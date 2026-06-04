@@ -16,6 +16,8 @@ import (
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/user"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -377,6 +379,62 @@ func TestComputeLabelValuesSeriesCount_AbortsOnCancelledContext(t *testing.T) {
 	}
 	require.Len(t, got, 1, "producer should abort after the first ctx check, not iterate all chunks")
 	require.ErrorIs(t, got[0].err, context.Canceled)
+}
+
+func TestComputeLabelValuesSeriesCount_LimitsQueuedChunks(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	pool, err := workerpool.New(workerpool.Config{Size: 1}, "test", reg, log.NewNopLogger())
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), pool))
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), pool))
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	lblValues := make([]string, labelValuesSeriesCountMaxConcurrency*2)
+	for i := range lblValues {
+		lblValues[i] = strconv.Itoa(i)
+	}
+
+	started := make(chan struct{}, 1)
+	release := make(chan struct{})
+	resCh := computeLabelValuesSeriesCount(
+		ctx,
+		pool,
+		"tenant-1",
+		1,
+		"lblName",
+		lblValues,
+		nil,
+		nil,
+		func(context.Context, tsdb.IndexPostingsReader, ...*labels.Matcher) (index.Postings, error) {
+			select {
+			case started <- struct{}{}:
+			default:
+			}
+			<-release
+			return index.EmptyPostings(), nil
+		},
+	)
+
+	<-started
+	expectedQueuedChunks := fmt.Sprintf(`# HELP cortex_workerpool_queue_length Number of work items queued in the worker pool, per tenant.
+# TYPE cortex_workerpool_queue_length gauge
+cortex_workerpool_queue_length{pool="test",user="tenant-1"} %d
+`, labelValuesSeriesCountMaxConcurrency-1)
+	require.Eventually(t, func() bool {
+		return testutil.GatherAndCompare(reg, strings.NewReader(expectedQueuedChunks), "cortex_workerpool_queue_length") == nil
+	}, time.Second, 10*time.Millisecond)
+
+	time.Sleep(50 * time.Millisecond)
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedQueuedChunks), "cortex_workerpool_queue_length"))
+
+	cancel()
+	close(release)
+	for range resCh {
+	}
 }
 
 func BenchmarkIngester_LabelValuesCardinality(b *testing.B) {

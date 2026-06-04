@@ -17,7 +17,8 @@ import (
 )
 
 const (
-	checkContextErrorSeriesCount = 1000 // series count interval in which context cancellation must be checked.
+	checkContextErrorSeriesCount         = 1000 // series count interval in which context cancellation must be checked.
+	labelValuesSeriesCountMaxConcurrency = 16
 )
 
 // LabelValuesCountConfig configures how label-values-cardinality responses are
@@ -241,6 +242,7 @@ func computeLabelValuesSeriesCount(
 		}
 	}
 
+	inFlightChunks := make(chan struct{}, labelValuesSeriesCountMaxConcurrency)
 	var wg sync.WaitGroup
 	go func() {
 		defer func() {
@@ -252,14 +254,29 @@ func computeLabelValuesSeriesCount(
 				countCh <- labelValueCountResult{err: err}
 				return
 			}
+			select {
+			case inFlightChunks <- struct{}{}:
+			case <-ctx.Done():
+				countCh <- labelValueCountResult{err: ctx.Err()}
+				return
+			}
+			if err := ctx.Err(); err != nil {
+				<-inFlightChunks
+				countCh <- labelValueCountResult{err: err}
+				return
+			}
 			end := min(start+chunkSize, len(lblValues))
 			s, e := start, end
 			wg.Add(1)
 			err := pool.Submit(tenantID, func() {
-				defer wg.Done()
+				defer func() {
+					<-inFlightChunks
+					wg.Done()
+				}()
 				processChunk(s, e)
 			})
 			if err != nil {
+				<-inFlightChunks
 				wg.Done()
 				countCh <- labelValueCountResult{err: err}
 				return
