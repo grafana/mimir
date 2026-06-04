@@ -205,90 +205,93 @@ func TestKafkaProducer_ProduceSync_ShouldCircuitBreakIfContextIsDone(t *testing.
 		topicName     = "test"
 	)
 
-	t.Run("context is done", func(t *testing.T) {
-		_, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
+	_, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
 
-		ctx := context.Background()
-		cfg := createTestKafkaConfig(clusterAddr, topicName)
-		reg := prometheus.NewPedanticRegistry()
-		prefixedReg := prometheus.WrapRegistererWithPrefix(writerMetricsPrefix, reg)
+	ctx := context.Background()
+	cfg := createTestKafkaConfig(clusterAddr, topicName)
+	reg := prometheus.NewPedanticRegistry()
+	prefixedReg := prometheus.WrapRegistererWithPrefix(writerMetricsPrefix, reg)
 
-		client, err := NewKafkaWriterClient(cfg, defaultMaxInflightProduceRequests, log.NewNopLogger(), prefixedReg)
-		require.NoError(t, err)
+	client, err := NewKafkaWriterClient(cfg, defaultMaxInflightProduceRequests, log.NewNopLogger(), prefixedReg)
+	require.NoError(t, err)
 
-		producer := NewKafkaProducer(client, cfg.ProducerMaxBufferedBytes, prefixedReg)
-		t.Cleanup(producer.Close)
+	producer := NewKafkaProducer(client, cfg.ProducerMaxBufferedBytes, prefixedReg)
+	t.Cleanup(producer.Close)
 
-		// Create a context with an expired deadline.
-		expiredCtx, cancel := context.WithDeadline(ctx, time.Now().Add(-time.Second))
-		t.Cleanup(cancel)
+	// Create a context with an expired deadline.
+	expiredCtx, cancel := context.WithDeadline(ctx, time.Now().Add(-time.Second))
+	t.Cleanup(cancel)
 
-		res := producer.ProduceSync(expiredCtx, []*kgo.Record{{Key: []byte("test"), Value: []byte("message 1")}})
-		require.ErrorIs(t, res.FirstErr(), context.DeadlineExceeded)
+	res := producer.ProduceSync(expiredCtx, []*kgo.Record{{Key: []byte("test"), Value: []byte("message 1")}})
+	require.ErrorIs(t, res.FirstErr(), context.DeadlineExceeded)
 
-		// We expect no records buffered in the Kafka client, because of the circuit breaker.
-		require.Equal(t, int64(0), producer.BufferedProduceRecords())
+	// We expect no records buffered in the Kafka client, because of the circuit breaker.
+	require.Equal(t, int64(0), producer.BufferedProduceRecords())
 
-		// Even if no record was actually enqueued, we expect the metric was tracked anyway to keep it consistent
-		// (we don't want to lose track of such records that, if context wasn't already done, they would have been produced).
-		assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
-			# HELP cortex_ingest_storage_writer_produce_records_enqueued_total Total number of Kafka records enqueued to be sent to the Kafka backend (includes records that fail to be successfully sent to the Kafka backend).
-			# TYPE cortex_ingest_storage_writer_produce_records_enqueued_total counter
-			cortex_ingest_storage_writer_produce_records_enqueued_total{} 1
+	// Even if no record was actually enqueued, we expect the metric was tracked anyway to keep it consistent
+	// (we don't want to lose track of such records that, if context wasn't already done, they would have been produced).
+	assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
+		# HELP cortex_ingest_storage_writer_produce_records_enqueued_total Total number of Kafka records enqueued to be sent to the Kafka backend (includes records that fail to be successfully sent to the Kafka backend).
+		# TYPE cortex_ingest_storage_writer_produce_records_enqueued_total counter
+		cortex_ingest_storage_writer_produce_records_enqueued_total{} 1
 
-			# HELP cortex_ingest_storage_writer_produce_records_failed_total Total number of Kafka records that failed to be sent to the Kafka backend.
-			# TYPE cortex_ingest_storage_writer_produce_records_failed_total counter
-			cortex_ingest_storage_writer_produce_records_failed_total{reason="cancelled-before-producing"} 1
-		`),
-			"cortex_ingest_storage_writer_produce_records_enqueued_total",
-			"cortex_ingest_storage_writer_produce_records_failed_total"))
+		# HELP cortex_ingest_storage_writer_produce_records_failed_total Total number of Kafka records that failed to be sent to the Kafka backend.
+		# TYPE cortex_ingest_storage_writer_produce_records_failed_total counter
+		cortex_ingest_storage_writer_produce_records_failed_total{reason="cancelled-before-producing"} 1
+	`),
+		"cortex_ingest_storage_writer_produce_records_enqueued_total",
+		"cortex_ingest_storage_writer_produce_records_failed_total"))
 
-		// We expect the circuit breaker triggers after we track the remaining context deadline (that in this case is 0).
-		metrics, err := dskit_metrics.NewMetricFamilyMapFromGatherer(reg)
-		require.NoError(t, err)
-		histogram, err := dskit_metrics.FindHistogramWithNameAndLabels(metrics, "cortex_ingest_storage_writer_produce_remaining_deadline_seconds")
-		require.NoError(t, err)
-		require.Equal(t, uint64(1), *histogram.SampleCount)
-		require.Equal(t, float64(0), *histogram.SampleSum)
-	})
+	// We expect the circuit breaker triggers after we track the remaining context deadline (that in this case is 0).
+	metrics, err := dskit_metrics.NewMetricFamilyMapFromGatherer(reg)
+	require.NoError(t, err)
+	histogram, err := dskit_metrics.FindHistogramWithNameAndLabels(metrics, "cortex_ingest_storage_writer_produce_remaining_deadline_seconds")
+	require.NoError(t, err)
+	require.Equal(t, uint64(1), *histogram.SampleCount)
+	require.Equal(t, float64(0), *histogram.SampleSum)
+}
 
-	t.Run("any input record has Timestamp set", func(t *testing.T) {
-		_, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
+func TestKafkaProducer_ProduceSync_ShouldRejectRecordsWithTimestampSet(t *testing.T) {
+	const (
+		numPartitions = 1
+		topicName     = "test"
+	)
 
-		cfg := createTestKafkaConfig(clusterAddr, topicName)
-		reg := prometheus.NewPedanticRegistry()
-		prefixedReg := prometheus.WrapRegistererWithPrefix(writerMetricsPrefix, reg)
+	_, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
 
-		client, err := NewKafkaWriterClient(cfg, defaultMaxInflightProduceRequests, log.NewNopLogger(), prefixedReg)
-		require.NoError(t, err)
+	cfg := createTestKafkaConfig(clusterAddr, topicName)
+	reg := prometheus.NewPedanticRegistry()
+	prefixedReg := prometheus.WrapRegistererWithPrefix(writerMetricsPrefix, reg)
 
-		producer := NewKafkaProducer(client, cfg.ProducerMaxBufferedBytes, prefixedReg)
-		t.Cleanup(producer.Close)
+	client, err := NewKafkaWriterClient(cfg, defaultMaxInflightProduceRequests, log.NewNopLogger(), prefixedReg)
+	require.NoError(t, err)
 
-		records := []*kgo.Record{
-			{Key: []byte("test"), Value: []byte("message 1")},
-			{Key: []byte("test"), Value: []byte("message 2"), Timestamp: time.Now()},
-		}
+	producer := NewKafkaProducer(client, cfg.ProducerMaxBufferedBytes, prefixedReg)
+	t.Cleanup(producer.Close)
 
-		res := producer.ProduceSync(context.Background(), records)
-		require.Len(t, res, len(records))
-		for i, r := range res {
-			require.Errorf(t, r.Err, "result[%d] should fail", i)
-			require.Containsf(t, r.Err.Error(), "Kafka record Timestamp must not be set", "result[%d] should report the timestamp error", i)
-			require.Samef(t, records[i], r.Record, "result[%d] should reference the original record", i)
-		}
+	records := []*kgo.Record{
+		{Key: []byte("test"), Value: []byte("message 1")},
+		{Key: []byte("test"), Value: []byte("message 2"), Timestamp: time.Now()},
+	}
 
-		// No record should be buffered in the Kafka client (none was produced).
-		require.Equal(t, int64(0), producer.BufferedProduceRecords())
-		require.Equal(t, int64(0), producer.bufferedBytes.Load())
+	res := producer.ProduceSync(context.Background(), records)
+	require.Len(t, res, len(records))
+	for i, r := range res {
+		require.Errorf(t, r.Err, "result[%d] should fail", i)
+		require.Containsf(t, r.Err.Error(), "Kafka record Timestamp must not be set", "result[%d] should report the timestamp error", i)
+		require.Samef(t, records[i], r.Record, "result[%d] should reference the original record", i)
+	}
 
-		assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
-			# HELP cortex_ingest_storage_writer_produce_records_failed_total Total number of Kafka records that failed to be sent to the Kafka backend.
-			# TYPE cortex_ingest_storage_writer_produce_records_failed_total counter
-			cortex_ingest_storage_writer_produce_records_failed_total{reason="record-timestamp-set"} 2
-		`),
-			"cortex_ingest_storage_writer_produce_records_failed_total"))
-	})
+	// No record should be buffered in the Kafka client (none was produced).
+	require.Equal(t, int64(0), producer.BufferedProduceRecords())
+	require.Equal(t, int64(0), producer.bufferedBytes.Load())
+
+	assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
+		# HELP cortex_ingest_storage_writer_produce_records_failed_total Total number of Kafka records that failed to be sent to the Kafka backend.
+		# TYPE cortex_ingest_storage_writer_produce_records_failed_total counter
+		cortex_ingest_storage_writer_produce_records_failed_total{reason="record-timestamp-set"} 2
+	`),
+		"cortex_ingest_storage_writer_produce_records_failed_total"))
 }
 
 func TestKafkaProducer_ProduceSync_ShouldRejectWholeBatchIfBufferIsFull(t *testing.T) {
