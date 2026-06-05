@@ -1,7 +1,0 @@
-{
-  "name": "screenshots",
-  "version": "0.1.0",
-  "dependencies": {
-    "puppeteer": "^24.0.0"
-  }
-}
