@@ -10,7 +10,7 @@ help:
 # WARNING: do not commit to a repository!
 -include Makefile.local
 
-.PHONY: all test test-with-race integration-tests cover clean images protos exes dist doc clean-doc check-doc push-multiarch-build-image license check-license format check-mixin check-mixin-jb check-mixin-mixtool check-mixin-runbooks check-mixin-mimirtool-rules build-mixin format-mixin check-jsonnet-manifests format-jsonnet-manifests push-multiarch-mimir list-image-targets check-jsonnet-getting-started mixin-screenshots
+.PHONY: all test test-with-race integration-tests cover clean images protos exes dist doc clean-doc check-doc push-multiarch-build-image license check-license format check-mixin check-mixin-jb check-mixin-mixtool check-mixin-runbooks check-mixin-mimirtool-rules build-mixin format-mixin check-jsonnet-manifests format-jsonnet-manifests push-multiarch-mimir list-image-targets check-jsonnet-getting-started
 .DEFAULT_GOAL := all
 
 # Version number
@@ -722,10 +722,6 @@ check-mixin-mimirtool-rules: build-mixin
 
 mixin-serve: ## Runs Grafana loading the mixin dashboards. Use MIXIN_OUT_PATH=operations/mimir-mixin-compiled-gem for GEM variant
 	@./operations/mimir-mixin-tools/serve/run.sh -p $(MIXIN_OUT_PATH)
-
-mixin-screenshots: ## Generates mixin dashboards screenshots.
-	@find $(DOC_SOURCES_PATH)/manage/monitor-grafana-mimir/dashboards -name '*.png' -delete
-	@./operations/mimir-mixin-tools/screenshots/run.sh
 
 check-jsonnet-manifests: ## Check the jsonnet manifests.
 check-jsonnet-manifests: format-jsonnet-manifests

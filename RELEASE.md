@@ -73,8 +73,8 @@ If something is not clear, you can get back to this document to learn more about
   - [ ] Ensure CHANGELOG entries are [sorted by type](https://github.com/grafana/mimir/blob/main/docs/internal/contributing/README.md#changelog)
   - [ ] Add a new section for the new release so that `## main / unreleased` is blank and at the top. The new section should say `## x.y.0-rc.0`.
 - [ ] Run `./tools/release/notify-changelog-cut.sh CHANGELOG.md`
-- [ ] Run `make mixin-screenshots`
-  - Before opening the PR, review all updated screenshots and ensure no sensitive data is disclosed
+- [ ] ~~Run `make mixin-screenshots`~~
+  - **2026/06**: mixin-screenshots was removed from `release-2.17` to reduce outdated dependencies in old supported release branches.
 - [ ] Create new release branch
   - [ ] Create the branch
     ```bash
@@ -283,7 +283,7 @@ To publish a stable release:
 1. Update dashboard screenshots
    1. Make sure that operations/mimir-mixin-tools/screenshots/.config is configured according to the directions in [operations/mimir-mixin-tools/screenshots/run.sh](https://github.com/grafana/mimir/blob/main/operations/mimir-mixin-tools/screenshots/run.sh)
    1. Make sure that operations/mimir-mixin-tools/serve/.config is configured according to the directions in [operations/mimir-mixin-tools/serve/run.sh](https://github.com/grafana/mimir/blob/main/operations/mimir-mixin-tools/serve/run.sh)
-   1. Run `make mixin-screenshots`
+   1. ~~Run `make mixin-screenshots`~~
    1. Review all updated screenshots and ensure no sensitive data is disclosed
    1. Open a PR
 1. After merging your PR to the release branch, run `./tools/release/tag-release.sh` to tag the new release from the release branch (see [How to tag a release](#how-to-tag-a-release)).
