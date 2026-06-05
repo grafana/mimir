@@ -643,7 +643,7 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 		}
 	}
 
-	i.queryWorkerPool, err = workerpool.New(workerpool.Config{Size: cfg.QueryWorkers}, "ingester-query", registerer, logger)
+	i.queryWorkerPool, err = workerpool.New(workerpool.Config{Size: cfg.QueryWorkers}, "ingester-worker-pool", registerer, logger)
 	if err != nil {
 		return nil, errors.Wrap(err, "creating ingester query worker pool")
 	}
