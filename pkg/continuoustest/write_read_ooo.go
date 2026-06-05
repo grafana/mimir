@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/antithesishq/antithesis-sdk-go/assert"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/multierror"
@@ -402,6 +403,7 @@ func (t *WriteReadOOOTest) runInstantQueryAndVerifyResult(ctx context.Context, t
 	if err != nil {
 		t.metrics.queryResultChecksFailedTotal.WithLabelValues(typeLabel).Inc()
 		level.Warn(logger).Log("msg", "Instant query result check failed", "err", err)
+		assert.Unreachable("OOO instant query result check failed", map[string]any{"err": err.Error()})
 		return fmt.Errorf("instant query result check failed: %w", err)
 	}
 
