@@ -151,11 +151,9 @@ func (m *RangeVectorSelector) NextStepSamples(ctx context.Context) (*types.Range
 		}
 	}
 
-	var err error
 	if fillBufferRequired {
 		// Note - fillBuffer may result in the buffer having a point after the rangeEnd.
-		_, err = m.fillBuffer(m.floats, m.histograms, rangeStart, originalRangeEnd, m.Selector.Anchored || m.Selector.Smoothed)
-		if err != nil {
+		if err := m.fillBuffer(m.floats, m.histograms, rangeStart, originalRangeEnd); err != nil {
 			return nil, err
 		}
 	}
@@ -185,27 +183,24 @@ func (m *RangeVectorSelector) NextStepSamples(ctx context.Context) (*types.Range
 			// Mutate the floats buffer to align and extend points to the original time boundaries.
 			// The result is either an empty buffer or one containing only points within the
 			// original time range, with points present at both boundaries.
-			err = m.extendedPointsState.ApplyBoundaryMutations(originalRangeStart, originalRangeEnd, rangeEnd)
-			if err != nil {
+			if err := m.extendedPointsState.ApplyBoundaryMutations(originalRangeStart, originalRangeEnd, rangeEnd); err != nil {
 				return nil, err
 			}
 
 			// A ViewAll can be used since we know that this buffer only contains points within the requested range.
 			m.stepData.Floats = m.floats.ViewAll(m.stepData.Floats)
 		}
-
-		// For histograms we do not mutate the underlying ring buffer. The view spans the extended
-		// look-back/look-ahead window (up to the extended rangeEnd) so that the rate/increase/
-		// delta family can pick or interpolate boundary values from points outside the original
-		// range, mirroring Prometheus's extendedHistogramRate. Other histogram-aware functions
-		// (e.g. resets, changes) see the same wider window, matching upstream Prometheus's
-		// behaviour where the engine's range buffer is uniformly extended for the modifier.
-		m.stepData.Histograms = m.histograms.ViewUntilSearchingBackwards(rangeEnd, m.stepData.Histograms)
 	} else {
 		m.stepData.Floats = m.floats.ViewUntilSearchingBackwards(rangeEnd, m.stepData.Floats)
-		m.stepData.Histograms = m.histograms.ViewUntilSearchingBackwards(rangeEnd, m.stepData.Histograms)
 	}
 
+	// For histograms we do not mutate the underlying ring buffer. The view spans the extended
+	// look-back/look-ahead window (up to the extended rangeEnd) so that the rate/increase/
+	// delta family can pick or interpolate boundary values from points outside the original
+	// range, mirroring Prometheus's extendedHistogramRate. Other histogram-aware functions
+	// (e.g. resets, changes) see the same wider window, matching upstream Prometheus's
+	// behaviour where the engine's range buffer is uniformly extended for the modifier.
+	m.stepData.Histograms = m.histograms.ViewUntilSearchingBackwards(rangeEnd, m.stepData.Histograms)
 	m.stepData.RangeStart = originalRangeStart // important to return the original range start so that functions like rate() can determine the range duration regardless of smoothed / anchored
 	m.stepData.RangeEnd = originalRangeEnd
 
@@ -216,9 +211,8 @@ func (m *RangeVectorSelector) NextStepSamples(ctx context.Context) (*types.Range
 // points are accumulated into the buffer if they have a timestamp greater than rangeStart with the accumulation stopping
 // once a point with a timestamp greater than or equal to rangeEnd has been accumulated.
 // As such, no point is accumulated for rangeStart and there may be one point after rangeEnd in the buffer.
-func (m *RangeVectorSelector) fillBuffer(floats *types.FPointRingBuffer, histograms *types.HPointRingBuffer, rangeStart, rangeEnd int64, smoothedOrAnchored bool) (bool, error) {
+func (m *RangeVectorSelector) fillBuffer(floats *types.FPointRingBuffer, histograms *types.HPointRingBuffer, rangeStart, rangeEnd int64) error {
 	// Keep filling the buffer until we reach the end of the range or the end of the iterator.
-	histogramObserved := false
 
 	for {
 		valueType := m.chunkIterator.Next()
@@ -226,7 +220,7 @@ func (m *RangeVectorSelector) fillBuffer(floats *types.FPointRingBuffer, histogr
 		switch valueType {
 		case chunkenc.ValNone:
 			// No more data. We are done.
-			return histogramObserved, m.chunkIterator.Err()
+			return m.chunkIterator.Err()
 		case chunkenc.ValFloat:
 			t, f := m.chunkIterator.At()
 			if value.IsStaleNaN(f) || t <= rangeStart {
@@ -239,11 +233,11 @@ func (m *RangeVectorSelector) fillBuffer(floats *types.FPointRingBuffer, histogr
 			// - callers of NextStepSamples are expected to pass the same RingBuffer to subsequent calls, so the point is not lost
 			// - callers of NextStepSamples are expected to handle the case where the buffer contains points beyond the end of the range
 			if _, err := floats.Append(promql.FPoint{T: t, F: f}); err != nil {
-				return false, err
+				return err
 			}
 
 			if t >= rangeEnd {
-				return histogramObserved, nil
+				return nil
 			}
 		case chunkenc.ValHistogram, chunkenc.ValFloatHistogram:
 			t := m.chunkIterator.AtT()
@@ -254,7 +248,7 @@ func (m *RangeVectorSelector) fillBuffer(floats *types.FPointRingBuffer, histogr
 
 			hPoint, _, err := histograms.NextPoint()
 			if err != nil {
-				return false, err
+				return err
 			}
 			hPoint.T, hPoint.H = m.chunkIterator.AtFloatHistogram(hPoint.H)
 			if value.IsStaleNaN(hPoint.H.Sum) {
@@ -265,13 +259,11 @@ func (m *RangeVectorSelector) fillBuffer(floats *types.FPointRingBuffer, histogr
 				continue
 			}
 
-			histogramObserved = true
-
 			if t >= rangeEnd {
-				return histogramObserved, nil
+				return nil
 			}
 		default:
-			return false, fmt.Errorf("unknown value type %s", valueType.String())
+			return fmt.Errorf("unknown value type %s", valueType.String())
 		}
 	}
 }
