@@ -150,7 +150,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     // Both support gRPC and HTTP requests. HTTP request is used when rule evaluation query requests go through the query-tee.
     ruler_query_frontend_routes_regex: '/httpgrpc.HTTP/Handle|.*api_v1_query',
     usage_tracker_track_series_routes_regex: '/usagetrackerpb.UsageTracker/TrackSeries(Batch)?',
-    usage_tracker_track_series_sync_route_regex: '/usagetrackerpb.UsageTracker/TrackSeries',
+    usage_tracker_track_series_sync_route_regex: '/usagetrackerpb.UsageTracker/TrackSeries$',
     usage_tracker_track_series_batch_route_regex: '/usagetrackerpb.UsageTracker/TrackSeriesBatch',
     usage_tracker_get_users_close_to_limit_routes_regex: '/usagetrackerpb.UsageTracker/GetUsersCloseToLimit',
 
