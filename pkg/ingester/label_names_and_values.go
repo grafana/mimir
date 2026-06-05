@@ -17,22 +17,22 @@ import (
 )
 
 const (
-	checkContextErrorSeriesCount = 1000 // series count interval in which context cancellation must be checked.
+	checkContextErrorSeriesCount    = 1000 // series count interval in which context cancellation must be checked.
 	dimensionLabelValuesSeriesCount = "labelValuesSeriesCount"
 )
 
-// LabelValuesCountConfig configures how label-values-cardinality responses are
-// computed on the ingester. The work itself is dispatched to the ingester's
-// shared tenant-fair query worker pool (see Config.QueryWorkers); this config
-// only carries the label-values-specific knobs.
+// LabelValuesCountConfig holds the label-values-cardinality-specific settings.
+// The work itself runs on the ingester's shared query pool (see Config.QueryWorkers);
+// this config only carries the knobs specific to label-values.
 type LabelValuesCountConfig struct {
 	ChunkSize int `yaml:"chunk_size" category:"experimental"`
 }
 
 // RegisterFlags registers config flags.
 func (cfg *LabelValuesCountConfig) RegisterFlags(f *flag.FlagSet) {
-	// 32 is a gut-feel default (not benchmarked): big enough to amortize
-	// per-task dispatch overhead, small enough to stay fair across tenants.
+	// 32 is a gut-feel default (not benchmarked):
+	// big enough to amortize per-task dispatch overhead,
+	// small enough to stay fair across tenants.
 	f.IntVar(&cfg.ChunkSize, "ingester.label-values-count-chunk-size", 32, "Number of label values processed per work unit submitted to the ingester query worker pool.")
 }
 
@@ -172,10 +172,9 @@ func labelValuesCardinality(
 
 		for countRes := range resultCh {
 			if countRes.err != nil {
-				// Drain to wait for in-flight chunks to release idxReader before
-				// the caller's defer idx.Close() fires. The producer goroutine
-				// closes resultCh after wg.Wait, so this returns once every
-				// chunk is done.
+				// Drain to wait for in-flight chunks to release idxReader before the caller's defer idx.Close() fires.
+				// The producer goroutine closes resultCh after wg.Wait,
+				// so this returns once every chunk is done.
 				for range resultCh { //nolint:revive
 				}
 				return countRes.err

@@ -187,11 +187,10 @@ type Config struct {
 	PushReactiveLimiter  reactivelimiter.Config            `yaml:"push_reactive_limiter"`
 	ReadReactiveLimiter  reactivelimiter.Config            `yaml:"read_reactive_limiter"`
 
-	// QueryWorkers sets the size of the ingester's shared tenant-fair query
-	// worker pool used to parallelize read-path work across tenants. It is
-	// intentionally not scoped to a single endpoint: label-values-cardinality
-	// is the only consumer today, but other query types are expected to submit
-	// to the same pool rather than each spawning its own GOMAXPROCS workers.
+	// QueryWorkers sets the number of workers in the ingester's shared query pool, which parallelizes read-path work fairly across tenants.
+	// The pool isn't tied to one endpoint on purpose:
+	// label-values-cardinality is its only user today,
+	// but other query types should submit to the same pool rather than each spinning up its own GOMAXPROCS goroutines.
 	QueryWorkers int `yaml:"query_workers" category:"experimental"`
 
 	LabelValuesCount LabelValuesCountConfig `yaml:"label_values_count"`
