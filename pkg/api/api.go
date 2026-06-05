@@ -421,8 +421,6 @@ func (a *API) RegisterIngesterPartitionRing(r http.Handler) {
 	a.RegisterRoute("/ingester/partition-ring", r, false, true, "GET", "POST")
 }
 
-// RegisterIngesterPartitionRingForCompartment registers the ring UI page for a single read compartment's
-// partition ring. Used instead of RegisterIngesterPartitionRing when compartments are enabled.
 func (a *API) RegisterIngesterPartitionRingForCompartment(r http.Handler, compartmentID int) {
 	path := fmt.Sprintf("ingester/partition-ring/compartment-%d", compartmentID)
 	a.indexPage.AddLinks(defaultWeight, "Ingester", []IndexPageLink{

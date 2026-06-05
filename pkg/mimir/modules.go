@@ -408,16 +408,9 @@ func (t *Mimir) initIngesterPartitionRings() (services.Service, error) {
 		return t.IngesterPartitionRingWatcher, nil
 	}
 
-	// Compartments enabled: build one partition ring watcher per compartment, each watching its own KV
-	// key, and expose a status page per compartment. Run them under a single service manager together with
-	// the legacy watcher, which the read path (query.go, adjustQueryRequestLimit) still consults and which
-	// only keeps its in-memory ring current while its service is running. The legacy ring's status page is
-	// not exposed in this mode: its ring is empty and is retired once the read path moves to the
-	// per-compartment rings.
 	numCompartments := t.Cfg.IngestStorage.Compartments.NumCompartments
 	t.IngesterPartitionRingWatchers = make([]*ring.PartitionRingWatcher, numCompartments)
-	allWatchers := make([]services.Service, 0, numCompartments+1)
-	allWatchers = append(allWatchers, t.IngesterPartitionRingWatcher)
+	allWatchers := make([]services.Service, 0, numCompartments)
 	for c := 0; c < numCompartments; c++ {
 		key := ingester.CompartmentPartitionRingKey(c)
 		watcher := ring.NewPartitionRingWatcher(key, key, kvClient, util_log.Logger, prometheus.WrapRegistererWithPrefix("cortex_", t.Registerer))
@@ -814,10 +807,14 @@ func (t *Mimir) initIngesterService() (serv services.Service, err error) {
 	t.Cfg.Ingester.IngestStorageConfig = t.Cfg.IngestStorage
 	t.tsdbIngesterConfig()
 
-	// The ingester observes its own read compartment's partition ring (index 0 is the legacy single ring
-	// when compartments are disabled), used by the partition-ring limiter and owned-series strategies.
+	// An ingester only needs its own ReadCompartmentID watcher, but this module is shared with
+	// distributor/querier so all N are built and the ingester selects one.
+	// TODO(per-compartment-rings): Only set up watcher for the ingester's compartment.
 	partitionRingWatcher := t.IngesterPartitionRingWatcher
 	if t.Cfg.IngestStorage.Enabled {
+		partitionRingWatcher = t.IngesterPartitionRingWatchers[0]
+	}
+	if t.Cfg.IngestStorage.Compartments.Enabled {
 		partitionRingWatcher = t.IngesterPartitionRingWatchers[t.Cfg.IngestStorage.Compartments.ReadCompartmentID]
 	}
 

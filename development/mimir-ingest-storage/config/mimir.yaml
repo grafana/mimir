@@ -19,9 +19,6 @@ ingest_storage:
   compartments:
     enabled: true
     num_compartments: 2
-    # Each compartment gets its own Kafka topic. The distributor routes series here by
-    # hash(user+metric); a null ingester per compartment consumes its topic and registers into
-    # that compartment's partition ring (ingester-partitions-compartment-<c>).
     topic_format: mimir-ingest-compartment-<compartment-id>
     # The single Kafka cluster is the only write VC. The address has no <write-compartment-id>
     # placeholder, so every write VC reader points at the same cluster. CompartmentReaders spins one

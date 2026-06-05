@@ -224,7 +224,12 @@ type Distributor struct {
 	// compartmentRouter routes series to compartment topics. Nil when compartments are disabled.
 	compartmentRouter *ingest.CompartmentRouter
 
-	// partitionsRing is the hash ring holding ingester partitions. It's used when ingest storage is enabled.
+	// partitionsRing is the hash ring holding ingester partitions. It's used when ingest storage
+	// is enabled. As part of compartments work, the write path is using partitionsRings instead of
+	// this field. The query path still uses this field but this only works correctly if
+	// compartments is disabled.
+	// FIXME(per-compartment-rings): remove once the read path is compartment-aware and uses
+	// partitionsRings as well.
 	partitionsRing *ring.PartitionInstanceRing
 
 	// partitionsRings holds the partition ring watchers indexed by read compartment, used by the write
