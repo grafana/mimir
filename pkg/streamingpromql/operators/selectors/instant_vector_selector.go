@@ -7,6 +7,7 @@ package selectors
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 
@@ -18,6 +19,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/util/annotations"
 
+	"github.com/grafana/mimir/pkg/streamingpromql/operators"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
@@ -31,17 +33,31 @@ type InstantVectorSelector struct {
 	chunkIterator    chunkenc.Iterator
 	memoizedIterator *storage.MemoizedSeriesIterator
 	evaluationStats  *types.OperatorEvaluationStats
+
+	// metricNames captures the metric name of each series in SeriesMetadata, so that the smoothed
+	// modifier can emit per-series annotations once the series data has been examined in NextSeries
+	// (the series labels are no longer available by then). Only populated when smoothed is used.
+	metricNames        *operators.MetricNames
+	currentSeriesIndex int
+	annos              annotations.Annotations
 }
 
 var _ types.InstantVectorOperator = &InstantVectorSelector{}
 
 func NewInstantVectorSelector(selector *Selector, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, returnSampleTimestamps, returnSampleTimestampsPreserveHistograms bool) *InstantVectorSelector {
-	return &InstantVectorSelector{
+	v := &InstantVectorSelector{
 		Selector:                                 selector,
 		MemoryConsumptionTracker:                 memoryConsumptionTracker,
 		ReturnSampleTimestamps:                   returnSampleTimestamps,
 		ReturnSampleTimestampsPreserveHistograms: returnSampleTimestampsPreserveHistograms,
 	}
+
+	if selector.Smoothed {
+		// The smoothed modifier can emit per-series annotations, which require the metric name.
+		v.metricNames = &operators.MetricNames{}
+	}
+
+	return v
 }
 
 func (v *InstantVectorSelector) ExpressionPosition() posrange.PositionRange {
@@ -49,13 +65,27 @@ func (v *InstantVectorSelector) ExpressionPosition() posrange.PositionRange {
 }
 
 func (v *InstantVectorSelector) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
-	return v.Selector.SeriesMetadata(ctx, matchers)
+	metadata, err := v.Selector.SeriesMetadata(ctx, matchers)
+	if err != nil {
+		return nil, err
+	}
+
+	// The smoothed modifier may need the metric name to emit annotations for a series once its
+	// samples have been examined in NextSeries.
+	if v.metricNames != nil {
+		v.metricNames.CaptureMetricNames(metadata)
+	}
+
+	return metadata, nil
 }
 
 func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
 	if v.memoizedIterator == nil {
 		v.memoizedIterator = storage.NewMemoizedEmptyIterator(v.Selector.LookbackDelta.Milliseconds() - 1) // -1 to exclude samples on the lower boundary of the range.
 	}
+
+	seriesIndex := v.currentSeriesIndex
+	v.currentSeriesIndex++
 
 	var matchesSubsets []bool
 	var err error
@@ -136,6 +166,14 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 				continue
 			}
 
+			// Under the smoothed modifier, if the look-back/look-ahead window straddles a float and
+			// a histogram we cannot interpolate. Mirror Prometheus's smoothSeries, which emits
+			// MixedFloatsHistogramsWarning and produces no point for the step.
+			if v.Selector.Smoothed && valueType != chunkenc.ValNone && right.T <= ts+v.Selector.LookbackDelta.Milliseconds() && ((h != nil) != (rightH != nil)) {
+				v.annos.Add(annotations.NewMixedFloatsHistogramsWarning(v.metricNames.GetMetricNameForSeries(seriesIndex), v.ExpressionPosition()))
+				continue
+			}
+
 			if h != nil {
 				if t == lastHistogramT && lastHistogram != nil {
 					// Reuse exactly the same FloatHistogram as last time, don't bother creating another FloatHistogram yet.
@@ -151,20 +189,20 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 				if v.Selector.Smoothed && rightH != nil && right.T <= ts+v.Selector.LookbackDelta.Milliseconds() {
 					interpolated, err := interpolateHistogramAt(h, t, rightH, right.T, ts)
 					if err != nil {
-						// Incompatible schemas (e.g. exponential mixed with custom buckets):
-						// drop this step. Annotation emission from the instant-vector selector
-						// is not currently plumbed; the divergence from Prometheus's
-						// MixedExponentialCustomHistogramsWarning is acceptable because the
-						// step is also dropped from the result either way.
+						// Exponential and custom-bucket histograms cannot be interpolated: emit
+						// MixedExponentialCustomHistogramsWarning and drop the step, mirroring
+						// Prometheus's smoothSeries / annosFromInterpolationError.
+						if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) {
+							v.annos.Add(annotations.NewMixedExponentialCustomHistogramsWarning(v.metricNames.GetMetricNameForSeries(seriesIndex), v.ExpressionPosition()))
+						}
 						continue
 					}
 					h = interpolated
 					hInterpolated = true
 				}
-				// If the right-side neighbour is a float (mixed within the look-ahead window)
-				// under smoothed, fall back to the lookback histogram. Annotation emission for
-				// MixedFloatsHistogramsWarning would belong here but is not currently plumbed
-				// through the instant-vector selector.
+				// A mixed float/histogram window is handled above (skip + warn), so any remaining
+				// right-side float here is outside the look-ahead window: fall back to the lookback
+				// histogram, mirroring Prometheus's nearest-previous-sample behaviour.
 			} else {
 				// If this query uses the 'smoothed' modifier, we look back within the look-back delta
 				// to find the most recent float value before the requested timestamp.
@@ -274,7 +312,7 @@ func (v *InstantVectorSelector) FinishedReading(ctx context.Context) error {
 func (v *InstantVectorSelector) Finalize(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
 	stats := v.evaluationStats
 	v.evaluationStats = nil
-	return stats, nil, nil
+	return stats, v.annos, nil
 }
 
 func (v *InstantVectorSelector) Close() {
@@ -299,6 +337,13 @@ func interpolateHistogramAt(h1 *histogram.FloatHistogram, t1 int64, h2 *histogra
 	}
 	if t == t2 {
 		return h2.Copy(), nil
+	}
+	// Exponential and custom-bucket histograms cannot be interpolated. Surface this as
+	// ErrHistogramsIncompatibleSchema before the counter-reset path below, so a DetectReset that
+	// happens to return true cannot mask it. Mirrors Prometheus's smoothSeries, which checks
+	// UsesCustomBuckets before interpolating.
+	if h1.UsesCustomBuckets() != h2.UsesCustomBuckets() {
+		return nil, histogram.ErrHistogramsIncompatibleSchema
 	}
 	fraction := float64(t-t1) / float64(t2-t1)
 	// Treat the pair as counter data unless BOTH samples explicitly carry the gauge hint. If

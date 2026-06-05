@@ -688,9 +688,8 @@ clear
 load 30s
   smoothed_mix {{schema:0 sum:1 count:1 buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:0 sum:5 count:4 buckets:[1 2 1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}}
 
-# Unsupported by streaming engine.
-# eval instant at 45s histogram_count(smoothed_mix smoothed)
-#     expect warn msg: PromQL warning: vector contains a mix of histograms with exponential and custom buckets schemas for metric name "smoothed_mix"
+eval instant at 45s histogram_count(smoothed_mix smoothed)
+    expect warn msg: PromQL warning: vector contains a mix of histograms with exponential and custom buckets schemas for metric name "smoothed_mix"
 
 # Smoothed vector selector must emit a warning and produce no result when the
 # lookback window mixes floats and histograms.
@@ -698,9 +697,8 @@ clear
 load 30s
   mixed_types 1 2 {{schema:0 sum:3 count:3 buckets:[3]}} {{schema:0 sum:4 count:4 buckets:[4]}}
 
-# Unsupported by streaming engine.
-# eval instant at 45s sort(mixed_types smoothed)
-#     expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "mixed_types"
+eval instant at 45s sort(mixed_types smoothed)
+    expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "mixed_types"
 
 # Smoothed rate where the RIGHT boundary interpolation crosses a counter reset.
 # Samples: t=0 count:5, t=10 count:10, t=20 count:3 (reset).
