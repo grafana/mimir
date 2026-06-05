@@ -18,6 +18,7 @@ import (
 
 const (
 	checkContextErrorSeriesCount = 1000 // series count interval in which context cancellation must be checked.
+	dimensionLabelValuesSeriesCount = "labelValuesSeriesCount"
 )
 
 // LabelValuesCountConfig configures how label-values-cardinality responses are
@@ -255,7 +256,7 @@ func computeLabelValuesSeriesCount(
 			end := min(start+chunkSize, len(lblValues))
 			s, e := start, end
 			wg.Add(1)
-			err := pool.Submit(tenantID, func() {
+			err := pool.Submit(dimensionLabelValuesSeriesCount, tenantID, func() {
 				defer wg.Done()
 				processChunk(s, e)
 			})
