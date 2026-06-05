@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/antithesishq/antithesis-sdk-go/assert"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/multierror"
@@ -272,6 +273,19 @@ func (t *WriteReadSeriesTest) runRangeQueryAndVerifyResult(ctx context.Context, 
 	t.metrics.queryResultChecksTotal.WithLabelValues(typeLabel).Inc()
 	_, err = verifySamplesSum(matrix, t.cfg.NumSeries, step, generateValue, generateSampleHistogram, nil)
 	if err != nil {
+		// A failed result check means the data read back from Mimir does not match what was
+		// written. Under correct behaviour this branch should never be reached, so we report it
+		// to Antithesis to surface the violation during fault-injection testing.
+		assert.Unreachable("Range query result check failed", map[string]any{
+			"err":           err.Error(),
+			"query":         metricSumQuery,
+			"start":         start.UnixMilli(),
+			"end":           end.UnixMilli(),
+			"step":          step.String(),
+			"type":          typeLabel,
+			"results_cache": resultsCacheEnabled,
+			"protocol":      t.client.Protocol(),
+		})
 		t.metrics.queryResultChecksFailedTotal.WithLabelValues(typeLabel).Inc()
 		level.Warn(logger).Log("msg", "Range query result check failed", "err", err)
 		return fmt.Errorf("range query result check failed: %w", err)
