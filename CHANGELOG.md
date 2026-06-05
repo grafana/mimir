@@ -18,6 +18,7 @@
 ### Mixin
 
 * [ENHANCEMENT] Alerts: Make `MimirInconsistentRuntimeConfig` alert less flaky when performing multiple configuration changes in a row in a large Kubernetes cluster. #15257
+* [ENHANCEMENT] Dashboards: Break the "Usage Tracker" row "Requests / sec" panel in the "Mimir / Writes" dashboard out into separate non-batch (Sync) and batch (Async) `TrackSeries` routes. #15579
 * [BUGFIX] Dashboards: Fix usage tracker row in "Mimir / Writes" dashboard to include both `TrackSeries` and `TrackSeriesBatch` routes. #15289
 
 ### Jsonnet

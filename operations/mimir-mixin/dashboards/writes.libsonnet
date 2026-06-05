@@ -332,8 +332,38 @@ local filename = 'mimir-writes.json';
       $._config.usage_tracker_enabled,
       $.row('Usage Tracker')
       .addPanel(
-        $.timeseriesPanel('Requests / sec') +
-        $.qpsPanelNativeHistogram($.queries.usage_tracker.requestsPerSecondMetric, $.queries.usage_tracker.trackSeriesRequestsPerSecondSelector)
+        local title = 'Requests / sec';
+        // Break the non-batch (Sync) and batch (Async) TrackSeries routes out into separate series,
+        // mirroring the Sync/Async split in the "Client req / sec" panel above. Non-batch requests
+        // are significantly more CPU intensive than batch ones, so keeping them separate is useful.
+        local syncPanel = $.qpsPanelNativeHistogram($.queries.usage_tracker.requestsPerSecondMetric, $.queries.usage_tracker.trackSeriesSyncRequestsPerSecondSelector);
+        local batchPanel = $.qpsPanelNativeHistogram($.queries.usage_tracker.requestsPerSecondMetric, $.queries.usage_tracker.trackSeriesBatchRequestsPerSecondSelector);
+        $.timeseriesPanel(title) +
+        syncPanel +
+        {
+          // Prefix the non-batch (Sync) target legends and append the batch (Async) targets.
+          targets: [
+            t { legendFormat: 'Sync ' + t.legendFormat }
+            for t in syncPanel.targets
+          ] + [
+            t { legendFormat: 'Async ' + t.legendFormat, refId: t.refId + '_batch' }
+            for t in batchPanel.targets
+          ],
+        } +
+        $.aliasColors({
+          ['Sync ' + name]: $.qpsPanelColors[name]
+          for name in std.objectFields($.qpsPanelColors)
+        } + {
+          ['Async ' + name]: $.qpsPanelColors[name]
+          for name in std.objectFields($.qpsPanelColors)
+        }) +
+        $.panelDescription(
+          title,
+          |||
+            The number of TrackSeries requests received by the Usage Tracker service, broken down into the non-batch (Sync) and batch (Async) routes.
+            Non-batch requests are significantly more CPU intensive than batch ones.
+          |||
+        )
       )
       .addPanel(
         $.timeseriesPanel('Latency') +
