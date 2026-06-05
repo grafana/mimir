@@ -814,13 +814,20 @@ func (t *Mimir) initIngesterService() (serv services.Service, err error) {
 	t.Cfg.Ingester.IngestStorageConfig = t.Cfg.IngestStorage
 	t.tsdbIngesterConfig()
 
-	t.Ingester, err = ingester.New(t.Cfg.Ingester, t.Overrides, t.IngesterRing, t.IngesterPartitionRingWatcher, t.ActiveGroupsCleanup, t.CostAttributionManager, t.Registerer, util_log.Logger)
+	// The ingester observes its own read compartment's partition ring (index 0 is the legacy single ring
+	// when compartments are disabled), used by the partition-ring limiter and owned-series strategies.
+	partitionRingWatcher := t.IngesterPartitionRingWatcher
+	if t.Cfg.IngestStorage.Enabled {
+		partitionRingWatcher = t.IngesterPartitionRingWatchers[t.Cfg.IngestStorage.Compartments.ReadCompartmentID]
+	}
+
+	t.Ingester, err = ingester.New(t.Cfg.Ingester, t.Overrides, t.IngesterRing, partitionRingWatcher, t.ActiveGroupsCleanup, t.CostAttributionManager, t.Registerer, util_log.Logger)
 	if err != nil {
 		return
 	}
 
-	if t.IngesterPartitionRingWatcher != nil {
-		t.IngesterPartitionRingWatcher = t.IngesterPartitionRingWatcher.WithDelegate(t.Ingester)
+	if partitionRingWatcher != nil {
+		partitionRingWatcher.WithDelegate(t.Ingester)
 	}
 	if t.ActiveGroupsCleanup != nil {
 		t.ActiveGroupsCleanup.Register(t.Ingester)
