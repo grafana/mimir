@@ -189,7 +189,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
       clientRequestsPerSecondMetric: 'cortex_usage_tracker_client_track_series_duration_seconds',
       requestsPerSecondMetric: $.queries.requests_per_second_metric,
       trackSeriesRequestsPerSecondRouteRegex: '%(usageTrackerTrackSeriesRoutesRegex)s' % variables,
-      trackSeriesRequestsPerSecondSelector: '%(usageTrackerMatcher)s, route=~"%(usageTrackerTrackSeriesRoutesRegex)s"' % variables,
       trackSeriesSyncRequestsPerSecondSelector: '%(usageTrackerMatcher)s, route=~"%(usageTrackerTrackSeriesSyncRouteRegex)s"' % variables,
       trackSeriesBatchRequestsPerSecondSelector: '%(usageTrackerMatcher)s, route=~"%(usageTrackerTrackSeriesBatchRouteRegex)s"' % variables,
       getUsersCloseToLimitRequestsPerSecondRouteRegex: '%(usageTrackerGetUsersCloseToLimitRoutesRegex)s' % variables,
