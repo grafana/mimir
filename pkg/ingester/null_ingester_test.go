@@ -6,15 +6,21 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/kv/consul"
+	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
+	"github.com/grafana/dskit/test"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/util/testkafka"
 )
 
@@ -45,10 +51,69 @@ func TestNullIngester_StartsAndStops(t *testing.T) {
 	cfg.IngestStorageConfig.Compartments.ReadCompartmentID = 0
 	cfg.IngestStorageConfig.Compartments.WriteKafkaAddressFormat = kafkaAddr
 
+	kv, closer := consul.NewInMemoryClient(ring.GetPartitionRingCodec(), log.NewNopLogger(), nil)
+	t.Cleanup(func() { require.NoError(t, closer.Close()) })
+	cfg.IngesterPartitionRing.KVStore.Mock = kv
+	cfg.IngesterPartitionRing.MinOwnersDuration = 0
+	cfg.IngesterPartitionRing.lifecyclerPollingInterval = 10 * time.Millisecond
+
 	ni, err := NewNullIngester(cfg, log.NewNopLogger(), prometheus.NewRegistry())
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(ctx, ni))
 	require.NoError(t, services.StopAndAwaitTerminated(ctx, ni))
+}
+
+func TestNullIngester_WithCompartments_RegistersIntoCompartmentPartitionRing(t *testing.T) {
+	ctx := context.Background()
+
+	_, kafkaAddr := testkafka.CreateCluster(t, 10, "test-comp-1")
+
+	cfg := defaultIngesterTestConfig(t)
+	cfg.IngesterRing.InstanceID = "ingester-zone-a-2" // partition 2
+	cfg.IngestStorageConfig.Enabled = true
+	cfg.IngestStorageConfig.Compartments.Enabled = true
+	cfg.IngestStorageConfig.Compartments.NumCompartments = 2
+	cfg.IngestStorageConfig.Compartments.TopicFormat = "test-comp-<compartment-id>"
+	cfg.IngestStorageConfig.Compartments.ReadCompartmentID = 1
+	cfg.IngestStorageConfig.Compartments.WriteKafkaAddressFormat = kafkaAddr
+
+	kv, closer := consul.NewInMemoryClient(ring.GetPartitionRingCodec(), log.NewNopLogger(), nil)
+	t.Cleanup(func() { require.NoError(t, closer.Close()) })
+	cfg.IngesterPartitionRing.KVStore.Mock = kv
+	cfg.IngesterPartitionRing.MinOwnersDuration = 0
+	cfg.IngesterPartitionRing.lifecyclerPollingInterval = 10 * time.Millisecond
+
+	ni, err := NewNullIngester(cfg, log.NewNopLogger(), prometheus.NewRegistry())
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(ctx, ni))
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, ni))
+	})
+
+	partitionID, err := ingest.IngesterPartitionID(cfg.IngesterRing.InstanceID)
+	require.NoError(t, err)
+
+	watcher := ring.NewPartitionRingWatcher(PartitionRingName, CompartmentPartitionRingKey(1), kv, log.NewNopLogger(), nil)
+	require.NoError(t, services.StartAndAwaitRunning(ctx, watcher))
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, watcher))
+	})
+
+	// The null ingester owns its partition and switches it to ACTIVE in its read compartment's ring.
+	test.Poll(t, 5*time.Second, []string{cfg.IngesterRing.InstanceID}, func() interface{} {
+		return watcher.PartitionRing().PartitionOwnerIDs(partitionID)
+	})
+	test.Poll(t, 5*time.Second, []int32{partitionID}, func() interface{} {
+		return watcher.PartitionRing().ActivePartitionIDs()
+	})
+
+	// It does not register into the legacy single ring.
+	legacyWatcher := ring.NewPartitionRingWatcher(PartitionRingName, PartitionRingKey, kv, log.NewNopLogger(), nil)
+	require.NoError(t, services.StartAndAwaitRunning(ctx, legacyWatcher))
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, legacyWatcher))
+	})
+	assert.Empty(t, legacyWatcher.PartitionRing().PartitionIDs())
 }
 
 func TestNullIngester_PushToStorageAndReleaseRequest_TracksIngestedSamples(t *testing.T) {

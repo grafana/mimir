@@ -7,6 +7,8 @@ import (
 	"os"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/kv"
+	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/tenant"
 	"github.com/pkg/errors"
@@ -25,6 +27,9 @@ type NullIngester struct {
 	logger  log.Logger
 	readers *ingest.CompartmentReaders
 	metrics *ingesterMetrics
+
+	subservices        *services.Manager
+	subservicesWatcher *services.FailureWatcher
 }
 
 // NewNullIngester creates a NullIngester that reads from all write compartment VCs for the
@@ -64,7 +69,31 @@ func NewNullIngester(cfg Config, logger log.Logger, reg prometheus.Registerer) (
 	}
 	ni.readers = readers
 
-	ni.Service = services.NewIdleService(ni.starting, ni.stopping).WithName("null-ingester")
+	partitionRingKV := cfg.IngesterPartitionRing.KVStore.Mock
+	if partitionRingKV == nil {
+		partitionRingKV, err = kv.NewClient(cfg.IngesterPartitionRing.KVStore, ring.GetPartitionRingCodec(), kv.RegistererWithKVName(reg, PartitionRingName+"-lifecycler"), logger)
+		if err != nil {
+			return nil, errors.Wrap(err, "creating KV store for ingester partition ring")
+		}
+	}
+
+	// Register into the read compartment's partition ring so the write path can route to this ingester.
+	partitionLifecycler := ring.NewPartitionInstanceLifecycler(
+		cfg.IngesterPartitionRing.ToLifecyclerConfig(partitionID, cfg.IngesterRing.InstanceID),
+		PartitionRingName,
+		CompartmentPartitionRingKey(compartmentsCfg.ReadCompartmentID),
+		partitionRingKV,
+		logger,
+		prometheus.WrapRegistererWithPrefix("cortex_", reg))
+	partitionLifecycler.BasicService = partitionLifecycler.WithName("null-ingester-partition-instance-lifecycler")
+
+	ni.subservices, err = services.NewManager(readers, partitionLifecycler)
+	if err != nil {
+		return nil, errors.Wrap(err, "creating null ingester subservices")
+	}
+	ni.subservicesWatcher = services.NewFailureWatcher()
+
+	ni.Service = services.NewBasicService(ni.starting, ni.running, ni.stopping).WithName("null-ingester")
 	return ni, nil
 }
 
@@ -93,9 +122,19 @@ func (ni *NullIngester) NotifyPreCommit(_ context.Context) error {
 }
 
 func (ni *NullIngester) starting(ctx context.Context) error {
-	return services.StartAndAwaitRunning(ctx, ni.readers)
+	ni.subservicesWatcher.WatchManager(ni.subservices)
+	return services.StartManagerAndAwaitHealthy(ctx, ni.subservices)
+}
+
+func (ni *NullIngester) running(ctx context.Context) error {
+	select {
+	case <-ctx.Done():
+		return nil
+	case err := <-ni.subservicesWatcher.Chan():
+		return errors.Wrap(err, "null ingester subservice failed")
+	}
 }
 
 func (ni *NullIngester) stopping(_ error) error {
-	return services.StopAndAwaitTerminated(context.Background(), ni.readers)
+	return services.StopManagerAndAwaitStopped(context.Background(), ni.subservices)
 }
