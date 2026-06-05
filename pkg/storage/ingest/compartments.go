@@ -7,6 +7,9 @@ import (
 	"flag"
 	"fmt"
 	"strings"
+	"time"
+
+	"github.com/grafana/dskit/flagext"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
@@ -42,6 +45,13 @@ type CompartmentsConfig struct {
 	// HeapMerger tunes the cross-VC record merger that orders records by Kafka timestamp
 	// before forwarding them downstream.
 	HeapMerger HeapMergerConfig `yaml:"heap_merger"`
+
+	// DebugConsumeDelay and DebugConsumeDelayVCs are testing-only knobs to induce cross-VC
+	// consumption skew: the listed write compartment VCs hold each fetched batch until
+	// DebugConsumeDelay after its newest record's timestamp before forwarding, yielding a
+	// steady ~DebugConsumeDelay lag on those VCs. Used to exercise the heap merger.
+	DebugConsumeDelay    time.Duration          `yaml:"debug_consume_delay"`
+	DebugConsumeDelayVCs flagext.StringSliceCSV `yaml:"debug_consume_delay_vcs"`
 }
 
 // RegisterFlagsWithPrefix registers the flags for CompartmentsConfig with the given prefix.
@@ -53,6 +63,8 @@ func (cfg *CompartmentsConfig) RegisterFlagsWithPrefix(prefix string, f *flag.Fl
 	f.StringVar(&cfg.WriteKafkaAddressFormat, prefix+"write-kafka-address-format", "", fmt.Sprintf("Kafka broker address template for write compartment VCs, with a %q placeholder replaced by the write compartment index. Used by null ingesters to read from all write VCs.", writeCompartmentIDPlaceholder))
 	f.StringVar(&cfg.WriteKafkaSASLUsernameFormat, prefix+"write-kafka-sasl-username-format", "", fmt.Sprintf("SASL username template for write compartment VCs, with a %q placeholder replaced by the write compartment index.", writeCompartmentIDPlaceholder))
 	f.StringVar(&cfg.WriteKafkaSASLPasswordFormat, prefix+"write-kafka-sasl-password-format", "", fmt.Sprintf("SASL password template for write compartment VCs, with a %q placeholder replaced by the write compartment index.", writeCompartmentIDPlaceholder))
+	f.DurationVar(&cfg.DebugConsumeDelay, prefix+"debug-consume-delay", 0, "Testing only: artificially delay consumption of the write compartment VCs listed in debug-consume-delay-vcs by this duration, to induce cross-VC skew for exercising the heap merger. 0 disables.")
+	f.Var(&cfg.DebugConsumeDelayVCs, prefix+"debug-consume-delay-vcs", "Testing only: comma-separated write compartment VC indices to delay by debug-consume-delay (e.g. \"5,6,7,8,9\").")
 	cfg.HeapMerger.RegisterFlagsWithPrefix(prefix+"heap-merger.", f)
 }
 

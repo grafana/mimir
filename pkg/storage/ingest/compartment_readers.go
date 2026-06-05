@@ -5,8 +5,11 @@ package ingest
 import (
 	"context"
 	"fmt"
+	"iter"
 	"path/filepath"
+	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-kit/log"
@@ -15,6 +18,7 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/twmb/franz-go/pkg/kgo"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -79,6 +83,14 @@ func NewCompartmentReaders(
 		merger = NewHeapMerger(cfg.HeapMerger, pusherFactory, NewHeapMergerMetrics(reg), mergerLogger)
 	}
 
+	// Testing-only: set of write compartment VCs whose consumption is artificially delayed.
+	delayedVCs := map[int]bool{}
+	for _, s := range cfg.DebugConsumeDelayVCs {
+		if id, err := strconv.Atoi(strings.TrimSpace(s)); err == nil {
+			delayedVCs[id] = true
+		}
+	}
+
 	readers := make([]*PartitionReader, cfg.NumCompartments)
 	for writeCompartmentID := 0; writeCompartmentID < cfg.NumCompartments; writeCompartmentID++ {
 		vcKafkaCfg := kafkaCfg
@@ -108,6 +120,18 @@ func NewCompartmentReaders(
 		} else {
 			consumerFactory = pusherFactory
 		}
+
+		// Testing-only: wrap this VC's consumer to induce consumption lag. Applied identically
+		// in both zones (same config), so it adds cross-VC skew without confounding the
+		// merge-on vs merge-off comparison.
+		if cfg.DebugConsumeDelay > 0 && delayedVCs[writeCompartmentID] {
+			inner := consumerFactory
+			delay := cfg.DebugConsumeDelay
+			consumerFactory = consumerFactoryFunc(func() RecordConsumer {
+				return &delayingConsumer{delay: delay, next: inner.consumer()}
+			})
+		}
+
 		reader, err := newPartitionReader(vcKafkaCfg, partitionID, readerInstanceID, offsetFilePath, consumerFactory, pusher, vcLogger, vcReg)
 		if err != nil {
 			return nil, errors.Wrapf(err, "creating partition reader for write compartment VC %d", writeCompartmentID)
@@ -201,4 +225,41 @@ func (cr *CompartmentReaders) WaitReadConsistencyUntilLastProducedOffset(ctx con
 		})
 	}
 	return g.Wait()
+}
+
+// delayingConsumer holds each batch until delay after its newest record's timestamp before
+// forwarding it downstream, simulating steady-state consumption lag for testing the cross-VC
+// merger. Records carry the distributor's produce wall-clock, so releasing at
+// (newest produce time + delay) yields a stable ~delay lag regardless of throughput: if the
+// reader falls behind, batches are already older than the release target and pass through
+// immediately, so the lag self-stabilizes at ~delay rather than growing unbounded.
+type delayingConsumer struct {
+	delay time.Duration
+	next  RecordConsumer
+}
+
+func (d *delayingConsumer) Consume(ctx context.Context, records iter.Seq[*kgo.Record]) error {
+	batch := slices.Collect(records)
+	if len(batch) == 0 {
+		return nil
+	}
+
+	var newest time.Time
+	for _, r := range batch {
+		if r.Timestamp.After(newest) {
+			newest = r.Timestamp
+		}
+	}
+
+	if wait := time.Until(newest.Add(d.delay)); wait > 0 {
+		timer := time.NewTimer(wait)
+		defer timer.Stop()
+		select {
+		case <-timer.C:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+
+	return d.next.Consume(ctx, slices.Values(batch))
 }
