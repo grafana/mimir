@@ -3,6 +3,7 @@
 package functions
 
 import (
+	"context"
 	"errors"
 	"testing"
 
@@ -12,7 +13,38 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
+
+// TestReturnJoinedHistogramPoints_DoesNotMangleAliasedHistograms verifies that returning a
+// joined-and-pooled HPoint slice to the pool does not corrupt the *histogram.FloatHistogram
+// instances it aliases from the range vector's ring buffer. With slice mangling enabled (as in
+// engine tests), the pool's mangle hook would otherwise mutate those shared instances in place.
+func TestReturnJoinedHistogramPoints_DoesNotMangleAliasedHistograms(t *testing.T) {
+	prev := types.EnableManglingReturnedSlices
+	types.EnableManglingReturnedSlices = true
+	t.Cleanup(func() { types.EnableManglingReturnedSlices = prev })
+
+	tracker := limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, "")
+
+	h1 := &histogram.FloatHistogram{Count: 5, Sum: 50}
+	h2 := &histogram.FloatHistogram{Count: 6, Sum: 60}
+	// A non-empty tail forces joinHistogramPoints to take a pooled slice (the case that gets
+	// returned to the pool); its points still alias h1 and h2.
+	head := []promql.HPoint{{T: 0, H: h1}}
+	tail := []promql.HPoint{{T: 1, H: h2}}
+
+	joined, pooled, err := joinHistogramPoints(head, tail, tracker)
+	require.NoError(t, err)
+	require.True(t, pooled)
+
+	returnJoinedHistogramPoints(joined, pooled, tracker)
+
+	require.Equal(t, float64(5), h1.Count, "aliased histogram must not be mangled after Put")
+	require.Equal(t, float64(50), h1.Sum, "aliased histogram must not be mangled after Put")
+	require.Equal(t, float64(6), h2.Count, "aliased histogram must not be mangled after Put")
+	require.Equal(t, float64(60), h2.Sum, "aliased histogram must not be mangled after Put")
+}
 
 // recordingEmitter returns an EmitAnnotationFunc that records the rendered message of every
 // annotation it is asked to emit, so tests can assert which annotations were produced.

@@ -787,3 +787,26 @@ eval instant at 182s delta(metric[1m1s] smoothed)
 eval instant at 182s rate(metric[1m1s] smoothed) / delta(metric[1m1s] smoothed)
   {} 0.017031319767812723
 
+# Smoothed instant interpolation between two gauge custom-bucket histograms with mismatched
+# bounds must reconcile the bounds and emit the mismatched-custom-buckets info annotation, matching
+# Prometheus. Here the look-back sample at t=0 (bounds [5]) and the look-ahead sample at t=30s
+# (bounds [5 10]) are interpolated at t=15s; the Sub reconciles the bounds (info: subtraction).
+clear
+load 30s
+  cb_gauge {{schema:-53 sum:2 count:2 custom_values:[5] buckets:[2] counter_reset_hint:gauge}} {{schema:-53 sum:6 count:6 custom_values:[5 10] buckets:[3 3] counter_reset_hint:gauge}}
+
+eval instant at 15s cb_gauge smoothed
+  expect info msg:PromQL info: mismatched custom buckets were reconciled during subtraction
+  cb_gauge {{schema:-53 count:4 sum:4 custom_values:[5] counter_reset_hint:gauge buckets:[2.5 1.5]}}
+
+# A float series in the requested range with a histogram only in the smoothed look-ahead window
+# (beyond the first sample after rangeEnd) must be treated as a mixed float/histogram window:
+# rate/increase/delta drop the point and emit MixedFloatsHistogramsWarning, matching Prometheus
+# which scans the full extended matrix. The look-ahead must be filled fully for MQE to see the
+# histogram at t=200s.
+clear
+load 10s
+  mixed _ _ _ _ 4 5 6 7 8 9 10 _ _ _ _ _ _ _ _ _ {{schema:0 sum:3 count:3 buckets:[3]}}
+
+eval instant at 100s rate(mixed[1m] smoothed)
+  expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "mixed"

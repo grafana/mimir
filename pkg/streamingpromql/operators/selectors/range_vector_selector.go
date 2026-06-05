@@ -142,18 +142,23 @@ func (m *RangeVectorSelector) NextStepSamples(ctx context.Context) (*types.Range
 	// histogram series sits next to a dense float series: the last sample can be well past
 	// rangeEnd and we do not need to fetch another sample until a future step's rangeEnd
 	// moves beyond it.
+	//
+	// rangeEnd is the extended look-ahead end for smoothed (originalRangeEnd + lookback) and equals
+	// originalRangeEnd for anchored and unmodified selectors. Filling and comparing against it
+	// ensures the smoothed look-ahead window is fully populated so that mixed float/histogram
+	// windows are detected the same way Prometheus detects them across the full extended matrix.
 	if m.Selector.Anchored || m.Selector.Smoothed {
 		switch {
-		case m.floats.Count() > 0 && m.floats.Last().T >= originalRangeEnd:
+		case m.floats.Count() > 0 && m.floats.Last().T >= rangeEnd:
 			fillBufferRequired = false
-		case m.histograms.Count() > 0 && m.histograms.Last().T >= originalRangeEnd:
+		case m.histograms.Count() > 0 && m.histograms.Last().T >= rangeEnd:
 			fillBufferRequired = false
 		}
 	}
 
 	if fillBufferRequired {
 		// Note - fillBuffer may result in the buffer having a point after the rangeEnd.
-		if err := m.fillBuffer(m.floats, m.histograms, rangeStart, originalRangeEnd); err != nil {
+		if err := m.fillBuffer(m.floats, m.histograms, rangeStart, rangeEnd); err != nil {
 			return nil, err
 		}
 	}

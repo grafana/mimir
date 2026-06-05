@@ -50,3 +50,19 @@ load 30s
 
 eval instant at 45s histogram_count(exp_then_custom smoothed)
   expect warn msg: PromQL warning: vector contains a mix of histograms with exponential and custom buckets schemas for metric name "exp_then_custom"
+
+# MQE-only, and a documented divergence from Prometheus's intent: the smoothed instant selector
+# only inspects the two immediate neighbours of the eval time when deciding whether the window
+# mixes floats and histograms. Here the nearest look-back (float @ 90s) and look-ahead (float @
+# 110s) are both floats, so MQE interpolates and returns 100, even though a histogram sits at 50s
+# within the look-back window. Prometheus's smoothSeries scans the full window and would emit
+# MixedFloatsHistogramsWarning + drop the point - but its engine panics on the resulting empty
+# instant result, so this can only be exercised against MQE. See the "Known limitation" note in
+# instant_vector_selector.go.
+clear
+load 10s
+  probe2b _ _ _ _ _ {{schema:0 sum:3 count:3 buckets:[3]}} _ _ _ 90 _ 110
+
+eval instant at 100s probe2b smoothed
+  expect no_warn
+  probe2b 100
