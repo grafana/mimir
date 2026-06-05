@@ -208,8 +208,6 @@ func (p *Pool) workerLoop(workerID string, ready chan<- error) {
 // ErrPoolStopped if the pool is shutting down.
 //
 // The underlying queue call passes:
-//   - queueDimension="": treated by the broker as "unknown"; the pool has no
-//     per-component dimension, so all tasks share a single first-layer queue.
 //   - maxQueriers=0: treated by tenantQuerierShards as "no shuffle sharding"
 //     (the sentinel for "every querier-worker is eligible"). The pool only
 //     registers a single querierID, so sharding is meaningless here.
@@ -218,8 +216,8 @@ func (p *Pool) workerLoop(workerID string, ready chan<- error) {
 //
 // Future changes to Queue.SubmitItemToEnqueue must preserve these
 // behaviors, or the pool must be updated to supply real values.
-func (p *Pool) Submit(tenantID string, fn func()) error {
-	if err := p.queue.SubmitItemToEnqueue(tenantID, fn, "", 0, nil); err != nil {
+func (p *Pool) Submit(dimension string, tenantID string, fn func()) error {
+	if err := p.queue.SubmitItemToEnqueue(tenantID, fn, dimension, 0, nil); err != nil {
 		if errors.Is(err, queue.ErrStopped) {
 			return ErrPoolStopped
 		}
