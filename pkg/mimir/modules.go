@@ -1187,7 +1187,7 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 		),
 	)
 
-	dnsResolver := dns.NewProvider(util_log.Logger, dnsProviderReg, dns.GolangResolverType)
+	dnsResolver := dns.NewProvider(dns.GolangResolverType, 0, util_log.Logger, dnsProviderReg)
 	manager, err := ruler.NewDefaultMultiTenantManager(t.Cfg.Ruler, managerFactory, t.Registerer, util_log.Logger, dnsResolver, t.Overrides, rulesFS)
 	if err != nil {
 		return nil, err
@@ -1301,7 +1301,7 @@ func (t *Mimir) initMemberlistKV() (services.Service, error) {
 			t.Registerer,
 		),
 	)
-	dnsProvider := dns.NewProvider(util_log.Logger, dnsProviderReg, dns.GolangResolverType)
+	dnsProvider := dns.NewProvider(dns.GolangResolverType, 0, util_log.Logger, dnsProviderReg)
 	t.MemberlistKV = memberlist.NewKVInitService(
 		&t.Cfg.MemberlistKV,
 		log.With(util_log.Logger, "component", "memberlist"),

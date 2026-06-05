@@ -6614,6 +6614,16 @@ The `memcached` block configures the Memcached-based caching backend. The suppor
 # CLI flag: -<prefix>.memcached.addresses
 [addresses: <string> | default = ""]
 
+# (advanced) How often each address is resolved to an IP address or list of host
+# names.
+# CLI flag: -<prefix>.memcached.addresses-lookup-period
+[addresses_lookup_period: <duration> | default = 30s]
+
+# (advanced) How many idle connections to the DNS resolver are kept open. 0
+# disables keeping any idle connections open.
+# CLI flag: -<prefix>.memcached.addresses-lookup-pool-size
+[addresses_lookup_pool_size: <int> | default = 0]
+
 # The socket read/write timeout.
 # CLI flag: -<prefix>.memcached.timeout
 [timeout: <duration> | default = 200ms]

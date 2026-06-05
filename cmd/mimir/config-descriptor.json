@@ -2753,6 +2753,28 @@
                         },
                         {
                           "kind": "field",
+                          "name": "addresses_lookup_period",
+                          "required": false,
+                          "desc": "How often each address is resolved to an IP address or list of host names.",
+                          "fieldValue": null,
+                          "fieldDefaultValue": 30000000000,
+                          "fieldFlag": "querier.mimir-query-engine.range-vector-splitting.memcached.addresses-lookup-period",
+                          "fieldType": "duration",
+                          "fieldCategory": "advanced"
+                        },
+                        {
+                          "kind": "field",
+                          "name": "addresses_lookup_pool_size",
+                          "required": false,
+                          "desc": "How many idle connections to the DNS resolver are kept open. 0 disables keeping any idle connections open.",
+                          "fieldValue": null,
+                          "fieldDefaultValue": 0,
+                          "fieldFlag": "querier.mimir-query-engine.range-vector-splitting.memcached.addresses-lookup-pool-size",
+                          "fieldType": "int",
+                          "fieldCategory": "advanced"
+                        },
+                        {
+                          "kind": "field",
                           "name": "timeout",
                           "required": false,
                           "desc": "The socket read/write timeout.",
@@ -8374,6 +8396,28 @@
                 },
                 {
                   "kind": "field",
+                  "name": "addresses_lookup_period",
+                  "required": false,
+                  "desc": "How often each address is resolved to an IP address or list of host names.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 30000000000,
+                  "fieldFlag": "query-frontend.results-cache.memcached.addresses-lookup-period",
+                  "fieldType": "duration",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "addresses_lookup_pool_size",
+                  "required": false,
+                  "desc": "How many idle connections to the DNS resolver are kept open. 0 disables keeping any idle connections open.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 0,
+                  "fieldFlag": "query-frontend.results-cache.memcached.addresses-lookup-pool-size",
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
                   "name": "timeout",
                   "required": false,
                   "desc": "The socket read/write timeout.",
@@ -10597,6 +10641,28 @@
                     },
                     {
                       "kind": "field",
+                      "name": "addresses_lookup_period",
+                      "required": false,
+                      "desc": "How often each address is resolved to an IP address or list of host names.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 30000000000,
+                      "fieldFlag": "blocks-storage.bucket-store.index-cache.memcached.addresses-lookup-period",
+                      "fieldType": "duration",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "addresses_lookup_pool_size",
+                      "required": false,
+                      "desc": "How many idle connections to the DNS resolver are kept open. 0 disables keeping any idle connections open.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 0,
+                      "fieldFlag": "blocks-storage.bucket-store.index-cache.memcached.addresses-lookup-pool-size",
+                      "fieldType": "int",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
                       "name": "timeout",
                       "required": false,
                       "desc": "The socket read/write timeout.",
@@ -10839,6 +10905,28 @@
                       "fieldDefaultValue": "",
                       "fieldFlag": "blocks-storage.bucket-store.index-header-cache.memcached.addresses",
                       "fieldType": "string"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "addresses_lookup_period",
+                      "required": false,
+                      "desc": "How often each address is resolved to an IP address or list of host names.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 30000000000,
+                      "fieldFlag": "blocks-storage.bucket-store.index-header-cache.memcached.addresses-lookup-period",
+                      "fieldType": "duration",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "addresses_lookup_pool_size",
+                      "required": false,
+                      "desc": "How many idle connections to the DNS resolver are kept open. 0 disables keeping any idle connections open.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 0,
+                      "fieldFlag": "blocks-storage.bucket-store.index-header-cache.memcached.addresses-lookup-pool-size",
+                      "fieldType": "int",
+                      "fieldCategory": "advanced"
                     },
                     {
                       "kind": "field",
@@ -11111,6 +11199,28 @@
                     },
                     {
                       "kind": "field",
+                      "name": "addresses_lookup_period",
+                      "required": false,
+                      "desc": "How often each address is resolved to an IP address or list of host names.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 30000000000,
+                      "fieldFlag": "blocks-storage.bucket-store.chunks-cache.memcached.addresses-lookup-period",
+                      "fieldType": "duration",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "addresses_lookup_pool_size",
+                      "required": false,
+                      "desc": "How many idle connections to the DNS resolver are kept open. 0 disables keeping any idle connections open.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 0,
+                      "fieldFlag": "blocks-storage.bucket-store.chunks-cache.memcached.addresses-lookup-pool-size",
+                      "fieldType": "int",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
                       "name": "timeout",
                       "required": false,
                       "desc": "The socket read/write timeout.",
@@ -11377,6 +11487,28 @@
                       "fieldDefaultValue": "",
                       "fieldFlag": "blocks-storage.bucket-store.metadata-cache.memcached.addresses",
                       "fieldType": "string"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "addresses_lookup_period",
+                      "required": false,
+                      "desc": "How often each address is resolved to an IP address or list of host names.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 30000000000,
+                      "fieldFlag": "blocks-storage.bucket-store.metadata-cache.memcached.addresses-lookup-period",
+                      "fieldType": "duration",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "addresses_lookup_pool_size",
+                      "required": false,
+                      "desc": "How many idle connections to the DNS resolver are kept open. 0 disables keeping any idle connections open.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 0,
+                      "fieldFlag": "blocks-storage.bucket-store.metadata-cache.memcached.addresses-lookup-pool-size",
+                      "fieldType": "int",
+                      "fieldCategory": "advanced"
                     },
                     {
                       "kind": "field",
@@ -16732,6 +16864,28 @@
                   "fieldDefaultValue": "",
                   "fieldFlag": "ruler-storage.cache.memcached.addresses",
                   "fieldType": "string"
+                },
+                {
+                  "kind": "field",
+                  "name": "addresses_lookup_period",
+                  "required": false,
+                  "desc": "How often each address is resolved to an IP address or list of host names.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 30000000000,
+                  "fieldFlag": "ruler-storage.cache.memcached.addresses-lookup-period",
+                  "fieldType": "duration",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "addresses_lookup_pool_size",
+                  "required": false,
+                  "desc": "How many idle connections to the DNS resolver are kept open. 0 disables keeping any idle connections open.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 0,
+                  "fieldFlag": "ruler-storage.cache.memcached.addresses-lookup-pool-size",
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
                 },
                 {
                   "kind": "field",
