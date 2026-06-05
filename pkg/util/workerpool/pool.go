@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-// Package workerpool provides a tenant-fair worker pool that executes opaque
-// units of work submitted as func() values. Work is dispatched across workers
-// using a per-tenant fair queue, so a tenant submitting many large tasks
-// cannot starve another tenant's small task.
+// Package workerpool runs func() tasks on a fixed set of worker goroutines.
+// Tasks are pulled from a per-tenant queue in round-robin order,
+// so one tenant flooding the pool with work cannot starve another tenant's tasks.
 package workerpool
 
 import (
@@ -27,11 +26,12 @@ import (
 // ErrPoolStopped is returned when the pool is stopped while a submission was waiting.
 var ErrPoolStopped = errors.New("worker pool is stopped")
 
-// Config configures a worker Pool. Each caller wires its own user-facing flags
-// and translates them into a Config; the pool intentionally does not register
-// flags itself so that flag names live in the caller's namespace.
+// Config holds the pool's settings.
+// The pool deliberately does not register its own flags;
+// each caller defines its flags and maps them into a Config, keeping flag names in the caller's namespace.
 type Config struct {
-	// Size is the number of worker goroutines. 0 selects runtime.GOMAXPROCS(0).
+	// Size is the number of worker goroutines.
+	// 0 selects runtime.GOMAXPROCS(0).
 	Size int `yaml:"size" category:"experimental"`
 }
 
@@ -43,12 +43,11 @@ func (cfg *Config) Validate() error {
 	return nil
 }
 
-// Pool is a tenant-fair worker pool. Use New to construct one.
+// Pool is a running worker pool; construct one with New.
 //
-// A panicking task is not recovered: the worker goroutine unwinds and the
-// panic crashes the process, matching the behaviour callers had before this
-// pool existed. Callers that need to convert panics into errors must wrap
-// their submitted function themselves.
+// A panicking task is not recovered: the panic unwinds the worker goroutine and crashes the process,
+// just as it would have before this pool existed.
+// Callers that want panics turned into errors must recover inside the func they submit.
 type Pool struct {
 	services.Service
 
@@ -60,13 +59,13 @@ type Pool struct {
 	workersWg sync.WaitGroup
 }
 
-// queueForgetDelay is passed to the underlying Queue. Pool workers
-// never disconnect during normal operation; the value only affects how long
-// disconnected workers are remembered before being forgotten.
+// queueForgetDelay is passed to the underlying queue.
+// Pool workers never disconnect while running,
+// so this only controls how long a disconnected worker is remembered before the queue forgets it.
 const queueForgetDelay = 0 * time.Second
 
-// New constructs a Pool. The name is used as a const label on the pool's
-// metrics so multiple pools can share a registerer.
+// New constructs a Pool.
+// name becomes a const label on the pool's metrics, so several pools can share one registerer.
 func New(cfg Config, name string, reg prometheus.Registerer, logger log.Logger) (*Pool, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
@@ -94,9 +93,8 @@ func New(cfg Config, name string, reg prometheus.Registerer, logger log.Logger) 
 		ConstLabels: constLabels,
 	})
 
-	// The underlying queue requires a per-tenant cap; passing math.MaxInt32
-	// effectively disables it. MaxInt32 (not MaxInt64) avoids any overflow
-	// risk in the broker's `tenantQueueSize + 1 > maxTenantQueueSize` check.
+	// The queue requires a per-tenant cap, but we don't want one, so pass an effectively unlimited value.
+	// Use MaxInt32 rather than MaxInt64 so internal "+1" bookkeeping in the queue can't overflow.
 	rq, err := queue.New(
 		logger,
 		math.MaxInt32,
@@ -123,17 +121,14 @@ func (p *Pool) starting(ctx context.Context) error {
 	if err := services.StartAndAwaitRunning(ctx, p.queue); err != nil {
 		return fmt.Errorf("starting worker pool queue: %w", err)
 	}
-	// Wait for each worker to finish registering with the queue before
-	// reporting the pool as running. Otherwise a Submit immediately after
-	// StartAndAwaitRunning could be enqueued before any worker is connected
-	// to the queue dispatcher, leaving the chunk idle until registration races
-	// through. A registration failure fails pool startup: a partially-staffed
-	// pool would silently process less work than configured, with no visible
-	// signal beyond a growing queue.
+	// Wait for every worker to register with the queue before reporting the pool as running.
+	// Otherwise work submitted right after StartAndAwaitRunning could sit in the queue with no worker connected to pick it up.
+	// If a worker fails to register, fail startup:
+	// a half-staffed pool would quietly do less work than configured, with no signal other than a growing queue.
 	ready := make(chan error, p.workers)
 	for i := 0; i < p.workers; i++ {
 		p.workersWg.Add(1)
-		go p.workerLoop(fmt.Sprintf("%s-worker-%d", p.name, i), ready)
+		go p.workerLoop(ready)
 	}
 	for i := 0; i < p.workers; i++ {
 		select {
@@ -154,22 +149,21 @@ func (p *Pool) running(ctx context.Context) error {
 }
 
 func (p *Pool) stopping(_ error) error {
-	// Stop the queue first. The queue's dispatcher will drain any pending items
-	// (workers continue processing) and then return ErrStopped from any pending
-	// AwaitItemForQuerier calls, allowing workers to exit cleanly.
+	// Stop the queue first.
+	// Its dispatcher drains any pending items (workers keep processing them) and then returns ErrStopped to waiting AwaitItemForQuerier calls,
+	// which lets the workers exit cleanly.
 	err := services.StopAndAwaitTerminated(context.Background(), p.queue)
 	p.workersWg.Wait()
 	return err
 }
 
-func (p *Pool) workerLoop(workerID string, ready chan<- error) {
+func (p *Pool) workerLoop(ready chan<- error) {
 	defer p.workersWg.Done()
 
-	conn := queue.NewUnregisteredQuerierWorkerConn(context.Background(), workerID)
+	conn := queue.NewUnregisteredQuerierWorkerConn(context.Background(), p.name)
 	err := p.queue.AwaitRegisterQuerierWorkerConn(conn)
-	// Always signal so starting() does not deadlock waiting for a worker that
-	// has already exited. Pass the registration error through so a failure
-	// fails pool startup.
+	// Always signal, even on failure, so starting() does not block on a worker that has already given up.
+	// Forward the registration error so a failed registration fails startup.
 	ready <- err
 	if err != nil {
 		return
@@ -182,40 +176,39 @@ func (p *Pool) workerLoop(workerID string, ready chan<- error) {
 		item, idx, err := p.queue.AwaitItemForQuerier(dequeueReq)
 		lastTenantIdx = idx
 		if err != nil {
-			// The queue only errors when it is shutting down (ErrStopped) or when
-			// the worker connection's context is cancelled. The pool gives workers
-			// a background context, so in practice this is always a shutdown, and
-			// the worker should exit; stopping() waits for all of them.
+			// The queue only returns an error when it is shutting down (ErrStopped) or when the worker's connection context is cancelled.
+			// We give workers a background context, so in practice this is always a shutdown:
+			// the worker should exit, and stopping() waits for it.
 			if errors.Is(err, queue.ErrStopped) || errors.Is(err, context.Canceled) {
 				return
 			}
-			// Any other error is unexpected. Do not exit: a worker that retired on
-			// a transient error would silently shrink the pool, and if every worker
-			// did so the pool would report Running with zero workers and quietly
-			// stop making progress. Log and keep serving instead.
-			level.Warn(p.logger).Log("msg", "worker pool worker received unexpected error from queue; continuing", "pool", p.name, "worker", workerID, "err", err)
+			// Anything else is unexpected, but do not exit on it:
+			// a worker that quit on a transient error would silently shrink the pool,
+			// and if they all did the pool would still report Running while doing no work at all.
+			// Log it and keep serving.
+			level.Warn(p.logger).Log("msg", "worker pool worker received unexpected error from queue; continuing", "pool", p.name, "worker", conn.WorkerID, "err", err)
 			continue
 		}
-		// Submit's signature guarantees func(), so the assertion is total. A
-		// failure here means an internal invariant has been broken; panic so
-		// it surfaces immediately rather than silently dropping work.
+		// Submit only ever enqueues a func(), so this assertion cannot fail in practice.
+		// If it does, an invariant is broken; panic loudly rather than silently drop the work.
 		fn := item.(func())
 		fn()
 	}
 }
 
-// Submit enqueues fn for execution by a worker on behalf of tenantID. Returns
-// ErrPoolStopped if the pool is shutting down.
+// Submit enqueues fn to run on a worker on behalf of tenantID.
+// It returns ErrPoolStopped if the pool is shutting down.
 //
-// The underlying queue call passes:
-//   - maxQueriers=0: treated by tenantQuerierShards as "no shuffle sharding"
-//     (the sentinel for "every querier-worker is eligible"). The pool only
-//     registers a single querierID, so sharding is meaningless here.
-//   - successFn=nil: guarded by the queue (it only invokes successFn when
-//     non-nil); the pool has no work to do between enqueue and dispatch.
+// dimension groups tasks by type. The queue spreads workers across dimensions,
+// so different task types make progress in parallel instead of one type monopolising every worker.
 //
-// Future changes to Queue.SubmitItemToEnqueue must preserve these
-// behaviors, or the pool must be updated to supply real values.
+// Two arguments to the underlying queue are worth explaining:
+//   - maxQueriers=0 disables shuffle sharding, so every worker is eligible to run any tenant's tasks.
+//     All the pool's workers register under one querier, so per-tenant querier sharding does not apply.
+//   - successFn=nil is fine: the queue only calls successFn when it is non-nil,
+//     and the pool has nothing to do between enqueue and dispatch.
+//
+// If Queue.SubmitItemToEnqueue ever changes these behaviours, this call must be updated to pass real values.
 func (p *Pool) Submit(dimension string, tenantID string, fn func()) error {
 	if err := p.queue.SubmitItemToEnqueue(tenantID, fn, dimension, 0, nil); err != nil {
 		if errors.Is(err, queue.ErrStopped) {

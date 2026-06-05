@@ -51,7 +51,7 @@ func TestPool_RunsTasksConcurrently(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(len(fns))
 	for _, fn := range fns {
-		require.NoError(t, p.Submit("tenant-1", func() {
+		require.NoError(t, p.Submit("test", "tenant-1", func() {
 			defer wg.Done()
 			fn()
 		}))
@@ -83,7 +83,7 @@ func TestPool_TenantFairness(t *testing.T) {
 
 	// Submit 8 tasks for the hog tenant - all queued behind the running one.
 	for i := 0; i < 8; i++ {
-		err := p.Submit("hog", hogFn)
+		err := p.Submit("test", "hog", hogFn)
 		require.NoError(t, err)
 	}
 
@@ -94,7 +94,7 @@ func TestPool_TenantFairness(t *testing.T) {
 	// remaining hog tasks complete.
 	lightStarted := make(chan struct{})
 	lightFn := func() { close(lightStarted) }
-	err := p.Submit("light", lightFn)
+	err := p.Submit("test", "light", lightFn)
 	require.NoError(t, err)
 
 	// Release one hog task so the worker becomes free.
@@ -116,7 +116,7 @@ func TestPool_StopDrainsInflightWork(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(4)
 	for i := 0; i < 4; i++ {
-		err := p.Submit("tenant", func() {
+		err := p.Submit("test", "tenant", func() {
 			defer wg.Done()
 			time.Sleep(50 * time.Millisecond)
 			ran.Add(1)
