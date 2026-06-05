@@ -33,6 +33,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kfake"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
@@ -482,6 +483,70 @@ func TestIngester_QueryStream_IngestStorageReadConsistency(t *testing.T) {
 			assert.Len(t, queryRes, testData.expectedQueriedSeries)
 		})
 	}
+}
+
+func TestIngester_CheckReadyFailsWhenIngestStorageReaderCannotFetchKafkaOffsets(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+
+	cfg := defaultIngesterTestConfig(t)
+	overrides := validation.NewOverrides(defaultLimitsTestConfig(), nil)
+	ingester, kafkaCluster, _ := createTestIngesterWithIngestStorage(t, &cfg, overrides, nil, prometheus.NewPedanticRegistry(), util_test.NewTestingLogger(t))
+
+	require.NoError(t, services.StartAndAwaitRunning(ctx, ingester))
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, ingester))
+	})
+
+	test.Poll(t, 5*time.Second, nil, func() interface{} {
+		return ingester.CheckReady(ctx)
+	})
+
+	failListOffsets := atomic.NewBool(true)
+	kafkaCluster.ControlKey(int16(kmsg.ListOffsets), func(kreq kmsg.Request) (kmsg.Response, error, bool) {
+		kafkaCluster.KeepControl()
+
+		req := kreq.(*kmsg.ListOffsetsRequest)
+		for _, topic := range req.Topics {
+			for _, partition := range topic.Partitions {
+				if partition.Timestamp != -1 {
+					return nil, nil, false
+				}
+			}
+		}
+
+		if !failListOffsets.Load() {
+			return nil, nil, false
+		}
+
+		res := req.ResponseKind().(*kmsg.ListOffsetsResponse)
+		for _, topic := range req.Topics {
+			resTopic := kmsg.NewListOffsetsResponseTopic()
+			resTopic.Topic = topic.Topic
+
+			for _, partition := range topic.Partitions {
+				resPartition := kmsg.NewListOffsetsResponseTopicPartition()
+				resPartition.Partition = partition.Partition
+				resPartition.ErrorCode = kerr.UnknownTopicOrPartition.Code
+				resTopic.Partitions = append(resTopic.Partitions, resPartition)
+			}
+
+			res.Topics = append(res.Topics, resTopic)
+		}
+
+		return res, nil, true
+	})
+
+	test.Poll(t, 5*time.Second, true, func() interface{} {
+		err := ingester.CheckReady(ctx)
+		return err != nil && errors.Is(err, kerr.UnknownTopicOrPartition)
+	})
+
+	failListOffsets.Store(false)
+	test.Poll(t, 5*time.Second, nil, func() interface{} {
+		return ingester.CheckReady(ctx)
+	})
 }
 
 func TestIngester_PrepareShutdownHandler_IngestStorageSupport(t *testing.T) {

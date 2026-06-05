@@ -887,6 +887,11 @@ func (i *Ingester) CheckReady(ctx context.Context) error {
 	if err := i.checkAvailableForRead(); err != nil {
 		return fmt.Errorf("ingester not ready for reads: %v", err)
 	}
+	if i.ingestReader != nil {
+		if err := i.ingestReader.CheckReady(); err != nil {
+			return fmt.Errorf("ingester not ready for ingest storage reads: %w", err)
+		}
+	}
 	return i.lifecycler.CheckReady(ctx)
 }
 

@@ -140,6 +140,55 @@ func TestPartitionReader_logFetchErrors(t *testing.T) {
 	`), "cortex_ingest_storage_reader_fetch_errors_total"))
 }
 
+func TestPartitionReader_checkDependenciesReady(t *testing.T) {
+	const (
+		topicName   = "test"
+		partitionID = 1
+	)
+
+	t.Run("should return offset reader error", func(t *testing.T) {
+		t.Parallel()
+
+		cfg := defaultReaderTestConfig(t, "", topicName, partitionID, nil)
+		reader, err := newPartitionReader(cfg.kafka, cfg.partitionID, "test-group", cfg.offsetFilePath, cfg.consumer, &NoOpPreCommitNotifier{}, cfg.logger, cfg.registry)
+		require.NoError(t, err)
+
+		offsetReader := &partitionOffsetReader{
+			GenericOffsetReader: NewGenericOffsetReader[int64](func(context.Context) (int64, error) {
+				return 0, kerr.UnknownTopicOrPartition
+			}, time.Hour, log.NewNopLogger()),
+		}
+		offsetReader.getAndNotifyLastProducedOffset(context.Background())
+		reader.offsetReader = offsetReader
+
+		err = reader.checkDependenciesReady()
+		require.Error(t, err)
+		assert.ErrorIs(t, err, kerr.UnknownTopicOrPartition)
+		assert.Contains(t, err.Error(), "failed to fetch last produced offset")
+	})
+
+	t.Run("should return commit error and clear it after successful commit", func(t *testing.T) {
+		t.Parallel()
+
+		cfg := defaultReaderTestConfig(t, "", topicName, partitionID, nil)
+		reader, err := newPartitionReader(cfg.kafka, cfg.partitionID, "test-group", cfg.offsetFilePath, cfg.consumer, &NoOpPreCommitNotifier{}, cfg.logger, cfg.registry)
+		require.NoError(t, err)
+
+		commitErr := fmt.Errorf("wrapped: %w", kerr.UnknownTopicOrPartition)
+		reader.committer = newPartitionCommitter(cfg.kafka, &mockAdminClient{err: commitErr}, partitionID, "test-group", &NoOpPreCommitNotifier{}, reader.offsetFile, log.NewNopLogger(), prometheus.NewPedanticRegistry())
+
+		require.Error(t, reader.committer.commit(context.Background(), 123))
+		err = reader.checkDependenciesReady()
+		require.Error(t, err)
+		assert.ErrorIs(t, err, kerr.UnknownTopicOrPartition)
+		assert.Contains(t, err.Error(), "failed to commit last consumed offset")
+
+		reader.committer.admClient = &mockAdminClient{}
+		require.NoError(t, reader.committer.commit(context.Background(), 123))
+		require.NoError(t, reader.checkDependenciesReady())
+	})
+}
+
 func TestPartitionReader_ConsumerError(t *testing.T) {
 	t.Parallel()
 
@@ -3789,13 +3838,14 @@ func (t *testPreCommitNotifier) NotifyPreCommit(_ context.Context) error {
 
 type mockAdminClient struct {
 	onCommit func()
+	err      error
 }
 
 func (m *mockAdminClient) CommitOffsets(ctx context.Context, group string, offsets kadm.Offsets) (kadm.OffsetResponses, error) {
 	if m.onCommit != nil {
 		m.onCommit()
 	}
-	return kadm.OffsetResponses{}, nil
+	return kadm.OffsetResponses{}, m.err
 }
 
 func (m *mockAdminClient) Close() {}
