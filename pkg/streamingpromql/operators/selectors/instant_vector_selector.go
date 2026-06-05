@@ -169,6 +169,13 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 			// Under the smoothed modifier, if the look-back/look-ahead window straddles a float and
 			// a histogram we cannot interpolate. Mirror Prometheus's smoothSeries, which emits
 			// MixedFloatsHistogramsWarning and produces no point for the step.
+			//
+			// Known limitation vs Prometheus: this compares only the two immediate neighbours of ts
+			// (the nearest look-back sample and the nearest look-ahead sample). Prometheus's
+			// smoothSeries scans the entire [ts-lookback, ts+lookback] window, so it also detects a
+			// non-adjacent other-typed sample (e.g. a histogram at ts-2*step when both immediate
+			// neighbours are floats). In that case MQE interpolates and returns a value where
+			// Prometheus would warn and drop the point.
 			if v.Selector.Smoothed && valueType != chunkenc.ValNone && right.T <= ts+v.Selector.LookbackDelta.Milliseconds() && ((h != nil) != (rightH != nil)) {
 				v.annos.Add(annotations.NewMixedFloatsHistogramsWarning(v.metricNames.GetMetricNameForSeries(seriesIndex), v.ExpressionPosition()))
 				continue
@@ -187,7 +194,9 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 				// counter as restarting from zero (mirrors interpolateHistograms in
 				// vendor/.../promql/functions.go).
 				if v.Selector.Smoothed && rightH != nil && right.T <= ts+v.Selector.LookbackDelta.Milliseconds() {
-					interpolated, err := interpolateHistogramAt(h, t, rightH, right.T, ts)
+					interpolated, err := interpolateHistogramAt(h, t, rightH, right.T, ts, func(op annotations.HistogramOperation) {
+						v.annos.Add(annotations.NewMismatchedCustomBucketsHistogramsInfo(v.ExpressionPosition(), op))
+					})
 					if err != nil {
 						// Exponential and custom-bucket histograms cannot be interpolated: emit
 						// MixedExponentialCustomHistogramsWarning and drop the step, mirroring
@@ -329,9 +338,11 @@ func (v *InstantVectorSelector) Close() {
 // returns the histogram value at time t. If h2.DetectReset(h1) returns true the counter is
 // modelled as restarting from zero, so the result is h2 scaled by the fraction (t-t1)/(t2-t1).
 // Returns an error when the two histograms have incompatible schemas (mixing exponential and
-// custom buckets). Mirrors interpolateHistograms in vendor/.../promql/functions.go and is used
-// by the smoothed instant-vector selector.
-func interpolateHistogramAt(h1 *histogram.FloatHistogram, t1 int64, h2 *histogram.FloatHistogram, t2, t int64) (*histogram.FloatHistogram, error) {
+// custom buckets). When a Sub or Add reconciles mismatched custom-bucket bounds, emitInfo is
+// called with the corresponding operation so the caller can surface the matching info
+// annotation. Mirrors interpolateHistograms in vendor/.../promql/functions.go and is used by
+// the smoothed instant-vector selector.
+func interpolateHistogramAt(h1 *histogram.FloatHistogram, t1 int64, h2 *histogram.FloatHistogram, t2, t int64, emitInfo func(annotations.HistogramOperation)) (*histogram.FloatHistogram, error) {
 	if t == t1 {
 		return h1.Copy(), nil
 	}
@@ -355,12 +366,16 @@ func interpolateHistogramAt(h1 *histogram.FloatHistogram, t1 int64, h2 *histogra
 		return h2.Copy().Mul(fraction), nil
 	}
 	result := h2.Copy()
-	if _, _, _, err := result.Sub(h1); err != nil {
+	if _, _, nhcbReconciled, err := result.Sub(h1); err != nil {
 		return nil, err
+	} else if nhcbReconciled {
+		emitInfo(annotations.HistogramSub)
 	}
 	result.Mul(fraction)
-	if _, _, _, err := result.Add(h1); err != nil {
+	if _, _, nhcbReconciled, err := result.Add(h1); err != nil {
 		return nil, err
+	} else if nhcbReconciled {
+		emitInfo(annotations.HistogramAdd)
 	}
 	return result, nil
 }

@@ -64,9 +64,7 @@ func rate(isRate bool) RangeVectorStepFunction {
 					return 0, false, nil, err
 				}
 				val, err := extendedHistogramRate(hExt, step.RangeStart, step.RangeEnd, rangeSeconds, true, isRate, step.Smoothed, emitAnnotation)
-				if hExtPooled {
-					types.HPointSlicePool.Put(&hExt, memoryConsumptionTracker)
-				}
+				returnJoinedHistogramPoints(hExt, hExtPooled, memoryConsumptionTracker)
 				if err != nil {
 					err = NativeHistogramErrorToAnnotation(err, emitAnnotation)
 					return 0, false, nil, err
@@ -113,6 +111,21 @@ func joinHistogramPoints(head, tail []promql.HPoint, memoryConsumptionTracker *l
 	joined = append(joined, head...)
 	joined = append(joined, tail...)
 	return joined, true, nil
+}
+
+// returnJoinedHistogramPoints returns a slice obtained from joinHistogramPoints to the pool when
+// it was pooled. The slice's points alias *histogram.FloatHistogram instances owned by the
+// range vector's ring buffer, so the histogram references are cleared before the slice is put
+// back: HPointSlicePool's mangle hook (enabled in tests) would otherwise mutate those shared
+// instances in place and corrupt the ring buffer. The backing array is still recycled.
+func returnJoinedHistogramPoints(joined []promql.HPoint, pooled bool, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
+	if !pooled {
+		return
+	}
+	for i := range joined {
+		joined[i].H = nil
+	}
+	types.HPointSlicePool.Put(&joined, memoryConsumptionTracker)
 }
 
 func histogramRate(isRate bool, hCount int, hHead []promql.HPoint, hTail []promql.HPoint, rangeStart int64, rangeEnd int64, rangeSeconds float64, emitAnnotation types.EmitAnnotationFunc) (*histogram.FloatHistogram, error) {
@@ -405,9 +418,7 @@ func delta(step *types.RangeVectorStepData, _ []types.ScalarData, _ types.QueryT
 				return 0, false, nil, err
 			}
 			val, err := extendedHistogramRate(hExt, step.RangeStart, step.RangeEnd, rangeSeconds, false, false, step.Smoothed, emitAnnotation)
-			if hExtPooled {
-				types.HPointSlicePool.Put(&hExt, memoryConsumptionTracker)
-			}
+			returnJoinedHistogramPoints(hExt, hExtPooled, memoryConsumptionTracker)
 			if err != nil {
 				err = NativeHistogramErrorToAnnotation(err, emitAnnotation)
 				return 0, false, nil, err

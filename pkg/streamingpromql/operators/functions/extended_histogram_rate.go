@@ -9,10 +9,11 @@ import (
 	"errors"
 	"sort"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/util/annotations"
+
+	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
 // interpolateHistograms performs linear interpolation between two histogram points h1 (at t1)
