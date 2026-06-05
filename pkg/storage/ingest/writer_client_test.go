@@ -251,6 +251,49 @@ func TestKafkaProducer_ProduceSync_ShouldCircuitBreakIfContextIsDone(t *testing.
 	require.Equal(t, float64(0), *histogram.SampleSum)
 }
 
+func TestKafkaProducer_ProduceSync_ShouldRejectRecordsWithTimestampSet(t *testing.T) {
+	const (
+		numPartitions = 1
+		topicName     = "test"
+	)
+
+	_, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
+
+	cfg := createTestKafkaConfig(clusterAddr, topicName)
+	reg := prometheus.NewPedanticRegistry()
+	prefixedReg := prometheus.WrapRegistererWithPrefix(writerMetricsPrefix, reg)
+
+	client, err := NewKafkaWriterClient(cfg, defaultMaxInflightProduceRequests, log.NewNopLogger(), prefixedReg)
+	require.NoError(t, err)
+
+	producer := NewKafkaProducer(client, cfg.ProducerMaxBufferedBytes, prefixedReg)
+	t.Cleanup(producer.Close)
+
+	records := []*kgo.Record{
+		{Key: []byte("test"), Value: []byte("message 1")},
+		{Key: []byte("test"), Value: []byte("message 2"), Timestamp: time.Now()},
+	}
+
+	res := producer.ProduceSync(context.Background(), records)
+	require.Len(t, res, len(records))
+	for i, r := range res {
+		require.Errorf(t, r.Err, "result[%d] should fail", i)
+		require.Containsf(t, r.Err.Error(), "Kafka record Timestamp must not be set", "result[%d] should report the timestamp error", i)
+		require.Samef(t, records[i], r.Record, "result[%d] should reference the original record", i)
+	}
+
+	// No record should be buffered in the Kafka client (none was produced).
+	require.Equal(t, int64(0), producer.BufferedProduceRecords())
+	require.Equal(t, int64(0), producer.bufferedBytes.Load())
+
+	assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
+		# HELP cortex_ingest_storage_writer_produce_records_failed_total Total number of Kafka records that failed to be sent to the Kafka backend.
+		# TYPE cortex_ingest_storage_writer_produce_records_failed_total counter
+		cortex_ingest_storage_writer_produce_records_failed_total{reason="record-timestamp-set"} 2
+	`),
+		"cortex_ingest_storage_writer_produce_records_failed_total"))
+}
+
 func TestKafkaProducer_ProduceSync_ShouldRejectWholeBatchIfBufferIsFull(t *testing.T) {
 	const (
 		numPartitions = 1
