@@ -333,9 +333,6 @@ local filename = 'mimir-writes.json';
       $.row('Usage Tracker')
       .addPanel(
         local title = 'Requests / sec';
-        // Break the non-batch (Sync) and batch (Async) TrackSeries routes out into separate series,
-        // mirroring the Sync/Async split in the "Client req / sec" panel above. Non-batch requests
-        // are significantly more CPU intensive than batch ones, so keeping them separate is useful.
         local syncPanel = $.qpsPanelNativeHistogram($.queries.usage_tracker.requestsPerSecondMetric, $.queries.usage_tracker.trackSeriesSyncRequestsPerSecondSelector);
         local batchPanel = $.qpsPanelNativeHistogram($.queries.usage_tracker.requestsPerSecondMetric, $.queries.usage_tracker.trackSeriesBatchRequestsPerSecondSelector);
         $.timeseriesPanel(title) +
