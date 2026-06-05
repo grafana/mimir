@@ -398,24 +398,22 @@ func (t *Mimir) initIngesterPartitionRings() (services.Service, error) {
 	t.IngesterPartitionRingWatcher = ring.NewPartitionRingWatcher(ingester.PartitionRingName, ingester.PartitionRingKey, kvClient, util_log.Logger, prometheus.WrapRegistererWithPrefix("cortex_", t.Registerer))
 	t.IngesterPartitionInstanceRing = ring.NewPartitionInstanceRing(t.IngesterPartitionRingWatcher, t.IngesterRing, t.Cfg.Ingester.IngesterRing.HeartbeatTimeout)
 
-	// Expose a web page to view the partitions ring state.
-	// FIXME(per-compartment-rings): this only exposes the legacy single ring. With compartments enabled,
-	// the per-compartment rings (t.IngesterPartitionRingWatchers) have no status page. Expose one handler
-	// per compartment in the admin UI.
-	t.API.RegisterIngesterPartitionRing(ring.NewPartitionRingPageHandler(t.IngesterPartitionRingWatcher, ring.NewPartitionRingEditor(ingester.PartitionRingKey, kvClient)))
-
 	// Track anonymous usage statistics.
 	usagestats.SetMode(usagestats.ModeIngestStorage)
 
 	if !t.Cfg.IngestStorage.Compartments.Enabled {
+		// Expose a web page to view the partitions ring state.
+		t.API.RegisterIngesterPartitionRing(ring.NewPartitionRingPageHandler(t.IngesterPartitionRingWatcher, ring.NewPartitionRingEditor(ingester.PartitionRingKey, kvClient)))
 		t.IngesterPartitionRingWatchers = []*ring.PartitionRingWatcher{t.IngesterPartitionRingWatcher}
 		return t.IngesterPartitionRingWatcher, nil
 	}
 
 	// Compartments enabled: build one partition ring watcher per compartment, each watching its own KV
-	// key. Run them under a single service manager together with the legacy watcher, which the read path
-	// (query.go, adjustQueryRequestLimit, admin page) still consults and which only keeps its in-memory
-	// ring current while its service is running.
+	// key, and expose a status page per compartment. Run them under a single service manager together with
+	// the legacy watcher, which the read path (query.go, adjustQueryRequestLimit) still consults and which
+	// only keeps its in-memory ring current while its service is running. The legacy ring's status page is
+	// not exposed in this mode: its ring is empty and is retired once the read path moves to the
+	// per-compartment rings.
 	numCompartments := t.Cfg.IngestStorage.Compartments.NumCompartments
 	t.IngesterPartitionRingWatchers = make([]*ring.PartitionRingWatcher, numCompartments)
 	allWatchers := make([]services.Service, 0, numCompartments+1)
@@ -425,6 +423,8 @@ func (t *Mimir) initIngesterPartitionRings() (services.Service, error) {
 		watcher := ring.NewPartitionRingWatcher(key, key, kvClient, util_log.Logger, prometheus.WrapRegistererWithPrefix("cortex_", t.Registerer))
 		t.IngesterPartitionRingWatchers[c] = watcher
 		allWatchers = append(allWatchers, watcher)
+
+		t.API.RegisterIngesterPartitionRingForCompartment(ring.NewPartitionRingPageHandler(watcher, ring.NewPartitionRingEditor(key, kvClient)), c)
 	}
 
 	manager, err := services.NewManager(allWatchers...)

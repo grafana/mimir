@@ -197,6 +197,34 @@ func TestApiGzip(t *testing.T) {
 	})
 }
 
+func TestRegisterIngesterPartitionRingForCompartment(t *testing.T) {
+	cfg := Config{GzipCompressionLevel: gzip.DefaultCompression}
+	serverCfg := getServerConfig(t)
+	srv, err := server.New(serverCfg)
+	require.NoError(t, err)
+	go func() { _ = srv.Run() }()
+	t.Cleanup(srv.Stop)
+
+	api, err := New(cfg, tenantfederation.Config{}, serverCfg, srv, log.NewNopLogger(), nil)
+	require.NoError(t, err)
+
+	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, "compartment 3 ring")
+	})
+	api.RegisterIngesterPartitionRingForCompartment(handler, 3)
+
+	u := fmt.Sprintf("http://%s:%d/ingester/partition-ring/compartment-3", serverCfg.HTTPListenAddress, serverCfg.HTTPListenPort)
+	res, err := http.DefaultClient.Get(u)
+	require.NoError(t, err)
+	defer func() { _ = res.Body.Close() }()
+
+	require.Equal(t, http.StatusOK, res.StatusCode)
+	body, err := io.ReadAll(res.Body)
+	require.NoError(t, err)
+	require.Equal(t, "compartment 3 ring", string(body))
+}
+
 type MockIngester struct {
 	ingester.API
 }
