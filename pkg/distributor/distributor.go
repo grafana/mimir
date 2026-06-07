@@ -1141,6 +1141,7 @@ func (d *Distributor) wrapPushWithMiddlewares(next PushFunc) PushFunc {
 	middlewares = append(middlewares, d.prePushHaDedupeMiddleware)
 	middlewares = append(middlewares, d.prePushRelabelMiddleware)
 	middlewares = append(middlewares, d.prePushSortAndFilterMiddleware)
+	middlewares = append(middlewares, d.prePushMergeMiddleware)
 	middlewares = append(middlewares, d.prePushValidationMiddleware)
 	middlewares = append(middlewares, d.cfg.PushWrappers...)             // TODO GEM has a BI middleware. It should probably be applied after prePushMaxSeriesLimitMiddleware
 	middlewares = append(middlewares, d.prePushMaxSeriesLimitMiddleware) // Should be the very last, to enforce the max series limit on top of all filtering, relabelling and other changes (e.g. GEM aggregations) previous middlewares could do
@@ -1240,6 +1241,84 @@ func (d *Distributor) prePushSortAndFilterMiddleware(next PushFunc) PushFunc {
 			// phase, we ignore them here.
 			// 3) Ingesters expect labels to be sorted in the Push request.
 			req.Timeseries[tsIdx].SortLabelsIfNeeded()
+		}
+
+		if len(removeTsIndexes) > 0 {
+			for _, removeTsIndex := range removeTsIndexes {
+				mimirpb.ReusePreallocTimeseries(&req.Timeseries[removeTsIndex])
+			}
+			req.Timeseries = util.RemoveSliceIndexes(req.Timeseries, removeTsIndexes)
+		}
+
+		return next(ctx, pushReq)
+	})
+}
+
+// prePushMergeMiddleware merges timeseries objects that share the same label set
+// within a single write request. Without this, the within-timeseries dedup in
+// validateSamples only catches duplicates inside one object — if the same
+// sample appears in two different timeseries objects with the same labels, both
+// copies pass through to the ingesters, where the duplicate is silently dropped
+// without incrementing cortex_discarded_samples_total (issue #15550).
+//
+// After this middleware, each distinct label set appears in at most one
+// timeseries object. The existing within-timeseries dedup then handles any
+// timestamp collisions that result from the merge.
+func (d *Distributor) prePushMergeMiddleware(next PushFunc) PushFunc {
+	return WithCleanup(next, func(next PushFunc, ctx context.Context, pushReq *Request) error {
+		req, err := pushReq.WriteRequest()
+		if err != nil {
+			return err
+		}
+
+		if len(req.Timeseries) <= 1 {
+			return next(ctx, pushReq)
+		}
+
+		// Build an index of label-set hash → first timeseries index. On
+		// collision (same hash + labels), merge the later timeseries' samples
+		// and histograms into the first and mark the later one for removal.
+		//
+		// The common case (no duplicates) adds only one hash-map lookup per
+		// timeseries — comparable to the cost of the label sort in the
+		// previous middleware.
+		seen := make(map[uint64]int, len(req.Timeseries))
+		var removeTsIndexes []int
+
+		for tsIdx := 0; tsIdx < len(req.Timeseries); tsIdx++ {
+			ts := req.Timeseries[tsIdx]
+			hash := labels.StableHash(mimirpb.FromLabelAdaptersToLabels(ts.Labels))
+
+			firstIdx, exists := seen[hash]
+			if !exists {
+				seen[hash] = tsIdx
+				continue
+			}
+
+			// Same hash — verify labels actually match (hash collision guard).
+			first := req.Timeseries[firstIdx]
+			if mimirpb.CompareLabelAdapters(first.Labels, ts.Labels) != 0 {
+				// Hash collision with genuinely different labels — treat as
+				// separate series. Store under a secondary index? In practice
+				// StableHash collisions are vanishingly rare on real label sets,
+				// so we simply skip the merge and let the validation middleware
+				// handle both independently.
+				continue
+			}
+
+			// Merge samples and histograms from the later timeseries into the first.
+			if len(ts.Samples) > 0 {
+				req.Timeseries[firstIdx].Samples = append(req.Timeseries[firstIdx].Samples, ts.Samples...)
+				req.Timeseries[firstIdx].SamplesUpdated()
+			}
+			if len(ts.Histograms) > 0 {
+				req.Timeseries[firstIdx].Histograms = append(req.Timeseries[firstIdx].Histograms, ts.Histograms...)
+			}
+			if len(ts.Exemplars) > 0 {
+				req.Timeseries[firstIdx].Exemplars = append(req.Timeseries[firstIdx].Exemplars, ts.Exemplars...)
+			}
+
+			removeTsIndexes = append(removeTsIndexes, tsIdx)
 		}
 
 		if len(removeTsIndexes) > 0 {
