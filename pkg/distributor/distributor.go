@@ -1298,13 +1298,12 @@ func (d *Distributor) prePushMergeMiddleware(next PushFunc) PushFunc {
 			// Same hash — verify labels actually match (hash collision guard).
 			first := req.Timeseries[firstIdx]
 			if mimirpb.CompareLabelAdapters(first.Labels, ts.Labels) != 0 {
-				// Hash collision with genuinely different labels. StableHash
-				// collisions are vanishingly rare (~1 in 2^64) on real label
-				// sets, so we skip the merge rather than maintaining a multi-map.
-				// In the unlikely event of a three-way collision (A, B, C share
-				// the same hash but B != A, C == B), C would fail to merge with
-				// B — an acceptable false negative that preserves correctness
-				// (no data is lost, just not deduplicated).
+				// Hash collision with genuinely different labels. Overwrite the
+				// map entry so that later timeseries with the SAME labels as this
+				// one can still merge (Bugbot: "hash collision skips label-set
+				// merge"). StableHash collisions are vanishingly rare (~1 in 2^64)
+				// on real label sets, so a single-slot-per-hash map is sufficient.
+				seen[hash] = tsIdx
 				continue
 			}
 
