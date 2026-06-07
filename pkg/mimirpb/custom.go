@@ -195,6 +195,7 @@ type MessageWithBufferRef interface {
 // BufferHolder is a base type for protobuf messages that keep unsafe references to the unmarshalling buffer.
 type BufferHolder struct {
 	buffer mem.Buffer
+	freed  bool
 }
 
 func (m *BufferHolder) Buffer() mem.Buffer {
@@ -206,10 +207,17 @@ func (m *BufferHolder) SetBuffer(buf mem.Buffer) {
 }
 
 func (m *BufferHolder) FreeBuffer() {
-	if m.buffer != nil {
-		m.buffer.Free()
-		m.buffer = nil
+	if m.buffer == nil {
+		if !m.freed {
+			return // Never had a buffer, no-op.
+		}
+
+		panic("BufferHolder.FreeBuffer called on already-freed buffer")
 	}
+
+	m.buffer.Free()
+	m.buffer = nil
+	m.freed = true
 }
 
 var _ MessageWithBufferRef = &BufferHolder{}
