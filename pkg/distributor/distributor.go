@@ -1328,6 +1328,14 @@ func (d *Distributor) prePushMergeMiddleware(next PushFunc) PushFunc {
 
 		if len(removeTsIndexes) > 0 {
 			for _, removeTsIndex := range removeTsIndexes {
+				// Nil out slices that were shallow-copied into the surviving
+				// timeseries BEFORE returning the source to the pool. Without
+				// this, the pool can reuse the source's backing arrays while
+				// the surviving timeseries still references them, corrupting
+				// histogram/exemplar data under concurrent pool reuse.
+				req.Timeseries[removeTsIndex].Samples = nil
+				req.Timeseries[removeTsIndex].Histograms = nil
+				req.Timeseries[removeTsIndex].Exemplars = nil
 				mimirpb.ReusePreallocTimeseries(&req.Timeseries[removeTsIndex])
 			}
 			req.Timeseries = util.RemoveSliceIndexes(req.Timeseries, removeTsIndexes)
