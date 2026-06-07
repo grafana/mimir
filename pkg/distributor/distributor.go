@@ -1298,18 +1298,19 @@ func (d *Distributor) prePushMergeMiddleware(next PushFunc) PushFunc {
 			// Same hash — verify labels actually match (hash collision guard).
 			first := req.Timeseries[firstIdx]
 			if mimirpb.CompareLabelAdapters(first.Labels, ts.Labels) != 0 {
-				// Hash collision with genuinely different labels — treat as
-				// separate series. Store under a secondary index? In practice
-				// StableHash collisions are vanishingly rare on real label sets,
-				// so we simply skip the merge and let the validation middleware
-				// handle both independently.
+				// Hash collision with genuinely different labels. StableHash
+				// collisions are vanishingly rare (~1 in 2^64) on real label
+				// sets, so we skip the merge rather than maintaining a multi-map.
+				// In the unlikely event of a three-way collision (A, B, C share
+				// the same hash but B != A, C == B), C would fail to merge with
+				// B — an acceptable false negative that preserves correctness
+				// (no data is lost, just not deduplicated).
 				continue
 			}
 
 			// Merge samples and histograms from the later timeseries into the first.
 			if len(ts.Samples) > 0 {
 				req.Timeseries[firstIdx].Samples = append(req.Timeseries[firstIdx].Samples, ts.Samples...)
-				req.Timeseries[firstIdx].SamplesUpdated()
 			}
 			if len(ts.Histograms) > 0 {
 				req.Timeseries[firstIdx].Histograms = append(req.Timeseries[firstIdx].Histograms, ts.Histograms...)
@@ -1317,6 +1318,10 @@ func (d *Distributor) prePushMergeMiddleware(next PushFunc) PushFunc {
 			if len(ts.Exemplars) > 0 {
 				req.Timeseries[firstIdx].Exemplars = append(req.Timeseries[firstIdx].Exemplars, ts.Exemplars...)
 			}
+			// Invalidate the marshal cache after merging — without this,
+			// Size()/Marshal() return stale pre-merge bytes and drop the
+			// merged histograms/exemplars.
+			req.Timeseries[firstIdx].SamplesUpdated()
 
 			removeTsIndexes = append(removeTsIndexes, tsIdx)
 		}
