@@ -426,6 +426,14 @@ func (c *Config) isRulerEnabled() bool {
 	return c.isAnyModuleExplicitlyTargeted(All, Ruler)
 }
 
+// isRulerBlocksQueryingEnabled reports whether a ruler in this process queries blocks storage
+// directly: it is enabled and evaluates rules locally. With remote rule evaluation
+// (-ruler.query-frontend.address set) the ruler delegates queries to the ruler-query-frontend and
+// touches neither the blocks object store nor the store-gateway ring.
+func (c *Config) isRulerBlocksQueryingEnabled() bool {
+	return c.isRulerEnabled() && c.Ruler.QueryFrontend.Address == ""
+}
+
 func (c *Config) isStoreGatewayEnabled() bool {
 	return c.isAnyModuleExplicitlyTargeted(All, StoreGateway)
 }
@@ -524,7 +532,7 @@ func (c *Config) validateFilesystemPaths(logger log.Logger) error {
 	var paths []pathConfig
 
 	// Blocks storage (check only for components using it).
-	if (c.isIngesterEnabled() || c.isQuerierEnabled() || c.isStoreGatewayEnabled() || c.isCompactorEnabled() || c.isRulerEnabled()) && c.BlocksStorage.Bucket.Backend == bucket.Filesystem {
+	if (c.isIngesterEnabled() || c.isQuerierEnabled() || c.isStoreGatewayEnabled() || c.isCompactorEnabled() || c.isRulerBlocksQueryingEnabled()) && c.BlocksStorage.Bucket.Backend == bucket.Filesystem {
 		// Add the optional prefix to the path, because that's the actual location where blocks will be stored.
 		paths = append(paths, pathConfig{
 			name:       "blocks storage filesystem directory",

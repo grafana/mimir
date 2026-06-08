@@ -127,7 +127,7 @@ func checkObjectStoresConfig(ctx context.Context, cfg Config, logger log.Logger)
 	errs := multierror.New()
 
 	// Check blocks storage config only if running at least one component using it.
-	if cfg.isIngesterEnabled() || cfg.isQuerierEnabled() || cfg.isRulerEnabled() || cfg.isStoreGatewayEnabled() || cfg.isCompactorEnabled() {
+	if cfg.isIngesterEnabled() || cfg.isQuerierEnabled() || cfg.isRulerBlocksQueryingEnabled() || cfg.isStoreGatewayEnabled() || cfg.isCompactorEnabled() {
 		errs.Add(errors.Wrap(checkObjectStoreConfig(ctx, cfg.BlocksStorage.Bucket, logger), "blocks storage"))
 	}
 

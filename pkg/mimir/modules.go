@@ -743,6 +743,14 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 }
 
 func (t *Mimir) initStoreQueryable() (services.Service, error) {
+	// The blocks-store queryable (store-gateway ring client + blocks bucket client) is only needed by
+	// the querier read path and by a ruler that evaluates rules locally. A ruler using remote rule
+	// evaluation delegates queries to the ruler-query-frontend, so don't build it for a process whose
+	// only would-be consumer is such a ruler.
+	if !t.Cfg.isQuerierEnabled() && !t.Cfg.isRulerBlocksQueryingEnabled() {
+		return nil, nil
+	}
+
 	q, err := querier.NewBlocksStoreQueryableFromConfig(
 		t.Cfg.Querier, t.Cfg.StoreGateway, t.Cfg.BlocksStorage, t.Overrides, util_log.Logger, t.Registerer,
 	)
@@ -1587,6 +1595,7 @@ func (t *Mimir) setupModuleManager() error {
 
 		All: {QueryFrontend, QueryScheduler, Querier, Ingester, Distributor, StoreGateway, Ruler, Compactor},
 	}
+
 	for mod, targets := range deps {
 		if err := mm.AddDependency(mod, targets...); err != nil {
 			return err
