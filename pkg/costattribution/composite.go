@@ -24,10 +24,10 @@ func (c *SampleTracker) getTrackers() []*sampleTracker { return c.trackers }
 
 func (c *SampleTracker) getConfigHash() uint64 { return c.configHash }
 
-func (c *SampleTracker) purge(now, deadline time.Time) int {
-	cardinality := 0
+func (c *SampleTracker) purge(now, deadline time.Time) (cardinality int, shouldRecreate bool) {
 	c.each(func(t *sampleTracker) { cardinality += t.purge(now, deadline) })
-	return cardinality
+	// When a sampleTracker recovers from overflow it just resets, it doesn't need to be re-created.
+	return cardinality, false
 }
 
 func (c *SampleTracker) collectCostAttribution(out chan<- prometheus.Metric) {
@@ -80,10 +80,13 @@ func (c *ActiveSeriesTracker) getTrackers() []*activeSeriesTracker { return c.tr
 
 func (c *ActiveSeriesTracker) getConfigHash() uint64 { return c.configHash }
 
-func (c *ActiveSeriesTracker) purge(now, deadline time.Time) int {
-	cardinality := 0
-	c.each(func(t *activeSeriesTracker) { cardinality += t.purge(now, deadline) })
-	return cardinality
+func (c *ActiveSeriesTracker) purge(now, deadline time.Time) (cardinality int, shouldRecreate bool) {
+	c.each(func(t *activeSeriesTracker) {
+		trackerCardinality, trackerShouldRecreate := t.purge(now, deadline)
+		cardinality += trackerCardinality
+		shouldRecreate = shouldRecreate || trackerShouldRecreate
+	})
+	return cardinality, shouldRecreate
 }
 
 func (c *ActiveSeriesTracker) collectCostAttribution(out chan<- prometheus.Metric) {

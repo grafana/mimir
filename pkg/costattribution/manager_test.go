@@ -10,6 +10,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -17,6 +18,7 @@ import (
 	"github.com/grafana/mimir/pkg/costattribution/costattributionmodel"
 	"github.com/grafana/mimir/pkg/costattribution/testutils"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 func newTestManager() (manager *Manager, reg, costAttributionReg *prometheus.Registry) {
@@ -770,5 +772,86 @@ func TestManager_InvalidTrackers(t *testing.T) {
 			"cortex_cost_attribution_active_series_tracker_overflown",
 			"cortex_cost_attribution_tracker_creation_errors_total",
 		))
+	})
+}
+
+// newManagerForLimits builds a Manager whose single tenant userID uses the given limits.
+func newManagerForLimits(t *testing.T, userID string, l *validation.Limits) *Manager {
+	t.Helper()
+	l.CostAttributionBaseTrackers.Canonicalize()
+	l.AdditionalCostAttributionTrackers.Canonicalize()
+	l.ComputeCostAttributionConfigHash()
+	overrides := validation.NewOverrides(validation.Limits{}, validation.NewMockTenantLimits(map[string]*validation.Limits{userID: l}))
+	// inactiveTimeout is small; tests drive "now" explicitly through purgeInactiveAttributionsUntil.
+	m, err := NewManager(time.Minute, time.Second, log.NewNopLogger(), overrides, prometheus.NewRegistry(), prometheus.NewRegistry())
+	require.NoError(t, err)
+	return m
+}
+
+// TestManager_ActiveSeriesTrackerReplacedAfterOverflowRecovery asserts the contract the ingester
+// relies on: when an active-series tracker recovers from overflow (its observed state is reset),
+// the Manager must hand back a different ActiveSeriesTracker composite (!Equals). The ingester
+// detects that change via CostAttributionDiffers (pointer identity) and re-tracks all current
+// series into the fresh tracker. If the Manager keeps returning the same composite while having
+// reset the underlying state, the ingester never re-tracks and later decrements operate on a
+// tracker whose state was wiped underneath it.
+func TestManager_ActiveSeriesTrackerReplacedAfterOverflowRecovery(t *testing.T) {
+	const userID = "u"
+	base := time.Unix(0, 0)
+	// purgeAt is well past the cooldown so the tracker is eligible to recover.
+	purgeAt := base.Add(time.Hour)
+
+	t.Run("single tracker", func(t *testing.T) {
+		m := newManagerForLimits(t, userID, &validation.Limits{
+			MaxCostAttributionCardinality: 2,
+			CostAttributionCooldown:       model.Duration(time.Minute),
+			CostAttributionBaseTrackers: costattributionmodel.TrackerConfigs{
+				"t1": {Labels: costattributionmodel.Labels{{Input: "a", Output: "a"}}},
+			},
+		})
+
+		before := m.ActiveSeriesTracker(userID)
+		require.NotNil(t, before)
+
+		// Drive t1 into overflow (3 distinct combos > maxCardinality 2), then bring its observed
+		// cardinality back to <= maxCardinality so the next purge recovers it.
+		before.Increment(labels.FromStrings("a", "v1"), base, -1)
+		before.Increment(labels.FromStrings("a", "v2"), base, -1)
+		before.Increment(labels.FromStrings("a", "v3"), base, -1)
+		before.Decrement(labels.FromStrings("a", "v3"), -1)
+
+		m.purgeInactiveAttributionsUntil(purgeAt)
+
+		after := m.ActiveSeriesTracker(userID)
+		require.False(t, before.Equals(after), "recovered tracker must be replaced so the ingester re-tracks")
+	})
+
+	t.Run("one of several trackers recovers", func(t *testing.T) {
+		// Only t1 overflows and recovers; t2 keeps cardinality, so the composite is not dropped as
+		// a whole. The Manager must still return a different composite because t1's state was reset.
+		m := newManagerForLimits(t, userID, &validation.Limits{
+			MaxCostAttributionCardinality: 2,
+			CostAttributionCooldown:       model.Duration(time.Minute),
+			CostAttributionBaseTrackers: costattributionmodel.TrackerConfigs{
+				"t1": {Labels: costattributionmodel.Labels{{Input: "a", Output: "a"}}},
+			},
+			AdditionalCostAttributionTrackers: costattributionmodel.TrackerConfigs{
+				"t2": {Labels: costattributionmodel.Labels{{Input: "b", Output: "b"}}},
+			},
+		})
+
+		before := m.ActiveSeriesTracker(userID)
+		require.NotNil(t, before)
+
+		// t1 sees a=v1,v2,v3 (overflows); t2 sees only b=w1 (stays below the limit).
+		before.Increment(labels.FromStrings("a", "v1", "b", "w1"), base, -1)
+		before.Increment(labels.FromStrings("a", "v2", "b", "w1"), base, -1)
+		before.Increment(labels.FromStrings("a", "v3", "b", "w1"), base, -1)
+		before.Decrement(labels.FromStrings("a", "v3", "b", "w1"), -1) // t1 back to {v1,v2}, still overflown
+
+		m.purgeInactiveAttributionsUntil(purgeAt)
+
+		after := m.ActiveSeriesTracker(userID)
+		require.False(t, before.Equals(after), "recovered tracker must be replaced so the ingester re-tracks")
 	})
 }

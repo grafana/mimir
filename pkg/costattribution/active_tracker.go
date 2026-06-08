@@ -295,20 +295,22 @@ func (at *activeSeriesTracker) fillKeyFromLabels(lbls labels.Labels, buf *bytes.
 	}
 }
 
-func (at *activeSeriesTracker) purge(now, deadline time.Time) int {
+// nolint:unused // The unused linter fails to detect usage of this method through the generic composite trackers.
+func (at *activeSeriesTracker) purge(now, deadline time.Time) (cardinality int, shouldRecreate bool) {
 	at.observedMtx.RLock()
 	tryRecoverFromOverflow := !at.overflowSince.IsZero() && at.overflowSince.Add(at.cooldownDuration).Before(deadline)
-	cardinality := len(at.observed)
+	cardinality = len(at.observed)
 	at.observedMtx.RUnlock()
 
 	if tryRecoverFromOverflow {
 		at.observedMtx.Lock()
 		if len(at.observed) <= at.maxCardinality {
-			// Recovered from overflow, reset.
-			at.observed = make(map[string]*counters)
-			at.overflowSince = time.Time{}
-			at.overflowCounter = counters{}
-			cardinality = 0
+			// Recovered from overflow.
+			// We can't just "reset" an active series cost attribution tracker when recovering from overflow,
+			// because we didn't properly track the series during overflow, so we don't know which series to keep and which to remove.
+			// So we signal to the manager that the entire active series tracker should be re-created.
+			// This will be seen by the active series tracker in the ingester, and all series will be re-counted.
+			shouldRecreate = true
 		} else {
 			// Extend the overflow period since we are still above the max cardinality after cleanup.
 			at.overflowSince = now
@@ -316,7 +318,7 @@ func (at *activeSeriesTracker) purge(now, deadline time.Time) int {
 		at.observedMtx.Unlock()
 	}
 
-	return cardinality
+	return cardinality, shouldRecreate
 }
 
 func (at *activeSeriesTracker) cardinality() (cardinality int, overflown bool) {

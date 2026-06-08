@@ -61,7 +61,7 @@ type compositeTracker[IT individualTracker] interface {
 
 	collectInternalCostAttribution(out chan<- prometheus.Metric)
 	collectCostAttribution(out chan<- prometheus.Metric)
-	purge(now, deadline time.Time) int
+	purge(now, deadline time.Time) (cardinality int, shouldRecreate bool)
 }
 
 type individualTracker interface {
@@ -69,7 +69,6 @@ type individualTracker interface {
 	config() (labels costattributionmodel.Labels, internal bool, maxCardinality int, cooldown time.Duration)
 	cardinality() (cardinality int, overflown bool)
 	collectCostAttribution(out chan<- prometheus.Metric)
-	purge(now, deadline time.Time) int
 }
 
 func NewManager(cleanupInterval, inactiveTimeout time.Duration, logger log.Logger, limits *validation.Overrides, reg, costAttributionReg prometheus.Registerer) (*Manager, error) {
@@ -316,8 +315,8 @@ func (mt *managerTrackers[CT, IT]) purge(now, deadline time.Time, limits *valida
 			continue
 		}
 
-		cardinality := composite.purge(now, deadline)
-		if cardinality == 0 {
+		cardinality, shouldRecreate := composite.purge(now, deadline)
+		if cardinality == 0 || shouldRecreate {
 			mt.Lock()
 			// If CT==SampleTracker, then it's safe to just remove the tracker here:
 			// in the worst case we'll lose track of an inflight caller who retrieved a SampleTracker but didn't track any samples yet.
