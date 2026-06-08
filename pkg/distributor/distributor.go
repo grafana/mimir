@@ -226,8 +226,8 @@ type Distributor struct {
 
 	// partitionsRing is the hash ring holding ingester partitions. It's used when ingest storage
 	// is enabled. As part of compartments work, the write path is using partitionsRings instead of
-	// this field. The query path still uses this field but this only works correctly if
-	// compartments is disabled.
+	// this field. The query path still uses this field, which is only set when compartments are
+	// disabled; with compartments enabled it is nil and the query path panics.
 	// FIXME(per-compartment-rings): remove once the read path is compartment-aware and uses
 	// partitionsRings as well.
 	partitionsRing *ring.PartitionInstanceRing

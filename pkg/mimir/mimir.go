@@ -868,18 +868,20 @@ type Mimir struct {
 	Server        *server.Server
 	ServerMetrics *server.Metrics
 	IngesterRing  *ring.Ring
-	// IngesterPartitionRingWatcher watches the legacy single partition ring.
-	// FIXME(per-compartment-rings): with compartments enabled this ring is empty (ingesters register into
-	// per-compartment rings), so the read path (query.go, adjustQueryRequestLimit) silently returns no
-	// results. Write path and admin UI are unaffected — both already use IngesterPartitionRingWatchers.
+	// IngesterPartitionRingWatcher watches the legacy single partition ring. It is only constructed when
+	// compartments are disabled.
+	// FIXME(per-compartment-rings): with compartments enabled this is nil (ingesters register into
+	// per-compartment rings), so the read path (query-frontend topic offsets reader, query.go,
+	// adjustQueryRequestLimit) panics. Write path and admin UI are unaffected — both already use
+	// IngesterPartitionRingWatchers.
 	IngesterPartitionRingWatcher *ring.PartitionRingWatcher
 	// IngesterPartitionRingWatchers holds the partition ring watchers indexed by read compartment, used
 	// by the distributor write path. With compartments disabled it holds just the legacy single watcher.
-	IngesterPartitionRingWatchers    []*ring.PartitionRingWatcher
+	IngesterPartitionRingWatchers []*ring.PartitionRingWatcher
 	// IngesterPartitionInstanceRing is built from IngesterPartitionRingWatcher and backs the distributor's
-	// partitionsRing (read path). With compartments enabled the underlying ring is empty — see the FIXME on
-	// IngesterPartitionRingWatcher.
-	IngesterPartitionInstanceRing *ring.PartitionInstanceRing
+	// partitionsRing (read path). It is only constructed when compartments are disabled; with compartments
+	// enabled it is nil — see the FIXME on IngesterPartitionRingWatcher.
+	IngesterPartitionInstanceRing    *ring.PartitionInstanceRing
 	TenantLimits                     validation.TenantLimits
 	Overrides                        *validation.Overrides
 	QueryLimitsProvider              streamingpromql.QueryLimitsProvider
