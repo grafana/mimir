@@ -335,47 +335,14 @@ func (v *InstantVectorSelector) Close() {
 }
 
 // interpolateHistogramAt linearly interpolates between two histograms (h1 at t1, h2 at t2) and
-// returns the histogram value at time t. If h2.DetectReset(h1) returns true the counter is
-// modelled as restarting from zero, so the result is h2 scaled by the fraction (t-t1)/(t2-t1).
-// Returns an error when the two histograms have incompatible schemas (mixing exponential and
-// custom buckets). When a Sub or Add reconciles mismatched custom-bucket bounds, emitInfo is
-// called with the corresponding operation so the caller can surface the matching info
-// annotation. Mirrors interpolateHistograms in vendor/.../promql/functions.go and is used by
-// the smoothed instant-vector selector.
+// returns the histogram value at time t for the smoothed instant-vector selector. It infers
+// whether the pair is counter data from the samples' reset hints and delegates the interpolation
+// to types.InterpolateHistograms.
 func interpolateHistogramAt(h1 *histogram.FloatHistogram, t1 int64, h2 *histogram.FloatHistogram, t2, t int64, emitInfo func(annotations.HistogramOperation)) (*histogram.FloatHistogram, error) {
-	if t == t1 {
-		return h1.Copy(), nil
-	}
-	if t == t2 {
-		return h2.Copy(), nil
-	}
-	// Exponential and custom-bucket histograms cannot be interpolated. Surface this as
-	// ErrHistogramsIncompatibleSchema before the counter-reset path below, so a DetectReset that
-	// happens to return true cannot mask it. Mirrors Prometheus's smoothSeries, which checks
-	// UsesCustomBuckets before interpolating.
-	if h1.UsesCustomBuckets() != h2.UsesCustomBuckets() {
-		return nil, histogram.ErrHistogramsIncompatibleSchema
-	}
-	fraction := float64(t-t1) / float64(t2-t1)
 	// Treat the pair as counter data unless BOTH samples explicitly carry the gauge hint. If
 	// either side could be a counter (UnknownCounterReset / CounterReset / NotCounterReset),
 	// model a detected decrease as a reset from zero. Matches upstream Prometheus's
 	// interpolateHistograms behaviour.
 	isCounter := h1.CounterResetHint != histogram.GaugeType || h2.CounterResetHint != histogram.GaugeType
-	if isCounter && h2.DetectReset(h1) {
-		return h2.Copy().Mul(fraction), nil
-	}
-	result := h2.Copy()
-	if _, _, nhcbReconciled, err := result.Sub(h1); err != nil {
-		return nil, err
-	} else if nhcbReconciled {
-		emitInfo(annotations.HistogramSub)
-	}
-	result.Mul(fraction)
-	if _, _, nhcbReconciled, err := result.Add(h1); err != nil {
-		return nil, err
-	} else if nhcbReconciled {
-		emitInfo(annotations.HistogramAdd)
-	}
-	return result, nil
+	return types.InterpolateHistograms(h1, t1, h2, t2, t, isCounter, emitInfo)
 }

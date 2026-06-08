@@ -17,41 +17,19 @@ import (
 )
 
 // interpolateHistograms performs linear interpolation between two histogram points h1 (at t1)
-// and h2 (at t2) and returns the histogram interpolated at time t. If isCounter is true and
-// h2.DetectReset(h1) returns true, the counter is modeled as starting from zero, so the result
-// is h2 scaled by the fraction (t - t1) / (t2 - t1). NHCB bucket-bounds reconciliation warnings
-// are emitted via emitAnnotation. Mirrors interpolateHistograms in upstream Prometheus.
+// and h2 (at t2) and returns the histogram interpolated at time t. It delegates to
+// types.InterpolateHistograms, translating the reconciliation operation into the matching
+// annotation generator. The caller guarantees schema consistency via validateHistogramRange, so
+// the schema check inside InterpolateHistograms is a no-op for this path.
 func interpolateHistograms(h1 *histogram.FloatHistogram, t1 int64, h2 *histogram.FloatHistogram, t2, t int64, isCounter bool, emitAnnotation types.EmitAnnotationFunc) (*histogram.FloatHistogram, error) {
-	if t == t1 {
-		return h1.Copy(), nil
-	}
-	if t == t2 {
-		return h2.Copy(), nil
-	}
-	fraction := float64(t-t1) / float64(t2-t1)
-
-	if isCounter && h2.DetectReset(h1) {
-		return h2.Copy().Mul(fraction), nil
-	}
-
-	// Result = H1 + (H2 - H1) * fraction.
-	result := h2.Copy()
-	_, _, nhcbReconciled, err := result.Sub(h1)
-	if err != nil {
-		return nil, err
-	}
-	if nhcbReconciled {
-		emitAnnotation(NewSubMismatchedCustomBucketsHistogramInfo)
-	}
-	result.Mul(fraction)
-	_, _, nhcbReconciled, err = result.Add(h1)
-	if err != nil {
-		return nil, err
-	}
-	if nhcbReconciled {
-		emitAnnotation(NewAddMismatchedCustomBucketsHistogramInfo)
-	}
-	return result, nil
+	return types.InterpolateHistograms(h1, t1, h2, t2, t, isCounter, func(op annotations.HistogramOperation) {
+		switch op {
+		case annotations.HistogramSub:
+			emitAnnotation(NewSubMismatchedCustomBucketsHistogramInfo)
+		case annotations.HistogramAdd:
+			emitAnnotation(NewAddMismatchedCustomBucketsHistogramInfo)
+		}
+	})
 }
 
 // pickOrInterpolateLeftHistogram returns the histogram at the left boundary of the range.
