@@ -70,7 +70,8 @@ var tracer = otel.Tracer("pkg/distributor")
 
 var (
 	// Validation errors.
-	errInvalidTenantShardSize = errors.New("invalid tenant shard size, the value must be greater than or equal to zero")
+	errInvalidTenantShardSize      = errors.New("invalid tenant shard size, the value must be greater than or equal to zero")
+	errPartitionRingsCountMismatch = errors.New("the number of ingester partition rings does not match the configured number of compartments")
 
 	reasonDistributorMaxIngestionRate             = globalerror.DistributorMaxIngestionRate.LabelValue()
 	reasonDistributorMaxInflightPushRequests      = globalerror.DistributorMaxInflightPushRequests.LabelValue()
@@ -510,6 +511,16 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		cfg.IngesterClientFactory = ring_client.PoolInstFunc(func(inst ring.InstanceDesc) (ring_client.PoolClient, error) {
 			return ingester_client.MakeIngesterClient(inst, clientConfig, clientMetrics, log)
 		})
+	}
+
+	if cfg.IngestStorageConfig.Enabled {
+		expectedPartitionRings := 1
+		if cfg.IngestStorageConfig.Compartments.Enabled {
+			expectedPartitionRings = cfg.IngestStorageConfig.Compartments.NumCompartments
+		}
+		if len(partitionsRings) != expectedPartitionRings {
+			return nil, fmt.Errorf("%w: expected %d but got %d", errPartitionRingsCountMismatch, expectedPartitionRings, len(partitionsRings))
+		}
 	}
 
 	cfg.PoolConfig.RemoteTimeout = cfg.RemoteTimeout

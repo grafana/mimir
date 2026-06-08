@@ -15,13 +15,16 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/mtime"
 	"github.com/grafana/dskit/ring"
+	ring_client "github.com/grafana/dskit/ring/client"
 	"github.com/grafana/dskit/test"
 	"github.com/grafana/dskit/user"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
@@ -47,6 +50,39 @@ import (
 
 // kafkaTopic is the Kafka topic used for ingest storage tests.
 const kafkaTopic = "test"
+
+func TestNew_ValidatesPartitionRingsCountMatchesCompartments(t *testing.T) {
+	newDistributor := func(t *testing.T, configure func(*Config), partitionsRings []*ring.PartitionRingWatcher) error {
+		t.Helper()
+
+		var distributorCfg Config
+		var clientConfig client.Config
+		limits := validation.Limits{}
+		flagext.DefaultValues(&distributorCfg, &clientConfig, &limits)
+		distributorCfg.IngesterClientFactory = ring_client.PoolInstFunc(func(ring.InstanceDesc) (ring_client.PoolClient, error) {
+			return nil, nil
+		})
+		distributorCfg.IngestStorageConfig.Enabled = true
+		configure(&distributorCfg)
+
+		overrides := validation.NewOverrides(limits, nil)
+		_, err := New(distributorCfg, clientConfig, overrides, nil, nil, nil, nil, partitionsRings, false, nil, nil, prometheus.NewPedanticRegistry(), log.NewNopLogger())
+		return err
+	}
+
+	t.Run("fails when compartments enabled and partition ring count does not match", func(t *testing.T) {
+		err := newDistributor(t, func(cfg *Config) {
+			cfg.IngestStorageConfig.Compartments.Enabled = true
+			cfg.IngestStorageConfig.Compartments.NumCompartments = 3
+		}, make([]*ring.PartitionRingWatcher, 2))
+		require.ErrorIs(t, err, errPartitionRingsCountMismatch)
+	})
+
+	t.Run("fails when compartments disabled and more than one partition ring is provided", func(t *testing.T) {
+		err := newDistributor(t, func(*Config) {}, make([]*ring.PartitionRingWatcher, 2))
+		require.ErrorIs(t, err, errPartitionRingsCountMismatch)
+	})
+}
 
 func TestDistributor_Push_ShouldSupportIngestStorage(t *testing.T) {
 	ctx := user.InjectOrgID(context.Background(), "user")
