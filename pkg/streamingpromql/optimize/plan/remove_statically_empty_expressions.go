@@ -294,6 +294,8 @@ func IsAlwaysEmptyFunctionCall(node *core.FunctionCall, params *planning.QueryPa
 		functions.FUNCTION_DAY_OF_WEEK,
 		functions.FUNCTION_DAY_OF_YEAR,
 		functions.FUNCTION_HOUR,
+		functions.FUNCTION_MAX_OF,
+		functions.FUNCTION_MIN_OF,
 		functions.FUNCTION_MINUTE,
 		functions.FUNCTION_MONTH,
 		functions.FUNCTION_VECTOR,
