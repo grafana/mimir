@@ -191,6 +191,27 @@ func TestAddHistogramWithAnnotations(t *testing.T) {
 	})
 }
 
+func TestSubHistogramWithAnnotations(t *testing.T) {
+	t.Run("compatible histograms are subtracted in place and report success", func(t *testing.T) {
+		emit, msgs := recordingEmitter()
+		base := expHist(15, 150, histogram.UnknownCounterReset)
+		other := expHist(5, 50, histogram.UnknownCounterReset)
+
+		require.True(t, subHistogramWithAnnotations(base, other, emit))
+		requireHistogramCountSum(t, base, 10, 100)
+		require.Empty(t, *msgs)
+	})
+
+	t.Run("incompatible schemas report failure and warn", func(t *testing.T) {
+		emit, msgs := recordingEmitter()
+		base := expHist(15, 150, histogram.UnknownCounterReset)
+		other := customHist(5, 50, histogram.UnknownCounterReset)
+
+		require.False(t, subHistogramWithAnnotations(base, other, emit))
+		requireSingleAnnotation(t, msgs, mixedExpCustomWarning)
+	})
+}
+
 func TestValidateHistogramRange(t *testing.T) {
 	t.Run("uniform exponential schemas are valid", func(t *testing.T) {
 		emit, msgs := recordingEmitter()
