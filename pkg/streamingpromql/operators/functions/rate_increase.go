@@ -56,35 +56,17 @@ func rate(isRate bool) RangeVectorStepFunction {
 		}
 
 		rangeSeconds := float64(step.RangeEnd-step.RangeStart) / 1000
+		smoothedOrAnchored := step.Smoothed || step.Anchored
 
-		if step.Smoothed || step.Anchored {
-			if hCount >= 1 {
-				hExt, hExtPooled, err := joinHistogramPoints(hHead, hTail, memoryConsumptionTracker)
-				if err != nil {
-					return 0, false, nil, err
-				}
-				val, err := extendedHistogramRate(hExt, step.RangeStart, step.RangeEnd, rangeSeconds, true, isRate, step.Smoothed, emitAnnotation)
-				returnJoinedHistogramPoints(hExt, hExtPooled, memoryConsumptionTracker)
-				if err != nil {
-					err = NativeHistogramErrorToAnnotation(err, emitAnnotation)
-					return 0, false, nil, err
-				}
-				return 0, false, val, nil
-			}
-			if fCount >= 2 {
-				val := floatRate(isRate, fCount, fHead, fTail, step.RangeStart, step.RangeEnd, rangeSeconds, true)
-				return val, true, nil, nil
-			}
-			return 0, false, nil, nil
-		}
-
+		// After the mixed-type guard above, at most one of floats/histograms is present, so the order
+		// of the float and histogram branches does not matter.
 		if fCount >= 2 {
-			val := floatRate(isRate, fCount, fHead, fTail, step.RangeStart, step.RangeEnd, rangeSeconds, false)
+			val := floatRate(isRate, fCount, fHead, fTail, step.RangeStart, step.RangeEnd, rangeSeconds, smoothedOrAnchored)
 			return val, true, nil, nil
 		}
 
-		if hCount >= 2 {
-			val, err := histogramRate(isRate, hCount, hHead, hTail, step.RangeStart, step.RangeEnd, rangeSeconds, emitAnnotation)
+		if hCount >= minHistogramPoints(smoothedOrAnchored) {
+			val, err := histogramRate(isRate, hCount, hHead, hTail, step.RangeStart, step.RangeEnd, rangeSeconds, step.Smoothed, step.Anchored, emitAnnotation, memoryConsumptionTracker)
 			if err != nil {
 				err = NativeHistogramErrorToAnnotation(err, emitAnnotation)
 				return 0, false, nil, err
@@ -94,6 +76,17 @@ func rate(isRate bool) RangeVectorStepFunction {
 
 		return 0, false, nil, nil
 	}
+}
+
+// minHistogramPoints returns the minimum number of histogram samples the rate/increase/delta family
+// requires to produce a point. Two samples are needed normally, but only one under the
+// smoothed/anchored modifier: a single in-range sample plus its neighbours in the extended
+// look-back/look-ahead window are enough to interpolate or anchor both range boundaries.
+func minHistogramPoints(smoothedOrAnchored bool) int {
+	if smoothedOrAnchored {
+		return 1
+	}
+	return 2
 }
 
 // joinHistogramPoints concatenates the head and tail slices returned by UnsafePoints into a
@@ -128,13 +121,30 @@ func returnJoinedHistogramPoints(joined []promql.HPoint, pooled bool, memoryCons
 	types.HPointSlicePool.Put(&joined, memoryConsumptionTracker)
 }
 
-func histogramRate(isRate bool, hCount int, hHead []promql.HPoint, hTail []promql.HPoint, rangeStart int64, rangeEnd int64, rangeSeconds float64, emitAnnotation types.EmitAnnotationFunc) (*histogram.FloatHistogram, error) {
+func histogramRate(isRate bool, hCount int, hHead []promql.HPoint, hTail []promql.HPoint, rangeStart int64, rangeEnd int64, rangeSeconds float64, smoothed, anchored bool, emitAnnotation types.EmitAnnotationFunc, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (*histogram.FloatHistogram, error) {
+	if smoothed || anchored {
+		return extendedHistogramRateFromPoints(hHead, hTail, rangeStart, rangeEnd, rangeSeconds, true, isRate, smoothed, emitAnnotation, memoryConsumptionTracker)
+	}
+
 	firstPoint, lastPoint, delta, fpHistCount, err := CalculateHistogramDelta(hHead, hTail, emitAnnotation)
 	if err != nil {
 		return nil, err
 	}
 
 	val := CalculateHistogramRate(true, isRate, rangeStart, rangeEnd, rangeSeconds, firstPoint, lastPoint, delta, hCount, fpHistCount)
+	return val, err
+}
+
+// extendedHistogramRateFromPoints joins the head and tail of the extended look-back/look-ahead
+// window into a single slice and computes the smoothed/anchored histogram rate, increase or delta
+// via extendedHistogramRate. It returns the joined slice to the pool before returning.
+func extendedHistogramRateFromPoints(hHead, hTail []promql.HPoint, rangeStart, rangeEnd int64, rangeSeconds float64, isCounter, isRate, smoothed bool, emitAnnotation types.EmitAnnotationFunc, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (*histogram.FloatHistogram, error) {
+	hExt, hExtPooled, err := joinHistogramPoints(hHead, hTail, memoryConsumptionTracker)
+	if err != nil {
+		return nil, err
+	}
+	val, err := extendedHistogramRate(hExt, rangeStart, rangeEnd, rangeSeconds, isCounter, isRate, smoothed, emitAnnotation)
+	returnJoinedHistogramPoints(hExt, hExtPooled, memoryConsumptionTracker)
 	return val, err
 }
 
@@ -410,35 +420,17 @@ func delta(step *types.RangeVectorStepData, _ []types.ScalarData, _ types.QueryT
 	}
 
 	rangeSeconds := float64(step.RangeEnd-step.RangeStart) / 1000
+	smoothedOrAnchored := step.Smoothed || step.Anchored
 
-	if step.Smoothed || step.Anchored {
-		if hCount >= 1 {
-			hExt, hExtPooled, err := joinHistogramPoints(hHead, hTail, memoryConsumptionTracker)
-			if err != nil {
-				return 0, false, nil, err
-			}
-			val, err := extendedHistogramRate(hExt, step.RangeStart, step.RangeEnd, rangeSeconds, false, false, step.Smoothed, emitAnnotation)
-			returnJoinedHistogramPoints(hExt, hExtPooled, memoryConsumptionTracker)
-			if err != nil {
-				err = NativeHistogramErrorToAnnotation(err, emitAnnotation)
-				return 0, false, nil, err
-			}
-			return 0, false, val, nil
-		}
-		if fCount >= 2 {
-			val := floatDelta(fCount, fHead, fTail, step.RangeStart, step.RangeEnd, rangeSeconds, true)
-			return val, true, nil, nil
-		}
-		return 0, false, nil, nil
-	}
-
+	// After the mixed-type guard above, at most one of floats/histograms is present, so the order
+	// of the float and histogram branches does not matter.
 	if fCount >= 2 {
-		val := floatDelta(fCount, fHead, fTail, step.RangeStart, step.RangeEnd, rangeSeconds, false)
+		val := floatDelta(fCount, fHead, fTail, step.RangeStart, step.RangeEnd, rangeSeconds, smoothedOrAnchored)
 		return val, true, nil, nil
 	}
 
-	if hCount >= 2 {
-		val, err := histogramDelta(hCount, hHead, hTail, step.RangeStart, step.RangeEnd, rangeSeconds, emitAnnotation)
+	if hCount >= minHistogramPoints(smoothedOrAnchored) {
+		val, err := histogramDelta(hCount, hHead, hTail, step.RangeStart, step.RangeEnd, rangeSeconds, step.Smoothed, step.Anchored, emitAnnotation, memoryConsumptionTracker)
 		if err != nil {
 			err = NativeHistogramErrorToAnnotation(err, emitAnnotation)
 			return 0, false, nil, err
@@ -463,7 +455,11 @@ func floatDelta(fCount int, fHead []promql.FPoint, fTail []promql.FPoint, rangeS
 	return CalculateFloatRate(false, false, rangeStart, rangeEnd, rangeSeconds, firstPoint, lastPoint, delta, fCount, anchoredOrSmoothed)
 }
 
-func histogramDelta(hCount int, hHead []promql.HPoint, hTail []promql.HPoint, rangeStart int64, rangeEnd int64, rangeSeconds float64, emitAnnotation types.EmitAnnotationFunc) (*histogram.FloatHistogram, error) {
+func histogramDelta(hCount int, hHead []promql.HPoint, hTail []promql.HPoint, rangeStart int64, rangeEnd int64, rangeSeconds float64, smoothed, anchored bool, emitAnnotation types.EmitAnnotationFunc, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (*histogram.FloatHistogram, error) {
+	if smoothed || anchored {
+		return extendedHistogramRateFromPoints(hHead, hTail, rangeStart, rangeEnd, rangeSeconds, false, false, smoothed, emitAnnotation, memoryConsumptionTracker)
+	}
+
 	firstPoint := hHead[0]
 
 	var lastPoint promql.HPoint
