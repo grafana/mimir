@@ -253,11 +253,13 @@
       'querier.shuffle-sharding-ingesters-enabled': 'false',
     }
   ) + (
-    if !$._config.shuffle_sharding.store_gateway_enabled then {} else {
+    // Store-gateway shuffle sharding only matters to the ruler when it queries store-gateways, i.e.
+    // when it evaluates rules locally.
+    if !$._config.shuffle_sharding.store_gateway_enabled || !$._config.ruler_evaluates_queries_locally then {} else {
       'store-gateway.tenant-shard-size': $._config.shuffle_sharding.store_gateway_shard_size,
     }
   ) + (
-    if !$._config.shuffle_sharding.store_gateway_enabled || !$._config.shuffle_sharding.store_gateway_shard_size_per_zone_defaults_enabled then {} else {
+    if !$._config.shuffle_sharding.store_gateway_enabled || !$._config.shuffle_sharding.store_gateway_shard_size_per_zone_defaults_enabled || !$._config.ruler_evaluates_queries_locally then {} else {
       'store-gateway.tenant-shard-size-per-zone': $._config.shuffle_sharding.store_gateway_shard_size_per_zone,
     }
   ),

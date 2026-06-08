@@ -6,16 +6,22 @@
     $._config.usageStatsConfig +
     $._config.grpcConfig +
     $._config.storageConfig +
-    $._config.blocksStorageConfig +
     $._config.rulerStorageConfig +
     $._config.queryConfig +
     $._config.queryEngineConfig +
     $._config.ingesterRingClientConfig +
     $._config.rulerLimitsConfig +
-    $._config.queryBlocksStorageConfig +
-    $.blocks_metadata_caching_config +
     $.ruler_storage_caching_config +
-    $.bucket_index_config
+    (
+      // The ruler reads blocks storage (the store-gateway ring + blocks object store) only when it
+      // evaluates rules locally. With remote rule evaluation it delegates queries to the
+      // ruler-query-frontend, so it doesn't need the blocks read-path config at all.
+      if !$._config.ruler_evaluates_queries_locally then {} else
+        $._config.blocksStorageConfig +
+        $._config.queryBlocksStorageConfig +
+        $.blocks_metadata_caching_config +
+        $.bucket_index_config
+    ) +
     {
       target: 'ruler',
 

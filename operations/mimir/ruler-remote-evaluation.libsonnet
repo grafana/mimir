@@ -4,6 +4,13 @@
     ruler_remote_evaluation_enabled: false,
     ruler_remote_evaluation_migration_enabled: false,
 
+    // True when the ruler evaluates rules locally and therefore reads blocks storage directly (the
+    // store-gateway ring + blocks object store). False when remote rule evaluation is enabled (and
+    // not mid-migration), where the ruler delegates queries to the ruler-query-frontend and needs
+    // none of the blocks read-path config. Components compose their blocks read-path flags onto the
+    // ruler only when this is true.
+    ruler_evaluates_queries_locally: !($._config.ruler_remote_evaluation_enabled && !$._config.ruler_remote_evaluation_migration_enabled),
+
     // The maximum size (in bytes) supported for a rule evaluation query response executed through
     // the ruler's dedicated read-path.
     ruler_remote_evaluation_max_query_response_size_bytes: 100 * 1024 * 1024,
@@ -12,7 +19,7 @@
   },
 
   local rulerQuerySchedulerName = 'ruler-query-scheduler',
-  local useRulerQueryFrontend = $._config.ruler_remote_evaluation_enabled && !$._config.ruler_remote_evaluation_migration_enabled,
+  local useRulerQueryFrontend = !$._config.ruler_evaluates_queries_locally,
 
   ruler_args+:: if !useRulerQueryFrontend then {} else {
     // Note: We use a headless service because the ruler uses gRPC load balancing.

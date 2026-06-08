@@ -36,9 +36,12 @@
     'ruler.query-frontend.address': 'dns:///ruler-query-frontend-zone-%(zone)s-headless.%(namespace)s.svc.%(cluster_domain)s:9095' % ($._config { zone: zone }),
   },
 
-  ruler_zone_a_args:: $.ruler_args + $.ruler_storage_zone_a_caching_config + $.blocks_metadata_zone_a_caching_config + rulerQueryFrontendClientZoneArgs('a'),
-  ruler_zone_b_args:: $.ruler_args + $.ruler_storage_zone_b_caching_config + $.blocks_metadata_zone_b_caching_config + rulerQueryFrontendClientZoneArgs('b'),
-  ruler_zone_c_args:: $.ruler_args + $.ruler_storage_zone_c_caching_config + $.blocks_metadata_zone_c_caching_config + rulerQueryFrontendClientZoneArgs('c'),
+  // Multi-zone rulers always evaluate rules remotely (they set -ruler.query-frontend.address below
+  // and multi-zone requires remote evaluation per the assert above), so they never query blocks
+  // directly and don't need the blocks metadata cache. The ruler-storage cache (for rules) is kept.
+  ruler_zone_a_args:: $.ruler_args + $.ruler_storage_zone_a_caching_config + rulerQueryFrontendClientZoneArgs('a'),
+  ruler_zone_b_args:: $.ruler_args + $.ruler_storage_zone_b_caching_config + rulerQueryFrontendClientZoneArgs('b'),
+  ruler_zone_c_args:: $.ruler_args + $.ruler_storage_zone_c_caching_config + rulerQueryFrontendClientZoneArgs('c'),
 
   ruler_zone_a_env_map:: {},
   ruler_zone_b_env_map:: {},

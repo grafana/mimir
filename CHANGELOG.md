@@ -72,8 +72,8 @@
 * [CHANGE] Query-frontend: Increase default query-frontend cache size limit to 25MB. #14857
 * [CHANGE] Query-frontend: Increase memory requested and limit to 2GiB and 4GiB respectively. #15688
 * [CHANGE] Continuous-test: Don't explicitly set `tests.write-read-series-test.num-series` and `tests.write-read-series-test.max-query-age` to their default values. #15705
+* [CHANGE] Ruler: When remote rule evaluation is enabled, stop passing the now-unused store-gateway and blocks-storage client flags (`-store-gateway.sharding-ring.*`, `-store-gateway.tenant-shard-size*`, `-blocks-storage.bucket-store.*`, `-blocks-storage.<backend>.bucket-name`) to the ruler. Only deploy this once all ruler pods run a Mimir build that does not read blocks storage for a remote-evaluation ruler; dropping these flags against an older binary makes the ruler fall back to defaults and fail to start. #15717
 * [ENHANCEMENT] Updated rollout-operator jsonnet library to v0.38.0. #15328, #15626
-
 
 ### Documentation
 
