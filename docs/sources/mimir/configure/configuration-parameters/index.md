@@ -914,7 +914,7 @@ retry_after_header:
   # CLI flag: -distributor.retry-after-header.min-backoff
   [min_backoff: <duration> | default = 6s]
 
-  # (advanced) Minimum duration of the Retry-After HTTP header in responses to
+  # (advanced) Maximum duration of the Retry-After HTTP header in responses to
   # 429/5xx errors. Must be greater than or equal to 1s. Backoff is calculated
   # as MinBackoff*2^(RetryAttempt-1) seconds with random jitter of 50% in either
   # direction. RetryAttempt is the value of the Retry-Attempt HTTP header.
@@ -2330,6 +2330,12 @@ The `query_scheduler` block configures the query-scheduler.
 # blast radius when shuffle-sharding is enabled.
 # CLI flag: -query-scheduler.querier-forget-delay
 [querier_forget_delay: <duration> | default = 0s]
+
+# (experimental) Enable the cortex_query_scheduler_inflight_max_age_seconds
+# metric, which reports the age of the oldest inflight request. Disabling it
+# skips the per-tick scan over inflight requests.
+# CLI flag: -query-scheduler.inflight-max-age-metric-enabled
+[inflight_max_age_metric_enabled: <boolean> | default = true]
 
 # This configures the gRPC client used to report errors back to the
 # query-frontend.
@@ -3888,6 +3894,18 @@ The `memberlist` block configures the Gossip memberlist.
 # processing a large number of messages from other nodes.
 # CLI flag: -memberlist.received-messages-queue-size
 [received_messages_queue_size: <int> | default = 1024]
+
+# (advanced) Size of the per-key internal queue for processing messages received
+# from other nodes. Increasing this value may help to avoid dropping per-key
+# updates when the node is processing many updates for the same key.
+# CLI flag: -memberlist.processed-messages-queue-size
+[processed_messages_queue_size: <int> | default = 1024]
+
+# (advanced) Compression algorithm used for outgoing messages when
+# -memberlist.compression-enabled is true. Supported values: lzw, snappy.
+# Ignored when -memberlist.compression-enabled is false.
+# CLI flag: -memberlist.compression-algorithm
+[compression_algorithm: <string> | default = "lzw"]
 
 # Gossip address to advertise to other members in the cluster. Used for NAT
 # traversal.
@@ -5689,6 +5707,13 @@ bucket_store:
     # CLI flag: -blocks-storage.bucket-store.index-header-cache.attributes-ttl
     [attributes_ttl: <duration> | default = 168h]
 
+    # (experimental) Maximum number of individual attributes items to keep in a
+    # first level in-memory LRU cache. Attributes will be stored and fetched
+    # in-memory before hitting the cache backend. 0 to disable the in-memory
+    # cache.
+    # CLI flag: -blocks-storage.bucket-store.index-header-cache.attributes-in-memory-max-items
+    [attributes_in_memory_max_items: <int> | default = 10000]
+
     # (experimental) TTL for caching individual index-header subranges.
     # CLI flag: -blocks-storage.bucket-store.index-header-cache.subrange-ttl
     [subrange_ttl: <duration> | default = 24h]
@@ -6614,6 +6639,16 @@ The `memcached` block configures the Memcached-based caching backend. The suppor
 # address, hostname, or an entry specified in the DNS Service Discovery format.
 # CLI flag: -<prefix>.memcached.addresses
 [addresses: <string> | default = ""]
+
+# (advanced) How often each address is resolved to an IP address or list of host
+# names.
+# CLI flag: -<prefix>.memcached.addresses-lookup-period
+[addresses_lookup_period: <duration> | default = 30s]
+
+# (advanced) How many idle connections to the DNS resolver are kept open. 0
+# disables keeping any idle connections open.
+# CLI flag: -<prefix>.memcached.addresses-lookup-pool-size
+[addresses_lookup_pool_size: <int> | default = 0]
 
 # The socket read/write timeout.
 # CLI flag: -<prefix>.memcached.timeout

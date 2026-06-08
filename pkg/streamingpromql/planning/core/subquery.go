@@ -18,9 +18,10 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
+//node:generate
 type Subquery struct {
 	*SubqueryDetails
-	Inner planning.Node `json:"-"`
+	Inner planning.Node `json:"-" node:"child"`
 }
 
 func (s *Subquery) Describe() string {
@@ -102,18 +103,6 @@ func (s *Subquery) Details() proto.Message {
 
 func (s *Subquery) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_SUBQUERY
-}
-
-func (s *Subquery) Child(idx int) planning.Node {
-	if idx != 0 {
-		panic(fmt.Sprintf("node of type Subquery supports 1 child, but attempted to get child at index %d", idx))
-	}
-
-	return s.Inner
-}
-
-func (s *Subquery) ChildCount() int {
-	return 1
 }
 
 func (s *Subquery) SetChildren(children []planning.Node) error {

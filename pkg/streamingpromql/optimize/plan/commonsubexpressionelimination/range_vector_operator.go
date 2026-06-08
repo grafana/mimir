@@ -11,6 +11,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/util/annotations"
 
@@ -61,7 +62,7 @@ func NewRangeVectorDuplicationBuffer(inner types.RangeVectorOperator, memoryCons
 		lastReturnedStepSamplesIndex: -1,
 		lastNextSeriesCallIndex:      -1,
 		lastNextStepSamplesCallIndex: -1,
-		buffer:                       newRangeVectorSeriesDataRingBuffer(timeRange.StepCount),
+		buffer:                       newRangeVectorSeriesDataRingBuffer(timeRange.StepCount, memoryConsumptionTracker),
 	}
 }
 
@@ -167,17 +168,39 @@ func (b *RangeVectorDuplicationBuffer) bufferUpToAndIncluding(ctx context.Contex
 			return bufferedRangeVectorStepData{}, err
 		}
 
-		b.lastNextStepSamplesCallIndex++
-		clonedData, err := cloneStepData(stepData)
+		combinedStepData, err := b.combineStepData(stepData, b.lastNextSeriesCallIndex)
 		if err != nil {
 			return bufferedRangeVectorStepData{}, err
 		}
 
-		b.buffer.Append(clonedData, b.lastNextSeriesCallIndex, b.lastNextStepSamplesCallIndex)
-		lastStepData = clonedData
+		b.lastNextStepSamplesCallIndex++
+		b.buffer.Append(combinedStepData, b.lastNextSeriesCallIndex, b.lastNextStepSamplesCallIndex)
+		lastStepData = combinedStepData
 	}
 
 	return lastStepData, nil
+}
+
+// combineStepData copies stepData into buffers owned by this struct (either shared per series or unique
+// to each step).
+func (b *RangeVectorDuplicationBuffer) combineStepData(stepData *types.RangeVectorStepData, seriesIndex int) (bufferedRangeVectorStepData, error) {
+	// anchored/smoothed modifiers cause extra data to be included in the view for a particular
+	// step beyond the range start/end and may include synthetic points. For simplicity in this
+	// case, we don't bother trying to use a shared buffer for all steps and instead fall back
+	// to duplicating the data for each step.
+	if stepData.Anchored || stepData.Smoothed {
+		cloned, err := cloneStepData(stepData)
+		if err != nil {
+			return bufferedRangeVectorStepData{}, err
+		}
+
+		return cloned, nil
+	}
+
+	// When not using anchored/smoothed modifiers, we can use a single buffer for all points in a
+	// particular series. This minimizes duplicated points when the range selector for each step
+	// overlaps with the range selector of the previous step.
+	return b.mergeStepData(stepData, seriesIndex)
 }
 
 func (b *RangeVectorDuplicationBuffer) anyConsumerWillReadSeries(unfilteredSeriesIndex int, ignore *RangeVectorDuplicationConsumer) bool {
@@ -383,11 +406,7 @@ func (b *RangeVectorDuplicationBuffer) releaseBufferedData(consumer *RangeVector
 
 func (b *RangeVectorDuplicationBuffer) releaseAllBufferedData() {
 	types.SeriesMetadataSlicePool.Put(&b.seriesMetadata, b.MemoryConsumptionTracker)
-
-	for b.buffer.Size() > 0 {
-		d := b.buffer.RemoveFirst()
-		d.Close()
-	}
+	b.buffer.Clear()
 }
 
 func (b *RangeVectorDuplicationBuffer) earliestSeriesIndexStillToReturn() int {
@@ -543,14 +562,9 @@ func (b *RangeVectorDuplicationBuffer) allConsumersFinalized() bool {
 	return true
 }
 
-type bufferedRangeVectorStepData struct {
-	stepData        *types.RangeVectorStepData
-	floatBuffer     *types.FPointRingBuffer
-	histogramBuffer *types.HPointRingBuffer
-}
-
+// cloneStepData creates a copy of stepData including dedicated underlying buffers.
 func cloneStepData(stepData *types.RangeVectorStepData) (bufferedRangeVectorStepData, error) {
-	buffered := bufferedRangeVectorStepData{
+	cloned := bufferedRangeVectorStepData{
 		stepData: &types.RangeVectorStepData{
 			StepT:      stepData.StepT,
 			RangeStart: stepData.RangeStart,
@@ -561,27 +575,113 @@ func cloneStepData(stepData *types.RangeVectorStepData) (bufferedRangeVectorStep
 	}
 
 	var err error
-
-	buffered.stepData.Floats, buffered.floatBuffer, err = stepData.Floats.Clone()
+	cloned.stepData.Floats, cloned.floatData, err = stepData.Floats.Clone()
 	if err != nil {
 		return bufferedRangeVectorStepData{}, err
 	}
 
-	buffered.stepData.Histograms, buffered.histogramBuffer, err = stepData.Histograms.Clone()
+	cloned.stepData.Histograms, cloned.histogramData, err = stepData.Histograms.Clone()
 	if err != nil {
 		return bufferedRangeVectorStepData{}, err
 	}
 
-	return buffered, nil
+	return cloned, nil
 }
 
-func (d bufferedRangeVectorStepData) Close() {
-	if d.floatBuffer != nil {
-		d.floatBuffer.Close()
+// mergeStepData adds all unique points from stepData to the shared floats and histograms buffers.
+// The dedicated buffers in bufferedRangeVectorStepData will be nil since the shared buffers are used.
+func (b *RangeVectorDuplicationBuffer) mergeStepData(stepData *types.RangeVectorStepData, seriesIndex int) (bufferedRangeVectorStepData, error) {
+	if stepData.Anchored || stepData.Smoothed {
+		return bufferedRangeVectorStepData{}, fmt.Errorf("cannot use shared FPoint and HPoint buffers with anchored/smoothed modifiers (this is a bug)")
 	}
 
-	if d.histogramBuffer != nil {
-		d.histogramBuffer.Close()
+	var (
+		lastF      promql.FPoint
+		lastH      promql.HPoint
+		floats     *types.FPointRingBuffer
+		histograms *types.HPointRingBuffer
+	)
+
+	if stepData.Floats.Any() {
+		floats = b.buffer.GetOrCreateFloatBuffer(seriesIndex)
+		if floats.Count() > 0 {
+			lastF = floats.Last()
+		}
+	}
+
+	if stepData.Histograms.Any() {
+		histograms = b.buffer.GetOrCreateHistogramBuffer(seriesIndex)
+		if histograms.Count() > 0 {
+			lastH = histograms.Last()
+		}
+	}
+
+	headF, tailF := stepData.Floats.UnsafePoints()
+	for _, section := range [][]promql.FPoint{headF, tailF} {
+		for _, p := range section {
+			if floats != nil && (floats.Count() == 0 || p.T > lastF.T) {
+				_, err := floats.Append(promql.FPoint{T: p.T, F: p.F})
+				if err != nil {
+					return bufferedRangeVectorStepData{}, err
+				}
+			}
+		}
+	}
+
+	headH, tailH := stepData.Histograms.UnsafePoints()
+	for _, section := range [][]promql.HPoint{headH, tailH} {
+		for _, p := range section {
+			if histograms != nil && (histograms.Count() == 0 || p.T > lastH.T) {
+				_, err := histograms.Append(promql.HPoint{T: p.T, H: p.H.Copy()})
+				if err != nil {
+					return bufferedRangeVectorStepData{}, err
+				}
+			}
+		}
+	}
+
+	var merged types.RangeVectorStepData
+	merged.Smoothed = stepData.Smoothed
+	merged.Anchored = stepData.Anchored
+	merged.RangeStart = stepData.RangeStart
+	merged.RangeEnd = stepData.RangeEnd
+	merged.StepT = stepData.StepT
+
+	if floats != nil {
+		merged.Floats = floats.ViewBetweenSearchingBackwards(stepData.RangeStart, stepData.RangeEnd, nil)
+	} else {
+		merged.Floats = &types.FPointRingBufferView{}
+	}
+
+	if histograms != nil {
+		merged.Histograms = histograms.ViewBetweenSearchingBackwards(stepData.RangeStart, stepData.RangeEnd, nil)
+	} else {
+		merged.Histograms = &types.HPointRingBufferView{}
+	}
+
+	return bufferedRangeVectorStepData{stepData: &merged}, nil
+}
+
+type bufferedRangeVectorStepData struct {
+	// stepData float and histogram views for this step along with its associated time range.
+	stepData *types.RangeVectorStepData
+
+	// floatData is an optional buffer for float data specific to only this step. Only used
+	// with anchored/smoothed modifiers, otherwise a shared per-series buffer is used.
+	floatData *types.FPointRingBuffer
+
+	// histogramData is an optional buffer for histogram data specific to only this step. Only
+	// used with anchored/smoothed modifiers, otherwise a shared per-series buffer is used.
+	histogramData *types.HPointRingBuffer
+}
+
+func (r bufferedRangeVectorStepData) Close() {
+	if r.floatData != nil {
+		r.floatData.Close()
+	}
+
+	if r.histogramData != nil {
+		r.histogramData.Close()
 	}
 }
 
@@ -668,14 +768,21 @@ func (d *RangeVectorDuplicationConsumer) Close() {
 }
 
 type rangeVectorSeriesDataRingBuffer struct {
-	buffer    *SeriesDataRingBuffer[bufferedRangeVectorStepData]
-	stepCount int
+	seriesStepData      *SeriesDataRingBuffer[bufferedRangeVectorStepData]
+	seriesFloatData     *SeriesDataRingBuffer[*types.FPointRingBuffer]
+	seriesHistogramData *SeriesDataRingBuffer[*types.HPointRingBuffer]
+	stepCount           int
+
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
 }
 
-func newRangeVectorSeriesDataRingBuffer(stepCount int) *rangeVectorSeriesDataRingBuffer {
+func newRangeVectorSeriesDataRingBuffer(stepCount int, memory *limiter.MemoryConsumptionTracker) *rangeVectorSeriesDataRingBuffer {
 	return &rangeVectorSeriesDataRingBuffer{
-		buffer:    &SeriesDataRingBuffer[bufferedRangeVectorStepData]{},
-		stepCount: stepCount,
+		seriesStepData:           &SeriesDataRingBuffer[bufferedRangeVectorStepData]{},
+		seriesFloatData:          &SeriesDataRingBuffer[*types.FPointRingBuffer]{},
+		seriesHistogramData:      &SeriesDataRingBuffer[*types.HPointRingBuffer]{},
+		stepCount:                stepCount,
+		memoryConsumptionTracker: memory,
 	}
 }
 
@@ -684,29 +791,74 @@ func (b *rangeVectorSeriesDataRingBuffer) elementIndexFor(seriesIndex int, stepI
 }
 
 func (b *rangeVectorSeriesDataRingBuffer) Append(data bufferedRangeVectorStepData, seriesIndex int, stepIndex int) {
-	b.buffer.Append(data, b.elementIndexFor(seriesIndex, stepIndex))
+	b.seriesStepData.Append(data, b.elementIndexFor(seriesIndex, stepIndex))
+}
+
+func (b *rangeVectorSeriesDataRingBuffer) GetOrCreateFloatBuffer(seriesIndex int) *types.FPointRingBuffer {
+	fpoints, present := b.seriesFloatData.GetIfPresent(seriesIndex)
+	if !present {
+		fpoints = types.NewFPointRingBuffer(b.memoryConsumptionTracker)
+		b.seriesFloatData.Append(fpoints, seriesIndex)
+	}
+
+	return fpoints
+}
+
+func (b *rangeVectorSeriesDataRingBuffer) GetOrCreateHistogramBuffer(seriesIndex int) *types.HPointRingBuffer {
+	hpoints, present := b.seriesHistogramData.GetIfPresent(seriesIndex)
+	if !present {
+		hpoints = types.NewHPointRingBuffer(b.memoryConsumptionTracker)
+		b.seriesHistogramData.Append(hpoints, seriesIndex)
+	}
+
+	return hpoints
 }
 
 func (b *rangeVectorSeriesDataRingBuffer) GetIfPresent(seriesIndex int, stepIndex int) (bufferedRangeVectorStepData, bool) {
-	return b.buffer.GetIfPresent(b.elementIndexFor(seriesIndex, stepIndex))
+	return b.seriesStepData.GetIfPresent(b.elementIndexFor(seriesIndex, stepIndex))
 }
 
 func (b *rangeVectorSeriesDataRingBuffer) RemoveAllStepsForSeriesIfPresent(seriesIndex int) {
 	for stepIdx := range b.stepCount {
-		if d, ok := b.RemoveIfPresent(seriesIndex, stepIdx); ok {
+		if d, present := b.RemoveIfPresent(seriesIndex, stepIdx); present {
 			d.Close()
 		}
+	}
+
+	if d, present := b.seriesFloatData.RemoveIfPresent(seriesIndex); present {
+		d.Close()
+	}
+
+	if d, present := b.seriesHistogramData.RemoveIfPresent(seriesIndex); present {
+		d.Close()
 	}
 }
 
 func (b *rangeVectorSeriesDataRingBuffer) RemoveIfPresent(seriesIndex int, stepIndex int) (bufferedRangeVectorStepData, bool) {
-	return b.buffer.RemoveIfPresent(b.elementIndexFor(seriesIndex, stepIndex))
+	return b.seriesStepData.RemoveIfPresent(b.elementIndexFor(seriesIndex, stepIndex))
 }
 
 func (b *rangeVectorSeriesDataRingBuffer) RemoveFirst() bufferedRangeVectorStepData {
-	return b.buffer.RemoveFirst()
+	return b.seriesStepData.RemoveFirst()
 }
 
 func (b *rangeVectorSeriesDataRingBuffer) Size() int {
-	return b.buffer.Size()
+	return b.seriesStepData.Size()
+}
+
+func (b *rangeVectorSeriesDataRingBuffer) Clear() {
+	for b.seriesStepData.Size() > 0 {
+		d := b.seriesStepData.RemoveFirst()
+		d.Close()
+	}
+
+	for b.seriesFloatData.Size() > 0 {
+		d := b.seriesFloatData.RemoveFirst()
+		d.Close()
+	}
+
+	for b.seriesHistogramData.Size() > 0 {
+		d := b.seriesHistogramData.RemoveFirst()
+		d.Close()
+	}
 }

@@ -1503,3 +1503,107 @@ func TestMergeQueryable_SearchLabelValues_RetainExistingPrefix_RewritesToIDLabel
 			"leaf %q must have been asked for %q (rewritten), not %q", id, defaultTenantLabel, originalDefaultTenantLabel)
 	}
 }
+
+// buildBenchmarkFederationResults generates per-tenant SearchResult slices
+// according to dedup ("disjoint", "half", "total"):
+//
+//   - "disjoint": tenant k holds values [k*N, (k+1)*N); zero overlap.
+//   - "half":     adjacent tenants share half their values, rotating around.
+//   - "total":    every tenant holds the same N values 0..N-1.
+//
+// Values are zero-padded so alpha order equals numeric order, matching the
+// distributor benchmark fixture.
+func buildBenchmarkFederationResults(numTenants, valuesPerTenant int, dedup string) (ids []string, results map[string][]storage.SearchResult) {
+	ids = make([]string, 0, numTenants)
+	results = make(map[string][]storage.SearchResult, numTenants)
+	for k := 0; k < numTenants; k++ {
+		id := fmt.Sprintf("t%03d", k)
+		ids = append(ids, id)
+		out := make([]storage.SearchResult, valuesPerTenant)
+		switch dedup {
+		case "disjoint":
+			base := k * valuesPerTenant
+			for i := 0; i < valuesPerTenant; i++ {
+				out[i] = storage.SearchResult{Value: fmt.Sprintf("v%09d", base+i), Score: 1.0}
+			}
+		case "half":
+			half := valuesPerTenant / 2
+			base := k * half
+			for i := 0; i < valuesPerTenant; i++ {
+				out[i] = storage.SearchResult{Value: fmt.Sprintf("v%09d", base+i), Score: 1.0}
+			}
+		case "total":
+			for i := 0; i < valuesPerTenant; i++ {
+				out[i] = storage.SearchResult{Value: fmt.Sprintf("v%09d", i), Score: 1.0}
+			}
+		default:
+			panic("buildBenchmarkFederationResults: unknown dedup " + dedup)
+		}
+		results[id] = out
+	}
+	return ids, results
+}
+
+// BenchmarkMergeQueryable_SearchLabelValues exercises the tenant federation
+// fan-out for the streaming search label-values path. Sub-cases vary tenant
+// count, per-tenant result-set size, and cross-tenant overlap. The
+// bypassWithSingleID=true sub-case at tenants=1 pins the single-tenant
+// fast path so its cost is visible separately from the multi-tenant merge.
+func BenchmarkMergeQueryable_SearchLabelValues(b *testing.B) {
+	type benchCase struct {
+		tenants         int
+		valuesPerTenant int
+		dedup           string
+		bypassSingle    bool
+	}
+	cases := []benchCase{
+		{1, 1000, "total", true},  // single-tenant bypass fast path
+		{1, 1000, "total", false}, // single-tenant via fan-out merge
+		{5, 100, "disjoint", false},
+		{5, 100, "half", false},
+		{5, 100, "total", false},
+		{5, 1000, "disjoint", false},
+		{5, 1000, "half", false},
+		{25, 100, "disjoint", false},
+		{25, 100, "half", false},
+		{100, 100, "disjoint", false},
+		{100, 100, "half", false},
+	}
+
+	for _, c := range cases {
+		c := c
+		_, results := buildBenchmarkFederationResults(c.tenants, c.valuesPerTenant, c.dedup)
+		src := &searchableTenantQueryable{resultsByTenant: results}
+		q := NewQueryable(src, c.bypassSingle, defaultConcurrency, prometheus.NewRegistry(), log.NewNopLogger())
+		querier, err := q.Querier(0, 1000)
+		require.NoError(b, err)
+		b.Cleanup(func() { _ = querier.Close() })
+
+		s, ok := querier.(searcher)
+		require.True(b, ok)
+
+		tenantIDs := make([]string, 0, c.tenants)
+		for k := 0; k < c.tenants; k++ {
+			tenantIDs = append(tenantIDs, fmt.Sprintf("t%03d", k))
+		}
+		ctx := user.InjectOrgID(context.Background(), strings.Join(tenantIDs, "|"))
+		hints := &storage.SearchHints{OrderBy: storage.OrderByValueAsc, Limit: c.tenants * c.valuesPerTenant}
+
+		name := fmt.Sprintf("tenants=%d/values=%d/dedup=%s/bypass=%t",
+			c.tenants, c.valuesPerTenant, c.dedup, c.bypassSingle)
+		b.Run(name, func(b *testing.B) {
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				rs := s.SearchLabelValues(ctx, "instance", nil, hints)
+				for rs.Next() {
+					_ = rs.At()
+				}
+				if err := rs.Err(); err != nil {
+					b.Fatal(err)
+				}
+				rs.Close()
+			}
+		})
+	}
+}

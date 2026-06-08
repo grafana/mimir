@@ -916,6 +916,7 @@ func TestFlagDefaults(t *testing.T) {
 
 	minTimeChecked := false
 	pingWithoutStreamChecked := false
+	compressionAlgoChecked := false
 	for {
 		line, err := buf.ReadString(delim)
 		if errors.Is(err, io.EOF) {
@@ -937,10 +938,18 @@ func TestFlagDefaults(t *testing.T) {
 			assert.Contains(t, nextLine, "(default true)")
 			pingWithoutStreamChecked = true
 		}
+
+		if strings.Contains(line, "-memberlist.compression-algorithm") {
+			nextLine, err := buf.ReadString(delim)
+			require.NoError(t, err)
+			assert.Contains(t, nextLine, `(default "lzw")`)
+			compressionAlgoChecked = true
+		}
 	}
 
 	require.True(t, minTimeChecked)
 	require.True(t, pingWithoutStreamChecked)
+	require.True(t, compressionAlgoChecked)
 
 	require.Equal(t, true, c.Server.GRPCServerPingWithoutStreamAllowed)
 	require.Equal(t, 10*time.Second, c.Server.GRPCServerMinTimeBetweenPings)

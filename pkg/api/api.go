@@ -19,6 +19,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/gorilla/mux"
 	"github.com/grafana/dskit/kv/memberlist"
+	dskitlog "github.com/grafana/dskit/log"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/server"
 	"github.com/prometheus/client_golang/prometheus"
@@ -161,7 +162,7 @@ func (a *API) deprecatedHandler(next http.Handler) http.Handler {
 	l := util_log.NewRateLimitedLogger(time.Minute, a.logger, time.Now)
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		level.Warn(l).Log("msg", "api: received a request on a deprecated endpoint", "path", r.URL.Path, "method", r.Method)
+		level.Warn(l).Log("msg", "api: received a request on a deprecated endpoint", "path", dskitlog.DropUnsafeChars(r.URL.Path), "method", dskitlog.DropUnsafeChars(r.Method))
 		next.ServeHTTP(w, r)
 	})
 }
@@ -456,13 +457,13 @@ func (a *API) DisableServerHTTPTimeouts(next http.Handler) http.Handler {
 		c := http.NewResponseController(w)
 		zero := time.Time{}
 
-		level.Debug(a.logger).Log("msg", "disabling HTTP server timeouts for URL", "url", r.URL)
+		level.Debug(a.logger).Log("msg", "disabling HTTP server timeouts for URL", "url", dskitlog.DropUnsafeChars(r.URL))
 
 		if err := c.SetReadDeadline(zero); err != nil {
-			level.Warn(a.logger).Log("msg", "failed to clear read deadline on HTTP connection", "url", r.URL, "err", err)
+			level.Warn(a.logger).Log("msg", "failed to clear read deadline on HTTP connection", "url", dskitlog.DropUnsafeChars(r.URL), "err", err)
 		}
 		if err := c.SetWriteDeadline(zero); err != nil {
-			level.Warn(a.logger).Log("msg", "failed to clear write deadline on HTTP connection", "url", r.URL, "err", err)
+			level.Warn(a.logger).Log("msg", "failed to clear write deadline on HTTP connection", "url", dskitlog.DropUnsafeChars(r.URL), "err", err)
 		}
 
 		next.ServeHTTP(w, r)

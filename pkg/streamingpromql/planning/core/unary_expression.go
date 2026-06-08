@@ -17,9 +17,10 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
+//node:generate
 type UnaryExpression struct {
 	*UnaryExpressionDetails
-	Inner planning.Node
+	Inner planning.Node `node:"child"`
 }
 
 func (u *UnaryExpression) Describe() string {
@@ -36,18 +37,6 @@ func (u *UnaryExpression) Details() proto.Message {
 
 func (u *UnaryExpression) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_UNARY_EXPRESSION
-}
-
-func (u *UnaryExpression) Child(idx int) planning.Node {
-	if idx != 0 {
-		panic(fmt.Sprintf("node of type UnaryExpression supports 1 child, but attempted to get child at index %d", idx))
-	}
-
-	return u.Inner
-}
-
-func (u *UnaryExpression) ChildCount() int {
-	return 1
 }
 
 func (u *UnaryExpression) SetChildren(children []planning.Node) error {

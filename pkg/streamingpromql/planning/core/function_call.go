@@ -19,9 +19,10 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
+//node:generate
 type FunctionCall struct {
 	*FunctionCallDetails
-	Args []planning.Node `json:"-"`
+	Args []planning.Node `json:"-" node:"children"`
 }
 
 func (f *FunctionCall) Describe() string {
@@ -44,18 +45,6 @@ func (f *FunctionCall) Details() proto.Message {
 
 func (f *FunctionCall) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_FUNCTION_CALL
-}
-
-func (f *FunctionCall) Child(idx int) planning.Node {
-	if idx >= len(f.Args) {
-		panic(fmt.Sprintf("this FunctionCall node has %d children, but attempted to get child at index %d", len(f.Args), idx))
-	}
-
-	return f.Args[idx]
-}
-
-func (f *FunctionCall) ChildCount() int {
-	return len(f.Args)
 }
 
 func (f *FunctionCall) SetChildren(children []planning.Node) error {
