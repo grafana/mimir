@@ -72,6 +72,7 @@ type Writer struct {
 	writeBytesTotal     prometheus.Counter
 	inputBytesTotal     prometheus.Counter
 	recordsPerRequest   prometheus.Histogram
+	serializeDuration   prometheus.Histogram
 }
 
 func NewWriter(kafkaCfg KafkaConfig, logger log.Logger, reg prometheus.Registerer) *Writer {
@@ -105,6 +106,14 @@ func NewWriter(kafkaCfg KafkaConfig, logger log.Logger, reg prometheus.Registere
 			Name:    "cortex_ingest_storage_writer_records_per_write_request",
 			Help:    "The number of records a single per-partition write request has been split into.",
 			Buckets: prometheus.ExponentialBuckets(1, 2, 8),
+		}),
+		serializeDuration: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
+			Name:                            "cortex_ingest_storage_writer_serialize_duration_seconds",
+			Help:                            "Time spent serializing an incoming request to Kafka records.",
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
+			NativeHistogramMaxBucketNumber:  100,
+			Buckets:                         prometheus.DefBuckets,
 		}),
 	}
 
@@ -192,19 +201,11 @@ func (w *Writer) MultiWriteSync(ctx context.Context, topic string, userID string
 		allRecords = append(allRecords, records...)
 		requestSizeBytes += reqSizeBytes
 	}
+	w.serializeDuration.Observe(time.Since(startTime).Seconds())
 
 	// Nothing to do if all requests were empty.
 	if len(allRecords) == 0 {
 		return nil
-	}
-
-	// If the caller provided an explicit record timestamp (e.g. the distributor's validation
-	// reference time), set it on every record so that consumers see the same timestamp that
-	// was used for grace-period checks.
-	if ts, ok := RecordTimestampFromContext(ctx); ok {
-		for _, r := range allRecords {
-			r.Timestamp = ts
-		}
 	}
 
 	// Write to backend. The topic and partition fields are already set on each record by ToRecords,

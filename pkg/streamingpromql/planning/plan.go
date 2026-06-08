@@ -15,7 +15,6 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/util/annotations"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -74,7 +73,14 @@ const QueryPlanV11 = QueryPlanVersion(11)
 // QueryPlanV12 introduces a dedicated type for the second argument for the info() function.
 const QueryPlanV12 = QueryPlanVersion(12)
 
-var MaximumSupportedQueryPlanVersion = QueryPlanV12
+// QueryPlanV13 derives the SplitFunctionCall inner-node cache key at materialize time
+// rather than reading it from the proto.
+const QueryPlanV13 = QueryPlanVersion(13)
+
+// QueryPlanV14 introduces support for splitting a range query into smaller sub ranges.
+const QueryPlanV14 = QueryPlanVersion(14)
+
+var MaximumSupportedQueryPlanVersion = QueryPlanV14
 
 type QueryPlan struct {
 	Root       Node
@@ -245,8 +251,6 @@ func (t QueriedTimeRange) Union(other QueriedTimeRange) QueriedTimeRange {
 type OperatorParameters struct {
 	Queryable                storage.Queryable
 	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
-	Annotations              *annotations.Annotations
-	QueryStats               *types.QueryStats
 	EagerLoadSelectors       bool
 	QueryParameters          *QueryParameters
 	Logger                   log.Logger
@@ -272,9 +276,6 @@ type SplitNode interface {
 	// IsSplittable returns true if the node can actually be split. While a node satisfying this interface can usually
 	// be split, there might be some edge cases where it's not possible or not implemented yet.
 	IsSplittable() bool
-
-	// SplittingCacheKey returns a cache key for this node's intermediate results.
-	SplittingCacheKey() string
 
 	GetRangeParams() RangeParams
 }

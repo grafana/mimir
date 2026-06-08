@@ -261,6 +261,10 @@ local filename = 'mimir-queries.json';
       .addPanel(
         $.timeseriesPanel('Query Expression Percentiles') +
         $.queryPanel(
+          'histogram_quantile(1.00, sum(rate(cortex_query_frontend_queries_expression_bytes{namespace="$namespace"}[$__rate_interval])))',
+          '100th Percentile'
+        ) +
+        $.queryPanel(
           'histogram_quantile(0.99, sum(rate(cortex_query_frontend_queries_expression_bytes{namespace="$namespace"}[$__rate_interval])))',
           '99th Percentile'
         ) +
@@ -272,7 +276,19 @@ local filename = 'mimir-queries.json';
           'histogram_avg(sum(rate(cortex_query_frontend_queries_expression_bytes{namespace="$namespace"}[$__rate_interval])))',
           'Average'
         ) +
-        { fieldConfig+: { defaults+: { unit: 'bytes' } } }
+        {
+          fieldConfig+: {
+            defaults+: {
+              unit: 'bytes',
+              custom+: {
+                scaleDistribution: {
+                  type: 'log',
+                  log: 2,
+                },
+              },
+            },
+          },
+        }
       )
     )
     .addRowIf(

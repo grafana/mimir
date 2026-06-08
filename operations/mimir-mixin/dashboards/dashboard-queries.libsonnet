@@ -209,6 +209,9 @@ local utils = import 'mixin-utils/utils.libsonnet';
         { name: 'activeSeries', displayName: '"active series" queries', route: '/api/v1/cardinality_active_series', routeLabel: '_api_v1_cardinality_active_series' },
         { name: 'labelNamesCardinality', displayName: '"label name cardinality" queries', route: '/api/v1/cardinality_label_names', routeLabel: '_api_v1_cardinality_label_names' },
         { name: 'labelValuesCardinality', displayName: '"label value cardinality" queries', route: '/api/v1/cardinality_label_values', routeLabel: '_api_v1_cardinality_label_values' },
+        { name: 'searchMetricNames', displayName: '"search metric names" queries', route: '/api/v1/search/metric_names', routeLabel: '_api_v1_search_metric_names' },
+        { name: 'searchLabelNames', displayName: '"search label names" queries', route: '/api/v1/search/label_names', routeLabel: '_api_v1_search_label_names' },
+        { name: 'searchLabelValues', displayName: '"search label values" queries', route: '/api/v1/search/label_values', routeLabel: '_api_v1_search_label_values' },
       ],
       local overviewRoutesRegex = '(prometheus|api_prom)(%s)' % std.join('|', [r.routeLabel for r in overviewRoutes]),
       overviewRoutesOverrides: [
@@ -346,7 +349,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       ingestOrClassicDeduplicatedQuery(perIngesterQuery, groupByLabels=''):: |||
         ( # Classic storage
           sum by (%(groupByCluster)s, %(groupByLabels)s) (
-            %(perIngesterQuery)s unless on (job)
+            %(perIngesterQuery)s unless on (%(groupByCluster)s, job)
             cortex_partition_ring_partitions{%(ingester)s}
           )
           / on (%(groupByCluster)s) group_left()

@@ -772,6 +772,7 @@ func IsSafeToApplyFilteringAfterFunction(functionCall *core.FunctionCall, group 
 		functions.FUNCTION_ADAPTIVE_METRICS_RESERVED_1,
 		functions.FUNCTION_ADAPTIVE_METRICS_RESERVED_2,
 		functions.FUNCTION_LAST_OVER_TIME,
+		functions.FUNCTION_SHARDING_AVG,
 		functions.FUNCTION_SHARDING_CONCAT,
 		functions.FUNCTION_SORT,
 		functions.FUNCTION_SORT_BY_LABEL,

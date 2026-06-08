@@ -4,10 +4,16 @@
 
 ### Grafana Mimir
 
+* [CHANGE] Query-frontend: `-query-frontend.log-query-request-headers` now rejects headers that carry credentials or session material (e.g. `Authorization`, `Cookie`, `X-Api-Key`) at startup, and any such headers that reach the slow-query/query-stats log paths are redacted as defense in depth. Operators that previously allow-listed such headers must remove them from the flag. #15487
+* [CHANGE] Alertmanager: Upgraded the embedded `prometheus/alertmanager` library to v0.32.0. The per-tenant alertmanager web UI and the `/-/healthy`, `/-/ready`, `/-/reload`, `/script.js`, and `/favicon.ico` endpoints under the alertmanager prefix are no longer served because upstream removed the embeddable UI package. The v2 API endpoints and request/response shapes are unchanged, but a few error message strings from the upstream parser have been reformatted (for example, matcher-validation errors now include `in set N`). #15144
+* [CHANGE] Alertmanager: The `cortex_alertmanager_dispatcher_aggregation_group_limit_reached_total` counter is now best-effort under concurrent alert ingest. The upstream alertmanager v0.32.0 ingests alerts via worker goroutines and the group-limit check is a racy check-then-act, so the configured limit can be exceeded under burst load. #15144
 * [FEATURE] API: Add alertmanager limits (alertmanager_notification_rate_limit, alertmanager_max_dispatcher_aggregation_groups, alertmanager_max_templates_count) to the user limits API response. #15308
 * [FEATURE] Mimirtool: Add AWS Signature Version 4 (SigV4) support for shared Mimir API client commands including `mimirtool rules`, `mimirtool alertmanager`, `mimirtool alerts`, `mimirtool backfill`, and `mimirtool analyze ruler`. #14959
 * [FEATURE] MQE: Add `cortex_querier_inflight_query_max_age_seconds` metric reporting the age of the oldest in-flight query memory consumption tracker. #15300
-* [ENHANCEMENT] MQE: Improve experimental support for reporting the number of samples read per query. #15179 #15220 #15223 #15232 #15237 #15255 #15276 #15282 #15285
+* [FEATURE] MQE: Add experimental support for splitting and caching `present_over_time` over range vectors in instant queries. #15386
+* [FEATURE] Query-scheduler: Add experimental `cortex_query_scheduler_inflight_max_age_seconds` metric reporting how long the oldest inflight request has been waiting since it was enqueued. Reports 0 when no requests are inflight. Enabled by default; can be disabled with `-query-scheduler.inflight-max-age-metric-enabled=false`. #15419
+* [ENHANCEMENT] Store-gateway, Ingester: Add read support for XOR2 chunk encoding. XOR2 is a new Prometheus TSDB encoding that provides better compression than XOR, particularly for stale markers. #15371
+* [ENHANCEMENT] MQE: Improve experimental support for reporting the number of samples read per query. #14838 #15179 #15191 #15220 #15223 #15232 #15237 #15255 #15276 #15282 #15285
 * [ENHANCEMENT] Distributor: Relabel middleware returns early if neither label dropping nor relabeling is configured. #15246
 * [ENHANCEMENT] Distributor: Improve distributor push middleware cleanup handling. #15245
 * [ENHANCEMENT] Ingest storage: Reject the whole batch of records of a Kafka write call when the configured `-ingest-storage.kafka.producer-max-buffered-bytes` limit is reached, instead of rejecting individual records. #15227
@@ -15,16 +21,33 @@
 * [ENHANCEMENT] Store-gateway: Remove outdated limit on caching LabelValues responses that contain more than 655360 values. The gob library panic which required workaround was fixed. #5021 #15271
 * [ENHANCEMENT] MQE: Reduce memory consumption of range vector splitting when many consecutive intervals are not cached. #15173
 * [ENHANCEMENT] Ingester: Make max concurrency for label values count endpoint configurable with `-ingester.label-values-count-max-concurrency`. #15299
+* [ENHANCEMENT] Ingest storage: Add `cortex_ingest_storage_writer_serialize_duration_seconds` native histogram metric tracking the time spent serializing an incoming request to Kafka records. #15527
+* [ENHANCEMENT] Memberlist: Add `-memberlist.compression-algorithm` flag to select the algorithm used to compress outgoing messages. Supported values: `lzw` (default) and `snappy`. The flag is ignored when `-memberlist.compression-enabled` is false. Before reconfiguring any node to emit a new algorithm, upgrade every cluster member to a build that can decode it, otherwise messages are dropped. #15357
+* [ENHANCEMENT] Memberlist: TCP push-pull and other TCP stream messages now skip compression when the compressed output is no smaller than the input, falling back to a plaintext frame. Mirrors existing UDP behaviour; receivers continue to decode both compressed and plaintext frames so the change is wire-compatible. #15357
+* [ENHANCEMENT] Memberlist: Reduce per-call allocations on the compression and TCP state-sync receive paths via internal buffer pools. #15357
+* [ENHANCEMENT] Memberlist: Add `memberlist.processed-messages-queue-size` flag to set the size of the per-key internal queue for processing messages received from other nodes. Increasing this value may help to avoid dropping per-key updates when the node is processing many updates for the same key. #15536
+* [ENHANCEMENT] MQE: Respect the `Cache-Control: no-store` request header when caching intermediate results for range vector splitting. #15148
+* [BUGFIX] Query-frontend: Fix `cardinality_analysis_max_results` being ignored when set higher than the default of 500. #15581
 * [BUGFIX] Ingest storage: Fix `KafkaProducer.ProduceSync()` returning a single result with a nil record when the context is canceled, instead of one result per input record (with the record set) as the underlying franz-go client does. #15199
+* [BUGFIX] Ingest storage: Fix `cortex_ingest_storage_reader_receive_delay_seconds` inflation by no longer setting the Kafka record `Timestamp` on the distributor side; the Kafka client now sets it at produce time. #15572
 * [BUGFIX] Distributor: Return HTTP 200 with OTLP partial-success when only some samples in an OTLP request are rejected by distributor-level validation (e.g. `too_far_in_past`). #15253
-* [BUGFIX] MQE: Bugfixes for experimental range vector splitting. #15147
+* [BUGFIX] MQE: Bugfixes for experimental range vector splitting. #15147 #15270 #14878
 * [BUGFIX] Querier: Fix querier ScaledObjects native histogram querying and triggering `MimirAutoscalerKedaFailing` when queriers have no traffic because `cortex_querier_request_duration_seconds_sum` is not published until the first request is received. #15106
 * [BUGFIX] Fix build failure on Windows and FreeBSD due to reference leaks instrumentation code. Enabling reference leaks instrumentation in those platforms now causes a configuration validation error instead. #15291
+* [BUGFIX] Query-frontend: Fixed a memory leak caused that could occur on some error paths if MQE was enabled. #15392
+* [BUGFIX] MQE: Fix issue where subqueries unnecessarily compute and then discard an additional step if the parent query is not aligned to the step. #15438
+* [BUGFIX] Upgrade Go to 1.26.4 to address [CVE-2026-42507](https://pkg.go.dev/vuln/GO-2026-5039). #15566
+* [BUGFIX] Memcached: Disable TCP DNS connection pooling used for service discovery by default. #15573
 
 ### Mixin
 
 * [CHANGE] Dashboards: Show maximum queue length, not minimum queue length, on the "Queue length" panel in the "Query-scheduler" row of the "Reads" and "Remote ruler reads" dashboards. #15326
 * [ENHANCEMENT] Alerts: Make `MimirInconsistentRuntimeConfig` alert less flaky when performing multiple configuration changes in a row in a large Kubernetes cluster. #15257
+* [ENHANCEMENT] Alerts: Widen the `MimirBlockBuilderPersistentJobFailure` lookback window to 20m to prevent the alert from flapping. #15332
+* [ENHANCEMENT] Alerts: Add a native histogram variant of the `MimirRequestLatency` alert, distinguished by the `histogram` label (`classic` or `native`). #15413
+* [ENHANCEMENT] Dashboards: Add 100th percentile to query expression percentiles graph. #15421
+* [ENHANCEMENT] Dashboards: Add the experimental streaming search API endpoints to the "Overview" per-endpoint query breakdown, and include the ingester `SearchLabelNames`/`SearchLabelValues` gRPC routes in the ingester panels of the "Reads", "Queries", and "Remote ruler reads" dashboards. #15571
+* [BUGFIX] Dashboards: Fix the classic/ingest-storage split in the "Tenants", "Top tenants" and "Writes" dashboards so that selecting multiple clusters with a mix of architectures no longer drops the classic clusters' data. The `unless on (job)` filter against `cortex_partition_ring_partitions` now also matches on the cluster aggregation labels. #15400
 
 ### Jsonnet
 
@@ -35,11 +58,12 @@
 
 ### Tools
 
+* [FEATURE] Copyblocks: add support for the block upload API as a copy destination. #15330
 * [ENHANCEMENT] Makefile: `build-mixin` and `mixin-screenshots` can now be configured to use native histograms for latency panels in dashboards. #15269
 
 ### Query-tee
 
-## 3.1.0-rc.0
+## 3.1.0
 
 ### Grafana Mimir
 
@@ -78,6 +102,7 @@
 * [CHANGE] Alertmanager: `-alertmanager.grafana-alertmanager-idle-grace-period` renamed to `-alertmanager.strict-initialization-idle-grace-period`. #14960
 * [CHANGE] Query-frontend: The per-query memory consumption limit now spans all time-split sub-queries when MQE is enabled rather than applying per split query. #14980
 * [CHANGE] Query-frontend: Rewriting middleware now runs before user-injected middlewares. #15111
+* [FEATURE] Querier: experimental streaming label/value search HTTP endpoints `/api/v1/search/{metric_names,label_names,label_values}`. Gated by `-querier.experimental-search-api-enabled` (default false). #15233, #15349, #15301, #15347, #15364
 * [FEATURE] Distributor: experimental per-tenant limit `-distributor.ha-tracker.per-sample-dedupe` (per-tenant `ha_tracker_per_sample_dedupe`) to evaluate HA deduplication for each timeseries within a write request rather than making a single decision based on the first series. Enables correct behavior for mixed-label requests (e.g. Prometheus federation, metrics proxies) without affecting standard setups that have uniform HA labels within a single request. Disabled by default. #15064
 * [FEATURE] Distributor: add `-validation.enforce-out-of-order-window-on-distributor` per-tenant option. When enabled and `past_grace_period` is 0, distributors reject samples older than `out_of_order_time_window`, matching ingester behavior, without relying on a small `past_grace_period`. #15090
 * [FEATURE] Runtime config: Support loading configuration from `http://` and `https://` URLs in addition to local files via `-runtime-config.file`. Added `-runtime-config.http-client-timeout` (default `30s`) to control the HTTP fetch timeout. Added `-runtime-config.http-client-cluster-validation.label` (inheritable from `-common.client-cluster-validation.label`) to send the `X-Cluster` validation header when fetching from a cluster-validated HTTP endpoint. #15052 #15244
@@ -330,6 +355,7 @@
 * [BUGFIX] MQE: Fix `info()` function only retaining one matcher when multiple data label matchers target the same label name. #14832
 * [BUGFIX] MQE: Fix `info()` function silently overwriting conflicting labels from different info metrics instead of returning an error. #14832
 * [BUGFIX] MQE: Fix `info()` function incorrectly grouping labels from replaced info series at the same evaluation timestamp due to lookback. #14832
+* [BUGFIX] Update to Go v1.26.3 to address [CVE-2026-42501](https://www.cve.org/CVERecord?id=CVE-2026-42501), [CVE-2026-42499](https://www.cve.org/CVERecord?id=CVE-2026-42499), [CVE-2026-39836](https://www.cve.org/CVERecord?id=CVE-2026-39836), [CVE-2026-39820](https://www.cve.org/CVERecord?id=CVE-2026-39820), [CVE-2026-33814](https://www.cve.org/CVERecord?id=CVE-2026-33814), [CVE-2026-33811](https://www.cve.org/CVERecord?id=CVE-2026-33811), [CVE-2026-39826](https://www.cve.org/CVERecord?id=CVE-2026-39826), [CVE-2026-39823](https://www.cve.org/CVERecord?id=CVE-2026-39823), [CVE-2026-39817](https://www.cve.org/CVERecord?id=CVE-2026-39817), [CVE-2026-39825](https://www.cve.org/CVERecord?id=CVE-2026-39825), [CVE-2026-39819](https://www.cve.org/CVERecord?id=CVE-2026-39819). #15263
 
 ### Mixin
 
@@ -736,6 +762,38 @@
 
 * [CHANGE] If you configure multiple secondary backends and enable comparisons, query-tee reports comparison results of the preferred backend against each of the secondaries. #13022
 * [CHANGE] Add backend configuration options for request proportion sampling and time-based query filtering. #13037
+
+## 2.17.11
+
+### Grafana Mimir
+
+* [BUGFIX] Update golang.org/x/net to v0.51.0 to address [CVE-2026-27141](https://nvd.nist.gov/vuln/detail/CVE-2026-27141). #15068
+* [BUGFIX] Update golang.org/x/net to v0.53.0 to address [CVE-2026-33814](https://nvd.nist.gov/vuln/detail/CVE-2026-33814). #15281
+* [BUGFIX] Update go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp to v1.43.0 to address [CVE-2026-39882](https://nvd.nist.gov/vuln/detail/CVE-2026-39882). #15329
+* [BUGFIX] Update go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp to v0.19.0 to address [CVE-2026-39882](https://nvd.nist.gov/vuln/detail/CVE-2026-39882). #15329
+* [BUGFIX] Update go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp to v1.43.0 to address [CVE-2026-39882](https://nvd.nist.gov/vuln/detail/CVE-2026-39882). #15329
+* [BUGFIX] Update go.opentelemetry.io/otel/exporters/stdout/stdoutlog to v0.19.0 for compatibility with updated OTLP exporters. #15329
+
+## 2.17.10
+
+### Grafana Mimir
+
+* [BUGFIX] Update go.opentelemetry.io/otel/sdk to v1.43.0 to address [CVE-2026-39883](https://www.cve.org/CVERecord?id=CVE-2026-39883). #15050
+* [BUGFIX] Update github.com/aws/aws-sdk-go-v2/service/s3 to v1.97.3 to address [GHSA-xmrv-pmrh-hhx2](https://github.com/advisories/GHSA-xmrv-pmrh-hhx2). #15050
+* [BUGFIX] Update to Go v1.25.9 to address [CVE-2026-32283](https://pkg.go.dev/vuln/GO-2026-4870), [CVE-2026-32282](https://pkg.go.dev/vuln/GO-2026-4864), [CVE-2026-27144](https://pkg.go.dev/vuln/GO-2026-4867), [CVE-2026-27143](https://pkg.go.dev/vuln/GO-2026-4868), [CVE-2026-27140](https://pkg.go.dev/vuln/GO-2026-4871), [CVE-2026-32289](https://pkg.go.dev/vuln/GO-2026-4865), [CVE-2026-32288](https://pkg.go.dev/vuln/GO-2026-4869), [CVE-2026-32280](https://pkg.go.dev/vuln/GO-2026-4947), [CVE-2026-32281](https://pkg.go.dev/vuln/GO-2026-4946). #15042
+* [BUGFIX] Ruler: Fix parsing of rule expressions with leading newlines. #14947 #15032
+
+## 2.17.9
+
+### Grafana Mimir
+
+* [BUGFIX] Update to Go v1.25.8 to address [CVE-2026-27142](https://pkg.go.dev/vuln/GO-2026-4603), [CVE-2026-27139](https://pkg.go.dev/vuln/GO-2026-4602), [CVE-2026-25679](https://pkg.go.dev/vuln/GO-2026-4601), [CVE-2026-27138](https://pkg.go.dev/vuln/GO-2026-4600), [CVE-2026-27137](https://pkg.go.dev/vuln/GO-2026-4599). #14908
+
+## 2.17.8
+
+### Grafana Mimir
+
+* [BUGFIX] Update module google.golang.org/grpc to v1.79.3 to address [CVE-2026-33186](https://nvd.nist.gov/vuln/detail/CVE-2026-33186) #14762
 
 ## 2.17.7
 

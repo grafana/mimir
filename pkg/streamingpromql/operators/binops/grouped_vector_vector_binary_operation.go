@@ -38,12 +38,11 @@ type GroupedVectorVectorBinaryOperation struct {
 	VectorMatching parser.VectorMatching
 
 	expressionPosition posrange.PositionRange
-	annotations        *annotations.Annotations
 	timeRange          types.QueryTimeRange
 	hints              *Hints
 	logger             log.Logger
 
-	evaluator       vectorVectorBinaryOperationEvaluator
+	evaluator       *vectorVectorBinaryOperationEvaluator
 	remainingSeries []*groupedBinaryOperationOutputSeries
 	oneSide         types.InstantVectorOperator // Either Left or Right
 	manySide        types.InstantVectorOperator
@@ -65,9 +64,9 @@ type groupedBinaryOperationOutputSeries struct {
 	oneSide  *oneSide
 }
 
-func (g *groupedBinaryOperationOutputSeries) Finalize(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
-	g.manySide.Finalize(memoryConsumptionTracker)
-	g.oneSide.Finalize(memoryConsumptionTracker)
+func (g *groupedBinaryOperationOutputSeries) FinishedReading(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
+	g.manySide.FinishedReading(memoryConsumptionTracker)
+	g.oneSide.FinishedReading(memoryConsumptionTracker)
 }
 
 type groupedBinaryOperationOutputSeriesWithLabels struct {
@@ -91,7 +90,7 @@ func (s *manySide) latestSeriesIndex() int {
 	return s.seriesIndices[len(s.seriesIndices)-1]
 }
 
-func (s *manySide) Finalize(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
+func (s *manySide) FinishedReading(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
 	types.PutInstantVectorSeriesData(s.mergedData, memoryConsumptionTracker)
 	s.mergedData = types.InstantVectorSeriesData{}
 }
@@ -114,7 +113,7 @@ func (s *oneSide) latestSeriesIndex() int {
 	return s.seriesIndices[len(s.seriesIndices)-1]
 }
 
-func (s *oneSide) Finalize(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
+func (s *oneSide) FinishedReading(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
 	types.PutInstantVectorSeriesData(s.mergedData, memoryConsumptionTracker)
 	s.mergedData = types.InstantVectorSeriesData{}
 
@@ -151,13 +150,12 @@ func NewGroupedVectorVectorBinaryOperation(
 	op parser.ItemType,
 	returnBool bool,
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
-	annotations *annotations.Annotations,
 	expressionPosition posrange.PositionRange,
 	timeRange types.QueryTimeRange,
 	hints *Hints,
 	logger log.Logger,
 ) (*GroupedVectorVectorBinaryOperation, error) {
-	e, err := newVectorVectorBinaryOperationEvaluator(op, returnBool, memoryConsumptionTracker, annotations, expressionPosition)
+	e, err := newVectorVectorBinaryOperationEvaluator(op, returnBool, memoryConsumptionTracker, expressionPosition)
 	if err != nil {
 		return nil, err
 	}
@@ -172,7 +170,6 @@ func NewGroupedVectorVectorBinaryOperation(
 
 		evaluator:          e,
 		expressionPosition: expressionPosition,
-		annotations:        annotations,
 		timeRange:          timeRange,
 		hints:              hints,
 		logger:             logger,
@@ -211,7 +208,7 @@ func (g *GroupedVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context,
 	if canProduceAnySeries, err := g.loadSeriesMetadata(ctx, matchers); err != nil {
 		return nil, err
 	} else if !canProduceAnySeries {
-		if err := g.Finalize(ctx); err != nil {
+		if err := g.FinishedReading(ctx); err != nil {
 			return nil, err
 		}
 
@@ -228,7 +225,7 @@ func (g *GroupedVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context,
 		types.BoolSlicePool.Put(&oneSideSeriesUsed, g.MemoryConsumptionTracker)
 		types.BoolSlicePool.Put(&manySideSeriesUsed, g.MemoryConsumptionTracker)
 
-		if err := g.Finalize(ctx); err != nil {
+		if err := g.FinishedReading(ctx); err != nil {
 			return nil, err
 		}
 
@@ -839,36 +836,43 @@ func (g *GroupedVectorVectorBinaryOperation) AfterPrepare(ctx context.Context) e
 	return g.Right.AfterPrepare(ctx)
 }
 
-func (g *GroupedVectorVectorBinaryOperation) Finalize(ctx context.Context) error {
+func (g *GroupedVectorVectorBinaryOperation) FinishedReading(ctx context.Context) error {
 	types.SeriesMetadataSlicePool.Put(&g.oneSideMetadata, g.MemoryConsumptionTracker)
 	types.SeriesMetadataSlicePool.Put(&g.manySideMetadata, g.MemoryConsumptionTracker)
 
 	if g.oneSideBuffer != nil {
-		g.oneSideBuffer.Finalize()
+		g.oneSideBuffer.FinishedReading()
 		g.oneSideBuffer = nil
 	}
 
 	if g.manySideBuffer != nil {
-		g.manySideBuffer.Finalize()
+		g.manySideBuffer.FinishedReading()
 		g.manySideBuffer = nil
 	}
 
 	for _, s := range g.remainingSeries {
-		s.Finalize(g.MemoryConsumptionTracker)
+		s.FinishedReading(g.MemoryConsumptionTracker)
 	}
 
 	g.remainingSeries = nil
 
-	// We don't need to finalize g.oneSide or g.manySide, as these are either g.Left or g.Right and so will be finalized below.
-	if err := g.Left.Finalize(ctx); err != nil {
+	// We don't need to call FinishedReading on g.oneSide or g.manySide, as these are either g.Left or g.Right and so will have FinishedReading called below.
+	if err := g.Left.FinishedReading(ctx); err != nil {
 		return err
 	}
 
-	return g.Right.Finalize(ctx)
+	return g.Right.FinishedReading(ctx)
 }
 
-func (g *GroupedVectorVectorBinaryOperation) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
-	return types.CombineStats(ctx, g.Left, g.Right)
+func (g *GroupedVectorVectorBinaryOperation) Finalize(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
+	stats, childAnnos, err := types.FinalizeAndCombine(ctx, g.Left, g.Right)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	g.evaluator.annotations.Merge(childAnnos)
+
+	return stats, g.evaluator.annotations, nil
 }
 
 func (g *GroupedVectorVectorBinaryOperation) Close() {

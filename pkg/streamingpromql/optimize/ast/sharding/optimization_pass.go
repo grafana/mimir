@@ -17,6 +17,7 @@ import (
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize"
+	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
 )
 
 type OptimizationPass struct {
@@ -38,7 +39,7 @@ func (o *OptimizationPass) Apply(ctx context.Context, expr parser.Expr) (parser.
 		return expr, nil
 	}
 
-	options := querymiddleware.RequestOptionsFromContext(ctx)
+	options := requestoptions.OptionsFromContext(ctx)
 	if options.ShardingDisabled {
 		return expr, nil
 	}
@@ -90,6 +91,13 @@ func (c *concatSquasher) Squash(exprs ...astmapper.EmbeddedQuery) (parser.Expr, 
 	return &parser.Call{
 		Func: ConcatFunction,
 		Args: args,
+	}, nil
+}
+
+func (c *concatSquasher) WrapAvgResult(expr parser.Expr) (parser.Expr, error) {
+	return &parser.Call{
+		Func: AvgFunction,
+		Args: []parser.Expr{expr},
 	}, nil
 }
 

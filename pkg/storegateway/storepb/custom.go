@@ -82,6 +82,12 @@ func (m *LabelValuesResponseHints) AddQueriedBlock(id ulid.ULID) {
 	})
 }
 
+func (m *SearchResponseHints) AddQueriedBlock(id ulid.ULID) {
+	m.QueriedBlocks = append(m.QueriedBlocks, Block{
+		Id: id.String(),
+	})
+}
+
 type emptySeriesSet struct{}
 
 func (emptySeriesSet) Next() bool                       { return false }
@@ -161,6 +167,8 @@ func (c AggrChunk) GetChunkEncoding() (chunk.Encoding, bool) {
 		return chunk.PrometheusHistogramChunk, true
 	case Chunk_FloatHistogram:
 		return chunk.PrometheusFloatHistogramChunk, true
+	case Chunk_XOR2:
+		return chunk.PrometheusXor2Chunk, true
 	default:
 		return 0, false
 	}

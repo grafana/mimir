@@ -462,7 +462,7 @@ func initMemberlistKV(ctx context.Context, joinAddrs []string, clusterLabel stri
 	cfg.Codecs = append(cfg.Codecs, ring.GetPartitionRingCodec())
 
 	// Create DNS provider for memberlist.
-	dnsProvider := dns.NewProvider(logger, nil, dns.GolangResolverType)
+	dnsProvider := dns.NewProvider(dns.GolangResolverType, 0, logger, nil)
 
 	// Create and start the memberlist KV service.
 	memberlistKV := memberlist.NewKVInitService(&cfg, logger, dnsProvider, nil)

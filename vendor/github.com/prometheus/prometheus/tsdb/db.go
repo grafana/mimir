@@ -1739,6 +1739,12 @@ func (db *DB) CompactOOOHead(ctx context.Context) error {
 // Callback for testing.
 var compactOOOHeadTestingCallback func()
 
+// Callback for testing. Invoked by compactHeadViewLocked after all blocks for
+// the head view have been written and reloaded, but before the per-series
+// evictor is called. Allows tests to interleave appends or other side effects
+// in that window.
+var compactHeadViewBeforeEvictTestingCallback func()
+
 // The db.cmtx mutex should be held before calling this method.
 func (db *DB) compactOOOHead(ctx context.Context) error {
 	if !db.oooWasEnabled.Load() {
@@ -1894,38 +1900,59 @@ func (db *DB) compactHead(head *RangeHead, truncateMemory bool) error {
 	return nil
 }
 
-// HeadPortionDecorator builds a BlockReader view of a portion of the head, restricted to the
+// headViewFactory builds a restricted BlockReader view of a portion of the head, covering the
 // closed time range [mint, maxt]. Implementations decide which subset of series the view exposes
-// (for example, by filtering on a list of series refs). The decorator is invoked once per
+// (for example, by filtering on a list of series refs). The factory is invoked once per
 // chunk-range slice during compaction.
-type HeadPortionDecorator func(head *Head, mint, maxt int64) BlockReader
+type headViewFactory func(head *Head, mint, maxt int64) BlockReader
 
-// HeadPortionEvictor removes the compacted series from the head after their block has been
-// written and reloaded. It receives the maxt the compaction wrote up to so it can apply any
-// per-series safety check that protects against series receiving fresh samples since ref
-// collection. HeadMinTime is not advanced by this step.
-type HeadPortionEvictor func(maxt int64) error
-
-// CompactHeadPortion writes a block (or sequence of blocks, one per chunk range) covering the
-// portion of the head described by decorator, then runs evictor to remove those series from the
-// head. HeadMinTime is not advanced; series outside the portion are unaffected.
+// headSeriesEvictor removes from the head the series that were just
+// written to blocks without advancing HeadMinTime.
 //
-// For example, this engine powers CompactStaleHead. Callers that maintain their own list of
-// series refs (for example, an external ownership tracker) can invoke it directly with their
-// own decorator/evictor pair.
-func (db *DB) CompactHeadPortion(decorator HeadPortionDecorator, evict HeadPortionEvictor, meta *BlockMeta) error {
-	db.cmtx.Lock()
-	defer db.cmtx.Unlock()
-	return db.compactHeadPortionLocked(decorator, evict, meta)
-}
+// The evictor must preserve any series that may have received samples
+// after compaction began, as those samples might not be present in the
+// generated blocks.
+//
+// maxt is the head's MaxTime at compaction start and is used to detect
+// obvious late writes via sample timestamps.
+//
+// appendIDWatermark is the head's append-ID counter at compaction
+// start. A series containing samples with appendID >
+// appendIDWatermark must not be evicted, as those samples were appended
+// after compaction began and may not be present in any block.
+//
+// When isolation is disabled, appendIDWatermark is always 0 and the
+// append-ID check becomes a no-op. In that mode, the caller must ensure
+// that no concurrent writes target the selected series.
+type headSeriesEvictor func(maxt int64, appendIDWatermark uint64) error
 
-// compactHeadPortionLocked is the body of CompactHeadPortion, intended for internal callers
-// that already hold db.cmtx.
-func (db *DB) compactHeadPortionLocked(decorator HeadPortionDecorator, evict HeadPortionEvictor, meta *BlockMeta) error {
+// compactHeadViewLocked writes a block (or sequence of blocks, one per chunk range) for the
+// restricted head view produced by viewFactory, then runs evictor to remove those series from the
+// head. HeadMinTime is not advanced; series outside the view are unaffected. configure, if
+// non-nil, is called on the freshly created BlockMeta before each write to set compaction hints
+// or other optional fields.
+// The caller must hold db.cmtx.
+func (db *DB) compactHeadViewLocked(viewFactory headViewFactory, evict headSeriesEvictor, configure func(*BlockMeta)) error {
 	mint, maxt := db.head.opts.ChunkRange*(db.head.MinTime()/db.head.opts.ChunkRange), db.head.MaxTime()
-	for ; mint < maxt; mint += db.head.chunkRange.Load() {
-		view := decorator(db.head, mint, mint+db.head.chunkRange.Load()-1)
+	// Capture the head's current append-ID as an eviction watermark before
+	// writing any blocks.
+	//
+	// The generated blocks are guaranteed to contain all samples with
+	// appendID <= watermark. Samples appended later (appendID > watermark)
+	// may or may not be present, depending on when each block writer takes
+	// its isolation snapshot.
+	//
+	// Eviction uses the watermark as a safety guard: a series is removed
+	// only if it has not received any samples with appendID > watermark
+	// since compaction began.
+	appendIDWatermark := db.head.iso.lastAppendID()
+	for ; mint <= maxt; mint += db.head.chunkRange.Load() {
+		view := viewFactory(db.head, mint, mint+db.head.chunkRange.Load()-1)
 
+		meta := &BlockMeta{}
+		if configure != nil {
+			configure(meta)
+		}
 		uids, err := db.compactor.Write(db.dir, view, view.Meta().MinTime, view.Meta().MaxTime+1, meta)
 		if err != nil {
 			return fmt.Errorf("persist head portion: %w", err)
@@ -1944,7 +1971,12 @@ func (db *DB) compactHeadPortionLocked(decorator HeadPortionDecorator, evict Hea
 		}
 	}
 
-	if err := evict(maxt); err != nil {
+	if compactHeadViewBeforeEvictTestingCallback != nil {
+		compactHeadViewBeforeEvictTestingCallback()
+		compactHeadViewBeforeEvictTestingCallback = nil
+	}
+
+	if err := evict(maxt, appendIDWatermark); err != nil {
 		return fmt.Errorf("head truncate: %w", err)
 	}
 	db.head.RebuildSymbolTable(db.logger)
@@ -1968,28 +2000,25 @@ func (db *DB) CompactStaleHead() (err error) {
 
 	// We get the stale series reference first because this list can change during the compaction below.
 	// It is more efficient and easier to provide an index interface for the stale series when we have a static list.
-	staleSeriesRefs, err := db.head.SortedStaleSeriesRefsNoOOOData(context.Background())
+	staleSeriesRefs, err := db.head.staleSeriesRefsNoOOOData(context.Background())
 	if err != nil {
 		return err
 	}
-	meta := &BlockMeta{}
-	meta.Compaction.SetStaleSeries()
-
-	if err := db.compactHeadPortionLocked(
+	if err := db.compactHeadViewLocked(
 		func(h *Head, mint, maxt int64) BlockReader {
-			return NewSelectedSeriesHead(h, mint, maxt, staleSeriesRefs, db.head.filterStaleSeriesAndSortPostings)
+			return NewSelectedSeriesHead(h, mint, maxt, staleSeriesRefs)
 		},
-		func(maxt int64) error {
-			return db.head.truncateStaleSeries(staleSeriesRefs, maxt)
+		func(maxt int64, appendIDWatermark uint64) error {
+			return db.head.truncateStaleSeries(staleSeriesRefs.sortedByRef, maxt, appendIDWatermark)
 		},
-		meta,
+		func(meta *BlockMeta) { meta.Compaction.SetStaleSeries() },
 	); err != nil {
 		return err
 	}
 
 	elapsed := time.Since(start)
 	db.metrics.staleSeriesCompactionDuration.Observe(elapsed.Seconds())
-	db.logger.Info("Ending stale series compaction", "num_series", len(staleSeriesRefs), "duration", elapsed)
+	db.logger.Info("Ending stale series compaction", "num_series", len(staleSeriesRefs.sortedByRef), "duration", elapsed)
 	return nil
 }
 
@@ -2024,38 +2053,35 @@ func (db *DB) CompactSelectedSeries(seriesRefs []storage.SeriesRef) (err error) 
 	// Skip series with out-of-order data: the ref-list pipeline writes only in-order chunks,
 	// so a series whose OOO state is non-empty would have its OOO chunks orphaned upon
 	// eviction. Such series stay in the head and are picked up on a later cycle.
-	seriesRefs, err = db.head.SortedSelectedSeriesRefNoOOOData(seriesRefs)
+	selectedSeriesRefs, err := db.head.filterSeriesAndSortPostings(index.NewListPostings(seriesRefs), isSeriesWithoutOOO)
 	if err != nil {
 		return err
 	}
-	skippedSeries := totalSeries - len(seriesRefs)
-	db.logger.Info("Starting selected series compaction", "num_series", len(seriesRefs), "num_skipped_ooo", skippedSeries)
+	skippedSeries := totalSeries - len(selectedSeriesRefs.sortedByRef)
+	db.logger.Info("Starting selected series compaction", "num_series", len(selectedSeriesRefs.sortedByRef), "num_skipped_ooo", skippedSeries)
 
-	if len(seriesRefs) == 0 {
+	if len(selectedSeriesRefs.sortedByRef) == 0 {
 		elapsed := time.Since(start)
 		db.metrics.selectedSeriesCompactionDuration.Observe(elapsed.Seconds())
 		db.logger.Info("Ending selected series compaction", "num_series", 0, "num_skipped_ooo", skippedSeries, "duration", elapsed)
 		return nil
 	}
 
-	meta := &BlockMeta{}
-	meta.Compaction.SetSelectedSeries()
-
-	if err := db.compactHeadPortionLocked(
+	if err := db.compactHeadViewLocked(
 		func(h *Head, mint, maxt int64) BlockReader {
-			return NewSelectedSeriesHead(h, mint, maxt, seriesRefs, db.head.filterSelectedSeriesAndSortPostings)
+			return NewSelectedSeriesHead(h, mint, maxt, selectedSeriesRefs)
 		},
-		func(maxt int64) error {
-			return db.head.truncateSelectedSeries(seriesRefs, maxt)
+		func(maxt int64, appendIDWatermark uint64) error {
+			return db.head.truncateSelectedSeries(seriesRefs, maxt, appendIDWatermark)
 		},
-		meta,
+		func(meta *BlockMeta) { meta.Compaction.SetSelectedSeries() },
 	); err != nil {
 		return err
 	}
 
 	elapsed := time.Since(start)
 	db.metrics.selectedSeriesCompactionDuration.Observe(elapsed.Seconds())
-	db.logger.Info("Ending selected series compaction", "num_series", len(seriesRefs), "num_skipped_ooo", skippedSeries, "duration", elapsed)
+	db.logger.Info("Ending selected series compaction", "num_series", len(selectedSeriesRefs.sortedByRef), "num_skipped_ooo", skippedSeries, "duration", elapsed)
 	return nil
 }
 

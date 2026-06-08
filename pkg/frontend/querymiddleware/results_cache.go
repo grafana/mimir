@@ -31,18 +31,13 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
 	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
 const (
 	// resultsCacheVersion should be increased every time cache should be invalidated (after a bugfix or cache format change).
 	resultsCacheVersion = 1
-
-	// cacheControlHeader is the name of the cache control header.
-	cacheControlHeader = "Cache-Control"
-
-	// noStoreValue is the value that cacheControlHeader has if the response indicates that the results should not be cached.
-	noStoreValue = "no-store"
 )
 
 var (
@@ -86,19 +81,19 @@ func errUnsupportedResultsCacheBackend(backend string) error {
 	return fmt.Errorf("%w: %q, supported values: %v", errUnsupportedBackend, backend, supportedResultsCacheBackends)
 }
 
-type resultsCacheMetrics struct {
-	cacheRequests prometheus.Counter
-	cacheHits     prometheus.Counter
+type ResultsCacheMetrics struct {
+	CacheRequests prometheus.Counter
+	CacheHits     prometheus.Counter
 }
 
-func newResultsCacheMetrics(requestType string, reg prometheus.Registerer) *resultsCacheMetrics {
-	return &resultsCacheMetrics{
-		cacheRequests: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+func NewResultsCacheMetrics(requestType string, reg prometheus.Registerer) *ResultsCacheMetrics {
+	return &ResultsCacheMetrics{
+		CacheRequests: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name:        "cortex_frontend_query_result_cache_requests_total",
 			Help:        "Total number of requests (or partial requests) looked up in the results cache.",
 			ConstLabels: map[string]string{"request_type": requestType},
 		}),
-		cacheHits: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+		CacheHits: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name:        "cortex_frontend_query_result_cache_hits_total",
 			Help:        "Total number of requests (or partial requests) fetched from the results cache.",
 			ConstLabels: map[string]string{"request_type": requestType},
@@ -279,12 +274,12 @@ func isRequestCachable(req MetricsQueryRequest, maxCacheTime int64, cacheUnalign
 	// We can run with step alignment disabled because Grafana does it already. Mimir automatically aligning start and end is not
 	// PromQL compatible. But this means we cannot cache queries that do not have their start and end aligned.
 	if !cacheUnalignedRequests && !isRequestStepAligned(req) {
-		return false, notCachableReasonUnalignedTimeRange
+		return false, NotCachableReasonUnalignedTimeRange
 	}
 
 	// Do not cache it at all if the query time range is more recent than the configured max cache freshness.
 	if req.GetStart() > maxCacheTime {
-		return false, notCachableReasonTooNew
+		return false, NotCachableReasonTooNew
 	}
 
 	if cachable, reason := areEvaluationTimeModifiersCachable(req, maxCacheTime, logger); !cachable {
@@ -298,8 +293,8 @@ func isRequestCachable(req MetricsQueryRequest, maxCacheTime int64, cacheUnalign
 // via an HTTP header, false otherwise.
 func responseHeadersAllowCaching(r Response) bool {
 	for _, hv := range r.GetHeaders() {
-		if hv.GetName() == cacheControlHeader {
-			return !slices.Contains(hv.GetValues(), noStoreValue)
+		if hv.GetName() == requestoptions.CacheControlHeader {
+			return !slices.Contains(hv.GetValues(), requestoptions.NoStoreValue)
 		}
 	}
 
@@ -363,7 +358,7 @@ func areEvaluationTimeModifiersCachable(r MetricsQueryRequest, maxCacheTime int6
 	})
 
 	if !cachable {
-		return false, notCachableReasonModifiersNotCachable
+		return false, NotCachableReasonModifiersNotCachable
 	}
 	return true, ""
 }

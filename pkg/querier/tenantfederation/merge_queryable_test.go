@@ -12,7 +12,9 @@ import (
 	"reflect"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/tenant"
@@ -30,8 +32,10 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	tracesdk "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/storage/series"
+	"github.com/grafana/mimir/pkg/streaminglabelvalues"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
@@ -1052,4 +1056,554 @@ func containsAttribute(span tracetest.SpanStub, expectedTag attribute.KeyValue) 
 type spanWithAttributes struct {
 	name string
 	tags []attribute.KeyValue
+}
+
+// searchableTenantQueryable returns a storage.Querier that also implements
+// the local search interface declared in merge_queryable.go, letting the
+// mergeQuerier's federation fan-out drive SearchLabelNames/SearchLabelValues
+// through the tenant adapter and back to per-tenant test results.
+type searchableTenantQueryable struct {
+	resultsByTenant map[string][]storage.SearchResult
+
+	// mu guards valueNamesObservedByTenant against concurrent updates
+	// from the federation fan-out goroutines.
+	mu                         sync.Mutex
+	valueNamesObservedByTenant map[string][]string
+
+	// holdFor optionally pauses each upstream Search* call for the given
+	// duration before returning, so concurrency-bounded fan-out tests can
+	// observe how many tenants are in flight at once. Zero disables the
+	// hold.
+	holdFor time.Duration
+
+	// inFlight tracks concurrent upstream Search* calls; maxInFlight
+	// stores the peak. Both are updated through atomic operations only.
+	inFlight    atomic.Int32
+	maxInFlight atomic.Int32
+}
+
+// enterUpstream records a new in-flight upstream call and returns a
+// release closure that must run before the upstream call returns.
+func (s *searchableTenantQueryable) enterUpstream() func() {
+	cur := s.inFlight.Add(1)
+	for {
+		prev := s.maxInFlight.Load()
+		if cur <= prev || s.maxInFlight.CompareAndSwap(prev, cur) {
+			break
+		}
+	}
+	if s.holdFor > 0 {
+		time.Sleep(s.holdFor)
+	}
+	return func() { s.inFlight.Add(-1) }
+}
+
+func (s *searchableTenantQueryable) Querier(_, _ int64) (storage.Querier, error) {
+	return &searchableTenantQuerier{src: s}, nil
+}
+
+func (s *searchableTenantQueryable) recordValueName(tenantID, name string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.valueNamesObservedByTenant == nil {
+		s.valueNamesObservedByTenant = map[string][]string{}
+	}
+	s.valueNamesObservedByTenant[tenantID] = append(s.valueNamesObservedByTenant[tenantID], name)
+}
+
+func (s *searchableTenantQueryable) observedValueNames(tenantID string) []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return slices.Clone(s.valueNamesObservedByTenant[tenantID])
+}
+
+type searchableTenantQuerier struct {
+	src *searchableTenantQueryable
+}
+
+func (q *searchableTenantQuerier) Select(_ context.Context, _ bool, _ *storage.SelectHints, _ ...*labels.Matcher) storage.SeriesSet {
+	return storage.EmptySeriesSet()
+}
+func (q *searchableTenantQuerier) LabelValues(_ context.Context, _ string, _ *storage.LabelHints, _ ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	return nil, nil, nil
+}
+func (q *searchableTenantQuerier) LabelNames(_ context.Context, _ *storage.LabelHints, _ ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	return nil, nil, nil
+}
+func (q *searchableTenantQuerier) Close() error { return nil }
+
+func (q *searchableTenantQuerier) SearchLabelNames(ctx context.Context, _ *streaminglabelvalues.Params, _ *storage.SearchHints, _ ...*labels.Matcher) storage.SearchResultSet {
+	release := q.src.enterUpstream()
+	defer release()
+	tenantID, _ := tenant.TenantID(ctx)
+	return storage.NewSearchResultSetFromSlice(q.src.resultsByTenant[tenantID], nil)
+}
+
+func (q *searchableTenantQuerier) SearchLabelValues(ctx context.Context, name string, _ *streaminglabelvalues.Params, _ *storage.SearchHints, _ ...*labels.Matcher) storage.SearchResultSet {
+	release := q.src.enterUpstream()
+	defer release()
+	tenantID, _ := tenant.TenantID(ctx)
+	q.src.recordValueName(tenantID, name)
+	return storage.NewSearchResultSetFromSlice(q.src.resultsByTenant[tenantID], nil)
+}
+
+// TestMergeQueryable_SearchLabelNames_MultiTenantFanout pins the federation
+// search path: a multi-tenant request must fan out per-tenant, route each
+// per-tenant call to its own org-ID-scoped context, and merge the streamed
+// SearchResultSets via storage.MergeSearchResultSets (dedup + ordering).
+func TestMergeQueryable_SearchLabelNames_MultiTenantFanout(t *testing.T) {
+	src := &searchableTenantQueryable{
+		resultsByTenant: map[string][]storage.SearchResult{
+			"t1": {{Value: "alpha", Score: 1.0}, {Value: "beta", Score: 1.0}},
+			"t2": {{Value: "beta", Score: 1.0}, {Value: "gamma", Score: 1.0}},
+		},
+	}
+	q := NewQueryable(src, false, defaultConcurrency, prometheus.NewRegistry(), log.NewNopLogger())
+
+	querier, err := q.Querier(0, 1000)
+	require.NoError(t, err)
+	defer querier.Close()
+	s, ok := querier.(searcher)
+	require.True(t, ok, "mergeQuerier must satisfy the local search interface")
+
+	ctx := user.InjectOrgID(context.Background(), "t1|t2")
+	rs := s.SearchLabelNames(ctx, nil, &storage.SearchHints{OrderBy: storage.OrderByValueAsc})
+	defer rs.Close()
+
+	var got []string
+	for rs.Next() {
+		got = append(got, rs.At().Value)
+	}
+	require.NoError(t, rs.Err())
+	assert.Equal(t, []string{"alpha", "beta", "gamma"}, got, "fan-out must dedup across tenants and respect value-asc ordering")
+}
+
+// TestMergeQueryable_SearchLabelNames_SingleTenantBypass pins the bypass
+// path: when bypassWithSingleID=true and exactly one tenant is in scope,
+// the federation layer must delegate directly to the per-tenant upstream
+// without invoking the fan-out merge.
+func TestMergeQueryable_SearchLabelNames_SingleTenantBypass(t *testing.T) {
+	src := &searchableTenantQueryable{
+		resultsByTenant: map[string][]storage.SearchResult{
+			"only": {{Value: "x", Score: 1.0}, {Value: "y", Score: 1.0}},
+		},
+	}
+	q := NewQueryable(src, true, defaultConcurrency, prometheus.NewRegistry(), log.NewNopLogger())
+
+	querier, err := q.Querier(0, 1000)
+	require.NoError(t, err)
+	defer querier.Close()
+	s := querier.(searcher)
+
+	ctx := user.InjectOrgID(context.Background(), "only")
+	rs := s.SearchLabelNames(ctx, nil, &storage.SearchHints{OrderBy: storage.OrderByValueAsc})
+	defer rs.Close()
+
+	var got []string
+	for rs.Next() {
+		got = append(got, rs.At().Value)
+	}
+	require.NoError(t, rs.Err())
+	assert.Equal(t, []string{"x", "y"}, got)
+}
+
+// drainSearchResultSet reads every result from rs and returns the values.
+// The caller still owns rs and is responsible for Close.
+func drainSearchResultSet(t *testing.T, rs storage.SearchResultSet) []string {
+	t.Helper()
+	var got []string
+	for rs.Next() {
+		got = append(got, rs.At().Value)
+	}
+	require.NoError(t, rs.Err())
+	return got
+}
+
+// TestMergeQueryable_SearchLabelNames_BoundedConcurrency pins the
+// federation max-concurrency contract for the search fan-out: with N
+// tenants and maxConcurrency=k, no more than k upstream SearchLabelNames
+// calls may be in flight at once. Sleeps in the upstream let many calls
+// pile up if the fan-out is unbounded.
+func TestMergeQueryable_SearchLabelNames_BoundedConcurrency(t *testing.T) {
+	const (
+		tenants        = 32
+		maxConcurrency = 4
+	)
+	results := map[string][]storage.SearchResult{}
+	ids := make([]string, 0, tenants)
+	for i := 0; i < tenants; i++ {
+		id := fmt.Sprintf("t%02d", i)
+		ids = append(ids, id)
+		results[id] = []storage.SearchResult{{Value: id, Score: 1.0}}
+	}
+	src := &searchableTenantQueryable{
+		resultsByTenant: results,
+		holdFor:         10 * time.Millisecond,
+	}
+	q := NewQueryable(src, false, maxConcurrency, prometheus.NewRegistry(), log.NewNopLogger())
+
+	querier, err := q.Querier(0, 1000)
+	require.NoError(t, err)
+	defer querier.Close()
+	s := querier.(searcher)
+
+	ctx := user.InjectOrgID(context.Background(), strings.Join(ids, "|"))
+	rs := s.SearchLabelNames(ctx, nil, &storage.SearchHints{OrderBy: storage.OrderByValueAsc})
+	defer rs.Close()
+
+	// Drain so we don't leave a partially-consumed stream behind.
+	for rs.Next() { //nolint:revive // intentionally empty
+	}
+	require.NoError(t, rs.Err())
+
+	peak := src.maxInFlight.Load()
+	assert.LessOrEqual(t, peak, int32(maxConcurrency),
+		"federation fan-out must respect maxConcurrency=%d, observed peak %d in-flight upstream calls", maxConcurrency, peak)
+}
+
+// TestMergeQueryable_SearchLabelValues_BoundedConcurrency mirrors the
+// SearchLabelNames concurrency test for the label-values fan-out.
+func TestMergeQueryable_SearchLabelValues_BoundedConcurrency(t *testing.T) {
+	const (
+		tenants        = 32
+		maxConcurrency = 4
+	)
+	results := map[string][]storage.SearchResult{}
+	ids := make([]string, 0, tenants)
+	for i := 0; i < tenants; i++ {
+		id := fmt.Sprintf("t%02d", i)
+		ids = append(ids, id)
+		results[id] = []storage.SearchResult{{Value: id, Score: 1.0}}
+	}
+	src := &searchableTenantQueryable{
+		resultsByTenant: results,
+		holdFor:         10 * time.Millisecond,
+	}
+	q := NewQueryable(src, false, maxConcurrency, prometheus.NewRegistry(), log.NewNopLogger())
+
+	querier, err := q.Querier(0, 1000)
+	require.NoError(t, err)
+	defer querier.Close()
+	s := querier.(searcher)
+
+	ctx := user.InjectOrgID(context.Background(), strings.Join(ids, "|"))
+	rs := s.SearchLabelValues(ctx, "instance", nil, &storage.SearchHints{OrderBy: storage.OrderByValueAsc})
+	defer rs.Close()
+
+	for rs.Next() { //nolint:revive // intentionally empty
+	}
+	require.NoError(t, rs.Err())
+
+	peak := src.maxInFlight.Load()
+	assert.LessOrEqual(t, peak, int32(maxConcurrency),
+		"federation fan-out must respect maxConcurrency=%d, observed peak %d in-flight upstream calls", maxConcurrency, peak)
+}
+
+// TestMergeQueryable_SearchLabelValues_MultiTenantFanout mirrors the
+// SearchLabelNames fan-out test for the label-values path: a multi-tenant
+// request must fan out per-tenant, route each per-tenant call to its own
+// org-ID-scoped context, and merge the streamed SearchResultSets.
+func TestMergeQueryable_SearchLabelValues_MultiTenantFanout(t *testing.T) {
+	src := &searchableTenantQueryable{
+		resultsByTenant: map[string][]storage.SearchResult{
+			"t1": {{Value: "alpha", Score: 1.0}, {Value: "beta", Score: 1.0}},
+			"t2": {{Value: "beta", Score: 1.0}, {Value: "gamma", Score: 1.0}},
+		},
+	}
+	q := NewQueryable(src, false, defaultConcurrency, prometheus.NewRegistry(), log.NewNopLogger())
+
+	querier, err := q.Querier(0, 1000)
+	require.NoError(t, err)
+	defer querier.Close()
+	s, ok := querier.(searcher)
+	require.True(t, ok, "mergeQuerier must satisfy the local search interface")
+
+	ctx := user.InjectOrgID(context.Background(), "t1|t2")
+	rs := s.SearchLabelValues(ctx, "instance", nil, &storage.SearchHints{OrderBy: storage.OrderByValueAsc})
+	defer rs.Close()
+
+	assert.Equal(t, []string{"alpha", "beta", "gamma"}, drainSearchResultSet(t, rs),
+		"fan-out must dedup across tenants and respect value-asc ordering")
+}
+
+// TestMergeQueryable_SearchLabelValues_SingleTenantBypass pins the bypass
+// path for the label-values RPC.
+func TestMergeQueryable_SearchLabelValues_SingleTenantBypass(t *testing.T) {
+	src := &searchableTenantQueryable{
+		resultsByTenant: map[string][]storage.SearchResult{
+			"only": {{Value: "x", Score: 1.0}, {Value: "y", Score: 1.0}},
+		},
+	}
+	q := NewQueryable(src, true, defaultConcurrency, prometheus.NewRegistry(), log.NewNopLogger())
+
+	querier, err := q.Querier(0, 1000)
+	require.NoError(t, err)
+	defer querier.Close()
+	s := querier.(searcher)
+
+	ctx := user.InjectOrgID(context.Background(), "only")
+	rs := s.SearchLabelValues(ctx, "instance", nil, &storage.SearchHints{OrderBy: storage.OrderByValueAsc})
+	defer rs.Close()
+
+	assert.Equal(t, []string{"x", "y"}, drainSearchResultSet(t, rs))
+}
+
+// TestMergeQueryable_SearchLabelValues_SyntheticIDLabel_ReturnsTenantIDs
+// pins the SearchLabelValues(__tenant_id__, ...) contract: the federation
+// layer must synthesise the tenant IDs themselves rather than forwarding
+// to per-tenant queriers that don't carry that label. The order respects
+// hints.OrderBy.
+func TestMergeQueryable_SearchLabelValues_SyntheticIDLabel_ReturnsTenantIDs(t *testing.T) {
+	src := &searchableTenantQueryable{}
+	q := NewQueryable(src, false, defaultConcurrency, prometheus.NewRegistry(), log.NewNopLogger())
+
+	querier, err := q.Querier(0, 1000)
+	require.NoError(t, err)
+	defer querier.Close()
+	s := querier.(searcher)
+
+	ctx := user.InjectOrgID(context.Background(), "team-c|team-a|team-b")
+
+	t.Run("OrderByValueAsc", func(t *testing.T) {
+		rs := s.SearchLabelValues(ctx, defaultTenantLabel, nil, &storage.SearchHints{OrderBy: storage.OrderByValueAsc})
+		defer rs.Close()
+		assert.Equal(t, []string{"team-a", "team-b", "team-c"}, drainSearchResultSet(t, rs))
+	})
+
+	t.Run("OrderByValueDesc", func(t *testing.T) {
+		rs := s.SearchLabelValues(ctx, defaultTenantLabel, nil, &storage.SearchHints{OrderBy: storage.OrderByValueDesc})
+		defer rs.Close()
+		assert.Equal(t, []string{"team-c", "team-b", "team-a"}, drainSearchResultSet(t, rs))
+	})
+
+	// No leaf SearchLabelValues call must have been made for the
+	// synthetic label — the federation layer answered locally.
+	for _, id := range []string{"team-a", "team-b", "team-c"} {
+		assert.Empty(t, src.observedValueNames(id),
+			"synthetic __tenant_id__ search must not fan out to tenant %q", id)
+	}
+}
+
+// TestMergeQueryable_SearchLabelValues_SyntheticIDLabel_FilteredByParams
+// pins the params-derived filter: SearchLabelValues(__tenant_id__, ...)
+// must filter the synthetic IDs through the same BuildFilter pipeline that
+// per-tenant leaves use, so substring/Jaro params behave consistently
+// regardless of which label is being searched.
+func TestMergeQueryable_SearchLabelValues_SyntheticIDLabel_FilteredByParams(t *testing.T) {
+	src := &searchableTenantQueryable{}
+	q := NewQueryable(src, false, defaultConcurrency, prometheus.NewRegistry(), log.NewNopLogger())
+
+	querier, err := q.Querier(0, 1000)
+	require.NoError(t, err)
+	defer querier.Close()
+	s := querier.(searcher)
+
+	ctx := user.InjectOrgID(context.Background(), "team-a|team-b|other")
+
+	// FuzzAlgSubsequence (default) with term "team" should match team-a and
+	// team-b but not "other".
+	params, err := streaminglabelvalues.NewParams([]string{"team"}, false, streaminglabelvalues.FuzzAlgSubsequence, 0)
+	require.NoError(t, err)
+
+	rs := s.SearchLabelValues(ctx, defaultTenantLabel, params, &storage.SearchHints{OrderBy: storage.OrderByValueAsc})
+	defer rs.Close()
+	assert.Equal(t, []string{"team-a", "team-b"}, drainSearchResultSet(t, rs))
+}
+
+// TestMergeQueryable_SearchLabelValues_SyntheticIDLabel_RespectsTenantMatcher
+// pins that a matcher on __tenant_id__ narrows the synthetic-value set in
+// the same way FilterValuesByMatchers narrows the fan-out set elsewhere.
+func TestMergeQueryable_SearchLabelValues_SyntheticIDLabel_RespectsTenantMatcher(t *testing.T) {
+	src := &searchableTenantQueryable{}
+	q := NewQueryable(src, false, defaultConcurrency, prometheus.NewRegistry(), log.NewNopLogger())
+
+	querier, err := q.Querier(0, 1000)
+	require.NoError(t, err)
+	defer querier.Close()
+	s := querier.(searcher)
+
+	ctx := user.InjectOrgID(context.Background(), "team-a|team-b|team-c")
+	matcher := labels.MustNewMatcher(labels.MatchRegexp, defaultTenantLabel, "team-(a|c)")
+
+	rs := s.SearchLabelValues(ctx, defaultTenantLabel, nil, &storage.SearchHints{OrderBy: storage.OrderByValueAsc}, matcher)
+	defer rs.Close()
+	assert.Equal(t, []string{"team-a", "team-c"}, drainSearchResultSet(t, rs))
+}
+
+// TestMergeQueryable_SearchLabelValues_SyntheticIDLabel_RespectsLimit pins
+// that hints.Limit truncates the synthetic-value result set after ordering,
+// matching the per-leaf semantics implemented via ApplySearchHints.
+func TestMergeQueryable_SearchLabelValues_SyntheticIDLabel_RespectsLimit(t *testing.T) {
+	src := &searchableTenantQueryable{}
+	q := NewQueryable(src, false, defaultConcurrency, prometheus.NewRegistry(), log.NewNopLogger())
+
+	querier, err := q.Querier(0, 1000)
+	require.NoError(t, err)
+	defer querier.Close()
+	s := querier.(searcher)
+
+	ctx := user.InjectOrgID(context.Background(), "team-a|team-b|team-c|team-d")
+
+	rs := s.SearchLabelValues(ctx, defaultTenantLabel, nil, &storage.SearchHints{OrderBy: storage.OrderByValueAsc, Limit: 2})
+	defer rs.Close()
+	assert.Equal(t, []string{"team-a", "team-b"}, drainSearchResultSet(t, rs))
+}
+
+// TestMergeQueryable_SearchLabelValues_SyntheticIDLabel_BypassNotInjected
+// pins the bypass contract: with bypassWithSingleID=true and a single
+// tenant, the synthetic label is NOT injected — the request is forwarded
+// to the per-tenant querier, mirroring LabelValues' bypass behaviour.
+func TestMergeQueryable_SearchLabelValues_SyntheticIDLabel_BypassNotInjected(t *testing.T) {
+	src := &searchableTenantQueryable{}
+	q := NewQueryable(src, true, defaultConcurrency, prometheus.NewRegistry(), log.NewNopLogger())
+
+	querier, err := q.Querier(0, 1000)
+	require.NoError(t, err)
+	defer querier.Close()
+	s := querier.(searcher)
+
+	ctx := user.InjectOrgID(context.Background(), "only")
+	rs := s.SearchLabelValues(ctx, defaultTenantLabel, nil, &storage.SearchHints{OrderBy: storage.OrderByValueAsc})
+	defer rs.Close()
+
+	assert.Empty(t, drainSearchResultSet(t, rs),
+		"bypass mode must not inject the synthetic __tenant_id__ value")
+	assert.Equal(t, []string{defaultTenantLabel}, src.observedValueNames("only"),
+		"bypass mode must forward the request verbatim to the per-tenant querier")
+}
+
+// TestMergeQueryable_SearchLabelValues_RetainExistingPrefix_RewritesToIDLabel
+// pins the retain-prefix rewrite: when a tenant's series already carry a
+// __tenant_id__ label the federation layer exposes those values under
+// original___tenant_id__. A SearchLabelValues call on that prefixed name
+// must rewrite to the original idLabelName before fanning out, so the
+// per-tenant queriers see __tenant_id__ — otherwise they'd be asked for a
+// label that doesn't exist in their storage.
+func TestMergeQueryable_SearchLabelValues_RetainExistingPrefix_RewritesToIDLabel(t *testing.T) {
+	src := &searchableTenantQueryable{
+		resultsByTenant: map[string][]storage.SearchResult{
+			"t1": {{Value: "real-1", Score: 1.0}},
+			"t2": {{Value: "real-2", Score: 1.0}},
+		},
+	}
+	q := NewQueryable(src, false, defaultConcurrency, prometheus.NewRegistry(), log.NewNopLogger())
+
+	querier, err := q.Querier(0, 1000)
+	require.NoError(t, err)
+	defer querier.Close()
+	s := querier.(searcher)
+
+	ctx := user.InjectOrgID(context.Background(), "t1|t2")
+	rs := s.SearchLabelValues(ctx, originalDefaultTenantLabel, nil, &storage.SearchHints{OrderBy: storage.OrderByValueAsc})
+	defer rs.Close()
+
+	assert.Equal(t, []string{"real-1", "real-2"}, drainSearchResultSet(t, rs))
+	for _, id := range []string{"t1", "t2"} {
+		assert.Equal(t, []string{defaultTenantLabel}, src.observedValueNames(id),
+			"leaf %q must have been asked for %q (rewritten), not %q", id, defaultTenantLabel, originalDefaultTenantLabel)
+	}
+}
+
+// buildBenchmarkFederationResults generates per-tenant SearchResult slices
+// according to dedup ("disjoint", "half", "total"):
+//
+//   - "disjoint": tenant k holds values [k*N, (k+1)*N); zero overlap.
+//   - "half":     adjacent tenants share half their values, rotating around.
+//   - "total":    every tenant holds the same N values 0..N-1.
+//
+// Values are zero-padded so alpha order equals numeric order, matching the
+// distributor benchmark fixture.
+func buildBenchmarkFederationResults(numTenants, valuesPerTenant int, dedup string) (ids []string, results map[string][]storage.SearchResult) {
+	ids = make([]string, 0, numTenants)
+	results = make(map[string][]storage.SearchResult, numTenants)
+	for k := 0; k < numTenants; k++ {
+		id := fmt.Sprintf("t%03d", k)
+		ids = append(ids, id)
+		out := make([]storage.SearchResult, valuesPerTenant)
+		switch dedup {
+		case "disjoint":
+			base := k * valuesPerTenant
+			for i := 0; i < valuesPerTenant; i++ {
+				out[i] = storage.SearchResult{Value: fmt.Sprintf("v%09d", base+i), Score: 1.0}
+			}
+		case "half":
+			half := valuesPerTenant / 2
+			base := k * half
+			for i := 0; i < valuesPerTenant; i++ {
+				out[i] = storage.SearchResult{Value: fmt.Sprintf("v%09d", base+i), Score: 1.0}
+			}
+		case "total":
+			for i := 0; i < valuesPerTenant; i++ {
+				out[i] = storage.SearchResult{Value: fmt.Sprintf("v%09d", i), Score: 1.0}
+			}
+		default:
+			panic("buildBenchmarkFederationResults: unknown dedup " + dedup)
+		}
+		results[id] = out
+	}
+	return ids, results
+}
+
+// BenchmarkMergeQueryable_SearchLabelValues exercises the tenant federation
+// fan-out for the streaming search label-values path. Sub-cases vary tenant
+// count, per-tenant result-set size, and cross-tenant overlap. The
+// bypassWithSingleID=true sub-case at tenants=1 pins the single-tenant
+// fast path so its cost is visible separately from the multi-tenant merge.
+func BenchmarkMergeQueryable_SearchLabelValues(b *testing.B) {
+	type benchCase struct {
+		tenants         int
+		valuesPerTenant int
+		dedup           string
+		bypassSingle    bool
+	}
+	cases := []benchCase{
+		{1, 1000, "total", true},  // single-tenant bypass fast path
+		{1, 1000, "total", false}, // single-tenant via fan-out merge
+		{5, 100, "disjoint", false},
+		{5, 100, "half", false},
+		{5, 100, "total", false},
+		{5, 1000, "disjoint", false},
+		{5, 1000, "half", false},
+		{25, 100, "disjoint", false},
+		{25, 100, "half", false},
+		{100, 100, "disjoint", false},
+		{100, 100, "half", false},
+	}
+
+	for _, c := range cases {
+		c := c
+		_, results := buildBenchmarkFederationResults(c.tenants, c.valuesPerTenant, c.dedup)
+		src := &searchableTenantQueryable{resultsByTenant: results}
+		q := NewQueryable(src, c.bypassSingle, defaultConcurrency, prometheus.NewRegistry(), log.NewNopLogger())
+		querier, err := q.Querier(0, 1000)
+		require.NoError(b, err)
+		b.Cleanup(func() { _ = querier.Close() })
+
+		s, ok := querier.(searcher)
+		require.True(b, ok)
+
+		tenantIDs := make([]string, 0, c.tenants)
+		for k := 0; k < c.tenants; k++ {
+			tenantIDs = append(tenantIDs, fmt.Sprintf("t%03d", k))
+		}
+		ctx := user.InjectOrgID(context.Background(), strings.Join(tenantIDs, "|"))
+		hints := &storage.SearchHints{OrderBy: storage.OrderByValueAsc, Limit: c.tenants * c.valuesPerTenant}
+
+		name := fmt.Sprintf("tenants=%d/values=%d/dedup=%s/bypass=%t",
+			c.tenants, c.valuesPerTenant, c.dedup, c.bypassSingle)
+		b.Run(name, func(b *testing.B) {
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				rs := s.SearchLabelValues(ctx, "instance", nil, hints)
+				for rs.Next() {
+					_ = rs.At()
+				}
+				if err := rs.Err(); err != nil {
+					b.Fatal(err)
+				}
+				rs.Close()
+			}
+		})
+	}
 }

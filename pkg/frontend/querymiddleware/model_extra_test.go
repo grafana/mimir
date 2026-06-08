@@ -19,6 +19,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
 	"github.com/grafana/mimir/pkg/util/promqlext"
 	"github.com/grafana/mimir/pkg/util/propagation"
 )
@@ -267,7 +268,7 @@ func TestPrometheusRangeQueryRequest_MinTMaxT(t *testing.T) {
 				1000,
 				defaultLookback,
 				expr,
-				Options{},
+				requestoptions.Options{},
 				nil,
 				"",
 			)
@@ -371,7 +372,7 @@ func TestPrometheusInstantQueryRequest_MinTMaxT(t *testing.T) {
 				now.UnixMilli(),
 				defaultLookback,
 				expr,
-				Options{},
+				requestoptions.Options{},
 				nil,
 				"",
 			)

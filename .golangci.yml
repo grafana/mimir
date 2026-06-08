@@ -59,14 +59,18 @@ linters:
         - dupImport
     gosec:
       includes:
+        - G101
         - G103
         - G104
         - G108
         - G109
         - G112
         - G114
+        - G117
         - G302
         - G401
+        - G402
+        - G501
       excludes:
         # Relies on system umask to restrict directory permissions, preserving operator flexibility
         - G301
@@ -98,6 +102,11 @@ linters:
       - linters:
           - revive
         text: if-return
+      # G101 fires on test fixtures with fake OAuth2/SASL/GCS-service-account values.
+      - linters:
+          - gosec
+        text: "G101"
+        path: _test\.go
 formatters:
   enable:
     - gci

@@ -21,7 +21,6 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/util/annotations"
 	"go.opentelemetry.io/otel"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
@@ -30,6 +29,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/multiaggregation"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/rangevectorsplitting"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/rangevectorsplitting/cache"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/splitandcache"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -42,7 +42,6 @@ func init() {
 }
 
 var tracer = otel.Tracer("pkg/streamingpromql")
-var errPerStepStatsNotSupported = errors.New("per-step stats are not supported by Mimir query engine")
 
 const DefaultLookbackDelta = 5 * time.Minute // This should be the same value as github.com/prometheus/prometheus/promql.defaultLookbackDelta.
 
@@ -66,10 +65,6 @@ func NewEngineWithCache(opts EngineOpts, metrics *stats.QueryMetrics, planner *Q
 
 	if !opts.CommonOpts.EnableNegativeOffset {
 		return nil, errors.New("disabling negative offsets not supported by Mimir query engine")
-	}
-
-	if opts.CommonOpts.EnablePerStepStats {
-		return nil, errPerStepStatsNotSupported
 	}
 
 	if planner == nil {
@@ -111,6 +106,7 @@ func NewEngineWithCache(opts EngineOpts, metrics *stats.QueryMetrics, planner *Q
 		planning.NODE_TYPE_MULTI_AGGREGATION_INSTANCE: planning.NodeMaterializerFunc[*multiaggregation.MultiAggregationInstance](multiaggregation.MaterializeMultiAggregationInstance),
 
 		planning.NODE_TYPE_SPLIT_FUNCTION_OVER_RANGE_VECTOR: rangevectorsplitting.NewMaterializer(opts.RangeVectorSplitting.Enabled, intermediateCache, opts.Logger),
+		planning.NODE_TYPE_TIME_RANGE_SPLIT:                 planning.NodeMaterializerFunc[*splitandcache.TimeRangeSplit](splitandcache.MaterializeSplit),
 	}
 
 	memoryConsumptionTrackerFactory := opts.MemoryConsumptionTrackerFactory
@@ -216,10 +212,6 @@ func (e *Engine) newQueryFromPlanner(ctx context.Context, queryable storage.Quer
 		opts = promql.NewPrometheusQueryOpts(false, 0)
 	}
 
-	if opts.EnablePerStepStats() {
-		return nil, errPerStepStatsNotSupported
-	}
-
 	lookbackDelta := opts.LookbackDelta()
 	if lookbackDelta == 0 {
 		lookbackDelta = e.lookbackDelta
@@ -300,8 +292,6 @@ func (e *Engine) materializeAndCreateEvaluator(ctx context.Context, queryable st
 
 	operatorParams := &planning.OperatorParameters{
 		Queryable:          queryable,
-		Annotations:        annotations.New(),
-		QueryStats:         types.NewQueryStats(),
 		EagerLoadSelectors: e.eagerLoadSelectors,
 		QueryParameters:    params,
 		Logger:             e.logger,

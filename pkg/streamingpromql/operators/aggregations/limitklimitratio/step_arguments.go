@@ -18,6 +18,7 @@ import (
 )
 
 type limitArgument interface {
+	getAnnotations() annotations.Annotations
 	close()
 }
 
@@ -25,7 +26,7 @@ type limitArgument interface {
 type limitRatioArgument struct {
 	r []float64 // The ratio value for each step
 
-	annotations                     *annotations.Annotations
+	annotations                     annotations.Annotations
 	haveEmittedRatioAboveAnnotation bool
 	haveEmittedRatioBelowAnnotation bool
 	memoryConsumptionTracker        *limiter.MemoryConsumptionTracker
@@ -33,9 +34,8 @@ type limitRatioArgument struct {
 	param                           types.ScalarOperator
 }
 
-func newLimitRatioArgument(ctx context.Context, annotations *annotations.Annotations, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, stepCount int, param types.ScalarOperator) (*limitRatioArgument, int, error) {
+func newLimitRatioArgument(ctx context.Context, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, stepCount int, param types.ScalarOperator) (*limitRatioArgument, int, error) {
 	r := &limitRatioArgument{
-		annotations:              annotations,
 		memoryConsumptionTracker: memoryConsumptionTracker,
 		stepCount:                stepCount,
 		param:                    param,
@@ -101,6 +101,10 @@ func (p *limitRatioArgument) init(ctx context.Context) (int, error) {
 	return zeros, nil
 }
 
+func (p *limitRatioArgument) getAnnotations() annotations.Annotations {
+	return p.annotations
+}
+
 func (p *limitRatioArgument) close() {
 	types.Float64SlicePool.Put(&p.r, p.memoryConsumptionTracker)
 }
@@ -164,6 +168,10 @@ func (p *limitkArgument) init(ctx context.Context) (int, error) {
 	}
 
 	return zeros, nil
+}
+
+func (p *limitkArgument) getAnnotations() annotations.Annotations {
+	return nil
 }
 
 func (p *limitkArgument) close() {

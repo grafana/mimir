@@ -19,6 +19,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/gorilla/mux"
 	"github.com/grafana/dskit/kv/memberlist"
+	dskitlog "github.com/grafana/dskit/log"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/server"
 	"github.com/prometheus/client_golang/prometheus"
@@ -161,7 +162,7 @@ func (a *API) deprecatedHandler(next http.Handler) http.Handler {
 	l := util_log.NewRateLimitedLogger(time.Minute, a.logger, time.Now)
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		level.Warn(l).Log("msg", "api: received a request on a deprecated endpoint", "path", r.URL.Path, "method", r.Method)
+		level.Warn(l).Log("msg", "api: received a request on a deprecated endpoint", "path", dskitlog.DropUnsafeChars(r.URL.Path), "method", dskitlog.DropUnsafeChars(r.Method))
 		next.ServeHTTP(w, r)
 	})
 }
@@ -456,13 +457,13 @@ func (a *API) DisableServerHTTPTimeouts(next http.Handler) http.Handler {
 		c := http.NewResponseController(w)
 		zero := time.Time{}
 
-		level.Debug(a.logger).Log("msg", "disabling HTTP server timeouts for URL", "url", r.URL)
+		level.Debug(a.logger).Log("msg", "disabling HTTP server timeouts for URL", "url", dskitlog.DropUnsafeChars(r.URL))
 
 		if err := c.SetReadDeadline(zero); err != nil {
-			level.Warn(a.logger).Log("msg", "failed to clear read deadline on HTTP connection", "url", r.URL, "err", err)
+			level.Warn(a.logger).Log("msg", "failed to clear read deadline on HTTP connection", "url", dskitlog.DropUnsafeChars(r.URL), "err", err)
 		}
 		if err := c.SetWriteDeadline(zero); err != nil {
-			level.Warn(a.logger).Log("msg", "failed to clear write deadline on HTTP connection", "url", r.URL, "err", err)
+			level.Warn(a.logger).Log("msg", "failed to clear write deadline on HTTP connection", "url", dskitlog.DropUnsafeChars(r.URL), "err", err)
 		}
 
 		next.ServeHTTP(w, r)
@@ -504,6 +505,11 @@ func (a *API) RegisterQueryAPI(handler http.Handler, buildInfoHandler http.Handl
 	a.RegisterRouteWithMaxBodySize(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/cardinality/active_series"), handler, true, true, maxBodySizeIfAny, "GET", "POST")
 	a.RegisterRouteWithMaxBodySize(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/cardinality/active_native_histogram_metrics"), handler, true, true, maxBodySizeIfAny, "GET", "POST")
 	a.RegisterRouteWithMaxBodySize(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/format_query"), handler, true, true, maxBodySizeIfAny, "GET", "POST")
+	// Experimental streaming search endpoints, gated by
+	// -querier.experimental-search-api-enabled. Mirrors Prometheus PR #18573.
+	a.RegisterRouteWithMaxBodySize(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/search/metric_names"), handler, true, true, maxBodySizeIfAny, "GET", "POST")
+	a.RegisterRouteWithMaxBodySize(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/search/label_names"), handler, true, true, maxBodySizeIfAny, "GET", "POST")
+	a.RegisterRouteWithMaxBodySize(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/search/label_values"), handler, true, true, maxBodySizeIfAny, "GET", "POST")
 }
 
 func (a *API) RegisterQueryAnalysisAPI(handler http.Handler) {

@@ -33,7 +33,7 @@ type VectorScalarBinaryOperation struct {
 	opFunc    vectorScalarBinaryOperationFunc
 
 	expressionPosition posrange.PositionRange
-	annotations        *annotations.Annotations
+	annotations        annotations.Annotations
 	scalarData         types.ScalarData
 	vectorIterator     types.InstantVectorSeriesDataIterator
 }
@@ -72,7 +72,6 @@ func NewVectorScalarBinaryOperation(
 		EnableDelayedNameRemoval: opParams.QueryParameters.EnableDelayedNameRemoval,
 
 		timeRange:          timeRange,
-		annotations:        opParams.Annotations,
 		expressionPosition: expressionPosition,
 	}
 
@@ -196,9 +195,9 @@ func (v *VectorScalarBinaryOperation) NextSeries(ctx context.Context) (types.Ins
 
 		if !valid {
 			if v.ScalarIsLeftSide {
-				emitIncompatibleTypesAnnotation(v.annotations, v.Op, nil, vectorH, v.expressionPosition)
+				v.annotations.Add(newIncompatibleTypesAnnotation(v.Op, nil, vectorH, v.expressionPosition))
 			} else {
-				emitIncompatibleTypesAnnotation(v.annotations, v.Op, vectorH, nil, v.expressionPosition)
+				v.annotations.Add(newIncompatibleTypesAnnotation(v.Op, vectorH, nil, v.expressionPosition))
 			}
 		}
 
@@ -267,18 +266,25 @@ func (v *VectorScalarBinaryOperation) AfterPrepare(ctx context.Context) error {
 	return v.Vector.AfterPrepare(ctx)
 }
 
-func (v *VectorScalarBinaryOperation) Finalize(ctx context.Context) error {
+func (v *VectorScalarBinaryOperation) FinishedReading(ctx context.Context) error {
 	types.FPointSlicePool.Put(&v.scalarData.Samples, v.MemoryConsumptionTracker)
 
-	if err := v.Scalar.Finalize(ctx); err != nil {
+	if err := v.Scalar.FinishedReading(ctx); err != nil {
 		return err
 	}
 
-	return v.Vector.Finalize(ctx)
+	return v.Vector.FinishedReading(ctx)
 }
 
-func (v *VectorScalarBinaryOperation) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
-	return types.CombineStats[types.StatsProvider](ctx, v.Vector, v.Scalar)
+func (v *VectorScalarBinaryOperation) Finalize(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
+	stats, childAnnos, err := types.FinalizeAndCombine[types.Finalizer](ctx, v.Vector, v.Scalar)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	v.annotations.Merge(childAnnos)
+
+	return stats, v.annotations, nil
 }
 
 func (v *VectorScalarBinaryOperation) Close() {

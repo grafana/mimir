@@ -71,7 +71,7 @@ type RetryConfig struct {
 func (cfg *RetryConfig) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.Enabled, "distributor.retry-after-header.enabled", true, "Enables inclusion of the Retry-After header in the response: true includes it for client retry guidance, false omits it.")
 	f.DurationVar(&cfg.MinBackoff, "distributor.retry-after-header.min-backoff", 6*time.Second, "Minimum duration of the Retry-After HTTP header in responses to 429/5xx errors. Must be greater than or equal to 1s. Backoff is calculated as MinBackoff*2^(RetryAttempt-1) seconds with random jitter of 50% in either direction. RetryAttempt is the value of the Retry-Attempt HTTP header.")
-	f.DurationVar(&cfg.MaxBackoff, "distributor.retry-after-header.max-backoff", 96*time.Second, "Minimum duration of the Retry-After HTTP header in responses to 429/5xx errors. Must be greater than or equal to 1s. Backoff is calculated as MinBackoff*2^(RetryAttempt-1) seconds with random jitter of 50% in either direction. RetryAttempt is the value of the Retry-Attempt HTTP header.")
+	f.DurationVar(&cfg.MaxBackoff, "distributor.retry-after-header.max-backoff", 96*time.Second, "Maximum duration of the Retry-After HTTP header in responses to 429/5xx errors. Must be greater than or equal to 1s. Backoff is calculated as MinBackoff*2^(RetryAttempt-1) seconds with random jitter of 50% in either direction. RetryAttempt is the value of the Retry-Attempt HTTP header.")
 }
 
 func (cfg *RetryConfig) Validate() error {

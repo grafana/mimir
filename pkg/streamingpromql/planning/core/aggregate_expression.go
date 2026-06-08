@@ -19,10 +19,11 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
+//node:generate
 type AggregateExpression struct {
 	*AggregateExpressionDetails
-	Inner planning.Node
-	Param planning.Node
+	Inner planning.Node `node:"child"`
+	Param planning.Node `node:"child,nilable"`
 }
 
 func (a *AggregateExpression) Describe() string {
@@ -63,28 +64,6 @@ func (a *AggregateExpression) Details() proto.Message {
 
 func (a *AggregateExpression) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_AGGREGATE_EXPRESSION
-}
-
-func (a *AggregateExpression) Child(idx int) planning.Node {
-	switch idx {
-	case 0:
-		return a.Inner
-	case 1:
-		if a.Param == nil {
-			panic("cannot get AggregateExpression child at index 1 if there is no parameter")
-		}
-		return a.Param
-	default:
-		panic(fmt.Sprintf("node of type AggregateExpression supports at most 2 children, but attempted to get child at index %d", idx))
-	}
-}
-
-func (a *AggregateExpression) ChildCount() int {
-	if a.Param == nil {
-		return 1
-	}
-
-	return 2
 }
 
 func (a *AggregateExpression) SetChildren(children []planning.Node) error {
@@ -162,7 +141,7 @@ func MaterializeAggregateExpression(a *AggregateExpression, materializer *planni
 			return nil, fmt.Errorf("could not create parameter operator for AggregateExpression %s: %w", a.Op.String(), err)
 		}
 
-		o = topkbottomk.New(inner, param, timeRange, a.Grouping, a.Without, a.Op == AGGREGATION_TOPK, params.MemoryConsumptionTracker, params.Annotations, a.GetExpressionPosition().ToPrometheusType())
+		o = topkbottomk.New(inner, param, timeRange, a.Grouping, a.Without, a.Op == AGGREGATION_TOPK, params.MemoryConsumptionTracker, a.GetExpressionPosition().ToPrometheusType())
 
 	case AGGREGATION_LIMITK:
 		param, err := materializer.ConvertNodeToScalarOperator(a.Param, timeRange)
@@ -170,7 +149,7 @@ func MaterializeAggregateExpression(a *AggregateExpression, materializer *planni
 			return nil, fmt.Errorf("could not create parameter operator for AggregateExpression %s: %w", a.Op.String(), err)
 		}
 
-		o = limitklimitratio.NewLimitK(inner, param, timeRange, a.Grouping, a.Without, params.MemoryConsumptionTracker, params.Annotations, a.GetExpressionPosition().ToPrometheusType())
+		o = limitklimitratio.NewLimitK(inner, param, timeRange, a.Grouping, a.Without, params.MemoryConsumptionTracker, a.GetExpressionPosition().ToPrometheusType())
 
 	case AGGREGATION_LIMIT_RATIO:
 		param, err := materializer.ConvertNodeToScalarOperator(a.Param, timeRange)
@@ -178,7 +157,7 @@ func MaterializeAggregateExpression(a *AggregateExpression, materializer *planni
 			return nil, fmt.Errorf("could not create parameter operator for AggregateExpression %s: %w", a.Op.String(), err)
 		}
 
-		o = limitklimitratio.NewLimitRatio(inner, param, timeRange, a.Grouping, a.Without, params.MemoryConsumptionTracker, params.Annotations, a.GetExpressionPosition().ToPrometheusType())
+		o = limitklimitratio.NewLimitRatio(inner, param, timeRange, a.Grouping, a.Without, params.MemoryConsumptionTracker, a.GetExpressionPosition().ToPrometheusType())
 
 	case AGGREGATION_QUANTILE:
 		param, err := materializer.ConvertNodeToScalarOperator(a.Param, timeRange)
@@ -186,7 +165,7 @@ func MaterializeAggregateExpression(a *AggregateExpression, materializer *planni
 			return nil, fmt.Errorf("could not create parameter operator for AggregateExpression %s: %w", a.Op.String(), err)
 		}
 
-		o, err = aggregations.NewQuantileAggregation(inner, param, timeRange, a.Grouping, a.Without, params.MemoryConsumptionTracker, params.Annotations, a.GetExpressionPosition().ToPrometheusType())
+		o, err = aggregations.NewQuantileAggregation(inner, param, timeRange, a.Grouping, a.Without, params.MemoryConsumptionTracker, a.GetExpressionPosition().ToPrometheusType())
 		if err != nil {
 			return nil, err
 		}
@@ -206,7 +185,7 @@ func MaterializeAggregateExpression(a *AggregateExpression, materializer *planni
 		}
 
 		var err error
-		o, err = aggregations.NewAggregation(inner, timeRange, a.Grouping, a.Without, itemType, params.MemoryConsumptionTracker, params.Annotations, a.GetExpressionPosition().ToPrometheusType())
+		o, err = aggregations.NewAggregation(inner, timeRange, a.Grouping, a.Without, itemType, params.MemoryConsumptionTracker, a.GetExpressionPosition().ToPrometheusType())
 		if err != nil {
 			return nil, err
 		}

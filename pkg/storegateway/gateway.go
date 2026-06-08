@@ -84,6 +84,16 @@ func (cfg *Config) Validate(limits validation.Limits) error {
 // StoreGateway is the Mimir service responsible to expose an API over the bucket
 // where blocks are stored, supporting blocks sharding and replication across a pool
 // of store gateway instances (optional).
+// activityTracker is the subset of *activitytracker.ActivityTracker exercised
+// by StoreGateway. Defined as an interface so tests can inject a fake; the
+// production *activitytracker.ActivityTracker satisfies it implicitly. Both
+// methods are nil-safe on the concrete type, so a typed-nil pointer wrapped
+// in this interface continues to behave the same way.
+type activityTracker interface {
+	Insert(activityGenerator func() string) int
+	Delete(activityIndex int)
+}
+
 type StoreGateway struct {
 	services.Service
 
@@ -91,7 +101,7 @@ type StoreGateway struct {
 	storageCfg mimir_tsdb.BlocksStorageConfig
 	logger     log.Logger
 	stores     *BucketStores
-	tracker    *activitytracker.ActivityTracker
+	tracker    activityTracker
 
 	// Ring used for sharding blocks.
 	ringLifecycler *ring.BasicLifecycler
@@ -377,6 +387,26 @@ func (g *StoreGateway) LabelValues(ctx context.Context, req *storepb.LabelValues
 	defer g.tracker.Delete(ix)
 
 	return g.stores.LabelValues(ctx, req)
+}
+
+// SearchLabelNames implements the storegatewaypb.StoreGatewayServer interface.
+func (g *StoreGateway) SearchLabelNames(req *storepb.SearchLabelNamesRequest, srv storegatewaypb.StoreGateway_SearchLabelNamesServer) error {
+	ix := g.tracker.Insert(func() string {
+		return requestActivity(srv.Context(), "StoreGateway/SearchLabelNames", req)
+	})
+	defer g.tracker.Delete(ix)
+
+	return g.stores.SearchLabelNames(req, srv)
+}
+
+// SearchLabelValues implements the storegatewaypb.StoreGatewayServer interface.
+func (g *StoreGateway) SearchLabelValues(req *storepb.SearchLabelValuesRequest, srv storegatewaypb.StoreGateway_SearchLabelValuesServer) error {
+	ix := g.tracker.Insert(func() string {
+		return requestActivity(srv.Context(), "StoreGateway/SearchLabelValues", req)
+	})
+	defer g.tracker.Delete(ix)
+
+	return g.stores.SearchLabelValues(req, srv)
 }
 
 func requestActivity(ctx context.Context, name string, req interface{}) string {

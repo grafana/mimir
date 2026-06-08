@@ -24,6 +24,7 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           fetch-depth: '0' # we need all commits so that the git history check returns valid commits
+          persist-credentials: false
 
       - name: Retrieve Secrets from Vault
         id: get-secrets
@@ -33,16 +34,12 @@ jobs:
             LOKI_URL=flaky-tests-bot:loki-url
             LOKI_USERNAME=flaky-tests-bot:loki-username
             LOKI_PASSWORD=flaky-tests-bot:loki-password
-            APP_ID=mimir-github-bot:app_id
-            PRIVATE_KEY=mimir-github-bot:private_key
 
       - name: Generate GitHub App Token
         id: github-token
-        uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3 # v3
+        uses: grafana/shared-workflows/actions/create-github-app-token@46f48da11e78ebdba7a8747ae456b11062fac83e # create-github-app-token/v0.3.1
         with:
-          app-id: ${{ env.APP_ID }}
-          private-key: ${{ env.PRIVATE_KEY }}
-          owner: ${{ github.repository_owner }}
+          github_app: mimir-github-bot
 
       - name: Run Flaky Tests Analysis
         uses: grafana/shared-workflows/actions/go-flaky-tests@fda601c4163fc8b5558029918e4e6259a2359682

@@ -5,6 +5,8 @@ package scheduler
 import (
 	"container/list"
 	"errors"
+	"fmt"
+	"iter"
 	"sync"
 	"time"
 
@@ -126,14 +128,19 @@ func (s *jobQueue[T]) add(id string, spec T) error {
 		return errJobAlreadyExists
 	}
 
-	// See if the creation policy would allow it.
-
-	existingJobs := make([]*T, 0, len(s.jobs))
-	for _, j := range s.jobs {
-		existingJobs = append(existingJobs, &j.spec)
+	// See if the creation policy would allow it. The iterator yields a
+	// reference to each existing job's spec; the policy must not retain those
+	// references beyond the call as the underlying jobs may mutate or be
+	// removed once the queue lock is released.
+	existing := func(yield func(*T) bool) {
+		for _, j := range s.jobs {
+			if !yield(&j.spec) {
+				return
+			}
+		}
 	}
-	if !s.creationPolicy.canCreateJob(jobKey{id: id}, &spec, existingJobs) {
-		return errJobCreationDisallowed
+	if err := s.creationPolicy.canCreateJob(jobKey{id: id}, &spec, existing); err != nil {
+		return fmt.Errorf("%w: %w", errJobCreationDisallowed, err)
 	}
 
 	j := &job[T]{
@@ -314,14 +321,20 @@ type jobKey struct {
 	epoch int64
 }
 
+// jobCreationPolicy decides whether a candidate job is allowed to be added to
+// the queue. existing is a lazy iterator over references to the specs of jobs
+// already in the queue at the time of the call; policies are free to stop
+// iterating early. The references must not be retained after canCreateJob
+// returns. A nil error means the job is allowed; any non-nil error rejects the
+// job and is wrapped in errJobCreationDisallowed.
 type jobCreationPolicy[T any] interface {
-	canCreateJob(jobKey, *T, []*T) bool
+	canCreateJob(key jobKey, spec *T, existing iter.Seq[*T]) error
 }
 
 type noOpJobCreationPolicy[T any] struct{}
 
-func (p noOpJobCreationPolicy[T]) canCreateJob(_ jobKey, _ *T, _ []*T) bool { // nolint:unused
-	return true
+func (p noOpJobCreationPolicy[T]) canCreateJob(_ jobKey, _ *T, _ iter.Seq[*T]) error { // nolint:unused
+	return nil
 }
 
 var _ jobCreationPolicy[any] = (*noOpJobCreationPolicy[any])(nil)

@@ -21,10 +21,11 @@ import (
 
 var errCannotMergeBinaryExpressionHints = errors.New("cannot merge hints for binary expressions with different hints")
 
+//node:generate
 type BinaryExpression struct {
 	*BinaryExpressionDetails
-	LHS planning.Node
-	RHS planning.Node
+	LHS planning.Node `node:"child"`
+	RHS planning.Node `node:"child"`
 }
 
 func (b *BinaryExpression) Describe() string {
@@ -114,21 +115,6 @@ func (b *BinaryExpression) Details() proto.Message {
 
 func (b *BinaryExpression) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_BINARY_EXPRESSION
-}
-
-func (b *BinaryExpression) Child(idx int) planning.Node {
-	switch idx {
-	case 0:
-		return b.LHS
-	case 1:
-		return b.RHS
-	default:
-		panic(fmt.Sprintf("node of type BinaryExpression supports 2 children, but attempted to get child at index %d", idx))
-	}
-}
-
-func (b *BinaryExpression) ChildCount() int {
-	return 2
 }
 
 func (b *BinaryExpression) SetChildren(children []planning.Node) error {
@@ -230,7 +216,7 @@ func MaterializeBinaryExpression(b *BinaryExpression, materializer *planning.Mat
 	}
 
 	if lhsScalar != nil && rhsScalar != nil {
-		o, err := binops.NewScalarScalarBinaryOperation(lhsScalar, rhsScalar, op, params.MemoryConsumptionTracker, params.Annotations, b.GetExpressionPosition().ToPrometheusType())
+		o, err := binops.NewScalarScalarBinaryOperation(lhsScalar, rhsScalar, op, params.MemoryConsumptionTracker, b.GetExpressionPosition().ToPrometheusType())
 		if err != nil {
 			return nil, err
 		}
@@ -293,9 +279,9 @@ func (b *BinaryExpression) createVectorVectorOperator(lhs, rhs types.InstantVect
 	default:
 		switch b.VectorMatching.Card {
 		case parser.CardOneToMany, parser.CardManyToOne:
-			return binops.NewGroupedVectorVectorBinaryOperation(lhs, rhs, *b.VectorMatching.ToPrometheusType(), op, b.ReturnBool, params.MemoryConsumptionTracker, params.Annotations, b.GetExpressionPosition().ToPrometheusType(), timeRange, b.Hints.ToOperatorType(), params.Logger)
+			return binops.NewGroupedVectorVectorBinaryOperation(lhs, rhs, *b.VectorMatching.ToPrometheusType(), op, b.ReturnBool, params.MemoryConsumptionTracker, b.GetExpressionPosition().ToPrometheusType(), timeRange, b.Hints.ToOperatorType(), params.Logger)
 		case parser.CardOneToOne:
-			return binops.NewOneToOneVectorVectorBinaryOperation(lhs, rhs, *b.VectorMatching.ToPrometheusType(), op, b.ReturnBool, params.MemoryConsumptionTracker, params.Annotations, b.GetExpressionPosition().ToPrometheusType(), timeRange, b.Hints.ToOperatorType(), params.Logger)
+			return binops.NewOneToOneVectorVectorBinaryOperation(lhs, rhs, *b.VectorMatching.ToPrometheusType(), op, b.ReturnBool, params.MemoryConsumptionTracker, b.GetExpressionPosition().ToPrometheusType(), timeRange, b.Hints.ToOperatorType(), params.Logger)
 		default:
 			return nil, compat.NewNotSupportedError(fmt.Sprintf("binary expression with %v matching for '%v'", b.VectorMatching.Card, b.Op.String()))
 		}

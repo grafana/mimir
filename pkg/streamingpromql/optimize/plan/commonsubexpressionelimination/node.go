@@ -28,9 +28,10 @@ func init() {
 	})
 }
 
+//node:generate
 type Duplicate struct {
 	*DuplicateDetails
-	Inner planning.Node
+	Inner planning.Node `node:"child"`
 }
 
 func (d *Duplicate) Details() proto.Message {
@@ -39,18 +40,6 @@ func (d *Duplicate) Details() proto.Message {
 
 func (d *Duplicate) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_DUPLICATE
-}
-
-func (d *Duplicate) Child(idx int) planning.Node {
-	if idx != 0 {
-		panic(fmt.Sprintf("node of type Duplicate supports 1 child, but attempted to get child at index %d", idx))
-	}
-
-	return d.Inner
-}
-
-func (d *Duplicate) ChildCount() int {
-	return 1
 }
 
 func (d *Duplicate) SetChildren(children []planning.Node) error {
@@ -121,6 +110,24 @@ func (d *Duplicate) MinimumRequiredPlanVersion(timeRange types.QueryTimeRange) (
 	return planning.QueryPlanVersionZero, nil
 }
 
+func (d *Duplicate) IsSplittable() bool {
+	splitNode, ok := d.Inner.(planning.SplitNode)
+	if !ok {
+		return false
+	}
+	return splitNode.IsSplittable()
+}
+
+func (d *Duplicate) GetRangeParams() planning.RangeParams {
+	splitNode, ok := d.Inner.(planning.SplitNode)
+	if !ok {
+		return planning.RangeParams{}
+	}
+	return splitNode.GetRangeParams()
+}
+
+var _ planning.SplitNode = &Duplicate{}
+
 func MaterializeDuplicate(d *Duplicate, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters, overrideTimeParams planning.RangeParams) (planning.OperatorFactory, error) {
 	inner, err := materializer.ConvertNodeToOperatorWithSubRange(d.Inner, timeRange, overrideTimeParams)
 	if err != nil {
@@ -157,9 +164,10 @@ func (d *RangeVectorDuplicationConsumerOperatorFactory) Produce() (types.Operato
 	return d.Buffer.AddConsumer(), nil
 }
 
+//node:generate
 type DuplicateFilter struct {
 	*DuplicateFilterDetails
-	Inner *Duplicate
+	Inner *Duplicate `node:"child"`
 }
 
 func (f *DuplicateFilter) Details() proto.Message {
@@ -168,18 +176,6 @@ func (f *DuplicateFilter) Details() proto.Message {
 
 func (f *DuplicateFilter) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_DUPLICATE_FILTER
-}
-
-func (f *DuplicateFilter) Child(idx int) planning.Node {
-	if idx != 0 {
-		panic(fmt.Sprintf("node of type DuplicateFilter supports 1 child, but attempted to get child at index %d", idx))
-	}
-
-	return f.Inner
-}
-
-func (f *DuplicateFilter) ChildCount() int {
-	return 1
 }
 
 func (f *DuplicateFilter) SetChildren(children []planning.Node) error {
@@ -252,6 +248,16 @@ func (f *DuplicateFilter) ExpressionPosition() (posrange.PositionRange, error) {
 func (f *DuplicateFilter) MinimumRequiredPlanVersion(types.QueryTimeRange) (planning.QueryPlanVersion, error) {
 	return planning.QueryPlanV7, nil
 }
+
+func (f *DuplicateFilter) IsSplittable() bool {
+	return f.Inner.IsSplittable()
+}
+
+func (f *DuplicateFilter) GetRangeParams() planning.RangeParams {
+	return f.Inner.GetRangeParams()
+}
+
+var _ planning.SplitNode = &DuplicateFilter{}
 
 func MaterializeDuplicateFilter(f *DuplicateFilter, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters, overrideTimeParams planning.RangeParams) (planning.OperatorFactory, error) {
 	operator, err := materializer.ConvertNodeToOperatorWithSubRange(f.Inner, timeRange, overrideTimeParams)

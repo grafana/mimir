@@ -27,9 +27,10 @@ func init() {
 	})
 }
 
+//node:generate
 type SplitFunctionCall struct {
 	*SplitFunctionCallDetails
-	Inner *core.FunctionCall
+	Inner *core.FunctionCall `node:"child"`
 }
 
 func (s *SplitFunctionCall) Details() proto.Message {
@@ -51,17 +52,6 @@ func (s *SplitFunctionCall) SetChildren(children []planning.Node) error {
 	}
 	s.Inner = inner
 	return nil
-}
-
-func (s *SplitFunctionCall) Child(idx int) planning.Node {
-	if idx > 0 {
-		panic(fmt.Sprintf("SplitFunctionCall node has 1 child, but attempted to get child at index %d", idx))
-	}
-	return s.Inner
-}
-
-func (s *SplitFunctionCall) ChildCount() int {
-	return 1
 }
 
 func (s *SplitFunctionCall) ReplaceChild(idx int, child planning.Node) error {
@@ -140,8 +130,7 @@ func (s *SplitFunctionCall) ExpressionPosition() (posrange.PositionRange, error)
 }
 
 func (s *SplitFunctionCall) MinimumRequiredPlanVersion(types.QueryTimeRange) (planning.QueryPlanVersion, error) {
-	// Query splitting with intermediate result caching requires QueryPlanV6
-	return planning.QueryPlanV6, nil
+	return planning.QueryPlanV13, nil
 }
 
 type Materializer struct {
@@ -188,20 +177,30 @@ func (m Materializer) Materialize(n planning.Node, materializer *planning.Materi
 		return nil, fmt.Errorf("expected exactly 1 child for range vector splitting function %s, got %d", s.Inner.Function.PromQLName(), s.Inner.ChildCount())
 	}
 
+	innerNode := s.Inner.Child(0)
+	splitNode, ok := innerNode.(planning.SplitNode)
+	if !ok {
+		return nil, fmt.Errorf("inner node of split function call does not implement SplitNode: %T", innerNode)
+	}
+
 	expressionPos, err := s.Inner.ExpressionPosition()
 	if err != nil {
 		return nil, err
 	}
 
+	innerCacheKey, err := SplittingCacheKey(splitNode, params.QueryParameters)
+	if err != nil {
+		return nil, fmt.Errorf("computing splitting cache key: %w", err)
+	}
+
 	splitOp, err := splitFactory(
-		s.Inner.Child(0),
+		innerNode,
 		materializer,
 		timeRange,
 		ranges,
-		s.InnerNodeCacheKey,
+		innerCacheKey,
 		m.cache,
 		expressionPos,
-		params.Annotations,
 		params.MemoryConsumptionTracker,
 		params.QueryParameters.EnableDelayedNameRemoval,
 		params.Logger,
@@ -211,4 +210,24 @@ func (m Materializer) Materialize(n planning.Node, materializer *planning.Materi
 	}
 
 	return planning.NewSingleUseOperatorFactory(splitOp), nil
+}
+
+func SplittingCacheKey(node planning.Node, params *planning.QueryParameters) ([]byte, error) {
+	// Make a copy of params so we can clear a couple of unnecessary fields before encoding.
+	cacheKeyParams := *params
+	// Clear query time range as queries at different times can share cache entries if the queries overlap.
+	cacheKeyParams.TimeRange = types.QueryTimeRange{}
+	cacheKeyParams.OriginalExpression = ""
+
+	plan := &planning.QueryPlan{Root: node, Parameters: &cacheKeyParams}
+	encoded, _, err := plan.ToEncodedPlan(false, true)
+	if err != nil {
+		return nil, fmt.Errorf("encoding %T for splitting cache key: %w", node, err)
+	}
+
+	b, err := proto.Marshal(encoded)
+	if err != nil {
+		return nil, fmt.Errorf("marshalling encoded plan for splitting cache key: %w", err)
+	}
+	return b, nil
 }

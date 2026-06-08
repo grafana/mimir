@@ -57,6 +57,20 @@ groups:
             2.5
           for: 15m
           labels:
+            histogram: classic
+            severity: warning
+        - alert: MimirRequestLatency
+          annotations:
+            message: |
+                {{ $labels.job }} {{ $labels.route }} is experiencing {{ printf "%.2f" $value }}s 99th percentile latency.
+            runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirrequestlatency
+          expr: |
+            histogram_quantile(0.99, cluster_namespace_job_route:cortex_request_duration_seconds:sum_rate{route!~"metrics|/frontend.Frontend/Process|ready|/schedulerpb.SchedulerForFrontend/FrontendLoop|/schedulerpb.SchedulerForQuerier/QuerierLoop|debug_pprof"})
+              >
+            2.5
+          for: 15m
+          labels:
+            histogram: native
             severity: warning
         - alert: MimirInconsistentRuntimeConfig
           annotations:
@@ -1629,7 +1643,7 @@ groups:
             message: GEM {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace }} has detected a persistently failing job.
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirblockbuilderpersistentjobfailure
           expr: |
-            increase(cortex_blockbuilder_scheduler_persistent_job_failures_total[1m]) > 0
+            increase(cortex_blockbuilder_scheduler_persistent_job_failures_total[20m]) > 0
           labels:
             severity: critical
         - alert: MimirFewerIngestersConsumingThanActivePartitions

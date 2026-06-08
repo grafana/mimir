@@ -865,6 +865,7 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 	mqeOpts.EagerLoadSelectors = true
 
 	t.Cfg.Frontend.QueryMiddleware.InternalFunctionNames.Add(sharding.ConcatFunction.Name)
+	t.Cfg.Frontend.QueryMiddleware.InternalFunctionNames.Add(sharding.AvgFunction.Name)
 
 	var memoryConsumptionTrackerFactory *limiter.InflightMemoryConsumptionTracker
 
@@ -1087,8 +1088,9 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 	//   - Query execution (engine selection, memory tracking, etc.) happens in remote querier
 	// When query-frontend is NOT configured (local/embedded mode):
 	//   - If tenant federation is enabled: queryFunc routes to federated or regular execution based on query
-	//   - If tenant federation is disabled: queryFunc directly executes via rules.EngineQueryFunc(engine, queryable)
-	//     which creates a Query object from the PromQL string and calls Query.Exec()
+	//   - If tenant federation is disabled: queryFunc directly executes via ruler.EngineQueryFunc(engine, queryable)
+	//     which is a Mimir-specific replacement for rules.EngineQueryFunc that Closes the underlying
+	//     promql.Query after every evaluation (required for MQE memory tracker cleanup).
 	var queryFunc rules.QueryFunc
 
 	if t.Cfg.Ruler.QueryFrontend.Address != "" {
@@ -1140,15 +1142,15 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 
 			federatedQueryable = tenantfederation.NewQueryable(queryable, bypassForSingleQuerier, t.Cfg.TenantFederation.MaxConcurrent, rulerRegisterer, util_log.Logger)
 
-			regularQueryFunc := rules.EngineQueryFunc(eng, queryable)
-			federatedQueryFunc := rules.EngineQueryFunc(eng, federatedQueryable)
+			regularQueryFunc := ruler.EngineQueryFunc(eng, queryable)
+			federatedQueryFunc := ruler.EngineQueryFunc(eng, federatedQueryable)
 
 			embeddedQueryable = federatedQueryable
 			queryFunc = ruler.TenantFederationQueryFunc(regularQueryFunc, federatedQueryFunc)
 
 		} else {
 			embeddedQueryable = queryable
-			queryFunc = rules.EngineQueryFunc(eng, queryable)
+			queryFunc = ruler.EngineQueryFunc(eng, queryable)
 		}
 	}
 
@@ -1185,7 +1187,7 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 		),
 	)
 
-	dnsResolver := dns.NewProvider(util_log.Logger, dnsProviderReg, dns.GolangResolverType)
+	dnsResolver := dns.NewProvider(dns.GolangResolverType, 0, util_log.Logger, dnsProviderReg)
 	manager, err := ruler.NewDefaultMultiTenantManager(t.Cfg.Ruler, managerFactory, t.Registerer, util_log.Logger, dnsResolver, t.Overrides, rulesFS)
 	if err != nil {
 		return nil, err
@@ -1299,7 +1301,7 @@ func (t *Mimir) initMemberlistKV() (services.Service, error) {
 			t.Registerer,
 		),
 	)
-	dnsProvider := dns.NewProvider(util_log.Logger, dnsProviderReg, dns.GolangResolverType)
+	dnsProvider := dns.NewProvider(dns.GolangResolverType, 0, util_log.Logger, dnsProviderReg)
 	t.MemberlistKV = memberlist.NewKVInitService(
 		&t.Cfg.MemberlistKV,
 		log.With(util_log.Logger, "component", "memberlist"),

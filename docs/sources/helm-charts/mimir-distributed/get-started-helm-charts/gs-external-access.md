@@ -65,7 +65,6 @@ You can either configure Prometheus to write to Grafana Mimir or [configure Graf
 Make a choice based on whether or not you already have a Prometheus server set up:
 
 - For an existing Prometheus server:
-
   1. Add the following YAML snippet to your Prometheus configuration file:
 
      ```yaml
@@ -78,7 +77,6 @@ Make a choice based on whether or not you already have a Prometheus server set u
   1. Restart the Prometheus server.
 
 - For a Prometheus server that does not exist yet:
-
   1. Write the following configuration to a `prometheus.yml` file:
 
      ```yaml
@@ -109,7 +107,6 @@ You can either configure Grafana Alloy to write to Grafana Mimir or [configure P
 Make a choice based on whether you already have Alloy set up:
 
 - For an existing Alloy:
-
   1. Add the following configuration snippet for the `prometheus.remote_write` component to your Alloy configuration file:
 
      ```
@@ -125,7 +122,6 @@ Make a choice based on whether you already have Alloy set up:
   1. Restart Alloy.
 
 - For a new Alloy:
-
   1. Write the following configuration to a `config.alloy` file:
 
      ```

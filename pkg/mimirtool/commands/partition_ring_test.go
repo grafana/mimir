@@ -843,7 +843,7 @@ func startMemberlistKV(t *testing.T) (*memberlist.KV, *memberlist.Client) {
 	cfg.Codecs = []codec.Codec{ring.GetCodec(), ring.GetPartitionRingCodec()}
 
 	logger := log.NewNopLogger()
-	dnsProvider := dns.NewProvider(logger, nil, dns.GolangResolverType)
+	dnsProvider := dns.NewProvider(dns.GolangResolverType, 0, logger, nil)
 
 	mkv := memberlist.NewKV(cfg, logger, dnsProvider, nil)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), mkv))

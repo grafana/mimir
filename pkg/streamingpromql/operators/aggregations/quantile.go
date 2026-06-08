@@ -27,7 +27,7 @@ type QuantileAggregation struct {
 	Param                    types.ScalarOperator
 	Aggregation              *Aggregation
 	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
-	Annotations              *annotations.Annotations
+	Annotations              annotations.Annotations
 }
 
 func NewQuantileAggregation(
@@ -37,7 +37,6 @@ func NewQuantileAggregation(
 	grouping []string,
 	without bool,
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
-	annotations *annotations.Annotations,
 	expressionPosition posrange.PositionRange,
 ) (*QuantileAggregation, error) {
 
@@ -48,7 +47,6 @@ func NewQuantileAggregation(
 		without,
 		parser.QUANTILE,
 		memoryConsumptionTracker,
-		annotations,
 		expressionPosition,
 	)
 	if err != nil {
@@ -59,7 +57,6 @@ func NewQuantileAggregation(
 		Aggregation:              a,
 		Param:                    param,
 		MemoryConsumptionTracker: memoryConsumptionTracker,
-		Annotations:              annotations,
 	}
 
 	return q, nil
@@ -102,16 +99,24 @@ func (q *QuantileAggregation) AfterPrepare(ctx context.Context) error {
 	return q.Param.AfterPrepare(ctx)
 }
 
-func (q *QuantileAggregation) Finalize(ctx context.Context) error {
-	if err := q.Aggregation.Finalize(ctx); err != nil {
+func (q *QuantileAggregation) FinishedReading(ctx context.Context) error {
+	if err := q.Aggregation.FinishedReading(ctx); err != nil {
 		return err
 	}
 
-	return q.Param.Finalize(ctx)
+	return q.Param.FinishedReading(ctx)
 }
 
-func (q *QuantileAggregation) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
-	return types.CombineStats[types.StatsProvider](ctx, q.Aggregation, q.Param)
+func (q *QuantileAggregation) Finalize(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
+	stats, annos, err := types.FinalizeAndCombine[types.Finalizer](ctx, q.Aggregation, q.Param)
+
+	if err != nil {
+		return nil, nil, err
+	}
+
+	q.Annotations.Merge(annos)
+
+	return stats, q.Annotations, nil
 }
 
 func (q *QuantileAggregation) Close() {

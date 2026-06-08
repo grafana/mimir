@@ -26,6 +26,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
 	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
@@ -67,7 +68,7 @@ type PrometheusRangeQueryRequest struct {
 
 	// ID of the request used to correlate downstream requests and responses.
 	id      int64
-	options Options
+	options requestoptions.Options
 	// hints that could be optionally attached to the request to pass down the stack.
 	// These hints can be used to optimize the query execution.
 	hints *Hints
@@ -81,7 +82,7 @@ func NewPrometheusRangeQueryRequest(
 	start, end, step int64,
 	lookbackDelta time.Duration,
 	queryExpr parser.Expr,
-	options Options,
+	options requestoptions.Options,
 	hints *Hints,
 	stats string,
 ) *PrometheusRangeQueryRequest {
@@ -175,7 +176,7 @@ func (r *PrometheusRangeQueryRequest) GetMaxT() int64 {
 	return r.maxT
 }
 
-func (r *PrometheusRangeQueryRequest) GetOptions() Options {
+func (r *PrometheusRangeQueryRequest) GetOptions() requestoptions.Options {
 	return r.options
 }
 
@@ -300,7 +301,7 @@ type PrometheusInstantQueryRequest struct {
 
 	// ID of the request used to correlate downstream requests and responses.
 	id      int64
-	options Options
+	options requestoptions.Options
 	// hints that could be optionally attached to the request to pass down the stack.
 	// These hints can be used to optimize the query execution.
 	hints *Hints
@@ -314,7 +315,7 @@ func NewPrometheusInstantQueryRequest(
 	time int64,
 	lookbackDelta time.Duration,
 	queryExpr parser.Expr,
-	options Options,
+	options requestoptions.Options,
 	hints *Hints,
 	stats string,
 ) *PrometheusInstantQueryRequest {
@@ -410,7 +411,7 @@ func (r *PrometheusInstantQueryRequest) GetMaxT() int64 {
 	return r.maxT
 }
 
-func (r *PrometheusInstantQueryRequest) GetOptions() Options {
+func (r *PrometheusInstantQueryRequest) GetOptions() requestoptions.Options {
 	return r.options
 }
 
