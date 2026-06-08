@@ -5688,6 +5688,13 @@ bucket_store:
     # CLI flag: -blocks-storage.bucket-store.index-header-cache.attributes-ttl
     [attributes_ttl: <duration> | default = 168h]
 
+    # (experimental) Maximum number of individual attributes items to keep in a
+    # first level in-memory LRU cache. Attributes will be stored and fetched
+    # in-memory before hitting the cache backend. 0 to disable the in-memory
+    # cache.
+    # CLI flag: -blocks-storage.bucket-store.index-header-cache.attributes-in-memory-max-items
+    [attributes_in_memory_max_items: <int> | default = 10000]
+
     # (experimental) TTL for caching individual index-header subranges.
     # CLI flag: -blocks-storage.bucket-store.index-header-cache.subrange-ttl
     [subrange_ttl: <duration> | default = 24h]
