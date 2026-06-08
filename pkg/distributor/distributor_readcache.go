@@ -4,6 +4,7 @@ package distributor
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
@@ -18,6 +19,28 @@ import (
 	"github.com/grafana/mimir/pkg/nautilus/rebalancer"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
+
+// errReadcacheRoutingUnavailable is returned by the nautilus read
+// path when a tenant is configured for readcache_read_routing
+// nautilus-only but the distributor cannot resolve the query to a
+// readcache instance: either no live assignment/readcache log
+// snapshot has been received, or a resolved partition has no current
+// readcache owner. There is intentionally no ingester fallback for
+// nautilus-only tenants (their data lives on the nautilus_ingest
+// topic, which ingesters do not consume), so this surfaces to the
+// caller as a query failure, mirroring the write-side
+// nautilusRoutingUnavailableError semantics.
+type errReadcacheRoutingUnavailable struct {
+	reason string
+}
+
+func newReadcacheRoutingUnavailableError(reason string) errReadcacheRoutingUnavailable {
+	return errReadcacheRoutingUnavailable{reason: reason}
+}
+
+func (e errReadcacheRoutingUnavailable) Error() string {
+	return fmt.Sprintf("readcache read routing required but unavailable: %s", e.reason)
+}
 
 // readcacheHitTracker accumulates the set of distinct readcache
 // instance IDs the distributor committed to using for a single
@@ -228,42 +251,54 @@ func (d *Distributor) previousReadcacheOwnerForPartition(partitionID int32) (str
 	return best.InstanceID, true
 }
 
-// queryClientForInstance returns the gRPC client the
-// distributor's read path should use for the given ingester
-// instance. When a readcache pod owns the partition that mapped
-// the instance and a readcache pool is configured, the readcache
-// client is returned; otherwise the ingester client from the
-// shared pool is returned.
+// queryClientForInstance returns the gRPC client the distributor's
+// read path should use for the given instance, and whether that
+// client is a readcache client (viaReadcache).
 //
-// When the returned client is a readcache client and hits is
-// non-nil, the chosen readcache instance ID is recorded in hits so
-// the caller can emit a per-query histogram observation. The
-// ingester branch never records into hits (a readcache count of
-// zero means "served entirely from ingesters", which is the
-// migration baseline).
+// For nautilus-only tenants (shouldRouteReadToReadcache), the read
+// path routes exclusively to readcache: the replication sets were
+// built from the assignment log by getReadcacheReplicationSetsForQuery,
+// so every instance maps to a partition with a current readcache
+// owner. Any inability to resolve a reachable owner is a hard
+// failure — there is deliberately no ingester fallback, because the
+// tenant's data lives on the nautilus_ingest topic that ingesters
+// do not consume. The returned error surfaces to the caller (a 503,
+// matching a full ingester outage); the warm-up previous-owner
+// fallback is handled by the caller on errStillWarming.
 //
-// Errors from readcache resolution are logged but never bubble up:
-// a failed readcache dial degrades to "served by ingester".
-// Transport errors observed mid-stream (after the dial succeeded)
-// surface to the caller in the usual way and are handled by the
-// normal ring-quorum retry machinery.
-func (d *Distributor) queryClientForInstance(ctx context.Context, ing ring.InstanceDesc, partitionByInstance map[string]int32, hits *readcacheHitTracker, logger log.Logger) (client.IngesterClient, error) {
-	if d.shouldRouteReadToReadcache(ctx) && partitionByInstance != nil && d.readcachePool != nil {
-		if partID, ok := partitionByInstance[ing.Id]; ok {
-			rcClient, instanceID, ok, err := d.resolveReadcacheClientForPartition(ctx, partID)
-			if err != nil {
-				level.Warn(logger).Log("msg", "readcache resolution failed; falling back to ingester", "partition", partID, "err", err)
-			} else if ok {
-				hits.record(instanceID)
-				return rcClient, nil
-			}
+// For all other tenants the ingester client from the shared pool is
+// returned with viaReadcache=false.
+//
+// When a readcache client is returned and hits is non-nil, the
+// chosen readcache instance ID is recorded in hits so the caller can
+// emit a per-query histogram observation. The ingester branch never
+// records into hits (a readcache count of zero means "served
+// entirely from ingesters", which is the migration baseline).
+func (d *Distributor) queryClientForInstance(ctx context.Context, ing ring.InstanceDesc, partitionByInstance map[string]int32, hits *readcacheHitTracker, _ log.Logger) (client.IngesterClient, bool, error) {
+	if d.shouldRouteReadToReadcache(ctx) {
+		if d.readcachePool == nil {
+			return nil, false, newReadcacheRoutingUnavailableError("readcache pool is not configured")
 		}
+		partID, ok := partitionByInstance[ing.Id]
+		if !ok {
+			return nil, false, newReadcacheRoutingUnavailableError(fmt.Sprintf("instance %q has no resolved partition", ing.Id))
+		}
+		rcClient, instanceID, ok, err := d.resolveReadcacheClientForPartition(ctx, partID)
+		if err != nil {
+			return nil, false, err
+		}
+		if !ok {
+			return nil, false, newReadcacheRoutingUnavailableError(fmt.Sprintf("partition %d has no reachable readcache owner", partID))
+		}
+		hits.record(instanceID)
+		return rcClient, true, nil
 	}
+
 	c, err := d.ingesterPool.GetClientForInstance(ing)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
-	return c.(client.IngesterClient), nil
+	return c.(client.IngesterClient), false, nil
 }
 
 // previousReadcacheClientForPartition returns the gRPC client for

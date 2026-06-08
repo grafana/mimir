@@ -106,9 +106,27 @@ func (d *Distributor) QueryStream(ctx context.Context, queryMetrics *stats.Query
 
 		req.StreamingChunksBatchSize = d.cfg.StreamingChunksPerIngesterSeriesBufferSize
 
-		replicationSets, partitionByInstance, err := d.getIngesterReplicationSetsForQuery(ctx, matchers)
-		if err != nil {
-			return err
+		var (
+			replicationSets     []ring.ReplicationSet
+			partitionByInstance map[string]int32
+		)
+		if d.shouldRouteReadToReadcache(ctx) {
+			// Nautilus-only tenant: resolve partitions from the
+			// rebalancer assignment log and route exclusively to
+			// readcache. No ingester fallback.
+			userID, err := tenant.TenantID(ctx)
+			if err != nil {
+				return err
+			}
+			replicationSets, partitionByInstance, err = d.getReadcacheReplicationSetsForQuery(userID, matchers)
+			if err != nil {
+				return err
+			}
+		} else {
+			replicationSets, partitionByInstance, err = d.getIngesterReplicationSetsForQuery(ctx, matchers)
+			if err != nil {
+				return err
+			}
 		}
 
 		result, err = d.queryIngesterStream(ctx, replicationSets, partitionByInstance, hits, req, queryMetrics)
@@ -291,6 +309,77 @@ func (d *Distributor) getReplicationSetsForMetricName(r *ring.PartitionInstanceR
 	return result, partitionByInstance, nil
 }
 
+// getReadcacheReplicationSetsForQuery builds the replication sets for
+// a read on a nautilus-only tenant. It is the read-path analogue of
+// the write path's getKeysByAssignment: partitions are resolved from
+// the rebalancer's range->partition assignment log (the same log the
+// write path consults), not the production partition ring, because a
+// nautilus tenant's data lives on the nautilus_ingest topic whose
+// partition universe is defined by that log.
+//
+// Resolution:
+//   - An exact __name__ matcher narrows the query to the metric
+//     name's hash range [lo, hi] (mimirpb.MetricNameHashRange) and
+//     only the partitions whose tiles overlap that range are queried.
+//   - Otherwise the query fans out to every partition in the active
+//     table.
+//
+// Each resolved partition becomes its own single-instance
+// ring.ReplicationSet whose synthetic InstanceDesc.Id is unique per
+// partition (a readcache instance owns many partitions, so keying by
+// owner ID would collide). The returned partitionByInstance maps
+// that synthetic ID to the partition; queryClientForInstance resolves
+// the partition to its current readcache owner from the readcache log
+// at query time and dials it via the readcache pool.
+//
+// Any inability to resolve (no live assignment log, no live readcache
+// log, an uncovered partition, or a partition with no current owner)
+// returns errReadcacheRoutingUnavailable. There is no ingester
+// fallback for nautilus-only tenants.
+func (d *Distributor) getReadcacheReplicationSetsForQuery(userID string, matchers []*labels.Matcher) ([]ring.ReplicationSet, map[string]int32, error) {
+	now := d.now()
+
+	table := d.nautilusActiveTableFor(now)
+	if table == nil {
+		return nil, nil, newReadcacheRoutingUnavailableError("no live assignment log snapshot is available")
+	}
+	rcLog := d.GetReadcacheLog()
+	if rcLog == nil {
+		return nil, nil, newReadcacheRoutingUnavailableError("no live readcache assignment log snapshot is available")
+	}
+
+	var partitionIDs []int32
+	if metricName, ok := extractExactMetricName(matchers); ok {
+		lo, hi := mimirpb.MetricNameHashRange(userID, metricName)
+		partitionIDs = table.PartitionsOverlapping(lo, hi)
+	} else {
+		partitionIDs = table.AllPartitions()
+	}
+	if len(partitionIDs) == 0 {
+		return nil, nil, newReadcacheRoutingUnavailableError("assignment log resolved no partitions for the query")
+	}
+
+	sets := make([]ring.ReplicationSet, 0, len(partitionIDs))
+	partitionByInstance := make(map[string]int32, len(partitionIDs))
+	for _, partID := range partitionIDs {
+		owners := rcLog.Lookup(now, partID)
+		if len(owners) == 0 {
+			return nil, nil, newReadcacheRoutingUnavailableError(fmt.Sprintf("partition %d has no current readcache owner", partID))
+		}
+		// Synthetic, partition-unique instance ID: a readcache pod
+		// owns multiple partitions, so a per-owner key would collide
+		// in partitionByInstance and across replication sets. The
+		// owner is shown for readability; the authoritative dial
+		// happens in queryClientForInstance via the partition.
+		instanceID := fmt.Sprintf("%s/p%d", owners[0], partID)
+		sets = append(sets, ring.ReplicationSet{
+			Instances: []ring.InstanceDesc{{Id: instanceID}},
+		})
+		partitionByInstance[instanceID] = partID
+	}
+	return sets, partitionByInstance, nil
+}
+
 // mergeExemplarSets merges and dedupes two sets of already sorted exemplar pairs.
 // Both a and b should be lists of exemplars from the same series.
 // Defined here instead of pkg/util to avoid a import cycle.
@@ -401,26 +490,42 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets [
 
 		var result ingesterQueryResult
 
-		queryClient, err := d.queryClientForInstance(ctx, *ing, partitionByInstance, hits, log)
+		partID, hasPart := partitionByInstance[ing.Id]
+
+		queryClient, viaReadcache, err := d.queryClientForInstance(ctx, *ing, partitionByInstance, hits, log)
 		if err != nil {
 			return result, err
 		}
 
-		stream, err = queryClient.QueryStream(ctx, req)
+		// When the call is routed to a readcache pod, stamp the
+		// resolved partition into the request so the pod scopes its
+		// read to exactly that partition's TSDB and attributes the
+		// scanned-samples query load to it. The request is shared
+		// across all per-instance goroutines, so copy it before
+		// mutating the hint. Ingester calls keep req untouched (the
+		// ingester ignores the hint after the nautilus revert).
+		streamReq := req
+		if viaReadcache && hasPart {
+			r := *req
+			r.QueryAttributionHint = &ingester_client.QueryAttributionHint{PartitionId: partID}
+			streamReq = &r
+		}
+
+		stream, err = queryClient.QueryStream(ctx, streamReq)
 		if err != nil {
 			// If readcache says it's still warming, try the
 			// partition's previous lease owner before giving up.
 			// For experimental tenants there is no ingester
 			// fallback (see plan section 2C.4); a failure here
 			// surfaces as 503 to the caller, matching the
-			// failure semantics of a full ingester outage.
-			if readcache.IsStillWarming(err) {
-				if partID, hasPart := partitionByInstance[ing.Id]; hasPart {
-					if prev, prevID, ok := d.previousReadcacheClientForPartition(ctx, partID); ok {
-						level.Info(log).Log("msg", "readcache still warming; falling back to previous lease owner", "partition", partID)
-						hits.record(prevID)
-						stream, err = prev.QueryStream(ctx, req)
-					}
+			// failure semantics of a full ingester outage. The
+			// previous owner is also a readcache pod, so it
+			// receives the same partition-hinted request.
+			if readcache.IsStillWarming(err) && hasPart {
+				if prev, prevID, ok := d.previousReadcacheClientForPartition(ctx, partID); ok {
+					level.Info(log).Log("msg", "readcache still warming; falling back to previous lease owner", "partition", partID)
+					hits.record(prevID)
+					stream, err = prev.QueryStream(ctx, streamReq)
 				}
 			}
 			if err != nil {

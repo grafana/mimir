@@ -151,6 +151,84 @@ func TestActiveTable_Lookup_HashGap(t *testing.T) {
 	assert.Equal(t, int32(2), pid)
 }
 
+func TestActiveTable_PartitionsOverlapping(t *testing.T) {
+	l := NewLog()
+	at := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	// A non-uniform tiling where partition 2 owns two disjoint
+	// tiles, so a wide query range can resolve to it once.
+	l.entries = []LogEntry{
+		{Range: HashRange{Lo: 0, Hi: 99}, PartitionID: 1, From: at, To: at.Add(testLease)},
+		{Range: HashRange{Lo: 100, Hi: 199}, PartitionID: 2, From: at, To: at.Add(testLease)},
+		{Range: HashRange{Lo: 200, Hi: 299}, PartitionID: 3, From: at, To: at.Add(testLease)},
+		{Range: HashRange{Lo: 300, Hi: 399}, PartitionID: 2, From: at, To: at.Add(testLease)},
+		{Range: HashRange{Lo: 400, Hi: math.MaxUint32}, PartitionID: 4, From: at, To: at.Add(testLease)},
+	}
+	tbl := l.ActiveTable(at)
+	require.NotNil(t, tbl)
+
+	t.Run("range inside a single tile", func(t *testing.T) {
+		assert.Equal(t, []int32{1}, tbl.PartitionsOverlapping(10, 50))
+	})
+
+	t.Run("range spanning several tiles dedupes partitions", func(t *testing.T) {
+		// [50, 350] touches tiles 1,2,3,2 -> {1,2,3} in tile order.
+		assert.Equal(t, []int32{1, 2, 3}, tbl.PartitionsOverlapping(50, 350))
+	})
+
+	t.Run("exact tile boundaries are inclusive", func(t *testing.T) {
+		assert.Equal(t, []int32{2}, tbl.PartitionsOverlapping(100, 199))
+		assert.Equal(t, []int32{2, 3}, tbl.PartitionsOverlapping(199, 200))
+	})
+
+	t.Run("range covering the whole space returns all distinct partitions", func(t *testing.T) {
+		assert.Equal(t, []int32{1, 2, 3, 4}, tbl.PartitionsOverlapping(0, math.MaxUint32))
+	})
+
+	t.Run("inverted range returns nil", func(t *testing.T) {
+		assert.Nil(t, tbl.PartitionsOverlapping(300, 100))
+	})
+}
+
+func TestActiveTable_PartitionsOverlapping_HashGap(t *testing.T) {
+	l := NewLog()
+	at := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	l.entries = []LogEntry{
+		{Range: HashRange{Lo: 0, Hi: 99}, PartitionID: 1, From: at, To: at.Add(testLease)},
+		{Range: HashRange{Lo: 200, Hi: math.MaxUint32}, PartitionID: 2, From: at, To: at.Add(testLease)},
+	}
+	tbl := l.ActiveTable(at)
+	require.NotNil(t, tbl)
+
+	// A query range that falls entirely within the gap matches no tile.
+	assert.Nil(t, tbl.PartitionsOverlapping(120, 150))
+	// A range straddling the gap matches the tiles on both sides.
+	assert.Equal(t, []int32{1, 2}, tbl.PartitionsOverlapping(50, 250))
+}
+
+func TestActiveTable_AllPartitions(t *testing.T) {
+	l := NewLog()
+	at := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	l.entries = []LogEntry{
+		{Range: HashRange{Lo: 0, Hi: 99}, PartitionID: 5, From: at, To: at.Add(testLease)},
+		{Range: HashRange{Lo: 100, Hi: 199}, PartitionID: 7, From: at, To: at.Add(testLease)},
+		{Range: HashRange{Lo: 200, Hi: math.MaxUint32}, PartitionID: 5, From: at, To: at.Add(testLease)},
+	}
+	tbl := l.ActiveTable(at)
+	require.NotNil(t, tbl)
+
+	// Partition 5 owns two tiles but appears once, in tile order.
+	assert.Equal(t, []int32{5, 7}, tbl.AllPartitions())
+}
+
+func TestActiveTable_AllPartitions_EvenSplit(t *testing.T) {
+	l := NewLog()
+	at := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	require.True(t, l.Apply(at, EvenSplit([]int32{0, 1, 2, 3}), testLease, testLookahead))
+	tbl := l.ActiveTable(at)
+	require.NotNil(t, tbl)
+	assert.Equal(t, []int32{0, 1, 2, 3}, tbl.AllPartitions())
+}
+
 // BenchmarkActiveTable_Lookup measures the per-key lookup cost on an
 // active table sized like a typical fleet (96 partitions × 1 tile
 // each = 96 entries).
