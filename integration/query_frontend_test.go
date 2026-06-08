@@ -390,7 +390,7 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 			require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Equals(0), "cortex_frontend_split_queries_total"))
 			end := now
 			start := end.Add(-(30*24*time.Hour + 1*time.Hour)) // 30 days + 1 hour. Makes sure we can go above the max partial query length.
-			_, err = c.QueryRange("{instance=~\"hello.*\"}", start, end, time.Hour)
+			_, _, err = c.QueryRange("{instance=~\"hello.*\"}", start, end, time.Hour)
 			require.NoError(t, err)
 
 			// Depending on what time it is and how that aligns with midnight UTC, the query may be broken into 31 or 32 parts.
@@ -402,7 +402,7 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 			start := time.Unix(1595846748, 806*1e6)
 			end := time.Unix(1595846750, 806*1e6)
 
-			result, err := c.QueryRange("time()", start, end, time.Second)
+			result, _, err := c.QueryRange("time()", start, end, time.Second)
 			require.NoError(t, err)
 			require.Equal(t, model.ValMatrix, result.Type())
 
@@ -432,7 +432,7 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 
 		// Test that evaluating a query with a scalar result works as expected.
 		if userID == 0 {
-			result, err := c.Query("scalar(series_1)", now)
+			result, _, err := c.Query("scalar(series_1)", now)
 			require.NoError(t, err)
 			require.Equal(t, model.ValScalar, result.Type())
 			scalar := result.(*model.Scalar)
@@ -442,7 +442,7 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 
 		// Same thing, but with a range vector result.
 		if userID == 0 {
-			result, err := c.Query("series_1[5m]", now)
+			result, _, err := c.Query("series_1[5m]", now)
 			require.NoError(t, err)
 			require.Equal(t, model.ValMatrix, result.Type())
 			matrix := result.(model.Matrix)
@@ -456,7 +456,7 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 		// Test subquery spin-off.
 		if userID == 0 {
 			require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Equals(0), "cortex_frontend_spun_off_subqueries_total"))
-			result, err := c.Query("sum_over_time(((count(series_1) * count(series_1)) or vector(1))[6h:15m])", now)
+			result, _, err := c.Query("sum_over_time(((count(series_1) * count(series_1)) or vector(1))[6h:15m])", now)
 			require.NoError(t, err)
 			require.Len(t, result, 1)
 			require.Equal(t, result.(model.Vector)[0].Metric, model.Metric{})
@@ -468,7 +468,7 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 			go func() {
 				defer wg.Done()
 
-				result, err := c.Query("series_1", now)
+				result, _, err := c.Query("series_1", now)
 				require.NoError(t, err)
 				require.Equal(t, model.ValVector, result.Type())
 				assert.Equal(t, expectedVectors[userID], result.(model.Vector))
@@ -1153,7 +1153,7 @@ func TestQueryFrontendWithExplicitLookbackDelta(t *testing.T) {
 }
 
 func queryLookbackDeltaTest(t *testing.T, client *e2emimir.Client, seriesName string, ts time.Time, expectResult bool, expectedValue float64, opts ...promv1.Option) {
-	res, err := client.Query(seriesName, ts, opts...)
+	res, _, err := client.Query(seriesName, ts, opts...)
 	require.NoError(t, err)
 
 	v, ok := res.(model.Vector)
@@ -1170,7 +1170,7 @@ func queryLookbackDeltaTest(t *testing.T, client *e2emimir.Client, seriesName st
 	}
 
 	step := 100 * time.Minute
-	res, err = client.QueryRange(seriesName, ts.Add(-step), ts.Add(step), step, opts...)
+	res, _, err = client.QueryRange(seriesName, ts.Add(-step), ts.Add(step), step, opts...)
 	require.NoError(t, err)
 
 	m, ok := res.(model.Matrix)

@@ -87,7 +87,7 @@ func runTestPushSeriesAndQueryBack(t *testing.T, mimir *e2emimir.MimirService, s
 	require.Equal(t, http.StatusOK, res.StatusCode)
 
 	// Query the series.
-	result, err := c.Query(seriesName, now)
+	result, _, err := c.Query(seriesName, now)
 	require.NoError(t, err)
 	require.Equal(t, model.ValVector, result.Type())
 	assert.Equal(t, expectedVector, result.(model.Vector))
@@ -100,7 +100,7 @@ func runTestPushSeriesAndQueryBack(t *testing.T, mimir *e2emimir.MimirService, s
 	require.NoError(t, err)
 	require.Equal(t, []string{"__name__", "foo"}, labelNames)
 
-	rangeResult, err := c.QueryRange(seriesName, now.Add(-15*time.Minute), now, 15*time.Second)
+	rangeResult, _, err := c.QueryRange(seriesName, now.Add(-15*time.Minute), now, 15*time.Second)
 	require.NoError(t, err)
 	require.Equal(t, model.ValMatrix, rangeResult.Type())
 	require.Equal(t, expectedMatrix, rangeResult.(model.Matrix))

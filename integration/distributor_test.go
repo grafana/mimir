@@ -1135,7 +1135,7 @@ func TestDistributor_RW2_RC3_CreatedTimestamp(t *testing.T) {
 			{Timestamp: model.Time(queryStart.Add(5 * time.Minute).UnixMilli()), Value: model.SampleValue(100)},
 		},
 	}}
-	got, err := client.QueryRange("foobarC_CT_total", queryStart, queryEnd, queryStep)
+	got, _, err := client.QueryRange("foobarC_CT_total", queryStart, queryEnd, queryStep)
 	require.NoError(t, err)
 	require.Equal(t, want.String(), got.String())
 }
@@ -1288,7 +1288,7 @@ func testDistributorCases(t *testing.T, cachingUnmarshalDataEnabled bool, rwVers
 			}
 
 			for q, res := range tc.queries {
-				result, err := client.QueryRange(q, queryStart, queryEnd, queryStep)
+				result, _, err := client.QueryRange(q, queryStart, queryEnd, queryStep)
 				require.NoError(t, err)
 
 				require.Equal(t, res.String(), result.String())
@@ -1599,7 +1599,7 @@ func testDistributorNameValidation(
 				return
 			}
 			for q, want := range tc.queries {
-				got, err := client.QueryRange(q, queryStart, queryEnd, queryStep)
+				got, _, err := client.QueryRange(q, queryStart, queryEnd, queryStep)
 				require.NoError(t, err)
 				require.Equal(t, want.String(), got.String())
 			}
