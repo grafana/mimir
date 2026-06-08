@@ -169,6 +169,40 @@ func TestSampleTracker_inactiveObservations(t *testing.T) {
 	assert.Len(t, st.observed, 0)
 }
 
+func TestSampleTracker_extendsOverflow(t *testing.T) {
+	manager, _, _ := newTestManager()
+	manager.SampleTracker("user7") // ensure tracker exists; user7 has MaxCardinality 2 and a 20m cooldown.
+	st := getSampleTracker(manager, "user7")
+	require.NotNil(t, st)
+	require.Equal(t, 2, st.maxCardinality)
+
+	// Simulate an overflowed tracker that still has maxCardinality observations whose
+	// lastUpdate is more recent than the purge deadline (so they don't expire).
+	// This is the only way to reach the extend branch: in the manager flow observation
+	// timestamps are frozen during overflow, so they always expire before we get here.
+	st.overflowSince = time.Unix(0, 0)
+	for _, team := range []string{"foo", "bar"} {
+		o := &observation{}
+		o.lastUpdate.Store(5000)
+		st.observed[team] = o
+	}
+	require.Len(t, st.observed, 2)
+
+	// Cooldown (1200s) has elapsed relative to the deadline, but the observations are
+	// newer than the deadline, so cardinality stays at the limit -> extend the overflow.
+	st.purge(time.Unix(5000, 0), time.Unix(2000, 0))
+
+	require.Equal(t, time.Unix(5000, 0), st.overflowSince, "overflow should be extended to now")
+	_, overflown := st.cardinality()
+	require.True(t, overflown, "should still be overflown")
+	require.Len(t, st.observed, 2, "observations newer than the deadline should be retained")
+
+	// Advance time so the stale observations expire and the cooldown elapses again -> recover.
+	st.purge(time.Unix(6300, 0), time.Unix(6300, 0))
+	require.True(t, st.overflowSince.IsZero(), "should have recovered from overflow")
+	require.Empty(t, st.observed)
+}
+
 func TestSampleTracker_Concurrency(t *testing.T) {
 	// Disabled due to spurious failures. See https://github.com/grafana/mimir/issues/10482
 	t.Skip()

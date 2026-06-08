@@ -328,6 +328,9 @@ func (st *sampleTracker) purge(now, deadline time.Time) int {
 				st.overflowSince = time.Time{}
 				st.overflowCounter = observation{}
 				cardinality = 0
+			} else {
+				// Extend the overflow period since we are still above the max cardinality after cleanup.
+				st.overflowSince = now
 			}
 		}
 		st.observedMtx.Unlock()
