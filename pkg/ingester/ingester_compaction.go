@@ -667,6 +667,15 @@ func (i *Ingester) compactBlocksDueToNonOwnedSeries(ctx context.Context, jitter 
 			continue
 		}
 
+		seriesAfter := db.Head().NumSeries()
+		// CompactSelectedSeries returns nil when no series were compacted (e.g., all
+		// series have OOO state). Verify that series were actually evicted before
+		// treating this as success.
+		if seriesBefore == seriesAfter {
+			level.Warn(i.logger).Log("msg", "selected series compaction returned success during per-tenant early compaction of non-owned series but no series were evicted; this may indicate that OOO state was not cleared before eviction", "user", userID, "in_memory_series", seriesBefore, "num_refs", len(refs))
+			continue
+		}
+
 		// Note: lastEarlyCompaction is intentionally not updated here. It is only
 		// updated by compactions that advance HeadMinTime. The compactions performed
 		// here (CompactOOOHead + CompactSelectedSeries) do not advance HeadMinTime.
@@ -678,7 +687,7 @@ func (i *Ingester) compactBlocksDueToNonOwnedSeries(ctx context.Context, jitter 
 			"user", userID,
 			"trigger", trigger,
 			"before_in_memory_series", seriesBefore,
-			"after_in_memory_series", db.Head().NumSeries(),
+			"after_in_memory_series", seriesAfter,
 		)
 	}
 }
