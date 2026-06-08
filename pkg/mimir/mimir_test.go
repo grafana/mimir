@@ -781,6 +781,26 @@ func TestConfig_validateFilesystemPaths(t *testing.T) {
 			},
 			expectedErr: fmt.Sprintf(`the configured blocks storage filesystem directory "blocks" cannot overlap with the configured alertmanager data directory "%s"`, cwd),
 		},
+		"should fail if blocks storage filesystem directory overlaps with ruler data directory for a local-evaluation ruler": {
+			setup: func(cfg *Config) {
+				cfg.Target = flagext.StringSliceCSV{Ruler}
+				cfg.Ruler.RulePath = "/path/to/data"
+				cfg.RulerStorage.Backend = bucket.GCS // Avoid adding a ruler storage filesystem path.
+				cfg.BlocksStorage.Bucket.Backend = bucket.Filesystem
+				cfg.BlocksStorage.Bucket.Filesystem.Directory = "/path/to/data/blocks"
+			},
+			expectedErr: `the configured blocks storage filesystem directory "/path/to/data/blocks" cannot overlap with the configured ruler data directory "/path/to/data"`,
+		},
+		"should succeed if blocks storage filesystem directory overlaps with ruler data directory for a remote-evaluation ruler": {
+			setup: func(cfg *Config) {
+				cfg.Target = flagext.StringSliceCSV{Ruler}
+				cfg.Ruler.QueryFrontend.Address = "dns:///ruler-query-frontend:9095"
+				cfg.Ruler.RulePath = "/path/to/data"
+				cfg.RulerStorage.Backend = bucket.GCS
+				cfg.BlocksStorage.Bucket.Backend = bucket.Filesystem
+				cfg.BlocksStorage.Bucket.Filesystem.Directory = "/path/to/data/blocks"
+			},
+		},
 	}
 
 	for testName, testData := range tests {

@@ -167,6 +167,52 @@ func TestMimir_InitRulerStorage(t *testing.T) {
 	}
 }
 
+func TestRuler_StoreQueryableNotBuiltForRemoteEvaluation(t *testing.T) {
+	dir := t.TempDir()
+
+	tests := map[string]struct {
+		remoteEvaluation     bool
+		expectStoreQueryable bool
+	}{
+		"local rule evaluation builds the blocks-store queryable": {
+			remoteEvaluation:     false,
+			expectStoreQueryable: true,
+		},
+		"remote rule evaluation does not build the blocks-store queryable": {
+			remoteEvaluation:     true,
+			expectStoreQueryable: false,
+		},
+	}
+
+	for name, testData := range tests {
+		t.Run(name, func(t *testing.T) {
+			cfg := Config{}
+			flagext.DefaultValues(&cfg)
+			// Set to 0 to find any free port.
+			cfg.Server.HTTPListenPort = 0
+			cfg.Server.GRPCListenPort = 0
+			cfg.Target = []string{Ruler}
+			cfg.RuntimeConfig.LoadPath = []string{filepath.Join(dir, "config.yaml")}
+			if testData.remoteEvaluation {
+				cfg.Ruler.QueryFrontend.Address = "dns:///ruler-query-frontend:9095"
+			}
+
+			c, err := New(cfg, prometheus.NewPedanticRegistry())
+			require.NoError(t, err)
+
+			_, err = c.ModuleManager.InitModuleServices(cfg.Target...)
+			require.NoError(t, err)
+			defer c.Server.Stop()
+
+			if testData.expectStoreQueryable {
+				require.NotNil(t, c.StoreQueryable)
+			} else {
+				require.Nil(t, c.StoreQueryable)
+			}
+		})
+	}
+}
+
 func TestMultiKVSetup(t *testing.T) {
 	dir := t.TempDir()
 

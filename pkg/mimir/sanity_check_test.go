@@ -77,6 +77,28 @@ func TestCheckObjectStoresConfig(t *testing.T) {
 			},
 			expected: "",
 		},
+		"should check blocks storage config when target=ruler with local rule evaluation": {
+			setup: func(cfg *Config) {
+				require.NoError(t, cfg.Target.Set("ruler"))
+
+				// Local rule evaluation: the ruler queries blocks storage, so an invalid blocks bucket must fail.
+				cfg.BlocksStorage.Bucket.Backend = bucket.GCS
+				cfg.BlocksStorage.Bucket.GCS.BucketName = "invalid"
+			},
+			expected: errObjectStorage,
+		},
+		"should not check blocks storage config when target=ruler with remote rule evaluation": {
+			setup: func(cfg *Config) {
+				require.NoError(t, cfg.Target.Set("ruler"))
+				cfg.Ruler.QueryFrontend.Address = "dns:///ruler-query-frontend:9095"
+
+				// Remote rule evaluation: the ruler does not query blocks storage, so an invalid blocks
+				// bucket must be ignored.
+				cfg.BlocksStorage.Bucket.Backend = bucket.GCS
+				cfg.BlocksStorage.Bucket.GCS.BucketName = "invalid"
+			},
+			expected: "",
+		},
 		"should fail on invalid AWS S3 config": {
 			setup: func(cfg *Config) {
 				require.NoError(t, cfg.Target.Set("all,alertmanager"))
