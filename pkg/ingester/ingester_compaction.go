@@ -126,10 +126,10 @@ func (i *Ingester) compactionServiceRunning(ctx context.Context) error {
 	// effectively spreading the compactions over the configured interval.
 	firstInterval, standardInterval := i.compactionServiceInterval(time.Now(), i.instanceRing.Zones())
 
-	// Compute a fixed per-replica jitter for non-owned series eviction. Using a value that is
-	// stable for the lifetime of this service instance ensures that two replicas which detect
-	// the same non-owned refs at the same time will consistently evict at different offsets:
-	// effective wait = minGracePeriod + jitter, uniformly distributed in [minGrace, 3×minGrace].
+	// Compute a fixed per-replica jitter for non-owned series eviction. Because the
+	// jitter is stable for the lifetime of the process, replicas that discover the
+	// same non-owned refs at the same time will evict them at different times.
+	// The effective grace period is minGracePeriod + jitter.
 	var nonOwnedSeriesJitter time.Duration
 	if variance := 2 * int64(i.cfg.EarlyCompactionNonOwnedSeriesMinGracePeriod); variance > 0 {
 		nonOwnedSeriesJitter = time.Duration(rand.Int63n(variance))
@@ -593,15 +593,17 @@ func (i *Ingester) compactBlocksToReducePerTenantOwnedSeries(ctx context.Context
 	}
 }
 
-// compactBlocksDueToNonOwnedSeries triggers an early head compaction for tenants whose last
-// computeOwnedSeries call(s) queued non-owned series for eviction. CompactOOOHead runs first
-// to persist OOO data into OOO blocks (the regular block writer's chunk enumerator only sees
-// in-order containers), then CompactSelectedSeries writes the queued series into a block and
-// evicts them from the head's index without advancing HeadMinTime.
+// compactBlocksDueToNonOwnedSeries triggers an early head compaction for tenants
+// whose non-owned series have remained pending long enough to be evicted.
 //
-// Per-tenant gate: the eviction is skipped for tenants whose EarlyHeadCompactionOwnedSeriesThreshold
-// is not set, and for tenants whose total in-head series (owned + non-owned) count is below the local
-// threshold.
+// CompactOOOHead runs first to persist OOO data into OOO blocks, since the
+// regular block writer only sees in-order series. CompactSelectedSeries then
+// writes the selected non-owned series into a block and evicts them from the
+// head's index without advancing HeadMinTime.
+//
+// Eviction is skipped for tenants that do not have
+// EarlyHeadCompactionOwnedSeriesThreshold configured, or whose total in-head
+// series count (owned + non-owned) remains below the local threshold.
 func (i *Ingester) compactBlocksDueToNonOwnedSeries(ctx context.Context, jitter time.Duration) {
 	if !i.cfg.EarlyCompactionNonOwnedSeriesEnabled {
 		return
@@ -650,27 +652,24 @@ func (i *Ingester) compactBlocksDueToNonOwnedSeries(ctx context.Context, jitter 
 		seriesBefore := db.Head().NumSeries()
 		level.Info(i.logger).Log("msg", "triggering per-tenant early head compaction of non-owned series", "user", userID, "trigger", trigger, "before_in_memory_series", seriesBefore, "num_refs", len(refs))
 
-		// Step 1: compact the OOO head so the out-of-order data of every series with OOO
-		// chunks is persisted before we evict any series in step 2. CompactOOOHead is a no-op
-		// for tenants that have never used OOO ingestion.
+		// Step 1: compact the OOO head to persist all out-of-order data before any
+		// series are evicted in step 2. CompactOOOHead is a no-op for tenants that
+		// have never ingested out-of-order samples.
 		if err := db.db.CompactOOOHead(ctx); err != nil {
 			level.Warn(i.logger).Log("msg", "OOO head compaction failed during per-tenant early compaction of non-owned series", "user", userID, "err", err)
 			// Fall through: CompactSelectedSeries still helps for non-owned series without OOO data.
 		}
 
-		// Step 2: write the queued non-owned series into a block and evict them from the head.
+		// Step 2: persist the queued non-owned series in a block and evict them from
+		// the head.
 		if err := db.db.CompactSelectedSeries(refs); err != nil {
 			level.Warn(i.logger).Log("msg", "selected series compaction failed during per-tenant early compaction of non-owned series", "user", userID, "err", err)
 			continue
 		}
 
-		// Note: lastEarlyCompaction is intentionally not updated here. The cooldown it controls
-		// gates compactBlocksToReducePerTenantOwnedSeries, which targets owned-series memory
-		// pressure via a forced head compaction with a time cutoff. The work this function does
-		// (CompactOOOHead + CompactSelectedSeries) is targeted at non-owned series only, does
-		// not advance HeadMinTime, and does not compete for the same resource — so suppressing
-		// per-tenant early compaction after a ring-change-driven eviction would block unrelated
-		// owned-series relief.
+		// Note: lastEarlyCompaction is intentionally not updated here. It is only
+		// updated by compactions that advance HeadMinTime. The compactions performed
+		// here (CompactOOOHead + CompactSelectedSeries) do not advance HeadMinTime.
 		db.triggerRecomputeOwnedSeries(recomputeOwnedSeriesReasonEarlyCompaction)
 
 		i.metrics.earlyCompactionNonOwnedSeriesTriggered.WithLabelValues(userID).Inc()

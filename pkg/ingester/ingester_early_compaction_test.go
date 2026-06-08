@@ -1048,14 +1048,14 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldFlushDataToBlock(t *tes
 	limits := defaultLimitsTestConfig()
 	limits.EarlyHeadCompactionOwnedSeriesThreshold = 1
 
-	// 3 zones x 1 ingester each makes localThreshold == globalThreshold, so threshold=1
-	// gates on at least 1 owned series.
+	// With 3 zones and 1 ingester per zone, localThreshold equals
+	// globalThreshold, so threshold=1 requires at least 1 owned series.
 	ingesters := setupTestIngesterRing(t, []string{"zone-a", "zone-b", "zone-c"}, 1, cfg, limits)
 	ingester := ingesters[0]
 
-	// Push two samples at different timestamps so the head's MinTime < MaxTime. Push two
-	// series so that one can remain owned to satisfy the per-tenant gate, while the other
-	// is marked non-owned and exercises the eviction path.
+	// Push two samples at different timestamps to ensure the head's MinTime is less
+	// than MaxTime. Use two series so one remains owned (satisfying the per-tenant
+	// gate) while the other is marked non-owned and evicted.
 	sampleTime, err := time.Parse(time.RFC3339, "2026-05-05T00:00:00Z")
 	require.NoError(t, err)
 	t1 := sampleTime.UnixMilli()
@@ -1093,8 +1093,7 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldFlushDataToBlock(t *tes
 	blockIDs := listBlocksInDir(t, userBlocksDir)
 	require.Len(t, blockIDs, 1)
 
-	// The block contains the non-owned series's two samples, unmodified (no synthetic samples
-	// are appended on this path).
+	// The block contains the non-owned series's two samples.
 	assert.Equal(t, model.Matrix{{
 		Metric: nonOwnedMetricModel,
 		Values: []model.SamplePair{
@@ -1110,9 +1109,7 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldFlushDataToBlock(t *tes
 	ingester.compactBlocksDueToNonOwnedSeries(ctx, 0)
 	require.Len(t, listBlocksInDir(t, userBlocksDir), 1)
 
-	// lastEarlyCompaction is intentionally NOT updated by this path (see comment in
-	// compactBlocksDueToNonOwnedSeries): non-owned eviction must not gate the unrelated
-	// per-tenant early compaction.
+	// lastEarlyCompaction is intentionally not updated by this path.
 	assert.True(t, db.getLastEarlyCompaction().IsZero())
 
 	// Data for the non-owned series should still be queryable from the ingester (served from
@@ -1135,11 +1132,12 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldFlushDataToBlock(t *tes
 	}}, res)
 }
 
-// TestIngester_compactBlocksDueToNonOwnedSeries_ShouldFlushOnlyNonOwnedSeries verifies that
-// when the head holds a mix of owned and non-owned series, compactBlocksDueToNonOwnedSeries
-// flushes only the non-owned ones into a block and evicts them, leaving the owned series in
-// the head untouched. Both series remain queryable through the ingester (owned from the head,
-// non-owned from the local block).
+// TestIngester_compactBlocksDueToNonOwnedSeries_ShouldFlushOnlyNonOwnedSeries
+// verifies that when the head contains both owned and non-owned series,
+// compactBlocksDueToNonOwnedSeries flushes and evicts only the non-owned
+// series. The owned series remain in the head, and both series remain
+// queryable through the ingester (owned from the head, non-owned from the
+// local block).
 func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldFlushOnlyNonOwnedSeries(t *testing.T) {
 	var (
 		ctx         = context.Background()
@@ -1155,9 +1153,9 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldFlushOnlyNonOwnedSeries
 	limits := defaultLimitsTestConfig()
 	limits.EarlyHeadCompactionOwnedSeriesThreshold = 1
 
-	// 3 zones x 1 ingester each makes the per-tenant local threshold equal
-	// to the global threshold, so threshold=1 gives localThreshold=1 and the gate passes when
-	// one series is owned. We interact with the first ingester for the rest of the test.
+	// With 3 zones and 1 ingester per zone, the per-tenant local threshold equals
+	// the global threshold. Therefore, threshold=1 causes the gate to pass when
+	// one series is owned. The rest of the test interacts with the first ingester.
 	ingesters := setupTestIngesterRing(t, []string{"zone-a", "zone-b", "zone-c"}, 1, cfg, limits)
 	ingester := ingesters[0]
 
@@ -1170,10 +1168,6 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldFlushOnlyNonOwnedSeries
 	ownedName := ownedLabels.Get(model.MetricNameLabel)
 	nonOwnedName := nonOwnedLabels.Get(model.MetricNameLabel)
 
-	// Push two samples per series at different timestamps so the head's MinTime < MaxTime
-	// (required for both the chunk-range loop and the eviction-step early-return guard to
-	// do work). pushSeriesToIngester only pushes the first sample of each series, so we use
-	// two calls per series.
 	for _, lbls := range []labels.Labels{ownedLabels, nonOwnedLabels} {
 		require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []util_test.Series{{
 			Labels:  lbls,
@@ -1189,7 +1183,6 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldFlushOnlyNonOwnedSeries
 	require.NotNil(t, db)
 	require.Equal(t, uint64(2), db.Head().NumSeries())
 
-	// Configure ownership and queue the non-owned ref.
 	db.ownedTokenRanges = ring.TokenRanges{0, minHash}
 	require.True(t, db.recomputeOwnedSeries(0, "test", log.NewNopLogger()), "recomputeOwnedSeries should succeed")
 	require.Equal(t, 1, db.ownedSeriesState().ownedSeriesCount, "exactly one series should be owned")
@@ -1242,12 +1235,16 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldFlushOnlyNonOwnedSeries
 	assert.Equal(t, expected(nonOwnedName), queryStream(nonOwnedName))
 }
 
-// TestIngester_compactBlocksDueToNonOwnedSeries_ShouldHandleOOOSamples verifies the two-step
-// flow when both series carry out-of-order data. CompactOOOHead (step 1) flushes the OOO data
-// of both series into an OOO block and clears their s.ooo state; CompactSelectedSeries (step 2)
-// then evicts the non-owned series from the head's index — the OOO filter inside the primitive
-// no longer skips it, because step 1 made s.ooo nil. The owned series stays in the head with
-// its in-order chunks intact and its OOO chunks now persisted on disk.
+// TestIngester_compactBlocksDueToNonOwnedSeries_ShouldHandleOOOSamples
+// verifies the two-step eviction flow when both series contain out-of-order
+// data. In step 1, CompactOOOHead flushes the OOO data of both series into an
+// OOO block and clears their OOO state. In step 2, CompactSelectedSeries
+// evicts the non-owned series from the head, while the owned series remains.
+//
+// This works because CompactSelectedSeries skips series with in-memory OOO
+// state, and step 1 ensures the non-owned series no longer has any. The owned
+// series keeps its in-order chunks in the head, while its OOO chunks are
+// persisted on disk.
 func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldHandleOOOSamples(t *testing.T) {
 	var (
 		ctx         = context.Background()
@@ -1266,8 +1263,6 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldHandleOOOSamples(t *tes
 	// timestamps are below the head's MaxTime.
 	limits.OutOfOrderTimeWindow = model.Duration(time.Hour)
 
-	// 3 zones x 1 ingester makes localThreshold==globalThreshold so threshold=1 gates on 1
-	// owned series.
 	ingesters := setupTestIngesterRing(t, []string{"zone-a", "zone-b", "zone-c"}, 1, cfg, limits)
 	ingester := ingesters[0]
 
@@ -1281,8 +1276,9 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldHandleOOOSamples(t *tes
 	ownedName := ownedLabels.Get(model.MetricNameLabel)
 	nonOwnedName := nonOwnedLabels.Get(model.MetricNameLabel)
 
-	// Push for each series: two in-order samples at t1 and t2, then an OOO sample at tOOO so
-	// the series enters the OOO ingestion path (s.ooo becomes non-nil).
+	// For each series, push two in-order samples at t1 and t2, then an
+	// out-of-order sample at tOOO so the series enters the OOO ingestion path and
+	// acquires in-memory OOO state (s.ooo becomes non-nil).
 	pushOne := func(lbls labels.Labels, ts int64, val float64) {
 		require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []util_test.Series{{
 			Labels:  lbls,
@@ -1299,7 +1295,6 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldHandleOOOSamples(t *tes
 	require.NotNil(t, db)
 	require.Equal(t, uint64(2), db.Head().NumSeries())
 
-	// Configure ownership and queue the non-owned ref.
 	db.ownedTokenRanges = ring.TokenRanges{0, minHash}
 	require.True(t, db.recomputeOwnedSeries(0, "test", log.NewNopLogger()), "recomputeOwnedSeries should succeed")
 	require.Equal(t, 1, db.ownedSeriesState().ownedSeriesCount, "exactly one series should be owned")
@@ -1309,9 +1304,9 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldHandleOOOSamples(t *tes
 	// The non-owned series should have been evicted; the owned series should remain.
 	assert.Equal(t, uint64(1), db.Head().NumSeries())
 
-	// Two blocks should be on disk: one OOO block (from step 1, containing the OOO data of
-	// both series) and one selected-series block (from step 2, containing the in-order data of
-	// the non-owned series only).
+	// Two blocks should be on disk: an OOO block from step 1 containing the OOO
+	// data of both series, and a selected-series block from step 2 containing the
+	// in-order data of the evicted non-owned series.
 	userBlocksDir := filepath.Join(ingester.cfg.BlocksStorageConfig.TSDB.Dir, userID)
 	blockIDs := listBlocksInDir(t, userBlocksDir)
 	require.Len(t, blockIDs, 2)
@@ -1384,10 +1379,11 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldHandleOOOSamples(t *tes
 	assert.Equal(t, expected(nonOwnedName), queryStream(nonOwnedName))
 }
 
-// TestIngester_compactBlocksDueToNonOwnedSeries_ShouldRespectGracePeriod verifies that the
-// configured grace period gates the eviction: while the period has not elapsed since the last
-// pending-refs update, compactBlocksDueToNonOwnedSeries does not compact or evict anything;
-// once the per-tenant last-update timestamp is older than the threshold, eviction proceeds.
+// TestIngester_compactBlocksDueToNonOwnedSeries_ShouldRespectGracePeriod
+// verifies that the grace period delays non-owned series eviction. No
+// compaction or eviction occurs while the pending-refs last-update timestamp
+// remains within the grace period. Eviction proceeds once the timestamp is
+// older than the configured threshold.
 func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldRespectGracePeriod(t *testing.T) {
 	var (
 		ctx         = context.Background()
@@ -1406,8 +1402,6 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldRespectGracePeriod(t *t
 	limits := defaultLimitsTestConfig()
 	limits.EarlyHeadCompactionOwnedSeriesThreshold = 1
 
-	// 3 zones x 1 ingester each makes localThreshold == globalThreshold so threshold=1 gates
-	// on at least 1 owned series.
 	ingesters := setupTestIngesterRing(t, []string{"zone-a", "zone-b", "zone-c"}, 1, cfg, limits)
 	ingester := ingesters[0]
 
@@ -1459,13 +1453,14 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldRespectGracePeriod(t *t
 	require.Equal(t, uint64(1), db.Head().NumSeries(), "non-owned series should be evicted from the head after the grace period elapses")
 }
 
-// TestIngester_compactBlocksDueToNonOwnedSeries_ShouldHandleScaleUp simulates the HPA scale-up
-// scenario: an ingester accumulates series under one ring topology, more ingesters then join
-// the ring, and the existing replica is left holding series that are now non-owned.
-// The test verifies that compactBlocksDueToNonOwnedSeries correctly evicts those series under
-// the smaller post-scale-up per-ingester local threshold, and that the same call would have
-// been a no-op under the pre-scale-up topology (where the local threshold was still above the
-// number of in-head series).
+// TestIngester_compactBlocksDueToNonOwnedSeries_ShouldHandleScaleUp simulates
+// an HPA scale-up where additional ingesters join the ring, reducing the
+// per-ingester local threshold and causing some existing series to become
+// non-owned.
+//
+// The test verifies that compactBlocksDueToNonOwnedSeries evicts those series
+// after the scale-up, whereas the same ingester state would not have met the
+// eviction threshold before the scale-up.
 func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldHandleScaleUp(t *testing.T) {
 	const numSeries = 10000
 
@@ -1474,20 +1469,18 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldHandleScaleUp(t *testin
 	cfg.UpdateIngesterOwnedSeries = true
 	cfg.EarlyCompactionNonOwnedSeriesEnabled = true
 	cfg.EarlyCompactionNonOwnedSeriesMinGracePeriod = 0
-	cfg.EarlyCompactionNonOwnedSeriesMaxGracePeriod = 0 // this test exercises the threshold gate, not the max-grace fallback
-	// The post-scale-up sub-test also exercises compactBlocksToReducePerTenantOwnedSeries
-	// (which short-circuits unless both of these flags are set), to show that the older
-	// owned-series gate would not have fired in the post-scale-up state.
+	cfg.EarlyCompactionNonOwnedSeriesMaxGracePeriod = 0
+
 	cfg.ActiveSeriesMetrics.Enabled = true
 	cfg.ActiveSeriesMetrics.IdleTimeout = 20 * time.Minute
 	cfg.UseIngesterOwnedSeriesForLimits = true
 
 	limits := defaultLimitsTestConfig()
-	// Global threshold = 30000. With 3 zones and RF=3 the per-ingester local threshold is
-	// (30000 * 3) / (3 * ingestersPerZone). Pre-scale-up (2 ingesters/zone) => 15000;
-	// post-scale-up (4 ingesters/zone) => 7500. The head holds numSeries = 10000 series, so
-	// the gate skips against the pre-scale-up threshold (10000 < 15000) and fires against the
-	// post-scale-up threshold (10000 >= 7500): the scale-up itself is what unlocks eviction.
+	// Global threshold = 30000. With 3 zones and RF=3, the per-ingester local
+	// threshold is 15000 before the scale-up (2 ingesters/zone) and 7500 after it
+	// (4 ingesters/zone). The head contains 10000 series, so the threshold gate is
+	// not met before the scale-up (10000 < 15000) but is met afterwards
+	// (10000 >= 7500). The scale-up itself is what makes eviction eligible.
 	limits.EarlyHeadCompactionOwnedSeriesThreshold = 30000
 
 	zones := []string{"zone-a", "zone-b", "zone-c"}
@@ -1497,10 +1490,10 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldHandleScaleUp(t *testin
 	t1 := sampleTime.UnixMilli()
 	t2 := t1 + 1
 
-	// setupScenario builds a ring with the given per-zone fan-out, pushes numSeries series with
-	// two samples each (so the head's MinTime < MaxTime) into ingester[0], and configures the
-	// owned token ranges to cover the lower half of the uint32 keyspace so roughly half the
-	// series end up non-owned and queued for eviction.
+	// setupScenario builds a ring with the given per-zone fan-out, pushes numSeries
+	// series with two samples each into ingester[0] so the head has MinTime < MaxTime,
+	// and assigns owned token ranges to the lower half of the uint32 keyspace so
+	// roughly half the series become non-owned and are queued for eviction.
 	setupScenario := func(t *testing.T, ingestersPerZone int) (*Ingester, *userTSDB, string, int) {
 		ctxWithUser := user.InjectOrgID(context.Background(), userID)
 
@@ -1550,15 +1543,19 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldHandleScaleUp(t *testin
 	})
 
 	t.Run("post-scale-up topology triggers eviction", func(t *testing.T) {
-		// 4 ingesters/zone => localThreshold = 7500. The owned-series count after the simulated
-		// rebalance is ~5000 (half of numSeries), which is below the local threshold. So:
-		//   - compactBlocksToReducePerTenantOwnedSeries gates on ownedSeriesCount >= localThreshold
-		//     => 5000 < 7500 => skip, no block produced.
-		//   - compactBlocksDueToNonOwnedSeries gates on Head().NumSeries() >= localThreshold
-		//     => 10000 >= 7500 => fire, non-owned refs evicted into a block.
-		// This is precisely the gap the new function closes: after the scale-up the older
-		// owned-series gate stops firing even though stale non-owned series are still bloating
-		// the head.
+		// With 4 ingesters per zone, localThreshold = 7500. After the simulated
+		// rebalance, only ~5000 series remain owned (about half of numSeries), while
+		// the head still contains all 10000 series.
+		//
+		// Therefore:
+		//   - compactBlocksToReducePerTenantOwnedSeries does not trigger because it
+		//     gates on ownedSeriesCount >= localThreshold (5000 < 7500).
+		//   - compactBlocksDueToNonOwnedSeries does trigger because it gates on
+		//     Head().NumSeries() >= localThreshold (10000 >= 7500).
+		//
+		// This illustrates the gap closed by the new eviction path: after a scale-up,
+		// non-owned series can still consume significant head memory even when the
+		// owned-series compaction threshold is no longer met.
 		ingester, db, blocksDir, postScaleOwned := setupScenario(t, 4)
 		require.Less(t, postScaleOwned,
 			ingester.limiter.ringStrategy.convertGlobalToLocalLimit(userID, limits.EarlyHeadCompactionOwnedSeriesThreshold),
@@ -1575,12 +1572,12 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldHandleScaleUp(t *testin
 	})
 
 	t.Run("max grace period triggers eviction when threshold gate is closed", func(t *testing.T) {
-		// Pre-scale-up topology (2 ingesters/zone): localThreshold = 15000 > Head() = 10000,
-		// so the threshold gate is closed and the fast path (minGrace=0 + gate) cannot fire.
-		// This simulates a tenant well below its series limit that would never be served by
-		// the fast path alone, regardless of how long min grace runs.
-		// After the max grace period elapses the slow path bypasses the gate and evicts the
-		// non-owned series, guaranteeing eventual cleanup.
+		// Pre-scale-up (2 ingesters per zone), localThreshold = 15000 > Head().NumSeries()
+		// = 10000, so the threshold gate blocks the fast eviction path.
+		//
+		// This simulates a tenant below its series limit. The non-owned series remain
+		// in the head until the max grace period expires, at which point the slow path
+		// bypasses the threshold gate and guarantees their eventual eviction.
 		cfg.EarlyCompactionNonOwnedSeriesMaxGracePeriod = time.Minute
 		ingester, db, blocksDir, _ := setupScenario(t, 2)
 
@@ -1602,11 +1599,14 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldHandleScaleUp(t *testin
 	})
 }
 
-// TestIngester_compactBlocksDueToNonOwnedSeries_StaleRefsAfterPriorEviction verifies that
-// compactBlocksDueToNonOwnedSeries handles stale series refs gracefully. This covers the
-// scenario where the old path (compactBlocksToReducePerTenantOwnedSeries) already evicted a
-// series that is still cached in pendingNonOwnedRefs: the stale refs must be silently dropped
-// without error or panic, and no spurious block must be produced.
+// TestIngester_compactBlocksDueToNonOwnedSeries_StaleRefsAfterPriorEviction
+// verifies that compactBlocksDueToNonOwnedSeries handles stale refs in
+// pendingNonOwnedRefs gracefully.
+//
+// This covers the case where a series has already been evicted by
+// compactBlocksToReducePerTenantOwnedSeries but its ref remains cached as
+// pending non-owned. The stale ref should be ignored without error or panic,
+// and no block should be produced.
 func TestIngester_compactBlocksDueToNonOwnedSeries_StaleRefsAfterPriorEviction(t *testing.T) {
 	ctx := context.Background()
 	ctxWithUser := user.InjectOrgID(ctx, userID)
@@ -1625,7 +1625,6 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_StaleRefsAfterPriorEviction(t
 	limits.EarlyHeadCompactionOwnedSeriesThreshold = 1
 	limits.EarlyHeadCompactionMinEstimatedSeriesReductionPercentage = 0
 
-	// 3 zones × 1 ingester each → localThreshold = 1, so the gate opens on any non-zero head.
 	ingesters := setupTestIngesterRing(t, []string{"zone-a", "zone-b", "zone-c"}, 1, cfg, limits)
 	ingester := ingesters[0]
 
@@ -1658,9 +1657,10 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_StaleRefsAfterPriorEviction(t
 	require.Len(t, db.pendingNonOwnedRefs, 1, "exactly one non-owned ref should be queued")
 	db.pendingNonOwnedRefsMtx.Unlock()
 
-	// Push a recent sample to the owned series so it survives the old path's forced compaction
-	// (its chunk extends past forcedCompactionMaxTime = now − idleTimeout = now − 20 min).
-	// The non-owned series has no data after the cutoff and will be removed from the head.
+	// Push a recent sample to the owned series so it survives the old path's
+	// forced compaction. The owned series has data past the compaction cutoff
+	// (now - idleTimeout), while the non-owned series does not and is evicted from
+	// the head.
 	tRecent := time.Now().UnixMilli()
 	require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []util_test.Series{{
 		Labels: ownedLabels, Samples: []util_test.Sample{{TS: tRecent, Val: 3.0}},
@@ -1668,9 +1668,10 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_StaleRefsAfterPriorEviction(t
 
 	userBlocksDir := filepath.Join(ingester.cfg.BlocksStorageConfig.TSDB.Dir, userID)
 
-	// Run the old path. It evicts the non-owned series (all data before forcedCompactionMaxTime)
-	// while keeping the owned series (recent chunk survives the cutoff). The stale ref remains in
-	// pendingNonOwnedRefs because the old path does not clear it.
+	// Run the old path. The non-owned series is evicted because it has no data
+	// beyond forcedCompactionMaxTime, while the owned series survives due to its
+	// recent sample. The evicted series ref remains cached in pendingNonOwnedRefs,
+	// creating the stale-ref condition exercised by this test.
 	ingester.compactBlocksToReducePerTenantOwnedSeries(ctx, time.Now())
 	require.NotEmpty(t, listBlocksInDir(t, userBlocksDir), "old path should have produced at least one block")
 	require.Equal(t, uint64(1), db.Head().NumSeries(), "non-owned series should be evicted by old path")
@@ -1681,10 +1682,10 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_StaleRefsAfterPriorEviction(t
 
 	blocksAfterOldPath := listBlocksInDir(t, userBlocksDir)
 
-	// Now run the new path. The cached refs in pendingNonOwnedRefs are stale — the series
-	// they point to no longer exist in the head. filterSelectedSeriesAndSortPostings silently
-	// drops refs whose series cannot be found, so CompactSelectedSeries returns nil without
-	// writing a block or panicking.
+	// Now run the new path. The refs cached in pendingNonOwnedRefs are stale
+	// because the corresponding series no longer exist in the head.
+	// CompactSelectedSeries must drop missing refs and complete without producing
+	// a block or returning an error.
 	ingester.compactBlocksDueToNonOwnedSeries(ctx, 0)
 
 	require.Equal(t, blocksAfterOldPath, listBlocksInDir(t, userBlocksDir), "no additional block should be produced for stale refs")

@@ -782,9 +782,9 @@ func (u *userTSDB) takePendingNonOwnedRefs(notAfter time.Time) []storage.SeriesR
 }
 
 func (u *userTSDB) computeOwnedSeries() int {
-	// If no token ranges are assigned, every series in the head is non-owned.
-	// activeSeries.Clear() handles the active-series side; the loop below collects refs to
-	// queue for targeted eviction.
+	// If no token ranges are assigned, all head series are non-owned.
+	// activeSeries.Clear handles the active-series state; the loop below collects
+	// refs for targeted eviction.
 	allNonOwned := len(u.ownedTokenRanges) == 0
 	if allNonOwned {
 		u.activeSeries.Clear()

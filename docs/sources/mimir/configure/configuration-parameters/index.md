@@ -1484,22 +1484,18 @@ instance_limits:
 # CLI flag: -ingester.early-compaction-non-owned-series-enabled
 [early_compaction_non_owned_series_enabled: <boolean> | default = false]
 
-# (experimental) Minimum time that must elapse after a non-owned series is
-# detected before it can be evicted, provided the in-memory series count exceeds
-# the local threshold derived from
-# -ingester.early-head-compaction-owned-series-threshold. Any detection that
-# adds new refs resets the timer. A value of 0 evicts as soon as the threshold
-# gate is satisfied. A per-replica jitter in [0, 2×min-grace-period] is chosen
-# at startup and added to every eviction check, so effective eviction times are
-# spread across [min-grace-period, 3×min-grace-period] to avoid thundering-herd
-# compactions across replicas.
+# (experimental) Minimum time a series must remain non-owned before it can be
+# evicted when the local owned-series threshold is exceeded. New non-owned
+# series reset the timer. A value of 0 evicts immediately. A per-replica startup
+# jitter spreads evictions across replicas.
 # CLI flag: -ingester.early-compaction-non-owned-series-min-grace-period
 [early_compaction_non_owned_series_min_grace_period: <duration> | default = 30s]
 
-# (experimental) Maximum time after which non-owned series are evicted
-# regardless of the local threshold gate. This guarantees eventual eviction even
-# for tenants well below their series limit. A value of 0 disables the maximum
-# grace period, relying solely on the threshold gate.
+# (experimental) Maximum time a series may remain non-owned before it is
+# evicted, regardless of the owned-series threshold. This ensures eventual
+# eviction even for tenants below their threshold. A value of 0 disables the
+# maximum grace period, so eviction depends solely on the owned-series
+# threshold.
 # CLI flag: -ingester.early-compaction-non-owned-series-max-grace-period
 [early_compaction_non_owned_series_max_grace_period: <duration> | default = 5m]
 
