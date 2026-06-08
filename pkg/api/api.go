@@ -421,6 +421,14 @@ func (a *API) RegisterIngesterPartitionRing(r http.Handler) {
 	a.RegisterRoute("/ingester/partition-ring", r, false, true, "GET", "POST")
 }
 
+func (a *API) RegisterIngesterPartitionRingForCompartment(r http.Handler, compartmentID int) {
+	path := fmt.Sprintf("ingester/partition-ring/compartment-%d", compartmentID)
+	a.indexPage.AddLinks(defaultWeight, "Ingester", []IndexPageLink{
+		{Desc: fmt.Sprintf("Partition ring status (compartment %d)", compartmentID), Path: path},
+	})
+	a.RegisterRoute("/"+path, r, false, true, "GET", "POST")
+}
+
 // RegisterStoreGateway registers the ring UI page associated with the store-gateway.
 func (a *API) RegisterStoreGateway(s *storegateway.StoreGateway) {
 	storegatewaypb.RegisterStoreGatewayServer(a.server.GRPC, s)

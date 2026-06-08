@@ -385,7 +385,7 @@ func (t *Mimir) initIngesterRing() (serv services.Service, err error) {
 	return t.IngesterRing, nil
 }
 
-func (t *Mimir) initIngesterPartitionRing() (services.Service, error) {
+func (t *Mimir) initIngesterPartitionRings() (services.Service, error) {
 	if !t.Cfg.IngestStorage.Enabled {
 		return nil, nil
 	}
@@ -395,16 +395,49 @@ func (t *Mimir) initIngesterPartitionRing() (services.Service, error) {
 		return nil, errors.Wrap(err, "creating KV store for ingester partitions ring watcher")
 	}
 
-	t.IngesterPartitionRingWatcher = ring.NewPartitionRingWatcher(ingester.PartitionRingName, ingester.PartitionRingKey, kvClient, util_log.Logger, prometheus.WrapRegistererWithPrefix("cortex_", t.Registerer))
-	t.IngesterPartitionInstanceRing = ring.NewPartitionInstanceRing(t.IngesterPartitionRingWatcher, t.IngesterRing, t.Cfg.Ingester.IngesterRing.HeartbeatTimeout)
-
-	// Expose a web page to view the partitions ring state.
-	t.API.RegisterIngesterPartitionRing(ring.NewPartitionRingPageHandler(t.IngesterPartitionRingWatcher, ring.NewPartitionRingEditor(ingester.PartitionRingKey, kvClient)))
-
 	// Track anonymous usage statistics.
 	usagestats.SetMode(usagestats.ModeIngestStorage)
 
-	return t.IngesterPartitionRingWatcher, nil
+	if !t.Cfg.IngestStorage.Compartments.Enabled {
+		t.IngesterPartitionRingWatcher = ring.NewPartitionRingWatcher(ingester.PartitionRingName, ingester.PartitionRingKey, kvClient, util_log.Logger, prometheus.WrapRegistererWithPrefix("cortex_", t.Registerer))
+		t.IngesterPartitionInstanceRing = ring.NewPartitionInstanceRing(t.IngesterPartitionRingWatcher, t.IngesterRing, t.Cfg.Ingester.IngesterRing.HeartbeatTimeout)
+
+		// Expose a web page to view the partitions ring state.
+		t.API.RegisterIngesterPartitionRing(ring.NewPartitionRingPageHandler(t.IngesterPartitionRingWatcher, ring.NewPartitionRingEditor(ingester.PartitionRingKey, kvClient)))
+		t.IngesterPartitionRingWatchers = []*ring.PartitionRingWatcher{t.IngesterPartitionRingWatcher}
+		return t.IngesterPartitionRingWatcher, nil
+	}
+
+	numCompartments := t.Cfg.IngestStorage.Compartments.NumCompartments
+	t.IngesterPartitionRingWatchers = make([]*ring.PartitionRingWatcher, numCompartments)
+	allWatchers := make([]services.Service, 0, numCompartments)
+	for c := 0; c < numCompartments; c++ {
+		key := ingester.CompartmentPartitionRingKey(c)
+		watcher := ring.NewPartitionRingWatcher(key, key, kvClient, util_log.Logger, prometheus.WrapRegistererWithPrefix("cortex_", t.Registerer))
+		t.IngesterPartitionRingWatchers[c] = watcher
+		allWatchers = append(allWatchers, watcher)
+
+		t.API.RegisterIngesterPartitionRingForCompartment(ring.NewPartitionRingPageHandler(watcher, ring.NewPartitionRingEditor(key, kvClient)), c)
+	}
+
+	manager, err := services.NewManager(allWatchers...)
+	if err != nil {
+		return nil, errors.Wrap(err, "creating service manager for ingester partition ring watchers")
+	}
+	w := services.NewFailureWatcher()
+	return services.NewBasicService(func(ctx context.Context) error {
+		w.WatchManager(manager)
+		return services.StartManagerAndAwaitHealthy(ctx, manager)
+	}, func(serviceContext context.Context) error {
+		select {
+		case <-serviceContext.Done():
+			return nil
+		case err := <-w.Chan():
+			return err
+		}
+	}, func(_ error) error {
+		return services.StopManagerAndAwaitStopped(context.Background(), manager)
+	}), nil
 }
 
 func (t *Mimir) initRuntimeConfig() (services.Service, error) {
@@ -518,7 +551,7 @@ func (t *Mimir) initDistributorService() (serv services.Service, err error) {
 
 	t.Distributor, err = distributor.New(t.Cfg.Distributor, t.Cfg.IngesterClient, t.Overrides,
 		t.ActiveGroupsCleanup, t.CostAttributionManager, t.IngesterRing, t.IngesterPartitionInstanceRing,
-		canJoinDistributorsRing, t.UsageTrackerPartitionRing, t.UsageTrackerInstanceRing, t.Registerer, util_log.Logger)
+		t.IngesterPartitionRingWatchers, canJoinDistributorsRing, t.UsageTrackerPartitionRing, t.UsageTrackerInstanceRing, t.Registerer, util_log.Logger)
 	if err != nil {
 		return
 	}
@@ -774,13 +807,24 @@ func (t *Mimir) initIngesterService() (serv services.Service, err error) {
 	t.Cfg.Ingester.IngestStorageConfig = t.Cfg.IngestStorage
 	t.tsdbIngesterConfig()
 
-	t.Ingester, err = ingester.New(t.Cfg.Ingester, t.Overrides, t.IngesterRing, t.IngesterPartitionRingWatcher, t.ActiveGroupsCleanup, t.CostAttributionManager, t.Registerer, util_log.Logger)
+	// An ingester only needs its own ReadCompartmentID watcher, but this module is shared with
+	// distributor/querier so all N are built and the ingester selects one.
+	// TODO(per-compartment-rings): Only set up watcher for the ingester's compartment.
+	partitionRingWatcher := t.IngesterPartitionRingWatcher
+	if t.Cfg.IngestStorage.Enabled {
+		partitionRingWatcher = t.IngesterPartitionRingWatchers[0]
+	}
+	if t.Cfg.IngestStorage.Compartments.Enabled {
+		partitionRingWatcher = t.IngesterPartitionRingWatchers[t.Cfg.IngestStorage.Compartments.ReadCompartmentID]
+	}
+
+	t.Ingester, err = ingester.New(t.Cfg.Ingester, t.Overrides, t.IngesterRing, partitionRingWatcher, t.ActiveGroupsCleanup, t.CostAttributionManager, t.Registerer, util_log.Logger)
 	if err != nil {
 		return
 	}
 
-	if t.IngesterPartitionRingWatcher != nil {
-		t.IngesterPartitionRingWatcher = t.IngesterPartitionRingWatcher.WithDelegate(t.Ingester)
+	if partitionRingWatcher != nil {
+		partitionRingWatcher.WithDelegate(t.Ingester)
 	}
 	if t.ActiveGroupsCleanup != nil {
 		t.ActiveGroupsCleanup.Register(t.Ingester)
@@ -1500,7 +1544,7 @@ func (t *Mimir) setupModuleManager() error {
 	mm.RegisterModule(Distributor, t.initDistributor)
 	mm.RegisterModule(DistributorService, t.initDistributorService, modules.UserInvisibleModule)
 	mm.RegisterModule(Ingester, t.initIngester)
-	mm.RegisterModule(IngesterPartitionRing, t.initIngesterPartitionRing, modules.UserInvisibleModule)
+	mm.RegisterModule(IngesterPartitionRing, t.initIngesterPartitionRings, modules.UserInvisibleModule)
 	mm.RegisterModule(IngesterRing, t.initIngesterRing, modules.UserInvisibleModule)
 	mm.RegisterModule(IngesterService, t.initIngesterService, modules.UserInvisibleModule)
 	mm.RegisterModule(NullIngester, t.initNullIngester)

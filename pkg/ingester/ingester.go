@@ -566,10 +566,16 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 			}
 		}
 
+		// With compartments enabled, register into this ingester's read compartment partition ring.
+		partitionRingKey := PartitionRingKey
+		if compartmentsCfg := ingestCfg.Compartments; compartmentsCfg.Enabled {
+			partitionRingKey = CompartmentPartitionRingKey(compartmentsCfg.ReadCompartmentID)
+		}
+
 		i.ingestPartitionLifecycler = ring.NewPartitionInstanceLifecycler(
 			i.cfg.IngesterPartitionRing.ToLifecyclerConfig(i.ingestPartitionID, cfg.IngesterRing.InstanceID),
 			PartitionRingName,
-			PartitionRingKey,
+			partitionRingKey,
 			partitionRingKV,
 			logger,
 			prometheus.WrapRegistererWithPrefix("cortex_", registerer))

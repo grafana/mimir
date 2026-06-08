@@ -18,12 +18,14 @@ ingest_storage:
     fetch_concurrency_max: 15
   compartments:
     enabled: true
-    num_compartments: 10
-    # Use the default topic name as the topic format (no <compartment-id> variation) so that
-    # all compartments write to the same "mimir-ingest" topic. This is a temporary workaround
-    # because ingesters don't yet support consuming from different topics. It allows testing
-    # the distributor's compartment routing logic end-to-end without requiring ingester changes.
-    topic_format: mimir-ingest
+    num_compartments: 2
+    topic_format: mimir-ingest-compartment-<compartment-id>
+    # The single Kafka cluster is the only write VC. The address has no <write-compartment-id>
+    # placeholder, so every write VC reader points at the same cluster. CompartmentReaders spins one
+    # reader per write VC (count = num_compartments), so each compartment topic is consumed
+    # num_compartments times: real ingesters dedup the repeats in TSDB (exact-duplicate no-ops), null
+    # ingesters just discard them; either way cortex_ingester_ingested_samples_total is inflated.
+    write_kafka_address_format: kafka_1:9092
 
 ingester:
   push_grpc_method_enabled: false

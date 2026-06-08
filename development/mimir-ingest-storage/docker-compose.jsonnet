@@ -33,24 +33,25 @@ std.manifestYamlDoc({
     }),
   },
 
+  local numCompartments = 2,
+  local partitionsPerCompartment = 1,
+  local zones = ['zone-a', 'zone-b'],
+  local useNullIngesters = false,
+  local ingesterTarget = if useNullIngesters then 'null-ingester' else 'ingester',
   ingesters:: {
-    'ingester-zone-a-1': mimirService({
-      name: 'ingester-zone-a-1',
-      target: 'ingester',
-      publishedHttpPort: 8002,
-      jaegerApp: 'ingester-zone-a-1',
-      extraArguments: ['-ingester.ring.instance-availability-zone=zone-a'],
-      extraVolumes: ['.data-ingester-zone-a-1:/data:delegated'],
-    }),
-
-    'ingester-zone-b-1': mimirService({
-      name: 'ingester-zone-b-1',
-      target: 'ingester',
-      publishedHttpPort: 8003,
-      jaegerApp: 'ingester-zone-b-1',
-      extraArguments: ['-ingester.ring.instance-availability-zone=zone-b'],
-      extraVolumes: ['.data-ingester-zone-b-1:/data:delegated'],
-    }),
+    ['ingester-c%d-%s-%d' % [compartment, zones[zoneIdx], partition]]: mimirService({
+      name: 'ingester-c%d-%s-%d' % [compartment, zones[zoneIdx], partition],
+      target: ingesterTarget,
+      // Based at 8100 (clear of all other services, which top out at 8090) to leave room to scale the counts above.
+      publishedHttpPort: 8100 + ((compartment * partitionsPerCompartment + partition) * std.length(zones)) + zoneIdx,
+      jaegerApp: 'ingester-c%d-%s-%d' % [compartment, zones[zoneIdx], partition],
+      extraArguments: ['-ingest-storage.compartments.read-compartment-id=%d' % compartment]
+                      + (if useNullIngesters then [] else ['-ingester.ring.instance-availability-zone=%s' % zones[zoneIdx]]),
+      extraVolumes: if useNullIngesters then [] else ['.data-ingester-c%d-%s-%d:/data:delegated' % [compartment, zones[zoneIdx], partition]],
+    })
+    for compartment in std.range(0, numCompartments - 1)
+    for partition in std.range(0, partitionsPerCompartment - 1)
+    for zoneIdx in std.range(0, std.length(zones) - 1)
   },
 
   querier:: {
@@ -184,7 +185,7 @@ std.manifestYamlDoc({
       hostname: 'nginx',
       image: 'nginxinc/nginx-unprivileged:1.22-alpine',
       depends_on: [
-        'ingester-zone-a-1',
+        'distributor-1',
         'alertmanager-1',
         'ruler-1',
         'query-frontend',
@@ -193,7 +194,7 @@ std.manifestYamlDoc({
       ],
       environment: [
         'NGINX_ENVSUBST_OUTPUT_DIR=/etc/nginx',
-        'DISTRIBUTOR_HOST=ingester-zone-a-1:8080',
+        'DISTRIBUTOR_HOST=distributor-1:8080',
         'ALERT_MANAGER_HOST=alertmanager-1:8080',
         'RULER_HOST=ruler-1:8080',
         'QUERY_FRONTEND_HOST=query-frontend:8080',
@@ -248,9 +249,9 @@ std.manifestYamlDoc({
       ],
       healthcheck: {
         test: 'kafka-broker-api-versions --bootstrap-server localhost:9092 || exit 1',
-        start_period: '1s',
-        interval: '1s',
-        timeout: '1s',
+        start_period: '10s',
+        interval: '5s',
+        timeout: '10s',
         retries: '30',
       },
     },
@@ -268,9 +269,9 @@ std.manifestYamlDoc({
       ],
       healthcheck: {
         test: 'kafka-broker-api-versions --bootstrap-server localhost:9092 || exit 1',
-        start_period: '1s',
-        interval: '1s',
-        timeout: '1s',
+        start_period: '10s',
+        interval: '5s',
+        timeout: '10s',
         retries: '30',
       },
     },
@@ -288,9 +289,9 @@ std.manifestYamlDoc({
       ],
       healthcheck: {
         test: 'kafka-broker-api-versions --bootstrap-server localhost:9092 || exit 1',
-        start_period: '1s',
-        interval: '1s',
-        timeout: '1s',
+        start_period: '10s',
+        interval: '5s',
+        timeout: '10s',
         retries: '30',
       },
     },

@@ -4,11 +4,17 @@ package ingester
 
 import (
 	"flag"
+	"strconv"
 	"time"
 
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/ring"
 )
+
+// CompartmentPartitionRingKey returns the KVStore key for the partition ring of the given read compartment.
+func CompartmentPartitionRingKey(compartmentID int) string {
+	return PartitionRingKey + "-compartment-" + strconv.Itoa(compartmentID)
+}
 
 type PartitionRingConfig struct {
 	KVStore kv.Config `yaml:"kvstore" doc:"description=The key-value store used to share the hash ring across multiple instances. This option needs be set on ingesters, distributors, queriers, and rulers when running in microservices mode."`

@@ -70,7 +70,8 @@ var tracer = otel.Tracer("pkg/distributor")
 
 var (
 	// Validation errors.
-	errInvalidTenantShardSize = errors.New("invalid tenant shard size, the value must be greater than or equal to zero")
+	errInvalidTenantShardSize      = errors.New("invalid tenant shard size, the value must be greater than or equal to zero")
+	errPartitionRingsCountMismatch = errors.New("the number of ingester partition rings does not match the configured number of compartments")
 
 	reasonDistributorMaxIngestionRate             = globalerror.DistributorMaxIngestionRate.LabelValue()
 	reasonDistributorMaxInflightPushRequests      = globalerror.DistributorMaxInflightPushRequests.LabelValue()
@@ -224,8 +225,18 @@ type Distributor struct {
 	// compartmentRouter routes series to compartment topics. Nil when compartments are disabled.
 	compartmentRouter *ingest.CompartmentRouter
 
-	// partitionsRing is the hash ring holding ingester partitions. It's used when ingest storage is enabled.
+	// partitionsRing is the hash ring holding ingester partitions. It's used when ingest storage
+	// is enabled. As part of compartments work, the write path is using partitionsRings instead of
+	// this field. The query path still uses this field, which is only set when compartments are
+	// disabled; with compartments enabled it is nil and the query path panics.
+	// FIXME(per-compartment-rings): remove once the read path is compartment-aware and uses
+	// partitionsRings as well.
 	partitionsRing *ring.PartitionInstanceRing
+
+	// partitionsRings holds the partition ring watchers indexed by read compartment, used by the write
+	// path. It has length >= 1 when ingest storage is enabled (size 1 holding the legacy watcher when
+	// compartments are disabled) and is empty when ingest storage is disabled.
+	partitionsRings []*ring.PartitionRingWatcher
 
 	// usageTrackerClient is the client that should be used to track per-tenant series and
 	// enforce max series limit in the distributor. This field is nil if usage-tracker
@@ -494,12 +505,22 @@ func (m *PushMetrics) deleteUserMetrics(user string) {
 }
 
 // New constructs a new Distributor
-func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Overrides, activeGroupsCleanupService *util.ActiveGroupsCleanupService, costAttributionMgr *costattribution.Manager, ingestersRing ring.ReadRing, partitionsRing *ring.PartitionInstanceRing, canJoinDistributorsRing bool, usageTrackerPartitionRing *ring.MultiPartitionInstanceRing, usageTrackerInstanceRing ring.ReadRing, reg prometheus.Registerer, log log.Logger) (*Distributor, error) {
+func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Overrides, activeGroupsCleanupService *util.ActiveGroupsCleanupService, costAttributionMgr *costattribution.Manager, ingestersRing ring.ReadRing, partitionsRing *ring.PartitionInstanceRing, partitionsRings []*ring.PartitionRingWatcher, canJoinDistributorsRing bool, usageTrackerPartitionRing *ring.MultiPartitionInstanceRing, usageTrackerInstanceRing ring.ReadRing, reg prometheus.Registerer, log log.Logger) (*Distributor, error) {
 	clientMetrics := ingester_client.NewMetrics(reg)
 	if cfg.IngesterClientFactory == nil {
 		cfg.IngesterClientFactory = ring_client.PoolInstFunc(func(inst ring.InstanceDesc) (ring_client.PoolClient, error) {
 			return ingester_client.MakeIngesterClient(inst, clientConfig, clientMetrics, log)
 		})
+	}
+
+	if cfg.IngestStorageConfig.Enabled {
+		expectedPartitionRings := 1
+		if cfg.IngestStorageConfig.Compartments.Enabled {
+			expectedPartitionRings = cfg.IngestStorageConfig.Compartments.NumCompartments
+		}
+		if len(partitionsRings) != expectedPartitionRings {
+			return nil, fmt.Errorf("%w: expected %d but got %d", errPartitionRingsCountMismatch, expectedPartitionRings, len(partitionsRings))
+		}
 	}
 
 	cfg.PoolConfig.RemoteTimeout = cfg.RemoteTimeout
@@ -512,6 +533,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		ingestersRing:               ingestersRing,
 		RequestBufferPool:           requestBufferPool,
 		partitionsRing:              partitionsRing,
+		partitionsRings:             partitionsRings,
 		ingesterPool:                NewPool(cfg.PoolConfig, ingestersRing, cfg.IngesterClientFactory, log),
 		healthyInstancesCount:       atomic.NewUint32(0),
 		healthyInstancesInZoneCount: atomic.NewUint32(0),
@@ -2105,17 +2127,20 @@ func (d *Distributor) push(ctx context.Context, pushReq *Request) error {
 
 	var (
 		ingestersSubring  ring.DoBatchRing
-		partitionsSubring *ring.ActivePartitionBatchRing
+		partitionSubrings []*ring.ActivePartitionBatchRing
 	)
 
-	// Get the tenant's subring to use to either write to ingesters or partitions.
+	// Shuffle-shard each compartment's partition ring (a single ring at index 0 when compartments are disabled).
 	if d.cfg.IngestStorageConfig.Enabled {
-		subring, err := d.partitionsRing.ShuffleShard(userID, d.limits.EffectiveIngestionPartitionsTenantWriteShardSize(userID))
-		if err != nil {
-			return err
+		shardSize := d.limits.EffectiveIngestionPartitionsTenantWriteShardSize(userID)
+		partitionSubrings = make([]*ring.ActivePartitionBatchRing, len(d.partitionsRings))
+		for c := range d.partitionsRings {
+			subring, err := d.partitionsRings[c].PartitionRing().ShuffleShard(userID, shardSize)
+			if err != nil {
+				return err
+			}
+			partitionSubrings[c] = ring.NewActivePartitionBatchRing(subring)
 		}
-
-		partitionsSubring = ring.NewActivePartitionBatchRing(subring.PartitionRing())
 	}
 
 	if !d.cfg.IngestStorageConfig.Enabled || d.cfg.IngestStorageConfig.Migration.DistributorSendToIngestersEnabled {
@@ -2127,15 +2152,15 @@ func (d *Distributor) push(ctx context.Context, pushReq *Request) error {
 	// once all backend requests have completed (see cleanup function passed to sendWriteRequestToBackends()).
 	cleanupInDefer = false
 
-	return d.sendWriteRequestToBackends(ctx, userID, req, ingestersSubring, partitionsSubring, pushReq.CleanUp)
+	return d.sendWriteRequestToBackends(ctx, userID, req, ingestersSubring, partitionSubrings, pushReq.CleanUp)
 }
 
 // sendWriteRequestToBackends sends the input req data to backends. The backends could be:
 // - Ingesters, when ingestersSubring is not nil
-// - Ingest storage partitions, when partitionsSubring is not nil
+// - Ingest storage partitions, when partitionSubrings is not empty (one subring per compartment)
 //
 // The input cleanup function is guaranteed to be called after all requests to all backends have completed.
-func (d *Distributor) sendWriteRequestToBackends(ctx context.Context, tenantID string, req *mimirpb.WriteRequest, ingestersSubring, partitionsSubring ring.DoBatchRing, cleanup func()) error {
+func (d *Distributor) sendWriteRequestToBackends(ctx context.Context, tenantID string, req *mimirpb.WriteRequest, ingestersSubring ring.DoBatchRing, partitionSubrings []*ring.ActivePartitionBatchRing, cleanup func()) error {
 	var (
 		wg            = sync.WaitGroup{}
 		partitionsErr error
@@ -2143,7 +2168,7 @@ func (d *Distributor) sendWriteRequestToBackends(ctx context.Context, tenantID s
 	)
 
 	// Ensure at least one ring has been provided.
-	if ingestersSubring == nil && partitionsSubring == nil {
+	if ingestersSubring == nil && len(partitionSubrings) == 0 {
 		// It should never happen. If it happens, it's a logic bug.
 		panic("no tenant subring has been provided to sendWriteRequestToBackends()")
 	}
@@ -2199,14 +2224,14 @@ func (d *Distributor) sendWriteRequestToBackends(ctx context.Context, tenantID s
 	}
 
 	// Keep it easy if there's only 1 backend to write to.
-	if partitionsSubring == nil {
+	if len(partitionSubrings) == 0 {
 		keys, initialMetadataIndex := getSeriesAndMetadataTokens(tenantID, req)
 		return d.sendWriteRequestToIngesters(ctx, ingestersSubring, req, keys, initialMetadataIndex, remoteRequestContext, batchOptions)
 	}
 	if ingestersSubring == nil {
 		defaultTopic := d.cfg.IngestStorageConfig.KafkaConfig.Topic
 		ct, initialMetadataIndex := getCompartmentTokensForWriteRequest(d.compartmentRouter, defaultTopic, tenantID, req)
-		return d.sendWriteRequestToPartitions(ctx, tenantID, partitionsSubring, req, ct, initialMetadataIndex, partitionsRequestContext, batchOptions)
+		return d.sendWriteRequestToPartitions(ctx, tenantID, partitionSubrings, req, ct, initialMetadataIndex, partitionsRequestContext, batchOptions)
 	}
 
 	// Prepare a callback function that will call the input cleanup callback function only after
@@ -2234,7 +2259,7 @@ func (d *Distributor) sendWriteRequestToBackends(ctx context.Context, tenantID s
 	go func() {
 		defer wg.Done()
 
-		partitionsErr = d.sendWriteRequestToPartitions(ctx, tenantID, partitionsSubring, req, ct, initialMetadataIndex, partitionsRequestContext, batchOptions)
+		partitionsErr = d.sendWriteRequestToPartitions(ctx, tenantID, partitionSubrings, req, ct, initialMetadataIndex, partitionsRequestContext, batchOptions)
 	}()
 
 	// Wait until all backends have done.
@@ -2278,7 +2303,7 @@ func (d *Distributor) sendWriteRequestToIngesters(ctx context.Context, tenantRin
 	return errors.Wrap(err, "send data to ingesters")
 }
 
-func (d *Distributor) sendWriteRequestToPartitions(ctx context.Context, tenantID string, tenantRing ring.DoBatchRing, req *mimirpb.WriteRequest, cts []compartmentTokens, initialMetadataIndex int, remoteRequestContext func() context.Context, batchOptions ring.DoBatchOptions) error {
+func (d *Distributor) sendWriteRequestToPartitions(ctx context.Context, tenantID string, partitionSubrings []*ring.ActivePartitionBatchRing, req *mimirpb.WriteRequest, cts []compartmentTokens, initialMetadataIndex int, remoteRequestContext func() context.Context, batchOptions ring.DoBatchOptions) error {
 	// Ensure cleanup is called exactly once after all work completes.
 	cleanup := batchOptions.Cleanup
 	if cleanup == nil {
@@ -2296,7 +2321,7 @@ func (d *Distributor) sendWriteRequestToPartitions(ctx context.Context, tenantID
 	for _, ct := range cts {
 		g.Go(func() error {
 			// Split keys by partition without spawning per-partition goroutines.
-			instanceKeys, err := SplitKeysByInstance(ctx, ring.WriteNoExtend, tenantRing, ct.tokens)
+			instanceKeys, err := SplitKeysByInstance(ctx, ring.WriteNoExtend, partitionSubrings[ct.compartmentID], ct.tokens)
 			if err != nil {
 				return err
 			}

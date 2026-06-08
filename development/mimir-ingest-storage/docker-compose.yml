@@ -148,14 +148,14 @@
       - "9091:9091"
     "volumes":
       - "./config:/etc/agent-config"
-  "ingester-zone-a-1":
+  "ingester-c0-zone-a-0":
     "build":
       "context": "."
       "dockerfile": "dev.dockerfile"
     "command":
       - "sh"
       - "-c"
-      - "exec ./mimir -config.file=./config/mimir.yaml -target=ingester -activity-tracker.filepath=/activity/ingester-zone-a-1 -ingester.ring.instance-availability-zone=zone-a"
+      - "exec ./mimir -config.file=./config/mimir.yaml -target=ingester -activity-tracker.filepath=/activity/ingester-c0-zone-a-0 -ingest-storage.compartments.read-compartment-id=0 -ingester.ring.instance-availability-zone=zone-a"
     "depends_on":
       "kafka_1":
         "condition": "service_healthy"
@@ -165,23 +165,23 @@
         "condition": "service_started"
     "environment":
       - "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://tempo:4318/v1/traces"
-    "hostname": "ingester-zone-a-1"
+    "hostname": "ingester-c0-zone-a-0"
     "image": "mimir"
     "ports":
-      - "8002:8080"
-      - "11002:11002"
+      - "8100:8080"
+      - "11100:11100"
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
-      - ".data-ingester-zone-a-1:/data:delegated"
-  "ingester-zone-b-1":
+      - ".data-ingester-c0-zone-a-0:/data:delegated"
+  "ingester-c0-zone-b-0":
     "build":
       "context": "."
       "dockerfile": "dev.dockerfile"
     "command":
       - "sh"
       - "-c"
-      - "exec ./mimir -config.file=./config/mimir.yaml -target=ingester -activity-tracker.filepath=/activity/ingester-zone-b-1 -ingester.ring.instance-availability-zone=zone-b"
+      - "exec ./mimir -config.file=./config/mimir.yaml -target=ingester -activity-tracker.filepath=/activity/ingester-c0-zone-b-0 -ingest-storage.compartments.read-compartment-id=0 -ingester.ring.instance-availability-zone=zone-b"
     "depends_on":
       "kafka_1":
         "condition": "service_healthy"
@@ -191,15 +191,67 @@
         "condition": "service_started"
     "environment":
       - "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://tempo:4318/v1/traces"
-    "hostname": "ingester-zone-b-1"
+    "hostname": "ingester-c0-zone-b-0"
     "image": "mimir"
     "ports":
-      - "8003:8080"
-      - "11003:11003"
+      - "8101:8080"
+      - "11101:11101"
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
-      - ".data-ingester-zone-b-1:/data:delegated"
+      - ".data-ingester-c0-zone-b-0:/data:delegated"
+  "ingester-c1-zone-a-0":
+    "build":
+      "context": "."
+      "dockerfile": "dev.dockerfile"
+    "command":
+      - "sh"
+      - "-c"
+      - "exec ./mimir -config.file=./config/mimir.yaml -target=ingester -activity-tracker.filepath=/activity/ingester-c1-zone-a-0 -ingest-storage.compartments.read-compartment-id=1 -ingester.ring.instance-availability-zone=zone-a"
+    "depends_on":
+      "kafka_1":
+        "condition": "service_healthy"
+      "kafka_2":
+        "condition": "service_healthy"
+      "minio":
+        "condition": "service_started"
+    "environment":
+      - "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://tempo:4318/v1/traces"
+    "hostname": "ingester-c1-zone-a-0"
+    "image": "mimir"
+    "ports":
+      - "8102:8080"
+      - "11102:11102"
+    "volumes":
+      - "./config:/mimir/config"
+      - "./activity:/activity"
+      - ".data-ingester-c1-zone-a-0:/data:delegated"
+  "ingester-c1-zone-b-0":
+    "build":
+      "context": "."
+      "dockerfile": "dev.dockerfile"
+    "command":
+      - "sh"
+      - "-c"
+      - "exec ./mimir -config.file=./config/mimir.yaml -target=ingester -activity-tracker.filepath=/activity/ingester-c1-zone-b-0 -ingest-storage.compartments.read-compartment-id=1 -ingester.ring.instance-availability-zone=zone-b"
+    "depends_on":
+      "kafka_1":
+        "condition": "service_healthy"
+      "kafka_2":
+        "condition": "service_healthy"
+      "minio":
+        "condition": "service_started"
+    "environment":
+      - "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://tempo:4318/v1/traces"
+    "hostname": "ingester-c1-zone-b-0"
+    "image": "mimir"
+    "ports":
+      - "8103:8080"
+      - "11103:11103"
+    "volumes":
+      - "./config:/mimir/config"
+      - "./activity:/activity"
+      - ".data-ingester-c1-zone-b-0:/data:delegated"
   "kafka_1":
     "environment":
       - "CLUSTER_ID=zH1GDqcNTzGMDCXm5VZQdg"
@@ -216,11 +268,11 @@
       - "KAFKA_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093,PLAINTEXT_HOST://:29092"
       - "KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka_1:9092,PLAINTEXT_HOST://localhost:29092"
     "healthcheck":
-      "interval": "1s"
+      "interval": "5s"
       "retries": "30"
-      "start_period": "1s"
+      "start_period": "10s"
       "test": "kafka-broker-api-versions --bootstrap-server localhost:9092 || exit 1"
-      "timeout": "1s"
+      "timeout": "10s"
     "image": "confluentinc/cp-kafka:latest"
     "ports":
       - "29092:29092"
@@ -240,11 +292,11 @@
       - "KAFKA_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093,PLAINTEXT_HOST://:29093"
       - "KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka_2:9092,PLAINTEXT_HOST://localhost:29093"
     "healthcheck":
-      "interval": "1s"
+      "interval": "5s"
       "retries": "30"
-      "start_period": "1s"
+      "start_period": "10s"
       "test": "kafka-broker-api-versions --bootstrap-server localhost:9092 || exit 1"
-      "timeout": "1s"
+      "timeout": "10s"
     "image": "confluentinc/cp-kafka:latest"
     "ports":
       - "29093:29093"
@@ -264,11 +316,11 @@
       - "KAFKA_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093,PLAINTEXT_HOST://:29094"
       - "KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka_3:9092,PLAINTEXT_HOST://localhost:29094"
     "healthcheck":
-      "interval": "1s"
+      "interval": "5s"
       "retries": "30"
-      "start_period": "1s"
+      "start_period": "10s"
       "test": "kafka-broker-api-versions --bootstrap-server localhost:9092 || exit 1"
-      "timeout": "1s"
+      "timeout": "10s"
     "image": "confluentinc/cp-kafka:latest"
     "ports":
       - "29094:29094"
@@ -291,7 +343,7 @@
       - ".data-minio:/data:delegated"
   "nginx":
     "depends_on":
-      - "ingester-zone-a-1"
+      - "distributor-1"
       - "alertmanager-1"
       - "ruler-1"
       - "query-frontend"
@@ -299,7 +351,7 @@
       - "grafana"
     "environment":
       - "NGINX_ENVSUBST_OUTPUT_DIR=/etc/nginx"
-      - "DISTRIBUTOR_HOST=ingester-zone-a-1:8080"
+      - "DISTRIBUTOR_HOST=distributor-1:8080"
       - "ALERT_MANAGER_HOST=alertmanager-1:8080"
       - "RULER_HOST=ruler-1:8080"
       - "QUERY_FRONTEND_HOST=query-frontend:8080"

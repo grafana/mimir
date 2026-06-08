@@ -771,6 +771,39 @@ func TestIngester_PreparePartitionDownscaleHandler(t *testing.T) {
 	}
 }
 
+func TestIngester_WithCompartments_RegistersIntoCompartmentPartitionRing(t *testing.T) {
+	ctx := context.Background()
+
+	overrides := validation.NewOverrides(defaultLimitsTestConfig(), nil)
+
+	cfg := defaultIngesterTestConfig(t)
+	cfg.IngesterRing.InstanceID = "ingester-zone-a-2" // partition 2
+	cfg.IngestStorageConfig.Compartments.Enabled = true
+	cfg.IngestStorageConfig.Compartments.NumCompartments = 2
+	cfg.IngestStorageConfig.Compartments.TopicFormat = "comp-<compartment-id>"
+	cfg.IngestStorageConfig.Compartments.ReadCompartmentID = 1
+
+	// The returned watcher observes this ingester's read compartment ring.
+	ingester, _, watcher := createTestIngesterWithIngestStorage(t, &cfg, overrides, nil, prometheus.NewPedanticRegistry(), util_test.NewTestingLogger(t))
+	require.NoError(t, services.StartAndAwaitRunning(ctx, ingester))
+	t.Cleanup(func() {
+		_ = services.StopAndAwaitTerminated(ctx, ingester)
+	})
+
+	// The ingester registers its partition as owner in its own read compartment's ring.
+	test.Poll(t, 5*time.Second, []string{cfg.IngesterRing.InstanceID}, func() interface{} {
+		return watcher.PartitionRing().PartitionOwnerIDs(ingester.ingestPartitionID)
+	})
+
+	// It does not register into the legacy single ring.
+	legacyWatcher := ring.NewPartitionRingWatcher(PartitionRingName, PartitionRingKey, cfg.IngesterPartitionRing.KVStore.Mock, log.NewNopLogger(), nil)
+	require.NoError(t, services.StartAndAwaitRunning(ctx, legacyWatcher))
+	t.Cleanup(func() {
+		_ = services.StopAndAwaitTerminated(ctx, legacyWatcher)
+	})
+	assert.Empty(t, legacyWatcher.PartitionRing().PartitionIDs())
+}
+
 func TestIngester_ShouldNotCreatePartitionIfThereIsShutdownMarker(t *testing.T) {
 	ctx := context.Background()
 
@@ -1111,9 +1144,19 @@ func createTestIngesterWithIngestStorage(
 	ingesterCfg.IngesterPartitionRing.MinOwnersDuration = 0
 	ingesterCfg.IngesterPartitionRing.lifecyclerPollingInterval = 10 * time.Millisecond
 
-	// Create a fake Kafka cluster.
-	kafkaCluster, kafkaAddr := testkafka.CreateCluster(t, 10, ingesterCfg.IngestStorageConfig.KafkaConfig.Topic)
+	// Create a fake Kafka cluster. With compartments enabled, seed the read compartment's topic as the
+	// cluster topic, point the write VCs at it, and register into that compartment's partition ring.
+	partitionRingKey := PartitionRingKey
+	clusterTopic := ingesterCfg.IngestStorageConfig.KafkaConfig.Topic
+	if c := ingesterCfg.IngestStorageConfig.Compartments; c.Enabled {
+		partitionRingKey = CompartmentPartitionRingKey(c.ReadCompartmentID)
+		clusterTopic = ingest.NewCompartmentRouter(c).Topic(c.ReadCompartmentID)
+	}
+	kafkaCluster, kafkaAddr := testkafka.CreateCluster(t, 10, clusterTopic)
 	ingesterCfg.IngestStorageConfig.KafkaConfig.Address = flagext.StringSliceCSV{kafkaAddr}
+	if c := ingesterCfg.IngestStorageConfig.Compartments; c.Enabled && c.WriteKafkaAddressFormat == "" {
+		ingesterCfg.IngestStorageConfig.Compartments.WriteKafkaAddressFormat = kafkaAddr
+	}
 
 	if ingesterCfg.IngesterRing.InstanceID == "" || ingesterCfg.IngesterRing.InstanceID == defaultIngesterConfig.IngesterRing.InstanceID {
 		// The ingest storage requires the ingester ID to have a well known format.
@@ -1131,7 +1174,7 @@ func createTestIngesterWithIngestStorage(
 
 	// Create and start the partition ring watcher. Since it's a dependency which is passed
 	// to ingester New() function, we start the watcher beforehand.
-	prw := ring.NewPartitionRingWatcher(PartitionRingName, PartitionRingKey, kv, log.NewNopLogger(), nil)
+	prw := ring.NewPartitionRingWatcher(PartitionRingName, partitionRingKey, kv, log.NewNopLogger(), nil)
 	require.NoError(t, services.StartAndAwaitRunning(ctx, prw))
 	t.Cleanup(func() {
 		require.NoError(t, services.StopAndAwaitTerminated(ctx, prw))
