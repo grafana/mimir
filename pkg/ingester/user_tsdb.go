@@ -11,7 +11,6 @@ import (
 	"math"
 	"sync"
 	"time"
-	"unsafe"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -804,7 +803,9 @@ func (u *userTSDB) computeOwnedSeries() int {
 		// activeSeries.Clear() above already handled the active-series side.
 		if allNonOwned {
 			if trackNonOwned {
-				nonOwnedRefs = append(nonOwnedRefs, *(*[]storage.SeriesRef)(unsafe.Pointer(&refs))...)
+				for _, ref := range refs {
+					nonOwnedRefs = append(nonOwnedRefs, storage.SeriesRef(ref))
+				}
 			}
 			return
 		}

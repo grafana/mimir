@@ -538,7 +538,7 @@ func TestRecomputeOwnedSeries(t *testing.T) {
 		require.NoError(t, err)
 		require.NoError(t, app.Commit())
 
-		db := &userTSDB{db: tsdbDB, activeSeries: newActiveSeries(), ownedTokenRanges: nil}
+		db := &userTSDB{cfg: &Config{EarlyCompactionNonOwnedSeriesEnabled: true}, db: tsdbDB, activeSeries: newActiveSeries(), ownedTokenRanges: nil}
 		count := db.computeOwnedSeries()
 
 		require.Equal(t, 0, count)
@@ -551,7 +551,7 @@ func TestRecomputeOwnedSeries(t *testing.T) {
 		require.NoError(t, err)
 		t.Cleanup(func() { require.NoError(t, tsdbDB.Close()) })
 
-		db := &userTSDB{db: tsdbDB, activeSeries: newActiveSeries(), ownedTokenRanges: nil}
+		db := &userTSDB{cfg: &Config{EarlyCompactionNonOwnedSeriesEnabled: true}, db: tsdbDB, activeSeries: newActiveSeries(), ownedTokenRanges: nil}
 		count := db.computeOwnedSeries()
 
 		require.Equal(t, 0, count)
@@ -573,7 +573,7 @@ func TestRecomputeOwnedSeries(t *testing.T) {
 		require.NoError(t, err)
 		require.NoError(t, app.Commit())
 
-		db := &userTSDB{db: tsdbDB, activeSeries: newActiveSeries(), ownedTokenRanges: ring.TokenRanges{0, math.MaxUint32}}
+		db := &userTSDB{cfg: &Config{EarlyCompactionNonOwnedSeriesEnabled: true}, db: tsdbDB, activeSeries: newActiveSeries(), ownedTokenRanges: ring.TokenRanges{0, math.MaxUint32}}
 		count := db.computeOwnedSeries()
 
 		require.Equal(t, 2, count)
@@ -605,7 +605,7 @@ func TestRecomputeOwnedSeries(t *testing.T) {
 
 		// Own only the series with the lower hash; the other is non-owned.
 		minHash := min(hashA, hashB)
-		db := &userTSDB{db: tsdbDB, activeSeries: newActiveSeries(), ownedTokenRanges: ring.TokenRanges{0, minHash}}
+		db := &userTSDB{cfg: &Config{EarlyCompactionNonOwnedSeriesEnabled: true}, db: tsdbDB, activeSeries: newActiveSeries(), ownedTokenRanges: ring.TokenRanges{0, minHash}}
 
 		count := db.computeOwnedSeries()
 
