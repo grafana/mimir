@@ -342,6 +342,102 @@ func TestRingBuffer_ViewUntilWithExistingView(t *testing.T) {
 	})
 }
 
+func TestRingBuffer_ViewBetweenSearchingBackwards(t *testing.T) {
+	t.Run("FPoint ring buffer", func(t *testing.T) {
+		buf := &fPointRingBufferWrapper{NewFPointRingBuffer(limiter.NewUnlimitedMemoryConsumptionTracker(context.Background()))}
+		mustAppend(t, buf, promql.FPoint{T: 1, F: 100})
+		mustAppend(t, buf, promql.FPoint{T: 2, F: 200})
+		mustAppend(t, buf, promql.FPoint{T: 3, F: 300})
+		mustAppend(t, buf, promql.FPoint{T: 4, F: 400})
+		mustAppend(t, buf, promql.FPoint{T: 5, F: 500})
+		mustAppend(t, buf, promql.FPoint{T: 6, F: 600})
+		mustAppend(t, buf, promql.FPoint{T: 7, F: 700})
+		buf.RemoveFirst()                               // remove T=1
+		buf.RemoveFirst()                               // remove T=2
+		mustAppend(t, buf, promql.FPoint{T: 8, F: 800}) // Takes index 7 in the initial cap(8) slice.
+		mustAppend(t, buf, promql.FPoint{T: 9, F: 900}) // Takes index 0 in the initial cap(8) slice.
+
+		view := buf.ViewBetweenSearchingBackwards(2, 3, nil)
+		viewShouldHavePoints(t, view, promql.FPoint{T: 3, F: 300})
+
+		newView := buf.ViewBetweenSearchingBackwards(1, 5, view)
+		require.Same(t, newView, view)
+		viewShouldHavePoints(t, view, promql.FPoint{T: 3, F: 300}, promql.FPoint{T: 4, F: 400}, promql.FPoint{T: 5, F: 500})
+
+		newView = buf.ViewBetweenSearchingBackwards(2, 4, view)
+		require.Same(t, newView, view)
+		viewShouldHavePoints(t, view, promql.FPoint{T: 3, F: 300}, promql.FPoint{T: 4, F: 400})
+
+		newView = buf.ViewBetweenSearchingBackwards(3, 3, view)
+		require.Same(t, newView, view)
+		viewShouldHavePoints(t, view, []promql.FPoint{}...)
+
+		newView = buf.ViewBetweenSearchingBackwards(10, 15, view)
+		require.Same(t, newView, view)
+		viewShouldHavePoints(t, view, []promql.FPoint{}...)
+
+		newView = buf.ViewBetweenSearchingBackwards(7, 9, view)
+		require.Same(t, newView, view)
+		viewShouldHavePoints(t, view, promql.FPoint{T: 8, F: 800}, promql.FPoint{T: 9, F: 900})
+
+		require.Panics(t, func() {
+			buf.ViewBetweenSearchingBackwards(4, 3, view)
+		})
+	})
+
+	t.Run("HPoint ring buffer", func(t *testing.T) {
+		h1 := &histogram.FloatHistogram{Count: 100}
+		h2 := &histogram.FloatHistogram{Count: 200}
+		h3 := &histogram.FloatHistogram{Count: 300}
+		h4 := &histogram.FloatHistogram{Count: 400}
+		h5 := &histogram.FloatHistogram{Count: 500}
+		h6 := &histogram.FloatHistogram{Count: 600}
+		h7 := &histogram.FloatHistogram{Count: 700}
+		h8 := &histogram.FloatHistogram{Count: 800}
+		h9 := &histogram.FloatHistogram{Count: 900}
+
+		buf := &hPointRingBufferWrapper{NewHPointRingBuffer(limiter.NewUnlimitedMemoryConsumptionTracker(context.Background()))}
+		mustAppend(t, buf, promql.HPoint{T: 1, H: h1})
+		mustAppend(t, buf, promql.HPoint{T: 2, H: h2})
+		mustAppend(t, buf, promql.HPoint{T: 3, H: h3})
+		mustAppend(t, buf, promql.HPoint{T: 4, H: h4})
+		mustAppend(t, buf, promql.HPoint{T: 5, H: h5})
+		mustAppend(t, buf, promql.HPoint{T: 6, H: h6})
+		mustAppend(t, buf, promql.HPoint{T: 7, H: h7})
+		buf.RemoveFirst()                              // remove T=1
+		buf.RemoveFirst()                              // remove T=2
+		mustAppend(t, buf, promql.HPoint{T: 8, H: h8}) // Takes index 7 in the initial cap(8) slice.
+		mustAppend(t, buf, promql.HPoint{T: 9, H: h9}) // Takes index 0 in the initial cap(8) slice.
+
+		view := buf.ViewBetweenSearchingBackwards(2, 3, nil)
+		viewShouldHavePoints(t, view, promql.HPoint{T: 3, H: h3})
+
+		newView := buf.ViewBetweenSearchingBackwards(1, 5, view)
+		require.Same(t, newView, view)
+		viewShouldHavePoints(t, view, promql.HPoint{T: 3, H: h3}, promql.HPoint{T: 4, H: h4}, promql.HPoint{T: 5, H: h5})
+
+		newView = buf.ViewBetweenSearchingBackwards(2, 4, view)
+		require.Same(t, newView, view)
+		viewShouldHavePoints(t, view, promql.HPoint{T: 3, H: h3}, promql.HPoint{T: 4, H: h4})
+
+		newView = buf.ViewBetweenSearchingBackwards(3, 3, view)
+		require.Same(t, newView, view)
+		viewShouldHavePoints(t, view, []promql.HPoint{}...)
+
+		newView = buf.ViewBetweenSearchingBackwards(10, 15, view)
+		require.Same(t, newView, view)
+		viewShouldHavePoints(t, view, []promql.HPoint{}...)
+
+		newView = buf.ViewBetweenSearchingBackwards(7, 9, view)
+		require.Same(t, newView, view)
+		viewShouldHavePoints(t, view, promql.HPoint{T: 8, H: h8}, promql.HPoint{T: 9, H: h9})
+
+		require.Panics(t, func() {
+			buf.ViewBetweenSearchingBackwards(4, 3, view)
+		})
+	})
+}
+
 func mustAppend[T any](t *testing.T, buf ringBuffer[T], point T) {
 	_, err := buf.Append(point)
 	require.NoError(t, err)
