@@ -11,6 +11,7 @@ import (
 	"math"
 	"sync"
 	"time"
+	"unsafe"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -788,13 +789,15 @@ func (u *userTSDB) computeOwnedSeries() int {
 
 	count := 0
 	var nonOwnedRefs []storage.SeriesRef
+	// Only track non-owned refs if early compaction will consume them.
+	trackNonOwned := u.cfg.EarlyCompactionNonOwnedSeriesEnabled
 
 	u.Head().ForEachSecondaryHash(func(refs []chunks.HeadSeriesRef, secondaryHashes []uint32) {
 		// Fast path: when no token range is owned every series in this batch is non-owned.
 		// activeSeries.Clear() above already handled the active-series side.
 		if allNonOwned {
-			for _, ref := range refs {
-				nonOwnedRefs = append(nonOwnedRefs, storage.SeriesRef(ref))
+			if trackNonOwned {
+				nonOwnedRefs = append(nonOwnedRefs, *(*[]storage.SeriesRef)(unsafe.Pointer(&refs))...)
 			}
 			return
 		}
@@ -804,27 +807,18 @@ func (u *userTSDB) computeOwnedSeries() int {
 				continue
 			}
 			u.activeSeries.Delete(refs[i], idx)
-			nonOwnedRefs = append(nonOwnedRefs, storage.SeriesRef(refs[i]))
+			if trackNonOwned {
+				nonOwnedRefs = append(nonOwnedRefs, storage.SeriesRef(refs[i]))
+			}
 		}
 	})
 
 	// Queue the non-owned refs for targeted eviction by the next compaction-loop iteration.
-	u.addPendingNonOwnedRefs(nonOwnedRefs)
+	if trackNonOwned {
+		u.addPendingNonOwnedRefs(nonOwnedRefs)
+	}
 
 	return count
-}
-
-// CompactOOOHead compacts the OOO head into blocks.
-func (u *userTSDB) CompactOOOHead(ctx context.Context) error {
-	return u.db.CompactOOOHead(ctx)
-}
-
-// CompactSelectedSeries writes the given series into a block and evicts them from the head
-// without advancing HeadMinTime. Series that received fresh samples since the caller collected
-// the refs, and series that still hold OOO data at the moment of compaction, are skipped and
-// stay in the head — they become candidates again on a subsequent computeOwnedSeries cycle.
-func (u *userTSDB) CompactSelectedSeries(refs []storage.SeriesRef) error {
-	return u.db.CompactSelectedSeries(refs)
 }
 
 func (u *userTSDB) setLastEarlyCompaction(t time.Time) {

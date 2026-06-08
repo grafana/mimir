@@ -634,11 +634,9 @@ func (i *Ingester) compactBlocksDueToNonOwnedSeries(ctx context.Context, jitter 
 			if len(refs) > 0 {
 				trigger = "in-memory series count exceeds local threshold"
 			}
-		}
-
-		// Slow path: max grace period elapsed — evict regardless of the threshold gate to
-		// guarantee eventual cleanup even for tenants well below their series limit.
-		if len(refs) == 0 && i.cfg.EarlyCompactionNonOwnedSeriesMaxGracePeriod > 0 {
+		} else if i.cfg.EarlyCompactionNonOwnedSeriesMaxGracePeriod > 0 {
+			// Slow path: max grace period elapsed — evict regardless of the threshold gate to
+			// guarantee eventual cleanup even for tenants well below their series limit.
 			refs = db.takePendingNonOwnedRefs(now.Add(-i.cfg.EarlyCompactionNonOwnedSeriesMaxGracePeriod - jitter))
 			if len(refs) > 0 {
 				trigger = "max grace period elapsed"
@@ -655,13 +653,13 @@ func (i *Ingester) compactBlocksDueToNonOwnedSeries(ctx context.Context, jitter 
 		// Step 1: compact the OOO head so the out-of-order data of every series with OOO
 		// chunks is persisted before we evict any series in step 2. CompactOOOHead is a no-op
 		// for tenants that have never used OOO ingestion.
-		if err := db.CompactOOOHead(ctx); err != nil {
+		if err := db.db.CompactOOOHead(ctx); err != nil {
 			level.Warn(i.logger).Log("msg", "OOO head compaction failed during per-tenant early compaction of non-owned series", "user", userID, "err", err)
 			// Fall through: CompactSelectedSeries still helps for non-owned series without OOO data.
 		}
 
 		// Step 2: write the queued non-owned series into a block and evict them from the head.
-		if err := db.CompactSelectedSeries(refs); err != nil {
+		if err := db.db.CompactSelectedSeries(refs); err != nil {
 			level.Warn(i.logger).Log("msg", "selected series compaction failed during per-tenant early compaction of non-owned series", "user", userID, "err", err)
 			continue
 		}

@@ -21,7 +21,6 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -962,16 +961,36 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldNotCompactWhenDisabled(
 
 	sampleTime, err := time.Parse(time.RFC3339, "2026-05-05T00:00:00Z")
 	require.NoError(t, err)
+	t1 := sampleTime.UnixMilli()
+	t2 := t1 + 1
 
-	require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []util_test.Series{{
-		Labels:  labels.FromStrings(model.MetricNameLabel, "metric_1"),
-		Samples: []util_test.Sample{{TS: sampleTime.UnixMilli(), Val: 1.0}},
-	}}))
+	ownedLabels, nonOwnedLabels, minHash := pickOwnedAndNonOwnedSeries(t, userID)
+	for _, lbls := range []labels.Labels{ownedLabels, nonOwnedLabels} {
+		require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []util_test.Series{{
+			Labels:  lbls,
+			Samples: []util_test.Sample{{TS: t1, Val: 1.0}},
+		}}))
+		require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []util_test.Series{{
+			Labels:  lbls,
+			Samples: []util_test.Sample{{TS: t2, Val: 2.0}},
+		}}))
+	}
 
-	// Simulate non-owned series detection by queueing a ref directly.
 	db := ingester.getTSDB(userID)
 	require.NotNil(t, db)
-	db.addPendingNonOwnedRefs([]storage.SeriesRef{1})
+	require.Equal(t, uint64(2), db.Head().NumSeries())
+
+	// Configure ownership so the lower-hash series is owned and the other is non-owned. With
+	// the feature enabled this would queue the non-owned ref for eviction; with the feature
+	// disabled computeOwnedSeries must skip the queue.
+	db.ownedTokenRanges = ring.TokenRanges{0, minHash}
+	require.True(t, db.recomputeOwnedSeries(0, "test", log.NewNopLogger()), "recomputeOwnedSeries should succeed")
+	require.Equal(t, 1, db.ownedSeriesState().ownedSeriesCount, "exactly one series should be owned")
+
+	db.pendingNonOwnedRefsMtx.Lock()
+	assert.Empty(t, db.pendingNonOwnedRefs, "pendingNonOwnedRefs must not be populated when early compaction of non-owned series is disabled")
+	assert.True(t, db.pendingNonOwnedRefsLastUpdate.IsZero(), "pendingNonOwnedRefsLastUpdate must remain unset when early compaction of non-owned series is disabled")
+	db.pendingNonOwnedRefsMtx.Unlock()
 
 	// Should not compact because the feature is disabled.
 	ingester.compactBlocksDueToNonOwnedSeries(ctx, 0)
@@ -1042,19 +1061,7 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldFlushDataToBlock(t *tes
 	t1 := sampleTime.UnixMilli()
 	t2 := t1 + 1
 
-	labelsA := labels.FromStrings(model.MetricNameLabel, "metric_a")
-	labelsB := labels.FromStrings(model.MetricNameLabel, "metric_b")
-
-	hashA := mimirpb.ShardByAllLabels(userID, labelsA)
-	hashB := mimirpb.ShardByAllLabels(userID, labelsB)
-	require.NotEqual(t, hashA, hashB)
-	var ownedLabels, nonOwnedLabels labels.Labels
-	var minHash uint32
-	if hashA < hashB {
-		ownedLabels, nonOwnedLabels, minHash = labelsA, labelsB, hashA
-	} else {
-		ownedLabels, nonOwnedLabels, minHash = labelsB, labelsA, hashB
-	}
+	ownedLabels, nonOwnedLabels, minHash := pickOwnedAndNonOwnedSeries(t, userID)
 	nonOwnedName := nonOwnedLabels.Get(model.MetricNameLabel)
 	nonOwnedMetricModel := model.Metric{model.MetricNameLabel: model.LabelValue(nonOwnedName)}
 
@@ -1159,21 +1166,7 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldFlushOnlyNonOwnedSeries
 	t1 := sampleTime.UnixMilli()
 	t2 := t1 + 1
 
-	labelsA := labels.FromStrings(model.MetricNameLabel, "metric_a")
-	labelsB := labels.FromStrings(model.MetricNameLabel, "metric_b")
-
-	// Designate the series with the lower secondary hash as owned. The ingester's secondary
-	// hash function is mimirpb.ShardByAllLabels(userID, ls).
-	hashA := mimirpb.ShardByAllLabels(userID, labelsA)
-	hashB := mimirpb.ShardByAllLabels(userID, labelsB)
-	require.NotEqual(t, hashA, hashB)
-	var ownedLabels, nonOwnedLabels labels.Labels
-	var minHash uint32
-	if hashA < hashB {
-		ownedLabels, nonOwnedLabels, minHash = labelsA, labelsB, hashA
-	} else {
-		ownedLabels, nonOwnedLabels, minHash = labelsB, labelsA, hashB
-	}
+	ownedLabels, nonOwnedLabels, minHash := pickOwnedAndNonOwnedSeries(t, userID)
 	ownedName := ownedLabels.Get(model.MetricNameLabel)
 	nonOwnedName := nonOwnedLabels.Get(model.MetricNameLabel)
 
@@ -1284,19 +1277,7 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldHandleOOOSamples(t *tes
 	t2 := t1 + 1
 	tOOO := t1 - 100 // out-of-order, well within the configured OOO window
 
-	labelsA := labels.FromStrings(model.MetricNameLabel, "metric_a")
-	labelsB := labels.FromStrings(model.MetricNameLabel, "metric_b")
-
-	hashA := mimirpb.ShardByAllLabels(userID, labelsA)
-	hashB := mimirpb.ShardByAllLabels(userID, labelsB)
-	require.NotEqual(t, hashA, hashB)
-	var ownedLabels, nonOwnedLabels labels.Labels
-	var minHash uint32
-	if hashA < hashB {
-		ownedLabels, nonOwnedLabels, minHash = labelsA, labelsB, hashA
-	} else {
-		ownedLabels, nonOwnedLabels, minHash = labelsB, labelsA, hashB
-	}
+	ownedLabels, nonOwnedLabels, minHash := pickOwnedAndNonOwnedSeries(t, userID)
 	ownedName := ownedLabels.Get(model.MetricNameLabel)
 	nonOwnedName := nonOwnedLabels.Get(model.MetricNameLabel)
 
@@ -1437,19 +1418,7 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldRespectGracePeriod(t *t
 
 	// Push two series so one can remain owned (satisfying the per-tenant gate) while the
 	// other is non-owned and exercises the grace-period gating.
-	labelsA := labels.FromStrings(model.MetricNameLabel, "metric_a")
-	labelsB := labels.FromStrings(model.MetricNameLabel, "metric_b")
-
-	hashA := mimirpb.ShardByAllLabels(userID, labelsA)
-	hashB := mimirpb.ShardByAllLabels(userID, labelsB)
-	require.NotEqual(t, hashA, hashB)
-	var ownedLabels, nonOwnedLabels labels.Labels
-	var minHash uint32
-	if hashA < hashB {
-		ownedLabels, nonOwnedLabels, minHash = labelsA, labelsB, hashA
-	} else {
-		ownedLabels, nonOwnedLabels, minHash = labelsB, labelsA, hashB
-	}
+	ownedLabels, nonOwnedLabels, minHash := pickOwnedAndNonOwnedSeries(t, userID)
 
 	for _, lbls := range []labels.Labels{ownedLabels, nonOwnedLabels} {
 		require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []util_test.Series{{
@@ -1665,20 +1634,7 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_StaleRefsAfterPriorEviction(t
 	t1 := sampleTime.UnixMilli()
 	t2 := t1 + 1
 
-	labelsA := labels.FromStrings(model.MetricNameLabel, "metric_a")
-	labelsB := labels.FromStrings(model.MetricNameLabel, "metric_b")
-
-	hashA := mimirpb.ShardByAllLabels(userID, labelsA)
-	hashB := mimirpb.ShardByAllLabels(userID, labelsB)
-	require.NotEqual(t, hashA, hashB)
-
-	var ownedLabels, nonOwnedLabels labels.Labels
-	var minHash uint32
-	if hashA < hashB {
-		ownedLabels, nonOwnedLabels, minHash = labelsA, labelsB, hashA
-	} else {
-		ownedLabels, nonOwnedLabels, minHash = labelsB, labelsA, hashB
-	}
+	ownedLabels, nonOwnedLabels, minHash := pickOwnedAndNonOwnedSeries(t, userID)
 
 	for _, lbls := range []labels.Labels{ownedLabels, nonOwnedLabels} {
 		require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []util_test.Series{{
@@ -1733,6 +1689,23 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_StaleRefsAfterPriorEviction(t
 
 	require.Equal(t, blocksAfterOldPath, listBlocksInDir(t, userBlocksDir), "no additional block should be produced for stale refs")
 	require.Equal(t, uint64(1), db.Head().NumSeries(), "head should still contain only the owned series")
+}
+
+// pickOwnedAndNonOwnedSeries returns two single-label series with distinct secondary hashes,
+// designating the one with the lower hash as owned and the other as non-owned. The returned
+// minHash is the lower of the two secondary hashes, so setting
+// userTSDB.ownedTokenRanges = {0, minHash} makes ownedLabels owned and nonOwnedLabels non-owned.
+func pickOwnedAndNonOwnedSeries(t *testing.T, userID string) (ownedLabels, nonOwnedLabels labels.Labels, minHash uint32) {
+	t.Helper()
+	labelsA := labels.FromStrings(model.MetricNameLabel, "metric_a")
+	labelsB := labels.FromStrings(model.MetricNameLabel, "metric_b")
+	hashA := mimirpb.ShardByAllLabels(userID, labelsA)
+	hashB := mimirpb.ShardByAllLabels(userID, labelsB)
+	require.NotEqual(t, hashA, hashB)
+	if hashA < hashB {
+		return labelsA, labelsB, hashA
+	}
+	return labelsB, labelsA, hashB
 }
 
 func setupTestIngesterRing(t *testing.T, zones []string, ingestersPerZone int, cfg Config, limitsCfg validation.Limits) []*Ingester {
