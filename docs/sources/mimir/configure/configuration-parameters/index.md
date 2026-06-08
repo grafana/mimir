@@ -5902,6 +5902,11 @@ bucket_store:
       # CLI flag: -blocks-storage.bucket-store.index-header.bucket-reader.index-sections
       [index_sections: <string> | default = "postings-offsets-table"]
 
+      # (experimental) Size in bytes of the buffer used for reading index-header
+      # sections from object storage.
+      # CLI flag: -blocks-storage.bucket-store.index-header.bucket-reader.buffer-size-bytes
+      [buffer_size_bytes: <int> | default = 1048576]
+
   # (advanced) This option controls how many series to fetch per batch. The
   # batch size must be greater than 0.
   # CLI flag: -blocks-storage.bucket-store.batch-series-size

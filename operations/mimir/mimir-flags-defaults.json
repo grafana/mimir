@@ -847,6 +847,7 @@
   "blocks-storage.bucket-store.index-header.lazy-loading-concurrency": 4,
   "blocks-storage.bucket-store.index-header.lazy-loading-concurrency-queue-timeout": 5000000000,
   "blocks-storage.bucket-store.index-header.bucket-reader.index-sections": "postings-offsets-table",
+  "blocks-storage.bucket-store.index-header.bucket-reader.buffer-size-bytes": 1048576,
   "blocks-storage.bucket-store.batch-series-size": 5000,
   "blocks-storage.bucket-store.series-fetch-preference": 0.75,
   "blocks-storage.tsdb.dir": "./tsdb/",

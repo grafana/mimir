@@ -11922,6 +11922,17 @@
                       "fieldFlag": "blocks-storage.bucket-store.index-header.bucket-reader.index-sections",
                       "fieldType": "string",
                       "fieldCategory": "experimental"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "buffer_size_bytes",
+                      "required": false,
+                      "desc": "Size in bytes of the buffer used for reading index-header sections from object storage.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 1048576,
+                      "fieldFlag": "blocks-storage.bucket-store.index-header.bucket-reader.buffer-size-bytes",
+                      "fieldType": "int",
+                      "fieldCategory": "experimental"
                     }
                   ],
                   "fieldValue": null,
