@@ -148,10 +148,13 @@ func (m *RangeVectorSelector) NextStepSamples(ctx context.Context) (*types.Range
 	// ensures the smoothed look-ahead window is fully populated so that mixed float/histogram
 	// windows are detected the same way Prometheus detects them across the full extended matrix.
 	if m.Selector.Anchored || m.Selector.Smoothed {
-		switch {
-		case m.floats.Count() > 0 && m.floats.Last().T >= rangeEnd:
-			fillBufferRequired = false
-		case m.histograms.Count() > 0 && m.histograms.Last().T >= rangeEnd:
+		// Only skip filling when every buffer that already holds samples
+		// has caught up to the extended rangeEnd. This prevents skipping
+		// when, for example, floats are ahead but histograms are still
+		// sparse and have not yet reached rangeEnd.
+		floatsCaughtUp := m.floats.Count() == 0 || m.floats.Last().T >= rangeEnd
+		histogramsCaughtUp := m.histograms.Count() == 0 || m.histograms.Last().T >= rangeEnd
+		if floatsCaughtUp && histogramsCaughtUp {
 			fillBufferRequired = false
 		}
 	}
