@@ -1958,6 +1958,59 @@ additional_cost_attribution_trackers:
 	}, additionalLabels, "additional tracker labels should be sorted after unmarshal")
 }
 
+func TestCostAttributionLabelsStructuredMigrationOnUnmarshal(t *testing.T) {
+	t.Run("deprecated field alone migrates to the cost-attribution base tracker", func(t *testing.T) {
+		cfg := Limits{}
+		flagext.DefaultValues(&cfg)
+		require.NoError(t, yaml.Unmarshal([]byte(`
+cost_attribution_labels_structured:
+  - input: team
+    output: my_team
+`), &cfg))
+
+		require.Empty(t, cfg.CostAttributionLabelsStructured, "deprecated field should be cleared after migration")
+		require.Equal(t, costattributionmodel.TrackerConfigs{
+			costattributionmodel.DefaultTrackerName: {Labels: costattributionmodel.Labels{{Input: "team", Output: "my_team"}}},
+		}, cfg.CostAttributionBaseTrackers)
+	})
+
+	t.Run("deprecated field together with base trackers is rejected without dropping the base trackers", func(t *testing.T) {
+		cfg := Limits{}
+		flagext.DefaultValues(&cfg)
+		err := yaml.Unmarshal([]byte(`
+cost_attribution_labels_structured:
+  - input: team
+cost_attribution_trackers:
+  by-team:
+    labels:
+      - input: team
+`), &cfg)
+		require.EqualError(t, err, "cost_attribution_labels_structured and cost_attribution_trackers are mutually exclusive; use cost_attribution_trackers only")
+	})
+
+	t.Run("deprecated field together with only additional trackers migrates and preserves additional", func(t *testing.T) {
+		cfg := Limits{}
+		flagext.DefaultValues(&cfg)
+		require.NoError(t, yaml.Unmarshal([]byte(`
+cost_attribution_labels_structured:
+  - input: team
+    output: my_team
+additional_cost_attribution_trackers:
+  by-svc:
+    labels:
+      - input: service
+`), &cfg))
+
+		require.Empty(t, cfg.CostAttributionLabelsStructured)
+		require.Equal(t, costattributionmodel.TrackerConfigs{
+			costattributionmodel.DefaultTrackerName: {Labels: costattributionmodel.Labels{{Input: "team", Output: "my_team"}}},
+		}, cfg.CostAttributionBaseTrackers)
+		require.Equal(t, costattributionmodel.TrackerConfigs{
+			"by-svc": {Labels: costattributionmodel.Labels{{Input: "service"}}},
+		}, cfg.AdditionalCostAttributionTrackers)
+	})
+}
+
 func TestCostAttributionTrackerLabelsAreSortedAfterFlagParsing(t *testing.T) {
 	var tc costattributionmodel.TrackerConfigs
 	require.NoError(t, tc.Set(`{"by-team":{"labels":[{"input":"z_label"},{"input":"a_label"}]}}`))

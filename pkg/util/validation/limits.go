@@ -608,7 +608,9 @@ func (l *Limits) migrateCostAttributionLabelsStructured() {
 	if len(l.CostAttributionLabelsStructured) == 0 {
 		return
 	}
-	if _, ok := l.CostAttributionBaseTrackers[costattributionmodel.DefaultTrackerName]; ok {
+	if len(l.CostAttributionBaseTrackers) > 0 {
+		// Base trackers are set too; leave the deprecated field in place so Validate rejects the
+		// mutually-exclusive combination instead of silently dropping the configured trackers.
 		return
 	}
 	l.CostAttributionBaseTrackers = costattributionmodel.TrackerConfigs{
