@@ -30,6 +30,20 @@ func (a *AggregateExpression) ChildCount() int {
 	return 2
 }
 
+func (a *AggregateExpression) SetChildren(children []planning.Node) error {
+	switch len(children) {
+	case 1:
+		a.Inner = children[0]
+		a.Param = nil
+	case 2:
+		a.Inner = children[0]
+		a.Param = children[1]
+	default:
+		return fmt.Errorf("node of type AggregateExpression expects 1 or 2 children, but got %d", len(children))
+	}
+	return nil
+}
+
 func (b *BinaryExpression) Child(idx int) planning.Node {
 	switch idx {
 	case 0:
@@ -45,12 +59,29 @@ func (b *BinaryExpression) ChildCount() int {
 	return 2
 }
 
+func (b *BinaryExpression) SetChildren(children []planning.Node) error {
+	if len(children) != 2 {
+		return fmt.Errorf("node of type BinaryExpression expects 2 children, but got %d", len(children))
+	}
+
+	b.LHS = children[0]
+	b.RHS = children[1]
+	return nil
+}
+
 func (d *DataLabelSelector) Child(idx int) planning.Node {
 	panic(fmt.Sprintf("node of type DataLabelSelector has no children, but attempted to get child at index %d", idx))
 }
 
 func (d *DataLabelSelector) ChildCount() int {
 	return 0
+}
+
+func (d *DataLabelSelector) SetChildren(children []planning.Node) error {
+	if len(children) != 0 {
+		return fmt.Errorf("node of type DataLabelSelector expects 0 children, but got %d", len(children))
+	}
+	return nil
 }
 
 func (d *DeduplicateAndMerge) Child(idx int) planning.Node {
@@ -64,6 +95,15 @@ func (d *DeduplicateAndMerge) ChildCount() int {
 	return 1
 }
 
+func (d *DeduplicateAndMerge) SetChildren(children []planning.Node) error {
+	if len(children) != 1 {
+		return fmt.Errorf("node of type DeduplicateAndMerge expects one child, but got %d", len(children))
+	}
+
+	d.Inner = children[0]
+	return nil
+}
+
 func (d *DropName) Child(idx int) planning.Node {
 	if idx != 0 {
 		panic(fmt.Sprintf("node of type DropName supports 1 child, but attempted to get child at index %d", idx))
@@ -73,6 +113,15 @@ func (d *DropName) Child(idx int) planning.Node {
 
 func (d *DropName) ChildCount() int {
 	return 1
+}
+
+func (d *DropName) SetChildren(children []planning.Node) error {
+	if len(children) != 1 {
+		return fmt.Errorf("node of type DropName expects one child, but got %d", len(children))
+	}
+
+	d.Inner = children[0]
+	return nil
 }
 
 func (f *FunctionCall) Child(idx int) planning.Node {
@@ -86,12 +135,24 @@ func (f *FunctionCall) ChildCount() int {
 	return len(f.Args)
 }
 
+func (f *FunctionCall) SetChildren(children []planning.Node) error {
+	f.Args = children
+	return nil
+}
+
 func (m *MatrixSelector) Child(idx int) planning.Node {
 	panic(fmt.Sprintf("node of type MatrixSelector has no children, but attempted to get child at index %d", idx))
 }
 
 func (m *MatrixSelector) ChildCount() int {
 	return 0
+}
+
+func (m *MatrixSelector) SetChildren(children []planning.Node) error {
+	if len(children) != 0 {
+		return fmt.Errorf("node of type MatrixSelector expects 0 children, but got %d", len(children))
+	}
+	return nil
 }
 
 func (n *NoOp) Child(idx int) planning.Node {
@@ -102,12 +163,26 @@ func (n *NoOp) ChildCount() int {
 	return 0
 }
 
+func (n *NoOp) SetChildren(children []planning.Node) error {
+	if len(children) != 0 {
+		return fmt.Errorf("node of type NoOp expects 0 children, but got %d", len(children))
+	}
+	return nil
+}
+
 func (n *NumberLiteral) Child(idx int) planning.Node {
 	panic(fmt.Sprintf("node of type NumberLiteral has no children, but attempted to get child at index %d", idx))
 }
 
 func (n *NumberLiteral) ChildCount() int {
 	return 0
+}
+
+func (n *NumberLiteral) SetChildren(children []planning.Node) error {
+	if len(children) != 0 {
+		return fmt.Errorf("node of type NumberLiteral expects 0 children, but got %d", len(children))
+	}
+	return nil
 }
 
 func (s *StepInvariantExpression) Child(idx int) planning.Node {
@@ -121,12 +196,28 @@ func (s *StepInvariantExpression) ChildCount() int {
 	return 1
 }
 
+func (s *StepInvariantExpression) SetChildren(children []planning.Node) error {
+	if len(children) != 1 {
+		return fmt.Errorf("node of type StepInvariantExpression expects one child, but got %d", len(children))
+	}
+
+	s.Inner = children[0]
+	return nil
+}
+
 func (s *StringLiteral) Child(idx int) planning.Node {
 	panic(fmt.Sprintf("node of type StringLiteral has no children, but attempted to get child at index %d", idx))
 }
 
 func (s *StringLiteral) ChildCount() int {
 	return 0
+}
+
+func (s *StringLiteral) SetChildren(children []planning.Node) error {
+	if len(children) != 0 {
+		return fmt.Errorf("node of type StringLiteral expects 0 children, but got %d", len(children))
+	}
+	return nil
 }
 
 func (s *Subquery) Child(idx int) planning.Node {
@@ -140,6 +231,15 @@ func (s *Subquery) ChildCount() int {
 	return 1
 }
 
+func (s *Subquery) SetChildren(children []planning.Node) error {
+	if len(children) != 1 {
+		return fmt.Errorf("node of type Subquery expects one child, but got %d", len(children))
+	}
+
+	s.Inner = children[0]
+	return nil
+}
+
 func (u *UnaryExpression) Child(idx int) planning.Node {
 	if idx != 0 {
 		panic(fmt.Sprintf("node of type UnaryExpression supports 1 child, but attempted to get child at index %d", idx))
@@ -151,10 +251,26 @@ func (u *UnaryExpression) ChildCount() int {
 	return 1
 }
 
+func (u *UnaryExpression) SetChildren(children []planning.Node) error {
+	if len(children) != 1 {
+		return fmt.Errorf("node of type UnaryExpression expects one child, but got %d", len(children))
+	}
+
+	u.Inner = children[0]
+	return nil
+}
+
 func (v *VectorSelector) Child(idx int) planning.Node {
 	panic(fmt.Sprintf("node of type VectorSelector has no children, but attempted to get child at index %d", idx))
 }
 
 func (v *VectorSelector) ChildCount() int {
 	return 0
+}
+
+func (v *VectorSelector) SetChildren(children []planning.Node) error {
+	if len(children) != 0 {
+		return fmt.Errorf("node of type VectorSelector expects 0 children, but got %d", len(children))
+	}
+	return nil
 }

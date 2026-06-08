@@ -105,16 +105,6 @@ func (s *Subquery) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_SUBQUERY
 }
 
-func (s *Subquery) SetChildren(children []planning.Node) error {
-	if len(children) != 1 {
-		return fmt.Errorf("node of type Subquery expects 1 child, but got %d", len(children))
-	}
-
-	s.Inner = children[0]
-
-	return nil
-}
-
 func (s *Subquery) ReplaceChild(idx int, node planning.Node) error {
 	if idx != 0 {
 		return fmt.Errorf("node of type Subquery supports 1 child, but attempted to replace child at index %d", idx)

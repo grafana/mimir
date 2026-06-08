@@ -41,19 +41,6 @@ func (s *SplitFunctionCall) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_SPLIT_FUNCTION_OVER_RANGE_VECTOR
 }
 
-func (s *SplitFunctionCall) SetChildren(children []planning.Node) error {
-	if len(children) != 1 {
-		return fmt.Errorf("node of type SplitFunctionCall supports 1 child, but got %d", len(children))
-	}
-
-	inner, ok := children[0].(*core.FunctionCall)
-	if !ok {
-		return fmt.Errorf("SplitFunctionCall node should only wrap FunctionCall nodes, got %T", children[0])
-	}
-	s.Inner = inner
-	return nil
-}
-
 func (s *SplitFunctionCall) ReplaceChild(idx int, child planning.Node) error {
 	if idx > 0 {
 		return fmt.Errorf("SplitFunctionCall node has 1 child, but attempted to replace child at index %d", idx)

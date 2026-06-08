@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
+	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 )
 
 func (s *SplitFunctionCall) Child(idx int) planning.Node {
@@ -18,4 +19,17 @@ func (s *SplitFunctionCall) Child(idx int) planning.Node {
 
 func (s *SplitFunctionCall) ChildCount() int {
 	return 1
+}
+
+func (s *SplitFunctionCall) SetChildren(children []planning.Node) error {
+	if len(children) != 1 {
+		return fmt.Errorf("node of type SplitFunctionCall expects one child, but got %d", len(children))
+	}
+
+	child0, ok := children[0].(*core.FunctionCall)
+	if !ok {
+		return fmt.Errorf("node of type SplitFunctionCall expects child 0 to be of type *core.FunctionCall, but got %T", children[0])
+	}
+	s.Inner = child0
+	return nil
 }
