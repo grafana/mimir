@@ -33,18 +33,28 @@ func newTestManager() (manager *Manager, reg, costAttributionReg *prometheus.Reg
 	return manager, reg, costAttributionReg
 }
 
-func getSampleTracker(m *Manager, userID string) *sampleTracker {
-	if trackers, ok := m.sampleTrackers.individual[userID]; ok {
-		return trackers[costattributionmodel.DefaultTrackerName]
+// trackerByName returns the individual tracker with the given name from the user's composite,
+// or the zero value if there's no composite or no tracker with that name.
+func (mt *managerTrackers[CT, IT]) trackerByName(userID, name string) IT {
+	mt.RLock()
+	defer mt.RUnlock()
+	if c, ok := mt.composite[userID]; ok {
+		for _, t := range c.getTrackers() {
+			if t.trackerName() == name {
+				return t
+			}
+		}
 	}
-	return nil
+	var zero IT
+	return zero
+}
+
+func getSampleTracker(m *Manager, userID string) *sampleTracker {
+	return m.sampleTrackers.trackerByName(userID, costattributionmodel.DefaultTrackerName)
 }
 
 func getActiveTracker(m *Manager, userID string) *activeSeriesTracker {
-	if trackers, ok := m.activeSeriesTrackers.individual[userID]; ok {
-		return trackers[costattributionmodel.DefaultTrackerName]
-	}
-	return nil
+	return m.activeSeriesTrackers.trackerByName(userID, costattributionmodel.DefaultTrackerName)
 }
 
 func assertHasLabels(t *testing.T, tracker individualTracker, expected costattributionmodel.Labels) {
@@ -64,7 +74,7 @@ func withLockedActiveSeriesTracker(m *Manager, userID string, fn func(ast *activ
 func TestManager_New(t *testing.T) {
 	manager, _, _ := newTestManager()
 	assert.NotNil(t, manager)
-	assert.NotNil(t, manager.sampleTrackers.individual)
+	assert.NotNil(t, manager.sampleTrackers.composite)
 	assert.Equal(t, 10*time.Second, manager.inactiveTimeout)
 }
 
@@ -209,7 +219,7 @@ func TestManager_CreateDeleteTracker(t *testing.T) {
 	t.Run("Disabling user cost attribution", func(t *testing.T) {
 		manager.limits = testutils.NewMockCostAttributionLimits(1)
 		manager.purgeInactiveAttributionsUntil(time.Unix(11, 0).Add(manager.inactiveTimeout))
-		assert.Equal(t, 1, len(manager.sampleTrackers.individual))
+		assert.Equal(t, 1, len(manager.sampleTrackers.composite))
 
 		expectedMetrics := `
 		# HELP cortex_distributor_received_attributed_samples_total The total number of samples that were received per attribution.
@@ -223,7 +233,7 @@ func TestManager_CreateDeleteTracker(t *testing.T) {
 		manager.limits = testutils.NewMockCostAttributionLimits(2)
 		manager.purgeInactiveAttributionsUntil(time.Unix(12, 0).Add(manager.inactiveTimeout))
 		manager.SampleTracker("user3")
-		assert.Equal(t, 1, len(manager.sampleTrackers.individual))
+		assert.Equal(t, 1, len(manager.sampleTrackers.composite))
 		st := getSampleTracker(manager, "user3")
 		assertHasLabels(t, st, costattributionmodel.Labels{{Input: "feature", Output: "my_feature"}, {Input: "team", Output: "my_team"}})
 		manager.ActiveSeriesTracker("user3")
@@ -280,7 +290,7 @@ func TestManager_PurgeInactiveAttributionsUntil(t *testing.T) {
 
 	t.Run("Purge before inactive timeout", func(t *testing.T) {
 		manager.purgeInactiveAttributionsUntil(time.Unix(0, 0).Add(manager.inactiveTimeout))
-		assert.Equal(t, 2, len(manager.sampleTrackers.individual))
+		assert.Equal(t, 2, len(manager.sampleTrackers.composite))
 
 		expectedMetrics := `
 		# HELP cortex_discarded_attributed_samples_total The total number of samples that were discarded per attribution.
@@ -295,7 +305,7 @@ func TestManager_PurgeInactiveAttributionsUntil(t *testing.T) {
 		manager.limits = testutils.NewMockCostAttributionLimits(1)
 		manager.purgeInactiveAttributionsUntil(time.Unix(5, 0).Add(manager.inactiveTimeout))
 
-		assert.Equal(t, 1, len(manager.sampleTrackers.individual), "Expected one active tracker after purging")
+		assert.Equal(t, 1, len(manager.sampleTrackers.composite), "Expected one active tracker after purging")
 		assert.Nil(t, manager.SampleTracker("user1"), "Expected user1 tracker to be purged")
 		assert.Nil(t, manager.ActiveSeriesTracker("user1"), "Expected user1 tracker to be purged")
 
@@ -310,7 +320,7 @@ func TestManager_PurgeInactiveAttributionsUntil(t *testing.T) {
 	t.Run("Purge all trackers", func(t *testing.T) {
 		manager.purgeInactiveAttributionsUntil(time.Unix(20, 0).Add(manager.inactiveTimeout))
 
-		assert.Equal(t, 0, len(manager.sampleTrackers.individual), "Expected no active trackers after full purge")
+		assert.Equal(t, 0, len(manager.sampleTrackers.composite), "Expected no active trackers after full purge")
 
 		assert.NoError(t, testutil.GatherAndCompare(costAttributionReg, strings.NewReader(""), "cortex_discarded_attributed_samples_total", "cortex_distributor_received_attributed_samples_total"))
 	})
@@ -452,11 +462,11 @@ func TestManager_MultipleTrackers(t *testing.T) {
 		require.Len(t, at.trackers, 2)
 
 		// Verify individual tracker labels.
-		defaultST := manager.sampleTrackers.individual["user8"][costattributionmodel.DefaultTrackerName]
+		defaultST := manager.sampleTrackers.trackerByName("user8", costattributionmodel.DefaultTrackerName)
 		require.NotNil(t, defaultST)
 		assertHasLabels(t, defaultST, costattributionmodel.Labels{{Input: "team", Output: "my_team"}})
 
-		platformST := manager.sampleTrackers.individual["user8"]["by-platform"]
+		platformST := manager.sampleTrackers.trackerByName("user8", "by-platform")
 		require.NotNil(t, platformST)
 		assertHasLabels(t, platformST, costattributionmodel.Labels{{Input: "platform", Output: "my_platform"}})
 	})
@@ -467,9 +477,9 @@ func TestManager_MultipleTrackers(t *testing.T) {
 		require.NotNil(t, st)
 		require.Len(t, st.trackers, 2)
 
-		require.Nil(t, manager.sampleTrackers.individual["user9"][costattributionmodel.DefaultTrackerName])
-		require.NotNil(t, manager.sampleTrackers.individual["user9"]["by-team"])
-		require.NotNil(t, manager.sampleTrackers.individual["user9"]["by-service"])
+		require.Nil(t, manager.sampleTrackers.trackerByName("user9", costattributionmodel.DefaultTrackerName))
+		require.NotNil(t, manager.sampleTrackers.trackerByName("user9", "by-team"))
+		require.NotNil(t, manager.sampleTrackers.trackerByName("user9", "by-service"))
 	})
 
 	t.Run("Metrics fan out to all trackers", func(t *testing.T) {
@@ -572,15 +582,14 @@ func TestManager_MultipleTrackers(t *testing.T) {
 			{LabelValues: []string{"team", "ops", "service", "gateway"}, SamplesCount: 1},
 		}), time.Unix(100, 0))
 
-		require.Len(t, manager.sampleTrackers.individual["user9"], 2)
+		require.Len(t, manager.sampleTrackers.composite["user9"].getTrackers(), 2)
 
 		// Purge at t=105 → deadline=95. Data at 100 > 95, survives.
 		manager.purgeInactiveAttributionsUntil(time.Unix(105, 0))
-		require.Len(t, manager.sampleTrackers.individual["user9"], 2, "user9 trackers should survive after early purge")
+		require.Len(t, manager.sampleTrackers.composite["user9"].getTrackers(), 2, "user9 trackers should survive after early purge")
 
 		// Purge at t=120 → deadline=110. Data at 100 <= 110, expired. Cardinality → 0, user removed.
 		manager.purgeInactiveAttributionsUntil(time.Unix(120, 0))
-		assert.Empty(t, manager.sampleTrackers.individual["user9"], "user9 trackers should be purged")
 		assert.Empty(t, manager.sampleTrackers.composite["user9"], "user9 composite should be purged")
 	})
 }
@@ -854,4 +863,83 @@ func TestManager_ActiveSeriesTrackerReplacedAfterOverflowRecovery(t *testing.T) 
 		after := m.ActiveSeriesTracker(userID)
 		require.False(t, before.Equals(after), "recovered tracker must be replaced so the ingester re-tracks")
 	})
+}
+
+// TestManager_ActiveSeriesTrackerRebuiltFreshOnConfigReload guards against double-counting active
+// series on a config reload. The config hash covers the whole cost-attribution config, so an
+// unrelated change (here: adding a second tracker) forces the active-series composite to be
+// rebuilt even though the existing tracker's own config didn't change. The ingester detects the
+// new composite via Equals and re-tracks all current series; if rebuild reused the populated
+// active-series tracker, those series would be counted twice. So the active-series tracker must be
+// rebuilt fresh (empty). Sample trackers have no such re-track contract, so an unchanged one must
+// instead be reused to preserve its accumulated counts.
+func TestManager_ActiveSeriesTrackerRebuiltFreshOnConfigReload(t *testing.T) {
+	const userID = "u"
+
+	buildLimits := func(l *validation.Limits) *validation.Overrides {
+		l.CostAttributionBaseTrackers.Canonicalize()
+		l.AdditionalCostAttributionTrackers.Canonicalize()
+		l.ComputeCostAttributionConfigHash()
+		return validation.NewOverrides(validation.Limits{}, validation.NewMockTenantLimits(map[string]*validation.Limits{userID: l}))
+	}
+
+	// configA has a single tracker t1.
+	configA := buildLimits(&validation.Limits{
+		MaxCostAttributionCardinality: 100,
+		CostAttributionBaseTrackers: costattributionmodel.TrackerConfigs{
+			"t1": {Labels: costattributionmodel.Labels{{Input: "a", Output: "a"}}},
+		},
+	})
+	// configB keeps t1 identical but adds an unrelated t2, which bumps the overall config hash.
+	configB := buildLimits(&validation.Limits{
+		MaxCostAttributionCardinality: 100,
+		CostAttributionBaseTrackers: costattributionmodel.TrackerConfigs{
+			"t1": {Labels: costattributionmodel.Labels{{Input: "a", Output: "a"}}},
+		},
+		AdditionalCostAttributionTrackers: costattributionmodel.TrackerConfigs{
+			"t2": {Labels: costattributionmodel.Labels{{Input: "b", Output: "b"}}},
+		},
+	})
+
+	m, err := NewManager(time.Minute, time.Second, log.NewNopLogger(), configA, prometheus.NewRegistry(), prometheus.NewRegistry())
+	require.NoError(t, err)
+
+	// Track a series into both the active-series and the sample tracker for t1.
+	astBefore := m.ActiveSeriesTracker(userID)
+	require.NotNil(t, astBefore)
+	astBefore.Increment(labels.FromStrings("a", "v1"), time.Unix(0, 0), -1)
+
+	stBefore := m.SampleTracker(userID)
+	require.NotNil(t, stBefore)
+	stBefore.IncrementReceivedSamples(testutils.CreateRequest([]testutils.Series{{LabelValues: []string{"a", "v1"}, SamplesCount: 1}}), time.Unix(0, 0))
+
+	activeT1Before := m.activeSeriesTrackers.trackerByName(userID, "t1")
+	sampleT1Before := m.sampleTrackers.trackerByName(userID, "t1")
+	require.NotNil(t, activeT1Before)
+	require.NotNil(t, sampleT1Before)
+	if c, _ := activeT1Before.cardinality(); c != 1 {
+		t.Fatalf("expected active tracker cardinality 1 before reload, got %d", c)
+	}
+
+	// Reload: t1 is unchanged, but the hash changed because t2 was added.
+	m.limits = configB
+
+	astAfter := m.ActiveSeriesTracker(userID)
+	require.False(t, astBefore.Equals(astAfter), "composite must change so the ingester re-tracks")
+
+	// The active-series tracker for t1 must be a fresh, empty instance.
+	activeT1After := m.activeSeriesTrackers.trackerByName(userID, "t1")
+	require.NotNil(t, activeT1After)
+	require.NotSame(t, activeT1Before, activeT1After, "active-series tracker must be rebuilt from scratch")
+	if c, _ := activeT1After.cardinality(); c != 0 {
+		t.Fatalf("expected rebuilt active tracker to be empty, got cardinality %d", c)
+	}
+
+	// The sample tracker for t1 must be reused and keep its counts.
+	require.NotNil(t, m.SampleTracker(userID))
+	sampleT1After := m.sampleTrackers.trackerByName(userID, "t1")
+	require.Same(t, sampleT1Before, sampleT1After, "unchanged sample tracker must be reused to preserve counts")
+	if c, _ := sampleT1After.cardinality(); c != 1 {
+		t.Fatalf("expected reused sample tracker to keep cardinality 1, got %d", c)
+	}
 }

@@ -6,13 +6,10 @@ import (
 	"context"
 	"fmt"
 	"maps"
-	"slices"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -42,22 +39,20 @@ type Manager struct {
 	activeSeriesTrackers *managerTrackers[*ActiveSeriesTracker, *activeSeriesTracker]
 }
 
-type managerTrackers[CT compositeTracker[IT], IT individualTracker] struct {
+type managerTrackers[CT compositeTracker[CT, IT], IT individualTracker] struct {
 	sync.RWMutex
-	composite  map[string]CT
-	individual map[string]map[string]IT
+	composite map[string]CT
 
-	newComposite   func(trackers []IT, configHash uint64) CT
-	newIndividual  func(userID, trackerName string, labels costattributionmodel.Labels, internal bool, maxCardinality int, cooldown time.Duration, logger log.Logger) (IT, error)
 	creationErrors *prometheus.CounterVec
 
 	cardinalityDesc *descriptor
 	overflowDesc    *descriptor
 }
 
-type compositeTracker[IT individualTracker] interface {
+type compositeTracker[CT any, IT individualTracker] interface {
 	getTrackers() []IT
 	getConfigHash() uint64
+	rebuild(userID string, cfg validation.CostAttributionConfig, configHash uint64, logger log.Logger, creationErrors *prometheus.CounterVec) CT
 
 	collectInternalCostAttribution(out chan<- prometheus.Metric)
 	collectCostAttribution(out chan<- prometheus.Metric)
@@ -79,19 +74,13 @@ func NewManager(cleanupInterval, inactiveTimeout time.Duration, logger log.Logge
 
 	m := &Manager{
 		sampleTrackers: &managerTrackers[*SampleTracker, *sampleTracker]{
-			composite:  make(map[string]*SampleTracker),
-			individual: make(map[string]map[string]*sampleTracker),
+			composite: make(map[string]*SampleTracker),
 
-			newComposite:   newSampleTrackerComposite,
-			newIndividual:  newSampleTracker,
 			creationErrors: allTrackerCreationErrors.MustCurryWith(prometheus.Labels{"tracker_type": samplesTrackerType}),
 		},
 		activeSeriesTrackers: &managerTrackers[*ActiveSeriesTracker, *activeSeriesTracker]{
-			composite:  make(map[string]*ActiveSeriesTracker),
-			individual: make(map[string]map[string]*activeSeriesTracker),
+			composite: make(map[string]*ActiveSeriesTracker),
 
-			newComposite:   newActiveSeriesTrackerComposite,
-			newIndividual:  newActiveSeriesTracker,
 			creationErrors: allTrackerCreationErrors.MustCurryWith(prometheus.Labels{"tracker_type": activeSeriesTrackerType}),
 		},
 
@@ -176,7 +165,6 @@ func (mt *managerTrackers[CT, IT]) get(userID string, limits *validation.Overrid
 			// When purging, also check if this user _had_ trackers before.
 			mt.Lock()
 			delete(mt.composite, userID)
-			delete(mt.individual, userID)
 			mt.Unlock()
 		}
 		var zero CT
@@ -201,7 +189,6 @@ func (mt *managerTrackers[CT, IT]) rebuild(userID string, limits *validation.Ove
 	configHash, has := limits.CostAttributionConfigHash(userID)
 	if !has {
 		delete(mt.composite, userID)
-		delete(mt.individual, userID)
 		var zero CT
 		return zero, false
 	}
@@ -211,41 +198,8 @@ func (mt *managerTrackers[CT, IT]) rebuild(userID string, limits *validation.Ove
 	}
 
 	cfg := limits.CostAttributionConfig(userID)
-
-	individualUserTrackers, ok := mt.individual[userID]
-	if !ok {
-		individualUserTrackers = make(map[string]IT, len(cfg.Trackers))
-		mt.individual[userID] = individualUserTrackers
-	}
-
-	// Remove the ones that are no longer in the config.
-	for name := range individualUserTrackers {
-		if _, ok := cfg.Trackers[name]; !ok {
-			delete(individualUserTrackers, name)
-		}
-	}
-
-	// Add the missing ones.
-	for name, tcfg := range cfg.Trackers {
-		if existing, ok := individualUserTrackers[name]; ok {
-			lbls, internal, maxCardinality, cooldown := existing.config()
-			if maxCardinality == cfg.MaxCardinality && internal == tcfg.Internal && cooldown == cfg.Cooldown && slices.Equal(lbls, tcfg.Labels) {
-				continue
-			}
-		}
-		tracker, err := mt.newIndividual(userID, name, tcfg.Labels, tcfg.Internal, cfg.MaxCardinality, cfg.Cooldown, logger)
-		if err != nil {
-			mt.creationErrors.With(prometheus.Labels{"user": userID, "tracker_name": name}).Inc()
-			level.Warn(logger).Log("msg", "error creating cost attribution tracker, skipping it", "user", userID, "tracker_name", name, "error", err)
-			delete(individualUserTrackers, name)
-			continue
-		}
-		individualUserTrackers[name] = tracker
-	}
-
-	trackers := slices.Collect(maps.Values(individualUserTrackers))
-	slices.SortFunc(trackers, func(a, b IT) int { return strings.Compare(a.trackerName(), b.trackerName()) })
-	composite := mt.newComposite(trackers, configHash)
+	// mt.composite[userID] is the zero value (a nil composite) when absent, and rebuild() handles a nil receiver.
+	composite := mt.composite[userID].rebuild(userID, cfg, configHash, logger, mt.creationErrors)
 	mt.composite[userID] = composite
 	return composite, true
 }
@@ -326,7 +280,6 @@ func (mt *managerTrackers[CT, IT]) purge(now, deadline time.Time, limits *valida
 			// If CT==ActiveSeriesTracker, then next active series tracking will see that ActiveSeriesTracker
 			// was re-created and will re-track all series.
 			delete(mt.composite, userID)
-			delete(mt.individual, userID)
 			mt.Unlock()
 		}
 	}

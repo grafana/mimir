@@ -66,7 +66,7 @@ func TestNewSampleTracker(t *testing.T) {
 func TestSampleTracker_hasSameLabels(t *testing.T) {
 	manager, _, _ := newTestManager()
 	manager.SampleTracker("user1")
-	st := manager.sampleTrackers.individual["user1"][costattributionmodel.DefaultTrackerName]
+	st := manager.sampleTrackers.trackerByName("user1", costattributionmodel.DefaultTrackerName)
 	assertHasLabels(t, st, costattributionmodel.Labels{{Input: "team", Output: "my_team"}})
 }
 
@@ -117,7 +117,7 @@ func TestSampleTracker_IncrementReceviedSamples(t *testing.T) {
 func TestSampleTracker_IncrementDiscardedSamples(t *testing.T) {
 	manager, _, _ := newTestManager()
 	cst := manager.SampleTracker("user3")
-	st := manager.sampleTrackers.individual["user3"][costattributionmodel.DefaultTrackerName]
+	st := manager.sampleTrackers.trackerByName("user3", costattributionmodel.DefaultTrackerName)
 	lbls1 := []mimirpb.LabelAdapter{{Name: "department", Value: "foo"}, {Name: "service", Value: "bar"}}
 	lbls2 := []mimirpb.LabelAdapter{{Name: "department", Value: "bar"}, {Name: "service", Value: "baz"}}
 	lbls3 := []mimirpb.LabelAdapter{{Name: "department", Value: "baz"}, {Name: "service", Value: "foo"}}
@@ -142,7 +142,7 @@ func TestSampleTracker_IncrementDiscardedSamples(t *testing.T) {
 func TestSampleTracker_inactiveObservations(t *testing.T) {
 	manager, _, _ := newTestManager()
 	cst := manager.SampleTracker("user1")
-	st := manager.sampleTrackers.individual["user1"][costattributionmodel.DefaultTrackerName]
+	st := manager.sampleTrackers.trackerByName("user1", costattributionmodel.DefaultTrackerName)
 
 	observations := [][]mimirpb.LabelAdapter{
 		{{Name: "team", Value: "foo"}},
@@ -209,7 +209,7 @@ func TestSampleTracker_Concurrency(t *testing.T) {
 
 	m, _, costAttributionReg := newTestManager()
 	cst := m.SampleTracker("user1")
-	st := m.sampleTrackers.individual["user1"][costattributionmodel.DefaultTrackerName]
+	st := m.sampleTrackers.trackerByName("user1", costattributionmodel.DefaultTrackerName)
 
 	var wg sync.WaitGroup
 	var i int64

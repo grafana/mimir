@@ -4,14 +4,18 @@
 package costattribution
 
 import (
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
 
 	"github.com/grafana/mimir/pkg/costattribution/costattributionmodel"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 // SampleTracker delegates to one or more internal sample trackers.
@@ -56,6 +60,35 @@ func (c *SampleTracker) eachFiltered(filter func(tracker individualTracker) bool
 			do(t)
 		}
 	}
+}
+
+// rebuild returns a new composite for the given config, reusing the individual trackers whose
+// config didn't change and recreating only the ones that did (or were added). Reusing trackers
+// preserves their accumulated counts, which is the desired behavior for sample trackers.
+// The receiver may be nil, in which case all trackers are built from scratch.
+func (c *SampleTracker) rebuild(userID string, cfg validation.CostAttributionConfig, configHash uint64, logger log.Logger, creationErrors *prometheus.CounterVec) *SampleTracker {
+	existing := make(map[string]*sampleTracker)
+	c.each(func(t *sampleTracker) { existing[t.name] = t })
+
+	trackers := make([]*sampleTracker, 0, len(cfg.Trackers))
+	for name, tcfg := range cfg.Trackers {
+		if t, ok := existing[name]; ok {
+			lbls, internal, maxCardinality, cooldown := t.config()
+			if maxCardinality == cfg.MaxCardinality && internal == tcfg.Internal && cooldown == cfg.Cooldown && slices.Equal(lbls, tcfg.Labels) {
+				trackers = append(trackers, t)
+				continue
+			}
+		}
+		t, err := newSampleTracker(userID, name, tcfg.Labels, tcfg.Internal, cfg.MaxCardinality, cfg.Cooldown, logger)
+		if err != nil {
+			creationErrors.With(prometheus.Labels{"user": userID, "tracker_name": name}).Inc()
+			level.Warn(logger).Log("msg", "error creating cost attribution tracker, skipping it", "user", userID, "tracker_name", name, "error", err)
+			continue
+		}
+		trackers = append(trackers, t)
+	}
+	slices.SortFunc(trackers, func(a, b *sampleTracker) int { return strings.Compare(a.name, b.name) })
+	return newSampleTrackerComposite(trackers, configHash)
 }
 
 func newSampleTrackerComposite(trackers []*sampleTracker, configHash uint64) *SampleTracker {
@@ -115,6 +148,27 @@ func (c *ActiveSeriesTracker) eachFiltered(filter func(tracker individualTracker
 			do(t)
 		}
 	}
+}
+
+// rebuild returns a new composite for the given config, always building all individual trackers
+// from scratch. Unlike sample trackers, active series trackers can't be reused across composites:
+// the ingester detects the composite swap (via Equals) and re-tracks all series, so reusing a
+// tracker that still holds its observations would double-count them. Building fresh, empty
+// trackers ensures the re-track counts each series exactly once.
+// The receiver is ignored (and may be nil).
+func (c *ActiveSeriesTracker) rebuild(userID string, cfg validation.CostAttributionConfig, configHash uint64, logger log.Logger, creationErrors *prometheus.CounterVec) *ActiveSeriesTracker {
+	trackers := make([]*activeSeriesTracker, 0, len(cfg.Trackers))
+	for name, tcfg := range cfg.Trackers {
+		t, err := newActiveSeriesTracker(userID, name, tcfg.Labels, tcfg.Internal, cfg.MaxCardinality, cfg.Cooldown, logger)
+		if err != nil {
+			creationErrors.With(prometheus.Labels{"user": userID, "tracker_name": name}).Inc()
+			level.Warn(logger).Log("msg", "error creating cost attribution tracker, skipping it", "user", userID, "tracker_name", name, "error", err)
+			continue
+		}
+		trackers = append(trackers, t)
+	}
+	slices.SortFunc(trackers, func(a, b *activeSeriesTracker) int { return strings.Compare(a.name, b.name) })
+	return newActiveSeriesTrackerComposite(trackers, configHash)
 }
 
 func newActiveSeriesTrackerComposite(trackers []*activeSeriesTracker, configHash uint64) *ActiveSeriesTracker {
