@@ -127,6 +127,17 @@ func (h *Hedger) ProduceSync(ctx context.Context, primaryID int32, routedPartiti
 		}
 	}
 
+	// observeAttempts records the attempt depth of a resolved produce call,
+	// split by outcome: 1 = resolved on the primary, N = resolved after N-1
+	// hedge waves.
+	observeAttempts := func(result produceResult, attempts int) {
+		if result.succeeded() {
+			h.metrics.produceRequestsAttemptsSuccess.Observe(float64(attempts))
+		} else {
+			h.metrics.produceRequestsAttemptsFailure.Observe(float64(attempts))
+		}
+	}
+
 	// Check the hedging delay to apply to this request.
 	delay, shouldHedge := h.shouldHedge(time.Now(), primaryID, routedPartitions)
 
@@ -162,27 +173,32 @@ func (h *Hedger) ProduceSync(ctx context.Context, primaryID int32, routedPartiti
 		select {
 		case primaryResult := <-primaryCh:
 			if primaryResult.succeeded() {
+				observeAttempts(primaryResult, 1)
 				return primaryResult.resp, nil
 			}
 
-			hedgingResult := h.runHedgingAttempts(workCtx, primaryID, partitions, candidates)
-			result := selectProduceResult(primaryResult, hedgingResult)
+			hedged := h.runHedgingAttempts(workCtx, primaryID, partitions, candidates)
+			result := selectProduceResult(primaryResult, hedged.result)
+			observeAttempts(result, hedged.attempts)
 			return result.resp, result.err
 		case <-timer.C:
-			result := h.runHedgingAttemptsAndRaceWithPrimary(workCtx, primaryID, partitions, candidates, primaryCh)
-			return result.resp, result.err
+			hedged := h.runHedgingAttemptsAndRaceWithPrimary(workCtx, primaryID, partitions, candidates, primaryCh)
+			observeAttempts(hedged.result, hedged.attempts)
+			return hedged.result.resp, hedged.result.err
 		}
 	}
 
 	// No hedging — wait for the primary synchronously.
 	primaryResult := <-primaryCh
 	if primaryResult.succeeded() {
+		observeAttempts(primaryResult, 1)
 		return primaryResult.resp, nil
 	}
 
 	// The primary has failed. Try secondaries.
-	hedgingResult := h.runHedgingAttempts(workCtx, primaryID, partitions, candidates)
-	result := selectProduceResult(primaryResult, hedgingResult)
+	hedged := h.runHedgingAttempts(workCtx, primaryID, partitions, candidates)
+	result := selectProduceResult(primaryResult, hedged.result)
+	observeAttempts(result, hedged.attempts)
 	return result.resp, result.err
 }
 
@@ -190,8 +206,10 @@ func (h *Hedger) ProduceSync(ctx context.Context, primaryID int32, routedPartiti
 // the in-flight primary; the first to produce a usable outcome wins.
 // workCtx scopes both legs and is cancelled by the caller's deferred
 // cancel as soon as this function returns, which unwinds the losing leg.
-func (h *Hedger) runHedgingAttemptsAndRaceWithPrimary(workCtx context.Context, primaryID int32, partitions []topicPartitionRecords, candidates *hedgerCandidates, primaryCh <-chan produceResult) produceResult {
-	fallbackCh := make(chan produceResult, 1)
+// The reported attempts is the depth of the winning leg: 1 when the
+// primary wins, the fallback's own depth when the fallback wins.
+func (h *Hedger) runHedgingAttemptsAndRaceWithPrimary(workCtx context.Context, primaryID int32, partitions []topicPartitionRecords, candidates *hedgerCandidates, primaryCh <-chan produceResult) hedgerProduceResult {
+	fallbackCh := make(chan hedgerProduceResult, 1)
 	go func() {
 		fallbackCh <- h.runHedgingAttempts(workCtx, primaryID, partitions, candidates)
 	}()
@@ -206,31 +224,35 @@ func (h *Hedger) runHedgingAttemptsAndRaceWithPrimary(workCtx context.Context, p
 			// We don't wait for the fallback goroutine here — fallbackCh
 			// is buffered (1) so the goroutine self-drains and exits on
 			// its next ctx check after the caller's defer cancels workCtx.
-			return primaryResult
+			return hedgerProduceResult{result: primaryResult, attempts: 1}
 		}
 		// Primary failed; the fallback's view supersedes primary's
 		// (per-partition errors are equivalent or richer there).
-		return selectProduceResult(primaryResult, <-fallbackCh)
-	case fallbackResult := <-fallbackCh:
-		if fallbackResult.succeeded() {
-			return fallbackResult
+		fb := <-fallbackCh
+		return hedgerProduceResult{result: selectProduceResult(primaryResult, fb.result), attempts: fb.attempts}
+	case fb := <-fallbackCh:
+		if fb.result.succeeded() {
+			return fb
 		}
 		// Fallback failed (e.g. exhausted candidates) — the primary may
-		// still produce a usable outcome, so let it finish.
-		return selectProduceResult(<-primaryCh, fallbackResult)
+		// still produce a usable outcome, so let it finish. If the primary
+		// then succeeds it won on its single attempt (depth 1).
+		return hedgerProduceResult{result: selectProduceResult(<-primaryCh, fb.result), attempts: 1}
 	}
 }
 
 // runHedgingAttempts runs the per-partition retry loop across other
 // agents, returning when every partition is resolved, has exhausted
-// MaxHedgeAgents, or ctx is canceled.
-func (h *Hedger) runHedgingAttempts(workCtx context.Context, primaryID int32, partitions []topicPartitionRecords, candidates *hedgerCandidates) (result produceResult) {
+// MaxHedgeAgents, or ctx is canceled. The reported attempts is the total
+// attempt depth: 1 (the primary, which this function models as the first
+// tried agent) plus one per hedge wave dispatched.
+func (h *Hedger) runHedgingAttempts(workCtx context.Context, primaryID int32, partitions []topicPartitionRecords, candidates *hedgerCandidates) (out hedgerProduceResult) {
 	h.metrics.hedgeAttemptsTotal.Inc()
 	// Count a win only when the result is successful AND we weren't
 	// preempted by ctx cancellation (e.g. the racing variant aborting
 	// the fallback because the primary won).
 	defer func() {
-		if result.succeeded() && workCtx.Err() == nil {
+		if out.result.succeeded() && workCtx.Err() == nil {
 			h.metrics.hedgeWinsTotal.Inc()
 		}
 	}()
@@ -240,7 +262,8 @@ func (h *Hedger) runHedgingAttempts(workCtx context.Context, primaryID int32, pa
 		// Duplicate (topic, partition) in the input — caller (the
 		// cluster buffer) violated its bin-by-partition invariant.
 		// Surface so the bug isn't silenced.
-		return produceResult{err: err}
+		out.result = produceResult{err: err}
+		return out
 	}
 
 	// tried lives outside the accumulator: it's strategy/retry concern,
@@ -251,28 +274,40 @@ func (h *Hedger) runHedgingAttempts(workCtx context.Context, primaryID int32, pa
 		tried[topicPartition{topic: p.topic, partition: p.partition}] = []int32{primaryID}
 	}
 
-	for workCtx.Err() == nil && h.runHedgingAttempt(workCtx, acc, tried, candidates) {
+	// The primary is attempt 1; each dispatched hedge wave adds one. A wave
+	// that bails before dispatching (candidates exhausted) must not count.
+	out.attempts = 1
+	for workCtx.Err() == nil {
+		dispatched, canRetry := h.runHedgingAttempt(workCtx, acc, tried, candidates)
+		if dispatched {
+			out.attempts++
+		}
+		if !canRetry {
+			break
+		}
 	}
 
 	// If the caller's ctx was canceled mid-loop, surface that directly:
 	// the work was preempted, not exhausted. We still want the merged
 	// per-partition state, so we keep acc.result()'s resp.
-	result = acc.result()
+	out.result = acc.result()
 	if ctxErr := workCtx.Err(); ctxErr != nil {
-		result.err = ctxErr
+		out.result.err = ctxErr
 	}
-	return result
+	return out
 }
 
-// runHedgingAttempt runs one wave of the per-partition retry loop,
-// fanning out per agent. The returned more reports whether the caller
-// should iterate again — false when no further work would change the
-// outcome (every partition resolved, accumulator aborted, a partition
-// exhausted candidates, or ctx canceled mid-wave).
-func (h *Hedger) runHedgingAttempt(workCtx context.Context, acc *produceResultAccumulator, tried map[topicPartition][]int32, candidates *hedgerCandidates) (canRetry bool) {
+// runHedgingAttempt runs one wave of the per-partition retry loop, fanning
+// out per agent. dispatched reports whether this wave actually issued any
+// produce requests (false when it bailed before dispatching: nothing
+// pending or a partition exhausted its candidates). canRetry reports
+// whether the caller should iterate again — false when no further work
+// would change the outcome (every partition resolved, accumulator aborted,
+// a partition exhausted candidates, or ctx canceled mid-wave).
+func (h *Hedger) runHedgingAttempt(workCtx context.Context, acc *produceResultAccumulator, tried map[topicPartition][]int32, candidates *hedgerCandidates) (dispatched, canRetry bool) {
 	pending := acc.remaining()
 	if len(pending) == 0 {
-		return false
+		return false, false
 	}
 
 	// Pick the next candidate per partition; group by chosen agent.
@@ -289,7 +324,7 @@ func (h *Hedger) runHedgingAttempt(workCtx context.Context, acc *produceResultAc
 		// refresh, probe rotation, ordering changes) so the per-call
 		// MaxHedgeAgents limit alone doesn't bound the total.
 		if len(tried[tp]) >= h.cfg.MaxHedgeAgents {
-			return false
+			return false, false
 		}
 
 		var (
@@ -306,7 +341,7 @@ func (h *Hedger) runHedgingAttempt(workCtx context.Context, acc *produceResultAc
 
 		// We exhausted all candidates for this partition. We give up.
 		if !found {
-			return false
+			return false, false
 		}
 
 		tried[tp] = append(tried[tp], next)
@@ -342,13 +377,13 @@ func (h *Hedger) runHedgingAttempt(workCtx context.Context, acc *produceResultAc
 				// Either every partition resolved or a non-retriable
 				// err aborted the batch — either way, no further wave
 				// would change the outcome.
-				return false
+				return true, false
 			}
 		case <-attemptCtx.Done():
-			return false
+			return true, false
 		}
 	}
-	return true
+	return true, true
 }
 
 // shouldHedge returns the hedge delay (and whether to hedge) for primaryID.
@@ -363,11 +398,13 @@ func (h *Hedger) shouldHedge(now time.Time, primaryID int32, partitions []routed
 
 	primary, ok := h.tracker.AgentStats(now, primaryID)
 	if !ok {
+		h.metrics.hedgeAttemptsSuppressedTotal.WithLabelValues(hedgeSuppressedNoAgentStats).Inc()
 		return 0, false
 	}
 
 	clusterStats, hasClusterStats := h.tracker.ClusterStats(now, h.health.SlowMultiplier, h.health.FaultyThreshold)
 	if !hasClusterStats {
+		h.metrics.hedgeAttemptsSuppressedTotal.WithLabelValues(hedgeSuppressedNoClusterStats).Inc()
 		return 0, false
 	}
 
@@ -379,9 +416,11 @@ func (h *Hedger) shouldHedge(now time.Time, primaryID int32, partitions []routed
 	// exactly what we want. At large N the configured fraction dominates
 	// (1/N is tiny) so this is a no-op in production-sized clusters.
 	if clusterStats.SlowFraction > maxFractionFloor(h.health.MaxSlowFraction, clusterStats.SlowContributorsCount) {
+		h.metrics.hedgeAttemptsSuppressedTotal.WithLabelValues(hedgeSuppressedSlowFraction).Inc()
 		return 0, false
 	}
 	if clusterStats.FaultyFraction > maxFractionFloor(h.health.MaxFaultyFraction, clusterStats.FaultyContributorsCount) {
+		h.metrics.hedgeAttemptsSuppressedTotal.WithLabelValues(hedgeSuppressedFaultyFraction).Inc()
 		return 0, false
 	}
 
@@ -402,6 +441,15 @@ func (h *Hedger) shouldHedge(now time.Time, primaryID int32, partitions []routed
 	}
 
 	return max(baseline, h.cfg.MinHedgeDelay), true
+}
+
+// hedgerProduceResult bundles a hedge cascade's result with its attempt
+// depth (1 = resolved on the primary, N = resolved after N-1 hedge waves).
+// It is the common return of the hedging functions and the payload the
+// racing variant collects its fallback leg on.
+type hedgerProduceResult struct {
+	result   produceResult
+	attempts int
 }
 
 // hedgerCandidates memoizes strategy.Candidates() per (topic, partition)

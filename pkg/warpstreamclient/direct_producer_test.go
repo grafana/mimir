@@ -57,10 +57,11 @@ func TestKafkaDirectProducer_Produce(t *testing.T) {
 			}
 			return [16]byte{}, false
 		}
+		m := newMetrics(reg)
 		producer := NewKafkaDirectProducer(client, topicIDFn, 9, KafkaDirectProducerConfig{
 			ProduceRequestTimeout:         time.Second,
 			ProduceRequestTimeoutOverhead: time.Second,
-		}, newMetrics(reg))
+		}, m)
 
 		records := []*kgo.Record{{
 			Topic:     topicName,
@@ -99,6 +100,12 @@ func TestKafkaDirectProducer_Produce(t *testing.T) {
 			# TYPE produce_requests_total counter
 			produce_requests_total 1
 		`), "produce_requests_total", "produce_requests_failed_total"))
+
+		// Per-attempt latency recorded once under outcome=success, none under failure.
+		successCount, _ := histogramCountSum(t, m.produceRequestLatencySuccess.(prometheus.Histogram))
+		failureCount, _ := histogramCountSum(t, m.produceRequestLatencyFailure.(prometheus.Histogram))
+		assert.Equal(t, uint64(1), successCount)
+		assert.Equal(t, uint64(0), failureCount)
 	})
 
 	t.Run("applies per-attempt timeout (TimeoutMillis on wire + client-side ctx deadline)", func(t *testing.T) {
@@ -181,7 +188,7 @@ func TestKafkaDirectProducer_Produce(t *testing.T) {
 			# HELP produce_requests_total Total number of Produce requests issued to a Warpstream agent. Each retry counts as a separate request.
 			# TYPE produce_requests_total counter
 			produce_requests_total 1
-			# HELP produce_requests_failed_total Total number of Produce requests issued to a Warpstream agent that failed, by failure reason.
+			# HELP produce_requests_failed_total Total number of Produce requests issued to a Warpstream agent that failed, by failure reason. Each retry counts as a separate request.
 			# TYPE produce_requests_failed_total counter
 			produce_requests_failed_total{reason="timeout"} 1
 		`), "produce_requests_total", "produce_requests_failed_total"))

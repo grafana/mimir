@@ -78,7 +78,7 @@ func NewKafkaDirectProducer(client *kgo.Client, topicID func(string) ([16]byte, 
 }
 
 // ProduceSync implements DirectProducer.
-func (s *KafkaDirectProducer) ProduceSync(ctx context.Context, nodeID int32, partitions []topicPartitionRecords) (*kmsg.ProduceResponse, error) {
+func (s *KafkaDirectProducer) ProduceSync(ctx context.Context, nodeID int32, partitions []topicPartitionRecords) (retResp *kmsg.ProduceResponse, retErr error) {
 	var records []*kgo.Record
 	for _, p := range partitions {
 		records = append(records, p.records...)
@@ -92,9 +92,21 @@ func (s *KafkaDirectProducer) ProduceSync(ctx context.Context, nodeID int32, par
 	attemptCtx, cancel := context.WithTimeout(ctx, s.cfg.ProduceRequestTimeout+s.cfg.ProduceRequestTimeoutOverhead)
 	defer cancel()
 
+	s.metrics.produceRequestsTotal.Inc()
+
+	// Observe per-attempt latency and the failure reason at the single exit.
+	reqStart := time.Now()
+	defer func() {
+		if retErr != nil {
+			s.metrics.produceRequestLatencyFailure.Observe(time.Since(reqStart).Seconds())
+			s.metrics.produceRequestsFailedTotal.WithLabelValues(getProduceResultErr(retErr).reason).Inc()
+		} else {
+			s.metrics.produceRequestLatencySuccess.Observe(time.Since(reqStart).Seconds())
+		}
+	}()
+
 	// Uses Broker.Request (not RetriableRequest) so franz-go's internal retry
 	// loop stays out of the way: retries are owned by the caller.
-	s.metrics.produceRequestsTotal.Inc()
 	resp, err := s.client.Broker(int(nodeID)).Request(attemptCtx, req)
 
 	// Decode the response up front so the hook always observes the same
@@ -104,7 +116,6 @@ func (s *KafkaDirectProducer) ProduceSync(ctx context.Context, nodeID int32, par
 		var ok bool
 		pr, ok = resp.(*kmsg.ProduceResponse)
 		if !ok {
-			s.metrics.produceRequestsFailedTotal.WithLabelValues("unknown").Inc()
 			return nil, fmt.Errorf("unexpected response type %T", resp)
 		}
 	}
@@ -118,7 +129,6 @@ func (s *KafkaDirectProducer) ProduceSync(ctx context.Context, nodeID int32, par
 	}
 
 	if err != nil {
-		s.metrics.produceRequestsFailedTotal.WithLabelValues(getProduceResultErr(err).reason).Inc()
 		return nil, err
 	}
 	return pr, nil

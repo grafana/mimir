@@ -12,12 +12,22 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
+	dto "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
 )
+
+// histogramCountSum returns the observation count and sum of a histogram.
+// Works for native histograms, where SampleCount/SampleSum are always set.
+func histogramCountSum(t *testing.T, h prometheus.Histogram) (uint64, float64) {
+	t.Helper()
+	var m dto.Metric
+	require.NoError(t, h.Write(&m))
+	return m.GetHistogram().GetSampleCount(), m.GetHistogram().GetSampleSum()
+}
 
 // hedgerResult captures one partition's terminal outcome as fired by the
 // Hedger's per-partition done callback.
@@ -166,6 +176,27 @@ func TestHedger_ProduceSync(t *testing.T) {
 		assert.Equal(t, float64(0), testutil.ToFloat64(m.hedgeWinsTotal))
 		assert.Equal(t, float64(1), testutil.ToFloat64(m.produceRequestsPrimaryTotal))
 		assert.Equal(t, float64(0), testutil.ToFloat64(m.produceRequestsHedgeTotal))
+		// Primary won → one success observation of attempt depth 1.
+		count, sum := histogramCountSum(t, m.produceRequestsAttemptsSuccess.(prometheus.Histogram))
+		assert.Equal(t, uint64(1), count)
+		assert.Equal(t, float64(1), sum)
+	})
+
+	t.Run("hedging suppressed when primary has no agent stats yet", func(t *testing.T) {
+		producer := newMockDirectProducer()
+		producer.respFn = successResp
+		m := newMetrics(prometheus.NewPedanticRegistry())
+		// Empty tracker: AgentStats returns !ok for the primary, so
+		// shouldHedge bails at the no-agent-stats gate.
+		h := NewHedger(producer, NewAverageAgentStatsTracker(), stratPrimaryAndSecondary, health, cfg, 0, 1<<20, m)
+
+		capture := newResultCapture()
+		runHedger(h, context.Background(), makeReq(capture))
+
+		require.NoError(t, capture.get(topic, partition).err)
+		assert.Len(t, producer.recordedCalls(), 1)
+		assert.Equal(t, float64(1), testutil.ToFloat64(m.hedgeAttemptsSuppressedTotal.WithLabelValues(hedgeSuppressedNoAgentStats)))
+		assert.Equal(t, float64(0), testutil.ToFloat64(m.hedgeAttemptsTotal))
 	})
 
 	t.Run("primary slow: hedge fires and secondary wins", func(t *testing.T) {
@@ -216,6 +247,10 @@ func TestHedger_ProduceSync(t *testing.T) {
 		assert.Equal(t, float64(1), testutil.ToFloat64(m.hedgeWinsTotal))
 		assert.Equal(t, float64(1), testutil.ToFloat64(m.produceRequestsPrimaryTotal))
 		assert.GreaterOrEqual(t, testutil.ToFloat64(m.produceRequestsHedgeTotal), float64(1))
+		// Primary failed, one hedge wave resolved it → success attempt depth 2.
+		count, sum := histogramCountSum(t, m.produceRequestsAttemptsSuccess.(prometheus.Histogram))
+		assert.Equal(t, uint64(1), count)
+		assert.Equal(t, float64(2), sum)
 	})
 
 	t.Run("hedge timer fires and secondary wins: hedgeWinsTotal incremented", func(t *testing.T) {
@@ -362,6 +397,11 @@ func TestHedger_ProduceSync(t *testing.T) {
 		// fallback candidate.
 		assert.Equal(t, float64(1), testutil.ToFloat64(m.produceRequestsPrimaryTotal))
 		assert.Equal(t, float64(0), testutil.ToFloat64(m.produceRequestsHedgeTotal))
+		// No hedge candidate → only the primary attempt was made before
+		// giving up, recorded under the failure outcome.
+		count, sum := histogramCountSum(t, m.produceRequestsAttemptsFailure.(prometheus.Histogram))
+		assert.Equal(t, uint64(1), count)
+		assert.Equal(t, float64(1), sum)
 	})
 
 	t.Run("partial fallback coverage: any partition exhausting candidates stops the whole attempt", func(t *testing.T) {
