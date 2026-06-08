@@ -697,15 +697,20 @@ func (u *userTSDB) updateTokenRanges(newTokenRanges []uint32) bool {
 	return !prev.Equal(newTokenRanges)
 }
 
-// addPendingNonOwnedRefs reconciles the per-tenant pending eviction set with the caller's
-// authoritative current non-owned snapshot. Refs in the snapshot that are not yet in the set
-// are added; refs already in the set but absent from the snapshot are removed (they became
-// owned again, or their series got GC'd from the head, and must not be evicted).
+// addPendingNonOwnedRefs reconciles the per-tenant pending-eviction set with the
+// caller's authoritative snapshot of currently non-owned refs.
 //
-// The last-update timestamp is bumped only if at least one ref wasn't already in the set;
-// that keeps the grace-period clock anchored to the first time a still-pending ref appeared,
-// rather than restarting it on every recompute cycle that re-finds the same non-owned set.
-// The compaction loop consumes the set with takePendingNonOwnedRefs.
+// Refs present in the snapshot but missing from the set are added. Refs present
+// in the set but absent from the snapshot are removed, since they have either
+// become owned again or their series has been garbage-collected from the head
+// and therefore must not be evicted.
+//
+// The last-update timestamp is advanced only when new refs are added. This keeps
+// the grace-period timer anchored to the first observation of refs that remain
+// pending, instead of resetting it on every reconciliation that observes the
+// same non-owned set.
+//
+// The compaction loop consumes pending refs via takePendingNonOwnedRefs.
 func (u *userTSDB) addPendingNonOwnedRefs(refs []storage.SeriesRef) {
 	u.pendingNonOwnedRefsMtx.Lock()
 	defer u.pendingNonOwnedRefsMtx.Unlock()
@@ -752,10 +757,12 @@ func (u *userTSDB) addPendingNonOwnedRefs(refs []storage.SeriesRef) {
 	}
 }
 
-// takePendingNonOwnedRefs atomically returns and clears the pending eviction set, but only
-// if its last-update time is at or before notAfter (the grace-period threshold). Returns nil
-// if no eviction is pending or the grace period has not yet elapsed, in which case the set
-// is left intact.
+// takePendingNonOwnedRefs atomically returns and clears the pending-eviction
+// set if its last-update timestamp is at or before notAfter (the grace-period
+// cutoff).
+//
+// Returns nil if the set is empty or the grace period has not yet elapsed. In
+// that case, the pending set is left unchanged.
 func (u *userTSDB) takePendingNonOwnedRefs(notAfter time.Time) []storage.SeriesRef {
 	u.pendingNonOwnedRefsMtx.Lock()
 	defer u.pendingNonOwnedRefsMtx.Unlock()
