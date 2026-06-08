@@ -78,6 +78,22 @@ func addHistogramWithAnnotations(base, other *histogram.FloatHistogram, emitAnno
 	return true
 }
 
+// subHistogramWithAnnotations subtracts other from base in place, translating histogram errors
+// and bucket-bounds reconciliations into annotations. Returns false if the operation failed.
+func subHistogramWithAnnotations(base, other *histogram.FloatHistogram, emitAnnotation types.EmitAnnotationFunc) bool {
+	_, _, nhcbBoundsReconciled, err := base.Sub(other)
+	if err != nil {
+		if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) {
+			emitAnnotation(annotations.NewMixedExponentialCustomHistogramsWarning)
+		}
+		return false
+	}
+	if nhcbBoundsReconciled {
+		emitAnnotation(NewSubMismatchedCustomBucketsHistogramInfo)
+	}
+	return true
+}
+
 // validateHistogramRange checks all histogram samples in h for schema consistency and
 // counter-type hints. It returns false (and emits MixedExponentialCustomHistogramsWarning)
 // when exponential and custom buckets are mixed. It emits NativeHistogramNotCounterWarning for
@@ -211,11 +227,8 @@ func extendedHistogramRate(hExtended []promql.HPoint, originalRangeStart, origin
 	// Copy right before subtracting left so that correctForCounterResetsHistogram can still
 	// call right.DetectReset against the original boundary value rather than (right - left).
 	delta := right.Copy()
-	if _, _, nhcbReconciled, err := delta.Sub(left); err != nil {
-		annosFromInterpolationError(err, emitAnnotation)
+	if !subHistogramWithAnnotations(delta, left, emitAnnotation) {
 		return nil, nil
-	} else if nhcbReconciled {
-		emitAnnotation(NewSubMismatchedCustomBucketsHistogramInfo)
 	}
 
 	if isCounter {
