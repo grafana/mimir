@@ -1904,6 +1904,11 @@ func (cl *Client) forgetControllerID(id int32) {
 	}
 }
 
+// Coordinator types match Kafka's FindCoordinator key-type enum.
+// coordinatorTypeShare (the share-state coordinator) is keyed by a
+// groupId:topicId:partition SharePartitionKey and serves only the
+// broker-internal persister RPCs (keys 83-87), which kgo never issues; share
+// groups go entirely through the GROUP coordinator (see #1330).
 const (
 	coordinatorTypeGroup int8 = 0
 	coordinatorTypeTxn   int8 = 1
@@ -2316,9 +2321,9 @@ func (cl *Client) handleCoordinatorReq(ctx context.Context, req kmsg.Request) Re
 		}
 		return shard(br, req, resp, err)
 	case *kmsg.AlterShareGroupOffsetsRequest:
-		return cl.handleCoordinatorReqSimple(ctx, coordinatorTypeShare, t.GroupID, req)
+		return cl.handleCoordinatorReqSimple(ctx, coordinatorTypeGroup, t.GroupID, req)
 	case *kmsg.DeleteShareGroupOffsetsRequest:
-		return cl.handleCoordinatorReqSimple(ctx, coordinatorTypeShare, t.GroupID, req)
+		return cl.handleCoordinatorReqSimple(ctx, coordinatorTypeGroup, t.GroupID, req)
 	}
 }
 
@@ -3042,8 +3047,8 @@ func (cl *Client) storeCachedMeta(meta *kmsg.MetadataResponse, all bool, results
 		// Topic *string. Without these clones, readers via
 		// RequestCachedMetadata or sharded request paths (which read
 		// ps[part].Replicas) would race those writers. dupt on the
-		// GET side also clones, which is defense in depth: the cache
-		// cannot be corrupted by a caller mutating a returned response.
+		// GET side clones separately: that isolates returned responses
+		// from the cache, this isolates the cache from the response.
 		topicName := *topic.Topic
 		topic.Topic = &topicName
 		topic.Partitions = slices.Clone(topic.Partitions)
@@ -5477,7 +5482,7 @@ func (cl *describeShareGroupOffsetsSharder) shard(ctx context.Context, kreq kmsg
 	for _, g := range req.Groups {
 		groupIDs = append(groupIDs, g.GroupID)
 	}
-	coordinators := cl.loadCoordinators(ctx, coordinatorTypeShare, groupIDs...)
+	coordinators := cl.loadCoordinators(ctx, coordinatorTypeGroup, groupIDs...)
 	type unkerr struct {
 		err     error
 		groupID string
@@ -5537,7 +5542,7 @@ func (cl *describeShareGroupOffsetsSharder) onResp(_ kmsg.Request, kresp kmsg.Re
 	for i := range resp.Groups {
 		group := &resp.Groups[i]
 		err := kerr.ErrorForCode(group.ErrorCode)
-		cl.maybeDeleteStaleCoordinator(group.GroupID, coordinatorTypeShare, err)
+		cl.maybeDeleteStaleCoordinator(group.GroupID, coordinatorTypeGroup, err)
 		onRespShardErr(&retErr, err)
 	}
 	return retErr

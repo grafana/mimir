@@ -969,9 +969,12 @@ func (sc *shareConsumer) manage() {
 			consecutiveErrors = 0
 			continue
 
+		// Evict with coordinatorTypeGroup to match how the heartbeat loads it:
+		// the cache is keyed by {name, type}, so a share-typed evict never
+		// matches and we would retry the stale coordinator forever (#1330).
 		case isRetryableBrokerErr(err),
 			isAnyDialErr(err),
-			sc.cl.maybeDeleteStaleCoordinator(sc.cfg.shareGroup, coordinatorTypeShare, err):
+			sc.cl.maybeDeleteStaleCoordinator(sc.cfg.shareGroup, coordinatorTypeGroup, err):
 			// Retryable -- fall through to shared backoff below.
 
 		default:
