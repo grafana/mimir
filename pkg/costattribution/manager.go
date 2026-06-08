@@ -48,7 +48,7 @@ type managerTrackers[CT compositeTracker[IT], IT individualTracker] struct {
 	individual map[string]map[string]IT
 
 	newComposite   func(trackers []IT, configHash uint64) CT
-	newIndividual  func(userID, trackerName string, labels costattributionmodel.Labels, maxCardinality int, cooldown time.Duration, logger log.Logger) (IT, error)
+	newIndividual  func(userID, trackerName string, labels costattributionmodel.Labels, internal bool, maxCardinality int, cooldown time.Duration, logger log.Logger) (IT, error)
 	creationErrors *prometheus.CounterVec
 
 	cardinalityDesc *descriptor
@@ -59,13 +59,14 @@ type compositeTracker[IT individualTracker] interface {
 	getTrackers() []IT
 	getConfigHash() uint64
 
+	collectInternalCostAttribution(out chan<- prometheus.Metric)
 	collectCostAttribution(out chan<- prometheus.Metric)
 	purge(now, deadline time.Time) int
 }
 
 type individualTracker interface {
 	trackerName() string
-	config() (labels costattributionmodel.Labels, maxCardinality int, cooldown time.Duration)
+	config() (labels costattributionmodel.Labels, internal bool, maxCardinality int, cooldown time.Duration)
 	cardinality() (cardinality int, overflown bool)
 	collectCostAttribution(out chan<- prometheus.Metric)
 	purge(now, deadline time.Time) int
@@ -228,12 +229,12 @@ func (mt *managerTrackers[CT, IT]) rebuild(userID string, limits *validation.Ove
 	// Add the missing ones.
 	for name, tcfg := range cfg.Trackers {
 		if existing, ok := individualUserTrackers[name]; ok {
-			lbls, maxCardinality, cooldown := existing.config()
-			if maxCardinality == cfg.MaxCardinality && cooldown == cfg.Cooldown && slices.Equal(lbls, tcfg.Labels) {
+			lbls, internal, maxCardinality, cooldown := existing.config()
+			if maxCardinality == cfg.MaxCardinality && internal == tcfg.Internal && cooldown == cfg.Cooldown && slices.Equal(lbls, tcfg.Labels) {
 				continue
 			}
 		}
-		tracker, err := mt.newIndividual(userID, name, tcfg.Labels, cfg.MaxCardinality, cfg.Cooldown, logger)
+		tracker, err := mt.newIndividual(userID, name, tcfg.Labels, tcfg.Internal, cfg.MaxCardinality, cfg.Cooldown, logger)
 		if err != nil {
 			mt.creationErrors.With(prometheus.Labels{"user": userID, "tracker_name": name}).Inc()
 			level.Warn(logger).Log("msg", "error creating cost attribution tracker, skipping it", "user", userID, "tracker_name", name, "error", err)
@@ -268,6 +269,7 @@ func (mt *managerTrackers[CT, IT]) collect(out chan<- prometheus.Metric) {
 				out <- mt.overflowDesc.gauge(1, userID, tracker.trackerName())
 			}
 		}
+		composite.collectInternalCostAttribution(out)
 	}
 }
 

@@ -34,6 +34,7 @@ type sampleTracker struct {
 	discardedSampleAttribution *descriptor
 	logger                     log.Logger
 
+	internal       bool
 	labels         costattributionmodel.Labels
 	overflowLabels []string
 
@@ -47,7 +48,7 @@ type sampleTracker struct {
 	overflowCounter observation
 }
 
-func newSampleTracker(userID, trackerName string, trackedLabels costattributionmodel.Labels, limit int, cooldown time.Duration, logger log.Logger) (*sampleTracker, error) {
+func newSampleTracker(userID, trackerName string, trackedLabels costattributionmodel.Labels, internal bool, limit int, cooldown time.Duration, logger log.Logger) (*sampleTracker, error) {
 	// Create a map for overflow labels to export when overflow happens
 	overflowLabels := make([]string, len(trackedLabels)+2)
 	for i := range trackedLabels {
@@ -61,6 +62,7 @@ func newSampleTracker(userID, trackerName string, trackedLabels costattributionm
 		userID:           userID,
 		name:             trackerName,
 		labels:           trackedLabels,
+		internal:         internal,
 		maxCardinality:   limit,
 		observed:         make(map[string]*observation),
 		cooldownDuration: cooldown,
@@ -103,8 +105,8 @@ func (st *sampleTracker) trackerName() string {
 	return st.name
 }
 
-func (st *sampleTracker) config() (labels costattributionmodel.Labels, limit int, cooldown time.Duration) {
-	return st.labels, st.maxCardinality, st.cooldownDuration
+func (st *sampleTracker) config() (labels costattributionmodel.Labels, internal bool, limit int, cooldown time.Duration) {
+	return st.labels, st.internal, st.maxCardinality, st.cooldownDuration
 }
 
 var bufferPool = sync.Pool{

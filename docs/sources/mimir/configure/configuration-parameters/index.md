@@ -4748,6 +4748,11 @@ cost_attribution_labels_structured:
 
         [output: <string> | default = ""]
 
+    # Expose this tracker's metrics on the operational /metrics endpoint instead
+    # of the cost-attribution specific /usage-metrics endpoint that is used by
+    # default.
+    [internal: <boolean> | default = ]
+
 # (experimental)
 [additional_cost_attribution_trackers:]
   <string>:
@@ -4755,6 +4760,11 @@ cost_attribution_labels_structured:
       -         [input: <string> | default = ""]
 
         [output: <string> | default = ""]
+
+    # Expose this tracker's metrics on the operational /metrics endpoint instead
+    # of the cost-attribution specific /usage-metrics endpoint that is used by
+    # default.
+    [internal: <boolean> | default = ]
 
 # (experimental) Defines how long cost attribution stays in overflow before
 # attempting a reset, with received/discarded samples extending the cooldown if

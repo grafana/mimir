@@ -6523,6 +6523,15 @@
                   "fieldValue": null,
                   "fieldDefaultValue": null
                 }
+              },
+              {
+                "kind": "field",
+                "name": "internal",
+                "required": false,
+                "desc": "Expose this tracker's metrics on the operational /metrics endpoint instead of the cost-attribution specific /usage-metrics endpoint that is used by default.",
+                "fieldValue": null,
+                "fieldDefaultValue": false,
+                "fieldType": "boolean"
               }
             ],
             "fieldValue": null,
@@ -6580,6 +6589,15 @@
                   "fieldValue": null,
                   "fieldDefaultValue": null
                 }
+              },
+              {
+                "kind": "field",
+                "name": "internal",
+                "required": false,
+                "desc": "Expose this tracker's metrics on the operational /metrics endpoint instead of the cost-attribution specific /usage-metrics endpoint that is used by default.",
+                "fieldValue": null,
+                "fieldDefaultValue": false,
+                "fieldType": "boolean"
               }
             ],
             "fieldValue": null,

@@ -14,7 +14,8 @@ import (
 
 // TrackerConfig defines the configuration for a single named cost attribution tracker.
 type TrackerConfig struct {
-	Labels Labels `yaml:"labels" json:"labels"`
+	Labels   Labels `yaml:"labels" json:"labels"`
+	Internal bool   `yaml:"internal" json:"internal" doc:"description=Expose this tracker's metrics on the operational /metrics endpoint instead of the cost-attribution specific /usage-metrics endpoint that is used by default."`
 }
 
 // TrackerConfigs is a map of tracker name to TrackerConfig.

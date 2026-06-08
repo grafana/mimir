@@ -34,6 +34,7 @@ type activeSeriesTracker struct {
 	activeNativeHistogramBucketsPerUserAttribution *descriptor
 	logger                                         log.Logger
 
+	internal       bool
 	labels         costattributionmodel.Labels
 	overflowLabels []string
 
@@ -49,7 +50,7 @@ type activeSeriesTracker struct {
 	overflowCounter counters
 }
 
-func newActiveSeriesTracker(userID, trackerName string, trackedLabels costattributionmodel.Labels, limit int, cooldownDuration time.Duration, logger log.Logger) (*activeSeriesTracker, error) {
+func newActiveSeriesTracker(userID, trackerName string, trackedLabels costattributionmodel.Labels, internal bool, limit int, cooldownDuration time.Duration, logger log.Logger) (*activeSeriesTracker, error) {
 	// Create a map for overflow labels to export when overflow happens
 	overflowLabels := make([]string, len(trackedLabels)+1)
 	for i := range trackedLabels {
@@ -61,6 +62,7 @@ func newActiveSeriesTracker(userID, trackerName string, trackedLabels costattrib
 	ast := &activeSeriesTracker{
 		userID:           userID,
 		name:             trackerName,
+		internal:         internal,
 		labels:           trackedLabels,
 		maxCardinality:   limit,
 		observed:         make(map[string]*counters),
@@ -108,8 +110,8 @@ func (at *activeSeriesTracker) trackerName() string {
 	return at.name
 }
 
-func (at *activeSeriesTracker) config() (labels costattributionmodel.Labels, limit int, cooldown time.Duration) {
-	return at.labels, at.maxCardinality, at.cooldownDuration
+func (at *activeSeriesTracker) config() (labels costattributionmodel.Labels, internal bool, limit int, cooldown time.Duration) {
+	return at.labels, at.internal, at.maxCardinality, at.cooldownDuration
 }
 
 // Increment increases the active series count for the given labels.

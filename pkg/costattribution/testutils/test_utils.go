@@ -49,11 +49,12 @@ func NewMockCostAttributionOverrides(limits validation.Limits, overrides map[str
 			},
 		},
 		// user9 has only additional trackers (no base).
+		// Both of them are internal
 		"user9": {
 			MaxCostAttributionCardinality: 3,
 			AdditionalCostAttributionTrackers: costattributionmodel.TrackerConfigs{
-				"by-team":    {Labels: costattributionmodel.Labels{{Input: "team", Output: "my_team"}}},
-				"by-service": {Labels: costattributionmodel.Labels{{Input: "service", Output: "my_service"}}},
+				"by-team":    {Labels: costattributionmodel.Labels{{Input: "team", Output: "my_team"}}, Internal: true},
+				"by-service": {Labels: costattributionmodel.Labels{{Input: "service", Output: "my_service"}}, Internal: true},
 			},
 		},
 	}

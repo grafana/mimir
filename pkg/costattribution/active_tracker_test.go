@@ -49,7 +49,7 @@ func TestNewActiveTracker(t *testing.T) {
 
 	for testName, testCase := range testCases {
 		t.Run(testName, func(t *testing.T) {
-			ast, astErr := newActiveSeriesTracker("tenant-1", costattributionmodel.DefaultTrackerName, testCase.costAttributionLabels, 10, 1*time.Minute, log.NewNopLogger())
+			ast, astErr := newActiveSeriesTracker("tenant-1", costattributionmodel.DefaultTrackerName, testCase.costAttributionLabels, false, 10, 1*time.Minute, log.NewNopLogger())
 			if testCase.expectedErr == nil {
 				require.NoError(t, astErr)
 				require.NotNil(t, ast)

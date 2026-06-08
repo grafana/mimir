@@ -34,7 +34,12 @@ func (c *SampleTracker) purge(now, deadline time.Time) int {
 
 // nolint:unused
 func (c *SampleTracker) collectCostAttribution(out chan<- prometheus.Metric) {
-	c.each(func(t *sampleTracker) { t.collectCostAttribution(out) })
+	c.eachFiltered(isNotInternal, func(t *sampleTracker) { t.collectCostAttribution(out) })
+}
+
+// nolint:unused
+func (c *SampleTracker) collectInternalCostAttribution(out chan<- prometheus.Metric) {
+	c.eachFiltered(isInternal, func(t *sampleTracker) { t.collectCostAttribution(out) })
 }
 
 func (c *SampleTracker) each(do func(*sampleTracker)) {
@@ -43,6 +48,17 @@ func (c *SampleTracker) each(do func(*sampleTracker)) {
 	}
 	for _, t := range c.trackers {
 		do(t)
+	}
+}
+
+func (c *SampleTracker) eachFiltered(filter func(tracker individualTracker) bool, do func(tracker *sampleTracker)) {
+	if c == nil {
+		return
+	}
+	for _, t := range c.trackers {
+		if filter(t) {
+			do(t)
+		}
 	}
 }
 
@@ -79,7 +95,12 @@ func (c *ActiveSeriesTracker) purge(now, deadline time.Time) int {
 
 // nolint:unused
 func (c *ActiveSeriesTracker) collectCostAttribution(out chan<- prometheus.Metric) {
-	c.each(func(t *activeSeriesTracker) { t.collectCostAttribution(out) })
+	c.eachFiltered(isNotInternal, func(t *activeSeriesTracker) { t.collectCostAttribution(out) })
+}
+
+// nolint:unused
+func (c *ActiveSeriesTracker) collectInternalCostAttribution(out chan<- prometheus.Metric) {
+	c.eachFiltered(isInternal, func(t *activeSeriesTracker) { t.collectCostAttribution(out) })
 }
 
 func (c *ActiveSeriesTracker) each(do func(tracker *activeSeriesTracker)) {
@@ -88,6 +109,17 @@ func (c *ActiveSeriesTracker) each(do func(tracker *activeSeriesTracker)) {
 	}
 	for _, t := range c.trackers {
 		do(t)
+	}
+}
+
+func (c *ActiveSeriesTracker) eachFiltered(filter func(tracker individualTracker) bool, do func(tracker *activeSeriesTracker)) {
+	if c == nil {
+		return
+	}
+	for _, t := range c.trackers {
+		if filter(t) {
+			do(t)
+		}
 	}
 }
 
@@ -116,9 +148,19 @@ func (c *ActiveSeriesTracker) Equals(other *ActiveSeriesTracker) bool {
 // NewActiveSeriesTrackerForTests creates an ActiveSeriesTracker with a single tracker.
 // This is a test helper for the activeseries package.
 func NewActiveSeriesTrackerForTests(userID, trackerName string, trackedLabels costattributionmodel.Labels, limit int, cooldownDuration time.Duration, logger log.Logger) (*ActiveSeriesTracker, error) {
-	t, err := newActiveSeriesTracker(userID, trackerName, trackedLabels, limit, cooldownDuration, logger)
+	t, err := newActiveSeriesTracker(userID, trackerName, trackedLabels, false, limit, cooldownDuration, logger)
 	if err != nil {
 		return nil, err
 	}
 	return &ActiveSeriesTracker{trackers: []*activeSeriesTracker{t}}, nil
+}
+
+func isInternal(tracker individualTracker) bool {
+	_, internal, _, _ := tracker.config()
+	return internal
+}
+
+func isNotInternal(tracker individualTracker) bool {
+	_, internal, _, _ := tracker.config()
+	return !internal
 }
