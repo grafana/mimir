@@ -24,7 +24,9 @@ type metrics struct {
 	produceRequestsAttemptsSuccess prometheus.Observer
 	produceRequestsAttemptsFailure prometheus.Observer
 	produceRequestLatencySuccess   prometheus.Observer
-	produceRequestLatencyFailure   prometheus.Observer
+	// produceRequestLatencyFailure is keyed by failure reason; success
+	// latency carries no reason label (see produceRequestLatencySuccess).
+	produceRequestLatencyFailure prometheus.ObserverVec
 
 	produceRequestsPrimaryTotal prometheus.Counter
 	produceRequestsHedgeTotal   prometheus.Counter
@@ -40,14 +42,17 @@ const (
 )
 
 func newMetrics(reg prometheus.Registerer) *metrics {
+	// On failures the latency carries a "reason" label; on success the
+	// reason is left empty, which Prometheus treats as the label being
+	// absent for the success series.
 	produceRequestLatency := promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
 		Name:                            "produce_request_latency_seconds",
-		Help:                            "Latency of a single Produce request to a Warpstream agent, by outcome. Each retry counts as a separate request.",
+		Help:                            "Latency of a single Produce request to a Warpstream agent, by outcome (and by failure reason when the outcome is a failure). Each retry counts as a separate request.",
 		NativeHistogramBucketFactor:     1.1,
 		NativeHistogramMaxBucketNumber:  100,
 		NativeHistogramMinResetDuration: time.Hour,
 		Buckets:                         prometheus.DefBuckets,
-	}, []string{"outcome"})
+	}, []string{"outcome", "reason"})
 
 	produceRequestAttempts := promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
 		Name:                            "produce_requests_attempts",
@@ -92,7 +97,7 @@ func newMetrics(reg prometheus.Registerer) *metrics {
 		}, []string{"reason"}),
 		produceRequestsAttemptsSuccess: produceRequestAttempts.WithLabelValues("success"),
 		produceRequestsAttemptsFailure: produceRequestAttempts.WithLabelValues("failure"),
-		produceRequestLatencySuccess:   produceRequestLatency.WithLabelValues("success"),
-		produceRequestLatencyFailure:   produceRequestLatency.WithLabelValues("failure"),
+		produceRequestLatencySuccess:   produceRequestLatency.WithLabelValues("success", ""),
+		produceRequestLatencyFailure:   produceRequestLatency.MustCurryWith(prometheus.Labels{"outcome": "failure"}),
 	}
 }

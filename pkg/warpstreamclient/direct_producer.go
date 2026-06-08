@@ -97,11 +97,13 @@ func (s *KafkaDirectProducer) ProduceSync(ctx context.Context, nodeID int32, par
 	// Observe per-attempt latency and the failure reason at the single exit.
 	reqStart := time.Now()
 	defer func() {
+		latencySeconds := time.Since(reqStart).Seconds()
 		if retErr != nil {
-			s.metrics.produceRequestLatencyFailure.Observe(time.Since(reqStart).Seconds())
-			s.metrics.produceRequestsFailedTotal.WithLabelValues(getProduceResultErr(retErr).reason).Inc()
+			reason := getProduceResultErr(retErr).reason
+			s.metrics.produceRequestLatencyFailure.WithLabelValues(reason).Observe(latencySeconds)
+			s.metrics.produceRequestsFailedTotal.WithLabelValues(reason).Inc()
 		} else {
-			s.metrics.produceRequestLatencySuccess.Observe(time.Since(reqStart).Seconds())
+			s.metrics.produceRequestLatencySuccess.Observe(latencySeconds)
 		}
 	}()
 

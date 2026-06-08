@@ -101,11 +101,11 @@ func TestKafkaDirectProducer_Produce(t *testing.T) {
 			produce_requests_total 1
 		`), "produce_requests_total", "produce_requests_failed_total"))
 
-		// Per-attempt latency recorded once under outcome=success, none under failure.
+		// Per-attempt latency recorded once under outcome=success; no failure
+		// series exists (only the success series is collected).
 		successCount, _ := histogramCountSum(t, m.produceRequestLatencySuccess.(prometheus.Histogram))
-		failureCount, _ := histogramCountSum(t, m.produceRequestLatencyFailure.(prometheus.Histogram))
 		assert.Equal(t, uint64(1), successCount)
-		assert.Equal(t, uint64(0), failureCount)
+		assert.Equal(t, 1, testutil.CollectAndCount(reg, "produce_request_latency_seconds"))
 	})
 
 	t.Run("applies per-attempt timeout (TimeoutMillis on wire + client-side ctx deadline)", func(t *testing.T) {
