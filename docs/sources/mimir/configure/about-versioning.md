@@ -128,6 +128,10 @@ The following features are currently experimental:
   - Per-tenant early TSDB Head compaction based on owned series count:
     - `-ingester.early-head-compaction-owned-series-threshold`
     - `-ingester.early-head-compaction-min-estimated-series-reduction-percentage`
+  - Early TSDB Head compaction of non-owned series after ring changes:
+    - `-ingester.early-compaction-non-owned-series-enabled`
+    - `-ingester.early-compaction-non-owned-series-min-grace-period`
+    - `-ingester.early-compaction-non-owned-series-max-grace-period`
   - Timely head compaction (`-blocks-storage.tsdb.timely-head-compaction-enabled`)
   - Count owned series and use them to enforce series limits:
     - `-ingester.track-ingester-owned-series`
