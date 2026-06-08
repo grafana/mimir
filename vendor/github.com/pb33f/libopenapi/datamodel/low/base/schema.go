@@ -2,8 +2,6 @@ package base
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"sync"
 
 	"github.com/pb33f/libopenapi/datamodel/low"
@@ -153,81 +151,33 @@ type Schema struct {
 // will specifically look for a key node named 'schema' and extract the value mapped to that key. If the operation
 // fails then no NodeReference is returned and an error is returned instead.
 func ExtractSchema(ctx context.Context, root *yaml.Node, idx *index.SpecIndex) (*low.NodeReference[*SchemaProxy], error) {
-	var schLabel, schNode *yaml.Node
 	errStr := "schema build failed: reference '%s' cannot be found at line %d, col %d"
 
-	refLocation := ""
-	var refNode *yaml.Node
-
-	foundIndex := idx
-	foundCtx := ctx
-	if rf, rl, rv := utils.IsNodeRefValue(root); rf {
-		// locate reference in index.
-		ref, fIdx, err, nCtx := low.LocateRefNodeWithContext(ctx, root, idx)
-		if ref != nil {
-			schNode = ref
-			schLabel = rl
-			foundCtx = nCtx
-			foundIndex = fIdx
-		} else if errors.Is(err, low.ErrExternalRefSkipped) {
-			refLocation = rv
-			schema := &SchemaProxy{kn: root, vn: root, idx: idx, ctx: ctx}
-			_ = schema.Build(ctx, root, root, idx)
-			n := &low.NodeReference[*SchemaProxy]{Value: schema, KeyNode: root, ValueNode: root}
-			n.SetReference(refLocation, root)
-			schema.SetReference(refLocation, root)
-			return n, nil
-		} else {
-			v := root.Content[1].Value
-			if root.Content[1].Value == "" {
-				v = "[empty]"
-			}
-			return nil, fmt.Errorf(errStr,
-				v, root.Content[1].Line, root.Content[1].Column)
-		}
-	} else {
-		_, schLabel, schNode = utils.FindKeyNodeFull(SchemaLabel, root.Content)
-		if schNode != nil {
-			h := false
-			if h, _, refLocation = utils.IsNodeRefValue(schNode); h {
-				ref, fIdx, lerr, nCtx := low.LocateRefNodeWithContext(foundCtx, schNode, foundIndex)
-				if ref != nil {
-					refNode = schNode
-					schNode = ref
-					if fIdx != nil {
-						foundIndex = fIdx
-					}
-					foundCtx = nCtx
-				} else if errors.Is(lerr, low.ErrExternalRefSkipped) {
-					refNode = schNode
-				} else {
-					v := schNode.Content[1].Value
-					if schNode.Content[1].Value == "" {
-						v = "[empty]"
-					}
-					return nil, fmt.Errorf(errStr,
-						v, schNode.Content[1].Line, schNode.Content[1].Column)
-				}
-			}
-		}
+	if rf, refLabel, _ := utils.IsNodeRefValue(root); rf {
+		return extractSchemaProxy(ctx, idx, refLabel, root, errStr)
 	}
 
+	_, schLabel, schNode := utils.FindKeyNodeFull(SchemaLabel, root.Content)
 	if schNode != nil {
-		// check if schema has already been built.
-		schema := &SchemaProxy{kn: schLabel, vn: schNode, idx: foundIndex, ctx: foundCtx}
-
-		// call Build to ensure transformation happens
-		_ = schema.Build(foundCtx, schLabel, schNode, foundIndex)
-
-		schema.SetReference(refLocation, refNode)
-
-		n := &low.NodeReference[*SchemaProxy]{
-			Value:     schema,
-			KeyNode:   schLabel,
-			ValueNode: schema.vn, // use transformed node
-		}
-		n.SetReference(refLocation, refNode)
-		return n, nil
+		return extractSchemaProxy(ctx, idx, schLabel, schNode, errStr)
 	}
 	return nil, nil
+}
+
+func extractSchemaProxy(ctx context.Context, idx *index.SpecIndex, keyNode, valueNode *yaml.Node, errFormat string) (*low.NodeReference[*SchemaProxy], error) {
+	resolved, err := resolveSchemaBuildInput(ctx, valueNode, idx, errFormat)
+	if err != nil {
+		return nil, err
+	}
+
+	built := buildSchemaProxy(resolved.ctx, resolved.idx, keyNode, resolved.valueNode, resolved.scopeNode, resolved.refNode, resolved.transformed, resolved.refLocation)
+	n := &low.NodeReference[*SchemaProxy]{
+		Value:     built.Value,
+		KeyNode:   keyNode,
+		ValueNode: built.ValueNode,
+	}
+	if resolved.refLocation != "" {
+		n.SetReference(resolved.refLocation, resolved.refNode)
+	}
+	return n, nil
 }
