@@ -47,7 +47,7 @@ func newMockDirectProducer() *mockDirectProducer {
 	}
 }
 
-func (m *mockDirectProducer) ProduceSync(ctx context.Context, nodeID int32, partitions []topicPartitionRecords) (*kmsg.ProduceResponse, error) {
+func (m *mockDirectProducer) ProduceSync(ctx context.Context, nodeID int32, partitions []topicPartitionRecords) ProduceResult {
 	m.mu.Lock()
 	delay := m.delays[nodeID]
 	err := m.errs[nodeID]
@@ -60,7 +60,7 @@ func (m *mockDirectProducer) ProduceSync(ctx context.Context, nodeID int32, part
 		case <-time.After(delay):
 		case <-ctx.Done():
 			m.record(nodeID, partitions, ctx.Err())
-			return nil, ctx.Err()
+			return ProduceResult{err: ctx.Err()}
 		}
 	}
 	if block != nil {
@@ -68,20 +68,20 @@ func (m *mockDirectProducer) ProduceSync(ctx context.Context, nodeID int32, part
 		case <-block:
 		case <-ctx.Done():
 			m.record(nodeID, partitions, ctx.Err())
-			return nil, ctx.Err()
+			return ProduceResult{err: ctx.Err()}
 		}
 	}
 	if err != nil {
 		m.record(nodeID, partitions, err)
-		return nil, err
+		return ProduceResult{err: err}
 	}
 	if respFn != nil {
 		resp, fnErr := respFn(nodeID, partitions)
 		m.record(nodeID, partitions, fnErr)
-		return resp, fnErr
+		return ProduceResult{resp: resp, err: fnErr}
 	}
 	m.record(nodeID, partitions, nil)
-	return kmsg.NewPtrProduceResponse(), nil
+	return ProduceResult{resp: kmsg.NewPtrProduceResponse()}
 }
 
 func (m *mockDirectProducer) record(nodeID int32, partitions []topicPartitionRecords, err error) {
@@ -113,9 +113,9 @@ func TestMockDirectProducer_MultipleCalls(t *testing.T) {
 		m := newMockDirectProducer()
 		ctx := context.Background()
 
-		_, _ = m.ProduceSync(ctx, 1, nil)
-		_, _ = m.ProduceSync(ctx, 2, nil)
-		_, _ = m.ProduceSync(ctx, 1, nil)
+		_ = m.ProduceSync(ctx, 1, nil)
+		_ = m.ProduceSync(ctx, 2, nil)
+		_ = m.ProduceSync(ctx, 1, nil)
 
 		calls := m.recordedCalls()
 		require.Len(t, calls, 3)
@@ -131,7 +131,7 @@ func TestMockDirectProducer_MultipleCalls(t *testing.T) {
 			wg.Add(1)
 			go func(nodeID int32) {
 				defer wg.Done()
-				_, _ = m.ProduceSync(context.Background(), nodeID, nil)
+				_ = m.ProduceSync(context.Background(), nodeID, nil)
 			}(int32(i))
 		}
 		wg.Wait()
@@ -145,7 +145,7 @@ func TestMockDirectProducer_MultipleCalls(t *testing.T) {
 
 		done := make(chan struct{})
 		go func() {
-			_, _ = m.ProduceSync(context.Background(), 1, nil)
+			_ = m.ProduceSync(context.Background(), 1, nil)
 			close(done)
 		}()
 
@@ -199,7 +199,7 @@ func TestMockDirectProducer(t *testing.T) {
 			defer cancel()
 
 			start := time.Now()
-			_, err := m.ProduceSync(ctx, tc.nodeID, nil)
+			err := m.ProduceSync(ctx, tc.nodeID, nil).error()
 
 			if tc.wantErr {
 				require.Error(t, err)

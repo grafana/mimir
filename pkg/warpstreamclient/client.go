@@ -196,7 +196,7 @@ func (c *WarpstreamClient) ProduceSync(ctx context.Context, records []*kgo.Recor
 		indexOf[records[idx]] = idx
 	}
 
-	routed, err := c.routeRecords(okRecords, func(groupRecords []*kgo.Record) func(*kmsg.ProduceResponse, error) {
+	routed, err := c.routeRecords(okRecords, func(groupRecords []*kgo.Record) func(ProduceResult) {
 		return perPartitionDone(groupRecords[0].Topic, groupRecords[0].Partition, func(err error) {
 			for _, r := range groupRecords {
 				results[indexOf[r]] = kgo.ProduceResult{Record: r, Err: err}
@@ -220,7 +220,7 @@ func (c *WarpstreamClient) ProduceSync(ctx context.Context, records []*kgo.Recor
 
 // flushBatch is the cluster buffer's AgentFlushFunc: it bounds the
 // Hedger call to WriteTimeout and forwards everything else verbatim.
-func (c *WarpstreamClient) flushBatch(ctx context.Context, nodeID int32, partitions []routedTopicPartitionRecords) (*kmsg.ProduceResponse, error) {
+func (c *WarpstreamClient) flushBatch(ctx context.Context, nodeID int32, partitions []routedTopicPartitionRecords) ProduceResult {
 	flushCtx, cancel := context.WithTimeout(ctx, c.cfg.WriteTimeout)
 	defer cancel()
 	return c.hedger.ProduceSync(flushCtx, nodeID, partitions)
@@ -287,7 +287,7 @@ func (c *WarpstreamClient) startBackgroundRefresh() {
 // routeRecords groups records by (topic, partition), stamps each group with
 // its initial destination NodeID and mints the per-group done callback.
 // Returns an error if any record's partition has no known candidate.
-func (c *WarpstreamClient) routeRecords(records []*kgo.Record, doneFor func(groupRecords []*kgo.Record) func(*kmsg.ProduceResponse, error)) ([]routedTopicPartitionRecords, error) {
+func (c *WarpstreamClient) routeRecords(records []*kgo.Record, doneFor func(groupRecords []*kgo.Record) func(ProduceResult)) ([]routedTopicPartitionRecords, error) {
 	groups := make(map[topicPartition]*routedTopicPartitionRecords)
 	order := make([]topicPartition, 0)
 	for _, r := range records {
@@ -323,7 +323,7 @@ func (c *WarpstreamClient) routeRecords(records []*kgo.Record, doneFor func(grou
 // routeRecord is the single-record specialisation of routeRecords: it
 // skips the per-partition map and avoids heap-allocating an intermediate
 // group. Returns an error if the record's partition has no known candidate.
-func (c *WarpstreamClient) routeRecord(record *kgo.Record, done func(*kmsg.ProduceResponse, error)) (routedTopicPartitionRecords, error) {
+func (c *WarpstreamClient) routeRecord(record *kgo.Record, done func(ProduceResult)) (routedTopicPartitionRecords, error) {
 	cands := c.strategy.Candidates(record.Topic, record.Partition, 1)
 	if len(cands) == 0 {
 		return routedTopicPartitionRecords{}, fmt.Errorf("no agent assigned for topic %q partition %d", record.Topic, record.Partition)
@@ -340,19 +340,19 @@ func (c *WarpstreamClient) routeRecord(record *kgo.Record, done func(*kmsg.Produ
 	}, nil
 }
 
-// perPartitionDone adapts a batch-wide (resp, err) callback to a
+// perPartitionDone adapts a batch-wide ProduceResult callback to a
 // per-partition outcome for one (topic, partition).
-func perPartitionDone(topic string, partition int32, user func(error)) func(*kmsg.ProduceResponse, error) {
-	return func(resp *kmsg.ProduceResponse, transportErr error) {
+func perPartitionDone(topic string, partition int32, user func(error)) func(ProduceResult) {
+	return func(res ProduceResult) {
 		// The merged response is authoritative when present: it carries
 		// one terminal entry per partition (resolved or synthesized), so
 		// a partition that actually succeeded must report success even
-		// when transportErr says some peer partition failed.
-		if resp == nil {
-			user(transportErr)
+		// when res.err says some peer partition failed.
+		if res.resp == nil {
+			user(res.err)
 			return
 		}
-		err := partitionErrorFromResp(resp, topic, partition)
+		err := partitionErrorFromResp(res.resp, topic, partition)
 		// A retriable kerr surfaced here means the Hedger exhausted its
 		// retry budget; wrap with kgo.ErrRecordTimeout to match franz-go's
 		// retry-exhausted contract while keeping the specific kerr in
@@ -368,17 +368,17 @@ func perPartitionDone(topic string, partition int32, user func(error)) func(*kms
 // perRecordDone returns a done callback that resolves the
 // outcome for a single (record, promise) pair. Same semantics as
 // perPartitionDone but avoids the extra closure that wraps promise.
-func perRecordDone(record *kgo.Record, promise func(*kgo.Record, error)) func(*kmsg.ProduceResponse, error) {
-	return func(resp *kmsg.ProduceResponse, transportErr error) {
-		if resp == nil {
-			promise(record, transportErr)
+func perRecordDone(record *kgo.Record, promise func(*kgo.Record, error)) func(ProduceResult) {
+	return func(res ProduceResult) {
+		if res.resp == nil {
+			promise(record, res.err)
 			return
 		}
 
 		// partitionErrorFromResp only ever returns nil or *kerr.Error
 		// (from kerr.ErrorForCode), so a direct type assertion avoids
 		// the errors.As reflection.
-		err := partitionErrorFromResp(resp, record.Topic, record.Partition)
+		err := partitionErrorFromResp(res.resp, record.Topic, record.Partition)
 		if ke, _ := err.(*kerr.Error); ke != nil && ke.Retriable {
 			err = fmt.Errorf("%w: %w", kgo.ErrRecordTimeout, err)
 		}

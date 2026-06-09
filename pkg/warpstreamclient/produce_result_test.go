@@ -52,17 +52,17 @@ func mustNewProduceResultAccumulator(t *testing.T, partitions []topicPartitionRe
 
 func TestProduceResult_Error(t *testing.T) {
 	tests := map[string]struct {
-		res  produceResult
+		res  ProduceResult
 		want error
 	}{
 		"fully successful resp returns nil": {
-			res: produceResult{resp: makeProduceResponse(0, 0, makeProduceResponseTopic("t",
+			res: ProduceResult{resp: makeProduceResponse(0, 0, makeProduceResponseTopic("t",
 				makeProduceResponseTopicPartition(0, kerrNoError),
 			))},
 			want: nil,
 		},
 		"transport err wins over resp": {
-			res: produceResult{
+			res: ProduceResult{
 				err: kerr.LeaderNotAvailable,
 				resp: makeProduceResponse(0, 0, makeProduceResponseTopic("t",
 					makeProduceResponseTopicPartition(0, kerrNoError),
@@ -71,14 +71,14 @@ func TestProduceResult_Error(t *testing.T) {
 			want: kerr.LeaderNotAvailable,
 		},
 		"per-partition err: first non-zero ErrorCode": {
-			res: produceResult{resp: makeProduceResponse(0, 0, makeProduceResponseTopic("t",
+			res: ProduceResult{resp: makeProduceResponse(0, 0, makeProduceResponseTopic("t",
 				makeProduceResponseTopicPartition(0, kerrNoError),
 				makeProduceResponseTopicPartition(1, kerr.NotLeaderForPartition.Code),
 			))},
 			want: kerr.NotLeaderForPartition,
 		},
-		"empty produceResult (both nil) returns the empty sentinel": {
-			res:  produceResult{},
+		"empty ProduceResult (both nil) returns the empty sentinel": {
+			res:  ProduceResult{},
 			want: errEmptyProduceResult,
 		},
 	}
@@ -211,7 +211,7 @@ func TestProduceResultAccumulator_Accumulate(t *testing.T) {
 			makeTopicPartitionRecords("t", 1),
 		})
 
-		a.accumulate(produceResult{resp: makeProduceResponse(9, 50, makeProduceResponseTopic("t",
+		a.accumulate(ProduceResult{resp: makeProduceResponse(9, 50, makeProduceResponseTopic("t",
 			kmsg.ProduceResponseTopicPartition{Partition: 0, ErrorCode: kerrNoError, BaseOffset: 100},
 			kmsg.ProduceResponseTopicPartition{Partition: 1, ErrorCode: kerrNoError, BaseOffset: 200},
 		))})
@@ -236,7 +236,7 @@ func TestProduceResultAccumulator_Accumulate(t *testing.T) {
 	t.Run("transport retriable err: not aborted, pending unchanged", func(t *testing.T) {
 		a := mustNewProduceResultAccumulator(t, []topicPartitionRecords{makeTopicPartitionRecords("t", 0)})
 
-		a.accumulate(produceResult{err: kerr.LeaderNotAvailable})
+		a.accumulate(ProduceResult{err: kerr.LeaderNotAvailable})
 
 		d, err := a.done()
 		assert.False(t, d)
@@ -249,7 +249,7 @@ func TestProduceResultAccumulator_Accumulate(t *testing.T) {
 	t.Run("transport non-retriable err: aborted", func(t *testing.T) {
 		a := mustNewProduceResultAccumulator(t, []topicPartitionRecords{makeTopicPartitionRecords("t", 0)})
 
-		a.accumulate(produceResult{err: context.Canceled})
+		a.accumulate(ProduceResult{err: context.Canceled})
 
 		d, err := a.done()
 		assert.True(t, d)
@@ -270,7 +270,7 @@ func TestProduceResultAccumulator_Accumulate(t *testing.T) {
 			makeTopicPartitionRecords("t", 1),
 		})
 
-		a.accumulate(produceResult{resp: makeProduceResponse(0, 0, makeProduceResponseTopic("t",
+		a.accumulate(ProduceResult{resp: makeProduceResponse(0, 0, makeProduceResponseTopic("t",
 			kmsg.ProduceResponseTopicPartition{Partition: 0, ErrorCode: kerrNoError, BaseOffset: 100},
 			makeProduceResponseTopicPartition(1, kerr.NotLeaderForPartition.Code),
 		))})
@@ -288,7 +288,7 @@ func TestProduceResultAccumulator_Accumulate(t *testing.T) {
 			makeTopicPartitionRecords("t", 1),
 		})
 
-		a.accumulate(produceResult{resp: makeProduceResponse(0, 0, makeProduceResponseTopic("t",
+		a.accumulate(ProduceResult{resp: makeProduceResponse(0, 0, makeProduceResponseTopic("t",
 			kmsg.ProduceResponseTopicPartition{Partition: 0, ErrorCode: kerrNoError, BaseOffset: 100},
 			makeProduceResponseTopicPartition(1, kerr.MessageTooLarge.Code),
 		))})
@@ -311,7 +311,7 @@ func TestProduceResultAccumulator_Accumulate(t *testing.T) {
 			makeTopicPartitionRecords("t", 1),
 		})
 
-		a.accumulate(produceResult{resp: makeProduceResponse(0, 0, makeProduceResponseTopic("t",
+		a.accumulate(ProduceResult{resp: makeProduceResponse(0, 0, makeProduceResponseTopic("t",
 			kmsg.ProduceResponseTopicPartition{Partition: 0, ErrorCode: kerrNoError, BaseOffset: 100},
 		))})
 
@@ -341,14 +341,14 @@ func TestProduceResultAccumulator_Accumulate(t *testing.T) {
 			kmsg.ProduceResponseTopicPartition{Partition: 1, ErrorCode: kerrNoError, BaseOffset: 200},
 		))
 
-		a.accumulate(produceResult{resp: first})
+		a.accumulate(ProduceResult{resp: first})
 		d, _ := a.done()
 		assert.False(t, d)
 		// Intermediate state: one partition resolved but one still
 		// pending and no error observed → bare ErrRecordTimeout.
 		assert.ErrorIs(t, a.result().err, kgo.ErrRecordTimeout)
 
-		a.accumulate(produceResult{resp: second})
+		a.accumulate(ProduceResult{resp: second})
 		d, _ = a.done()
 		assert.True(t, d)
 		assert.Nil(t, a.result().err)
@@ -371,13 +371,13 @@ func TestProduceResultAccumulator_Accumulate(t *testing.T) {
 		// about, or a future caller mistake — the last accumulate wins.
 		a := mustNewProduceResultAccumulator(t, []topicPartitionRecords{makeTopicPartitionRecords("t", 0)})
 
-		a.accumulate(produceResult{resp: makeProduceResponse(0, 0, makeProduceResponseTopic("t",
+		a.accumulate(ProduceResult{resp: makeProduceResponse(0, 0, makeProduceResponseTopic("t",
 			kmsg.ProduceResponseTopicPartition{Partition: 0, ErrorCode: kerrNoError, BaseOffset: 1},
 		))})
 		d, _ := a.done()
 		require.True(t, d)
 
-		a.accumulate(produceResult{resp: makeProduceResponse(0, 0, makeProduceResponseTopic("t",
+		a.accumulate(ProduceResult{resp: makeProduceResponse(0, 0, makeProduceResponseTopic("t",
 			kmsg.ProduceResponseTopicPartition{Partition: 0, ErrorCode: kerrNoError, BaseOffset: 999},
 		))})
 
@@ -395,7 +395,7 @@ func TestProduceResultAccumulator_Response(t *testing.T) {
 			makeTopicPartitionRecords("u", 7),
 		})
 
-		a.accumulate(produceResult{err: kerr.LeaderNotAvailable})
+		a.accumulate(ProduceResult{err: kerr.LeaderNotAvailable})
 
 		resp := a.result().resp
 		require.Len(t, resp.Topics, 2)
@@ -408,7 +408,7 @@ func TestProduceResultAccumulator_Response(t *testing.T) {
 	t.Run("aborted on non-kerr err: pending entries fall back to UNKNOWN_SERVER_ERROR", func(t *testing.T) {
 		a := mustNewProduceResultAccumulator(t, []topicPartitionRecords{makeTopicPartitionRecords("t", 0)})
 
-		a.accumulate(produceResult{err: errors.New("some non-retriable transport boom")})
+		a.accumulate(ProduceResult{err: errors.New("some non-retriable transport boom")})
 
 		resp := a.result().resp
 		entries := partitionEntries(resp, "t")
@@ -425,7 +425,7 @@ func TestProduceResultAccumulator_Response(t *testing.T) {
 			makeTopicPartitionRecords("t", 1),
 		})
 
-		a.accumulate(produceResult{resp: makeProduceResponse(0, 0, makeProduceResponseTopic("t",
+		a.accumulate(ProduceResult{resp: makeProduceResponse(0, 0, makeProduceResponseTopic("t",
 			kmsg.ProduceResponseTopicPartition{Partition: 0, ErrorCode: kerrNoError, BaseOffset: 100},
 			makeProduceResponseTopicPartition(1, kerr.NotLeaderForPartition.Code),
 		))})
@@ -445,11 +445,11 @@ func TestProduceResultAccumulator_Response(t *testing.T) {
 		a := mustNewProduceResultAccumulator(t, []topicPartitionRecords{makeTopicPartitionRecords("t", 0)})
 
 		// First leg: partition fails retriably (recorded in failed map).
-		a.accumulate(produceResult{resp: makeProduceResponse(0, 0, makeProduceResponseTopic("t",
+		a.accumulate(ProduceResult{resp: makeProduceResponse(0, 0, makeProduceResponseTopic("t",
 			makeProduceResponseTopicPartition(0, kerr.NotLeaderForPartition.Code),
 		))})
 		// Second leg: partition succeeds — should drop the failed entry.
-		a.accumulate(produceResult{resp: makeProduceResponse(0, 0, makeProduceResponseTopic("t",
+		a.accumulate(ProduceResult{resp: makeProduceResponse(0, 0, makeProduceResponseTopic("t",
 			kmsg.ProduceResponseTopicPartition{Partition: 0, ErrorCode: kerrNoError, BaseOffset: 42},
 		))})
 
@@ -466,10 +466,10 @@ func TestProduceResultAccumulator_Response(t *testing.T) {
 			makeTopicPartitionRecords("t", 1),
 		})
 
-		a.accumulate(produceResult{resp: makeProduceResponse(9, 0, makeProduceResponseTopic("t",
+		a.accumulate(ProduceResult{resp: makeProduceResponse(9, 0, makeProduceResponseTopic("t",
 			kmsg.ProduceResponseTopicPartition{Partition: 0, ErrorCode: kerrNoError, BaseOffset: 42},
 		))})
-		a.accumulate(produceResult{err: kerr.LeaderNotAvailable})
+		a.accumulate(ProduceResult{err: kerr.LeaderNotAvailable})
 
 		resp := a.result().resp
 		entries := partitionEntries(resp, "t")
@@ -488,7 +488,7 @@ func TestProduceResultAccumulator_Result(t *testing.T) {
 			makeTopicPartitionRecords("t", 0),
 			makeTopicPartitionRecords("t", 1),
 		})
-		a.accumulate(produceResult{resp: makeProduceResponse(9, 100, makeProduceResponseTopic("t",
+		a.accumulate(ProduceResult{resp: makeProduceResponse(9, 100, makeProduceResponseTopic("t",
 			kmsg.ProduceResponseTopicPartition{Partition: 0, ErrorCode: kerrNoError, BaseOffset: 42},
 			kmsg.ProduceResponseTopicPartition{Partition: 1, ErrorCode: kerrNoError, BaseOffset: 43},
 		))})
@@ -507,7 +507,7 @@ func TestProduceResultAccumulator_Result(t *testing.T) {
 			makeTopicPartitionRecords("t", 0),
 			makeTopicPartitionRecords("t", 1),
 		})
-		a.accumulate(produceResult{resp: makeProduceResponse(9, 0, makeProduceResponseTopic("t",
+		a.accumulate(ProduceResult{resp: makeProduceResponse(9, 0, makeProduceResponseTopic("t",
 			kmsg.ProduceResponseTopicPartition{Partition: 0, ErrorCode: kerrNoError, BaseOffset: 42},
 		))})
 
@@ -527,10 +527,10 @@ func TestProduceResultAccumulator_Result(t *testing.T) {
 		})
 		// First leg resolves partition 0; second leg's transport error
 		// leaves partition 1 pending and is recorded as lastErr.
-		a.accumulate(produceResult{resp: makeProduceResponse(9, 0, makeProduceResponseTopic("t",
+		a.accumulate(ProduceResult{resp: makeProduceResponse(9, 0, makeProduceResponseTopic("t",
 			kmsg.ProduceResponseTopicPartition{Partition: 0, ErrorCode: kerrNoError, BaseOffset: 42},
 		))})
-		a.accumulate(produceResult{err: kerr.LeaderNotAvailable})
+		a.accumulate(ProduceResult{err: kerr.LeaderNotAvailable})
 
 		r := a.result()
 		require.Error(t, r.err)
@@ -549,7 +549,7 @@ func TestProduceResultAccumulator_Result(t *testing.T) {
 
 	t.Run("nothing resolved, retriable err observed: kgo.ErrRecordTimeout wraps the kerr", func(t *testing.T) {
 		a := mustNewProduceResultAccumulator(t, []topicPartitionRecords{makeTopicPartitionRecords("t", 0)})
-		a.accumulate(produceResult{err: kerr.LeaderNotAvailable})
+		a.accumulate(ProduceResult{err: kerr.LeaderNotAvailable})
 
 		r := a.result()
 		require.Error(t, r.err)
@@ -559,7 +559,7 @@ func TestProduceResultAccumulator_Result(t *testing.T) {
 
 	t.Run("nothing resolved, non-retriable err observed: kgo.ErrRecordTimeout wraps the kerr", func(t *testing.T) {
 		a := mustNewProduceResultAccumulator(t, []topicPartitionRecords{makeTopicPartitionRecords("t", 0)})
-		a.accumulate(produceResult{err: kerr.MessageTooLarge})
+		a.accumulate(ProduceResult{err: kerr.MessageTooLarge})
 
 		r := a.result()
 		require.Error(t, r.err)
@@ -594,42 +594,42 @@ func TestSelectProduceResult(t *testing.T) {
 	fallbackErr := fmt.Errorf("%w: %w", kgo.ErrRecordTimeout, kerr.NotLeaderForPartition)
 
 	tests := map[string]struct {
-		primary  produceResult
-		fallback produceResult
-		want     produceResult
+		primary  ProduceResult
+		fallback ProduceResult
+		want     ProduceResult
 	}{
 		"primary succeeded: return primary, ignore fallback": {
-			primary:  produceResult{resp: successResp},
-			fallback: produceResult{resp: nil, err: fallbackErr},
-			want:     produceResult{resp: successResp},
+			primary:  ProduceResult{resp: successResp},
+			fallback: ProduceResult{resp: nil, err: fallbackErr},
+			want:     ProduceResult{resp: successResp},
 		},
 		"primary errored, fallback succeeded: return fallback": {
-			primary:  produceResult{err: primaryErr},
-			fallback: produceResult{resp: successResp},
-			want:     produceResult{resp: successResp},
+			primary:  ProduceResult{err: primaryErr},
+			fallback: ProduceResult{resp: successResp},
+			want:     ProduceResult{resp: successResp},
 		},
 		"primary errored, fallback errored: fallback.resp (merged view) + chained primary.err: fallback.err": {
-			primary:  produceResult{err: primaryErr},
-			fallback: produceResult{resp: fallbackCodesResp, err: fallbackErr},
-			want: produceResult{
+			primary:  ProduceResult{err: primaryErr},
+			fallback: ProduceResult{resp: fallbackCodesResp, err: fallbackErr},
+			want: ProduceResult{
 				resp: fallbackCodesResp,
 				err:  fmt.Errorf("%w: %w", primaryErr, fallbackErr),
 			},
 		},
 		"primary had per-partition codes only (no transport err), fallback errored: return primary": {
-			primary:  produceResult{resp: primaryCodesResp},
-			fallback: produceResult{resp: fallbackCodesResp, err: fallbackErr},
-			want:     produceResult{resp: primaryCodesResp},
+			primary:  ProduceResult{resp: primaryCodesResp},
+			fallback: ProduceResult{resp: fallbackCodesResp, err: fallbackErr},
+			want:     ProduceResult{resp: primaryCodesResp},
 		},
 		"primary transport-errored, fallback had per-partition codes only (partial wins): return fallback": {
-			primary:  produceResult{err: primaryErr},
-			fallback: produceResult{resp: fallbackCodesResp},
-			want:     produceResult{resp: fallbackCodesResp},
+			primary:  ProduceResult{err: primaryErr},
+			fallback: ProduceResult{resp: fallbackCodesResp},
+			want:     ProduceResult{resp: fallbackCodesResp},
 		},
 		"both had per-partition codes only (no transport errs): return fallback (its view is the latest)": {
-			primary:  produceResult{resp: primaryCodesResp},
-			fallback: produceResult{resp: fallbackCodesResp},
-			want:     produceResult{resp: fallbackCodesResp},
+			primary:  ProduceResult{resp: primaryCodesResp},
+			fallback: ProduceResult{resp: fallbackCodesResp},
+			want:     ProduceResult{resp: fallbackCodesResp},
 		},
 	}
 	for name, tc := range tests {

@@ -7,8 +7,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-
-	"github.com/twmb/franz-go/pkg/kmsg"
 )
 
 // ClusterRecordBuffer is the cluster-wide entry point for buffering produce
@@ -106,9 +104,9 @@ func (c *ClusterRecordBuffer) Add(ctx context.Context, partitions []routedTopicP
 			ourDoneFired atomic.Bool
 		)
 
-		fireOrigDone := func(resp *kmsg.ProduceResponse, err error) {
+		fireOrigDone := func(res ProduceResult) {
 			if origDoneFired.CompareAndSwap(false, true) {
-				orig(resp, err)
+				orig(res)
 			}
 		}
 		// AfterFunc's callback always runs in a separate goroutine and
@@ -116,15 +114,15 @@ func (c *ClusterRecordBuffer) Add(ctx context.Context, partitions []routedTopicP
 		// can only fire via addToBuffers further down (synchronous on
 		// pre-canceled ctx) or via the flush (later still), so
 		// stopCtxWatch is already bound by the time it's read.
-		stopCtxWatch := context.AfterFunc(ctx, func() { fireOrigDone(nil, ctx.Err()) })
+		stopCtxWatch := context.AfterFunc(ctx, func() { fireOrigDone(ProduceResult{err: ctx.Err()}) })
 
-		p.done = func(resp *kmsg.ProduceResponse, err error) {
+		p.done = func(res ProduceResult) {
 			if ourDoneFired.CompareAndSwap(false, true) {
 				stopCtxWatch()
 				c.bufferedBytes.Add(-valueBytes)
 				c.bufferedRecords.Add(-recCount)
 			}
-			fireOrigDone(resp, err)
+			fireOrigDone(res)
 		}
 		wrapped[i] = p
 	}
@@ -144,7 +142,7 @@ func (c *ClusterRecordBuffer) addToBuffers(ctx context.Context, partitions []rou
 		// the batch flush in the background); this matters because the
 		// caller may otherwise observe a duplicate from a "no-op" call.
 		for _, p := range partitions {
-			p.done(nil, err)
+			p.done(ProduceResult{err: err})
 		}
 		return
 	}
@@ -157,7 +155,7 @@ func (c *ClusterRecordBuffer) addToBuffers(ctx context.Context, partitions []rou
 		buffer, err := c.agentRecordBufferFor(nodeID)
 		if err != nil {
 			for _, p := range agentPartitions {
-				p.done(nil, err)
+				p.done(ProduceResult{err: err})
 			}
 			continue
 		}

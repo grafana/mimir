@@ -22,7 +22,7 @@ import (
 // in exactly one place — the nodeID parameter — and the function cannot
 // be called with a mismatched per-RTP nodeID.
 type DirectProducer interface {
-	ProduceSync(ctx context.Context, nodeID int32, partitions []topicPartitionRecords) (*kmsg.ProduceResponse, error)
+	ProduceSync(ctx context.Context, nodeID int32, partitions []topicPartitionRecords) ProduceResult
 }
 
 // KafkaDirectProducerConfig holds the per-request timings for
@@ -78,14 +78,14 @@ func NewKafkaDirectProducer(client *kgo.Client, topicID func(string) ([16]byte, 
 }
 
 // ProduceSync implements DirectProducer.
-func (s *KafkaDirectProducer) ProduceSync(ctx context.Context, nodeID int32, partitions []topicPartitionRecords) (retResp *kmsg.ProduceResponse, retErr error) {
+func (s *KafkaDirectProducer) ProduceSync(ctx context.Context, nodeID int32, partitions []topicPartitionRecords) (retResult ProduceResult) {
 	var records []*kgo.Record
 	for _, p := range partitions {
 		records = append(records, p.records...)
 	}
 	req, err := buildMultiTopicProduceRequest(s.version, s.topicID, records)
 	if err != nil {
-		return nil, err
+		return ProduceResult{err: err}
 	}
 	req.SetTimeout(int32(s.cfg.ProduceRequestTimeout.Milliseconds()))
 
@@ -95,15 +95,18 @@ func (s *KafkaDirectProducer) ProduceSync(ctx context.Context, nodeID int32, par
 	s.metrics.produceDirectRequestsTotal.Inc()
 
 	// Observe per-attempt latency and the failure reason at the single exit.
+	// Classify via the returned ProduceResult, not the transport error, so a
+	// response carrying a per-partition error code (with no transport error)
+	// is counted as a failure.
 	reqStart := time.Now()
 	defer func() {
 		latencySeconds := time.Since(reqStart).Seconds()
-		if retErr != nil {
-			reason := getProduceResultErr(retErr).reason
+		if retResult.succeeded() {
+			s.metrics.produceDirectRequestLatencySuccess.Observe(latencySeconds)
+		} else {
+			reason := getProduceResultErr(retResult.error()).reason
 			s.metrics.produceDirectRequestLatencyFailure.WithLabelValues(reason).Observe(latencySeconds)
 			s.metrics.produceDirectRequestsFailedTotal.WithLabelValues(reason).Inc()
-		} else {
-			s.metrics.produceDirectRequestLatencySuccess.Observe(latencySeconds)
 		}
 	}()
 
@@ -118,7 +121,7 @@ func (s *KafkaDirectProducer) ProduceSync(ctx context.Context, nodeID int32, par
 		var ok bool
 		pr, ok = resp.(*kmsg.ProduceResponse)
 		if !ok {
-			return nil, fmt.Errorf("unexpected response type %T", resp)
+			return ProduceResult{err: fmt.Errorf("unexpected response type %T", resp)}
 		}
 	}
 
@@ -126,12 +129,12 @@ func (s *KafkaDirectProducer) ProduceSync(ctx context.Context, nodeID int32, par
 		s.onProduceResponse(attemptCtx, nodeID, pr, err)
 		// The hook may have slept past the attempt deadline.
 		if ctxErr := attemptCtx.Err(); ctxErr != nil {
-			return nil, ctxErr
+			return ProduceResult{err: ctxErr}
 		}
 	}
 
 	if err != nil {
-		return nil, err
+		return ProduceResult{err: err}
 	}
-	return pr, nil
+	return ProduceResult{resp: pr}
 }

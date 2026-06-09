@@ -15,7 +15,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kgo"
-	"github.com/twmb/franz-go/pkg/kmsg"
 )
 
 // recordingFlush captures every flush invocation made by a buffer. onFlush,
@@ -39,7 +38,7 @@ func newRecordingFlush() *recordingFlush {
 }
 
 func (r *recordingFlush) Func() AgentFlushFunc {
-	return func(_ context.Context, nodeID int32, partitions []routedTopicPartitionRecords) (*kmsg.ProduceResponse, error) {
+	return func(_ context.Context, nodeID int32, partitions []routedTopicPartitionRecords) ProduceResult {
 		var bare []*kgo.Record
 		for _, p := range partitions {
 			bare = append(bare, p.records...)
@@ -51,7 +50,7 @@ func (r *recordingFlush) Func() AgentFlushFunc {
 		if r.onFlush != nil {
 			err = r.onFlush(nodeID, bare)
 		}
-		return nil, err
+		return ProduceResult{err: err}
 	}
 }
 
@@ -72,10 +71,10 @@ func routedToSharedDone(nodeID int32, records []*kgo.Record, sharedDone func(err
 		firstErr error
 		fired    bool
 	)
-	fan := func(_ *kmsg.ProduceResponse, err error) {
+	fan := func(res ProduceResult) {
 		mu.Lock()
-		if err != nil && firstErr == nil {
-			firstErr = err
+		if res.err != nil && firstErr == nil {
+			firstErr = res.err
 		}
 		pending--
 		last := pending == 0 && !fired
@@ -88,12 +87,12 @@ func routedToSharedDone(nodeID int32, records []*kgo.Record, sharedDone func(err
 			sharedDone(final)
 		}
 	}
-	return routedToWithDone(nodeID, records, func(_ []*kgo.Record) func(*kmsg.ProduceResponse, error) { return fan })
+	return routedToWithDone(nodeID, records, func(_ []*kgo.Record) func(ProduceResult) { return fan })
 }
 
 // routedToWithDone groups records by (topic, partition) at nodeID; doneFor
 // mints the per-group done.
-func routedToWithDone(nodeID int32, records []*kgo.Record, doneFor func([]*kgo.Record) func(*kmsg.ProduceResponse, error)) []routedTopicPartitionRecords {
+func routedToWithDone(nodeID int32, records []*kgo.Record, doneFor func([]*kgo.Record) func(ProduceResult)) []routedTopicPartitionRecords {
 	groups := make(map[topicPartition]*routedTopicPartitionRecords)
 	var order []topicPartition
 	for _, r := range records {
@@ -355,8 +354,8 @@ func TestAgentRecordBuffer_BufferedWireBytes(t *testing.T) {
 				1,
 				time.Hour,
 				1<<30,
-				func(_ context.Context, _ int32, _ []routedTopicPartitionRecords) (*kmsg.ProduceResponse, error) {
-					return nil, nil
+				func(_ context.Context, _ int32, _ []routedTopicPartitionRecords) ProduceResult {
+					return ProduceResult{}
 				},
 				newMetrics(prometheus.NewPedanticRegistry()),
 			)
@@ -387,13 +386,13 @@ func TestAgentRecordBuffer_BufferedWireBytes_AfterEarlyFlush(t *testing.T) {
 		time.Hour,
 		// Tight cap: anything beyond ~512 bytes pushes a small batch over.
 		512,
-		func(_ context.Context, _ int32, partitions []routedTopicPartitionRecords) (*kmsg.ProduceResponse, error) {
+		func(_ context.Context, _ int32, partitions []routedTopicPartitionRecords) ProduceResult {
 			var recs []*kgo.Record
 			for _, p := range partitions {
 				recs = append(recs, p.records...)
 			}
 			flushed <- recs
-			return nil, nil
+			return ProduceResult{}
 		},
 		newMetrics(prometheus.NewPedanticRegistry()),
 	)

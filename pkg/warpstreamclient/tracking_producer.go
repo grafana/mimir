@@ -5,8 +5,6 @@ package warpstreamclient
 import (
 	"context"
 	"time"
-
-	"github.com/twmb/franz-go/pkg/kmsg"
 )
 
 // TrackingProducer is a DirectProducer decorator that records the outcome —
@@ -23,12 +21,12 @@ func NewTrackingProducer(inner DirectProducer, tracker AgentStatsTracker) *Track
 }
 
 // ProduceSync implements DirectProducer.
-func (p *TrackingProducer) ProduceSync(ctx context.Context, nodeID int32, partitions []topicPartitionRecords) (*kmsg.ProduceResponse, error) {
+func (p *TrackingProducer) ProduceSync(ctx context.Context, nodeID int32, partitions []topicPartitionRecords) ProduceResult {
 	start := time.Now()
-	resp, err := p.inner.ProduceSync(ctx, nodeID, partitions)
-	// Use produceResult.error() so the tracked error is consistent with what
+	res := p.inner.ProduceSync(ctx, nodeID, partitions)
+	// Use ProduceResult.error() so the tracked error is consistent with what
 	// the Hedger sees: per-partition response codes count as agent errors,
 	// not just transport-level failures.
-	p.tracker.TrackAgentRequest(time.Now(), nodeID, time.Since(start), produceResult{resp: resp, err: err}.error())
-	return resp, err
+	p.tracker.TrackAgentRequest(time.Now(), nodeID, time.Since(start), res.error())
+	return res
 }

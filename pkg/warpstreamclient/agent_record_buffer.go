@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/twmb/franz-go/pkg/kgo"
-	"github.com/twmb/franz-go/pkg/kmsg"
 )
 
 // errBufferClosed is returned to Add callers attempting to enqueue after Close.
@@ -22,12 +21,11 @@ var errBufferClosed = errors.New("record buffer is closed")
 // bins.
 //
 // The function is responsible only for producing the batch and returning
-// the resulting (response, error). The buffer fires each routed entry's
-// done callback uniformly with that outcome after this returns; callers
-// that resolve per-partition outcomes internally (e.g. the Hedger) must
-// make their done callbacks idempotent so the buffer's redundant fire is
-// a no-op.
-type AgentFlushFunc func(ctx context.Context, nodeID int32, partitions []routedTopicPartitionRecords) (*kmsg.ProduceResponse, error)
+// the resulting ProduceResult. The buffer fires each routed entry's done
+// callback uniformly with that outcome after this returns; callers that
+// resolve per-partition outcomes internally (e.g. the Hedger) must make
+// their done callbacks idempotent so the buffer's redundant fire is a no-op.
+type AgentFlushFunc func(ctx context.Context, nodeID int32, partitions []routedTopicPartitionRecords) ProduceResult
 
 // AgentRecordBuffer accumulates records targeted at one Warpstream agent and
 // flushes them as a single ProduceRequest on linger expiry, batch-size
@@ -111,7 +109,7 @@ func (a *AgentRecordBuffer) Add(partitions []routedTopicPartitionRecords) {
 	if a.closed {
 		a.mu.Unlock()
 		for _, p := range partitions {
-			p.done(nil, errBufferClosed)
+			p.done(ProduceResult{err: errBufferClosed})
 		}
 		return
 	}
@@ -242,9 +240,9 @@ func (a *AgentRecordBuffer) startFlushLocked() {
 	go func() {
 		defer a.flushWG.Done()
 		a.metrics.lingerFlushesTotal.Inc()
-		resp, err := a.flush(a.flushCtx, a.nodeID, partitions)
+		res := a.flush(a.flushCtx, a.nodeID, partitions)
 		for _, p := range partitions {
-			p.done(resp, err)
+			p.done(res)
 		}
 	}()
 }

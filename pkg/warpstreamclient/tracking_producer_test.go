@@ -52,8 +52,8 @@ func TestTrackingProducer_Produce(t *testing.T) {
 		tr := &recordingTracker{}
 		tp := NewTrackingProducer(inner, tr)
 
-		_, err := tp.ProduceSync(context.Background(), 7, nil)
-		require.NoError(t, err)
+		res := tp.ProduceSync(context.Background(), 7, nil)
+		require.NoError(t, res.err)
 
 		require.Len(t, tr.calls, 1)
 		assert.Equal(t, int32(7), tr.calls[0].nodeID)
@@ -68,8 +68,8 @@ func TestTrackingProducer_Produce(t *testing.T) {
 		tr := &recordingTracker{}
 		tp := NewTrackingProducer(inner, tr)
 
-		_, err := tp.ProduceSync(context.Background(), 3, nil)
-		require.ErrorIs(t, err, boom)
+		res := tp.ProduceSync(context.Background(), 3, nil)
+		require.ErrorIs(t, res.err, boom)
 
 		require.Len(t, tr.calls, 1)
 		assert.Equal(t, int32(3), tr.calls[0].nodeID)
@@ -89,8 +89,8 @@ func TestTrackingProducer_Produce(t *testing.T) {
 		tr := &recordingTracker{}
 		tp := NewTrackingProducer(inner, tr)
 
-		_, err := tp.ProduceSync(context.Background(), 5, nil)
-		require.NoError(t, err)
+		res := tp.ProduceSync(context.Background(), 5, nil)
+		require.NoError(t, res.err)
 
 		require.Len(t, tr.calls, 1)
 		assert.ErrorIs(t, tr.calls[0].err, kerr.NotLeaderForPartition)
@@ -102,8 +102,8 @@ func TestTrackingProducer_Produce(t *testing.T) {
 		inner.respFn = func(int32, []topicPartitionRecords) (*kmsg.ProduceResponse, error) { return want, nil }
 		tp := NewTrackingProducer(inner, &recordingTracker{})
 
-		got, err := tp.ProduceSync(context.Background(), 1, nil)
-		require.NoError(t, err)
-		assert.Same(t, want, got)
+		res := tp.ProduceSync(context.Background(), 1, nil)
+		require.NoError(t, res.err)
+		assert.Same(t, want, res.resp)
 	})
 }

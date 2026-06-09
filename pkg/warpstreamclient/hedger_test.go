@@ -48,10 +48,10 @@ func newResultCapture() *resultCapture {
 	return &resultCapture{results: make(map[topicPartition]hedgerResult)}
 }
 
-func (c *resultCapture) doneFor(topic string, partition int32) func(*kmsg.ProduceResponse, error) {
-	return func(resp *kmsg.ProduceResponse, err error) {
+func (c *resultCapture) doneFor(topic string, partition int32) func(ProduceResult) {
+	return func(res ProduceResult) {
 		c.mu.Lock()
-		c.results[topicPartition{topic: topic, partition: partition}] = hedgerResult{resp: resp, err: err}
+		c.results[topicPartition{topic: topic, partition: partition}] = hedgerResult(res)
 		c.mu.Unlock()
 	}
 }
@@ -67,7 +67,7 @@ func runHedger(h *Hedger, ctx context.Context, partitions []routedTopicPartition
 		return
 	}
 	primaryID := partitions[0].nodeID
-	resp, err := h.ProduceSync(ctx, primaryID, partitions)
+	res := h.ProduceSync(ctx, primaryID, partitions)
 	for _, p := range partitions {
 		if p.done == nil {
 			continue
@@ -75,15 +75,15 @@ func runHedger(h *Hedger, ctx context.Context, partitions []routedTopicPartition
 		// Mirror perPartitionDone: prefer the per-partition entry from
 		// the merged response; fall back to the top-level err only when
 		// no response is available.
-		if resp == nil {
-			p.done(resp, err)
+		if res.resp == nil {
+			p.done(res)
 			continue
 		}
-		e := partitionErrorsFromResp(resp)[topicPartition{topic: p.topic, partition: p.partition}]
+		e := partitionErrorsFromResp(res.resp)[topicPartition{topic: p.topic, partition: p.partition}]
 		if kerr.IsRetriable(e) {
 			e = fmt.Errorf("%w: %w", kgo.ErrRecordTimeout, e)
 		}
-		p.done(resp, e)
+		p.done(ProduceResult{resp: res.resp, err: e})
 	}
 }
 
@@ -180,6 +180,19 @@ func TestHedger_ProduceSync(t *testing.T) {
 		count, sum := histogramCountSum(t, m.produceRequestsAttemptsSuccess.(prometheus.Histogram))
 		assert.Equal(t, uint64(1), count)
 		assert.Equal(t, float64(1), sum)
+	})
+
+	t.Run("empty input is trivially successful", func(t *testing.T) {
+		producer := newMockDirectProducer()
+		m := newMetrics(prometheus.NewPedanticRegistry())
+		h := NewHedger(producer, healthyTracker(), stratPrimaryAndSecondary, health, cfg, 0, 1<<20, m)
+
+		// Nothing to produce must classify as success, not the empty/error
+		// sentinel (guards the non-nil empty resp returned for this case).
+		res := h.ProduceSync(context.Background(), primaryID, nil)
+		assert.True(t, res.succeeded())
+		assert.NoError(t, res.error())
+		assert.Empty(t, producer.recordedCalls())
 	})
 
 	t.Run("hedging suppressed when primary has no agent stats yet", func(t *testing.T) {
@@ -829,14 +842,14 @@ func TestHedger_ProduceSync(t *testing.T) {
 			cancel()
 		}()
 
-		_, err := h.ProduceSync(ctx, primaryID, []routedTopicPartitionRecords{{
+		err := h.ProduceSync(ctx, primaryID, []routedTopicPartitionRecords{{
 			topicPartitionRecords: topicPartitionRecords{
 				topic:     topic,
 				partition: partition,
 				records:   []*kgo.Record{{Topic: topic, Partition: partition}},
 			},
 			nodeID: primaryID,
-		}})
+		}}).error()
 		require.Error(t, err)
 		// The ctx err is chained inside the primary+fallback envelope by
 		// selectProduceResult.
@@ -905,7 +918,7 @@ func TestHedger_ProduceSync(t *testing.T) {
 				nodeID:                secondaryID,
 			},
 		}
-		_, err := h.ProduceSync(context.Background(), primaryID, req)
+		err := h.ProduceSync(context.Background(), primaryID, req).error()
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "primaryID=1")
 		assert.Empty(t, producer.recordedCalls())

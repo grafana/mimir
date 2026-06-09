@@ -14,7 +14,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kgo"
-	"github.com/twmb/franz-go/pkg/kmsg"
 )
 
 // routedToMany maps each record to its destination nodeID via routeBy and
@@ -48,10 +47,10 @@ func routedToMany(records []*kgo.Record, routeBy func(string, int32) int32, shar
 		firstErr error
 		fired    bool
 	)
-	fan := func(_ *kmsg.ProduceResponse, err error) {
+	fan := func(res ProduceResult) {
 		mu.Lock()
-		if err != nil && firstErr == nil {
-			firstErr = err
+		if res.err != nil && firstErr == nil {
+			firstErr = res.err
 		}
 		pending--
 		last := pending == 0 && !fired

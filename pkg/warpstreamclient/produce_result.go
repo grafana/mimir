@@ -17,44 +17,35 @@ import (
 const kerrNoError int16 = 0
 
 var (
-	errEmptyProduceResult = errors.New("empty produceResult: both resp and err are nil")
+	errEmptyProduceResult = errors.New("empty ProduceResult: both resp and err are nil")
 )
 
-// produceResult carries the outcome of a produce request.
-type produceResult struct {
+// ProduceResult carries the outcome of a produce request.
+type ProduceResult struct {
 	resp *kmsg.ProduceResponse
 	err  error
 }
 
-// succeeded reports whether produceResult is fully-successful. An empty
-// result (both fields nil) is not considered successful.
-func (r produceResult) succeeded() bool {
-	return r.err == nil && r.resp != nil && parseProduceResponse(r.resp) == nil
+// succeeded reports whether ProduceResult is fully-successful.
+func (r ProduceResult) succeeded() bool {
+	// error() is the single predicate: it returns nil only for a fully-successful result
+	// (an empty result is not).
+	return r.error() == nil
 }
 
 // error returns the error to surface for a failed produce result.
 // Returns nil only for a fully-successful result; an empty result (both
 // fields nil) returns errEmptyProduceResult.
-func (r produceResult) error() error {
+func (r ProduceResult) error() error {
 	// Transport-level errors win.
 	if r.err != nil {
 		return r.err
 	}
-
 	if r.resp == nil {
 		return errEmptyProduceResult
 	}
-
-	// Take the first non-zero per-partition ErrorCode in the response.
-	for _, t := range r.resp.Topics {
-		for _, p := range t.Partitions {
-			if p.ErrorCode != kerrNoError {
-				return kerr.ErrorForCode(p.ErrorCode)
-			}
-		}
-	}
-
-	return nil
+	// The first non-zero per-partition ErrorCode, if any.
+	return parseProduceResponse(r.resp)
 }
 
 // produceResultErr is the classification of a produce error.
@@ -166,7 +157,7 @@ func (a *produceResultAccumulator) remaining() []topicPartitionRecords {
 }
 
 // accumulate folds one produce attempt's outcome into the merged state.
-func (a *produceResultAccumulator) accumulate(res produceResult) {
+func (a *produceResultAccumulator) accumulate(res ProduceResult) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
@@ -230,8 +221,8 @@ func (a *produceResultAccumulator) done() (bool, error) {
 	return len(a.pending) == 0 || a.aborted, a.lastErr.err
 }
 
-// result builds the final produceResult that the caller should surface.
-func (a *produceResultAccumulator) result() produceResult {
+// result builds the final ProduceResult that the caller should surface.
+func (a *produceResultAccumulator) result() ProduceResult {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
@@ -241,20 +232,20 @@ func (a *produceResultAccumulator) result() produceResult {
 		// Every partition has a terminal entry. Per-partition codes in
 		// resp carry any per-partition errors; the leg overall succeeded
 		// enough to not need a retry-exhausted envelope.
-		return produceResult{resp: resp}
+		return ProduceResult{resp: resp}
 	}
 
 	if a.lastErr.err != nil {
 		// A leg reported an error and partitions remain pending: surface
 		// the specific kerr, wrapped in kgo.ErrRecordTimeout, because we
 		// can consider it like "response not received in time".
-		return produceResult{resp: resp, err: fmt.Errorf("%w: %w", kgo.ErrRecordTimeout, a.lastErr.err)}
+		return ProduceResult{resp: resp, err: fmt.Errorf("%w: %w", kgo.ErrRecordTimeout, a.lastErr.err)}
 	}
 
 	// Pending partitions but no failure was observed (e.g. partial
 	// response coverage with successful per-partition codes): bare
 	// retry-exhausted envelope.
-	return produceResult{resp: resp, err: kgo.ErrRecordTimeout}
+	return ProduceResult{resp: resp, err: kgo.ErrRecordTimeout}
 }
 
 // responseLocked merges every accumulated outcome into a single
@@ -312,7 +303,7 @@ func (a *produceResultAccumulator) responseLocked() *kmsg.ProduceResponse {
 }
 
 // selectProduceResult picks which produce outcome ProduceSync should surface.
-func selectProduceResult(primary, fallback produceResult) produceResult {
+func selectProduceResult(primary, fallback ProduceResult) ProduceResult {
 	if primary.succeeded() {
 		return primary
 	}
@@ -323,7 +314,7 @@ func selectProduceResult(primary, fallback produceResult) produceResult {
 		// Both transport-errored. Prefer fallback's resp: it encodes the
 		// accumulator's per-partition view (strictly richer than
 		// primary's resp once primary has failed transport-level).
-		return produceResult{
+		return ProduceResult{
 			resp: fallback.resp,
 			err:  fmt.Errorf("%w: %w", primary.err, fallback.err),
 		}

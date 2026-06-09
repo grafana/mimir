@@ -4,6 +4,7 @@ package warpstreamclient
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -13,6 +14,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
 
@@ -71,9 +73,9 @@ func TestKafkaDirectProducer_Produce(t *testing.T) {
 			Timestamp: time.Now(),
 		}}
 
-		resp, err := producer.ProduceSync(context.Background(), brokerNodeID, partitionsForTest(records))
-		require.NoError(t, err)
-		require.NoError(t, parseProduceResponse(resp))
+		res := producer.ProduceSync(context.Background(), brokerNodeID, partitionsForTest(records))
+		require.NoError(t, res.err)
+		require.NoError(t, parseProduceResponse(res.resp))
 
 		// Verify the record was actually stored by consuming it back.
 		consumer, err := kgo.NewClient(
@@ -160,9 +162,9 @@ func TestKafkaDirectProducer_Produce(t *testing.T) {
 		}, newMetrics(reg))
 
 		startedAt := time.Now()
-		_, err = producer.ProduceSync(context.Background(), brokerNodeID, partitionsForTest([]*kgo.Record{{
+		err = producer.ProduceSync(context.Background(), brokerNodeID, partitionsForTest([]*kgo.Record{{
 			Topic: topicName, Partition: partition, Value: []byte("v"), Timestamp: time.Now(),
-		}}))
+		}})).error()
 		elapsed := time.Since(startedAt)
 
 		// Verify (a) per-attempt deadline fires on the client side as
@@ -192,6 +194,78 @@ func TestKafkaDirectProducer_Produce(t *testing.T) {
 			# TYPE produce_direct_requests_failed_total counter
 			produce_direct_requests_failed_total{reason="timeout"} 1
 		`), "produce_direct_requests_total", "produce_direct_requests_failed_total"))
+	})
+
+	// A transport-OK response carrying a per-partition error code is a failure:
+	// it must increment the failed counter (by classified reason) and observe
+	// failure — not success — latency. Both the retriable and non-retriable
+	// reason routings are covered.
+	t.Run("per-partition error code with no transport error counts as a failure", func(t *testing.T) {
+		cases := map[string]struct {
+			errorCode int16
+			wantErr   *kerr.Error
+			reason    string
+		}{
+			"non-retriable code": {kerr.MessageTooLarge.Code, kerr.MessageTooLarge, "kafka_non_retriable_error"},
+			"retriable code":     {kerr.NotLeaderForPartition.Code, kerr.NotLeaderForPartition, "kafka_retriable_error"},
+		}
+		for name, tc := range cases {
+			t.Run(name, func(t *testing.T) {
+				cluster, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
+				cluster.ControlKey(int16(kmsg.Produce), func(req kmsg.Request) (kmsg.Response, error, bool) {
+					pr := req.(*kmsg.ProduceRequest)
+					resp := pr.ResponseKind().(*kmsg.ProduceResponse)
+					resp.Topics = []kmsg.ProduceResponseTopic{{
+						Topic: topicName,
+						Partitions: []kmsg.ProduceResponseTopicPartition{
+							{Partition: partition, ErrorCode: tc.errorCode},
+						},
+					}}
+					return resp, nil, true
+				})
+
+				client, err := kgo.NewClient(kgo.SeedBrokers(clusterAddr))
+				require.NoError(t, err)
+				t.Cleanup(client.Close)
+
+				metaResp, err := client.Request(context.Background(), &kmsg.MetadataRequest{
+					Topics: []kmsg.MetadataRequestTopic{{Topic: kmsg.StringPtr(topicName)}},
+				})
+				require.NoError(t, err)
+				topicID := metaResp.(*kmsg.MetadataResponse).Topics[0].TopicID
+
+				reg := prometheus.NewPedanticRegistry()
+				topicIDFn := func(n string) ([16]byte, bool) {
+					if n == topicName {
+						return topicID, true
+					}
+					return [16]byte{}, false
+				}
+				m := newMetrics(reg)
+				producer := NewKafkaDirectProducer(client, topicIDFn, 9, KafkaDirectProducerConfig{
+					ProduceRequestTimeout:         time.Second,
+					ProduceRequestTimeoutOverhead: time.Second,
+				}, m)
+
+				res := producer.ProduceSync(context.Background(), brokerNodeID, partitionsForTest([]*kgo.Record{{
+					Topic: topicName, Partition: partition, Value: []byte("v"), Timestamp: time.Now(),
+				}}))
+
+				assert.False(t, res.succeeded())
+				assert.ErrorIs(t, res.error(), tc.wantErr)
+
+				require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
+					# HELP produce_direct_requests_failed_total Total number of direct Produce requests issued to a Warpstream agent that failed, by failure reason. Each retry counts as a separate request.
+					# TYPE produce_direct_requests_failed_total counter
+					produce_direct_requests_failed_total{reason="%s"} 1
+				`, tc.reason)), "produce_direct_requests_failed_total"))
+
+				successCount, _ := histogramCountSum(t, m.produceDirectRequestLatencySuccess.(prometheus.Histogram))
+				assert.Equal(t, uint64(0), successCount)
+				failureCount, _ := histogramCountSum(t, m.produceDirectRequestLatencyFailure.WithLabelValues(tc.reason).(prometheus.Histogram))
+				assert.Equal(t, uint64(1), failureCount)
+			})
+		}
 	})
 }
 

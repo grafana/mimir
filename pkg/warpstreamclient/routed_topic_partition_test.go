@@ -20,7 +20,7 @@ func TestNewMultiRoutedTopicPartitionRecords(t *testing.T) {
 			{topic: "u", partition: 5, records: []*kgo.Record{{Topic: "u", Partition: 5}}},
 		}
 		var fired int
-		done := func(*kmsg.ProduceResponse, error) { fired++ }
+		done := func(ProduceResult) { fired++ }
 
 		out := newMultiRoutedTopicPartitionRecords(parts, 42, done)
 		require.Len(t, out, len(parts))
@@ -30,13 +30,13 @@ func TestNewMultiRoutedTopicPartitionRecords(t *testing.T) {
 			assert.Equal(t, parts[i].records, r.records)
 			assert.Equal(t, int32(42), r.nodeID)
 			require.NotNil(t, r.done)
-			r.done(nil, nil)
+			r.done(ProduceResult{})
 		}
 		assert.Equal(t, len(parts), fired)
 	})
 
 	t.Run("empty input returns empty slice", func(t *testing.T) {
-		out := newMultiRoutedTopicPartitionRecords(nil, 1, func(*kmsg.ProduceResponse, error) {})
+		out := newMultiRoutedTopicPartitionRecords(nil, 1, func(ProduceResult) {})
 		assert.Empty(t, out)
 	})
 
@@ -47,27 +47,21 @@ func TestNewMultiRoutedTopicPartitionRecords(t *testing.T) {
 		assert.Nil(t, out[0].done)
 	})
 
-	t.Run("done propagates resp and err to every entry", func(t *testing.T) {
+	t.Run("done propagates the ProduceResult to every entry", func(t *testing.T) {
 		parts := []topicPartitionRecords{
 			{topic: "t", partition: 0},
 			{topic: "t", partition: 1},
 		}
 		want := errors.New("boom")
 		resp := &kmsg.ProduceResponse{}
-		var calls []struct {
-			resp *kmsg.ProduceResponse
-			err  error
-		}
-		done := func(r *kmsg.ProduceResponse, err error) {
-			calls = append(calls, struct {
-				resp *kmsg.ProduceResponse
-				err  error
-			}{r, err})
+		var calls []ProduceResult
+		done := func(res ProduceResult) {
+			calls = append(calls, res)
 		}
 
 		out := newMultiRoutedTopicPartitionRecords(parts, 7, done)
 		for _, r := range out {
-			r.done(resp, want)
+			r.done(ProduceResult{resp: resp, err: want})
 		}
 		require.Len(t, calls, len(parts))
 		for _, c := range calls {

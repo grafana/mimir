@@ -94,7 +94,7 @@ func NewHedger(inner DirectProducer, tracker AgentStatsReader, strategy Partitio
 		cfg:      cfg,
 		metrics:  m,
 	}
-	h.hedgeBuffer = NewClusterRecordBuffer(linger, maxBatchBytes, func(ctx context.Context, nodeID int32, parts []routedTopicPartitionRecords) (*kmsg.ProduceResponse, error) {
+	h.hedgeBuffer = NewClusterRecordBuffer(linger, maxBatchBytes, func(ctx context.Context, nodeID int32, parts []routedTopicPartitionRecords) ProduceResult {
 		// Every hedge-buffer flush is one hedge wire request (possibly
 		// covering multiple partitions). The companion primary counter is
 		// incremented in ProduceSync.
@@ -113,24 +113,26 @@ func (h *Hedger) Close() {
 }
 
 // ProduceSync resolves every partition to a terminal outcome and returns a
-// single merged ProduceResponse encoding each partition's outcome.
-func (h *Hedger) ProduceSync(ctx context.Context, primaryID int32, routedPartitions []routedTopicPartitionRecords) (*kmsg.ProduceResponse, error) {
+// ProduceResult whose response merges each partition's outcome.
+func (h *Hedger) ProduceSync(ctx context.Context, primaryID int32, routedPartitions []routedTopicPartitionRecords) ProduceResult {
 	if len(routedPartitions) == 0 {
-		return &kmsg.ProduceResponse{}, nil
+		// Nothing to do is trivially successful. A bare ProduceResult{} would
+		// instead read as the empty/error sentinel via succeeded()/error().
+		return ProduceResult{resp: &kmsg.ProduceResponse{}}
 	}
 
 	// All routed partitions in one call must share primaryID — the buffer
 	// bins by destination nodeID. A mismatch is a routing bug.
 	for _, p := range routedPartitions {
 		if p.nodeID != primaryID {
-			return nil, fmt.Errorf("hedger: partition %s/%d routed to nodeID=%d but primaryID=%d", p.topic, p.partition, p.nodeID, primaryID)
+			return ProduceResult{err: fmt.Errorf("hedger: partition %s/%d routed to nodeID=%d but primaryID=%d", p.topic, p.partition, p.nodeID, primaryID)}
 		}
 	}
 
 	// observeAttempts records the attempt depth of a resolved produce call,
 	// split by outcome: 1 = resolved on the primary, N = resolved after N-1
 	// hedge waves.
-	observeAttempts := func(result produceResult, attempts int) {
+	observeAttempts := func(result ProduceResult, attempts int) {
 		if result.succeeded() {
 			h.metrics.produceRequestsAttemptsSuccess.Observe(float64(attempts))
 		} else {
@@ -157,11 +159,10 @@ func (h *Hedger) ProduceSync(ctx context.Context, primaryID int32, routedPartiti
 	// lands on primaryCh whenever the call completes; the buffered slot
 	// guarantees the goroutine doesn't block on send when ProduceSync has
 	// already moved on to the fallback path.
-	primaryCh := make(chan produceResult, 1)
+	primaryCh := make(chan ProduceResult, 1)
 	go func() {
 		h.metrics.produceRequestsPrimaryTotal.Inc()
-		resp, err := h.inner.ProduceSync(workCtx, primaryID, partitions)
-		primaryCh <- produceResult{resp: resp, err: err}
+		primaryCh <- h.inner.ProduceSync(workCtx, primaryID, partitions)
 	}()
 
 	candidates := newHedgerCandidates(h.strategy, h.cfg.MaxHedgeAgents)
@@ -174,17 +175,17 @@ func (h *Hedger) ProduceSync(ctx context.Context, primaryID int32, routedPartiti
 		case primaryResult := <-primaryCh:
 			if primaryResult.succeeded() {
 				observeAttempts(primaryResult, 1)
-				return primaryResult.resp, nil
+				return primaryResult
 			}
 
 			hedged := h.runHedgingAttempts(workCtx, primaryID, partitions, candidates)
 			result := selectProduceResult(primaryResult, hedged.result)
 			observeAttempts(result, hedged.attempts)
-			return result.resp, result.err
+			return result
 		case <-timer.C:
 			hedged := h.runHedgingAttemptsAndRaceWithPrimary(workCtx, primaryID, partitions, candidates, primaryCh)
 			observeAttempts(hedged.result, hedged.attempts)
-			return hedged.result.resp, hedged.result.err
+			return hedged.result
 		}
 	}
 
@@ -192,14 +193,14 @@ func (h *Hedger) ProduceSync(ctx context.Context, primaryID int32, routedPartiti
 	primaryResult := <-primaryCh
 	if primaryResult.succeeded() {
 		observeAttempts(primaryResult, 1)
-		return primaryResult.resp, nil
+		return primaryResult
 	}
 
 	// The primary has failed. Try secondaries.
 	hedged := h.runHedgingAttempts(workCtx, primaryID, partitions, candidates)
 	result := selectProduceResult(primaryResult, hedged.result)
 	observeAttempts(result, hedged.attempts)
-	return result.resp, result.err
+	return result
 }
 
 // runHedgingAttemptsAndRaceWithPrimary races the hedge fallback against
@@ -208,7 +209,7 @@ func (h *Hedger) ProduceSync(ctx context.Context, primaryID int32, routedPartiti
 // cancel as soon as this function returns, which unwinds the losing leg.
 // The reported attempts is the depth of the winning leg: 1 when the
 // primary wins, the fallback's own depth when the fallback wins.
-func (h *Hedger) runHedgingAttemptsAndRaceWithPrimary(workCtx context.Context, primaryID int32, partitions []topicPartitionRecords, candidates *hedgerCandidates, primaryCh <-chan produceResult) hedgerProduceResult {
+func (h *Hedger) runHedgingAttemptsAndRaceWithPrimary(workCtx context.Context, primaryID int32, partitions []topicPartitionRecords, candidates *hedgerCandidates, primaryCh <-chan ProduceResult) hedgerProduceResult {
 	fallbackCh := make(chan hedgerProduceResult, 1)
 	go func() {
 		fallbackCh <- h.runHedgingAttempts(workCtx, primaryID, partitions, candidates)
@@ -262,7 +263,7 @@ func (h *Hedger) runHedgingAttempts(workCtx context.Context, primaryID int32, pa
 		// Duplicate (topic, partition) in the input — caller (the
 		// cluster buffer) violated its bin-by-partition invariant.
 		// Surface so the bug isn't silenced.
-		out.result = produceResult{err: err}
+		out.result = ProduceResult{err: err}
 		return out
 	}
 
@@ -360,11 +361,11 @@ func (h *Hedger) runHedgingAttempt(workCtx context.Context, acc *produceResultAc
 	// legDone so each group sends at most once. The buffered capacity
 	// ensures a late legDone (e.g. fired after we returned because the
 	// batch resolved early) never blocks the deliverer.
-	results := make(chan produceResult, len(groups))
+	results := make(chan ProduceResult, len(groups))
 	for agent, parts := range groups {
 		var once sync.Once
-		legDone := func(resp *kmsg.ProduceResponse, err error) {
-			once.Do(func() { results <- produceResult{resp: resp, err: err} })
+		legDone := func(res ProduceResult) {
+			once.Do(func() { results <- res })
 		}
 		h.hedgeBuffer.Add(attemptCtx, newMultiRoutedTopicPartitionRecords(parts, agent, legDone))
 	}
@@ -448,7 +449,7 @@ func (h *Hedger) shouldHedge(now time.Time, primaryID int32, partitions []routed
 // It is the common return of the hedging functions and the payload the
 // racing variant collects its fallback leg on.
 type hedgerProduceResult struct {
-	result   produceResult
+	result   ProduceResult
 	attempts int
 }
 

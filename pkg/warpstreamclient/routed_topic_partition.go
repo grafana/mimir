@@ -4,7 +4,6 @@ package warpstreamclient
 
 import (
 	"github.com/twmb/franz-go/pkg/kgo"
-	"github.com/twmb/franz-go/pkg/kmsg"
 )
 
 // topicPartitionRecords is the bare "what to produce" data for one Kafka
@@ -35,14 +34,12 @@ func (p *topicPartitionRecords) recordValueBytes() int64 {
 // through the buffer. It is the bare topicPartitionRecords plus the routing
 // decision (nodeID + nodeState) and the per-partition completion callback.
 //
-// done fires exactly once with the partition's terminal outcome: the
-// produce attempt's full ProduceResponse plus the partition-specific error
-// extracted from it (or just an error with a nil response on transport-
-// level failure or ctx-cancel). The response is plumbed through for
-// callers that need to see the raw outcome; most callers only consume the
-// error. All records in the group share that outcome — per-record fan-out
-// is the concern of the caller that built the group (e.g.
-// WarpstreamClient.ProduceSync).
+// done fires exactly once with the partition's terminal ProduceResult: the
+// produce attempt's full ProduceResponse, or an error-only result on
+// transport-level failure or ctx-cancel. Callers that only care about the
+// error split it out via ProduceResult.error(). All records in the group
+// share that outcome — per-record fan-out is the concern of the caller that
+// built the group (e.g. WarpstreamClient.ProduceSync).
 //
 // Cross-agent retry is NOT a concern of this type: the Hedger owns the
 // "try the next agent" loop internally per call. A routed entry entering
@@ -58,7 +55,7 @@ func (p *topicPartitionRecords) recordValueBytes() int64 {
 type routedTopicPartitionRecords struct {
 	topicPartitionRecords
 
-	done   func(*kmsg.ProduceResponse, error)
+	done   func(ProduceResult)
 	nodeID int32
 
 	// nodeState mirrors the State of the Agent that nodeID was picked
@@ -72,7 +69,7 @@ type routedTopicPartitionRecords struct {
 // newMultiRoutedTopicPartitionRecords stamps each input with the same
 // routing decision (nodeID) and shared done callback. Used by callers
 // that batch multiple partitions to the same agent in one wave.
-func newMultiRoutedTopicPartitionRecords(parts []topicPartitionRecords, nodeID int32, done func(*kmsg.ProduceResponse, error)) []routedTopicPartitionRecords {
+func newMultiRoutedTopicPartitionRecords(parts []topicPartitionRecords, nodeID int32, done func(ProduceResult)) []routedTopicPartitionRecords {
 	out := make([]routedTopicPartitionRecords, len(parts))
 	for i, p := range parts {
 		out[i] = routedTopicPartitionRecords{
@@ -106,16 +103,16 @@ func unrouteTopicPartitionRecords(parts []routedTopicPartitionRecords) []topicPa
 // chainDones returns a done that invokes both a and b. Used by the buffer's
 // merge path so a merged routed entry carries every contributing caller's
 // completion. Either may be nil (no-op).
-func chainDones(a, b func(*kmsg.ProduceResponse, error)) func(*kmsg.ProduceResponse, error) {
+func chainDones(a, b func(ProduceResult)) func(ProduceResult) {
 	switch {
 	case a == nil:
 		return b
 	case b == nil:
 		return a
 	default:
-		return func(resp *kmsg.ProduceResponse, err error) {
-			a(resp, err)
-			b(resp, err)
+		return func(res ProduceResult) {
+			a(res)
+			b(res)
 		}
 	}
 }
