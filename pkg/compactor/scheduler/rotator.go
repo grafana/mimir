@@ -193,7 +193,7 @@ func (r *Rotator) LeaseJob(ctx context.Context) (*compactorschedulerpb.LeaseJobR
 }
 
 // advanceCursor atomically advances the cursor by one and returns its previous element.
-// Must be called under the read lock with a non-empty rotation.
+// Must be called while holding the lock, with a non-empty rotation.
 func (r *Rotator) advanceCursor() *list.Element {
 	for {
 		elem := r.cursor.Load()
@@ -417,14 +417,10 @@ func (r *Rotator) addToRotation(tenant string, tenantState *TenantRotationState)
 func (r *Rotator) removeFromRotation(tenantState *TenantRotationState) {
 	elem := tenantState.element
 	if r.cursor.Load() == elem {
-		next := elem.Next()
-		if next == nil {
-			next = r.rotation.Front() // wrap
+		r.advanceCursor()
+		if r.cursor.Load() == elem {
+			r.cursor.Store(nil)
 		}
-		if next == elem {
-			next = nil // removing the last remaining element
-		}
-		r.cursor.Store(next)
 	}
 	r.rotation.Remove(elem)
 	tenantState.element = nil
