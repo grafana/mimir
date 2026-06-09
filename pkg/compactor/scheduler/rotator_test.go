@@ -87,74 +87,86 @@ func newRotatorForTest() *Rotator {
 	return NewRotator(0, 0, 0, time.Minute, 0, 0, metrics.pendingJobsLastEmpty, log.NewNopLogger())
 }
 
-func seedRotation(r *Rotator, tenants ...string) map[string]*TenantRotationState {
-	states := make(map[string]*TenantRotationState, len(tenants))
-	for _, tenant := range tenants {
-		state := &TenantRotationState{}
-		r.tenantStateMap[tenant] = state
-		r.addToRotation(tenant, state)
-		states[tenant] = state
+// addTenantWithPendingJobs adds a tenant to the rotation with numJobs pending compaction jobs
+func addTenantWithPendingJobs(r *Rotator, clk clock.Clock, name string, numJobs int) {
+	metrics := newSchedulerMetrics(prometheus.NewPedanticRegistry())
+	jt := NewJobTracker(&NopJobPersister{}, name, clk, infiniteLeases, infiniteLeases, metrics.newTrackerMetricsForTenant(name), log.NewNopLogger())
+	for j := range numJobs {
+		id := fmt.Sprintf("%s-%d", name, j)
+		jt.incompleteJobs[id] = jt.pending.PushBack(
+			NewTrackedCompactionJob(id, &CompactionJob{}, uint32(j), 0, clk.Now()))
 	}
-	return states
+	r.AddTenant(name, jt)
 }
 
-func rotationOrder(r *Rotator) []string {
-	tenants := make([]string, 0, r.rotation.Len())
-	for e := r.rotation.Front(); e != nil; e = e.Next() {
-		tenants = append(tenants, e.Value.(string))
-	}
-	return tenants
+// leaseTenant leases one job and returns the tenant it was leased from.
+func leaseTenant(t *testing.T, r *Rotator) string {
+	t.Helper()
+	resp, ok, err := r.LeaseJob(context.Background())
+	require.NoError(t, err)
+	require.True(t, ok)
+	return resp.Spec.Tenant
 }
 
-func TestRotator_RemoveFromRotation_PreservesOrder(t *testing.T) {
-	r := newRotatorForTest()
-	states := seedRotation(r, "a", "b", "c", "d", "e")
-	require.Equal(t, []string{"a", "b", "c", "d", "e"}, rotationOrder(r))
+// TestRotator_RemoveTenant checks that RemoveTenant does not alter the order of the remaining tenants.
+func TestRotator_RemoveTenant(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		tenants    []string
+		leaseFirst int
+		remove     string
+		want       []string
+	}{
+		{
+			name:       "tenant the cursor already passed keeps order",
+			tenants:    []string{"a", "b", "c", "d", "e"},
+			leaseFirst: 5, // full cycle: cursor back on "a"
+			remove:     "c",
+			want:       []string{"a", "b", "d", "e", "a", "b", "d", "e"},
+		},
+		{
+			name:       "next-up middle tenant does not skip",
+			tenants:    []string{"a", "b", "c", "d", "e"},
+			leaseFirst: 2, // next up is "c"
+			remove:     "c",
+			want:       []string{"d", "e", "a", "b", "d"},
+		},
+		{
+			name:       "next-up tail tenant wraps to front",
+			tenants:    []string{"a", "b", "c"},
+			leaseFirst: 2, // next up is "c"
+			remove:     "c",
+			want:       []string{"a", "b", "a", "b"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			clk := clock.NewMock()
+			clk.Set(time.Now())
+			r := newRotatorForTest()
+			r.clock = clk
 
-	// Remove from the middle: remaining tenants keep their relative order.
-	r.removeFromRotation(states["c"])
-	require.Equal(t, []string{"a", "b", "d", "e"}, rotationOrder(r))
-	require.Nil(t, states["c"].element)
+			for _, name := range tc.tenants {
+				addTenantWithPendingJobs(r, clk, name, 10)
+			}
+			for range tc.leaseFirst {
+				leaseTenant(t, r)
+			}
 
-	// Remove the head and the tail.
-	r.removeFromRotation(states["a"])
-	require.Equal(t, []string{"b", "d", "e"}, rotationOrder(r))
-	r.removeFromRotation(states["e"])
-	require.Equal(t, []string{"b", "d"}, rotationOrder(r))
+			_, ok := r.RemoveTenant(tc.remove)
+			require.True(t, ok)
 
-	// Drain the rotation: cursor goes back to nil.
-	r.removeFromRotation(states["b"])
-	r.removeFromRotation(states["d"])
-	require.Equal(t, 0, r.rotation.Len())
-	require.Nil(t, r.cursor.Load())
-}
-
-func TestRotator_RemoveFromRotation_AdvancesCursor(t *testing.T) {
-	r := newRotatorForTest()
-	states := seedRotation(r, "a", "b", "c", "d", "e")
-
-	// Consume two slots so the cursor lands on "c".
-	require.Equal(t, "a", r.advanceCursor().Value.(string))
-	require.Equal(t, "b", r.advanceCursor().Value.(string))
-	require.Equal(t, "c", r.cursor.Load().Value.(string))
-
-	// Removing the tenant the cursor points to advances it to the next tenant, preserving order.
-	r.removeFromRotation(states["c"])
-	require.Equal(t, "d", r.cursor.Load().Value.(string))
-
-	// Round-robin continues in the original relative order.
-	var seen []string
-	for range 8 {
-		seen = append(seen, r.advanceCursor().Value.(string))
+			var seen []string
+			for range tc.want {
+				seen = append(seen, leaseTenant(t, r))
+			}
+			require.Equal(t, tc.want, seen)
+		})
 	}
-	require.Equal(t, []string{"d", "e", "a", "b", "d", "e", "a", "b"}, seen)
 }
 
 // TestRotator_LeaseJob_ConcurrentLeasersDoNotSkipPendingWork is a regression test for a bug where
-// LeaseJob's loop advanced the shared cursor on every iteration. Under contention, a concurrent
-// leaser's advances could interleave with this leaser's advances, causing it to revisit some
-// tenants and skip others — including the one with pending work. With K pending jobs and K
-// concurrent leasers, all K leasers must succeed.
+// LeaseJob's loop advanced the shared cursor on every iteration. Under contention, this could cause
+// it to skip over tenants with pending jobs.
 func TestRotator_LeaseJob_ConcurrentLeasersDoNotSkipPendingWork(t *testing.T) {
 	const (
 		numEmpties = 8
@@ -217,20 +229,6 @@ func TestRotator_LeaseJob_ConcurrentLeasersDoNotSkipPendingWork(t *testing.T) {
 		require.Equal(t, int32(leasers), successes.Load(),
 			"trial %d: every leaser must succeed because the rotation has at least %d pending jobs", trial, leasers)
 	}
-}
-
-func TestRotator_RemoveFromRotation_CursorWrapsOnTailRemoval(t *testing.T) {
-	r := newRotatorForTest()
-	states := seedRotation(r, "a", "b", "c")
-
-	// Advance cursor to the tail ("c").
-	require.Equal(t, "a", r.advanceCursor().Value.(string))
-	require.Equal(t, "b", r.advanceCursor().Value.(string))
-	require.Equal(t, "c", r.cursor.Load().Value.(string))
-
-	// Removing the tail under the cursor wraps to the front.
-	r.removeFromRotation(states["c"])
-	require.Equal(t, "a", r.cursor.Load().Value.(string))
 }
 
 func TestRotator_PendingJobsLastEmpty(t *testing.T) {
