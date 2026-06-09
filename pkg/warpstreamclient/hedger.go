@@ -430,7 +430,7 @@ func (h *Hedger) shouldHedge(now time.Time, primaryID int32, partitions []routed
 	// smallest non-zero rate is 1/N, so a single error trips any threshold
 	// finer than that. Require N >= ceil(1/FaultyThreshold) before the
 	// faulty signal is trustworthy.
-	primaryFaulty := primary.RequestCount >= errorRateMinRequests(h.health.FaultyThreshold) && primary.ErrorRate > clusterStats.FaultyThreshold
+	primaryFaulty := primary.RequestCount >= errorRateMinRequests(clusterStats) && primary.ErrorRate > clusterStats.FaultyThreshold
 
 	baseline := clusterStats.BaselineLatency
 	if !primarySlow && !primaryFaulty {

@@ -356,6 +356,76 @@ func TestAverageAgentStatsTracker_ClusterStats(t *testing.T) {
 		// FaultyFraction over all qualifying agents: 1/3.
 		assert.InDelta(t, 1.0/3.0, cluster.FaultyFraction, 1e-9)
 	})
+
+	t.Run("low cluster volume: a low-request faulty agent is still counted", func(t *testing.T) {
+		// Backpressure: every agent is under base, so the average drops below
+		// base and the gate relaxes — the faulty agent is counted even though
+		// it has only 6 requests, the case the fixed base=20 gate would miss.
+		// 5 agents total: 1 faulty (all errors, no successes) + 4 healthy. The
+		// all-errors agent still counts as observed (totalRequestsCount sums
+		// successes and failures), so the denominator is 5, not 4.
+		tr := NewAverageAgentStatsTracker()
+		seedFullWindow(tr, 1, nowNs, 0, 0, 1) // faulty: 6 errored requests, 0 successful
+		for id := int32(2); id <= 5; id++ {
+			seedFullWindow(tr, id, nowNs, 1, 10, 0) // healthy, low volume (6 requests)
+		}
+
+		cluster, ok := tr.ClusterStats(now, 2.0, 0.05)
+		require.True(t, ok)
+		assert.Equal(t, int64(6), cluster.AvgRequestsPerAgent)
+		assert.InDelta(t, 1.0/5.0, cluster.FaultyFraction, 1e-9)
+		assert.Equal(t, int64(5), cluster.FaultyContributorsCount)
+	})
+
+	t.Run("high cluster volume: a low-request faulty agent is gated out", func(t *testing.T) {
+		// Busy cluster: the average is well above base, so the gate holds at
+		// base and the low-request faulty agent is NOT counted — its sparseness
+		// is the anomaly, not a fault.
+		tr := NewAverageAgentStatsTracker()
+		seedFullWindow(tr, 1, nowNs, 0, 0, 1) // faulty but low volume (6 requests)
+		for id := int32(2); id <= 5; id++ {
+			seedFullWindow(tr, id, nowNs, 20, 10, 0) // healthy, high volume (120 requests)
+		}
+
+		cluster, ok := tr.ClusterStats(now, 2.0, 0.05)
+		require.True(t, ok)
+		assert.GreaterOrEqual(t, cluster.AvgRequestsPerAgent, int64(20))
+		assert.Equal(t, 0.0, cluster.FaultyFraction)
+		assert.Equal(t, int64(5), cluster.FaultyContributorsCount)
+	})
+
+	t.Run("idle agents are excluded from the denominator (observed, not known)", func(t *testing.T) {
+		// A known but idle agent (window aged out) must not inflate the
+		// FaultyFraction denominator: the fraction is over agents we currently
+		// have a signal for, not every agent the tracker has ever seen.
+		tr := NewAverageAgentStatsTracker()
+		past := now.Add(-30 * time.Minute)
+		seedFullWindow(tr, 99, past.UnixNano(), 20, 10, 0) // known, but aged out of the window
+		seedFullWindow(tr, 1, nowNs, 0, 0, 1)              // faulty, low volume
+		seedFullWindow(tr, 2, nowNs, 1, 10, 0)             // healthy
+		seedFullWindow(tr, 3, nowNs, 1, 10, 0)             // healthy
+
+		cluster, ok := tr.ClusterStats(now, 2.0, 0.05)
+		require.True(t, ok)
+		// 3 observed agents (id 99 contributes nothing) → 1/3, not 1/4.
+		assert.Equal(t, int64(3), cluster.FaultyContributorsCount)
+		assert.InDelta(t, 1.0/3.0, cluster.FaultyFraction, 1e-9)
+	})
+
+	t.Run("cluster-wide failure: most observed agents faulty drives the fraction high", func(t *testing.T) {
+		// When the failure is cluster-wide (2 of 3 observed agents at 100%
+		// errors under low volume), FaultyFraction must climb above the
+		// suppression floor so the demoter/hedger stand down rather than
+		// demote most of the pool onto the survivors.
+		tr := NewAverageAgentStatsTracker()
+		seedFullWindow(tr, 1, nowNs, 0, 0, 1)  // faulty
+		seedFullWindow(tr, 2, nowNs, 0, 0, 1)  // faulty
+		seedFullWindow(tr, 3, nowNs, 1, 10, 0) // healthy
+
+		cluster, ok := tr.ClusterStats(now, 2.0, 0.05)
+		require.True(t, ok)
+		assert.InDelta(t, 2.0/3.0, cluster.FaultyFraction, 1e-9)
+	})
 }
 
 // TestAverageAgentStatsTracker_Scenarios collects specific scenarios for
@@ -513,6 +583,28 @@ func BenchmarkAverageAgentStatsTracker_ClusterStats(b *testing.B) {
 			for range b.N {
 				_, _ = tr.ClusterStats(now, 2.0, 0.05)
 			}
+		})
+	}
+}
+
+func TestErrorRateMinRequests(t *testing.T) {
+	cases := map[string]struct {
+		faultyThreshold     float64
+		avgRequestsPerAgent int64
+		expected            int64
+	}{
+		"disabled when threshold is zero":               {0, 100, 0},
+		"busy cluster holds at base":                    {0.2, 10, 5},               // avg >= base(5)
+		"average exactly at base holds":                 {0.2, 5, 5},                // avg == base(5)
+		"starved cluster relaxes to minFilledBuckets":   {0.2, 3, minFilledBuckets}, // avg < base(5)
+		"starved cluster with zero average":             {0.2, 0, minFilledBuckets}, //
+		"relaxed floor never exceeds base":              {1.0, 0, 1},                // base(1) < minFilledBuckets
+		"busy cluster holds at base for high threshold": {0.5, 5, 2},                // avg >= base(2)
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			got := errorRateMinRequests(ClusterStats{FaultyThreshold: tc.faultyThreshold, AvgRequestsPerAgent: tc.avgRequestsPerAgent})
+			assert.Equal(t, tc.expected, got)
 		})
 	}
 }

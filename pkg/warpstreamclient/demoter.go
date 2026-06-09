@@ -106,7 +106,7 @@ func NewDemoter(inner PartitionAssignmentStrategy, tracker AgentStatsReader, hea
 	}, d.demotedAgentsCount)
 	promauto.With(reg).NewGaugeFunc(prometheus.GaugeOpts{
 		Name: "demoter_demotion_suppressed",
-		Help: "Whether the Demoter is currently suppressing all demotions because too many agents are faulty (1) or not (0).",
+		Help: "Whether the Demoter is currently suppressing all demotions, because too many agents are faulty or there is no cluster signal (1), or not (0).",
 	}, d.demotionSuppressedMetricValue)
 
 	return d
@@ -201,15 +201,11 @@ func (d *Demoter) Candidates(topic string, partition int32, maxCandidates int) [
 // isDemoted reports whether agent nodeID currently meets the demotion
 // criteria.
 func (d *Demoter) isDemoted(now time.Time, nodeID int32, clusterStats ClusterStats, hasClusterStats bool) bool {
-	// Cold-start (no stats) is reported as not demoted — we'd rather
-	// route fresh traffic to an unknown agent than declare the cluster
-	// unusable on first request.
-	if !hasClusterStats {
-		return false
-	}
-	// Cluster-wide guard: if too many agents are already faulty, treat
-	// this as a cluster-wide event and stop demoting.
-	if d.isDemotionSuppressed(clusterStats) {
+	// Suppression guard, which also covers cold-start (no cluster view): we'd
+	// rather route fresh traffic to an unknown agent than declare the cluster
+	// unusable, and when too many agents are already faulty, demoting more would
+	// just dump load onto the survivors.
+	if d.isDemotionSuppressed(clusterStats, hasClusterStats) {
 		return false
 	}
 	stats, ok := d.tracker.AgentStats(now, nodeID)
@@ -224,7 +220,7 @@ func (d *Demoter) isDemoted(now time.Time, nodeID int32, clusterStats ClusterSta
 	// route doesn't fall under the gate and oscillate the agent back to
 	// healthy. On confirmed recovery the probe state is cleared so the
 	// strict gate applies next time.
-	minRequests := errorRateMinRequests(d.healthCfg.FaultyThreshold)
+	minRequests := errorRateMinRequests(clusterStats)
 
 	// Read the demoted state, classify, and apply the transition under a
 	// single lock so the read and the act are atomic. Because the act flips
@@ -268,11 +264,15 @@ func (d *Demoter) isDemoted(now time.Time, nodeID int32, clusterStats ClusterSta
 	return isFaulty
 }
 
-// isDemotionSuppressed reports whether the cluster-wide guard is tripping: too
-// many agents are already faulty, so demoting any of them would just dump their
-// traffic onto the survivors. Applies the same scale-aware 1/N floor as the
-// Hedger so a single bad agent in a tiny cluster never trips the suppression.
-func (d *Demoter) isDemotionSuppressed(clusterStats ClusterStats) bool {
+// isDemotionSuppressed reports whether demotion is currently suppressed: either
+// there is no cluster view (hasClusterStats is false), or too many agents are
+// already faulty so demoting any of them would just dump their traffic onto the
+// survivors. Applies the same scale-aware 1/N floor as the Hedger so a single bad
+// agent in a tiny cluster never trips the suppression.
+func (d *Demoter) isDemotionSuppressed(clusterStats ClusterStats, hasClusterStats bool) bool {
+	if !hasClusterStats {
+		return true
+	}
 	return clusterStats.FaultyFraction > maxFractionFloor(d.healthCfg.MaxFaultyFraction, clusterStats.FaultyContributorsCount)
 }
 
@@ -282,11 +282,11 @@ func (d *Demoter) demotedAgentsCount() float64 {
 	return float64(len(d.lastDemotedProbe))
 }
 
-// demotionSuppressedMetricValue returns 1 when the cluster-wide guard is currently
-// suppressing all demotions, 0 otherwise (including cold start).
+// demotionSuppressedMetricValue returns 1 when demotion is currently suppressed —
+// the cluster-wide guard is tripping or there is no cluster signal — 0 otherwise.
 func (d *Demoter) demotionSuppressedMetricValue() float64 {
 	clusterStats, ok := d.tracker.ClusterStats(d.now(), d.healthCfg.SlowMultiplier, d.healthCfg.FaultyThreshold)
-	if ok && d.isDemotionSuppressed(clusterStats) {
+	if d.isDemotionSuppressed(clusterStats, ok) {
 		return 1
 	}
 	return 0

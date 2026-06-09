@@ -76,7 +76,7 @@ func TestDemoter_Candidates(t *testing.T) {
 			# TYPE demoter_demoted_agents gauge
 			demoter_demoted_agents 0
 
-			# HELP demoter_demotion_suppressed Whether the Demoter is currently suppressing all demotions because too many agents are faulty (1) or not (0).
+			# HELP demoter_demotion_suppressed Whether the Demoter is currently suppressing all demotions, because too many agents are faulty or there is no cluster signal (1), or not (0).
 			# TYPE demoter_demotion_suppressed gauge
 			demoter_demotion_suppressed 0
 		`)))
@@ -107,7 +107,7 @@ func TestDemoter_Candidates(t *testing.T) {
 			# TYPE demoter_demoted_agents gauge
 			demoter_demoted_agents 1
 
-			# HELP demoter_demotion_suppressed Whether the Demoter is currently suppressing all demotions because too many agents are faulty (1) or not (0).
+			# HELP demoter_demotion_suppressed Whether the Demoter is currently suppressing all demotions, because too many agents are faulty or there is no cluster signal (1), or not (0).
 			# TYPE demoter_demotion_suppressed gauge
 			demoter_demotion_suppressed 0
 		`)))
@@ -151,7 +151,7 @@ func TestDemoter_Candidates(t *testing.T) {
 			# HELP demoter_demoted_agents Number of Warpstream agents currently demoted by the Demoter.
 			# TYPE demoter_demoted_agents gauge
 			demoter_demoted_agents 1
-			# HELP demoter_demotion_suppressed Whether the Demoter is currently suppressing all demotions because too many agents are faulty (1) or not (0).
+			# HELP demoter_demotion_suppressed Whether the Demoter is currently suppressing all demotions, because too many agents are faulty or there is no cluster signal (1), or not (0).
 			# TYPE demoter_demotion_suppressed gauge
 			demoter_demotion_suppressed 0
 		`)))
@@ -184,7 +184,7 @@ func TestDemoter_Candidates(t *testing.T) {
 			# TYPE demoter_demoted_agents gauge
 			demoter_demoted_agents 0
 
-			# HELP demoter_demotion_suppressed Whether the Demoter is currently suppressing all demotions because too many agents are faulty (1) or not (0).
+			# HELP demoter_demotion_suppressed Whether the Demoter is currently suppressing all demotions, because too many agents are faulty or there is no cluster signal (1), or not (0).
 			# TYPE demoter_demotion_suppressed gauge
 			demoter_demotion_suppressed 1
 		`)))
@@ -207,7 +207,7 @@ func TestDemoter_Candidates(t *testing.T) {
 
 		// 2 of 3 faulty → suppressed.
 		require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
-			# HELP demoter_demotion_suppressed Whether the Demoter is currently suppressing all demotions because too many agents are faulty (1) or not (0).
+			# HELP demoter_demotion_suppressed Whether the Demoter is currently suppressing all demotions, because too many agents are faulty or there is no cluster signal (1), or not (0).
 			# TYPE demoter_demotion_suppressed gauge
 			demoter_demotion_suppressed 1
 		`), "demoter_demotion_suppressed"))
@@ -215,7 +215,7 @@ func TestDemoter_Candidates(t *testing.T) {
 		// extraID recovers → 1 of 3 faulty, below the floor → no longer suppressed.
 		seedFullWindow(tr, extraID, nowNs, 20, 10, 0)
 		require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
-			# HELP demoter_demotion_suppressed Whether the Demoter is currently suppressing all demotions because too many agents are faulty (1) or not (0).
+			# HELP demoter_demotion_suppressed Whether the Demoter is currently suppressing all demotions, because too many agents are faulty or there is no cluster signal (1), or not (0).
 			# TYPE demoter_demotion_suppressed gauge
 			demoter_demotion_suppressed 0
 		`), "demoter_demotion_suppressed"))
@@ -235,16 +235,78 @@ func TestDemoter_Candidates(t *testing.T) {
 		assert.Equal(t, slowID, cands[0].NodeID)
 		assert.Equal(t, AgentStateHealthy, cands[0].State)
 
-		// No cluster stats yet → suppression reads 0 (fail-open), nothing demoted.
+		// No cluster stats yet → nothing demoted, and suppression reads 1
+		// (no cluster signal).
 		require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 			# HELP demoter_demoted_agents Number of Warpstream agents currently demoted by the Demoter.
 			# TYPE demoter_demoted_agents gauge
 			demoter_demoted_agents 0
 
-			# HELP demoter_demotion_suppressed Whether the Demoter is currently suppressing all demotions because too many agents are faulty (1) or not (0).
+			# HELP demoter_demotion_suppressed Whether the Demoter is currently suppressing all demotions, because too many agents are faulty or there is no cluster signal (1), or not (0).
+			# TYPE demoter_demotion_suppressed gauge
+			demoter_demotion_suppressed 1
+		`)))
+	})
+
+	t.Run("low cluster volume: faulty agent below base requests is still demoted", func(t *testing.T) {
+		// Backpressure: every agent is well under base = ceil(1/0.05) = 20
+		// requests, so the cluster average drops below base and the adaptive
+		// gate relaxes. 1 faulty of 5 known agents (0.2) stays below the
+		// suppression floor, so the faulty agent is demoted despite its sparse
+		// traffic — which the fixed base=20 gate would never have caught.
+		tr := NewAverageAgentStatsTracker()
+		nowNs := time.Now().UnixNano()
+		seedFullWindow(tr, slowID, nowNs, 0, 0, 1) // faulty: 6 errors across 6 buckets
+		for _, id := range []int32{healthyID, extraID, 4, 5} {
+			seedFullWindow(tr, id, nowNs, 1, 10, 0) // healthy, low volume: 6 successes
+		}
+		inner := &mockPartitionAssignmentStrategy{
+			candidates: map[partitionKey][]Agent{{topic, part}: healthyAgents(slowID, healthyID)},
+		}
+		d, reg := newTestDemoter(inner, tr, health, cfg)
+		d.now = func() time.Time { return time.Now() }
+
+		cands := d.Candidates(topic, part, 2)
+		require.NotEmpty(t, cands)
+		assert.Equal(t, slowID, cands[0].NodeID)
+		assert.Equal(t, AgentStateDemoted, cands[0].State)
+
+		require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+			# HELP demoter_demoted_agents Number of Warpstream agents currently demoted by the Demoter.
+			# TYPE demoter_demoted_agents gauge
+			demoter_demoted_agents 1
+			# HELP demoter_demotion_suppressed Whether the Demoter is currently suppressing all demotions, because too many agents are faulty or there is no cluster signal (1), or not (0).
 			# TYPE demoter_demotion_suppressed gauge
 			demoter_demotion_suppressed 0
 		`)))
+	})
+
+	t.Run("high cluster volume: a low-volume faulty agent stays gated", func(t *testing.T) {
+		// Busy cluster: the average is well above base, so the gate holds at
+		// base. A faulty agent with only a handful of requests stays below base
+		// and is NOT demoted — its sparseness is the anomaly, not a fault.
+		tr := NewAverageAgentStatsTracker()
+		nowNs := time.Now().UnixNano()
+		seedFullWindow(tr, slowID, nowNs, 0, 0, 1) // faulty but low volume: 6 errors
+		for _, id := range []int32{healthyID, extraID, 4, 5} {
+			seedFullWindow(tr, id, nowNs, 20, 10, 0) // healthy, high volume
+		}
+		inner := &mockPartitionAssignmentStrategy{
+			candidates: map[partitionKey][]Agent{{topic, part}: healthyAgents(slowID, healthyID)},
+		}
+		d, reg := newTestDemoter(inner, tr, health, cfg)
+		d.now = func() time.Time { return time.Now() }
+
+		cands := d.Candidates(topic, part, 2)
+		require.NotEmpty(t, cands)
+		assert.Equal(t, slowID, cands[0].NodeID)
+		assert.Equal(t, AgentStateHealthy, cands[0].State)
+
+		require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+			# HELP demoter_demoted_agents Number of Warpstream agents currently demoted by the Demoter.
+			# TYPE demoter_demoted_agents gauge
+			demoter_demoted_agents 0
+		`), "demoter_demoted_agents"))
 	})
 
 	t.Run("demoted agent with sparse probe-only traffic stays demoted (hysteresis)", func(t *testing.T) {
@@ -339,7 +401,7 @@ func TestDemoter_Candidates(t *testing.T) {
 			# TYPE demoter_demoted_agents gauge
 			demoter_demoted_agents 1
 
-			# HELP demoter_demotion_suppressed Whether the Demoter is currently suppressing all demotions because too many agents are faulty (1) or not (0).
+			# HELP demoter_demotion_suppressed Whether the Demoter is currently suppressing all demotions, because too many agents are faulty or there is no cluster signal (1), or not (0).
 			# TYPE demoter_demotion_suppressed gauge
 			demoter_demotion_suppressed 0
 		`)))
@@ -358,7 +420,7 @@ func TestDemoter_Candidates(t *testing.T) {
 			# TYPE demoter_demoted_agents gauge
 			demoter_demoted_agents 0
 
-			# HELP demoter_demotion_suppressed Whether the Demoter is currently suppressing all demotions because too many agents are faulty (1) or not (0).
+			# HELP demoter_demotion_suppressed Whether the Demoter is currently suppressing all demotions, because too many agents are faulty or there is no cluster signal (1), or not (0).
 			# TYPE demoter_demotion_suppressed gauge
 			demoter_demotion_suppressed 0
 		`)))

@@ -29,13 +29,11 @@ import (
 //
 // There is no fixed minimum request count: low-throughput agents are
 // admitted as long as their requests are spread across enough buckets.
-// For the cluster error-rate signal a request-count floor is derived
-// per-call from the FaultyThreshold passed to ClusterStats (see
-// errorRateMinRequests): the smallest non-zero observable error rate is
-// 1/N, so we suppress noise from low-N agents only when it could pretend
-// to be above the configured threshold. AgentStats itself reports the
-// raw ErrorRate plus a RequestCount so the caller can apply the same
-// gate against its own threshold.
+// The error-rate signal instead gets a volume-adaptive request-count floor
+// derived per-call from the FaultyThreshold and the observed cluster volume
+// (see errorRateMinRequests). AgentStats itself reports the raw ErrorRate
+// plus a RequestCount so the caller can apply the same gate against its own
+// threshold.
 const (
 	numStatsBuckets  = 6
 	bucketDuration   = 10 * time.Second
@@ -43,14 +41,18 @@ const (
 
 	// minFilledBuckets is the number of distinct time buckets that must
 	// hold at least one request before an agent's stats are considered
-	// representative. With 6 buckets of 10s, requiring 3 means requests
-	// must cover at least 30 seconds of wall-clock activity.
+	// representative. With 6 buckets of 10s, requiring 2 means requests
+	// must cover at least 20 seconds of wall-clock activity. It is kept low
+	// so that an agent is still observable under backpressure (where each
+	// client sees only a handful of requests per agent per window).
 	//
 	// The same gate is used for AgentStats (per-agent decisions) and for
 	// admitting an agent to the cluster baseline computation: an agent
 	// that contributes to the baseline is one whose own stats are also
-	// available.
-	minFilledBuckets = 3
+	// available. It also doubles as the low-volume sample floor in
+	// errorRateMinRequests: an agent that qualifies here has at least this
+	// many requests, so the relaxed gate is always satisfiable.
+	minFilledBuckets = 2
 )
 
 // AgentStatsReader is the read-only subset of AgentStatsTracker. Components
@@ -138,13 +140,15 @@ type ClusterStats struct {
 	// FaultyThreshold is the error rate above which an agent is considered faulty.
 	FaultyThreshold float64
 
+	// AvgRequestsPerAgent is the average request count across observed agents
+	// (agents with at least one request in the window).
+	AvgRequestsPerAgent int64
+
 	// FaultyFraction is the fraction of agents whose error rate exceeds FaultyThreshold.
 	FaultyFraction float64
 
-	// FaultyContributorsCount is the number of agents that contributed to
-	// FaultyFraction (i.e. agents whose request count is large enough for
-	// the error rate to be statistically meaningful). Lets the caller scale
-	// fraction-based decisions to cluster size.
+	// FaultyContributorsCount is the denominator of FaultyFraction. Lets the
+	// caller scale fraction-based decisions to cluster size.
 	FaultyContributorsCount int64
 }
 
@@ -219,42 +223,36 @@ func (t *AverageAgentStatsTracker) AgentStats(now time.Time, nodeID int32) (Agen
 	return snap.toAgentStats(), true
 }
 
-// ClusterStats walks every agent and aggregates the cluster-wide view in
-// two passes: the first computes the baseline latency and the (request-
-// weighted) baseline error rate; the second counts agents above the slow
-// and faulty thresholds. Returns false when there is no quorum of
-// qualifying agents.
+// ClusterStats walks every agent and aggregates the cluster-wide view,
+// returning false when there is no quorum of qualifying agents.
 //
-// SlowFraction is the fraction of agents (with at least one successful
-// request, since latency is undefined otherwise) whose latency exceeds
-// the slow threshold. FaultyFraction excludes agents whose request count
-// is too small to distinguish their error rate from 1/N quantisation
-// (totalCount < ceil(1/faultyThreshold)) from both numerator and
-// denominator, so a cluster of low-throughput agents reports zero
-// (no signal) instead of a noisy ratio.
+// slowMultiplier sets the slow threshold relative to the baseline latency: an
+// agent is slow when its latency exceeds baseline*slowMultiplier. faultyThreshold
+// is the error rate above which an agent is counted faulty. The meaning of each
+// result field is documented on ClusterStats.
 func (t *AverageAgentStatsTracker) ClusterStats(now time.Time, slowMultiplier, faultyThreshold float64) (ClusterStats, bool) {
 	t.statsMu.RLock()
 	defer t.statsMu.RUnlock()
 
-	// Agents below this request count have an error rate too coarse to
-	// reliably distinguish from the threshold (smallest non-zero rate
-	// would already exceed it). They are excluded from the FaultyFraction
-	// numerator AND denominator so a cluster of low-throughput agents
-	// reports 0 (no signal) rather than a noisy ratio.
-	minErrorRateRequests := errorRateMinRequests(faultyThreshold)
+	// Per-qualified-agent error stats, collected so the faulty count can be
+	// deferred until AvgRequestsPerAgent is known (it drives the adaptive
+	// per-agent sample gate in errorRateMinRequests).
+	type agentErrorStat struct{ requests, faulty int64 }
 
 	var (
 		nowNs = now.UnixNano()
 
 		// Per-agent latencies for agents with at least one successful
-		// request — the only data the second pass needs to count slow
-		// agents. Agents without a successful request are simply not
-		// appended.
+		// request — the only data needed to count slow agents. Agents
+		// without a successful request are simply not appended.
 		agentAverageLatenciesMs = make([]int64, 0, len(t.stats))
 
 		// Agents count.
 		observedAgentsCount  int64 // agents with any request in the window
 		qualifiedAgentsCount int64 // agents that also pass the filled-buckets gate
+
+		// Volume aggregation (drives the adaptive error-rate gate).
+		observedAgentsTotalRequestsCount int64
 
 		// Latency aggregation.
 		qualifiedAgentsLatencySumMs int64 // sum of per-agent average latencies
@@ -262,10 +260,7 @@ func (t *AverageAgentStatsTracker) ClusterStats(now time.Time, slowMultiplier, f
 		// Error-rate aggregation.
 		qualifiedAgentsTotalRequestsCount       int64
 		qualifiedAgentsTotalFaultyRequestsCount int64
-
-		// Faulty-fraction counters.
-		faultyAgentsCount       int64
-		faultyContributorsCount int64
+		qualifiedAgentErrorStats                = make([]agentErrorStat, 0, len(t.stats))
 	)
 
 	for _, s := range t.stats {
@@ -277,6 +272,7 @@ func (t *AverageAgentStatsTracker) ClusterStats(now time.Time, slowMultiplier, f
 		}
 
 		observedAgentsCount++
+		observedAgentsTotalRequestsCount += agentRequestsCount
 
 		// Same bucket-spread gate as AgentStats: agents with requests
 		// concentrated in fewer time buckets aren't representative
@@ -288,20 +284,12 @@ func (t *AverageAgentStatsTracker) ClusterStats(now time.Time, slowMultiplier, f
 		qualifiedAgentsCount++
 		qualifiedAgentsTotalRequestsCount += agentRequestsCount
 		qualifiedAgentsTotalFaultyRequestsCount += snap.faultyRequestsCount
+		qualifiedAgentErrorStats = append(qualifiedAgentErrorStats, agentErrorStat{requests: agentRequestsCount, faulty: snap.faultyRequestsCount})
 
 		if snap.successfulRequestsLatencyCount > 0 {
 			agentAverageLatencyMs := snap.successfulRequestsLatencySumMs / snap.successfulRequestsLatencyCount
 			qualifiedAgentsLatencySumMs += agentAverageLatencyMs
 			agentAverageLatenciesMs = append(agentAverageLatenciesMs, agentAverageLatencyMs)
-		}
-
-		// An agent qualifies to be a contributor to faulty agents fraction only
-		// if we have tracked enough requests to be statistically significant.
-		if agentRequestsCount >= minErrorRateRequests {
-			faultyContributorsCount++
-			if float64(snap.faultyRequestsCount)/float64(agentRequestsCount) > faultyThreshold {
-				faultyAgentsCount++
-			}
 		}
 	}
 
@@ -332,7 +320,21 @@ func (t *AverageAgentStatsTracker) ClusterStats(now time.Time, slowMultiplier, f
 		baselineErrorRate = float64(qualifiedAgentsTotalFaultyRequestsCount) / float64(qualifiedAgentsTotalRequestsCount)
 	}
 
-	// Compute slow and faulty agent fractions.
+	// Faulty agents are qualified agents whose error rate exceeds the
+	// threshold, gated by the volume-adaptive minimum request count.
+	avgRequestsPerAgent := observedAgentsTotalRequestsCount / observedAgentsCount
+	minErrorRateRequests := errorRateMinRequests(ClusterStats{FaultyThreshold: faultyThreshold, AvgRequestsPerAgent: avgRequestsPerAgent})
+	var faultyAgentsCount int64
+	for _, a := range qualifiedAgentErrorStats {
+		if a.requests >= minErrorRateRequests && float64(a.faulty)/float64(a.requests) > faultyThreshold {
+			faultyAgentsCount++
+		}
+	}
+
+	// SlowFraction is over agents with a measurable latency; FaultyFraction's
+	// denominator is the observed agents (those with at least one request), so
+	// it reflects the agents we currently have a health signal for rather than
+	// treating idle or unknown agents as healthy.
 	var slowFraction, faultyFraction float64
 	if len(agentAverageLatenciesMs) > 0 {
 		var slowAgentsCount int64
@@ -343,8 +345,8 @@ func (t *AverageAgentStatsTracker) ClusterStats(now time.Time, slowMultiplier, f
 		}
 		slowFraction = float64(slowAgentsCount) / float64(len(agentAverageLatenciesMs))
 	}
-	if faultyContributorsCount > 0 {
-		faultyFraction = float64(faultyAgentsCount) / float64(faultyContributorsCount)
+	if observedAgentsCount > 0 {
+		faultyFraction = float64(faultyAgentsCount) / float64(observedAgentsCount)
 	}
 
 	return ClusterStats{
@@ -354,8 +356,9 @@ func (t *AverageAgentStatsTracker) ClusterStats(now time.Time, slowMultiplier, f
 		SlowContributorsCount:   int64(len(agentAverageLatenciesMs)),
 		BaselineErrorRate:       baselineErrorRate,
 		FaultyThreshold:         faultyThreshold,
+		AvgRequestsPerAgent:     avgRequestsPerAgent,
 		FaultyFraction:          faultyFraction,
-		FaultyContributorsCount: faultyContributorsCount,
+		FaultyContributorsCount: observedAgentsCount,
 	}, true
 }
 
@@ -466,19 +469,32 @@ func bucketIndex(nowNs int64) int64 {
 	return idx
 }
 
-// errorRateMinRequests returns the minimum totalCount required for an
-// observed error rate to be reliably distinguishable from
-// faultyThreshold. Below this, the smallest non-zero rate (1/N) is
-// itself >= the threshold, so any single error would trip — too noisy
-// to act on. faultyThreshold <= 0 disables the gate (any observation
-// counts).
-func errorRateMinRequests(faultyThreshold float64) int64 {
-	if faultyThreshold <= 0 {
+// errorRateMinRequests returns the minimum request count an agent must have
+// before its observed error rate may be acted upon, adapted to how much traffic
+// the cluster is actually seeing.
+func errorRateMinRequests(stats ClusterStats) int64 {
+	if stats.FaultyThreshold <= 0 {
 		return 0
 	}
-	n := int64(math.Ceil(1.0 / faultyThreshold))
-	if n < 1 {
-		return 1
+	// base is the smallest count at which the coarsest non-zero error rate
+	// (1/base) no longer exceeds the threshold on its own. Requiring it stops
+	// one or two fluke errors on a barely-used agent from faking a high rate
+	// and causing a false demotion.
+	base := int64(math.Ceil(1.0 / stats.FaultyThreshold))
+	if base < 1 {
+		base = 1
 	}
-	return n
+	// When the cluster is busy, the typical agent easily exceeds base, so we
+	// hold every agent to base — a genuinely low-volume agent is itself the
+	// anomaly and shouldn't be judged on sparse data.
+	if stats.AvgRequestsPerAgent >= base {
+		return base
+	}
+	// When the whole cluster is starved (backpressure), no agent can reach
+	// base, so enforcing it would disable demotion for everyone. Relax to the
+	// bar an agent already cleared to enter the cluster view (minFilledBuckets
+	// requests, one per filled bucket), never above base. This trades some
+	// precision for the ability to act at all; a fluke demotion is corrected by
+	// the recovery probe within one ProbeInterval.
+	return min(base, int64(minFilledBuckets))
 }
