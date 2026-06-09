@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Partitions Ring Status</title>
+</head>
+<body>
+    <h1>Partitions Ring Status</h1>
+    <ul>
+    {{ range .CompartmentIDs }}
+        <li><a href="partition-ring/compartment-{{ . }}">Compartment {{ . }}</a></li>
+    {{ end }}
+    </ul>
+</body>
+</html>

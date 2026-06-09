@@ -409,6 +409,7 @@ func (t *Mimir) initIngesterPartitionRings() (services.Service, error) {
 	}
 
 	numCompartments := t.Cfg.IngestStorage.Compartments.NumCompartments
+	t.API.RegisterIngesterPartitionRingsIndex(numCompartments)
 	t.IngesterPartitionRingWatchers = make([]*ring.PartitionRingWatcher, numCompartments)
 	allWatchers := make([]services.Service, 0, numCompartments)
 	for c := 0; c < numCompartments; c++ {

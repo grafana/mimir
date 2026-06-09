@@ -421,11 +421,16 @@ func (a *API) RegisterIngesterPartitionRing(r http.Handler) {
 	a.RegisterRoute("/ingester/partition-ring", r, false, true, "GET", "POST")
 }
 
+// RegisterIngesterPartitionRingsIndex registers a page listing all per-compartment partition rings.
+func (a *API) RegisterIngesterPartitionRingsIndex(numCompartments int) {
+	a.indexPage.AddLinks(defaultWeight, "Ingester", []IndexPageLink{
+		{Desc: "Partition ring status", Path: "ingester/partition-ring"},
+	})
+	a.RegisterRoute("/ingester/partition-ring", newIngesterPartitionRingIndexHandler(numCompartments), false, true, "GET")
+}
+
 func (a *API) RegisterIngesterPartitionRingForCompartment(r http.Handler, compartmentID int) {
 	path := fmt.Sprintf("ingester/partition-ring/compartment-%d", compartmentID)
-	a.indexPage.AddLinks(defaultWeight, "Ingester", []IndexPageLink{
-		{Desc: fmt.Sprintf("Partition ring status (compartment %d)", compartmentID), Path: path},
-	})
 	a.RegisterRoute("/"+path, r, false, true, "GET", "POST")
 }
 
