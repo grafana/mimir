@@ -82,8 +82,8 @@ require (
 	github.com/xlab/treeprint v1.2.0
 	go.etcd.io/bbolt v1.4.3
 	go.opentelemetry.io/collector/pdata v1.59.0
-	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.68.0
-	go.opentelemetry.io/contrib/propagators/jaeger v1.43.0
+	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.69.0
+	go.opentelemetry.io/contrib/propagators/jaeger v1.44.0
 	go.opentelemetry.io/otel v1.44.0
 	go.opentelemetry.io/otel/sdk v1.44.0
 	go.opentelemetry.io/otel/trace v1.44.0
