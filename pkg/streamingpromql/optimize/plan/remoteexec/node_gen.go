@@ -24,10 +24,9 @@ func (r *RemoteExecutionConsumer) SetChildren(children []planning.Node) error {
 	if len(children) != 1 {
 		return fmt.Errorf("node of type RemoteExecutionConsumer expects one child, but got %d", len(children))
 	}
-
 	child0, ok := children[0].(*RemoteExecutionGroup)
 	if !ok {
-		return fmt.Errorf("node of type RemoteExecutionConsumer expects child 0 to be of type *RemoteExecutionGroup, but got %T", children[0])
+		return fmt.Errorf("node of type RemoteExecutionConsumer expects child Group to be of type *RemoteExecutionGroup, but got %T", children[0])
 	}
 	r.Group = child0
 	return nil

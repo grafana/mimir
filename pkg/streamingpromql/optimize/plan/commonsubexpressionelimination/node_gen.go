@@ -24,7 +24,6 @@ func (d *Duplicate) SetChildren(children []planning.Node) error {
 	if len(children) != 1 {
 		return fmt.Errorf("node of type Duplicate expects one child, but got %d", len(children))
 	}
-
 	d.Inner = children[0]
 	return nil
 }
@@ -44,10 +43,9 @@ func (d *DuplicateFilter) SetChildren(children []planning.Node) error {
 	if len(children) != 1 {
 		return fmt.Errorf("node of type DuplicateFilter expects one child, but got %d", len(children))
 	}
-
 	child0, ok := children[0].(*Duplicate)
 	if !ok {
-		return fmt.Errorf("node of type DuplicateFilter expects child 0 to be of type *Duplicate, but got %T", children[0])
+		return fmt.Errorf("node of type DuplicateFilter expects child Inner to be of type *Duplicate, but got %T", children[0])
 	}
 	d.Inner = child0
 	return nil

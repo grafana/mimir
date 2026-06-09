@@ -63,7 +63,6 @@ func (b *BinaryExpression) SetChildren(children []planning.Node) error {
 	if len(children) != 2 {
 		return fmt.Errorf("node of type BinaryExpression expects 2 children, but got %d", len(children))
 	}
-
 	b.LHS = children[0]
 	b.RHS = children[1]
 	return nil
@@ -99,7 +98,6 @@ func (d *DeduplicateAndMerge) SetChildren(children []planning.Node) error {
 	if len(children) != 1 {
 		return fmt.Errorf("node of type DeduplicateAndMerge expects one child, but got %d", len(children))
 	}
-
 	d.Inner = children[0]
 	return nil
 }
@@ -119,7 +117,6 @@ func (d *DropName) SetChildren(children []planning.Node) error {
 	if len(children) != 1 {
 		return fmt.Errorf("node of type DropName expects one child, but got %d", len(children))
 	}
-
 	d.Inner = children[0]
 	return nil
 }
@@ -200,7 +197,6 @@ func (s *StepInvariantExpression) SetChildren(children []planning.Node) error {
 	if len(children) != 1 {
 		return fmt.Errorf("node of type StepInvariantExpression expects one child, but got %d", len(children))
 	}
-
 	s.Inner = children[0]
 	return nil
 }
@@ -235,7 +231,6 @@ func (s *Subquery) SetChildren(children []planning.Node) error {
 	if len(children) != 1 {
 		return fmt.Errorf("node of type Subquery expects one child, but got %d", len(children))
 	}
-
 	s.Inner = children[0]
 	return nil
 }
@@ -255,7 +250,6 @@ func (u *UnaryExpression) SetChildren(children []planning.Node) error {
 	if len(children) != 1 {
 		return fmt.Errorf("node of type UnaryExpression expects one child, but got %d", len(children))
 	}
-
 	u.Inner = children[0]
 	return nil
 }

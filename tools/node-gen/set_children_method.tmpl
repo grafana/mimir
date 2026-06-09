@@ -26,11 +26,11 @@ func ({{.Receiver}} *{{.Type}}) SetChildren(children []planning.Node) error {
 	if len(children) != {{len .ChildFields}} {
 		return fmt.Errorf("node of type {{.Type}} expects {{if eq (len .ChildFields) 1}}one child{{else}}{{len .ChildFields}} children{{end}}, but got %d", len(children))
 	}
-	{{range $i, $f := .ChildFields}}
+	{{- range $i, $f := .ChildFields}}
 	{{- if ne $f.Type "planning.Node"}}
 	child{{$i}}, ok := children[{{$i}}].({{$f.Type}})
 	if !ok {
-		return fmt.Errorf("node of type {{$.Type}} expects child {{$i}} to be of type {{$f.Type}}, but got %T", children[{{$i}}])
+		return fmt.Errorf("node of type {{$.Type}} expects child {{$f.Name}} to be of type {{$f.Type}}, but got %T", children[{{$i}}])
 	}
 	{{$.Receiver}}.{{$f.Name}} = child{{$i}}
 	{{- else}}
@@ -49,7 +49,7 @@ func ({{.Receiver}} *{{.Type}}) SetChildren(children []planning.Node) error {
 	{{- if ne $f.Type "planning.Node"}}
 		child{{$i}}, ok := children[{{$i}}].({{$f.Type}})
 		if !ok {
-			return fmt.Errorf("node of type {{$.Type}} expects child {{$i}} to be of type {{$f.Type}}, but got %T", children[{{$i}}])
+			return fmt.Errorf("node of type {{$.Type}} expects child {{$f.Name}} to be of type {{$f.Type}}, but got %T", children[{{$i}}])
 		}
 		{{$.Receiver}}.{{$f.Name}} = child{{$i}}
 	{{- else}}
@@ -62,7 +62,7 @@ func ({{.Receiver}} *{{.Type}}) SetChildren(children []planning.Node) error {
 	{{- if ne $f.Type "planning.Node"}}
 		child{{$i}}, ok := children[{{$i}}].({{$f.Type}})
 		if !ok {
-			return fmt.Errorf("node of type {{$.Type}} expects child {{$i}} to be of type {{$f.Type}}, but got %T", children[{{$i}}])
+			return fmt.Errorf("node of type {{$.Type}} expects child {{$f.Name}} to be of type {{$f.Type}}, but got %T", children[{{$i}}])
 		}
 		{{$.Receiver}}.{{$f.Name}} = child{{$i}}
 	{{- else}}

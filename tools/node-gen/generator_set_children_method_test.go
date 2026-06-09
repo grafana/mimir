@@ -37,7 +37,6 @@ func TestSetChildrenMethod(t *testing.T) {
 						 if len(children) != 1 {
 							 return fmt.Errorf("node of type Subquery expects one child, but got %d", len(children))
 						 }
-
 						 s.Inner = children[0]
 						 return nil
 					   }`,
@@ -54,10 +53,9 @@ func TestSetChildrenMethod(t *testing.T) {
 						 if len(children) != 1 {
 							 return fmt.Errorf("node of type Subquery expects one child, but got %d", len(children))
 						 }
-
 						 child0, ok := children[0].(*core.FunctionCall)
   						 if !ok {
-							return fmt.Errorf("node of type Subquery expects child 0 to be of type *core.FunctionCall, but got %T", children[0])
+							return fmt.Errorf("node of type Subquery expects child Inner to be of type *core.FunctionCall, but got %T", children[0])
                          }
 	                     s.Inner = child0
 						 return nil
@@ -95,7 +93,6 @@ func TestSetChildrenMethod(t *testing.T) {
 					  	if len(children) != 2 {
 					  		return fmt.Errorf("node of type BinaryExpression expects 2 children, but got %d", len(children))
 					  	}
-
 					  	b.LHS = children[0]
 					  	b.RHS = children[1]
 					  	return nil
@@ -183,10 +180,9 @@ func TestSetChildrenMethod(t *testing.T) {
 					  	if len(children) != 1 {
 					  		return fmt.Errorf("node of type RemoteExecutionConsumer expects one child, but got %d", len(children))
 					  	}
-
 					  	child0, ok := children[0].(*RemoteExecutionGroup)
 					  	if !ok {
-					  		return fmt.Errorf("node of type RemoteExecutionConsumer expects child 0 to be of type *RemoteExecutionGroup, but got %T", children[0])
+					  		return fmt.Errorf("node of type RemoteExecutionConsumer expects child Group to be of type *RemoteExecutionGroup, but got %T", children[0])
 					  	}
 					  	r.Group = child0
 					  	return nil
@@ -210,7 +206,7 @@ func TestSetChildrenMethod(t *testing.T) {
 					  		w.Inner = children[0]
 					  		child1, ok := children[1].(*Foo)
 					  		if !ok {
-					  			return fmt.Errorf("node of type Wrapper expects child 1 to be of type *Foo, but got %T", children[1])
+					  			return fmt.Errorf("node of type Wrapper expects child Opt to be of type *Foo, but got %T", children[1])
 					  		}
 					  		w.Opt = child1
 					  	default:
