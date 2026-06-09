@@ -36,7 +36,10 @@ import (
 func readcacheTestDistributor(t *testing.T, now time.Time, partitions []int32, ownerFor func(int32) (string, bool)) *Distributor {
 	t.Helper()
 
-	d := &Distributor{now: func() time.Time { return now }}
+	d := &Distributor{
+		now:    func() time.Time { return now },
+		limits: validation.NewOverrides(validation.Limits{}, nil),
+	}
 
 	al := assignment.NewLog()
 	require.True(t, al.Apply(now, assignment.EvenSplit(partitions), 5*time.Minute, time.Minute))
@@ -65,6 +68,11 @@ func TestDistributor_GetReadcacheReplicationSetsForQuery(t *testing.T) {
 	const userID = "user-1"
 	partitions := []int32{0, 1, 2, 3}
 
+	// Query just after now so the padded wall-clock window overlaps the
+	// leases the helper seeds at now (Apply creates [now, now+lease)).
+	from := model.TimeFromUnixNano(now.UnixNano())
+	to := model.TimeFromUnixNano(now.Add(time.Minute).UnixNano())
+
 	// N:1 ownership: rc-a owns even partitions, rc-b owns odd ones.
 	ownerFor := func(p int32) (string, bool) {
 		if p%2 == 0 {
@@ -77,7 +85,7 @@ func TestDistributor_GetReadcacheReplicationSetsForQuery(t *testing.T) {
 		d := readcacheTestDistributor(t, now, partitions, ownerFor)
 
 		// No exact __name__ matcher -> fan out to all partitions.
-		sets, partitionByInstance, err := d.getReadcacheReplicationSetsForQuery(userID, []*labels.Matcher{mustEqualMatcher("bar", "baz")})
+		sets, partitionByInstance, err := d.getReadcacheReplicationSetsForQuery(userID, from, to, []*labels.Matcher{mustEqualMatcher("bar", "baz")})
 		require.NoError(t, err)
 		require.Len(t, sets, len(partitions))
 		require.Len(t, partitionByInstance, len(partitions))
@@ -104,7 +112,7 @@ func TestDistributor_GetReadcacheReplicationSetsForQuery(t *testing.T) {
 		d := readcacheTestDistributor(t, now, partitions, ownerFor)
 
 		nameMatcher := mustEqualMatcher(model.MetricNameLabel, "some_metric")
-		sets, partitionByInstance, err := d.getReadcacheReplicationSetsForQuery(userID, []*labels.Matcher{nameMatcher})
+		sets, partitionByInstance, err := d.getReadcacheReplicationSetsForQuery(userID, from, to, []*labels.Matcher{nameMatcher})
 		require.NoError(t, err)
 		require.NotEmpty(t, sets)
 
@@ -129,7 +137,7 @@ func TestDistributor_GetReadcacheReplicationSetsForQuery(t *testing.T) {
 
 	t.Run("missing assignment log is a hard failure with no ingester fallback", func(t *testing.T) {
 		d := &Distributor{now: func() time.Time { return now }}
-		_, _, err := d.getReadcacheReplicationSetsForQuery(userID, []*labels.Matcher{mustEqualMatcher("bar", "baz")})
+		_, _, err := d.getReadcacheReplicationSetsForQuery(userID, from, to, []*labels.Matcher{mustEqualMatcher("bar", "baz")})
 		require.Error(t, err)
 		var rcErr errReadcacheRoutingUnavailable
 		assert.True(t, errors.As(err, &rcErr), "want errReadcacheRoutingUnavailable, got %T", err)
@@ -141,7 +149,7 @@ func TestDistributor_GetReadcacheReplicationSetsForQuery(t *testing.T) {
 		require.True(t, al.Apply(now, assignment.EvenSplit(partitions), 5*time.Minute, time.Minute))
 		d.nautilusLog.Store(al)
 
-		_, _, err := d.getReadcacheReplicationSetsForQuery(userID, []*labels.Matcher{mustEqualMatcher("bar", "baz")})
+		_, _, err := d.getReadcacheReplicationSetsForQuery(userID, from, to, []*labels.Matcher{mustEqualMatcher("bar", "baz")})
 		require.Error(t, err)
 		var rcErr errReadcacheRoutingUnavailable
 		assert.True(t, errors.As(err, &rcErr))
@@ -156,10 +164,80 @@ func TestDistributor_GetReadcacheReplicationSetsForQuery(t *testing.T) {
 			return "rc-a", true
 		})
 
-		_, _, err := d.getReadcacheReplicationSetsForQuery(userID, []*labels.Matcher{mustEqualMatcher("bar", "baz")})
+		_, _, err := d.getReadcacheReplicationSetsForQuery(userID, from, to, []*labels.Matcher{mustEqualMatcher("bar", "baz")})
 		require.Error(t, err)
 		var rcErr errReadcacheRoutingUnavailable
 		assert.True(t, errors.As(err, &rcErr))
+	})
+}
+
+// TestDistributor_GetReadcacheReplicationSetsForQuery_Interval proves
+// the interval-aware behaviour: a hash range that moved between
+// partitions (P0 -> P1 at now-1h) fans out to BOTH partitions for a
+// query whose window spans the move, to just the current owner for a
+// narrow recent query, and is bounded by query-ingesters-within.
+func TestDistributor_GetReadcacheReplicationSetsForQuery_Interval(t *testing.T) {
+	now := time.Date(2026, 6, 8, 12, 0, 0, 0, time.UTC)
+	const userID = "user-1"
+
+	full := assignment.HashRange{Lo: 0, Hi: 4294967295}
+	mt := func(at time.Time) model.Time { return model.TimeFromUnixNano(at.UnixNano()) }
+
+	// Build a Distributor whose range->partition log records a move of
+	// the whole keyspace from P0 to P1 at now-1h, plus a readcache log
+	// where both partitions still have a current owner at `now`.
+	build := func(qiw time.Duration) *Distributor {
+		d := &Distributor{
+			now: func() time.Time { return now },
+			limits: validation.NewOverrides(validation.Limits{
+				QueryIngestersWithin: model.Duration(qiw),
+			}, nil),
+		}
+		d.nautilusLog.Store(assignment.NewLogFromEntries([]assignment.LogEntry{
+			{Range: full, PartitionID: 0, From: now.Add(-2 * time.Hour), To: now.Add(-time.Hour)},
+			{Range: full, PartitionID: 1, From: now.Add(-time.Hour), To: now.Add(5 * time.Minute)},
+		}))
+		d.readcacheLog.Store(readcacheassignment.NewLogFromEntries([]readcacheassignment.LogEntry{
+			{PartitionID: 0, InstanceID: "rc-a", From: now.Add(-2 * time.Hour), To: now.Add(5 * time.Minute)},
+			{PartitionID: 1, InstanceID: "rc-b", From: now.Add(-time.Hour), To: now.Add(5 * time.Minute)},
+		}))
+		return d
+	}
+
+	resolvedPartitions := func(t *testing.T, d *Distributor, from, to model.Time) []int32 {
+		t.Helper()
+		sets, partitionByInstance, err := d.getReadcacheReplicationSetsForQuery(userID, from, to, []*labels.Matcher{mustEqualMatcher("bar", "baz")})
+		require.NoError(t, err)
+		var got []int32
+		for _, rs := range sets {
+			require.Len(t, rs.Instances, 1)
+			got = append(got, partitionByInstance[rs.Instances[0].Id])
+		}
+		sort.Slice(got, func(i, j int) bool { return got[i] < got[j] })
+		return got
+	}
+
+	t.Run("window spanning the move fans out to both partitions", func(t *testing.T) {
+		d := build(13 * time.Hour)
+		// [now-90m, now] spans the P0->P1 move at now-1h.
+		got := resolvedPartitions(t, d, mt(now.Add(-90*time.Minute)), mt(now))
+		assert.Equal(t, []int32{0, 1}, got)
+	})
+
+	t.Run("narrow recent window resolves to only the current owner", func(t *testing.T) {
+		d := build(13 * time.Hour)
+		// [now, now+1m] is entirely after the move.
+		got := resolvedPartitions(t, d, mt(now), mt(now.Add(time.Minute)))
+		assert.Equal(t, []int32{1}, got)
+	})
+
+	t.Run("query-ingesters-within clamps the lookback", func(t *testing.T) {
+		// qiw=30m clamps w0 to now-30m, excluding P0's lease that
+		// ended at now-1h, so the old partition drops out even though
+		// the requested from is 90m ago.
+		d := build(30 * time.Minute)
+		got := resolvedPartitions(t, d, mt(now.Add(-90*time.Minute)), mt(now))
+		assert.Equal(t, []int32{1}, got)
 	})
 }
 

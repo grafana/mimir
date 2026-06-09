@@ -278,7 +278,7 @@ func TestRefreshReadcacheLeases_NoOpWhenHorizonAlreadyBeyondLookahead(t *testing
 	// (latestTo already past lookahead) but ready still flips.
 	r.readcacheStore.apply(t0, &readcacheassignment.Assignment{
 		Entries: []readcacheassignment.AssignmentEntry{{PartitionID: 0, InstanceID: "rc-a"}},
-	}, r.cfg.LeaseDuration, r.cfg.LeaseLookahead, r.cfg.EntryRetention)
+	}, r.cfg.LeaseDuration, r.cfg.LeaseLookahead, r.cfg.EntryRetention, r.cfg.ReadcacheMoveSafetyWindow)
 
 	buf.Reset()
 	assert.False(t, r.refreshReadcacheLeases(t0),

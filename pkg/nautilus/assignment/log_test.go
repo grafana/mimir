@@ -641,7 +641,7 @@ func TestLog_ApplyReaddPreemptsAliveFuture(t *testing.T) {
 	for _, sample := range []time.Time{
 		t1,
 		t1.Add(30 * time.Second),
-		t1.Add(time.Minute),         // the seeded future's old From
+		t1.Add(time.Minute), // the seeded future's old From
 		t1.Add(2 * time.Minute),
 		t1.Add(testLease - time.Second),
 	} {
@@ -752,11 +752,11 @@ func TestLog_ApplyDropThenReaddWithinLeaseDoesNotLeaveGap(t *testing.T) {
 	// densely across the danger zone to catch any sub-window
 	// regression.
 	dangerZone := []time.Time{
-		t4,                          // moment of re-add
-		t4.Add(time.Second),         // immediately after
-		t4.Add(time.Minute),         // mid-window
-		t1.Add(testLease - time.Second), // just before old successor.From
-		t1.Add(testLease),           // at old successor.From
+		t4,                                 // moment of re-add
+		t4.Add(time.Second),                // immediately after
+		t4.Add(time.Minute),                // mid-window
+		t1.Add(testLease - time.Second),    // just before old successor.From
+		t1.Add(testLease),                  // at old successor.From
 		t1.Add(testLease).Add(time.Second), // just past
 		t1.Add(testLease).Add(time.Minute), // well past
 	}
@@ -811,4 +811,90 @@ func TestLog_ApplyReassignAfterSuccessorPreIssued(t *testing.T) {
 		assert.Equal(t, int32(9), assn.Entries[0].PartitionID,
 			"only the new partition should be active at %s", sample)
 	}
+}
+
+// TestLog_PartitionsOverlappingInterval exercises the query read-path
+// interval lookup: which partitions could hold a hash range's samples
+// over a wall-clock window, across range->partition reassignments.
+func TestLog_PartitionsOverlappingInterval(t *testing.T) {
+	day := func(hh int) time.Time {
+		return time.Date(2026, 1, 1, hh, 0, 0, 0, time.UTC)
+	}
+	full := HashRange{Lo: 0, Hi: math.MaxUint32}
+	// Hash range H moves between partitions over time. Two disjoint
+	// leases (different partitions) covering H, plus an unrelated tile
+	// in a non-overlapping hash range.
+	const H = uint32(1000)
+	hTile := HashRange{Lo: 500, Hi: 1500}
+	otherTile := HashRange{Lo: 2000, Hi: 3000}
+	l := NewLogFromEntries([]LogEntry{
+		{Range: hTile, PartitionID: 7, From: day(8), To: day(12)},
+		{Range: hTile, PartitionID: 3, From: day(12), To: day(18)},
+		{Range: otherTile, PartitionID: 9, From: day(8), To: day(18)},
+	})
+
+	t.Run("window spanning the move returns both partitions", func(t *testing.T) {
+		got := l.PartitionsOverlappingInterval(day(10), day(14), H, H)
+		assert.Equal(t, []int32{3, 7}, got)
+	})
+
+	t.Run("window before the move returns only the first owner", func(t *testing.T) {
+		got := l.PartitionsOverlappingInterval(day(9), day(11), H, H)
+		assert.Equal(t, []int32{7}, got)
+	})
+
+	t.Run("window after the move returns only the second owner", func(t *testing.T) {
+		got := l.PartitionsOverlappingInterval(day(13), day(17), H, H)
+		assert.Equal(t, []int32{3}, got)
+	})
+
+	t.Run("hash range outside the tile is excluded", func(t *testing.T) {
+		// Key 2500 is in otherTile, not hTile.
+		got := l.PartitionsOverlappingInterval(day(8), day(18), 2500, 2500)
+		assert.Equal(t, []int32{9}, got)
+	})
+
+	t.Run("half-open boundary: window touching only To is excluded", func(t *testing.T) {
+		// [day(12), day(13)) does not intersect the first lease
+		// [day(8), day(12)) because To is exclusive.
+		got := l.PartitionsOverlappingInterval(day(12), day(13), H, H)
+		assert.Equal(t, []int32{3}, got)
+	})
+
+	t.Run("full hash range over whole history returns all overlapping partitions", func(t *testing.T) {
+		got := l.PartitionsOverlappingInterval(day(8), day(18), full.Lo, full.Hi)
+		assert.Equal(t, []int32{3, 7, 9}, got)
+	})
+}
+
+// TestLog_AllPartitionsDuring exercises the full-fanout interval lookup
+// (no hash-range narrowing) and de-duplication across multiple leases
+// of the same partition.
+func TestLog_AllPartitionsDuring(t *testing.T) {
+	day := func(hh int) time.Time {
+		return time.Date(2026, 1, 1, hh, 0, 0, 0, time.UTC)
+	}
+	a := HashRange{Lo: 0, Hi: 1000}
+	b := HashRange{Lo: 1001, Hi: math.MaxUint32}
+	l := NewLogFromEntries([]LogEntry{
+		{Range: a, PartitionID: 1, From: day(8), To: day(12)},
+		{Range: b, PartitionID: 2, From: day(8), To: day(12)},
+		// Partition 1 owns a different tile in a later window too.
+		{Range: b, PartitionID: 1, From: day(12), To: day(18)},
+		{Range: a, PartitionID: 2, From: day(12), To: day(18)},
+	})
+
+	t.Run("early window", func(t *testing.T) {
+		assert.Equal(t, []int32{1, 2}, l.AllPartitionsDuring(day(9), day(11)))
+	})
+
+	t.Run("dedup across multiple leases of the same partition", func(t *testing.T) {
+		// Whole history: partitions 1 and 2 each appear twice; result
+		// must be distinct and sorted.
+		assert.Equal(t, []int32{1, 2}, l.AllPartitionsDuring(day(8), day(18)))
+	})
+
+	t.Run("window outside all leases returns nothing", func(t *testing.T) {
+		assert.Empty(t, l.AllPartitionsDuring(day(20), day(22)))
+	})
 }

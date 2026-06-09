@@ -118,7 +118,7 @@ func (d *Distributor) QueryStream(ctx context.Context, queryMetrics *stats.Query
 			if err != nil {
 				return err
 			}
-			replicationSets, partitionByInstance, err = d.getReadcacheReplicationSetsForQuery(userID, matchers)
+			replicationSets, partitionByInstance, err = d.getReadcacheReplicationSetsForQuery(userID, from, to, matchers)
 			if err != nil {
 				return err
 			}
@@ -317,30 +317,45 @@ func (d *Distributor) getReplicationSetsForMetricName(r *ring.PartitionInstanceR
 // nautilus tenant's data lives on the nautilus_ingest topic whose
 // partition universe is defined by that log.
 //
-// Resolution:
+// Resolution is interval-aware. The query's sample-time range
+// [from, to] is padded into the wall-clock window during which those
+// samples could have been written, so the read picks up every
+// partition that owned the hashrange across any range->partition move
+// inside the query interval (not just the partition that owns it at
+// the current instant):
 //   - An exact __name__ matcher narrows the query to the metric
 //     name's hash range [lo, hi] (mimirpb.MetricNameHashRange) and
-//     only the partitions whose tiles overlap that range are queried.
-//   - Otherwise the query fans out to every partition in the active
-//     table.
+//     only the partitions whose tiles overlapped that range during the
+//     window are queried (PartitionsOverlappingInterval).
+//   - Otherwise the query fans out to every partition that owned any
+//     part of the keyspace during the window (AllPartitionsDuring).
 //
-// Each resolved partition becomes its own single-instance
-// ring.ReplicationSet whose synthetic InstanceDesc.Id is unique per
-// partition (a readcache instance owns many partitions, so keying by
-// owner ID would collide). The returned partitionByInstance maps
-// that synthetic ID to the partition; queryClientForInstance resolves
-// the partition to its current readcache owner from the readcache log
-// at query time and dials it via the readcache pool.
+// The partition->readcache instance dimension is resolved over the
+// SAME window via readcacheassignment.Log.OwnersDuring: every readcache
+// that owned the partition at any point during [w0,w1) is queried,
+// because after a partition->readcache move each owner holds only the
+// slice it ingested while it owned the partition (the new owner starts
+// at the Kafka live edge; the previous owner keeps its frozen slice).
+// The per-instance merge dedups the safety-window overlap band.
+//
+// Each (owner, partition) pair becomes its own single-instance
+// ring.ReplicationSet. InstanceDesc.Id is the synthetic
+// "owner/p<partition>" key (unique per pair, since a readcache owns
+// many partitions and a partition may have several owners across the
+// window); InstanceDesc.Addr carries the real readcache instance to
+// dial, so queryClientForInstance dials that specific owner rather
+// than re-resolving to a single current owner. partitionByInstance
+// maps the synthetic Id to the partition for the QueryAttributionHint.
 //
 // Any inability to resolve (no live assignment log, no live readcache
-// log, an uncovered partition, or a partition with no current owner)
-// returns errReadcacheRoutingUnavailable. There is no ingester
+// log, an uncovered partition, or a partition with no owner during the
+// window) returns errReadcacheRoutingUnavailable. There is no ingester
 // fallback for nautilus-only tenants.
-func (d *Distributor) getReadcacheReplicationSetsForQuery(userID string, matchers []*labels.Matcher) ([]ring.ReplicationSet, map[string]int32, error) {
+func (d *Distributor) getReadcacheReplicationSetsForQuery(userID string, from, to model.Time, matchers []*labels.Matcher) ([]ring.ReplicationSet, map[string]int32, error) {
 	now := d.now()
 
-	table := d.nautilusActiveTableFor(now)
-	if table == nil {
+	log := d.GetNautilusLog()
+	if log == nil {
 		return nil, nil, newReadcacheRoutingUnavailableError("no live assignment log snapshot is available")
 	}
 	rcLog := d.GetReadcacheLog()
@@ -348,12 +363,27 @@ func (d *Distributor) getReadcacheReplicationSetsForQuery(userID string, matcher
 		return nil, nil, newReadcacheRoutingUnavailableError("no live readcache assignment log snapshot is available")
 	}
 
+	// Pad the sample-time range into the wall-clock window during
+	// which those samples could have been written. A sample stamped s
+	// is accepted at wallclock w in [s-creationGrace, s+oooWindow], so
+	// over s in [from,to] the union is [from-creationGrace,
+	// to+oooWindow]. Clamp the lower bound to now-queryIngestersWithin:
+	// readcache holds nothing older, and the querier already clamps the
+	// request range to the same horizon.
+	w0 := from.Time().Add(-d.limits.CreationGracePeriod(userID))
+	w1 := to.Time().Add(d.limits.OutOfOrderTimeWindow(userID))
+	if qiw := d.limits.QueryIngestersWithin(userID); qiw > 0 {
+		if floor := now.Add(-qiw); w0.Before(floor) {
+			w0 = floor
+		}
+	}
+
 	var partitionIDs []int32
 	if metricName, ok := extractExactMetricName(matchers); ok {
 		lo, hi := mimirpb.MetricNameHashRange(userID, metricName)
-		partitionIDs = table.PartitionsOverlapping(lo, hi)
+		partitionIDs = log.PartitionsOverlappingInterval(w0, w1, lo, hi)
 	} else {
-		partitionIDs = table.AllPartitions()
+		partitionIDs = log.AllPartitionsDuring(w0, w1)
 	}
 	if len(partitionIDs) == 0 {
 		return nil, nil, newReadcacheRoutingUnavailableError("assignment log resolved no partitions for the query")
@@ -362,20 +392,25 @@ func (d *Distributor) getReadcacheReplicationSetsForQuery(userID string, matcher
 	sets := make([]ring.ReplicationSet, 0, len(partitionIDs))
 	partitionByInstance := make(map[string]int32, len(partitionIDs))
 	for _, partID := range partitionIDs {
-		owners := rcLog.Lookup(now, partID)
+		// Every readcache that owned partID during the window, not
+		// just the owner at `now`: a query spanning a partition move
+		// must reach both the previous owner (frozen slice) and the
+		// current owner (live slice).
+		owners := rcLog.OwnersDuring(partID, w0, w1)
 		if len(owners) == 0 {
-			return nil, nil, newReadcacheRoutingUnavailableError(fmt.Sprintf("partition %d has no current readcache owner", partID))
+			return nil, nil, newReadcacheRoutingUnavailableError(fmt.Sprintf("partition %d had no readcache owner during the query window", partID))
 		}
-		// Synthetic, partition-unique instance ID: a readcache pod
-		// owns multiple partitions, so a per-owner key would collide
-		// in partitionByInstance and across replication sets. The
-		// owner is shown for readability; the authoritative dial
-		// happens in queryClientForInstance via the partition.
-		instanceID := fmt.Sprintf("%s/p%d", owners[0], partID)
-		sets = append(sets, ring.ReplicationSet{
-			Instances: []ring.InstanceDesc{{Id: instanceID}},
-		})
-		partitionByInstance[instanceID] = partID
+		for _, owner := range owners {
+			// Synthetic, (owner, partition)-unique instance ID: a
+			// readcache owns multiple partitions and a partition may
+			// have several owners across the window, so the key must
+			// combine both. Addr carries the real instance to dial.
+			instanceID := fmt.Sprintf("%s/p%d", owner, partID)
+			sets = append(sets, ring.ReplicationSet{
+				Instances: []ring.InstanceDesc{{Id: instanceID, Addr: owner}},
+			})
+			partitionByInstance[instanceID] = partID
+		}
 	}
 	return sets, partitionByInstance, nil
 }

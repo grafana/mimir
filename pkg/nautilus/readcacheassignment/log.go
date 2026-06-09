@@ -67,10 +67,19 @@ func NewLogFromEntries(entries []LogEntry) *Log {
 // the log holds a lease whose To is at least at + lookahead. Semantics
 // mirror pkg/nautilus/assignment.Log.Apply.
 //
-// In single-owner mode (the Phase 2 default), `next` contains exactly
-// one entry per PartitionID. When the InstanceID for a partition
-// changes between rounds, the active entry's To is clamped to at and
-// a new entry is appended for the new owner.
+// When the InstanceID for a partition changes between rounds, the old
+// owner's active lease is preempted and a new lease is appended for
+// the new owner starting at `at`.
+//
+// safetyWindow controls the preemption boundary for the old owner. It
+// is the keystone of the "no full replay" move scheme: the new owner
+// starts consuming at the Kafka live edge at `at`, while the old owner
+// is kept alive (still consuming, still routable) until at+safetyWindow
+// before its lease ends, then it freezes. The overlap guarantees there
+// is no gap between the two owners' slices; it produces a small
+// duplicate band that query-time dedup absorbs. A safetyWindow of 0
+// reproduces the legacy immediate preemption (To = at), where the old
+// owner stops the instant the move happens.
 //
 // In multi-owner mode `next` may contain multiple entries per
 // PartitionID; each (PartitionID, InstanceID) pair gets its own lease
@@ -78,7 +87,7 @@ func NewLogFromEntries(entries []LogEntry) *Log {
 // leaving the others alone.
 //
 // Returns true if any entry was mutated or appended.
-func (l *Log) Apply(at time.Time, next *Assignment, leaseDuration, lookahead time.Duration) (changed bool) {
+func (l *Log) Apply(at time.Time, next *Assignment, leaseDuration, lookahead, safetyWindow time.Duration) (changed bool) {
 	type key struct {
 		pid      int32
 		instance string
@@ -133,12 +142,18 @@ func (l *Log) Apply(at time.Time, next *Assignment, leaseDuration, lookahead tim
 			}
 			continue
 		}
-		// Preempt: see pkg/nautilus/assignment/log.go Apply for the
-		// rationale behind clamping pre-issued future leases to To =
-		// From rather than To = at.
-		newTo := at
+		// Preempt. An active lease being moved away is kept alive
+		// until at+safetyWindow (capped at its natural end) so the
+		// previous owner keeps consuming and stays routable across
+		// the handoff; with safetyWindow=0 this collapses to the
+		// legacy immediate To=at preemption. Pre-issued future leases
+		// are clamped to To = From regardless (see
+		// pkg/nautilus/assignment/log.go Apply for the rationale).
+		newTo := at.Add(safetyWindow)
 		if e.From.After(at) {
 			newTo = e.From
+		} else if newTo.After(e.To) {
+			newTo = e.To
 		}
 		if !e.To.Equal(newTo) {
 			e.To = newTo

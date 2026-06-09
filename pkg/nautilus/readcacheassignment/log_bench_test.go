@@ -62,7 +62,7 @@ func benchApply(b *testing.B, numPartitions, numHistorical int) {
 	lookahead := 90 * time.Second
 
 	baseline := NewLog()
-	baseline.Apply(t0, desired, lease, lookahead)
+	baseline.Apply(t0, desired, lease, lookahead, 0)
 
 	if numHistorical > 0 {
 		historical := make([]LogEntry, 0, numHistorical*len(desired.Entries))
@@ -89,6 +89,6 @@ func benchApply(b *testing.B, numPartitions, numHistorical int) {
 		l := &Log{entries: append([]LogEntry(nil), baseline.entries...)}
 		at := t0.Add(time.Duration(i+1) * lookahead)
 		b.StartTimer()
-		l.Apply(at, desired, lease, lookahead)
+		l.Apply(at, desired, lease, lookahead, 0)
 	}
 }

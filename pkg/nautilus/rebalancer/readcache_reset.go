@@ -84,7 +84,7 @@ func (r *Rebalancer) ResetReadcacheAssignment(now time.Time) (ResetReadcacheResu
 	}
 
 	next := &readcacheassignment.Assignment{Entries: entries}
-	r.readcacheStore.apply(now, next, r.cfg.LeaseDuration, r.cfg.LeaseLookahead, r.cfg.EntryRetention)
+	r.readcacheStore.apply(now, next, r.cfg.LeaseDuration, r.cfg.LeaseLookahead, r.cfg.EntryRetention, r.cfg.ReadcacheMoveSafetyWindow)
 
 	// Reflect the reset in the slicer's cooldown bookkeeping so the
 	// next slicer round (if enabled) does not immediately try to

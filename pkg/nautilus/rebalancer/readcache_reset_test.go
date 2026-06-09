@@ -290,5 +290,5 @@ func rebuildAllOnOne(t *testing.T, r *Rebalancer, at time.Time, numPartitions in
 			InstanceID:  instance,
 		}
 	}
-	r.readcacheStore.apply(at, a, r.cfg.LeaseDuration, r.cfg.LeaseLookahead, r.cfg.EntryRetention)
+	r.readcacheStore.apply(at, a, r.cfg.LeaseDuration, r.cfg.LeaseLookahead, r.cfg.EntryRetention, r.cfg.ReadcacheMoveSafetyWindow)
 }

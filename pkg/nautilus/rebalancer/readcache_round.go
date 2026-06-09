@@ -76,7 +76,7 @@ func (r *Rebalancer) runReadcacheSlicer(
 
 	r.readcacheCooldowns.extendForMoves(now, cfg.MoveCooldown, plan.Moves)
 
-	changed := r.readcacheStore.apply(now, plan.Assignment, r.cfg.LeaseDuration, r.cfg.LeaseLookahead, r.cfg.EntryRetention)
+	changed := r.readcacheStore.apply(now, plan.Assignment, r.cfg.LeaseDuration, r.cfg.LeaseLookahead, r.cfg.EntryRetention, r.cfg.ReadcacheMoveSafetyWindow)
 	if changed {
 		level.Info(r.logger).Log(
 			"msg", "readcache slicer round produced changes",

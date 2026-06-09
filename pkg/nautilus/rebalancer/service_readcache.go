@@ -50,9 +50,9 @@ func newReadcacheLogStore() *readcacheLogStore {
 // apply installs next as the new desired (partition -> instance)
 // assignment, pre-issuing successors and pruning expired entries. See
 // logStore.apply for semantics.
-func (s *readcacheLogStore) apply(at time.Time, next *readcacheassignment.Assignment, leaseDuration, lookahead, retention time.Duration) bool {
+func (s *readcacheLogStore) apply(at time.Time, next *readcacheassignment.Assignment, leaseDuration, lookahead, retention, safetyWindow time.Duration) bool {
 	s.mu.Lock()
-	changed := s.log.Apply(at, next, leaseDuration, lookahead)
+	changed := s.log.Apply(at, next, leaseDuration, lookahead, safetyWindow)
 	if retention > 0 {
 		s.log.Prune(at.Add(-retention))
 	}

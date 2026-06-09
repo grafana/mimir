@@ -52,7 +52,7 @@ func TestReadcacheLogStore_FirstApplyPrimesSubscriber(t *testing.T) {
 			{PartitionID: 0, InstanceID: "rc-a"},
 			{PartitionID: 1, InstanceID: "rc-b"},
 		},
-	}, time.Minute, 10*time.Second, time.Hour))
+	}, time.Minute, 10*time.Second, time.Hour, 0))
 
 	select {
 	case snap := <-updates:
@@ -90,7 +90,7 @@ func TestReadcacheLogStore_NoOpApplyStillPrimesEarlySubscriber(t *testing.T) {
 			{PartitionID: 0, InstanceID: "rc-a"},
 			{PartitionID: 1, InstanceID: "rc-b"},
 		},
-	}, leaseDur, lookahead, time.Hour)
+	}, leaseDur, lookahead, time.Hour, 0)
 	assert.False(t, changed, "fixture must reproduce the no-op apply case")
 
 	select {
@@ -113,7 +113,7 @@ func TestReadcacheLogStore_SubscribeAfterApplyReturnsLiveEntries(t *testing.T) {
 		Entries: []readcacheassignment.AssignmentEntry{
 			{PartitionID: 0, InstanceID: "rc-a"},
 		},
-	}, time.Minute, 10*time.Second, time.Hour))
+	}, time.Minute, 10*time.Second, time.Hour, 0))
 
 	initial, _, unsubscribe := s.subscribe(t0)
 	defer unsubscribe()

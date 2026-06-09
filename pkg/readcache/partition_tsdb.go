@@ -5,6 +5,7 @@ package readcache
 import (
 	"context"
 	"fmt"
+	"math"
 	"path/filepath"
 	"sync"
 	"time"
@@ -84,6 +85,7 @@ type partitionTSDB struct {
 func openPartitionTSDB(
 	tenantID string,
 	partitionID int32,
+	epoch int,
 	rootDir string,
 	cfg mimir_tsdb.TSDBConfig,
 	localBlockRetention time.Duration,
@@ -93,7 +95,7 @@ func openPartitionTSDB(
 	tsdbPromReg prometheus.Registerer,
 	logger log.Logger,
 ) (*partitionTSDB, error) {
-	dir := filepath.Join(rootDir, tenantID, fmt.Sprintf("partition-%d", partitionID))
+	dir := partitionEpochDir(rootDir, tenantID, partitionID, epoch)
 
 	userLogger := log.With(logger, "user", tenantID, "partition", partitionID)
 
@@ -164,6 +166,43 @@ func openPartitionTSDB(
 		dir:         dir,
 		db:          db,
 	}, nil
+}
+
+// partitionEpochDir is the on-disk directory for a (tenant, partition,
+// epoch) TSDB. Epoch 0 — the first time this pod owns the partition —
+// uses the legacy "partition-<id>" path so the common single-epoch
+// case is unchanged; later epochs (after a partition leaves and
+// returns to the same pod) get an "-epoch-<n>" suffix so a fresh live
+// TSDB never collides on disk with a still-open frozen epoch.
+func partitionEpochDir(rootDir, tenantID string, partitionID int32, epoch int) string {
+	name := fmt.Sprintf("partition-%d", partitionID)
+	if epoch > 0 {
+		name = fmt.Sprintf("partition-%d-epoch-%d", partitionID, epoch)
+	}
+	return filepath.Join(rootDir, tenantID, name)
+}
+
+// sampleBounds returns the inclusive [minT, maxT] sample-time span this
+// TSDB currently holds across its head and persisted blocks. When the
+// TSDB has no data it returns (0, -1) so that maxT < minT and any
+// overlap test against a real query range is false. Used to scope
+// frozen epochs at query time and to drive the absolute-wallclock
+// reaper.
+func (p *partitionTSDB) sampleBounds() (minT, maxT int64) {
+	minT, maxT = int64(math.MaxInt64), int64(math.MinInt64)
+	if h := p.db.Head(); h != nil && h.MinTime() <= h.MaxTime() {
+		minT = min(minT, h.MinTime())
+		maxT = max(maxT, h.MaxTime())
+	}
+	for _, b := range p.db.Blocks() {
+		m := b.Meta()
+		minT = min(minT, m.MinTime)
+		maxT = max(maxT, m.MaxTime)
+	}
+	if minT > maxT {
+		return 0, -1
+	}
+	return minT, maxT
 }
 
 // applyTenantTSDBSettings reapplies per-tenant TSDB settings from runtime

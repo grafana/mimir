@@ -279,6 +279,20 @@ func (d *Distributor) queryClientForInstance(ctx context.Context, ing ring.Insta
 		if d.readcachePool == nil {
 			return nil, false, newReadcacheRoutingUnavailableError("readcache pool is not configured")
 		}
+		// getReadcacheReplicationSetsForQuery resolved the specific
+		// owner for this (owner, partition) pair and carried it in
+		// Addr. Dial that instance directly: with interval-aware
+		// fan-out a partition can map to several owners across the
+		// query window, so we must not collapse back to a single
+		// current owner here.
+		if ing.Addr != "" {
+			rcClient, err := d.readcachePool.GetClientForInstance(ctx, ing.Addr)
+			if err != nil {
+				return nil, false, err
+			}
+			hits.record(ing.Addr)
+			return rcClient, true, nil
+		}
 		partID, ok := partitionByInstance[ing.Id]
 		if !ok {
 			return nil, false, newReadcacheRoutingUnavailableError(fmt.Sprintf("instance %q has no resolved partition", ing.Id))

@@ -97,7 +97,7 @@ func (r *Rebalancer) refreshReadcacheLeases(now time.Time) bool {
 	}
 
 	next := &readcacheassignment.Assignment{Entries: entries}
-	changed := r.readcacheStore.apply(now, next, r.cfg.LeaseDuration, r.cfg.LeaseLookahead, r.cfg.EntryRetention)
+	changed := r.readcacheStore.apply(now, next, r.cfg.LeaseDuration, r.cfg.LeaseLookahead, r.cfg.EntryRetention, r.cfg.ReadcacheMoveSafetyWindow)
 	if changed {
 		level.Info(r.logger).Log(
 			"msg", "readcache leases refreshed",

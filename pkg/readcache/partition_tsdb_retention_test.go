@@ -49,6 +49,7 @@ func TestPartitionTSDB_LocalBlockRetention_DeletesOldBlocks(t *testing.T) {
 	p, err := openPartitionTSDB(
 		"tenant-1",
 		0,
+		0, // epoch
 		cfg.DataDir,
 		cfg.BlocksStorage.TSDB,
 		cfg.LocalBlockRetention,
@@ -118,6 +119,7 @@ func TestPartitionTSDB_LocalBlockRetention_Zero_DisablesRetention(t *testing.T) 
 	p, err := openPartitionTSDB(
 		"tenant-1",
 		0,
+		0, // epoch
 		cfg.DataDir,
 		cfg.BlocksStorage.TSDB,
 		cfg.LocalBlockRetention,

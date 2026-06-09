@@ -126,7 +126,7 @@ func TestReadcacheLogStore_PersistOnApply(t *testing.T) {
 			{PartitionID: 0, InstanceID: "rc-a"},
 			{PartitionID: 1, InstanceID: "rc-b"},
 		},
-	}, time.Minute, 10*time.Second, time.Hour)
+	}, time.Minute, 10*time.Second, time.Hour, 0)
 
 	require.Len(t, persisted, 1)
 	assert.NotEmpty(t, persisted[0])
@@ -137,6 +137,6 @@ func TestReadcacheLogStore_PersistOnApply(t *testing.T) {
 			{PartitionID: 0, InstanceID: "rc-a"},
 			{PartitionID: 1, InstanceID: "rc-b"},
 		},
-	}, time.Minute, 10*time.Second, time.Hour)
+	}, time.Minute, 10*time.Second, time.Hour, 0)
 	assert.Len(t, persisted, 1)
 }

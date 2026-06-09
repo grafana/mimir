@@ -96,6 +96,18 @@ type Config struct {
 	// of the streaming snapshots.
 	EntryRetention time.Duration `yaml:"entry_retention"`
 
+	// ReadcacheMoveSafetyWindow is the overlap window applied when a
+	// partition moves between readcache instances. The new owner
+	// starts at the Kafka live edge immediately; the previous owner
+	// keeps its lease (and keeps consuming, and stays routable) until
+	// move_time + this window before freezing its slice. The overlap
+	// guarantees no gap between the two owners' slices at the cost of
+	// a small duplicate band that query-time dedup absorbs. 0
+	// preserves the legacy immediate-handoff behaviour (the previous
+	// owner stops the instant the move happens), which can drop a few
+	// samples right at the handoff offset.
+	ReadcacheMoveSafetyWindow time.Duration `yaml:"readcache_move_safety_window"`
+
 	// ReadcacheSlicer configures the second slicer round that
 	// balances partition->readcache-instance assignments. The first
 	// round (above) balances hash-range->partition; the second round
@@ -173,6 +185,7 @@ func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.DurationVar(&cfg.LeaseDuration, prefix+"lease-duration", 5*time.Minute, "Duration of each freshly-issued or pre-issued successor assignment-log lease. Consumers fall back to the partition ring once a lease expires, so this caps how long stale routing can persist after a rebalancer outage.")
 	f.DurationVar(&cfg.LeaseLookahead, prefix+"lease-lookahead", 90*time.Second, "How far before an active lease's expiry the rebalancer pre-issues its successor. Steady-state rebalance interval is approximately LeaseDuration; LeaseLookahead is the safety buffer to disseminate the successor to all consumers before the active lease ends.")
 	f.DurationVar(&cfg.EntryRetention, prefix+"entry-retention", 24*time.Hour, "How long expired assignment-log entries are retained after their lease ended. Active and pre-issued leases are never pruned. Must exceed querier QueryIngestersWithin plus a drain buffer once queriers consume the log; today the value chiefly caps the rebalancer's snapshot size sent to distributor stream subscribers.")
+	f.DurationVar(&cfg.ReadcacheMoveSafetyWindow, prefix+"readcache-move-safety-window", 0, "Overlap window kept on the previous readcache owner when a partition moves between instances. The new owner adopts the partition at the Kafka live edge immediately; the previous owner keeps consuming and stays queryable until move_time+this before freezing its slice, guaranteeing no gap across the handoff at the cost of a small duplicate band absorbed by query-time dedup. 0 keeps the legacy immediate handoff.")
 	f.StringVar(&cfg.DataDir, prefix+"data-dir", "", "Directory where the rebalancer persists its assignment logs. Empty disables persistence; on restart the log is seeded from FineEvenSplit / ingester reports as before. Set this to a persistent volume in production so rebalancer restarts don't shuffle routing.")
 	f.StringVar(&cfg.KafkaTopic, prefix+"kafka-topic", "nautilus_ingest", "Name of the Kafka topic the nautilus pipeline runs on. The rebalancer auto-creates this topic on startup (gated by -ingest-storage.kafka.auto-create-topic-enabled); distributors forward nautilus-only tenant writes here; readcache pods consume from it.")
 	f.Var(&asInt32Var{&cfg.PartitionCount}, prefix+"partition-count", "Number of partitions on -nautilus.rebalancer.kafka-topic. Used both for auto-creation and to size the slicer's initial partition set when seeding the in-memory log. Must be > 0 when persistence is empty; otherwise the seeded value from disk wins.")

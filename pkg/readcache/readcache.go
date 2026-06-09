@@ -126,12 +126,37 @@ type Readcache struct {
 	// production; a non-nil setter would be a code smell. Tests
 	// install hooks before calling services.StopAndAwaitTerminated.
 	stopPartitionHook func(partitionID int32)
+
+	// frozen holds read-only epoch TSDBs for partitions this pod no
+	// longer actively owns. After a partition->readcache move the
+	// previous owner stops consuming but keeps the slice it ingested
+	// queryable (a "frozen epoch") so a query whose interval spans
+	// the move still finds the pre-move data on the previous owner.
+	// The absolute-wallclock reaper drops an epoch once its newest
+	// sample is older than LocalBlockRetention. Keyed by partition
+	// ID; a partition may have several frozen epochs if it churned
+	// on and off this pod.
+	frozenMu sync.RWMutex
+	frozen   map[int32][]*frozenEpoch
+
+	// epochSeq tracks the next epoch number to hand out per partition
+	// (0 on first acquisition). Mutated only in addPartition under
+	// partitionMu.
+	epochSeq map[int32]int
 }
 
 // partitionState bundles the per-partition Kafka reader and the
 // per-tenant heads keyed by tenant ID.
 type partitionState struct {
 	partitionID int32
+
+	// epoch is the per-partition acquisition generation on this pod.
+	// It is assigned when the pod gains the partition (addPartition)
+	// and is used as the on-disk TSDB directory suffix so a fresh
+	// live TSDB never collides with a still-open frozen epoch of the
+	// same partition after it leaves and returns. Epoch 0 is the
+	// first acquisition and uses the legacy directory layout.
+	epoch int
 
 	// reader is the Kafka consumer driving samples into this
 	// partition. Nil until startKafkaReader is called.
@@ -203,6 +228,8 @@ func New(
 		logger:             logger,
 		reg:                reg,
 		partitions:         make(map[int32]*partitionState),
+		frozen:             make(map[int32][]*frozenEpoch),
+		epochSeq:           make(map[int32]int),
 		instanceLifecycler: instanceLifecycler,
 		queryLoad:          loadstats.NewTracker("cortex_readcache"),
 		partitionSeries:    loadstats.NewPartitionSeries(),
@@ -353,6 +380,9 @@ func (r *Readcache) running(ctx context.Context) error {
 	loadStatsTickT := time.NewTicker(loadstats.TickInterval)
 	defer loadStatsTickT.Stop()
 
+	reapT := time.NewTicker(frozenEpochReapInterval)
+	defer reapT.Stop()
+
 	// When configured, subscribe to the rebalancer's
 	// WatchReadcacheAssignments stream and react to ownership
 	// changes by add/removing partitions. The goroutine returns
@@ -378,6 +408,8 @@ func (r *Readcache) running(ctx context.Context) error {
 			r.queryLoad.Tick()
 			r.tickSampleRates()
 			go r.refreshSeriesStats(ctx)
+		case <-reapT.C:
+			r.reapFrozenEpochs(time.Now())
 		}
 	}
 }
@@ -444,6 +476,25 @@ func (r *Readcache) stopping(_ error) error {
 	}
 	_ = g.Wait()
 
+	// Close any frozen epoch TSDBs we were still serving. They have no
+	// reader to stop, so a plain Close suffices.
+	r.frozenMu.Lock()
+	frozenByPartition := r.frozen
+	r.frozen = map[int32][]*frozenEpoch{}
+	r.frozenMu.Unlock()
+	for _, eps := range frozenByPartition {
+		for _, ep := range eps {
+			for tenant, db := range ep.tenants {
+				if r.tsdbMetrics != nil {
+					r.tsdbMetrics.RemoveRegistryForTenant(tsdbMetricsTenantID(tenant, ep.partitionID))
+				}
+				if err := db.Close(); err != nil && firstErr == nil {
+					firstErr = err
+				}
+			}
+		}
+	}
+
 	if r.rebalancerConn != nil {
 		if err := r.rebalancerConn.Close(); err != nil && firstErr == nil {
 			firstErr = err
@@ -500,6 +551,12 @@ func (r *Readcache) addPartition(ctx context.Context, partitionID int32) error {
 		return fmt.Errorf("creating readcache data-dir for partition %d: %w", partitionID, err)
 	}
 	p := newPartitionState(partitionID)
+	// Assign this acquisition's epoch (0 on the first time this pod
+	// owns the partition; incremented on each re-acquisition) so a
+	// fresh live TSDB never collides on disk with a frozen epoch of
+	// the same partition still being served.
+	p.epoch = r.epochSeq[partitionID]
+	r.epochSeq[partitionID]++
 	r.partitions[partitionID] = p
 	r.partitionMu.Unlock()
 
@@ -522,8 +579,11 @@ func (r *Readcache) addPartition(ctx context.Context, partitionID int32) error {
 	return nil
 }
 
-// removePartition stops owning a partition: shuts down the Kafka
-// reader and closes per-tenant TSDBs. Idempotent.
+// removePartition stops actively owning a partition: it shuts down
+// the Kafka reader but, instead of closing the per-tenant TSDBs,
+// freezes them as a read-only epoch (see freezePartition) so the
+// slice this pod ingested while it owned the partition stays
+// queryable until the reaper drops it. Idempotent.
 //
 // The partition is deleted from r.partitions BEFORE the reader stop
 // blocks for in-flight pushes. Holding partitionMu across the reader
@@ -543,7 +603,7 @@ func (r *Readcache) removePartition(partitionID int32) error {
 	if !ok {
 		return nil
 	}
-	return r.stopPartition(partitionID, p)
+	return r.freezePartition(partitionID, p)
 }
 
 // stopPartition closes a partition's resources. The caller must
@@ -618,6 +678,7 @@ func (r *Readcache) getOrOpenTSDB(tenantID string, partitionID int32) (*partitio
 	opened, err := openPartitionTSDB(
 		tenantID,
 		partitionID,
+		p.epoch,
 		r.cfg.DataDir,
 		r.cfg.BlocksStorage.TSDB,
 		r.cfg.LocalBlockRetention,
@@ -655,37 +716,62 @@ func tsdbMetricsTenantID(tenantID string, partitionID int32) string {
 // silently produce incomplete results, which is strictly worse than
 // failing fast.
 func (r *Readcache) listTSDBsForTenant(tenantID string, hint *client.QueryAttributionHint) ([]*partitionTSDB, error) {
+	var out []*partitionTSDB
+
+	// Live partitions this pod currently owns.
 	r.partitionMu.RLock()
-	defer r.partitionMu.RUnlock()
-
 	if hint != nil {
-		p, ok := r.partitions[hint.PartitionId]
-		if !ok {
-			return nil, nil
+		if p, ok := r.partitions[hint.PartitionId]; ok {
+			if !p.warm.Load() {
+				r.partitionMu.RUnlock()
+				return nil, errStillWarming(hint.PartitionId)
+			}
+			p.tenantsMu.RLock()
+			if db := p.tenants[tenantID]; db != nil {
+				out = append(out, db)
+			}
+			p.tenantsMu.RUnlock()
 		}
-		if !p.warm.Load() {
-			return nil, errStillWarming(hint.PartitionId)
+	} else {
+		for _, p := range r.partitions {
+			if !p.warm.Load() {
+				r.partitionMu.RUnlock()
+				return nil, errStillWarming(p.partitionID)
+			}
+			p.tenantsMu.RLock()
+			if db := p.tenants[tenantID]; db != nil {
+				out = append(out, db)
+			}
+			p.tenantsMu.RUnlock()
 		}
-		p.tenantsMu.RLock()
-		db := p.tenants[tenantID]
-		p.tenantsMu.RUnlock()
-		if db == nil {
-			return nil, nil
-		}
-		return []*partitionTSDB{db}, nil
 	}
+	r.partitionMu.RUnlock()
 
-	out := make([]*partitionTSDB, 0, len(r.partitions))
-	for _, p := range r.partitions {
-		if !p.warm.Load() {
-			return nil, errStillWarming(p.partitionID)
+	// Frozen epochs from prior ownership stints of these partitions.
+	// They are read-only and disjoint in identity from the live TSDBs
+	// (distinct on-disk directories), so adding them can never
+	// duplicate a live head. The per-querier [from,through] range
+	// applied downstream scopes each frozen epoch to the sample-time
+	// window it actually overlaps, so non-overlapping epochs return
+	// no series. Acquired after partitionMu is released to keep a
+	// strict lock order (partitionMu -> frozenMu) free of nesting.
+	r.frozenMu.RLock()
+	addFrozen := func(partitionID int32) {
+		for _, ep := range r.frozen[partitionID] {
+			if db := ep.tenants[tenantID]; db != nil {
+				out = append(out, db)
+			}
 		}
-		p.tenantsMu.RLock()
-		if db := p.tenants[tenantID]; db != nil {
-			out = append(out, db)
-		}
-		p.tenantsMu.RUnlock()
 	}
+	if hint != nil {
+		addFrozen(hint.PartitionId)
+	} else {
+		for partitionID := range r.frozen {
+			addFrozen(partitionID)
+		}
+	}
+	r.frozenMu.RUnlock()
+
 	return out, nil
 }
 

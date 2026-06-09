@@ -333,6 +333,33 @@ func (l *Log) PartitionsOverlappingInterval(w0, w1 time.Time, lo, hi uint32) []i
 		}
 		seen[e.PartitionID] = struct{}{}
 	}
+	return sortedDistinctPartitions(seen)
+}
+
+// AllPartitionsDuring returns the distinct partition IDs of every lease
+// whose wall-clock window [From, To) intersects [w0, w1), regardless of
+// hash range. It is the full-fanout counterpart of
+// PartitionsOverlappingInterval, used when a query has no exact
+// __name__ matcher and therefore can't be narrowed to a single hash
+// range: the read must reach every partition that owned any part of
+// the keyspace during the window.
+//
+// Half-open intersection: a lease [From, To) intersects [w0, w1) iff
+// From < w1 && To > w0. Results are de-duplicated and returned sorted
+// ascending for deterministic fan-out.
+func (l *Log) AllPartitionsDuring(w0, w1 time.Time) []int32 {
+	seen := make(map[int32]struct{})
+	for _, e := range l.entries {
+		if !e.From.Before(w1) || !e.To.After(w0) {
+			continue
+		}
+		seen[e.PartitionID] = struct{}{}
+	}
+	return sortedDistinctPartitions(seen)
+}
+
+// sortedDistinctPartitions returns the keys of seen sorted ascending.
+func sortedDistinctPartitions(seen map[int32]struct{}) []int32 {
 	out := make([]int32, 0, len(seen))
 	for p := range seen {
 		out = append(out, p)
