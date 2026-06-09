@@ -198,6 +198,11 @@ func labelValuesCardinality(
 			}
 			// Flush the response when reached message threshold.
 			if err := client.SendLabelValuesCardinalityResponse(srv, &resp); err != nil {
+				// Drain to wait for in-flight chunks to release idxReader before the caller's defer idx.Close() fires.
+				// The producer goroutine closes resultCh after wg.Wait,
+				// so this returns once every chunk is done.
+				for range resultCh { //nolint:revive
+				}
 				return err
 			}
 			resp.Items = resp.Items[:0]

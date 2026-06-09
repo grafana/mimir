@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"slices"
 	"strconv"
@@ -268,6 +269,81 @@ func TestIngester_LabelValuesCardinality_AllValuesToBeReturnedInSingleMessage(t 
 	}
 }
 
+func TestLabelValuesCardinality_DrainsResultsOnSendError(t *testing.T) {
+	pool, err := workerpool.New(workerpool.Config{Size: 2}, "test", nil, log.NewNopLogger())
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), pool))
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), pool))
+	})
+
+	sendErr := errors.New("send failed")
+	ctx := user.InjectOrgID(context.Background(), userID)
+	srv := &mockLabelValuesCardinalityServer{
+		context: ctx,
+		sendErr: sendErr,
+	}
+	idxReader := &mockIndex{existingLabels: map[string][]string{
+		"label-a": {"0", "1", "2", "3"},
+	}}
+
+	blockedPostingStarted := make(chan struct{}, 1)
+	releaseBlockedPostings := make(chan struct{})
+	t.Cleanup(func() {
+		select {
+		case <-releaseBlockedPostings:
+		default:
+			close(releaseBlockedPostings)
+		}
+	})
+	postingsForMatchersFn := func(_ context.Context, _ tsdb.IndexPostingsReader, matchers ...*labels.Matcher) (index.Postings, error) {
+		if matchers[len(matchers)-1].Value != "0" {
+			select {
+			case blockedPostingStarted <- struct{}{}:
+			default:
+			}
+			<-releaseBlockedPostings
+		}
+		return &singlePostings{remaining: 1}, nil
+	}
+
+	doneCh := make(chan error, 1)
+	go func() {
+		doneCh <- labelValuesCardinality(
+			[]string{"label-a"},
+			nil,
+			idxReader,
+			postingsForMatchersFn,
+			1,
+			pool,
+			userID,
+			1,
+			srv,
+		)
+	}()
+
+	select {
+	case <-blockedPostingStarted:
+	case <-time.After(time.Second):
+		require.Fail(t, "labelValuesCardinality did not start an in-flight chunk")
+	}
+
+	select {
+	case err := <-doneCh:
+		require.Failf(t, "labelValuesCardinality returned before draining in-flight chunks", "err: %v", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	close(releaseBlockedPostings)
+
+	select {
+	case err := <-doneCh:
+		require.ErrorIs(t, err, sendErr)
+	case <-time.After(time.Second):
+		require.Fail(t, "labelValuesCardinality did not return after in-flight chunks completed")
+	}
+}
+
 func TestLabelNamesAndValues_ContextCancellation(t *testing.T) {
 	cctx, cancel := context.WithCancel(context.Background())
 
@@ -323,6 +399,22 @@ func (ip infinitePostings) Next() bool                  { return true }
 func (ip infinitePostings) Seek(storage.SeriesRef) bool { return true }
 func (ip infinitePostings) At() storage.SeriesRef       { return 0 }
 func (ip infinitePostings) Err() error                  { return nil }
+
+type singlePostings struct {
+	remaining int
+}
+
+func (p *singlePostings) Seek(storage.SeriesRef) bool { return p.Next() }
+func (p *singlePostings) At() storage.SeriesRef       { return 0 }
+func (p *singlePostings) Err() error                  { return nil }
+
+func (p *singlePostings) Next() bool {
+	if p.remaining == 0 {
+		return false
+	}
+	p.remaining--
+	return true
+}
 
 func TestCountLabelValueSeries_ContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
@@ -528,9 +620,13 @@ type mockLabelValuesCardinalityServer struct {
 	client.Ingester_LabelValuesCardinalityServer
 	SentResponses []client.LabelValuesCardinalityResponse
 	context       context.Context
+	sendErr       error
 }
 
 func (m *mockLabelValuesCardinalityServer) Send(resp *client.LabelValuesCardinalityResponse) error {
+	if m.sendErr != nil {
+		return m.sendErr
+	}
 	var sentResp client.LabelValuesCardinalityResponse
 	b, err := json.Marshal(resp)
 	if err != nil {
