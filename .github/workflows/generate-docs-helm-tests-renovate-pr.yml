@@ -114,7 +114,7 @@ jobs:
           github_app: mimir-github-bot
 
       - name: Commit regenerated helm tests and docs to PR branch
-        uses: planetscale/ghcommit-action@25309d8005ac7c3bcd61d3fe19b69e0fe47dbdde # v0.2.20
+        uses: planetscale/ghcommit-action@57a6c787385af407a557374c794a09273aaebfd7 # v0.2.21
         with:
           commit_message: "Update build with regenerated helm tests and docs"
           repo: ${{ github.event.pull_request.head.repo.full_name }}
