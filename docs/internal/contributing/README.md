@@ -23,7 +23,7 @@ Before a piece of work is finished:
 
 ## Experimental features
 
-By default, new experimental features should be disabled and gated behind a per-tenant limit or configuration flag, so that they can be tested and introduced gradually. Document the feature in [`docs/sources/mimir/configure/about-versioning.md`](../../sources/mimir/configure/about-versioning.md#experimental-features) so that the no-backwards-compatibility guarantee for experimental features applies.
+By default, new experimental features should be disabled and gated behind a per-tenant limit or configuration flag, so that they can be tested and introduced gradually. Document the feature in [`docs/sources/mimir/configure/about-versioning.md`](../../sources/mimir/configure/about-versioning.md#experimental-features).
 
 ## Grafana Mimir Helm chart
 
