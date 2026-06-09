@@ -31,7 +31,7 @@ require (
 	github.com/prometheus/alertmanager v0.32.2
 	github.com/prometheus/client_golang v1.23.3-0.20260305100053-48a6770e980b
 	github.com/prometheus/client_model v0.6.2
-	github.com/prometheus/common v0.67.5
+	github.com/prometheus/common v0.68.1
 	github.com/prometheus/prometheus v1.99.0
 	github.com/spf13/afero v1.15.0
 	github.com/stretchr/testify v1.11.1
