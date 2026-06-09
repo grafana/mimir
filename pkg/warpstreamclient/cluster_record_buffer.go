@@ -95,7 +95,7 @@ func (c *ClusterRecordBuffer) Add(ctx context.Context, partitions []routedTopicP
 		c.bufferedRecords.Add(recCount)
 
 		var (
-			orig = p.done
+			origDone = p.done
 
 			// origDoneFired gates the original done ("ctx-cancel vs flush" race).
 			origDoneFired atomic.Bool
@@ -106,15 +106,18 @@ func (c *ClusterRecordBuffer) Add(ctx context.Context, partitions []routedTopicP
 
 		fireOrigDone := func(res ProduceResult) {
 			if origDoneFired.CompareAndSwap(false, true) {
-				orig(res)
+				origDone(res)
 			}
 		}
+
 		// AfterFunc's callback always runs in a separate goroutine and
 		// never races with the stopCtxWatch assignment below — done()
 		// can only fire via addToBuffers further down (synchronous on
 		// pre-canceled ctx) or via the flush (later still), so
 		// stopCtxWatch is already bound by the time it's read.
-		stopCtxWatch := context.AfterFunc(ctx, func() { fireOrigDone(ProduceResult{err: ctx.Err()}) })
+		stopCtxWatch := context.AfterFunc(ctx, func() {
+			fireOrigDone(ProduceResult{err: ctx.Err()})
+		})
 
 		p.done = func(res ProduceResult) {
 			if ourDoneFired.CompareAndSwap(false, true) {
@@ -126,6 +129,7 @@ func (c *ClusterRecordBuffer) Add(ctx context.Context, partitions []routedTopicP
 		}
 		wrapped[i] = p
 	}
+
 	c.addToBuffers(ctx, wrapped)
 }
 
