@@ -1142,15 +1142,15 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 
 			federatedQueryable = tenantfederation.NewQueryable(queryable, bypassForSingleQuerier, t.Cfg.TenantFederation.MaxConcurrent, rulerRegisterer, util_log.Logger)
 
-			regularQueryFunc := ruler.EngineQueryFunc(eng, queryable)
-			federatedQueryFunc := ruler.EngineQueryFunc(eng, federatedQueryable)
+			regularQueryFunc := rules.EngineQueryFunc(eng, queryable)
+			federatedQueryFunc := rules.EngineQueryFunc(eng, federatedQueryable)
 
 			embeddedQueryable = federatedQueryable
 			queryFunc = ruler.TenantFederationQueryFunc(regularQueryFunc, federatedQueryFunc)
 
 		} else {
 			embeddedQueryable = queryable
-			queryFunc = ruler.EngineQueryFunc(eng, queryable)
+			queryFunc = rules.EngineQueryFunc(eng, queryable)
 		}
 	}
 

@@ -230,47 +230,6 @@ type RulesLimits interface {
 	NameValidationScheme(userID string) model.ValidationScheme
 }
 
-// EngineQueryFunc returns a rules.QueryFunc that executes instant PromQL
-// queries against engine. Unlike rules.EngineQueryFunc, it Close()s the
-// underlying promql.Query after every evaluation.
-//
-// This matters when engine is the Mimir streaming engine: that engine keeps a
-// per-query MemoryConsumptionTracker registered in its
-// InflightMemoryConsumptionTracker map until Close is called. Query.Exec only
-// Deregisters on its error path; on success the caller owns the close. The
-// vendored rules.EngineQueryFunc never calls Close, so every successful
-// local-mode rule evaluation against MQE leaks one tracker.
-//
-// The streaming engine's Query.Close returns the result Vector slice and its
-// labels (via SeriesMetadataSlicePool) to internal pools, so we deep-copy the
-// Vector before letting the deferred Close fire.
-func EngineQueryFunc(engine promql.QueryEngine, q storage.Queryable) rules.QueryFunc {
-	return func(ctx context.Context, qs string, t time.Time) (promql.Vector, error) {
-		qry, err := engine.NewInstantQuery(ctx, q, nil, qs, t)
-		if err != nil {
-			return nil, err
-		}
-		defer qry.Close()
-
-		res := qry.Exec(ctx)
-		if res.Err != nil {
-			return nil, res.Err
-		}
-		switch v := res.Value.(type) {
-		case promql.Vector:
-			return copyVector(v), nil
-		case promql.Scalar:
-			return promql.Vector{promql.Sample{
-				T:      v.T,
-				F:      v.V,
-				Metric: labels.EmptyLabels(),
-			}}, nil
-		default:
-			return nil, errors.New("rule result is not a vector or scalar")
-		}
-	}
-}
-
 // copyVector returns a Vector whose backing arrays, label slices, and
 // FloatHistogram values do not overlap with v. Required to detach a query
 // result from internal pools owned by either engine before Query.Close returns

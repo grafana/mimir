@@ -1323,7 +1323,7 @@ func TestPrometheusErrorStringsForDuplicateLabelsets(t *testing.T) {
 	}
 }
 
-// TestEngineQueryFunc_ClosesQueryAndPreservesResult ensures the Mimir-specific
+// TestEngineQueryFunc_ClosesQueryAndPreservesResult ensures the upstream
 // EngineQueryFunc Close()s the underlying *promql.Query (so the streaming
 // engine's InflightMemoryConsumptionTracker map doesn't leak one entry per
 // successful rule evaluation), while still returning a Vector whose data is
@@ -1345,7 +1345,7 @@ func TestEngineQueryFunc_ClosesQueryAndPreservesResult(t *testing.T) {
 	`)
 	t.Cleanup(func() { storage.Close() })
 
-	qf := EngineQueryFunc(engine, storage)
+	qf := rules.EngineQueryFunc(engine, storage)
 
 	vec, err := qf(context.Background(), "up", time.Unix(120, 0))
 	require.NoError(t, err)
@@ -1363,54 +1363,6 @@ func TestEngineQueryFunc_ClosesQueryAndPreservesResult(t *testing.T) {
 		# TYPE cortex_querier_inflight_query_sampled_count gauge
 		cortex_querier_inflight_query_sampled_count 0
 	`), "cortex_querier_inflight_query_sampled_count"))
-}
-
-// TestEngineQueryFunc_VendoredEngineQueryFuncClosesQuery is a control test
-// pinning the behaviour of the vendored rules.EngineQueryFunc: it MUST Close
-// the Query after each evaluation, otherwise the Mimir streaming engine's
-// InflightMemoryConsumptionTracker leaks an entry per successful evaluation.
-//
-// Upstream (prometheus/prometheus) fixed this in
-// vendor/.../rules/manager.go by adding `defer q.Close()`, so the gauge
-// should now read 0. If this assertion ever fails, a future vendor bump has
-// reintroduced the leak — restore the close before shipping.
-//
-// Closing the Query is only one of two reasons ruler.EngineQueryFunc exists.
-// The other (deep-copying pooled Vector/label/FloatHistogram memory before
-// Close returns it to internal pools) is guarded by
-// TestCopyVector_DeepCopiesFloatHistogram. The wrapper can be retired only
-// when both guards remain green without it.
-func TestEngineQueryFunc_VendoredEngineQueryFuncClosesQuery(t *testing.T) {
-	opts := streamingpromql.NewTestEngineOpts()
-	// Pedantic mode panics on Close if memory accounting is non-zero. We never
-	// call Close here, so disable it to keep the test focused on the leak count.
-	opts.Pedantic = false
-
-	reg, ok := opts.CommonOpts.Reg.(*prometheus.Registry)
-	require.True(t, ok)
-
-	planner, err := streamingpromql.NewQueryPlanner(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
-	require.NoError(t, err)
-	engine, err := streamingpromql.NewEngine(opts, stats.NewQueryMetrics(reg), planner)
-	require.NoError(t, err)
-
-	storage := promqltest.LoadedStorage(t, `
-		load 1m
-			up{instance="a"} 1 1 1
-	`)
-	t.Cleanup(func() { storage.Close() })
-
-	qf := rules.EngineQueryFunc(engine, storage)
-
-	_, err = qf(context.Background(), "up", time.Unix(120, 0))
-	require.NoError(t, err)
-
-	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
-		# HELP cortex_querier_inflight_query_sampled_count Number of in-flight memory consumption trackers accumulated during the last metrics collection.
-		# TYPE cortex_querier_inflight_query_sampled_count gauge
-		cortex_querier_inflight_query_sampled_count 0
-	`), "cortex_querier_inflight_query_sampled_count"),
-		"if this assertion fails, vendored rules.EngineQueryFunc has stopped closing its Query — restore the close before shipping, or ruler.EngineQueryFunc will once again be load-bearing for the leak fix")
 }
 
 // TestCopyVector_DeepCopiesFloatHistogram ensures the wrapper deep copies
