@@ -21,6 +21,13 @@ func (r HashRange) Contains(key uint32) bool {
 	return key >= r.Lo && key <= r.Hi
 }
 
+// Overlaps reports whether this range intersects the inclusive hash
+// range [lo, hi]. Both ranges are inclusive on both ends, so they
+// overlap iff each starts at or before the other ends.
+func (r HashRange) Overlaps(lo, hi uint32) bool {
+	return r.Lo <= hi && r.Hi >= lo
+}
+
 // Size returns the number of hash values covered by this range.
 func (r HashRange) Size() uint64 {
 	return uint64(r.Hi) - uint64(r.Lo) + 1

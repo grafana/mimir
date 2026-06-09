@@ -306,6 +306,41 @@ func (l *Log) Lookup(at time.Time, key uint32) (int32, bool) {
 	return 0, false
 }
 
+// PartitionsOverlappingInterval returns the distinct partition IDs of
+// every lease whose wall-clock window [From, To) intersects the
+// half-open wall-clock window [w0, w1) AND whose hash Range overlaps
+// the inclusive key range [lo, hi].
+//
+// This is the query read-path analogue of Lookup. Where Lookup answers
+// "which partition owns this key right now", this answers "which
+// partitions could hold samples for this hash range that were written
+// at any wall-clock instant the query interval maps to". A query whose
+// interval spans a range->partition reassignment therefore fans out to
+// every partition that owned the range during the window, not just the
+// partition that owns it at the current instant.
+//
+// Half-open intersection: a lease [From, To) intersects [w0, w1) iff
+// From < w1 && To > w0. Results are de-duplicated and returned sorted
+// ascending for deterministic fan-out.
+func (l *Log) PartitionsOverlappingInterval(w0, w1 time.Time, lo, hi uint32) []int32 {
+	seen := make(map[int32]struct{})
+	for _, e := range l.entries {
+		if !e.From.Before(w1) || !e.To.After(w0) {
+			continue
+		}
+		if !e.Range.Overlaps(lo, hi) {
+			continue
+		}
+		seen[e.PartitionID] = struct{}{}
+	}
+	out := make([]int32, 0, len(seen))
+	for p := range seen {
+		out = append(out, p)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
+	return out
+}
+
 // ActiveAt returns a copy of all entries whose lease covers `at`.
 // When `at` is the current wall-clock time and the log has been
 // driven by recent Apply calls, the returned entries tile the full

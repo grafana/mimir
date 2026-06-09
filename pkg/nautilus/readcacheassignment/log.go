@@ -207,6 +207,39 @@ func (l *Log) Lookup(at time.Time, partitionID int32) []string {
 	return out
 }
 
+// OwnersDuring returns the distinct instance IDs that held partitionID
+// at any point during the half-open wall-clock window [w0, w1). A lease
+// [From, To) is included iff From < w1 && To > w0.
+//
+// This is the interval analogue of Lookup. A query whose interval spans
+// a partition->instance move fans out to every readcache that owned the
+// partition during the window: each readcache holds only the slice of
+// the partition's data it ingested while it owned the partition (the
+// new owner starts at the Kafka live edge and the previous owner keeps
+// its frozen slice queryable until retention), so the distributor must
+// query all of them and merge + dedup the results.
+//
+// Results are de-duplicated and returned sorted ascending for
+// deterministic fan-out.
+func (l *Log) OwnersDuring(partitionID int32, w0, w1 time.Time) []string {
+	seen := make(map[string]struct{})
+	for _, e := range l.entries {
+		if e.PartitionID != partitionID {
+			continue
+		}
+		if !e.From.Before(w1) || !e.To.After(w0) {
+			continue
+		}
+		seen[e.InstanceID] = struct{}{}
+	}
+	out := make([]string, 0, len(seen))
+	for id := range seen {
+		out = append(out, id)
+	}
+	sort.Strings(out)
+	return out
+}
+
 // ActiveAt returns a copy of all entries whose lease covers `at`.
 func (l *Log) ActiveAt(at time.Time) []LogEntry {
 	var out []LogEntry
