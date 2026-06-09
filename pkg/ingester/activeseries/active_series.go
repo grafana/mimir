@@ -142,10 +142,16 @@ func (c *ActiveSeries) MatchersDiffer(ctCfg asmodel.CustomTrackersConfig) bool {
 	return ctCfg.String() != c.matchers.Config().String()
 }
 
-func (c *ActiveSeries) CostAttributionDiffers(caCfg *costattribution.ActiveSeriesTracker) bool {
+func (c *ActiveSeries) CostAttributionDiffers(cat *costattribution.ActiveSeriesTracker) bool {
 	c.configMutex.RLock()
 	defer c.configMutex.RUnlock()
-	return caCfg != c.cat
+	return !cat.Equals(c.cat)
+}
+
+func (c *ActiveSeries) CostAttributionTracker() *costattribution.ActiveSeriesTracker {
+	c.configMutex.RLock()
+	defer c.configMutex.RUnlock()
+	return c.cat
 }
 
 func (c *ActiveSeries) ReloadSeriesConfig(asm *asmodel.Matchers, cat *costattribution.ActiveSeriesTracker, matchersChanged bool, catChanged bool, idx tsdb.IndexReader) {

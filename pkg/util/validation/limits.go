@@ -11,6 +11,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"hash/fnv"
 	"math"
 	"reflect"
 	"slices"
@@ -248,9 +249,15 @@ type Limits struct {
 	ActiveSeriesResultsMaxSizeBytes               int  `yaml:"active_series_results_max_size_bytes" json:"active_series_results_max_size_bytes" category:"advanced"`
 
 	// Cost attribution.
-	CostAttributionLabelsStructured costattributionmodel.Labels `yaml:"cost_attribution_labels_structured,omitempty" json:"cost_attribution_labels_structured,omitempty" category:"experimental"`
-	MaxCostAttributionCardinality   int                         `yaml:"max_cost_attribution_cardinality" json:"max_cost_attribution_cardinality" category:"experimental"`
-	CostAttributionCooldown         model.Duration              `yaml:"cost_attribution_cooldown" json:"cost_attribution_cooldown" category:"experimental"`
+	// Deprecated: use CostAttributionBaseTrackers instead. If set, it is migrated into CostAttributionBaseTrackers
+	// as a tracker named "cost-attribution" during validation. Cannot be set together with CostAttributionBaseTrackers.
+	CostAttributionLabelsStructured   costattributionmodel.Labels                          `yaml:"cost_attribution_labels_structured,omitempty" json:"cost_attribution_labels_structured,omitempty" category:"experimental"`
+	CostAttributionBaseTrackers       costattributionmodel.TrackerConfigs                  `yaml:"cost_attribution_trackers,omitempty" json:"cost_attribution_trackers,omitempty" category:"experimental"`
+	AdditionalCostAttributionTrackers costattributionmodel.TrackerConfigs                  `yaml:"additional_cost_attribution_trackers,omitempty" json:"additional_cost_attribution_trackers,omitempty" category:"experimental"`
+	costAttributionMergedTrackers     *atomic.Pointer[costattributionmodel.TrackerConfigs] `yaml:"-" json:"-"`
+	CostAttributionCooldown           model.Duration                                       `yaml:"cost_attribution_cooldown" json:"cost_attribution_cooldown" category:"experimental"`
+	MaxCostAttributionCardinality     int                                                  `yaml:"max_cost_attribution_cardinality" json:"max_cost_attribution_cardinality" category:"experimental"`
+	costAttributionConfigHash         uint64
 
 	// Ruler defaults and limits.
 	RulerEvaluationDelay                                  model.Duration                    `yaml:"ruler_evaluation_delay_duration" json:"ruler_evaluation_delay_duration"`
@@ -404,6 +411,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 
 	f.StringVar(&l.SeparateMetricsGroupLabel, "validation.separate-metrics-group-label", "", "Label used to define the group label for metrics separation. For each write request, the group is obtained from the first non-empty group label from the first timeseries in the incoming list of timeseries. Specific distributor and ingester metrics will be further separated adding a 'group' label with group label's value. Currently applies to the following metrics: cortex_discarded_samples_total")
 
+	f.Var(&l.CostAttributionBaseTrackers, "validation.cost-attribution-trackers", "Base cost attribution trackers configuration as JSON. Each tracker defines labels to track for cost attribution. Example: '{\"by-team\":{\"labels\":[{\"input\":\"team\"}]}}'.")
 	f.IntVar(&l.MaxCostAttributionCardinality, "validation.max-cost-attribution-cardinality", 2000, "Maximum cardinality of cost attribution labels allowed per user.")
 	f.Var(&l.CostAttributionCooldown, "validation.cost-attribution-cooldown", "Defines how long cost attribution stays in overflow before attempting a reset, with received/discarded samples extending the cooldown if overflow persists, while active series reset and restart tracking after the cooldown.")
 	f.IntVar(&l.MaxActiveSeriesAdditionalCustomTrackers, MaxActiveSeriesAdditionalCustomTrackersFlag, 0, "Maximum number of additional custom trackers for active series that you can configure per tenant. This limit only applies to additional custom trackers. Set to 0 to disable the limit.")
@@ -531,8 +539,9 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.IngestionPartitionsTenantShardSize, "ingest-storage.ingestion-partition-tenant-shard-size", 0, "The number of partitions a tenant's data should be sharded to when using the ingest storage. Tenants are sharded across partitions using shuffle-sharding. 0 disables shuffle sharding and tenant is sharded across all partitions.")
 	f.IntVar(&l.IngestionPartitionsTenantWriteShardSize, "ingest-storage.ingestion-partition-tenant-write-shard-size", 0, "The maximum number of partitions a tenant's data should be written to when using the ingest storage. When set to a value > 0 and less than -ingest-storage.ingestion-partition-tenant-shard-size, writes use fewer partitions while reads continue using the full shard size. This allows safely reducing the shard size without losing query coverage during the migration. 0 means the write shard size equals the read shard size.")
 
-	// Ensure the pointer holder is initialized.
+	// Ensure the pointer holders are initialized.
 	l.activeSeriesMergedCustomTrackersConfig = atomic.NewPointer[asmodel.CustomTrackersConfig](nil)
+	l.costAttributionMergedTrackers = atomic.NewPointer[costattributionmodel.TrackerConfigs](nil)
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -563,8 +572,9 @@ func (l *Limits) unmarshal(decode func(any) error) error {
 		l.RulerMaxRulesPerRuleGroupByNamespace = defaultLimits.RulerMaxRulesPerRuleGroupByNamespace.Clone()
 		l.RulerMaxRuleGroupsPerTenantByNamespace = defaultLimits.RulerMaxRuleGroupsPerTenantByNamespace.Clone()
 
-		// Reset the merged custom active series trackers config, to not interfere with the default limits.
+		// Reset the merged trackers configs, to not interfere with the default limits.
 		l.activeSeriesMergedCustomTrackersConfig = atomic.NewPointer[asmodel.CustomTrackersConfig](nil)
+		l.costAttributionMergedTrackers = atomic.NewPointer[costattributionmodel.TrackerConfigs](nil)
 
 		// Reset these params to be nil, since they are set during RegisterFlags.
 		l.OTelMetricSuffixesEnabled = nil
@@ -579,12 +589,34 @@ func (l *Limits) unmarshal(decode func(any) error) error {
 	}
 	l.extensions = getExtensions()
 
+	l.migrateCostAttributionLabelsStructured()
+
 	if err = l.Validate(); err != nil {
 		return err
 	}
 
 	l.canonicalizeQueries()
+	l.CostAttributionBaseTrackers.Canonicalize()
+	l.AdditionalCostAttributionTrackers.Canonicalize()
+	l.ComputeCostAttributionConfigHash()
 	return nil
+}
+
+// migrateCostAttributionLabelsStructured migrates the deprecated CostAttributionLabelsStructured
+// field into CostAttributionBaseTrackers.
+func (l *Limits) migrateCostAttributionLabelsStructured() {
+	if len(l.CostAttributionLabelsStructured) == 0 {
+		return
+	}
+	if len(l.CostAttributionBaseTrackers) > 0 {
+		// Base trackers are set too; leave the deprecated field in place so Validate rejects the
+		// mutually-exclusive combination instead of silently dropping the configured trackers.
+		return
+	}
+	l.CostAttributionBaseTrackers = costattributionmodel.TrackerConfigs{
+		costattributionmodel.DefaultTrackerName: costattributionmodel.TrackerConfig{Labels: l.CostAttributionLabelsStructured},
+	}
+	l.CostAttributionLabelsStructured = nil
 }
 
 // RegisterExtensionsDefaults registers the default values for extensions into l.
@@ -694,7 +726,13 @@ func (l *Limits) Validate() error {
 		}
 	}
 
-	if err := l.CostAttributionLabelsStructured.Validate(); err != nil {
+	if len(l.CostAttributionLabelsStructured) > 0 && len(l.CostAttributionBaseTrackers) > 0 {
+		return fmt.Errorf("cost_attribution_labels_structured and cost_attribution_trackers are mutually exclusive; use cost_attribution_trackers only")
+	}
+	if err := l.CostAttributionBaseTrackers.Validate(); err != nil {
+		return err
+	}
+	if err := l.AdditionalCostAttributionTrackers.Validate(); err != nil {
 		return err
 	}
 
@@ -708,6 +746,25 @@ func (l *Limits) Validate() error {
 	}
 
 	return nil
+}
+
+// ComputeCostAttributionConfigHash computes and caches the hash of cost attribution config fields.
+func (l *Limits) ComputeCostAttributionConfigHash() uint64 {
+	l.costAttributionConfigHash = l.computeCostAttributionConfigHash()
+	return l.costAttributionConfigHash
+}
+
+func (l *Limits) computeCostAttributionConfigHash() uint64 {
+	if len(l.CostAttributionBaseTrackers) == 0 && len(l.AdditionalCostAttributionTrackers) == 0 {
+		return 0
+	}
+	h := fnv.New64a()
+	e := json.NewEncoder(h)
+	_ = e.Encode(l.CostAttributionBaseTrackers)
+	_ = e.Encode(l.MaxCostAttributionCardinality)
+	_ = e.Encode(l.CostAttributionCooldown)
+	_ = e.Encode(l.AdditionalCostAttributionTrackers)
+	return h.Sum64()
 }
 
 // LabelValueHashLen is the length of the hash portion that replaces part of all
@@ -1152,16 +1209,57 @@ func (o *Overrides) SeparateMetricsGroupLabel(userID string) string {
 	return o.getOverridesForUser(userID).SeparateMetricsGroupLabel
 }
 
-func (o *Overrides) CostAttributionLabelsStructured(userID string) costattributionmodel.Labels {
-	return o.getOverridesForUser(userID).CostAttributionLabelsStructured
-}
-
 func (o *Overrides) CostAttributionCooldown(userID string) time.Duration {
 	return time.Duration(o.getOverridesForUser(userID).CostAttributionCooldown)
 }
 
 func (o *Overrides) MaxCostAttributionCardinality(userID string) int {
 	return o.getOverridesForUser(userID).MaxCostAttributionCardinality
+}
+
+// costAttributionTrackers returns the merged base + additional tracker configs. The result is cached.
+func (l *Limits) costAttributionTrackers() costattributionmodel.TrackerConfigs {
+	if l.costAttributionMergedTrackers == nil {
+		return costattributionmodel.MergeTrackerConfigs(
+			l.CostAttributionBaseTrackers,
+			l.AdditionalCostAttributionTrackers,
+		)
+	}
+
+	if merged := l.costAttributionMergedTrackers.Load(); merged != nil {
+		return *merged
+	}
+
+	merged := costattributionmodel.MergeTrackerConfigs(
+		l.CostAttributionBaseTrackers,
+		l.AdditionalCostAttributionTrackers,
+	)
+	l.costAttributionMergedTrackers.Store(&merged)
+	return merged
+}
+
+// CostAttributionConfig returns all cost attribution limits for a tenant in a single lookup.
+type CostAttributionConfig struct {
+	Trackers       costattributionmodel.TrackerConfigs
+	MaxCardinality int
+	Cooldown       time.Duration
+}
+
+func (o *Overrides) CostAttributionConfig(userID string) CostAttributionConfig {
+	l := o.getOverridesForUser(userID)
+	return CostAttributionConfig{
+		Trackers:       l.costAttributionTrackers(),
+		MaxCardinality: l.MaxCostAttributionCardinality,
+		Cooldown:       time.Duration(l.CostAttributionCooldown),
+	}
+}
+
+// CostAttributionConfigHash returns a precomputed hash of all cost attribution
+// config fields for a tenant. The hash is stable within a config reload cycle.
+// The second argument indicates whether the user has any cost attribution trackers configured.
+func (o *Overrides) CostAttributionConfigHash(userID string) (uint64, bool) {
+	user := o.getOverridesForUser(userID)
+	return user.costAttributionConfigHash, len(user.CostAttributionBaseTrackers)+len(user.AdditionalCostAttributionTrackers) > 0
 }
 
 // IngestionTenantShardSize returns the ingesters shard size for a given user.

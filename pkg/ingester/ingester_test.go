@@ -4634,7 +4634,9 @@ func BenchmarkIngesterPush(b *testing.B) {
 				if limits == nil {
 					return
 				}
-				limits.CostAttributionLabelsStructured = costattributionmodel.Labels{{Input: "cpu"}}
+				limits.CostAttributionBaseTrackers = costattributionmodel.TrackerConfigs{
+					costattributionmodel.DefaultTrackerName: {Labels: costattributionmodel.Labels{{Input: "cpu"}}},
+				}
 				limits.MaxCostAttributionCardinality = 100
 			},
 			customRegistry: prometheus.NewRegistry(),
