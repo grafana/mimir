@@ -63,7 +63,7 @@
   // Create resource that will be targetted by ScaledObject.
   ingester_primary_zone_replica_template: if !$._config.ingest_storage_ingester_autoscaling_enabled then null else $.replicaTemplate($._config.ingest_storage_ingester_autoscaling_primary_zone, replicas=-1, label_selector=$._config.ingest_storage_replica_template_label_selector),
 
-  ingesterPartitionAutoscalingOwnedSeriesTrigger(podSelector, ringName):: {
+  ingesterPartitionAutoscalingOwnedSeriesTrigger(workloadSelector, ringName):: {
     // We want to target a maximum number of owned series per ingester pod.
     // However, we can't use a `Value` metric because the HPA will also count pods assigned to read-only partitions when calculating the desired number of replicas.
     // This means we need to use an `AverageValue` metric, which doesn't use the current replica count at all.
@@ -74,9 +74,9 @@
     local max_owned_series_x_active_partitions = |||
       (
           max(
-              sum by (pod) (cortex_ingester_owned_series{cluster="%(cluster)s", namespace="%(namespace)s", job="%(namespace)s/%(pod_selector)s", container="ingester"})
+              sum by (pod) (cortex_ingester_owned_series{cluster="%(cluster)s", namespace="%(namespace)s", job="%(namespace)s/%(workload_selector)s", container="ingester"})
               and
-              sum by (pod) (kube_pod_status_ready{cluster="%(cluster)s", namespace="%(namespace)s", pod=~"%(pod_selector)s.*", condition="true"}) > 0
+              sum by (pod) (kube_pod_status_ready{cluster="%(cluster)s", namespace="%(namespace)s", pod=~"%(workload_selector)s.*", condition="true"}) > 0
           )
           *
           max(cortex_partition_ring_partitions{cluster="%(cluster)s", namespace="%(namespace)s", state="Active", container="distributor", name="%(ring)s"})
@@ -92,7 +92,7 @@
     query: ('max_over_time(min_over_time(' + max_owned_series_x_active_partitions + '[5m:])[2h:5m])') % {
       cluster: $._config.cluster,
       namespace: $._config.namespace,
-      pod_selector: podSelector,
+      workload_selector: workloadSelector,
       ring: ringName,
     },
     threshold: std.toString($._config.ingest_storage_ingester_autoscaling_max_owned_series_threshold),
