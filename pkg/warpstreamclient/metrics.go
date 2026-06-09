@@ -19,14 +19,14 @@ type metrics struct {
 
 	lingerFlushesTotal prometheus.Counter
 
-	produceRequestsTotal           prometheus.Counter
-	produceRequestsFailedTotal     *prometheus.CounterVec
-	produceRequestsAttemptsSuccess prometheus.Observer
-	produceRequestsAttemptsFailure prometheus.Observer
-	produceRequestLatencySuccess   prometheus.Observer
-	// produceRequestLatencyFailure is keyed by failure reason; success
-	// latency carries no reason label (see produceRequestLatencySuccess).
-	produceRequestLatencyFailure prometheus.ObserverVec
+	produceDirectRequestsTotal         prometheus.Counter
+	produceDirectRequestsFailedTotal   *prometheus.CounterVec
+	produceRequestsAttemptsSuccess     prometheus.Observer
+	produceRequestsAttemptsFailure     prometheus.Observer
+	produceDirectRequestLatencySuccess prometheus.Observer
+	// produceDirectRequestLatencyFailure is keyed by failure reason; success
+	// latency carries no reason label (see produceDirectRequestLatencySuccess).
+	produceDirectRequestLatencyFailure prometheus.ObserverVec
 
 	produceRequestsPrimaryTotal prometheus.Counter
 	produceRequestsHedgeTotal   prometheus.Counter
@@ -45,9 +45,9 @@ func newMetrics(reg prometheus.Registerer) *metrics {
 	// On failures the latency carries a "reason" label; on success the
 	// reason is left empty, which Prometheus treats as the label being
 	// absent for the success series.
-	produceRequestLatency := promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
-		Name:                            "produce_request_latency_seconds",
-		Help:                            "Latency of a single Produce request to a Warpstream agent, by outcome (and by failure reason when the outcome is a failure). Each retry counts as a separate request.",
+	produceDirectRequestLatency := promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
+		Name:                            "produce_direct_request_latency_seconds",
+		Help:                            "Latency of a single direct Produce request to a Warpstream agent, by outcome (and by failure reason when the outcome is a failure). Each retry counts as a separate request.",
 		NativeHistogramBucketFactor:     1.1,
 		NativeHistogramMaxBucketNumber:  100,
 		NativeHistogramMinResetDuration: time.Hour,
@@ -79,9 +79,9 @@ func newMetrics(reg prometheus.Registerer) *metrics {
 			Name: "linger_flushes_total",
 			Help: "Total number of partition batch flushes triggered by the linger buffer.",
 		}),
-		produceRequestsTotal: promauto.With(reg).NewCounter(prometheus.CounterOpts{
-			Name: "produce_requests_total",
-			Help: "Total number of Produce requests issued to a Warpstream agent. Each retry counts as a separate request.",
+		produceDirectRequestsTotal: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "produce_direct_requests_total",
+			Help: "Total number of direct Produce requests issued to a Warpstream agent. Each retry counts as a separate request.",
 		}),
 		produceRequestsPrimaryTotal: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "produce_requests_primary_total",
@@ -91,13 +91,13 @@ func newMetrics(reg prometheus.Registerer) *metrics {
 			Name: "produce_requests_hedge_total",
 			Help: "Total number of hedging and retried Produce wire requests.",
 		}),
-		produceRequestsFailedTotal: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
-			Name: "produce_requests_failed_total",
-			Help: "Total number of Produce requests issued to a Warpstream agent that failed, by failure reason. Each retry counts as a separate request.",
+		produceDirectRequestsFailedTotal: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "produce_direct_requests_failed_total",
+			Help: "Total number of direct Produce requests issued to a Warpstream agent that failed, by failure reason. Each retry counts as a separate request.",
 		}, []string{"reason"}),
-		produceRequestsAttemptsSuccess: produceRequestAttempts.WithLabelValues("success"),
-		produceRequestsAttemptsFailure: produceRequestAttempts.WithLabelValues("failure"),
-		produceRequestLatencySuccess:   produceRequestLatency.WithLabelValues("success", ""),
-		produceRequestLatencyFailure:   produceRequestLatency.MustCurryWith(prometheus.Labels{"outcome": "failure"}),
+		produceRequestsAttemptsSuccess:     produceRequestAttempts.WithLabelValues("success"),
+		produceRequestsAttemptsFailure:     produceRequestAttempts.WithLabelValues("failure"),
+		produceDirectRequestLatencySuccess: produceDirectRequestLatency.WithLabelValues("success", ""),
+		produceDirectRequestLatencyFailure: produceDirectRequestLatency.MustCurryWith(prometheus.Labels{"outcome": "failure"}),
 	}
 }
