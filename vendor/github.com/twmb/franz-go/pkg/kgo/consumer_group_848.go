@@ -425,6 +425,18 @@ func (g *g848) initialJoin() (time.Duration, error) {
 	g.lastSubscribedTopics = nil
 	g.lastTopics = nil
 	g.prerevoking.Store(false)
+	// Drain any stale rejoin signal, mirroring joinAndSync. Nothing
+	// else on the 848 path consumes the channel across a member reset:
+	// if a signal was queued (e.g. metadata found new matching topics)
+	// and the heartbeat loop then exited on a fatal error without
+	// reading it, the signal would survive into the session we are
+	// about to build and immediately bounce it. The join below already
+	// carries our current subscription (mkreq reads live state), which
+	// is everything a queued signal could ask for.
+	select {
+	case <-g.g.rejoinCh:
+	default:
+	}
 	req := g.mkreq()
 	resp, err := req.RequestWith(g.g.ctx, g.g.cl)
 	if err == nil {
