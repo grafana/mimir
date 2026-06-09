@@ -34,40 +34,7 @@
 
     // Make triggers configurable so that we can add more. Each object needs to have: query, threshold, metric_type.
     ingest_storage_ingester_autoscaling_triggers: [
-      {
-        // We want to target a maximum number of owned series per ingester pod.
-        // However, we can't use a `Value` metric because the HPA will also count pods assigned to read-only partitions when calculating the desired number of replicas.
-        // This means we need to use an `AverageValue` metric, which doesn't use the current replica count at all.
-        // To do this, we fake a "total owned series" value by multiplying the max owned series per pod by the number of active partitions.
-        // The HPA then calculates the desired replica count as this total value / threshold.
-
-        // Calculate the "total owned series" as the owned series on the worst pod multiplied by the number of active partitions.
-        local max_owned_series_x_active_partitions = |||
-          (
-              max(
-                  sum by (pod) (cortex_ingester_owned_series{cluster="%(cluster)s", namespace="%(namespace)s", job="%(namespace)s/%(primary_zone)s", container="ingester"})
-                  and
-                  sum by (pod) (kube_pod_status_ready{cluster="%(cluster)s", namespace="%(namespace)s", pod=~"%(primary_zone)s.*", condition="true"}) > 0
-              )
-              *
-              max(cortex_partition_ring_partitions{cluster="%(cluster)s", namespace="%(namespace)s", state="Active", container="distributor", name="ingester-partitions"})
-          )
-        |||,
-
-        // Our compaction cycles are 2h long, but the max stabilizationWindowSeconds is only 1h. This means that we'll react to a scale-down
-        // after compaction half-way through a cycle, when the series counts in ingesters are still growing, resulting in partitions being put into read-only
-        // mode only to be taken back out of it a short time later. To artificially increase our stabilization window to 3h, we use a `max_over_time`
-        // of 2h. However, because this query uses both the max-owned-series-per-pod and the partition count, and the max-owned-series-per-pod doesn't decrease
-        // until some time after the partition count increases, we see brief spikes in the artificial "total series" we calculate after a scale-up. To
-        // mitigate this, we first use a `min_over_time` of 5m.
-        query: ('max_over_time(min_over_time(' + max_owned_series_x_active_partitions + '[5m:])[2h:5m])') % {
-          cluster: $._config.cluster,
-          namespace: $._config.namespace,
-          primary_zone: $._config.ingest_storage_ingester_autoscaling_primary_zone,
-        },
-        threshold: std.toString($._config.ingest_storage_ingester_autoscaling_max_owned_series_threshold),
-        metric_type: 'AverageValue',  // HPA will compute desired replicas as "<query result> / <threshold>".
-      },
+      $.ingesterPartitionAutoscalingOwnedSeriesTrigger($._config.ingest_storage_ingester_autoscaling_primary_zone, 'ingester-partitions'),
     ],
 
     // When set to false, metrics used by scaling triggers are only indexed if there is more than 1 trigger.
@@ -96,37 +63,79 @@
   // Create resource that will be targetted by ScaledObject.
   ingester_primary_zone_replica_template: if !$._config.ingest_storage_ingester_autoscaling_enabled then null else $.replicaTemplate($._config.ingest_storage_ingester_autoscaling_primary_zone, replicas=-1, label_selector=$._config.ingest_storage_replica_template_label_selector),
 
+  ingesterPartitionAutoscalingOwnedSeriesTrigger(podSelector, ringName):: {
+    // We want to target a maximum number of owned series per ingester pod.
+    // However, we can't use a `Value` metric because the HPA will also count pods assigned to read-only partitions when calculating the desired number of replicas.
+    // This means we need to use an `AverageValue` metric, which doesn't use the current replica count at all.
+    // To do this, we fake a "total owned series" value by multiplying the max owned series per pod by the number of active partitions.
+    // The HPA then calculates the desired replica count as this total value / threshold.
+
+    // Calculate the "total owned series" as the owned series on the worst pod multiplied by the number of active partitions.
+    local max_owned_series_x_active_partitions = |||
+      (
+          max(
+              sum by (pod) (cortex_ingester_owned_series{cluster="%(cluster)s", namespace="%(namespace)s", job="%(namespace)s/%(pod_selector)s", container="ingester"})
+              and
+              sum by (pod) (kube_pod_status_ready{cluster="%(cluster)s", namespace="%(namespace)s", pod=~"%(pod_selector)s.*", condition="true"}) > 0
+          )
+          *
+          max(cortex_partition_ring_partitions{cluster="%(cluster)s", namespace="%(namespace)s", state="Active", container="distributor", name="%(ring)s"})
+      )
+    |||,
+
+    // Our compaction cycles are 2h long, but the max stabilizationWindowSeconds is only 1h. This means that we'll react to a scale-down
+    // after compaction half-way through a cycle, when the series counts in ingesters are still growing, resulting in partitions being put into read-only
+    // mode only to be taken back out of it a short time later. To artificially increase our stabilization window to 3h, we use a `max_over_time`
+    // of 2h. However, because this query uses both the max-owned-series-per-pod and the partition count, and the max-owned-series-per-pod doesn't decrease
+    // until some time after the partition count increases, we see brief spikes in the artificial "total series" we calculate after a scale-up. To
+    // mitigate this, we first use a `min_over_time` of 5m.
+    query: ('max_over_time(min_over_time(' + max_owned_series_x_active_partitions + '[5m:])[2h:5m])') % {
+      cluster: $._config.cluster,
+      namespace: $._config.namespace,
+      pod_selector: podSelector,
+      ring: ringName,
+    },
+    threshold: std.toString($._config.ingest_storage_ingester_autoscaling_max_owned_series_threshold),
+    metric_type: 'AverageValue',  // HPA will compute desired replicas as "<query result> / <threshold>".
+  },
+
   //
   // Configure prepare-shutdown endpoint in all ingesters.
   //
 
+  ingesterPartitionAutoscalingStatefulSetMixin(leaderName, isLeader, replicaTemplate)::
+    local statefulSet = $.apps.v1.statefulSet;
+
+    $.removeReplicasFromSpec +
+    statefulSet.mixin.metadata.withLabelsMixin({
+      'grafana.com/prepare-downscale': 'true',
+      'grafana.com/min-time-between-zones-downscale': '0',  // Follower zones should adjust their number of instances based on leader zone immediately.
+    }) +
+    statefulSet.mixin.metadata.withAnnotationsMixin(
+      {
+        'grafana.com/prepare-downscale-http-path': 'ingester/prepare-shutdown',  // We want to tell ingesters that they are shutting down.
+        'grafana.com/prepare-downscale-http-port': '%(server_http_port)s' % $._config,
+      } + (
+        if isLeader then {
+          'grafana.com/rollout-mirror-replicas-from-resource-name': replicaTemplate.metadata.name,
+          'grafana.com/rollout-mirror-replicas-from-resource-kind': replicaTemplate.kind,
+          'grafana.com/rollout-mirror-replicas-from-resource-api-version': replicaTemplate.apiVersion,
+          'grafana.com/rollout-delayed-downscale': $._config.ingest_storage_ingester_downscale_delay,
+          'grafana.com/rollout-prepare-delayed-downscale-url': 'http://pod/ingester/prepare-partition-downscale',
+        } else {
+          'grafana.com/rollout-downscale-leader': leaderName,
+        }
+      )
+    ),
+
   local updateIngesterZone(zone) = overrideSuperIfExists(
     '%s_statefulset' % std.strReplace(zone, '-', '_'),
-    if !$._config.ingest_storage_ingester_autoscaling_ingester_annotations_enabled then {} else (
-      local statefulSet = $.apps.v1.statefulSet;
-
-      $.removeReplicasFromSpec +
-      statefulSet.mixin.metadata.withLabelsMixin({
-        'grafana.com/prepare-downscale': 'true',
-        'grafana.com/min-time-between-zones-downscale': '0',  // Follower zones should adjust their number of instances based on leader zone immediately.
-      }) +
-      statefulSet.mixin.metadata.withAnnotationsMixin(
-        {
-          'grafana.com/prepare-downscale-http-path': 'ingester/prepare-shutdown',  // We want to tell ingesters that they are shutting down.
-          'grafana.com/prepare-downscale-http-port': '%(server_http_port)s' % $._config,
-        } + (
-          if zone == $._config.ingest_storage_ingester_autoscaling_primary_zone then {
-            'grafana.com/rollout-mirror-replicas-from-resource-name': $._config.ingest_storage_ingester_autoscaling_primary_zone,
-            'grafana.com/rollout-mirror-replicas-from-resource-kind': $.ingester_primary_zone_replica_template.kind,
-            'grafana.com/rollout-mirror-replicas-from-resource-api-version': $.ingester_primary_zone_replica_template.apiVersion,
-            'grafana.com/rollout-delayed-downscale': $._config.ingest_storage_ingester_downscale_delay,
-            'grafana.com/rollout-prepare-delayed-downscale-url': 'http://pod/ingester/prepare-partition-downscale',
-          } else {
-            'grafana.com/rollout-downscale-leader': $._config.ingest_storage_ingester_autoscaling_primary_zone,
-          }
-        )
+    if !$._config.ingest_storage_ingester_autoscaling_ingester_annotations_enabled then {} else
+      $.ingesterPartitionAutoscalingStatefulSetMixin(
+        $._config.ingest_storage_ingester_autoscaling_primary_zone,
+        zone == $._config.ingest_storage_ingester_autoscaling_primary_zone,
+        $.ingester_primary_zone_replica_template,
       )
-    )
   ),
 
   ingester_zone_a_statefulset: updateIngesterZone('ingester-zone-a'),
