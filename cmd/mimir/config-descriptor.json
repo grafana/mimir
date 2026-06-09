@@ -6453,7 +6453,7 @@
                 "kind": "field",
                 "name": "input",
                 "required": false,
-                "desc": "",
+                "desc": "Source label name to read from the incoming series.",
                 "fieldValue": null,
                 "fieldDefaultValue": "",
                 "fieldType": "string"
@@ -6462,7 +6462,7 @@
                 "kind": "field",
                 "name": "output",
                 "required": false,
-                "desc": "",
+                "desc": "Label name to use in the cost attribution output metrics. If empty, the input label name is used.",
                 "fieldValue": null,
                 "fieldDefaultValue": "",
                 "fieldType": "string"
@@ -6505,7 +6505,7 @@
                       "kind": "field",
                       "name": "input",
                       "required": false,
-                      "desc": "",
+                      "desc": "Source label name to read from the incoming series.",
                       "fieldValue": null,
                       "fieldDefaultValue": "",
                       "fieldType": "string"
@@ -6514,7 +6514,7 @@
                       "kind": "field",
                       "name": "output",
                       "required": false,
-                      "desc": "",
+                      "desc": "Label name to use in the cost attribution output metrics. If empty, the input label name is used.",
                       "fieldValue": null,
                       "fieldDefaultValue": "",
                       "fieldType": "string"
@@ -6571,7 +6571,7 @@
                       "kind": "field",
                       "name": "input",
                       "required": false,
-                      "desc": "",
+                      "desc": "Source label name to read from the incoming series.",
                       "fieldValue": null,
                       "fieldDefaultValue": "",
                       "fieldType": "string"
@@ -6580,7 +6580,7 @@
                       "kind": "field",
                       "name": "output",
                       "required": false,
-                      "desc": "",
+                      "desc": "Label name to use in the cost attribution output metrics. If empty, the input label name is used.",
                       "fieldValue": null,
                       "fieldDefaultValue": "",
                       "fieldType": "string"

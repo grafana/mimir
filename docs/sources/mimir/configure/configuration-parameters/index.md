@@ -4733,8 +4733,11 @@ blocked_requests:
 
 # (experimental)
 cost_attribution_labels_structured:
-  -     [input: <string> | default = ""]
+  - # Source label name to read from the incoming series.
+    [input: <string> | default = ""]
 
+    # Label name to use in the cost attribution output metrics. If empty, the
+    # input label name is used.
     [output: <string> | default = ""]
 
 # (experimental) Base cost attribution trackers configuration as JSON. Each
@@ -4744,8 +4747,11 @@ cost_attribution_labels_structured:
 [cost_attribution_trackers:]
   <string>:
     labels:
-      -         [input: <string> | default = ""]
+      - # Source label name to read from the incoming series.
+        [input: <string> | default = ""]
 
+        # Label name to use in the cost attribution output metrics. If empty,
+        # the input label name is used.
         [output: <string> | default = ""]
 
     # Expose this tracker's metrics on the operational /metrics endpoint instead
@@ -4757,8 +4763,11 @@ cost_attribution_labels_structured:
 [additional_cost_attribution_trackers:]
   <string>:
     labels:
-      -         [input: <string> | default = ""]
+      - # Source label name to read from the incoming series.
+        [input: <string> | default = ""]
 
+        # Label name to use in the cost attribution output metrics. If empty,
+        # the input label name is used.
         [output: <string> | default = ""]
 
     # Expose this tracker's metrics on the operational /metrics endpoint instead
