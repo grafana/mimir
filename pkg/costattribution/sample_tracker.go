@@ -175,11 +175,9 @@ func (st *sampleTracker) IncrementReceivedSamples(req *mimirpb.WriteRequest, now
 
 	// Update the observations for each label set and update the state per request,
 	// this would be less precised than per sample but it's more efficient
-	var total float64
 	for k, v := range dict {
 		count := float64(v)
 		st.updateObservations(k, now, count, 0, nil)
-		total += count
 	}
 }
 
