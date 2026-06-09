@@ -6,6 +6,11 @@ import (
 	"errors"
 	"sync"
 	"time"
+
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
 // DemoterConfig holds the Demoter-specific knobs. The health
@@ -65,28 +70,46 @@ type Demoter struct {
 	tracker    AgentStatsReader
 	healthCfg  HealthCheckConfig
 	demoterCfg DemoterConfig
+	logger     log.Logger
 
 	// now is injectable for testing; defaults to time.Now.
 	now func() time.Time
 
 	// lastDemotedProbe maps nodeID → the last probe timestamp. Entry
 	// presence is the "this agent has been classified as demoted" signal
-	// that drives the hysteresis branch of isDemoted. Recovery removes
-	// the entry so a future deterioration uses the strict gate again.
+	// that drives the hysteresis branch of isDemoted. isDemoted creates the
+	// entry (zero timestamp, so the first probe is immediately due) on the
+	// demotion edge and removes it on recovery; shouldProbe and the
+	// forced-probe fallback in Candidates stamp it with each probe time.
 	lastDemotedProbeMu sync.Mutex
 	lastDemotedProbe   map[int32]time.Time
 }
 
 // NewDemoter wraps inner with the demotion policy described on Demoter.
-func NewDemoter(inner PartitionAssignmentStrategy, tracker AgentStatsReader, health HealthCheckConfig, cfg DemoterConfig) *Demoter {
-	return &Demoter{
+func NewDemoter(inner PartitionAssignmentStrategy, tracker AgentStatsReader, health HealthCheckConfig, cfg DemoterConfig, logger log.Logger, reg prometheus.Registerer) *Demoter {
+	if logger == nil {
+		logger = log.NewNopLogger()
+	}
+	d := &Demoter{
 		inner:            inner,
 		tracker:          tracker,
 		healthCfg:        health,
 		demoterCfg:       cfg,
+		logger:           logger,
 		now:              time.Now,
 		lastDemotedProbe: make(map[int32]time.Time),
 	}
+
+	promauto.With(reg).NewGaugeFunc(prometheus.GaugeOpts{
+		Name: "demoter_demoted_agents",
+		Help: "Number of Warpstream agents currently demoted by the Demoter.",
+	}, d.demotedAgentsCount)
+	promauto.With(reg).NewGaugeFunc(prometheus.GaugeOpts{
+		Name: "demoter_demotion_suppressed",
+		Help: "Whether the Demoter is currently suppressing all demotions because too many agents are faulty (1) or not (0).",
+	}, d.demotionSuppressedMetricValue)
+
+	return d
 }
 
 // Candidates returns the candidate list with demoted agents either elided
@@ -162,6 +185,9 @@ func (d *Demoter) Candidates(topic string, partition int32, maxCandidates int) [
 	// back to the natural primary as a forced probe. We'd rather send
 	// traffic to a sick agent than refuse to route at all.
 	if len(candidates) == 0 {
+		// agents[0] was classified demoted by isDemoted above (which emits the
+		// demote log on the demotion edge); here we only record the forced
+		// probe time so it counts against the probe interval.
 		forced := agents[0].cloneWithState(AgentStateDemoted)
 		d.lastDemotedProbeMu.Lock()
 		d.lastDemotedProbe[forced.NodeID] = now
@@ -182,10 +208,8 @@ func (d *Demoter) isDemoted(now time.Time, nodeID int32, clusterStats ClusterSta
 		return false
 	}
 	// Cluster-wide guard: if too many agents are already faulty, treat
-	// this as a cluster-wide event and stop demoting. Apply the same
-	// scale-aware 1/N floor as the Hedger so a single bad agent in a
-	// tiny cluster never trips the suppression.
-	if clusterStats.FaultyFraction > maxFractionFloor(d.healthCfg.MaxFaultyFraction, clusterStats.FaultyContributorsCount) {
+	// this as a cluster-wide event and stop demoting.
+	if d.isDemotionSuppressed(clusterStats) {
 		return false
 	}
 	stats, ok := d.tracker.AgentStats(now, nodeID)
@@ -201,26 +225,76 @@ func (d *Demoter) isDemoted(now time.Time, nodeID int32, clusterStats ClusterSta
 	// healthy. On confirmed recovery the probe state is cleared so the
 	// strict gate applies next time.
 	minRequests := errorRateMinRequests(d.healthCfg.FaultyThreshold)
-	d.lastDemotedProbeMu.Lock()
-	_, wasDemoted := d.lastDemotedProbe[nodeID]
-	d.lastDemotedProbeMu.Unlock()
-	if wasDemoted {
-		minRequests = 1
-	}
 
-	isFaulty := stats.RequestCount >= minRequests && stats.ErrorRate > clusterStats.FaultyThreshold
-	if wasDemoted && !isFaulty {
-		// Recovery: clear the probe state so the strict gate applies
-		// again next time the agent's health deteriorates.
+	// Read the demoted state, classify, and apply the transition under a
+	// single lock so the read and the act are atomic. Because the act flips
+	// the map membership that wasDemoted reads, every later call — a repeat
+	// within this Candidates pass or a concurrent one — sees the new state and
+	// is a no-op, so each transition is logged exactly once.
+	var isFaulty, demoted, restored bool
+	{
 		d.lastDemotedProbeMu.Lock()
-		delete(d.lastDemotedProbe, nodeID)
+
+		_, wasDemoted := d.lastDemotedProbe[nodeID]
+		if wasDemoted {
+			minRequests = 1
+		}
+
+		isFaulty = stats.RequestCount >= minRequests && stats.ErrorRate > clusterStats.FaultyThreshold
+
+		switch {
+		case isFaulty && !wasDemoted:
+			// Register the agent with a zero probe timestamp so its first probe is
+			// immediately due (the zero time is always older than ProbeInterval).
+			d.lastDemotedProbe[nodeID] = time.Time{}
+			demoted = true
+		case wasDemoted && !isFaulty:
+			// Recovery: clear the probe state so the strict gate applies again
+			// next time the agent's health deteriorates.
+			delete(d.lastDemotedProbe, nodeID)
+			restored = true
+		}
+
 		d.lastDemotedProbeMu.Unlock()
 	}
+
+	switch {
+	case demoted:
+		level.Info(d.logger).Log("msg", "warpstream agent demoted", "node_id", nodeID, "error_rate", stats.ErrorRate, "request_count", stats.RequestCount, "min_requests", minRequests, "faulty_threshold", clusterStats.FaultyThreshold)
+	case restored:
+		level.Info(d.logger).Log("msg", "warpstream agent restored", "node_id", nodeID)
+	}
+
 	return isFaulty
 }
 
-// shouldProbe returns true if the caller should issue the probe,
-// atomically taking the slot in that case.
+// isDemotionSuppressed reports whether the cluster-wide guard is tripping: too
+// many agents are already faulty, so demoting any of them would just dump their
+// traffic onto the survivors. Applies the same scale-aware 1/N floor as the
+// Hedger so a single bad agent in a tiny cluster never trips the suppression.
+func (d *Demoter) isDemotionSuppressed(clusterStats ClusterStats) bool {
+	return clusterStats.FaultyFraction > maxFractionFloor(d.healthCfg.MaxFaultyFraction, clusterStats.FaultyContributorsCount)
+}
+
+func (d *Demoter) demotedAgentsCount() float64 {
+	d.lastDemotedProbeMu.Lock()
+	defer d.lastDemotedProbeMu.Unlock()
+	return float64(len(d.lastDemotedProbe))
+}
+
+// demotionSuppressedMetricValue returns 1 when the cluster-wide guard is currently
+// suppressing all demotions, 0 otherwise (including cold start).
+func (d *Demoter) demotionSuppressedMetricValue() float64 {
+	clusterStats, ok := d.tracker.ClusterStats(d.now(), d.healthCfg.SlowMultiplier, d.healthCfg.FaultyThreshold)
+	if ok && d.isDemotionSuppressed(clusterStats) {
+		return 1
+	}
+	return 0
+}
+
+// shouldProbe returns true if the caller should issue the probe, atomically
+// taking the slot in that case. A freshly demoted agent carries a zero
+// timestamp, so its first probe is always due.
 func (d *Demoter) shouldProbe(now time.Time, nodeID int32) bool {
 	d.lastDemotedProbeMu.Lock()
 	defer d.lastDemotedProbeMu.Unlock()

@@ -3,12 +3,25 @@
 package warpstreamclient
 
 import (
+	"bytes"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/go-kit/log"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// newTestDemoter builds a Demoter with a throwaway registry (so the gauges can
+// be asserted) and a no-op logger.
+func newTestDemoter(inner PartitionAssignmentStrategy, tracker AgentStatsReader, health HealthCheckConfig, cfg DemoterConfig) (*Demoter, *prometheus.Registry) {
+	reg := prometheus.NewPedanticRegistry()
+	return NewDemoter(inner, tracker, health, cfg, log.NewNopLogger(), reg), reg
+}
 
 func TestDemoter_Candidates(t *testing.T) {
 	const (
@@ -48,7 +61,7 @@ func TestDemoter_Candidates(t *testing.T) {
 		inner := &mockPartitionAssignmentStrategy{
 			candidates: map[partitionKey][]Agent{{topic, part}: healthyAgents(healthyID, extraID)},
 		}
-		d := NewDemoter(inner, newTracker(), health, cfg)
+		d, reg := newTestDemoter(inner, newTracker(), health, cfg)
 		now := time.Now()
 		d.now = func() time.Time { return now }
 
@@ -56,13 +69,24 @@ func TestDemoter_Candidates(t *testing.T) {
 		require.Len(t, cands, 2)
 		assert.Equal(t, healthyID, cands[0].NodeID)
 		assert.Equal(t, AgentStateHealthy, cands[0].State)
+
+		// Nothing demoted, nothing suppressed.
+		require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+			# HELP demoter_demoted_agents Number of Warpstream agents currently demoted by the Demoter.
+			# TYPE demoter_demoted_agents gauge
+			demoter_demoted_agents 0
+
+			# HELP demoter_demotion_suppressed Whether the Demoter is currently suppressing all demotions because too many agents are faulty (1) or not (0).
+			# TYPE demoter_demotion_suppressed gauge
+			demoter_demotion_suppressed 0
+		`)))
 	})
 
 	t.Run("demoted primary is skipped on first call within probe interval and emitted as probe on first call after interval", func(t *testing.T) {
 		inner := &mockPartitionAssignmentStrategy{
 			candidates: map[partitionKey][]Agent{{topic, part}: healthyAgents(slowID, healthyID)},
 		}
-		d := NewDemoter(inner, newTracker(slowID), health, cfg)
+		d, reg := newTestDemoter(inner, newTracker(slowID), health, cfg)
 		start := time.Now()
 		now := start
 		d.now = func() time.Time { return now }
@@ -76,6 +100,17 @@ func TestDemoter_Candidates(t *testing.T) {
 		assert.Equal(t, AgentStateDemoted, cands[0].State)
 		assert.Equal(t, healthyID, cands[1].NodeID)
 		assert.Equal(t, AgentStateHealthy, cands[1].State)
+
+		// One agent is now demoted; the cluster-wide guard is not tripping.
+		require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+			# HELP demoter_demoted_agents Number of Warpstream agents currently demoted by the Demoter.
+			# TYPE demoter_demoted_agents gauge
+			demoter_demoted_agents 1
+
+			# HELP demoter_demotion_suppressed Whether the Demoter is currently suppressing all demotions because too many agents are faulty (1) or not (0).
+			# TYPE demoter_demotion_suppressed gauge
+			demoter_demotion_suppressed 0
+		`)))
 
 		// Second call inside the probe interval: skip the demoted primary,
 		// surface the healthy secondary as the new primary.
@@ -100,7 +135,7 @@ func TestDemoter_Candidates(t *testing.T) {
 		inner := &mockPartitionAssignmentStrategy{
 			candidates: map[partitionKey][]Agent{{topic, part}: healthyAgents(healthyID, slowID)},
 		}
-		d := NewDemoter(inner, newTracker(slowID), health, cfg)
+		d, reg := newTestDemoter(inner, newTracker(slowID), health, cfg)
 		d.now = func() time.Time { return time.Now() }
 
 		cands := d.Candidates(topic, part, 3)
@@ -109,6 +144,17 @@ func TestDemoter_Candidates(t *testing.T) {
 		for _, c := range cands {
 			assert.NotEqual(t, slowID, c.NodeID)
 		}
+
+		// The faulty agent is counted as demoted even though it was filtered
+		// out of the candidate list (never surfaced as a primary probe).
+		require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+			# HELP demoter_demoted_agents Number of Warpstream agents currently demoted by the Demoter.
+			# TYPE demoter_demoted_agents gauge
+			demoter_demoted_agents 1
+			# HELP demoter_demotion_suppressed Whether the Demoter is currently suppressing all demotions because too many agents are faulty (1) or not (0).
+			# TYPE demoter_demotion_suppressed gauge
+			demoter_demotion_suppressed 0
+		`)))
 	})
 
 	t.Run("max faulty fraction guard suppresses demotion when too many agents are faulty", func(t *testing.T) {
@@ -122,7 +168,7 @@ func TestDemoter_Candidates(t *testing.T) {
 		inner := &mockPartitionAssignmentStrategy{
 			candidates: map[partitionKey][]Agent{{topic, part}: healthyAgents(slowID, extraID)},
 		}
-		d := NewDemoter(inner, newTracker(slowID, extraID), health, cfg)
+		d, reg := newTestDemoter(inner, newTracker(slowID, extraID), health, cfg)
 		d.now = func() time.Time { return time.Now() }
 
 		cands := d.Candidates(topic, part, 2)
@@ -131,6 +177,48 @@ func TestDemoter_Candidates(t *testing.T) {
 		assert.Equal(t, AgentStateHealthy, cands[0].State)
 		assert.Equal(t, extraID, cands[1].NodeID)
 		assert.Equal(t, AgentStateHealthy, cands[1].State)
+
+		// The cluster-wide guard is tripping and nothing was demoted.
+		require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+			# HELP demoter_demoted_agents Number of Warpstream agents currently demoted by the Demoter.
+			# TYPE demoter_demoted_agents gauge
+			demoter_demoted_agents 0
+
+			# HELP demoter_demotion_suppressed Whether the Demoter is currently suppressing all demotions because too many agents are faulty (1) or not (0).
+			# TYPE demoter_demotion_suppressed gauge
+			demoter_demotion_suppressed 1
+		`)))
+	})
+
+	t.Run("demotion_suppressed gauge clears once the faulty fraction drops", func(t *testing.T) {
+		// The gauge recomputes from cluster stats on every scrape, so it must
+		// fall back to 0 when agents recover below the suppression floor — not
+		// latch at 1.
+		inner := &mockPartitionAssignmentStrategy{
+			candidates: map[partitionKey][]Agent{{topic, part}: healthyAgents(slowID, extraID)},
+		}
+		tr := NewAverageAgentStatsTracker()
+		nowNs := time.Now().UnixNano()
+		seedFullWindow(tr, healthyID, nowNs, 20, 10, 0)
+		seedFullWindow(tr, slowID, nowNs, 10, 10, 10)
+		seedFullWindow(tr, extraID, nowNs, 10, 10, 10)
+		d, reg := newTestDemoter(inner, tr, health, cfg)
+		d.now = func() time.Time { return time.Now() }
+
+		// 2 of 3 faulty → suppressed.
+		require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+			# HELP demoter_demotion_suppressed Whether the Demoter is currently suppressing all demotions because too many agents are faulty (1) or not (0).
+			# TYPE demoter_demotion_suppressed gauge
+			demoter_demotion_suppressed 1
+		`), "demoter_demotion_suppressed"))
+
+		// extraID recovers → 1 of 3 faulty, below the floor → no longer suppressed.
+		seedFullWindow(tr, extraID, nowNs, 20, 10, 0)
+		require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+			# HELP demoter_demotion_suppressed Whether the Demoter is currently suppressing all demotions because too many agents are faulty (1) or not (0).
+			# TYPE demoter_demotion_suppressed gauge
+			demoter_demotion_suppressed 0
+		`), "demoter_demotion_suppressed"))
 	})
 
 	t.Run("cold start (no cluster stats): nothing is demoted", func(t *testing.T) {
@@ -139,13 +227,24 @@ func TestDemoter_Candidates(t *testing.T) {
 		inner := &mockPartitionAssignmentStrategy{
 			candidates: map[partitionKey][]Agent{{topic, part}: healthyAgents(slowID, healthyID)},
 		}
-		d := NewDemoter(inner, NewAverageAgentStatsTracker(), health, cfg)
+		d, reg := newTestDemoter(inner, NewAverageAgentStatsTracker(), health, cfg)
 		d.now = func() time.Time { return time.Now() }
 
 		cands := d.Candidates(topic, part, 2)
 		require.Len(t, cands, 2)
 		assert.Equal(t, slowID, cands[0].NodeID)
 		assert.Equal(t, AgentStateHealthy, cands[0].State)
+
+		// No cluster stats yet → suppression reads 0 (fail-open), nothing demoted.
+		require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+			# HELP demoter_demoted_agents Number of Warpstream agents currently demoted by the Demoter.
+			# TYPE demoter_demoted_agents gauge
+			demoter_demoted_agents 0
+
+			# HELP demoter_demotion_suppressed Whether the Demoter is currently suppressing all demotions because too many agents are faulty (1) or not (0).
+			# TYPE demoter_demotion_suppressed gauge
+			demoter_demotion_suppressed 0
+		`)))
 	})
 
 	t.Run("demoted agent with sparse probe-only traffic stays demoted (hysteresis)", func(t *testing.T) {
@@ -178,7 +277,7 @@ func TestDemoter_Candidates(t *testing.T) {
 		inner := &mockPartitionAssignmentStrategy{
 			candidates: map[partitionKey][]Agent{{topic, part}: healthyAgents(slowID, healthyID)},
 		}
-		d := NewDemoter(inner, tr, health, cfg)
+		d, _ := newTestDemoter(inner, tr, health, cfg)
 		now := time.Now()
 		d.now = func() time.Time { return now }
 
@@ -227,7 +326,7 @@ func TestDemoter_Candidates(t *testing.T) {
 		inner := &mockPartitionAssignmentStrategy{
 			candidates: map[partitionKey][]Agent{{topic, part}: healthyAgents(slowID, healthyID)},
 		}
-		d := NewDemoter(inner, tr, health, cfg)
+		d, reg := newTestDemoter(inner, tr, health, cfg)
 		now := time.Now()
 		d.now = func() time.Time { return now }
 
@@ -235,6 +334,15 @@ func TestDemoter_Candidates(t *testing.T) {
 		first := d.Candidates(topic, part, 2)
 		require.Equal(t, slowID, first[0].NodeID)
 		require.Equal(t, AgentStateDemoted, first[0].State)
+		require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+			# HELP demoter_demoted_agents Number of Warpstream agents currently demoted by the Demoter.
+			# TYPE demoter_demoted_agents gauge
+			demoter_demoted_agents 1
+
+			# HELP demoter_demotion_suppressed Whether the Demoter is currently suppressing all demotions because too many agents are faulty (1) or not (0).
+			# TYPE demoter_demotion_suppressed gauge
+			demoter_demotion_suppressed 0
+		`)))
 
 		// Recovery: replace the stats with all-successful traffic.
 		// ErrorRate drops to 0 so isDemoted returns false; the recovery
@@ -245,6 +353,15 @@ func TestDemoter_Candidates(t *testing.T) {
 		require.NotEmpty(t, recovered)
 		assert.Equal(t, slowID, recovered[0].NodeID)
 		assert.Equal(t, AgentStateHealthy, recovered[0].State)
+		require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+			# HELP demoter_demoted_agents Number of Warpstream agents currently demoted by the Demoter.
+			# TYPE demoter_demoted_agents gauge
+			demoter_demoted_agents 0
+
+			# HELP demoter_demotion_suppressed Whether the Demoter is currently suppressing all demotions because too many agents are faulty (1) or not (0).
+			# TYPE demoter_demotion_suppressed gauge
+			demoter_demotion_suppressed 0
+		`)))
 
 		// Now simulate a fresh sparse-failure window (RequestCount=6).
 		// Because the previous recovery cleared lastDemotedProbe, the
@@ -269,7 +386,7 @@ func TestDemoter_Candidates(t *testing.T) {
 				{topic, partB}: healthyAgents(slowID, healthyID),
 			},
 		}
-		d := NewDemoter(inner, newTracker(slowID), health, cfg)
+		d, _ := newTestDemoter(inner, newTracker(slowID), health, cfg)
 		now := time.Now()
 		d.now = func() time.Time { return now }
 
@@ -309,7 +426,7 @@ func TestDemoter_Candidates(t *testing.T) {
 			seedFullWindow(tr, id, nowNs, 20, 10, 10)
 		}
 
-		d := NewDemoter(inner, tr, health, cfg)
+		d, _ := newTestDemoter(inner, tr, health, cfg)
 		now := time.Now()
 		d.now = func() time.Time { return now }
 
@@ -341,7 +458,7 @@ func TestDemoter_Candidates(t *testing.T) {
 			seedFullWindow(tr, id, nowNs, 20, 10, 0)
 		}
 
-		d := NewDemoter(inner, tr, health, cfg)
+		d, _ := newTestDemoter(inner, tr, health, cfg)
 		now := time.Now()
 		d.now = func() time.Time { return now }
 
@@ -373,7 +490,7 @@ func TestDemoter_Candidates(t *testing.T) {
 			seedFullWindow(tr, id, nowNs, 20, 10, 0)
 		}
 
-		d := NewDemoter(inner, tr, health, cfg)
+		d, _ := newTestDemoter(inner, tr, health, cfg)
 		now := time.Now()
 		d.now = func() time.Time { return now }
 
@@ -381,6 +498,47 @@ func TestDemoter_Candidates(t *testing.T) {
 		require.Len(t, cands, 3)
 		assert.Equal(t, demoted, cands[0].NodeID)
 		assert.Equal(t, AgentStateDemoted, cands[0].State)
+	})
+
+	t.Run("logs demote and restore transitions", func(t *testing.T) {
+		var buf bytes.Buffer
+		logger := log.NewLogfmtLogger(&buf)
+		reg := prometheus.NewPedanticRegistry()
+
+		tr := NewAverageAgentStatsTracker()
+		nowNs := time.Now().UnixNano()
+		seedFullWindow(tr, healthyID, nowNs, 20, 10, 0)
+		seedFullWindow(tr, extraID, nowNs, 20, 10, 0)
+		seedFullWindow(tr, slowID, nowNs, 0, 0, 30) // heavy failures
+
+		inner := &mockPartitionAssignmentStrategy{
+			candidates: map[partitionKey][]Agent{{topic, part}: healthyAgents(slowID, healthyID)},
+		}
+		d := NewDemoter(inner, tr, health, cfg, logger, reg)
+		now := time.Now()
+		d.now = func() time.Time { return now }
+
+		// Demote: slowID claims the probe slot, logging the transition once
+		// with the diagnostic fields that explain why it crossed the gate.
+		d.Candidates(topic, part, 2)
+		demoteLog := buf.String()
+		assert.Contains(t, demoteLog, "warpstream agent demoted")
+		assert.Contains(t, demoteLog, "node_id="+strconv.Itoa(int(slowID)))
+		assert.Contains(t, demoteLog, "error_rate=")
+		assert.Contains(t, demoteLog, "request_count=")
+		// The demotion edge applies the strict gate, so min_requests is
+		// errorRateMinRequests(0.05)=20, not the relaxed 1.
+		assert.Contains(t, demoteLog, "min_requests=20")
+		assert.Contains(t, demoteLog, "faulty_threshold=0.05")
+
+		// Recovery: all-successful traffic clears the probe state and logs restore.
+		buf.Reset()
+		seedFullWindow(tr, slowID, nowNs, 20, 10, 0)
+		now = now.Add(cfg.ProbeInterval + time.Millisecond)
+		d.Candidates(topic, part, 2)
+		restoreLog := buf.String()
+		assert.Contains(t, restoreLog, "warpstream agent restored")
+		assert.Contains(t, restoreLog, "node_id="+strconv.Itoa(int(slowID)))
 	})
 }
 
@@ -445,7 +603,7 @@ func BenchmarkDemoter_Candidates(b *testing.B) {
 			}
 			inner := newDefaultPartitionAssignmentStrategy(agents, leaders)
 
-			d := NewDemoter(inner, tracker, health, cfg)
+			d, _ := newTestDemoter(inner, tracker, health, cfg)
 
 			b.ResetTimer()
 			b.RunParallel(func(pb *testing.PB) {

@@ -137,7 +137,7 @@ func NewWarpstreamClient(cfg Config, logger log.Logger, reg prometheus.Registere
 	// agent-pool changes flow through transparently while the Demoter's
 	// per-agent probe-timing state persists across refreshes.
 	lazy := NewLazyPartitionAssignmentStrategy(pool.Strategy)
-	c.strategy = NewDemoter(lazy, tracker, cfg.HealthCheck, cfg.Demoter)
+	c.strategy = NewDemoter(lazy, tracker, cfg.HealthCheck, cfg.Demoter, logger, reg)
 	c.hedger = NewHedger(trackingProducer, tracker, c.strategy, cfg.HealthCheck, cfg.Hedger, cfg.Linger, cfg.MaxBatchBytes, m)
 	// The cluster buffer's AgentFlushFunc is the Hedger, wrapped only to
 	// bound each flush by WriteTimeout. The Hedger is otherwise shaped
