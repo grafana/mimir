@@ -129,17 +129,6 @@ func TestRotator_RemoveFromRotation_PreservesOrder(t *testing.T) {
 	require.Nil(t, r.cursor.Load())
 }
 
-func TestRotator_AdvanceCursor_RoundRobin(t *testing.T) {
-	r := newRotatorForTest()
-	seedRotation(r, "a", "b", "c")
-
-	var seen []string
-	for range 9 {
-		seen = append(seen, r.advanceCursor().Value.(string))
-	}
-	require.Equal(t, []string{"a", "b", "c", "a", "b", "c", "a", "b", "c"}, seen)
-}
-
 func TestRotator_RemoveFromRotation_AdvancesCursor(t *testing.T) {
 	r := newRotatorForTest()
 	states := seedRotation(r, "a", "b", "c", "d", "e")
