@@ -217,8 +217,7 @@ func (at *activeSeriesTracker) Decrement(lbls labels.Labels, nativeHistogramBuck
 		at.observedMtx.Lock()
 		c, ok := at.observed[string(buf.Bytes())]
 		if ok && c.activeSeries.Load() == 0 {
-			// use buf.String() instead of string(buf.Bytes()) to fix the lint issue
-			delete(at.observed, buf.String())
+			delete(at.observed, string(buf.Bytes())) //nolint:staticcheck // Avoid allocating a string just for the delete call.
 		}
 		at.observedMtx.Unlock()
 		return
