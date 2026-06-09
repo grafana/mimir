@@ -87,8 +87,9 @@ func newRotatorForTest() *Rotator {
 	return NewRotator(0, 0, 0, time.Minute, 0, 0, metrics.pendingJobsLastEmpty, log.NewNopLogger())
 }
 
-// addTenantWithPendingJobs adds a tenant to the rotation with numJobs pending compaction jobs
-func addTenantWithPendingJobs(r *Rotator, clk clock.Clock, name string, numJobs int) {
+// newTrackerWithPendingJobs builds a JobTracker for the named tenant holding numJobs pending
+// compaction jobs (numJobs == 0 yields an empty tracker).
+func newTrackerWithPendingJobs(clk clock.Clock, name string, numJobs int) *JobTracker {
 	metrics := newSchedulerMetrics(prometheus.NewPedanticRegistry())
 	jt := NewJobTracker(&NopJobPersister{}, name, clk, infiniteLeases, infiniteLeases, metrics.newTrackerMetricsForTenant(name), log.NewNopLogger())
 	for j := range numJobs {
@@ -96,7 +97,12 @@ func addTenantWithPendingJobs(r *Rotator, clk clock.Clock, name string, numJobs 
 		jt.incompleteJobs[id] = jt.pending.PushBack(
 			NewTrackedCompactionJob(id, &CompactionJob{}, uint32(j), 0, clk.Now()))
 	}
-	r.AddTenant(name, jt)
+	return jt
+}
+
+// addTenantWithPendingJobs adds a tenant to the rotation with numJobs pending compaction jobs
+func addTenantWithPendingJobs(r *Rotator, clk clock.Clock, name string, numJobs int) {
+	r.AddTenant(name, newTrackerWithPendingJobs(clk, name, numJobs))
 }
 
 // leaseTenant leases one job and returns the tenant it was leased from.
@@ -170,7 +176,7 @@ func TestRotator_RemoveTenant(t *testing.T) {
 func TestRotator_LeaseJob_ConcurrentLeasersDoNotSkipPendingWork(t *testing.T) {
 	const (
 		numEmpties = 8
-		leasers    = 16
+		jobCount   = 16
 		trials     = 50
 	)
 
@@ -181,41 +187,28 @@ func TestRotator_LeaseJob_ConcurrentLeasersDoNotSkipPendingWork(t *testing.T) {
 		r := newRotatorForTest()
 		r.clock = clk
 
-		// Build [empty, ..., empty, pending(leasers jobs), empty, ..., empty]. Put the pending
-		// tenant in the middle so a leaser must traverse empties before reaching it.
-		midIdx := numEmpties / 2
-		seeded := make([]struct {
-			name string
-			jt   *JobTracker
-		}, 0, numEmpties+1)
+		// lets us easily setup a rotation with tenants with no work for the test
+		forceIntoRotation := func(name string, jt *JobTracker) {
+			state := &TenantRotationState{tracker: jt}
+			r.tenantStateMap[name] = state
+			r.addToRotation(name, state)
+		}
+
+		// Setup a rotation like so: [empty, ..., empty, pending(jobCount jobs), empty, ..., empty]
+		// The pending tenant sits in the middle so a leaser must traverse empties before reaching it.
 		for i := range numEmpties + 1 {
-			jt, _ := newTestJobTracker(clk)
-			name := fmt.Sprintf("empty%d", i)
-			if i == midIdx {
-				name = "pending"
-				for j := range leasers {
-					id := fmt.Sprintf("job-%d-%d", trial, j)
-					jt.incompleteJobs[id] = jt.pending.PushBack(
-						NewTrackedCompactionJob(id, &CompactionJob{}, uint32(j), 0, clk.Now()))
-				}
+			name, numJobs := fmt.Sprintf("empty%d", i), 0
+			if i == numEmpties/2 {
+				name, numJobs = "pending", jobCount
 			}
-			seeded = append(seeded, struct {
-				name string
-				jt   *JobTracker
-			}{name, jt})
+			forceIntoRotation(name, newTrackerWithPendingJobs(clk, name, numJobs))
 		}
 
-		// Seed the rotation directly so the empties are in it (AddTenant would skip them).
-		for _, s := range seeded {
-			state := &TenantRotationState{tracker: s.jt}
-			r.tenantStateMap[s.name] = state
-			r.addToRotation(s.name, state)
-		}
-
+		// Spin up jobCount concurrent leasers, we should have exactly jobCount successful leases
 		var wg sync.WaitGroup
 		var successes atomic.Int32
 		start := make(chan struct{})
-		for range leasers {
+		for range jobCount {
 			wg.Go(func() {
 				<-start
 				if _, ok, _ := r.LeaseJob(context.Background()); ok {
@@ -226,8 +219,8 @@ func TestRotator_LeaseJob_ConcurrentLeasersDoNotSkipPendingWork(t *testing.T) {
 		close(start)
 		wg.Wait()
 
-		require.Equal(t, int32(leasers), successes.Load(),
-			"trial %d: every leaser must succeed because the rotation has at least %d pending jobs", trial, leasers)
+		require.Equal(t, int32(jobCount), successes.Load(),
+			"trial %d: every leaser must succeed because the rotation has at least %d pending jobs", trial, jobCount)
 	}
 }
 
