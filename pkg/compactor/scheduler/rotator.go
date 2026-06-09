@@ -50,15 +50,14 @@ type Rotator struct {
 	mtx            sync.RWMutex
 	tenantStateMap map[string]*TenantRotationState
 	rotation       *list.List
-	// cursor points to the next rotation element to be leased. It is advanced via CAS by concurrent
-	// readers of LeaseJob so each rotation cycle visits every tenant exactly once.
-	// Invariant: cursor is nil if and only if rotation is empty.
+	// cursor points to the next element in 'rotation' to be leased.
+	// it is nil iff 'rotation' is empty.
 	cursor atomic.Pointer[list.Element]
 }
 
 type TenantRotationState struct {
 	tracker *JobTracker
-	// element is the tenant's slot in the rotation, or nil when the tenant is outside the rotation.
+	// element is the tenant's slot in 'rotation', or nil outside the rotation.
 	element *list.Element
 }
 
@@ -164,10 +163,9 @@ func (r *Rotator) LeaseJob(ctx context.Context) (*compactorschedulerpb.LeaseJobR
 		return nil, false, nil
 	}
 
-	// Pick a starting tenant via the shared cursor for fairness across concurrent callers, then walk
-	// the rotation locally so a concurrent LeaseJob advancing the shared cursor cannot cause us to
-	// skip a tenant we have not yet tried. A tenant may transition to having no pending jobs on the
-	// Lease call itself, which returns a nil response and we move on to the next.
+	// Take a starting tenant from the shared cursor for fairness across concurrent callers, then walk
+	// the rotation locally: walking the shared cursor instead would let a concurrent caller advance it
+	// past tenants we never tried, including one with pending work.
 	elem := r.advanceCursor()
 	for range length {
 		tenant := elem.Value.(string)
@@ -194,8 +192,8 @@ func (r *Rotator) LeaseJob(ctx context.Context) (*compactorschedulerpb.LeaseJobR
 	return nil, false, nil
 }
 
-// advanceCursor atomically swaps the cursor to the next rotation element and returns the element
-// that was at the cursor before the swap. Must be called under the read lock with a non-empty rotation.
+// advanceCursor atomically advances the cursor by one and returns its previous element.
+// Must be called under the read lock with a non-empty rotation.
 func (r *Rotator) advanceCursor() *list.Element {
 	for {
 		elem := r.cursor.Load()
@@ -415,8 +413,7 @@ func (r *Rotator) addToRotation(tenant string, tenantState *TenantRotationState)
 	}
 }
 
-// removeFromRotation removes the specified tenant from the rotation in O(1) while preserving the
-// order of the remaining tenants. A write lock must be held.
+// removeFromRotation removes the specified tenant from the rotation. A write lock must be held in order to call this function.
 func (r *Rotator) removeFromRotation(tenantState *TenantRotationState) {
 	elem := tenantState.element
 	if r.cursor.Load() == elem {
