@@ -4,6 +4,7 @@ package ingester
 
 import (
 	"context"
+	"fmt"
 	"math"
 	"slices"
 	"testing"
@@ -613,4 +614,92 @@ func TestRecomputeOwnedSeries(t *testing.T) {
 		require.Len(t, db.takePendingNonOwnedRefs(time.Now().Add(time.Hour)), 1)
 		require.Equal(t, uint64(2), tsdbDB.Head().NumSeries())
 	})
+}
+
+// BenchmarkUserTSDB_addPendingNonOwnedRefs measures the per-call cost of the
+// reconciliation logic across the four regimes the production path exercises:
+//   - "fresh": empty set, snapshot of N refs (first detection after a ring change).
+//   - "re-enqueue": same N refs re-passed every recompute cycle (steady state).
+//   - "full-replacement": every recompute brings a fully disjoint snapshot
+//     (worst case under churn — N drops + N adds per call).
+//   - "partial-drop": pending set of N refs, snapshot is a strict half-subset
+//     (stale-refs scenario after another compaction path evicted some series —
+//     reconciliation must drop N/2 refs with no adds).
+func BenchmarkUserTSDB_addPendingNonOwnedRefs(b *testing.B) {
+	b.ReportAllocs()
+	sizes := []int{1_000, 10_000, 100_000, 1_000_000}
+	for _, size := range sizes {
+		refsA := make([]storage.SeriesRef, size)
+		refsB := make([]storage.SeriesRef, size)
+		for i := 0; i < size; i++ {
+			refsA[i] = storage.SeriesRef(i + 1)
+			refsB[i] = storage.SeriesRef(i + 1 + size)
+		}
+
+		b.Run(fmt.Sprintf("size=%d/fresh", size), func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				b.StopTimer()
+				db := &userTSDB{}
+				b.StartTimer()
+				db.addPendingNonOwnedRefs(refsA)
+			}
+		})
+
+		b.Run(fmt.Sprintf("size=%d/re-enqueue", size), func(b *testing.B) {
+			db := &userTSDB{}
+			db.addPendingNonOwnedRefs(refsA)
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				db.addPendingNonOwnedRefs(refsA)
+			}
+		})
+
+		b.Run(fmt.Sprintf("size=%d/full-replacement", size), func(b *testing.B) {
+			db := &userTSDB{}
+			db.addPendingNonOwnedRefs(refsA)
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				if i%2 == 0 {
+					db.addPendingNonOwnedRefs(refsB)
+				} else {
+					db.addPendingNonOwnedRefs(refsA)
+				}
+			}
+		})
+
+		b.Run(fmt.Sprintf("size=%d/partial-drop", size), func(b *testing.B) {
+			refsHalf := refsA[:size/2]
+			for i := 0; i < b.N; i++ {
+				b.StopTimer()
+				db := &userTSDB{}
+				db.addPendingNonOwnedRefs(refsA)
+				b.StartTimer()
+				db.addPendingNonOwnedRefs(refsHalf)
+			}
+		})
+	}
+}
+
+// BenchmarkUserTSDB_takePendingNonOwnedRefs measures the per-call cost of draining
+// a populated set. The setup (addPendingNonOwnedRefs) is excluded from the timed
+// region; only the take itself is measured.
+func BenchmarkUserTSDB_takePendingNonOwnedRefs(b *testing.B) {
+	b.ReportAllocs()
+	sizes := []int{1_000, 10_000, 100_000, 1_000_000}
+	for _, size := range sizes {
+		refs := make([]storage.SeriesRef, size)
+		for i := 0; i < size; i++ {
+			refs[i] = storage.SeriesRef(i + 1)
+		}
+		b.Run(fmt.Sprintf("size=%d", size), func(b *testing.B) {
+			notAfter := time.Now().Add(time.Hour)
+			for i := 0; i < b.N; i++ {
+				b.StopTimer()
+				db := &userTSDB{}
+				db.addPendingNonOwnedRefs(refs)
+				b.StartTimer()
+				db.takePendingNonOwnedRefs(notAfter)
+			}
+		})
+	}
 }
