@@ -5366,7 +5366,7 @@
               "kind": "field",
               "name": "chunk_size",
               "required": false,
-              "desc": "Number of label values processed per work unit submitted to the ingester query worker pool.",
+              "desc": "Number of label values processed per work unit submitted to the ingester query worker pool. Smaller values improve cross-tenant fairness at the cost of more scheduling overhead.",
               "fieldValue": null,
               "fieldDefaultValue": 32,
               "fieldFlag": "ingester.label-values-count-chunk-size",

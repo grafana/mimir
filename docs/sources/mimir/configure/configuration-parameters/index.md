@@ -1708,7 +1708,8 @@ read_reactive_limiter:
 
 label_values_count:
   # (experimental) Number of label values processed per work unit submitted to
-  # the ingester query worker pool.
+  # the ingester query worker pool. Smaller values improve cross-tenant fairness
+  # at the cost of more scheduling overhead.
   # CLI flag: -ingester.label-values-count-chunk-size
   [chunk_size: <int> | default = 32]
 ```

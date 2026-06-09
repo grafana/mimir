@@ -1694,7 +1694,7 @@ Usage of ./cmd/mimir/mimir:
   -ingester.instance-limits.max-tenants int
     	Max tenants that this ingester can hold. Requests from additional tenants will be rejected. 0 = unlimited.
   -ingester.label-values-count-chunk-size int
-    	[experimental] Number of label values processed per work unit submitted to the ingester query worker pool. (default 32)
+    	[experimental] Number of label values processed per work unit submitted to the ingester query worker pool. Smaller values improve cross-tenant fairness at the cost of more scheduling overhead. (default 32)
   -ingester.max-global-exemplars-per-user int
     	[experimental] The maximum number of exemplars in memory, across the cluster. 0 to disable exemplars ingestion.
   -ingester.max-global-metadata-per-metric int

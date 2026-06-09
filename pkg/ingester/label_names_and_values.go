@@ -33,7 +33,7 @@ func (cfg *LabelValuesCountConfig) RegisterFlags(f *flag.FlagSet) {
 	// 32 is a gut-feel default (not benchmarked):
 	// big enough to amortize per-task dispatch overhead,
 	// small enough to stay fair across tenants.
-	f.IntVar(&cfg.ChunkSize, "ingester.label-values-count-chunk-size", 32, "Number of label values processed per work unit submitted to the ingester query worker pool.")
+	f.IntVar(&cfg.ChunkSize, "ingester.label-values-count-chunk-size", 32, "Number of label values processed per work unit submitted to the ingester query worker pool. Smaller values improve cross-tenant fairness at the cost of more scheduling overhead.")
 }
 
 // Validate returns an error if the config is invalid.
