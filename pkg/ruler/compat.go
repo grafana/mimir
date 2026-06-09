@@ -230,6 +230,50 @@ type RulesLimits interface {
 	NameValidationScheme(userID string) model.ValidationScheme
 }
 
+// EngineQueryFunc returns a rules.QueryFunc that executes instant PromQL
+// queries against engine and deep-copies the result before returning it.
+//
+// This matters when engine is the Mimir streaming engine: its Query.Close
+// returns the result Vector slice and the per-sample labels (via
+// SeriesMetadataSlicePool) to internal pools, where a concurrent rule
+// evaluation may immediately reuse them. The vendored rules.EngineQueryFunc
+// returns that pooled Vector verbatim and then Close()s the query, so it would
+// hand the rule manager memory that can be overwritten under it. We own the
+// query here and deep-copy the Vector before the deferred Close fires, so the
+// rule manager receives standalone memory.
+//
+// Owning the query also means we Close it after every evaluation, which keeps
+// the streaming engine from leaking a per-evaluation MemoryConsumptionTracker
+// (registered in its InflightMemoryConsumptionTracker map until Close):
+// Query.Exec only Deregisters on its error path, leaving the success path to
+// the caller.
+func EngineQueryFunc(engine promql.QueryEngine, q storage.Queryable) rules.QueryFunc {
+	return func(ctx context.Context, qs string, t time.Time) (promql.Vector, error) {
+		qry, err := engine.NewInstantQuery(ctx, q, nil, qs, t)
+		if err != nil {
+			return nil, err
+		}
+		defer qry.Close()
+
+		res := qry.Exec(ctx)
+		if res.Err != nil {
+			return nil, res.Err
+		}
+		switch v := res.Value.(type) {
+		case promql.Vector:
+			return copyVector(v), nil
+		case promql.Scalar:
+			return promql.Vector{promql.Sample{
+				T:      v.T,
+				F:      v.V,
+				Metric: labels.EmptyLabels(),
+			}}, nil
+		default:
+			return nil, errors.New("rule result is not a vector or scalar")
+		}
+	}
+}
+
 // copyVector returns a Vector whose backing arrays, label slices, and
 // FloatHistogram values do not overlap with v. Required to detach a query
 // result from internal pools owned by either engine before Query.Close returns
