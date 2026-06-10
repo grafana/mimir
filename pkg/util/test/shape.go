@@ -83,6 +83,12 @@ func AddTypeToTree(t reflect.Type, tree treeprint.Tree, ignoreName, ignoreXXXPre
 		if ignoreXXXPrefix && strings.HasPrefix(fieldName, "XXX_") {
 			return
 		}
+		// Generator-internal unexported fields (e.g. wiresmith's fieldsPresent
+		// presence bitmap) are skipped under the same flag that skips gogo's
+		// XXX_ internals: both are codegen bookkeeping, not message shape.
+		if ignoreXXXPrefix && !f.IsExported() {
+			continue
+		}
 		if ignoreName {
 			fieldName = ignoredFieldName
 		}
