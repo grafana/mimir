@@ -10,29 +10,36 @@ syntax = "proto3";
 
 package cortexpb;
 
-import "gogoproto/gogo.proto";
+import "wiresmith/options.proto";
 
-option go_package = "mimirpb";
-option (gogoproto.marshaler_all) = true;
-option (gogoproto.unmarshaler_all) = true;
+option go_package = "github.com/grafana/mimir/pkg/mimirpb";
+
+// Note: gogoproto.marshaler_all / unmarshaler_all are unnecessary under
+// wiresmith — Marshal/Unmarshal methods are always emitted.
 
 message WriteRequest {
-  repeated TimeSeries timeseries = 1 [
-    (gogoproto.nullable) = false,
-    (gogoproto.customtype) = "PreallocTimeseries"
-  ];
+  // INCOMPATIBLE: gogoproto.customtype = "PreallocTimeseries" on a repeated
+  // message field. wiresmith v1 only supports customtype on singular
+  // bytes/string fields, and PreallocTimeseries implements gogoproto-style
+  // methods (Marshal/Unmarshal/MarshalToSizedBuffer), not wiresmith's
+  // SizeWiresmith/MarshalWiresmith/UnmarshalWiresmith. Mimir relies on this
+  // hook for zero-copy unmarshal into a pooled buffer; see AGENTS.md "Unsafe
+  // memory tricks". No clean wiresmith equivalent today.
+  repeated TimeSeries timeseries = 1;
   enum SourceEnum {
     API = 0;
     RULE = 1;
     OTLP = 2;
   }
   SourceEnum Source = 2;
-  repeated MetricMetadata metadata = 3 [(gogoproto.nullable) = true];
+  // gogoproto.nullable=true on a repeated message ⇒ []*MetricMetadata.
+  repeated MetricMetadata metadata = 3 [(wiresmith.options.pointer) = true];
 
   // Remote Write 2.0 specific fields. Only used when the extra internal
   // field UnmarshalFromRW2 is true.
   repeated string symbolsRW2 = 4;
-  repeated TimeSeriesRW2 timeseriesRW2 = 5 [(gogoproto.nullable) = false];
+  // nullable=false on repeated message ⇒ []TimeSeriesRW2: wiresmith default.
+  repeated TimeSeriesRW2 timeseriesRW2 = 5;
 
   // Mimir-specific fields, using intentionally high field numbers to avoid conflicts with upstream Prometheus.
 
@@ -69,14 +76,18 @@ message ErrorDetails {
 }
 
 message TimeSeries {
-  repeated LabelPair labels = 1 [
-    (gogoproto.nullable) = false,
-    (gogoproto.customtype) = "UnsafeMutableLabel"
-  ];
+  // INCOMPATIBLE: gogoproto.customtype = "UnsafeMutableLabel" on a repeated
+  // message field. Same constraint as PreallocTimeseries above:
+  //   - wiresmith v1 customtype only supports singular bytes/string;
+  //   - UnsafeMutableLabel implements gogoproto-style methods.
+  // This is the cornerstone of Mimir's zero-copy buffer-reuse pattern
+  // (AGENTS.md "Unsafe memory tricks"). The wiresmith-generated []LabelPair
+  // would copy from the request buffer instead of holding shared references.
+  repeated LabelPair labels = 1;
   // Sorted by time, oldest sample first.
-  repeated Sample samples = 2 [(gogoproto.nullable) = false];
-  repeated Exemplar exemplars = 3 [(gogoproto.nullable) = false];
-  repeated Histogram histograms = 4 [(gogoproto.nullable) = false];
+  repeated Sample samples = 2;
+  repeated Exemplar exemplars = 3;
+  repeated Histogram histograms = 4;
 
   // Copy from remote write 2.0.
   // Note that the "optional" keyword is omitted due to
@@ -116,18 +127,14 @@ message MetricMetadata {
 }
 
 message Metric {
-  repeated LabelPair labels = 1 [
-    (gogoproto.nullable) = false,
-    (gogoproto.customtype) = "UnsafeMutableLabel"
-  ];
+  // INCOMPATIBLE: customtype = "UnsafeMutableLabel" (see TimeSeries.labels).
+  repeated LabelPair labels = 1;
 }
 
 message Exemplar {
+  // INCOMPATIBLE: customtype = "UnsafeMutableLabel" (see TimeSeries.labels).
   // Exemplar labels, different than series labels
-  repeated LabelPair labels = 1 [
-    (gogoproto.nullable) = false,
-    (gogoproto.customtype) = "UnsafeMutableLabel"
-  ];
+  repeated LabelPair labels = 1;
   double value = 2;
   int64 timestamp_ms = 3;
 }
@@ -137,8 +144,11 @@ message Histogram {
   enum ResetHint {
     // These values are based on CounterResetHint from https://github.com/prometheus/prometheus/blob/main/model/histogram/histogram.go.
     // The values must remain in sync with the constants defined there.
-
-    option (gogoproto.goproto_enum_prefix) = true;
+    //
+    // INCOMPATIBLE: gogoproto.goproto_enum_prefix = true. wiresmith always
+    // prefixes enum constants with the enum name (e.g. ResetHint_UNKNOWN),
+    // matching protoc-gen-go default; there is no option to suppress or
+    // toggle the prefix today.
     UNKNOWN = 0; // Need to test for a counter reset explicitly.
     YES = 1; // This is the 1st histogram after a counter reset.
     NO = 2; // There was no counter reset between this and the previous Histogram.
@@ -165,7 +175,7 @@ message Histogram {
   }
 
   // Negative Buckets.
-  repeated BucketSpan negative_spans = 8 [(gogoproto.nullable) = false];
+  repeated BucketSpan negative_spans = 8;
   // Use either "negative_deltas" or "negative_counts", the former for
   // regular histograms with integer counts, the latter for float
   // histograms.
@@ -173,7 +183,7 @@ message Histogram {
   repeated double negative_counts = 10; // Absolute count of each bucket.
 
   // Positive Buckets.
-  repeated BucketSpan positive_spans = 11 [(gogoproto.nullable) = false];
+  repeated BucketSpan positive_spans = 11;
   // Use either "positive_deltas" or "positive_counts", the former for
   // regular histograms with integer counts, the latter for float
   // histograms.
@@ -198,14 +208,20 @@ message FloatHistogram {
   reserved 1, 6, 9, 12, 15;
   reserved "count_int", "zero_count_int", "negative_deltas", "positive_deltas", "timestamp";
 
-  uint32 counter_reset_hint = 14 [(gogoproto.casttype) = "github.com/prometheus/prometheus/model/histogram.CounterResetHint"];
+  // INCOMPATIBLE: gogoproto.casttype "...histogram.CounterResetHint". gogoproto
+  // casts the on-wire uint32 to an external named type so callers can use it
+  // directly as histogram.CounterResetHint. wiresmith has no casttype
+  // equivalent — closest is customtype, but that's restricted to bytes/string
+  // and requires a wiresmith-method-implementing wrapper. Field stays uint32
+  // and downstream casts must be done manually.
+  uint32 counter_reset_hint = 14;
   sint32 schema = 4;
   double zero_threshold = 5;
   double zero_count = 7;
   double count = 2;
   double sum = 3;
-  repeated BucketSpan positive_spans = 11 [(gogoproto.nullable) = false];
-  repeated BucketSpan negative_spans = 8 [(gogoproto.nullable) = false];
+  repeated BucketSpan positive_spans = 11;
+  repeated BucketSpan negative_spans = 8;
   repeated double positive_buckets = 13;
   repeated double negative_buckets = 10;
   repeated double custom_values = 16;
@@ -228,7 +244,7 @@ message BucketSpan {
 message FloatHistogramPair {
   // Fields order MUST match promql.HPoint so that we can cast types between them.
   int64 timestamp_ms = 2;
-  FloatHistogram histogram = 1 [(gogoproto.nullable) = true];
+  FloatHistogram histogram = 1 [(wiresmith.options.pointer) = true];
 }
 
 // SampleHistogram is based on https://github.com/prometheus/common/blob/main/model/value_histogram.go
@@ -297,8 +313,8 @@ message StringData {
 }
 
 message VectorData {
-  repeated VectorSample samples = 1 [(gogoproto.nullable) = false];
-  repeated VectorHistogram histograms = 2 [(gogoproto.nullable) = false];
+  repeated VectorSample samples = 1;
+  repeated VectorHistogram histograms = 2;
 }
 
 message VectorSample {
@@ -313,7 +329,7 @@ message VectorHistogram {
   // Why not use a map<...> here? We want to preserve the order of the labels, as labels.Labels expects them to be sorted.
   repeated string metric = 1;
 
-  FloatHistogram histogram = 2 [(gogoproto.nullable) = false];
+  FloatHistogram histogram = 2;
   int64 timestamp_ms = 3;
 }
 
@@ -323,15 +339,15 @@ message ScalarData {
 }
 
 message MatrixData {
-  repeated MatrixSeries series = 1 [(gogoproto.nullable) = false];
+  repeated MatrixSeries series = 1;
 }
 
 message MatrixSeries {
   // Why not use a map<...> here? We want to preserve the order of the labels.
   repeated string metric = 1;
 
-  repeated Sample samples = 2 [(gogoproto.nullable) = false];
-  repeated FloatHistogramPair histograms = 3 [(gogoproto.nullable) = false];
+  repeated Sample samples = 2;
+  repeated FloatHistogramPair histograms = 3;
 }
 
 // Remote write 2.0 support.
@@ -342,7 +358,7 @@ message MatrixSeries {
 
 message WriteRequestRW2 {
   repeated string symbols = 4;
-  repeated TimeSeriesRW2 timeseries = 5 [(gogoproto.nullable) = false];
+  repeated TimeSeriesRW2 timeseries = 5;
 }
 
 message TimeSeriesRW2 {
@@ -360,14 +376,14 @@ message TimeSeriesRW2 {
   // streaming), in healthy cases, there will be only one sample or histogram.
   //
   // Samples and histograms are sorted by timestamp (older first).
-  repeated Sample samples = 2 [(gogoproto.nullable) = false];
-  repeated Histogram histograms = 3 [(gogoproto.nullable) = false];
+  repeated Sample samples = 2;
+  repeated Histogram histograms = 3;
 
   // exemplars represents an optional set of exemplars attached to this series' samples.
-  repeated ExemplarRW2 exemplars = 4 [(gogoproto.nullable) = false];
+  repeated ExemplarRW2 exemplars = 4;
 
   // metadata represents the metadata associated with the given series' samples.
-  MetadataRW2 metadata = 5 [(gogoproto.nullable) = false];
+  MetadataRW2 metadata = 5;
 
   // created_timestamp represents an optional created timestamp associated with
   // this series' samples in ms format, typically for counter or histogram type
