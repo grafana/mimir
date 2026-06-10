@@ -20,7 +20,7 @@ type Tree interface {
 }
 
 type DequeueArgs struct {
-	QuerierID       string
+	ConsumerID      string
 	WorkerID        int
 	LastTenantIndex int
 }
@@ -133,9 +133,9 @@ func (t *MultiAlgorithmTreeQueue) GetNode(path QueuePath) *Node {
 
 // Node maintains node-specific information used to enqueue and dequeue to itself, such as a local
 // queue, node height, references to its children, and position in queue.
-// Note that the tenantQuerierAssignments QueuingAlgorithm largely disregards Node's queueOrder and
+// Note that the tenantConsumerAssignments QueuingAlgorithm largely disregards Node's queueOrder and
 // queuePosition, managing analogous state instead, because shuffle-sharding + fairness  requirements
-// necessitate input from the querier.
+// necessitate input from the consumer.
 type Node struct {
 	name             string
 	localQueue       *list.List
@@ -337,7 +337,7 @@ func (n *Node) getOrAddNode(pathFromNode QueuePath, tree *MultiAlgorithmTreeQueu
 func TenantQueueCount(tree *MultiAlgorithmTreeQueue) int {
 	var count int
 	for _, qa := range tree.algosByDepth {
-		if tqqa, ok := qa.(*TenantQuerierQueuingAlgorithm); ok {
+		if tqqa, ok := qa.(*TenantConsumerQueuingAlgorithm); ok {
 			for _, t := range tqqa.TenantIDOrder() {
 				if t != "" {
 					count++

@@ -45,15 +45,15 @@ type dequeueVal struct {
 	tenant *queueTenant
 }
 
-func assertExpectedValuesOnDequeue(t *testing.T, qb *queueBroker, lastTenantIndex int, querierID string, expectedVals []dequeueVal) int {
+func assertExpectedValuesOnDequeue(t *testing.T, qb *queueBroker, lastTenantIndex int, consumerID string, expectedVals []dequeueVal) int {
 	var req *tenantItem
 	var tenant *queueTenant
 	var err error
 
 	for _, expected := range expectedVals {
-		req, tenant, lastTenantIndex, err = qb.dequeueItemForQuerier(&QuerierWorkerDequeueRequest{
-			QuerierWorkerConn: &QuerierWorkerConn{QuerierID: querierID},
-			lastTenantIndex:   TenantIndex{last: lastTenantIndex},
+		req, tenant, lastTenantIndex, err = qb.dequeueItemForConsumer(&ConsumerWorkerDequeueRequest{
+			ConsumerWorkerConn: &ConsumerWorkerConn{ConsumerID: consumerID},
+			lastTenantIndex:    TenantIndex{last: lastTenantIndex},
 		})
 		assert.Equal(t, expected.item, req)
 		assert.Equal(t, expected.tenant, tenant)
@@ -62,7 +62,7 @@ func assertExpectedValuesOnDequeue(t *testing.T, qb *queueBroker, lastTenantInde
 	return lastTenantIndex
 }
 
-// TestQueues_NoShuffleSharding tests dequeueing of objects for different queriers, where any querier can
+// TestQueues_NoShuffleSharding tests dequeueing of objects for different consumers, where any consumer can
 // handle queries for any tenant, as tenant queues are added and removed
 
 func TestQueues_NoShuffleSharding(t *testing.T) {
@@ -70,22 +70,22 @@ func TestQueues_NoShuffleSharding(t *testing.T) {
 	assert.NotNil(t, qb)
 	assert.NoError(t, isConsistent(qb))
 
-	qb.addQuerierWorkerConn(NewUnregisteredQuerierWorkerConn(context.Background(), "querier-1"))
-	qb.addQuerierWorkerConn(NewUnregisteredQuerierWorkerConn(context.Background(), "querier-2"))
+	qb.addConsumerWorkerConn(NewUnregisteredConsumerWorkerConn(context.Background(), "consumer-1"))
+	qb.addConsumerWorkerConn(NewUnregisteredConsumerWorkerConn(context.Background(), "consumer-2"))
 
-	req, tenant, lastTenantIndexQuerierOne, err := qb.dequeueItemForQuerier(&QuerierWorkerDequeueRequest{
-		QuerierWorkerConn: &QuerierWorkerConn{QuerierID: "querier-1"},
-		lastTenantIndex:   TenantIndex{-1},
+	req, tenant, lastTenantIndexConsumerOne, err := qb.dequeueItemForConsumer(&ConsumerWorkerDequeueRequest{
+		ConsumerWorkerConn: &ConsumerWorkerConn{ConsumerID: "consumer-1"},
+		lastTenantIndex:    TenantIndex{-1},
 	})
 	assert.Nil(t, req)
 	assert.Nil(t, tenant)
 	assert.NoError(t, err)
 
 	// Add tenant queues: tenant "one"
-	err = qb.tenantQuerierAssignments.createOrUpdateTenant("one", 0)
+	err = qb.tenantConsumerAssignments.createOrUpdateTenant("one", 0)
 	assert.NoError(t, err)
 
-	tenantOne := qb.tenantQuerierAssignments.tenantsByID["one"]
+	tenantOne := qb.tenantConsumerAssignments.tenantsByID["one"]
 
 	// Queue enough objects for tenant "one"
 	err = qb.enqueueObjectsForTests(tenantOne.tenantID, 10)
@@ -97,13 +97,13 @@ func TestQueues_NoShuffleSharding(t *testing.T) {
 		{buildExpectedObject(tenantOne.tenantID, 0), tenantOne},
 		{buildExpectedObject(tenantOne.tenantID, 1), tenantOne},
 	}
-	lastTenantIndexQuerierOne = assertExpectedValuesOnDequeue(t, qb, lastTenantIndexQuerierOne, "querier-1", expectedDequeueVals)
+	lastTenantIndexConsumerOne = assertExpectedValuesOnDequeue(t, qb, lastTenantIndexConsumerOne, "consumer-1", expectedDequeueVals)
 
 	// Add tenant two
-	err = qb.tenantQuerierAssignments.createOrUpdateTenant("two", 0)
+	err = qb.tenantConsumerAssignments.createOrUpdateTenant("two", 0)
 	assert.NoError(t, err)
 
-	tenantTwo := qb.tenantQuerierAssignments.tenantsByID["two"]
+	tenantTwo := qb.tenantConsumerAssignments.tenantsByID["two"]
 
 	err = qb.enqueueObjectsForTests(tenantTwo.tenantID, 10)
 	assert.NoError(t, err)
@@ -116,34 +116,34 @@ func TestQueues_NoShuffleSharding(t *testing.T) {
 		{buildExpectedObject(tenantOne.tenantID, 3), tenantOne},
 	}
 
-	lastTenantIndexQuerierOne = assertExpectedValuesOnDequeue(t, qb, lastTenantIndexQuerierOne, "querier-1", expectedDequeueVals)
+	lastTenantIndexConsumerOne = assertExpectedValuesOnDequeue(t, qb, lastTenantIndexConsumerOne, "consumer-1", expectedDequeueVals)
 
 	expectedDequeueVals = []dequeueVal{
 		{buildExpectedObject(tenantOne.tenantID, 4), tenantOne},
 		{buildExpectedObject(tenantTwo.tenantID, 2), tenantTwo},
 		{buildExpectedObject(tenantOne.tenantID, 5), tenantOne},
 	}
-	lastTenantIndexQuerierTwo := assertExpectedValuesOnDequeue(t, qb, -1, "querier-2", expectedDequeueVals)
+	lastTenantIndexConsumerTwo := assertExpectedValuesOnDequeue(t, qb, -1, "consumer-2", expectedDequeueVals)
 
 	// [one two three]
 	// confirm fifo by adding a third tenant queue and iterating to it
-	err = qb.tenantQuerierAssignments.createOrUpdateTenant("three", 0)
+	err = qb.tenantConsumerAssignments.createOrUpdateTenant("three", 0)
 	assert.NoError(t, err)
 
-	tenantThree := qb.tenantQuerierAssignments.tenantsByID["three"]
+	tenantThree := qb.tenantConsumerAssignments.tenantsByID["three"]
 
 	err = qb.enqueueObjectsForTests(tenantThree.tenantID, 10)
 	assert.NoError(t, err)
 	assert.NoError(t, isConsistent(qb))
 
-	// lastTenantIndexQuerierOne was 0 (tenantOne) for querier-1; appending
+	// lastTenantIndexConsumerOne was 0 (tenantOne) for consumer-1; appending
 	expectedDequeueVals = []dequeueVal{
 		{buildExpectedObject(tenantTwo.tenantID, 3), tenantTwo},
 		{buildExpectedObject(tenantThree.tenantID, 0), tenantThree},
 		{buildExpectedObject(tenantOne.tenantID, 6), tenantOne},
 	}
 
-	lastTenantIndexQuerierOne = assertExpectedValuesOnDequeue(t, qb, lastTenantIndexQuerierOne, "querier-1", expectedDequeueVals)
+	lastTenantIndexConsumerOne = assertExpectedValuesOnDequeue(t, qb, lastTenantIndexConsumerOne, "consumer-1", expectedDequeueVals)
 
 	// Remove one: ["" two three]
 	qb.removeTenantQueue("one")
@@ -154,13 +154,13 @@ func TestQueues_NoShuffleSharding(t *testing.T) {
 		{buildExpectedObject(tenantThree.tenantID, 1), tenantThree},
 		{buildExpectedObject(tenantTwo.tenantID, 5), tenantTwo},
 	}
-	lastTenantIndexQuerierOne = assertExpectedValuesOnDequeue(t, qb, lastTenantIndexQuerierOne, "querier-1", expectedDequeueVals)
+	lastTenantIndexConsumerOne = assertExpectedValuesOnDequeue(t, qb, lastTenantIndexConsumerOne, "consumer-1", expectedDequeueVals)
 
 	// "four" is added at the beginning of the list: [four two three]
-	err = qb.tenantQuerierAssignments.createOrUpdateTenant("four", 0)
+	err = qb.tenantConsumerAssignments.createOrUpdateTenant("four", 0)
 	assert.NoError(t, err)
 
-	tenantFour := qb.tenantQuerierAssignments.tenantsByID["four"]
+	tenantFour := qb.tenantConsumerAssignments.tenantsByID["four"]
 
 	err = qb.enqueueObjectsForTests(tenantFour.tenantID, 10)
 	assert.NoError(t, err)
@@ -173,7 +173,7 @@ func TestQueues_NoShuffleSharding(t *testing.T) {
 		{buildExpectedObject(tenantTwo.tenantID, 7), tenantTwo},
 	}
 
-	_ = assertExpectedValuesOnDequeue(t, qb, lastTenantIndexQuerierTwo, "querier-2", expectedDequeueVals)
+	_ = assertExpectedValuesOnDequeue(t, qb, lastTenantIndexConsumerTwo, "consumer-2", expectedDequeueVals)
 
 	// Remove two: [four "" three]
 	qb.removeTenantQueue("two")
@@ -184,7 +184,7 @@ func TestQueues_NoShuffleSharding(t *testing.T) {
 		{buildExpectedObject(tenantFour.tenantID, 1), tenantFour},
 		{buildExpectedObject(tenantThree.tenantID, 4), tenantThree},
 	}
-	lastTenantIndexQuerierOne = assertExpectedValuesOnDequeue(t, qb, lastTenantIndexQuerierOne, "querier-1", expectedDequeueVals)
+	lastTenantIndexConsumerOne = assertExpectedValuesOnDequeue(t, qb, lastTenantIndexConsumerOne, "consumer-1", expectedDequeueVals)
 
 	// Remove three: [four ""] )
 	qb.removeTenantQueue("three")
@@ -194,9 +194,9 @@ func TestQueues_NoShuffleSharding(t *testing.T) {
 	qb.removeTenantQueue("four")
 	assert.NoError(t, isConsistent(qb))
 
-	req, tenant, _, err = qb.dequeueItemForQuerier(&QuerierWorkerDequeueRequest{
-		QuerierWorkerConn: &QuerierWorkerConn{QuerierID: "querier-1"},
-		lastTenantIndex:   TenantIndex{lastTenantIndexQuerierOne},
+	req, tenant, _, err = qb.dequeueItemForConsumer(&ConsumerWorkerDequeueRequest{
+		ConsumerWorkerConn: &ConsumerWorkerConn{ConsumerID: "consumer-1"},
+		lastTenantIndex:    TenantIndex{lastTenantIndexConsumerOne},
 	},
 	)
 	assert.Nil(t, req)
@@ -272,10 +272,10 @@ func TestQueuesRespectMaxTenantQueueSizeWithSubQueues(t *testing.T) {
 	}
 
 	// dequeue a request
-	qb.addQuerierWorkerConn(NewUnregisteredQuerierWorkerConn(context.Background(), "querier-1"))
-	dequeuedTenantReq, _, _, err := qb.dequeueItemForQuerier(&QuerierWorkerDequeueRequest{
-		QuerierWorkerConn: &QuerierWorkerConn{QuerierID: "querier-1"},
-		lastTenantIndex:   TenantIndex{-1},
+	qb.addConsumerWorkerConn(NewUnregisteredConsumerWorkerConn(context.Background(), "consumer-1"))
+	dequeuedTenantReq, _, _, err := qb.dequeueItemForConsumer(&ConsumerWorkerDequeueRequest{
+		ConsumerWorkerConn: &ConsumerWorkerConn{ConsumerID: "consumer-1"},
+		lastTenantIndex:    TenantIndex{-1},
 	})
 	assert.NoError(t, err)
 	assert.NotNil(t, dequeuedTenantReq)
@@ -294,27 +294,27 @@ func TestQueuesRespectMaxTenantQueueSizeWithSubQueues(t *testing.T) {
 	assert.ErrorIs(t, err, ErrTooManyRequests)
 }
 
-func TestQueuesOnTerminatingQuerier(t *testing.T) {
+func TestQueuesOnTerminatingConsumer(t *testing.T) {
 	qb := newQueueBroker(0, 0)
 	assert.NotNil(t, qb)
 	assert.NoError(t, isConsistent(qb))
 
-	qb.addQuerierWorkerConn(NewUnregisteredQuerierWorkerConn(context.Background(), "querier-1"))
-	qb.addQuerierWorkerConn(NewUnregisteredQuerierWorkerConn(context.Background(), "querier-2"))
+	qb.addConsumerWorkerConn(NewUnregisteredConsumerWorkerConn(context.Background(), "consumer-1"))
+	qb.addConsumerWorkerConn(NewUnregisteredConsumerWorkerConn(context.Background(), "consumer-2"))
 
 	// Add queues: [one two]
-	err := qb.tenantQuerierAssignments.createOrUpdateTenant("one", 0)
+	err := qb.tenantConsumerAssignments.createOrUpdateTenant("one", 0)
 	assert.NoError(t, err)
-	err = qb.tenantQuerierAssignments.createOrUpdateTenant("two", 0)
+	err = qb.tenantConsumerAssignments.createOrUpdateTenant("two", 0)
 	assert.NoError(t, err)
 
 	err = qb.enqueueObjectsForTests("one", 10)
 	assert.NoError(t, err)
-	tenantOne := qb.tenantQuerierAssignments.tenantsByID["one"]
+	tenantOne := qb.tenantConsumerAssignments.tenantsByID["one"]
 
 	err = qb.enqueueObjectsForTests("two", 10)
 	assert.NoError(t, err)
-	tenantTwo := qb.tenantQuerierAssignments.tenantsByID["two"]
+	tenantTwo := qb.tenantConsumerAssignments.tenantsByID["two"]
 
 	expectedDequeueVals := []dequeueVal{
 		{buildExpectedObject(tenantOne.tenantID, 0), tenantOne},
@@ -322,7 +322,7 @@ func TestQueuesOnTerminatingQuerier(t *testing.T) {
 		{buildExpectedObject(tenantOne.tenantID, 1), tenantOne},
 		{buildExpectedObject(tenantTwo.tenantID, 1), tenantTwo},
 	}
-	qOneLastTenantIndex := assertExpectedValuesOnDequeue(t, qb, -1, "querier-1", expectedDequeueVals)
+	qOneLastTenantIndex := assertExpectedValuesOnDequeue(t, qb, -1, "consumer-1", expectedDequeueVals)
 
 	expectedDequeueVals = []dequeueVal{
 		{buildExpectedObject(tenantOne.tenantID, 2), tenantOne},
@@ -330,19 +330,19 @@ func TestQueuesOnTerminatingQuerier(t *testing.T) {
 		{buildExpectedObject(tenantOne.tenantID, 3), tenantOne},
 		{buildExpectedObject(tenantTwo.tenantID, 3), tenantTwo},
 	}
-	qTwolastTenantIndex := assertExpectedValuesOnDequeue(t, qb, -1, "querier-2", expectedDequeueVals)
+	qTwolastTenantIndex := assertExpectedValuesOnDequeue(t, qb, -1, "consumer-2", expectedDequeueVals)
 
-	// After notify shutdown for querier-2, it's expected to own no queue.
-	qb.notifyQuerierShutdown("querier-2")
-	req, tenant, qTwolastTenantIndex, err := qb.dequeueItemForQuerier(&QuerierWorkerDequeueRequest{
-		QuerierWorkerConn: &QuerierWorkerConn{QuerierID: "querier-2"},
-		lastTenantIndex:   TenantIndex{qTwolastTenantIndex},
+	// After notify shutdown for consumer-2, it's expected to own no queue.
+	qb.notifyConsumerShutdown("consumer-2")
+	req, tenant, qTwolastTenantIndex, err := qb.dequeueItemForConsumer(&ConsumerWorkerDequeueRequest{
+		ConsumerWorkerConn: &ConsumerWorkerConn{ConsumerID: "consumer-2"},
+		lastTenantIndex:    TenantIndex{qTwolastTenantIndex},
 	})
 	assert.Nil(t, req)
 	assert.Nil(t, tenant)
-	assert.Equal(t, ErrQuerierShuttingDown, err)
+	assert.Equal(t, ErrConsumerShuttingDown, err)
 
-	// However, querier-1 still get queues because it's still running.
+	// However, consumer-1 still get queues because it's still running.
 	expectedDequeueVals = []dequeueVal{
 		{buildExpectedObject(tenantOne.tenantID, 4), tenantOne},
 		{buildExpectedObject(tenantTwo.tenantID, 4), tenantTwo},
@@ -351,44 +351,44 @@ func TestQueuesOnTerminatingQuerier(t *testing.T) {
 	}
 
 	for _, expected := range expectedDequeueVals {
-		req, tenant, qOneLastTenantIndex, err = qb.dequeueItemForQuerier(&QuerierWorkerDequeueRequest{
-			QuerierWorkerConn: &QuerierWorkerConn{QuerierID: "querier-1"},
-			lastTenantIndex:   TenantIndex{qOneLastTenantIndex},
+		req, tenant, qOneLastTenantIndex, err = qb.dequeueItemForConsumer(&ConsumerWorkerDequeueRequest{
+			ConsumerWorkerConn: &ConsumerWorkerConn{ConsumerID: "consumer-1"},
+			lastTenantIndex:    TenantIndex{qOneLastTenantIndex},
 		})
 		assert.Equal(t, expected.item, req)
 		assert.Equal(t, expected.tenant, tenant)
 		assert.NoError(t, err)
 	}
 
-	// After disconnecting querier-2, it's expected to own no queue.
-	qb.tenantQuerierAssignments.removeQueriers("querier-2")
-	req, tenant, _, err = qb.dequeueItemForQuerier(&QuerierWorkerDequeueRequest{
-		QuerierWorkerConn: &QuerierWorkerConn{QuerierID: "querier-2"},
-		lastTenantIndex:   TenantIndex{qTwolastTenantIndex},
+	// After disconnecting consumer-2, it's expected to own no queue.
+	qb.tenantConsumerAssignments.removeConsumers("consumer-2")
+	req, tenant, _, err = qb.dequeueItemForConsumer(&ConsumerWorkerDequeueRequest{
+		ConsumerWorkerConn: &ConsumerWorkerConn{ConsumerID: "consumer-2"},
+		lastTenantIndex:    TenantIndex{qTwolastTenantIndex},
 	})
 	assert.Nil(t, req)
 	assert.Nil(t, tenant)
-	assert.Equal(t, ErrQuerierShuttingDown, err)
+	assert.Equal(t, ErrConsumerShuttingDown, err)
 }
 
-func TestQueues_QuerierDistribution(t *testing.T) {
+func TestQueues_ConsumerDistribution(t *testing.T) {
 	qb := newQueueBroker(0, 0)
 	assert.NotNil(t, qb)
 	assert.NoError(t, isConsistent(qb))
 
-	queriers := 30
+	consumers := 30
 	numTenants := 1000
-	maxQueriersPerTenant := 5
+	maxConsumersPerTenant := 5
 
-	// Add some queriers.
-	for ix := 0; ix < queriers; ix++ {
-		qid := fmt.Sprintf("querier-%d", ix)
-		qb.addQuerierWorkerConn(NewUnregisteredQuerierWorkerConn(context.Background(), qid))
+	// Add some consumers.
+	for ix := 0; ix < consumers; ix++ {
+		qid := fmt.Sprintf("consumer-%d", ix)
+		qb.addConsumerWorkerConn(NewUnregisteredConsumerWorkerConn(context.Background(), qid))
 
-		// No querier has any queues yet.
-		req, tenant, _, err := qb.dequeueItemForQuerier(&QuerierWorkerDequeueRequest{
-			QuerierWorkerConn: &QuerierWorkerConn{QuerierID: qid},
-			lastTenantIndex:   TenantIndex{-1},
+		// No consumer has any queues yet.
+		req, tenant, _, err := qb.dequeueItemForConsumer(&ConsumerWorkerDequeueRequest{
+			ConsumerWorkerConn: &ConsumerWorkerConn{ConsumerID: qid},
+			lastTenantIndex:    TenantIndex{-1},
 		})
 		assert.Nil(t, req)
 		assert.Nil(t, tenant)
@@ -400,44 +400,44 @@ func TestQueues_QuerierDistribution(t *testing.T) {
 	// Add tenant queues.
 	for i := 0; i < numTenants; i++ {
 		uid := fmt.Sprintf("tenant-%d", i)
-		err := qb.tenantQuerierAssignments.createOrUpdateTenant(uid, maxQueriersPerTenant)
+		err := qb.tenantConsumerAssignments.createOrUpdateTenant(uid, maxConsumersPerTenant)
 		assert.NoError(t, err)
 
 		//Enqueue some stuff so that the tree queue node exists
 		err = qb.enqueueObjectsForTests(uid, 1)
 		assert.NoError(t, err)
 
-		// Verify it has maxQueriersPerTenant queriers assigned now.
-		qs := qb.tenantQuerierAssignments.queriersForTenant(uid)
-		assert.Equal(t, maxQueriersPerTenant, len(qs))
+		// Verify it has maxConsumersPerTenant consumers assigned now.
+		qs := qb.tenantConsumerAssignments.consumersForTenant(uid)
+		assert.Equal(t, maxConsumersPerTenant, len(qs))
 	}
 
-	// After adding all tenants, verify results. For each querier, find out how many different tenants it handles,
+	// After adding all tenants, verify results. For each consumer, find out how many different tenants it handles,
 	// and compute mean and stdDev.
-	queriersMap := make(map[tree.QuerierID]int)
+	consumersMap := make(map[tree.ConsumerID]int)
 
-	for tenantID := range qb.tenantQuerierAssignments.tenantsByID {
-		querierSet := qb.tenantQuerierAssignments.queriersForTenant(tenantID)
-		for querierID := range querierSet {
-			queriersMap[querierID]++
+	for tenantID := range qb.tenantConsumerAssignments.tenantsByID {
+		consumerSet := qb.tenantConsumerAssignments.consumersForTenant(tenantID)
+		for consumerID := range consumerSet {
+			consumersMap[consumerID]++
 		}
 	}
 
 	mean := float64(0)
-	for _, c := range queriersMap {
+	for _, c := range consumersMap {
 		mean += float64(c)
 	}
-	mean = mean / float64(len(queriersMap))
+	mean = mean / float64(len(consumersMap))
 
 	stdDev := float64(0)
-	for _, c := range queriersMap {
+	for _, c := range consumersMap {
 		d := float64(c) - mean
 		stdDev += (d * d)
 	}
-	stdDev = math.Sqrt(stdDev / float64(len(queriersMap)))
+	stdDev = math.Sqrt(stdDev / float64(len(consumersMap)))
 	t.Log("mean:", mean, "stddev:", stdDev)
 
-	assert.InDelta(t, numTenants*maxQueriersPerTenant/queriers, mean, 1)
+	assert.InDelta(t, numTenants*maxConsumersPerTenant/consumers, mean, 1)
 	assert.InDelta(t, stdDev, 0, mean*0.2)
 }
 
@@ -456,11 +456,11 @@ func TestQueuesConsistency(t *testing.T) {
 
 			r := rand.New(rand.NewSource(time.Now().Unix()))
 
-			// maps querier IDs to tenant indexes for that querier.
+			// maps consumer IDs to tenant indexes for that consumer.
 			lastTenantIndexes := map[string]int{}
 
-			// track active querier-worker connections to use worker IDs for removal
-			conns := map[string][]*QuerierWorkerConn{}
+			// track active consumer-worker connections to use worker IDs for removal
+			conns := map[string][]*ConsumerWorkerConn{}
 
 			for i := 0; i < 100; i++ {
 				switch r.Int() % 6 {
@@ -468,28 +468,28 @@ func TestQueuesConsistency(t *testing.T) {
 					err := getOrAddTenantQueue(qb, generateTenant(r), 3)
 					assert.Nil(t, err)
 				case 1:
-					querierID := generateQuerier(r)
-					tenantIndex := getNextTenantForQuerier(qb, lastTenantIndexes[querierID], querierID)
-					lastTenantIndexes[querierID] = tenantIndex
+					consumerID := generateConsumer(r)
+					tenantIndex := getNextTenantForConsumer(qb, lastTenantIndexes[consumerID], consumerID)
+					lastTenantIndexes[consumerID] = tenantIndex
 				case 2:
 					qb.removeTenantQueue(generateTenant(r))
 				case 3:
-					querierID := generateQuerier(r)
-					conn := NewUnregisteredQuerierWorkerConn(context.Background(), querierID)
-					qb.addQuerierWorkerConn(conn)
-					conns[querierID] = append(conns[querierID], conn)
+					consumerID := generateConsumer(r)
+					conn := NewUnregisteredConsumerWorkerConn(context.Background(), consumerID)
+					qb.addConsumerWorkerConn(conn)
+					conns[consumerID] = append(conns[consumerID], conn)
 				case 4:
-					querierID := generateQuerier(r)
-					if len(conns[querierID]) > 0 {
+					consumerID := generateConsumer(r)
+					if len(conns[consumerID]) > 0 {
 						// does not matter which connection is removed; just choose the last one in the list
-						conn := conns[querierID][len(conns[querierID])-1]
-						qb.removeQuerierWorkerConn(conn, time.Now())
+						conn := conns[consumerID][len(conns[consumerID])-1]
+						qb.removeConsumerWorkerConn(conn, time.Now())
 						// slice removed connection off end of tracking list
-						conns[querierID] = conns[querierID][:len(conns[querierID])-1]
+						conns[consumerID] = conns[consumerID][:len(conns[consumerID])-1]
 					}
 				case 5:
-					q := generateQuerier(r)
-					qb.notifyQuerierShutdown(q)
+					q := generateConsumer(r)
+					qb.notifyConsumerShutdown(q)
 				}
 
 				assert.NoErrorf(t, isConsistent(qb), "last action %d, rand: %d", i, r.Int()%6)
@@ -500,9 +500,9 @@ func TestQueuesConsistency(t *testing.T) {
 
 func TestQueues_ForgetDelay(t *testing.T) {
 	const (
-		forgetDelay          = 1 * time.Minute
-		maxQueriersPerTenant = 1
-		numTenants           = 10
+		forgetDelay           = 1 * time.Minute
+		maxConsumersPerTenant = 1
+		numTenants            = 10
 	)
 
 	now := time.Now()
@@ -510,26 +510,26 @@ func TestQueues_ForgetDelay(t *testing.T) {
 	assert.NotNil(t, qb)
 	assert.NoError(t, isConsistent(qb))
 
-	// 3 queriers open 2 connections each.
-	querier1Conn1 := NewUnregisteredQuerierWorkerConn(context.Background(), "querier-1")
-	qb.addQuerierWorkerConn(querier1Conn1)
-	querier1Conn2 := NewUnregisteredQuerierWorkerConn(context.Background(), "querier-1")
-	qb.addQuerierWorkerConn(querier1Conn2)
+	// 3 consumers open 2 connections each.
+	consumer1Conn1 := NewUnregisteredConsumerWorkerConn(context.Background(), "consumer-1")
+	qb.addConsumerWorkerConn(consumer1Conn1)
+	consumer1Conn2 := NewUnregisteredConsumerWorkerConn(context.Background(), "consumer-1")
+	qb.addConsumerWorkerConn(consumer1Conn2)
 
-	querier2Conn1 := NewUnregisteredQuerierWorkerConn(context.Background(), "querier-2")
-	qb.addQuerierWorkerConn(querier2Conn1)
-	querier2Conn2 := NewUnregisteredQuerierWorkerConn(context.Background(), "querier-2")
-	qb.addQuerierWorkerConn(querier2Conn2)
+	consumer2Conn1 := NewUnregisteredConsumerWorkerConn(context.Background(), "consumer-2")
+	qb.addConsumerWorkerConn(consumer2Conn1)
+	consumer2Conn2 := NewUnregisteredConsumerWorkerConn(context.Background(), "consumer-2")
+	qb.addConsumerWorkerConn(consumer2Conn2)
 
-	querier3Conn1 := NewUnregisteredQuerierWorkerConn(context.Background(), "querier-3")
-	qb.addQuerierWorkerConn(querier3Conn1)
-	querier3Conn2 := NewUnregisteredQuerierWorkerConn(context.Background(), "querier-3")
-	qb.addQuerierWorkerConn(querier3Conn2)
+	consumer3Conn1 := NewUnregisteredConsumerWorkerConn(context.Background(), "consumer-3")
+	qb.addConsumerWorkerConn(consumer3Conn1)
+	consumer3Conn2 := NewUnregisteredConsumerWorkerConn(context.Background(), "consumer-3")
+	qb.addConsumerWorkerConn(consumer3Conn2)
 
 	// Add tenant queues.
 	for i := 0; i < numTenants; i++ {
 		tenantID := fmt.Sprintf("tenant-%d", i)
-		err := qb.tenantQuerierAssignments.createOrUpdateTenant(tenantID, maxQueriersPerTenant)
+		err := qb.tenantConsumerAssignments.createOrUpdateTenant(tenantID, maxConsumersPerTenant)
 		assert.NoError(t, err)
 
 		//Enqueue some stuff so that the tree queue node exists
@@ -537,79 +537,79 @@ func TestQueues_ForgetDelay(t *testing.T) {
 		assert.NoError(t, err)
 	}
 
-	// We expect querier-1 to have some tenants.
-	querier1Tenants := getTenantsByQuerier(qb, "querier-1")
-	require.NotEmpty(t, querier1Tenants)
+	// We expect consumer-1 to have some tenants.
+	consumer1Tenants := getTenantsByConsumer(qb, "consumer-1")
+	require.NotEmpty(t, consumer1Tenants)
 
-	// Gracefully shutdown querier-1.
-	qb.removeQuerierWorkerConn(querier1Conn1, now.Add(20*time.Second))
-	qb.removeQuerierWorkerConn(querier1Conn2, now.Add(21*time.Second))
-	qb.notifyQuerierShutdown("querier-1")
+	// Gracefully shutdown consumer-1.
+	qb.removeConsumerWorkerConn(consumer1Conn1, now.Add(20*time.Second))
+	qb.removeConsumerWorkerConn(consumer1Conn2, now.Add(21*time.Second))
+	qb.notifyConsumerShutdown("consumer-1")
 
-	// We expect querier-1 has been removed.
-	assert.NotContains(t, qb.querierConnections.queriersByID, "querier-1")
+	// We expect consumer-1 has been removed.
+	assert.NotContains(t, qb.consumerConnections.consumersByID, "consumer-1")
 	assert.NoError(t, isConsistent(qb))
 
-	// We expect querier-1 tenants have been shuffled to other queriers.
-	for _, tenantID := range querier1Tenants {
-		assert.Contains(t, append(getTenantsByQuerier(qb, "querier-2"), getTenantsByQuerier(qb, "querier-3")...), tenantID)
+	// We expect consumer-1 tenants have been shuffled to other consumers.
+	for _, tenantID := range consumer1Tenants {
+		assert.Contains(t, append(getTenantsByConsumer(qb, "consumer-2"), getTenantsByConsumer(qb, "consumer-3")...), tenantID)
 	}
 
-	// Querier-1 reconnects.
-	qb.addQuerierWorkerConn(querier1Conn1)
-	qb.addQuerierWorkerConn(querier1Conn2)
+	// Consumer-1 reconnects.
+	qb.addConsumerWorkerConn(consumer1Conn1)
+	qb.addConsumerWorkerConn(consumer1Conn2)
 
-	// We expect the initial querier-1 tenants have got back to querier-1.
-	for _, tenantID := range querier1Tenants {
-		assert.Contains(t, getTenantsByQuerier(qb, "querier-1"), tenantID)
-		assert.NotContains(t, getTenantsByQuerier(qb, "querier-2"), tenantID)
-		assert.NotContains(t, getTenantsByQuerier(qb, "querier-3"), tenantID)
+	// We expect the initial consumer-1 tenants have got back to consumer-1.
+	for _, tenantID := range consumer1Tenants {
+		assert.Contains(t, getTenantsByConsumer(qb, "consumer-1"), tenantID)
+		assert.NotContains(t, getTenantsByConsumer(qb, "consumer-2"), tenantID)
+		assert.NotContains(t, getTenantsByConsumer(qb, "consumer-3"), tenantID)
 	}
 
-	// Querier-1 abruptly terminates (no shutdown notification received).
-	qb.removeQuerierWorkerConn(querier1Conn1, now.Add(40*time.Second))
-	qb.removeQuerierWorkerConn(querier1Conn2, now.Add(41*time.Second))
+	// Consumer-1 abruptly terminates (no shutdown notification received).
+	qb.removeConsumerWorkerConn(consumer1Conn1, now.Add(40*time.Second))
+	qb.removeConsumerWorkerConn(consumer1Conn2, now.Add(41*time.Second))
 
-	// We expect querier-1 has NOT been removed.
-	assert.Contains(t, qb.querierConnections.queriersByID, "querier-1")
+	// We expect consumer-1 has NOT been removed.
+	assert.Contains(t, qb.consumerConnections.consumersByID, "consumer-1")
 	assert.NoError(t, isConsistent(qb))
 
-	// We expect the querier-1 tenants have not been shuffled to other queriers.
-	for _, tenantID := range querier1Tenants {
-		assert.Contains(t, getTenantsByQuerier(qb, "querier-1"), tenantID)
-		assert.NotContains(t, getTenantsByQuerier(qb, "querier-2"), tenantID)
-		assert.NotContains(t, getTenantsByQuerier(qb, "querier-3"), tenantID)
+	// We expect the consumer-1 tenants have not been shuffled to other consumers.
+	for _, tenantID := range consumer1Tenants {
+		assert.Contains(t, getTenantsByConsumer(qb, "consumer-1"), tenantID)
+		assert.NotContains(t, getTenantsByConsumer(qb, "consumer-2"), tenantID)
+		assert.NotContains(t, getTenantsByConsumer(qb, "consumer-3"), tenantID)
 	}
 
-	// Try to forget disconnected queriers, but querier-1 forget delay hasn't passed yet.
-	qb.forgetDisconnectedQueriers(now.Add(90 * time.Second))
+	// Try to forget disconnected consumers, but consumer-1 forget delay hasn't passed yet.
+	qb.forgetDisconnectedConsumers(now.Add(90 * time.Second))
 
-	assert.Contains(t, qb.querierConnections.queriersByID, "querier-1")
+	assert.Contains(t, qb.consumerConnections.consumersByID, "consumer-1")
 	assert.NoError(t, isConsistent(qb))
 
-	for _, tenantID := range querier1Tenants {
-		assert.Contains(t, getTenantsByQuerier(qb, "querier-1"), tenantID)
-		assert.NotContains(t, getTenantsByQuerier(qb, "querier-2"), tenantID)
-		assert.NotContains(t, getTenantsByQuerier(qb, "querier-3"), tenantID)
+	for _, tenantID := range consumer1Tenants {
+		assert.Contains(t, getTenantsByConsumer(qb, "consumer-1"), tenantID)
+		assert.NotContains(t, getTenantsByConsumer(qb, "consumer-2"), tenantID)
+		assert.NotContains(t, getTenantsByConsumer(qb, "consumer-3"), tenantID)
 	}
 
-	// Try to forget disconnected queriers. This time querier-1 forget delay has passed.
-	qb.forgetDisconnectedQueriers(now.Add(105 * time.Second))
+	// Try to forget disconnected consumers. This time consumer-1 forget delay has passed.
+	qb.forgetDisconnectedConsumers(now.Add(105 * time.Second))
 
-	assert.NotContains(t, qb.querierConnections.queriersByID, "querier-1")
+	assert.NotContains(t, qb.consumerConnections.consumersByID, "consumer-1")
 	assert.NoError(t, isConsistent(qb))
 
-	// We expect querier-1 tenants have been shuffled to other queriers.
-	for _, tenantID := range querier1Tenants {
-		assert.Contains(t, append(getTenantsByQuerier(qb, "querier-2"), getTenantsByQuerier(qb, "querier-3")...), tenantID)
+	// We expect consumer-1 tenants have been shuffled to other consumers.
+	for _, tenantID := range consumer1Tenants {
+		assert.Contains(t, append(getTenantsByConsumer(qb, "consumer-2"), getTenantsByConsumer(qb, "consumer-3")...), tenantID)
 	}
 }
 
-func TestQueues_ForgetDelay_ShouldCorrectlyHandleQuerierReconnectingBeforeForgetDelayIsPassed(t *testing.T) {
+func TestQueues_ForgetDelay_ShouldCorrectlyHandleConsumerReconnectingBeforeForgetDelayIsPassed(t *testing.T) {
 	const (
-		forgetDelay          = time.Minute
-		maxQueriersPerTenant = 1
-		numTenants           = 100
+		forgetDelay           = time.Minute
+		maxConsumersPerTenant = 1
+		numTenants            = 100
 	)
 
 	now := time.Now()
@@ -617,26 +617,26 @@ func TestQueues_ForgetDelay_ShouldCorrectlyHandleQuerierReconnectingBeforeForget
 	assert.NotNil(t, qb)
 	assert.NoError(t, isConsistent(qb))
 
-	// 3 queriers open 2 connections each.
-	querier1Conn1 := NewUnregisteredQuerierWorkerConn(context.Background(), "querier-1")
-	qb.addQuerierWorkerConn(querier1Conn1)
-	querier1Conn2 := NewUnregisteredQuerierWorkerConn(context.Background(), "querier-1")
-	qb.addQuerierWorkerConn(querier1Conn2)
+	// 3 consumers open 2 connections each.
+	consumer1Conn1 := NewUnregisteredConsumerWorkerConn(context.Background(), "consumer-1")
+	qb.addConsumerWorkerConn(consumer1Conn1)
+	consumer1Conn2 := NewUnregisteredConsumerWorkerConn(context.Background(), "consumer-1")
+	qb.addConsumerWorkerConn(consumer1Conn2)
 
-	querier2Conn1 := NewUnregisteredQuerierWorkerConn(context.Background(), "querier-2")
-	qb.addQuerierWorkerConn(querier2Conn1)
-	querier2Conn2 := NewUnregisteredQuerierWorkerConn(context.Background(), "querier-2")
-	qb.addQuerierWorkerConn(querier2Conn2)
+	consumer2Conn1 := NewUnregisteredConsumerWorkerConn(context.Background(), "consumer-2")
+	qb.addConsumerWorkerConn(consumer2Conn1)
+	consumer2Conn2 := NewUnregisteredConsumerWorkerConn(context.Background(), "consumer-2")
+	qb.addConsumerWorkerConn(consumer2Conn2)
 
-	querier3Conn1 := NewUnregisteredQuerierWorkerConn(context.Background(), "querier-3")
-	qb.addQuerierWorkerConn(querier3Conn1)
-	querier3Conn2 := NewUnregisteredQuerierWorkerConn(context.Background(), "querier-3")
-	qb.addQuerierWorkerConn(querier3Conn2)
+	consumer3Conn1 := NewUnregisteredConsumerWorkerConn(context.Background(), "consumer-3")
+	qb.addConsumerWorkerConn(consumer3Conn1)
+	consumer3Conn2 := NewUnregisteredConsumerWorkerConn(context.Background(), "consumer-3")
+	qb.addConsumerWorkerConn(consumer3Conn2)
 
 	// Add tenant queues.
 	for i := 0; i < numTenants; i++ {
 		tenantID := fmt.Sprintf("tenant-%d", i)
-		err := qb.tenantQuerierAssignments.createOrUpdateTenant(tenantID, maxQueriersPerTenant)
+		err := qb.tenantConsumerAssignments.createOrUpdateTenant(tenantID, maxConsumersPerTenant)
 		assert.NoError(t, err)
 
 		//Enqueue some stuff so that the tree queue node exists
@@ -644,52 +644,52 @@ func TestQueues_ForgetDelay_ShouldCorrectlyHandleQuerierReconnectingBeforeForget
 		assert.NoError(t, err)
 	}
 
-	// We expect querier-1 to have some tenants.
-	querier1Tenants := getTenantsByQuerier(qb, "querier-1")
-	require.NotEmpty(t, querier1Tenants)
+	// We expect consumer-1 to have some tenants.
+	consumer1Tenants := getTenantsByConsumer(qb, "consumer-1")
+	require.NotEmpty(t, consumer1Tenants)
 
-	// Querier-1 abruptly terminates (no shutdown notification received).
-	qb.removeQuerierWorkerConn(querier1Conn1, now.Add(40*time.Second))
-	qb.removeQuerierWorkerConn(querier1Conn2, now.Add(41*time.Second))
+	// Consumer-1 abruptly terminates (no shutdown notification received).
+	qb.removeConsumerWorkerConn(consumer1Conn1, now.Add(40*time.Second))
+	qb.removeConsumerWorkerConn(consumer1Conn2, now.Add(41*time.Second))
 
-	// We expect querier-1 has NOT been removed.
-	assert.Contains(t, qb.querierConnections.queriersByID, "querier-1")
+	// We expect consumer-1 has NOT been removed.
+	assert.Contains(t, qb.consumerConnections.consumersByID, "consumer-1")
 	assert.NoError(t, isConsistent(qb))
 
-	// We expect the querier-1 tenants have not been shuffled to other queriers.
-	for _, tenantID := range querier1Tenants {
-		assert.Contains(t, getTenantsByQuerier(qb, "querier-1"), tenantID)
-		assert.NotContains(t, getTenantsByQuerier(qb, "querier-2"), tenantID)
-		assert.NotContains(t, getTenantsByQuerier(qb, "querier-3"), tenantID)
+	// We expect the consumer-1 tenants have not been shuffled to other consumers.
+	for _, tenantID := range consumer1Tenants {
+		assert.Contains(t, getTenantsByConsumer(qb, "consumer-1"), tenantID)
+		assert.NotContains(t, getTenantsByConsumer(qb, "consumer-2"), tenantID)
+		assert.NotContains(t, getTenantsByConsumer(qb, "consumer-3"), tenantID)
 	}
 
-	// Try to forget disconnected queriers, but querier-1 forget delay hasn't passed yet.
-	qb.forgetDisconnectedQueriers(now.Add(90 * time.Second))
+	// Try to forget disconnected consumers, but consumer-1 forget delay hasn't passed yet.
+	qb.forgetDisconnectedConsumers(now.Add(90 * time.Second))
 
-	// Querier-1 reconnects.
-	qb.addQuerierWorkerConn(querier1Conn1)
-	qb.addQuerierWorkerConn(querier1Conn2)
+	// Consumer-1 reconnects.
+	qb.addConsumerWorkerConn(consumer1Conn1)
+	qb.addConsumerWorkerConn(consumer1Conn2)
 
-	assert.Contains(t, qb.querierConnections.queriersByID, "querier-1")
+	assert.Contains(t, qb.consumerConnections.consumersByID, "consumer-1")
 	assert.NoError(t, isConsistent(qb))
 
-	// We expect the querier-1 tenants have not been shuffled to other queriers.
-	for _, tenantID := range querier1Tenants {
-		assert.Contains(t, getTenantsByQuerier(qb, "querier-1"), tenantID)
-		assert.NotContains(t, getTenantsByQuerier(qb, "querier-2"), tenantID)
-		assert.NotContains(t, getTenantsByQuerier(qb, "querier-3"), tenantID)
+	// We expect the consumer-1 tenants have not been shuffled to other consumers.
+	for _, tenantID := range consumer1Tenants {
+		assert.Contains(t, getTenantsByConsumer(qb, "consumer-1"), tenantID)
+		assert.NotContains(t, getTenantsByConsumer(qb, "consumer-2"), tenantID)
+		assert.NotContains(t, getTenantsByConsumer(qb, "consumer-3"), tenantID)
 	}
 
-	// Try to forget disconnected queriers far in the future, but there's no disconnected querier.
-	qb.forgetDisconnectedQueriers(now.Add(200 * time.Second))
+	// Try to forget disconnected consumers far in the future, but there's no disconnected consumer.
+	qb.forgetDisconnectedConsumers(now.Add(200 * time.Second))
 
-	assert.Contains(t, qb.querierConnections.queriersByID, "querier-1")
+	assert.Contains(t, qb.consumerConnections.consumersByID, "consumer-1")
 	assert.NoError(t, isConsistent(qb))
 
-	for _, tenantID := range querier1Tenants {
-		assert.Contains(t, getTenantsByQuerier(qb, "querier-1"), tenantID)
-		assert.NotContains(t, getTenantsByQuerier(qb, "querier-2"), tenantID)
-		assert.NotContains(t, getTenantsByQuerier(qb, "querier-3"), tenantID)
+	for _, tenantID := range consumer1Tenants {
+		assert.Contains(t, getTenantsByConsumer(qb, "consumer-1"), tenantID)
+		assert.NotContains(t, getTenantsByConsumer(qb, "consumer-2"), tenantID)
+		assert.NotContains(t, getTenantsByConsumer(qb, "consumer-3"), tenantID)
 	}
 }
 
@@ -697,30 +697,30 @@ func generateTenant(r *rand.Rand) string {
 	return fmt.Sprint("tenant-", r.Int()%5)
 }
 
-func generateQuerier(r *rand.Rand) string {
-	return fmt.Sprint("querier-", r.Int()%5)
+func generateConsumer(r *rand.Rand) string {
+	return fmt.Sprint("consumer-", r.Int()%5)
 }
 
-// getTenantsByQuerier returns the list of tenants handled by the provided QuerierID.
+// getTenantsByConsumer returns the list of tenants handled by the provided ConsumerID.
 
-func getTenantsByQuerier(broker *queueBroker, querierID string) []string {
+func getTenantsByConsumer(broker *queueBroker, consumerID string) []string {
 	var tenantIDs []string
-	for _, tenantID := range broker.tenantQuerierAssignments.queuingAlgorithm.TenantIDOrder() {
-		querierSet := broker.tenantQuerierAssignments.queriersForTenant(tenantID)
-		if querierSet == nil {
-			// If it's nil then all queriers can handle this tenant.
+	for _, tenantID := range broker.tenantConsumerAssignments.queuingAlgorithm.TenantIDOrder() {
+		consumerSet := broker.tenantConsumerAssignments.consumersForTenant(tenantID)
+		if consumerSet == nil {
+			// If it's nil then all consumers can handle this tenant.
 			tenantIDs = append(tenantIDs, tenantID)
 			continue
 		}
-		if _, ok := querierSet[tree.QuerierID(querierID)]; ok {
+		if _, ok := consumerSet[tree.ConsumerID(consumerID)]; ok {
 			tenantIDs = append(tenantIDs, tenantID)
 		}
 	}
 	return tenantIDs
 }
 
-func getOrAddTenantQueue(qb *queueBroker, tenantID string, maxQueriers int) error {
-	err := qb.tenantQuerierAssignments.createOrUpdateTenant(tenantID, maxQueriers)
+func getOrAddTenantQueue(qb *queueBroker, tenantID string, maxConsumers int) error {
+	err := qb.tenantConsumerAssignments.createOrUpdateTenant(tenantID, maxConsumers)
 	if err != nil {
 		return err
 	}
@@ -731,7 +731,7 @@ func getOrAddTenantQueue(qb *queueBroker, tenantID string, maxQueriers int) erro
 
 // removeTenantQueue is a test utility, not intended for use by consumers of queueBroker
 func (qb *queueBroker) removeTenantQueue(tenantID string) bool {
-	qb.tenantQuerierAssignments.removeTenant(tenantID)
+	qb.tenantConsumerAssignments.removeTenant(tenantID)
 	queuePath := qb.makeQueuePathForTests(tenantID)
 
 	tree.DeleteNode(tree.RootNode(qb.tree.(*tree.MultiAlgorithmTreeQueue)), queuePath)
@@ -744,14 +744,14 @@ func (qb *queueBroker) makeQueuePathForTests(tenantID string) tree.QueuePath {
 }
 
 func isConsistent(qb *queueBroker) error {
-	if len(qb.tenantQuerierAssignments.querierIDsSorted) != len(qb.querierConnections.queriersByID) {
-		return fmt.Errorf("inconsistent number of sorted queriers and querier connections")
+	if len(qb.tenantConsumerAssignments.consumerIDsSorted) != len(qb.consumerConnections.consumersByID) {
+		return fmt.Errorf("inconsistent number of sorted consumers and consumer connections")
 	}
 
 	tenantCount := 0
 	existingTenants := make(map[string]bool)
 
-	for ix, tenantID := range qb.tenantQuerierAssignments.queuingAlgorithm.TenantIDOrder() {
+	for ix, tenantID := range qb.tenantConsumerAssignments.queuingAlgorithm.TenantIDOrder() {
 		path := qb.makeQueuePathForTests(tenantID)
 
 		node := qb.tree.GetNode(path)
@@ -772,23 +772,23 @@ func isConsistent(qb *queueBroker) error {
 			existingTenants[tenantID] = true
 		}
 
-		tenant := qb.tenantQuerierAssignments.tenantsByID[tenantID]
-		querierSet := qb.tenantQuerierAssignments.queriersForTenant(tenantID)
+		tenant := qb.tenantConsumerAssignments.tenantsByID[tenantID]
+		consumerSet := qb.tenantConsumerAssignments.consumersForTenant(tenantID)
 
 		if tenant.orderIndex != ix {
 			return fmt.Errorf("invalid tenant's index, expected=%d, got=%d", ix, tenant.orderIndex)
 		}
 
-		if tenant.maxQueriers == 0 && querierSet != nil {
-			return fmt.Errorf("tenant %s has queriers, but maxQueriers=0", tenantID)
+		if tenant.maxConsumers == 0 && consumerSet != nil {
+			return fmt.Errorf("tenant %s has consumers, but maxConsumers=0", tenantID)
 		}
 
-		if tenant.maxQueriers > 0 && len(qb.tenantQuerierAssignments.querierIDsSorted) <= tenant.maxQueriers && querierSet != nil {
-			return fmt.Errorf("tenant %s has queriers set despite not enough queriers available", tenantID)
+		if tenant.maxConsumers > 0 && len(qb.tenantConsumerAssignments.consumerIDsSorted) <= tenant.maxConsumers && consumerSet != nil {
+			return fmt.Errorf("tenant %s has consumers set despite not enough consumers available", tenantID)
 		}
 
-		if tenant.maxQueriers > 0 && len(qb.tenantQuerierAssignments.querierIDsSorted) > tenant.maxQueriers && len(querierSet) != tenant.maxQueriers {
-			return fmt.Errorf("tenant %s has incorrect number of queriers, expected=%d, got=%d", tenantID, len(querierSet), tenant.maxQueriers)
+		if tenant.maxConsumers > 0 && len(qb.tenantConsumerAssignments.consumerIDsSorted) > tenant.maxConsumers && len(consumerSet) != tenant.maxConsumers {
+			return fmt.Errorf("tenant %s has incorrect number of consumers, expected=%d, got=%d", tenantID, len(consumerSet), tenant.maxConsumers)
 		}
 	}
 
@@ -803,16 +803,16 @@ func isConsistent(qb *queueBroker) error {
 	return nil
 }
 
-// The next tenant for the querier is obtained by rotating through the global tenant order
-// starting just after the last tenant the querier received a request for, until a tenant
-// is found that is assigned to the given querier according to the querier shuffle sharding.
-// A newly connected querier provides lastTenantIndex of -1 in order to start at the beginning.
-func getNextTenantForQuerier(qb *queueBroker, lastTenantIndex int, querierID string) int {
-	if !qb.querierConnections.querierIsAvailable(querierID) {
+// The next tenant for the consumer is obtained by rotating through the global tenant order
+// starting just after the last tenant the consumer received a request for, until a tenant
+// is found that is assigned to the given consumer according to the consumer shuffle sharding.
+// A newly connected consumer provides lastTenantIndex of -1 in order to start at the beginning.
+func getNextTenantForConsumer(qb *queueBroker, lastTenantIndex int, consumerID string) int {
+	if !qb.consumerConnections.consumerIsAvailable(consumerID) {
 		return lastTenantIndex
 	}
 	tenantOrderIndex := lastTenantIndex
-	tenantIDOrder := qb.tenantQuerierAssignments.queuingAlgorithm.TenantIDOrder()
+	tenantIDOrder := qb.tenantConsumerAssignments.queuingAlgorithm.TenantIDOrder()
 	for iters := 0; iters < len(tenantIDOrder); iters++ {
 		tenantOrderIndex++
 		if tenantOrderIndex >= len(tenantIDOrder) {
@@ -823,12 +823,12 @@ func getNextTenantForQuerier(qb *queueBroker, lastTenantIndex int, querierID str
 			continue
 		}
 
-		tenantQuerierSet := qb.tenantQuerierAssignments.queriersForTenant(tenantID)
-		if tenantQuerierSet == nil {
-			// tenant can use all queriers
+		tenantConsumerSet := qb.tenantConsumerAssignments.consumersForTenant(tenantID)
+		if tenantConsumerSet == nil {
+			// tenant can use all consumers
 			return tenantOrderIndex
-		} else if _, ok := tenantQuerierSet[tree.QuerierID(querierID)]; ok {
-			// tenant is assigned this querier
+		} else if _, ok := tenantConsumerSet[tree.ConsumerID(consumerID)]; ok {
+			// tenant is assigned this consumer
 			return tenantOrderIndex
 		}
 	}

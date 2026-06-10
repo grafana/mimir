@@ -114,24 +114,24 @@ func (sq *schedulerQueue) Enqueue(req *SchedulerRequest, successFn func()) error
 	return sq.queue.SubmitItemToEnqueue(req.UserID, req, req.ExpectedQueryComponentName(), maxQueriers, successFn)
 }
 
-func (sq *schedulerQueue) AwaitRegisterQuerierWorkerConn(conn *queue.QuerierWorkerConn) error {
-	return sq.queue.AwaitRegisterQuerierWorkerConn(conn)
+func (sq *schedulerQueue) AwaitRegisterQuerierWorkerConn(conn *queue.ConsumerWorkerConn) error {
+	return sq.queue.AwaitRegisterConsumerWorkerConn(conn)
 }
 
-func (sq *schedulerQueue) SubmitUnregisterQuerierWorkerConn(conn *queue.QuerierWorkerConn) {
-	sq.queue.SubmitUnregisterQuerierWorkerConn(conn)
+func (sq *schedulerQueue) SubmitUnregisterQuerierWorkerConn(conn *queue.ConsumerWorkerConn) {
+	sq.queue.SubmitUnregisterConsumerWorkerConn(conn)
 }
 
-func (sq *schedulerQueue) AwaitRequestForQuerier(req *queue.QuerierWorkerDequeueRequest) (queue.Item, queue.TenantIndex, error) {
-	return sq.queue.AwaitItemForQuerier(req)
+func (sq *schedulerQueue) AwaitRequestForQuerier(req *queue.ConsumerWorkerDequeueRequest) (queue.Item, queue.TenantIndex, error) {
+	return sq.queue.AwaitItemForConsumer(req)
 }
 
 func (sq *schedulerQueue) SubmitNotifyQuerierShutdown(ctx context.Context, querierID string) {
-	sq.queue.SubmitNotifyQuerierShutdown(ctx, querierID)
+	sq.queue.SubmitNotifyConsumerShutdown(ctx, querierID)
 }
 
 func (sq *schedulerQueue) GetConnectedQuerierWorkersMetric() float64 {
-	return sq.queue.GetConnectedQuerierWorkersMetric()
+	return sq.queue.GetConnectedConsumerWorkersMetric()
 }
 
 func (sq *schedulerQueue) IsEmpty() bool {

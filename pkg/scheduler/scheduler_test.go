@@ -141,7 +141,7 @@ func drainScheduler(t *testing.T, s *Scheduler) {
 	lastTenantIndex := queue.FirstTenant()
 	querierID := "emptying-consumer"
 
-	querierWorkerConn := queue.NewUnregisteredQuerierWorkerConn(context.Background(), querierID)
+	querierWorkerConn := queue.NewUnregisteredConsumerWorkerConn(context.Background(), querierID)
 	require.NoError(t, s.queue.AwaitRegisterQuerierWorkerConn(querierWorkerConn))
 	defer s.queue.SubmitUnregisterQuerierWorkerConn(querierWorkerConn)
 
@@ -163,9 +163,9 @@ func drainScheduler(t *testing.T, s *Scheduler) {
 type consumeRequest func(request queue.Item) error
 
 func queueConsume(
-	q *schedulerQueue, querierWorkerConn *queue.QuerierWorkerConn, lastTenantIdx queue.TenantIndex, consumeFunc consumeRequest,
+	q *schedulerQueue, querierWorkerConn *queue.ConsumerWorkerConn, lastTenantIdx queue.TenantIndex, consumeFunc consumeRequest,
 ) (queue.TenantIndex, error) {
-	dequeueReq := queue.NewQuerierWorkerDequeueRequest(querierWorkerConn, lastTenantIdx)
+	dequeueReq := queue.NewConsumerWorkerDequeueRequest(querierWorkerConn, lastTenantIdx)
 	request, idx, err := q.AwaitRequestForQuerier(dequeueReq)
 	if err != nil {
 		return lastTenantIdx, err
