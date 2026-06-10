@@ -98,8 +98,8 @@ func isCanonicalName(name string, allowTrailingDelim bool) bool {
 
 // isTemp reports whether fsPath is the temporary write directory or lies within it.
 func (bkt *fsBucket) isTemp(fsPath string) bool {
-	staging := bkt.tempWriteDir()
-	return fsPath == staging || strings.HasPrefix(fsPath, staging+string(filepath.Separator))
+	tempDir := bkt.tempWriteDir()
+	return fsPath == tempDir || strings.HasPrefix(fsPath, tempDir+string(filepath.Separator))
 }
 
 // resolveObject validates objectName as an object key and maps it to its
@@ -257,7 +257,7 @@ func (bkt *fsBucket) listShallow(prefix string, dir string) (*ListResult, error)
 	prefixes := make([]string, 0, len(entries))
 	for _, entry := range entries {
 		if entry.IsDir() {
-			// Never surface the reserved staging directory as a prefix
+			// Never surface the reserved temporary write directory as a prefix
 			if bkt.isTemp(filepath.Join(dir, entry.Name())) {
 				continue
 			}
@@ -291,7 +291,7 @@ func (bkt *fsBucket) listRecursive(dir string) (*ListResult, error) {
 			return err
 		}
 		if entry.IsDir() {
-			// Ignore the staging directory
+			// Ignore the temporary write directory
 			if bkt.isTemp(path) {
 				return filepath.SkipDir
 			}
