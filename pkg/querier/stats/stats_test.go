@@ -7,6 +7,7 @@ package stats
 
 import (
 	"context"
+	"reflect"
 	"sync"
 	"testing"
 	"time"
@@ -265,23 +266,23 @@ func TestStats_Merge(t *testing.T) {
 }
 
 func TestStats_Copy(t *testing.T) {
-	s1 := &SafeStats{
-		Stats: Stats{
-			WallTime:                    1,
-			FetchedSeriesCount:          2,
-			FetchedChunkBytes:           3,
-			FetchedChunksCount:          4,
-			ShardedQueries:              5,
-			SplitQueries:                6,
-			FetchedIndexBytes:           7,
-			EstimatedSeriesCount:        8,
-			QueueTime:                   9,
-			SamplesProcessed:            10,
-			RemoteExecutionRequestCount: 12,
-			EquivalentSamplesRead:       13,
-			PhysicalSamplesRead:         14,
-		},
+	s1 := &SafeStats{}
+
+	// Set every field of the Stats struct to a unique non-zero value (its ordinal) via
+	// reflection, so this test fails if Copy() doesn't copy a newly added field.
+	statsValue := reflect.ValueOf(&s1.Stats).Elem()
+	for i := 0; i < statsValue.NumField(); i++ {
+		field := statsValue.Field(i)
+		switch field.Kind() {
+		case reflect.Int64: // Covers time.Duration fields.
+			field.SetInt(int64(i + 1))
+		case reflect.Uint32, reflect.Uint64:
+			field.SetUint(uint64(i + 1))
+		default:
+			t.Fatalf("field %s has unsupported kind %s, please update this test", statsValue.Type().Field(i).Name, field.Kind())
+		}
 	}
+
 	s2 := s1.Copy()
 	assert.NotSame(t, s1, s2)
 	assert.EqualValues(t, s1, s2)
