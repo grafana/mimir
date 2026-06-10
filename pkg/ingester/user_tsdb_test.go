@@ -111,8 +111,6 @@ func TestUserTSDB_acquireAppendLock(t *testing.T) {
 	})
 }
 
-// refSet is a tiny helper for tests and benchmarks that need to pass a
-// map[storage.SeriesRef]struct{} snapshot to addPendingNonOwnedRefs.
 func refSet(refs ...storage.SeriesRef) map[storage.SeriesRef]struct{} {
 	if len(refs) == 0 {
 		return nil

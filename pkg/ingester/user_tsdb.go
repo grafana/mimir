@@ -697,11 +697,7 @@ func (u *userTSDB) updateTokenRanges(newTokenRanges []uint32) bool {
 }
 
 // addPendingNonOwnedRefs reconciles the per-tenant pending-eviction set with the
-// caller's authoritative snapshot of currently non-owned refs.
-//
-// The snapshot is passed as a set (map) so the caller can build it once during
-// its own iteration over the head; this avoids re-hashing a slice into a map
-// inside the lock on the reconciliation hot path.
+// caller's authoritative snapshot of currently non-owned refs, passed as a map.
 //
 // Refs present in the snapshot but missing from the set are added. Refs present
 // in the set but absent from the snapshot are removed, since they have either
@@ -714,24 +710,24 @@ func (u *userTSDB) updateTokenRanges(newTokenRanges []uint32) bool {
 // same non-owned set.
 //
 // The compaction loop consumes pending refs via takePendingNonOwnedRefs.
-func (u *userTSDB) addPendingNonOwnedRefs(current map[storage.SeriesRef]struct{}) {
+func (u *userTSDB) addPendingNonOwnedRefs(refs map[storage.SeriesRef]struct{}) {
 	u.pendingNonOwnedRefsMtx.Lock()
 	defer u.pendingNonOwnedRefsMtx.Unlock()
 
 	// Nothing to add and nothing to drop.
-	if len(current) == 0 && len(u.pendingNonOwnedRefs) == 0 {
+	if len(refs) == 0 && len(u.pendingNonOwnedRefs) == 0 {
 		return
 	}
 
 	// Drop refs that are no longer non-owned. Without this, a series whose ring ownership
 	// flipped back (or whose memSeries was GC'd) would otherwise be evicted on the next take.
 	for r := range u.pendingNonOwnedRefs {
-		if _, stillNonOwned := current[r]; !stillNonOwned {
+		if _, stillNonOwned := refs[r]; !stillNonOwned {
 			delete(u.pendingNonOwnedRefs, r)
 		}
 	}
 
-	if len(current) == 0 {
+	if len(refs) == 0 {
 		// Drop pass alone may have emptied the set; reset the timestamp so a future enqueue
 		// starts the grace-period clock cleanly.
 		if len(u.pendingNonOwnedRefs) == 0 {
@@ -741,10 +737,10 @@ func (u *userTSDB) addPendingNonOwnedRefs(current map[storage.SeriesRef]struct{}
 	}
 
 	if u.pendingNonOwnedRefs == nil {
-		u.pendingNonOwnedRefs = make(map[storage.SeriesRef]struct{}, len(current))
+		u.pendingNonOwnedRefs = make(map[storage.SeriesRef]struct{}, len(refs))
 	}
 	addedAny := false
-	for r := range current {
+	for r := range refs {
 		if _, ok := u.pendingNonOwnedRefs[r]; !ok {
 			u.pendingNonOwnedRefs[r] = struct{}{}
 			addedAny = true
@@ -793,7 +789,7 @@ func (u *userTSDB) computeOwnedSeries() int {
 	defer idx.Close()
 
 	count := 0
-	// Build the non-owned snapshot as a set directly so the reconciliation in
+	// Build the non-owned snapshot as a map directly so the reconciliation in
 	// addPendingNonOwnedRefs doesn't have to re-hash a slice under the lock.
 	var nonOwnedRefs map[storage.SeriesRef]struct{}
 	trackNonOwned := u.cfg.EarlyCompactionNonOwnedSeriesEnabled
