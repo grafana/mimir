@@ -1,236 +1,217 @@
 # Wiresmith migration status
 
-Migration of `pkg/mimirpb/mimir.proto` from gogoproto (`protoc` + `gogoslick`)
-to the [wiresmith](https://github.com/grafana/wiresmith) compiler.
+Migration of Grafana Mimir protos from gogoproto (`protoc` + `gogoslick`) to
+the [wiresmith](https://github.com/grafana/wiresmith) compiler.
 
-## Status: pkg/mimirpb migrated, full repo builds, all touched + write-path tests green
+Toolchain: wiresmith from the `databases` branch (worktree
+`/Users/oleg-kozlyuk/Projects/wiresmith/wiresmith-databases`, commit 9407011);
+`go.mod` `replace` points at that worktree (must become a published version
+before merging). Generated code depends on `protohelpers.SkipValue` /
+`protohelpers.MaxUnmarshalDepth` from that branch.
 
-### What migrated
+## Status
 
-- `pkg/mimirpb/mimir.proto` is compiled by wiresmith (see the Makefile grouped
-  target for `pkg/mimirpb/mimir*.pb.go`). gogoproto annotations were rewritten
-  to `wiresmith/options.proto` options:
-  - `(wiresmith.options.customtype) = "PreallocTimeseries"` on
-    `WriteRequest.timeseries` and `"UnsafeMutableLabel"` on
-    `TimeSeries.labels` / `Metric.labels` / `Exemplar.labels`. These preserve
-    Mimir's zero-copy (yolo-string) unmarshal path. The wiresmith
-    `SizeWiresmith`/`MarshalWiresmith`/`UnmarshalWiresmith`/`EqualWiresmith`/
-    `CompareWiresmith` contract is implemented in
-    `pkg/mimirpb/wiresmith_adapters.go` by delegating to the existing
-    gogo-style methods.
-  - `(wiresmith.options.casttype) =
-    ".../model/histogram.CounterResetHint"` on
-    `FloatHistogram.counter_reset_hint`. Works even though
-    `CounterResetHint` is a defined type over `byte` and the wire kind is
-    `uint32` (Go conversions truncate as gogo did).
-  - `(wiresmith.options.pointer) = true` where gogo nullability produced
-    pointer shapes that hand-written code (and unsafe casts to
-    `model.SampleHistogram*`) depend on: `WriteRequest.metadata`,
-    `FloatHistogramPair.histogram`, `SampleHistogram.buckets`,
-    `SampleHistogramPair.histogram`.
-- New hand-written support files in `pkg/mimirpb/`:
-  - `wiresmith_adapters.go` — customtype adapter methods.
-  - `gogoproto_compat.go` — `sovMimir`/`encodeVarintMimir`/`skipMimir`
-    helpers (used by hand-written marshalling code) and unprefixed enum
-    constant aliases (`UNKNOWN`, `COUNTER`, `API`, `ERROR_CAUSE_*`,
-    `METRIC_TYPE_*`, ...) matching gogo's `goproto_enum_prefix=false` output.
-  - `gogoproto_registry.go` — gogo-registry `proto.RegisterType/Enum` calls.
-    `github.com/gogo/status` (used via dskit `grpcutil.ErrorToStatus`)
-    resolves `google.protobuf.Any` error details through the gogo registry;
-    without these registrations `mimirpb.ErrorDetails` in gRPC statuses
-    silently stops round-tripping (caught by `TestIsClientError`).
-  - `unmarshal_rw2.go` — the RW2→RW1 direct unmarshalling functions
-    (`TimeSeries.UnmarshalRW2`, `Exemplar.UnmarshalRW2`,
-    `MetricMetadataUnmarshalRW2`), copied verbatim from the previously
-    patched gogo `mimir.pb.go`. Under gogo these lived inside the generated
-    file via the expected diff; they are plain hand-written code now.
+| Proto | Status | Expdiff |
+|---|---|---|
+| `pkg/mimirpb/mimir.proto` | migrated (phase 1+2) | 1103 lines (was 2144 in phase 1) |
+| `pkg/distributor/ha_tracker.proto` | migrated (phase 2) | none |
+| `pkg/querier/stats/stats.proto` | migrated (phase 2) | none (one hand-written `GoString` shim) |
+| all other protos (~22) | still gogoproto | — |
 
-### The expected-diff (expdiff) mechanism
+Full repo builds; pkg/mimirpb, pkg/distributor, pkg/ingester,
+pkg/storage/ingest, pkg/querier(+stats), pkg/frontend/... test suites green.
 
-`tools/apply-expected-diffs.sh` (invoked from `make protos`) applies
-`pkg/mimirpb/mimir.pb.go.expdiff` in reverse onto freshly generated output.
-The old gogo expdiff is retained as
-`pkg/mimirpb/mimir.pb.go.expdiff.legacy-gogoproto` for reference.
+## Resolved wiresmith blockers (phase 1 → phase 2)
 
-The new expdiff against wiresmith output (~2100 lines) patches:
+1. **RESOLVED — presence bitmap**: `(wiresmith.options.no_presence_all) = true`
+   (file) / `(wiresmith.options.no_presence)` (message) drop the
+   `XXX_fieldsPresent` bitmap. mimir.proto, ha_tracker.proto and stats.proto
+   all set the file option: structs are declared-fields-only again, the
+   unsafe casts to Prometheus types (`[]Sample ↔ []promql.FPoint`,
+   `[]BucketSpan ↔ []histogram.Span`, `FloatHistogram ↔
+   histogram.FloatHistogram`, `SampleHistogram ↔ model.SampleHistogram`) are
+   layout-safe natively, and `require.Equal(literal, unmarshalled)` tests
+   pass without shims. The phase-1 bitmap-strip expdiff hunks (~1000 lines)
+   and the bitmap-only test shims (`pkg/util/test/shape.go`,
+   `timeseries_test.go` unexported-field skips) were all removed/reverted.
+2. **RESOLVED — pre-scan preallocation clobbering pooled slices**: the
+   generated pre-count pass now emits `if cap(m.X) < c { make } else {
+   m.X = m.X[:0] }` by default; the phase-1 pool-guard expdiff hunks are gone.
 
-1. **Extra struct fields**: `WriteRequest` gains `BufferHolder`,
+## mimir.proto specifics
+
+### Annotations
+
+- `(wiresmith.options.customtype) = "PreallocTimeseries"` on
+  `WriteRequest.timeseries` and `"UnsafeMutableLabel"` on
+  `TimeSeries.labels` / `Metric.labels` / `Exemplar.labels` — preserves the
+  zero-copy (yolo-string) unmarshal path. Adapter methods
+  (`SizeWiresmith`/`MarshalWiresmith`/`UnmarshalWiresmith`/`EqualWiresmith`/
+  `CompareWiresmith`) live in `pkg/mimirpb/wiresmith_adapters.go`, delegating
+  to the existing gogo-style implementations.
+- `(wiresmith.options.casttype)` on `FloatHistogram.counter_reset_hint` →
+  `histogram.CounterResetHint` (defined over `byte`, wire kind uint32).
+- `(wiresmith.options.pointer) = true` where gogo nullability produced
+  pointer shapes: `WriteRequest.metadata`, `FloatHistogramPair.histogram`,
+  `SampleHistogram.buckets`, `SampleHistogramPair.histogram`.
+- `(wiresmith.options.no_presence_all) = true` file-wide.
+
+### Hand-written support files (pkg/mimirpb/)
+
+- `wiresmith_adapters.go` — customtype adapter methods.
+- `gogoproto_compat.go` — `sovMimir`/`encodeVarintMimir`/`skipMimir` helpers
+  and unprefixed enum constant aliases (`UNKNOWN`, `COUNTER`, `API`,
+  `ERROR_CAUSE_*`, `METRIC_TYPE_*`, ...) matching gogo's
+  `goproto_enum_prefix=false` output.
+- `gogoproto_registry.go` — gogo-registry registrations;
+  `github.com/gogo/status` (via dskit `grpcutil.ErrorToStatus`) resolves
+  `google.protobuf.Any` error details through the gogo registry
+  (caught by `TestIsClientError`).
+- `unmarshal_rw2.go` — RW2→RW1 direct unmarshalling functions, copied from
+  the previously patched gogo output.
+
+### The expected-diff (expdiff)
+
+`tools/apply-expected-diffs.sh` (from `make protos`) applies
+`pkg/mimirpb/mimir.pb.go.expdiff` in reverse onto fresh output. The gogo-era
+diff is retained as `mimir.pb.go.expdiff.legacy-gogoproto`.
+
+Phase-2 expdiff: **1103 lines, 17 hunks** (phase 1: 2144). ~790 of those
+lines are one hunk: the deleted generated bodies of the
+`TimeSeriesRW2`/`ExemplarRW2`/`MetadataRW2` unmarshallers, replaced by
+`return errorInternalRW2` stubs. The true hand-patch surface (~310 lines):
+
+1. Extra struct fields: `WriteRequest` (`BufferHolder`,
    `sourceBufferHolders`, `skipUnmarshalingExemplars`,
    `skipNormalizeMetadataMetricName`, `skipDeduplicateMetadata`,
-   `unmarshalFromRW2`, `rw2symbols`; `TimeSeries` gains
-   `SkipUnmarshalingExemplars`. (Same as under gogo.)
-2. **RW2 dispatch in `WriteRequest.unmarshal`**: in RW2 mode, field 4
-   (symbols) goes into paged yolo-string storage, field 5 (RW2 timeseries)
-   is decoded straight into `[]PreallocTimeseries` with symbol resolution,
-   RW1 fields are rejected, and collected metadata is flushed at the end.
-   (Same as under gogo.)
-3. **Exemplar skipping** in `TimeSeries.unmarshal` (same as under gogo).
-4. **Pool-aware preallocation**: wiresmith emits a pre-count pass that
-   unconditionally `make()`s repeated-field slices for payloads >= 256 bytes;
-   patched to respect existing (pooled) capacity for
-   `WriteRequest.Timeseries` and `TimeSeries.Labels/Samples/Exemplars/Histograms`.
-5. **RW2 unmarshal stubs**: `TimeSeriesRW2`/`ExemplarRW2`/`MetadataRW2`
-   `unmarshal` return `errorInternalRW2` (defensive guard, same as gogo).
-6. **fieldsPresent bitmap removal** (wiresmith-specific, see blockers): the
-   presence bitmap field, all `Has*` accessors, bitmap reads/writes are
-   removed from every message.
+   `unmarshalFromRW2`, `rw2symbols`), `TimeSeries`
+   (`SkipUnmarshalingExemplars`).
+2. RW2 dispatch in `WriteRequest.unmarshal`: RW1/RW2 field guards, yolo
+   symbols into paged storage, RW2 series decoded straight into
+   `[]PreallocTimeseries`, metadata flush; plus an RW2-aware redirect of the
+   pre-count preallocation (field 5 counts preallocate `m.Timeseries`, the
+   generated `SymbolsRW2`/`TimeseriesRW2` preallocations are dropped).
+3. Exemplar skipping in `TimeSeries.unmarshal` (case 3 + prealloc gating).
+4. RW2 unmarshal stubs (see above).
 
-To regenerate: `make protos` (or run the wiresmith invocation from the
-Makefile, then `git apply -R pkg/mimirpb/mimir.pb.go.expdiff`). When the
-generated output changes shape, recreate the expdiff by diffing the desired
-(patched) file against pristine output:
-`git diff --no-index <patched> <generated>` with paths rewritten to
-`a/pkg/mimirpb/mimir.pb.go` / `b/pkg/mimirpb/mimir.pb.go`.
+Rebuild procedure: regenerate (pristine), re-apply the patches, then
+`git diff --no-index <patched> <pristine>` with paths rewritten to
+`a/pkg/mimirpb/mimir.pb.go` / `b/pkg/mimirpb/mimir.pb.go`; verify with
+`git apply -R` round-trip.
 
-### Consumer adaptations
+## ha_tracker.proto (pkg/distributor)
 
-- `QueryResponse` oneof wrappers hold values, and the `string` variant is
-  `QueryResponse_String`/`.String` (gogo: `QueryResponse_String_`/`.String_`):
-  adapted `pkg/api/protobuf_codec.go`,
-  `pkg/frontend/querymiddleware/codec_protobuf.go`,
-  `pkg/ruler/remotequerier_decoder.go` and their tests.
-- `pkg/continuoustest`: gogo emitted `Equal` on oneof wrapper types; added
-  local `histogramCountEqual`/`histogramZeroCountEqual` helpers.
-- `pkg/mimirpb/timeseries.go`: oneof interface names are exported
-  (`Histogram_Count` instead of gogo's `isHistogram_Count`).
-- `pkg/util/test/shape.go`: shape trees skip unexported (codegen-internal)
-  fields under the same flag that skips gogo `XXX_` fields.
+Zero expdiff, zero shims: `ReplicaDesc` is plain data; dskit's memberlist
+`codec.NewProtoCodec` marshals through gogo interfaces that wiresmith's
+method set satisfies (`Marshal`/`Unmarshal`/`Reset`/`String`/`ProtoMessage`).
+Because `pkg/distributor` contains other still-gogo protos and wiresmith
+eagerly compiles every `.proto` under `--proto_path`, the Makefile rule
+stages the file into a scratch dir first (the Tempo recipe from wiresmith's
+FLAGS.md).
 
-### Test results (all with `-count=1`)
+## stats.proto (pkg/querier/stats)
+
+- Exercises `(wiresmith.options.stdduration)`: value `time.Duration` shape
+  matches gogo `stdduration+nullable=false`; the hand-written atomic
+  field accesses (`atomic.AddInt64((*int64)(&s.WallTime), ...)`) work
+  unchanged.
+- **Cross-toolchain imports**: stats.proto is imported by three still-gogo
+  protos (`querierpb/querier.proto`, `querymiddleware/model.proto`,
+  `frontendv2pb/frontend.proto`), including as a gogo `customtype`
+  (`SafeStats`). Their committed gogo-generated code compiles against the
+  wiresmith output because the method surface matches — except gogoslick's
+  `GoString`, provided as a one-method shim in
+  `pkg/querier/stats/wiresmith_compat.go`.
+- So protoc can still regenerate those importers, wiresmith's
+  `options.proto` is checked in at `proto-include/wiresmith/options.proto`
+  and `./proto-include` was added to the protoc `-I` path (this also
+  un-breaks regeneration of gogo protos importing `pkg/mimirpb/mimir.proto`,
+  latent since phase 1). `proto-include` is pruned from `PROTO_DEFS`.
+
+## Test results (phase 2, all `-count=1`)
 
 | Package | Result |
 |---|---|
 | `./pkg/mimirpb/...` | ok |
-| `./pkg/util/test/...` | ok |
-| `./pkg/continuoustest/...` | ok |
-| `./pkg/api/...` | ok |
-| `./pkg/frontend/querymiddleware/...` | ok |
-| `./pkg/ruler/...` | ok |
 | `./pkg/distributor/...` | ok |
 | `./pkg/ingester/...` | ok |
-| `./pkg/storage/ingest/...` | ok (after expected-error-text fix; one kafka-based flake under load) |
-| `./pkg/...` (full sweep) | 131 packages ok; pkg/ingester, pkg/compactor, pkg/storage/ingest failed under full-suite parallel load but pass in isolation (load flakes); the only real failure was TestPusherConsumer's expected unmarshal error text, fixed |
+| `./pkg/storage/ingest/...` | ok |
+| `./pkg/querier/stats`, `./pkg/querier` | ok |
+| `./pkg/frontend/...` | ok |
+| `./pkg/util/test` | ok |
+| `go build ./...`, `go vet` | clean (modulo pre-existing `Seek` vet warnings) |
 
-`go build ./...` and `go vet ./...` are clean (modulo pre-existing `Seek`
-signature vet warnings unrelated to this migration).
+## Benchmarks (Apple M4 Pro, single run each — NOT benchstat-grade)
 
-### Benchmarks (Apple M4 Pro, single run each — NOT benchstat-grade)
+`BenchmarkUnMarshal` (pkg/mimirpb), gogo baseline (cb6dac78a3) vs phase 2:
 
-`BenchmarkUnMarshal` (pkg/mimirpb, large multi-series requests), wiresmith
-vs gogo baseline (commit cb6dac78a3 in a separate worktree):
+| Bench | gogo | phase 2 | B/op gogo → ph2 | allocs gogo → ph2 |
+|---|---|---|---|---|
+| Marshal/RW1 | 11.79ms | 15.58ms¹ | 26.8MB → 26.8MB | 2 → 2 |
+| Marshal/RW2 | 5.26ms | 5.70ms | 18.4MB → 18.4MB | 2 → 2 |
+| Unmarshal/RW1 skip=true | 9.24ms | 11.94ms | 57.1MB → 31.2MB (−45%) | 60426 → 50408 |
+| Unmarshal/RW2 skip=true | 10.57ms | 12.69ms | 32.8MB → 31.3MB | 50025 → 50015 |
+| Unmarshal/RW1 skip=false | 10.96ms | 11.78ms | 61.9MB → 32.8MB (−47%) | 100426 → 60408 |
+| Unmarshal/RW2 skip=false | 11.41ms | 14.25ms | 34.4MB → 33.0MB | 60025 → 60015 |
 
-| Bench | gogo ns/op | wiresmith ns/op | gogo B/op | wiresmith B/op | gogo allocs | wiresmith allocs |
-|---|---|---|---|---|---|---|
-| Marshal/RW1 | 11.79ms | 12.08ms (+2%) | 26.8MB | 26.8MB | 2 | 2 |
-| Marshal/RW2 | 5.26ms | 5.48ms (+4%) | 18.4MB | 18.4MB | 2 | 2 |
-| Unmarshal/RW1 skip=true | 9.24ms | 11.86ms (+28%) | 57.1MB | 31.2MB (−45%) | 60426 | 50408 (−17%) |
-| Unmarshal/RW2 skip=true | 10.57ms | 12.94ms (+22%) | 32.8MB | 31.3MB | 50025 | 50015 |
-| Unmarshal/RW1 skip=false | 10.96ms | 12.26ms (+12%) | 61.9MB | 32.8MB (−47%) | 100426 | 60408 (−40%) |
-| Unmarshal/RW2 skip=false | 11.41ms | 13.72ms (+20%) | 34.4MB | 33.0MB | 60025 | 60016 |
+¹ Single-run outlier (phase 1 measured 12.08ms for the same code path);
+these numbers are noisy. Takeaway unchanged from phase 1: marshal ≈ parity,
+unmarshal ~10–25% slower wall-clock while allocating roughly half the bytes
+on RW1 — plausibly the pre-scan counting pass. Needs a benchstat-grade run
+before declaring write-path perf parity.
 
-Takeaway: marshal is at parity; unmarshal is ~12–28% slower wall-clock in
-this single-run microbench while allocating roughly half the bytes on RW1
-(wiresmith's pre-count pass produces exactly-sized slices). The slowdown is
-plausibly the extra pre-scan pass over the payload (always active for these
-large requests); worth a proper benchstat investigation and possibly a
-wiresmith tuning knob before declaring perf parity on the write path.
+## Remaining wiresmith blockers / friction (ranked)
 
-## Remaining work
+1. **Eager whole-tree compilation under a single `--proto_path`.** Compiling
+   one proto in a directory that also contains still-gogo protos fails the
+   whole run when a sibling has unresolvable imports (e.g.
+   `distributorpb/distributor.proto` imports
+   `github.com/grafana/mimir/pkg/mimirpb/mimir.proto` and
+   `gogoproto/gogo.proto`). Workaround: stage the target proto into a
+   scratch directory (now baked into the Makefile rules). Suggested feature:
+   only compile the positional files plus their transitive imports, and/or
+   support multiple `--proto_path` entries / exclusion globs.
+2. **Unmarshal wall-clock vs gogo** (see benchmarks): the always-on pre-scan
+   pass for payloads ≥ 256B costs ~10–25% on large requests while halving
+   allocations. Suggested: a knob (or heuristic) to skip the counting pass,
+   or fold counting into the main decode loop.
+3. **No `goproto_enum_prefix=false` equivalent** — still worked around with
+   const aliases in `pkg/mimirpb/gogoproto_compat.go`. Becomes more annoying
+   with every migrated proto whose consumers use unprefixed constants.
+4. **No unmarshal context-threading / parent hook for customtype** — the RW2
+   dispatch and exemplar skipping still require expdiff patching of
+   `WriteRequest.unmarshal` (gogo had the same limitation; a hook would
+   remove most of the remaining mimir expdiff).
+5. **No `GoString`** (gogoslick parity) — still-gogo importers of a migrated
+   proto call it on embedded messages; one-line shim per package. An emit
+   option would remove the shim.
+6. Cosmetic API churn (documented, handled at call sites): oneof wrappers
+   hold values; `QueryResponse_String`/`String` naming (no trailing
+   underscore); exported oneof interface names; no `Equal` on oneof wrapper
+   types; getters for singular value message fields return `*T`.
 
-- The `replace github.com/grafana/wiresmith => /Users/oleg-kozlyuk/Projects/wiresmith/wiresmith`
-  in `go.mod` must be replaced with a published version before this can merge;
-  `vendor/github.com/grafana/wiresmith` is currently vendored from that path.
-- Only `pkg/mimirpb/mimir.proto` is migrated. All other `.proto` files
-  (ingester client, store-gateway, frontend, alertmanager, ...) still use
-  gogoproto and `make protos`'s `%.pb.go: %.proto` protoc rule.
-- `make protos` end-to-end (including protoc for the unmigrated files) not
-  exercised here; the wiresmith rule + expdiff application were verified
-  manually.
-- Integration tests (`integration/`) not run.
-- Wire-format note: for `nullable=false` singular message fields gogo always
-  emitted the submessage (empty ⇒ `tag, len=0`); wiresmith (with the bitmap
-  stripped) omits empty submessages. Decoded values are identical; only the
-  encoded bytes differ for empty-submessage edge cases.
+## Migration ordering notes / next targets
 
-## Wiresmith blockers / feature requests (ranked)
+Multiple `.proto` files per Go package now work in wiresmith, and a migrated
+proto can keep gogo importers (method surface compatible + `GoString` shim +
+`proto-include` for protoc). Recommended order:
 
-1. **No way to disable per-field presence tracking (`fieldsPresent` bitmap).**
-   - Where: every message in `pkg/mimirpb/mimir.proto`; worst for `Sample`,
-     `BucketSpan`, `FloatHistogram`, `FloatHistogramPair`, `SampleHistogram`,
-     `HistogramBucket`.
-   - gogo equivalent: gogo simply has no presence for proto3 non-optional
-     fields.
-   - Why it blocks: (a) the bitmap changes struct memory layout, breaking
-     Mimir's unsafe casts to Prometheus types (`[]Sample ↔ []promql.FPoint`,
-     `[]BucketSpan ↔ []histogram.Span`, `FloatHistogram ↔
-     histogram.FloatHistogram`, `SampleHistogram ↔ model.SampleHistogram`) —
-     slice casts corrupt memory because the element stride differs; (b) every
-     `require.Equal(literal, unmarshalled)` test in the repo fails because
-     presence bits are set only on the unmarshalled side; (c) 8 bytes per
-     message of dead weight for an API (`Has*`) Mimir never calls.
-   - Today this is ~90% of the new expdiff (struct fields, 39 `Has*` methods,
-     32 unmarshal bitmap writes, marshal/size/get branches).
-   - Suggested feature: file- or message-level option, e.g.
-     `(wiresmith.options.no_presence) = true`, that drops the bitmap, `Has*`
-     accessors and presence-conditional emission (presence = non-zero value,
-     gogo semantics).
+1. `pkg/querier/querierpb/querier.proto` + `pkg/frontend/querymiddleware/model.proto`
+   + `pkg/frontend/v2/frontendv2pb/frontend.proto` — the stats.proto
+   importers; note `frontend.proto` uses gogo `customtype = SafeStats` on a
+   message field, which wiresmith customtype can express (needs
+   `SizeWiresmith`-family adapters on `SafeStats`, same recipe as
+   `PreallocTimeseries`). querier.proto declares a service → exercises
+   wiresmith's grpc emission. They also import mimir.proto — wiresmith
+   compiles imports by module path only if present under `--proto_path`;
+   staging must include the imported protos (or symlinks).
+2. `pkg/ruler/rulespb/rules.proto`, `pkg/scheduler/schedulerpb/scheduler.proto`
+   (streaming services), `pkg/alertmanager/alertspb/alerts.proto`.
+3. `pkg/storegateway/storepb/*` — three protos in one Go package
+   (now supported), cross-package hintspb imports, heavy custom code.
+4. `pkg/ingester/client/ingester.proto` — large, imports mimir.proto,
+   streaming service, hand-patched code similar to mimirpb.
 
-2. **Pre-count preallocation pass clobbers caller-provided slices.**
-   - Where: generated `unmarshal` of `WriteRequest`, `TimeSeries` (any
-     message with repeated fields, payload >= 256B).
-   - Why it blocks: Mimir pools `[]PreallocTimeseries` and the
-     `TimeSeries.Labels/Samples/Exemplars/Histograms` slices
-     (`PreallocWriteRequest.Unmarshal`, `TimeseriesFromPool`); wiresmith's
-     unconditional `m.X = make(...)` discards the pooled backing arrays.
-   - Patched in the expdiff to `if cap(m.X) < c { m.X = make(...) }`.
-   - Suggested feature: emit the cap-guard by default — it is semantics-neutral
-     and makes generated code pooling-friendly.
-
-3. **No `goproto_enum_prefix=false` equivalent.**
-   - Where: `ErrorCause`, `QueryStatus`, `QueryErrorType`,
-     `WriteRequest.SourceEnum`, `MetricMetadata.MetricType`,
-     `MetadataRW2.MetricType` — old API exposed `UNKNOWN`, `COUNTER`, `API`,
-     `ERROR_CAUSE_*`, etc., used by dozens of packages.
-   - Workaround: const aliases in `gogoproto_compat.go` (clean, but the alias
-     file must track the proto by hand).
-   - Suggested feature: enum-level option to emit unprefixed constants.
-
-4. **No unmarshal context-threading / parent-hook for customtype.**
-   - Where: `WriteRequest.timeseries`: elements need
-     `skipUnmarshalingExemplars` and (for RW2) the symbols table and metadata
-     set from the parent message before `UnmarshalWiresmith` runs.
-   - gogo had the same limitation (this part of the expdiff is parity, not a
-     regression), so this is a "would remove the need for patching" item: a
-     hook like `UnmarshalWiresmithInContext(buf []byte, parent any)` or a
-     generated per-message unmarshal-interceptor option would let the whole
-     RW2 dispatch live in hand-written code and shrink the expdiff to just
-     the extra struct fields.
-
-5. **Minor API-shape differences requiring one-off call-site churn**
-   (not blockers, recorded for completeness):
-   - Oneof wrapper for a field named `string` is `QueryResponse_String` with
-     field `String` (gogo: trailing-underscore names).
-   - Oneof wrapper types have no `Equal` methods.
-   - Oneof message variants hold values, not pointers
-     (`&QueryResponse_Matrix{Matrix: data}` vs `{Matrix: &data}`).
-   - Oneof interface type is exported (`Histogram_Count`) instead of gogo's
-     unexported `isHistogram_Count`.
-   - Getters for singular value-type message fields return `*T` (gogo
-     `nullable=false` returned `T`).
-
-### Wiresmith capabilities verified working
-
-- `customtype` on repeated message fields with pooled/yolo custom types
-  (zero-copy parity with gogo, including the marshalled-data cache in
-  `PreallocTimeseries`).
-- `casttype` uint32 → external defined-over-`byte` type.
-- `pointer` on singular and repeated message fields.
-- Wire format binary-compatible with the gogo encoder for everything tests
-  cover (distributor/ingester suites round-trip through both hand-written
-  and generated paths).
-- Generated method surface (`Marshal`/`MarshalTo`/`MarshalToSizedBuffer`/
-  `Size`/`Unmarshal`/`Reset`/`String`/`Equal`/`Compare`) is name-compatible
-  with gogo, so nearly all hand-written mimirpb code compiled unchanged.
-- google.golang.org/protobuf registry integration (Any round-trip through
-  grpc-go status) works out of the box; the *gogo* registry needed the manual
-  shim above.
+Before merging: replace the local-path `go.mod` `replace` with a published
+wiresmith version; run integration tests; benchstat-grade write-path
+benchmarks.
