@@ -42,16 +42,6 @@ func (d *Duplicate) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_DUPLICATE
 }
 
-func (d *Duplicate) SetChildren(children []planning.Node) error {
-	if len(children) != 1 {
-		return fmt.Errorf("node of type Duplicate supports 1 child, but got %d", len(children))
-	}
-
-	d.Inner = children[0]
-
-	return nil
-}
-
 func (d *Duplicate) ReplaceChild(idx int, node planning.Node) error {
 	if idx != 0 {
 		return fmt.Errorf("node of type Duplicate supports 1 child, but attempted to replace child at index %d", idx)
@@ -176,14 +166,6 @@ func (f *DuplicateFilter) Details() proto.Message {
 
 func (f *DuplicateFilter) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_DUPLICATE_FILTER
-}
-
-func (f *DuplicateFilter) SetChildren(children []planning.Node) error {
-	if len(children) != 1 {
-		return fmt.Errorf("node of type DuplicateFilter supports 1 child, but got %d", len(children))
-	}
-
-	return f.ReplaceChild(0, children[0])
 }
 
 func (f *DuplicateFilter) ReplaceChild(idx int, node planning.Node) error {

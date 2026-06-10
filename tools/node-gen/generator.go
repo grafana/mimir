@@ -25,6 +25,7 @@ func CreateGenerators() []MethodGenerator {
 	return []MethodGenerator{
 		ChildMethod,
 		ChildCountMethod,
+		SetChildrenMethod,
 	}
 }
 

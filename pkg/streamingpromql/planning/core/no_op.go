@@ -32,14 +32,6 @@ func (n *NoOp) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_NO_OP
 }
 
-func (n *NoOp) SetChildren(children []planning.Node) error {
-	if len(children) != 0 {
-		return fmt.Errorf("node of type NoOp expects 0 children, but got %d", len(children))
-	}
-
-	return nil
-}
-
 func (n *NoOp) ReplaceChild(idx int, _ planning.Node) error {
 	return fmt.Errorf("node of type NoOp supports no children, but attempted to replace child at index %d", idx)
 }

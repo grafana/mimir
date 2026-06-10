@@ -41,15 +41,6 @@ func (g *MultiAggregationGroup) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_MULTI_AGGREGATION_GROUP
 }
 
-func (g *MultiAggregationGroup) SetChildren(children []planning.Node) error {
-	if len(children) != 1 {
-		return fmt.Errorf("node of type MultiAggregationGroup supports 1 child, but got %d", len(children))
-	}
-
-	g.Inner = children[0]
-	return nil
-}
-
 func (g *MultiAggregationGroup) ReplaceChild(idx int, node planning.Node) error {
 	if idx != 0 {
 		return fmt.Errorf("node of type MultiAggregationGroup supports 1 child, but attempted to replace child at index %d", idx)
@@ -114,14 +105,6 @@ func (a *MultiAggregationInstance) Details() proto.Message {
 
 func (a *MultiAggregationInstance) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_MULTI_AGGREGATION_INSTANCE
-}
-
-func (a *MultiAggregationInstance) SetChildren(children []planning.Node) error {
-	if len(children) != 1 {
-		return fmt.Errorf("node of type MultiAggregationInstance supports 1 child, but got %d", len(children))
-	}
-
-	return a.ReplaceChild(0, children[0])
 }
 
 func (a *MultiAggregationInstance) ReplaceChild(idx int, node planning.Node) error {
