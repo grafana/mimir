@@ -182,8 +182,12 @@ func checkCopyStatus(ctx context.Context, client *blob.Client) (*blob.CopyStatus
 	return response.CopyStatus, response.CopyStatusDescription, nil
 }
 
-func (bkt *azureBucket) Exists(ctx context.Context, objectName string) (bool, error) {
-	resp, err := bkt.containerClient.NewBlobClient(objectName).GetProperties(ctx, nil)
+func (bkt *azureBucket) Exists(ctx context.Context, objectName string, options ExistsOptions) (bool, error) {
+	client, err := bkt.containerClient.NewBlobClient(objectName).WithVersionID(options.VersionID)
+	if err != nil {
+		return false, fmt.Errorf("could not construct a client with the provided version ID: %s: %w", options.VersionID, err)
+	}
+	resp, err := client.GetProperties(ctx, nil)
 	if err == nil {
 		// Don't treat failed or pending copies as existing
 		if resp.CopyStatus != nil && *resp.CopyStatus != blob.CopyStatusTypeSuccess {

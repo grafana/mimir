@@ -56,8 +56,12 @@ func (bkt *gcsBucket) Get(ctx context.Context, objectName string, options GetOpt
 	return obj.NewReader(ctx)
 }
 
-func (bkt *gcsBucket) Exists(ctx context.Context, objectName string) (bool, error) {
-	_, err := bkt.client.Object(objectName).Attrs(ctx)
+func (bkt *gcsBucket) Exists(ctx context.Context, objectName string, options ExistsOptions) (bool, error) {
+	obj, err := bkt.objectHandle(objectName, options.VersionID)
+	if err != nil {
+		return false, err
+	}
+	_, err = obj.Attrs(ctx)
 	if err == nil {
 		return true, nil
 	}

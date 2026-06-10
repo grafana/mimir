@@ -26,7 +26,6 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
-	"github.com/thanos-io/objstore/providers/filesystem"
 	"golang.org/x/time/rate"
 
 	"github.com/grafana/mimir/integration/e2emimir"
@@ -34,6 +33,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/bucket/s3"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
+	"github.com/grafana/mimir/pkg/util/objtools" //lint:ignore faillint objtools is allowed in tools and their tests
 )
 
 func TestMimirtoolBackfill(t *testing.T) {
@@ -239,9 +239,9 @@ func TestBackfillSlowUploadSpeed(t *testing.T) {
 	// Initiate new block upload.
 	{
 		// client.GetBlockMetaFromBucket will generate correct meta.json file ready for initiating upload of our block.
-		fsBkt, err := filesystem.NewBucket(tmpDir)
+		fsBkt, err := (&objtools.FilesystemClientConfig{Directory: tmpDir}).ToBucket()
 		require.NoError(t, err)
-		meta, err := client.GetBlockMeta(context.Background(), fsBkt, block)
+		meta, err := client.GetBlockMeta(context.Background(), fsBkt, "", block)
 		require.NoError(t, err)
 
 		buf := bytes.NewBuffer(nil)
