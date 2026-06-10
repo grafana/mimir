@@ -344,11 +344,6 @@ func TestDeepCopyTimeseriesCopiesAllFields(t *testing.T) {
 	srcType := srcVal.Type()
 	dstVal := reflect.ValueOf(dst.TimeSeries).Elem()
 	for i := 0; i < srcVal.NumField(); i++ {
-		// Unexported fields (e.g. the wiresmith fieldsPresent bitmap) carry no
-		// proto data and are not part of the deep-copy contract.
-		if !srcType.Field(i).IsExported() {
-			continue
-		}
 		srcField := srcVal.Field(i)
 		dstField := dstVal.Field(i)
 		fieldName := srcType.Field(i).Name
@@ -368,11 +363,6 @@ func assertNoZeroFieldsDeep(t *testing.T, val reflect.Value, path string) {
 	case reflect.Struct:
 		typ := val.Type()
 		for i := 0; i < val.NumField(); i++ {
-			// Skip unexported fields (e.g. the wiresmith fieldsPresent
-			// bitmap): they carry no proto data.
-			if !typ.Field(i).IsExported() {
-				continue
-			}
 			field := val.Field(i)
 			fieldName := typ.Field(i).Name
 			fieldPath := path + "." + fieldName
