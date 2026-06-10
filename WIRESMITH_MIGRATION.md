@@ -108,7 +108,8 @@ generated output changes shape, recreate the expdiff by diffing the desired
 | `./pkg/ruler/...` | ok |
 | `./pkg/distributor/...` | ok |
 | `./pkg/ingester/...` | ok |
-| `./pkg/...` (full sweep) | see latest commit message / CI |
+| `./pkg/storage/ingest/...` | ok (after expected-error-text fix; one kafka-based flake under load) |
+| `./pkg/...` (full sweep) | 131 packages ok; pkg/ingester, pkg/compactor, pkg/storage/ingest failed under full-suite parallel load but pass in isolation (load flakes); the only real failure was TestPusherConsumer's expected unmarshal error text, fixed |
 
 `go build ./...` and `go vet ./...` are clean (modulo pre-existing `Seek`
 signature vet warnings unrelated to this migration).
