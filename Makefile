@@ -211,7 +211,10 @@ PROTO_GRPC_GOS := pkg/alertmanager/alertmanagerpb/alertmanager_grpc.pb.go
 PROTO_WIRESMITH_GOS := \
 	pkg/mimirpb/mimir_compare.pb.go \
 	pkg/mimirpb/mimir_equal.pb.go \
-	pkg/mimirpb/mimir_reflect.pb.go
+	pkg/mimirpb/mimir_reflect.pb.go \
+	pkg/distributor/ha_tracker_compare.pb.go \
+	pkg/distributor/ha_tracker_equal.pb.go \
+	pkg/distributor/ha_tracker_reflect.pb.go
 
 # Packages containing //node:generate-annotated structs, and the corresponding
 # generated files. Discovered at make-parse time.
@@ -352,6 +355,29 @@ ifeq ($(GENERATE_FILES),true)
 	mv pkg/mimirpb/cortexpb/mimir_equal.pb.go pkg/mimirpb/mimir_equal.pb.go
 	mv pkg/mimirpb/cortexpb/mimir_reflect.pb.go pkg/mimirpb/mimir_reflect.pb.go
 	rmdir pkg/mimirpb/cortexpb
+else
+	@echo "Warning: generating files has been disabled, but the following files need to be regenerated: $@"
+	@echo "If this is unexpected, check if the last modified timestamps on the outputs and $< are correct."
+endif
+
+# pkg/distributor/ha_tracker.proto is compiled by wiresmith. Unlike mimir.proto
+# its directory contains other (still gogo-compiled) protos, and wiresmith
+# eagerly compiles every .proto it finds under --proto_path, so the source is
+# staged into a scratch directory first (the same recipe wiresmith documents
+# for Tempo in FLAGS.md).
+pkg/distributor/ha_tracker.pb.go \
+pkg/distributor/ha_tracker_compare.pb.go \
+pkg/distributor/ha_tracker_equal.pb.go \
+pkg/distributor/ha_tracker_reflect.pb.go &: pkg/distributor/ha_tracker.proto
+ifeq ($(GENERATE_FILES),true)
+	rm -rf .wiresmith-staging && mkdir -p .wiresmith-staging/in
+	cp pkg/distributor/ha_tracker.proto .wiresmith-staging/in/
+	cd .wiresmith-staging && wiresmith --proto_path=in --out=out --module=github.com/grafana/mimir
+	mv .wiresmith-staging/out/distributor/ha_tracker.pb.go pkg/distributor/ha_tracker.pb.go
+	mv .wiresmith-staging/out/distributor/ha_tracker_compare.pb.go pkg/distributor/ha_tracker_compare.pb.go
+	mv .wiresmith-staging/out/distributor/ha_tracker_equal.pb.go pkg/distributor/ha_tracker_equal.pb.go
+	mv .wiresmith-staging/out/distributor/ha_tracker_reflect.pb.go pkg/distributor/ha_tracker_reflect.pb.go
+	rm -rf .wiresmith-staging
 else
 	@echo "Warning: generating files has been disabled, but the following files need to be regenerated: $@"
 	@echo "If this is unexpected, check if the last modified timestamps on the outputs and $< are correct."
