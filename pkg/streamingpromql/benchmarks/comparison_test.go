@@ -9,6 +9,8 @@ import (
 	"context"
 	"math"
 	"os"
+	"runtime"
+	"runtime/metrics"
 	"testing"
 	"time"
 
@@ -36,6 +38,12 @@ import (
 	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
+
+func readHeapObjects() uint64 {
+	s := []metrics.Sample{{Name: "/memory/classes/heap/objects:bytes"}}
+	metrics.Read(s)
+	return s[0].Value.Uint64()
+}
 
 // This is based on the benchmarks from https://github.com/prometheus/prometheus/blob/main/promql/bench_test.go.
 func BenchmarkQuery(b *testing.B) {
@@ -79,12 +87,29 @@ func BenchmarkQuery(b *testing.B) {
 
 			for name, engine := range engines {
 				b.Run("engine="+name, func(b *testing.B) {
+					b.StopTimer()
+					runtime.GC()
+					baseHeap := readHeapObjects()
+					var peakDelta int64
+					b.StartTimer()
+
 					for i := 0; i < b.N; i++ {
 						res, cleanup := c.Run(ctx, b, start, end, interval, engine, q)
+
+						// Sample heap while the result is still live, before cleanup releases it.
+						// This captures the peak working set attributable to the query rather than
+						// the whole subprocess lifetime (which is dominated by initialization).
+						if d := int64(readHeapObjects()) - int64(baseHeap); d > peakDelta {
+							peakDelta = d
+						}
 
 						if res != nil {
 							cleanup()
 						}
+					}
+
+					if b.N > 0 {
+						b.ReportMetric(float64(max(0, peakDelta)), "peak-heap-B")
 					}
 				})
 			}

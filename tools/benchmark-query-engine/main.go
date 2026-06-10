@@ -12,7 +12,6 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
-	"runtime"
 	"slices"
 	"strings"
 	"syscall"
@@ -336,7 +335,6 @@ func (a *app) runBenchmark(b benchmark, printBenchmarkHeader bool) error {
 		return fmt.Errorf("executing command failed: %w", err)
 	}
 
-	usage := cmd.ProcessState.SysUsage().(*syscall.Rusage)
 	outputLines := strings.Split(strings.TrimSpace(buf.String()), "\n")
 
 	for _, l := range outputLines {
@@ -349,25 +347,13 @@ func (a *app) runBenchmark(b benchmark, printBenchmarkHeader bool) error {
 				fmt.Println(l)
 			}
 		} else if isBenchmarkLine {
-			fmt.Print(l)
-			fmt.Printf("     %v B\n", maxRSSInBytes(usage))
+			fmt.Println(l)
 		} else if !isPassLine {
 			fmt.Println(l)
 		}
 	}
 
 	return nil
-}
-
-func maxRSSInBytes(usage *syscall.Rusage) int64 {
-	switch runtime.GOOS {
-	case "linux":
-		return usage.Maxrss * 1024 // Maxrss is returned in kilobytes on Linux.
-	case "darwin":
-		return usage.Maxrss // Maxrss is already in bytes on macOS.
-	default:
-		panic(fmt.Sprintf("unknown GOOS '%v'", runtime.GOOS))
-	}
 }
 
 type benchmark struct {
