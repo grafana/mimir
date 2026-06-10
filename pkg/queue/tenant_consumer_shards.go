@@ -181,7 +181,10 @@ func (tqa *tenantConsumerShards) shuffleTenantConsumers(tenantID string, scratch
 	}
 
 	consumerIDSet := make(map[tree.ConsumerID]struct{}, tenant.maxConsumers)
-	rnd := rand.New(rand.NewSource(tenant.shuffleShardSeed))
+	// Deterministic, seeded PRNG: every replica must derive the same shuffle-shard
+	// assignment for a given tenant.
+	// This intentionally uses math/rand (seedable), not crypto/rand (not seedable).
+	rnd := rand.New(rand.NewSource(tenant.shuffleShardSeed)) // nosemgrep
 
 	scratchpad = append(scratchpad[:0], tqa.consumerIDsSorted...)
 
