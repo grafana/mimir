@@ -627,6 +627,34 @@ func ExemplarEqual(this *mimirpb.Exemplar, that interface{}) bool {
 	return true
 }
 
+// histogramCountEqual compares two Histogram_Count oneof payloads by variant
+// and value. The gogoproto-generated wrapper types used to provide Equal
+// methods; wiresmith wrappers do not, so the comparison lives here.
+func histogramCountEqual(a, b mimirpb.Histogram_Count) bool {
+	switch av := a.(type) {
+	case *mimirpb.Histogram_CountInt:
+		bv, ok := b.(*mimirpb.Histogram_CountInt)
+		return ok && av.CountInt == bv.CountInt
+	case *mimirpb.Histogram_CountFloat:
+		bv, ok := b.(*mimirpb.Histogram_CountFloat)
+		return ok && av.CountFloat == bv.CountFloat
+	}
+	return false
+}
+
+// histogramZeroCountEqual is histogramCountEqual for the zero_count oneof.
+func histogramZeroCountEqual(a, b mimirpb.Histogram_ZeroCount) bool {
+	switch av := a.(type) {
+	case *mimirpb.Histogram_ZeroCountInt:
+		bv, ok := b.(*mimirpb.Histogram_ZeroCountInt)
+		return ok && av.ZeroCountInt == bv.ZeroCountInt
+	case *mimirpb.Histogram_ZeroCountFloat:
+		bv, ok := b.(*mimirpb.Histogram_ZeroCountFloat)
+		return ok && av.ZeroCountFloat == bv.ZeroCountFloat
+	}
+	return false
+}
+
 // HistogramEqual is a copy of mimirpb.Histogram.Equal but equates NaN values.
 func HistogramEqual(this *mimirpb.Histogram, that interface{}) bool {
 	if that == nil {
@@ -653,7 +681,7 @@ func HistogramEqual(this *mimirpb.Histogram, that interface{}) bool {
 		}
 	} else if this.Count == nil {
 		return false
-	} else if !this.Count.Equal(that1.Count) {
+	} else if !histogramCountEqual(this.Count, that1.Count) {
 		return false
 	}
 	if !floatEqualsEquateNaN(this.Sum, that1.Sum) {
@@ -671,7 +699,7 @@ func HistogramEqual(this *mimirpb.Histogram, that interface{}) bool {
 		}
 	} else if this.ZeroCount == nil {
 		return false
-	} else if !this.ZeroCount.Equal(that1.ZeroCount) {
+	} else if !histogramZeroCountEqual(this.ZeroCount, that1.ZeroCount) {
 		return false
 	}
 	if len(this.NegativeSpans) != len(that1.NegativeSpans) {

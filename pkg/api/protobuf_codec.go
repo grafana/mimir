@@ -53,19 +53,19 @@ func (c protobufCodec) Encode(resp *v1.Response) ([]byte, error) {
 		switch data.ResultType {
 		case parser.ValueTypeString:
 			s := c.encodeString(data.Result.(promql.String))
-			p.Data = &mimirpb.QueryResponse_String_{String_: &s}
+			p.Data = &mimirpb.QueryResponse_String{String: s}
 
 		case parser.ValueTypeScalar:
 			s := c.encodeScalar(data.Result.(promql.Scalar))
-			p.Data = &mimirpb.QueryResponse_Scalar{Scalar: &s}
+			p.Data = &mimirpb.QueryResponse_Scalar{Scalar: s}
 
 		case parser.ValueTypeVector:
 			v := c.encodeVector(data.Result.(promql.Vector))
-			p.Data = &mimirpb.QueryResponse_Vector{Vector: &v}
+			p.Data = &mimirpb.QueryResponse_Vector{Vector: v}
 
 		case parser.ValueTypeMatrix:
 			m := c.encodeMatrix(data.Result.(promql.Matrix))
-			p.Data = &mimirpb.QueryResponse_Matrix{Matrix: &m}
+			p.Data = &mimirpb.QueryResponse_Matrix{Matrix: m}
 
 		default:
 			return nil, fmt.Errorf("unknown result type '%v'", data.ResultType)

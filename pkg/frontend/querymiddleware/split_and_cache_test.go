@@ -1850,7 +1850,7 @@ func mockProtobufResponseWithSamplesAndHistograms(labels []mimirpb.LabelAdapter,
 	return &mimirpb.QueryResponse{
 		Status: mimirpb.QUERY_STATUS_SUCCESS,
 		Data: &mimirpb.QueryResponse_Matrix{
-			Matrix: &mimirpb.MatrixData{
+			Matrix: mimirpb.MatrixData{
 				Series: []mimirpb.MatrixSeries{
 					{
 						Metric:     stringArrayFromLabels(labels),
