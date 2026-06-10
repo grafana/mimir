@@ -41,7 +41,13 @@ func newMergeIterator(it iterator, cs []GenericChunk) *mergeIterator {
 	}
 
 	css := partitionChunks(cs)
-	if cap(c.its) >= len(css) {
+	// The reuse branch requires an existing batchStream. A freshly
+	// allocated mergeIterator has none, and trivially satisfies
+	// cap(c.its) >= len(css) when css is empty: zero chunks is a real
+	// case, because a streamed series can advertise a chunk-meta count
+	// at Select time and then materialize no chunks (e.g. OOO-head
+	// iterables that re-encode to no samples).
+	if c.batches != nil && cap(c.its) >= len(css) {
 		c.its = c.its[:len(css)]
 		c.h = c.h[:0]
 		c.batches.empty()
