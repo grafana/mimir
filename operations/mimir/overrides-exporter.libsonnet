@@ -26,6 +26,7 @@
       'ingestion_rate',
       'ingestion_burst_size',
       'max_global_series_per_user',
+      'early_head_compaction_owned_series_threshold',
       'max_global_series_per_metric',
       'max_global_exemplars_per_user',
       'max_fetched_chunks_per_query',
