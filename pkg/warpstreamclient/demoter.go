@@ -13,6 +13,27 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
+// demotionSuppressionReason is why demotion is suppressed. Its string value is
+// the metric label exposed by demotionSuppressedMetric; the empty value means
+// demotion is not suppressed.
+type demotionSuppressionReason string
+
+const (
+	demotionNotSuppressed demotionSuppressionReason = ""
+	// demotionSuppressedNoClusterStats: no usable cluster view yet (cold start
+	// or too few agents have enough data to qualify), so there's nothing to
+	// judge an agent against.
+	demotionSuppressedNoClusterStats demotionSuppressionReason = "no_cluster_stats"
+	// demotionSuppressedManyFaultyAgents: too many agents are faulty (over the
+	// configured MaxFaultyFraction), so demoting any of them would just dump
+	// their traffic onto the survivors.
+	demotionSuppressedManyFaultyAgents demotionSuppressionReason = "many_faulty_agents"
+	// demotionSuppressedManyFaultyAgentsSmallCluster: same as above, but the
+	// cluster is small enough that the 1/N floor raised the effective threshold
+	// above MaxFaultyFraction and the faulty fraction still exceeded it.
+	demotionSuppressedManyFaultyAgentsSmallCluster demotionSuppressionReason = "many_faulty_agents_small_cluster"
+)
+
 // DemoterConfig holds the Demoter-specific knobs. The health
 // classification thresholds (FaultyThreshold and MaxFaultyFraction) live
 // on HealthCheckConfig and are shared with the Hedger so both components
@@ -104,10 +125,7 @@ func NewDemoter(inner PartitionAssignmentStrategy, tracker AgentStatsReader, hea
 		Name: "demoter_demoted_agents",
 		Help: "Number of Warpstream agents currently demoted by the Demoter.",
 	}, d.demotedAgentsCount)
-	promauto.With(reg).NewGaugeFunc(prometheus.GaugeOpts{
-		Name: "demoter_demotion_suppressed",
-		Help: "Whether the Demoter is currently suppressing all demotions, because too many agents are faulty or there is no cluster signal (1), or not (0).",
-	}, d.demotionSuppressedMetricValue)
+	newDemotionSuppressedMetric(d, reg)
 
 	return d
 }
@@ -205,7 +223,7 @@ func (d *Demoter) isDemoted(now time.Time, nodeID int32, clusterStats ClusterSta
 	// rather route fresh traffic to an unknown agent than declare the cluster
 	// unusable, and when too many agents are already faulty, demoting more would
 	// just dump load onto the survivors.
-	if d.isDemotionSuppressed(clusterStats, hasClusterStats) {
+	if suppressed, _ := d.isDemotionSuppressed(clusterStats, hasClusterStats); suppressed {
 		return false
 	}
 	stats, ok := d.tracker.AgentStats(now, nodeID)
@@ -264,32 +282,29 @@ func (d *Demoter) isDemoted(now time.Time, nodeID int32, clusterStats ClusterSta
 	return isFaulty
 }
 
-// isDemotionSuppressed reports whether demotion is currently suppressed: either
-// there is no cluster view (hasClusterStats is false), or too many agents are
-// already faulty so demoting any of them would just dump their traffic onto the
-// survivors. Applies the same scale-aware 1/N floor as the Hedger so a single bad
-// agent in a tiny cluster never trips the suppression.
-func (d *Demoter) isDemotionSuppressed(clusterStats ClusterStats, hasClusterStats bool) bool {
+// isDemotionSuppressed reports whether demotion is currently suppressed, and why:
+// either there is no cluster view (hasClusterStats is false), or too many agents
+// are already faulty so demoting any of them would just dump their traffic onto
+// the survivors. Applies the same scale-aware 1/N floor as the Hedger so a single
+// bad agent in a tiny cluster never trips the suppression.
+func (d *Demoter) isDemotionSuppressed(clusterStats ClusterStats, hasClusterStats bool) (bool, demotionSuppressionReason) {
 	if !hasClusterStats {
-		return true
+		return true, demotionSuppressedNoClusterStats
 	}
-	return clusterStats.FaultyFraction > maxFractionFloor(d.healthCfg.MaxFaultyFraction, clusterStats.FaultyContributorsCount)
+	floor := maxFractionFloor(d.healthCfg.MaxFaultyFraction, clusterStats.FaultyContributorsCount)
+	if clusterStats.FaultyFraction <= floor {
+		return false, demotionNotSuppressed
+	}
+	if floor > d.healthCfg.MaxFaultyFraction {
+		return true, demotionSuppressedManyFaultyAgentsSmallCluster
+	}
+	return true, demotionSuppressedManyFaultyAgents
 }
 
 func (d *Demoter) demotedAgentsCount() float64 {
 	d.lastDemotedProbeMu.Lock()
 	defer d.lastDemotedProbeMu.Unlock()
 	return float64(len(d.lastDemotedProbe))
-}
-
-// demotionSuppressedMetricValue returns 1 when demotion is currently suppressed —
-// the cluster-wide guard is tripping or there is no cluster signal — 0 otherwise.
-func (d *Demoter) demotionSuppressedMetricValue() float64 {
-	clusterStats, ok := d.tracker.ClusterStats(d.now(), d.healthCfg.SlowMultiplier, d.healthCfg.FaultyThreshold)
-	if d.isDemotionSuppressed(clusterStats, ok) {
-		return 1
-	}
-	return 0
 }
 
 // shouldProbe returns true if the caller should issue the probe, atomically
@@ -303,4 +318,51 @@ func (d *Demoter) shouldProbe(now time.Time, nodeID int32) bool {
 	}
 	d.lastDemotedProbe[nodeID] = now
 	return true
+}
+
+// demotionSuppressedMetric is a prometheus.Collector that exposes
+// demoter_demotion_suppressed, one series per suppression reason. It takes a
+// single ClusterStats snapshot per scrape and sets at most one series to 1 (the
+// active reason); all others are 0, so the breakdown is always mutually
+// consistent and no series is ever missing. sum() over the series reproduces the
+// plain "is demotion suppressed" 0/1 signal.
+type demotionSuppressedMetric struct {
+	d    *Demoter
+	desc *prometheus.Desc
+}
+
+func newDemotionSuppressedMetric(d *Demoter, reg prometheus.Registerer) *demotionSuppressedMetric {
+	m := &demotionSuppressedMetric{
+		d: d,
+		desc: prometheus.NewDesc(
+			"demoter_demotion_suppressed",
+			"Whether the Demoter is currently suppressing all demotions (1) and why, broken down by reason; 0 for inactive reasons.",
+			[]string{"reason"}, nil,
+		),
+	}
+	if reg != nil {
+		reg.MustRegister(m)
+	}
+	return m
+}
+
+func (m *demotionSuppressedMetric) Describe(ch chan<- *prometheus.Desc) {
+	ch <- m.desc
+}
+
+func (m *demotionSuppressedMetric) Collect(ch chan<- prometheus.Metric) {
+	clusterStats, hasClusterStats := m.d.tracker.ClusterStats(m.d.now(), m.d.healthCfg.SlowMultiplier, m.d.healthCfg.FaultyThreshold)
+	_, actualReason := m.d.isDemotionSuppressed(clusterStats, hasClusterStats)
+
+	for _, reason := range []demotionSuppressionReason{
+		demotionSuppressedNoClusterStats,
+		demotionSuppressedManyFaultyAgents,
+		demotionSuppressedManyFaultyAgentsSmallCluster,
+	} {
+		value := 0.0
+		if reason == actualReason {
+			value = 1
+		}
+		ch <- prometheus.MustNewConstMetric(m.desc, prometheus.GaugeValue, value, string(reason))
+	}
 }

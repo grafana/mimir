@@ -76,9 +76,11 @@ func TestDemoter_Candidates(t *testing.T) {
 			# TYPE demoter_demoted_agents gauge
 			demoter_demoted_agents 0
 
-			# HELP demoter_demotion_suppressed Whether the Demoter is currently suppressing all demotions, because too many agents are faulty or there is no cluster signal (1), or not (0).
+			# HELP demoter_demotion_suppressed Whether the Demoter is currently suppressing all demotions (1) and why, broken down by reason; 0 for inactive reasons.
 			# TYPE demoter_demotion_suppressed gauge
-			demoter_demotion_suppressed 0
+			demoter_demotion_suppressed{reason="many_faulty_agents"} 0
+			demoter_demotion_suppressed{reason="many_faulty_agents_small_cluster"} 0
+			demoter_demotion_suppressed{reason="no_cluster_stats"} 0
 		`)))
 	})
 
@@ -107,9 +109,11 @@ func TestDemoter_Candidates(t *testing.T) {
 			# TYPE demoter_demoted_agents gauge
 			demoter_demoted_agents 1
 
-			# HELP demoter_demotion_suppressed Whether the Demoter is currently suppressing all demotions, because too many agents are faulty or there is no cluster signal (1), or not (0).
+			# HELP demoter_demotion_suppressed Whether the Demoter is currently suppressing all demotions (1) and why, broken down by reason; 0 for inactive reasons.
 			# TYPE demoter_demotion_suppressed gauge
-			demoter_demotion_suppressed 0
+			demoter_demotion_suppressed{reason="many_faulty_agents"} 0
+			demoter_demotion_suppressed{reason="many_faulty_agents_small_cluster"} 0
+			demoter_demotion_suppressed{reason="no_cluster_stats"} 0
 		`)))
 
 		// Second call inside the probe interval: skip the demoted primary,
@@ -151,9 +155,11 @@ func TestDemoter_Candidates(t *testing.T) {
 			# HELP demoter_demoted_agents Number of Warpstream agents currently demoted by the Demoter.
 			# TYPE demoter_demoted_agents gauge
 			demoter_demoted_agents 1
-			# HELP demoter_demotion_suppressed Whether the Demoter is currently suppressing all demotions, because too many agents are faulty or there is no cluster signal (1), or not (0).
+			# HELP demoter_demotion_suppressed Whether the Demoter is currently suppressing all demotions (1) and why, broken down by reason; 0 for inactive reasons.
 			# TYPE demoter_demotion_suppressed gauge
-			demoter_demotion_suppressed 0
+			demoter_demotion_suppressed{reason="many_faulty_agents"} 0
+			demoter_demotion_suppressed{reason="many_faulty_agents_small_cluster"} 0
+			demoter_demotion_suppressed{reason="no_cluster_stats"} 0
 		`)))
 	})
 
@@ -178,16 +184,51 @@ func TestDemoter_Candidates(t *testing.T) {
 		assert.Equal(t, extraID, cands[1].NodeID)
 		assert.Equal(t, AgentStateHealthy, cands[1].State)
 
-		// The cluster-wide guard is tripping and nothing was demoted.
+		// The cluster-wide guard is tripping and nothing was demoted. With only
+		// 3 observed agents the 1/N floor (1/3 ≈ 0.33) raises the effective
+		// threshold above MaxFaultyFraction (0.3), so the reason is the
+		// small-cluster branch.
 		require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 			# HELP demoter_demoted_agents Number of Warpstream agents currently demoted by the Demoter.
 			# TYPE demoter_demoted_agents gauge
 			demoter_demoted_agents 0
 
-			# HELP demoter_demotion_suppressed Whether the Demoter is currently suppressing all demotions, because too many agents are faulty or there is no cluster signal (1), or not (0).
+			# HELP demoter_demotion_suppressed Whether the Demoter is currently suppressing all demotions (1) and why, broken down by reason; 0 for inactive reasons.
 			# TYPE demoter_demotion_suppressed gauge
-			demoter_demotion_suppressed 1
+			demoter_demotion_suppressed{reason="many_faulty_agents"} 0
+			demoter_demotion_suppressed{reason="many_faulty_agents_small_cluster"} 1
+			demoter_demotion_suppressed{reason="no_cluster_stats"} 0
 		`)))
+	})
+
+	t.Run("max faulty fraction guard reports many_faulty_agents in a larger cluster", func(t *testing.T) {
+		// 2 of 5 observed agents faulty: FaultyFraction = 0.4 exceeds
+		// MaxFaultyFraction (0.3), and 1/N (0.2) is below it, so the configured
+		// threshold is the operative one → reason many_faulty_agents (not the
+		// small-cluster branch).
+		tr := NewAverageAgentStatsTracker()
+		nowNs := time.Now().UnixNano()
+		for _, id := range []int32{healthyID, extraID, 4} {
+			seedFullWindow(tr, id, nowNs, 20, 10, 0)
+		}
+		for _, id := range []int32{slowID, 5} {
+			seedFullWindow(tr, id, nowNs, 10, 10, 10)
+		}
+		inner := &mockPartitionAssignmentStrategy{
+			candidates: map[partitionKey][]Agent{{topic, part}: healthyAgents(slowID, healthyID)},
+		}
+		d, reg := newTestDemoter(inner, tr, health, cfg)
+		d.now = func() time.Time { return time.Now() }
+
+		d.Candidates(topic, part, 2)
+
+		require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+			# HELP demoter_demotion_suppressed Whether the Demoter is currently suppressing all demotions (1) and why, broken down by reason; 0 for inactive reasons.
+			# TYPE demoter_demotion_suppressed gauge
+			demoter_demotion_suppressed{reason="many_faulty_agents"} 1
+			demoter_demotion_suppressed{reason="many_faulty_agents_small_cluster"} 0
+			demoter_demotion_suppressed{reason="no_cluster_stats"} 0
+		`), "demoter_demotion_suppressed"))
 	})
 
 	t.Run("demotion_suppressed gauge clears once the faulty fraction drops", func(t *testing.T) {
@@ -205,19 +246,23 @@ func TestDemoter_Candidates(t *testing.T) {
 		d, reg := newTestDemoter(inner, tr, health, cfg)
 		d.now = func() time.Time { return time.Now() }
 
-		// 2 of 3 faulty → suppressed.
+		// 2 of 3 faulty → suppressed (small-cluster floor, 1/3 > 0.3).
 		require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
-			# HELP demoter_demotion_suppressed Whether the Demoter is currently suppressing all demotions, because too many agents are faulty or there is no cluster signal (1), or not (0).
+			# HELP demoter_demotion_suppressed Whether the Demoter is currently suppressing all demotions (1) and why, broken down by reason; 0 for inactive reasons.
 			# TYPE demoter_demotion_suppressed gauge
-			demoter_demotion_suppressed 1
+			demoter_demotion_suppressed{reason="many_faulty_agents"} 0
+			demoter_demotion_suppressed{reason="many_faulty_agents_small_cluster"} 1
+			demoter_demotion_suppressed{reason="no_cluster_stats"} 0
 		`), "demoter_demotion_suppressed"))
 
 		// extraID recovers → 1 of 3 faulty, below the floor → no longer suppressed.
 		seedFullWindow(tr, extraID, nowNs, 20, 10, 0)
 		require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
-			# HELP demoter_demotion_suppressed Whether the Demoter is currently suppressing all demotions, because too many agents are faulty or there is no cluster signal (1), or not (0).
+			# HELP demoter_demotion_suppressed Whether the Demoter is currently suppressing all demotions (1) and why, broken down by reason; 0 for inactive reasons.
 			# TYPE demoter_demotion_suppressed gauge
-			demoter_demotion_suppressed 0
+			demoter_demotion_suppressed{reason="many_faulty_agents"} 0
+			demoter_demotion_suppressed{reason="many_faulty_agents_small_cluster"} 0
+			demoter_demotion_suppressed{reason="no_cluster_stats"} 0
 		`), "demoter_demotion_suppressed"))
 	})
 
@@ -236,15 +281,17 @@ func TestDemoter_Candidates(t *testing.T) {
 		assert.Equal(t, AgentStateHealthy, cands[0].State)
 
 		// No cluster stats yet → nothing demoted, and suppression reads 1
-		// (no cluster signal).
+		// with reason no_cluster_stats.
 		require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 			# HELP demoter_demoted_agents Number of Warpstream agents currently demoted by the Demoter.
 			# TYPE demoter_demoted_agents gauge
 			demoter_demoted_agents 0
 
-			# HELP demoter_demotion_suppressed Whether the Demoter is currently suppressing all demotions, because too many agents are faulty or there is no cluster signal (1), or not (0).
+			# HELP demoter_demotion_suppressed Whether the Demoter is currently suppressing all demotions (1) and why, broken down by reason; 0 for inactive reasons.
 			# TYPE demoter_demotion_suppressed gauge
-			demoter_demotion_suppressed 1
+			demoter_demotion_suppressed{reason="many_faulty_agents"} 0
+			demoter_demotion_suppressed{reason="many_faulty_agents_small_cluster"} 0
+			demoter_demotion_suppressed{reason="no_cluster_stats"} 1
 		`)))
 	})
 
@@ -275,9 +322,11 @@ func TestDemoter_Candidates(t *testing.T) {
 			# HELP demoter_demoted_agents Number of Warpstream agents currently demoted by the Demoter.
 			# TYPE demoter_demoted_agents gauge
 			demoter_demoted_agents 1
-			# HELP demoter_demotion_suppressed Whether the Demoter is currently suppressing all demotions, because too many agents are faulty or there is no cluster signal (1), or not (0).
+			# HELP demoter_demotion_suppressed Whether the Demoter is currently suppressing all demotions (1) and why, broken down by reason; 0 for inactive reasons.
 			# TYPE demoter_demotion_suppressed gauge
-			demoter_demotion_suppressed 0
+			demoter_demotion_suppressed{reason="many_faulty_agents"} 0
+			demoter_demotion_suppressed{reason="many_faulty_agents_small_cluster"} 0
+			demoter_demotion_suppressed{reason="no_cluster_stats"} 0
 		`)))
 	})
 
@@ -401,9 +450,11 @@ func TestDemoter_Candidates(t *testing.T) {
 			# TYPE demoter_demoted_agents gauge
 			demoter_demoted_agents 1
 
-			# HELP demoter_demotion_suppressed Whether the Demoter is currently suppressing all demotions, because too many agents are faulty or there is no cluster signal (1), or not (0).
+			# HELP demoter_demotion_suppressed Whether the Demoter is currently suppressing all demotions (1) and why, broken down by reason; 0 for inactive reasons.
 			# TYPE demoter_demotion_suppressed gauge
-			demoter_demotion_suppressed 0
+			demoter_demotion_suppressed{reason="many_faulty_agents"} 0
+			demoter_demotion_suppressed{reason="many_faulty_agents_small_cluster"} 0
+			demoter_demotion_suppressed{reason="no_cluster_stats"} 0
 		`)))
 
 		// Recovery: replace the stats with all-successful traffic.
@@ -420,9 +471,11 @@ func TestDemoter_Candidates(t *testing.T) {
 			# TYPE demoter_demoted_agents gauge
 			demoter_demoted_agents 0
 
-			# HELP demoter_demotion_suppressed Whether the Demoter is currently suppressing all demotions, because too many agents are faulty or there is no cluster signal (1), or not (0).
+			# HELP demoter_demotion_suppressed Whether the Demoter is currently suppressing all demotions (1) and why, broken down by reason; 0 for inactive reasons.
 			# TYPE demoter_demotion_suppressed gauge
-			demoter_demotion_suppressed 0
+			demoter_demotion_suppressed{reason="many_faulty_agents"} 0
+			demoter_demotion_suppressed{reason="many_faulty_agents_small_cluster"} 0
+			demoter_demotion_suppressed{reason="no_cluster_stats"} 0
 		`)))
 
 		// Now simulate a fresh sparse-failure window (RequestCount=6).
@@ -602,6 +655,58 @@ func TestDemoter_Candidates(t *testing.T) {
 		assert.Contains(t, restoreLog, "warpstream agent restored")
 		assert.Contains(t, restoreLog, "node_id="+strconv.Itoa(int(slowID)))
 	})
+}
+
+func TestDemoter_isDemotionSuppressed(t *testing.T) {
+	d := &Demoter{healthCfg: HealthCheckConfig{MaxFaultyFraction: 0.3}}
+
+	tests := map[string]struct {
+		clusterStats    ClusterStats
+		hasClusterStats bool
+		wantSuppressed  bool
+		wantReason      demotionSuppressionReason
+	}{
+		"no cluster stats": {
+			hasClusterStats: false,
+			wantSuppressed:  true,
+			wantReason:      demotionSuppressedNoClusterStats,
+		},
+		"healthy: faulty fraction below threshold": {
+			clusterStats:    ClusterStats{FaultyFraction: 0.2, FaultyContributorsCount: 10},
+			hasClusterStats: true,
+			wantSuppressed:  false,
+			wantReason:      demotionNotSuppressed,
+		},
+		"many faulty agents: configured threshold is operative in a large cluster": {
+			// 1/N (0.1) is below MaxFaultyFraction, so the configured threshold applies.
+			clusterStats:    ClusterStats{FaultyFraction: 0.4, FaultyContributorsCount: 10},
+			hasClusterStats: true,
+			wantSuppressed:  true,
+			wantReason:      demotionSuppressedManyFaultyAgents,
+		},
+		"small cluster: 1/N floor raises the threshold above configured and is still exceeded": {
+			// 2 agents → 1/N = 0.5 > MaxFaultyFraction (0.3); faulty fraction 1.0 exceeds the raised bar.
+			clusterStats:    ClusterStats{FaultyFraction: 1.0, FaultyContributorsCount: 2},
+			hasClusterStats: true,
+			wantSuppressed:  true,
+			wantReason:      demotionSuppressedManyFaultyAgentsSmallCluster,
+		},
+		"small cluster: 1/N floor protects a single bad agent": {
+			// 2 agents, one faulty → 0.5; the floor is also 0.5, not strictly exceeded → not suppressed.
+			clusterStats:    ClusterStats{FaultyFraction: 0.5, FaultyContributorsCount: 2},
+			hasClusterStats: true,
+			wantSuppressed:  false,
+			wantReason:      demotionNotSuppressed,
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			suppressed, reason := d.isDemotionSuppressed(tc.clusterStats, tc.hasClusterStats)
+			assert.Equal(t, tc.wantSuppressed, suppressed)
+			assert.Equal(t, tc.wantReason, reason)
+		})
+	}
 }
 
 // BenchmarkDemoter_Candidates measures the cost of Demoter.Candidates
