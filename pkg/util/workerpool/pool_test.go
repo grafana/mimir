@@ -137,7 +137,7 @@ func TestPool_StartingBlocksUntilWorkersAreRegistered(t *testing.T) {
 	// By the time StartAndAwaitRunning returns (inside startPool), every
 	// worker must already be registered with the queue — otherwise a Submit
 	// here could land in the queue before any worker is connected.
-	require.Equal(t, float64(workers), p.queue.GetConnectedQuerierWorkersMetric())
+	require.Equal(t, float64(workers), p.queue.GetConnectedConsumerWorkersMetric())
 }
 
 func TestConfig_Validate(t *testing.T) {

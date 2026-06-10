@@ -150,7 +150,7 @@ func (p *Pool) running(ctx context.Context) error {
 
 func (p *Pool) stopping(_ error) error {
 	// Stop the queue first.
-	// Its dispatcher drains any pending items (workers keep processing them) and then returns ErrStopped to waiting AwaitItemForQuerier calls,
+	// Its dispatcher drains any pending items (workers keep processing them) and then returns ErrStopped to waiting AwaitItemForConsumer calls,
 	// which lets the workers exit cleanly.
 	err := services.StopAndAwaitTerminated(context.Background(), p.queue)
 	p.workersWg.Wait()
@@ -160,20 +160,20 @@ func (p *Pool) stopping(_ error) error {
 func (p *Pool) workerLoop(ready chan<- error) {
 	defer p.workersWg.Done()
 
-	conn := queue.NewUnregisteredQuerierWorkerConn(context.Background(), p.name)
-	err := p.queue.AwaitRegisterQuerierWorkerConn(conn)
+	conn := queue.NewUnregisteredConsumerWorkerConn(context.Background(), p.name)
+	err := p.queue.AwaitRegisterConsumerWorkerConn(conn)
 	// Always signal, even on failure, so starting() does not block on a worker that has already given up.
 	// Forward the registration error so a failed registration fails startup.
 	ready <- err
 	if err != nil {
 		return
 	}
-	defer p.queue.SubmitUnregisterQuerierWorkerConn(conn)
+	defer p.queue.SubmitUnregisterConsumerWorkerConn(conn)
 
 	lastTenantIdx := queue.FirstTenant()
 	for {
-		dequeueReq := queue.NewQuerierWorkerDequeueRequest(conn, lastTenantIdx)
-		item, idx, err := p.queue.AwaitItemForQuerier(dequeueReq)
+		dequeueReq := queue.NewConsumerWorkerDequeueRequest(conn, lastTenantIdx)
+		item, idx, err := p.queue.AwaitItemForConsumer(dequeueReq)
 		lastTenantIdx = idx
 		if err != nil {
 			// The queue only returns an error when it is shutting down (ErrStopped) or when the worker's connection context is cancelled.
@@ -203,8 +203,8 @@ func (p *Pool) workerLoop(ready chan<- error) {
 // so different task types make progress in parallel instead of one type monopolising every worker.
 //
 // Two arguments to the underlying queue are worth explaining:
-//   - maxQueriers=0 disables shuffle sharding, so every worker is eligible to run any tenant's tasks.
-//     All the pool's workers register under one querier, so per-tenant querier sharding does not apply.
+//   - maxConsumers=0 disables shuffle sharding, so every worker is eligible to run any tenant's tasks.
+//     All the pool's workers register under one consumer, so per-tenant consumer sharding does not apply.
 //   - successFn=nil is fine: the queue only calls successFn when it is non-nil,
 //     and the pool has nothing to do between enqueue and dispatch.
 //
