@@ -51,7 +51,7 @@ func TestGetQueryStep(t *testing.T) {
 
 func TestVerifySamplesSum(t *testing.T) {
 	testVerifySamplesSumFloats(t, generateSineWaveValue, "generateSineWaveValue")
-	for _, histProfile := range histogramProfiles {
+	for _, histProfile := range histogramProfilesForWriteProtocol(writeProtocolPrometheus) {
 		testVerifySamplesSumHistograms(t, histProfile.generateValue, histProfile.generateSampleHistogram, fmt.Sprintf("generateHistogramValue for %s", histProfile.typeLabel))
 	}
 }

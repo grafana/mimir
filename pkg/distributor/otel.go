@@ -821,6 +821,10 @@ func TimeseriesToOTLPRequest(timeseries []prompb.TimeSeries, metadata []mimirpb.
 			}
 			metric.ExponentialHistogram().SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
 			for i, histogram := range ts.Histograms {
+				if _, isFloatCount := histogram.Count.(*prompb.Histogram_CountFloat); isFloatCount {
+					panic(fmt.Sprintf("prometheus histograms with float counts cannot be converted to OTEL exponential histograms, this is a bug. histogram: %+v", histogram))
+				}
+
 				datapoint := metric.ExponentialHistogram().DataPoints().AppendEmpty()
 				datapoint.SetTimestamp(pcommon.Timestamp(histogram.Timestamp * time.Millisecond.Nanoseconds()))
 				datapoint.SetScale(histogram.Schema)
