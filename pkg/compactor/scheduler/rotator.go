@@ -405,7 +405,7 @@ func (r *Rotator) possiblyRemoveFromRotation(tenant string) {
 	}
 }
 
-// addToRotation appends the specified tenant to the rotation. A write lock must be held.
+// addToRotation appends the specified tenant to the rotation. A write lock must be held in order to call this function.
 func (r *Rotator) addToRotation(tenant string, tenantState *TenantRotationState) {
 	tenantState.element = r.rotation.PushBack(tenant)
 	if r.cursor.Load() == nil {
