@@ -93,10 +93,10 @@ func (g *MultiAggregationGroup) MinimumRequiredPlanVersion(types.QueryTimeRange)
 	return planning.QueryPlanV5, nil
 }
 
-//node:generate
 type MultiAggregationInstance struct {
 	*MultiAggregationInstanceDetails
-	Group *MultiAggregationGroup `node:"child"`
+	Group *MultiAggregationGroup
+	Param planning.Node // nil for non-parameterized aggregations (eg. sum), set for quantile.
 }
 
 func (a *MultiAggregationInstance) Details() proto.Message {
@@ -107,18 +107,59 @@ func (a *MultiAggregationInstance) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_MULTI_AGGREGATION_INSTANCE
 }
 
+func (a *MultiAggregationInstance) Child(idx int) planning.Node {
+	switch idx {
+	case 0:
+		return a.Group
+	case 1:
+		if a.Param == nil {
+			panic("cannot get MultiAggregationInstance child at index 1 if there is no parameter")
+		}
+		return a.Param
+	default:
+		panic(fmt.Sprintf("node of type MultiAggregationInstance supports at most 2 children, but attempted to get child at index %d", idx))
+	}
+}
+
+func (a *MultiAggregationInstance) ChildCount() int {
+	if a.Param == nil {
+		return 1
+	}
+
+	return 2
+}
+
+func (a *MultiAggregationInstance) SetChildren(children []planning.Node) error {
+	switch len(children) {
+	case 1:
+		a.Param = nil
+		return a.ReplaceChild(0, children[0])
+	case 2:
+		if err := a.ReplaceChild(0, children[0]); err != nil {
+			return err
+		}
+		a.Param = children[1]
+		return nil
+	default:
+		return fmt.Errorf("node of type MultiAggregationInstance expects 1 or 2 children, but got %d", len(children))
+	}
+}
+
 func (a *MultiAggregationInstance) ReplaceChild(idx int, node planning.Node) error {
-	if idx != 0 {
-		return fmt.Errorf("node of type MultiAggregationInstance supports 1 child, but attempted to replace child at index %d", idx)
+	switch idx {
+	case 0:
+		group, ok := node.(*MultiAggregationGroup)
+		if !ok {
+			return fmt.Errorf("node of type MultiAggregationInstance requires child at index 0 of type MultiAggregationGroup, but got %T", node)
+		}
+		a.Group = group
+		return nil
+	case 1:
+		a.Param = node
+		return nil
+	default:
+		return fmt.Errorf("node of type MultiAggregationInstance expects at most 2 children, but attempted to replace child at index %d", idx)
 	}
-
-	group, ok := node.(*MultiAggregationGroup)
-	if !ok {
-		return fmt.Errorf("node of type MultiAggregationInstance requires child of type MultiAggregationGroup, but got %T", node)
-	}
-
-	a.Group = group
-	return nil
 }
 
 func (a *MultiAggregationInstance) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
@@ -157,7 +198,11 @@ func (a *MultiAggregationInstance) Describe() string {
 }
 
 func (a *MultiAggregationInstance) ChildrenLabels() []string {
-	return []string{""}
+	if a.Param == nil {
+		return []string{""}
+	}
+
+	return []string{"", "parameter"}
 }
 
 func (a *MultiAggregationInstance) ChildrenTimeRange(parentTimeRange types.QueryTimeRange) types.QueryTimeRange {
@@ -169,7 +214,21 @@ func (a *MultiAggregationInstance) ResultType() (parser.ValueType, error) {
 }
 
 func (a *MultiAggregationInstance) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) (planning.QueriedTimeRange, error) {
-	return a.Group.QueriedTimeRange(queryTimeRange, lookbackDelta)
+	groupRange, err := a.Group.QueriedTimeRange(queryTimeRange, lookbackDelta)
+	if err != nil {
+		return planning.NoDataQueried(), err
+	}
+
+	if a.Param == nil {
+		return groupRange, nil
+	}
+
+	paramRange, err := a.Param.QueriedTimeRange(queryTimeRange, lookbackDelta)
+	if err != nil {
+		return planning.NoDataQueried(), err
+	}
+
+	return groupRange.Union(paramRange), nil
 }
 
 func (a *MultiAggregationInstance) ExpressionPosition() (posrange.PositionRange, error) {
@@ -177,6 +236,10 @@ func (a *MultiAggregationInstance) ExpressionPosition() (posrange.PositionRange,
 }
 
 func (a *MultiAggregationInstance) MinimumRequiredPlanVersion(types.QueryTimeRange) (planning.QueryPlanVersion, error) {
+	if a.Param != nil {
+		return planning.QueryPlanV15, nil
+	}
+
 	if len(a.Filters) > 0 {
 		return planning.QueryPlanV8, nil
 	}
@@ -237,6 +300,15 @@ func MaterializeMultiAggregationInstance(node *MultiAggregationInstance, materia
 
 	if err != nil {
 		return nil, err
+	}
+
+	if node.Param != nil {
+		param, err := materializer.ConvertNodeToScalarOperator(node.Param, timeRange)
+		if err != nil {
+			return nil, fmt.Errorf("could not create parameter operator for MultiAggregationInstance %s: %w", node.Aggregation.Op.String(), err)
+		}
+
+		instance.SetParam(param)
 	}
 
 	return planning.NewSingleUseOperatorFactory(instance), nil

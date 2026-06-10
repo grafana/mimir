@@ -5,6 +5,7 @@ package multiaggregation
 import (
 	"context"
 	"errors"
+	"math"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -244,6 +245,10 @@ type MultiAggregatorInstanceOperator struct {
 	filters     []*labels.Matcher
 	subsetIndex int // If filters is non-empty, the index in the inner operator's stats that we expect to find the subset statistics for this instance.
 
+	// param is the scalar operator providing the parameter value for parameterized aggregations (eg. quantile).
+	// nil for non-parameterized aggregations.
+	param types.ScalarOperator
+
 	// unfilteredSeriesBitmap contains one entry per unfiltered input series, where true indicates that it passes this instance's filters.
 	// If this instance has no filters, this is nil.
 	unfilteredSeriesBitmap []bool
@@ -280,17 +285,55 @@ func (m *MultiAggregatorInstanceOperator) Configure(
 	return nil
 }
 
+// SetParam sets the scalar operator providing the parameter value for parameterized aggregations (eg. quantile).
+func (m *MultiAggregatorInstanceOperator) SetParam(param types.ScalarOperator) {
+	m.param = param
+}
+
 func (m *MultiAggregatorInstanceOperator) Prepare(ctx context.Context, params *types.PrepareParams) error {
-	return m.group.Prepare(ctx, params)
+	if err := m.group.Prepare(ctx, params); err != nil {
+		return err
+	}
+
+	if m.param != nil {
+		return m.param.Prepare(ctx, params)
+	}
+
+	return nil
 }
 
 func (m *MultiAggregatorInstanceOperator) AfterPrepare(ctx context.Context) error {
-	return m.group.AfterPrepare(ctx)
+	if err := m.group.AfterPrepare(ctx); err != nil {
+		return err
+	}
+
+	if m.param != nil {
+		return m.param.AfterPrepare(ctx)
+	}
+
+	return nil
 }
 
 func (m *MultiAggregatorInstanceOperator) SeriesMetadata(ctx context.Context, _ types.Matchers) ([]types.SeriesMetadata, error) {
 	// Note that we deliberately ignore the matchers passed here as we can't use them: there's no
 	// guarantee that they apply to other instances in the same group.
+
+	// For parameterized aggregations (eg. quantile), fetch and validate the parameter values
+	// before computing output series, so that ParamData is available when ComputeNextOutputSeries is called.
+	if m.param != nil {
+		paramData, err := m.param.GetValues(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		for _, p := range paramData.Samples {
+			if math.IsNaN(p.F) || p.F < 0 || p.F > 1 {
+				m.aggregator.Annotations.Add(annotations.NewInvalidQuantileWarning(p.F, m.param.ExpressionPosition()))
+			}
+		}
+
+		m.aggregator.ParamData = paramData
+	}
 
 	if !m.group.haveComputedSeriesMetadata {
 		if err := m.group.ComputeOutputSeriesForAllInstances(ctx); err != nil {
@@ -392,6 +435,12 @@ func (m *MultiAggregatorInstanceOperator) FinishedReading(ctx context.Context) e
 	types.BoolSlicePool.Put(&m.unfilteredSeriesBitmap, m.group.memoryConsumptionTracker)
 	types.SeriesMetadataSlicePool.Put(&m.outputSeriesMetadata, m.group.memoryConsumptionTracker)
 
+	if m.param != nil {
+		if err := m.param.FinishedReading(ctx); err != nil {
+			return err
+		}
+	}
+
 	m.finishedReadingCalled = true
 	return m.group.FinishedReading(ctx)
 }
@@ -404,12 +453,31 @@ func (m *MultiAggregatorInstanceOperator) Finalize(ctx context.Context) (*types.
 
 	m.aggregator.Annotations.Merge(childAnnos)
 
+	if m.param != nil {
+		paramStats, paramAnnos, err := m.param.Finalize(ctx)
+		if err != nil {
+			stats.Close()
+			return nil, nil, err
+		}
+		if err := stats.Add(paramStats); err != nil {
+			stats.Close()
+			paramStats.Close()
+			return nil, nil, err
+		}
+		paramStats.Close()
+		m.aggregator.Annotations.Merge(paramAnnos)
+	}
+
 	return stats, m.aggregator.Annotations, nil
 }
 
 func (m *MultiAggregatorInstanceOperator) Close() {
 	if m.closed {
 		return
+	}
+
+	if m.param != nil {
+		m.param.Close()
 	}
 
 	m.closed = true

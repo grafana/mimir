@@ -56,6 +56,15 @@ func (o *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, 
 	}
 
 	filteringSupported := maximumSupportedQueryPlanVersion >= planning.QueryPlanV8
+	quantileSupported := maximumSupportedQueryPlanVersion >= planning.QueryPlanV15
+
+	isSupportedOp := func(op core.AggregationOperation) bool {
+		if op == core.AGGREGATION_QUANTILE && !quantileSupported {
+			return false
+		}
+		supported, err := IsSupportedAggregationOperation(op)
+		return err == nil && supported
+	}
 
 	ineligibleDuplicateNodes := make(map[*commonsubexpressionelimination.Duplicate]struct{})
 	candidateDuplicateNodes := make(map[*commonsubexpressionelimination.Duplicate][]aggregateOverDuplicate)
@@ -84,7 +93,7 @@ func (o *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, 
 			if !isAggregate {
 				ineligibleDuplicateNodes[duplicate] = struct{}{}
 				delete(candidateDuplicateNodes, duplicate)
-			} else if supported, err := IsSupportedAggregationOperation(aggregate.Op); err != nil || !supported {
+			} else if !isSupportedOp(aggregate.Op) {
 				ineligibleDuplicateNodes[duplicate] = struct{}{}
 				delete(candidateDuplicateNodes, duplicate)
 			}
@@ -97,7 +106,7 @@ func (o *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, 
 			aggregate, isAggregate := child.(*core.AggregateExpression)
 			if !isAggregate {
 				continue
-			} else if supported, err := IsSupportedAggregationOperation(aggregate.Op); err != nil || !supported {
+			} else if !isSupportedOp(aggregate.Op) {
 				continue
 			}
 
@@ -176,6 +185,7 @@ func (o *OptimizationPass) replaceWithMultiAggregation(duplicate *commonsubexpre
 				SubsetIndex: aggregateOverDuplicate.subsetIndex,
 			},
 			Group: group,
+			Param: aggregateOverDuplicate.aggregate.Param,
 		}
 
 		if err := aggregateOverDuplicate.aggregateParent.ReplaceChild(aggregateOverDuplicate.indexOfAggregateInParent, consumer); err != nil {
@@ -204,9 +214,9 @@ func IsSupportedAggregationOperation(o core.AggregationOperation) (bool, error) 
 		return true, nil
 	case core.AGGREGATION_STDDEV:
 		return true, nil
-
 	case core.AGGREGATION_QUANTILE:
-		return false, nil
+		return true, nil
+
 	case core.AGGREGATION_COUNT_VALUES:
 		return false, nil
 	case core.AGGREGATION_TOPK:
