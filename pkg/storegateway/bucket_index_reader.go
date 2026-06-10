@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"io"
 	"slices"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -418,6 +419,130 @@ func (r *bucketIndexReader) FetchPostings(ctx context.Context, keys []labels.Lab
 		}
 	}
 	return ps, nil
+}
+
+func (r *bucketIndexReader) buildPostingsFromKnownOffsets(ctx context.Context, keys []labels.Label, knownOffsets map[string][]streamindex.PostingListOffset, stats *safeQueryStats) ([]index.Postings, error) {
+	output := make([]index.Postings, len(keys))
+	ptrs := make([]postingPtr, 0, len(knownOffsets))
+	for ix, key := range keys {
+		if offsets, ok := knownOffsets[key.Name]; ok {
+			foundPos := sort.Search(len(knownOffsets[key.Name]), func(i int) bool {
+				return offsets[i].LabelValue >= key.Value
+			})
+			if foundPos < len(knownOffsets[key.Name]) && offsets[foundPos].LabelValue == key.Value {
+				ptrs = append(ptrs, postingPtr{
+					keyID: ix,
+					ptr:   offsets[foundPos].Off,
+				})
+			}
+		}
+	}
+	slices.SortFunc(ptrs, func(a, b postingPtr) int {
+		return cmp.Compare(a.ptr.Start, b.ptr.Start)
+	})
+
+	// TODO(bwplotka): Asses how large in worst case scenario this can be. (e.g fetch for AllPostingsKeys)
+	// Consider sub split if too big.
+	parts := r.block.partitioners.postings.Partition(len(ptrs), func(i int) (start, end uint64) {
+		return uint64(ptrs[i].ptr.Start), uint64(ptrs[i].ptr.End)
+	})
+
+	// Use a different TTL for postings based on the duration of the block.
+	postingsTTL := indexcache.BlockTTL(r.block.meta)
+
+	g, ctx := errgroup.WithContext(ctx)
+	for _, part := range parts {
+		i, j := part.ElemRng[0], part.ElemRng[1]
+
+		start := int64(part.Start)
+		// We assume index does not have any ptrs that has 0 length.
+		length := int64(part.End) - start
+
+		// Fetch from object storage concurrently and update stats and posting list.
+		g.Go(func() error {
+			begin := time.Now()
+
+			b, err := r.block.readIndexRange(ctx, start, length)
+			if err != nil {
+				return errors.Wrap(err, "read postings range")
+			}
+			fetchTime := time.Since(begin)
+
+			stats.update(func(stats *queryStats) {
+				stats.postingsFetchCount++
+				stats.postingsFetched += j - i
+				stats.postingsFetchDurationSum += fetchTime
+				stats.postingsFetchedSizeSum += int(length)
+			})
+
+			for _, p := range ptrs[i:j] {
+				// index-header can estimate endings, which means we need to resize the endings.
+				pBytes, err := resizePostings(b[p.ptr.Start-start : p.ptr.End-start])
+				if err != nil {
+					return err
+				}
+
+				compressionTime := time.Duration(0)
+				compressions, compressionErrors, compressedSize := 0, 0, 0
+
+				// Reencode postings before storing to cache. If that fails, we store original bytes.
+				// This can only fail, if postings data was somehow corrupted,
+				// and there is nothing we can do about it.
+				// Errors from corrupted postings will be reported when postings are used.
+				compressions++
+				s := time.Now()
+				bep := newBigEndianPostings(pBytes[4:])
+				dataToCache, err := diffVarintSnappyWithMatchersEncode(bep, bep.length(), encodeLabelForPostingsCache(keys[p.keyID]), nil)
+				compressionTime = time.Since(s)
+				if err == nil {
+					compressedSize = len(dataToCache)
+					r.block.indexCache.StorePostings(r.block.userID, r.block.meta.ULID, keys[p.keyID], dataToCache, postingsTTL)
+				} else {
+					compressionErrors = 1
+					level.Warn(r.block.logger).Log(
+						"msg", "couldn't encode postings for cache",
+						"err", err,
+						"user", r.block.userID,
+						"block", r.block.meta.ULID,
+						"label", keys[p.keyID],
+					)
+				}
+
+				// Return postings. Truncate first 4 bytes which are length of posting.
+				// Access to output is not protected by a mutex because each goroutine
+				// is expected to handle a different set of keys.
+				output[p.keyID] = newBigEndianPostings(pBytes[4:])
+
+				// If we just fetched it we still have to update the stats for touched postings.
+				stats.update(func(stats *queryStats) {
+					stats.postingsTouched++
+					stats.postingsTouchedSizeSum += len(pBytes)
+					stats.cachedPostingsCompressions += compressions
+					stats.cachedPostingsCompressionErrors += compressionErrors
+					stats.cachedPostingsOriginalSizeSum += len(pBytes)
+					stats.cachedPostingsCompressedSizeSum += compressedSize
+					stats.cachedPostingsCompressionTimeSum += compressionTime
+				})
+			}
+			return nil
+		})
+	}
+
+	if err := g.Wait(); err != nil {
+		return nil, err
+	}
+
+	version, err := r.block.indexHeaderReader.IndexVersion(ctx)
+	if err != nil {
+		return nil, errors.Wrap(err, "get index version")
+	}
+	for i := range output {
+		output[i] = checkNilPosting(keys[i], output[i])
+		if version >= index.FormatV2 {
+			output[i] = paddedPostings{output[i]}
+		}
+	}
+	return output, nil
 }
 
 // fetchPostings is the version-unaware private implementation of FetchPostings.

@@ -1709,7 +1709,7 @@ func labelValuesFromPostings(ctx context.Context, labelName string, indexr *buck
 		keys[i] = labels.Label{Name: labelName, Value: value.LabelValue}
 	}
 
-	fetchedPostings, err := indexr.FetchPostings(ctx, keys, stats)
+	fetchedPostings, err := indexr.buildPostingsFromKnownOffsets(ctx, keys, map[string][]streamindex.PostingListOffset{labelName: allValues}, stats)
 	if err != nil {
 		return nil, errors.Wrap(err, "get postings")
 	}
