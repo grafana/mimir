@@ -110,6 +110,16 @@ func (r *Readcache) queryStream(req *client.QueryRequest, stream client.Ingester
 				return err
 			}
 
+			// Never advertise a series with no in-range chunks: the
+			// querier's batch merge iterator assumes every streamed
+			// series carries at least one chunk and panics otherwise.
+			// Multi-epoch TSDBs make this case real: a frozen epoch
+			// can index a labelset while owning no chunk inside
+			// [from, through].
+			if chunkCount == 0 {
+				continue
+			}
+
 			items = append(items, seriesItem{
 				factory:  cs.IteratorFactory(),
 				chunkCnt: chunkCount,
