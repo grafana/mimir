@@ -82,8 +82,8 @@ var protobufCodecScenarios = map[string]struct {
 		},
 		expectedPayload: mimirpb.QueryResponse{
 			Status: mimirpb.QUERY_STATUS_SUCCESS,
-			Data: &mimirpb.QueryResponse_String_{
-				String_: &mimirpb.StringData{
+			Data: &mimirpb.QueryResponse_String{
+				String: mimirpb.StringData{
 					TimestampMs: 1234,
 					Value:       "the-string",
 				},
@@ -104,7 +104,7 @@ var protobufCodecScenarios = map[string]struct {
 		expectedPayload: mimirpb.QueryResponse{
 			Status: mimirpb.QUERY_STATUS_SUCCESS,
 			Data: &mimirpb.QueryResponse_Scalar{
-				Scalar: &mimirpb.ScalarData{
+				Scalar: mimirpb.ScalarData{
 					TimestampMs: 1234,
 					Value:       5.67,
 				},
@@ -122,7 +122,7 @@ var protobufCodecScenarios = map[string]struct {
 		expectedPayload: mimirpb.QueryResponse{
 			Status: mimirpb.QUERY_STATUS_SUCCESS,
 			Data: &mimirpb.QueryResponse_Vector{
-				Vector: &mimirpb.VectorData{},
+				Vector: mimirpb.VectorData{},
 			},
 		},
 	},
@@ -143,7 +143,7 @@ var protobufCodecScenarios = map[string]struct {
 		expectedPayload: mimirpb.QueryResponse{
 			Status: mimirpb.QUERY_STATUS_SUCCESS,
 			Data: &mimirpb.QueryResponse_Vector{
-				Vector: &mimirpb.VectorData{
+				Vector: mimirpb.VectorData{
 					Samples: []mimirpb.VectorSample{
 						{
 							Metric:      nil,
@@ -172,7 +172,7 @@ var protobufCodecScenarios = map[string]struct {
 		expectedPayload: mimirpb.QueryResponse{
 			Status: mimirpb.QUERY_STATUS_SUCCESS,
 			Data: &mimirpb.QueryResponse_Vector{
-				Vector: &mimirpb.VectorData{
+				Vector: mimirpb.VectorData{
 					Samples: []mimirpb.VectorSample{
 						{
 							Metric:      []string{"name-1", "value-1"},
@@ -201,7 +201,7 @@ var protobufCodecScenarios = map[string]struct {
 		expectedPayload: mimirpb.QueryResponse{
 			Status: mimirpb.QUERY_STATUS_SUCCESS,
 			Data: &mimirpb.QueryResponse_Vector{
-				Vector: &mimirpb.VectorData{
+				Vector: mimirpb.VectorData{
 					Samples: []mimirpb.VectorSample{
 						{
 							Metric:      []string{"name-1", "value-1", "name-2", "value-2"},
@@ -235,7 +235,7 @@ var protobufCodecScenarios = map[string]struct {
 		expectedPayload: mimirpb.QueryResponse{
 			Status: mimirpb.QUERY_STATUS_SUCCESS,
 			Data: &mimirpb.QueryResponse_Vector{
-				Vector: &mimirpb.VectorData{
+				Vector: mimirpb.VectorData{
 					Samples: []mimirpb.VectorSample{
 						{
 							Metric:      []string{"name-1", "value-1", "name-2", "value-2"},
@@ -286,7 +286,7 @@ var protobufCodecScenarios = map[string]struct {
 		expectedPayload: mimirpb.QueryResponse{
 			Status: mimirpb.QUERY_STATUS_SUCCESS,
 			Data: &mimirpb.QueryResponse_Vector{
-				Vector: &mimirpb.VectorData{
+				Vector: mimirpb.VectorData{
 					Histograms: []mimirpb.VectorHistogram{
 						{
 							Metric:      []string{"name-1", "value-1"},
@@ -381,7 +381,7 @@ var protobufCodecScenarios = map[string]struct {
 		expectedPayload: mimirpb.QueryResponse{
 			Status: mimirpb.QUERY_STATUS_SUCCESS,
 			Data: &mimirpb.QueryResponse_Vector{
-				Vector: &mimirpb.VectorData{
+				Vector: mimirpb.VectorData{
 					Histograms: []mimirpb.VectorHistogram{
 						{
 							Metric:      []string{"name-1", "value-1"},
@@ -455,7 +455,7 @@ var protobufCodecScenarios = map[string]struct {
 		expectedPayload: mimirpb.QueryResponse{
 			Status: mimirpb.QUERY_STATUS_SUCCESS,
 			Data: &mimirpb.QueryResponse_Matrix{
-				Matrix: &mimirpb.MatrixData{},
+				Matrix: mimirpb.MatrixData{},
 			},
 		},
 	},
@@ -474,7 +474,7 @@ var protobufCodecScenarios = map[string]struct {
 		expectedPayload: mimirpb.QueryResponse{
 			Status: mimirpb.QUERY_STATUS_SUCCESS,
 			Data: &mimirpb.QueryResponse_Matrix{
-				Matrix: &mimirpb.MatrixData{
+				Matrix: mimirpb.MatrixData{
 					Series: []mimirpb.MatrixSeries{
 						{
 							Metric:  nil,
@@ -500,7 +500,7 @@ var protobufCodecScenarios = map[string]struct {
 		expectedPayload: mimirpb.QueryResponse{
 			Status: mimirpb.QUERY_STATUS_SUCCESS,
 			Data: &mimirpb.QueryResponse_Matrix{
-				Matrix: &mimirpb.MatrixData{
+				Matrix: mimirpb.MatrixData{
 					Series: []mimirpb.MatrixSeries{
 						{
 							Metric:  []string{"name-1", "value-1"},
@@ -526,7 +526,7 @@ var protobufCodecScenarios = map[string]struct {
 		expectedPayload: mimirpb.QueryResponse{
 			Status: mimirpb.QUERY_STATUS_SUCCESS,
 			Data: &mimirpb.QueryResponse_Matrix{
-				Matrix: &mimirpb.MatrixData{
+				Matrix: mimirpb.MatrixData{
 					Series: []mimirpb.MatrixSeries{
 						{
 							Metric:  []string{"name-1", "value-1", "name-2", "value-2"},
@@ -558,7 +558,7 @@ var protobufCodecScenarios = map[string]struct {
 		expectedPayload: mimirpb.QueryResponse{
 			Status: mimirpb.QUERY_STATUS_SUCCESS,
 			Data: &mimirpb.QueryResponse_Matrix{
-				Matrix: &mimirpb.MatrixData{
+				Matrix: mimirpb.MatrixData{
 					Series: []mimirpb.MatrixSeries{
 						{
 							Metric: []string{"name-1", "value-1", "name-2", "value-2"},
@@ -593,7 +593,7 @@ var protobufCodecScenarios = map[string]struct {
 		expectedPayload: mimirpb.QueryResponse{
 			Status: mimirpb.QUERY_STATUS_SUCCESS,
 			Data: &mimirpb.QueryResponse_Matrix{
-				Matrix: &mimirpb.MatrixData{
+				Matrix: mimirpb.MatrixData{
 					Series: []mimirpb.MatrixSeries{
 						{
 							Metric: []string{"name-1", "value-1", "name-2", "value-2"},
@@ -639,7 +639,7 @@ var protobufCodecScenarios = map[string]struct {
 		expectedPayload: mimirpb.QueryResponse{
 			Status: mimirpb.QUERY_STATUS_SUCCESS,
 			Data: &mimirpb.QueryResponse_Matrix{
-				Matrix: &mimirpb.MatrixData{
+				Matrix: mimirpb.MatrixData{
 					Series: []mimirpb.MatrixSeries{
 						{
 							Metric: []string{"name-1", "value-1"},
@@ -708,7 +708,7 @@ var protobufCodecScenarios = map[string]struct {
 		expectedPayload: mimirpb.QueryResponse{
 			Status: mimirpb.QUERY_STATUS_SUCCESS,
 			Data: &mimirpb.QueryResponse_Matrix{
-				Matrix: &mimirpb.MatrixData{
+				Matrix: mimirpb.MatrixData{
 					Series: []mimirpb.MatrixSeries{
 						{
 							Metric: []string{"name-1", "value-1", "name-2", "value-2"},
@@ -810,7 +810,7 @@ var protobufCodecScenarios = map[string]struct {
 		expectedPayload: mimirpb.QueryResponse{
 			Status: mimirpb.QUERY_STATUS_SUCCESS,
 			Data: &mimirpb.QueryResponse_Matrix{
-				Matrix: &mimirpb.MatrixData{
+				Matrix: mimirpb.MatrixData{
 					Series: []mimirpb.MatrixSeries{
 						{
 							Metric: []string{"name-1", "value-1", "name-2", "value-2"},
