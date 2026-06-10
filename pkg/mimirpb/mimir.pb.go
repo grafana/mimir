@@ -396,8 +396,6 @@ type WriteRequest struct {
 	// Unmarshal from Remote Write 2.0. if rw2symbols is not nil.
 	unmarshalFromRW2 bool
 	rw2symbols       rw2PagedSymbols
-
-	fieldsPresent [1]uint64
 }
 
 type WriteResponse struct {
@@ -407,8 +405,6 @@ type ErrorDetails struct {
 	Cause           ErrorCause `protobuf:"varint,1,opt,name=Cause,proto3,enum=cortexpb.ErrorCause" json:"Cause,omitempty"`
 	Soft            bool       `protobuf:"varint,2,opt,name=Soft,proto3" json:"Soft,omitempty"`
 	RejectedSamples int64      `protobuf:"varint,3,opt,name=RejectedSamples,proto3" json:"RejectedSamples,omitempty"`
-
-	fieldsPresent [1]uint64
 }
 
 // # DO NOT SHALLOW-COPY
@@ -435,23 +431,17 @@ type TimeSeries struct {
 
 	// Skip unmarshaling of exemplars.
 	SkipUnmarshalingExemplars bool
-
-	fieldsPresent [1]uint64
 }
 
 type LabelPair struct {
 	Name  []byte `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
 	Value []byte `protobuf:"bytes,2,opt,name=value,proto3" json:"value,omitempty"`
-
-	fieldsPresent [1]uint64
 }
 
 type Sample struct {
 	// Fields order MUST match promql.FPoint so that we can cast types between them.
 	TimestampMs int64   `protobuf:"varint,2,opt,name=timestamp_ms,json=timestampMs,proto3" json:"timestamp_ms,omitempty"`
 	Value       float64 `protobuf:"fixed64,1,opt,name=value,proto3" json:"value,omitempty"`
-	// Modified code: no fieldsPresent bitmap — this struct is unsafe-cast
-	// to/from a Prometheus type and must match its memory layout exactly.
 }
 
 type MetricMetadata struct {
@@ -459,8 +449,6 @@ type MetricMetadata struct {
 	MetricFamilyName string                    `protobuf:"bytes,2,opt,name=metric_family_name,json=metricFamilyName,proto3" json:"metric_family_name,omitempty"`
 	Help             string                    `protobuf:"bytes,4,opt,name=help,proto3" json:"help,omitempty"`
 	Unit             string                    `protobuf:"bytes,5,opt,name=unit,proto3" json:"unit,omitempty"`
-
-	fieldsPresent [1]uint64
 }
 
 type Metric struct {
@@ -472,8 +460,6 @@ type Exemplar struct {
 	Labels      []UnsafeMutableLabel `protobuf:"bytes,1,rep,name=labels,proto3" json:"labels,omitempty"`
 	Value       float64              `protobuf:"fixed64,2,opt,name=value,proto3" json:"value,omitempty"`
 	TimestampMs int64                `protobuf:"varint,3,opt,name=timestamp_ms,json=timestampMs,proto3" json:"timestamp_ms,omitempty"`
-
-	fieldsPresent [1]uint64
 }
 
 // This is based on https://github.com/prometheus/prometheus/blob/main/prompb/types.proto
@@ -511,8 +497,6 @@ type Histogram struct {
 	// Used only for converting from OpenTelemetry to Prometheus internally and
 	// to unmarshal Remote Write 2.0 messages.
 	CustomValues []float64 `protobuf:"fixed64,16,rep,packed,name=custom_values,json=customValues,proto3" json:"custom_values,omitempty"`
-
-	fieldsPresent [1]uint64
 }
 
 // FloatHistogram is based on https://github.com/prometheus/prometheus/blob/main/model/histogram/float_histogram.go.
@@ -533,8 +517,6 @@ type FloatHistogram struct {
 	PositiveBuckets  []float64                  `protobuf:"fixed64,13,rep,packed,name=positive_buckets,json=positiveBuckets,proto3" json:"positive_buckets,omitempty"`
 	NegativeBuckets  []float64                  `protobuf:"fixed64,10,rep,packed,name=negative_buckets,json=negativeBuckets,proto3" json:"negative_buckets,omitempty"`
 	CustomValues     []float64                  `protobuf:"fixed64,16,rep,packed,name=custom_values,json=customValues,proto3" json:"custom_values,omitempty"`
-	// Modified code: no fieldsPresent bitmap — this struct is unsafe-cast
-	// to/from a Prometheus type and must match its memory layout exactly.
 }
 
 // A BucketSpan defines a number of consecutive buckets with their
@@ -549,16 +531,12 @@ type FloatHistogram struct {
 type BucketSpan struct {
 	Offset int32  `protobuf:"zigzag32,1,opt,name=offset,proto3" json:"offset,omitempty"`
 	Length uint32 `protobuf:"varint,2,opt,name=length,proto3" json:"length,omitempty"`
-	// Modified code: no fieldsPresent bitmap — this struct is unsafe-cast
-	// to/from a Prometheus type and must match its memory layout exactly.
 }
 
 type FloatHistogramPair struct {
 	// Fields order MUST match promql.HPoint so that we can cast types between them.
 	TimestampMs int64           `protobuf:"varint,2,opt,name=timestamp_ms,json=timestampMs,proto3" json:"timestamp_ms,omitempty"`
 	Histogram   *FloatHistogram `protobuf:"bytes,1,opt,name=histogram,proto3" json:"histogram,omitempty"`
-	// Modified code: no fieldsPresent bitmap — this struct is unsafe-cast
-	// to/from a Prometheus type and must match its memory layout exactly.
 }
 
 // SampleHistogram is based on https://github.com/prometheus/common/blob/main/model/value_histogram.go
@@ -570,8 +548,6 @@ type SampleHistogram struct {
 	// Pointer shape ([]*HistogramBucket) matches model.SampleHistogram.Buckets
 	// for the unsafe cast in compat.go (gogoproto default nullability).
 	Buckets []*HistogramBucket `protobuf:"bytes,3,rep,name=buckets,proto3" json:"buckets,omitempty"`
-	// Modified code: no fieldsPresent bitmap — this struct is unsafe-cast
-	// to/from a Prometheus type and must match its memory layout exactly.
 }
 
 // Must keep the same order and type of fields for casting, see SampleHistogram
@@ -580,8 +556,6 @@ type HistogramBucket struct {
 	Lower      float64 `protobuf:"fixed64,2,opt,name=lower,proto3" json:"lower,omitempty"`
 	Upper      float64 `protobuf:"fixed64,3,opt,name=upper,proto3" json:"upper,omitempty"`
 	Count      float64 `protobuf:"fixed64,4,opt,name=count,proto3" json:"count,omitempty"`
-	// Modified code: no fieldsPresent bitmap — this struct is unsafe-cast
-	// to/from a Prometheus type and must match its memory layout exactly.
 }
 
 // Must keep the same order and type of fields for casting, see SampleHistogram
@@ -590,8 +564,6 @@ type SampleHistogramPair struct {
 	// Pointer shape (*SampleHistogram) matches model.SampleHistogramPair for
 	// the unsafe cast in compat.go (gogoproto default nullability).
 	Histogram *SampleHistogram `protobuf:"bytes,1,opt,name=histogram,proto3" json:"histogram,omitempty"`
-
-	fieldsPresent [1]uint64
 }
 
 type QueryResponse struct {
@@ -601,15 +573,11 @@ type QueryResponse struct {
 	Data      QueryResponse_Data `protobuf_oneof:"data"`
 	Warnings  []string           `protobuf:"bytes,8,rep,name=warnings,proto3" json:"warnings,omitempty"`
 	Infos     []string           `protobuf:"bytes,9,rep,name=infos,proto3" json:"infos,omitempty"`
-
-	fieldsPresent [1]uint64
 }
 
 type StringData struct {
 	Value       string `protobuf:"bytes,1,opt,name=value,proto3" json:"value,omitempty"`
 	TimestampMs int64  `protobuf:"varint,2,opt,name=timestamp_ms,json=timestampMs,proto3" json:"timestamp_ms,omitempty"`
-
-	fieldsPresent [1]uint64
 }
 
 type VectorData struct {
@@ -622,8 +590,6 @@ type VectorSample struct {
 	Metric      []string `protobuf:"bytes,1,rep,name=metric,proto3" json:"metric,omitempty"`
 	Value       float64  `protobuf:"fixed64,2,opt,name=value,proto3" json:"value,omitempty"`
 	TimestampMs int64    `protobuf:"varint,3,opt,name=timestamp_ms,json=timestampMs,proto3" json:"timestamp_ms,omitempty"`
-
-	fieldsPresent [1]uint64
 }
 
 type VectorHistogram struct {
@@ -631,15 +597,11 @@ type VectorHistogram struct {
 	Metric      []string       `protobuf:"bytes,1,rep,name=metric,proto3" json:"metric,omitempty"`
 	Histogram   FloatHistogram `protobuf:"bytes,2,opt,name=histogram,proto3" json:"histogram,omitempty"`
 	TimestampMs int64          `protobuf:"varint,3,opt,name=timestamp_ms,json=timestampMs,proto3" json:"timestamp_ms,omitempty"`
-
-	fieldsPresent [1]uint64
 }
 
 type ScalarData struct {
 	Value       float64 `protobuf:"fixed64,1,opt,name=value,proto3" json:"value,omitempty"`
 	TimestampMs int64   `protobuf:"varint,2,opt,name=timestamp_ms,json=timestampMs,proto3" json:"timestamp_ms,omitempty"`
-
-	fieldsPresent [1]uint64
 }
 
 type MatrixData struct {
@@ -695,8 +657,6 @@ type TimeSeriesRW2 struct {
 	// Zero value means value not set. If you need to use exactly zero value for
 	// the timestamp, use 1 millisecond before or after.
 	CreatedTimestamp int64 `protobuf:"varint,6,opt,name=created_timestamp,json=createdTimestamp,proto3" json:"created_timestamp,omitempty"`
-
-	fieldsPresent [1]uint64
 }
 
 type ExemplarRW2 struct {
@@ -713,8 +673,6 @@ type ExemplarRW2 struct {
 	// For Go, see github.com/prometheus/prometheus/model/timestamp/timestamp.go
 	// for conversion from/to time.Time to Prometheus timestamp.
 	Timestamp int64 `protobuf:"varint,3,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
-
-	fieldsPresent [1]uint64
 }
 
 type MetadataRW2 struct {
@@ -727,8 +685,6 @@ type MetadataRW2 struct {
 	// for the metric. Unit is optional, reference should point to an empty string in
 	// such a case.
 	UnitRef uint32 `protobuf:"varint,4,opt,name=unit_ref,json=unitRef,proto3" json:"unit_ref,omitempty"`
-
-	fieldsPresent [1]uint64
 }
 
 func (m *WriteRequest) Reset() {
@@ -1121,279 +1077,6 @@ func (m *MetadataRW2) String() string {
 		return "<nil>"
 	}
 	return fmt.Sprintf("%v", *m)
-}
-
-func (m *WriteRequest) HasSource() bool {
-	if m == nil {
-		return false
-	}
-	return m.fieldsPresent[0]&(1<<0) != 0
-}
-
-func (m *WriteRequest) HasSkipLabelValidation() bool {
-	if m == nil {
-		return false
-	}
-	return m.fieldsPresent[0]&(1<<1) != 0
-}
-
-func (m *WriteRequest) HasSkipLabelCountValidation() bool {
-	if m == nil {
-		return false
-	}
-	return m.fieldsPresent[0]&(1<<2) != 0
-}
-
-func (m *ErrorDetails) HasCause() bool {
-	if m == nil {
-		return false
-	}
-	return m.fieldsPresent[0]&(1<<0) != 0
-}
-
-func (m *ErrorDetails) HasSoft() bool {
-	if m == nil {
-		return false
-	}
-	return m.fieldsPresent[0]&(1<<1) != 0
-}
-
-func (m *ErrorDetails) HasRejectedSamples() bool {
-	if m == nil {
-		return false
-	}
-	return m.fieldsPresent[0]&(1<<2) != 0
-}
-
-func (m *TimeSeries) HasCreatedTimestamp() bool {
-	if m == nil {
-		return false
-	}
-	return m.fieldsPresent[0]&(1<<0) != 0
-}
-
-func (m *LabelPair) HasName() bool {
-	if m == nil {
-		return false
-	}
-	return m.fieldsPresent[0]&(1<<0) != 0
-}
-
-func (m *LabelPair) HasValue() bool {
-	if m == nil {
-		return false
-	}
-	return m.fieldsPresent[0]&(1<<1) != 0
-}
-
-func (m *MetricMetadata) HasType() bool {
-	if m == nil {
-		return false
-	}
-	return m.fieldsPresent[0]&(1<<0) != 0
-}
-
-func (m *MetricMetadata) HasMetricFamilyName() bool {
-	if m == nil {
-		return false
-	}
-	return m.fieldsPresent[0]&(1<<1) != 0
-}
-
-func (m *MetricMetadata) HasHelp() bool {
-	if m == nil {
-		return false
-	}
-	return m.fieldsPresent[0]&(1<<2) != 0
-}
-
-func (m *MetricMetadata) HasUnit() bool {
-	if m == nil {
-		return false
-	}
-	return m.fieldsPresent[0]&(1<<3) != 0
-}
-
-func (m *Exemplar) HasValue() bool {
-	if m == nil {
-		return false
-	}
-	return m.fieldsPresent[0]&(1<<0) != 0
-}
-
-func (m *Exemplar) HasTimestampMs() bool {
-	if m == nil {
-		return false
-	}
-	return m.fieldsPresent[0]&(1<<1) != 0
-}
-
-func (m *Histogram) HasSum() bool {
-	if m == nil {
-		return false
-	}
-	return m.fieldsPresent[0]&(1<<0) != 0
-}
-
-func (m *Histogram) HasSchema() bool {
-	if m == nil {
-		return false
-	}
-	return m.fieldsPresent[0]&(1<<1) != 0
-}
-
-func (m *Histogram) HasZeroThreshold() bool {
-	if m == nil {
-		return false
-	}
-	return m.fieldsPresent[0]&(1<<2) != 0
-}
-
-func (m *Histogram) HasResetHint() bool {
-	if m == nil {
-		return false
-	}
-	return m.fieldsPresent[0]&(1<<3) != 0
-}
-
-func (m *Histogram) HasTimestamp() bool {
-	if m == nil {
-		return false
-	}
-	return m.fieldsPresent[0]&(1<<4) != 0
-}
-
-func (m *SampleHistogramPair) HasTimestamp() bool {
-	if m == nil {
-		return false
-	}
-	return m.fieldsPresent[0]&(1<<0) != 0
-}
-
-func (m *QueryResponse) HasStatus() bool {
-	if m == nil {
-		return false
-	}
-	return m.fieldsPresent[0]&(1<<0) != 0
-}
-
-func (m *QueryResponse) HasErrorType() bool {
-	if m == nil {
-		return false
-	}
-	return m.fieldsPresent[0]&(1<<1) != 0
-}
-
-func (m *QueryResponse) HasError() bool {
-	if m == nil {
-		return false
-	}
-	return m.fieldsPresent[0]&(1<<2) != 0
-}
-
-func (m *StringData) HasValue() bool {
-	if m == nil {
-		return false
-	}
-	return m.fieldsPresent[0]&(1<<0) != 0
-}
-
-func (m *StringData) HasTimestampMs() bool {
-	if m == nil {
-		return false
-	}
-	return m.fieldsPresent[0]&(1<<1) != 0
-}
-
-func (m *VectorSample) HasValue() bool {
-	if m == nil {
-		return false
-	}
-	return m.fieldsPresent[0]&(1<<0) != 0
-}
-
-func (m *VectorSample) HasTimestampMs() bool {
-	if m == nil {
-		return false
-	}
-	return m.fieldsPresent[0]&(1<<1) != 0
-}
-
-func (m *VectorHistogram) HasHistogram() bool {
-	if m == nil {
-		return false
-	}
-	return m.fieldsPresent[0]&(1<<0) != 0
-}
-
-func (m *VectorHistogram) HasTimestampMs() bool {
-	if m == nil {
-		return false
-	}
-	return m.fieldsPresent[0]&(1<<1) != 0
-}
-
-func (m *ScalarData) HasValue() bool {
-	if m == nil {
-		return false
-	}
-	return m.fieldsPresent[0]&(1<<0) != 0
-}
-
-func (m *ScalarData) HasTimestampMs() bool {
-	if m == nil {
-		return false
-	}
-	return m.fieldsPresent[0]&(1<<1) != 0
-}
-
-func (m *TimeSeriesRW2) HasMetadata() bool {
-	if m == nil {
-		return false
-	}
-	return m.fieldsPresent[0]&(1<<0) != 0
-}
-
-func (m *TimeSeriesRW2) HasCreatedTimestamp() bool {
-	if m == nil {
-		return false
-	}
-	return m.fieldsPresent[0]&(1<<1) != 0
-}
-
-func (m *ExemplarRW2) HasValue() bool {
-	if m == nil {
-		return false
-	}
-	return m.fieldsPresent[0]&(1<<0) != 0
-}
-
-func (m *ExemplarRW2) HasTimestamp() bool {
-	if m == nil {
-		return false
-	}
-	return m.fieldsPresent[0]&(1<<1) != 0
-}
-
-func (m *MetadataRW2) HasType() bool {
-	if m == nil {
-		return false
-	}
-	return m.fieldsPresent[0]&(1<<0) != 0
-}
-
-func (m *MetadataRW2) HasHelpRef() bool {
-	if m == nil {
-		return false
-	}
-	return m.fieldsPresent[0]&(1<<1) != 0
-}
-
-func (m *MetadataRW2) HasUnitRef() bool {
-	if m == nil {
-		return false
-	}
-	return m.fieldsPresent[0]&(1<<2) != 0
 }
 
 func (m *WriteRequest) GetTimeseries() []PreallocTimeseries {
@@ -2007,7 +1690,7 @@ func (m *VectorHistogram) GetMetric() []string {
 }
 
 func (m *VectorHistogram) GetHistogram() *FloatHistogram {
-	if m != nil && m.fieldsPresent[0]&(1<<0) != 0 {
+	if m != nil {
 		return &m.Histogram
 	}
 	return nil
@@ -2105,7 +1788,7 @@ func (m *TimeSeriesRW2) GetExemplars() []ExemplarRW2 {
 }
 
 func (m *TimeSeriesRW2) GetMetadata() *MetadataRW2 {
-	if m != nil && m.fieldsPresent[0]&(1<<0) != 0 {
+	if m != nil {
 		return &m.Metadata
 	}
 	return nil
@@ -2623,8 +2306,6 @@ func (m *VectorHistogram) Size() int {
 		s := m.Histogram.Size()
 		if s > 0 {
 			n += 1 + protowire.SizeVarint(uint64(s)) + s
-		} else if m.fieldsPresent[0]&(1<<0) != 0 {
-			n += 2
 		}
 	}
 	if m.TimestampMs != 0 {
@@ -2721,8 +2402,6 @@ func (m *TimeSeriesRW2) Size() int {
 		s := m.Metadata.Size()
 		if s > 0 {
 			n += 1 + protowire.SizeVarint(uint64(s)) + s
-		} else if m.fieldsPresent[0]&(1<<0) != 0 {
-			n += 2
 		}
 	}
 	if m.CreatedTimestamp != 0 {
@@ -4101,11 +3780,6 @@ func (m *VectorHistogram) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
 			i--
 			dAtA[i] = 0x12
-		} else if m.fieldsPresent[0]&(1<<0) != 0 {
-			i--
-			dAtA[i] = 0
-			i--
-			dAtA[i] = 0x12
 		}
 	}
 	for iNdEx := len(m.Metric) - 1; iNdEx >= 0; iNdEx-- {
@@ -4353,11 +4027,6 @@ func (m *TimeSeriesRW2) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 		if size > 0 {
 			i -= size
 			i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
-			i--
-			dAtA[i] = 0x2a
-		} else if m.fieldsPresent[0]&(1<<0) != 0 {
-			i--
-			dAtA[i] = 0
 			i--
 			dAtA[i] = 0x2a
 		}
@@ -4798,7 +4467,6 @@ func (m *WriteRequest) unmarshal(dAtA []byte, depth int) error {
 				}
 			}
 			m.Source = WriteRequest_SourceEnum(v)
-			m.fieldsPresent[0] |= 1 << 0
 		case 3: // metadata
 			// Modified code: reject RW1 metadata in RW2 mode.
 			if m.unmarshalFromRW2 {
@@ -4998,7 +4666,6 @@ func (m *WriteRequest) unmarshal(dAtA []byte, depth int) error {
 				}
 			}
 			m.SkipLabelValidation = v != 0
-			m.fieldsPresent[0] |= 1 << 1
 		case 1001: // skip_label_count_validation
 			if wireType != 0 {
 				n, err := skipValue(dAtA[iNdEx:], wireType, fieldNum)
@@ -5027,7 +4694,6 @@ func (m *WriteRequest) unmarshal(dAtA []byte, depth int) error {
 				}
 			}
 			m.SkipLabelCountValidation = v != 0
-			m.fieldsPresent[0] |= 1 << 2
 		default:
 			n, err := skipValue(dAtA[iNdEx:], wireType, fieldNum)
 			if err != nil {
@@ -5183,7 +4849,6 @@ func (m *ErrorDetails) unmarshal(dAtA []byte, depth int) error {
 				}
 			}
 			m.Cause = ErrorCause(v)
-			m.fieldsPresent[0] |= 1 << 0
 		case 2: // Soft
 			if wireType != 0 {
 				n, err := skipValue(dAtA[iNdEx:], wireType, fieldNum)
@@ -5212,7 +4877,6 @@ func (m *ErrorDetails) unmarshal(dAtA []byte, depth int) error {
 				}
 			}
 			m.Soft = v != 0
-			m.fieldsPresent[0] |= 1 << 1
 		case 3: // RejectedSamples
 			if wireType != 0 {
 				n, err := skipValue(dAtA[iNdEx:], wireType, fieldNum)
@@ -5241,7 +4905,6 @@ func (m *ErrorDetails) unmarshal(dAtA []byte, depth int) error {
 				}
 			}
 			m.RejectedSamples = int64(v)
-			m.fieldsPresent[0] |= 1 << 2
 		default:
 			n, err := skipValue(dAtA[iNdEx:], wireType, fieldNum)
 			if err != nil {
@@ -5627,7 +5290,6 @@ func (m *TimeSeries) unmarshal(dAtA []byte, depth int) error {
 				}
 			}
 			m.CreatedTimestamp = int64(v)
-			m.fieldsPresent[0] |= 1 << 0
 		default:
 			n, err := skipValue(dAtA[iNdEx:], wireType, fieldNum)
 			if err != nil {
@@ -5731,7 +5393,6 @@ func (m *LabelPair) unmarshal(dAtA []byte, depth int) error {
 			}
 			m.Name = append(m.Name[:0], dAtA[iNdEx:postIndex]...)
 			iNdEx = postIndex
-			m.fieldsPresent[0] |= 1 << 0
 		case 2: // value
 			if wireType != 2 {
 				n, err := skipValue(dAtA[iNdEx:], wireType, fieldNum)
@@ -5777,7 +5438,6 @@ func (m *LabelPair) unmarshal(dAtA []byte, depth int) error {
 			}
 			m.Value = append(m.Value[:0], dAtA[iNdEx:postIndex]...)
 			iNdEx = postIndex
-			m.fieldsPresent[0] |= 1 << 1
 		default:
 			n, err := skipValue(dAtA[iNdEx:], wireType, fieldNum)
 			if err != nil {
@@ -5965,7 +5625,6 @@ func (m *MetricMetadata) unmarshal(dAtA []byte, depth int) error {
 				}
 			}
 			m.Type = MetricMetadata_MetricType(v)
-			m.fieldsPresent[0] |= 1 << 0
 		case 2: // metric_family_name
 			if wireType != 2 {
 				n, err := skipValue(dAtA[iNdEx:], wireType, fieldNum)
@@ -6011,7 +5670,6 @@ func (m *MetricMetadata) unmarshal(dAtA []byte, depth int) error {
 			}
 			m.MetricFamilyName = string(dAtA[iNdEx:postIndex])
 			iNdEx = postIndex
-			m.fieldsPresent[0] |= 1 << 1
 		case 4: // help
 			if wireType != 2 {
 				n, err := skipValue(dAtA[iNdEx:], wireType, fieldNum)
@@ -6057,7 +5715,6 @@ func (m *MetricMetadata) unmarshal(dAtA []byte, depth int) error {
 			}
 			m.Help = string(dAtA[iNdEx:postIndex])
 			iNdEx = postIndex
-			m.fieldsPresent[0] |= 1 << 2
 		case 5: // unit
 			if wireType != 2 {
 				n, err := skipValue(dAtA[iNdEx:], wireType, fieldNum)
@@ -6103,7 +5760,6 @@ func (m *MetricMetadata) unmarshal(dAtA []byte, depth int) error {
 			}
 			m.Unit = string(dAtA[iNdEx:postIndex])
 			iNdEx = postIndex
-			m.fieldsPresent[0] |= 1 << 3
 		default:
 			n, err := skipValue(dAtA[iNdEx:], wireType, fieldNum)
 			if err != nil {
@@ -6459,7 +6115,6 @@ func (m *Exemplar) unmarshal(dAtA []byte, depth int) error {
 			v := binary.LittleEndian.Uint64(dAtA[iNdEx:])
 			iNdEx += 8
 			m.Value = math.Float64frombits(v)
-			m.fieldsPresent[0] |= 1 << 0
 		case 3: // timestamp_ms
 			if wireType != 0 {
 				n, err := skipValue(dAtA[iNdEx:], wireType, fieldNum)
@@ -6488,7 +6143,6 @@ func (m *Exemplar) unmarshal(dAtA []byte, depth int) error {
 				}
 			}
 			m.TimestampMs = int64(v)
-			m.fieldsPresent[0] |= 1 << 1
 		default:
 			n, err := skipValue(dAtA[iNdEx:], wireType, fieldNum)
 			if err != nil {
@@ -6677,7 +6331,6 @@ func (m *Histogram) unmarshal(dAtA []byte, depth int) error {
 			v := binary.LittleEndian.Uint64(dAtA[iNdEx:])
 			iNdEx += 8
 			m.Sum = math.Float64frombits(v)
-			m.fieldsPresent[0] |= 1 << 0
 		case 4: // schema
 			if wireType != 0 {
 				n, err := skipValue(dAtA[iNdEx:], wireType, fieldNum)
@@ -6706,7 +6359,6 @@ func (m *Histogram) unmarshal(dAtA []byte, depth int) error {
 				}
 			}
 			m.Schema = int32(uint32(v)>>1) ^ int32(uint32(v))<<31>>31
-			m.fieldsPresent[0] |= 1 << 1
 		case 5: // zero_threshold
 			if wireType != 1 {
 				n, err := skipValue(dAtA[iNdEx:], wireType, fieldNum)
@@ -6722,7 +6374,6 @@ func (m *Histogram) unmarshal(dAtA []byte, depth int) error {
 			v := binary.LittleEndian.Uint64(dAtA[iNdEx:])
 			iNdEx += 8
 			m.ZeroThreshold = math.Float64frombits(v)
-			m.fieldsPresent[0] |= 1 << 2
 		case 6: // zero_count_int
 			if wireType != 0 {
 				n, err := skipValue(dAtA[iNdEx:], wireType, fieldNum)
@@ -7210,7 +6861,6 @@ func (m *Histogram) unmarshal(dAtA []byte, depth int) error {
 				}
 			}
 			m.ResetHint = Histogram_ResetHint(v)
-			m.fieldsPresent[0] |= 1 << 3
 		case 15: // timestamp
 			if wireType != 0 {
 				n, err := skipValue(dAtA[iNdEx:], wireType, fieldNum)
@@ -7239,7 +6889,6 @@ func (m *Histogram) unmarshal(dAtA []byte, depth int) error {
 				}
 			}
 			m.Timestamp = int64(v)
-			m.fieldsPresent[0] |= 1 << 4
 		case 16: // custom_values
 			if wireType == 2 {
 				var byteLen uint64
@@ -8500,7 +8149,6 @@ func (m *SampleHistogramPair) unmarshal(dAtA []byte, depth int) error {
 				}
 			}
 			m.Timestamp = int64(v)
-			m.fieldsPresent[0] |= 1 << 0
 		case 1: // histogram
 			if wireType != 2 {
 				n, err := skipValue(dAtA[iNdEx:], wireType, fieldNum)
@@ -8709,7 +8357,6 @@ func (m *QueryResponse) unmarshal(dAtA []byte, depth int) error {
 				}
 			}
 			m.Status = QueryStatus(v)
-			m.fieldsPresent[0] |= 1 << 0
 		case 2: // error_type
 			if wireType != 0 {
 				n, err := skipValue(dAtA[iNdEx:], wireType, fieldNum)
@@ -8738,7 +8385,6 @@ func (m *QueryResponse) unmarshal(dAtA []byte, depth int) error {
 				}
 			}
 			m.ErrorType = QueryErrorType(v)
-			m.fieldsPresent[0] |= 1 << 1
 		case 3: // error
 			if wireType != 2 {
 				n, err := skipValue(dAtA[iNdEx:], wireType, fieldNum)
@@ -8784,7 +8430,6 @@ func (m *QueryResponse) unmarshal(dAtA []byte, depth int) error {
 			}
 			m.Error = string(dAtA[iNdEx:postIndex])
 			iNdEx = postIndex
-			m.fieldsPresent[0] |= 1 << 2
 		case 4: // string
 			if wireType != 2 {
 				n, err := skipValue(dAtA[iNdEx:], wireType, fieldNum)
@@ -9186,7 +8831,6 @@ func (m *StringData) unmarshal(dAtA []byte, depth int) error {
 			}
 			m.Value = string(dAtA[iNdEx:postIndex])
 			iNdEx = postIndex
-			m.fieldsPresent[0] |= 1 << 0
 		case 2: // timestamp_ms
 			if wireType != 0 {
 				n, err := skipValue(dAtA[iNdEx:], wireType, fieldNum)
@@ -9215,7 +8859,6 @@ func (m *StringData) unmarshal(dAtA []byte, depth int) error {
 				}
 			}
 			m.TimestampMs = int64(v)
-			m.fieldsPresent[0] |= 1 << 1
 		default:
 			n, err := skipValue(dAtA[iNdEx:], wireType, fieldNum)
 			if err != nil {
@@ -9623,7 +9266,6 @@ func (m *VectorSample) unmarshal(dAtA []byte, depth int) error {
 			v := binary.LittleEndian.Uint64(dAtA[iNdEx:])
 			iNdEx += 8
 			m.Value = math.Float64frombits(v)
-			m.fieldsPresent[0] |= 1 << 0
 		case 3: // timestamp_ms
 			if wireType != 0 {
 				n, err := skipValue(dAtA[iNdEx:], wireType, fieldNum)
@@ -9652,7 +9294,6 @@ func (m *VectorSample) unmarshal(dAtA []byte, depth int) error {
 				}
 			}
 			m.TimestampMs = int64(v)
-			m.fieldsPresent[0] |= 1 << 1
 		default:
 			n, err := skipValue(dAtA[iNdEx:], wireType, fieldNum)
 			if err != nil {
@@ -9866,7 +9507,6 @@ func (m *VectorHistogram) unmarshal(dAtA []byte, depth int) error {
 				return err
 			}
 			iNdEx = postIndex
-			m.fieldsPresent[0] |= 1 << 0
 		case 3: // timestamp_ms
 			if wireType != 0 {
 				n, err := skipValue(dAtA[iNdEx:], wireType, fieldNum)
@@ -9895,7 +9535,6 @@ func (m *VectorHistogram) unmarshal(dAtA []byte, depth int) error {
 				}
 			}
 			m.TimestampMs = int64(v)
-			m.fieldsPresent[0] |= 1 << 1
 		default:
 			n, err := skipValue(dAtA[iNdEx:], wireType, fieldNum)
 			if err != nil {
@@ -9969,7 +9608,6 @@ func (m *ScalarData) unmarshal(dAtA []byte, depth int) error {
 			v := binary.LittleEndian.Uint64(dAtA[iNdEx:])
 			iNdEx += 8
 			m.Value = math.Float64frombits(v)
-			m.fieldsPresent[0] |= 1 << 0
 		case 2: // timestamp_ms
 			if wireType != 0 {
 				n, err := skipValue(dAtA[iNdEx:], wireType, fieldNum)
@@ -9998,7 +9636,6 @@ func (m *ScalarData) unmarshal(dAtA []byte, depth int) error {
 				}
 			}
 			m.TimestampMs = int64(v)
-			m.fieldsPresent[0] |= 1 << 1
 		default:
 			n, err := skipValue(dAtA[iNdEx:], wireType, fieldNum)
 			if err != nil {
