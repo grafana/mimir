@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package queue
+package scheduler
 
 import (
 	"sync"
@@ -13,6 +13,17 @@ type QueryComponent string
 const (
 	StoreGateway QueryComponent = "store-gateway"
 	Ingester     QueryComponent = "ingester"
+)
+
+// Queue-dimension labels the scheduler attaches to enqueued requests.
+// The underlying queue treats these as opaque strings;
+// they're defined here so SchedulerRequest.ExpectedQueryComponentName and queryComponentFlags can agree on the same vocabulary.
+// The "unknown" bucket is owned by the queue (it routes empty dimensions there),
+// so we reference queue.UnknownDimension directly rather than redeclaring the literal.
+const (
+	ingesterQueueDimension                = "ingester"
+	storeGatewayQueueDimension            = "store-gateway"
+	ingesterAndStoreGatewayQueueDimension = "ingester-and-store-gateway"
 )
 
 // queryComponentFlags interprets annotations by the frontend for the expected query component,
@@ -32,8 +43,9 @@ func queryComponentFlags(queryComponentName string) (isIngester, isStoreGateway 
 	return isIngester, isStoreGateway
 }
 
-// QueryComponentUtilization tracks requests from the time they are forwarded to a querier
-// to the time are completed by the querier or failed due to cancel, timeout, or disconnect.
+// QueryComponentUtilization tracks requests
+// from the time they are forwarded to a querier
+// to the time they are completed by the querier or failed due to cancel, timeout, or disconnect.
 // Unlike the Scheduler's schedulerInflightRequests, tracking begins only when the request is sent to a querier.
 //
 // Scheduler-Querier inflight requests are broken out by the query component flags,
@@ -42,7 +54,8 @@ func queryComponentFlags(queryComponentName string) (isIngester, isStoreGateway 
 // therefore the sum of inflight requests by component is likely to exceed the inflight requests total.
 type QueryComponentUtilization struct {
 	inflightRequestsMu sync.RWMutex
-	// inflightRequests tracks requests from the time the request was successfully sent to a querier
+	// inflightRequests tracks requests
+	// from the time the request was successfully sent to a querier
 	// to the time the request was completed by the querier or failed due to cancel, timeout, or disconnect.
 	inflightRequests             map[RequestKey]*SchedulerRequest
 	ingesterInflightRequests     int

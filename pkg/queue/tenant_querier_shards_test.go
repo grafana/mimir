@@ -14,7 +14,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/scheduler/queue/tree"
+	"github.com/grafana/mimir/pkg/queue/tree"
 )
 
 func TestShuffleQueriers(t *testing.T) {

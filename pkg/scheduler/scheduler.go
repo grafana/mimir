@@ -40,7 +40,7 @@ import (
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/querierpb" //lint:ignore faillint we can't avoid using this given that's where the Protobuf definition lives
-	"github.com/grafana/mimir/pkg/scheduler/queue"
+	"github.com/grafana/mimir/pkg/queue"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerdiscovery"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
 	"github.com/grafana/mimir/pkg/util"
@@ -71,7 +71,7 @@ type Scheduler struct {
 	inflightRequestsMu sync.Mutex
 	// schedulerInflightRequests tracks requests from the time they are received to be enqueued by the scheduler
 	// to the time they are completed by the querier or failed due to cancel, timeout, or disconnect.
-	schedulerInflightRequests     map[queue.RequestKey]*queue.SchedulerRequest
+	schedulerInflightRequests     map[RequestKey]*SchedulerRequest
 	schedulerInflightRequestCount *atomic.Int64
 
 	// The ring is used to let other components discover query-scheduler replicas.
@@ -135,7 +135,7 @@ func NewScheduler(cfg Config, limits Limits, log log.Logger, registerer promethe
 		log:    log,
 		limits: limits,
 
-		schedulerInflightRequests:     map[queue.RequestKey]*queue.SchedulerRequest{},
+		schedulerInflightRequests:     map[RequestKey]*SchedulerRequest{},
 		schedulerInflightRequestCount: atomic.NewInt64(0),
 		connectedFrontends:            map[string]*connectedFrontend{},
 		subservicesWatcher:            services.NewFailureWatcher(),
@@ -310,7 +310,7 @@ func (s *Scheduler) FrontendLoop(frontend schedulerpb.SchedulerForFrontend_Front
 
 			enqueueSpan.End()
 		case schedulerpb.CANCEL:
-			requestKey := queue.NewSchedulerRequestKey(frontendAddress, msg.QueryID)
+			requestKey := NewSchedulerRequestKey(frontendAddress, msg.QueryID)
 			schedulerReq := s.cancelRequestAndRemoveFromPending(requestKey, "frontend cancelled query")
 			// we may not have reached MarkRequestSent for this query before receiving the cancel,
 			// but RequestQueue will just no-op if the request was not yet tracked in the inflightRequests map.
@@ -382,7 +382,7 @@ func (s *Scheduler) enqueueRequest(requestContext context.Context, frontendAddr 
 
 	userID := msg.GetUserID()
 
-	req := &queue.SchedulerRequest{
+	req := &SchedulerRequest{
 		FrontendAddr:              frontendAddr,
 		UserID:                    msg.UserID,
 		QueryID:                   msg.QueryID,
@@ -413,7 +413,7 @@ func (s *Scheduler) enqueueRequest(requestContext context.Context, frontendAddr 
 	})
 }
 
-func (s *Scheduler) addRequestToPending(req *queue.SchedulerRequest) {
+func (s *Scheduler) addRequestToPending(req *SchedulerRequest) {
 	s.inflightRequestsMu.Lock()
 	defer s.inflightRequestsMu.Unlock()
 
@@ -422,7 +422,7 @@ func (s *Scheduler) addRequestToPending(req *queue.SchedulerRequest) {
 }
 
 // This method doesn't do removal from the queue.
-func (s *Scheduler) cancelRequestAndRemoveFromPending(key queue.RequestKey, reason string) *queue.SchedulerRequest {
+func (s *Scheduler) cancelRequestAndRemoveFromPending(key RequestKey, reason string) *SchedulerRequest {
 	s.inflightRequestsMu.Lock()
 	defer s.inflightRequestsMu.Unlock()
 
@@ -482,7 +482,7 @@ func (s *Scheduler) QuerierLoop(querier schedulerpb.SchedulerForQuerier_QuerierL
 
 		lastTenantIdx = idx
 
-		schedulerReq := queryReq.(*queue.SchedulerRequest)
+		schedulerReq := queryReq.(*SchedulerRequest)
 
 		queueTime := time.Since(schedulerReq.EnqueueTime)
 		additionalQueueDimensionLabels := strings.Join(schedulerReq.AdditionalQueueDimensions, ":")
@@ -527,7 +527,7 @@ func (s *Scheduler) NotifyQuerierShutdown(ctx context.Context, req *schedulerpb.
 	return &schedulerpb.NotifyQuerierShutdownResponse{}, nil
 }
 
-func (s *Scheduler) forwardRequestToQuerier(querier schedulerpb.SchedulerForQuerier_QuerierLoopServer, querierID string, req *queue.SchedulerRequest, queueTime time.Duration) error {
+func (s *Scheduler) forwardRequestToQuerier(querier schedulerpb.SchedulerForQuerier_QuerierLoopServer, querierID string, req *SchedulerRequest, queueTime time.Duration) error {
 	s.queue.MarkRequestSent(req)
 	defer s.queue.MarkRequestCompleted(req)
 	defer s.cancelRequestAndRemoveFromPending(req.Key(), "request complete")
@@ -612,7 +612,7 @@ func (s *Scheduler) forwardRequestToQuerier(querier schedulerpb.SchedulerForQuer
 	}
 }
 
-func (s *Scheduler) forwardErrorToFrontend(ctx context.Context, req *queue.SchedulerRequest, requestErr error) {
+func (s *Scheduler) forwardErrorToFrontend(ctx context.Context, req *SchedulerRequest, requestErr error) {
 	opts, err := s.cfg.GRPCClientConfig.DialOption(
 		[]grpc.UnaryClientInterceptor{
 			middleware.ClientUserHeaderInterceptor,

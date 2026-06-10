@@ -13,11 +13,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/grafana/dskit/httpgrpc"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/scheduler/queue/tree"
+	"github.com/grafana/mimir/pkg/queue/tree"
 )
 
 func (qb *queueBroker) enqueueObjectsForTests(tenantID string, numObjects int) error {
@@ -209,16 +208,13 @@ func TestQueuesRespectMaxTenantQueueSizeWithSubQueues(t *testing.T) {
 	maxTenantQueueSize := 100
 	qb := newQueueBroker(maxTenantQueueSize, 0)
 	additionalQueueDimensions := map[int][]string{
-		0: {unknownQueueDimension},
+		0: {UnknownDimension},
 		1: {ingesterQueueDimension},
 		2: {storeGatewayQueueDimension},
 		3: {ingesterAndStoreGatewayQueueDimension},
 	}
-	req := &SchedulerRequest{
-		Ctx:          context.Background(),
-		FrontendAddr: "http://query-frontend:8007",
-		UserID:       "tenant-1",
-		HttpRequest:  &httpgrpc.HTTPRequest{},
+	req := &testQueryRequest{
+		UserID: "tenant-1",
 	}
 
 	// build queue evenly with either no additional queue dimension or one of 3 additional dimensions
@@ -252,7 +248,7 @@ func TestQueuesRespectMaxTenantQueueSizeWithSubQueues(t *testing.T) {
 	for _, v := range additionalQueueDimensions {
 		var checkPath tree.QueuePath
 		if v == nil {
-			v = []string{unknownQueueDimension}
+			v = []string{UnknownDimension}
 		}
 		checkPath = append(append(checkPath, v...), "tenant-1")
 
@@ -744,7 +740,7 @@ func (qb *queueBroker) removeTenantQueue(tenantID string) bool {
 }
 
 func (qb *queueBroker) makeQueuePathForTests(tenantID string) tree.QueuePath {
-	return tree.QueuePath{unknownQueueDimension, tenantID}
+	return tree.QueuePath{UnknownDimension, tenantID}
 }
 
 func isConsistent(qb *queueBroker) error {

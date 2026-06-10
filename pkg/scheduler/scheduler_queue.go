@@ -12,7 +12,7 @@ import (
 	"github.com/grafana/dskit/tenant"
 	"github.com/prometheus/client_golang/prometheus"
 
-	"github.com/grafana/mimir/pkg/scheduler/queue"
+	"github.com/grafana/mimir/pkg/queue"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -26,7 +26,7 @@ type schedulerQueue struct {
 	services.Service
 
 	queue                     *queue.RequestQueue
-	queryComponentUtilization *queue.QueryComponentUtilization
+	queryComponentUtilization *QueryComponentUtilization
 	limits                    Limits
 
 	subservicesWatcher *services.FailureWatcher
@@ -53,7 +53,7 @@ func newSchedulerQueue(
 		return nil, err
 	}
 
-	qcu, err := queue.NewQueryComponentUtilization(querierInflightRequestsMetric)
+	qcu, err := NewQueryComponentUtilization(querierInflightRequestsMetric)
 	if err != nil {
 		return nil, err
 	}
@@ -105,7 +105,7 @@ func (sq *schedulerQueue) stopping(_ error) error {
 
 // Enqueue submits a SchedulerRequest, deriving the queue dimension from the
 // request itself and the per-tenant max-queriers from the configured Limits.
-func (sq *schedulerQueue) Enqueue(req *queue.SchedulerRequest, successFn func()) error {
+func (sq *schedulerQueue) Enqueue(req *SchedulerRequest, successFn func()) error {
 	tenantIDs, err := tenant.TenantIDsFromOrgID(req.UserID)
 	if err != nil {
 		return err
@@ -140,12 +140,12 @@ func (sq *schedulerQueue) IsEmpty() bool {
 
 // MarkRequestSent reports the request was forwarded to a querier so the
 // QueryComponentUtilization sidecar starts counting it as inflight.
-func (sq *schedulerQueue) MarkRequestSent(req *queue.SchedulerRequest) {
+func (sq *schedulerQueue) MarkRequestSent(req *SchedulerRequest) {
 	sq.queryComponentUtilization.MarkRequestSent(req)
 }
 
 // MarkRequestCompleted reports the request was completed or cancelled so the
 // QueryComponentUtilization sidecar stops counting it as inflight.
-func (sq *schedulerQueue) MarkRequestCompleted(req *queue.SchedulerRequest) {
+func (sq *schedulerQueue) MarkRequestCompleted(req *SchedulerRequest) {
 	sq.queryComponentUtilization.MarkRequestCompleted(req)
 }
