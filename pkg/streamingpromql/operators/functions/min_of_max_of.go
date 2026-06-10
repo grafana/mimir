@@ -111,7 +111,7 @@ func (m *ScalarMinMax) GetValues(ctx context.Context) (types.ScalarData, error) 
 		return types.ScalarData{}, err
 	}
 
-	defer types.FPointSlicePool.Put(&val2.Samples, m.memoryConsumptionTracker)
+	// Note that we aren't cleaning up val2 since we use it for our return value.
 
 	if len(val1.Samples) != m.timeRange.StepCount {
 		return types.ScalarData{}, fmt.Errorf("unexpected number of samples in first argument. expected %d, got %d", m.timeRange.StepCount, len(val1.Samples))
@@ -121,17 +121,9 @@ func (m *ScalarMinMax) GetValues(ctx context.Context) (types.ScalarData, error) 
 		return types.ScalarData{}, fmt.Errorf("unexpected number of samples in second argument. expected %d, got %d", m.timeRange.StepCount, len(val2.Samples))
 	}
 
-	samples, err := types.FPointSlicePool.Get(m.timeRange.StepCount, m.memoryConsumptionTracker)
-	if err != nil {
-		return types.ScalarData{}, err
-	}
-
-	samples = samples[:m.timeRange.StepCount]
-
 	for step := 0; step < m.timeRange.StepCount; step++ {
-		samples[step].T = m.timeRange.StartT + int64(step)*m.timeRange.IntervalMilliseconds
-		samples[step].F = m.cmp(val1.Samples[step].F, val2.Samples[step].F)
+		val2.Samples[step].F = m.cmp(val1.Samples[step].F, val2.Samples[step].F)
 	}
 
-	return types.ScalarData{Samples: samples}, nil
+	return val2, nil
 }
