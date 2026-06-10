@@ -2192,4 +2192,4 @@ sigs.k8s.io/yaml
 # github.com/munnerz/goautoneg => github.com/grafana/goautoneg v0.0.0-20240607115440-f335c04c58ce
 # github.com/opentracing-contrib/go-grpc => github.com/charleskorn/go-grpc v0.0.0-20231024023642-e9298576254f
 # github.com/prometheus/otlptranslator => github.com/grafana/mimir-otlptranslator v0.0.0-20251017074411-ea1e8f863e1d
-# github.com/grafana/wiresmith => /Users/oleg-kozlyuk/Projects/wiresmith/wiresmith
+# github.com/grafana/wiresmith => /Users/oleg-kozlyuk/Projects/wiresmith/wiresmith-databases
