@@ -20,10 +20,15 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kfake"
+	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
 	"github.com/twmb/franz-go/pkg/sasl"
 	awssasl "github.com/twmb/franz-go/pkg/sasl/aws"
 	"github.com/twmb/franz-go/pkg/sasl/oauth"
+	"go.opentelemetry.io/otel"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+	"go.opentelemetry.io/otel/trace"
 )
 
 func TestMSKIAMCredentials(t *testing.T) {
@@ -421,4 +426,156 @@ func serveSecretFromSocket(t *testing.T, secret any) string {
 	t.Cleanup(func() { _ = server.Close() })
 
 	return socketPath
+}
+
+// setupTestTracerProvider installs a global TracerProvider with a parent-based
+// sampler and a span recorder, restoring the previous provider on cleanup.
+// Tests using it must not run in parallel because the provider is global.
+func setupTestTracerProvider(t testing.TB) *tracetest.SpanRecorder {
+	recorder := tracetest.NewSpanRecorder()
+	tp := sdktrace.NewTracerProvider(
+		sdktrace.WithSpanProcessor(recorder),
+		sdktrace.WithSampler(sdktrace.ParentBased(sdktrace.AlwaysSample())),
+	)
+	prev := otel.GetTracerProvider()
+	otel.SetTracerProvider(tp)
+	t.Cleanup(func() {
+		otel.SetTracerProvider(prev)
+		_ = tp.Shutdown(t.Context())
+	})
+	return recorder
+}
+
+// fetchRecordWithTraceparent returns a fetched record carrying a traceparent
+// header with the given trace ID and sampled flag, as injected by a producer.
+func fetchRecordWithTraceparent(traceID string, sampled bool) *kgo.Record {
+	flags := "00"
+	if sampled {
+		flags = "01"
+	}
+	return &kgo.Record{
+		Topic: "test-topic",
+		Headers: []kgo.RecordHeader{
+			{Key: "traceparent", Value: []byte("00-" + traceID + "-00f067aa0ba902b7-" + flags)},
+		},
+	}
+}
+
+func TestSampledOnlyTracer_FetchHooks(t *testing.T) {
+	const traceID = "4bf92f3577b34da6a3ce929d0e0e4736"
+
+	t.Run("unsampled record: context carries the remote span context, no span is created", func(t *testing.T) {
+		recorder := setupTestTracerProvider(t)
+		tracer := newSampledOnlyTracer()
+
+		rec := fetchRecordWithTraceparent(traceID, false)
+		tracer.OnFetchRecordBuffered(rec)
+
+		require.NotNil(t, rec.Context)
+		sc := trace.SpanContextFromContext(rec.Context)
+		assert.Equal(t, traceID, sc.TraceID().String())
+		assert.False(t, sc.IsSampled())
+		assert.True(t, sc.IsRemote())
+		assert.Empty(t, recorder.Started())
+
+		tracer.OnFetchRecordUnbuffered(rec, true)
+		assert.Empty(t, recorder.Ended())
+	})
+
+	t.Run("sampled record: a receive span is created and ended", func(t *testing.T) {
+		recorder := setupTestTracerProvider(t)
+		tracer := newSampledOnlyTracer()
+
+		rec := fetchRecordWithTraceparent(traceID, true)
+		tracer.OnFetchRecordBuffered(rec)
+
+		require.Len(t, recorder.Started(), 1)
+		span := recorder.Started()[0]
+		assert.Equal(t, "test-topic receive", span.Name())
+		assert.Equal(t, traceID, span.Parent().TraceID().String())
+		assert.True(t, trace.SpanContextFromContext(rec.Context).IsSampled())
+
+		tracer.OnFetchRecordUnbuffered(rec, true)
+		require.Len(t, recorder.Ended(), 1)
+	})
+
+	t.Run("record without trace headers: context is set, no span is created", func(t *testing.T) {
+		recorder := setupTestTracerProvider(t)
+		tracer := newSampledOnlyTracer()
+
+		rec := &kgo.Record{Topic: "test-topic"}
+		tracer.OnFetchRecordBuffered(rec)
+
+		require.NotNil(t, rec.Context)
+		assert.False(t, trace.SpanContextFromContext(rec.Context).IsValid())
+		assert.Empty(t, recorder.Started())
+
+		tracer.OnFetchRecordUnbuffered(rec, true)
+		assert.Empty(t, recorder.Ended())
+	})
+}
+
+func TestSampledOnlyTracer_ProduceHooks(t *testing.T) {
+	t.Run("unsampled context: no span is created", func(t *testing.T) {
+		recorder := setupTestTracerProvider(t)
+		tracer := newSampledOnlyTracer()
+
+		rec := &kgo.Record{Topic: "test-topic", Context: trace.ContextWithSpanContext(t.Context(), trace.NewSpanContext(trace.SpanContextConfig{
+			TraceID:    trace.TraceID{1},
+			SpanID:     trace.SpanID{1},
+			TraceFlags: 0,
+			Remote:     true,
+		}))}
+		tracer.OnProduceRecordBuffered(rec)
+		assert.Empty(t, recorder.Started())
+
+		tracer.OnProduceRecordUnbuffered(rec, nil)
+		assert.Empty(t, recorder.Ended())
+	})
+
+	t.Run("sampled context: a publish span is created and ended", func(t *testing.T) {
+		recorder := setupTestTracerProvider(t)
+		tracer := newSampledOnlyTracer()
+
+		ctx, parent := otel.Tracer("test").Start(t.Context(), "request")
+		defer parent.End()
+
+		rec := &kgo.Record{Topic: "test-topic", Context: ctx}
+		tracer.OnProduceRecordBuffered(rec)
+		require.Len(t, recorder.Started(), 2) // "request" + the publish span.
+		assert.Equal(t, "test-topic publish", recorder.Started()[1].Name())
+
+		tracer.OnProduceRecordUnbuffered(rec, nil)
+		require.Len(t, recorder.Ended(), 1)
+	})
+}
+
+// BenchmarkFetchRecordTracing compares the per-record fetch-hook cost for
+// unsampled traces (the overwhelmingly common case in production) between the
+// gated sampledOnlyTracer and the raw kotel tracer it wraps.
+func BenchmarkFetchRecordTracing(b *testing.B) {
+	const traceID = "4bf92f3577b34da6a3ce929d0e0e4736"
+	setupTestTracerProvider(b)
+
+	b.Run("sampledOnlyTracer unsampled", func(b *testing.B) {
+		tracer := newSampledOnlyTracer()
+		rec := fetchRecordWithTraceparent(traceID, false)
+		b.ReportAllocs()
+		for b.Loop() {
+			rec.Context = b.Context()
+			tracer.OnFetchRecordBuffered(rec)
+			tracer.OnFetchRecordUnbuffered(rec, true)
+		}
+	})
+
+	b.Run("kotel unsampled", func(b *testing.B) {
+		tracer := recordsTracer()
+		rec := fetchRecordWithTraceparent(traceID, false)
+		b.ReportAllocs()
+		for b.Loop() {
+			rec.Context = b.Context()
+			tracer.OnFetchRecordBuffered(rec)
+			tracer.OnFetchRecordUnbuffered(rec, true)
+		}
+	})
 }
