@@ -239,6 +239,59 @@ func TestDistributor_GetReadcacheReplicationSetsForQuery_Interval(t *testing.T) 
 		got := resolvedPartitions(t, d, mt(now.Add(-90*time.Minute)), mt(now))
 		assert.Equal(t, []int32{1}, got)
 	})
+
+	// Regression test: every LeaseDuration the rebalancer pre-issues
+	// successor leases LeaseLookahead before rotation. A tenant with a
+	// large OOO window used to push w1 = to + oooWindow far into the
+	// future, picking up a pre-issued lease that moves a range to a
+	// partition whose readcache assignment isn't live yet; OwnersDuring
+	// then resolved nothing and every query hard-failed with "partition
+	// N had no readcache owner during the query window" until the lease
+	// activated. The wall-clock window must be clamped to the present:
+	// ownership in the future can't hold data this query could see.
+	t.Run("pre-issued future lease to an ownerless partition must not fail the query", func(t *testing.T) {
+		d := &Distributor{
+			now: func() time.Time { return now },
+			limits: validation.NewOverrides(validation.Limits{
+				QueryIngestersWithin: model.Duration(13 * time.Hour),
+				// 30d OOO window: w1 would reach a month into the
+				// future without the clamp.
+				OutOfOrderTimeWindow: model.Duration(30 * 24 * time.Hour),
+			}, nil),
+		}
+		d.nautilusLog.Store(assignment.NewLogFromEntries([]assignment.LogEntry{
+			// P1 owns the keyspace now; the rebalancer has pre-issued
+			// a successor lease moving it to brand-new P2 in 90s.
+			{Range: full, PartitionID: 1, From: now.Add(-time.Hour), To: now.Add(90 * time.Second)},
+			{Range: full, PartitionID: 2, From: now.Add(90 * time.Second), To: now.Add(90*time.Second + 5*time.Minute)},
+		}))
+		// The readcache log knows nothing about P2 yet.
+		d.readcacheLog.Store(readcacheassignment.NewLogFromEntries([]readcacheassignment.LogEntry{
+			{PartitionID: 1, InstanceID: "rc-b", From: now.Add(-time.Hour), To: now.Add(5 * time.Minute)},
+		}))
+
+		got := resolvedPartitions(t, d, mt(now.Add(-15*time.Minute)), mt(now))
+		assert.Equal(t, []int32{1}, got, "only the current owner must be queried; the future lease holds no data yet")
+	})
+
+	t.Run("lease activated at this exact instant is still routable", func(t *testing.T) {
+		// The clamp is now+1ms because the log lookups use half-open
+		// intersection (From < w1): a ceiling of exactly now would
+		// exclude a lease with From == now.
+		d := &Distributor{
+			now:    func() time.Time { return now },
+			limits: validation.NewOverrides(validation.Limits{}, nil),
+		}
+		d.nautilusLog.Store(assignment.NewLogFromEntries([]assignment.LogEntry{
+			{Range: full, PartitionID: 0, From: now, To: now.Add(5 * time.Minute)},
+		}))
+		d.readcacheLog.Store(readcacheassignment.NewLogFromEntries([]readcacheassignment.LogEntry{
+			{PartitionID: 0, InstanceID: "rc-a", From: now, To: now.Add(5 * time.Minute)},
+		}))
+
+		got := resolvedPartitions(t, d, mt(now), mt(now))
+		assert.Equal(t, []int32{0}, got)
+	})
 }
 
 // TestDistributor_QueryClientForInstance_NautilusNoIngesterFallback

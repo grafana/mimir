@@ -370,12 +370,29 @@ func (d *Distributor) getReadcacheReplicationSetsForQuery(userID string, from, t
 	// to+oooWindow]. Clamp the lower bound to now-queryIngestersWithin:
 	// readcache holds nothing older, and the querier already clamps the
 	// request range to the same horizon.
+	// The log lookups use half-open intersection (lease matches iff
+	// From < w1), while w1 is meant to be the last wallclock instant a
+	// relevant write could land, inclusive. Add one millisecond (model.
+	// Time resolution) so a lease starting exactly at that instant is
+	// matched.
 	w0 := from.Time().Add(-d.limits.CreationGracePeriod(userID))
-	w1 := to.Time().Add(d.limits.OutOfOrderTimeWindow(userID))
+	w1 := to.Time().Add(d.limits.OutOfOrderTimeWindow(userID)).Add(time.Millisecond)
 	if qiw := d.limits.QueryIngestersWithin(userID); qiw > 0 {
 		if floor := now.Add(-qiw); w0.Before(floor) {
 			w0 = floor
 		}
+	}
+	// Clamp the upper bound to the present: samples written after this
+	// instant cannot be visible to this query, so ownership beyond the
+	// present is irrelevant to routing. Without the clamp, a large OOO
+	// window pushes w1 far into the future and picks up the successor
+	// leases the rebalancer pre-issues LeaseLookahead before each
+	// rotation; when such a lease moves a range to a partition whose
+	// readcache assignment isn't live yet, OwnersDuring comes up empty
+	// and the query hard-fails for the length of the lookahead, every
+	// round.
+	if ceil := now.Add(time.Millisecond); w1.After(ceil) {
+		w1 = ceil
 	}
 
 	var partitionIDs []int32
