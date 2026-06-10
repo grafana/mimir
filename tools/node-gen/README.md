@@ -8,11 +8,12 @@ top of `planning.Node`.
 
 # Supported generators
 
-| Method                                        | Description                                                      |
-| --------------------------------------------- | ---------------------------------------------------------------- |
-| `Child(idx int) planning.Node`                | Returns the child at the given index.                            |
-| `ChildCount() int`                            | Returns the number of children.                                  |
-| `SetChildren(children []planning.Node) error` | Sets all children at once, validating the count and child types. |
+| Method                                             | Description                                                           |
+| -------------------------------------------------- | --------------------------------------------------------------------- |
+| `Child(idx int) planning.Node`                     | Returns the child at the given index.                                 |
+| `ChildCount() int`                                 | Returns the number of children.                                       |
+| `SetChildren(children []planning.Node) error`      | Sets all children at once, validating the count and child types.      |
+| `ReplaceChild(idx int, child planning.Node) error` | Replaces the child at the given index, validating the index and type. |
 
 # How to opt a struct in
 
