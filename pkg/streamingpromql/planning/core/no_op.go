@@ -3,7 +3,6 @@
 package core
 
 import (
-	"fmt"
 	"time"
 
 	"github.com/gogo/protobuf/proto"
@@ -30,10 +29,6 @@ func (n *NoOp) Details() proto.Message {
 
 func (n *NoOp) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_NO_OP
-}
-
-func (n *NoOp) ReplaceChild(idx int, _ planning.Node) error {
-	return fmt.Errorf("node of type NoOp supports no children, but attempted to replace child at index %d", idx)
 }
 
 func (n *NoOp) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {

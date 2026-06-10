@@ -66,19 +66,6 @@ func (a *AggregateExpression) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_AGGREGATE_EXPRESSION
 }
 
-func (a *AggregateExpression) ReplaceChild(idx int, node planning.Node) error {
-	switch idx {
-	case 0:
-		a.Inner = node
-		return nil
-	case 1:
-		a.Param = node
-		return nil
-	default:
-		return fmt.Errorf("node of type AggregateExpression expects 1 or 2 children, but attempted to replace child at index %d", idx)
-	}
-}
-
 func (a *AggregateExpression) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
 	otherAggregateExpression, ok := other.(*AggregateExpression)
 

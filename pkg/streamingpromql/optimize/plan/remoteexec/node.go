@@ -42,15 +42,6 @@ func (r *RemoteExecutionGroup) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_REMOTE_EXEC_GROUP
 }
 
-func (r *RemoteExecutionGroup) ReplaceChild(idx int, node planning.Node) error {
-	if idx >= len(r.Nodes) {
-		panic(fmt.Sprintf("this RemoteExecutionGroup node has %d children, but attempted to replace child at index %d", len(r.Nodes), idx))
-	}
-
-	r.Nodes[idx] = node
-	return nil
-}
-
 func (r *RemoteExecutionGroup) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
 	_, ok := other.(*RemoteExecutionGroup)
 
@@ -124,20 +115,6 @@ func (c *RemoteExecutionConsumer) Details() proto.Message {
 
 func (c *RemoteExecutionConsumer) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_REMOTE_EXEC_CONSUMER
-}
-
-func (c *RemoteExecutionConsumer) ReplaceChild(idx int, child planning.Node) error {
-	if idx != 0 {
-		return fmt.Errorf("node of type RemoteExecutionConsumer supports 1 child, but attempted to replace child at index %d", idx)
-	}
-
-	group, ok := child.(*RemoteExecutionGroup)
-	if !ok {
-		return fmt.Errorf("node of type RemoteExecutionConsumer requires child of type RemoteExecutionGroup, but got %T", child)
-	}
-
-	c.Group = group
-	return nil
 }
 
 func (c *RemoteExecutionConsumer) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
