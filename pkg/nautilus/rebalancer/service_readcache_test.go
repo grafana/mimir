@@ -120,3 +120,44 @@ func TestReadcacheLogStore_SubscribeAfterApplyReturnsLiveEntries(t *testing.T) {
 	assert.Len(t, initial, 1,
 		"after first apply, subscribe must return the current live snapshot as initial")
 }
+
+// TestReadcacheLogStore_SubscribeIncludesRetainedHistory asserts that
+// expired-but-retained leases are handed to subscribers. The
+// distributor resolves "which readcache owned partition P during the
+// query's wall-clock window", so the previous owner's expired lease is
+// load-bearing: without it, queries spanning a partition move can't
+// find the readcache holding the frozen slice, and any window bound
+// that lands before the latest rotation reports "partition P had no
+// readcache owner during the query window".
+func TestReadcacheLogStore_SubscribeIncludesRetainedHistory(t *testing.T) {
+	s := newReadcacheLogStore()
+	t0 := time.Unix(1000, 0)
+
+	// rc-a owns partition 0; its lease expires after one minute.
+	require.True(t, s.apply(t0, &readcacheassignment.Assignment{
+		Entries: []readcacheassignment.AssignmentEntry{
+			{PartitionID: 0, InstanceID: "rc-a"},
+		},
+	}, time.Minute, 10*time.Second, time.Hour, 0))
+
+	// Thirty minutes later (well past rc-a's lease, well within the
+	// 1h retention) the partition moves to rc-b.
+	t1 := t0.Add(30 * time.Minute)
+	require.True(t, s.apply(t1, &readcacheassignment.Assignment{
+		Entries: []readcacheassignment.AssignmentEntry{
+			{PartitionID: 0, InstanceID: "rc-b"},
+		},
+	}, time.Minute, 10*time.Second, time.Hour, 0))
+
+	initial, _, unsubscribe := s.subscribe(t1)
+	defer unsubscribe()
+
+	var sawExpired bool
+	for _, e := range initial {
+		if e.InstanceID == "rc-a" && !e.To.After(t1) {
+			sawExpired = true
+		}
+	}
+	assert.True(t, sawExpired,
+		"subscribe must include the previous owner's expired-but-retained lease")
+}

@@ -75,12 +75,18 @@ func newLogStore() *logStore {
 // Only when the lookahead window catches up does Apply append a new
 // successor and trigger a broadcast.
 //
-// The broadcast snapshot only contains live entries (To > at):
-// expired entries can never be returned by Lookup at any t >= at,
-// so omitting them keeps the gRPC message size proportional to the
-// active+pre-issued tile count rather than the full retention
-// window. The unfiltered log is still available to admin views and
-// (in future) queriers via snapshot().
+// The broadcast snapshot contains the full retention-bounded log,
+// history included, NOT just the live entries. The write path only
+// needs leases covering `now`, but the distributor's read path
+// resolves partitions over the query's whole wall-clock window
+// (getReadcacheReplicationSetsForQuery): expired leases are exactly
+// what tells it which partitions held a hash range earlier in the
+// window, and which readcache holds a frozen slice from before a
+// move. Shipping live entries only amputates that history and makes
+// post-rotation queries resolve no partitions (or no owners) for any
+// window bound that lands before the latest rotation. EntryRetention
+// bounds the snapshot size; it must exceed the querier's lookback
+// (QueryIngestersWithin), which the flag documents.
 func (s *logStore) apply(at time.Time, next *assignment.Assignment, leaseDuration, lookahead, retention time.Duration) bool {
 	s.mu.Lock()
 	changed := s.log.Apply(at, next, leaseDuration, lookahead)
@@ -100,7 +106,7 @@ func (s *logStore) apply(at time.Time, next *assignment.Assignment, leaseDuratio
 		s.mu.Unlock()
 		return false
 	}
-	snap := s.log.LiveEntries(at)
+	snap := s.log.Entries()
 	if changed && s.persistFn != nil {
 		// Persist while still holding the mutex so a concurrent
 		// subscribe()'s initial snapshot can't see a state that
@@ -180,17 +186,18 @@ func (s *logStore) latestActiveAssignment(at time.Time) *assignment.Assignment {
 // empty" based solely on stale persisted entries whose leases
 // already expired during the restart window.
 //
-// Expired entries are omitted from both the initial snapshot and
-// subsequent broadcasts: a fresh subscriber can never use them and
-// including them would inflate the gRPC message by the full
-// retention window's worth of history.
+// Expired-but-retained entries are included in both the initial
+// snapshot and subsequent broadcasts: the distributor's read path
+// resolves ownership over the query's wall-clock window, so it needs
+// the history, not just the leases covering `now`. See the apply()
+// comment.
 //
 // The caller MUST invoke unsubscribe when finished.
-func (s *logStore) subscribe(at time.Time) (initial []assignment.LogEntry, updates <-chan []assignment.LogEntry, unsubscribe func()) {
+func (s *logStore) subscribe(_ time.Time) (initial []assignment.LogEntry, updates <-chan []assignment.LogEntry, unsubscribe func()) {
 	sub := &subscription{ch: make(chan []assignment.LogEntry, 1)}
 	s.mu.Lock()
 	if s.ready {
-		initial = s.log.LiveEntries(at)
+		initial = s.log.Entries()
 	}
 	s.subscribers[sub] = struct{}{}
 	s.mu.Unlock()

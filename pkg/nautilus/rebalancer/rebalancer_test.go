@@ -769,43 +769,47 @@ func TestLogStore_SubscribeAfterApplyReturnsLiveEntries(t *testing.T) {
 		"after first apply, subscribe must return the current live snapshot as initial")
 }
 
-func TestLogStore_SubscribeOmitsExpiredEntries(t *testing.T) {
+// TestLogStore_SubscribeIncludesRetainedHistory asserts that
+// subscribers receive the full retention-bounded log, history
+// included. The distributor's read path resolves partition ownership
+// over the query's wall-clock window, so expired leases are
+// load-bearing: omitting them makes any query window bound that lands
+// before the latest rotation resolve no partitions (or no readcache
+// owners). Only entries beyond EntryRetention may be dropped.
+func TestLogStore_SubscribeIncludesRetainedHistory(t *testing.T) {
 	s := newLogStore()
 	t1 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 
 	// Round 1: install a tiling. Use a short lease so the entries
-	// can be expired by the time we subscribe.
+	// are expired (but retained) by the time we subscribe.
 	a := assignment.EvenSplit([]int32{0, 1})
 	require.True(t, s.apply(t1, a, time.Minute, 10*time.Second, time.Hour))
 	require.Len(t, s.snapshot(), len(a.Entries))
 
-	// Round 2 well past the lease horizon: a fresh tiling appended
-	// for new ranges. The first round's entries are now expired
-	// but still retained in the log (Prune retention is 1h).
-	t2 := t1.Add(time.Hour)
+	// Round 2 well past the lease horizon but within retention: the
+	// round-1 entries (To = t1+1m) are expired at t2 yet must still
+	// be handed to subscribers.
+	t2 := t1.Add(30 * time.Minute)
 	require.True(t, s.apply(t2, a, time.Minute, 10*time.Second, time.Hour))
 	full := s.snapshot()
 	require.Greater(t, len(full), len(a.Entries),
 		"unfiltered snapshot must include both rounds")
 
-	// subscribe at t2 must hand back only the live entries from
-	// round 2; the round-1 entries (To = t1+1m) are expired at t2.
 	initial, _, unsubscribe := s.subscribe(t2)
 	defer unsubscribe()
 
-	require.Len(t, initial, len(a.Entries),
-		"subscribe must omit entries whose lease ended before at")
-	for _, e := range initial {
-		assert.True(t, e.To.After(t2),
-			"every entry returned to subscriber must have To > at; got %v <= %v", e.To, t2)
-	}
+	require.Len(t, initial, len(full),
+		"subscribe must return the full retained log, expired entries included")
 }
 
-func TestLogStore_BroadcastOmitsExpiredEntries(t *testing.T) {
+// TestLogStore_BroadcastIncludesRetainedHistoryAndHonoursRetention
+// asserts the broadcast counterpart of the above, and that pruning by
+// EntryRetention still bounds what subscribers receive.
+func TestLogStore_BroadcastIncludesRetainedHistoryAndHonoursRetention(t *testing.T) {
 	s := newLogStore()
 	t1 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 
-	// Subscribe before any apply so we can observe the broadcast.
+	// Subscribe before any apply so we can observe the broadcasts.
 	_, updates, unsubscribe := s.subscribe(t1)
 	defer unsubscribe()
 
@@ -818,20 +822,39 @@ func TestLogStore_BroadcastOmitsExpiredEntries(t *testing.T) {
 		t.Fatal("did not receive round-1 broadcast")
 	}
 
-	// Round 2 well past the round-1 lease horizon.
-	t2 := t1.Add(time.Hour)
+	// Round 2 past the round-1 lease horizon but within retention:
+	// the broadcast must still carry the expired round-1 entries.
+	t2 := t1.Add(30 * time.Minute)
 	require.True(t, s.apply(t2, a, time.Minute, 10*time.Second, time.Hour))
-
+	expired := 0
 	select {
 	case snap := <-updates:
 		require.NotEmpty(t, snap)
-		// Every entry in the broadcast must be live at t2.
 		for _, e := range snap {
-			assert.True(t, e.To.After(t2),
-				"broadcast included expired entry: %+v at=%v", e, t2)
+			if !e.To.After(t2) {
+				expired++
+			}
 		}
+		require.NotZero(t, expired,
+			"round-2 broadcast must include the expired-but-retained round-1 entries")
 	case <-time.After(time.Second):
 		t.Fatal("did not receive round-2 broadcast")
+	}
+
+	// Round 3 beyond round 1's retention horizon: Prune drops the
+	// round-1 entries (To = t1+1m < t3-1h), so the broadcast may not
+	// grow without bound.
+	t3 := t1.Add(2 * time.Hour)
+	require.True(t, s.apply(t3, a, time.Minute, 10*time.Second, time.Hour))
+	select {
+	case snap := <-updates:
+		require.NotEmpty(t, snap)
+		for _, e := range snap {
+			assert.False(t, e.To.Before(t3.Add(-time.Hour)),
+				"broadcast included an entry past the retention horizon: %+v", e)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("did not receive round-3 broadcast")
 	}
 }
 

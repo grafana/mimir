@@ -457,17 +457,17 @@ func (r *Rebalancer) nextRoundDelay(now time.Time) time.Duration {
 }
 
 // WatchAssignments implements NautilusRebalancerServer. It sends
-// the live entries (active leases plus pre-issued successors) of
-// the assignment log immediately on connect and then a fresh
-// live-entry snapshot on every subsequent rebalance round that
-// mutates the log (i.e. every round that pre-issues a successor
-// lease, preempts an active lease, or creates a new lease for a
-// reassignment). Expired entries are not transmitted: a fresh
-// subscriber can never use them, and including them would make the
-// gRPC message proportional to the full retention window
-// (currently 24h) rather than the active+successor working set.
-// The store conflates updates so a slow subscriber sees only the
-// most recent snapshot.
+// the full retention-bounded assignment log (expired entries, active
+// leases, and pre-issued successors) immediately on connect and then
+// a fresh snapshot on every subsequent rebalance round that mutates
+// the log (i.e. every round that pre-issues a successor lease,
+// preempts an active lease, or creates a new lease for a
+// reassignment). Expired-but-retained entries are load-bearing for
+// the distributor's read path, which resolves partition ownership
+// over a query's wall-clock window rather than at `now`; the gRPC
+// message size is bounded by EntryRetention, which must exceed the
+// querier's lookback (QueryIngestersWithin). The store conflates
+// updates so a slow subscriber sees only the most recent snapshot.
 //
 // If the rebalancer has not yet completed its first apply() the
 // initial Send is skipped; the subscriber waits on the updates
@@ -507,8 +507,8 @@ func (r *Rebalancer) WatchAssignments(_ *WatchAssignmentsRequest, stream Nautilu
 // WatchReadcacheAssignments is the readcache-side analogue of
 // WatchAssignments: instead of (hash range -> ingester partition) it
 // streams (Kafka partition -> readcache instance) leases. The wire
-// contract is identical (snapshot on connect, conflated updates,
-// only live entries transmitted). The same first-apply gate applies:
+// contract is identical (full retention-bounded snapshot on connect,
+// conflated updates). The same first-apply gate applies:
 // the initial Send is skipped until the readcache log has been
 // touched by apply() at least once (cold start, regular slicer
 // round, or admin reset), so a rebalancer restart never broadcasts

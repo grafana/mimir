@@ -65,7 +65,11 @@ func (s *readcacheLogStore) apply(at time.Time, next *readcacheassignment.Assign
 		s.mu.Unlock()
 		return false
 	}
-	snap := s.log.LiveEntries(at)
+	// Full retention-bounded snapshot, history included: the
+	// distributor's read path needs expired leases to resolve which
+	// readcache holds a frozen slice from before a partition move.
+	// See logStore.apply.
+	snap := s.log.Entries()
 	if changed && s.persistFn != nil {
 		if err := s.persistFn(snap); err != nil && s.logger != nil {
 			level.Error(s.logger).Log("msg", "failed to persist readcache assignment log", "err", err)
@@ -126,11 +130,11 @@ func (s *readcacheLogStore) activeEntries(at time.Time) []readcacheassignment.Lo
 // that prevents a freshly-restarted rebalancer from broadcasting a
 // stale-but-expired persisted log as the authoritative "you own
 // nothing" snapshot. See logStore.subscribe for the full rationale.
-func (s *readcacheLogStore) subscribe(at time.Time) (initial []readcacheassignment.LogEntry, updates <-chan []readcacheassignment.LogEntry, unsubscribe func()) {
+func (s *readcacheLogStore) subscribe(_ time.Time) (initial []readcacheassignment.LogEntry, updates <-chan []readcacheassignment.LogEntry, unsubscribe func()) {
 	sub := &readcacheSubscription{ch: make(chan []readcacheassignment.LogEntry, 1)}
 	s.mu.Lock()
 	if s.ready {
-		initial = s.log.LiveEntries(at)
+		initial = s.log.Entries()
 	}
 	s.subscribers[sub] = struct{}{}
 	s.mu.Unlock()
