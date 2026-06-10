@@ -1,0 +1,187 @@
+// wiresmith custom field options.
+//
+// Import this file from any user .proto to opt into wiresmith-specific code
+// shape attributes. The wiresmith CLI embeds this file and serves it from the
+// canonical import path "wiresmith/options.proto", so users do not need to
+// vendor it into their proto tree.
+syntax = "proto2";
+
+package wiresmith.options;
+
+import "google/protobuf/descriptor.proto";
+
+extend google.protobuf.FieldOptions {
+  // pointer = true emits the field as a Go pointer type:
+  //   - singular `message Foo` field -> *Foo
+  //   - repeated `message Foo` field -> []*Foo
+  //
+  // The on-wire format is unchanged. This is a compatibility shim for
+  // codebases that expect protoc-gen-go / gogoproto(nullable=true) shape.
+  //
+  // Only valid on singular or repeated message fields. Combining with the
+  // proto3 `optional` keyword is an error (optional already produces a
+  // pointer). See compiler/generator/option_pointer.go for the full
+  // validation list.
+  optional bool pointer = 50030;
+
+  // jsontag replaces the default `json:"..."` struct tag value on the
+  // generated Go field. The value is taken verbatim — including any
+  // `,omitempty` — so callers can match an existing JSON wire contract.
+  //
+  //   string block_id = 1 [(wiresmith.options.jsontag) = "blockID"];
+  //   //  ->  BlockId string `protobuf:"..." json:"blockID"`
+  //
+  // The on-wire protobuf format is unchanged. Valid on every field kind
+  // (scalar, message, repeated, map, oneof variant). Backticks are
+  // rejected because they would terminate the surrounding raw-string
+  // struct tag. See compiler/generator/option_jsontag.go.
+  optional string jsontag = 50031;
+
+  // customtype replaces the generated Go field type with a user-supplied
+  // type that owns its own wire encoding.
+  //
+  //   bytes  label_pairs = 1 [(wiresmith.options.customtype) = "github.com/foo/bar.LabelPairs"];
+  //   //  ->  LabelPairs bar.LabelPairs `protobuf:"..."`
+  //
+  // The user's type must implement the wiresmith CustomMarshaler interface
+  // (SizeWiresmith / MarshalWiresmith / UnmarshalWiresmith / EqualWiresmith
+  // / CompareWiresmith). Wire format is unchanged — the field still occupies
+  // the same field number and is encoded length-delimited.
+  //
+  // v1 scope: only valid on singular `bytes` and `string` fields (no map,
+  // oneof, repeated, optional, or message fields). The value is formatted as
+  // either "import/path.TypeName" (the import is registered automatically
+  // with an explicit, collision-free alias derived from the path base, so the
+  // user's directory name need not match the package's `package` declaration)
+  // or just "TypeName" when the user-supplied type lives in the same Go
+  // package as the generated code.
+  optional string customtype = 50032;
+
+  // customname overrides the generated Go field name and all derived
+  // method names (Get<Name>, Has<Name>, oneof wrapper-struct field). Used
+  // to preserve initialisms like "ID" / "URL" that the default
+  // snake_case -> PascalCase conversion mangles to "Id" / "Url".
+  //
+  //   string block_id = 1 [(wiresmith.options.customname) = "BlockID"];
+  //   //  ->  BlockID string `protobuf:"..."`
+  //   //      func (m *Foo) GetBlockID() string { ... }
+  //
+  // Wire format is unchanged. The wrapper type name for oneof variants is
+  // NOT renamed — it stays Foo_<ProtoFieldName> so type identity is
+  // anchored to the schema, not the Go API surface.
+  //
+  // Applies to every field kind. Values must be valid exported Go
+  // identifiers (start with an uppercase letter). See
+  // compiler/generator/option_customname.go.
+  optional string customname = 50033;
+
+  // stdtime = true emits a `google.protobuf.Timestamp` field as a stdlib
+  // `time.Time` value instead of a generated `*Timestamp` message:
+  //
+  //   google.protobuf.Timestamp created = 1 [(wiresmith.options.stdtime) = true];
+  //   //  -> Created time.Time `protobuf:"..."`
+  //
+  // The on-wire format is unchanged — the value is still encoded as a
+  // length-delimited Timestamp sub-message with int64 seconds (field 1) and
+  // int32 nanos (field 2). Decoded times are normalised to UTC because UTC is
+  // the canonical protobuf Timestamp timezone.
+  //
+  // Presence semantics follow gogoproto's stdtime: the Go zero `time.Time{}`
+  // (January 1, year 1 UTC) is treated as "not set" and skipped on marshal.
+  // The Unix epoch (1970-01-01, `time.Unix(0, 0).UTC()`) is *not* the same
+  // value as `time.Time{}` and round-trips as an explicit empty Timestamp
+  // payload.
+  //
+  // v1 scope: only valid on singular `google.protobuf.Timestamp` fields.
+  // Map, oneof, repeated, optional, and (wiresmith.options.pointer) are
+  // rejected — they need separate plumbing and are tracked in follow-up beads.
+  optional bool stdtime = 50034;
+
+  // stdduration = true emits a `google.protobuf.Duration` field as a stdlib
+  // `time.Duration` value instead of a generated `*Duration` message:
+  //
+  //   google.protobuf.Duration lookback = 1 [(wiresmith.options.stdduration) = true];
+  //   //  -> Lookback time.Duration `protobuf:"..."`
+  //
+  // The on-wire format is unchanged — the value is still encoded as a
+  // length-delimited Duration sub-message with int64 seconds (field 1) and
+  // int32 nanos (field 2).
+  //
+  // Presence semantics: the Go zero `time.Duration(0)` is treated as "not
+  // set" and skipped on marshal — matching proto3 default-suppression for
+  // the underlying submessage. A wire payload with seconds=0 nanos=0
+  // (explicit zero) decodes to `time.Duration(0)`, indistinguishable from
+  // an absent field. If you need to distinguish "explicit zero" from
+  // "unset", store presence alongside the duration.
+  //
+  // Overflow on decode saturates to math.MaxInt64 / math.MinInt64 nanos —
+  // proto Duration can express up to ~10000 years while time.Duration tops
+  // out at ~292 years (int64 nanoseconds).
+  //
+  // v1 scope: only valid on singular `google.protobuf.Duration` fields.
+  // Map, oneof, repeated, optional, and (wiresmith.options.pointer) are
+  // rejected — same shape as stdtime.
+  optional bool stdduration = 50035;
+
+  // casttype = "MyAlias" overrides the generated Go field type name
+  // without changing the wire encoding. The wire-level kind stays exactly
+  // what the proto declares; only the Go-side type is renamed:
+  //
+  //   int64 user_id = 1 [(wiresmith.options.casttype) = "github.com/myapp/pkg.UserID"];
+  //   //  -> UserID pkg.UserID `protobuf:"..."`
+  //
+  // The aliased Go type must be a `type X = Underlying` (alias) or
+  // `type X Underlying` (defined type) over the proto field's natural Go
+  // shape. Both forms work because casttype only affects the
+  // declaration; the marshal/unmarshal hot path inserts conversions to
+  // bridge MyAlias and the underlying kind.
+  //
+  // Unlike (wiresmith.options.customtype), casttype does NOT require the
+  // user type to implement any wiresmith interface — the standard scalar
+  // marshal/unmarshal/equal/compare code is reused with a cast at each
+  // boundary.
+  //
+  // v1 scope: integer scalars (int32/int64/uint32/uint64/sint32/sint64/
+  // fixed*/sfixed*), bool, string, bytes. Float/double, enum, message,
+  // map, oneof, and proto3 `optional` are rejected — float/double need
+  // bit-cast handling (math.Float*bits) at every emit site which v1 does
+  // not implement; the rest are filed as follow-up beads if a real use
+  // case surfaces.
+  optional string casttype = 50036;
+}
+
+extend google.protobuf.MessageOptions {
+  // no_presence = true omits the fieldsPresent bitmap from this message's
+  // generated struct.
+  //
+  // By default wiresmith tracks wire-presence of singular value-typed
+  // fields in a `fieldsPresent [N]uint64` bitmap, which powers Has<F>()
+  // and lets a present-but-empty nested message survive a round-trip.
+  // The bitmap changes the struct's memory layout, which matters when
+  // consumer code relies on layout compatibility with hand-written types
+  // (e.g. unsafe slice casts between generated and domain types) or
+  // compares structs with reflect.DeepEqual.
+  //
+  // With no_presence = true:
+  //   - the struct contains exactly the declared fields (gogoproto
+  //     `nullable=false` layout parity);
+  //   - Has<F>() is not emitted for bitmap-tracked fields (proto3
+  //     `optional` fields keep their nil-check Has<F>());
+  //   - a present-but-empty nested message marshals to nothing — absent
+  //     and empty are indistinguishable, exactly like gogoproto
+  //     value-type fields;
+  //   - Get<MsgField>() returns &m.Field unconditionally instead of
+  //     consulting the bitmap.
+  //
+  // Applies to this message only — nested message declarations need
+  // their own annotation (or use no_presence_all).
+  optional bool no_presence = 50040;
+}
+
+extend google.protobuf.FileOptions {
+  // no_presence_all applies (wiresmith.options.no_presence) to every
+  // message in the file, including nested ones. A per-message
+  // no_presence value (true or false) overrides the file default —
+  // same override layering as gogoproto's *_all options.
+  optional bool no_presence_all = 50041;
+}

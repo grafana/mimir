@@ -179,7 +179,7 @@ print-supported-os-arch: ## Print supported OS/arch combinations for dist.
 
 # We don't want find to scan inside a bunch of directories, to accelerate the
 # 'make: Entering directory '/go/src/github.com/grafana/mimir' phase.
-DONT_FIND := -name vendor -prune -o -name .git -prune -o -name .cache -prune -o -name .pkg -prune -o -name packaging -prune -o -name mimir-mixin-tools -prune -o -name trafficdump -prune -o
+DONT_FIND := -name vendor -prune -o -name proto-include -prune -o -name .git -prune -o -name .cache -prune -o -name .pkg -prune -o -name packaging -prune -o -name mimir-mixin-tools -prune -o -name trafficdump -prune -o
 
 # MAKE_FILES is a list of make files to lint.
 # We purposefully avoid MAKEFILES as a variable name as it influences
@@ -214,7 +214,10 @@ PROTO_WIRESMITH_GOS := \
 	pkg/mimirpb/mimir_reflect.pb.go \
 	pkg/distributor/ha_tracker_compare.pb.go \
 	pkg/distributor/ha_tracker_equal.pb.go \
-	pkg/distributor/ha_tracker_reflect.pb.go
+	pkg/distributor/ha_tracker_reflect.pb.go \
+	pkg/querier/stats/stats_compare.pb.go \
+	pkg/querier/stats/stats_equal.pb.go \
+	pkg/querier/stats/stats_reflect.pb.go
 
 # Packages containing //node:generate-annotated structs, and the corresponding
 # generated files. Discovered at make-parse time.
@@ -383,9 +386,31 @@ else
 	@echo "If this is unexpected, check if the last modified timestamps on the outputs and $< are correct."
 endif
 
+# pkg/querier/stats/stats.proto is compiled by wiresmith (staged like
+# ha_tracker.proto above). It is still imported by gogo-compiled protos
+# (querierpb, querymiddleware model, frontendv2pb); protoc resolves the
+# wiresmith/options.proto import via ./proto-include.
+pkg/querier/stats/stats.pb.go \
+pkg/querier/stats/stats_compare.pb.go \
+pkg/querier/stats/stats_equal.pb.go \
+pkg/querier/stats/stats_reflect.pb.go &: pkg/querier/stats/stats.proto
+ifeq ($(GENERATE_FILES),true)
+	rm -rf .wiresmith-staging && mkdir -p .wiresmith-staging/in
+	cp pkg/querier/stats/stats.proto .wiresmith-staging/in/
+	cd .wiresmith-staging && wiresmith --proto_path=in --out=out --module=github.com/grafana/mimir
+	mv .wiresmith-staging/out/stats/stats.pb.go pkg/querier/stats/stats.pb.go
+	mv .wiresmith-staging/out/stats/stats_compare.pb.go pkg/querier/stats/stats_compare.pb.go
+	mv .wiresmith-staging/out/stats/stats_equal.pb.go pkg/querier/stats/stats_equal.pb.go
+	mv .wiresmith-staging/out/stats/stats_reflect.pb.go pkg/querier/stats/stats_reflect.pb.go
+	rm -rf .wiresmith-staging
+else
+	@echo "Warning: generating files has been disabled, but the following files need to be regenerated: $@"
+	@echo "If this is unexpected, check if the last modified timestamps on the outputs and $< are correct."
+endif
+
 %.pb.go: %.proto
 ifeq ($(GENERATE_FILES),true)
-	protoc -I $(GOPATH)/src:./vendor/github.com/gogo/protobuf:./vendor:./$(@D):./pkg/storegateway/storepb --gogoslick_out=plugins=grpc,Mgoogle/protobuf/any.proto=github.com/gogo/protobuf/types,:./$(@D) ./$(patsubst %.pb.go,%.proto,$@)
+	protoc -I $(GOPATH)/src:./vendor/github.com/gogo/protobuf:./vendor:./$(@D):./pkg/storegateway/storepb:./proto-include --gogoslick_out=plugins=grpc,Mgoogle/protobuf/any.proto=github.com/gogo/protobuf/types,:./$(@D) ./$(patsubst %.pb.go,%.proto,$@)
 else
 	@echo "Warning: generating files has been disabled, but the following file needs to be regenerated: $@"
 	@echo "If this is unexpected, check if the last modified timestamps on $@ and $(patsubst %.pb.go,%.proto,$@) are correct."
