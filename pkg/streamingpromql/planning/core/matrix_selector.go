@@ -45,14 +45,6 @@ func (m *MatrixSelector) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_MATRIX_SELECTOR
 }
 
-func (m *MatrixSelector) SetChildren(children []planning.Node) error {
-	if len(children) != 0 {
-		return fmt.Errorf("node of type MatrixSelector expects 0 children, but got %d", len(children))
-	}
-
-	return nil
-}
-
 func (m *MatrixSelector) ReplaceChild(idx int, node planning.Node) error {
 	return fmt.Errorf("node of type MatrixSelector supports no children, but attempted to replace child at index %d", idx)
 }

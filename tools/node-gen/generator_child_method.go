@@ -15,6 +15,7 @@ type templateStructData struct {
 	Type          string
 	ChildFields   []childField
 	ChildrenField string
+	ChildrenMin   int
 }
 
 func (d *templateStructData) LastField() childField {
@@ -29,8 +30,10 @@ func (d *templateStructData) CountWithoutLast() int {
 
 // childField represents a struct field tagged with child/children.
 type childField struct {
-	Name    string
-	Nilable bool
+	Name       string
+	Nilable    bool
+	Type       string // source type (e.g. *core.FunctionCall)
+	TypeImport string
 }
 
 //go:embed child_method.tmpl
@@ -51,6 +54,15 @@ var childCountTmpl = template.Must(template.New("child_count_method").Parse(chil
 var ChildCountMethod = MethodGenerator{
 	Name:     "ChildCount",
 	Generate: childCountMethodGenerate,
+}
+
+//go:embed set_children_method.tmpl
+var setChildrenTmplContent string
+var setChildrenTmpl = template.Must(template.New("set_children_method").Parse(setChildrenTmplContent))
+
+var SetChildrenMethod = MethodGenerator{
+	Name:     "SetChildren",
+	Generate: setChildrenMethodGenerate,
 }
 
 func childMethodGenerate(s *Struct, imports *ImportsCollector) (string, error) {
@@ -96,8 +108,36 @@ func childCountMethodGenerate(s *Struct, _ *ImportsCollector) (string, error) {
 	return renderTemplate(childCountTmpl, subtmplName, data)
 }
 
+func setChildrenMethodGenerate(s *Struct, imports *ImportsCollector) (string, error) {
+	data, err := buildTemplateStructData(s)
+	if err != nil {
+		return "", err
+	}
+
+	imports.Add("fmt")
+	imports.Add("github.com/grafana/mimir/pkg/streamingpromql/planning")
+	for _, cf := range data.ChildFields {
+		imports.Add(cf.TypeImport)
+	}
+
+	var subtmplName string
+	switch {
+	case data.ChildrenField != "":
+		subtmplName = "children_field"
+	case len(data.ChildFields) == 0:
+		subtmplName = "no_fields"
+	case data.LastField().Nilable:
+		subtmplName = "nilable_last"
+	default:
+		subtmplName = "child_fields"
+	}
+
+	return renderTemplate(setChildrenTmpl, subtmplName, data)
+}
+
 // buildTemplateStructData validates the tagged fields of the given structure and returns the template input for it.
 // Returns an error if the tags violate the supported shape:
+//   - node:"children,min=N" must have a non-negative N,
 //   - node:"child" and node:"children" cannot be mixed,
 //   - at most one node:"children" field,
 //   - at most one node:"child,nilable" field, and it must be the last node:"child" field,
@@ -107,6 +147,7 @@ func buildTemplateStructData(s *Struct) (*templateStructData, error) {
 		childFields       []childField
 		nilableFieldCount int
 		childrenFieldName string
+		childrenMin       int
 	)
 	for _, f := range s.Fields {
 		if f.Tag == nil {
@@ -123,12 +164,21 @@ func buildTemplateStructData(s *Struct) (*templateStructData, error) {
 			if f.Tag.Nilable {
 				nilableFieldCount++
 			}
-			childFields = append(childFields, childField{Name: f.Name, Nilable: f.Tag.Nilable})
+			childFields = append(childFields, childField{
+				Name:       f.Name,
+				Nilable:    f.Tag.Nilable,
+				Type:       f.Type.Name,
+				TypeImport: f.Type.ImportPath,
+			})
 		case f.Tag.IsChildren:
 			if childrenFieldName != "" {
 				return nil, fmt.Errorf(`multiple node:"children" fields are not supported`)
 			}
+			if f.Tag.Min < 0 {
+				return nil, fmt.Errorf(`node:"children" min must be non-negative, got %d`, f.Tag.Min)
+			}
 			childrenFieldName = f.Name
+			childrenMin = f.Tag.Min
 		}
 	}
 	if len(childFields) > 0 && childrenFieldName != "" {
@@ -146,6 +196,7 @@ func buildTemplateStructData(s *Struct) (*templateStructData, error) {
 		Type:          s.Name,
 		ChildFields:   childFields,
 		ChildrenField: childrenFieldName,
+		ChildrenMin:   childrenMin,
 	}, nil
 }
 

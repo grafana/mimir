@@ -31,14 +31,6 @@ func (t *DataLabelSelector) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_DATA_LABEL_SELECTOR
 }
 
-func (t *DataLabelSelector) SetChildren(children []planning.Node) error {
-	if len(children) != 0 {
-		return fmt.Errorf("node of type DataLabelSelector expects 0 children, but got %d", len(children))
-	}
-
-	return nil
-}
-
 func (t *DataLabelSelector) ReplaceChild(idx int, _ planning.Node) error {
 	return fmt.Errorf("node of type DataLabelSelector supports no children, but attempted to replace child at index %d", idx)
 }

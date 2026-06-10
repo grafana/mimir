@@ -48,14 +48,6 @@ func (v *VectorSelector) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_VECTOR_SELECTOR
 }
 
-func (v *VectorSelector) SetChildren(children []planning.Node) error {
-	if len(children) != 0 {
-		return fmt.Errorf("node of type VectorSelector expects 0 children, but got %d", len(children))
-	}
-
-	return nil
-}
-
 func (v *VectorSelector) ReplaceChild(idx int, node planning.Node) error {
 	return fmt.Errorf("node of type VectorSelector supports no children, but attempted to replace child at index %d", idx)
 }

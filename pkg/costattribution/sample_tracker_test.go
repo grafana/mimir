@@ -50,7 +50,7 @@ func TestNewSampleTracker(t *testing.T) {
 
 	for testName, testCase := range testCases {
 		t.Run(testName, func(t *testing.T) {
-			st, stErr := newSampleTracker("tenant-1", testCase.costAttributionLabels, 10, 1*time.Minute, log.NewNopLogger())
+			st, stErr := newSampleTracker("tenant-1", costattributionmodel.DefaultTrackerName, testCase.costAttributionLabels, false, 10, 1*time.Minute, log.NewNopLogger())
 			if testCase.expectedErr == nil {
 				require.NoError(t, stErr)
 				require.NotNil(t, st)
@@ -65,8 +65,9 @@ func TestNewSampleTracker(t *testing.T) {
 
 func TestSampleTracker_hasSameLabels(t *testing.T) {
 	manager, _, _ := newTestManager()
-	st := manager.SampleTracker("user1")
-	assert.True(t, st.hasSameLabels(costattributionmodel.Labels{{Input: "team", Output: "my_team"}}), "Expected cost attribution labels mismatch")
+	manager.SampleTracker("user1")
+	st := manager.sampleTrackers.trackerByName("user1", costattributionmodel.DefaultTrackerName)
+	assertHasLabels(t, st, costattributionmodel.Labels{{Input: "team", Output: "my_team"}})
 }
 
 func TestSampleTracker_IncrementReceviedSamples(t *testing.T) {
@@ -115,60 +116,91 @@ func TestSampleTracker_IncrementReceviedSamples(t *testing.T) {
 
 func TestSampleTracker_IncrementDiscardedSamples(t *testing.T) {
 	manager, _, _ := newTestManager()
-	st := manager.SampleTracker("user3")
+	cst := manager.SampleTracker("user3")
+	st := manager.sampleTrackers.trackerByName("user3", costattributionmodel.DefaultTrackerName)
 	lbls1 := []mimirpb.LabelAdapter{{Name: "department", Value: "foo"}, {Name: "service", Value: "bar"}}
 	lbls2 := []mimirpb.LabelAdapter{{Name: "department", Value: "bar"}, {Name: "service", Value: "baz"}}
 	lbls3 := []mimirpb.LabelAdapter{{Name: "department", Value: "baz"}, {Name: "service", Value: "foo"}}
 
-	st.IncrementDiscardedSamples(lbls1, 1, "", time.Unix(1, 0))
+	cst.IncrementDiscardedSamples(lbls1, 1, "", time.Unix(1, 0))
 	assert.True(t, st.overflowSince.IsZero(), "First observation, should not overflow")
 	assert.Equal(t, 1, len(st.observed))
 
-	st.IncrementDiscardedSamples(lbls2, 1, "", time.Unix(2, 0))
+	cst.IncrementDiscardedSamples(lbls2, 1, "", time.Unix(2, 0))
 	assert.True(t, st.overflowSince.IsZero(), "Second observation, should not overflow")
 	assert.Equal(t, 2, len(st.observed))
 
-	st.IncrementDiscardedSamples(lbls3, 1, "", time.Unix(3, 0))
+	cst.IncrementDiscardedSamples(lbls3, 1, "", time.Unix(3, 0))
 	assert.Equal(t, time.Unix(3, 0), st.overflowSince, "Third observation, should overflow")
 	assert.Equal(t, 2, len(st.observed))
 
-	st.IncrementDiscardedSamples(lbls3, 1, "", time.Unix(4, 0))
+	cst.IncrementDiscardedSamples(lbls3, 1, "", time.Unix(4, 0))
 	assert.Equal(t, time.Unix(3, 0), st.overflowSince, "Fourth observation, should stay overflow")
 	assert.Equal(t, 2, len(st.observed))
 }
 
 func TestSampleTracker_inactiveObservations(t *testing.T) {
-	// Setup the test environment: create a st for user1 with a "team" label and max cardinality of 5.
 	manager, _, _ := newTestManager()
-	st := manager.SampleTracker("user1")
+	cst := manager.SampleTracker("user1")
+	st := manager.sampleTrackers.trackerByName("user1", costattributionmodel.DefaultTrackerName)
 
-	// Create two observations with different last update timestamps.
 	observations := [][]mimirpb.LabelAdapter{
 		{{Name: "team", Value: "foo"}},
 		{{Name: "team", Value: "bar"}},
 		{{Name: "team", Value: "baz"}},
 	}
 
-	// Simulate samples discarded with different timestamps.
-	st.IncrementDiscardedSamples(observations[0], 1, "invalid-metrics-name", time.Unix(1, 0))
-	st.IncrementDiscardedSamples(observations[1], 2, "out-of-window-sample", time.Unix(12, 0))
-	st.IncrementDiscardedSamples(observations[2], 3, "invalid-metrics-name", time.Unix(20, 0))
+	cst.IncrementDiscardedSamples(observations[0], 1, "invalid-metrics-name", time.Unix(1, 0))
+	cst.IncrementDiscardedSamples(observations[1], 2, "out-of-window-sample", time.Unix(12, 0))
+	cst.IncrementDiscardedSamples(observations[2], 3, "invalid-metrics-name", time.Unix(20, 0))
 
-	// Ensure that two observations were successfully added to the tracker.
 	require.Len(t, st.observed, 3)
 
-	// Purge observations that haven't been updated in the last 10 seconds.
-	st.cleanupInactiveObservations(time.Unix(0, 0))
+	st.purge(time.Unix(0, 0), time.Unix(0, 0))
 	require.Len(t, st.observed, 3)
 
-	st.cleanupInactiveObservations(time.Unix(10, 0))
+	st.purge(time.Unix(10, 0), time.Unix(10, 0))
 	assert.Len(t, st.observed, 2)
 
-	st.cleanupInactiveObservations(time.Unix(15, 0))
+	st.purge(time.Unix(15, 0), time.Unix(15, 0))
 	assert.Len(t, st.observed, 1)
 
-	st.cleanupInactiveObservations(time.Unix(25, 0))
+	st.purge(time.Unix(25, 0), time.Unix(25, 0))
 	assert.Len(t, st.observed, 0)
+}
+
+func TestSampleTracker_extendsOverflow(t *testing.T) {
+	manager, _, _ := newTestManager()
+	manager.SampleTracker("user7") // ensure tracker exists; user7 has MaxCardinality 2 and a 20m cooldown.
+	st := getSampleTracker(manager, "user7")
+	require.NotNil(t, st)
+	require.Equal(t, 2, st.maxCardinality)
+
+	// Simulate an overflowed tracker that still has maxCardinality observations whose
+	// lastUpdate is more recent than the purge deadline (so they don't expire).
+	// This is the only way to reach the extend branch: in the manager flow observation
+	// timestamps are frozen during overflow, so they always expire before we get here.
+	st.overflowSince = time.Unix(0, 0)
+	for _, team := range []string{"foo", "bar"} {
+		o := &observation{}
+		o.lastUpdate.Store(5000)
+		st.observed[team] = o
+	}
+	require.Len(t, st.observed, 2)
+
+	// Cooldown (1200s) has elapsed relative to the deadline, but the observations are
+	// newer than the deadline, so cardinality stays at the limit -> extend the overflow.
+	st.purge(time.Unix(5000, 0), time.Unix(2000, 0))
+
+	require.Equal(t, time.Unix(5000, 0), st.overflowSince, "overflow should be extended to now")
+	_, overflown := st.cardinality()
+	require.True(t, overflown, "should still be overflown")
+	require.Len(t, st.observed, 2, "observations newer than the deadline should be retained")
+
+	// Advance time so the stale observations expire and the cooldown elapses again -> recover.
+	st.purge(time.Unix(6300, 0), time.Unix(6300, 0))
+	require.True(t, st.overflowSince.IsZero(), "should have recovered from overflow")
+	require.Empty(t, st.observed)
 }
 
 func TestSampleTracker_Concurrency(t *testing.T) {
@@ -176,7 +208,8 @@ func TestSampleTracker_Concurrency(t *testing.T) {
 	t.Skip()
 
 	m, _, costAttributionReg := newTestManager()
-	st := m.SampleTracker("user1")
+	cst := m.SampleTracker("user1")
+	st := m.sampleTrackers.trackerByName("user1", costattributionmodel.DefaultTrackerName)
 
 	var wg sync.WaitGroup
 	var i int64
@@ -184,13 +217,12 @@ func TestSampleTracker_Concurrency(t *testing.T) {
 		wg.Add(1)
 		go func(i int64) {
 			defer wg.Done()
-			st.IncrementReceivedSamples(testutils.CreateRequest([]testutils.Series{{LabelValues: []string{"team", string(rune('A' + (i % 26)))}, SamplesCount: 1}}), time.Unix(i, 0))
-			st.IncrementDiscardedSamples([]mimirpb.LabelAdapter{{Name: "team", Value: string(rune('A' + (i % 26)))}}, 1, "sample-out-of-order", time.Unix(i, 0))
+			cst.IncrementReceivedSamples(testutils.CreateRequest([]testutils.Series{{LabelValues: []string{"team", string(rune('A' + (i % 26)))}, SamplesCount: 1}}), time.Unix(i, 0))
+			cst.IncrementDiscardedSamples([]mimirpb.LabelAdapter{{Name: "team", Value: string(rune('A' + (i % 26)))}}, 1, "sample-out-of-order", time.Unix(i, 0))
 		}(i)
 	}
 	wg.Wait()
 
-	// Verify no data races or inconsistencies, since after 5 all the samples will be counted into the overflow, so the count should be 95
 	assert.True(t, len(st.observed) > 0, "Observed set should not be empty after concurrent updates")
 	assert.LessOrEqual(t, len(st.observed), st.maxCardinality, "Observed count should not exceed max cardinality")
 	assert.NotEqual(t, st.overflowSince.IsZero(), "Expected state to be Overflow")

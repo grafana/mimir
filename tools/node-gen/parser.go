@@ -8,6 +8,7 @@ import (
 	"go/parser"
 	"go/token"
 	"os"
+	"path"
 	"path/filepath"
 	"reflect"
 	"slices"
@@ -32,6 +33,13 @@ type Field struct {
 	Name     string
 	Tag      *NodeTag
 	Embedded bool
+	Type     *FieldType
+}
+
+// FieldType is a struct field's declared type, resolved for code generation.
+type FieldType struct {
+	Name       string // Name is the type rendered as source, e.g. "planning.Node", "*core.FunctionCall", "[]planning.Node".
+	ImportPath string // import path of the type's package qualifier, or "" when the type has no qualifier (a local or builtin type).
 }
 
 // NodeTag is the parsed value of a node:"..." struct tag.
@@ -39,6 +47,7 @@ type NodeTag struct {
 	IsChild    bool
 	IsChildren bool
 	Nilable    bool // child only; non-nil by default; set true with the "nilable" tag option for the rare case (e.g. AggregateExpression.Param)
+	Min        int  // children only; minimum required number of children, set with the "min=N" tag option (0 means no lower bound)
 }
 
 // ParsePackage reads all non-test .go files in packagePath (skipping the generated file named genFileName)
@@ -59,10 +68,10 @@ func ParsePackage(packagePath, genFileName string) (*Package, error) {
 		if !strings.HasSuffix(entry.Name(), ".go") || genFileName == entry.Name() || strings.HasSuffix(entry.Name(), "_test.go") {
 			continue
 		}
-		path := filepath.Join(packagePath, entry.Name())
-		f, err := parser.ParseFile(fset, path, nil, parser.ParseComments)
+		filePath := filepath.Join(packagePath, entry.Name())
+		f, err := parser.ParseFile(fset, filePath, nil, parser.ParseComments)
 		if err != nil {
-			return nil, fmt.Errorf("parsing %q: %w", path, err)
+			return nil, fmt.Errorf("parsing %q: %w", filePath, err)
 		}
 		files = append(files, f)
 	}
@@ -93,6 +102,10 @@ func buildPackage(files []*ast.File) (*Package, error) {
 // collectNodeStructs returns the //node:generate-annotated struct type declarations found in file.
 // Non-annotated declarations are ignored.
 func collectNodeStructs(f *ast.File) ([]*Struct, error) {
+	imports, err := parseFileImports(f)
+	if err != nil {
+		return nil, err
+	}
 	var structs []*Struct
 	for _, decl := range f.Decls {
 		gd, ok := decl.(*ast.GenDecl)
@@ -111,7 +124,7 @@ func collectNodeStructs(f *ast.File) ([]*Struct, error) {
 			if !ok {
 				continue
 			}
-			s, err := parseStruct(ts.Name.Name, st)
+			s, err := parseStruct(ts.Name.Name, st, imports)
 			if err != nil {
 				return nil, fmt.Errorf("struct %s: %w", ts.Name.Name, err)
 			}
@@ -133,10 +146,10 @@ func hasNodeGenerateComment(cg *ast.CommentGroup) bool {
 	return false
 }
 
-func parseStruct(name string, st *ast.StructType) (*Struct, error) {
+func parseStruct(name string, st *ast.StructType, imports map[string]string) (*Struct, error) {
 	s := &Struct{Name: name}
 	for _, field := range st.Fields.List {
-		fields, err := parseField(field)
+		fields, err := parseField(field, imports)
 		if err != nil {
 			return nil, err
 		}
@@ -147,7 +160,7 @@ func parseStruct(name string, st *ast.StructType) (*Struct, error) {
 
 // parseField expands one ast.Field declaration into one or more Field entries:
 // multi-name declarations (e.g. "a, b int") yield one Field per name
-func parseField(field *ast.Field) ([]Field, error) {
+func parseField(field *ast.Field, imports map[string]string) ([]Field, error) {
 	var tag *NodeTag
 	if field.Tag != nil {
 		raw, err := strconv.Unquote(field.Tag.Value)
@@ -162,14 +175,74 @@ func parseField(field *ast.Field) ([]Field, error) {
 			return nil, fmt.Errorf("embedded field tag: %w", err)
 		}
 	}
+
+	fieldType, err := resolveFieldType(field.Type, imports)
+	if err != nil {
+		if len(field.Names) > 0 {
+			return nil, fmt.Errorf("field %q: %w", field.Names[0].Name, err)
+		}
+		return nil, fmt.Errorf("embedded field: %w", err)
+	}
+
 	if len(field.Names) == 0 {
-		return []Field{{Tag: tag, Embedded: true}}, nil
+		return []Field{{Tag: tag, Embedded: true, Type: fieldType}}, nil
 	}
 	result := make([]Field, len(field.Names))
 	for i, name := range field.Names {
-		result[i] = Field{Name: name.Name, Tag: tag}
+		result[i] = Field{Name: name.Name, Tag: tag, Type: fieldType}
 	}
 	return result, nil
+}
+
+// parseFileImports maps a file's import local names to their import paths.
+func parseFileImports(f *ast.File) (map[string]string, error) {
+	imports := make(map[string]string, len(f.Imports))
+	for _, imp := range f.Imports {
+		importPath, err := strconv.Unquote(imp.Path.Value)
+		if err != nil {
+			return nil, fmt.Errorf("unquoting import path %s: %w", imp.Path.Value, err)
+		}
+		// The local name is the import alias if one is given, otherwise the package name.
+		// We assume the latter equals the last path segment.
+		name := path.Base(importPath)
+		if imp.Name != nil {
+			name = imp.Name.Name
+		}
+		imports[name] = importPath
+	}
+	return imports, nil
+}
+
+// resolveFieldType renders a field's declared type as source and resolves the import path of
+// its package qualifier (empty when the type has no qualifier).
+func resolveFieldType(expr ast.Expr, imports map[string]string) (*FieldType, error) {
+	switch t := expr.(type) {
+	case *ast.Ident:
+		return &FieldType{Name: t.Name}, nil
+	case *ast.StarExpr:
+		inner, err := resolveFieldType(t.X, imports)
+		if err != nil {
+			return nil, err
+		}
+		return &FieldType{Name: "*" + inner.Name, ImportPath: inner.ImportPath}, nil
+	case *ast.ArrayType:
+		if t.Len != nil {
+			return nil, fmt.Errorf("unsupported fixed-size array field type")
+		}
+		inner, err := resolveFieldType(t.Elt, imports)
+		if err != nil {
+			return nil, err
+		}
+		return &FieldType{Name: "[]" + inner.Name, ImportPath: inner.ImportPath}, nil
+	case *ast.SelectorExpr:
+		pkg, ok := t.X.(*ast.Ident)
+		if !ok {
+			return nil, fmt.Errorf("unsupported field type")
+		}
+		return &FieldType{Name: pkg.Name + "." + t.Sel.Name, ImportPath: imports[pkg.Name]}, nil
+	default:
+		return nil, fmt.Errorf("unsupported field type %T", expr)
+	}
 }
 
 // parseNodeTag parses the node:"..." struct tag value.
@@ -183,7 +256,7 @@ func parseNodeTag(tag reflect.StructTag) (*NodeTag, error) {
 	case "child":
 		return parseChildTag(parts[1:])
 	case "children":
-		return &NodeTag{IsChildren: true}, nil
+		return parseChildrenTag(parts[1:])
 	default:
 		return nil, fmt.Errorf("unknown node tag kind %q", parts[0])
 	}
@@ -198,6 +271,25 @@ func parseChildTag(opts []string) (*NodeTag, error) {
 			t.Nilable = true
 		default:
 			return nil, fmt.Errorf("unknown child tag option %q", opt)
+		}
+	}
+	return t, nil
+}
+
+// parseChildrenTag parses the comma-separated options after "children".
+func parseChildrenTag(opts []string) (*NodeTag, error) {
+	t := &NodeTag{IsChildren: true}
+	for _, opt := range opts {
+		switch {
+		case strings.HasPrefix(opt, "min="):
+			raw := strings.TrimPrefix(opt, "min=")
+			minChildren, err := strconv.Atoi(raw)
+			if err != nil {
+				return nil, fmt.Errorf("invalid children min value %q", raw)
+			}
+			t.Min = minChildren
+		default:
+			return nil, fmt.Errorf("unknown children tag option %q", opt)
 		}
 	}
 	return t, nil

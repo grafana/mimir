@@ -37,14 +37,6 @@ func (s *StringLiteral) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_STRING_LITERAL
 }
 
-func (s *StringLiteral) SetChildren(children []planning.Node) error {
-	if len(children) != 0 {
-		return fmt.Errorf("node of type StringLiteral expects 0 children, but got %d", len(children))
-	}
-
-	return nil
-}
-
 func (s *StringLiteral) ReplaceChild(idx int, node planning.Node) error {
 	return fmt.Errorf("node of type StringLiteral supports no children, but attempted to replace child at index %d", idx)
 }
