@@ -44,7 +44,7 @@ func (this *WriteRequest) Equal(that interface{}) bool {
 		return false
 	}
 	for i := range this.Timeseries {
-		if !this.Timeseries[i].Equal(that1.Timeseries[i]) {
+		if !this.Timeseries[i].EqualWiresmith(that1.Timeseries[i]) {
 			return false
 		}
 	}
@@ -163,7 +163,7 @@ func (this *TimeSeries) Equal(that interface{}) bool {
 		return false
 	}
 	for i := range this.Labels {
-		if !this.Labels[i].Equal(that1.Labels[i]) {
+		if !this.Labels[i].EqualWiresmith(that1.Labels[i]) {
 			return false
 		}
 	}
@@ -310,7 +310,7 @@ func (this *Metric) Equal(that interface{}) bool {
 		return false
 	}
 	for i := range this.Labels {
-		if !this.Labels[i].Equal(that1.Labels[i]) {
+		if !this.Labels[i].EqualWiresmith(that1.Labels[i]) {
 			return false
 		}
 	}
@@ -340,7 +340,7 @@ func (this *Exemplar) Equal(that interface{}) bool {
 		return false
 	}
 	for i := range this.Labels {
-		if !this.Labels[i].Equal(that1.Labels[i]) {
+		if !this.Labels[i].EqualWiresmith(that1.Labels[i]) {
 			return false
 		}
 	}
@@ -664,7 +664,10 @@ func (this *SampleHistogram) Equal(that interface{}) bool {
 		return false
 	}
 	for i := range this.Buckets {
-		if !this.Buckets[i].Equal(that1.Buckets[i]) {
+		if (this.Buckets[i] == nil) != (that1.Buckets[i] == nil) {
+			return false
+		}
+		if this.Buckets[i] != nil && !this.Buckets[i].Equal(that1.Buckets[i]) {
 			return false
 		}
 	}
@@ -727,7 +730,10 @@ func (this *SampleHistogramPair) Equal(that interface{}) bool {
 	if this.Timestamp != that1.Timestamp {
 		return false
 	}
-	if !this.Histogram.Equal(that1.Histogram) {
+	if (this.Histogram == nil) != (that1.Histogram == nil) {
+		return false
+	}
+	if this.Histogram != nil && !this.Histogram.Equal(that1.Histogram) {
 		return false
 	}
 	return true

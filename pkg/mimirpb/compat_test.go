@@ -534,6 +534,9 @@ func TestFromHistogramToHistogramProto(t *testing.T) {
 	assert.NoError(t, err)
 	p2 := Histogram{}
 	assert.NoError(t, p2.Unmarshal(d))
+	// Unmarshalling populates the wiresmith presence bitmap, which is not part
+	// of the proto data; clear it so the literal fixture compares equal.
+	p2.fieldsPresent = [1]uint64{}
 	assert.Equal(t, expected, p2)
 }
 
@@ -582,6 +585,9 @@ func TestFromFloatHistogramToHistogramProto(t *testing.T) {
 	assert.NoError(t, err)
 	p2 := Histogram{}
 	assert.NoError(t, p2.Unmarshal(d))
+	// Unmarshalling populates the wiresmith presence bitmap, which is not part
+	// of the proto data; clear it so the literal fixture compares equal.
+	p2.fieldsPresent = [1]uint64{}
 	assert.Equal(t, expected, p2)
 }
 
