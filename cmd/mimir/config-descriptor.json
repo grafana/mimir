@@ -2660,17 +2660,6 @@
             },
             {
               "kind": "field",
-              "name": "enable_projection_pushdown",
-              "required": false,
-              "desc": "Enable projection pushdown to only fetch labels required for the query from storage.",
-              "fieldValue": null,
-              "fieldDefaultValue": false,
-              "fieldFlag": "querier.mimir-query-engine.enable-projection-pushdown",
-              "fieldType": "boolean",
-              "fieldCategory": "experimental"
-            },
-            {
-              "kind": "field",
               "name": "enable_multi_aggregation",
               "required": false,
               "desc": "Enable computing multiple aggregations over the same data without buffering. Requires common subexpression elimination to be enabled.",
