@@ -17,6 +17,13 @@ option go_package = "github.com/grafana/mimir/pkg/mimirpb";
 // Note: gogoproto.marshaler_all / unmarshaler_all are unnecessary under
 // wiresmith — Marshal/Unmarshal methods are always emitted.
 
+// Drop the per-message presence bitmap everywhere: gogoproto had no presence
+// tracking for proto3 non-optional fields, Mimir never calls Has*(), several
+// structs are unsafe-cast to Prometheus types and must keep declared-fields-
+// only memory layout, and tests compare literals against unmarshalled values
+// with reflect.DeepEqual.
+option (wiresmith.options.no_presence_all) = true;
+
 message WriteRequest {
   // PreallocTimeseries implements the wiresmith customtype contract
   // (SizeWiresmith/MarshalWiresmith/UnmarshalWiresmith/...) by delegating to
