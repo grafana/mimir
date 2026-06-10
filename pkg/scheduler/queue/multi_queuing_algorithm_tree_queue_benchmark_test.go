@@ -60,7 +60,7 @@ func makeWeightedRandAdditionalQueueDimensionFunc(
 const slowConsumerQueueDimension = storeGatewayQueueDimension
 
 func makeQueueConsumeFuncWithSlowQueryComponent(
-	queue *RequestQueue,
+	qcu *QueryComponentUtilization,
 	slowConsumerLatency time.Duration,
 	normalConsumerLatency time.Duration,
 	report *testScenarioQueueDurationObservations,
@@ -77,14 +77,14 @@ func makeQueueConsumeFuncWithSlowQueryComponent(
 		}
 		report.Observe(schedulerRequest.UserID, queryComponent, time.Since(schedulerRequest.EnqueueTime).Seconds())
 
-		queue.QueryComponentUtilization.MarkRequestSent(schedulerRequest)
+		qcu.MarkRequestSent(schedulerRequest)
 		if queryComponent == slowConsumerQueueDimension {
 			time.Sleep(slowConsumerLatency)
 		} else {
 			time.Sleep(normalConsumerLatency)
 		}
 
-		queue.QueryComponentUtilization.MarkRequestCompleted(schedulerRequest)
+		qcu.MarkRequestCompleted(schedulerRequest)
 		return nil
 	}
 }
@@ -424,6 +424,10 @@ func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 					promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 					promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 					promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
+				)
+				require.NoError(t, err)
+
+				qcu, err := NewQueryComponentUtilization(
 					promauto.With(nil).NewSummaryVec(prometheus.SummaryOpts{}, []string{"query_component"}),
 				)
 				require.NoError(t, err)
@@ -459,7 +463,7 @@ func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 				// configure queue consumers with respective latencies for processing requests
 				// which were assigned the "normal" or "slow" query component
 				consumeFunc := makeQueueConsumeFuncWithSlowQueryComponent(
-					queue, slowConsumerLatency, normalConsumerLatency, testCaseObservations,
+					qcu, slowConsumerLatency, normalConsumerLatency, testCaseObservations,
 				)
 				queueConsumerErrGroup, startConsumersChan := makeQueueConsumerGroup(
 					context.Background(), queue, totalRequests, numConsumers, numWorkersPerConsumer, consumeFunc,

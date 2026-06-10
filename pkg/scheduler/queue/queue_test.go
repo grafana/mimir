@@ -100,7 +100,6 @@ func BenchmarkConcurrentQueueOperations(b *testing.B) {
 								promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 								promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 								promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
-								promauto.With(nil).NewSummaryVec(prometheus.SummaryOpts{}, []string{"query_component"}),
 							)
 							require.NoError(b, err)
 
@@ -223,7 +222,7 @@ func queueProduce(
 	}
 	req := makeSchedulerRequest(tenantID, additionalQueueDimensions)
 	for {
-		err := queue.SubmitRequestToEnqueue(tenantID, req, maxQueriersPerTenant, func() {})
+		err := queue.SubmitRequestToEnqueue(tenantID, req, req.ExpectedQueryComponentName(), maxQueriersPerTenant, func() {})
 		if err == nil {
 			break
 		}
@@ -370,7 +369,6 @@ func TestDispatchToWaitingDequeueRequestForUnregisteredQuerierWorker(t *testing.
 		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
-		promauto.With(nil).NewSummaryVec(prometheus.SummaryOpts{}, []string{"query_component"}),
 	)
 	require.NoError(t, err)
 
@@ -421,13 +419,13 @@ func TestDispatchToWaitingDequeueRequestForUnregisteredQuerierWorker(t *testing.
 		HttpRequest:               &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"},
 		AdditionalQueueDimensions: []string{"ingester"},
 	}
-	assert.NoError(t, queue.SubmitRequestToEnqueue("user-2", reqNotShardedToQuerier1, 1, nil))
+	assert.NoError(t, queue.SubmitRequestToEnqueue("user-2", reqNotShardedToQuerier1, reqNotShardedToQuerier1.ExpectedQueryComponentName(), 1, nil))
 	reqNotShardedToQuerier1 = &SchedulerRequest{
 		Ctx:                       context.Background(),
 		HttpRequest:               &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"},
 		AdditionalQueueDimensions: []string{"store-gateway"},
 	}
-	assert.NoError(t, queue.SubmitRequestToEnqueue("user-2", reqNotShardedToQuerier1, 1, nil))
+	assert.NoError(t, queue.SubmitRequestToEnqueue("user-2", reqNotShardedToQuerier1, reqNotShardedToQuerier1.ExpectedQueryComponentName(), 1, nil))
 
 	// Querier-1 submits a request to dequeue;
 	// it will not receive anything as the only requests in the queue are not sharded to querier-1.
@@ -487,7 +485,6 @@ func TestRequestQueue_RegisterAndUnregisterQuerierWorkerConnections(t *testing.T
 		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
-		promauto.With(nil).NewSummaryVec(prometheus.SummaryOpts{}, []string{"query_component"}),
 	)
 	require.NoError(t, err)
 
@@ -573,7 +570,6 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldGetRequestAfterReshardingBe
 		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
-		promauto.With(nil).NewSummaryVec(prometheus.SummaryOpts{}, []string{"query_component"}),
 	)
 	require.NoError(t, err)
 
@@ -616,7 +612,7 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldGetRequestAfterReshardingBe
 		HttpRequest:               &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"},
 		AdditionalQueueDimensions: randAdditionalQueueDimension(""),
 	}
-	require.NoError(t, queue.SubmitRequestToEnqueue("user-1", req, 1, nil))
+	require.NoError(t, queue.SubmitRequestToEnqueue("user-1", req, req.ExpectedQueryComponentName(), 1, nil))
 
 	startTime := time.Now()
 	done := make(chan struct{})
@@ -646,7 +642,6 @@ func TestRequestQueue_GetNextRequestForQuerier_ReshardNotifiedCorrectlyForMultip
 		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
-		promauto.With(nil).NewSummaryVec(prometheus.SummaryOpts{}, []string{"query_component"}),
 	)
 	require.NoError(t, err)
 
@@ -705,7 +700,7 @@ func TestRequestQueue_GetNextRequestForQuerier_ReshardNotifiedCorrectlyForMultip
 		HttpRequest:               &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"},
 		AdditionalQueueDimensions: randAdditionalQueueDimension(""),
 	}
-	require.NoError(t, queue.SubmitRequestToEnqueue("user-1", req, 2, nil))
+	require.NoError(t, queue.SubmitRequestToEnqueue("user-1", req, req.ExpectedQueryComponentName(), 2, nil))
 
 	startTime := time.Now()
 	done := make(chan struct{})
@@ -735,7 +730,6 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldReturnAfterContextCancelled
 		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
-		promauto.With(nil).NewSummaryVec(prometheus.SummaryOpts{}, []string{"query_component"}),
 	)
 	require.NoError(t, err)
 
@@ -791,7 +785,6 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldReturnImmediatelyIfQuerierI
 		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
-		promauto.With(nil).NewSummaryVec(prometheus.SummaryOpts{}, []string{"query_component"}),
 	)
 	require.NoError(t, err)
 
@@ -822,7 +815,6 @@ func TestRequestQueue_tryDispatchRequestToQuerier_ShouldReEnqueueAfterFailedSend
 		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
-		promauto.With(nil).NewSummaryVec(prometheus.SummaryOpts{}, []string{"query_component"}),
 	)
 	require.NoError(t, err)
 
@@ -839,8 +831,9 @@ func TestRequestQueue_tryDispatchRequestToQuerier_ShouldReEnqueueAfterFailedSend
 		AdditionalQueueDimensions: queueDim,
 	}
 	tr := tenantRequest{
-		tenantID: "tenant-1",
-		req:      req,
+		tenantID:       "tenant-1",
+		queueDimension: req.ExpectedQueryComponentName(),
+		req:            req,
 	}
 
 	var multiAlgorithmTreeQueuePath tree.QueuePath
@@ -887,7 +880,6 @@ func TestRequestQueue_ShutdownWithPendingRequests_ShouldDrainRequests(t *testing
 		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
-		promauto.With(nil).NewSummaryVec(prometheus.SummaryOpts{}, []string{"query_component"}),
 	)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(ctx, queue))
@@ -899,7 +891,7 @@ func TestRequestQueue_ShutdownWithPendingRequests_ShouldDrainRequests(t *testing
 	// And push a request to the queue
 	req := makeSchedulerRequest(tenantID, []string{})
 	require.NotNil(t, req)
-	err = queue.SubmitRequestToEnqueue(tenantID, req, 1, func() {})
+	err = queue.SubmitRequestToEnqueue(tenantID, req, req.ExpectedQueryComponentName(), 1, func() {})
 	require.NoError(t, err)
 
 	// And make sure it got to the queue

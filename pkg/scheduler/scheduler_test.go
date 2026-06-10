@@ -142,19 +142,19 @@ func drainScheduler(t *testing.T, s *Scheduler) {
 	querierID := "emptying-consumer"
 
 	querierWorkerConn := queue.NewUnregisteredQuerierWorkerConn(context.Background(), querierID)
-	require.NoError(t, s.requestQueue.AwaitRegisterQuerierWorkerConn(querierWorkerConn))
-	defer s.requestQueue.SubmitUnregisterQuerierWorkerConn(querierWorkerConn)
+	require.NoError(t, s.queue.AwaitRegisterQuerierWorkerConn(querierWorkerConn))
+	defer s.queue.SubmitUnregisterQuerierWorkerConn(querierWorkerConn)
 
 	consumer := func(request queue.QueryRequest) error {
 		return nil
 	}
 
 	for {
-		if s.requestQueue.IsEmpty() {
+		if s.queue.IsEmpty() {
 			return
 		}
 
-		idx, err := queueConsume(s.requestQueue, querierWorkerConn, lastTenantIndex, consumer)
+		idx, err := queueConsume(s.queue, querierWorkerConn, lastTenantIndex, consumer)
 		require.NoError(t, err)
 		lastTenantIndex = idx
 	}
@@ -163,7 +163,7 @@ func drainScheduler(t *testing.T, s *Scheduler) {
 type consumeRequest func(request queue.QueryRequest) error
 
 func queueConsume(
-	q *queue.RequestQueue, querierWorkerConn *queue.QuerierWorkerConn, lastTenantIdx queue.TenantIndex, consumeFunc consumeRequest,
+	q *schedulerQueue, querierWorkerConn *queue.QuerierWorkerConn, lastTenantIdx queue.TenantIndex, consumeFunc consumeRequest,
 ) (queue.TenantIndex, error) {
 	dequeueReq := queue.NewQuerierWorkerDequeueRequest(querierWorkerConn, lastTenantIdx)
 	request, idx, err := q.AwaitRequestForQuerier(dequeueReq)
@@ -546,7 +546,7 @@ func TestSchedulerShutdown_PendingRequests(t *testing.T) {
 	require.Equal(t, uint64(2), req.QueryID)
 
 	// The queue is empty and there's no inflight requests
-	require.Equal(t, true, scheduler.requestQueue.IsEmpty())
+	require.Equal(t, true, scheduler.queue.IsEmpty())
 
 	// This should error because the queue is stopped (we can't check the error exactly because its wrapped by grpc)
 	err = querierLoop.Send(&schedulerpb.QuerierToScheduler{})
@@ -875,8 +875,8 @@ func verifyQueryComponentUtilizationLeft(t *testing.T, scheduler *Scheduler) {
 	test.Poll(t, 2*time.Second, services.Terminated, func() interface{} {
 		return scheduler.State()
 	})
-	require.Zero(t, scheduler.requestQueue.QueryComponentUtilization.GetForComponent(queue.Ingester))
-	require.Zero(t, scheduler.requestQueue.QueryComponentUtilization.GetForComponent(queue.StoreGateway))
+	require.Zero(t, scheduler.queue.queryComponentUtilization.GetForComponent(queue.Ingester))
+	require.Zero(t, scheduler.queue.queryComponentUtilization.GetForComponent(queue.StoreGateway))
 }
 
 type limits struct {
