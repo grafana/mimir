@@ -456,6 +456,7 @@ func (m *ingesterMetrics) deletePerUserMetrics(userID string) {
 
 	m.maxLocalSeriesPerUser.DeleteLabelValues(userID)
 	m.ownedSeriesPerUser.DeleteLabelValues(userID)
+	m.earlyCompactionNonOwnedSeriesTriggered.DeleteLabelValues(userID)
 	m.attributedActiveSeriesFailuresPerUser.DeleteLabelValues(userID)
 }
 
