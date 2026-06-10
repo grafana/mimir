@@ -726,7 +726,7 @@ github.com/grafana/pyroscope-go/godeltaprof/internal/pprof
 ## explicit; go 1.21
 github.com/grafana/regexp
 github.com/grafana/regexp/syntax
-# github.com/grafana/wiresmith v0.0.0-00010101000000-000000000000 => /Users/oleg-kozlyuk/Projects/wiresmith
+# github.com/grafana/wiresmith v0.0.0-00010101000000-000000000000 => /Users/oleg-kozlyuk/Projects/wiresmith/wiresmith
 ## explicit; go 1.26.3
 github.com/grafana/wiresmith/protohelpers
 # github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0
@@ -2177,4 +2177,4 @@ sigs.k8s.io/yaml
 # github.com/munnerz/goautoneg => github.com/grafana/goautoneg v0.0.0-20240607115440-f335c04c58ce
 # github.com/opentracing-contrib/go-grpc => github.com/charleskorn/go-grpc v0.0.0-20231024023642-e9298576254f
 # github.com/prometheus/otlptranslator => github.com/grafana/mimir-otlptranslator v0.0.0-20251017074411-ea1e8f863e1d
-# github.com/grafana/wiresmith => /Users/oleg-kozlyuk/Projects/wiresmith
+# github.com/grafana/wiresmith => /Users/oleg-kozlyuk/Projects/wiresmith/wiresmith

@@ -713,8 +713,8 @@ func copyToYoloString(buf []byte, src string) (string, []byte) {
 // The returned histogram does not share any memory with the given one.
 func copyHistogram(src Histogram) Histogram {
 	var (
-		dstCount     isHistogram_Count
-		dstZeroCount isHistogram_ZeroCount
+		dstCount     Histogram_Count
+		dstZeroCount Histogram_ZeroCount
 	)
 	// Copy count.
 	switch src.Count.(type) {

@@ -58,7 +58,7 @@ func (this *WriteRequest) Compare(that interface{}) int {
 		return 1
 	}
 	for i := range this.Timeseries {
-		if c := this.Timeseries[i].Compare(that1.Timeseries[i]); c != 0 {
+		if c := this.Timeseries[i].CompareWiresmith(that1.Timeseries[i]); c != 0 {
 			return c
 		}
 	}
@@ -233,7 +233,7 @@ func (this *TimeSeries) Compare(that interface{}) int {
 		return 1
 	}
 	for i := range this.Labels {
-		if c := this.Labels[i].Compare(that1.Labels[i]); c != 0 {
+		if c := this.Labels[i].CompareWiresmith(that1.Labels[i]); c != 0 {
 			return c
 		}
 	}
@@ -437,7 +437,7 @@ func (this *Metric) Compare(that interface{}) int {
 		return 1
 	}
 	for i := range this.Labels {
-		if c := this.Labels[i].Compare(that1.Labels[i]); c != 0 {
+		if c := this.Labels[i].CompareWiresmith(that1.Labels[i]); c != 0 {
 			return c
 		}
 	}
@@ -476,7 +476,7 @@ func (this *Exemplar) Compare(that interface{}) int {
 		return 1
 	}
 	for i := range this.Labels {
-		if c := this.Labels[i].Compare(that1.Labels[i]); c != 0 {
+		if c := this.Labels[i].CompareWiresmith(that1.Labels[i]); c != 0 {
 			return c
 		}
 	}
@@ -990,8 +990,16 @@ func (this *SampleHistogram) Compare(that interface{}) int {
 		return 1
 	}
 	for i := range this.Buckets {
-		if c := this.Buckets[i].Compare(that1.Buckets[i]); c != 0 {
-			return c
+		if (this.Buckets[i] == nil) != (that1.Buckets[i] == nil) {
+			if this.Buckets[i] == nil {
+				return -1
+			}
+			return 1
+		}
+		if this.Buckets[i] != nil {
+			if c := this.Buckets[i].Compare(that1.Buckets[i]); c != 0 {
+				return c
+			}
 		}
 	}
 	return 0
@@ -1074,8 +1082,16 @@ func (this *SampleHistogramPair) Compare(that interface{}) int {
 	} else if this == nil {
 		return -1
 	}
-	if c := this.Histogram.Compare(that1.Histogram); c != 0 {
-		return c
+	if (this.Histogram == nil) != (that1.Histogram == nil) {
+		if this.Histogram == nil {
+			return -1
+		}
+		return 1
+	}
+	if this.Histogram != nil {
+		if c := this.Histogram.Compare(that1.Histogram); c != 0 {
+			return c
+		}
 	}
 	if this.Timestamp != that1.Timestamp {
 		if this.Timestamp < that1.Timestamp {

@@ -6,11 +6,13 @@ package mimirpb
 import (
 	"encoding/binary"
 	"fmt"
-	"github.com/grafana/wiresmith/protohelpers"
-	"google.golang.org/protobuf/encoding/protowire"
 	"io"
 	"math"
 	"strconv"
+
+	"github.com/grafana/wiresmith/protohelpers"
+	histogram "github.com/prometheus/prometheus/model/histogram"
+	"google.golang.org/protobuf/encoding/protowire"
 )
 
 type ErrorCause int32
@@ -225,10 +227,9 @@ const (
 	// These values are based on CounterResetHint from https://github.com/prometheus/prometheus/blob/main/model/histogram/histogram.go.
 	// The values must remain in sync with the constants defined there.
 	//
-	// INCOMPATIBLE: gogoproto.goproto_enum_prefix = true. wiresmith always
-	// prefixes enum constants with the enum name (e.g. ResetHint_UNKNOWN),
-	// matching protoc-gen-go default; there is no option to suppress or
-	// toggle the prefix today.
+	// wiresmith prefixes nested enum constants with the parent message name
+	// (Histogram_UNKNOWN, ...), which matches what gogoproto generated here
+	// under goproto_enum_prefix = true.
 	Histogram_UNKNOWN Histogram_ResetHint = 0
 	Histogram_YES     Histogram_ResetHint = 1
 	Histogram_NO      Histogram_ResetHint = 2
@@ -359,14 +360,20 @@ type QueryResponse_Matrix struct {
 func (*QueryResponse_Matrix) isQueryResponse_Data() {}
 
 type WriteRequest struct {
-	// INCOMPATIBLE: gogoproto.customtype = "PreallocTimeseries" on a repeated
-	// message field. wiresmith v1 only supports customtype on singular
-	// bytes/string fields, and PreallocTimeseries implements gogoproto-style
-	// methods (Marshal/Unmarshal/MarshalToSizedBuffer), not wiresmith's
-	// SizeWiresmith/MarshalWiresmith/UnmarshalWiresmith. Mimir relies on this
-	// hook for zero-copy unmarshal into a pooled buffer; see AGENTS.md "Unsafe
-	// memory tricks". No clean wiresmith equivalent today.
-	Timeseries []TimeSeries            `protobuf:"bytes,1,rep,name=timeseries,proto3" json:"timeseries,omitempty"`
+	// Keep reference to buffer for unsafe references.
+	BufferHolder
+	// sourceBufferHolders is populated when the WriteRequest is synthesized
+	// from other WriteRequests, e. g. when batching, and thus holds references
+	// to those source buffers. The WriteRequest must hold a strong reference to
+	// each of these buffers.
+	sourceBufferHolders map[uintptr]BufferHolder
+
+	// PreallocTimeseries implements the wiresmith customtype contract
+	// (SizeWiresmith/MarshalWiresmith/UnmarshalWiresmith/...) by delegating to
+	// its gogo-style methods; see wiresmith_adapters.go. Mimir relies on this
+	// hook for zero-copy unmarshal into pooled buffers; see AGENTS.md "Unsafe
+	// memory tricks".
+	Timeseries []PreallocTimeseries    `protobuf:"bytes,1,rep,name=timeseries,proto3" json:"timeseries,omitempty"`
 	Source     WriteRequest_SourceEnum `protobuf:"varint,2,opt,name=Source,proto3,enum=cortexpb.WriteRequest.SourceEnum" json:"Source,omitempty"`
 	// gogoproto.nullable=true on a repeated message ⇒ []*MetricMetadata.
 	Metadata []*MetricMetadata `protobuf:"bytes,3,rep,name=metadata,proto3" json:"metadata,omitempty"`
@@ -379,6 +386,16 @@ type WriteRequest struct {
 	SkipLabelValidation bool `protobuf:"varint,1000,opt,name=skip_label_validation,json=skipLabelValidation,proto3" json:"skip_label_validation,omitempty"`
 	// Skip label count validation.
 	SkipLabelCountValidation bool `protobuf:"varint,1001,opt,name=skip_label_count_validation,json=skipLabelCountValidation,proto3" json:"skip_label_count_validation,omitempty"`
+
+	// Skip unmarshaling of exemplars.
+	skipUnmarshalingExemplars bool
+	// Skip normalization of metadata metric names when unmarshalling the request.
+	skipNormalizeMetadataMetricName bool
+	// Skip deduplication of metric metadata by family name.
+	skipDeduplicateMetadata bool
+	// Unmarshal from Remote Write 2.0. if rw2symbols is not nil.
+	unmarshalFromRW2 bool
+	rw2symbols       rw2PagedSymbols
 
 	fieldsPresent [1]uint64
 }
@@ -394,15 +411,17 @@ type ErrorDetails struct {
 	fieldsPresent [1]uint64
 }
 
+// # DO NOT SHALLOW-COPY
+//
+// Data referenced from a PreallocTimeseries may change once the timeseries is
+// returned to the shared pool. This includes usually immutable references, like
+// strings. If needed, use DeepCopyTimeseries instead.
 type TimeSeries struct {
-	// INCOMPATIBLE: gogoproto.customtype = "UnsafeMutableLabel" on a repeated
-	// message field. Same constraint as PreallocTimeseries above:
-	// - wiresmith v1 customtype only supports singular bytes/string;
-	// - UnsafeMutableLabel implements gogoproto-style methods.
-	// This is the cornerstone of Mimir's zero-copy buffer-reuse pattern
-	// (AGENTS.md "Unsafe memory tricks"). The wiresmith-generated []LabelPair
-	// would copy from the request buffer instead of holding shared references.
-	Labels []LabelPair `protobuf:"bytes,1,rep,name=labels,proto3" json:"labels,omitempty"`
+	// UnsafeMutableLabel (= LabelAdapter) holds yolo-string references into the
+	// unmarshalling buffer instead of copying — the cornerstone of Mimir's
+	// zero-copy buffer-reuse pattern (AGENTS.md "Unsafe memory tricks"). The
+	// wiresmith customtype adapter methods live in wiresmith_adapters.go.
+	Labels []UnsafeMutableLabel `protobuf:"bytes,1,rep,name=labels,proto3" json:"labels,omitempty"`
 	// Sorted by time, oldest sample first.
 	Samples    []Sample    `protobuf:"bytes,2,rep,name=samples,proto3" json:"samples,omitempty"`
 	Exemplars  []Exemplar  `protobuf:"bytes,3,rep,name=exemplars,proto3" json:"exemplars,omitempty"`
@@ -413,6 +432,9 @@ type TimeSeries struct {
 	// Zero value means value not set. If you need to use exactly zero value for
 	// the timestamp, use 1 millisecond before or after.
 	CreatedTimestamp int64 `protobuf:"varint,6,opt,name=created_timestamp,json=createdTimestamp,proto3" json:"created_timestamp,omitempty"`
+
+	// Skip unmarshaling of exemplars.
+	SkipUnmarshalingExemplars bool
 
 	fieldsPresent [1]uint64
 }
@@ -428,8 +450,8 @@ type Sample struct {
 	// Fields order MUST match promql.FPoint so that we can cast types between them.
 	TimestampMs int64   `protobuf:"varint,2,opt,name=timestamp_ms,json=timestampMs,proto3" json:"timestamp_ms,omitempty"`
 	Value       float64 `protobuf:"fixed64,1,opt,name=value,proto3" json:"value,omitempty"`
-
-	fieldsPresent [1]uint64
+	// Modified code: no fieldsPresent bitmap — this struct is unsafe-cast
+	// to/from a Prometheus type and must match its memory layout exactly.
 }
 
 type MetricMetadata struct {
@@ -442,16 +464,14 @@ type MetricMetadata struct {
 }
 
 type Metric struct {
-	// INCOMPATIBLE: customtype = "UnsafeMutableLabel" (see TimeSeries.labels).
-	Labels []LabelPair `protobuf:"bytes,1,rep,name=labels,proto3" json:"labels,omitempty"`
+	Labels []UnsafeMutableLabel `protobuf:"bytes,1,rep,name=labels,proto3" json:"labels,omitempty"`
 }
 
 type Exemplar struct {
-	// INCOMPATIBLE: customtype = "UnsafeMutableLabel" (see TimeSeries.labels).
 	// Exemplar labels, different than series labels
-	Labels      []LabelPair `protobuf:"bytes,1,rep,name=labels,proto3" json:"labels,omitempty"`
-	Value       float64     `protobuf:"fixed64,2,opt,name=value,proto3" json:"value,omitempty"`
-	TimestampMs int64       `protobuf:"varint,3,opt,name=timestamp_ms,json=timestampMs,proto3" json:"timestamp_ms,omitempty"`
+	Labels      []UnsafeMutableLabel `protobuf:"bytes,1,rep,name=labels,proto3" json:"labels,omitempty"`
+	Value       float64              `protobuf:"fixed64,2,opt,name=value,proto3" json:"value,omitempty"`
+	TimestampMs int64                `protobuf:"varint,3,opt,name=timestamp_ms,json=timestampMs,proto3" json:"timestamp_ms,omitempty"`
 
 	fieldsPresent [1]uint64
 }
@@ -499,25 +519,22 @@ type Histogram struct {
 // The fields below must be the same types and in the same order as Prometheus' histogram.FloatHistogram type so we can cast between
 // them safely.
 type FloatHistogram struct {
-	// INCOMPATIBLE: gogoproto.casttype "...histogram.CounterResetHint". gogoproto
-	// casts the on-wire uint32 to an external named type so callers can use it
-	// directly as histogram.CounterResetHint. wiresmith has no casttype
-	// equivalent — closest is customtype, but that's restricted to bytes/string
-	// and requires a wiresmith-method-implementing wrapper. Field stays uint32
-	// and downstream casts must be done manually.
-	CounterResetHint uint32       `protobuf:"varint,14,opt,name=counter_reset_hint,json=counterResetHint,proto3" json:"counter_reset_hint,omitempty"`
-	Schema           int32        `protobuf:"zigzag32,4,opt,name=schema,proto3" json:"schema,omitempty"`
-	ZeroThreshold    float64      `protobuf:"fixed64,5,opt,name=zero_threshold,json=zeroThreshold,proto3" json:"zero_threshold,omitempty"`
-	ZeroCount        float64      `protobuf:"fixed64,7,opt,name=zero_count,json=zeroCount,proto3" json:"zero_count,omitempty"`
-	Count            float64      `protobuf:"fixed64,2,opt,name=count,proto3" json:"count,omitempty"`
-	Sum              float64      `protobuf:"fixed64,3,opt,name=sum,proto3" json:"sum,omitempty"`
-	PositiveSpans    []BucketSpan `protobuf:"bytes,11,rep,name=positive_spans,json=positiveSpans,proto3" json:"positive_spans,omitempty"`
-	NegativeSpans    []BucketSpan `protobuf:"bytes,8,rep,name=negative_spans,json=negativeSpans,proto3" json:"negative_spans,omitempty"`
-	PositiveBuckets  []float64    `protobuf:"fixed64,13,rep,packed,name=positive_buckets,json=positiveBuckets,proto3" json:"positive_buckets,omitempty"`
-	NegativeBuckets  []float64    `protobuf:"fixed64,10,rep,packed,name=negative_buckets,json=negativeBuckets,proto3" json:"negative_buckets,omitempty"`
-	CustomValues     []float64    `protobuf:"fixed64,16,rep,packed,name=custom_values,json=customValues,proto3" json:"custom_values,omitempty"`
-
-	fieldsPresent [1]uint64
+	// histogram.CounterResetHint is a defined type over byte; the wiresmith
+	// casttype bridges the on-wire uint32 to it via plain Go conversions,
+	// matching the previous gogoproto.casttype behavior.
+	CounterResetHint histogram.CounterResetHint `protobuf:"varint,14,opt,name=counter_reset_hint,json=counterResetHint,proto3" json:"counter_reset_hint,omitempty"`
+	Schema           int32                      `protobuf:"zigzag32,4,opt,name=schema,proto3" json:"schema,omitempty"`
+	ZeroThreshold    float64                    `protobuf:"fixed64,5,opt,name=zero_threshold,json=zeroThreshold,proto3" json:"zero_threshold,omitempty"`
+	ZeroCount        float64                    `protobuf:"fixed64,7,opt,name=zero_count,json=zeroCount,proto3" json:"zero_count,omitempty"`
+	Count            float64                    `protobuf:"fixed64,2,opt,name=count,proto3" json:"count,omitempty"`
+	Sum              float64                    `protobuf:"fixed64,3,opt,name=sum,proto3" json:"sum,omitempty"`
+	PositiveSpans    []BucketSpan               `protobuf:"bytes,11,rep,name=positive_spans,json=positiveSpans,proto3" json:"positive_spans,omitempty"`
+	NegativeSpans    []BucketSpan               `protobuf:"bytes,8,rep,name=negative_spans,json=negativeSpans,proto3" json:"negative_spans,omitempty"`
+	PositiveBuckets  []float64                  `protobuf:"fixed64,13,rep,packed,name=positive_buckets,json=positiveBuckets,proto3" json:"positive_buckets,omitempty"`
+	NegativeBuckets  []float64                  `protobuf:"fixed64,10,rep,packed,name=negative_buckets,json=negativeBuckets,proto3" json:"negative_buckets,omitempty"`
+	CustomValues     []float64                  `protobuf:"fixed64,16,rep,packed,name=custom_values,json=customValues,proto3" json:"custom_values,omitempty"`
+	// Modified code: no fieldsPresent bitmap — this struct is unsafe-cast
+	// to/from a Prometheus type and must match its memory layout exactly.
 }
 
 // A BucketSpan defines a number of consecutive buckets with their
@@ -532,27 +549,29 @@ type FloatHistogram struct {
 type BucketSpan struct {
 	Offset int32  `protobuf:"zigzag32,1,opt,name=offset,proto3" json:"offset,omitempty"`
 	Length uint32 `protobuf:"varint,2,opt,name=length,proto3" json:"length,omitempty"`
-
-	fieldsPresent [1]uint64
+	// Modified code: no fieldsPresent bitmap — this struct is unsafe-cast
+	// to/from a Prometheus type and must match its memory layout exactly.
 }
 
 type FloatHistogramPair struct {
 	// Fields order MUST match promql.HPoint so that we can cast types between them.
 	TimestampMs int64           `protobuf:"varint,2,opt,name=timestamp_ms,json=timestampMs,proto3" json:"timestamp_ms,omitempty"`
 	Histogram   *FloatHistogram `protobuf:"bytes,1,opt,name=histogram,proto3" json:"histogram,omitempty"`
-
-	fieldsPresent [1]uint64
+	// Modified code: no fieldsPresent bitmap — this struct is unsafe-cast
+	// to/from a Prometheus type and must match its memory layout exactly.
 }
 
 // SampleHistogram is based on https://github.com/prometheus/common/blob/main/model/value_histogram.go
 // for compatibility with PromQL API results
 // Must keep the same order and type of fields for casting
 type SampleHistogram struct {
-	Count   float64           `protobuf:"fixed64,1,opt,name=count,proto3" json:"count,omitempty"`
-	Sum     float64           `protobuf:"fixed64,2,opt,name=sum,proto3" json:"sum,omitempty"`
-	Buckets []HistogramBucket `protobuf:"bytes,3,rep,name=buckets,proto3" json:"buckets,omitempty"`
-
-	fieldsPresent [1]uint64
+	Count float64 `protobuf:"fixed64,1,opt,name=count,proto3" json:"count,omitempty"`
+	Sum   float64 `protobuf:"fixed64,2,opt,name=sum,proto3" json:"sum,omitempty"`
+	// Pointer shape ([]*HistogramBucket) matches model.SampleHistogram.Buckets
+	// for the unsafe cast in compat.go (gogoproto default nullability).
+	Buckets []*HistogramBucket `protobuf:"bytes,3,rep,name=buckets,proto3" json:"buckets,omitempty"`
+	// Modified code: no fieldsPresent bitmap — this struct is unsafe-cast
+	// to/from a Prometheus type and must match its memory layout exactly.
 }
 
 // Must keep the same order and type of fields for casting, see SampleHistogram
@@ -561,14 +580,16 @@ type HistogramBucket struct {
 	Lower      float64 `protobuf:"fixed64,2,opt,name=lower,proto3" json:"lower,omitempty"`
 	Upper      float64 `protobuf:"fixed64,3,opt,name=upper,proto3" json:"upper,omitempty"`
 	Count      float64 `protobuf:"fixed64,4,opt,name=count,proto3" json:"count,omitempty"`
-
-	fieldsPresent [1]uint64
+	// Modified code: no fieldsPresent bitmap — this struct is unsafe-cast
+	// to/from a Prometheus type and must match its memory layout exactly.
 }
 
 // Must keep the same order and type of fields for casting, see SampleHistogram
 type SampleHistogramPair struct {
-	Timestamp int64           `protobuf:"varint,2,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
-	Histogram SampleHistogram `protobuf:"bytes,1,opt,name=histogram,proto3" json:"histogram,omitempty"`
+	Timestamp int64 `protobuf:"varint,2,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
+	// Pointer shape (*SampleHistogram) matches model.SampleHistogramPair for
+	// the unsafe cast in compat.go (gogoproto default nullability).
+	Histogram *SampleHistogram `protobuf:"bytes,1,opt,name=histogram,proto3" json:"histogram,omitempty"`
 
 	fieldsPresent [1]uint64
 }
@@ -1165,20 +1186,6 @@ func (m *LabelPair) HasValue() bool {
 	return m.fieldsPresent[0]&(1<<1) != 0
 }
 
-func (m *Sample) HasTimestampMs() bool {
-	if m == nil {
-		return false
-	}
-	return m.fieldsPresent[0]&(1<<0) != 0
-}
-
-func (m *Sample) HasValue() bool {
-	if m == nil {
-		return false
-	}
-	return m.fieldsPresent[0]&(1<<1) != 0
-}
-
 func (m *MetricMetadata) HasType() bool {
 	if m == nil {
 		return false
@@ -1256,123 +1263,11 @@ func (m *Histogram) HasTimestamp() bool {
 	return m.fieldsPresent[0]&(1<<4) != 0
 }
 
-func (m *FloatHistogram) HasCounterResetHint() bool {
-	if m == nil {
-		return false
-	}
-	return m.fieldsPresent[0]&(1<<0) != 0
-}
-
-func (m *FloatHistogram) HasSchema() bool {
-	if m == nil {
-		return false
-	}
-	return m.fieldsPresent[0]&(1<<1) != 0
-}
-
-func (m *FloatHistogram) HasZeroThreshold() bool {
-	if m == nil {
-		return false
-	}
-	return m.fieldsPresent[0]&(1<<2) != 0
-}
-
-func (m *FloatHistogram) HasZeroCount() bool {
-	if m == nil {
-		return false
-	}
-	return m.fieldsPresent[0]&(1<<3) != 0
-}
-
-func (m *FloatHistogram) HasCount() bool {
-	if m == nil {
-		return false
-	}
-	return m.fieldsPresent[0]&(1<<4) != 0
-}
-
-func (m *FloatHistogram) HasSum() bool {
-	if m == nil {
-		return false
-	}
-	return m.fieldsPresent[0]&(1<<5) != 0
-}
-
-func (m *BucketSpan) HasOffset() bool {
-	if m == nil {
-		return false
-	}
-	return m.fieldsPresent[0]&(1<<0) != 0
-}
-
-func (m *BucketSpan) HasLength() bool {
-	if m == nil {
-		return false
-	}
-	return m.fieldsPresent[0]&(1<<1) != 0
-}
-
-func (m *FloatHistogramPair) HasTimestampMs() bool {
-	if m == nil {
-		return false
-	}
-	return m.fieldsPresent[0]&(1<<0) != 0
-}
-
-func (m *SampleHistogram) HasCount() bool {
-	if m == nil {
-		return false
-	}
-	return m.fieldsPresent[0]&(1<<0) != 0
-}
-
-func (m *SampleHistogram) HasSum() bool {
-	if m == nil {
-		return false
-	}
-	return m.fieldsPresent[0]&(1<<1) != 0
-}
-
-func (m *HistogramBucket) HasBoundaries() bool {
-	if m == nil {
-		return false
-	}
-	return m.fieldsPresent[0]&(1<<0) != 0
-}
-
-func (m *HistogramBucket) HasLower() bool {
-	if m == nil {
-		return false
-	}
-	return m.fieldsPresent[0]&(1<<1) != 0
-}
-
-func (m *HistogramBucket) HasUpper() bool {
-	if m == nil {
-		return false
-	}
-	return m.fieldsPresent[0]&(1<<2) != 0
-}
-
-func (m *HistogramBucket) HasCount() bool {
-	if m == nil {
-		return false
-	}
-	return m.fieldsPresent[0]&(1<<3) != 0
-}
-
 func (m *SampleHistogramPair) HasTimestamp() bool {
 	if m == nil {
 		return false
 	}
 	return m.fieldsPresent[0]&(1<<0) != 0
-}
-
-func (m *SampleHistogramPair) HasHistogram() bool {
-	if m == nil {
-		return false
-	}
-	return m.fieldsPresent[0]&(1<<1) != 0
 }
 
 func (m *QueryResponse) HasStatus() bool {
@@ -1501,7 +1396,7 @@ func (m *MetadataRW2) HasUnitRef() bool {
 	return m.fieldsPresent[0]&(1<<2) != 0
 }
 
-func (m *WriteRequest) GetTimeseries() []TimeSeries {
+func (m *WriteRequest) GetTimeseries() []PreallocTimeseries {
 	if m != nil {
 		return m.Timeseries
 	}
@@ -1571,7 +1466,7 @@ func (m *ErrorDetails) GetRejectedSamples() int64 {
 	return 0
 }
 
-func (m *TimeSeries) GetLabels() []LabelPair {
+func (m *TimeSeries) GetLabels() []UnsafeMutableLabel {
 	if m != nil {
 		return m.Labels
 	}
@@ -1662,14 +1557,14 @@ func (m *MetricMetadata) GetUnit() string {
 	return ""
 }
 
-func (m *Metric) GetLabels() []LabelPair {
+func (m *Metric) GetLabels() []UnsafeMutableLabel {
 	if m != nil {
 		return m.Labels
 	}
 	return nil
 }
 
-func (m *Exemplar) GetLabels() []LabelPair {
+func (m *Exemplar) GetLabels() []UnsafeMutableLabel {
 	if m != nil {
 		return m.Labels
 	}
@@ -1816,11 +1711,12 @@ func (m *Histogram) GetCustomValues() []float64 {
 	return nil
 }
 
-func (m *FloatHistogram) GetCounterResetHint() uint32 {
+func (m *FloatHistogram) GetCounterResetHint() histogram.CounterResetHint {
 	if m != nil {
 		return m.CounterResetHint
 	}
-	return 0
+	var zero histogram.CounterResetHint
+	return zero
 }
 
 func (m *FloatHistogram) GetSchema() int32 {
@@ -1935,7 +1831,7 @@ func (m *SampleHistogram) GetSum() float64 {
 	return 0
 }
 
-func (m *SampleHistogram) GetBuckets() []HistogramBucket {
+func (m *SampleHistogram) GetBuckets() []*HistogramBucket {
 	if m != nil {
 		return m.Buckets
 	}
@@ -1978,8 +1874,8 @@ func (m *SampleHistogramPair) GetTimestamp() int64 {
 }
 
 func (m *SampleHistogramPair) GetHistogram() *SampleHistogram {
-	if m != nil && m.fieldsPresent[0]&(1<<1) != 0 {
-		return &m.Histogram
+	if m != nil {
+		return m.Histogram
 	}
 	return nil
 }
@@ -2270,7 +2166,7 @@ func (m *WriteRequest) Size() int {
 	}
 	var n int
 	for i := range m.Timeseries {
-		s := m.Timeseries[i].Size()
+		s := m.Timeseries[i].SizeWiresmith()
 		n += 1 + protowire.SizeVarint(uint64(s)) + s
 	}
 	if m.Source != 0 {
@@ -2330,7 +2226,7 @@ func (m *TimeSeries) Size() int {
 	}
 	var n int
 	for i := range m.Labels {
-		s := m.Labels[i].Size()
+		s := m.Labels[i].SizeWiresmith()
 		n += 1 + protowire.SizeVarint(uint64(s)) + s
 	}
 	for i := range m.Samples {
@@ -2405,7 +2301,7 @@ func (m *Metric) Size() int {
 	}
 	var n int
 	for i := range m.Labels {
-		s := m.Labels[i].Size()
+		s := m.Labels[i].SizeWiresmith()
 		n += 1 + protowire.SizeVarint(uint64(s)) + s
 	}
 	return n
@@ -2417,7 +2313,7 @@ func (m *Exemplar) Size() int {
 	}
 	var n int
 	for i := range m.Labels {
-		s := m.Labels[i].Size()
+		s := m.Labels[i].SizeWiresmith()
 		n += 1 + protowire.SizeVarint(uint64(s)) + s
 	}
 	if math.Float64bits(m.Value) != 0 {
@@ -2587,7 +2483,10 @@ func (m *SampleHistogram) Size() int {
 		n += 9
 	}
 	for i := range m.Buckets {
-		s := m.Buckets[i].Size()
+		if m.Buckets[i] == nil {
+			continue
+		}
+		s := (*m.Buckets[i]).Size()
 		n += 1 + protowire.SizeVarint(uint64(s)) + s
 	}
 	return n
@@ -2621,13 +2520,9 @@ func (m *SampleHistogramPair) Size() int {
 	if m.Timestamp != 0 {
 		n += 1 + protowire.SizeVarint(uint64(m.Timestamp))
 	}
-	{
-		s := m.Histogram.Size()
-		if s > 0 {
-			n += 1 + protowire.SizeVarint(uint64(s)) + s
-		} else if m.fieldsPresent[0]&(1<<1) != 0 {
-			n += 2
-		}
+	if m.Histogram != nil {
+		s := (*m.Histogram).Size()
+		n += 1 + protowire.SizeVarint(uint64(s)) + s
 	}
 	return n
 }
@@ -2963,12 +2858,18 @@ func (m *WriteRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 		dAtA[i] = 0x10
 	}
 	for iNdEx := len(m.Timeseries) - 1; iNdEx >= 0; iNdEx-- {
-		size, err := m.Timeseries[iNdEx].MarshalToSizedBuffer(dAtA[:i])
-		if err != nil {
-			return 0, err
+		s := m.Timeseries[iNdEx].SizeWiresmith()
+		i -= s
+		if s > 0 {
+			n, err := m.Timeseries[iNdEx].MarshalWiresmith(dAtA[i : i+s])
+			if err != nil {
+				return 0, err
+			}
+			if n != s {
+				return 0, fmt.Errorf("m.Timeseries[iNdEx].MarshalWiresmith returned %d bytes, expected %d", n, s)
+			}
 		}
-		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = protohelpers.EncodeVarint(dAtA, i, uint64(s))
 		i--
 		dAtA[i] = 0x0a
 	}
@@ -3124,12 +3025,18 @@ func (m *TimeSeries) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 		dAtA[i] = 0x12
 	}
 	for iNdEx := len(m.Labels) - 1; iNdEx >= 0; iNdEx-- {
-		size, err := m.Labels[iNdEx].MarshalToSizedBuffer(dAtA[:i])
-		if err != nil {
-			return 0, err
+		s := m.Labels[iNdEx].SizeWiresmith()
+		i -= s
+		if s > 0 {
+			n, err := m.Labels[iNdEx].MarshalWiresmith(dAtA[i : i+s])
+			if err != nil {
+				return 0, err
+			}
+			if n != s {
+				return 0, fmt.Errorf("m.Labels[iNdEx].MarshalWiresmith returned %d bytes, expected %d", n, s)
+			}
 		}
-		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = protohelpers.EncodeVarint(dAtA, i, uint64(s))
 		i--
 		dAtA[i] = 0x0a
 	}
@@ -3313,12 +3220,18 @@ func (m *Metric) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	}
 	i := len(dAtA)
 	for iNdEx := len(m.Labels) - 1; iNdEx >= 0; iNdEx-- {
-		size, err := m.Labels[iNdEx].MarshalToSizedBuffer(dAtA[:i])
-		if err != nil {
-			return 0, err
+		s := m.Labels[iNdEx].SizeWiresmith()
+		i -= s
+		if s > 0 {
+			n, err := m.Labels[iNdEx].MarshalWiresmith(dAtA[i : i+s])
+			if err != nil {
+				return 0, err
+			}
+			if n != s {
+				return 0, fmt.Errorf("m.Labels[iNdEx].MarshalWiresmith returned %d bytes, expected %d", n, s)
+			}
 		}
-		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = protohelpers.EncodeVarint(dAtA, i, uint64(s))
 		i--
 		dAtA[i] = 0x0a
 	}
@@ -3366,12 +3279,18 @@ func (m *Exemplar) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 		dAtA[i] = 0x11
 	}
 	for iNdEx := len(m.Labels) - 1; iNdEx >= 0; iNdEx-- {
-		size, err := m.Labels[iNdEx].MarshalToSizedBuffer(dAtA[:i])
-		if err != nil {
-			return 0, err
+		s := m.Labels[iNdEx].SizeWiresmith()
+		i -= s
+		if s > 0 {
+			n, err := m.Labels[iNdEx].MarshalWiresmith(dAtA[i : i+s])
+			if err != nil {
+				return 0, err
+			}
+			if n != s {
+				return 0, fmt.Errorf("m.Labels[iNdEx].MarshalWiresmith returned %d bytes, expected %d", n, s)
+			}
 		}
-		i -= size
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i = protohelpers.EncodeVarint(dAtA, i, uint64(s))
 		i--
 		dAtA[i] = 0x0a
 	}
@@ -3762,7 +3681,10 @@ func (m *SampleHistogram) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	}
 	i := len(dAtA)
 	for iNdEx := len(m.Buckets) - 1; iNdEx >= 0; iNdEx-- {
-		size, err := m.Buckets[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+		if m.Buckets[iNdEx] == nil {
+			continue
+		}
+		size, err := (*m.Buckets[iNdEx]).MarshalToSizedBuffer(dAtA[:i])
 		if err != nil {
 			return 0, err
 		}
@@ -3875,22 +3797,15 @@ func (m *SampleHistogramPair) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 		i--
 		dAtA[i] = 0x10
 	}
-	{
-		size, err := m.Histogram.MarshalToSizedBuffer(dAtA[:i])
+	if m.Histogram != nil {
+		size, err := (*m.Histogram).MarshalToSizedBuffer(dAtA[:i])
 		if err != nil {
 			return 0, err
 		}
-		if size > 0 {
-			i -= size
-			i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
-			i--
-			dAtA[i] = 0x0a
-		} else if m.fieldsPresent[0]&(1<<1) != 0 {
-			i--
-			dAtA[i] = 0
-			i--
-			dAtA[i] = 0x0a
-		}
+		i -= size
+		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i--
+		dAtA[i] = 0x0a
 	}
 	return len(dAtA) - i, nil
 }
@@ -4669,6 +4584,9 @@ func (m *WriteRequest) UnmarshalWithDepth(b []byte, depth int) error {
 }
 
 func (m *WriteRequest) unmarshal(dAtA []byte, depth int) error {
+	var metadata metadataSet
+	seenFirstSymbol := false
+
 	if depth > maxUnmarshalDepth {
 		return fmt.Errorf("exceeded max recursion depth")
 	}
@@ -4739,11 +4657,19 @@ func (m *WriteRequest) unmarshal(dAtA []byte, depth int) error {
 			}
 		}
 		preCapMax := l / 2
+		// Modified code: the Timeseries slice is usually preallocated from a
+		// pool by PreallocWriteRequest.Unmarshal, so only allocate when the
+		// pooled capacity is insufficient. In RW2 mode field 5 entries are
+		// decoded into m.Timeseries (not m.TimeseriesRW2), and field 4 symbols
+		// go into m.rw2symbols pages, so their target slices differ from the
+		// declared proto fields.
 		if c := field1count; c > 0 {
 			if c > preCapMax {
 				c = preCapMax
 			}
-			m.Timeseries = make([]TimeSeries, 0, c)
+			if cap(m.Timeseries) < c {
+				m.Timeseries = make([]PreallocTimeseries, 0, c)
+			}
 		}
 		if c := field3count; c > 0 {
 			if c > preCapMax {
@@ -4751,18 +4677,15 @@ func (m *WriteRequest) unmarshal(dAtA []byte, depth int) error {
 			}
 			m.Metadata = make([]*MetricMetadata, 0, c)
 		}
-		if c := field4count; c > 0 {
+		if c := field5count; c > 0 && m.unmarshalFromRW2 {
 			if c > preCapMax {
 				c = preCapMax
 			}
-			m.SymbolsRW2 = make([]string, 0, c)
-		}
-		if c := field5count; c > 0 {
-			if c > preCapMax {
-				c = preCapMax
+			if cap(m.Timeseries) < c {
+				m.Timeseries = make([]PreallocTimeseries, 0, c)
 			}
-			m.TimeseriesRW2 = make([]TimeSeriesRW2, 0, c)
 		}
+		// End modified code.
 	}
 	for iNdEx < l {
 		var wire uint64
@@ -4834,10 +4757,18 @@ func (m *WriteRequest) unmarshal(dAtA []byte, depth int) error {
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			m.Timeseries = append(m.Timeseries, TimeSeries{})
-			if err := m.Timeseries[len(m.Timeseries)-1].unmarshal(dAtA[iNdEx:postIndex], depth+1); err != nil {
+			// Modified code: reject RW1 timeseries in RW2 mode, propagate the
+			// exemplar-skipping flag, and unmarshal in place so the pooled
+			// backing array is reused.
+			if m.unmarshalFromRW2 {
+				return errorUnexpectedRW1Timeseries
+			}
+			m.Timeseries = append(m.Timeseries, PreallocTimeseries{})
+			m.Timeseries[len(m.Timeseries)-1].skipUnmarshalingExemplars = m.skipUnmarshalingExemplars
+			if err := m.Timeseries[len(m.Timeseries)-1].Unmarshal(dAtA[iNdEx:postIndex], nil, nil, m.skipNormalizeMetadataMetricName); err != nil {
 				return err
 			}
+			// End modified code.
 			iNdEx = postIndex
 		case 2: // Source
 			if wireType != 0 {
@@ -4869,6 +4800,11 @@ func (m *WriteRequest) unmarshal(dAtA []byte, depth int) error {
 			m.Source = WriteRequest_SourceEnum(v)
 			m.fieldsPresent[0] |= 1 << 0
 		case 3: // metadata
+			// Modified code: reject RW1 metadata in RW2 mode.
+			if m.unmarshalFromRW2 {
+				return errorUnexpectedRW1Metadata
+			}
+			// End modified code.
 			if wireType != 2 {
 				n, err := skipValue(dAtA[iNdEx:], wireType, fieldNum)
 				if err != nil {
@@ -4917,6 +4853,11 @@ func (m *WriteRequest) unmarshal(dAtA []byte, depth int) error {
 			}
 			iNdEx = postIndex
 		case 4: // symbolsRW2
+			// Modified code: only valid in RW2 mode.
+			if !m.unmarshalFromRW2 {
+				return errorUnexpectedRW2Symbols
+			}
+			// End modified code.
 			if wireType != 2 {
 				n, err := skipValue(dAtA[iNdEx:], wireType, fieldNum)
 				if err != nil {
@@ -4959,9 +4900,21 @@ func (m *WriteRequest) unmarshal(dAtA []byte, depth int) error {
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			m.SymbolsRW2 = append(m.SymbolsRW2, string(dAtA[iNdEx:postIndex]))
+			// Modified code: symbols are yolo-string references into the
+			// request buffer, stored in paged storage instead of m.SymbolsRW2.
+			if !seenFirstSymbol && postIndex > iNdEx {
+				return errorInvalidFirstSymbol
+			}
+			seenFirstSymbol = true
+			m.rw2symbols.append(yoloString(dAtA[iNdEx:postIndex]))
+			// End modified code.
 			iNdEx = postIndex
 		case 5: // timeseriesRW2
+			// Modified code: only valid in RW2 mode.
+			if !m.unmarshalFromRW2 {
+				return errorUnexpectedRW2Timeseries
+			}
+			// End modified code.
 			if wireType != 2 {
 				n, err := skipValue(dAtA[iNdEx:], wireType, fieldNum)
 				if err != nil {
@@ -5004,10 +4957,18 @@ func (m *WriteRequest) unmarshal(dAtA []byte, depth int) error {
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			m.TimeseriesRW2 = append(m.TimeseriesRW2, TimeSeriesRW2{})
-			if err := m.TimeseriesRW2[len(m.TimeseriesRW2)-1].unmarshal(dAtA[iNdEx:postIndex], depth+1); err != nil {
+			// Modified code: RW2 timeseries are decoded straight into the RW1
+			// in-memory representation (PreallocTimeseries), resolving symbol
+			// references against m.rw2symbols.
+			m.Timeseries = append(m.Timeseries, PreallocTimeseries{})
+			m.Timeseries[len(m.Timeseries)-1].skipUnmarshalingExemplars = m.skipUnmarshalingExemplars
+			if metadata == nil {
+				metadata = metadataSetFromSettings(m.skipDeduplicateMetadata)
+			}
+			if err := m.Timeseries[len(m.Timeseries)-1].Unmarshal(dAtA[iNdEx:postIndex], &m.rw2symbols, metadata, m.skipNormalizeMetadataMetricName); err != nil {
 				return err
 			}
+			// End modified code.
 			iNdEx = postIndex
 		case 1000: // skip_label_validation
 			if wireType != 0 {
@@ -5078,6 +5039,17 @@ func (m *WriteRequest) unmarshal(dAtA []byte, depth int) error {
 	if iNdEx > l {
 		return io.ErrUnexpectedEOF
 	}
+
+	// Modified code: flush the metadata collected from RW2 timeseries and
+	// release the symbol pages back to their pool.
+	if m.unmarshalFromRW2 {
+		if metadata != nil {
+			m.Metadata = metadata.slice()
+		}
+		m.rw2symbols.releasePages()
+	}
+	// End modified code.
+
 	return nil
 }
 
@@ -5370,26 +5342,38 @@ func (m *TimeSeries) unmarshal(dAtA []byte, depth int) error {
 			if c > preCapMax {
 				c = preCapMax
 			}
-			m.Labels = make([]LabelPair, 0, c)
+			// Modified code: TimeSeries usually comes from a pool
+			// (TimeseriesFromPool) with preallocated slices; only allocate
+			// when the pooled capacity is insufficient. Same below.
+			if cap(m.Labels) < c {
+				m.Labels = make([]UnsafeMutableLabel, 0, c)
+			}
 		}
 		if c := field2count; c > 0 {
 			if c > preCapMax {
 				c = preCapMax
 			}
-			m.Samples = make([]Sample, 0, c)
+			if cap(m.Samples) < c {
+				m.Samples = make([]Sample, 0, c)
+			}
 		}
-		if c := field3count; c > 0 {
+		if c := field3count; c > 0 && !m.SkipUnmarshalingExemplars {
 			if c > preCapMax {
 				c = preCapMax
 			}
-			m.Exemplars = make([]Exemplar, 0, c)
+			if cap(m.Exemplars) < c {
+				m.Exemplars = make([]Exemplar, 0, c)
+			}
 		}
 		if c := field4count; c > 0 {
 			if c > preCapMax {
 				c = preCapMax
 			}
-			m.Histograms = make([]Histogram, 0, c)
+			if cap(m.Histograms) < c {
+				m.Histograms = make([]Histogram, 0, c)
+			}
 		}
+		// End modified code.
 	}
 	for iNdEx < l {
 		var wire uint64
@@ -5461,10 +5445,11 @@ func (m *TimeSeries) unmarshal(dAtA []byte, depth int) error {
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			m.Labels = append(m.Labels, LabelPair{})
-			if err := m.Labels[len(m.Labels)-1].unmarshal(dAtA[iNdEx:postIndex], depth+1); err != nil {
+			var elem UnsafeMutableLabel
+			if err := elem.UnmarshalWiresmith(dAtA[iNdEx:postIndex]); err != nil {
 				return err
 			}
+			m.Labels = append(m.Labels, elem)
 			iNdEx = postIndex
 		case 2: // samples
 			if wireType != 2 {
@@ -5557,10 +5542,14 @@ func (m *TimeSeries) unmarshal(dAtA []byte, depth int) error {
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			m.Exemplars = append(m.Exemplars, Exemplar{})
-			if err := m.Exemplars[len(m.Exemplars)-1].unmarshal(dAtA[iNdEx:postIndex], depth+1); err != nil {
-				return err
+			// Modified code: optionally skip unmarshalling exemplars.
+			if !m.SkipUnmarshalingExemplars {
+				m.Exemplars = append(m.Exemplars, Exemplar{})
+				if err := m.Exemplars[len(m.Exemplars)-1].unmarshal(dAtA[iNdEx:postIndex], depth+1); err != nil {
+					return err
+				}
 			}
+			// End modified code.
 			iNdEx = postIndex
 		case 4: // histograms
 			if wireType != 2 {
@@ -5875,7 +5864,6 @@ func (m *Sample) unmarshal(dAtA []byte, depth int) error {
 				}
 			}
 			m.TimestampMs = int64(v)
-			m.fieldsPresent[0] |= 1 << 0
 		case 1: // value
 			if wireType != 1 {
 				n, err := skipValue(dAtA[iNdEx:], wireType, fieldNum)
@@ -5891,7 +5879,6 @@ func (m *Sample) unmarshal(dAtA []byte, depth int) error {
 			v := binary.LittleEndian.Uint64(dAtA[iNdEx:])
 			iNdEx += 8
 			m.Value = math.Float64frombits(v)
-			m.fieldsPresent[0] |= 1 << 1
 		default:
 			n, err := skipValue(dAtA[iNdEx:], wireType, fieldNum)
 			if err != nil {
@@ -6208,7 +6195,7 @@ func (m *Metric) unmarshal(dAtA []byte, depth int) error {
 			if c > preCapMax {
 				c = preCapMax
 			}
-			m.Labels = make([]LabelPair, 0, c)
+			m.Labels = make([]UnsafeMutableLabel, 0, c)
 		}
 	}
 	for iNdEx < l {
@@ -6281,10 +6268,11 @@ func (m *Metric) unmarshal(dAtA []byte, depth int) error {
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			m.Labels = append(m.Labels, LabelPair{})
-			if err := m.Labels[len(m.Labels)-1].unmarshal(dAtA[iNdEx:postIndex], depth+1); err != nil {
+			var elem UnsafeMutableLabel
+			if err := elem.UnmarshalWiresmith(dAtA[iNdEx:postIndex]); err != nil {
 				return err
 			}
+			m.Labels = append(m.Labels, elem)
 			iNdEx = postIndex
 		default:
 			n, err := skipValue(dAtA[iNdEx:], wireType, fieldNum)
@@ -6377,7 +6365,7 @@ func (m *Exemplar) unmarshal(dAtA []byte, depth int) error {
 			if c > preCapMax {
 				c = preCapMax
 			}
-			m.Labels = make([]LabelPair, 0, c)
+			m.Labels = make([]UnsafeMutableLabel, 0, c)
 		}
 	}
 	for iNdEx < l {
@@ -6450,10 +6438,11 @@ func (m *Exemplar) unmarshal(dAtA []byte, depth int) error {
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			m.Labels = append(m.Labels, LabelPair{})
-			if err := m.Labels[len(m.Labels)-1].unmarshal(dAtA[iNdEx:postIndex], depth+1); err != nil {
+			var elem UnsafeMutableLabel
+			if err := elem.UnmarshalWiresmith(dAtA[iNdEx:postIndex]); err != nil {
 				return err
 			}
+			m.Labels = append(m.Labels, elem)
 			iNdEx = postIndex
 		case 2: // value
 			if wireType != 1 {
@@ -7471,8 +7460,7 @@ func (m *FloatHistogram) unmarshal(dAtA []byte, depth int) error {
 					break
 				}
 			}
-			m.CounterResetHint = uint32(v)
-			m.fieldsPresent[0] |= 1 << 0
+			m.CounterResetHint = histogram.CounterResetHint(uint32(v))
 		case 4: // schema
 			if wireType != 0 {
 				n, err := skipValue(dAtA[iNdEx:], wireType, fieldNum)
@@ -7501,7 +7489,6 @@ func (m *FloatHistogram) unmarshal(dAtA []byte, depth int) error {
 				}
 			}
 			m.Schema = int32(uint32(v)>>1) ^ int32(uint32(v))<<31>>31
-			m.fieldsPresent[0] |= 1 << 1
 		case 5: // zero_threshold
 			if wireType != 1 {
 				n, err := skipValue(dAtA[iNdEx:], wireType, fieldNum)
@@ -7517,7 +7504,6 @@ func (m *FloatHistogram) unmarshal(dAtA []byte, depth int) error {
 			v := binary.LittleEndian.Uint64(dAtA[iNdEx:])
 			iNdEx += 8
 			m.ZeroThreshold = math.Float64frombits(v)
-			m.fieldsPresent[0] |= 1 << 2
 		case 7: // zero_count
 			if wireType != 1 {
 				n, err := skipValue(dAtA[iNdEx:], wireType, fieldNum)
@@ -7533,7 +7519,6 @@ func (m *FloatHistogram) unmarshal(dAtA []byte, depth int) error {
 			v := binary.LittleEndian.Uint64(dAtA[iNdEx:])
 			iNdEx += 8
 			m.ZeroCount = math.Float64frombits(v)
-			m.fieldsPresent[0] |= 1 << 3
 		case 2: // count
 			if wireType != 1 {
 				n, err := skipValue(dAtA[iNdEx:], wireType, fieldNum)
@@ -7549,7 +7534,6 @@ func (m *FloatHistogram) unmarshal(dAtA []byte, depth int) error {
 			v := binary.LittleEndian.Uint64(dAtA[iNdEx:])
 			iNdEx += 8
 			m.Count = math.Float64frombits(v)
-			m.fieldsPresent[0] |= 1 << 4
 		case 3: // sum
 			if wireType != 1 {
 				n, err := skipValue(dAtA[iNdEx:], wireType, fieldNum)
@@ -7565,7 +7549,6 @@ func (m *FloatHistogram) unmarshal(dAtA []byte, depth int) error {
 			v := binary.LittleEndian.Uint64(dAtA[iNdEx:])
 			iNdEx += 8
 			m.Sum = math.Float64frombits(v)
-			m.fieldsPresent[0] |= 1 << 5
 		case 11: // positive_spans
 			if wireType != 2 {
 				n, err := skipValue(dAtA[iNdEx:], wireType, fieldNum)
@@ -7937,7 +7920,6 @@ func (m *BucketSpan) unmarshal(dAtA []byte, depth int) error {
 				}
 			}
 			m.Offset = int32(uint32(v)>>1) ^ int32(uint32(v))<<31>>31
-			m.fieldsPresent[0] |= 1 << 0
 		case 2: // length
 			if wireType != 0 {
 				n, err := skipValue(dAtA[iNdEx:], wireType, fieldNum)
@@ -7966,7 +7948,6 @@ func (m *BucketSpan) unmarshal(dAtA []byte, depth int) error {
 				}
 			}
 			m.Length = uint32(v)
-			m.fieldsPresent[0] |= 1 << 1
 		default:
 			n, err := skipValue(dAtA[iNdEx:], wireType, fieldNum)
 			if err != nil {
@@ -8053,7 +8034,6 @@ func (m *FloatHistogramPair) unmarshal(dAtA []byte, depth int) error {
 				}
 			}
 			m.TimestampMs = int64(v)
-			m.fieldsPresent[0] |= 1 << 0
 		case 1: // histogram
 			if wireType != 2 {
 				n, err := skipValue(dAtA[iNdEx:], wireType, fieldNum)
@@ -8195,7 +8175,7 @@ func (m *SampleHistogram) unmarshal(dAtA []byte, depth int) error {
 			if c > preCapMax {
 				c = preCapMax
 			}
-			m.Buckets = make([]HistogramBucket, 0, c)
+			m.Buckets = make([]*HistogramBucket, 0, c)
 		}
 	}
 	for iNdEx < l {
@@ -8240,7 +8220,6 @@ func (m *SampleHistogram) unmarshal(dAtA []byte, depth int) error {
 			v := binary.LittleEndian.Uint64(dAtA[iNdEx:])
 			iNdEx += 8
 			m.Count = math.Float64frombits(v)
-			m.fieldsPresent[0] |= 1 << 0
 		case 2: // sum
 			if wireType != 1 {
 				n, err := skipValue(dAtA[iNdEx:], wireType, fieldNum)
@@ -8256,7 +8235,6 @@ func (m *SampleHistogram) unmarshal(dAtA []byte, depth int) error {
 			v := binary.LittleEndian.Uint64(dAtA[iNdEx:])
 			iNdEx += 8
 			m.Sum = math.Float64frombits(v)
-			m.fieldsPresent[0] |= 1 << 1
 		case 3: // buckets
 			if wireType != 2 {
 				n, err := skipValue(dAtA[iNdEx:], wireType, fieldNum)
@@ -8300,7 +8278,7 @@ func (m *SampleHistogram) unmarshal(dAtA []byte, depth int) error {
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			m.Buckets = append(m.Buckets, HistogramBucket{})
+			m.Buckets = append(m.Buckets, &HistogramBucket{})
 			if err := m.Buckets[len(m.Buckets)-1].unmarshal(dAtA[iNdEx:postIndex], depth+1); err != nil {
 				return err
 			}
@@ -8391,7 +8369,6 @@ func (m *HistogramBucket) unmarshal(dAtA []byte, depth int) error {
 				}
 			}
 			m.Boundaries = int32(v)
-			m.fieldsPresent[0] |= 1 << 0
 		case 2: // lower
 			if wireType != 1 {
 				n, err := skipValue(dAtA[iNdEx:], wireType, fieldNum)
@@ -8407,7 +8384,6 @@ func (m *HistogramBucket) unmarshal(dAtA []byte, depth int) error {
 			v := binary.LittleEndian.Uint64(dAtA[iNdEx:])
 			iNdEx += 8
 			m.Lower = math.Float64frombits(v)
-			m.fieldsPresent[0] |= 1 << 1
 		case 3: // upper
 			if wireType != 1 {
 				n, err := skipValue(dAtA[iNdEx:], wireType, fieldNum)
@@ -8423,7 +8399,6 @@ func (m *HistogramBucket) unmarshal(dAtA []byte, depth int) error {
 			v := binary.LittleEndian.Uint64(dAtA[iNdEx:])
 			iNdEx += 8
 			m.Upper = math.Float64frombits(v)
-			m.fieldsPresent[0] |= 1 << 2
 		case 4: // count
 			if wireType != 1 {
 				n, err := skipValue(dAtA[iNdEx:], wireType, fieldNum)
@@ -8439,7 +8414,6 @@ func (m *HistogramBucket) unmarshal(dAtA []byte, depth int) error {
 			v := binary.LittleEndian.Uint64(dAtA[iNdEx:])
 			iNdEx += 8
 			m.Count = math.Float64frombits(v)
-			m.fieldsPresent[0] |= 1 << 3
 		default:
 			n, err := skipValue(dAtA[iNdEx:], wireType, fieldNum)
 			if err != nil {
@@ -8570,11 +8544,13 @@ func (m *SampleHistogramPair) unmarshal(dAtA []byte, depth int) error {
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
+			if m.Histogram == nil {
+				m.Histogram = new(SampleHistogram)
+			}
 			if err := m.Histogram.unmarshal(dAtA[iNdEx:postIndex], depth+1); err != nil {
 				return err
 			}
 			iNdEx = postIndex
-			m.fieldsPresent[0] |= 1 << 1
 		default:
 			n, err := skipValue(dAtA[iNdEx:], wireType, fieldNum)
 			if err != nil {
@@ -10721,449 +10697,10 @@ func (m *TimeSeriesRW2) UnmarshalWithDepth(b []byte, depth int) error {
 }
 
 func (m *TimeSeriesRW2) unmarshal(dAtA []byte, depth int) error {
-	if depth > maxUnmarshalDepth {
-		return fmt.Errorf("exceeded max recursion depth")
-	}
-	l := len(dAtA)
-	iNdEx := 0
-	if l >= 256 {
-		var preIdx int
-		var field2count int
-		var field3count int
-		var field4count int
-		for preIdx < l {
-			var preWire uint64
-			for shift := uint(0); ; shift += 7 {
-				if preIdx >= l {
-					break
-				}
-				b := dAtA[preIdx]
-				preIdx++
-				preWire |= uint64(b&0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-			preNum := int32(preWire >> 3)
-			preTyp := int(preWire & 0x7)
-			switch preNum {
-			case 2:
-				field2count++
-			case 3:
-				field3count++
-			case 4:
-				field4count++
-			}
-			switch preTyp {
-			case 0:
-				for preIdx < l {
-					preIdx++
-					if dAtA[preIdx-1] < 0x80 {
-						break
-					}
-				}
-			case 1:
-				preIdx += 8
-			case 2:
-				var preLen uint64
-				for shift := uint(0); ; shift += 7 {
-					if preIdx >= l {
-						break
-					}
-					b := dAtA[preIdx]
-					preIdx++
-					preLen |= uint64(b&0x7F) << shift
-					if b < 0x80 {
-						break
-					}
-				}
-				preIdx += int(preLen)
-			case 5:
-				preIdx += 4
-			default:
-				preIdx = -1
-			}
-			if preIdx < 0 || preIdx > l {
-				break
-			}
-		}
-		preCapMax := l / 2
-		if c := field2count; c > 0 {
-			if c > preCapMax {
-				c = preCapMax
-			}
-			m.Samples = make([]Sample, 0, c)
-		}
-		if c := field3count; c > 0 {
-			if c > preCapMax {
-				c = preCapMax
-			}
-			m.Histograms = make([]Histogram, 0, c)
-		}
-		if c := field4count; c > 0 {
-			if c > preCapMax {
-				c = preCapMax
-			}
-			m.Exemplars = make([]ExemplarRW2, 0, c)
-		}
-	}
-	for iNdEx < l {
-		var wire uint64
-		if iNdEx < l && dAtA[iNdEx] < 0x80 {
-			wire = uint64(dAtA[iNdEx])
-			iNdEx++
-		} else {
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 35 {
-					return fmt.Errorf("proto: integer overflow")
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				wire |= uint64(b&0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-		}
-		if wire>>3 < 1 || wire>>3 > 0x1FFFFFFF {
-			return fmt.Errorf("invalid field number")
-		}
-		fieldNum := int32(wire >> 3)
-		wireType := int(wire & 0x7)
-		switch fieldNum {
-		case 1: // labels_refs
-			if wireType == 2 {
-				var byteLen uint64
-				if iNdEx < l && dAtA[iNdEx] < 0x80 {
-					byteLen = uint64(dAtA[iNdEx])
-					iNdEx++
-				} else {
-					for shift := uint(0); ; shift += 7 {
-						if shift >= 64 {
-							return fmt.Errorf("proto: integer overflow")
-						}
-						if iNdEx >= l {
-							return io.ErrUnexpectedEOF
-						}
-						b := dAtA[iNdEx]
-						iNdEx++
-						byteLen |= uint64(b&0x7F) << shift
-						if b < 0x80 {
-							if shift == 63 && b > 1 {
-								return fmt.Errorf("proto: varint overflow")
-							}
-							break
-						}
-					}
-				}
-				if byteLen > uint64(math.MaxInt) {
-					return io.ErrUnexpectedEOF
-				}
-				intByteLen := int(byteLen)
-				postIndex := iNdEx + intByteLen
-				if postIndex < 0 {
-					return fmt.Errorf("proto: negative length")
-				}
-				if postIndex > l {
-					return io.ErrUnexpectedEOF
-				}
-				data := dAtA[iNdEx:postIndex]
-				var elementCount int
-				for _, b := range data {
-					if b < 128 {
-						elementCount++
-					}
-				}
-				if elementCount != 0 && len(m.LabelsRefs) == 0 {
-					m.LabelsRefs = make([]uint32, 0, elementCount)
-				}
-				for len(data) > 0 {
-					var v uint64
-					var vn int
-					for shift := uint(0); ; shift += 7 {
-						if shift >= 64 {
-							return fmt.Errorf("proto: integer overflow")
-						}
-						if vn >= len(data) {
-							return io.ErrUnexpectedEOF
-						}
-						b := data[vn]
-						vn++
-						v |= uint64(b&0x7F) << shift
-						if b < 0x80 {
-							if shift == 63 && b > 1 {
-								return fmt.Errorf("proto: varint overflow")
-							}
-							break
-						}
-					}
-					m.LabelsRefs = append(m.LabelsRefs, uint32(v))
-					data = data[vn:]
-				}
-				iNdEx = postIndex
-			} else if wireType == 0 {
-				var v uint64
-				for shift := uint(0); ; shift += 7 {
-					if shift >= 64 {
-						return fmt.Errorf("proto: integer overflow")
-					}
-					if iNdEx >= l {
-						return io.ErrUnexpectedEOF
-					}
-					b := dAtA[iNdEx]
-					iNdEx++
-					v |= uint64(b&0x7F) << shift
-					if b < 0x80 {
-						if shift == 63 && b > 1 {
-							return fmt.Errorf("proto: varint overflow")
-						}
-						break
-					}
-				}
-				m.LabelsRefs = append(m.LabelsRefs, uint32(v))
-			} else {
-				n, err := skipValue(dAtA[iNdEx:], wireType, fieldNum)
-				if err != nil {
-					return err
-				}
-				iNdEx += n
-			}
-		case 2: // samples
-			if wireType != 2 {
-				n, err := skipValue(dAtA[iNdEx:], wireType, fieldNum)
-				if err != nil {
-					return err
-				}
-				iNdEx += n
-				continue
-			}
-			var byteLen uint64
-			if iNdEx < l && dAtA[iNdEx] < 0x80 {
-				byteLen = uint64(dAtA[iNdEx])
-				iNdEx++
-			} else {
-				for shift := uint(0); ; shift += 7 {
-					if shift >= 64 {
-						return fmt.Errorf("proto: integer overflow")
-					}
-					if iNdEx >= l {
-						return io.ErrUnexpectedEOF
-					}
-					b := dAtA[iNdEx]
-					iNdEx++
-					byteLen |= uint64(b&0x7F) << shift
-					if b < 0x80 {
-						if shift == 63 && b > 1 {
-							return fmt.Errorf("proto: varint overflow")
-						}
-						break
-					}
-				}
-			}
-			if byteLen > uint64(math.MaxInt) {
-				return io.ErrUnexpectedEOF
-			}
-			intByteLen := int(byteLen)
-			postIndex := iNdEx + intByteLen
-			if postIndex < 0 {
-				return fmt.Errorf("proto: negative length")
-			}
-			if postIndex > l {
-				return io.ErrUnexpectedEOF
-			}
-			m.Samples = append(m.Samples, Sample{})
-			if err := m.Samples[len(m.Samples)-1].unmarshal(dAtA[iNdEx:postIndex], depth+1); err != nil {
-				return err
-			}
-			iNdEx = postIndex
-		case 3: // histograms
-			if wireType != 2 {
-				n, err := skipValue(dAtA[iNdEx:], wireType, fieldNum)
-				if err != nil {
-					return err
-				}
-				iNdEx += n
-				continue
-			}
-			var byteLen uint64
-			if iNdEx < l && dAtA[iNdEx] < 0x80 {
-				byteLen = uint64(dAtA[iNdEx])
-				iNdEx++
-			} else {
-				for shift := uint(0); ; shift += 7 {
-					if shift >= 64 {
-						return fmt.Errorf("proto: integer overflow")
-					}
-					if iNdEx >= l {
-						return io.ErrUnexpectedEOF
-					}
-					b := dAtA[iNdEx]
-					iNdEx++
-					byteLen |= uint64(b&0x7F) << shift
-					if b < 0x80 {
-						if shift == 63 && b > 1 {
-							return fmt.Errorf("proto: varint overflow")
-						}
-						break
-					}
-				}
-			}
-			if byteLen > uint64(math.MaxInt) {
-				return io.ErrUnexpectedEOF
-			}
-			intByteLen := int(byteLen)
-			postIndex := iNdEx + intByteLen
-			if postIndex < 0 {
-				return fmt.Errorf("proto: negative length")
-			}
-			if postIndex > l {
-				return io.ErrUnexpectedEOF
-			}
-			m.Histograms = append(m.Histograms, Histogram{})
-			if err := m.Histograms[len(m.Histograms)-1].unmarshal(dAtA[iNdEx:postIndex], depth+1); err != nil {
-				return err
-			}
-			iNdEx = postIndex
-		case 4: // exemplars
-			if wireType != 2 {
-				n, err := skipValue(dAtA[iNdEx:], wireType, fieldNum)
-				if err != nil {
-					return err
-				}
-				iNdEx += n
-				continue
-			}
-			var byteLen uint64
-			if iNdEx < l && dAtA[iNdEx] < 0x80 {
-				byteLen = uint64(dAtA[iNdEx])
-				iNdEx++
-			} else {
-				for shift := uint(0); ; shift += 7 {
-					if shift >= 64 {
-						return fmt.Errorf("proto: integer overflow")
-					}
-					if iNdEx >= l {
-						return io.ErrUnexpectedEOF
-					}
-					b := dAtA[iNdEx]
-					iNdEx++
-					byteLen |= uint64(b&0x7F) << shift
-					if b < 0x80 {
-						if shift == 63 && b > 1 {
-							return fmt.Errorf("proto: varint overflow")
-						}
-						break
-					}
-				}
-			}
-			if byteLen > uint64(math.MaxInt) {
-				return io.ErrUnexpectedEOF
-			}
-			intByteLen := int(byteLen)
-			postIndex := iNdEx + intByteLen
-			if postIndex < 0 {
-				return fmt.Errorf("proto: negative length")
-			}
-			if postIndex > l {
-				return io.ErrUnexpectedEOF
-			}
-			m.Exemplars = append(m.Exemplars, ExemplarRW2{})
-			if err := m.Exemplars[len(m.Exemplars)-1].unmarshal(dAtA[iNdEx:postIndex], depth+1); err != nil {
-				return err
-			}
-			iNdEx = postIndex
-		case 5: // metadata
-			if wireType != 2 {
-				n, err := skipValue(dAtA[iNdEx:], wireType, fieldNum)
-				if err != nil {
-					return err
-				}
-				iNdEx += n
-				continue
-			}
-			var byteLen uint64
-			if iNdEx < l && dAtA[iNdEx] < 0x80 {
-				byteLen = uint64(dAtA[iNdEx])
-				iNdEx++
-			} else {
-				for shift := uint(0); ; shift += 7 {
-					if shift >= 64 {
-						return fmt.Errorf("proto: integer overflow")
-					}
-					if iNdEx >= l {
-						return io.ErrUnexpectedEOF
-					}
-					b := dAtA[iNdEx]
-					iNdEx++
-					byteLen |= uint64(b&0x7F) << shift
-					if b < 0x80 {
-						if shift == 63 && b > 1 {
-							return fmt.Errorf("proto: varint overflow")
-						}
-						break
-					}
-				}
-			}
-			if byteLen > uint64(math.MaxInt) {
-				return io.ErrUnexpectedEOF
-			}
-			intByteLen := int(byteLen)
-			postIndex := iNdEx + intByteLen
-			if postIndex < 0 {
-				return fmt.Errorf("proto: negative length")
-			}
-			if postIndex > l {
-				return io.ErrUnexpectedEOF
-			}
-			if err := m.Metadata.unmarshal(dAtA[iNdEx:postIndex], depth+1); err != nil {
-				return err
-			}
-			iNdEx = postIndex
-			m.fieldsPresent[0] |= 1 << 0
-		case 6: // created_timestamp
-			if wireType != 0 {
-				n, err := skipValue(dAtA[iNdEx:], wireType, fieldNum)
-				if err != nil {
-					return err
-				}
-				iNdEx += n
-				continue
-			}
-			var v uint64
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return fmt.Errorf("proto: integer overflow")
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				v |= uint64(b&0x7F) << shift
-				if b < 0x80 {
-					if shift == 63 && b > 1 {
-						return fmt.Errorf("proto: varint overflow")
-					}
-					break
-				}
-			}
-			m.CreatedTimestamp = int64(v)
-			m.fieldsPresent[0] |= 1 << 1
-		default:
-			n, err := skipValue(dAtA[iNdEx:], wireType, fieldNum)
-			if err != nil {
-				return err
-			}
-			iNdEx += n
-		}
-	}
-	if iNdEx > l {
-		return io.ErrUnexpectedEOF
-	}
-	return nil
+	// Modified code: RW2 messages are never unmarshalled standalone in Mimir;
+	// the RW2 wire format is decoded directly into the RW1 representation by
+	// the patched WriteRequest unmarshal (see unmarshal_rw2.go).
+	return errorInternalRW2
 }
 
 func (m *ExemplarRW2) Unmarshal(b []byte) error {
@@ -11178,192 +10715,10 @@ func (m *ExemplarRW2) UnmarshalWithDepth(b []byte, depth int) error {
 }
 
 func (m *ExemplarRW2) unmarshal(dAtA []byte, depth int) error {
-	if depth > maxUnmarshalDepth {
-		return fmt.Errorf("exceeded max recursion depth")
-	}
-	l := len(dAtA)
-	iNdEx := 0
-	for iNdEx < l {
-		var wire uint64
-		if iNdEx < l && dAtA[iNdEx] < 0x80 {
-			wire = uint64(dAtA[iNdEx])
-			iNdEx++
-		} else {
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 35 {
-					return fmt.Errorf("proto: integer overflow")
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				wire |= uint64(b&0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-		}
-		if wire>>3 < 1 || wire>>3 > 0x1FFFFFFF {
-			return fmt.Errorf("invalid field number")
-		}
-		fieldNum := int32(wire >> 3)
-		wireType := int(wire & 0x7)
-		switch fieldNum {
-		case 1: // labels_refs
-			if wireType == 2 {
-				var byteLen uint64
-				if iNdEx < l && dAtA[iNdEx] < 0x80 {
-					byteLen = uint64(dAtA[iNdEx])
-					iNdEx++
-				} else {
-					for shift := uint(0); ; shift += 7 {
-						if shift >= 64 {
-							return fmt.Errorf("proto: integer overflow")
-						}
-						if iNdEx >= l {
-							return io.ErrUnexpectedEOF
-						}
-						b := dAtA[iNdEx]
-						iNdEx++
-						byteLen |= uint64(b&0x7F) << shift
-						if b < 0x80 {
-							if shift == 63 && b > 1 {
-								return fmt.Errorf("proto: varint overflow")
-							}
-							break
-						}
-					}
-				}
-				if byteLen > uint64(math.MaxInt) {
-					return io.ErrUnexpectedEOF
-				}
-				intByteLen := int(byteLen)
-				postIndex := iNdEx + intByteLen
-				if postIndex < 0 {
-					return fmt.Errorf("proto: negative length")
-				}
-				if postIndex > l {
-					return io.ErrUnexpectedEOF
-				}
-				data := dAtA[iNdEx:postIndex]
-				var elementCount int
-				for _, b := range data {
-					if b < 128 {
-						elementCount++
-					}
-				}
-				if elementCount != 0 && len(m.LabelsRefs) == 0 {
-					m.LabelsRefs = make([]uint32, 0, elementCount)
-				}
-				for len(data) > 0 {
-					var v uint64
-					var vn int
-					for shift := uint(0); ; shift += 7 {
-						if shift >= 64 {
-							return fmt.Errorf("proto: integer overflow")
-						}
-						if vn >= len(data) {
-							return io.ErrUnexpectedEOF
-						}
-						b := data[vn]
-						vn++
-						v |= uint64(b&0x7F) << shift
-						if b < 0x80 {
-							if shift == 63 && b > 1 {
-								return fmt.Errorf("proto: varint overflow")
-							}
-							break
-						}
-					}
-					m.LabelsRefs = append(m.LabelsRefs, uint32(v))
-					data = data[vn:]
-				}
-				iNdEx = postIndex
-			} else if wireType == 0 {
-				var v uint64
-				for shift := uint(0); ; shift += 7 {
-					if shift >= 64 {
-						return fmt.Errorf("proto: integer overflow")
-					}
-					if iNdEx >= l {
-						return io.ErrUnexpectedEOF
-					}
-					b := dAtA[iNdEx]
-					iNdEx++
-					v |= uint64(b&0x7F) << shift
-					if b < 0x80 {
-						if shift == 63 && b > 1 {
-							return fmt.Errorf("proto: varint overflow")
-						}
-						break
-					}
-				}
-				m.LabelsRefs = append(m.LabelsRefs, uint32(v))
-			} else {
-				n, err := skipValue(dAtA[iNdEx:], wireType, fieldNum)
-				if err != nil {
-					return err
-				}
-				iNdEx += n
-			}
-		case 2: // value
-			if wireType != 1 {
-				n, err := skipValue(dAtA[iNdEx:], wireType, fieldNum)
-				if err != nil {
-					return err
-				}
-				iNdEx += n
-				continue
-			}
-			if (iNdEx + 8) > l {
-				return io.ErrUnexpectedEOF
-			}
-			v := binary.LittleEndian.Uint64(dAtA[iNdEx:])
-			iNdEx += 8
-			m.Value = math.Float64frombits(v)
-			m.fieldsPresent[0] |= 1 << 0
-		case 3: // timestamp
-			if wireType != 0 {
-				n, err := skipValue(dAtA[iNdEx:], wireType, fieldNum)
-				if err != nil {
-					return err
-				}
-				iNdEx += n
-				continue
-			}
-			var v uint64
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return fmt.Errorf("proto: integer overflow")
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				v |= uint64(b&0x7F) << shift
-				if b < 0x80 {
-					if shift == 63 && b > 1 {
-						return fmt.Errorf("proto: varint overflow")
-					}
-					break
-				}
-			}
-			m.Timestamp = int64(v)
-			m.fieldsPresent[0] |= 1 << 1
-		default:
-			n, err := skipValue(dAtA[iNdEx:], wireType, fieldNum)
-			if err != nil {
-				return err
-			}
-			iNdEx += n
-		}
-	}
-	if iNdEx > l {
-		return io.ErrUnexpectedEOF
-	}
-	return nil
+	// Modified code: RW2 messages are never unmarshalled standalone in Mimir;
+	// the RW2 wire format is decoded directly into the RW1 representation by
+	// the patched WriteRequest unmarshal (see unmarshal_rw2.go).
+	return errorInternalRW2
 }
 
 func (m *MetadataRW2) Unmarshal(b []byte) error {
@@ -11378,135 +10733,8 @@ func (m *MetadataRW2) UnmarshalWithDepth(b []byte, depth int) error {
 }
 
 func (m *MetadataRW2) unmarshal(dAtA []byte, depth int) error {
-	if depth > maxUnmarshalDepth {
-		return fmt.Errorf("exceeded max recursion depth")
-	}
-	l := len(dAtA)
-	iNdEx := 0
-	for iNdEx < l {
-		var wire uint64
-		if iNdEx < l && dAtA[iNdEx] < 0x80 {
-			wire = uint64(dAtA[iNdEx])
-			iNdEx++
-		} else {
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 35 {
-					return fmt.Errorf("proto: integer overflow")
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				wire |= uint64(b&0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-		}
-		if wire>>3 < 1 || wire>>3 > 0x1FFFFFFF {
-			return fmt.Errorf("invalid field number")
-		}
-		fieldNum := int32(wire >> 3)
-		wireType := int(wire & 0x7)
-		switch fieldNum {
-		case 1: // type
-			if wireType != 0 {
-				n, err := skipValue(dAtA[iNdEx:], wireType, fieldNum)
-				if err != nil {
-					return err
-				}
-				iNdEx += n
-				continue
-			}
-			var v uint64
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return fmt.Errorf("proto: integer overflow")
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				v |= uint64(b&0x7F) << shift
-				if b < 0x80 {
-					if shift == 63 && b > 1 {
-						return fmt.Errorf("proto: varint overflow")
-					}
-					break
-				}
-			}
-			m.Type = MetadataRW2_MetricType(v)
-			m.fieldsPresent[0] |= 1 << 0
-		case 3: // help_ref
-			if wireType != 0 {
-				n, err := skipValue(dAtA[iNdEx:], wireType, fieldNum)
-				if err != nil {
-					return err
-				}
-				iNdEx += n
-				continue
-			}
-			var v uint64
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return fmt.Errorf("proto: integer overflow")
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				v |= uint64(b&0x7F) << shift
-				if b < 0x80 {
-					if shift == 63 && b > 1 {
-						return fmt.Errorf("proto: varint overflow")
-					}
-					break
-				}
-			}
-			m.HelpRef = uint32(v)
-			m.fieldsPresent[0] |= 1 << 1
-		case 4: // unit_ref
-			if wireType != 0 {
-				n, err := skipValue(dAtA[iNdEx:], wireType, fieldNum)
-				if err != nil {
-					return err
-				}
-				iNdEx += n
-				continue
-			}
-			var v uint64
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return fmt.Errorf("proto: integer overflow")
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				v |= uint64(b&0x7F) << shift
-				if b < 0x80 {
-					if shift == 63 && b > 1 {
-						return fmt.Errorf("proto: varint overflow")
-					}
-					break
-				}
-			}
-			m.UnitRef = uint32(v)
-			m.fieldsPresent[0] |= 1 << 2
-		default:
-			n, err := skipValue(dAtA[iNdEx:], wireType, fieldNum)
-			if err != nil {
-				return err
-			}
-			iNdEx += n
-		}
-	}
-	if iNdEx > l {
-		return io.ErrUnexpectedEOF
-	}
-	return nil
+	// Modified code: RW2 messages are never unmarshalled standalone in Mimir;
+	// the RW2 wire format is decoded directly into the RW1 representation by
+	// the patched WriteRequest unmarshal (see unmarshal_rw2.go).
+	return errorInternalRW2
 }
