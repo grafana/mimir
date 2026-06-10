@@ -1,6 +1,6 @@
 module github.com/grafana/mimir
 
-go 1.25.10
+go 1.26.3
 
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v1.7.0
@@ -81,7 +81,7 @@ require (
 	github.com/tylertreat/BoomFilters v0.0.0-20251117164519-53813c36cc1b
 	github.com/xlab/treeprint v1.2.0
 	go.etcd.io/bbolt v1.4.3
-	go.opentelemetry.io/collector/pdata v1.58.0
+	go.opentelemetry.io/collector/pdata v1.59.0
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.68.0
 	go.opentelemetry.io/contrib/propagators/jaeger v1.43.0
 	go.opentelemetry.io/otel v1.44.0
@@ -173,7 +173,7 @@ require (
 	github.com/pb33f/ordered-map/v2 v2.3.1 // indirect
 	github.com/philhofer/fwd v1.2.0 // indirect
 	github.com/pires/go-proxyproto v0.11.0 // indirect
-	github.com/planetscale/vtprotobuf v0.6.1-0.20240319094008-0393e58bdf10 // indirect
+	github.com/planetscale/vtprotobuf v0.6.1-0.20250313105119-ba97887b0a25 // indirect
 	github.com/power-devops/perfstat v0.0.0-20240221224432-82ca36839d55 // indirect
 	github.com/prometheus/client_golang/exp v0.0.0-20260506204903-0ac87e14c303 // indirect
 	github.com/puzpuzpuz/xsync/v4 v4.5.0 // indirect
@@ -191,7 +191,7 @@ require (
 	go.opentelemetry.io/collector/confmap v1.57.0 // indirect
 	go.opentelemetry.io/collector/confmap/xconfmap v0.151.0 // indirect
 	go.opentelemetry.io/collector/consumer v1.57.0 // indirect
-	go.opentelemetry.io/collector/featuregate v1.58.0 // indirect
+	go.opentelemetry.io/collector/featuregate v1.59.0 // indirect
 	go.opentelemetry.io/collector/internal/componentalias v0.151.0 // indirect
 	go.opentelemetry.io/collector/pipeline v1.57.0 // indirect
 	go.opentelemetry.io/collector/processor v1.57.0 // indirect
@@ -279,6 +279,7 @@ require (
 	github.com/googleapis/enterprise-certificate-proxy v0.3.16 // indirect
 	github.com/googleapis/gax-go/v2 v2.22.0 // indirect
 	github.com/grafana/gomemcache v0.0.0-20251127154401-74f93547077b
+	github.com/grafana/wiresmith v0.0.0-00010101000000-000000000000
 	github.com/hashicorp/consul/api v1.33.7 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
@@ -364,3 +365,5 @@ replace github.com/opentracing-contrib/go-grpc => github.com/charleskorn/go-grpc
 // Use Mimir fork of prometheus/otlptranslator to allow for higher velocity of upstream development,
 // while allowing Mimir to move at a more conservative pace.
 replace github.com/prometheus/otlptranslator => github.com/grafana/mimir-otlptranslator v0.0.0-20251017074411-ea1e8f863e1d
+
+replace github.com/grafana/wiresmith => /Users/oleg-kozlyuk/Projects/wiresmith
