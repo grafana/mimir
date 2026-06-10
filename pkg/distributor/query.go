@@ -563,6 +563,15 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets [
 			streamReq = &r
 		}
 
+		// Surface readcache fan-out in the per-query stats (and the
+		// query-frontend's "query stats" log line): one count per
+		// QueryStream RPC issued to a readcache instance, including
+		// the warming fallback below.
+		queryStats := stats.FromContext(ctx)
+		if viaReadcache {
+			queryStats.AddReadcacheQueryStreamCalls(1)
+		}
+
 		stream, err = queryClient.QueryStream(ctx, streamReq)
 		if err != nil {
 			// If readcache says it's still warming, try the
@@ -577,6 +586,7 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets [
 				if prev, prevID, ok := d.previousReadcacheClientForPartition(ctx, partID); ok {
 					level.Info(log).Log("msg", "readcache still warming; falling back to previous lease owner", "partition", partID)
 					hits.record(prevID)
+					queryStats.AddReadcacheQueryStreamCalls(1)
 					stream, err = prev.QueryStream(ctx, streamReq)
 				}
 			}
