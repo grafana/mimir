@@ -206,6 +206,13 @@ PROTO_GOS := $(patsubst %.proto,%.pb.go,$(PROTO_DEFS))
 # protoc-gen-go-grpc toolchain (see the rule for alertmanager.pb.go).
 PROTO_GRPC_GOS := pkg/alertmanager/alertmanagerpb/alertmanager_grpc.pb.go
 
+# Side-product outputs produced by wiresmith alongside %.pb.go. These also miss
+# the %.proto -> %.pb.go patsubst, so are tracked explicitly here.
+PROTO_WIRESMITH_GOS := \
+	pkg/mimirpb/mimir_compare.pb.go \
+	pkg/mimirpb/mimir_equal.pb.go \
+	pkg/mimirpb/mimir_reflect.pb.go
+
 # Packages containing //node:generate-annotated structs, and the corresponding
 # generated files. Discovered at make-parse time.
 NODE_GEN_PKGS := $(sort $(patsubst %/,%,$(dir $(shell grep -rl --include='*.go' --exclude='*_test.go' --exclude='node_gen.go' '^//node:generate$$' pkg))))
@@ -288,7 +295,7 @@ $(EXES_RACE):
 	CGO_ENABLED=1 GOOS=$(GOOS) GOARCH=$(GOARCH) go build -race $(GO_FLAGS) -o "$@$(BINARY_SUFFIX)" ./$(@D)
 
 protos: ## Generates protobuf files.
-protos: $(PROTO_GOS) $(PROTO_GRPC_GOS)
+protos: $(PROTO_GOS) $(PROTO_GRPC_GOS) $(PROTO_WIRESMITH_GOS)
 	@./tools/apply-expected-diffs.sh $(PROTO_GOS) $(PROTO_GRPC_GOS)
 
 GENERATE_FILES ?= true
@@ -320,6 +327,31 @@ ifeq ($(GENERATE_FILES),true)
 		--go_out=paths=source_relative:./$(<D) \
 		--go-grpc_out=paths=source_relative:./$(<D) \
 		./$<
+else
+	@echo "Warning: generating files has been disabled, but the following files need to be regenerated: $@"
+	@echo "If this is unexpected, check if the last modified timestamps on the outputs and $< are correct."
+endif
+
+# pkg/mimirpb/mimir.proto is compiled by wiresmith (a non-reflective Go marshal
+# code generator). Grouped target (&:) so the single wiresmith invocation
+# produces all four outputs atomically -- deleting any one of them forces a
+# regeneration of the set.
+#
+# wiresmith routes flat (single-file) layouts under <proto-package>/<basename>
+# (see buildImportMapping in compiler/generator/generator.go), so its output
+# lands at pkg/mimirpb/cortexpb/mimir*.pb.go. We move the generated set up one
+# directory to keep the Go package import path stable for downstream consumers.
+pkg/mimirpb/mimir.pb.go \
+pkg/mimirpb/mimir_compare.pb.go \
+pkg/mimirpb/mimir_equal.pb.go \
+pkg/mimirpb/mimir_reflect.pb.go &: pkg/mimirpb/mimir.proto
+ifeq ($(GENERATE_FILES),true)
+	wiresmith --proto_path=./pkg/mimirpb --out=./pkg/mimirpb --module=github.com/grafana/mimir pkg/mimirpb/mimir.proto
+	mv pkg/mimirpb/cortexpb/mimir.pb.go pkg/mimirpb/mimir.pb.go
+	mv pkg/mimirpb/cortexpb/mimir_compare.pb.go pkg/mimirpb/mimir_compare.pb.go
+	mv pkg/mimirpb/cortexpb/mimir_equal.pb.go pkg/mimirpb/mimir_equal.pb.go
+	mv pkg/mimirpb/cortexpb/mimir_reflect.pb.go pkg/mimirpb/mimir_reflect.pb.go
+	rmdir pkg/mimirpb/cortexpb
 else
 	@echo "Warning: generating files has been disabled, but the following files need to be regenerated: $@"
 	@echo "If this is unexpected, check if the last modified timestamps on the outputs and $< are correct."
