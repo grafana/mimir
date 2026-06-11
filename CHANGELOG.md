@@ -1,5 +1,11 @@
 # Changelog
 
+## unreleased
+
+### Grafana Mimir
+
+* [CHANGE] Update Docker image bases from Debian 12 to Debian 13 (`gcr.io/distroless/static-debian13`; race images use `base-nossl-debian13`). #15629
+
 ## 3.1.0
 
 ### Grafana Mimir
