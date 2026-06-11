@@ -95,18 +95,6 @@ jobs:
         run: |
           mkdir -p /go/src/github.com/grafana/mimir
           ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
-      # TEMPORARY (wiresmith migration): install the wiresmith proto generator on
-      # PATH until it ships in the published mimir-build-image. Needed by the
-      # protos / check-protos targets below. Built from a checkout because
-      # wiresmith's go.mod carries a replace directive, which blocks
-      # `go install pkg@version`.
-      - name: Install wiresmith proto generator
-        env:
-          GOPRIVATE: github.com/grafana/*
-        run: |
-          git clone --quiet --filter=blob:none https://github.com/grafana/wiresmith.git /tmp/wiresmith-src
-          git -C /tmp/wiresmith-src checkout --quiet a6d80cb6d9caa5a6828f816bf9f561ba1a5f7ece
-          (cd /tmp/wiresmith-src && go install ./cmd/wiresmith)
       - name: Lint
         run: make BUILD_IN_CONTAINER=false lint
       - name: Check Vendor Directory
@@ -659,17 +647,6 @@ jobs:
         run: |
           mkdir -p /go/src/github.com/grafana/mimir
           ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
-      # TEMPORARY (wiresmith migration): install the wiresmith proto generator on
-      # PATH until it ships in the published mimir-build-image. Built from a
-      # checkout because wiresmith's go.mod carries a replace directive, which
-      # blocks `go install pkg@version`.
-      - name: Install wiresmith proto generator
-        env:
-          GOPRIVATE: github.com/grafana/*
-        run: |
-          git clone --quiet --filter=blob:none https://github.com/grafana/wiresmith.git /tmp/wiresmith-src
-          git -C /tmp/wiresmith-src checkout --quiet a6d80cb6d9caa5a6828f816bf9f561ba1a5f7ece
-          (cd /tmp/wiresmith-src && go install ./cmd/wiresmith)
       - name: Build Mimir with race-detector
         run: |
           make BUILD_IN_CONTAINER=false cmd/mimir/.uptodate_race
