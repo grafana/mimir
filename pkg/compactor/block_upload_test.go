@@ -23,6 +23,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/gorilla/mux"
 	"github.com/grafana/dskit/cancellation"
+	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
 	"github.com/grafana/dskit/user"
 	"github.com/oklog/ulid/v2"
@@ -1249,12 +1250,14 @@ func TestMultitenantCompactor_FinishBlockUpload(t *testing.T) {
 		errorInjector          func(op bucket.Operation, name string) error
 		disableBlockUpload     bool
 		enableValidation       bool // should only be set to true for tests that fail before validation is started
+		notStarted             bool
 		maxConcurrency         int
 		setConcurrency         int64
 		expBadRequest          string
 		expConflict            string
 		expNotFound            string
 		expTooManyRequests     bool
+		expServiceUnavailable  bool
 		expInternalServerError bool
 	}{
 		{
@@ -1342,6 +1345,13 @@ func TestMultitenantCompactor_FinishBlockUpload(t *testing.T) {
 			setConcurrency:     2,
 			expTooManyRequests: true,
 		},
+		{
+			name:                  "compactor not yet started",
+			tenantID:              tenantID,
+			blockID:               blockID,
+			notStarted:            true,
+			expServiceUnavailable: true,
+		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -1365,6 +1375,9 @@ func TestMultitenantCompactor_FinishBlockUpload(t *testing.T) {
 			c.compactorCfg.MaxBlockUploadValidationConcurrency = tc.maxConcurrency
 			if tc.setConcurrency > 0 {
 				c.blockUploadValidations.Add(tc.setConcurrency)
+			}
+			if tc.notStarted {
+				c.Service = services.NewIdleService(nil, nil)
 			}
 
 			c.compactorCfg.DataDir = t.TempDir()
@@ -1399,6 +1412,9 @@ func TestMultitenantCompactor_FinishBlockUpload(t *testing.T) {
 			case tc.expTooManyRequests:
 				assert.Equal(t, http.StatusTooManyRequests, resp.StatusCode)
 				assert.Equal(t, "too many block upload validations in progress, limit is 2\n", string(body))
+			case tc.expServiceUnavailable:
+				assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
+				assert.Equal(t, "compactor not ready\n", string(body))
 			default:
 				assert.Equal(t, http.StatusOK, resp.StatusCode)
 				assert.Empty(t, string(body))

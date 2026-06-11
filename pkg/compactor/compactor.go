@@ -624,6 +624,9 @@ func (c *MultitenantCompactor) starting(ctx context.Context) error {
 		return fmt.Errorf("failed to start the blocks cleaner: %w", err)
 	}
 
+	// Remove validation directories possibly left behind by block upload
+	c.cleanupLeftoverValidationDirectories()
+
 	return nil
 }
 
