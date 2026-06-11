@@ -168,7 +168,7 @@ func TestOptimizationPass(t *testing.T) {
 			expectedPlan: `
 				- BinaryExpression: LHS + RHS
 					- LHS: MultiAggregationInstance: quantile
-						- ref#1 MultiAggregationGroup
+						- expression: ref#1 MultiAggregationGroup
 							- VectorSelector: {__name__="foo"}
 						- parameter: NumberLiteral: 0.99
 					- RHS: MultiAggregationInstance: sum
@@ -186,7 +186,7 @@ func TestOptimizationPass(t *testing.T) {
 						- ref#1 MultiAggregationGroup
 							- VectorSelector: {__name__="foo"}
 					- RHS: MultiAggregationInstance: quantile
-						- ref#1 MultiAggregationGroup ...
+						- expression: ref#1 MultiAggregationGroup ...
 						- parameter: NumberLiteral: 0.99
 			`,
 			expectedAggregationNodesReplacedCount: 2,
@@ -333,11 +333,11 @@ func TestOptimizationPass(t *testing.T) {
 			expectedPlan: `
 				- BinaryExpression: LHS - RHS
 					- LHS: MultiAggregationInstance: quantile
-						- ref#1 MultiAggregationGroup
+						- expression: ref#1 MultiAggregationGroup
 							- VectorSelector: {__name__="foo"}
 						- parameter: NumberLiteral: 0.99
 					- RHS: MultiAggregationInstance: quantile
-						- ref#1 MultiAggregationGroup ...
+						- expression: ref#1 MultiAggregationGroup ...
 						- parameter: NumberLiteral: 0.5
 			`,
 			expectedAggregationNodesReplacedCount: 2,
@@ -349,7 +349,7 @@ func TestOptimizationPass(t *testing.T) {
 			expectedPlan: `
 				- BinaryExpression: LHS + RHS
 					- LHS: MultiAggregationInstance: quantile by (group)
-						- ref#1 MultiAggregationGroup
+						- expression: ref#1 MultiAggregationGroup
 							- VectorSelector: {__name__="foo"}
 						- parameter: NumberLiteral: 0.99
 					- RHS: MultiAggregationInstance: count by (group)
@@ -565,7 +565,7 @@ func TestIsSupportedAggregationOperation(t *testing.T) {
 			continue
 		}
 
-		_, err := multiaggregation.IsSupportedAggregationOperation(op)
+		_, err := multiaggregation.IsSupportedAggregationOperation(op, planning.MaximumSupportedQueryPlanVersion)
 		require.NoErrorf(t, err, "got error for operation %s", name)
 	}
 }

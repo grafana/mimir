@@ -56,15 +56,6 @@ func (o *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, 
 	}
 
 	filteringSupported := maximumSupportedQueryPlanVersion >= planning.QueryPlanV8
-	quantileSupported := maximumSupportedQueryPlanVersion >= planning.QueryPlanV15
-
-	isSupportedOp := func(op core.AggregationOperation) bool {
-		if op == core.AGGREGATION_QUANTILE && !quantileSupported {
-			return false
-		}
-		supported, err := IsSupportedAggregationOperation(op)
-		return err == nil && supported
-	}
 
 	ineligibleDuplicateNodes := make(map[*commonsubexpressionelimination.Duplicate]struct{})
 	candidateDuplicateNodes := make(map[*commonsubexpressionelimination.Duplicate][]aggregateOverDuplicate)
@@ -93,7 +84,7 @@ func (o *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, 
 			if !isAggregate {
 				ineligibleDuplicateNodes[duplicate] = struct{}{}
 				delete(candidateDuplicateNodes, duplicate)
-			} else if !isSupportedOp(aggregate.Op) {
+			} else if supported, err := IsSupportedAggregationOperation(aggregate.Op, maximumSupportedQueryPlanVersion); err != nil || !supported {
 				ineligibleDuplicateNodes[duplicate] = struct{}{}
 				delete(candidateDuplicateNodes, duplicate)
 			}
@@ -106,7 +97,7 @@ func (o *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, 
 			aggregate, isAggregate := child.(*core.AggregateExpression)
 			if !isAggregate {
 				continue
-			} else if !isSupportedOp(aggregate.Op) {
+			} else if supported, err := IsSupportedAggregationOperation(aggregate.Op, maximumSupportedQueryPlanVersion); err != nil || !supported {
 				continue
 			}
 
@@ -196,7 +187,7 @@ func (o *OptimizationPass) replaceWithMultiAggregation(duplicate *commonsubexpre
 	return nil
 }
 
-func IsSupportedAggregationOperation(o core.AggregationOperation) (bool, error) {
+func IsSupportedAggregationOperation(o core.AggregationOperation, maximumSupportedQueryPlanVersion planning.QueryPlanVersion) (bool, error) {
 	switch o {
 	case core.AGGREGATION_SUM:
 		return true, nil
@@ -215,7 +206,7 @@ func IsSupportedAggregationOperation(o core.AggregationOperation) (bool, error) 
 	case core.AGGREGATION_STDDEV:
 		return true, nil
 	case core.AGGREGATION_QUANTILE:
-		return true, nil
+		return maximumSupportedQueryPlanVersion >= planning.QueryPlanV15, nil
 
 	case core.AGGREGATION_COUNT_VALUES:
 		return false, nil

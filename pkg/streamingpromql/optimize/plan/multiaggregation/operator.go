@@ -5,7 +5,6 @@ package multiaggregation
 import (
 	"context"
 	"errors"
-	"math"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -271,6 +270,7 @@ func (m *MultiAggregatorInstanceOperator) Configure(
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
 	timeRange types.QueryTimeRange,
 	expressionPosition posrange.PositionRange,
+	param types.ScalarOperator,
 ) error {
 	var err error
 	m.aggregator, err = aggregations.NewAggregator(op, grouping, without, memoryConsumptionTracker, timeRange, m.group.inner.ExpressionPosition())
@@ -281,13 +281,9 @@ func (m *MultiAggregatorInstanceOperator) Configure(
 	m.expressionPosition = expressionPosition
 	m.filters = filters
 	m.subsetIndex = subsetIndex
+	m.param = param
 
 	return nil
-}
-
-// SetParam sets the scalar operator providing the parameter value for parameterized aggregations (eg. quantile).
-func (m *MultiAggregatorInstanceOperator) SetParam(param types.ScalarOperator) {
-	m.param = param
 }
 
 func (m *MultiAggregatorInstanceOperator) Prepare(ctx context.Context, params *types.PrepareParams) error {
@@ -326,11 +322,7 @@ func (m *MultiAggregatorInstanceOperator) SeriesMetadata(ctx context.Context, _ 
 			return nil, err
 		}
 
-		for _, p := range paramData.Samples {
-			if math.IsNaN(p.F) || p.F < 0 || p.F > 1 {
-				m.aggregator.Annotations.Add(annotations.NewInvalidQuantileWarning(p.F, m.param.ExpressionPosition()))
-			}
-		}
+		aggregations.ValidateQuantileParam(paramData, m.param.ExpressionPosition(), &m.aggregator.Annotations)
 
 		m.aggregator.ParamData = paramData
 	}
@@ -456,12 +448,9 @@ func (m *MultiAggregatorInstanceOperator) Finalize(ctx context.Context) (*types.
 	if m.param != nil {
 		paramStats, paramAnnos, err := m.param.Finalize(ctx)
 		if err != nil {
-			stats.Close()
 			return nil, nil, err
 		}
 		if err := stats.Add(paramStats); err != nil {
-			stats.Close()
-			paramStats.Close()
 			return nil, nil, err
 		}
 		paramStats.Close()

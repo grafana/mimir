@@ -202,7 +202,7 @@ func (a *MultiAggregationInstance) ChildrenLabels() []string {
 		return []string{""}
 	}
 
-	return []string{"", "parameter"}
+	return []string{"expression", "parameter"}
 }
 
 func (a *MultiAggregationInstance) ChildrenTimeRange(parentTimeRange types.QueryTimeRange) types.QueryTimeRange {
@@ -287,6 +287,14 @@ func MaterializeMultiAggregationInstance(node *MultiAggregationInstance, materia
 		return nil, err
 	}
 
+	var param types.ScalarOperator
+	if node.Param != nil {
+		param, err = materializer.ConvertNodeToScalarOperator(node.Param, timeRange)
+		if err != nil {
+			return nil, fmt.Errorf("could not create parameter operator for MultiAggregationInstance %s: %w", node.Aggregation.Op.String(), err)
+		}
+	}
+
 	err = instance.Configure(
 		op,
 		node.Aggregation.Grouping,
@@ -296,19 +304,11 @@ func MaterializeMultiAggregationInstance(node *MultiAggregationInstance, materia
 		params.MemoryConsumptionTracker,
 		timeRange,
 		node.Aggregation.ExpressionPosition.ToPrometheusType(),
+		param,
 	)
 
 	if err != nil {
 		return nil, err
-	}
-
-	if node.Param != nil {
-		param, err := materializer.ConvertNodeToScalarOperator(node.Param, timeRange)
-		if err != nil {
-			return nil, fmt.Errorf("could not create parameter operator for MultiAggregationInstance %s: %w", node.Aggregation.Op.String(), err)
-		}
-
-		instance.SetParam(param)
 	}
 
 	return planning.NewSingleUseOperatorFactory(instance), nil
