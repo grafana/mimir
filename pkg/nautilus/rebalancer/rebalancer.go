@@ -478,29 +478,38 @@ func (r *Rebalancer) nextRoundDelay(now time.Time) time.Duration {
 // from broadcasting an empty snapshot derived from stale persisted
 // state (whose leases have all expired during the restart window).
 func (r *Rebalancer) WatchAssignments(req *WatchAssignmentsRequest, stream NautilusRebalancer_WatchAssignmentsServer) error {
+	ctx := stream.Context()
+	obs := newWatchStreamObserver(r, "hash", req.GetSupportsDeltas(), ctx)
+	defer obs.finish()
+
 	initial, updates, unsubscribe := r.store.subscribe(req.GetSupportsDeltas())
 	defer unsubscribe()
+
+	send := func(u assignmentUpdate) error {
+		resp := assignmentUpdateToProto(u)
+		obs.recordSend(u.reset, len(resp.Entries), resp.Size())
+		return stream.Send(resp)
+	}
 
 	// subscribe returns initial=nil when the store has not yet run
 	// its first apply(); skip the initial Send in that case and let
 	// the first apply's broadcast (delivered on updates) prime the
 	// subscriber.
 	if initial != nil {
-		if err := stream.Send(assignmentUpdateToProto(*initial)); err != nil {
-			return err
+		if err := send(*initial); err != nil {
+			return obs.fail(err)
 		}
 	}
-	ctx := stream.Context()
 	for {
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return obs.fail(ctx.Err())
 		case u, ok := <-updates:
 			if !ok {
 				return nil
 			}
-			if err := stream.Send(assignmentUpdateToProto(u)); err != nil {
-				return err
+			if err := send(u); err != nil {
+				return obs.fail(err)
 			}
 		}
 	}
@@ -528,26 +537,35 @@ func assignmentUpdateToProto(u assignmentUpdate) *WatchAssignmentsResponse {
 // restart never broadcasts an empty/expired view that would tell
 // every readcache to drop all partitions.
 func (r *Rebalancer) WatchReadcacheAssignments(req *WatchReadcacheAssignmentsRequest, stream NautilusRebalancer_WatchReadcacheAssignmentsServer) error {
+	ctx := stream.Context()
+	obs := newWatchStreamObserver(r, "readcache", req.GetSupportsDeltas(), ctx)
+	defer obs.finish()
+
 	initial, updates, unsubscribe := r.readcacheStore.subscribe(req.GetSupportsDeltas())
 	defer unsubscribe()
 
+	send := func(u readcacheUpdate) error {
+		resp := readcacheUpdateToProto(u)
+		obs.recordSend(u.reset, len(resp.Entries), resp.Size())
+		return stream.Send(resp)
+	}
+
 	// See WatchAssignments for why we may skip the initial Send.
 	if initial != nil {
-		if err := stream.Send(readcacheUpdateToProto(*initial)); err != nil {
-			return err
+		if err := send(*initial); err != nil {
+			return obs.fail(err)
 		}
 	}
-	ctx := stream.Context()
 	for {
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return obs.fail(ctx.Err())
 		case u, ok := <-updates:
 			if !ok {
 				return nil
 			}
-			if err := stream.Send(readcacheUpdateToProto(u)); err != nil {
-				return err
+			if err := send(u); err != nil {
+				return obs.fail(err)
 			}
 		}
 	}

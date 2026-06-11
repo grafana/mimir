@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -1251,6 +1253,61 @@ func TestRebalancer_WatchAssignments_SendsInitialAndUpdates(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("WatchAssignments did not exit on context cancel")
 	}
+}
+
+// TestRebalancer_WatchAssignments_StreamObservability pins the
+// connect/send/disconnect accounting added to diagnose rebalancer
+// TX: a delta subscriber must register exactly one started stream,
+// one snapshot send (the initial full log), and per-round delta
+// sends, with the active gauge returning to zero on disconnect.
+func TestRebalancer_WatchAssignments_StreamObservability(t *testing.T) {
+	reg := prometheus.NewPedanticRegistry()
+	r := &Rebalancer{store: newLogStore(), metrics: newMetrics(reg)}
+
+	t0 := time.Now()
+	r.store.apply(t0, assignment.EvenSplit([]int32{0, 1}), testStoreLease, testStoreLookahead, time.Hour)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	stream := newFakeStream(ctx, 4)
+
+	done := make(chan error, 1)
+	go func() {
+		done <- r.WatchAssignments(&WatchAssignmentsRequest{SupportsDeltas: true}, stream)
+	}()
+
+	// Initial snapshot.
+	select {
+	case msg := <-stream.sent:
+		require.True(t, msg.Reset_, "first message must be the snapshot")
+	case <-time.After(time.Second):
+		t.Fatal("did not receive initial snapshot")
+	}
+
+	// A mutating round produces a delta for the primed subscriber.
+	r.store.apply(t0.Add(time.Minute), assignment.EvenSplit([]int32{0, 1, 2}), testStoreLease, testStoreLookahead, time.Hour)
+	select {
+	case msg := <-stream.sent:
+		require.False(t, msg.Reset_, "primed delta subscriber must receive a delta")
+	case <-time.After(time.Second):
+		t.Fatal("did not receive delta")
+	}
+
+	assert.Equal(t, float64(1), testutil.ToFloat64(r.metrics.watchStreamsStarted.WithLabelValues("hash", "delta")))
+	assert.Equal(t, float64(1), testutil.ToFloat64(r.metrics.watchStreamsActive.WithLabelValues("hash")))
+	assert.Equal(t, float64(1), testutil.ToFloat64(r.metrics.watchSentMessages.WithLabelValues("hash", "snapshot")))
+	assert.Equal(t, float64(1), testutil.ToFloat64(r.metrics.watchSentMessages.WithLabelValues("hash", "delta")))
+	assert.Greater(t, testutil.ToFloat64(r.metrics.watchSentBytes.WithLabelValues("hash", "snapshot")), float64(0))
+	assert.Greater(t, testutil.ToFloat64(r.metrics.watchSentEntries.WithLabelValues("hash", "snapshot")), float64(0))
+
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("WatchAssignments did not exit on context cancel")
+	}
+	assert.Equal(t, float64(0), testutil.ToFloat64(r.metrics.watchStreamsActive.WithLabelValues("hash")),
+		"active gauge must return to zero on disconnect")
 }
 
 func TestLoadMap_SeriesAt(t *testing.T) {

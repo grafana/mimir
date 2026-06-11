@@ -59,6 +59,21 @@ type metrics struct {
 	// skips). Lets dashboards show the breakdown of "why did tier-2
 	// fire / not fire" without re-reading logs.
 	tier2RoundDecisions *prometheus.CounterVec
+
+	// Watch-stream observability. Snapshot messages carry the full
+	// retention-bounded log (sent on connect and, for legacy
+	// subscribers, on every mutating round); delta messages carry
+	// only the entries a round mutated. The bytes counters make
+	// "where is the rebalancer's network TX going" a dashboard
+	// read: sustained snapshot bytes mean stream churn (restarts,
+	// reconnect loops, max-connection-age recycling), since a
+	// healthy delta subscriber receives exactly one snapshot per
+	// stream lifetime.
+	watchStreamsActive  *prometheus.GaugeVec   // stream
+	watchStreamsStarted *prometheus.CounterVec // stream, protocol
+	watchSentMessages   *prometheus.CounterVec // stream, kind
+	watchSentEntries    *prometheus.CounterVec // stream, kind
+	watchSentBytes      *prometheus.CounterVec // stream, kind
 }
 
 func newMetrics(r prometheus.Registerer) *metrics {
@@ -91,11 +106,54 @@ func newMetrics(r prometheus.Registerer) *metrics {
 			Name: "cortex_nautilus_rebalancer_tier2_round_decisions_total",
 			Help: "Count of tier-2 (readcache slicer) gate decisions partitioned by outcome (fire vs skip) and reason. Lets dashboards show why tier-2 chose to fire or wait, without re-reading logs.",
 		}, []string{"outcome", "reason"}),
+		watchStreamsActive: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "cortex_nautilus_rebalancer_watch_streams_active",
+			Help: "Number of currently-connected assignment watch streams, by stream type (hash = range->partition log, readcache = partition->instance log).",
+		}, []string{"stream"}),
+		watchStreamsStarted: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_nautilus_rebalancer_watch_streams_started_total",
+			Help: "Total assignment watch streams accepted, by stream type and subscriber protocol (delta vs legacy). A high rate with a stable fleet means subscribers are churning streams — every (re)connect costs a full-log snapshot send.",
+		}, []string{"stream", "protocol"}),
+		watchSentMessages: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_nautilus_rebalancer_watch_sent_messages_total",
+			Help: "Watch messages sent, by stream type and kind (snapshot carries the full retention-bounded log; delta carries only the entries one round mutated).",
+		}, []string{"stream", "kind"}),
+		watchSentEntries: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_nautilus_rebalancer_watch_sent_entries_total",
+			Help: "Log entries carried by sent watch messages, by stream type and kind.",
+		}, []string{"stream", "kind"}),
+		watchSentBytes: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_nautilus_rebalancer_watch_sent_bytes_total",
+			Help: "Marshaled proto bytes of sent watch messages, by stream type and kind. Approximates the rebalancer's outbound stream bandwidth (excludes gRPC framing/compression).",
+		}, []string{"stream", "kind"}),
 	}
 	if r != nil {
-		r.MustRegister(m.partitionQuerySamples, m.unnamedQuerySamples, m.readcacheInstanceLoad, m.readcachePartitionOwner, m.rateZeroExclusions, m.tier2RoundDecisions)
+		r.MustRegister(m.partitionQuerySamples, m.unnamedQuerySamples, m.readcacheInstanceLoad, m.readcachePartitionOwner, m.rateZeroExclusions, m.tier2RoundDecisions,
+			m.watchStreamsActive, m.watchStreamsStarted, m.watchSentMessages, m.watchSentEntries, m.watchSentBytes)
 	}
 	return m
+}
+
+// watchStreamStarted records a new watch stream and returns a done
+// func for the disconnect. Safe on a nil receiver (test wiring).
+func (m *metrics) watchStreamStarted(stream, protocol string) (done func()) {
+	if m == nil {
+		return func() {}
+	}
+	m.watchStreamsStarted.WithLabelValues(stream, protocol).Inc()
+	m.watchStreamsActive.WithLabelValues(stream).Inc()
+	return func() { m.watchStreamsActive.WithLabelValues(stream).Dec() }
+}
+
+// recordWatchSend accounts one sent watch message. kind is
+// "snapshot" (reset=true) or "delta". Safe on a nil receiver.
+func (m *metrics) recordWatchSend(stream, kind string, entries, bytes int) {
+	if m == nil {
+		return
+	}
+	m.watchSentMessages.WithLabelValues(stream, kind).Inc()
+	m.watchSentEntries.WithLabelValues(stream, kind).Add(float64(entries))
+	m.watchSentBytes.WithLabelValues(stream, kind).Add(float64(bytes))
 }
 
 // updateRound replaces the previous round's per-partition and per-
