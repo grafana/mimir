@@ -821,7 +821,11 @@ func IsSafeToApplyFilteringAfterFunction(functionCall *core.FunctionCall, group 
 
 		return !group.haveAnyFiltersForLabel(model.MetricNameLabel), nil
 
-	case functions.FUNCTION_PI, functions.FUNCTION_VECTOR, functions.FUNCTION_TIME:
+	case functions.FUNCTION_MAX_OF,
+		functions.FUNCTION_MIN_OF,
+		functions.FUNCTION_PI,
+		functions.FUNCTION_VECTOR,
+		functions.FUNCTION_TIME:
 		// These functions should never directly contain a selector, so this method should never be called for
 		// these functions, but return false to be safe.
 		return false, nil
