@@ -36,7 +36,7 @@ func (p *PreallocTimeseries) EqualWiresmith(other any) bool {
 	if !ok {
 		return false
 	}
-	return p.TimeSeries.Equal(o.TimeSeries)
+	return p.Equal(o.TimeSeries)
 }
 
 // CompareWiresmith implements the wiresmith customtype contract.
@@ -45,7 +45,7 @@ func (p *PreallocTimeseries) CompareWiresmith(other any) int {
 	if !ok {
 		return -1
 	}
-	return p.TimeSeries.Compare(o.TimeSeries)
+	return p.Compare(o.TimeSeries)
 }
 
 // SizeWiresmith implements the wiresmith customtype contract.
