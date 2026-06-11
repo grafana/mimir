@@ -397,11 +397,13 @@ func toPostingGroups(ctx context.Context, ms []*labels.Matcher, indexhdr indexhe
 	return postingGroups, nil
 }
 
-// FetchPostings fills postings requested by posting groups.
+// FetchPostingsForKnownOffsets fills postings requested by posting groups.
 // It returns one postings for each key, in the same order.
-// If postings for given key is not fetched, entry at given index will be an ErrPostings
-func (r *bucketIndexReader) FetchPostings(ctx context.Context, keys []labels.Label, stats *safeQueryStats) ([]index.Postings, error) {
-	ps, err := r.fetchPostings(ctx, keys, stats)
+// If postings for given key is not fetched, entry at given index will be an EmptyPostings.
+// NOTE: On cache misses, knownOffsets will be used to fetch postings for that label name, not the index header.
+// Thus, knownOffsetsForLabel should only be passed if the caller has provided all the offsets required to fulfill the request.
+func (r *bucketIndexReader) FetchPostingsForKnownOffsets(ctx context.Context, keys []labels.Label, knownOffsetsForLabel map[string][]streamindex.PostingListOffset, stats *safeQueryStats) ([]index.Postings, error) {
+	ps, err := r.fetchPostingsForKnownOffsets(ctx, keys, knownOffsetsForLabel, stats)
 	if err != nil {
 		return nil, err
 	}
@@ -414,35 +416,106 @@ func (r *bucketIndexReader) FetchPostings(ctx context.Context, keys []labels.Lab
 	}
 	for i := range ps {
 		ps[i] = checkNilPosting(keys[i], ps[i])
-		if version >= 2 {
+		if version >= index.FormatV2 {
 			ps[i] = paddedPostings{ps[i]}
 		}
 	}
 	return ps, nil
 }
 
-func (r *bucketIndexReader) buildPostingsFromKnownOffsets(ctx context.Context, keys []labels.Label, knownOffsets map[string][]streamindex.PostingListOffset, stats *safeQueryStats) ([]index.Postings, error) {
-	output := make([]index.Postings, len(keys))
-	ptrs := make([]postingPtr, 0, len(knownOffsets))
+// decodePostingsForKeyFromCache decodes bytes read from the cache into index.Postings. If the postings cannot be decoded,
+// a warning is logged, but no error is returned.
+func (r *bucketIndexReader) decodePostingsForKeyFromCache(b []byte, key labels.Label, stats *safeQueryStats) (index.Postings, error) {
+	stats.update(func(stats *queryStats) {
+		stats.postingsTouched++
+		stats.postingsTouchedSizeSum += len(b)
+	})
+
+	l, cachedLabelsKey, pendingMatchers, err := r.decodePostings(b, stats)
+	if len(pendingMatchers) > 0 {
+		return nil, fmt.Errorf("not expecting matchers on non-expanded postings for %s=%s in block %s, but got %s",
+			key.Name, key.Value, r.block.meta.ULID, util.MatchersStringer(pendingMatchers))
+	}
+	if err == nil && cachedLabelsKey == encodeLabelForPostingsCache(key) {
+		return l, nil
+	}
+
+	level.Warn(r.block.logger).Log(
+		"msg", "can't decode cached postings",
+		"err", err,
+		"key", fmt.Sprintf("%+v", key),
+		"labels_key", cachedLabelsKey,
+		"block", r.block.meta.ULID,
+		"bytes_len", len(b),
+		"bytes_head_hex", hex.EncodeToString(b[:min(8, len(b))]),
+	)
+	// If we can't decode cached postings, we log a warning but don't error,
+	// since errors terminate postings fetch.
+	return nil, nil
+}
+
+// fetchPostingsForKnownOffsets, much like fetchPostings, fetches postings for the given keys.
+// However, it resolves postings offsets using knownOffsets[key.Name] rather than the index-header PostingsOffset lookup.
+// Keys whose label name or value isn't in known offsets are treated as having an empty postings result.
+func (r *bucketIndexReader) fetchPostingsForKnownOffsets(ctx context.Context, keys []labels.Label, knownOffsets map[string][]streamindex.PostingListOffset, stats *safeQueryStats) ([]index.Postings, error) {
+	postings := make([]index.Postings, len(keys))
+	var ptrs []postingPtr
+
+	// Fetch postings from the cache with a single call.
+	fromCache := r.block.indexCache.FetchMultiPostings(ctx, r.block.userID, r.block.meta.ULID, keys)
+
+	// Iterate over all keys and fetch postings from cache.
+	// If we have a miss, resolve the offset from knownOffsets and mark the key to be fetched in `ptrs`.
 	for ix, key := range keys {
-		if offsets, ok := knownOffsets[key.Name]; ok {
-			foundPos := sort.Search(len(knownOffsets[key.Name]), func(i int) bool {
-				return offsets[i].LabelValue >= key.Value
-			})
-			if foundPos < len(knownOffsets[key.Name]) && offsets[foundPos].LabelValue == key.Value {
-				ptrs = append(ptrs, postingPtr{
-					keyID: ix,
-					ptr:   offsets[foundPos].Off,
-				})
+		// Get postings for the given key from cache first.
+		if b, _ := fromCache.Next(); b != nil {
+			p, err := r.decodePostingsForKeyFromCache(b, key, stats)
+			if err != nil {
+				return nil, err
+			}
+			if p != nil {
+				postings[ix] = p
+				continue
 			}
 		}
+
+		// Cache miss; resolve the byte range from the known offsets
+		offsets, ok := knownOffsets[key.Name]
+
+		// If there are no known offsets for this label, we set postings to empty for this key
+		if !ok {
+			postings[ix] = index.EmptyPostings()
+			continue
+		}
+		foundPos := sort.Search(len(offsets), func(i int) bool {
+			return offsets[i].LabelValue >= key.Value
+		})
+		// Again, if we can't find offsets in knownOffsets, we treat these postings as empty.
+		if foundPos >= len(offsets) || offsets[foundPos].LabelValue != key.Value {
+			postings[ix] = index.EmptyPostings()
+			continue
+		}
+
+		stats.update(func(stats *queryStats) {
+			stats.postingsToFetch++
+		})
+
+		ptrs = append(ptrs, postingPtr{ptr: offsets[foundPos].Off, keyID: ix})
 	}
+
+	return r.fetchPostingsForPtrs(ctx, ptrs, keys, postings, stats)
+}
+
+// fetchPostingsForPtrs reads the byte offset in the index header given by each postingPtr.ptr,
+// and fills the resulting postings in at position postingPtr.keyID in output.
+// It also caches these postings before returning.
+func (r *bucketIndexReader) fetchPostingsForPtrs(ctx context.Context, ptrs []postingPtr, keys []labels.Label, output []index.Postings, stats *safeQueryStats) ([]index.Postings, error) {
 	slices.SortFunc(ptrs, func(a, b postingPtr) int {
 		return cmp.Compare(a.ptr.Start, b.ptr.Start)
 	})
 
-	// TODO(bwplotka): Asses how large in worst case scenario this can be. (e.g fetch for AllPostingsKeys)
-	// Consider sub split if too big.
+	// TODO(bwplotka): Assess how large in worst case scenario this can be (e.g fetch for AllPostingsKeys).
+	//  Consider sub split if too big.
 	parts := r.block.partitioners.postings.Partition(len(ptrs), func(i int) (start, end uint64) {
 		return uint64(ptrs[i].ptr.Start), uint64(ptrs[i].ptr.End)
 	})
@@ -532,21 +605,12 @@ func (r *bucketIndexReader) buildPostingsFromKnownOffsets(ctx context.Context, k
 		return nil, err
 	}
 
-	version, err := r.block.indexHeaderReader.IndexVersion(ctx)
-	if err != nil {
-		return nil, errors.Wrap(err, "get index version")
-	}
-	for i := range output {
-		output[i] = checkNilPosting(keys[i], output[i])
-		if version >= index.FormatV2 {
-			output[i] = paddedPostings{output[i]}
-		}
-	}
 	return output, nil
 }
 
-// fetchPostings is the version-unaware private implementation of FetchPostings.
-// callers of this method may need to add padding to the results.
+// fetchPostings fills postings requested by posting groups.
+// It returns one postings for each key, in the same order.
+// Callers of this method may need to add padding to the results.
 // If postings for given key is not fetched, entry at given index will be nil.
 func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Label, stats *safeQueryStats) ([]index.Postings, error) {
 	timer := prometheus.NewTimer(r.block.metrics.postingsFetchDuration)
@@ -565,30 +629,14 @@ func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Lab
 	for ix, key := range keys {
 		// Get postings for the given key from cache first.
 		if b, _ := fromCache.Next(); b != nil {
-			stats.update(func(stats *queryStats) {
-				stats.postingsTouched++
-				stats.postingsTouchedSizeSum += len(b)
-			})
-
-			l, cachedLabelsKey, pendingMatchers, err := r.decodePostings(b, stats)
-			if len(pendingMatchers) > 0 {
-				return nil, fmt.Errorf("not expecting matchers on non-expanded postings for %s=%s in block %s, but got %s",
-					key.Name, key.Value, r.block.meta.ULID, util.MatchersStringer(pendingMatchers))
+			p, err := r.decodePostingsForKeyFromCache(b, key, stats)
+			if err != nil {
+				return nil, err
 			}
-			if err == nil && cachedLabelsKey == encodeLabelForPostingsCache(key) {
-				output[ix] = l
+			if p != nil {
+				output[ix] = p
 				continue
 			}
-
-			level.Warn(r.block.logger).Log(
-				"msg", "can't decode cached postings",
-				"err", err,
-				"key", fmt.Sprintf("%+v", key),
-				"labels_key", cachedLabelsKey,
-				"block", r.block.meta.ULID,
-				"bytes_len", len(b),
-				"bytes_head_hex", hex.EncodeToString(b[:min(8, len(b))]),
-			)
 		}
 
 		// Cache miss; save pointer for actual posting in index stored in object store.
@@ -610,98 +658,7 @@ func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Lab
 		ptrs = append(ptrs, postingPtr{ptr: ptr, keyID: ix})
 	}
 
-	slices.SortFunc(ptrs, func(a, b postingPtr) int {
-		return cmp.Compare(a.ptr.Start, b.ptr.Start)
-	})
-
-	// TODO(bwplotka): Asses how large in worst case scenario this can be. (e.g fetch for AllPostingsKeys)
-	// Consider sub split if too big.
-	parts := r.block.partitioners.postings.Partition(len(ptrs), func(i int) (start, end uint64) {
-		return uint64(ptrs[i].ptr.Start), uint64(ptrs[i].ptr.End)
-	})
-
-	// Use a different TTL for postings based on the duration of the block.
-	postingsTTL := indexcache.BlockTTL(r.block.meta)
-
-	g, ctx := errgroup.WithContext(ctx)
-	for _, part := range parts {
-		i, j := part.ElemRng[0], part.ElemRng[1]
-
-		start := int64(part.Start)
-		// We assume index does not have any ptrs that has 0 length.
-		length := int64(part.End) - start
-
-		// Fetch from object storage concurrently and update stats and posting list.
-		g.Go(func() error {
-			begin := time.Now()
-
-			b, err := r.block.readIndexRange(ctx, start, length)
-			if err != nil {
-				return errors.Wrap(err, "read postings range")
-			}
-			fetchTime := time.Since(begin)
-
-			stats.update(func(stats *queryStats) {
-				stats.postingsFetchCount++
-				stats.postingsFetched += j - i
-				stats.postingsFetchDurationSum += fetchTime
-				stats.postingsFetchedSizeSum += int(length)
-			})
-
-			for _, p := range ptrs[i:j] {
-				// index-header can estimate endings, which means we need to resize the endings.
-				pBytes, err := resizePostings(b[p.ptr.Start-start : p.ptr.End-start])
-				if err != nil {
-					return err
-				}
-
-				compressionTime := time.Duration(0)
-				compressions, compressionErrors, compressedSize := 0, 0, 0
-
-				// Reencode postings before storing to cache. If that fails, we store original bytes.
-				// This can only fail, if postings data was somehow corrupted,
-				// and there is nothing we can do about it.
-				// Errors from corrupted postings will be reported when postings are used.
-				compressions++
-				s := time.Now()
-				bep := newBigEndianPostings(pBytes[4:])
-				dataToCache, err := diffVarintSnappyWithMatchersEncode(bep, bep.length(), encodeLabelForPostingsCache(keys[p.keyID]), nil)
-				compressionTime = time.Since(s)
-				if err == nil {
-					compressedSize = len(dataToCache)
-					r.block.indexCache.StorePostings(r.block.userID, r.block.meta.ULID, keys[p.keyID], dataToCache, postingsTTL)
-				} else {
-					compressionErrors = 1
-					level.Warn(r.block.logger).Log(
-						"msg", "couldn't encode postings for cache",
-						"err", err,
-						"user", r.block.userID,
-						"block", r.block.meta.ULID,
-						"label", keys[p.keyID],
-					)
-				}
-
-				// Return postings. Truncate first 4 bytes which are length of posting.
-				// Access to output is not protected by a mutex because each goroutine
-				// is expected to handle a different set of keys.
-				output[p.keyID] = newBigEndianPostings(pBytes[4:])
-
-				// If we just fetched it we still have to update the stats for touched postings.
-				stats.update(func(stats *queryStats) {
-					stats.postingsTouched++
-					stats.postingsTouchedSizeSum += len(pBytes)
-					stats.cachedPostingsCompressions += compressions
-					stats.cachedPostingsCompressionErrors += compressionErrors
-					stats.cachedPostingsOriginalSizeSum += len(pBytes)
-					stats.cachedPostingsCompressedSizeSum += compressedSize
-					stats.cachedPostingsCompressionTimeSum += compressionTime
-				})
-			}
-			return nil
-		})
-	}
-
-	return output, g.Wait()
+	return r.fetchPostingsForPtrs(ctx, ptrs, keys, output, stats)
 }
 
 func encodeLabelForPostingsCache(l labels.Label) indexcache.LabelMatchersKey {
