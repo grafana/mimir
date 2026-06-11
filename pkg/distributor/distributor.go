@@ -1134,7 +1134,7 @@ func (d *Distributor) watchNautilusAssignments(ctx context.Context) {
 	backoff := minBackoff
 
 	for ctx.Err() == nil {
-		stream, err := client.WatchAssignments(ctx, &rebalancer.WatchAssignmentsRequest{})
+		stream, err := client.WatchAssignments(ctx, &rebalancer.WatchAssignmentsRequest{SupportsDeltas: true})
 		if err != nil {
 			level.Warn(d.log).Log("msg", "failed to open nautilus WatchAssignments stream", "err", err, "backoff", backoff)
 			d.sleepWithCtx(ctx, backoff)
@@ -1160,15 +1160,36 @@ func (d *Distributor) watchNautilusAssignments(ctx context.Context) {
 
 // consumeNautilusStream loops on Recv and atomically swaps
 // d.nautilusLog plus its derived d.nautilusActiveTable on each
-// snapshot. Returns the error that ended the stream so the caller
+// message. Returns the error that ended the stream so the caller
 // can decide whether to reconnect.
+//
+// We subscribe with SupportsDeltas, so a message is either a full
+// snapshot (reset=true; always the first message on a stream) that
+// replaces the local log wholesale, or a delta (reset=false) whose
+// entries are upserted into the previous log by lease identity. The
+// merged log is then pruned to the server's retention horizon. The
+// first message is treated as a snapshot regardless of the flag so
+// a mixed-version rollout (old rebalancer that never sets reset)
+// degrades to the legacy replace-wholesale behavior instead of
+// merging snapshots into each other.
 func (d *Distributor) consumeNautilusStream(stream rebalancer.NautilusRebalancer_WatchAssignmentsClient) error {
+	first := true
 	for {
 		resp, err := stream.Recv()
 		if err != nil {
 			return err
 		}
-		log := assignment.NewLogFromEntries(rebalancer.EntriesFromProto(resp.Entries))
+		entries := rebalancer.EntriesFromProto(resp.Entries)
+		var log *assignment.Log
+		if resp.Reset_ || first {
+			log = assignment.NewLogFromEntries(entries)
+		} else {
+			log = d.nautilusLog.Load().MergedWithEntries(entries)
+		}
+		if resp.PruneBeforeUnixMs > 0 {
+			log.Prune(time.UnixMilli(resp.PruneBeforeUnixMs))
+		}
+		first = false
 		d.nautilusLog.Store(log)
 		// Pre-build the active table for "now" so the next write
 		// request hits the fast path immediately. Hold the rebuild
@@ -1182,8 +1203,10 @@ func (d *Distributor) consumeNautilusStream(stream rebalancer.NautilusRebalancer
 		d.nautilusAssignmentsReceived.Inc()
 
 		fields := []interface{}{
-			"msg", "received nautilus assignment snapshot",
+			"msg", "received nautilus assignment update",
 			"entries", len(resp.Entries),
+			"reset", resp.Reset_,
+			"log_entries", log.Len(),
 		}
 		if table != nil {
 			fields = append(fields,

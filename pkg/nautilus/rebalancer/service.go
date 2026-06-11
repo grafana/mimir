@@ -12,18 +12,43 @@ import (
 	"github.com/grafana/mimir/pkg/nautilus/assignment"
 )
 
+// assignmentUpdate is one message bound for a watch subscriber:
+// either a full snapshot of the retention-bounded log (reset=true)
+// or the entries created/mutated since the subscriber's previous
+// message (reset=false, delta subscribers only).
+type assignmentUpdate struct {
+	entries []assignment.LogEntry
+	reset   bool
+	// pruneBefore is the server's retention horizon at broadcast
+	// time. Delta subscribers prune their local log with it; zero
+	// means retention is disabled.
+	pruneBefore time.Time
+}
+
 // logStore provides thread-safe access to the assignment log plus a
 // fan-out subscription mechanism for streaming RPC clients.
 //
 // Reads (snapshot, latestActiveAssignment) take a defensive copy so
 // callers can iterate without holding the mutex. Apply mutates the
-// log under the mutex and broadcasts a fresh snapshot to all
-// subscribers via 1-buffered conflated channels: a slow subscriber
-// sees only the most recent snapshot, never every intermediate one.
+// log under the mutex and broadcasts to all subscribers via
+// 1-buffered conflated channels. Conflation never loses state: for
+// snapshot subscribers a newer snapshot replaces the pending one;
+// for delta subscribers a new delta is merged (upsert by lease
+// identity) into the pending update, so a slow subscriber receives
+// the coalesced equivalent of every broadcast it missed.
 type logStore struct {
 	mu          sync.Mutex
 	log         *assignment.Log
 	subscribers map[*subscription]struct{}
+
+	// lastBroadcast is the full entry set as of the previous
+	// broadcast, used to compute the per-apply delta (entries whose
+	// To changed plus appended entries; the rebalancer never deletes
+	// or rewrites From in place, see Log.MergedWithEntries).
+	lastBroadcast []assignment.LogEntry
+	// lastPruneBefore is the retention horizon of the most recent
+	// apply, stamped on initial snapshots handed to new subscribers.
+	lastPruneBefore time.Time
 
 	// ready flips to true the first time apply() runs. Until then,
 	// subscribe() returns a nil initial snapshot so the gRPC handler
@@ -53,7 +78,16 @@ type logStore struct {
 
 // subscription holds a single watcher's conflated update channel.
 type subscription struct {
-	ch chan []assignment.LogEntry
+	ch chan assignmentUpdate
+	// wantsDeltas records whether the subscriber understands
+	// incremental updates (WatchAssignmentsRequest.supports_deltas).
+	// Legacy subscribers get a full snapshot on every broadcast.
+	wantsDeltas bool
+	// primed flips to true once the subscriber has been handed a
+	// full snapshot (either as subscribe()'s initial or as a
+	// reset broadcast); only primed delta subscribers may receive
+	// deltas. Guarded by logStore.mu.
+	primed bool
 }
 
 func newLogStore() *logStore {
@@ -75,20 +109,27 @@ func newLogStore() *logStore {
 // Only when the lookahead window catches up does Apply append a new
 // successor and trigger a broadcast.
 //
-// The broadcast snapshot contains the full retention-bounded log,
-// history included, NOT just the live entries. The write path only
-// needs leases covering `now`, but the distributor's read path
-// resolves partitions over the query's whole wall-clock window
+// Broadcast contents cover the full retention-bounded log, history
+// included, NOT just the live entries. The write path only needs
+// leases covering `now`, but the distributor's read path resolves
+// partitions over the query's whole wall-clock window
 // (getReadcacheReplicationSetsForQuery): expired leases are exactly
 // what tells it which partitions held a hash range earlier in the
 // window, and which readcache holds a frozen slice from before a
-// move. Shipping live entries only amputates that history and makes
-// post-rotation queries resolve no partitions (or no owners) for any
-// window bound that lands before the latest rotation. EntryRetention
-// bounds the snapshot size; it must exceed the querier's lookback
-// (QueryIngestersWithin), which the flag documents.
+// move. EntryRetention bounds the state size; it must exceed the
+// querier's lookback (QueryIngestersWithin), which the flag
+// documents.
+//
+// Delta subscribers receive only the entries this apply created or
+// mutated; legacy subscribers receive the full snapshot. Sends
+// happen while holding the mutex — conflateSendUpdate never blocks,
+// and in-lock sending guarantees subscribers observe deltas in
+// apply order and keeps the per-subscriber primed transition atomic
+// with its first snapshot.
 func (s *logStore) apply(at time.Time, next *assignment.Assignment, leaseDuration, lookahead, retention time.Duration) bool {
 	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	changed := s.log.Apply(at, next, leaseDuration, lookahead)
 	if retention > 0 {
 		s.log.Prune(at.Add(-retention))
@@ -103,28 +144,60 @@ func (s *logStore) apply(at time.Time, next *assignment.Assignment, leaseDuratio
 	becameReady := !s.ready
 	s.ready = true
 	if !changed && !becameReady {
-		s.mu.Unlock()
 		return false
 	}
-	snap := s.log.Entries()
+	full := s.log.Entries()
+	delta := diffAssignmentEntries(s.lastBroadcast, full)
+	s.lastBroadcast = full
+	if retention > 0 {
+		s.lastPruneBefore = at.Add(-retention)
+	}
 	if changed && s.persistFn != nil {
 		// Persist while still holding the mutex so a concurrent
 		// subscribe()'s initial snapshot can't see a state that
 		// hasn't been durably committed yet.
-		if err := s.persistFn(snap); err != nil && s.logger != nil {
+		if err := s.persistFn(full); err != nil && s.logger != nil {
 			level.Error(s.logger).Log("msg", "failed to persist assignment log", "err", err)
 		}
 	}
-	subs := make([]*subscription, 0, len(s.subscribers))
-	for sub := range s.subscribers {
-		subs = append(subs, sub)
-	}
-	s.mu.Unlock()
 
-	for _, sub := range subs {
-		conflateSend(sub.ch, snap)
+	for sub := range s.subscribers {
+		switch {
+		case !sub.wantsDeltas || !sub.primed:
+			sub.primed = true
+			conflateSendUpdate(sub.ch, assignmentUpdate{entries: full, reset: true, pruneBefore: s.lastPruneBefore})
+		case len(delta) == 0:
+			// A primed delta subscriber has nothing to learn from a
+			// no-op apply (e.g. the becameReady broadcast).
+		default:
+			conflateSendUpdate(sub.ch, assignmentUpdate{entries: delta, pruneBefore: s.lastPruneBefore})
+		}
 	}
 	return changed
+}
+
+// diffAssignmentEntries returns the entries of cur that are absent
+// from prev or whose To differs — exactly the mutations Log.Apply
+// can make (appends and in-place To rewrites; From and the identity
+// fields are immutable, and deletions only happen via Prune, which
+// subscribers replicate locally via pruneBefore).
+func diffAssignmentEntries(prev, cur []assignment.LogEntry) []assignment.LogEntry {
+	type key struct {
+		r      assignment.HashRange
+		pid    int32
+		fromMs int64
+	}
+	prevTo := make(map[key]time.Time, len(prev))
+	for _, e := range prev {
+		prevTo[key{r: e.Range, pid: e.PartitionID, fromMs: e.From.UnixMilli()}] = e.To
+	}
+	var out []assignment.LogEntry
+	for _, e := range cur {
+		if to, ok := prevTo[key{r: e.Range, pid: e.PartitionID, fromMs: e.From.UnixMilli()}]; !ok || !to.Equal(e.To) {
+			out = append(out, e)
+		}
+	}
+	return out
 }
 
 // setPersistFn installs a persist callback. Safe to call once at
@@ -172,9 +245,9 @@ func (s *logStore) latestActiveAssignment(at time.Time) *assignment.Assignment {
 }
 
 // subscribe registers a new watcher. If apply() has run at least
-// once (s.ready), it returns a snapshot of the log's live entries
-// (those with To > at) so the caller can prime its consumer
-// atomically with the subscription. If no apply has run yet, the
+// once (s.ready), it returns a full snapshot of the retained log
+// (reset=true) so the caller can prime its consumer atomically with
+// the subscription. If no apply has run yet, the
 // returned initial is nil — the caller MUST skip its initial send
 // in that case, and instead wait for the first broadcast on the
 // updates channel. apply() guarantees a broadcast on the
@@ -192,12 +265,16 @@ func (s *logStore) latestActiveAssignment(at time.Time) *assignment.Assignment {
 // the history, not just the leases covering `now`. See the apply()
 // comment.
 //
+// wantsDeltas opts the subscriber into incremental broadcasts after
+// its priming snapshot; see assignmentUpdate.
+//
 // The caller MUST invoke unsubscribe when finished.
-func (s *logStore) subscribe(_ time.Time) (initial []assignment.LogEntry, updates <-chan []assignment.LogEntry, unsubscribe func()) {
-	sub := &subscription{ch: make(chan []assignment.LogEntry, 1)}
+func (s *logStore) subscribe(wantsDeltas bool) (initial *assignmentUpdate, updates <-chan assignmentUpdate, unsubscribe func()) {
+	sub := &subscription{ch: make(chan assignmentUpdate, 1), wantsDeltas: wantsDeltas}
 	s.mu.Lock()
 	if s.ready {
-		initial = s.log.Entries()
+		sub.primed = true
+		initial = &assignmentUpdate{entries: s.log.Entries(), reset: true, pruneBefore: s.lastPruneBefore}
 	}
 	s.subscribers[sub] = struct{}{}
 	s.mu.Unlock()
@@ -221,24 +298,49 @@ func (s *logStore) numSubscribers() int {
 	return len(s.subscribers)
 }
 
-// conflateSend performs a non-blocking send of snap on ch. If the
-// buffer is already full, it drains the stale value and replaces it
-// with snap so slow subscribers always see the most recent state.
-func conflateSend(ch chan []assignment.LogEntry, snap []assignment.LogEntry) {
+// conflateSendUpdate performs a non-blocking send of u on ch. If the
+// buffer is full, the pending update is drained and coalesced with u
+// so slow subscribers never lose state:
+//
+//   - u is a snapshot (reset=true): it supersedes whatever was
+//     pending, snapshot or delta.
+//   - u is a delta on top of a pending snapshot: u is upserted into
+//     the snapshot, which stays a snapshot.
+//   - u is a delta on top of a pending delta: the deltas are
+//     upserted together. Upsert is last-write-wins per lease, which
+//     is correct because deltas arrive in apply order (sends happen
+//     under the store mutex).
+func conflateSendUpdate(ch chan assignmentUpdate, u assignmentUpdate) {
 	for {
 		select {
-		case ch <- snap:
+		case ch <- u:
 			return
 		default:
-			// Drain a stale value (if it's still there) and retry.
-			// The drained value may or may not be present by the time
-			// we get here; the default branch covers either case.
+			// Coalesce with the pending value (if it's still there)
+			// and retry. The pending value may have been consumed by
+			// the time we get here; the default branch covers that.
 			select {
-			case <-ch:
+			case pending := <-ch:
+				u = coalesceUpdates(pending, u)
 			default:
-				return
 			}
 		}
+	}
+}
+
+func coalesceUpdates(pending, next assignmentUpdate) assignmentUpdate {
+	if next.reset {
+		return next
+	}
+	merged := assignment.NewLogFromEntries(pending.entries).MergedWithEntries(next.entries)
+	pruneBefore := next.pruneBefore
+	if pruneBefore.IsZero() {
+		pruneBefore = pending.pruneBefore
+	}
+	return assignmentUpdate{
+		entries:     merged.Entries(),
+		reset:       pending.reset,
+		pruneBefore: pruneBefore,
 	}
 }
 

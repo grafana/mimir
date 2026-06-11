@@ -30,6 +30,22 @@ var _ = math.Inf
 const _ = proto.GoGoProtoPackageIsVersion3 // please upgrade the proto package
 
 type WatchAssignmentsRequest struct {
+	// supports_deltas opts the subscriber into incremental updates:
+	// the server still sends a full snapshot (reset=true) as the first
+	// message, but subsequent broadcasts carry only the entries
+	// created or mutated since the previous message on this stream
+	// (reset=false), which the client must upsert into its local log
+	// by lease identity (lo, hi, partition_id, from_unix_ms). Leases
+	// are never deleted by the rebalancer — preemption rewrites
+	// to_unix_ms in place (possibly to a zero-length [from, from)
+	// window) — so upsert plus client-side pruning by
+	// prune_before_unix_ms reconstructs the server's log exactly.
+	//
+	// When false (old clients), every message is a full snapshot the
+	// client replaces wholesale, which at production subscriber counts
+	// resends the entire retention window (~hours of lease history)
+	// every rebalance round.
+	SupportsDeltas bool `protobuf:"varint,1,opt,name=supports_deltas,json=supportsDeltas,proto3" json:"supports_deltas,omitempty"`
 }
 
 func (m *WatchAssignmentsRequest) Reset()      { *m = WatchAssignmentsRequest{} }
@@ -64,10 +80,29 @@ func (m *WatchAssignmentsRequest) XXX_DiscardUnknown() {
 
 var xxx_messageInfo_WatchAssignmentsRequest proto.InternalMessageInfo
 
-// WatchAssignmentsResponse is a full snapshot of the rebalancer's
-// assignment log at the time of the broadcast.
+func (m *WatchAssignmentsRequest) GetSupportsDeltas() bool {
+	if m != nil {
+		return m.SupportsDeltas
+	}
+	return false
+}
+
+// WatchAssignmentsResponse carries either a full snapshot of the
+// rebalancer's assignment log (reset=true) or an incremental delta
+// (reset=false; only sent to subscribers that set supports_deltas).
 type WatchAssignmentsResponse struct {
 	Entries []LogEntry `protobuf:"bytes,1,rep,name=entries,proto3" json:"entries"`
+	// reset=true: entries is a complete snapshot; replace any local
+	// state. reset=false: entries are upserts keyed by
+	// (lo, hi, partition_id, from_unix_ms).
+	Reset_ bool `protobuf:"varint,2,opt,name=reset,proto3" json:"reset,omitempty"`
+	// prune_before_unix_ms is the server's retention horizon at
+	// broadcast time: entries whose to_unix_ms is strictly before it
+	// have been pruned server-side and the client should drop them
+	// too. 0 means "no horizon supplied" (old servers); clients then
+	// skip pruning, matching the historical replace-wholesale
+	// behavior where snapshots were already retention-bounded.
+	PruneBeforeUnixMs int64 `protobuf:"varint,3,opt,name=prune_before_unix_ms,json=pruneBeforeUnixMs,proto3" json:"prune_before_unix_ms,omitempty"`
 }
 
 func (m *WatchAssignmentsResponse) Reset()      { *m = WatchAssignmentsResponse{} }
@@ -107,6 +142,20 @@ func (m *WatchAssignmentsResponse) GetEntries() []LogEntry {
 		return m.Entries
 	}
 	return nil
+}
+
+func (m *WatchAssignmentsResponse) GetReset_() bool {
+	if m != nil {
+		return m.Reset_
+	}
+	return false
+}
+
+func (m *WatchAssignmentsResponse) GetPruneBeforeUnixMs() int64 {
+	if m != nil {
+		return m.PruneBeforeUnixMs
+	}
+	return 0
 }
 
 // LogEntry is the wire representation of a single (partition, hash
@@ -200,6 +249,10 @@ func (m *LogEntry) GetToUnixMs() int64 {
 }
 
 type WatchReadcacheAssignmentsRequest struct {
+	// supports_deltas mirrors WatchAssignmentsRequest.supports_deltas;
+	// delta entries are upserts keyed by
+	// (partition_id, instance_id, from_unix_ms).
+	SupportsDeltas bool `protobuf:"varint,1,opt,name=supports_deltas,json=supportsDeltas,proto3" json:"supports_deltas,omitempty"`
 }
 
 func (m *WatchReadcacheAssignmentsRequest) Reset()      { *m = WatchReadcacheAssignmentsRequest{} }
@@ -234,11 +287,21 @@ func (m *WatchReadcacheAssignmentsRequest) XXX_DiscardUnknown() {
 
 var xxx_messageInfo_WatchReadcacheAssignmentsRequest proto.InternalMessageInfo
 
-// WatchReadcacheAssignmentsResponse is a full snapshot of the
-// rebalancer's readcache-assignment log at the time of the
-// broadcast.
+func (m *WatchReadcacheAssignmentsRequest) GetSupportsDeltas() bool {
+	if m != nil {
+		return m.SupportsDeltas
+	}
+	return false
+}
+
+// WatchReadcacheAssignmentsResponse carries either a full snapshot
+// of the rebalancer's readcache-assignment log (reset=true) or an
+// incremental delta (reset=false; only sent to subscribers that set
+// supports_deltas). Field semantics mirror WatchAssignmentsResponse.
 type WatchReadcacheAssignmentsResponse struct {
-	Entries []ReadcacheLogEntry `protobuf:"bytes,1,rep,name=entries,proto3" json:"entries"`
+	Entries           []ReadcacheLogEntry `protobuf:"bytes,1,rep,name=entries,proto3" json:"entries"`
+	Reset_            bool                `protobuf:"varint,2,opt,name=reset,proto3" json:"reset,omitempty"`
+	PruneBeforeUnixMs int64               `protobuf:"varint,3,opt,name=prune_before_unix_ms,json=pruneBeforeUnixMs,proto3" json:"prune_before_unix_ms,omitempty"`
 }
 
 func (m *WatchReadcacheAssignmentsResponse) Reset()      { *m = WatchReadcacheAssignmentsResponse{} }
@@ -278,6 +341,20 @@ func (m *WatchReadcacheAssignmentsResponse) GetEntries() []ReadcacheLogEntry {
 		return m.Entries
 	}
 	return nil
+}
+
+func (m *WatchReadcacheAssignmentsResponse) GetReset_() bool {
+	if m != nil {
+		return m.Reset_
+	}
+	return false
+}
+
+func (m *WatchReadcacheAssignmentsResponse) GetPruneBeforeUnixMs() int64 {
+	if m != nil {
+		return m.PruneBeforeUnixMs
+	}
+	return 0
 }
 
 // ReadcacheLogEntry is the wire representation of a single
@@ -569,46 +646,50 @@ func init() {
 func init() { proto.RegisterFile("service.proto", fileDescriptor_a0b84a42fa06f626) }
 
 var fileDescriptor_a0b84a42fa06f626 = []byte{
-	// 619 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x94, 0x94, 0xcf, 0x4f, 0x13, 0x41,
-	0x14, 0xc7, 0x77, 0x5a, 0x28, 0xf5, 0x01, 0x16, 0x46, 0xa2, 0x4b, 0x85, 0xa1, 0x34, 0x91, 0x34,
-	0xa2, 0x15, 0x31, 0x7a, 0x33, 0x11, 0x8c, 0x1a, 0x12, 0x35, 0x66, 0x8d, 0x31, 0x7a, 0x69, 0x86,
-	0xdd, 0x71, 0x3b, 0xb1, 0xcc, 0x94, 0x99, 0xa9, 0xc1, 0x78, 0xf1, 0x0f, 0xd0, 0xc4, 0x84, 0x83,
-	0xff, 0x82, 0x7f, 0x0a, 0x47, 0x8e, 0x9c, 0x8c, 0x2c, 0x17, 0x8f, 0xfc, 0x09, 0x66, 0x7f, 0xb0,
-	0xc2, 0x76, 0x5b, 0xe5, 0xd6, 0x79, 0xdf, 0xef, 0x7b, 0xd3, 0xf7, 0x79, 0x6f, 0x16, 0x26, 0x35,
-	0x53, 0x1f, 0xb8, 0xcb, 0x9a, 0x5d, 0x25, 0x8d, 0xc4, 0x97, 0x04, 0xed, 0x19, 0xde, 0xe9, 0xe9,
-	0xa6, 0x62, 0x9b, 0xb4, 0x43, 0x85, 0xcb, 0x54, 0x75, 0xc6, 0x97, 0xbe, 0x8c, 0xf4, 0x5b, 0xe1,
-	0xaf, 0xd8, 0x5a, 0x9f, 0x85, 0x2b, 0xaf, 0xa9, 0x71, 0xdb, 0x6b, 0x5a, 0x73, 0x5f, 0x6c, 0x31,
-	0x61, 0xb4, 0xc3, 0xb6, 0x7b, 0x4c, 0x9b, 0xfa, 0x1b, 0xb0, 0xfb, 0x25, 0xdd, 0x95, 0x42, 0x33,
-	0x7c, 0x1f, 0xc6, 0x98, 0x30, 0x8a, 0x33, 0x6d, 0xa3, 0x5a, 0xb1, 0x31, 0xbe, 0x3a, 0xdf, 0xcc,
-	0xb9, 0xb3, 0xf9, 0x54, 0xfa, 0x8f, 0x84, 0x51, 0x1f, 0xd7, 0x47, 0xf6, 0x7e, 0x2e, 0x58, 0xce,
-	0x49, 0x4e, 0xfd, 0x2b, 0x82, 0xf2, 0x89, 0x86, 0x2f, 0x42, 0xa1, 0x23, 0x6d, 0x54, 0x43, 0x8d,
-	0x49, 0xa7, 0xd0, 0x91, 0xe1, 0xb9, 0xcd, 0xed, 0x42, 0x7c, 0x6e, 0x73, 0xbc, 0x08, 0x13, 0x5d,
-	0xaa, 0x0c, 0x37, 0x5c, 0x8a, 0x16, 0xf7, 0xec, 0x62, 0x0d, 0x35, 0x46, 0x9d, 0xf1, 0x34, 0xb6,
-	0xe1, 0xe1, 0x1a, 0x4c, 0xbc, 0x53, 0x72, 0xab, 0xd5, 0x13, 0x7c, 0xa7, 0xb5, 0xa5, 0xed, 0x91,
-	0x1a, 0x6a, 0x14, 0x1d, 0x08, 0x63, 0xaf, 0x04, 0xdf, 0x79, 0xa6, 0xf1, 0x1c, 0x80, 0x91, 0xa9,
-	0x3e, 0x1a, 0xe9, 0x65, 0x23, 0x63, 0xb5, 0x5e, 0x87, 0x5a, 0xd4, 0xaa, 0xc3, 0xa8, 0xe7, 0x52,
-	0xb7, 0xcd, 0x72, 0x70, 0xbc, 0x87, 0xc5, 0x21, 0x9e, 0x84, 0xcb, 0xe3, 0x2c, 0x97, 0xa5, 0x5c,
-	0x2e, 0x69, 0x8d, 0x41, 0x80, 0xbe, 0x23, 0x98, 0xee, 0x33, 0xf5, 0x91, 0x40, 0xfd, 0x24, 0x16,
-	0x60, 0x9c, 0x0b, 0x6d, 0xc2, 0x6b, 0x42, 0x47, 0x48, 0xf1, 0x82, 0x03, 0x27, 0xa1, 0x1c, 0x54,
-	0xc5, 0x7f, 0xa0, 0x1a, 0xc9, 0xa0, 0x9a, 0x87, 0xab, 0x4f, 0x98, 0x79, 0xd9, 0x95, 0xa6, 0xc3,
-	0xfd, 0xb6, 0x61, 0x9e, 0x43, 0x85, 0xcf, 0x52, 0x4a, 0x2e, 0xcc, 0xe5, 0xcb, 0x09, 0xa0, 0x87,
-	0x50, 0x52, 0x51, 0x24, 0xe1, 0x73, 0x2d, 0x97, 0x4f, 0x36, 0x3f, 0xc1, 0x93, 0xa4, 0xd6, 0x77,
-	0x0b, 0x30, 0x95, 0xb5, 0xe0, 0x59, 0x28, 0x1b, 0x45, 0xe3, 0xb6, 0x51, 0xd4, 0xf6, 0x58, 0x74,
-	0xde, 0xf0, 0x92, 0x0d, 0x2b, 0x64, 0x36, 0xac, 0x98, 0x6e, 0xd8, 0x32, 0x60, 0x6d, 0xa8, 0x32,
-	0xcc, 0x6b, 0x51, 0x93, 0xe9, 0xbc, 0x92, 0x28, 0x6b, 0x26, 0xc1, 0xb3, 0x0c, 0x98, 0xed, 0x74,
-	0xb9, 0x62, 0xfa, 0xb4, 0x39, 0xde, 0xa8, 0x4a, 0xa2, 0xa4, 0xe6, 0xeb, 0x30, 0x1d, 0xd1, 0x3e,
-	0x33, 0xb6, 0x52, 0x34, 0xb6, 0x4a, 0x28, 0xbc, 0x38, 0x35, 0xba, 0x25, 0xa8, 0x18, 0x79, 0xd6,
-	0x39, 0x16, 0x39, 0x27, 0x8d, 0x3c, 0xed, 0xbb, 0x0c, 0x25, 0xc5, 0xa8, 0x96, 0xc2, 0x2e, 0x47,
-	0x6d, 0x26, 0xa7, 0xd5, 0xdd, 0x22, 0xe0, 0xe7, 0x09, 0x4c, 0x27, 0x65, 0x89, 0xb7, 0x61, 0x2a,
-	0xfb, 0x8c, 0xf1, 0x8d, 0x5c, 0xea, 0x03, 0x3e, 0x04, 0xd5, 0x9b, 0xff, 0xe9, 0x8e, 0x47, 0xbc,
-	0x82, 0xf0, 0x17, 0x04, 0xb3, 0x03, 0xdf, 0x0a, 0xbe, 0x3b, 0xb8, 0xdc, 0x90, 0xf7, 0x57, 0xbd,
-	0x77, 0xde, 0xb4, 0xf4, 0xef, 0x7c, 0x82, 0x99, 0xbc, 0x9d, 0xc4, 0x2b, 0xb9, 0x15, 0x87, 0x6c,
-	0x77, 0xf5, 0xf6, 0x39, 0x32, 0xe2, 0xeb, 0xd7, 0x1f, 0xec, 0x1f, 0x12, 0xeb, 0xe0, 0x90, 0x58,
-	0xc7, 0x87, 0x04, 0x7d, 0x0e, 0x08, 0xfa, 0x11, 0x10, 0xb4, 0x17, 0x10, 0xb4, 0x1f, 0x10, 0xf4,
-	0x2b, 0x20, 0xe8, 0x77, 0x40, 0xac, 0xe3, 0x80, 0xa0, 0x6f, 0x47, 0xc4, 0xda, 0x3f, 0x22, 0xd6,
-	0xc1, 0x11, 0xb1, 0xde, 0xc2, 0xdf, 0xf2, 0x9b, 0xa5, 0xe8, 0x4b, 0x7d, 0xe7, 0x4f, 0x00, 0x00,
-	0x00, 0xff, 0xff, 0x7d, 0xf7, 0x01, 0xa7, 0xe5, 0x05, 0x00, 0x00,
+	// 687 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xb4, 0x55, 0xcf, 0x4f, 0x13, 0x4d,
+	0x18, 0xde, 0x69, 0xa1, 0xf4, 0x7b, 0xa1, 0x14, 0xe6, 0x6b, 0xbe, 0xaf, 0x54, 0x58, 0x4a, 0x13,
+	0x91, 0x88, 0x16, 0xc4, 0xe8, 0xcd, 0x44, 0xea, 0xaf, 0x10, 0x7f, 0xc4, 0xac, 0x31, 0x26, 0x5e,
+	0x9a, 0xa1, 0x3b, 0xb4, 0x93, 0x94, 0x99, 0x65, 0x66, 0x6a, 0x30, 0x5e, 0xfc, 0x03, 0x34, 0x31,
+	0xe1, 0xe0, 0xd5, 0xa3, 0x67, 0xff, 0x0a, 0x8e, 0x1c, 0x39, 0x19, 0x59, 0x2e, 0x1e, 0xf9, 0x13,
+	0xcc, 0xce, 0x6e, 0x57, 0xd8, 0x2e, 0x28, 0x31, 0xde, 0x3a, 0xef, 0xf3, 0xbc, 0xef, 0x3b, 0xef,
+	0xf3, 0xbc, 0x3b, 0x85, 0x82, 0xa2, 0xf2, 0x15, 0x6b, 0xd1, 0xba, 0x27, 0x85, 0x16, 0xf8, 0x5f,
+	0x4e, 0x7a, 0x9a, 0x75, 0x7b, 0xaa, 0x2e, 0xe9, 0x3a, 0xe9, 0x12, 0xde, 0xa2, 0xb2, 0x52, 0x6a,
+	0x8b, 0xb6, 0x30, 0xf8, 0x52, 0xf0, 0x2b, 0xa4, 0xd6, 0x1a, 0xf0, 0xff, 0x0b, 0xa2, 0x5b, 0x9d,
+	0x55, 0xa5, 0x58, 0x9b, 0x6f, 0x52, 0xae, 0x95, 0x43, 0xb7, 0x7a, 0x54, 0x69, 0x7c, 0x09, 0x8a,
+	0xaa, 0xe7, 0x79, 0x42, 0x6a, 0xd5, 0x74, 0x69, 0x57, 0x13, 0x55, 0x46, 0x55, 0xb4, 0x90, 0x77,
+	0xc6, 0xfb, 0xe1, 0xbb, 0x26, 0x5a, 0xfb, 0x84, 0xa0, 0x3c, 0x58, 0x44, 0x79, 0x82, 0x2b, 0x8a,
+	0x6f, 0xc1, 0x08, 0xe5, 0x5a, 0x32, 0x1a, 0x64, 0x67, 0x17, 0x46, 0x57, 0x66, 0xea, 0x29, 0xb7,
+	0xab, 0x3f, 0x12, 0xed, 0x7b, 0x5c, 0xcb, 0xd7, 0x8d, 0xa1, 0xdd, 0xaf, 0xb3, 0x96, 0xd3, 0xcf,
+	0xc1, 0x25, 0x18, 0x96, 0x54, 0x51, 0x5d, 0xce, 0x98, 0xd6, 0xe1, 0x01, 0x2f, 0x41, 0xc9, 0x93,
+	0x3d, 0x4e, 0x9b, 0xeb, 0x74, 0x43, 0x48, 0xda, 0xec, 0x71, 0xb6, 0xdd, 0xdc, 0x54, 0xe5, 0x6c,
+	0x15, 0x2d, 0x64, 0x9d, 0x49, 0x83, 0x35, 0x0c, 0xf4, 0x9c, 0xb3, 0xed, 0xc7, 0xaa, 0xf6, 0x1e,
+	0x41, 0xbe, 0xdf, 0x02, 0x8f, 0x43, 0xa6, 0x2b, 0xcc, 0x2c, 0x05, 0x27, 0xd3, 0x15, 0xc1, 0xb9,
+	0xc3, 0x4c, 0x83, 0x82, 0x93, 0xe9, 0x30, 0x3c, 0x07, 0x63, 0x1e, 0x91, 0x9a, 0x69, 0x26, 0x78,
+	0x93, 0xb9, 0xa6, 0xea, 0xb0, 0x33, 0x1a, 0xc7, 0xd6, 0x5c, 0x5c, 0x85, 0xb1, 0x0d, 0x29, 0x36,
+	0xe3, 0xc6, 0x43, 0xa6, 0x31, 0x04, 0xb1, 0xb0, 0x23, 0x9e, 0x06, 0xd0, 0x22, 0xc6, 0x87, 0x0d,
+	0x9e, 0xd7, 0x22, 0xba, 0xcf, 0x43, 0xa8, 0x1a, 0xc5, 0x1c, 0x4a, 0xdc, 0x16, 0x69, 0x75, 0xe8,
+	0x9f, 0xe8, 0xff, 0x05, 0xc1, 0xdc, 0x19, 0xd5, 0x22, 0x23, 0xee, 0x27, 0x8d, 0x98, 0x4f, 0x35,
+	0x22, 0xae, 0xf1, 0x97, 0x1d, 0xf9, 0x88, 0x60, 0x72, 0xa0, 0xd7, 0x80, 0xf4, 0x68, 0x50, 0xfa,
+	0x59, 0x18, 0x65, 0x5c, 0xe9, 0xe0, 0xb6, 0x01, 0x23, 0xb8, 0xc5, 0x3f, 0x0e, 0xf4, 0x43, 0x29,
+	0xde, 0x64, 0x7f, 0xe1, 0xcd, 0x50, 0xc2, 0x9b, 0x19, 0xb8, 0xf0, 0x80, 0xea, 0x67, 0x9e, 0xd0,
+	0x5d, 0xd6, 0xee, 0x68, 0xea, 0x3a, 0x84, 0xb7, 0x69, 0xdf, 0x96, 0x5a, 0x0b, 0xa6, 0xd3, 0xe1,
+	0x48, 0xe7, 0x3b, 0x90, 0x93, 0x26, 0x12, 0xc9, 0x7c, 0x31, 0x55, 0xe6, 0x64, 0x7e, 0xa4, 0x72,
+	0x94, 0x5a, 0xdb, 0xc9, 0xc0, 0x44, 0x92, 0x82, 0xa7, 0x20, 0xaf, 0x25, 0x09, 0xc7, 0x46, 0x66,
+	0xec, 0x11, 0x73, 0x5e, 0x73, 0xa3, 0x95, 0xce, 0x24, 0x56, 0x3a, 0x1b, 0xaf, 0xf4, 0x22, 0x60,
+	0xa5, 0x89, 0xd4, 0xd4, 0x6d, 0x12, 0x9d, 0x98, 0xbc, 0x18, 0x21, 0xab, 0x3a, 0x92, 0x67, 0x11,
+	0x30, 0xdd, 0xf6, 0x98, 0xa4, 0xea, 0x38, 0x39, 0x5c, 0xe1, 0x62, 0x84, 0xc4, 0xe4, 0xcb, 0x30,
+	0x69, 0xd4, 0x3e, 0x61, 0x5b, 0xce, 0xd8, 0x56, 0x0c, 0x80, 0xa7, 0xc7, 0xac, 0x9b, 0x87, 0xa2,
+	0x16, 0x27, 0x99, 0x23, 0x86, 0x59, 0xd0, 0xe2, 0x38, 0xef, 0x3f, 0xc8, 0x49, 0x4a, 0x94, 0xe0,
+	0xe5, 0xbc, 0x19, 0x33, 0x3a, 0xad, 0xec, 0x64, 0x01, 0x3f, 0x89, 0xc4, 0x74, 0x62, 0x2d, 0xf1,
+	0x16, 0x4c, 0x24, 0x9f, 0x1f, 0x7c, 0x25, 0x55, 0xf5, 0x53, 0x9e, 0xba, 0xca, 0xd5, 0xdf, 0x64,
+	0x87, 0x16, 0x2f, 0x23, 0xfc, 0x0e, 0xc1, 0xd4, 0xa9, 0x9f, 0x1c, 0xbe, 0x71, 0x7a, 0xb9, 0x33,
+	0x3e, 0xf8, 0xca, 0xcd, 0xf3, 0xa6, 0xc5, 0xd7, 0x79, 0x03, 0xa5, 0xb4, 0x9d, 0xc4, 0xcb, 0xa9,
+	0x15, 0xcf, 0xd8, 0xee, 0xca, 0xb5, 0x73, 0x64, 0x84, 0xed, 0x1b, 0xb7, 0xf7, 0x0e, 0x6c, 0x6b,
+	0xff, 0xc0, 0xb6, 0x8e, 0x0e, 0x6c, 0xf4, 0xd6, 0xb7, 0xd1, 0x67, 0xdf, 0x46, 0xbb, 0xbe, 0x8d,
+	0xf6, 0x7c, 0x1b, 0x7d, 0xf3, 0x6d, 0xf4, 0xdd, 0xb7, 0xad, 0x23, 0xdf, 0x46, 0x1f, 0x0e, 0x6d,
+	0x6b, 0xef, 0xd0, 0xb6, 0xf6, 0x0f, 0x6d, 0xeb, 0x25, 0xfc, 0x2c, 0xbf, 0x9e, 0x33, 0xff, 0x45,
+	0xd7, 0x7f, 0x04, 0x00, 0x00, 0xff, 0xff, 0x46, 0xc5, 0xc6, 0x2f, 0xc7, 0x06, 0x00, 0x00,
 }
 
 func (this *WatchAssignmentsRequest) Equal(that interface{}) bool {
@@ -628,6 +709,9 @@ func (this *WatchAssignmentsRequest) Equal(that interface{}) bool {
 	if that1 == nil {
 		return this == nil
 	} else if this == nil {
+		return false
+	}
+	if this.SupportsDeltas != that1.SupportsDeltas {
 		return false
 	}
 	return true
@@ -658,6 +742,12 @@ func (this *WatchAssignmentsResponse) Equal(that interface{}) bool {
 		if !this.Entries[i].Equal(&that1.Entries[i]) {
 			return false
 		}
+	}
+	if this.Reset_ != that1.Reset_ {
+		return false
+	}
+	if this.PruneBeforeUnixMs != that1.PruneBeforeUnixMs {
+		return false
 	}
 	return true
 }
@@ -716,6 +806,9 @@ func (this *WatchReadcacheAssignmentsRequest) Equal(that interface{}) bool {
 	} else if this == nil {
 		return false
 	}
+	if this.SupportsDeltas != that1.SupportsDeltas {
+		return false
+	}
 	return true
 }
 func (this *WatchReadcacheAssignmentsResponse) Equal(that interface{}) bool {
@@ -744,6 +837,12 @@ func (this *WatchReadcacheAssignmentsResponse) Equal(that interface{}) bool {
 		if !this.Entries[i].Equal(&that1.Entries[i]) {
 			return false
 		}
+	}
+	if this.Reset_ != that1.Reset_ {
+		return false
+	}
+	if this.PruneBeforeUnixMs != that1.PruneBeforeUnixMs {
+		return false
 	}
 	return true
 }
@@ -879,8 +978,9 @@ func (this *WatchAssignmentsRequest) GoString() string {
 	if this == nil {
 		return "nil"
 	}
-	s := make([]string, 0, 4)
+	s := make([]string, 0, 5)
 	s = append(s, "&rebalancer.WatchAssignmentsRequest{")
+	s = append(s, "SupportsDeltas: "+fmt.Sprintf("%#v", this.SupportsDeltas)+",\n")
 	s = append(s, "}")
 	return strings.Join(s, "")
 }
@@ -888,7 +988,7 @@ func (this *WatchAssignmentsResponse) GoString() string {
 	if this == nil {
 		return "nil"
 	}
-	s := make([]string, 0, 5)
+	s := make([]string, 0, 7)
 	s = append(s, "&rebalancer.WatchAssignmentsResponse{")
 	if this.Entries != nil {
 		vs := make([]LogEntry, len(this.Entries))
@@ -897,6 +997,8 @@ func (this *WatchAssignmentsResponse) GoString() string {
 		}
 		s = append(s, "Entries: "+fmt.Sprintf("%#v", vs)+",\n")
 	}
+	s = append(s, "Reset_: "+fmt.Sprintf("%#v", this.Reset_)+",\n")
+	s = append(s, "PruneBeforeUnixMs: "+fmt.Sprintf("%#v", this.PruneBeforeUnixMs)+",\n")
 	s = append(s, "}")
 	return strings.Join(s, "")
 }
@@ -918,8 +1020,9 @@ func (this *WatchReadcacheAssignmentsRequest) GoString() string {
 	if this == nil {
 		return "nil"
 	}
-	s := make([]string, 0, 4)
+	s := make([]string, 0, 5)
 	s = append(s, "&rebalancer.WatchReadcacheAssignmentsRequest{")
+	s = append(s, "SupportsDeltas: "+fmt.Sprintf("%#v", this.SupportsDeltas)+",\n")
 	s = append(s, "}")
 	return strings.Join(s, "")
 }
@@ -927,7 +1030,7 @@ func (this *WatchReadcacheAssignmentsResponse) GoString() string {
 	if this == nil {
 		return "nil"
 	}
-	s := make([]string, 0, 5)
+	s := make([]string, 0, 7)
 	s = append(s, "&rebalancer.WatchReadcacheAssignmentsResponse{")
 	if this.Entries != nil {
 		vs := make([]ReadcacheLogEntry, len(this.Entries))
@@ -936,6 +1039,8 @@ func (this *WatchReadcacheAssignmentsResponse) GoString() string {
 		}
 		s = append(s, "Entries: "+fmt.Sprintf("%#v", vs)+",\n")
 	}
+	s = append(s, "Reset_: "+fmt.Sprintf("%#v", this.Reset_)+",\n")
+	s = append(s, "PruneBeforeUnixMs: "+fmt.Sprintf("%#v", this.PruneBeforeUnixMs)+",\n")
 	s = append(s, "}")
 	return strings.Join(s, "")
 }
@@ -1017,9 +1122,12 @@ const _ = grpc.SupportPackageIsVersion4
 type NautilusRebalancerClient interface {
 	// WatchAssignments subscribes to the rebalancer's assignment log.
 	// The server sends the current full snapshot immediately on
-	// connect, then sends a fresh full snapshot on each rebalance
-	// round that changes the log. Slow subscribers receive only the
-	// most recent snapshot; intermediate ones are conflated.
+	// connect. Subsequent messages depend on the request's
+	// supports_deltas flag: deltas (entries created/mutated since the
+	// previous message, merged across conflated rounds) for new
+	// clients, full snapshots for old ones. Slow subscribers never
+	// miss state: pending deltas are merged, not dropped, and
+	// snapshots are conflated to the most recent.
 	WatchAssignments(ctx context.Context, in *WatchAssignmentsRequest, opts ...grpc.CallOption) (NautilusRebalancer_WatchAssignmentsClient, error)
 	// WatchReadcacheAssignments is the readcache-side analogue of
 	// WatchAssignments: instead of (hash range -> partition) leases it
@@ -1125,9 +1233,12 @@ func (c *nautilusRebalancerClient) GetSpotlightedRanges(ctx context.Context, in 
 type NautilusRebalancerServer interface {
 	// WatchAssignments subscribes to the rebalancer's assignment log.
 	// The server sends the current full snapshot immediately on
-	// connect, then sends a fresh full snapshot on each rebalance
-	// round that changes the log. Slow subscribers receive only the
-	// most recent snapshot; intermediate ones are conflated.
+	// connect. Subsequent messages depend on the request's
+	// supports_deltas flag: deltas (entries created/mutated since the
+	// previous message, merged across conflated rounds) for new
+	// clients, full snapshots for old ones. Slow subscribers never
+	// miss state: pending deltas are merged, not dropped, and
+	// snapshots are conflated to the most recent.
 	WatchAssignments(*WatchAssignmentsRequest, NautilusRebalancer_WatchAssignmentsServer) error
 	// WatchReadcacheAssignments is the readcache-side analogue of
 	// WatchAssignments: instead of (hash range -> partition) leases it
@@ -1270,6 +1381,16 @@ func (m *WatchAssignmentsRequest) MarshalToSizedBuffer(dAtA []byte) (int, error)
 	_ = i
 	var l int
 	_ = l
+	if m.SupportsDeltas {
+		i--
+		if m.SupportsDeltas {
+			dAtA[i] = 1
+		} else {
+			dAtA[i] = 0
+		}
+		i--
+		dAtA[i] = 0x8
+	}
 	return len(dAtA) - i, nil
 }
 
@@ -1293,6 +1414,21 @@ func (m *WatchAssignmentsResponse) MarshalToSizedBuffer(dAtA []byte) (int, error
 	_ = i
 	var l int
 	_ = l
+	if m.PruneBeforeUnixMs != 0 {
+		i = encodeVarintService(dAtA, i, uint64(m.PruneBeforeUnixMs))
+		i--
+		dAtA[i] = 0x18
+	}
+	if m.Reset_ {
+		i--
+		if m.Reset_ {
+			dAtA[i] = 1
+		} else {
+			dAtA[i] = 0
+		}
+		i--
+		dAtA[i] = 0x10
+	}
 	if len(m.Entries) > 0 {
 		for iNdEx := len(m.Entries) - 1; iNdEx >= 0; iNdEx-- {
 			{
@@ -1378,6 +1514,16 @@ func (m *WatchReadcacheAssignmentsRequest) MarshalToSizedBuffer(dAtA []byte) (in
 	_ = i
 	var l int
 	_ = l
+	if m.SupportsDeltas {
+		i--
+		if m.SupportsDeltas {
+			dAtA[i] = 1
+		} else {
+			dAtA[i] = 0
+		}
+		i--
+		dAtA[i] = 0x8
+	}
 	return len(dAtA) - i, nil
 }
 
@@ -1401,6 +1547,21 @@ func (m *WatchReadcacheAssignmentsResponse) MarshalToSizedBuffer(dAtA []byte) (i
 	_ = i
 	var l int
 	_ = l
+	if m.PruneBeforeUnixMs != 0 {
+		i = encodeVarintService(dAtA, i, uint64(m.PruneBeforeUnixMs))
+		i--
+		dAtA[i] = 0x18
+	}
+	if m.Reset_ {
+		i--
+		if m.Reset_ {
+			dAtA[i] = 1
+		} else {
+			dAtA[i] = 0
+		}
+		i--
+		dAtA[i] = 0x10
+	}
 	if len(m.Entries) > 0 {
 		for iNdEx := len(m.Entries) - 1; iNdEx >= 0; iNdEx-- {
 			{
@@ -1607,6 +1768,9 @@ func (m *WatchAssignmentsRequest) Size() (n int) {
 	}
 	var l int
 	_ = l
+	if m.SupportsDeltas {
+		n += 2
+	}
 	return n
 }
 
@@ -1621,6 +1785,12 @@ func (m *WatchAssignmentsResponse) Size() (n int) {
 			l = e.Size()
 			n += 1 + l + sovService(uint64(l))
 		}
+	}
+	if m.Reset_ {
+		n += 2
+	}
+	if m.PruneBeforeUnixMs != 0 {
+		n += 1 + sovService(uint64(m.PruneBeforeUnixMs))
 	}
 	return n
 }
@@ -1655,6 +1825,9 @@ func (m *WatchReadcacheAssignmentsRequest) Size() (n int) {
 	}
 	var l int
 	_ = l
+	if m.SupportsDeltas {
+		n += 2
+	}
 	return n
 }
 
@@ -1669,6 +1842,12 @@ func (m *WatchReadcacheAssignmentsResponse) Size() (n int) {
 			l = e.Size()
 			n += 1 + l + sovService(uint64(l))
 		}
+	}
+	if m.Reset_ {
+		n += 2
+	}
+	if m.PruneBeforeUnixMs != 0 {
+		n += 1 + sovService(uint64(m.PruneBeforeUnixMs))
 	}
 	return n
 }
@@ -1765,6 +1944,7 @@ func (this *WatchAssignmentsRequest) String() string {
 		return "nil"
 	}
 	s := strings.Join([]string{`&WatchAssignmentsRequest{`,
+		`SupportsDeltas:` + fmt.Sprintf("%v", this.SupportsDeltas) + `,`,
 		`}`,
 	}, "")
 	return s
@@ -1780,6 +1960,8 @@ func (this *WatchAssignmentsResponse) String() string {
 	repeatedStringForEntries += "}"
 	s := strings.Join([]string{`&WatchAssignmentsResponse{`,
 		`Entries:` + repeatedStringForEntries + `,`,
+		`Reset_:` + fmt.Sprintf("%v", this.Reset_) + `,`,
+		`PruneBeforeUnixMs:` + fmt.Sprintf("%v", this.PruneBeforeUnixMs) + `,`,
 		`}`,
 	}, "")
 	return s
@@ -1803,6 +1985,7 @@ func (this *WatchReadcacheAssignmentsRequest) String() string {
 		return "nil"
 	}
 	s := strings.Join([]string{`&WatchReadcacheAssignmentsRequest{`,
+		`SupportsDeltas:` + fmt.Sprintf("%v", this.SupportsDeltas) + `,`,
 		`}`,
 	}, "")
 	return s
@@ -1818,6 +2001,8 @@ func (this *WatchReadcacheAssignmentsResponse) String() string {
 	repeatedStringForEntries += "}"
 	s := strings.Join([]string{`&WatchReadcacheAssignmentsResponse{`,
 		`Entries:` + repeatedStringForEntries + `,`,
+		`Reset_:` + fmt.Sprintf("%v", this.Reset_) + `,`,
+		`PruneBeforeUnixMs:` + fmt.Sprintf("%v", this.PruneBeforeUnixMs) + `,`,
 		`}`,
 	}, "")
 	return s
@@ -1913,6 +2098,26 @@ func (m *WatchAssignmentsRequest) Unmarshal(dAtA []byte) error {
 			return fmt.Errorf("proto: WatchAssignmentsRequest: illegal tag %d (wire type %d)", fieldNum, wire)
 		}
 		switch fieldNum {
+		case 1:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field SupportsDeltas", wireType)
+			}
+			var v int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowService
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				v |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			m.SupportsDeltas = bool(v != 0)
 		default:
 			iNdEx = preIndex
 			skippy, err := skipService(dAtA[iNdEx:])
@@ -1997,6 +2202,45 @@ func (m *WatchAssignmentsResponse) Unmarshal(dAtA []byte) error {
 				return err
 			}
 			iNdEx = postIndex
+		case 2:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Reset_", wireType)
+			}
+			var v int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowService
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				v |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			m.Reset_ = bool(v != 0)
+		case 3:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field PruneBeforeUnixMs", wireType)
+			}
+			m.PruneBeforeUnixMs = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowService
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.PruneBeforeUnixMs |= int64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
 		default:
 			iNdEx = preIndex
 			skippy, err := skipService(dAtA[iNdEx:])
@@ -2192,6 +2436,26 @@ func (m *WatchReadcacheAssignmentsRequest) Unmarshal(dAtA []byte) error {
 			return fmt.Errorf("proto: WatchReadcacheAssignmentsRequest: illegal tag %d (wire type %d)", fieldNum, wire)
 		}
 		switch fieldNum {
+		case 1:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field SupportsDeltas", wireType)
+			}
+			var v int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowService
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				v |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			m.SupportsDeltas = bool(v != 0)
 		default:
 			iNdEx = preIndex
 			skippy, err := skipService(dAtA[iNdEx:])
@@ -2276,6 +2540,45 @@ func (m *WatchReadcacheAssignmentsResponse) Unmarshal(dAtA []byte) error {
 				return err
 			}
 			iNdEx = postIndex
+		case 2:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Reset_", wireType)
+			}
+			var v int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowService
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				v |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			m.Reset_ = bool(v != 0)
+		case 3:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field PruneBeforeUnixMs", wireType)
+			}
+			m.PruneBeforeUnixMs = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowService
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.PruneBeforeUnixMs |= int64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
 		default:
 			iNdEx = preIndex
 			skippy, err := skipService(dAtA[iNdEx:])

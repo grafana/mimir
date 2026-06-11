@@ -180,6 +180,69 @@ func TestLog_Prune(t *testing.T) {
 	}
 }
 
+// TestLog_MergedWithEntries_ReplayEquivalence drives a Log through a
+// partition move with a safety window — the readcache log's richest
+// mutation pattern (the old owner's To is clamped to move+safety,
+// the new owner gets a fresh lease) — and verifies that replaying
+// per-round diffs onto an initial snapshot reproduces the final log,
+// the invariant the delta wire protocol rests on.
+func TestLog_MergedWithEntries_ReplayEquivalence(t *testing.T) {
+	t0 := time.Unix(1000, 0)
+	lease, lookahead, safety := 5*time.Minute, 90*time.Second, 2*time.Minute
+
+	server := NewLog()
+	server.Apply(t0, &Assignment{
+		Entries: []AssignmentEntry{
+			{PartitionID: 0, InstanceID: "rc-a"},
+			{PartitionID: 1, InstanceID: "rc-b"},
+		},
+	}, lease, lookahead, safety)
+
+	client := NewLogFromEntries(server.Entries())
+
+	steps := []*Assignment{
+		// Partition 0 moves rc-a -> rc-b (preemption with safety
+		// window on rc-a's active lease).
+		{Entries: []AssignmentEntry{
+			{PartitionID: 0, InstanceID: "rc-b"},
+			{PartitionID: 1, InstanceID: "rc-b"},
+		}},
+		// And back again.
+		{Entries: []AssignmentEntry{
+			{PartitionID: 0, InstanceID: "rc-a"},
+			{PartitionID: 1, InstanceID: "rc-b"},
+		}},
+	}
+	at := t0
+	for _, next := range steps {
+		at = at.Add(lease - lookahead)
+		before := server.Entries()
+		server.Apply(at, next, lease, lookahead, safety)
+		after := server.Entries()
+
+		type key struct {
+			pid      int32
+			instance string
+			fromMs   int64
+		}
+		prevTo := make(map[key]time.Time, len(before))
+		for _, e := range before {
+			prevTo[key{e.PartitionID, e.InstanceID, e.From.UnixMilli()}] = e.To
+		}
+		var delta []LogEntry
+		for _, e := range after {
+			if to, ok := prevTo[key{e.PartitionID, e.InstanceID, e.From.UnixMilli()}]; !ok || !to.Equal(e.To) {
+				delta = append(delta, e)
+			}
+		}
+
+		client = client.MergedWithEntries(delta)
+	}
+
+	assert.Equal(t, server.Entries(), client.Entries(),
+		"replaying per-round diffs onto the initial snapshot must reproduce the server log exactly")
+}
+
 func TestLog_LiveEntries(t *testing.T) {
 	l := NewLog()
 	at := time.Unix(1000, 0)

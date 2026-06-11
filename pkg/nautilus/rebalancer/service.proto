@@ -16,9 +16,12 @@ option (gogoproto.unmarshaler_all) = true;
 service NautilusRebalancer {
   // WatchAssignments subscribes to the rebalancer's assignment log.
   // The server sends the current full snapshot immediately on
-  // connect, then sends a fresh full snapshot on each rebalance
-  // round that changes the log. Slow subscribers receive only the
-  // most recent snapshot; intermediate ones are conflated.
+  // connect. Subsequent messages depend on the request's
+  // supports_deltas flag: deltas (entries created/mutated since the
+  // previous message, merged across conflated rounds) for new
+  // clients, full snapshots for old ones. Slow subscribers never
+  // miss state: pending deltas are merged, not dropped, and
+  // snapshots are conflated to the most recent.
   rpc WatchAssignments(WatchAssignmentsRequest) returns (stream WatchAssignmentsResponse);
 
   // WatchReadcacheAssignments is the readcache-side analogue of
@@ -41,12 +44,41 @@ service NautilusRebalancer {
   rpc GetSpotlightedRanges(GetSpotlightedRangesRequest) returns (GetSpotlightedRangesResponse);
 }
 
-message WatchAssignmentsRequest {}
+message WatchAssignmentsRequest {
+  // supports_deltas opts the subscriber into incremental updates:
+  // the server still sends a full snapshot (reset=true) as the first
+  // message, but subsequent broadcasts carry only the entries
+  // created or mutated since the previous message on this stream
+  // (reset=false), which the client must upsert into its local log
+  // by lease identity (lo, hi, partition_id, from_unix_ms). Leases
+  // are never deleted by the rebalancer — preemption rewrites
+  // to_unix_ms in place (possibly to a zero-length [from, from)
+  // window) — so upsert plus client-side pruning by
+  // prune_before_unix_ms reconstructs the server's log exactly.
+  //
+  // When false (old clients), every message is a full snapshot the
+  // client replaces wholesale, which at production subscriber counts
+  // resends the entire retention window (~hours of lease history)
+  // every rebalance round.
+  bool supports_deltas = 1;
+}
 
-// WatchAssignmentsResponse is a full snapshot of the rebalancer's
-// assignment log at the time of the broadcast.
+// WatchAssignmentsResponse carries either a full snapshot of the
+// rebalancer's assignment log (reset=true) or an incremental delta
+// (reset=false; only sent to subscribers that set supports_deltas).
 message WatchAssignmentsResponse {
   repeated LogEntry entries = 1 [(gogoproto.nullable) = false];
+  // reset=true: entries is a complete snapshot; replace any local
+  // state. reset=false: entries are upserts keyed by
+  // (lo, hi, partition_id, from_unix_ms).
+  bool reset = 2;
+  // prune_before_unix_ms is the server's retention horizon at
+  // broadcast time: entries whose to_unix_ms is strictly before it
+  // have been pruned server-side and the client should drop them
+  // too. 0 means "no horizon supplied" (old servers); clients then
+  // skip pruning, matching the historical replace-wholesale
+  // behavior where snapshots were already retention-bounded.
+  int64 prune_before_unix_ms = 3;
 }
 
 // LogEntry is the wire representation of a single (partition, hash
@@ -72,13 +104,21 @@ message LogEntry {
   int64 to_unix_ms = 5;
 }
 
-message WatchReadcacheAssignmentsRequest {}
+message WatchReadcacheAssignmentsRequest {
+  // supports_deltas mirrors WatchAssignmentsRequest.supports_deltas;
+  // delta entries are upserts keyed by
+  // (partition_id, instance_id, from_unix_ms).
+  bool supports_deltas = 1;
+}
 
-// WatchReadcacheAssignmentsResponse is a full snapshot of the
-// rebalancer's readcache-assignment log at the time of the
-// broadcast.
+// WatchReadcacheAssignmentsResponse carries either a full snapshot
+// of the rebalancer's readcache-assignment log (reset=true) or an
+// incremental delta (reset=false; only sent to subscribers that set
+// supports_deltas). Field semantics mirror WatchAssignmentsResponse.
 message WatchReadcacheAssignmentsResponse {
   repeated ReadcacheLogEntry entries = 1 [(gogoproto.nullable) = false];
+  bool reset = 2;
+  int64 prune_before_unix_ms = 3;
 }
 
 // ReadcacheLogEntry is the wire representation of a single

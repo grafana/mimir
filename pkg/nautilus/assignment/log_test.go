@@ -510,6 +510,115 @@ func TestLog_LiveEntries_EmptyLog(t *testing.T) {
 	assert.Empty(t, got)
 }
 
+// TestLog_MergedWithEntries_UpsertSemantics pins the delta-merge
+// contract used by WatchAssignments delta subscribers: an incoming
+// entry with a known (Range, PartitionID, From) identity replaces the
+// stored one (To rewrites: extensions, preemptions, zero-length
+// kills), an unknown identity is appended, and the receiver is left
+// untouched.
+func TestLog_MergedWithEntries_UpsertSemantics(t *testing.T) {
+	t0 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	r1 := HashRange{Lo: 0, Hi: 99}
+	r2 := HashRange{Lo: 100, Hi: math.MaxUint32}
+
+	base := NewLogFromEntries([]LogEntry{
+		{Range: r1, PartitionID: 1, From: t0, To: t0.Add(5 * time.Minute)},
+		{Range: r2, PartitionID: 2, From: t0, To: t0.Add(5 * time.Minute)},
+	})
+
+	// Delta: r1's lease is preempted (To rewritten), and a successor
+	// for r1 on partition 3 is appended.
+	merged := base.MergedWithEntries([]LogEntry{
+		{Range: r1, PartitionID: 1, From: t0, To: t0.Add(2 * time.Minute)},
+		{Range: r1, PartitionID: 3, From: t0.Add(2 * time.Minute), To: t0.Add(7 * time.Minute)},
+	})
+
+	got := merged.Entries()
+	require.Len(t, got, 3)
+	for _, e := range got {
+		if e.Range == r1 && e.PartitionID == 1 {
+			assert.True(t, e.To.Equal(t0.Add(2*time.Minute)),
+				"preemption delta must replace the stored entry's To")
+		}
+	}
+
+	// The receiver must be unchanged: same entry count, original To.
+	orig := base.Entries()
+	require.Len(t, orig, 2)
+	for _, e := range orig {
+		if e.Range == r1 && e.PartitionID == 1 {
+			assert.True(t, e.To.Equal(t0.Add(5*time.Minute)),
+				"merge must not mutate the receiver")
+		}
+	}
+}
+
+func TestLog_MergedWithEntries_NilReceiver(t *testing.T) {
+	t0 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	var l *Log
+	merged := l.MergedWithEntries([]LogEntry{
+		{Range: HashRange{Lo: 0, Hi: math.MaxUint32}, PartitionID: 1, From: t0, To: t0.Add(time.Minute)},
+	})
+	require.NotNil(t, merged)
+	assert.Equal(t, 1, merged.Len())
+}
+
+// TestLog_MergedWithEntries_ReplayEquivalence drives a Log through
+// several Apply rounds (extensions, a reassignment-with-preemption,
+// and a split) and verifies that replaying the per-round diffs onto
+// an initial snapshot reproduces the final log exactly — the
+// invariant the delta wire protocol rests on.
+func TestLog_MergedWithEntries_ReplayEquivalence(t *testing.T) {
+	t0 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	lease, lookahead := 5*time.Minute, 90*time.Second
+
+	server := NewLog()
+	server.Apply(t0, EvenSplit([]int32{0, 1}), lease, lookahead)
+
+	// Client primes from the initial snapshot.
+	client := NewLogFromEntries(server.Entries())
+
+	steps := []struct {
+		at   time.Time
+		next *Assignment
+	}{
+		// Steady-state extension within lookahead.
+		{t0.Add(lease - lookahead), EvenSplit([]int32{0, 1})},
+		// Reassignment: a third partition joins, preempting chains.
+		{t0.Add(lease), EvenSplit([]int32{0, 1, 2})},
+		// Back to two partitions: more preemptions.
+		{t0.Add(2 * lease), EvenSplit([]int32{0, 2})},
+	}
+	for _, step := range steps {
+		before := server.Entries()
+		server.Apply(step.at, step.next, lease, lookahead)
+		after := server.Entries()
+
+		// Compute the diff the same way the rebalancer store does:
+		// entries absent from before or with a different To.
+		type key struct {
+			r      HashRange
+			pid    int32
+			fromMs int64
+		}
+		prevTo := make(map[key]time.Time, len(before))
+		for _, e := range before {
+			prevTo[key{e.Range, e.PartitionID, e.From.UnixMilli()}] = e.To
+		}
+		var delta []LogEntry
+		for _, e := range after {
+			if to, ok := prevTo[key{e.Range, e.PartitionID, e.From.UnixMilli()}]; !ok || !to.Equal(e.To) {
+				delta = append(delta, e)
+			}
+		}
+
+		client = client.MergedWithEntries(delta)
+	}
+
+	assert.Equal(t, server.Entries(), client.Entries(),
+		"replaying per-round diffs onto the initial snapshot must reproduce the server log exactly")
+}
+
 // TestLog_ApplySplitAfterSuccessorPreIssued is a regression test
 // for a production bug where Apply skipped pre-issued future
 // entries during preemption. If a range was split, merged, or

@@ -457,17 +457,19 @@ func (r *Rebalancer) nextRoundDelay(now time.Time) time.Duration {
 }
 
 // WatchAssignments implements NautilusRebalancerServer. It sends
-// the full retention-bounded assignment log (expired entries, active
-// leases, and pre-issued successors) immediately on connect and then
-// a fresh snapshot on every subsequent rebalance round that mutates
-// the log (i.e. every round that pre-issues a successor lease,
-// preempts an active lease, or creates a new lease for a
-// reassignment). Expired-but-retained entries are load-bearing for
-// the distributor's read path, which resolves partition ownership
-// over a query's wall-clock window rather than at `now`; the gRPC
-// message size is bounded by EntryRetention, which must exceed the
-// querier's lookback (QueryIngestersWithin). The store conflates
-// updates so a slow subscriber sees only the most recent snapshot.
+// a full snapshot of the retention-bounded assignment log (expired
+// entries, active leases, and pre-issued successors; reset=true)
+// immediately on connect. Subsequent messages depend on the
+// request's supports_deltas flag: subscribers that set it receive
+// only the entries each rebalance round created or mutated
+// (reset=false, upserts by lease identity), while legacy subscribers
+// receive a fresh full snapshot per mutating round.
+// Expired-but-retained entries are load-bearing for the
+// distributor's read path, which resolves partition ownership over a
+// query's wall-clock window rather than at `now`; the state size is
+// bounded by EntryRetention, which must exceed the querier's
+// lookback (QueryIngestersWithin). Slow subscribers lose nothing:
+// pending deltas are coalesced, pending snapshots replaced.
 //
 // If the rebalancer has not yet completed its first apply() the
 // initial Send is skipped; the subscriber waits on the updates
@@ -475,8 +477,8 @@ func (r *Rebalancer) nextRoundDelay(now time.Time) time.Duration {
 // first slicer round. This prevents a freshly-restarted rebalancer
 // from broadcasting an empty snapshot derived from stale persisted
 // state (whose leases have all expired during the restart window).
-func (r *Rebalancer) WatchAssignments(_ *WatchAssignmentsRequest, stream NautilusRebalancer_WatchAssignmentsServer) error {
-	initial, updates, unsubscribe := r.store.subscribe(r.now())
+func (r *Rebalancer) WatchAssignments(req *WatchAssignmentsRequest, stream NautilusRebalancer_WatchAssignmentsServer) error {
+	initial, updates, unsubscribe := r.store.subscribe(req.GetSupportsDeltas())
 	defer unsubscribe()
 
 	// subscribe returns initial=nil when the store has not yet run
@@ -484,7 +486,7 @@ func (r *Rebalancer) WatchAssignments(_ *WatchAssignmentsRequest, stream Nautilu
 	// the first apply's broadcast (delivered on updates) prime the
 	// subscriber.
 	if initial != nil {
-		if err := stream.Send(&WatchAssignmentsResponse{Entries: EntriesToProto(initial)}); err != nil {
+		if err := stream.Send(assignmentUpdateToProto(*initial)); err != nil {
 			return err
 		}
 	}
@@ -493,34 +495,45 @@ func (r *Rebalancer) WatchAssignments(_ *WatchAssignmentsRequest, stream Nautilu
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case snap, ok := <-updates:
+		case u, ok := <-updates:
 			if !ok {
 				return nil
 			}
-			if err := stream.Send(&WatchAssignmentsResponse{Entries: EntriesToProto(snap)}); err != nil {
+			if err := stream.Send(assignmentUpdateToProto(u)); err != nil {
 				return err
 			}
 		}
 	}
 }
 
+func assignmentUpdateToProto(u assignmentUpdate) *WatchAssignmentsResponse {
+	resp := &WatchAssignmentsResponse{
+		Entries: EntriesToProto(u.entries),
+		Reset_:  u.reset,
+	}
+	if !u.pruneBefore.IsZero() {
+		resp.PruneBeforeUnixMs = u.pruneBefore.UnixMilli()
+	}
+	return resp
+}
+
 // WatchReadcacheAssignments is the readcache-side analogue of
 // WatchAssignments: instead of (hash range -> ingester partition) it
 // streams (Kafka partition -> readcache instance) leases. The wire
-// contract is identical (full retention-bounded snapshot on connect,
-// conflated updates). The same first-apply gate applies:
-// the initial Send is skipped until the readcache log has been
-// touched by apply() at least once (cold start, regular slicer
-// round, or admin reset), so a rebalancer restart never broadcasts
-// an empty/expired view that would tell every readcache to drop all
-// partitions.
-func (r *Rebalancer) WatchReadcacheAssignments(_ *WatchReadcacheAssignmentsRequest, stream NautilusRebalancer_WatchReadcacheAssignmentsServer) error {
-	initial, updates, unsubscribe := r.readcacheStore.subscribe(r.now())
+// contract is identical (full snapshot on connect, deltas or
+// snapshots after depending on supports_deltas). The same
+// first-apply gate applies: the initial Send is skipped until the
+// readcache log has been touched by apply() at least once (cold
+// start, regular slicer round, or admin reset), so a rebalancer
+// restart never broadcasts an empty/expired view that would tell
+// every readcache to drop all partitions.
+func (r *Rebalancer) WatchReadcacheAssignments(req *WatchReadcacheAssignmentsRequest, stream NautilusRebalancer_WatchReadcacheAssignmentsServer) error {
+	initial, updates, unsubscribe := r.readcacheStore.subscribe(req.GetSupportsDeltas())
 	defer unsubscribe()
 
 	// See WatchAssignments for why we may skip the initial Send.
 	if initial != nil {
-		if err := stream.Send(&WatchReadcacheAssignmentsResponse{Entries: ReadcacheEntriesToProto(initial)}); err != nil {
+		if err := stream.Send(readcacheUpdateToProto(*initial)); err != nil {
 			return err
 		}
 	}
@@ -529,15 +542,26 @@ func (r *Rebalancer) WatchReadcacheAssignments(_ *WatchReadcacheAssignmentsReque
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case snap, ok := <-updates:
+		case u, ok := <-updates:
 			if !ok {
 				return nil
 			}
-			if err := stream.Send(&WatchReadcacheAssignmentsResponse{Entries: ReadcacheEntriesToProto(snap)}); err != nil {
+			if err := stream.Send(readcacheUpdateToProto(u)); err != nil {
 				return err
 			}
 		}
 	}
+}
+
+func readcacheUpdateToProto(u readcacheUpdate) *WatchReadcacheAssignmentsResponse {
+	resp := &WatchReadcacheAssignmentsResponse{
+		Entries: ReadcacheEntriesToProto(u.entries),
+		Reset_:  u.reset,
+	}
+	if !u.pruneBefore.IsZero() {
+		resp.PruneBeforeUnixMs = u.pruneBefore.UnixMilli()
+	}
+	return resp
 }
 
 // GetSpotlightedRanges returns the rebalancer's currently-active

@@ -63,6 +63,43 @@ func NewLogFromEntries(entries []LogEntry) *Log {
 	return &Log{entries: cp}
 }
 
+// MergedWithEntries returns a new Log holding the receiver's entries
+// with `deltas` upserted into them, keyed by
+// (PartitionID, InstanceID, From). The receiver is not modified. See
+// pkg/nautilus/assignment.Log.MergedWithEntries for the rationale:
+// the rebalancer only ever rewrites To in place, so upsert-by-identity
+// reconstructs the server's log exactly. A nil receiver is treated as
+// an empty log.
+func (l *Log) MergedWithEntries(deltas []LogEntry) *Log {
+	var base []LogEntry
+	if l != nil {
+		base = l.entries
+	}
+	merged := make([]LogEntry, len(base), len(base)+len(deltas))
+	copy(merged, base)
+
+	type key struct {
+		pid      int32
+		instance string
+		fromMs   int64
+	}
+	idx := make(map[key]int, len(merged))
+	for i, e := range merged {
+		idx[key{pid: e.PartitionID, instance: e.InstanceID, fromMs: e.From.UnixMilli()}] = i
+	}
+	for _, d := range deltas {
+		k := key{pid: d.PartitionID, instance: d.InstanceID, fromMs: d.From.UnixMilli()}
+		if i, ok := idx[k]; ok {
+			merged[i] = d
+			continue
+		}
+		idx[k] = len(merged)
+		merged = append(merged, d)
+	}
+	sortEntries(merged)
+	return &Log{entries: merged}
+}
+
 // Apply ensures, for every (PartitionID, InstanceID) in `next`, that
 // the log holds a lease whose To is at least at + lookahead. Semantics
 // mirror pkg/nautilus/assignment.Log.Apply.

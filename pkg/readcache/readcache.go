@@ -852,7 +852,7 @@ func (r *Readcache) watchReadcacheAssignments(ctx context.Context) {
 	cli := rebalancer.NewNautilusRebalancerClient(r.rebalancerConn)
 
 	for ctx.Err() == nil {
-		stream, err := cli.WatchReadcacheAssignments(ctx, &rebalancer.WatchReadcacheAssignmentsRequest{})
+		stream, err := cli.WatchReadcacheAssignments(ctx, &rebalancer.WatchReadcacheAssignmentsRequest{SupportsDeltas: true})
 		if err != nil {
 			level.Warn(r.logger).Log("msg", "failed to open WatchReadcacheAssignments stream", "err", err, "backoff", backoff)
 			sleepWithCtx(ctx, backoff)
@@ -874,17 +874,34 @@ func (r *Readcache) watchReadcacheAssignments(ctx context.Context) {
 	}
 }
 
+// consumeAssignmentStream maintains a stream-local merged log: the
+// first message (and any reset) replaces it wholesale, deltas are
+// upserted into it by lease identity, and the server's retention
+// horizon prunes it. The merged log's full entry set is handed to
+// applyAssignment, which filters to leases active at `now` — so the
+// reconciliation semantics are identical to the old full-snapshot
+// protocol. The log is rebuilt from scratch on reconnect (the server
+// re-primes with a snapshot).
 func (r *Readcache) consumeAssignmentStream(ctx context.Context, stream rebalancer.NautilusRebalancer_WatchReadcacheAssignmentsClient) error {
+	var local *readcacheassignment.Log
 	for {
 		resp, err := stream.Recv()
 		if err != nil {
 			return err
 		}
 		entries := rebalancer.ReadcacheEntriesFromProto(resp.Entries)
-		if err := r.applyAssignment(ctx, entries, time.Now()); err != nil {
+		if resp.Reset_ || local == nil {
+			local = readcacheassignment.NewLogFromEntries(entries)
+		} else {
+			local = local.MergedWithEntries(entries)
+		}
+		if resp.PruneBeforeUnixMs > 0 {
+			local.Prune(time.UnixMilli(resp.PruneBeforeUnixMs))
+		}
+		if err := r.applyAssignment(ctx, local.Entries(), time.Now()); err != nil {
 			level.Warn(r.logger).Log("msg", "applying readcache assignment", "err", err)
 			// Keep consuming: a single failed add/remove must not
-			// take down the whole subscription. The next snapshot
+			// take down the whole subscription. The next update
 			// will reconcile.
 		}
 	}

@@ -81,6 +81,49 @@ func NewLogFromEntries(entries []LogEntry) *Log {
 	return &Log{entries: cp}
 }
 
+// MergedWithEntries returns a new Log holding the receiver's entries
+// with `deltas` upserted into them. The receiver is not modified, so
+// callers that publish their Log through an atomic pointer can build
+// the successor log without synchronizing readers.
+//
+// Upsert identity is (Range, PartitionID, From): the rebalancer never
+// deletes a lease or rewrites its From — mutation is always an
+// in-place rewrite of To (extension pre-issue, preemption clamp, or
+// the zero-length [From, From) kill of an unwanted pre-issued
+// successor) — so replacing the matching entry wholesale reconstructs
+// the server's log exactly. Entries with no match are appended.
+//
+// A nil receiver is treated as an empty log.
+func (l *Log) MergedWithEntries(deltas []LogEntry) *Log {
+	var base []LogEntry
+	if l != nil {
+		base = l.entries
+	}
+	merged := make([]LogEntry, len(base), len(base)+len(deltas))
+	copy(merged, base)
+
+	type key struct {
+		r      HashRange
+		pid    int32
+		fromMs int64
+	}
+	idx := make(map[key]int, len(merged))
+	for i, e := range merged {
+		idx[key{r: e.Range, pid: e.PartitionID, fromMs: e.From.UnixMilli()}] = i
+	}
+	for _, d := range deltas {
+		k := key{r: d.Range, pid: d.PartitionID, fromMs: d.From.UnixMilli()}
+		if i, ok := idx[k]; ok {
+			merged[i] = d
+			continue
+		}
+		idx[k] = len(merged)
+		merged = append(merged, d)
+	}
+	sortEntries(merged)
+	return &Log{entries: merged}
+}
+
 // Apply ensures, for every (Range, PartitionID) in `next`, that the
 // log holds a lease whose To is at least at + lookahead. Concretely:
 //

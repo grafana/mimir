@@ -114,7 +114,7 @@ func (d *Distributor) watchReadcacheAssignments(ctx context.Context) {
 	backoff := minBackoff
 
 	for ctx.Err() == nil {
-		stream, err := client.WatchReadcacheAssignments(ctx, &rebalancer.WatchReadcacheAssignmentsRequest{})
+		stream, err := client.WatchReadcacheAssignments(ctx, &rebalancer.WatchReadcacheAssignmentsRequest{SupportsDeltas: true})
 		if err != nil {
 			level.Warn(d.log).Log("msg", "failed to open readcache WatchReadcacheAssignments stream", "err", err, "backoff", backoff)
 			d.sleepWithCtx(ctx, backoff)
@@ -134,13 +134,26 @@ func (d *Distributor) watchReadcacheAssignments(ctx context.Context) {
 	}
 }
 
+// consumeReadcacheStream mirrors consumeNautilusStream's
+// snapshot/delta handling; see there for the protocol notes.
 func (d *Distributor) consumeReadcacheStream(stream rebalancer.NautilusRebalancer_WatchReadcacheAssignmentsClient) error {
+	first := true
 	for {
 		resp, err := stream.Recv()
 		if err != nil {
 			return err
 		}
-		log := readcacheassignment.NewLogFromEntries(rebalancer.ReadcacheEntriesFromProto(resp.Entries))
+		entries := rebalancer.ReadcacheEntriesFromProto(resp.Entries)
+		var log *readcacheassignment.Log
+		if resp.Reset_ || first {
+			log = readcacheassignment.NewLogFromEntries(entries)
+		} else {
+			log = d.readcacheLog.Load().MergedWithEntries(entries)
+		}
+		if resp.PruneBeforeUnixMs > 0 {
+			log.Prune(time.UnixMilli(resp.PruneBeforeUnixMs))
+		}
+		first = false
 		d.readcacheLog.Store(log)
 	}
 }

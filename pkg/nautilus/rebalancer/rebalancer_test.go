@@ -599,17 +599,18 @@ func TestLogStore_SubscribeReceivesUpdates(t *testing.T) {
 	a1 := assignment.EvenSplit([]int32{0, 1})
 	require.True(t, s.apply(time.Now(), a1, testStoreLease, testStoreLookahead, time.Hour))
 
-	initial, updates, unsubscribe := s.subscribe(time.Now())
+	initial, updates, unsubscribe := s.subscribe(false)
 	defer unsubscribe()
 
-	require.NotEmpty(t, initial)
+	require.NotNil(t, initial)
+	require.NotEmpty(t, initial.entries)
 
 	a2 := assignment.EvenSplit([]int32{0, 1, 2})
 	require.True(t, s.apply(time.Now().Add(time.Minute), a2, testStoreLease, testStoreLookahead, time.Hour))
 
 	select {
-	case snap := <-updates:
-		require.NotEmpty(t, snap)
+	case u := <-updates:
+		require.NotEmpty(t, u.entries)
 	case <-time.After(time.Second):
 		t.Fatal("did not receive update on subscription channel")
 	}
@@ -618,7 +619,7 @@ func TestLogStore_SubscribeReceivesUpdates(t *testing.T) {
 func TestLogStore_SubscribeConflatesSlowConsumer(t *testing.T) {
 	s := newLogStore()
 
-	_, updates, unsubscribe := s.subscribe(time.Now())
+	_, updates, unsubscribe := s.subscribe(false)
 	defer unsubscribe()
 
 	// Three back-to-back applies; a slow consumer should see exactly
@@ -631,8 +632,8 @@ func TestLogStore_SubscribeConflatesSlowConsumer(t *testing.T) {
 	// Drain — channel must hold exactly one buffered value (the
 	// latest), and after reading nothing else should be queued.
 	select {
-	case snap := <-updates:
-		require.NotEmpty(t, snap)
+	case u := <-updates:
+		require.NotEmpty(t, u.entries)
 	case <-time.After(time.Second):
 		t.Fatal("did not receive any update")
 	}
@@ -645,7 +646,7 @@ func TestLogStore_SubscribeConflatesSlowConsumer(t *testing.T) {
 
 func TestLogStore_UnsubscribeReleasesSubscriber(t *testing.T) {
 	s := newLogStore()
-	_, _, unsubscribe := s.subscribe(time.Now())
+	_, _, unsubscribe := s.subscribe(false)
 	require.Equal(t, 1, s.numSubscribers())
 	unsubscribe()
 	require.Equal(t, 0, s.numSubscribers())
@@ -673,7 +674,7 @@ func TestLogStore_SubscribeBeforeFirstApplyReturnsNilInitial(t *testing.T) {
 	}
 	s.seedFromEntries(seeded)
 
-	initial, _, unsubscribe := s.subscribe(t0)
+	initial, _, unsubscribe := s.subscribe(false)
 	defer unsubscribe()
 	assert.Nil(t, initial,
 		"subscribe must return nil initial before the first apply, even when the log has live entries, to prevent a freshly-restarted rebalancer from broadcasting stale state as authoritative")
@@ -688,7 +689,7 @@ func TestLogStore_FirstApplyPrimesSubscribersAttachedEarly(t *testing.T) {
 	s := newLogStore()
 	t0 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 
-	initial, updates, unsubscribe := s.subscribe(t0)
+	initial, updates, unsubscribe := s.subscribe(false)
 	defer unsubscribe()
 	require.Nil(t, initial, "subscribe before ready returns nil initial")
 
@@ -696,9 +697,10 @@ func TestLogStore_FirstApplyPrimesSubscribersAttachedEarly(t *testing.T) {
 	require.True(t, s.apply(t0, a, testStoreLease, testStoreLookahead, time.Hour))
 
 	select {
-	case snap := <-updates:
-		assert.NotEmpty(t, snap,
+	case u := <-updates:
+		assert.NotEmpty(t, u.entries,
 			"first apply after subscribe must prime the subscriber with the current live state")
+		assert.True(t, u.reset, "priming broadcast must be a snapshot")
 	case <-time.After(time.Second):
 		t.Fatal("subscriber attached before first apply did not receive a priming broadcast")
 	}
@@ -731,7 +733,7 @@ func TestLogStore_NoOpApplyStillPrimesEarlySubscriber(t *testing.T) {
 	s.seedFromEntries(seedEntries)
 
 	// Subscriber connects before any apply.
-	initial, updates, unsubscribe := s.subscribe(t0)
+	initial, updates, unsubscribe := s.subscribe(false)
 	defer unsubscribe()
 	require.Nil(t, initial, "subscribe before ready returns nil initial even when log is non-empty")
 
@@ -744,9 +746,10 @@ func TestLogStore_NoOpApplyStillPrimesEarlySubscriber(t *testing.T) {
 	assert.False(t, changed, "fixture must reproduce the no-op apply case")
 
 	select {
-	case snap := <-updates:
-		assert.NotEmpty(t, snap,
+	case u := <-updates:
+		assert.NotEmpty(t, u.entries,
 			"a no-op apply on the !ready -> ready edge must still prime the subscriber")
+		assert.True(t, u.reset, "priming broadcast must be a snapshot")
 	case <-time.After(time.Second):
 		t.Fatal("subscriber did not receive a priming broadcast on the no-op-but-becameReady apply")
 	}
@@ -763,10 +766,12 @@ func TestLogStore_SubscribeAfterApplyReturnsLiveEntries(t *testing.T) {
 	a := assignment.EvenSplit([]int32{0, 1})
 	require.True(t, s.apply(t0, a, testStoreLease, testStoreLookahead, time.Hour))
 
-	initial, _, unsubscribe := s.subscribe(t0)
+	initial, _, unsubscribe := s.subscribe(false)
 	defer unsubscribe()
-	assert.Len(t, initial, len(a.Entries),
+	require.NotNil(t, initial)
+	assert.Len(t, initial.entries, len(a.Entries),
 		"after first apply, subscribe must return the current live snapshot as initial")
+	assert.True(t, initial.reset, "initial must be a snapshot")
 }
 
 // TestLogStore_SubscribeIncludesRetainedHistory asserts that
@@ -795,10 +800,11 @@ func TestLogStore_SubscribeIncludesRetainedHistory(t *testing.T) {
 	require.Greater(t, len(full), len(a.Entries),
 		"unfiltered snapshot must include both rounds")
 
-	initial, _, unsubscribe := s.subscribe(t2)
+	initial, _, unsubscribe := s.subscribe(false)
 	defer unsubscribe()
 
-	require.Len(t, initial, len(full),
+	require.NotNil(t, initial)
+	require.Len(t, initial.entries, len(full),
 		"subscribe must return the full retained log, expired entries included")
 }
 
@@ -810,7 +816,7 @@ func TestLogStore_BroadcastIncludesRetainedHistoryAndHonoursRetention(t *testing
 	t1 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 
 	// Subscribe before any apply so we can observe the broadcasts.
-	_, updates, unsubscribe := s.subscribe(t1)
+	_, updates, unsubscribe := s.subscribe(false)
 	defer unsubscribe()
 
 	// Round 1.
@@ -828,9 +834,9 @@ func TestLogStore_BroadcastIncludesRetainedHistoryAndHonoursRetention(t *testing
 	require.True(t, s.apply(t2, a, time.Minute, 10*time.Second, time.Hour))
 	expired := 0
 	select {
-	case snap := <-updates:
-		require.NotEmpty(t, snap)
-		for _, e := range snap {
+	case u := <-updates:
+		require.NotEmpty(t, u.entries)
+		for _, e := range u.entries {
 			if !e.To.After(t2) {
 				expired++
 			}
@@ -847,14 +853,139 @@ func TestLogStore_BroadcastIncludesRetainedHistoryAndHonoursRetention(t *testing
 	t3 := t1.Add(2 * time.Hour)
 	require.True(t, s.apply(t3, a, time.Minute, 10*time.Second, time.Hour))
 	select {
-	case snap := <-updates:
-		require.NotEmpty(t, snap)
-		for _, e := range snap {
+	case u := <-updates:
+		require.NotEmpty(t, u.entries)
+		for _, e := range u.entries {
 			assert.False(t, e.To.Before(t3.Add(-time.Hour)),
 				"broadcast included an entry past the retention horizon: %+v", e)
 		}
 	case <-time.After(time.Second):
 		t.Fatal("did not receive round-3 broadcast")
+	}
+}
+
+// TestLogStore_DeltaSubscriberReceivesOnlyMutations pins the delta
+// protocol on the hash store: a delta subscriber is primed with a
+// reset snapshot, then each mutating apply delivers only the entries
+// it created or rewrote, and replaying those deltas client-side
+// reproduces the store's snapshot exactly.
+func TestLogStore_DeltaSubscriberReceivesOnlyMutations(t *testing.T) {
+	s := newLogStore()
+	t0 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	a2 := assignment.EvenSplit([]int32{0, 1})
+	require.True(t, s.apply(t0, a2, testStoreLease, testStoreLookahead, time.Hour))
+
+	initial, updates, unsubscribe := s.subscribe(true)
+	defer unsubscribe()
+	require.NotNil(t, initial)
+	require.True(t, initial.reset, "delta subscriber must be primed with a snapshot")
+	client := assignment.NewLogFromEntries(initial.entries)
+
+	// A steady-state extension round: the lookahead window catches
+	// up, so apply pre-issues one successor per chain and touches
+	// nothing else. The delta must carry exactly the successors,
+	// not the untouched history.
+	require.True(t, s.apply(t0.Add(testStoreLease-testStoreLookahead), a2, testStoreLease, testStoreLookahead, time.Hour))
+
+	select {
+	case u := <-updates:
+		require.False(t, u.reset, "primed delta subscriber must receive a delta, not a snapshot")
+		require.Len(t, u.entries, len(a2.Entries),
+			"extension round delta must carry only the pre-issued successors")
+		require.Less(t, len(u.entries), len(s.snapshot()),
+			"delta must be smaller than the full log")
+		client = client.MergedWithEntries(u.entries)
+		if !u.pruneBefore.IsZero() {
+			client.Prune(u.pruneBefore)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("did not receive delta broadcast")
+	}
+
+	// A reassignment round: partition 2 joins, preempting the active
+	// chains. The delta must carry the rewritten (preempted) entries
+	// too, or replay would leave stale active leases client-side.
+	a3 := assignment.EvenSplit([]int32{0, 1, 2})
+	require.True(t, s.apply(t0.Add(testStoreLease), a3, testStoreLease, testStoreLookahead, time.Hour))
+
+	select {
+	case u := <-updates:
+		require.False(t, u.reset)
+		client = client.MergedWithEntries(u.entries)
+		if !u.pruneBefore.IsZero() {
+			client.Prune(u.pruneBefore)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("did not receive reassignment delta broadcast")
+	}
+
+	assert.Equal(t, s.snapshot(), client.Entries(),
+		"snapshot + delta replay must reproduce the server log exactly")
+}
+
+// TestLogStore_DeltaCoalescingLosesNothing covers the slow-subscriber
+// path: multiple mutating applies land while the subscriber isn't
+// consuming. The pending deltas must coalesce (not drop), so a single
+// read plus replay still reproduces the final server log.
+func TestLogStore_DeltaCoalescingLosesNothing(t *testing.T) {
+	s := newLogStore()
+	t0 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	require.True(t, s.apply(t0, assignment.EvenSplit([]int32{0}), testStoreLease, testStoreLookahead, time.Hour))
+
+	initial, updates, unsubscribe := s.subscribe(true)
+	defer unsubscribe()
+	require.NotNil(t, initial)
+	client := assignment.NewLogFromEntries(initial.entries)
+
+	// Three mutating applies without a consume in between.
+	require.True(t, s.apply(t0.Add(time.Second), assignment.EvenSplit([]int32{0, 1}), testStoreLease, testStoreLookahead, time.Hour))
+	require.True(t, s.apply(t0.Add(2*time.Second), assignment.EvenSplit([]int32{0, 1, 2}), testStoreLease, testStoreLookahead, time.Hour))
+	require.True(t, s.apply(t0.Add(3*time.Second), assignment.EvenSplit([]int32{2, 3}), testStoreLease, testStoreLookahead, time.Hour))
+
+	// The channel holds exactly one coalesced delta.
+	select {
+	case u := <-updates:
+		require.False(t, u.reset)
+		client = client.MergedWithEntries(u.entries)
+		if !u.pruneBefore.IsZero() {
+			client.Prune(u.pruneBefore)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("did not receive coalesced delta")
+	}
+	select {
+	case <-updates:
+		t.Fatal("expected exactly one coalesced update buffered")
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	assert.Equal(t, s.snapshot(), client.Entries(),
+		"coalesced delta replay must reproduce the server log exactly")
+}
+
+// TestLogStore_LegacySubscriberStillGetsSnapshots pins backwards
+// compatibility: a subscriber that did not opt into deltas receives
+// a full snapshot on every mutating apply.
+func TestLogStore_LegacySubscriberStillGetsSnapshots(t *testing.T) {
+	s := newLogStore()
+	t0 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	require.True(t, s.apply(t0, assignment.EvenSplit([]int32{0, 1}), testStoreLease, testStoreLookahead, time.Hour))
+
+	_, updates, unsubscribe := s.subscribe(false)
+	defer unsubscribe()
+
+	require.True(t, s.apply(t0.Add(time.Minute), assignment.EvenSplit([]int32{0, 1, 2}), testStoreLease, testStoreLookahead, time.Hour))
+
+	select {
+	case u := <-updates:
+		assert.True(t, u.reset, "legacy subscriber broadcasts must be snapshots")
+		assert.Equal(t, s.snapshot(), u.entries,
+			"legacy subscriber must receive the full log on every broadcast")
+	case <-time.After(time.Second):
+		t.Fatal("did not receive broadcast")
 	}
 }
 

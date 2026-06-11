@@ -157,7 +157,7 @@ func TestResetReadcacheAssignment_NoPartitionsIsError(t *testing.T) {
 func TestResetReadcacheAssignment_BroadcastsToSubscribers(t *testing.T) {
 	r := newTestRebalancerForReset(t, 4, []string{"rc-a", "rc-b"})
 
-	_, _, unsub := r.readcacheStore.subscribe(time.Unix(1000, 0))
+	_, _, unsub := r.readcacheStore.subscribe(false)
 	defer unsub()
 	require.Equal(t, 1, r.readcacheStore.numSubscribers())
 

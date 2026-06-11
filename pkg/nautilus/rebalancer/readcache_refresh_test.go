@@ -238,7 +238,7 @@ func TestRefreshReadcacheLeases_PrimesEarlySubscriber(t *testing.T) {
 		{PartitionID: 0, InstanceID: "rc-a", From: t0.Add(-time.Minute), To: t0.Add(time.Minute)},
 	})
 
-	initial, updates, unsubscribe := r.readcacheStore.subscribe(t0)
+	initial, updates, unsubscribe := r.readcacheStore.subscribe(false)
 	defer unsubscribe()
 	require.Nil(t, initial,
 		"sanity: subscribe before any apply must return nil initial")
@@ -246,8 +246,8 @@ func TestRefreshReadcacheLeases_PrimesEarlySubscriber(t *testing.T) {
 	r.refreshReadcacheLeases(t0)
 
 	select {
-	case snap := <-updates:
-		assert.NotEmpty(t, snap,
+	case u := <-updates:
+		assert.NotEmpty(t, u.entries,
 			"refresh must prime early subscribers by flipping !ready -> ready inside apply")
 	case <-time.After(time.Second):
 		t.Fatal("subscriber attached before refresh did not receive a priming broadcast")
