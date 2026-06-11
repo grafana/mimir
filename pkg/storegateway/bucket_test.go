@@ -2081,6 +2081,28 @@ func TestBucketStore_Series_RequestAndResponseHints(t *testing.T) {
 	}
 }
 
+func TestBucketStore_Series_MaxConcurrentBlocksPerRequest(t *testing.T) {
+	query := func(maxConcurrentBlocksPerRequest int) []*storeTestSeries {
+		tb, store, _, _, _, _, cleanup := setupStoreForHintsTest(t, 5000)
+		tb.Cleanup(cleanup)
+		store.maxConcurrentBlocksPerRequest = maxConcurrentBlocksPerRequest
+
+		srv := newStoreGatewayTestServer(t, store)
+		seriesSet, _, _, _, err := srv.Series(context.Background(), &storepb.SeriesRequest{
+			MinTime:  math.MinInt64,
+			MaxTime:  math.MaxInt64,
+			Matchers: []storepb.LabelMatcher{{Type: storepb.LabelMatcher_EQ, Name: "ext1", Value: "1"}},
+		})
+		require.NoError(t, err)
+		return seriesSet
+	}
+
+	// Running with or without the block concurrency limit should not alter the result.
+	unlimited := query(0)
+	require.NotEmpty(t, unlimited)
+	assert.Equal(t, unlimited, query(1))
+}
+
 func TestBucketStore_Series_ErrorUnmarshallingRequestHints(t *testing.T) {
 	tmpDir := t.TempDir()
 

@@ -863,6 +863,7 @@
   "blocks-storage.bucket-store.index-header.bucket-reader.index-sections": "postings-offsets-table",
   "blocks-storage.bucket-store.batch-series-size": 5000,
   "blocks-storage.bucket-store.series-fetch-preference": 0.75,
+  "blocks-storage.bucket-store.max-concurrent-blocks-per-request": 0,
   "blocks-storage.tsdb.dir": "./tsdb/",
   "blocks-storage.tsdb.retention-period": 46800000000000,
   "blocks-storage.tsdb.ship-interval": 60000000000,

@@ -12238,6 +12238,17 @@
               "fieldFlag": "blocks-storage.bucket-store.series-fetch-preference",
               "fieldType": "float",
               "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "max_concurrent_blocks_per_request",
+              "required": false,
+              "desc": "Maximum number of blocks for which a single Series, LabelNames or LabelValues request resolves matchers (expanded postings) concurrently. Requests touching more blocks than this process them in waves of this size, bounding the peak memory of matcher resolution for queries that span many blocks (for example long time ranges). 0 disables the limit.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "blocks-storage.bucket-store.max-concurrent-blocks-per-request",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
             }
           ],
           "fieldValue": null,

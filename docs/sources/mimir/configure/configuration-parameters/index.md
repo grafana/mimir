@@ -5990,6 +5990,14 @@ bucket_store:
   # CLI flag: -blocks-storage.bucket-store.series-fetch-preference
   [series_fetch_preference: <float> | default = 0.75]
 
+  # (experimental) Maximum number of blocks for which a single Series,
+  # LabelNames or LabelValues request resolves matchers (expanded postings)
+  # concurrently. Requests touching more blocks than this process them in waves
+  # of this size, bounding the peak memory of matcher resolution for queries
+  # that span many blocks (for example long time ranges). 0 disables the limit.
+  # CLI flag: -blocks-storage.bucket-store.max-concurrent-blocks-per-request
+  [max_concurrent_blocks_per_request: <int> | default = 0]
+
 tsdb:
   # Directory to store TSDBs (including WAL) in the ingesters. This directory is
   # required to be persisted between restarts.
