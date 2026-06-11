@@ -1,5 +1,5 @@
 diff --git a/pkg/mimirpb/mimir.pb.go b/pkg/mimirpb/mimir.pb.go
-index fbae8e24c4..e76908a417 100644
+index 6278c906b7..e76908a417 100644
 --- a/pkg/mimirpb/mimir.pb.go
 +++ b/pkg/mimirpb/mimir.pb.go
 @@ -353,14 +353,6 @@ type QueryResponse_Matrix struct {
@@ -56,7 +56,7 @@ index fbae8e24c4..e76908a417 100644
  }
  
  type LabelPair struct {
-@@ -4179,9 +4153,6 @@ func (m *WriteRequest) UnmarshalWithDepth(b []byte, depth int) error {
+@@ -4179,15 +4153,12 @@ func (m *WriteRequest) UnmarshalWithDepth(b []byte, depth int) error {
  }
  
  func (m *WriteRequest) unmarshal(dAtA []byte, depth int) error {
@@ -66,6 +66,13 @@ index fbae8e24c4..e76908a417 100644
  	if depth > protohelpers.MaxUnmarshalDepth {
  		return fmt.Errorf("exceeded max recursion depth")
  	}
+ 	l := len(dAtA)
+ 	iNdEx := 0
+-	if l >= 256 && !m.unmarshalFromRW2 { // RW2 mode discards the pre-scan counts (symbols paged, field5 prealloc ~0 benefit); skip the walk.
++	if l >= 256 {
+ 		var preIdx int
+ 		var field1count int
+ 		var field3count int
 @@ -4272,23 +4243,26 @@ func (m *WriteRequest) unmarshal(dAtA []byte, depth int) error {
  				m.Metadata = grown
  			}

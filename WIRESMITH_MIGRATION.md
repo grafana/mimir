@@ -13,7 +13,7 @@ before merging). Generated code depends on `protohelpers.SkipValue` /
 
 | Proto | Status | Expdiff |
 |---|---|---|
-| `pkg/mimirpb/mimir.proto` | migrated (phase 1+2+3) | 1087 lines (1103 phase 2, 2144 phase 1) |
+| `pkg/mimirpb/mimir.proto` | migrated (phase 1+2+3+DB-18) | 1094 lines (1087 phase 3, 1103 phase 2, 2144 phase 1) |
 | `pkg/distributor/ha_tracker.proto` | migrated (phase 2) | none |
 | `pkg/querier/stats/stats.proto` | migrated (phase 2) | none (one hand-written `GoString` shim) |
 | all other protos (~22) | still gogoproto | — |
@@ -83,7 +83,7 @@ pkg/storage/ingest, pkg/querier(+stats), pkg/frontend/... test suites green.
 `pkg/mimirpb/mimir.pb.go.expdiff` in reverse onto fresh output. The gogo-era
 diff is retained as `mimir.pb.go.expdiff.legacy-gogoproto`.
 
-Expdiff: **1087 lines, 16 hunks** (phase 2: 1103/17; phase 1: 2144). ~790 of those
+Expdiff: **1094 lines, 16 hunks** (phase 3: 1087/16; phase 2: 1103/17; phase 1: 2144). ~790 of those
 lines are one hunk: the deleted generated bodies of the
 `TimeSeriesRW2`/`ExemplarRW2`/`MetadataRW2` unmarshallers, replaced by
 `return errorInternalRW2` stubs. The true hand-patch surface (~310 lines):
@@ -97,7 +97,11 @@ lines are one hunk: the deleted generated bodies of the
    symbols into paged storage, RW2 series decoded straight into
    `[]PreallocTimeseries`, metadata flush; plus an RW2-aware redirect of the
    pre-count preallocation (field 5 counts preallocate `m.Timeseries`, the
-   generated `SymbolsRW2`/`TimeseriesRW2` preallocations are dropped).
+   generated `SymbolsRW2`/`TimeseriesRW2` preallocations are dropped). The
+   whole `if l >= 256` pre-scan is now gated on `&& !m.unmarshalFromRW2`: in
+   RW2 mode the counts are discarded (symbols paged, field5 prealloc ~0
+   benefit), so the walk is skipped to fix the +15% RW2 unmarshal wall-clock
+   regression (DB-18 / wiresmith-bobw); RW1 keeps the −47%-bytes win.
 3. Exemplar skipping in `TimeSeries.unmarshal` (case 3 + prealloc gating).
 4. RW2 unmarshal stubs (see above).
 
@@ -152,24 +156,59 @@ points one level up. (This replaces the earlier scratch-dir staging recipe.)
 | `./pkg/util/test` | ok |
 | `go build ./...`, `go vet` | clean (modulo pre-existing `Seek` vet warnings) |
 
-## Benchmarks (Apple M4 Pro, single run each — NOT benchstat-grade)
+## Benchmarks (Apple M4 Pro, benchstat-grade — DB-9, 2026-06-11)
 
-`BenchmarkUnMarshal` (pkg/mimirpb), gogo baseline (cb6dac78a3) vs phase 2:
+`BenchmarkUnMarshal` (pkg/mimirpb), gogo baseline (cb6dac78a3) vs wiresmith
+`wiresmith` branch. Method: two `go test -c` binaries, **alternated** 20 rounds
+(gogo, wiresmith, gogo, …) so thermal drift cancels across the pair; `-count`
+effectively 20, `benchstat` ±1%, every delta p=0.000.
 
-| Bench | gogo | phase 2 | B/op gogo → ph2 | allocs gogo → ph2 |
-|---|---|---|---|---|
-| Marshal/RW1 | 11.79ms | 15.58ms¹ | 26.8MB → 26.8MB | 2 → 2 |
-| Marshal/RW2 | 5.26ms | 5.70ms | 18.4MB → 18.4MB | 2 → 2 |
-| Unmarshal/RW1 skip=true | 9.24ms | 11.94ms | 57.1MB → 31.2MB (−45%) | 60426 → 50408 |
-| Unmarshal/RW2 skip=true | 10.57ms | 12.69ms | 32.8MB → 31.3MB | 50025 → 50015 |
-| Unmarshal/RW1 skip=false | 10.96ms | 11.78ms | 61.9MB → 32.8MB (−47%) | 100426 → 60408 |
-| Unmarshal/RW2 skip=false | 11.41ms | 14.25ms | 34.4MB → 33.0MB | 60025 → 60015 |
+| Bench | gogo sec/op | wiresmith sec/op | Δ time | B/op Δ | allocs Δ |
+|---|---|---|---|---|---|
+| Marshal/RW1            | 11.90m | 10.87m | **−8.68%** | −0.00% | ~ |
+| Marshal/RW2            | 5.170m | 4.804m | **−7.07%** | ~ | ~ |
+| Unmarshal/RW1 skip=true  | 9.062m | 9.365m | +3.34% | **−45.34%** | −16.58% |
+| Unmarshal/RW1 skip=false | 10.81m | 10.33m | **−4.47%** | **−47.00%** | −39.85% |
+| Unmarshal/RW2 skip=true  | 10.10m | 11.66m | **+15.42%** | −4.70% | −0.02% |
+| Unmarshal/RW2 skip=false | 10.90m | 12.59m | **+15.52%** | −4.39% | −0.02% |
 
-¹ Single-run outlier (phase 1 measured 12.08ms for the same code path);
-these numbers are noisy. Takeaway unchanged from phase 1: marshal ≈ parity,
-unmarshal ~10–25% slower wall-clock while allocating roughly half the bytes
-on RW1 — plausibly the pre-scan counting pass. Needs a benchstat-grade run
-before declaring write-path perf parity.
+Revised takeaways (overturning the earlier noisy single-run numbers):
+
+- **Marshal is ~7–9% *faster*** under wiresmith (the prior "+26%" was thermal noise).
+- **RW1 unmarshal is a net win**: skip=false −4.5% wall *and* −47% bytes / −40%
+  allocs; skip=true only +3.3% wall for −45% bytes.
+- **The sole regression is RW2 unmarshal: +15%**, with negligible allocation
+  benefit (−4–5% bytes, ~0 allocs).
+
+### Root cause of the RW2 regression: the always-on pre-scan pass
+
+`WriteRequest.unmarshal` (mimir.pb.go) runs a full extra linear pass over the
+payload counting fields 1/3/4/5 to preallocate slices whenever `len >= 256`.
+On RW2 the bulk of the bytes are field 4 (symbols) — and `field4count` is
+explicitly discarded (`_ = field4count`) because symbols go to `m.rw2symbols`
+paged storage, not a preallocated slice. So RW2 pays for a full scan of its
+largest section and gets nothing back; only `field5count` (timeseries) yields a
+small, ~5%-bytes preallocation.
+
+**Isolation experiment** (same alternated method, pre-scan forced off via
+`if false`, wiresmith-with-prescan vs wiresmith-no-prescan):
+
+| Bench | Δ time (remove pre-scan) | Δ bytes | Δ allocs |
+|---|---|---|---|
+| Unmarshal/RW1 skip=true  | −3.50% | **+82.96%** | +19.87% |
+| Unmarshal/RW1 skip=false | +3.08% | **+88.66%** | +66.25% |
+| Unmarshal/RW2 skip=true  | **−13.70%** | +4.91% | +0.02% |
+| Unmarshal/RW2 skip=false | **−13.14%** | +4.64% | +0.02% |
+
+Removing the pre-scan recovers ~13% on RW2 — taking it to **dead parity with
+gogo** (no-prescan RW2 = 10.09m/10.94m vs gogo 10.10m/10.90m) — while it would
+*cost* RW1 ~3% wall and ~2× the allocations. The pre-scan is a clear win on
+RW1 and pure overhead on RW2. A line-level CPU profile attributes ~180ms (~5%
+of total, ~35% of `unmarshal`'s own flat time) to the pre-scan loop on the RW2
+path. Fix lives wiresmith-side (bead DB-18 / wiresmith-bobw): gate the pre-scan
+off when its counts don't drive a preallocation — concretely, skip it in
+`unmarshalFromRW2` mode, or fold counting into the main decode loop. Tracked
+also as the unmarshal-wall-clock friction item below.
 
 ## Remaining wiresmith blockers / friction (ranked)
 
