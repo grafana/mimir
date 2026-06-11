@@ -13,7 +13,7 @@ before merging). Generated code depends on `protohelpers.SkipValue` /
 
 | Proto | Status | Expdiff |
 |---|---|---|
-| `pkg/mimirpb/mimir.proto` | migrated (phase 1+2) | 1103 lines (was 2144 in phase 1) |
+| `pkg/mimirpb/mimir.proto` | migrated (phase 1+2+3) | 1087 lines (1103 phase 2, 2144 phase 1) |
 | `pkg/distributor/ha_tracker.proto` | migrated (phase 2) | none |
 | `pkg/querier/stats/stats.proto` | migrated (phase 2) | none (one hand-written `GoString` shim) |
 | all other protos (~22) | still gogoproto | — |
@@ -55,14 +55,21 @@ pkg/storage/ingest, pkg/querier(+stats), pkg/frontend/... test suites green.
   pointer shapes: `WriteRequest.metadata`, `FloatHistogramPair.histogram`,
   `SampleHistogram.buckets`, `SampleHistogramPair.histogram`.
 - `(wiresmith.options.no_presence_all) = true` file-wide.
+- `(wiresmith.options.enum_no_prefix_all) = true` file-wide — emits
+  unprefixed enum value constants (`UNKNOWN`, `COUNTER`, `API`,
+  `ERROR_CAUSE_*`, `METRIC_TYPE_*`, ...) matching gogo's
+  `goproto_enum_prefix=false` output, so the previous const-alias shims in
+  `gogoproto_compat.go` are gone. `Histogram.ResetHint` opts back in with
+  `(wiresmith.options.enum_no_prefix) = false` (it had explicit
+  `goproto_enum_prefix=true` under gogo; bare `UNKNOWN`/`GAUGE` would collide
+  with `MetricMetadata.MetricType` at package scope).
 
 ### Hand-written support files (pkg/mimirpb/)
 
 - `wiresmith_adapters.go` — customtype adapter methods.
 - `gogoproto_compat.go` — `sovMimir`/`encodeVarintMimir`/`skipMimir` helpers
-  and unprefixed enum constant aliases (`UNKNOWN`, `COUNTER`, `API`,
-  `ERROR_CAUSE_*`, `METRIC_TYPE_*`, ...) matching gogo's
-  `goproto_enum_prefix=false` output.
+  used by the hand-written marshalling code (the unprefixed enum constant
+  aliases that used to live here are gone; see `enum_no_prefix_all` above).
 - `gogoproto_registry.go` — gogo-registry registrations;
   `github.com/gogo/status` (via dskit `grpcutil.ErrorToStatus`) resolves
   `google.protobuf.Any` error details through the gogo registry
@@ -76,7 +83,7 @@ pkg/storage/ingest, pkg/querier(+stats), pkg/frontend/... test suites green.
 `pkg/mimirpb/mimir.pb.go.expdiff` in reverse onto fresh output. The gogo-era
 diff is retained as `mimir.pb.go.expdiff.legacy-gogoproto`.
 
-Phase-2 expdiff: **1103 lines, 17 hunks** (phase 1: 2144). ~790 of those
+Expdiff: **1087 lines, 16 hunks** (phase 2: 1103/17; phase 1: 2144). ~790 of those
 lines are one hunk: the deleted generated bodies of the
 `TimeSeriesRW2`/`ExemplarRW2`/`MetadataRW2` unmarshallers, replaced by
 `return errorInternalRW2` stubs. The true hand-patch surface (~310 lines):
@@ -104,10 +111,14 @@ Rebuild procedure: regenerate (pristine), re-apply the patches, then
 Zero expdiff, zero shims: `ReplicaDesc` is plain data; dskit's memberlist
 `codec.NewProtoCodec` marshals through gogo interfaces that wiresmith's
 method set satisfies (`Marshal`/`Unmarshal`/`Reset`/`String`/`ProtoMessage`).
-Because `pkg/distributor` contains other still-gogo protos and wiresmith
-eagerly compiles every `.proto` under `--proto_path`, the Makefile rule
-stages the file into a scratch dir first (the Tempo recipe from wiresmith's
-FLAGS.md).
+Because `pkg/distributor` contains other still-gogo protos and wiresmith,
+when invoked with no positional files, eagerly compiles every `.proto` under
+`--proto_path`, the Makefile rule passes the target proto as a positional
+argument: wiresmith then emits only that file (and resolves its transitive
+imports against the `--proto_path` walk), so the still-gogo siblings are
+ignored. The flat single-file layout routes output under the proto package
+name (`distributor`), which lines up with the target directory when `--out`
+points one level up. (This replaces the earlier scratch-dir staging recipe.)
 
 ## stats.proto (pkg/querier/stats)
 
@@ -162,22 +173,25 @@ before declaring write-path perf parity.
 
 ## Remaining wiresmith blockers / friction (ranked)
 
-1. **Eager whole-tree compilation under a single `--proto_path`.** Compiling
-   one proto in a directory that also contains still-gogo protos fails the
-   whole run when a sibling has unresolvable imports (e.g.
-   `distributorpb/distributor.proto` imports
-   `github.com/grafana/mimir/pkg/mimirpb/mimir.proto` and
-   `gogoproto/gogo.proto`). Workaround: stage the target proto into a
-   scratch directory (now baked into the Makefile rules). Suggested feature:
-   only compile the positional files plus their transitive imports, and/or
-   support multiple `--proto_path` entries / exclusion globs.
+1. **RESOLVED (mostly) — eager whole-tree compilation under a single
+   `--proto_path`.** Without positional files, wiresmith compiles every
+   `.proto` under `--proto_path`, so a sibling with unresolvable imports
+   (e.g. `distributorpb/distributor.proto` importing `gogoproto/gogo.proto`)
+   failed the whole run. The `databases` build now compiles only the
+   positional files plus their transitive imports; the Makefile rules pass
+   the target proto positionally and dropped the scratch-staging recipe.
+   Remaining friction: still a single `--proto_path` (no multiple roots /
+   exclusion globs), and imports must be reachable under that one root.
 2. **Unmarshal wall-clock vs gogo** (see benchmarks): the always-on pre-scan
    pass for payloads ≥ 256B costs ~10–25% on large requests while halving
    allocations. Suggested: a knob (or heuristic) to skip the counting pass,
    or fold counting into the main decode loop.
-3. **No `goproto_enum_prefix=false` equivalent** — still worked around with
-   const aliases in `pkg/mimirpb/gogoproto_compat.go`. Becomes more annoying
-   with every migrated proto whose consumers use unprefixed constants.
+3. **RESOLVED — `goproto_enum_prefix=false` equivalent**:
+   `(wiresmith.options.enum_no_prefix_all) = true` (file) /
+   `(wiresmith.options.enum_no_prefix)` (per-enum override) emit unprefixed
+   value constants. mimir.proto adopts it file-wide (with
+   `Histogram.ResetHint` overriding back to `false`); the const-alias shims
+   in `gogoproto_compat.go` were removed.
 4. **No unmarshal context-threading / parent hook for customtype** — the RW2
    dispatch and exemplar skipping still require expdiff patching of
    `WriteRequest.unmarshal` (gogo had the same limitation; a hook would

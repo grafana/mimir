@@ -14,10 +14,11 @@ import (
 // migration:
 //
 //   - varint helpers (sovMimir/encodeVarintMimir/skipMimir) used by the
-//     hand-written marshalling code (LabelAdapter, request splitting, ...);
-//   - unprefixed enum constant aliases: gogoproto generated them with
-//     goproto_enum_prefix=false semantics, while wiresmith always prefixes
-//     constants with the enum (or parent message) name like protoc-gen-go.
+//     hand-written marshalling code (LabelAdapter, request splitting, ...).
+//
+// (The unprefixed enum constant aliases that used to live here are gone:
+// mimir.proto now sets (wiresmith.options.enum_no_prefix_all) = true and the
+// generated constants match the old gogoproto names directly.)
 
 // Varint helpers copied from the gogoproto-generated mimir.pb.go.
 
@@ -121,71 +122,3 @@ func skipMimir(dAtA []byte) (n int, err error) {
 	}
 	return 0, io.ErrUnexpectedEOF
 }
-
-// Unprefixed enum constant aliases matching the gogoproto-generated names.
-// Histogram_ResetHint used goproto_enum_prefix=true, so its wiresmith names
-// (Histogram_UNKNOWN, ...) already match and need no aliases.
-
-const (
-	ERROR_CAUSE_UNKNOWN                ErrorCause = ErrorCause_ERROR_CAUSE_UNKNOWN
-	ERROR_CAUSE_REPLICAS_DID_NOT_MATCH ErrorCause = ErrorCause_ERROR_CAUSE_REPLICAS_DID_NOT_MATCH
-	ERROR_CAUSE_TOO_MANY_CLUSTERS      ErrorCause = ErrorCause_ERROR_CAUSE_TOO_MANY_CLUSTERS
-	ERROR_CAUSE_BAD_DATA               ErrorCause = ErrorCause_ERROR_CAUSE_BAD_DATA
-	ERROR_CAUSE_INGESTION_RATE_LIMITED ErrorCause = ErrorCause_ERROR_CAUSE_INGESTION_RATE_LIMITED
-	ERROR_CAUSE_REQUEST_RATE_LIMITED   ErrorCause = ErrorCause_ERROR_CAUSE_REQUEST_RATE_LIMITED
-	ERROR_CAUSE_INSTANCE_LIMIT         ErrorCause = ErrorCause_ERROR_CAUSE_INSTANCE_LIMIT
-	ERROR_CAUSE_SERVICE_UNAVAILABLE    ErrorCause = ErrorCause_ERROR_CAUSE_SERVICE_UNAVAILABLE
-	ERROR_CAUSE_TSDB_UNAVAILABLE       ErrorCause = ErrorCause_ERROR_CAUSE_TSDB_UNAVAILABLE
-	ERROR_CAUSE_TOO_BUSY               ErrorCause = ErrorCause_ERROR_CAUSE_TOO_BUSY
-	ERROR_CAUSE_CIRCUIT_BREAKER_OPEN   ErrorCause = ErrorCause_ERROR_CAUSE_CIRCUIT_BREAKER_OPEN
-	ERROR_CAUSE_METHOD_NOT_ALLOWED     ErrorCause = ErrorCause_ERROR_CAUSE_METHOD_NOT_ALLOWED
-	ERROR_CAUSE_TENANT_LIMIT           ErrorCause = ErrorCause_ERROR_CAUSE_TENANT_LIMIT
-	ERROR_CAUSE_ACTIVE_SERIES_LIMITED  ErrorCause = ErrorCause_ERROR_CAUSE_ACTIVE_SERIES_LIMITED
-)
-
-const (
-	QUERY_STATUS_ERROR   QueryStatus = QueryStatus_QUERY_STATUS_ERROR
-	QUERY_STATUS_SUCCESS QueryStatus = QueryStatus_QUERY_STATUS_SUCCESS
-)
-
-const (
-	QUERY_ERROR_TYPE_NONE              QueryErrorType = QueryErrorType_QUERY_ERROR_TYPE_NONE
-	QUERY_ERROR_TYPE_TIMEOUT           QueryErrorType = QueryErrorType_QUERY_ERROR_TYPE_TIMEOUT
-	QUERY_ERROR_TYPE_CANCELED          QueryErrorType = QueryErrorType_QUERY_ERROR_TYPE_CANCELED
-	QUERY_ERROR_TYPE_EXECUTION         QueryErrorType = QueryErrorType_QUERY_ERROR_TYPE_EXECUTION
-	QUERY_ERROR_TYPE_BAD_DATA          QueryErrorType = QueryErrorType_QUERY_ERROR_TYPE_BAD_DATA
-	QUERY_ERROR_TYPE_INTERNAL          QueryErrorType = QueryErrorType_QUERY_ERROR_TYPE_INTERNAL
-	QUERY_ERROR_TYPE_UNAVAILABLE       QueryErrorType = QueryErrorType_QUERY_ERROR_TYPE_UNAVAILABLE
-	QUERY_ERROR_TYPE_NOT_FOUND         QueryErrorType = QueryErrorType_QUERY_ERROR_TYPE_NOT_FOUND
-	QUERY_ERROR_TYPE_NOT_ACCEPTABLE    QueryErrorType = QueryErrorType_QUERY_ERROR_TYPE_NOT_ACCEPTABLE
-	QUERY_ERROR_TYPE_TOO_MANY_REQUESTS QueryErrorType = QueryErrorType_QUERY_ERROR_TYPE_TOO_MANY_REQUESTS
-	QUERY_ERROR_TYPE_TOO_LARGE_ENTRY   QueryErrorType = QueryErrorType_QUERY_ERROR_TYPE_TOO_LARGE_ENTRY
-)
-
-const (
-	API  WriteRequest_SourceEnum = WriteRequest_API
-	RULE WriteRequest_SourceEnum = WriteRequest_RULE
-	OTLP WriteRequest_SourceEnum = WriteRequest_OTLP
-)
-
-const (
-	UNKNOWN        MetricMetadata_MetricType = MetricMetadata_UNKNOWN
-	COUNTER        MetricMetadata_MetricType = MetricMetadata_COUNTER
-	GAUGE          MetricMetadata_MetricType = MetricMetadata_GAUGE
-	HISTOGRAM      MetricMetadata_MetricType = MetricMetadata_HISTOGRAM
-	GAUGEHISTOGRAM MetricMetadata_MetricType = MetricMetadata_GAUGEHISTOGRAM
-	SUMMARY        MetricMetadata_MetricType = MetricMetadata_SUMMARY
-	INFO           MetricMetadata_MetricType = MetricMetadata_INFO
-	STATESET       MetricMetadata_MetricType = MetricMetadata_STATESET
-)
-
-const (
-	METRIC_TYPE_UNSPECIFIED    MetadataRW2_MetricType = MetadataRW2_METRIC_TYPE_UNSPECIFIED
-	METRIC_TYPE_COUNTER        MetadataRW2_MetricType = MetadataRW2_METRIC_TYPE_COUNTER
-	METRIC_TYPE_GAUGE          MetadataRW2_MetricType = MetadataRW2_METRIC_TYPE_GAUGE
-	METRIC_TYPE_HISTOGRAM      MetadataRW2_MetricType = MetadataRW2_METRIC_TYPE_HISTOGRAM
-	METRIC_TYPE_GAUGEHISTOGRAM MetadataRW2_MetricType = MetadataRW2_METRIC_TYPE_GAUGEHISTOGRAM
-	METRIC_TYPE_SUMMARY        MetadataRW2_MetricType = MetadataRW2_METRIC_TYPE_SUMMARY
-	METRIC_TYPE_INFO           MetadataRW2_MetricType = MetadataRW2_METRIC_TYPE_INFO
-	METRIC_TYPE_STATESET       MetadataRW2_MetricType = MetadataRW2_METRIC_TYPE_STATESET
-)
