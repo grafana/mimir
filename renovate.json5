@@ -88,6 +88,7 @@
   ],
   baseBranchPatterns: [
     'main',
+    'release-3.1',
     'release-3.0',
     'release-2.17',
   ],
@@ -98,6 +99,7 @@
   packageRules: [
     {
       matchBaseBranches: [
+        'release-3.1',
         'release-3.0',
         'release-2.17',
       ],
