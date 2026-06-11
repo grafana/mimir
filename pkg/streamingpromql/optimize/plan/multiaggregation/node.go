@@ -93,10 +93,11 @@ func (g *MultiAggregationGroup) MinimumRequiredPlanVersion(types.QueryTimeRange)
 	return planning.QueryPlanV5, nil
 }
 
+//node:generate
 type MultiAggregationInstance struct {
 	*MultiAggregationInstanceDetails
-	Group *MultiAggregationGroup
-	Param planning.Node // nil for non-parameterized aggregations (eg. sum), set for quantile.
+	Group *MultiAggregationGroup `node:"child"`
+	Param planning.Node          `node:"child,nilable"` // nil for non-parameterized aggregations (eg. sum), set for quantile.
 }
 
 func (a *MultiAggregationInstance) Details() proto.Message {
@@ -105,44 +106,6 @@ func (a *MultiAggregationInstance) Details() proto.Message {
 
 func (a *MultiAggregationInstance) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_MULTI_AGGREGATION_INSTANCE
-}
-
-func (a *MultiAggregationInstance) Child(idx int) planning.Node {
-	switch idx {
-	case 0:
-		return a.Group
-	case 1:
-		if a.Param == nil {
-			panic("cannot get MultiAggregationInstance child at index 1 if there is no parameter")
-		}
-		return a.Param
-	default:
-		panic(fmt.Sprintf("node of type MultiAggregationInstance supports at most 2 children, but attempted to get child at index %d", idx))
-	}
-}
-
-func (a *MultiAggregationInstance) ChildCount() int {
-	if a.Param == nil {
-		return 1
-	}
-
-	return 2
-}
-
-func (a *MultiAggregationInstance) SetChildren(children []planning.Node) error {
-	switch len(children) {
-	case 1:
-		a.Param = nil
-		return a.ReplaceChild(0, children[0])
-	case 2:
-		if err := a.ReplaceChild(0, children[0]); err != nil {
-			return err
-		}
-		a.Param = children[1]
-		return nil
-	default:
-		return fmt.Errorf("node of type MultiAggregationInstance expects 1 or 2 children, but got %d", len(children))
-	}
 }
 
 func (a *MultiAggregationInstance) ReplaceChild(idx int, node planning.Node) error {
