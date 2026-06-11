@@ -26,6 +26,19 @@ runs:
       run: |
         mkdir -p /go/src/github.com/grafana/mimir
         ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
+    # TEMPORARY (wiresmith migration): the wiresmith proto generator is not yet
+    # part of the published mimir-build-image, so install it on PATH before the
+    # build regenerates *.pb.go. Built from a checkout because wiresmith's go.mod
+    # carries a replace directive, which blocks `go install pkg@version`.
+    # Remove once wiresmith ships in the build image.
+    - name: Install wiresmith proto generator
+      shell: bash
+      env:
+        GOPRIVATE: github.com/grafana/*
+      run: |
+        git clone --quiet --filter=blob:none https://github.com/grafana/wiresmith.git /tmp/wiresmith-src
+        git -C /tmp/wiresmith-src checkout --quiet a6d80cb6d9caa5a6828f816bf9f561ba1a5f7ece
+        (cd /tmp/wiresmith-src && go install ./cmd/wiresmith)
     - name: Build Docker Image
       shell: bash
       run: |
