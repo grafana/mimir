@@ -34,6 +34,7 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.uber.org/atomic"
 
+	"github.com/grafana/mimir/pkg/compartments"
 	"github.com/grafana/mimir/pkg/costattribution"
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
 	"github.com/grafana/mimir/pkg/ingester/lookupplan"
@@ -193,8 +194,14 @@ type Config struct {
 
 	PushGrpcMethodEnabled bool `yaml:"push_grpc_method_enabled" category:"experimental" doc:"hidden"`
 
-	// This config is dynamically injected because defined outside the ingester config.
-	IngestStorageConfig ingest.Config `yaml:"-"`
+	// ReadCompartmentID is the read compartment this ingester serves. It selects which partition ring
+	// the ingester registers its partition into. When compartments are disabled it must be 0, because it
+	// is used to index the (single) non-compartment partition ring, which lives at index 0.
+	ReadCompartmentID int `yaml:"read_compartment_id" category:"experimental" doc:"hidden"`
+
+	// These configs are dynamically injected because defined outside the ingester config.
+	IngestStorageConfig ingest.Config       `yaml:"-"`
+	Compartments        compartments.Config `yaml:"-"`
 
 	// This config can be overridden in tests.
 	limitMetricsUpdatePeriod time.Duration `yaml:"-"`
@@ -227,14 +234,25 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.DurationVar(&cfg.EarlyCompactionNonOwnedSeriesMaxGracePeriod, "ingester.early-compaction-non-owned-series-max-grace-period", 5*time.Minute, "Maximum time a series may remain non-owned before it is evicted, regardless of the owned-series threshold. This ensures eventual eviction even for tenants below their threshold. A value of 0 disables the maximum grace period, so eviction depends solely on the owned-series threshold.")
 	f.IntVar(&cfg.LabelValuesCountRequestMaxConcurrency, "ingester.label-values-count-max-concurrency", 16, "Maximum concurrency used to compute a single label values count request.")
 	f.BoolVar(&cfg.PushGrpcMethodEnabled, "ingester.push-grpc-method-enabled", true, "Enables Push gRPC method on ingester. Can be only disabled when using ingest-storage to make sure ingesters only receive data from Kafka.")
+	f.IntVar(&cfg.ReadCompartmentID, "ingester.read-compartment-id", 0, "The read compartment this ingester serves. Only used when compartments are enabled.")
 
 	// Hardcoded config (can only be overridden in tests).
 	cfg.limitMetricsUpdatePeriod = time.Second * 15
 }
 
-func (cfg *Config) Validate() error {
+func (cfg *Config) Validate(compartmentsCfg compartments.Config) error {
 	if cfg.ErrorSampleRate < 0 {
 		return fmt.Errorf("error sample rate cannot be a negative number")
+	}
+
+	if compartmentsCfg.Enabled {
+		if cfg.ReadCompartmentID < 0 || cfg.ReadCompartmentID >= compartmentsCfg.Read.NumCompartments {
+			return fmt.Errorf("ingester read compartment ID %d is out of range [0, %d)", cfg.ReadCompartmentID, compartmentsCfg.Read.NumCompartments)
+		}
+	} else if cfg.ReadCompartmentID != 0 {
+		// When compartments are disabled the read compartment ID must be 0, because it is used to index the
+		// single non-compartment partition ring (at index 0).
+		return errors.New("ingester read compartment ID must be 0 when compartments are disabled")
 	}
 
 	// Tokenless mode requires gRPC push to be disabled.
@@ -570,10 +588,19 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 			}
 		}
 
+		// With compartments enabled the ingester registers its partition into the partition ring of
+		// its own read compartment, so the write path routes to it. The read compartment ID is
+		// validated by Config.Validate.
+		partitionRingName, partitionRingKey := PartitionRingName, PartitionRingKey
+		if cfg.Compartments.Enabled {
+			partitionRingName = compartments.ReadCompartmentRingName(cfg.ReadCompartmentID, PartitionRingName)
+			partitionRingKey = compartments.ReadCompartmentRingKey(cfg.ReadCompartmentID, PartitionRingKey)
+		}
+
 		i.ingestPartitionLifecycler = ring.NewPartitionInstanceLifecycler(
 			i.cfg.IngesterPartitionRing.ToLifecyclerConfig(i.ingestPartitionID, cfg.IngesterRing.InstanceID),
-			PartitionRingName,
-			PartitionRingKey,
+			partitionRingName,
+			partitionRingKey,
 			partitionRingKV,
 			logger,
 			prometheus.WrapRegistererWithPrefix("cortex_", registerer))

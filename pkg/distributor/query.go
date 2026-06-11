@@ -121,7 +121,8 @@ func (d *Distributor) getIngesterReplicationSetsForQuery(ctx context.Context) ([
 	}
 
 	if d.cfg.IngestStorageConfig.Enabled {
-		r := d.partitionsRing
+		// Read path is not compartment-aware yet, so it always uses read compartment 0.
+		r := d.partitionInstanceRings.Get(0)
 
 		// Build a subring to query. We use ShuffleShardWithLookback() to limit the partitions to query
 		// to the tenant's shard (when shuffle sharding is enabled) and to filter out inactive partitions
