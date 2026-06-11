@@ -6,32 +6,31 @@ package mimirpb
 import (
 	"encoding/binary"
 	"fmt"
-	"io"
-	"math"
-	"strconv"
-
 	"github.com/grafana/wiresmith/protohelpers"
 	histogram "github.com/prometheus/prometheus/model/histogram"
 	"google.golang.org/protobuf/encoding/protowire"
+	"io"
+	"math"
+	"strconv"
 )
 
 type ErrorCause int32
 
 const (
-	ErrorCause_ERROR_CAUSE_UNKNOWN                ErrorCause = 0
-	ErrorCause_ERROR_CAUSE_REPLICAS_DID_NOT_MATCH ErrorCause = 1
-	ErrorCause_ERROR_CAUSE_TOO_MANY_CLUSTERS      ErrorCause = 2
-	ErrorCause_ERROR_CAUSE_BAD_DATA               ErrorCause = 3
-	ErrorCause_ERROR_CAUSE_INGESTION_RATE_LIMITED ErrorCause = 4
-	ErrorCause_ERROR_CAUSE_REQUEST_RATE_LIMITED   ErrorCause = 5
-	ErrorCause_ERROR_CAUSE_INSTANCE_LIMIT         ErrorCause = 6
-	ErrorCause_ERROR_CAUSE_SERVICE_UNAVAILABLE    ErrorCause = 7
-	ErrorCause_ERROR_CAUSE_TSDB_UNAVAILABLE       ErrorCause = 8
-	ErrorCause_ERROR_CAUSE_TOO_BUSY               ErrorCause = 9
-	ErrorCause_ERROR_CAUSE_CIRCUIT_BREAKER_OPEN   ErrorCause = 10
-	ErrorCause_ERROR_CAUSE_METHOD_NOT_ALLOWED     ErrorCause = 11
-	ErrorCause_ERROR_CAUSE_TENANT_LIMIT           ErrorCause = 12
-	ErrorCause_ERROR_CAUSE_ACTIVE_SERIES_LIMITED  ErrorCause = 13
+	ERROR_CAUSE_UNKNOWN                ErrorCause = 0
+	ERROR_CAUSE_REPLICAS_DID_NOT_MATCH ErrorCause = 1
+	ERROR_CAUSE_TOO_MANY_CLUSTERS      ErrorCause = 2
+	ERROR_CAUSE_BAD_DATA               ErrorCause = 3
+	ERROR_CAUSE_INGESTION_RATE_LIMITED ErrorCause = 4
+	ERROR_CAUSE_REQUEST_RATE_LIMITED   ErrorCause = 5
+	ERROR_CAUSE_INSTANCE_LIMIT         ErrorCause = 6
+	ERROR_CAUSE_SERVICE_UNAVAILABLE    ErrorCause = 7
+	ERROR_CAUSE_TSDB_UNAVAILABLE       ErrorCause = 8
+	ERROR_CAUSE_TOO_BUSY               ErrorCause = 9
+	ERROR_CAUSE_CIRCUIT_BREAKER_OPEN   ErrorCause = 10
+	ERROR_CAUSE_METHOD_NOT_ALLOWED     ErrorCause = 11
+	ERROR_CAUSE_TENANT_LIMIT           ErrorCause = 12
+	ERROR_CAUSE_ACTIVE_SERIES_LIMITED  ErrorCause = 13
 )
 
 var ErrorCause_name = map[int32]string{
@@ -79,8 +78,8 @@ func (x ErrorCause) String() string {
 type QueryStatus int32
 
 const (
-	QueryStatus_QUERY_STATUS_ERROR   QueryStatus = 0
-	QueryStatus_QUERY_STATUS_SUCCESS QueryStatus = 1
+	QUERY_STATUS_ERROR   QueryStatus = 0
+	QUERY_STATUS_SUCCESS QueryStatus = 1
 )
 
 var QueryStatus_name = map[int32]string{
@@ -104,17 +103,17 @@ func (x QueryStatus) String() string {
 type QueryErrorType int32
 
 const (
-	QueryErrorType_QUERY_ERROR_TYPE_NONE              QueryErrorType = 0
-	QueryErrorType_QUERY_ERROR_TYPE_TIMEOUT           QueryErrorType = 1
-	QueryErrorType_QUERY_ERROR_TYPE_CANCELED          QueryErrorType = 2
-	QueryErrorType_QUERY_ERROR_TYPE_EXECUTION         QueryErrorType = 3
-	QueryErrorType_QUERY_ERROR_TYPE_BAD_DATA          QueryErrorType = 4
-	QueryErrorType_QUERY_ERROR_TYPE_INTERNAL          QueryErrorType = 5
-	QueryErrorType_QUERY_ERROR_TYPE_UNAVAILABLE       QueryErrorType = 6
-	QueryErrorType_QUERY_ERROR_TYPE_NOT_FOUND         QueryErrorType = 7
-	QueryErrorType_QUERY_ERROR_TYPE_NOT_ACCEPTABLE    QueryErrorType = 8
-	QueryErrorType_QUERY_ERROR_TYPE_TOO_MANY_REQUESTS QueryErrorType = 9
-	QueryErrorType_QUERY_ERROR_TYPE_TOO_LARGE_ENTRY   QueryErrorType = 10
+	QUERY_ERROR_TYPE_NONE              QueryErrorType = 0
+	QUERY_ERROR_TYPE_TIMEOUT           QueryErrorType = 1
+	QUERY_ERROR_TYPE_CANCELED          QueryErrorType = 2
+	QUERY_ERROR_TYPE_EXECUTION         QueryErrorType = 3
+	QUERY_ERROR_TYPE_BAD_DATA          QueryErrorType = 4
+	QUERY_ERROR_TYPE_INTERNAL          QueryErrorType = 5
+	QUERY_ERROR_TYPE_UNAVAILABLE       QueryErrorType = 6
+	QUERY_ERROR_TYPE_NOT_FOUND         QueryErrorType = 7
+	QUERY_ERROR_TYPE_NOT_ACCEPTABLE    QueryErrorType = 8
+	QUERY_ERROR_TYPE_TOO_MANY_REQUESTS QueryErrorType = 9
+	QUERY_ERROR_TYPE_TOO_LARGE_ENTRY   QueryErrorType = 10
 )
 
 var QueryErrorType_name = map[int32]string{
@@ -155,9 +154,9 @@ func (x QueryErrorType) String() string {
 type WriteRequest_SourceEnum int32
 
 const (
-	WriteRequest_API  WriteRequest_SourceEnum = 0
-	WriteRequest_RULE WriteRequest_SourceEnum = 1
-	WriteRequest_OTLP WriteRequest_SourceEnum = 2
+	API  WriteRequest_SourceEnum = 0
+	RULE WriteRequest_SourceEnum = 1
+	OTLP WriteRequest_SourceEnum = 2
 )
 
 var WriteRequest_SourceEnum_name = map[int32]string{
@@ -182,14 +181,14 @@ func (x WriteRequest_SourceEnum) String() string {
 type MetricMetadata_MetricType int32
 
 const (
-	MetricMetadata_UNKNOWN        MetricMetadata_MetricType = 0
-	MetricMetadata_COUNTER        MetricMetadata_MetricType = 1
-	MetricMetadata_GAUGE          MetricMetadata_MetricType = 2
-	MetricMetadata_HISTOGRAM      MetricMetadata_MetricType = 3
-	MetricMetadata_GAUGEHISTOGRAM MetricMetadata_MetricType = 4
-	MetricMetadata_SUMMARY        MetricMetadata_MetricType = 5
-	MetricMetadata_INFO           MetricMetadata_MetricType = 6
-	MetricMetadata_STATESET       MetricMetadata_MetricType = 7
+	UNKNOWN        MetricMetadata_MetricType = 0
+	COUNTER        MetricMetadata_MetricType = 1
+	GAUGE          MetricMetadata_MetricType = 2
+	HISTOGRAM      MetricMetadata_MetricType = 3
+	GAUGEHISTOGRAM MetricMetadata_MetricType = 4
+	SUMMARY        MetricMetadata_MetricType = 5
+	INFO           MetricMetadata_MetricType = 6
+	STATESET       MetricMetadata_MetricType = 7
 )
 
 var MetricMetadata_MetricType_name = map[int32]string{
@@ -224,12 +223,6 @@ func (x MetricMetadata_MetricType) String() string {
 type Histogram_ResetHint int32
 
 const (
-	// These values are based on CounterResetHint from https://github.com/prometheus/prometheus/blob/main/model/histogram/histogram.go.
-	// The values must remain in sync with the constants defined there.
-	//
-	// wiresmith prefixes nested enum constants with the parent message name
-	// (Histogram_UNKNOWN, ...), which matches what gogoproto generated here
-	// under goproto_enum_prefix = true.
 	Histogram_UNKNOWN Histogram_ResetHint = 0
 	Histogram_YES     Histogram_ResetHint = 1
 	Histogram_NO      Histogram_ResetHint = 2
@@ -260,14 +253,14 @@ func (x Histogram_ResetHint) String() string {
 type MetadataRW2_MetricType int32
 
 const (
-	MetadataRW2_METRIC_TYPE_UNSPECIFIED    MetadataRW2_MetricType = 0
-	MetadataRW2_METRIC_TYPE_COUNTER        MetadataRW2_MetricType = 1
-	MetadataRW2_METRIC_TYPE_GAUGE          MetadataRW2_MetricType = 2
-	MetadataRW2_METRIC_TYPE_HISTOGRAM      MetadataRW2_MetricType = 3
-	MetadataRW2_METRIC_TYPE_GAUGEHISTOGRAM MetadataRW2_MetricType = 4
-	MetadataRW2_METRIC_TYPE_SUMMARY        MetadataRW2_MetricType = 5
-	MetadataRW2_METRIC_TYPE_INFO           MetadataRW2_MetricType = 6
-	MetadataRW2_METRIC_TYPE_STATESET       MetadataRW2_MetricType = 7
+	METRIC_TYPE_UNSPECIFIED    MetadataRW2_MetricType = 0
+	METRIC_TYPE_COUNTER        MetadataRW2_MetricType = 1
+	METRIC_TYPE_GAUGE          MetadataRW2_MetricType = 2
+	METRIC_TYPE_HISTOGRAM      MetadataRW2_MetricType = 3
+	METRIC_TYPE_GAUGEHISTOGRAM MetadataRW2_MetricType = 4
+	METRIC_TYPE_SUMMARY        MetadataRW2_MetricType = 5
+	METRIC_TYPE_INFO           MetadataRW2_MetricType = 6
+	METRIC_TYPE_STATESET       MetadataRW2_MetricType = 7
 )
 
 var MetadataRW2_MetricType_name = map[int32]string{
@@ -1689,11 +1682,11 @@ func (m *VectorHistogram) GetMetric() []string {
 	return nil
 }
 
-func (m *VectorHistogram) GetHistogram() *FloatHistogram {
+func (m *VectorHistogram) GetHistogram() FloatHistogram {
 	if m != nil {
-		return &m.Histogram
+		return m.Histogram
 	}
-	return nil
+	return FloatHistogram{}
 }
 
 func (m *VectorHistogram) GetTimestampMs() int64 {
@@ -1787,11 +1780,11 @@ func (m *TimeSeriesRW2) GetExemplars() []ExemplarRW2 {
 	return nil
 }
 
-func (m *TimeSeriesRW2) GetMetadata() *MetadataRW2 {
+func (m *TimeSeriesRW2) GetMetadata() MetadataRW2 {
 	if m != nil {
-		return &m.Metadata
+		return m.Metadata
 	}
-	return nil
+	return MetadataRW2{}
 }
 
 func (m *TimeSeriesRW2) GetCreatedTimestamp() int64 {
@@ -4263,20 +4256,20 @@ func (m *WriteRequest) unmarshal(dAtA []byte, depth int) error {
 			if c > preCapMax {
 				c = preCapMax
 			}
-			if cap(m.Timeseries) < c {
-				m.Timeseries = make([]PreallocTimeseries, 0, c)
-			} else {
-				m.Timeseries = m.Timeseries[:0]
+			if need := len(m.Timeseries) + c; cap(m.Timeseries) < need {
+				grown := make([]PreallocTimeseries, len(m.Timeseries), need)
+				copy(grown, m.Timeseries)
+				m.Timeseries = grown
 			}
 		}
 		if c := field3count; c > 0 {
 			if c > preCapMax {
 				c = preCapMax
 			}
-			if cap(m.Metadata) < c {
-				m.Metadata = make([]*MetricMetadata, 0, c)
-			} else {
-				m.Metadata = m.Metadata[:0]
+			if need := len(m.Metadata) + c; cap(m.Metadata) < need {
+				grown := make([]*MetricMetadata, len(m.Metadata), need)
+				copy(grown, m.Metadata)
+				m.Metadata = grown
 			}
 		}
 		// Modified code: in RW2 mode field 4 symbols go into m.rw2symbols paged
@@ -4289,10 +4282,10 @@ func (m *WriteRequest) unmarshal(dAtA []byte, depth int) error {
 			if c > preCapMax {
 				c = preCapMax
 			}
-			if cap(m.Timeseries) < c {
-				m.Timeseries = make([]PreallocTimeseries, 0, c)
-			} else {
-				m.Timeseries = m.Timeseries[:0]
+			if need := len(m.Timeseries) + c; cap(m.Timeseries) < need {
+				grown := make([]PreallocTimeseries, len(m.Timeseries), need)
+				copy(grown, m.Timeseries)
+				m.Timeseries = grown
 			}
 		}
 		// End modified code.
@@ -4946,20 +4939,20 @@ func (m *TimeSeries) unmarshal(dAtA []byte, depth int) error {
 			if c > preCapMax {
 				c = preCapMax
 			}
-			if cap(m.Labels) < c {
-				m.Labels = make([]UnsafeMutableLabel, 0, c)
-			} else {
-				m.Labels = m.Labels[:0]
+			if need := len(m.Labels) + c; cap(m.Labels) < need {
+				grown := make([]UnsafeMutableLabel, len(m.Labels), need)
+				copy(grown, m.Labels)
+				m.Labels = grown
 			}
 		}
 		if c := field2count; c > 0 {
 			if c > preCapMax {
 				c = preCapMax
 			}
-			if cap(m.Samples) < c {
-				m.Samples = make([]Sample, 0, c)
-			} else {
-				m.Samples = m.Samples[:0]
+			if need := len(m.Samples) + c; cap(m.Samples) < need {
+				grown := make([]Sample, len(m.Samples), need)
+				copy(grown, m.Samples)
+				m.Samples = grown
 			}
 		}
 		// Modified code: don't preallocate exemplars that won't be unmarshalled.
@@ -4967,10 +4960,10 @@ func (m *TimeSeries) unmarshal(dAtA []byte, depth int) error {
 			if c > preCapMax {
 				c = preCapMax
 			}
-			if cap(m.Exemplars) < c {
-				m.Exemplars = make([]Exemplar, 0, c)
-			} else {
-				m.Exemplars = m.Exemplars[:0]
+			if need := len(m.Exemplars) + c; cap(m.Exemplars) < need {
+				grown := make([]Exemplar, len(m.Exemplars), need)
+				copy(grown, m.Exemplars)
+				m.Exemplars = grown
 			}
 		}
 		// End modified code.
@@ -4978,10 +4971,10 @@ func (m *TimeSeries) unmarshal(dAtA []byte, depth int) error {
 			if c > preCapMax {
 				c = preCapMax
 			}
-			if cap(m.Histograms) < c {
-				m.Histograms = make([]Histogram, 0, c)
-			} else {
-				m.Histograms = m.Histograms[:0]
+			if need := len(m.Histograms) + c; cap(m.Histograms) < need {
+				grown := make([]Histogram, len(m.Histograms), need)
+				copy(grown, m.Histograms)
+				m.Histograms = grown
 			}
 		}
 	}
@@ -5798,10 +5791,10 @@ func (m *Metric) unmarshal(dAtA []byte, depth int) error {
 			if c > preCapMax {
 				c = preCapMax
 			}
-			if cap(m.Labels) < c {
-				m.Labels = make([]UnsafeMutableLabel, 0, c)
-			} else {
-				m.Labels = m.Labels[:0]
+			if need := len(m.Labels) + c; cap(m.Labels) < need {
+				grown := make([]UnsafeMutableLabel, len(m.Labels), need)
+				copy(grown, m.Labels)
+				m.Labels = grown
 			}
 		}
 	}
@@ -5972,10 +5965,10 @@ func (m *Exemplar) unmarshal(dAtA []byte, depth int) error {
 			if c > preCapMax {
 				c = preCapMax
 			}
-			if cap(m.Labels) < c {
-				m.Labels = make([]UnsafeMutableLabel, 0, c)
-			} else {
-				m.Labels = m.Labels[:0]
+			if need := len(m.Labels) + c; cap(m.Labels) < need {
+				grown := make([]UnsafeMutableLabel, len(m.Labels), need)
+				copy(grown, m.Labels)
+				m.Labels = grown
 			}
 		}
 	}
@@ -6192,20 +6185,20 @@ func (m *Histogram) unmarshal(dAtA []byte, depth int) error {
 			if c > preCapMax {
 				c = preCapMax
 			}
-			if cap(m.NegativeSpans) < c {
-				m.NegativeSpans = make([]BucketSpan, 0, c)
-			} else {
-				m.NegativeSpans = m.NegativeSpans[:0]
+			if need := len(m.NegativeSpans) + c; cap(m.NegativeSpans) < need {
+				grown := make([]BucketSpan, len(m.NegativeSpans), need)
+				copy(grown, m.NegativeSpans)
+				m.NegativeSpans = grown
 			}
 		}
 		if c := field11count; c > 0 {
 			if c > preCapMax {
 				c = preCapMax
 			}
-			if cap(m.PositiveSpans) < c {
-				m.PositiveSpans = make([]BucketSpan, 0, c)
-			} else {
-				m.PositiveSpans = m.PositiveSpans[:0]
+			if need := len(m.PositiveSpans) + c; cap(m.PositiveSpans) < need {
+				grown := make([]BucketSpan, len(m.PositiveSpans), need)
+				copy(grown, m.PositiveSpans)
+				m.PositiveSpans = grown
 			}
 		}
 	}
@@ -7009,20 +7002,20 @@ func (m *FloatHistogram) unmarshal(dAtA []byte, depth int) error {
 			if c > preCapMax {
 				c = preCapMax
 			}
-			if cap(m.PositiveSpans) < c {
-				m.PositiveSpans = make([]BucketSpan, 0, c)
-			} else {
-				m.PositiveSpans = m.PositiveSpans[:0]
+			if need := len(m.PositiveSpans) + c; cap(m.PositiveSpans) < need {
+				grown := make([]BucketSpan, len(m.PositiveSpans), need)
+				copy(grown, m.PositiveSpans)
+				m.PositiveSpans = grown
 			}
 		}
 		if c := field8count; c > 0 {
 			if c > preCapMax {
 				c = preCapMax
 			}
-			if cap(m.NegativeSpans) < c {
-				m.NegativeSpans = make([]BucketSpan, 0, c)
-			} else {
-				m.NegativeSpans = m.NegativeSpans[:0]
+			if need := len(m.NegativeSpans) + c; cap(m.NegativeSpans) < need {
+				grown := make([]BucketSpan, len(m.NegativeSpans), need)
+				copy(grown, m.NegativeSpans)
+				m.NegativeSpans = grown
 			}
 		}
 	}
@@ -7795,10 +7788,10 @@ func (m *SampleHistogram) unmarshal(dAtA []byte, depth int) error {
 			if c > preCapMax {
 				c = preCapMax
 			}
-			if cap(m.Buckets) < c {
-				m.Buckets = make([]*HistogramBucket, 0, c)
-			} else {
-				m.Buckets = m.Buckets[:0]
+			if need := len(m.Buckets) + c; cap(m.Buckets) < need {
+				grown := make([]*HistogramBucket, len(m.Buckets), need)
+				copy(grown, m.Buckets)
+				m.Buckets = grown
 			}
 		}
 	}
@@ -8268,20 +8261,20 @@ func (m *QueryResponse) unmarshal(dAtA []byte, depth int) error {
 			if c > preCapMax {
 				c = preCapMax
 			}
-			if cap(m.Warnings) < c {
-				m.Warnings = make([]string, 0, c)
-			} else {
-				m.Warnings = m.Warnings[:0]
+			if need := len(m.Warnings) + c; cap(m.Warnings) < need {
+				grown := make([]string, len(m.Warnings), need)
+				copy(grown, m.Warnings)
+				m.Warnings = grown
 			}
 		}
 		if c := field9count; c > 0 {
 			if c > preCapMax {
 				c = preCapMax
 			}
-			if cap(m.Infos) < c {
-				m.Infos = make([]string, 0, c)
-			} else {
-				m.Infos = m.Infos[:0]
+			if need := len(m.Infos) + c; cap(m.Infos) < need {
+				grown := make([]string, len(m.Infos), need)
+				copy(grown, m.Infos)
+				m.Infos = grown
 			}
 		}
 	}
@@ -8936,20 +8929,20 @@ func (m *VectorData) unmarshal(dAtA []byte, depth int) error {
 			if c > preCapMax {
 				c = preCapMax
 			}
-			if cap(m.Samples) < c {
-				m.Samples = make([]VectorSample, 0, c)
-			} else {
-				m.Samples = m.Samples[:0]
+			if need := len(m.Samples) + c; cap(m.Samples) < need {
+				grown := make([]VectorSample, len(m.Samples), need)
+				copy(grown, m.Samples)
+				m.Samples = grown
 			}
 		}
 		if c := field2count; c > 0 {
 			if c > preCapMax {
 				c = preCapMax
 			}
-			if cap(m.Histograms) < c {
-				m.Histograms = make([]VectorHistogram, 0, c)
-			} else {
-				m.Histograms = m.Histograms[:0]
+			if need := len(m.Histograms) + c; cap(m.Histograms) < need {
+				grown := make([]VectorHistogram, len(m.Histograms), need)
+				copy(grown, m.Histograms)
+				m.Histograms = grown
 			}
 		}
 	}
@@ -9167,10 +9160,10 @@ func (m *VectorSample) unmarshal(dAtA []byte, depth int) error {
 			if c > preCapMax {
 				c = preCapMax
 			}
-			if cap(m.Metric) < c {
-				m.Metric = make([]string, 0, c)
-			} else {
-				m.Metric = m.Metric[:0]
+			if need := len(m.Metric) + c; cap(m.Metric) < need {
+				grown := make([]string, len(m.Metric), need)
+				copy(grown, m.Metric)
+				m.Metric = grown
 			}
 		}
 	}
@@ -9380,10 +9373,10 @@ func (m *VectorHistogram) unmarshal(dAtA []byte, depth int) error {
 			if c > preCapMax {
 				c = preCapMax
 			}
-			if cap(m.Metric) < c {
-				m.Metric = make([]string, 0, c)
-			} else {
-				m.Metric = m.Metric[:0]
+			if need := len(m.Metric) + c; cap(m.Metric) < need {
+				grown := make([]string, len(m.Metric), need)
+				copy(grown, m.Metric)
+				m.Metric = grown
 			}
 		}
 	}
@@ -9726,10 +9719,10 @@ func (m *MatrixData) unmarshal(dAtA []byte, depth int) error {
 			if c > preCapMax {
 				c = preCapMax
 			}
-			if cap(m.Series) < c {
-				m.Series = make([]MatrixSeries, 0, c)
-			} else {
-				m.Series = m.Series[:0]
+			if need := len(m.Series) + c; cap(m.Series) < need {
+				grown := make([]MatrixSeries, len(m.Series), need)
+				copy(grown, m.Series)
+				m.Series = grown
 			}
 		}
 	}
@@ -9905,30 +9898,30 @@ func (m *MatrixSeries) unmarshal(dAtA []byte, depth int) error {
 			if c > preCapMax {
 				c = preCapMax
 			}
-			if cap(m.Metric) < c {
-				m.Metric = make([]string, 0, c)
-			} else {
-				m.Metric = m.Metric[:0]
+			if need := len(m.Metric) + c; cap(m.Metric) < need {
+				grown := make([]string, len(m.Metric), need)
+				copy(grown, m.Metric)
+				m.Metric = grown
 			}
 		}
 		if c := field2count; c > 0 {
 			if c > preCapMax {
 				c = preCapMax
 			}
-			if cap(m.Samples) < c {
-				m.Samples = make([]Sample, 0, c)
-			} else {
-				m.Samples = m.Samples[:0]
+			if need := len(m.Samples) + c; cap(m.Samples) < need {
+				grown := make([]Sample, len(m.Samples), need)
+				copy(grown, m.Samples)
+				m.Samples = grown
 			}
 		}
 		if c := field3count; c > 0 {
 			if c > preCapMax {
 				c = preCapMax
 			}
-			if cap(m.Histograms) < c {
-				m.Histograms = make([]FloatHistogramPair, 0, c)
-			} else {
-				m.Histograms = m.Histograms[:0]
+			if need := len(m.Histograms) + c; cap(m.Histograms) < need {
+				grown := make([]FloatHistogramPair, len(m.Histograms), need)
+				copy(grown, m.Histograms)
+				m.Histograms = grown
 			}
 		}
 	}
@@ -10194,20 +10187,20 @@ func (m *WriteRequestRW2) unmarshal(dAtA []byte, depth int) error {
 			if c > preCapMax {
 				c = preCapMax
 			}
-			if cap(m.Symbols) < c {
-				m.Symbols = make([]string, 0, c)
-			} else {
-				m.Symbols = m.Symbols[:0]
+			if need := len(m.Symbols) + c; cap(m.Symbols) < need {
+				grown := make([]string, len(m.Symbols), need)
+				copy(grown, m.Symbols)
+				m.Symbols = grown
 			}
 		}
 		if c := field5count; c > 0 {
 			if c > preCapMax {
 				c = preCapMax
 			}
-			if cap(m.Timeseries) < c {
-				m.Timeseries = make([]TimeSeriesRW2, 0, c)
-			} else {
-				m.Timeseries = m.Timeseries[:0]
+			if need := len(m.Timeseries) + c; cap(m.Timeseries) < need {
+				grown := make([]TimeSeriesRW2, len(m.Timeseries), need)
+				copy(grown, m.Timeseries)
+				m.Timeseries = grown
 			}
 		}
 	}

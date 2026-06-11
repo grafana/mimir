@@ -363,31 +363,24 @@ else
 	@echo "If this is unexpected, check if the last modified timestamps on the outputs and $< are correct."
 endif
 
-# pkg/distributor/ha_tracker.proto is compiled by wiresmith. Unlike mimir.proto
-# its directory contains other (still gogo-compiled) protos, and wiresmith
-# eagerly compiles every .proto it finds under --proto_path, so the source is
-# staged into a scratch directory first (the same recipe wiresmith documents
-# for Tempo in FLAGS.md).
+# pkg/distributor/ha_tracker.proto is compiled by wiresmith. Passing the file
+# as a positional argument scopes compilation to it and its transitive imports,
+# so the still-gogo sibling protos in the directory are ignored. The flat
+# layout routes output under the proto package name ("distributor"), which
+# lines up with the target directory when --out points one level up.
 pkg/distributor/ha_tracker.pb.go \
 pkg/distributor/ha_tracker_compare.pb.go \
 pkg/distributor/ha_tracker_equal.pb.go \
 pkg/distributor/ha_tracker_reflect.pb.go &: pkg/distributor/ha_tracker.proto
 ifeq ($(GENERATE_FILES),true)
-	rm -rf .wiresmith-staging && mkdir -p .wiresmith-staging/in
-	cp pkg/distributor/ha_tracker.proto .wiresmith-staging/in/
-	cd .wiresmith-staging && wiresmith --proto_path=in --out=out --module=github.com/grafana/mimir
-	mv .wiresmith-staging/out/distributor/ha_tracker.pb.go pkg/distributor/ha_tracker.pb.go
-	mv .wiresmith-staging/out/distributor/ha_tracker_compare.pb.go pkg/distributor/ha_tracker_compare.pb.go
-	mv .wiresmith-staging/out/distributor/ha_tracker_equal.pb.go pkg/distributor/ha_tracker_equal.pb.go
-	mv .wiresmith-staging/out/distributor/ha_tracker_reflect.pb.go pkg/distributor/ha_tracker_reflect.pb.go
-	rm -rf .wiresmith-staging
+	wiresmith --proto_path=./pkg/distributor --out=./pkg --module=github.com/grafana/mimir pkg/distributor/ha_tracker.proto
 else
 	@echo "Warning: generating files has been disabled, but the following files need to be regenerated: $@"
 	@echo "If this is unexpected, check if the last modified timestamps on the outputs and $< are correct."
 endif
 
-# pkg/querier/stats/stats.proto is compiled by wiresmith (staged like
-# ha_tracker.proto above). It is still imported by gogo-compiled protos
+# pkg/querier/stats/stats.proto is compiled by wiresmith (positionally scoped
+# like ha_tracker.proto above). It is still imported by gogo-compiled protos
 # (querierpb, querymiddleware model, frontendv2pb); protoc resolves the
 # wiresmith/options.proto import via ./proto-include.
 pkg/querier/stats/stats.pb.go \
@@ -395,14 +388,7 @@ pkg/querier/stats/stats_compare.pb.go \
 pkg/querier/stats/stats_equal.pb.go \
 pkg/querier/stats/stats_reflect.pb.go &: pkg/querier/stats/stats.proto
 ifeq ($(GENERATE_FILES),true)
-	rm -rf .wiresmith-staging && mkdir -p .wiresmith-staging/in
-	cp pkg/querier/stats/stats.proto .wiresmith-staging/in/
-	cd .wiresmith-staging && wiresmith --proto_path=in --out=out --module=github.com/grafana/mimir
-	mv .wiresmith-staging/out/stats/stats.pb.go pkg/querier/stats/stats.pb.go
-	mv .wiresmith-staging/out/stats/stats_compare.pb.go pkg/querier/stats/stats_compare.pb.go
-	mv .wiresmith-staging/out/stats/stats_equal.pb.go pkg/querier/stats/stats_equal.pb.go
-	mv .wiresmith-staging/out/stats/stats_reflect.pb.go pkg/querier/stats/stats_reflect.pb.go
-	rm -rf .wiresmith-staging
+	wiresmith --proto_path=./pkg/querier/stats --out=./pkg/querier --module=github.com/grafana/mimir pkg/querier/stats/stats.proto
 else
 	@echo "Warning: generating files has been disabled, but the following files need to be regenerated: $@"
 	@echo "If this is unexpected, check if the last modified timestamps on the outputs and $< are correct."
