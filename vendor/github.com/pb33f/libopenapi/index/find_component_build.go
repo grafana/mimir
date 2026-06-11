@@ -47,6 +47,7 @@ func buildResolvedComponentReference(
 			HasSiblingProperties: source.HasSiblingProperties,
 			In:                   source.In,
 		}
+		ref.SourcePath = append([]string(nil), source.SourcePath...)
 		ref.ParentNodeTypes = append([]string(nil), source.ParentNodeTypes...)
 		ref.SiblingKeys = append([]*yaml.Node(nil), source.SiblingKeys...)
 		ref.SiblingProperties = cloneSiblingProperties(source.SiblingProperties)

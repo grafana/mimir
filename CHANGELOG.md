@@ -7,11 +7,18 @@
 * [CHANGE] Query-frontend: `-query-frontend.log-query-request-headers` now rejects headers that carry credentials or session material (e.g. `Authorization`, `Cookie`, `X-Api-Key`) at startup, and any such headers that reach the slow-query/query-stats log paths are redacted as defense in depth. Operators that previously allow-listed such headers must remove them from the flag. #15487
 * [CHANGE] Alertmanager: Upgraded the embedded `prometheus/alertmanager` library to v0.32.0. The per-tenant alertmanager web UI and the `/-/healthy`, `/-/ready`, `/-/reload`, `/script.js`, and `/favicon.ico` endpoints under the alertmanager prefix are no longer served because upstream removed the embeddable UI package. The v2 API endpoints and request/response shapes are unchanged, but a few error message strings from the upstream parser have been reformatted (for example, matcher-validation errors now include `in set N`). #15144
 * [CHANGE] Alertmanager: The `cortex_alertmanager_dispatcher_aggregation_group_limit_reached_total` counter is now best-effort under concurrent alert ingest. The upstream alertmanager v0.32.0 ingests alerts via worker goroutines and the group-limit check is a racy check-then-act, so the configured limit can be exceeded under burst load. #15144
+* [CHANGE] Querier: The experimental PromQL duration arithmetic helpers `min(...)` and `max(...)` used inside `[...]` range/subquery brackets and `offset` clauses have been renamed to `min_of(...)` and `max_of(...)`. #15593 #15603
+* [CHANGE] Querier, Store-gateway: Only send non-opaque GRPC types between queriers and store-gateways. Note that this change requires upgrading from Mimir 3.1. See associated release notes for more information. #15358
+* [CHANGE] Querier: Remove experimental MQE Projection Pushdown optimization pass and associated CLI flag `querier.mimir-query-engine.enable-projection-pushdown`. #15618
+* [CHANGE] Update Docker image bases from Debian 12 to Debian 13 (`gcr.io/distroless/static-debian13`; race images use `base-nossl-debian13`). #15629
 * [FEATURE] API: Add alertmanager limits (alertmanager_notification_rate_limit, alertmanager_max_dispatcher_aggregation_groups, alertmanager_max_templates_count) to the user limits API response. #15308
 * [FEATURE] Mimirtool: Add AWS Signature Version 4 (SigV4) support for shared Mimir API client commands including `mimirtool rules`, `mimirtool alertmanager`, `mimirtool alerts`, `mimirtool backfill`, and `mimirtool analyze ruler`. #14959
+* [FEATURE] Cost attribution: Support multiple named cost attribution trackers per tenant via new `additional_cost_attribution_trackers` config field. #15302
 * [FEATURE] MQE: Add `cortex_querier_inflight_query_max_age_seconds` metric reporting the age of the oldest in-flight query memory consumption tracker. #15300
 * [FEATURE] MQE: Add experimental support for splitting and caching `present_over_time` over range vectors in instant queries. #15386
 * [FEATURE] Query-scheduler: Add experimental `cortex_query_scheduler_inflight_max_age_seconds` metric reporting how long the oldest inflight request has been waiting since it was enqueued. Reports 0 when no requests are inflight. Enabled by default; can be disabled with `-query-scheduler.inflight-max-age-metric-enabled=false`. #15419
+* [FEATURE] Ingester: Add experimental early compaction of non-owned series. After a ring change, the ingester tracks series whose ownership shifted to another replica and flushes them into a block, evicting them from the TSDB head ahead of the regular head-compaction cycle. Eviction triggers when both (a) the in-memory series count exceeds the local threshold derived from `-ingester.early-head-compaction-owned-series-threshold` and the `-ingester.early-compaction-non-owned-series-min-grace-period` has elapsed, or (b) the `-ingester.early-compaction-non-owned-series-max-grace-period` has elapsed, regardless of the threshold. Disabled by default; enable with `-ingester.early-compaction-non-owned-series-enabled`. Requires `-ingester.track-ingester-owned-series` or `-ingester.use-ingester-owned-series-for-limits` to be enabled. Adds the `cortex_ingester_tsdb_early_compaction_non_owned_series_triggered_total` counter. #15314
+* [FEATURE] Ingester: Add experimental `cortex_ingester_tsdb_head_chunks_max_mmapped` gauge reporting the maximum, across all per-tenant TSDBs, of the maximum number of head chunks memory-mapped for any individual series during the last memory-mapping pass. Temporary measurement metric; will be removed once we have collected enough data. #15616
 * [ENHANCEMENT] Store-gateway, Ingester: Add read support for XOR2 chunk encoding. XOR2 is a new Prometheus TSDB encoding that provides better compression than XOR, particularly for stale markers. #15371
 * [ENHANCEMENT] MQE: Improve experimental support for reporting the number of samples read per query. #14838 #15179 #15191 #15220 #15223 #15232 #15237 #15255 #15276 #15282 #15285
 * [ENHANCEMENT] Distributor: Relabel middleware returns early if neither label dropping nor relabeling is configured. #15246
@@ -27,6 +34,7 @@
 * [ENHANCEMENT] Memberlist: Reduce per-call allocations on the compression and TCP state-sync receive paths via internal buffer pools. #15357
 * [ENHANCEMENT] Memberlist: Add `memberlist.processed-messages-queue-size` flag to set the size of the per-key internal queue for processing messages received from other nodes. Increasing this value may help to avoid dropping per-key updates when the node is processing many updates for the same key. #15536
 * [ENHANCEMENT] MQE: Respect the `Cache-Control: no-store` request header when caching intermediate results for range vector splitting. #15148
+* [BUGFIX] Query-frontend: Fix `cardinality_analysis_max_results` being ignored when set higher than the default of 500. #15581
 * [BUGFIX] Ingest storage: Fix `KafkaProducer.ProduceSync()` returning a single result with a nil record when the context is canceled, instead of one result per input record (with the record set) as the underlying franz-go client does. #15199
 * [BUGFIX] Ingest storage: Fix `cortex_ingest_storage_reader_receive_delay_seconds` inflation by no longer setting the Kafka record `Timestamp` on the distributor side; the Kafka client now sets it at produce time. #15572
 * [BUGFIX] Distributor: Return HTTP 200 with OTLP partial-success when only some samples in an OTLP request are rejected by distributor-level validation (e.g. `too_far_in_past`). #15253
@@ -36,6 +44,8 @@
 * [BUGFIX] Query-frontend: Fixed a memory leak caused that could occur on some error paths if MQE was enabled. #15392
 * [BUGFIX] MQE: Fix issue where subqueries unnecessarily compute and then discard an additional step if the parent query is not aligned to the step. #15438
 * [BUGFIX] Upgrade Go to 1.26.4 to address [CVE-2026-42507](https://pkg.go.dev/vuln/GO-2026-5039). #15566
+* [BUGFIX] Memcached: Disable TCP DNS connection pooling used for service discovery by default. #15573
+* [BUGFIX] Ingest storage: Fix `cortex_ingest_storage_writer_produce_records_enqueued_total` not being incremented when `KafkaProducer.ProduceSync()` rejects a batch because a record has its `Timestamp` set by the caller. #15610
 
 ### Mixin
 
@@ -50,7 +60,7 @@
 ### Jsonnet
 
 * [CHANGE] Query-frontend: Increase default query-frontend cache size limit to 25MB. #14857
-* [ENHANCEMENT] Updated rollout-operator jsonnet library to v0.37.0. #15328
+* [ENHANCEMENT] Updated rollout-operator jsonnet library to v0.38.0. #15328, #15626
 
 ### Documentation
 

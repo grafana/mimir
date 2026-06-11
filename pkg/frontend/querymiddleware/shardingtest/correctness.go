@@ -800,6 +800,8 @@ func testQueryShardingFunctionCorrectness(t *testing.T, runTestCase functionCorr
 
 	fnToIgnore := map[string]struct{}{
 		"end":    {},
+		"max_of": {},
+		"min_of": {},
 		"pi":     {},
 		"range":  {},
 		"scalar": {},

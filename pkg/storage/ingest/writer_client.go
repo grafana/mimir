@@ -277,7 +277,11 @@ func (c *KafkaProducer) ProduceSync(ctx context.Context, records []*kgo.Record) 
 	// use a Kafka record header instead.
 	for _, record := range records {
 		if !record.Timestamp.IsZero() {
-			c.produceRecordsFailedTotal.WithLabelValues("record-timestamp-set").Add(float64(len(records)))
+			recordsCount := float64(len(records))
+
+			c.produceRecordsEnqueuedTotal.Add(recordsCount)
+			c.produceRecordsFailedTotal.WithLabelValues("record-timestamp-set").Add(recordsCount)
+
 			return newFailedProduceResultsFromRecords(records, errors.New("Kafka record Timestamp must not be set by the caller; it is reserved for the Kafka client to track produce time"))
 		}
 	}

@@ -83,7 +83,7 @@ func main() {
 	cfg.MemberlistKV.Codecs = append(cfg.MemberlistKV.Codecs, ring.GetCodec())
 	cfg.MemberlistKV.Codecs = append(cfg.MemberlistKV.Codecs, ring.GetPartitionRingCodec())
 
-	dnsProvider := dns.NewProvider(logger, prometheus.DefaultRegisterer, dns.GolangResolverType)
+	dnsProvider := dns.NewProvider(dns.GolangResolverType, 0, logger, prometheus.DefaultRegisterer)
 	memberlistKV := memberlist.NewKVInitService(&cfg.MemberlistKV, logger, dnsProvider, prometheus.DefaultRegisterer)
 	assertNoError(services.StartAndAwaitRunning(ctx, memberlistKV))
 

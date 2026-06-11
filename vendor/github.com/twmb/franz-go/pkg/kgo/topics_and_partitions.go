@@ -657,9 +657,13 @@ func (old *topicPartition) migrateCursorTo( //nolint:revive // old/new naming ma
 	// leader epoch on the new broker to see if we experienced data loss
 	// before we can use this cursor.
 	//
-	// Metadata ensures that leaderEpoch is non-negative only if the broker
-	// supports KIP-320.
-	if new.leaderEpoch != -1 && old.cursor.lastConsumedEpoch >= 0 {
+	// We can only validate against a real (non-negative) leader epoch.
+	// Metadata reports a non-negative epoch only if the broker supports
+	// KIP-320, and the metadata merge keeps our last known real epoch
+	// rather than ever migrating us to the -1 "no leader" sentinel (see
+	// mergeTopicPartitions), so a negative epoch here means we genuinely
+	// have nothing to validate against and must skip validation.
+	if new.leaderEpoch >= 0 && old.cursor.lastConsumedEpoch >= 0 {
 		// Since the cursor consumed messages, it is definitely usable.
 		// We use it so that the epoch load can finish using it
 		// properly.

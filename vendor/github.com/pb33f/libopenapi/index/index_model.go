@@ -40,6 +40,7 @@ type Reference struct {
 	Index                 *SpecIndex            `json:"-"`                        // index that contains this reference.
 	RemoteLocation        string                `json:"remoteLocation,omitempty"`
 	Path                  string                `json:"path,omitempty"`               // this won't always be available.
+	SourcePath            []string              `json:"-"`                            // OpenAPI path to the source $ref location.
 	RequiredRefProperties map[string][]string   `json:"requiredProperties,omitempty"` // definition names (eg, #/definitions/One) to a list of required properties on this definition which reference that definition
 	HasSiblingProperties  bool                  `json:"-"`                            // indicates if ref has sibling properties
 	SiblingProperties     map[string]*yaml.Node `json:"-"`                            // stores sibling property nodes

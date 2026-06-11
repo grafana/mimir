@@ -767,6 +767,18 @@ func (cl *Client) doPartition(parts *topicPartitions, partsData *topicPartitions
 	mapping := partsData.writablePartitions
 	if parts.partitioner.RequiresConsistency(pr.Record) {
 		mapping = partsData.partitions
+	} else if len(mapping) == 0 && len(partsData.partitions) > 0 {
+		// Every partition has a retriable load error, e.g. a rolling
+		// restart of an RF=1 broker briefly left all partitions
+		// leaderless. Rather than failing the record up front with
+		// the synthetic error below, fall back to the full set: the
+		// record buffers and rides the normal metadata-refresh retry
+		// path, the same as records on consistency-requiring
+		// partitioners via the branch above. If the outage outlasts
+		// the delivery timeout or retry limits, the record fails
+		// with the partition's actual load error. The Java client
+		// falls back identically when no partition is available.
+		mapping = partsData.partitions
 	}
 	if len(mapping) == 0 {
 		cl.producer.promiseRecord(pr, errors.New("unable to partition record due to no usable partitions"))

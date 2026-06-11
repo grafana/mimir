@@ -14,13 +14,9 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
-	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/atomic"
-
-	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
 )
 
 const (
@@ -36,54 +32,8 @@ var (
 	ErrQuerierWorkerDisconnected = errors.New("querier worker has disconnected")
 )
 
-type RequestKey struct {
-	frontendAddr string
-	queryID      uint64
-}
-
-func NewSchedulerRequestKey(frontendAddr string, queryID uint64) RequestKey {
-	return RequestKey{
-		frontendAddr: frontendAddr,
-		queryID:      queryID,
-	}
-}
-
-type SchedulerRequest struct {
-	FrontendAddr              string
-	UserID                    string
-	QueryID                   uint64
-	HttpRequest               *httpgrpc.HTTPRequest
-	ProtobufRequest           *schedulerpb.ProtobufRequest
-	StatsEnabled              bool
-	AdditionalQueueDimensions []string
-
-	EnqueueTime time.Time
-
-	Ctx        context.Context
-	CancelFunc context.CancelCauseFunc
-	QueueSpan  trace.Span
-
-	ParentSpanContext trace.SpanContext
-}
-
-func (sr *SchedulerRequest) Key() RequestKey {
-	return RequestKey{
-		frontendAddr: sr.FrontendAddr,
-		queryID:      sr.QueryID,
-	}
-}
-
-// ExpectedQueryComponentName parses the expected query component from annotations by the frontend.
-func (sr *SchedulerRequest) ExpectedQueryComponentName() string {
-	if len(sr.AdditionalQueueDimensions) > 0 {
-		return sr.AdditionalQueueDimensions[0]
-	}
-	return unknownQueueDimension
-}
-
-// QueryRequest represents the items stored in the queue
-// which may be a SchedulerRequest when running with the standalone scheduler process,
-// or a frontend/v1 request when running with the RequestQueue embedded in the v1 frontend.
+// QueryRequest is the opaque type the queue dispatches between producers and
+// consumers. Callers cast to the concrete type they enqueued.
 type QueryRequest interface{}
 
 // RequestQueue holds incoming requests in queues, split by multiple dimensions based on properties of the request.
@@ -121,17 +71,10 @@ type RequestQueue struct {
 	stopCompleted chan struct{} // Closed by dispatcherLoop() after a stop is requested and the dispatcher has stopped.
 
 	requestsToEnqueue                     chan requestToEnqueue
-	requestsSent                          chan *SchedulerRequest
-	requestsCompleted                     chan *SchedulerRequest
 	querierWorkerOperations               chan *querierWorkerOperation
 	waitingDequeueRequests                chan *QuerierWorkerDequeueRequest
 	waitingDequeueRequestsToDispatch      *list.List
 	waitingDequeueRequestsToDispatchCount *atomic.Int64
-
-	// QueryComponentUtilization encapsulates tracking requests from the time they are forwarded to a querier
-	// to the time are completed by the querier or failed due to cancel, timeout, or disconnect.
-	// Unlike schedulerInflightRequests, tracking begins only when the request is sent to a querier.
-	QueryComponentUtilization *QueryComponentUtilization
 
 	queueBroker *queueBroker
 }
@@ -205,11 +148,12 @@ func (qwo *querierWorkerOperation) AwaitQuerierWorkerConnUpdate() error {
 }
 
 type requestToEnqueue struct {
-	tenantID    string
-	req         QueryRequest
-	maxQueriers int
-	successFn   func()
-	errChan     chan error
+	tenantID       string
+	queueDimension string
+	req            QueryRequest
+	maxQueriers    int
+	successFn      func()
+	errChan        chan error
 }
 
 func NewRequestQueue(
@@ -219,13 +163,7 @@ func NewRequestQueue(
 	queueLength *prometheus.GaugeVec,
 	discardedRequests *prometheus.CounterVec,
 	enqueueDuration prometheus.Histogram,
-	querierInflightRequestsMetric *prometheus.SummaryVec,
 ) (*RequestQueue, error) {
-	queryComponentCapacity, err := NewQueryComponentUtilization(querierInflightRequestsMetric)
-	if err != nil {
-		return nil, err
-	}
-
 	q := &RequestQueue{
 		// settings
 		log:                     log,
@@ -243,15 +181,12 @@ func NewRequestQueue(
 		stopCompleted: make(chan struct{}),
 
 		requestsToEnqueue:                     make(chan requestToEnqueue),
-		requestsSent:                          make(chan *SchedulerRequest),
-		requestsCompleted:                     make(chan *SchedulerRequest),
 		querierWorkerOperations:               make(chan *querierWorkerOperation),
 		waitingDequeueRequests:                make(chan *QuerierWorkerDequeueRequest),
 		waitingDequeueRequestsToDispatch:      list.New(),
 		waitingDequeueRequestsToDispatchCount: atomic.NewInt64(0),
 
-		QueryComponentUtilization: queryComponentCapacity,
-		queueBroker:               newQueueBroker(maxOutstandingPerTenant, forgetDelay),
+		queueBroker: newQueueBroker(maxOutstandingPerTenant, forgetDelay),
 	}
 
 	q.Service = services.NewBasicService(q.starting, q.running, q.stop).WithName("request queue")
@@ -271,18 +206,10 @@ func (q *RequestQueue) running(ctx context.Context) error {
 	forgetDisconnectedQueriersTicker := time.NewTicker(forgetCheckPeriod)
 	defer forgetDisconnectedQueriersTicker.Stop()
 
-	// periodically submit a message to dispatcherLoop to observe inflight requests;
-	// same as scheduler, we observe inflight requests frequently and at regular intervals
-	// to have a good approximation of max inflight requests over percentiles of time.
-	inflightRequestsTicker := time.NewTicker(250 * time.Millisecond)
-	defer inflightRequestsTicker.Stop()
-
 	for {
 		select {
 		case <-forgetDisconnectedQueriersTicker.C:
 			q.submitForgetDisconnectedQueriers(ctx)
-		case <-inflightRequestsTicker.C:
-			q.QueryComponentUtilization.ObserveInflightRequests()
 		case <-ctx.Done():
 			// context done case serves as a default case to bail out
 			// if the waiting querier-worker connection's context times out or is canceled,
@@ -389,8 +316,9 @@ func (q *RequestQueue) dispatcherLoop() {
 // If request is enqueued successFn is called before the request can be dispatched to a querier.
 func (q *RequestQueue) enqueueRequestInternal(r requestToEnqueue) error {
 	tr := tenantRequest{
-		tenantID: r.tenantID,
-		req:      r.req,
+		tenantID:       r.tenantID,
+		queueDimension: r.queueDimension,
+		req:            r.req,
 	}
 	err := q.queueBroker.enqueueRequestBack(&tr, r.maxQueriers)
 	if err != nil {
@@ -459,20 +387,24 @@ func (q *RequestQueue) trySendNextRequestForQuerier(dequeueReq *QuerierWorkerDeq
 // If request is successfully enqueued, successFn is called before any querier can receive the request.
 // Returns error if any occurred during enqueuing, or if the RequestQueue service stopped before enqueuing the request.
 //
+// queueDimension is the first-layer queue dimension to file the request under (e.g. a query component name).
+// An empty string is treated as the "unknown" dimension.
+//
 // maxQueriers is tenant-specific value to compute which queriers should handle requests for this tenant.
 // It is passed to SubmitRequestToEnqueue because the value can change between calls.
-func (q *RequestQueue) SubmitRequestToEnqueue(tenantID string, req QueryRequest, maxQueriers int, successFn func()) error {
+func (q *RequestQueue) SubmitRequestToEnqueue(tenantID string, req QueryRequest, queueDimension string, maxQueriers int, successFn func()) error {
 	start := time.Now()
 	defer func() {
 		q.enqueueDuration.Observe(time.Since(start).Seconds())
 	}()
 
 	r := requestToEnqueue{
-		tenantID:    tenantID,
-		req:         req,
-		maxQueriers: maxQueriers,
-		successFn:   successFn,
-		errChan:     make(chan error),
+		tenantID:       tenantID,
+		queueDimension: queueDimension,
+		req:            req,
+		maxQueriers:    maxQueriers,
+		successFn:      successFn,
+		errChan:        make(chan error),
 	}
 
 	select {

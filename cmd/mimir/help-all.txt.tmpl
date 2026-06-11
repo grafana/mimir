@@ -437,6 +437,10 @@ Usage of ./cmd/mimir/mimir:
     	Maximum number of sub-GetRange requests that a single GetRange request can be split into when fetching chunks. Zero or negative value = unlimited number of sub-requests. (default 3)
   -blocks-storage.bucket-store.chunks-cache.memcached.addresses comma-separated-list-of-strings
     	Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.
+  -blocks-storage.bucket-store.chunks-cache.memcached.addresses-lookup-period duration
+    	How often each address is resolved to an IP address or list of host names. (default 30s)
+  -blocks-storage.bucket-store.chunks-cache.memcached.addresses-lookup-pool-size uint
+    	How many idle connections to the DNS resolver are kept open. 0 disables keeping any idle connections open.
   -blocks-storage.bucket-store.chunks-cache.memcached.connect-timeout duration
     	The connection timeout. (default 200ms)
   -blocks-storage.bucket-store.chunks-cache.memcached.max-async-buffer-size int
@@ -485,6 +489,10 @@ Usage of ./cmd/mimir/mimir:
     	Maximum size in bytes of in-memory index cache used to speed up blocks index lookups (shared between all tenants). (default 1073741824)
   -blocks-storage.bucket-store.index-cache.memcached.addresses comma-separated-list-of-strings
     	Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.
+  -blocks-storage.bucket-store.index-cache.memcached.addresses-lookup-period duration
+    	How often each address is resolved to an IP address or list of host names. (default 30s)
+  -blocks-storage.bucket-store.index-cache.memcached.addresses-lookup-pool-size uint
+    	How many idle connections to the DNS resolver are kept open. 0 disables keeping any idle connections open.
   -blocks-storage.bucket-store.index-cache.memcached.connect-timeout duration
     	The connection timeout. (default 200ms)
   -blocks-storage.bucket-store.index-cache.memcached.max-async-buffer-size int
@@ -519,6 +527,8 @@ Usage of ./cmd/mimir/mimir:
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -blocks-storage.bucket-store.index-cache.memcached.tls-server-name string
     	Override the expected name on the server certificate.
+  -blocks-storage.bucket-store.index-header-cache.attributes-in-memory-max-items int
+    	[experimental] Maximum number of individual attributes items to keep in a first level in-memory LRU cache. Attributes will be stored and fetched in-memory before hitting the cache backend. 0 to disable the in-memory cache. (default 10000)
   -blocks-storage.bucket-store.index-header-cache.attributes-ttl duration
     	[experimental] TTL for caching object attributes of the block index for the index-header reader.  If the metadata cache is configured, attributes will be stored in the metadata cache backend, otherwise attributes are stored in the index-header cache backend. (default 168h0m0s)
   -blocks-storage.bucket-store.index-header-cache.backend string
@@ -527,6 +537,10 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Maximum number of sub-GetRange requests that a single GetRange request can be split into when fetching index-header ranges. Zero or negative value = unlimited number of sub-requests. (default 3)
   -blocks-storage.bucket-store.index-header-cache.memcached.addresses comma-separated-list-of-strings
     	Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.
+  -blocks-storage.bucket-store.index-header-cache.memcached.addresses-lookup-period duration
+    	How often each address is resolved to an IP address or list of host names. (default 30s)
+  -blocks-storage.bucket-store.index-header-cache.memcached.addresses-lookup-pool-size uint
+    	How many idle connections to the DNS resolver are kept open. 0 disables keeping any idle connections open.
   -blocks-storage.bucket-store.index-header-cache.memcached.connect-timeout duration
     	The connection timeout. (default 200ms)
   -blocks-storage.bucket-store.index-header-cache.memcached.max-async-buffer-size int
@@ -599,6 +613,10 @@ Usage of ./cmd/mimir/mimir:
     	How long to cache list of chunks for a block. (default 24h0m0s)
   -blocks-storage.bucket-store.metadata-cache.memcached.addresses comma-separated-list-of-strings
     	Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.
+  -blocks-storage.bucket-store.metadata-cache.memcached.addresses-lookup-period duration
+    	How often each address is resolved to an IP address or list of host names. (default 30s)
+  -blocks-storage.bucket-store.metadata-cache.memcached.addresses-lookup-pool-size uint
+    	How many idle connections to the DNS resolver are kept open. 0 disables keeping any idle connections open.
   -blocks-storage.bucket-store.metadata-cache.memcached.connect-timeout duration
     	The connection timeout. (default 200ms)
   -blocks-storage.bucket-store.metadata-cache.memcached.max-async-buffer-size int
@@ -1673,6 +1691,12 @@ Usage of ./cmd/mimir/mimir:
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -ingester.client.tls-server-name string
     	Override the expected name on the server certificate.
+  -ingester.early-compaction-non-owned-series-enabled
+    	[experimental] When enabled, the ingester triggers an early TSDB head compaction for series that are no longer owned by the ingester after a ring change. Requires -ingester.track-ingester-owned-series or -ingester.use-ingester-owned-series-for-limits to be enabled.
+  -ingester.early-compaction-non-owned-series-max-grace-period duration
+    	[experimental] Maximum time a series may remain non-owned before it is evicted, regardless of the owned-series threshold. This ensures eventual eviction even for tenants below their threshold. A value of 0 disables the maximum grace period, so eviction depends solely on the owned-series threshold. (default 5m0s)
+  -ingester.early-compaction-non-owned-series-min-grace-period duration
+    	[experimental] Minimum time a series must remain non-owned before it can be evicted when the local owned-series threshold is exceeded. New non-owned series reset the timer. A value of 0 evicts immediately. A per-replica startup jitter spreads evictions across replicas. (default 30s)
   -ingester.early-head-compaction-min-estimated-series-reduction-percentage int
     	[experimental] Minimum estimated series reduction percentage (0-100) required to trigger per-tenant early compaction. (default 15)
   -ingester.early-head-compaction-owned-series-threshold int
@@ -2289,8 +2313,6 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Enable computing multiple aggregations over the same data without buffering. Requires common subexpression elimination to be enabled. (default true)
   -querier.mimir-query-engine.enable-narrow-binary-selectors
     	[experimental] Enable generating selectors for one side of a binary expression based on results from the other side.
-  -querier.mimir-query-engine.enable-projection-pushdown
-    	[experimental] Enable projection pushdown to only fetch labels required for the query from storage.
   -querier.mimir-query-engine.enable-prune-toggles
     	[experimental] Enable pruning query expressions that are toggled off with constants. (default true)
   -querier.mimir-query-engine.enable-range-query-range-vector-common-subexpression-elimination
@@ -2309,6 +2331,10 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Enable splitting function over range vectors queries into smaller blocks for caching.
   -querier.mimir-query-engine.range-vector-splitting.memcached.addresses comma-separated-list-of-strings
     	Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.
+  -querier.mimir-query-engine.range-vector-splitting.memcached.addresses-lookup-period duration
+    	How often each address is resolved to an IP address or list of host names. (default 30s)
+  -querier.mimir-query-engine.range-vector-splitting.memcached.addresses-lookup-pool-size uint
+    	How many idle connections to the DNS resolver are kept open. 0 disables keeping any idle connections open.
   -querier.mimir-query-engine.range-vector-splitting.memcached.connect-timeout duration
     	The connection timeout. (default 200ms)
   -querier.mimir-query-engine.range-vector-splitting.memcached.max-async-buffer-size int
@@ -2667,6 +2693,10 @@ Usage of ./cmd/mimir/mimir:
     	Enable cache compression, if not empty. Supported values are: snappy.
   -query-frontend.results-cache.memcached.addresses comma-separated-list-of-strings
     	Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.
+  -query-frontend.results-cache.memcached.addresses-lookup-period duration
+    	How often each address is resolved to an IP address or list of host names. (default 30s)
+  -query-frontend.results-cache.memcached.addresses-lookup-pool-size uint
+    	How many idle connections to the DNS resolver are kept open. 0 disables keeping any idle connections open.
   -query-frontend.results-cache.memcached.connect-timeout duration
     	The connection timeout. (default 200ms)
   -query-frontend.results-cache.memcached.max-async-buffer-size int
@@ -2885,6 +2915,10 @@ Usage of ./cmd/mimir/mimir:
     	Backend for ruler storage cache, if not empty. The cache is supported for any storage backend except "local". Supported values: memcached.
   -ruler-storage.cache.memcached.addresses comma-separated-list-of-strings
     	Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.
+  -ruler-storage.cache.memcached.addresses-lookup-period duration
+    	How often each address is resolved to an IP address or list of host names. (default 30s)
+  -ruler-storage.cache.memcached.addresses-lookup-pool-size uint
+    	How many idle connections to the DNS resolver are kept open. 0 disables keeping any idle connections open.
   -ruler-storage.cache.memcached.connect-timeout duration
     	The connection timeout. (default 200ms)
   -ruler-storage.cache.memcached.max-async-buffer-size int
@@ -3649,6 +3683,8 @@ Usage of ./cmd/mimir/mimir:
     	Installation mode. Supported values: custom, helm, jsonnet. (default "custom")
   -validation.cost-attribution-cooldown duration
     	[experimental] Defines how long cost attribution stays in overflow before attempting a reset, with received/discarded samples extending the cooldown if overflow persists, while active series reset and restart tracking after the cooldown.
+  -validation.cost-attribution-trackers value
+    	[experimental] Base cost attribution trackers configuration as JSON. Each tracker defines labels to track for cost attribution. Example: '{"by-team":{"labels":[{"input":"team"}]}}'.
   -validation.create-grace-period duration
     	Controls how far into the future incoming samples and exemplars are accepted compared to the wall clock. Any sample or exemplar will be rejected if its timestamp is greater than '(now + creation_grace_period)'. This configuration is enforced in the distributor and ingester. (default 10m)
   -validation.enforce-metadata-metric-name

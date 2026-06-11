@@ -307,7 +307,7 @@ func (c *Config) Validate(log log.Logger) error {
 	if err := c.IngesterClient.Validate(); err != nil {
 		return errors.Wrap(err, "invalid ingester_client config")
 	}
-	if err := c.Ingester.Validate(log); err != nil {
+	if err := c.Ingester.Validate(); err != nil {
 		// We check for "ingester" module here because, as of today, its config has a special mode, that assumes
 		// passing a unique set of per instance flags, e.g. "-ingester.ring.instance-id".
 		// Such a scenario breaks the validation of other modules if those flags aren't also passed to each instance (ref

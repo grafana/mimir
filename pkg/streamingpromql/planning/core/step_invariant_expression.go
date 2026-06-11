@@ -46,16 +46,6 @@ func (s *StepInvariantExpression) MinimumRequiredPlanVersion(types.QueryTimeRang
 	return planning.QueryPlanV1, nil
 }
 
-func (s *StepInvariantExpression) SetChildren(children []planning.Node) error {
-	if len(children) != 1 {
-		return fmt.Errorf("node of type StepInvariantExpression expects 1 child, but got %d", len(children))
-	}
-
-	s.Inner = children[0]
-
-	return nil
-}
-
 func (s *StepInvariantExpression) ReplaceChild(idx int, node planning.Node) error {
 	if idx != 0 {
 		return fmt.Errorf("node of type StepInvariantExpression supports 1 child, but attempted to replace child at index %d", idx)

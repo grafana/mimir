@@ -1365,13 +1365,22 @@ func TestEngineQueryFunc_ClosesQueryAndPreservesResult(t *testing.T) {
 	`), "cortex_querier_inflight_query_sampled_count"))
 }
 
-// TestEngineQueryFunc_VendoredEngineQueryFuncLeaks is a control test that
-// documents the bug we are fixing: rules.EngineQueryFunc (the vendored
-// Prometheus helper) does not Close the Query, so the Mimir streaming engine's
+// TestEngineQueryFunc_VendoredEngineQueryFuncClosesQuery is a control test
+// pinning the behaviour of the vendored rules.EngineQueryFunc: it MUST Close
+// the Query after each evaluation, otherwise the Mimir streaming engine's
 // InflightMemoryConsumptionTracker leaks an entry per successful evaluation.
-// If this test ever stops failing the leak source is gone upstream and
-// EngineQueryFunc in this package can be retired.
-func TestEngineQueryFunc_VendoredEngineQueryFuncLeaks(t *testing.T) {
+//
+// Upstream (prometheus/prometheus) fixed this in
+// vendor/.../rules/manager.go by adding `defer q.Close()`, so the gauge
+// should now read 0. If this assertion ever fails, a future vendor bump has
+// reintroduced the leak — restore the close before shipping.
+//
+// Closing the Query is only one of two reasons ruler.EngineQueryFunc exists.
+// The other (deep-copying pooled Vector/label/FloatHistogram memory before
+// Close returns it to internal pools) is guarded by
+// TestCopyVector_DeepCopiesFloatHistogram. The wrapper can be retired only
+// when both guards remain green without it.
+func TestEngineQueryFunc_VendoredEngineQueryFuncClosesQuery(t *testing.T) {
 	opts := streamingpromql.NewTestEngineOpts()
 	// Pedantic mode panics on Close if memory accounting is non-zero. We never
 	// call Close here, so disable it to keep the test focused on the leak count.
@@ -1399,9 +1408,9 @@ func TestEngineQueryFunc_VendoredEngineQueryFuncLeaks(t *testing.T) {
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 		# HELP cortex_querier_inflight_query_sampled_count Number of in-flight memory consumption trackers accumulated during the last metrics collection.
 		# TYPE cortex_querier_inflight_query_sampled_count gauge
-		cortex_querier_inflight_query_sampled_count 1
+		cortex_querier_inflight_query_sampled_count 0
 	`), "cortex_querier_inflight_query_sampled_count"),
-		"if this assertion fails, vendored rules.EngineQueryFunc now closes its Query — ruler.EngineQueryFunc may be redundant")
+		"if this assertion fails, vendored rules.EngineQueryFunc has stopped closing its Query — restore the close before shipping, or ruler.EngineQueryFunc will once again be load-bearing for the leak fix")
 }
 
 // TestCopyVector_DeepCopiesFloatHistogram ensures the wrapper deep copies

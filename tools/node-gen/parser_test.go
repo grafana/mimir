@@ -70,6 +70,7 @@ func TestParser_FieldTags(t *testing.T) {
 			Inner    planning.Node   ` + "`" + `node:"child"` + "`" + `
 			Param    planning.Node   ` + "`" + `node:"child,nilable"` + "`" + `
 			Args     []planning.Node ` + "`" + `node:"children"` + "`" + `
+			Bounded  []planning.Node ` + "`" + `node:"children,min=1"` + "`" + `
 			Untagged int
 			*Embedded
 		}`})
@@ -77,7 +78,7 @@ func TestParser_FieldTags(t *testing.T) {
 
 	require.Len(t, pkg.NodeStructs, 1)
 	fields := pkg.NodeStructs[0].Fields
-	require.Len(t, fields, 5)
+	require.Len(t, fields, 6)
 
 	require.Equal(t, "Inner", fields[0].Name)
 	require.Equal(t, &NodeTag{IsChild: true}, fields[0].Tag)
@@ -88,11 +89,14 @@ func TestParser_FieldTags(t *testing.T) {
 	require.Equal(t, "Args", fields[2].Name)
 	require.Equal(t, &NodeTag{IsChildren: true}, fields[2].Tag)
 
-	require.Equal(t, "Untagged", fields[3].Name)
-	require.Nil(t, fields[3].Tag)
+	require.Equal(t, "Bounded", fields[3].Name)
+	require.Equal(t, &NodeTag{IsChildren: true, Min: 1}, fields[3].Tag)
 
-	require.True(t, fields[4].Embedded)
-	require.Equal(t, "", fields[4].Name)
+	require.Equal(t, "Untagged", fields[4].Name)
+	require.Nil(t, fields[4].Tag)
+
+	require.True(t, fields[5].Embedded)
+	require.Equal(t, "", fields[5].Name)
 }
 
 func TestParser_BadTag(t *testing.T) {
@@ -114,6 +118,20 @@ func TestParser_BadTag(t *testing.T) {
 					 //node:generate
 					 type S struct{ X int ` + "`" + `node:"child,bogus"` + "`" + ` }`,
 			errContains: `unknown child tag option "bogus"`,
+		},
+		{
+			name: "unknown children option",
+			source: `package core
+					 //node:generate
+					 type S struct{ X []int ` + "`" + `node:"children,bogus"` + "`" + ` }`,
+			errContains: `unknown children tag option "bogus"`,
+		},
+		{
+			name: "invalid children min",
+			source: `package core
+					 //node:generate
+					 type S struct{ X []int ` + "`" + `node:"children,min=abc"` + "`" + ` }`,
+			errContains: `invalid children min value "abc"`,
 		},
 	}
 
