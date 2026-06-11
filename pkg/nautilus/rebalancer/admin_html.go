@@ -134,6 +134,15 @@ details>summary::-webkit-details-marker{display:none}
 	<div class="legend-item"><div class="legend-swatch act-reassign"></div> Reassign</div>
 </div>
 
+<h2>Metric hash range lookup</h2>
+<form method="GET" action="{{.AdminPathPrefix}}/metric" style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">
+	<input type="text" name="user" placeholder="tenant ID" required style="padding:4px 8px;border:1px solid #ccc;border-radius:4px;font-size:12px;width:110px">
+	<input type="text" name="metric" placeholder="metric name (e.g. up)" required style="padding:4px 8px;border:1px solid #ccc;border-radius:4px;font-size:12px;width:280px">
+	<input type="text" name="window" placeholder="window (default 15m)" style="padding:4px 8px;border:1px solid #ccc;border-radius:4px;font-size:12px;width:140px">
+	<button type="submit" style="background:#e7f5ff;color:#1971c2;border:1px solid #1971c2;border-radius:4px;padding:4px 10px;font-size:12px;cursor:pointer;font-weight:600">Resolve</button>
+	<span style="font-size:11px;color:#666">Shows the metric's locality hash range, the assignment-log tiles it overlaps over the window, and the partitions + readcache owners a query would fan out to. Append &amp;format=json for machine output.</span>
+</form>
+
 <h2>Partitions (click to expand ranges)</h2>
 <div class="partitions">
 {{range .Partitions}}

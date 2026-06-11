@@ -661,6 +661,8 @@ func (r *Rebalancer) buildReadcacheReplicaViews() []readcacheReplicaView {
 //	GET  /rounds.json            → list of recent round summaries
 //	GET  /rounds/{idx}.json      → full Trace for one round
 //	                               (idx 0 = newest, up to maxRoundLogs-1)
+//	GET  /metric                 → metric-name hash range lookup tool
+//	                               (?user=&metric=[&window=][&format=json])
 //	POST /readcache/reset        → force an even-split
 //	                               (partition -> readcache) assignment
 //
@@ -683,6 +685,8 @@ func (r *Rebalancer) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	case strings.HasPrefix(sub, "/rounds/") && strings.HasSuffix(sub, ".json"):
 		idxStr := strings.TrimSuffix(strings.TrimPrefix(sub, "/rounds/"), ".json")
 		r.serveRoundTrace(w, idxStr)
+	case sub == "/metric":
+		r.serveMetricLookup(w, req)
 	case sub == "/readcache/reset":
 		r.serveReadcacheReset(w, req)
 	default:
