@@ -13,7 +13,12 @@ package cortexpb;
 import "wiresmith/options.proto";
 
 option go_package = "github.com/grafana/mimir/pkg/mimirpb";
-
+// gogoproto generated unprefixed enum constants (goproto_enum_prefix=false
+// default in Mimir's gogo setup); keep that API. Histogram.ResetHint opts
+// back into prefixed constants below, matching its explicit
+// goproto_enum_prefix=true under gogo (bare UNKNOWN/GAUGE would collide with
+// MetricMetadata.MetricType at package scope).
+option (wiresmith.options.enum_no_prefix_all) = true;
 // Note: gogoproto.marshaler_all / unmarshaler_all are unnecessary under
 // wiresmith — Marshal/Unmarshal methods are always emitted.
 
@@ -145,9 +150,11 @@ message Histogram {
     // These values are based on CounterResetHint from https://github.com/prometheus/prometheus/blob/main/model/histogram/histogram.go.
     // The values must remain in sync with the constants defined there.
     //
-    // wiresmith prefixes nested enum constants with the parent message name
-    // (Histogram_UNKNOWN, ...), which matches what gogoproto generated here
-    // under goproto_enum_prefix = true.
+    // Keep prefixed constants (Histogram_UNKNOWN, ...) — matches gogoproto's
+    // explicit goproto_enum_prefix = true here, and bare UNKNOWN/GAUGE would
+    // collide with MetricMetadata.MetricType.
+    option (wiresmith.options.enum_no_prefix) = false;
+
     UNKNOWN = 0; // Need to test for a counter reset explicitly.
     YES = 1; // This is the 1st histogram after a counter reset.
     NO = 2; // There was no counter reset between this and the previous Histogram.
