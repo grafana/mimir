@@ -4187,7 +4187,7 @@ func (m *WriteRequest) unmarshal(dAtA []byte, depth int) error {
 	}
 	l := len(dAtA)
 	iNdEx := 0
-	if l >= 256 {
+	if l >= 256 && !m.unmarshalFromRW2 { // RW2 mode discards the pre-scan counts (symbols paged, field5 prealloc ~0 benefit); skip the walk.
 		var preIdx int
 		var field1count int
 		var field3count int
