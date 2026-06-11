@@ -4812,6 +4812,39 @@
           "fieldCategory": "experimental"
         },
         {
+          "kind": "field",
+          "name": "early_compaction_non_owned_series_enabled",
+          "required": false,
+          "desc": "When enabled, the ingester triggers an early TSDB head compaction for series that are no longer owned by the ingester after a ring change. Requires -ingester.track-ingester-owned-series or -ingester.use-ingester-owned-series-for-limits to be enabled.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "ingester.early-compaction-non-owned-series-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "early_compaction_non_owned_series_min_grace_period",
+          "required": false,
+          "desc": "Minimum time a series must remain non-owned before it can be evicted when the local owned-series threshold is exceeded. New non-owned series reset the timer. A value of 0 evicts immediately. A per-replica startup jitter spreads evictions across replicas.",
+          "fieldValue": null,
+          "fieldDefaultValue": 30000000000,
+          "fieldFlag": "ingester.early-compaction-non-owned-series-min-grace-period",
+          "fieldType": "duration",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "early_compaction_non_owned_series_max_grace_period",
+          "required": false,
+          "desc": "Maximum time a series may remain non-owned before it is evicted, regardless of the owned-series threshold. This ensures eventual eviction even for tenants below their threshold. A value of 0 disables the maximum grace period, so eviction depends solely on the owned-series threshold.",
+          "fieldValue": null,
+          "fieldDefaultValue": 300000000000,
+          "fieldFlag": "ingester.early-compaction-non-owned-series-max-grace-period",
+          "fieldType": "duration",
+          "fieldCategory": "experimental"
+        },
+        {
           "kind": "block",
           "name": "push_circuit_breaker",
           "required": false,
