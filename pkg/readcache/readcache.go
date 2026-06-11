@@ -101,6 +101,20 @@ type Readcache struct {
 	// the producer side.
 	samplesIngestedTotal *prometheus.CounterVec
 
+	// ingestedSamples mirrors cortex_ingester_ingested_samples_total:
+	// per-user successfully-appended samples (SucceededSamplesCount,
+	// i.e. excluding soft-rejected samples, unlike
+	// samplesIngestedTotal which counts Kafka arrivals). Exists so
+	// readcache ingestion can be lined up 1:1 against the old-world
+	// ingester counter for correctness verification.
+	ingestedSamples *prometheus.CounterVec
+
+	// queriedSamples mirrors cortex_ingester_queried_samples: one
+	// observation per QueryStream call with the total samples carried
+	// by the streamed chunks. Same buckets as the ingester metric so
+	// the two histograms compare directly.
+	queriedSamples prometheus.Histogram
+
 	// seriesWalkMu prevents overlapping background series walks when a
 	// single tick takes longer than loadstats.TickInterval.
 	seriesWalkMu sync.Mutex
@@ -279,9 +293,22 @@ func New(
 		Help: "Total float and native-histogram samples successfully appended to a partition's TSDB head from the Kafka ingest topic, labelled by Kafka partition ID. Use rate() to get samples/sec per partition. Readcache counterpart to cortex_distributor_nautilus_partition_samples_written_total.",
 	}, []string{"partition"})
 
+	r.ingestedSamples = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "cortex_readcache_ingested_samples_total",
+		Help: "The total number of samples ingested per user. Counts successfully-appended samples only (the readcache mirror of cortex_ingester_ingested_samples_total), so the two line up 1:1 when a tenant is moved between the ingester and readcache write paths.",
+	}, []string{"user"})
+
+	r.queriedSamples = prometheus.NewHistogram(prometheus.HistogramOpts{
+		Name: "cortex_readcache_queried_samples",
+		Help: "The total number of samples returned from queries. The readcache mirror of cortex_ingester_queried_samples, with identical buckets.",
+		// Match cortex_ingester_queried_samples exactly so the two
+		// histograms compare directly: 10*(8^(8-1)) = 20.9m.
+		Buckets: prometheus.ExponentialBuckets(10, 8, 8),
+	})
+
 	if reg != nil {
 		r.tsdbMetrics = mimir_tsdb.NewTSDBMetrics(prometheus.WrapRegistererWithPrefix("cortex_readcache_", reg), logger)
-		reg.MustRegister(r.queryLoad, r.samplesIngestedTotal)
+		reg.MustRegister(r.queryLoad, r.samplesIngestedTotal, r.ingestedSamples, r.queriedSamples)
 	}
 
 	r.Service = services.NewBasicService(r.starting, r.running, r.stopping)

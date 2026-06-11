@@ -116,6 +116,14 @@ func (p *partitionPusher) PushToStorageAndReleaseRequest(ctx context.Context, re
 			p.samplesIngested.Add(float64(n))
 		}
 	}
+	// Mirror of cortex_ingester_ingested_samples_total: only samples
+	// that survived soft-error validation and were committed. The
+	// ingester increments after the hard-failure return and
+	// regardless of FirstPartialErr (the commit completed); same
+	// ordering here, so the two counters line up 1:1 per user.
+	if p.rc.ingestedSamples != nil {
+		p.rc.ingestedSamples.WithLabelValues(userID).Add(float64(res.Stats.SucceededSamplesCount))
+	}
 	// Attribute the batch to its per-range EwmaRate so the
 	// rebalancer can balance by ingest throughput. recordSampleBatch
 	// is safe to call after Append: it only reads ts.Labels (deep

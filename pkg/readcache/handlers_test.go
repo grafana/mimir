@@ -14,6 +14,7 @@ import (
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
+	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
@@ -116,6 +117,13 @@ func TestReadcache_SamplesIngestedTotal_PerPartition(t *testing.T) {
 		"partition 1 should be attributed exactly 7 samples")
 	assert.Equal(t, float64(0), testutil.ToFloat64(rc.samplesIngestedTotal.WithLabelValues("2")),
 		"partition 2 was not owned and must have zero samples")
+
+	// The per-user ingester-mirror counter must see all successfully
+	// appended samples across partitions, keyed by tenant — the
+	// readcache side of the cortex_ingester_ingested_samples_total
+	// correctness comparison.
+	assert.Equal(t, float64(10), testutil.ToFloat64(rc.ingestedSamples.WithLabelValues(tenantID)),
+		"cortex_readcache_ingested_samples_total must count successfully-appended samples per user")
 }
 
 // TestReadcache_QueryStream_QueryLoadAttribution is the end-to-end
@@ -225,6 +233,18 @@ func TestReadcache_QueryStream_QueryLoadAttribution(t *testing.T) {
 	// Full-fanout (nil hint): scans every owned partition and bills
 	// the unnamed bucket. Only partition 0 has p0_series.
 	assert.Equal(t, 1, runQuery("p0_series", nil))
+
+	// The ingester-mirror queried-samples histogram must have one
+	// observation per queryStream call and a sum equal to all the
+	// samples streamed back: 0 (wrong-partition hint) + p0 + p1 + p0
+	// (full fanout) — the readcache side of the
+	// cortex_ingester_queried_samples correctness comparison.
+	var qs dto.Metric
+	require.NoError(t, rc.queriedSamples.Write(&qs))
+	assert.Equal(t, uint64(4), qs.Histogram.GetSampleCount(),
+		"cortex_readcache_queried_samples must observe once per QueryStream")
+	assert.Equal(t, float64(2*p0Samples+p1Samples), qs.Histogram.GetSampleSum(),
+		"cortex_readcache_queried_samples sum must equal the total streamed samples")
 
 	// Advance the EWMAs once (the background loop ticks every 15s,
 	// far beyond this test's lifetime). With init=false the first

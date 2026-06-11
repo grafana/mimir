@@ -198,6 +198,12 @@ func (r *Readcache) queryStream(req *client.QueryRequest, stream client.Ingester
 	}
 
 	r.queryLoad.Attribute(req.QueryAttributionHint, int64(samples))
+	// Mirror of cortex_ingester_queried_samples: one observation per
+	// QueryStream with the total samples carried by the streamed
+	// chunks, so old-world and readcache query volume line up.
+	if r.queriedSamples != nil {
+		r.queriedSamples.Observe(float64(samples))
+	}
 	spanlog.DebugLog("series", len(items), "samples", samples)
 	return nil
 }
