@@ -30,7 +30,7 @@ func (m *MatrixSelector) IsSplittable() bool {
 var _ planning.SplitNode = &MatrixSelector{}
 
 func (m *MatrixSelector) Describe() string {
-	return describeSelector(m.Matchers, m.Timestamp, m.Offset, &m.Range, m.SkipHistogramBuckets, m.Anchored, m.Smoothed, m.CounterAware, m.ProjectionLabels, m.ProjectionInclude, m.Subsets)
+	return describeSelector(m.Matchers, m.Timestamp, m.Offset, &m.Range, m.SkipHistogramBuckets, m.Anchored, m.Smoothed, m.CounterAware, m.Subsets)
 }
 
 func (m *MatrixSelector) ChildrenTimeRange(timeRange types.QueryTimeRange) types.QueryTimeRange {
@@ -43,14 +43,6 @@ func (m *MatrixSelector) Details() proto.Message {
 
 func (m *MatrixSelector) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_MATRIX_SELECTOR
-}
-
-func (m *MatrixSelector) SetChildren(children []planning.Node) error {
-	if len(children) != 0 {
-		return fmt.Errorf("node of type MatrixSelector expects 0 children, but got %d", len(children))
-	}
-
-	return nil
 }
 
 func (m *MatrixSelector) ReplaceChild(idx int, node planning.Node) error {
@@ -89,13 +81,6 @@ func (m *MatrixSelector) MergeHints(other planning.Node) error {
 	}
 
 	m.SkipHistogramBuckets = m.SkipHistogramBuckets && otherMatrixSelector.SkipHistogramBuckets
-	m.ProjectionInclude, m.ProjectionLabels = mergeProjectionLabels(
-		m.ProjectionInclude,
-		m.ProjectionLabels,
-		otherMatrixSelector.ProjectionInclude,
-		otherMatrixSelector.ProjectionLabels,
-	)
-
 	return nil
 }
 
@@ -136,8 +121,6 @@ func MaterializeMatrixSelector(m *MatrixSelector, _ *planning.Materializer, time
 		Anchored:                 m.Anchored,
 		Smoothed:                 m.Smoothed,
 		CounterAware:             m.CounterAware,
-		ProjectionInclude:        m.ProjectionInclude,
-		ProjectionLabels:         m.ProjectionLabels,
 		Subsets:                  subsets,
 	}
 

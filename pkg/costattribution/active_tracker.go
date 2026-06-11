@@ -5,7 +5,6 @@ package costattribution
 import (
 	"bytes"
 	"fmt"
-	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -26,14 +25,16 @@ type counters struct {
 	nativeHistogramBuckets atomic.Int64
 }
 
-type ActiveSeriesTracker struct {
+type activeSeriesTracker struct {
 	userID                                         string
+	name                                           string
 	activeSeriesPerUserAttribution                 *descriptor
 	attributedOverflowLabels                       *descriptor
 	activeNativeHistogramSeriesPerUserAttribution  *descriptor
 	activeNativeHistogramBucketsPerUserAttribution *descriptor
 	logger                                         log.Logger
 
+	internal       bool
 	labels         costattributionmodel.Labels
 	overflowLabels []string
 
@@ -49,7 +50,7 @@ type ActiveSeriesTracker struct {
 	overflowCounter counters
 }
 
-func NewActiveSeriesTracker(userID string, trackedLabels costattributionmodel.Labels, limit int, cooldownDuration time.Duration, logger log.Logger) (*ActiveSeriesTracker, error) {
+func newActiveSeriesTracker(userID, trackerName string, trackedLabels costattributionmodel.Labels, internal bool, limit int, cooldownDuration time.Duration, logger log.Logger) (*activeSeriesTracker, error) {
 	// Create a map for overflow labels to export when overflow happens
 	overflowLabels := make([]string, len(trackedLabels)+1)
 	for i := range trackedLabels {
@@ -58,8 +59,10 @@ func NewActiveSeriesTracker(userID string, trackedLabels costattributionmodel.La
 
 	overflowLabels[len(trackedLabels)] = userID
 
-	ast := &ActiveSeriesTracker{
+	ast := &activeSeriesTracker{
 		userID:           userID,
+		name:             trackerName,
+		internal:         internal,
 		labels:           trackedLabels,
 		maxCardinality:   limit,
 		observed:         make(map[string]*counters),
@@ -74,7 +77,7 @@ func NewActiveSeriesTracker(userID string, trackedLabels costattributionmodel.La
 	return ast, nil
 }
 
-func (at *ActiveSeriesTracker) createAndValidateDescriptors(trackedLabels costattributionmodel.Labels) error {
+func (at *activeSeriesTracker) createAndValidateDescriptors(trackedLabels costattributionmodel.Labels) error {
 	variableLabels := make([]string, 0, len(trackedLabels)+1)
 	variableLabels = append(variableLabels, trackedLabels.OutputLabels()...)
 	variableLabels = append(variableLabels, tenantLabel)
@@ -82,35 +85,39 @@ func (at *ActiveSeriesTracker) createAndValidateDescriptors(trackedLabels costat
 	var err error
 	if at.activeSeriesPerUserAttribution, err = newDescriptor("cortex_ingester_attributed_active_series",
 		"The total number of active series per user and attribution.", variableLabels,
-		prometheus.Labels{trackerLabel: defaultTrackerName}); err != nil {
+		prometheus.Labels{trackerLabel: at.name}); err != nil {
 		return err
 	}
 	if at.attributedOverflowLabels, err = newDescriptor("cortex_attributed_series_overflow_labels",
 		"The overflow labels for this tenant. This metric is always 1 for tenants with active series, it is only used to have the overflow labels available in the recording rules without knowing their names.", variableLabels,
-		prometheus.Labels{trackerLabel: defaultTrackerName}); err != nil {
+		prometheus.Labels{trackerLabel: at.name}); err != nil {
 		return err
 	}
 	if at.activeNativeHistogramSeriesPerUserAttribution, err = newDescriptor("cortex_ingester_attributed_active_native_histogram_series",
 		"The total number of active native histogram series per user and attribution.", variableLabels,
-		prometheus.Labels{trackerLabel: defaultTrackerName}); err != nil {
+		prometheus.Labels{trackerLabel: at.name}); err != nil {
 		return err
 	}
 	if at.activeNativeHistogramBucketsPerUserAttribution, err = newDescriptor("cortex_ingester_attributed_active_native_histogram_buckets",
 		"The total number of active native histogram buckets per user and attribution.", variableLabels,
-		prometheus.Labels{trackerLabel: defaultTrackerName}); err != nil {
+		prometheus.Labels{trackerLabel: at.name}); err != nil {
 		return err
 	}
 	return nil
 }
 
-func (at *ActiveSeriesTracker) hasSameLabels(labels costattributionmodel.Labels) bool {
-	return slices.Equal(at.labels, labels)
+func (at *activeSeriesTracker) trackerName() string {
+	return at.name
+}
+
+func (at *activeSeriesTracker) config() (labels costattributionmodel.Labels, internal bool, limit int, cooldown time.Duration) {
+	return at.labels, at.internal, at.maxCardinality, at.cooldownDuration
 }
 
 // Increment increases the active series count for the given labels.
 // If nativeHistogramBucketNum is not -1, it also increments the native histogram counter and the corresponding bucket.
 // Otherwise, only the active series count is updated.
-func (at *ActiveSeriesTracker) Increment(lbls labels.Labels, now time.Time, nativeHistogramBucketNum int) {
+func (at *activeSeriesTracker) Increment(lbls labels.Labels, now time.Time, nativeHistogramBucketNum int) {
 	if at == nil {
 		return
 	}
@@ -186,7 +193,7 @@ func (at *ActiveSeriesTracker) Increment(lbls labels.Labels, now time.Time, nati
 	}
 }
 
-func (at *ActiveSeriesTracker) Decrement(lbls labels.Labels, nativeHistogramBucketNum int) {
+func (at *activeSeriesTracker) Decrement(lbls labels.Labels, nativeHistogramBucketNum int) {
 	if at == nil {
 		return
 	}
@@ -210,8 +217,7 @@ func (at *ActiveSeriesTracker) Decrement(lbls labels.Labels, nativeHistogramBuck
 		at.observedMtx.Lock()
 		c, ok := at.observed[string(buf.Bytes())]
 		if ok && c.activeSeries.Load() == 0 {
-			// use buf.String() instead of string(buf.Bytes()) to fix the lint issue
-			delete(at.observed, buf.String())
+			delete(at.observed, string(buf.Bytes())) //nolint:staticcheck // Avoid allocating a string just for the delete call.
 		}
 		at.observedMtx.Unlock()
 		return
@@ -229,7 +235,7 @@ func (at *ActiveSeriesTracker) Decrement(lbls labels.Labels, nativeHistogramBuck
 	panic(fmt.Errorf("decrementing non-existent active series: labels=%v, cost attribution keys: %v, the current observation map length: %d, the current cost attribution key: %s", lbls, at.labels, len(at.observed), buf.String()))
 }
 
-func (at *ActiveSeriesTracker) Collect(out chan<- prometheus.Metric) {
+func (at *activeSeriesTracker) collectCostAttribution(out chan<- prometheus.Metric) {
 	out <- at.attributedOverflowLabels.gauge(1, at.overflowLabels...)
 
 	at.observedMtx.RLock()
@@ -273,7 +279,7 @@ func (at *ActiveSeriesTracker) Collect(out chan<- prometheus.Metric) {
 	}
 }
 
-func (at *ActiveSeriesTracker) fillKeyFromLabels(lbls labels.Labels, buf *bytes.Buffer) {
+func (at *activeSeriesTracker) fillKeyFromLabels(lbls labels.Labels, buf *bytes.Buffer) {
 	buf.Reset()
 	for idx, cal := range at.labels {
 		if idx > 0 {
@@ -288,7 +294,33 @@ func (at *ActiveSeriesTracker) fillKeyFromLabels(lbls labels.Labels, buf *bytes.
 	}
 }
 
-func (at *ActiveSeriesTracker) cardinality() (cardinality int, overflown bool) {
+// nolint:unused // The unused linter fails to detect usage of this method through the generic composite trackers.
+func (at *activeSeriesTracker) purge(now, deadline time.Time) (cardinality int, shouldRecreate bool) {
+	at.observedMtx.RLock()
+	tryRecoverFromOverflow := !at.overflowSince.IsZero() && at.overflowSince.Add(at.cooldownDuration).Before(deadline)
+	cardinality = len(at.observed)
+	at.observedMtx.RUnlock()
+
+	if tryRecoverFromOverflow {
+		at.observedMtx.Lock()
+		if len(at.observed) <= at.maxCardinality {
+			// Recovered from overflow.
+			// We can't just "reset" an active series cost attribution tracker when recovering from overflow,
+			// because we didn't properly track the series during overflow, so we don't know which series to keep and which to remove.
+			// So we signal to the manager that the entire active series tracker should be re-created.
+			// This will be seen by the active series tracker in the ingester, and all series will be re-counted.
+			shouldRecreate = true
+		} else {
+			// Extend the overflow period since we are still above the max cardinality after cleanup.
+			at.overflowSince = now
+		}
+		at.observedMtx.Unlock()
+	}
+
+	return cardinality, shouldRecreate
+}
+
+func (at *activeSeriesTracker) cardinality() (cardinality int, overflown bool) {
 	at.observedMtx.RLock()
 	defer at.observedMtx.RUnlock()
 	return len(at.observed), !at.overflowSince.IsZero()

@@ -100,7 +100,6 @@ type Client struct {
 		topics map[string]cachedMetaTopic
 		byID   map[[16]byte]string // TopicID => topic name
 		allAt  time.Time           // when last all-topics fetch completed
-		anyAt  time.Time           // when any cached metadata was last stored
 	}
 }
 
@@ -1106,7 +1105,15 @@ func (cl *Client) updateMetadataBrokers(resp *kmsg.MetadataResponse) {
 	if resp.ControllerID >= 0 {
 		cl.controllerID = resp.ControllerID
 	}
-	cl.clusterID = resp.ClusterID
+	// Clone ClusterID so cl.clusterID owns its own *string, independent
+	// of the broker response. Readers (dups in RequestCachedMetadata)
+	// would otherwise race a user mutating *resp.ClusterID on a
+	// previously-returned cl.Request(MetadataRequest) response.
+	cl.clusterID = nil
+	if resp.ClusterID != nil {
+		s := *resp.ClusterID
+		cl.clusterID = &s
+	}
 	cl.controllerIDMu.Unlock()
 	cl.updateBrokers(resp.Brokers)
 }
@@ -1511,7 +1518,7 @@ func (cl *Client) RequestCachedMetadata(ctx context.Context, req *kmsg.MetadataR
 			NodeID: b.meta.NodeID,
 			Host:   b.meta.Host,
 			Port:   b.meta.Port,
-			Rack:   b.meta.Rack,
+			Rack:   dups(b.meta.Rack),
 		})
 	}
 	cl.brokersMu.RUnlock()
@@ -1897,6 +1904,11 @@ func (cl *Client) forgetControllerID(id int32) {
 	}
 }
 
+// Coordinator types match Kafka's FindCoordinator key-type enum.
+// coordinatorTypeShare (the share-state coordinator) is keyed by a
+// groupId:topicId:partition SharePartitionKey and serves only the
+// broker-internal persister RPCs (keys 83-87), which kgo never issues; share
+// groups go entirely through the GROUP coordinator (see #1330).
 const (
 	coordinatorTypeGroup int8 = 0
 	coordinatorTypeTxn   int8 = 1
@@ -2309,9 +2321,9 @@ func (cl *Client) handleCoordinatorReq(ctx context.Context, req kmsg.Request) Re
 		}
 		return shard(br, req, resp, err)
 	case *kmsg.AlterShareGroupOffsetsRequest:
-		return cl.handleCoordinatorReqSimple(ctx, coordinatorTypeShare, t.GroupID, req)
+		return cl.handleCoordinatorReqSimple(ctx, coordinatorTypeGroup, t.GroupID, req)
 	case *kmsg.DeleteShareGroupOffsetsRequest:
-		return cl.handleCoordinatorReqSimple(ctx, coordinatorTypeShare, t.GroupID, req)
+		return cl.handleCoordinatorReqSimple(ctx, coordinatorTypeGroup, t.GroupID, req)
 	}
 }
 
@@ -3016,7 +3028,6 @@ func (cl *Client) storeCachedMeta(meta *kmsg.MetadataResponse, all bool, results
 		cl.metaCache.byID = make(map[[16]byte]string)
 	}
 	when := time.Now()
-	cl.metaCache.anyAt = when
 	var zeroID [16]byte
 	var stored int
 	for _, topic := range meta.Topics {
@@ -3026,22 +3037,43 @@ func (cl *Client) storeCachedMeta(meta *kmsg.MetadataResponse, all bool, results
 			continue
 		}
 		stored++
+		// Deep-clone the topic name, Partitions, and each partition's
+		// inner slices so the cache owns fully independent state. The
+		// broker response is shared with whoever consumed it:
+		// fetchTopicMetadata sort.Slice's the outer Partitions slice
+		// in place to validate ordering (issue #1328), and
+		// cl.Request(MetadataRequest) hands the response back to user
+		// code that may mutate the inner slices or write through the
+		// Topic *string. Without these clones, readers via
+		// RequestCachedMetadata or sharded request paths (which read
+		// ps[part].Replicas) would race those writers. dupt on the
+		// GET side clones separately: that isolates returned responses
+		// from the cache, this isolates the cache from the response.
+		topicName := *topic.Topic
+		topic.Topic = &topicName
+		topic.Partitions = slices.Clone(topic.Partitions)
+		for i := range topic.Partitions {
+			p := &topic.Partitions[i]
+			p.Replicas = slices.Clone(p.Replicas)
+			p.ISR = slices.Clone(p.ISR)
+			p.OfflineReplicas = slices.Clone(p.OfflineReplicas)
+		}
 		t := cachedMetaTopic{
 			id:   topic.TopicID,
 			t:    topic,
 			ps:   make(map[int32]kmsg.MetadataResponseTopicPartition),
 			when: when,
 		}
-		cl.metaCache.topics[*topic.Topic] = t
+		cl.metaCache.topics[topicName] = t
 		for _, partition := range topic.Partitions {
 			t.ps[partition.Partition] = partition
 		}
 		if topic.TopicID != zeroID {
-			cl.metaCache.byID[topic.TopicID] = *topic.Topic
+			cl.metaCache.byID[topic.TopicID] = topicName
 		}
 
 		if results != nil {
-			results[*t.t.Topic] = t
+			results[topicName] = t
 		}
 	}
 
@@ -5450,7 +5482,7 @@ func (cl *describeShareGroupOffsetsSharder) shard(ctx context.Context, kreq kmsg
 	for _, g := range req.Groups {
 		groupIDs = append(groupIDs, g.GroupID)
 	}
-	coordinators := cl.loadCoordinators(ctx, coordinatorTypeShare, groupIDs...)
+	coordinators := cl.loadCoordinators(ctx, coordinatorTypeGroup, groupIDs...)
 	type unkerr struct {
 		err     error
 		groupID string
@@ -5510,7 +5542,7 @@ func (cl *describeShareGroupOffsetsSharder) onResp(_ kmsg.Request, kresp kmsg.Re
 	for i := range resp.Groups {
 		group := &resp.Groups[i]
 		err := kerr.ErrorForCode(group.ErrorCode)
-		cl.maybeDeleteStaleCoordinator(group.GroupID, coordinatorTypeShare, err)
+		cl.maybeDeleteStaleCoordinator(group.GroupID, coordinatorTypeGroup, err)
 		onRespShardErr(&retErr, err)
 	}
 	return retErr

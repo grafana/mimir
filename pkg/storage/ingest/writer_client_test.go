@@ -287,10 +287,15 @@ func TestKafkaProducer_ProduceSync_ShouldRejectRecordsWithTimestampSet(t *testin
 	require.Equal(t, int64(0), producer.bufferedBytes.Load())
 
 	assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
+		# HELP cortex_ingest_storage_writer_produce_records_enqueued_total Total number of Kafka records enqueued to be sent to the Kafka backend (includes records that fail to be successfully sent to the Kafka backend).
+		# TYPE cortex_ingest_storage_writer_produce_records_enqueued_total counter
+		cortex_ingest_storage_writer_produce_records_enqueued_total 2
+
 		# HELP cortex_ingest_storage_writer_produce_records_failed_total Total number of Kafka records that failed to be sent to the Kafka backend.
 		# TYPE cortex_ingest_storage_writer_produce_records_failed_total counter
 		cortex_ingest_storage_writer_produce_records_failed_total{reason="record-timestamp-set"} 2
 	`),
+		"cortex_ingest_storage_writer_produce_records_enqueued_total",
 		"cortex_ingest_storage_writer_produce_records_failed_total"))
 }
 

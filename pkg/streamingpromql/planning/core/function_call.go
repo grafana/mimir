@@ -47,11 +47,6 @@ func (f *FunctionCall) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_FUNCTION_CALL
 }
 
-func (f *FunctionCall) SetChildren(children []planning.Node) error {
-	f.Args = children
-	return nil
-}
-
 func (f *FunctionCall) ReplaceChild(idx int, node planning.Node) error {
 	if idx >= len(f.Args) {
 		return fmt.Errorf("this FunctionCall node has %d children, but attempted to replace child at index %d", len(f.Args), idx)

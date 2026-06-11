@@ -1679,7 +1679,14 @@ func (fm *fetchManager) manageFetchConcurrency() {
 			continue
 		}
 
-		if wantQuit && activeFetches == 0 {
+		// We cannot return while sources are still registered in
+		// wantFetch: each of them is (or is about to be) blocked
+		// sending on cancelFetchCh, which only we drain. Returning
+		// early orphans those sends once the channel's small buffer
+		// fills; the sources then hold session workers forever and
+		// stopSession never finishes (consumer deadlock). Keep
+		// looping until every registered source has canceled.
+		if wantQuit && activeFetches == 0 && len(wantFetch) == 0 {
 			return
 		}
 	}

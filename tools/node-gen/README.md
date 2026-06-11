@@ -8,10 +8,11 @@ top of `planning.Node`.
 
 # Supported generators
 
-| Method                         | Description                           |
-| ------------------------------ | ------------------------------------- |
-| `Child(idx int) planning.Node` | Returns the child at the given index. |
-| `ChildCount() int`             | Returns the number of children.       |
+| Method                                        | Description                                                      |
+| --------------------------------------------- | ---------------------------------------------------------------- |
+| `Child(idx int) planning.Node`                | Returns the child at the given index.                            |
+| `ChildCount() int`                            | Returns the number of children.                                  |
+| `SetChildren(children []planning.Node) error` | Sets all children at once, validating the count and child types. |
 
 # How to opt a struct in
 
@@ -21,6 +22,8 @@ top of `planning.Node`.
    - `node:"child,nilable"` — single child that may be `nil` at
      runtime (rare; e.g. `AggregateExpression.Param`).
    - `node:"children"` — slice of children (`[]planning.Node`).
+   - `node:"children,min=N"` — as `children`, but a node
+     requires at least `N` children.
 
 # How to run
 

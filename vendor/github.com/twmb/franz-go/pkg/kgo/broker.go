@@ -222,6 +222,17 @@ func unknownSeedID(seedNum int) int32 {
 }
 
 func (cl *Client) newBroker(nodeID int32, host string, port int32, rack *string) *broker {
+	// Clone the Rack *string so the broker owns its own pointer. A
+	// user-issued cl.Request(MetadataRequest) is hijacked through
+	// fetchMetadata, which builds brokers from the response and then
+	// returns that same response to the user: a user writing *Rack
+	// through their response would race every internal deref of
+	// b.meta.Rack (brokerRacks, dups in RequestCachedMetadata,
+	// meta.equals on a later metadata update).
+	if rack != nil {
+		r := *rack
+		rack = &r
+	}
 	return &broker{
 		cl: cl,
 
