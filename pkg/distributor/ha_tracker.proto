@@ -10,7 +10,6 @@ package distributor;
 import "wiresmith/options.proto";
 
 option go_package = "github.com/grafana/mimir/pkg/distributor";
-
 // Note: gogoproto.marshaler_all / unmarshaler_all are unnecessary under
 // wiresmith — Marshal/Unmarshal methods are always emitted. no_presence_all
 // keeps gogoproto value semantics (no presence bitmap, declared-fields-only
