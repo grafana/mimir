@@ -178,10 +178,35 @@ extend google.protobuf.MessageOptions {
   optional bool no_presence = 50040;
 }
 
+extend google.protobuf.EnumOptions {
+  // enum_no_prefix = true emits this enum's value constants without the
+  // `EnumName_` prefix (gogoproto `goproto_enum_prefix = false`
+  // equivalent):
+  //
+  //   enum MetricType {
+  //     option (wiresmith.options.enum_no_prefix) = true;
+  //     UNKNOWN = 0;   // emitted as `UNKNOWN`, not `MetricType_UNKNOWN`
+  //     COUNTER = 1;
+  //   }
+  //
+  // Only the constant identifiers change — the `<Type>_name` /
+  // `<Type>_value` maps and String() keep the bare proto names either
+  // way. Unprefixed constants live at package scope, so two enums in one
+  // Go package declaring the same value name fail at `go build` with a
+  // duplicate-declaration error; choosing non-colliding names is the
+  // author's responsibility, exactly as with gogoproto.
+  optional bool enum_no_prefix = 50042;
+}
+
 extend google.protobuf.FileOptions {
   // no_presence_all applies (wiresmith.options.no_presence) to every
   // message in the file, including nested ones. A per-message
   // no_presence value (true or false) overrides the file default —
   // same override layering as gogoproto's *_all options.
   optional bool no_presence_all = 50041;
+
+  // enum_no_prefix_all applies (wiresmith.options.enum_no_prefix) to
+  // every enum in the file, including nested ones. A per-enum value
+  // (true or false) overrides the file default.
+  optional bool enum_no_prefix_all = 50043;
 }
