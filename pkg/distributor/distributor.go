@@ -278,6 +278,12 @@ type Distributor struct {
 	// readcache addresses are configured.
 	readcachePool *readcachePool
 
+	// readcacheRouteLogSeq counts readcache routing resolutions so
+	// getReadcacheReplicationSetsForQuery can emit its
+	// routing-decision diagnostic log for 1 in every
+	// readcacheRouteLogEvery queries instead of all of them.
+	readcacheRouteLogSeq atomic.Uint64
+
 	// nautilusRebalancerConn is the gRPC connection to the rebalancer.
 	nautilusRebalancerConn io.Closer
 	// nautilusStreamConnected is 1 while a WatchAssignments stream is

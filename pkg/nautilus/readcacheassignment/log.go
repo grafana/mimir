@@ -292,6 +292,26 @@ func (l *Log) OwnersDuring(partitionID int32, w0, w1 time.Time) []string {
 	return out
 }
 
+// EntriesDuring returns copies of the lease entries for partitionID
+// that overlap the half-open wall-clock window [w0, w1) — the same
+// predicate as OwnersDuring, but preserving each lease's [From, To)
+// bounds instead of collapsing to distinct instance IDs. Used for
+// diagnostics (the distributor's sampled routing-decision log), so a
+// human can see WHY each readcache was selected for a query window.
+func (l *Log) EntriesDuring(partitionID int32, w0, w1 time.Time) []LogEntry {
+	var out []LogEntry
+	for _, e := range l.entries {
+		if e.PartitionID != partitionID {
+			continue
+		}
+		if !e.From.Before(w1) || !e.To.After(w0) {
+			continue
+		}
+		out = append(out, e)
+	}
+	return out
+}
+
 // ActiveAt returns a copy of all entries whose lease covers `at`.
 func (l *Log) ActiveAt(at time.Time) []LogEntry {
 	var out []LogEntry

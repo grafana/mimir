@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/go-kit/log/level"
@@ -27,6 +28,7 @@ import (
 
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/nautilus/readcacheassignment"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/readcache"
 	"github.com/grafana/mimir/pkg/util"
@@ -396,7 +398,8 @@ func (d *Distributor) getReadcacheReplicationSetsForQuery(userID string, from, t
 	}
 
 	var partitionIDs []int32
-	if metricName, ok := extractExactMetricName(matchers); ok {
+	metricName, named := extractExactMetricName(matchers)
+	if named {
 		lo, hi := mimirpb.MetricNameHashRange(userID, metricName)
 		partitionIDs = log.PartitionsOverlappingInterval(w0, w1, lo, hi)
 	} else {
@@ -408,6 +411,7 @@ func (d *Distributor) getReadcacheReplicationSetsForQuery(userID string, from, t
 
 	sets := make([]ring.ReplicationSet, 0, len(partitionIDs))
 	partitionByInstance := make(map[string]int32, len(partitionIDs))
+	distinctOwners := make(map[string]struct{})
 	for _, partID := range partitionIDs {
 		// Every readcache that owned partID during the window, not
 		// just the owner at `now`: a query spanning a partition move
@@ -427,9 +431,69 @@ func (d *Distributor) getReadcacheReplicationSetsForQuery(userID string, from, t
 				Instances: []ring.InstanceDesc{{Id: instanceID, Addr: owner}},
 			})
 			partitionByInstance[instanceID] = partID
+			distinctOwners[owner] = struct{}{}
 		}
 	}
+
+	if d.readcacheRouteLogSeq.Inc()%readcacheRouteLogEvery == 1 {
+		d.logReadcacheRoutingDecision(userID, metricName, named, from, to, w0, w1, partitionIDs, len(sets), len(distinctOwners), rcLog)
+	}
+
 	return sets, partitionByInstance, nil
+}
+
+// readcacheRouteLogEvery is the sampling rate of the readcache
+// routing-decision diagnostic log: 1 in every N readcache-routed
+// queries gets the full per-partition ownership breakdown logged.
+const readcacheRouteLogEvery = 100
+
+// logReadcacheRoutingDecision emits one info-level line explaining a
+// readcache routing resolution end to end: the query's sample-time
+// range, the padded wall-clock window it was expanded to, and — per
+// resolved partition — every lease from the readcache assignment log
+// that overlapped the window, with its [from, to) bounds. Each listed
+// lease is the reason its instance is queried for that partition, so
+// the line answers "why did this query fan out to these readcaches".
+// Sampled (see readcacheRouteLogEvery) because the per-partition
+// breakdown is large on full-fanout queries.
+func (d *Distributor) logReadcacheRoutingDecision(userID, metricName string, named bool, from, to model.Time, w0, w1 time.Time, partitionIDs []int32, pairs, distinctOwners int, rcLog *readcacheassignment.Log) {
+	if d.log == nil {
+		return
+	}
+	const timeFmt = "15:04:05.000"
+	var sb strings.Builder
+	for i, partID := range partitionIDs {
+		if i > 0 {
+			sb.WriteByte(' ')
+		}
+		fmt.Fprintf(&sb, "p%d{", partID)
+		for j, e := range rcLog.EntriesDuring(partID, w0, w1) {
+			if j > 0 {
+				sb.WriteByte(',')
+			}
+			fmt.Fprintf(&sb, "%s[%s,%s)", e.InstanceID, e.From.UTC().Format(timeFmt), e.To.UTC().Format(timeFmt))
+		}
+		sb.WriteByte('}')
+	}
+
+	mode := "full-fanout"
+	if named {
+		mode = "metric-name"
+	}
+	level.Info(d.log).Log(
+		"msg", "readcache routing decision (sampled)",
+		"user", userID,
+		"mode", mode,
+		"metric", metricName,
+		"query_from", from.Time().UTC().Format(time.RFC3339),
+		"query_to", to.Time().UTC().Format(time.RFC3339),
+		"window_w0", w0.UTC().Format(time.RFC3339),
+		"window_w1", w1.UTC().Format(time.RFC3339),
+		"partitions", len(partitionIDs),
+		"owner_partition_pairs", pairs,
+		"distinct_readcaches", distinctOwners,
+		"per_partition_owners", sb.String(),
+	)
 }
 
 // mergeExemplarSets merges and dedupes two sets of already sorted exemplar pairs.

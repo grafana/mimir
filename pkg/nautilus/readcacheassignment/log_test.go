@@ -260,6 +260,57 @@ func TestLog_LiveEntries(t *testing.T) {
 	assert.Empty(t, live)
 }
 
+// TestLog_EntriesDuring pins the diagnostic accessor behind the
+// distributor's sampled routing-decision log: it must return exactly
+// the leases OwnersDuring would have matched (same half-open window
+// predicate), preserving each lease's bounds so the log can explain
+// WHY an instance was selected.
+func TestLog_EntriesDuring(t *testing.T) {
+	at := time.Unix(1000, 0)
+	l := NewLogFromEntries([]LogEntry{
+		// Two consecutive leases on partition 0: a move from rc-a to rc-b.
+		{PartitionID: 0, InstanceID: "rc-a", From: at, To: at.Add(10 * time.Minute)},
+		{PartitionID: 0, InstanceID: "rc-b", From: at.Add(10 * time.Minute), To: at.Add(20 * time.Minute)},
+		// Other partition, must never leak into partition 0 results.
+		{PartitionID: 1, InstanceID: "rc-c", From: at, To: at.Add(20 * time.Minute)},
+	})
+
+	// Window spanning the move returns both leases with their bounds.
+	got := l.EntriesDuring(0, at.Add(5*time.Minute), at.Add(15*time.Minute))
+	require.Len(t, got, 2)
+	assert.Equal(t, "rc-a", got[0].InstanceID)
+	assert.True(t, got[0].From.Equal(at))
+	assert.True(t, got[0].To.Equal(at.Add(10*time.Minute)))
+	assert.Equal(t, "rc-b", got[1].InstanceID)
+
+	// Window entirely inside the first lease returns only it.
+	got = l.EntriesDuring(0, at.Add(time.Minute), at.Add(2*time.Minute))
+	require.Len(t, got, 1)
+	assert.Equal(t, "rc-a", got[0].InstanceID)
+
+	// Half-open semantics match OwnersDuring: a window starting
+	// exactly at a lease's To excludes it, and a window ending
+	// exactly at a lease's From excludes it.
+	got = l.EntriesDuring(0, at.Add(10*time.Minute), at.Add(11*time.Minute))
+	require.Len(t, got, 1)
+	assert.Equal(t, "rc-b", got[0].InstanceID)
+	got = l.EntriesDuring(0, at.Add(-time.Minute), at)
+	assert.Empty(t, got)
+
+	// The set of instances always agrees with OwnersDuring over the
+	// same window.
+	w0, w1 := at.Add(5*time.Minute), at.Add(15*time.Minute)
+	owners := l.OwnersDuring(0, w0, w1)
+	fromEntries := make(map[string]struct{})
+	for _, e := range l.EntriesDuring(0, w0, w1) {
+		fromEntries[e.InstanceID] = struct{}{}
+	}
+	require.Len(t, fromEntries, len(owners))
+	for _, o := range owners {
+		assert.Contains(t, fromEntries, o)
+	}
+}
+
 func TestNewLogFromEntries(t *testing.T) {
 	at := time.Unix(1000, 0)
 	seed := []LogEntry{
