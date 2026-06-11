@@ -1,6 +1,6 @@
 module github.com/grafana/mimir
 
-go 1.26.3
+go 1.26.4
 
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v1.8.0
@@ -281,7 +281,7 @@ require (
 	github.com/googleapis/enterprise-certificate-proxy v0.3.16 // indirect
 	github.com/googleapis/gax-go/v2 v2.22.0 // indirect
 	github.com/grafana/gomemcache v0.0.0-20251127154401-74f93547077b
-	github.com/grafana/wiresmith v0.0.0-00010101000000-000000000000
+	github.com/grafana/wiresmith v0.0.0-20260611113301-a6d80cb6d9ca
 	github.com/hashicorp/consul/api v1.33.7 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
@@ -367,5 +367,3 @@ replace github.com/opentracing-contrib/go-grpc => github.com/charleskorn/go-grpc
 // Use Mimir fork of prometheus/otlptranslator to allow for higher velocity of upstream development,
 // while allowing Mimir to move at a more conservative pace.
 replace github.com/prometheus/otlptranslator => github.com/grafana/mimir-otlptranslator v0.0.0-20251017074411-ea1e8f863e1d
-
-replace github.com/grafana/wiresmith => /Users/oleg-kozlyuk/Projects/wiresmith/wiresmith-databases
