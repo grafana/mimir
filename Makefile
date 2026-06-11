@@ -112,13 +112,13 @@ SED ?= $(shell which gsed 2>/dev/null || which sed)
 
 %/$(UPTODATE_RACE): GOOS=linux
 %/$(UPTODATE_RACE): %/Dockerfile
-	# We need gcompat -- compatibility layer with glibc, as race-detector currently requires glibc.
+	# The race detector requires glibc, so we use the distroless base-nossl image rather than static.
 	$(SUDO) docker build \
 		--build-arg=revision=$(GIT_REVISION) \
 		--build-arg=goproxyValue=$(GOPROXY_VALUE) \
 		--build-arg=USE_BINARY_SUFFIX=true \
 		--build-arg=BINARY_SUFFIX=_race \
-		--build-arg=BASEIMG="gcr.io/distroless/base-nossl-debian12@sha256:c8430558b9a8688298c060ddc5e6f2993c8a092dee8a6b7058139ac8472e8ad0" \
+		--build-arg=BASEIMG="gcr.io/distroless/base-nossl-debian13@sha256:792f51c506fc67f7eaa38093f6d4937a053cebb79ec0e7c3b7746f6bbba85606" \
 		-t $(IMAGE_PREFIX)$(shell basename $(@D)):$(IMAGE_TAG_RACE) $(@D)/
 	@echo
 	@echo Go binaries were built using GOOS=$(GOOS) and GOARCH=$(GOARCH)

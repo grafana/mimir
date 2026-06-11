@@ -10,6 +10,7 @@
 * [CHANGE] Querier: The experimental PromQL duration arithmetic helpers `min(...)` and `max(...)` used inside `[...]` range/subquery brackets and `offset` clauses have been renamed to `min_of(...)` and `max_of(...)`. #15593 #15603
 * [CHANGE] Querier, Store-gateway: Only send non-opaque GRPC types between queriers and store-gateways. Note that this change requires upgrading from Mimir 3.1. See associated release notes for more information. #15358
 * [CHANGE] Querier: Remove experimental MQE Projection Pushdown optimization pass and associated CLI flag `querier.mimir-query-engine.enable-projection-pushdown`. #15618
+* [CHANGE] Update Docker image bases from Debian 12 to Debian 13 (`gcr.io/distroless/static-debian13`; race images use `base-nossl-debian13`). The CA-bundle override stage is no longer needed and has been removed. #15629
 * [FEATURE] API: Add alertmanager limits (alertmanager_notification_rate_limit, alertmanager_max_dispatcher_aggregation_groups, alertmanager_max_templates_count) to the user limits API response. #15308
 * [FEATURE] Mimirtool: Add AWS Signature Version 4 (SigV4) support for shared Mimir API client commands including `mimirtool rules`, `mimirtool alertmanager`, `mimirtool alerts`, `mimirtool backfill`, and `mimirtool analyze ruler`. #14959
 * [FEATURE] Cost attribution: Support multiple named cost attribution trackers per tenant via new `additional_cost_attribution_trackers` config field. #15302
