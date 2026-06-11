@@ -45,7 +45,8 @@ func TestPartitionInstanceRings(t *testing.T) {
 
 	// Compartment 0's ring resolves only compartment 0's partition owner against the shared instance
 	// ring; compartment 1's instance is never an owner of compartment 0's partitions.
-	sets, err := rings.Get(0).GetReplicationSetsForOperation(ring.Read)
+	readOp := ring.NewOp([]ring.InstanceState{ring.ACTIVE, ring.PENDING}, nil)
+	sets, err := rings.Get(0).GetReplicationSetsForOperation(readOp)
 	require.NoError(t, err)
 	require.Len(t, sets, 1)
 	require.Len(t, sets[0].Instances, 1)
