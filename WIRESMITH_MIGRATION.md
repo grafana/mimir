@@ -11,12 +11,12 @@ before merging). Generated code depends on `protohelpers.SkipValue` /
 
 ## Status
 
-| Proto | Status | Expdiff |
-|---|---|---|
-| `pkg/mimirpb/mimir.proto` | migrated (phase 1+2+3+DB-18) | 1094 lines (1087 phase 3, 1103 phase 2, 2144 phase 1) |
-| `pkg/distributor/ha_tracker.proto` | migrated (phase 2) | none |
-| `pkg/querier/stats/stats.proto` | migrated (phase 2) | none (one hand-written `GoString` shim) |
-| all other protos (~22) | still gogoproto | — |
+| Proto                              | Status                       | Expdiff                                               |
+| ---------------------------------- | ---------------------------- | ----------------------------------------------------- |
+| `pkg/mimirpb/mimir.proto`          | migrated (phase 1+2+3+DB-18) | 1094 lines (1087 phase 3, 1103 phase 2, 2144 phase 1) |
+| `pkg/distributor/ha_tracker.proto` | migrated (phase 2)           | none                                                  |
+| `pkg/querier/stats/stats.proto`    | migrated (phase 2)           | none (one hand-written `GoString` shim)               |
+| all other protos (~22)             | still gogoproto              | —                                                     |
 
 Full repo builds; pkg/mimirpb, pkg/distributor, pkg/ingester,
 pkg/storage/ingest, pkg/querier(+stats), pkg/frontend/... test suites green.
@@ -29,14 +29,14 @@ pkg/storage/ingest, pkg/querier(+stats), pkg/frontend/... test suites green.
    all set the file option: structs are declared-fields-only again, the
    unsafe casts to Prometheus types (`[]Sample ↔ []promql.FPoint`,
    `[]BucketSpan ↔ []histogram.Span`, `FloatHistogram ↔
-   histogram.FloatHistogram`, `SampleHistogram ↔ model.SampleHistogram`) are
+histogram.FloatHistogram`, `SampleHistogram ↔ model.SampleHistogram`) are
    layout-safe natively, and `require.Equal(literal, unmarshalled)` tests
    pass without shims. The phase-1 bitmap-strip expdiff hunks (~1000 lines)
    and the bitmap-only test shims (`pkg/util/test/shape.go`,
    `timeseries_test.go` unexported-field skips) were all removed/reverted.
 2. **RESOLVED — pre-scan preallocation clobbering pooled slices**: the
    generated pre-count pass now emits `if cap(m.X) < c { make } else {
-   m.X = m.X[:0] }` by default; the phase-1 pool-guard expdiff hunks are gone.
+m.X = m.X[:0] }` by default; the phase-1 pool-guard expdiff hunks are gone.
 
 ## mimir.proto specifics
 
@@ -145,16 +145,16 @@ points one level up. (This replaces the earlier scratch-dir staging recipe.)
 
 ## Test results (phase 2, all `-count=1`)
 
-| Package | Result |
-|---|---|
-| `./pkg/mimirpb/...` | ok |
-| `./pkg/distributor/...` | ok |
-| `./pkg/ingester/...` | ok |
-| `./pkg/storage/ingest/...` | ok |
-| `./pkg/querier/stats`, `./pkg/querier` | ok |
-| `./pkg/frontend/...` | ok |
-| `./pkg/util/test` | ok |
-| `go build ./...`, `go vet` | clean (modulo pre-existing `Seek` vet warnings) |
+| Package                                | Result                                          |
+| -------------------------------------- | ----------------------------------------------- |
+| `./pkg/mimirpb/...`                    | ok                                              |
+| `./pkg/distributor/...`                | ok                                              |
+| `./pkg/ingester/...`                   | ok                                              |
+| `./pkg/storage/ingest/...`             | ok                                              |
+| `./pkg/querier/stats`, `./pkg/querier` | ok                                              |
+| `./pkg/frontend/...`                   | ok                                              |
+| `./pkg/util/test`                      | ok                                              |
+| `go build ./...`, `go vet`             | clean (modulo pre-existing `Seek` vet warnings) |
 
 ## Benchmarks (Apple M4 Pro, benchstat-grade — DB-9, 2026-06-11)
 
@@ -163,19 +163,19 @@ points one level up. (This replaces the earlier scratch-dir staging recipe.)
 (gogo, wiresmith, gogo, …) so thermal drift cancels across the pair; `-count`
 effectively 20, `benchstat` ±1%, every delta p=0.000.
 
-| Bench | gogo sec/op | wiresmith sec/op | Δ time | B/op Δ | allocs Δ |
-|---|---|---|---|---|---|
-| Marshal/RW1            | 11.90m | 10.87m | **−8.68%** | −0.00% | ~ |
-| Marshal/RW2            | 5.170m | 4.804m | **−7.07%** | ~ | ~ |
-| Unmarshal/RW1 skip=true  | 9.062m | 9.365m | +3.34% | **−45.34%** | −16.58% |
-| Unmarshal/RW1 skip=false | 10.81m | 10.33m | **−4.47%** | **−47.00%** | −39.85% |
-| Unmarshal/RW2 skip=true  | 10.10m | 11.66m | **+15.42%** | −4.70% | −0.02% |
-| Unmarshal/RW2 skip=false | 10.90m | 12.59m | **+15.52%** | −4.39% | −0.02% |
+| Bench                    | gogo sec/op | wiresmith sec/op | Δ time      | B/op Δ      | allocs Δ |
+| ------------------------ | ----------- | ---------------- | ----------- | ----------- | -------- |
+| Marshal/RW1              | 11.90m      | 10.87m           | **−8.68%**  | −0.00%      | ~        |
+| Marshal/RW2              | 5.170m      | 4.804m           | **−7.07%**  | ~           | ~        |
+| Unmarshal/RW1 skip=true  | 9.062m      | 9.365m           | +3.34%      | **−45.34%** | −16.58%  |
+| Unmarshal/RW1 skip=false | 10.81m      | 10.33m           | **−4.47%**  | **−47.00%** | −39.85%  |
+| Unmarshal/RW2 skip=true  | 10.10m      | 11.66m           | **+15.42%** | −4.70%      | −0.02%   |
+| Unmarshal/RW2 skip=false | 10.90m      | 12.59m           | **+15.52%** | −4.39%      | −0.02%   |
 
 Revised takeaways (overturning the earlier noisy single-run numbers):
 
-- **Marshal is ~7–9% *faster*** under wiresmith (the prior "+26%" was thermal noise).
-- **RW1 unmarshal is a net win**: skip=false −4.5% wall *and* −47% bytes / −40%
+- **Marshal is ~7–9% _faster_** under wiresmith (the prior "+26%" was thermal noise).
+- **RW1 unmarshal is a net win**: skip=false −4.5% wall _and_ −47% bytes / −40%
   allocs; skip=true only +3.3% wall for −45% bytes.
 - **The sole regression is RW2 unmarshal: +15%**, with negligible allocation
   benefit (−4–5% bytes, ~0 allocs).
@@ -193,16 +193,16 @@ small, ~5%-bytes preallocation.
 **Isolation experiment** (same alternated method, pre-scan forced off via
 `if false`, wiresmith-with-prescan vs wiresmith-no-prescan):
 
-| Bench | Δ time (remove pre-scan) | Δ bytes | Δ allocs |
-|---|---|---|---|
-| Unmarshal/RW1 skip=true  | −3.50% | **+82.96%** | +19.87% |
-| Unmarshal/RW1 skip=false | +3.08% | **+88.66%** | +66.25% |
-| Unmarshal/RW2 skip=true  | **−13.70%** | +4.91% | +0.02% |
-| Unmarshal/RW2 skip=false | **−13.14%** | +4.64% | +0.02% |
+| Bench                    | Δ time (remove pre-scan) | Δ bytes     | Δ allocs |
+| ------------------------ | ------------------------ | ----------- | -------- |
+| Unmarshal/RW1 skip=true  | −3.50%                   | **+82.96%** | +19.87%  |
+| Unmarshal/RW1 skip=false | +3.08%                   | **+88.66%** | +66.25%  |
+| Unmarshal/RW2 skip=true  | **−13.70%**              | +4.91%      | +0.02%   |
+| Unmarshal/RW2 skip=false | **−13.14%**              | +4.64%      | +0.02%   |
 
 Removing the pre-scan recovers ~13% on RW2 — taking it to **dead parity with
 gogo** (no-prescan RW2 = 10.09m/10.94m vs gogo 10.10m/10.90m) — while it would
-*cost* RW1 ~3% wall and ~2× the allocations. The pre-scan is a clear win on
+_cost_ RW1 ~3% wall and ~2× the allocations. The pre-scan is a clear win on
 RW1 and pure overhead on RW2. A line-level CPU profile attributes ~180ms (~5%
 of total, ~35% of `unmarshal`'s own flat time) to the pre-scan loop on the RW2
 path. Fix lives wiresmith-side (bead DB-18 / wiresmith-bobw): gate the pre-scan
@@ -250,14 +250,14 @@ proto can keep gogo importers (method surface compatible + `GoString` shim +
 `proto-include` for protoc). Recommended order:
 
 1. `pkg/querier/querierpb/querier.proto` + `pkg/frontend/querymiddleware/model.proto`
-   + `pkg/frontend/v2/frontendv2pb/frontend.proto` — the stats.proto
-   importers; note `frontend.proto` uses gogo `customtype = SafeStats` on a
-   message field, which wiresmith customtype can express (needs
-   `SizeWiresmith`-family adapters on `SafeStats`, same recipe as
-   `PreallocTimeseries`). querier.proto declares a service → exercises
-   wiresmith's grpc emission. They also import mimir.proto — wiresmith
-   compiles imports by module path only if present under `--proto_path`;
-   staging must include the imported protos (or symlinks).
+   - `pkg/frontend/v2/frontendv2pb/frontend.proto` — the stats.proto
+     importers; note `frontend.proto` uses gogo `customtype = SafeStats` on a
+     message field, which wiresmith customtype can express (needs
+     `SizeWiresmith`-family adapters on `SafeStats`, same recipe as
+     `PreallocTimeseries`). querier.proto declares a service → exercises
+     wiresmith's grpc emission. They also import mimir.proto — wiresmith
+     compiles imports by module path only if present under `--proto_path`;
+     staging must include the imported protos (or symlinks).
 2. `pkg/ruler/rulespb/rules.proto`, `pkg/scheduler/schedulerpb/scheduler.proto`
    (streaming services), `pkg/alertmanager/alertspb/alerts.proto`.
 3. `pkg/storegateway/storepb/*` — three protos in one Go package
