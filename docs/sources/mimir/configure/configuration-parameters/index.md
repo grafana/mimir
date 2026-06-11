@@ -1477,6 +1477,28 @@ instance_limits:
 # CLI flag: -ingester.owned-series-update-interval
 [owned_series_update_interval: <duration> | default = 15s]
 
+# (experimental) When enabled, the ingester triggers an early TSDB head
+# compaction for series that are no longer owned by the ingester after a ring
+# change. Requires -ingester.track-ingester-owned-series or
+# -ingester.use-ingester-owned-series-for-limits to be enabled.
+# CLI flag: -ingester.early-compaction-non-owned-series-enabled
+[early_compaction_non_owned_series_enabled: <boolean> | default = false]
+
+# (experimental) Minimum time a series must remain non-owned before it can be
+# evicted when the local owned-series threshold is exceeded. New non-owned
+# series reset the timer. A value of 0 evicts immediately. A per-replica startup
+# jitter spreads evictions across replicas.
+# CLI flag: -ingester.early-compaction-non-owned-series-min-grace-period
+[early_compaction_non_owned_series_min_grace_period: <duration> | default = 30s]
+
+# (experimental) Maximum time a series may remain non-owned before it is
+# evicted, regardless of the owned-series threshold. This ensures eventual
+# eviction even for tenants below their threshold. A value of 0 disables the
+# maximum grace period, so eviction depends solely on the owned-series
+# threshold.
+# CLI flag: -ingester.early-compaction-non-owned-series-max-grace-period
+[early_compaction_non_owned_series_max_grace_period: <duration> | default = 5m]
+
 push_circuit_breaker:
   # (experimental) Enable circuit breaking when making requests to ingesters
   # CLI flag: -ingester.push-circuit-breaker.enabled
@@ -2004,11 +2026,6 @@ mimir_query_engine:
   # part of selector expressions.
   # CLI flag: -querier.mimir-query-engine.enable-reduce-matchers
   [enable_reduce_matchers: <boolean> | default = true]
-
-  # (experimental) Enable projection pushdown to only fetch labels required for
-  # the query from storage.
-  # CLI flag: -querier.mimir-query-engine.enable-projection-pushdown
-  [enable_projection_pushdown: <boolean> | default = false]
 
   # (experimental) Enable computing multiple aggregations over the same data
   # without buffering. Requires common subexpression elimination to be enabled.
@@ -4733,14 +4750,47 @@ blocked_requests:
 
 # (experimental)
 cost_attribution_labels_structured:
-  -     [input: <string> | default = ""]
+  - # Source label name to read from the incoming series.
+    [input: <string> | default = ""]
 
+    # Label name to use in the cost attribution output metrics. If empty, the
+    # input label name is used.
     [output: <string> | default = ""]
 
-# (experimental) Maximum cardinality of cost attribution labels allowed per
-# user.
-# CLI flag: -validation.max-cost-attribution-cardinality
-[max_cost_attribution_cardinality: <int> | default = 2000]
+# (experimental) Base cost attribution trackers configuration as JSON. Each
+# tracker defines labels to track for cost attribution. Example:
+# '{"by-team":{"labels":[{"input":"team"}]}}'.
+# CLI flag: -validation.cost-attribution-trackers
+[cost_attribution_trackers:]
+  <string>:
+    labels:
+      - # Source label name to read from the incoming series.
+        [input: <string> | default = ""]
+
+        # Label name to use in the cost attribution output metrics. If empty,
+        # the input label name is used.
+        [output: <string> | default = ""]
+
+    # Expose this tracker's metrics on the operational /metrics endpoint instead
+    # of the cost-attribution specific /usage-metrics endpoint that is used by
+    # default.
+    [internal: <boolean> | default = ]
+
+# (experimental)
+[additional_cost_attribution_trackers:]
+  <string>:
+    labels:
+      - # Source label name to read from the incoming series.
+        [input: <string> | default = ""]
+
+        # Label name to use in the cost attribution output metrics. If empty,
+        # the input label name is used.
+        [output: <string> | default = ""]
+
+    # Expose this tracker's metrics on the operational /metrics endpoint instead
+    # of the cost-attribution specific /usage-metrics endpoint that is used by
+    # default.
+    [internal: <boolean> | default = ]
 
 # (experimental) Defines how long cost attribution stays in overflow before
 # attempting a reset, with received/discarded samples extending the cooldown if
@@ -4748,6 +4798,11 @@ cost_attribution_labels_structured:
 # cooldown.
 # CLI flag: -validation.cost-attribution-cooldown
 [cost_attribution_cooldown: <duration> | default = 0s]
+
+# (experimental) Maximum cardinality of cost attribution labels allowed per
+# user.
+# CLI flag: -validation.max-cost-attribution-cardinality
+[max_cost_attribution_cardinality: <int> | default = 2000]
 
 # Duration to delay the evaluation of rules to ensure the underlying metrics
 # have been pushed.

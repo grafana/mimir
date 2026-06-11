@@ -6,10 +6,10 @@ metadata:
   name: small-values-rollout-operator
   namespace: "citestns"
   labels:
-    helm.sh/chart: rollout-operator-0.49.0
+    helm.sh/chart: rollout-operator-0.50.0
     app.kubernetes.io/name: rollout-operator
     app.kubernetes.io/instance: small-values
-    app.kubernetes.io/version: "v0.36.2"
+    app.kubernetes.io/version: "v0.38.0"
     app.kubernetes.io/managed-by: Helm
 rules:
 - apiGroups:
@@ -21,6 +21,7 @@ rules:
   - get
   - watch
   - delete
+  - patch
 - apiGroups:
   - apps
   resources:

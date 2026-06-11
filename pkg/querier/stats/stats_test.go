@@ -265,6 +265,7 @@ func TestStats_Merge(t *testing.T) {
 }
 
 func TestStats_Copy(t *testing.T) {
+	//exhaustruct:enforce
 	s1 := &SafeStats{
 		Stats: Stats{
 			WallTime:                    1,
@@ -276,10 +277,13 @@ func TestStats_Copy(t *testing.T) {
 			FetchedIndexBytes:           7,
 			EstimatedSeriesCount:        8,
 			QueueTime:                   9,
-			SamplesProcessed:            10,
-			RemoteExecutionRequestCount: 12,
-			EquivalentSamplesRead:       13,
-			PhysicalSamplesRead:         14,
+			EncodeTime:                  10,
+			SamplesProcessed:            11,
+			SpunOffSubqueries:           12,
+			RemoteExecutionRequestCount: 13,
+			SplitRangeVectors:           14,
+			EquivalentSamplesRead:       15,
+			PhysicalSamplesRead:         16,
 		},
 	}
 	s2 := s1.Copy()

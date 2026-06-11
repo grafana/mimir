@@ -2660,17 +2660,6 @@
             },
             {
               "kind": "field",
-              "name": "enable_projection_pushdown",
-              "required": false,
-              "desc": "Enable projection pushdown to only fetch labels required for the query from storage.",
-              "fieldValue": null,
-              "fieldDefaultValue": false,
-              "fieldFlag": "querier.mimir-query-engine.enable-projection-pushdown",
-              "fieldType": "boolean",
-              "fieldCategory": "experimental"
-            },
-            {
-              "kind": "field",
               "name": "enable_multi_aggregation",
               "required": false,
               "desc": "Enable computing multiple aggregations over the same data without buffering. Requires common subexpression elimination to be enabled.",
@@ -4823,6 +4812,39 @@
           "fieldCategory": "experimental"
         },
         {
+          "kind": "field",
+          "name": "early_compaction_non_owned_series_enabled",
+          "required": false,
+          "desc": "When enabled, the ingester triggers an early TSDB head compaction for series that are no longer owned by the ingester after a ring change. Requires -ingester.track-ingester-owned-series or -ingester.use-ingester-owned-series-for-limits to be enabled.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "ingester.early-compaction-non-owned-series-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "early_compaction_non_owned_series_min_grace_period",
+          "required": false,
+          "desc": "Minimum time a series must remain non-owned before it can be evicted when the local owned-series threshold is exceeded. New non-owned series reset the timer. A value of 0 evicts immediately. A per-replica startup jitter spreads evictions across replicas.",
+          "fieldValue": null,
+          "fieldDefaultValue": 30000000000,
+          "fieldFlag": "ingester.early-compaction-non-owned-series-min-grace-period",
+          "fieldType": "duration",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "early_compaction_non_owned_series_max_grace_period",
+          "required": false,
+          "desc": "Maximum time a series may remain non-owned before it is evicted, regardless of the owned-series threshold. This ensures eventual eviction even for tenants below their threshold. A value of 0 disables the maximum grace period, so eviction depends solely on the owned-series threshold.",
+          "fieldValue": null,
+          "fieldDefaultValue": 300000000000,
+          "fieldFlag": "ingester.early-compaction-non-owned-series-max-grace-period",
+          "fieldType": "duration",
+          "fieldCategory": "experimental"
+        },
+        {
           "kind": "block",
           "name": "push_circuit_breaker",
           "required": false,
@@ -6453,7 +6475,7 @@
                 "kind": "field",
                 "name": "input",
                 "required": false,
-                "desc": "",
+                "desc": "Source label name to read from the incoming series.",
                 "fieldValue": null,
                 "fieldDefaultValue": "",
                 "fieldType": "string"
@@ -6462,7 +6484,7 @@
                 "kind": "field",
                 "name": "output",
                 "required": false,
-                "desc": "",
+                "desc": "Label name to use in the cost attribution output metrics. If empty, the input label name is used.",
                 "fieldValue": null,
                 "fieldDefaultValue": "",
                 "fieldType": "string"
@@ -6473,15 +6495,136 @@
           }
         },
         {
-          "kind": "field",
-          "name": "max_cost_attribution_cardinality",
+          "kind": "map",
+          "name": "cost_attribution_trackers",
           "required": false,
-          "desc": "Maximum cardinality of cost attribution labels allowed per user.",
+          "desc": "Base cost attribution trackers configuration as JSON. Each tracker defines labels to track for cost attribution. Example: '{\"by-team\":{\"labels\":[{\"input\":\"team\"}]}}'.",
           "fieldValue": null,
-          "fieldDefaultValue": 2000,
-          "fieldFlag": "validation.max-cost-attribution-cardinality",
-          "fieldType": "int",
-          "fieldCategory": "experimental"
+          "fieldDefaultValue": null,
+          "fieldType": "string",
+          "fieldCategory": "experimental",
+          "fieldElement": {
+            "kind": "block",
+            "name": "cost_attribution_trackers",
+            "required": false,
+            "desc": "",
+            "blockEntries": [
+              {
+                "kind": "field",
+                "name": "labels",
+                "required": false,
+                "desc": "",
+                "fieldValue": null,
+                "fieldDefaultValue": null,
+                "fieldType": "slice",
+                "fieldElement": {
+                  "kind": "block",
+                  "name": "labels",
+                  "required": false,
+                  "desc": "",
+                  "blockEntries": [
+                    {
+                      "kind": "field",
+                      "name": "input",
+                      "required": false,
+                      "desc": "Source label name to read from the incoming series.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldType": "string"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "output",
+                      "required": false,
+                      "desc": "Label name to use in the cost attribution output metrics. If empty, the input label name is used.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldType": "string"
+                    }
+                  ],
+                  "fieldValue": null,
+                  "fieldDefaultValue": null
+                }
+              },
+              {
+                "kind": "field",
+                "name": "internal",
+                "required": false,
+                "desc": "Expose this tracker's metrics on the operational /metrics endpoint instead of the cost-attribution specific /usage-metrics endpoint that is used by default.",
+                "fieldValue": null,
+                "fieldDefaultValue": false,
+                "fieldType": "boolean"
+              }
+            ],
+            "fieldValue": null,
+            "fieldDefaultValue": null
+          }
+        },
+        {
+          "kind": "map",
+          "name": "additional_cost_attribution_trackers",
+          "required": false,
+          "desc": "",
+          "fieldValue": null,
+          "fieldDefaultValue": null,
+          "fieldType": "string",
+          "fieldCategory": "experimental",
+          "fieldElement": {
+            "kind": "block",
+            "name": "additional_cost_attribution_trackers",
+            "required": false,
+            "desc": "",
+            "blockEntries": [
+              {
+                "kind": "field",
+                "name": "labels",
+                "required": false,
+                "desc": "",
+                "fieldValue": null,
+                "fieldDefaultValue": null,
+                "fieldType": "slice",
+                "fieldElement": {
+                  "kind": "block",
+                  "name": "labels",
+                  "required": false,
+                  "desc": "",
+                  "blockEntries": [
+                    {
+                      "kind": "field",
+                      "name": "input",
+                      "required": false,
+                      "desc": "Source label name to read from the incoming series.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldType": "string"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "output",
+                      "required": false,
+                      "desc": "Label name to use in the cost attribution output metrics. If empty, the input label name is used.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldType": "string"
+                    }
+                  ],
+                  "fieldValue": null,
+                  "fieldDefaultValue": null
+                }
+              },
+              {
+                "kind": "field",
+                "name": "internal",
+                "required": false,
+                "desc": "Expose this tracker's metrics on the operational /metrics endpoint instead of the cost-attribution specific /usage-metrics endpoint that is used by default.",
+                "fieldValue": null,
+                "fieldDefaultValue": false,
+                "fieldType": "boolean"
+              }
+            ],
+            "fieldValue": null,
+            "fieldDefaultValue": null
+          }
         },
         {
           "kind": "field",
@@ -6492,6 +6635,17 @@
           "fieldDefaultValue": 0,
           "fieldFlag": "validation.cost-attribution-cooldown",
           "fieldType": "duration",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "max_cost_attribution_cardinality",
+          "required": false,
+          "desc": "Maximum cardinality of cost attribution labels allowed per user.",
+          "fieldValue": null,
+          "fieldDefaultValue": 2000,
+          "fieldFlag": "validation.max-cost-attribution-cardinality",
+          "fieldType": "int",
           "fieldCategory": "experimental"
         },
         {

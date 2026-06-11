@@ -1691,6 +1691,12 @@ Usage of ./cmd/mimir/mimir:
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -ingester.client.tls-server-name string
     	Override the expected name on the server certificate.
+  -ingester.early-compaction-non-owned-series-enabled
+    	[experimental] When enabled, the ingester triggers an early TSDB head compaction for series that are no longer owned by the ingester after a ring change. Requires -ingester.track-ingester-owned-series or -ingester.use-ingester-owned-series-for-limits to be enabled.
+  -ingester.early-compaction-non-owned-series-max-grace-period duration
+    	[experimental] Maximum time a series may remain non-owned before it is evicted, regardless of the owned-series threshold. This ensures eventual eviction even for tenants below their threshold. A value of 0 disables the maximum grace period, so eviction depends solely on the owned-series threshold. (default 5m0s)
+  -ingester.early-compaction-non-owned-series-min-grace-period duration
+    	[experimental] Minimum time a series must remain non-owned before it can be evicted when the local owned-series threshold is exceeded. New non-owned series reset the timer. A value of 0 evicts immediately. A per-replica startup jitter spreads evictions across replicas. (default 30s)
   -ingester.early-head-compaction-min-estimated-series-reduction-percentage int
     	[experimental] Minimum estimated series reduction percentage (0-100) required to trigger per-tenant early compaction. (default 15)
   -ingester.early-head-compaction-owned-series-threshold int
@@ -2307,8 +2313,6 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Enable computing multiple aggregations over the same data without buffering. Requires common subexpression elimination to be enabled. (default true)
   -querier.mimir-query-engine.enable-narrow-binary-selectors
     	[experimental] Enable generating selectors for one side of a binary expression based on results from the other side.
-  -querier.mimir-query-engine.enable-projection-pushdown
-    	[experimental] Enable projection pushdown to only fetch labels required for the query from storage.
   -querier.mimir-query-engine.enable-prune-toggles
     	[experimental] Enable pruning query expressions that are toggled off with constants. (default true)
   -querier.mimir-query-engine.enable-range-query-range-vector-common-subexpression-elimination
@@ -3679,6 +3683,8 @@ Usage of ./cmd/mimir/mimir:
     	Installation mode. Supported values: custom, helm, jsonnet. (default "custom")
   -validation.cost-attribution-cooldown duration
     	[experimental] Defines how long cost attribution stays in overflow before attempting a reset, with received/discarded samples extending the cooldown if overflow persists, while active series reset and restart tracking after the cooldown.
+  -validation.cost-attribution-trackers value
+    	[experimental] Base cost attribution trackers configuration as JSON. Each tracker defines labels to track for cost attribution. Example: '{"by-team":{"labels":[{"input":"team"}]}}'.
   -validation.create-grace-period duration
     	Controls how far into the future incoming samples and exemplars are accepted compared to the wall clock. Any sample or exemplar will be rejected if its timestamp is greater than '(now + creation_grace_period)'. This configuration is enforced in the distributor and ingester. (default 10m)
   -validation.enforce-metadata-metric-name

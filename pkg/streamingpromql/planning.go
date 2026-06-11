@@ -135,11 +135,6 @@ func NewQueryPlannerWithTime(opts EngineOpts, versionProvider QueryPlanVersionPr
 	// This optimization pass must be registered before common subexpression elimination, if that is enabled.
 	planner.RegisterQueryPlanOptimizationPass(plan.NewSkipHistogramDecodingOptimizationPass())
 
-	if opts.EnableProjectionPushdown {
-		// This optimization pass must be registered before common subexpression elimination, if that is enabled.
-		planner.RegisterQueryPlanOptimizationPass(plan.NewProjectionPushdownOptimizationPass(opts.CommonOpts.Reg, opts.Logger))
-	}
-
 	if opts.EnableSubsetSelectorElimination && !opts.EnableCommonSubexpressionElimination {
 		return nil, errors.New("cannot enable subset selector elimination without common subexpression elimination")
 	}

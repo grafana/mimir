@@ -31,7 +31,7 @@ func init() {
 //node:generate
 type RemoteExecutionGroup struct {
 	*RemoteExecutionGroupDetails
-	Nodes []planning.Node `node:"children"`
+	Nodes []planning.Node `node:"children,min=1"`
 }
 
 func (r *RemoteExecutionGroup) Details() proto.Message {
@@ -40,16 +40,6 @@ func (r *RemoteExecutionGroup) Details() proto.Message {
 
 func (r *RemoteExecutionGroup) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_REMOTE_EXEC_GROUP
-}
-
-func (r *RemoteExecutionGroup) SetChildren(children []planning.Node) error {
-	if len(children) < 1 {
-		return fmt.Errorf("node of type RemoteExecutionGroup requires at least one child, but got %d", len(children))
-	}
-
-	r.Nodes = children
-
-	return nil
 }
 
 func (r *RemoteExecutionGroup) ReplaceChild(idx int, node planning.Node) error {
@@ -134,20 +124,6 @@ func (c *RemoteExecutionConsumer) Details() proto.Message {
 
 func (c *RemoteExecutionConsumer) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_REMOTE_EXEC_CONSUMER
-}
-
-func (c *RemoteExecutionConsumer) SetChildren(children []planning.Node) error {
-	if len(children) != 1 {
-		return fmt.Errorf("node of type RemoteExecutionConsumer requires 1 child, but got %d", len(children))
-	}
-
-	group, ok := children[0].(*RemoteExecutionGroup)
-	if !ok {
-		return fmt.Errorf("node of type RemoteExecutionConsumer requires child of type RemoteExecutionGroup, but got %T", children[0])
-	}
-
-	c.Group = group
-	return nil
 }
 
 func (c *RemoteExecutionConsumer) ReplaceChild(idx int, child planning.Node) error {

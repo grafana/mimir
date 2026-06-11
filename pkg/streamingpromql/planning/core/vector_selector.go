@@ -23,7 +23,7 @@ type VectorSelector struct {
 }
 
 func (v *VectorSelector) Describe() string {
-	d := describeSelector(v.Matchers, v.Timestamp, v.Offset, nil, v.SkipHistogramBuckets, false, v.Smoothed, false, v.ProjectionLabels, v.ProjectionInclude, v.Subsets)
+	d := describeSelector(v.Matchers, v.Timestamp, v.Offset, nil, v.SkipHistogramBuckets, false, v.Smoothed, false, v.Subsets)
 
 	if v.ReturnSampleTimestamps {
 		d = d + ", return sample timestamps"
@@ -46,14 +46,6 @@ func (v *VectorSelector) Details() proto.Message {
 
 func (v *VectorSelector) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_VECTOR_SELECTOR
-}
-
-func (v *VectorSelector) SetChildren(children []planning.Node) error {
-	if len(children) != 0 {
-		return fmt.Errorf("node of type VectorSelector expects 0 children, but got %d", len(children))
-	}
-
-	return nil
 }
 
 func (v *VectorSelector) ReplaceChild(idx int, node planning.Node) error {
@@ -91,13 +83,6 @@ func (v *VectorSelector) MergeHints(other planning.Node) error {
 	}
 
 	v.SkipHistogramBuckets = v.SkipHistogramBuckets && otherVectorSelector.SkipHistogramBuckets
-	v.ProjectionInclude, v.ProjectionLabels = mergeProjectionLabels(
-		v.ProjectionInclude,
-		v.ProjectionLabels,
-		otherVectorSelector.ProjectionInclude,
-		otherVectorSelector.ProjectionLabels,
-	)
-
 	return nil
 }
 
@@ -123,8 +108,6 @@ func MaterializeVectorSelector(v *VectorSelector, _ *planning.Materializer, time
 		ExpressionPosition:       v.GetExpressionPosition().ToPrometheusType(),
 		MemoryConsumptionTracker: params.MemoryConsumptionTracker,
 		Smoothed:                 v.Smoothed,
-		ProjectionInclude:        v.ProjectionInclude,
-		ProjectionLabels:         v.ProjectionLabels,
 		Subsets:                  subsets,
 	}
 
