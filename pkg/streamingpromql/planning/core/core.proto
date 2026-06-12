@@ -151,8 +151,8 @@ message VectorSelectorDetails {
   bool returnSampleTimestamps = 5;
   bool skipHistogramBuckets = 6;
   bool smoothed = 7;
-  bool projectionInclude = 8;
-  repeated string projectionLabels = 9;
+  reserved 8; // projectionInclude is no longer used.
+  reserved 9; // projectionLabels is no longer used.
   bool returnSampleTimestampsPreserveHistograms = 10;
 
   repeated SubsetMatchers subsets = 11 [(gogoproto.nullable) = false];
@@ -174,8 +174,8 @@ message MatrixSelectorDetails {
   bool smoothed = 7;
   bool anchored = 8;
   bool counterAware = 9;
-  bool projectionInclude = 10;
-  repeated string projectionLabels = 11;
+  reserved 10; // projectionInclude is no longer used.
+  reserved 11; // projectionLabels is no longer used.
 
   repeated SubsetMatchers subsets = 12 [(gogoproto.nullable) = false];
 }

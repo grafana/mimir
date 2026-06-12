@@ -7,10 +7,10 @@ metadata:
   labels:
     grafana.com/inject-rollout-operator-ca: "true"
     grafana.com/namespace: "citestns"
-    helm.sh/chart: rollout-operator-0.49.0
+    helm.sh/chart: rollout-operator-0.50.0
     app.kubernetes.io/name: rollout-operator
     app.kubernetes.io/instance: test-oss-pvc-name-values
-    app.kubernetes.io/version: "v0.36.2"
+    app.kubernetes.io/version: "v0.38.0"
     app.kubernetes.io/managed-by: Helm
 webhooks:
   - name: zpdb-validation-citestns.grafana.com
