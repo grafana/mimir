@@ -4,7 +4,7 @@ This program can copy Mimir blocks between two buckets or from a bucket to a bac
 
 By default, a copy between two buckets will be attempted server-side if both the source and destination specify the same object storage service. If the buckets are on different object storage services, or if `--client-side-copy` is passed, then the copy will be performed client side.
 
-The currently supported object storage services are Amazon Simple Storage Service (S3 and S3-compatible), Azure Blob Storage (ABS), and Google Cloud Storage (GCS).
+The currently supported object storage services are Amazon Simple Storage Service (S3 and S3-compatible), Azure Blob Storage (ABS), and Google Cloud Storage (GCS). A local filesystem is also supported.
 
 ## Features
 
@@ -73,6 +73,21 @@ Consider passing `--client-side-copy` to avoid having to deal with that.
 ```
 
 If both `--s3.<source|destination>.access-key-id` and `--s3.<source|destination>.secret-access-key` are omitted, credentials are resolved from the environment. This supports IAM roles for service accounts (IRSA) on EKS, ECS task roles, and EC2 instance metadata, and lets a single role that has access to both buckets authenticate the source and destination clients without passing static credentials.
+
+### Example for a local filesystem
+
+The directory is treated as the root of the bucket, so it is expected to follow the same layout Mimir uses in object storage: one subdirectory per tenant, each containing the tenant's blocks and a `markers` directory (e.g. `<directory>/<tenant ID>/<block ULID>/meta.json` and `<directory>/<tenant ID>/markers/`).
+
+```bash
+./copyblocks \
+  --source.backend filesystem \
+  --destination.backend filesystem \
+  --filesystem.source.directory <source directory> \
+  --filesystem.destination.directory <destination directory> \
+  --copy-period 24h \
+  --min-block-duration 13h \
+  --dry-run
+```
 
 ### Example for copying between different object storage providers
 

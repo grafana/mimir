@@ -4,7 +4,7 @@ This program copies objects by prefix between two buckets. If your infrastructur
 
 By default, copying will be attempted server-side if both the source and destination specify the same object storage service. If the buckets are on different object storage services, or if `--client-side-copy` is passed, then the copy will be performed client side.
 
-The currently supported services are Amazon Simple Storage Service (S3 and S3-compatible), Azure Blob Storage (ABS), and Google Cloud Storage (GCS).
+The currently supported services are Amazon Simple Storage Service (S3 and S3-compatible), Azure Blob Storage (ABS), and Google Cloud Storage (GCS). A local filesystem is also supported.
 
 ## Features
 
@@ -49,7 +49,7 @@ Run `go build` in this directory to build the program. Then, use an example belo
 
 ### Example for Amazon Simple Storage Service
 
-The destination is called to intiate the server-side copy which may require setting up additional permissions for the copy to have access the source bucket.
+The destination is called to initiate the server-side copy which may require setting up additional permissions for the copy to have access the source bucket.
 Consider passing `--client-side-copy` to avoid having to deal with that.
 
 ```bash
@@ -65,6 +65,21 @@ Consider passing `--client-side-copy` to avoid having to deal with that.
   --s3.destination.secret-access-key <destination secret access key> \
   --s3.destination.endpoint <destination endpoint> \
   --source-prefix tenant2 \
+  --dry-run
+```
+
+### Example for a local filesystem
+
+The directory is treated as the root of the bucket, and prefixes are resolved relative to it (e.g. `--source-prefix tenant1` matches objects under `<directory>/tenant1/`).
+
+```bash
+./copyprefix \
+  --source.backend filesystem \
+  --destination.backend filesystem \
+  --filesystem.source.directory <source directory> \
+  --filesystem.destination.directory <destination directory> \
+  --source-prefix tenant1 \
+  --destination-prefix tenant2 \
   --dry-run
 ```
 

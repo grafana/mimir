@@ -30,7 +30,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"github.com/thanos-io/objstore"
 
 	"github.com/grafana/mimir/pkg/mimirtool/client"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
@@ -297,7 +296,7 @@ func newBucketBlockCopier(ctx context.Context, cfg config) (objtools.Bucket, *bl
 	return sourceBucket, &blockCopier{
 		name: destBucket.Name(),
 		copyBlock: func(ctx context.Context, srcTenant, dstTenant string, blockID ulid.ULID, markers blockMarkers) error {
-			exists, err := destBucket.Exists(ctx, metaObjectName(dstTenant, blockID))
+			exists, err := destBucket.Exists(ctx, metaObjectName(dstTenant, blockID), objtools.ExistsOptions{})
 			if err != nil {
 				return fmt.Errorf("failed to check if block already exists on destination: %w", err)
 			}
@@ -314,10 +313,6 @@ func newBackfillBlockCopier(ctx context.Context, cfg config, logger log.Logger) 
 	if err != nil {
 		return nil, nil, err
 	}
-	objstoreBkt, err := cfg.copyConfig.SourceObjstoreBucket(ctx, logger)
-	if err != nil {
-		return nil, nil, err
-	}
 	mimirClient, err := client.New(cfg.backfill.clientConfig, logger)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to create Mimir client for backfill: %w", err)
@@ -325,8 +320,7 @@ func newBackfillBlockCopier(ctx context.Context, cfg config, logger log.Logger) 
 	return sourceBucket, &blockCopier{
 		name: "backfill",
 		copyBlock: func(ctx context.Context, srcTenant, _ string, blockID ulid.ULID, _ blockMarkers) error {
-			prefixedBkt := objstore.NewPrefixedBucket(objstoreBkt, srcTenant)
-			err := mimirClient.BackfillBlock(ctx, prefixedBkt, blockID, cfg.backfill.sleepTime)
+			err := mimirClient.BackfillBlock(ctx, sourceBucket, srcTenant, blockID, cfg.backfill.sleepTime)
 			if errors.Is(err, client.ErrConflict) {
 				return errBlockAlreadyExists
 			}
