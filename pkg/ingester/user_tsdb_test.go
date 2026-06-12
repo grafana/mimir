@@ -213,6 +213,32 @@ func TestUserTSDB_addPendingNonOwnedRefs(t *testing.T) {
 			"a new ref in the snapshot must bump the newest timestamp")
 	})
 
+	t.Run("dropping the uniquely-oldest ref advances oldest to the next-oldest retained ref", func(t *testing.T) {
+		// Stage two refs with distinct add timestamps: ref 1 at T0, ref 2 at T1>T0.
+		db := &userTSDB{}
+		db.addPendingNonOwnedRefs(refSet(1))
+		oldestTS := db.oldestPendingNonOwnedRefTS
+
+		time.Sleep(2 * time.Millisecond)
+		db.addPendingNonOwnedRefs(refSet(1, 2))
+		newestTS := db.newestPendingNonOwnedRefTS
+		require.True(t, db.oldestPendingNonOwnedRefTS.Equal(oldestTS),
+			"sanity: oldest stays anchored to ref 1's add time while it is still pending")
+		require.True(t, newestTS.After(oldestTS),
+			"sanity: newest advances to ref 2's add time")
+
+		// Ref 1 is no longer non-owned. The drop pass deletes it and must recompute
+		// oldestPendingNonOwnedRefTS from the retained refs only; it must not keep
+		// pointing at the just-deleted ref's timestamp.
+		db.addPendingNonOwnedRefs(refSet(2))
+
+		assert.Equal(t, map[storage.SeriesRef]bool{2: true}, asSet(db))
+		assert.True(t, db.oldestPendingNonOwnedRefTS.Equal(newestTS),
+			"oldest must advance to ref 2's add time once the older ref 1 has been dropped")
+		assert.True(t, db.newestPendingNonOwnedRefTS.Equal(newestTS),
+			"newest must not be touched by a drop-only reconciliation")
+	})
+
 	t.Run("empty snapshot drops everything and resets both timestamps", func(t *testing.T) {
 		db := &userTSDB{}
 		db.addPendingNonOwnedRefs(refSet(1, 2, 3))

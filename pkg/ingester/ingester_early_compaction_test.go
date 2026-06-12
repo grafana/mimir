@@ -1703,22 +1703,20 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_StaleRefsAfterPriorEviction(t
 	require.Equal(t, uint64(1), db.Head().NumSeries(), "head should still contain only the owned series")
 }
 
-// TestIngester_compactBlocksDueToNonOwnedSeries_ShouldEvictAgedRefsDespiteFresherOnes is the
-// integration-level regression test for the bug where non-owned series remained pinned in the head
-// indefinitely under sustained ring churn. The previous single-anchor design bumped the shared
-// grace timer whenever any new ref was queued, so a continuous trickle of churn kept the cutoff
-// permanently out of reach and even refs that had been pending well past minGrace were never
-// returned by takePendingNonOwnedRefs.
+// TestIngester_compactBlocksDueToNonOwnedSeries_ShouldEvictAgedRefsDespiteFresherOnes verifies
+// that pending non-owned refs are evicted based on their individual grace periods.
 //
-// The test simulates the two-phase sequence that produced the bug:
-//  1. A first recompute queues a batch of "older" non-owned refs; their per-ref timestamps are
-//     then backdated to make them appear past the min-grace cutoff.
-//  2. A second recompute queues a batch of "newer" non-owned refs at current wall-clock time,
-//     leaving the older batch's per-ref timestamps untouched (the per-ref design's contract).
+// The test simulates a situation where some non-owned refs have been pending long enough to
+// exceed the minimum grace period, while other refs have only recently become non-owned.
 //
-// compactBlocksDueToNonOwnedSeries must evict only the older refs and leave the newer ones pending,
-// producing exactly one block. Under the previous design no refs would be evicted at all because
-// the shared anchor would have been bumped to current time by phase 2.
+// The scenario is constructed in two steps:
+//  1. Queue an initial batch of non-owned refs and backdate their timestamps so they appear
+//     older than the minimum grace period.
+//  2. Queue a second batch of non-owned refs using the current time, leaving the timestamps
+//     of the older refs unchanged.
+//
+// When compaction runs, only the older refs should be selected for eviction, while the newer
+// refs should remain pending. As a result, exactly one block should be compacted.
 func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldEvictAgedRefsDespiteFresherOnes(t *testing.T) {
 	const (
 		olderSeriesCount = 5
@@ -1804,8 +1802,7 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldEvictAgedRefsDespiteFre
 	db.pendingNonOwnedRefsMtx.Unlock()
 
 	// Compaction must evict the older batch (its per-ref grace has elapsed) and leave the newer
-	// batch pending. Under the previous single-anchor design, phase 2 would have reset the timer
-	// and no refs would be evicted.
+	// batch pending.
 	userBlocksDir := filepath.Join(ingester.cfg.BlocksStorageConfig.TSDB.Dir, userID)
 	ingester.compactBlocksDueToNonOwnedSeries(ctx, 0)
 
