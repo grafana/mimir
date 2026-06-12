@@ -4256,20 +4256,16 @@ func (m *WriteRequest) unmarshal(dAtA []byte, depth int) error {
 			if c > preCapMax {
 				c = preCapMax
 			}
-			if need := len(m.Timeseries) + c; cap(m.Timeseries) < need {
-				grown := make([]PreallocTimeseries, len(m.Timeseries), need)
-				copy(grown, m.Timeseries)
-				m.Timeseries = grown
+			if len(m.Timeseries) == 0 && cap(m.Timeseries) < c {
+				m.Timeseries = make([]PreallocTimeseries, 0, c)
 			}
 		}
 		if c := field3count; c > 0 {
 			if c > preCapMax {
 				c = preCapMax
 			}
-			if need := len(m.Metadata) + c; cap(m.Metadata) < need {
-				grown := make([]*MetricMetadata, len(m.Metadata), need)
-				copy(grown, m.Metadata)
-				m.Metadata = grown
+			if len(m.Metadata) == 0 && cap(m.Metadata) < c {
+				m.Metadata = make([]*MetricMetadata, 0, c)
 			}
 		}
 		// Modified code: in RW2 mode field 4 symbols go into m.rw2symbols paged
@@ -4939,20 +4935,16 @@ func (m *TimeSeries) unmarshal(dAtA []byte, depth int) error {
 			if c > preCapMax {
 				c = preCapMax
 			}
-			if need := len(m.Labels) + c; cap(m.Labels) < need {
-				grown := make([]UnsafeMutableLabel, len(m.Labels), need)
-				copy(grown, m.Labels)
-				m.Labels = grown
+			if len(m.Labels) == 0 && cap(m.Labels) < c {
+				m.Labels = make([]UnsafeMutableLabel, 0, c)
 			}
 		}
 		if c := field2count; c > 0 {
 			if c > preCapMax {
 				c = preCapMax
 			}
-			if need := len(m.Samples) + c; cap(m.Samples) < need {
-				grown := make([]Sample, len(m.Samples), need)
-				copy(grown, m.Samples)
-				m.Samples = grown
+			if len(m.Samples) == 0 && cap(m.Samples) < c {
+				m.Samples = make([]Sample, 0, c)
 			}
 		}
 		// Modified code: don't preallocate exemplars that won't be unmarshalled.
@@ -4960,10 +4952,8 @@ func (m *TimeSeries) unmarshal(dAtA []byte, depth int) error {
 			if c > preCapMax {
 				c = preCapMax
 			}
-			if need := len(m.Exemplars) + c; cap(m.Exemplars) < need {
-				grown := make([]Exemplar, len(m.Exemplars), need)
-				copy(grown, m.Exemplars)
-				m.Exemplars = grown
+			if len(m.Exemplars) == 0 && cap(m.Exemplars) < c {
+				m.Exemplars = make([]Exemplar, 0, c)
 			}
 		}
 		// End modified code.
@@ -4971,10 +4961,8 @@ func (m *TimeSeries) unmarshal(dAtA []byte, depth int) error {
 			if c > preCapMax {
 				c = preCapMax
 			}
-			if need := len(m.Histograms) + c; cap(m.Histograms) < need {
-				grown := make([]Histogram, len(m.Histograms), need)
-				copy(grown, m.Histograms)
-				m.Histograms = grown
+			if len(m.Histograms) == 0 && cap(m.Histograms) < c {
+				m.Histograms = make([]Histogram, 0, c)
 			}
 		}
 	}
@@ -5791,10 +5779,8 @@ func (m *Metric) unmarshal(dAtA []byte, depth int) error {
 			if c > preCapMax {
 				c = preCapMax
 			}
-			if need := len(m.Labels) + c; cap(m.Labels) < need {
-				grown := make([]UnsafeMutableLabel, len(m.Labels), need)
-				copy(grown, m.Labels)
-				m.Labels = grown
+			if len(m.Labels) == 0 && cap(m.Labels) < c {
+				m.Labels = make([]UnsafeMutableLabel, 0, c)
 			}
 		}
 	}
@@ -5965,10 +5951,8 @@ func (m *Exemplar) unmarshal(dAtA []byte, depth int) error {
 			if c > preCapMax {
 				c = preCapMax
 			}
-			if need := len(m.Labels) + c; cap(m.Labels) < need {
-				grown := make([]UnsafeMutableLabel, len(m.Labels), need)
-				copy(grown, m.Labels)
-				m.Labels = grown
+			if len(m.Labels) == 0 && cap(m.Labels) < c {
+				m.Labels = make([]UnsafeMutableLabel, 0, c)
 			}
 		}
 	}
@@ -6185,20 +6169,16 @@ func (m *Histogram) unmarshal(dAtA []byte, depth int) error {
 			if c > preCapMax {
 				c = preCapMax
 			}
-			if need := len(m.NegativeSpans) + c; cap(m.NegativeSpans) < need {
-				grown := make([]BucketSpan, len(m.NegativeSpans), need)
-				copy(grown, m.NegativeSpans)
-				m.NegativeSpans = grown
+			if len(m.NegativeSpans) == 0 && cap(m.NegativeSpans) < c {
+				m.NegativeSpans = make([]BucketSpan, 0, c)
 			}
 		}
 		if c := field11count; c > 0 {
 			if c > preCapMax {
 				c = preCapMax
 			}
-			if need := len(m.PositiveSpans) + c; cap(m.PositiveSpans) < need {
-				grown := make([]BucketSpan, len(m.PositiveSpans), need)
-				copy(grown, m.PositiveSpans)
-				m.PositiveSpans = grown
+			if len(m.PositiveSpans) == 0 && cap(m.PositiveSpans) < c {
+				m.PositiveSpans = make([]BucketSpan, 0, c)
 			}
 		}
 	}
@@ -7002,20 +6982,16 @@ func (m *FloatHistogram) unmarshal(dAtA []byte, depth int) error {
 			if c > preCapMax {
 				c = preCapMax
 			}
-			if need := len(m.PositiveSpans) + c; cap(m.PositiveSpans) < need {
-				grown := make([]BucketSpan, len(m.PositiveSpans), need)
-				copy(grown, m.PositiveSpans)
-				m.PositiveSpans = grown
+			if len(m.PositiveSpans) == 0 && cap(m.PositiveSpans) < c {
+				m.PositiveSpans = make([]BucketSpan, 0, c)
 			}
 		}
 		if c := field8count; c > 0 {
 			if c > preCapMax {
 				c = preCapMax
 			}
-			if need := len(m.NegativeSpans) + c; cap(m.NegativeSpans) < need {
-				grown := make([]BucketSpan, len(m.NegativeSpans), need)
-				copy(grown, m.NegativeSpans)
-				m.NegativeSpans = grown
+			if len(m.NegativeSpans) == 0 && cap(m.NegativeSpans) < c {
+				m.NegativeSpans = make([]BucketSpan, 0, c)
 			}
 		}
 	}
@@ -7788,10 +7764,8 @@ func (m *SampleHistogram) unmarshal(dAtA []byte, depth int) error {
 			if c > preCapMax {
 				c = preCapMax
 			}
-			if need := len(m.Buckets) + c; cap(m.Buckets) < need {
-				grown := make([]*HistogramBucket, len(m.Buckets), need)
-				copy(grown, m.Buckets)
-				m.Buckets = grown
+			if len(m.Buckets) == 0 && cap(m.Buckets) < c {
+				m.Buckets = make([]*HistogramBucket, 0, c)
 			}
 		}
 	}
@@ -8261,20 +8235,16 @@ func (m *QueryResponse) unmarshal(dAtA []byte, depth int) error {
 			if c > preCapMax {
 				c = preCapMax
 			}
-			if need := len(m.Warnings) + c; cap(m.Warnings) < need {
-				grown := make([]string, len(m.Warnings), need)
-				copy(grown, m.Warnings)
-				m.Warnings = grown
+			if len(m.Warnings) == 0 && cap(m.Warnings) < c {
+				m.Warnings = make([]string, 0, c)
 			}
 		}
 		if c := field9count; c > 0 {
 			if c > preCapMax {
 				c = preCapMax
 			}
-			if need := len(m.Infos) + c; cap(m.Infos) < need {
-				grown := make([]string, len(m.Infos), need)
-				copy(grown, m.Infos)
-				m.Infos = grown
+			if len(m.Infos) == 0 && cap(m.Infos) < c {
+				m.Infos = make([]string, 0, c)
 			}
 		}
 	}
@@ -8929,20 +8899,16 @@ func (m *VectorData) unmarshal(dAtA []byte, depth int) error {
 			if c > preCapMax {
 				c = preCapMax
 			}
-			if need := len(m.Samples) + c; cap(m.Samples) < need {
-				grown := make([]VectorSample, len(m.Samples), need)
-				copy(grown, m.Samples)
-				m.Samples = grown
+			if len(m.Samples) == 0 && cap(m.Samples) < c {
+				m.Samples = make([]VectorSample, 0, c)
 			}
 		}
 		if c := field2count; c > 0 {
 			if c > preCapMax {
 				c = preCapMax
 			}
-			if need := len(m.Histograms) + c; cap(m.Histograms) < need {
-				grown := make([]VectorHistogram, len(m.Histograms), need)
-				copy(grown, m.Histograms)
-				m.Histograms = grown
+			if len(m.Histograms) == 0 && cap(m.Histograms) < c {
+				m.Histograms = make([]VectorHistogram, 0, c)
 			}
 		}
 	}
@@ -9160,10 +9126,8 @@ func (m *VectorSample) unmarshal(dAtA []byte, depth int) error {
 			if c > preCapMax {
 				c = preCapMax
 			}
-			if need := len(m.Metric) + c; cap(m.Metric) < need {
-				grown := make([]string, len(m.Metric), need)
-				copy(grown, m.Metric)
-				m.Metric = grown
+			if len(m.Metric) == 0 && cap(m.Metric) < c {
+				m.Metric = make([]string, 0, c)
 			}
 		}
 	}
@@ -9373,10 +9337,8 @@ func (m *VectorHistogram) unmarshal(dAtA []byte, depth int) error {
 			if c > preCapMax {
 				c = preCapMax
 			}
-			if need := len(m.Metric) + c; cap(m.Metric) < need {
-				grown := make([]string, len(m.Metric), need)
-				copy(grown, m.Metric)
-				m.Metric = grown
+			if len(m.Metric) == 0 && cap(m.Metric) < c {
+				m.Metric = make([]string, 0, c)
 			}
 		}
 	}
@@ -9719,10 +9681,8 @@ func (m *MatrixData) unmarshal(dAtA []byte, depth int) error {
 			if c > preCapMax {
 				c = preCapMax
 			}
-			if need := len(m.Series) + c; cap(m.Series) < need {
-				grown := make([]MatrixSeries, len(m.Series), need)
-				copy(grown, m.Series)
-				m.Series = grown
+			if len(m.Series) == 0 && cap(m.Series) < c {
+				m.Series = make([]MatrixSeries, 0, c)
 			}
 		}
 	}
@@ -9898,30 +9858,24 @@ func (m *MatrixSeries) unmarshal(dAtA []byte, depth int) error {
 			if c > preCapMax {
 				c = preCapMax
 			}
-			if need := len(m.Metric) + c; cap(m.Metric) < need {
-				grown := make([]string, len(m.Metric), need)
-				copy(grown, m.Metric)
-				m.Metric = grown
+			if len(m.Metric) == 0 && cap(m.Metric) < c {
+				m.Metric = make([]string, 0, c)
 			}
 		}
 		if c := field2count; c > 0 {
 			if c > preCapMax {
 				c = preCapMax
 			}
-			if need := len(m.Samples) + c; cap(m.Samples) < need {
-				grown := make([]Sample, len(m.Samples), need)
-				copy(grown, m.Samples)
-				m.Samples = grown
+			if len(m.Samples) == 0 && cap(m.Samples) < c {
+				m.Samples = make([]Sample, 0, c)
 			}
 		}
 		if c := field3count; c > 0 {
 			if c > preCapMax {
 				c = preCapMax
 			}
-			if need := len(m.Histograms) + c; cap(m.Histograms) < need {
-				grown := make([]FloatHistogramPair, len(m.Histograms), need)
-				copy(grown, m.Histograms)
-				m.Histograms = grown
+			if len(m.Histograms) == 0 && cap(m.Histograms) < c {
+				m.Histograms = make([]FloatHistogramPair, 0, c)
 			}
 		}
 	}
@@ -10187,20 +10141,16 @@ func (m *WriteRequestRW2) unmarshal(dAtA []byte, depth int) error {
 			if c > preCapMax {
 				c = preCapMax
 			}
-			if need := len(m.Symbols) + c; cap(m.Symbols) < need {
-				grown := make([]string, len(m.Symbols), need)
-				copy(grown, m.Symbols)
-				m.Symbols = grown
+			if len(m.Symbols) == 0 && cap(m.Symbols) < c {
+				m.Symbols = make([]string, 0, c)
 			}
 		}
 		if c := field5count; c > 0 {
 			if c > preCapMax {
 				c = preCapMax
 			}
-			if need := len(m.Timeseries) + c; cap(m.Timeseries) < need {
-				grown := make([]TimeSeriesRW2, len(m.Timeseries), need)
-				copy(grown, m.Timeseries)
-				m.Timeseries = grown
+			if len(m.Timeseries) == 0 && cap(m.Timeseries) < c {
+				m.Timeseries = make([]TimeSeriesRW2, 0, c)
 			}
 		}
 	}
