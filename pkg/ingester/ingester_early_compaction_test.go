@@ -989,8 +989,6 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldNotCompactWhenDisabled(
 
 	db.pendingNonOwnedRefsMtx.Lock()
 	assert.Empty(t, db.pendingNonOwnedRefs, "pendingNonOwnedRefs must not be populated when early compaction of non-owned series is disabled")
-	assert.True(t, db.oldestPendingNonOwnedRefTS.IsZero(), "oldestPendingNonOwnedRefTS must remain unset when early compaction of non-owned series is disabled")
-	assert.True(t, db.newestPendingNonOwnedRefTS.IsZero(), "newestPendingNonOwnedRefTS must remain unset when early compaction of non-owned series is disabled")
 	db.pendingNonOwnedRefsMtx.Unlock()
 
 	// Should not compact because the feature is disabled.
@@ -1449,8 +1447,6 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldRespectGracePeriod(t *t
 	for r := range db.pendingNonOwnedRefs {
 		db.pendingNonOwnedRefs[r] = backdated
 	}
-	db.oldestPendingNonOwnedRefTS = backdated
-	db.newestPendingNonOwnedRefTS = backdated
 	db.pendingNonOwnedRefsMtx.Unlock()
 
 	// Second call: eviction should now proceed for the non-owned series.
@@ -1599,8 +1595,6 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldHandleScaleUp(t *testin
 		for r := range db.pendingNonOwnedRefs {
 			db.pendingNonOwnedRefs[r] = backdated
 		}
-		db.oldestPendingNonOwnedRefTS = backdated
-		db.newestPendingNonOwnedRefTS = backdated
 		db.pendingNonOwnedRefsMtx.Unlock()
 
 		// Second call: max grace elapsed, gate bypassed — non-owned series are evicted.
@@ -1783,8 +1777,6 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldEvictAgedRefsDespiteFre
 	for r := range db.pendingNonOwnedRefs {
 		db.pendingNonOwnedRefs[r] = backdated
 	}
-	db.oldestPendingNonOwnedRefTS = backdated
-	db.newestPendingNonOwnedRefTS = backdated
 	db.pendingNonOwnedRefsMtx.Unlock()
 
 	// Phase 2: push the newer batch and recompute again. The older refs keep their backdated
@@ -1795,10 +1787,19 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldEvictAgedRefsDespiteFre
 
 	db.pendingNonOwnedRefsMtx.Lock()
 	require.Len(t, db.pendingNonOwnedRefs, totalSeries, "both batches should be queued as non-owned")
-	require.True(t, db.oldestPendingNonOwnedRefTS.Equal(backdated),
-		"oldest timestamp must remain anchored to the older batch despite the new arrivals")
-	require.True(t, db.newestPendingNonOwnedRefTS.After(backdated),
-		"newest timestamp must advance to the newer batch")
+	olderRetained := 0
+	newerStamped := 0
+	for _, ts := range db.pendingNonOwnedRefs {
+		if ts.Equal(backdated) {
+			olderRetained++
+		} else if ts.After(backdated) {
+			newerStamped++
+		}
+	}
+	require.Equal(t, olderSeriesCount, olderRetained,
+		"per-ref timestamps for the older batch must stay backdated despite the new arrivals")
+	require.Equal(t, newerSeriesCount, newerStamped,
+		"newer batch must carry timestamps later than the backdated value")
 	db.pendingNonOwnedRefsMtx.Unlock()
 
 	// Compaction must evict the older batch (its per-ref grace has elapsed) and leave the newer
