@@ -7366,6 +7366,17 @@
         },
         {
           "kind": "field",
+          "name": "otel_log_target_info_label_name_collisions",
+          "required": false,
+          "desc": "Whether to log, at debug level, OTel resource attributes that collide after label name sanitization in the OTLP endpoint. Colliding attribute values may get concatenated with ';' in the resulting target_info label; empty values get overwritten or dropped instead.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "distributor.otel-log-target-info-label-name-collisions",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "ingest_storage_read_consistency",
           "required": false,
           "desc": "The default consistency level to enforce for queries when using the ingest storage. Supports values: strong, eventual.",
