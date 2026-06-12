@@ -31,7 +31,7 @@ import (
 // If MIMIR_PREVIOUS_IMAGES is set to a JSON, it supports mapping flags for those versions,
 // see TestParsePreviousImageVersionOverrides for the JSON format to use.
 func previousVersionImages(t *testing.T) map[string]e2emimir.FlagMapper {
-	if overrides := previousImageVersionOverrides(t); len(overrides) > 0 {
+	if overrides, overridesSet := previousImageVersionOverrides(t); len(overrides) > 0 || overridesSet {
 		for key, mapper := range overrides {
 			overrides[key] = e2emimir.ChainFlagMappers(mapper, defaultPreviousVersionGlobalOverrides)
 		}
@@ -361,10 +361,16 @@ type remoteReadRequestTest struct {
 
 type testingLogger interface{ Logf(string, ...interface{}) }
 
-func previousImageVersionOverrides(t *testing.T) map[string]e2emimir.FlagMapper {
-	overrides, err := parsePreviousImageVersionOverrides(os.Getenv("MIMIR_PREVIOUS_IMAGES"), t)
+func previousImageVersionOverrides(t *testing.T) (overrides map[string]e2emimir.FlagMapper, overridesSet bool) {
+	envVal, present := os.LookupEnv("MIMIR_PREVIOUS_IMAGES")
+	if !present {
+		return nil, false
+	}
+
+	var err error
+	overrides, err = parsePreviousImageVersionOverrides(envVal, t)
 	require.NoError(t, err)
-	return overrides
+	return overrides, true
 }
 
 func parsePreviousImageVersionOverrides(env string, logger testingLogger) (map[string]e2emimir.FlagMapper, error) {
