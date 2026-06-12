@@ -1056,6 +1056,13 @@ func (s *BucketStore) getSeriesIteratorFromBlocks(
 	if s.maxConcurrentBlocksPerRequest > 0 {
 		g.SetLimit(s.maxConcurrentBlocksPerRequest)
 	}
+	// Logged before the fan-out so it survives even if the request is OOM-killed mid-resolution.
+	level.Info(spanlogger.FromContext(ctx, s.logger)).Log(
+		"msg", "series request block fan-out",
+		"user", s.userID,
+		"num_blocks", len(blocks),
+		"max_concurrent_blocks_per_request", s.maxConcurrentBlocksPerRequest,
+	)
 	for _, b := range blocks {
 		// Keep track of queried blocks.
 		indexr := indexReaders[b.meta.ULID]
