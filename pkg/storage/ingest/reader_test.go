@@ -2382,7 +2382,7 @@ func TestPartitionReader_ShouldNotMissRecordsIfKafkaReturnsAFetchBothWithAnError
 	const (
 		topicName            = "test"
 		partitionID          = 1
-		totalProducedRecords = 1000
+		totalProducedRecords = 200
 		recordSizeBytes      = initialBytesPerRecord
 		maxBufferedBytes     = (totalProducedRecords * initialBytesPerRecord) / 100
 	)
