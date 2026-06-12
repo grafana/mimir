@@ -139,10 +139,12 @@ func logTargetInfoLabelCollisions(md pmetric.Metrics, opts conversionOptions, lo
 
 			logged++
 			// TODO: the translator appends the colliding value even when it is
-			// identical to the existing one, producing e.g. "val;val". Skipping
-			// the append for identical values needs an upstream change in
-			// prometheus/prometheus createAttributes (helper.go); revisit this
-			// log line's wording if that lands.
+			// identical to the existing one, producing e.g. "val;val". The OTel
+			// collector already skips the append for identical values
+			// (open-telemetry/opentelemetry-collector-contrib#36928, merged
+			// January 2025), but prometheus/prometheus createAttributes
+			// (helper.go) never picked that up. Port it upstream, then revisit
+			// this log line's wording.
 			level.Debug(logger).Log(
 				"msg", "OTLP resource attributes collide after label name sanitization, values may be concatenated in target_info",
 				"label", name,
