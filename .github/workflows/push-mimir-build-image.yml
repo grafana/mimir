@@ -74,6 +74,12 @@ jobs:
           echo "New image hash is $new_image_hash"
           new_image_tag="pr${{ github.event.pull_request.number }}-$new_image_hash"
           echo "new_image_tag=$new_image_tag" >> $GITHUB_OUTPUT
+          
+          {
+            echo "build_args<<EOF"
+            make print-build-image-build-args
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Check if image is already built
         if: steps.check_if_files_modified.outputs.modified == 'true'
@@ -94,7 +100,7 @@ jobs:
         run: |
           if [ ${{ steps.check_if_image_is_built.outputs.need_to_build }} == 'true' ]; then
            gh pr comment $PR_NUMBER --body "**Building new version of mimir-build-image**. After image is built and pushed to the registry, \
-           a new commit will automatically be added to this PR with new image version \`$IMAGE:$NEW_IMAGE_TAG\`. This can take up to 1 hour."
+           a new commit will automatically be added to this PR with new image version \`$IMAGE:$NEW_IMAGE_TAG\`. This can take a few minutes."
           else
             echo "This PR will not trigger a build of mimir-build-image"
             gh pr comment $PR_NUMBER --body "**Not building new version of mimir-build-image**. This PR modifies the build image or the build image build workflow, but the image \`$IMAGE:$NEW_IMAGE_TAG\` already exists."
@@ -109,21 +115,47 @@ jobs:
       need_to_build: ${{ steps.check_if_image_is_built.outputs.need_to_build }}
       new_image_tag: ${{ steps.compute_variables.outputs.new_image_tag }}
       main_image_tag: ${{ steps.compute_variables.outputs.main_image_tag }}
+      build_args: ${{ steps.compute_variables.outputs.build_args }}
 
+  build-push-multiarch:
+    name: Build image
+    needs:
+      - prepare
+    if: needs.prepare.outputs.need_to_build == 'true'
+    uses: grafana/shared-workflows/.github/workflows/docker-build-push-multiarch.yml@638f24848a49edb0bd14f771b6dd37b4455f1591 # main
+    with:
+      context: mimir-build-image
+      platforms: linux/arm64,linux/amd64
+      tags: ${{ needs.prepare.outputs.new_image_tag }}
+      build-args: ${{ needs.prepare.outputs.build_args }}
+      push: true
+      registries: gar
+      gar-environment: dev
+      gar-repository: docker-mimir-build-image
+      gar-image: mimir-build-image
+      generate-summary: true
+      runner-type-x64: ubuntu-x64
+      runner-type-arm64: ubuntu-arm64
+
+  # This name is completely misleading, but a previous version of this workflow used this name and it's used as a required PR check in GitHub.
+  # Renaming it would mean backporting a large number of changes to old release branches, so we're keeping it as-is for now.
+  # Once all active release branches use this workflow, it'll be much easier to rename it and backport just that rename.
   build_and_push:
     runs-on: ubuntu-latest
     needs:
       - prepare
-    if: always()
+      - build-push-multiarch
+    if: always() # Even if the build-push-multiarch job is skipped, we still want to run this job and mark it as successful, so that we can make this job a required check.
     permissions:
       contents: read
-      pull-requests: write
-      id-token: write
+      id-token: write # Required to generate GitHub app token to push commit.
     steps:
-      - name: Fail if prepare failed
-        if: needs.prepare.result != 'success'
+      # We always run this job even if the image build is skipped, so that we can make this job a required check.
+      # So if the image build failed, then we want this job to fail too.
+      - name: Fail if image build failed
+        if: needs.prepare.result != 'success' || (needs.prepare.outputs.need_to_build == 'true' && needs.build-push-multiarch.result != 'success')
         run: |
-          echo "Prepare job failed, stopping."
+          echo "Image build failed, stopping."
           exit 1
 
       - name: Checkout repository
@@ -131,32 +163,19 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           persist-credentials: false
-          ref: ${{ github.event.pull_request.head.ref }}
+          ref: ${{ github.event.pull_request.head.ref }} # Check out the PR branch itself, not the temporary merge commit
 
-      - name: Setup QEMU
-        if: needs.prepare.outputs.need_to_build == 'true'
-        uses: docker/setup-qemu-action@ce360397dd3f832beb865e1373c09c0e9f86d70a # v4.0.0
-
-      - name: Set up Docker Buildx
-        if: needs.prepare.outputs.need_to_build == 'true'
-        uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
-
-      - name: Login to Docker Hub
-        if: needs.prepare.outputs.need_to_build == 'true'
-        uses: grafana/shared-workflows/actions/dockerhub-login@13fb504e3bfe323c1188bf244970d94b2d336e86 # v1.0.1
-
-      - name: Build and Push Docker Image
-        if: needs.prepare.outputs.need_to_build == 'true'
-        run: |
-          make push-multiarch-build-image IMAGE_TAG=${{ needs.prepare.outputs.new_image_tag }}
-
+      # Compare the just-built tag against the one currently referenced in the Makefile.
+      # If they differ, update the Makefile and signal the next step to commit; otherwise
+      # `changed=false` and no commit will be made.
       - name: Check whether Makefile needs updating, and update it
         id: update_makefile
         if: needs.prepare.outputs.need_to_build == 'true'
         run: |
           set -euo pipefail
+          NEW_IMAGE_TAG=$(echo $NEW_IMAGE | cut -d ':' -f 2-)
           echo "Current build image tag is $MAIN_IMAGE_TAG"
-          echo "New image tag is $NEW_IMAGE_TAG"
+          echo "Built image is $NEW_IMAGE, new tag is $NEW_IMAGE_TAG"
           if [ "$MAIN_IMAGE_TAG" = "$NEW_IMAGE_TAG" ]; then
             echo "Build image tag is already up to date."
             echo "changed=false" >> "$GITHUB_OUTPUT"
@@ -165,9 +184,11 @@ jobs:
             echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
         env:
-          NEW_IMAGE_TAG: ${{ needs.prepare.outputs.new_image_tag }}
+          NEW_IMAGE: ${{ needs.build-push-multiarch.outputs.image-digests }}
           MAIN_IMAGE_TAG: ${{ needs.prepare.outputs.main_image_tag }}
 
+      # Generate the app token here (rather than earlier in the job) so we only mint one
+      # when we actually need to commit.
       - name: Generate GitHub App Token
         if: steps.update_makefile.outputs.changed == 'true'
         id: app-token-for-commit
