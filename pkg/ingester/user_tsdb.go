@@ -764,14 +764,30 @@ func (u *userTSDB) takePendingNonOwnedRefs(notAfter time.Time) []storage.SeriesR
 	if len(u.pendingNonOwnedRefs) == 0 {
 		return nil
 	}
+	// Fast skip: even the oldest pending ref is younger than the cutoff, so nothing is eligible yet.
 	if u.oldestPendingNonOwnedRefTS.After(notAfter) {
 		return nil
 	}
-	partialDeletionNeeded := u.newestPendingNonOwnedRefTS.After(notAfter)
+	// Full drain: every pending ref is at or older than the cutoff, so clear the map in one shot
+	// instead of paying per-key deletes.
+	if u.newestPendingNonOwnedRefTS.Before(notAfter) {
+		refs := make([]storage.SeriesRef, 0, len(u.pendingNonOwnedRefs))
+		for r := range u.pendingNonOwnedRefs {
+			refs = append(refs, r)
+		}
+		u.pendingNonOwnedRefs = nil
+		u.newestPendingNonOwnedRefTS = time.Time{}
+		u.oldestPendingNonOwnedRefTS = time.Time{}
+		return refs
+	}
+
+	// Partial drain: some refs are eligible and some are not. Iterate over the map and selectively
+	// delete the eligible ones, tracking the minimum timestamp across the retained refs so
+	// oldestPendingNonOwnedRefTS keeps its meaning for the next take.
 	u.oldestPendingNonOwnedRefTS = time.Now()
 	refs := make([]storage.SeriesRef, 0, len(u.pendingNonOwnedRefs))
 	for r, ts := range u.pendingNonOwnedRefs {
-		if partialDeletionNeeded && ts.After(notAfter) {
+		if ts.After(notAfter) {
 			if ts.Before(u.oldestPendingNonOwnedRefTS) {
 				u.oldestPendingNonOwnedRefTS = ts
 			}
@@ -779,16 +795,8 @@ func (u *userTSDB) takePendingNonOwnedRefs(notAfter time.Time) []storage.SeriesR
 		}
 
 		refs = append(refs, r)
-		if partialDeletionNeeded {
-			delete(u.pendingNonOwnedRefs, r)
-		}
+		delete(u.pendingNonOwnedRefs, r)
 	}
-	if !partialDeletionNeeded {
-		u.pendingNonOwnedRefs = nil
-		u.newestPendingNonOwnedRefTS = time.Time{}
-		u.oldestPendingNonOwnedRefTS = time.Time{}
-	}
-
 	return refs
 }
 
