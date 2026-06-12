@@ -56,7 +56,16 @@ type Pool struct {
 	name    string
 	logger  log.Logger
 
+	taskDuration *prometheus.HistogramVec
+
 	workersWg sync.WaitGroup
+}
+
+// task pairs the submitted func with its dimension so the worker can label
+// the run-duration metric without the queue having to return the dimension.
+type task struct {
+	dimension string
+	fn        func()
 }
 
 // queueForgetDelay is passed to the underlying queue.
@@ -92,6 +101,14 @@ func New(cfg Config, name string, reg prometheus.Registerer, logger log.Logger) 
 		Help:        "Time spent enqueueing work items into the worker pool.",
 		ConstLabels: constLabels,
 	})
+	taskDuration := promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
+		Name:        "cortex_workerpool_task_duration_seconds",
+		Help:        "Time taken to execute work items in the worker pool, per task dimension.",
+		ConstLabels: constLabels,
+		// Task execution ranges from sub-millisecond index lookups to multi-second
+		// high-cardinality counts; these buckets match cortex_ingester_tsdb_appender_add_duration_seconds.
+		Buckets: []float64{.001, .005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5, 10},
+	}, []string{"dimension"})
 
 	// The queue requires a per-tenant cap, but we don't want one, so pass an effectively unlimited value.
 	// Use MaxInt32 rather than MaxInt64 so internal "+1" bookkeeping in the queue can't overflow.
@@ -108,10 +125,11 @@ func New(cfg Config, name string, reg prometheus.Registerer, logger log.Logger) 
 	}
 
 	p := &Pool{
-		queue:   rq,
-		workers: size,
-		name:    name,
-		logger:  logger,
+		queue:        rq,
+		workers:      size,
+		name:         name,
+		logger:       logger,
+		taskDuration: taskDuration,
 	}
 	p.Service = services.NewBasicService(p.starting, p.running, p.stopping)
 	return p, nil
@@ -189,10 +207,12 @@ func (p *Pool) workerLoop(ready chan<- error) {
 			level.Warn(p.logger).Log("msg", "worker pool worker received unexpected error from queue; continuing", "pool", p.name, "worker", conn.WorkerID, "err", err)
 			continue
 		}
-		// Submit only ever enqueues a func(), so this assertion cannot fail in practice.
+		// Submit only ever enqueues a task, so this assertion cannot fail in practice.
 		// If it does, an invariant is broken; panic loudly rather than silently drop the work.
-		fn := item.(func())
-		fn()
+		t := item.(task)
+		start := time.Now()
+		t.fn()
+		p.taskDuration.WithLabelValues(t.dimension).Observe(time.Since(start).Seconds())
 	}
 }
 
@@ -210,7 +230,8 @@ func (p *Pool) workerLoop(ready chan<- error) {
 //
 // If Queue.SubmitItemToEnqueue ever changes these behaviours, this call must be updated to pass real values.
 func (p *Pool) Submit(dimension string, tenantID string, fn func()) error {
-	if err := p.queue.SubmitItemToEnqueue(tenantID, fn, dimension, 0, nil); err != nil {
+	t := task{dimension: dimension, fn: fn}
+	if err := p.queue.SubmitItemToEnqueue(tenantID, t, dimension, 0, nil); err != nil {
 		if errors.Is(err, queue.ErrStopped) {
 			return ErrPoolStopped
 		}
