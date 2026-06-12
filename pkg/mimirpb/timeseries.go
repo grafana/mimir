@@ -84,6 +84,14 @@ func (p *PreallocWriteRequest) Unmarshal(dAtA []byte) error {
 	p.unmarshalFromRW2 = p.UnmarshalFromRW2
 	p.rw2symbols.offset = p.RW2SymbolOffset
 	p.rw2symbols.commonSymbols = p.RW2CommonSymbols
+	if p.UnmarshalFromRW2 {
+		// In RW2 mode the top-level pre-scan is pure cost: symbols (field 4) are
+		// paged into m.rw2symbols and timeseries (field 5) are decoded straight
+		// into the RW1 representation, so neither pre-scanned slice gets
+		// preallocated. UnmarshalNoPrescan skips that top-level walk (it still
+		// preserves nested pre-scans) instead of guarding it on unmarshalFromRW2.
+		return p.WriteRequest.UnmarshalNoPrescan(dAtA)
+	}
 	return p.WriteRequest.Unmarshal(dAtA)
 }
 
