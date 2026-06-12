@@ -244,11 +244,12 @@ func (s *OperatorEvaluationStats) AddSubRange(other *OperatorEvaluationStats) er
 	}
 
 	for otherIndex := firstOtherIndex; otherIndex <= lastOtherIndex; otherIndex++ {
-		s.allSeries.Add(firstIndexInThisInstance+otherIndex, other.allSeries.samplesProcessedPerStep[otherIndex], other.allSeries.samplesReadIfSubsequentStep[otherIndex], other.allSeries.samplesReadIfFirstStep[otherIndex])
+		destIndex := s.timeRange.PointIndex(other.timeRange.IndexTime(otherIndex))
+		s.allSeries.Add(destIndex, other.allSeries.samplesProcessedPerStep[otherIndex], other.allSeries.samplesReadIfSubsequentStep[otherIndex], other.allSeries.samplesReadIfFirstStep[otherIndex])
 
 		for subsetIdx, subset := range s.subsets {
 			otherSubset := other.subsets[subsetIdx]
-			subset.Add(firstIndexInThisInstance+otherIndex, otherSubset.samplesProcessedPerStep[otherIndex], otherSubset.samplesReadIfSubsequentStep[otherIndex], otherSubset.samplesReadIfFirstStep[otherIndex])
+			subset.Add(destIndex, otherSubset.samplesProcessedPerStep[otherIndex], otherSubset.samplesReadIfSubsequentStep[otherIndex], otherSubset.samplesReadIfFirstStep[otherIndex])
 		}
 	}
 
