@@ -1,5 +1,5 @@
 diff --git a/pkg/mimirpb/mimir.pb.go b/pkg/mimirpb/mimir.pb.go
-index 1569957..42de4ee 100644
+index 40b1ef751e..784bcea56c 100644
 --- a/pkg/mimirpb/mimir.pb.go
 +++ b/pkg/mimirpb/mimir.pb.go
 @@ -353,14 +353,6 @@ type QueryResponse_Matrix struct {
@@ -56,7 +56,7 @@ index 1569957..42de4ee 100644
  }
  
  type LabelPair struct {
-@@ -4179,15 +4153,12 @@ func (m *WriteRequest) UnmarshalWithDepth(b []byte, depth int) error {
+@@ -4179,9 +4153,6 @@ func (m *WriteRequest) UnmarshalWithDepth(b []byte, depth int) error {
  }
  
  func (m *WriteRequest) unmarshal(dAtA []byte, depth int) error {
@@ -66,13 +66,6 @@ index 1569957..42de4ee 100644
  	if depth > protohelpers.MaxUnmarshalDepth {
  		return fmt.Errorf("exceeded max recursion depth")
  	}
- 	l := len(dAtA)
- 	iNdEx := 0
--	if l >= 256 && !m.unmarshalFromRW2 { // RW2 mode discards the pre-scan counts (symbols paged, field5 prealloc ~0 benefit); skip the walk.
-+	if l >= 256 {
- 		var preIdx int
- 		var field1count int
- 		var field3count int
 @@ -4268,23 +4239,22 @@ func (m *WriteRequest) unmarshal(dAtA []byte, depth int) error {
  				m.Metadata = make([]*MetricMetadata, 0, c)
  			}
@@ -216,7 +209,7 @@ index 1569957..42de4ee 100644
  	return nil
  }
  
-@@ -4947,8 +4869,7 @@ func (m *TimeSeries) unmarshal(dAtA []byte, depth int) error {
+@@ -4951,8 +4873,7 @@ func (m *TimeSeries) unmarshal(dAtA []byte, depth int) error {
  				m.Samples = make([]Sample, 0, c)
  			}
  		}
@@ -226,7 +219,7 @@ index 1569957..42de4ee 100644
  			if c > preCapMax {
  				c = preCapMax
  			}
-@@ -4956,7 +4877,6 @@ func (m *TimeSeries) unmarshal(dAtA []byte, depth int) error {
+@@ -4960,7 +4881,6 @@ func (m *TimeSeries) unmarshal(dAtA []byte, depth int) error {
  				m.Exemplars = make([]Exemplar, 0, c)
  			}
  		}
@@ -234,7 +227,7 @@ index 1569957..42de4ee 100644
  		if c := field4count; c > 0 {
  			if c > preCapMax {
  				c = preCapMax
-@@ -5133,14 +5053,10 @@ func (m *TimeSeries) unmarshal(dAtA []byte, depth int) error {
+@@ -5137,14 +5057,10 @@ func (m *TimeSeries) unmarshal(dAtA []byte, depth int) error {
  			if postIndex > l {
  				return io.ErrUnexpectedEOF
  			}
@@ -252,7 +245,7 @@ index 1569957..42de4ee 100644
  			iNdEx = postIndex
  		case 4: // histograms
  			if wireType != 2 {
-@@ -10300,44 +10216,791 @@ func (m *TimeSeriesRW2) UnmarshalWithDepth(b []byte, depth int) error {
+@@ -10356,44 +10272,795 @@ func (m *TimeSeriesRW2) UnmarshalWithDepth(b []byte, depth int) error {
  }
  
  func (m *TimeSeriesRW2) unmarshal(dAtA []byte, depth int) error {
@@ -291,7 +284,7 @@ index 1569957..42de4ee 100644
 -		depth = 0
 +	l := len(dAtA)
 +	iNdEx := 0
-+	if l >= 256 {
++	if l >= 256 && depth >= 0 {
 +		var preIdx int
 +		var field2count int
 +		var field3count int
@@ -741,6 +734,10 @@ index 1569957..42de4ee 100644
 +		return io.ErrUnexpectedEOF
 +	}
 +	return nil
++}
++
++func (m *TimeSeriesRW2) UnmarshalNoPrescan(dAtA []byte) error {
++	return m.unmarshal(dAtA, -1)
 +}
 +
 +func (m *ExemplarRW2) Unmarshal(b []byte) error {

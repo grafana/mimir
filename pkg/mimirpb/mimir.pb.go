@@ -4187,7 +4187,7 @@ func (m *WriteRequest) unmarshal(dAtA []byte, depth int) error {
 	}
 	l := len(dAtA)
 	iNdEx := 0
-	if l >= 256 && !m.unmarshalFromRW2 { // RW2 mode discards the pre-scan counts (symbols paged, field5 prealloc ~0 benefit); skip the walk.
+	if l >= 256 && depth >= 0 {
 		var preIdx int
 		var field1count int
 		var field3count int
@@ -4649,6 +4649,10 @@ func (m *WriteRequest) unmarshal(dAtA []byte, depth int) error {
 	return nil
 }
 
+func (m *WriteRequest) UnmarshalNoPrescan(dAtA []byte) error {
+	return m.unmarshal(dAtA, -1)
+}
+
 func (m *WriteResponse) Unmarshal(b []byte) error {
 	return m.unmarshal(b, 0)
 }
@@ -4866,7 +4870,7 @@ func (m *TimeSeries) unmarshal(dAtA []byte, depth int) error {
 	}
 	l := len(dAtA)
 	iNdEx := 0
-	if l >= 256 {
+	if l >= 256 && depth >= 0 {
 		var preIdx int
 		var field1count int
 		var field2count int
@@ -5230,6 +5234,10 @@ func (m *TimeSeries) unmarshal(dAtA []byte, depth int) error {
 		return io.ErrUnexpectedEOF
 	}
 	return nil
+}
+
+func (m *TimeSeries) UnmarshalNoPrescan(dAtA []byte) error {
+	return m.unmarshal(dAtA, -1)
 }
 
 func (m *LabelPair) Unmarshal(b []byte) error {
@@ -5719,7 +5727,7 @@ func (m *Metric) unmarshal(dAtA []byte, depth int) error {
 	}
 	l := len(dAtA)
 	iNdEx := 0
-	if l >= 256 {
+	if l >= 256 && depth >= 0 {
 		var preIdx int
 		var field1count int
 		for preIdx < l {
@@ -5874,6 +5882,10 @@ func (m *Metric) unmarshal(dAtA []byte, depth int) error {
 	return nil
 }
 
+func (m *Metric) UnmarshalNoPrescan(dAtA []byte) error {
+	return m.unmarshal(dAtA, -1)
+}
+
 func (m *Exemplar) Unmarshal(b []byte) error {
 	return m.unmarshal(b, 0)
 }
@@ -5891,7 +5903,7 @@ func (m *Exemplar) unmarshal(dAtA []byte, depth int) error {
 	}
 	l := len(dAtA)
 	iNdEx := 0
-	if l >= 256 {
+	if l >= 256 && depth >= 0 {
 		var preIdx int
 		var field1count int
 		for preIdx < l {
@@ -6089,6 +6101,10 @@ func (m *Exemplar) unmarshal(dAtA []byte, depth int) error {
 	return nil
 }
 
+func (m *Exemplar) UnmarshalNoPrescan(dAtA []byte) error {
+	return m.unmarshal(dAtA, -1)
+}
+
 func (m *Histogram) Unmarshal(b []byte) error {
 	return m.unmarshal(b, 0)
 }
@@ -6106,7 +6122,7 @@ func (m *Histogram) unmarshal(dAtA []byte, depth int) error {
 	}
 	l := len(dAtA)
 	iNdEx := 0
-	if l >= 256 {
+	if l >= 256 && depth >= 0 {
 		var preIdx int
 		var field8count int
 		var field11count int
@@ -6902,6 +6918,10 @@ func (m *Histogram) unmarshal(dAtA []byte, depth int) error {
 	return nil
 }
 
+func (m *Histogram) UnmarshalNoPrescan(dAtA []byte) error {
+	return m.unmarshal(dAtA, -1)
+}
+
 func (m *FloatHistogram) Unmarshal(b []byte) error {
 	return m.unmarshal(b, 0)
 }
@@ -6919,7 +6939,7 @@ func (m *FloatHistogram) unmarshal(dAtA []byte, depth int) error {
 	}
 	l := len(dAtA)
 	iNdEx := 0
-	if l >= 256 {
+	if l >= 256 && depth >= 0 {
 		var preIdx int
 		var field11count int
 		var field8count int
@@ -7437,6 +7457,10 @@ func (m *FloatHistogram) unmarshal(dAtA []byte, depth int) error {
 	return nil
 }
 
+func (m *FloatHistogram) UnmarshalNoPrescan(dAtA []byte) error {
+	return m.unmarshal(dAtA, -1)
+}
+
 func (m *BucketSpan) Unmarshal(b []byte) error {
 	return m.unmarshal(b, 0)
 }
@@ -7704,7 +7728,7 @@ func (m *SampleHistogram) unmarshal(dAtA []byte, depth int) error {
 	}
 	l := len(dAtA)
 	iNdEx := 0
-	if l >= 256 {
+	if l >= 256 && depth >= 0 {
 		var preIdx int
 		var field3count int
 		for preIdx < l {
@@ -7886,6 +7910,10 @@ func (m *SampleHistogram) unmarshal(dAtA []byte, depth int) error {
 		return io.ErrUnexpectedEOF
 	}
 	return nil
+}
+
+func (m *SampleHistogram) UnmarshalNoPrescan(dAtA []byte) error {
+	return m.unmarshal(dAtA, -1)
 }
 
 func (m *HistogramBucket) Unmarshal(b []byte) error {
@@ -8172,7 +8200,7 @@ func (m *QueryResponse) unmarshal(dAtA []byte, depth int) error {
 	}
 	l := len(dAtA)
 	iNdEx := 0
-	if l >= 256 {
+	if l >= 256 && depth >= 0 {
 		var preIdx int
 		var field8count int
 		var field9count int
@@ -8688,6 +8716,10 @@ func (m *QueryResponse) unmarshal(dAtA []byte, depth int) error {
 	return nil
 }
 
+func (m *QueryResponse) UnmarshalNoPrescan(dAtA []byte) error {
+	return m.unmarshal(dAtA, -1)
+}
+
 func (m *StringData) Unmarshal(b []byte) error {
 	return m.unmarshal(b, 0)
 }
@@ -8836,7 +8868,7 @@ func (m *VectorData) unmarshal(dAtA []byte, depth int) error {
 	}
 	l := len(dAtA)
 	iNdEx := 0
-	if l >= 256 {
+	if l >= 256 && depth >= 0 {
 		var preIdx int
 		var field1count int
 		var field2count int
@@ -9049,6 +9081,10 @@ func (m *VectorData) unmarshal(dAtA []byte, depth int) error {
 	return nil
 }
 
+func (m *VectorData) UnmarshalNoPrescan(dAtA []byte) error {
+	return m.unmarshal(dAtA, -1)
+}
+
 func (m *VectorSample) Unmarshal(b []byte) error {
 	return m.unmarshal(b, 0)
 }
@@ -9066,7 +9102,7 @@ func (m *VectorSample) unmarshal(dAtA []byte, depth int) error {
 	}
 	l := len(dAtA)
 	iNdEx := 0
-	if l >= 256 {
+	if l >= 256 && depth >= 0 {
 		var preIdx int
 		var field1count int
 		for preIdx < l {
@@ -9260,6 +9296,10 @@ func (m *VectorSample) unmarshal(dAtA []byte, depth int) error {
 	return nil
 }
 
+func (m *VectorSample) UnmarshalNoPrescan(dAtA []byte) error {
+	return m.unmarshal(dAtA, -1)
+}
+
 func (m *VectorHistogram) Unmarshal(b []byte) error {
 	return m.unmarshal(b, 0)
 }
@@ -9277,7 +9317,7 @@ func (m *VectorHistogram) unmarshal(dAtA []byte, depth int) error {
 	}
 	l := len(dAtA)
 	iNdEx := 0
-	if l >= 256 {
+	if l >= 256 && depth >= 0 {
 		var preIdx int
 		var field1count int
 		for preIdx < l {
@@ -9503,6 +9543,10 @@ func (m *VectorHistogram) unmarshal(dAtA []byte, depth int) error {
 	return nil
 }
 
+func (m *VectorHistogram) UnmarshalNoPrescan(dAtA []byte) error {
+	return m.unmarshal(dAtA, -1)
+}
+
 func (m *ScalarData) Unmarshal(b []byte) error {
 	return m.unmarshal(b, 0)
 }
@@ -9621,7 +9665,7 @@ func (m *MatrixData) unmarshal(dAtA []byte, depth int) error {
 	}
 	l := len(dAtA)
 	iNdEx := 0
-	if l >= 256 {
+	if l >= 256 && depth >= 0 {
 		var preIdx int
 		var field1count int
 		for preIdx < l {
@@ -9775,6 +9819,10 @@ func (m *MatrixData) unmarshal(dAtA []byte, depth int) error {
 	return nil
 }
 
+func (m *MatrixData) UnmarshalNoPrescan(dAtA []byte) error {
+	return m.unmarshal(dAtA, -1)
+}
+
 func (m *MatrixSeries) Unmarshal(b []byte) error {
 	return m.unmarshal(b, 0)
 }
@@ -9792,7 +9840,7 @@ func (m *MatrixSeries) unmarshal(dAtA []byte, depth int) error {
 	}
 	l := len(dAtA)
 	iNdEx := 0
-	if l >= 256 {
+	if l >= 256 && depth >= 0 {
 		var preIdx int
 		var field1count int
 		var field2count int
@@ -10061,6 +10109,10 @@ func (m *MatrixSeries) unmarshal(dAtA []byte, depth int) error {
 	return nil
 }
 
+func (m *MatrixSeries) UnmarshalNoPrescan(dAtA []byte) error {
+	return m.unmarshal(dAtA, -1)
+}
+
 func (m *WriteRequestRW2) Unmarshal(b []byte) error {
 	return m.unmarshal(b, 0)
 }
@@ -10078,7 +10130,7 @@ func (m *WriteRequestRW2) unmarshal(dAtA []byte, depth int) error {
 	}
 	l := len(dAtA)
 	iNdEx := 0
-	if l >= 256 {
+	if l >= 256 && depth >= 0 {
 		var preIdx int
 		var field4count int
 		var field5count int
@@ -10286,6 +10338,10 @@ func (m *WriteRequestRW2) unmarshal(dAtA []byte, depth int) error {
 		return io.ErrUnexpectedEOF
 	}
 	return nil
+}
+
+func (m *WriteRequestRW2) UnmarshalNoPrescan(dAtA []byte) error {
+	return m.unmarshal(dAtA, -1)
 }
 
 func (m *TimeSeriesRW2) Unmarshal(b []byte) error {
