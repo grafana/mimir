@@ -4,7 +4,6 @@ package ingest
 
 import (
 	"context"
-	"strconv"
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/kv"
@@ -51,11 +50,7 @@ func NewPartitionRingWatchers(compartmentsEnabled bool, numCompartments int, rin
 			name := compartments.ReadCompartmentRingName(c, ringName)
 			key := compartments.ReadCompartmentRingKey(c, ringKey)
 
-			// Add a "compartment" label so the per-compartment ring metrics are distinguishable and
-			// don't conflict when registered against the same registerer.
-			compartmentReg := prometheus.WrapRegistererWith(prometheus.Labels{"compartment": strconv.Itoa(c)}, reg)
-
-			watchers[c] = ring.NewPartitionRingWatcher(name, key, kvClient, logger, compartmentReg)
+			watchers[c] = ring.NewPartitionRingWatcher(name, key, kvClient, logger, reg)
 		}
 	}
 

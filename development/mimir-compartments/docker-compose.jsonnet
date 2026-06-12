@@ -1,5 +1,5 @@
 std.manifestYamlDoc({
-  // We explicitely list all important services here, so that it's easy to disable them by commenting out.
+  // We explicitly list all important services here, so that it's easy to disable them by commenting out.
   services:
     self.distributors +
     self.ingesters +
@@ -201,8 +201,9 @@ std.manifestYamlDoc({
       hostname: 'nginx',
       image: 'nginxinc/nginx-unprivileged:1.22-alpine',
       depends_on: [
-        'distributor-wc-0',
-        'distributor-wc-1',
+        'distributor-wc-%d' % id
+        for id in std.range(0, numWriteCompartments - 1)
+      ] + [
         'alertmanager-1',
         'ruler-1',
         'query-frontend',

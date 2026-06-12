@@ -14,9 +14,9 @@ import (
 const CompartmentIDPlaceholder = "<compartment-id>"
 
 var (
-	ErrInvalidNumCompartments    = errors.New("compartments read.num-compartments must be greater than 0 when compartments are enabled")
-	ErrEmptyKafkaTopicFormat     = errors.New("compartments read.kafka-topic-format must not be empty when compartments are enabled")
-	ErrKafkaTopicFormatPlacehold = fmt.Errorf("compartments read.kafka-topic-format must contain the %q placeholder", CompartmentIDPlaceholder)
+	ErrInvalidNumCompartments      = errors.New("compartments read.num-compartments must be greater than 0 when compartments are enabled")
+	ErrEmptyKafkaTopicFormat       = errors.New("compartments read.kafka-topic-format must not be empty when compartments are enabled")
+	ErrKafkaTopicFormatPlaceholder = fmt.Errorf("compartments read.kafka-topic-format must contain the %q placeholder", CompartmentIDPlaceholder)
 )
 
 // Config holds the configuration for the compartments architecture.
@@ -55,7 +55,7 @@ func (cfg *Config) Validate() error {
 		return ErrEmptyKafkaTopicFormat
 	}
 	if !strings.Contains(cfg.Read.KafkaTopicFormat, CompartmentIDPlaceholder) {
-		return ErrKafkaTopicFormatPlacehold
+		return ErrKafkaTopicFormatPlaceholder
 	}
 	return nil
 }

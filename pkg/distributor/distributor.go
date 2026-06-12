@@ -515,15 +515,15 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 	if cfg.IngestStorageConfig.Enabled {
 		switch {
 		case partitionRings == nil:
-			return nil, errors.New("invariant violation: ingester partition rings are required when ingest storage is enabled")
+			return nil, errors.New("ingester partition rings are required when ingest storage is enabled")
 		case partitionInstanceRings == nil:
-			return nil, errors.New("invariant violation: ingester partition instance rings are required when ingest storage is enabled")
+			return nil, errors.New("ingester partition instance rings are required when ingest storage is enabled")
 		case partitionInstanceRings.Count() != partitionRings.Count():
-			return nil, fmt.Errorf("invariant violation: the number of ingester partition instance rings (%d) does not match the number of ingester partition rings (%d)", partitionInstanceRings.Count(), partitionRings.Count())
+			return nil, fmt.Errorf("the number of ingester partition instance rings (%d) does not match the number of ingester partition rings (%d)", partitionInstanceRings.Count(), partitionRings.Count())
 		case cfg.Compartments.Enabled && partitionRings.Count() != cfg.Compartments.Read.NumCompartments:
-			return nil, fmt.Errorf("invariant violation: the number of ingester partition rings (%d) does not match the configured number of read compartments (%d)", partitionRings.Count(), cfg.Compartments.Read.NumCompartments)
+			return nil, fmt.Errorf("the number of ingester partition rings (%d) does not match the configured number of read compartments (%d)", partitionRings.Count(), cfg.Compartments.Read.NumCompartments)
 		case !cfg.Compartments.Enabled && partitionRings.Count() != 1:
-			return nil, fmt.Errorf("invariant violation: expected exactly 1 ingester partition ring when compartments are disabled, but got %d", partitionRings.Count())
+			return nil, fmt.Errorf("expected exactly 1 ingester partition ring when compartments are disabled, but got %d", partitionRings.Count())
 		}
 	}
 
@@ -2238,10 +2238,7 @@ func (d *Distributor) sendWriteRequestToBackends(ctx context.Context, tenantID s
 			return d.sendWriteRequestToCompartments(ctx, tenantID, partitionSubrings, req, partitionsRequestContext, batchOptions.Cleanup)
 		}
 
-		if len(partitionSubrings) != 1 {
-			return errors.New("invariant violation: distributor should not have more than 1 partitions ring when compartments are disabled")
-		}
-
+		// When compartments are disabled, New() guarantees there is exactly one partition ring.
 		keys, initialMetadataIndex := getSeriesAndMetadataTokens(tenantID, req)
 		return d.sendWriteRequestToPartitions(ctx, tenantID, partitionSubrings[0], req, keys, initialMetadataIndex, partitionsRequestContext, batchOptions.Cleanup)
 	}

@@ -34,7 +34,7 @@ func TestConfig_Validate(t *testing.T) {
 		},
 		"enabled with topic format missing the placeholder is rejected": {
 			cfg:         Config{Enabled: true, Read: ReadConfig{NumCompartments: 2, KafkaTopicFormat: "mimir-rc"}},
-			expectedErr: ErrKafkaTopicFormatPlacehold,
+			expectedErr: ErrKafkaTopicFormatPlaceholder,
 		},
 	}
 
