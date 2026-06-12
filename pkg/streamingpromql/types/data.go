@@ -141,6 +141,10 @@ type RangeVectorStepData struct {
 	// may be modified on subsequent calls to NextStepSamples.
 	Histograms *HPointRingBufferView
 
+	// MixedInExtendedRange is set to true when the extended look-back/look-ahead window of an
+	// Anchored or Smoothed range vector contains both floats and histograms.
+	MixedInExtendedRange bool
+
 	// StepT is the timestamp of this time step.
 	StepT int64
 

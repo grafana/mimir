@@ -5,15 +5,10 @@
 load 1m
   mixed 1 2 3 {{schema:0 sum:5 count:4 buckets:[1 2 1]}} 4 5 6 7+1x60
 
+# MQE-only: when the boundary-aligned anchored range puts the histogram exactly at rangeEnd
+# (t=3m here), Prometheus's engine drops the series entirely, while MQE returns {} 0 because the
+# resulting buffer has only a single histogram sample with no float reset partner. The float
+# samples in the original window are removed by anchored boundary mutation (lookback float at
+# rangeStart is consumed as the synthetic anchor, no float remains in (rangeStart, rangeEnd]).
 eval instant at 3m resets(mixed[1m] anchored)
-  expect fail msg: smoothed and anchored modifiers do not work with native histograms
-
-eval instant at 4m resets(mixed[1m] anchored)
-  expect fail msg: smoothed and anchored modifiers do not work with native histograms
-
-eval instant at 5m resets(mixed[1m] anchored)
-  expect fail msg: smoothed and anchored modifiers do not work with native histograms
-
-# Whilst the histogram is within the range + look-back window the query will fail
-eval instant at 8m resets(mixed[1m] anchored)
-  expect fail msg: smoothed and anchored modifiers do not work with native histograms
+  {} 0
