@@ -87,22 +87,22 @@ func New(cfg Config, name string, reg prometheus.Registerer, logger log.Logger) 
 
 	constLabels := prometheus.Labels{"pool": name}
 	queueLength := promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
-		Name:        "cortex_workerpool_queue_length",
+		Name:        "mimir_workerpool_queue_length",
 		Help:        "Number of work items queued in the worker pool, per tenant.",
 		ConstLabels: constLabels,
 	}, []string{"user"})
 	discarded := promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
-		Name:        "cortex_workerpool_discarded_requests_total",
+		Name:        "mimir_workerpool_discarded_requests_total",
 		Help:        "Total number of work items discarded by the worker pool because the tenant's queue was full.",
 		ConstLabels: constLabels,
 	}, []string{"user"})
 	enqueueDuration := promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
-		Name:        "cortex_workerpool_enqueue_duration_seconds",
+		Name:        "mimir_workerpool_enqueue_duration_seconds",
 		Help:        "Time spent enqueueing work items into the worker pool.",
 		ConstLabels: constLabels,
 	})
 	taskDuration := promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
-		Name:        "cortex_workerpool_task_duration_seconds",
+		Name:        "mimir_workerpool_task_duration_seconds",
 		Help:        "Time taken to execute work items in the worker pool, per task dimension.",
 		ConstLabels: constLabels,
 		// Task execution ranges from sub-millisecond index lookups to multi-second

@@ -167,13 +167,13 @@ func TestPool_RecordsTaskDuration(t *testing.T) {
 }
 
 // taskDurationSampleCount returns the number of samples recorded in
-// cortex_workerpool_task_duration_seconds for the given dimension label.
+// mimir_workerpool_task_duration_seconds for the given dimension label.
 func taskDurationSampleCount(t *testing.T, g prometheus.Gatherer, dimension string) uint64 {
 	t.Helper()
 	mfs, err := g.Gather()
 	require.NoError(t, err)
 	for _, mf := range mfs {
-		if mf.GetName() != "cortex_workerpool_task_duration_seconds" {
+		if mf.GetName() != "mimir_workerpool_task_duration_seconds" {
 			continue
 		}
 		for _, m := range mf.GetMetric() {
