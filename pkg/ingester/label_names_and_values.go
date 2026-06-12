@@ -150,7 +150,11 @@ func labelValuesCardinality(
 	chunkSize int,
 	srv client.Ingester_LabelValuesCardinalityServer,
 ) error {
-	ctx := srv.Context()
+	// Cancel on return so any in-flight chunk tasks still running on the shared
+	// worker pool bail out at their next ctx.Err() check instead of computing
+	// counts no one will read and holding pool workers from other tenants.
+	ctx, cancel := context.WithCancel(srv.Context())
+	defer cancel()
 
 	resp := client.LabelValuesCardinalityResponse{}
 	respSize := 0
@@ -172,11 +176,6 @@ func labelValuesCardinality(
 
 		for countRes := range resultCh {
 			if countRes.err != nil {
-				// Drain to wait for in-flight chunks to release idxReader before the caller's defer idx.Close() fires.
-				// The producer goroutine closes resultCh after wg.Wait,
-				// so this returns once every chunk is done.
-				for range resultCh { //nolint:revive
-				}
 				return countRes.err
 			}
 			if countRes.count == 0 {
@@ -198,11 +197,6 @@ func labelValuesCardinality(
 			}
 			// Flush the response when reached message threshold.
 			if err := client.SendLabelValuesCardinalityResponse(srv, &resp); err != nil {
-				// Drain to wait for in-flight chunks to release idxReader before the caller's defer idx.Close() fires.
-				// The producer goroutine closes resultCh after wg.Wait,
-				// so this returns once every chunk is done.
-				for range resultCh { //nolint:revive
-				}
 				return err
 			}
 			resp.Items = resp.Items[:0]
