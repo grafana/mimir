@@ -23,7 +23,6 @@ import (
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/thanos-io/objstore/providers/s3"
 
-	"github.com/grafana/mimir/pkg/continuoustest"
 	asmodel "github.com/grafana/mimir/pkg/ingester/activeseries/model"
 	"github.com/grafana/mimir/pkg/ruler/notifier"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
@@ -389,8 +388,6 @@ func getFieldCustomType(t reflect.Type) (string, bool) {
 	case reflect.TypeOf(asmodel.CustomTrackersConfig{}).String():
 		return "map of tracker name (string) to matcher (string)", true
 	case reflect.TypeOf(validation.LabelValueLengthOverLimitStrategy(0)).String():
-		return "string", true
-	case reflect.TypeOf(continuoustest.WriteProtocol("")).String():
 		return "string", true
 	default:
 		return "", false
