@@ -48,6 +48,7 @@
 * [BUGFIX] Upgrade Go to 1.26.4 to address [CVE-2026-42507](https://pkg.go.dev/vuln/GO-2026-5039). #15566
 * [BUGFIX] Memcached: Disable TCP DNS connection pooling used for service discovery by default. #15573
 * [BUGFIX] Ingest storage: Fix `cortex_ingest_storage_writer_produce_records_enqueued_total` not being incremented when `KafkaProducer.ProduceSync()` rejects a batch because a record has its `Timestamp` set by the caller. #15610
+* [BUGFIX] Continuous-test: Fix a crash when histogram tests were enabled in combination with the OTLP-HTTP write protocol. #15641
 
 ### Mixin
 
