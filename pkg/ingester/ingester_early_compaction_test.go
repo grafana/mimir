@@ -1710,10 +1710,10 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_StaleRefsAfterPriorEviction(t
 // exceed the minimum grace period, while other refs have only recently become non-owned.
 //
 // The scenario is constructed in two steps:
-//   1. Queue an initial batch of non-owned refs and backdate their timestamps so they appear
-//      older than the minimum grace period.
-//   2. Queue a second batch of non-owned refs using the current time, leaving the timestamps
-//      of the older refs unchanged.
+//  1. Queue an initial batch of non-owned refs and backdate their timestamps so they appear
+//     older than the minimum grace period.
+//  2. Queue a second batch of non-owned refs using the current time, leaving the timestamps
+//     of the older refs unchanged.
 //
 // When compaction runs, only the older refs should be selected for eviction, while the newer
 // refs should remain pending. As a result, exactly one block should be compacted.
