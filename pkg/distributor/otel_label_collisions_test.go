@@ -63,7 +63,7 @@ func TestLogTargetInfoLabelCollisions(t *testing.T) {
 			},
 			opts: collisionScanOpts(),
 			expectedLines: []string{
-				"label=k8s_pod_name attributes=k8s.pod.name,k8s_pod_name job=ns/svc instance=inst",
+				"label=k8s_pod_name attributes=k8s.pod.name,k8s_pod_name job=ns/svc instance=inst metrics=test_metric metrics_total=1",
 			},
 		},
 		"no collision produces no log": {
@@ -178,6 +178,29 @@ func TestLogTargetInfoLabelCollisions(t *testing.T) {
 			opts: collisionScanOpts(),
 			expectedLines: []string{
 				"label=k8s_pod_name attributes=k8s.pod.name,k8s_pod_name job=svc instance=",
+			},
+		},
+		"metric names are capped at three with a total count": {
+			buildMetrics: func() pmetric.Metrics {
+				md := pmetric.NewMetrics()
+				rm := md.ResourceMetrics().AppendEmpty()
+				attrs := rm.Resource().Attributes()
+				attrs.PutStr("service.name", "svc")
+				attrs.PutStr("k8s.pod.name", "foo")
+				attrs.PutStr("k8s_pod_name", "bar")
+				sm := rm.ScopeMetrics().AppendEmpty()
+				for _, n := range []string{"m1", "m2", "m3", "m4", "m5"} {
+					m := sm.Metrics().AppendEmpty()
+					m.SetName(n)
+					dp := m.SetEmptyGauge().DataPoints().AppendEmpty()
+					dp.SetDoubleValue(1)
+					dp.SetTimestamp(pcommon.NewTimestampFromTime(time.Now()))
+				}
+				return md
+			},
+			opts: collisionScanOpts(),
+			expectedLines: []string{
+				"metrics=m1,m2,m3 metrics_total=5",
 			},
 		},
 		"promoted resource attributes are not an extra collision source": {

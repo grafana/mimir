@@ -29,10 +29,18 @@ const (
 // the log-level filter).
 const maxLoggedTargetInfoLabelCollisions = 10
 
+// maxMetricNamesPerCollisionLog caps the number of metric names included in a
+// collision detail line; the full count is always included via metrics_total.
+const maxMetricNamesPerCollisionLog = 3
+
 // logTargetInfoLabelCollisions logs, at debug level, resource attributes that
 // sanitize to the same Prometheus label name. The OTLP translator may
 // concatenate such values with ';' in target_info labels (empty values are
 // overwritten or dropped instead).
+//
+// Each detail line includes up to maxMetricNamesPerCollisionLog metric names
+// plus a total count to help locate the offending resource; names come from
+// the first resource that produced the (deduplicated) collision.
 //
 // When opts.allowUTF8 is true the function logs nothing, because LabelNamer.Build
 // returns names unchanged and sanitization collisions cannot occur. Callers are
@@ -100,6 +108,13 @@ func logTargetInfoLabelCollisions(md pmetric.Metrics, opts conversionOptions, lo
 		}
 		slices.Sort(collidingLabels)
 
+		// Metric names are gathered lazily: only when a detail line is actually
+		// emitted for this resource, to avoid cost on the no-collision path and
+		// for resources whose collisions are all deduped or suppressed.
+		var metricNames []string
+		var metricsTotal int
+		metricNamesGathered := false
+
 		for _, name := range collidingLabels {
 			attrNames := byLabel[name]
 			slices.Sort(attrNames)
@@ -116,13 +131,26 @@ func logTargetInfoLabelCollisions(md pmetric.Metrics, opts conversionOptions, lo
 				resourceSuppressed = true
 				continue
 			}
+
+			if !metricNamesGathered {
+				metricNames, metricsTotal = resourceMetricNames(rm, maxMetricNamesPerCollisionLog)
+				metricNamesGathered = true
+			}
+
 			logged++
+			// TODO: the translator appends the colliding value even when it is
+			// identical to the existing one, producing e.g. "val;val". Skipping
+			// the append for identical values needs an upstream change in
+			// prometheus/prometheus createAttributes (helper.go); revisit this
+			// log line's wording if that lands.
 			level.Debug(logger).Log(
 				"msg", "OTLP resource attributes collide after label name sanitization, values may be concatenated in target_info",
 				"label", name,
 				"attributes", attributes,
 				"job", job,
 				"instance", instance,
+				"metrics", strings.Join(metricNames, ","),
+				"metrics_total", metricsTotal,
 			)
 		}
 		// affectedResources counts resources whose novel (not deduplicated) collisions
@@ -186,6 +214,22 @@ func otelResourceIdentity(attrs pcommon.Map) (job, instance string) {
 		instance = instanceID.AsString()
 	}
 	return job, instance
+}
+
+// resourceMetricNames returns up to max metric names of the resource plus the
+// total number of metrics it carries, to help locate the source of a collision.
+func resourceMetricNames(rm pmetric.ResourceMetrics, max int) (names []string, total int) {
+	sms := rm.ScopeMetrics()
+	for i := 0; i < sms.Len(); i++ {
+		ms := sms.At(i).Metrics()
+		for j := 0; j < ms.Len(); j++ {
+			if len(names) < max {
+				names = append(names, ms.At(j).Name())
+			}
+			total++
+		}
+	}
+	return names, total
 }
 
 func resourceHasDataPoints(rm pmetric.ResourceMetrics) bool {
