@@ -772,8 +772,16 @@ func BenchmarkUserTSDB_addPendingNonOwnedRefs(b *testing.B) {
 }
 
 // BenchmarkUserTSDB_takePendingNonOwnedRefs measures the per-call cost of draining
-// a populated set. The setup (addPendingNonOwnedRefs) is excluded from the timed
-// region; only the take itself is measured.
+// a populated set across the three branches of takePendingNonOwnedRefs:
+//   - "full-drain": every pending ref has aged past the cutoff (ranges over keys
+//     only and nils the map in one shot).
+//   - "partial-drain": half the refs (added at T0) are past the cutoff and the
+//     other half (added at T1) are retained.
+//   - "fast-skip": even the oldest pending ref is younger than the cutoff, so the
+//     function returns nil without iterating.
+//
+// The setup (addPendingNonOwnedRefs) is excluded from the timed region; only
+// the take itself is measured.
 func BenchmarkUserTSDB_takePendingNonOwnedRefs(b *testing.B) {
 	b.ReportAllocs()
 	sizes := []int{1_000, 10_000, 100_000, 1_000_000}
@@ -782,8 +790,49 @@ func BenchmarkUserTSDB_takePendingNonOwnedRefs(b *testing.B) {
 		for i := 0; i < size; i++ {
 			refs[storage.SeriesRef(i+1)] = struct{}{}
 		}
-		b.Run(fmt.Sprintf("size=%d", size), func(b *testing.B) {
+		refsA := make(map[storage.SeriesRef]struct{}, size/2)
+		refsB := make(map[storage.SeriesRef]struct{}, size/2)
+		for i := 0; i < size/2; i++ {
+			refsA[storage.SeriesRef(i+1)] = struct{}{}
+			refsB[storage.SeriesRef(i+1+size/2)] = struct{}{}
+		}
+
+		b.Run(fmt.Sprintf("size=%d/full-drain", size), func(b *testing.B) {
 			notAfter := time.Now().Add(time.Hour)
+			for i := 0; i < b.N; i++ {
+				b.StopTimer()
+				db := &userTSDB{}
+				db.addPendingNonOwnedRefs(refs)
+				b.StartTimer()
+				db.takePendingNonOwnedRefs(notAfter)
+			}
+		})
+
+		b.Run(fmt.Sprintf("size=%d/partial-drain", size), func(b *testing.B) {
+			notAfter := time.Now().Add(-time.Minute)
+			for i := 0; i < b.N; i++ {
+				b.StopTimer()
+				db := &userTSDB{}
+				// Stage half the refs as if they had been added an hour ago, then
+				// add the other half "now". The cutoff (-1 min) falls between the
+				// two batches so refsA are eligible and refsB are retained.
+				db.addPendingNonOwnedRefs(refsA)
+				backdated := time.Now().Add(-time.Hour)
+				for r := range db.pendingNonOwnedRefs {
+					db.pendingNonOwnedRefs[r] = backdated
+				}
+				db.oldestPendingNonOwnedRefTS = backdated
+				db.newestPendingNonOwnedRefTS = backdated
+				db.addPendingNonOwnedRefs(refsB)
+				b.StartTimer()
+				db.takePendingNonOwnedRefs(notAfter)
+			}
+		})
+
+		b.Run(fmt.Sprintf("size=%d/fast-skip", size), func(b *testing.B) {
+			// notAfter strictly before the oldest add => oldestPendingNonOwnedRefTS.After(notAfter)
+			// is true and the function returns nil without iterating.
+			notAfter := time.Now().Add(-time.Hour)
 			for i := 0; i < b.N; i++ {
 				b.StopTimer()
 				db := &userTSDB{}

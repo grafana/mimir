@@ -719,10 +719,17 @@ func (u *userTSDB) addPendingNonOwnedRefs(refs map[storage.SeriesRef]struct{}) {
 
 	// Drop refs that are no longer non-owned. Without this, a series whose ring ownership
 	// flipped back (or whose memSeries was GC'd) would otherwise be evicted on the next take.
-	for r := range u.pendingNonOwnedRefs {
+	var newOldestTS time.Time
+	for r, ts := range u.pendingNonOwnedRefs {
 		if _, stillNonOwned := refs[r]; !stillNonOwned {
 			delete(u.pendingNonOwnedRefs, r)
 		}
+		if newOldestTS.IsZero() || ts.Before(newOldestTS) {
+			newOldestTS = ts
+		}
+	}
+	if !newOldestTS.IsZero() {
+		u.oldestPendingNonOwnedRefTS = newOldestTS
 	}
 
 	if len(refs) == 0 {
