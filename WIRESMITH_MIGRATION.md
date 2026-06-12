@@ -3,22 +3,24 @@
 Migration of Grafana Mimir protos from gogoproto (`protoc` + `gogoslick`) to
 the [wiresmith](https://github.com/grafana/wiresmith) compiler.
 
-Toolchain: wiresmith pinned to the public release
-`github.com/grafana/wiresmith v0.0.0-20260611164808-4f41063d76a2`
-(`origin/main` @ `4f41063`). The module is public and go-installable — no
-`replace`, `GOPRIVATE`, or `url.insteadOf` needed. Install the compiler with
-`go install github.com/grafana/wiresmith@4f41063d76a26c3580bf341ca1e2a8e82aaa6467`.
+Toolchain: wiresmith pinned to the public `databases`-branch pseudo-version
+`github.com/grafana/wiresmith v0.0.0-20260612130815-854b4c6268c2`
+(`databases` @ `854b4c6`, which emits `UnmarshalNoPrescan`). The module is
+public and go-installable — no `replace`, `GOPRIVATE`, or `url.insteadOf`
+needed. Install the compiler with
+`go install github.com/grafana/wiresmith/cmd/wiresmith@v0.0.0-20260612130815-854b4c6268c2`.
 Generated code depends on `protohelpers.SkipValue` /
-`protohelpers.MaxUnmarshalDepth`, vendored from that release.
+`protohelpers.MaxUnmarshalDepth`, vendored from that release (protohelpers is
+unchanged from the prior `4f41063` pin, so the vendored runtime is identical).
 
-**Pin vs. checked-in `mimir.pb.go` mismatch (temporary):** `mimir.pb.go` was
-regenerated with an *unpublished* compiler — `databases` @ `854b4c6` — to pick
-up the `UnmarshalNoPrescan` emission (see the RW2 pre-scan section below). The
-go.mod pin is still `4f41063`, which does **not** emit `UnmarshalNoPrescan`, so
-`make check-protos` against the pinned compiler will report a diff until a
-release containing `854b4c6` is published and pinned. No protohelpers changes,
-so the vendored runtime stays valid. Re-pin once `databases` lands in a tagged
-release.
+**Pin status:** the go.mod pin now matches the checked-in `mimir.pb.go`. Both
+were produced with `databases` @ `854b4c6` (the compiler that emits
+`UnmarshalNoPrescan` — see the RW2 pre-scan section below), so
+`make check-protos` round-trips against the pinned compiler. Remaining step:
+bump to the corresponding `wiresmith` main pseudo-version once `databases`
+merges to main. A squash-merge orphans the `854b4c6` commit, but the Go module
+proxy keeps the pseudo-version fetchable, so the pin stays installable in the
+interim.
 
 ## Status
 
@@ -32,11 +34,10 @@ release.
 Full repo builds; pkg/mimirpb, pkg/distributor, pkg/ingester,
 pkg/storage/ingest, pkg/querier(+stats), pkg/frontend/... test suites green.
 
-Regen reproducibility (against the `databases` @ `854b4c6` compiler for
-`mimir.pb.go`, the public `4f41063` compiler otherwise, 2026-06-12):
-`ha_tracker.{pb,_compare,_equal,_reflect}.go`, `stats.{...}.go`, and
-`mimir_{compare,equal,reflect}.pb.go` regenerate byte-for-byte identical to the
-committed files under `4f41063`. `mimir.pb.go` was regenerated with `854b4c6`
+Regen reproducibility (against the pinned `databases` @ `854b4c6` compiler,
+2026-06-12): `ha_tracker.{pb,_compare,_equal,_reflect}.go`, `stats.{...}.go`,
+and `mimir_{compare,equal,reflect}.pb.go` regenerate byte-for-byte identical to
+the committed files. `mimir.pb.go` was regenerated with `854b4c6`
 to pick up the new `UnmarshalNoPrescan(dAtA []byte) error` emission (top-level
 pre-scan is skipped via a depth-sentinel of −1; nested pre-scans preserved; the
 generated pre-scan guard is now `if l >= 256 && depth >= 0`). `make protos`
@@ -331,12 +332,11 @@ proto can keep gogo importers (method surface compatible + `GoString` shim +
 4. `pkg/ingester/client/ingester.proto` — large, imports mimir.proto,
    streaming service, hand-patched code similar to mimirpb.
 
-Before merging: `go.mod` is already pinned to a public pseudo-version
-`v0.0.0-20260611164808-4f41063d76a2` (no `replace` — the local `replace` was
-removed earlier). **Blocker:** the checked-in `mimir.pb.go` was regenerated with
-the unpublished `databases` @ `854b4c6` compiler (for `UnmarshalNoPrescan`), so
-it no longer round-trips against the pinned `4f41063` — a release containing
-`854b4c6` must be published and the pin bumped before merge, otherwise
-`make check-protos` fails. Remaining: re-pin once `databases` ships; run
-integration tests; benchstat-grade write-path benchmarks (unit-bench deltas
-recorded above).
+Before merging: `go.mod` is pinned to the public `databases` pseudo-version
+`v0.0.0-20260612130815-854b4c6268c2` (no `replace` — the local `replace` was
+removed earlier), which matches the checked-in `mimir.pb.go` (both `854b4c6`,
+`UnmarshalNoPrescan`), so `make check-protos` round-trips. Remaining: bump to
+the `wiresmith` main pseudo-version once `databases` merges to main (a squash
+orphans the `854b4c6` commit, but the module proxy keeps the current pin
+fetchable in the meantime); run integration tests; benchstat-grade write-path
+benchmarks (unit-bench deltas recorded above).
