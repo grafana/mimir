@@ -159,13 +159,14 @@ func TestInterpolateHistograms(t *testing.T) {
 func TestAnnosFromInterpolationError(t *testing.T) {
 	t.Run("incompatible schema emits MixedExponentialCustomHistogramsWarning", func(t *testing.T) {
 		emit, msgs := recordingEmitter()
-		annosFromInterpolationError(histogram.ErrHistogramsIncompatibleSchema, emit)
+		require.NoError(t, annosFromInterpolationError(histogram.ErrHistogramsIncompatibleSchema, emit))
 		requireSingleAnnotation(t, msgs, mixedExpCustomWarning)
 	})
 
-	t.Run("unrecognised error emits no annotation", func(t *testing.T) {
+	t.Run("unrecognised error is returned and emits no annotation", func(t *testing.T) {
 		emit, msgs := recordingEmitter()
-		annosFromInterpolationError(errors.New("some other error"), emit)
+		sentinel := errors.New("some other error")
+		require.ErrorIs(t, annosFromInterpolationError(sentinel, emit), sentinel)
 		require.Empty(t, *msgs)
 	})
 }

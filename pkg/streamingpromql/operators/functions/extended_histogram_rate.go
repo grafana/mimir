@@ -54,12 +54,14 @@ func pickOrInterpolateRightHistogram(hists []promql.HPoint, last int, rangeEnd i
 }
 
 // annosFromInterpolationError translates an error returned by interpolateHistograms (via
-// pickOrInterpolate*Histogram) into the appropriate annotation. Unknown errors are left for the
+// pickOrInterpolate*Histogram) into the appropriate annotation. Unknown errors are returned for the
 // caller to surface.
-func annosFromInterpolationError(err error, emitAnnotation types.EmitAnnotationFunc) {
+func annosFromInterpolationError(err error, emitAnnotation types.EmitAnnotationFunc) error {
 	if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) {
 		emitAnnotation(annotations.NewMixedExponentialCustomHistogramsWarning)
+		return nil
 	}
+	return err
 }
 
 // addHistogramWithAnnotations adds other into base in place, translating histogram errors and
@@ -211,13 +213,11 @@ func extendedHistogramRate(hExtended []promql.HPoint, originalRangeStart, origin
 
 	left, err := pickOrInterpolateLeftHistogram(hExtended, firstSampleIndex, originalRangeStart, smoothed, isCounter, emitAnnotation)
 	if err != nil {
-		annosFromInterpolationError(err, emitAnnotation)
-		return nil, nil
+		return nil, annosFromInterpolationError(err, emitAnnotation)
 	}
 	right, err := pickOrInterpolateRightHistogram(hExtended, lastSampleIndex, originalRangeEnd, smoothed, isCounter, emitAnnotation)
 	if err != nil {
-		annosFromInterpolationError(err, emitAnnotation)
-		return nil, nil
+		return nil, annosFromInterpolationError(err, emitAnnotation)
 	}
 
 	if !isCounter && (left.CounterResetHint != histogram.GaugeType || right.CounterResetHint != histogram.GaugeType) {
