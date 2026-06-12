@@ -76,6 +76,7 @@ type OTLPHandlerLimits interface {
 	NameValidationScheme(id string) model.ValidationScheme
 	OTelLabelNameUnderscoreSanitization(string) bool
 	OTelLabelNamePreserveMultipleUnderscores(string) bool
+	OTelLogTranslationWarnings(id string) bool
 }
 
 type OTLPPushMiddleware func(ctx context.Context, req *pmetricotlp.ExportRequest) error
@@ -97,6 +98,9 @@ func OTLPHandler(
 	logger log.Logger,
 ) http.Handler {
 	discardedDueToOtelParseError := validation.DiscardedSamplesCounter(reg, otelParseError)
+	// The deduper is shared across requests: translation warnings are typically
+	// chronic per tenant, so they are logged once per TTL rather than per request.
+	warningDeduper := newOTelTranslationWarningDeduper(otelTranslationWarningDedupTTL, time.Now)
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
@@ -114,7 +118,7 @@ func OTLPHandler(
 		parser := newOTLPParser(
 			allowTranslationHeaders,
 			limits, resourceAttributePromotionConfig, keepIdentifyingOTelResourceAttributesConfig,
-			otlpConverter, pushMetrics, discardedDueToOtelParseError,
+			otlpConverter, pushMetrics, discardedDueToOtelParseError, warningDeduper,
 			OTLPPushMiddlewares,
 			&schemeOverride,
 		)
@@ -257,6 +261,7 @@ func newOTLPParser(
 	otlpConverter *otlpMimirConverter,
 	pushMetrics *PushMetrics,
 	discardedDueToOtelParseError *prometheus.CounterVec,
+	warningDeduper *otelTranslationWarningDeduper,
 	OTLPPushMiddlewares []OTLPPushMiddleware,
 	schemeOverride **model.ValidationScheme,
 ) parserFunc {
@@ -445,6 +450,38 @@ func newOTLPParser(
 		)
 		if metricsDropped > 0 {
 			discardedDueToOtelParseError.WithLabelValues(tenantID, "").Add(float64(metricsDropped)) // "group" label is empty here as metrics couldn't be parsed
+		}
+		if warnings := otlpConverter.TranslationWarnings(); len(warnings) > 0 {
+			// The counter counts distinct warnings per request, before deduplication
+			// and independently of the logging limit.
+			pushMetrics.AddOTLPTranslationWarnings(tenantID, len(warnings))
+			if limits.OTelLogTranslationWarnings(tenantID) {
+				logged, processed := 0, 0
+				for _, warning := range warnings {
+					// Warnings over the per-request cap are not marked as seen by the
+					// deduper, so they get logged on a later request instead.
+					if logged >= maxLoggedOTelTranslationWarningsPerRequest {
+						break
+					}
+
+					processed++
+					// Truncation before the deduper bounds both the log line and the
+					// dedup map key; attribute names embedded in the warning can be
+					// as long as the request payload allows.
+					if len(warning) > maxErrMsgLen {
+						warning = warning[:maxErrMsgLen]
+					}
+					if !warningDeduper.allow(tenantID, warning) {
+						continue
+					}
+
+					logged++
+					level.Warn(spanLogger).Log("msg", "OTLP translation warning", "warning", warning, "insight", true)
+				}
+				if suppressed := len(warnings) - processed; suppressed > 0 && warningDeduper.allow(tenantID, otelTranslationWarningsSuppressedKey) {
+					level.Warn(spanLogger).Log("msg", "additional OTLP translation warnings were suppressed", "suppressed", suppressed, "insight", true)
+				}
+			}
 		}
 		if err != nil {
 			convSpan.SetTag("metrics_dropped", metricsDropped)
@@ -745,6 +782,15 @@ func (c *otlpMimirConverter) ToSeriesAndMetadata(ctx context.Context, md pmetric
 
 	timeseries, metadata := c.appender.GetResult()
 	return timeseries, metadata
+}
+
+// TranslationWarnings returns label name collision warnings produced while
+// translating the OTLP request. The translator's other annotations (e.g.
+// histogram conversion warnings, which embed data point values and thus have
+// unbounded distinct-message cardinality) deliberately stay unlogged,
+// until their volume is reviewed.
+func (c *otlpMimirConverter) TranslationWarnings() []string {
+	return c.converter.CollisionWarnings()
 }
 
 func (c *otlpMimirConverter) DroppedTotal() int {

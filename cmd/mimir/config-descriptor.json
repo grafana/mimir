@@ -7399,6 +7399,17 @@
         },
         {
           "kind": "field",
+          "name": "otel_log_translation_warnings",
+          "required": false,
+          "desc": "Whether to log OTLP translation warnings, e.g. about attribute names that collide after label name sanitization, in the OTLP endpoint, as usage insights. Warnings are deduplicated and rate-limited per tenant. The cortex_distributor_otlp_translation_warnings_total metric is recorded regardless of this setting.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "distributor.otel-log-translation-warnings",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "ingest_storage_read_consistency",
           "required": false,
           "desc": "The default consistency level to enforce for queries when using the ingest storage. Supports values: strong, eventual.",

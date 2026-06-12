@@ -8,6 +8,7 @@ package validation
 import (
 	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 	"reflect"
 	"strings"
@@ -3009,4 +3010,29 @@ func getDefaultLimits() Limits {
 	limits := Limits{}
 	flagext.DefaultValues(&limits)
 	return limits
+}
+
+func TestOTelLogTranslationWarnings(t *testing.T) {
+	defaults := Limits{}
+	flagext.DefaultValues(&defaults)
+	require.False(t, defaults.OTelLogTranslationWarnings, "must default to disabled")
+
+	// YAML name round-trip.
+	limitsYAML := Limits{}
+	require.NoError(t, yaml.Unmarshal([]byte(`otel_log_translation_warnings: true`), &limitsYAML))
+	require.True(t, limitsYAML.OTelLogTranslationWarnings)
+
+	// CLI flag registration.
+	fs := flag.NewFlagSet("test", flag.PanicOnError)
+	parsed := Limits{}
+	parsed.RegisterFlags(fs)
+	require.NoError(t, fs.Parse([]string{"-distributor.otel-log-translation-warnings=true"}))
+	require.True(t, parsed.OTelLogTranslationWarnings)
+
+	// Per-tenant override via Overrides getter.
+	ov := NewOverrides(defaults, NewMockTenantLimits(map[string]*Limits{
+		"enabled-tenant": {OTelLogTranslationWarnings: true},
+	}))
+	require.True(t, ov.OTelLogTranslationWarnings("enabled-tenant"))
+	require.False(t, ov.OTelLogTranslationWarnings("other-tenant"))
 }

@@ -406,8 +406,9 @@ type PushMetrics struct {
 	influxRequestCounter       *prometheus.CounterVec
 	influxUncompressedBodySize *prometheus.HistogramVec
 	// OTLP metrics.
-	otlpRequestCounter     *prometheus.CounterVec
-	otlpContentTypeCounter *prometheus.CounterVec
+	otlpRequestCounter             *prometheus.CounterVec
+	otlpContentTypeCounter         *prometheus.CounterVec
+	otlpTranslationWarningsCounter *prometheus.CounterVec
 	// Temporary to better understand which array (ResourceMetrics/ScopeMetrics/Metrics) is usually large
 	otlpArrayLengths *prometheus.HistogramVec
 }
@@ -428,6 +429,10 @@ func newPushMetrics(reg prometheus.Registerer) *PushMetrics {
 		otlpRequestCounter: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_distributor_otlp_requests_total",
 			Help: "The total number of OTLP requests that have come in to the distributor.",
+		}, []string{"user"}),
+		otlpTranslationWarningsCounter: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_distributor_otlp_translation_warnings_total",
+			Help: "The total number of distinct warnings produced while translating OTLP requests to Prometheus format, counted once per request they occur in. Currently this covers attribute names colliding after label name sanitization.",
 		}, []string{"user"}),
 		uncompressedBodySize: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
 			Name:                            "cortex_distributor_uncompressed_request_body_size_bytes",
@@ -484,6 +489,12 @@ func (m *PushMetrics) ObserveRequestBodySize(user, handler string, uncompressedS
 	}
 }
 
+func (m *PushMetrics) AddOTLPTranslationWarnings(user string, count int) {
+	if m != nil {
+		m.otlpTranslationWarningsCounter.WithLabelValues(user).Add(float64(count))
+	}
+}
+
 func (m *PushMetrics) IncOTLPContentType(contentType string) {
 	if m != nil {
 		m.otlpContentTypeCounter.WithLabelValues(contentType).Inc()
@@ -500,6 +511,7 @@ func (m *PushMetrics) deleteUserMetrics(user string) {
 	m.influxRequestCounter.DeleteLabelValues(user)
 	m.influxUncompressedBodySize.DeleteLabelValues(user)
 	m.otlpRequestCounter.DeleteLabelValues(user)
+	m.otlpTranslationWarningsCounter.DeleteLabelValues(user)
 	m.uncompressedBodySize.DeleteLabelValues(user)
 }
 
