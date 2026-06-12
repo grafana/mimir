@@ -711,6 +711,38 @@ func TestOperatorEvaluationStats_AddSubRange_Subsets(t *testing.T) {
 	require.Equal(t, []int64{0, 0, 222, 0}, destination.subsets[0].samplesReadIfFirstStep)
 }
 
+func TestOperatorEvaluationStats_AddSubRange_SingleStepDestination(t *testing.T) {
+	ctx := context.Background()
+	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+
+	startT := timestamp.Time(0).Add(2 * time.Minute)
+	destination, err := NewOperatorEvaluationStats(ctx, NewInstantQueryTimeRange(startT), memoryConsumptionTracker, 0)
+	require.NoError(t, err)
+
+	source, err := NewOperatorEvaluationStats(ctx, NewRangeQueryTimeRange(startT.Add(-2*time.Minute), startT.Add(2*time.Minute), time.Minute), memoryConsumptionTracker, 0)
+	require.NoError(t, err)
+	source.allSeries.samplesProcessedPerStep[0] = 1
+	source.allSeries.samplesProcessedPerStep[1] = 2
+	source.allSeries.samplesProcessedPerStep[2] = 3
+	source.allSeries.samplesProcessedPerStep[3] = 4
+	source.allSeries.samplesProcessedPerStep[4] = 5
+	source.allSeries.samplesReadIfSubsequentStep[0] = 11
+	source.allSeries.samplesReadIfSubsequentStep[1] = 12
+	source.allSeries.samplesReadIfSubsequentStep[2] = 13
+	source.allSeries.samplesReadIfSubsequentStep[3] = 14
+	source.allSeries.samplesReadIfSubsequentStep[4] = 15
+	source.allSeries.samplesReadIfFirstStep[0] = 101
+	source.allSeries.samplesReadIfFirstStep[1] = 102
+	source.allSeries.samplesReadIfFirstStep[2] = 103
+	source.allSeries.samplesReadIfFirstStep[3] = 104
+	source.allSeries.samplesReadIfFirstStep[4] = 105
+
+	require.NoError(t, destination.AddSubRange(source))
+	require.Equal(t, []int64{3}, destination.allSeries.samplesProcessedPerStep)
+	require.Equal(t, []int64{13}, destination.allSeries.samplesReadIfSubsequentStep)
+	require.Equal(t, []int64{103}, destination.allSeries.samplesReadIfFirstStep)
+}
+
 func TestOperatorEvaluationStats_AddSubRange_ErrorCases(t *testing.T) {
 	create := func(timeRange QueryTimeRange, subsetCount int) *OperatorEvaluationStats {
 		ctx := context.Background()

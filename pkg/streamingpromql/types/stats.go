@@ -229,8 +229,7 @@ func (s *OperatorEvaluationStats) AddSubRange(other *OperatorEvaluationStats) er
 		return fmt.Errorf("cannot add a sub-range from an OperatorEvaluationStats instance with multiple steps and interval %v ms to another instance with multiple steps and interval %v ms", other.timeRange.IntervalMilliseconds, s.timeRange.IntervalMilliseconds)
 	}
 
-	firstIndexInThisInstance := s.timeRange.PointIndex(other.timeRange.StartT)
-	if s.timeRange.IndexTime(firstIndexInThisInstance) != other.timeRange.StartT || s.timeRange.StartT > other.timeRange.EndT || s.timeRange.EndT < other.timeRange.StartT {
+	if s.timeRange.IndexTime(s.timeRange.PointIndex(other.timeRange.StartT)) != other.timeRange.StartT || s.timeRange.StartT > other.timeRange.EndT || s.timeRange.EndT < other.timeRange.StartT {
 		return fmt.Errorf("cannot add a sub-range from an OperatorEvaluationStats instance with time range [%v, %v] and interval %v ms to another instance with time range [%v, %v] and interval %v ms", other.timeRange.StartT, other.timeRange.EndT, other.timeRange.IntervalMilliseconds, s.timeRange.StartT, s.timeRange.EndT, s.timeRange.IntervalMilliseconds)
 	}
 
@@ -243,13 +242,17 @@ func (s *OperatorEvaluationStats) AddSubRange(other *OperatorEvaluationStats) er
 		lastOtherIndex = other.timeRange.PointIndex(s.timeRange.EndT)
 	}
 
+	nextIndexInThisInstance := s.timeRange.PointIndex(other.timeRange.IndexTime(firstOtherIndex))
+
 	for otherIndex := firstOtherIndex; otherIndex <= lastOtherIndex; otherIndex++ {
-		s.allSeries.Add(firstIndexInThisInstance+otherIndex, other.allSeries.samplesProcessedPerStep[otherIndex], other.allSeries.samplesReadIfSubsequentStep[otherIndex], other.allSeries.samplesReadIfFirstStep[otherIndex])
+		s.allSeries.Add(nextIndexInThisInstance, other.allSeries.samplesProcessedPerStep[otherIndex], other.allSeries.samplesReadIfSubsequentStep[otherIndex], other.allSeries.samplesReadIfFirstStep[otherIndex])
 
 		for subsetIdx, subset := range s.subsets {
 			otherSubset := other.subsets[subsetIdx]
-			subset.Add(firstIndexInThisInstance+otherIndex, otherSubset.samplesProcessedPerStep[otherIndex], otherSubset.samplesReadIfSubsequentStep[otherIndex], otherSubset.samplesReadIfFirstStep[otherIndex])
+			subset.Add(nextIndexInThisInstance, otherSubset.samplesProcessedPerStep[otherIndex], otherSubset.samplesReadIfSubsequentStep[otherIndex], otherSubset.samplesReadIfFirstStep[otherIndex])
 		}
+
+		nextIndexInThisInstance++
 	}
 
 	return nil
