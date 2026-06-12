@@ -14,7 +14,16 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
+
+	"github.com/grafana/mimir/pkg/util/test"
 )
+
+// TestMain fails the suite if any test leaks a goroutine (e.g. a worker or the
+// inner queue's dispatcher), which is the strongest guard against the
+// failed-start cleanup regressing.
+func TestMain(m *testing.M) {
+	test.VerifyNoLeakTestMain(m)
+}
 
 func startPool(t *testing.T, cfg Config) *Pool {
 	t.Helper()
@@ -129,6 +138,24 @@ func TestPool_StopDrainsInflightWork(t *testing.T) {
 	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), p))
 	wg.Wait()
 	assert.Equal(t, int64(4), ran.Load())
+}
+
+func TestPool_FailedStartCleansUp(t *testing.T) {
+	// dskit's BasicService does not call stopping() when starting() returns an
+	// error, so starting() must tear down the queue and any workers itself.
+	// The package-level goleak TestMain additionally fails if any goroutine leaks.
+	p, err := New(Config{Size: 4}, "test", nil, log.NewNopLogger())
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	require.Error(t, p.starting(ctx))
+
+	// The queue must not be left running, and any registered workers must have disconnected.
+	require.Eventually(t, func() bool {
+		return p.queue.State() == services.Terminated && p.queue.GetConnectedConsumerWorkersMetric() == 0
+	}, time.Second, time.Millisecond, "queue should be terminated with no connected workers after a failed start")
 }
 
 func TestPool_StartingBlocksUntilWorkersAreRegistered(t *testing.T) {

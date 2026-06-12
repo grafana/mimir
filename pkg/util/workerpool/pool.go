@@ -135,10 +135,22 @@ func New(cfg Config, name string, reg prometheus.Registerer, logger log.Logger) 
 	return p, nil
 }
 
-func (p *Pool) starting(ctx context.Context) error {
-	if err := services.StartAndAwaitRunning(ctx, p.queue); err != nil {
-		return fmt.Errorf("starting worker pool queue: %w", err)
+func (p *Pool) starting(ctx context.Context) (err error) {
+	if startErr := services.StartAndAwaitRunning(ctx, p.queue); startErr != nil {
+		return fmt.Errorf("starting worker pool queue: %w", startErr)
 	}
+	// The queue is now running and we are about to launch worker goroutines.
+	// dskit's BasicService does NOT call stopping() when starting() returns an error,
+	// so if anything below fails we must tear down the queue and workers ourselves
+	// to avoid leaking them.
+	defer func() {
+		if err != nil {
+			if stopErr := p.stopQueueAndWaitForWorkers(); stopErr != nil {
+				level.Error(p.logger).Log("msg", "cleaning up worker pool after failed start", "pool", p.name, "err", stopErr)
+			}
+		}
+	}()
+
 	// Wait for every worker to register with the queue before reporting the pool as running.
 	// Otherwise work submitted right after StartAndAwaitRunning could sit in the queue with no worker connected to pick it up.
 	// If a worker fails to register, fail startup:
@@ -150,12 +162,14 @@ func (p *Pool) starting(ctx context.Context) error {
 	}
 	for i := 0; i < p.workers; i++ {
 		select {
-		case err := <-ready:
-			if err != nil {
-				return fmt.Errorf("registering worker pool worker: %w", err)
+		case regErr := <-ready:
+			if regErr != nil {
+				err = fmt.Errorf("registering worker pool worker: %w", regErr)
+				return err
 			}
 		case <-ctx.Done():
-			return ctx.Err()
+			err = ctx.Err()
+			return err
 		}
 	}
 	return nil
@@ -167,9 +181,15 @@ func (p *Pool) running(ctx context.Context) error {
 }
 
 func (p *Pool) stopping(_ error) error {
-	// Stop the queue first.
-	// Its dispatcher drains any pending items (workers keep processing them) and then returns ErrStopped to waiting AwaitItemForConsumer calls,
-	// which lets the workers exit cleanly.
+	return p.stopQueueAndWaitForWorkers()
+}
+
+// stopQueueAndWaitForWorkers stops the inner queue and waits for all worker goroutines to exit.
+// Stopping the queue first makes AwaitItemForConsumer return ErrStopped to idle workers
+// (and unblocks any still registering), which lets the workers exit cleanly and workersWg drain.
+// It uses context.Background() deliberately: cleanup must not depend on a possibly
+// already-cancelled caller context.
+func (p *Pool) stopQueueAndWaitForWorkers() error {
 	err := services.StopAndAwaitTerminated(context.Background(), p.queue)
 	p.workersWg.Wait()
 	return err
