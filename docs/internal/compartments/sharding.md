@@ -56,7 +56,7 @@ An analysis of the largest Grafana Labs tenants reached two conclusions:
 The table below reports the per-tenant outcome for every analysed tenant (see the column legend below
 it). Each tenant is shown as an anonymized letter.
 
-| Tenant | Eco        | Unique names | Series dist | Top metric series % | Queries shardable | Avg metrics / query |
+| Tenant | Ecosystem  | Unique names | Series dist | Top metric series % | Queries shardable | Avg metrics / query |
 | ------ | ---------- | ------------ | ----------- | ------------------- | ----------------- | ------------------- |
 | A      | Prometheus | 29061        | 0.91        | 4%                  | 90%               | 1.53                |
 | B      | Prometheus | 80942        | 0.96        | 4%                  | 100%              | 1.52                |
@@ -89,7 +89,7 @@ it). Each tenant is shown as an anonymized letter.
 Column legend:
 
 - **Tenant** — anonymized tenant identifier.
-- **Eco** — metric ecosystem (Prometheus or OTLP).
+- **Ecosystem** — metric ecosystem (Prometheus or OTLP).
 - **Unique names** — number of distinct metric names.
 - **Series dist** — how evenly series are spread across metric names (0–1; higher means more even, lower
   means concentrated on few names; **higher is better**).

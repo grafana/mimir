@@ -48,9 +48,10 @@ At Grafana Labs the per-write-compartment Kafka clusters are Warpstream clusters
 are specific to Warpstream; the design above is Kafka-cluster-generic.
 
 - **Read agents run (logically) in write compartments, not read compartments.** There is one read-agent
-  pool per Warpstream virtual cluster (VC), and VCs are driven by write compartments. An ingester
-  consuming a partition across all VCs connects to one read agent per write compartment, so the number
-  of direct ingester-to-read-agent connections stays limited.
+  pool per Warpstream virtual cluster (VC), and VCs are driven by write compartments. An ingester only
+  consumes a single partition from each VC, and consuming a single partition requires connecting to only
+  one read agent, so an ingester connects to exactly one read agent per write compartment. This bounds the
+  number of direct ingester-to-read-agent connections to the number of write compartments.
 - **Read-agent distributed caching.** Warpstream read agents build a distributed in-memory cache and can
   fetch portions of files from one another. As a result, consuming a partition across all VCs may, under
   the hood, require data from any read agent in any write compartment. This is a potential scalability
