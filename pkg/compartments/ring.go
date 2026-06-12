@@ -4,10 +4,10 @@ package compartments
 
 import "strconv"
 
-// readCompartmentRingPrefix builds the "readcomp-<id>-" prefix prepended to a ring key or name to
+// readCompartmentRingPrefix builds the "rc-<id>-" prefix prepended to a ring key or name to
 // scope it to a single read compartment.
 func readCompartmentRingPrefix(compartmentID int) string {
-	return "readcomp-" + strconv.Itoa(compartmentID) + "-"
+	return "rc-" + strconv.Itoa(compartmentID) + "-"
 }
 
 // ReadCompartmentRingKey returns the KVStore key for the partition ring of the given read

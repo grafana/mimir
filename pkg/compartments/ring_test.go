@@ -9,8 +9,8 @@ import (
 )
 
 func TestReadCompartmentRingKeyAndName(t *testing.T) {
-	assert.Equal(t, "readcomp-0-ingester-partitions", ReadCompartmentRingKey(0, "ingester-partitions"))
-	assert.Equal(t, "readcomp-3-ingester-partitions", ReadCompartmentRingKey(3, "ingester-partitions"))
-	assert.Equal(t, "readcomp-0-partition-ring", ReadCompartmentRingName(0, "partition-ring"))
-	assert.Equal(t, "readcomp-2-partition-ring", ReadCompartmentRingName(2, "partition-ring"))
+	assert.Equal(t, "rc-0-ingester-partitions", ReadCompartmentRingKey(0, "ingester-partitions"))
+	assert.Equal(t, "rc-3-ingester-partitions", ReadCompartmentRingKey(3, "ingester-partitions"))
+	assert.Equal(t, "rc-0-partition-ring", ReadCompartmentRingName(0, "partition-ring"))
+	assert.Equal(t, "rc-2-partition-ring", ReadCompartmentRingName(2, "partition-ring"))
 }

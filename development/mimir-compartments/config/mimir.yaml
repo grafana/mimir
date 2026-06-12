@@ -23,7 +23,7 @@ compartments:
   enabled: true
   read:
     num_compartments: 2
-    kafka_topic_format: mimir-ingest-readcomp-<compartment-id>
+    kafka_topic_format: mimir-ingest-rc-<compartment-id>
 
 ingester:
   push_grpc_method_enabled: false
@@ -78,8 +78,8 @@ blocks_storage:
 
 memberlist:
   join_members:
-    - distributor-writecomp-0
-    - distributor-writecomp-1
+    - distributor-wc-0
+    - distributor-wc-1
     - localhost
   rejoin_interval: 10s
 

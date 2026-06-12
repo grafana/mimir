@@ -99,14 +99,14 @@
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
-  "distributor-writecomp-0":
+  "distributor-wc-0":
     "build":
       "context": "."
       "dockerfile": "dev.dockerfile"
     "command":
       - "sh"
       - "-c"
-      - "exec ./mimir -config.file=./config/mimir.yaml -target=distributor -activity-tracker.filepath=/activity/distributor-writecomp-0"
+      - "exec ./mimir -config.file=./config/mimir.yaml -target=distributor -activity-tracker.filepath=/activity/distributor-wc-0"
     "depends_on":
       "kafka_1":
         "condition": "service_healthy"
@@ -116,7 +116,7 @@
         "condition": "service_started"
     "environment":
       - "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://tempo:4318/v1/traces"
-    "hostname": "distributor-writecomp-0"
+    "hostname": "distributor-wc-0"
     "image": "mimir"
     "networks":
       "default":
@@ -128,14 +128,14 @@
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
-  "distributor-writecomp-1":
+  "distributor-wc-1":
     "build":
       "context": "."
       "dockerfile": "dev.dockerfile"
     "command":
       - "sh"
       - "-c"
-      - "exec ./mimir -config.file=./config/mimir.yaml -target=distributor -activity-tracker.filepath=/activity/distributor-writecomp-1"
+      - "exec ./mimir -config.file=./config/mimir.yaml -target=distributor -activity-tracker.filepath=/activity/distributor-wc-1"
     "depends_on":
       "kafka_1":
         "condition": "service_healthy"
@@ -145,7 +145,7 @@
         "condition": "service_started"
     "environment":
       - "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://tempo:4318/v1/traces"
-    "hostname": "distributor-writecomp-1"
+    "hostname": "distributor-wc-1"
     "image": "mimir"
     "networks":
       "default":
@@ -181,14 +181,14 @@
       - "9091:9091"
     "volumes":
       - "./config:/etc/agent-config"
-  "ingester-zone-a-readcomp-0-0":
+  "ingester-zone-a-rc-0-0":
     "build":
       "context": "."
       "dockerfile": "dev.dockerfile"
     "command":
       - "sh"
       - "-c"
-      - "exec ./mimir -config.file=./config/mimir.yaml -target=ingester -activity-tracker.filepath=/activity/ingester-zone-a-readcomp-0-0 -ingester.ring.instance-availability-zone=zone-a -ingester.read-compartment-id=0 -ingest-storage.kafka.topic=mimir-ingest-readcomp-0"
+      - "exec ./mimir -config.file=./config/mimir.yaml -target=ingester -activity-tracker.filepath=/activity/ingester-zone-a-rc-0-0 -ingester.ring.instance-availability-zone=zone-a -ingester.read-compartment-id=0 -ingest-storage.kafka.topic=mimir-ingest-rc-0"
     "depends_on":
       "kafka_1":
         "condition": "service_healthy"
@@ -198,7 +198,7 @@
         "condition": "service_started"
     "environment":
       - "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://tempo:4318/v1/traces"
-    "hostname": "ingester-zone-a-readcomp-0-0"
+    "hostname": "ingester-zone-a-rc-0-0"
     "image": "mimir"
     "ports":
       - "8100:8080"
@@ -206,15 +206,15 @@
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
-      - ".data-ingester-zone-a-readcomp-0-0:/data:delegated"
-  "ingester-zone-a-readcomp-0-1":
+      - ".data-ingester-zone-a-rc-0-0:/data:delegated"
+  "ingester-zone-a-rc-0-1":
     "build":
       "context": "."
       "dockerfile": "dev.dockerfile"
     "command":
       - "sh"
       - "-c"
-      - "exec ./mimir -config.file=./config/mimir.yaml -target=ingester -activity-tracker.filepath=/activity/ingester-zone-a-readcomp-0-1 -ingester.ring.instance-availability-zone=zone-a -ingester.read-compartment-id=0 -ingest-storage.kafka.topic=mimir-ingest-readcomp-0"
+      - "exec ./mimir -config.file=./config/mimir.yaml -target=ingester -activity-tracker.filepath=/activity/ingester-zone-a-rc-0-1 -ingester.ring.instance-availability-zone=zone-a -ingester.read-compartment-id=0 -ingest-storage.kafka.topic=mimir-ingest-rc-0"
     "depends_on":
       "kafka_1":
         "condition": "service_healthy"
@@ -224,7 +224,7 @@
         "condition": "service_started"
     "environment":
       - "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://tempo:4318/v1/traces"
-    "hostname": "ingester-zone-a-readcomp-0-1"
+    "hostname": "ingester-zone-a-rc-0-1"
     "image": "mimir"
     "ports":
       - "8102:8080"
@@ -232,15 +232,15 @@
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
-      - ".data-ingester-zone-a-readcomp-0-1:/data:delegated"
-  "ingester-zone-a-readcomp-1-0":
+      - ".data-ingester-zone-a-rc-0-1:/data:delegated"
+  "ingester-zone-a-rc-1-0":
     "build":
       "context": "."
       "dockerfile": "dev.dockerfile"
     "command":
       - "sh"
       - "-c"
-      - "exec ./mimir -config.file=./config/mimir.yaml -target=ingester -activity-tracker.filepath=/activity/ingester-zone-a-readcomp-1-0 -ingester.ring.instance-availability-zone=zone-a -ingester.read-compartment-id=1 -ingest-storage.kafka.topic=mimir-ingest-readcomp-1"
+      - "exec ./mimir -config.file=./config/mimir.yaml -target=ingester -activity-tracker.filepath=/activity/ingester-zone-a-rc-1-0 -ingester.ring.instance-availability-zone=zone-a -ingester.read-compartment-id=1 -ingest-storage.kafka.topic=mimir-ingest-rc-1"
     "depends_on":
       "kafka_1":
         "condition": "service_healthy"
@@ -250,7 +250,7 @@
         "condition": "service_started"
     "environment":
       - "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://tempo:4318/v1/traces"
-    "hostname": "ingester-zone-a-readcomp-1-0"
+    "hostname": "ingester-zone-a-rc-1-0"
     "image": "mimir"
     "ports":
       - "8104:8080"
@@ -258,15 +258,15 @@
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
-      - ".data-ingester-zone-a-readcomp-1-0:/data:delegated"
-  "ingester-zone-a-readcomp-1-1":
+      - ".data-ingester-zone-a-rc-1-0:/data:delegated"
+  "ingester-zone-a-rc-1-1":
     "build":
       "context": "."
       "dockerfile": "dev.dockerfile"
     "command":
       - "sh"
       - "-c"
-      - "exec ./mimir -config.file=./config/mimir.yaml -target=ingester -activity-tracker.filepath=/activity/ingester-zone-a-readcomp-1-1 -ingester.ring.instance-availability-zone=zone-a -ingester.read-compartment-id=1 -ingest-storage.kafka.topic=mimir-ingest-readcomp-1"
+      - "exec ./mimir -config.file=./config/mimir.yaml -target=ingester -activity-tracker.filepath=/activity/ingester-zone-a-rc-1-1 -ingester.ring.instance-availability-zone=zone-a -ingester.read-compartment-id=1 -ingest-storage.kafka.topic=mimir-ingest-rc-1"
     "depends_on":
       "kafka_1":
         "condition": "service_healthy"
@@ -276,7 +276,7 @@
         "condition": "service_started"
     "environment":
       - "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://tempo:4318/v1/traces"
-    "hostname": "ingester-zone-a-readcomp-1-1"
+    "hostname": "ingester-zone-a-rc-1-1"
     "image": "mimir"
     "ports":
       - "8106:8080"
@@ -284,15 +284,15 @@
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
-      - ".data-ingester-zone-a-readcomp-1-1:/data:delegated"
-  "ingester-zone-b-readcomp-0-0":
+      - ".data-ingester-zone-a-rc-1-1:/data:delegated"
+  "ingester-zone-b-rc-0-0":
     "build":
       "context": "."
       "dockerfile": "dev.dockerfile"
     "command":
       - "sh"
       - "-c"
-      - "exec ./mimir -config.file=./config/mimir.yaml -target=ingester -activity-tracker.filepath=/activity/ingester-zone-b-readcomp-0-0 -ingester.ring.instance-availability-zone=zone-b -ingester.read-compartment-id=0 -ingest-storage.kafka.topic=mimir-ingest-readcomp-0"
+      - "exec ./mimir -config.file=./config/mimir.yaml -target=ingester -activity-tracker.filepath=/activity/ingester-zone-b-rc-0-0 -ingester.ring.instance-availability-zone=zone-b -ingester.read-compartment-id=0 -ingest-storage.kafka.topic=mimir-ingest-rc-0"
     "depends_on":
       "kafka_1":
         "condition": "service_healthy"
@@ -302,7 +302,7 @@
         "condition": "service_started"
     "environment":
       - "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://tempo:4318/v1/traces"
-    "hostname": "ingester-zone-b-readcomp-0-0"
+    "hostname": "ingester-zone-b-rc-0-0"
     "image": "mimir"
     "ports":
       - "8101:8080"
@@ -310,15 +310,15 @@
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
-      - ".data-ingester-zone-b-readcomp-0-0:/data:delegated"
-  "ingester-zone-b-readcomp-0-1":
+      - ".data-ingester-zone-b-rc-0-0:/data:delegated"
+  "ingester-zone-b-rc-0-1":
     "build":
       "context": "."
       "dockerfile": "dev.dockerfile"
     "command":
       - "sh"
       - "-c"
-      - "exec ./mimir -config.file=./config/mimir.yaml -target=ingester -activity-tracker.filepath=/activity/ingester-zone-b-readcomp-0-1 -ingester.ring.instance-availability-zone=zone-b -ingester.read-compartment-id=0 -ingest-storage.kafka.topic=mimir-ingest-readcomp-0"
+      - "exec ./mimir -config.file=./config/mimir.yaml -target=ingester -activity-tracker.filepath=/activity/ingester-zone-b-rc-0-1 -ingester.ring.instance-availability-zone=zone-b -ingester.read-compartment-id=0 -ingest-storage.kafka.topic=mimir-ingest-rc-0"
     "depends_on":
       "kafka_1":
         "condition": "service_healthy"
@@ -328,7 +328,7 @@
         "condition": "service_started"
     "environment":
       - "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://tempo:4318/v1/traces"
-    "hostname": "ingester-zone-b-readcomp-0-1"
+    "hostname": "ingester-zone-b-rc-0-1"
     "image": "mimir"
     "ports":
       - "8103:8080"
@@ -336,15 +336,15 @@
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
-      - ".data-ingester-zone-b-readcomp-0-1:/data:delegated"
-  "ingester-zone-b-readcomp-1-0":
+      - ".data-ingester-zone-b-rc-0-1:/data:delegated"
+  "ingester-zone-b-rc-1-0":
     "build":
       "context": "."
       "dockerfile": "dev.dockerfile"
     "command":
       - "sh"
       - "-c"
-      - "exec ./mimir -config.file=./config/mimir.yaml -target=ingester -activity-tracker.filepath=/activity/ingester-zone-b-readcomp-1-0 -ingester.ring.instance-availability-zone=zone-b -ingester.read-compartment-id=1 -ingest-storage.kafka.topic=mimir-ingest-readcomp-1"
+      - "exec ./mimir -config.file=./config/mimir.yaml -target=ingester -activity-tracker.filepath=/activity/ingester-zone-b-rc-1-0 -ingester.ring.instance-availability-zone=zone-b -ingester.read-compartment-id=1 -ingest-storage.kafka.topic=mimir-ingest-rc-1"
     "depends_on":
       "kafka_1":
         "condition": "service_healthy"
@@ -354,7 +354,7 @@
         "condition": "service_started"
     "environment":
       - "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://tempo:4318/v1/traces"
-    "hostname": "ingester-zone-b-readcomp-1-0"
+    "hostname": "ingester-zone-b-rc-1-0"
     "image": "mimir"
     "ports":
       - "8105:8080"
@@ -362,15 +362,15 @@
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
-      - ".data-ingester-zone-b-readcomp-1-0:/data:delegated"
-  "ingester-zone-b-readcomp-1-1":
+      - ".data-ingester-zone-b-rc-1-0:/data:delegated"
+  "ingester-zone-b-rc-1-1":
     "build":
       "context": "."
       "dockerfile": "dev.dockerfile"
     "command":
       - "sh"
       - "-c"
-      - "exec ./mimir -config.file=./config/mimir.yaml -target=ingester -activity-tracker.filepath=/activity/ingester-zone-b-readcomp-1-1 -ingester.ring.instance-availability-zone=zone-b -ingester.read-compartment-id=1 -ingest-storage.kafka.topic=mimir-ingest-readcomp-1"
+      - "exec ./mimir -config.file=./config/mimir.yaml -target=ingester -activity-tracker.filepath=/activity/ingester-zone-b-rc-1-1 -ingester.ring.instance-availability-zone=zone-b -ingester.read-compartment-id=1 -ingest-storage.kafka.topic=mimir-ingest-rc-1"
     "depends_on":
       "kafka_1":
         "condition": "service_healthy"
@@ -380,7 +380,7 @@
         "condition": "service_started"
     "environment":
       - "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://tempo:4318/v1/traces"
-    "hostname": "ingester-zone-b-readcomp-1-1"
+    "hostname": "ingester-zone-b-rc-1-1"
     "image": "mimir"
     "ports":
       - "8107:8080"
@@ -388,7 +388,7 @@
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
-      - ".data-ingester-zone-b-readcomp-1-1:/data:delegated"
+      - ".data-ingester-zone-b-rc-1-1:/data:delegated"
   "kafka_1":
     "environment":
       - "CLUSTER_ID=zH1GDqcNTzGMDCXm5VZQdg"
@@ -479,8 +479,8 @@
       - ".data-minio:/data:delegated"
   "nginx":
     "depends_on":
-      - "distributor-writecomp-0"
-      - "distributor-writecomp-1"
+      - "distributor-wc-0"
+      - "distributor-wc-1"
       - "alertmanager-1"
       - "ruler-1"
       - "query-frontend"

@@ -12,15 +12,15 @@ import (
 )
 
 func newTestRouter(numCompartments int) *Router {
-	return NewRouter(ReadConfig{NumCompartments: numCompartments, KafkaTopicFormat: "mimir-readcomp-<compartment-id>"})
+	return NewRouter(ReadConfig{NumCompartments: numCompartments, KafkaTopicFormat: "mimir-rc-<compartment-id>"})
 }
 
 func TestRouter_TopicForCompartment(t *testing.T) {
 	r := newTestRouter(3)
 	require.Equal(t, 3, r.NumCompartments())
-	assert.Equal(t, "mimir-readcomp-0", r.TopicForCompartment(0))
-	assert.Equal(t, "mimir-readcomp-1", r.TopicForCompartment(1))
-	assert.Equal(t, "mimir-readcomp-2", r.TopicForCompartment(2))
+	assert.Equal(t, "mimir-rc-0", r.TopicForCompartment(0))
+	assert.Equal(t, "mimir-rc-1", r.TopicForCompartment(1))
+	assert.Equal(t, "mimir-rc-2", r.TopicForCompartment(2))
 }
 
 func TestRouter_CompartmentForMetric(t *testing.T) {

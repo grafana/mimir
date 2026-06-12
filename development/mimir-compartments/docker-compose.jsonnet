@@ -29,8 +29,8 @@ std.manifestYamlDoc({
   // (both shard every write across all read compartments by metric name); nginx load-balances across them.
   local numWriteCompartments = 2,
   distributors:: {
-    ['distributor-writecomp-%d' % id]: mimirService({
-      name: 'distributor-writecomp-%d' % id,
+    ['distributor-wc-%d' % id]: mimirService({
+      name: 'distributor-wc-%d' % id,
       target: 'distributor',
       publishedHttpPort: 8000 + id,
     }) + {
@@ -47,23 +47,23 @@ std.manifestYamlDoc({
   local numCompartments = 2,
   local partitionsPerCompartment = 2,
   local zones = ['zone-a', 'zone-b'],
-  // Ingesters belong to a read compartment. The name is ingester-<zone>-readcomp-<compartment>-<partition>;
+  // Ingesters belong to a read compartment. The name is ingester-<zone>-rc-<compartment>-<partition>;
   // the trailing number is the partition ID (0-based, parsed by the ingester to own that partition), and
   // -ingester.read-compartment-id selects the read compartment ring it registers into.
   ingesters:: {
-    ['ingester-%s-readcomp-%d-%d' % [zones[zoneIdx], compartment, partition]]: mimirService({
-      name: 'ingester-%s-readcomp-%d-%d' % [zones[zoneIdx], compartment, partition],
+    ['ingester-%s-rc-%d-%d' % [zones[zoneIdx], compartment, partition]]: mimirService({
+      name: 'ingester-%s-rc-%d-%d' % [zones[zoneIdx], compartment, partition],
       target: 'ingester',
       // Based at 8100 to leave room below for the other services.
       publishedHttpPort: 8100 + ((compartment * partitionsPerCompartment + partition) * std.length(zones)) + zoneIdx,
-      jaegerApp: 'ingester-%s-readcomp-%d-%d' % [zones[zoneIdx], compartment, partition],
+      jaegerApp: 'ingester-%s-rc-%d-%d' % [zones[zoneIdx], compartment, partition],
       extraArguments: [
         '-ingester.ring.instance-availability-zone=%s' % zones[zoneIdx],
         '-ingester.read-compartment-id=%d' % compartment,
         // Each compartment's ingesters consume their own read compartment's Kafka topic.
-        '-ingest-storage.kafka.topic=mimir-ingest-readcomp-%d' % compartment,
+        '-ingest-storage.kafka.topic=mimir-ingest-rc-%d' % compartment,
       ],
-      extraVolumes: ['.data-ingester-%s-readcomp-%d-%d:/data:delegated' % [zones[zoneIdx], compartment, partition]],
+      extraVolumes: ['.data-ingester-%s-rc-%d-%d:/data:delegated' % [zones[zoneIdx], compartment, partition]],
     })
     for compartment in std.range(0, numCompartments - 1)
     for partition in std.range(0, partitionsPerCompartment - 1)
@@ -201,8 +201,8 @@ std.manifestYamlDoc({
       hostname: 'nginx',
       image: 'nginxinc/nginx-unprivileged:1.22-alpine',
       depends_on: [
-        'distributor-writecomp-0',
-        'distributor-writecomp-1',
+        'distributor-wc-0',
+        'distributor-wc-1',
         'alertmanager-1',
         'ruler-1',
         'query-frontend',

@@ -40,7 +40,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 // RegisterFlagsWithPrefix registers the read compartments flags with the given prefix.
 func (cfg *ReadConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.IntVar(&cfg.NumCompartments, prefix+"num-compartments", 0, "The number of read compartments.")
-	f.StringVar(&cfg.KafkaTopicFormat, prefix+"kafka-topic-format", "", fmt.Sprintf("The Kafka topic name template, containing the %q placeholder that is replaced with the read compartment ID (e.g. ingest-readcomp-%s).", CompartmentIDPlaceholder, CompartmentIDPlaceholder))
+	f.StringVar(&cfg.KafkaTopicFormat, prefix+"kafka-topic-format", "", fmt.Sprintf("The Kafka topic name template, containing the %q placeholder that is replaced with the read compartment ID (e.g. ingest-rc-%s).", CompartmentIDPlaceholder, CompartmentIDPlaceholder))
 }
 
 // Validate returns an error if the config is invalid.

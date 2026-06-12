@@ -1,9 +1,9 @@
-.data-ingester-zone-a-readcomp-0-0
-.data-ingester-zone-a-readcomp-0-1
-.data-ingester-zone-a-readcomp-1-0
-.data-ingester-zone-a-readcomp-1-1
-.data-ingester-zone-b-readcomp-0-0
-.data-ingester-zone-b-readcomp-0-1
-.data-ingester-zone-b-readcomp-1-0
-.data-ingester-zone-b-readcomp-1-1
+.data-ingester-zone-a-rc-0-0
+.data-ingester-zone-a-rc-0-1
+.data-ingester-zone-a-rc-1-0
+.data-ingester-zone-a-rc-1-1
+.data-ingester-zone-b-rc-0-0
+.data-ingester-zone-b-rc-0-1
+.data-ingester-zone-b-rc-1-0
+.data-ingester-zone-b-rc-1-1
 .data-minio

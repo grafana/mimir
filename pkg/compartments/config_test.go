@@ -18,14 +18,14 @@ func TestConfig_Validate(t *testing.T) {
 			cfg: Config{Enabled: false, Read: ReadConfig{NumCompartments: 0, KafkaTopicFormat: ""}},
 		},
 		"enabled with valid config passes": {
-			cfg: Config{Enabled: true, Read: ReadConfig{NumCompartments: 2, KafkaTopicFormat: "mimir-readcomp-<compartment-id>"}},
+			cfg: Config{Enabled: true, Read: ReadConfig{NumCompartments: 2, KafkaTopicFormat: "mimir-rc-<compartment-id>"}},
 		},
 		"enabled with zero compartments is rejected": {
-			cfg:         Config{Enabled: true, Read: ReadConfig{NumCompartments: 0, KafkaTopicFormat: "mimir-readcomp-<compartment-id>"}},
+			cfg:         Config{Enabled: true, Read: ReadConfig{NumCompartments: 0, KafkaTopicFormat: "mimir-rc-<compartment-id>"}},
 			expectedErr: ErrInvalidNumCompartments,
 		},
 		"enabled with negative compartments is rejected": {
-			cfg:         Config{Enabled: true, Read: ReadConfig{NumCompartments: -1, KafkaTopicFormat: "mimir-readcomp-<compartment-id>"}},
+			cfg:         Config{Enabled: true, Read: ReadConfig{NumCompartments: -1, KafkaTopicFormat: "mimir-rc-<compartment-id>"}},
 			expectedErr: ErrInvalidNumCompartments,
 		},
 		"enabled with empty topic format is rejected": {
@@ -33,7 +33,7 @@ func TestConfig_Validate(t *testing.T) {
 			expectedErr: ErrEmptyKafkaTopicFormat,
 		},
 		"enabled with topic format missing the placeholder is rejected": {
-			cfg:         Config{Enabled: true, Read: ReadConfig{NumCompartments: 2, KafkaTopicFormat: "mimir-readcomp"}},
+			cfg:         Config{Enabled: true, Read: ReadConfig{NumCompartments: 2, KafkaTopicFormat: "mimir-rc"}},
 			expectedErr: ErrKafkaTopicFormatPlacehold,
 		},
 	}
