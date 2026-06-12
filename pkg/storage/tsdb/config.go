@@ -109,6 +109,7 @@ var (
 	errInvalidWALReplayConcurrency                  = errors.New("invalid TSDB WAL replay concurrency")
 	errInvalidStripeSize                            = errors.New("invalid TSDB stripe size")
 	errInvalidStreamingBatchSize                    = errors.New("invalid store-gateway streaming batch size")
+	errInvalidMaxConcurrentBlocksPerRequest         = errors.New("invalid store-gateway max concurrent blocks per request, must be greater than or equal to 0")
 	errInvalidEarlyHeadCompactionMinSeriesReduction = errors.New("early compaction minimum series reduction percentage must be a value between 0 and 100 (included)")
 	errEarlyCompactionRequiresActiveSeries          = fmt.Errorf("early compaction requires -%s to be enabled", activeseries.EnabledFlag)
 	errEmptyBlockranges                             = errors.New("empty block ranges for TSDB")
@@ -468,6 +469,10 @@ type BucketStoreConfig struct {
 
 	StreamingBatchSize    int     `yaml:"streaming_series_batch_size" category:"advanced"`
 	SeriesFetchPreference float64 `yaml:"series_fetch_preference" category:"advanced"`
+
+	// MaxConcurrentBlocksPerRequest limits how many blocks a single Series/LabelNames/LabelValues
+	// request resolves matchers (expanded postings) for concurrently. 0 disables the limit.
+	MaxConcurrentBlocksPerRequest int `yaml:"max_concurrent_blocks_per_request" category:"experimental"`
 }
 
 // RegisterFlags registers the BucketStore flags
@@ -497,12 +502,16 @@ func (cfg *BucketStoreConfig) RegisterFlags(f *flag.FlagSet) {
 	f.Uint64Var(&cfg.PartitionerMaxGapBytesChunks, "blocks-storage.bucket-store.partitioner-max-gap-bytes-chunks", 0, "Max size - in bytes - of a gap for which the partitioner aggregates together two bucket GET object requests. Overrides the 'bucket-store.partitioner-max-gap-bytes' when requesting chunks")
 	f.IntVar(&cfg.StreamingBatchSize, "blocks-storage.bucket-store.batch-series-size", 5000, "This option controls how many series to fetch per batch. The batch size must be greater than 0.")
 	f.Float64Var(&cfg.SeriesFetchPreference, "blocks-storage.bucket-store.series-fetch-preference", 0.75, "This parameter controls the trade-off in fetching series versus fetching postings to fulfill a series request. Increasing the series preference results in fetching more series and reducing the volume of postings fetched. Reducing the series preference results in the opposite. Increase this parameter to reduce the rate of fetched series bytes (see \"Mimir / Queries\" dashboard) or API calls to the object store. Must be a positive floating point number.")
+	f.IntVar(&cfg.MaxConcurrentBlocksPerRequest, "blocks-storage.bucket-store.max-concurrent-blocks-per-request", 0, "Maximum number of blocks for which a single Series, LabelNames or LabelValues request resolves matchers (expanded postings) concurrently. Requests touching more blocks than this process them in waves of this size, bounding the peak memory of matcher resolution for queries that span many blocks (for example long time ranges). 0 disables the limit.")
 }
 
 // Validate the config.
 func (cfg *BucketStoreConfig) Validate() error {
 	if cfg.StreamingBatchSize <= 0 {
 		return errInvalidStreamingBatchSize
+	}
+	if cfg.MaxConcurrentBlocksPerRequest < 0 {
+		return errInvalidMaxConcurrentBlocksPerRequest
 	}
 	if cfg.IgnoreDeletionMarksWhileQueryingDelay >= cfg.IgnoreDeletionMarksInStoreGatewayDelay {
 		// If we ignore deletion marks for longer while querying, we'll try to query blocks that store-gateways have

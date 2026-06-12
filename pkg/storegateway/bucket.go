@@ -130,6 +130,10 @@ type BucketStore struct {
 
 	// postingsStrategy is a strategy shared among all tenants.
 	postingsStrategy postingsSelectionStrategy
+
+	// maxConcurrentBlocksPerRequest limits how many blocks a single request resolves
+	// matchers (expanded postings) for concurrently. 0 means no limit.
+	maxConcurrentBlocksPerRequest int
 }
 
 type noopCache struct{}
@@ -238,6 +242,8 @@ func NewBucketStore(
 		userID:                      userID,
 		maxSeriesPerBatch:           bucketStoreConfig.StreamingBatchSize,
 		postingsStrategy:            postingsStrategy,
+
+		maxConcurrentBlocksPerRequest: bucketStoreConfig.MaxConcurrentBlocksPerRequest,
 	}
 
 	for _, option := range options {
@@ -1045,6 +1051,11 @@ func (s *BucketStore) getSeriesIteratorFromBlocks(
 		begin                    = time.Now()
 		blocksQueriedByBlockMeta = make(map[blockQueriedMeta]int)
 	)
+	// Limit how many blocks resolve matchers (expanded postings) concurrently, to bound the
+	// peak memory of matcher resolution for requests that span many blocks.
+	if s.maxConcurrentBlocksPerRequest > 0 {
+		g.SetLimit(s.maxConcurrentBlocksPerRequest)
+	}
 	for _, b := range blocks {
 		// Keep track of queried blocks.
 		indexr := indexReaders[b.meta.ULID]
@@ -1309,6 +1320,9 @@ func (s *BucketStore) LabelNames(ctx context.Context, req *storepb.LabelNamesReq
 	defer s.recordBucketIndexDiscoveryDiff(ctx)
 
 	g, gctx := errgroup.WithContext(ctx)
+	if s.maxConcurrentBlocksPerRequest > 0 {
+		g.SetLimit(s.maxConcurrentBlocksPerRequest)
+	}
 
 	var setsMtx sync.Mutex
 	var sets [][]string
@@ -1481,6 +1495,9 @@ func (s *BucketStore) LabelValues(ctx context.Context, req *storepb.LabelValuesR
 
 	resHints := &storepb.LabelValuesResponseHints{}
 	g, gctx := errgroup.WithContext(ctx)
+	if s.maxConcurrentBlocksPerRequest > 0 {
+		g.SetLimit(s.maxConcurrentBlocksPerRequest)
+	}
 
 	var reqBlockMatchers []*labels.Matcher
 	if req.RequestHints != nil {
