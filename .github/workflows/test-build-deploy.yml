@@ -97,11 +97,8 @@ jobs:
           ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
       - name: Lint
         run: make BUILD_IN_CONTAINER=false lint
-      # TODO(wiresmith): Temporarily skipped because go mod download can't fetch the
-      # private github.com/grafana/wiresmith module from fork-PR CI. Re-enable once
-      # wiresmith is public / installed in the build image.
-      # - name: Check Vendor Directory
-      #   run: make BUILD_IN_CONTAINER=false mod-check
+      - name: Check Vendor Directory
+        run: make BUILD_IN_CONTAINER=false mod-check
       - name: Check Protos
         run: make BUILD_IN_CONTAINER=false check-protos
       - name: Check Generated Node Methods
