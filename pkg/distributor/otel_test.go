@@ -2834,3 +2834,98 @@ func (c fakeResourceAttributePromotionConfig) PromoteOTelResourceAttributes(stri
 func boolPtr(b bool) *bool {
 	return &b
 }
+
+func TestOTLPHandler_TargetInfoLabelCollisionLogging(t *testing.T) {
+	for name, tc := range map[string]struct {
+		limitEnabled              bool
+		nameValidationScheme      model.ValidationScheme
+		allowTranslationHeaders   bool
+		translationStrategyHeader string
+		expectCollisionLog        bool
+	}{
+		"limit enabled, legacy validation logs the collision": {
+			limitEnabled:         true,
+			nameValidationScheme: model.LegacyValidation,
+			expectCollisionLog:   true,
+		},
+		"limit disabled logs nothing": {
+			limitEnabled:         false,
+			nameValidationScheme: model.LegacyValidation,
+			expectCollisionLog:   false,
+		},
+		"limit enabled, UTF-8 validation (NoTranslation) skips the scan": {
+			limitEnabled:         true,
+			nameValidationScheme: model.UTF8Validation,
+			expectCollisionLog:   false,
+		},
+		"limit enabled, UTF-8 selected via translation header skips the scan": {
+			limitEnabled:              true,
+			nameValidationScheme:      model.LegacyValidation,
+			allowTranslationHeaders:   true,
+			translationStrategyHeader: string(otlptranslator.NoTranslation),
+			expectCollisionLog:        false,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			md := pmetric.NewMetrics()
+			rm := md.ResourceMetrics().AppendEmpty()
+			attrs := rm.Resource().Attributes()
+			attrs.PutStr("service.name", "svc")
+			attrs.PutStr("service.instance.id", "inst")
+			attrs.PutStr("k8s.pod.name", "foo")
+			attrs.PutStr("k8s_pod_name", "bar")
+			m := rm.ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
+			m.SetName("test_metric")
+			dp := m.SetEmptyGauge().DataPoints().AppendEmpty()
+			dp.SetDoubleValue(1)
+			dp.SetTimestamp(pcommon.NewTimestampFromTime(time.Now()))
+
+			exportReq := pmetricotlp.NewExportRequestFromMetrics(md)
+			body, err := exportReq.MarshalProto()
+			require.NoError(t, err)
+			req := createOTLPRequest(t, body, "", pbContentType)
+			if tc.translationStrategyHeader != "" {
+				req.Header.Set(otlpTranslationStrategyHeader, tc.translationStrategyHeader)
+			}
+
+			testLimits := &validation.Limits{
+				NameValidationScheme:                     tc.nameValidationScheme,
+				OTelMetricSuffixesEnabled:                boolPtr(false),
+				OTelLogTargetInfoLabelNameCollisions:     tc.limitEnabled,
+				OTelLabelNameUnderscoreSanitization:      true,
+				OTelLabelNamePreserveMultipleUnderscores: true,
+			}
+			limits := validation.NewOverrides(
+				validation.Limits{},
+				validation.NewMockTenantLimits(map[string]*validation.Limits{"test": testLimits}),
+			)
+
+			pusher := func(_ context.Context, pushReq *Request) error {
+				t.Cleanup(pushReq.CleanUp)
+				// Calling WriteRequest triggers the supplier, which is where the
+				// scan runs. Without this the supplier is never invoked and the
+				// collision check never executes.
+				_, err := pushReq.WriteRequest()
+				return err
+			}
+			logs := &concurrency.SyncBuffer{}
+			handler := OTLPHandler(
+				100000, nil, nil, tc.allowTranslationHeaders, limits, nil, nil, RetryConfig{}, nil,
+				pusher, nil, nil, util_log.MakeLeveledLogger(logs, "debug"),
+			)
+
+			resp := httptest.NewRecorder()
+			handler.ServeHTTP(resp, req)
+			require.Equal(t, http.StatusOK, resp.Code, "response body: %s", resp.Body.String())
+
+			const collisionMsg = "collide after label name sanitization"
+			if tc.expectCollisionLog {
+				assert.Contains(t, logs.String(), collisionMsg)
+				assert.Contains(t, logs.String(), "label=k8s_pod_name")
+				assert.Contains(t, logs.String(), "attributes=k8s.pod.name,k8s_pod_name")
+			} else {
+				assert.NotContains(t, logs.String(), collisionMsg)
+			}
+		})
+	}
+}
