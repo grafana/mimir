@@ -60,6 +60,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 
+	"github.com/grafana/mimir/pkg/compartments"
 	"github.com/grafana/mimir/pkg/costattribution"
 	"github.com/grafana/mimir/pkg/costattribution/costattributionmodel"
 	asmodel "github.com/grafana/mimir/pkg/ingester/activeseries/model"
@@ -124,7 +125,10 @@ func TestIncrementDecrementIdleCompactionConcurrent(t *testing.T) {
 }
 
 func TestConfig_Validate(t *testing.T) {
+	enabledCompartments := compartments.Config{Enabled: true, Read: compartments.ReadConfig{NumCompartments: 2}}
+
 	tests := map[string]struct {
+		compartments  compartments.Config
 		setup         func(*Config)
 		expectedError string
 	}{
@@ -150,6 +154,38 @@ func TestConfig_Validate(t *testing.T) {
 				cfg.PushGrpcMethodEnabled = false
 			},
 		},
+		"compartments disabled with a non-zero read compartment ID fails validation": {
+			setup: func(cfg *Config) {
+				cfg.ReadCompartmentID = 1
+			},
+			expectedError: "ingester read compartment ID must be 0 when compartments are disabled",
+		},
+		"compartments enabled with read compartment ID 0 passes validation": {
+			compartments: enabledCompartments,
+			setup: func(cfg *Config) {
+				cfg.ReadCompartmentID = 0
+			},
+		},
+		"compartments enabled with an in-range read compartment ID passes validation": {
+			compartments: enabledCompartments,
+			setup: func(cfg *Config) {
+				cfg.ReadCompartmentID = 1
+			},
+		},
+		"compartments enabled with a negative read compartment ID fails validation": {
+			compartments: enabledCompartments,
+			setup: func(cfg *Config) {
+				cfg.ReadCompartmentID = -1
+			},
+			expectedError: "ingester read compartment ID -1 is out of range [0, 2)",
+		},
+		"compartments enabled with an out-of-range read compartment ID fails validation": {
+			compartments: enabledCompartments,
+			setup: func(cfg *Config) {
+				cfg.ReadCompartmentID = 2
+			},
+			expectedError: "ingester read compartment ID 2 is out of range [0, 2)",
+		},
 	}
 
 	for name, tc := range tests {
@@ -158,7 +194,7 @@ func TestConfig_Validate(t *testing.T) {
 			flagext.DefaultValues(&cfg)
 			tc.setup(&cfg)
 
-			err := cfg.Validate()
+			err := cfg.Validate(tc.compartments)
 			if tc.expectedError == "" {
 				require.NoError(t, err)
 			} else {
