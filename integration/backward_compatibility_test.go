@@ -139,7 +139,9 @@ func runBackwardCompatibilityTest(t *testing.T, previousImage string, oldFlagsMa
 	compactor := e2emimir.NewCompactor("compactor", consul.NetworkHTTPEndpoint(), flags)
 	require.NoError(t, s.StartAndWaitReady(compactor))
 
-	checkQueries(t, consul, previousImage, flags, oldFlagsMapper, s, 1,
+	// series_1 and series_2 have been shipped to the storage as 2 distinct blocks (series_3 is still
+	// in the ingester), so the store-gateway is expected to load at least 2 blocks before querying.
+	checkQueries(t, consul, previousImage, flags, oldFlagsMapper, s, 1, 2,
 		[]instantQueryTest{
 			{
 				expr:           "series_1",
@@ -217,7 +219,9 @@ func runNewDistributorsCanPushToOldIngestersWithReplication(t *testing.T, previo
 	require.NoError(t, err)
 	require.Equal(t, 200, res.StatusCode)
 
-	checkQueries(t, consul, previousImage, flags, oldFlagsMapper, s, 3, []instantQueryTest{{
+	// No blocks have been shipped to the storage: all data is still in the ingesters, so the
+	// store-gateway is not expected to load any block.
+	checkQueries(t, consul, previousImage, flags, oldFlagsMapper, s, 3, 0, []instantQueryTest{{
 		time:           now,
 		expr:           "series_1",
 		expectedVector: expectedVector,
@@ -232,6 +236,7 @@ func checkQueries(
 	oldFlagsMapper e2emimir.FlagMapper,
 	s *e2e.Scenario,
 	numIngesters int,
+	expectedStoreGatewayBlocks int,
 	instantQueries []instantQueryTest,
 	remoteReadRequests []remoteReadRequestTest,
 ) {
@@ -295,6 +300,23 @@ func checkQueries(
 			require.NoError(t, querier.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_ring_members"}, e2e.WithLabelMatchers(
 				labels.MustNewMatcher(labels.MatchEqual, "name", "store-gateway-client"),
 				labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
+
+			// Wait until the store-gateway has loaded the blocks before querying.
+			//
+			// The store-gateway switches to ACTIVE in the ring only after its initial block sync completes,
+			// but if that sync runs before the compactor has published the per-tenant bucket index, the
+			// missing bucket index is treated as a legit empty result: the store-gateway becomes ACTIVE
+			// having loaded zero blocks and only loads them on a later periodic sync. Since we start the
+			// compactor and the store-gateway at roughly the same time, the querier (which only waits for the
+			// store-gateway to be ACTIVE) may query in that window and fail the store consistency check
+			// ("err-mimir-store-consistency-check-failed").
+			//
+			// The number of loaded blocks may be higher than expectedStoreGatewayBlocks if the compactor has
+			// already compacted the source blocks into new ones (the source blocks are retained until the
+			// deletion delay elapses), so we only require that at least the expected number have been loaded.
+			if expectedStoreGatewayBlocks > 0 {
+				require.NoError(t, storeGateway.WaitSumMetricsWithOptions(e2e.GreaterOrEqual(float64(expectedStoreGatewayBlocks)), []string{"cortex_bucket_store_blocks_loaded"}, e2e.WaitMissingMetrics))
+			}
 
 			// Query the series.
 			for _, endpoint := range []string{queryFrontend.HTTPEndpoint(), querier.HTTPEndpoint()} {
