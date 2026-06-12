@@ -44,6 +44,7 @@ type skipTimestampFunc func(t time.Time) bool
 type histogramProfile struct {
 	metricName              string
 	typeLabel               string
+	otelCompatible          bool
 	metadata                []prompb.MetricMetadata
 	generateHistogram       generateHistogramFunc
 	generateSampleHistogram generateSampleHistogramFunc
@@ -52,10 +53,11 @@ type histogramProfile struct {
 }
 
 var (
-	histogramProfiles = []histogramProfile{
+	defaultHistogramProfiles = []histogramProfile{
 		{
-			metricName: "mimir_continuous_test_histogram_int_counter_v2",
-			typeLabel:  "histogram_int_counter",
+			metricName:     "mimir_continuous_test_histogram_int_counter_v2",
+			typeLabel:      "histogram_int_counter",
+			otelCompatible: true,
 			metadata: []prompb.MetricMetadata{{
 				Type:             prompb.MetricMetadata_HISTOGRAM,
 				MetricFamilyName: "mimir_continuous_test_histogram_int_counter_v2",
@@ -125,12 +127,28 @@ var (
 )
 
 func init() {
-	for i, histProfile := range histogramProfiles {
-		histogramProfiles[i].generateValue = nil
-		histogramProfiles[i].generateSeries = func(name string, t time.Time, numSeries int, extraLabels ...prompb.Label) []prompb.TimeSeries {
+	for i, histProfile := range defaultHistogramProfiles {
+		defaultHistogramProfiles[i].generateValue = nil
+		defaultHistogramProfiles[i].generateSeries = func(name string, t time.Time, numSeries int, extraLabels ...prompb.Label) []prompb.TimeSeries {
 			return generateHistogramSeriesInner(name, t, numSeries, histProfile.generateHistogram, extraLabels...)
 		}
 	}
+}
+
+func histogramProfilesForWriteProtocol(writeProtocol WriteProtocol) []histogramProfile {
+	var out []histogramProfile
+	for _, p := range defaultHistogramProfiles {
+		switch writeProtocol {
+		case writeProtocolOtelHttp:
+			if p.otelCompatible {
+				out = append(out, p)
+			}
+		default:
+			out = append(out, p)
+		}
+	}
+
+	return out
 }
 
 type querySumFunc func(metricName string) string

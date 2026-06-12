@@ -69,8 +69,10 @@ func init() {
 		},
 	}}
 
-	histTestTuples = make([]WriteReadSeriesTestTuple, len(histogramProfiles))
-	for i, histProfile := range histogramProfiles {
+	histProfiles := histogramProfilesForWriteProtocol(writeProtocolDefault)
+
+	histTestTuples = make([]WriteReadSeriesTestTuple, len(histProfiles))
+	for i, histProfile := range histProfiles {
 		histTestTuples[i] = WriteReadSeriesTestTuple{
 			metricName:              histProfile.metricName,
 			typeLabel:               histProfile.typeLabel,
@@ -125,7 +127,7 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 		client.On("Metadata", mock.Anything, mock.Anything).Return(v1.Metadata{}, nil)
 
 		reg := prometheus.NewPedanticRegistry()
-		test := NewWriteReadSeriesTest(cfg, client, logger, reg)
+		test := NewWriteReadSeriesTest(cfg, client, writeProtocolDefault, logger, reg)
 
 		now := time.Unix(1000, 0)
 		// Ignore this error. It will be non-nil because the query mock does not return any data.
@@ -163,7 +165,7 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 		client.On("Metadata", mock.Anything, mock.Anything).Return(v1.Metadata{}, nil)
 
 		reg := prometheus.NewPedanticRegistry()
-		test := NewWriteReadSeriesTest(cfg, client, logger, reg)
+		test := NewWriteReadSeriesTest(cfg, client, writeProtocolDefault, logger, reg)
 
 		now := time.Unix(999, 0)
 		// Ignore this error. It will be non-nil because the query mock does not return any data.
@@ -201,7 +203,7 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 		client.On("Metadata", mock.Anything, mock.Anything).Return(v1.Metadata{}, nil)
 
 		reg := prometheus.NewPedanticRegistry()
-		test := NewWriteReadSeriesTest(cfg, client, logger, reg)
+		test := NewWriteReadSeriesTest(cfg, client, writeProtocolDefault, logger, reg)
 
 		for _, tt := range testTuples {
 			records := tt.getMetricHistory(test)
@@ -246,7 +248,7 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 		client.On("Metadata", mock.Anything, mock.Anything).Return(v1.Metadata{}, nil)
 
 		reg := prometheus.NewPedanticRegistry()
-		test := NewWriteReadSeriesTest(cfg, client, logger, reg)
+		test := NewWriteReadSeriesTest(cfg, client, writeProtocolDefault, logger, reg)
 
 		for _, tt := range testTuples {
 			records := tt.getMetricHistory(test)
@@ -277,7 +279,7 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 		client.On("Metadata", mock.Anything, mock.Anything).Return(v1.Metadata{}, nil)
 
 		reg := prometheus.NewPedanticRegistry()
-		test := NewWriteReadSeriesTest(cfg, client, logger, reg)
+		test := NewWriteReadSeriesTest(cfg, client, writeProtocolDefault, logger, reg)
 
 		for _, tt := range testTuples {
 			records := tt.getMetricHistory(test)
@@ -310,7 +312,7 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 		client.On("Metadata", mock.Anything, mock.Anything).Return(v1.Metadata{}, nil)
 
 		reg := prometheus.NewPedanticRegistry()
-		test := NewWriteReadSeriesTest(cfg, client, logger, reg)
+		test := NewWriteReadSeriesTest(cfg, client, writeProtocolDefault, logger, reg)
 
 		for _, tt := range testTuples {
 			records := tt.getMetricHistory(test)
@@ -361,7 +363,7 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 			}, nil)
 		}
 		if cfg.WithHistograms {
-			for _, histProfile := range histogramProfiles {
+			for _, histProfile := range histogramProfilesForWriteProtocol(writeProtocolDefault) {
 				md := histProfile.metadata[0]
 				client.On("Metadata", mock.Anything, histProfile.metricName).Return(v1.Metadata{
 					Type: v1.MetricType(strings.ToLower(md.Type.String())),
@@ -390,7 +392,7 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 		}
 
 		reg := prometheus.NewPedanticRegistry()
-		test := NewWriteReadSeriesTest(cfg, client, logger, reg)
+		test := NewWriteReadSeriesTest(cfg, client, writeProtocolDefault, logger, reg)
 
 		err := test.Run(context.Background(), now)
 		assert.NoError(t, err)
@@ -447,7 +449,7 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 		}
 
 		reg := prometheus.NewPedanticRegistry()
-		test := NewWriteReadSeriesTest(cfg, client, logger, reg)
+		test := NewWriteReadSeriesTest(cfg, client, writeProtocolDefault, logger, reg)
 
 		err := test.Run(context.Background(), now)
 		assert.Error(t, err)
@@ -508,7 +510,7 @@ func testWriteReadSeriesTestInit(t *testing.T, cfg WriteReadSeriesTestConfig, te
 		}
 
 		reg := prometheus.NewPedanticRegistry()
-		test := NewWriteReadSeriesTest(cfg, client, logger, reg)
+		test := NewWriteReadSeriesTest(cfg, client, writeProtocolDefault, logger, reg)
 
 		require.NoError(t, test.Init(context.Background(), now))
 
@@ -544,7 +546,7 @@ func testWriteReadSeriesTestInit(t *testing.T, cfg WriteReadSeriesTestConfig, te
 			}
 		}
 
-		test := NewWriteReadSeriesTest(cfg, client, logger, nil)
+		test := NewWriteReadSeriesTest(cfg, client, writeProtocolDefault, logger, nil)
 
 		require.NoError(t, test.Init(context.Background(), now))
 
@@ -578,7 +580,7 @@ func testWriteReadSeriesTestInit(t *testing.T, cfg WriteReadSeriesTestConfig, te
 			}
 		}
 
-		test := NewWriteReadSeriesTest(cfg, client, logger, nil)
+		test := NewWriteReadSeriesTest(cfg, client, writeProtocolDefault, logger, nil)
 
 		require.NoError(t, test.Init(context.Background(), now))
 
@@ -614,7 +616,7 @@ func testWriteReadSeriesTestInit(t *testing.T, cfg WriteReadSeriesTestConfig, te
 			}
 		}
 
-		test := NewWriteReadSeriesTest(cfg, client, logger, nil)
+		test := NewWriteReadSeriesTest(cfg, client, writeProtocolDefault, logger, nil)
 
 		require.NoError(t, test.Init(context.Background(), now))
 
@@ -643,7 +645,7 @@ func testWriteReadSeriesTestInit(t *testing.T, cfg WriteReadSeriesTestConfig, te
 			client.On("QueryRange", mock.Anything, tt.querySum(tt.metricName), now.Add(-48*time.Hour).Add(writeInterval), now.Add(-24*time.Hour), writeInterval, mock.Anything).Return(model.Matrix{{}}, nil)
 		}
 
-		test := NewWriteReadSeriesTest(cfg, client, logger, nil)
+		test := NewWriteReadSeriesTest(cfg, client, writeProtocolDefault, logger, nil)
 
 		require.NoError(t, test.Init(context.Background(), now))
 
@@ -683,7 +685,7 @@ func testWriteReadSeriesTestInit(t *testing.T, cfg WriteReadSeriesTestConfig, te
 			}
 		}
 
-		test := NewWriteReadSeriesTest(cfg, client, logger, nil)
+		test := NewWriteReadSeriesTest(cfg, client, writeProtocolDefault, logger, nil)
 
 		require.NoError(t, test.Init(context.Background(), now))
 
@@ -713,7 +715,7 @@ func testWriteReadSeriesTestInit(t *testing.T, cfg WriteReadSeriesTestConfig, te
 
 		testCfg := cfg
 		testCfg.MaxQueryAge = 2 * time.Hour
-		test := NewWriteReadSeriesTest(testCfg, client, logger, nil)
+		test := NewWriteReadSeriesTest(testCfg, client, writeProtocolDefault, logger, nil)
 
 		require.NoError(t, test.Init(context.Background(), now))
 
@@ -741,7 +743,7 @@ func testWriteReadSeriesTestInit(t *testing.T, cfg WriteReadSeriesTestConfig, te
 			}
 		}
 
-		test := NewWriteReadSeriesTest(cfg, client, logger, nil)
+		test := NewWriteReadSeriesTest(cfg, client, writeProtocolDefault, logger, nil)
 
 		require.NoError(t, test.Init(context.Background(), now))
 
@@ -761,7 +763,7 @@ func testWriteReadSeriesTestInit(t *testing.T, cfg WriteReadSeriesTestConfig, te
 			client.On("QueryRange", mock.Anything, tt.querySum(tt.metricName), now.Add(-24*time.Hour).Add(writeInterval), now, writeInterval, mock.Anything).Return(model.Matrix{}, errors.New("failed"))
 		}
 
-		test := NewWriteReadSeriesTest(cfg, client, logger, nil)
+		test := NewWriteReadSeriesTest(cfg, client, writeProtocolDefault, logger, nil)
 
 		require.NoError(t, test.Init(context.Background(), now))
 
@@ -790,7 +792,7 @@ func testWriteReadSeriesTestInit(t *testing.T, cfg WriteReadSeriesTestConfig, te
 			client.On("QueryRange", mock.Anything, tt.querySum(tt.metricName), now.Add(-48*time.Hour).Add(writeInterval), now.Add(-24*time.Hour), writeInterval, mock.Anything).Return(model.Matrix{{}}, errors.New("failed"))
 		}
 
-		test := NewWriteReadSeriesTest(cfg, client, logger, nil)
+		test := NewWriteReadSeriesTest(cfg, client, writeProtocolDefault, logger, nil)
 
 		require.NoError(t, test.Init(context.Background(), now))
 
@@ -824,7 +826,7 @@ func testWriteReadSeriesTestInit(t *testing.T, cfg WriteReadSeriesTestConfig, te
 			}
 		}
 
-		test := NewWriteReadSeriesTest(cfg, client, logger, nil)
+		test := NewWriteReadSeriesTest(cfg, client, writeProtocolDefault, logger, nil)
 
 		require.NoError(t, test.Init(context.Background(), now))
 
@@ -864,7 +866,7 @@ func testWriteReadSeriesTestInit(t *testing.T, cfg WriteReadSeriesTestConfig, te
 			}
 		}
 
-		test := NewWriteReadSeriesTest(cfg, client, logger, nil)
+		test := NewWriteReadSeriesTest(cfg, client, writeProtocolDefault, logger, nil)
 
 		require.NoError(t, test.Init(context.Background(), now))
 
@@ -898,7 +900,7 @@ func testWriteReadSeriesTestInit(t *testing.T, cfg WriteReadSeriesTestConfig, te
 			}
 		}
 
-		test := NewWriteReadSeriesTest(cfg, client, logger, nil)
+		test := NewWriteReadSeriesTest(cfg, client, writeProtocolDefault, logger, nil)
 
 		require.NoError(t, test.Init(context.Background(), now))
 
@@ -921,7 +923,7 @@ func TestWriteReadSeriesTest_getRangeQueryTimeRanges(t *testing.T) {
 	now := time.Unix(int64((10*24*time.Hour)+(2*time.Second)), 0)
 
 	t.Run("min/max query time has not been set yet", func(t *testing.T) {
-		test := NewWriteReadSeriesTest(cfg, newMockClient(), log.NewNopLogger(), nil)
+		test := NewWriteReadSeriesTest(cfg, newMockClient(), writeProtocolDefault, log.NewNopLogger(), nil)
 
 		actualRanges, actualInstants, err := test.getQueryTimeRanges(now, &test.floatMetric)
 		assert.Error(t, err)
@@ -930,7 +932,7 @@ func TestWriteReadSeriesTest_getRangeQueryTimeRanges(t *testing.T) {
 	})
 
 	t.Run("min/max query time is older than max age", func(t *testing.T) {
-		test := NewWriteReadSeriesTest(cfg, newMockClient(), log.NewNopLogger(), nil)
+		test := NewWriteReadSeriesTest(cfg, newMockClient(), writeProtocolDefault, log.NewNopLogger(), nil)
 		test.floatMetric.queryMinTime = now.Add(-cfg.MaxQueryAge).Add(-time.Minute)
 		test.floatMetric.queryMaxTime = now.Add(-cfg.MaxQueryAge).Add(-time.Minute)
 
@@ -941,7 +943,7 @@ func TestWriteReadSeriesTest_getRangeQueryTimeRanges(t *testing.T) {
 	})
 
 	t.Run("min query time = max query time", func(t *testing.T) {
-		test := NewWriteReadSeriesTest(cfg, newMockClient(), log.NewNopLogger(), nil)
+		test := NewWriteReadSeriesTest(cfg, newMockClient(), writeProtocolDefault, log.NewNopLogger(), nil)
 		test.floatMetric.queryMinTime = now.Add(-time.Minute)
 		test.floatMetric.queryMaxTime = now.Add(-time.Minute)
 
@@ -958,7 +960,7 @@ func TestWriteReadSeriesTest_getRangeQueryTimeRanges(t *testing.T) {
 	})
 
 	t.Run("min and max query time are within the last 1h", func(t *testing.T) {
-		test := NewWriteReadSeriesTest(cfg, newMockClient(), log.NewNopLogger(), nil)
+		test := NewWriteReadSeriesTest(cfg, newMockClient(), writeProtocolDefault, log.NewNopLogger(), nil)
 		test.floatMetric.queryMinTime = now.Add(-30 * time.Minute)
 		test.floatMetric.queryMaxTime = now.Add(-time.Minute)
 
@@ -979,7 +981,7 @@ func TestWriteReadSeriesTest_getRangeQueryTimeRanges(t *testing.T) {
 	})
 
 	t.Run("min and max query time are within the last 2h", func(t *testing.T) {
-		test := NewWriteReadSeriesTest(cfg, newMockClient(), log.NewNopLogger(), nil)
+		test := NewWriteReadSeriesTest(cfg, newMockClient(), writeProtocolDefault, log.NewNopLogger(), nil)
 		test.floatMetric.queryMinTime = now.Add(-90 * time.Minute)
 		test.floatMetric.queryMaxTime = now.Add(-80 * time.Minute)
 
@@ -1000,7 +1002,7 @@ func TestWriteReadSeriesTest_getRangeQueryTimeRanges(t *testing.T) {
 	})
 
 	t.Run("min query time is older than 24h", func(t *testing.T) {
-		test := NewWriteReadSeriesTest(cfg, newMockClient(), log.NewNopLogger(), nil)
+		test := NewWriteReadSeriesTest(cfg, newMockClient(), writeProtocolDefault, log.NewNopLogger(), nil)
 		test.floatMetric.queryMinTime = now.Add(-30 * time.Hour)
 		test.floatMetric.queryMaxTime = now.Add(-time.Minute)
 
@@ -1024,7 +1026,7 @@ func TestWriteReadSeriesTest_getRangeQueryTimeRanges(t *testing.T) {
 	})
 
 	t.Run("max query time is older than 24h but more recent than max query age", func(t *testing.T) {
-		test := NewWriteReadSeriesTest(cfg, newMockClient(), log.NewNopLogger(), nil)
+		test := NewWriteReadSeriesTest(cfg, newMockClient(), writeProtocolDefault, log.NewNopLogger(), nil)
 		test.floatMetric.queryMinTime = now.Add(-30 * time.Hour)
 		test.floatMetric.queryMaxTime = now.Add(-25 * time.Hour)
 
@@ -1045,7 +1047,7 @@ func TestWriteReadSeriesTest_getRangeQueryTimeRanges(t *testing.T) {
 		cfg := cfg
 		cfg.MaxQueryAge = 10 * time.Minute
 
-		test := NewWriteReadSeriesTest(cfg, newMockClient(), log.NewNopLogger(), nil)
+		test := NewWriteReadSeriesTest(cfg, newMockClient(), writeProtocolDefault, log.NewNopLogger(), nil)
 		test.floatMetric.queryMinTime = now.Add(-30 * time.Hour)
 		test.floatMetric.queryMaxTime = now.Add(-time.Minute)
 
@@ -1068,6 +1070,6 @@ func TestWriteReadSeriesTest_getRangeQueryTimeRanges(t *testing.T) {
 
 func newMockClient() *ClientMock {
 	client := &ClientMock{}
-	client.On("Protocol").Return("prometheus")
+	client.On("Protocol").Return(writeProtocolDefault)
 	return client
 }
