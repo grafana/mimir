@@ -20,24 +20,24 @@ import (
 // rather than redeclaring the literal.
 const UnknownDimension = "unknown"
 
-// tenantRequest is the queue's internal wrapper for an enqueued QueryRequest.
+// tenantItem is the queue's internal wrapper for an enqueued Item.
 // queueDimension is the first-layer queue dimension to enqueue under (e.g. a
 // query component name); the tenantID is appended internally to form the full
 // queue path.
-type tenantRequest struct {
+type tenantItem struct {
 	tenantID       string
 	queueDimension string
-	req            QueryRequest
+	item           Item
 }
 
 // queueBroker encapsulates access to the Tree queue for pending requests, and brokers logic dependencies between
-// querier connections and tenant-querier assignments (e.g., assigning newly-connected queriers to tenants, or
-// reshuffling queriers when a querier has disconnected).
+// consumer connections and tenant-consumer assignments (e.g., assigning newly-connected consumers to tenants, or
+// reshuffling consumers when a consumer has disconnected).
 type queueBroker struct {
 	tree tree.Tree
 
-	tenantQuerierAssignments *tenantQuerierShards
-	querierConnections       *querierConnections
+	tenantConsumerAssignments *tenantConsumerShards
+	consumerConnections       *consumerConnections
 
 	maxTenantQueueSize int
 }
@@ -46,13 +46,13 @@ func newQueueBroker(
 	maxTenantQueueSize int,
 	forgetDelay time.Duration,
 ) *queueBroker {
-	qc := newQuerierConnections(forgetDelay)
-	tqas := newTenantQuerierAssignments()
+	qc := newConsumerConnections(forgetDelay)
+	tqas := newTenantConsumerAssignments()
 	var treeQueue tree.Tree
 	var err error
 	algos := []tree.QueuingAlgorithm{
-		tree.NewQuerierWorkerQueuePriorityAlgo(), // root; algorithm selects query component based on worker ID
-		tqas.queuingAlgorithm,                    // query components; algorithm selects tenants
+		tree.NewConsumerWorkerQueuePriorityAlgo(), // root; algorithm selects query component based on worker ID
+		tqas.queuingAlgorithm,                     // query components; algorithm selects tenants
 	}
 	treeQueue, err = tree.NewTree(algos...)
 
@@ -61,10 +61,10 @@ func newQueueBroker(
 		panic(fmt.Sprintf("error creating the tree queue: %v", err))
 	}
 	qb := &queueBroker{
-		tree:                     treeQueue,
-		querierConnections:       qc,
-		tenantQuerierAssignments: tqas,
-		maxTenantQueueSize:       maxTenantQueueSize,
+		tree:                      treeQueue,
+		consumerConnections:       qc,
+		tenantConsumerAssignments: tqas,
+		maxTenantQueueSize:        maxTenantQueueSize,
 	}
 
 	return qb
@@ -78,127 +78,127 @@ func (qb *queueBroker) itemCount() int {
 	return qb.tree.ItemCount()
 }
 
-// enqueueRequestBack is the standard interface to enqueue requests for dispatch to queriers.
+// enqueueItemBack is the standard interface to enqueue items for dispatch to consumers.
 //
-// Tenants and tenant-querier shuffle sharding relationships are managed internally as needed.
-func (qb *queueBroker) enqueueRequestBack(request *tenantRequest, tenantMaxQueriers int) error {
-	err := qb.tenantQuerierAssignments.createOrUpdateTenant(request.tenantID, tenantMaxQueriers)
+// Tenants and tenant-consumer shuffle sharding relationships are managed internally as needed.
+func (qb *queueBroker) enqueueItemBack(item *tenantItem, tenantMaxConsumers int) error {
+	err := qb.tenantConsumerAssignments.createOrUpdateTenant(item.tenantID, tenantMaxConsumers)
 	if err != nil {
 		return err
 	}
 
-	tenantQueueSize := qb.tenantQuerierAssignments.queuingAlgorithm.TotalQueueSizeForTenant(request.tenantID)
+	tenantQueueSize := qb.tenantConsumerAssignments.queuingAlgorithm.TotalQueueSizeForTenant(item.tenantID)
 	if tenantQueueSize+1 > qb.maxTenantQueueSize {
 		return ErrTooManyRequests
 	}
 
-	return qb.tree.EnqueueBackByPath(qb.queuePath(request), request)
+	return qb.tree.EnqueueBackByPath(qb.queuePath(item), item)
 }
 
-// enqueueRequestFront should only be used for re-enqueueing previously dequeued requests
-// to the front of the queue when there was a failure in dispatching to a querier.
+// enqueueItemFront should only be used for re-enqueueing previously dequeued items
+// to the front of the queue when there was a failure in dispatching to a consumer.
 //
 // max tenant queue size checks are skipped even though queue size violations
-// are not expected to occur when re-enqueuing a previously dequeued request.
-func (qb *queueBroker) enqueueRequestFront(request *tenantRequest, tenantMaxQueriers int) error {
-	err := qb.tenantQuerierAssignments.createOrUpdateTenant(request.tenantID, tenantMaxQueriers)
+// are not expected to occur when re-enqueuing a previously dequeued item.
+func (qb *queueBroker) enqueueItemFront(item *tenantItem, tenantMaxConsumers int) error {
+	err := qb.tenantConsumerAssignments.createOrUpdateTenant(item.tenantID, tenantMaxConsumers)
 	if err != nil {
 		return err
 	}
-	return qb.tree.EnqueueFrontByPath(qb.queuePath(request), request)
+	return qb.tree.EnqueueFrontByPath(qb.queuePath(item), item)
 }
 
-// queuePath returns the two-level queue path for an enqueued tenantRequest:
+// queuePath returns the two-level queue path for an enqueued tenantItem:
 // the first-layer queue dimension (typically a query component name)
 // supplied by the caller, followed by the tenantID.
-func (qb *queueBroker) queuePath(request *tenantRequest) tree.QueuePath {
-	dim := request.queueDimension
+func (qb *queueBroker) queuePath(item *tenantItem) tree.QueuePath {
+	dim := item.queueDimension
 	if dim == "" {
 		dim = UnknownDimension
 	}
-	return tree.QueuePath{dim, request.tenantID}
+	return tree.QueuePath{dim, item.tenantID}
 }
 
-func (qb *queueBroker) dequeueRequestForQuerier(
-	dequeueReq *QuerierWorkerDequeueRequest,
+func (qb *queueBroker) dequeueItemForConsumer(
+	dequeueReq *ConsumerWorkerDequeueRequest,
 ) (
-	*tenantRequest,
+	*tenantItem,
 	*queueTenant,
 	int,
 	error,
 ) {
-	// check if querier is registered and is not shutting down
-	if !qb.querierConnections.querierIsAvailable(dequeueReq.QuerierID) {
-		return nil, nil, qb.tenantQuerierAssignments.queuingAlgorithm.TenantOrderIndex(), ErrQuerierShuttingDown
+	// check if consumer is registered and is not shutting down
+	if !qb.consumerConnections.consumerIsAvailable(dequeueReq.ConsumerID) {
+		return nil, nil, qb.tenantConsumerAssignments.queuingAlgorithm.TenantOrderIndex(), ErrConsumerShuttingDown
 	}
 
-	// check if the specific querier-worker connection was deregistered since its dequeue request was submitted
+	// check if the specific consumer-worker connection was deregistered since its dequeue request was submitted
 	if dequeueReq.WorkerID == unregisteredWorkerID {
-		return nil, nil, qb.tenantQuerierAssignments.queuingAlgorithm.TenantOrderIndex(), ErrQuerierWorkerDisconnected
+		return nil, nil, qb.tenantConsumerAssignments.queuingAlgorithm.TenantOrderIndex(), ErrConsumerWorkerDisconnected
 	}
 
 	var queuePath tree.QueuePath
 	var queueElement any
 	queuePath, queueElement = qb.tree.Dequeue(
 		&tree.DequeueArgs{
-			QuerierID:       dequeueReq.QuerierID,
+			ConsumerID:      dequeueReq.ConsumerID,
 			WorkerID:        dequeueReq.WorkerID,
 			LastTenantIndex: dequeueReq.lastTenantIndex.last,
 		})
 
 	if queueElement == nil {
-		return nil, nil, qb.tenantQuerierAssignments.queuingAlgorithm.TenantOrderIndex(), nil
+		return nil, nil, qb.tenantConsumerAssignments.queuingAlgorithm.TenantOrderIndex(), nil
 	}
 
 	// re-casting to same type it was enqueued as; panic would indicate a bug
-	request := queueElement.(*tenantRequest)
-	tenantID := request.tenantID
+	item := queueElement.(*tenantItem)
+	tenantID := item.tenantID
 
 	var tenant *queueTenant
 	if tenantID != "" {
-		tenant = qb.tenantQuerierAssignments.tenantsByID[tenantID]
+		tenant = qb.tenantConsumerAssignments.tenantsByID[tenantID]
 	}
 
 	queueNodeAfterDequeue := qb.tree.GetNode(queuePath)
-	if queueNodeAfterDequeue == nil && qb.tenantQuerierAssignments.queuingAlgorithm.TotalQueueSizeForTenant(tenantID) == 0 {
+	if queueNodeAfterDequeue == nil && qb.tenantConsumerAssignments.queuingAlgorithm.TotalQueueSizeForTenant(tenantID) == 0 {
 		// queue node was deleted due to being empty after dequeue, and there are no remaining queue items for this tenant
-		qb.tenantQuerierAssignments.removeTenant(tenantID)
+		qb.tenantConsumerAssignments.removeTenant(tenantID)
 	}
 
-	return request, tenant, qb.tenantQuerierAssignments.queuingAlgorithm.TenantOrderIndex(), nil
+	return item, tenant, qb.tenantConsumerAssignments.queuingAlgorithm.TenantOrderIndex(), nil
 }
 
-// below methods simply pass through to the queueBroker's tenantQuerierShards; this layering could be skipped
-// but there is no reason to make consumers know that they need to call through to the tenantQuerierShards.
+// below methods simply pass through to the queueBroker's tenantConsumerShards; this layering could be skipped
+// but there is no reason to make consumers know that they need to call through to the tenantConsumerShards.
 
-func (qb *queueBroker) addQuerierWorkerConn(conn *QuerierWorkerConn) (resharded bool) {
-	// if conn is for a new querier, we need to recompute tenant querier relationship; otherwise, we don't reshard
-	if addQuerier := qb.querierConnections.addQuerierWorkerConn(conn); addQuerier {
-		qb.tenantQuerierAssignments.addQuerier(conn.QuerierID)
-		return qb.tenantQuerierAssignments.recomputeTenantQueriers()
-	}
-	return false
-}
-
-func (qb *queueBroker) removeQuerierWorkerConn(conn *QuerierWorkerConn, now time.Time) (resharded bool) {
-	// if we're removing the last active connection for the querier, the querier may need to be removed
-	if removedQuerier := qb.querierConnections.removeQuerierWorkerConn(conn, now); removedQuerier {
-		return qb.tenantQuerierAssignments.removeQueriers(conn.QuerierID)
+func (qb *queueBroker) addConsumerWorkerConn(conn *ConsumerWorkerConn) (resharded bool) {
+	// if conn is for a new consumer, we need to recompute tenant consumer relationship; otherwise, we don't reshard
+	if addConsumer := qb.consumerConnections.addConsumerWorkerConn(conn); addConsumer {
+		qb.tenantConsumerAssignments.addConsumer(conn.ConsumerID)
+		return qb.tenantConsumerAssignments.recomputeTenantConsumers()
 	}
 	return false
 }
 
-// notifyQuerierShutdown handles a graceful shutdown notification from a querier.
-// Returns true if tenant-querier reshard was triggered.
-func (qb *queueBroker) notifyQuerierShutdown(querierID string) (resharded bool) {
-	if removedQuerier := qb.querierConnections.shutdownQuerier(querierID); removedQuerier {
-		return qb.tenantQuerierAssignments.removeQueriers(querierID)
+func (qb *queueBroker) removeConsumerWorkerConn(conn *ConsumerWorkerConn, now time.Time) (resharded bool) {
+	// if we're removing the last active connection for the consumer, the consumer may need to be removed
+	if removedConsumer := qb.consumerConnections.removeConsumerWorkerConn(conn, now); removedConsumer {
+		return qb.tenantConsumerAssignments.removeConsumers(conn.ConsumerID)
 	}
 	return false
 }
 
-// forgetDisconnectedQueriers removes all queriers which have had zero connections for longer than the forget delay.
-// Returns true if tenant-querier reshard was triggered.
-func (qb *queueBroker) forgetDisconnectedQueriers(now time.Time) (resharded bool) {
-	return qb.tenantQuerierAssignments.removeQueriers(qb.querierConnections.removeForgettableQueriers(now)...)
+// notifyConsumerShutdown handles a graceful shutdown notification from a consumer.
+// Returns true if tenant-consumer reshard was triggered.
+func (qb *queueBroker) notifyConsumerShutdown(consumerID string) (resharded bool) {
+	if removedConsumer := qb.consumerConnections.shutdownConsumer(consumerID); removedConsumer {
+		return qb.tenantConsumerAssignments.removeConsumers(consumerID)
+	}
+	return false
+}
+
+// forgetDisconnectedConsumers removes all consumers which have had zero connections for longer than the forget delay.
+// Returns true if tenant-consumer reshard was triggered.
+func (qb *queueBroker) forgetDisconnectedConsumers(now time.Time) (resharded bool) {
+	return qb.tenantConsumerAssignments.removeConsumers(qb.consumerConnections.removeForgettableConsumers(now)...)
 }

@@ -28,8 +28,8 @@ func Test_NewTree(t *testing.T) {
 			treeAlgos: []QueuingAlgorithm{&RoundRobinState{}},
 		},
 		{
-			name:      "create tenant-querier tree",
-			treeAlgos: []QueuingAlgorithm{&TenantQuerierQueuingAlgorithm{}},
+			name:      "create tenant-consumer tree",
+			treeAlgos: []QueuingAlgorithm{&TenantConsumerQueuingAlgorithm{}},
 		},
 		{
 			name:      "successfully create a tree with no queuing algorithms", // creates a single node with a queue
@@ -67,35 +67,35 @@ func Test_EnqueueBackByPath(t *testing.T) {
 			childPathsToEnqueue: []QueuePath{{"child-1"}},
 		},
 		{
-			name:             "enqueue tenant-querier node to round-robin node",
-			treeAlgosByDepth: []QueuingAlgorithm{&RoundRobinState{}, NewTenantQuerierQueuingAlgorithm()},
+			name:             "enqueue tenant-consumer node to round-robin node",
+			treeAlgosByDepth: []QueuingAlgorithm{&RoundRobinState{}, NewTenantConsumerQueuingAlgorithm()},
 			childPathsToEnqueue: []QueuePath{
-				{"tenant-querier-1", "child-1"},
-				{"tenant-querier-2", "child-2"},
-				{"tenant-querier-1", "child-2"},
+				{"tenant-consumer-1", "child-1"},
+				{"tenant-consumer-2", "child-2"},
+				{"tenant-consumer-1", "child-2"},
 			},
 		},
 		{
-			name: "enqueue round-robin node to tenant-querier node",
+			name: "enqueue round-robin node to tenant-consumer node",
 			treeAlgosByDepth: []QueuingAlgorithm{
-				NewTenantQuerierQueuingAlgorithm(),
+				NewTenantConsumerQueuingAlgorithm(),
 			},
 			childPathsToEnqueue: []QueuePath{{"child-1"}, {"child-2"}},
 		},
 		{
-			name: "enqueue tenant-querier node to tenant-querier node",
+			name: "enqueue tenant-consumer node to tenant-consumer node",
 			treeAlgosByDepth: []QueuingAlgorithm{
-				NewTenantQuerierQueuingAlgorithm(),
-				NewTenantQuerierQueuingAlgorithm(),
+				NewTenantConsumerQueuingAlgorithm(),
+				NewTenantConsumerQueuingAlgorithm(),
 			},
 			childPathsToEnqueue: []QueuePath{{"child", "grandchild"}},
 		},
 		{
 			name: "fail to enqueue to a node at depth 1 in tree with max-depth of 2",
 			treeAlgosByDepth: []QueuingAlgorithm{
-				NewTenantQuerierQueuingAlgorithm(),
+				NewTenantConsumerQueuingAlgorithm(),
 				&RoundRobinState{},
-				NewTenantQuerierQueuingAlgorithm(),
+				NewTenantConsumerQueuingAlgorithm(),
 			},
 			childPathsToEnqueue: []QueuePath{{"child"}},
 			expectErr:           true,
@@ -126,7 +126,7 @@ func Test_EnqueueBackByPath(t *testing.T) {
 }
 
 func Test_EnqueueFrontByPath(t *testing.T) {
-	someQuerier := "placeholder"
+	someConsumer := "placeholder"
 	tests := []struct {
 		name             string
 		treeAlgosByDepth []QueuingAlgorithm
@@ -143,8 +143,8 @@ func Test_EnqueueFrontByPath(t *testing.T) {
 			expected: []any{"query-2", "query-1"},
 		},
 		{
-			name:             "enqueue to front of a leaf off tenant-querier node",
-			treeAlgosByDepth: []QueuingAlgorithm{NewTenantQuerierQueuingAlgorithm()},
+			name:             "enqueue to front of a leaf off tenant-consumer node",
+			treeAlgosByDepth: []QueuingAlgorithm{NewTenantConsumerQueuingAlgorithm()},
 			enqueueObjs: []enqueueObj{
 				{"query-1", QueuePath{"tq-1"}},
 				{"query-2", QueuePath{"tq-1"}},
@@ -163,10 +163,10 @@ func Test_EnqueueFrontByPath(t *testing.T) {
 			require.NoError(t, err)
 
 			for _, expectedVal := range tt.expected {
-				_, v := tree.Dequeue(&DequeueArgs{QuerierID: someQuerier})
+				_, v := tree.Dequeue(&DequeueArgs{ConsumerID: someConsumer})
 				require.Equal(t, expectedVal, v)
 			}
-			_, v := tree.Dequeue(&DequeueArgs{QuerierID: someQuerier})
+			_, v := tree.Dequeue(&DequeueArgs{ConsumerID: someConsumer})
 			require.Nil(t, v)
 		})
 	}
@@ -188,9 +188,9 @@ func Test_Dequeue_SingleAlgo(t *testing.T) {
 			rootAlgo: []QueuingAlgorithm{&RoundRobinState{}},
 		},
 		{
-			name:        "dequeue from empty tenant-querier root node",
-			rootAlgo:    []QueuingAlgorithm{NewTenantQuerierQueuingAlgorithm()},
-			dequeueArgs: &DequeueArgs{QuerierID: "placeholder", LastTenantIndex: newQuerierTenantIndex},
+			name:        "dequeue from empty tenant-consumer root node",
+			rootAlgo:    []QueuingAlgorithm{NewTenantConsumerQueuingAlgorithm()},
+			dequeueArgs: &DequeueArgs{ConsumerID: "placeholder", LastTenantIndex: newConsumerTenantIndex},
 		},
 		{
 			name:        "dequeue from non-empty leaf node",
@@ -203,14 +203,14 @@ func Test_Dequeue_SingleAlgo(t *testing.T) {
 			enqueueObjs: []enqueueObj{{"round-robin-child-object", QueuePath{"round-robin-child"}}},
 		},
 		{
-			name:        "dequeue from non-empty tenant-querier root node",
-			rootAlgo:    []QueuingAlgorithm{NewTenantQuerierQueuingAlgorithm()},
+			name:        "dequeue from non-empty tenant-consumer root node",
+			rootAlgo:    []QueuingAlgorithm{NewTenantConsumerQueuingAlgorithm()},
 			enqueueObjs: []enqueueObj{{"tqa-child-object", QueuePath{"tqa-child"}}},
-			dequeueArgs: &DequeueArgs{QuerierID: "placeholder", LastTenantIndex: newQuerierTenantIndex},
+			dequeueArgs: &DequeueArgs{ConsumerID: "placeholder", LastTenantIndex: newConsumerTenantIndex},
 		},
 		{
-			name:        "dequeue from non-empty tenant-querier root node with no current querier",
-			rootAlgo:    []QueuingAlgorithm{NewTenantQuerierQueuingAlgorithm()},
+			name:        "dequeue from non-empty tenant-consumer root node with no current consumer",
+			rootAlgo:    []QueuingAlgorithm{NewTenantConsumerQueuingAlgorithm()},
 			enqueueObjs: []enqueueObj{{"tqa-child-object", QueuePath{"tqa-child"}}},
 			expectNil:   true,
 		},
@@ -313,7 +313,7 @@ func Test_DequeueOrderAfterEnqueue(t *testing.T) {
 	type opType string
 	enqueue := opType("enqueue")
 	dequeue := opType("dequeue")
-	placeholderQuerier := "some-querier"
+	placeholderConsumer := "some-consumer"
 
 	type op struct {
 		kind opType
@@ -340,9 +340,9 @@ func Test_DequeueOrderAfterEnqueue(t *testing.T) {
 			},
 		},
 		{
-			name: "should dequeue from new tenant-querier child before repeat-dequeueing",
+			name: "should dequeue from new tenant-consumer child before repeat-dequeueing",
 			treeAlgosByDepth: []QueuingAlgorithm{
-				NewTenantQuerierQueuingAlgorithm(),
+				NewTenantConsumerQueuingAlgorithm(),
 			},
 			operationOrder: []op{
 				{enqueue, QueuePath{"child-1"}, "obj-1"},
@@ -367,7 +367,7 @@ func Test_DequeueOrderAfterEnqueue(t *testing.T) {
 					require.NoError(t, err)
 				}
 				if operation.kind == dequeue {
-					path, obj := tree.Dequeue(&DequeueArgs{QuerierID: placeholderQuerier})
+					path, obj := tree.Dequeue(&DequeueArgs{ConsumerID: placeholderConsumer})
 					require.Equal(t, operation.path, path)
 					require.Equal(t, operation.obj, obj)
 				}
@@ -376,55 +376,55 @@ func Test_DequeueOrderAfterEnqueue(t *testing.T) {
 	}
 }
 
-func Test_TenantQuerierAssignmentsDequeue(t *testing.T) {
+func Test_TenantConsumerAssignmentsDequeue(t *testing.T) {
 	tests := []struct {
 		name             string
 		treeAlgosByDepth []QueuingAlgorithm
-		currQuerier      []string
+		currConsumer     []string
 		enqueueObjs      []enqueueObj
 		expected         []any
 		expectErr        bool
 	}{
 		{
-			name: "happy path - tenant found in tenant-querier map under first child",
+			name: "happy path - tenant found in tenant-consumer map under first child",
 			treeAlgosByDepth: []QueuingAlgorithm{
 				&RoundRobinState{},
-				&TenantQuerierQueuingAlgorithm{
-					tenantQuerierIDs: map[TenantID]map[QuerierID]struct{}{"tenant-1": {"querier-1": {}}},
-					tenantNodes:      map[string][]*Node{},
+				&TenantConsumerQueuingAlgorithm{
+					tenantConsumerIDs: map[TenantID]map[ConsumerID]struct{}{"tenant-1": {"consumer-1": {}}},
+					tenantNodes:       map[string][]*Node{},
 				},
 			},
-			currQuerier: []string{"querier-1"},
+			currConsumer: []string{"consumer-1"},
 			enqueueObjs: []enqueueObj{
 				{obj: "query-1", path: QueuePath{"query-component-1", "tenant-1"}},
 			},
 			expected: []any{"query-1"},
 		},
 		{
-			name: "tenant exists, but not for querier",
+			name: "tenant exists, but not for consumer",
 			treeAlgosByDepth: []QueuingAlgorithm{
 				&RoundRobinState{},
-				&TenantQuerierQueuingAlgorithm{
-					tenantQuerierIDs: map[TenantID]map[QuerierID]struct{}{"tenant-1": {"querier-2": {}}},
-					tenantNodes:      map[string][]*Node{},
+				&TenantConsumerQueuingAlgorithm{
+					tenantConsumerIDs: map[TenantID]map[ConsumerID]struct{}{"tenant-1": {"consumer-2": {}}},
+					tenantNodes:       map[string][]*Node{},
 				},
 			},
-			currQuerier: []string{"querier-1"},
+			currConsumer: []string{"consumer-1"},
 			enqueueObjs: []enqueueObj{
 				{obj: "query-1", path: QueuePath{"query-component-1", "tenant-1"}},
 			},
 			expected: []any{nil},
 		},
 		{
-			name: "1 of 3 tenants exist for querier",
+			name: "1 of 3 tenants exist for consumer",
 			treeAlgosByDepth: []QueuingAlgorithm{
 				&RoundRobinState{},
-				&TenantQuerierQueuingAlgorithm{
-					tenantQuerierIDs: map[TenantID]map[QuerierID]struct{}{"tenant-1": {"querier-2": {}}, "tenant-2": {"querier-2": {}}, "tenant-3": {"querier-1": {}}},
-					tenantNodes:      map[string][]*Node{},
+				&TenantConsumerQueuingAlgorithm{
+					tenantConsumerIDs: map[TenantID]map[ConsumerID]struct{}{"tenant-1": {"consumer-2": {}}, "tenant-2": {"consumer-2": {}}, "tenant-3": {"consumer-1": {}}},
+					tenantNodes:       map[string][]*Node{},
 				},
 			},
-			currQuerier: []string{"querier-1", "querier-1"},
+			currConsumer: []string{"consumer-1", "consumer-1"},
 			enqueueObjs: []enqueueObj{
 				{obj: "query-1", path: QueuePath{"query-component-1", "tenant-1"}},
 				{obj: "query-2", path: QueuePath{"query-component-1", "tenant-2"}},
@@ -433,15 +433,15 @@ func Test_TenantQuerierAssignmentsDequeue(t *testing.T) {
 			expected: []any{"query-3", nil},
 		},
 		{
-			name: "tenant exists for querier on next parent node",
+			name: "tenant exists for consumer on next parent node",
 			treeAlgosByDepth: []QueuingAlgorithm{
 				&RoundRobinState{},
-				&TenantQuerierQueuingAlgorithm{
-					tenantQuerierIDs: map[TenantID]map[QuerierID]struct{}{"tenant-1": {"querier-2": {}}, "tenant-2": {"querier-2": {}}, "tenant-3": {"querier-1": {}}},
-					tenantNodes:      map[string][]*Node{},
+				&TenantConsumerQueuingAlgorithm{
+					tenantConsumerIDs: map[TenantID]map[ConsumerID]struct{}{"tenant-1": {"consumer-2": {}}, "tenant-2": {"consumer-2": {}}, "tenant-3": {"consumer-1": {}}},
+					tenantNodes:       map[string][]*Node{},
 				},
 			},
-			currQuerier: []string{"querier-1", "querier-1", "querier-1"},
+			currConsumer: []string{"consumer-1", "consumer-1", "consumer-1"},
 			enqueueObjs: []enqueueObj{
 				{obj: "query-1", path: QueuePath{"query-component-1", "tenant-1"}},
 				{obj: "query-2", path: QueuePath{"query-component-1", "tenant-2"}},
@@ -451,15 +451,15 @@ func Test_TenantQuerierAssignmentsDequeue(t *testing.T) {
 			expected: []any{"query-4", "query-3", nil},
 		},
 		{
-			name: "2 of 3 tenants exist for querier",
+			name: "2 of 3 tenants exist for consumer",
 			treeAlgosByDepth: []QueuingAlgorithm{
 				&RoundRobinState{},
-				&TenantQuerierQueuingAlgorithm{
-					tenantQuerierIDs: map[TenantID]map[QuerierID]struct{}{"tenant-1": {"querier-1": {}}, "tenant-2": {"querier-2": {}}, "tenant-3": {"querier-1": {}}},
-					tenantNodes:      map[string][]*Node{},
+				&TenantConsumerQueuingAlgorithm{
+					tenantConsumerIDs: map[TenantID]map[ConsumerID]struct{}{"tenant-1": {"consumer-1": {}}, "tenant-2": {"consumer-2": {}}, "tenant-3": {"consumer-1": {}}},
+					tenantNodes:       map[string][]*Node{},
 				},
 			},
-			currQuerier: []string{"querier-1", "querier-1", "querier-1"},
+			currConsumer: []string{"consumer-1", "consumer-1", "consumer-1"},
 			enqueueObjs: []enqueueObj{
 				{obj: "query-1", path: QueuePath{"query-component-1", "tenant-1"}},
 				{obj: "query-2", path: QueuePath{"query-component-1", "tenant-2"}},
@@ -468,15 +468,15 @@ func Test_TenantQuerierAssignmentsDequeue(t *testing.T) {
 			expected: []any{"query-1", "query-3", nil},
 		},
 		{
-			name: "root node is tenant-querier node",
+			name: "root node is tenant-consumer node",
 			treeAlgosByDepth: []QueuingAlgorithm{
-				&TenantQuerierQueuingAlgorithm{
-					tenantQuerierIDs: map[TenantID]map[QuerierID]struct{}{"tenant-1": {"querier-1": {}}, "tenant-2": {}},
-					tenantNodes:      map[string][]*Node{},
+				&TenantConsumerQueuingAlgorithm{
+					tenantConsumerIDs: map[TenantID]map[ConsumerID]struct{}{"tenant-1": {"consumer-1": {}}, "tenant-2": {}},
+					tenantNodes:       map[string][]*Node{},
 				},
 				&RoundRobinState{},
 			},
-			currQuerier: []string{"querier-1", "querier-1", "querier-1"},
+			currConsumer: []string{"consumer-1", "consumer-1", "consumer-1"},
 			enqueueObjs: []enqueueObj{
 				{obj: "query-1", path: QueuePath{"tenant-2", "query-component-1"}},
 				{obj: "query-2", path: QueuePath{"tenant-1", "query-component-2"}},
@@ -485,49 +485,49 @@ func Test_TenantQuerierAssignmentsDequeue(t *testing.T) {
 			expected: []any{"query-2", "query-3", nil},
 		},
 		{
-			name: "dequeuing for one querier returns nil, but does return for a different querier",
+			name: "dequeuing for one consumer returns nil, but does return for a different consumer",
 			treeAlgosByDepth: []QueuingAlgorithm{
-				&TenantQuerierQueuingAlgorithm{
-					tenantQuerierIDs: map[TenantID]map[QuerierID]struct{}{"tenant-1": {"querier-1": {}}},
-					tenantNodes:      map[string][]*Node{},
+				&TenantConsumerQueuingAlgorithm{
+					tenantConsumerIDs: map[TenantID]map[ConsumerID]struct{}{"tenant-1": {"consumer-1": {}}},
+					tenantNodes:       map[string][]*Node{},
 				},
 				&RoundRobinState{},
 			},
-			currQuerier: []string{"querier-2", "querier-1"},
+			currConsumer: []string{"consumer-2", "consumer-1"},
 			enqueueObjs: []enqueueObj{
 				{obj: "query-1", path: QueuePath{"tenant-1", "query-component-1"}},
 			},
 			expected: []any{nil, "query-1"},
 		},
 		{
-			name: "no querier set in state",
+			name: "no consumer set in state",
 			treeAlgosByDepth: []QueuingAlgorithm{
-				&TenantQuerierQueuingAlgorithm{
-					tenantQuerierIDs: map[TenantID]map[QuerierID]struct{}{"tenant-1": {"querier-1": {}}},
-					tenantNodes:      map[string][]*Node{},
+				&TenantConsumerQueuingAlgorithm{
+					tenantConsumerIDs: map[TenantID]map[ConsumerID]struct{}{"tenant-1": {"consumer-1": {}}},
+					tenantNodes:       map[string][]*Node{},
 				},
-				&TenantQuerierQueuingAlgorithm{
-					tenantQuerierIDs: map[TenantID]map[QuerierID]struct{}{"tenant-1": {"querier-1": {}}},
-					tenantNodes:      map[string][]*Node{},
+				&TenantConsumerQueuingAlgorithm{
+					tenantConsumerIDs: map[TenantID]map[ConsumerID]struct{}{"tenant-1": {"consumer-1": {}}},
+					tenantNodes:       map[string][]*Node{},
 				},
 			},
-			currQuerier: []string{""},
+			currConsumer: []string{""},
 			enqueueObjs: []enqueueObj{
 				{obj: "query-1", path: QueuePath{"tenant-1", "query-component-1"}},
 			},
 			expected: []any{nil},
 		},
 		{
-			// This also dequeues if the tenant _is not_ in the tenant querier map; is this expected? (probably)
-			name: "dequeue from a tenant with a nil tenant-querier map",
+			// This also dequeues if the tenant _is not_ in the tenant consumer map; is this expected? (probably)
+			name: "dequeue from a tenant with a nil tenant-consumer map",
 			treeAlgosByDepth: []QueuingAlgorithm{
-				&TenantQuerierQueuingAlgorithm{
-					tenantQuerierIDs: map[TenantID]map[QuerierID]struct{}{"tenant-1": {"querier-1": {}}, "tenant-2": nil},
-					tenantNodes:      map[string][]*Node{},
+				&TenantConsumerQueuingAlgorithm{
+					tenantConsumerIDs: map[TenantID]map[ConsumerID]struct{}{"tenant-1": {"consumer-1": {}}, "tenant-2": nil},
+					tenantNodes:       map[string][]*Node{},
 				},
 				&RoundRobinState{},
 			},
-			currQuerier: []string{"querier-1", "querier-1", "querier-1"},
+			currConsumer: []string{"consumer-1", "consumer-1", "consumer-1"},
 			enqueueObjs: []enqueueObj{
 				{obj: "query-1", path: QueuePath{"tenant-1", "query-component-1"}},
 				{obj: "query-2", path: QueuePath{"tenant-2", "query-component-1"}},
@@ -546,10 +546,10 @@ func Test_TenantQuerierAssignmentsDequeue(t *testing.T) {
 				err = tree.EnqueueBackByPath(o.path, o.obj)
 				require.NoError(t, err)
 			}
-			// currQuerier at position i is used to dequeue the expected result at position i
-			require.Equal(t, len(tt.currQuerier), len(tt.expected))
+			// currConsumer at position i is used to dequeue the expected result at position i
+			require.Equal(t, len(tt.currConsumer), len(tt.expected))
 			for i := 0; i < len(tt.expected); i++ {
-				_, v := tree.Dequeue(&DequeueArgs{QuerierID: tt.currQuerier[i], LastTenantIndex: i - 1})
+				_, v := tree.Dequeue(&DequeueArgs{ConsumerID: tt.currConsumer[i], LastTenantIndex: i - 1})
 				require.Equal(t, tt.expected[i], v)
 			}
 		})
@@ -557,16 +557,16 @@ func Test_TenantQuerierAssignmentsDequeue(t *testing.T) {
 
 }
 
-// Test_ChangeTenantQuerierAssignments illustrates that we can update a state in tenantQuerierAssignments,
+// Test_ChangeTenantConsumerAssignments illustrates that we can update a state in tenantConsumerAssignments,
 // and the tree dequeue behavior will adjust accordingly.
-func Test_ChangeTenantQuerierAssignments(t *testing.T) {
-	tqa := &TenantQuerierQueuingAlgorithm{
-		tenantQuerierIDs: map[TenantID]map[QuerierID]struct{}{
-			"tenant-1": {"querier-1": {}},
-			"tenant-2": {"querier-2": {}},
+func Test_ChangeTenantConsumerAssignments(t *testing.T) {
+	tqa := &TenantConsumerQueuingAlgorithm{
+		tenantConsumerIDs: map[TenantID]map[ConsumerID]struct{}{
+			"tenant-1": {"consumer-1": {}},
+			"tenant-2": {"consumer-2": {}},
 		},
-		tenantNodes:    map[string][]*Node{},
-		currentQuerier: "",
+		tenantNodes:     map[string][]*Node{},
+		currentConsumer: "",
 	}
 
 	tree, err := NewTree(tqa, &RoundRobinState{})
@@ -585,32 +585,32 @@ func Test_ChangeTenantQuerierAssignments(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	querier1 := "querier-1"
-	querier2 := "querier-2"
-	querier3 := "querier-3"
+	consumer1 := "consumer-1"
+	consumer2 := "consumer-2"
+	consumer3 := "consumer-3"
 
-	// dequeue for querier-2 should dequeue query-2
-	_, v := tree.Dequeue(&DequeueArgs{QuerierID: querier2, LastTenantIndex: newQuerierTenantIndex})
+	// dequeue for consumer-2 should dequeue query-2
+	_, v := tree.Dequeue(&DequeueArgs{ConsumerID: consumer2, LastTenantIndex: newConsumerTenantIndex})
 	require.Equal(t, "query-2", v)
 
-	// dequeue for querier-1 should dequeue query-1
-	_, v = tree.Dequeue(&DequeueArgs{QuerierID: querier1, LastTenantIndex: newQuerierTenantIndex})
+	// dequeue for consumer-1 should dequeue query-1
+	_, v = tree.Dequeue(&DequeueArgs{ConsumerID: consumer1, LastTenantIndex: newConsumerTenantIndex})
 	require.Equal(t, "query-1", v)
 
-	// update tqa map to add querier-3 as assigned to tenant-2, then dequeue for querier-3 should dequeue query-3
-	tqa.SetQueriersForTenant("tenant-2", map[QuerierID]struct{}{"querier-3": {}})
-	_, v = tree.Dequeue(&DequeueArgs{QuerierID: querier3, LastTenantIndex: newQuerierTenantIndex})
+	// update tqa map to add consumer-3 as assigned to tenant-2, then dequeue for consumer-3 should dequeue query-3
+	tqa.SetConsumersForTenant("tenant-2", map[ConsumerID]struct{}{"consumer-3": {}})
+	_, v = tree.Dequeue(&DequeueArgs{ConsumerID: consumer3, LastTenantIndex: newConsumerTenantIndex})
 	require.Equal(t, "query-3", v)
 
 	// during reshuffle, we only ever reassign tenant values, we don't assign an entirely new map value
-	// to tenantQuerierIDs. Reassign tenant-2 to an empty map value, and query-5 (tenant-3), which can be handled
-	// by any querier, should be dequeued,
-	tqa.SetQueriersForTenant("tenant-2", map[QuerierID]struct{}{})
-	_, v = tree.Dequeue(&DequeueArgs{QuerierID: querier3})
+	// to tenantConsumerIDs. Reassign tenant-2 to an empty map value, and query-5 (tenant-3), which can be handled
+	// by any consumer, should be dequeued,
+	tqa.SetConsumersForTenant("tenant-2", map[ConsumerID]struct{}{})
+	_, v = tree.Dequeue(&DequeueArgs{ConsumerID: consumer3})
 	require.Equal(t, "query-5", v)
 
-	// then we should not be able to dequeue query-4, because tenant-2 cannot be handled by _any_ queriers
-	_, v = tree.Dequeue(&DequeueArgs{QuerierID: querier3})
+	// then we should not be able to dequeue query-4, because tenant-2 cannot be handled by _any_ consumers
+	_, v = tree.Dequeue(&DequeueArgs{ConsumerID: consumer3})
 	require.Nil(t, v)
 
 }
@@ -803,7 +803,7 @@ func Test_NodeCannotDeleteItself(t *testing.T) {
 	}{
 		{"root node is leaf node", []QueuingAlgorithm{}},
 		{"round robin", []QueuingAlgorithm{&RoundRobinState{}}},
-		{"tenant querier assignment", []QueuingAlgorithm{&TenantQuerierQueuingAlgorithm{}}},
+		{"tenant consumer assignment", []QueuingAlgorithm{&TenantConsumerQueuingAlgorithm{}}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -61,8 +61,8 @@ func randAdditionalQueueDimension(_ string) []string {
 	return secondQueueDimensionOptions[idx : idx+1]
 }
 
-// testQueryRequest is a generic stand-in for the scheduler's SchedulerRequest.
-// The queue treats values as opaque QueryRequest; tests use this type so
+// testItem is a generic stand-in for the scheduler's SchedulerRequest.
+// The queue treats values as an opaque Item; tests use this type so
 // the queue's own test suite has no dependency on the scheduler package.
 //
 // The field shape mirrors the scheduler's SchedulerRequest so that
@@ -70,7 +70,7 @@ func randAdditionalQueueDimension(_ string) []string {
 // HttpRequest field holds a heap-allocated struct with its own strings and
 // header pointers, rather than a single inline byte filler that would have
 // misleadingly cheap copy semantics.
-type testQueryRequest struct {
+type testItem struct {
 	Ctx                       context.Context
 	FrontendAddr              string
 	UserID                    string
@@ -80,19 +80,19 @@ type testQueryRequest struct {
 }
 
 // ExpectedQueryComponentName mirrors SchedulerRequest.ExpectedQueryComponentName.
-func (r *testQueryRequest) ExpectedQueryComponentName() string {
+func (r *testItem) ExpectedQueryComponentName() string {
 	if len(r.AdditionalQueueDimensions) > 0 {
 		return r.AdditionalQueueDimensions[0]
 	}
 	return UnknownDimension
 }
 
-// makeTestQueryRequest creates a request whose in-memory size and shape
+// makeTestItem creates a request whose in-memory size and shape
 // approximate a real query request (a representative URL, headers, and
 // frontend address). The point is for benchmarks of a non-trivial queue
 // depth to be dominated by request payload rather than queue mechanics.
-func makeTestQueryRequest(tenantID string, additionalQueueDimensions []string) *testQueryRequest {
-	return &testQueryRequest{
+func makeTestItem(tenantID string, additionalQueueDimensions []string) *testItem {
+	return &testItem{
 		Ctx:          context.Background(),
 		FrontendAddr: "http://query-frontend:8007",
 		UserID:       tenantID,
@@ -112,8 +112,8 @@ func makeTestQueryRequest(tenantID string, additionalQueueDimensions []string) *
 }
 
 func BenchmarkConcurrentQueueOperations(b *testing.B) {
-	maxQueriersPerTenant := 0 // disable shuffle sharding
-	forgetQuerierDelay := time.Duration(0)
+	maxConsumersPerTenant := 0 // disable shuffle sharding
+	forgetConsumerDelay := time.Duration(0)
 	maxOutstandingRequestsPerTenant := 100
 
 	for _, numTenants := range []int{1, 10, 1000} {
@@ -124,13 +124,13 @@ func BenchmarkConcurrentQueueOperations(b *testing.B) {
 			for _, numProducers := range []int{10, 25} {
 				b.Run(fmt.Sprintf("%v concurrent producers", numProducers), func(b *testing.B) {
 
-					// Queriers run with parallelism of 16 when query sharding is enabled.
+					// Consumers run with parallelism of 16 when query sharding is enabled.
 					for _, numConsumers := range []int{16, 160, 1600} {
 						b.Run(fmt.Sprintf("%v concurrent consumers", numConsumers), func(b *testing.B) {
-							queue, err := NewRequestQueue(
+							queue, err := New(
 								log.NewNopLogger(),
 								maxOutstandingRequestsPerTenant,
-								forgetQuerierDelay,
+								forgetConsumerDelay,
 								promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 								promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 								promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
@@ -145,7 +145,7 @@ func BenchmarkConcurrentQueueOperations(b *testing.B) {
 							})
 
 							startProducersChan, producersErrGroup := makeQueueProducerGroup(
-								queue, maxQueriersPerTenant, b.N, numProducers, numTenants, randAdditionalQueueDimension,
+								queue, maxConsumersPerTenant, b.N, numProducers, numTenants, randAdditionalQueueDimension,
 							)
 
 							queueConsumerErrGroup, startConsumersChan := makeQueueConsumerGroup(
@@ -188,8 +188,8 @@ func queueActorIterationCount(totalIters int, numActors int, actorIdx int) int {
 }
 
 func makeQueueProducerGroup(
-	queue *RequestQueue,
-	maxQueriersPerTenant int,
+	queue *Queue,
+	maxConsumersPerTenant int,
 	totalRequests int,
 	numProducers int,
 	numTenants int,
@@ -200,7 +200,7 @@ func makeQueueProducerGroup(
 
 	runProducer := runQueueProducerIters(
 		queue,
-		maxQueriersPerTenant,
+		maxConsumersPerTenant,
 		totalRequests,
 		numProducers,
 		numTenants,
@@ -217,8 +217,8 @@ func makeQueueProducerGroup(
 }
 
 func runQueueProducerIters(
-	queue *RequestQueue,
-	maxQueriersPerTenant int,
+	queue *Queue,
+	maxConsumersPerTenant int,
 	totalIters int,
 	numProducers int,
 	numTenants int,
@@ -232,7 +232,7 @@ func runQueueProducerIters(
 		<-start
 
 		for i := 0; i < producerIters; i++ {
-			err := queueProduce(queue, maxQueriersPerTenant, tenantIDStr, additionalQueueDimensionFunc)
+			err := queueProduce(queue, maxConsumersPerTenant, tenantIDStr, additionalQueueDimensionFunc)
 			if err != nil {
 				return err
 			}
@@ -245,8 +245,8 @@ func runQueueProducerIters(
 }
 
 func queueProduce(
-	queue *RequestQueue,
-	maxQueriersPerTenant int,
+	queue *Queue,
+	maxConsumersPerTenant int,
 	tenantID string,
 	additionalQueueDimensionFunc func(tenantID string) []string,
 ) error {
@@ -254,9 +254,9 @@ func queueProduce(
 	if additionalQueueDimensionFunc != nil {
 		additionalQueueDimensions = additionalQueueDimensionFunc(tenantID)
 	}
-	req := makeTestQueryRequest(tenantID, additionalQueueDimensions)
+	req := makeTestItem(tenantID, additionalQueueDimensions)
 	for {
-		err := queue.SubmitRequestToEnqueue(tenantID, req, req.ExpectedQueryComponentName(), maxQueriersPerTenant, func() {})
+		err := queue.SubmitItemToEnqueue(tenantID, req, req.ExpectedQueryComponentName(), maxConsumersPerTenant, func() {})
 		if err == nil {
 			break
 		}
@@ -270,11 +270,11 @@ func queueProduce(
 
 func makeQueueConsumerGroup(
 	ctx context.Context,
-	queue *RequestQueue,
+	queue *Queue,
 	totalRequests int,
 	numConsumers int,
 	numWorkersPerConsumer int,
-	consumeFunc consumeRequest,
+	consumeFunc consumeItem,
 ) (*errgroup.Group, chan struct{}) {
 	queueConsumerErrGroup, ctx := errgroup.WithContext(ctx)
 	consumedRequestsCounter := make(chan struct{}, totalRequests)
@@ -296,27 +296,27 @@ func makeQueueConsumerGroup(
 func runQueueConsumerUntilEmpty(
 	ctx context.Context,
 	totalRequests int,
-	requestQueue *RequestQueue,
-	consumeFunc consumeRequest,
+	requestQueue *Queue,
+	consumeFunc consumeItem,
 	consumedRequestsCounter chan struct{},
 	start chan struct{},
 	stop chan struct{},
 ) func(consumerIdx int) error {
 	return func(consumerIdx int) error {
 		lastTenantIndex := FirstTenant()
-		querierID := fmt.Sprintf("consumer-%v", consumerIdx)
+		consumerID := fmt.Sprintf("consumer-%v", consumerIdx)
 
-		querierWorkerConn := NewUnregisteredQuerierWorkerConn(context.Background(), querierID)
-		err := requestQueue.AwaitRegisterQuerierWorkerConn(querierWorkerConn)
+		consumerWorkerConn := NewUnregisteredConsumerWorkerConn(context.Background(), consumerID)
+		err := requestQueue.AwaitRegisterConsumerWorkerConn(consumerWorkerConn)
 		if err != nil {
 			return err
 		}
-		defer requestQueue.SubmitUnregisterQuerierWorkerConn(querierWorkerConn)
+		defer requestQueue.SubmitUnregisterConsumerWorkerConn(consumerWorkerConn)
 
 		consumedRequest := make(chan struct{})
 		loopQueueConsume := func() error {
 			for {
-				idx, err := queueConsume(requestQueue, querierWorkerConn, lastTenantIndex, consumeFunc)
+				idx, err := queueConsume(requestQueue, consumerWorkerConn, lastTenantIndex, consumeFunc)
 				if err != nil {
 					return err
 				}
@@ -344,13 +344,13 @@ func runQueueConsumerUntilEmpty(
 	}
 }
 
-type consumeRequest func(request QueryRequest) error
+type consumeItem func(request Item) error
 
 func queueConsume(
-	queue *RequestQueue, querierWorkerConn *QuerierWorkerConn, lastTenantIdx TenantIndex, consumeFunc consumeRequest,
+	queue *Queue, consumerWorkerConn *ConsumerWorkerConn, lastTenantIdx TenantIndex, consumeFunc consumeItem,
 ) (TenantIndex, error) {
-	dequeueReq := NewQuerierWorkerDequeueRequest(querierWorkerConn, lastTenantIdx)
-	request, idx, err := queue.AwaitRequestForQuerier(dequeueReq)
+	dequeueReq := NewConsumerWorkerDequeueRequest(consumerWorkerConn, lastTenantIdx)
+	request, idx, err := queue.AwaitItemForConsumer(dequeueReq)
 	if err != nil {
 		return lastTenantIdx, err
 	}
@@ -362,15 +362,15 @@ func queueConsume(
 	return lastTenantIdx, err
 }
 
-func (q *RequestQueue) EmptyQueue(t *testing.T) {
+func (q *Queue) EmptyQueue(t *testing.T) {
 	lastTenantIndex := FirstTenant()
-	querierID := "emptying-consumer"
+	consumerID := "emptying-consumer"
 
-	querierWorkerConn := NewUnregisteredQuerierWorkerConn(context.Background(), querierID)
-	require.NoError(t, q.AwaitRegisterQuerierWorkerConn(querierWorkerConn))
-	defer q.SubmitUnregisterQuerierWorkerConn(querierWorkerConn)
+	consumerWorkerConn := NewUnregisteredConsumerWorkerConn(context.Background(), consumerID)
+	require.NoError(t, q.AwaitRegisterConsumerWorkerConn(consumerWorkerConn))
+	defer q.SubmitUnregisterConsumerWorkerConn(consumerWorkerConn)
 
-	consumer := func(request QueryRequest) error {
+	consumer := func(request Item) error {
 		return nil
 	}
 
@@ -379,24 +379,24 @@ func (q *RequestQueue) EmptyQueue(t *testing.T) {
 			return
 		}
 
-		idx, err := queueConsume(q, querierWorkerConn, lastTenantIndex, consumer)
+		idx, err := queueConsume(q, consumerWorkerConn, lastTenantIndex, consumer)
 		require.NoError(t, err)
 		lastTenantIndex = idx
 	}
 }
 
-// TestDispatchToWaitingDequeueRequestForUnregisteredQuerierWorker tests a scenario which previously caused a panic.
-// When a querier-worker submits a dequeue request while there are no queue items sharded to that querier,
+// TestDispatchToWaitingDequeueRequestForUnregisteredConsumerWorker tests a scenario which previously caused a panic.
+// When a consumer-worker submits a dequeue request while there are no queue items sharded to that consumer,
 // The waiting dequeue request is held in an internal queue until a reshard or enqueue operation occurs.
 // A reshard or enqueue operation triggers an attempt to dispatch queue items to those waiting dequeue requests.
 //
-// If the querier-worker associated with the dequeue request has since crashed or otherwise been deregistered,
+// If the consumer-worker associated with the dequeue request has since crashed or otherwise been deregistered,
 // the queue should skip that dequeue request drop it from the internal queue so it will not be retried.
-func TestDispatchToWaitingDequeueRequestForUnregisteredQuerierWorker(t *testing.T) {
+func TestDispatchToWaitingDequeueRequestForUnregisteredConsumerWorker(t *testing.T) {
 	const forgetDelay = 2 * time.Second
 	const testTimeout = 10 * time.Second
 
-	queue, err := NewRequestQueue(
+	queue, err := New(
 		log.NewNopLogger(),
 		2,
 		forgetDelay,
@@ -410,22 +410,22 @@ func TestDispatchToWaitingDequeueRequestForUnregisteredQuerierWorker(t *testing.
 	ctx := context.Background()
 	require.NoError(t, services.StartAndAwaitRunning(ctx, queue))
 
-	// Two queriers connect, allowing us to enqueue requests sharded to only one of the two.
-	querier1Ctx, querier1CtxCancel := context.WithCancelCause(context.Background())
-	querier1Conn := NewUnregisteredQuerierWorkerConn(querier1Ctx, "querier-1")
-	assert.NoError(t, queue.AwaitRegisterQuerierWorkerConn(querier1Conn))
-	querier2Conn := NewUnregisteredQuerierWorkerConn(context.Background(), "querier-2")
-	assert.NoError(t, queue.AwaitRegisterQuerierWorkerConn(querier2Conn))
+	// Two consumers connect, allowing us to enqueue requests sharded to only one of the two.
+	consumer1Ctx, consumer1CtxCancel := context.WithCancelCause(context.Background())
+	consumer1Conn := NewUnregisteredConsumerWorkerConn(consumer1Ctx, "consumer-1")
+	assert.NoError(t, queue.AwaitRegisterConsumerWorkerConn(consumer1Conn))
+	consumer2Conn := NewUnregisteredConsumerWorkerConn(context.Background(), "consumer-2")
+	assert.NoError(t, queue.AwaitRegisterConsumerWorkerConn(consumer2Conn))
 
-	// A third querier to be registered later to trigger request dispatch
-	querier3Conn := NewUnregisteredQuerierWorkerConn(context.Background(), "querier-3")
+	// A third consumer to be registered later to trigger request dispatch
+	consumer3Conn := NewUnregisteredConsumerWorkerConn(context.Background(), "consumer-3")
 
 	t.Cleanup(func() {
 		// if the test has failed and the queue does not get cleared,
-		// we must send a shutdown signal for the remaining connected querier
+		// we must send a shutdown signal for the remaining connected consumer
 		// or else StopAndAwaitTerminated will never complete.
-		queue.SubmitUnregisterQuerierWorkerConn(querier2Conn)
-		queue.SubmitUnregisterQuerierWorkerConn(querier3Conn)
+		queue.SubmitUnregisterConsumerWorkerConn(consumer2Conn)
+		queue.SubmitUnregisterConsumerWorkerConn(consumer3Conn)
 
 		queue.EmptyQueue(t)
 
@@ -433,44 +433,44 @@ func TestDispatchToWaitingDequeueRequestForUnregisteredQuerierWorker(t *testing.
 	})
 
 	assertControlFlowError := func(t *testing.T, err error) {
-		// Error received by the querier connections waiting for a dequeue should be one of:
-		// * ErrQuerierWorkerDisconnected: the waiting conn was crashed or otherwise deregistered but the whole querier is not yet deregistered
-		// * context.Canceled: context cancellation also propagates on waiting conn crash/deregister and races with ErrQuerierWorkerDisconnected
-		// * ErrQuerierShuttingDown: querier has initiated shutdown or all conns deregistered
-		// * ErrStopped: The scheduler has received a shutdown signal and cleared its queue or lost all querier connections.
-		assert.True(t, errors.Is(err, ErrQuerierWorkerDisconnected) || errors.Is(err, context.Canceled) || errors.Is(err, ErrQuerierShuttingDown) || errors.Is(err, ErrStopped))
+		// Error received by the consumer connections waiting for a dequeue should be one of:
+		// * ErrConsumerWorkerDisconnected: the waiting conn was crashed or otherwise deregistered but the whole consumer is not yet deregistered
+		// * context.Canceled: context cancellation also propagates on waiting conn crash/deregister and races with ErrConsumerWorkerDisconnected
+		// * ErrConsumerShuttingDown: consumer has initiated shutdown or all conns deregistered
+		// * ErrStopped: The scheduler has received a shutdown signal and cleared its queue or lost all consumer connections.
+		assert.True(t, errors.Is(err, ErrConsumerWorkerDisconnected) || errors.Is(err, context.Canceled) || errors.Is(err, ErrConsumerShuttingDown) || errors.Is(err, ErrStopped))
 	}
 
-	// Enqueue requests which will NOT be sharded to querier-1.
-	// NOTE: "user-1" shuffle shard always chooses the first querier ("querier-1" in this case)
-	// when there are only one or two queriers in the sorted list of connected queriers.
+	// Enqueue requests which will NOT be sharded to consumer-1.
+	// NOTE: "user-1" shuffle shard always chooses the first consumer ("consumer-1" in this case)
+	// when there are only one or two consumers in the sorted list of connected consumers.
 	//
 	// These requests will sit in the queue -
-	// querier-2 is the only querier sharded to user-1, but querier-2 has not requested to dequeue yet.
+	// consumer-2 is the only consumer sharded to user-1, but consumer-2 has not requested to dequeue yet.
 	// >1 queue dimensions must exist in the queue to reproduce a potential panic condition (dims % unregisteredWorkerID).
-	reqNotShardedToQuerier1 := &testQueryRequest{
+	reqNotShardedToConsumer1 := &testItem{
 		Ctx:                       context.Background(),
 		HttpRequest:               &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"},
 		AdditionalQueueDimensions: []string{"ingester"},
 	}
-	assert.NoError(t, queue.SubmitRequestToEnqueue("user-2", reqNotShardedToQuerier1, reqNotShardedToQuerier1.ExpectedQueryComponentName(), 1, nil))
-	reqNotShardedToQuerier1 = &testQueryRequest{
+	assert.NoError(t, queue.SubmitItemToEnqueue("user-2", reqNotShardedToConsumer1, reqNotShardedToConsumer1.ExpectedQueryComponentName(), 1, nil))
+	reqNotShardedToConsumer1 = &testItem{
 		Ctx:                       context.Background(),
 		HttpRequest:               &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"},
 		AdditionalQueueDimensions: []string{"store-gateway"},
 	}
-	assert.NoError(t, queue.SubmitRequestToEnqueue("user-2", reqNotShardedToQuerier1, reqNotShardedToQuerier1.ExpectedQueryComponentName(), 1, nil))
+	assert.NoError(t, queue.SubmitItemToEnqueue("user-2", reqNotShardedToConsumer1, reqNotShardedToConsumer1.ExpectedQueryComponentName(), 1, nil))
 
-	// Querier-1 submits a request to dequeue;
-	// it will not receive anything as the only requests in the queue are not sharded to querier-1.
-	querier1SubmitDequeueReqWG := sync.WaitGroup{}
-	querier1SubmitDequeueReqWG.Add(1)
-	querier1DequeueReq := NewQuerierWorkerDequeueRequest(querier1Conn, FirstTenant())
+	// Consumer-1 submits a request to dequeue;
+	// it will not receive anything as the only requests in the queue are not sharded to consumer-1.
+	consumer1SubmitDequeueReqWG := sync.WaitGroup{}
+	consumer1SubmitDequeueReqWG.Add(1)
+	consumer1DequeueReq := NewConsumerWorkerDequeueRequest(consumer1Conn, FirstTenant())
 	go func() {
-		defer querier1SubmitDequeueReqWG.Done()
-		_, _, err := queue.AwaitRequestForQuerier(querier1DequeueReq)
+		defer consumer1SubmitDequeueReqWG.Done()
+		_, _, err := queue.AwaitItemForConsumer(consumer1DequeueReq)
 		// This blocks until it receives one of the control flow errors;
-		// it will not receive a request as those in the queue are only sharded to querier-2.
+		// it will not receive a request as those in the queue are only sharded to consumer-2.
 		assertControlFlowError(t, err)
 	}()
 
@@ -479,25 +479,25 @@ func TestDispatchToWaitingDequeueRequestForUnregisteredQuerierWorker(t *testing.
 		time.Sleep(1 * time.Millisecond)
 	}
 
-	// Simulate a crash of querier-1's only connection, with no graceful shutdown notification from the querier.
-	// The entire querier is not removed until forgetDelay passes, but the individual connection is marked as unregistered.
+	// Simulate a crash of consumer-1's only connection, with no graceful shutdown notification from the consumer.
+	// The entire consumer is not removed until forgetDelay passes, but the individual connection is marked as unregistered.
 	// A waiting dequeue request must have its connection ID set to -1 to complete the potential panic condition.
-	querier1CtxCancel(errors.New("crash"))
-	queue.SubmitUnregisterQuerierWorkerConn(querier1Conn) // normally done in the defers of the grpc loop
+	consumer1CtxCancel(errors.New("crash"))
+	queue.SubmitUnregisterConsumerWorkerConn(consumer1Conn) // normally done in the defers of the grpc loop
 
-	// Wait for the queue to process the de-registration of the querier-1 connection.
-	for queue.connectedQuerierWorkers.Load() > 1 {
+	// Wait for the queue to process the de-registration of the consumer-1 connection.
+	for queue.connectedConsumerWorkers.Load() > 1 {
 		time.Sleep(1 * time.Millisecond)
 	}
 
-	// Register another querier to trigger a re-shard and ensure we attempt to dispatch the requests.
+	// Register another consumer to trigger a re-shard and ensure we attempt to dispatch the requests.
 	// The queue will first try to dispatch a queue item to its internally-queued waiting dequeue requests.
-	// The first waiting dequeue request in that list is from the crashed and deregistered querier-1 -
+	// The first waiting dequeue request in that list is from the crashed and deregistered consumer-1 -
 	// This test is to ensure that is handled gracefully.
-	assert.NoError(t, queue.AwaitRegisterQuerierWorkerConn(querier3Conn))
+	assert.NoError(t, queue.AwaitRegisterConsumerWorkerConn(consumer3Conn))
 
 	// The dequeue request should have been dropped from the waiting list
-	// when the queue received an error from the queue broker's dequeueRequestForQuerier.
+	// when the queue received an error from the queue broker's dequeueItemForConsumer.
 	assert.Eventually(
 		t,
 		func() bool { return queue.waitingDequeueRequestsToDispatchCount.Load() == 0 },
@@ -506,13 +506,13 @@ func TestDispatchToWaitingDequeueRequestForUnregisteredQuerierWorker(t *testing.
 	)
 
 	// This should be long gone but ensure we have no hanging goroutines
-	querier1SubmitDequeueReqWG.Wait()
+	consumer1SubmitDequeueReqWG.Wait()
 }
 
-func TestRequestQueue_RegisterAndUnregisterQuerierWorkerConnections(t *testing.T) {
+func TestQueue_RegisterAndUnregisterConsumerWorkerConnections(t *testing.T) {
 	const forgetDelay = 3 * time.Second
 
-	queue, err := NewRequestQueue(
+	queue, err := New(
 		log.NewNopLogger(),
 		1,
 		forgetDelay,
@@ -527,77 +527,77 @@ func TestRequestQueue_RegisterAndUnregisterQuerierWorkerConnections(t *testing.T
 	require.NoError(t, services.StartAndAwaitRunning(ctx, queue))
 
 	t.Cleanup(func() {
-		// we must send a shutdown signal for any remaining connected queriers
+		// we must send a shutdown signal for any remaining connected consumers
 		// or else StopAndAwaitTerminated will never complete.
-		queue.SubmitNotifyQuerierShutdown(ctx, "querier-1")
-		queue.SubmitNotifyQuerierShutdown(ctx, "querier-2")
+		queue.SubmitNotifyConsumerShutdown(ctx, "consumer-1")
+		queue.SubmitNotifyConsumerShutdown(ctx, "consumer-2")
 		require.NoError(t, services.StopAndAwaitTerminated(ctx, queue))
 	})
 
-	// 2 queriers open 3 connections each.
-	querier1Conn1 := NewUnregisteredQuerierWorkerConn(context.Background(), "querier-1")
-	require.NoError(t, queue.AwaitRegisterQuerierWorkerConn(querier1Conn1))
-	require.Equal(t, 0, querier1Conn1.WorkerID)
-	require.Equal(t, 1, int(queue.connectedQuerierWorkers.Load()))
+	// 2 consumers open 3 connections each.
+	consumer1Conn1 := NewUnregisteredConsumerWorkerConn(context.Background(), "consumer-1")
+	require.NoError(t, queue.AwaitRegisterConsumerWorkerConn(consumer1Conn1))
+	require.Equal(t, 0, consumer1Conn1.WorkerID)
+	require.Equal(t, 1, int(queue.connectedConsumerWorkers.Load()))
 
-	querier1Conn2 := NewUnregisteredQuerierWorkerConn(context.Background(), "querier-1")
-	require.NoError(t, queue.AwaitRegisterQuerierWorkerConn(querier1Conn2))
-	require.Equal(t, 1, querier1Conn2.WorkerID)
-	require.Equal(t, 2, int(queue.connectedQuerierWorkers.Load()))
+	consumer1Conn2 := NewUnregisteredConsumerWorkerConn(context.Background(), "consumer-1")
+	require.NoError(t, queue.AwaitRegisterConsumerWorkerConn(consumer1Conn2))
+	require.Equal(t, 1, consumer1Conn2.WorkerID)
+	require.Equal(t, 2, int(queue.connectedConsumerWorkers.Load()))
 
-	querier1Conn3 := NewUnregisteredQuerierWorkerConn(context.Background(), "querier-1")
-	require.NoError(t, queue.AwaitRegisterQuerierWorkerConn(querier1Conn3))
-	require.Equal(t, 2, querier1Conn3.WorkerID)
-	require.Equal(t, 3, int(queue.connectedQuerierWorkers.Load()))
+	consumer1Conn3 := NewUnregisteredConsumerWorkerConn(context.Background(), "consumer-1")
+	require.NoError(t, queue.AwaitRegisterConsumerWorkerConn(consumer1Conn3))
+	require.Equal(t, 2, consumer1Conn3.WorkerID)
+	require.Equal(t, 3, int(queue.connectedConsumerWorkers.Load()))
 
-	querier2Conn1 := NewUnregisteredQuerierWorkerConn(context.Background(), "querier-2")
-	require.NoError(t, queue.AwaitRegisterQuerierWorkerConn(querier2Conn1))
-	require.Equal(t, 0, querier2Conn1.WorkerID)
-	require.Equal(t, 4, int(queue.connectedQuerierWorkers.Load()))
+	consumer2Conn1 := NewUnregisteredConsumerWorkerConn(context.Background(), "consumer-2")
+	require.NoError(t, queue.AwaitRegisterConsumerWorkerConn(consumer2Conn1))
+	require.Equal(t, 0, consumer2Conn1.WorkerID)
+	require.Equal(t, 4, int(queue.connectedConsumerWorkers.Load()))
 
-	querier2Conn2 := NewUnregisteredQuerierWorkerConn(context.Background(), "querier-2")
-	require.NoError(t, queue.AwaitRegisterQuerierWorkerConn(querier2Conn2))
-	require.Equal(t, 1, querier2Conn2.WorkerID)
-	require.Equal(t, 5, int(queue.connectedQuerierWorkers.Load()))
+	consumer2Conn2 := NewUnregisteredConsumerWorkerConn(context.Background(), "consumer-2")
+	require.NoError(t, queue.AwaitRegisterConsumerWorkerConn(consumer2Conn2))
+	require.Equal(t, 1, consumer2Conn2.WorkerID)
+	require.Equal(t, 5, int(queue.connectedConsumerWorkers.Load()))
 
-	querier2Conn3 := NewUnregisteredQuerierWorkerConn(context.Background(), "querier-2")
-	require.NoError(t, queue.AwaitRegisterQuerierWorkerConn(querier2Conn3))
-	require.Equal(t, 2, querier2Conn3.WorkerID)
-	require.Equal(t, 6, int(queue.connectedQuerierWorkers.Load()))
+	consumer2Conn3 := NewUnregisteredConsumerWorkerConn(context.Background(), "consumer-2")
+	require.NoError(t, queue.AwaitRegisterConsumerWorkerConn(consumer2Conn3))
+	require.Equal(t, 2, consumer2Conn3.WorkerID)
+	require.Equal(t, 6, int(queue.connectedConsumerWorkers.Load()))
 
-	// if querier-worker disconnects and reconnects before any other querier-worker changes,
-	// the querier-worker connect will get its same worker ID back
-	queue.SubmitUnregisterQuerierWorkerConn(querier2Conn2)
-	require.NoError(t, queue.AwaitRegisterQuerierWorkerConn(querier2Conn2))
-	require.Equal(t, 1, querier2Conn2.WorkerID)
-	require.Equal(t, 6, int(queue.connectedQuerierWorkers.Load()))
+	// if consumer-worker disconnects and reconnects before any other consumer-worker changes,
+	// the consumer-worker connect will get its same worker ID back
+	queue.SubmitUnregisterConsumerWorkerConn(consumer2Conn2)
+	require.NoError(t, queue.AwaitRegisterConsumerWorkerConn(consumer2Conn2))
+	require.Equal(t, 1, consumer2Conn2.WorkerID)
+	require.Equal(t, 6, int(queue.connectedConsumerWorkers.Load()))
 
-	// if a querier-worker disconnects and another querier-worker connects before the first reconnects
-	// the second querier-worker will have taken the worker ID of the first querier-worker,
-	// and the first querier-worker will get issued a new worker ID
+	// if a consumer-worker disconnects and another consumer-worker connects before the first reconnects
+	// the second consumer-worker will have taken the worker ID of the first consumer-worker,
+	// and the first consumer-worker will get issued a new worker ID
 
 	// even though some operations are awaited
 	// and some are just submitted without waiting for completion,
-	// all querier-worker operations are processed in the order of the submit/await calls.
-	queue.SubmitUnregisterQuerierWorkerConn(querier1Conn2)
+	// all consumer-worker operations are processed in the order of the submit/await calls.
+	queue.SubmitUnregisterConsumerWorkerConn(consumer1Conn2)
 	// we cannot be sure the worker ID is unregistered yet,
 	// but once we await the next worker register call, we can be sure.
-	querier1Conn4 := NewUnregisteredQuerierWorkerConn(context.Background(), "querier-1")
-	require.NoError(t, queue.AwaitRegisterQuerierWorkerConn(querier1Conn4))
-	require.False(t, querier1Conn2.IsRegistered())
-	require.Equal(t, 1, querier1Conn4.WorkerID)
-	require.Equal(t, 6, int(queue.connectedQuerierWorkers.Load()))
-	// re-connect from the first querier-worker and get a completely new worker ID
-	require.NoError(t, queue.AwaitRegisterQuerierWorkerConn(querier1Conn2))
-	require.Equal(t, 3, querier1Conn2.WorkerID)
-	require.Equal(t, 7, int(queue.connectedQuerierWorkers.Load()))
+	consumer1Conn4 := NewUnregisteredConsumerWorkerConn(context.Background(), "consumer-1")
+	require.NoError(t, queue.AwaitRegisterConsumerWorkerConn(consumer1Conn4))
+	require.False(t, consumer1Conn2.IsRegistered())
+	require.Equal(t, 1, consumer1Conn4.WorkerID)
+	require.Equal(t, 6, int(queue.connectedConsumerWorkers.Load()))
+	// re-connect from the first consumer-worker and get a completely new worker ID
+	require.NoError(t, queue.AwaitRegisterConsumerWorkerConn(consumer1Conn2))
+	require.Equal(t, 3, consumer1Conn2.WorkerID)
+	require.Equal(t, 7, int(queue.connectedConsumerWorkers.Load()))
 }
 
-func TestRequestQueue_GetNextRequestForQuerier_ShouldGetRequestAfterReshardingBecauseQuerierHasBeenForgotten(t *testing.T) {
+func TestQueue_GetNextRequestForConsumer_ShouldGetRequestAfterReshardingBecauseConsumerHasBeenForgotten(t *testing.T) {
 	const forgetDelay = 3 * time.Second
 	const testTimeout = 10 * time.Second
 
-	queue, err := NewRequestQueue(
+	queue, err := New(
 		log.NewNopLogger(),
 		1,
 		forgetDelay,
@@ -611,65 +611,65 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldGetRequestAfterReshardingBe
 	ctx := context.Background()
 	require.NoError(t, services.StartAndAwaitRunning(ctx, queue))
 
-	// Two queriers connect.
-	querier1Conn := NewUnregisteredQuerierWorkerConn(context.Background(), "querier-1")
-	require.NoError(t, queue.AwaitRegisterQuerierWorkerConn(querier1Conn))
-	querier2Conn := NewUnregisteredQuerierWorkerConn(context.Background(), "querier-2")
-	require.NoError(t, queue.AwaitRegisterQuerierWorkerConn(querier2Conn))
+	// Two consumers connect.
+	consumer1Conn := NewUnregisteredConsumerWorkerConn(context.Background(), "consumer-1")
+	require.NoError(t, queue.AwaitRegisterConsumerWorkerConn(consumer1Conn))
+	consumer2Conn := NewUnregisteredConsumerWorkerConn(context.Background(), "consumer-2")
+	require.NoError(t, queue.AwaitRegisterConsumerWorkerConn(consumer2Conn))
 
 	t.Cleanup(func() {
 		// if the test has failed and the queue does not get cleared,
-		// we must send a shutdown signal for the remaining connected querier
+		// we must send a shutdown signal for the remaining connected consumer
 		// or else StopAndAwaitTerminated will never complete.
-		queue.SubmitUnregisterQuerierWorkerConn(querier2Conn)
+		queue.SubmitUnregisterConsumerWorkerConn(consumer2Conn)
 		require.NoError(t, services.StopAndAwaitTerminated(ctx, queue))
 	})
 
-	// Querier-2 waits for a new request.
-	querier2wg := sync.WaitGroup{}
-	querier2wg.Add(1)
+	// Consumer-2 waits for a new request.
+	consumer2wg := sync.WaitGroup{}
+	consumer2wg.Add(1)
 	go func() {
-		defer querier2wg.Done()
-		dequeueReq := NewQuerierWorkerDequeueRequest(querier2Conn, FirstTenant())
-		_, _, err := queue.AwaitRequestForQuerier(dequeueReq)
+		defer consumer2wg.Done()
+		dequeueReq := NewConsumerWorkerDequeueRequest(consumer2Conn, FirstTenant())
+		_, _, err := queue.AwaitItemForConsumer(dequeueReq)
 		require.NoError(t, err)
 	}()
 
-	// Querier-1 crashes (no graceful shutdown notification).
-	queue.SubmitUnregisterQuerierWorkerConn(querier1Conn)
+	// Consumer-1 crashes (no graceful shutdown notification).
+	queue.SubmitUnregisterConsumerWorkerConn(consumer1Conn)
 
-	// Enqueue a request from an user which would be assigned to querier-1.
-	// NOTE: "user-1" shuffle shard always chooses the first querier ("querier-1" in this case)
-	// when there are only one or two queriers in the sorted list of connected queriers
-	req := &testQueryRequest{
+	// Enqueue a request from an user which would be assigned to consumer-1.
+	// NOTE: "user-1" shuffle shard always chooses the first consumer ("consumer-1" in this case)
+	// when there are only one or two consumers in the sorted list of connected consumers
+	req := &testItem{
 		Ctx:                       context.Background(),
 		HttpRequest:               &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"},
 		AdditionalQueueDimensions: randAdditionalQueueDimension(""),
 	}
-	require.NoError(t, queue.SubmitRequestToEnqueue("user-1", req, req.ExpectedQueryComponentName(), 1, nil))
+	require.NoError(t, queue.SubmitItemToEnqueue("user-1", req, req.ExpectedQueryComponentName(), 1, nil))
 
 	startTime := time.Now()
 	done := make(chan struct{})
 	go func() {
-		querier2wg.Wait()
+		consumer2wg.Wait()
 		close(done)
 	}()
 
 	select {
 	case <-done:
 		waitTime := time.Since(startTime)
-		// We expect that querier-2 got the request only after forget delay is passed.
+		// We expect that consumer-2 got the request only after forget delay is passed.
 		assert.GreaterOrEqual(t, waitTime.Milliseconds(), forgetDelay.Milliseconds())
 	case <-time.After(testTimeout):
-		t.Fatal("timeout: querier-2 did not receive the request expected to be resharded to querier-2")
+		t.Fatal("timeout: consumer-2 did not receive the request expected to be resharded to consumer-2")
 	}
 }
 
-func TestRequestQueue_GetNextRequestForQuerier_ReshardNotifiedCorrectlyForMultipleQuerierForget(t *testing.T) {
+func TestQueue_GetNextRequestForConsumer_ReshardNotifiedCorrectlyForMultipleConsumerForget(t *testing.T) {
 	const forgetDelay = 3 * time.Second
 	const testTimeout = 10 * time.Second
 
-	queue, err := NewRequestQueue(
+	queue, err := New(
 		log.NewNopLogger(),
 		1,
 		forgetDelay,
@@ -683,81 +683,81 @@ func TestRequestQueue_GetNextRequestForQuerier_ReshardNotifiedCorrectlyForMultip
 	ctx := context.Background()
 	require.NoError(t, services.StartAndAwaitRunning(ctx, queue))
 
-	// Three queriers connect.
-	// We will submit the enqueue request with maxQueriers: 2.
+	// Three consumers connect.
+	// We will submit the enqueue request with maxConsumers: 2.
 	//
-	// Whenever forgetDisconnectedQueriers runs, all queriers which reached zero connections since the last
-	// run of forgetDisconnectedQueriers will all be removed in from the shuffle shard in the same run.
+	// Whenever forgetDisconnectedConsumers runs, all consumers which reached zero connections since the last
+	// run of forgetDisconnectedConsumers will all be removed in from the shuffle shard in the same run.
 	//
-	// In this case two queriers are forgotten in the same run, but only the first forgotten querier triggers a reshard.
-	// In the first reshard, the tenant goes from a shuffled subset of queriers to a state of
-	// "tenant can use all queriers", as connected queriers is now <= tenant.maxQueriers.
-	// The second forgotten querier won't trigger a reshard, as connected queriers is already <= tenant.maxQueriers.
+	// In this case two consumers are forgotten in the same run, but only the first forgotten consumer triggers a reshard.
+	// In the first reshard, the tenant goes from a shuffled subset of consumers to a state of
+	// "tenant can use all consumers", as connected consumers is now <= tenant.maxConsumers.
+	// The second forgotten consumer won't trigger a reshard, as connected consumers is already <= tenant.maxConsumers.
 	//
 	// We are testing that the occurrence of a reshard is reported correctly
-	// when not all querier forget operations in a single run of forgetDisconnectedQueriers caused a reshard.
-	// Two queriers connect.
-	querier1Conn := NewUnregisteredQuerierWorkerConn(context.Background(), "querier-1")
-	require.NoError(t, queue.AwaitRegisterQuerierWorkerConn(querier1Conn))
-	querier2Conn := NewUnregisteredQuerierWorkerConn(context.Background(), "querier-2")
-	require.NoError(t, queue.AwaitRegisterQuerierWorkerConn(querier2Conn))
-	querier3Conn := NewUnregisteredQuerierWorkerConn(context.Background(), "querier-3")
-	require.NoError(t, queue.AwaitRegisterQuerierWorkerConn(querier3Conn))
+	// when not all consumer forget operations in a single run of forgetDisconnectedConsumers caused a reshard.
+	// Two consumers connect.
+	consumer1Conn := NewUnregisteredConsumerWorkerConn(context.Background(), "consumer-1")
+	require.NoError(t, queue.AwaitRegisterConsumerWorkerConn(consumer1Conn))
+	consumer2Conn := NewUnregisteredConsumerWorkerConn(context.Background(), "consumer-2")
+	require.NoError(t, queue.AwaitRegisterConsumerWorkerConn(consumer2Conn))
+	consumer3Conn := NewUnregisteredConsumerWorkerConn(context.Background(), "consumer-3")
+	require.NoError(t, queue.AwaitRegisterConsumerWorkerConn(consumer3Conn))
 
 	t.Cleanup(func() {
 		// if the test has failed and the queue does not get cleared,
-		// we must send a shutdown signal for the remaining connected querier
+		// we must send a shutdown signal for the remaining connected consumer
 		// or else StopAndAwaitTerminated will never complete.
-		queue.SubmitUnregisterQuerierWorkerConn(querier2Conn)
+		queue.SubmitUnregisterConsumerWorkerConn(consumer2Conn)
 		require.NoError(t, services.StopAndAwaitTerminated(ctx, queue))
 	})
 
-	// querier-2 waits for a new request.
-	querier2wg := sync.WaitGroup{}
-	querier2wg.Add(1)
+	// consumer-2 waits for a new request.
+	consumer2wg := sync.WaitGroup{}
+	consumer2wg.Add(1)
 	go func() {
-		defer querier2wg.Done()
-		dequeueReq := NewQuerierWorkerDequeueRequest(querier2Conn, FirstTenant())
-		_, _, err := queue.AwaitRequestForQuerier(dequeueReq)
+		defer consumer2wg.Done()
+		dequeueReq := NewConsumerWorkerDequeueRequest(consumer2Conn, FirstTenant())
+		_, _, err := queue.AwaitItemForConsumer(dequeueReq)
 		require.NoError(t, err)
 	}()
 
-	// querier-1 and querier-3 crash (no graceful shutdown notification).
-	queue.SubmitUnregisterQuerierWorkerConn(querier1Conn)
-	queue.SubmitUnregisterQuerierWorkerConn(querier3Conn)
+	// consumer-1 and consumer-3 crash (no graceful shutdown notification).
+	queue.SubmitUnregisterConsumerWorkerConn(consumer1Conn)
+	queue.SubmitUnregisterConsumerWorkerConn(consumer3Conn)
 
-	// Enqueue a request from a tenant which would be assigned to querier-1.
-	// NOTE: "user-1" shuffle shard always chooses the first querier ("querier-1" in this case)
-	// when there are only one or two queriers in the sorted list of connected queriers
-	req := &testQueryRequest{
+	// Enqueue a request from a tenant which would be assigned to consumer-1.
+	// NOTE: "user-1" shuffle shard always chooses the first consumer ("consumer-1" in this case)
+	// when there are only one or two consumers in the sorted list of connected consumers
+	req := &testItem{
 		Ctx:                       context.Background(),
 		HttpRequest:               &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"},
 		AdditionalQueueDimensions: randAdditionalQueueDimension(""),
 	}
-	require.NoError(t, queue.SubmitRequestToEnqueue("user-1", req, req.ExpectedQueryComponentName(), 2, nil))
+	require.NoError(t, queue.SubmitItemToEnqueue("user-1", req, req.ExpectedQueryComponentName(), 2, nil))
 
 	startTime := time.Now()
 	done := make(chan struct{})
 	go func() {
-		querier2wg.Wait()
+		consumer2wg.Wait()
 		close(done)
 	}()
 
 	select {
 	case <-done:
 		waitTime := time.Since(startTime)
-		// We expect that querier-2 got the request only after forget delay is passed.
+		// We expect that consumer-2 got the request only after forget delay is passed.
 		assert.GreaterOrEqual(t, waitTime.Milliseconds(), forgetDelay.Milliseconds())
 	case <-time.After(testTimeout):
-		t.Fatal("timeout: querier-2 did not receive the request expected to be resharded to querier-2")
+		t.Fatal("timeout: consumer-2 did not receive the request expected to be resharded to consumer-2")
 	}
 }
 
-func TestRequestQueue_GetNextRequestForQuerier_ShouldReturnAfterContextCancelled(t *testing.T) {
+func TestQueue_GetNextRequestForConsumer_ShouldReturnAfterContextCancelled(t *testing.T) {
 	const forgetDelay = 3 * time.Second
-	const querierID = "querier-1"
+	const consumerID = "consumer-1"
 
-	queue, err := NewRequestQueue(
+	queue, err := New(
 		log.NewNopLogger(),
 		1,
 		forgetDelay,
@@ -772,47 +772,47 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldReturnAfterContextCancelled
 		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), queue))
 	})
 
-	querier1Conn := NewUnregisteredQuerierWorkerConn(context.Background(), querierID)
-	require.NoError(t, queue.AwaitRegisterQuerierWorkerConn(querier1Conn))
+	consumer1Conn := NewUnregisteredConsumerWorkerConn(context.Background(), consumerID)
+	require.NoError(t, queue.AwaitRegisterConsumerWorkerConn(consumer1Conn))
 
-	// Calling AwaitRequestForQuerier with a context that is already cancelled should fail immediately.
+	// Calling AwaitItemForConsumer with a context that is already cancelled should fail immediately.
 	deadCtx, cancel := context.WithCancel(context.Background())
 	cancel()
-	querier1Conn.ctx = deadCtx
+	consumer1Conn.ctx = deadCtx
 
-	dequeueReq := NewQuerierWorkerDequeueRequest(querier1Conn, FirstTenant())
-	r, tenant, err := queue.AwaitRequestForQuerier(dequeueReq)
+	dequeueReq := NewConsumerWorkerDequeueRequest(consumer1Conn, FirstTenant())
+	r, tenant, err := queue.AwaitItemForConsumer(dequeueReq)
 	assert.Nil(t, r)
 	assert.Equal(t, FirstTenant(), tenant)
 	assert.ErrorIs(t, err, context.Canceled)
 
-	// Further, a context canceled after AwaitRequestForQuerier publishes a request should also fail.
+	// Further, a context canceled after AwaitItemForConsumer publishes a request should also fail.
 	errChan := make(chan error)
 	ctx, cancel := context.WithCancel(context.Background())
-	querier1Conn.ctx = ctx
+	consumer1Conn.ctx = ctx
 
 	go func() {
-		dequeueReq := NewQuerierWorkerDequeueRequest(querier1Conn, FirstTenant())
-		_, _, err := queue.AwaitRequestForQuerier(dequeueReq)
+		dequeueReq := NewConsumerWorkerDequeueRequest(consumer1Conn, FirstTenant())
+		_, _, err := queue.AwaitItemForConsumer(dequeueReq)
 		errChan <- err
 	}()
 
-	time.Sleep(20 * time.Millisecond) // Wait for AwaitRequestForQuerier to be waiting for a query.
+	time.Sleep(20 * time.Millisecond) // Wait for AwaitItemForConsumer to be waiting for a query.
 	cancel()
 
 	select {
 	case err := <-errChan:
 		require.Equal(t, context.Canceled, err)
 	case <-time.After(time.Second):
-		require.Fail(t, "gave up waiting for GetNextRequestForQuerierToReturn")
+		require.Fail(t, "gave up waiting for GetNextRequestForConsumerToReturn")
 	}
 }
 
-func TestRequestQueue_GetNextRequestForQuerier_ShouldReturnImmediatelyIfQuerierIsAlreadyShuttingDown(t *testing.T) {
+func TestQueue_GetNextRequestForConsumer_ShouldReturnImmediatelyIfConsumerIsAlreadyShuttingDown(t *testing.T) {
 	const forgetDelay = 3 * time.Second
-	const querierID = "querier-1"
+	const consumerID = "consumer-1"
 
-	queue, err := NewRequestQueue(
+	queue, err := New(
 		log.NewNopLogger(),
 		1,
 		forgetDelay,
@@ -828,21 +828,21 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldReturnImmediatelyIfQuerierI
 		require.NoError(t, services.StopAndAwaitTerminated(ctx, queue))
 	})
 
-	querierConn := NewUnregisteredQuerierWorkerConn(context.Background(), querierID)
-	require.NoError(t, queue.AwaitRegisterQuerierWorkerConn(querierConn))
+	consumerConn := NewUnregisteredConsumerWorkerConn(context.Background(), consumerID)
+	require.NoError(t, queue.AwaitRegisterConsumerWorkerConn(consumerConn))
 
-	queue.SubmitNotifyQuerierShutdown(ctx, querierID)
+	queue.SubmitNotifyConsumerShutdown(ctx, consumerID)
 
-	dequeueReq := NewQuerierWorkerDequeueRequest(querierConn, FirstTenant())
-	_, _, err = queue.AwaitRequestForQuerier(dequeueReq)
-	require.EqualError(t, err, "querier has informed the scheduler it is shutting down")
+	dequeueReq := NewConsumerWorkerDequeueRequest(consumerConn, FirstTenant())
+	_, _, err = queue.AwaitItemForConsumer(dequeueReq)
+	require.EqualError(t, err, "consumer has informed the scheduler it is shutting down")
 }
 
-func TestRequestQueue_tryDispatchRequestToQuerier_ShouldReEnqueueAfterFailedSendToQuerier(t *testing.T) {
+func TestQueue_tryDispatchRequestToConsumer_ShouldReEnqueueAfterFailedSendToConsumer(t *testing.T) {
 	const forgetDelay = 3 * time.Second
-	const querierID = "querier-1"
+	const consumerID = "consumer-1"
 
-	queue, err := NewRequestQueue(
+	queue, err := New(
 		log.NewNopLogger(),
 		1,
 		forgetDelay,
@@ -853,21 +853,21 @@ func TestRequestQueue_tryDispatchRequestToQuerier_ShouldReEnqueueAfterFailedSend
 	require.NoError(t, err)
 
 	// bypassing queue dispatcher loop for direct usage of the queueBroker and
-	// passing a QuerierWorkerDequeueRequest for a canceled querier connection
+	// passing a ConsumerWorkerDequeueRequest for a canceled consumer connection
 	qb := newQueueBroker(queue.maxOutstandingPerTenant, queue.forgetDelay)
-	qb.addQuerierWorkerConn(NewUnregisteredQuerierWorkerConn(context.Background(), querierID))
+	qb.addConsumerWorkerConn(NewUnregisteredConsumerWorkerConn(context.Background(), consumerID))
 
-	tenantMaxQueriers := 0 // no sharding
+	tenantMaxConsumers := 0 // no sharding
 	queueDim := randAdditionalQueueDimension("")
-	req := &testQueryRequest{
+	req := &testItem{
 		Ctx:                       context.Background(),
 		HttpRequest:               &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"},
 		AdditionalQueueDimensions: queueDim,
 	}
-	tr := tenantRequest{
+	tr := tenantItem{
 		tenantID:       "tenant-1",
 		queueDimension: req.ExpectedQueryComponentName(),
-		req:            req,
+		item:           req,
 	}
 
 	var multiAlgorithmTreeQueuePath tree.QueuePath
@@ -877,37 +877,37 @@ func TestRequestQueue_tryDispatchRequestToQuerier_ShouldReEnqueueAfterFailedSend
 	multiAlgorithmTreeQueuePath = append(append(multiAlgorithmTreeQueuePath, queueDim...), "tenant-1")
 
 	require.Nil(t, qb.tree.GetNode(multiAlgorithmTreeQueuePath))
-	require.NoError(t, qb.enqueueRequestBack(&tr, tenantMaxQueriers))
+	require.NoError(t, qb.enqueueItemBack(&tr, tenantMaxConsumers))
 	require.False(t, qb.tree.GetNode(multiAlgorithmTreeQueuePath).IsEmpty())
 
 	ctx, cancel := context.WithCancel(context.Background())
-	call := &QuerierWorkerDequeueRequest{
-		QuerierWorkerConn: &QuerierWorkerConn{
-			ctx:       ctx,
-			QuerierID: querierID,
-			WorkerID:  0,
+	call := &ConsumerWorkerDequeueRequest{
+		ConsumerWorkerConn: &ConsumerWorkerConn{
+			ctx:        ctx,
+			ConsumerID: consumerID,
+			WorkerID:   0,
 		},
 		lastTenantIndex: FirstTenant(),
-		recvChan:        make(chan querierWorkerDequeueResponse),
+		recvChan:        make(chan consumerWorkerDequeueResponse),
 	}
-	cancel() // ensure querier context done before send is attempted
+	cancel() // ensure consumer context done before send is attempted
 
-	// send to querier will fail but method returns true,
-	// indicating not to re-submit a request for QuerierWorkerDequeueRequest for the querier
-	require.True(t, queue.trySendNextRequestForQuerier(call))
+	// send to consumer will fail but method returns true,
+	// indicating not to re-submit a request for ConsumerWorkerDequeueRequest for the consumer
+	require.True(t, queue.trySendNextItemForConsumer(call))
 	// assert request was re-enqueued for tenant after failed send
 	require.False(t, qb.tree.GetNode(multiAlgorithmTreeQueuePath).IsEmpty())
 }
 
 // This test ensures that even if the queue has no pending requests, we still wait until any inflight requests
 // have been returned before existing
-func TestRequestQueue_ShutdownWithPendingRequests_ShouldDrainRequests(t *testing.T) {
+func TestQueue_ShutdownWithPendingRequests_ShouldDrainRequests(t *testing.T) {
 	ctx := context.Background()
 	tenantID := "testTenant"
-	querierID := "querier1"
+	consumerID := "consumer1"
 
 	// So we create a queue
-	queue, err := NewRequestQueue(
+	queue, err := New(
 		log.NewNopLogger(),
 		1,
 		0,
@@ -919,13 +919,13 @@ func TestRequestQueue_ShutdownWithPendingRequests_ShouldDrainRequests(t *testing
 	require.NoError(t, services.StartAndAwaitRunning(ctx, queue))
 
 	// With a worker
-	conn := NewUnregisteredQuerierWorkerConn(context.Background(), querierID)
-	require.NoError(t, queue.AwaitRegisterQuerierWorkerConn(conn))
+	conn := NewUnregisteredConsumerWorkerConn(context.Background(), consumerID)
+	require.NoError(t, queue.AwaitRegisterConsumerWorkerConn(conn))
 
 	// And push a request to the queue
-	req := makeTestQueryRequest(tenantID, []string{})
+	req := makeTestItem(tenantID, []string{})
 	require.NotNil(t, req)
-	err = queue.SubmitRequestToEnqueue(tenantID, req, req.ExpectedQueryComponentName(), 1, func() {})
+	err = queue.SubmitItemToEnqueue(tenantID, req, req.ExpectedQueryComponentName(), 1, func() {})
 	require.NoError(t, err)
 
 	// And make sure it got to the queue
@@ -935,8 +935,8 @@ func TestRequestQueue_ShutdownWithPendingRequests_ShouldDrainRequests(t *testing
 	queue.StopAsync()
 
 	// Consume the existing request from the queue and ensure it matches the one we queued
-	dequeueReq := NewQuerierWorkerDequeueRequest(conn, FirstTenant())
-	r, _, err := queue.AwaitRequestForQuerier(dequeueReq)
+	dequeueReq := NewConsumerWorkerDequeueRequest(conn, FirstTenant())
+	r, _, err := queue.AwaitItemForConsumer(dequeueReq)
 	require.NoError(t, err)
 	require.NotNil(t, r)
 	require.Equal(t, r, req)
