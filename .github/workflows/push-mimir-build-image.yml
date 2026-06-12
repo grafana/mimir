@@ -127,7 +127,7 @@ jobs:
           exit 1
 
       - name: Checkout repository
-        if: needs.prepare.outputs.need_to_build == 'true'
+        if: needs.prepare.outputs.new_image_tag != ''
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           persist-credentials: false
@@ -152,7 +152,7 @@ jobs:
 
       - name: Check whether Makefile needs updating, and update it
         id: update_makefile
-        if: needs.prepare.outputs.need_to_build == 'true'
+        if: needs.prepare.outputs.new_image_tag != ''
         run: |
           set -euo pipefail
           echo "Current build image tag is $MAIN_IMAGE_TAG"
