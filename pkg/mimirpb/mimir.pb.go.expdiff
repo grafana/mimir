@@ -1,5 +1,5 @@
 diff --git a/pkg/mimirpb/mimir.pb.go b/pkg/mimirpb/mimir.pb.go
-index 6278c906b7..e76908a417 100644
+index 1569957..42de4ee 100644
 --- a/pkg/mimirpb/mimir.pb.go
 +++ b/pkg/mimirpb/mimir.pb.go
 @@ -353,14 +353,6 @@ type QueryResponse_Matrix struct {
@@ -73,8 +73,8 @@ index 6278c906b7..e76908a417 100644
  		var preIdx int
  		var field1count int
  		var field3count int
-@@ -4272,23 +4243,26 @@ func (m *WriteRequest) unmarshal(dAtA []byte, depth int) error {
- 				m.Metadata = grown
+@@ -4268,23 +4239,22 @@ func (m *WriteRequest) unmarshal(dAtA []byte, depth int) error {
+ 				m.Metadata = make([]*MetricMetadata, 0, c)
  			}
  		}
 -		// Modified code: in RW2 mode field 4 symbols go into m.rw2symbols paged
@@ -85,6 +85,14 @@ index 6278c906b7..e76908a417 100644
 -		_ = field4count
 -		if c := field5count; c > 0 && m.unmarshalFromRW2 {
 +		if c := field4count; c > 0 {
++			if c > preCapMax {
++				c = preCapMax
++			}
++			if len(m.SymbolsRW2) == 0 && cap(m.SymbolsRW2) < c {
++				m.SymbolsRW2 = make([]string, 0, c)
++			}
++		}
++		if c := field5count; c > 0 {
  			if c > preCapMax {
  				c = preCapMax
  			}
@@ -92,27 +100,15 @@ index 6278c906b7..e76908a417 100644
 -				grown := make([]PreallocTimeseries, len(m.Timeseries), need)
 -				copy(grown, m.Timeseries)
 -				m.Timeseries = grown
-+			if need := len(m.SymbolsRW2) + c; cap(m.SymbolsRW2) < need {
-+				grown := make([]string, len(m.SymbolsRW2), need)
-+				copy(grown, m.SymbolsRW2)
-+				m.SymbolsRW2 = grown
-+			}
-+		}
-+		if c := field5count; c > 0 {
-+			if c > preCapMax {
-+				c = preCapMax
-+			}
-+			if need := len(m.TimeseriesRW2) + c; cap(m.TimeseriesRW2) < need {
-+				grown := make([]TimeSeriesRW2, len(m.TimeseriesRW2), need)
-+				copy(grown, m.TimeseriesRW2)
-+				m.TimeseriesRW2 = grown
++			if len(m.TimeseriesRW2) == 0 && cap(m.TimeseriesRW2) < c {
++				m.TimeseriesRW2 = make([]TimeSeriesRW2, 0, c)
  			}
  		}
 -		// End modified code.
  	}
  	for iNdEx < l {
  		var wire uint64
-@@ -4360,18 +4334,11 @@ func (m *WriteRequest) unmarshal(dAtA []byte, depth int) error {
+@@ -4356,18 +4326,11 @@ func (m *WriteRequest) unmarshal(dAtA []byte, depth int) error {
  			if postIndex > l {
  				return io.ErrUnexpectedEOF
  			}
@@ -134,7 +130,7 @@ index 6278c906b7..e76908a417 100644
  			iNdEx = postIndex
  		case 2: // Source
  			if wireType != 0 {
-@@ -4402,11 +4369,6 @@ func (m *WriteRequest) unmarshal(dAtA []byte, depth int) error {
+@@ -4398,11 +4361,6 @@ func (m *WriteRequest) unmarshal(dAtA []byte, depth int) error {
  			}
  			m.Source = WriteRequest_SourceEnum(v)
  		case 3: // metadata
@@ -146,7 +142,7 @@ index 6278c906b7..e76908a417 100644
  			if wireType != 2 {
  				n, err := protohelpers.SkipValue(dAtA[iNdEx:], wireType, fieldNum)
  				if err != nil {
-@@ -4455,11 +4417,6 @@ func (m *WriteRequest) unmarshal(dAtA []byte, depth int) error {
+@@ -4451,11 +4409,6 @@ func (m *WriteRequest) unmarshal(dAtA []byte, depth int) error {
  			}
  			iNdEx = postIndex
  		case 4: // symbolsRW2
@@ -158,7 +154,7 @@ index 6278c906b7..e76908a417 100644
  			if wireType != 2 {
  				n, err := protohelpers.SkipValue(dAtA[iNdEx:], wireType, fieldNum)
  				if err != nil {
-@@ -4502,21 +4459,9 @@ func (m *WriteRequest) unmarshal(dAtA []byte, depth int) error {
+@@ -4498,21 +4451,9 @@ func (m *WriteRequest) unmarshal(dAtA []byte, depth int) error {
  			if postIndex > l {
  				return io.ErrUnexpectedEOF
  			}
@@ -181,7 +177,7 @@ index 6278c906b7..e76908a417 100644
  			if wireType != 2 {
  				n, err := protohelpers.SkipValue(dAtA[iNdEx:], wireType, fieldNum)
  				if err != nil {
-@@ -4559,18 +4504,10 @@ func (m *WriteRequest) unmarshal(dAtA []byte, depth int) error {
+@@ -4555,18 +4496,10 @@ func (m *WriteRequest) unmarshal(dAtA []byte, depth int) error {
  			if postIndex > l {
  				return io.ErrUnexpectedEOF
  			}
@@ -202,7 +198,7 @@ index 6278c906b7..e76908a417 100644
  			iNdEx = postIndex
  		case 1000: // skip_label_validation
  			if wireType != 0 {
-@@ -4639,17 +4576,6 @@ func (m *WriteRequest) unmarshal(dAtA []byte, depth int) error {
+@@ -4635,17 +4568,6 @@ func (m *WriteRequest) unmarshal(dAtA []byte, depth int) error {
  	if iNdEx > l {
  		return io.ErrUnexpectedEOF
  	}
@@ -220,8 +216,8 @@ index 6278c906b7..e76908a417 100644
  	return nil
  }
  
-@@ -4955,8 +4881,7 @@ func (m *TimeSeries) unmarshal(dAtA []byte, depth int) error {
- 				m.Samples = grown
+@@ -4947,8 +4869,7 @@ func (m *TimeSeries) unmarshal(dAtA []byte, depth int) error {
+ 				m.Samples = make([]Sample, 0, c)
  			}
  		}
 -		// Modified code: don't preallocate exemplars that won't be unmarshalled.
@@ -230,15 +226,15 @@ index 6278c906b7..e76908a417 100644
  			if c > preCapMax {
  				c = preCapMax
  			}
-@@ -4966,7 +4891,6 @@ func (m *TimeSeries) unmarshal(dAtA []byte, depth int) error {
- 				m.Exemplars = grown
+@@ -4956,7 +4877,6 @@ func (m *TimeSeries) unmarshal(dAtA []byte, depth int) error {
+ 				m.Exemplars = make([]Exemplar, 0, c)
  			}
  		}
 -		// End modified code.
  		if c := field4count; c > 0 {
  			if c > preCapMax {
  				c = preCapMax
-@@ -5145,14 +5069,10 @@ func (m *TimeSeries) unmarshal(dAtA []byte, depth int) error {
+@@ -5133,14 +5053,10 @@ func (m *TimeSeries) unmarshal(dAtA []byte, depth int) error {
  			if postIndex > l {
  				return io.ErrUnexpectedEOF
  			}
@@ -256,7 +252,7 @@ index 6278c906b7..e76908a417 100644
  			iNdEx = postIndex
  		case 4: // histograms
  			if wireType != 2 {
-@@ -10350,44 +10270,797 @@ func (m *TimeSeriesRW2) UnmarshalWithDepth(b []byte, depth int) error {
+@@ -10300,44 +10216,791 @@ func (m *TimeSeriesRW2) UnmarshalWithDepth(b []byte, depth int) error {
  }
  
  func (m *TimeSeriesRW2) unmarshal(dAtA []byte, depth int) error {
@@ -361,30 +357,24 @@ index 6278c906b7..e76908a417 100644
 +			if c > preCapMax {
 +				c = preCapMax
 +			}
-+			if need := len(m.Samples) + c; cap(m.Samples) < need {
-+				grown := make([]Sample, len(m.Samples), need)
-+				copy(grown, m.Samples)
-+				m.Samples = grown
++			if len(m.Samples) == 0 && cap(m.Samples) < c {
++				m.Samples = make([]Sample, 0, c)
 +			}
 +		}
 +		if c := field3count; c > 0 {
 +			if c > preCapMax {
 +				c = preCapMax
 +			}
-+			if need := len(m.Histograms) + c; cap(m.Histograms) < need {
-+				grown := make([]Histogram, len(m.Histograms), need)
-+				copy(grown, m.Histograms)
-+				m.Histograms = grown
++			if len(m.Histograms) == 0 && cap(m.Histograms) < c {
++				m.Histograms = make([]Histogram, 0, c)
 +			}
 +		}
 +		if c := field4count; c > 0 {
 +			if c > preCapMax {
 +				c = preCapMax
 +			}
-+			if need := len(m.Exemplars) + c; cap(m.Exemplars) < need {
-+				grown := make([]ExemplarRW2, len(m.Exemplars), need)
-+				copy(grown, m.Exemplars)
-+				m.Exemplars = grown
++			if len(m.Exemplars) == 0 && cap(m.Exemplars) < c {
++				m.Exemplars = make([]ExemplarRW2, 0, c)
 +			}
 +		}
  	}
