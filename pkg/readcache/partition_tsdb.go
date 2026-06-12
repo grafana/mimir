@@ -90,6 +90,7 @@ func openPartitionTSDB(
 	cfg mimir_tsdb.TSDBConfig,
 	localBlockRetention time.Duration,
 	limits *validation.Overrides,
+	maxExemplarsCap int,
 	seriesHashCache *hashcache.SeriesHashCache,
 	headPostingsForMatchersCacheFactory, blockPostingsForMatchersCacheFactory tsdb.PostingsForMatchersCacheFactory,
 	tsdbPromReg prometheus.Registerer,
@@ -106,17 +107,13 @@ func openPartitionTSDB(
 	}
 
 	var oooTW time.Duration
-	var maxExemplars int64
 	if limits != nil {
 		oooTW = limits.OutOfOrderTimeWindow(tenantID)
 		if oooTW < 0 {
 			oooTW = 0
 		}
-		maxExemplars = int64(limits.MaxGlobalExemplarsPerUser(tenantID))
-		if maxExemplars < 0 {
-			maxExemplars = 0
-		}
 	}
+	maxExemplars := effectiveMaxExemplars(limits, tenantID, maxExemplarsCap)
 
 	opts := &tsdb.Options{
 		// RetentionDuration uses the readcache-local retention rather
@@ -205,9 +202,39 @@ func (p *partitionTSDB) sampleBounds() (minT, maxT int64) {
 	return minT, maxT
 }
 
+// effectiveMaxExemplars returns the exemplar-storage capacity for one
+// per-(tenant, partition) TSDB: the tenant's global limit clamped to
+// maxExemplarsCap (cap <= 0 means uncapped). The global limit can't be
+// used directly because Prometheus's circular exemplar storage
+// preallocates its entire ring buffer at the configured capacity, and
+// readcache instantiates one storage per (tenant, partition) TSDB — a
+// large global limit would be preallocated in full by every open TSDB
+// (live and frozen), multiplying it by the open-TSDB count. The
+// resulting buffers are permanently-live, pointer-bearing heap that
+// every GC mark cycle must scan; on dev-15 this alone pushed the heap
+// goal past GOMEMLIMIT and locked two pods into ~30 cores of
+// continuous GC. The ingester avoids the same trap by dividing the
+// global limit by the ring's shard count (Limiter.maxExemplarsPerUser);
+// readcache has no equivalent divisor, so it caps instead.
+func effectiveMaxExemplars(limits *validation.Overrides, tenantID string, maxExemplarsCap int) int64 {
+	if limits == nil {
+		return 0
+	}
+	maxExemplars := int64(limits.MaxGlobalExemplarsPerUser(tenantID))
+	if maxExemplars < 0 {
+		maxExemplars = 0
+	}
+	if maxExemplarsCap > 0 && maxExemplars > int64(maxExemplarsCap) {
+		maxExemplars = int64(maxExemplarsCap)
+	}
+	return maxExemplars
+}
+
 // applyTenantTSDBSettings reapplies per-tenant TSDB settings from runtime
-// limits (mirrors ingester.applyTSDBSettings).
-func (p *partitionTSDB) applyTenantTSDBSettings(limits *validation.Overrides, logger log.Logger) error {
+// limits (mirrors ingester.applyTSDBSettings). maxExemplarsCap must be
+// the same cap passed to openPartitionTSDB, or the periodic reapply
+// would resize the exemplar ring back up to the tenant's global limit.
+func (p *partitionTSDB) applyTenantTSDBSettings(limits *validation.Overrides, maxExemplarsCap int, logger log.Logger) error {
 	if limits == nil || p.db == nil {
 		return nil
 	}
@@ -218,14 +245,10 @@ func (p *partitionTSDB) applyTenantTSDBSettings(limits *validation.Overrides, lo
 	if oooTW < 0 {
 		oooTW = 0
 	}
-	maxExemplars := int64(limits.MaxGlobalExemplarsPerUser(p.tenantID))
-	if maxExemplars < 0 {
-		maxExemplars = 0
-	}
 	cfg := config.Config{
 		StorageConfig: config.StorageConfig{
 			ExemplarsConfig: &config.ExemplarsConfig{
-				MaxExemplars: maxExemplars,
+				MaxExemplars: effectiveMaxExemplars(limits, p.tenantID, maxExemplarsCap),
 			},
 			TSDBConfig: &config.TSDBConfig{
 				OutOfOrderTimeWindow: oooTW.Milliseconds(),

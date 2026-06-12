@@ -70,6 +70,20 @@ type Config struct {
 	// store-gateway (fed by blockbuilder) is the canonical source.
 	LocalBlockRetention time.Duration `yaml:"local_block_retention" category:"experimental"`
 
+	// MaxExemplarsPerPartitionTSDB caps the exemplar-storage capacity of
+	// each per-(tenant, partition) TSDB. The tenant limit
+	// (-ingester.max-global-exemplars-per-user) is a GLOBAL limit that the
+	// ingester divides by the ring's shard count before sizing its one
+	// per-tenant TSDB; readcache opens one TSDB per (tenant, partition)
+	// and has no equivalent divisor, so passing the global limit through
+	// unmodified preallocates the full global capacity in every TSDB
+	// (Prometheus's circular exemplar storage allocates its whole ring
+	// buffer upfront). Observed on dev-15: a 100M-global-limit tenant x
+	// 10 open TSDBs = 52 GiB of permanently-live, GC-scanned heap holding
+	// 9 actual exemplars, pushing the heap goal past GOMEMLIMIT and
+	// pinning ~30 cores in back-to-back GC mark cycles.
+	MaxExemplarsPerPartitionTSDB int `yaml:"max_exemplars_per_partition_tsdb" category:"experimental"`
+
 	// WipeTSDBDirOnStartup deletes DataDir on startup before recreating it.
 	// Only intended for development and testing.
 	WipeTSDBDirOnStartup bool `yaml:"wipe_tsdb_dir_on_startup" category:"experimental" doc:"hidden"`
@@ -101,6 +115,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.DurationVar(&cfg.HeadCompactionInterval, "readcache.head-compaction-interval", 1*time.Hour, "How often each partitionTSDB head is considered for compaction.")
 	f.DurationVar(&cfg.TSDBConfigUpdatePeriod, "readcache.tsdb-config-update-period", 15*time.Second, "Period with which readcache updates per-tenant TSDB configuration from runtime limits (e.g. out-of-order samples window, exemplars), mirroring the ingester.")
 	f.DurationVar(&cfg.LocalBlockRetention, "readcache.local-block-retention", 6*time.Hour, "How long readcache keeps locally-compacted blocks queryable after they leave the head.")
+	f.IntVar(&cfg.MaxExemplarsPerPartitionTSDB, "readcache.max-exemplars-per-partition-tsdb", 100000, "Upper bound on the exemplar-storage capacity of each per-(tenant, partition) TSDB. The effective capacity is min(tenant's max-global-exemplars-per-user, this cap); the circular exemplar storage preallocates its full capacity per TSDB, so an uncapped global limit multiplies across every open (tenant, partition) TSDB. 0 or negative disables the cap.")
 	cfg.InstanceRing.RegisterFlags(f, logger)
 }
 

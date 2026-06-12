@@ -54,7 +54,7 @@ func TestReadcache_FreezeKeepsSliceQueryableThenReaps(t *testing.T) {
 	// Stand up a live partition with one committed sample two minutes
 	// in the past, then publish it into r.partitions as epoch 0.
 	db, err := openPartitionTSDB(tenantID, pid, 0, cfg.DataDir, cfg.BlocksStorage.TSDB,
-		cfg.LocalBlockRetention, limits, nil, nil, nil, prometheus.NewRegistry(), log.NewNopLogger())
+		cfg.LocalBlockRetention, limits, 0, nil, nil, nil, prometheus.NewRegistry(), log.NewNopLogger())
 	require.NoError(t, err)
 
 	sampleTS := time.Now().Add(-2 * time.Minute).UnixMilli()

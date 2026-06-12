@@ -710,6 +710,7 @@ func (r *Readcache) getOrOpenTSDB(tenantID string, partitionID int32) (*partitio
 		r.cfg.BlocksStorage.TSDB,
 		r.cfg.LocalBlockRetention,
 		r.limits,
+		r.cfg.MaxExemplarsPerPartitionTSDB,
 		r.seriesHashCache,
 		r.headPostingsForMatchersCacheFactory,
 		r.blockPostingsForMatchersCacheFactory,
@@ -821,7 +822,7 @@ func (r *Readcache) applyPartitionTSDBTenantSettings() {
 		}
 		p.tenantsMu.RUnlock()
 		for _, db := range dbs {
-			_ = db.applyTenantTSDBSettings(r.limits, r.logger)
+			_ = db.applyTenantTSDBSettings(r.limits, r.cfg.MaxExemplarsPerPartitionTSDB, r.logger)
 		}
 	}
 }
