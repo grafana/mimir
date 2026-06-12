@@ -55,7 +55,14 @@ func (d *Distributor) QueryExemplars(ctx context.Context, from, to model.Time, m
 			return err
 		}
 
-		replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx)
+		// Flatten the per-exemplar-query matcher sets: if they all pin the same metric name the query
+		// targets a single compartment, otherwise compartmentForMatchers sees conflicting names and fans out.
+		var flatMatchers []*labels.Matcher
+		for _, set := range matchers {
+			flatMatchers = append(flatMatchers, set...)
+		}
+
+		replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx, flatMatchers...)
 		if err != nil {
 			return err
 		}
@@ -92,7 +99,7 @@ func (d *Distributor) QueryStream(ctx context.Context, queryMetrics *stats.Query
 
 		req.StreamingChunksBatchSize = d.cfg.StreamingChunksPerIngesterSeriesBufferSize
 
-		replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx)
+		replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx, matchers...)
 		if err != nil {
 			return err
 		}
@@ -114,7 +121,7 @@ func (d *Distributor) QueryStream(ctx context.Context, queryMetrics *stats.Query
 // that must be queried for a read operation.
 //
 // If multiple ring.ReplicationSets are returned, each must be queried separately, and results merged.
-func (d *Distributor) getIngesterReplicationSetsForQuery(ctx context.Context) ([]ring.ReplicationSet, error) {
+func (d *Distributor) getIngesterReplicationSetsForQuery(ctx context.Context, matchers ...*labels.Matcher) ([]ring.ReplicationSet, error) {
 	userID, err := tenant.TenantID(ctx)
 	if err != nil {
 		return nil, err
@@ -126,10 +133,21 @@ func (d *Distributor) getIngesterReplicationSetsForQuery(ctx context.Context) ([
 			shardSize = d.limits.IngestionPartitionsTenantShardSize(userID)
 		}
 
-		// Each compartment has its own partition ring (a single ring when compartments are disabled).
-		// Query every compartment and merge the resulting replication sets.
-		var replicationSets []ring.ReplicationSet
+		// Compartments shard series by metric name, so a query pinned to a single metric name (via an
+		// exact __name__ matcher) lives entirely in one compartment and we can query just that
+		// compartment's ring. Otherwise targetCompartment is -1 and we fan out to all compartments and
+		// merge the resulting replication sets.
+		targetCompartment := d.compartmentForMatchers(userID, matchers)
+
+		var (
+			replicationSets []ring.ReplicationSet
+			compartmentsHit int
+		)
 		for c := range d.partitionRings {
+			if targetCompartment >= 0 && c != targetCompartment {
+				continue
+			}
+
 			// Build a subring to query. We use ShuffleShardWithLookback() to limit the partitions to query
 			// to the tenant's shard (when shuffle sharding is enabled) and to filter out inactive partitions
 			// that have been inactive for longer than the lookback period.
@@ -143,8 +161,10 @@ func (d *Distributor) getIngesterReplicationSetsForQuery(ctx context.Context) ([
 				return nil, err
 			}
 			replicationSets = append(replicationSets, sets...)
+			compartmentsHit++
 		}
 
+		d.queryIngesterCompartmentsHit.Observe(float64(compartmentsHit))
 		return replicationSets, nil
 	}
 
@@ -163,6 +183,40 @@ func (d *Distributor) getIngesterReplicationSetsForQuery(ctx context.Context) ([
 	}
 
 	return []ring.ReplicationSet{replicationSet}, nil
+}
+
+// compartmentForMatchers returns the index of the single compartment a query is pinned to, derived from an
+// exact __name__ equality matcher (compartments shard series by metric name, so all series of a metric live
+// in one compartment). It returns -1 when the query can't be pinned to a single compartment — compartments
+// disabled, or no/regex/conflicting __name__ matcher — in which case the caller must fan out to all
+// compartments. Note this targeting assumes a fixed compartment count: if the number of compartments changes,
+// the metric→compartment mapping shifts and a targeted query could miss data until the rings settle.
+func (d *Distributor) compartmentForMatchers(userID string, matchers []*labels.Matcher) int {
+	if d.compartmentRouter == nil {
+		return -1
+	}
+
+	metricName := ""
+	for _, m := range matchers {
+		if m.Name != labels.MetricName || m.Type != labels.MatchEqual {
+			continue
+		}
+		if metricName != "" && metricName != m.Value {
+			// Conflicting exact metric names match no series; fan out rather than risk missing data.
+			return -1
+		}
+		metricName = m.Value
+	}
+	if metricName == "" {
+		return -1
+	}
+
+	compartment := d.compartmentRouter.CompartmentForMetric(userID, metricName)
+	if compartment < 0 || compartment >= len(d.partitionRings) {
+		// Defensive: the router and the rings should always agree on the compartment count.
+		return -1
+	}
+	return compartment
 }
 
 // mergeExemplarSets merges and dedupes two sets of already sorted exemplar pairs.
