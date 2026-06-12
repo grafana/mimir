@@ -989,7 +989,8 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldNotCompactWhenDisabled(
 
 	db.pendingNonOwnedRefsMtx.Lock()
 	assert.Empty(t, db.pendingNonOwnedRefs, "pendingNonOwnedRefs must not be populated when early compaction of non-owned series is disabled")
-	assert.True(t, db.pendingNonOwnedRefsLastUpdate.IsZero(), "pendingNonOwnedRefsLastUpdate must remain unset when early compaction of non-owned series is disabled")
+	assert.True(t, db.oldestPendingNonOwnedRefTS.IsZero(), "oldestPendingNonOwnedRefTS must remain unset when early compaction of non-owned series is disabled")
+	assert.True(t, db.newestPendingNonOwnedRefTS.IsZero(), "newestPendingNonOwnedRefTS must remain unset when early compaction of non-owned series is disabled")
 	db.pendingNonOwnedRefsMtx.Unlock()
 
 	// Should not compact because the feature is disabled.
@@ -1429,8 +1430,8 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldRespectGracePeriod(t *t
 	require.NotNil(t, db)
 	require.Equal(t, uint64(2), db.Head().NumSeries())
 
-	// Configure ownership and queue the non-owned ref. This stamps pendingNonOwnedRefsLastUpdate
-	// to time.Now().
+	// Configure ownership and queue the non-owned ref. This stamps the per-ref
+	// add timestamps to time.Now().
 	db.ownedTokenRanges = ring.TokenRanges{0, minHash}
 	require.True(t, db.recomputeOwnedSeries(0, "test", log.NewNopLogger()), "recomputeOwnedSeries should succeed")
 	require.Equal(t, 1, db.ownedSeriesState().ownedSeriesCount, "exactly one series should be owned")
@@ -1442,9 +1443,14 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldRespectGracePeriod(t *t
 	require.Empty(t, listBlocksInDir(t, userBlocksDir), "no block should be produced while the grace period is in effect")
 	require.Equal(t, uint64(2), db.Head().NumSeries(), "both series should still be in head while the grace period is in effect")
 
-	// Backdate the last-update timestamp so the grace period appears to have elapsed.
+	// Backdate every pending ref so the grace period appears to have elapsed for all of them.
+	backdated := time.Now().Add(-2 * time.Hour)
 	db.pendingNonOwnedRefsMtx.Lock()
-	db.pendingNonOwnedRefsLastUpdate = time.Now().Add(-2 * time.Hour)
+	for r := range db.pendingNonOwnedRefs {
+		db.pendingNonOwnedRefs[r] = backdated
+	}
+	db.oldestPendingNonOwnedRefTS = backdated
+	db.newestPendingNonOwnedRefTS = backdated
 	db.pendingNonOwnedRefsMtx.Unlock()
 
 	// Second call: eviction should now proceed for the non-owned series.
@@ -1587,9 +1593,14 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldHandleScaleUp(t *testin
 		assert.Empty(t, listBlocksInDir(t, blocksDir), "closed gate should block eviction before max grace elapses")
 		assert.Equal(t, uint64(numSeries), db.Head().NumSeries(), "all series should remain in the head")
 
-		// Backdate lastUpdate so the max grace period appears to have elapsed.
+		// Backdate every pending ref so the max grace period appears to have elapsed.
+		backdated := time.Now().Add(-2 * time.Minute)
 		db.pendingNonOwnedRefsMtx.Lock()
-		db.pendingNonOwnedRefsLastUpdate = time.Now().Add(-2 * time.Minute)
+		for r := range db.pendingNonOwnedRefs {
+			db.pendingNonOwnedRefs[r] = backdated
+		}
+		db.oldestPendingNonOwnedRefTS = backdated
+		db.newestPendingNonOwnedRefTS = backdated
 		db.pendingNonOwnedRefsMtx.Unlock()
 
 		// Second call: max grace elapsed, gate bypassed — non-owned series are evicted.
@@ -1690,6 +1701,124 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_StaleRefsAfterPriorEviction(t
 
 	require.Equal(t, blocksAfterOldPath, listBlocksInDir(t, userBlocksDir), "no additional block should be produced for stale refs")
 	require.Equal(t, uint64(1), db.Head().NumSeries(), "head should still contain only the owned series")
+}
+
+// TestIngester_compactBlocksDueToNonOwnedSeries_ShouldEvictAgedRefsDespiteFresherOnes is the
+// integration-level regression test for the bug where non-owned series remained pinned in the head
+// indefinitely under sustained ring churn. The previous single-anchor design bumped the shared
+// grace timer whenever any new ref was queued, so a continuous trickle of churn kept the cutoff
+// permanently out of reach and even refs that had been pending well past minGrace were never
+// returned by takePendingNonOwnedRefs.
+//
+// The test simulates the two-phase sequence that produced the bug:
+//  1. A first recompute queues a batch of "older" non-owned refs; their per-ref timestamps are
+//     then backdated to make them appear past the min-grace cutoff.
+//  2. A second recompute queues a batch of "newer" non-owned refs at current wall-clock time,
+//     leaving the older batch's per-ref timestamps untouched (the per-ref design's contract).
+//
+// compactBlocksDueToNonOwnedSeries must evict only the older refs and leave the newer ones pending,
+// producing exactly one block. Under the previous design no refs would be evicted at all because
+// the shared anchor would have been bumped to current time by phase 2.
+func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldEvictAgedRefsDespiteFresherOnes(t *testing.T) {
+	const (
+		olderSeriesCount = 5
+		newerSeriesCount = 5
+		totalSeries      = olderSeriesCount + newerSeriesCount
+	)
+
+	ctx := context.Background()
+	ctxWithUser := user.InjectOrgID(ctx, userID)
+
+	cfg := defaultIngesterTestConfig(t)
+	cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = time.Hour
+	cfg.UpdateIngesterOwnedSeries = true
+	cfg.EarlyCompactionNonOwnedSeriesEnabled = true
+	// minGrace is long enough that the fresh batch (phase 2) is well within grace; the older batch
+	// is backdated to before this cutoff so it must be evicted.
+	cfg.EarlyCompactionNonOwnedSeriesMinGracePeriod = time.Hour
+	cfg.EarlyCompactionNonOwnedSeriesMaxGracePeriod = 0
+	cfg.ActiveSeriesMetrics.Enabled = true
+	cfg.UseIngesterOwnedSeriesForLimits = true
+	cfg.ActiveSeriesMetrics.IdleTimeout = 20 * time.Minute
+
+	limits := defaultLimitsTestConfig()
+	limits.EarlyHeadCompactionOwnedSeriesThreshold = 1
+
+	ingesters := setupTestIngesterRing(t, []string{"zone-a", "zone-b", "zone-c"}, 1, cfg, limits)
+	ingester := ingesters[0]
+
+	sampleTime, err := time.Parse(time.RFC3339, "2026-05-05T00:00:00Z")
+	require.NoError(t, err)
+	t1 := sampleTime.UnixMilli()
+	t2 := t1 + 1
+
+	pushBatch := func(start, end int) {
+		for i := start; i < end; i++ {
+			lbls := labels.FromStrings(model.MetricNameLabel, fmt.Sprintf("metric_%d", i))
+			require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []util_test.Series{{
+				Labels:  lbls,
+				Samples: []util_test.Sample{{TS: t1, Val: 1.0}},
+			}}))
+			require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []util_test.Series{{
+				Labels:  lbls,
+				Samples: []util_test.Sample{{TS: t2, Val: 2.0}},
+			}}))
+		}
+	}
+
+	// Phase 1: push the older batch and queue them as non-owned.
+	pushBatch(0, olderSeriesCount)
+	db := ingester.getTSDB(userID)
+	require.NotNil(t, db)
+	require.Equal(t, uint64(olderSeriesCount), db.Head().NumSeries())
+
+	// Empty owned-token-ranges marks every head series as non-owned. recomputeOwnedSeries then
+	// stamps each ref's pending timestamp with time.Now().
+	db.ownedTokenRanges = ring.TokenRanges{}
+	require.True(t, db.recomputeOwnedSeries(0, "test", log.NewNopLogger()), "recomputeOwnedSeries should succeed")
+	require.Equal(t, 0, db.ownedSeriesState().ownedSeriesCount, "no series should be owned")
+
+	db.pendingNonOwnedRefsMtx.Lock()
+	require.Len(t, db.pendingNonOwnedRefs, olderSeriesCount, "older batch should be queued as non-owned")
+	// Backdate the older batch so its per-ref grace appears to have elapsed.
+	backdated := time.Now().Add(-2 * time.Hour)
+	for r := range db.pendingNonOwnedRefs {
+		db.pendingNonOwnedRefs[r] = backdated
+	}
+	db.oldestPendingNonOwnedRefTS = backdated
+	db.newestPendingNonOwnedRefTS = backdated
+	db.pendingNonOwnedRefsMtx.Unlock()
+
+	// Phase 2: push the newer batch and recompute again. The older refs keep their backdated
+	// timestamps; only the new refs are stamped with the current wall-clock time.
+	pushBatch(olderSeriesCount, totalSeries)
+	require.Equal(t, uint64(totalSeries), db.Head().NumSeries(), "head should contain both batches")
+	require.True(t, db.recomputeOwnedSeries(0, "test", log.NewNopLogger()), "recomputeOwnedSeries should succeed")
+
+	db.pendingNonOwnedRefsMtx.Lock()
+	require.Len(t, db.pendingNonOwnedRefs, totalSeries, "both batches should be queued as non-owned")
+	require.True(t, db.oldestPendingNonOwnedRefTS.Equal(backdated),
+		"oldest timestamp must remain anchored to the older batch despite the new arrivals")
+	require.True(t, db.newestPendingNonOwnedRefTS.After(backdated),
+		"newest timestamp must advance to the newer batch")
+	db.pendingNonOwnedRefsMtx.Unlock()
+
+	// Compaction must evict the older batch (its per-ref grace has elapsed) and leave the newer
+	// batch pending. Under the previous single-anchor design, phase 2 would have reset the timer
+	// and no refs would be evicted.
+	userBlocksDir := filepath.Join(ingester.cfg.BlocksStorageConfig.TSDB.Dir, userID)
+	ingester.compactBlocksDueToNonOwnedSeries(ctx, 0)
+
+	require.Len(t, listBlocksInDir(t, userBlocksDir), 1, "exactly one block should be produced for the older batch")
+	require.Equal(t, uint64(newerSeriesCount), db.Head().NumSeries(), "only the newer batch should remain in the head")
+
+	db.pendingNonOwnedRefsMtx.Lock()
+	require.Len(t, db.pendingNonOwnedRefs, newerSeriesCount, "only the newer batch should remain pending")
+	for _, ts := range db.pendingNonOwnedRefs {
+		require.True(t, ts.After(backdated),
+			"every retained pending ref must carry a fresher timestamp than the evicted batch")
+	}
+	db.pendingNonOwnedRefsMtx.Unlock()
 }
 
 // pickOwnedAndNonOwnedSeries returns two single-label series with distinct secondary hashes,
