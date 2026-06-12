@@ -98,6 +98,19 @@ type PrometheusConverter struct {
 	// sanitizedLabels caches the results of label name sanitization within a request.
 	// This avoids repeated string allocations for the same label names.
 	sanitizedLabels map[string]string
+
+	// collisionAnnots collects warning annotations about attribute names that
+	// collide after label name sanitization, causing their values to be
+	// concatenated. Reset on every FromMetrics call. Its memory grows with the
+	// number of distinct collisions in the request, bounded by the request
+	// size: the same order as the label processing performed anyway.
+	collisionAnnots annotations.Annotations
+	// recordedCollisions tracks the sanitized label names whose collision has
+	// already been recorded during the current FromMetrics call, so that a
+	// collision repeated across data points is recorded once instead of
+	// rebuilding the annotation per data point. Lazily allocated; reset on
+	// every FromMetrics call.
+	recordedCollisions map[string]struct{}
 }
 
 // targetInfoKey uniquely identifies a target_info sample by its labelset and timestamp.
@@ -113,6 +126,18 @@ func NewPrometheusConverter(appender storage.AppenderV2) *PrometheusConverter {
 		appender:        appender,
 		sanitizedLabels: make(map[string]string, 64), // Pre-size for typical label count.
 	}
+}
+
+// CollisionWarnings returns the label name collision warnings recorded during
+// the last FromMetrics call, as strings. The same warnings are merged into the
+// annotations returned by FromMetrics; this accessor lets embedders treat them
+// separately from other translation annotations.
+func (c *PrometheusConverter) CollisionWarnings() []string {
+	if len(c.collisionAnnots) == 0 {
+		return nil
+	}
+	warnings, _ := c.collisionAnnots.AsStrings("", 0, 0)
+	return warnings
 }
 
 // buildLabelName returns a sanitized label name, using the cache to avoid repeated allocations.
@@ -181,6 +206,11 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 	unitNamer := otlptranslator.UnitNamer{}
 	c.everyN = everyNTimes{n: 128}
 	c.seenTargetInfo = make(map[targetInfoKey]struct{})
+	c.collisionAnnots = nil
+	c.recordedCollisions = nil
+	// Annotations recorded on the converter while processing attributes are
+	// included on every return path, including early returns on context errors.
+	defer func() { annots.Merge(c.collisionAnnots) }()
 	resourceMetricsSlice := md.ResourceMetrics()
 
 	for i := range resourceMetricsSlice.Len() {

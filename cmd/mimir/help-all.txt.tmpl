@@ -1369,6 +1369,8 @@ Usage of ./cmd/mimir/mimir:
     	If enabled, keeps multiple consecutive underscores in label names when translating OTel attribute names. Defaults to true. (default true)
   -distributor.otel-label-name-underscore-sanitization
     	If enabled, prefixes label names starting with a single underscore with `key_` when translating OTel attribute names. Defaults to true. (default true)
+  -distributor.otel-log-translation-warnings
+    	[experimental] Whether to log OTLP translation warnings, e.g. about attribute names that collide after label name sanitization, in the OTLP endpoint, as usage insights. Warnings are deduplicated and rate-limited per tenant. The cortex_distributor_otlp_translation_warnings_total metric is recorded regardless of this setting.
   -distributor.otel-metric-suffixes-enabled
     	Whether to enable automatic suffixes to names of metrics ingested through OTLP.
   -distributor.otel-native-delta-ingestion

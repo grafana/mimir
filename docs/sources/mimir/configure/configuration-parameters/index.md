@@ -5221,6 +5221,14 @@ ruler_alertmanager_client_config:
 # CLI flag: -distributor.otel-label-name-preserve-underscores
 [otel_label_name_preserve_multiple_underscores: <boolean> | default = true]
 
+# (experimental) Whether to log OTLP translation warnings, e.g. about attribute
+# names that collide after label name sanitization, in the OTLP endpoint, as
+# usage insights. Warnings are deduplicated and rate-limited per tenant. The
+# cortex_distributor_otlp_translation_warnings_total metric is recorded
+# regardless of this setting.
+# CLI flag: -distributor.otel-log-translation-warnings
+[otel_log_translation_warnings: <boolean> | default = false]
+
 # (experimental) The default consistency level to enforce for queries when using
 # the ingest storage. Supports values: strong, eventual.
 # CLI flag: -ingest-storage.read-consistency
