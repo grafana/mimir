@@ -203,8 +203,12 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 						// Prometheus's smoothSeries / annosFromInterpolationError.
 						if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) {
 							v.annos.Add(annotations.NewMixedExponentialCustomHistogramsWarning(v.metricNames.GetMetricNameForSeries(seriesIndex), v.ExpressionPosition()))
+							// For incompatible schema, skip this step (mirror range-vector behavior).
+							continue
 						}
-						continue
+						// For any other interpolation error, surface it (don't drop silently),
+						// consistent with extendedHistogramRate via annosFromInterpolationError.
+						return types.InstantVectorSeriesData{}, err
 					}
 					h = interpolated
 					hInterpolated = true
