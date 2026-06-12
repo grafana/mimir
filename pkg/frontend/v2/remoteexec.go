@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"maps"
-	"math/bits"
 	"slices"
 	"sync"
 	"time"
@@ -555,7 +554,7 @@ func (r *scalarExecutionResponse) GetValues(ctx context.Context) (types.ScalarDa
 		return types.ScalarData{}, err
 	}
 
-	if v.Samples, err = ensureFPointSliceCapacityIsPowerOfTwo(v.Samples, r.memoryConsumptionTracker); err != nil {
+	if v.Samples, err = types.EnsureFPointSliceCapacityIsPowerOfTwo(v.Samples, r.memoryConsumptionTracker); err != nil {
 		return types.ScalarData{}, err
 	}
 
@@ -642,11 +641,11 @@ func (r *instantVectorExecutionResponse) GetNextSeries(ctx context.Context) (typ
 
 	var err error
 
-	if mqeData.Floats, err = ensureFPointSliceCapacityIsPowerOfTwo(mqeData.Floats, r.memoryConsumptionTracker); err != nil {
+	if mqeData.Floats, err = types.EnsureFPointSliceCapacityIsPowerOfTwo(mqeData.Floats, r.memoryConsumptionTracker); err != nil {
 		return types.InstantVectorSeriesData{}, err
 	}
 
-	if mqeData.Histograms, err = ensureHPointSliceCapacityIsPowerOfTwo(mqeData.Histograms, r.memoryConsumptionTracker); err != nil {
+	if mqeData.Histograms, err = types.EnsureHPointSliceCapacityIsPowerOfTwo(mqeData.Histograms, r.memoryConsumptionTracker); err != nil {
 		return types.InstantVectorSeriesData{}, err
 	}
 
@@ -738,11 +737,11 @@ func (r *rangeVectorExecutionResponse) GetNextStepSamples(ctx context.Context) (
 		return nil, err
 	}
 
-	if fPoints, err = ensureFPointSliceCapacityIsPowerOfTwo(fPoints, r.memoryConsumptionTracker); err != nil {
+	if fPoints, err = types.EnsureFPointSliceCapacityIsPowerOfTwo(fPoints, r.memoryConsumptionTracker); err != nil {
 		return nil, err
 	}
 
-	if hPoints, err = ensureHPointSliceCapacityIsPowerOfTwo(hPoints, r.memoryConsumptionTracker); err != nil {
+	if hPoints, err = types.EnsureHPointSliceCapacityIsPowerOfTwo(hPoints, r.memoryConsumptionTracker); err != nil {
 		return nil, err
 	}
 
@@ -861,56 +860,6 @@ func accountForHPointMemoryConsumption(points []promql.HPoint, memoryConsumption
 	}
 
 	return nil
-}
-
-// ensureFPointSliceCapacityIsPowerOfTwo returns d if its capacity is already a power of two, or otherwise a new slice with the same elements and a
-// capacity that is a power of two.
-//
-// If a new slice is created, the memory consumption estimate is adjusted assuming the old slice is no longer used.
-//
-// This exists because many places in MQE assume that slices have come from our pools and always have a capacity that is a power of two.
-// For example, the ring buffer implementations rely on the fact that slices have a capacity that is a power of two.
-func ensureFPointSliceCapacityIsPowerOfTwo(points []promql.FPoint, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) ([]promql.FPoint, error) {
-	if pool.IsPowerOfTwo(cap(points)) {
-		return points, nil
-	}
-
-	nextPowerOfTwo := 1 << bits.Len(uint(cap(points)-1))
-	newSlice, err := types.FPointSlicePool.Get(nextPowerOfTwo, memoryConsumptionTracker)
-	if err != nil {
-		return nil, err
-	}
-
-	newSlice = newSlice[:len(points)]
-	copy(newSlice, points)
-
-	// Don't return the old slice to the pool, but update the memory consumption estimate.
-	// The pool won't use it because it's not a power of two, so there's no point in calling Put() on it.
-	memoryConsumptionTracker.DecreaseMemoryConsumption(uint64(cap(points))*types.FPointSize, limiter.FPointSlices)
-
-	return newSlice, nil
-}
-
-// ensureHPointSliceCapacityIsPowerOfTwo is like ensureFPointSliceCapacityIsPowerOfTwo, but for HPoint slices.
-func ensureHPointSliceCapacityIsPowerOfTwo(points []promql.HPoint, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) ([]promql.HPoint, error) {
-	if pool.IsPowerOfTwo(cap(points)) {
-		return points, nil
-	}
-
-	nextPowerOfTwo := 1 << bits.Len(uint(cap(points)-1))
-	newSlice, err := types.HPointSlicePool.Get(nextPowerOfTwo, memoryConsumptionTracker)
-	if err != nil {
-		return nil, err
-	}
-
-	newSlice = newSlice[:len(points)]
-	copy(newSlice, points)
-
-	// Don't return the old slice to the pool, but update the memory consumption estimate.
-	// The pool won't use it because it's not a power of two, so there's no point in calling Put() on it.
-	memoryConsumptionTracker.DecreaseMemoryConsumption(uint64(cap(points))*types.HPointSize, limiter.HPointSlices)
-
-	return newSlice, nil
 }
 
 type eagerLoadingResponseStream struct {
