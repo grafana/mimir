@@ -121,21 +121,31 @@ func (d *Distributor) getIngesterReplicationSetsForQuery(ctx context.Context) ([
 	}
 
 	if d.cfg.IngestStorageConfig.Enabled {
-		r := d.partitionsRing
-
-		// Build a subring to query. We use ShuffleShardWithLookback() to limit the partitions to query
-		// to the tenant's shard (when shuffle sharding is enabled) and to filter out inactive partitions
-		// that have been inactive for longer than the lookback period.
 		shardSize := 0
 		if d.cfg.ShuffleShardingEnabled {
 			shardSize = d.limits.IngestionPartitionsTenantShardSize(userID)
 		}
-		r, err = r.ShuffleShardWithLookback(userID, shardSize, d.cfg.IngestersLookbackPeriod, time.Now())
-		if err != nil {
-			return nil, err
+
+		// Each compartment has its own partition ring (a single ring when compartments are disabled).
+		// Query every compartment and merge the resulting replication sets.
+		var replicationSets []ring.ReplicationSet
+		for c := range d.partitionRings {
+			// Build a subring to query. We use ShuffleShardWithLookback() to limit the partitions to query
+			// to the tenant's shard (when shuffle sharding is enabled) and to filter out inactive partitions
+			// that have been inactive for longer than the lookback period.
+			r, err := d.partitionRings[c].ShuffleShardWithLookback(userID, shardSize, d.cfg.IngestersLookbackPeriod, time.Now())
+			if err != nil {
+				return nil, err
+			}
+
+			sets, err := r.GetReplicationSetsForOperation(readNoExtend)
+			if err != nil {
+				return nil, err
+			}
+			replicationSets = append(replicationSets, sets...)
 		}
 
-		return r.GetReplicationSetsForOperation(readNoExtend)
+		return replicationSets, nil
 	}
 
 	// Lookup ingesters ring because ingest storage is disabled.

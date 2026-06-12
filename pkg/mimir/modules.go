@@ -400,22 +400,26 @@ func (t *Mimir) initIngesterPartitionRings() (services.Service, error) {
 
 	if !t.Cfg.IngestStorage.Compartments.Enabled {
 		t.IngesterPartitionRingWatcher = ring.NewPartitionRingWatcher(ingester.PartitionRingName, ingester.PartitionRingKey, kvClient, util_log.Logger, prometheus.WrapRegistererWithPrefix("cortex_", t.Registerer))
-		t.IngesterPartitionInstanceRing = ring.NewPartitionInstanceRing(t.IngesterPartitionRingWatcher, t.IngesterRing, t.Cfg.Ingester.IngesterRing.HeartbeatTimeout)
 
 		// Expose a web page to view the partitions ring state.
 		t.API.RegisterIngesterPartitionRing(ring.NewPartitionRingPageHandler(t.IngesterPartitionRingWatcher, ring.NewPartitionRingEditor(ingester.PartitionRingKey, kvClient)))
 		t.IngesterPartitionRingWatchers = []*ring.PartitionRingWatcher{t.IngesterPartitionRingWatcher}
+		t.IngesterPartitionInstanceRings = []*ring.PartitionInstanceRing{
+			ring.NewPartitionInstanceRing(t.IngesterPartitionRingWatcher, t.IngesterRing, t.Cfg.Ingester.IngesterRing.HeartbeatTimeout),
+		}
 		return t.IngesterPartitionRingWatcher, nil
 	}
 
 	numCompartments := t.Cfg.IngestStorage.Compartments.NumCompartments
 	t.API.RegisterIngesterPartitionRingsIndex(numCompartments)
 	t.IngesterPartitionRingWatchers = make([]*ring.PartitionRingWatcher, numCompartments)
+	t.IngesterPartitionInstanceRings = make([]*ring.PartitionInstanceRing, numCompartments)
 	allWatchers := make([]services.Service, 0, numCompartments)
 	for c := 0; c < numCompartments; c++ {
 		key := ingester.CompartmentPartitionRingKey(c)
 		watcher := ring.NewPartitionRingWatcher(key, key, kvClient, util_log.Logger, prometheus.WrapRegistererWithPrefix("cortex_", t.Registerer))
 		t.IngesterPartitionRingWatchers[c] = watcher
+		t.IngesterPartitionInstanceRings[c] = ring.NewPartitionInstanceRing(watcher, t.IngesterRing, t.Cfg.Ingester.IngesterRing.HeartbeatTimeout)
 		allWatchers = append(allWatchers, watcher)
 
 		t.API.RegisterIngesterPartitionRingForCompartment(ring.NewPartitionRingPageHandler(watcher, ring.NewPartitionRingEditor(key, kvClient)), c)
@@ -551,8 +555,8 @@ func (t *Mimir) initDistributorService() (serv services.Service, err error) {
 	t.Cfg.Distributor.UsageTrackerEnabled = t.Cfg.UsageTracker.Enabled
 
 	t.Distributor, err = distributor.New(t.Cfg.Distributor, t.Cfg.IngesterClient, t.Overrides,
-		t.ActiveGroupsCleanup, t.CostAttributionManager, t.IngesterRing, t.IngesterPartitionInstanceRing,
-		t.IngesterPartitionRingWatchers, canJoinDistributorsRing, t.UsageTrackerPartitionRing, t.UsageTrackerInstanceRing, t.Registerer, util_log.Logger)
+		t.ActiveGroupsCleanup, t.CostAttributionManager, t.IngesterRing,
+		t.IngesterPartitionInstanceRings, canJoinDistributorsRing, t.UsageTrackerPartitionRing, t.UsageTrackerInstanceRing, t.Registerer, util_log.Logger)
 	if err != nil {
 		return
 	}
@@ -876,6 +880,19 @@ func (t *Mimir) initQueryFrontendCodec() (services.Service, error) {
 // when the ingest storage is enabled.
 func (t *Mimir) initQueryFrontendTopicOffsetsReaders() (services.Service, error) {
 	if !t.Cfg.IngestStorage.Enabled {
+		return nil, nil
+	}
+
+	// TODO(compartments, #16): the strong-read-consistency offsets the query-frontend injects are keyed
+	// by bare partition ID (EncodeOffsets / map[int32]int64), which cannot disambiguate the same partition
+	// ID across compartments (every per-compartment ring has a partition 0). It would also require reading
+	// last-produced offsets per compartment topic. Until offsets are keyed by (compartment, partition),
+	// skip building the offsets reader when compartments are enabled. Strong-consistency queries then fall
+	// back to the ingester enforcing read consistency against its own partition's last produced offset
+	// (see enforceReadConsistency in ingester_query.go), which is correct per compartment; the only thing
+	// lost is the query-frontend pre-fetching a single consistent snapshot offset.
+	if t.Cfg.IngestStorage.Compartments.Enabled {
+		level.Info(util_log.Logger).Log("msg", "ingest storage compartments enabled: query-frontend topic offsets reader disabled; strong read consistency falls back to ingester-side last-produced-offset waiting (see #16)")
 		return nil, nil
 	}
 

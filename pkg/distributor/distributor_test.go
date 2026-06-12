@@ -2531,7 +2531,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 							}
 
 							// Start the distributor.
-							distributor, err := New(distributorCfg, clientConfig, overrides, nil, cam, ingestersRing, nil, nil, true, nil, nil, nil, log.NewNopLogger())
+							distributor, err := New(distributorCfg, clientConfig, overrides, nil, cam, ingestersRing, nil, true, nil, nil, nil, log.NewNopLogger())
 							require.NoError(b, err)
 							require.NoError(b, services.StartAndAwaitRunning(context.Background(), distributor))
 
@@ -6504,7 +6504,7 @@ func prepare(t testing.TB, cfg prepConfig) ([]*Distributor, []*mockIngester, []*
 
 	// Initialize the ingest storage's partitions ring.
 	var partitionsRing *ring.PartitionInstanceRing
-	var partitionsRings []*ring.PartitionRingWatcher
+	var partitionRings []*ring.PartitionInstanceRing
 	if cfg.ingestStorageEnabled {
 		partitionsStore := kvStore.WithCodec(ring.GetPartitionRingCodec())
 
@@ -6525,13 +6525,14 @@ func prepare(t testing.TB, cfg prepConfig) ([]*Distributor, []*mockIngester, []*
 		partitionsRing = ring.NewPartitionInstanceRing(legacyWatcher, ingestersRing, ingestersHeartbeatTimeout)
 
 		if cfg.ingestStorageCompartments > 0 {
-			partitionsRings = make([]*ring.PartitionRingWatcher, cfg.ingestStorageCompartments)
+			partitionRings = make([]*ring.PartitionInstanceRing, cfg.ingestStorageCompartments)
 			for c := 0; c < cfg.ingestStorageCompartments; c++ {
 				key := ingester.CompartmentPartitionRingKey(c)
-				partitionsRings[c] = startWatcher(key, key, preparePartitionsRing(cfg, ingesters, cfg.ingestStorageCompartmentActivePartitions[c]))
+				watcher := startWatcher(key, key, preparePartitionsRing(cfg, ingesters, cfg.ingestStorageCompartmentActivePartitions[c]))
+				partitionRings[c] = ring.NewPartitionInstanceRing(watcher, ingestersRing, ingestersHeartbeatTimeout)
 			}
 		} else {
-			partitionsRings = []*ring.PartitionRingWatcher{legacyWatcher}
+			partitionRings = []*ring.PartitionInstanceRing{partitionsRing}
 		}
 	}
 
@@ -6601,7 +6602,7 @@ func prepare(t testing.TB, cfg prepConfig) ([]*Distributor, []*mockIngester, []*
 		if reg == nil {
 			reg = prometheus.NewPedanticRegistry()
 		}
-		d, err := New(distributorCfg, clientConfig, overrides, nil, cfg.costAttributionMgr, ingestersRing, partitionsRing, partitionsRings, true, nil, nil, reg, logger)
+		d, err := New(distributorCfg, clientConfig, overrides, nil, cfg.costAttributionMgr, ingestersRing, partitionRings, true, nil, nil, reg, logger)
 		require.NoError(t, err)
 		if !cfg.disableDistributorService {
 			require.NoError(t, services.StartAndAwaitRunning(ctx, d))

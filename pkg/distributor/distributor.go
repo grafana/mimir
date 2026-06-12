@@ -225,18 +225,11 @@ type Distributor struct {
 	// compartmentRouter routes series to compartment topics. Nil when compartments are disabled.
 	compartmentRouter *ingest.CompartmentRouter
 
-	// partitionsRing is the hash ring holding ingester partitions. It's used when ingest storage
-	// is enabled. As part of compartments work, the write path is using partitionsRings instead of
-	// this field. The query path still uses this field, which is only set when compartments are
-	// disabled; with compartments enabled it is nil and the query path panics.
-	// FIXME(per-compartment-rings): remove once the read path is compartment-aware and uses
-	// partitionsRings as well.
-	partitionsRing *ring.PartitionInstanceRing
-
-	// partitionsRings holds the partition ring watchers indexed by read compartment, used by the write
-	// path. It has length >= 1 when ingest storage is enabled (size 1 holding the legacy watcher when
-	// compartments are disabled) and is empty when ingest storage is disabled.
-	partitionsRings []*ring.PartitionRingWatcher
+	// partitionRings holds the per-compartment partition instance rings indexed by read
+	// compartment. It's used by both the write and query paths. It has length >= 1 when ingest storage
+	// is enabled (size 1 holding the single ring when compartments are disabled) and is empty when
+	// ingest storage is disabled.
+	partitionRings []*ring.PartitionInstanceRing
 
 	// usageTrackerClient is the client that should be used to track per-tenant series and
 	// enforce max series limit in the distributor. This field is nil if usage-tracker
@@ -505,7 +498,7 @@ func (m *PushMetrics) deleteUserMetrics(user string) {
 }
 
 // New constructs a new Distributor
-func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Overrides, activeGroupsCleanupService *util.ActiveGroupsCleanupService, costAttributionMgr *costattribution.Manager, ingestersRing ring.ReadRing, partitionsRing *ring.PartitionInstanceRing, partitionsRings []*ring.PartitionRingWatcher, canJoinDistributorsRing bool, usageTrackerPartitionRing *ring.MultiPartitionInstanceRing, usageTrackerInstanceRing ring.ReadRing, reg prometheus.Registerer, log log.Logger) (*Distributor, error) {
+func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Overrides, activeGroupsCleanupService *util.ActiveGroupsCleanupService, costAttributionMgr *costattribution.Manager, ingestersRing ring.ReadRing, partitionRings []*ring.PartitionInstanceRing, canJoinDistributorsRing bool, usageTrackerPartitionRing *ring.MultiPartitionInstanceRing, usageTrackerInstanceRing ring.ReadRing, reg prometheus.Registerer, log log.Logger) (*Distributor, error) {
 	clientMetrics := ingester_client.NewMetrics(reg)
 	if cfg.IngesterClientFactory == nil {
 		cfg.IngesterClientFactory = ring_client.PoolInstFunc(func(inst ring.InstanceDesc) (ring_client.PoolClient, error) {
@@ -518,8 +511,8 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		if cfg.IngestStorageConfig.Compartments.Enabled {
 			expectedPartitionRings = cfg.IngestStorageConfig.Compartments.NumCompartments
 		}
-		if len(partitionsRings) != expectedPartitionRings {
-			return nil, fmt.Errorf("%w: expected %d but got %d", errPartitionRingsCountMismatch, expectedPartitionRings, len(partitionsRings))
+		if len(partitionRings) != expectedPartitionRings {
+			return nil, fmt.Errorf("%w: expected %d but got %d", errPartitionRingsCountMismatch, expectedPartitionRings, len(partitionRings))
 		}
 	}
 
@@ -532,8 +525,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		log:                         log,
 		ingestersRing:               ingestersRing,
 		RequestBufferPool:           requestBufferPool,
-		partitionsRing:              partitionsRing,
-		partitionsRings:             partitionsRings,
+		partitionRings:     partitionRings,
 		ingesterPool:                NewPool(cfg.PoolConfig, ingestersRing, cfg.IngesterClientFactory, log),
 		healthyInstancesCount:       atomic.NewUint32(0),
 		healthyInstancesInZoneCount: atomic.NewUint32(0),
@@ -2133,9 +2125,9 @@ func (d *Distributor) push(ctx context.Context, pushReq *Request) error {
 	// Shuffle-shard each compartment's partition ring (a single ring at index 0 when compartments are disabled).
 	if d.cfg.IngestStorageConfig.Enabled {
 		shardSize := d.limits.EffectiveIngestionPartitionsTenantWriteShardSize(userID)
-		partitionSubrings = make([]*ring.ActivePartitionBatchRing, len(d.partitionsRings))
-		for c := range d.partitionsRings {
-			subring, err := d.partitionsRings[c].PartitionRing().ShuffleShard(userID, shardSize)
+		partitionSubrings = make([]*ring.ActivePartitionBatchRing, len(d.partitionRings))
+		for c := range d.partitionRings {
+			subring, err := d.partitionRings[c].PartitionRing().ShuffleShard(userID, shardSize)
 			if err != nil {
 				return err
 			}
@@ -3388,9 +3380,12 @@ func (d *Distributor) adjustQueryRequestLimit(ctx context.Context, userID string
 
 	var shardSize int
 	if d.cfg.IngestStorageConfig.Enabled {
-		// Get the number of active partitions in the ring. Here the ShuffleShardSize handles cases when a tenant has 0 or negative
-		// number of shards, or more shards than the number of active partitions in the ring.
-		shardSize = d.partitionsRing.PartitionRing().ShuffleShardSize(d.limits.IngestionPartitionsTenantShardSize(userID))
+		// A query fans out to every compartment's partition ring (a single ring when compartments are
+		// disabled), so sum the active partitions across them. Here ShuffleShardSize handles cases when a
+		// tenant has 0 or negative number of shards, or more shards than the number of active partitions.
+		for c := range d.partitionRings {
+			shardSize += d.partitionRings[c].PartitionRing().ShuffleShardSize(d.limits.IngestionPartitionsTenantShardSize(userID))
+		}
 	} else {
 		// The ShuffleShard filters out read-only instances, leaving us with the number of active ingesters.
 		// Note, this can be costly to compute if the ring's caching is not enabled.

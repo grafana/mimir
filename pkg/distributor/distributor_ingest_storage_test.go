@@ -52,7 +52,7 @@ import (
 const kafkaTopic = "test"
 
 func TestNew_ValidatesPartitionRingsCountMatchesCompartments(t *testing.T) {
-	newDistributor := func(t *testing.T, configure func(*Config), partitionsRings []*ring.PartitionRingWatcher) error {
+	newDistributor := func(t *testing.T, configure func(*Config), partitionRings []*ring.PartitionInstanceRing) error {
 		t.Helper()
 
 		var distributorCfg Config
@@ -66,7 +66,7 @@ func TestNew_ValidatesPartitionRingsCountMatchesCompartments(t *testing.T) {
 		configure(&distributorCfg)
 
 		overrides := validation.NewOverrides(limits, nil)
-		_, err := New(distributorCfg, clientConfig, overrides, nil, nil, nil, nil, partitionsRings, false, nil, nil, prometheus.NewPedanticRegistry(), log.NewNopLogger())
+		_, err := New(distributorCfg, clientConfig, overrides, nil, nil, nil, partitionRings, false, nil, nil, prometheus.NewPedanticRegistry(), log.NewNopLogger())
 		return err
 	}
 
@@ -74,12 +74,12 @@ func TestNew_ValidatesPartitionRingsCountMatchesCompartments(t *testing.T) {
 		err := newDistributor(t, func(cfg *Config) {
 			cfg.IngestStorageConfig.Compartments.Enabled = true
 			cfg.IngestStorageConfig.Compartments.NumCompartments = 3
-		}, make([]*ring.PartitionRingWatcher, 2))
+		}, make([]*ring.PartitionInstanceRing, 2))
 		require.ErrorIs(t, err, errPartitionRingsCountMismatch)
 	})
 
 	t.Run("fails when compartments disabled and more than one partition ring is provided", func(t *testing.T) {
-		err := newDistributor(t, func(*Config) {}, make([]*ring.PartitionRingWatcher, 2))
+		err := newDistributor(t, func(*Config) {}, make([]*ring.PartitionInstanceRing, 2))
 		require.ErrorIs(t, err, errPartitionRingsCountMismatch)
 	})
 }

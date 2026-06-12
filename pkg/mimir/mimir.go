@@ -878,10 +878,11 @@ type Mimir struct {
 	// IngesterPartitionRingWatchers holds the partition ring watchers indexed by read compartment, used
 	// by the distributor write path. With compartments disabled it holds just the legacy single watcher.
 	IngesterPartitionRingWatchers []*ring.PartitionRingWatcher
-	// IngesterPartitionInstanceRing is built from IngesterPartitionRingWatcher and backs the distributor's
-	// partitionsRing (read path). It is only constructed when compartments are disabled; with compartments
-	// enabled it is nil — see the FIXME on IngesterPartitionRingWatcher.
-	IngesterPartitionInstanceRing    *ring.PartitionInstanceRing
+	// IngesterPartitionInstanceRings holds the per-compartment partition instance rings (one per read
+	// compartment), built from IngesterPartitionRingWatchers and the ingester instance ring. With
+	// compartments disabled it holds just the single instance ring. Passed to the distributor for both
+	// the write and query paths.
+	IngesterPartitionInstanceRings   []*ring.PartitionInstanceRing
 	TenantLimits                     validation.TenantLimits
 	Overrides                        *validation.Overrides
 	QueryLimitsProvider              streamingpromql.QueryLimitsProvider
