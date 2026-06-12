@@ -380,14 +380,7 @@ func (o *evaluationObserver) SeriesMetadataEvaluated(ctx context.Context, evalua
 	for startIdx := 0; startIdx < len(series) || (len(series) == 0 && !sentOne); startIdx += batchSize {
 		endIdx := min(startIdx+batchSize, len(series))
 		batch := series[startIdx:endIdx]
-
-		protoSeries := make([]querierpb.SeriesMetadata, 0, len(batch))
-		for _, s := range batch {
-			protoSeries = append(protoSeries, querierpb.SeriesMetadata{
-				Labels:   mimirpb.FromLabelsToLabelAdapters(s.Labels),
-				DropName: s.DropName,
-			})
-		}
+		protoSeries := querierpb.EncodeSeriesMetadataSlice(batch)
 
 		if err := o.w.Write(ctx, querierpb.EvaluateQueryResponse{
 			Message: &querierpb.EvaluateQueryResponse_SeriesMetadata{

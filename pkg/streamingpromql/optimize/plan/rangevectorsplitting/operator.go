@@ -777,13 +777,7 @@ func (p *UncachedSplit[T]) SeriesMetadata(ctx context.Context, _ types.Matchers)
 		return nil, err
 	}
 
-	p.seriesMetadata = make([]querierpb.SeriesMetadata, len(seriesMetadata))
-	for i, sm := range seriesMetadata {
-		p.seriesMetadata[i] = querierpb.SeriesMetadata{
-			Labels:   mimirpb.FromLabelsToLabelAdapters(sm.Labels),
-			DropName: sm.DropName,
-		}
-	}
+	p.seriesMetadata = querierpb.EncodeSeriesMetadataSlice(seriesMetadata)
 	p.localToMergedIdx = make([]int, len(seriesMetadata))
 
 	p.resultGetter = NewResultGetter(p.NextSeries)
