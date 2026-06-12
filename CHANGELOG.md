@@ -5,6 +5,7 @@
 ### Grafana Mimir
 
 * [CHANGE] Update Docker image bases from Debian 12 to Debian 13 (`gcr.io/distroless/static-debian13`; race images use `base-nossl-debian13`). #15629
+* [BUGFIX] Upgrade Go to 1.26.4 to address [CVE-2026-42507](https://pkg.go.dev/vuln/GO-2026-5039). #15659
 
 ## 3.1.0
 
