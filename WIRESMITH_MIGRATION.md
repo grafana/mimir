@@ -11,11 +11,20 @@ Toolchain: wiresmith pinned to the public release
 Generated code depends on `protohelpers.SkipValue` /
 `protohelpers.MaxUnmarshalDepth`, vendored from that release.
 
+**Pin vs. checked-in `mimir.pb.go` mismatch (temporary):** `mimir.pb.go` was
+regenerated with an *unpublished* compiler — `databases` @ `854b4c6` — to pick
+up the `UnmarshalNoPrescan` emission (see the RW2 pre-scan section below). The
+go.mod pin is still `4f41063`, which does **not** emit `UnmarshalNoPrescan`, so
+`make check-protos` against the pinned compiler will report a diff until a
+release containing `854b4c6` is published and pinned. No protohelpers changes,
+so the vendored runtime stays valid. Re-pin once `databases` lands in a tagged
+release.
+
 ## Status
 
 | Proto                              | Status                       | Expdiff                                               |
 | ---------------------------------- | ---------------------------- | ----------------------------------------------------- |
-| `pkg/mimirpb/mimir.proto`          | migrated (phase 1+2+3+DB-18) | 1084 lines (1094 pre-4f41063, 1087 phase 3, 1103 phase 2, 2144 phase 1) |
+| `pkg/mimirpb/mimir.proto`          | migrated (phase 1+2+3+DB-18+NoPrescan) | 1081 lines (1084 w/ guard hunk, 1094 pre-4f41063, 1087 phase 3, 1103 phase 2, 2144 phase 1) |
 | `pkg/distributor/ha_tracker.proto` | migrated (phase 2)           | none                                                  |
 | `pkg/querier/stats/stats.proto`    | migrated (phase 2)           | none (one hand-written `GoString` shim)               |
 | all other protos (~22)             | still gogoproto              | —                                                     |
@@ -23,18 +32,23 @@ Generated code depends on `protohelpers.SkipValue` /
 Full repo builds; pkg/mimirpb, pkg/distributor, pkg/ingester,
 pkg/storage/ingest, pkg/querier(+stats), pkg/frontend/... test suites green.
 
-Regen reproducibility (against the public `4f41063` compiler, 2026-06-12):
+Regen reproducibility (against the `databases` @ `854b4c6` compiler for
+`mimir.pb.go`, the public `4f41063` compiler otherwise, 2026-06-12):
 `ha_tracker.{pb,_compare,_equal,_reflect}.go`, `stats.{...}.go`, and
 `mimir_{compare,equal,reflect}.pb.go` regenerate byte-for-byte identical to the
-committed files. Only `mimir.pb.go` changed, and solely because the previous
-pin (`a6d80cb`) predated #134: the pre-scan prealloc codegen moved to the
-amortized empty-slice form. The expdiff was re-derived (16 hunks preserved);
-`tools/apply-expected-diffs.sh` round-trips. Workaround review: no shim was
-made removable by a now-shipped compiler feature — the customtype / casttype /
-stdduration / pointer / enum_no_prefix features were already adopted in the
-protos, and the alias shims were already removed in phase 3. The `GoString`
-shim, the gogo registry, the varint helpers, and the RW2 pre-scan guard are
-all kept (deliberate / runtime-flag / no compiler equivalent).
+committed files under `4f41063`. `mimir.pb.go` was regenerated with `854b4c6`
+to pick up the new `UnmarshalNoPrescan(dAtA []byte) error` emission (top-level
+pre-scan is skipped via a depth-sentinel of −1; nested pre-scans preserved; the
+generated pre-scan guard is now `if l >= 256 && depth >= 0`). `make protos`
+(`854b4c6` regen + `tools/apply-expected-diffs.sh` reverse-apply) reproduces the
+committed `mimir.pb.go` byte-for-byte, and the rebuilt expdiff round-trips in
+both directions. The expdiff was re-derived (16 hunks → 16 hunks, but the
+WriteRequest pre-scan-guard change was *dropped*: see below). Workaround review:
+the **RW2 pre-scan guard is no longer a hand patch** — the hand-written
+`&& !m.unmarshalFromRW2` guard is replaced by routing the RW2 path through the
+generated `UnmarshalNoPrescan` (generalizing the hand fix into supported API).
+The `GoString` shim, the gogo registry, and the varint helpers are still kept
+(deliberate / no compiler equivalent).
 
 ## Resolved wiresmith blockers (phase 1 → phase 2)
 
@@ -104,16 +118,22 @@ histogram.FloatHistogram`, `SampleHistogram ↔ model.SampleHistogram`) are
 `pkg/mimirpb/mimir.pb.go.expdiff` in reverse onto fresh output. The gogo-era
 diff is retained as `mimir.pb.go.expdiff.legacy-gogoproto`.
 
-Expdiff: **1084 lines, 16 hunks** (pre-4f41063: 1094/16; phase 3: 1087/16;
-phase 2: 1103/17; phase 1: 2144). The re-pin to `4f41063` re-derived the
-expdiff: the auto-generated pre-scan prealloc blocks moved from the
-grow-and-copy form to the shorter empty-slice-only form (#134), shrinking the
-diff by 10 lines; the hand-patch surface (struct fields, RW2 dispatch, exemplar
-skipping, RW2 stubs, the `&& !m.unmarshalFromRW2` pre-scan guard) is unchanged.
-~790 of those
+Expdiff: **1081 lines, 16 hunks** (DB-NoPrescan: 1084/16 with the guard hunk;
+pre-4f41063: 1094/16; phase 3: 1087/16; phase 2: 1103/17; phase 1: 2144). The
+`854b4c6` regen re-derived the expdiff: the WriteRequest hand-patch that gated
+the pre-scan on `&& !m.unmarshalFromRW2` was **dropped** — the committed guard
+is now the generator's own `if l >= 256 && depth >= 0`, so that change vanishes
+from the diff (the hunk that carried it shrank from `-15 +12` to `-9 +6`, now
+only removing the RW2 state-var declarations). The compiler features
+(`UnmarshalNoPrescan` methods, the `&& depth >= 0` guard suffix on every
+pre-scan-bearing message) are emitted by the generator and so appear on the
+generated side, not as hand patches. ~790 of the expdiff
 lines are one hunk: the deleted generated bodies of the
 `TimeSeriesRW2`/`ExemplarRW2`/`MetadataRW2` unmarshallers, replaced by
-`return errorInternalRW2` stubs. The true hand-patch surface (~310 lines):
+`return errorInternalRW2` stubs (the generator now also emits a
+`TimeSeriesRW2.UnmarshalNoPrescan`, likewise removed by that hunk since these
+messages are never standalone-unmarshalled in Mimir). The true hand-patch
+surface (~307 lines):
 
 1. Extra struct fields: `WriteRequest` (`BufferHolder`,
    `sourceBufferHolders`, `skipUnmarshalingExemplars`,
@@ -125,10 +145,11 @@ lines are one hunk: the deleted generated bodies of the
    `[]PreallocTimeseries`, metadata flush; plus an RW2-aware redirect of the
    pre-count preallocation (field 5 counts preallocate `m.Timeseries`, the
    generated `SymbolsRW2`/`TimeseriesRW2` preallocations are dropped). The
-   whole `if l >= 256` pre-scan is now gated on `&& !m.unmarshalFromRW2`: in
-   RW2 mode the counts are discarded (symbols paged, field5 prealloc ~0
-   benefit), so the walk is skipped to fix the +15% RW2 unmarshal wall-clock
-   regression (DB-18 / wiresmith-bobw); RW1 keeps the −47%-bytes win.
+   top-level pre-scan walk is **no longer** gated in the generated file: the
+   RW2 path is now entered through the generated `WriteRequest.UnmarshalNoPrescan`
+   (dispatched from `PreallocWriteRequest.Unmarshal` in `timeseries.go`), which
+   passes a depth sentinel of −1 so the generator's own `if l >= 256 && depth
+   >= 0` guard skips the walk. See the RW2 pre-scan section.
 3. Exemplar skipping in `TimeSeries.unmarshal` (case 3 + prealloc gating).
 4. RW2 unmarshal stubs (see above).
 
@@ -186,35 +207,42 @@ points one level up. (This replaces the earlier scratch-dir staging recipe.)
 | `./pkg/util/test`                      | ok                                              |
 | `go build ./...`, `go vet`             | clean (modulo pre-existing `Seek` vet warnings) |
 
-## Benchmarks (Apple M4 Pro, benchstat-grade — re-pinned to 4f41063, 2026-06-12)
+## Benchmarks (Apple M4 Pro, benchstat-grade — UnmarshalNoPrescan, 2026-06-12)
 
 `BenchmarkUnMarshal` (pkg/mimirpb), gogo baseline (cb6dac78a3) vs wiresmith
-`wiresmith` branch @ wiresmith `4f41063`. Method: two `go test -c` binaries,
-**alternated** 20 rounds (gogo, wiresmith, gogo, …) so thermal drift cancels
-across the pair; `-benchtime=2s -benchmem`, `benchstat` n=20, every wall-clock
-delta p≤0.009.
+`wiresmith` branch with the RW2 path routed through the generated
+`UnmarshalNoPrescan` (compiler `databases` @ `854b4c6`). Method: two
+`go test -c` binaries, **alternated** 20 rounds (gogo, wiresmith, gogo, …) so
+thermal drift cancels across the pair; `-benchtime=2s -benchmem`, `benchstat`
+n=20.
 
 | Bench                    | gogo sec/op | wiresmith sec/op | Δ time     | B/op Δ      | allocs Δ |
 | ------------------------ | ----------- | ---------------- | ---------- | ----------- | -------- |
-| Marshal/RW1              | 12.18m      | 11.02m           | **−9.55%** | ~           | ~        |
-| Marshal/RW2              | 5.277m      | 4.861m           | **−7.87%** | ~           | ~        |
-| Unmarshal/RW1 skip=true  | 9.201m      | 9.735m           | +5.80%     | **−45.34%** | −16.58%  |
-| Unmarshal/RW1 skip=false | 10.89m      | 10.62m           | **−2.50%** | **−47.00%** | −39.85%  |
-| Unmarshal/RW2 skip=true  | 10.25m      | 10.42m           | +1.63%     | ~           | ~        |
-| Unmarshal/RW2 skip=false | 11.00m      | 11.32m           | +2.99%     | +0.01%      | ~        |
+| Marshal/RW1              | 11.53m      | 10.38m           | **−9.93%** (p=0.000) | ~           | ~        |
+| Marshal/RW2              | 5.080m      | 4.778m           | **−5.95%** (p=0.000) | ~           | ~        |
+| Unmarshal/RW1 skip=true  | 8.891m      | 9.162m           | ~ (p=0.127)          | **−45.34%** | −16.58%  |
+| Unmarshal/RW1 skip=false | 10.57m      | 10.08m           | **−4.60%** (p=0.000) | **−47.00%** | −39.85%  |
+| Unmarshal/RW2 skip=true  | 9.923m      | 9.892m           | ~ (p=0.461)          | ~           | ~        |
+| Unmarshal/RW2 skip=false | 10.72m      | 10.64m           | ~ (p=0.242)          | ~           | ~        |
 
 Takeaways:
 
-- **Marshal is ~8–10% _faster_** under wiresmith.
-- **RW1 unmarshal is a net win**: skip=false −2.5% wall _and_ −47% bytes / −40%
-  allocs; skip=true +5.8% wall for −45% bytes / −17% allocs.
-- **RW2 unmarshal is now ~parity** (+1.6% / +3.0% wall, p≤0.003), down from the
-  +15% regression recorded against the older `a6d80cb` pin. The #134 pre-scan
-  codegen fix plus the `&& !m.unmarshalFromRW2` guard (DB-18) together remove
-  the RW2 pre-scan penalty: in RW2 mode the `if l >= 256` walk is skipped
-  entirely. There are no remaining regressions to flag.
+- **Marshal is ~6–10% _faster_** under wiresmith.
+- **RW1 unmarshal is a net win**: skip=false −4.6% wall _and_ −47% bytes / −40%
+  allocs; skip=true statistically flat wall (p=0.127) for −45% bytes / −17%
+  allocs.
+- **RW2 unmarshal is at parity** (both cases statistically indistinguishable
+  from gogo: p=0.461 / p=0.242, at byte and alloc parity), down from the +15%
+  regression recorded against the older `a6d80cb` pin. Routing the RW2 path
+  through the generated `UnmarshalNoPrescan` skips the top-level `if l >= 256`
+  walk exactly as the old `&& !m.unmarshalFromRW2` hand guard did — so the win
+  is preserved while the hand patch is gone. No remaining regressions to flag.
 
-### RW2 pre-scan: why the guard exists (now closed via DB-18)
+These match or improve on the prior hand-guard run (Marshal −9.2%/−6.6%; RW1
+skip=true +3.8%, skip=false −4.0%; RW2 +2.4%/+2.6%): RW2 did not regress and is
+now noise-level rather than a small positive delta.
+
+### RW2 pre-scan: why the skip exists (closed via UnmarshalNoPrescan)
 
 `WriteRequest.unmarshal` (mimir.pb.go) runs a full extra linear pass over the
 payload counting fields 1/3/4/5 to preallocate slices whenever `len >= 256`.
@@ -226,12 +254,24 @@ a full scan of its largest section and get nothing back; only `field5count`
 cost RW2 ~+15% wall (a line-level CPU profile attributed ~180ms — ~5% of total,
 ~35% of `unmarshal`'s own flat time — to the pre-scan loop on the RW2 path).
 
-**Fix (DB-18 / wiresmith-bobw, commit becca9c7):** the mimir-side expdiff gates
-the pre-scan with `if l >= 256 && !m.unmarshalFromRW2`, so RW2 skips the walk
-entirely while RW1 keeps the −47%-bytes win. With the `4f41063` re-pin this
-brings RW2 to **~parity with gogo** (+1.6% / +3.0% wall — see the bench table),
-closing the regression. This is a runtime-flag-driven decision the compiler
-can't make generically, so the guard stays in the expdiff.
+**Original fix (DB-18 / wiresmith-bobw, commit becca9c7):** the mimir-side
+expdiff gated the pre-scan with `if l >= 256 && !m.unmarshalFromRW2`, a
+runtime-flag-driven hand patch in the generated file.
+
+**Current fix (UnmarshalNoPrescan, `databases` @ `854b4c6`):** the compiler now
+emits `UnmarshalNoPrescan(dAtA []byte) error` on every pre-scan-bearing message;
+it calls `m.unmarshal(dAtA, -1)`, and the generated guard `if l >= 256 && depth
+>= 0` skips *only* the top-level pre-scan (the −1 sentinel; nested messages
+recurse with `depth+1 >= 0`, keeping their own pre-scans; `UnmarshalWithDepth`
+clamps any externally supplied `depth < 0` to 0). `PreallocWriteRequest.Unmarshal`
+(`timeseries.go`) routes the RW2 path through `WriteRequest.UnmarshalNoPrescan`
+and the RW1 path through plain `Unmarshal`. This generalizes the hand guard into
+supported API: the `&& !m.unmarshalFromRW2` patch is dropped from the expdiff,
+RW2 stays at parity, and RW1 keeps the −47%-bytes win. The `unmarshalFromRW2`
+runtime flag is **kept** — it still drives `ProtocolVersion()` and the entire
+RW2→RW1 decode dispatch (RW1-rejection in RW2 mode, paged-symbol handling,
+field-5 redirect, metadata flush); only its pre-scan-gating role moved to the
+NoPrescan entry point.
 
 ## Remaining wiresmith blockers / friction (ranked)
 
@@ -245,12 +285,12 @@ can't make generically, so the guard stays in the expdiff.
    Remaining friction: still a single `--proto_path` (no multiple roots /
    exclusion globs), and imports must be reachable under that one root.
 2. **RESOLVED — RW2 unmarshal wall-clock vs gogo**: the always-on pre-scan
-   pass for payloads ≥ 256B was pure overhead on RW2. Closed by the DB-18
-   `&& !m.unmarshalFromRW2` guard plus the #134 pre-scan codegen fix; RW2 is
-   now ~parity (see benchmarks). RW1 keeps the pre-scan (net win there). A
-   wiresmith-native knob/heuristic to skip the counting pass when its counts
-   don't drive a preallocation would let the guard move out of the expdiff,
-   but is no longer blocking.
+   pass for payloads ≥ 256B was pure overhead on RW2. Closed by the generated
+   `UnmarshalNoPrescan` (`databases` @ `854b4c6`) plus the #134 pre-scan codegen
+   fix; RW2 is now at parity (see benchmarks). RW1 keeps the pre-scan (net win
+   there). The earlier `&& !m.unmarshalFromRW2` hand guard is gone — the
+   compiler now provides the per-call top-level-skip knob (depth-sentinel −1),
+   so the guard is out of the expdiff.
 3. **RESOLVED — `goproto_enum_prefix=false` equivalent**:
    `(wiresmith.options.enum_no_prefix_all) = true` (file) /
    `(wiresmith.options.enum_no_prefix)` (per-enum override) emit unprefixed
@@ -291,6 +331,12 @@ proto can keep gogo importers (method surface compatible + `GoString` shim +
 4. `pkg/ingester/client/ingester.proto` — large, imports mimir.proto,
    streaming service, hand-patched code similar to mimirpb.
 
-Before merging: `go.mod` is already pinned to the public release
-`v0.0.0-20260611164808-4f41063d76a2` (no `replace`). Remaining: run integration
-tests; benchstat-grade write-path benchmarks (unit-bench deltas recorded above).
+Before merging: `go.mod` is already pinned to a public pseudo-version
+`v0.0.0-20260611164808-4f41063d76a2` (no `replace` — the local `replace` was
+removed earlier). **Blocker:** the checked-in `mimir.pb.go` was regenerated with
+the unpublished `databases` @ `854b4c6` compiler (for `UnmarshalNoPrescan`), so
+it no longer round-trips against the pinned `4f41063` — a release containing
+`854b4c6` must be published and the pin bumped before merge, otherwise
+`make check-protos` fails. Remaining: re-pin once `databases` ships; run
+integration tests; benchstat-grade write-path benchmarks (unit-bench deltas
+recorded above).
