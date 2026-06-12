@@ -5199,10 +5199,10 @@ ruler_alertmanager_client_config:
 # CLI flag: -distributor.otel-label-name-preserve-underscores
 [otel_label_name_preserve_multiple_underscores: <boolean> | default = true]
 
-# (experimental) Whether to log, at debug level, OTel resource attributes that
-# collide after label name sanitization in the OTLP endpoint. Colliding
-# attribute values may get concatenated with ';' in the resulting target_info
-# label; empty values get overwritten or dropped instead.
+# (experimental) Whether to log OTel resource attributes that collide after
+# label name sanitization in the OTLP endpoint. Colliding attribute values may
+# get concatenated with ';' in the resulting target_info label; empty values get
+# overwritten or dropped instead.
 # CLI flag: -distributor.otel-log-target-info-label-name-collisions
 [otel_log_target_info_label_name_collisions: <boolean> | default = false]
 

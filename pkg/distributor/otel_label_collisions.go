@@ -24,19 +24,20 @@ const (
 )
 
 // maxLoggedTargetInfoLabelCollisions caps detail log lines per request; the
-// remainder is reported in a single summary line. The cap bounds both log and
-// trace span volume (spanlogger records events on sampled spans regardless of
-// the log-level filter).
+// remainder is reported in a single summary line. The cap bounds log and
+// trace span volume (spanlogger records events on sampled spans).
 const maxLoggedTargetInfoLabelCollisions = 10
 
 // maxMetricNamesPerCollisionLog caps the number of metric names included in a
 // collision detail line; the full count is always included via metrics_total.
 const maxMetricNamesPerCollisionLog = 3
 
-// logTargetInfoLabelCollisions logs, at debug level, resource attributes that
-// sanitize to the same Prometheus label name. The OTLP translator may
-// concatenate such values with ';' in target_info labels (empty values are
-// overwritten or dropped instead).
+// logTargetInfoLabelCollisions logs at warning level with insight=true resource
+// attributes that sanitize to the same Prometheus label name, so the lines are
+// forwarded to Grafana Cloud usage insights. The OTLP translator may concatenate
+// such values with ';' in target_info labels (empty values are overwritten or
+// dropped instead). The per-tenant gate, per-request deduplication, and the
+// maxLoggedTargetInfoLabelCollisions cap bound the log volume.
 //
 // Each detail line includes up to maxMetricNamesPerCollisionLog metric names
 // plus a total count to help locate the offending resource; names come from
@@ -145,7 +146,7 @@ func logTargetInfoLabelCollisions(md pmetric.Metrics, opts conversionOptions, lo
 			// January 2025), but prometheus/prometheus createAttributes
 			// (helper.go) never picked that up. Port it upstream, then revisit
 			// this log line's wording.
-			level.Debug(logger).Log(
+			level.Warn(logger).Log(
 				"msg", "OTLP resource attributes collide after label name sanitization, values may be concatenated in target_info",
 				"label", name,
 				"attributes", attributes,
@@ -153,6 +154,7 @@ func logTargetInfoLabelCollisions(md pmetric.Metrics, opts conversionOptions, lo
 				"instance", instance,
 				"metrics", strings.Join(metricNames, ","),
 				"metrics_total", metricsTotal,
+				"insight", true,
 			)
 		}
 		// affectedResources counts resources whose novel (not deduplicated) collisions
@@ -164,10 +166,11 @@ func logTargetInfoLabelCollisions(md pmetric.Metrics, opts conversionOptions, lo
 	}
 
 	if suppressed > 0 {
-		level.Debug(logger).Log(
+		level.Warn(logger).Log(
 			"msg", "additional OTLP resource attribute label name collisions were suppressed",
 			"suppressed_collisions", suppressed,
 			"affected_resources", affectedResources,
+			"insight", true,
 		)
 	}
 }

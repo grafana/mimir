@@ -349,6 +349,7 @@ func TestLogTargetInfoLabelCollisions(t *testing.T) {
 			for i, expected := range tc.expectedLines {
 				assert.Contains(t, lines[i], collisionMsg)
 				assert.Contains(t, lines[i], expected)
+				assert.Contains(t, lines[i], "insight=true")
 			}
 		})
 	}

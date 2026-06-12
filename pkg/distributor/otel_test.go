@@ -2911,7 +2911,7 @@ func TestOTLPHandler_TargetInfoLabelCollisionLogging(t *testing.T) {
 			logs := &concurrency.SyncBuffer{}
 			handler := OTLPHandler(
 				100000, nil, nil, tc.allowTranslationHeaders, limits, nil, nil, RetryConfig{}, nil,
-				pusher, nil, nil, util_log.MakeLeveledLogger(logs, "debug"),
+				pusher, nil, nil, util_log.MakeLeveledLogger(logs, "info"),
 			)
 
 			resp := httptest.NewRecorder()
@@ -2923,6 +2923,7 @@ func TestOTLPHandler_TargetInfoLabelCollisionLogging(t *testing.T) {
 				assert.Contains(t, logs.String(), collisionMsg)
 				assert.Contains(t, logs.String(), "label=k8s_pod_name")
 				assert.Contains(t, logs.String(), "attributes=k8s.pod.name,k8s_pod_name")
+				assert.Contains(t, logs.String(), "insight=true")
 			} else {
 				assert.NotContains(t, logs.String(), collisionMsg)
 			}
