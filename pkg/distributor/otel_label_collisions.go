@@ -144,8 +144,9 @@ func logTargetInfoLabelCollisions(md pmetric.Metrics, opts conversionOptions, lo
 			// collector already skips the append for identical values
 			// (open-telemetry/opentelemetry-collector-contrib#36928, merged
 			// January 2025), but prometheus/prometheus createAttributes
-			// (helper.go) never picked that up. Port it upstream, then revisit
-			// this log line's wording.
+			// (helper.go) never picked that up; the spec change is proposed in
+			// open-telemetry/opentelemetry-specification#5151. Once it lands
+			// upstream, revisit this log line's wording.
 			level.Warn(logger).Log(
 				"msg", "OTLP resource attributes collide after label name sanitization, values may be concatenated in target_info",
 				"label", name,
