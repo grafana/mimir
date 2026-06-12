@@ -155,14 +155,17 @@ type userTSDB struct {
 
 	pendingNonOwnedRefsMtx sync.Mutex
 	// pendingNonOwnedRefs holds the series refs that the last computeOwnedSeries call(s) found
-	// to be non-owned. The compaction loop consumes this set and uses it for targeted eviction.
+	// to be non-owned, together with the timestamp when they were added to the map.
+	// The compaction loop consumes this set and uses it for targeted eviction.
 	// A set is used so re-queuing the same ref across multiple recompute cycles does not produce
 	// duplicates that would later break the index writer's strictly-ascending-labels invariant.
-	pendingNonOwnedRefs map[storage.SeriesRef]struct{}
-	// pendingNonOwnedRefsLastUpdate records the time at which the first not-yet-consumed ref was
-	// enqueued. Subsequent enqueues that don't introduce new refs leave it untouched, so the
-	// grace-period clock isn't reset by recompute cycles that find the same non-owned set.
-	pendingNonOwnedRefsLastUpdate time.Time
+	pendingNonOwnedRefs map[storage.SeriesRef]time.Time
+	// newestPendingNonOwnedRefTS is the latest add timestamp across pendingNonOwnedRefs,
+	// used by takePendingNonOwnedRefs to detect a full drain and skip per-key deletes.
+	newestPendingNonOwnedRefTS time.Time
+	// oldestPendingNonOwnedRefTS is the earliest add timestamp across pendingNonOwnedRefs,
+	// used to short-circuit takePendingNonOwnedRefs when no ref has aged past the cutoff.
+	oldestPendingNonOwnedRefTS time.Time
 
 	postingsCache *tsdb.PostingsForMatchersCache
 
@@ -704,11 +707,6 @@ func (u *userTSDB) updateTokenRanges(newTokenRanges []uint32) bool {
 // become owned again or their series has been garbage-collected from the head
 // and therefore must not be evicted.
 //
-// The last-update timestamp is advanced only when new refs are added. This keeps
-// the grace-period timer anchored to the first observation of refs that remain
-// pending, instead of resetting it on every reconciliation that observes the
-// same non-owned set.
-//
 // The compaction loop consumes pending refs via takePendingNonOwnedRefs.
 func (u *userTSDB) addPendingNonOwnedRefs(refs map[storage.SeriesRef]struct{}) {
 	u.pendingNonOwnedRefsMtx.Lock()
@@ -731,32 +729,34 @@ func (u *userTSDB) addPendingNonOwnedRefs(refs map[storage.SeriesRef]struct{}) {
 		// Drop pass alone may have emptied the set; reset the timestamp so a future enqueue
 		// starts the grace-period clock cleanly.
 		if len(u.pendingNonOwnedRefs) == 0 {
-			u.pendingNonOwnedRefsLastUpdate = time.Time{}
+			u.newestPendingNonOwnedRefTS = time.Time{}
+			u.oldestPendingNonOwnedRefTS = time.Time{}
 		}
 		return
 	}
 
-	if u.pendingNonOwnedRefs == nil {
-		u.pendingNonOwnedRefs = make(map[storage.SeriesRef]struct{}, len(refs))
+	now := time.Now()
+	if len(u.pendingNonOwnedRefs) == 0 {
+		u.pendingNonOwnedRefs = make(map[storage.SeriesRef]time.Time, len(refs))
+		u.oldestPendingNonOwnedRefTS = now
 	}
 	addedAny := false
 	for r := range refs {
 		if _, ok := u.pendingNonOwnedRefs[r]; !ok {
-			u.pendingNonOwnedRefs[r] = struct{}{}
+			u.pendingNonOwnedRefs[r] = now
 			addedAny = true
 		}
 	}
 	if addedAny {
-		u.pendingNonOwnedRefsLastUpdate = time.Now()
+		u.newestPendingNonOwnedRefTS = now
 	}
 }
 
-// takePendingNonOwnedRefs atomically returns and clears the pending-eviction
-// set if its last-update timestamp is at or before notAfter (the grace-period
-// cutoff).
+// takePendingNonOwnedRefs atomically removes and returns the subset of
+// pendingNonOwnedRefs whose per-ref add timestamp is at or before notAfter
+// (the grace-period cutoff). Refs added after notAfter are retained.
 //
-// Returns nil if the set is empty or the grace period has not yet elapsed. In
-// that case, the pending set is left unchanged.
+// Returns nil if the set is empty or no ref has aged past notAfter.
 func (u *userTSDB) takePendingNonOwnedRefs(notAfter time.Time) []storage.SeriesRef {
 	u.pendingNonOwnedRefsMtx.Lock()
 	defer u.pendingNonOwnedRefsMtx.Unlock()
@@ -764,15 +764,31 @@ func (u *userTSDB) takePendingNonOwnedRefs(notAfter time.Time) []storage.SeriesR
 	if len(u.pendingNonOwnedRefs) == 0 {
 		return nil
 	}
-	if u.pendingNonOwnedRefsLastUpdate.After(notAfter) {
+	if u.oldestPendingNonOwnedRefTS.After(notAfter) {
 		return nil
 	}
+	partialDeletionNeeded := u.newestPendingNonOwnedRefTS.After(notAfter)
+	u.oldestPendingNonOwnedRefTS = time.Now()
 	refs := make([]storage.SeriesRef, 0, len(u.pendingNonOwnedRefs))
-	for r := range u.pendingNonOwnedRefs {
+	for r, ts := range u.pendingNonOwnedRefs {
+		if partialDeletionNeeded && ts.After(notAfter) {
+			if ts.Before(u.oldestPendingNonOwnedRefTS) {
+				u.oldestPendingNonOwnedRefTS = ts
+			}
+			continue
+		}
+
 		refs = append(refs, r)
+		if partialDeletionNeeded {
+			delete(u.pendingNonOwnedRefs, r)
+		}
 	}
-	u.pendingNonOwnedRefs = nil
-	u.pendingNonOwnedRefsLastUpdate = time.Time{}
+	if !partialDeletionNeeded {
+		u.pendingNonOwnedRefs = nil
+		u.newestPendingNonOwnedRefTS = time.Time{}
+		u.oldestPendingNonOwnedRefTS = time.Time{}
+	}
+
 	return refs
 }
 

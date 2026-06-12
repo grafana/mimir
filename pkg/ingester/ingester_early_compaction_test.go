@@ -989,7 +989,8 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldNotCompactWhenDisabled(
 
 	db.pendingNonOwnedRefsMtx.Lock()
 	assert.Empty(t, db.pendingNonOwnedRefs, "pendingNonOwnedRefs must not be populated when early compaction of non-owned series is disabled")
-	assert.True(t, db.pendingNonOwnedRefsLastUpdate.IsZero(), "pendingNonOwnedRefsLastUpdate must remain unset when early compaction of non-owned series is disabled")
+	assert.True(t, db.oldestPendingNonOwnedRefTS.IsZero(), "oldestPendingNonOwnedRefTS must remain unset when early compaction of non-owned series is disabled")
+	assert.True(t, db.newestPendingNonOwnedRefTS.IsZero(), "newestPendingNonOwnedRefTS must remain unset when early compaction of non-owned series is disabled")
 	db.pendingNonOwnedRefsMtx.Unlock()
 
 	// Should not compact because the feature is disabled.
@@ -1429,8 +1430,8 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldRespectGracePeriod(t *t
 	require.NotNil(t, db)
 	require.Equal(t, uint64(2), db.Head().NumSeries())
 
-	// Configure ownership and queue the non-owned ref. This stamps pendingNonOwnedRefsLastUpdate
-	// to time.Now().
+	// Configure ownership and queue the non-owned ref. This stamps the per-ref
+	// add timestamps to time.Now().
 	db.ownedTokenRanges = ring.TokenRanges{0, minHash}
 	require.True(t, db.recomputeOwnedSeries(0, "test", log.NewNopLogger()), "recomputeOwnedSeries should succeed")
 	require.Equal(t, 1, db.ownedSeriesState().ownedSeriesCount, "exactly one series should be owned")
@@ -1442,9 +1443,14 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldRespectGracePeriod(t *t
 	require.Empty(t, listBlocksInDir(t, userBlocksDir), "no block should be produced while the grace period is in effect")
 	require.Equal(t, uint64(2), db.Head().NumSeries(), "both series should still be in head while the grace period is in effect")
 
-	// Backdate the last-update timestamp so the grace period appears to have elapsed.
+	// Backdate every pending ref so the grace period appears to have elapsed for all of them.
+	backdated := time.Now().Add(-2 * time.Hour)
 	db.pendingNonOwnedRefsMtx.Lock()
-	db.pendingNonOwnedRefsLastUpdate = time.Now().Add(-2 * time.Hour)
+	for r := range db.pendingNonOwnedRefs {
+		db.pendingNonOwnedRefs[r] = backdated
+	}
+	db.oldestPendingNonOwnedRefTS = backdated
+	db.newestPendingNonOwnedRefTS = backdated
 	db.pendingNonOwnedRefsMtx.Unlock()
 
 	// Second call: eviction should now proceed for the non-owned series.
@@ -1587,9 +1593,14 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldHandleScaleUp(t *testin
 		assert.Empty(t, listBlocksInDir(t, blocksDir), "closed gate should block eviction before max grace elapses")
 		assert.Equal(t, uint64(numSeries), db.Head().NumSeries(), "all series should remain in the head")
 
-		// Backdate lastUpdate so the max grace period appears to have elapsed.
+		// Backdate every pending ref so the max grace period appears to have elapsed.
+		backdated := time.Now().Add(-2 * time.Minute)
 		db.pendingNonOwnedRefsMtx.Lock()
-		db.pendingNonOwnedRefsLastUpdate = time.Now().Add(-2 * time.Minute)
+		for r := range db.pendingNonOwnedRefs {
+			db.pendingNonOwnedRefs[r] = backdated
+		}
+		db.oldestPendingNonOwnedRefTS = backdated
+		db.newestPendingNonOwnedRefTS = backdated
 		db.pendingNonOwnedRefsMtx.Unlock()
 
 		// Second call: max grace elapsed, gate bypassed — non-owned series are evicted.
