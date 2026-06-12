@@ -50,7 +50,7 @@ func (f ProtobufFormatter) EncodeQueryResponseTo(w io.Writer, resp *PrometheusRe
 				return err
 			}
 
-			payload.Data = &mimirpb.QueryResponse_String_{String_: &data}
+			payload.Data = &mimirpb.QueryResponse_String{String: data}
 
 		case model.ValScalar.String():
 			data, err := f.encodeScalarData(resp.Data.Result)
@@ -58,7 +58,7 @@ func (f ProtobufFormatter) EncodeQueryResponseTo(w io.Writer, resp *PrometheusRe
 				return err
 			}
 
-			payload.Data = &mimirpb.QueryResponse_Scalar{Scalar: &data}
+			payload.Data = &mimirpb.QueryResponse_Scalar{Scalar: data}
 
 		case model.ValVector.String():
 			data, err := f.encodeVectorData(resp.Data.Result)
@@ -66,11 +66,11 @@ func (f ProtobufFormatter) EncodeQueryResponseTo(w io.Writer, resp *PrometheusRe
 				return err
 			}
 
-			payload.Data = &mimirpb.QueryResponse_Vector{Vector: &data}
+			payload.Data = &mimirpb.QueryResponse_Vector{Vector: data}
 
 		case model.ValMatrix.String():
 			data := f.encodeMatrixData(resp.Data.Result)
-			payload.Data = &mimirpb.QueryResponse_Matrix{Matrix: &data}
+			payload.Data = &mimirpb.QueryResponse_Matrix{Matrix: data}
 
 		default:
 			return fmt.Errorf("unknown result type '%s'", resp.Data.ResultType)
@@ -237,14 +237,14 @@ func (f ProtobufFormatter) decodeData(resp mimirpb.QueryResponse) (*PrometheusDa
 	}
 
 	switch d := resp.Data.(type) {
-	case *mimirpb.QueryResponse_String_:
-		return f.decodeStringData(d.String_), nil
+	case *mimirpb.QueryResponse_String:
+		return f.decodeStringData(&d.String), nil
 	case *mimirpb.QueryResponse_Scalar:
-		return f.decodeScalarData(d.Scalar), nil
+		return f.decodeScalarData(&d.Scalar), nil
 	case *mimirpb.QueryResponse_Vector:
-		return f.decodeVectorData(d.Vector)
+		return f.decodeVectorData(&d.Vector)
 	case *mimirpb.QueryResponse_Matrix:
-		return f.decodeMatrixData(d.Matrix)
+		return f.decodeMatrixData(&d.Matrix)
 	default:
 		return nil, fmt.Errorf("unknown query response data type: %T", resp.Data)
 	}
