@@ -135,10 +135,20 @@ func New(cfg Config, name string, reg prometheus.Registerer, logger log.Logger) 
 	return p, nil
 }
 
-func (p *Pool) starting(ctx context.Context) error {
+func (p *Pool) starting(ctx context.Context) (err error) {
 	if err := services.StartAndAwaitRunning(ctx, p.queue); err != nil {
 		return fmt.Errorf("starting worker pool queue: %w", err)
 	}
+	started := false
+	defer func() {
+		if started {
+			return
+		}
+		if stopErr := p.stopping(err); stopErr != nil {
+			err = errors.Join(err, fmt.Errorf("stopping worker pool after failed start: %w", stopErr))
+		}
+	}()
+
 	// Wait for every worker to register with the queue before reporting the pool as running.
 	// Otherwise work submitted right after StartAndAwaitRunning could sit in the queue with no worker connected to pick it up.
 	// If a worker fails to register, fail startup:
@@ -158,6 +168,7 @@ func (p *Pool) starting(ctx context.Context) error {
 			return ctx.Err()
 		}
 	}
+	started = true
 	return nil
 }
 
