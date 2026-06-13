@@ -251,7 +251,11 @@ MIMIR_VERSION := github.com/grafana/mimir/pkg/util/version
 
 REGO_POLICIES_PATH=operations/policies
 
-GO_TAGS := netgo,stringlabels
+# Build tags used for all Go binaries and tests. A few places can't reference this variable
+# and hardcode the same list -- keep them in sync: .golangci.yml (build-tags),
+# .github/workflows/scripts/run-unit-tests-group.sh (BUILD_TAGS), and the go build invocations
+# in development/*/compose-up.sh.
+GO_TAGS := netgo,stringlabels,hashicorpmetrics
 GO_FLAGS := -ldflags "\
 		-X $(MIMIR_VERSION).Branch=$(GIT_BRANCH) \
 		-X $(MIMIR_VERSION).Revision=$(GIT_REVISION) \
@@ -527,12 +531,12 @@ print-go-version: ## Print the go version.
 	@go version | awk '{print $$3}' | sed 's/go//'
 
 test-with-race: ## Run all unit tests with data race detect.
-	go test -tags netgo,stringlabels -timeout 30m -race -count 1 $$(go list ./... | grep -v "^github.com/grafana/mimir/integration")
+	go test -tags $(GO_TAGS) -timeout 30m -race -count 1 $$(go list ./... | grep -v "^github.com/grafana/mimir/integration")
 
 cover: ## Run all unit tests with code coverage and generates reports.
 	$(eval COVERDIR := $(shell mktemp -d coverage.XXXXXXXXXX))
 	$(eval COVERFILE := $(shell mktemp $(COVERDIR)/unit.XXXXXXXXXX))
-	go test -tags netgo,stringlabels -timeout 30m -race -count 1 -coverprofile=$(COVERFILE) $$(go list ./... | grep -v "^github.com/grafana/mimir/integration")
+	go test -tags $(GO_TAGS) -timeout 30m -race -count 1 -coverprofile=$(COVERFILE) $$(go list ./... | grep -v "^github.com/grafana/mimir/integration")
 	go tool cover -html=$(COVERFILE) -o cover.html
 	go tool cover -func=cover.html | tail -n1
 
@@ -581,7 +585,7 @@ check-protobuf-format:
 	buf format --diff --exit-code $(addprefix --path=,$(PROTO_DEFS)) || (echo "Please format Protobuf files by running 'make format-protobuf'" && false)
 
 %.md : %.template
-	# Speed up check-doc in the lint CI job by aligning doc-generator's Go build flags (CGO_ENABLED=0, -tags netgo,stringlabels) with the rest of the lint pipeline, allowing it to reuse the build cache instead of recompiling the entire dependency tree from scratch.
+	# Speed up check-doc in the lint CI job by aligning doc-generator's Go build flags (CGO_ENABLED=0 and the GO_TAGS build tags) with the rest of the lint pipeline, allowing it to reuse the build cache instead of recompiling the entire dependency tree from scratch.
 	CGO_ENABLED=0 go run -tags $(GO_TAGS) ./tools/doc-generator $< > $@
 
 .PHONY: %.md.embedmd
@@ -897,7 +901,7 @@ warmup-build-cache-image-and-lint: ## Warm the Go build cache for image builds a
 		done; \
 	done
 	# Warm remaining packages for lint tools (golangci-lint, faillint) which type-check
-	# all packages with CGO_ENABLED=0 -tags=netgo,stringlabels on linux/amd64.
+	# all packages with CGO_ENABLED=0 and the GO_TAGS build tags on linux/amd64.
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -tags $(GO_TAGS) ./pkg/... ./cmd/... ./tools/... ./integration/... 2>&1 || true
 
 # Those vars are needed for packages target

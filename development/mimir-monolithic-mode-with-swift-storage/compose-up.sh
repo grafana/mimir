@@ -17,6 +17,6 @@ docker_compose() {
 
 SCRIPT_DIR=$(cd "$(dirname -- "$0")" && pwd)
 
-CGO_ENABLED=0 GOOS=linux go build -o "${SCRIPT_DIR}"/mimir "${SCRIPT_DIR}"/../../cmd/mimir && \
+CGO_ENABLED=0 GOOS=linux go build -tags=netgo,stringlabels,hashicorpmetrics -o "${SCRIPT_DIR}"/mimir "${SCRIPT_DIR}"/../../cmd/mimir && \
 docker_compose -f "${SCRIPT_DIR}"/docker-compose.yml build mimir-1 && \
 docker_compose -f "${SCRIPT_DIR}"/docker-compose.yml up "$@"
