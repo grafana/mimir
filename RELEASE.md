@@ -29,6 +29,7 @@ The following table contains past releases and tentative dates for upcoming rele
 | 2.17.0  | 2025-07-07 | Jeanette Tan       |
 | 3.0.0   | 2025-10-20 | Dimitar Dimitrov   |
 | 3.1.0   | 2026-05-18 | Toni Cárdenas      |
+| 3.2.0   | TBD        | TBD                |
 
 ## Release shepherd responsibilities
 
