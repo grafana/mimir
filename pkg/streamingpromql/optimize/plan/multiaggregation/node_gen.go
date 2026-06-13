@@ -29,24 +29,44 @@ func (m *MultiAggregationGroup) SetChildren(children []planning.Node) error {
 }
 
 func (m *MultiAggregationInstance) Child(idx int) planning.Node {
-	if idx != 0 {
-		panic(fmt.Sprintf("node of type MultiAggregationInstance supports 1 child, but attempted to get child at index %d", idx))
+	switch idx {
+	case 0:
+		return m.Group
+	case 1:
+		if m.Param == nil {
+			panic("cannot get MultiAggregationInstance child at index 1 if Param is nil")
+		}
+		return m.Param
+	default:
+		panic(fmt.Sprintf("node of type MultiAggregationInstance supports 2 children, but attempted to get child at index %d", idx))
 	}
-	return m.Group
 }
 
 func (m *MultiAggregationInstance) ChildCount() int {
-	return 1
+	if m.Param == nil {
+		return 1
+	}
+	return 2
 }
 
 func (m *MultiAggregationInstance) SetChildren(children []planning.Node) error {
-	if len(children) != 1 {
-		return fmt.Errorf("node of type MultiAggregationInstance expects one child, but got %d", len(children))
+	switch len(children) {
+	case 1:
+		child0, ok := children[0].(*MultiAggregationGroup)
+		if !ok {
+			return fmt.Errorf("node of type MultiAggregationInstance expects child Group to be of type *MultiAggregationGroup, but got %T", children[0])
+		}
+		m.Group = child0
+		m.Param = nil
+	case 2:
+		child0, ok := children[0].(*MultiAggregationGroup)
+		if !ok {
+			return fmt.Errorf("node of type MultiAggregationInstance expects child Group to be of type *MultiAggregationGroup, but got %T", children[0])
+		}
+		m.Group = child0
+		m.Param = children[1]
+	default:
+		return fmt.Errorf("node of type MultiAggregationInstance expects 1 or 2 children, but got %d", len(children))
 	}
-	child0, ok := children[0].(*MultiAggregationGroup)
-	if !ok {
-		return fmt.Errorf("node of type MultiAggregationInstance expects child Group to be of type *MultiAggregationGroup, but got %T", children[0])
-	}
-	m.Group = child0
 	return nil
 }

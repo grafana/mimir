@@ -62,17 +62,23 @@ func NewQuantileAggregation(
 	return q, nil
 }
 
+// ValidateQuantileParam checks each sample in paramData and adds an InvalidQuantileWarning annotation
+// for any value that is NaN or outside [0, 1].
+func ValidateQuantileParam(paramData types.ScalarData, paramExpressionPosition posrange.PositionRange, annos *annotations.Annotations) {
+	for _, p := range paramData.Samples {
+		if math.IsNaN(p.F) || p.F < 0 || p.F > 1 {
+			annos.Add(annotations.NewInvalidQuantileWarning(p.F, paramExpressionPosition))
+		}
+	}
+}
+
 func (q *QuantileAggregation) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
 	paramData, err := q.Param.GetValues(ctx)
 	if err != nil {
 		return nil, err
 	}
 	// Validate the parameter now so we only have to do it once for each group
-	for _, p := range paramData.Samples {
-		if math.IsNaN(p.F) || p.F < 0 || p.F > 1 {
-			q.Annotations.Add(annotations.NewInvalidQuantileWarning(p.F, q.Param.ExpressionPosition()))
-		}
-	}
+	ValidateQuantileParam(paramData, q.Param.ExpressionPosition(), &q.Annotations)
 
 	q.Aggregation.SetParamData(paramData)
 
