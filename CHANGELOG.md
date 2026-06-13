@@ -60,6 +60,7 @@
 * [ENHANCEMENT] Dashboards: Add 100th percentile to query expression percentiles graph. #15421
 * [ENHANCEMENT] Dashboards: Add the experimental streaming search API endpoints to the "Overview" per-endpoint query breakdown, and include the ingester `SearchLabelNames`/`SearchLabelValues` gRPC routes in the ingester panels of the "Reads", "Queries", and "Remote ruler reads" dashboards. #15571
 * [ENHANCEMENT] Dashboards: Add "p90 compaction delay by level" and "Store-gateway blocks queried by level" panels to the "Compaction" row of the "Compactor" dashboard. #15619
+* [ENHANCEMENT] Dashboards: Show the `early_head_compaction_owned_series_threshold` limit on the "Owned & in-memory series" panel of the "Tenants" dashboard. #15615
 * [BUGFIX] Dashboards: Fix the classic/ingest-storage split in the "Tenants", "Top tenants" and "Writes" dashboards so that selecting multiple clusters with a mix of architectures no longer drops the classic clusters' data. The `unless on (job)` filter against `cortex_partition_ring_partitions` now also matches on the cluster aggregation labels. #15400
 
 ### Jsonnet

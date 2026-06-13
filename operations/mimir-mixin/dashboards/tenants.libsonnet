@@ -28,6 +28,11 @@ local filename = 'mimir-tenants.json';
     $.overrideProperty('custom.lineStyle', { fill: 'dash' }),
   ]),
 
+  local earlyCompactionThresholdStyle = $.overrideFieldByName('early compaction threshold', [
+    $.overrideProperty('custom.fillOpacity', 0),
+    $.overrideProperty('custom.lineStyle', { fill: 'dash' }),
+  ]),
+
 
   [filename]:
     assert std.md5(filename) == '35fa247ce651ba189debf33d7ae41611' : 'UID of the dashboard has changed, please update references to dashboard.';
@@ -98,14 +103,16 @@ local filename = 'mimir-tenants.json';
             $.queries.ingester.ingestOrClassicDeduplicatedQuery(perIngesterInMemorySeries),
             $.queries.ingester.ingestOrClassicDeduplicatedQuery('cortex_ingester_owned_series{%s, user="$user"}' % [$.jobMatcher($._config.job_names.ingester)]),
             user_limits_overrides_query('max_global_series_per_user'),
+            user_limits_overrides_query('early_head_compaction_owned_series_threshold', non_zero=true),
           ],
           [
             'in-memory',
             'owned',
             'ingester limit',
+            'early compaction threshold',
           ],
         ) +
-        { fieldConfig+: { overrides+: [ingesterLimitStyle] } } +
+        { fieldConfig+: { overrides+: [ingesterLimitStyle, earlyCompactionThresholdStyle] } } +
         $.panelDescription(
           title,
           |||

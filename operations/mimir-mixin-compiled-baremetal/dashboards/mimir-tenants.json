@@ -179,6 +179,24 @@
                                  }
                               }
                            ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "early compaction threshold"
+                           },
+                           "properties": [
+                              {
+                                 "id": "custom.fillOpacity",
+                                 "value": 0
+                              },
+                              {
+                                 "id": "custom.lineStyle",
+                                 "value": {
+                                    "fill": "dash"
+                                 }
+                              }
+                           ]
                         }
                      ]
                   },
@@ -211,6 +229,12 @@
                         "expr": "max(cortex_limits_overrides{cluster=~\"$cluster\", job=~\"($namespace)/((overrides-exporter))\", limit_name=\"max_global_series_per_user\", user=\"$user\"})\nor\nmax(cortex_limits_defaults{cluster=~\"$cluster\", job=~\"($namespace)/((overrides-exporter))\", limit_name=\"max_global_series_per_user\"})\n",
                         "format": "time_series",
                         "legendFormat": "ingester limit",
+                        "legendLink": null
+                     },
+                     {
+                        "expr": "max(cortex_limits_overrides{cluster=~\"$cluster\", job=~\"($namespace)/((overrides-exporter))\", limit_name=\"early_head_compaction_owned_series_threshold\", user=\"$user\"})\nor\nmax(cortex_limits_defaults{cluster=~\"$cluster\", job=~\"($namespace)/((overrides-exporter))\", limit_name=\"early_head_compaction_owned_series_threshold\"} != 0)\n",
+                        "format": "time_series",
+                        "legendFormat": "early compaction threshold",
                         "legendLink": null
                      }
                   ],
