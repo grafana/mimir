@@ -250,6 +250,10 @@ std.manifestYamlDoc({
       '-activity-tracker.filepath=/tmp/activity/%(target)s-%(httpPort)d' % options,
       '-memberlist.nodename=%(memberlistNodeName)s' % options,
       '-memberlist.bind-port=%(memberlistBindPort)d' % options,
+      // Mimir reads mimir_cluster_seed.json from object storage on startup and waits up to 5 minutes
+      // from its creation time before becoming ready. The file persists in the MinIO volume across
+      // restarts, so without this flag any component starting within 5 minutes of the previous run blocks.
+      '-usage-stats.enabled=false',
     ] + options.extraArguments,
 
     // If we're using a local image, assemble a string of the binary to execute and CLI flags to pass to
