@@ -5391,14 +5391,35 @@
         },
         {
           "kind": "field",
-          "name": "label_values_count_request_max_concurrency",
+          "name": "query_workers",
           "required": false,
-          "desc": "Maximum concurrency used to compute a single label values count request.",
+          "desc": "Number of worker goroutines in the ingester's shared tenant-fair query worker pool, used to parallelize read-path work (currently label-values-cardinality) fairly across tenants. 0 uses GOMAXPROCS.",
           "fieldValue": null,
-          "fieldDefaultValue": 16,
-          "fieldFlag": "ingester.label-values-count-max-concurrency",
+          "fieldDefaultValue": 0,
+          "fieldFlag": "ingester.query-workers",
           "fieldType": "int",
           "fieldCategory": "experimental"
+        },
+        {
+          "kind": "block",
+          "name": "label_values_count",
+          "required": false,
+          "desc": "",
+          "blockEntries": [
+            {
+              "kind": "field",
+              "name": "chunk_size",
+              "required": false,
+              "desc": "Number of label values processed per work unit submitted to the ingester query worker pool. Smaller values improve cross-tenant fairness at the cost of more scheduling overhead.",
+              "fieldValue": null,
+              "fieldDefaultValue": 32,
+              "fieldFlag": "ingester.label-values-count-chunk-size",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            }
+          ],
+          "fieldValue": null,
+          "fieldDefaultValue": null
         }
       ],
       "fieldValue": null,

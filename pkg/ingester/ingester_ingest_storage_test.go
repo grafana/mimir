@@ -1140,6 +1140,16 @@ func createTestIngesterWithIngestStorage(
 	ingester, err := New(*ingesterCfg, overrides, ingestersRing, prw, nil, nil, reg, logger)
 	require.NoError(t, err)
 
+	// See note in prepareIngesterWithBlockStorageAndOverridesAndPartitionRing:
+	// the subservicesWatcher's listener goroutines would otherwise leak in
+	// tests that don't run the full ingester lifecycle.
+	t.Cleanup(func() {
+		ingester.compactionService.StopAsync()
+		ingester.metricsUpdaterService.StopAsync()
+		ingester.metadataPurgerService.StopAsync()
+		ingester.queryWorkerPool.StopAsync()
+	})
+
 	return ingester, kafkaCluster, prw
 }
 
