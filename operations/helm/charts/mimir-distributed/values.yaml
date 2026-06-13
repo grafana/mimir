@@ -3606,6 +3606,8 @@ metaMonitoring:
     # -- Create standard Mimir alerts in Prometheus Operator via a PrometheusRule CRD
     mimirAlerts: false
     # -- Create standard Mimir recording rules in Prometheus Operator via a PrometheusRule CRD
+    additionalRuleLabels: {}
+    # -- Additional labels to inject into each individual alerting and recording rule within the PrometheusRule CRD
     mimirRules: false
     # -- PrometheusRule annotations
     annotations: {}
