@@ -3,7 +3,6 @@
 package core
 
 import (
-	"fmt"
 	"strconv"
 	"time"
 
@@ -35,10 +34,6 @@ func (s *StringLiteral) Details() proto.Message {
 
 func (s *StringLiteral) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_STRING_LITERAL
-}
-
-func (s *StringLiteral) ReplaceChild(idx int, node planning.Node) error {
-	return fmt.Errorf("node of type StringLiteral supports no children, but attempted to replace child at index %d", idx)
 }
 
 func (s *StringLiteral) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {

@@ -21,9 +21,10 @@ func init() {
 	})
 }
 
+//node:generate
 type TimeRangeSplit struct {
 	*TimeRangeSplitDetails
-	Inner planning.Node
+	Inner planning.Node `node:"child"`
 }
 
 func (s *TimeRangeSplit) Details() proto.Message {
@@ -32,36 +33,6 @@ func (s *TimeRangeSplit) Details() proto.Message {
 
 func (s *TimeRangeSplit) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_TIME_RANGE_SPLIT
-}
-
-func (s *TimeRangeSplit) Child(idx int) planning.Node {
-	if idx != 0 {
-		panic(fmt.Sprintf("node of type Split supports 1 child, but attempted to get child at index %d", idx))
-	}
-
-	return s.Inner
-}
-
-func (s *TimeRangeSplit) ChildCount() int {
-	return 1
-}
-
-func (s *TimeRangeSplit) SetChildren(children []planning.Node) error {
-	if len(children) != 1 {
-		return fmt.Errorf("node of type Split requires 1 child, but got %d", len(children))
-	}
-
-	s.Inner = children[0]
-	return nil
-}
-
-func (s *TimeRangeSplit) ReplaceChild(idx int, child planning.Node) error {
-	if idx != 0 {
-		return fmt.Errorf("node of type Split supports 1 child, but attempted to replace child at index %d", idx)
-	}
-
-	s.Inner = child
-	return nil
 }
 
 func (s *TimeRangeSplit) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {

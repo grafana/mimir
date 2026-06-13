@@ -65,6 +65,15 @@ var SetChildrenMethod = MethodGenerator{
 	Generate: setChildrenMethodGenerate,
 }
 
+//go:embed replace_child_method.tmpl
+var replaceChildTmplContent string
+var replaceChildTmpl = template.Must(template.New("replace_child_method").Parse(replaceChildTmplContent))
+
+var ReplaceChildMethod = MethodGenerator{
+	Name:     "ReplaceChild",
+	Generate: replaceChildMethodGenerate,
+}
+
 func childMethodGenerate(s *Struct, imports *ImportsCollector) (string, error) {
 	data, err := buildTemplateStructData(s)
 	if err != nil {
@@ -133,6 +142,33 @@ func setChildrenMethodGenerate(s *Struct, imports *ImportsCollector) (string, er
 	}
 
 	return renderTemplate(setChildrenTmpl, subtmplName, data)
+}
+
+func replaceChildMethodGenerate(s *Struct, imports *ImportsCollector) (string, error) {
+	data, err := buildTemplateStructData(s)
+	if err != nil {
+		return "", err
+	}
+
+	imports.Add("fmt")
+	imports.Add("github.com/grafana/mimir/pkg/streamingpromql/planning")
+	for _, cf := range data.ChildFields {
+		imports.Add(cf.TypeImport)
+	}
+
+	var subtmplName string
+	switch {
+	case data.ChildrenField != "":
+		subtmplName = "children_field"
+	case len(data.ChildFields) == 1:
+		subtmplName = "single_child_field"
+	case len(data.ChildFields) > 1:
+		subtmplName = "multi_child_fields"
+	default:
+		subtmplName = "no_fields"
+	}
+
+	return renderTemplate(replaceChildTmpl, subtmplName, data)
 }
 
 // buildTemplateStructData validates the tagged fields of the given structure and returns the template input for it.
