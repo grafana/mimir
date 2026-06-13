@@ -31,7 +31,7 @@ type BucketStoreMetrics struct {
 	seriesDataFetched     *prometheus.SummaryVec
 	seriesDataSizeTouched *prometheus.SummaryVec
 	seriesDataSizeFetched *prometheus.SummaryVec
-	seriesBlocksQueried   *prometheus.SummaryVec
+	seriesBlocksQueried   *prometheus.HistogramVec
 	resultSeriesCount     prometheus.Summary
 	chunkSizeBytes        prometheus.Histogram
 	chunkSizeEstimateType *prometheus.CounterVec
@@ -114,9 +114,10 @@ func NewBucketStoreMetrics(reg prometheus.Registerer) *BucketStoreMetrics {
 		Help: "Size of all items of a data type in a block were fetched for a single Series/LabelValues/LabelNames request. This includes chunks from the cache and the object storage.",
 	}, []string{"data_type", "stage"})
 
-	m.seriesBlocksQueried = promauto.With(reg).NewSummaryVec(prometheus.SummaryOpts{
-		Name: "cortex_bucket_store_series_blocks_queried",
-		Help: "Number of blocks in a bucket store that were touched to satisfy a query. level|source=unknown/old_block means that the block was created before we started collecting these statistics in 2.12.0.",
+	m.seriesBlocksQueried = promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
+		Name:    "cortex_bucket_store_series_blocks_queried",
+		Help:    "Number of blocks in a bucket store that were touched to satisfy a query. level|source=unknown/old_block means that the block was created before we started collecting these statistics in 2.12.0.",
+		Buckets: prometheus.ExponentialBuckets(1, 2, 13), // 1 to 4096 blocks.
 	}, []string{"source", "level", "out_of_order"})
 	m.seriesRefetches = promauto.With(reg).NewCounter(prometheus.CounterOpts{
 		Name: "cortex_bucket_store_series_refetches_total",
