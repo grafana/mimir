@@ -217,33 +217,42 @@ func (s *OperatorEvaluationStats) AddSingleStep(other *OperatorEvaluationStats) 
 //
 // This instance is modified in-place.
 //
-// The other instance's steps must align with a sub-range of this instance's steps.
+// The other instance's steps must align with this instance's steps. Steps outside the range of this instance's time range are ignored.
 //
-// Both instances must not have subsets.
+// Both instances must have the same number of subsets.
 func (s *OperatorEvaluationStats) AddSubRange(other *OperatorEvaluationStats) error {
-	if len(s.subsets) > 0 {
-		return errors.New("cannot add a sub-range to an OperatorEvaluationStats instance that has subsets")
-	}
-
-	if len(other.subsets) > 0 {
-		return errors.New("cannot add a sub-range from an OperatorEvaluationStats instance that has subsets")
+	if len(s.subsets) != len(other.subsets) {
+		return fmt.Errorf("cannot add a sub-range with %d subset(s) to an OperatorEvaluationStats instance with %d subset(s)", len(other.subsets), len(s.subsets))
 	}
 
 	if s.timeRange.StepCount > 1 && other.timeRange.StepCount > 1 && other.timeRange.IntervalMilliseconds != s.timeRange.IntervalMilliseconds {
 		return fmt.Errorf("cannot add a sub-range from an OperatorEvaluationStats instance with multiple steps and interval %v ms to another instance with multiple steps and interval %v ms", other.timeRange.IntervalMilliseconds, s.timeRange.IntervalMilliseconds)
 	}
 
-	if other.timeRange.StartT < s.timeRange.StartT || other.timeRange.EndT > s.timeRange.EndT {
-		return fmt.Errorf("cannot add a sub-range from an OperatorEvaluationStats instance with time range [%v, %v] to another instance with time range [%v, %v]", other.timeRange.StartT, other.timeRange.EndT, s.timeRange.StartT, s.timeRange.EndT)
-	}
-
-	firstIndexInThisInstance := s.timeRange.PointIndex(other.timeRange.StartT)
-	if s.timeRange.IndexTime(firstIndexInThisInstance) != other.timeRange.StartT {
+	if s.timeRange.IndexTime(s.timeRange.PointIndex(other.timeRange.StartT)) != other.timeRange.StartT || s.timeRange.StartT > other.timeRange.EndT || s.timeRange.EndT < other.timeRange.StartT {
 		return fmt.Errorf("cannot add a sub-range from an OperatorEvaluationStats instance with time range [%v, %v] and interval %v ms to another instance with time range [%v, %v] and interval %v ms", other.timeRange.StartT, other.timeRange.EndT, other.timeRange.IntervalMilliseconds, s.timeRange.StartT, s.timeRange.EndT, s.timeRange.IntervalMilliseconds)
 	}
 
-	for otherIndex := range other.timeRange.StepCount {
-		s.allSeries.Add(firstIndexInThisInstance+int64(otherIndex), other.allSeries.samplesProcessedPerStep[otherIndex], other.allSeries.samplesReadIfSubsequentStep[otherIndex], other.allSeries.samplesReadIfFirstStep[otherIndex])
+	firstOtherIndex := int64(0)
+	lastOtherIndex := int64(other.timeRange.StepCount - 1)
+	if other.timeRange.StartT < s.timeRange.StartT {
+		firstOtherIndex = other.timeRange.PointIndex(s.timeRange.StartT)
+	}
+	if other.timeRange.EndT > s.timeRange.EndT {
+		lastOtherIndex = other.timeRange.PointIndex(s.timeRange.EndT)
+	}
+
+	nextIndexInThisInstance := s.timeRange.PointIndex(other.timeRange.IndexTime(firstOtherIndex))
+
+	for otherIndex := firstOtherIndex; otherIndex <= lastOtherIndex; otherIndex++ {
+		s.allSeries.Add(nextIndexInThisInstance, other.allSeries.samplesProcessedPerStep[otherIndex], other.allSeries.samplesReadIfSubsequentStep[otherIndex], other.allSeries.samplesReadIfFirstStep[otherIndex])
+
+		for subsetIdx, subset := range s.subsets {
+			otherSubset := other.subsets[subsetIdx]
+			subset.Add(nextIndexInThisInstance, otherSubset.samplesProcessedPerStep[otherIndex], otherSubset.samplesReadIfSubsequentStep[otherIndex], otherSubset.samplesReadIfFirstStep[otherIndex])
+		}
+
+		nextIndexInThisInstance++
 	}
 
 	return nil
