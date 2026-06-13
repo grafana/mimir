@@ -1,0 +1,470 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
+package warpstreamclient
+
+import (
+	"context"
+	"sync"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"github.com/go-kit/log"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"github.com/twmb/franz-go/pkg/kerr"
+	"github.com/twmb/franz-go/pkg/kfake"
+	"github.com/twmb/franz-go/pkg/kgo"
+	"github.com/twmb/franz-go/pkg/kmsg"
+
+	"github.com/grafana/mimir/pkg/util/testkafka"
+)
+
+// newTestWarpstreamClient brings up a kfake cluster and wires a
+// WarpstreamClient against it. The background metadata refresh goroutine
+// runs but its ticker (MetadataRefreshInterval) is well above any individual
+// test's runtime, so it never fires; t.Cleanup ensures Close cancels the
+// refresh ctx and joins the goroutine.
+func newTestWarpstreamClient(t *testing.T, topic string, numPartitions int32) (*WarpstreamClient, *kfake.Cluster, string) {
+	t.Helper()
+
+	cluster, clusterAddr := testkafka.CreateCluster(t, numPartitions, topic)
+
+	cfg := Config{
+		Address:       []string{clusterAddr},
+		Topic:         topic,
+		ClientID:      "warpstream-test",
+		DialTimeout:   2 * time.Second,
+		WriteTimeout:  5 * time.Second,
+		Linger:        10 * time.Millisecond,
+		MaxBatchBytes: 1 << 20,
+		HealthCheck: HealthCheckConfig{
+			SlowMultiplier:    2.0,
+			MaxSlowFraction:   0.3,
+			FaultyThreshold:   0.05,
+			MaxFaultyFraction: 0.3,
+		},
+		Hedger: HedgerConfig{
+			MinHedgeDelay:  10 * time.Millisecond,
+			MaxHedgeAgents: 3,
+		},
+		Demoter: DemoterConfig{
+			ProbeInterval: time.Second,
+		},
+		ClusterStatsTTL:         time.Second,
+		MetadataRefreshInterval: 10 * time.Second,
+		DirectProducer: KafkaDirectProducerConfig{
+			ProduceRequestTimeout:         2 * time.Second,
+			ProduceRequestTimeoutOverhead: time.Second,
+		},
+	}
+
+	c, err := NewWarpstreamClient(cfg, log.NewNopLogger(), prometheus.NewPedanticRegistry())
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		c.Close()
+	})
+	return c, cluster, clusterAddr
+}
+
+func TestWarpstreamClient_ProduceSync(t *testing.T) {
+	const topic = "test-topic"
+
+	t.Run("single record produces and is consumable", func(t *testing.T) {
+		c, _, clusterAddr := newTestWarpstreamClient(t, topic, 1)
+
+		results := c.ProduceSync(context.Background(), []*kgo.Record{
+			{Topic: topic, Partition: 0, Key: []byte("k"), Value: []byte("v"), Timestamp: time.Now()},
+		})
+		require.Len(t, results, 1)
+		require.NoError(t, results[0].Err)
+
+		// Verify the record landed by consuming it back.
+		consumer, err := kgo.NewClient(
+			kgo.SeedBrokers(clusterAddr),
+			kgo.ConsumePartitions(map[string]map[int32]kgo.Offset{
+				topic: {0: kgo.NewOffset().AtStart()},
+			}),
+		)
+		require.NoError(t, err)
+		t.Cleanup(consumer.Close)
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		t.Cleanup(cancel)
+		fetches := consumer.PollFetches(ctx)
+		require.NoError(t, fetches.Err())
+		require.Len(t, fetches.Records(), 1)
+		assert.Equal(t, []byte("v"), fetches.Records()[0].Value)
+	})
+
+	t.Run("records across two partitions both succeed", func(t *testing.T) {
+		c, _, _ := newTestWarpstreamClient(t, topic, 2)
+
+		results := c.ProduceSync(context.Background(), []*kgo.Record{
+			{Topic: topic, Partition: 0, Value: []byte("a"), Timestamp: time.Now()},
+			{Topic: topic, Partition: 1, Value: []byte("b"), Timestamp: time.Now()},
+		})
+		require.Len(t, results, 2)
+		assert.NoError(t, results[0].Err)
+		assert.NoError(t, results[1].Err)
+	})
+
+	t.Run("results preserve input record order", func(t *testing.T) {
+		c, _, _ := newTestWarpstreamClient(t, topic, 1)
+
+		records := []*kgo.Record{
+			{Topic: topic, Partition: 0, Value: []byte("0"), Timestamp: time.Now()},
+			{Topic: topic, Partition: 0, Value: []byte("1"), Timestamp: time.Now()},
+			{Topic: topic, Partition: 0, Value: []byte("2"), Timestamp: time.Now()},
+		}
+		results := c.ProduceSync(context.Background(), records)
+		require.Len(t, results, 3)
+		for i, r := range results {
+			assert.Same(t, records[i], r.Record, "result[%d] must reference input record %d", i, i)
+		}
+	})
+
+	t.Run("empty input returns nil", func(t *testing.T) {
+		c, _, _ := newTestWarpstreamClient(t, topic, 1)
+		results := c.ProduceSync(context.Background(), nil)
+		assert.Nil(t, results)
+	})
+
+	t.Run("record for unknown topic-partition fails fast at the resolver", func(t *testing.T) {
+		c, _, _ := newTestWarpstreamClient(t, topic, 1)
+
+		results := c.ProduceSync(context.Background(), []*kgo.Record{
+			{Topic: "does-not-exist", Partition: 0, Value: []byte("v"), Timestamp: time.Now()},
+		})
+		require.Len(t, results, 1)
+		require.Error(t, results[0].Err)
+		assert.ErrorContains(t, results[0].Err, "no agent assigned")
+	})
+
+	t.Run("canceled ctx ends the wait", func(t *testing.T) {
+		c, _, _ := newTestWarpstreamClient(t, topic, 1)
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		results := c.ProduceSync(ctx, []*kgo.Record{
+			{Topic: topic, Partition: 0, Value: []byte("v"), Timestamp: time.Now()},
+		})
+		require.Len(t, results, 1)
+		require.ErrorIs(t, results[0].Err, context.Canceled)
+	})
+
+	t.Run("oversized record fails per-record while ok records succeed", func(t *testing.T) {
+		c, _, _ := newTestWarpstreamClient(t, topic, 1)
+
+		// MaxBatchBytes is set to 1<<20 (see newTestWarpstreamClient); a 2 MB
+		// value exceeds the cap by itself.
+		oversize := make([]byte, 2<<20)
+		small := []byte("v")
+
+		records := []*kgo.Record{
+			{Topic: topic, Partition: 0, Value: oversize, Timestamp: time.Now()},
+			{Topic: topic, Partition: 0, Value: small, Timestamp: time.Now()},
+		}
+		results := c.ProduceSync(context.Background(), records)
+		require.Len(t, results, 2)
+
+		// Per-record outcomes preserve input order.
+		require.Error(t, results[0].Err)
+		assert.ErrorIs(t, results[0].Err, kerr.MessageTooLarge)
+		assert.Same(t, records[0], results[0].Record)
+
+		assert.NoError(t, results[1].Err)
+		assert.Same(t, records[1], results[1].Record)
+	})
+}
+
+func TestWarpstreamClient_Produce(t *testing.T) {
+	const topic = "test-topic"
+
+	t.Run("invokes promise once with the same record on success", func(t *testing.T) {
+		c, _, _ := newTestWarpstreamClient(t, topic, 1)
+
+		input := &kgo.Record{Topic: topic, Partition: 0, Key: []byte("k"), Value: []byte("v"), Timestamp: time.Now()}
+		done := make(chan struct {
+			r   *kgo.Record
+			err error
+		}, 1)
+		c.Produce(context.Background(), input, func(r *kgo.Record, err error) {
+			done <- struct {
+				r   *kgo.Record
+				err error
+			}{r, err}
+		})
+
+		select {
+		case got := <-done:
+			require.NoError(t, got.err)
+			assert.Same(t, input, got.r)
+		case <-time.After(time.Second):
+			t.Fatal("promise did not fire")
+		}
+	})
+
+	t.Run("invokes promise with error when topic is unknown to the agent pool", func(t *testing.T) {
+		c, _, _ := newTestWarpstreamClient(t, topic, 1)
+
+		input := &kgo.Record{Topic: "does-not-exist", Partition: 0, Value: []byte("v"), Timestamp: time.Now()}
+		done := make(chan error, 1)
+		c.Produce(context.Background(), input, func(_ *kgo.Record, err error) {
+			done <- err
+		})
+
+		select {
+		case err := <-done:
+			require.Error(t, err)
+			assert.ErrorContains(t, err, "no agent assigned")
+		case <-time.After(time.Second):
+			t.Fatal("promise did not fire")
+		}
+	})
+
+	t.Run("rejects oversized record synchronously with kerr.MessageTooLarge", func(t *testing.T) {
+		c, _, _ := newTestWarpstreamClient(t, topic, 1)
+
+		// MaxBatchBytes is 1<<20 in the test client; a 2 MB value exceeds it.
+		input := &kgo.Record{Topic: topic, Partition: 0, Value: make([]byte, 2<<20), Timestamp: time.Now()}
+		done := make(chan error, 1)
+		c.Produce(context.Background(), input, func(r *kgo.Record, err error) {
+			assert.Same(t, input, r)
+			done <- err
+		})
+
+		select {
+		case err := <-done:
+			require.Error(t, err)
+			assert.ErrorIs(t, err, kerr.MessageTooLarge)
+		case <-time.After(100 * time.Millisecond):
+			t.Fatal("promise did not fire — rejection must be synchronous, not buffered")
+		}
+	})
+}
+
+func TestWarpstreamClient_BufferedProduceBytes(t *testing.T) {
+	const topic = "test-topic"
+
+	t.Run("zero before any record is buffered", func(t *testing.T) {
+		c, _, _ := newTestWarpstreamClient(t, topic, 1)
+		assert.Equal(t, int64(0), c.BufferedProduceBytes())
+	})
+
+	t.Run("reflects in-flight bytes while produce is held, drops to zero once it completes", func(t *testing.T) {
+		c, cluster, _ := newTestWarpstreamClient(t, topic, 1)
+
+		// Block the broker's Produce handler so the in-flight state is
+		// observable deterministically rather than racing against the linger
+		// timer.
+		release := make(chan struct{})
+		cluster.ControlKey(int16(kmsg.Produce), func(kmsg.Request) (kmsg.Response, error, bool) {
+			<-release
+			return nil, nil, false
+		})
+
+		const value = "in-flight value"
+		records := []*kgo.Record{
+			{Topic: topic, Partition: 0, Value: []byte(value), Timestamp: time.Now()},
+		}
+		produced := make(chan struct{})
+		go func() {
+			defer close(produced)
+			c.ProduceSync(context.Background(), records)
+		}()
+
+		// While the broker is holding the Produce request, the bytes must
+		// be reflected as in-flight.
+		require.Eventually(t, func() bool {
+			return c.BufferedProduceBytes() == int64(len(value))
+		}, time.Second, 5*time.Millisecond)
+
+		// Release the broker; the counter drops back to zero once the
+		// produce completes.
+		close(release)
+		<-produced
+		require.Eventually(t, func() bool { return c.BufferedProduceBytes() == 0 },
+			time.Second, 5*time.Millisecond)
+	})
+}
+
+func TestWarpstreamClient_BufferedProduceRecords(t *testing.T) {
+	const topic = "test-topic"
+
+	t.Run("zero before any record is buffered", func(t *testing.T) {
+		c, _, _ := newTestWarpstreamClient(t, topic, 1)
+		assert.Equal(t, int64(0), c.BufferedProduceRecords())
+	})
+
+	t.Run("reflects in-flight records while produce is held, drops to zero once it completes", func(t *testing.T) {
+		c, cluster, _ := newTestWarpstreamClient(t, topic, 1)
+
+		release := make(chan struct{})
+		cluster.ControlKey(int16(kmsg.Produce), func(kmsg.Request) (kmsg.Response, error, bool) {
+			<-release
+			return nil, nil, false
+		})
+
+		records := []*kgo.Record{
+			{Topic: topic, Partition: 0, Value: []byte("a"), Timestamp: time.Now()},
+			{Topic: topic, Partition: 0, Value: []byte("b"), Timestamp: time.Now()},
+			{Topic: topic, Partition: 0, Value: []byte("c"), Timestamp: time.Now()},
+		}
+		produced := make(chan struct{})
+		go func() {
+			defer close(produced)
+			c.ProduceSync(context.Background(), records)
+		}()
+
+		require.Eventually(t, func() bool {
+			return c.BufferedProduceRecords() == int64(len(records))
+		}, time.Second, 5*time.Millisecond)
+
+		close(release)
+		<-produced
+		require.Eventually(t, func() bool { return c.BufferedProduceRecords() == 0 },
+			time.Second, 5*time.Millisecond)
+	})
+}
+
+func TestWarpstreamClient_Close(t *testing.T) {
+	t.Run("close is idempotent", func(t *testing.T) {
+		c, _, _ := newTestWarpstreamClient(t, "test-topic", 1)
+		c.Close()
+		c.Close()
+	})
+
+	t.Run("close flushes pending records", func(t *testing.T) {
+		const topic = "test-topic"
+		c, _, clusterAddr := newTestWarpstreamClient(t, topic, 1)
+
+		// Produce without waiting for the linger.
+		doneCh := make(chan error, 1)
+		c.buffer.Add(context.Background(), routedToSharedDone(0, []*kgo.Record{
+			{Topic: topic, Partition: 0, Value: []byte("v"), Timestamp: time.Now()},
+		}, func(err error) { doneCh <- err }))
+
+		c.Close()
+		require.NoError(t, <-doneCh)
+
+		// Verify the record landed.
+		consumer, err := kgo.NewClient(
+			kgo.SeedBrokers(clusterAddr),
+			kgo.ConsumePartitions(map[string]map[int32]kgo.Offset{
+				topic: {0: kgo.NewOffset().AtStart()},
+			}),
+		)
+		require.NoError(t, err)
+		t.Cleanup(consumer.Close)
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		t.Cleanup(cancel)
+		fetches := consumer.PollFetches(ctx)
+		require.NoError(t, fetches.Err())
+		require.Len(t, fetches.Records(), 1)
+	})
+}
+
+// produceClient is the minimum surface BenchmarkClient_Produce exercises against
+// both kgo.Client and *WarpstreamClient.
+type produceClient interface {
+	Produce(ctx context.Context, r *kgo.Record, promise func(*kgo.Record, error))
+	Close()
+}
+
+// BenchmarkClient_Produce stresses Produce() throughput for both backends against
+// the same kfake cluster (multi-broker, multi-partition), with many concurrent
+// goroutines fanning small records across partitions. To keep the comparison
+// apples-to-apples, the franz-go side uses the *kgo.Client embedded in the
+// WarpstreamClient — both legs run with identical kgo configuration. The
+// custom records/sec metric reports post-completion throughput; combined
+// with -benchmem it gives a per-record CPU and allocation profile.
+func BenchmarkClient_Produce(b *testing.B) {
+	const (
+		topic         = "bench-topic"
+		numPartitions = int32(500)
+		numBrokers    = 100
+		valueLen      = 1024
+		recordsPerOp  = 100
+	)
+
+	cluster, addr := testkafka.CreateCluster(b, numPartitions, topic, testkafka.WithNumBrokers(numBrokers))
+	b.Cleanup(cluster.Close)
+
+	cfg := Config{
+		Address:       []string{addr},
+		Topic:         topic,
+		ClientID:      "warpstream-bench",
+		DialTimeout:   2 * time.Second,
+		WriteTimeout:  30 * time.Second,
+		Linger:        50 * time.Millisecond,
+		MaxBatchBytes: 16 << 20,
+		HealthCheck: HealthCheckConfig{
+			SlowMultiplier:    2.0,
+			MaxSlowFraction:   0.3,
+			FaultyThreshold:   0.05,
+			MaxFaultyFraction: 0.3,
+		},
+		Hedger: HedgerConfig{
+			MinHedgeDelay:  time.Hour, // Disable hedging: never fires within the benchmark.
+			MaxHedgeAgents: 3,
+		},
+		Demoter: DemoterConfig{
+			ProbeInterval: time.Second,
+		},
+		ClusterStatsTTL:         time.Second,
+		MetadataRefreshInterval: time.Hour,
+		DirectProducer: KafkaDirectProducerConfig{
+			ProduceRequestTimeout:         10 * time.Second,
+			ProduceRequestTimeoutOverhead: time.Second,
+		},
+	}
+	wsc, err := NewWarpstreamClient(cfg, log.NewNopLogger(), prometheus.NewPedanticRegistry())
+	require.NoError(b, err)
+	b.Cleanup(wsc.Close)
+
+	// The franz-go leg reuses the kgo.Client embedded in the WarpstreamClient
+	// (its produce path is unaffected by the wrapping logic), so both legs
+	// share the exact same kgo configuration, broker set, and metadata view.
+	cases := []struct {
+		name   string
+		client produceClient
+	}{
+		{name: "kgo", client: wsc.Client},
+		{name: "warpstream", client: wsc},
+	}
+
+	value := make([]byte, valueLen)
+	for _, tc := range cases {
+		b.Run(tc.name, func(b *testing.B) {
+			p := tc.client
+			ctx := context.Background()
+			var (
+				wg        sync.WaitGroup
+				partition atomic.Int32
+			)
+
+			b.ReportAllocs()
+			b.ResetTimer()
+			b.RunParallel(func(pb *testing.PB) {
+				for pb.Next() {
+					wg.Add(recordsPerOp)
+					for i := 0; i < recordsPerOp; i++ {
+						pid := partition.Add(1) % numPartitions
+						rec := &kgo.Record{
+							Topic:     topic,
+							Partition: pid,
+							Value:     value,
+						}
+						p.Produce(ctx, rec, func(*kgo.Record, error) { wg.Done() })
+					}
+				}
+			})
+			wg.Wait()
+			b.StopTimer()
+
+			b.ReportMetric(float64(b.N*recordsPerOp)/b.Elapsed().Seconds(), "records/sec")
+		})
+	}
+}

@@ -1523,6 +1523,8 @@ Usage of ./cmd/mimir/mimir:
     	When auto-creation of Kafka topic is enabled and this value is positive, Mimir creates the topic with this number of partitions. When the value is -1 the Kafka broker uses the default number of partitions (num.partitions configuration). (default -1)
   -ingest-storage.kafka.auto-create-topic-enabled
     	Enable auto-creation of Kafka topic on startup if it doesn't exist. If creating the topic fails and the topic doesn't already exist, Mimir fails to start. (default true)
+  -ingest-storage.kafka.backend string
+    	The Kafka producer backend implementation. Supported values: kafka, warpstream. (default "kafka")
   -ingest-storage.kafka.client-id string
     	The Kafka client ID.
   -ingest-storage.kafka.client-rack string
@@ -1623,6 +1625,16 @@ Usage of ./cmd/mimir/mimir:
     	When enabled, the fetch request MaxBytes field is computed using the compressed size of previous records. When disabled, MaxBytes is computed using uncompressed bytes. Different Kafka implementations interpret MaxBytes differently. (default true)
   -ingest-storage.kafka.wait-strong-read-consistency-timeout duration
     	The maximum allowed for a read requests processed by an ingester to wait until strong read consistency is enforced. 0 to disable the timeout. (default 20s)
+  -ingest-storage.kafka.warpstream-hedge-faulty-threshold float
+    	[experimental] Mark an agent as faulty when its observed error rate exceeds this fraction. Only applies when ingest-storage.kafka.backend=warpstream. (default 0.05)
+  -ingest-storage.kafka.warpstream-hedge-max-faulty-fraction float
+    	[experimental] Suppress hedging when more than this fraction of agents are faulty (cluster-wide issue). Only applies when ingest-storage.kafka.backend=warpstream. (default 0.3)
+  -ingest-storage.kafka.warpstream-hedge-max-slow-fraction float
+    	[experimental] Suppress hedging when more than this fraction of agents are slow (cluster-wide issue). Only applies when ingest-storage.kafka.backend=warpstream. (default 0.3)
+  -ingest-storage.kafka.warpstream-hedge-min-delay duration
+    	[experimental] Floor on the dynamically-computed hedge delay. Only applies when ingest-storage.kafka.backend=warpstream. (default 1s)
+  -ingest-storage.kafka.warpstream-hedge-slow-multiplier float
+    	[experimental] Hedge a Produce request when the primary agent's window-average latency exceeds this multiple of the cluster baseline. Only applies when ingest-storage.kafka.backend=warpstream. (default 2)
   -ingest-storage.kafka.write-clients int
     	[deprecated] The number of Kafka clients used by producers. When the configured number of clients is greater than 1, partitions are sharded among Kafka clients. A higher number of clients may provide higher write throughput at the cost of additional Metadata requests pressure to Kafka. Deprecated: has no effect (Mimir always uses a single Kafka write client). (default 1)
   -ingest-storage.kafka.write-timeout duration

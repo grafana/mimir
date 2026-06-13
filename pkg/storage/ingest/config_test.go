@@ -43,6 +43,41 @@ func TestConfig_Validate(t *testing.T) {
 				cfg.KafkaConfig.Topic = "test"
 			},
 		},
+		"should pass if backend is explicitly set to warpstream": {
+			setup: func(cfg *Config) {
+				cfg.Enabled = true
+				cfg.KafkaConfig.Address = flagext.StringSliceCSV{"localhost"}
+				cfg.KafkaConfig.Topic = "test"
+				cfg.KafkaConfig.Backend = KafkaBackendWarpstream
+			},
+		},
+		"should fail if backend is empty": {
+			setup: func(cfg *Config) {
+				cfg.Enabled = true
+				cfg.KafkaConfig.Address = flagext.StringSliceCSV{"localhost"}
+				cfg.KafkaConfig.Topic = "test"
+				cfg.KafkaConfig.Backend = ""
+			},
+			expectedErr: ErrInvalidKafkaBackend,
+		},
+		"should fail if backend is unknown": {
+			setup: func(cfg *Config) {
+				cfg.Enabled = true
+				cfg.KafkaConfig.Address = flagext.StringSliceCSV{"localhost"}
+				cfg.KafkaConfig.Topic = "test"
+				cfg.KafkaConfig.Backend = "confluent"
+			},
+			expectedErr: ErrInvalidKafkaBackend,
+		},
+		"should fail if backend value is not lowercase": {
+			setup: func(cfg *Config) {
+				cfg.Enabled = true
+				cfg.KafkaConfig.Address = flagext.StringSliceCSV{"localhost"}
+				cfg.KafkaConfig.Topic = "test"
+				cfg.KafkaConfig.Backend = "Kafka"
+			},
+			expectedErr: ErrInvalidKafkaBackend,
+		},
 		"should fail if ingest storage is enabled and consume position is invalid": {
 			setup: func(cfg *Config) {
 				cfg.Enabled = true
@@ -459,4 +494,43 @@ func TestExhaustiveSASLMechanismOptions(t *testing.T) {
 		require.NoError(t, new(SASLMechanism).Set(string(o)))
 		require.NotErrorIs(t, (&KafkaAuthConfig{Mechanism: o}).Validate(), ErrInvalidSASLMechanism)
 	}
+}
+
+func TestKafkaConfig_ToWarpstreamClientConfig(t *testing.T) {
+	t.Run("maps warpstream-relevant fields", func(t *testing.T) {
+		cfg := KafkaConfig{
+			Backend:                                KafkaBackendWarpstream,
+			Address:                                []string{"a:9092", "b:9092"},
+			Topic:                                  "ingest",
+			ClientID:                               "client-1",
+			DialTimeout:                            3 * time.Second,
+			WriteTimeout:                           7 * time.Second,
+			WarpstreamHealthCheckSlowMultiplier:    1.5,
+			WarpstreamHealthCheckMaxSlowFraction:   0.4,
+			WarpstreamHealthCheckFaultyThreshold:   0.06,
+			WarpstreamHealthCheckMaxFaultyFraction: 0.5,
+			WarpstreamHedgeMinDelay:                15 * time.Millisecond,
+		}
+
+		wsCfg, err := cfg.ToWarpstreamClientConfig()
+		require.NoError(t, err)
+		assert.Equal(t, []string{"a:9092", "b:9092"}, []string(wsCfg.Address))
+		assert.Equal(t, "ingest", wsCfg.Topic)
+		assert.Equal(t, "client-1", wsCfg.ClientID)
+		assert.Equal(t, 3*time.Second, wsCfg.DialTimeout)
+		assert.Equal(t, 7*time.Second, wsCfg.WriteTimeout)
+		// Linger, max batch bytes, and metadata refresh interval mirror the
+		// kafka-backend defaults; ClusterStatsTTL is hardcoded to 1s.
+		assert.Equal(t, defaultProducerLinger, wsCfg.Linger)
+		assert.Equal(t, int32(producerBatchMaxBytes), wsCfg.MaxBatchBytes)
+		assert.Equal(t, defaultMetadataRefreshInterval, wsCfg.MetadataRefreshInterval)
+		assert.Equal(t, time.Second, wsCfg.ClusterStatsTTL)
+		assert.Equal(t, 1.5, wsCfg.HealthCheck.SlowMultiplier)
+		assert.Equal(t, 0.4, wsCfg.HealthCheck.MaxSlowFraction)
+		assert.Equal(t, 0.06, wsCfg.HealthCheck.FaultyThreshold)
+		assert.Equal(t, 0.5, wsCfg.HealthCheck.MaxFaultyFraction)
+		assert.Equal(t, 15*time.Millisecond, wsCfg.Hedger.MinHedgeDelay)
+		assert.False(t, wsCfg.TLSEnabled)
+		assert.Nil(t, wsCfg.TLSConfig)
+	})
 }

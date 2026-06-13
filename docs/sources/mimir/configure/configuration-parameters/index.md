@@ -5260,6 +5260,11 @@ The `ingest_storage` block configures the Kafka-based ingest storage.
 [enabled: <boolean> | default = false]
 
 kafka:
+  # The Kafka producer backend implementation. Supported values: kafka,
+  # warpstream.
+  # CLI flag: -ingest-storage.kafka.backend
+  [backend: <string> | default = "kafka"]
+
   # The Kafka seed broker address, or a comma-separated list of seed broker
   # addresses.
   # CLI flag: -ingest-storage.kafka.address
@@ -5294,6 +5299,34 @@ kafka:
   # Deprecated: has no effect (Mimir always uses a single Kafka write client).
   # CLI flag: -ingest-storage.kafka.write-clients
   [write_clients: <int> | default = 1]
+
+  # (experimental) Hedge a Produce request when the primary agent's
+  # window-average latency exceeds this multiple of the cluster baseline. Only
+  # applies when ingest-storage.kafka.backend=warpstream.
+  # CLI flag: -ingest-storage.kafka.warpstream-hedge-slow-multiplier
+  [warpstream_hedge_slow_multiplier: <float> | default = 2]
+
+  # (experimental) Suppress hedging when more than this fraction of agents are
+  # slow (cluster-wide issue). Only applies when
+  # ingest-storage.kafka.backend=warpstream.
+  # CLI flag: -ingest-storage.kafka.warpstream-hedge-max-slow-fraction
+  [warpstream_hedge_max_slow_fraction: <float> | default = 0.3]
+
+  # (experimental) Mark an agent as faulty when its observed error rate exceeds
+  # this fraction. Only applies when ingest-storage.kafka.backend=warpstream.
+  # CLI flag: -ingest-storage.kafka.warpstream-hedge-faulty-threshold
+  [warpstream_hedge_faulty_threshold: <float> | default = 0.05]
+
+  # (experimental) Suppress hedging when more than this fraction of agents are
+  # faulty (cluster-wide issue). Only applies when
+  # ingest-storage.kafka.backend=warpstream.
+  # CLI flag: -ingest-storage.kafka.warpstream-hedge-max-faulty-fraction
+  [warpstream_hedge_max_faulty_fraction: <float> | default = 0.3]
+
+  # (experimental) Floor on the dynamically-computed hedge delay. Only applies
+  # when ingest-storage.kafka.backend=warpstream.
+  # CLI flag: -ingest-storage.kafka.warpstream-hedge-min-delay
+  [warpstream_hedge_min_delay: <duration> | default = 10ms]
 
   # The SASL mechanism used to authenticate to Kafka. Supported values: PLAIN,
   # SCRAM-SHA-256, SCRAM-SHA-512, OAUTHBEARER, AWS_MSK_IAM. For
