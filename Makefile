@@ -31,7 +31,7 @@ BINARY_SUFFIX ?= ""
 # Boiler plate for building Docker containers.
 # All this must go at top of file I'm afraid.
 IMAGE_PREFIX ?= grafana/
-BUILD_IMAGE ?= $(IMAGE_PREFIX)mimir-build-image
+BUILD_IMAGE ?= us-docker.pkg.dev/grafanalabs-dev/docker-mimir-build-image/mimir-build-image
 CONTAINER_MOUNT_OPTIONS ?= delegated,z
 
 # For a tag push, $GITHUB_REF will look like refs/tags/<tag_name>.
@@ -171,6 +171,10 @@ push-multiarch-build-image: ## Push the docker build image.
 print-build-image:
 	@echo $(BUILD_IMAGE):$(LATEST_BUILD_IMAGE_TAG)
 
+.PHONY: print-build-image-build-args
+print-build-image-build-args:
+	@printf '%s\n' revision=$(GIT_REVISION) goproxyValue=$(GOPROXY_VALUE)
+
 # We don't want find to scan inside a bunch of directories, to accelerate the
 # 'make: Entering directory '/go/src/github.com/grafana/mimir' phase.
 DONT_FIND := -name vendor -prune -o -name .git -prune -o -name .cache -prune -o -name .pkg -prune -o -name packaging -prune -o -name mimir-mixin-tools -prune -o -name trafficdump -prune -o
@@ -225,7 +229,7 @@ mimir-build-image/$(UPTODATE): mimir-build-image/*
 # All the boiler plate for building golang follows:
 SUDO := $(shell docker info >/dev/null 2>&1 || echo "sudo -E")
 BUILD_IN_CONTAINER ?= true
-LATEST_BUILD_IMAGE_TAG ?= pr15263-b90faf9665
+LATEST_BUILD_IMAGE_TAG ?= pr15660-d9dd7cb0f3@sha256:6ae6fc0ec2dc54f3df24d890dbdf9792b8516a847b10cda1727eec0b7b1c80b5
 
 # TTY is parameterized to allow CI and scripts to run builds,
 # as it currently disallows TTY devices.
