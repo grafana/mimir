@@ -5221,6 +5221,13 @@ ruler_alertmanager_client_config:
 # CLI flag: -distributor.otel-label-name-preserve-underscores
 [otel_label_name_preserve_multiple_underscores: <boolean> | default = true]
 
+# (experimental) Whether to log OTel resource attributes that collide after
+# label name sanitization in the OTLP endpoint. Colliding attribute values may
+# get concatenated with ';' in the resulting target_info label; empty values get
+# overwritten or dropped instead.
+# CLI flag: -distributor.otel-log-target-info-label-name-collisions
+[otel_log_target_info_label_name_collisions: <boolean> | default = false]
+
 # (experimental) The default consistency level to enforce for queries when using
 # the ingest storage. Supports values: strong, eventual.
 # CLI flag: -ingest-storage.read-consistency

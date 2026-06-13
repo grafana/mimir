@@ -8,6 +8,7 @@ package validation
 import (
 	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 	"reflect"
 	"strings"
@@ -3009,4 +3010,29 @@ func getDefaultLimits() Limits {
 	limits := Limits{}
 	flagext.DefaultValues(&limits)
 	return limits
+}
+
+func TestOTelLogTargetInfoLabelNameCollisions(t *testing.T) {
+	defaults := Limits{}
+	flagext.DefaultValues(&defaults)
+	require.False(t, defaults.OTelLogTargetInfoLabelNameCollisions, "must default to disabled")
+
+	// YAML name round-trip.
+	limitsYAML := Limits{}
+	require.NoError(t, yaml.Unmarshal([]byte(`otel_log_target_info_label_name_collisions: true`), &limitsYAML))
+	require.True(t, limitsYAML.OTelLogTargetInfoLabelNameCollisions)
+
+	// CLI flag registration.
+	fs := flag.NewFlagSet("test", flag.PanicOnError)
+	parsed := Limits{}
+	parsed.RegisterFlags(fs)
+	require.NoError(t, fs.Parse([]string{"-distributor.otel-log-target-info-label-name-collisions=true"}))
+	require.True(t, parsed.OTelLogTargetInfoLabelNameCollisions)
+
+	// Per-tenant override via Overrides getter.
+	ov := NewOverrides(defaults, NewMockTenantLimits(map[string]*Limits{
+		"enabled-tenant": {OTelLogTargetInfoLabelNameCollisions: true},
+	}))
+	require.True(t, ov.OTelLogTargetInfoLabelNameCollisions("enabled-tenant"))
+	require.False(t, ov.OTelLogTargetInfoLabelNameCollisions("other-tenant"))
 }
