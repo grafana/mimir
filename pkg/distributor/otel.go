@@ -434,8 +434,9 @@ func newOTLPParser(
 			underscoreSanitization:            limits.OTelLabelNameUnderscoreSanitization(tenantID),
 			preserveMultipleUnderscores:       limits.OTelLabelNamePreserveMultipleUnderscores(tenantID),
 		}
+		convSpan, convCtx := spanlogger.New(ctx, logger, tracer, "Distributor.OTLPHandler.convert")
 		metrics, metadata, metricsDropped, err := otelMetricsToSeriesAndMetadata(
-			ctx,
+			convCtx,
 			otlpConverter,
 			otlpReq.Metrics(),
 			convOpts,
@@ -445,6 +446,7 @@ func newOTLPParser(
 			discardedDueToOtelParseError.WithLabelValues(tenantID, "").Add(float64(metricsDropped)) // "group" label is empty here as metrics couldn't be parsed
 		}
 		if err != nil {
+			convSpan.Finish()
 			return 0, err
 		}
 
@@ -458,6 +460,13 @@ func newOTLPParser(
 			histogramCount += len(m.Histograms)
 			exemplarCount += len(m.Exemplars)
 		}
+
+		convSpan.SetTag("metric_count", metricCount)
+		convSpan.SetTag("sample_count", sampleCount)
+		convSpan.SetTag("histogram_count", histogramCount)
+		convSpan.SetTag("exemplar_count", exemplarCount)
+		convSpan.SetTag("metrics_dropped", metricsDropped)
+		convSpan.Finish()
 
 		level.Debug(spanLogger).Log(
 			"msg", "OTLP to Prometheus conversion complete",
