@@ -2545,6 +2545,18 @@ memcached:
     capabilities:
       drop: [ALL]
     allowPrivilegeEscalation: false
+  # -- Readiness probe for the memcached container. Defaults to a TCP check on the memcached port.
+  readinessProbe:
+    tcpSocket:
+      port: client
+    initialDelaySeconds: 5
+    periodSeconds: 5
+  # -- Liveness probe for the memcached container. Defaults to a TCP check on the memcached port.
+  livenessProbe:
+    tcpSocket:
+      port: client
+    initialDelaySeconds: 10
+    periodSeconds: 10
 
 memcachedExporter:
   # -- Whether memcached metrics should be exported
@@ -2568,6 +2580,21 @@ memcachedExporter:
     capabilities:
       drop: [ALL]
     allowPrivilegeEscalation: false
+
+  # -- Readiness probe for the memcached-exporter container.
+  readinessProbe:
+    httpGet:
+      path: /metrics
+      port: http-metrics
+    initialDelaySeconds: 5
+    periodSeconds: 10
+  # -- Liveness probe for the memcached-exporter container.
+  livenessProbe:
+    httpGet:
+      path: /metrics
+      port: http-metrics
+    initialDelaySeconds: 10
+    periodSeconds: 10
 
   # -- Extra args to add to the exporter container.
   # Example:

@@ -73,6 +73,16 @@ spec:
               - ALL
             readOnlyRootFilesystem: true
           volumeMounts:
+          readinessProbe:
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            tcpSocket:
+              port: client
+          livenessProbe:
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            tcpSocket:
+              port: client
         - name: exporter
           image: prom/memcached-exporter:v0.15.3
           imagePullPolicy: IfNotPresent
@@ -94,4 +104,16 @@ spec:
               drop:
               - ALL
             readOnlyRootFilesystem: true
+          readinessProbe:
+            httpGet:
+              path: /metrics
+              port: http-metrics
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /metrics
+              port: http-metrics
+            initialDelaySeconds: 10
+            periodSeconds: 10
 
