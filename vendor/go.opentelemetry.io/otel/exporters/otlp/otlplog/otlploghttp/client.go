@@ -298,8 +298,9 @@ func (c *httpClient) newRequest(ctx context.Context, body []byte) (request, erro
 			return req, err
 		}
 
-		req.bodyReader = bodyReader(b.Bytes())
-		req.GetBody = bodyReaderErr(body)
+		compressedBody := b.Bytes()
+		req.bodyReader = bodyReader(compressedBody)
+		req.GetBody = bodyReaderErr(compressedBody)
 	}
 
 	return req, nil
