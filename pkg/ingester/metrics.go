@@ -65,6 +65,8 @@ type ingesterMetrics struct {
 	// Local limit metrics
 	maxLocalSeriesPerUser *prometheus.GaugeVec
 
+	headMaxTimestampTooFarInFuture *prometheus.GaugeVec
+
 	// Head compactions metrics.
 	compactionsTriggered                   prometheus.Counter
 	compactionsFailed                      prometheus.Counter
@@ -321,6 +323,12 @@ func newIngesterMetrics(
 			ConstLabels: map[string]string{"limit": "max_global_series_per_user"},
 		}, []string{"user"}),
 
+		headMaxTimestampTooFarInFuture: promauto.With(r).NewGaugeVec(prometheus.GaugeOpts{
+			Name: "cortex_ingester_tsdb_head_max_timestamp_too_far_in_future_seconds",
+			Help: "Number of seconds by which a tenant's TSDB head max timestamp exceeds the furthest-into-the-future " +
+				"timestamp currently accepted for that tenant (now + creation_grace_period). Only emitted when positive.",
+		}, []string{"user"}),
+
 		// Not registered automatically, but only if activeSeriesEnabled is true.
 		activeSeriesPerUser: promauto.With(activeSeriesReg).NewGaugeVec(prometheus.GaugeOpts{
 			Name: "cortex_ingester_active_series",
@@ -455,6 +463,7 @@ func (m *ingesterMetrics) deletePerUserMetrics(userID string) {
 	m.discardedMetadataPerMetricMetadataLimit.DeleteLabelValues(userID)
 
 	m.maxLocalSeriesPerUser.DeleteLabelValues(userID)
+	m.headMaxTimestampTooFarInFuture.DeleteLabelValues(userID)
 	m.ownedSeriesPerUser.DeleteLabelValues(userID)
 	m.earlyCompactionNonOwnedSeriesTriggered.DeleteLabelValues(userID)
 	m.attributedActiveSeriesFailuresPerUser.DeleteLabelValues(userID)

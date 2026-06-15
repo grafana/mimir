@@ -1683,22 +1683,24 @@ See [rollout-operator runbook](https://github.com/grafana/rollout-operator/blob/
 
 ### MimirIngestedDataTooFarInTheFuture
 
-This alert fires when one or more Mimir ingesters accepts a sample with timestamp that is too far in the future.
-This is typically a result of processing of corrupted message, and it can cause rejection of other samples with timestamp close to "now" (real-world time).
+This alert fires when a tenant's TSDB head in one or more Mimir ingesters holds samples whose timestamp is further into the future than that tenant's configured creation grace period allows.
+It can cause rejection of other samples with timestamp close to "now" (real-world time) for the affected tenant.
 
 How it **works**:
 
-- The metric exported by the ingester computes the maximum timestamp from all TSDBs open in the ingester.
-- The alert checks the metric and fires if the maximum timestamp is more than 1h in the future.
-- This alert doesn't respect the per-user creation grace period.
+- The ingester exports the per-tenant gauge `cortex_ingester_tsdb_head_max_timestamp_too_far_in_future_seconds`, set to the number of seconds by which a tenant's TSDB head max timestamp exceeds `now + creation_grace_period` for that tenant. It is only emitted while a tenant is in violation.
+- The alert fires when this gauge is `> 0` (sustained for 5m). The affected tenant is reported in the `user` label.
+- Because the limit is per-tenant, this alert respects each tenant's creation grace period: a tenant configured with a large `creation_grace_period` legitimately ingesting future-dated samples within that window does **not** trigger it.
+- Admission already rejects samples beyond `now + creation_grace_period` (in the distributor and ingester), so in normal operation the gauge stays at 0. It becomes positive mainly when a tenant's `creation_grace_period` was recently **reduced** below the spread of already-admitted data, or when older future-dated data re-enters the head (for example via WAL replay, head compaction, or a corrupted message).
 
 How to **investigate**
 
-- Find an affected ingester pod and connect to its http API. For example, using `kubectl port-forward <pod> 8080:80`.
-- Find the tenant with a bad sample on the ingester's tenants list, which you can get through the `/ingester/tenants` endpoint. The sample should display the warning "TSDB Head max timestamp too far in the future".
-- If there are no warnings, the sample is likely within the tenant's grace interval and the alert is a false positive.
+- The firing alert names the affected tenant in the `user` label. It is aggregated per tenant and does not carry a `pod` label; to find which ingesters hold the offending data, query `cortex_ingester_tsdb_head_max_timestamp_too_far_in_future_seconds{user="<tenant>"}`, which retains the `pod` label.
+- Connect to an affected ingester pod's http API. For example, using `kubectl port-forward <pod> 8080:80`.
+- Confirm the tenant on the ingester's tenants list, which you can get through the `/ingester/tenants` endpoint. The tenant displays the warning "TSDB Head max timestamp too far in the future" together with the grace interval and the head's max timestamp.
+- Check whether the tenant's `creation_grace_period` override was recently lowered. If the future data is in fact legitimate, widening the grace period back resolves the alert.
 
-If it's not a false positive:
+If the future-dated data is not legitimate:
 
 - Flush the tenant's data to blocks storage through the `/ingester/flush?wait=true&tenant=foo` endpoint.
 - Remove the tenant's directory on disk and restart the ingester.
