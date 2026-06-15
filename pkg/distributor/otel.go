@@ -32,6 +32,7 @@ import (
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheusremotewrite"
+	"github.com/prometheus/prometheus/util/annotations"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp"
@@ -451,11 +452,21 @@ func newOTLPParser(
 		if metricsDropped > 0 {
 			discardedDueToOtelParseError.WithLabelValues(tenantID, "").Add(float64(metricsDropped)) // "group" label is empty here as metrics couldn't be parsed
 		}
-		if warnings := otlpConverter.TranslationWarnings(); len(warnings) > 0 {
-			// The counter counts distinct warnings per request, before deduplication
-			// and independently of the logging limit.
-			pushMetrics.AddOTLPTranslationWarnings(tenantID, len(warnings))
-			if limits.OTelLogTranslationWarnings(tenantID) {
+		// Count all warning categories for the metric, before deduplication and
+		// independently of the logging limit.
+		if counts := otlpConverter.TranslationWarningCountsByCategory(); len(counts) > 0 {
+			total := 0
+			for _, n := range counts {
+				total += n
+			}
+			convSpan.SetTag("translation_warnings", total)
+			pushMetrics.AddOTLPTranslationWarnings(tenantID, counts)
+		}
+		// Logging is restricted to collision warnings, whose messages are bounded
+		// in cardinality; histogram warnings embed data point values and stay
+		// unlogged until their volume is reviewed.
+		if limits.OTelLogTranslationWarnings(tenantID) {
+			if warnings := otlpConverter.TranslationWarnings(); len(warnings) > 0 {
 				logged, processed := 0, 0
 				for _, warning := range warnings {
 					// Warnings over the per-request cap are not marked as seen by the
@@ -465,9 +476,6 @@ func newOTLPParser(
 					}
 
 					processed++
-					// Truncation before the deduper bounds both the log line and the
-					// dedup map key; attribute names embedded in the warning can be
-					// as long as the request payload allows.
 					if len(warning) > maxErrMsgLen {
 						warning = warning[:maxErrMsgLen]
 					}
@@ -762,6 +770,10 @@ func otelMetricsToSeriesAndMetadata(
 type otlpMimirConverter struct {
 	appender  *otlpappender.MimirAppender
 	converter *prometheusremotewrite.PrometheusConverter
+	// annots holds all translation warnings produced by the last FromMetrics
+	// call, including collisions (merged in by FromMetrics) and histogram
+	// warnings. Used to count warnings by category for the metric.
+	annots annotations.Annotations
 	// err holds OTLP parse errors
 	err error
 }
@@ -778,19 +790,36 @@ func (c *otlpMimirConverter) ToSeriesAndMetadata(ctx context.Context, md pmetric
 		return nil, nil
 	}
 
-	_, c.err = c.converter.FromMetrics(ctx, md, settings)
+	c.annots, c.err = c.converter.FromMetrics(ctx, md, settings)
 
 	timeseries, metadata := c.appender.GetResult()
 	return timeseries, metadata
 }
 
-// TranslationWarnings returns label name collision warnings produced while
-// translating the OTLP request. The translator's other annotations (e.g.
-// histogram conversion warnings, which embed data point values and thus have
-// unbounded distinct-message cardinality) deliberately stay unlogged,
-// until their volume is reviewed.
+// TranslationWarnings returns the label name collision warnings produced while
+// translating the OTLP request. These feed the log path only: the translator's
+// other annotations (e.g. histogram conversion warnings, which embed data point
+// values and thus have unbounded distinct-message cardinality) deliberately
+// stay unlogged for now. All categories are still counted by the metric via
+// TranslationWarningCountsByCategory.
 func (c *otlpMimirConverter) TranslationWarnings() []string {
 	return c.converter.CollisionWarnings()
+}
+
+// TranslationWarningCountsByCategory returns the number of distinct translation
+// warnings produced for the OTLP request, bucketed by category. Unlike the log
+// path, this covers every warning category, keyed by a bounded category label so it
+// is safe to expose as a metric.
+func (c *otlpMimirConverter) TranslationWarningCountsByCategory() map[string]int {
+	if len(c.annots) == 0 {
+		return nil
+	}
+
+	counts := map[string]int{}
+	for category, count := range prometheusremotewrite.CountWarningsByCategory(c.annots) {
+		counts[string(category)] = count
+	}
+	return counts
 }
 
 func (c *otlpMimirConverter) DroppedTotal() int {

@@ -255,7 +255,12 @@ func TestOTLPMimirConverter_TranslationWarnings_histogramWarningsNotIncluded(t *
 	require.NoError(t, err)
 	require.NotEmpty(t, annots, "expected the payload to produce a histogram translation annotation")
 
+	// The histogram warning is excluded from the logged collision warnings, but
+	// it is still counted by the metric under its own category.
 	assert.Empty(t, converter.TranslationWarnings())
+	require.Equal(t, map[prometheusremotewrite.WarningCategory]int{
+		prometheusremotewrite.WarningCategoryHistogramZeroCountNonZeroSum: 1,
+	}, prometheusremotewrite.CountWarningsByCategory(annots))
 }
 
 func TestOTLPHandler_TranslationWarningLogging(t *testing.T) {
@@ -312,9 +317,9 @@ func TestOTLPHandler_TranslationWarningLogging(t *testing.T) {
 	assert.Equal(t, 1, strings.Count(logs.String(), warningMsg))
 
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
-		# HELP cortex_distributor_otlp_translation_warnings_total The total number of distinct warnings produced while translating OTLP requests to Prometheus format, counted once per request they occur in. Currently this covers attribute names colliding after label name sanitization.
+		# HELP cortex_distributor_otlp_translation_warnings_total The total number of distinct warnings produced while translating OTLP requests to Prometheus format, counted once per request they occur in, broken down by category.
 		# TYPE cortex_distributor_otlp_translation_warnings_total counter
-		cortex_distributor_otlp_translation_warnings_total{user="test"} 2
+		cortex_distributor_otlp_translation_warnings_total{category="label_name_collision",user="test"} 2
 	`), "cortex_distributor_otlp_translation_warnings_total"))
 }
 
@@ -357,10 +362,72 @@ func TestOTLPHandler_TranslationWarningLogging_limitDisabled(t *testing.T) {
 
 	assert.NotContains(t, logs.String(), `msg="OTLP translation warning"`)
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
-		# HELP cortex_distributor_otlp_translation_warnings_total The total number of distinct warnings produced while translating OTLP requests to Prometheus format, counted once per request they occur in. Currently this covers attribute names colliding after label name sanitization.
+		# HELP cortex_distributor_otlp_translation_warnings_total The total number of distinct warnings produced while translating OTLP requests to Prometheus format, counted once per request they occur in, broken down by category.
 		# TYPE cortex_distributor_otlp_translation_warnings_total counter
-		cortex_distributor_otlp_translation_warnings_total{user="test"} 1
+		cortex_distributor_otlp_translation_warnings_total{category="label_name_collision",user="test"} 1
 	`), "cortex_distributor_otlp_translation_warnings_total"))
+}
+
+// TestOTLPHandler_TranslationWarningMetric_histogramCategoryCountedNotLogged
+// ensures histogram warnings are counted by the metric under their own category
+// even though, unlike collisions, they are never logged.
+func TestOTLPHandler_TranslationWarningMetric_histogramCategoryCountedNotLogged(t *testing.T) {
+	testLimits := &validation.Limits{
+		NameValidationScheme:                     model.LegacyValidation,
+		OTelMetricSuffixesEnabled:                boolPtr(false),
+		OTelLabelNameUnderscoreSanitization:      true,
+		OTelLabelNamePreserveMultipleUnderscores: true,
+		OTelLogTranslationWarnings:               true,
+	}
+	limits := validation.NewOverrides(
+		validation.Limits{},
+		validation.NewMockTenantLimits(map[string]*validation.Limits{"test": testLimits}),
+	)
+
+	pusher := func(_ context.Context, pushReq *Request) error {
+		t.Cleanup(pushReq.CleanUp)
+		_, err := pushReq.WriteRequest()
+		return err
+	}
+	logs := &concurrency.SyncBuffer{}
+	reg := prometheus.NewPedanticRegistry()
+	pushMetrics := newPushMetrics(reg)
+	handler := OTLPHandler(
+		100000, nil, nil, false, limits, nil, nil, RetryConfig{}, nil,
+		pusher, pushMetrics, reg, util_log.MakeLeveledLogger(logs, "info"),
+	)
+
+	// An exponential histogram data point with zero count but a non-zero sum
+	// produces a histogram translation warning (no attribute collision).
+	md := pmetric.NewMetrics()
+	rm := md.ResourceMetrics().AppendEmpty()
+	rm.Resource().Attributes().PutStr("service.name", "svc")
+	rm.Resource().Attributes().PutStr("service.instance.id", "inst")
+	m := rm.ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
+	m.SetName("test_histogram")
+	eh := m.SetEmptyExponentialHistogram()
+	eh.SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
+	dp := eh.DataPoints().AppendEmpty()
+	dp.SetTimestamp(pcommon.NewTimestampFromTime(time.Now()))
+	dp.SetCount(0)
+	dp.SetSum(155)
+
+	exportReq := pmetricotlp.NewExportRequestFromMetrics(md)
+	body, err := exportReq.MarshalProto()
+	require.NoError(t, err)
+	req := createOTLPRequest(t, body, "", pbContentType)
+	resp := httptest.NewRecorder()
+	handler.ServeHTTP(resp, req)
+	require.Equal(t, http.StatusOK, resp.Code, "response body: %s", resp.Body.String())
+
+	// Counted by the metric under the histogram category ...
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+		# HELP cortex_distributor_otlp_translation_warnings_total The total number of distinct warnings produced while translating OTLP requests to Prometheus format, counted once per request they occur in, broken down by category.
+		# TYPE cortex_distributor_otlp_translation_warnings_total counter
+		cortex_distributor_otlp_translation_warnings_total{category="histogram_zero_count_non_zero_sum",user="test"} 1
+	`), "cortex_distributor_otlp_translation_warnings_total"))
+	// ... but not logged, even though logging is enabled.
+	assert.NotContains(t, logs.String(), `msg="OTLP translation warning"`)
 }
 
 // TestOTLPHandler_TranslationWarningLogging_truncatesLongWarnings ensures that

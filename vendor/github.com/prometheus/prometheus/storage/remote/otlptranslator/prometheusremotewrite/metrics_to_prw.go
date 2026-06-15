@@ -101,14 +101,12 @@ type PrometheusConverter struct {
 
 	// collisionAnnots collects warning annotations about attribute names that
 	// collide after label name sanitization, causing their values to be
-	// concatenated. Reset on every FromMetrics call. Its memory grows with the
-	// number of distinct collisions in the request, bounded by the request
-	// size: the same order as the label processing performed anyway.
+	// concatenated. Reset on every FromMetrics call.
 	collisionAnnots annotations.Annotations
 	// recordedCollisions tracks the sanitized label names whose collision has
 	// already been recorded during the current FromMetrics call, so that a
 	// collision repeated across data points is recorded once instead of
-	// rebuilding the annotation per data point. Lazily allocated; reset on
+	// rebuilding the annotation per data point. Reset on
 	// every FromMetrics call.
 	recordedCollisions map[string]struct{}
 }
@@ -208,8 +206,6 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 	c.seenTargetInfo = make(map[targetInfoKey]struct{})
 	c.collisionAnnots = nil
 	c.recordedCollisions = nil
-	// Annotations recorded on the converter while processing attributes are
-	// included on every return path, including early returns on context errors.
 	defer func() { annots.Merge(c.collisionAnnots) }()
 	resourceMetricsSlice := md.ResourceMetrics()
 

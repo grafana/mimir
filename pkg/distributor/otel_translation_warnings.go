@@ -33,8 +33,7 @@ const (
 	otelTranslationWarningPurgeInterval = time.Minute
 
 	// maxLoggedOTelTranslationWarningsPerRequest caps warning log lines per
-	// request. Warnings suppressed by this cap are not marked as seen, so they
-	// get logged on a later request instead.
+	// request.
 	maxLoggedOTelTranslationWarningsPerRequest = 10
 
 	// otelTranslationWarningsSuppressedKey is the deduper key for the summary
@@ -48,21 +47,16 @@ const (
 // otelTranslationWarningDeduper rate-limits OTLP translation warning log lines.
 // Each distinct (tenant, message) pair is allowed once per TTL, and each tenant
 // is allowed a bounded number of lines per fixed (non-sliding) TTL window.
-// Translation warnings are typically chronic properties of a tenant's
-// instrumentation, re-detected on every request; without suppression an
-// affected tenant would log them at request rate.
 type otelTranslationWarningDeduper struct {
 	ttl time.Duration
 	now func() time.Time
 
 	// mtx guards the maps below. A single lock suffices: allow is only reached on
-	// the logging path, which is gated behind the off-by-default experimental
-	// -distributor.otel-log-translation-warnings limit and only when a request
+	// the logging path, which is off by default and only when a request
 	// actually produced warnings, so contention is negligible. Revisit (e.g.
 	// shard by tenant) if logging is ever enabled by default.
 	mtx sync.Mutex
-	// seen tracks when a (tenant, message) pair was last logged, keyed by
-	// tenant + "\x00" + message.
+	// seen tracks when a (tenant, message) pair was last logged.
 	seen map[string]time.Time
 	// tenantWindows tracks per-tenant log budgets, keyed by tenant.
 	tenantWindows map[string]*tenantWarningWindow

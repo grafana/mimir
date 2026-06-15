@@ -198,9 +198,7 @@ func (c *PrometheusConverter) createAttributes(
 // recordLabelCollision adds a warning annotation naming the original attribute
 // keys that map to the same label name finalKey after sanitization, so that
 // callers of FromMetrics can surface which attributes produced a concatenated
-// label value. It runs on the rare collision path only; sortedLabels is sorted
-// by original key, so the reported order matches the value concatenation
-// order. Name lookups hit the sanitizedLabels cache.
+// label value. Name lookups hit the sanitizedLabels cache.
 //
 // Each finalKey is recorded at most once per FromMetrics call.
 // Accepted limitation: if different attribute sets
@@ -212,7 +210,7 @@ func (c *PrometheusConverter) recordLabelCollision(sortedLabels labels.Labels, f
 
 	var keys strings.Builder
 	sortedLabels.Range(func(l labels.Label) {
-		// Errors abort the enclosing createAttributes call; no need to handle them here.
+		// No need to handle errors here.
 		if name, err := c.buildLabelName(l.Name); err != nil || name != finalKey {
 			return
 		}
@@ -221,7 +219,7 @@ func (c *PrometheusConverter) recordLabelCollision(sortedLabels labels.Labels, f
 		}
 		fmt.Fprintf(&keys, "%q", l.Name)
 	})
-	c.collisionAnnots.Add(fmt.Errorf(
+	c.collisionAnnots.Add(newCategorizedWarningf(WarningCategoryLabelNameCollision,
 		"OTLP attributes %s collide as label %q after name sanitization, values are concatenated with ';'",
 		keys.String(), finalKey))
 
