@@ -42,15 +42,6 @@ func (d *Duplicate) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_DUPLICATE
 }
 
-func (d *Duplicate) ReplaceChild(idx int, node planning.Node) error {
-	if idx != 0 {
-		return fmt.Errorf("node of type Duplicate supports 1 child, but attempted to replace child at index %d", idx)
-	}
-
-	d.Inner = node
-	return nil
-}
-
 func (d *Duplicate) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
 	_, ok := other.(*Duplicate)
 
@@ -166,22 +157,6 @@ func (f *DuplicateFilter) Details() proto.Message {
 
 func (f *DuplicateFilter) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_DUPLICATE_FILTER
-}
-
-func (f *DuplicateFilter) ReplaceChild(idx int, node planning.Node) error {
-	if idx != 0 {
-		return fmt.Errorf("node of type DuplicateFilter supports 1 child, but attempted to replace child at index %d", idx)
-	}
-
-	duplicate, ok := node.(*Duplicate)
-
-	if !ok {
-		return fmt.Errorf("node of type DuplicateFilter only supports Duplicate nodes as child, got %T", node)
-	}
-
-	f.Inner = duplicate
-
-	return nil
 }
 
 func (f *DuplicateFilter) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {

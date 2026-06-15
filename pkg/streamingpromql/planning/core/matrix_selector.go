@@ -45,10 +45,6 @@ func (m *MatrixSelector) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_MATRIX_SELECTOR
 }
 
-func (m *MatrixSelector) ReplaceChild(idx int, node planning.Node) error {
-	return fmt.Errorf("node of type MatrixSelector supports no children, but attempted to replace child at index %d", idx)
-}
-
 func (m *MatrixSelector) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
 	otherMatrixSelector, ok := other.(*MatrixSelector)
 
