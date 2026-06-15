@@ -283,6 +283,37 @@ func (u *userTSDB) setClosingState() {
 	}
 }
 
+// isClosed reports whether the TSDB has been closed. A closed TSDB is never reopened.
+func (u *userTSDB) isClosed() bool {
+	u.stateMtx.RLock()
+	defer u.stateMtx.RUnlock()
+
+	return u.state == closed
+}
+
+// futureRejectionMillis returns by how many milliseconds the earliest timestamp the head currently
+// accepts is ahead of nowMs. A positive result means the head rejects samples at the current time,
+// because it holds samples so far in the future that both its in-order floor (max timestamp - block
+// range / 2) and, when out-of-order ingestion is enabled, its out-of-order floor (max timestamp -
+// oooWindow) are ahead of now.
+func (u *userTSDB) futureRejectionMillis(nowMs int64, oooWindow time.Duration) int64 {
+	head := u.Head()
+
+	// The in-order floor, which also accounts for the max time of the last block compacted from the head.
+	floor, ok := head.AppendableMinValidTime()
+	if !ok {
+		// An empty head accepts any timestamp.
+		return 0
+	}
+
+	// Mirrors the head's own rule: a sample below the in-order floor is still accepted as
+	// out-of-order if it's within the out-of-order window of the head's max timestamp.
+	if oooWindow > 0 {
+		floor = min(floor, head.MaxTime()-oooWindow.Milliseconds())
+	}
+	return floor - nowMs
+}
+
 // compactHead triggers a forced compaction of the TSDB Head. This function compacts the in-order Head
 // block with the specified block duration and the OOO Head block at the chunk range duration, to avoid
 // having huge blocks.

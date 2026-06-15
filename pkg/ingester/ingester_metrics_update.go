@@ -229,6 +229,8 @@ func (i *Ingester) updateUsageStats() {
 }
 
 func (i *Ingester) updateLimitMetrics() {
+	nowMillis := time.Now().UnixMilli()
+
 	for _, userID := range i.getTSDBUsers() {
 		db := i.getTSDB(userID)
 		if db == nil {
@@ -247,6 +249,21 @@ func (i *Ingester) updateLimitMetrics() {
 
 		localLimit := i.limiter.maxSeriesPerUser(userID, minLocalSeriesLimit)
 		i.metrics.maxLocalSeriesPerUser.WithLabelValues(userID).Set(float64(localLimit))
+
+		// Report how far ahead of now the earliest timestamp the head accepts is. Only emitted while
+		// positive, so the series exists exactly for tenants whose samples at the current time would be rejected.
+		if excessMs := db.futureRejectionMillis(nowMillis, i.limits.OutOfOrderTimeWindow(userID)); excessMs > 0 {
+			i.metrics.headMaxTimestampTooFarInFuture.WithLabelValues(userID).Set(float64(excessMs) / 1000)
+
+			// Closing a TSDB marks it closed before deleting its per-tenant metrics. If that deletion ran
+			// before the Set above, the TSDB is closed by now, so remove the series: otherwise it would
+			// linger, pointing at an ingester that no longer holds the tenant's TSDB.
+			if db.isClosed() {
+				i.metrics.headMaxTimestampTooFarInFuture.DeleteLabelValues(userID)
+			}
+		} else {
+			i.metrics.headMaxTimestampTooFarInFuture.DeleteLabelValues(userID)
+		}
 
 		i.updateLabelValueBytesMetrics(userID, db)
 	}
