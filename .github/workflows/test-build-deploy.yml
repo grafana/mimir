@@ -263,7 +263,7 @@ jobs:
           key: go-build-cache-unit-${{ needs.prepare.outputs.build_image }}-${{ hashFiles('go.sum') }}
 
   # Same as the other warmup jobs but for image builds and linting, which use
-  # CGO_ENABLED=0 (no race) with -tags netgo,stringlabels.
+  # CGO_ENABLED=0 (no race) with the GO_TAGS build tags from the Makefile.
   warmup-go-build-cache-image-and-lint:
     needs: [prepare]
     runs-on: ubuntu-latest
@@ -583,7 +583,7 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           persist-credentials: false
-      # Race-enabled image uses CGO_ENABLED=1 -race -tags=netgo,stringlabels, same as unit tests.
+      # Race-enabled image uses CGO_ENABLED=1 -race with the GO_TAGS build tags, same as unit tests.
       - name: Restore Go build cache
         uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
