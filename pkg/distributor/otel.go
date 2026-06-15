@@ -76,6 +76,7 @@ type OTLPHandlerLimits interface {
 	NameValidationScheme(id string) model.ValidationScheme
 	OTelLabelNameUnderscoreSanitization(string) bool
 	OTelLabelNamePreserveMultipleUnderscores(string) bool
+	OTelLogTargetInfoLabelNameCollisions(id string) bool
 }
 
 type OTLPPushMiddleware func(ctx context.Context, req *pmetricotlp.ExportRequest) error
@@ -389,6 +390,7 @@ func newOTLPParser(
 		convertHistogramsToNHCB := limits.OTelConvertHistogramsToNHCB(tenantID)
 		promoteScopeMetadata := limits.OTelPromoteScopeMetadata(tenantID)
 		allowDeltaTemporality := limits.OTelNativeDeltaIngestion(tenantID)
+		logTargetInfoCollisions := limits.OTelLogTargetInfoLabelNameCollisions(tenantID)
 
 		limitsKey := tenantMd.WithTenant(tenantID)
 		translationStrategy := limits.OTelTranslationStrategy(limitsKey)
@@ -433,6 +435,9 @@ func newOTLPParser(
 			allowUTF8:                         !translationStrategy.ShouldEscape(),
 			underscoreSanitization:            limits.OTelLabelNameUnderscoreSanitization(tenantID),
 			preserveMultipleUnderscores:       limits.OTelLabelNamePreserveMultipleUnderscores(tenantID),
+		}
+		if logTargetInfoCollisions && !convOpts.allowUTF8 {
+			logTargetInfoLabelCollisions(otlpReq.Metrics(), convOpts, spanLogger)
 		}
 		metrics, metadata, metricsDropped, err := otelMetricsToSeriesAndMetadata(
 			ctx,

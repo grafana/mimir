@@ -108,6 +108,8 @@ The following features are currently experimental:
     - `-validation.name-validation-scheme`
   - Configure metric and label name translation strategy in OTLP endpoint
     - `-distributor.otel-translation-strategy`
+  - Logging of OTLP resource attribute label-name collisions affecting `target_info`
+    - `-distributor.otel-log-target-info-label-name-collisions`
   - Allow controlling OTLP translation via request headers
     - `-api.otlp-translation-headers-enabled`
   - Configure how to handle label values over the length limit
