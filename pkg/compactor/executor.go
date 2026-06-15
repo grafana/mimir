@@ -10,6 +10,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"syscall"
@@ -21,6 +22,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/backoff"
 	"github.com/grafana/dskit/cache"
+	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/grpcclient"
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/timeutil"
@@ -83,13 +85,13 @@ func (e *standaloneExecutor) stop() error {
 }
 
 var (
-	errInvalidSchedulerEndpoint                      = fmt.Errorf("invalid compactor.scheduler-client.scheduler-endpoint, required when compactor.scheduler-client.enabled is true")
-	errInvalidSchedulerUpdateInterval                = fmt.Errorf("invalid compactor.scheduler-client.update-interval, interval must be positive")
-	errInvalidSchedulerLeasingMinBackoff             = fmt.Errorf("invalid compactor.scheduler-client.leasing-min-backoff, must be positive")
-	errInvalidSchedulerLeasingMaxBackoff             = fmt.Errorf("invalid compactor.scheduler-client.leasing-max-backoff, must be greater than min backoff")
-	errInvalidSchedulerUpdateMinBackoff              = fmt.Errorf("invalid compactor.scheduler-client.update-min-backoff, must be positive")
-	errInvalidSchedulerUpdateMaxBackoff              = fmt.Errorf("invalid compactor.scheduler-client.update-max-backoff, must be greater than min backoff")
-	errInvalidSchedulerTerminatingFinalStatusTimeout = fmt.Errorf("invalid compactor.scheduler-client.terminating-final-status-timeout, must be positive")
+	errInvalidSchedulerEndpoint                      = errors.New("invalid compactor.scheduler-client.scheduler-endpoint, required when compactor.scheduler-client.enabled is true")
+	errInvalidSchedulerUpdateInterval                = errors.New("invalid compactor.scheduler-client.update-interval, interval must be positive")
+	errInvalidSchedulerLeasingMinBackoff             = errors.New("invalid compactor.scheduler-client.leasing-min-backoff, must be positive")
+	errInvalidSchedulerLeasingMaxBackoff             = errors.New("invalid compactor.scheduler-client.leasing-max-backoff, must be greater than min backoff")
+	errInvalidSchedulerUpdateMinBackoff              = errors.New("invalid compactor.scheduler-client.update-min-backoff, must be positive")
+	errInvalidSchedulerUpdateMaxBackoff              = errors.New("invalid compactor.scheduler-client.update-max-backoff, must be greater than min backoff")
+	errInvalidSchedulerTerminatingFinalStatusTimeout = errors.New("invalid compactor.scheduler-client.terminating-final-status-timeout, must be positive")
 )
 
 type SchedulerClientConfig struct {
@@ -104,6 +106,7 @@ type SchedulerClientConfig struct {
 	CompactionDirCleanupInterval  time.Duration                  `yaml:"compaction_dir_cleanup_interval" category:"experimental"`
 	MetadataCacheConfig           mimir_tsdb.MetadataCacheConfig `yaml:"metadata_cache" category:"experimental"`
 	TerminatingFinalStatusTimeout time.Duration                  `yaml:"terminating_final_status_timeout" category:"experimental"`
+	Lanes                         flagext.StringSliceCSV         `yaml:"lanes" category:"experimental"`
 }
 
 func (cfg *SchedulerClientConfig) RegisterFlags(f *flag.FlagSet) {
@@ -117,6 +120,7 @@ func (cfg *SchedulerClientConfig) RegisterFlags(f *flag.FlagSet) {
 	f.DurationVar(&cfg.UpdateMaxBackoff, flagPrefix+"update-max-backoff", 32*time.Second, "Maximum backoff time for compaction executor retries when sending scheduler status updates.")
 	f.DurationVar(&cfg.CompactionDirCleanupInterval, flagPrefix+"compaction-dir-cleanup-interval", 30*time.Minute, "Defines how frequently to clean up the compaction working directory. The directory is cleaned on startup and then only when this interval has elapsed since the last cleanup. Set to 0 to disable periodic cleanup.")
 	f.DurationVar(&cfg.TerminatingFinalStatusTimeout, flagPrefix+"terminating-final-status-timeout", 30*time.Second, "Timeout for sending a final job status update to the scheduler when the parent context is canceled (e.g. during shutdown).")
+	f.Var(&cfg.Lanes, flagPrefix+"lanes", "Lanes of work this worker will lease, in priority order. Each entry is a '+'-separated list of job types (compact, plan). Multiple entries are comma-separated, each running in its own goroutine. Example: compact+plan,plan")
 	cfg.GRPCClientConfig.RegisterFlagsWithPrefix(flagPrefix+"grpc-client-config", f)
 	cfg.MetadataCacheConfig.RegisterFlagsWithPrefix(f, flagPrefix+"metadata-cache.")
 }
@@ -169,6 +173,7 @@ type schedulerExecutor struct {
 	retryable                failsafe.Executor[any]
 	lastCleanupTime          time.Time
 	metadataCache            cache.Cache
+	laneRequests             [][]*compactorschedulerpb.LaneRequest
 }
 
 func newSchedulerExecutor(cfg SchedulerClientConfig, logger log.Logger, invalidClusterValidation *prometheus.CounterVec, reg prometheus.Registerer) (*schedulerExecutor, error) {
@@ -178,11 +183,17 @@ func newSchedulerExecutor(cfg SchedulerClientConfig, logger log.Logger, invalidC
 		return nil, fmt.Errorf("failed to create metadata cache: %w", err)
 	}
 
+	laneRequests, err := parseLaneRequests(cfg.Lanes)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse lane request configuration: %w", err)
+	}
+
 	executor := &schedulerExecutor{
 		cfg:                      cfg,
 		logger:                   logger,
 		invalidClusterValidation: invalidClusterValidation,
 		metadataCache:            metadataCache,
+		laneRequests:             laneRequests,
 	}
 
 	executor.retryable = failsafe.With(retrypolicy.NewBuilder[any]().
@@ -215,9 +226,49 @@ func newSchedulerExecutor(cfg SchedulerClientConfig, logger log.Logger, invalidC
 	return executor, nil
 }
 
+// parseLaneRequests parses the requested lanes for each goroutine.
+// An example value is compact+plan,plan
+// '+' separates multiple job types per goroutine, and ',' separates goroutines.
+// If the provided argument is empty then a default is supplied.
+func parseLaneRequests(configuredLanes flagext.StringSliceCSV) ([][]*compactorschedulerpb.LaneRequest, error) {
+	if len(configuredLanes) == 0 {
+		// Supply a default
+		return [][]*compactorschedulerpb.LaneRequest{
+			{&compactorschedulerpb.LaneRequest{JobType: compactorschedulerpb.JOB_TYPE_COMPACTION}, &compactorschedulerpb.LaneRequest{JobType: compactorschedulerpb.JOB_TYPE_PLANNING}},
+			{&compactorschedulerpb.LaneRequest{JobType: compactorschedulerpb.JOB_TYPE_PLANNING}},
+		}, nil
+	}
+
+	combined := make([][]*compactorschedulerpb.LaneRequest, 0, len(configuredLanes))
+	compactionSeen := false
+	for _, workerLane := range configuredLanes {
+		split := strings.Split(workerLane, "+")
+		if len(split) == 0 {
+			return nil, fmt.Errorf("invalid lane configuration: %q", workerLane)
+		}
+		requests := make([]*compactorschedulerpb.LaneRequest, 0, len(split))
+		for _, lane := range split {
+			switch lane {
+			case "plan":
+				requests = append(requests, &compactorschedulerpb.LaneRequest{JobType: compactorschedulerpb.JOB_TYPE_PLANNING})
+			case "compact":
+				requests = append(requests, &compactorschedulerpb.LaneRequest{JobType: compactorschedulerpb.JOB_TYPE_COMPACTION})
+				if compactionSeen {
+					return nil, fmt.Errorf("concurrent compaction in requested lanes is not supported: %s", configuredLanes)
+				}
+				compactionSeen = true
+			default:
+				return nil, fmt.Errorf("unknown job type in lane configuration: %q", lane)
+			}
+		}
+		combined = append(combined, requests)
+	}
+	return combined, nil
+}
+
 func (e *schedulerExecutor) run(ctx context.Context, c *MultitenantCompactor) error {
-	workerID := fmt.Sprintf("compactor-%s", c.ringLifecycler.GetInstanceID())
-	level.Info(e.logger).Log("msg", "compactor running in scheduler mode", "scheduler_endpoint", e.cfg.SchedulerEndpoint, "worker_id", workerID)
+	baseWorkerID := fmt.Sprintf("compactor-%s", c.ringLifecycler.GetInstanceID())
+	level.Info(e.logger).Log("msg", "compactor running in scheduler mode", "scheduler_endpoint", e.cfg.SchedulerEndpoint, "worker_id", baseWorkerID)
 
 	// Scheduler mode compactors work on jobs for arbitrary tenants, so unlike standalone mode they
 	// do not cache metadata on disk. Pass nil for ownedUsers to delete any meta sync directories
@@ -226,20 +277,59 @@ func (e *schedulerExecutor) run(ctx context.Context, c *MultitenantCompactor) er
 
 	compactDir := filepath.Join(c.compactorCfg.DataDir, "compact")
 
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	// subErr is written only by the watcher goroutine below; wg.Wait establishes the happens-before
+	// for reading it. A plain shutdown leaves it nil, matching the previous single-loop behavior.
+	var subErr error
+
+	var wg sync.WaitGroup
+	wg.Go(func() {
+		select {
+		case <-ctx.Done():
+		case err := <-c.ringSubservicesWatcher.Chan():
+			subErr = fmt.Errorf("compactor subservice failed: %w", err)
+			cancel()
+		}
+	})
+
+	for i, lanes := range e.laneRequests {
+		workerID := baseWorkerID
+		if len(e.laneRequests) > 1 {
+			workerID = fmt.Sprintf("%s-%d", baseWorkerID, i)
+		}
+		// Only one worker should clean up and it has to be the one compacting
+		cleanup := slices.ContainsFunc(lanes, func(lr *compactorschedulerpb.LaneRequest) bool {
+			return lr.JobType == compactorschedulerpb.JOB_TYPE_COMPACTION
+		})
+		req := &compactorschedulerpb.LeaseJobRequest{
+			WorkerId:     workerID,
+			LaneRequests: lanes,
+		}
+		wg.Go(func() {
+			e.runWorker(ctx, c, compactDir, cleanup, req)
+		})
+	}
+
+	wg.Wait()
+	return subErr
+}
+
+func (e *schedulerExecutor) runWorker(ctx context.Context, c *MultitenantCompactor, compactDir string, cleanup bool, req *compactorschedulerpb.LeaseJobRequest) {
 	b := backoff.New(ctx, backoff.Config{
 		MinBackoff: e.cfg.LeasingMinBackoff,
 		MaxBackoff: e.cfg.LeasingMaxBackoff,
 	})
 
 	for {
-		// Clean up the compaction directory before leasing work if interval is configured.
-		if e.cfg.CompactionDirCleanupInterval > 0 {
+		if cleanup && e.cfg.CompactionDirCleanupInterval > 0 {
 			if err := e.cleanupCompactionDir(compactDir); err != nil {
 				level.Warn(e.logger).Log("msg", "failed to cleanup compaction directory", "path", compactDir, "err", err)
 			}
 		}
 
-		ok, err := e.leaseAndExecuteJob(ctx, c, workerID)
+		ok, err := e.leaseAndExecuteJob(ctx, c, req)
 		if err != nil {
 			level.Warn(e.logger).Log("msg", "failed to lease or execute job", "err", err)
 		}
@@ -249,11 +339,8 @@ func (e *schedulerExecutor) run(ctx context.Context, c *MultitenantCompactor) er
 
 		select {
 		case <-time.After(b.NextDelay()):
-			continue
 		case <-ctx.Done():
-			return nil
-		case err := <-c.ringSubservicesWatcher.Chan():
-			return fmt.Errorf("compactor subservice failed: %w", err)
+			return
 		}
 	}
 }
@@ -400,11 +487,7 @@ func (e *schedulerExecutor) makeSchedulerClient() (compactorschedulerpb.Compacto
 	return client, conn, nil
 }
 
-func (e *schedulerExecutor) leaseAndExecuteJob(ctx context.Context, c *MultitenantCompactor, workerID string) (bool, error) {
-	req := &compactorschedulerpb.LeaseJobRequest{
-		WorkerId: workerID,
-	}
-
+func (e *schedulerExecutor) leaseAndExecuteJob(ctx context.Context, c *MultitenantCompactor, req *compactorschedulerpb.LeaseJobRequest) (bool, error) {
 	resp, err := e.schedulerClient.LeaseJob(ctx, req)
 	if err != nil {
 		return false, err
