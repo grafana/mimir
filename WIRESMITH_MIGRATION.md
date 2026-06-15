@@ -24,12 +24,12 @@ interim.
 
 ## Status
 
-| Proto                              | Status                       | Expdiff                                               |
-| ---------------------------------- | ---------------------------- | ----------------------------------------------------- |
+| Proto                              | Status                                 | Expdiff                                                                                     |
+| ---------------------------------- | -------------------------------------- | ------------------------------------------------------------------------------------------- |
 | `pkg/mimirpb/mimir.proto`          | migrated (phase 1+2+3+DB-18+NoPrescan) | 1081 lines (1084 w/ guard hunk, 1094 pre-4f41063, 1087 phase 3, 1103 phase 2, 2144 phase 1) |
-| `pkg/distributor/ha_tracker.proto` | migrated (phase 2)           | none                                                  |
-| `pkg/querier/stats/stats.proto`    | migrated (phase 2)           | none (one hand-written `GoString` shim)               |
-| all other protos (~22)             | still gogoproto              | —                                                     |
+| `pkg/distributor/ha_tracker.proto` | migrated (phase 2)                     | none                                                                                        |
+| `pkg/querier/stats/stats.proto`    | migrated (phase 2)                     | none (one hand-written `GoString` shim)                                                     |
+| all other protos (~22)             | still gogoproto                        | —                                                                                           |
 
 Full repo builds; pkg/mimirpb, pkg/distributor, pkg/ingester,
 pkg/storage/ingest, pkg/querier(+stats), pkg/frontend/... test suites green.
@@ -44,7 +44,7 @@ generated pre-scan guard is now `if l >= 256 && depth >= 0`). `make protos`
 (`854b4c6` regen + `tools/apply-expected-diffs.sh` reverse-apply) reproduces the
 committed `mimir.pb.go` byte-for-byte, and the rebuilt expdiff round-trips in
 both directions. The expdiff was re-derived (16 hunks → 16 hunks, but the
-WriteRequest pre-scan-guard change was *dropped*: see below). Workaround review:
+WriteRequest pre-scan-guard change was _dropped_: see below). Workaround review:
 the **RW2 pre-scan guard is no longer a hand patch** — the hand-written
 `&& !m.unmarshalFromRW2` guard is replaced by routing the RW2 path through the
 generated `UnmarshalNoPrescan` (generalizing the hand fix into supported API).
@@ -149,8 +149,9 @@ surface (~307 lines):
    top-level pre-scan walk is **no longer** gated in the generated file: the
    RW2 path is now entered through the generated `WriteRequest.UnmarshalNoPrescan`
    (dispatched from `PreallocWriteRequest.Unmarshal` in `timeseries.go`), which
-   passes a depth sentinel of −1 so the generator's own `if l >= 256 && depth
-   >= 0` guard skips the walk. See the RW2 pre-scan section.
+   passes a depth sentinel of −1 so the generator's own
+   `if l >= 256 && depth >= 0` guard skips the walk. See the RW2 pre-scan
+   section.
 3. Exemplar skipping in `TimeSeries.unmarshal` (case 3 + prealloc gating).
 4. RW2 unmarshal stubs (see above).
 
@@ -217,8 +218,8 @@ points one level up. (This replaces the earlier scratch-dir staging recipe.)
 thermal drift cancels across the pair; `-benchtime=2s -benchmem`, `benchstat`
 n=20.
 
-| Bench                    | gogo sec/op | wiresmith sec/op | Δ time     | B/op Δ      | allocs Δ |
-| ------------------------ | ----------- | ---------------- | ---------- | ----------- | -------- |
+| Bench                    | gogo sec/op | wiresmith sec/op | Δ time               | B/op Δ      | allocs Δ |
+| ------------------------ | ----------- | ---------------- | -------------------- | ----------- | -------- |
 | Marshal/RW1              | 11.53m      | 10.38m           | **−9.93%** (p=0.000) | ~           | ~        |
 | Marshal/RW2              | 5.080m      | 4.778m           | **−5.95%** (p=0.000) | ~           | ~        |
 | Unmarshal/RW1 skip=true  | 8.891m      | 9.162m           | ~ (p=0.127)          | **−45.34%** | −16.58%  |
@@ -261,8 +262,9 @@ runtime-flag-driven hand patch in the generated file.
 
 **Current fix (UnmarshalNoPrescan, `databases` @ `854b4c6`):** the compiler now
 emits `UnmarshalNoPrescan(dAtA []byte) error` on every pre-scan-bearing message;
-it calls `m.unmarshal(dAtA, -1)`, and the generated guard `if l >= 256 && depth
->= 0` skips *only* the top-level pre-scan (the −1 sentinel; nested messages
+it calls `m.unmarshal(dAtA, -1)`, and the generated guard
+`if l >= 256 && depth >= 0` skips _only_ the top-level pre-scan (the −1
+sentinel; nested messages
 recurse with `depth+1 >= 0`, keeping their own pre-scans; `UnmarshalWithDepth`
 clamps any externally supplied `depth < 0` to 0). `PreallocWriteRequest.Unmarshal`
 (`timeseries.go`) routes the RW2 path through `WriteRequest.UnmarshalNoPrescan`
