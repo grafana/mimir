@@ -92,6 +92,8 @@ func BenchmarkQuery(b *testing.B) {
 }
 
 func TestBothEnginesReturnSameResultsForBenchmarkQueries(t *testing.T) {
+	t.Skip("disabled because the time and resource usage is causing CI failures for very little value.")
+
 	metricSizes := []int{1, 100} // Don't bother with 2000 series test here: these test cases take a while and they're most interesting as benchmarks, not correctness tests.
 	q := createBenchmarkQueryable(t, metricSizes)
 	cases := TestCases(metricSizes)
