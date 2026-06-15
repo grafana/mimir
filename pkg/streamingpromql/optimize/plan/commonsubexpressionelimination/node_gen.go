@@ -36,6 +36,10 @@ func (d *Duplicate) ReplaceChild(idx int, node planning.Node) error {
 	return nil
 }
 
+func (d *Duplicate) ChildrenLabels() []string {
+	return []string{""}
+}
+
 func (d *DuplicateFilter) Child(idx int) planning.Node {
 	if idx != 0 {
 		panic(fmt.Sprintf("node of type DuplicateFilter supports 1 child, but attempted to get child at index %d", idx))
@@ -69,4 +73,8 @@ func (d *DuplicateFilter) ReplaceChild(idx int, node planning.Node) error {
 	}
 	d.Inner = child
 	return nil
+}
+
+func (d *DuplicateFilter) ChildrenLabels() []string {
+	return []string{""}
 }

@@ -80,10 +80,6 @@ func (m *MatrixSelector) MergeHints(other planning.Node) error {
 	return nil
 }
 
-func (m *MatrixSelector) ChildrenLabels() []string {
-	return nil
-}
-
 func MaterializeMatrixSelector(m *MatrixSelector, _ *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters, overrideTimeParams planning.RangeParams) (planning.OperatorFactory, error) {
 	selectorRange := m.Range
 	selectorTs := m.Timestamp

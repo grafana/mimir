@@ -48,10 +48,6 @@ func (n *NoOp) Describe() string {
 	return ""
 }
 
-func (n *NoOp) ChildrenLabels() []string {
-	return nil
-}
-
 func (n *NoOp) ChildrenTimeRange(timeRange types.QueryTimeRange) types.QueryTimeRange {
 	return timeRange
 }

@@ -60,10 +60,6 @@ func (g *MultiAggregationGroup) Describe() string {
 	return ""
 }
 
-func (g *MultiAggregationGroup) ChildrenLabels() []string {
-	return []string{""}
-}
-
 func (g *MultiAggregationGroup) ChildrenTimeRange(parentTimeRange types.QueryTimeRange) types.QueryTimeRange {
 	return parentTimeRange
 }
@@ -131,10 +127,6 @@ func (a *MultiAggregationInstance) Describe() string {
 	}
 
 	return builder.String()
-}
-
-func (a *MultiAggregationInstance) ChildrenLabels() []string {
-	return []string{""}
 }
 
 func (a *MultiAggregationInstance) ChildrenTimeRange(parentTimeRange types.QueryTimeRange) types.QueryTimeRange {

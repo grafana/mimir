@@ -36,6 +36,10 @@ func (m *MultiAggregationGroup) ReplaceChild(idx int, node planning.Node) error 
 	return nil
 }
 
+func (m *MultiAggregationGroup) ChildrenLabels() []string {
+	return []string{""}
+}
+
 func (m *MultiAggregationInstance) Child(idx int) planning.Node {
 	if idx != 0 {
 		panic(fmt.Sprintf("node of type MultiAggregationInstance supports 1 child, but attempted to get child at index %d", idx))
@@ -69,4 +73,8 @@ func (m *MultiAggregationInstance) ReplaceChild(idx int, node planning.Node) err
 	}
 	m.Group = child
 	return nil
+}
+
+func (m *MultiAggregationInstance) ChildrenLabels() []string {
+	return []string{""}
 }
