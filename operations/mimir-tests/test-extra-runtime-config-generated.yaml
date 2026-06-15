@@ -740,10 +740,10 @@ spec:
           timeoutSeconds: 1
         resources:
           limits:
-            memory: 1200Mi
+            memory: 4Gi
           requests:
             cpu: "2"
-            memory: 600Mi
+            memory: 2Gi
         volumeMounts:
         - mountPath: /etc/another-config
           name: new-config-map
