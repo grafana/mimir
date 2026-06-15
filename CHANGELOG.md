@@ -66,6 +66,7 @@
 ### Jsonnet
 
 * [CHANGE] Query-frontend: Increase default query-frontend cache size limit to 25MB. #14857
+* [CHANGE] Query-frontend: Increase memory requested and limit to 2GiB and 4GiB respectively. #15688
 * [ENHANCEMENT] Updated rollout-operator jsonnet library to v0.38.0. #15328, #15626
 
 ### Documentation

@@ -2623,10 +2623,10 @@ spec:
           timeoutSeconds: 1
         resources:
           limits:
-            memory: 1200Mi
+            memory: 4Gi
           requests:
             cpu: "2"
-            memory: 600Mi
+            memory: 2Gi
         volumeMounts:
         - mountPath: /etc/mimir
           name: overrides
@@ -2723,10 +2723,10 @@ spec:
           timeoutSeconds: 1
         resources:
           limits:
-            memory: 1200Mi
+            memory: 4Gi
           requests:
             cpu: "2"
-            memory: 600Mi
+            memory: 2Gi
         volumeMounts:
         - mountPath: /etc/mimir
           name: overrides
@@ -2828,10 +2828,10 @@ spec:
           timeoutSeconds: 1
         resources:
           limits:
-            memory: 1200Mi
+            memory: 4Gi
           requests:
             cpu: "2"
-            memory: 600Mi
+            memory: 2Gi
         volumeMounts:
         - mountPath: /etc/mimir
           name: overrides
@@ -3712,10 +3712,10 @@ spec:
           timeoutSeconds: 1
         resources:
           limits:
-            memory: 1200Mi
+            memory: 4Gi
           requests:
             cpu: "2"
-            memory: 600Mi
+            memory: 2Gi
         volumeMounts:
         - mountPath: /etc/mimir
           name: overrides
@@ -3817,10 +3817,10 @@ spec:
           timeoutSeconds: 1
         resources:
           limits:
-            memory: 1200Mi
+            memory: 4Gi
           requests:
             cpu: "2"
-            memory: 600Mi
+            memory: 2Gi
         volumeMounts:
         - mountPath: /etc/mimir
           name: overrides
@@ -3927,10 +3927,10 @@ spec:
           timeoutSeconds: 1
         resources:
           limits:
-            memory: 1200Mi
+            memory: 4Gi
           requests:
             cpu: "2"
-            memory: 600Mi
+            memory: 2Gi
         volumeMounts:
         - mountPath: /etc/mimir
           name: overrides
@@ -6382,7 +6382,7 @@ spec:
           or vector(0)
         )
       serverAddress: http://prometheus.default:9090/prometheus
-      threshold: "629145600"
+      threshold: "2147483648"
     name: query_frontend_memory_hpa_default
     type: prometheus
 ---
@@ -6444,7 +6444,7 @@ spec:
           or vector(0)
         )
       serverAddress: http://prometheus.default:9090/prometheus
-      threshold: "629145600"
+      threshold: "2147483648"
     name: query_frontend_zone_a_memory_hpa_default
     type: prometheus
 ---
@@ -6506,7 +6506,7 @@ spec:
           or vector(0)
         )
       serverAddress: http://prometheus.default:9090/prometheus
-      threshold: "629145600"
+      threshold: "2147483648"
     name: query_frontend_zone_b_memory_hpa_default
     type: prometheus
 ---
@@ -6840,7 +6840,7 @@ spec:
           or vector(0)
         )
       serverAddress: http://prometheus.default:9090/prometheus
-      threshold: "629145600"
+      threshold: "2147483648"
     name: ruler_query_frontend_memory_hpa_default
     type: prometheus
 ---
@@ -6902,7 +6902,7 @@ spec:
           or vector(0)
         )
       serverAddress: http://prometheus.default:9090/prometheus
-      threshold: "629145600"
+      threshold: "2147483648"
     name: ruler_query_frontend_zone_a_memory_hpa_default
     type: prometheus
 ---
@@ -6964,7 +6964,7 @@ spec:
           or vector(0)
         )
       serverAddress: http://prometheus.default:9090/prometheus
-      threshold: "629145600"
+      threshold: "2147483648"
     name: ruler_query_frontend_zone_b_memory_hpa_default
     type: prometheus
 ---

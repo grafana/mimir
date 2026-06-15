@@ -854,7 +854,7 @@ spec:
           timeoutSeconds: 1
         resources:
           limits:
-            memory: 1200Mi
+            memory: 4Gi
           requests:
             cpu: 2500m
             memory: 600Mi
@@ -1195,10 +1195,10 @@ spec:
           timeoutSeconds: 1
         resources:
           limits:
-            memory: 1200Mi
+            memory: 4Gi
           requests:
             cpu: "2"
-            memory: 600Mi
+            memory: 2Gi
         volumeMounts:
         - mountPath: /etc/mimir
           name: overrides
@@ -2399,7 +2399,7 @@ spec:
           or vector(0)
         )
       serverAddress: http://prometheus.default:9090/prometheus
-      threshold: "559939584"
+      threshold: "1911260446"
     name: ruler_query_frontend_memory_hpa_default
     type: prometheus
 ---
