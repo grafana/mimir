@@ -340,6 +340,8 @@ type QueryLimitsProvider interface {
 	GetMaxOutOfOrderTimeWindow(ctx context.Context) (time.Duration, error)
 	// GetMinResultsCacheTTL returns the TTL for cached results for the tenant(s) in the context.
 	GetMinResultsCacheTTL(ctx context.Context) (time.Duration, error)
+	// GetMaxCacheFreshness returns the period after which results are cacheable for the tenant(s) in the context.
+	GetMaxCacheFreshness(ctx context.Context) (time.Duration, error)
 }
 
 // NewStaticQueryLimitsProvider returns a QueryLimitsProvider that always returns the provided limits.
@@ -355,6 +357,7 @@ type StaticQueryLimitsProvider struct {
 	EnableDelayedNameRemoval              bool
 	MaxOutOfOrderTimeWindow               time.Duration
 	MinResultsCacheTTL                    time.Duration
+	MaxCacheFreshness                     time.Duration
 }
 
 func (p StaticQueryLimitsProvider) GetMaxEstimatedMemoryConsumptionPerQuery(_ context.Context) (uint64, error) {
@@ -371,6 +374,10 @@ func (p StaticQueryLimitsProvider) GetMaxOutOfOrderTimeWindow(_ context.Context)
 
 func (p StaticQueryLimitsProvider) GetMinResultsCacheTTL(_ context.Context) (time.Duration, error) {
 	return p.MinResultsCacheTTL, nil
+}
+
+func (p StaticQueryLimitsProvider) GetMaxCacheFreshness(_ context.Context) (time.Duration, error) {
+	return p.MaxCacheFreshness, nil
 }
 
 type NoopQueryTracker struct{}
