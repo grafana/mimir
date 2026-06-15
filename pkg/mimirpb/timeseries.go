@@ -90,7 +90,7 @@ func (p *PreallocWriteRequest) Unmarshal(dAtA []byte) error {
 		// into the RW1 representation, so neither pre-scanned slice gets
 		// preallocated. UnmarshalNoPrescan skips that top-level walk (it still
 		// preserves nested pre-scans) instead of guarding it on unmarshalFromRW2.
-		return p.WriteRequest.UnmarshalNoPrescan(dAtA)
+		return p.UnmarshalNoPrescan(dAtA)
 	}
 	return p.WriteRequest.Unmarshal(dAtA)
 }
