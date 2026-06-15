@@ -906,6 +906,15 @@ func (p *TenantQueryLimitsProvider) GetMinResultsCacheTTL(ctx context.Context) (
 	return validation.SmallestPositiveNonZeroDurationPerTenant(tenantIDs, p.limits.ResultsCacheTTL), nil
 }
 
+func (p *TenantQueryLimitsProvider) GetMinOutOfOrderResultsCacheTTL(ctx context.Context) (time.Duration, error) {
+	tenantIDs, err := tenant.TenantIDs(ctx)
+	if err != nil {
+		return 0, err
+	}
+
+	return validation.SmallestPositiveNonZeroDurationPerTenant(tenantIDs, p.limits.ResultsCacheTTLForOutOfOrderTimeWindow), nil
+}
+
 func (p *TenantQueryLimitsProvider) GetMaxCacheFreshness(ctx context.Context) (time.Duration, error) {
 	tenantIDs, err := tenant.TenantIDs(ctx)
 	if err != nil {

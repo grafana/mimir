@@ -987,6 +987,10 @@ func (m mockQueryLimitsProvider) GetMinResultsCacheTTL(ctx context.Context) (tim
 	return m.m.resultsCacheTTL, nil
 }
 
+func (m mockQueryLimitsProvider) GetMinOutOfOrderResultsCacheTTL(ctx context.Context) (time.Duration, error) {
+	return m.m.resultsCacheOutOfOrderWindowTTL, nil
+}
+
 func (m mockQueryLimitsProvider) GetMaxCacheFreshness(_ context.Context) (time.Duration, error) {
 	return m.m.maxCacheFreshness, nil
 }
