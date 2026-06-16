@@ -353,6 +353,7 @@ std.manifestYamlDoc({
       command: [
         if $._config.enable_prometheus_rw2 then '--config.file=/etc/prometheus/prometheusRW2.yaml' else '--config.file=/etc/prometheus/prometheus.yaml',
         '--enable-feature=exemplar-storage',
+        '--enable-feature=promql-experimental-functions',
       ],
       volumes: [
         './config:/etc/prometheus',
