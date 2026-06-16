@@ -224,17 +224,20 @@ func (s *TimeRangeSplitOperator) FinishedReading(ctx context.Context) error {
 }
 
 func (s *TimeRangeSplitOperator) Finalize(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
-	combinedStats, err := types.NewOperatorEvaluationStats(ctx, s.TimeRange, s.MemoryConsumptionTracker, 0)
-	if err != nil {
-		return nil, nil, err
-	}
-
+	var combinedStats *types.OperatorEvaluationStats // We can't create this immediately as we don't know the subset count yet.
 	var combinedAnnotations annotations.Annotations
 
 	for _, r := range s.ranges {
 		rangeStats, rangeAnnotations, err := r.operator.Finalize(ctx)
 		if err != nil {
 			return nil, nil, err
+		}
+
+		if combinedStats == nil {
+			combinedStats, err = types.NewOperatorEvaluationStats(ctx, s.TimeRange, s.MemoryConsumptionTracker, rangeStats.GetSubsetCount())
+			if err != nil {
+				return nil, nil, err
+			}
 		}
 
 		if err := combinedStats.AddSubRange(rangeStats); err != nil {
