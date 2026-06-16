@@ -563,7 +563,7 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr, timeRange types.QueryTimeR
 		if isVectorScalar {
 			// Comparison vector-scalar operations without bool modifier don't drop the __name__ label.
 			// So don't need to wrap in DeduplicateAndMerge.
-			if expr.Op.IsComparisonOperator() && !expr.ReturnBool {
+			if (expr.Op.IsComparisonOperator() && !expr.ReturnBool) || expr.Op == parser.TRIM_UPPER || expr.Op == parser.TRIM_LOWER {
 				return binExpr, nil
 			}
 

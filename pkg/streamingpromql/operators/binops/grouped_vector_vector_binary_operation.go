@@ -555,6 +555,11 @@ func (g *GroupedVectorVectorBinaryOperation) shouldRemoveMetricNameFromManySide(
 		return g.ReturnBool
 	}
 
+	if g.Op == parser.TRIM_UPPER || g.Op == parser.TRIM_LOWER {
+		// Trim operators act like a filter on the "many" side, so retain its metric name.
+		return false
+	}
+
 	return true
 }
 

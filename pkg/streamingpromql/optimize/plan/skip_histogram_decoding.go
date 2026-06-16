@@ -63,6 +63,13 @@ func (s *SkipHistogramDecodingOptimizationPass) applyToNode(node planning.Node, 
 		}
 	}
 
+	// Trim operators compute new count and sum from the bucket data, so we need to decode buckets.
+	if b, ok := node.(*core.BinaryExpression); ok {
+		if b.Op == core.BINARY_TRIM_UPPER || b.Op == core.BINARY_TRIM_LOWER {
+			skipHistogramBuckets = false
+		}
+	}
+
 	for child := range planning.ChildrenIter(node) {
 		s.applyToNode(child, skipHistogramBuckets)
 	}

@@ -93,6 +93,8 @@ enum BinaryOperation {
   BINARY_LSS = 14; // <
   BINARY_GTE = 15; // >=
   BINARY_GTR = 16; // >
+  BINARY_TRIM_UPPER = 17; // </
+  BINARY_TRIM_LOWER = 18; // >/
 }
 
 message VectorMatching {
