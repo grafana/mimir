@@ -31,7 +31,7 @@ jobs:
       # Only the Makefile is needed to run `make print-build-image`, so we use
       # sparse checkout to avoid fetching the entire repository.
       - name: Check out repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           persist-credentials: false
           sparse-checkout: |
@@ -57,7 +57,7 @@ jobs:
     container:
       image: ${{ needs.prepare.outputs.build_image }} # zizmor: ignore[unpinned-images] The image output produced by the prepare step is pinned
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           persist-credentials: false
       - name: Run Git Config
@@ -78,7 +78,7 @@ jobs:
       image: ${{ needs.prepare.outputs.build_image }} # zizmor: ignore[unpinned-images] The image output produced by the prepare step is pinned
     steps:
       - name: Check out repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           persist-credentials: false
       - name: Restore Go build cache
@@ -122,7 +122,7 @@ jobs:
       image: ${{ needs.prepare.outputs.build_image }} # zizmor: ignore[unpinned-images] The image output produced by the prepare step is pinned
     steps:
       - name: Check out repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           persist-credentials: false
       - name: Run Git Config
@@ -154,7 +154,7 @@ jobs:
       image: ${{ needs.prepare.outputs.build_image }} # zizmor: ignore[unpinned-images] The image output produced by the prepare step is pinned
     steps:
       - name: Check out repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           persist-credentials: false
       - name: Run Git Config
@@ -188,7 +188,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       # Sparse checkout of go.sum only, to compute the cache key without fetching the full repo.
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         if: github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true'
         with:
           persist-credentials: false
@@ -201,7 +201,7 @@ jobs:
           path: /home/runner/.cache/go-build
           key: go-build-cache-integration-${{ needs.prepare.outputs.build_image }}-${{ hashFiles('go.sum') }}
           lookup-only: true
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         if: steps.check-cache.outputs.cache-hit != 'true' && (github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true')
         with:
           persist-credentials: false
@@ -230,7 +230,7 @@ jobs:
     container:
       image: ${{ needs.prepare.outputs.build_image }} # zizmor: ignore[unpinned-images] The image output produced by the prepare step is pinned
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         if: github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true'
         with:
           persist-credentials: false
@@ -243,7 +243,7 @@ jobs:
           path: /go/cache
           key: go-build-cache-unit-${{ needs.prepare.outputs.build_image }}-${{ hashFiles('go.sum') }}
           lookup-only: true
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         if: steps.check-cache.outputs.cache-hit != 'true' && (github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true')
         with:
           persist-credentials: false
@@ -270,7 +270,7 @@ jobs:
     container:
       image: ${{ needs.prepare.outputs.build_image }} # zizmor: ignore[unpinned-images] The image output produced by the prepare step is pinned
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         if: github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true'
         with:
           persist-credentials: false
@@ -283,7 +283,7 @@ jobs:
           path: /go/cache
           key: go-build-cache-image-and-lint-${{ needs.prepare.outputs.build_image }}-${{ hashFiles('go.sum') }}
           lookup-only: true
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         if: steps.check-cache.outputs.cache-hit != 'true' && (github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true')
         with:
           persist-credentials: false
@@ -325,7 +325,7 @@ jobs:
       image: ${{ needs.prepare.outputs.build_image }} # zizmor: ignore[unpinned-images] The image output produced by the prepare step is pinned
     steps:
       - name: Check out repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           persist-credentials: false
       - name: Restore Go build cache
@@ -417,7 +417,7 @@ jobs:
       image: ${{ needs.prepare.outputs.build_image }} # zizmor: ignore[unpinned-images] The image output produced by the prepare step is pinned
     steps:
       - name: Check out repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           persist-credentials: false
       - name: Restore Go build cache
@@ -441,7 +441,7 @@ jobs:
       image: ${{ needs.prepare.outputs.build_image }} # zizmor: ignore[unpinned-images] The image output produced by the prepare step is pinned
     steps:
       - name: Check out repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           persist-credentials: false
       - name: Restore Go build cache
@@ -465,7 +465,7 @@ jobs:
       image: ${{ needs.prepare.outputs.build_image }} # zizmor: ignore[unpinned-images] The image output produced by the prepare step is pinned
     steps:
       - name: Check out repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           persist-credentials: false
       - name: Restore Go build cache
@@ -489,7 +489,7 @@ jobs:
       image: ${{ needs.prepare.outputs.build_image }} # zizmor: ignore[unpinned-images] The image output produced by the prepare step is pinned
     steps:
       - name: Check out repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           persist-credentials: false
       - name: Restore Go build cache
@@ -513,7 +513,7 @@ jobs:
       image: ${{ needs.prepare.outputs.build_image }} # zizmor: ignore[unpinned-images] The image output produced by the prepare step is pinned
     steps:
       - name: Check out repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           persist-credentials: false
       - name: Restore Go build cache
@@ -541,7 +541,7 @@ jobs:
       image: ${{ needs.prepare.outputs.build_image }} # zizmor: ignore[unpinned-images] The image output produced by the prepare step is pinned
     steps:
       - name: Check out repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           persist-credentials: false
       - name: Restore Go build cache
@@ -580,7 +580,7 @@ jobs:
       image: ${{ needs.prepare.outputs.build_image }} # zizmor: ignore[unpinned-images] The image output produced by the prepare step is pinned
     steps:
       - name: Check out repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           persist-credentials: false
       # Race-enabled image uses CGO_ENABLED=1 -race -tags=netgo,stringlabels, same as unit tests.
@@ -634,7 +634,7 @@ jobs:
           go-version: ${{ needs.goversion.outputs.version }}
           cache: false # We manage caching ourselves below to maintain consistency with the other jobs that don't use setup-go.
       - name: Check out repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           persist-credentials: false
       - name: Restore Go build cache
@@ -707,7 +707,7 @@ jobs:
       id-token: write
     steps:
       - name: Check out repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           persist-credentials: false
       - name: Run Git Config
