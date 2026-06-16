@@ -222,7 +222,7 @@ func TestUserTSDB_addPendingNonOwnedRefs(t *testing.T) {
 
 		db.addPendingNonOwnedRefs(nil)
 
-		assert.Empty(t, db.pendingNonOwnedRefs)
+		assert.Nil(t, db.pendingNonOwnedRefs)
 	})
 
 	t.Run("empty snapshot on an empty set is a no-op", func(t *testing.T) {
@@ -230,7 +230,7 @@ func TestUserTSDB_addPendingNonOwnedRefs(t *testing.T) {
 
 		db.addPendingNonOwnedRefs(nil)
 
-		assert.Empty(t, db.pendingNonOwnedRefs)
+		assert.Nil(t, db.pendingNonOwnedRefs)
 	})
 
 	t.Run("fully replacing the snapshot drops all old refs and stamps the new ones", func(t *testing.T) {
@@ -296,7 +296,7 @@ func TestUserTSDB_takePendingNonOwnedRefs(t *testing.T) {
 		got := db.takePendingNonOwnedRefs(time.Now().Add(time.Hour))
 
 		assert.Equal(t, []storage.SeriesRef{1, 2, 3}, asSortedSlice(got))
-		assert.Empty(t, db.pendingNonOwnedRefs, "queue must be empty after a successful take")
+		assert.Nil(t, db.pendingNonOwnedRefs, "queue must be freed after a successful full take")
 	})
 
 	t.Run("returns refs at the grace-period boundary (notAfter == ref timestamp)", func(t *testing.T) {
@@ -308,7 +308,7 @@ func TestUserTSDB_takePendingNonOwnedRefs(t *testing.T) {
 		got := db.takePendingNonOwnedRefs(db.pendingNonOwnedRefs[42])
 
 		assert.Equal(t, []storage.SeriesRef{42}, got)
-		assert.Empty(t, db.pendingNonOwnedRefs)
+		assert.Nil(t, db.pendingNonOwnedRefs)
 	})
 
 	t.Run("subsequent take after a successful one returns nil", func(t *testing.T) {
@@ -365,7 +365,7 @@ func TestUserTSDB_takePendingNonOwnedRefs(t *testing.T) {
 		// Far-future cutoff: ref 3 is now eligible.
 		got := db.takePendingNonOwnedRefs(time.Now().Add(time.Hour))
 		assert.Equal(t, []storage.SeriesRef{3}, got)
-		assert.Empty(t, db.pendingNonOwnedRefs)
+		assert.Nil(t, db.pendingNonOwnedRefs)
 	})
 }
 
