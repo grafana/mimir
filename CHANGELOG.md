@@ -4,10 +4,13 @@
 
 ### Grafana Mimir
 
+## 3.0.7
+
+### Grafana Mimir
+
 * [CHANGE] Update Docker image bases from Debian 12 to Debian 13 (`gcr.io/distroless/static-debian13`; race images use `base-nossl-debian13`). #15629
-* [BUGFIX] Upgrade Go to 1.26.4 to address [CVE-2026-42507](https://pkg.go.dev/vuln/GO-2026-5039). #15660
 * [BUGFIX] Distributor: Fix nil pointer panic in `WriteRequest.Unmarshal` when receiving a Remote Write 2.0 request with zero timeseries. #14698
-* [BUGFIX] Update to Go v1.26.3 to address high-severity CVEs [CVE-2026-42501](https://pkg.go.dev/vuln/GO-2026-4984), [CVE-2026-39836](https://pkg.go.dev/vuln/GO-2026-4971), [CVE-2026-33811](https://pkg.go.dev/vuln/GO-2026-4981), [CVE-2026-33814](https://pkg.go.dev/vuln/GO-2026-4918), [CVE-2026-42499](https://pkg.go.dev/vuln/GO-2026-4977), [CVE-2026-39820](https://pkg.go.dev/vuln/GO-2026-4986) and other lower-severity CVEs. #15402
+* [BUGFIX] Update to Go v1.26.4 to address [CVE-2026-42501](https://pkg.go.dev/vuln/GO-2026-4984), [CVE-2026-39836](https://pkg.go.dev/vuln/GO-2026-4971), [CVE-2026-33811](https://pkg.go.dev/vuln/GO-2026-4981), [CVE-2026-33814](https://pkg.go.dev/vuln/GO-2026-4918), [CVE-2026-42499](https://pkg.go.dev/vuln/GO-2026-4977), [CVE-2026-39820](https://pkg.go.dev/vuln/GO-2026-4986), [CVE-2026-42507](https://pkg.go.dev/vuln/GO-2026-5039) and other lower-severity CVEs. #15402 #15660
 
 ## 3.0.6
 
