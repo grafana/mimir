@@ -11,6 +11,8 @@ name: Build and Push mimir-build-image
 on:
   pull_request:
 
+permissions: {}
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
   cancel-in-progress: true
@@ -122,6 +124,9 @@ jobs:
     needs:
       - prepare
     if: needs.prepare.outputs.need_to_build == 'true'
+    permissions:
+      contents: read
+      id-token: write
     uses: grafana/shared-workflows/.github/workflows/docker-build-push-multiarch.yml@638f24848a49edb0bd14f771b6dd37b4455f1591 # main
     with:
       context: mimir-build-image

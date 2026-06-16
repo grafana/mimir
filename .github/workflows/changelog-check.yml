@@ -4,6 +4,10 @@ on:
   pull_request:
     types: [opened, synchronize, labeled, unlabeled]
 
+permissions:
+  contents: read         # actions/checkout
+  pull-requests: read    # `gh pr view --json labels` in the check-label step
+
 jobs:
   check-changelog:
     runs-on: ubuntu-latest
