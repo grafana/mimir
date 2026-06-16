@@ -27,6 +27,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/querier/stats"
+	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -87,7 +88,8 @@ func remoteReadSamples(
 		Results: make([]*prompb.QueryResult, len(req.Queries)),
 	}
 
-	sampleCounts := make([]uint64, len(req.Queries))
+	physicalSampleCounts := make([]uint64, len(req.Queries))
+	equivalentSampleCounts := make([]uint64, len(req.Queries))
 	closers := make([]io.Closer, len(req.Queries))
 	defer func() {
 		for _, closer := range closers {
@@ -113,7 +115,7 @@ func remoteReadSamples(
 
 		// We can over-read when querying, but we don't need to return samples
 		// outside the queried range, so can filter them out.
-		resp.Results[idx], sampleCounts[idx], err = seriesSetToQueryResult(seriesSet, int64(minT), int64(maxT))
+		resp.Results[idx], physicalSampleCounts[idx], equivalentSampleCounts[idx], err = seriesSetToQueryResult(seriesSet, int64(minT), int64(maxT))
 		return err
 	}
 
@@ -127,13 +129,14 @@ func remoteReadSamples(
 		return
 	}
 
-	var totalSamples uint64
-	for _, c := range sampleCounts {
-		totalSamples += c
+	var totalPhysicalSamples, totalEquivalentSamples uint64
+	for i := range physicalSampleCounts {
+		totalPhysicalSamples += physicalSampleCounts[i]
+		totalEquivalentSamples += equivalentSampleCounts[i]
 	}
 	queryStats := stats.FromContext(ctx)
-	queryStats.AddPhysicalSamplesRead(totalSamples)
-	queryStats.AddEquivalentSamplesRead(totalSamples)
+	queryStats.AddPhysicalSamplesRead(totalPhysicalSamples)
+	queryStats.AddEquivalentSamplesRead(totalEquivalentSamples)
 
 	w.Header().Add("Content-Type", "application/x-protobuf")
 	w.Header().Set("Content-Encoding", "snappy")
@@ -253,9 +256,12 @@ func remoteReadErrorStatusCode(err error) int {
 	}
 }
 
-func seriesSetToQueryResult(s storage.SeriesSet, filterStartMs, filterEndMs int64) (*prompb.QueryResult, uint64, error) {
+// seriesSetToQueryResult converts a SeriesSet to a QueryResult, returning both
+// the physical and equivalent sample counts. Physical counts 1 per sample
+// regardless of type; equivalent uses EquivalentFloatSampleCount for histograms.
+func seriesSetToQueryResult(s storage.SeriesSet, filterStartMs, filterEndMs int64) (*prompb.QueryResult, uint64, uint64, error) {
 	result := &prompb.QueryResult{}
-	var sampleCount uint64
+	var physicalSampleCount, equivalentSampleCount uint64
 
 	var it chunkenc.Iterator
 	for s.Next() {
@@ -276,22 +282,25 @@ func seriesSetToQueryResult(s storage.SeriesSet, filterStartMs, filterEndMs int6
 					Timestamp: t,
 					Value:     v,
 				})
-				sampleCount++
+				physicalSampleCount++
+				equivalentSampleCount++
 			case chunkenc.ValHistogram:
 				t, h := it.AtHistogram(nil) // Nil argument as we pass the data to the protobuf as-is without copy.
 				histograms = append(histograms, prompb.FromIntHistogram(t, h))
-				sampleCount++
+				physicalSampleCount++
+				equivalentSampleCount += uint64(types.EquivalentFloatSampleCount(h.ToFloat(nil)))
 			case chunkenc.ValFloatHistogram:
 				t, h := it.AtFloatHistogram(nil) // Nil argument as we pass the data to the protobuf as-is without copy.
 				histograms = append(histograms, prompb.FromFloatHistogram(t, h))
-				sampleCount++
+				physicalSampleCount++
+				equivalentSampleCount += uint64(types.EquivalentFloatSampleCount(h))
 			default:
-				return nil, 0, fmt.Errorf("unsupported value type: %v", valType)
+				return nil, 0, 0, fmt.Errorf("unsupported value type: %v", valType)
 			}
 		}
 
 		if err := it.Err(); err != nil {
-			return nil, 0, err
+			return nil, 0, 0, err
 		}
 
 		ts := &prompb.TimeSeries{
@@ -303,7 +312,7 @@ func seriesSetToQueryResult(s storage.SeriesSet, filterStartMs, filterEndMs int6
 		result.Timeseries = append(result.Timeseries, ts)
 	}
 
-	return result, sampleCount, s.Err()
+	return result, physicalSampleCount, equivalentSampleCount, s.Err()
 }
 
 func negotiateResponseType(accepted []prompb.ReadRequest_ResponseType) (prompb.ReadRequest_ResponseType, error) {
@@ -347,8 +356,9 @@ func streamChunkedReadResponses(stream io.Writer, ss storage.ChunkSeriesSet, que
 				return 0, errors.Errorf("found not populated chunk returned by SeriesSet at ref: %v", chk.Ref)
 			}
 
-			// NumSamples() is used here to avoid decoding the individual samples, the tests show that it's safe to use for this but
-			// review this first if we run into inaccuracies with some chunk encodings.
+			// NumSamples() is used for both physical and equivalent sample counts in the streaming path.
+			// This avoids decoding individual samples for performance. For histograms, this means the
+			// equivalent count won't reflect the higher float-equivalent cost, which is an accepted trade-off.
 			sampleCount += uint64(chk.Chunk.NumSamples())
 
 			// Cut the chunk.
