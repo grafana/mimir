@@ -167,8 +167,9 @@ func remoteReadStreamedXORChunks(
 
 	// Process all queries concurrently and collect their ChunkSeriesSet results
 	type queryResult struct {
-		series  storage.ChunkSeriesSet
-		querier io.Closer
+		series     storage.ChunkSeriesSet
+		querier    io.Closer
+		minT, maxT int64
 	}
 
 	results := make([]queryResult, len(req.Queries))
@@ -184,7 +185,7 @@ func remoteReadStreamedXORChunks(
 
 	run := func(_ context.Context, idx int) error {
 		qr := req.Queries[idx]
-		start, end, _, _, matchers, hints, err := queryFromRemoteReadQuery(qr)
+		start, end, minT, maxT, matchers, hints, err := queryFromRemoteReadQuery(qr)
 		if err != nil {
 			return err
 		}
@@ -198,7 +199,7 @@ func remoteReadStreamedXORChunks(
 		// Use the original ctx instead of jobCtx because ForEachJob cancels jobCtx before returning,
 		// but we need the SeriesSet to remain valid for streaming later.
 		seriesSet := querier.Select(ctx, true, hints, matchers...)
-		results[idx] = queryResult{series: seriesSet, querier: querier}
+		results[idx] = queryResult{series: seriesSet, querier: querier, minT: int64(minT), maxT: int64(maxT)}
 		return nil
 	}
 
@@ -224,6 +225,8 @@ func remoteReadStreamedXORChunks(
 			result.series,
 			i,
 			maxBytesInFrame,
+			result.minT,
+			result.maxT,
 		)
 		// Report stats incrementally so that already-streamed queries are counted
 		// even if a later query errors or the client disconnects.
@@ -340,7 +343,7 @@ func negotiateResponseType(accepted []prompb.ReadRequest_ResponseType) (prompb.R
 	return 0, errors.Errorf("server does not support any of the requested response types: %v; supported: %v", accepted, supported)
 }
 
-func streamChunkedReadResponses(stream io.Writer, ss storage.ChunkSeriesSet, queryIndex, maxBytesInFrame int) (uint64, uint64, error) {
+func streamChunkedReadResponses(stream io.Writer, ss storage.ChunkSeriesSet, queryIndex, maxBytesInFrame int, minTMs, maxTMs int64) (uint64, uint64, error) {
 	var (
 		chks                  []prompb.Chunk
 		lbls                  []prompb.Label
@@ -364,11 +367,16 @@ func streamChunkedReadResponses(stream io.Writer, ss storage.ChunkSeriesSet, que
 				return 0, 0, errors.Errorf("found not populated chunk returned by SeriesSet at ref: %v", chk.Ref)
 			}
 
-			physicalSampleCount += uint64(chk.Chunk.NumSamples())
-			eqCount, err := equivalentSampleCountForChunk(chk.Chunk)
+			// Count only samples within the queried range, excluding stale markers, to match the
+			// samples response path. The whole chunk is still streamed to the
+			// client (chunks are atomic in the streaming protocol), so a streamed-chunks client can
+			// receive slightly more raw samples than are metered. This is intentional: metering
+			// reflects the logical query range, not the bytes delivered.
+			physicalCount, eqCount, err := sampleCountsForChunk(chk.Chunk, minTMs, maxTMs)
 			if err != nil {
-				return 0, 0, errors.Wrap(err, "compute equivalent sample count")
+				return 0, 0, errors.Wrap(err, "compute sample counts")
 			}
+			physicalSampleCount += physicalCount
 			equivalentSampleCount += eqCount
 
 			// Cut the chunk.
@@ -412,37 +420,52 @@ func streamChunkedReadResponses(stream io.Writer, ss storage.ChunkSeriesSet, que
 	return physicalSampleCount, equivalentSampleCount, ss.Err()
 }
 
-// equivalentSampleCountForChunk returns the equivalent float sample count for a chunk.
-// Float chunks return NumSamples() directly. Histogram chunks only decode the first sample because all samples in
-// a chunk share the same bucket layout, we then multiply its cost by NumSamples() to get the total count.
-func equivalentSampleCountForChunk(chk chunkenc.Chunk) (uint64, error) {
-	enc := chk.Encoding()
-
-	if enc == chunkenc.EncXOR || enc == chunkenc.EncXOR2 {
-		return uint64(chk.NumSamples()), nil
-	}
-
-	numSamples := chk.NumSamples()
-	if numSamples == 0 {
-		return 0, nil
-	}
-
+// sampleCountsForChunk returns the physical and equivalent float sample counts for the samples in
+// chk that fall within [minTMs, maxTMs], excluding stale markers. It mirrors the per-sample counting
+// on the samples response path so that the same data is metered  identically regardless of the negotiated response type.
+//
+// All samples in a histogram chunk share a single bucket layout, so their equivalent weight is
+// identical; we compute it once from the first non-stale histogram sample and reuse it.
+func sampleCountsForChunk(chk chunkenc.Chunk, minTMs, maxTMs int64) (physical, equivalent uint64, err error) {
 	it := chk.Iterator(nil)
+	var (
+		fh                  histogram.FloatHistogram
+		histogramWeight     uint64
+		haveHistogramWeight bool
+	)
 	for valType := it.Next(); valType != chunkenc.ValNone; valType = it.Next() {
-		var fh histogram.FloatHistogram
-		_, h := it.AtFloatHistogram(&fh)
-		// We skip stale/NaN values because their bucket layouts are empty, using them would result in undercounting (really
-		// just not counting at all).
-		if value.IsStaleNaN(h.Sum) {
+		// We can over-read chunks that only partially overlap the queried range, so skip samples
+		// outside it; we must not meter samples that weren't queried for.
+		if t := it.AtT(); t < minTMs || t > maxTMs {
 			continue
 		}
-		perSample := types.EquivalentFloatSampleCount(h)
-		return uint64(perSample) * uint64(numSamples), nil
+
+		switch valType {
+		case chunkenc.ValFloat:
+			if _, v := it.At(); !value.IsStaleNaN(v) {
+				physical++
+				equivalent++
+			}
+		case chunkenc.ValHistogram, chunkenc.ValFloatHistogram:
+			_, h := it.AtFloatHistogram(&fh)
+			// Skip stale markers: their bucket layout is empty, so they carry no equivalent weight.
+			if value.IsStaleNaN(h.Sum) {
+				continue
+			}
+			if !haveHistogramWeight {
+				histogramWeight = uint64(types.EquivalentFloatSampleCount(h))
+				haveHistogramWeight = true
+			}
+			physical++
+			equivalent += histogramWeight
+		default:
+			return 0, 0, fmt.Errorf("unsupported value type: %v", valType)
+		}
 	}
 	if err := it.Err(); err != nil {
-		return 0, err
+		return 0, 0, err
 	}
-	return 0, nil
+	return physical, equivalent, nil
 }
 
 func initializedFrameBytesRemaining(maxBytesInFrame int, lbls []prompb.Label) int {
