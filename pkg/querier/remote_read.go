@@ -90,8 +90,6 @@ func remoteReadSamples(
 		Results: make([]*prompb.QueryResult, len(req.Queries)),
 	}
 
-	physicalSampleCounts := make([]uint64, len(req.Queries))
-	equivalentSampleCounts := make([]uint64, len(req.Queries))
 	closers := make([]io.Closer, len(req.Queries))
 	defer func() {
 		for _, closer := range closers {
@@ -100,6 +98,8 @@ func remoteReadSamples(
 			}
 		}
 	}()
+
+	queryStats := stats.FromContext(ctx)
 
 	run := func(_ context.Context, idx int) error {
 		start, end, minT, maxT, matchers, hints, err := queryFromRemoteReadQuery(req.Queries[idx])
@@ -117,8 +117,18 @@ func remoteReadSamples(
 
 		// We can over-read when querying, but we don't need to return samples
 		// outside the queried range, so can filter them out.
-		resp.Results[idx], physicalSampleCounts[idx], equivalentSampleCounts[idx], err = seriesSetToQueryResult(seriesSet, int64(minT), int64(maxT))
-		return err
+		var physicalSampleCount, equivalentSampleCount uint64
+		resp.Results[idx], physicalSampleCount, equivalentSampleCount, err = seriesSetToQueryResult(seriesSet, int64(minT), int64(maxT))
+		if err != nil {
+			return err
+		}
+
+		// Report stats incrementally so that already-processed queries are counted
+		// even if a later query errors or the client disconnects.
+		// The underlying stats methods are atomic, so concurrent calls are safe.
+		queryStats.AddPhysicalSamplesRead(physicalSampleCount)
+		queryStats.AddEquivalentSamplesRead(equivalentSampleCount)
+		return nil
 	}
 
 	err := concurrency.ForEachJob(ctx, len(req.Queries), maxConcurrency, run)
@@ -130,15 +140,6 @@ func remoteReadSamples(
 		http.Error(w, err.Error(), code) // change the Content-Type to text/plain and return a human-readable error message
 		return
 	}
-
-	var totalPhysicalSamples, totalEquivalentSamples uint64
-	for i := range physicalSampleCounts {
-		totalPhysicalSamples += physicalSampleCounts[i]
-		totalEquivalentSamples += equivalentSampleCounts[i]
-	}
-	queryStats := stats.FromContext(ctx)
-	queryStats.AddPhysicalSamplesRead(totalPhysicalSamples)
-	queryStats.AddEquivalentSamplesRead(totalEquivalentSamples)
 
 	w.Header().Add("Content-Type", "application/x-protobuf")
 	w.Header().Set("Content-Encoding", "snappy")
@@ -216,7 +217,7 @@ func remoteReadStreamedXORChunks(
 	// We don't set the header because the http stdlib will automatically set it to 200 on the first Write().
 	// In case of an error, we will break the stream below.
 
-	var totalPhysicalSamples, totalEquivalentSamples uint64
+	queryStats := stats.FromContext(ctx)
 	for i, result := range results {
 		physicalCount, equivalentCount, err := streamChunkedReadResponses(
 			prom_remote.NewChunkedWriter(w, f),
@@ -224,6 +225,10 @@ func remoteReadStreamedXORChunks(
 			i,
 			maxBytesInFrame,
 		)
+		// Report stats incrementally so that already-streamed queries are counted
+		// even if a later query errors or the client disconnects.
+		queryStats.AddPhysicalSamplesRead(physicalCount)
+		queryStats.AddEquivalentSamplesRead(equivalentCount)
 		if err != nil {
 			code := remoteReadErrorStatusCode(err)
 			if code/100 != 4 {
@@ -235,13 +240,7 @@ func remoteReadStreamedXORChunks(
 			http.Error(w, err.Error(), code)
 			return
 		}
-		totalPhysicalSamples += physicalCount
-		totalEquivalentSamples += equivalentCount
 	}
-
-	queryStats := stats.FromContext(ctx)
-	queryStats.AddPhysicalSamplesRead(totalPhysicalSamples)
-	queryStats.AddEquivalentSamplesRead(totalEquivalentSamples)
 }
 
 func remoteReadErrorStatusCode(err error) int {
