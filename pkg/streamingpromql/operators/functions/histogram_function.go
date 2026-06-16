@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"unsafe"
 
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
@@ -33,6 +34,12 @@ const (
 	// This is only used for backwards compatibility when delayed __name__ removal is not enabled.
 	intentionallyEmptyMetricName = ""
 )
+
+// isMetricNameLabel reports whether name is the __name__ label. It is used as the predicate for
+// Labels.DropReserved to drop the metric name (the non-deprecated equivalent of DropMetricName).
+func isMetricNameLabel(name string) bool {
+	return name == model.MetricNameLabel
+}
 
 // histogramGrouper holds the state and logic shared by HistogramFunction and
 // HistogramQuantilesFunction for collating an instant vector's classic and native histogram series
@@ -254,8 +261,7 @@ func (h *HistogramFunction) SeriesMetadata(ctx context.Context, matchers types.M
 		if h.enableDelayedNameRemoval {
 			labelsMetadata = types.SeriesMetadata{Labels: g.labels, DropName: true}
 		} else {
-			//nolint:staticcheck // SA1019: DropMetricName is deprecated.
-			labelsMetadata = types.SeriesMetadata{Labels: g.labels.DropMetricName()}
+			labelsMetadata = types.SeriesMetadata{Labels: g.labels.DropReserved(isMetricNameLabel)}
 		}
 		seriesMetadata, err = types.AppendSeriesMetadata(h.memoryConsumptionTracker, seriesMetadata, labelsMetadata)
 		if err != nil {
@@ -965,7 +971,7 @@ func (h *HistogramQuantilesFunction) SeriesMetadata(ctx context.Context, matcher
 				lb.Set(h.quantileLabel, h.quantileLabels[i])
 				labelsMetadata = types.SeriesMetadata{Labels: lb.Labels(), DropName: true}
 			} else {
-				lb.Reset(g.labels.DropMetricName())
+				lb.Reset(g.labels.DropReserved(isMetricNameLabel))
 				lb.Set(h.quantileLabel, h.quantileLabels[i])
 				labelsMetadata = types.SeriesMetadata{Labels: lb.Labels()}
 			}
