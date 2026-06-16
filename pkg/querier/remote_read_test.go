@@ -467,6 +467,31 @@ func TestRemoteReadSamples_SampleCountStats(t *testing.T) {
 			expectedPhysicalSampleCount:   0,
 			expectedEquivalentSampleCount: 0,
 		},
+		"stale samples not counted": {
+			queries: []*prompb.Query{
+				{StartTimestampMs: 0, EndTimestampMs: 10},
+			},
+			seriesSets: func() []storage.SeriesSet {
+				staleNaN := model.SampleValue(math.Float64frombits(value.StaleNaN))
+				return []storage.SeriesSet{
+					series.NewConcreteSeriesSetFromUnsortedSeries([]storage.Series{
+						series.NewConcreteSeries(
+							labels.FromStrings("foo", "bar"),
+							[]model.SamplePair{
+								{Timestamp: 1, Value: 1},
+								{Timestamp: 2, Value: staleNaN},
+								{Timestamp: 3, Value: 3},
+								{Timestamp: 4, Value: staleNaN},
+								{Timestamp: 5, Value: 5},
+							},
+							nil,
+						),
+					}),
+				}
+			},
+			expectedPhysicalSampleCount:   3,
+			expectedEquivalentSampleCount: 3,
+		},
 	}
 
 	for testName, tc := range tests {

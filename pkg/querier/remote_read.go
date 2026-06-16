@@ -283,18 +283,24 @@ func seriesSetToQueryResult(s storage.SeriesSet, filterStartMs, filterEndMs int6
 					Timestamp: t,
 					Value:     v,
 				})
-				physicalSampleCount++
-				equivalentSampleCount++
+				if !value.IsStaleNaN(v) {
+					physicalSampleCount++
+					equivalentSampleCount++
+				}
 			case chunkenc.ValHistogram:
 				t, h := it.AtHistogram(nil) // Nil argument as we pass the data to the protobuf as-is without copy.
 				histograms = append(histograms, prompb.FromIntHistogram(t, h))
-				physicalSampleCount++
-				equivalentSampleCount += uint64(types.EquivalentFloatSampleCount(h.ToFloat(nil)))
+				if !value.IsStaleNaN(h.Sum) {
+					physicalSampleCount++
+					equivalentSampleCount += uint64(types.EquivalentFloatSampleCount(h.ToFloat(nil)))
+				}
 			case chunkenc.ValFloatHistogram:
 				t, h := it.AtFloatHistogram(nil) // Nil argument as we pass the data to the protobuf as-is without copy.
 				histograms = append(histograms, prompb.FromFloatHistogram(t, h))
-				physicalSampleCount++
-				equivalentSampleCount += uint64(types.EquivalentFloatSampleCount(h))
+				if !value.IsStaleNaN(h.Sum) {
+					physicalSampleCount++
+					equivalentSampleCount += uint64(types.EquivalentFloatSampleCount(h))
+				}
 			default:
 				return nil, 0, 0, fmt.Errorf("unsupported value type: %v", valType)
 			}
