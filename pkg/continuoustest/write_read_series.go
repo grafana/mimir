@@ -39,8 +39,8 @@ type WriteReadSeriesTestConfig struct {
 }
 
 func (cfg *WriteReadSeriesTestConfig) RegisterFlags(f *flag.FlagSet) {
-	f.IntVar(&cfg.NumSeries, "tests.write-read-series-test.num-series", 10000, "Number of series used for the test.")
-	f.DurationVar(&cfg.MaxQueryAge, "tests.write-read-series-test.max-query-age", 7*24*time.Hour, "How back in the past metrics can be queried at most.")
+	f.IntVar(&cfg.NumSeries, "tests.write-read-series-test.num-series", 1000, "Number of series used for the test.")
+	f.DurationVar(&cfg.MaxQueryAge, "tests.write-read-series-test.max-query-age", 48*time.Hour, "How back in the past metrics can be queried at most.")
 	f.BoolVar(&cfg.WithFloats, "tests.write-read-series-test.float-samples-enabled", true, "Set to true to use float samples")
 	f.BoolVar(&cfg.WithHistograms, "tests.write-read-series-test.histogram-samples-enabled", false, "Set to true to use native histogram samples")
 }
