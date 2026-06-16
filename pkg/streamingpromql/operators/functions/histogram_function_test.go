@@ -119,9 +119,11 @@ func TestHistogramFunction_ReturnsGroupsFinishedFirstEarliest(t *testing.T) {
 				f: &histogramQuantile{
 					phArg: &testScalarOperator{},
 				},
-				inner:                    &operators.TestOperator{Series: testCase.inputSeries, MemoryConsumptionTracker: memoryConsumptionTracker},
-				innerSeriesMetricNames:   &operators.MetricNames{},
-				memoryConsumptionTracker: memoryConsumptionTracker,
+				histogramGrouper: histogramGrouper{
+					inner:                    &operators.TestOperator{Series: testCase.inputSeries, MemoryConsumptionTracker: memoryConsumptionTracker},
+					innerSeriesMetricNames:   &operators.MetricNames{},
+					memoryConsumptionTracker: memoryConsumptionTracker,
+				},
 			}
 
 			outputSeries, err := hOp.SeriesMetadata(ctx, nil)
@@ -151,9 +153,11 @@ func TestHistogramFunction_MemoryTracking(t *testing.T) {
 			phArg:                    &testScalarOperator{},
 			memoryConsumptionTracker: tracker,
 		},
-		inner:                    &operators.TestOperator{Series: inputSeries, MemoryConsumptionTracker: tracker},
-		innerSeriesMetricNames:   &operators.MetricNames{},
-		memoryConsumptionTracker: tracker,
+		histogramGrouper: histogramGrouper{
+			inner:                    &operators.TestOperator{Series: inputSeries, MemoryConsumptionTracker: tracker},
+			innerSeriesMetricNames:   &operators.MetricNames{},
+			memoryConsumptionTracker: tracker,
+		},
 	}
 
 	_, err := hOp.SeriesMetadata(ctx, nil)

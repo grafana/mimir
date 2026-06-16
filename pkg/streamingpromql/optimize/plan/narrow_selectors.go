@@ -217,17 +217,22 @@ func filterLabels(lbls []string, created map[string]struct{}) []string {
 	return out
 }
 
-// createdLabels returns a set of label names created by a call to label_replace or label_join
-// by any children of the given node.
+// createdLabels returns a set of label names created by a call to label_replace, label_join or
+// histogram_quantiles by any children of the given node.
 func createdLabels(node planning.Node) map[string]struct{} {
 	created := make(map[string]struct{})
 
 	_ = optimize.Walk(node, optimize.VisitorFunc(func(n planning.Node, path []planning.Node) error {
 		if f, ok := n.(*core.FunctionCall); ok {
-			if (f.Function == functions.FUNCTION_LABEL_REPLACE || f.Function == functions.FUNCTION_LABEL_JOIN) && len(f.Args) > 1 {
-				// The second parameter for both label_replace and label_join is the destination label.
-				if lbl, ok := f.Args[1].(*core.StringLiteral); ok {
-					created[lbl.Value] = struct{}{}
+			switch f.Function {
+			case functions.FUNCTION_LABEL_REPLACE, functions.FUNCTION_LABEL_JOIN, functions.FUNCTION_HISTOGRAM_QUANTILES:
+				// The second parameter for label_replace, label_join and histogram_quantiles is the
+				// destination label. It is synthesised by the function and does not exist on the raw
+				// series fetched from storage, so we must not generate a matcher for it.
+				if len(f.Args) > 1 {
+					if lbl, ok := f.Args[1].(*core.StringLiteral); ok {
+						created[lbl.Value] = struct{}{}
+					}
 				}
 			}
 		}

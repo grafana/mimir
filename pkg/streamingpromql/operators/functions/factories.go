@@ -480,6 +480,36 @@ func HistogramFractionFunctionOperatorFactory(args []types.Operator, _ labels.La
 	return NewHistogramFractionFunction(lower, upper, inner, opParams.MemoryConsumptionTracker, expressionPosition, timeRange, opParams.QueryParameters.EnableDelayedNameRemoval), nil
 }
 
+func HistogramQuantilesFunctionOperatorFactory(args []types.Operator, _ labels.Labels, opParams *planning.OperatorParameters, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.Operator, error) {
+	if len(args) < 3 {
+		// Should be caught by the PromQL parser, but we check here for safety.
+		return nil, fmt.Errorf("expected at least 3 arguments for histogram_quantiles, got %v", len(args))
+	}
+
+	inner, ok := args[0].(types.InstantVectorOperator)
+	if !ok {
+		// Should be caught by the PromQL parser, but we check here for safety.
+		return nil, fmt.Errorf("expected an instant vector for 1st argument for histogram_quantiles, got %T", args[0])
+	}
+
+	quantileLabelOp, ok := args[1].(types.StringOperator)
+	if !ok {
+		// Should be caught by the PromQL parser, but we check here for safety.
+		return nil, fmt.Errorf("expected a string for 2nd argument for histogram_quantiles, got %T", args[1])
+	}
+
+	quantileArgs := make([]types.ScalarOperator, 0, len(args)-2)
+	for i := 2; i < len(args); i++ {
+		q, ok := args[i].(types.ScalarOperator)
+		if !ok {
+			return nil, fmt.Errorf("expected a scalar for argument %d for histogram_quantiles, got %T", i+1, args[i])
+		}
+		quantileArgs = append(quantileArgs, q)
+	}
+
+	return NewHistogramQuantilesFunction(quantileArgs, quantileLabelOp, inner, opParams.MemoryConsumptionTracker, expressionPosition, timeRange, opParams.QueryParameters.EnableDelayedNameRemoval), nil
+}
+
 func TimestampFunctionOperatorFactory(args []types.Operator, _ labels.Labels, opParams *planning.OperatorParameters, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.Operator, error) {
 	if len(args) != 1 {
 		// Should be caught by the PromQL parser, but we check here for safety.
@@ -742,6 +772,7 @@ func init() {
 	must(RegisterFunction(FUNCTION_HISTOGRAM_COUNT, "histogram_count", parser.ValueTypeVector, InstantVectorTransformationFunctionOperatorFactory("histogram_count", HistogramCount)))
 	must(RegisterFunction(FUNCTION_HISTOGRAM_FRACTION, "histogram_fraction", parser.ValueTypeVector, HistogramFractionFunctionOperatorFactory))
 	must(RegisterFunction(FUNCTION_HISTOGRAM_QUANTILE, "histogram_quantile", parser.ValueTypeVector, HistogramQuantileFunctionOperatorFactory))
+	must(RegisterFunction(FUNCTION_HISTOGRAM_QUANTILES, "histogram_quantiles", parser.ValueTypeVector, HistogramQuantilesFunctionOperatorFactory))
 	must(RegisterFunction(FUNCTION_HISTOGRAM_STDDEV, "histogram_stddev", parser.ValueTypeVector, InstantVectorTransformationFunctionOperatorFactory("histogram_stddev", HistogramStdDevStdVar(true))))
 	must(RegisterFunction(FUNCTION_HISTOGRAM_STDVAR, "histogram_stdvar", parser.ValueTypeVector, InstantVectorTransformationFunctionOperatorFactory("histogram_stdvar", HistogramStdDevStdVar(false))))
 	must(RegisterFunction(FUNCTION_HISTOGRAM_SUM, "histogram_sum", parser.ValueTypeVector, InstantVectorTransformationFunctionOperatorFactory("histogram_sum", HistogramSum)))

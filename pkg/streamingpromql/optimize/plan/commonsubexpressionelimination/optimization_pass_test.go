@@ -2478,7 +2478,7 @@ func TestIsSafeToApplyFilteringAfterFunction_HandlesAllKnownFunctions(t *testing
 				},
 			}
 
-			if f == functions.FUNCTION_LABEL_REPLACE || f == functions.FUNCTION_LABEL_JOIN {
+			if f == functions.FUNCTION_LABEL_REPLACE || f == functions.FUNCTION_LABEL_JOIN || f == functions.FUNCTION_HISTOGRAM_QUANTILES {
 				fn.Args = []planning.Node{&core.VectorSelector{}, &core.StringLiteral{StringLiteralDetails: &core.StringLiteralDetails{Value: "the_label"}}}
 			}
 
