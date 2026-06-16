@@ -718,7 +718,7 @@ func (u *userTSDB) addPendingNonOwnedRefs(refs map[storage.SeriesRef]struct{}) {
 			delete(u.pendingNonOwnedRefs, r)
 		}
 	}
-	
+
 	if u.pendingNonOwnedRefs == nil {
 		u.pendingNonOwnedRefs = make(map[storage.SeriesRef]time.Time, len(refs))
 	}
