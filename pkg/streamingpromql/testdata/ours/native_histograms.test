@@ -276,3 +276,35 @@ eval instant at 3m rate(metric[3m1s])
 
 eval instant at 3m increase(metric[3m1s])
   {} {{schema:2 sum:181 count:362 buckets:[362] counter_reset_hint:gauge}}
+
+clear
+
+# Trim operators retain the metric name of the "many" side when used with group_left,
+# mirroring Prometheus' behaviour (trim acts like a filter, so the histogram's name is kept).
+load 1m
+  cbh_for_join{label="a"} {{schema:-53 sum:33 count:101 custom_values:[5] buckets:[1 100]}}
+  cbh_for_join{label="b"} {{schema:-53 sum:66 count:202 custom_values:[5] buckets:[2 200]}}
+  float_for_join{label="a"} 1
+  float_for_join{label="b"} 4
+
+eval instant at 0 cbh_for_join >/ on (label) group_left float_for_join
+  cbh_for_join{label="a"} {{schema:-53 count:100.8 sum:502.4 custom_values:[5] buckets:[0.8 100]}}
+  cbh_for_join{label="b"} {{schema:-53 count:200.4 sum:1001.8 custom_values:[5] buckets:[0.4 200]}}
+
+# Trim operators are only valid as "histogram </ float" / "histogram >/ float".
+# Any other combination of operand types yields an info annotation and no samples.
+
+# float </ float
+eval instant at 0 float_for_join </ on (label) float_for_join
+  expect info
+  expect no_warn
+
+# float >/ histogram (histogram on the right side is not a valid trim)
+eval instant at 0 float_for_join >/ on (label) cbh_for_join
+  expect info
+  expect no_warn
+
+# histogram </ histogram
+eval instant at 0 cbh_for_join </ on (label) cbh_for_join
+  expect info
+  expect no_warn
