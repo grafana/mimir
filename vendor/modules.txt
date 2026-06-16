@@ -307,7 +307,7 @@ github.com/cncf/xds/go/xds/data/orca/v3
 github.com/cncf/xds/go/xds/service/orca/v3
 github.com/cncf/xds/go/xds/type/matcher/v3
 github.com/cncf/xds/go/xds/type/v3
-# github.com/coder/quartz v0.3.0
+# github.com/coder/quartz v0.3.1
 ## explicit; go 1.23.9
 github.com/coder/quartz
 # github.com/coreos/go-semver v0.3.1
@@ -505,11 +505,11 @@ github.com/go-openapi/spec
 ## explicit; go 1.25.0
 github.com/go-openapi/strfmt
 github.com/go-openapi/strfmt/internal/bsonlite
-# github.com/go-openapi/swag v0.25.5
-## explicit; go 1.24.0
+# github.com/go-openapi/swag v0.26.0
+## explicit; go 1.25.0
 github.com/go-openapi/swag
-# github.com/go-openapi/swag/cmdutils v0.25.5
-## explicit; go 1.24.0
+# github.com/go-openapi/swag/cmdutils v0.26.0
+## explicit; go 1.25.0
 github.com/go-openapi/swag/cmdutils
 # github.com/go-openapi/swag/conv v0.26.1
 ## explicit; go 1.25.0
@@ -526,14 +526,14 @@ github.com/go-openapi/swag/jsonutils
 github.com/go-openapi/swag/jsonutils/adapters
 github.com/go-openapi/swag/jsonutils/adapters/ifaces
 github.com/go-openapi/swag/jsonutils/adapters/stdlib/json
-# github.com/go-openapi/swag/loading v0.25.5
-## explicit; go 1.24.0
+# github.com/go-openapi/swag/loading v0.26.0
+## explicit; go 1.25.0
 github.com/go-openapi/swag/loading
-# github.com/go-openapi/swag/mangling v0.25.5
-## explicit; go 1.24.0
+# github.com/go-openapi/swag/mangling v0.26.0
+## explicit; go 1.25.0
 github.com/go-openapi/swag/mangling
-# github.com/go-openapi/swag/netutils v0.25.5
-## explicit; go 1.24.0
+# github.com/go-openapi/swag/netutils v0.26.0
+## explicit; go 1.25.0
 github.com/go-openapi/swag/netutils
 # github.com/go-openapi/swag/stringutils v0.26.0
 ## explicit; go 1.25.0
@@ -541,8 +541,8 @@ github.com/go-openapi/swag/stringutils
 # github.com/go-openapi/swag/typeutils v0.26.1
 ## explicit; go 1.25.0
 github.com/go-openapi/swag/typeutils
-# github.com/go-openapi/swag/yamlutils v0.25.5
-## explicit; go 1.24.0
+# github.com/go-openapi/swag/yamlutils v0.26.0
+## explicit; go 1.25.0
 github.com/go-openapi/swag/yamlutils
 # github.com/go-openapi/validate v0.25.2
 ## explicit; go 1.24.0
@@ -1048,7 +1048,7 @@ github.com/pmezard/go-difflib/difflib
 # github.com/power-devops/perfstat v0.0.0-20240221224432-82ca36839d55
 ## explicit; go 1.14
 github.com/power-devops/perfstat
-# github.com/prometheus/alertmanager v0.32.2
+# github.com/prometheus/alertmanager v0.33.0
 ## explicit; go 1.25.0
 github.com/prometheus/alertmanager/alert
 github.com/prometheus/alertmanager/api
@@ -1067,9 +1067,13 @@ github.com/prometheus/alertmanager/cluster/clusterpb
 github.com/prometheus/alertmanager/config
 github.com/prometheus/alertmanager/config/common
 github.com/prometheus/alertmanager/dispatch
+github.com/prometheus/alertmanager/eventrecorder
+github.com/prometheus/alertmanager/eventrecorder/eventrecorderpb
 github.com/prometheus/alertmanager/featurecontrol
 github.com/prometheus/alertmanager/inhibit
+github.com/prometheus/alertmanager/kafka
 github.com/prometheus/alertmanager/limit
+github.com/prometheus/alertmanager/marker
 github.com/prometheus/alertmanager/matcher/compat
 github.com/prometheus/alertmanager/matcher/parse
 github.com/prometheus/alertmanager/nflog
@@ -1077,6 +1081,9 @@ github.com/prometheus/alertmanager/nflog/nflogpb
 github.com/prometheus/alertmanager/notify
 github.com/prometheus/alertmanager/notify/discord
 github.com/prometheus/alertmanager/notify/email
+github.com/prometheus/alertmanager/notify/incidentio
+github.com/prometheus/alertmanager/notify/jira
+github.com/prometheus/alertmanager/notify/mattermost
 github.com/prometheus/alertmanager/notify/msteams
 github.com/prometheus/alertmanager/notify/msteamsv2
 github.com/prometheus/alertmanager/notify/opsgenie
@@ -1307,8 +1314,8 @@ github.com/twmb/franz-go/pkg/sasl/scram
 # github.com/twmb/franz-go/pkg/kadm v1.18.1-0.20260529212035-11b03a277c72
 ## explicit; go 1.25.0
 github.com/twmb/franz-go/pkg/kadm
-# github.com/twmb/franz-go/pkg/kfake v0.0.0-20260121195810-e0832fcbdccb
-## explicit; go 1.24.0
+# github.com/twmb/franz-go/pkg/kfake v0.0.0-20260515175617-8268a5d078c0
+## explicit; go 1.25.0
 github.com/twmb/franz-go/pkg/kfake
 # github.com/twmb/franz-go/pkg/kmsg v1.13.1
 ## explicit; go 1.24.0
@@ -1320,6 +1327,9 @@ github.com/twmb/franz-go/plugin/kotel
 # github.com/twmb/franz-go/plugin/kprom v1.4.0
 ## explicit; go 1.25.0
 github.com/twmb/franz-go/plugin/kprom
+# github.com/twmb/franz-go/plugin/kslog v1.0.0
+## explicit; go 1.21.0
+github.com/twmb/franz-go/plugin/kslog
 # github.com/tylertreat/BoomFilters v0.0.0-20251117164519-53813c36cc1b
 ## explicit
 github.com/tylertreat/BoomFilters
@@ -1485,7 +1495,6 @@ go.opentelemetry.io/otel/semconv/v1.21.0
 go.opentelemetry.io/otel/semconv/v1.26.0
 go.opentelemetry.io/otel/semconv/v1.37.0
 go.opentelemetry.io/otel/semconv/v1.37.0/rpcconv
-go.opentelemetry.io/otel/semconv/v1.39.0
 go.opentelemetry.io/otel/semconv/v1.40.0
 go.opentelemetry.io/otel/semconv/v1.40.0/otelconv
 go.opentelemetry.io/otel/semconv/v1.41.0
