@@ -160,34 +160,113 @@ func (h *headIndexReader) SortedPostings(p index.Postings) index.Postings {
 	return index.NewListPostings(ep)
 }
 
-// ShardedPostings implements IndexReader. This function returns an failing postings list if sharding
+// ShardedPostings implements IndexReader. This function returns a failing postings list if sharding
 // has not been enabled in the Head.
 func (h *headIndexReader) ShardedPostings(p index.Postings, shardIndex, shardCount uint64) index.Postings {
 	if !h.head.opts.EnableSharding {
 		return index.ErrPostings(errors.New("sharding is disabled"))
 	}
+	if shardIndex >= shardCount {
+		// An out-of-range shard index selects nothing: hash % shardCount
+		// never reaches shardIndex.
+		return index.EmptyPostings()
+	}
+	if shardCount == 1 {
+		// Every series belongs to shard 0 of 1.
+		return p
+	}
 
+	// A shard is served from the shard hash buckets: candidate buckets congruent
+	// to the shard index, sub-filtered by shard hash when the shard count does
+	// not divide the bucket count. Membership is tested against sorted ref lists
+	// instead of looking up every series. The input postings are drained
+	// sequentially, never seeked: the input may be an expensive postings tree,
+	// while the bucket side seeks cheaply. The returned postings may include refs
+	// of series deleted since p was built; readers resolve those like any other
+	// stale postings entry.
+	candidateBuckets, subFiltered := h.head.shardBuckets.shardSpread(shardCount)
+	maxBuckets := h.head.opts.ShardedPostingsSubFilterMaxBuckets
+	if maxBuckets == 0 {
+		maxBuckets = defaultShardedPostingsSubFilterMaxBuckets
+	}
+	if !subFiltered || candidateBuckets <= maxBuckets {
+		// Exact divisor, or a narrow spread where sub-filtering is cheap enough to
+		// always win: serve from the buckets without sizing the input.
+		return h.shardedPostingsViaSubFilter(p, shardIndex, shardCount)
+	}
+
+	// Wide spread: a non-dividing shard count spreads across
+	// candidateBuckets = bucketCount/gcd(shardCount, bucketCount) buckets, which
+	// sub-filtering must merge and seek per input ref — a fixed per-call setup
+	// cost that outweighs a per-series getByID scan only for a small matched
+	// input (getByID is proportional to the input). The input size isn't known
+	// up front, so peek a bounded prefix: serve a small input (fully buffered) by
+	// getByID, and replay the prefix to the sub-filter for a large one.
+	maxSeries := h.head.opts.ShardedPostingsGetByIDMaxSeries
+	if maxSeries <= 0 {
+		maxSeries = defaultShardedPostingsGetByIDMaxSeries
+	}
+	prefix, exhausted := drainPostings(p, maxSeries)
+	if err := p.Err(); err != nil {
+		return index.ErrPostings(err)
+	}
+	if exhausted {
+		return h.shardedPostingsViaGetByID(index.NewListPostings(prefix), shardIndex, shardCount)
+	}
+	// The prefix and p's remaining refs are disjoint and ascending, so Merge is
+	// an order-preserving concat that replays the peeked refs; it advances p with
+	// Next only, never Seek.
+	return h.shardedPostingsViaSubFilter(index.Merge(context.Background(), index.NewListPostings(prefix), p), shardIndex, shardCount)
+}
+
+// drainPostings advances p up to limit times, returning the refs read and
+// whether p was exhausted within that bound (fewer than limit refs read, so the
+// prefix holds every ref of p). It does not inspect p.Err(); the caller checks it.
+func drainPostings(p index.Postings, limit int) (refs []storage.SeriesRef, exhausted bool) {
+	for len(refs) < limit && p.Next() {
+		refs = append(refs, p.At())
+	}
+	return refs, len(refs) < limit
+}
+
+// shardedPostingsViaSubFilter serves a shard from the shard hash buckets:
+// candidate buckets congruent to the shard index, sub-filtered by shard hash
+// when the shard count does not divide the bucket count, intersected with the
+// input postings. Cheap for narrow candidate-bucket spreads and for large
+// inputs; ShardedPostings prefers it to getByID except for a wide spread on a
+// small matched input.
+func (h *headIndexReader) shardedPostingsViaSubFilter(p index.Postings, shardIndex, shardCount uint64) index.Postings {
+	lists, subFiltered := h.head.shardBuckets.postingsFor(shardIndex, shardCount)
+	if subFiltered {
+		h.head.metrics.shardedPostingsSubfiltered.Inc()
+	}
+	return newShardFilterPostings(p, index.Merge(context.Background(), lists...))
+}
+
+// shardedPostingsViaGetByID serves a shard by looking up every input series and
+// testing its shard hash. ShardedPostings uses it for a wide candidate-bucket
+// spread on a small matched input, where getByID — proportional to the input —
+// beats sub-filtering's fixed per-call setup cost. Series whose refs are no
+// longer in the head (deleted since p was built) are skipped, matching the
+// bucket path's tolerance of stale postings entries.
+func (h *headIndexReader) shardedPostingsViaGetByID(p index.Postings, shardIndex, shardCount uint64) index.Postings {
+	h.head.metrics.shardedPostingsGetByID.Inc()
 	out := make([]storage.SeriesRef, 0, 128)
 	notFoundSeriesCount := 0
-
 	for p.Next() {
 		s := h.head.series.getByID(chunks.HeadSeriesRef(p.At()))
 		if s == nil {
 			notFoundSeriesCount++
 			continue
 		}
-
-		// Check if the series belong to the shard.
 		if s.shardHash%shardCount != shardIndex {
 			continue
 		}
-
 		out = append(out, storage.SeriesRef(s.ref))
 	}
 	if notFoundSeriesCount > 0 {
 		h.head.logger.Debug("Looked up series not found", "count", notFoundSeriesCount)
 	}
-
 	return index.NewListPostings(out)
 }
 
