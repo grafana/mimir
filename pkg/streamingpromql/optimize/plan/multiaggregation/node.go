@@ -41,15 +41,6 @@ func (g *MultiAggregationGroup) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_MULTI_AGGREGATION_GROUP
 }
 
-func (g *MultiAggregationGroup) ReplaceChild(idx int, node planning.Node) error {
-	if idx != 0 {
-		return fmt.Errorf("node of type MultiAggregationGroup supports 1 child, but attempted to replace child at index %d", idx)
-	}
-
-	g.Inner = node
-	return nil
-}
-
 func (g *MultiAggregationGroup) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
 	_, ok := other.(*MultiAggregationGroup)
 
@@ -106,23 +97,6 @@ func (a *MultiAggregationInstance) Details() proto.Message {
 
 func (a *MultiAggregationInstance) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_MULTI_AGGREGATION_INSTANCE
-}
-
-func (a *MultiAggregationInstance) ReplaceChild(idx int, node planning.Node) error {
-	switch idx {
-	case 0:
-		group, ok := node.(*MultiAggregationGroup)
-		if !ok {
-			return fmt.Errorf("node of type MultiAggregationInstance requires child at index 0 of type MultiAggregationGroup, but got %T", node)
-		}
-		a.Group = group
-		return nil
-	case 1:
-		a.Param = node
-		return nil
-	default:
-		return fmt.Errorf("node of type MultiAggregationInstance expects at most 2 children, but attempted to replace child at index %d", idx)
-	}
 }
 
 func (a *MultiAggregationInstance) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {

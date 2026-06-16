@@ -51,6 +51,7 @@ import (
 	blockbuilderscheduler "github.com/grafana/mimir/pkg/blockbuilder/scheduler"
 	"github.com/grafana/mimir/pkg/compactor"
 	compactorscheduler "github.com/grafana/mimir/pkg/compactor/scheduler"
+	"github.com/grafana/mimir/pkg/compartments"
 	"github.com/grafana/mimir/pkg/continuoustest"
 	"github.com/grafana/mimir/pkg/costattribution"
 	"github.com/grafana/mimir/pkg/distributor"
@@ -125,6 +126,7 @@ type Config struct {
 	Worker                         querier_worker.Config           `yaml:"frontend_worker"`
 	Frontend                       frontend.CombinedFrontendConfig `yaml:"frontend"`
 	IngestStorage                  ingest.Config                   `yaml:"ingest_storage"`
+	Compartments                   compartments.Config             `yaml:"compartments" doc:"hidden"`
 	BlockBuilder                   blockbuilder.Config             `yaml:"block_builder" doc:"hidden"`
 	BlockBuilderScheduler          blockbuilderscheduler.Config    `yaml:"block_builder_scheduler" doc:"hidden"`
 	BlocksStorage                  tsdb.BlocksStorageConfig        `yaml:"blocks_storage"`
@@ -198,6 +200,7 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	c.Worker.RegisterFlags(f)
 	c.Frontend.RegisterFlags(f, logger)
 	c.IngestStorage.RegisterFlags(f)
+	c.Compartments.RegisterFlags(f)
 	c.BlockBuilder.RegisterFlags(f, logger)
 	c.BlockBuilderScheduler.RegisterFlags(f)
 	c.BlocksStorage.RegisterFlags(f)
@@ -283,6 +286,15 @@ func (c *Config) Validate(log log.Logger) error {
 	if err := c.IngestStorage.Validate(); err != nil {
 		return errors.Wrap(err, "invalid ingest storage config")
 	}
+	if err := c.Compartments.Validate(); err != nil {
+		return errors.Wrap(err, "invalid compartments config")
+	}
+	if c.Compartments.Enabled && !c.IngestStorage.Enabled {
+		return errors.New("compartments require ingest storage to be enabled")
+	}
+	if c.Compartments.Enabled && c.IngestStorage.Migration.DistributorSendToIngestersEnabled {
+		return errors.New("compartments cannot be enabled together with ingest storage migration's distributor-send-to-ingesters")
+	}
 	if c.isIngesterEnabled() {
 		if !c.IngestStorage.Enabled && !c.Ingester.PushGrpcMethodEnabled {
 			return errors.New("cannot disable Push gRPC method in ingester, while ingest storage (-ingest-storage.enabled) is not enabled")
@@ -307,7 +319,7 @@ func (c *Config) Validate(log log.Logger) error {
 	if err := c.IngesterClient.Validate(); err != nil {
 		return errors.Wrap(err, "invalid ingester_client config")
 	}
-	if err := c.Ingester.Validate(log); err != nil {
+	if err := c.Ingester.Validate(c.Compartments); err != nil {
 		// We check for "ingester" module here because, as of today, its config has a special mode, that assumes
 		// passing a unique set of per instance flags, e.g. "-ingester.ring.instance-id".
 		// Such a scenario breaks the validation of other modules if those flags aren't also passed to each instance (ref
@@ -868,8 +880,8 @@ type Mimir struct {
 	Server                           *server.Server
 	ServerMetrics                    *server.Metrics
 	IngesterRing                     *ring.Ring
-	IngesterPartitionRingWatcher     *ring.PartitionRingWatcher
-	IngesterPartitionInstanceRing    *ring.PartitionInstanceRing
+	IngesterPartitionRingWatchers    *ingest.PartitionRingWatchers
+	IngesterPartitionInstanceRings   *ingest.PartitionInstanceRings
 	TenantLimits                     validation.TenantLimits
 	Overrides                        *validation.Overrides
 	QueryLimitsProvider              streamingpromql.QueryLimitsProvider

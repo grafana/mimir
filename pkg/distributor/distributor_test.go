@@ -60,6 +60,7 @@ import (
 	"google.golang.org/grpc/metadata"
 
 	"github.com/grafana/mimir/pkg/cardinality"
+	"github.com/grafana/mimir/pkg/compartments"
 	"github.com/grafana/mimir/pkg/costattribution"
 	"github.com/grafana/mimir/pkg/costattribution/costattributionmodel"
 	"github.com/grafana/mimir/pkg/ingester"
@@ -2533,7 +2534,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 							}
 
 							// Start the distributor.
-							distributor, err := New(distributorCfg, clientConfig, overrides, nil, cam, ingestersRing, nil, true, nil, nil, nil, log.NewNopLogger())
+							distributor, err := New(distributorCfg, clientConfig, overrides, nil, cam, ingestersRing, nil, nil, true, nil, nil, nil, log.NewNopLogger())
 							require.NoError(b, err)
 							require.NoError(b, services.StartAndAwaitRunning(context.Background(), distributor))
 
@@ -6173,6 +6174,12 @@ type prepConfig struct {
 	ingestStorageMigrationEnabled bool
 	ingestStoragePartitions       int32 // Number of partitions. Auto-detected from configured ingesters if not explicitly set.
 	ingestStorageKafka            *kfake.Cluster
+
+	// Compartments specific configuration. When numCompartments > 0, the partition rings
+	// component is built with that many read compartment rings, each seeded with the active partitions
+	// listed in compartmentActivePartitions[compartmentID].
+	numCompartments             int
+	compartmentActivePartitions map[int][]int32
 }
 
 // totalIngesters takes into account ingesterStateByZone and numIngesters.
@@ -6390,6 +6397,17 @@ func prepareRingInstances(cfg prepConfig, ingesters []*mockIngester) *ring.Desc 
 	return &ring.Desc{Ingesters: ingesterDescs}
 }
 
+// prepareCompartmentPartitionRing builds a partition ring desc with the given partitions set ACTIVE,
+// used to seed a single read compartment's partition ring in tests.
+func prepareCompartmentPartitionRing(activePartitions []int32) *ring.PartitionRingDesc {
+	desc := ring.NewPartitionRingDesc()
+	timeBeforeShuffleShardingLookbackPeriod := time.Now().Add(-2 * time.Hour)
+	for _, partitionID := range activePartitions {
+		desc.AddPartition(partitionID, ring.PartitionActive, timeBeforeShuffleShardingLookbackPeriod)
+	}
+	return desc
+}
+
 func preparePartitionsRing(cfg prepConfig, ingesters []*mockIngester) *ring.PartitionRingDesc {
 	desc := ring.NewPartitionRingDesc()
 
@@ -6485,22 +6503,41 @@ func prepare(t testing.TB, cfg prepConfig) ([]*Distributor, []*mockIngester, []*
 	})
 
 	// Initialize the ingest storage's partitions ring.
-	var partitionsRing *ring.PartitionInstanceRing
+	var (
+		partitionInstanceRings *ingest.PartitionInstanceRings
+		partitionRings         *ingest.PartitionRingWatchers
+	)
 	if cfg.ingestStorageEnabled {
-		// Init the partitions ring.
 		partitionsStore := kvStore.WithCodec(ring.GetPartitionRingCodec())
-		require.NoError(t, partitionsStore.CAS(ctx, ingester.PartitionRingKey, func(_ interface{}) (interface{}, bool, error) {
-			return preparePartitionsRing(cfg, ingesters), true, nil
-		}))
 
-		// Init the watcher.
-		watcher := ring.NewPartitionRingWatcher(ingester.PartitionRingName, ingester.PartitionRingKey, partitionsStore, logger, prometheus.NewPedanticRegistry())
-		require.NoError(t, services.StartAndAwaitRunning(ctx, watcher))
+		compartmentsEnabled := cfg.numCompartments > 0
+		if compartmentsEnabled {
+			// Seed each read compartment's own partition ring.
+			for c := 0; c < cfg.numCompartments; c++ {
+				key := compartments.ReadCompartmentRingKey(c, ingester.PartitionRingKey)
+				activePartitions := cfg.compartmentActivePartitions[c]
+				require.NoError(t, partitionsStore.CAS(ctx, key, func(_ interface{}) (interface{}, bool, error) {
+					return prepareCompartmentPartitionRing(activePartitions), true, nil
+				}))
+			}
+		} else {
+			// Single partition ring under the legacy key.
+			require.NoError(t, partitionsStore.CAS(ctx, ingester.PartitionRingKey, func(_ interface{}) (interface{}, bool, error) {
+				return preparePartitionsRing(cfg, ingesters), true, nil
+			}))
+		}
+
+		// Init the partition rings component used by the write path (1 ring when compartments are
+		// disabled, N when enabled).
+		var err error
+		partitionRings, err = ingest.NewPartitionRingWatchers(compartmentsEnabled, cfg.numCompartments, ingester.PartitionRingName, ingester.PartitionRingKey, partitionsStore, logger, nil)
+		require.NoError(t, err)
+		require.NoError(t, services.StartAndAwaitRunning(ctx, partitionRings))
 		t.Cleanup(func() {
-			require.NoError(t, services.StopAndAwaitTerminated(ctx, watcher))
+			require.NoError(t, services.StopAndAwaitTerminated(ctx, partitionRings))
 		})
 
-		partitionsRing = ring.NewPartitionInstanceRing(watcher, ingestersRing, ingestersHeartbeatTimeout)
+		partitionInstanceRings = ingest.NewPartitionInstanceRings(partitionRings, ingestersRing, ingestersHeartbeatTimeout)
 	}
 
 	if cfg.limits == nil {
@@ -6569,7 +6606,7 @@ func prepare(t testing.TB, cfg prepConfig) ([]*Distributor, []*mockIngester, []*
 		if reg == nil {
 			reg = prometheus.NewPedanticRegistry()
 		}
-		d, err := New(distributorCfg, clientConfig, overrides, nil, cfg.costAttributionMgr, ingestersRing, partitionsRing, true, nil, nil, reg, logger)
+		d, err := New(distributorCfg, clientConfig, overrides, nil, cfg.costAttributionMgr, ingestersRing, partitionInstanceRings, partitionRings, true, nil, nil, reg, logger)
 		require.NoError(t, err)
 		if !cfg.disableDistributorService {
 			require.NoError(t, services.StartAndAwaitRunning(ctx, d))

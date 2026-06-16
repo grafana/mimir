@@ -457,7 +457,7 @@ func (s *Scheduler) QuerierLoop(querier schedulerpb.SchedulerForQuerier_QuerierL
 	}
 
 	querierID := resp.GetQuerierID()
-	querierWorkerConn := queue.NewUnregisteredQuerierWorkerConn(querier.Context(), querierID)
+	querierWorkerConn := queue.NewUnregisteredConsumerWorkerConn(querier.Context(), querierID)
 	err = s.queue.AwaitRegisterQuerierWorkerConn(querierWorkerConn)
 	if err != nil {
 		return s.transformRequestQueueError(err)
@@ -468,7 +468,7 @@ func (s *Scheduler) QuerierLoop(querier schedulerpb.SchedulerForQuerier_QuerierL
 
 	// In stopping state scheduler is not accepting new queries, but still dispatching queries in the queues.
 	for s.isRunningOrStopping() {
-		dequeueReq := queue.NewQuerierWorkerDequeueRequest(querierWorkerConn, lastTenantIdx)
+		dequeueReq := queue.NewConsumerWorkerDequeueRequest(querierWorkerConn, lastTenantIdx)
 		queryReq, idx, err := s.queue.AwaitRequestForQuerier(dequeueReq)
 		if err != nil {
 			// The error returned can either be ErrQuerierShuttingDown or ErrQuerierWorkerDisconnected.

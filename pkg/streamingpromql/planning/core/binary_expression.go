@@ -117,19 +117,6 @@ func (b *BinaryExpression) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_BINARY_EXPRESSION
 }
 
-func (b *BinaryExpression) ReplaceChild(idx int, node planning.Node) error {
-	switch idx {
-	case 0:
-		b.LHS = node
-		return nil
-	case 1:
-		b.RHS = node
-		return nil
-	default:
-		return fmt.Errorf("node of type BinaryExpression expects 1 or 2 children, but attempted to replace child at index %d", idx)
-	}
-}
-
 func (b *BinaryExpression) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
 	otherBinaryExpression, ok := other.(*BinaryExpression)
 

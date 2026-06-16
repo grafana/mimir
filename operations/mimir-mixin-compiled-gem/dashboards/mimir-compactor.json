@@ -920,7 +920,7 @@
                         "sort": "none"
                      }
                   },
-                  "span": 6,
+                  "span": 3,
                   "targets": [
                      {
                         "expr": "avg(max by(user) (cortex_bucket_blocks_count{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir))\"}))",
@@ -969,7 +969,7 @@
                         "sort": "desc"
                      }
                   },
-                  "span": 6,
+                  "span": 3,
                   "targets": [
                      {
                         "expr": "topk(10, max by(user) (cortex_bucket_blocks_count{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir))\"}))",
@@ -979,6 +979,128 @@
                      }
                   ],
                   "title": "Tenants with largest number of blocks",
+                  "type": "timeseries"
+               },
+               {
+                  "datasource": "$datasource",
+                  "description": "### p90 compaction delay by level\np90 delay between a block being uploaded and compacted, by compaction level.\nA rising delay suggests the compactor is falling behind ingestion.\n\n",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "auto",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "s"
+                     },
+                     "overrides": [ ]
+                  },
+                  "id": 11,
+                  "links": [ ],
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "multi",
+                        "sort": "none"
+                     }
+                  },
+                  "span": 3,
+                  "targets": [
+                     {
+                        "expr": "(histogram_quantile(0.90, sum by (le,level) (rate(cortex_compactor_block_compaction_delay_seconds_bucket{level=~\"[0-4]\", cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir))\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
+                        "format": "time_series",
+                        "legendFormat": "{{level}}",
+                        "legendLink": null
+                     },
+                     {
+                        "expr": "(histogram_quantile(0.90, sum by (level) (rate(cortex_compactor_block_compaction_delay_seconds{level=~\"[0-4]\", cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir))\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
+                        "format": "time_series",
+                        "legendFormat": "{{level}}",
+                        "legendLink": null
+                     },
+                     {
+                        "expr": "(histogram_quantile(0.90, sum by (le) (rate(cortex_compactor_block_compaction_delay_seconds_bucket{level!~\"[0-4]\", cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir))\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
+                        "format": "time_series",
+                        "legendFormat": "5+",
+                        "legendLink": null
+                     },
+                     {
+                        "expr": "(histogram_quantile(0.90, sum (rate(cortex_compactor_block_compaction_delay_seconds{level!~\"[0-4]\", cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir))\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
+                        "format": "time_series",
+                        "legendFormat": "5+",
+                        "legendLink": null
+                     }
+                  ],
+                  "title": "p90 compaction delay by level",
+                  "type": "timeseries"
+               },
+               {
+                  "datasource": "$datasource",
+                  "description": "### Store-gateway blocks queried by level\nRate of blocks queried by store-gateways, by compaction level.\nA rising share of low levels suggests the compactor is falling behind ingestion, though read traffic patterns also influence this.\n\n",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 100,
+                           "lineWidth": 0,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "normal"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "ops"
+                     },
+                     "overrides": [ ]
+                  },
+                  "id": 12,
+                  "links": [ ],
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "multi",
+                        "sort": "none"
+                     }
+                  },
+                  "span": 3,
+                  "targets": [
+                     {
+                        "expr": "sum by (level) (rate(cortex_bucket_store_series_blocks_queried_sum{component=\"store-gateway\",level=~\"[0-4]\",cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir))\"}[$__rate_interval]))",
+                        "format": "time_series",
+                        "legendFormat": "{{level}}",
+                        "legendLink": null
+                     },
+                     {
+                        "expr": "sum(rate(cortex_bucket_store_series_blocks_queried_sum{component=\"store-gateway\",level!~\"[0-4]\",cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir))\"}[$__rate_interval]))",
+                        "format": "time_series",
+                        "legendFormat": "5+",
+                        "legendLink": null
+                     }
+                  ],
+                  "title": "Store-gateway blocks queried by level",
                   "type": "timeseries"
                }
             ],
@@ -1018,7 +1140,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 11,
+                  "id": 13,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1097,7 +1219,7 @@
                         }
                      ]
                   },
-                  "id": 12,
+                  "id": 14,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1194,7 +1316,7 @@
                         }
                      ]
                   },
-                  "id": 13,
+                  "id": 15,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1248,7 +1370,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 14,
+                  "id": 16,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -1357,7 +1479,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 15,
+                  "id": 17,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1390,7 +1512,7 @@
                         "unit": "percentunit"
                      }
                   },
-                  "id": 16,
+                  "id": 18,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1438,7 +1560,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 17,
+                  "id": 19,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -1535,7 +1657,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 18,
+                  "id": 20,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -1632,7 +1754,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 19,
+                  "id": 21,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -1729,7 +1851,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 20,
+                  "id": 22,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -1826,7 +1948,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 21,
+                  "id": 23,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -1923,7 +2045,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 22,
+                  "id": 24,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -2183,7 +2305,7 @@
                         }
                      ]
                   },
-                  "id": 23,
+                  "id": 25,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2237,7 +2359,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 24,
+                  "id": 26,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {

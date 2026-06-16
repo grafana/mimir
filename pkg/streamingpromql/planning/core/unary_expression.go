@@ -39,15 +39,6 @@ func (u *UnaryExpression) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_UNARY_EXPRESSION
 }
 
-func (u *UnaryExpression) ReplaceChild(idx int, node planning.Node) error {
-	if idx != 0 {
-		return fmt.Errorf("node of type UnaryExpression supports 1 child, but attempted to replace child at index %d", idx)
-	}
-
-	u.Inner = node
-	return nil
-}
-
 func (u *UnaryExpression) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
 	otherUnaryExpression, ok := other.(*UnaryExpression)
 

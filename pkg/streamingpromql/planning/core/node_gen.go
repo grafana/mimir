@@ -44,6 +44,19 @@ func (a *AggregateExpression) SetChildren(children []planning.Node) error {
 	return nil
 }
 
+func (a *AggregateExpression) ReplaceChild(idx int, node planning.Node) error {
+	switch idx {
+	case 0:
+		a.Inner = node
+		return nil
+	case 1:
+		a.Param = node
+		return nil
+	default:
+		return fmt.Errorf("node of type AggregateExpression supports 2 children, but attempted to replace child at index %d", idx)
+	}
+}
+
 func (b *BinaryExpression) Child(idx int) planning.Node {
 	switch idx {
 	case 0:
@@ -68,6 +81,19 @@ func (b *BinaryExpression) SetChildren(children []planning.Node) error {
 	return nil
 }
 
+func (b *BinaryExpression) ReplaceChild(idx int, node planning.Node) error {
+	switch idx {
+	case 0:
+		b.LHS = node
+		return nil
+	case 1:
+		b.RHS = node
+		return nil
+	default:
+		return fmt.Errorf("node of type BinaryExpression supports 2 children, but attempted to replace child at index %d", idx)
+	}
+}
+
 func (d *DataLabelSelector) Child(idx int) planning.Node {
 	panic(fmt.Sprintf("node of type DataLabelSelector has no children, but attempted to get child at index %d", idx))
 }
@@ -81,6 +107,10 @@ func (d *DataLabelSelector) SetChildren(children []planning.Node) error {
 		return fmt.Errorf("node of type DataLabelSelector expects 0 children, but got %d", len(children))
 	}
 	return nil
+}
+
+func (d *DataLabelSelector) ReplaceChild(idx int, _ planning.Node) error {
+	return fmt.Errorf("node of type DataLabelSelector has no children, but attempted to replace child at index %d", idx)
 }
 
 func (d *DeduplicateAndMerge) Child(idx int) planning.Node {
@@ -99,6 +129,14 @@ func (d *DeduplicateAndMerge) SetChildren(children []planning.Node) error {
 		return fmt.Errorf("node of type DeduplicateAndMerge expects one child, but got %d", len(children))
 	}
 	d.Inner = children[0]
+	return nil
+}
+
+func (d *DeduplicateAndMerge) ReplaceChild(idx int, node planning.Node) error {
+	if idx != 0 {
+		return fmt.Errorf("node of type DeduplicateAndMerge supports 1 child, but attempted to replace child at index %d", idx)
+	}
+	d.Inner = node
 	return nil
 }
 
@@ -121,6 +159,14 @@ func (d *DropName) SetChildren(children []planning.Node) error {
 	return nil
 }
 
+func (d *DropName) ReplaceChild(idx int, node planning.Node) error {
+	if idx != 0 {
+		return fmt.Errorf("node of type DropName supports 1 child, but attempted to replace child at index %d", idx)
+	}
+	d.Inner = node
+	return nil
+}
+
 func (f *FunctionCall) Child(idx int) planning.Node {
 	if idx >= len(f.Args) {
 		panic(fmt.Sprintf("this FunctionCall node has %d children, but attempted to get child at index %d", len(f.Args), idx))
@@ -134,6 +180,14 @@ func (f *FunctionCall) ChildCount() int {
 
 func (f *FunctionCall) SetChildren(children []planning.Node) error {
 	f.Args = children
+	return nil
+}
+
+func (f *FunctionCall) ReplaceChild(idx int, node planning.Node) error {
+	if idx >= len(f.Args) {
+		return fmt.Errorf("this FunctionCall node has %d children, but attempted to replace child at index %d", len(f.Args), idx)
+	}
+	f.Args[idx] = node
 	return nil
 }
 
@@ -152,6 +206,10 @@ func (m *MatrixSelector) SetChildren(children []planning.Node) error {
 	return nil
 }
 
+func (m *MatrixSelector) ReplaceChild(idx int, _ planning.Node) error {
+	return fmt.Errorf("node of type MatrixSelector has no children, but attempted to replace child at index %d", idx)
+}
+
 func (n *NoOp) Child(idx int) planning.Node {
 	panic(fmt.Sprintf("node of type NoOp has no children, but attempted to get child at index %d", idx))
 }
@@ -167,6 +225,10 @@ func (n *NoOp) SetChildren(children []planning.Node) error {
 	return nil
 }
 
+func (n *NoOp) ReplaceChild(idx int, _ planning.Node) error {
+	return fmt.Errorf("node of type NoOp has no children, but attempted to replace child at index %d", idx)
+}
+
 func (n *NumberLiteral) Child(idx int) planning.Node {
 	panic(fmt.Sprintf("node of type NumberLiteral has no children, but attempted to get child at index %d", idx))
 }
@@ -180,6 +242,10 @@ func (n *NumberLiteral) SetChildren(children []planning.Node) error {
 		return fmt.Errorf("node of type NumberLiteral expects 0 children, but got %d", len(children))
 	}
 	return nil
+}
+
+func (n *NumberLiteral) ReplaceChild(idx int, _ planning.Node) error {
+	return fmt.Errorf("node of type NumberLiteral has no children, but attempted to replace child at index %d", idx)
 }
 
 func (s *StepInvariantExpression) Child(idx int) planning.Node {
@@ -201,6 +267,14 @@ func (s *StepInvariantExpression) SetChildren(children []planning.Node) error {
 	return nil
 }
 
+func (s *StepInvariantExpression) ReplaceChild(idx int, node planning.Node) error {
+	if idx != 0 {
+		return fmt.Errorf("node of type StepInvariantExpression supports 1 child, but attempted to replace child at index %d", idx)
+	}
+	s.Inner = node
+	return nil
+}
+
 func (s *StringLiteral) Child(idx int) planning.Node {
 	panic(fmt.Sprintf("node of type StringLiteral has no children, but attempted to get child at index %d", idx))
 }
@@ -214,6 +288,10 @@ func (s *StringLiteral) SetChildren(children []planning.Node) error {
 		return fmt.Errorf("node of type StringLiteral expects 0 children, but got %d", len(children))
 	}
 	return nil
+}
+
+func (s *StringLiteral) ReplaceChild(idx int, _ planning.Node) error {
+	return fmt.Errorf("node of type StringLiteral has no children, but attempted to replace child at index %d", idx)
 }
 
 func (s *Subquery) Child(idx int) planning.Node {
@@ -232,6 +310,14 @@ func (s *Subquery) SetChildren(children []planning.Node) error {
 		return fmt.Errorf("node of type Subquery expects one child, but got %d", len(children))
 	}
 	s.Inner = children[0]
+	return nil
+}
+
+func (s *Subquery) ReplaceChild(idx int, node planning.Node) error {
+	if idx != 0 {
+		return fmt.Errorf("node of type Subquery supports 1 child, but attempted to replace child at index %d", idx)
+	}
+	s.Inner = node
 	return nil
 }
 
@@ -254,6 +340,14 @@ func (u *UnaryExpression) SetChildren(children []planning.Node) error {
 	return nil
 }
 
+func (u *UnaryExpression) ReplaceChild(idx int, node planning.Node) error {
+	if idx != 0 {
+		return fmt.Errorf("node of type UnaryExpression supports 1 child, but attempted to replace child at index %d", idx)
+	}
+	u.Inner = node
+	return nil
+}
+
 func (v *VectorSelector) Child(idx int) planning.Node {
 	panic(fmt.Sprintf("node of type VectorSelector has no children, but attempted to get child at index %d", idx))
 }
@@ -267,4 +361,8 @@ func (v *VectorSelector) SetChildren(children []planning.Node) error {
 		return fmt.Errorf("node of type VectorSelector expects 0 children, but got %d", len(children))
 	}
 	return nil
+}
+
+func (v *VectorSelector) ReplaceChild(idx int, _ planning.Node) error {
+	return fmt.Errorf("node of type VectorSelector has no children, but attempted to replace child at index %d", idx)
 }

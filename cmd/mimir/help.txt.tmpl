@@ -957,7 +957,7 @@ Usage of ./cmd/mimir/mimir:
     	The maximum number of series to write in a single request. (default 1000)
   -tests.write-endpoint string
     	The base endpoint on the write path. The URL should have no trailing slash. The specific API path is appended by the tool to the URL, for example /api/v1/push for the remote write API endpoint, so the configured URL must not include it.
-  -tests.write-protocol string
+  -tests.write-protocol value
     	The protocol to use to write series data. Supported values are: prometheus, prometheus2, otlp-http (default "prometheus")
   -tests.write-read-ooo-test.enabled
     	Enables a test that writes samples out-of-order and verifies query results.
@@ -972,9 +972,9 @@ Usage of ./cmd/mimir/mimir:
   -tests.write-read-series-test.histogram-samples-enabled
     	Set to true to use native histogram samples
   -tests.write-read-series-test.max-query-age duration
-    	How back in the past metrics can be queried at most. (default 168h0m0s)
+    	How back in the past metrics can be queried at most. (default 48h0m0s)
   -tests.write-read-series-test.num-series int
-    	Number of series used for the test. (default 10000)
+    	Number of series used for the test. (default 1000)
   -tests.write-timeout duration
     	The timeout for a single write request. (default 5s)
   -usage-stats.enabled

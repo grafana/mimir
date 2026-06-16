@@ -543,6 +543,41 @@ func TestConfigValidation(t *testing.T) {
 			},
 			expectAnyError: false,
 		},
+		{
+			name: "should fail if compartments are enabled but ingest storage is disabled",
+			getTestConfig: func() *Config {
+				cfg := newDefaultConfig()
+				cfg.IngestStorage.Enabled = false
+				cfg.Compartments.Enabled = true
+				cfg.Compartments.Read.NumCompartments = 2
+				cfg.Compartments.Read.KafkaTopicFormat = "mimir-ingest-compartment-<compartment-id>"
+				return cfg
+			},
+			expectAnyError: true,
+		},
+		{
+			name: "should fail if compartments are enabled together with ingest storage distributor-send-to-ingesters",
+			getTestConfig: func() *Config {
+				cfg := newDefaultConfig()
+				cfg.IngestStorage.Enabled = true
+				cfg.IngestStorage.Migration.DistributorSendToIngestersEnabled = true
+				cfg.Compartments.Enabled = true
+				cfg.Compartments.Read.NumCompartments = 2
+				cfg.Compartments.Read.KafkaTopicFormat = "mimir-ingest-compartment-<compartment-id>"
+				return cfg
+			},
+			expectAnyError: true,
+		},
+		{
+			name: "should fail if ingester read compartment ID is non-zero when compartments are disabled",
+			getTestConfig: func() *Config {
+				cfg := newDefaultConfig()
+				cfg.Compartments.Enabled = false
+				cfg.Ingester.ReadCompartmentID = 1
+				return cfg
+			},
+			expectAnyError: true,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			err := tc.getTestConfig().Validate(log.NewNopLogger())

@@ -28,6 +28,14 @@ func (m *MultiAggregationGroup) SetChildren(children []planning.Node) error {
 	return nil
 }
 
+func (m *MultiAggregationGroup) ReplaceChild(idx int, node planning.Node) error {
+	if idx != 0 {
+		return fmt.Errorf("node of type MultiAggregationGroup supports 1 child, but attempted to replace child at index %d", idx)
+	}
+	m.Inner = node
+	return nil
+}
+
 func (m *MultiAggregationInstance) Child(idx int) planning.Node {
 	switch idx {
 	case 0:
@@ -69,4 +77,21 @@ func (m *MultiAggregationInstance) SetChildren(children []planning.Node) error {
 		return fmt.Errorf("node of type MultiAggregationInstance expects 1 or 2 children, but got %d", len(children))
 	}
 	return nil
+}
+
+func (m *MultiAggregationInstance) ReplaceChild(idx int, node planning.Node) error {
+	switch idx {
+	case 0:
+		child, ok := node.(*MultiAggregationGroup)
+		if !ok {
+			return fmt.Errorf("node of type MultiAggregationInstance expects child Group to be of type *MultiAggregationGroup, but got %T", node)
+		}
+		m.Group = child
+		return nil
+	case 1:
+		m.Param = node
+		return nil
+	default:
+		return fmt.Errorf("node of type MultiAggregationInstance supports 2 children, but attempted to replace child at index %d", idx)
+	}
 }

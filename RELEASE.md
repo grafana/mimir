@@ -87,8 +87,8 @@ If something is not clear, you can get back to this document to learn more about
   - [ ] Remove "main / unreleased" section from the CHANGELOG
   - [ ] If a new minor or major version is being released, adjust the settings in the `renovate.json5` configuration on the `main` branch by adding the new version.
         This way we ensure that dependency updates maintain the new version, as well as the latest two minor versions.
-        For instance, if versions 3.0 and 2.10 are configured in `renovate.json`, and version 3.1 is being released,
-        during the release process `renovate.json5` should keep updated the following branches: `main`, `release-3.1`, `release-3.0` and `release-2.10`.
+        For instance, if versions 3.1, 3.0 and 2.10 are configured in `renovate.json`, and version 3.2 is being released,
+        during the release process `renovate.json5` should keep updated the following branches: `main`, `release-3.2`, `release-3.1`, `release-3.0`, and `release-2.10`.
 - [ ] Publish the Mimir release candidate
   - [ ] Update VERSION in the release branch and update CHANGELOG with version and release date.
     - Keep in mind this is a release candidate, so the version string in VERSION and CHANGELOG must end in `-rc.#`, where `#` is the release candidate number, starting at 0.
@@ -143,9 +143,9 @@ If something is not clear, you can get back to this document to learn more about
     ```
     This prepares a PR into `main` branch. On approval, **use** the `merge-approved-pr-branch-to-main.sh` script, following the [instruction](https://github.com/grafana/mimir/blob/main/RELEASE.md#merging-release-branch-into-main) on how to merge the PR with "Merge commit" (i.e. we DO NOT "Squash and merge" this one).
   - [ ] If during the release process settings in the `renovate.json5` have been modified in such a way that dependency updates maintain more than the latest two minor versions,
-        modify it again to ensure that only the latest two minor versions get updated.
-        For instance, if versions 3.1, 3.0 and 2.10 are configured in `renovate.json5`, `renovate.json5` should keep updated the following branches:
-        `main`, `release-3.1` and `release-3.0`.
+        modify it again to ensure that only the latest two minor versions get updated, plus any older major version that we still want to keep updated.
+        For instance, if versions 3.2, 3.1, 3.0 and 2.10 are configured in `renovate.json5`, `renovate.json5` should keep updated the following branches:
+        `main`, `release-3.2`, `release-3.1`, and `release-2.10`.
   - [ ] Announce the release on socials
   - [ ] Open a PR to add the new version to the backward compatibility integration test (`integration/backward_compatibility.go`)
     - Keep the last 3 minor releases

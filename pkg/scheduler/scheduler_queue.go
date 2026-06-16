@@ -16,7 +16,7 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
-// schedulerQueue wraps the generic queue.RequestQueue with scheduler-specific queue logic:
+// schedulerQueue wraps the generic queue.Queue with scheduler-specific queue logic:
 //   - the first queue dimension is the query component,
 //     determined from the annotation that the query-frontend attaches to the request.
 //   - the per-tenant max-queriers limit is looked up from the configured Limits.
@@ -25,7 +25,7 @@ import (
 type schedulerQueue struct {
 	services.Service
 
-	queue                     *queue.RequestQueue
+	queue                     *queue.Queue
 	queryComponentUtilization *QueryComponentUtilization
 	limits                    Limits
 
@@ -41,7 +41,7 @@ func newSchedulerQueue(
 	enqueueDuration prometheus.Histogram,
 	querierInflightRequestsMetric *prometheus.SummaryVec,
 ) (*schedulerQueue, error) {
-	q, err := queue.NewRequestQueue(
+	q, err := queue.New(
 		logger,
 		cfg.MaxOutstandingPerTenant,
 		cfg.QuerierForgetDelay,
@@ -111,27 +111,27 @@ func (sq *schedulerQueue) Enqueue(req *SchedulerRequest, successFn func()) error
 		return err
 	}
 	maxQueriers := validation.SmallestPositiveNonZeroIntPerTenant(tenantIDs, sq.limits.MaxQueriersPerUser)
-	return sq.queue.SubmitRequestToEnqueue(req.UserID, req, req.ExpectedQueryComponentName(), maxQueriers, successFn)
+	return sq.queue.SubmitItemToEnqueue(req.UserID, req, req.ExpectedQueryComponentName(), maxQueriers, successFn)
 }
 
-func (sq *schedulerQueue) AwaitRegisterQuerierWorkerConn(conn *queue.QuerierWorkerConn) error {
-	return sq.queue.AwaitRegisterQuerierWorkerConn(conn)
+func (sq *schedulerQueue) AwaitRegisterQuerierWorkerConn(conn *queue.ConsumerWorkerConn) error {
+	return sq.queue.AwaitRegisterConsumerWorkerConn(conn)
 }
 
-func (sq *schedulerQueue) SubmitUnregisterQuerierWorkerConn(conn *queue.QuerierWorkerConn) {
-	sq.queue.SubmitUnregisterQuerierWorkerConn(conn)
+func (sq *schedulerQueue) SubmitUnregisterQuerierWorkerConn(conn *queue.ConsumerWorkerConn) {
+	sq.queue.SubmitUnregisterConsumerWorkerConn(conn)
 }
 
-func (sq *schedulerQueue) AwaitRequestForQuerier(req *queue.QuerierWorkerDequeueRequest) (queue.QueryRequest, queue.TenantIndex, error) {
-	return sq.queue.AwaitRequestForQuerier(req)
+func (sq *schedulerQueue) AwaitRequestForQuerier(req *queue.ConsumerWorkerDequeueRequest) (queue.Item, queue.TenantIndex, error) {
+	return sq.queue.AwaitItemForConsumer(req)
 }
 
 func (sq *schedulerQueue) SubmitNotifyQuerierShutdown(ctx context.Context, querierID string) {
-	sq.queue.SubmitNotifyQuerierShutdown(ctx, querierID)
+	sq.queue.SubmitNotifyConsumerShutdown(ctx, querierID)
 }
 
 func (sq *schedulerQueue) GetConnectedQuerierWorkersMetric() float64 {
-	return sq.queue.GetConnectedQuerierWorkersMetric()
+	return sq.queue.GetConnectedConsumerWorkersMetric()
 }
 
 func (sq *schedulerQueue) IsEmpty() bool {

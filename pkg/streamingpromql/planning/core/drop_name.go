@@ -29,15 +29,6 @@ func (n *DropName) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_DROP_NAME
 }
 
-func (n *DropName) ReplaceChild(idx int, node planning.Node) error {
-	if idx != 0 {
-		return fmt.Errorf("node of type DropName supports 1 child, but attempted to replace child at index %d", idx)
-	}
-
-	n.Inner = node
-	return nil
-}
-
 func (n *DropName) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
 	_, ok := other.(*DropName)
 

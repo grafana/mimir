@@ -916,6 +916,8 @@ func functionNeedsDeduplication(fnc functions.Function) bool {
 		functions.FUNCTION_FIRST_OVER_TIME,
 		functions.FUNCTION_INFO,
 		functions.FUNCTION_LAST_OVER_TIME,
+		functions.FUNCTION_MAX_OF,
+		functions.FUNCTION_MIN_OF,
 		functions.FUNCTION_PI,
 		functions.FUNCTION_SCALAR,
 		functions.FUNCTION_SHARDING_AVG,    // Passes through the result of sum()/count() unchanged.

@@ -44,7 +44,7 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 # Set --ignore-scripts to avoid arbitrary code execution in build hook scripts. (Prettier 2.3.2 doesn't happen to have any.)
-RUN npm install -g --ignore-scripts prettier@3.8.3
+RUN npm install -g --ignore-scripts prettier@3.8.4
 
 # renovate: datasource=github-release-attachments depName=mvdan/sh
 ENV SHFMT_VERSION=v3.13.1

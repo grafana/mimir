@@ -32,3 +32,15 @@ func (s *SplitFunctionCall) SetChildren(children []planning.Node) error {
 	s.Inner = child0
 	return nil
 }
+
+func (s *SplitFunctionCall) ReplaceChild(idx int, node planning.Node) error {
+	if idx != 0 {
+		return fmt.Errorf("node of type SplitFunctionCall supports 1 child, but attempted to replace child at index %d", idx)
+	}
+	child, ok := node.(*core.FunctionCall)
+	if !ok {
+		return fmt.Errorf("node of type SplitFunctionCall expects child Inner to be of type *core.FunctionCall, but got %T", node)
+	}
+	s.Inner = child
+	return nil
+}

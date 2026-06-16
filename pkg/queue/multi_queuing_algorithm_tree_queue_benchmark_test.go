@@ -22,7 +22,7 @@ import (
 	"github.com/grafana/mimir/pkg/queue/tree"
 )
 
-const querierForgetDelay = 0
+const consumerForgetDelay = 0
 const maxOutStandingPerTenant = 1000000
 
 func weightedRandAdditionalQueueDimension(dimensionWeights map[string]float64) string {
@@ -63,9 +63,9 @@ func makeQueueConsumeFuncWithSlowQueryComponent(
 	slowConsumerLatency time.Duration,
 	normalConsumerLatency time.Duration,
 	report *testScenarioQueueDurationObservations,
-) consumeRequest {
-	return func(request QueryRequest) error {
-		req := request.(*testQueryRequest)
+) consumeItem {
+	return func(request Item) error {
+		req := request.(*testItem)
 		queryComponent := req.ExpectedQueryComponentName()
 		if queryComponent == ingesterAndStoreGatewayQueueDimension {
 			// we expect the latency of a query hitting both a normal and a slowed-down query component
@@ -365,9 +365,9 @@ func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 
 	// enable shuffle sharding; we cannot be too restrictive with only two tenants,
 	// or some consumers will not get sharded to any of the two tenants.
-	// enabling shuffle sharding ensures we will hit cases where a querier-worker
+	// enabling shuffle sharding ensures we will hit cases where a consumer-worker
 	// does not find any tenant leaf nodes it can work on under its prioritized query component node
-	maxQueriersPerTenant := numConsumers - 1
+	maxConsumersPerTenant := numConsumers - 1
 
 	var testCaseNames []string
 	testCaseReports := map[string]*testScenarioQueueDurationReport{}
@@ -375,30 +375,30 @@ func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 	for _, weightedQueueDimensionTestCase := range weightedQueueDimensionTestCases {
 		numTenants := len(weightedQueueDimensionTestCase.tenantQueueDimensionsWeights)
 
-		tqaFlipped := tree.NewTenantQuerierQueuingAlgorithm()
-		tqaQuerierWorkerPrioritization := tree.NewTenantQuerierQueuingAlgorithm()
+		tqaFlipped := tree.NewTenantConsumerQueuingAlgorithm()
+		tqaConsumerWorkerPrioritization := tree.NewTenantConsumerQueuingAlgorithm()
 
 		flippedRoundRobinTree, err := tree.NewTree(tree.NewRoundRobinState(), tqaFlipped)
 		require.NoError(t, err)
 
-		querierWorkerPrioritizationTree, err := tree.NewTree(tree.NewQuerierWorkerQueuePriorityAlgo(), tqaQuerierWorkerPrioritization)
+		consumerWorkerPrioritizationTree, err := tree.NewTree(tree.NewConsumerWorkerQueuePriorityAlgo(), tqaConsumerWorkerPrioritization)
 		require.NoError(t, err)
 
 		treeScenarios := []struct {
 			name string
 			tree tree.Tree
-			tqa  *tree.TenantQuerierQueuingAlgorithm
+			tqa  *tree.TenantConsumerQueuingAlgorithm
 		}{
 			// keeping these names the same length keeps logged results aligned
 			{
-				"query component round-robin -> tenant-querier tree",
+				"query component round-robin -> tenant-consumer tree",
 				flippedRoundRobinTree,
 				tqaFlipped,
 			},
 			{
-				"worker-queue prioritization -> tenant-querier tree",
-				querierWorkerPrioritizationTree,
-				tqaQuerierWorkerPrioritization,
+				"worker-queue prioritization -> tenant-consumer tree",
+				consumerWorkerPrioritizationTree,
+				tqaConsumerWorkerPrioritization,
 			},
 		}
 		for _, scenario := range treeScenarios {
@@ -414,22 +414,22 @@ func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 			}
 
 			t.Run(testCaseName, func(t *testing.T) {
-				queue, err := NewRequestQueue(
+				queue, err := New(
 					log.NewNopLogger(),
 					maxOutStandingPerTenant,
-					querierForgetDelay,
+					consumerForgetDelay,
 					promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 					promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 					promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
 				)
 				require.NoError(t, err)
 
-				// NewRequestQueue constructor does not allow passing in a tree or tenantQuerierShards
+				// New constructor does not allow passing in a tree or tenantConsumerShards
 				// so we have to override here to use the same structures as the test case
-				queue.queueBroker.tenantQuerierAssignments = &tenantQuerierShards{
-					querierIDsSorted: make([]tree.QuerierID, 0),
-					tenantsByID:      make(map[string]*queueTenant),
-					queuingAlgorithm: scenario.tqa,
+				queue.queueBroker.tenantConsumerAssignments = &tenantConsumerShards{
+					consumerIDsSorted: make([]tree.ConsumerID, 0),
+					tenantsByID:       make(map[string]*queueTenant),
+					queuingAlgorithm:  scenario.tqa,
 				}
 				queue.queueBroker.tree = scenario.tree
 
@@ -438,7 +438,7 @@ func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 
 				t.Cleanup(func() {
 					// if the test has failed and the queue does not get cleared,
-					// we must send a shutdown signal for the remaining connected querier
+					// we must send a shutdown signal for the remaining connected consumer
 					// or else StopAndAwaitTerminated will never complete.
 					assert.NoError(t, services.StopAndAwaitTerminated(ctx, queue))
 				})
@@ -449,7 +449,7 @@ func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 					weightedQueueDimensionTestCase.tenantQueueDimensionsWeights,
 				)
 				producersChan, producersErrGroup := makeQueueProducerGroup(
-					queue, maxQueriersPerTenant, totalRequests, numProducers, numTenants, queueDimensionFunc,
+					queue, maxConsumersPerTenant, totalRequests, numProducers, numTenants, queueDimensionFunc,
 				)
 
 				// configure queue consumers with respective latencies for processing requests
@@ -481,9 +481,9 @@ func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 				testCaseReports[testCaseName] = report
 
 				require.NoError(t, queue.stop(nil))
-				assert.NotEqual(t, "", tree.CurrentQuerier(scenario.tqa))
+				assert.NotEqual(t, "", tree.CurrentConsumer(scenario.tqa))
 				// ensure everything was dequeued; we can pass a nil DequeueArgs because we don't
-				// want to update any state before doing this (i.e., we're dequeuing for _any_ querier,
+				// want to update any state before doing this (i.e., we're dequeuing for _any_ consumer,
 				// just to make sure the tree is empty).
 				path, val := scenario.tree.Dequeue(nil)
 				assert.Nil(t, val)

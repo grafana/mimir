@@ -20,12 +20,16 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/gorilla/mux"
+	"github.com/grafana/dskit/kv"
+	"github.com/grafana/dskit/kv/consul"
+	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/server"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/querier/tenantfederation"
+	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/util/activitytracker"
 	"github.com/grafana/mimir/pkg/util/gziphandler"
 )
@@ -203,6 +207,75 @@ type MockIngester struct {
 
 func (mi MockIngester) ShutdownHandler(w http.ResponseWriter, _ *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func TestApi_RegisterIngesterPartitionRings(t *testing.T) {
+	const ringKey = "ingester-partitions"
+
+	// newAPI starts a server with an API and returns the API, the server config and an in-memory KV.
+	newAPI := func(t *testing.T) (*API, server.Config, kv.Client) {
+		serverCfg := getServerConfig(t)
+		srv, err := server.New(serverCfg)
+		require.NoError(t, err)
+		go func() { _ = srv.Run() }()
+		t.Cleanup(srv.Stop)
+
+		api, err := New(Config{GzipCompressionLevel: gzip.DefaultCompression}, tenantfederation.Config{}, serverCfg, srv, log.NewNopLogger(), nil)
+		require.NoError(t, err)
+
+		kvClient, closer := consul.NewInMemoryClient(ring.GetPartitionRingCodec(), log.NewNopLogger(), nil)
+		t.Cleanup(func() { _ = closer.Close() })
+
+		return api, serverCfg, kvClient
+	}
+
+	get := func(t *testing.T, serverCfg server.Config, path string) (int, string) {
+		res, err := http.DefaultClient.Get(fmt.Sprintf("http://%s:%d%s", serverCfg.HTTPListenAddress, serverCfg.HTTPListenPort, path))
+		require.NoError(t, err)
+		defer func() { _ = res.Body.Close() }()
+		body, err := io.ReadAll(res.Body)
+		require.NoError(t, err)
+		return res.StatusCode, string(body)
+	}
+
+	t.Run("compartments disabled", func(t *testing.T) {
+		api, serverCfg, kvClient := newAPI(t)
+		watcher, err := ingest.NewPartitionRingWatchers(false, 0, ringKey, ringKey, kvClient, log.NewNopLogger(), nil)
+		require.NoError(t, err)
+
+		api.RegisterIngesterPartitionRings(false, watcher, ringKey, kvClient)
+
+		// /ingester/partition-ring is the actual ring status page (not the compartments index page):
+		// the status page has the partition table, the index page only lists per-compartment links.
+		status, body := get(t, serverCfg, "/ingester/partition-ring")
+		require.Equal(t, http.StatusOK, status)
+		require.Contains(t, body, "<th>Partition ID</th>")
+		require.NotContains(t, body, "partition-ring/compartment-")
+
+		// There are no per-compartment pages.
+		status, _ = get(t, serverCfg, "/ingester/partition-ring/compartment-0")
+		require.Equal(t, http.StatusNotFound, status)
+	})
+
+	t.Run("compartments enabled", func(t *testing.T) {
+		api, serverCfg, kvClient := newAPI(t)
+		watcher, err := ingest.NewPartitionRingWatchers(true, 2, ringKey, ringKey, kvClient, log.NewNopLogger(), nil)
+		require.NoError(t, err)
+
+		api.RegisterIngesterPartitionRings(true, watcher, ringKey, kvClient)
+
+		// The index page lists all read compartments.
+		status, body := get(t, serverCfg, "/ingester/partition-ring")
+		require.Equal(t, http.StatusOK, status)
+		require.Contains(t, body, "partition-ring/compartment-0")
+		require.Contains(t, body, "partition-ring/compartment-1")
+
+		// Each read compartment's ring page is served.
+		for _, c := range []int{0, 1} {
+			status, _ := get(t, serverCfg, fmt.Sprintf("/ingester/partition-ring/compartment-%d", c))
+			require.Equal(t, http.StatusOK, status)
+		}
+	})
 }
 
 func TestApiIngesterShutdown(t *testing.T) {
