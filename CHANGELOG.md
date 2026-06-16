@@ -10,6 +10,7 @@
 * [CHANGE] Querier: The experimental PromQL duration arithmetic helpers `min(...)` and `max(...)` used inside `[...]` range/subquery brackets and `offset` clauses have been renamed to `min_of(...)` and `max_of(...)`. #15593 #15603
 * [CHANGE] Querier, Store-gateway: Only send non-opaque GRPC types between queriers and store-gateways. Note that this change requires upgrading from Mimir 3.1. See associated release notes for more information. #15358
 * [CHANGE] Querier: Remove experimental MQE Projection Pushdown optimization pass and associated CLI flag `querier.mimir-query-engine.enable-projection-pushdown`. #15618
+* [CHANGE] Continuous-test: Change default values for `tests.write-read-series-test.num-series` and `tests.write-read-series-test.max-query-age` to match the values being set in jsonnet. #15705
 * [CHANGE] Update Docker image bases from Debian 12 to Debian 13 (`gcr.io/distroless/static-debian13`; race images use `base-nossl-debian13`). #15629
 * [FEATURE] API: Add alertmanager limits (alertmanager_notification_rate_limit, alertmanager_max_dispatcher_aggregation_groups, alertmanager_max_templates_count) to the user limits API response. #15308
 * [FEATURE] Mimirtool: Add AWS Signature Version 4 (SigV4) support for shared Mimir API client commands including `mimirtool rules`, `mimirtool alertmanager`, `mimirtool alerts`, `mimirtool backfill`, and `mimirtool analyze ruler`. #14959
@@ -67,7 +68,9 @@
 
 * [CHANGE] Query-frontend: Increase default query-frontend cache size limit to 25MB. #14857
 * [CHANGE] Query-frontend: Increase memory requested and limit to 2GiB and 4GiB respectively. #15688
+* [CHANGE] Continuous-test: Don't explicitly set `tests.write-read-series-test.num-series` and `tests.write-read-series-test.max-query-age` to their default values. #15705
 * [ENHANCEMENT] Updated rollout-operator jsonnet library to v0.38.0. #15328, #15626
+
 
 ### Documentation
 
