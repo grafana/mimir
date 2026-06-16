@@ -737,9 +737,6 @@ func (u *userTSDB) takePendingNonOwnedRefs(notAfter time.Time) []storage.SeriesR
 	u.pendingNonOwnedRefsMtx.Lock()
 	defer u.pendingNonOwnedRefsMtx.Unlock()
 
-	if len(u.pendingNonOwnedRefs) == 0 {
-		return nil
-	}
 	var refs []storage.SeriesRef
 	for r, ts := range u.pendingNonOwnedRefs {
 		if ts.After(notAfter) {
@@ -750,6 +747,10 @@ func (u *userTSDB) takePendingNonOwnedRefs(notAfter time.Time) []storage.SeriesR
 		}
 		refs = append(refs, r)
 		delete(u.pendingNonOwnedRefs, r)
+	}
+	// Free pendingNonOwnedRefs if we returned them all.
+	if len(u.pendingNonOwnedRefs) == 0 {
+		u.pendingNonOwnedRefs = nil
 	}
 	return refs
 }
