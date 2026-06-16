@@ -25,6 +25,7 @@ import (
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql"
+	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/propagation"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
@@ -396,7 +397,8 @@ func (rth *engineQueryRequestRoundTripperHandler) Do(ctx context.Context, r Metr
 	}
 
 	ctx = ContextWithHeadersToPropagate(ctx, headers)
-	ctx = ContextWithRequestHintsAndOptions(ctx, r.GetHints(), r.GetOptions())
+	ctx = ContextWithRequestHints(ctx, r.GetHints())
+	ctx = requestoptions.ContextWithOptions(ctx, r.GetOptions())
 	opts, err := r.GetQueryOpts()
 	if err != nil {
 		return nil, err
@@ -504,14 +506,11 @@ type requestContextKeyType int
 
 const (
 	requestHintsKey requestContextKeyType = iota
-	requestOptionsKey
 	parallelismLimiterKey
 )
 
-func ContextWithRequestHintsAndOptions(ctx context.Context, hints *Hints, options Options) context.Context {
-	ctx = context.WithValue(ctx, requestHintsKey, hints)
-	ctx = context.WithValue(ctx, requestOptionsKey, options)
-	return ctx
+func ContextWithRequestHints(ctx context.Context, hints *Hints) context.Context {
+	return context.WithValue(ctx, requestHintsKey, hints)
 }
 
 func RequestHintsFromContext(ctx context.Context) *Hints {
@@ -520,14 +519,6 @@ func RequestHintsFromContext(ctx context.Context) *Hints {
 	}
 
 	return nil
-}
-
-func RequestOptionsFromContext(ctx context.Context) Options {
-	if v := ctx.Value(requestOptionsKey); v != nil {
-		return v.(Options)
-	}
-
-	return Options{}
 }
 
 func ContextWithParallelismLimiter(ctx context.Context, limiter *ParallelismLimiter) context.Context {

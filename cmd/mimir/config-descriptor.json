@@ -1001,7 +1001,7 @@
               "kind": "field",
               "name": "max_backoff",
               "required": false,
-              "desc": "Minimum duration of the Retry-After HTTP header in responses to 429/5xx errors. Must be greater than or equal to 1s. Backoff is calculated as MinBackoff*2^(RetryAttempt-1) seconds with random jitter of 50% in either direction. RetryAttempt is the value of the Retry-Attempt HTTP header.",
+              "desc": "Maximum duration of the Retry-After HTTP header in responses to 429/5xx errors. Must be greater than or equal to 1s. Backoff is calculated as MinBackoff*2^(RetryAttempt-1) seconds with random jitter of 50% in either direction. RetryAttempt is the value of the Retry-Attempt HTTP header.",
               "fieldValue": null,
               "fieldDefaultValue": 96000000000,
               "fieldFlag": "distributor.retry-after-header.max-backoff",
@@ -2481,6 +2481,17 @@
         },
         {
           "kind": "field",
+          "name": "experimental_search_api_enabled",
+          "required": false,
+          "desc": "If set to true, enables the experimental streaming label/value search HTTP endpoints (/api/v1/search/{metric_names,label_names,label_values}). Mirrors Prometheus's experimental.search-api feature gate.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "querier.experimental-search-api-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "filter_queryables_enabled",
           "required": false,
           "desc": "If set to true, the header 'X-Filter-Queryables' can be used to filter down the list of queryables that shall be used. This is useful to test and monitor single queryables in isolation. Deprecated: has no effect.",
@@ -2649,17 +2660,6 @@
             },
             {
               "kind": "field",
-              "name": "enable_projection_pushdown",
-              "required": false,
-              "desc": "Enable projection pushdown to only fetch labels required for the query from storage.",
-              "fieldValue": null,
-              "fieldDefaultValue": false,
-              "fieldFlag": "querier.mimir-query-engine.enable-projection-pushdown",
-              "fieldType": "boolean",
-              "fieldCategory": "experimental"
-            },
-            {
-              "kind": "field",
               "name": "enable_multi_aggregation",
               "required": false,
               "desc": "Enable computing multiple aggregations over the same data without buffering. Requires common subexpression elimination to be enabled.",
@@ -2739,6 +2739,28 @@
                           "fieldDefaultValue": "",
                           "fieldFlag": "querier.mimir-query-engine.range-vector-splitting.memcached.addresses",
                           "fieldType": "string"
+                        },
+                        {
+                          "kind": "field",
+                          "name": "addresses_lookup_period",
+                          "required": false,
+                          "desc": "How often each address is resolved to an IP address or list of host names.",
+                          "fieldValue": null,
+                          "fieldDefaultValue": 30000000000,
+                          "fieldFlag": "querier.mimir-query-engine.range-vector-splitting.memcached.addresses-lookup-period",
+                          "fieldType": "duration",
+                          "fieldCategory": "advanced"
+                        },
+                        {
+                          "kind": "field",
+                          "name": "addresses_lookup_pool_size",
+                          "required": false,
+                          "desc": "How many idle connections to the DNS resolver are kept open. 0 disables keeping any idle connections open.",
+                          "fieldValue": null,
+                          "fieldDefaultValue": 0,
+                          "fieldFlag": "querier.mimir-query-engine.range-vector-splitting.memcached.addresses-lookup-pool-size",
+                          "fieldType": "int",
+                          "fieldCategory": "advanced"
                         },
                         {
                           "kind": "field",
@@ -4790,6 +4812,39 @@
           "fieldCategory": "experimental"
         },
         {
+          "kind": "field",
+          "name": "early_compaction_non_owned_series_enabled",
+          "required": false,
+          "desc": "When enabled, the ingester triggers an early TSDB head compaction for series that are no longer owned by the ingester after a ring change. Requires -ingester.track-ingester-owned-series or -ingester.use-ingester-owned-series-for-limits to be enabled.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "ingester.early-compaction-non-owned-series-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "early_compaction_non_owned_series_min_grace_period",
+          "required": false,
+          "desc": "Minimum time a series must remain non-owned before it can be evicted when the local owned-series threshold is exceeded. New non-owned series reset the timer. A value of 0 evicts immediately. A per-replica startup jitter spreads evictions across replicas.",
+          "fieldValue": null,
+          "fieldDefaultValue": 30000000000,
+          "fieldFlag": "ingester.early-compaction-non-owned-series-min-grace-period",
+          "fieldType": "duration",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "early_compaction_non_owned_series_max_grace_period",
+          "required": false,
+          "desc": "Maximum time a series may remain non-owned before it is evicted, regardless of the owned-series threshold. This ensures eventual eviction even for tenants below their threshold. A value of 0 disables the maximum grace period, so eviction depends solely on the owned-series threshold.",
+          "fieldValue": null,
+          "fieldDefaultValue": 300000000000,
+          "fieldFlag": "ingester.early-compaction-non-owned-series-max-grace-period",
+          "fieldType": "duration",
+          "fieldCategory": "experimental"
+        },
+        {
           "kind": "block",
           "name": "push_circuit_breaker",
           "required": false,
@@ -6420,7 +6475,7 @@
                 "kind": "field",
                 "name": "input",
                 "required": false,
-                "desc": "",
+                "desc": "Source label name to read from the incoming series.",
                 "fieldValue": null,
                 "fieldDefaultValue": "",
                 "fieldType": "string"
@@ -6429,7 +6484,7 @@
                 "kind": "field",
                 "name": "output",
                 "required": false,
-                "desc": "",
+                "desc": "Label name to use in the cost attribution output metrics. If empty, the input label name is used.",
                 "fieldValue": null,
                 "fieldDefaultValue": "",
                 "fieldType": "string"
@@ -6440,15 +6495,136 @@
           }
         },
         {
-          "kind": "field",
-          "name": "max_cost_attribution_cardinality",
+          "kind": "map",
+          "name": "cost_attribution_trackers",
           "required": false,
-          "desc": "Maximum cardinality of cost attribution labels allowed per user.",
+          "desc": "Base cost attribution trackers configuration as JSON. Each tracker defines labels to track for cost attribution. Example: '{\"by-team\":{\"labels\":[{\"input\":\"team\"}]}}'.",
           "fieldValue": null,
-          "fieldDefaultValue": 2000,
-          "fieldFlag": "validation.max-cost-attribution-cardinality",
-          "fieldType": "int",
-          "fieldCategory": "experimental"
+          "fieldDefaultValue": null,
+          "fieldType": "string",
+          "fieldCategory": "experimental",
+          "fieldElement": {
+            "kind": "block",
+            "name": "cost_attribution_trackers",
+            "required": false,
+            "desc": "",
+            "blockEntries": [
+              {
+                "kind": "field",
+                "name": "labels",
+                "required": false,
+                "desc": "",
+                "fieldValue": null,
+                "fieldDefaultValue": null,
+                "fieldType": "slice",
+                "fieldElement": {
+                  "kind": "block",
+                  "name": "labels",
+                  "required": false,
+                  "desc": "",
+                  "blockEntries": [
+                    {
+                      "kind": "field",
+                      "name": "input",
+                      "required": false,
+                      "desc": "Source label name to read from the incoming series.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldType": "string"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "output",
+                      "required": false,
+                      "desc": "Label name to use in the cost attribution output metrics. If empty, the input label name is used.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldType": "string"
+                    }
+                  ],
+                  "fieldValue": null,
+                  "fieldDefaultValue": null
+                }
+              },
+              {
+                "kind": "field",
+                "name": "internal",
+                "required": false,
+                "desc": "Expose this tracker's metrics on the operational /metrics endpoint instead of the cost-attribution specific /usage-metrics endpoint that is used by default.",
+                "fieldValue": null,
+                "fieldDefaultValue": false,
+                "fieldType": "boolean"
+              }
+            ],
+            "fieldValue": null,
+            "fieldDefaultValue": null
+          }
+        },
+        {
+          "kind": "map",
+          "name": "additional_cost_attribution_trackers",
+          "required": false,
+          "desc": "",
+          "fieldValue": null,
+          "fieldDefaultValue": null,
+          "fieldType": "string",
+          "fieldCategory": "experimental",
+          "fieldElement": {
+            "kind": "block",
+            "name": "additional_cost_attribution_trackers",
+            "required": false,
+            "desc": "",
+            "blockEntries": [
+              {
+                "kind": "field",
+                "name": "labels",
+                "required": false,
+                "desc": "",
+                "fieldValue": null,
+                "fieldDefaultValue": null,
+                "fieldType": "slice",
+                "fieldElement": {
+                  "kind": "block",
+                  "name": "labels",
+                  "required": false,
+                  "desc": "",
+                  "blockEntries": [
+                    {
+                      "kind": "field",
+                      "name": "input",
+                      "required": false,
+                      "desc": "Source label name to read from the incoming series.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldType": "string"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "output",
+                      "required": false,
+                      "desc": "Label name to use in the cost attribution output metrics. If empty, the input label name is used.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldType": "string"
+                    }
+                  ],
+                  "fieldValue": null,
+                  "fieldDefaultValue": null
+                }
+              },
+              {
+                "kind": "field",
+                "name": "internal",
+                "required": false,
+                "desc": "Expose this tracker's metrics on the operational /metrics endpoint instead of the cost-attribution specific /usage-metrics endpoint that is used by default.",
+                "fieldValue": null,
+                "fieldDefaultValue": false,
+                "fieldType": "boolean"
+              }
+            ],
+            "fieldValue": null,
+            "fieldDefaultValue": null
+          }
         },
         {
           "kind": "field",
@@ -6459,6 +6635,17 @@
           "fieldDefaultValue": 0,
           "fieldFlag": "validation.cost-attribution-cooldown",
           "fieldType": "duration",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "max_cost_attribution_cardinality",
+          "required": false,
+          "desc": "Maximum cardinality of cost attribution labels allowed per user.",
+          "fieldValue": null,
+          "fieldDefaultValue": 2000,
+          "fieldFlag": "validation.max-cost-attribution-cardinality",
+          "fieldType": "int",
           "fieldCategory": "experimental"
         },
         {
@@ -8360,6 +8547,28 @@
                   "fieldDefaultValue": "",
                   "fieldFlag": "query-frontend.results-cache.memcached.addresses",
                   "fieldType": "string"
+                },
+                {
+                  "kind": "field",
+                  "name": "addresses_lookup_period",
+                  "required": false,
+                  "desc": "How often each address is resolved to an IP address or list of host names.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 30000000000,
+                  "fieldFlag": "query-frontend.results-cache.memcached.addresses-lookup-period",
+                  "fieldType": "duration",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "addresses_lookup_pool_size",
+                  "required": false,
+                  "desc": "How many idle connections to the DNS resolver are kept open. 0 disables keeping any idle connections open.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 0,
+                  "fieldFlag": "query-frontend.results-cache.memcached.addresses-lookup-pool-size",
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
                 },
                 {
                   "kind": "field",
@@ -10586,6 +10795,28 @@
                     },
                     {
                       "kind": "field",
+                      "name": "addresses_lookup_period",
+                      "required": false,
+                      "desc": "How often each address is resolved to an IP address or list of host names.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 30000000000,
+                      "fieldFlag": "blocks-storage.bucket-store.index-cache.memcached.addresses-lookup-period",
+                      "fieldType": "duration",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "addresses_lookup_pool_size",
+                      "required": false,
+                      "desc": "How many idle connections to the DNS resolver are kept open. 0 disables keeping any idle connections open.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 0,
+                      "fieldFlag": "blocks-storage.bucket-store.index-cache.memcached.addresses-lookup-pool-size",
+                      "fieldType": "int",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
                       "name": "timeout",
                       "required": false,
                       "desc": "The socket read/write timeout.",
@@ -10831,6 +11062,28 @@
                     },
                     {
                       "kind": "field",
+                      "name": "addresses_lookup_period",
+                      "required": false,
+                      "desc": "How often each address is resolved to an IP address or list of host names.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 30000000000,
+                      "fieldFlag": "blocks-storage.bucket-store.index-header-cache.memcached.addresses-lookup-period",
+                      "fieldType": "duration",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "addresses_lookup_pool_size",
+                      "required": false,
+                      "desc": "How many idle connections to the DNS resolver are kept open. 0 disables keeping any idle connections open.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 0,
+                      "fieldFlag": "blocks-storage.bucket-store.index-header-cache.memcached.addresses-lookup-pool-size",
+                      "fieldType": "int",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
                       "name": "timeout",
                       "required": false,
                       "desc": "The socket read/write timeout.",
@@ -11031,6 +11284,17 @@
                 },
                 {
                   "kind": "field",
+                  "name": "attributes_in_memory_max_items",
+                  "required": false,
+                  "desc": "Maximum number of individual attributes items to keep in a first level in-memory LRU cache. Attributes will be stored and fetched in-memory before hitting the cache backend. 0 to disable the in-memory cache.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 10000,
+                  "fieldFlag": "blocks-storage.bucket-store.index-header-cache.attributes-in-memory-max-items",
+                  "fieldType": "int",
+                  "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
                   "name": "subrange_ttl",
                   "required": false,
                   "desc": "TTL for caching individual index-header subranges.",
@@ -11097,6 +11361,28 @@
                       "fieldDefaultValue": "",
                       "fieldFlag": "blocks-storage.bucket-store.chunks-cache.memcached.addresses",
                       "fieldType": "string"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "addresses_lookup_period",
+                      "required": false,
+                      "desc": "How often each address is resolved to an IP address or list of host names.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 30000000000,
+                      "fieldFlag": "blocks-storage.bucket-store.chunks-cache.memcached.addresses-lookup-period",
+                      "fieldType": "duration",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "addresses_lookup_pool_size",
+                      "required": false,
+                      "desc": "How many idle connections to the DNS resolver are kept open. 0 disables keeping any idle connections open.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 0,
+                      "fieldFlag": "blocks-storage.bucket-store.chunks-cache.memcached.addresses-lookup-pool-size",
+                      "fieldType": "int",
+                      "fieldCategory": "advanced"
                     },
                     {
                       "kind": "field",
@@ -11366,6 +11652,28 @@
                       "fieldDefaultValue": "",
                       "fieldFlag": "blocks-storage.bucket-store.metadata-cache.memcached.addresses",
                       "fieldType": "string"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "addresses_lookup_period",
+                      "required": false,
+                      "desc": "How often each address is resolved to an IP address or list of host names.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 30000000000,
+                      "fieldFlag": "blocks-storage.bucket-store.metadata-cache.memcached.addresses-lookup-period",
+                      "fieldType": "duration",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "addresses_lookup_pool_size",
+                      "required": false,
+                      "desc": "How many idle connections to the DNS resolver are kept open. 0 disables keeping any idle connections open.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 0,
+                      "fieldFlag": "blocks-storage.bucket-store.metadata-cache.memcached.addresses-lookup-pool-size",
+                      "fieldType": "int",
+                      "fieldCategory": "advanced"
                     },
                     {
                       "kind": "field",
@@ -16724,6 +17032,28 @@
                 },
                 {
                   "kind": "field",
+                  "name": "addresses_lookup_period",
+                  "required": false,
+                  "desc": "How often each address is resolved to an IP address or list of host names.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 30000000000,
+                  "fieldFlag": "ruler-storage.cache.memcached.addresses-lookup-period",
+                  "fieldType": "duration",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "addresses_lookup_pool_size",
+                  "required": false,
+                  "desc": "How many idle connections to the DNS resolver are kept open. 0 disables keeping any idle connections open.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 0,
+                  "fieldFlag": "ruler-storage.cache.memcached.addresses-lookup-pool-size",
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
                   "name": "timeout",
                   "required": false,
                   "desc": "The socket read/write timeout.",
@@ -19166,6 +19496,28 @@
         },
         {
           "kind": "field",
+          "name": "processed_messages_queue_size",
+          "required": false,
+          "desc": "Size of the per-key internal queue for processing messages received from other nodes. Increasing this value may help to avoid dropping per-key updates when the node is processing many updates for the same key.",
+          "fieldValue": null,
+          "fieldDefaultValue": 1024,
+          "fieldFlag": "memberlist.processed-messages-queue-size",
+          "fieldType": "int",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "compression_algorithm",
+          "required": false,
+          "desc": "Compression algorithm used for outgoing messages when -memberlist.compression-enabled is true. Supported values: lzw, snappy. Ignored when -memberlist.compression-enabled is false.",
+          "fieldValue": null,
+          "fieldDefaultValue": "lzw",
+          "fieldFlag": "memberlist.compression-algorithm",
+          "fieldType": "string",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
           "name": "advertise_addr",
           "required": false,
           "desc": "Gossip address to advertise to other members in the cluster. Used for NAT traversal.",
@@ -19647,6 +19999,17 @@
           "fieldDefaultValue": 0,
           "fieldFlag": "query-scheduler.querier-forget-delay",
           "fieldType": "duration",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "inflight_max_age_metric_enabled",
+          "required": false,
+          "desc": "Enable the cortex_query_scheduler_inflight_max_age_seconds metric, which reports the age of the oldest inflight request. Disabling it skips the per-tick scan over inflight requests.",
+          "fieldValue": null,
+          "fieldDefaultValue": true,
+          "fieldFlag": "query-scheduler.inflight-max-age-metric-enabled",
+          "fieldType": "boolean",
           "fieldCategory": "experimental"
         },
         {

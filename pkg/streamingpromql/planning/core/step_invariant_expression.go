@@ -18,9 +18,11 @@ import (
 
 // StepInvariantExpression is a query which evaluates to the same result irrelevant of the evaluation time.
 // To optimise for this, a single value is determined and used to populate the vector for each step of the given series.
+//
+//node:generate
 type StepInvariantExpression struct {
 	*StepInvariantExpressionDetails
-	Inner planning.Node `json:"-"`
+	Inner planning.Node `json:"-" node:"child"`
 }
 
 func (s *StepInvariantExpression) Describe() string {
@@ -40,39 +42,8 @@ func (s *StepInvariantExpression) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_STEP_INVARIANT_EXPRESSION
 }
 
-func (s *StepInvariantExpression) Child(idx int) planning.Node {
-	if idx != 0 {
-		panic(fmt.Sprintf("node of type StepInvariantExpression supports 1 child, but attempted to get child at index %d", idx))
-	}
-
-	return s.Inner
-}
-
-func (s *StepInvariantExpression) ChildCount() int {
-	return 1
-}
-
 func (s *StepInvariantExpression) MinimumRequiredPlanVersion(types.QueryTimeRange) (planning.QueryPlanVersion, error) {
 	return planning.QueryPlanV1, nil
-}
-
-func (s *StepInvariantExpression) SetChildren(children []planning.Node) error {
-	if len(children) != 1 {
-		return fmt.Errorf("node of type StepInvariantExpression expects 1 child, but got %d", len(children))
-	}
-
-	s.Inner = children[0]
-
-	return nil
-}
-
-func (s *StepInvariantExpression) ReplaceChild(idx int, node planning.Node) error {
-	if idx != 0 {
-		return fmt.Errorf("node of type StepInvariantExpression supports 1 child, but attempted to replace child at index %d", idx)
-	}
-
-	s.Inner = node
-	return nil
 }
 
 func (s *StepInvariantExpression) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {

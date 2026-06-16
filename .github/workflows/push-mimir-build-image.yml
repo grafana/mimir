@@ -1,229 +1,218 @@
 name: Build and Push mimir-build-image
 
-# configure trigger by pull request
+# A note on permissions:
+# We don't explicitly check that the PR author is authorized to trigger a build:
+# fork PRs receive a read-only GITHUB_TOKEN with no secrets, so the image push and
+# Makefile commit steps fail naturally with permission denied, while PRs from
+# internal branches already require repo write access. Relying on GitHub's
+# permission model also lets us drop the org-members read scope the
+# mimir-github-bot App previously needed.
+
 on:
   pull_request:
+
+permissions: {}
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 jobs:
-  build_and_push:
+  prepare:
+    name: Prepare
     runs-on: ubuntu-latest
     permissions:
-      # Allow pushing to the GitHub repo for collaborators, forks should remain read-only
-      contents: write
-      # Allow PR modification for collaborators, forks should remain read-only
-      pull-requests: write
-      # Necessary to authenticate with Vault which happens in dockerhub-login
-      id-token: write
+      contents: read
+      pull-requests: write # So we can post comments on the PR.
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-        with:
-          persist-credentials: false
-
-      # We only want for this workflow to do anything when mimir-build-image/Dockerfile is modified.
-      # However, we want for it to be able to run for all PRs, just so it can be made a required check
+      # We only want for this workflow to do anything when anything inside mimir-build-image/ is modified,
+      # as well as when this workflow is modified.
+      #
+      # However, we want for the workflow to be able to run for all PRs, just so it can be made a required check
       # (i.e. so PRs can't be merged until it's done).
       #
       # We list changed files via the paginated PR Files API rather than `gh pr diff --name-only`
       # because the latter caps at 300 files and returns HTTP 406 on larger PRs, in which case the
       # script would silently fall into the "not modified" branch even when the Dockerfile was
       # actually modified.
-      - name: Check if mimir-build-image/Dockerfile was modified
-        id: check_dockerfile
+      - name: Check if files modified
+        id: check_if_files_modified
         run: |
           set -euo pipefail
           files=$(gh api --paginate \
             -H "Accept: application/vnd.github+json" \
             "/repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files" \
             --jq '.[].filename')
-          if echo "$files" | grep -qx 'mimir-build-image/Dockerfile'; then
+          if echo "$files" | grep -qxE '(mimir-build-image/.*|\.github/workflows/push-mimir-build-image\.yml)'; then
             echo "modified=true" >> "$GITHUB_OUTPUT"
-            echo "Dockerfile was modified"
+            echo "Dockerfile or build workflow was modified"
           else
             echo "modified=false" >> "$GITHUB_OUTPUT"
-            echo "Dockerfile was not modified"
+            echo "Dockerfile or build workflow were not modified"
           fi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # We use the mimir-github-bot GitHub App because GITHUB_TOKEN doesn't have org-level permissions.
-      - name: Generate GitHub App Token for Membership
-        if: steps.check_dockerfile.outputs.modified == 'true'
-        id: app-token-for-membership
-        uses: grafana/shared-workflows/actions/create-github-app-token@580590a644e82e79bb2598bdaba0be245a14dda0 # create-github-app-token/v0.2.2
+      - name: Checkout repository
+        if: steps.check_if_files_modified.outputs.modified == 'true'
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
-          github_app: mimir-github-bot
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.ref }} # Check out the PR branch itself, not the temporary merge commit
 
-      # Check if PR author is a Grafana organization member using the GitHub API.
-      # This is more reliable than author_association which depends on public membership visibility.
-      # Uses the GitHub App token because GITHUB_TOKEN doesn't have org-level permissions.
-      - name: Check if PR author is org member
-        if: steps.check_dockerfile.outputs.modified == 'true'
-        id: check_membership
+      - name: Compute variables
+        if: steps.check_if_files_modified.outputs.modified == 'true'
+        id: compute_variables
         run: |
-          # Check membership, capturing the HTTP status code
-          status_code=$(gh api \
-            -H "Accept: application/vnd.github+json" \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
-            "/orgs/grafana/members/${PR_AUTHOR}" \
-            --include 2>&1 | head -1 | awk '{print $2}')
-          if [ "$status_code" = "204" ]; then
-            echo "is_member=true" >> $GITHUB_OUTPUT
-            echo "✓ User ${PR_AUTHOR} is a Grafana organization member"
-          else
-            echo "is_member=false" >> $GITHUB_OUTPUT
-            echo "✗ User ${PR_AUTHOR} is not a Grafana organization member (HTTP $status_code)"
-          fi
-        env:
-          GITHUB_TOKEN: ${{ steps.app-token-for-membership.outputs.token }}
-          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
-
-      # We want to allow running github actions for all contributors, but don't want all contributors to be able to
-      # publish new build images just by sending the PR. Only Grafana org members and Renovate can proceed.
-      # This step sets an 'authorized' output that all subsequent privileged steps depend on.
-      - name: Check authorization
-        if: steps.check_dockerfile.outputs.modified == 'true'
-        id: authorize
-        run: |
-          if [ "${{ steps.check_membership.outputs.is_member }}" = "true" ] || [ "${PR_AUTHOR}" = "renovate-sh-app[bot]" ]; then
-            echo "authorized=true" >> $GITHUB_OUTPUT
-            echo "✓ User ${PR_AUTHOR} is authorized to build images"
-          else
-            echo "authorized=false" >> $GITHUB_OUTPUT
-            # We want to fail the workflow here because we only get here if the build image Dockerfile
-            # has changed, and such a PR shouldn't pass without a successful build and push.
-            echo "::error::Only Grafana organization members and Renovate can trigger build image updates"
-            exit 1
-          fi
-        env:
-          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
-
-      - name: Checkout Pull Request Branch
-        if: steps.check_dockerfile.outputs.modified == 'true' && steps.authorize.outputs.authorized == 'true'
-        run: gh pr checkout ${{ github.event.pull_request.number }}
-        env:
-          GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
-
-      - name: Setup QEMU
-        if: steps.check_dockerfile.outputs.modified == 'true' && steps.authorize.outputs.authorized == 'true'
-        uses: docker/setup-qemu-action@ce360397dd3f832beb865e1373c09c0e9f86d70a # v4.0.0
-
-      - name: Set up Docker Buildx
-        if: steps.check_dockerfile.outputs.modified == 'true' && steps.authorize.outputs.authorized == 'true'
-        uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
-
-      - name: Login to Docker Hub
-        if: steps.check_dockerfile.outputs.modified == 'true' && steps.authorize.outputs.authorized == 'true'
-        uses: grafana/shared-workflows/actions/dockerhub-login@13fb504e3bfe323c1188bf244970d94b2d336e86 # v1.0.1
-
-      - name: Prepare Variables
-        if: steps.check_dockerfile.outputs.modified == 'true' && steps.authorize.outputs.authorized == 'true'
-        id: prepare
-        run: |
-          echo "path=mimir-build-image/Dockerfile" >> $GITHUB_OUTPUT
           main_build_image=$(make print-build-image)
-          main_image_tag=$(echo $main_build_image | cut -d ':' -f 2)
+          main_image_tag=$(echo $main_build_image | cut -d ':' -f 2-) # Get everything after the first : (ie. the image tag and digest, if present)
           image_name=$(echo $main_build_image | cut -d ':' -f 1)
-          echo "image=$image_name" >> $GITHUB_OUTPUT
+          echo "image_name=$image_name" >> $GITHUB_OUTPUT
           echo "main_image_tag=$main_image_tag" >> $GITHUB_OUTPUT
 
-      - name: Compute Image Tag
-        if: steps.check_dockerfile.outputs.modified == 'true' && steps.authorize.outputs.authorized == 'true'
-        id: compute_hash
-        run: |
-          current_hash=$(md5sum ${{ steps.prepare.outputs.path }} | awk '{print substr($1, 0, 10)}')
-          echo "the file path is ${{ steps.prepare.outputs.path }}"
-          echo "build tag is $current_hash"
-          tag="pr${{ github.event.pull_request.number }}-$current_hash"
-          echo "tag=$tag" >> $GITHUB_OUTPUT
+          # Compute a hash of the entire build image directory and this workflow, so that any changes to the Dockerfile or other files trigger a new build.
+          # We use tar so that this also captures changes to permissions.
+          new_image_hash=$(tar -c -f - --exclude .uptodate --mtime='1900-01-01 00:00Z' --sort=name mimir-build-image .github/workflows/push-mimir-build-image.yml | md5sum | awk '{print substr($1, 0, 10)}')
+          echo "New image hash is $new_image_hash"
+          new_image_tag="pr${{ github.event.pull_request.number }}-$new_image_hash"
+          echo "new_image_tag=$new_image_tag" >> $GITHUB_OUTPUT
+          
+          {
+            echo "build_args<<EOF"
+            make print-build-image-build-args
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
 
-      - name: Check Should Build Image
-        if: steps.check_dockerfile.outputs.modified == 'true' && steps.authorize.outputs.authorized == 'true'
-        id: check_build
+      - name: Check if image is already built
+        if: steps.check_if_files_modified.outputs.modified == 'true'
+        id: check_if_image_is_built
         run: |
-          echo "Checking if image should be built"
-          if skopeo inspect --raw "docker://${{ steps.prepare.outputs.image }}:${{ steps.compute_hash.outputs.tag }}" >/dev/null 2>&1; then
-            echo "build=false" >> $GITHUB_OUTPUT
-            echo "Tag ${{ steps.compute_hash.outputs.tag }} exists"
+          echo "Checking if image has already been built"
+          if skopeo inspect --raw "docker://${{ steps.compute_variables.outputs.image_name }}:${{ steps.compute_variables.outputs.new_image_tag }}"; then
+            echo "Tag ${{ steps.compute_variables.outputs.new_image_tag }} exists"
+            echo "need_to_build=false" >> $GITHUB_OUTPUT
           else
-            echo "Tag ${{ steps.compute_hash.outputs.tag }} does not exist"
-            echo "build=true" >> $GITHUB_OUTPUT
+            echo "Tag ${{ steps.compute_variables.outputs.new_image_tag }} does not exist"
+            echo "need_to_build=true" >> $GITHUB_OUTPUT
           fi
 
-      - name: Add Comment to the PR
-        if: steps.check_dockerfile.outputs.modified == 'true' && steps.authorize.outputs.authorized == 'true'
+      - name: Add comment to the PR
+        if: steps.check_if_files_modified.outputs.modified == 'true'
         id: notification
         run: |
-          if [ ${{ steps.check_build.outputs.build }} == 'true' ]; then
-           gh pr comment $PR_NUMBER --body "**Building new version of mimir-build-image**. After image is built and pushed to Docker Hub, \
-           a new commit will automatically be added to this PR with new image version \`$IMAGE:$TAG\`. This can take up to 1 hour."
+          if [ ${{ steps.check_if_image_is_built.outputs.need_to_build }} == 'true' ]; then
+           gh pr comment $PR_NUMBER --body "**Building new version of mimir-build-image**. After image is built and pushed to the registry, \
+           a new commit will automatically be added to this PR with new image version \`$IMAGE:$NEW_IMAGE_TAG\`. This can take a few minutes."
           else
             echo "This PR will not trigger a build of mimir-build-image"
-            gh pr comment $PR_NUMBER --body "**Not building new version of mimir-build-image**. This PR modifies \`mimir-build-image/Dockerfile\`, but the image \`$IMAGE:$TAG\` already exists."
+            gh pr comment $PR_NUMBER --body "**Not building new version of mimir-build-image**. This PR modifies the build image or the build image build workflow, but the image \`$IMAGE:$NEW_IMAGE_TAG\` already exists."
           fi
         env:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
-          TAG: ${{ steps.compute_hash.outputs.tag }}
-          IMAGE: ${{ steps.prepare.outputs.image }}
+          NEW_IMAGE_TAG: ${{ steps.compute_variables.outputs.new_image_tag }}
+          IMAGE: ${{ steps.compute_variables.outputs.image_name }}
 
-      - name: Build and Push Docker Image
-        if: steps.check_dockerfile.outputs.modified == 'true' && steps.authorize.outputs.authorized == 'true' && steps.check_build.outputs.build == 'true'
-        run: |
-          echo "Building and Pushing Docker Image"
-          make push-multiarch-build-image IMAGE_TAG=${{ steps.compute_hash.outputs.tag }}
+    outputs:
+      need_to_build: ${{ steps.check_if_image_is_built.outputs.need_to_build }}
+      new_image_tag: ${{ steps.compute_variables.outputs.new_image_tag }}
+      main_image_tag: ${{ steps.compute_variables.outputs.main_image_tag }}
+      build_args: ${{ steps.compute_variables.outputs.build_args }}
 
-      - name: Compare built tag with Makefile
-        if: steps.check_dockerfile.outputs.modified == 'true' && steps.authorize.outputs.authorized == 'true'
-        id: compare_tag
+  build-push-multiarch:
+    name: Build image
+    needs:
+      - prepare
+    if: needs.prepare.outputs.need_to_build == 'true'
+    permissions:
+      contents: read
+      id-token: write
+    uses: grafana/shared-workflows/.github/workflows/docker-build-push-multiarch.yml@638f24848a49edb0bd14f771b6dd37b4455f1591 # main
+    with:
+      context: mimir-build-image
+      platforms: linux/arm64,linux/amd64
+      tags: ${{ needs.prepare.outputs.new_image_tag }}
+      build-args: ${{ needs.prepare.outputs.build_args }}
+      push: true
+      registries: gar
+      gar-environment: dev
+      gar-repository: docker-mimir-build-image
+      gar-image: mimir-build-image
+      generate-summary: true
+      runner-type-x64: ubuntu-x64
+      runner-type-arm64: ubuntu-arm64
+
+  # This name is completely misleading, but a previous version of this workflow used this name and it's used as a required PR check in GitHub.
+  # Renaming it would mean backporting a large number of changes to old release branches, so we're keeping it as-is for now.
+  # Once all active release branches use this workflow, it'll be much easier to rename it and backport just that rename.
+  build_and_push:
+    runs-on: ubuntu-latest
+    needs:
+      - prepare
+      - build-push-multiarch
+    if: always() # Even if the build-push-multiarch job is skipped, we still want to run this job and mark it as successful, so that we can make this job a required check.
+    permissions:
+      contents: read
+      id-token: write # Required to generate GitHub app token to push commit.
+    steps:
+      # We always run this job even if the image build is skipped, so that we can make this job a required check.
+      # So if the image build failed, then we want this job to fail too.
+      - name: Fail if image build failed
+        if: needs.prepare.result != 'success' || (needs.prepare.outputs.need_to_build == 'true' && needs.build-push-multiarch.result != 'success')
         run: |
-          echo "Comparing built tag with Makefile"
-          if [ ${{ steps.compute_hash.outputs.tag }} == "$(make print-build-image)" ]; then
-            echo "Built tag is the same as the one in Makefile"
-            echo "isDifferent=false" >> $GITHUB_OUTPUT
+          echo "Image build failed, stopping."
+          exit 1
+
+      - name: Checkout repository
+        if: needs.prepare.outputs.need_to_build == 'true'
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.ref }} # Check out the PR branch itself, not the temporary merge commit
+
+      # Compare the just-built tag against the one currently referenced in the Makefile.
+      # If they differ, update the Makefile and signal the next step to commit; otherwise
+      # `changed=false` and no commit will be made.
+      - name: Check whether Makefile needs updating, and update it
+        id: update_makefile
+        if: needs.prepare.outputs.need_to_build == 'true'
+        run: |
+          set -euo pipefail
+          NEW_IMAGE_TAG=$(echo $NEW_IMAGE | cut -d ':' -f 2-)
+          echo "Current build image tag is $MAIN_IMAGE_TAG"
+          echo "Built image is $NEW_IMAGE, new tag is $NEW_IMAGE_TAG"
+          if [ "$MAIN_IMAGE_TAG" = "$NEW_IMAGE_TAG" ]; then
+            echo "Build image tag is already up to date."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
           else
-            echo "Built tag is different from the one in Makefile"
-            echo "isDifferent=true" >> $GITHUB_OUTPUT
+            sed -i "s/$MAIN_IMAGE_TAG/$NEW_IMAGE_TAG/g" Makefile
+            echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
+        env:
+          NEW_IMAGE: ${{ needs.build-push-multiarch.outputs.image-digests }}
+          MAIN_IMAGE_TAG: ${{ needs.prepare.outputs.main_image_tag }}
 
-      # Tokens expire after 1h. Since building the image can take a long time, we create a fresh App Token for the last
-      # step of the build.
+      # Generate the app token here (rather than earlier in the job) so we only mint one
+      # when we actually need to commit.
       - name: Generate GitHub App Token
-        if: steps.check_dockerfile.outputs.modified == 'true'
+        if: steps.update_makefile.outputs.changed == 'true'
         id: app-token-for-commit
-        uses: grafana/shared-workflows/actions/create-github-app-token@580590a644e82e79bb2598bdaba0be245a14dda0 # create-github-app-token/v0.2.2
+        uses: grafana/shared-workflows/actions/create-github-app-token@46f48da11e78ebdba7a8747ae456b11062fac83e # create-github-app-token/v0.3.1
         with:
           github_app: mimir-github-bot
 
-      # This step uses "Mimir bot" token (generated at the start of the workflow) instead of
-      # "github-actions bot" (secrets.GITHUB_TOKEN) because any events triggered by the latter
-      # don't spawn GitHub actions.
+      # Commit via the GraphQL createCommitOnBranch mutation so that the resulting commit
+      # is signed by GitHub's web-flow key (shows as Verified in the PR). We use the
+      # "Mimir bot" App token rather than secrets.GITHUB_TOKEN because events triggered
+      # by the latter don't spawn GitHub Actions runs.
       # Refer to https://docs.github.com/en/actions/security-for-github-actions/security-guides/automatic-token-authentication#using-the-github_token-in-a-workflow
-      - name: Add commit to PR in order to update Build Image version
-        if: steps.check_dockerfile.outputs.modified == 'true' && steps.authorize.outputs.authorized == 'true' && steps.compare_tag.outputs.isDifferent == 'true'
-        run: |
-          echo "Get current Build Image Version"
-          echo "Current Build Image Version is $MAIN_TAG"
-          echo "Built Image Version is $TAG"
-          if [ "$MAIN_TAG" = "$TAG" ]; then
-            echo "Build Image Version is already up to date"
-          else
-            echo "Build Image Version is not up to date"
-            sed -i "s/$MAIN_TAG/${{ steps.compute_hash.outputs.tag }}/g" Makefile
-            git config --global user.email "${GITHUB_EMAIL}"
-            git config --global user.name "${GITHUB_LOGIN}"
-            git config --global url.https://x-access-token:${GITHUB_TOKEN}@github.com/.insteadOf https://github.com/
-            git add Makefile
-            git commit -m "Update build image version to ${{ steps.compute_hash.outputs.tag }}"
-            git push origin HEAD
-          fi
+      - name: Commit Makefile update to PR branch
+        if: steps.update_makefile.outputs.changed == 'true'
+        uses: planetscale/ghcommit-action@57a6c787385af407a557374c794a09273aaebfd7 # v0.2.21
+        with:
+          commit_message: "Update build image version to ${{ needs.prepare.outputs.new_image_tag }}"
+          repo: ${{ github.event.pull_request.head.repo.full_name }}
+          branch: ${{ github.head_ref }}
+          file_pattern: Makefile
         env:
           GITHUB_TOKEN: ${{ steps.app-token-for-commit.outputs.token }}
-          GITHUB_LOGIN: mimir-github-bot[bot]
-          GITHUB_EMAIL: 199097951+mimir-github-bot[bot]@users.noreply.github.com
-          TAG: ${{ steps.compute_hash.outputs.tag }}
-          MAIN_TAG: ${{ steps.prepare.outputs.main_image_tag }}

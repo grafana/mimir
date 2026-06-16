@@ -47,17 +47,29 @@ func (b *HPointRingBuffer) DiscardPointsAtOrBefore(t int64) {
 	}
 }
 
+func (b *HPointRingBuffer) RemoveFirst() {
+	if b.size > 0 {
+		b.firstIndex++
+		b.size--
+
+		if b.firstIndex >= len(b.points) {
+			b.firstIndex = 0
+		}
+	}
+}
+
 // Append adds p to this buffer, expanding it if required.
+// A boolean is returned indicating if the underlying buffer had to be resized.
 // If this buffer is non-empty, p.T must be greater than or equal to the
 // timestamp of the last point in the buffer.
-func (b *HPointRingBuffer) Append(p promql.HPoint) error {
-	hPoint, err := b.NextPoint()
+func (b *HPointRingBuffer) Append(p promql.HPoint) (bool, error) {
+	hPoint, resized, err := b.NextPoint()
 	if err != nil {
-		return err
+		return resized, err
 	}
 	hPoint.T = p.T
 	hPoint.H = p.H
-	return nil
+	return resized, nil
 }
 
 // ViewUntilSearchingForwards returns a view into this buffer, including only points with timestamps less than or equal to maxT.
@@ -73,7 +85,7 @@ func (b *HPointRingBuffer) ViewUntilSearchingForwards(maxT int64, existing *HPoi
 
 	size := 0
 
-	for size < b.size && b.pointAt(size).T <= maxT {
+	for size < b.size && b.PointAt(size).T <= maxT {
 		size++
 	}
 
@@ -91,7 +103,7 @@ func (b *HPointRingBuffer) ViewUntilSearchingBackwards(maxT int64, existing *HPo
 
 	nextPositionToCheck := b.size - 1
 
-	for nextPositionToCheck >= 0 && b.pointAt(nextPositionToCheck).T > maxT {
+	for nextPositionToCheck >= 0 && b.PointAt(nextPositionToCheck).T > maxT {
 		nextPositionToCheck--
 	}
 
@@ -100,19 +112,74 @@ func (b *HPointRingBuffer) ViewUntilSearchingBackwards(maxT int64, existing *HPo
 	return existing
 }
 
-// pointAt returns the point at index 'position'.
-func (b *HPointRingBuffer) pointAt(position int) promql.HPoint {
+// ViewBetweenSearchingBackwards returns a view into this buffer including only points with timestamps
+// greater than minT and less than or equal to maxT. The method panics if minT is greater than maxT.
+func (b *HPointRingBuffer) ViewBetweenSearchingBackwards(minT, maxT int64, existing *HPointRingBufferView) *HPointRingBufferView {
+	if existing == nil {
+		existing = &HPointRingBufferView{buffer: b}
+	}
+
+	if minT > maxT {
+		panic(fmt.Sprintf("attempted to create an HPointRingBufferView with minT(%d) > maxT(%d) (this is a bug)", minT, maxT))
+	}
+
+	// If the buffer is empty or min time is beyond the last point in this buffer,
+	// return a zero-sized view since there are no points or no matching points.
+	if b.size == 0 || b.Last().T < minT {
+		existing.offset = 0
+		existing.size = 0
+		return existing
+	}
+
+	var start int
+	for start = b.size - 1; start >= 0; start-- {
+		if b.PointAt(start).T <= minT {
+			break
+		}
+	}
+
+	var end int
+	for end = b.size - 1; end >= 0; end-- {
+		if b.PointAt(end).T <= maxT {
+			break
+		}
+	}
+
+	existing.offset = start + 1
+	existing.size = end - start
+
+	return existing
+}
+
+// PointAt returns the point at index 'position'.
+func (b *HPointRingBuffer) PointAt(position int) promql.HPoint {
 	return b.points[(b.firstIndex+position)&b.pointsIndexMask]
 }
 
+// Last returns the last point in the buffer.
+// Note that it is the caller's responsibility to have checked that the buffer size is not empty.
+func (b *HPointRingBuffer) Last() promql.HPoint {
+	return b.PointAt(b.size - 1)
+}
+
+// Count returns the current number of points in the buffer.
+func (b *HPointRingBuffer) Count() int {
+	return b.size
+}
+
 // NextPoint gets the next point in this buffer, expanding it if required.
+//
+// A boolean is returned indicating if the underlying buffer had to be resized.
+//
 // The returned point's timestamp (HPoint.T) must be set to greater than or equal
 // to the timestamp of the last point in the buffer before further methods
 // are called on this buffer (with the exception of RemoveLastPoint, Reset or Close).
 //
 // This method allows reusing an existing HPoint in this buffer where possible,
 // reducing the number of FloatHistograms allocated.
-func (b *HPointRingBuffer) NextPoint() (*promql.HPoint, error) {
+func (b *HPointRingBuffer) NextPoint() (*promql.HPoint, bool, error) {
+	resized := false
+
 	if b.size == len(b.points) {
 		// Create a new slice, copy the elements from the current slice.
 		newSize := b.size * 2
@@ -122,15 +189,16 @@ func (b *HPointRingBuffer) NextPoint() (*promql.HPoint, error) {
 
 		newSlice, err := getHPointSliceForRingBuffer(newSize, b.memoryConsumptionTracker)
 		if err != nil {
-			return nil, err
+			return nil, resized, err
 		}
 
 		if !pool.IsPowerOfTwo(cap(newSlice)) {
 			// We rely on the capacity being a power of two for the pointsIndexMask optimisation below.
 			// If we can guarantee that newSlice has a capacity that is a power of two in the future, then we can drop this check.
-			return nil, fmt.Errorf("pool returned slice of capacity %v (requested %v), but wanted a power of two", cap(newSlice), newSize)
+			return nil, resized, fmt.Errorf("pool returned slice of capacity %v (requested %v), but wanted a power of two", cap(newSlice), newSize)
 		}
 
+		resized = true
 		newSlice = newSlice[:cap(newSlice)]
 		pointsAtEnd := b.size - b.firstIndex
 		copy(newSlice, b.points[b.firstIndex:])
@@ -149,7 +217,7 @@ func (b *HPointRingBuffer) NextPoint() (*promql.HPoint, error) {
 
 	nextIndex := (b.firstIndex + b.size) & b.pointsIndexMask
 	b.size++
-	return &b.points[nextIndex], nil
+	return &b.points[nextIndex], resized, nil
 }
 
 // RemoveLastPoint removes the last point that was allocated.
@@ -333,7 +401,7 @@ func (b *HPointRingBuffer) EquivalentFloatSampleCountUntil(maxT int64) int64 {
 	count := int64(0)
 
 	for i := range b.size {
-		p := b.pointAt(i)
+		p := b.PointAt(i)
 
 		if p.T > maxT {
 			// We've reached the end of the range we need to search.
@@ -351,7 +419,7 @@ func (b *HPointRingBuffer) EquivalentFloatSampleCountBetween(minT, maxT int64) i
 	count := int64(0)
 
 	for i := range b.size {
-		p := b.pointAt(i)
+		p := b.PointAt(i)
 
 		if p.T > maxT {
 			// We've reached the end of the range we need to search.
@@ -378,7 +446,7 @@ func (v HPointRingBufferView) PointAt(i int) promql.HPoint {
 		panic(fmt.Sprintf("PointAt(): out of range, requested index %v but have length %v", i, v.size))
 	}
 
-	return v.buffer.pointAt(v.offset + i)
+	return v.buffer.PointAt(v.offset + i)
 }
 
 // Clone returns a clone of this view and its underlying ring buffer.

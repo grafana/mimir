@@ -27,9 +27,10 @@ func init() {
 	})
 }
 
+//node:generate
 type MultiAggregationGroup struct {
 	*MultiAggregationGroupDetails
-	Inner planning.Node
+	Inner planning.Node `node:"child"`
 }
 
 func (g *MultiAggregationGroup) Details() proto.Message {
@@ -38,36 +39,6 @@ func (g *MultiAggregationGroup) Details() proto.Message {
 
 func (g *MultiAggregationGroup) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_MULTI_AGGREGATION_GROUP
-}
-
-func (g *MultiAggregationGroup) Child(idx int) planning.Node {
-	if idx != 0 {
-		panic(fmt.Sprintf("node of type MultiAggregationGroup supports 1 child, but attempted to get child at index %d", idx))
-	}
-
-	return g.Inner
-}
-
-func (g *MultiAggregationGroup) ChildCount() int {
-	return 1
-}
-
-func (g *MultiAggregationGroup) SetChildren(children []planning.Node) error {
-	if len(children) != 1 {
-		return fmt.Errorf("node of type MultiAggregationGroup supports 1 child, but got %d", len(children))
-	}
-
-	g.Inner = children[0]
-	return nil
-}
-
-func (g *MultiAggregationGroup) ReplaceChild(idx int, node planning.Node) error {
-	if idx != 0 {
-		return fmt.Errorf("node of type MultiAggregationGroup supports 1 child, but attempted to replace child at index %d", idx)
-	}
-
-	g.Inner = node
-	return nil
 }
 
 func (g *MultiAggregationGroup) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
@@ -113,9 +84,10 @@ func (g *MultiAggregationGroup) MinimumRequiredPlanVersion(types.QueryTimeRange)
 	return planning.QueryPlanV5, nil
 }
 
+//node:generate
 type MultiAggregationInstance struct {
 	*MultiAggregationInstanceDetails
-	Group *MultiAggregationGroup
+	Group *MultiAggregationGroup `node:"child"`
 }
 
 func (a *MultiAggregationInstance) Details() proto.Message {
@@ -124,40 +96,6 @@ func (a *MultiAggregationInstance) Details() proto.Message {
 
 func (a *MultiAggregationInstance) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_MULTI_AGGREGATION_INSTANCE
-}
-
-func (a *MultiAggregationInstance) Child(idx int) planning.Node {
-	if idx != 0 {
-		panic(fmt.Sprintf("node of type MultiAggregationInstance supports 1 child, but attempted to get child at index %d", idx))
-	}
-
-	return a.Group
-}
-
-func (a *MultiAggregationInstance) ChildCount() int {
-	return 1
-}
-
-func (a *MultiAggregationInstance) SetChildren(children []planning.Node) error {
-	if len(children) != 1 {
-		return fmt.Errorf("node of type MultiAggregationInstance supports 1 child, but got %d", len(children))
-	}
-
-	return a.ReplaceChild(0, children[0])
-}
-
-func (a *MultiAggregationInstance) ReplaceChild(idx int, node planning.Node) error {
-	if idx != 0 {
-		return fmt.Errorf("node of type MultiAggregationInstance supports 1 child, but attempted to replace child at index %d", idx)
-	}
-
-	group, ok := node.(*MultiAggregationGroup)
-	if !ok {
-		return fmt.Errorf("node of type MultiAggregationInstance requires child of type MultiAggregationGroup, but got %T", node)
-	}
-
-	a.Group = group
-	return nil
 }
 
 func (a *MultiAggregationInstance) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
@@ -270,7 +208,6 @@ func MaterializeMultiAggregationInstance(node *MultiAggregationInstance, materia
 		matchers,
 		int(node.SubsetIndex),
 		params.MemoryConsumptionTracker,
-		params.Annotations,
 		timeRange,
 		node.Aggregation.ExpressionPosition.ToPrometheusType(),
 	)

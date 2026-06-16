@@ -616,6 +616,7 @@ func (c *MultitenantCompactor) starting(ctx context.Context) error {
 		GetDeletionMarkersConcurrency: defaultGetDeletionMarkersConcurrency,
 		UpdateBlocksConcurrency:       c.compactorCfg.UpdateBlocksConcurrency,
 		CompactionBlockRanges:         c.compactorCfg.BlockRanges,
+		EstimateCompactionJobs:        !c.compactorCfg.SchedulerClientConfig.Enabled,
 	}, c.bucketClient, c.shardingStrategy.blocksCleanerOwnsUser, c.cfgProvider, c.parentLogger, c.registerer)
 
 	// Start blocks cleaner asynchronously, don't wait until initial cleanup is finished.
@@ -623,6 +624,9 @@ func (c *MultitenantCompactor) starting(ctx context.Context) error {
 		c.ringSubservices.StopAsync()
 		return fmt.Errorf("failed to start the blocks cleaner: %w", err)
 	}
+
+	// Remove validation directories possibly left behind by block upload
+	c.cleanupLeftoverValidationDirectories()
 
 	return nil
 }

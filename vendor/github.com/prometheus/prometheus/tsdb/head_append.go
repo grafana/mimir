@@ -118,17 +118,23 @@ func (a *initAppender) AppendSTZeroSample(ref storage.SeriesRef, lset labels.Lab
 // initTime initializes a head with the first timestamp. This only needs to be called
 // for a completely fresh head with an empty WAL.
 func (h *Head) initTime(t int64) {
-	if !h.minTime.CompareAndSwap(math.MaxInt64, t) {
-		// Concurrent appends that are initializing.
-		// Wait until h.maxTime is swapped to avoid minTime/maxTime races.
+	// maxTime must be set before minTime, because initialized() keys off minTime.
+	// If minTime were set to t first, a concurrent Head.Appender call could
+	// observe initialized() == true while maxTime is still math.MinInt64; the
+	// resulting underflow in appendableMinValidTime would reject in-range samples
+	// with ErrOutOfBounds.
+	if !h.maxTime.CompareAndSwap(math.MinInt64, t) {
+		// Another goroutine already won the init race. Wait until it also sets
+		// minTime, so callers that next read initialized() can rely on both
+		// bounds being valid.
 		// This should complete in microseconds under normal operation.
 		antiDeadlockTimeout := time.After(100 * time.Millisecond)
-		for h.maxTime.Load() == math.MinInt64 {
+		for h.minTime.Load() == math.MaxInt64 {
 			select {
 			case <-antiDeadlockTimeout:
 				// This should never happen in normal operation.
 				// If it does, there may be a bug or the system is severely overloaded.
-				h.logger.Warn("initTime timeout waiting for maxTime initialization")
+				h.logger.Warn("initTime timeout waiting for minTime initialization")
 				return
 			default:
 				runtime.Gosched() // Yield to allow the initializing goroutine to complete
@@ -136,8 +142,7 @@ func (h *Head) initTime(t int64) {
 		}
 		return
 	}
-	// Ensure that max time is initialized to at least the min time we just set.
-	h.maxTime.CompareAndSwap(math.MinInt64, t)
+	h.minTime.CompareAndSwap(math.MaxInt64, t)
 }
 
 func (a *initAppender) GetRef(lset labels.Labels, hash uint64) (storage.SeriesRef, labels.Labels) {
@@ -853,7 +858,7 @@ func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels
 		// TODO(codesome): If we definitely know at this point that the sample is ooo, then optimise
 		// to skip that sample from the WAL and write only in the WBL.
 		_, delta, err := s.appendableHistogram(t, h, a.headMaxt, a.minValidTime, a.oooTimeWindow)
-		if err != nil {
+		if err == nil {
 			s.pendingCommit = true
 		}
 		s.Unlock()
@@ -1888,8 +1893,7 @@ func (s *memSeries) appendHistogram(st, t int64, h *histogram.Histogram, appendI
 	// Head controls the execution of recoding, so that we own the proper
 	// chunk reference afterwards and mmap used up chunks.
 
-	// Ignoring ok is ok, since we don't want to compare to the wrong previous appender anyway.
-	prevApp, _ := s.app.(*chunkenc.HistogramAppender)
+	prevApp := s.app
 
 	c, sampleInOrder, chunkCreated := s.histogramsAppendPreprocessor(t, chunkenc.ValHistogram.ChunkEncoding(o.useXOR2), o)
 	if !sampleInOrder {
@@ -1946,8 +1950,7 @@ func (s *memSeries) appendFloatHistogram(st, t int64, fh *histogram.FloatHistogr
 	// Head controls the execution of recoding, so that we own the proper
 	// chunk reference afterwards and mmap used up chunks.
 
-	// Ignoring ok is ok, since we don't want to compare to the wrong previous appender anyway.
-	prevApp, _ := s.app.(*chunkenc.FloatHistogramAppender)
+	prevApp := s.app
 
 	c, sampleInOrder, chunkCreated := s.histogramsAppendPreprocessor(t, chunkenc.ValFloatHistogram.ChunkEncoding(o.useXOR2), o)
 	if !sampleInOrder {

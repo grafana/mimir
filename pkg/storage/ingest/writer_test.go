@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/grafana/dskit/flagext"
+	dskit_metrics "github.com/grafana/dskit/metrics"
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
 	promtest "github.com/prometheus/client_golang/prometheus/testutil"
@@ -132,6 +133,8 @@ func TestWriter_WriteSync(t *testing.T) {
 			"cortex_ingest_storage_writer_sent_bytes_total",
 			"cortex_ingest_storage_writer_records_per_write_request",
 			"cortex_ingest_storage_writer_produce_records_enqueued_total"))
+
+		assertHistogramSampleCount(t, reg, "cortex_ingest_storage_writer_serialize_duration_seconds", 1)
 	})
 
 	t.Run("should block until data has been committed to storage (WriteRequest stored in multiple records)", func(t *testing.T) {
@@ -224,6 +227,8 @@ func TestWriter_WriteSync(t *testing.T) {
 			"cortex_ingest_storage_writer_sent_bytes_total",
 			"cortex_ingest_storage_writer_records_per_write_request",
 			"cortex_ingest_storage_writer_produce_records_enqueued_total"))
+
+		assertHistogramSampleCount(t, reg, "cortex_ingest_storage_writer_serialize_duration_seconds", 1)
 	})
 
 	t.Run("should write to the requested partition", func(t *testing.T) {
@@ -885,6 +890,8 @@ func TestWriter_MultiWriteSync(t *testing.T) {
 			"cortex_ingest_storage_writer_sent_bytes_total",
 			"cortex_ingest_storage_writer_records_per_write_request",
 			"cortex_ingest_storage_writer_produce_records_enqueued_total"))
+
+		assertHistogramSampleCount(t, reg, "cortex_ingest_storage_writer_serialize_duration_seconds", 1)
 	})
 
 	t.Run("should skip empty requests", func(t *testing.T) {
@@ -953,6 +960,8 @@ func TestWriter_MultiWriteSync(t *testing.T) {
 			"cortex_ingest_storage_writer_sent_bytes_total",
 			"cortex_ingest_storage_writer_records_per_write_request",
 			"cortex_ingest_storage_writer_produce_records_enqueued_total"))
+
+		assertHistogramSampleCount(t, reg, "cortex_ingest_storage_writer_serialize_duration_seconds", 1)
 	})
 
 	t.Run("should return nil when all partition requests are empty", func(t *testing.T) {
@@ -1678,6 +1687,18 @@ func createTestKafkaConfig(clusterAddr, topicName string) KafkaConfig {
 	return cfg
 }
 
+// assertHistogramSampleCount asserts that the histogram metric with the given name
+// has been observed the expected number of times.
+func assertHistogramSampleCount(t *testing.T, reg prometheus.Gatherer, metricName string, expected uint64) {
+	t.Helper()
+
+	mfm, err := dskit_metrics.NewMetricFamilyMapFromGatherer(reg)
+	require.NoError(t, err)
+	hist, err := dskit_metrics.FindHistogramWithNameAndLabels(mfm, metricName)
+	require.NoError(t, err)
+	assert.Equal(t, expected, hist.GetSampleCount())
+}
+
 func createTestWriter(t *testing.T, cfg KafkaConfig) (*Writer, prometheus.Gatherer) {
 	reg := prometheus.NewPedanticRegistry()
 
@@ -1689,45 +1710,6 @@ func createTestWriter(t *testing.T, cfg KafkaConfig) (*Writer, prometheus.Gather
 	})
 
 	return writer, reg
-}
-
-func TestWriter_WriteSync_SetsRecordTimestampFromContext(t *testing.T) {
-	t.Parallel()
-
-	const (
-		topicName     = "test"
-		numPartitions = 1
-		partitionID   = 0
-		tenantID      = "user-1"
-	)
-
-	_, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
-	writer, _ := createTestWriter(t, createTestKafkaConfig(clusterAddr, topicName))
-
-	// Use a timestamp close to now so it doesn't trip franz-go's RecordDeliveryTimeout.
-	ts := time.Now().Add(-time.Second).Truncate(time.Millisecond)
-	ctx := ContextWithRecordTimestamp(context.Background(), ts)
-
-	err := writer.WriteSync(ctx, topicName, partitionID, tenantID, &mimirpb.WriteRequest{
-		Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_1")},
-		Source:     mimirpb.API,
-	})
-	require.NoError(t, err)
-
-	consumer, err := kgo.NewClient(kgo.SeedBrokers(clusterAddr), kgo.ConsumePartitions(map[string]map[int32]kgo.Offset{
-		topicName: {partitionID: kgo.NewOffset().AtStart()},
-	}))
-	require.NoError(t, err)
-	t.Cleanup(consumer.Close)
-
-	fetchCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	t.Cleanup(cancel)
-
-	fetches := consumer.PollFetches(fetchCtx)
-	require.NoError(t, fetches.Err())
-	records := fetches.Records()
-	require.Len(t, records, 1)
-	assert.Equal(t, ts, records[0].Timestamp)
 }
 
 func deserializeRecord(t *testing.T, rec *kgo.Record) mimirpb.WriteRequest {

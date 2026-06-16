@@ -914,7 +914,7 @@ retry_after_header:
   # CLI flag: -distributor.retry-after-header.min-backoff
   [min_backoff: <duration> | default = 6s]
 
-  # (advanced) Minimum duration of the Retry-After HTTP header in responses to
+  # (advanced) Maximum duration of the Retry-After HTTP header in responses to
   # 429/5xx errors. Must be greater than or equal to 1s. Backoff is calculated
   # as MinBackoff*2^(RetryAttempt-1) seconds with random jitter of 50% in either
   # direction. RetryAttempt is the value of the Retry-Attempt HTTP header.
@@ -1477,6 +1477,28 @@ instance_limits:
 # CLI flag: -ingester.owned-series-update-interval
 [owned_series_update_interval: <duration> | default = 15s]
 
+# (experimental) When enabled, the ingester triggers an early TSDB head
+# compaction for series that are no longer owned by the ingester after a ring
+# change. Requires -ingester.track-ingester-owned-series or
+# -ingester.use-ingester-owned-series-for-limits to be enabled.
+# CLI flag: -ingester.early-compaction-non-owned-series-enabled
+[early_compaction_non_owned_series_enabled: <boolean> | default = false]
+
+# (experimental) Minimum time a series must remain non-owned before it can be
+# evicted when the local owned-series threshold is exceeded. New non-owned
+# series reset the timer. A value of 0 evicts immediately. A per-replica startup
+# jitter spreads evictions across replicas.
+# CLI flag: -ingester.early-compaction-non-owned-series-min-grace-period
+[early_compaction_non_owned_series_min_grace_period: <duration> | default = 30s]
+
+# (experimental) Maximum time a series may remain non-owned before it is
+# evicted, regardless of the owned-series threshold. This ensures eventual
+# eviction even for tenants below their threshold. A value of 0 disables the
+# maximum grace period, so eviction depends solely on the owned-series
+# threshold.
+# CLI flag: -ingester.early-compaction-non-owned-series-max-grace-period
+[early_compaction_non_owned_series_max_grace_period: <duration> | default = 5m]
+
 push_circuit_breaker:
   # (experimental) Enable circuit breaking when making requests to ingesters
   # CLI flag: -ingester.push-circuit-breaker.enabled
@@ -1915,6 +1937,13 @@ store_gateway_client:
 # CLI flag: -querier.enable-query-engine-fallback
 [enable_query_engine_fallback: <boolean> | default = true]
 
+# (experimental) If set to true, enables the experimental streaming label/value
+# search HTTP endpoints
+# (/api/v1/search/{metric_names,label_names,label_values}). Mirrors Prometheus's
+# experimental.search-api feature gate.
+# CLI flag: -querier.experimental-search-api-enabled
+[experimental_search_api_enabled: <boolean> | default = false]
+
 # (deprecated) If set to true, the header 'X-Filter-Queryables' can be used to
 # filter down the list of queryables that shall be used. This is useful to test
 # and monitor single queryables in isolation. Deprecated: has no effect.
@@ -1997,11 +2026,6 @@ mimir_query_engine:
   # part of selector expressions.
   # CLI flag: -querier.mimir-query-engine.enable-reduce-matchers
   [enable_reduce_matchers: <boolean> | default = true]
-
-  # (experimental) Enable projection pushdown to only fetch labels required for
-  # the query from storage.
-  # CLI flag: -querier.mimir-query-engine.enable-projection-pushdown
-  [enable_projection_pushdown: <boolean> | default = false]
 
   # (experimental) Enable computing multiple aggregations over the same data
   # without buffering. Requires common subexpression elimination to be enabled.
@@ -2323,6 +2347,12 @@ The `query_scheduler` block configures the query-scheduler.
 # blast radius when shuffle-sharding is enabled.
 # CLI flag: -query-scheduler.querier-forget-delay
 [querier_forget_delay: <duration> | default = 0s]
+
+# (experimental) Enable the cortex_query_scheduler_inflight_max_age_seconds
+# metric, which reports the age of the oldest inflight request. Disabling it
+# skips the per-tick scan over inflight requests.
+# CLI flag: -query-scheduler.inflight-max-age-metric-enabled
+[inflight_max_age_metric_enabled: <boolean> | default = true]
 
 # This configures the gRPC client used to report errors back to the
 # query-frontend.
@@ -3882,6 +3912,18 @@ The `memberlist` block configures the Gossip memberlist.
 # CLI flag: -memberlist.received-messages-queue-size
 [received_messages_queue_size: <int> | default = 1024]
 
+# (advanced) Size of the per-key internal queue for processing messages received
+# from other nodes. Increasing this value may help to avoid dropping per-key
+# updates when the node is processing many updates for the same key.
+# CLI flag: -memberlist.processed-messages-queue-size
+[processed_messages_queue_size: <int> | default = 1024]
+
+# (advanced) Compression algorithm used for outgoing messages when
+# -memberlist.compression-enabled is true. Supported values: lzw, snappy.
+# Ignored when -memberlist.compression-enabled is false.
+# CLI flag: -memberlist.compression-algorithm
+[compression_algorithm: <string> | default = "lzw"]
+
 # Gossip address to advertise to other members in the cluster. Used for NAT
 # traversal.
 # CLI flag: -memberlist.advertise-addr
@@ -4708,14 +4750,47 @@ blocked_requests:
 
 # (experimental)
 cost_attribution_labels_structured:
-  -     [input: <string> | default = ""]
+  - # Source label name to read from the incoming series.
+    [input: <string> | default = ""]
 
+    # Label name to use in the cost attribution output metrics. If empty, the
+    # input label name is used.
     [output: <string> | default = ""]
 
-# (experimental) Maximum cardinality of cost attribution labels allowed per
-# user.
-# CLI flag: -validation.max-cost-attribution-cardinality
-[max_cost_attribution_cardinality: <int> | default = 2000]
+# (experimental) Base cost attribution trackers configuration as JSON. Each
+# tracker defines labels to track for cost attribution. Example:
+# '{"by-team":{"labels":[{"input":"team"}]}}'.
+# CLI flag: -validation.cost-attribution-trackers
+[cost_attribution_trackers:]
+  <string>:
+    labels:
+      - # Source label name to read from the incoming series.
+        [input: <string> | default = ""]
+
+        # Label name to use in the cost attribution output metrics. If empty,
+        # the input label name is used.
+        [output: <string> | default = ""]
+
+    # Expose this tracker's metrics on the operational /metrics endpoint instead
+    # of the cost-attribution specific /usage-metrics endpoint that is used by
+    # default.
+    [internal: <boolean> | default = ]
+
+# (experimental)
+[additional_cost_attribution_trackers:]
+  <string>:
+    labels:
+      - # Source label name to read from the incoming series.
+        [input: <string> | default = ""]
+
+        # Label name to use in the cost attribution output metrics. If empty,
+        # the input label name is used.
+        [output: <string> | default = ""]
+
+    # Expose this tracker's metrics on the operational /metrics endpoint instead
+    # of the cost-attribution specific /usage-metrics endpoint that is used by
+    # default.
+    [internal: <boolean> | default = ]
 
 # (experimental) Defines how long cost attribution stays in overflow before
 # attempting a reset, with received/discarded samples extending the cooldown if
@@ -4723,6 +4798,11 @@ cost_attribution_labels_structured:
 # cooldown.
 # CLI flag: -validation.cost-attribution-cooldown
 [cost_attribution_cooldown: <duration> | default = 0s]
+
+# (experimental) Maximum cardinality of cost attribution labels allowed per
+# user.
+# CLI flag: -validation.max-cost-attribution-cardinality
+[max_cost_attribution_cardinality: <int> | default = 2000]
 
 # Duration to delay the evaluation of rules to ensure the underlying metrics
 # have been pushed.
@@ -5663,6 +5743,13 @@ bucket_store:
     # CLI flag: -blocks-storage.bucket-store.index-header-cache.attributes-ttl
     [attributes_ttl: <duration> | default = 168h]
 
+    # (experimental) Maximum number of individual attributes items to keep in a
+    # first level in-memory LRU cache. Attributes will be stored and fetched
+    # in-memory before hitting the cache backend. 0 to disable the in-memory
+    # cache.
+    # CLI flag: -blocks-storage.bucket-store.index-header-cache.attributes-in-memory-max-items
+    [attributes_in_memory_max_items: <int> | default = 10000]
+
     # (experimental) TTL for caching individual index-header subranges.
     # CLI flag: -blocks-storage.bucket-store.index-header-cache.subrange-ttl
     [subrange_ttl: <duration> | default = 24h]
@@ -6588,6 +6675,16 @@ The `memcached` block configures the Memcached-based caching backend. The suppor
 # address, hostname, or an entry specified in the DNS Service Discovery format.
 # CLI flag: -<prefix>.memcached.addresses
 [addresses: <string> | default = ""]
+
+# (advanced) How often each address is resolved to an IP address or list of host
+# names.
+# CLI flag: -<prefix>.memcached.addresses-lookup-period
+[addresses_lookup_period: <duration> | default = 30s]
+
+# (advanced) How many idle connections to the DNS resolver are kept open. 0
+# disables keeping any idle connections open.
+# CLI flag: -<prefix>.memcached.addresses-lookup-pool-size
+[addresses_lookup_pool_size: <int> | default = 0]
 
 # The socket read/write timeout.
 # CLI flag: -<prefix>.memcached.timeout

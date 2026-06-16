@@ -494,6 +494,35 @@ func (g *groupConsumer) manageFailWait(consecutiveErrors int, err error) (ctxCan
 	return false
 }
 
+// abandonAssignment fires onLost, invalidates cursors, and clears local
+// assignment state in preparation for re-joining. Used by the 848 manage
+// loop when the server-side member state was lost (Fenced/UnknownMember/
+// StaleMember/GroupMaxSize/UnsupportedAssignor): the partitions are no
+// longer ours, so cursors must stop fetching before the next initialJoin
+// to prevent dual-processing records that have been reassigned to another
+// member. Mirrors manageFailWait's cleanup without the consecutive-error
+// backoff. Must be called with memberGen still holding the OLD member id
+// so onLost callbacks see the membership context that was active when the
+// loss occurred.
+func (g *groupConsumer) abandonAssignment(why string) {
+	g.c.waitAndAddRebalance()
+
+	g.cfg.onLost(g.cl.ctx, g.cl, g.nowAssigned.read())
+
+	g.c.mu.Lock()
+	g.c.assignPartitions(nil, assignInvalidateAll, nil, why)
+	g.mu.Lock()     // before allowing poll to touch uncommitted, lock the group
+	g.c.mu.Unlock() // now part of poll can continue
+	g.uncommitted = nil
+	g.mu.Unlock()
+
+	g.nowAssigned.store(nil)
+	g.lastAssigned = nil
+	g.fetching = nil
+
+	g.c.unaddRebalance()
+}
+
 // Manages the group consumer's join / sync / heartbeat / fetch offset flow.
 //
 // Once a group is assigned, we fire a metadata request for all topics the
@@ -782,7 +811,25 @@ func (g *groupConsumer) revoke(stage revokeStage, lost map[string][]int32, leavi
 	}
 
 	if stage != revokeThisSession { // cooperative consumers rejoin after revoking what they lost
-		defer g.rejoin("after revoking what we lost from a rebalance")
+		// The rejoin triggers the second join of the classic
+		// cooperative two-phase rebalance: after giving up lost
+		// partitions, the member rejoins so the group can reassign
+		// them. 848 has no second join, the server reconciles
+		// through heartbeats. There, this signal would only tear
+		// down and rebuild the heartbeat session: the session that
+		// called us already handled both our lost and added
+		// partitions, so the rebuilt session re-enters with an empty
+		// diff, and because rebuilding re-arms the heartbeat timer
+		// at a full interval, the bounce also DELAYS the heartbeat
+		// that acks our revocation to the server. For 848, prerevoke
+		// instead forces an immediate heartbeat to ack the
+		// revocation.
+		g.mu.Lock()
+		is848 := g.is848
+		g.mu.Unlock()
+		if !is848 {
+			defer g.rejoin("after revoking what we lost from a rebalance")
+		}
 	}
 
 	// The block below deletes everything lost from our uncommitted map.
@@ -834,6 +881,7 @@ func (s *assignRevokeSession) prerevoke(g *groupConsumer, lost map[string][]int3
 	// very first concurrent heartbeat sends keepalive.
 	g.mu.Lock()
 	g848 := g.g848
+	is848 := g.is848 // g848 stays non-nil after a fallback to classic; is848 is what tracks the protocol
 	g.mu.Unlock()
 	if g848 != nil {
 		g848.prerevoking.Store(true)
@@ -847,6 +895,33 @@ func (s *assignRevokeSession) prerevoke(g *groupConsumer, lost map[string][]int3
 		// subsequent heartbeats resume sending full requests.
 		if g848 != nil {
 			g848.prerevoking.Store(false)
+		}
+		// If we revoked, ack the revocation to the server right away
+		// rather than waiting out the heartbeat timer: the server
+		// cannot give the revoked partitions to other members until
+		// it sees a heartbeat without them, so an immediate full
+		// heartbeat (prerevoking was cleared above, so it will not
+		// be a keepalive) directly speeds group-wide reconciliation.
+		// The Java client acks the same way the moment revocation
+		// callbacks complete.
+		//
+		// The send must be best effort, NOT blocking. If the
+		// heartbeat loop exits on a fatal error before consuming our
+		// send (its first heartbeat can fail while we are still
+		// revoking), nothing reads heartbeatForceCh again until the
+		// next session begins, but the next session cannot begin
+		// until we return: setupAssignedAndHeartbeat waits on
+		// assignDone, which waits on prerevokeDone, which closes
+		// only when this goroutine exits. A blocking send would
+		// deadlock the manage loop. If the send is missed (loop
+		// mid-heartbeat or already gone), the regular heartbeat
+		// timer acks within one interval, which is no worse than
+		// what the session bounce this replaced provided.
+		if is848 && len(lost) > 0 {
+			select {
+			case g.heartbeatForceCh <- func(error) {}:
+			default:
+			}
 		}
 	}()
 	return s.prerevokeDone
@@ -1864,17 +1939,36 @@ start:
 					)
 					select {
 					case <-ctx.Done():
+						// Cancellation here means the
+						// heartbeat exited (rebalance, new
+						// assignment, client close); the
+						// session is tearing down. Returning
+						// ctx.Err() prevents falling through
+						// to the non-retryable injection path
+						// below, which would surface a
+						// transient retryable error as a fake
+						// fetch error to the user.
+						return ctx.Err()
 					case <-time.After(time.Second):
 						goto start
 					}
 				}
-				g.cfg.logger.Log(LogLevelError, "fetch offsets failed",
+				// A single non-retryable partition error (e.g.
+				// TopicAuthorizationFailed) used to abort the
+				// entire fetchOffsets and tear the session down,
+				// which then immediately rejoined and hit the same
+				// error: a spin loop driven by one bad partition.
+				// Instead we surface the error to the user via a
+				// fake fetch and drop the partition from this
+				// assignment; the rest of the session proceeds.
+				g.cfg.logger.Log(LogLevelError, "fetch offsets failed for partition; injecting error and continuing with remaining partitions",
 					"group", g.cfg.group,
 					"topic", topic,
 					"partition", rPartition.Partition,
 					"err", err,
 				)
-				return err
+				g.c.addFakeReadyForDraining(topic, rPartition.Partition, err, "fetch offsets returned a non-retryable partition error")
+				continue
 			}
 			offset := Offset{
 				at:    rPartition.Offset,
@@ -2064,7 +2158,23 @@ func (g *groupConsumer) findNewAssignments() {
 	}
 
 	if numNewTopics > 0 {
-		g.rejoin("rejoining because there are more topics to consume, our interests have changed")
+		// 848 needs no rejoin here: mkreq rebuilds the subscription
+		// from live state on every heartbeat and the keepalive check
+		// sends a full request when it changes, so the next heartbeat
+		// already carries our new interests. Bouncing the session
+		// would only delay that, since rebuilding re-arms the
+		// heartbeat timer at a full interval. Instead, force an
+		// immediate heartbeat (best effort, must not block; see the
+		// walkthrough in prerevoke); if the force is missed, the
+		// timer sends within one interval.
+		if g.is848 {
+			select {
+			case g.heartbeatForceCh <- func(error) {}:
+			default:
+			}
+		} else {
+			g.rejoin("rejoining because there are more topics to consume, our interests have changed")
+		}
 	} else if g.leader.Load() {
 		if len(toChange) > 0 {
 			g.rejoin("rejoining because we are the leader and noticed some topics have new partitions")
@@ -3111,6 +3221,7 @@ func (g *groupConsumer) commit(
 	req.Generation = generation
 	req.MemberID = memberID
 	req.InstanceID = g.cfg.instanceID
+	is848 := g.is848 // g.mu is held, per the function comment above
 
 	if ctx.Done() != nil {
 		go func() {
@@ -3177,6 +3288,14 @@ func (g *groupConsumer) commit(
 		// wire. Pin to v9 so the broker continues to match by name.
 		// See #1312. Held in a separate variable from commitCtx so
 		// the cancel/retry-sleep paths keep using the unwrapped ctx.
+		//
+		// pinV9 is computed once here and not recomputed inside the
+		// STALE_MEMBER_EPOCH retry loop below because that loop only
+		// DROPS partitions from req.Topics; it never re-adds topics
+		// whose TopicID state could change pinV9. If a future change
+		// allows re-adding topics on retry, recompute pinV9 (and rebuild
+		// reqCtx) inside the loop so a topic-id-less topic never lands
+		// on a v10+ wire by accident.
 		reqCtx := commitCtx
 		if pinV9 {
 			reqCtx = context.WithValue(commitCtx, ctxPinReq, &pinReq{pinMax: true, max: 9})
@@ -3345,9 +3464,65 @@ func (g *groupConsumer) commit(
 		// original request, not the wire-filtered one.
 		req.Topics = origReqTopics
 
+		// If the broker no longer recognizes our member (the session
+		// expired during a network blip, or the group rebalanced
+		// without us), every commit from here on fails identically
+		// while we keep consuming as a zombie, until the heartbeat
+		// loop sees the same error up to a full heartbeat interval
+		// later. Rejoin immediately instead; the join itself repairs
+		// the session (joinAndSync clears the member id and retries
+		// if the broker rejects the join with UnknownMemberID).
+		//
+		// Classic protocol only: in 848 mode, a forced "rejoin" does
+		// not actually rejoin. The heartbeat loop treats the signal
+		// as RebalanceInProgress and the manage loop restarts the
+		// session with the same member id and epoch; only a
+		// heartbeat error resets the member to epoch 0. Worse, with
+		// autocommit the restart livelocks: ending a session runs
+		// the default revoke, which sync-commits uncommitted
+		// offsets; that commit fails with the same fatal error and
+		// re-queues the rejoin signal; the restarted session then
+		// consumes the queued signal before its first heartbeat
+		// timer can fire, and the cycle repeats forever without a
+		// single heartbeat reaching the broker. Classic does not
+		// loop because joinAndSync drains rejoinCh before joining
+		// and the join re-registers us. For 848 we leave fatal
+		// member errors to the heartbeat loop, matching the Java
+		// clients: the classic Java consumer rejoins from the commit
+		// path, while the next-gen one leaves fencing detection to
+		// the heartbeat.
+		if !is848 {
+			if fatalErr := commitHasFatalMemberError(resp); fatalErr != nil {
+				g.cfg.logger.Log(LogLevelInfo, "offset commit returned a fatal group member error, triggering rejoin",
+					"group", g.cfg.group,
+					"err", fatalErr,
+				)
+				g.rejoin(fmt.Sprintf("offset commit error: %s", fatalErr))
+			}
+		}
+
 		g.updateCommitted(req, resp)
 		onDone(g.cl, req, resp, nil)
 	}()
+}
+
+// commitHasFatalMemberError returns the first per-partition error that
+// means the broker no longer recognizes this member's session. The
+// broker validates membership before any per-partition handling, so
+// these errors arrive on every partition or none. FencedInstanceID is
+// deliberately not included: it means another instance with our
+// instance id has taken over, and rejoining would fight that instance
+// for the group slot rather than repair anything.
+func commitHasFatalMemberError(resp *kmsg.OffsetCommitResponse) error {
+	for i := range resp.Topics {
+		for _, p := range resp.Topics[i].Partitions {
+			switch p.ErrorCode {
+			case kerr.UnknownMemberID.Code, kerr.IllegalGeneration.Code:
+				return kerr.ErrorForCode(p.ErrorCode)
+			}
+		}
+	}
+	return nil
 }
 
 type reNews struct {

@@ -93,8 +93,6 @@ func BenchmarkQuery(b *testing.B) {
 }
 
 func TestBothEnginesReturnSameResultsForBenchmarkQueries(t *testing.T) {
-	t.Skip("range queries with range selectors that overlap the query step are a pathological case for the CSE pass which causes this test to consume an excessive amount of memory")
-
 	metricSizes := []int{1, 100} // Don't bother with 2000 series test here: these test cases take a while and they're most interesting as benchmarks, not correctness tests.
 	q := createBenchmarkQueryable(t, metricSizes)
 	cases := TestCases(metricSizes)
@@ -247,7 +245,7 @@ func createIngesterQueryable(t testing.TB, address string) storage.Queryable {
 
 	overrides := validation.NewOverrides(limits, nil)
 
-	d, err := distributor.New(distributorCfg, clientCfg, overrides, nil, nil, ingestersRing, nil, false, nil, nil, nil, logger)
+	d, err := distributor.New(distributorCfg, clientCfg, overrides, nil, nil, ingestersRing, nil, nil, false, nil, nil, nil, logger)
 	require.NoError(t, err)
 
 	queryMetrics := stats.NewQueryMetrics(nil)

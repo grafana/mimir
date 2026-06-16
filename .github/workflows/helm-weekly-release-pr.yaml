@@ -19,7 +19,7 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           persist-credentials: false
-      - uses: imjasonh/setup-crane@6da1ae018866400525525ce74ff892880c099987 # v0.5
+      - uses: imjasonh/setup-crane@59c71e96a00b28651f10369ba3359a6d730740a0 # v0.6
       - name: Update/regenerate files
         id: update
         run: bash .github/workflows/scripts/helm-weekly-release.sh
@@ -29,7 +29,7 @@ jobs:
       # Refer to https://docs.github.com/en/actions/security-for-github-actions/security-guides/automatic-token-authentication#using-the-github_token-in-a-workflow
       - name: Generate GitHub App Token
         id: app-token
-        uses: grafana/shared-workflows/actions/create-github-app-token@580590a644e82e79bb2598bdaba0be245a14dda0 # create-github-app-token/v0.2.2
+        uses: grafana/shared-workflows/actions/create-github-app-token@46f48da11e78ebdba7a8747ae456b11062fac83e # create-github-app-token/v0.3.1
         with:
           github_app: mimir-vendoring
 
@@ -37,6 +37,7 @@ jobs:
         uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
         with:
           token: ${{ steps.app-token.outputs.token }}
+          sign-commits: true
           title: Release mimir-distributed Helm chart ${{ steps.update.outputs.new_chart_version }}
           body: Automated PR created by [helm-weekly-release-pr.yaml](https://github.com/grafana/mimir/blob/main/.github/workflows/helm-weekly-release-pr.yaml)
           commit-message: Update mimir-distributed chart to ${{ steps.update.outputs.new_chart_version }}

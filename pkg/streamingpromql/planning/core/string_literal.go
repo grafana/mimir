@@ -3,7 +3,6 @@
 package core
 
 import (
-	"fmt"
 	"strconv"
 	"time"
 
@@ -16,6 +15,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
+//node:generate
 type StringLiteral struct {
 	*StringLiteralDetails
 }
@@ -34,26 +34,6 @@ func (s *StringLiteral) Details() proto.Message {
 
 func (s *StringLiteral) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_STRING_LITERAL
-}
-
-func (s *StringLiteral) Child(idx int) planning.Node {
-	panic(fmt.Sprintf("node of type StringLiteral has no children, but attempted to get child at index %d", idx))
-}
-
-func (s *StringLiteral) ChildCount() int {
-	return 0
-}
-
-func (s *StringLiteral) SetChildren(children []planning.Node) error {
-	if len(children) != 0 {
-		return fmt.Errorf("node of type StringLiteral expects 0 children, but got %d", len(children))
-	}
-
-	return nil
-}
-
-func (s *StringLiteral) ReplaceChild(idx int, node planning.Node) error {
-	return fmt.Errorf("node of type StringLiteral supports no children, but attempted to replace child at index %d", idx)
 }
 
 func (s *StringLiteral) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {

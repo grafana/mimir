@@ -66,7 +66,9 @@ func NewProxyBackend(name string, endpoint *url.URL, timeout time.Duration, pref
 	innerTransport := &http.Transport{
 		Proxy: http.ProxyFromEnvironment,
 		TLSClientConfig: &tls.Config{
-			InsecureSkipVerify: skipTLSVerify,
+			// InsecureSkipVerify is controlled by an operator-supplied CLI flag of a load-testing tool,
+			// intended to allow comparison against backends with self-signed certificates in development.
+			InsecureSkipVerify: skipTLSVerify, //nolint:gosec
 		},
 		DialContext: (&net.Dialer{
 			Timeout:   30 * time.Second,

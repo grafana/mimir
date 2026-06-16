@@ -3,7 +3,6 @@
 package core
 
 import (
-	"fmt"
 	"time"
 
 	"github.com/gogo/protobuf/proto"
@@ -15,9 +14,10 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
+//node:generate
 type DeduplicateAndMerge struct {
 	*DeduplicateAndMergeDetails
-	Inner planning.Node
+	Inner planning.Node `node:"child"`
 }
 
 func (d *DeduplicateAndMerge) Details() proto.Message {
@@ -26,37 +26,6 @@ func (d *DeduplicateAndMerge) Details() proto.Message {
 
 func (d *DeduplicateAndMerge) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_DEDUPLICATE_AND_MERGE
-}
-
-func (d *DeduplicateAndMerge) Child(idx int) planning.Node {
-	if idx != 0 {
-		panic(fmt.Sprintf("node of type DeduplicateAndMerge supports 1 child, but attempted to get child at index %d", idx))
-	}
-
-	return d.Inner
-}
-
-func (d *DeduplicateAndMerge) ChildCount() int {
-	return 1
-}
-
-func (d *DeduplicateAndMerge) SetChildren(children []planning.Node) error {
-	if len(children) != 1 {
-		return fmt.Errorf("node of type DeduplicateAndMerge supports 1 child, but got %d", len(children))
-	}
-
-	d.Inner = children[0]
-
-	return nil
-}
-
-func (d *DeduplicateAndMerge) ReplaceChild(idx int, node planning.Node) error {
-	if idx != 0 {
-		return fmt.Errorf("node of type DeduplicateAndMerge supports 1 child, but attempted to replace child at index %d", idx)
-	}
-
-	d.Inner = node
-	return nil
 }
 
 func (d *DeduplicateAndMerge) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {

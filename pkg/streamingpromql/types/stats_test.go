@@ -10,6 +10,8 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/parser/posrange"
+	"github.com/prometheus/prometheus/util/annotations"
 	promstats "github.com/prometheus/prometheus/util/stats"
 	"github.com/stretchr/testify/require"
 
@@ -66,13 +68,15 @@ func TestOperatorEvaluationStats_TrackSamplesForRangeVectorSelector(t *testing.T
 	}{
 		"floats": {
 			append: func(ts int64, floats *FPointRingBuffer, histograms *HPointRingBuffer) error {
-				return floats.Append(promql.FPoint{T: ts})
+				_, err := floats.Append(promql.FPoint{T: ts})
+				return err
 			},
 			samplesPerPoint: 1,
 		},
 		"histograms": {
 			append: func(ts int64, floatsf *FPointRingBuffer, histograms *HPointRingBuffer) error {
-				return histograms.Append(promql.HPoint{T: ts, H: &histogram.FloatHistogram{}})
+				_, err := histograms.Append(promql.HPoint{T: ts, H: &histogram.FloatHistogram{}})
+				return err
 			},
 			samplesPerPoint: EquivalentFloatSampleCount(&histogram.FloatHistogram{}),
 		},
@@ -182,9 +186,12 @@ func TestOperatorEvaluationStats_TrackSamplesForRangeVectorSelector_FloatsAndHis
 	histograms := NewHPointRingBuffer(memoryConsumptionTracker)
 
 	h := &histogram.FloatHistogram{}
-	require.NoError(t, floats.Append(promql.FPoint{T: timestamp.FromTime(start.Add(-3 * time.Second))}))
-	require.NoError(t, histograms.Append(promql.HPoint{T: timestamp.FromTime(start.Add(-2 * time.Second)), H: h}))
-	require.NoError(t, floats.Append(promql.FPoint{T: timestamp.FromTime(start.Add(-time.Second))}))
+	_, err = floats.Append(promql.FPoint{T: timestamp.FromTime(start.Add(-3 * time.Second))})
+	require.NoError(t, err)
+	_, err = histograms.Append(promql.HPoint{T: timestamp.FromTime(start.Add(-2 * time.Second)), H: h})
+	require.NoError(t, err)
+	_, err = floats.Append(promql.FPoint{T: timestamp.FromTime(start.Add(-time.Second))})
+	require.NoError(t, err)
 
 	stats.TrackSamplesForRangeVectorSelector(timestamp.FromTime(start), floats, histograms, timestamp.FromTime(start.Add(-4*time.Second)), timestamp.FromTime(start), false, nil)
 	samplesProcessedPerStep.requireChange(t, stats.allSeries.samplesProcessedPerStep, 2+EquivalentFloatSampleCount(h), 0, 0)
@@ -218,8 +225,10 @@ func TestOperatorEvaluationStats_TrackSamplesForRangeVectorSelector_FixedTimesta
 	floats := NewFPointRingBuffer(memoryConsumptionTracker)
 	histograms := NewHPointRingBuffer(memoryConsumptionTracker)
 
-	require.NoError(t, floats.Append(promql.FPoint{T: timestamp.FromTime(start.Add(-2 * time.Second))}))
-	require.NoError(t, floats.Append(promql.FPoint{T: timestamp.FromTime(start.Add(-time.Second))}))
+	_, err = floats.Append(promql.FPoint{T: timestamp.FromTime(start.Add(-2 * time.Second))})
+	require.NoError(t, err)
+	_, err = floats.Append(promql.FPoint{T: timestamp.FromTime(start.Add(-time.Second))})
+	require.NoError(t, err)
 
 	haveTimestamp := true
 	stats.TrackSamplesForRangeVectorSelector(timestamp.FromTime(start), floats, histograms, timestamp.FromTime(start.Add(-4*time.Second)), timestamp.FromTime(start), haveTimestamp, nil)
@@ -322,10 +331,14 @@ func TestOperatorEvaluationStats_Subsets_TrackSamplesForRangeVectorSelector(t *t
 
 	floats := NewFPointRingBuffer(memoryConsumptionTracker)
 	histograms := NewHPointRingBuffer(memoryConsumptionTracker)
-	require.NoError(t, floats.Append(promql.FPoint{T: timestamp.FromTime(start.Add(-3 * time.Second))}))
-	require.NoError(t, floats.Append(promql.FPoint{T: timestamp.FromTime(start.Add(-2 * time.Second))}))
-	require.NoError(t, floats.Append(promql.FPoint{T: timestamp.FromTime(start.Add(-time.Second))}))
-	require.NoError(t, floats.Append(promql.FPoint{T: timestamp.FromTime(start)}))
+	_, err = floats.Append(promql.FPoint{T: timestamp.FromTime(start.Add(-3 * time.Second))})
+	require.NoError(t, err)
+	_, err = floats.Append(promql.FPoint{T: timestamp.FromTime(start.Add(-2 * time.Second))})
+	require.NoError(t, err)
+	_, err = floats.Append(promql.FPoint{T: timestamp.FromTime(start.Add(-time.Second))})
+	require.NoError(t, err)
+	_, err = floats.Append(promql.FPoint{T: timestamp.FromTime(start)})
+	require.NoError(t, err)
 
 	overallProcessed := newPerStepTracker("overall samples processed", timeRange.StepCount)
 	overallReadIfSubsequentStep := newPerStepTracker("overall samples read if subsequent step", timeRange.StepCount)
@@ -594,6 +607,113 @@ func TestOperatorEvaluationStats_AddSingleStep_MultipleSteps(t *testing.T) {
 
 	require.EqualError(t, oneStep.AddSingleStep(multipleSteps), "cannot add a single step to a OperatorEvaluationStats instance from another instance with 6 steps")
 	require.EqualError(t, multipleSteps.AddSingleStep(oneStep), "cannot add a single step to a OperatorEvaluationStats instance with 6 steps")
+}
+
+func TestOperatorEvaluationStats_AddSubRange(t *testing.T) {
+	ctx := context.Background()
+	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+
+	startT := timestamp.Time(0)
+	destination, err := NewOperatorEvaluationStats(ctx, NewRangeQueryTimeRange(startT, startT.Add(5*time.Minute), time.Minute), memoryConsumptionTracker, 0)
+	require.NoError(t, err)
+
+	multiStepSource, err := NewOperatorEvaluationStats(ctx, NewRangeQueryTimeRange(startT.Add(time.Minute), startT.Add(3*time.Minute), time.Minute), memoryConsumptionTracker, 0)
+	require.NoError(t, err)
+	multiStepSource.allSeries.samplesProcessedPerStep[0] = 1
+	multiStepSource.allSeries.samplesProcessedPerStep[1] = 2
+	multiStepSource.allSeries.samplesProcessedPerStep[2] = 3
+	multiStepSource.allSeries.samplesReadIfSubsequentStep[0] = 11
+	multiStepSource.allSeries.samplesReadIfSubsequentStep[1] = 12
+	multiStepSource.allSeries.samplesReadIfSubsequentStep[2] = 13
+	multiStepSource.allSeries.samplesReadIfFirstStep[0] = 101
+	multiStepSource.allSeries.samplesReadIfFirstStep[1] = 102
+	multiStepSource.allSeries.samplesReadIfFirstStep[2] = 103
+
+	require.NoError(t, destination.AddSubRange(multiStepSource))
+	require.Equal(t, []int64{0, 1, 2, 3, 0, 0}, destination.allSeries.samplesProcessedPerStep)
+	require.Equal(t, []int64{0, 11, 12, 13, 0, 0}, destination.allSeries.samplesReadIfSubsequentStep)
+	require.Equal(t, []int64{0, 101, 102, 103, 0, 0}, destination.allSeries.samplesReadIfFirstStep)
+
+	// Even if the step isn't the same, adding a single step range should still work.
+	singleStepSource, err := NewOperatorEvaluationStats(ctx, NewRangeQueryTimeRange(startT.Add(4*time.Minute), startT.Add(4*time.Minute), time.Millisecond), memoryConsumptionTracker, 0)
+	require.NoError(t, err)
+	singleStepSource.allSeries.samplesProcessedPerStep[0] = 4
+	singleStepSource.allSeries.samplesReadIfSubsequentStep[0] = 14
+	singleStepSource.allSeries.samplesReadIfFirstStep[0] = 104
+
+	require.NoError(t, destination.AddSubRange(singleStepSource))
+	require.Equal(t, []int64{0, 1, 2, 3, 4, 0}, destination.allSeries.samplesProcessedPerStep)
+	require.Equal(t, []int64{0, 11, 12, 13, 14, 0}, destination.allSeries.samplesReadIfSubsequentStep)
+	require.Equal(t, []int64{0, 101, 102, 103, 104, 0}, destination.allSeries.samplesReadIfFirstStep)
+
+}
+
+func TestOperatorEvaluationStats_AddSubRange_ErrorCases(t *testing.T) {
+	create := func(timeRange QueryTimeRange, subsetCount int) *OperatorEvaluationStats {
+		ctx := context.Background()
+		stats, err := NewOperatorEvaluationStats(ctx, timeRange, limiter.NewUnlimitedMemoryConsumptionTracker(ctx), subsetCount)
+		require.NoError(t, err)
+		return stats
+	}
+
+	testCases := map[string]struct {
+		receiver      *OperatorEvaluationStats
+		other         *OperatorEvaluationStats
+		expectedError string
+	}{
+		"receiver has no subsets, other does": {
+			receiver:      create(NewInstantQueryTimeRange(time.Now()), 0),
+			other:         create(NewInstantQueryTimeRange(time.Now()), 1),
+			expectedError: "cannot add a sub-range from an OperatorEvaluationStats instance that has subsets",
+		},
+		"receiver has subsets, other does not": {
+			receiver:      create(NewInstantQueryTimeRange(time.Now()), 1),
+			other:         create(NewInstantQueryTimeRange(time.Now()), 0),
+			expectedError: "cannot add a sub-range to an OperatorEvaluationStats instance that has subsets",
+		},
+		"both have subsets": {
+			receiver:      create(NewInstantQueryTimeRange(time.Now()), 1),
+			other:         create(NewInstantQueryTimeRange(time.Now()), 1),
+			expectedError: "cannot add a sub-range to an OperatorEvaluationStats instance that has subsets",
+		},
+		"both have multiple steps and a different interval": {
+			receiver:      create(NewRangeQueryTimeRange(timestamp.Time(1), timestamp.Time(50), time.Millisecond), 0),
+			other:         create(NewRangeQueryTimeRange(timestamp.Time(3), timestamp.Time(7), 2*time.Millisecond), 0),
+			expectedError: "cannot add a sub-range from an OperatorEvaluationStats instance with multiple steps and interval 2 ms to another instance with multiple steps and interval 1 ms",
+		},
+		"both have the same step, but other instance ends after receiver": {
+			receiver:      create(NewRangeQueryTimeRange(timestamp.Time(100), timestamp.Time(500), 10*time.Millisecond), 0),
+			other:         create(NewRangeQueryTimeRange(timestamp.Time(300), timestamp.Time(700), 10*time.Millisecond), 0),
+			expectedError: "cannot add a sub-range from an OperatorEvaluationStats instance with time range [300, 700] to another instance with time range [100, 500]",
+		},
+		"both have the same step, but other instance is entirely after receiver": {
+			receiver:      create(NewRangeQueryTimeRange(timestamp.Time(100), timestamp.Time(500), 10*time.Millisecond), 0),
+			other:         create(NewRangeQueryTimeRange(timestamp.Time(1000), timestamp.Time(1500), 10*time.Millisecond), 0),
+			expectedError: "cannot add a sub-range from an OperatorEvaluationStats instance with time range [1000, 1500] to another instance with time range [100, 500]",
+		},
+		"both have the same step, but other instance starts before receiver": {
+			receiver:      create(NewRangeQueryTimeRange(timestamp.Time(100), timestamp.Time(500), 10*time.Millisecond), 0),
+			other:         create(NewRangeQueryTimeRange(timestamp.Time(50), timestamp.Time(300), 10*time.Millisecond), 0),
+			expectedError: "cannot add a sub-range from an OperatorEvaluationStats instance with time range [50, 300] to another instance with time range [100, 500]",
+		},
+		"both have the same step, but other instance is entirely before receiver": {
+			receiver:      create(NewRangeQueryTimeRange(timestamp.Time(100), timestamp.Time(500), 10*time.Millisecond), 0),
+			other:         create(NewRangeQueryTimeRange(timestamp.Time(50), timestamp.Time(80), 10*time.Millisecond), 0),
+			expectedError: "cannot add a sub-range from an OperatorEvaluationStats instance with time range [50, 80] to another instance with time range [100, 500]",
+		},
+		"both have the same step and other instance is within receiver, but steps do not align": {
+			receiver:      create(NewRangeQueryTimeRange(timestamp.Time(100), timestamp.Time(500), 10*time.Millisecond), 0),
+			other:         create(NewRangeQueryTimeRange(timestamp.Time(151), timestamp.Time(351), 10*time.Millisecond), 0),
+			expectedError: "cannot add a sub-range from an OperatorEvaluationStats instance with time range [151, 351] and interval 10 ms to another instance with time range [100, 500] and interval 10 ms",
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			err := testCase.receiver.AddSubRange(testCase.other)
+			require.EqualError(t, err, testCase.expectedError)
+		})
+	}
 }
 
 func TestOperatorEvaluationStats_Clone(t *testing.T) {
@@ -1513,4 +1633,117 @@ func TestOperatorEvaluationStats_GetTotalSamplesProcessed(t *testing.T) {
 
 	stats.Close()
 	require.Zerof(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes(), "expected all instances to be returned to pool, current memory consumption is:\n%v", memoryConsumptionTracker.DescribeCurrentMemoryConsumption())
+}
+
+// statsAndAnnotationsProvider is a minimal Finalizer used by FinalizeAndCombine tests.
+type statsAndAnnotationsProvider struct {
+	stats *OperatorEvaluationStats
+	annos annotations.Annotations
+	err   error
+}
+
+func (p *statsAndAnnotationsProvider) Finalize(_ context.Context) (*OperatorEvaluationStats, annotations.Annotations, error) {
+	return p.stats, p.annos, p.err
+}
+
+func makeAnnotations(errs ...error) annotations.Annotations {
+	var a annotations.Annotations
+
+	for _, err := range errs {
+		a.Add(err)
+	}
+
+	return a
+}
+
+func TestFinalizeAndCombine_AnnotationHandling(t *testing.T) {
+	ctx := context.Background()
+	tracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+	timeRange := NewInstantQueryTimeRange(timestamp.Time(0))
+
+	warning1 := annotations.NewBadBucketLabelWarning("a", "1", posrange.PositionRange{Start: 1, End: 2})
+	warning2 := annotations.NewBadBucketLabelWarning("b", "2", posrange.PositionRange{Start: 3, End: 4})
+	info1 := annotations.NewMixedFloatsHistogramsAggWarning(posrange.PositionRange{Start: 5, End: 6})
+
+	newStats := func(t *testing.T) *OperatorEvaluationStats {
+		stats, err := NewOperatorEvaluationStats(ctx, timeRange, tracker, 0)
+		require.NoError(t, err)
+		return stats
+	}
+
+	t.Run("single operator with no annotations", func(t *testing.T) {
+		_, combinedAnnos, err := FinalizeAndCombine(ctx, &statsAndAnnotationsProvider{stats: newStats(t)})
+		require.NoError(t, err)
+		require.Nil(t, combinedAnnos)
+	})
+
+	t.Run("single operator with annotations", func(t *testing.T) {
+		_, combinedAnnos, err := FinalizeAndCombine(ctx, &statsAndAnnotationsProvider{
+			stats: newStats(t),
+			annos: makeAnnotations(warning1),
+		})
+		require.NoError(t, err)
+		require.ElementsMatch(t, []error{warning1}, combinedAnnos.AsErrors())
+	})
+
+	t.Run("multiple operators with mixed annotations", func(t *testing.T) {
+		_, combinedAnnos, err := FinalizeAndCombine(ctx,
+			&statsAndAnnotationsProvider{stats: newStats(t), annos: makeAnnotations(warning1)},
+			&statsAndAnnotationsProvider{stats: newStats(t)},
+			&statsAndAnnotationsProvider{stats: newStats(t), annos: makeAnnotations(warning2, info1)},
+		)
+		require.NoError(t, err)
+		require.ElementsMatch(t, []error{warning1, warning2, info1}, combinedAnnos.AsErrors())
+	})
+}
+
+func TestOperatorEvaluationStats_HalveCounts(t *testing.T) {
+	ctx := context.Background()
+	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+
+	start := timestamp.Time(0)
+	step := time.Minute
+	end := start.Add(step)
+	timeRange := NewRangeQueryTimeRange(start, end, step)
+
+	s, err := NewOperatorEvaluationStats(ctx, timeRange, memoryConsumptionTracker, 2)
+	require.NoError(t, err)
+
+	s.allSeries.samplesProcessedPerStep[0] = 100
+	s.allSeries.samplesProcessedPerStep[1] = 200
+	s.allSeries.samplesReadIfSubsequentStep[0] = 10
+	s.allSeries.samplesReadIfSubsequentStep[1] = 20
+	s.allSeries.samplesReadIfFirstStep[0] = 12
+	s.allSeries.samplesReadIfFirstStep[1] = 22
+
+	s.subsets[0].samplesProcessedPerStep[0] = 60
+	s.subsets[0].samplesProcessedPerStep[1] = 80
+	s.subsets[0].samplesReadIfSubsequentStep[0] = 6
+	s.subsets[0].samplesReadIfSubsequentStep[1] = 8
+	s.subsets[0].samplesReadIfFirstStep[0] = 4
+	s.subsets[0].samplesReadIfFirstStep[1] = 18
+
+	s.subsets[1].samplesProcessedPerStep[0] = 40
+	s.subsets[1].samplesProcessedPerStep[1] = 120
+	s.subsets[1].samplesReadIfSubsequentStep[0] = 4
+	s.subsets[1].samplesReadIfSubsequentStep[1] = 12
+	s.subsets[1].samplesReadIfFirstStep[0] = 2
+	s.subsets[1].samplesReadIfFirstStep[1] = 28
+
+	s.HalveCounts()
+
+	require.Equal(t, []int64{50, 100}, s.allSeries.samplesProcessedPerStep)
+	require.Equal(t, []int64{5, 10}, s.allSeries.samplesReadIfSubsequentStep)
+	require.Equal(t, []int64{6, 11}, s.allSeries.samplesReadIfFirstStep)
+
+	require.Equal(t, []int64{30, 40}, s.subsets[0].samplesProcessedPerStep)
+	require.Equal(t, []int64{3, 4}, s.subsets[0].samplesReadIfSubsequentStep)
+	require.Equal(t, []int64{2, 9}, s.subsets[0].samplesReadIfFirstStep)
+
+	require.Equal(t, []int64{20, 60}, s.subsets[1].samplesProcessedPerStep)
+	require.Equal(t, []int64{2, 6}, s.subsets[1].samplesReadIfSubsequentStep)
+	require.Equal(t, []int64{1, 14}, s.subsets[1].samplesReadIfFirstStep)
+
+	s.Close()
+	require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
 }

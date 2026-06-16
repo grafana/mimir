@@ -390,7 +390,6 @@ func TestTopKBottomKInstantQuery_GroupingAndSorting(t *testing.T) {
 				testCase.without,
 				false,
 				memoryConsumptionTracker,
-				nil,
 				posrange.PositionRange{Start: 0, End: 10},
 			)
 

@@ -28,8 +28,7 @@ type Evaluator struct {
 
 	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 
-	annotations *annotations.Annotations
-	cancel      context.CancelCauseFunc
+	cancel context.CancelCauseFunc
 }
 
 func NewEvaluator(nodeRequests []NodeEvaluationRequest, params *planning.OperatorParameters, engine *Engine, originalExpression string) (*Evaluator, error) {
@@ -39,8 +38,6 @@ func NewEvaluator(nodeRequests []NodeEvaluationRequest, params *planning.Operato
 		originalExpression: originalExpression,
 
 		MemoryConsumptionTracker: params.MemoryConsumptionTracker,
-
-		annotations: params.Annotations,
 	}, nil
 }
 
@@ -168,7 +165,7 @@ func (e *Evaluator) Evaluate(ctx context.Context, observer EvaluationObserver) (
 			}
 
 			if !haveMoreWork {
-				if err := evaluator.finalize(ctx); err != nil {
+				if err := evaluator.finishedReading(ctx); err != nil {
 					return err
 				}
 
@@ -179,30 +176,28 @@ func (e *Evaluator) Evaluate(ctx context.Context, observer EvaluationObserver) (
 	}
 
 	if e.engine.pedantic {
-		// Finalize the all operators a second time to ensure all operators behave correctly if Finalize is called multiple times.
+		// Call FinishedReading on all operators a second time to ensure all operators behave correctly if FinishedReading is called multiple times.
 		for _, req := range e.nodeRequests {
-			if err := req.operator.Finalize(ctx); err != nil {
-				return fmt.Errorf("pedantic mode: failed to finalize operator a second time after successfully finalizing the first time: %w", err)
+			if err := req.operator.FinishedReading(ctx); err != nil {
+				return fmt.Errorf("pedantic mode: failed to call FinishedReading on the operator a second time after successfully finishedReading the first time: %w", err)
 			}
 		}
 	}
 
-	stats := make(map[planning.Node]*types.OperatorEvaluationStats, len(e.nodeRequests))
+	nodeInfo := make(map[planning.Node]NodeCompletionInfo, len(e.nodeRequests))
 	for _, req := range e.nodeRequests {
-		s, err := req.operator.Stats(ctx)
+		s, a, err := req.operator.Finalize(ctx)
 		if err != nil {
 			return err
 		}
 
-		stats[req.Node] = s
+		nodeInfo[req.Node] = NodeCompletionInfo{
+			Annotations: a,
+			Stats:       s,
+		}
 	}
 
-	// To make comparing to Prometheus' engine easier, only return the annotations if there are some, otherwise, return nil.
-	if len(*e.annotations) == 0 {
-		e.annotations = nil
-	}
-
-	return observer.EvaluationCompleted(ctx, e, e.annotations, stats)
+	return observer.EvaluationCompleted(ctx, e, nodeInfo)
 }
 
 func (e *Evaluator) closeOperators() {
@@ -217,7 +212,7 @@ type operatorEvaluator interface {
 	// performWork returns true if there is more work remaining for this operator, or false otherwise.
 	performWork(ctx context.Context, evaluator *Evaluator, observer EvaluationObserver) (bool, error)
 
-	finalize(ctx context.Context) error
+	finishedReading(ctx context.Context) error
 }
 
 type instantVectorEvaluator struct {
@@ -267,8 +262,8 @@ func (e *instantVectorEvaluator) performWork(ctx context.Context, evaluator *Eva
 	return haveMoreSeries, nil
 }
 
-func (e *instantVectorEvaluator) finalize(ctx context.Context) error {
-	return e.operator.Finalize(ctx)
+func (e *instantVectorEvaluator) finishedReading(ctx context.Context) error {
+	return e.operator.FinishedReading(ctx)
 }
 
 type rangeVectorEvaluator struct {
@@ -334,8 +329,8 @@ func (e *rangeVectorEvaluator) performWork(ctx context.Context, evaluator *Evalu
 	return haveMoreSeries, nil
 }
 
-func (e *rangeVectorEvaluator) finalize(ctx context.Context) error {
-	return e.operator.Finalize(ctx)
+func (e *rangeVectorEvaluator) finishedReading(ctx context.Context) error {
+	return e.operator.FinishedReading(ctx)
 }
 
 type scalarEvaluator struct {
@@ -352,8 +347,8 @@ func (e *scalarEvaluator) performWork(ctx context.Context, evaluator *Evaluator,
 	return false, observer.ScalarEvaluated(ctx, evaluator, e.node, d)
 }
 
-func (e *scalarEvaluator) finalize(ctx context.Context) error {
-	return e.operator.Finalize(ctx)
+func (e *scalarEvaluator) finishedReading(ctx context.Context) error {
+	return e.operator.FinishedReading(ctx)
 }
 
 type stringEvaluator struct {
@@ -367,8 +362,8 @@ func (e *stringEvaluator) performWork(ctx context.Context, evaluator *Evaluator,
 	return false, observer.StringEvaluated(ctx, evaluator, e.node, v)
 }
 
-func (e *stringEvaluator) finalize(ctx context.Context) error {
-	return e.operator.Finalize(ctx)
+func (e *stringEvaluator) finishedReading(ctx context.Context) error {
+	return e.operator.FinishedReading(ctx)
 }
 
 func (e *Evaluator) Cancel() {
@@ -409,5 +404,10 @@ type EvaluationObserver interface {
 
 	// EvaluationCompleted notifies this observer when evaluation is complete.
 	// Implementations of this method are responsible for closing the OperatorEvaluationStats instances when they are no longer needed.
-	EvaluationCompleted(ctx context.Context, evaluator *Evaluator, annotations *annotations.Annotations, stats map[planning.Node]*types.OperatorEvaluationStats) error
+	EvaluationCompleted(ctx context.Context, evaluator *Evaluator, nodeInfo map[planning.Node]NodeCompletionInfo) error
+}
+
+type NodeCompletionInfo struct {
+	Annotations annotations.Annotations
+	Stats       *types.OperatorEvaluationStats
 }

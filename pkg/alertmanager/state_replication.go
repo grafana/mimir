@@ -116,7 +116,7 @@ func newReplicatedStates(userID string, rf int, re Replicator, st alertstore.Ale
 		initialSyncDuration: promauto.With(r).NewHistogram(prometheus.HistogramOpts{
 			Name:    "alertmanager_state_initial_sync_duration_seconds",
 			Help:    "Time spent syncing initial state from peers or remote storage.",
-			Buckets: prometheus.ExponentialBuckets(0.008, 4, 7),
+			Buckets: []float64{0.1, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300},
 		}),
 	}
 	s.initialSyncCompleted.WithLabelValues(syncFromReplica)

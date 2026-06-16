@@ -28,9 +28,10 @@ func init() {
 	})
 }
 
+//node:generate
 type Duplicate struct {
 	*DuplicateDetails
-	Inner planning.Node
+	Inner planning.Node `node:"child"`
 }
 
 func (d *Duplicate) Details() proto.Message {
@@ -39,37 +40,6 @@ func (d *Duplicate) Details() proto.Message {
 
 func (d *Duplicate) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_DUPLICATE
-}
-
-func (d *Duplicate) Child(idx int) planning.Node {
-	if idx != 0 {
-		panic(fmt.Sprintf("node of type Duplicate supports 1 child, but attempted to get child at index %d", idx))
-	}
-
-	return d.Inner
-}
-
-func (d *Duplicate) ChildCount() int {
-	return 1
-}
-
-func (d *Duplicate) SetChildren(children []planning.Node) error {
-	if len(children) != 1 {
-		return fmt.Errorf("node of type Duplicate supports 1 child, but got %d", len(children))
-	}
-
-	d.Inner = children[0]
-
-	return nil
-}
-
-func (d *Duplicate) ReplaceChild(idx int, node planning.Node) error {
-	if idx != 0 {
-		return fmt.Errorf("node of type Duplicate supports 1 child, but attempted to replace child at index %d", idx)
-	}
-
-	d.Inner = node
-	return nil
 }
 
 func (d *Duplicate) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
@@ -175,9 +145,10 @@ func (d *RangeVectorDuplicationConsumerOperatorFactory) Produce() (types.Operato
 	return d.Buffer.AddConsumer(), nil
 }
 
+//node:generate
 type DuplicateFilter struct {
 	*DuplicateFilterDetails
-	Inner *Duplicate
+	Inner *Duplicate `node:"child"`
 }
 
 func (f *DuplicateFilter) Details() proto.Message {
@@ -186,42 +157,6 @@ func (f *DuplicateFilter) Details() proto.Message {
 
 func (f *DuplicateFilter) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_DUPLICATE_FILTER
-}
-
-func (f *DuplicateFilter) Child(idx int) planning.Node {
-	if idx != 0 {
-		panic(fmt.Sprintf("node of type DuplicateFilter supports 1 child, but attempted to get child at index %d", idx))
-	}
-
-	return f.Inner
-}
-
-func (f *DuplicateFilter) ChildCount() int {
-	return 1
-}
-
-func (f *DuplicateFilter) SetChildren(children []planning.Node) error {
-	if len(children) != 1 {
-		return fmt.Errorf("node of type DuplicateFilter supports 1 child, but got %d", len(children))
-	}
-
-	return f.ReplaceChild(0, children[0])
-}
-
-func (f *DuplicateFilter) ReplaceChild(idx int, node planning.Node) error {
-	if idx != 0 {
-		return fmt.Errorf("node of type DuplicateFilter supports 1 child, but attempted to replace child at index %d", idx)
-	}
-
-	duplicate, ok := node.(*Duplicate)
-
-	if !ok {
-		return fmt.Errorf("node of type DuplicateFilter only supports Duplicate nodes as child, got %T", node)
-	}
-
-	f.Inner = duplicate
-
-	return nil
 }
 
 func (f *DuplicateFilter) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {

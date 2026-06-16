@@ -7,7 +7,7 @@ package alertmanager
 
 import (
 	"context"
-	"crypto/md5"
+	"crypto/md5" //nolint:gosec // md5 is used to derive a non-cryptographic metric value from the alertmanager config.
 	"encoding/binary"
 	"errors"
 	"fmt"

@@ -268,6 +268,24 @@ func (c *KafkaProducer) ProduceSync(ctx context.Context, records []*kgo.Record) 
 		return newFailedProduceResultsFromRecords(records, errors.Wrap(context.Cause(ctx), "skipped producing Kafka records because context is already done"))
 	}
 
+	// Record.Timestamp must be left unset by callers. We rely on the franz-go client setting
+	// it as late as possible (right before the record is sent on the wire) so that it accurately
+	// represents the produce time. That timestamp is used to compute end-to-end latency
+	// (cortex_ingest_storage_reader_receive_delay_seconds) and the strong-read-consistency wait
+	// in the partition reader. Stamping it earlier inflates both. If a caller needs to attach
+	// another timestamp with a different meaning (e.g. distributor validation time), it must
+	// use a Kafka record header instead.
+	for _, record := range records {
+		if !record.Timestamp.IsZero() {
+			recordsCount := float64(len(records))
+
+			c.produceRecordsEnqueuedTotal.Add(recordsCount)
+			c.produceRecordsFailedTotal.WithLabelValues("record-timestamp-set").Add(recordsCount)
+
+			return newFailedProduceResultsFromRecords(records, errors.New("Kafka record Timestamp must not be set by the caller; it is reserved for the Kafka client to track produce time"))
+		}
+	}
+
 	c.produceRecordsEnqueuedTotal.Add(float64(len(records)))
 
 	// Reserve buffer space for the whole batch up front. If the reservation would exceed the configured

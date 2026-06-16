@@ -14,6 +14,7 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
@@ -221,7 +222,7 @@ func (m *RangeVectorSelector) fillBuffer(floats *types.FPointRingBuffer, histogr
 			// We might append a sample beyond the range end, but this is OK:
 			// - callers of NextStepSamples are expected to pass the same RingBuffer to subsequent calls, so the point is not lost
 			// - callers of NextStepSamples are expected to handle the case where the buffer contains points beyond the end of the range
-			if err := floats.Append(promql.FPoint{T: t, F: f}); err != nil {
+			if _, err := floats.Append(promql.FPoint{T: t, F: f}); err != nil {
 				return false, err
 			}
 
@@ -235,7 +236,7 @@ func (m *RangeVectorSelector) fillBuffer(floats *types.FPointRingBuffer, histogr
 				continue
 			}
 
-			hPoint, err := histograms.NextPoint()
+			hPoint, _, err := histograms.NextPoint()
 			if err != nil {
 				return false, err
 			}
@@ -272,7 +273,7 @@ func (m *RangeVectorSelector) AfterPrepare(ctx context.Context) error {
 	return nil
 }
 
-func (m *RangeVectorSelector) Finalize(ctx context.Context) error {
+func (m *RangeVectorSelector) FinishedReading(ctx context.Context) error {
 	m.floats.Close()
 	m.histograms.Close()
 	m.chunkIterator = nil
@@ -280,14 +281,14 @@ func (m *RangeVectorSelector) Finalize(ctx context.Context) error {
 	return nil
 }
 
-func (m *RangeVectorSelector) Stats(_ context.Context) (*types.OperatorEvaluationStats, error) {
+func (m *RangeVectorSelector) Finalize(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
 	stats := m.evaluationStats
 	m.evaluationStats = nil
-	return stats, nil
+	return stats, nil, nil
 }
 
 func (m *RangeVectorSelector) Close() {
-	// If the query fails, then Finalize above won't be called, so make sure to close the selector.
+	// If the query fails, then FinishedReading above won't be called, so make sure to close the selector.
 	m.Selector.Close()
 
 	if m.evaluationStats != nil {

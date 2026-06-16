@@ -14,6 +14,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
+	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
 	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
@@ -23,7 +24,7 @@ func TestOptimizationPass(t *testing.T) {
 
 	testCases := map[string]struct {
 		input          string
-		options        querymiddleware.Options
+		options        requestoptions.Options
 		hints          *querymiddleware.Hints
 		expectedOutput string
 	}{
@@ -37,14 +38,14 @@ func TestOptimizationPass(t *testing.T) {
 		},
 		"shardable expression with sharding disabled": {
 			input: `sum(foo)`,
-			options: querymiddleware.Options{
+			options: requestoptions.Options{
 				ShardingDisabled: true,
 			},
 			expectedOutput: `sum(foo)`,
 		},
 		"shardable expression with specific requested shard count": {
 			input: `sum(foo)`,
-			options: querymiddleware.Options{
+			options: requestoptions.Options{
 				TotalShards: 3,
 			},
 			expectedOutput: `sum(__sharded_concat__(sum(foo{__query_shard__="1_of_3"}), sum(foo{__query_shard__="2_of_3"}), sum(foo{__query_shard__="3_of_3"})))`,
@@ -87,7 +88,8 @@ func TestOptimizationPass(t *testing.T) {
 			afterRewrite, err := rewriteForSubquerySpinoff(ctx, testCase.input)
 			require.NoError(t, err)
 
-			ctx = querymiddleware.ContextWithRequestHintsAndOptions(ctx, testCase.hints, testCase.options)
+			ctx = querymiddleware.ContextWithRequestHints(ctx, testCase.hints)
+			ctx = requestoptions.ContextWithOptions(ctx, testCase.options)
 			output, err := pass.Apply(ctx, afterRewrite)
 			require.NoError(t, err)
 			require.Equal(t, testCase.expectedOutput, output.String())

@@ -23,6 +23,7 @@ import (
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/sharding"
+	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/promqlext"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
@@ -83,13 +84,13 @@ func (s *shardBySeriesBase) shardBySeriesSelector(ctx context.Context, spanLog *
 }
 
 func setShardCountFromHeader(origShardCount int, r *http.Request, spanLog *spanlogger.SpanLogger) int {
-	for _, value := range r.Header.Values(totalShardsControlHeader) {
+	for _, value := range r.Header.Values(requestoptions.TotalShardsControlHeader) {
 		shards, err := strconv.ParseInt(value, 10, 32)
 		if err != nil {
 			continue
 		}
 		if shards >= 0 {
-			spanLog.DebugLog("msg", fmt.Sprintf("using shard count from header %s: %d", totalShardsControlHeader, shards))
+			spanLog.DebugLog("msg", fmt.Sprintf("using shard count from header %s: %d", requestoptions.TotalShardsControlHeader, shards))
 			return int(shards)
 		}
 	}

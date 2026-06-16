@@ -94,6 +94,40 @@ local utils = import 'mixin-utils/utils.libsonnet';
                  + $.dashboardURLAnnotation('mimir-remote-ruler-reads.json'),
   },
 
+  local requestLatencyAlert(histogram_type) = {
+    local excluded_routes = std.join('|', [
+      'metrics',
+      '/frontend.Frontend/Process',
+      'ready',
+      '/schedulerpb.SchedulerForFrontend/FrontendLoop',
+      '/schedulerpb.SchedulerForQuerier/QuerierLoop',
+    ] + $._config.alert_excluded_routes),
+    local query = {
+      classic: '%(group_prefix_jobs)s_route:cortex_request_duration_seconds:99quantile{route!~"%(excluded_routes)s"}' % ($._config { excluded_routes: excluded_routes }),
+      native: 'histogram_quantile(0.99, %(group_prefix_jobs)s_route:cortex_request_duration_seconds:sum_rate{route!~"%(excluded_routes)s"})' % ($._config { excluded_routes: excluded_routes }),
+    },
+    alert: $.alertName('RequestLatency'),
+    expr: |||
+      %(query)s
+        >
+      %(cortex_p99_latency_threshold_seconds)s
+    ||| % ($._config { query: query[histogram_type] }),
+    'for': '15m',
+    labels: $.histogramLabels({ severity: 'warning' }, histogram_type, nhcb=false),
+    annotations: {
+                   message: |||
+                     {{ $labels.%(per_job_label)s }} {{ $labels.route }} is experiencing {{ printf "%%.2f" $value }}s 99th percentile latency.
+                   ||| % $._config,
+                 }
+                 // Alternative dashboards for investigation:
+                 //   - Mimir / Scaling (mimir-scaling.json) - for scaling decisions
+                 //   - Mimir / Reads (mimir-reads.json) - for read path latency
+                 //   - Mimir / Slow Queries (mimir-slow-queries.json) - to identify slow queries
+                 //   - Mimir / Queries (mimir-queries.json) - for queue length analysis
+                 //   - Mimir / Alertmanager (mimir-alertmanager.json) - for alertmanager path
+                 + $.dashboardURLAnnotation('mimir-writes.json'),
+  },
+
   local kvStoreFailure(histogram_type) = {
     alert: $.alertName('KVStoreFailure'),
     local sum_by = [$._config.alert_aggregation_labels, $._config.per_instance_label, 'status_code', 'kv_name'],
@@ -140,38 +174,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
         },
         requestErrorsAlert('classic'),
         requestErrorsAlert('native'),
-        {
-          alert: $.alertName('RequestLatency'),
-          expr: |||
-            %(group_prefix_jobs)s_route:cortex_request_duration_seconds:99quantile{route!~"%(excluded_routes)s"}
-              >
-            %(cortex_p99_latency_threshold_seconds)s
-          ||| % $._config {
-            excluded_routes: std.join('|', [
-              'metrics',
-              '/frontend.Frontend/Process',
-              'ready',
-              '/schedulerpb.SchedulerForFrontend/FrontendLoop',
-              '/schedulerpb.SchedulerForQuerier/QuerierLoop',
-            ] + $._config.alert_excluded_routes),
-          },
-          'for': '15m',
-          labels: {
-            severity: 'warning',
-          },
-          annotations: {
-                         message: |||
-                           {{ $labels.%(per_job_label)s }} {{ $labels.route }} is experiencing {{ printf "%%.2f" $value }}s 99th percentile latency.
-                         ||| % $._config,
-                       }
-                       // Alternative dashboards for investigation:
-                       //   - Mimir / Scaling (mimir-scaling.json) - for scaling decisions
-                       //   - Mimir / Reads (mimir-reads.json) - for read path latency
-                       //   - Mimir / Slow Queries (mimir-slow-queries.json) - to identify slow queries
-                       //   - Mimir / Queries (mimir-queries.json) - for queue length analysis
-                       //   - Mimir / Alertmanager (mimir-alertmanager.json) - for alertmanager path
-                       + $.dashboardURLAnnotation('mimir-writes.json'),
-        },
+        requestLatencyAlert('classic'),
+        requestLatencyAlert('native'),
         {
           alert: $.alertName('InconsistentRuntimeConfig'),
           expr: |||

@@ -30,3 +30,4 @@ spec:
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: metamonitoring-values
     app.kubernetes.io/component: distributor
+

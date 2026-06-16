@@ -18,9 +18,10 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
+//node:generate
 type Subquery struct {
 	*SubqueryDetails
-	Inner planning.Node `json:"-"`
+	Inner planning.Node `json:"-" node:"child"`
 }
 
 func (s *Subquery) Describe() string {
@@ -70,6 +71,14 @@ func (s *Subquery) ChildrenTimeRange(timeRange types.QueryTimeRange) types.Query
 	if s.Timestamp != nil {
 		start = timestamp.FromTime(*s.Timestamp)
 		end = start
+	} else if !timeRange.IsInstant {
+		// Align the parent end timestamp down to the parent's step grid before applying the
+		// subquery offset.
+		// This ensures the subquery does not evaluate past the parent's last actual step if the
+		// parent's end time isn't aligned to its step.
+		// For example, if the step is 1h, and the parent time range is 09:00 to 11:30, then the last
+		// parent step is 11:00, and the subquery should not evaluate past that.
+		end = start + ((end-start)/timeRange.IntervalMilliseconds)*timeRange.IntervalMilliseconds
 	}
 
 	// Find the first timestamp inside the subquery range that is aligned to the step.
@@ -79,7 +88,12 @@ func (s *Subquery) ChildrenTimeRange(timeRange types.QueryTimeRange) types.Query
 		alignedStart += stepMilliseconds
 	}
 
+	// Note that this timestamp may not be aligned to the subquery's step grid, but this isn't an issue:
+	// the subquery will be evaluated up to the last step within the range, just like the behaviour for top-level queries.
+	// For example, if the start of the range is 09:00 and the subquery step is 1h, it doesn't matter if
+	// the end is 11:00, 11:01 or 11:59, the last evaluated step will be 11:00, as expected.
 	end = end - s.Offset.Milliseconds()
+
 	return types.NewRangeQueryTimeRange(timestamp.Time(alignedStart), timestamp.Time(end), s.Step)
 }
 
@@ -89,37 +103,6 @@ func (s *Subquery) Details() proto.Message {
 
 func (s *Subquery) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_SUBQUERY
-}
-
-func (s *Subquery) Child(idx int) planning.Node {
-	if idx != 0 {
-		panic(fmt.Sprintf("node of type Subquery supports 1 child, but attempted to get child at index %d", idx))
-	}
-
-	return s.Inner
-}
-
-func (s *Subquery) ChildCount() int {
-	return 1
-}
-
-func (s *Subquery) SetChildren(children []planning.Node) error {
-	if len(children) != 1 {
-		return fmt.Errorf("node of type Subquery expects 1 child, but got %d", len(children))
-	}
-
-	s.Inner = children[0]
-
-	return nil
-}
-
-func (s *Subquery) ReplaceChild(idx int, node planning.Node) error {
-	if idx != 0 {
-		return fmt.Errorf("node of type Subquery supports 1 child, but attempted to replace child at index %d", idx)
-	}
-
-	s.Inner = node
-	return nil
 }
 
 func (s *Subquery) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {

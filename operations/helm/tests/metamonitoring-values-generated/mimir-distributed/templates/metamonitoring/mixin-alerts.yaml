@@ -69,6 +69,20 @@ spec:
               2.5
             for: 15m
             labels:
+              histogram: classic
+              severity: warning
+          - alert: MimirRequestLatency
+            annotations:
+              message: |
+                  {{ $labels.job }} {{ $labels.route }} is experiencing {{ printf "%.2f" $value }}s 99th percentile latency.
+              runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirrequestlatency
+            expr: |
+              histogram_quantile(0.99, cluster_namespace_job_route:cortex_request_duration_seconds:sum_rate{route!~"metrics|/frontend.Frontend/Process|ready|/schedulerpb.SchedulerForFrontend/FrontendLoop|/schedulerpb.SchedulerForQuerier/QuerierLoop|debug_pprof"})
+                >
+              2.5
+            for: 15m
+            labels:
+              histogram: native
               severity: warning
           - alert: MimirInconsistentRuntimeConfig
             annotations:
@@ -1708,3 +1722,4 @@ spec:
               sum by(cluster, namespace, test) (rate(mimir_continuous_test_query_result_checks_failed_total[10m])) > 0
             labels:
               severity: warning
+  

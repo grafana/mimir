@@ -49,6 +49,9 @@ func (cfg *CombinedFrontendConfig) RegisterFlags(f *flag.FlagSet, logger log.Log
 }
 
 func (cfg *CombinedFrontendConfig) Validate() error {
+	if err := cfg.Handler.Validate(); err != nil {
+		return err
+	}
 	if err := cfg.FrontendV2.Validate(); err != nil {
 		return err
 	}

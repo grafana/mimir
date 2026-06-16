@@ -756,9 +756,11 @@ func (c *otlpMimirConverter) Err() error {
 	return nil
 }
 
-// TimeseriesToOTLPRequest is used in tests.
-// If you provide exemplars they will be placed on the first float or
-// histogram sample.
+// TimeseriesToOTLPRequest is used in tests to convert Prometheus types to OTEL types.
+//
+// If you provide exemplars they will be placed on the first float histogram sample.
+//
+// NOTE: This should not be called from production code besides continuoustest.
 func TimeseriesToOTLPRequest(timeseries []prompb.TimeSeries, metadata []mimirpb.MetricMetadata) pmetricotlp.ExportRequest {
 	d := pmetric.NewMetrics()
 
@@ -821,6 +823,10 @@ func TimeseriesToOTLPRequest(timeseries []prompb.TimeSeries, metadata []mimirpb.
 			}
 			metric.ExponentialHistogram().SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
 			for i, histogram := range ts.Histograms {
+				if _, isFloatCount := histogram.Count.(*prompb.Histogram_CountFloat); isFloatCount {
+					panic(fmt.Sprintf("prometheus histograms with float counts cannot be converted to OTEL exponential histograms, this is a bug. histogram: %+v", histogram))
+				}
+
 				datapoint := metric.ExponentialHistogram().DataPoints().AppendEmpty()
 				datapoint.SetTimestamp(pcommon.Timestamp(histogram.Timestamp * time.Millisecond.Nanoseconds()))
 				datapoint.SetScale(histogram.Schema)

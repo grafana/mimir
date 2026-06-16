@@ -24,8 +24,18 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/util/annotations"
 
+	"github.com/grafana/mimir/pkg/streaminglabelvalues"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
+
+// searcher is the cross-source Mimir search interface that mergeQuerier
+// defers to when a request targets the search endpoints. Declared locally
+// to avoid an import cycle on pkg/querier; MUST stay in lock-step with
+// pkg/querier.mimirSearcher.
+type searcher interface {
+	SearchLabelNames(ctx context.Context, params *streaminglabelvalues.Params, hints *storage.SearchHints, matchers ...*labels.Matcher) storage.SearchResultSet
+	SearchLabelValues(ctx context.Context, name string, params *streaminglabelvalues.Params, hints *storage.SearchHints, matchers ...*labels.Matcher) storage.SearchResultSet
+}
 
 // NewQueryable returns a queryable that iterates through all the tenant IDs
 // that are part of the request and aggregates the query results for tenant.
@@ -65,6 +75,8 @@ type MergeQuerierUpstream interface {
 	Select(ctx context.Context, id string, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet
 	LabelValues(ctx context.Context, id string, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error)
 	LabelNames(ctx context.Context, id string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error)
+	SearchLabelNames(ctx context.Context, id string, params *streaminglabelvalues.Params, hints *storage.SearchHints, matchers ...*labels.Matcher) storage.SearchResultSet
+	SearchLabelValues(ctx context.Context, id string, name string, params *streaminglabelvalues.Params, hints *storage.SearchHints, matchers ...*labels.Matcher) storage.SearchResultSet
 	Close() error
 }
 
@@ -84,6 +96,25 @@ func (q *tenantQuerier) LabelValues(ctx context.Context, id string, name string,
 
 func (q *tenantQuerier) LabelNames(ctx context.Context, id string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	return q.upstream.LabelNames(user.InjectOrgID(ctx, id), hints, matchers...)
+}
+
+// SearchLabelNames type-asserts the upstream to the local search interface
+// and forwards the call with the per-tenant org ID injected.
+func (q *tenantQuerier) SearchLabelNames(ctx context.Context, id string, params *streaminglabelvalues.Params, hints *storage.SearchHints, matchers ...*labels.Matcher) storage.SearchResultSet {
+	s, ok := q.upstream.(searcher)
+	if !ok {
+		return storage.ErrSearchResultSet(errors.Errorf("upstream %T does not support search", q.upstream))
+	}
+	return s.SearchLabelNames(user.InjectOrgID(ctx, id), params, hints, matchers...)
+}
+
+// SearchLabelValues mirrors SearchLabelNames with the label name parameter.
+func (q *tenantQuerier) SearchLabelValues(ctx context.Context, id string, name string, params *streaminglabelvalues.Params, hints *storage.SearchHints, matchers ...*labels.Matcher) storage.SearchResultSet {
+	s, ok := q.upstream.(searcher)
+	if !ok {
+		return storage.ErrSearchResultSet(errors.Errorf("upstream %T does not support search", q.upstream))
+	}
+	return s.SearchLabelValues(user.InjectOrgID(ctx, id), name, params, hints, matchers...)
 }
 
 func (q *tenantQuerier) Close() error {
@@ -287,6 +318,135 @@ func (m *mergeQuerier) LabelNames(ctx context.Context, hints *storage.LabelHints
 	labelNames[labelPos] = labelToAdd
 
 	return labelNames, warnings, nil
+}
+
+// SearchLabelNames fans out the search RPC across involved federation IDs,
+// merging each per-tenant SearchResultSet via storage.MergeSearchResultSets.
+//
+// Limitations: the result does NOT add the idLabelName synthetic label that
+// LabelNames adds. Search results carry only the underlying label names that
+// each per-tenant querier emits; the federation layer simply unions them.
+func (m *mergeQuerier) SearchLabelNames(ctx context.Context, params *streaminglabelvalues.Params, hints *storage.SearchHints, matchers ...*labels.Matcher) storage.SearchResultSet {
+	ids, err := m.resolver.TenantIDs(ctx)
+	if err != nil {
+		return storage.ErrSearchResultSet(err)
+	}
+
+	m.tenantsQueried.Observe(float64(len(ids)))
+	if m.bypassWithSingleID && len(ids) == 1 {
+		return m.upstream.SearchLabelNames(ctx, ids[0], params, hints, matchers...)
+	}
+
+	jobs, filteredMatchers := tenantJobsForSearch(m.idLabelName, ids, matchers)
+	// Single-job fast path: no fan-out, no merge wrapper. The upstream
+	// call already honours hints (ordering, limit, filter) for its single
+	// source; MergeSearchResultSets with a one-element input would just
+	// pass them through with extra allocations.
+	if len(jobs) == 1 {
+		return m.upstream.SearchLabelNames(ctx, jobs[0], params, hints, filteredMatchers...)
+	}
+	sets := make([]storage.SearchResultSet, len(jobs))
+	// We don't use the context passed to the per-job closure: the opened
+	// SearchResultSets are iterated AFTER ForEachJob returns, and the per-job
+	// ctx is cancelled at that point. Bind to the outer ctx instead, matching
+	// the explicit hazard noted in defaultMultiTenantSelectFunc.
+	run := func(_ context.Context, idx int) error {
+		sets[idx] = m.upstream.SearchLabelNames(ctx, jobs[idx], params, hints, filteredMatchers...)
+		return nil
+	}
+	if err := concurrency.ForEachJob(ctx, len(jobs), m.maxConcurrency, run); err != nil {
+		return storage.ErrSearchResultSet(err)
+	}
+	return storage.MergeSearchResultSets(sets, hints)
+}
+
+// SearchLabelValues mirrors SearchLabelNames with the label name parameter.
+//
+// Two cases are special-cased before the fan-out, mirroring LabelValues:
+//   - name == idLabelName: return the matched federation IDs themselves
+//     filtered by params and ordered/limited by hints. Per-tenant queriers
+//     don't carry this synthetic label, so without this case the result
+//     would be empty (inconsistent with LabelValues).
+//   - name == retainExistingPrefix+idLabelName: the caller wants the real
+//     label values stored on the per-tenant series, exposed under the
+//     prefixed name when the federation layer detected a collision. The
+//     name is rewritten back to idLabelName and forwarded.
+//
+// In single-tenant bypass mode (bypassWithSingleID && len(ids)==1) the
+// synthetic label is not injected; the call is forwarded as-is, mirroring
+// LabelValues' bypass semantics so the synthetic label only appears when
+// federation is actually doing work.
+func (m *mergeQuerier) SearchLabelValues(ctx context.Context, name string, params *streaminglabelvalues.Params, hints *storage.SearchHints, matchers ...*labels.Matcher) storage.SearchResultSet {
+	ids, err := m.resolver.TenantIDs(ctx)
+	if err != nil {
+		return storage.ErrSearchResultSet(err)
+	}
+
+	m.tenantsQueried.Observe(float64(len(ids)))
+	if m.bypassWithSingleID && len(ids) == 1 {
+		return m.upstream.SearchLabelValues(ctx, ids[0], name, params, hints, matchers...)
+	}
+
+	// The id-label and retain-prefix special cases need the set form of
+	// matchedIDs; the fast path used elsewhere returns nil for matchedIDs
+	// when no id-label matcher was supplied, so detect those names first
+	// and fall back to the full filter when they apply.
+	if name == m.idLabelName {
+		matchedIDs, _ := FilterValuesByMatchers(m.idLabelName, ids, matchers...)
+		return searchSyntheticIDs(ids, matchedIDs, params, hints)
+	}
+
+	// ensure the name of a retained label gets handled under the original
+	// label name
+	if name == retainExistingPrefix+m.idLabelName {
+		name = m.idLabelName
+	}
+
+	jobs, filteredMatchers := tenantJobsForSearch(m.idLabelName, ids, matchers)
+	// Single-job fast path: same rationale as SearchLabelNames above.
+	if len(jobs) == 1 {
+		return m.upstream.SearchLabelValues(ctx, jobs[0], name, params, hints, filteredMatchers...)
+	}
+	sets := make([]storage.SearchResultSet, len(jobs))
+	run := func(_ context.Context, idx int) error {
+		sets[idx] = m.upstream.SearchLabelValues(ctx, jobs[idx], name, params, hints, filteredMatchers...)
+		return nil
+	}
+	if err := concurrency.ForEachJob(ctx, len(jobs), m.maxConcurrency, run); err != nil {
+		return storage.ErrSearchResultSet(err)
+	}
+	return storage.MergeSearchResultSets(sets, hints)
+}
+
+// searchSyntheticIDs builds a SearchResultSet whose values are the matched
+// federation IDs themselves, filtered/ordered/limited per params and hints.
+// ids preserves the resolver's original list (used only as the iteration
+// source); matchedIDs is the subset surviving tenant matchers. params is
+// authoritative for the filter; any hints.Filter the caller already set is
+// overwritten, matching the per-leaf semantics described on mimirSearcher
+// (params travel separately from the opaque hints.Filter).
+func searchSyntheticIDs(ids []string, matchedIDs map[string]struct{}, params *streaminglabelvalues.Params, hints *storage.SearchHints) storage.SearchResultSet {
+	filter, err := streaminglabelvalues.BuildFilter(params)
+	if err != nil {
+		return storage.ErrSearchResultSet(err)
+	}
+	values := make([]string, 0, len(matchedIDs))
+	for _, id := range ids {
+		if _, ok := matchedIDs[id]; ok {
+			values = append(values, id)
+		}
+	}
+	// ApplySearchHints relies on ascending input for its OrderByValueAsc
+	// fast path and its OrderByValueDesc reverse; the resolver does not
+	// guarantee that, so sort here.
+	sort.Strings(values)
+
+	var hintsCopy storage.SearchHints
+	if hints != nil {
+		hintsCopy = *hints
+	}
+	hintsCopy.Filter = filter
+	return storage.NewSearchResultSetFromSlice(storage.ApplySearchHints(values, &hintsCopy), nil)
 }
 
 type stringSliceFunc func(context.Context, string) ([]string, annotations.Annotations, error)
@@ -507,4 +667,39 @@ func (a *addLabelsSeries) Labels() labels.Labels {
 // Iterator returns a new, independent iterator of the data of the series.
 func (a *addLabelsSeries) Iterator(i chunkenc.Iterator) chunkenc.Iterator {
 	return a.upstream.Iterator(i)
+}
+
+// tenantJobsForSearch returns the per-tenant job list and the matchers that
+// must propagate to each per-tenant call.
+//
+// Fast path: when no matcher targets idLabelName (or its retain-prefix
+// alias), every tenant ID is in scope; the function returns the ids slice
+// verbatim as the job list and the matchers slice verbatim as the filtered
+// matchers. This avoids the map allocation FilterValuesByMatchers performs
+// to track the survivor set and the follow-on map-to-slice copy in the
+// caller — the dominant per-tenant allocation cost observed in the
+// federation fan-out benchmark.
+//
+// Slow path: when at least one matcher targets idLabelName, fall back to
+// FilterValuesByMatchers which prunes the survivor set per matcher and
+// returns the unrelated matchers under the original label name.
+func tenantJobsForSearch(idLabelName string, ids []string, matchers []*labels.Matcher) (jobs []string, filteredMatchers []*labels.Matcher) {
+	retainedName := retainExistingPrefix + idLabelName
+	hasIDMatcher := false
+	for _, m := range matchers {
+		if m.Name == idLabelName || m.Name == retainedName {
+			hasIDMatcher = true
+			break
+		}
+	}
+	if !hasIDMatcher {
+		return ids, matchers
+	}
+
+	matchedIDs, fm := FilterValuesByMatchers(idLabelName, ids, matchers...)
+	jobs = make([]string, 0, len(matchedIDs))
+	for id := range matchedIDs {
+		jobs = append(jobs, id)
+	}
+	return jobs, fm
 }

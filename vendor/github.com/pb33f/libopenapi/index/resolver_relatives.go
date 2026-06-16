@@ -144,6 +144,7 @@ func (resolver *Resolver) extractRelativeReference(
 		RemoteLocation: ref.RemoteLocation,
 		IsRemote:       true,
 		Index:          ref.Index,
+		SourcePath:     append([]string(nil), ref.SourcePath...),
 	}
 
 	locatedRef, _, _ := resolver.searchReferenceWithContext(ref, searchRef)

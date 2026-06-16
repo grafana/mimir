@@ -3,7 +3,6 @@
 package core
 
 import (
-	"fmt"
 	"time"
 
 	"github.com/gogo/protobuf/proto"
@@ -18,6 +17,8 @@ import (
 // NoOp is a query plan node that always returns an empty instant vector.
 // It is used by optimization passes to replace subexpressions that can be statically
 // determined to return no results.
+//
+//node:generate
 type NoOp struct {
 	*NoOpDetails
 }
@@ -28,26 +29,6 @@ func (n *NoOp) Details() proto.Message {
 
 func (n *NoOp) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_NO_OP
-}
-
-func (n *NoOp) Child(idx int) planning.Node {
-	panic(fmt.Sprintf("node of type NoOp has no children, but attempted to get child at index %d", idx))
-}
-
-func (n *NoOp) ChildCount() int {
-	return 0
-}
-
-func (n *NoOp) SetChildren(children []planning.Node) error {
-	if len(children) != 0 {
-		return fmt.Errorf("node of type NoOp expects 0 children, but got %d", len(children))
-	}
-
-	return nil
-}
-
-func (n *NoOp) ReplaceChild(idx int, _ planning.Node) error {
-	return fmt.Errorf("node of type NoOp supports no children, but attempted to replace child at index %d", idx)
 }
 
 func (n *NoOp) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {

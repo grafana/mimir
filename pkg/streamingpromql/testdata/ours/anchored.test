@@ -342,18 +342,21 @@ load 1m
 eval instant at 1m resets(mixed[1m] anchored)
   {} 0
 
-eval instant at 3m resets(mixed[1m] anchored)
-  expect fail msg: smoothed and anchored modifiers do not work with native histograms
+# These tests have been commented out since upstream Prometheus has recently
+# added support for smoothed/anchored histograms.
+# These tests have been commented out whilst a Mimir implementation is completed.
+#eval instant at 3m resets(mixed[1m] anchored)
+#  expect fail msg: smoothed and anchored modifiers do not work with native histograms
 
-eval instant at 4m resets(mixed[1m] anchored)
-  expect fail msg: smoothed and anchored modifiers do not work with native histograms
+#eval instant at 4m resets(mixed[1m] anchored)
+#  expect fail msg: smoothed and anchored modifiers do not work with native histograms
 
-eval instant at 5m resets(mixed[1m] anchored)
-  expect fail msg: smoothed and anchored modifiers do not work with native histograms
+#eval instant at 5m resets(mixed[1m] anchored)
+#  expect fail msg: smoothed and anchored modifiers do not work with native histograms
 
 # Whilst the histogram is within the range + look-back window the query will fail
-eval instant at 8m resets(mixed[1m] anchored)
-  expect fail msg: smoothed and anchored modifiers do not work with native histograms
+#eval instant at 8m resets(mixed[1m] anchored)
+#  expect fail msg: smoothed and anchored modifiers do not work with native histograms
 
 eval instant at 10m resets(mixed[1m] anchored)
   {} 0
@@ -427,6 +430,10 @@ eval range from 0 to 10m step 1m increase(metric[1m] anchored)
 
 eval range from 0 to 10m step 1m increase(metric[1m2s] anchored)
   {} 0 1 2 2 2 2 2 2 2 2 2
+
+# Different function applying to the same range selector to exercise common subexpression elimination.
+eval range from 0 to 10m step 1m increase(metric[5m] anchored) + delta(metric[5m] anchored)
+  {} 0 2 4 6 8 10 10 10 10 10 10
 
 clear
 load 1m

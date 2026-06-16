@@ -34,6 +34,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/rangevectorsplitting/cache"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
+	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
 	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
@@ -212,6 +213,42 @@ func TestQuerySplitting_InstantQueryWith5hRange_UsesCache(t *testing.T) {
 	}, ranges5)
 	// Cache stats: Q1: 2 gets (miss), 2 sets | Q2: 2 gets/hits | Q3: 2 gets/hits | Q4: 1 get/hit | Q5: 2 gets, 1 hit, 1 set
 	verifyCacheStats(t, testCache, 9, 6, 3) // Total: 9 gets, 6 hits, 3 sets
+}
+
+// TestQuerySplitting_InstantQueryWith5hRange_CacheDisabledByRequest runs the same query as
+// TestQuerySplitting_InstantQueryWith5hRange_UsesCache but with Options{CacheDisabled: true}
+// on the context. With caching disabled, no cache entry should be read or written on either run.
+func TestQuerySplitting_InstantQueryWith5hRange_CacheDisabledByRequest(t *testing.T) {
+	testCache, mimirEngine := setupEngineAndCache(t)
+
+	promStorage := promqltest.LoadedStorage(t, `
+		load 10m
+			some_metric{env="1"} 0+1x60
+	`)
+	t.Cleanup(func() { require.NoError(t, promStorage.Close()) })
+
+	baseT := timestamp.Time(0)
+	expr := "sum_over_time(some_metric[5h])"
+	ts := baseT.Add(6 * time.Hour)
+
+	expected := &promql.Result{
+		Value: promql.Vector{
+			{
+				Metric: labels.FromStrings("env", "1"),
+				T:      timestamp.FromTime(ts),
+				F:      645,
+			},
+		},
+	}
+
+	ctx := requestoptions.ContextWithOptions(context.Background(), requestoptions.Options{CacheDisabled: true})
+	result, _ := runInstantQueryWithContext(t, ctx, mimirEngine, promStorage, expr, ts)
+	require.Equal(t, expected, result)
+
+	result, _ = runInstantQueryWithContext(t, ctx, mimirEngine, promStorage, expr, ts)
+	require.Equal(t, expected, result)
+
+	verifyCacheStats(t, testCache, 0, 0, 0)
 }
 
 func TestQuerySplitting_MultipleSeriesWithGaps_UsesCache(t *testing.T) {
@@ -1234,7 +1271,7 @@ func TestQuerySplitting_NoMetadataConsumption_DoesNotCache(t *testing.T) {
 	baseT := timestamp.Time(0)
 
 	// nonexistent_metric returns no series, so the binary op short-circuits.
-	// This means Finalize() is called on the sum_over_time split operator without SeriesMetadata() being called first.
+	// This means FinishedReading() is called on the sum_over_time split operator without SeriesMetadata() being called first.
 	expr := "nonexistent_metric + sum_over_time(test_metric[24h])"
 	ts := baseT.Add(25 * time.Hour)
 
@@ -1262,7 +1299,7 @@ func TestQuerySplitting_PartialConsumption_DoesNotCache(t *testing.T) {
 
 	// `and on(env)` matches only env=1. The split operator (left) returns 2 series from
 	// SeriesMetadata, but `and` only consumes the first (env=1) via NextSeries before
-	// finalizing the left side. The second series (env=2) is never consumed.
+	// finishing reading from the left side. The second series (env=2) is never consumed.
 	expr := `sum_over_time(some_metric[5h]) and on(env) filter_metric`
 
 	result, stats := runInstantQuery(t, mimirEngine, promStorage, expr, ts)
@@ -1347,6 +1384,7 @@ func TestQuerySplitting_PerRangeSeriesMetadata(t *testing.T) {
 		{"rate", "rate(test_metric[10h])"},
 		{"increase", "increase(test_metric[10h])"},
 		{"avg_over_time", "avg_over_time(test_metric[10h])"},
+		{"present_over_time", "present_over_time(test_metric[10h])"},
 	}
 
 	env1Labels := querierpb.SeriesMetadata{Labels: []mimirpb.LabelAdapter{{Name: "__name__", Value: "test_metric"}, {Name: "env", Value: "1"}}}
@@ -1450,7 +1488,11 @@ func setupEngineAndCacheWithOpts(t *testing.T, opts streamingpromql.EngineOpts) 
 }
 
 func runInstantQuery(t *testing.T, eng promql.QueryEngine, storage storage.Storage, expr string, ts time.Time) (*promql.Result, *promstats.QuerySamples) {
-	ctx := user.InjectOrgID(context.Background(), "test-user")
+	return runInstantQueryWithContext(t, context.Background(), eng, storage, expr, ts)
+}
+
+func runInstantQueryWithContext(t *testing.T, ctx context.Context, eng promql.QueryEngine, storage storage.Storage, expr string, ts time.Time) (*promql.Result, *promstats.QuerySamples) {
+	ctx = user.InjectOrgID(ctx, "test-user")
 	q, err := eng.NewInstantQuery(ctx, storage, nil, expr, ts)
 	require.NoError(t, err)
 	defer q.Close()

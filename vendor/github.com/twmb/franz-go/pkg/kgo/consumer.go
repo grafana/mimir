@@ -1679,7 +1679,14 @@ func (fm *fetchManager) manageFetchConcurrency() {
 			continue
 		}
 
-		if wantQuit && activeFetches == 0 {
+		// We cannot return while sources are still registered in
+		// wantFetch: each of them is (or is about to be) blocked
+		// sending on cancelFetchCh, which only we drain. Returning
+		// early orphans those sends once the channel's small buffer
+		// fills; the sources then hold session workers forever and
+		// stopSession never finishes (consumer deadlock). Keep
+		// looping until every registered source has canceled.
+		if wantQuit && activeFetches == 0 && len(wantFetch) == 0 {
 			return
 		}
 	}
@@ -1839,8 +1846,13 @@ func (c *consumer) stopSession() (listOrEpochLoads, *topicsPartitions) {
 	c.sourcesReadyForDraining = nil
 
 	// At this point, we have invalidated any buffered data from the prior
-	// session. We leave any fake things that were ready so that the user
-	// can act on errors. The session is dead.
+	// session. We deliberately leave c.fakeReadyForDraining so the user can
+	// still observe errors that happened in the dying session (data loss,
+	// list/epoch failures, no-committed-offset notices, etc.). A consequence
+	// is that the user's next poll may surface an error for a partition the
+	// new assignment does not include; callers that key off fake-fetch errors
+	// for committing must check current ownership before acting. The session
+	// is dead.
 
 	session.listOrEpochLoadsWaiting.mergeFrom(session.listOrEpochLoadsLoading)
 	return session.listOrEpochLoadsWaiting, session.tps

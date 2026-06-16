@@ -17,12 +17,13 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
+//node:generate
 type VectorSelector struct {
 	*VectorSelectorDetails
 }
 
 func (v *VectorSelector) Describe() string {
-	d := describeSelector(v.Matchers, v.Timestamp, v.Offset, nil, v.SkipHistogramBuckets, false, v.Smoothed, false, v.ProjectionLabels, v.ProjectionInclude, v.Subsets)
+	d := describeSelector(v.Matchers, v.Timestamp, v.Offset, nil, v.SkipHistogramBuckets, false, v.Smoothed, false, v.Subsets)
 
 	if v.ReturnSampleTimestamps {
 		d = d + ", return sample timestamps"
@@ -45,26 +46,6 @@ func (v *VectorSelector) Details() proto.Message {
 
 func (v *VectorSelector) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_VECTOR_SELECTOR
-}
-
-func (v *VectorSelector) Child(idx int) planning.Node {
-	panic(fmt.Sprintf("node of type VectorSelector has no children, but attempted to get child at index %d", idx))
-}
-
-func (v *VectorSelector) ChildCount() int {
-	return 0
-}
-
-func (v *VectorSelector) SetChildren(children []planning.Node) error {
-	if len(children) != 0 {
-		return fmt.Errorf("node of type VectorSelector expects 0 children, but got %d", len(children))
-	}
-
-	return nil
-}
-
-func (v *VectorSelector) ReplaceChild(idx int, node planning.Node) error {
-	return fmt.Errorf("node of type VectorSelector supports no children, but attempted to replace child at index %d", idx)
 }
 
 func (v *VectorSelector) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
@@ -98,13 +79,6 @@ func (v *VectorSelector) MergeHints(other planning.Node) error {
 	}
 
 	v.SkipHistogramBuckets = v.SkipHistogramBuckets && otherVectorSelector.SkipHistogramBuckets
-	v.ProjectionInclude, v.ProjectionLabels = mergeProjectionLabels(
-		v.ProjectionInclude,
-		v.ProjectionLabels,
-		otherVectorSelector.ProjectionInclude,
-		otherVectorSelector.ProjectionLabels,
-	)
-
 	return nil
 }
 
@@ -130,8 +104,6 @@ func MaterializeVectorSelector(v *VectorSelector, _ *planning.Materializer, time
 		ExpressionPosition:       v.GetExpressionPosition().ToPrometheusType(),
 		MemoryConsumptionTracker: params.MemoryConsumptionTracker,
 		Smoothed:                 v.Smoothed,
-		ProjectionInclude:        v.ProjectionInclude,
-		ProjectionLabels:         v.ProjectionLabels,
 		Subsets:                  subsets,
 	}
 

@@ -108,6 +108,7 @@ func testBlocksCleanerWithOptions(t *testing.T, options testBlocksCleanerOptions
 		TenantCleanupDelay:            options.tenantDeletionDelay,
 		DeleteBlocksConcurrency:       1,
 		GetDeletionMarkersConcurrency: 1,
+		EstimateCompactionJobs:        true,
 	}
 
 	reg := prometheus.NewPedanticRegistry()
@@ -218,6 +219,19 @@ func testBlocksCleanerWithOptions(t *testing.T, options testBlocksCleanerOptions
 		"cortex_bucket_blocks_marked_for_deletion_count",
 		"cortex_bucket_blocks_partials_count",
 		"cortex_bucket_index_estimated_compaction_jobs",
+	))
+}
+
+func TestBlocksCleaner_ShouldNotRegisterCompactionJobMetricsWhenEstimationDisabled(t *testing.T) {
+	bucketClient, _ := mimir_testutil.PrepareFilesystemBucket(t)
+
+	reg := prometheus.NewPedanticRegistry()
+	_ = NewBlocksCleaner(BlocksCleanerConfig{EstimateCompactionJobs: false}, bucketClient, tsdb.AllUsers, newMockConfigProvider(), log.NewNopLogger(), reg)
+
+	// With estimation disabled neither the gauge nor the error counter are registered.
+	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(""),
+		"cortex_bucket_index_estimated_compaction_jobs",
+		"cortex_bucket_index_estimated_compaction_jobs_errors_total",
 	))
 }
 
@@ -362,6 +376,7 @@ func TestBlocksCleaner_ShouldRemoveMetricsForTenantsNotBelongingAnymoreToTheShar
 		CleanupConcurrency:            1,
 		DeleteBlocksConcurrency:       1,
 		GetDeletionMarkersConcurrency: 1,
+		EstimateCompactionJobs:        true,
 	}
 
 	ctx := context.Background()
@@ -446,6 +461,7 @@ func TestBlocksCleaner_ShouldNotCleanupUserThatDoesntBelongToShardAnymore(t *tes
 		CleanupInterval:         time.Minute,
 		CleanupConcurrency:      1,
 		DeleteBlocksConcurrency: 1,
+		EstimateCompactionJobs:  true,
 	}
 
 	ctx := context.Background()

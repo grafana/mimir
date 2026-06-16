@@ -28,9 +28,10 @@ func init() {
 	})
 }
 
+//node:generate
 type RemoteExecutionGroup struct {
 	*RemoteExecutionGroupDetails
-	Nodes []planning.Node
+	Nodes []planning.Node `node:"children,min=1"`
 }
 
 func (r *RemoteExecutionGroup) Details() proto.Message {
@@ -39,37 +40,6 @@ func (r *RemoteExecutionGroup) Details() proto.Message {
 
 func (r *RemoteExecutionGroup) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_REMOTE_EXEC_GROUP
-}
-
-func (r *RemoteExecutionGroup) Child(idx int) planning.Node {
-	if idx >= len(r.Nodes) {
-		panic(fmt.Sprintf("this RemoteExecutionGroup node has %d children, but attempted to get child at index %d", len(r.Nodes), idx))
-	}
-
-	return r.Nodes[idx]
-}
-
-func (r *RemoteExecutionGroup) ChildCount() int {
-	return len(r.Nodes)
-}
-
-func (r *RemoteExecutionGroup) SetChildren(children []planning.Node) error {
-	if len(children) < 1 {
-		return fmt.Errorf("node of type RemoteExecutionGroup requires at least one child, but got %d", len(children))
-	}
-
-	r.Nodes = children
-
-	return nil
-}
-
-func (r *RemoteExecutionGroup) ReplaceChild(idx int, node planning.Node) error {
-	if idx >= len(r.Nodes) {
-		panic(fmt.Sprintf("this RemoteExecutionGroup node has %d children, but attempted to replace child at index %d", len(r.Nodes), idx))
-	}
-
-	r.Nodes[idx] = node
-	return nil
 }
 
 func (r *RemoteExecutionGroup) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
@@ -133,9 +103,10 @@ func (r *RemoteExecutionGroup) MinimumRequiredPlanVersion(types.QueryTimeRange) 
 	return planning.QueryPlanVersionZero, nil
 }
 
+//node:generate
 type RemoteExecutionConsumer struct {
 	*RemoteExecutionConsumerDetails
-	Group *RemoteExecutionGroup
+	Group *RemoteExecutionGroup `node:"child"`
 }
 
 func (c *RemoteExecutionConsumer) Details() proto.Message {
@@ -144,46 +115,6 @@ func (c *RemoteExecutionConsumer) Details() proto.Message {
 
 func (c *RemoteExecutionConsumer) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_REMOTE_EXEC_CONSUMER
-}
-
-func (c *RemoteExecutionConsumer) Child(idx int) planning.Node {
-	if idx != 0 {
-		panic(fmt.Sprintf("node of type RemoteExecutionConsumer supports 1 child, but attempted to get child at index %d", idx))
-	}
-
-	return c.Group
-}
-
-func (c *RemoteExecutionConsumer) ChildCount() int {
-	return 1
-}
-
-func (c *RemoteExecutionConsumer) SetChildren(children []planning.Node) error {
-	if len(children) != 1 {
-		return fmt.Errorf("node of type RemoteExecutionConsumer requires 1 child, but got %d", len(children))
-	}
-
-	group, ok := children[0].(*RemoteExecutionGroup)
-	if !ok {
-		return fmt.Errorf("node of type RemoteExecutionConsumer requires child of type RemoteExecutionGroup, but got %T", children[0])
-	}
-
-	c.Group = group
-	return nil
-}
-
-func (c *RemoteExecutionConsumer) ReplaceChild(idx int, child planning.Node) error {
-	if idx != 0 {
-		return fmt.Errorf("node of type RemoteExecutionConsumer supports 1 child, but attempted to replace child at index %d", idx)
-	}
-
-	group, ok := child.(*RemoteExecutionGroup)
-	if !ok {
-		return fmt.Errorf("node of type RemoteExecutionConsumer requires child of type RemoteExecutionGroup, but got %T", child)
-	}
-
-	c.Group = group
-	return nil
 }
 
 func (c *RemoteExecutionConsumer) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
@@ -311,7 +242,6 @@ func (f *RemoteExecutionGroupOperatorFactory) ProduceOperatorForConsumingNode(c 
 			Node:               node,
 			TimeRange:          timeRange,
 			GroupEvaluator:     f.GroupEvaluator,
-			Annotations:        params.Annotations,
 			expressionPosition: expressionPosition,
 		}, nil
 
@@ -320,7 +250,6 @@ func (f *RemoteExecutionGroupOperatorFactory) ProduceOperatorForConsumingNode(c 
 			Node:               node,
 			TimeRange:          timeRange,
 			GroupEvaluator:     f.GroupEvaluator,
-			Annotations:        params.Annotations,
 			expressionPosition: expressionPosition,
 		}, nil
 
@@ -329,7 +258,6 @@ func (f *RemoteExecutionGroupOperatorFactory) ProduceOperatorForConsumingNode(c 
 			Node:               node,
 			TimeRange:          timeRange,
 			GroupEvaluator:     f.GroupEvaluator,
-			Annotations:        params.Annotations,
 			expressionPosition: expressionPosition,
 		}, nil
 

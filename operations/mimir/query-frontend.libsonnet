@@ -68,8 +68,8 @@
     (if std.length(envmap) > 0 then container.withEnvMap(std.prune(envmap)) else {}) +
     $.tracing_env_mixin +
     $.util.readinessProbe +
-    $.util.resourcesRequests('2', '600Mi') +
-    $.util.resourcesLimits(null, '1200Mi'),
+    $.util.resourcesRequests('2', '2Gi') +
+    $.util.resourcesLimits(null, '4Gi'),
 
   query_frontend_env_map:: {},
 

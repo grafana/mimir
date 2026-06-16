@@ -11,6 +11,8 @@ import (
 	"testing"
 
 	"github.com/grafana/dskit/grpcutil"
+	"github.com/oklog/ulid/v2"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/stretchr/testify/assert"
@@ -228,8 +230,10 @@ func TestBucketStoreSearchLabelNamesHonoursCtxCancellation(t *testing.T) {
 
 // TestStreamBucketSearchResultsBatching exercises streamBucketSearchResults
 // in isolation against a synthetic iterator of >searchBatchSize results, and
-// verifies the boundary splits into the expected batches with any iterator
-// warnings riding on the trailer.
+// verifies the boundary splits into the expected batches with the header
+// batch sent first (carrying response_hints.queried_blocks) and warnings
+// riding on the trailer. The trailer must NOT carry response_hints — the
+// querier reads them only from the header.
 func TestStreamBucketSearchResultsBatching(t *testing.T) {
 	const total = searchBatchSize + 1
 	results := make([]storage.SearchResult, total)
@@ -244,17 +248,70 @@ func TestStreamBucketSearchResultsBatching(t *testing.T) {
 	send := func(b *storepb.SearchResultBatch) error {
 		copyResults := make([]storepb.SearchResultBatch_Result, len(b.Results))
 		copy(copyResults, b.Results)
-		sent = append(sent, &storepb.SearchResultBatch{Results: copyResults, Warnings: b.Warnings})
+		sent = append(sent, &storepb.SearchResultBatch{Results: copyResults, Warnings: b.Warnings, ResponseHints: b.ResponseHints})
 		return nil
 	}
-	require.NoError(t, streamBucketSearchResults(context.Background(), rs, send))
+	queried := []ulid.ULID{ulid.MustNew(1, nil), ulid.MustNew(2, nil)}
+	require.NoError(t, streamBucketSearchResults(context.Background(), rs, queried, send))
 
-	require.Len(t, sent, 2, "257 results must split into 2 batches at the searchBatchSize=256 boundary")
-	assert.Len(t, sent[0].Results, searchBatchSize)
-	assert.Empty(t, sent[0].Warnings, "warnings must ride only on the trailer batch")
-	assert.Len(t, sent[1].Results, 1)
-	require.Len(t, sent[1].Warnings, 1)
-	assert.Equal(t, "partial-block: index header missing", sent[1].Warnings[0])
+	require.Len(t, sent, 3, "header + 257 results split at the searchBatchSize=256 boundary = 3 messages")
+	// Header batch: empty Results, empty Warnings, ResponseHints populated.
+	assert.Empty(t, sent[0].Results, "header batch must carry no results")
+	assert.Empty(t, sent[0].Warnings, "header batch must carry no warnings")
+	require.NotNil(t, sent[0].ResponseHints, "header batch must carry response_hints")
+	require.Len(t, sent[0].ResponseHints.QueriedBlocks, 2)
+	assert.Equal(t, queried[0].String(), sent[0].ResponseHints.QueriedBlocks[0].Id)
+	assert.Equal(t, queried[1].String(), sent[0].ResponseHints.QueriedBlocks[1].Id)
+	// First full data batch.
+	assert.Len(t, sent[1].Results, searchBatchSize)
+	assert.Empty(t, sent[1].Warnings, "warnings must ride only on the trailer batch")
+	assert.Nil(t, sent[1].ResponseHints, "response_hints must ride only on the header batch")
+	// Trailer batch: residual results + warnings, no response_hints.
+	assert.Len(t, sent[2].Results, 1)
+	require.Len(t, sent[2].Warnings, 1)
+	assert.Equal(t, "partial-block: index header missing", sent[2].Warnings[0])
+	assert.Nil(t, sent[2].ResponseHints, "response_hints must NOT ride on the trailer batch")
+}
+
+// TestStreamBucketSearchResultsHeaderOnlyWhenNoResults asserts the SG still
+// emits the header batch when the iterator produces zero results — the
+// querier's consistency check needs the header even from SGs that found
+// nothing for the requested blocks (so those blocks are correctly classified
+// as queried-but-empty rather than still-missing).
+func TestStreamBucketSearchResultsHeaderOnlyWhenNoResults(t *testing.T) {
+	rs := storage.NewSearchResultSetFromSlice(nil, nil)
+	var sent []*storepb.SearchResultBatch
+	send := func(b *storepb.SearchResultBatch) error {
+		sent = append(sent, b)
+		return nil
+	}
+	queried := []ulid.ULID{ulid.MustNew(1, nil)}
+	require.NoError(t, streamBucketSearchResults(context.Background(), rs, queried, send))
+
+	require.Len(t, sent, 1, "no results and no warnings should yield header-only stream")
+	require.NotNil(t, sent[0].ResponseHints)
+	require.Len(t, sent[0].ResponseHints.QueriedBlocks, 1)
+	assert.Equal(t, queried[0].String(), sent[0].ResponseHints.QueriedBlocks[0].Id)
+	assert.Empty(t, sent[0].Results)
+	assert.Empty(t, sent[0].Warnings)
+}
+
+// TestStreamBucketSearchResultsHeaderWhenNoQueriedBlocks asserts the SG
+// always sends the header batch even when no blocks were queried — the
+// querier-side header read would otherwise block waiting for a message that
+// never arrives.
+func TestStreamBucketSearchResultsHeaderWhenNoQueriedBlocks(t *testing.T) {
+	rs := storage.NewSearchResultSetFromSlice(nil, nil)
+	var sent []*storepb.SearchResultBatch
+	send := func(b *storepb.SearchResultBatch) error {
+		sent = append(sent, b)
+		return nil
+	}
+	require.NoError(t, streamBucketSearchResults(context.Background(), rs, nil, send))
+
+	require.Len(t, sent, 1, "empty queried-blocks set still requires a header batch")
+	require.NotNil(t, sent[0].ResponseHints, "header must carry a (possibly empty) response_hints struct")
+	assert.Empty(t, sent[0].ResponseHints.QueriedBlocks)
 }
 
 // TestStreamBucketSearchResultsHonoursCtxCancellation cancels ctx before
@@ -268,7 +325,223 @@ func TestStreamBucketSearchResultsHonoursCtxCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	send := func(_ *storepb.SearchResultBatch) error { return nil }
-	err := streamBucketSearchResults(ctx, rs, send)
+	err := streamBucketSearchResults(ctx, rs, nil, send)
 	require.Error(t, err)
 	require.True(t, errors.Is(err, context.Canceled), "expected context.Canceled, got %v", err)
+}
+
+// prepareBenchmarkSearchStore builds a BucketStore backed by the same series
+// fixture used by BenchmarkBucketStoreLabelValues so the search benchmarks
+// here and the legacy LabelValues benchmark there can be compared
+// apples-to-apples. Cache is the noopCache provided by defaultPrepareStoreConfig,
+// which models the worst-case "cold index cache" production scenario.
+// minTimeMs / maxTimeMs come straight from the suite's bookkeeping fields
+// and are already in milliseconds (i.e. ready for *Request{Start,End}).
+func prepareBenchmarkSearchStore(b *testing.B) (store *BucketStore, minTimeMs, maxTimeMs int64) {
+	b.Helper()
+	dir := b.TempDir()
+	bkt, err := filesystem.NewBucket(filepath.Join(dir, "bkt"))
+	require.NoError(b, err)
+	b.Cleanup(func() { _ = bkt.Close() })
+
+	series := generateSeries([]int{1, 10, 100, 1000})
+	series = append(series, prefixLabels("high_cardinality_", generateSeries([]int{1, 1_000_000}))...)
+	b.Logf("Total %d series generated", len(series))
+
+	cfg := defaultPrepareStoreConfig(b)
+	cfg.tempDir = dir
+	cfg.series = series
+	cfg.postingsStrategy = worstCaseFetchedDataStrategy{1.0}
+
+	s := prepareStoreWithTestBlocks(b, bkt, cfg)
+	return s.store, s.minTime, s.maxTime
+}
+
+// BenchmarkBucketStore_SearchLabelValues exercises BucketStore.SearchLabelValues
+// across cardinality buckets matching BenchmarkBucketStoreLabelValues so the
+// numbers line up. Filter and ordering variations cover the per-block search
+// path's fast and slow lanes.
+func BenchmarkBucketStore_SearchLabelValues(b *testing.B) {
+	store, minTimeMs, maxTimeMs := prepareBenchmarkSearchStore(b)
+	ctx := context.Background()
+
+	runOnce := func(b *testing.B, req *storepb.SearchLabelValuesRequest) {
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			s := &mockSearchLabelValuesServer{ctx: ctx}
+			if err := store.SearchLabelValues(req, s); err != nil {
+				b.Fatal(err)
+			}
+		}
+	}
+
+	startMs, endMs := minTimeMs, maxTimeMs
+
+	b.Run("label=label_1/filter=none/order=alpha_asc/limit=10000", func(b *testing.B) {
+		runOnce(b, &storepb.SearchLabelValuesRequest{
+			Start: startMs, End: endMs,
+			Label:    "label_1",
+			Ordering: storepb.ORDER_BY_VALUE_ASC,
+			Limit:    10_000,
+		})
+	})
+	b.Run("label=label_3/filter=none/order=alpha_asc/limit=10000", func(b *testing.B) {
+		runOnce(b, &storepb.SearchLabelValuesRequest{
+			Start: startMs, End: endMs,
+			Label:    "label_3",
+			Ordering: storepb.ORDER_BY_VALUE_ASC,
+			Limit:    10_000,
+		})
+	})
+	b.Run("label=high_cardinality_label_1/filter=none/order=alpha_asc/limit=10000", func(b *testing.B) {
+		runOnce(b, &storepb.SearchLabelValuesRequest{
+			Start: startMs, End: endMs,
+			Label:    "high_cardinality_label_1",
+			Ordering: storepb.ORDER_BY_VALUE_ASC,
+			Limit:    10_000,
+		})
+	})
+	b.Run("label=high_cardinality_label_1/filter=substring/order=alpha_asc/limit=10000", func(b *testing.B) {
+		runOnce(b, &storepb.SearchLabelValuesRequest{
+			Start: startMs, End: endMs,
+			Label:    "high_cardinality_label_1",
+			Filter:   &storepb.SearchFilter{Terms: []string{"1"}},
+			Ordering: storepb.ORDER_BY_VALUE_ASC,
+			Limit:    10_000,
+		})
+	})
+	b.Run("label=high_cardinality_label_1/filter=substring/order=score_desc/limit=100", func(b *testing.B) {
+		runOnce(b, &storepb.SearchLabelValuesRequest{
+			Start: startMs, End: endMs,
+			Label:    "high_cardinality_label_1",
+			Filter:   &storepb.SearchFilter{Terms: []string{"1"}},
+			Ordering: storepb.ORDER_BY_SCORE_DESC,
+			Limit:    100,
+		})
+	})
+}
+
+// BenchmarkBucketStore_SearchLabelNames exercises BucketStore.SearchLabelNames.
+// The number of label names visible at the block index is small (one per
+// label_n plus high_cardinality_* prefixed variants), so result-set size is
+// dominated by name-count, not by per-value scan.
+func BenchmarkBucketStore_SearchLabelNames(b *testing.B) {
+	store, minTimeMs, maxTimeMs := prepareBenchmarkSearchStore(b)
+	ctx := context.Background()
+
+	run := func(b *testing.B, req *storepb.SearchLabelNamesRequest) {
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			s := &mockSearchLabelNamesServer{ctx: ctx}
+			if err := store.SearchLabelNames(req, s); err != nil {
+				b.Fatal(err)
+			}
+		}
+	}
+
+	startMs, endMs := minTimeMs, maxTimeMs
+
+	b.Run("filter=none", func(b *testing.B) {
+		run(b, &storepb.SearchLabelNamesRequest{
+			Start: startMs, End: endMs,
+			Ordering: storepb.ORDER_BY_VALUE_ASC,
+			Limit:    10_000,
+		})
+	})
+	b.Run("filter=substring_label", func(b *testing.B) {
+		run(b, &storepb.SearchLabelNamesRequest{
+			Start: startMs, End: endMs,
+			Filter:   &storepb.SearchFilter{Terms: []string{"label"}},
+			Ordering: storepb.ORDER_BY_VALUE_ASC,
+			Limit:    10_000,
+		})
+	})
+	b.Run("filter=substring_high_cardinality", func(b *testing.B) {
+		run(b, &storepb.SearchLabelNamesRequest{
+			Start: startMs, End: endMs,
+			Filter:   &storepb.SearchFilter{Terms: []string{"high_cardinality"}},
+			Ordering: storepb.ORDER_BY_VALUE_ASC,
+			Limit:    10_000,
+		})
+	})
+}
+
+// BenchmarkBucketStore_SearchLabelValuesVsLabelValues compares the new
+// streaming SearchLabelValues RPC to the legacy unary LabelValues on the
+// same store with the same matchers, no filter, alpha-asc ordering, and a
+// non-binding limit. Sub-case names are keyed on /impl=legacy and /impl=new
+// so benchstat -col '/impl' renders the comparison directly.
+func BenchmarkBucketStore_SearchLabelValuesVsLabelValues(b *testing.B) {
+	store, minTimeMs, maxTimeMs := prepareBenchmarkSearchStore(b)
+	ctx := context.Background()
+
+	cases := []struct {
+		name     string
+		label    string
+		matchers []*labels.Matcher
+	}{
+		{
+			name:  "10_values",
+			label: "label_1",
+			matchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchEqual, "label_2", "0"),
+				labels.MustNewMatcher(labels.MatchEqual, "label_3", "0"),
+			},
+		},
+		{
+			name:  "1000_values",
+			label: "label_3",
+			matchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchEqual, "label_1", "0"),
+				labels.MustNewMatcher(labels.MatchEqual, "label_2", "0"),
+			},
+		},
+	}
+
+	startMs, endMs := minTimeMs, maxTimeMs
+
+	for _, c := range cases {
+		legacyMatchers, err := storepb.PromMatchersToMatchers(c.matchers...)
+		require.NoError(b, err)
+		searchMatchers, err := storepb.PromMatchersToMatchers(c.matchers...)
+		require.NoError(b, err)
+
+		legacyReq := &storepb.LabelValuesRequest{
+			Label:    c.label,
+			Start:    startMs,
+			End:      endMs,
+			Matchers: legacyMatchers,
+			Limit:    10_000,
+		}
+		searchReq := &storepb.SearchLabelValuesRequest{
+			Label:    c.label,
+			Start:    startMs,
+			End:      endMs,
+			Matchers: searchMatchers,
+			Ordering: storepb.ORDER_BY_VALUE_ASC,
+			Limit:    10_000,
+		}
+
+		b.Run(fmt.Sprintf("card=%s/impl=legacy", c.name), func(b *testing.B) {
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				if _, err := store.LabelValues(ctx, legacyReq); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+		b.Run(fmt.Sprintf("card=%s/impl=new", c.name), func(b *testing.B) {
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				s := &mockSearchLabelValuesServer{ctx: ctx}
+				if err := store.SearchLabelValues(searchReq, s); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
 }

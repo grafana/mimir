@@ -36,9 +36,10 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [CHANGE] Set default memory ballast for ruler to 1GiB to reduce GC pressure during startup. #13376
 * [CHANGE] Set docker.io as the default registry for mimir image. #13267
 * [CHANGE] Query-frontend: Increase default query-frontend cache size limit to 25MB. #14857
+* [CHANGE] Query-frontend: Increase default query-frontend memory limit to 4GiB. #15688
 * [ENHANCEMENT] Add Support to customize gossip ring k8s service annotations. #12718
 * [ENHANCEMENT] Ruler querier and query-frontend: Add support for newly-introduced querier ring, which is used when performing query planning in query-frontends and distributing portions of the plan to queriers for execution. #13017
-* [ENHANCEMENT] Upgrade rollout-operator chart to [0.37.0](https://github.com/grafana/helm-charts/blob/main/charts/rollout-operator/README.md#upgrade-of-grafana-rollout-operator). Note required actions for upgrading the rollout-operator chart. #13245
+* [ENHANCEMENT] Upgrade rollout-operator chart to [0.38.0](https://github.com/grafana/helm-charts/blob/main/charts/rollout-operator/README.md#upgrade-of-grafana-rollout-operator--v0380). Note required actions for upgrading the rollout-operator chart. #13245, #15626
 * [ENHANCEMENT] Set `minReadySeconds` for Memcached statefulsets to slow down rollouts. #13495
 * [ENHANCEMENT] Add support for KEDA ScaledObject fallback configuration. This allows configuring fallback behavior when the scaler fails to get metrics from the source. #13467
 * [ENHANCEMENT] Upgrade to Helm v4. #13661
@@ -49,6 +50,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] Add support for custom labels on PersistentVolumeClaim resources for alertmanager, compactor, ingester, and store-gateway. #14373
 * [ENHANCEMENT] Ingester: Add `ingester.zoneAwareReplication.autoIngestStorageClientRack` to pass `-ingest-storage.kafka.client-rack` when zone-aware replication is enabled. #14654
 * [ENHANCEMENT] Allow zone-aware replication for ingesters with 2 zones when ingest storage is enabled. #14449
+* [BUGFIX] Fix `persistentVolume.name` not being propagated to volumeMounts and emptyDir fallback volumes for alertmanager, compactor, ingester, and store-gateway. #15010
 * [BUGFIX] Fix missing newline for custom pod labels. #13325
 * [BUGFIX] Upgrade rollout-operator chart to 0.37.1, which fixes server-tls.self-signed-cert.dns-name to use the full release name instead of always being set to `rollout-operator.NAMESPACE.svc`. If upgrading from 6.0.0 or 6.0.1, delete the `certificate` secret created by the rollout-operator pod and recreate the rollout-operator pod. #13357
 * [BUGFIX] Delete gateway's serviceMonitor #13481

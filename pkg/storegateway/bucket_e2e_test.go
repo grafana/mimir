@@ -130,6 +130,9 @@ type prepareStoreConfig struct {
 	nonOverlappingBlocks bool
 	numBlocks            int
 	bucketStoreConfig    mimir_tsdb.BucketStoreConfig
+
+	// Optionally wrap objstore.Bucket for caching (e.g. NewStoreCachingBucket) or to inject test instrumentation.
+	wrapBucket func(tb testing.TB, bkt objstore.Bucket, logger log.Logger, reg prometheus.Registerer) (objstore.Bucket, error)
 }
 
 func (c *prepareStoreConfig) apply(opts ...prepareStoreConfigOption) *prepareStoreConfig {
@@ -204,10 +207,16 @@ func prepareStoreWithTestBlocks(t testing.TB, bkt objstore.Bucket, cfg *prepareS
 
 	const userID = "tenant"
 
+	storeBkt := bkt
+	if cfg.wrapBucket != nil {
+		storeBkt, err = cfg.wrapBucket(t, bkt, s.logger, s.metricsRegistry)
+		require.NoError(t, err)
+	}
+
 	const maxGapBytes = mimir_tsdb.DefaultPartitionerMaxGapSize
 	store, err := NewBucketStore(
 		userID,
-		objstore.WithNoopInstr(bkt),
+		objstore.WithNoopInstr(storeBkt),
 		newTestBucketIndexMetadataReader(t, bkt, userID),
 		metaFetcher,
 		cfg.tempDir,

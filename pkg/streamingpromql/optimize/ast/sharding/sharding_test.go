@@ -11,16 +11,19 @@ import (
 	"fmt"
 	"math"
 	"testing"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/shardingtest"
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware/testdatagen"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
@@ -131,6 +134,50 @@ func TestQuerySharding_FunctionCorrectness(t *testing.T) {
 		// if you rerun the same query twice).
 		testutils.RequireEqualResults(t, expr, unshardedResult, shardedResult, false)
 	})
+}
+
+func TestQuerySharding_AvgStats(t *testing.T) {
+	// Verify that sharded avg() reports the same sample count as unsharded avg().
+	// Without the __sharded_avg__ correction, sharded avg() reports 2x the samples
+	// because both the sum and count legs process the same underlying data.
+
+	start := time.Unix(0, 0)
+	end := time.Unix(300, 0)
+	step := 30 * time.Second
+
+	queryable := testdatagen.StorageSeriesQueryable([]storage.Series{
+		testdatagen.NewSeries(labels.FromStrings("__name__", "foo", "group", "a", "idx", "0"), start, end, step, testdatagen.Factor(5)),
+		testdatagen.NewSeries(labels.FromStrings("__name__", "foo", "group", "a", "idx", "1"), start, end, step, testdatagen.Factor(7)),
+		testdatagen.NewSeries(labels.FromStrings("__name__", "foo", "group", "b", "idx", "0"), start, end, step, testdatagen.Factor(12)),
+		testdatagen.NewSeries(labels.FromStrings("__name__", "foo", "group", "b", "idx", "1"), start, end, step, testdatagen.Factor(11)),
+	})
+
+	ctx := user.InjectOrgID(context.Background(), "test-user")
+
+	execQuery := func(t *testing.T, engine promql.QueryEngine, expr string) (int64, int64) {
+		q, err := engine.NewRangeQuery(ctx, queryable, nil, expr, start, end, step)
+		require.NoError(t, err)
+		defer q.Close()
+		res := q.Exec(ctx)
+		require.NoError(t, res.Err)
+		samples := q.Stats().Samples
+		return samples.TotalSamples, samples.SamplesRead
+	}
+
+	expr := `avg(foo)`
+	unshardedEngine, _ := createEngine(t, 0)
+	unshardedSamplesProcessed, unshardedSamplesRead := execQuery(t, unshardedEngine, expr)
+	require.Greater(t, unshardedSamplesProcessed, int64(0), "unsharded query should have processed some samples")
+	require.Greater(t, unshardedSamplesRead, int64(0), "unsharded query should have read some samples")
+
+	for _, numShards := range []int{2, 4} {
+		t.Run(fmt.Sprintf("shards=%d", numShards), func(t *testing.T) {
+			shardedEngine, _ := createEngine(t, numShards)
+			shardedSamplesProcessed, shardedSamplesRead := execQuery(t, shardedEngine, expr)
+			require.Equal(t, unshardedSamplesProcessed, shardedSamplesProcessed, "sharded avg() should report the same 'samples processed' count as unsharded avg()")
+			require.Equal(t, unshardedSamplesRead, shardedSamplesRead, "sharded avg() should report the same 'samples read' count as unsharded avg()")
+		})
+	}
 }
 
 // requireValidSamples ensures the query produces some results which are not NaN.

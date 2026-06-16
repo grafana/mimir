@@ -82,6 +82,7 @@ spec:
     image: "docker.io/library/busybox:latest"
     command: ['sleep', '60']
   restartPolicy: Never
+
 ---
 # Source: mimir-distributed/charts/grafana-agent-operator/templates/tests/test-grafanaagent.yaml
 apiVersion: monitoring.grafana.com/v1alpha1
