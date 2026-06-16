@@ -73,6 +73,7 @@
 * [CHANGE] Query-frontend: Increase memory requested and limit to 2GiB and 4GiB respectively. #15688
 * [CHANGE] Continuous-test: Don't explicitly set `tests.write-read-series-test.num-series` and `tests.write-read-series-test.max-query-age` to their default values. #15705
 * [ENHANCEMENT] Updated rollout-operator jsonnet library to v0.38.0. #15328, #15626
+* [ENHANCEMENT] Make range vector splitting configurable per query path. #15706
 
 
 ### Documentation
