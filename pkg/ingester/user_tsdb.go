@@ -154,18 +154,12 @@ type userTSDB struct {
 	requiresOwnedSeriesUpdate atomic.String // Non-empty string means that we need to recompute "owned series" for the user. Value will be used in the log message.
 
 	pendingNonOwnedRefsMtx sync.Mutex
-	// pendingNonOwnedRefs holds the series refs that the last computeOwnedSeries call(s) found
-	// to be non-owned, together with the timestamp when they were added to the map.
-	// The compaction loop consumes this set and uses it for targeted eviction.
-	// A set is used so re-queuing the same ref across multiple recompute cycles does not produce
-	// duplicates that would later break the index writer's strictly-ascending-labels invariant.
+	// pendingNonOwnedRefs maps each ref that the last computeOwnedSeries call(s) found to be
+	// non-owned to the timestamp at which it was first observed as non-owned. The compaction
+	// loop consumes this map via takePendingNonOwnedRefs, returning only refs whose per-ref
+	// timestamp has aged past the cutoff so that fresh refs queued during ring churn don't
+	// keep older refs pinned in the head.
 	pendingNonOwnedRefs map[storage.SeriesRef]time.Time
-	// newestPendingNonOwnedRefTS is the latest add timestamp across pendingNonOwnedRefs,
-	// used by takePendingNonOwnedRefs to detect a full drain and skip per-key deletes.
-	newestPendingNonOwnedRefTS time.Time
-	// oldestPendingNonOwnedRefTS is the earliest add timestamp across pendingNonOwnedRefs,
-	// used to short-circuit takePendingNonOwnedRefs when no ref has aged past the cutoff.
-	oldestPendingNonOwnedRefTS time.Time
 
 	postingsCache *tsdb.PostingsForMatchersCache
 
@@ -700,112 +694,63 @@ func (u *userTSDB) updateTokenRanges(newTokenRanges []uint32) bool {
 }
 
 // addPendingNonOwnedRefs reconciles the per-tenant pending-eviction set with the
-// caller's authoritative snapshot of currently non-owned refs, passed as a map.
+// caller's authoritative snapshot of currently non-owned refs.
 //
-// Refs present in the snapshot but missing from the set are added. Refs present
-// in the set but absent from the snapshot are removed, since they have either
-// become owned again or their series has been garbage-collected from the head
-// and therefore must not be evicted.
+// Refs in the snapshot but missing from the set are added with the current timestamp.
+// Refs in the set but absent from the snapshot are removed, since they have either
+// become owned again or their series has been garbage-collected from the head and
+// therefore must not be evicted.
 //
 // The compaction loop consumes pending refs via takePendingNonOwnedRefs.
 func (u *userTSDB) addPendingNonOwnedRefs(refs map[storage.SeriesRef]struct{}) {
 	u.pendingNonOwnedRefsMtx.Lock()
 	defer u.pendingNonOwnedRefsMtx.Unlock()
 
-	// Nothing to add and nothing to drop.
-	if len(refs) == 0 && len(u.pendingNonOwnedRefs) == 0 {
+	// Free pendingNonOwnedRefs if the snapshot contains no refs.
+	if len(refs) == 0 {
+		u.pendingNonOwnedRefs = nil
 		return
 	}
 
-	// Drop refs that are no longer non-owned. Without this, a series whose ring ownership
-	// flipped back (or whose memSeries was GC'd) would otherwise be evicted on the next take.
-	// We also update oldestPendingNonOwnedRefTS, because the ref with the oldest timestamp
-	// might have been removed.
-	var newOldestTS time.Time
-	for r, ts := range u.pendingNonOwnedRefs {
+	// Drop refs that are no longer non-owned.
+	for r := range u.pendingNonOwnedRefs {
 		if _, stillNonOwned := refs[r]; !stillNonOwned {
 			delete(u.pendingNonOwnedRefs, r)
-			continue
 		}
-		if newOldestTS.IsZero() || ts.Before(newOldestTS) {
-			newOldestTS = ts
-		}
-	}
-	if !newOldestTS.IsZero() {
-		u.oldestPendingNonOwnedRefTS = newOldestTS
 	}
 
-	if len(refs) == 0 {
-		// Drop pass alone may have emptied the set; reset the timestamp so a future enqueue
-		// starts the grace-period clock cleanly.
-		if len(u.pendingNonOwnedRefs) == 0 {
-			u.newestPendingNonOwnedRefTS = time.Time{}
-			u.oldestPendingNonOwnedRefTS = time.Time{}
-		}
-		return
-	}
-
-	now := time.Now()
-	if len(u.pendingNonOwnedRefs) == 0 {
+	if u.pendingNonOwnedRefs == nil {
 		u.pendingNonOwnedRefs = make(map[storage.SeriesRef]time.Time, len(refs))
-		u.oldestPendingNonOwnedRefTS = now
 	}
-	addedAny := false
+	now := time.Now()
 	for r := range refs {
 		if _, ok := u.pendingNonOwnedRefs[r]; !ok {
 			u.pendingNonOwnedRefs[r] = now
-			addedAny = true
 		}
-	}
-	if addedAny {
-		u.newestPendingNonOwnedRefTS = now
 	}
 }
 
 // takePendingNonOwnedRefs atomically removes and returns the subset of
 // pendingNonOwnedRefs whose per-ref add timestamp is at or before notAfter
 // (the grace-period cutoff). Refs added after notAfter are retained.
-//
-// Returns nil if the set is empty or no ref has aged past notAfter.
 func (u *userTSDB) takePendingNonOwnedRefs(notAfter time.Time) []storage.SeriesRef {
 	u.pendingNonOwnedRefsMtx.Lock()
 	defer u.pendingNonOwnedRefsMtx.Unlock()
 
-	if len(u.pendingNonOwnedRefs) == 0 {
-		return nil
-	}
-	// Fast skip: even the oldest pending ref is younger than the cutoff, so nothing is eligible yet.
-	if u.oldestPendingNonOwnedRefTS.After(notAfter) {
-		return nil
-	}
-	// Full drain: every pending ref is at or older than the cutoff, so clear the map in one shot
-	// instead of paying per-key deletes.
-	if u.newestPendingNonOwnedRefTS.Before(notAfter) {
-		refs := make([]storage.SeriesRef, 0, len(u.pendingNonOwnedRefs))
-		for r := range u.pendingNonOwnedRefs {
-			refs = append(refs, r)
-		}
-		u.pendingNonOwnedRefs = nil
-		u.newestPendingNonOwnedRefTS = time.Time{}
-		u.oldestPendingNonOwnedRefTS = time.Time{}
-		return refs
-	}
-
-	// Partial drain: some refs are eligible and some are not. Iterate over the map and selectively
-	// delete the eligible ones, tracking the minimum timestamp across the retained refs so
-	// oldestPendingNonOwnedRefTS keeps its meaning for the next take.
-	u.oldestPendingNonOwnedRefTS = time.Now()
-	refs := make([]storage.SeriesRef, 0, len(u.pendingNonOwnedRefs))
+	var refs []storage.SeriesRef
 	for r, ts := range u.pendingNonOwnedRefs {
 		if ts.After(notAfter) {
-			if ts.Before(u.oldestPendingNonOwnedRefTS) {
-				u.oldestPendingNonOwnedRefTS = ts
-			}
 			continue
 		}
-
+		if refs == nil {
+			refs = make([]storage.SeriesRef, 0, len(u.pendingNonOwnedRefs))
+		}
 		refs = append(refs, r)
 		delete(u.pendingNonOwnedRefs, r)
+	}
+	// Free pendingNonOwnedRefs if we returned them all.
+	if len(u.pendingNonOwnedRefs) == 0 {
+		u.pendingNonOwnedRefs = nil
 	}
 	return refs
 }
