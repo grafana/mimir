@@ -597,6 +597,15 @@ func TestConfigValidation(t *testing.T) {
 			expectAnyError: true,
 		},
 		{
+			name: "should fail if compartments are enabled but the Kafka address is not parameterised by write compartment",
+			getTestConfig: func() *Config {
+				cfg := validCompartmentsConfig()
+				cfg.IngestStorage.KafkaConfig.Address = flagext.StringSliceCSV{"localhost:9092"}
+				return cfg
+			},
+			expectAnyError: true,
+		},
+		{
 			name: "should fail if the offset catalogue is enabled together with more than one write compartment",
 			getTestConfig: func() *Config {
 				cfg := validCompartmentsConfig()
@@ -655,7 +664,7 @@ func TestConfigValidation(t *testing.T) {
 func validCompartmentsConfig() *Config {
 	cfg := newDefaultConfig()
 	cfg.IngestStorage.Enabled = true
-	cfg.IngestStorage.KafkaConfig.Address = flagext.StringSliceCSV{"localhost:9092"}
+	cfg.IngestStorage.KafkaConfig.Address = flagext.StringSliceCSV{"kafka-wc-<write-compartment-id>:9092"}
 	cfg.IngestStorage.KafkaConfig.Topic = "mimir-ingest-rc-<read-compartment-id>"
 	cfg.Compartments.Enabled = true
 	cfg.Compartments.Read.NumCompartments = 2
