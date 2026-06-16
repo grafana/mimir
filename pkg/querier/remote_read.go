@@ -17,7 +17,9 @@ import (
 	"github.com/grafana/dskit/concurrency"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
@@ -214,9 +216,9 @@ func remoteReadStreamedXORChunks(
 	// We don't set the header because the http stdlib will automatically set it to 200 on the first Write().
 	// In case of an error, we will break the stream below.
 
-	var totalSamples uint64
+	var totalPhysicalSamples, totalEquivalentSamples uint64
 	for i, result := range results {
-		count, err := streamChunkedReadResponses(
+		physicalCount, equivalentCount, err := streamChunkedReadResponses(
 			prom_remote.NewChunkedWriter(w, f),
 			result.series,
 			i,
@@ -233,12 +235,13 @@ func remoteReadStreamedXORChunks(
 			http.Error(w, err.Error(), code)
 			return
 		}
-		totalSamples += count
+		totalPhysicalSamples += physicalCount
+		totalEquivalentSamples += equivalentCount
 	}
 
 	queryStats := stats.FromContext(ctx)
-	queryStats.AddPhysicalSamplesRead(totalSamples)
-	queryStats.AddEquivalentSamplesRead(totalSamples)
+	queryStats.AddPhysicalSamplesRead(totalPhysicalSamples)
+	queryStats.AddEquivalentSamplesRead(totalEquivalentSamples)
 }
 
 func remoteReadErrorStatusCode(err error) int {
@@ -256,9 +259,8 @@ func remoteReadErrorStatusCode(err error) int {
 	}
 }
 
-// seriesSetToQueryResult converts a SeriesSet to a QueryResult, returning both
-// the physical and equivalent sample counts. Physical counts 1 per sample
-// regardless of type; equivalent uses EquivalentFloatSampleCount for histograms.
+// seriesSetToQueryResult converts a SeriesSet to a QueryResult, filtering samples to [filterStartMs, filterEndMs].
+// Returns physical sample count (1 per sample) and equivalent float sample count (histogram-weighted).
 func seriesSetToQueryResult(s storage.SeriesSet, filterStartMs, filterEndMs int64) (*prompb.QueryResult, uint64, uint64, error) {
 	result := &prompb.QueryResult{}
 	var physicalSampleCount, equivalentSampleCount uint64
@@ -333,11 +335,12 @@ func negotiateResponseType(accepted []prompb.ReadRequest_ResponseType) (prompb.R
 	return 0, errors.Errorf("server does not support any of the requested response types: %v; supported: %v", accepted, supported)
 }
 
-func streamChunkedReadResponses(stream io.Writer, ss storage.ChunkSeriesSet, queryIndex, maxBytesInFrame int) (uint64, error) {
+func streamChunkedReadResponses(stream io.Writer, ss storage.ChunkSeriesSet, queryIndex, maxBytesInFrame int) (uint64, uint64, error) {
 	var (
-		chks        []prompb.Chunk
-		lbls        []prompb.Label
-		sampleCount uint64
+		chks                  []prompb.Chunk
+		lbls                  []prompb.Label
+		physicalSampleCount   uint64
+		equivalentSampleCount uint64
 	)
 
 	var iter chunks.Iterator
@@ -353,13 +356,15 @@ func streamChunkedReadResponses(stream io.Writer, ss storage.ChunkSeriesSet, que
 			chk := iter.At()
 
 			if chk.Chunk == nil {
-				return 0, errors.Errorf("found not populated chunk returned by SeriesSet at ref: %v", chk.Ref)
+				return 0, 0, errors.Errorf("found not populated chunk returned by SeriesSet at ref: %v", chk.Ref)
 			}
 
-			// NumSamples() is used for both physical and equivalent sample counts in the streaming path.
-			// This avoids decoding individual samples for performance. For histograms, this means the
-			// equivalent count won't reflect the higher float-equivalent cost, which is an accepted trade-off.
-			sampleCount += uint64(chk.Chunk.NumSamples())
+			physicalSampleCount += uint64(chk.Chunk.NumSamples())
+			eqCount, err := equivalentSampleCountForChunk(chk.Chunk)
+			if err != nil {
+				return 0, 0, errors.Wrap(err, "compute equivalent sample count")
+			}
+			equivalentSampleCount += eqCount
 
 			// Cut the chunk.
 			chks = append(chks, prompb.Chunk{
@@ -386,20 +391,53 @@ func streamChunkedReadResponses(stream io.Writer, ss storage.ChunkSeriesSet, que
 				QueryIndex: int64(queryIndex),
 			})
 			if err != nil {
-				return 0, errors.Wrap(err, "marshal client.StreamReadResponse")
+				return 0, 0, errors.Wrap(err, "marshal client.StreamReadResponse")
 			}
 
 			if _, err := stream.Write(b); err != nil {
-				return 0, errors.Wrap(err, "write to stream")
+				return 0, 0, errors.Wrap(err, "write to stream")
 			}
 			chks = chks[:0]
 			frameBytesRemaining = initializedFrameBytesRemaining(maxBytesInFrame, lbls)
 		}
 		if err := iter.Err(); err != nil {
-			return 0, err
+			return 0, 0, err
 		}
 	}
-	return sampleCount, ss.Err()
+	return physicalSampleCount, equivalentSampleCount, ss.Err()
+}
+
+// equivalentSampleCountForChunk returns the equivalent float sample count for a chunk.
+// Float chunks return NumSamples() directly. Histogram chunks only decode the first sample because all samples in
+// a chunk share the same bucket layout, we then multiply its cost by NumSamples() to get the total count.
+func equivalentSampleCountForChunk(chk chunkenc.Chunk) (uint64, error) {
+	enc := chk.Encoding()
+
+	if enc == chunkenc.EncXOR || enc == chunkenc.EncXOR2 {
+		return uint64(chk.NumSamples()), nil
+	}
+
+	numSamples := chk.NumSamples()
+	if numSamples == 0 {
+		return 0, nil
+	}
+
+	it := chk.Iterator(nil)
+	for valType := it.Next(); valType != chunkenc.ValNone; valType = it.Next() {
+		var fh histogram.FloatHistogram
+		_, h := it.AtFloatHistogram(&fh)
+		// We skip stale/NaN values because their bucket layouts are empty, using them would result in undercounting (really
+		// just not counting at all).
+		if value.IsStaleNaN(h.Sum) {
+			continue
+		}
+		perSample := types.EquivalentFloatSampleCount(h)
+		return uint64(perSample) * uint64(numSamples), nil
+	}
+	if err := it.Err(); err != nil {
+		return 0, err
+	}
+	return 0, nil
 }
 
 func initializedFrameBytesRemaining(maxBytesInFrame int, lbls []prompb.Label) int {
