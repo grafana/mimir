@@ -10,12 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-kit/log"
-	"github.com/thanos-io/objstore"
-	"github.com/thanos-io/objstore/providers/azure"
-	"github.com/thanos-io/objstore/providers/gcs"
-	"github.com/thanos-io/objstore/providers/s3"
-
 	"github.com/grafana/mimir/pkg/storage/bucket"
 )
 
@@ -26,7 +20,7 @@ const (
 // Bucket is an object storage interface intended to be used by tools that require functionality that isn't in objstore
 type Bucket interface {
 	Get(ctx context.Context, objectName string, options GetOptions) (io.ReadCloser, error)
-	Exists(ctx context.Context, objectName string) (bool, error)
+	Exists(ctx context.Context, objectName string, options ExistsOptions) (bool, error)
 	ServerSideCopy(ctx context.Context, objectName string, dstBucket Bucket, options CopyOptions) error
 	ClientSideCopy(ctx context.Context, objectName string, dstBucket Bucket, options CopyOptions) error
 	List(ctx context.Context, options ListOptions) (*ListResult, error)
@@ -49,6 +43,10 @@ func (options *CopyOptions) destinationObjectName(sourceObjectName string) strin
 }
 
 type GetOptions struct {
+	VersionID string
+}
+
+type ExistsOptions struct {
 	VersionID string
 }
 
@@ -109,10 +107,11 @@ type VersionInfo struct {
 }
 
 type BucketConfig struct {
-	backend string
-	azure   AzureClientConfig
-	gcs     GCSClientConfig
-	s3      S3ClientConfig
+	backend    string
+	azure      AzureClientConfig
+	gcs        GCSClientConfig
+	s3         S3ClientConfig
+	filesystem FilesystemClientConfig
 }
 
 func (c *BucketConfig) RegisterFlags(f *flag.FlagSet) {
@@ -128,13 +127,14 @@ func ifNotEmptySuffix(s, suffix string) string {
 
 func (c *BucketConfig) registerFlags(descriptor string, f *flag.FlagSet, externalBackends []string) {
 	descriptorFlagPrefix := ifNotEmptySuffix(descriptor, ".")
-	allBackends := append([]string{bucket.Azure, bucket.GCS, bucket.S3}, externalBackends...)
+	allBackends := append([]string{bucket.Azure, bucket.GCS, bucket.S3, bucket.Filesystem}, externalBackends...)
 	acceptedBackends := strings.Join(allBackends[:len(allBackends)-1], ", ") + " or " + allBackends[len(allBackends)-1] + "."
 	f.StringVar(&c.backend, descriptorFlagPrefix+"backend", "",
 		fmt.Sprintf("The %sobject storage backend. Accepted values are: %s", ifNotEmptySuffix(descriptor, " "), acceptedBackends))
 	c.azure.RegisterFlags(bucket.Azure+"."+descriptorFlagPrefix, f)
 	c.gcs.RegisterFlags(bucket.GCS+"."+descriptorFlagPrefix, f)
 	c.s3.RegisterFlags(bucket.S3+"."+descriptorFlagPrefix, f)
+	c.filesystem.RegisterFlags(bucket.Filesystem+"."+descriptorFlagPrefix, f)
 }
 
 func (c *BucketConfig) Validate() error {
@@ -153,6 +153,8 @@ func (c *BucketConfig) validate(descriptor string) error {
 		return c.gcs.Validate(bucket.GCS + "." + descriptorFlagPrefix)
 	case bucket.S3:
 		return c.s3.Validate(bucket.S3 + "." + descriptorFlagPrefix)
+	case bucket.Filesystem:
+		return c.filesystem.Validate(bucket.Filesystem + "." + descriptorFlagPrefix)
 	default:
 		return fmt.Errorf("unknown backend provided in --%sbackend", descriptorFlagPrefix)
 	}
@@ -166,33 +168,8 @@ func (c *BucketConfig) ToBucket(ctx context.Context) (Bucket, error) {
 		return c.gcs.ToBucket(ctx)
 	case bucket.S3:
 		return c.s3.ToBucket()
-	default:
-		return nil, fmt.Errorf("unknown backend: %v", c.backend)
-	}
-}
-
-// ToObjstoreBucket is an adapter to objstore
-func (c *BucketConfig) ToObjstoreBucket(ctx context.Context, logger log.Logger) (objstore.Bucket, error) {
-	switch c.backend {
-	case bucket.S3:
-		return s3.NewBucketWithConfig(logger, s3.Config{
-			Bucket:    c.s3.BucketName,
-			Endpoint:  c.s3.Endpoint,
-			AccessKey: c.s3.AccessKeyID,
-			SecretKey: c.s3.SecretAccessKey,
-			Insecure:  !c.s3.Secure,
-			PartSize:  c.s3.PartSize,
-		}, "objtools-s3", nil)
-	case bucket.GCS:
-		return gcs.NewBucketWithConfig(ctx, logger, gcs.Config{
-			Bucket: c.gcs.BucketName,
-		}, "objtools-gcs", nil)
-	case bucket.Azure:
-		azCfg := azure.DefaultConfig
-		azCfg.StorageAccountName = c.azure.AccountName
-		azCfg.StorageAccountKey = c.azure.AccountKey
-		azCfg.ContainerName = c.azure.ContainerName
-		return azure.NewBucketWithConfig(logger, azCfg, "objtools-azure", nil)
+	case bucket.Filesystem:
+		return c.filesystem.ToBucket()
 	default:
 		return nil, fmt.Errorf("unknown backend: %v", c.backend)
 	}
@@ -225,11 +202,6 @@ func (c *CopyBucketConfig) Validate() error {
 // SourceBucket creates and returns only the source bucket.
 func (c *CopyBucketConfig) SourceBucket(ctx context.Context) (Bucket, error) {
 	return c.source.ToBucket(ctx)
-}
-
-// SourceObjstoreBucket creates an objstore.Bucket from the source configuration.
-func (c *CopyBucketConfig) SourceObjstoreBucket(ctx context.Context, logger log.Logger) (objstore.Bucket, error) {
-	return c.source.ToObjstoreBucket(ctx, logger)
 }
 
 // ValidateSource validates only the source bucket configuration.
@@ -265,6 +237,14 @@ func (c *CopyBucketConfig) toCopyFunc(source Bucket, destination Bucket) CopyFun
 	return func(ctx context.Context, objectName string, options CopyOptions) error {
 		return source.ServerSideCopy(ctx, objectName, destination, options)
 	}
+}
+
+// NewFilesystemCopyBucketConfig constructs a CopyBucketConfig that copies between two local directories.
+func NewFilesystemCopyBucketConfig(sourceDir, destDir string) CopyBucketConfig {
+	fs := func(dir string) BucketConfig {
+		return BucketConfig{backend: bucket.Filesystem, filesystem: FilesystemClientConfig{Directory: dir}}
+	}
+	return CopyBucketConfig{source: fs(sourceDir), destination: fs(destDir)}
 }
 
 func ensureDelimiterSuffix(prefix string) string {

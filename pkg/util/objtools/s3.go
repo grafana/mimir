@@ -86,8 +86,10 @@ func (bkt *s3Bucket) Get(ctx context.Context, objectName string, options GetOpti
 	return obj, nil
 }
 
-func (bkt *s3Bucket) Exists(ctx context.Context, objectName string) (bool, error) {
-	_, err := bkt.client.StatObject(ctx, bkt.bucketName, objectName, minio.StatObjectOptions{})
+func (bkt *s3Bucket) Exists(ctx context.Context, objectName string, options ExistsOptions) (bool, error) {
+	_, err := bkt.client.StatObject(ctx, bkt.bucketName, objectName, minio.StatObjectOptions{
+		VersionID: options.VersionID,
+	})
 	if err != nil {
 		if minio.ToErrorResponse(err).Code == minio.NoSuchKey {
 			return false, nil

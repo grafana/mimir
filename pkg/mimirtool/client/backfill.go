@@ -19,10 +19,9 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/oklog/ulid/v2"
 	"github.com/pkg/errors"
-	"github.com/thanos-io/objstore"
-	"github.com/thanos-io/objstore/providers/filesystem"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
+	"github.com/grafana/mimir/pkg/util/objtools" //lint:ignore faillint mimirtool is a tool, so it may use objtools.
 )
 
 var ErrBlockInvalid = errors.New("block is invalid")
@@ -51,7 +50,7 @@ func (c *MimirClient) Backfill(ctx context.Context, blocks []string, sleepTime t
 	// Upload each block
 	var succeeded, failed, alreadyExists int
 
-	buckets := make(map[string]objstore.BucketReader, 1)
+	buckets := make(map[string]objtools.Bucket, 1)
 	for _, b := range blocks {
 		logctx := log.With(c.logger, "path", b)
 
@@ -59,7 +58,8 @@ func (c *MimirClient) Backfill(ctx context.Context, blocks []string, sleepTime t
 		fsBkt, ok := buckets[dir]
 		if !ok {
 			var err error
-			fsBkt, err = filesystem.NewBucket(dir)
+			cfg := objtools.FilesystemClientConfig{Directory: dir}
+			fsBkt, err = cfg.ToBucket()
 			if err != nil {
 				level.Error(logctx).Log("msg", "failed to create filesystem bucket", "err", err)
 				failed++
@@ -75,7 +75,7 @@ func (c *MimirClient) Backfill(ctx context.Context, blocks []string, sleepTime t
 			continue
 		}
 
-		if err := c.backfillBlock(ctx, fsBkt, blockID, logctx, sleepTime); err != nil {
+		if err := c.backfillBlock(ctx, fsBkt, "", blockID, logctx, sleepTime); err != nil {
 			if errors.Is(err, ErrConflict) {
 				level.Warn(logctx).Log("msg", "block already exists on the server")
 				alreadyExists++
@@ -100,9 +100,10 @@ func (c *MimirClient) Backfill(ctx context.Context, blocks []string, sleepTime t
 }
 
 // BackfillBlock uploads a single TSDB block from a bucket to a Mimir instance
-// via the block upload API.
-func (c *MimirClient) BackfillBlock(ctx context.Context, bkt objstore.BucketReader, blockID ulid.ULID, sleepTime time.Duration) error {
-	return c.backfillBlock(ctx, bkt, blockID, c.logger, sleepTime)
+// via the block upload API. The block's objects are read from prefix/blockID
+// within the bucket; pass a blank prefix when the block sits at the bucket root.
+func (c *MimirClient) BackfillBlock(ctx context.Context, bkt objtools.Bucket, prefix string, blockID ulid.ULID, sleepTime time.Duration) error {
+	return c.backfillBlock(ctx, bkt, prefix, blockID, c.logger, sleepTime)
 }
 
 // drainAndCloseBody drains and closes the body to let the transport reuse the connection.
@@ -111,8 +112,8 @@ func drainAndCloseBody(resp *http.Response) {
 	_ = resp.Body.Close()
 }
 
-func (c *MimirClient) backfillBlock(ctx context.Context, bkt objstore.BucketReader, blockID ulid.ULID, logctx log.Logger, sleepTime time.Duration) error {
-	blockMeta, err := GetBlockMeta(ctx, bkt, blockID)
+func (c *MimirClient) backfillBlock(ctx context.Context, bkt objtools.Bucket, prefix string, blockID ulid.ULID, logctx log.Logger, sleepTime time.Duration) error {
+	blockMeta, err := GetBlockMeta(ctx, bkt, prefix, blockID)
 	if err != nil {
 		return err
 	}
@@ -148,7 +149,7 @@ func (c *MimirClient) backfillBlock(ctx context.Context, bkt objstore.BucketRead
 			continue
 		}
 
-		if err := c.uploadBlockFile(ctx, bkt, blockID, tf, path.Join(blockPath, uploadFile), logctx); err != nil {
+		if err := c.uploadBlockFile(ctx, bkt, prefix, blockID, tf, path.Join(blockPath, uploadFile), logctx); err != nil {
 			return err
 		}
 	}
@@ -214,9 +215,9 @@ func (c *MimirClient) getBlockUpload(ctx context.Context, url string) (result, e
 	return r, nil
 }
 
-func (c *MimirClient) uploadBlockFile(ctx context.Context, bkt objstore.BucketReader, blockID ulid.ULID, tf block.File, fileUploadEndpoint string, logctx log.Logger) error {
-	objectName := path.Join(blockID.String(), tf.RelPath)
-	r, err := bkt.Get(ctx, objectName)
+func (c *MimirClient) uploadBlockFile(ctx context.Context, bkt objtools.Bucket, prefix string, blockID ulid.ULID, tf block.File, fileUploadEndpoint string, logctx log.Logger) error {
+	objectName := path.Join(prefix, blockID.String(), tf.RelPath)
+	r, err := bkt.Get(ctx, objectName, objtools.GetOptions{})
 	if err != nil {
 		return errors.Wrapf(err, "failed to read %q from bucket", objectName)
 	}
@@ -237,12 +238,14 @@ func (c *MimirClient) uploadBlockFile(ctx context.Context, bkt objstore.BucketRe
 
 // GetBlockMeta reads meta.json from the bucket and adds (or replaces)
 // the thanos.files section with the list of files from the block in the bucket.
-func GetBlockMeta(ctx context.Context, bkt objstore.BucketReader, blockID ulid.ULID) (block.Meta, error) {
+// The block's objects are read from prefix/blockID within the bucket; pass a
+// blank prefix when the block sits at the bucket root.
+func GetBlockMeta(ctx context.Context, bkt objtools.Bucket, prefix string, blockID ulid.ULID) (block.Meta, error) {
 	var blockMeta block.Meta
 
-	blockPrefix := blockID.String()
+	blockPrefix := path.Join(prefix, blockID.String())
 	metaPath := path.Join(blockPrefix, block.MetaFilename)
-	r, err := bkt.Get(ctx, metaPath)
+	r, err := bkt.Get(ctx, metaPath, objtools.GetOptions{})
 	if err != nil {
 		return blockMeta, errors.Wrapf(err, "failed to read %q", metaPath)
 	}
@@ -261,29 +264,31 @@ func GetBlockMeta(ctx context.Context, bkt objstore.BucketReader, blockID ulid.U
 			block.MetaFilename, blockMeta.Version)
 	}
 
-	blockMeta.Thanos.Files = []block.File{{RelPath: block.MetaFilename}}
-
-	appendFile := func(relPath string) error {
-		objPath := path.Join(blockPrefix, relPath)
-		attrs, err := bkt.Attributes(ctx, objPath)
-		if err != nil {
-			return errors.Wrapf(err, "failed to get attributes for %q", objPath)
-		}
-		blockMeta.Thanos.Files = append(blockMeta.Thanos.Files, block.File{RelPath: relPath, SizeBytes: attrs.Size})
-		return nil
-	}
-
-	if err := appendFile(block.IndexFilename); err != nil {
-		return blockMeta, err
-	}
-
-	chunksPrefix := path.Join(blockPrefix, block.ChunksDirname)
-	err = bkt.Iter(ctx, chunksPrefix, func(name string) error {
-		return appendFile(strings.TrimPrefix(name, blockPrefix+"/"))
-	})
+	listing, err := bkt.List(ctx, objtools.ListOptions{Prefix: blockPrefix, Recursive: true})
 	if err != nil {
-		return blockMeta, errors.Wrapf(err, "failed to list chunks in %q", chunksPrefix)
+		return blockMeta, errors.Wrapf(err, "failed to list files in block %q", blockID)
 	}
+
+	// We only upload the index and chunks; meta.json is sent separately during the upload.
+	blockMeta.Thanos.Files = []block.File{{RelPath: block.MetaFilename}}
+	var indexFound bool
+	var chunkFiles []block.File
+	trim := blockPrefix + objtools.Delim
+	for _, obj := range listing.Objects {
+		// List returns full object names; the upload API wants paths relative to the block.
+		relPath := strings.TrimPrefix(obj.Name, trim)
+		switch {
+		case relPath == block.IndexFilename:
+			indexFound = true
+			blockMeta.Thanos.Files = append(blockMeta.Thanos.Files, block.File{RelPath: relPath, SizeBytes: obj.Size})
+		case strings.HasPrefix(relPath, block.ChunksDirname+objtools.Delim):
+			chunkFiles = append(chunkFiles, block.File{RelPath: relPath, SizeBytes: obj.Size})
+		}
+	}
+	if !indexFound {
+		return blockMeta, errors.Errorf("failed to find %q in block %q", block.IndexFilename, blockID)
+	}
+	blockMeta.Thanos.Files = append(blockMeta.Thanos.Files, chunkFiles...)
 
 	return blockMeta, nil
 }
