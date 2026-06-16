@@ -308,3 +308,10 @@ eval instant at 0 float_for_join >/ on (label) cbh_for_join
 eval instant at 0 cbh_for_join </ on (label) cbh_for_join
   expect info
   expect no_warn
+
+# Trim operators are not defined between two scalars: this must return a query error rather than panic.
+eval_fail instant at 0 2 </ 3
+  expected_fail_regexp operator "<\/" not allowed for [Ss]calar operations
+
+eval_fail instant at 0 2 >/ 3
+  expected_fail_regexp operator ">\/" not allowed for [Ss]calar operations
