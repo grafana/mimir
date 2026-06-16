@@ -31,6 +31,9 @@ type TSDBMetrics struct {
 	tsdbHeadGcDuration                *prometheus.Desc
 	tsdbActiveAppenders               *prometheus.Desc
 	tsdbSeriesNotFound                *prometheus.Desc
+	tsdbShardedPostingsSubfiltered    *prometheus.Desc
+	tsdbShardedPostingsFallback       *prometheus.Desc
+	tsdbShardedAllPostingsFallback    *prometheus.Desc
 	tsdbChunks                        *prometheus.Desc
 	tsdbChunksCreatedTotal            *prometheus.Desc
 	tsdbChunksRemovedTotal            *prometheus.Desc
@@ -135,6 +138,18 @@ func NewTSDBMetrics(r prometheus.Registerer, logger log.Logger) *TSDBMetrics {
 		tsdbSeriesNotFound: prometheus.NewDesc(
 			"tsdb_head_series_not_found_total",
 			"Total number of TSDB requests for series that were not found.",
+			nil, nil),
+		tsdbShardedPostingsSubfiltered: prometheus.NewDesc(
+			"tsdb_head_sharded_postings_subfiltered_total",
+			"Total number of TSDB head ShardedPostings calls served by sub-filtering candidate buckets because the shard count does not divide the bucket count.",
+			nil, nil),
+		tsdbShardedPostingsFallback: prometheus.NewDesc(
+			"tsdb_head_sharded_postings_fallback_total",
+			"Total number of TSDB head ShardedPostings calls served by per-series filtering instead of the shard bucket index.",
+			nil, nil),
+		tsdbShardedAllPostingsFallback: prometheus.NewDesc(
+			"tsdb_head_sharded_all_postings_fallback_total",
+			"Total number of TSDB head ShardedAllPostings calls served by a full series scan instead of the shard bucket index.",
 			nil, nil),
 		tsdbChunks: prometheus.NewDesc(
 			"tsdb_head_chunks",
@@ -297,6 +312,9 @@ func (sm *TSDBMetrics) Describe(out chan<- *prometheus.Desc) {
 	out <- sm.tsdbHeadGcDuration
 	out <- sm.tsdbActiveAppenders
 	out <- sm.tsdbSeriesNotFound
+	out <- sm.tsdbShardedPostingsSubfiltered
+	out <- sm.tsdbShardedPostingsFallback
+	out <- sm.tsdbShardedAllPostingsFallback
 	out <- sm.tsdbChunks
 	out <- sm.tsdbChunksCreatedTotal
 	out <- sm.tsdbChunksRemovedTotal
@@ -353,6 +371,9 @@ func (sm *TSDBMetrics) Collect(out chan<- prometheus.Metric) {
 	data.SendSumOfSummaries(out, sm.tsdbHeadGcDuration, "prometheus_tsdb_head_gc_duration_seconds")
 	data.SendSumOfGauges(out, sm.tsdbActiveAppenders, "prometheus_tsdb_head_active_appenders")
 	data.SendSumOfCounters(out, sm.tsdbSeriesNotFound, "prometheus_tsdb_head_series_not_found_total")
+	data.SendSumOfCounters(out, sm.tsdbShardedPostingsSubfiltered, "prometheus_tsdb_head_sharded_postings_subfiltered_total")
+	data.SendSumOfCounters(out, sm.tsdbShardedPostingsFallback, "prometheus_tsdb_head_sharded_postings_fallback_total")
+	data.SendSumOfCounters(out, sm.tsdbShardedAllPostingsFallback, "prometheus_tsdb_head_sharded_all_postings_fallback_total")
 	data.SendSumOfGauges(out, sm.tsdbChunks, "prometheus_tsdb_head_chunks")
 	data.SendSumOfCountersPerTenant(out, sm.tsdbChunksCreatedTotal, "prometheus_tsdb_head_chunks_created_total")
 	data.SendSumOfCountersPerTenant(out, sm.tsdbChunksRemovedTotal, "prometheus_tsdb_head_chunks_removed_total")
