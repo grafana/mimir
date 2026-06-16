@@ -349,7 +349,7 @@ std.manifestYamlDoc({
 
   prometheus:: {
     prometheus: {
-      image: 'prom/prometheus:v3.9.1',
+      image: 'prom/prometheus:v3.12.0',
       command: [
         if $._config.enable_prometheus_rw2 then '--config.file=/etc/prometheus/prometheusRW2.yaml' else '--config.file=/etc/prometheus/prometheus.yaml',
         '--enable-feature=exemplar-storage',
