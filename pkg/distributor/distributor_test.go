@@ -116,7 +116,7 @@ func TestConfig_Validate(t *testing.T) {
 
 			testData.initLimits(&limits)
 
-			assert.Equal(t, testData.expected, cfg.Validate(limits))
+			assert.Equal(t, testData.expected, cfg.Validate(limits, compartments.Config{}))
 		})
 	}
 }
@@ -6353,7 +6353,7 @@ func prepareIngesterZone(t testing.TB, zone string, state ingesterZoneState, cfg
 			kafkaCfg.LastProducedOffsetPollInterval = 100 * time.Millisecond
 			kafkaCfg.LastProducedOffsetRetryTimeout = 100 * time.Millisecond
 
-			ingester.partitionReader, err = ingest.NewPartitionReaderForPusher(kafkaCfg, ingester.partitionID(), ingester.instanceID(), filepath.Join(t.TempDir(), "test.json"), newMockIngesterPusherAdapter(ingester), log.NewNopLogger(), nil)
+			ingester.partitionReader, err = ingest.NewSingleClusterPartitionReader(kafkaCfg, ingester.partitionID(), ingester.instanceID(), filepath.Join(t.TempDir(), "test.json"), newMockIngesterPusherAdapter(ingester), log.NewNopLogger(), nil)
 			require.NoError(t, err)
 
 			// We start it async, and then we wait until running in a defer so that multiple partition
@@ -6991,7 +6991,7 @@ type mockIngester struct {
 
 	// partitionReader is responsible to consume a partition from Kafka when the
 	// ingest storage is enabled. This field is nil if the ingest storage is disabled.
-	partitionReader *ingest.PartitionReader
+	partitionReader ingest.PartitionReader
 
 	// Hooks.
 	hooksMx        sync.Mutex

@@ -12,7 +12,7 @@ import (
 )
 
 func newTestRouter(numCompartments int) *Router {
-	return NewRouter(ReadConfig{NumCompartments: numCompartments, KafkaTopicFormat: "mimir-rc-<compartment-id>"})
+	return NewRouter(numCompartments, "mimir-rc-<read-compartment-id>")
 }
 
 func TestRouter_TopicForCompartment(t *testing.T) {
