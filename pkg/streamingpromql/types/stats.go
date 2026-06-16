@@ -217,9 +217,10 @@ func (s *OperatorEvaluationStats) AddSingleStep(other *OperatorEvaluationStats) 
 //
 // This instance is modified in-place.
 //
-// The other instance's steps must align with this instance's steps. Steps outside the range of this instance's time range are ignored.
+// An error is returned if the other instance's steps do not align with this instance's steps.
+// Steps outside the range of this instance's time range are ignored.
 //
-// Both instances must have the same number of subsets.
+// An error is returned if the instances have a different number of subsets.
 func (s *OperatorEvaluationStats) AddSubRange(other *OperatorEvaluationStats) error {
 	if len(s.subsets) != len(other.subsets) {
 		return fmt.Errorf("cannot add a sub-range with %d subset(s) to an OperatorEvaluationStats instance with %d subset(s)", len(other.subsets), len(s.subsets))
