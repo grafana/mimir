@@ -706,15 +706,19 @@ func (u *userTSDB) addPendingNonOwnedRefs(refs map[storage.SeriesRef]struct{}) {
 	u.pendingNonOwnedRefsMtx.Lock()
 	defer u.pendingNonOwnedRefsMtx.Unlock()
 
+	// Free pendingNonOwnedRefs if the snapshot contains no refs.
+	if len(refs) == 0 {
+		u.pendingNonOwnedRefs = nil
+		return
+	}
+
+	// Drop refs that are no longer non-owned.
 	for r := range u.pendingNonOwnedRefs {
 		if _, stillNonOwned := refs[r]; !stillNonOwned {
 			delete(u.pendingNonOwnedRefs, r)
 		}
 	}
-
-	if len(refs) == 0 {
-		return
-	}
+	
 	if u.pendingNonOwnedRefs == nil {
 		u.pendingNonOwnedRefs = make(map[storage.SeriesRef]time.Time, len(refs))
 	}
