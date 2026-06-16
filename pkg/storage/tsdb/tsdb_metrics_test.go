@@ -13,6 +13,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/common/promslog"
+	promtsdb "github.com/prometheus/prometheus/tsdb"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb"
@@ -138,6 +140,18 @@ func TestTSDBMetrics(t *testing.T) {
 			# HELP cortex_ingester_tsdb_head_chunks Total number of chunks in the TSDB head block.
 			# TYPE cortex_ingester_tsdb_head_chunks gauge
 			cortex_ingester_tsdb_head_chunks 2180882
+
+			# HELP cortex_ingester_tsdb_head_sharded_all_postings_fallback_total Total number of TSDB head ShardedAllPostings calls served by a full series scan because the shard count is not a power of two or the shard bucket index is disabled.
+			# TYPE cortex_ingester_tsdb_head_sharded_all_postings_fallback_total counter
+			cortex_ingester_tsdb_head_sharded_all_postings_fallback_total 3370454
+
+			# HELP cortex_ingester_tsdb_head_sharded_postings_fallback_total Total number of TSDB head ShardedPostings calls served by per-series filtering because the shard count is not a power of two or the shard bucket index is disabled.
+			# TYPE cortex_ingester_tsdb_head_sharded_postings_fallback_total counter
+			cortex_ingester_tsdb_head_sharded_postings_fallback_total 3271323
+
+			# HELP cortex_ingester_tsdb_head_sharded_postings_subfiltered_total Total number of TSDB head ShardedPostings calls for a power-of-two shard count larger than the shard bucket count, served by sub-filtering the single candidate bucket.
+			# TYPE cortex_ingester_tsdb_head_sharded_postings_subfiltered_total counter
+			cortex_ingester_tsdb_head_sharded_postings_subfiltered_total 3172192
 
 			# HELP cortex_ingester_tsdb_head_chunks_created_total Total number of series created in the TSDB head.
 			# TYPE cortex_ingester_tsdb_head_chunks_created_total counter
@@ -385,6 +399,18 @@ func TestTSDBMetricsWithRemoval(t *testing.T) {
 			# TYPE cortex_ingester_tsdb_head_chunks gauge
 			cortex_ingester_tsdb_head_chunks 2158904
 
+			# HELP cortex_ingester_tsdb_head_sharded_all_postings_fallback_total Total number of TSDB head ShardedAllPostings calls served by a full series scan because the shard count is not a power of two or the shard bucket index is disabled.
+			# TYPE cortex_ingester_tsdb_head_sharded_all_postings_fallback_total counter
+			cortex_ingester_tsdb_head_sharded_all_postings_fallback_total 3370454
+
+			# HELP cortex_ingester_tsdb_head_sharded_postings_fallback_total Total number of TSDB head ShardedPostings calls served by per-series filtering because the shard count is not a power of two or the shard bucket index is disabled.
+			# TYPE cortex_ingester_tsdb_head_sharded_postings_fallback_total counter
+			cortex_ingester_tsdb_head_sharded_postings_fallback_total 3271323
+
+			# HELP cortex_ingester_tsdb_head_sharded_postings_subfiltered_total Total number of TSDB head ShardedPostings calls for a power-of-two shard count larger than the shard bucket count, served by sub-filtering the single candidate bucket.
+			# TYPE cortex_ingester_tsdb_head_sharded_postings_subfiltered_total counter
+			cortex_ingester_tsdb_head_sharded_postings_subfiltered_total 3172192
+
 			# HELP cortex_ingester_tsdb_head_chunks_created_total Total number of series created in the TSDB head.
 			# TYPE cortex_ingester_tsdb_head_chunks_created_total counter
 			cortex_ingester_tsdb_head_chunks_created_total{user="user1"} 283935
@@ -500,6 +526,39 @@ func TestTSDBMetricsWithRemoval(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestTSDBMetrics_ShardingMetricNamesMatchPrometheus(t *testing.T) {
+	sourceReg := prometheus.NewRegistry()
+	headOpts := promtsdb.DefaultHeadOptions()
+	headOpts.ChunkDirRoot = t.TempDir()
+	headOpts.EnableSharding = true
+	head, err := promtsdb.NewHead(sourceReg, promslog.NewNopLogger(), nil, nil, headOpts, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, head.Close())
+	})
+
+	mainReg := prometheus.NewPedanticRegistry()
+	tsdbMetrics := tsdb.NewTSDBMetrics(prometheus.WrapRegistererWithPrefix("cortex_ingester_", mainReg), log.NewNopLogger())
+	tsdbMetrics.SetRegistryForTenant("user", sourceReg)
+
+	err = testutil.GatherAndCompare(mainReg, bytes.NewBufferString(`
+		# HELP cortex_ingester_tsdb_head_sharded_all_postings_fallback_total Total number of TSDB head ShardedAllPostings calls served by a full series scan because the shard count is not a power of two or the shard bucket index is disabled.
+		# TYPE cortex_ingester_tsdb_head_sharded_all_postings_fallback_total counter
+		cortex_ingester_tsdb_head_sharded_all_postings_fallback_total 0
+		# HELP cortex_ingester_tsdb_head_sharded_postings_fallback_total Total number of TSDB head ShardedPostings calls served by per-series filtering because the shard count is not a power of two or the shard bucket index is disabled.
+		# TYPE cortex_ingester_tsdb_head_sharded_postings_fallback_total counter
+		cortex_ingester_tsdb_head_sharded_postings_fallback_total 0
+		# HELP cortex_ingester_tsdb_head_sharded_postings_subfiltered_total Total number of TSDB head ShardedPostings calls for a power-of-two shard count larger than the shard bucket count, served by sub-filtering the single candidate bucket.
+		# TYPE cortex_ingester_tsdb_head_sharded_postings_subfiltered_total counter
+		cortex_ingester_tsdb_head_sharded_postings_subfiltered_total 0
+	`),
+		"cortex_ingester_tsdb_head_sharded_all_postings_fallback_total",
+		"cortex_ingester_tsdb_head_sharded_postings_fallback_total",
+		"cortex_ingester_tsdb_head_sharded_postings_subfiltered_total",
+	)
+	require.NoError(t, err)
+}
+
 func populateTSDBMetrics(base float64) *prometheus.Registry {
 	r := prometheus.NewRegistry()
 
@@ -604,6 +663,24 @@ func populateTSDBMetrics(base float64) *prometheus.Registry {
 		Help: "Total number of requests for series that were not found.",
 	})
 	seriesNotFound.Add(21 * base)
+
+	shardedPostingsSubfiltered := promauto.With(r).NewCounter(prometheus.CounterOpts{
+		Name: "prometheus_tsdb_head_sharded_postings_subfiltered_total",
+		Help: "Total number of ShardedPostings calls served by sub-filtering candidate buckets.",
+	})
+	shardedPostingsSubfiltered.Add(32 * base)
+
+	shardedPostingsFallback := promauto.With(r).NewCounter(prometheus.CounterOpts{
+		Name: "prometheus_tsdb_head_sharded_postings_fallback_total",
+		Help: "Total number of ShardedPostings calls served by per-series filtering.",
+	})
+	shardedPostingsFallback.Add(33 * base)
+
+	shardedAllPostingsFallback := promauto.With(r).NewCounter(prometheus.CounterOpts{
+		Name: "prometheus_tsdb_head_sharded_all_postings_fallback_total",
+		Help: "Total number of ShardedAllPostings calls served by a full series scan.",
+	})
+	shardedAllPostingsFallback.Add(34 * base)
 
 	chunks := promauto.With(r).NewGauge(prometheus.GaugeOpts{
 		Name: "prometheus_tsdb_head_chunks",

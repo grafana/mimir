@@ -98,6 +98,26 @@ func TestIngester_ActiveSeries(t *testing.T) {
 			assert.Equal(t, tc.expectedMessageCount, len(server.responses))
 		})
 	}
+
+	t.Run("canceled sharded match-all context", func(t *testing.T) {
+		db := ingesterClient.getTSDB(userID)
+		require.NotNil(t, db)
+		idx, err := db.Head().Index()
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			require.NoError(t, idx.Close())
+		})
+
+		canceledCtx, cancel := context.WithCancel(ctx)
+		cancel()
+		postings, err := getPostings(canceledCtx, db, idx, []*labels.Matcher{
+			labels.MustNewMatcher(labels.MatchEqual, sharding.ShardLabel, "1_of_4"),
+			labels.MustNewMatcher(labels.MatchRegexp, model.MetricNameLabel, ".*"),
+		}, false)
+		require.NoError(t, err)
+		require.False(t, postings.Next())
+		require.ErrorIs(t, postings.Err(), context.Canceled)
+	})
 }
 
 func TestIngester_ActiveNativeHistogramSeries(t *testing.T) {
