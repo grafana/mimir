@@ -20,15 +20,27 @@ BUILD_IMAGE=$(make -s -C "${SCRIPT_DIR}"/../.. print-build-image)
 # Make sure docker-compose.yml is up-to-date.
 cd "$SCRIPT_DIR" && make
 
+# Returns 0 (true) if the binary doesn't exist or any .go file under the given
+# source directories is newer than the binary.
+needs_build() {
+    local binary="$1"; shift
+    [ ! -f "$binary" ] && return 0
+    find "$@" -name '*.go' -newer "$binary" -print -quit 2>/dev/null | grep -q .
+}
+
 # -gcflags "all=-N -l" disables optimizations that allow for better run with combination with Delve debugger.
 # GOARCH is not changed.
-CGO_ENABLED=0 GOOS=linux go build -mod=vendor -tags=netgo,stringlabels -gcflags "all=-N -l" -o "${SCRIPT_DIR}"/mimir "${SCRIPT_DIR}"/../../cmd/mimir
-docker_compose -f "${SCRIPT_DIR}"/docker-compose.yml build --build-arg BUILD_IMAGE="${BUILD_IMAGE}" distributor-1
+if needs_build "${SCRIPT_DIR}/mimir" "${SCRIPT_DIR}/../../cmd/mimir" "${SCRIPT_DIR}/../../pkg" "${SCRIPT_DIR}/../../vendor"; then
+    CGO_ENABLED=0 GOOS=linux go build -mod=vendor -tags=netgo,stringlabels -gcflags "all=-N -l" -o "${SCRIPT_DIR}"/mimir "${SCRIPT_DIR}"/../../cmd/mimir
+    docker_compose -f "${SCRIPT_DIR}"/docker-compose.yml build --build-arg BUILD_IMAGE="${BUILD_IMAGE}" distributor-1
+fi
 
 if [ "$(yq '.services."query-tee"' "${SCRIPT_DIR}"/docker-compose.yml)" != "null" ]; then
   # If query-tee is enabled, build its binary and image as well.
-  CGO_ENABLED=0 GOOS=linux go build -mod=vendor -tags=netgo,stringlabels -gcflags "all=-N -l" -o "${SCRIPT_DIR}"/../../cmd/query-tee "${SCRIPT_DIR}"/../../cmd/query-tee
-  docker_compose -f "${SCRIPT_DIR}"/docker-compose.yml build --build-arg BUILD_IMAGE="${BUILD_IMAGE}" query-tee
+  if needs_build "${SCRIPT_DIR}/../../cmd/query-tee/query-tee" "${SCRIPT_DIR}/../../cmd/query-tee" "${SCRIPT_DIR}/../../vendor"; then
+    CGO_ENABLED=0 GOOS=linux go build -mod=vendor -tags=netgo,stringlabels -gcflags "all=-N -l" -o "${SCRIPT_DIR}"/../../cmd/query-tee "${SCRIPT_DIR}"/../../cmd/query-tee
+    docker_compose -f "${SCRIPT_DIR}"/docker-compose.yml build --build-arg BUILD_IMAGE="${BUILD_IMAGE}" query-tee
+  fi
 fi
 
 docker_compose -f "${SCRIPT_DIR}"/docker-compose.yml up "$@"
