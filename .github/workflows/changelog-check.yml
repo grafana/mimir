@@ -4,9 +4,13 @@ on:
   pull_request:
     types: [opened, synchronize, labeled, unlabeled]
 
+permissions: {}
+
 jobs:
   check-changelog:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - name: Checkout code
         uses: actions/checkout@v4

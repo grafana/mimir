@@ -4,6 +4,8 @@ name: Build and Push mimir-build-image
 on:
   pull_request:
 
+permissions: {}
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
   cancel-in-progress: true
