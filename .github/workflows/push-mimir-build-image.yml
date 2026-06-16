@@ -208,7 +208,7 @@ jobs:
       # Refer to https://docs.github.com/en/actions/security-for-github-actions/security-guides/automatic-token-authentication#using-the-github_token-in-a-workflow
       - name: Commit Makefile update to PR branch
         if: steps.update_makefile.outputs.changed == 'true'
-        uses: planetscale/ghcommit-action@57a6c787385af407a557374c794a09273aaebfd7 # v0.2.21
+        uses: planetscale/ghcommit-action@a6b150b81dca5dd027baa898604418eec9e11465 # v0.2.22
         with:
           commit_message: "Update build image version to ${{ needs.prepare.outputs.new_image_tag }}"
           repo: ${{ github.event.pull_request.head.repo.full_name }}
