@@ -98,6 +98,9 @@ func (s *BlockBuilderScheduler) running(ctx context.Context) error {
 
 	c, err := s.fetchCommittedOffsets(ctx)
 	if err != nil {
+		if errors.Is(err, context.Canceled) {
+			return nil
+		}
 		level.Error(s.logger).Log("msg", "failed to fetch committed offsets", "err", err)
 		s.metrics.fetchOffsetsFailed.Inc()
 		return fmt.Errorf("fetch committed offsets: %w", err)
@@ -114,7 +117,7 @@ func (s *BlockBuilderScheduler) running(ctx context.Context) error {
 	select {
 	case <-observeComplete:
 	case <-ctx.Done():
-		return ctx.Err()
+		return nil
 	}
 
 	// Now we can transition to normal operation.
