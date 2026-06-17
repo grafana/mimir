@@ -30,17 +30,20 @@ needs_build() {
 
 # -gcflags "all=-N -l" disables optimizations that allow for better run with combination with Delve debugger.
 # GOARCH is not changed.
+# Only recompile when sources changed (it's the slow step), but always (re)build the
+# image: it's cheap and decoupling avoids a stale image if a previous image build failed
+# after a successful go build.
 if needs_build "${SCRIPT_DIR}/mimir" "${SCRIPT_DIR}/../../cmd/mimir" "${SCRIPT_DIR}/../../pkg" "${SCRIPT_DIR}/../../vendor"; then
     CGO_ENABLED=0 GOOS=linux go build -mod=vendor -tags=netgo,stringlabels -gcflags "all=-N -l" -o "${SCRIPT_DIR}"/mimir "${SCRIPT_DIR}"/../../cmd/mimir
-    docker_compose -f "${SCRIPT_DIR}"/docker-compose.yml build --build-arg BUILD_IMAGE="${BUILD_IMAGE}" distributor-1
 fi
+docker_compose -f "${SCRIPT_DIR}"/docker-compose.yml build --build-arg BUILD_IMAGE="${BUILD_IMAGE}" distributor-1
 
 if [ "$(yq '.services."query-tee"' "${SCRIPT_DIR}"/docker-compose.yml)" != "null" ]; then
   # If query-tee is enabled, build its binary and image as well.
   if needs_build "${SCRIPT_DIR}/../../cmd/query-tee/query-tee" "${SCRIPT_DIR}/../../cmd/query-tee" "${SCRIPT_DIR}/../../pkg" "${SCRIPT_DIR}/../../tools/querytee" "${SCRIPT_DIR}/../../vendor"; then
     CGO_ENABLED=0 GOOS=linux go build -mod=vendor -tags=netgo,stringlabels -gcflags "all=-N -l" -o "${SCRIPT_DIR}"/../../cmd/query-tee "${SCRIPT_DIR}"/../../cmd/query-tee
-    docker_compose -f "${SCRIPT_DIR}"/docker-compose.yml build --build-arg BUILD_IMAGE="${BUILD_IMAGE}" query-tee
   fi
+  docker_compose -f "${SCRIPT_DIR}"/docker-compose.yml build --build-arg BUILD_IMAGE="${BUILD_IMAGE}" query-tee
 fi
 
 docker_compose -f "${SCRIPT_DIR}"/docker-compose.yml up "$@"
