@@ -156,17 +156,23 @@ func TestInterpolateHistograms(t *testing.T) {
 	}
 }
 
-func TestAnnosFromInterpolationError(t *testing.T) {
+func TestNativeHistogramErrorToAnnotation(t *testing.T) {
+	t.Run("nil error returns nil and emits no annotation", func(t *testing.T) {
+		emit, msgs := recordingEmitter()
+		require.NoError(t, NativeHistogramErrorToAnnotation(nil, emit))
+		require.Empty(t, *msgs)
+	})
+
 	t.Run("incompatible schema emits MixedExponentialCustomHistogramsWarning", func(t *testing.T) {
 		emit, msgs := recordingEmitter()
-		require.NoError(t, annosFromInterpolationError(histogram.ErrHistogramsIncompatibleSchema, emit))
+		require.NoError(t, NativeHistogramErrorToAnnotation(histogram.ErrHistogramsIncompatibleSchema, emit))
 		requireSingleAnnotation(t, msgs, mixedExpCustomWarning)
 	})
 
 	t.Run("unrecognised error is returned and emits no annotation", func(t *testing.T) {
 		emit, msgs := recordingEmitter()
 		sentinel := errors.New("some other error")
-		require.ErrorIs(t, annosFromInterpolationError(sentinel, emit), sentinel)
+		require.ErrorIs(t, NativeHistogramErrorToAnnotation(sentinel, emit), sentinel)
 		require.Empty(t, *msgs)
 	})
 }
@@ -177,17 +183,21 @@ func TestAddHistogramWithAnnotations(t *testing.T) {
 		base := expHist(10, 100, histogram.UnknownCounterReset)
 		other := expHist(5, 50, histogram.UnknownCounterReset)
 
-		require.True(t, addHistogramWithAnnotations(base, other, emit))
+		ok, err := addHistogramWithAnnotations(base, other, emit)
+		require.True(t, ok)
+		require.NoError(t, err)
 		requireHistogramCountSum(t, base, 15, 150)
 		require.Empty(t, *msgs)
 	})
 
-	t.Run("incompatible schemas report failure and warn", func(t *testing.T) {
+	t.Run("incompatible schemas report failure, warn, and return no error", func(t *testing.T) {
 		emit, msgs := recordingEmitter()
 		base := expHist(10, 100, histogram.UnknownCounterReset)
 		other := customHist(5, 50, histogram.UnknownCounterReset)
 
-		require.False(t, addHistogramWithAnnotations(base, other, emit))
+		ok, err := addHistogramWithAnnotations(base, other, emit)
+		require.False(t, ok)
+		require.NoError(t, err)
 		requireSingleAnnotation(t, msgs, mixedExpCustomWarning)
 	})
 }
@@ -198,17 +208,21 @@ func TestSubHistogramWithAnnotations(t *testing.T) {
 		base := expHist(15, 150, histogram.UnknownCounterReset)
 		other := expHist(5, 50, histogram.UnknownCounterReset)
 
-		require.True(t, subHistogramWithAnnotations(base, other, emit))
+		ok, err := subHistogramWithAnnotations(base, other, emit)
+		require.True(t, ok)
+		require.NoError(t, err)
 		requireHistogramCountSum(t, base, 10, 100)
 		require.Empty(t, *msgs)
 	})
 
-	t.Run("incompatible schemas report failure and warn", func(t *testing.T) {
+	t.Run("incompatible schemas report failure, warn, and return no error", func(t *testing.T) {
 		emit, msgs := recordingEmitter()
 		base := expHist(15, 150, histogram.UnknownCounterReset)
 		other := customHist(5, 50, histogram.UnknownCounterReset)
 
-		require.False(t, subHistogramWithAnnotations(base, other, emit))
+		ok, err := subHistogramWithAnnotations(base, other, emit)
+		require.False(t, ok)
+		require.NoError(t, err)
 		requireSingleAnnotation(t, msgs, mixedExpCustomWarning)
 	})
 }
@@ -335,8 +349,9 @@ func TestCorrectForCounterResetsHistogram(t *testing.T) {
 			left := tc.h[tc.firstSampleIndex].H
 			right := tc.h[tc.lastSampleIndex].H
 
-			correction, ok := correctForCounterResetsHistogram(tc.h, tc.firstSampleIndex, tc.lastSampleIndex, left, right, tc.rangeStart, tc.smoothed, emit)
+			correction, ok, err := correctForCounterResetsHistogram(tc.h, tc.firstSampleIndex, tc.lastSampleIndex, left, right, tc.rangeStart, tc.smoothed, emit)
 			require.True(t, ok)
+			require.NoError(t, err)
 
 			if tc.expectCorrection {
 				requireHistogramCountSum(t, correction, tc.expectedCount, tc.expectedSum)

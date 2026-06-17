@@ -6,7 +6,6 @@
 package functions
 
 import (
-	"errors"
 	"sort"
 
 	"github.com/prometheus/prometheus/model/histogram"
@@ -53,47 +52,34 @@ func pickOrInterpolateRightHistogram(hists []promql.HPoint, last int, rangeEnd i
 	return hists[last].H.Copy(), nil
 }
 
-// annosFromInterpolationError translates an error returned by interpolateHistograms (via
-// pickOrInterpolate*Histogram) into the appropriate annotation. Unknown errors are returned for the
-// caller to surface.
-func annosFromInterpolationError(err error, emitAnnotation types.EmitAnnotationFunc) error {
-	if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) {
-		emitAnnotation(annotations.NewMixedExponentialCustomHistogramsWarning)
-		return nil
-	}
-	return err
-}
-
-// addHistogramWithAnnotations adds other into base in place, translating histogram errors and
-// bucket-bounds reconciliations into annotations. Returns false if the operation failed.
-func addHistogramWithAnnotations(base, other *histogram.FloatHistogram, emitAnnotation types.EmitAnnotationFunc) bool {
+// addHistogramWithAnnotations adds other into base in place, translating bucket-bounds
+// reconciliations into info annotations. It returns ok=false when the addition failed: err is nil
+// when the failure was converted into an annotation (incompatible schemas), and non-nil when the
+// error is unexpected and must be surfaced by the caller.
+func addHistogramWithAnnotations(base, other *histogram.FloatHistogram, emitAnnotation types.EmitAnnotationFunc) (bool, error) {
 	_, _, nhcbBoundsReconciled, err := base.Add(other)
 	if err != nil {
-		if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) {
-			emitAnnotation(annotations.NewMixedExponentialCustomHistogramsWarning)
-		}
-		return false
+		return false, NativeHistogramErrorToAnnotation(err, emitAnnotation)
 	}
 	if nhcbBoundsReconciled {
 		emitAnnotation(NewAddMismatchedCustomBucketsHistogramInfo)
 	}
-	return true
+	return true, nil
 }
 
-// subHistogramWithAnnotations subtracts other from base in place, translating histogram errors
-// and bucket-bounds reconciliations into annotations. Returns false if the operation failed.
-func subHistogramWithAnnotations(base, other *histogram.FloatHistogram, emitAnnotation types.EmitAnnotationFunc) bool {
+// subHistogramWithAnnotations subtracts other from base in place, translating bucket-bounds
+// reconciliations into info annotations. It returns ok=false when the subtraction failed: err is
+// nil when the failure was converted into an annotation (incompatible schemas), and non-nil when
+// the error is unexpected and must be surfaced by the caller.
+func subHistogramWithAnnotations(base, other *histogram.FloatHistogram, emitAnnotation types.EmitAnnotationFunc) (bool, error) {
 	_, _, nhcbBoundsReconciled, err := base.Sub(other)
 	if err != nil {
-		if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) {
-			emitAnnotation(annotations.NewMixedExponentialCustomHistogramsWarning)
-		}
-		return false
+		return false, NativeHistogramErrorToAnnotation(err, emitAnnotation)
 	}
 	if nhcbBoundsReconciled {
 		emitAnnotation(NewSubMismatchedCustomBucketsHistogramInfo)
 	}
-	return true
+	return true, nil
 }
 
 // validateHistogramRange checks all histogram samples in h for schema consistency and
@@ -118,7 +104,7 @@ func validateHistogramRange(h []promql.HPoint, isCounter bool, emitAnnotation ty
 // firstSampleIndex and lastSampleIndex in h, using left and right as the boundary values. It
 // mirrors correctForCounterResets for float samples. Returns the accumulated correction
 // (nil if none) and false if combining histograms failed.
-func correctForCounterResetsHistogram(h []promql.HPoint, firstSampleIndex, lastSampleIndex int, left, right *histogram.FloatHistogram, rangeStart int64, smoothed bool, emitAnnotation types.EmitAnnotationFunc) (*histogram.FloatHistogram, bool) {
+func correctForCounterResetsHistogram(h []promql.HPoint, firstSampleIndex, lastSampleIndex int, left, right *histogram.FloatHistogram, rangeStart int64, smoothed bool, emitAnnotation types.EmitAnnotationFunc) (*histogram.FloatHistogram, bool, error) {
 	// firstSampleIndex is represented by left, so the loop starts one beyond.
 	first := firstSampleIndex + 1
 	prev := left
@@ -144,30 +130,33 @@ func correctForCounterResetsHistogram(h []promql.HPoint, firstSampleIndex, lastS
 	// boundaries were interpolated from the same reset segment, so there is nothing more to
 	// correct.
 	if first > last+1 {
-		return nil, true
+		return nil, true, nil
 	}
 
 	var correction *histogram.FloatHistogram
 
-	addCorrection := func(h *histogram.FloatHistogram) bool {
+	addCorrection := func(h *histogram.FloatHistogram) (bool, error) {
 		if correction == nil {
 			correction = h.Copy()
-			return true
+			return true, nil
 		}
 		return addHistogramWithAnnotations(correction, h, emitAnnotation)
 	}
 
 	for _, p := range h[first : last+1] {
-		if p.H.DetectReset(prev) && !addCorrection(prev) {
-			return nil, false
+		if p.H.DetectReset(prev) {
+			if ok, err := addCorrection(prev); !ok {
+				return nil, false, err
+			}
 		}
 		prev = p.H
 	}
-	if right.DetectReset(prev) && !addCorrection(prev) {
-		return nil, false
-
+	if right.DetectReset(prev) {
+		if ok, err := addCorrection(prev); !ok {
+			return nil, false, err
+		}
 	}
-	return correction, true
+	return correction, true, nil
 }
 
 // extendedHistogramRate computes rate/increase/delta for histograms under the anchored or
@@ -213,11 +202,11 @@ func extendedHistogramRate(hExtended []promql.HPoint, originalRangeStart, origin
 
 	left, err := pickOrInterpolateLeftHistogram(hExtended, firstSampleIndex, originalRangeStart, smoothed, isCounter, emitAnnotation)
 	if err != nil {
-		return nil, annosFromInterpolationError(err, emitAnnotation)
+		return nil, NativeHistogramErrorToAnnotation(err, emitAnnotation)
 	}
 	right, err := pickOrInterpolateRightHistogram(hExtended, lastSampleIndex, originalRangeEnd, smoothed, isCounter, emitAnnotation)
 	if err != nil {
-		return nil, annosFromInterpolationError(err, emitAnnotation)
+		return nil, NativeHistogramErrorToAnnotation(err, emitAnnotation)
 	}
 
 	if !isCounter && (left.CounterResetHint != histogram.GaugeType || right.CounterResetHint != histogram.GaugeType) {
@@ -227,18 +216,18 @@ func extendedHistogramRate(hExtended []promql.HPoint, originalRangeStart, origin
 	// Copy right before subtracting left so that correctForCounterResetsHistogram can still
 	// call right.DetectReset against the original boundary value rather than (right - left).
 	delta := right.Copy()
-	if !subHistogramWithAnnotations(delta, left, emitAnnotation) {
-		return nil, nil
+	if ok, err := subHistogramWithAnnotations(delta, left, emitAnnotation); !ok {
+		return nil, err
 	}
 
 	if isCounter {
-		correction, ok := correctForCounterResetsHistogram(hExtended, firstSampleIndex, lastSampleIndex, left, right, originalRangeStart, smoothed, emitAnnotation)
+		correction, ok, err := correctForCounterResetsHistogram(hExtended, firstSampleIndex, lastSampleIndex, left, right, originalRangeStart, smoothed, emitAnnotation)
 		if !ok {
-			return nil, nil
+			return nil, err
 		}
 		if correction != nil {
-			if !addHistogramWithAnnotations(delta, correction, emitAnnotation) {
-				return nil, nil
+			if ok, err := addHistogramWithAnnotations(delta, correction, emitAnnotation); !ok {
+				return nil, err
 			}
 		}
 	}
