@@ -17,7 +17,6 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/backoff"
-	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/gate"
 	"github.com/grafana/dskit/multierror"
 	"github.com/grafana/dskit/services"
@@ -95,12 +94,32 @@ type BucketStores struct {
 
 // NewBucketStores makes a new BucketStores. After starting the returned BucketStores
 func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStrategy, bucketClient objstore.Bucket, allowedTenants *util.AllowList, limits *validation.Overrides, logger log.Logger, reg prometheus.Registerer) (*BucketStores, error) {
-	chunksCacheClient, err := cache.CreateClient("chunks-cache", cfg.BucketStore.ChunksCache.BackendConfig, logger, prometheus.WrapRegistererWithPrefix("thanos_", reg))
+	var err error
+
+	// Init index cache.
+	indexCache, err := indexcache.NewIndexCache(cfg.BucketStore.IndexCache, logger, reg)
 	if err != nil {
-		return nil, errors.Wrapf(err, "chunks-cache")
+		return nil, err
+	}
+	// Init metadata cache client.
+	metadataCache, err := tsdb.NewMetadataCacheClient(cfg.BucketStore.MetadataCache.BackendConfig, logger, reg)
+	if err != nil {
+		return nil, err
+	}
+	// Init chunks cache client.
+	chunksCacheClient, err := tsdb.NewChunksCacheClient(cfg.BucketStore.ChunksCache.BackendConfig, logger, reg)
+	if err != nil {
+		return nil, err
+	}
+	// Init index-header cache client.
+	indexHeaderCacheClient, err := tsdb.NewIndexHeaderCacheClient(cfg.BucketStore.IndexHeaderCache.BackendConfig, logger, reg)
+	if err != nil {
+		return nil, err
 	}
 
-	cachingBucket, err := tsdb.CreateCachingBucket(chunksCacheClient, cfg.BucketStore.ChunksCache, cfg.BucketStore.MetadataCache, bucketClient, logger, reg)
+	// Configure caching bucket to cover configured metadata, index-header, and chunks caching.
+	// Bucket caches for index-header and chunks share the metadata cache for object attributes.
+	cachingBucket, err := tsdb.NewStoreCachingBucket(cfg, metadataCache, indexHeaderCacheClient, chunksCacheClient, bucketClient, logger, reg)
 	if err != nil {
 		return nil, errors.Wrapf(err, "create caching bucket")
 	}
@@ -133,6 +152,7 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStra
 		cfg:                cfg,
 		limits:             limits,
 		bucket:             cachingBucket,
+		indexCache:         indexCache,
 		shardingStrategy:   shardingStrategy,
 		allowedTenants:     allowedTenants,
 		stores:             map[string]*BucketStore{},
@@ -182,11 +202,6 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStra
 		"Size in bytes used by loaded blocks of discovered tenants.",
 		[]string{"user"}, nil,
 	)
-
-	// Init the index cache.
-	if u.indexCache, err = indexcache.NewIndexCache(cfg.BucketStore.IndexCache, logger, reg); err != nil {
-		return nil, errors.Wrap(err, "create index cache")
-	}
 
 	if reg != nil {
 		reg.MustRegister(u.metaFetcherMetrics)
@@ -407,6 +422,48 @@ func (u *BucketStores) LabelValues(ctx context.Context, req *storepb.LabelValues
 	return store.LabelValues(ctx, req)
 }
 
+// SearchLabelNames implements the storegatewaypb.StoreGatewayServer interface.
+func (u *BucketStores) SearchLabelNames(req *storepb.SearchLabelNamesRequest, srv storegatewaypb.StoreGateway_SearchLabelNamesServer) error {
+	spanLog, ctx := spanlogger.New(srv.Context(), u.logger, tracer, "BucketStores.SearchLabelNames")
+	defer spanLog.Finish()
+
+	userID := getUserIDFromGRPCContext(ctx)
+	if userID == "" {
+		return fmt.Errorf("no userID")
+	}
+
+	store := u.getStore(userID)
+	if store == nil {
+		return nil
+	}
+
+	return store.SearchLabelNames(req, spanSearchLabelNamesServer{
+		StoreGateway_SearchLabelNamesServer: srv,
+		ctx:                                 ctx,
+	})
+}
+
+// SearchLabelValues implements the storegatewaypb.StoreGatewayServer interface.
+func (u *BucketStores) SearchLabelValues(req *storepb.SearchLabelValuesRequest, srv storegatewaypb.StoreGateway_SearchLabelValuesServer) error {
+	spanLog, ctx := spanlogger.New(srv.Context(), u.logger, tracer, "BucketStores.SearchLabelValues")
+	defer spanLog.Finish()
+
+	userID := getUserIDFromGRPCContext(ctx)
+	if userID == "" {
+		return fmt.Errorf("no userID")
+	}
+
+	store := u.getStore(userID)
+	if store == nil {
+		return nil
+	}
+
+	return store.SearchLabelValues(req, spanSearchLabelValuesServer{
+		StoreGateway_SearchLabelValuesServer: srv,
+		ctx:                                  ctx,
+	})
+}
+
 // scanUsers in the bucket and return the list of found users, respecting any specifically
 // enabled or disabled users.
 func (u *BucketStores) scanUsers(ctx context.Context) ([]string, error) {
@@ -523,6 +580,7 @@ func (u *BucketStores) getOrCreateStore(ctx context.Context, userID string) (*Bu
 	level.Info(userLogger).Log("msg", "creating user bucket store")
 
 	userBkt := bucket.NewUserBucketClient(userID, u.bucket, u.limits)
+
 	fetcherReg := prometheus.NewRegistry()
 	fetcherMetrics := NewBucketIndexBlockMetadataFetcherMetrics(fetcherReg, u.bucketStoreMetrics)
 
@@ -676,5 +734,25 @@ type spanSeriesServer struct {
 }
 
 func (s spanSeriesServer) Context() context.Context {
+	return s.ctx
+}
+
+type spanSearchLabelNamesServer struct {
+	storegatewaypb.StoreGateway_SearchLabelNamesServer
+
+	ctx context.Context
+}
+
+func (s spanSearchLabelNamesServer) Context() context.Context {
+	return s.ctx
+}
+
+type spanSearchLabelValuesServer struct {
+	storegatewaypb.StoreGateway_SearchLabelValuesServer
+
+	ctx context.Context
+}
+
+func (s spanSearchLabelValuesServer) Context() context.Context {
 	return s.ctx
 }

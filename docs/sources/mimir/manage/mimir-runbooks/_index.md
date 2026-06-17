@@ -131,7 +131,6 @@ How to **fix** it:
 
 4. **Ensure that per-tenant maximum series limits are close to actual utilization levels**<br />
    When investigating this alert, ensure that each per-tenant maximum series limit is not significantly higher than the actual utilization level. If the per-tenant `max_global_series_per_user` limit is close to the actual utilization level and ingesters are autoscaled based on owned active series, the `max_series` per ingester instance limit should rarely be reached.
-
    1. Run the following instant query to identify tenants with a maximum series limit that is significantly above the utilization level and can put the Mimir cluster at risk:
 
       ```
@@ -460,19 +459,25 @@ How to **fix** it:
   - If the ruler is logging the gRPC error "trying to send message larger than max", consider increasing `-server.grpc-max-send-msg-size-bytes` in the query-frontend (or ruler-query-frontend if you're running a dedicated read path for rule evaluations). If you're using jsonnet, you should just tune `_config.ruler_remote_evaluation_max_query_response_size_bytes`.
 - When using Memberlist as KV store for hash rings, ensure that Memberlist is working correctly. See instructions for the [`MimirGossipMembersTooHigh`](#MimirGossipMembersTooHigh) and [`MimirGossipMembersTooLow`](#MimirGossipMembersTooLow) alerts.
 
-### MimirRulerMissedEvaluations
+### MimirRulersMissedEvaluations
 
-This alert fires when there is a rule group that is taking longer to evaluate than its evaluation interval.
+This alert fires when a significant % of rule group evaluations are missed (skipped) across all rulers.
 
 How it **works**:
 
-- The Mimir ruler will evaluate a rule group according to the evaluation interval on the rule group.
+- The Mimir ruler evaluates each rule group according to the configured evaluation interval.
 - If an evaluation is not finished by the time the next evaluation should happen, the next evaluation is missed.
 
 How to **fix** it:
 
 - Increase the evaluation interval of the rule group. You can use the rate of missed evaluation to estimate how long the rule group evaluation actually takes.
 - Try splitting up the rule group into multiple rule groups. Rule groups are evaluated in parallel, so the same rules may still fit in the same resolution.
+
+### MimirRulerMissedEvaluations
+
+This alert fires when a significant % of rule group evaluations are missed (skipped) in a specific ruler instance.
+
+Refer to the [MimirRulersMissedEvaluations](#mimirrulersmissedevaluations) runbook for detailed investigation steps.
 
 ### MimirRulerRemoteEvaluationFailing
 
@@ -789,7 +794,6 @@ When this alert fires, the compactor may still have successfully compacted some 
 How to **investigate**:
 
 - Look for any error in the compactor logs
-
   - Corruption: [`not healthy index found`](#compactor-is-failing-because-of-not-healthy-index-found)
   - Invalid result block:
     - **How to detect**: Search compactor logs for `invalid result block`.
@@ -808,7 +812,6 @@ How to **investigate**:
           ```
           For examples using AWS S3 or Azure, see [How to use the mark-blocks tool](#how-to-use-the-mark-blocks-tool).
   - Result block exceeds symbol table maximum size:
-
     - **How to detect**: Search compactor logs for `symbol table size exceeds`.
     - **What it means**: The compactor successfully validated the source blocks. But the resulting block is impossible to write due to the error above.
     - This is caused by too many series being stored in the blocks, which indicates that `-compactor.split-and-merge-shards` is too low for the tenant. Could be also an indication of very high churn in labels causing label cardinality explosion.
@@ -827,7 +830,6 @@ How to **investigate**:
     - Further reading: [Compaction algorithm](../../references/architecture/components/compactor/#compaction-algorithm).
 
   - Ring failures:
-
     - **How to detect**:
       - Search compactor logs for `unhealthy instances`.
       - Check the [compactor ring web page](../../references/http-api/#compactor-ring-status) for unhealthy instances.
@@ -840,7 +842,6 @@ How to **investigate**:
     - **How to mitigate**: Unknown. This typically self-resolves after ten to twenty minutes.
 
 - Check the [Compactor Dashboard](../monitor-grafana-mimir/dashboards/compactor/) and set it to view the last 7 days.
-
   - Compactor has fallen behind:
     - **How to detect**:
       - Check the `Last successful run per-compactor replica` panel - are there recent runs in the last 6-12 hours?
@@ -888,7 +889,7 @@ level=error ts=2020-07-12T17:35:05.516823471Z caller=compactor.go:339 component=
 
 When this happens, the affected block(s) will be marked as non-compact by the compactor in order to prevent the next execution from being blocked, which could potentially have a negative impact on the performance of the read path.
 
-If the corruption affects only 1 block whose compaction `level` is 1 (the information is stored inside its `meta.json`) then Mimir guarantees no data loss because all the data is replicated across other blocks. In all other cases, there may be some data loss.
+If the corruption affects only one block whose compaction `level` is 1 (this information is stored inside block's `meta.json`), and shipment of blocks to the object storage is done from ingesters (default case), then Mimir guarantees no data loss. That is, the data is replicated across blocks shipped from multiple ingester replicas. In all other cases — e.g. when ingester shipment is disabled and blocks are shipped from the block-builder (experimental architecture) — there may be some data loss.
 
 Once this alert has been triggered, it is recommended to follow the following steps:
 
@@ -1288,7 +1289,6 @@ How to **investigate**:
   matched by the `gossip-ring` service and then getting endpoints truncated to 1000 is not an issue per-se, but it's
   an issue if you're running a version of Kubernetes affected by the mentioned bug.
 - If you've been affected by the Kubernetes bug:
-
   1. Stop the bleed re-creating the service endpoints list
 
      ```sh
@@ -1518,9 +1518,11 @@ How to **investigate**:
   - Check if it's caused by a **single tenant**:
     - We don't have a metric tracking the active TCP connections or QPS per tenant
     - As a proxy metric, you can check if the ingestion rate has significantly increased for any tenant (it's not a very accurate proxy metric for number of TCP connections so take it with a grain of salt):
+
     ```
     topk(10, sum by(user) (rate(cortex_distributor_samples_in_total{namespace="<namespace>"}[$__rate_interval])))
     ```
+
     - In case you need to quickly reject write path traffic from a single tenant, you can override its `ingestion_rate` and `ingestion_rate_burst` setting lower values (so that some/most of their traffic will be rejected)
 
 ### MimirAutoscalerNotActive
@@ -1768,7 +1770,6 @@ How it **works**:
 How to **investigate** and **fix** it:
 
 - Check the `Mimir / Compactor` dashboard
-
   - Ensure the compactor is healthy and running successfully.
     - The "Last successful run per-compactor replica" panel should show all compactors are running Ok and none of them having Delayed, Late or Very Late status.
     - "Tenants with largest number of blocks" must not be trending upwards
@@ -1777,13 +1778,11 @@ How to **investigate** and **fix** it:
     - If the compactor is lagging behind or there are many blocks to compactor, temporarily increase increase the compactor replicas to let the compactor catching up quickly.
 
 - Check the `Mimir / Reads resources` dashboard
-
   - Check if disk utilization is nearly balanced between store-gateway replicas (e.g. a 20-30% variance between replicas is expected)
     - If disk utilization is nearly balanced you can scale out store-gateway replicas to lower disk utilization on average
     - If disk utilization is unbalanced you may consider the other options before scaling out store-gateways
 
 - Check if disk utilization unbalance is caused by shuffle sharding
-
   - Investigate which tenants use most of the store-gateway disk in the replicas with highest disk utilization. You can query the `cortex_bucket_store_blocks_loaded_size_bytes` metric to see per-tenant disk utilization across all store-gateway replicas. For example, to find the top 10 tenants by disk utilization on a specific store-gateway pod:
 
     ```
@@ -1799,7 +1798,6 @@ How to **investigate** and **fix** it:
   - Check the configured `-store-gateway.tenant-shard-size` (`store_gateway_tenant_shard_size`) of each tenant that mostly contributes to disk utilization. Consider increase the tenant's the shard size if it's smaller than the number of available store-gateway replicas (a value of `0` disables shuffle sharding for the tenant, effectively sharding their blocks across all replicas).
 
 - Check if disk utilization unbalance is caused by a tenant with uneven block sizes
-
   - Even if a tenant has no shuffle sharding and their blocks are sharded across all replicas, it may still cause unbalance in store-gateway disk utilization if the size of their blocks dramatically changed over time (e.g. because the number of series per block significantly changed over time). As a proxy metric, the number of series per block is roughly the total number of series across all blocks for the largest `-compactor.block-ranges` (default is 24h) divided by the number of `-compactor.split-and-merge-shards` (`compactor_split_and_merge_shards`).
   - If you suspect this may be an issue:
     - Check the number of series in each block in the store-gateway blocks list for the affected tenant, through the web page exposed by the store-gateway at `/store-gateway/tenant/<tenant ID>/blocks`
@@ -1807,7 +1805,6 @@ How to **investigate** and **fix** it:
     - Check the configured `compactor_split_and_merge_shards` for the tenant. A reasonable rule of thumb is 8-10 million series per compactor shard - if the number of series per shard is above this range, increase `compactor_split_and_merge_shards` for the affected tenant(s) accordingly.
 
 - Check if the persistent volume is nearing its limit and determine if it needs to be increased.
-
   - If persistent volume resizing is required for store-gateways and automatic downscaling is enabled, you must disable it before proceeding with the resizing process. This step is necessary to prevent any unexpected downscaling by the rollout operator while updating the stateful set for each zone. To disable automatic downscaling for store-gateways,
     set `$._config.store_gateway_automated_downscale_enabled = false`.
 
@@ -2117,7 +2114,6 @@ How to **fix**:
   - Add more CPU/memory/disk to ingesters, depending on the saturated resources.
   - Increase the ingester max series instance limit (see [`MimirIngesterReachingSeriesLimit`](#MimirIngesterReachingSeriesLimit) runbook).
 - **Skip replaying overloading backlog from partition** (data loss)
-
   1. Ensure ingesters have been scaled out, and the new partitions are ACTIVE in the partitions ring. If autoscaler didn't scaled out ingesters yet, manually add more ingester replicas (e.g. increasing HPA min replicas or manually setting the desired number of ingester replicas if ingester autoscaling is disabled).
   1. Find out the timestamp at which new partitions were created and became ACTIVE in the ring (e.g. looking at new ingesters logs).
   1. Temporarily restart ingesters with the following configuration:
@@ -2205,7 +2201,6 @@ If you just need to "rewind" the commit for a number of partitions so block-buil
    `kafka-consumer-groups.sh --group $BLOCK_BUILDER_GROUP --topic $TOPIC:$PARTITION --reset-offsets --to-offset $OFFSET --dry-run`
 
    where:
-
    - `BLOCK_BUILDER_GROUP` is the consumer group specified in the `block-builder-scheduler` configuration. ("block-builder" by default.)
    - `TOPIC` is the Kafka topic specified in the `block-builder-scheduler` configuration.
    - `PARTITION` and `OFFSET` are the first pair of items located in step 1
@@ -2255,7 +2250,15 @@ How it **works**:
 
 - Block-builder-scheduler schedules and assigns jobs to workers, but it is the workers who carry out the consumption work.
 - Block-builder-scheduler notices when a worker fails to complete a job, and maintains a failure count on each job.
-- Block-builder-scheduler increments the `cortex_blockbuilder_scheduler_persistent_job_failures_total` metric when a job's failure count exceeds the `block-builder-scheduler.job-failures-allowed` setting.
+- Block-builder-scheduler increments the `cortex_blockbuilder_scheduler_persistent_job_failures_total` metric when a job's failure count exceeds the `-block-builder-scheduler.job-failures-allowed` setting.
+
+What is the **impact**:
+
+- The scheduler retries the job continuously and never gives up on its own. The records in the failing offset range stay absent from object storage until the job succeeds.
+- If a job does not succeed before ingesters stop serving data from the affected offset, query results may be missing data.
+- If exactly `-block-builder-scheduler.max-jobs-per-partition` jobs are failing repeatedly for a partition, the partition is effectively stalled. If less, then the partition continues to make progress, but slower than expected.
+- The partition's committed Kafka offset cannot advance past a failing job. If the commit lags far behind and the scheduler restarts, it re-schedules jobs covering offset ranges that may have already succeeded, writing duplicate blocks to object storage.
+- If a job fails repeatedly for longer than the Kafka topic retention, the data in the affected range is effectively lost, unless ingesters are configured to also ship blocks, and succeeding.
 
 How to **investigate**:
 
@@ -2263,6 +2266,10 @@ How to **investigate**:
   > ERROR ts=2025-10-30T15:20:55.134630922Z caller=jobs.go:236 level=error msg="job failed in a persistent manner" job_id=ingest/25/11740286308 epoch=104901 assignee=block-builder-7786c54c8-hsr6h fail_count=8
 - Now look at the logs on the assigned worker corresponding with the job ID found previously to understand the nature of the failure.
 - If there is no clear failure, check to see if the worker pod was terminated due to an out-of-memory condition. If this is the case, give the block-builder workers more memory.
+
+How to **mitigate**:
+
+- If in doubt that a job will succeed before the Kafka topic retention expires, temporarily increasing the retention is a good idea to prevent permanent data loss and buy more time for the investigation and fix. Gaps in queries may still occur during the incident, but at least the data will be retained in Kafka until the issue is resolved.
 
 ### MimirServerInvalidClusterLabelRequests
 
@@ -3102,11 +3109,12 @@ How to **fix** it:
 
 ### err-mimir-sample-timestamp-too-old
 
-This error occurs when the ingester rejects a sample because its timestamp is too old as compared to the most recent timestamp received for the same tenant across all its time series.
+This error occurs when Mimir rejects a sample because its timestamp is too old.
 
 How it **works**:
 
-- If the incoming timestamp is more than 1 hour older than the most recent timestamp ingested for the tenant, the sample will be rejected.
+- The ingester rejects a sample if its timestamp is more than 1 hour older than the most recent timestamp ingested for the tenant.
+- The distributor can also produce this error when `enforce_out_of_order_window_on_distributor` is enabled and `past_grace_period` is 0. In that case, a sample is rejected if its timestamp is lower than `(now - out_of_order_time_window)`, which matches the rejection the ingester would later perform. To allow older samples, increase `out_of_order_time_window`, or disable `enforce_out_of_order_window_on_distributor`.
 
 {{< admonition type="note" >}}
 If the out-of-order sample ingestion is enabled, then this error is similar to `err-mimir-sample-out-of-order` below with a difference that the sample is older than the out-of-order time window as it relates to the latest sample for that particular time series or the TSDB.
@@ -3851,14 +3859,17 @@ Use `evaluation stats` when asking:
 
 When looking at `msg="query stats"` consider the following attributes;
 
-- status, err - indicates success or failure with an error message indicating the failure reason
-- param_query - the PromQL as submitted by the user
-- param_start, param_end, param_step - the query time range and step interval
+- status, err — indicates success or failure with an error message indicating the failure reason
+- param_query — the PromQL as submitted by the user
+- param_start — the start of the query time range
+- param_end — the end of the query time range
+- param_step — the step
 - length — total time window covered by the query (end − start)
 - time_since_min_time — how long ago the query start was relative to now (the oldest data point requested)
-- time_since_max_time - how long ago the query end was relative to now (the most recent data point requested)
-- user_agent - the HTTP User-Agent header value
-- status_code - the http response status code
+- time_since_max_time — how long ago the query end was relative to now (the most recent data point requested)
+- user_agent — the HTTP User-Agent header value
+- header_cache_control — the HTTP Cache-Control header value
+- status_code — the http response status code
 - response_time — total wall-clock time from request received to response sent
 - response_size_bytes — size of the HTTP response body
 - response_series_count — total number of series in the response
@@ -3866,19 +3877,23 @@ When looking at `msg="query stats"` consider the following attributes;
 - queue_time_seconds — time spent waiting in the query scheduler queue
 - query_wall_time_seconds — time spent actually executing the query
 - encode_time_seconds — time spent serialising the result to JSON
-- remote_execution_request_count - number of requests sent to queriers for execution
-- split_queries - the query was split into n sub-queries by the time-splitting middleware
+- remote_execution_request_count — number of requests sent to queriers for execution
+- split_queries — the query was split into n sub-queries by the time-splitting middleware
 - sharded_queries — the number of sharded queries
-- spun_off_subqueries — the number of subquery spin-offs
+- spun_off_subqueries — the number of subqueries spun off
+- split_range_vectors — the number of range vectors split
 - fetched_series_count — number of distinct time series read from store-gateways and ingesters
 - fetched_chunks_count — total chunks fetched
 - fetched_chunk_bytes — raw chunk data transferred
 - fetched_index_bytes — number of index bytes fetched. This can be 0 if the index was fully served from cache or memory
 - estimated_series_count — pre-execution estimate of series count
 - samples_processed — total individual samples evaluated
+- equivalent_samples_read — equivalent number of samples that would have been read from storage to execute a query, if no caching or other optimizations were applied to the query
+- physical_samples_read — the number of samples read from storage. Excludes any samples not read due to caching or other optimizations.
 - results_cache_hit_bytes — the number of bytes returned from the query results cache
-- results_cache_miss_bytes —the number of bytes fetched from storage and written to the query results cache
-- read_consistency — flags if strong read consistency was required
+- results_cache_miss_bytes — the number of bytes fetched from storage and written to the query results cache
+- read_consistency — the read consistency level requested, if any
+- read_consistency_max_delay — the maximum delay / staleness allowed for an eventually consistent request, if any
 
 When looking at `msg="evaluation stats"` consider the following attributes;
 

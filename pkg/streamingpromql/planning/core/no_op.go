@@ -3,7 +3,6 @@
 package core
 
 import (
-	"fmt"
 	"time"
 
 	"github.com/gogo/protobuf/proto"
@@ -18,6 +17,8 @@ import (
 // NoOp is a query plan node that always returns an empty instant vector.
 // It is used by optimization passes to replace subexpressions that can be statically
 // determined to return no results.
+//
+//node:generate
 type NoOp struct {
 	*NoOpDetails
 }
@@ -30,29 +31,9 @@ func (n *NoOp) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_NO_OP
 }
 
-func (n *NoOp) Child(idx int) planning.Node {
-	panic(fmt.Sprintf("node of type NoOp has no children, but attempted to get child at index %d", idx))
-}
-
-func (n *NoOp) ChildCount() int {
-	return 0
-}
-
-func (n *NoOp) SetChildren(children []planning.Node) error {
-	if len(children) != 0 {
-		return fmt.Errorf("node of type NoOp expects 0 children, but got %d", len(children))
-	}
-
-	return nil
-}
-
-func (n *NoOp) ReplaceChild(idx int, _ planning.Node) error {
-	return fmt.Errorf("node of type NoOp supports no children, but attempted to replace child at index %d", idx)
-}
-
 func (n *NoOp) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
-	_, ok := other.(*NoOp)
-	return ok
+	o, ok := other.(*NoOp)
+	return ok && n.MatrixSelector == o.MatrixSelector
 }
 
 func (n *NoOp) MergeHints(_ planning.Node) error {
@@ -61,6 +42,9 @@ func (n *NoOp) MergeHints(_ planning.Node) error {
 }
 
 func (n *NoOp) Describe() string {
+	if n.MatrixSelector {
+		return "matrix"
+	}
 	return ""
 }
 
@@ -73,6 +57,9 @@ func (n *NoOp) ChildrenTimeRange(timeRange types.QueryTimeRange) types.QueryTime
 }
 
 func (n *NoOp) ResultType() (parser.ValueType, error) {
+	if n.MatrixSelector {
+		return parser.ValueTypeMatrix, nil
+	}
 	return parser.ValueTypeVector, nil
 }
 
@@ -84,11 +71,18 @@ func (n *NoOp) ExpressionPosition() (posrange.PositionRange, error) {
 	return posrange.PositionRange{}, nil
 }
 
-func (n *NoOp) MinimumRequiredPlanVersion() planning.QueryPlanVersion {
-	return planning.QueryPlanV9
+func (n *NoOp) MinimumRequiredPlanVersion(types.QueryTimeRange) (planning.QueryPlanVersion, error) {
+	return planning.QueryPlanV10, nil
 }
 
-func MaterializeNoOp(_ *NoOp, _ *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
-	o := operators.NewNoOp(timeRange, params.MemoryConsumptionTracker)
+func MaterializeNoOp(n *NoOp, _ *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
+	var o types.Operator
+
+	if n.MatrixSelector {
+		o = operators.NewNoOpRange(timeRange, params.MemoryConsumptionTracker)
+	} else {
+		o = operators.NewNoOpInstant(timeRange, params.MemoryConsumptionTracker)
+	}
+
 	return planning.NewSingleUseOperatorFactory(o), nil
 }

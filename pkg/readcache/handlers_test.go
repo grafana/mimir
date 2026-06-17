@@ -201,7 +201,7 @@ func TestReadcache_QueryStream_QueryLoadAttribution(t *testing.T) {
 	runQuery := func(series string, hint *ingester_client.QueryAttributionHint) int {
 		t.Helper()
 		req, err := ingester_client.ToQueryRequest(
-			0, model.Time(time.Now().UnixMilli()), false, nil,
+			0, model.Time(time.Now().UnixMilli()),
 			[]*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "__name__", series)},
 		)
 		require.NoError(t, err)

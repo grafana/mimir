@@ -16,6 +16,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
+	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
@@ -262,22 +263,22 @@ func (c *CountValues) AfterPrepare(ctx context.Context) error {
 	return c.LabelName.AfterPrepare(ctx)
 }
 
-func (c *CountValues) Finalize(ctx context.Context) error {
+func (c *CountValues) FinishedReading(ctx context.Context) error {
 	for _, d := range c.series {
 		types.FPointSlicePool.Put(&d, c.MemoryConsumptionTracker)
 	}
 
 	c.series = nil
 
-	if err := c.Inner.Finalize(ctx); err != nil {
+	if err := c.Inner.FinishedReading(ctx); err != nil {
 		return err
 	}
 
-	return c.LabelName.Finalize(ctx)
+	return c.LabelName.FinishedReading(ctx)
 }
 
-func (c *CountValues) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
-	return types.CombineStats[types.StatsProvider](ctx, c.Inner, c.LabelName)
+func (c *CountValues) Finalize(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
+	return types.FinalizeAndCombine[types.Finalizer](ctx, c.Inner, c.LabelName)
 }
 
 func (c *CountValues) Close() {

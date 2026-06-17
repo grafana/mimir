@@ -25,19 +25,6 @@ import (
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
-type recordTimestampKeyType struct{}
-
-var recordTimestampKey = recordTimestampKeyType{}
-
-func ContextWithRecordTimestamp(ctx context.Context, ts time.Time) context.Context {
-	return context.WithValue(ctx, recordTimestampKey, ts)
-}
-
-func RecordTimestampFromContext(ctx context.Context) (time.Time, bool) {
-	ts, ok := ctx.Value(recordTimestampKey).(time.Time)
-	return ts, ok
-}
-
 type Pusher interface {
 	PushToStorageAndReleaseRequest(context.Context, *mimirpb.WriteRequest) error
 	PreCommitNotifier

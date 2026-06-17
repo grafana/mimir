@@ -30,12 +30,14 @@ import (
 	v1API "github.com/prometheus/prometheus/web/api/v1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/atomic"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
+	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
 	"github.com/grafana/mimir/pkg/util/chunkinfologger"
 	"github.com/grafana/mimir/pkg/util/promqlext"
 	testutil "github.com/grafana/mimir/pkg/util/test"
@@ -97,7 +99,7 @@ func TestCodec_EncodeMetricsQueryRequest_Roundtrip(t *testing.T) {
 				(2 * time.Minute).Milliseconds(),
 				codec.lookbackDelta,
 				parseQuery(t, "sum(container_memory_rss) by (namespace)"),
-				Options{},
+				requestoptions.Options{},
 				nil,
 				"",
 			),
@@ -114,7 +116,7 @@ func TestCodec_EncodeMetricsQueryRequest_Roundtrip(t *testing.T) {
 				(2 * time.Minute).Milliseconds(),
 				codec.lookbackDelta,
 				parseQuery(t, "sum(container_memory_rss) by (namespace)"),
-				Options{},
+				requestoptions.Options{},
 				nil,
 				"all",
 			),
@@ -130,7 +132,7 @@ func TestCodec_EncodeMetricsQueryRequest_Roundtrip(t *testing.T) {
 				(2 * time.Minute).Milliseconds(),
 				3*time.Minute+2*time.Second,
 				parseQuery(t, "sum(container_memory_rss) by (namespace)"),
-				Options{},
+				requestoptions.Options{},
 				nil,
 				"",
 			),
@@ -144,7 +146,7 @@ func TestCodec_EncodeMetricsQueryRequest_Roundtrip(t *testing.T) {
 				1536716880*1e3,
 				codec.lookbackDelta,
 				parseQuery(t, "sum(container_memory_rss) by (namespace)"),
-				Options{},
+				requestoptions.Options{},
 				nil,
 				"",
 			),
@@ -157,7 +159,7 @@ func TestCodec_EncodeMetricsQueryRequest_Roundtrip(t *testing.T) {
 				1536716880*1e3,
 				3*time.Minute+2*time.Second,
 				parseQuery(t, "sum(container_memory_rss) by (namespace)"),
-				Options{},
+				requestoptions.Options{},
 				nil,
 				"",
 			),
@@ -248,7 +250,7 @@ func TestCodec_EncodeMetricsQueryRequest_Oneway(t *testing.T) {
 				1234567890000,
 				time.Duration(0),
 				parseQuery(t, "up"),
-				Options{},
+				requestoptions.Options{},
 				nil,
 				"",
 			),
@@ -261,7 +263,7 @@ func TestCodec_EncodeMetricsQueryRequest_Oneway(t *testing.T) {
 				1234567890000,
 				time.Duration(50*time.Second),
 				parseQuery(t, "up"),
-				Options{},
+				requestoptions.Options{},
 				nil,
 				"",
 			),
@@ -315,7 +317,7 @@ func TestMetricsQuery_MinMaxTime(t *testing.T) {
 		stepDuration.Milliseconds(),
 		lookbackDuration,
 		parseQuery(t, "go_goroutines{}"),
-		Options{},
+		requestoptions.Options{},
 		nil,
 		"",
 	)
@@ -325,7 +327,7 @@ func TestMetricsQuery_MinMaxTime(t *testing.T) {
 		endTime.UnixMilli(),
 		lookbackDuration,
 		parseQuery(t, "go_goroutines{}"),
-		Options{},
+		requestoptions.Options{},
 		nil,
 		"",
 	)
@@ -444,7 +446,7 @@ func TestMetricsQuery_WithStartEnd_TransformConsistency(t *testing.T) {
 		stepDuration.Milliseconds(),
 		time.Duration(0),
 		parseQuery(t, "go_goroutines{}"),
-		Options{},
+		requestoptions.Options{},
 		nil,
 		"",
 	)
@@ -454,7 +456,7 @@ func TestMetricsQuery_WithStartEnd_TransformConsistency(t *testing.T) {
 		endTime.UnixMilli(),
 		time.Duration(0),
 		parseQuery(t, "go_goroutines{}"),
-		Options{},
+		requestoptions.Options{},
 		nil,
 		"",
 	)
@@ -527,7 +529,7 @@ func TestMetricsQuery_WithQuery_WithExpr_TransformConsistency(t *testing.T) {
 		stepDuration.Milliseconds(),
 		time.Duration(0),
 		parseQuery(t, "go_goroutines{}"),
-		Options{},
+		requestoptions.Options{},
 		nil,
 		"",
 	)
@@ -537,7 +539,7 @@ func TestMetricsQuery_WithQuery_WithExpr_TransformConsistency(t *testing.T) {
 		endTime.UnixMilli(),
 		time.Duration(0),
 		parseQuery(t, "go_goroutines{}"),
-		Options{},
+		requestoptions.Options{},
 		nil,
 		"",
 	)
@@ -1845,62 +1847,6 @@ func TestDecodeRangeQueryTimeParams(t *testing.T) {
 	}
 }
 
-func Test_DecodeOptions(t *testing.T) {
-	for _, tt := range []struct {
-		name     string
-		input    *http.Request
-		expected *Options
-	}{
-		{
-			name: "default",
-			input: &http.Request{
-				Header: http.Header{},
-			},
-			expected: &Options{},
-		},
-		{
-			name: "disable cache",
-			input: &http.Request{
-				Header: http.Header{
-					cacheControlHeader: []string{noStoreValue},
-				},
-			},
-			expected: &Options{
-				CacheDisabled: true,
-			},
-		},
-		{
-			name: "custom sharding",
-			input: &http.Request{
-				Header: http.Header{
-					totalShardsControlHeader: []string{"64"},
-				},
-			},
-			expected: &Options{
-				TotalShards: 64,
-			},
-		},
-		{
-			name: "disable sharding",
-			input: &http.Request{
-				Header: http.Header{
-					totalShardsControlHeader: []string{"0"},
-				},
-			},
-			expected: &Options{
-				ShardingDisabled: true,
-			},
-		},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			actual := &Options{}
-			DecodeOptions(tt.input, actual)
-			require.Equal(t, tt.expected, actual)
-		})
-	}
-}
-
 // TestCodec_DecodeEncode_Metrics tests that decoding and re-encoding a
 // metrics query request does not lose relevant information about the original request.
 func TestCodec_DecodeEncode_Metrics(t *testing.T) {
@@ -1914,15 +1860,15 @@ func TestCodec_DecodeEncode_Metrics(t *testing.T) {
 		},
 		{
 			name:    "shard count header",
-			headers: http.Header{totalShardsControlHeader: []string{"128"}},
+			headers: http.Header{requestoptions.TotalShardsControlHeader: []string{"128"}},
 		},
 		{
 			name:    "shard count disabled via header",
-			headers: http.Header{totalShardsControlHeader: []string{"0"}},
+			headers: http.Header{requestoptions.TotalShardsControlHeader: []string{"0"}},
 		},
 		{
 			name:    "cache disabled via header",
-			headers: http.Header{cacheControlHeader: []string{noStoreValue}},
+			headers: http.Header{requestoptions.CacheControlHeader: []string{requestoptions.NoStoreValue}},
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -2265,4 +2211,182 @@ func encodeQueryResponse(f formatter, resp *PrometheusResponse) ([]byte, error) 
 		return nil, err
 	}
 	return buf.Bytes(), nil
+}
+
+// closeCountingResponse wraps a Response and records whether Close() has been
+// called through this layer. The embedded Response provides every other method.
+type closeCountingResponse struct {
+	Response
+	closed atomic.Bool
+}
+
+func (r *closeCountingResponse) Close() { r.closed.Store(true) }
+
+func (r *closeCountingResponse) Closed() bool { return r.closed.Load() }
+
+// nonPrometheusResponse satisfies the Response interface but returns
+// (nil, false) from GetPrometheusResponse and is not assertable to
+// *PrometheusLabelsResponse or *PrometheusSeriesResponse, so it exercises every
+// "invalid response format" early-return in the codec.
+type nonPrometheusResponse struct {
+	closed atomic.Bool
+}
+
+func (r *nonPrometheusResponse) Reset()                          {}
+func (r *nonPrometheusResponse) String() string                  { return "" }
+func (r *nonPrometheusResponse) ProtoMessage()                   {}
+func (r *nonPrometheusResponse) GetHeaders() []*PrometheusHeader { return nil }
+func (r *nonPrometheusResponse) GetPrometheusResponse() (*PrometheusResponse, bool) {
+	return nil, false
+}
+func (r *nonPrometheusResponse) Close()       { r.closed.Store(true) }
+func (r *nonPrometheusResponse) Closed() bool { return r.closed.Load() }
+
+// TestCodec_EncodeMetricsQueryResponse_ClosesResponseOnEarlyReturn ensures that
+// every error path in EncodeMetricsQueryResponse closes the response. Skipping
+// Close on early returns leaks any resources the response holds.
+func TestCodec_EncodeMetricsQueryResponse_ClosesResponseOnEarlyReturn(t *testing.T) {
+	codec := newTestCodec()
+
+	t.Run("unsupported Accept header", func(t *testing.T) {
+		res := &closeCountingResponse{
+			Response: &PrometheusResponse{
+				Status: statusSuccess,
+				Data:   &PrometheusData{ResultType: matrix},
+			},
+		}
+
+		req, err := http.NewRequest(http.MethodGet, "/something", nil)
+		require.NoError(t, err)
+		req.Header.Set("Accept", "testing/not-a-supported-content-type")
+
+		_, err = codec.EncodeMetricsQueryResponse(context.Background(), req, res)
+		require.Error(t, err)
+		require.True(t, res.Closed())
+	})
+
+	t.Run("response missing PrometheusResponse", func(t *testing.T) {
+		res := &nonPrometheusResponse{}
+
+		req, err := http.NewRequest(http.MethodGet, "/something", nil)
+		require.NoError(t, err)
+
+		_, err = codec.EncodeMetricsQueryResponse(context.Background(), req, res)
+		require.Error(t, err)
+		require.True(t, res.Closed())
+	})
+}
+
+// TestCodec_EncodeLabelsSeriesQueryResponse_ClosesResponseOnEarlyReturn covers
+// the same lifecycle contract as the metrics-query equivalent for the
+// labels/series encoder.
+func TestCodec_EncodeLabelsSeriesQueryResponse_ClosesResponseOnEarlyReturn(t *testing.T) {
+	codec := newTestCodec()
+
+	t.Run("unsupported Accept header (labels)", func(t *testing.T) {
+		res := &closeCountingResponse{Response: &PrometheusLabelsResponse{Status: statusSuccess}}
+
+		req, err := http.NewRequest(http.MethodGet, "/something", nil)
+		require.NoError(t, err)
+		req.Header.Set("Accept", "testing/not-a-supported-content-type")
+
+		_, err = codec.EncodeLabelsSeriesQueryResponse(context.Background(), req, res, false)
+		require.Error(t, err)
+		require.True(t, res.Closed())
+	})
+
+	t.Run("unsupported Accept header (series)", func(t *testing.T) {
+		res := &closeCountingResponse{Response: &PrometheusSeriesResponse{Status: statusSuccess}}
+
+		req, err := http.NewRequest(http.MethodGet, "/something", nil)
+		require.NoError(t, err)
+		req.Header.Set("Accept", "testing/not-a-supported-content-type")
+
+		_, err = codec.EncodeLabelsSeriesQueryResponse(context.Background(), req, res, true)
+		require.Error(t, err)
+		require.True(t, res.Closed())
+	})
+
+	t.Run("response is not a labels response", func(t *testing.T) {
+		res := &nonPrometheusResponse{}
+
+		req, err := http.NewRequest(http.MethodGet, "/something", nil)
+		require.NoError(t, err)
+
+		_, err = codec.EncodeLabelsSeriesQueryResponse(context.Background(), req, res, false)
+		require.Error(t, err)
+		require.True(t, res.Closed())
+	})
+
+	t.Run("response is not a series response", func(t *testing.T) {
+		res := &nonPrometheusResponse{}
+
+		req, err := http.NewRequest(http.MethodGet, "/something", nil)
+		require.NoError(t, err)
+
+		_, err = codec.EncodeLabelsSeriesQueryResponse(context.Background(), req, res, true)
+		require.Error(t, err)
+		require.True(t, res.Closed())
+	})
+}
+
+// TestCodec_MergeResponse_ClosesInputsOnValidationFailure ensures that when
+// MergeResponse rejects the batch mid-iteration it still closes every input
+// response. Without this, every response in the failing batch leaks its
+// finalizer (and any *promql.Query / MemoryConsumptionTracker it owns).
+func TestCodec_MergeResponse_ClosesInputsOnValidationFailure(t *testing.T) {
+	codec := Codec{}
+
+	matrixOK := func() Response {
+		return &PrometheusResponse{
+			Status: statusSuccess,
+			Data:   &PrometheusData{ResultType: matrix},
+		}
+	}
+
+	scenarios := map[string]Response{
+		"not a PrometheusResponse": &nonPrometheusResponse{},
+		"unsuccessful status":      &PrometheusResponse{Status: statusError},
+		"missing data":             &PrometheusResponse{Status: statusSuccess, Data: nil},
+		"non-matrix result type":   &PrometheusResponse{Status: statusSuccess, Data: &PrometheusData{ResultType: model.ValVector.String()}},
+	}
+
+	for name, bad := range scenarios {
+		t.Run(name, func(t *testing.T) {
+			good1 := &closeCountingResponse{Response: matrixOK()}
+			good2 := &closeCountingResponse{Response: matrixOK()}
+			wrappedBad := &closeCountingResponse{Response: bad}
+
+			// Bad response placed in the middle so we exercise responses on both sides.
+			_, err := codec.MergeResponse(good1, wrappedBad, good2)
+			require.Error(t, err)
+			require.True(t, good1.Closed(), "earlier valid response must be closed")
+			require.True(t, wrappedBad.Closed(), "failing response must be closed")
+			require.True(t, good2.Closed(), "later valid response must be closed")
+		})
+	}
+}
+
+// TestCodec_MergeResponse_TransfersOwnershipOnSuccess ensures the success path
+// does NOT close inputs eagerly — closing must happen exactly once, when the
+// caller closes the merged response.
+func TestCodec_MergeResponse_TransfersOwnershipOnSuccess(t *testing.T) {
+	codec := Codec{}
+	in1 := &closeCountingResponse{Response: &PrometheusResponse{
+		Status: statusSuccess,
+		Data:   &PrometheusData{ResultType: matrix},
+	}}
+	in2 := &closeCountingResponse{Response: &PrometheusResponse{
+		Status: statusSuccess,
+		Data:   &PrometheusData{ResultType: matrix},
+	}}
+
+	merged, err := codec.MergeResponse(in1, in2)
+	require.NoError(t, err)
+	require.False(t, in1.Closed(), "input must not be closed before merged response is closed")
+	require.False(t, in2.Closed(), "input must not be closed before merged response is closed")
+
+	merged.Close()
+	require.True(t, in1.Closed(), "closing the merged response must close each input")
+	require.True(t, in2.Closed(), "closing the merged response must close each input")
 }

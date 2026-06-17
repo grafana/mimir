@@ -5,7 +5,6 @@ package plan_test
 import (
 	"context"
 	"fmt"
-	"math"
 	"strconv"
 	"strings"
 	"testing"
@@ -13,11 +12,15 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
-	"github.com/prometheus/prometheus/model/timestamp"
+	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/streamingpromql"
+	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan"
+	"github.com/grafana/mimir/pkg/streamingpromql/planning"
+	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
@@ -25,7 +28,8 @@ import (
 func TestRemoveStaticallyEmptyExpressionsOptimizationPass(t *testing.T) {
 	const lookbackDelta = 5 * time.Minute
 	const constant = 1000
-	thresholdMs := (constant*time.Second + lookbackDelta).Milliseconds()
+	selectorThresholdMs := (constant*time.Second + lookbackDelta).Milliseconds() - 1 // -1 because the lookback window is left-open.
+	nonSelectorThresholdMs := (constant * time.Second).Milliseconds()
 
 	testCases := map[string]struct {
 		expr            string
@@ -35,80 +39,137 @@ func TestRemoveStaticallyEmptyExpressionsOptimizationPass(t *testing.T) {
 	}{
 		"timestamp(v) < C: query time range is on threshold, should optimize": {
 			expr:       "timestamp(metric) < CONSTANT",
-			queryStart: time.UnixMilli(thresholdMs),
+			queryStart: time.UnixMilli(selectorThresholdMs),
 			expectedPlan: `
 				- NoOp
 			`,
 		},
 		"timestamp(v) < bool C: would optimise because query time range is on threshold, but skipped due to bool modifier": {
 			expr:            "timestamp(metric) < bool CONSTANT",
-			queryStart:      time.UnixMilli(thresholdMs),
+			queryStart:      time.UnixMilli(selectorThresholdMs),
 			expectUnchanged: true,
 		},
 		"timestamp(v) < C: query time range overlaps threshold, should not optimize": {
 			expr:            "timestamp(metric) < CONSTANT",
-			queryStart:      time.UnixMilli(thresholdMs - 1),
+			queryStart:      time.UnixMilli(selectorThresholdMs - 1),
 			expectUnchanged: true,
 		},
+		"timestamp(v offset -1ms) < C: query time range does not overlaps threshold, should optimize": {
+			expr:       "timestamp(metric offset -1ms) < CONSTANT",
+			queryStart: time.UnixMilli(selectorThresholdMs),
+			expectedPlan: `
+				- NoOp
+			`,
+		},
+		"timestamp(v offset 1ms) < C: query time range overlaps threshold, should not optimize": {
+			expr:            "timestamp(metric offset 1ms) < CONSTANT",
+			queryStart:      time.UnixMilli(selectorThresholdMs),
+			expectUnchanged: true,
+		},
+		"timestamp(abs(v)) < C: query time range is on threshold, should optimize": {
+			expr:       "timestamp(abs(v)) < CONSTANT",
+			queryStart: time.UnixMilli(nonSelectorThresholdMs),
+			expectedPlan: `
+				- NoOp
+			`,
+		},
+		"timestamp(abs(v)) < C: query time range is above threshold, should optimize": {
+			expr:       "timestamp(abs(v)) < CONSTANT",
+			queryStart: time.UnixMilli(nonSelectorThresholdMs + 1),
+			expectedPlan: `
+				- NoOp
+			`,
+		},
+		"timestamp(abs(v offset 1ms)) < C: query time range is above threshold, should optimize (offset and lookback delta ignored)": {
+			expr:       "timestamp(abs(v offset 1ms)) < CONSTANT",
+			queryStart: time.UnixMilli(nonSelectorThresholdMs + 1),
+			expectedPlan: `
+				- NoOp
+			`,
+		},
+
 		"timestamp(v) <= C: query range starts just above threshold, should optimize": {
 			expr:       "timestamp(metric) <= CONSTANT",
-			queryStart: time.UnixMilli(thresholdMs + 1),
+			queryStart: time.UnixMilli(selectorThresholdMs + 2),
 			expectedPlan: `
 				- NoOp
 			`,
 		},
-		"timestamp(v) <= C: query range starts exactly at threshold, should not optimize": {
+		"timestamp(v) <= C: query range starts exactly at threshold, should optimize": {
+			expr:       "timestamp(metric) <= CONSTANT",
+			queryStart: time.UnixMilli(selectorThresholdMs + 1),
+			expectedPlan: `
+				- NoOp
+			`,
+		},
+		"timestamp(v) <= C: query range starts below threshold, should not optimize": {
 			expr:            "timestamp(metric) <= CONSTANT",
-			queryStart:      time.UnixMilli(thresholdMs),
+			queryStart:      time.UnixMilli(selectorThresholdMs),
 			expectUnchanged: true,
 		},
-		"C > timestamp(v): query range at threshold, should optimize": {
-			expr:       "metric and CONSTANT > timestamp(metric)",
-			queryStart: time.UnixMilli(thresholdMs),
+		"C > timestamp(v): query range starts at threshold, should optimize": {
+			expr:       "CONSTANT > timestamp(metric)",
+			queryStart: time.UnixMilli(selectorThresholdMs + 1),
 			expectedPlan: `
 				- NoOp
 			`,
 		},
-		"C > timestamp(v): query range before threshold, should not optimize": {
-			expr:            "metric and CONSTANT > timestamp(metric)",
-			queryStart:      time.UnixMilli(thresholdMs - 1),
-			expectUnchanged: true,
-		},
-		"C >= timestamp(v): query range just above threshold, should optimize": {
-			expr:       "metric and CONSTANT >= timestamp(metric)",
-			queryStart: time.UnixMilli(thresholdMs + 1),
+		"C > timestamp(v): query range starts before threshold, should optimize": {
+			expr:       "CONSTANT > timestamp(metric)",
+			queryStart: time.UnixMilli(selectorThresholdMs),
 			expectedPlan: `
 				- NoOp
 			`,
 		},
-		"C >= timestamp(v): query range exactly at threshold, should not optimize": {
-			expr:            "metric and CONSTANT >= timestamp(metric)",
-			queryStart:      time.UnixMilli(thresholdMs),
+		"C >= timestamp(v): query range starts just above threshold, should optimize": {
+			expr:       "CONSTANT >= timestamp(metric)",
+			queryStart: time.UnixMilli(selectorThresholdMs + 2),
+			expectedPlan: `
+				- NoOp
+			`,
+		},
+		"C >= timestamp(v): query range starts exactly at threshold, should optimize": {
+			expr:       "CONSTANT >= timestamp(metric)",
+			queryStart: time.UnixMilli(selectorThresholdMs + 1),
+			expectedPlan: `
+				- NoOp
+			`,
+		},
+		"C >= timestamp(v): query range starts just below threshold, should not optimize": {
+			expr:            "CONSTANT >= timestamp(metric)",
+			queryStart:      time.UnixMilli(selectorThresholdMs),
 			expectUnchanged: true,
 		},
 
 		"non-timestamp comparison: should not optimize": {
 			expr:            "metric2 < CONSTANT",
-			queryStart:      time.UnixMilli(thresholdMs),
+			queryStart:      time.UnixMilli(selectorThresholdMs + 1),
 			expectUnchanged: true,
 		},
 
-		"timestamp(v) < C with and: query range starts exactly at threshold, should optimize": {
+		"timestamp(v) < C with and: query range starts after threshold, should optimize": {
 			expr:       "metric and timestamp(metric) < CONSTANT",
-			queryStart: time.UnixMilli(thresholdMs),
+			queryStart: time.UnixMilli(selectorThresholdMs + 1),
 			expectedPlan: `
 				- NoOp
 			`,
 		},
-		"timestamp(v) < C with and: query range starts just before before threshold, should not optimize": {
+		"timestamp(v) < C with and: query range starts at threshold, should optimize": {
+			expr:       "metric and timestamp(metric) < CONSTANT",
+			queryStart: time.UnixMilli(selectorThresholdMs),
+			expectedPlan: `
+				- NoOp
+			`,
+		},
+		"timestamp(v) < C with and: query range starts before threshold, should not optimize": {
 			expr:            "metric and timestamp(metric) < CONSTANT",
-			queryStart:      time.UnixMilli(thresholdMs - 1),
+			queryStart:      time.UnixMilli(selectorThresholdMs - 1),
 			expectUnchanged: true,
 		},
 
 		"timestamp condition on LHS of and: should optimize": {
 			expr:       "timestamp(metric) < CONSTANT and metric",
-			queryStart: time.UnixMilli(thresholdMs),
+			queryStart: time.UnixMilli(selectorThresholdMs + 1),
 			expectedPlan: `
 				- NoOp
 			`,
@@ -118,37 +179,36 @@ func TestRemoveStaticallyEmptyExpressionsOptimizationPass(t *testing.T) {
 			// The inner "and" has the timestamp filter → replaced with NoOp.
 			// The outer "and" then has NoOp as its LHS → also replaced with NoOp.
 			expr:       "(metric and timestamp(metric) < CONSTANT) and metric2",
-			queryStart: time.UnixMilli(thresholdMs),
+			queryStart: time.UnixMilli(selectorThresholdMs + 1),
 			expectedPlan: `
 				- NoOp
 			`,
 		},
 		"nested and expressions: inner not optimized because not a no-op": {
 			expr:            "(metric and timestamp(metric) < CONSTANT) and metric2",
-			queryStart:      time.UnixMilli(thresholdMs - 1),
+			queryStart:      time.UnixMilli(selectorThresholdMs - 1),
 			expectUnchanged: true,
 		},
 		"nested and expressions: should optimize as far as possible": {
+			// The inner "and" has the timestamp filter → replaced with NoOp.
+			// The outer "or" then has NoOp as its LHS → simplified to just the RHS.
 			expr:       "(metric and timestamp(metric) < CONSTANT) or metric2",
-			queryStart: time.UnixMilli(thresholdMs),
+			queryStart: time.UnixMilli(selectorThresholdMs + 1),
 			expectedPlan: `
-				- DeduplicateAndMerge
-					- BinaryExpression: LHS or RHS
-						- LHS: NoOp
-						- RHS: VectorSelector: {__name__="metric2"}
+				- VectorSelector: {__name__="metric2"}
 			`,
 		},
 
 		"complex expression inside timestamp() that is a no-op: should optimize": {
 			expr:       `foo and timestamp(sum(metric)) < CONSTANT`,
-			queryStart: time.UnixMilli(thresholdMs),
+			queryStart: time.UnixMilli(nonSelectorThresholdMs),
 			expectedPlan: `
 				- NoOp
 			`,
 		},
 		"complex expression inside timestamp() that is not a no-op: should not optimize": {
 			expr:            `foo and timestamp(sum(metric)) < CONSTANT`,
-			queryStart:      time.UnixMilli(thresholdMs - 1),
+			queryStart:      time.UnixMilli(nonSelectorThresholdMs - 1),
 			expectUnchanged: true,
 		},
 
@@ -156,7 +216,7 @@ func TestRemoveStaticallyEmptyExpressionsOptimizationPass(t *testing.T) {
 			// The "and timestamp(metric) < CONSTANT" is outside the subquery, so it is evaluated
 			// at the outer query time range, which is after the threshold.
 			expr:       "avg_over_time(metric[5m:1m]) and timestamp(metric) < CONSTANT",
-			queryStart: time.UnixMilli(thresholdMs),
+			queryStart: time.UnixMilli(selectorThresholdMs + 1),
 			expectedPlan: `
 				- NoOp
 			`,
@@ -166,6 +226,254 @@ func TestRemoveStaticallyEmptyExpressionsOptimizationPass(t *testing.T) {
 			expr:            "avg_over_time((metric and timestamp(metric) < CONSTANT)[2h:1m])",
 			queryStart:      time.Unix(10000, 0),
 			expectUnchanged: true,
+		},
+		"function over subquery with empty results: should not optimize": {
+			// We short-circuit on subqueries now for simplicity
+			expr:            `max_over_time(EMPTY_RESULT[1d:5m])`,
+			expectUnchanged: true,
+		},
+		"function over subquery binary operation with empty results: should optimize": {
+			expr: `max_over_time(metric_a[1d:5m]) + rate(EMPTY_RESULT[5m])`,
+			expectedPlan: `
+				- NoOp
+			`,
+		},
+		"unary operation on empty results: should optimize": {
+			expr: `-rate(EMPTY_RESULT[5m])`,
+			expectedPlan: `
+				- NoOp
+			`,
+		},
+		"non-conflicting equals matchers: should not optimize": {
+			expr:            `metric{pod="foo", env="bar"}`,
+			queryStart:      time.UnixMilli(selectorThresholdMs),
+			expectUnchanged: true,
+		},
+		"non-equals matchers: should not optimize": {
+			expr:            `metric{pod=~"foo.+", pod!~".+bar"}`,
+			queryStart:      time.UnixMilli(selectorThresholdMs),
+			expectUnchanged: true,
+		},
+		"conflicting equals matchers in first info() argument: should optimize": {
+			expr:       `info(metric{pod="foo", pod="bar"}, {__name__="other_info"})`,
+			queryStart: time.UnixMilli(selectorThresholdMs),
+			expectedPlan: `
+				- NoOp
+			`,
+		},
+		"conflicting equals matchers in second info() argument: should not optimize": {
+			expr:            `info(metric, {env="prod", env="dev"})`,
+			queryStart:      time.UnixMilli(selectorThresholdMs),
+			expectUnchanged: true,
+		},
+		"conflicting equals matchers vector: should optimize": {
+			expr:       `metric{pod="foo", pod="bar"}`,
+			queryStart: time.UnixMilli(selectorThresholdMs),
+			expectedPlan: `
+				- NoOp
+			`,
+		},
+		"conflicting equals matchers matrix: should optimize": {
+			expr:       `avg_over_time(metric{pod="foo", pod="bar"}[5m])`,
+			queryStart: time.UnixMilli(selectorThresholdMs),
+			expectedPlan: `
+				- NoOp
+			`,
+		},
+		"conflicting equals matchers on LHS of binary expression: should optimize": {
+			expr:       `metric{pod="foo", pod="bar"} and foo`,
+			queryStart: time.UnixMilli(selectorThresholdMs),
+			expectedPlan: `
+				- NoOp
+			`,
+		},
+		"conflicting equals matchers on RHS of binary expression: should optimize": {
+			expr:       `foo and metric{pod="foo", pod="bar"}`,
+			queryStart: time.UnixMilli(selectorThresholdMs),
+			expectedPlan: `
+				- NoOp
+			`,
+		},
+		"aggregation over empty result: should optimize": {
+			expr:       `sum(EMPTY_RESULT)`,
+			queryStart: time.UnixMilli(selectorThresholdMs),
+			expectedPlan: `
+				- NoOp
+			`,
+		},
+		"aggregation over function over empty result: should optimize": {
+			expr: `sum(rate(EMPTY_RESULT[5m]))`,
+			expectedPlan: `
+				- NoOp
+			`,
+		},
+		"aggregation with grouping over empty result: should optimize": {
+			expr: `count by (namespace) (EMPTY_RESULT)`,
+			expectedPlan: `
+				- NoOp
+			`,
+		},
+		"aggregation without grouping over empty result: should optimize": {
+			expr: `sum without (namespace) (EMPTY_RESULT)`,
+			expectedPlan: `
+				- NoOp
+			`,
+		},
+		"binary add with empty result on right side: should optimize": {
+			expr: `sum(metric_a) + sum(EMPTY_RESULT)`,
+			expectedPlan: `
+				- NoOp
+			`,
+		},
+		"binary add with empty result on left side: should optimize": {
+			expr: `sum(EMPTY_RESULT) + sum(metric_a)`,
+			expectedPlan: `
+				- NoOp
+			`,
+		},
+		"binary modulo with empty result on right side: should optimize": {
+			expr: `sum(metric_a) % sum(EMPTY_RESULT)`,
+			expectedPlan: `
+				- NoOp
+			`,
+		},
+		"binary exponent with empty result on left side: should optimize": {
+			expr: `sum(EMPTY_RESULT) ^ sum(metric_a)`,
+			expectedPlan: `
+				- NoOp
+			`,
+		},
+		"binary atan2 with empty result on right side: should optimize": {
+			expr: `some_metric atan2 EMPTY_RESULT`,
+			expectedPlan: `
+				- NoOp
+			`,
+		},
+		"binary less-than with empty result on right side: should optimize": {
+			expr: `some_metric_a < EMPTY_RESULT`,
+			expectedPlan: `
+				- NoOp
+			`,
+		},
+		"binary less-than-or-equal with empty result on right side: should optimize": {
+			expr: `some_metric_a <= EMPTY_RESULT`,
+			expectedPlan: `
+				- NoOp
+			`,
+		},
+		"binary greater-than with empty result on right side: should optimize": {
+			expr: `some_metric_a > EMPTY_RESULT`,
+			expectedPlan: `
+				- NoOp
+			`,
+		},
+		"binary greater-than-or-equal with empty result on right side: should optimize": {
+			expr: `some_metric_a >= EMPTY_RESULT`,
+			expectedPlan: `
+				- NoOp
+			`,
+		},
+		"binary add with results on both sides: should not optimize": {
+			expr:            `sum(metric_a) + sum(metric_b)`,
+			expectUnchanged: true,
+		},
+		"binary greater-than with results on both sides: should not optimize": {
+			expr:            `some_metric_a > some_metric_b`,
+			expectUnchanged: true,
+		},
+		"absent over empty result: should only optimize selector": {
+			expr: `absent(EMPTY_RESULT)`,
+			expectedPlan: `
+				- FunctionCall: absent(...)
+					- NoOp
+			`,
+		},
+		"absent_over_time over empty result: should only optimize selector": {
+			expr: `absent_over_time(EMPTY_RESULT[5m])`,
+			expectedPlan: `
+				- FunctionCall: absent_over_time(...)
+					- NoOp: matrix
+			`,
+		},
+		"abs over empty result: should optimize": {
+			expr: `abs(EMPTY_RESULT)`,
+			expectedPlan: `
+				- NoOp
+			`,
+		},
+		"histogram_quantile over empty result: should optimize": {
+			expr: `histogram_quantile(0.99, sum(rate(EMPTY_RESULT[5m])))`,
+			expectedPlan: `
+				- NoOp
+			`,
+		},
+		"histogram_fraction over empty result: should optimize": {
+			expr: `histogram_fraction(0, 0.2, rate(EMPTY_RESULT[5m]))`,
+			expectedPlan: `
+				- NoOp
+			`,
+		},
+		"non-empty result ANDed with empty result: returns empty result": {
+			expr: `metric and EMPTY_RESULT`,
+			expectedPlan: `
+				- NoOp
+			`,
+		},
+		"non-empty result ANDed with non-empty result: stays as-is": {
+			expr:            `metric and other_metric`,
+			expectUnchanged: true,
+		},
+		"empty result ANDed with empty result: returns empty result": {
+			expr: `EMPTY_RESULT and EMPTY_RESULT`,
+			expectedPlan: `
+				- NoOp
+			`,
+		},
+
+		"empty result ORed with non-empty result: returns non-empty side": {
+			expr: `EMPTY_RESULT or metric`,
+			expectedPlan: `
+				- VectorSelector: {__name__="metric"}
+			`,
+		},
+		"non-empty result ORed with empty result: returns non-empty side": {
+			expr: `metric or EMPTY_RESULT`,
+			expectedPlan: `
+				- VectorSelector: {__name__="metric"}
+			`,
+		},
+		"non-empty result ORed with non-empty result: stays as-is": {
+			expr:            `metric or other_metric`,
+			expectUnchanged: true,
+		},
+		"empty result ORed with empty result: returns empty result": {
+			expr: `EMPTY_RESULT or EMPTY_RESULT`,
+			expectedPlan: `
+				- NoOp
+			`,
+		},
+
+		"empty result UNLESSed with non-empty result: returns empty result": {
+			expr: `EMPTY_RESULT unless metric`,
+			expectedPlan: `
+				- NoOp
+			`,
+		},
+		"non-empty result UNLESSed with empty result: returns non-empty side": {
+			expr: `metric unless EMPTY_RESULT`,
+			expectedPlan: `
+				- VectorSelector: {__name__="metric"}
+			`,
+		},
+		"non-empty result UNLESSed with non-empty result: stays as-is": {
+			expr:            `metric unless other_metric`,
+			expectUnchanged: true,
+		},
+		"empty result UNLESSed with empty result: returns empty result": {
+			expr: `EMPTY_RESULT unless EMPTY_RESULT`,
+			expectedPlan: `
+				- NoOp
+			`,
 		},
 	}
 
@@ -190,8 +498,9 @@ func TestRemoveStaticallyEmptyExpressionsOptimizationPass(t *testing.T) {
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
 			testCase.expr = strings.ReplaceAll(testCase.expr, "CONSTANT", strconv.Itoa(constant))
+			testCase.expr = strings.ReplaceAll(testCase.expr, "EMPTY_RESULT", `some_metric{foo="bar", foo="not-bar"}`)
 
-			timeRange := types.NewRangeQueryTimeRange(testCase.queryStart, timestamp.Time(math.MaxInt64), time.Minute)
+			timeRange := types.NewRangeQueryTimeRange(testCase.queryStart, testCase.queryStart.Add(24*time.Hour), time.Minute)
 			expectedModified := 1
 
 			if testCase.expectUnchanged {
@@ -214,4 +523,128 @@ func TestRemoveStaticallyEmptyExpressionsOptimizationPass(t *testing.T) {
 			))
 		})
 	}
+}
+
+func TestRemoveStaticallyEmptyExpressions_AdaptiveMetrics(t *testing.T) {
+	// This test confirms that expressions rewritten by Adaptive Metrics are correctly optimised away.
+	// Expressions like timestamp(foo) < C are rewritten to wrapper(timestamp(foo)) < C.
+
+	reg := prometheus.NewPedanticRegistry()
+	opts := streamingpromql.NewTestEngineOpts()
+	optimizationPass := plan.NewRemoveStaticallyEmptyExpressionsOptimizationPass(reg, opts.Logger)
+
+	for _, function := range []functions.Function{functions.FUNCTION_ADAPTIVE_METRICS_RESERVED_1, functions.FUNCTION_ADAPTIVE_METRICS_RESERVED_2} {
+		// We have to manually create the query plan instead of parsing it from an expression because the Adaptive Metrics wrapper
+		// functions aren't registered in open source Mimir.
+		selector := &core.VectorSelector{
+			VectorSelectorDetails: &core.VectorSelectorDetails{
+				Matchers: []*core.LabelMatcher{
+					{
+						Type:  labels.MatchEqual,
+						Name:  model.MetricNameLabel,
+						Value: "metric",
+					},
+				},
+			},
+		}
+
+		timestampFunctionCall := &core.FunctionCall{
+			FunctionCallDetails: &core.FunctionCallDetails{
+				Function: functions.FUNCTION_TIMESTAMP,
+			},
+			Args: []planning.Node{selector},
+		}
+
+		adaptiveMetricsWrapper := &core.FunctionCall{
+			FunctionCallDetails: &core.FunctionCallDetails{
+				Function: function,
+			},
+			Args: []planning.Node{
+				timestampFunctionCall,
+			},
+		}
+
+		scalar := &core.NumberLiteral{
+			NumberLiteralDetails: &core.NumberLiteralDetails{
+				Value: 1000,
+			},
+		}
+
+		queryPlan := &planning.QueryPlan{
+			Root: &core.BinaryExpression{
+				LHS: adaptiveMetricsWrapper,
+				RHS: scalar,
+				BinaryExpressionDetails: &core.BinaryExpressionDetails{
+					Op: core.BINARY_LTE,
+				},
+			},
+			Parameters: &planning.QueryParameters{
+				TimeRange: types.NewInstantQueryTimeRange(time.Unix(2000, 0)),
+			},
+		}
+
+		optimizedPlan, err := optimizationPass.Apply(context.Background(), queryPlan, planning.MaximumSupportedQueryPlanVersion)
+		require.NoError(t, err)
+
+		require.Equal(t, "- NoOp", optimizedPlan.String())
+	}
+}
+
+func TestRemoveStaticallyEmptyExpressions_IsAlwaysEmptyFunctionCall_UnknownFunctionsHandled(t *testing.T) {
+	params := &planning.QueryParameters{
+		TimeRange:     types.NewInstantQueryTimeRange(time.Now()),
+		LookbackDelta: 5 * time.Minute,
+	}
+
+	maxFuncOrd := getMaxFunctionOrdinal()
+	funcCall := &core.FunctionCall{
+		FunctionCallDetails: &core.FunctionCallDetails{
+			Function: functions.Function(maxFuncOrd + 1),
+		},
+	}
+
+	_, err := plan.IsAlwaysEmptyFunctionCall(funcCall, params)
+	require.ErrorIs(t, err, plan.ErrUnknownFunction)
+}
+
+func TestRemoveStaticallyEmptyExpressions_IsAlwaysEmptyFunctionCall_AllKnownFunctionsHandled(t *testing.T) {
+	params := &planning.QueryParameters{
+		TimeRange:     types.NewInstantQueryTimeRange(time.Now()),
+		LookbackDelta: 5 * time.Minute,
+	}
+
+	// For every known function, ensure that we either get no error when determining if
+	// it is always empty or an error because we haven't passed the expected arguments
+	// (because we don't pass any). The idea is to make sure we have explicitly handled
+	// every defined function.
+	for ord := range functions.Function_name {
+		currentFunc := functions.Function(ord)
+
+		// Not a real function so it isn't handled by the optimization pass.
+		if currentFunc == functions.FUNCTION_UNKNOWN {
+			continue
+		}
+
+		funcCall := &core.FunctionCall{
+			FunctionCallDetails: &core.FunctionCallDetails{
+				Function: currentFunc,
+			},
+		}
+
+		_, err := plan.IsAlwaysEmptyFunctionCall(funcCall, params)
+		if err != nil {
+			require.ErrorIs(t, err, plan.ErrInvalidFunctionArgs, "expected no error or invalid arguments error for %s, got %s", currentFunc, err)
+		}
+	}
+}
+
+func getMaxFunctionOrdinal() int32 {
+	maxFuncOrd := int32(0)
+	for _, i := range functions.Function_value {
+		if i > maxFuncOrd {
+			maxFuncOrd = i
+		}
+	}
+
+	return maxFuncOrd
 }

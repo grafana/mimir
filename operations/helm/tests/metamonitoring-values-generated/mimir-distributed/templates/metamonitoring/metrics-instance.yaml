@@ -13,7 +13,6 @@ metadata:
 spec:
   remoteWrite:
       - url: http://metamonitoring-values-mimir-gateway.citestns.svc:80/api/v1/push
-        basicAuth:
         headers:
           X-Scope-OrgID: metamonitoring
       - url: https://mimir.example.com
@@ -43,3 +42,4 @@ spec:
     matchLabels:
       app.kubernetes.io/name: mimir
       app.kubernetes.io/instance: metamonitoring-values
+

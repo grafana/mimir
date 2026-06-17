@@ -218,7 +218,7 @@ func (r *Readcache) startKafkaReader(ctx context.Context, p *partitionState) err
 		}, partitionReg)
 	}
 
-	reader, err := ingest.NewPartitionReaderForPusher(
+	reader, err := ingest.NewSingleClusterPartitionReader(
 		kafkaCfg,
 		p.partitionID,
 		r.cfg.InstanceID,

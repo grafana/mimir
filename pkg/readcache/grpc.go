@@ -93,6 +93,16 @@ func (r *Readcache) ActiveSeries(req *client.ActiveSeriesRequest, srv client.Ing
 	return r.activeSeries(req, srv)
 }
 
+// SearchLabelNames implements client.IngesterServer.
+func (r *Readcache) SearchLabelNames(_ *client.SearchLabelNamesRequest, _ client.Ingester_SearchLabelNamesServer) error {
+	return status.Error(codes.Unimplemented, "readcache does not implement label name search")
+}
+
+// SearchLabelValues implements client.IngesterServer.
+func (r *Readcache) SearchLabelValues(_ *client.SearchLabelValuesRequest, _ client.Ingester_SearchLabelValuesServer) error {
+	return status.Error(codes.Unimplemented, "readcache does not implement label value search")
+}
+
 // HashRangeStats implements client.IngesterServer. Readcache is the
 // authoritative producer of this RPC under the Phase 2 plan.
 func (r *Readcache) HashRangeStats(ctx context.Context, req *client.HashRangeStatsRequest) (*client.HashRangeStatsResponse, error) {

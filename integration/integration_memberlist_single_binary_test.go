@@ -38,9 +38,39 @@ func TestSingleBinaryWithMemberlist(t *testing.T) {
 			"-memberlist.compression-enabled": "false",
 		})
 	})
+
+	t.Run("compression-snappy", func(t *testing.T) {
+		testSingleBinaryEnv(t, false, map[string]string{
+			"-memberlist.compression-enabled":   "true",
+			"-memberlist.compression-algorithm": "snappy",
+		})
+	})
+
+	// mixedCompression exercises the in-rollout state where some nodes emit
+	// snappy and others emit lzw. The cluster must converge regardless of
+	// the heterogeneous mix.
+	mixedCompression := func(t *testing.T, tlsEnabled bool) {
+		t.Helper()
+		snappyFlags := map[string]string{"-memberlist.compression-enabled": "true", "-memberlist.compression-algorithm": "snappy"}
+		lzwFlags := map[string]string{"-memberlist.compression-enabled": "true", "-memberlist.compression-algorithm": "lzw"}
+		testSingleBinaryEnvPerNodeFlags(t, tlsEnabled, snappyFlags, lzwFlags, lzwFlags, nil)
+	}
+	t.Run("compression-mixed", func(t *testing.T) { mixedCompression(t, false) })
+	t.Run("tls-compression-mixed", func(t *testing.T) { mixedCompression(t, true) })
 }
 
 func testSingleBinaryEnv(t *testing.T, tlsEnabled bool, flags map[string]string) {
+	t.Helper()
+	testSingleBinaryEnvPerNodeFlags(t, tlsEnabled, flags, flags, flags, nil)
+}
+
+func testSingleBinaryEnvPerNodeFlags(
+	t *testing.T,
+	tlsEnabled bool,
+	mimir1Flags, mimir2Flags, mimir3Flags map[string]string,
+	postConverge func(mimir1, mimir2, mimir3 *e2emimir.MimirService),
+) {
+	t.Helper()
 	s, err := e2e.NewScenario(networkName)
 	require.NoError(t, err)
 	defer s.Close()
@@ -72,13 +102,13 @@ func testSingleBinaryEnv(t *testing.T, tlsEnabled bool, flags map[string]string)
 			filepath.Join(s.SharedDir(), clientKeyFile),
 		))
 
-		mimir1 = newSingleBinary("mimir-1", memberlistDNS, "", flags)
-		mimir2 = newSingleBinary("mimir-2", memberlistDNS, networkName+"-mimir-1:8000", flags)
-		mimir3 = newSingleBinary("mimir-3", memberlistDNS, networkName+"-mimir-1:8000", flags)
+		mimir1 = newSingleBinary("mimir-1", memberlistDNS, "", mimir1Flags)
+		mimir2 = newSingleBinary("mimir-2", memberlistDNS, networkName+"-mimir-1:8000", mimir2Flags)
+		mimir3 = newSingleBinary("mimir-3", memberlistDNS, networkName+"-mimir-1:8000", mimir3Flags)
 	} else {
-		mimir1 = newSingleBinary("mimir-1", "", "", flags)
-		mimir2 = newSingleBinary("mimir-2", "", networkName+"-mimir-1:8000", flags)
-		mimir3 = newSingleBinary("mimir-3", "", networkName+"-mimir-1:8000", flags)
+		mimir1 = newSingleBinary("mimir-1", "", "", mimir1Flags)
+		mimir2 = newSingleBinary("mimir-2", "", networkName+"-mimir-1:8000", mimir2Flags)
+		mimir3 = newSingleBinary("mimir-3", "", networkName+"-mimir-1:8000", mimir3Flags)
 	}
 
 	// start mimir-1 first, as mimir-2 and mimir-3 both connect to mimir-1
@@ -89,6 +119,10 @@ func testSingleBinaryEnv(t *testing.T, tlsEnabled bool, flags map[string]string)
 	require.NoError(t, mimir1.WaitSumMetrics(e2e.Equals(3), "memberlist_client_cluster_members_count"))
 	require.NoError(t, mimir2.WaitSumMetrics(e2e.Equals(3), "memberlist_client_cluster_members_count"))
 	require.NoError(t, mimir3.WaitSumMetrics(e2e.Equals(3), "memberlist_client_cluster_members_count"))
+
+	if postConverge != nil {
+		postConverge(mimir1, mimir2, mimir3)
+	}
 
 	// Each Mimir instance will use (512 ingester tokens + 1 distributor token + 512 compactor tokens + 512 store gateway tokens + 512 tokens seen by store-gateway client + 128 ruler tokens + 1 querier token).
 	tokensPerInstance := float64(512 + 1 + 512 + 512 + 512 + 128 + 1)

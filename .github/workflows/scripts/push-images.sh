@@ -11,9 +11,12 @@ TAG="$3"
 
 # If image is the latest stable git tag, also push :latest image.
 # Do not tag with latest any release candidate (tag ends with "-rc.*").
+LATEST_TAG="$(git ls-remote --tags origin | awk '{print $2}' | grep -E '^refs/tags/mimir-[0-9]+\.[0-9]+\.[0-9]+$' | grep -Eo 'mimir-.*' | sort -V | tail -n 1)"
 EXTRA_TAG=""
-if [[ "$(git tag | grep -E '^mimir-[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n 1)" == "mimir-${TAG}" ]]; then
+if [[ "$LATEST_TAG" == "mimir-${TAG}" ]]; then
   EXTRA_TAG="latest"
+else
+  echo "Latest stable git tag is $LATEST_TAG, while we're pushing $TAG. Not pushing :latest"
 fi
 
 # Push images from OCI archives to docker registry.

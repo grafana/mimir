@@ -165,13 +165,6 @@ func (s *readcacheLogStore) snapshot() []readcacheassignment.LogEntry {
 	return s.log.Entries()
 }
 
-// activeEntries returns the readcache ownership leases valid at at.
-func (s *readcacheLogStore) activeEntries(at time.Time) []readcacheassignment.LogEntry {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.log.LiveEntries(at)
-}
-
 // subscribe registers a new watcher. Same semantics as
 // logStore.subscribe, including the !s.ready -> nil initial gate
 // that prevents a freshly-restarted rebalancer from broadcasting a

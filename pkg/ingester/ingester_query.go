@@ -27,7 +27,7 @@ import (
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/api"
-	"github.com/grafana/mimir/pkg/storage/series"
+	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
@@ -498,6 +498,7 @@ func (i *Ingester) LabelValuesCardinality(req *client.LabelValuesCardinalityRequ
 		idx,
 		postingsForMatchersFn,
 		labelValuesCardinalityTargetSizeBytes,
+		i.cfg.LabelValuesCountRequestMaxConcurrency,
 		srv,
 	)
 }
@@ -573,7 +574,6 @@ func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_
 
 	selectHints := initSelectHints(int64(from), int64(through))
 	selectHints = configSelectHintsWithShard(selectHints, shard)
-	selectHints = configSelectHintsWithProjections(selectHints, req.ProjectionInclude, req.ProjectionLabels)
 	// Disable chunks trimming, so that we don't have to rewrite chunks which have samples outside
 	// the requested from/through range. PromQL engine can handle it.
 	selectHints = configSelectHintsWithDisabledTrimming(selectHints)
@@ -659,8 +659,6 @@ func putChunkSeriesNode(sn *chunkSeriesNode) {
 }
 
 func (i *Ingester) sendStreamingQuerySeries(ctx context.Context, q storage.ChunkQuerier, hints *storage.SelectHints, matchers []*labels.Matcher, stream client.Ingester_QueryStreamServer) (*chunkSeriesNode, int, error) {
-	spanlog := spanlogger.FromContext(ctx, i.logger)
-
 	// Series must be sorted so that they can be read by the querier in the order the PromQL engine expects.
 	ss := q.Select(ctx, true, hints, matchers...)
 	if ss.Err() != nil {
@@ -668,22 +666,6 @@ func (i *Ingester) sendStreamingQuerySeries(ctx context.Context, q storage.Chunk
 	}
 
 	seriesInBatch := make([]client.QueryStreamSeries, 0, queryStreamBatchSize)
-
-	var (
-		projections *series.ProjectionLabels
-
-		// We keep track of the number of bytes used for the original labels
-		// and the number of bytes saved if we applied the projection optimization.
-		// This allows us to quantify the value of the optimization.
-		originalLabelBytes uint64
-		reducedLabelBytes  uint64
-		skippedLabelBytes  uint64
-	)
-
-	if hints.ProjectionInclude {
-		spanlog.DebugLog("msg", "applying projections to return subset of series labels", "labels", hints.ProjectionLabels)
-		projections = series.NewProjectionLabels(hints.ProjectionLabels)
-	}
 
 	// We retain the iterator factory returned by IteratorFactory() rather than the full storage.ChunkSeries,
 	// so that we don't hold references to labels or other series data longer than necessary.
@@ -714,17 +696,6 @@ func (i *Ingester) sendStreamingQuerySeries(ctx context.Context, q storage.Chunk
 		}
 
 		lbls := cs.Labels()
-
-		if hints.ProjectionInclude {
-			originalLabelBytes += lbls.ByteSize()
-			reduced := projections.Reduce(lbls)
-			// Estimate the size of the series hash label and value since we aren't generating
-			// series hash on ingest currently.
-			reducedLabelBytes += reduced.ByteSize() + uint64(len(series.HashLabelName)) + 42 /* 256-bit hash as base64 */
-		} else {
-			skippedLabelBytes += lbls.ByteSize()
-		}
-
 		seriesInBatch = append(seriesInBatch, client.QueryStreamSeries{
 			Labels:     mimirpb.FromLabelsToLabelAdapters(lbls),
 			ChunkCount: int64(chunkCount),
@@ -741,10 +712,6 @@ func (i *Ingester) sendStreamingQuerySeries(ctx context.Context, q storage.Chunk
 			seriesInBatch = seriesInBatch[:0]
 		}
 	}
-
-	i.metrics.originalLabelBytes.Add(float64(originalLabelBytes))
-	i.metrics.reducedLabelBytes.Add(float64(reducedLabelBytes))
-	i.metrics.skippedLabelBytes.Add(float64(skippedLabelBytes))
 
 	// Send any remaining series, and signal that there are no more.
 	err := client.SendQueryStream(stream, &client.QueryStreamResponse{
@@ -897,15 +864,6 @@ func configSelectHintsWithDisabledTrimming(hints *storage.SelectHints) *storage.
 	return hints
 }
 
-func configSelectHintsWithProjections(hints *storage.SelectHints, projectionInclude bool, projectionLabels []string) *storage.SelectHints {
-	if projectionInclude {
-		hints.ProjectionInclude = true
-		hints.ProjectionLabels = projectionLabels
-	}
-
-	return hints
-}
-
 func (i *Ingester) UserRegistryHandler(w http.ResponseWriter, r *http.Request) {
 	userID, err := tenant.TenantID(r.Context())
 	if err != nil {
@@ -965,12 +923,17 @@ func (i *Ingester) enforceReadConsistency(ctx context.Context, tenantID string) 
 	}
 
 	if level == api.ReadConsistencyStrong {
-		// Check if request already contains the minimum offset we have to guarantee being queried
-		// for our partition.
-		if offsets, ok := api.ReadConsistencyEncodedOffsetsFromContext(ctx); ok {
-			if offset, ok := offsets.Lookup(i.ingestPartitionID); ok {
-				spanLog.DebugLog("msg", "enforcing strong read consistency", "offset", offset)
-				return errors.Wrap(i.ingestReader.WaitReadConsistencyUntilOffset(ctx, offset), "wait for read consistency")
+		// When compartments are enabled, per-compartment offsets are not yet propagated by the
+		// query-frontend and querier, so we ignore the encoded offset and fall back to waiting until the
+		// last produced offset.
+		if !i.cfg.Compartments.Enabled {
+			// Check if request already contains the minimum offset we have to guarantee being queried
+			// for our partition.
+			if offsets, ok := api.ReadConsistencyEncodedOffsetsFromContext(ctx); ok {
+				if offset, ok := offsets.Lookup(i.ingestPartitionID); ok {
+					spanLog.DebugLog("msg", "enforcing strong read consistency", "offset", offset)
+					return errors.Wrap(i.ingestReader.WaitReadConsistencyUntilOffsets(ctx, ingest.NewSingleClusterPartitionOffsets(offset)), "wait for read consistency")
+				}
 			}
 		}
 

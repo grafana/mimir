@@ -1,0 +1,58 @@
+{{- /*gotype: github.com/grafana/mimir/tools/node-gen.templateStructData*/ -}}
+
+{{define "children_field" -}}
+func ({{.Receiver}} *{{.Type}}) ReplaceChild(idx int, node planning.Node) error {
+	if idx >= len({{.Receiver}}.{{.ChildrenField}}) {
+		return fmt.Errorf("this {{.Type}} node has %d children, but attempted to replace child at index %d", len({{.Receiver}}.{{.ChildrenField}}), idx)
+	}
+	{{.Receiver}}.{{.ChildrenField}}[idx] = node
+	return nil
+}
+{{- end }}
+
+{{define "single_child_field" -}}
+{{$field := index .ChildFields 0 -}}
+func ({{.Receiver}} *{{.Type}}) ReplaceChild(idx int, node planning.Node) error {
+	if idx != 0 {
+		return fmt.Errorf("node of type {{.Type}} supports 1 child, but attempted to replace child at index %d", idx)
+	}
+	{{- if ne $field.Type "planning.Node" }}
+	child, ok := node.({{$field.Type}})
+	if !ok {
+		return fmt.Errorf("node of type {{.Type}} expects child {{$field.Name}} to be of type {{$field.Type}}, but got %T", node)
+	}
+	{{.Receiver}}.{{$field.Name}} = child
+	{{- else }}
+	{{.Receiver}}.{{$field.Name}} = node
+	{{- end }}
+	return nil
+}
+{{- end }}
+
+{{define "multi_child_fields" -}}
+func ({{.Receiver}} *{{.Type}}) ReplaceChild(idx int, node planning.Node) error {
+	switch idx {
+	{{- range $i, $f := .ChildFields }}
+	case {{$i}}:
+		{{- if ne $f.Type "planning.Node" }}
+		child, ok := node.({{$f.Type}})
+		if !ok {
+			return fmt.Errorf("node of type {{$.Type}} expects child {{$f.Name}} to be of type {{$f.Type}}, but got %T", node)
+		}
+		{{$.Receiver}}.{{$f.Name}} = child
+		{{- else }}
+		{{$.Receiver}}.{{$f.Name}} = node
+		{{- end }}
+		return nil
+	{{- end }}
+	default:
+		return fmt.Errorf("node of type {{.Type}} supports {{len .ChildFields}} children, but attempted to replace child at index %d", idx)
+	}
+}
+{{- end }}
+
+{{define "no_fields" -}}
+func ({{.Receiver}} *{{.Type}}) ReplaceChild(idx int, _ planning.Node) error {
+	return fmt.Errorf("node of type {{.Type}} has no children, but attempted to replace child at index %d", idx)
+}
+{{- end }}

@@ -46,6 +46,15 @@ Incoming samples are considered duplicated (and thus dropped) if they are receiv
 If the HA tracker is enabled but incoming samples contain only one or none of the cluster and replica labels, these samples are accepted by default and never deduplicated.
 
 > Note: for performance reasons, the HA tracker only checks the cluster and replica label of the first series in the request to determine whether all series in the request should be deduplicated. This assumes that all series inside the request have the same cluster and replica labels, which is typically true when Prometheus is configured with external labels. Ensure this requirement is honored if you have a non-standard Prometheus setup (for example, you're using Prometheus federation or have a metrics proxy in between).
+>
+> If all series inside a single write request can't be guaranteed to share the same cluster and replica labels, enable the experimental per-series HA deduplication via `-distributor.ha-tracker.per-sample-dedupe` (or the `ha_tracker_per_sample_dedupe` per-tenant limit). With this setting enabled, each timeseries in the request is evaluated independently, so non-elected replicas are dropped even when mixed with elected-replica or non-HA series in the same request.
+
+### Error responses
+
+When the HA tracker drops samples, Mimir returns one of the following errors depending on the reason:
+
+- **Replicas did not match**: When samples are received from a non-elected replica, Mimir returns an HTTP `202 Accepted` response with the message `replicas did not match, rejecting sample: replica=<replica>, elected=<elected>`. This indicates that the samples were successfully deduplicated and can be safely ignored.
+- **Too many HA clusters**: When the number of HA clusters for a tenant exceeds the configured limit, Mimir returns an HTTP `400 Bad Request` response with the error ID `err-mimir-tenant-too-many-ha-clusters`. To adjust this limit, configure `-distributor.ha-tracker.max-clusters` or contact your service administrator.
 
 ## Configuration
 

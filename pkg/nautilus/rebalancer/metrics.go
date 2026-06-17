@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
 // metrics holds the Prometheus collectors for the rebalancer. Phase 1
@@ -77,59 +78,58 @@ type metrics struct {
 }
 
 func newMetrics(r prometheus.Registerer) *metrics {
+	if r == nil {
+		r = prometheus.NewRegistry()
+	}
 	m := &metrics{
-		partitionQuerySamples: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		partitionQuerySamples: promauto.With(r).NewGaugeVec(prometheus.GaugeOpts{
 			Name: "cortex_nautilus_rebalancer_partition_query_samples_ewma",
 			Help: "EWMA of samples-per-second scanned by named queries, summed across ingesters that reported the partition. Phase 1: observation-only; the rebalancer still balances on head-series count.",
 		}, []string{"partition"}),
-		unnamedQuerySamples: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		unnamedQuerySamples: promauto.With(r).NewGaugeVec(prometheus.GaugeOpts{
 			Name: "cortex_nautilus_rebalancer_unnamed_query_samples_ewma",
 			Help: "EWMA of samples-per-second scanned by full-fanout queries on each ingester. Reported per ingester because the work scours all owned partitions.",
 		}, []string{"instance"}),
 		lastPartitionKeys: map[string]struct{}{},
 		lastInstanceKeys:  map[string]struct{}{},
-		readcacheInstanceLoad: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		readcacheInstanceLoad: promauto.With(r).NewGaugeVec(prometheus.GaugeOpts{
 			Name: "cortex_nautilus_rebalancer_readcache_instance_load",
 			Help: "Total per-instance load (alpha*active_series + beta*samples_ewma) for the most recent readcache slicer round.",
 		}, []string{"instance"}),
-		readcachePartitionOwner: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		readcachePartitionOwner: promauto.With(r).NewGaugeVec(prometheus.GaugeOpts{
 			Name: "cortex_nautilus_rebalancer_readcache_partition_owner",
 			Help: "Per (partition, instance) gauge set to 1 for the currently-planned owner. Stale (partition, instance) pairs are deleted between rounds, so the sum over instances per partition is always 1 for active partitions.",
 		}, []string{"partition", "instance"}),
 		lastReadcacheInstanceKeys:  map[string]struct{}{},
 		lastReadcachePartitionKeys: map[string]struct{}{},
-		rateZeroExclusions: prometheus.NewGauge(prometheus.GaugeOpts{
+		rateZeroExclusions: promauto.With(r).NewGauge(prometheus.GaugeOpts{
 			Name: "cortex_nautilus_rebalancer_phase3_excluded_partitions",
 			Help: "Number of partitions runPhase3 skipped on the most recent round because their reported sample rate was 0 despite holding in-memory series (typically a partition whose readcache was just reassigned by tier-2 and whose EWMA has not yet ramped up).",
 		}),
-		tier2RoundDecisions: prometheus.NewCounterVec(prometheus.CounterOpts{
+		tier2RoundDecisions: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_nautilus_rebalancer_tier2_round_decisions_total",
 			Help: "Count of tier-2 (readcache slicer) gate decisions partitioned by outcome (fire vs skip) and reason. Lets dashboards show why tier-2 chose to fire or wait, without re-reading logs.",
 		}, []string{"outcome", "reason"}),
-		watchStreamsActive: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		watchStreamsActive: promauto.With(r).NewGaugeVec(prometheus.GaugeOpts{
 			Name: "cortex_nautilus_rebalancer_watch_streams_active",
 			Help: "Number of currently-connected assignment watch streams, by stream type (hash = range->partition log, readcache = partition->instance log).",
 		}, []string{"stream"}),
-		watchStreamsStarted: prometheus.NewCounterVec(prometheus.CounterOpts{
+		watchStreamsStarted: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_nautilus_rebalancer_watch_streams_started_total",
 			Help: "Total assignment watch streams accepted, by stream type and subscriber protocol (delta vs legacy). A high rate with a stable fleet means subscribers are churning streams — every (re)connect costs a full-log snapshot send.",
 		}, []string{"stream", "protocol"}),
-		watchSentMessages: prometheus.NewCounterVec(prometheus.CounterOpts{
+		watchSentMessages: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_nautilus_rebalancer_watch_sent_messages_total",
 			Help: "Watch messages sent, by stream type and kind (snapshot carries the full retention-bounded log; delta carries only the entries one round mutated).",
 		}, []string{"stream", "kind"}),
-		watchSentEntries: prometheus.NewCounterVec(prometheus.CounterOpts{
+		watchSentEntries: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_nautilus_rebalancer_watch_sent_entries_total",
 			Help: "Log entries carried by sent watch messages, by stream type and kind.",
 		}, []string{"stream", "kind"}),
-		watchSentBytes: prometheus.NewCounterVec(prometheus.CounterOpts{
+		watchSentBytes: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_nautilus_rebalancer_watch_sent_bytes_total",
 			Help: "Marshaled proto bytes of sent watch messages, by stream type and kind. Approximates the rebalancer's outbound stream bandwidth (excludes gRPC framing/compression).",
 		}, []string{"stream", "kind"}),
-	}
-	if r != nil {
-		r.MustRegister(m.partitionQuerySamples, m.unnamedQuerySamples, m.readcacheInstanceLoad, m.readcachePartitionOwner, m.rateZeroExclusions, m.tier2RoundDecisions,
-			m.watchStreamsActive, m.watchStreamsStarted, m.watchSentMessages, m.watchSentEntries, m.watchSentBytes)
 	}
 	return m
 }

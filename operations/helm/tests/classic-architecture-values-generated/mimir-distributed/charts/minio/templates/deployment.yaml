@@ -82,4 +82,5 @@ spec:
             claimName: classic-architecture-values-minio
         - name: minio-user
           secret:
-            secretName: classic-architecture-values-minio
+            secretName: classic-architecture-values-minio        
+

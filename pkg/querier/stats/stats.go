@@ -227,6 +227,19 @@ func (s *SafeStats) LoadSamplesProcessed() uint64 {
 	return atomic.LoadUint64(&s.SamplesProcessed)
 }
 
+func (s *SafeStats) AddSamplesProcessedPerStep(points []StepStat) {
+	s.mergeSamplesProcessedPerStep(points)
+}
+
+func (s *SafeStats) LoadSamplesProcessedPerStep() []StepStat {
+	if s == nil {
+		return nil
+	}
+	s.mx.Lock()
+	defer s.mx.Unlock()
+	return s.SamplesProcessedPerStep
+}
+
 func (s *SafeStats) AddSpunOffSubqueries(num uint32) {
 	if s == nil {
 		return
@@ -239,20 +252,6 @@ func (s *SafeStats) LoadSpunOffSubqueries() uint32 {
 		return 0
 	}
 	return atomic.LoadUint32(&s.SpunOffSubqueries)
-}
-
-func (s *SafeStats) AddSamplesProcessedPerStep(points []StepStat) {
-	// merge is concurrent safe
-	s.mergeSamplesProcessedPerStep(points)
-}
-
-func (s *SafeStats) LoadSamplesProcessedPerStep() []StepStat {
-	if s == nil {
-		return nil
-	}
-	s.mx.Lock()
-	defer s.mx.Unlock()
-	return s.SamplesProcessedPerStep
 }
 
 func (s *SafeStats) AddRemoteExecutionRequests(count uint32) {
@@ -297,6 +296,38 @@ func (s *SafeStats) LoadReadcacheQueryStreamCalls() uint32 {
 	return atomic.LoadUint32(&s.ReadcacheQueryStreamCalls)
 }
 
+func (s *SafeStats) AddEquivalentSamplesRead(c uint64) {
+	if s == nil {
+		return
+	}
+
+	atomic.AddUint64(&s.EquivalentSamplesRead, c)
+}
+
+func (s *SafeStats) LoadEquivalentSamplesRead() uint64 {
+	if s == nil {
+		return 0
+	}
+
+	return atomic.LoadUint64(&s.EquivalentSamplesRead)
+}
+
+func (s *SafeStats) AddPhysicalSamplesRead(c uint64) {
+	if s == nil {
+		return
+	}
+
+	atomic.AddUint64(&s.PhysicalSamplesRead, c)
+}
+
+func (s *SafeStats) LoadPhysicalSamplesRead() uint64 {
+	if s == nil {
+		return 0
+	}
+
+	return atomic.LoadUint64(&s.PhysicalSamplesRead)
+}
+
 // Merge the provided Stats into this one.
 func (s *SafeStats) Merge(other *SafeStats) {
 	if s == nil || other == nil {
@@ -313,10 +344,12 @@ func (s *SafeStats) Merge(other *SafeStats) {
 	s.AddQueueTime(other.LoadQueueTime())
 	s.AddEncodeTime(other.LoadEncodeTime())
 	s.AddSamplesProcessed(other.LoadSamplesProcessed())
-	s.AddSpunOffSubqueries(other.LoadSpunOffSubqueries())
 	s.mergeSamplesProcessedPerStep(other.LoadSamplesProcessedPerStep())
+	s.AddSpunOffSubqueries(other.LoadSpunOffSubqueries())
 	s.AddRemoteExecutionRequests(other.LoadRemoteExecutionRequestCount())
 	s.AddSplitRangeVectors(other.LoadSplitRangeVectors())
+	s.AddEquivalentSamplesRead(other.LoadEquivalentSamplesRead())
+	s.AddPhysicalSamplesRead(other.LoadPhysicalSamplesRead())
 	s.AddReadcacheQueryStreamCalls(other.LoadReadcacheQueryStreamCalls())
 }
 
@@ -337,26 +370,20 @@ func (s *SafeStats) mergeSamplesProcessedPerStep(other []StepStat) {
 
 	merged := make([]StepStat, 0, len(this)+len(other))
 	i, j := 0, 0
-	confilctsNum := 0
-	var sum int64
 
 	for i < len(this) && j < len(other) {
 		if this[i].Timestamp < other[j].Timestamp {
 			merged = append(merged, this[i])
-			sum += this[i].Value
 			i++
 		} else if other[j].Timestamp < this[i].Timestamp {
 			merged = append(merged, other[j])
-			sum += other[j].Value
 			j++
 		} else {
-			confilctsNum++
 			summed := StepStat{
 				Timestamp: this[i].Timestamp,
 				Value:     this[i].Value + other[j].Value,
 			}
 			merged = append(merged, summed)
-			sum += summed.Value
 			i++
 			j++
 		}
@@ -365,11 +392,9 @@ func (s *SafeStats) mergeSamplesProcessedPerStep(other []StepStat) {
 	// Append any remaining elements
 	for ; i < len(this); i++ {
 		merged = append(merged, this[i])
-		sum += this[i].Value
 	}
 	for ; j < len(other); j++ {
 		merged = append(merged, other[j])
-		sum += other[j].Value
 	}
 	s.SamplesProcessedPerStep = merged // Set directly since we hold the lock
 }

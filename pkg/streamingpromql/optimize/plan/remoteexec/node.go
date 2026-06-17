@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/proto"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
@@ -27,9 +28,10 @@ func init() {
 	})
 }
 
+//node:generate
 type RemoteExecutionGroup struct {
 	*RemoteExecutionGroupDetails
-	Nodes []planning.Node
+	Nodes []planning.Node `node:"children,min=1"`
 }
 
 func (r *RemoteExecutionGroup) Details() proto.Message {
@@ -38,37 +40,6 @@ func (r *RemoteExecutionGroup) Details() proto.Message {
 
 func (r *RemoteExecutionGroup) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_REMOTE_EXEC_GROUP
-}
-
-func (r *RemoteExecutionGroup) Child(idx int) planning.Node {
-	if idx >= len(r.Nodes) {
-		panic(fmt.Sprintf("this RemoteExecutionGroup node has %d children, but attempted to get child at index %d", len(r.Nodes), idx))
-	}
-
-	return r.Nodes[idx]
-}
-
-func (r *RemoteExecutionGroup) ChildCount() int {
-	return len(r.Nodes)
-}
-
-func (r *RemoteExecutionGroup) SetChildren(children []planning.Node) error {
-	if len(children) < 1 {
-		return fmt.Errorf("node of type RemoteExecutionGroup requires at least one child, but got %d", len(children))
-	}
-
-	r.Nodes = children
-
-	return nil
-}
-
-func (r *RemoteExecutionGroup) ReplaceChild(idx int, node planning.Node) error {
-	if idx >= len(r.Nodes) {
-		panic(fmt.Sprintf("this RemoteExecutionGroup node has %d children, but attempted to replace child at index %d", len(r.Nodes), idx))
-	}
-
-	r.Nodes[idx] = node
-	return nil
 }
 
 func (r *RemoteExecutionGroup) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
@@ -124,17 +95,18 @@ func (r *RemoteExecutionGroup) ExpressionPosition() (posrange.PositionRange, err
 	return posrange.PositionRange{}, errors.New("cannot call ExpressionPosition on RemoteExecutionGroup node directly, call ExpressionPosition on consumer node instead")
 }
 
-func (r *RemoteExecutionGroup) MinimumRequiredPlanVersion() planning.QueryPlanVersion {
+func (r *RemoteExecutionGroup) MinimumRequiredPlanVersion(types.QueryTimeRange) (planning.QueryPlanVersion, error) {
 	if len(r.Nodes) > 1 {
-		return planning.QueryPlanV3
+		return planning.QueryPlanV3, nil
 	}
 
-	return planning.QueryPlanVersionZero
+	return planning.QueryPlanVersionZero, nil
 }
 
+//node:generate
 type RemoteExecutionConsumer struct {
 	*RemoteExecutionConsumerDetails
-	Group *RemoteExecutionGroup
+	Group *RemoteExecutionGroup `node:"child"`
 }
 
 func (c *RemoteExecutionConsumer) Details() proto.Message {
@@ -143,46 +115,6 @@ func (c *RemoteExecutionConsumer) Details() proto.Message {
 
 func (c *RemoteExecutionConsumer) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_REMOTE_EXEC_CONSUMER
-}
-
-func (c *RemoteExecutionConsumer) Child(idx int) planning.Node {
-	if idx != 0 {
-		panic(fmt.Sprintf("node of type RemoteExecutionConsumer supports 1 child, but attempted to get child at index %d", idx))
-	}
-
-	return c.Group
-}
-
-func (c *RemoteExecutionConsumer) ChildCount() int {
-	return 1
-}
-
-func (c *RemoteExecutionConsumer) SetChildren(children []planning.Node) error {
-	if len(children) != 1 {
-		return fmt.Errorf("node of type RemoteExecutionConsumer requires 1 child, but got %d", len(children))
-	}
-
-	group, ok := children[0].(*RemoteExecutionGroup)
-	if !ok {
-		return fmt.Errorf("node of type RemoteExecutionConsumer requires child of type RemoteExecutionGroup, but got %T", children[0])
-	}
-
-	c.Group = group
-	return nil
-}
-
-func (c *RemoteExecutionConsumer) ReplaceChild(idx int, child planning.Node) error {
-	if idx != 0 {
-		return fmt.Errorf("node of type RemoteExecutionConsumer supports 1 child, but attempted to replace child at index %d", idx)
-	}
-
-	group, ok := child.(*RemoteExecutionGroup)
-	if !ok {
-		return fmt.Errorf("node of type RemoteExecutionConsumer requires child of type RemoteExecutionGroup, but got %T", child)
-	}
-
-	c.Group = group
-	return nil
 }
 
 func (c *RemoteExecutionConsumer) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
@@ -251,20 +183,20 @@ func (c *RemoteExecutionConsumer) getEvaluatedNode() (planning.Node, error) {
 	return c.Group.Nodes[c.NodeIndex], nil
 }
 
-func (c *RemoteExecutionConsumer) MinimumRequiredPlanVersion() planning.QueryPlanVersion {
+func (c *RemoteExecutionConsumer) MinimumRequiredPlanVersion(types.QueryTimeRange) (planning.QueryPlanVersion, error) {
 	// Even though this node type was introduced around the time of query plan v3, this node type is only
 	// ever used in query-frontends, and is needed to support remote execution of single nodes against
 	// queriers supporting v2 or earlier.
 	// So we return v0 here and rely on the RemoteExecutionGroup's MinimumRequiredPlanVersion() to
 	// return the correct version required based on whether one or many nodes are being evaluated.
-	return planning.QueryPlanVersionZero
+	return planning.QueryPlanVersionZero, nil
 }
 
 type RemoteExecutionGroupMaterializer struct {
 	groupEvaluatorFactory GroupEvaluatorFactory
 }
 
-type GroupEvaluatorFactory func(eagerLoad bool, queryParameters *planning.QueryParameters, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) GroupEvaluator
+type GroupEvaluatorFactory func(eagerLoad bool, queryParameters *planning.QueryParameters, logger log.Logger, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) GroupEvaluator
 
 func NewRemoteExecutionGroupMaterializer(groupEvaluatorFactory GroupEvaluatorFactory) planning.NodeMaterializer {
 	return &RemoteExecutionGroupMaterializer{groupEvaluatorFactory: groupEvaluatorFactory}
@@ -276,7 +208,7 @@ func (m *RemoteExecutionGroupMaterializer) Materialize(n planning.Node, material
 		return nil, fmt.Errorf("expected node of type RemoteExecutionGroup, got %T", n)
 	}
 
-	evaluator := m.groupEvaluatorFactory(g.EagerLoad, params.QueryParameters, params.MemoryConsumptionTracker)
+	evaluator := m.groupEvaluatorFactory(g.EagerLoad, params.QueryParameters, params.Logger, params.MemoryConsumptionTracker)
 	return &RemoteExecutionGroupOperatorFactory{GroupEvaluator: evaluator}, nil
 }
 
@@ -310,8 +242,6 @@ func (f *RemoteExecutionGroupOperatorFactory) ProduceOperatorForConsumingNode(c 
 			Node:               node,
 			TimeRange:          timeRange,
 			GroupEvaluator:     f.GroupEvaluator,
-			Annotations:        params.Annotations,
-			QueryStats:         params.QueryStats,
 			expressionPosition: expressionPosition,
 		}, nil
 
@@ -320,8 +250,6 @@ func (f *RemoteExecutionGroupOperatorFactory) ProduceOperatorForConsumingNode(c 
 			Node:               node,
 			TimeRange:          timeRange,
 			GroupEvaluator:     f.GroupEvaluator,
-			Annotations:        params.Annotations,
-			QueryStats:         params.QueryStats,
 			expressionPosition: expressionPosition,
 		}, nil
 
@@ -330,8 +258,6 @@ func (f *RemoteExecutionGroupOperatorFactory) ProduceOperatorForConsumingNode(c 
 			Node:               node,
 			TimeRange:          timeRange,
 			GroupEvaluator:     f.GroupEvaluator,
-			Annotations:        params.Annotations,
-			QueryStats:         params.QueryStats,
 			expressionPosition: expressionPosition,
 		}, nil
 

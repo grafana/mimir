@@ -91,3 +91,13 @@ func (m *IngesterServerMock) GetHashRanges(ctx context.Context, req *GetHashRang
 	args := m.Called(ctx, req)
 	return args.Get(0).(*GetHashRangesResponse), args.Error(1)
 }
+
+func (m *IngesterServerMock) SearchLabelNames(req *SearchLabelNamesRequest, srv Ingester_SearchLabelNamesServer) error {
+	args := m.Called(req, srv)
+	return args.Error(0)
+}
+
+func (m *IngesterServerMock) SearchLabelValues(req *SearchLabelValuesRequest, srv Ingester_SearchLabelValuesServer) error {
+	args := m.Called(req, srv)
+	return args.Error(0)
+}

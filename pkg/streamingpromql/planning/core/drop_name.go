@@ -15,9 +15,10 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
+//node:generate
 type DropName struct {
 	*DropNameDetails
-	Inner planning.Node
+	Inner planning.Node `node:"child"`
 }
 
 func (n *DropName) Details() proto.Message {
@@ -26,37 +27,6 @@ func (n *DropName) Details() proto.Message {
 
 func (n *DropName) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_DROP_NAME
-}
-
-func (n *DropName) Child(idx int) planning.Node {
-	if idx != 0 {
-		panic(fmt.Sprintf("node of type DropName supports 1 child, but attempted to get child at index %d", idx))
-	}
-
-	return n.Inner
-}
-
-func (n *DropName) ChildCount() int {
-	return 1
-}
-
-func (n *DropName) SetChildren(children []planning.Node) error {
-	if len(children) != 1 {
-		return fmt.Errorf("node of type DropName supports 1 child, but got %d", len(children))
-	}
-
-	n.Inner = children[0]
-
-	return nil
-}
-
-func (n *DropName) ReplaceChild(idx int, node planning.Node) error {
-	if idx != 0 {
-		return fmt.Errorf("node of type DropName supports 1 child, but attempted to replace child at index %d", idx)
-	}
-
-	n.Inner = node
-	return nil
 }
 
 func (n *DropName) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
@@ -94,8 +64,8 @@ func (n *DropName) ExpressionPosition() (posrange.PositionRange, error) {
 	return n.Inner.ExpressionPosition()
 }
 
-func (n *DropName) MinimumRequiredPlanVersion() planning.QueryPlanVersion {
-	return planning.QueryPlanV1
+func (n *DropName) MinimumRequiredPlanVersion(types.QueryTimeRange) (planning.QueryPlanVersion, error) {
+	return planning.QueryPlanV1, nil
 }
 
 func MaterializeDropName(n *DropName, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {

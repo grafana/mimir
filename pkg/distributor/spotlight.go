@@ -76,15 +76,6 @@ func newDistributorSpotlightTracker() *distributorSpotlightTracker {
 	}
 }
 
-// snapshot returns the currently cached spotlight set. The returned
-// slice aliases internal state and must not be mutated; callers
-// iterate it read-only on the write path.
-func (t *distributorSpotlightTracker) snapshot() []rebalancer.SpotlightedRange {
-	t.mu.RLock()
-	defer t.mu.RUnlock()
-	return t.spotlights
-}
-
 // setSpotlights replaces the cached set. The new slice is taken
 // over verbatim (no defensive copy); callers must not mutate it
 // after handing it off.

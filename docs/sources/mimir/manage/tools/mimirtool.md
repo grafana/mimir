@@ -5,11 +5,11 @@ description:
   Use Mimirtool to perform common tasks in Grafana Mimir or Grafana Cloud
   Metrics.
 menuTitle: Mimirtool
-title: Grafana Mimirtool
+title: Mimirtool
 weight: 40
 ---
 
-# Grafana Mimirtool
+# Mimirtool
 
 Mimirtool is a command-line tool that operators and tenants can use to execute a number of common tasks that involve Grafana Mimir or Grafana Cloud Metrics.
 
@@ -90,6 +90,19 @@ It is also possible to set TLS-related options with the following environment va
 | `MIMIR_TLS_CERT_PATH`            | `--tls-cert-path`            | Sets the path to the client certificate to use to authenticate to the Grafana Mimir cluster.                           |
 | `MIMIR_TLS_KEY_PATH`             | `--tls-key-path`             | Sets the path to the private key to use to authenticate to the Grafana Mimir cluster.                                  |
 | `MIMIR_TLS_INSECURE_SKIP_VERIFY` | `--tls-insecure-skip-verify` | If `true`, disables verification of the Grafana Mimir cluster's TLS certificate. This is insecure and not recommended. |
+
+Commands that use Mimirtool's shared Mimir API client (`rules`, `alertmanager`, `alerts`, `backfill`, and `analyze ruler`) also support AWS Signature Version 4 request signing with the following environment variables or CLI flags:
+
+| Environment variable                | Flag                            | Description                                                                                                                                                                            |
+| ----------------------------------- | ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `MIMIR_SIGV4_REGION`                | `--sigv4-region`                | Sets the AWS region used for SigV4 request signing. This option is required when SigV4 signing is configured.                                                                          |
+| `MIMIR_SIGV4_ACCESS_KEY`            | `--sigv4-access-key`            | Sets the AWS access key used for SigV4 request signing. If unset, the AWS default credential chain is used.                                                                            |
+| `MIMIR_SIGV4_SECRET_KEY`            | `--sigv4-secret-key`            | Sets the AWS secret key used for SigV4 request signing. Must be set together with `MIMIR_SIGV4_ACCESS_KEY`.                                                                            |
+| `MIMIR_SIGV4_PROFILE`               | `--sigv4-profile`               | Sets the AWS shared config profile used for SigV4 request signing.                                                                                                                     |
+| `MIMIR_SIGV4_ASSUME_ROLE_ARN`       | `--sigv4-assume-role-arn`       | Sets the AWS role Amazon Resource Name (ARN) to assume before SigV4 request signing.                                                                                                   |
+| `MIMIR_SIGV4_EXTERNAL_ID`           | `--sigv4-external-id`           | Sets the AWS external ID to use when assuming `MIMIR_SIGV4_ASSUME_ROLE_ARN`.                                                                                                           |
+| `MIMIR_SIGV4_USE_FIPS_STS_ENDPOINT` | `--sigv4-use-fips-sts-endpoint` | If `true`, uses the Federal Information Processing Standards (FIPS) AWS Security Token Service (STS) endpoint when assuming a role for SigV4 request signing.                          |
+| `MIMIR_SIGV4_SERVICE_NAME`          | `--sigv4-service-name`          | Sets the AWS service name used for SigV4 request signing. If SigV4 is enabled and this is unset, the underlying signer defaults to `aps`; use `execute-api` for API Gateway endpoints. |
 
 ## Commands
 
@@ -1246,6 +1259,7 @@ Forcefully adds one or more partitions to the partition ring.
 | `--memberlist.join`          | Required. Address of a memberlist node to join. Can be specified multiple times.                            |
 | `--memberlist.cluster-label` | The cluster label to use when joining the memberlist cluster.                                               |
 | `--memberlist.bind-port`     | Port to listen on for memberlist gossip messages. Default: `7946`. Use `0` to pick a random available port. |
+| `--partition-ring.key`       | The KV store key under which the partition ring is stored. Default: `ingester-partitions`.                  |
 | `--verbose`                  | Enable verbose logging.                                                                                     |
 
 ##### Example
@@ -1269,6 +1283,7 @@ Forcefully removes one or more partitions from the partition ring. A partition c
 | `--memberlist.join`          | Required. Address of a memberlist node to join. Can be specified multiple times.                            |
 | `--memberlist.cluster-label` | The cluster label to use when joining the memberlist cluster.                                               |
 | `--memberlist.bind-port`     | Port to listen on for memberlist gossip messages. Default: `7946`. Use `0` to pick a random available port. |
+| `--partition-ring.key`       | The KV store key under which the partition ring is stored. Default: `ingester-partitions`.                  |
 | `--verbose`                  | Enable verbose logging.                                                                                     |
 
 ##### Example
@@ -1292,6 +1307,7 @@ Forcefully adds one or more owners (ingester instances) to the partition ring, a
 | `--memberlist.join`          | Required. Address of a memberlist node to join. Can be specified multiple times.                            |
 | `--memberlist.cluster-label` | The cluster label to use when joining the memberlist cluster.                                               |
 | `--memberlist.bind-port`     | Port to listen on for memberlist gossip messages. Default: `7946`. Use `0` to pick a random available port. |
+| `--partition-ring.key`       | The KV store key under which the partition ring is stored. Default: `ingester-partitions`.                  |
 | `--verbose`                  | Enable verbose logging.                                                                                     |
 
 ##### Example
@@ -1315,6 +1331,7 @@ Forcefully removes one or more owners (ingester instances) from the partition ri
 | `--memberlist.join`          | Required. Address of a memberlist node to join. Can be specified multiple times.                            |
 | `--memberlist.cluster-label` | The cluster label to use when joining the memberlist cluster.                                               |
 | `--memberlist.bind-port`     | Port to listen on for memberlist gossip messages. Default: `7946`. Use `0` to pick a random available port. |
+| `--partition-ring.key`       | The KV store key under which the partition ring is stored. Default: `ingester-partitions`.                  |
 | `--verbose`                  | Enable verbose logging.                                                                                     |
 
 ##### Example

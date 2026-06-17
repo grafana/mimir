@@ -21,7 +21,6 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/util/annotations"
 	"go.opentelemetry.io/otel"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
@@ -30,6 +29,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/multiaggregation"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/rangevectorsplitting"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/rangevectorsplitting/cache"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/splitandcache"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -42,7 +42,6 @@ func init() {
 }
 
 var tracer = otel.Tracer("pkg/streamingpromql")
-var errPerStepStatsNotSupported = errors.New("per-step stats are not supported by Mimir query engine")
 
 const DefaultLookbackDelta = 5 * time.Minute // This should be the same value as github.com/prometheus/prometheus/promql.defaultLookbackDelta.
 
@@ -66,10 +65,6 @@ func NewEngineWithCache(opts EngineOpts, metrics *stats.QueryMetrics, planner *Q
 
 	if !opts.CommonOpts.EnableNegativeOffset {
 		return nil, errors.New("disabling negative offsets not supported by Mimir query engine")
-	}
-
-	if opts.CommonOpts.EnablePerStepStats {
-		return nil, errPerStepStatsNotSupported
 	}
 
 	if planner == nil {
@@ -102,6 +97,7 @@ func NewEngineWithCache(opts EngineOpts, metrics *stats.QueryMetrics, planner *Q
 		planning.NODE_TYPE_DEDUPLICATE_AND_MERGE: planning.NodeMaterializerFunc[*core.DeduplicateAndMerge](core.MaterializeDeduplicateAndMerge),
 		planning.NODE_TYPE_DROP_NAME:             planning.NodeMaterializerFunc[*core.DropName](core.MaterializeDropName),
 		planning.NODE_TYPE_NO_OP:                 planning.NodeMaterializerFunc[*core.NoOp](core.MaterializeNoOp),
+		planning.NODE_TYPE_DATA_LABEL_SELECTOR:   planning.NodeMaterializerFunc[*core.DataLabelSelector](core.MaterializeDataLabelSelector),
 
 		planning.NODE_TYPE_DUPLICATE:                  planning.RangeAwareNodeMaterializerFunc[*commonsubexpressionelimination.Duplicate](commonsubexpressionelimination.MaterializeDuplicate),
 		planning.NODE_TYPE_DUPLICATE_FILTER:           planning.RangeAwareNodeMaterializerFunc[*commonsubexpressionelimination.DuplicateFilter](commonsubexpressionelimination.MaterializeDuplicateFilter),
@@ -110,6 +106,12 @@ func NewEngineWithCache(opts EngineOpts, metrics *stats.QueryMetrics, planner *Q
 		planning.NODE_TYPE_MULTI_AGGREGATION_INSTANCE: planning.NodeMaterializerFunc[*multiaggregation.MultiAggregationInstance](multiaggregation.MaterializeMultiAggregationInstance),
 
 		planning.NODE_TYPE_SPLIT_FUNCTION_OVER_RANGE_VECTOR: rangevectorsplitting.NewMaterializer(opts.RangeVectorSplitting.Enabled, intermediateCache, opts.Logger),
+		planning.NODE_TYPE_TIME_RANGE_SPLIT:                 planning.NodeMaterializerFunc[*splitandcache.TimeRangeSplit](splitandcache.MaterializeSplit),
+	}
+
+	memoryConsumptionTrackerFactory := opts.MemoryConsumptionTrackerFactory
+	if memoryConsumptionTrackerFactory == nil {
+		memoryConsumptionTrackerFactory = limiter.NewInflightMemoryConsumptionTracker(opts.CommonOpts.Reg, metrics.QueriesRejectedTotal.WithLabelValues(stats.RejectReasonMaxEstimatedQueryMemoryConsumption))
 	}
 
 	return &Engine{
@@ -125,13 +127,12 @@ func NewEngineWithCache(opts EngineOpts, metrics *stats.QueryMetrics, planner *Q
 			Help:                        "Estimated peak memory consumption of each query (in bytes)",
 			NativeHistogramBucketFactor: 1.1,
 		}),
-		queriesRejectedDueToPeakMemoryConsumption: metrics.QueriesRejectedTotal.WithLabelValues(stats.RejectReasonMaxEstimatedQueryMemoryConsumption),
 
-		pedantic:                         opts.Pedantic,
-		eagerLoadSelectors:               opts.EagerLoadSelectors,
-		planner:                          planner,
-		nodeMaterializers:                nodeMaterializers,
-		inflightMemoryConsumptionTracker: limiter.NewInflightMemoryConsumptionTracker(opts.CommonOpts.Reg),
+		pedantic:                        opts.Pedantic,
+		eagerLoadSelectors:              opts.EagerLoadSelectors,
+		planner:                         planner,
+		nodeMaterializers:               nodeMaterializers,
+		memoryConsumptionTrackerFactory: memoryConsumptionTrackerFactory,
 	}, nil
 }
 
@@ -159,9 +160,8 @@ type Engine struct {
 
 	noStepSubqueryIntervalFn func(rangeMillis int64) int64
 
-	logger                                    log.Logger
-	estimatedPeakMemoryConsumption            prometheus.Histogram
-	queriesRejectedDueToPeakMemoryConsumption prometheus.Counter
+	logger                         log.Logger
+	estimatedPeakMemoryConsumption prometheus.Histogram
 
 	// When operating in pedantic mode:
 	// - Query.Exec() will call Close() on the root operator a second time to ensure it behaves correctly if Close() is called multiple times.
@@ -172,9 +172,9 @@ type Engine struct {
 
 	eagerLoadSelectors bool
 
-	planner                          *QueryPlanner
-	nodeMaterializers                map[planning.NodeType]planning.NodeMaterializer
-	inflightMemoryConsumptionTracker *limiter.InflightMemoryConsumptionTracker
+	planner                         *QueryPlanner
+	nodeMaterializers               map[planning.NodeType]planning.NodeMaterializer
+	memoryConsumptionTrackerFactory *limiter.InflightMemoryConsumptionTracker
 }
 
 func (e *Engine) RegisterNodeMaterializer(nodeType planning.NodeType, materializer planning.NodeMaterializer) error {
@@ -210,10 +210,6 @@ func (e *Engine) newQueryFromPlanner(ctx context.Context, queryable storage.Quer
 
 	if opts == nil {
 		opts = promql.NewPrometheusQueryOpts(false, 0)
-	}
-
-	if opts.EnablePerStepStats() {
-		return nil, errPerStepStatsNotSupported
 	}
 
 	lookbackDelta := opts.LookbackDelta()
@@ -294,29 +290,33 @@ func (e *Engine) materializeAndCreateEvaluator(ctx context.Context, queryable st
 
 	defer e.activeQueryTracker.Delete(queryID)
 
-	maxEstimatedMemoryConsumptionPerQuery, err := e.limitsProvider.GetMaxEstimatedMemoryConsumptionPerQuery(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("could not get memory consumption limit for query: %w", err)
+	operatorParams := &planning.OperatorParameters{
+		Queryable:          queryable,
+		EagerLoadSelectors: e.eagerLoadSelectors,
+		QueryParameters:    params,
+		Logger:             e.logger,
 	}
 
-	// Obtain a new memory consumption tracker. Note that this needs to be deregistered from the e.inflightMemoryConsumptionTracker once the evaluator is no longer needed
-	memoryConsumptionTracker := e.inflightMemoryConsumptionTracker.NewMemoryConsumptionTracker(ctx, maxEstimatedMemoryConsumptionPerQuery, e.queriesRejectedDueToPeakMemoryConsumption, params.OriginalExpression)
-
-	operatorParams := &planning.OperatorParameters{
-		Queryable:                queryable,
-		MemoryConsumptionTracker: memoryConsumptionTracker,
-		Annotations:              annotations.New(),
-		QueryStats:               types.NewQueryStats(),
-		EagerLoadSelectors:       e.eagerLoadSelectors,
-		QueryParameters:          params,
-		Logger:                   e.logger,
+	// When we are executing from within a time split query the memory consumption tracker will be allocated for the entire query
+	// All the time split queries must fit within a single memory consumption tracker.
+	// Note that we use a wrapped memory consumption tracker so we can still log the memory stats for this sub query, but still enforce
+	// the overall memory consumption tracking for the entire query.
+	if parentTracker, parentErr := limiter.MemoryConsumptionTrackerFromContext(ctx); parentErr == nil {
+		// Note that it is safe for this to parent tracker to be passed to memoryConsumptionTrackerFactory.Deregister()
+		operatorParams.MemoryConsumptionTracker = parentTracker
+	} else {
+		maxEstimatedMemoryConsumptionPerQuery, err := e.limitsProvider.GetMaxEstimatedMemoryConsumptionPerQuery(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("could not get memory consumption limit for query: %w", err)
+		}
+		operatorParams.MemoryConsumptionTracker = e.memoryConsumptionTrackerFactory.NewMemoryConsumptionTracker(ctx, maxEstimatedMemoryConsumptionPerQuery, params.OriginalExpression)
 	}
 
 	materializer := planning.NewMaterializer(operatorParams, e.nodeMaterializers)
 	for idx, req := range nodeRequests {
 		op, err := materializer.ConvertNodeToOperator(req.Node, req.TimeRange)
 		if err != nil {
-			e.inflightMemoryConsumptionTracker.Deregister(memoryConsumptionTracker)
+			e.memoryConsumptionTrackerFactory.Deregister(operatorParams.MemoryConsumptionTracker)
 			return nil, err
 		}
 
@@ -325,7 +325,7 @@ func (e *Engine) materializeAndCreateEvaluator(ctx context.Context, queryable st
 
 	evaluator, err := NewEvaluator(nodeRequests, operatorParams, e, params.OriginalExpression)
 	if err != nil {
-		e.inflightMemoryConsumptionTracker.Deregister(memoryConsumptionTracker)
+		e.memoryConsumptionTrackerFactory.Deregister(operatorParams.MemoryConsumptionTracker)
 		return nil, err
 	}
 	return evaluator, nil

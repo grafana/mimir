@@ -17,6 +17,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
+//node:generate
 type MatrixSelector struct {
 	*MatrixSelectorDetails
 }
@@ -29,18 +30,7 @@ func (m *MatrixSelector) IsSplittable() bool {
 var _ planning.SplitNode = &MatrixSelector{}
 
 func (m *MatrixSelector) Describe() string {
-	return describeSelector(m.Matchers, m.Timestamp, m.Offset, &m.Range, m.SkipHistogramBuckets, m.Anchored, m.Smoothed, m.CounterAware, m.ProjectionLabels, m.ProjectionInclude)
-}
-
-// RangeVectorSplittingCacheKey returns the cache key for the matrix selector.
-// The range is not part of the cache key as range vector splitting means that matrix selectors which only differ by
-// the range can share cache entries.
-// The offset and @ modifiers are not part of the cache key as they are adjusted for when calculating split ranges.
-// TODO: when subquery splitting is supported, the logic will have to change - if the matrix selector is not the root
-// inner node, the range plus the offset and @ modifiers will have to be retained.
-// TODO: investigate codegen to keep the cache key up to date when new fields are added to the node.
-func (m *MatrixSelector) SplittingCacheKey() string {
-	return describeSelector(m.Matchers, nil, 0, nil, m.SkipHistogramBuckets, m.Anchored, m.Smoothed, m.CounterAware, m.ProjectionLabels, m.ProjectionInclude)
+	return describeSelector(m.Matchers, m.Timestamp, m.Offset, &m.Range, m.SkipHistogramBuckets, m.Anchored, m.Smoothed, m.CounterAware, m.Subsets)
 }
 
 func (m *MatrixSelector) ChildrenTimeRange(timeRange types.QueryTimeRange) types.QueryTimeRange {
@@ -55,31 +45,12 @@ func (m *MatrixSelector) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_MATRIX_SELECTOR
 }
 
-func (m *MatrixSelector) Child(idx int) planning.Node {
-	panic(fmt.Sprintf("node of type MatrixSelector has no children, but attempted to get child at index %d", idx))
-}
-
-func (m *MatrixSelector) ChildCount() int {
-	return 0
-}
-
-func (m *MatrixSelector) SetChildren(children []planning.Node) error {
-	if len(children) != 0 {
-		return fmt.Errorf("node of type MatrixSelector expects 0 children, but got %d", len(children))
-	}
-
-	return nil
-}
-
-func (m *MatrixSelector) ReplaceChild(idx int, node planning.Node) error {
-	return fmt.Errorf("node of type MatrixSelector supports no children, but attempted to replace child at index %d", idx)
-}
-
 func (m *MatrixSelector) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
 	otherMatrixSelector, ok := other.(*MatrixSelector)
 
 	return ok &&
 		slices.EqualFunc(m.Matchers, otherMatrixSelector.Matchers, matchersEqual) &&
+		slices.EqualFunc(m.Subsets, otherMatrixSelector.Subsets, subsetsEqual) &&
 		m.EquivalentToIgnoringMatchersAndHints(otherMatrixSelector)
 }
 
@@ -106,13 +77,6 @@ func (m *MatrixSelector) MergeHints(other planning.Node) error {
 	}
 
 	m.SkipHistogramBuckets = m.SkipHistogramBuckets && otherMatrixSelector.SkipHistogramBuckets
-	m.ProjectionInclude, m.ProjectionLabels = mergeProjectionLabels(
-		m.ProjectionInclude,
-		m.ProjectionLabels,
-		otherMatrixSelector.ProjectionInclude,
-		otherMatrixSelector.ProjectionLabels,
-	)
-
 	return nil
 }
 
@@ -134,6 +98,11 @@ func MaterializeMatrixSelector(m *MatrixSelector, _ *planning.Materializer, time
 		selectorOffset = overrideTimeParams.Offset.Milliseconds()
 	}
 
+	subsets, err := SubsetsToSelectorType(m.Subsets)
+	if err != nil {
+		return nil, err
+	}
+
 	selector := &selectors.Selector{
 		Queryable:                params.Queryable,
 		TimeRange:                timeRange,
@@ -148,15 +117,14 @@ func MaterializeMatrixSelector(m *MatrixSelector, _ *planning.Materializer, time
 		Anchored:                 m.Anchored,
 		Smoothed:                 m.Smoothed,
 		CounterAware:             m.CounterAware,
-		ProjectionInclude:        m.ProjectionInclude,
-		ProjectionLabels:         m.ProjectionLabels,
+		Subsets:                  subsets,
 	}
 
 	if m.Anchored || m.Smoothed {
 		selector.LookbackDelta = params.QueryParameters.LookbackDelta
 	}
 
-	o := selectors.NewRangeVectorSelector(selector, params.MemoryConsumptionTracker, params.QueryStats)
+	o := selectors.NewRangeVectorSelector(selector, params.MemoryConsumptionTracker)
 
 	return planning.NewSingleUseOperatorFactory(o), nil
 }
@@ -178,11 +146,11 @@ func (m *MatrixSelector) ExpressionPosition() (posrange.PositionRange, error) {
 	return m.GetExpressionPosition().ToPrometheusType(), nil
 }
 
-func (m *MatrixSelector) MinimumRequiredPlanVersion() planning.QueryPlanVersion {
+func (m *MatrixSelector) MinimumRequiredPlanVersion(types.QueryTimeRange) (planning.QueryPlanVersion, error) {
 	if m.Anchored || m.Smoothed {
-		return planning.QueryPlanV4
+		return planning.QueryPlanV4, nil
 	}
-	return planning.QueryPlanVersionZero
+	return planning.QueryPlanVersionZero, nil
 }
 
 func (m *MatrixSelector) GetRange() time.Duration {

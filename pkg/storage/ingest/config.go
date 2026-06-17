@@ -17,6 +17,7 @@ import (
 	dskittls "github.com/grafana/dskit/crypto/tls"
 	"github.com/grafana/dskit/flagext"
 
+	"github.com/grafana/mimir/pkg/compartments"
 	"github.com/grafana/mimir/pkg/util"
 )
 
@@ -128,7 +129,7 @@ type KafkaConfig struct {
 
 	WaitStrongReadConsistencyTimeout time.Duration `yaml:"wait_strong_read_consistency_timeout"`
 
-	ProducerRecordVersion int `yaml:"producer_record_version" category:"experimental"`
+	ProducerRecordVersion int `yaml:"producer_record_version"`
 
 	// Used when logging unsampled client errors. Set from ingester's ErrorSampleRate.
 	FallbackClientErrorSampleRate int64 `yaml:"-"`
@@ -153,7 +154,7 @@ type KafkaConfig struct {
 	IngestionConcurrencyTargetFlushesPerShard int `yaml:"ingestion_concurrency_target_flushes_per_shard"`
 
 	// IngestionConcurrencyEstimatedBytesPerSample is the estimated number of bytes per sample.
-	// Our data indicates that the average sample size is somewhere between ~250 and ~500 bytes. We'll use 500 bytes as a conservative estimate.
+	// Our data indicates that the average sample size is somewhere between ~100 and ~200 bytes. We'll use 200 bytes as a conservative estimate.
 	IngestionConcurrencyEstimatedBytesPerSample int `yaml:"ingestion_concurrency_estimated_bytes_per_sample"`
 
 	// The fetch backoff config to use in the concurrent fetchers (when enabled). This setting
@@ -207,7 +208,7 @@ func (cfg *KafkaConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) 
 
 	f.DurationVar(&cfg.WaitStrongReadConsistencyTimeout, prefix+"wait-strong-read-consistency-timeout", 20*time.Second, "The maximum allowed for a read requests processed by an ingester to wait until strong read consistency is enforced. 0 to disable the timeout.")
 
-	f.IntVar(&cfg.ProducerRecordVersion, prefix+"producer-record-version", 0, "The record version that this producer sends.")
+	f.IntVar(&cfg.ProducerRecordVersion, prefix+"producer-record-version", 2, "The record version that this producer sends.")
 
 	f.DurationVar(&cfg.FetchMaxWait, prefix+"fetch-max-wait", 5*time.Second, "The maximum amount of time a Kafka broker waits for some records before a Fetch response is returned.")
 	f.IntVar(&cfg.FetchConcurrencyMax, prefix+"fetch-concurrency-max", 12, "The maximum number of concurrent fetch requests that the ingester makes when reading data from Kafka during startup. Concurrent fetch requests are issued only when there is sufficient backlog of records to consume. Set to 0 to disable.")
@@ -218,7 +219,7 @@ func (cfg *KafkaConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) 
 	f.IntVar(&cfg.IngestionConcurrencyBatchSize, prefix+"ingestion-concurrency-batch-size", 150, "The number of timeseries to batch together before ingesting to the TSDB head. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0.")
 	f.IntVar(&cfg.IngestionConcurrencyQueueCapacity, prefix+"ingestion-concurrency-queue-capacity", 3, "The number of batches to prepare and queue to ingest to the TSDB head. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0.")
 	f.IntVar(&cfg.IngestionConcurrencyTargetFlushesPerShard, prefix+"ingestion-concurrency-target-flushes-per-shard", 40, "The expected number of times to ingest timeseries to the TSDB head after batching. With fewer flushes, the overhead of splitting up the work is higher than the benefit of parallelization. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0.")
-	f.IntVar(&cfg.IngestionConcurrencyEstimatedBytesPerSample, prefix+"ingestion-concurrency-estimated-bytes-per-sample", 500, "The estimated number of bytes a sample has at time of ingestion. This value is used to estimate the timeseries without decompressing them. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0.")
+	f.IntVar(&cfg.IngestionConcurrencyEstimatedBytesPerSample, prefix+"ingestion-concurrency-estimated-bytes-per-sample", 200, "The estimated number of bytes a sample has at time of ingestion. This value is used to estimate the timeseries without decompressing them. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0.")
 
 	cfg.SASL.RegisterFlagsWithPrefix(prefix+"sasl-", f)
 	f.BoolVar(&cfg.TLSEnabled, prefix+"tls-enabled", false, "Enable TLS for the Kafka client connection.")
@@ -305,6 +306,25 @@ func (cfg *KafkaConfig) GetConsumerGroup(instanceID string, partitionID int32) s
 	}
 
 	return strings.ReplaceAll(cfg.ConsumerGroup, "<partition>", strconv.Itoa(int(partitionID)))
+}
+
+// WriteCompartmentConfig returns a copy of cfg targeting the given write compartment's Kafka cluster:
+// the compartments.WriteCompartmentIDPlaceholder in the Kafka address and SASL username/password is
+// replaced with the write compartment ID. The topic is left unchanged (it is templated by read
+// compartment, not by write compartment).
+func (cfg *KafkaConfig) WriteCompartmentConfig(writeCompartmentID int) KafkaConfig {
+	c := *cfg
+
+	addresses := make(flagext.StringSliceCSV, len(cfg.Address))
+	for i, addr := range cfg.Address {
+		addresses[i] = compartments.ReplaceWriteCompartment(addr, writeCompartmentID)
+	}
+	c.Address = addresses
+
+	c.SASL.Username = compartments.ReplaceWriteCompartment(cfg.SASL.Username, writeCompartmentID)
+	c.SASL.Password = flagext.SecretWithValue(compartments.ReplaceWriteCompartment(cfg.SASL.Password.String(), writeCompartmentID))
+
+	return c
 }
 
 // MigrationConfig holds the configuration used to migrate Mimir to ingest storage. This config shouldn't be

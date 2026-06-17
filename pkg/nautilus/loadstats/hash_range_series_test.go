@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/go-kit/log"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/stretchr/testify/assert"
@@ -240,7 +241,7 @@ func TestCountSeriesByHashRange_AppendsAndAttributesSeries(t *testing.T) {
 	for i := 0; i < 50; i++ {
 		for _, metric := range []string{"http_requests_total", "cpu_seconds_total", "disk_bytes", "memory_rss"} {
 			lset := labels.FromStrings(
-				labels.MetricName, metric,
+				model.MetricNameLabel, metric,
 				"instance", fmt.Sprintf("host-%d", i),
 				"job", "test",
 			)
@@ -255,7 +256,7 @@ func TestCountSeriesByHashRange_AppendsAndAttributesSeries(t *testing.T) {
 
 	expected := make(map[uint32]int, totalSeries)
 	for _, lset := range seriesLabels {
-		h := mimirpb.ShardByMetricNameLocalityLabels(userID, lset.Get(labels.MetricName), lset)
+		h := mimirpb.ShardByMetricNameLocalityLabels(userID, lset.Get(model.MetricNameLabel), lset)
 		expected[h]++
 	}
 	require.NotEmpty(t, expected, "no hashes observed")
@@ -335,7 +336,7 @@ func TestCountSeriesByHashRange_ContextCancellation(t *testing.T) {
 	cancel()
 
 	app := head.Appender(context.Background())
-	_, err := app.Append(0, labels.FromStrings(labels.MetricName, "foo"), 0, 0)
+	_, err := app.Append(0, labels.FromStrings(model.MetricNameLabel, "foo"), 0, 0)
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 

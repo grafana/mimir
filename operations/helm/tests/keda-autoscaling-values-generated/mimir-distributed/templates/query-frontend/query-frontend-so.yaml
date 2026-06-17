@@ -43,3 +43,4 @@ spec:
       ignoreNullValues: "true"
       unsafeSsl: "false"
     type: prometheus
+

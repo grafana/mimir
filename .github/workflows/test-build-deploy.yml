@@ -40,8 +40,14 @@ jobs:
       - name: Get build image from Makefile
         id: build_image_step
         run: echo "build_image=$(make print-build-image)" >> "$GITHUB_OUTPUT"
+      - name: Get supported OS/arch for dist builds
+        id: dist_matrix_step
+        run: |
+          matrix=$(make print-supported-os-arch | jq -Rc 'split("\t") | {os: .[0], arch: .[1]}' | jq -sc '{include: .}')
+          echo "dist_matrix=$matrix" >> "$GITHUB_OUTPUT"
     outputs:
       build_image: ${{ steps.build_image_step.outputs.build_image }}
+      dist_matrix: ${{ steps.dist_matrix_step.outputs.dist_matrix }}
       # Determine if we will deploy (aka push) the image to the registry.
       is_deploy: ${{ (startsWith(github.ref, 'refs/tags/') || startsWith(github.ref, 'refs/heads/r')) && github.event_name == 'push' && github.repository == 'grafana/mimir' }}
 
@@ -76,11 +82,11 @@ jobs:
         with:
           persist-credentials: false
       - name: Restore Go build cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
           path: /go/cache
-          key: go-build-cache-image-and-lint-${{ hashFiles('go.sum') }}
-          restore-keys: go-build-cache-image-and-lint-
+          key: go-build-cache-image-and-lint-${{ needs.prepare.outputs.build_image }}-${{ hashFiles('go.sum') }}
+          restore-keys: go-build-cache-image-and-lint-${{ needs.prepare.outputs.build_image }}-
       - name: Run Git Config
         run: git config --global --add safe.directory '*'
         # Commands in the Makefile are hardcoded with an assumed file structure of the CI container
@@ -95,6 +101,8 @@ jobs:
         run: make BUILD_IN_CONTAINER=false mod-check
       - name: Check Protos
         run: make BUILD_IN_CONTAINER=false check-protos
+      - name: Check Generated Node Methods
+        run: make BUILD_IN_CONTAINER=false check-node-methods
       - name: Check Generated Documentation
         run: make BUILD_IN_CONTAINER=false check-doc
       - name: Check Reference Help Documentation
@@ -157,10 +165,6 @@ jobs:
         run: |
           mkdir -p /go/src/github.com/grafana/mimir
           ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
-      - name: Set up Helm
-        uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4.3.1
-        with:
-          version: v4.0.1
       - name: Check Helm Tests
         run: make BUILD_IN_CONTAINER=false check-helm-tests
 
@@ -192,16 +196,16 @@ jobs:
       - name: Check if Go build cache exists
         id: check-cache
         if: github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true'
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
           path: /home/runner/.cache/go-build
-          key: go-build-cache-integration-${{ hashFiles('go.sum') }}
+          key: go-build-cache-integration-${{ needs.prepare.outputs.build_image }}-${{ hashFiles('go.sum') }}
           lookup-only: true
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         if: steps.check-cache.outputs.cache-hit != 'true' && (github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true')
         with:
           persist-credentials: false
-      - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
         if: steps.check-cache.outputs.cache-hit != 'true' && (github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true')
         with:
           go-version: ${{ needs.goversion.outputs.version }}
@@ -212,11 +216,11 @@ jobs:
       - name: Print Go build cache size
         if: steps.check-cache.outputs.cache-hit != 'true' && (github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true')
         run: du -sh /home/runner/.cache/go-build
-      - uses: actions/cache/save@v4
+      - uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         if: steps.check-cache.outputs.cache-hit != 'true' && (github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true')
         with:
           path: /home/runner/.cache/go-build
-          key: go-build-cache-integration-${{ hashFiles('go.sum') }}
+          key: go-build-cache-integration-${{ needs.prepare.outputs.build_image }}-${{ hashFiles('go.sum') }}
 
   # Same as above but for unit tests, which compile with -race (producing different cache
   # entries) and run inside a container.
@@ -234,10 +238,10 @@ jobs:
       - name: Check if Go build cache exists
         id: check-cache
         if: github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true'
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
           path: /go/cache
-          key: go-build-cache-unit-${{ hashFiles('go.sum') }}
+          key: go-build-cache-unit-${{ needs.prepare.outputs.build_image }}-${{ hashFiles('go.sum') }}
           lookup-only: true
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         if: steps.check-cache.outputs.cache-hit != 'true' && (github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true')
@@ -252,11 +256,11 @@ jobs:
       - name: Print Go build cache size
         if: steps.check-cache.outputs.cache-hit != 'true' && (github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true')
         run: du -sh /go/cache
-      - uses: actions/cache/save@v4
+      - uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         if: steps.check-cache.outputs.cache-hit != 'true' && (github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true')
         with:
           path: /go/cache
-          key: go-build-cache-unit-${{ hashFiles('go.sum') }}
+          key: go-build-cache-unit-${{ needs.prepare.outputs.build_image }}-${{ hashFiles('go.sum') }}
 
   # Same as the other warmup jobs but for image builds and linting, which use
   # CGO_ENABLED=0 (no race) with -tags netgo,stringlabels.
@@ -274,10 +278,10 @@ jobs:
       - name: Check if Go build cache exists
         id: check-cache
         if: github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true'
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
           path: /go/cache
-          key: go-build-cache-image-and-lint-${{ hashFiles('go.sum') }}
+          key: go-build-cache-image-and-lint-${{ needs.prepare.outputs.build_image }}-${{ hashFiles('go.sum') }}
           lookup-only: true
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         if: steps.check-cache.outputs.cache-hit != 'true' && (github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true')
@@ -292,11 +296,11 @@ jobs:
       - name: Print Go build cache size
         if: steps.check-cache.outputs.cache-hit != 'true' && (github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true')
         run: du -sh /go/cache
-      - uses: actions/cache/save@v4
+      - uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         if: steps.check-cache.outputs.cache-hit != 'true' && (github.ref == 'refs/heads/main' || env.FORCE_BUILD_CACHE_WARMUP == 'true')
         with:
           path: /go/cache
-          key: go-build-cache-image-and-lint-${{ hashFiles('go.sum') }}
+          key: go-build-cache-image-and-lint-${{ needs.prepare.outputs.build_image }}-${{ hashFiles('go.sum') }}
 
   test:
     runs-on: ubuntu-latest
@@ -312,9 +316,11 @@ jobs:
     needs:
       - prepare
       - warmup-go-build-cache-unit-tests
+    # The test job runs untrusted PR code (`go test`) and must NOT have write permissions.
+    # PR comments for streamingpromql failures are handled by the downstream
+    # notify-streamingpromql-failures job, which doesn't run any PR-author code.
     permissions:
       contents: read
-      pull-requests: write
     container:
       image: ${{ needs.prepare.outputs.build_image }} # zizmor: ignore[unpinned-images] The image output produced by the prepare step is pinned
     steps:
@@ -323,13 +329,11 @@ jobs:
         with:
           persist-credentials: false
       - name: Restore Go build cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
           path: /go/cache
-          key: go-build-cache-unit-${{ hashFiles('go.sum') }}
-          restore-keys: go-build-cache-unit-
-      - name: Install GitHub CLI
-        run: ./.github/workflows/scripts/install-gh.sh
+          key: go-build-cache-unit-${{ needs.prepare.outputs.build_image }}-${{ hashFiles('go.sum') }}
+          restore-keys: go-build-cache-unit-${{ needs.prepare.outputs.build_image }}-
       - name: Run Git Config
         run: git config --global --add safe.directory '*'
       - name: Symlink Expected Path to Workspace
@@ -340,24 +344,66 @@ jobs:
         run: |
           echo "Running unit tests (group ${{ matrix.test_group_id }} of ${{ matrix.test_group_total }})${{ matrix.extra_build_tags != '' && format(' with build tags: {0}', matrix.extra_build_tags) || '' }} with Go version: $(go version)"
           EXTRA_BUILD_TAGS="${{ matrix.extra_build_tags }}" ./.github/workflows/scripts/run-unit-tests-group.sh --index ${{ matrix.test_group_id }} --total ${{ matrix.test_group_total }}
-      - name: Notify on streamingpromql failures
-        if: failure() && env.FAILED_PACKAGES != '' && contains(github.event.pull_request.labels.*.name, 'vendored-mimir-prometheus-update')
+      - name: Record failed packages for notification
+        if: failure() && env.FAILED_PACKAGES != ''
         run: |
-          if echo "${{ env.FAILED_PACKAGES }}" | grep -q "pkg/streamingpromql"; then
-            gh pr comment ${{ github.event.pull_request.number }} --body \
-              "⚠️ Test failures detected in \`pkg/streamingpromql\` (test group ${{ matrix.test_group_id }}/${{ matrix.test_group_total }})
-              
-          Failed packages in this test group:
-          \`\`\`
-          ${{ env.FAILED_PACKAGES }}
-          \`\`\`
-              
-          cc @charleskorn @56quarters @lamida @zenador @tcp13equals2
-              
-          Please review the [test logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) and push fixes to this PR."
-          fi
+          mkdir -p failed-packages
+          printf '%s\n' "${FAILED_PACKAGES}" > "failed-packages/group-${MATRIX_TAGS:-default}-${MATRIX_GROUP_ID}.txt"
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          FAILED_PACKAGES: ${{ env.FAILED_PACKAGES }}
+          MATRIX_TAGS: ${{ matrix.extra_build_tags }}
+          MATRIX_GROUP_ID: ${{ matrix.test_group_id }}
+      - name: Upload failed packages artifact
+        if: failure() && env.FAILED_PACKAGES != ''
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: failed-packages-${{ matrix.extra_build_tags || 'default' }}-${{ matrix.test_group_id }}
+          path: failed-packages/
+          retention-days: 1
+
+  notify-streamingpromql-failures:
+    needs: test
+    runs-on: ubuntu-latest
+    # Only runs on PRs labeled for the vendored mimir-prometheus update flow, and only when test failed.
+    if: failure() && github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'vendored-mimir-prometheus-update')
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Download failed packages artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        continue-on-error: true
+        with:
+          pattern: failed-packages-*
+          merge-multiple: true
+          path: failed-packages
+      - name: Comment on PR if streamingpromql failed
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          if [ ! -d failed-packages ] || [ -z "$(ls -A failed-packages 2>/dev/null)" ]; then
+            echo "No failed-packages artifacts produced; nothing to comment."
+            exit 0
+          fi
+          # `grep -v` exits 1 when nothing matches; under `pipefail` that would kill the
+          # script before the streamingpromql check below. Wrap it so the pipeline stays
+          # at exit 0 even if every input line happens to be empty.
+          ALL_FAILED=$(cat failed-packages/*.txt 2>/dev/null | tr ' ' '\n' | { grep -v '^$' || true; } | sort -u)
+          if ! echo "$ALL_FAILED" | grep -q '^github.com/grafana/mimir/pkg/streamingpromql'; then
+            echo "No streamingpromql failures detected."
+            exit 0
+          fi
+          {
+            printf ':warning: Test failures detected in `pkg/streamingpromql`\n\n'
+            printf 'Failed packages across all test groups:\n```\n%s\n```\n\n' "$ALL_FAILED"
+            printf 'cc @charleskorn @56quarters @lamida @zenador @tcp13equals2\n\n'
+            printf 'Please review the [test logs](%s) and push fixes to this PR.\n' "$RUN_URL"
+          } > comment.md
+          gh pr comment "$PR_NUMBER" --body-file comment.md
 
   test-docs:
     uses: ./.github/workflows/test-docs.yml
@@ -375,11 +421,11 @@ jobs:
         with:
           persist-credentials: false
       - name: Restore Go build cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
           path: /go/cache
-          key: go-build-cache-image-and-lint-${{ hashFiles('go.sum') }}
-          restore-keys: go-build-cache-image-and-lint-
+          key: go-build-cache-image-and-lint-${{ needs.prepare.outputs.build_image }}-${{ hashFiles('go.sum') }}
+          restore-keys: go-build-cache-image-and-lint-${{ needs.prepare.outputs.build_image }}-
       - name: Build
         uses: ./.github/actions/build-image
         with:
@@ -399,11 +445,11 @@ jobs:
         with:
           persist-credentials: false
       - name: Restore Go build cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
           path: /go/cache
-          key: go-build-cache-image-and-lint-${{ hashFiles('go.sum') }}
-          restore-keys: go-build-cache-image-and-lint-
+          key: go-build-cache-image-and-lint-${{ needs.prepare.outputs.build_image }}-${{ hashFiles('go.sum') }}
+          restore-keys: go-build-cache-image-and-lint-${{ needs.prepare.outputs.build_image }}-
       - name: Build
         uses: ./.github/actions/build-image
         with:
@@ -423,11 +469,11 @@ jobs:
         with:
           persist-credentials: false
       - name: Restore Go build cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
           path: /go/cache
-          key: go-build-cache-image-and-lint-${{ hashFiles('go.sum') }}
-          restore-keys: go-build-cache-image-and-lint-
+          key: go-build-cache-image-and-lint-${{ needs.prepare.outputs.build_image }}-${{ hashFiles('go.sum') }}
+          restore-keys: go-build-cache-image-and-lint-${{ needs.prepare.outputs.build_image }}-
       - name: Build
         uses: ./.github/actions/build-image
         with:
@@ -447,11 +493,11 @@ jobs:
         with:
           persist-credentials: false
       - name: Restore Go build cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
           path: /go/cache
-          key: go-build-cache-image-and-lint-${{ hashFiles('go.sum') }}
-          restore-keys: go-build-cache-image-and-lint-
+          key: go-build-cache-image-and-lint-${{ needs.prepare.outputs.build_image }}-${{ hashFiles('go.sum') }}
+          restore-keys: go-build-cache-image-and-lint-${{ needs.prepare.outputs.build_image }}-
       - name: Build
         uses: ./.github/actions/build-image
         with:
@@ -471,16 +517,43 @@ jobs:
         with:
           persist-credentials: false
       - name: Restore Go build cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
           path: /go/cache
-          key: go-build-cache-image-and-lint-${{ hashFiles('go.sum') }}
-          restore-keys: go-build-cache-image-and-lint-
+          key: go-build-cache-image-and-lint-${{ needs.prepare.outputs.build_image }}-${{ hashFiles('go.sum') }}
+          restore-keys: go-build-cache-image-and-lint-${{ needs.prepare.outputs.build_image }}-
       - name: Build
         uses: ./.github/actions/build-image
         with:
           artifact_name: docker-image-copyblocks
           target: "./tools/copyblocks/.uptodate"
+
+  build-dist:
+    runs-on: ubuntu-latest
+    name: build-dist (${{ matrix.os }}, ${{ matrix.arch }})
+    needs:
+      - prepare
+      - warmup-go-build-cache-image-and-lint
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.prepare.outputs.dist_matrix) }}
+    container:
+      image: ${{ needs.prepare.outputs.build_image }} # zizmor: ignore[unpinned-images] The image output produced by the prepare step is pinned
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
+      - name: Restore Go build cache
+        uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
+        with:
+          path: /go/cache
+          key: go-build-cache-image-and-lint-${{ needs.prepare.outputs.build_image }}-${{ hashFiles('go.sum') }}
+          restore-keys: go-build-cache-image-and-lint-${{ needs.prepare.outputs.build_image }}-
+      - name: Run Git Config
+        run: git config --global --add safe.directory '*'
+      - name: Build
+        run: make BUILD_IN_CONTAINER=false dist GOOS=${{ matrix.os }} GOARCH=${{ matrix.arch }}
 
   # This job does not do anything - it exists to simplify the "needs" condition of the "deploy" job,
   # and to make it easier to configure the required passing checks in branch protection rules in GitHub,
@@ -494,6 +567,7 @@ jobs:
       - build-query-tee-image
       - build-mimirtool-image
       - build-copyblocks-image
+      - build-dist
     steps:
       - run: echo "All dependencies succeeded!"
 
@@ -511,20 +585,20 @@ jobs:
           persist-credentials: false
       # Race-enabled image uses CGO_ENABLED=1 -race -tags=netgo,stringlabels, same as unit tests.
       - name: Restore Go build cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
           path: /go/cache
-          key: go-build-cache-unit-${{ hashFiles('go.sum') }}
-          restore-keys: go-build-cache-unit-
+          key: go-build-cache-unit-${{ needs.prepare.outputs.build_image }}-${{ hashFiles('go.sum') }}
+          restore-keys: go-build-cache-unit-${{ needs.prepare.outputs.build_image }}-
       - name: Run Git Config
         run: git config --global --add safe.directory '*'
       - name: Install Docker Client
         run: ./.github/workflows/scripts/install-docker.sh
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@ce360397dd3f832beb865e1373c09c0e9f86d70a # v4.0.0
+        uses: docker/setup-qemu-action@06116385d9baf250c9f4dcb4858b16962ea869c3 # v4.1.0
       - name: Set up Docker Buildx
         id: buildx
-        uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
+        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
       - name: Symlink Expected Path to Workspace
         run: |
           mkdir -p /go/src/github.com/grafana/mimir
@@ -536,7 +610,7 @@ jobs:
           export MIMIR_DISTROLESS_IMAGE="grafana/mimir:$IMAGE_TAG_RACE"
           docker save $MIMIR_DISTROLESS_IMAGE -o ./mimir_race_image_distroless
       - name: Upload archive with race-enabled Mimir
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           # We deliberately don't use the "docker-image" prefix here, as that is used to find all images published as part of a release, and we don't want this image included in the release.
           name: test-docker-image-race-enabled-mimir
@@ -555,7 +629,7 @@ jobs:
         test_group_total: [20]
     steps:
       - name: Upgrade golang
-        uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
         with:
           go-version: ${{ needs.goversion.outputs.version }}
           cache: false # We manage caching ourselves below to maintain consistency with the other jobs that don't use setup-go.
@@ -564,11 +638,11 @@ jobs:
         with:
           persist-credentials: false
       - name: Restore Go build cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
           path: /home/runner/.cache/go-build
-          key: go-build-cache-integration-${{ hashFiles('go.sum') }}
-          restore-keys: go-build-cache-integration-
+          key: go-build-cache-integration-${{ needs.prepare.outputs.build_image }}-${{ hashFiles('go.sum') }}
+          restore-keys: go-build-cache-integration-${{ needs.prepare.outputs.build_image }}-
       - name: Run Git Config
         run: git config --global --add safe.directory '*'
       - name: Symlink Expected Path to Workspace
@@ -656,11 +730,15 @@ jobs:
           for f in built-images/**/images.tar; do
             tar xvf $f -C /tmp/images
           done
-      - name: Login to DockerHub
-        uses: grafana/shared-workflows/actions/dockerhub-login@13fb504e3bfe323c1188bf244970d94b2d336e86 # v1.0.1
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3
+      - name: Log into GAR
+        uses: grafana/shared-workflows/actions/login-to-gar@1f541877ceb22c7be7667d8a8df04984aeac9f9d # login-to-gar/v1.0.3
+        with:
+          registry: us-docker.pkg.dev
       - name: Push Docker Images
         run: |
-          ./.github/workflows/scripts/push-images.sh /tmp/images grafana/ $(make image-tag)
+          ./.github/workflows/scripts/push-images.sh /tmp/images us-docker.pkg.dev/grafanalabs-global/dockerhub-mimir-prod-mirror/ $(make image-tag)
 
   send-slack-notification-on-automated-vendoring:
     needs:

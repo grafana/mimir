@@ -42,6 +42,12 @@ service Ingester {
   rpc SetHashRanges(SetHashRangesRequest) returns (SetHashRangesResponse) {}
   rpc GetHashRanges(GetHashRangesRequest) returns (GetHashRangesResponse) {}
 
+  // SearchLabelNames streams label names matching the search filter.
+  rpc SearchLabelNames(SearchLabelNamesRequest) returns (stream SearchResultBatch) {}
+
+  // SearchLabelValues streams label values for the given label name matching the search filter.
+  rpc SearchLabelValues(SearchLabelValuesRequest) returns (stream SearchResultBatch) {}
+
   // When adding more read-path methods here, please update ingester_read_path_routes_regex in operations/mimir-mixin/config.libsonnet as well.
 }
 
@@ -192,8 +198,8 @@ message QueryRequest {
   int64 start_timestamp_ms = 1;
   int64 end_timestamp_ms = 2;
   repeated LabelMatcher matchers = 3;
-  bool projection_include = 4;
-  repeated string projection_labels = 5;
+  reserved 4; // projections include, not used anymore.
+  reserved 5; // projections labels, not used anymore.
 
   // query_attribution_hint records the routing decision the
   // distributor (or future querier) made for this call. nil means no
@@ -228,6 +234,80 @@ message ActiveSeriesRequest {
     NATIVE_HISTOGRAM_SERIES = 1;
   }
   RequestType type = 2;
+}
+
+// SearchOrdering selects the result ordering wire-side. Values mirror the
+// Prometheus storage.Ordering enum so the server-side translation is 1:1.
+enum SearchOrdering {
+  ORDER_BY_VALUE_ASC = 0;
+  ORDER_BY_VALUE_DESC = 1;
+  ORDER_BY_SCORE_DESC = 2;
+}
+
+// SearchFilter is the wire encoding of the filter applied to a search
+// request. Field names match Prometheus PR #18573's HTTP URL params so the
+// HTTP-to-gRPC translation in the querier (later PR) is verbatim.
+message SearchFilter {
+  // Terms are the search terms; combined with OR-max by filterOr at the server.
+  repeated string terms = 1;
+  // CaseInsensitive flips the search to be case-insensitive. The proto3 zero
+  // value (false) means case-sensitive — matching Prometheus's HTTP
+  // case_sensitive URL-param default of true. The HTTP handler in the later
+  // PR translates the URL param to this wire bit (case_sensitive=false URL
+  // param → case_insensitive=true wire bit).
+  bool case_insensitive = 2;
+
+  enum FuzzAlg {
+    FUZZ_ALG_SUBSEQUENCE = 0;
+    FUZZ_ALG_JARO_WINKLER = 1;
+  }
+  FuzzAlg fuzz_alg = 3;
+  // FuzzThreshold is the minimum fuzzy score expressed as int 0-100,
+  // matching Prometheus PR #18573's fuzz_threshold URL param. The server
+  // divides by 100 to compare against the matcher's [0,1] score.
+  int32 fuzz_threshold = 4;
+}
+
+message SearchLabelNamesRequest {
+  int64 start_timestamp_ms = 1;
+  int64 end_timestamp_ms = 2;
+  repeated LabelMatcher matchers = 3;
+  SearchFilter filter = 4;
+  SearchOrdering ordering = 5;
+  // Limit caps the number of accepted results; 0 means no limit.
+  int64 limit = 6;
+}
+
+message SearchLabelValuesRequest {
+  int64 start_timestamp_ms = 1;
+  int64 end_timestamp_ms = 2;
+  // Name is the label whose values are searched.
+  string name = 3;
+  repeated LabelMatcher matchers = 4;
+  SearchFilter filter = 5;
+  SearchOrdering ordering = 6;
+  int64 limit = 7;
+  // IncludeMetadata asks the ingester to enrich each result's Metadata field
+  // with the per-tenant MetricMetadata when name == "__name__". Has no effect
+  // for any other label name. Ignored by sources without metric metadata
+  // (e.g. store-gateway).
+  bool include_metadata = 8;
+}
+
+// SearchResultBatch carries one batch of (value, score) pairs in a streaming
+// reply. Both SearchLabel{Names,Values} use this shape. Warnings, when
+// present, accompany the final batch of a stream and carry annotations
+// produced by the underlying Searcher.
+message SearchResultBatch {
+  message Result {
+    string value = 1;
+    double score = 2;
+    // Metadata is populated only when the request set include_metadata=true
+    // and the underlying source has metric metadata for value. Nil otherwise.
+    cortexpb.MetricMetadata metadata = 3;
+  }
+  repeated Result results = 1 [(gogoproto.nullable) = false];
+  repeated string warnings = 2;
 }
 
 // QueryStreamResponse contains either:

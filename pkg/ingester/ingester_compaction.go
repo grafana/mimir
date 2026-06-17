@@ -17,6 +17,7 @@ import (
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/timeutil"
+	"github.com/prometheus/prometheus/storage"
 
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/util"
@@ -125,6 +126,15 @@ func (i *Ingester) compactionServiceRunning(ctx context.Context) error {
 	// effectively spreading the compactions over the configured interval.
 	firstInterval, standardInterval := i.compactionServiceInterval(time.Now(), i.instanceRing.Zones())
 
+	// Compute a fixed per-replica jitter for non-owned series eviction. Because the
+	// jitter is stable for the lifetime of the process, replicas that discover the
+	// same non-owned refs at the same time will evict them at different times.
+	// The effective grace period is minGracePeriod + jitter.
+	var nonOwnedSeriesJitter time.Duration
+	if variance := 2 * int64(i.cfg.EarlyCompactionNonOwnedSeriesMinGracePeriod); variance > 0 {
+		nonOwnedSeriesJitter = time.Duration(rand.Int63n(variance))
+	}
+
 	// After the first interval, we want the compaction to run at a specified interval for the zone if we have multiple zones,
 	// before we switch to running the compaction at the standard configured `HeadCompactionInterval`.
 	// If the criteria to have staggered compactions are not met, standardInterval and i.cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval are the same.
@@ -152,6 +162,9 @@ func (i *Ingester) compactionServiceRunning(ctx context.Context) error {
 
 			// Check if any TSDB Head should be compacted based on per-tenant owned series thresholds.
 			i.compactBlocksToReducePerTenantOwnedSeries(ctx, time.Now())
+
+			// Check if any TSDB Head should be early-compacted to flush non-owned series.
+			i.compactBlocksDueToNonOwnedSeries(ctx, nonOwnedSeriesJitter)
 
 			// Decrement the counter after compaction is complete
 			i.numCompactionsInProgress.Dec()
@@ -214,7 +227,11 @@ func (i *Ingester) offsetCataloguesSync(ctx context.Context) {
 	// all series in the block are guaranteed to come from below this lastSeenOffset.
 	// Note: for normal compaction cycle, that cuts head at "chunkRange * 3/2",
 	// this offset overshoots by ~1h. This is technically correct, but very conservative.
-	offsetHW := i.ingestReader.LastSeenOffset()
+	//
+	// The offset catalogue currently only tracks Kafka cluster 0; it is mutually exclusive with more
+	// than one write compartment (enforced by config validation), so cluster 0 is the only cluster, and
+	// in the non-compartments case it is the single Kafka cluster.
+	offsetHW := i.ingestReader.LastSeenOffsets().ForKafkaCluster(0)
 
 	level.Info(i.logger).Log("msg", "syncing offset catalogues for tenants", "last_seen_offset", offsetHW)
 
@@ -576,6 +593,105 @@ func (i *Ingester) compactBlocksToReducePerTenantOwnedSeries(ctx context.Context
 			"user", userID,
 			"before_in_memory_series", userMemorySeries,
 			"after_in_memory_series", db.Head().NumSeries(),
+		)
+	}
+}
+
+// compactBlocksDueToNonOwnedSeries triggers an early head compaction for tenants
+// whose non-owned series have remained pending long enough to be evicted.
+//
+// CompactOOOHead runs first to persist OOO data into OOO blocks, since the
+// regular block writer only sees in-order series. CompactSelectedSeries then
+// writes the selected non-owned series into a block and evicts them from the
+// head's index without advancing HeadMinTime.
+//
+// Eviction is skipped for tenants that do not have
+// EarlyHeadCompactionOwnedSeriesThreshold configured, or whose total in-head
+// series count (owned + non-owned) remains below the local threshold.
+func (i *Ingester) compactBlocksDueToNonOwnedSeries(ctx context.Context, jitter time.Duration) {
+	if !i.cfg.EarlyCompactionNonOwnedSeriesEnabled {
+		return
+	}
+
+	for _, userID := range i.getTSDBUsers() {
+		if ctx.Err() != nil {
+			return
+		}
+
+		// Per-tenant gate.
+		threshold := i.limits.EarlyHeadCompactionOwnedSeriesThreshold(userID)
+		if threshold <= 0 {
+			continue // Per-tenant early compaction disabled for this tenant.
+		}
+
+		db := i.getTSDB(userID)
+		if db == nil {
+			continue
+		}
+
+		now := time.Now()
+
+		// Fast path: threshold gate is satisfied and min grace period has elapsed.
+		var refs []storage.SeriesRef
+		var trigger string
+		localThreshold := i.limiter.ringStrategy.convertGlobalToLocalLimit(userID, threshold)
+		if localThreshold > 0 && db.Head().NumSeries() >= uint64(localThreshold) {
+			refs = db.takePendingNonOwnedRefs(now.Add(-i.cfg.EarlyCompactionNonOwnedSeriesMinGracePeriod - jitter))
+			if len(refs) > 0 {
+				trigger = "in-memory series count exceeds local threshold"
+			}
+		} else if i.cfg.EarlyCompactionNonOwnedSeriesMaxGracePeriod > 0 {
+			// Slow path: max grace period elapsed — evict regardless of the threshold gate to
+			// guarantee eventual cleanup even for tenants well below their series limit.
+			refs = db.takePendingNonOwnedRefs(now.Add(-i.cfg.EarlyCompactionNonOwnedSeriesMaxGracePeriod - jitter))
+			if len(refs) > 0 {
+				trigger = "max grace period elapsed"
+			}
+		}
+
+		if len(refs) == 0 {
+			continue
+		}
+
+		seriesBefore := db.Head().NumSeries()
+		level.Info(i.logger).Log("msg", "triggering per-tenant early head compaction of non-owned series", "user", userID, "trigger", trigger, "before_in_memory_series", seriesBefore, "num_refs", len(refs))
+
+		// Step 1: compact the OOO head to persist all out-of-order data before any
+		// series are evicted in step 2. CompactOOOHead is a no-op for tenants that
+		// have never ingested out-of-order samples.
+		if err := db.db.CompactOOOHead(ctx); err != nil {
+			level.Warn(i.logger).Log("msg", "OOO head compaction failed during per-tenant early compaction of non-owned series", "user", userID, "err", err)
+			// Fall through: CompactSelectedSeries still helps for non-owned series without OOO data.
+		}
+
+		// Step 2: persist the queued non-owned series in a block and evict them from
+		// the head.
+		if err := db.db.CompactSelectedSeries(refs); err != nil {
+			level.Warn(i.logger).Log("msg", "selected series compaction failed during per-tenant early compaction of non-owned series", "user", userID, "err", err)
+			continue
+		}
+
+		seriesAfter := db.Head().NumSeries()
+		// CompactSelectedSeries returns nil when no series were compacted (e.g., all
+		// series have OOO state). Verify that series were actually evicted before
+		// treating this as success.
+		if seriesBefore == seriesAfter {
+			level.Warn(i.logger).Log("msg", "selected series compaction returned success during per-tenant early compaction of non-owned series but no series were evicted; this may indicate that OOO state was not cleared before eviction", "user", userID, "in_memory_series", seriesBefore, "num_refs", len(refs))
+			continue
+		}
+
+		// Note: lastEarlyCompaction is intentionally not updated here. It is only
+		// updated by compactions that advance HeadMinTime. The compactions performed
+		// here (CompactOOOHead + CompactSelectedSeries) do not advance HeadMinTime.
+		db.triggerRecomputeOwnedSeries(recomputeOwnedSeriesReasonEarlyCompaction)
+
+		i.metrics.earlyCompactionNonOwnedSeriesTriggered.WithLabelValues(userID).Inc()
+
+		level.Info(i.logger).Log("msg", "per-tenant early head compaction of non-owned series completed",
+			"user", userID,
+			"trigger", trigger,
+			"before_in_memory_series", seriesBefore,
+			"after_in_memory_series", seriesAfter,
 		)
 	}
 }

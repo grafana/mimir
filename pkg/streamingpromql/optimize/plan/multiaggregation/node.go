@@ -5,6 +5,7 @@ package multiaggregation
 import (
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -26,9 +27,10 @@ func init() {
 	})
 }
 
+//node:generate
 type MultiAggregationGroup struct {
 	*MultiAggregationGroupDetails
-	Inner planning.Node
+	Inner planning.Node `node:"child"`
 }
 
 func (g *MultiAggregationGroup) Details() proto.Message {
@@ -37,36 +39,6 @@ func (g *MultiAggregationGroup) Details() proto.Message {
 
 func (g *MultiAggregationGroup) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_MULTI_AGGREGATION_GROUP
-}
-
-func (g *MultiAggregationGroup) Child(idx int) planning.Node {
-	if idx != 0 {
-		panic(fmt.Sprintf("node of type MultiAggregationGroup supports 1 child, but attempted to get child at index %d", idx))
-	}
-
-	return g.Inner
-}
-
-func (g *MultiAggregationGroup) ChildCount() int {
-	return 1
-}
-
-func (g *MultiAggregationGroup) SetChildren(children []planning.Node) error {
-	if len(children) != 1 {
-		return fmt.Errorf("node of type MultiAggregationGroup supports 1 child, but got %d", len(children))
-	}
-
-	g.Inner = children[0]
-	return nil
-}
-
-func (g *MultiAggregationGroup) ReplaceChild(idx int, node planning.Node) error {
-	if idx != 0 {
-		return fmt.Errorf("node of type MultiAggregationGroup supports 1 child, but attempted to replace child at index %d", idx)
-	}
-
-	g.Inner = node
-	return nil
 }
 
 func (g *MultiAggregationGroup) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
@@ -108,13 +80,15 @@ func (g *MultiAggregationGroup) ExpressionPosition() (posrange.PositionRange, er
 	return g.Inner.ExpressionPosition()
 }
 
-func (g *MultiAggregationGroup) MinimumRequiredPlanVersion() planning.QueryPlanVersion {
-	return planning.QueryPlanV5
+func (g *MultiAggregationGroup) MinimumRequiredPlanVersion(types.QueryTimeRange) (planning.QueryPlanVersion, error) {
+	return planning.QueryPlanV5, nil
 }
 
+//node:generate
 type MultiAggregationInstance struct {
 	*MultiAggregationInstanceDetails
-	Group *MultiAggregationGroup
+	Group *MultiAggregationGroup `node:"child"`
+	Param planning.Node          `node:"child,nilable"` // nil for non-parameterized aggregations (eg. sum), set for quantile.
 }
 
 func (a *MultiAggregationInstance) Details() proto.Message {
@@ -125,40 +99,6 @@ func (a *MultiAggregationInstance) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_MULTI_AGGREGATION_INSTANCE
 }
 
-func (a *MultiAggregationInstance) Child(idx int) planning.Node {
-	if idx != 0 {
-		panic(fmt.Sprintf("node of type MultiAggregationInstance supports 1 child, but attempted to get child at index %d", idx))
-	}
-
-	return a.Group
-}
-
-func (a *MultiAggregationInstance) ChildCount() int {
-	return 1
-}
-
-func (a *MultiAggregationInstance) SetChildren(children []planning.Node) error {
-	if len(children) != 1 {
-		return fmt.Errorf("node of type MultiAggregationInstance supports 1 child, but got %d", len(children))
-	}
-
-	return a.ReplaceChild(0, children[0])
-}
-
-func (a *MultiAggregationInstance) ReplaceChild(idx int, node planning.Node) error {
-	if idx != 0 {
-		return fmt.Errorf("node of type MultiAggregationInstance supports 1 child, but attempted to replace child at index %d", idx)
-	}
-
-	group, ok := node.(*MultiAggregationGroup)
-	if !ok {
-		return fmt.Errorf("node of type MultiAggregationInstance requires child of type MultiAggregationGroup, but got %T", node)
-	}
-
-	a.Group = group
-	return nil
-}
-
 func (a *MultiAggregationInstance) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
 	otherInstance, ok := other.(*MultiAggregationInstance)
 
@@ -166,7 +106,8 @@ func (a *MultiAggregationInstance) EquivalentToIgnoringHintsAndChildren(other pl
 		a.Aggregation.EquivalentTo(otherInstance.Aggregation) &&
 		slices.EqualFunc(a.Filters, otherInstance.Filters, func(a *core.LabelMatcher, b *core.LabelMatcher) bool {
 			return a.Equal(b)
-		})
+		}) &&
+		a.SubsetIndex == otherInstance.SubsetIndex
 }
 
 func (a *MultiAggregationInstance) MergeHints(other planning.Node) error {
@@ -185,13 +126,20 @@ func (a *MultiAggregationInstance) Describe() string {
 	if len(a.Filters) > 0 {
 		builder.WriteString(", filters: ")
 		core.FormatMatchers(builder, a.Filters)
+
+		builder.WriteString(", subset index: ")
+		builder.WriteString(strconv.FormatInt(a.SubsetIndex, 10))
 	}
 
 	return builder.String()
 }
 
 func (a *MultiAggregationInstance) ChildrenLabels() []string {
-	return []string{""}
+	if a.Param == nil {
+		return []string{""}
+	}
+
+	return []string{"expression", "parameter"}
 }
 
 func (a *MultiAggregationInstance) ChildrenTimeRange(parentTimeRange types.QueryTimeRange) types.QueryTimeRange {
@@ -203,19 +151,37 @@ func (a *MultiAggregationInstance) ResultType() (parser.ValueType, error) {
 }
 
 func (a *MultiAggregationInstance) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) (planning.QueriedTimeRange, error) {
-	return a.Group.QueriedTimeRange(queryTimeRange, lookbackDelta)
+	groupRange, err := a.Group.QueriedTimeRange(queryTimeRange, lookbackDelta)
+	if err != nil {
+		return planning.NoDataQueried(), err
+	}
+
+	if a.Param == nil {
+		return groupRange, nil
+	}
+
+	paramRange, err := a.Param.QueriedTimeRange(queryTimeRange, lookbackDelta)
+	if err != nil {
+		return planning.NoDataQueried(), err
+	}
+
+	return groupRange.Union(paramRange), nil
 }
 
 func (a *MultiAggregationInstance) ExpressionPosition() (posrange.PositionRange, error) {
 	return a.Group.ExpressionPosition()
 }
 
-func (a *MultiAggregationInstance) MinimumRequiredPlanVersion() planning.QueryPlanVersion {
-	if len(a.Filters) > 0 {
-		return planning.QueryPlanV8
+func (a *MultiAggregationInstance) MinimumRequiredPlanVersion(types.QueryTimeRange) (planning.QueryPlanVersion, error) {
+	if a.Param != nil {
+		return planning.QueryPlanV15, nil
 	}
 
-	return planning.QueryPlanV5
+	if len(a.Filters) > 0 {
+		return planning.QueryPlanV8, nil
+	}
+
+	return planning.QueryPlanV5, nil
 }
 
 func MaterializeMultiAggregationGroup(node *MultiAggregationGroup, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
@@ -224,7 +190,7 @@ func MaterializeMultiAggregationGroup(node *MultiAggregationGroup, materializer 
 		return nil, err
 	}
 
-	evaluator := NewMultiAggregatorGroupEvaluator(inner, params.MemoryConsumptionTracker)
+	evaluator := NewMultiAggregatorGroupEvaluator(inner, params.MemoryConsumptionTracker, timeRange, params.Logger)
 
 	return &MultiAggregationInstanceFactory{group: evaluator}, nil
 }
@@ -258,15 +224,24 @@ func MaterializeMultiAggregationInstance(node *MultiAggregationInstance, materia
 		return nil, err
 	}
 
+	var param types.ScalarOperator
+	if node.Param != nil {
+		param, err = materializer.ConvertNodeToScalarOperator(node.Param, timeRange)
+		if err != nil {
+			return nil, fmt.Errorf("could not create parameter operator for MultiAggregationInstance %s: %w", node.Aggregation.Op.String(), err)
+		}
+	}
+
 	err = instance.Configure(
 		op,
 		node.Aggregation.Grouping,
 		node.Aggregation.Without,
 		matchers,
+		int(node.SubsetIndex),
 		params.MemoryConsumptionTracker,
-		params.Annotations,
 		timeRange,
 		node.Aggregation.ExpressionPosition.ToPrometheusType(),
+		param,
 	)
 
 	if err != nil {

@@ -17,6 +17,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
@@ -25,7 +26,6 @@ import (
 type InstantVectorSelector struct {
 	Selector                                 *Selector
 	MemoryConsumptionTracker                 *limiter.MemoryConsumptionTracker
-	QueryStats                               *types.QueryStats
 	ReturnSampleTimestamps                   bool // true if this operator is wrapped directly in the timestamp() function and so should return the underlying sample timestamps.
 	ReturnSampleTimestampsPreserveHistograms bool // Used for info() function to preserve histograms in info metrics while making the floats reflect timestamps.
 
@@ -36,10 +36,9 @@ type InstantVectorSelector struct {
 
 var _ types.InstantVectorOperator = &InstantVectorSelector{}
 
-func NewInstantVectorSelector(selector *Selector, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, stats *types.QueryStats, returnSampleTimestamps, returnSampleTimestampsPreserveHistograms bool) *InstantVectorSelector {
+func NewInstantVectorSelector(selector *Selector, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, returnSampleTimestamps, returnSampleTimestampsPreserveHistograms bool) *InstantVectorSelector {
 	return &InstantVectorSelector{
 		Selector:                                 selector,
-		QueryStats:                               stats,
 		MemoryConsumptionTracker:                 memoryConsumptionTracker,
 		ReturnSampleTimestamps:                   returnSampleTimestamps,
 		ReturnSampleTimestampsPreserveHistograms: returnSampleTimestampsPreserveHistograms,
@@ -59,8 +58,9 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 		v.memoizedIterator = storage.NewMemoizedEmptyIterator(v.Selector.LookbackDelta.Milliseconds() - 1) // -1 to exclude samples on the lower boundary of the range.
 	}
 
+	var matchesSubsets []bool
 	var err error
-	v.chunkIterator, err = v.Selector.Next(ctx, v.chunkIterator)
+	v.chunkIterator, matchesSubsets, err = v.Selector.Next(ctx, v.chunkIterator)
 	if err != nil {
 		return types.InstantVectorSeriesData{}, err
 	}
@@ -187,8 +187,7 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 
 			// For consistency with Prometheus' engine, we convert each histogram point to an equivalent number of float points.
 			sampleCount := types.EquivalentFloatSampleCount(h)
-			v.QueryStats.IncrementSamples(sampleCount)
-			v.evaluationStats.TrackSampleForInstantVectorSelector(stepT, sampleCount, nil)
+			v.evaluationStats.TrackSampleForInstantVectorSelector(stepT, sampleCount, matchesSubsets)
 
 		} else {
 			// Only create the slice once we know the series is a histogram or not.
@@ -200,8 +199,7 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 					return types.InstantVectorSeriesData{}, err
 				}
 			}
-			v.QueryStats.IncrementSamples(1)
-			v.evaluationStats.TrackSampleForInstantVectorSelector(stepT, 1, nil)
+			v.evaluationStats.TrackSampleForInstantVectorSelector(stepT, 1, matchesSubsets)
 			data.Floats = append(data.Floats, promql.FPoint{T: stepT, F: f})
 		}
 	}
@@ -215,7 +213,7 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 
 func (v *InstantVectorSelector) Prepare(ctx context.Context, params *types.PrepareParams) error {
 	var err error
-	v.evaluationStats, err = types.NewOperatorEvaluationStats(v.Selector.TimeRange, v.MemoryConsumptionTracker, 0)
+	v.evaluationStats, err = types.NewOperatorEvaluationStats(ctx, v.Selector.TimeRange, v.MemoryConsumptionTracker, len(v.Selector.Subsets))
 	if err != nil {
 		return err
 	}
@@ -226,7 +224,7 @@ func (v *InstantVectorSelector) AfterPrepare(ctx context.Context) error {
 	return nil
 }
 
-func (v *InstantVectorSelector) Finalize(ctx context.Context) error {
+func (v *InstantVectorSelector) FinishedReading(ctx context.Context) error {
 	v.memoizedIterator = nil
 	v.chunkIterator = nil
 
@@ -234,14 +232,14 @@ func (v *InstantVectorSelector) Finalize(ctx context.Context) error {
 	return nil
 }
 
-func (v *InstantVectorSelector) Stats(_ context.Context) (*types.OperatorEvaluationStats, error) {
+func (v *InstantVectorSelector) Finalize(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
 	stats := v.evaluationStats
 	v.evaluationStats = nil
-	return stats, nil
+	return stats, nil, nil
 }
 
 func (v *InstantVectorSelector) Close() {
-	// If the query fails, then Finalize above won't be called, so make sure to close the selector.
+	// If the query fails, then FinishedReading above won't be called, so make sure to close the selector.
 	v.Selector.Close()
 
 	if v.evaluationStats != nil {

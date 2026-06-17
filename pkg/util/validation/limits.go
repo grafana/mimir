@@ -11,6 +11,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"hash/fnv"
 	"math"
 	"reflect"
 	"slices"
@@ -55,6 +56,8 @@ const (
 	ReduceNativeHistogramOverMaxBucketsFlag     = "validation.reduce-native-histogram-over-max-buckets"
 	CreationGracePeriodFlag                     = "validation.create-grace-period"
 	PastGracePeriodFlag                         = "validation.past-grace-period"
+	EnforceOutOfOrderWindowOnDistributorFlag    = "validation.enforce-out-of-order-window-on-distributor"
+	OutOfOrderTimeWindowFlag                    = "ingester.out-of-order-time-window"
 	MaxActiveSeriesAdditionalCustomTrackersFlag = "validation.max-active-series-additional-custom-trackers"
 	MaxPartialQueryLengthFlag                   = "querier.max-partial-query-length"
 	MaxSeriesQueryLimitFlag                     = "querier.max-series-query-limit"
@@ -138,6 +141,7 @@ type Limits struct {
 	IngestionBurstSize            int     `yaml:"ingestion_burst_size" json:"ingestion_burst_size"`
 	IngestionBurstFactor          float64 `yaml:"ingestion_burst_factor" json:"ingestion_burst_factor" category:"experimental"`
 	AcceptHASamples               bool    `yaml:"accept_ha_samples" json:"accept_ha_samples"`
+	HATrackerPerSampleDedupe      bool    `yaml:"ha_tracker_per_sample_dedupe" json:"ha_tracker_per_sample_dedupe" category:"experimental"`
 	HAClusterLabel                string  `yaml:"ha_cluster_label" json:"ha_cluster_label"`
 	HAReplicaLabel                string  `yaml:"ha_replica_label" json:"ha_replica_label"`
 	HAMaxClusters                 int     `yaml:"ha_max_clusters" json:"ha_max_clusters"`
@@ -171,6 +175,7 @@ type Limits struct {
 	ReduceNativeHistogramOverMaxBuckets bool                              `yaml:"reduce_native_histogram_over_max_buckets" json:"reduce_native_histogram_over_max_buckets"`
 	CreationGracePeriod                 model.Duration                    `yaml:"creation_grace_period" json:"creation_grace_period" category:"advanced"`
 	PastGracePeriod                     model.Duration                    `yaml:"past_grace_period" json:"past_grace_period" category:"advanced"`
+	EnforceOOOWindowOnDistributor       bool                              `yaml:"enforce_out_of_order_window_on_distributor" json:"enforce_out_of_order_window_on_distributor" category:"experimental"`
 	EnforceMetadataMetricName           bool                              `yaml:"enforce_metadata_metric_name" json:"enforce_metadata_metric_name" category:"advanced"`
 	IngestionTenantShardSize            int                               `yaml:"ingestion_tenant_shard_size" json:"ingestion_tenant_shard_size"`
 	MetricRelabelConfigs                []*relabel.Config                 `yaml:"metric_relabel_configs,omitempty" json:"metric_relabel_configs,omitempty" doc:"nocli|description=List of metric relabel configurations. Note that in most situations, it is more effective to use metrics relabeling directly in the Prometheus server, e.g. remote_write.write_relabel_configs. Labels available during the relabeling phase and cleaned afterwards: __meta_tenant_id" category:"experimental"`
@@ -254,9 +259,15 @@ type Limits struct {
 	ActiveSeriesResultsMaxSizeBytes               int  `yaml:"active_series_results_max_size_bytes" json:"active_series_results_max_size_bytes" category:"advanced"`
 
 	// Cost attribution.
-	CostAttributionLabelsStructured costattributionmodel.Labels `yaml:"cost_attribution_labels_structured,omitempty" json:"cost_attribution_labels_structured,omitempty" category:"experimental"`
-	MaxCostAttributionCardinality   int                         `yaml:"max_cost_attribution_cardinality" json:"max_cost_attribution_cardinality" category:"experimental"`
-	CostAttributionCooldown         model.Duration              `yaml:"cost_attribution_cooldown" json:"cost_attribution_cooldown" category:"experimental"`
+	// Deprecated: use CostAttributionBaseTrackers instead. If set, it is migrated into CostAttributionBaseTrackers
+	// as a tracker named "cost-attribution" during validation. Cannot be set together with CostAttributionBaseTrackers.
+	CostAttributionLabelsStructured   costattributionmodel.Labels                          `yaml:"cost_attribution_labels_structured,omitempty" json:"cost_attribution_labels_structured,omitempty" category:"experimental"`
+	CostAttributionBaseTrackers       costattributionmodel.TrackerConfigs                  `yaml:"cost_attribution_trackers,omitempty" json:"cost_attribution_trackers,omitempty" category:"experimental"`
+	AdditionalCostAttributionTrackers costattributionmodel.TrackerConfigs                  `yaml:"additional_cost_attribution_trackers,omitempty" json:"additional_cost_attribution_trackers,omitempty" category:"experimental"`
+	costAttributionMergedTrackers     *atomic.Pointer[costattributionmodel.TrackerConfigs] `yaml:"-" json:"-"`
+	CostAttributionCooldown           model.Duration                                       `yaml:"cost_attribution_cooldown" json:"cost_attribution_cooldown" category:"experimental"`
+	MaxCostAttributionCardinality     int                                                  `yaml:"max_cost_attribution_cardinality" json:"max_cost_attribution_cardinality" category:"experimental"`
+	costAttributionConfigHash         uint64
 
 	// Ruler defaults and limits.
 	RulerEvaluationDelay                                  model.Duration                    `yaml:"ruler_evaluation_delay_duration" json:"ruler_evaluation_delay_duration"`
@@ -368,6 +379,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.IngestionBurstSize, IngestionBurstSizeFlag, 200000, "Per-tenant allowed ingestion burst size (in number of samples).")
 	f.Float64Var(&l.IngestionBurstFactor, IngestionBurstFactorFlag, 0, "Per-tenant burst factor which is the maximum burst size allowed as a multiple of the per-tenant ingestion rate, this burst-factor must be greater than or equal to 1. If this is set it will override the ingestion-burst-size option.")
 	f.BoolVar(&l.AcceptHASamples, "distributor.ha-tracker.enable-for-all-users", false, "Flag to enable, for all tenants, handling of samples with external labels identifying replicas in an HA Prometheus setup.")
+	f.BoolVar(&l.HATrackerPerSampleDedupe, "distributor.ha-tracker.per-sample-dedupe", false, "Experimental: evaluate HA deduplication per timeseries within a write request instead of applying the first series' decision to the whole request. Enables correct behavior for mixed-label requests such as Prometheus federation or metrics proxies.")
 	f.StringVar(&l.HAClusterLabel, "distributor.ha-tracker.cluster", "cluster", "Prometheus label to look for in samples to identify a Prometheus HA cluster.")
 	f.StringVar(&l.HAReplicaLabel, "distributor.ha-tracker.replica", "__replica__", "Prometheus label to look for in samples to identify a Prometheus HA replica.")
 	l.HATrackerUpdateTimeout = model.Duration(15 * time.Second)
@@ -393,11 +405,12 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	_ = l.CreationGracePeriod.Set("10m")
 	f.Var(&l.CreationGracePeriod, CreationGracePeriodFlag, "Controls how far into the future incoming samples and exemplars are accepted compared to the wall clock. Any sample or exemplar will be rejected if its timestamp is greater than '(now + creation_grace_period)'. This configuration is enforced in the distributor and ingester.")
 	f.Var(&l.PastGracePeriod, PastGracePeriodFlag, "Controls how far into the past incoming samples and exemplars are accepted compared to the wall clock. Any sample or exemplar will be rejected if its timestamp is lower than '(now - OOO window - past_grace_period)'. This configuration is enforced in the distributor and ingester. 0 to disable.")
+	f.BoolVar(&l.EnforceOOOWindowOnDistributor, EnforceOutOfOrderWindowOnDistributorFlag, false, "When enabled and past_grace_period is 0, the distributor rejects samples whose timestamp is older than '(now - out_of_order_time_window)'. This matches what the ingester will reject. Has no effect when past_grace_period is greater than 0.")
 	f.BoolVar(&l.EnforceMetadataMetricName, "validation.enforce-metadata-metric-name", true, "Enforce every metadata has a metric name.")
 	l.OTelMetricSuffixesEnabled = new(bool)
 	f.BoolVar(l.OTelMetricSuffixesEnabled, "distributor.otel-metric-suffixes-enabled", false, "Whether to enable automatic suffixes to names of metrics ingested through OTLP.")
 	f.BoolVar(&l.OTelCreatedTimestampZeroIngestionEnabled, "distributor.otel-created-timestamp-zero-ingestion-enabled", false, "Whether to enable translation of OTel start timestamps to Prometheus zero samples in the OTLP endpoint.")
-	f.Var(&l.PromoteOTelResourceAttributes, "distributor.otel-promote-resource-attributes", "Optionally specify OTel resource attributes to promote to labels.")
+	f.Var(&l.PromoteOTelResourceAttributes, "distributor.otel-promote-resource-attributes", "Optionally specify a comma-separated list of OTel resource attributes to promote to labels. E.g. 'k8s.cluster.name,host.name,cloud.region'")
 	f.BoolVar(&l.OTelKeepIdentifyingResourceAttributes, "distributor.otel-keep-identifying-resource-attributes", false, "Whether to keep identifying OTel resource attributes in the target_info metric on top of converting to job and instance labels.")
 	f.BoolVar(&l.OTelConvertHistogramsToNHCB, "distributor.otel-convert-histograms-to-nhcb", false, "Whether to convert OTel explicit histograms into native histograms with custom buckets.")
 	f.BoolVar(&l.OTelPromoteScopeMetadata, "distributor.otel-promote-scope-metadata", false, "Whether to promote OTel scope metadata (scope name, version, schema URL, attributes) to corresponding metric labels, prefixed with otel_scope_.")
@@ -419,7 +432,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.MaxGlobalExemplarsPerUser, "ingester.max-global-exemplars-per-user", 0, "The maximum number of exemplars in memory, across the cluster. 0 to disable exemplars ingestion.")
 	f.BoolVar(&l.IgnoreOOOExemplars, "ingester.ignore-ooo-exemplars", false, "Whether to ignore exemplars with out-of-order timestamps. If enabled, exemplars with out-of-order timestamps are silently dropped, otherwise they cause partial errors.")
 	f.Var(&l.ActiveSeriesBaseCustomTrackersConfig, "ingester.active-series-custom-trackers", "Additional active series metrics, matching the provided matchers. Matchers should be in form <name>:<matcher>, like 'foobar:{foo=\"bar\"}'. Multiple matchers can be provided either providing the flag multiple times or providing multiple semicolon-separated values to a single flag.")
-	f.Var(&l.OutOfOrderTimeWindow, "ingester.out-of-order-time-window", fmt.Sprintf("Non-zero value enables out-of-order support for most recent samples that are within the time window in relation to the TSDB's maximum time, i.e., within [db.maxTime-timeWindow, db.maxTime]). The ingester will need more memory as a factor of rate of out-of-order samples being ingested and the number of series that are getting out-of-order samples. If query falls into this window, cached results will use value from -%s option to specify TTL for resulting cache entry.", resultsCacheTTLForOutOfOrderWindowFlag))
+	f.Var(&l.OutOfOrderTimeWindow, OutOfOrderTimeWindowFlag, fmt.Sprintf("Non-zero value enables out-of-order support for most recent samples that are within the time window in relation to the TSDB's maximum time, i.e., within [db.maxTime-timeWindow, db.maxTime]). The ingester will need more memory as a factor of rate of out-of-order samples being ingested and the number of series that are getting out-of-order samples. If query falls into this window, cached results will use value from -%s option to specify TTL for resulting cache entry.", resultsCacheTTLForOutOfOrderWindowFlag))
 	f.BoolVar(&l.NativeHistogramsIngestionEnabled, "ingester.native-histograms-ingestion-enabled", true, "Enable ingestion of native histogram samples. If false, native histogram samples are ignored without an error. To query native histograms with query-sharding enabled make sure to set -query-frontend.query-result-response-format to 'protobuf'.")
 	f.BoolVar(&l.OutOfOrderBlocksExternalLabelEnabled, "ingester.out-of-order-blocks-external-label-enabled", false, "Whether the shipper should label out-of-order blocks with an external label before uploading them. Setting this label will compact out-of-order blocks separately from non-out-of-order blocks")
 	f.IntVar(&l.EarlyHeadCompactionOwnedSeriesThreshold, "ingester.early-head-compaction-owned-series-threshold", 0, "When the number of owned series for a tenant across the cluster exceeds this threshold, trigger early head compaction. 0 to disable.")
@@ -427,6 +440,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 
 	f.StringVar(&l.SeparateMetricsGroupLabel, "validation.separate-metrics-group-label", "", "Label used to define the group label for metrics separation. For each write request, the group is obtained from the first non-empty group label from the first timeseries in the incoming list of timeseries. Specific distributor and ingester metrics will be further separated adding a 'group' label with group label's value. Currently applies to the following metrics: cortex_discarded_samples_total")
 
+	f.Var(&l.CostAttributionBaseTrackers, "validation.cost-attribution-trackers", "Base cost attribution trackers configuration as JSON. Each tracker defines labels to track for cost attribution. Example: '{\"by-team\":{\"labels\":[{\"input\":\"team\"}]}}'.")
 	f.IntVar(&l.MaxCostAttributionCardinality, "validation.max-cost-attribution-cardinality", 2000, "Maximum cardinality of cost attribution labels allowed per user.")
 	f.Var(&l.CostAttributionCooldown, "validation.cost-attribution-cooldown", "Defines how long cost attribution stays in overflow before attempting a reset, with received/discarded samples extending the cooldown if overflow persists, while active series reset and restart tracking after the cooldown.")
 	f.IntVar(&l.MaxActiveSeriesAdditionalCustomTrackers, MaxActiveSeriesAdditionalCustomTrackersFlag, 0, "Maximum number of additional custom trackers for active series that you can configure per tenant. This limit only applies to additional custom trackers. Set to 0 to disable the limit.")
@@ -556,8 +570,9 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&l.NautilusIngestRouting, "distributor.nautilus-ingest-routing", NautilusIngestRoutingDisabled, "Which Kafka topic this tenant's writes are forwarded to. Valid values: 'disabled' (production ingest topic), 'nautilus-only' (experimental nautilus_ingest topic consumed by readcache). Must move in lockstep with readcache_read_routing.")
 	f.StringVar(&l.ReadcacheReadRouting, "distributor.readcache-read-routing", ReadcacheReadRoutingDisabled, "Which read path this tenant's queries are routed through. Valid values: 'disabled' (queries served by ingesters), 'nautilus-only' (queries served by readcache). Must move in lockstep with nautilus_ingest_routing.")
 
-	// Ensure the pointer holder is initialized.
+	// Ensure the pointer holders are initialized.
 	l.activeSeriesMergedCustomTrackersConfig = atomic.NewPointer[asmodel.CustomTrackersConfig](nil)
+	l.costAttributionMergedTrackers = atomic.NewPointer[costattributionmodel.TrackerConfigs](nil)
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -588,8 +603,9 @@ func (l *Limits) unmarshal(decode func(any) error) error {
 		l.RulerMaxRulesPerRuleGroupByNamespace = defaultLimits.RulerMaxRulesPerRuleGroupByNamespace.Clone()
 		l.RulerMaxRuleGroupsPerTenantByNamespace = defaultLimits.RulerMaxRuleGroupsPerTenantByNamespace.Clone()
 
-		// Reset the merged custom active series trackers config, to not interfere with the default limits.
+		// Reset the merged trackers configs, to not interfere with the default limits.
 		l.activeSeriesMergedCustomTrackersConfig = atomic.NewPointer[asmodel.CustomTrackersConfig](nil)
+		l.costAttributionMergedTrackers = atomic.NewPointer[costattributionmodel.TrackerConfigs](nil)
 
 		// Reset these params to be nil, since they are set during RegisterFlags.
 		l.OTelMetricSuffixesEnabled = nil
@@ -604,12 +620,34 @@ func (l *Limits) unmarshal(decode func(any) error) error {
 	}
 	l.extensions = getExtensions()
 
+	l.migrateCostAttributionLabelsStructured()
+
 	if err = l.Validate(); err != nil {
 		return err
 	}
 
 	l.canonicalizeQueries()
+	l.CostAttributionBaseTrackers.Canonicalize()
+	l.AdditionalCostAttributionTrackers.Canonicalize()
+	l.ComputeCostAttributionConfigHash()
 	return nil
+}
+
+// migrateCostAttributionLabelsStructured migrates the deprecated CostAttributionLabelsStructured
+// field into CostAttributionBaseTrackers.
+func (l *Limits) migrateCostAttributionLabelsStructured() {
+	if len(l.CostAttributionLabelsStructured) == 0 {
+		return
+	}
+	if len(l.CostAttributionBaseTrackers) > 0 {
+		// Base trackers are set too; leave the deprecated field in place so Validate rejects the
+		// mutually-exclusive combination instead of silently dropping the configured trackers.
+		return
+	}
+	l.CostAttributionBaseTrackers = costattributionmodel.TrackerConfigs{
+		costattributionmodel.DefaultTrackerName: costattributionmodel.TrackerConfig{Labels: l.CostAttributionLabelsStructured},
+	}
+	l.CostAttributionLabelsStructured = nil
 }
 
 // RegisterExtensionsDefaults registers the default values for extensions into l.
@@ -739,7 +777,13 @@ func (l *Limits) Validate() error {
 		}
 	}
 
-	if err := l.CostAttributionLabelsStructured.Validate(); err != nil {
+	if len(l.CostAttributionLabelsStructured) > 0 && len(l.CostAttributionBaseTrackers) > 0 {
+		return fmt.Errorf("cost_attribution_labels_structured and cost_attribution_trackers are mutually exclusive; use cost_attribution_trackers only")
+	}
+	if err := l.CostAttributionBaseTrackers.Validate(); err != nil {
+		return err
+	}
+	if err := l.AdditionalCostAttributionTrackers.Validate(); err != nil {
 		return err
 	}
 
@@ -753,6 +797,25 @@ func (l *Limits) Validate() error {
 	}
 
 	return nil
+}
+
+// ComputeCostAttributionConfigHash computes and caches the hash of cost attribution config fields.
+func (l *Limits) ComputeCostAttributionConfigHash() uint64 {
+	l.costAttributionConfigHash = l.computeCostAttributionConfigHash()
+	return l.costAttributionConfigHash
+}
+
+func (l *Limits) computeCostAttributionConfigHash() uint64 {
+	if len(l.CostAttributionBaseTrackers) == 0 && len(l.AdditionalCostAttributionTrackers) == 0 {
+		return 0
+	}
+	h := fnv.New64a()
+	e := json.NewEncoder(h)
+	_ = e.Encode(l.CostAttributionBaseTrackers)
+	_ = e.Encode(l.MaxCostAttributionCardinality)
+	_ = e.Encode(l.CostAttributionCooldown)
+	_ = e.Encode(l.AdditionalCostAttributionTrackers)
+	return h.Sum64()
 }
 
 // LabelValueHashLen is the length of the hash portion that replaces part of all
@@ -867,6 +930,13 @@ func (o *Overrides) AcceptHASamples(userID string) bool {
 	return o.getOverridesForUser(userID).AcceptHASamples
 }
 
+// HATrackerPerSampleDedupe returns whether HA deduplication should be evaluated
+// per timeseries within a write request (instead of applying the first series'
+// decision to the whole request) for this user.
+func (o *Overrides) HATrackerPerSampleDedupe(userID string) bool {
+	return o.getOverridesForUser(userID).HATrackerPerSampleDedupe
+}
+
 // HAClusterLabel returns the cluster label to look for when deciding whether to accept a sample from a Prometheus HA replica.
 func (o *Overrides) HAClusterLabel(userID string) string {
 	return o.getOverridesForUser(userID).HAClusterLabel
@@ -936,6 +1006,12 @@ func (o *Overrides) CreationGracePeriod(userID string) time.Duration {
 // Zero means disabled.
 func (o *Overrides) PastGracePeriod(userID string) time.Duration {
 	return time.Duration(o.getOverridesForUser(userID).PastGracePeriod)
+}
+
+// EnforceOOOWindowOnDistributor returns whether the distributor should reject
+// samples older than the out-of-order time window when past_grace_period is 0.
+func (o *Overrides) EnforceOOOWindowOnDistributor(userID string) bool {
+	return o.getOverridesForUser(userID).EnforceOOOWindowOnDistributor
 }
 
 // MaxActiveOrGlobalSeriesPerUser returns the maximum number of active series a user is allowed to store across the cluster.
@@ -1184,16 +1260,57 @@ func (o *Overrides) SeparateMetricsGroupLabel(userID string) string {
 	return o.getOverridesForUser(userID).SeparateMetricsGroupLabel
 }
 
-func (o *Overrides) CostAttributionLabelsStructured(userID string) costattributionmodel.Labels {
-	return o.getOverridesForUser(userID).CostAttributionLabelsStructured
-}
-
 func (o *Overrides) CostAttributionCooldown(userID string) time.Duration {
 	return time.Duration(o.getOverridesForUser(userID).CostAttributionCooldown)
 }
 
 func (o *Overrides) MaxCostAttributionCardinality(userID string) int {
 	return o.getOverridesForUser(userID).MaxCostAttributionCardinality
+}
+
+// costAttributionTrackers returns the merged base + additional tracker configs. The result is cached.
+func (l *Limits) costAttributionTrackers() costattributionmodel.TrackerConfigs {
+	if l.costAttributionMergedTrackers == nil {
+		return costattributionmodel.MergeTrackerConfigs(
+			l.CostAttributionBaseTrackers,
+			l.AdditionalCostAttributionTrackers,
+		)
+	}
+
+	if merged := l.costAttributionMergedTrackers.Load(); merged != nil {
+		return *merged
+	}
+
+	merged := costattributionmodel.MergeTrackerConfigs(
+		l.CostAttributionBaseTrackers,
+		l.AdditionalCostAttributionTrackers,
+	)
+	l.costAttributionMergedTrackers.Store(&merged)
+	return merged
+}
+
+// CostAttributionConfig returns all cost attribution limits for a tenant in a single lookup.
+type CostAttributionConfig struct {
+	Trackers       costattributionmodel.TrackerConfigs
+	MaxCardinality int
+	Cooldown       time.Duration
+}
+
+func (o *Overrides) CostAttributionConfig(userID string) CostAttributionConfig {
+	l := o.getOverridesForUser(userID)
+	return CostAttributionConfig{
+		Trackers:       l.costAttributionTrackers(),
+		MaxCardinality: l.MaxCostAttributionCardinality,
+		Cooldown:       time.Duration(l.CostAttributionCooldown),
+	}
+}
+
+// CostAttributionConfigHash returns a precomputed hash of all cost attribution
+// config fields for a tenant. The hash is stable within a config reload cycle.
+// The second argument indicates whether the user has any cost attribution trackers configured.
+func (o *Overrides) CostAttributionConfigHash(userID string) (uint64, bool) {
+	user := o.getOverridesForUser(userID)
+	return user.costAttributionConfigHash, len(user.CostAttributionBaseTrackers)+len(user.AdditionalCostAttributionTrackers) > 0
 }
 
 // IngestionTenantShardSize returns the ingesters shard size for a given user.

@@ -226,9 +226,9 @@ max_partial_query_length: 1s
 	err = json.Unmarshal([]byte(inputJSON), &limitsJSON)
 	require.NoError(t, err, "expected to be able to unmarshal from JSON")
 
-	// Excluding activeSeriesMergedCustomTrackersConfig because it's not comparable, but we
-	// don't care about it in this test (it's not exported to JSON or YAML).
-	assert.True(t, cmp.Equal(limitsYAML, limitsJSON, cmp.AllowUnexported(Limits{}), cmpopts.IgnoreFields(Limits{}, "activeSeriesMergedCustomTrackersConfig")), "expected YAML and JSON to match")
+	// Excluding merged config pointers because they're not comparable, and we
+	// don't care about them in this test (they're not exported to JSON or YAML).
+	assert.True(t, cmp.Equal(limitsYAML, limitsJSON, cmp.AllowUnexported(Limits{}), cmpopts.IgnoreFields(Limits{}, "activeSeriesMergedCustomTrackersConfig", "costAttributionMergedTrackers")), "expected YAML and JSON to match")
 }
 
 func TestLimitsAlwaysUsesPromDuration(t *testing.T) {
@@ -1855,41 +1855,59 @@ func TestLimits_Validate(t *testing.T) {
 			}(),
 			expectedErr: nil,
 		},
-		"should pass if cost_attribution_labels_struct is correct": {
+		"should pass if cost_attribution_trackers is correct": {
 			cfg: func() Limits {
 				cfg := Limits{}
 				flagext.DefaultValues(&cfg)
-				cfg.CostAttributionLabelsStructured = costattributionmodel.Labels{
-					{Input: "team", Output: "my_team"},
-					{Input: "service", Output: "my_service"},
+				cfg.CostAttributionBaseTrackers = costattributionmodel.TrackerConfigs{
+					"by-team": {Labels: costattributionmodel.Labels{
+						{Input: "team", Output: "my_team"},
+						{Input: "service", Output: "my_service"},
+					}},
 				}
 				return cfg
 			}(),
 			expectedErr: nil,
 		},
-		"should pass if the first cost attribution label is invalid": {
+		"should pass if the first cost attribution input label has reserved prefix": {
 			cfg: func() Limits {
 				cfg := Limits{}
 				flagext.DefaultValues(&cfg)
-				cfg.CostAttributionLabelsStructured = costattributionmodel.Labels{
-					{Input: "__team__", Output: "my_team"},
-					{Input: "service", Output: "my_service"},
+				cfg.CostAttributionBaseTrackers = costattributionmodel.TrackerConfigs{
+					"by-team": {Labels: costattributionmodel.Labels{
+						{Input: "__team__", Output: "my_team"},
+						{Input: "service", Output: "my_service"},
+					}},
 				}
 				return cfg
 			}(),
 			expectedErr: nil,
 		},
-		"should fail if the second cost attribution label is invalid": {
+		"should fail if a cost attribution output label is invalid": {
 			cfg: func() Limits {
 				cfg := Limits{}
 				flagext.DefaultValues(&cfg)
-				cfg.CostAttributionLabelsStructured = costattributionmodel.Labels{
-					{Input: "team", Output: "my_team"},
-					{Input: "service", Output: "__my_service__"},
+				cfg.CostAttributionBaseTrackers = costattributionmodel.TrackerConfigs{
+					"by-team": {Labels: costattributionmodel.Labels{
+						{Input: "team", Output: "my_team"},
+						{Input: "service", Output: "__my_service__"},
+					}},
 				}
 				return cfg
 			}(),
-			expectedErr: errors.New(`invalid cost attribution output label: "service:__my_service__"`),
+			expectedErr: errors.New(`cost attribution tracker "by-team": invalid cost attribution output label: "service:__my_service__"`),
+		},
+		"should fail if both deprecated and new cost attribution fields are set": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.CostAttributionLabelsStructured = costattributionmodel.Labels{{Input: "team"}}
+				cfg.CostAttributionBaseTrackers = costattributionmodel.TrackerConfigs{
+					"by-team": {Labels: costattributionmodel.Labels{{Input: "team"}}},
+				}
+				return cfg
+			}(),
+			expectedErr: errors.New("cost_attribution_labels_structured and cost_attribution_trackers are mutually exclusive; use cost_attribution_trackers only"),
 		},
 		"nautilus_ingest_routing rejects unknown values": {
 			cfg: func() Limits {
@@ -1956,6 +1974,100 @@ func TestLimits_Validate(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestCostAttributionTrackerLabelsAreSortedAfterUnmarshal(t *testing.T) {
+	yamlInput := `
+cost_attribution_trackers:
+  by-team:
+    labels:
+      - input: z_label
+      - input: a_label
+additional_cost_attribution_trackers:
+  by-svc:
+    labels:
+      - input: service
+      - input: env
+`
+	cfg := Limits{}
+	flagext.DefaultValues(&cfg)
+	require.NoError(t, yaml.Unmarshal([]byte(yamlInput), &cfg))
+
+	baseLabels := cfg.CostAttributionBaseTrackers["by-team"].Labels
+	require.Equal(t, costattributionmodel.Labels{
+		{Input: "a_label"},
+		{Input: "z_label"},
+	}, baseLabels, "base tracker labels should be sorted after unmarshal")
+
+	additionalLabels := cfg.AdditionalCostAttributionTrackers["by-svc"].Labels
+	require.Equal(t, costattributionmodel.Labels{
+		{Input: "env"},
+		{Input: "service"},
+	}, additionalLabels, "additional tracker labels should be sorted after unmarshal")
+}
+
+func TestCostAttributionLabelsStructuredMigrationOnUnmarshal(t *testing.T) {
+	t.Run("deprecated field alone migrates to the cost-attribution base tracker", func(t *testing.T) {
+		cfg := Limits{}
+		flagext.DefaultValues(&cfg)
+		require.NoError(t, yaml.Unmarshal([]byte(`
+cost_attribution_labels_structured:
+  - input: team
+    output: my_team
+`), &cfg))
+
+		require.Empty(t, cfg.CostAttributionLabelsStructured, "deprecated field should be cleared after migration")
+		require.Equal(t, costattributionmodel.TrackerConfigs{
+			costattributionmodel.DefaultTrackerName: {Labels: costattributionmodel.Labels{{Input: "team", Output: "my_team"}}},
+		}, cfg.CostAttributionBaseTrackers)
+	})
+
+	t.Run("deprecated field together with base trackers is rejected without dropping the base trackers", func(t *testing.T) {
+		cfg := Limits{}
+		flagext.DefaultValues(&cfg)
+		err := yaml.Unmarshal([]byte(`
+cost_attribution_labels_structured:
+  - input: team
+cost_attribution_trackers:
+  by-team:
+    labels:
+      - input: team
+`), &cfg)
+		require.EqualError(t, err, "cost_attribution_labels_structured and cost_attribution_trackers are mutually exclusive; use cost_attribution_trackers only")
+	})
+
+	t.Run("deprecated field together with only additional trackers migrates and preserves additional", func(t *testing.T) {
+		cfg := Limits{}
+		flagext.DefaultValues(&cfg)
+		require.NoError(t, yaml.Unmarshal([]byte(`
+cost_attribution_labels_structured:
+  - input: team
+    output: my_team
+additional_cost_attribution_trackers:
+  by-svc:
+    labels:
+      - input: service
+`), &cfg))
+
+		require.Empty(t, cfg.CostAttributionLabelsStructured)
+		require.Equal(t, costattributionmodel.TrackerConfigs{
+			costattributionmodel.DefaultTrackerName: {Labels: costattributionmodel.Labels{{Input: "team", Output: "my_team"}}},
+		}, cfg.CostAttributionBaseTrackers)
+		require.Equal(t, costattributionmodel.TrackerConfigs{
+			"by-svc": {Labels: costattributionmodel.Labels{{Input: "service"}}},
+		}, cfg.AdditionalCostAttributionTrackers)
+	})
+}
+
+func TestCostAttributionTrackerLabelsAreSortedAfterFlagParsing(t *testing.T) {
+	var tc costattributionmodel.TrackerConfigs
+	require.NoError(t, tc.Set(`{"by-team":{"labels":[{"input":"z_label"},{"input":"a_label"}]}}`))
+
+	labels := tc["by-team"].Labels
+	require.Equal(t, costattributionmodel.Labels{
+		{Input: "a_label"},
+		{Input: "z_label"},
+	}, labels, "tracker labels should be sorted after flag parsing")
 }
 
 func TestLimits_ValidateMaxActiveSeriesAdditionalCustomTrackers(t *testing.T) {

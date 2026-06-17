@@ -311,6 +311,9 @@ func sumOverTime(step *types.RangeVectorStepData, _ []types.ScalarData, _ types.
 	}
 
 	h, err := SumHistograms(hHead, hTail, emitAnnotation)
+	if err != nil {
+		err = NativeHistogramErrorToAnnotation(err, emitAnnotation)
+	}
 	return 0, false, h, err
 }
 
@@ -353,11 +356,12 @@ func SumHistograms(head, tail []promql.HPoint, emitAnnotation types.EmitAnnotati
 		for _, p := range points {
 			trackCounterReset(p.H)
 
-			var nhcbBoundsReconciled bool
-			var err error
+			var (
+				nhcbBoundsReconciled bool
+				err                  error
+			)
 			compensation, _, nhcbBoundsReconciled, err = sum.KahanAdd(p.H, compensation)
 			if err != nil {
-				err = NativeHistogramErrorToAnnotation(err, emitAnnotation)
 				return false, err
 			}
 			if nhcbBoundsReconciled {

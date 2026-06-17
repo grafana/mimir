@@ -60,6 +60,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 
+	"github.com/grafana/mimir/pkg/compartments"
 	"github.com/grafana/mimir/pkg/costattribution"
 	"github.com/grafana/mimir/pkg/costattribution/costattributionmodel"
 	asmodel "github.com/grafana/mimir/pkg/ingester/activeseries/model"
@@ -124,7 +125,10 @@ func TestIncrementDecrementIdleCompactionConcurrent(t *testing.T) {
 }
 
 func TestConfig_Validate(t *testing.T) {
+	enabledCompartments := compartments.Config{Enabled: true, Read: compartments.ReadConfig{NumCompartments: 2}}
+
 	tests := map[string]struct {
+		compartments  compartments.Config
 		setup         func(*Config)
 		expectedError string
 	}{
@@ -150,6 +154,38 @@ func TestConfig_Validate(t *testing.T) {
 				cfg.PushGrpcMethodEnabled = false
 			},
 		},
+		"compartments disabled with a non-zero read compartment ID fails validation": {
+			setup: func(cfg *Config) {
+				cfg.ReadCompartmentID = 1
+			},
+			expectedError: "ingester read compartment ID must be 0 when compartments are disabled",
+		},
+		"compartments enabled with read compartment ID 0 passes validation": {
+			compartments: enabledCompartments,
+			setup: func(cfg *Config) {
+				cfg.ReadCompartmentID = 0
+			},
+		},
+		"compartments enabled with an in-range read compartment ID passes validation": {
+			compartments: enabledCompartments,
+			setup: func(cfg *Config) {
+				cfg.ReadCompartmentID = 1
+			},
+		},
+		"compartments enabled with a negative read compartment ID fails validation": {
+			compartments: enabledCompartments,
+			setup: func(cfg *Config) {
+				cfg.ReadCompartmentID = -1
+			},
+			expectedError: "ingester read compartment ID -1 is out of range [0, 2)",
+		},
+		"compartments enabled with an out-of-range read compartment ID fails validation": {
+			compartments: enabledCompartments,
+			setup: func(cfg *Config) {
+				cfg.ReadCompartmentID = 2
+			},
+			expectedError: "ingester read compartment ID 2 is out of range [0, 2)",
+		},
 	}
 
 	for name, tc := range tests {
@@ -158,7 +194,7 @@ func TestConfig_Validate(t *testing.T) {
 			flagext.DefaultValues(&cfg)
 			tc.setup(&cfg)
 
-			err := cfg.Validate(log.NewNopLogger())
+			err := cfg.Validate(tc.compartments)
 			if tc.expectedError == "" {
 				require.NoError(t, err)
 			} else {
@@ -4361,7 +4397,7 @@ func TestIngester_Push(t *testing.T) {
 			}, s)
 			require.NoError(t, err)
 
-			res, err := client.StreamsToMatrix(model.Earliest, model.Latest, s.responses)
+			res, err := client.StreamsToMatrixForTests(model.Earliest, model.Latest, s.responses)
 			require.NoError(t, err)
 			if len(res) == 0 {
 				res = nil
@@ -4634,7 +4670,9 @@ func BenchmarkIngesterPush(b *testing.B) {
 				if limits == nil {
 					return
 				}
-				limits.CostAttributionLabelsStructured = costattributionmodel.Labels{{Input: "cpu"}}
+				limits.CostAttributionBaseTrackers = costattributionmodel.TrackerConfigs{
+					costattributionmodel.DefaultTrackerName: {Labels: costattributionmodel.Labels{{Input: "cpu"}}},
+				}
 				limits.MaxCostAttributionCardinality = 100
 			},
 			customRegistry: prometheus.NewRegistry(),
@@ -5324,7 +5362,7 @@ func Test_Ingester_Query(t *testing.T) {
 			err = i.QueryStream(req, &s)
 			require.NoError(t, err)
 
-			res, err := client.StreamsToMatrix(model.Earliest, model.Latest, s.responses)
+			res, err := client.StreamsToMatrixForTests(model.Earliest, model.Latest, s.responses)
 			require.NoError(t, err)
 			assert.ElementsMatch(t, testData.expected, res)
 		})
@@ -5567,7 +5605,7 @@ func TestIngester_QueryStream_QuerySharding(t *testing.T) {
 		err = i.QueryStream(req, &s)
 		require.NoError(t, err)
 
-		res, err := client.StreamsToMatrix(model.Earliest, model.Latest, s.responses)
+		res, err := client.StreamsToMatrixForTests(model.Earliest, model.Latest, s.responses)
 		require.NoError(t, err)
 		actualTimeseries = append(actualTimeseries, res...)
 	}
@@ -8924,7 +8962,7 @@ func runTestQueryTimes(ctx context.Context, t *testing.T, ing *Ingester, ty labe
 	if err != nil {
 		return nil, nil, err
 	}
-	req, err := client.ToQueryRequest(start, end, false, nil, []*labels.Matcher{matcher})
+	req, err := client.ToQueryRequest(start, end, []*labels.Matcher{matcher})
 	if err != nil {
 		return nil, nil, err
 	}
@@ -8932,7 +8970,7 @@ func runTestQueryTimes(ctx context.Context, t *testing.T, ing *Ingester, ty labe
 	err = ing.QueryStream(req, &s)
 	require.NoError(t, err)
 
-	res, err := client.StreamsToMatrix(model.Earliest, model.Latest, s.responses)
+	res, err := client.StreamsToMatrixForTests(model.Earliest, model.Latest, s.responses)
 	require.NoError(t, err)
 	sort.Sort(res)
 	return res, req, nil
@@ -10344,7 +10382,7 @@ func testIngesterOutOfOrder(t *testing.T,
 		err = i.QueryStream(req, &s)
 		require.NoError(t, err)
 
-		res, err := client.StreamsToMatrix(model.Earliest, model.Latest, s.responses)
+		res, err := client.StreamsToMatrixForTests(model.Earliest, model.Latest, s.responses)
 		require.NoError(t, err)
 		assert.ElementsMatch(t, expMatrix, res)
 	}
@@ -10582,7 +10620,7 @@ func testIngesterOutOfOrderCompactHead(t *testing.T,
 		err = i.QueryStream(req, &s)
 		require.NoError(t, err)
 
-		res, err := client.StreamsToMatrix(model.Earliest, model.Latest, s.responses)
+		res, err := client.StreamsToMatrixForTests(model.Earliest, model.Latest, s.responses)
 		require.NoError(t, err)
 		assert.ElementsMatch(t, expMatrix, res)
 	}
@@ -10870,7 +10908,7 @@ func testIngesterCanEnableIngestAndQueryNativeHistograms(t *testing.T, sampleHis
 		err := ing.QueryStream(req, &s)
 		require.NoError(t, err, msg)
 
-		res, err := client.StreamsToMatrix(model.Earliest, model.Latest, s.responses)
+		res, err := client.StreamsToMatrixForTests(model.Earliest, model.Latest, s.responses)
 		require.NoError(t, err, msg)
 		assert.ElementsMatch(t, expected, res, msg)
 	}

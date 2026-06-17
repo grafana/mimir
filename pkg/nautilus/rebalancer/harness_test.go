@@ -324,24 +324,24 @@ func (r fakeReadcacheRing) GetAllHealthy(_ ring.Operation) (ring.ReplicationSet,
 // advance() and runRound(); inspect with tier1Active(),
 // tier2Active(), ownersByInstance(), and logContains().
 type harness struct {
-	t       *testing.T
-	cfg     Config
-	clock   *fakeClock
-	fleet   *fakeFleet
-	r       *Rebalancer
-	logBuf  *bytes.Buffer
-	logger  log.Logger
-	ctx     context.Context
-	cancel  context.CancelFunc
+	t      *testing.T
+	cfg    Config
+	clock  *fakeClock
+	fleet  *fakeFleet
+	r      *Rebalancer
+	logBuf *bytes.Buffer
+	logger log.Logger
+	ctx    context.Context
+	cancel context.CancelFunc
 }
 
 // harnessOpts is the optional configuration for newHarness. Zero
 // value gives a sane default: 4-partition cluster, 5min lease, slicer
 // disabled (Phase 2A bring-up shape).
 type harnessOpts struct {
-	cfg            Config
-	startTime      time.Time
-	captureLogs    bool   // capture log output into a buffer for assertions
+	cfg                      Config
+	startTime                time.Time
+	captureLogs              bool // capture log output into a buffer for assertions
 	staticReadcacheInstances bool // set ReadcacheSlicer.Instances from fleet instead of using fakeReadcacheRing
 }
 
@@ -443,14 +443,6 @@ func (h *harness) addReadcache(id string) *fakeReadcache {
 // caveat.
 func (h *harness) removeReadcache(id string) {
 	h.fleet.removeReadcache(id)
-}
-
-// syncStaticInstances copies the current fleet membership into
-// cfg.ReadcacheSlicer.Instances. Only needed in the
-// staticReadcacheInstances=true mode; with the default fakeReadcacheRing
-// the slicer discovers churn automatically.
-func (h *harness) syncStaticInstances() {
-	h.r.cfg.ReadcacheSlicer.Instances = flagext.StringSliceCSV(h.fleet.instanceIDs())
 }
 
 // advance moves the fake clock forward by d. Has no other side

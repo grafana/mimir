@@ -5,6 +5,9 @@ package streamingpromql
 import (
 	"context"
 	"fmt"
+	"maps"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -12,7 +15,6 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/promqltest"
-	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/querier/stats"
@@ -21,6 +23,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/selectors"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
+	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
@@ -32,9 +35,8 @@ func TestEvaluator(t *testing.T) {
 	engine, err := NewEngine(opts, stats.NewQueryMetrics(opts.CommonOpts.Reg), planner)
 	require.NoError(t, err)
 
-	memoryConsumptionTracker := engine.inflightMemoryConsumptionTracker.NewMemoryConsumptionTracker(context.Background(), 0, nil, "")
+	memoryConsumptionTracker := engine.memoryConsumptionTrackerFactory.NewMemoryConsumptionTracker(context.Background(), 0, "")
 	timeRange := types.NewRangeQueryTimeRange(timestamp.Time(0), timestamp.Time(0).Add(2*time.Minute), time.Minute)
-	stats := types.NewQueryStats()
 	lookbackDelta := 5 * time.Minute
 
 	storage := promqltest.LoadedStorage(t, `
@@ -67,7 +69,7 @@ func TestEvaluator(t *testing.T) {
 		LookbackDelta:            lookbackDelta,
 		MemoryConsumptionTracker: memoryConsumptionTracker,
 	}
-	instantVectorOperator := selectors.NewInstantVectorSelector(instantVectorSelector, memoryConsumptionTracker, stats, false, false)
+	instantVectorOperator := selectors.NewInstantVectorSelector(instantVectorSelector, memoryConsumptionTracker, false, false)
 
 	rangeVectorNode := &core.MatrixSelector{MatrixSelectorDetails: &core.MatrixSelectorDetails{
 		Matchers: []*core.LabelMatcher{
@@ -83,7 +85,7 @@ func TestEvaluator(t *testing.T) {
 		Range:                    rangeVectorNode.Range,
 		MemoryConsumptionTracker: memoryConsumptionTracker,
 	}
-	rangeVectorOperator := selectors.NewRangeVectorSelector(rangeVectorSelector, memoryConsumptionTracker, stats)
+	rangeVectorOperator := selectors.NewRangeVectorSelector(rangeVectorSelector, memoryConsumptionTracker)
 
 	nodeRequests := []NodeEvaluationRequest{
 		{
@@ -110,15 +112,20 @@ func TestEvaluator(t *testing.T) {
 
 	params := &planning.OperatorParameters{
 		MemoryConsumptionTracker: memoryConsumptionTracker,
-		Annotations:              annotations.New(),
-		QueryStats:               stats,
 	}
 
 	evaluator, err := NewEvaluator(nodeRequests, params, engine, "this expression is not used")
 	require.NoError(t, err)
 
 	ctx := context.Background()
-	observer := &loggingEvaluationObserver{}
+	observer := &loggingEvaluationObserver{
+		nodeNames: map[planning.Node]string{
+			scalarNode:        "scalarNode",
+			stringNode:        "stringNode",
+			instantVectorNode: "instantVectorNode",
+			rangeVectorNode:   "rangeVectorNode",
+		},
+	}
 	require.NoError(t, evaluator.Evaluate(ctx, observer))
 
 	expectedObserverEvents := []evaluationObserverEvent{
@@ -136,14 +143,24 @@ func TestEvaluator(t *testing.T) {
 		{node: rangeVectorNode, event: "RangeVectorStepSamplesEvaluated", details: `series: 1, floats: [23 @[100000] 25 @[110000] 27 @[120000]], histograms: []`},
 		{node: instantVectorNode, event: "InstantVectorSeriesDataEvaluated", details: `series: 2, floats: [1 @[0] 19 @[60000] 37 @[120000]], histograms: []`},
 		{node: instantVectorNode, event: "InstantVectorSeriesDataEvaluated", details: `series: 3, floats: [1 @[0] 25 @[60000] 49 @[120000]], histograms: []`},
-		{event: "EvaluationCompleted", details: `annotations: <nil>, stats: {26}`},
+		{
+			event: "EvaluationCompleted",
+			details: testutils.TrimIndent(`
+				node info:
+				  instantVectorNode: annotations: [], stats: {processed: [4 4 4], read if subsequent step: [4 4 4], read if first step: [4 4 4]}
+				  rangeVectorNode: annotations: [], stats: {processed: [2 6 6], read if subsequent step: [2 6 6], read if first step: [2 6 6]}
+				  scalarNode: annotations: [], stats: {processed: [0 0 0], read if subsequent step: [0 0 0], read if first step: [0 0 0]}
+				  stringNode: annotations: [], stats: {processed: [0 0 0], read if subsequent step: [0 0 0], read if first step: [0 0 0]}
+			`),
+		},
 	}
 
 	require.Equal(t, expectedObserverEvents, observer.events)
 }
 
 type loggingEvaluationObserver struct {
-	events []evaluationObserverEvent
+	events    []evaluationObserverEvent
+	nodeNames map[planning.Node]string
 }
 
 type evaluationObserverEvent struct {
@@ -187,7 +204,27 @@ func (l *loggingEvaluationObserver) StringEvaluated(ctx context.Context, evaluat
 	return nil
 }
 
-func (l *loggingEvaluationObserver) EvaluationCompleted(ctx context.Context, evaluator *Evaluator, annotations *annotations.Annotations, stats *types.QueryStats) error {
-	l.events = append(l.events, evaluationObserverEvent{event: "EvaluationCompleted", details: fmt.Sprintf("annotations: %v, stats: %v", annotations, *stats)})
+func (l *loggingEvaluationObserver) EvaluationCompleted(ctx context.Context, evaluator *Evaluator, nodeInfo map[planning.Node]NodeCompletionInfo) error {
+	formattedInfo := make(map[string]string, len(nodeInfo))
+
+	for node, nodeInfo := range nodeInfo {
+		name, ok := l.nodeNames[node]
+		if !ok {
+			return fmt.Errorf("unknown %[1]T node passed to loggingEvaluationObserver.EvaluationCompleted: %[1]v", node)
+		}
+
+		encoded := nodeInfo.Stats.Encode().AllSeries
+		formattedInfo[name] = fmt.Sprintf("annotations: %v, stats: {processed: %v, read if subsequent step: %v, read if first step: %v}", nodeInfo.Annotations.AsErrors(), encoded.SamplesProcessedPerStep, encoded.SamplesReadIfSubsequentStep, encoded.SamplesReadIfFirstStep)
+	}
+
+	details := &strings.Builder{}
+	details.WriteString("node info:\n")
+
+	for _, name := range slices.Sorted(maps.Keys(formattedInfo)) {
+		formatted := formattedInfo[name]
+		fmt.Fprintf(details, "  %v: %v\n", name, formatted)
+	}
+
+	l.events = append(l.events, evaluationObserverEvent{event: "EvaluationCompleted", details: strings.TrimSpace(details.String())})
 	return nil
 }

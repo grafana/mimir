@@ -41,8 +41,9 @@ type Query struct {
 	vector         promql.Vector
 	string         *promql.String
 	scalar         *promql.Scalar
-	annotations    *annotations.Annotations
-	stats          *types.QueryStats
+	annotations    annotations.Annotations
+	stats          *types.OperatorEvaluationStats
+	finalizedStats *promstats.QuerySamples
 
 	topLevelValueType parser.ValueType
 	resultIsVector    bool // This is necessary as we need to know what kind of result to return (vector or matrix) if the result is empty.
@@ -65,10 +66,8 @@ func (q *Query) Exec(ctx context.Context) (res *promql.Result) {
 	// so we can safely return it now.
 	types.SeriesMetadataSlicePool.Put(&q.seriesMetadata, q.memoryConsumptionTracker)
 
-	result := &promql.Result{}
-
-	if q.annotations != nil {
-		result.Warnings = *q.annotations
+	result := &promql.Result{
+		Warnings: q.annotations,
 	}
 
 	switch {
@@ -244,15 +243,31 @@ func (q *Query) StringEvaluated(_ context.Context, _ *Evaluator, _ planning.Node
 }
 
 // EvaluationCompleted implements the EvaluationObserver interface.
-func (q *Query) EvaluationCompleted(_ context.Context, _ *Evaluator, annotations *annotations.Annotations, stats *types.QueryStats) error {
-	q.annotations = annotations
-	q.stats = stats
+func (q *Query) EvaluationCompleted(_ context.Context, _ *Evaluator, nodeInfo map[planning.Node]NodeCompletionInfo) error {
+	if len(nodeInfo) != 1 {
+		return fmt.Errorf("expected exactly one node completion info entry, but got %d", len(nodeInfo))
+	}
+
+	nodeCompletionInfo := nodeInfo[q.evaluator.nodeRequests[0].Node]
+	q.stats = nodeCompletionInfo.Stats
+	q.annotations = nodeCompletionInfo.Annotations
+
+	var err error
+	q.finalizedStats, err = q.stats.FinalizeAndComputePrometheusStats()
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
 func (q *Query) Close() {
 	q.evaluator.Close()
 	q.returnResultToPool()
+
+	if q.stats != nil {
+		q.stats.Close()
+	}
 
 	if q.engine.pedantic && q.succeeded {
 		// Only bother checking memory consumption if the query succeeded: it's not expected that all memory
@@ -291,6 +306,10 @@ func (q *Query) returnResultToPool() {
 
 	// And nothing to do for strings: these don't come from a pool.
 	q.string = nil
+
+	// Note this will also be called in the evaluator close but this is safe and help ensure this is always deregistered as quickly as possible.
+	// This also avoids an issue where the Query (and underlying Evaluator) Close() may not be called on Query.Exec() error.
+	q.engine.memoryConsumptionTrackerFactory.Deregister(q.evaluator.MemoryConsumptionTracker)
 }
 
 func (q *Query) Statement() parser.Statement {
@@ -299,13 +318,8 @@ func (q *Query) Statement() parser.Statement {
 
 func (q *Query) Stats() *promstats.Statistics {
 	return &promstats.Statistics{
-		Timers: promstats.NewQueryTimers(),
-		Samples: &promstats.QuerySamples{
-			TotalSamples:       q.stats.TotalSamples,
-			EnablePerStepStats: false,
-			Interval:           q.topLevelQueryTimeRange.IntervalMilliseconds,
-			StartTimestamp:     q.topLevelQueryTimeRange.StartT,
-		},
+		Timers:  promstats.NewQueryTimers(),
+		Samples: q.finalizedStats,
 	}
 }
 

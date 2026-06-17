@@ -119,6 +119,7 @@ func TestDoRequest(t *testing.T) {
 		key          string
 		id           string
 		authToken    string
+		sigV4        SigV4Config
 		extraHeaders map[string]string
 		expectedErr  string
 		validate     func(t *testing.T, req *http.Request)
@@ -128,7 +129,30 @@ func TestDoRequest(t *testing.T) {
 			user:        "my-ba-user",
 			key:         "my-ba-password",
 			authToken:   "RandomJwt",
-			expectedErr: "at most one of basic auth or auth token should be configured",
+			expectedErr: "at most one of basic_auth, auth_token or sigv4 must be configured",
+		},
+		{
+			name: "errors because basic auth and sigv4 are provided",
+			user: "my-ba-user",
+			key:  "my-ba-password",
+			sigV4: SigV4Config{
+				Region:      "ap-northeast-1",
+				AccessKey:   "test-access-key",
+				SecretKey:   "test-secret-key",
+				ServiceName: "execute-api",
+			},
+			expectedErr: "at most one of basic_auth, auth_token or sigv4 must be configured",
+		},
+		{
+			name:      "errors because auth token and sigv4 are provided",
+			authToken: "RandomJwt",
+			sigV4: SigV4Config{
+				Region:      "ap-northeast-1",
+				AccessKey:   "test-access-key",
+				SecretKey:   "test-secret-key",
+				ServiceName: "execute-api",
+			},
+			expectedErr: "at most one of basic_auth, auth_token or sigv4 must be configured",
 		},
 		{
 			name: "user provided so uses key as password",
@@ -165,6 +189,21 @@ func TestDoRequest(t *testing.T) {
 			},
 		},
 		{
+			name: "sigv4 signs the request",
+			id:   "my-tenant-id",
+			sigV4: SigV4Config{
+				Region:      "ap-northeast-1",
+				AccessKey:   "test-access-key",
+				SecretKey:   "test-secret-key",
+				ServiceName: "execute-api",
+			},
+			validate: func(t *testing.T, req *http.Request) {
+				require.Contains(t, req.Header.Get("Authorization"), "AWS4-HMAC-SHA256 Credential=test-access-key/")
+				require.NotEmpty(t, req.Header.Get("X-Amz-Date"))
+				require.Equal(t, "my-tenant-id", req.Header.Get("X-Scope-OrgID"))
+			},
+		},
+		{
 			name: "no auth options and tenant are provided",
 			validate: func(t *testing.T, req *http.Request) {
 				require.Empty(t, req.Header.Get("Authorization"))
@@ -193,12 +232,10 @@ func TestDoRequest(t *testing.T) {
 				User:         tc.user,
 				Key:          tc.key,
 				AuthToken:    tc.authToken,
+				SigV4:        tc.sigV4,
 				ID:           tc.id,
 				ExtraHeaders: tc.extraHeaders,
 			}, log.NewNopLogger())
-			require.NoError(t, err)
-
-			res, err := client.doRequest(ctx, "/test", http.MethodGet, nil, -1)
 
 			// Validate errors
 			if tc.expectedErr != "" {
@@ -208,9 +245,65 @@ func TestDoRequest(t *testing.T) {
 			}
 
 			require.NoError(t, err)
+
+			res, err := client.doRequest(ctx, "/test", http.MethodGet, nil, -1)
+			require.NoError(t, err)
 			require.Equal(t, http.StatusOK, res.StatusCode)
 			req := <-requestCh
 			tc.validate(t, req)
+		})
+	}
+}
+
+func TestNewErrorsOnInvalidSigV4Config(t *testing.T) {
+	_, err := New(Config{
+		Address: "http://example.com",
+		SigV4: SigV4Config{
+			ServiceName: "execute-api",
+		},
+	}, log.NewNopLogger())
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "sigv4 region must be configured")
+}
+
+func TestSigV4ConfigValidate(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		cfg         SigV4Config
+		expectedErr string
+	}{
+		{
+			name: "zero value is valid",
+			cfg:  SigV4Config{},
+		},
+		{
+			name: "configured settings are valid",
+			cfg: SigV4Config{
+				Region:      "ap-northeast-1",
+				AccessKey:   "test-access-key",
+				SecretKey:   "test-secret-key",
+				ServiceName: "execute-api",
+			},
+		},
+		{
+			name: "configured settings without region are invalid",
+			cfg: SigV4Config{
+				ServiceName: "execute-api",
+			},
+			expectedErr: "sigv4 region must be configured",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.cfg.Validate()
+
+			if tc.expectedErr != "" {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), tc.expectedErr)
+				return
+			}
+
+			require.NoError(t, err)
 		})
 	}
 }

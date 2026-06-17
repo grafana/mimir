@@ -17,6 +17,8 @@ import (
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/dskit/user"
+	"github.com/prometheus/client_golang/prometheus"
+	promtest "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
@@ -31,13 +33,16 @@ import (
 	"go.uber.org/atomic"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware/testdatagen"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
+	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/chunkinfologger"
+	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/promqlext"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -633,7 +638,7 @@ func TestLimitsMiddleware_MaxQueryLength_InstantQueryWithSubquery(t *testing.T) 
 		t.Run(testName, func(t *testing.T) {
 			queryTime := util.TimeToMillis(now)
 			req := NewPrometheusInstantQueryRequest(
-				"/query", nil, queryTime, 0, parseQuery(t, testData.query), Options{}, nil, "",
+				"/query", nil, queryTime, 0, parseQuery(t, testData.query), requestoptions.Options{}, nil, "",
 			)
 
 			limits := mockLimits{maxTotalQueryLength: testData.maxTotalQueryLength}
@@ -678,6 +683,10 @@ func (m multiTenantMockLimits) MaxTotalQueryLength(userID string) time.Duration 
 
 func (m multiTenantMockLimits) MaxQueryExpressionSizeBytes(userID string) int {
 	return m.byTenant[userID].maxQueryExpressionSizeBytes
+}
+
+func (m multiTenantMockLimits) MaxEstimatedMemoryConsumptionPerQuery(userID string) uint64 {
+	return m.byTenant[userID].maxEstimatedMemoryConsumptionPerQuery
 }
 
 func (m multiTenantMockLimits) MaxQueryParallelism(userID string) int {
@@ -789,37 +798,38 @@ func (m multiTenantMockLimits) LabelsQueryOptimizerEnabled(userID string) bool {
 }
 
 type mockLimits struct {
-	maxQueryLookback                     time.Duration
-	maxQueryLength                       time.Duration
-	maxTotalQueryLength                  time.Duration
-	maxQueryExpressionSizeBytes          int
-	maxCacheFreshness                    time.Duration
-	maxQueryParallelism                  int
-	maxShardedQueries                    int
-	maxRegexpSizeBytes                   int
-	totalShards                          int
-	compactorShards                      int
-	compactorBlocksRetentionPeriod       time.Duration
-	outOfOrderTimeWindow                 time.Duration
-	creationGracePeriod                  time.Duration
-	nativeHistogramsIngestionEnabled     bool
-	resultsCacheTTL                      time.Duration
-	resultsCacheOutOfOrderWindowTTL      time.Duration
-	resultsCacheTTLForCardinalityQuery   time.Duration
-	resultsCacheTTLForLabelsQuery        time.Duration
-	resultsCacheTTLForErrors             time.Duration
-	resultsCacheForUnalignedQueryEnabled bool
-	enabledPromQLExperimentalFunctions   []string
-	enabledPromQLExtendedRangeSelectors  []string
-	prom2RangeCompat                     bool
-	blockedQueries                       []validation.BlockedQuery
-	limitedQueries                       []validation.LimitedQuery
-	blockedRequests                      []validation.BlockedRequest
-	alignQueriesWithStep                 bool
-	queryIngestersWithin                 time.Duration
-	ingestStorageReadConsistency         string
-	subquerySpinOffEnabled               bool
-	labelsQueryOptimizerEnabled          bool
+	maxQueryLookback                      time.Duration
+	maxQueryLength                        time.Duration
+	maxTotalQueryLength                   time.Duration
+	maxQueryExpressionSizeBytes           int
+	maxEstimatedMemoryConsumptionPerQuery uint64
+	maxCacheFreshness                     time.Duration
+	maxQueryParallelism                   int
+	maxShardedQueries                     int
+	maxRegexpSizeBytes                    int
+	totalShards                           int
+	compactorShards                       int
+	compactorBlocksRetentionPeriod        time.Duration
+	outOfOrderTimeWindow                  time.Duration
+	creationGracePeriod                   time.Duration
+	nativeHistogramsIngestionEnabled      bool
+	resultsCacheTTL                       time.Duration
+	resultsCacheOutOfOrderWindowTTL       time.Duration
+	resultsCacheTTLForCardinalityQuery    time.Duration
+	resultsCacheTTLForLabelsQuery         time.Duration
+	resultsCacheTTLForErrors              time.Duration
+	resultsCacheForUnalignedQueryEnabled  bool
+	enabledPromQLExperimentalFunctions    []string
+	enabledPromQLExtendedRangeSelectors   []string
+	prom2RangeCompat                      bool
+	blockedQueries                        []validation.BlockedQuery
+	limitedQueries                        []validation.LimitedQuery
+	blockedRequests                       []validation.BlockedRequest
+	alignQueriesWithStep                  bool
+	queryIngestersWithin                  time.Duration
+	ingestStorageReadConsistency          string
+	subquerySpinOffEnabled                bool
+	labelsQueryOptimizerEnabled           bool
 }
 
 func (m mockLimits) MaxQueryLookback(string) time.Duration {
@@ -835,6 +845,10 @@ func (m mockLimits) MaxTotalQueryLength(string) time.Duration {
 
 func (m mockLimits) MaxQueryExpressionSizeBytes(string) int {
 	return m.maxQueryExpressionSizeBytes
+}
+
+func (m mockLimits) MaxEstimatedMemoryConsumptionPerQuery(string) uint64 {
+	return m.maxEstimatedMemoryConsumptionPerQuery
 }
 
 func (m mockLimits) MaxQueryParallelism(string) int {
@@ -946,6 +960,30 @@ func (m mockLimits) SubquerySpinOffEnabled(string) bool {
 
 func (m mockLimits) LabelsQueryOptimizerEnabled(string) bool {
 	return m.labelsQueryOptimizerEnabled
+}
+
+// mockQueryLimits implements QueryLimitsProvider
+type mockQueryLimitsProvider struct {
+	m *mockLimits
+}
+
+func newMockQueryLimitsProvider(m *mockLimits) mockQueryLimitsProvider {
+	return mockQueryLimitsProvider{m: m}
+}
+
+func (m mockQueryLimitsProvider) GetMaxEstimatedMemoryConsumptionPerQuery(ctx context.Context) (uint64, error) {
+	return m.m.maxEstimatedMemoryConsumptionPerQuery, nil
+}
+
+func (m mockQueryLimitsProvider) GetEnableDelayedNameRemoval(ctx context.Context) (bool, error) {
+	return false, nil
+}
+
+func (m mockQueryLimitsProvider) GetMaxOutOfOrderTimeWindow(ctx context.Context) (time.Duration, error) {
+	return m.m.outOfOrderTimeWindow, nil
+}
+func (m mockQueryLimitsProvider) GetMinResultsCacheTTL(ctx context.Context) (time.Duration, error) {
+	return m.m.resultsCacheTTL, nil
 }
 
 type mockHandler struct {
@@ -1181,6 +1219,14 @@ func BenchmarkLimitedParallelismRoundTripper(b *testing.B) {
 	}
 }
 
+func TestContextWithRequestHints(t *testing.T) {
+	hints := &Hints{TotalQueries: 3}
+	ctx := ContextWithRequestHints(context.Background(), hints)
+	require.Equal(t, hints, RequestHintsFromContext(ctx))
+
+	require.Nil(t, RequestHintsFromContext(context.Background()))
+}
+
 func TestSmallestPositiveNonZeroDuration(t *testing.T) {
 	assert.Equal(t, time.Duration(0), smallestPositiveNonZeroDuration())
 	assert.Equal(t, time.Duration(0), smallestPositiveNonZeroDuration(0))
@@ -1250,7 +1296,7 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 		api.ReadConsistencyMaxDelayHeader: {time.Minute.String()},
 	}
 
-	requestOptions := Options{
+	requestOptions := requestoptions.Options{
 		TotalShards: 123,
 	}
 
@@ -1262,14 +1308,18 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 	}
 
 	testCases := map[string]struct {
-		req                      MetricsQueryRequest
-		expectedResponse         Response
-		expectedErr              error
-		expectedSamplesProcessed uint64
+		req                           MetricsQueryRequest
+		expectedResponse              Response
+		expectedErr                   error
+		expectedSamplesProcessed      uint64
+		expectedEquivalentSamplesRead uint64
+		expectedPhysicalSamplesRead   uint64
 	}{
 		"range query": {
-			req:                      NewPrometheusRangeQueryRequest("/", requestHeaders, 1000, 7000, 2000, lookbackDelta, mustParseExpr(`5*some_metric`), requestOptions, requestHints, ""),
-			expectedSamplesProcessed: 4,
+			req:                           NewPrometheusRangeQueryRequest("/", requestHeaders, 1000, 7000, 2000, lookbackDelta, mustParseExpr(`5*some_metric`), requestOptions, requestHints, ""),
+			expectedSamplesProcessed:      4,
+			expectedPhysicalSamplesRead:   4,
+			expectedEquivalentSamplesRead: 4,
 			expectedResponse: &PrometheusResponse{
 				Status: statusSuccess,
 				Data: &PrometheusData{
@@ -1294,8 +1344,10 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 		},
 
 		"instant query": {
-			req:                      NewPrometheusInstantQueryRequest("/", requestHeaders, 3000, lookbackDelta, mustParseExpr(`5*some_metric`), requestOptions, requestHints, ""),
-			expectedSamplesProcessed: 1,
+			req:                           NewPrometheusInstantQueryRequest("/", requestHeaders, 3000, lookbackDelta, mustParseExpr(`5*some_metric`), requestOptions, requestHints, ""),
+			expectedSamplesProcessed:      1,
+			expectedPhysicalSamplesRead:   1,
+			expectedEquivalentSamplesRead: 1,
 			expectedResponse: &PrometheusResponse{
 				Status: statusSuccess,
 				Data: &PrometheusData{
@@ -1333,7 +1385,9 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 				Warnings: []string{},
 				Infos:    []string{},
 			},
-			expectedSamplesProcessed: 1,
+			expectedSamplesProcessed:      1,
+			expectedEquivalentSamplesRead: 1,
+			expectedPhysicalSamplesRead:   1,
 		},
 
 		"string result": {
@@ -1364,8 +1418,10 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 		},
 
 		"annotations": {
-			req:                      NewPrometheusInstantQueryRequest("/", requestHeaders, 3000, lookbackDelta, mustParseExpr(`histogram_quantile(0.1, rate(some_metric[2s]))`), requestOptions, requestHints, ""),
-			expectedSamplesProcessed: 2,
+			req:                           NewPrometheusInstantQueryRequest("/", requestHeaders, 3000, lookbackDelta, mustParseExpr(`histogram_quantile(0.1, rate(some_metric[2s]))`), requestOptions, requestHints, ""),
+			expectedSamplesProcessed:      2,
+			expectedEquivalentSamplesRead: 2,
+			expectedPhysicalSamplesRead:   2,
 			expectedResponse: &PrometheusResponse{
 				Status: statusSuccess,
 				Data: &PrometheusData{
@@ -1408,6 +1464,8 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 			responseWithFinalizer.Close()
 
 			require.Equal(t, testCase.expectedSamplesProcessed, stats.SamplesProcessed)
+			require.Equal(t, testCase.expectedPhysicalSamplesRead, stats.PhysicalSamplesRead)
+			require.Equal(t, testCase.expectedEquivalentSamplesRead, stats.EquivalentSamplesRead)
 
 			if responseWithFinalizer.Data.ResultType == model.ValString.String() {
 				// We can't perform the assertions below for string results because it doesn't select any data,
@@ -1421,8 +1479,80 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 			hints := RequestHintsFromContext(contextCapturingStorage.ctx)
 			require.Equal(t, testCase.req.GetHints(), hints)
 
-			options := RequestOptionsFromContext(contextCapturingStorage.ctx)
+			options := requestoptions.OptionsFromContext(contextCapturingStorage.ctx)
 			require.Equal(t, testCase.req.GetOptions(), options)
+		})
+	}
+}
+
+// TestEngineQueryRequestRoundTripperHandler_ClosesQueryOnError verifies that
+// engineQueryRequestRoundTripperHandler.Do leaves no in-flight memory
+// consumption tracker behind, regardless of which return path Do takes.
+// `engineQueryRequestRoundTripperHandler` is wired to a concrete
+// *streamingpromql.Engine, so this test asserts the post-condition via the
+// inflight tracker count rather than wrapping the engine.
+func TestEngineQueryRequestRoundTripperHandler_ClosesQueryOnError(t *testing.T) {
+	const sampledMetric = "cortex_querier_inflight_query_sampled_count"
+	const sampledHelp = `# HELP cortex_querier_inflight_query_sampled_count Number of in-flight memory consumption trackers accumulated during the last metrics collection.
+# TYPE cortex_querier_inflight_query_sampled_count gauge
+`
+
+	failingQueryable := storage.QueryableFunc(func(int64, int64) (storage.Querier, error) {
+		return nil, apierror.New(apierror.TypeInternal, "boom")
+	})
+
+	successfulQueryable := testdatagen.StorageSeriesQueryable([]storage.Series{
+		testdatagen.NewSeries(labels.FromStrings("__name__", "bar1"), start.Add(-lookbackDelta), end, step, testdatagen.Factor(5)),
+	})
+
+	testCases := map[string]struct {
+		queryable     storage.Queryable
+		expectSuccess bool
+	}{
+		"execution error leaves no tracker registered": {
+			queryable: failingQueryable,
+		},
+		"successful query drains via finalizer": {
+			queryable:     successfulQueryable,
+			expectSuccess: true,
+		},
+	}
+
+	req := NewPrometheusInstantQueryRequest("/", nil, util.TimeToMillis(end), lookbackDelta, parseQuery(t, "bar1"), requestoptions.Options{}, nil, "")
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			reg := prometheus.NewPedanticRegistry()
+			queryMetrics := stats.NewQueryMetrics(reg)
+			inflightTracker := limiter.NewInflightMemoryConsumptionTracker(reg, queryMetrics.QueriesRejectedTotal.WithLabelValues(stats.RejectReasonMaxEstimatedQueryMemoryConsumption))
+
+			opts := streamingpromql.NewTestEngineOpts()
+			opts.CommonOpts.Reg = reg
+			opts.MemoryConsumptionTrackerFactory = inflightTracker
+
+			planner, err := streamingpromql.NewQueryPlanner(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
+			require.NoError(t, err)
+			engine, err := streamingpromql.NewEngine(opts, queryMetrics, planner)
+			require.NoError(t, err)
+
+			handler := NewEngineQueryRequestRoundTripperHandler(engine, newTestCodec(), log.NewNopLogger())
+			handler.(*engineQueryRequestRoundTripperHandler).storage = tc.queryable
+
+			resp, err := handler.Do(context.Background(), req)
+
+			if tc.expectSuccess {
+				require.NoError(t, err)
+				require.NotNil(t, resp)
+				// On success the query is held alive by the finalizer; the
+				// tracker should still be registered until we close the response.
+				require.NoError(t, promtest.CollectAndCompare(inflightTracker, strings.NewReader(sampledHelp+sampledMetric+" 1\n"), sampledMetric))
+				resp.(*PrometheusResponseWithFinalizer).Close()
+			} else {
+				require.Error(t, err)
+				require.Nil(t, resp)
+			}
+
+			require.NoError(t, promtest.CollectAndCompare(inflightTracker, strings.NewReader(sampledHelp+sampledMetric+" 0\n"), sampledMetric))
 		})
 	}
 }

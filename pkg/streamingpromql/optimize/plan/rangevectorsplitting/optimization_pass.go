@@ -15,6 +15,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
+	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
@@ -62,7 +63,7 @@ func (o *OptimizationPass) Name() string {
 }
 
 func (o *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, maximumSupportedQueryPlanVersion planning.QueryPlanVersion) (*planning.QueryPlan, error) {
-	if maximumSupportedQueryPlanVersion < planning.QueryPlanV6 {
+	if maximumSupportedQueryPlanVersion < planning.QueryPlanV13 {
 		return plan, nil
 	}
 
@@ -119,11 +120,11 @@ func (o *OptimizationPass) wrapSplitRangeVectorFunctions(ctx context.Context, n 
 
 // trySplitFunction attempts to wrap a function call with query splitting for intermediate result caching.
 // When creating the split ranges to query/cache by, the start and end timestamps are adjusted by the offset and @
-// modifiers. The adjustment means that queries which load the same data will use the same cache entries, even if the
-// actual query itself is different. E.g. sum_over_time(foo[2h]) at 4h and sum_over_time(foo[2h] offset 1h) at 5h load
-// the same data and have the same result.
-// For range vector selectors, this also means we can align split ranges to block boundaries(ish - the split interval is
-// currently hardcoded, while blocks vary in size). This reduces unnecessary block reads.
+// modifiers so that splits are expressed in data-time rather than query-time. This lets us align split ranges to TSDB
+// block boundaries(ish - the split interval is currently hardcoded, while blocks vary in size), so each split typically
+// reads from a single block instead of straddling two.
+// Note: queries with different modifiers but identical underlying data DO NOT end up sharing cache entries (e.g.
+// sum_over_time(foo[2h]) at 4h and sum_over_time(foo[2h] offset 1h) at 5h), as offset and @ are part of the cache key.
 // TODO: consider if the modifier adjustments are worth it when the supported nodes/functions are expanded.
 //   - For subqueries the resulting time range might not be indicative of the actual queried timerange depending on the
 //     inner nodes for the subquery, so the split ranges might not align with the stored blocks after the adjustments.
@@ -196,10 +197,15 @@ func (o *OptimizationPass) trySplitFunction(ctx context.Context, functionCall *c
 		return nil, "no_cacheable_blocks_after_ooo_filter", nil
 	}
 
+	if requestoptions.OptionsFromContext(ctx).CacheDisabled {
+		for i := range splitRanges {
+			splitRanges[i].Cacheable = false
+		}
+	}
+
 	n := &SplitFunctionCall{
 		SplitFunctionCallDetails: &SplitFunctionCallDetails{
-			SplitRanges:       splitRanges,
-			InnerNodeCacheKey: inner.SplittingCacheKey(),
+			SplitRanges: splitRanges,
 		},
 		Inner: functionCall,
 	}

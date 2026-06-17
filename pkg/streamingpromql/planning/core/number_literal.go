@@ -3,7 +3,6 @@
 package core
 
 import (
-	"fmt"
 	"strconv"
 	"time"
 
@@ -16,6 +15,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
+//node:generate
 type NumberLiteral struct {
 	*NumberLiteralDetails
 }
@@ -34,26 +34,6 @@ func (n *NumberLiteral) Details() proto.Message {
 
 func (n *NumberLiteral) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_NUMBER_LITERAL
-}
-
-func (n *NumberLiteral) Child(idx int) planning.Node {
-	panic(fmt.Sprintf("node of type NumberLiteral has no children, but attempted to get child at index %d", idx))
-}
-
-func (n *NumberLiteral) ChildCount() int {
-	return 0
-}
-
-func (n *NumberLiteral) SetChildren(children []planning.Node) error {
-	if len(children) != 0 {
-		return fmt.Errorf("node of type NumberLiteral expects 0 children, but got %d", len(children))
-	}
-
-	return nil
-}
-
-func (n *NumberLiteral) ReplaceChild(idx int, node planning.Node) error {
-	return fmt.Errorf("node of type NumberLiteral supports no children, but attempted to replace child at index %d", idx)
 }
 
 func (n *NumberLiteral) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
@@ -89,6 +69,6 @@ func (n *NumberLiteral) ExpressionPosition() (posrange.PositionRange, error) {
 	return n.GetExpressionPosition().ToPrometheusType(), nil
 }
 
-func (n *NumberLiteral) MinimumRequiredPlanVersion() planning.QueryPlanVersion {
-	return planning.QueryPlanVersionZero
+func (n *NumberLiteral) MinimumRequiredPlanVersion(types.QueryTimeRange) (planning.QueryPlanVersion, error) {
+	return planning.QueryPlanVersionZero, nil
 }

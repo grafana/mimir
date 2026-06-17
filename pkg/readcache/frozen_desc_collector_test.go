@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -30,14 +31,13 @@ func TestFrozenDescCollector_StableIdentityAcrossDescChurn(t *testing.T) {
 	// initial set of reader metrics on partitionReg, wrapping it in
 	// a frozenDescCollector, then registering the wrapper.
 	partitionReg := prometheus.NewRegistry()
-	initialMetric := prometheus.NewCounter(prometheus.CounterOpts{
+	initialMetric := promauto.With(partitionReg).NewCounter(prometheus.CounterOpts{
 		Name: "reader_records_total",
 		Help: "Records consumed by the partition reader.",
 		ConstLabels: prometheus.Labels{
 			"reader_partition": "0",
 		},
 	})
-	require.NoError(t, partitionReg.Register(initialMetric))
 
 	wrapper := newFrozenDescCollector(partitionReg)
 	require.NotNil(t, wrapper)
@@ -46,14 +46,13 @@ func TestFrozenDescCollector_StableIdentityAcrossDescChurn(t *testing.T) {
 	// Simulate the running reader adding a new metric AFTER
 	// registration. This is exactly the kind of churn that breaks a
 	// naive Unregister(partitionReg) call.
-	lateMetric := prometheus.NewHistogram(prometheus.HistogramOpts{
+	_ = promauto.With(partitionReg).NewHistogram(prometheus.HistogramOpts{
 		Name: "reader_fetch_duration_seconds",
 		Help: "Latency of partition fetches.",
 		ConstLabels: prometheus.Labels{
 			"reader_partition": "0",
 		},
 	})
-	require.NoError(t, partitionReg.Register(lateMetric))
 
 	// All metrics from partitionReg (including the late one) must
 	// flow through the wrapper's Collect into a Gather on the outer
@@ -80,14 +79,13 @@ func TestFrozenDescCollector_StableIdentityAcrossDescChurn(t *testing.T) {
 	// the stale collectorID from the first lifecycle (with the same
 	// snapshot) is still in the outer registry.
 	partitionReg2 := prometheus.NewRegistry()
-	initialMetric2 := prometheus.NewCounter(prometheus.CounterOpts{
+	_ = promauto.With(partitionReg2).NewCounter(prometheus.CounterOpts{
 		Name: "reader_records_total",
 		Help: "Records consumed by the partition reader.",
 		ConstLabels: prometheus.Labels{
 			"reader_partition": "0",
 		},
 	})
-	require.NoError(t, partitionReg2.Register(initialMetric2))
 
 	wrapper2 := newFrozenDescCollector(partitionReg2)
 	require.NoError(t, outer.Register(wrapper2),

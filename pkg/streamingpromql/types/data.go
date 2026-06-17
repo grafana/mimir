@@ -6,8 +6,6 @@
 package types
 
 import (
-	"errors"
-	"fmt"
 	"time"
 
 	"github.com/prometheus/prometheus/model/histogram"
@@ -165,39 +163,6 @@ type RangeVectorStepData struct {
 	Smoothed bool
 }
 
-// SubStep returns a substep with the same StepT but filtered to range (rangeStart, rangeEnd].
-// If previousSubStep is provided, it will be reused to create the new substep. previousSubStep must be a previous
-// substep for the same parent step, and the next step is assumed to cover a later range (we only start searching from
-// after the samples of the previous subviews).
-func (s *RangeVectorStepData) SubStep(rangeStart, rangeEnd int64, previousSubStep *RangeVectorStepData) (*RangeVectorStepData, error) {
-	if s.Anchored || s.Smoothed {
-		return nil, errors.New("substep not supported for range vectors with anchored or smoothed modifiers")
-	}
-
-	if rangeStart < s.RangeStart {
-		return nil, fmt.Errorf("substep start (%d) is before parent step's start (%d)", rangeStart, s.RangeStart)
-	}
-	if rangeEnd > s.RangeEnd {
-		return nil, fmt.Errorf("substep end (%d) is after parent step's end (%d)", rangeEnd, s.RangeEnd)
-	}
-	if rangeStart >= rangeEnd {
-		return nil, fmt.Errorf("substep start (%d) must be less than end (%d)", rangeStart, rangeEnd)
-	}
-
-	if previousSubStep == nil {
-		previousSubStep = &RangeVectorStepData{}
-	}
-
-	previousSubStep.StepT = s.StepT
-	previousSubStep.RangeStart = rangeStart
-	previousSubStep.RangeEnd = rangeEnd
-
-	previousSubStep.Floats = s.Floats.SubView(rangeStart, rangeEnd, previousSubStep.Floats)
-	previousSubStep.Histograms = s.Histograms.SubView(rangeStart, rangeEnd, previousSubStep.Histograms)
-
-	return previousSubStep, nil
-}
-
 type ScalarData struct {
 	// Samples contains floating point samples for this series.
 	// Samples must be sorted in timestamp order, earliest timestamps first.
@@ -322,6 +287,23 @@ func (q *QueryTimeRange) LastPointIndexAtOrBefore(t int64) int {
 		return q.StepCount - 1
 	}
 	return idx
+}
+
+func (q *QueryTimeRange) Encode() EncodedQueryTimeRange {
+	return EncodedQueryTimeRange{
+		StartT:               q.StartT,
+		EndT:                 q.EndT,
+		IntervalMilliseconds: q.IntervalMilliseconds,
+		IsInstant:            q.IsInstant,
+	}
+}
+
+func (e *EncodedQueryTimeRange) Decode() QueryTimeRange {
+	if e.IsInstant {
+		return NewInstantQueryTimeRange(timestamp.Time(e.StartT))
+	}
+
+	return NewRangeQueryTimeRange(timestamp.Time(e.StartT), timestamp.Time(e.EndT), time.Duration(e.IntervalMilliseconds)*time.Millisecond)
 }
 
 func MatchersMatch(matchers []*labels.Matcher, lbls labels.Labels) bool {

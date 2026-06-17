@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
-	"strings"
 
 	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/dskit/tracing"
@@ -156,6 +155,24 @@ func (i *ActivityTrackerWrapper) GetHashRanges(ctx context.Context, request *cli
 	return i.ing.GetHashRanges(ctx, request)
 }
 
+func (i *ActivityTrackerWrapper) SearchLabelNames(request *client.SearchLabelNamesRequest, server client.Ingester_SearchLabelNamesServer) error {
+	ix := i.tracker.Insert(func() string {
+		return requestActivity(server.Context(), "Ingester/SearchLabelNames", request)
+	})
+	defer i.tracker.Delete(ix)
+
+	return i.ing.SearchLabelNames(request, server)
+}
+
+func (i *ActivityTrackerWrapper) SearchLabelValues(request *client.SearchLabelValuesRequest, server client.Ingester_SearchLabelValuesServer) error {
+	ix := i.tracker.Insert(func() string {
+		return requestActivity(server.Context(), "Ingester/SearchLabelValues", request)
+	})
+	defer i.tracker.Delete(ix)
+
+	return i.ing.SearchLabelValues(request, server)
+}
+
 func (i *ActivityTrackerWrapper) FlushHandler(w http.ResponseWriter, r *http.Request) {
 	ix := i.tracker.Insert(func() string {
 		return requestActivity(r.Context(), "Ingester/FlushHandler", nil)
@@ -296,14 +313,6 @@ func queryRequestToString(sb *bytes.Buffer, req *client.QueryRequest) {
 		sb.WriteString(",")
 	}
 	sb.WriteString("},")
-
-	sb.WriteString("ProjectionInclude:")
-	sb.WriteString(strconv.FormatBool(req.ProjectionInclude))
-	sb.WriteString(",")
-
-	sb.WriteString("ProjectionLabels:[")
-	sb.WriteString(strings.Join(req.ProjectionLabels, " "))
-	sb.WriteString("],")
 
 	b = b[:0]
 	sb.WriteString("QueryAttributionHint:")

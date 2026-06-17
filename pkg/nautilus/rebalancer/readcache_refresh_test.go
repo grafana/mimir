@@ -27,7 +27,7 @@ func newTestRebalancerForRefresh(t *testing.T, logBuf *bytes.Buffer) *Rebalancer
 		LeaseLookahead: 4 * time.Minute,
 		EntryRetention: time.Hour,
 	}
-	var logger log.Logger = log.NewNopLogger()
+	logger := log.NewNopLogger()
 	if logBuf != nil {
 		logger = log.NewLogfmtLogger(logBuf)
 	}

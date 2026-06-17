@@ -4,6 +4,7 @@ package querier
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
@@ -11,6 +12,7 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/storage/series"
+	"github.com/grafana/mimir/pkg/streaminglabelvalues"
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
@@ -59,6 +61,28 @@ func (q *memoryTrackingQuerier) LabelValues(ctx context.Context, name string, hi
 
 func (q *memoryTrackingQuerier) LabelNames(ctx context.Context, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	return q.inner.LabelNames(ctx, hints, matchers...)
+}
+
+// SearchLabelNames passes through to the inner querier's mimirSearcher
+// implementation. No memory tracking is applied to label search — the
+// streaming SearchResultSet caps memory at the per-tenant Limit via the
+// merge tree, so wrapping each emitted Value in a tracker would be
+// redundant work on the hot path.
+func (q *memoryTrackingQuerier) SearchLabelNames(ctx context.Context, params *streaminglabelvalues.Params, hints *storage.SearchHints, matchers ...*labels.Matcher) storage.SearchResultSet {
+	s, ok := q.inner.(mimirSearcher)
+	if !ok {
+		return storage.ErrSearchResultSet(fmt.Errorf("inner querier %T does not implement search", q.inner))
+	}
+	return s.SearchLabelNames(ctx, params, hints, matchers...)
+}
+
+// SearchLabelValues mirrors SearchLabelNames; see that docstring for rationale.
+func (q *memoryTrackingQuerier) SearchLabelValues(ctx context.Context, name string, params *streaminglabelvalues.Params, hints *storage.SearchHints, matchers ...*labels.Matcher) storage.SearchResultSet {
+	s, ok := q.inner.(mimirSearcher)
+	if !ok {
+		return storage.ErrSearchResultSet(fmt.Errorf("inner querier %T does not implement search", q.inner))
+	}
+	return s.SearchLabelValues(ctx, name, params, hints, matchers...)
 }
 
 func (q *memoryTrackingQuerier) Close() error {

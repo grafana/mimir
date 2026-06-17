@@ -524,7 +524,7 @@ func TestDistributor_QueryStream_ShouldSupportIngestStorage(t *testing.T) {
 
 			// Query ingesters.
 			queryMetrics := stats.NewQueryMetrics(distributorRegistries[0])
-			resp, err := distributors[0].QueryStream(ctx, queryMetrics, 0, 10, false, nil, testData.matchers...)
+			resp, err := distributors[0].QueryStream(ctx, queryMetrics, 0, 10, testData.matchers...)
 
 			if testData.expectedErr == nil {
 				require.NoError(t, err)
@@ -539,7 +539,7 @@ func TestDistributor_QueryStream_ShouldSupportIngestStorage(t *testing.T) {
 				}
 			}
 
-			responseMatrix, err := ingester_client.StreamingSeriesToMatrix(0, 5, resp.StreamingSeries)
+			responseMatrix, err := ingester_client.StreamingSeriesToMatrixForTests(0, 5, resp.StreamingSeries)
 			assert.NoError(t, err)
 			assert.Equal(t, testData.expectedResponse.String(), responseMatrix.String())
 
@@ -652,7 +652,7 @@ func TestDistributor_QueryStream_InactivePartitionsLookback(t *testing.T) {
 
 				// Wait for the partition ring to discover all 4 partitions.
 				test.Poll(t, 5*time.Second, 4, func() interface{} {
-					return d.partitionsRing.PartitionRing().PartitionsCount()
+					return d.partitionInstanceRings.Get(0).PartitionRing().PartitionsCount()
 				})
 
 				// Update partition states:
@@ -675,7 +675,7 @@ func TestDistributor_QueryStream_InactivePartitionsLookback(t *testing.T) {
 
 				// Wait for the partition ring watcher to see the updated states.
 				test.Poll(t, 5*time.Second, 2, func() interface{} {
-					return d.partitionsRing.PartitionRing().ActivePartitionsCount()
+					return d.partitionInstanceRings.Get(0).PartitionRing().ActivePartitionsCount()
 				})
 
 				// Verify getIngesterReplicationSetsForQuery returns the expected partitions.
@@ -694,14 +694,14 @@ func TestDistributor_QueryStream_InactivePartitionsLookback(t *testing.T) {
 
 				// Query ingesters.
 				queryMetrics := stats.NewQueryMetrics(distributorRegistries[0])
-				resp, err := d.QueryStream(ctx, queryMetrics, 0, 10, false, nil, selectAllSeriesMatcher)
+				resp, err := d.QueryStream(ctx, queryMetrics, 0, 10, selectAllSeriesMatcher)
 
 				if scenario.expectQueryError {
 					require.Error(t, err)
 				} else {
 					require.NoError(t, err)
 
-					responseMatrix, err := ingester_client.StreamingSeriesToMatrix(0, 10, resp.StreamingSeries)
+					responseMatrix, err := ingester_client.StreamingSeriesToMatrixForTests(0, 10, resp.StreamingSeries)
 					require.NoError(t, err)
 
 					// Build expected response based on which partitions are queried.
@@ -748,7 +748,7 @@ func TestDistributor_QueryStream_AttributionHint(t *testing.T) {
 	require.Len(t, distributors, 1)
 	d := distributors[0]
 	test.Poll(t, 5*time.Second, 4, func() interface{} {
-		return d.partitionsRing.PartitionRing().PartitionsCount()
+		return d.ingesterPartitionRings.PartitionRing(0).PartitionsCount()
 	})
 
 	t.Run("named path populates partitionByInstance for every queried instance", func(t *testing.T) {
@@ -817,14 +817,14 @@ func TestDistributor_QueryStream_EmitsReadcacheHitsHistogram(t *testing.T) {
 	require.Len(t, distributors, 1)
 	d := distributors[0]
 	test.Poll(t, 5*time.Second, 4, func() interface{} {
-		return d.partitionsRing.PartitionRing().PartitionsCount()
+		return d.ingesterPartitionRings.PartitionRing(0).PartitionsCount()
 	})
 
 	queryMetrics := stats.NewQueryMetrics(prometheus.NewPedanticRegistry())
 	// Full-fanout matcher: avoids any reliance on readcache routing
 	// and exercises the simplest histogram path (no readcache
 	// dialed, observation should be 0).
-	_, err := d.QueryStream(ctx, queryMetrics, 0, 10, false, nil, mustEqualMatcher("bar", "baz"))
+	_, err := d.QueryStream(ctx, queryMetrics, 0, 10, mustEqualMatcher("bar", "baz"))
 	require.NoError(t, err)
 
 	count, sum := histogramCountAndSum(t, d.queryReadcacheInstancesHit)
@@ -833,7 +833,7 @@ func TestDistributor_QueryStream_EmitsReadcacheHitsHistogram(t *testing.T) {
 
 	// A second query continues to observe; this guards against an
 	// accidental "observe only on the first call" regression.
-	_, err = d.QueryStream(ctx, queryMetrics, 0, 10, false, nil, mustEqualMatcher("bar", "baz"))
+	_, err = d.QueryStream(ctx, queryMetrics, 0, 10, mustEqualMatcher("bar", "baz"))
 	require.NoError(t, err)
 
 	count, sum = histogramCountAndSum(t, d.queryReadcacheInstancesHit)

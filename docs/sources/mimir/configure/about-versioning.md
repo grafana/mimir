@@ -112,8 +112,13 @@ The following features are currently experimental:
     - `-api.otlp-translation-headers-enabled`
   - Configure how to handle label values over the length limit
     - `-validation.label-value-length-over-limit-strategy`
+  - Enforce the out-of-order time window on the distributor when `past_grace_period` is 0
+    - `-validation.enforce-out-of-order-window-on-distributor`
   - Ingester health check grace period (`-distributor.ingester-health-check-grace-period`)
+  - Evaluate HA deduplication per timeseries within a write request instead of using the first series' labels for the whole request
+    - `-distributor.ha-tracker.per-sample-dedupe`
 - Ingester
+  - `cortex_ingester_tsdb_head_chunks_max_mmapped` metric. Reports the maximum, across all per-tenant TSDBs, of the maximum number of head chunks memory-mapped for any individual series during the last memory-mapping pass. Temporary measurement metric; will be removed once we have collected enough data.
   - Add variance to chunks end time to spread writing across time (`-blocks-storage.tsdb.head-chunks-end-time-variance`)
   - Snapshotting of in-memory TSDB data on disk when shutting down (`-blocks-storage.tsdb.memory-snapshot-on-shutdown`)
   - Out-of-order samples ingestion (`-ingester.out-of-order-time-window`)
@@ -124,6 +129,10 @@ The following features are currently experimental:
   - Per-tenant early TSDB Head compaction based on owned series count:
     - `-ingester.early-head-compaction-owned-series-threshold`
     - `-ingester.early-head-compaction-min-estimated-series-reduction-percentage`
+  - Early TSDB Head compaction of non-owned series after ring changes:
+    - `-ingester.early-compaction-non-owned-series-enabled`
+    - `-ingester.early-compaction-non-owned-series-min-grace-period`
+    - `-ingester.early-compaction-non-owned-series-max-grace-period`
   - Timely head compaction (`-blocks-storage.tsdb.timely-head-compaction-enabled`)
   - Count owned series and use them to enforce series limits:
     - `-ingester.track-ingester-owned-series`
@@ -196,6 +205,7 @@ The following features are currently experimental:
   - File based Kafka consumer group offset tracking enforcement
     - `-ingest-storage.kafka.consumer-group-offset-commit-file-enforced`
 - Querier
+  - Streaming label/value search HTTP endpoints `/api/v1/search/{metric_names,label_names,label_values}` returning NDJSON, mirroring the [Prometheus search API](https://github.com/prometheus/prometheus/pull/18573) (`-querier.experimental-search-api-enabled`).
   - Max concurrency for tenant federated queries (`-tenant-federation.max-concurrent`)
   - [Mimir query engine](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/mimir-query-engine) (`-querier.query-engine` and `-querier.enable-query-engine-fallback`, and all flags beginning with `-querier.mimir-query-engine`)
   - Maximum estimated memory consumption per query limit (`-querier.max-estimated-memory-consumption-per-query`)
@@ -224,6 +234,7 @@ The following features are currently experimental:
   - Experimental PromQL functions and aggregations, including `mad_over_time`, `ts_of_min_over_time`, `ts_of_max_over_time`, `ts_of_first_over_time`, `ts_of_last_over_time`, `sort_by_label`, `sort_by_label_desc`, `limitk` and `limit_ratio` (`-query-frontend.enabled-promql-experimental-functions=...`)
 - Query-scheduler
   - `-query-scheduler.querier-forget-delay`
+  - `-query-scheduler.inflight-max-age-metric-enabled`
 - Store-gateway
   - Eagerly loading some blocks on startup even when lazy loading is enabled `-blocks-storage.bucket-store.index-header.eager-loading-startup-enabled`
   - Allow more than the default of 3 store-gateways to own recent blocks `-store-gateway.dynamic-replication`
@@ -261,13 +272,12 @@ The following features are currently experimental:
     - Assuming that a gRPC client configuration can be reached via `-<grpc-client-config-path>`, cluster validation label is configured via: `-<grpc-client-config-path>.cluster-validation.label`.
     - The cluster validation label of all gRPC clients can be configured via `-common.client-cluster-validation.label`.
     - Requests with invalid cluster validation labels are tracked via the `cortex_client_invalid_cluster_validation_label_requests_total` metric.
-- Common
-  - Instrument a fraction of pooled objects for references that outlive their lifetime.
-    - Only implemented for objects embedding `mimirpb.BufferHolder`.
-    - Flags:
-      - `-common.instrument-reference-leaks.percentage`
-      - `-common.instrument-reference-leaks.before-reuse-period`
-      - `-common.instrument-reference-leaks.max-inflight-instrumented-bytes`
+- Instrument a fraction of pooled objects for references that outlive their lifetime.
+  - Only implemented for objects embedding `mimirpb.BufferHolder`.
+  - Flags:
+    - `-instrument-reference-leaks.percentage`
+    - `-instrument-reference-leaks.before-reuse-period`
+    - `-instrument-reference-leaks.max-inflight-instrumented-bytes`
 - Preferred available zones for querying ingesters and store-gateways
   - `-querier.prefer-availability-zones`
 - Memberlist zone-aware routing

@@ -937,7 +937,7 @@ func TestMultitenantAlertmanager_DeleteUserConfig(t *testing.T) {
 		logger: test.NewTestingLogger(t),
 	}
 
-	require.NoError(t, alertStore.SetAlertConfig(context.Background(), alertspb.AlertConfigDesc{
+	require.NoError(t, alertStore.SetAlertConfig(context.Background(), &alertspb.AlertConfigDesc{
 		User:      "test_user",
 		RawConfig: "config",
 	}))
@@ -1015,7 +1015,7 @@ receivers:
 	alertStore := bucketclient.NewBucketAlertStore(storage, nil, log.NewNopLogger())
 
 	for u, cfg := range testCases {
-		err := alertStore.SetAlertConfig(context.Background(), alertspb.AlertConfigDesc{
+		err := alertStore.SetAlertConfig(context.Background(), &alertspb.AlertConfigDesc{
 			User:      u,
 			RawConfig: cfg.AlertmanagerConfig,
 		})
@@ -1091,6 +1091,9 @@ func TestValidateAlertmanagerConfig(t *testing.T) {
 		input    interface{}
 		expected error
 	}{
+		"nil input": {
+			input: nil,
+		},
 		"*HTTPClientConfig": {
 			input: &commoncfg.HTTPClientConfig{
 				BasicAuth: &commoncfg.BasicAuth{
@@ -1245,6 +1248,11 @@ func TestValidateAlertmanagerConfig(t *testing.T) {
 				},
 			},
 			expected: errPasswordFileNotAllowed,
+		},
+		"map containing nil value": {
+			input: map[string]interface{}{
+				"test": nil,
+			},
 		},
 		"map containing TLSConfig as nested child": {
 			input: map[string][]config.EmailConfig{

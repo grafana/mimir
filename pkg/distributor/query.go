@@ -86,7 +86,7 @@ func (d *Distributor) QueryExemplars(ctx context.Context, from, to model.Time, m
 }
 
 // QueryStream queries multiple ingesters via the streaming interface and returns a big ol' set of chunks.
-func (d *Distributor) QueryStream(ctx context.Context, queryMetrics *stats.QueryMetrics, from, to model.Time, projectionInclude bool, projectionLabels []string, matchers ...*labels.Matcher) (ingester_client.CombinedQueryStreamResponse, error) {
+func (d *Distributor) QueryStream(ctx context.Context, queryMetrics *stats.QueryMetrics, from, to model.Time, matchers ...*labels.Matcher) (ingester_client.CombinedQueryStreamResponse, error) {
 	var result ingester_client.CombinedQueryStreamResponse
 	// Allocate the per-query readcache hit tracker outside the
 	// instrument.CollectedRequest closure so the histogram is
@@ -101,7 +101,7 @@ func (d *Distributor) QueryStream(ctx context.Context, queryMetrics *stats.Query
 	}()
 
 	err := instrument.CollectedRequest(ctx, "Distributor.QueryStream", d.queryDuration, instrument.ErrorCode, func(ctx context.Context) error {
-		req, err := ingester_client.ToQueryRequest(from, to, projectionInclude, projectionLabels, matchers)
+		req, err := ingester_client.ToQueryRequest(from, to, matchers)
 		if err != nil {
 			return err
 		}
@@ -166,7 +166,8 @@ func (d *Distributor) getIngesterReplicationSetsForQuery(ctx context.Context, ma
 	}
 
 	if d.cfg.IngestStorageConfig.Enabled {
-		r := d.partitionsRing
+		// Read path is not compartment-aware yet, so it always uses read compartment 0.
+		r := d.partitionInstanceRings.Get(0)
 
 		// Build a subring to query. We use ShuffleShardWithLookback() to limit the partitions to query
 		// to the tenant's shard (when shuffle sharding is enabled) and to filter out inactive partitions
@@ -216,7 +217,7 @@ func (d *Distributor) getIngesterReplicationSetsForQuery(ctx context.Context, ma
 // Returns ("", false) if no such matcher exists.
 func extractExactMetricName(matchers []*labels.Matcher) (string, bool) {
 	for _, m := range matchers {
-		if m.Name == labels.MetricName && m.Type == labels.MatchEqual && m.Value != "" {
+		if m.Name == model.MetricNameLabel && m.Type == labels.MatchEqual && m.Value != "" {
 			return m.Value, true
 		}
 	}

@@ -3,6 +3,7 @@
 package readcache
 
 import (
+	"github.com/grafana/dskit/grpcutil"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -39,7 +40,7 @@ func IsStillWarming(err error) bool {
 	if err == nil {
 		return false
 	}
-	st, ok := status.FromError(err)
+	st, ok := grpcutil.ErrorToStatus(err)
 	if !ok {
 		return false
 	}

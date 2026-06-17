@@ -26,6 +26,7 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/series"
+	"github.com/grafana/mimir/pkg/streaminglabelvalues"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/chunkinfologger"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
@@ -34,7 +35,7 @@ import (
 // Distributor is the read interface to the distributor, made an interface here
 // to reduce package coupling.
 type Distributor interface {
-	QueryStream(ctx context.Context, queryMetrics *stats.QueryMetrics, from, to model.Time, projectionInclude bool, projectionLabels []string, matchers ...*labels.Matcher) (client.CombinedQueryStreamResponse, error)
+	QueryStream(ctx context.Context, queryMetrics *stats.QueryMetrics, from, to model.Time, matchers ...*labels.Matcher) (client.CombinedQueryStreamResponse, error)
 	QueryExemplars(ctx context.Context, from, to model.Time, matchers ...[]*labels.Matcher) (*client.ExemplarQueryResponse, error)
 	LabelValuesForLabelName(ctx context.Context, from, to model.Time, label model.LabelName, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, error)
 	LabelNames(ctx context.Context, from model.Time, to model.Time, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, error)
@@ -44,6 +45,8 @@ type Distributor interface {
 	LabelValuesCardinality(ctx context.Context, labelNames []model.LabelName, matchers []*labels.Matcher, countMethod cardinality.CountMethod) (uint64, *client.LabelValuesCardinalityResponse, error)
 	ActiveSeries(ctx context.Context, matchers []*labels.Matcher) ([]labels.Labels, error)
 	ActiveNativeHistogramMetrics(ctx context.Context, matchers []*labels.Matcher) (*cardinality.ActiveNativeHistogramMetricsResponse, error)
+	SearchLabelNames(ctx context.Context, from, to model.Time, params *streaminglabelvalues.Params, hints *storage.SearchHints, matchers []*labels.Matcher) storage.SearchResultSet
+	SearchLabelValues(ctx context.Context, from, to model.Time, name string, params *streaminglabelvalues.Params, hints *storage.SearchHints, matchers []*labels.Matcher) storage.SearchResultSet
 }
 
 func NewDistributorQueryable(distributor Distributor, cfgProvider distributorQueryableConfigProvider, queryMetrics *stats.QueryMetrics, logger log.Logger) storage.Queryable {
@@ -122,20 +125,11 @@ func (q *distributorQuerier) Select(ctx context.Context, _ bool, sp *storage.Sel
 		return series.LabelsToSeriesSet(ms)
 	}
 
-	var (
-		projectionInclude bool
-		projectionLabels  []string
-	)
-	if sp != nil {
-		projectionInclude = sp.ProjectionInclude
-		projectionLabels = sp.ProjectionLabels
-	}
-
-	return q.streamingSelect(ctx, minT, maxT, projectionInclude, projectionLabels, matchers)
+	return q.streamingSelect(ctx, minT, maxT, matchers)
 }
 
-func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int64, projectionInclude bool, projectionLabels []string, matchers []*labels.Matcher) storage.SeriesSet {
-	results, err := q.distributor.QueryStream(ctx, q.queryMetrics, model.Time(minT), model.Time(maxT), projectionInclude, projectionLabels, matchers...)
+func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int64, matchers []*labels.Matcher) storage.SeriesSet {
+	results, err := q.distributor.QueryStream(ctx, q.queryMetrics, model.Time(minT), model.Time(maxT), matchers...)
 	if err != nil {
 		return storage.ErrSeriesSet(err)
 	}

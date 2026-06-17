@@ -10,7 +10,7 @@ help:
 # WARNING: do not commit to a repository!
 -include Makefile.local
 
-.PHONY: all test test-with-race integration-tests cover clean images protos exes dist doc clean-doc check-doc check-reference-help push-multiarch-build-image license check-license format check-mixin check-mixin-jb check-mixin-mixtool check-mixin-runbooks check-mixin-mimirtool-rules build-mixin format-mixin check-jsonnet-manifests format-jsonnet-manifests push-multiarch-mimir list-image-targets check-jsonnet-getting-started mixin-screenshots warmup-build-cache-integration-tests warmup-build-cache-unit-tests warmup-build-cache-image-and-lint
+.PHONY: all test test-with-race integration-tests cover clean images protos exes dist doc clean-doc check-doc check-reference-help license check-license format check-mixin check-mixin-jb check-mixin-mixtool check-mixin-runbooks check-mixin-mimirtool-rules build-mixin format-mixin check-jsonnet-manifests format-jsonnet-manifests push-multiarch-mimir list-image-targets check-jsonnet-getting-started mixin-screenshots warmup-build-cache-integration-tests warmup-build-cache-unit-tests warmup-build-cache-image-and-lint print-supported-os-arch
 .DEFAULT_GOAL := all
 
 # Version number
@@ -31,7 +31,9 @@ BINARY_SUFFIX ?= ""
 # Boiler plate for building Docker containers.
 # All this must go at top of file I'm afraid.
 IMAGE_PREFIX ?= grafana/
-BUILD_IMAGE ?= $(IMAGE_PREFIX)mimir-build-image
+# The build image is published to Google Artifact Registry and is anonymously pullable.
+# See .github/workflows/push-mimir-build-image.yml for the publishing flow.
+BUILD_IMAGE ?= us-docker.pkg.dev/grafanalabs-dev/docker-mimir-build-image/mimir-build-image
 CONTAINER_MOUNT_OPTIONS ?= delegated,z
 
 # For a tag push, $GITHUB_REF will look like refs/tags/<tag_name>.
@@ -104,20 +106,19 @@ SED ?= $(shell which gsed 2>/dev/null || which sed)
 	@echo Image name: $(IMAGE_PREFIX)$(shell basename $(@D))
 	@echo Image name: $(IMAGE_PREFIX)$(shell basename $(@D)):$(IMAGE_TAG)
 	@echo
-	@echo Please use '"make push-multiarch-build-image"' to build and push build image.
 	@echo Please use '"make push-multiarch-mimir"' to build and push Mimir image.
 	@echo
 	@touch $@
 
 %/$(UPTODATE_RACE): GOOS=linux
 %/$(UPTODATE_RACE): %/Dockerfile
-	# We need gcompat -- compatibility layer with glibc, as race-detector currently requires glibc.
+	# The race detector requires glibc, so we use the distroless base-nossl image rather than static.
 	$(SUDO) docker build \
 		--build-arg=revision=$(GIT_REVISION) \
 		--build-arg=goproxyValue=$(GOPROXY_VALUE) \
 		--build-arg=USE_BINARY_SUFFIX=true \
 		--build-arg=BINARY_SUFFIX=_race \
-		--build-arg=BASEIMG="gcr.io/distroless/base-nossl-debian12@sha256:c8430558b9a8688298c060ddc5e6f2993c8a092dee8a6b7058139ac8472e8ad0" \
+		--build-arg=BASEIMG="gcr.io/distroless/base-nossl-debian13@sha256:792f51c506fc67f7eaa38093f6d4937a053cebb79ec0e7c3b7746f6bbba85606" \
 		-t $(IMAGE_PREFIX)$(shell basename $(@D)):$(IMAGE_TAG_RACE) $(@D)/
 	@echo
 	@echo Go binaries were built using GOOS=$(GOOS) and GOARCH=$(GOARCH)
@@ -132,8 +133,6 @@ SED ?= $(shell which gsed 2>/dev/null || which sed)
 PUSH_MULTIARCH_TARGET ?= type=registry
 
 # This target compiles mimir for linux/amd64 and linux/arm64 and then builds and pushes a multiarch image to the target repository.
-# We don't do separate building of single-platform and multiplatform images here (as we do for push-multiarch-build-image), as
-# these Dockerfiles are not doing much, and are unlikely to fail.
 push-multiarch-%/$(UPTODATE):
 	$(eval DIR := $(patsubst push-multiarch-%/$(UPTODATE),%,$@))
 
@@ -159,16 +158,24 @@ fetch-build-image: ## Fetch latest the docker build image if it isn't already pr
 	docker tag $(BUILD_IMAGE):$(LATEST_BUILD_IMAGE_TAG) $(BUILD_IMAGE):latest
 	touch mimir-build-image/.uptodate
 
-# push-multiarch-build-image requires the ability to build images for multiple platforms:
-# https://docs.docker.com/buildx/working-with-buildx/#build-multi-platform-images
-push-multiarch-build-image: ## Push the docker build image.
-	@echo
-	# Build and push mimir build image for linux/amd64 and linux/arm64
-	$(SUDO) docker buildx build -o type=registry --platform linux/amd64,linux/arm64 --progress=plain --build-arg=revision=$(GIT_REVISION) --build-arg=goproxyValue=$(GOPROXY_VALUE) -t $(BUILD_IMAGE):$(IMAGE_TAG) mimir-build-image/
-
 .PHONY: print-build-image
 print-build-image:
 	@echo $(BUILD_IMAGE):$(LATEST_BUILD_IMAGE_TAG)
+
+.PHONY: print-build-image-build-args
+print-build-image-build-args:
+	@printf '%s\n' revision=$(GIT_REVISION) goproxyValue=$(GOPROXY_VALUE)
+
+# Supported operating systems and architectures for dist builds.
+DIST_OSES ?= linux darwin windows freebsd
+DIST_ARCHES ?= amd64 arm64
+
+print-supported-os-arch: ## Print supported OS/arch combinations for dist.
+	@for os in $(DIST_OSES); do \
+		for arch in $(DIST_ARCHES); do \
+			printf '%s\t%s\n' "$$os" "$$arch"; \
+		done; \
+	done
 
 # We don't want find to scan inside a bunch of directories, to accelerate the
 # 'make: Entering directory '/go/src/github.com/grafana/mimir' phase.
@@ -192,6 +199,16 @@ images: ## Print all image names.
 # Generating proto code is automated.
 PROTO_DEFS := $(shell find . $(DONT_FIND) -type f -name '*.proto' -print)
 PROTO_GOS := $(patsubst %.proto,%.pb.go,$(PROTO_DEFS))
+
+# Side-product outputs produced by --go-grpc_out (alongside their *.pb.go).
+# These are NOT matched by the %.proto -> %.pb.go patsubst, so they must be
+# tracked explicitly. Add new entries here when a new .proto adopts the
+# protoc-gen-go-grpc toolchain (see the rule for alertmanager.pb.go).
+PROTO_GRPC_GOS := pkg/alertmanager/alertmanagerpb/alertmanager_grpc.pb.go
+
+# Packages containing //node:generate-annotated structs, and the corresponding
+# generated files. Discovered at make-parse time.
+NODE_GEN_PKGS := $(sort $(patsubst %/,%,$(dir $(shell grep -rl --include='*.go' --exclude='*_test.go' --exclude='node_gen.go' '^//node:generate$$' pkg))))
 
 PROMQL_TESTS := $(shell find pkg/streamingpromql/testdata/ours pkg/streamingpromql/testdata/ours-only $(DONT_FIND) -type f -path '*.test' -print)
 
@@ -224,7 +241,7 @@ mimir-build-image/$(UPTODATE): mimir-build-image/*
 # All the boiler plate for building golang follows:
 SUDO := $(shell docker info >/dev/null 2>&1 || echo "sudo -E")
 BUILD_IN_CONTAINER ?= true
-LATEST_BUILD_IMAGE_TAG ?= pr14706-0f4c20cb8b
+LATEST_BUILD_IMAGE_TAG ?= pr15714-8f2d4feafa@sha256:a095187801cac4819a34c4e6e4d8d32613693b8c649c0cf3bd56756f32ab5082
 
 # TTY is parameterized to allow CI and scripts to run builds,
 # as it currently disallows TTY devices.
@@ -254,9 +271,9 @@ GOVOLUMES=	-v mimir-go-cache:/go/cache \
 # Mount local ssh credentials to be able to clone private repos when doing `mod-check`
 SSHVOLUME=  -v ~/.ssh/:/root/.ssh:$(CONTAINER_MOUNT_OPTIONS)
 
-exes $(EXES) $(EXES_RACE) protos $(PROTO_GOS) lint lint-gh-action lint-packaging-scripts test test-with-race cover shell mod-check check-protos doc format dist build-mixin format-mixin check-mixin-tests license check-license conftest-fmt check-conftest-fmt helm-conftest-test helm-conftest-quick-test conftest-verify check-helm-tests build-helm-tests print-go-version format-promql-tests check-promql-tests format-protobuf check-protobuf-format: fetch-build-image
+exes $(EXES) $(EXES_RACE) protos $(PROTO_GOS) lint lint-gh-action lint-packaging-scripts test test-with-race cover shell mod-check check-protos doc format dist build-mixin format-mixin check-mixin-tests license check-license conftest-fmt check-conftest-fmt helm-conftest-test helm-conftest-quick-test conftest-verify check-helm-tests build-helm-tests print-go-version format-promql-tests check-promql-tests format-protobuf check-protobuf-format generate-node-methods check-node-methods clean-node-methods: fetch-build-image
 	@echo ">>>> Entering build container: $@"
-	$(SUDO) time docker run --rm $(TTY) -i $(SSHVOLUME) $(GOVOLUMES) $(BUILD_IMAGE) GOOS=$(GOOS) GOARCH=$(GOARCH) BINARY_SUFFIX=$(BINARY_SUFFIX) $@;
+	$(SUDO) time docker run --rm $(TTY) -i $(SSHVOLUME) $(GOVOLUMES) $(BUILD_IMAGE) GOOS=$(GOOS) GOARCH=$(GOARCH) BINARY_SUFFIX=$(BINARY_SUFFIX) DASHBOARDS_HISTOGRAM_MODE=$(DASHBOARDS_HISTOGRAM_MODE) $@;
 
 else
 
@@ -271,10 +288,42 @@ $(EXES_RACE):
 	CGO_ENABLED=1 GOOS=$(GOOS) GOARCH=$(GOARCH) go build -race $(GO_FLAGS) -o "$@$(BINARY_SUFFIX)" ./$(@D)
 
 protos: ## Generates protobuf files.
-protos: $(PROTO_GOS)
-	@./tools/apply-expected-diffs.sh $(PROTO_GOS)
+protos: $(PROTO_GOS) $(PROTO_GRPC_GOS)
+	@./tools/apply-expected-diffs.sh $(PROTO_GOS) $(PROTO_GRPC_GOS)
 
 GENERATE_FILES ?= true
+
+# alertspb and alertmanagerpb embed types from prometheus/alertmanager's clusterpb,
+# which switched away from gogo-protobuf in v0.32.0. We therefore generate these
+# packages with the standard protoc-gen-go (and protoc-gen-go-grpc) toolchain
+# instead of the gogoslick rule below.
+pkg/alertmanager/alertspb/alerts.pb.go: pkg/alertmanager/alertspb/alerts.proto
+ifeq ($(GENERATE_FILES),true)
+	protoc -I $(GOPATH)/src:./vendor:./$(@D) --go_out=paths=source_relative:./$(@D) ./$<
+else
+	@echo "Warning: generating files has been disabled, but the following file needs to be regenerated: $@"
+	@echo "If this is unexpected, check if the last modified timestamps on $@ and $< are correct."
+endif
+
+# httpgrpc.proto in dskit imports gogoproto/gogo.proto and uses a short go_package
+# value; map it to its full Go import path explicitly so protoc-gen-go can resolve it.
+# Grouped target (&:) tells make that the single protoc invocation produces both
+# *.pb.go and *_grpc.pb.go atomically -- deleting either forces regeneration.
+pkg/alertmanager/alertmanagerpb/alertmanager.pb.go \
+pkg/alertmanager/alertmanagerpb/alertmanager_grpc.pb.go &: \
+		pkg/alertmanager/alertmanagerpb/alertmanager.proto
+ifeq ($(GENERATE_FILES),true)
+	protoc -I $(GOPATH)/src:./vendor/github.com/gogo/protobuf:./vendor:./$(<D) \
+		--go_opt=Mgithub.com/grafana/dskit/httpgrpc/httpgrpc.proto=github.com/grafana/dskit/httpgrpc \
+		--go-grpc_opt=Mgithub.com/grafana/dskit/httpgrpc/httpgrpc.proto=github.com/grafana/dskit/httpgrpc \
+		--go-grpc_opt=require_unimplemented_servers=false \
+		--go_out=paths=source_relative:./$(<D) \
+		--go-grpc_out=paths=source_relative:./$(<D) \
+		./$<
+else
+	@echo "Warning: generating files has been disabled, but the following files need to be regenerated: $@"
+	@echo "If this is unexpected, check if the last modified timestamps on the outputs and $< are correct."
+endif
 
 %.pb.go: %.proto
 ifeq ($(GENERATE_FILES),true)
@@ -468,9 +517,8 @@ lint: check-makefiles check-merge-conflicts
 	# Ensure gRPC buffers aren't released too early
 	$(LINT_GO_ENV) go run ./tools/lint-buffer-holder
 
-format: ## Run gofmt and goimports.
-	find . $(DONT_FIND) -name '*.pb.go' -prune -o -type f -name '*.go' -exec gofmt -w -s {} \;
-	find . $(DONT_FIND) -name '*.pb.go' -prune -o -type f -name '*.go' -exec goimports -w -local github.com/grafana/mimir {} \;
+format: ## Run formatters.
+	$(LINT_GO_ENV) golangci-lint fmt
 
 test: ## Run all unit tests.
 	go test -timeout 30m $$(go list ./... | grep -v "^github.com/grafana/mimir/integration")
@@ -500,7 +548,23 @@ mod-check: ## Check the go mod is clean and tidy.
 
 check-protos: ## Check the protobuf files are up to date.
 check-protos: clean-protos protos
-	@./tools/find-diff-or-untracked.sh $(PROTO_GOS) || (echo "Please rebuild protobuf code by running 'check-protos'" && false)
+	@./tools/find-diff-or-untracked.sh $(PROTO_GOS) $(PROTO_GRPC_GOS) || (echo "Please rebuild protobuf code by running 'check-protos'" && false)
+
+.PHONY: generate-node-methods check-node-methods clean-node-methods
+clean-node-methods: ## Remove generated node method files.
+	@files=$$(grep -rl --include='node_gen.go' '// Code generated by node-gen' pkg); \
+	if [ -n "$$files" ]; then rm -f $$files; fi
+
+generate-node-methods: ## Generate node method implementations.
+generate-node-methods: clean-node-methods
+	@for pkg in $(NODE_GEN_PKGS); do \
+		echo "Generating node methods for $$pkg"; \
+		go run ./tools/node-gen/ $$pkg || exit $$?; \
+	done
+
+check-node-methods: ## Check generated node methods are up to date.
+check-node-methods: generate-node-methods
+	@./tools/find-diff-or-untracked.sh 'pkg/**/node_gen.go' || (echo "Please regenerate node methods by running 'make generate-node-methods' and committing the result" && false)
 
 format-promql-tests:
 	@./tools/format-promql-test.sh $(PROMQL_TESTS)
@@ -548,8 +612,17 @@ dist: ## Generates binaries for a Mimir release.
 	@mkdir -p ./dist
 	@# Build binaries for various architectures and operating systems. Only
 	@# mimirtool supports Windows for now.
-	@for os in linux darwin windows freebsd; do \
-		for arch in amd64 arm64; do \
+	@# When GOOS and/or GOARCH are passed on the command line, only matching
+	@# targets are built.
+	@set -e; \
+	for os in $(DIST_OSES); do \
+		if [ -n "$(filter command line,$(origin GOOS))" ] && [ "$$os" != "$(GOOS)" ]; then \
+			continue; \
+		fi; \
+		for arch in $(DIST_ARCHES); do \
+			if [ -n "$(filter command line,$(origin GOARCH))" ] && [ "$$arch" != "$(GOARCH)" ]; then \
+				continue; \
+			fi; \
 			suffix="" ; \
 			if [ "$$os" = "windows" ]; then \
 				suffix=".exe" ; \
@@ -584,7 +657,14 @@ build-mixin: check-mixin-jb
 	@for suffix in $(MIXIN_OUT_PATH_SUFFIXES); do \
 		mkdir -p "$(MIXIN_OUT_PATH)$$suffix"; \
 		find "$(MIXIN_OUT_PATH)$$suffix" -type f -delete; \
-		mixtool generate all --output-alerts "$(MIXIN_OUT_PATH)$$suffix/alerts.yaml" --output-rules "$(MIXIN_OUT_PATH)$$suffix/rules.yaml" --directory "$(MIXIN_OUT_PATH)$$suffix/dashboards" "${MIXIN_PATH}/mixin-compiled$$suffix.libsonnet"; \
+		input_file="${MIXIN_PATH}/mixin-compiled$$suffix.libsonnet"; \
+		if [ -n "$(DASHBOARDS_HISTOGRAM_MODE)" ]; then \
+			tmp_file="${MIXIN_PATH}/mixin-compiled$$suffix-tmp-latency.libsonnet"; \
+			echo "(import 'mixin-compiled$$suffix.libsonnet') + { _config+:: { dashboards_default_latency_mode: '$(DASHBOARDS_HISTOGRAM_MODE)' } }" > "$$tmp_file"; \
+			input_file="$$tmp_file"; \
+		fi; \
+		mixtool generate all --output-alerts "$(MIXIN_OUT_PATH)$$suffix/alerts.yaml" --output-rules "$(MIXIN_OUT_PATH)$$suffix/rules.yaml" --directory "$(MIXIN_OUT_PATH)$$suffix/dashboards" "$$input_file"; \
+		if [ -n "$(DASHBOARDS_HISTOGRAM_MODE)" ]; then rm -f "$$tmp_file"; fi; \
 		./tools/check-rules.sh "$(MIXIN_OUT_PATH)$$suffix/rules.yaml" 20 ; \
 		cd "$(MIXIN_OUT_PATH)$$suffix/.." && zip -q -r "mimir-mixin$$suffix.zip" $$(basename "$(MIXIN_OUT_PATH)$$suffix"); \
 		cd -; \
@@ -663,7 +743,7 @@ clean: ## Cleanup the docker images, object files and executables.
 	go clean ./...
 
 clean-protos: ## Clean protobuf files.
-	rm -rf $(PROTO_GOS)
+	rm -rf $(PROTO_GOS) $(PROTO_GRPC_GOS)
 
 list-image-targets: ## List all images building make targets.
 	@echo $(UPTODATE_FILES) | tr " " "\n"

@@ -19,7 +19,6 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
-	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/operators"
@@ -452,14 +451,14 @@ func TestOneToOneVectorVectorBinaryOperation_Sorting(t *testing.T) {
 	}
 }
 
-func TestOneToOneVectorVectorBinaryOperation_FinalizesInnerOperatorsAsSoonAsPossible(t *testing.T) {
+func TestOneToOneVectorVectorBinaryOperation_CallsFinishedReadingOnInnerOperatorsAsSoonAsPossible(t *testing.T) {
 	testCases := map[string]struct {
 		leftSeries  []labels.Labels
 		rightSeries []labels.Labels
 
-		expectedOutputSeries                           []labels.Labels
-		expectLeftSideFinalizedAfterOutputSeriesIndex  int
-		expectRightSideFinalizedAfterOutputSeriesIndex int
+		expectedOutputSeries                                       []labels.Labels
+		expectLeftSideFinishedReadingCalledAfterOutputSeriesIndex  int
+		expectRightSideFinishedReadingCalledAfterOutputSeriesIndex int
 	}{
 		"no series on left": {
 			leftSeries: []labels.Labels{},
@@ -469,9 +468,9 @@ func TestOneToOneVectorVectorBinaryOperation_FinalizesInnerOperatorsAsSoonAsPoss
 				labels.FromStrings("group", "3", "series", "right-3"),
 			},
 
-			expectedOutputSeries:                           []labels.Labels{},
-			expectLeftSideFinalizedAfterOutputSeriesIndex:  -1,
-			expectRightSideFinalizedAfterOutputSeriesIndex: -1,
+			expectedOutputSeries: []labels.Labels{},
+			expectLeftSideFinishedReadingCalledAfterOutputSeriesIndex:  -1,
+			expectRightSideFinishedReadingCalledAfterOutputSeriesIndex: -1,
 		},
 		"no series on right": {
 			leftSeries: []labels.Labels{
@@ -481,9 +480,9 @@ func TestOneToOneVectorVectorBinaryOperation_FinalizesInnerOperatorsAsSoonAsPoss
 			},
 			rightSeries: []labels.Labels{},
 
-			expectedOutputSeries:                           []labels.Labels{},
-			expectLeftSideFinalizedAfterOutputSeriesIndex:  -1,
-			expectRightSideFinalizedAfterOutputSeriesIndex: -1,
+			expectedOutputSeries: []labels.Labels{},
+			expectLeftSideFinishedReadingCalledAfterOutputSeriesIndex:  -1,
+			expectRightSideFinishedReadingCalledAfterOutputSeriesIndex: -1,
 		},
 		"reach end of both sides at the same time": {
 			leftSeries: []labels.Labels{
@@ -501,8 +500,8 @@ func TestOneToOneVectorVectorBinaryOperation_FinalizesInnerOperatorsAsSoonAsPoss
 				labels.FromStrings("group", "1"),
 				labels.FromStrings("group", "2"),
 			},
-			expectLeftSideFinalizedAfterOutputSeriesIndex:  1,
-			expectRightSideFinalizedAfterOutputSeriesIndex: 1,
+			expectLeftSideFinishedReadingCalledAfterOutputSeriesIndex:  1,
+			expectRightSideFinishedReadingCalledAfterOutputSeriesIndex: 1,
 		},
 		"no more matches with unmatched series still to read on both sides": {
 			leftSeries: []labels.Labels{
@@ -519,8 +518,8 @@ func TestOneToOneVectorVectorBinaryOperation_FinalizesInnerOperatorsAsSoonAsPoss
 			expectedOutputSeries: []labels.Labels{
 				labels.FromStrings("group", "1"),
 			},
-			expectLeftSideFinalizedAfterOutputSeriesIndex:  0,
-			expectRightSideFinalizedAfterOutputSeriesIndex: 0,
+			expectLeftSideFinishedReadingCalledAfterOutputSeriesIndex:  0,
+			expectRightSideFinishedReadingCalledAfterOutputSeriesIndex: 0,
 		},
 		"no more matches with unmatched series still to read on left side": {
 			leftSeries: []labels.Labels{
@@ -536,8 +535,8 @@ func TestOneToOneVectorVectorBinaryOperation_FinalizesInnerOperatorsAsSoonAsPoss
 			expectedOutputSeries: []labels.Labels{
 				labels.FromStrings("group", "1"),
 			},
-			expectLeftSideFinalizedAfterOutputSeriesIndex:  0,
-			expectRightSideFinalizedAfterOutputSeriesIndex: 0,
+			expectLeftSideFinishedReadingCalledAfterOutputSeriesIndex:  0,
+			expectRightSideFinishedReadingCalledAfterOutputSeriesIndex: 0,
 		},
 		"no more matches with unmatched series still to read on right side": {
 			leftSeries: []labels.Labels{
@@ -553,8 +552,8 @@ func TestOneToOneVectorVectorBinaryOperation_FinalizesInnerOperatorsAsSoonAsPoss
 			expectedOutputSeries: []labels.Labels{
 				labels.FromStrings("group", "1"),
 			},
-			expectLeftSideFinalizedAfterOutputSeriesIndex:  0,
-			expectRightSideFinalizedAfterOutputSeriesIndex: 0,
+			expectLeftSideFinishedReadingCalledAfterOutputSeriesIndex:  0,
+			expectRightSideFinishedReadingCalledAfterOutputSeriesIndex: 0,
 		},
 		"no matches": {
 			leftSeries: []labels.Labels{
@@ -567,9 +566,9 @@ func TestOneToOneVectorVectorBinaryOperation_FinalizesInnerOperatorsAsSoonAsPoss
 				labels.FromStrings("group", "5", "series", "right-3"),
 			},
 
-			expectedOutputSeries:                           []labels.Labels{},
-			expectLeftSideFinalizedAfterOutputSeriesIndex:  -1,
-			expectRightSideFinalizedAfterOutputSeriesIndex: -1,
+			expectedOutputSeries: []labels.Labels{},
+			expectLeftSideFinishedReadingCalledAfterOutputSeriesIndex:  -1,
+			expectRightSideFinishedReadingCalledAfterOutputSeriesIndex: -1,
 		},
 		"right side exhausted before left": {
 			leftSeries: []labels.Labels{
@@ -585,8 +584,8 @@ func TestOneToOneVectorVectorBinaryOperation_FinalizesInnerOperatorsAsSoonAsPoss
 				labels.FromStrings("group", "1"),
 				labels.FromStrings("group", "2"),
 			},
-			expectLeftSideFinalizedAfterOutputSeriesIndex:  1,
-			expectRightSideFinalizedAfterOutputSeriesIndex: 0,
+			expectLeftSideFinishedReadingCalledAfterOutputSeriesIndex:  1,
+			expectRightSideFinishedReadingCalledAfterOutputSeriesIndex: 0,
 		},
 		"left side exhausted before right": {
 			leftSeries: []labels.Labels{
@@ -606,19 +605,19 @@ func TestOneToOneVectorVectorBinaryOperation_FinalizesInnerOperatorsAsSoonAsPoss
 				labels.FromStrings("group", "2"),
 				labels.FromStrings("group", "3"),
 			},
-			expectLeftSideFinalizedAfterOutputSeriesIndex:  1,
-			expectRightSideFinalizedAfterOutputSeriesIndex: 2,
+			expectLeftSideFinishedReadingCalledAfterOutputSeriesIndex:  1,
+			expectRightSideFinishedReadingCalledAfterOutputSeriesIndex: 2,
 		},
 	}
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			if testCase.expectLeftSideFinalizedAfterOutputSeriesIndex >= len(testCase.expectedOutputSeries) {
-				require.Failf(t, "invalid test case", "expectLeftSideFinalizedAfterOutputSeriesIndex %v is beyond end of expected output series %v", testCase.expectLeftSideFinalizedAfterOutputSeriesIndex, testCase.expectedOutputSeries)
+			if testCase.expectLeftSideFinishedReadingCalledAfterOutputSeriesIndex >= len(testCase.expectedOutputSeries) {
+				require.Failf(t, "invalid test case", "expectLeftSideFinishedReadingCalledAfterOutputSeriesIndex %v is beyond end of expected output series %v", testCase.expectLeftSideFinishedReadingCalledAfterOutputSeriesIndex, testCase.expectedOutputSeries)
 			}
 
-			if testCase.expectRightSideFinalizedAfterOutputSeriesIndex >= len(testCase.expectedOutputSeries) {
-				require.Failf(t, "invalid test case", "expectRightSideFinalizedAfterOutputSeriesIndex %v is beyond end of expected output series %v", testCase.expectRightSideFinalizedAfterOutputSeriesIndex, testCase.expectedOutputSeries)
+			if testCase.expectRightSideFinishedReadingCalledAfterOutputSeriesIndex >= len(testCase.expectedOutputSeries) {
+				require.Failf(t, "invalid test case", "expectRightSideFinishedReadingCalledAfterOutputSeriesIndex %v is beyond end of expected output series %v", testCase.expectRightSideFinishedReadingCalledAfterOutputSeriesIndex, testCase.expectedOutputSeries)
 			}
 
 			ctx := context.Background()
@@ -627,7 +626,7 @@ func TestOneToOneVectorVectorBinaryOperation_FinalizesInnerOperatorsAsSoonAsPoss
 			left := &operators.TestOperator{Series: testCase.leftSeries, Data: make([]types.InstantVectorSeriesData, len(testCase.leftSeries)), MemoryConsumptionTracker: memoryConsumptionTracker}
 			right := &operators.TestOperator{Series: testCase.rightSeries, Data: make([]types.InstantVectorSeriesData, len(testCase.rightSeries)), MemoryConsumptionTracker: memoryConsumptionTracker}
 			vectorMatching := parser.VectorMatching{On: true, MatchingLabels: []string{"group"}}
-			o, err := NewOneToOneVectorVectorBinaryOperation(left, right, vectorMatching, parser.ADD, false, memoryConsumptionTracker, annotations.New(), posrange.PositionRange{}, timeRange, nil, log.NewNopLogger())
+			o, err := NewOneToOneVectorVectorBinaryOperation(left, right, vectorMatching, parser.ADD, false, memoryConsumptionTracker, posrange.PositionRange{}, timeRange, nil, log.NewNopLogger())
 			require.NoError(t, err)
 
 			outputSeries, err := o.SeriesMetadata(ctx, nil)
@@ -639,16 +638,16 @@ func TestOneToOneVectorVectorBinaryOperation_FinalizesInnerOperatorsAsSoonAsPoss
 				require.Equal(t, testutils.LabelsToSeriesMetadata(testCase.expectedOutputSeries), outputSeries)
 			}
 
-			if testCase.expectLeftSideFinalizedAfterOutputSeriesIndex == -1 {
-				require.True(t, left.Finalized, "left side should be finalized after SeriesMetadata, but it is not")
+			if testCase.expectLeftSideFinishedReadingCalledAfterOutputSeriesIndex == -1 {
+				require.True(t, left.FinishedReadingCalled, "left side should have FinishedReading called after SeriesMetadata, but it is not")
 			} else {
-				require.False(t, left.Finalized, "left side should not be finalized after SeriesMetadata, but it is")
+				require.False(t, left.FinishedReadingCalled, "left side should not have FinishedReading called after SeriesMetadata, but it is")
 			}
 
-			if testCase.expectRightSideFinalizedAfterOutputSeriesIndex == -1 {
-				require.True(t, right.Finalized, "right side should be finalized after SeriesMetadata, but it is not")
+			if testCase.expectRightSideFinishedReadingCalledAfterOutputSeriesIndex == -1 {
+				require.True(t, right.FinishedReadingCalled, "right side should have FinishedReading called after SeriesMetadata, but it is not")
 			} else {
-				require.False(t, right.Finalized, "right side should not be finalized after SeriesMetadata, but it is")
+				require.False(t, right.FinishedReadingCalled, "right side should not have FinishedReading called after SeriesMetadata, but it is")
 			}
 
 			require.False(t, left.Closed, "left side should not be closed after SeriesMetadata, but it is")
@@ -658,16 +657,16 @@ func TestOneToOneVectorVectorBinaryOperation_FinalizesInnerOperatorsAsSoonAsPoss
 				_, err := o.NextSeries(ctx)
 				require.NoErrorf(t, err, "got error while reading series at index %v", outputSeriesIdx)
 
-				if outputSeriesIdx >= testCase.expectLeftSideFinalizedAfterOutputSeriesIndex {
-					require.Truef(t, left.Finalized, "left side should be finalized after output series at index %v, but it is not", outputSeriesIdx)
+				if outputSeriesIdx >= testCase.expectLeftSideFinishedReadingCalledAfterOutputSeriesIndex {
+					require.Truef(t, left.FinishedReadingCalled, "left side should have FinishedReading called after output series at index %v, but it is not", outputSeriesIdx)
 				} else {
-					require.Falsef(t, left.Finalized, "left side should not be finalized after output series at index %v, but it is", outputSeriesIdx)
+					require.Falsef(t, left.FinishedReadingCalled, "left side should not have FinishedReading called after output series at index %v, but it is", outputSeriesIdx)
 				}
 
-				if outputSeriesIdx >= testCase.expectRightSideFinalizedAfterOutputSeriesIndex {
-					require.Truef(t, right.Finalized, "right side should be finalized after output series at index %v, but it is not", outputSeriesIdx)
+				if outputSeriesIdx >= testCase.expectRightSideFinishedReadingCalledAfterOutputSeriesIndex {
+					require.Truef(t, right.FinishedReadingCalled, "right side should have FinishedReading called after output series at index %v, but it is not", outputSeriesIdx)
 				} else {
-					require.Falsef(t, right.Finalized, "right side should not be finalized after output series at index %v, but it is", outputSeriesIdx)
+					require.Falsef(t, right.FinishedReadingCalled, "right side should not have FinishedReading called after output series at index %v, but it is", outputSeriesIdx)
 				}
 			}
 
@@ -679,9 +678,9 @@ func TestOneToOneVectorVectorBinaryOperation_FinalizesInnerOperatorsAsSoonAsPoss
 			_, err = o.NextSeries(ctx)
 			require.Equal(t, types.EOS, err)
 
-			require.NoError(t, o.Finalize(ctx))
-			require.True(t, left.Finalized, "left side should be finalized after calling Finalize, but it is not")
-			require.True(t, right.Finalized, "right side should be finalized after calling Finalize, but it is not")
+			require.NoError(t, o.FinishedReading(ctx))
+			require.True(t, left.FinishedReadingCalled, "left side should have FinishedReading called after calling FinishedReading, but it is not")
+			require.True(t, right.FinishedReadingCalled, "right side should have FinishedReading called after calling FinishedReading, but it is not")
 			// Make sure we've returned everything to their pools.
 			require.Equal(t, uint64(0), memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
 
@@ -690,6 +689,215 @@ func TestOneToOneVectorVectorBinaryOperation_FinalizesInnerOperatorsAsSoonAsPoss
 			require.True(t, right.Closed, "right side should be closed after closing operator, but it isn't")
 		})
 	}
+}
+
+func TestOneToOneVectorVectorBinaryOperation_PassesWithoutDerivedMatchersToRHS(t *testing.T) {
+	// Verifies that exclude-style matchers are forwarded to the RHS via explicit
+	// exclude hints (set by an up-to-date query-frontend). When hints are nil
+	// (old query-frontend plans), no matchers are generated to avoid incorrect
+	// filtering of labels synthesized by label_replace/label_join.
+	testCases := map[string]struct {
+		vectorMatching       parser.VectorMatching
+		hints                *Hints
+		leftSeries           []labels.Labels
+		rightSeries          []labels.Labels
+		expectedRHSMatchers  types.Matchers
+		expectedOutputSeries []labels.Labels
+	}{
+		"exclude hints: RHS receives matchers for non-excluded LHS labels": {
+			vectorMatching: parser.VectorMatching{On: false, MatchingLabels: []string{"foo"}},
+			hints:          &Hints{Exclude: []string{"foo"}},
+			leftSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "foo", "bar", "region", "us-east"),
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "foo", "x", "region", "us-east"),
+				labels.FromStrings("env", "staging", "foo", "y", "region", "us-east"), // filtered by env hint
+			},
+			expectedRHSMatchers: types.Matchers{
+				{Type: labels.MatchRegexp, Name: "env", Value: "prod"},
+				{Type: labels.MatchRegexp, Name: "region", Value: "us-east"},
+			},
+			expectedOutputSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "region", "us-east"),
+			},
+		},
+		"exclude hints with multiple LHS series: RHS receives matchers from common non-excluded labels": {
+			vectorMatching: parser.VectorMatching{On: false, MatchingLabels: []string{"foo"}},
+			hints:          &Hints{Exclude: []string{"foo"}},
+			leftSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "foo", "bar", "region", "us-east"),
+				labels.FromStrings("env", "prod", "foo", "baz", "region", "eu-west"),
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "foo", "x", "region", "us-east"),
+				labels.FromStrings("env", "prod", "foo", "y", "region", "eu-west"),
+				labels.FromStrings("env", "staging", "foo", "z", "region", "us-east"), // filtered by env matcher
+			},
+			expectedRHSMatchers: types.Matchers{
+				{Type: labels.MatchRegexp, Name: "env", Value: "prod"},
+				{Type: labels.MatchRegexp, Name: "region", Value: "eu-west|us-east"},
+			},
+			expectedOutputSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "region", "us-east"),
+				labels.FromStrings("env", "prod", "region", "eu-west"),
+			},
+		},
+		"exclude hints with heterogeneous LHS labels: absent label matched with empty string": {
+			vectorMatching: parser.VectorMatching{On: false, MatchingLabels: []string{}},
+			hints:          &Hints{Exclude: []string{}},
+			leftSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "region", "us-east"),
+				labels.FromStrings("env", "prod"), // no region label
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "region", "us-east"),
+				labels.FromStrings("env", "prod"),
+				labels.FromStrings("env", "staging"), // filtered by env matcher
+			},
+			// region is absent from one LHS series, so the matcher includes the empty
+			// string to also match RHS series without a region label.
+			expectedRHSMatchers: types.Matchers{
+				{Type: labels.MatchRegexp, Name: "env", Value: "prod"},
+				{Type: labels.MatchRegexp, Name: "region", Value: "|us-east"},
+			},
+			expectedOutputSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "region", "us-east"),
+				labels.FromStrings("env", "prod"),
+			},
+		},
+		"exclude hints with multiple excluded labels": {
+			vectorMatching: parser.VectorMatching{On: false, MatchingLabels: []string{"foo", "bar"}},
+			hints:          &Hints{Exclude: []string{"bar", "foo"}},
+			leftSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "foo", "a", "bar", "b", "region", "us-east"),
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "foo", "x", "bar", "y", "region", "us-east"),
+				labels.FromStrings("env", "dev", "foo", "x", "bar", "y", "region", "us-east"), // filtered by env matcher
+			},
+			expectedRHSMatchers: types.Matchers{
+				{Type: labels.MatchRegexp, Name: "env", Value: "prod"},
+				{Type: labels.MatchRegexp, Name: "region", Value: "us-east"},
+			},
+			expectedOutputSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "region", "us-east"),
+			},
+		},
+		"nil hints with !On matching: RHS receives nil matchers (no fallback)": {
+			vectorMatching: parser.VectorMatching{On: false, MatchingLabels: []string{"foo"}},
+			hints:          nil,
+			leftSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "foo", "bar", "region", "us-east"),
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "foo", "x", "region", "us-east"),
+				labels.FromStrings("env", "staging", "foo", "y", "region", "eu-west"),
+			},
+			expectedRHSMatchers: nil,
+			expectedOutputSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "region", "us-east"),
+			},
+		},
+		"on matching with hints: RHS receives include-derived matchers": {
+			vectorMatching: parser.VectorMatching{On: true, MatchingLabels: []string{"env"}},
+			hints:          &Hints{Include: []string{"env"}},
+			leftSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "region", "us-east"),
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "region", "us-east"),
+				labels.FromStrings("env", "staging", "region", "us-east"), // filtered by env hint
+			},
+			expectedRHSMatchers: types.Matchers{
+				{Type: labels.MatchRegexp, Name: "env", Value: "prod"},
+			},
+			expectedOutputSeries: []labels.Labels{
+				labels.FromStrings("env", "prod"),
+			},
+		},
+		"on matching without hints: RHS receives nil matchers": {
+			vectorMatching: parser.VectorMatching{On: true, MatchingLabels: []string{"env"}},
+			hints:          nil,
+			leftSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "region", "us-east"),
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "region", "us-east"),
+			},
+			expectedRHSMatchers: nil,
+			expectedOutputSeries: []labels.Labels{
+				labels.FromStrings("env", "prod"),
+			},
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			ctx := context.Background()
+			timeRange := types.NewInstantQueryTimeRange(time.Now())
+			memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+			left := &operators.TestOperator{Series: testCase.leftSeries, MemoryConsumptionTracker: memoryConsumptionTracker}
+			right := &operators.TestOperator{Series: testCase.rightSeries, Data: make([]types.InstantVectorSeriesData, len(testCase.rightSeries)), MemoryConsumptionTracker: memoryConsumptionTracker}
+
+			o, err := NewOneToOneVectorVectorBinaryOperation(left, right, testCase.vectorMatching, parser.ADD, false, memoryConsumptionTracker, posrange.PositionRange{}, timeRange, testCase.hints, log.NewNopLogger())
+			require.NoError(t, err)
+
+			outputSeries, err := o.SeriesMetadata(ctx, nil)
+			require.NoError(t, err)
+
+			require.Equal(t, testCase.expectedRHSMatchers, right.MatchersProvided, "matchers passed to RHS")
+			require.ElementsMatch(t, testutils.LabelsToSeriesMetadata(testCase.expectedOutputSeries), outputSeries)
+
+			types.SeriesMetadataSlicePool.Put(&outputSeries, memoryConsumptionTracker)
+			require.NoError(t, o.FinishedReading(ctx))
+			o.Close()
+		})
+	}
+}
+
+func TestOneToOneVectorVectorBinaryOperation_DropsParentMatchersWhenHintsProduceNoMatchers(t *testing.T) {
+	// When hints are non-nil but BuildMatchers returns nil (e.g., all labels are excluded),
+	// parent matchers must still be dropped. Parent matchers may refer to labels that don't
+	// exist on the RHS of this binary operation.
+	ctx := context.Background()
+	timeRange := types.NewInstantQueryTimeRange(time.Now())
+	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+
+	// Both sides have "cluster" so parent matchers don't filter out the LHS.
+	// The RHS intentionally does NOT have "cluster" — this is the scenario where
+	// forwarding parent matchers to the RHS would be wrong.
+	leftSeries := []labels.Labels{
+		labels.FromStrings("env", "prod", "cluster", "us-east"),
+	}
+	rightSeries := []labels.Labels{
+		labels.FromStrings("env", "prod"),
+	}
+
+	left := &operators.TestOperator{Series: leftSeries, MemoryConsumptionTracker: memoryConsumptionTracker}
+	right := &operators.TestOperator{Series: rightSeries, Data: make([]types.InstantVectorSeriesData, len(rightSeries)), MemoryConsumptionTracker: memoryConsumptionTracker}
+
+	// Exclude hints that exclude all non-__name__ LHS labels: BuildMatchers will return nil
+	// because all label names present on the LHS are excluded.
+	hints := &Hints{Exclude: []string{"cluster", "env"}}
+	vectorMatching := parser.VectorMatching{On: false, MatchingLabels: []string{"cluster", "env"}}
+
+	o, err := NewOneToOneVectorVectorBinaryOperation(left, right, vectorMatching, parser.ADD, false, memoryConsumptionTracker, posrange.PositionRange{}, timeRange, hints, log.NewNopLogger())
+	require.NoError(t, err)
+
+	// Pass non-nil parent matchers that refer to a label ("cluster") not present on the RHS.
+	parentMatchers := types.Matchers{
+		{Type: labels.MatchRegexp, Name: "cluster", Value: "us-east"},
+	}
+	outputSeries, err := o.SeriesMetadata(ctx, parentMatchers)
+	require.NoError(t, err)
+
+	// Parent matchers must be dropped, not forwarded to RHS.
+	require.Nil(t, right.MatchersProvided, "parent matchers should be dropped when hints are set but produce no matchers")
+
+	types.SeriesMetadataSlicePool.Put(&outputSeries, memoryConsumptionTracker)
+	require.NoError(t, o.FinishedReading(ctx))
+	o.Close()
 }
 
 func TestOneToOneVectorVectorBinaryOperation_ReleasesIntermediateStateIfClosedEarly(t *testing.T) {
@@ -728,7 +936,7 @@ func TestOneToOneVectorVectorBinaryOperation_ReleasesIntermediateStateIfClosedEa
 			left := &operators.TestOperator{Series: leftSeries, Data: []types.InstantVectorSeriesData{left1Data, left2Data}, MemoryConsumptionTracker: memoryConsumptionTracker}
 			right := &operators.TestOperator{Series: rightSeries, Data: []types.InstantVectorSeriesData{rightData}, MemoryConsumptionTracker: memoryConsumptionTracker}
 			vectorMatching := parser.VectorMatching{On: false}
-			o, err := NewOneToOneVectorVectorBinaryOperation(left, right, vectorMatching, parser.LTE, false, memoryConsumptionTracker, annotations.New(), posrange.PositionRange{}, timeRange, nil, log.NewNopLogger())
+			o, err := NewOneToOneVectorVectorBinaryOperation(left, right, vectorMatching, parser.LTE, false, memoryConsumptionTracker, posrange.PositionRange{}, timeRange, nil, log.NewNopLogger())
 			require.NoError(t, err)
 
 			metadata, err := o.SeriesMetadata(ctx, nil)
@@ -747,8 +955,8 @@ func TestOneToOneVectorVectorBinaryOperation_ReleasesIntermediateStateIfClosedEa
 				types.PutInstantVectorSeriesData(d, memoryConsumptionTracker)
 			}
 
-			// Finalize the operator and verify that the intermediate state is released.
-			require.NoError(t, o.Finalize(ctx))
+			// Call FinishedReading on the operator and verify that the intermediate state is released.
+			require.NoError(t, o.FinishedReading(ctx))
 			require.Equal(t, uint64(0), memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
 			o.Close()
 		})

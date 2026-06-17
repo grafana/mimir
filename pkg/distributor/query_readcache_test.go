@@ -360,7 +360,7 @@ func TestDistributor_QueryStream_NautilusRoutingDoesNotDialIngesters(t *testing.
 	require.Len(t, distributors, 1)
 	d := distributors[0]
 	test.Poll(t, 5*time.Second, 4, func() interface{} {
-		return d.partitionsRing.PartitionRing().PartitionsCount()
+		return d.ingesterPartitionRings.PartitionRing(0).PartitionsCount()
 	})
 
 	// No rebalancer address was configured, so neither the
@@ -368,7 +368,7 @@ func TestDistributor_QueryStream_NautilusRoutingDoesNotDialIngesters(t *testing.
 	require.Nil(t, d.GetReadcacheLog())
 
 	queryMetrics := stats.NewQueryMetrics(prometheus.NewPedanticRegistry())
-	_, err := d.QueryStream(ctx, queryMetrics, 0, 10, false, nil, mustEqualMatcher(model.MetricNameLabel, "foo"))
+	_, err := d.QueryStream(ctx, queryMetrics, 0, 10, mustEqualMatcher(model.MetricNameLabel, "foo"))
 	require.Error(t, err, "nautilus-only read must fail when the assignment log is not live")
 
 	assert.Zero(t, countMockIngestersCalls(ingesters, "QueryStream"),

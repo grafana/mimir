@@ -41,7 +41,7 @@ type matchersInhibitionRule struct {
 // and disagreement. If no incompatible inputs or disagreement are found, then the Alertmanager
 // can be switched to the UTF-8 strict mode. Otherwise, configurations should be fixed before
 // enabling the mode.
-func validateMatchersInConfigDesc(logger log.Logger, origin string, cfg alertspb.AlertConfigDesc) {
+func validateMatchersInConfigDesc(logger log.Logger, origin string, cfg *alertspb.AlertConfigDesc) {
 	// Do not add origin to the logger as it's added in the compat package.
 	logger = log.With(logger, "user", cfg.User)
 	parseFn := compat.FallbackMatchersParser(utillog.SlogFromGoKit(logger))

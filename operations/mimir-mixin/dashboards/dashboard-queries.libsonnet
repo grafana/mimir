@@ -28,8 +28,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
   // ncSumHistogramCountRateRatio builds native and classic queries for
   // sum(rate(<metric>_count{<selectors + extra_selector>}[ri])) / sum(rate(<metric>_count{<selectors>}[ri])).
   ncSumHistogramCountRateRatio(metric, selectors, extra_selector, rate_interval='$__rate_interval')::
-    local selectorsStr = $.toPrometheusSelector(selectors);
-    local extendedSelectorsStr = $.toPrometheusSelector(selectors + extra_selector);
+    local selectorsStr = utils.toPrometheusSelector(selectors);
+    local extendedSelectorsStr = utils.toPrometheusSelector(selectors + extra_selector);
     {
       classic: 'sum(rate(%(metric)s_count%(extendedSelectors)s[%(rateInterval)s])) /\nsum(rate(%(metric)s_count%(selectors)s[%(rateInterval)s]))' % {
         metric: metric,
@@ -48,7 +48,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
   // ncSumHistogramCountRate builds native and classic queries for
   // sum(rate(<metric>_count{<selectors>}[ri])).
   ncSumHistogramCountRate(metric, selectors, rate_interval='$__rate_interval')::
-    local selectorsStr = $.toPrometheusSelector(selectors);
+    local selectorsStr = utils.toPrometheusSelector(selectors);
     {
       classic: 'sum(rate(%(metric)s_count%(selectors)s[%(rateInterval)s]))' % {
         metric: metric,
@@ -65,7 +65,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
   ncAvgHistogramQuantile(quantile, metric, selectors, offset, rate_interval='$__rate_interval')::
     local labels = std.join('_', [matcher.label for matcher in selectors]);
     local metricStr = '%(labels)s:%(metric)s' % { labels: labels, metric: metric };
-    local selectorsStr = $.toPrometheusSelector(selectors);
+    local selectorsStr = utils.toPrometheusSelector(selectors);
     {
       classic: |||
         1 - (
@@ -209,6 +209,9 @@ local utils = import 'mixin-utils/utils.libsonnet';
         { name: 'activeSeries', displayName: '"active series" queries', route: '/api/v1/cardinality_active_series', routeLabel: '_api_v1_cardinality_active_series' },
         { name: 'labelNamesCardinality', displayName: '"label name cardinality" queries', route: '/api/v1/cardinality_label_names', routeLabel: '_api_v1_cardinality_label_names' },
         { name: 'labelValuesCardinality', displayName: '"label value cardinality" queries', route: '/api/v1/cardinality_label_values', routeLabel: '_api_v1_cardinality_label_values' },
+        { name: 'searchMetricNames', displayName: '"search metric names" queries', route: '/api/v1/search/metric_names', routeLabel: '_api_v1_search_metric_names' },
+        { name: 'searchLabelNames', displayName: '"search label names" queries', route: '/api/v1/search/label_names', routeLabel: '_api_v1_search_label_names' },
+        { name: 'searchLabelValues', displayName: '"search label values" queries', route: '/api/v1/search/label_values', routeLabel: '_api_v1_search_label_values' },
       ],
       local overviewRoutesRegex = '(prometheus|api_prom)(%s)' % std.join('|', [r.routeLabel for r in overviewRoutes]),
       overviewRoutesOverrides: [
@@ -346,7 +349,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       ingestOrClassicDeduplicatedQuery(perIngesterQuery, groupByLabels=''):: |||
         ( # Classic storage
           sum by (%(groupByCluster)s, %(groupByLabels)s) (
-            %(perIngesterQuery)s unless on (job)
+            %(perIngesterQuery)s unless on (%(groupByCluster)s, job)
             cortex_partition_ring_partitions{%(ingester)s}
           )
           / on (%(groupByCluster)s) group_left()

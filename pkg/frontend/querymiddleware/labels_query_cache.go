@@ -41,7 +41,7 @@ func newLabelsQueryCacheRoundTripper(
 		limits: limits,
 	}
 
-	return newGenericQueryCacheRoundTripper(cache, generator.LabelValues, ttl, next, logger, newResultsCacheMetrics(queryTypeLabels, reg))
+	return newGenericQueryCacheRoundTripper(cache, generator.LabelValues, ttl, next, logger, NewResultsCacheMetrics(queryTypeLabels, reg))
 }
 
 type labelsQueryTTL struct {
@@ -109,9 +109,9 @@ func generateLabelsQueryRequestCacheKey(startTime, endTime int64, labelName stri
 	}
 
 	// Add start and end time.
-	b.WriteString(fmt.Sprintf("%d", startTime))
+	fmt.Fprintf(&b, "%d", startTime)
 	b.WriteRune(stringParamSeparator)
-	b.WriteString(fmt.Sprintf("%d", endTime))
+	fmt.Fprintf(&b, "%d", endTime)
 
 	// Add label name (if any).
 	if labelName != "" {

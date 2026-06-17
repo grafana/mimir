@@ -17,3 +17,4 @@ spec:
       app.kubernetes.io/instance: test-oss-topology-spread-constraints-values
       app.kubernetes.io/component: distributor
   maxUnavailable: 1
+

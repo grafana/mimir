@@ -96,16 +96,6 @@ func (si *simulatedIngester) snapshot() []rangeRate {
 	return out
 }
 
-// totalSeries returns the simulated ingester's TotalActiveSeries value
-// (L_i): the sum of per-range rates it currently owns.
-func (si *simulatedIngester) totalSeries() int64 {
-	var total int64
-	for _, r := range si.rates {
-		total += int64(r.Rate())
-	}
-	return total
-}
-
 // loadSource represents a source of load: a set of hashes with a fixed
 // samples-per-second rate, simulating traffic from specific metric names.
 type loadSource struct {

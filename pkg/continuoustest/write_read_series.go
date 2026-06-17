@@ -39,8 +39,8 @@ type WriteReadSeriesTestConfig struct {
 }
 
 func (cfg *WriteReadSeriesTestConfig) RegisterFlags(f *flag.FlagSet) {
-	f.IntVar(&cfg.NumSeries, "tests.write-read-series-test.num-series", 10000, "Number of series used for the test.")
-	f.DurationVar(&cfg.MaxQueryAge, "tests.write-read-series-test.max-query-age", 7*24*time.Hour, "How back in the past metrics can be queried at most.")
+	f.IntVar(&cfg.NumSeries, "tests.write-read-series-test.num-series", 1000, "Number of series used for the test.")
+	f.DurationVar(&cfg.MaxQueryAge, "tests.write-read-series-test.max-query-age", 48*time.Hour, "How back in the past metrics can be queried at most.")
 	f.BoolVar(&cfg.WithFloats, "tests.write-read-series-test.float-samples-enabled", true, "Set to true to use float samples")
 	f.BoolVar(&cfg.WithHistograms, "tests.write-read-series-test.histogram-samples-enabled", false, "Set to true to use native histogram samples")
 }
@@ -52,8 +52,9 @@ type WriteReadSeriesTest struct {
 	logger  log.Logger
 	metrics *TestMetrics
 
-	floatMetric MetricHistory
-	histMetrics []MetricHistory
+	floatMetric  MetricHistory
+	histMetrics  []MetricHistory
+	histProfiles []histogramProfile
 }
 
 type MetricHistory struct {
@@ -62,16 +63,19 @@ type MetricHistory struct {
 	queryMaxTime         time.Time
 }
 
-func NewWriteReadSeriesTest(cfg WriteReadSeriesTestConfig, client MimirClient, logger log.Logger, reg prometheus.Registerer) *WriteReadSeriesTest {
+func NewWriteReadSeriesTest(cfg WriteReadSeriesTestConfig, client MimirClient, writeProtocol WriteProtocol, logger log.Logger, reg prometheus.Registerer) *WriteReadSeriesTest {
 	const name = "write-read-series"
 
+	histProfiles := histogramProfilesForWriteProtocol(writeProtocol)
+
 	return &WriteReadSeriesTest{
-		name:        name,
-		cfg:         cfg,
-		client:      client,
-		logger:      log.With(logger, "test", name),
-		metrics:     NewTestMetrics(name, reg),
-		histMetrics: make([]MetricHistory, len(histogramProfiles)),
+		name:         name,
+		cfg:          cfg,
+		client:       client,
+		logger:       log.With(logger, "test", name),
+		metrics:      NewTestMetrics(name, reg),
+		histMetrics:  make([]MetricHistory, len(histProfiles)),
+		histProfiles: histProfiles,
 	}
 }
 
@@ -95,7 +99,7 @@ func (t *WriteReadSeriesTest) Init(ctx context.Context, now time.Time) error {
 		t.metrics.InitializeCountersToZero(floatTypeLabel)
 	}
 	if t.cfg.WithHistograms {
-		for i, histProfile := range histogramProfiles {
+		for i, histProfile := range t.histProfiles {
 			err := t.recoverPast(ctx, now, histProfile.metricName, querySumHist, histProfile.generateValue, histProfile.generateSampleHistogram, &t.histMetrics[i])
 			if err != nil {
 				return err
@@ -140,7 +144,7 @@ func (t *WriteReadSeriesTest) Run(ctx context.Context, now time.Time) error {
 	}
 
 	if t.cfg.WithHistograms {
-		for i, histProfile := range histogramProfiles {
+		for i, histProfile := range t.histProfiles {
 			t.RunInner(ctx, now, writeLimiter, errs, histProfile.metricName, histProfile.typeLabel, histProfile.metadata, querySumHist, histProfile.generateSeries, histProfile.generateValue, histProfile.generateSampleHistogram, &t.histMetrics[i])
 		}
 	}
@@ -158,7 +162,7 @@ func (t *WriteReadSeriesTest) RunInner(ctx context.Context, now time.Time, write
 			return
 		}
 
-		series := generateSeries(metricName, timestamp, t.cfg.NumSeries, prompb.Label{Name: "protocol", Value: t.client.Protocol()})
+		series := generateSeries(metricName, timestamp, t.cfg.NumSeries, prompb.Label{Name: "protocol", Value: string(t.client.Protocol())})
 		if err := writeSamples(ctx, typeLabel, timestamp, series, metricMetadata, records, t.client, t.metrics, logger); err != nil {
 			errs.Add(err)
 			break

@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
-FROM grafana/mimirtool:3.0.5@sha256:41191341dd57c4e9a45e8987fca7c02e27b2e74971013446431d97101bb60266 AS mimirtool
+FROM grafana/mimirtool:3.1.1 AS mimirtool
 
-FROM alpine:3.23.3@sha256:25109184c71bdad752c8312a8623239686a9a2071e8825f20acb8f2198c3f659
+FROM alpine:3.24.0@sha256:a2d49ea686c2adfe3c992e47dc3b5e7fa6e6b5055609400dc2acaeb241c829f4
 
 COPY --from=mimirtool /bin/mimirtool /bin/mimirtool
 

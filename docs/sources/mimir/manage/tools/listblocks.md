@@ -1,31 +1,27 @@
 ---
 aliases:
   - ../../operators-guide/tools/listblocks/
-description: Listblocks show the block details of a tenant.
+description: Listblocks shows the block details of a tenant.
 menuTitle: Listblocks
-title: Grafana Mimir listblocks
+title: Listblocks
 weight: 10
 ---
 
-# Grafana Mimir listblocks
+# Listblocks
 
 The listblocks tool lists blocks and shows the block details of a tenant.
 
 ## Download and configure listblocks
 
-Download listblocks as part of the Mimir binary. To download the binary, refer to [Grafana Mimir releases](https://github.com/grafana/mimir/releases) on GitHub.
+Listblocks must be compiled from [source](https://github.com/grafana/mimir/tree/main/tools/listblocks) before use.
 
 To configure listblocks, you need to provide access to the object storage bucket and specify the tenant ID. For example:
 
 ```bash
-mimir listblocks --config.file=/path/to/mimir.yaml --tenant-id=<your-tenant-id>
+listblocks --user=<your-tenant-id> --backend=s3 --s3.bucket-name=<your-bucket> --s3.endpoint=<your-s3-endpoint>
 ```
 
-You can also specify bucket details directly if they aren't in your configuration file. For example:
-
-```bash
-mimir listblocks --tenant-id=<your-tenant-id> --blocks-storage.backend=s3 --blocks-storage.s3.bucket-name=<your-bucket> --blocks-storage.s3.endpoint=<your-s3-endpoint>
-```
+Run `listblocks --help` to see all available options.
 
 ## Use listblocks
 
@@ -33,7 +29,7 @@ Listblocks doesn't use the bucket index; instead, it downloads the `meta.json` f
 This means that listblocks has an up-to-date view of the blocks in the bucket.
 
 ```
-$ ./listblocks -backend=gcs -gcs.bucket-name=bucket-with-blocks -user=10428
+$ listblocks -backend=gcs -gcs.bucket-name=bucket-with-blocks -user=10428
 Block ID                     Min Time               Max Time               Duration
 01E0HMK47RGAAKZJBMG8B8QXGP   2020-02-07T07:49:46Z   2020-02-08T00:00:00Z   16h10m13.89s
 01E0M0VK2KEDZC5AK1PX8K00EX   2020-02-08T00:00:00Z   2020-02-09T00:00:00Z   24h0m0s
@@ -75,7 +71,7 @@ Listblocks has many options you can use to modify the output. The following list
 ## Example
 
 ```
-$ ./listblocks -backend=gcs -gcs.bucket-name=bucket-with-blocks -user=10428 -min-time=2022-02-01T00:00:00Z -max-time=2022-02-04T00:00:00Z -show-labels -show-block-size
+$ listblocks -backend=gcs -gcs.bucket-name=bucket-with-blocks -user=10428 -min-time=2022-02-01T00:00:00Z -max-time=2022-02-04T00:00:00Z -show-labels -show-block-size
 Block ID                     Min Time               Max Time               Duration   Size     Labels (excl. __org_id__)
 01FTWJ3V2TP7N4D7FCSSBJXQ9Z   2022-02-01T00:00:00Z   2022-02-02T00:00:00Z   24h0m0s    69 GiB   {__compactor_shard_id__="1_of_4"}
 01FTWJZ3FD4QX4T1FMJJNP7XR1   2022-02-01T00:00:00Z   2022-02-02T00:00:00Z   24h0m0s    69 GiB   {__compactor_shard_id__="2_of_4"}

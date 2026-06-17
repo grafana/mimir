@@ -25,8 +25,8 @@ type S3ClientConfig struct {
 func (c *S3ClientConfig) RegisterFlags(prefix string, f *flag.FlagSet) {
 	f.StringVar(&c.BucketName, prefix+"bucket-name", "", "The name of the bucket (not prefixed by a scheme).")
 	f.StringVar(&c.Endpoint, prefix+"endpoint", "", "The endpoint to contact when accessing the bucket.")
-	f.StringVar(&c.AccessKeyID, prefix+"access-key-id", "", "The access key ID used in AWS Signature Version 4 authentication.")
-	f.StringVar(&c.SecretAccessKey, prefix+"secret-access-key", "", "The secret access key used in AWS Signature Version 4 authentication.")
+	f.StringVar(&c.AccessKeyID, prefix+"access-key-id", "", "The access key ID used in AWS Signature Version 4 authentication. If unset along with "+prefix+"secret-access-key, credentials are resolved from environment variables, a credentials file, or IAM (ECS task roles, EC2 instance metadata, IRSA).")
+	f.StringVar(&c.SecretAccessKey, prefix+"secret-access-key", "", "The secret access key used in AWS Signature Version 4 authentication. If unset along with "+prefix+"access-key-id, credentials are resolved from environment variables, a credentials file, or IAM (ECS task roles, EC2 instance metadata, IRSA).")
 	f.BoolVar(&c.Secure, prefix+"secure", true, "If true (default), use HTTPS when connecting to the bucket. If false, insecure HTTP is used.")
 	f.Uint64Var(&c.PartSize, prefix+"part-size", 0, "If 0, and object's size is known and optimal for multipart upload, the default value is the minimum allowed size 16MiB.")
 }
@@ -38,18 +38,26 @@ func (c *S3ClientConfig) Validate(prefix string) error {
 	if c.Endpoint == "" {
 		return errors.New(prefix + "endpoint is missing")
 	}
-	if c.AccessKeyID == "" {
-		return errors.New(prefix + "access-key-id is missing")
-	}
-	if c.SecretAccessKey == "" {
-		return errors.New(prefix + "secret-access-key is missing")
+	if (c.AccessKeyID == "") != (c.SecretAccessKey == "") {
+		return errors.New(prefix + "access-key-id and " + prefix + "secret-access-key must be set together, or both left empty to use credentials from the environment")
 	}
 	return nil
 }
 
 func (c *S3ClientConfig) ToBucket() (Bucket, error) {
+	var creds *credentials.Credentials
+	if c.AccessKeyID != "" {
+		creds = credentials.NewStaticV4(c.AccessKeyID, c.SecretAccessKey, "")
+	} else {
+		// Match the objstore credential chain: env vars, then file-based credentials, then IAM.
+		creds = credentials.NewChainCredentials([]credentials.Provider{
+			&credentials.EnvAWS{},
+			&credentials.FileAWSCredentials{},
+			&credentials.IAM{},
+		})
+	}
 	client, err := minio.New(c.Endpoint, &minio.Options{
-		Creds:  credentials.NewStaticV4(c.AccessKeyID, c.SecretAccessKey, ""),
+		Creds:  creds,
 		Secure: c.Secure,
 	})
 	if err != nil {
@@ -76,6 +84,17 @@ func (bkt *s3Bucket) Get(ctx context.Context, objectName string, options GetOpti
 		return nil, err
 	}
 	return obj, nil
+}
+
+func (bkt *s3Bucket) Exists(ctx context.Context, objectName string) (bool, error) {
+	_, err := bkt.client.StatObject(ctx, bkt.bucketName, objectName, minio.StatObjectOptions{})
+	if err != nil {
+		if minio.ToErrorResponse(err).Code == minio.NoSuchKey {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
 }
 
 const maxSingleCopySize int64 = 5 * (1024 * 1024 * 1024) // 5 GiB

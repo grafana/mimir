@@ -10,7 +10,6 @@ import (
 	"os"
 	"sort"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/go-kit/log"
@@ -19,9 +18,11 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/tenant"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/hashcache"
 	"go.opentelemetry.io/otel"
+	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -174,7 +175,7 @@ type partitionState struct {
 
 	// reader is the Kafka consumer driving samples into this
 	// partition. Nil until startKafkaReader is called.
-	reader *ingest.PartitionReader
+	reader ingest.PartitionReader
 
 	// readerMetrics is the Collector actually registered on the main
 	// Mimir registry: a *frozenDescCollector wrapping the per-partition
@@ -288,17 +289,22 @@ func New(
 
 	r.pushErrSamplers = ingester.NewIngesterErrSamplers(10)
 
-	r.samplesIngestedTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+	metricReg := reg
+	if metricReg == nil {
+		metricReg = prometheus.NewRegistry()
+	}
+
+	r.samplesIngestedTotal = promauto.With(metricReg).NewCounterVec(prometheus.CounterOpts{
 		Name: "cortex_readcache_samples_ingested_total",
 		Help: "Total float and native-histogram samples successfully appended to a partition's TSDB head from the Kafka ingest topic, labelled by Kafka partition ID. Use rate() to get samples/sec per partition. Readcache counterpart to cortex_distributor_nautilus_partition_samples_written_total.",
 	}, []string{"partition"})
 
-	r.ingestedSamples = prometheus.NewCounterVec(prometheus.CounterOpts{
+	r.ingestedSamples = promauto.With(metricReg).NewCounterVec(prometheus.CounterOpts{
 		Name: "cortex_readcache_ingested_samples_total",
 		Help: "The total number of samples ingested per user. Counts successfully-appended samples only (the readcache mirror of cortex_ingester_ingested_samples_total), so the two line up 1:1 when a tenant is moved between the ingester and readcache write paths.",
 	}, []string{"user"})
 
-	r.queriedSamples = prometheus.NewHistogram(prometheus.HistogramOpts{
+	r.queriedSamples = promauto.With(metricReg).NewHistogram(prometheus.HistogramOpts{
 		Name: "cortex_readcache_queried_samples",
 		Help: "The total number of samples returned from queries. The readcache mirror of cortex_ingester_queried_samples, with identical buckets.",
 		// Match cortex_ingester_queried_samples exactly so the two
@@ -308,7 +314,7 @@ func New(
 
 	if reg != nil {
 		r.tsdbMetrics = mimir_tsdb.NewTSDBMetrics(prometheus.WrapRegistererWithPrefix("cortex_readcache_", reg), logger)
-		reg.MustRegister(r.queryLoad, r.samplesIngestedTotal, r.ingestedSamples, r.queriedSamples)
+		reg.MustRegister(r.queryLoad)
 	}
 
 	r.Service = services.NewBasicService(r.starting, r.running, r.stopping)
@@ -388,7 +394,7 @@ func (r *Readcache) starting(ctx context.Context) error {
 func (r *Readcache) dialRebalancer(ctx context.Context) (*grpc.ClientConn, error) {
 	dialOpts := []grpc.DialOption{
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithBlock(),
+		grpc.WithBlock(), //nolint:staticcheck // Keep blocking DialContext semantics until the gRPC 2 migration.
 	}
 	// nolint:staticcheck // grpc.DialContext() has been deprecated; we'll address it before upgrading to gRPC 2.
 	return grpc.DialContext(ctx, r.cfg.RebalancerAddress, dialOpts...)

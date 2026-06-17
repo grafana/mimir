@@ -13,6 +13,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
@@ -213,7 +214,7 @@ func CountSeriesByHashRange(ctx context.Context, userID string, head *tsdb.Head,
 		walked++
 
 		lset := builder.Labels()
-		metricName := lset.Get(labels.MetricName)
+		metricName := lset.Get(model.MetricNameLabel)
 		hash := mimirpb.ShardByMetricNameLocalityLabels(userID, metricName, lset)
 
 		// Binary search: find largest i such that ranges[i].Lo <= hash.

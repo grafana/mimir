@@ -4,7 +4,6 @@ package remoteexec
 
 import (
 	"context"
-	"errors"
 
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/util/annotations"
@@ -17,12 +16,10 @@ type ScalarRemoteExec struct {
 	Node               planning.Node
 	TimeRange          types.QueryTimeRange
 	GroupEvaluator     GroupEvaluator
-	Annotations        *annotations.Annotations
-	QueryStats         *types.QueryStats
 	expressionPosition posrange.PositionRange
 
-	resp      ScalarRemoteExecutionResponse
-	finalized bool
+	resp                  ScalarRemoteExecutionResponse
+	finishedReadingCalled bool
 }
 
 var _ types.ScalarOperator = &ScalarRemoteExec{}
@@ -50,22 +47,22 @@ func (s *ScalarRemoteExec) GetValues(ctx context.Context) (types.ScalarData, err
 	return v, nil
 }
 
-func (s *ScalarRemoteExec) Finalize(ctx context.Context) error {
-	if s.finalized {
+func (s *ScalarRemoteExec) FinishedReading(ctx context.Context) error {
+	if s.finishedReadingCalled {
 		return nil
 	}
 
-	s.finalized = true
+	s.finishedReadingCalled = true
 
-	return finalize(ctx, s.resp, s.Annotations, s.QueryStats)
+	return finishedReading(ctx, s.resp)
 }
 
 func (s *ScalarRemoteExec) ExpressionPosition() posrange.PositionRange {
 	return s.expressionPosition
 }
 
-func (s *ScalarRemoteExec) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
-	return nil, errors.New("Stats not implemented for scalar remote execution")
+func (s *ScalarRemoteExec) Finalize(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
+	return s.resp.Finalize(ctx)
 }
 
 func (s *ScalarRemoteExec) Close() {
@@ -73,5 +70,5 @@ func (s *ScalarRemoteExec) Close() {
 		s.resp.Close()
 	}
 
-	s.finalized = true // Don't try to finalize from a closed stream.
+	s.finishedReadingCalled = true // Don't try to call FinishedReading from a closed stream.
 }

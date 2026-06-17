@@ -21,6 +21,10 @@ Before a piece of work is finished:
 - If you have made any changes to flags or config, run `make reference-help doc` and commit the changed files to update the config file documentation.
 - Follow the [pull request template](.github/PULL_REQUEST_TEMPLATE.md) when creating PRs.
 
+## Experimental features
+
+By default, new experimental features should be disabled and gated behind a per-tenant limit or configuration flag, so that they can be tested and introduced gradually. Document the feature in [`docs/sources/mimir/configure/about-versioning.md`](../../sources/mimir/configure/about-versioning.md#experimental-features).
+
 ## Grafana Mimir Helm chart
 
 Please see the dedicated "[Contributing to Grafana Mimir helm chart](contributing-to-helm-chart.md)" page.

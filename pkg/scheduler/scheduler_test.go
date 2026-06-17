@@ -43,7 +43,7 @@ import (
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/querierpb" //lint:ignore faillint we can't avoid using this given that's where the Protobuf definition lives
-	"github.com/grafana/mimir/pkg/scheduler/queue"
+	"github.com/grafana/mimir/pkg/queue"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/httpgrpcutil"
@@ -141,31 +141,31 @@ func drainScheduler(t *testing.T, s *Scheduler) {
 	lastTenantIndex := queue.FirstTenant()
 	querierID := "emptying-consumer"
 
-	querierWorkerConn := queue.NewUnregisteredQuerierWorkerConn(context.Background(), querierID)
-	require.NoError(t, s.requestQueue.AwaitRegisterQuerierWorkerConn(querierWorkerConn))
-	defer s.requestQueue.SubmitUnregisterQuerierWorkerConn(querierWorkerConn)
+	querierWorkerConn := queue.NewUnregisteredConsumerWorkerConn(context.Background(), querierID)
+	require.NoError(t, s.queue.AwaitRegisterQuerierWorkerConn(querierWorkerConn))
+	defer s.queue.SubmitUnregisterQuerierWorkerConn(querierWorkerConn)
 
-	consumer := func(request queue.QueryRequest) error {
+	consumer := func(request queue.Item) error {
 		return nil
 	}
 
 	for {
-		if s.requestQueue.IsEmpty() {
+		if s.queue.IsEmpty() {
 			return
 		}
 
-		idx, err := queueConsume(s.requestQueue, querierWorkerConn, lastTenantIndex, consumer)
+		idx, err := queueConsume(s.queue, querierWorkerConn, lastTenantIndex, consumer)
 		require.NoError(t, err)
 		lastTenantIndex = idx
 	}
 }
 
-type consumeRequest func(request queue.QueryRequest) error
+type consumeRequest func(request queue.Item) error
 
 func queueConsume(
-	q *queue.RequestQueue, querierWorkerConn *queue.QuerierWorkerConn, lastTenantIdx queue.TenantIndex, consumeFunc consumeRequest,
+	q *schedulerQueue, querierWorkerConn *queue.ConsumerWorkerConn, lastTenantIdx queue.TenantIndex, consumeFunc consumeRequest,
 ) (queue.TenantIndex, error) {
-	dequeueReq := queue.NewQuerierWorkerDequeueRequest(querierWorkerConn, lastTenantIdx)
+	dequeueReq := queue.NewConsumerWorkerDequeueRequest(querierWorkerConn, lastTenantIdx)
 	request, idx, err := q.AwaitRequestForQuerier(dequeueReq)
 	if err != nil {
 		return lastTenantIdx, err
@@ -546,7 +546,7 @@ func TestSchedulerShutdown_PendingRequests(t *testing.T) {
 	require.Equal(t, uint64(2), req.QueryID)
 
 	// The queue is empty and there's no inflight requests
-	require.Equal(t, true, scheduler.requestQueue.IsEmpty())
+	require.Equal(t, true, scheduler.queue.IsEmpty())
 
 	// This should error because the queue is stopped (we can't check the error exactly because its wrapped by grpc)
 	err = querierLoop.Send(&schedulerpb.QuerierToScheduler{})
@@ -781,6 +781,12 @@ func TestSchedulerQuerierMetrics(t *testing.T) {
 		return err == nil
 	}, time.Second, 10*time.Millisecond, "expected cortex_query_scheduler_connected_querier_clients metric to be incremented after querier connected")
 
+	require.Eventually(t, func() bool {
+		// an item is waiting in the queue, inflightMaxAge is reported
+		inflightMaxAge := testutil.ToFloat64(scheduler.inflightMaxAge)
+		return inflightMaxAge > 0
+	}, time.Second, 10*time.Millisecond, "expected cortex_query_scheduler_inflight_max_age_seconds metric to be greater than zero when an item is in the queue")
+
 	cancel()
 	require.NoError(t, util.CloseAndExhaust[*schedulerpb.SchedulerToQuerier](querierLoop))
 
@@ -793,6 +799,12 @@ func TestSchedulerQuerierMetrics(t *testing.T) {
 
 		return err == nil
 	}, time.Second, 10*time.Millisecond, "expected cortex_query_scheduler_connected_querier_clients metric to be decremented after querier disconnected")
+
+	require.Eventually(t, func() bool {
+		// the queue is empty, inflightMaxAge reports 0
+		inflightMaxAge := testutil.ToFloat64(scheduler.inflightMaxAge)
+		return inflightMaxAge == 0
+	}, time.Second, 10*time.Millisecond, "expected cortex_query_scheduler_inflight_max_age_seconds metric to be zero when the queue is empty")
 
 	require.NoError(t, promtest.HasNativeHistogram(reg, "cortex_query_scheduler_queue_duration_seconds"))
 	require.NoError(t, promtest.HasSampleCount(reg, "cortex_query_scheduler_queue_duration_seconds", 1))
@@ -863,8 +875,8 @@ func verifyQueryComponentUtilizationLeft(t *testing.T, scheduler *Scheduler) {
 	test.Poll(t, 2*time.Second, services.Terminated, func() interface{} {
 		return scheduler.State()
 	})
-	require.Zero(t, scheduler.requestQueue.QueryComponentUtilization.GetForComponent(queue.Ingester))
-	require.Zero(t, scheduler.requestQueue.QueryComponentUtilization.GetForComponent(queue.StoreGateway))
+	require.Zero(t, scheduler.queue.queryComponentUtilization.GetForComponent(Ingester))
+	require.Zero(t, scheduler.queue.queryComponentUtilization.GetForComponent(StoreGateway))
 }
 
 type limits struct {

@@ -17,7 +17,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	syncatomic "sync/atomic"
+	syncatomic "sync/atomic" //lint:ignore faillint generic atomic.Pointer isn't available in go.uber.org/atomic.
 	"time"
 
 	"github.com/go-kit/log"
@@ -41,7 +41,6 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
-	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
 	"go.opentelemetry.io/otel"
@@ -53,6 +52,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 
 	"github.com/grafana/mimir/pkg/cardinality"
+	"github.com/grafana/mimir/pkg/compartments"
 	"github.com/grafana/mimir/pkg/costattribution"
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -155,7 +155,9 @@ type Distributor struct {
 
 	costAttributionMgr *costattribution.Manager
 	// For handling HA replicas.
-	HATracker haTracker
+	HATracker  haTracker
+	perRequest *perRequestDedupe
+	perSample  *perSampleDedupe
 
 	// Per-user rate limiters.
 	requestRateLimiter   *limiter.RateLimiter
@@ -235,8 +237,17 @@ type Distributor struct {
 	// ingestStorageWriter is the writer used when ingest storage is enabled.
 	ingestStorageWriter *ingest.Writer
 
-	// partitionsRing is the hash ring holding ingester partitions. It's used when ingest storage is enabled.
-	partitionsRing *ring.PartitionInstanceRing
+	// ingesterPartitionRings holds the per-read-compartment ingester partition rings (a single ring
+	// when compartments are disabled). It's used by the write path when ingest storage is enabled.
+	ingesterPartitionRings *ingest.PartitionRingWatchers
+
+	// partitionInstanceRings holds the per-read-compartment partition+instance rings used by the read
+	// (query) path when ingest storage is enabled. The read path is not yet compartment-aware, so it
+	// always uses compartment 0 (that is also the only ring when compartments are disabled).
+	partitionInstanceRings *ingest.PartitionInstanceRings
+
+	// compartmentRouter shards series to read compartments. Nil when compartments are disabled.
+	compartmentRouter *compartments.Router
 
 	// usageTrackerClient is the client that should be used to track per-tenant series and
 	// enforce max series limit in the distributor. This field is nil if usage-tracker
@@ -382,6 +393,13 @@ type Config struct {
 	// IngestStorageConfig is dynamically injected because defined outside of distributor config.
 	IngestStorageConfig ingest.Config `yaml:"-"`
 
+	// Compartments is dynamically injected because defined outside of distributor config.
+	Compartments compartments.Config `yaml:"-"`
+
+	// WriteCompartmentID is the write compartment this distributor belongs to. It selects which write
+	// compartment's Kafka cluster the distributor produces to. Only used when compartments are enabled.
+	WriteCompartmentID int `yaml:"write_compartment_id" category:"experimental" doc:"hidden"`
+
 	// Limits for distributor
 	DefaultLimits    InstanceLimits         `yaml:"instance_limits"`
 	InstanceLimitsFn func() *InstanceLimits `yaml:"-"`
@@ -452,30 +470,20 @@ type PushWrapper func(next PushFunc) PushFunc
 
 // WithCleanup wraps the given pushWrapper function with automatic resource cleanup handling.
 // It ensures Request.CleanUp() is called via defer if the given next PushFunc isn't invoked.
-// See NextOrCleanup for the cleanup detection mechanism.
 func WithCleanup(next PushFunc, pushWrapper func(next PushFunc, ctx context.Context, pushReq *Request) error) PushFunc {
-	return func(ctx context.Context, pushReq *Request) error {
-		next, maybeCleanup := NextOrCleanup(next, pushReq)
-		defer maybeCleanup()
-		return pushWrapper(next, ctx, pushReq)
+	nextWrapper := func(ctx context.Context, req *Request) error {
+		req.needsCleanup = false
+		return next(ctx, req)
 	}
-}
-
-// NextOrCleanup returns a new PushFunc and a cleanup function that should be deferred by the caller.
-// The cleanup function will only call Request.CleanUp() if next() wasn't called previously.
-//
-// This function is used outside of this codebase.
-func NextOrCleanup(next PushFunc, pushReq *Request) (_ PushFunc, maybeCleanup func()) {
-	cleanupInDefer := true
-	return func(ctx context.Context, req *Request) error {
-			cleanupInDefer = false
-			return next(ctx, req)
-		},
-		func() {
-			if cleanupInDefer {
+	return func(ctx context.Context, pushReq *Request) error {
+		pushReq.needsCleanup = true
+		defer func() {
+			if pushReq.needsCleanup {
 				pushReq.CleanUp()
 			}
-		}
+		}()
+		return pushWrapper(nextWrapper, ctx, pushReq)
+	}
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
@@ -500,18 +508,31 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.BoolVar(&cfg.NautilusRequired, "distributor.nautilus-required", false, "If true, the distributor rejects write requests with a 503 Service Unavailable when the nautilus assignment log is unavailable or doesn't cover a series key, instead of falling back to the partition ring's hash-based routing. Use this in deployments where nautilus assignments are load-bearing for query locality.")
 	f.StringVar(&cfg.NautilusIngestTopic, "distributor.nautilus-ingest-topic", "nautilus_ingest", "Kafka topic to which writes for tenants in nautilus_ingest_routing=nautilus-only are forwarded. The production -ingest-storage.kafka.topic is unaffected. Must match the topic the readcache pods consume from.")
 	cfg.Readcache.RegisterFlagsWithPrefix("distributor.readcache.", f)
+	f.IntVar(&cfg.WriteCompartmentID, "distributor.write-compartment-id", 0, "The write compartment this distributor belongs to. Only used when compartments are enabled.")
 
 	cfg.DefaultLimits.RegisterFlags(f)
 }
 
 // Validate config and returns error on failure
-func (cfg *Config) Validate(limits validation.Limits) error {
+func (cfg *Config) Validate(limits validation.Limits, compartmentsCfg compartments.Config) error {
 	if limits.IngestionTenantShardSize < 0 {
 		return errInvalidTenantShardSize
 	}
 
 	if cfg.NautilusRequired && cfg.NautilusRebalancerAddress == "" {
 		return errNautilusRequiredWithoutAddress
+	}
+
+	// The distributor produces to its own write compartment's Kafka cluster, so its write compartment
+	// must be in range.
+	if compartmentsCfg.Enabled {
+		if cfg.WriteCompartmentID < 0 || cfg.WriteCompartmentID >= compartmentsCfg.Write.NumCompartments {
+			return fmt.Errorf("distributor write compartment ID %d is out of range [0, %d)", cfg.WriteCompartmentID, compartmentsCfg.Write.NumCompartments)
+		}
+	} else if cfg.WriteCompartmentID != 0 {
+		// When compartments are disabled the write compartment ID must be 0, as it's only meaningful with
+		// compartments enabled.
+		return errors.New("distributor write compartment ID must be 0 when compartments are disabled")
 	}
 
 	if err := cfg.ReactiveLimiter.Validate(); err != nil {
@@ -632,12 +653,27 @@ func (m *PushMetrics) deleteUserMetrics(user string) {
 }
 
 // New constructs a new Distributor
-func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Overrides, activeGroupsCleanupService *util.ActiveGroupsCleanupService, costAttributionMgr *costattribution.Manager, ingestersRing ring.ReadRing, partitionsRing *ring.PartitionInstanceRing, canJoinDistributorsRing bool, usageTrackerPartitionRing *ring.MultiPartitionInstanceRing, usageTrackerInstanceRing ring.ReadRing, readcacheRing *ring.Ring, reg prometheus.Registerer, log log.Logger) (*Distributor, error) {
+func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Overrides, activeGroupsCleanupService *util.ActiveGroupsCleanupService, costAttributionMgr *costattribution.Manager, ingestersRing ring.ReadRing, partitionInstanceRings *ingest.PartitionInstanceRings, partitionRings *ingest.PartitionRingWatchers, canJoinDistributorsRing bool, usageTrackerPartitionRing *ring.MultiPartitionInstanceRing, usageTrackerInstanceRing ring.ReadRing, readcacheRing *ring.Ring, reg prometheus.Registerer, log log.Logger) (*Distributor, error) {
 	clientMetrics := ingester_client.NewMetrics(reg)
 	if cfg.IngesterClientFactory == nil {
 		cfg.IngesterClientFactory = ring_client.PoolInstFunc(func(inst ring.InstanceDesc) (ring_client.PoolClient, error) {
 			return ingester_client.MakeIngesterClient(inst, clientConfig, clientMetrics, log)
 		})
+	}
+
+	if cfg.IngestStorageConfig.Enabled {
+		switch {
+		case partitionRings == nil:
+			return nil, errors.New("ingester partition rings are required when ingest storage is enabled")
+		case partitionInstanceRings == nil:
+			return nil, errors.New("ingester partition instance rings are required when ingest storage is enabled")
+		case partitionInstanceRings.Count() != partitionRings.Count():
+			return nil, fmt.Errorf("the number of ingester partition instance rings (%d) does not match the number of ingester partition rings (%d)", partitionInstanceRings.Count(), partitionRings.Count())
+		case cfg.Compartments.Enabled && partitionRings.Count() != cfg.Compartments.Read.NumCompartments:
+			return nil, fmt.Errorf("the number of ingester partition rings (%d) does not match the configured number of read compartments (%d)", partitionRings.Count(), cfg.Compartments.Read.NumCompartments)
+		case !cfg.Compartments.Enabled && partitionRings.Count() != 1:
+			return nil, fmt.Errorf("expected exactly 1 ingester partition ring when compartments are disabled, but got %d", partitionRings.Count())
+		}
 	}
 
 	cfg.PoolConfig.RemoteTimeout = cfg.RemoteTimeout
@@ -649,7 +685,8 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		log:                         log,
 		ingestersRing:               ingestersRing,
 		RequestBufferPool:           requestBufferPool,
-		partitionsRing:              partitionsRing,
+		partitionInstanceRings:      partitionInstanceRings,
+		ingesterPartitionRings:      partitionRings,
 		ingesterPool:                NewPool(cfg.PoolConfig, ingestersRing, cfg.IngesterClientFactory, log),
 		healthyInstancesCount:       atomic.NewUint32(0),
 		clusterValidationLabel:      clientConfig.GRPCClientConfig.ClusterValidation.Label,
@@ -920,6 +957,22 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 	d.distributorsLifecycler = distributorsLifecycler
 	d.distributorsRing = distributorsRing
 	d.HATracker = haTrackerImpl
+	d.perRequest = &perRequestDedupe{
+		limits:                            limits,
+		haTracker:                         haTrackerImpl,
+		dedupedSamples:                    d.dedupedSamples,
+		nonHASamples:                      d.nonHASamples,
+		discardedSamplesTooManyHaClusters: d.discardedSamplesTooManyHaClusters,
+		costAttributionMgr:                costAttributionMgr,
+	}
+	d.perSample = &perSampleDedupe{
+		limits:                            limits,
+		haTracker:                         haTrackerImpl,
+		dedupedSamples:                    d.dedupedSamples,
+		nonHASamples:                      d.nonHASamples,
+		discardedSamplesTooManyHaClusters: d.discardedSamplesTooManyHaClusters,
+		costAttributionMgr:                costAttributionMgr,
+	}
 
 	d.activeUsers = util.NewActiveUsersCleanupWithDefaultValues(d.cleanupInactiveUser)
 	d.activeGroups = activeGroupsCleanupService
@@ -941,8 +994,20 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 	}
 
 	if cfg.IngestStorageConfig.Enabled {
-		d.ingestStorageWriter = ingest.NewWriter(d.cfg.IngestStorageConfig.KafkaConfig, log, reg)
+		writerKafkaCfg := d.cfg.IngestStorageConfig.KafkaConfig
+		if cfg.Compartments.Enabled {
+			// Resolve the writer's Kafka address and credentials for this distributor's write compartment.
+			// Topic auto-creation is required to be disabled by config validation, because the writer's topic
+			// is the read-compartment template; the resolved topics are created by the ingesters' readers.
+			writerKafkaCfg = writerKafkaCfg.WriteCompartmentConfig(cfg.WriteCompartmentID)
+		}
+
+		d.ingestStorageWriter = ingest.NewWriter(writerKafkaCfg, log, reg)
 		subservices = append(subservices, d.ingestStorageWriter)
+
+		if cfg.Compartments.Enabled {
+			d.compartmentRouter = compartments.NewRouter(cfg.Compartments.Read.NumCompartments, cfg.IngestStorageConfig.KafkaConfig.Topic)
+		}
 	}
 
 	// Init usage-tracker client (if enabled).
@@ -1057,7 +1122,7 @@ func (d *Distributor) starting(ctx context.Context) error {
 	if d.cfg.NautilusRebalancerAddress != "" {
 		dialOpts := []grpc.DialOption{
 			grpc.WithTransportCredentials(insecure.NewCredentials()),
-			grpc.WithBlock(),
+			grpc.WithBlock(), //nolint:staticcheck // Keep blocking DialContext semantics until the gRPC 2 migration.
 			// The WatchAssignments stream snapshot grows with the
 			// number of active hash-range tiles plus pre-issued
 			// successors. With ~6k ranges and a few successors per
@@ -1311,34 +1376,6 @@ func (d *Distributor) stopping(_ error) error {
 	return services.StopManagerAndAwaitStopped(context.Background(), d.subservices)
 }
 
-// Returns a boolean that indicates whether or not we want to remove the replica label going forward,
-// and an error that indicates whether we want to accept samples based on the cluster/replica found in ts.
-// nil for the error means accept the sample.
-func (d *Distributor) checkSample(ctx context.Context, userID, cluster, replica string, ts int64) (removeReplicaLabel bool, _ error) {
-	// If the sample doesn't have either HA label, accept it.
-	// At the moment we want to accept these samples by default.
-	if cluster == "" || replica == "" {
-		return false, nil
-	}
-
-	// If replica label is too long, don't use it. We accept the sample here, but it will fail validation later anyway.
-	if len(replica) > d.limits.MaxLabelValueLength(userID) {
-		return false, nil
-	}
-
-	// At this point we know we have both HA labels, we should lookup
-	// the cluster/instance here to see if we want to accept this sample.
-	// Convert the timestamp to a time.Time for checking the replica
-	sampleTime := timestamp.Time(ts)
-	err := d.HATracker.checkReplica(ctx, userID, cluster, replica, time.Now(), sampleTime)
-	// checkReplica would have returned an error if there was a real error talking to Consul,
-	// or if the replica is not the currently elected replica.
-	if err != nil { // Don't accept the sample.
-		return false, err
-	}
-	return true, nil
-}
-
 // validateSamples validates samples of a single timeseries and removes the ones with duplicated timestamps.
 // Returns an error explaining the first validation finding.
 // May alter timeseries data in-place.
@@ -1542,90 +1579,6 @@ func (d *Distributor) wrapPushWithMiddlewares(next PushFunc) PushFunc {
 
 }
 
-func (d *Distributor) prePushHaDedupeMiddleware(next PushFunc) PushFunc {
-	return WithCleanup(next, func(next PushFunc, ctx context.Context, pushReq *Request) error {
-		req, err := pushReq.WriteRequest()
-		if err != nil {
-			return err
-		}
-
-		userID, err := tenant.TenantID(ctx)
-		if err != nil {
-			return err
-		}
-
-		if len(req.Timeseries) == 0 || !d.limits.AcceptHASamples(userID) {
-			return next(ctx, pushReq)
-		}
-
-		haReplicaLabel := d.limits.HAReplicaLabel(userID)
-		cluster, replica := findHALabels(haReplicaLabel, d.limits.HAClusterLabel(userID), req.Timeseries[0].Labels)
-		// Make a copy of these, since they may be retained as labels on our metrics, e.g. dedupedSamples.
-		cluster, replica = strings.Clone(cluster), strings.Clone(replica)
-
-		span := trace.SpanFromContext(ctx)
-		span.SetAttributes(
-			attribute.String("cluster", cluster),
-			attribute.String("replica", replica),
-		)
-
-		numSamples := 0
-		now := time.Now()
-		group := d.activeGroups.UpdateActiveGroupTimestamp(userID, validation.GroupLabel(d.limits, userID, req.Timeseries), now)
-		sampleTimestamp := timestamp.FromTime(now)
-		if d.limits.HATrackerUseSampleTimeForFailover(userID) {
-			earliestSampleTimestamp := sampleTimestamp
-			for _, ts := range req.Timeseries {
-				if len(ts.Samples) > 0 {
-					tsms := ts.Samples[0].TimestampMs
-					if tsms < earliestSampleTimestamp {
-						earliestSampleTimestamp = tsms
-					}
-				}
-				if len(ts.Histograms) > 0 {
-					tsms := ts.Histograms[0].Timestamp
-					if tsms < earliestSampleTimestamp {
-						earliestSampleTimestamp = tsms
-					}
-				}
-			}
-			sampleTimestamp = earliestSampleTimestamp
-		}
-		for _, ts := range req.Timeseries {
-			numSamples += len(ts.Samples) + len(ts.Histograms)
-		}
-
-		removeReplica, err := d.checkSample(ctx, userID, cluster, replica, sampleTimestamp)
-		if err != nil {
-			if errors.As(err, &replicasDidNotMatchError{}) {
-				// These samples have been deduped.
-				d.dedupedSamples.WithLabelValues(userID, cluster).Add(float64(numSamples))
-			}
-
-			if errors.As(err, &tooManyClustersError{}) {
-				d.discardedSamplesTooManyHaClusters.WithLabelValues(userID, group).Add(float64(numSamples))
-				d.costAttributionMgr.SampleTracker(userID).IncrementDiscardedSamples(req.Timeseries[0].Labels, float64(numSamples), reasonTooManyHAClusters, now)
-			}
-
-			return err
-		}
-
-		if removeReplica {
-			// If we found both the cluster and replica labels, we only want to include the cluster label when
-			// storing series in Mimir. If we kept the replica label we would end up with another series for the same
-			// series we're trying to dedupe when HA tracking moves over to a different replica.
-			for ix := range req.Timeseries {
-				req.Timeseries[ix].RemoveLabel(haReplicaLabel)
-			}
-		} else {
-			// If there wasn't an error but removeReplica is false that means we didn't find both HA labels.
-			d.nonHASamples.WithLabelValues(userID).Add(float64(numSamples))
-		}
-
-		return next(ctx, pushReq)
-	})
-}
-
 func (d *Distributor) prePushRelabelMiddleware(next PushFunc) PushFunc {
 	return WithCleanup(next, func(next PushFunc, ctx context.Context, pushReq *Request) error {
 		req, err := pushReq.WriteRequest()
@@ -1640,6 +1593,10 @@ func (d *Distributor) prePushRelabelMiddleware(next PushFunc) PushFunc {
 
 		dropLabels := d.limits.DropLabels(userID)
 		relabelConfigs := d.limits.MetricRelabelConfigs(userID)
+
+		if len(dropLabels) == 0 && len(relabelConfigs) == 0 {
+			return next(ctx, pushReq)
+		}
 
 		var removeTsIndexes []int
 		lb := labels.NewBuilder(labels.EmptyLabels())
@@ -1787,6 +1744,11 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 		var droppedNativeHistograms int
 
 		var firstPartialErr error
+		// firstValidationErr holds the first encountered series validation error.
+		// It is kept separately from firstPartialErr (which may also hold a metadata-validation error)
+		// so we can build a soft validationError when the request is partially accepted.
+		var firstValidationErr error
+		var rejectedSamplesCount int64
 		var removeIndexes []int
 		totalSamples, totalExemplars := 0, 0
 		const maxMetricsWithDeduplicatedSamplesToTrace = 10
@@ -1821,7 +1783,9 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 				if firstPartialErr == nil {
 					// The series are never retained by validationErr. This is guaranteed by the way the latter is built.
 					firstPartialErr = newValidationError(validationErr)
+					firstValidationErr = validationErr
 				}
+				rejectedSamplesCount += int64(rawSamples + rawHistograms)
 				removeIndexes = append(removeIndexes, tsIdx)
 				continue
 			}
@@ -1924,11 +1888,37 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 		// totalN included samples, exemplars and metadata. Ingester follows this pattern when computing its ingestion rate.
 		d.ingestionRate.Add(int64(totalN))
 
-		ctx = ingest.ContextWithRecordTimestamp(ctx, now)
 		err = next(ctx, pushReq)
 		if err != nil {
-			// Errors resulting from the pushing to the ingesters have priority over validation errors.
+			// Errors resulting from the pushing to the ingesters have priority over
+			// validation errors, but if a downstream middleware returns a soft
+			// partial-success error we fold this middleware's rejection count into
+			// it. Mirrors what's done for active-series rejections.
+			//
+			// Note: when counts are combined, partial_success.error_message reflects
+			// only the downstream cause; per-reason rejection breakdowns are
+			// available via cortex_discarded_samples_total.
+			//
+			// TODO: if a future soft Error type carries a rejectedSamples count
+			// (e.g., a soft variant of partitionPushError for ingest-storage Kafka),
+			// add a parallel branch here so its count is also combined.
+			if rejectedSamplesCount > 0 {
+				var ingErr ingesterPushError
+				if errors.As(err, &ingErr) && ingErr.IsSoft() {
+					ingErr.rejectedSamples += rejectedSamplesCount
+					return ingErr
+				}
+				var asErr activeSeriesLimitedError
+				if errors.As(err, &asErr) && asErr.IsSoft() {
+					asErr.rejectedSamples += rejectedSamplesCount
+					return asErr
+				}
+			}
 			return err
+		}
+
+		if firstValidationErr != nil && validatedSamples > 0 {
+			return newSoftValidationError(firstValidationErr, rejectedSamplesCount)
 		}
 
 		return firstPartialErr
@@ -2530,22 +2520,23 @@ func (d *Distributor) push(ctx context.Context, pushReq *Request) error {
 		ctx = ingester_client.WithSlabPool(ctx, slabPool)
 	}
 
-	// Get both series and metadata keys in one slice.
-	keys, initialMetadataIndex := getSeriesAndMetadataTokens(userID, req)
-
 	var (
 		ingestersSubring  ring.DoBatchRing
-		partitionsSubring *ring.ActivePartitionBatchRing
+		partitionSubrings []*ring.ActivePartitionBatchRing
 	)
 
-	// Get the tenant's subring to use to either write to ingesters or partitions.
+	// Shuffle-shard each read compartment's partition ring (a single ring at index 0 when compartments
+	// are disabled).
 	if d.cfg.IngestStorageConfig.Enabled {
-		subring, err := d.partitionsRing.ShuffleShard(userID, d.limits.EffectiveIngestionPartitionsTenantWriteShardSize(userID))
-		if err != nil {
-			return err
+		shardSize := d.limits.EffectiveIngestionPartitionsTenantWriteShardSize(userID)
+		partitionSubrings = make([]*ring.ActivePartitionBatchRing, d.ingesterPartitionRings.Count())
+		for c := range partitionSubrings {
+			subring, err := d.ingesterPartitionRings.PartitionRing(c).ShuffleShard(userID, shardSize)
+			if err != nil {
+				return err
+			}
+			partitionSubrings[c] = ring.NewActivePartitionBatchRing(subring)
 		}
-
-		partitionsSubring = ring.NewActivePartitionBatchRing(subring.PartitionRing())
 	}
 
 	if !d.cfg.IngestStorageConfig.Enabled || d.cfg.IngestStorageConfig.Migration.DistributorSendToIngestersEnabled {
@@ -2557,15 +2548,15 @@ func (d *Distributor) push(ctx context.Context, pushReq *Request) error {
 	// once all backend requests have completed (see cleanup function passed to sendWriteRequestToBackends()).
 	cleanupInDefer = false
 
-	return d.sendWriteRequestToBackends(ctx, userID, req, keys, initialMetadataIndex, ingestersSubring, partitionsSubring, pushReq.CleanUp)
+	return d.sendWriteRequestToBackends(ctx, userID, req, ingestersSubring, partitionSubrings, pushReq.CleanUp)
 }
 
 // sendWriteRequestToBackends sends the input req data to backends. The backends could be:
 // - Ingesters, when ingestersSubring is not nil
-// - Ingest storage partitions, when partitionsSubring is not nil
+// - Ingest storage partitions, when partitionSubrings is not empty (one subring per read compartment)
 //
 // The input cleanup function is guaranteed to be called after all requests to all backends have completed.
-func (d *Distributor) sendWriteRequestToBackends(ctx context.Context, tenantID string, req *mimirpb.WriteRequest, keys []uint32, initialMetadataIndex int, ingestersSubring ring.DoBatchRing, partitionsSubring *ring.ActivePartitionBatchRing, cleanup func()) error {
+func (d *Distributor) sendWriteRequestToBackends(ctx context.Context, tenantID string, req *mimirpb.WriteRequest, ingestersSubring ring.DoBatchRing, partitionSubrings []*ring.ActivePartitionBatchRing, cleanup func()) error {
 	var (
 		wg            = sync.WaitGroup{}
 		partitionsErr error
@@ -2573,7 +2564,7 @@ func (d *Distributor) sendWriteRequestToBackends(ctx context.Context, tenantID s
 	)
 
 	// Ensure at least one ring has been provided.
-	if ingestersSubring == nil && partitionsSubring == nil {
+	if ingestersSubring == nil && len(partitionSubrings) == 0 {
 		// It should never happen. If it happens, it's a logic bug.
 		panic("no tenant subring has been provided to sendWriteRequestToBackends()")
 	}
@@ -2629,21 +2620,32 @@ func (d *Distributor) sendWriteRequestToBackends(ctx context.Context, tenantID s
 	}
 
 	// Keep it easy if there's only 1 backend to write to.
-	if partitionsSubring == nil {
+	if len(partitionSubrings) == 0 {
+		keys, initialMetadataIndex := getSeriesAndMetadataTokens(tenantID, req)
 		return d.sendWriteRequestToIngesters(ctx, ingestersSubring, req, keys, initialMetadataIndex, remoteRequestContext, batchOptions)
 	}
+
 	if ingestersSubring == nil {
-		return d.sendWriteRequestToPartitions(ctx, tenantID, partitionsSubring, req, keys, initialMetadataIndex, partitionsRequestContext, batchOptions.Cleanup)
+		if d.cfg.Compartments.Enabled {
+			return d.sendWriteRequestToCompartments(ctx, tenantID, partitionSubrings, req, partitionsRequestContext, batchOptions.Cleanup)
+		}
+
+		// When compartments are disabled, New() guarantees there is exactly one partition ring.
+		keys, initialMetadataIndex := getSeriesAndMetadataTokens(tenantID, req)
+		return d.sendWriteRequestToPartitions(ctx, tenantID, partitionSubrings[0], req, keys, initialMetadataIndex, partitionsRequestContext, batchOptions.Cleanup)
 	}
 
-	// Prepare a callback function that will call the input cleanup callback function only after
-	// the cleanup has been done for all backends.
+	// Dual-write to ingesters and partitions. Compartments are never enabled here: config validation
+	// forbids combining compartments with the migration's distributor-send-to-ingesters, so the single
+	// partition ring is used.
 	cleanupWaitBackends := atomic.NewInt64(2)
 	batchOptions.Cleanup = func() {
 		if cleanupWaitBackends.Dec() == 0 {
 			batchCleanup()
 		}
 	}
+
+	keys, initialMetadataIndex := getSeriesAndMetadataTokens(tenantID, req)
 
 	// Write both to ingesters and partitions.
 	wg.Add(2)
@@ -2657,7 +2659,7 @@ func (d *Distributor) sendWriteRequestToBackends(ctx context.Context, tenantID s
 	go func() {
 		defer wg.Done()
 
-		partitionsErr = d.sendWriteRequestToPartitions(ctx, tenantID, partitionsSubring, req, keys, initialMetadataIndex, partitionsRequestContext, batchOptions.Cleanup)
+		partitionsErr = d.sendWriteRequestToPartitions(ctx, tenantID, partitionSubrings[0], req, keys, initialMetadataIndex, partitionsRequestContext, batchOptions.Cleanup)
 	}()
 
 	// Wait until all backends have done.
@@ -2712,7 +2714,7 @@ func (d *Distributor) sendWriteRequestToPartitions(ctx context.Context, tenantID
 	now := d.now()
 	usedNautilusRouting := false
 	if table := d.nautilusActiveTableFor(now); table != nil {
-		partitionKeys, err = d.getKeysByAssignment(ctx, tenantID, table, keys)
+		partitionKeys, err = d.getKeysByAssignment(ctx, tenantID, table, tenantRing, keys)
 		usedNautilusRouting = err == nil
 	} else if d.cfg.NautilusRequired {
 		level.Warn(d.log).Log(
@@ -2824,6 +2826,50 @@ func (d *Distributor) observeNautilusPartitionWrites(tenantID, topic string, par
 	}
 }
 
+// sendWriteRequestToCompartments shards the write request across read compartments (each with its own
+// partition ring and Kafka topic) and writes each compartment's partitions in a single ProduceSync
+// call. It is used only when compartments are enabled, where the distributor never also writes to
+// ingesters (config validation forbids combining compartments with distributor-send-to-ingesters).
+func (d *Distributor) sendWriteRequestToCompartments(ctx context.Context, tenantID string, partitionSubrings []*ring.ActivePartitionBatchRing, req *mimirpb.WriteRequest, remoteRequestContext func() context.Context, cleanup func()) error {
+	defer cleanup()
+
+	cts, initialMetadataIndex := getCompartmentTokensForWriteRequest(d.compartmentRouter, tenantID, req)
+
+	// We use an errgroup without context cancellation so that a failure writing to one compartment does
+	// not cancel the in-flight writes to the other compartments. A write can fail with a soft failure
+	// (the overall request may still succeed) or a hard failure (the whole request fails); ideally we
+	// would short-circuit the other compartments only on a hard failure, but distinguishing the two is
+	// a future improvement, so for now we never cancel.
+	var g errgroup.Group
+	for _, ct := range cts {
+		g.Go(func() error {
+			// Group this compartment's keys by partition within its own partition ring.
+			partitionKeys, err := partitionSubrings[ct.compartmentID].GetKeysByPartition(ctx, ct.tokens)
+			if err != nil {
+				return err
+			}
+
+			// Build per-partition write requests, remapping the per-compartment token indexes back to
+			// the original WriteRequest indexes.
+			partitionRequests := make([]ingest.PartitionWriteRequest, 0, len(partitionKeys))
+			for _, pk := range partitionKeys {
+				partitionRequests = append(partitionRequests, ingest.PartitionWriteRequest{
+					PartitionID:  pk.PartitionID,
+					WriteRequest: req.ForIndexes(ct.writeRequestIndexes(pk.Indexes), initialMetadataIndex),
+				})
+			}
+
+			// Write all partitions of this compartment in a single ProduceSync call to its topic.
+			writeCtx := remoteRequestContext()
+			err = d.ingestStorageWriter.MultiWriteSync(writeCtx, ct.topic, tenantID, partitionRequests)
+			err = wrapPartitionsPushError(err)
+			return wrapDeadlineExceededPushError(err)
+		})
+	}
+
+	return errors.Wrap(g.Wait(), "send data to partitions")
+}
+
 // getSeriesAndMetadataTokens returns a slice of tokens for the series and metadata from the request in this specific order.
 // Metadata tokens start at initialMetadataIndex.
 func getSeriesAndMetadataTokens(userID string, req *mimirpb.WriteRequest) (keys []uint32, initialMetadataIndex int) {
@@ -2874,14 +2920,12 @@ func (d *Distributor) nautilusActiveTableFor(at time.Time) *assignment.ActiveTab
 // ActiveTable. When the table doesn't cover a given key (e.g. a
 // hash gap or a transition edge case) the behaviour depends on
 // d.cfg.NautilusRequired: if false, fall back per-key to the
-// partition ring's ActivePartitionForKey; if true, return a 503
+// tenantRing's ActivePartitionForKey; if true, return a 503
 // nautilusRoutingUnavailableError so the writer retries instead of
 // silently routing through hash-mod sharding.
-func (d *Distributor) getKeysByAssignment(ctx context.Context, tenantID string, table *assignment.ActiveTable, keys []uint32) ([]ring.PartitionKeys, error) {
-	// pRing is fetched lazily — a fully-covering table means we
-	// never consult it, and in NautilusRequired mode we never
-	// consult it at all.
-	var pRing *ring.PartitionRing
+func (d *Distributor) getKeysByAssignment(ctx context.Context, tenantID string, table *assignment.ActiveTable, tenantRing *ring.ActivePartitionBatchRing, keys []uint32) ([]ring.PartitionKeys, error) {
+	// tenantRing is consulted only for keys missing from the assignment table, and never in
+	// NautilusRequired mode.
 	var ringFallbackKeys int
 
 	partitionIndexes := make(map[int32][]int)
@@ -2905,14 +2949,18 @@ func (d *Distributor) getKeysByAssignment(ctx context.Context, tenantID string, 
 				return nil, newNautilusRoutingUnavailableError(fmt.Sprintf("assignment log does not cover key %d", key))
 			}
 			ringFallbackKeys++
-			if pRing == nil {
-				pRing = d.partitionsRing.PartitionRing()
+			if tenantRing == nil {
+				return nil, errors.New("partition ring is required for nautilus fallback routing")
 			}
-			var err error
-			pid, err = pRing.ActivePartitionForKey(key)
+			rs, err := tenantRing.Get(key, ring.WriteNoExtend, nil, nil, nil)
 			if err != nil {
 				return nil, err
 			}
+			pid64, err := strconv.ParseInt(rs.Instances[0].Id, 10, 32)
+			if err != nil {
+				return nil, err
+			}
+			pid = int32(pid64)
 		}
 		partitionIndexes[pid] = append(partitionIndexes[pid], i)
 	}
@@ -3008,6 +3056,14 @@ func (d *Distributor) updateReceivedMetrics(ctx context.Context, pushReq *Reques
 // forReplicationSets runs f, in parallel, for all ingesters in the input replicationSets.
 // Return an error if any f fails for any of the input replicationSets.
 func forReplicationSets[R any](ctx context.Context, d *Distributor, replicationSets []ring.ReplicationSet, f func(context.Context, ingester_client.IngesterClient) (R, error)) ([]R, error) {
+	quorumConfig := d.queryQuorumConfigForReplicationSets(ctx, replicationSets)
+	return forReplicationSetsWithQuorumConfig(ctx, d, replicationSets, quorumConfig, f)
+}
+
+// forReplicationSetsWithQuorumConfig runs f, in parallel, for all ingesters in the input replicationSets, using the provided quorum config.
+// It is expected that the provided quorumConfig matches the given replicationSets.
+// If you do not need to customize the quorum config, use forReplicationSets instead.
+func forReplicationSetsWithQuorumConfig[R any](ctx context.Context, d *Distributor, replicationSets []ring.ReplicationSet, quorumConfig ring.DoUntilQuorumConfig, f func(context.Context, ingester_client.IngesterClient) (R, error)) ([]R, error) {
 	wrappedF := func(ctx context.Context, ingester *ring.InstanceDesc) (R, error) {
 		client, err := d.ingesterPool.GetClientForInstance(*ingester)
 		if err != nil {
@@ -3021,8 +3077,6 @@ func forReplicationSets[R any](ctx context.Context, d *Distributor, replicationS
 	cleanup := func(_ R) {
 		// Nothing to do.
 	}
-
-	quorumConfig := d.queryQuorumConfigForReplicationSets(ctx, replicationSets)
 
 	return concurrency.ForEachJobMergeResults[ring.ReplicationSet, R](ctx, replicationSets, 0, func(ctx context.Context, set ring.ReplicationSet) ([]R, error) {
 		return ring.DoUntilQuorum(ctx, set, quorumConfig, wrappedF, cleanup)
@@ -3608,7 +3662,9 @@ func (d *Distributor) deduplicateActiveSeries(ctx context.Context, matchers []*l
 		return ignored{}, nil
 	}
 
-	_, err = forReplicationSets(ctx, d, replicationSets, ingesterQuery)
+	quorumConfig := d.queryQuorumConfigForReplicationSets(ctx, replicationSets)
+	quorumConfig.IsTerminalError = validation.IsLimitError
+	_, err = forReplicationSetsWithQuorumConfig(ctx, d, replicationSets, quorumConfig, ingesterQuery)
 	if err != nil {
 		return nil, err
 	}
@@ -3650,7 +3706,7 @@ func newActiveSeriesResponse(hashCollisionCount prometheus.Counter, maxSize int,
 	}
 }
 
-var ErrResponseTooLarge = errors.New("response too large")
+var ErrResponseTooLarge = validation.NewLimitError("response too large")
 
 func (r *activeSeriesResponse) add(series []*mimirpb.Metric, bucketCounts []uint64) error {
 
@@ -3955,7 +4011,8 @@ func (d *Distributor) adjustQueryRequestLimit(ctx context.Context, userID string
 	if d.cfg.IngestStorageConfig.Enabled {
 		// Get the number of active partitions in the ring. Here the ShuffleShardSize handles cases when a tenant has 0 or negative
 		// number of shards, or more shards than the number of active partitions in the ring.
-		shardSize = d.partitionsRing.PartitionRing().ShuffleShardSize(d.limits.IngestionPartitionsTenantShardSize(userID))
+		// Read path is not compartment-aware yet, so it always uses read compartment 0.
+		shardSize = d.partitionInstanceRings.Get(0).PartitionRing().ShuffleShardSize(d.limits.IngestionPartitionsTenantShardSize(userID))
 	} else {
 		// The ShuffleShard filters out read-only instances, leaving us with the number of active ingesters.
 		// Note, this can be costly to compute if the ring's caching is not enabled.

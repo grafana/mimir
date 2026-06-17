@@ -5,8 +5,10 @@ package binops
 import (
 	"context"
 
+	"github.com/go-kit/log"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
+	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
@@ -22,6 +24,8 @@ type AndUnlessBinaryOperation struct {
 
 	timeRange                  types.QueryTimeRange
 	expressionPosition         posrange.PositionRange
+	hints                      *Hints
+	logger                     log.Logger
 	leftSeriesGroups           []*andGroup
 	rightSeriesGroups          []*andGroup
 	nextRightSeriesIndex       int
@@ -40,6 +44,8 @@ func NewAndUnlessBinaryOperation(
 	isUnless bool,
 	timeRange types.QueryTimeRange,
 	expressionPosition posrange.PositionRange,
+	hints *Hints,
+	logger log.Logger,
 ) *AndUnlessBinaryOperation {
 	return &AndUnlessBinaryOperation{
 		Left:                     left,
@@ -49,6 +55,8 @@ func NewAndUnlessBinaryOperation(
 		IsUnless:                 isUnless,
 		timeRange:                timeRange,
 		expressionPosition:       expressionPosition,
+		hints:                    hints,
+		logger:                   logger,
 
 		lastLeftSeriesIndexToRead:  -1,
 		lastRightSeriesIndexToRead: -1,
@@ -62,15 +70,15 @@ func (a *AndUnlessBinaryOperation) SeriesMetadata(ctx context.Context, matchers 
 	}
 
 	if a.lastLeftSeriesIndexToRead == -1 {
-		// We're not going to read anything from the left side, finalize it now.
-		if err := a.Left.Finalize(ctx); err != nil {
+		// We're not going to read anything from the left side, call FinishedReading on it now.
+		if err := a.Left.FinishedReading(ctx); err != nil {
 			return nil, err
 		}
 	}
 
 	if a.lastRightSeriesIndexToRead == -1 {
-		// We're not going to read anything from the right side, finalize it now.
-		if err := a.Right.Finalize(ctx); err != nil {
+		// We're not going to read anything from the right side, call FinishedReading on it now.
+		if err := a.Right.FinishedReading(ctx); err != nil {
 			return nil, err
 		}
 	}
@@ -90,12 +98,8 @@ func (a *AndUnlessBinaryOperation) computeSeriesMetadata(ctx context.Context, ma
 		return nil, nil
 	}
 
-	// Do not pass the parent's matchers to the RHS. For 'and' and 'unless', the RHS acts as
-	// a presence filter on the LHS: only the LHS series are returned. Passing matchers from a
-	// parent binary operation to the RHS could incorrectly exclude RHS series that would
-	// otherwise filter out (for 'unless') or include (for 'and') LHS series, producing wrong
-	// results when the parent's matchers cover labels not in this operation's matching set.
-	rightMetadata, err := a.Right.SeriesMetadata(ctx, nil)
+	rhsMatchers := BuildMatchers(ctx, a.logger, leftMetadata, a.hints)
+	rightMetadata, err := a.Right.SeriesMetadata(ctx, rhsMatchers)
 	if err != nil {
 		return nil, err
 	}
@@ -193,10 +197,10 @@ func (a *AndUnlessBinaryOperation) NextSeries(ctx context.Context) (types.Instan
 		return types.InstantVectorSeriesData{}, err
 	}
 
-	// If we're done reading the left side, finalize it so it can do any outstanding work as early as possible.
+	// If we're done reading the left side, call FinishedReading on it so it can do any outstanding work as early as possible.
 	// We do the same thing for the right side in readRightSideUntilGroupComplete.
 	if a.nextLeftSeriesIndex > a.lastLeftSeriesIndexToRead {
-		if err := a.Left.Finalize(ctx); err != nil {
+		if err := a.Left.FinishedReading(ctx); err != nil {
 			return types.InstantVectorSeriesData{}, err
 		}
 	}
@@ -253,7 +257,7 @@ func (a *AndUnlessBinaryOperation) computeNextSeries(ctx context.Context) (types
 
 		if thisSeriesGroup.leftSeriesCount == 0 {
 			// This is the last series for this group, return it to the pool.
-			thisSeriesGroup.Finalize(a.MemoryConsumptionTracker)
+			thisSeriesGroup.FinishedReading(a.MemoryConsumptionTracker)
 		}
 
 		return filteredData, nil
@@ -281,9 +285,9 @@ func (a *AndUnlessBinaryOperation) readRightSideUntilGroupComplete(ctx context.C
 		a.nextRightSeriesIndex++
 	}
 
-	// If we're done reading the right side, finalize it so it can release any resources as early as possible.
+	// If we're done reading the right side, call FinishedReading on it so it can release any resources as early as possible.
 	if a.nextRightSeriesIndex > a.lastRightSeriesIndexToRead {
-		if err := a.Right.Finalize(ctx); err != nil {
+		if err := a.Right.FinishedReading(ctx); err != nil {
 			return err
 		}
 	}
@@ -311,13 +315,13 @@ func (a *AndUnlessBinaryOperation) AfterPrepare(ctx context.Context) error {
 	return a.Right.AfterPrepare(ctx)
 }
 
-func (a *AndUnlessBinaryOperation) Finalize(ctx context.Context) error {
+func (a *AndUnlessBinaryOperation) FinishedReading(ctx context.Context) error {
 	for _, group := range a.leftSeriesGroups {
 		if group == nil {
 			continue
 		}
 
-		group.Finalize(a.MemoryConsumptionTracker)
+		group.FinishedReading(a.MemoryConsumptionTracker)
 	}
 
 	a.leftSeriesGroups = nil
@@ -325,15 +329,15 @@ func (a *AndUnlessBinaryOperation) Finalize(ctx context.Context) error {
 	// We don't need to explicitly close any groups in rightSeriesGroups, as they would have been closed above.
 	a.rightSeriesGroups = nil
 
-	if err := a.Left.Finalize(ctx); err != nil {
+	if err := a.Left.FinishedReading(ctx); err != nil {
 		return err
 	}
 
-	return a.Right.Finalize(ctx)
+	return a.Right.FinishedReading(ctx)
 }
 
-func (a *AndUnlessBinaryOperation) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
-	return types.CombineStats(ctx, a.Left, a.Right)
+func (a *AndUnlessBinaryOperation) Finalize(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
+	return types.FinalizeAndCombine(ctx, a.Left, a.Right)
 }
 
 func (a *AndUnlessBinaryOperation) Close() {
@@ -377,6 +381,6 @@ func (g *andGroup) FilterLeftSeries(leftData types.InstantVectorSeriesData, memo
 	return filterSeries(leftData, g.rightSamplePresence, !isUnless, memoryConsumptionTracker, timeRange)
 }
 
-func (g *andGroup) Finalize(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
+func (g *andGroup) FinishedReading(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
 	types.BoolSlicePool.Put(&g.rightSamplePresence, memoryConsumptionTracker)
 }

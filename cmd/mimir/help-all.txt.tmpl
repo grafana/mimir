@@ -428,7 +428,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.bucket-store.bucket-index.update-on-error-interval duration
     	How frequently a bucket index, which previously failed to load, should be tried to load again. This option is used only by querier. (default 1m0s)
   -blocks-storage.bucket-store.chunks-cache.attributes-in-memory-max-items int
-    	Maximum number of object attribute items to keep in a first level in-memory LRU cache. Metadata will be stored and fetched in-memory before hitting the cache backend. 0 to disable the in-memory cache. (default 50000)
+    	Maximum number of object attribute items to keep in a first-level in-memory LRU cache. Metadata will be stored and fetched in-memory before hitting the cache backend. 0 to disable the in-memory cache. (default 50000)
   -blocks-storage.bucket-store.chunks-cache.attributes-ttl duration
     	TTL for caching object attributes for chunks. If the metadata cache is configured, attributes will be stored under this cache backend, otherwise attributes are stored in the chunks cache backend. (default 168h0m0s)
   -blocks-storage.bucket-store.chunks-cache.backend string
@@ -437,6 +437,10 @@ Usage of ./cmd/mimir/mimir:
     	Maximum number of sub-GetRange requests that a single GetRange request can be split into when fetching chunks. Zero or negative value = unlimited number of sub-requests. (default 3)
   -blocks-storage.bucket-store.chunks-cache.memcached.addresses comma-separated-list-of-strings
     	Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.
+  -blocks-storage.bucket-store.chunks-cache.memcached.addresses-lookup-period duration
+    	How often each address is resolved to an IP address or list of host names. (default 30s)
+  -blocks-storage.bucket-store.chunks-cache.memcached.addresses-lookup-pool-size uint
+    	How many idle connections to the DNS resolver are kept open. 0 disables keeping any idle connections open.
   -blocks-storage.bucket-store.chunks-cache.memcached.connect-timeout duration
     	The connection timeout. (default 200ms)
   -blocks-storage.bucket-store.chunks-cache.memcached.max-async-buffer-size int
@@ -485,6 +489,10 @@ Usage of ./cmd/mimir/mimir:
     	Maximum size in bytes of in-memory index cache used to speed up blocks index lookups (shared between all tenants). (default 1073741824)
   -blocks-storage.bucket-store.index-cache.memcached.addresses comma-separated-list-of-strings
     	Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.
+  -blocks-storage.bucket-store.index-cache.memcached.addresses-lookup-period duration
+    	How often each address is resolved to an IP address or list of host names. (default 30s)
+  -blocks-storage.bucket-store.index-cache.memcached.addresses-lookup-pool-size uint
+    	How many idle connections to the DNS resolver are kept open. 0 disables keeping any idle connections open.
   -blocks-storage.bucket-store.index-cache.memcached.connect-timeout duration
     	The connection timeout. (default 200ms)
   -blocks-storage.bucket-store.index-cache.memcached.max-async-buffer-size int
@@ -519,6 +527,58 @@ Usage of ./cmd/mimir/mimir:
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -blocks-storage.bucket-store.index-cache.memcached.tls-server-name string
     	Override the expected name on the server certificate.
+  -blocks-storage.bucket-store.index-header-cache.attributes-in-memory-max-items int
+    	[experimental] Maximum number of individual attributes items to keep in a first level in-memory LRU cache. Attributes will be stored and fetched in-memory before hitting the cache backend. 0 to disable the in-memory cache. (default 10000)
+  -blocks-storage.bucket-store.index-header-cache.attributes-ttl duration
+    	[experimental] TTL for caching object attributes of the block index for the index-header reader.  If the metadata cache is configured, attributes will be stored in the metadata cache backend, otherwise attributes are stored in the index-header cache backend. (default 168h0m0s)
+  -blocks-storage.bucket-store.index-header-cache.backend string
+    	Backend for index-header cache, if not empty. Intended for use with -blocks-storage.bucket-store.index-header.bucket-reader. Supported values: memcached.
+  -blocks-storage.bucket-store.index-header-cache.max-get-range-requests int
+    	[experimental] Maximum number of sub-GetRange requests that a single GetRange request can be split into when fetching index-header ranges. Zero or negative value = unlimited number of sub-requests. (default 3)
+  -blocks-storage.bucket-store.index-header-cache.memcached.addresses comma-separated-list-of-strings
+    	Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.
+  -blocks-storage.bucket-store.index-header-cache.memcached.addresses-lookup-period duration
+    	How often each address is resolved to an IP address or list of host names. (default 30s)
+  -blocks-storage.bucket-store.index-header-cache.memcached.addresses-lookup-pool-size uint
+    	How many idle connections to the DNS resolver are kept open. 0 disables keeping any idle connections open.
+  -blocks-storage.bucket-store.index-header-cache.memcached.connect-timeout duration
+    	The connection timeout. (default 200ms)
+  -blocks-storage.bucket-store.index-header-cache.memcached.max-async-buffer-size int
+    	The maximum number of enqueued asynchronous operations allowed. (default 25000)
+  -blocks-storage.bucket-store.index-header-cache.memcached.max-async-concurrency int
+    	The maximum number of concurrent asynchronous operations can occur. (default 50)
+  -blocks-storage.bucket-store.index-header-cache.memcached.max-get-multi-batch-size int
+    	The maximum number of keys a single underlying get operation should run. If more keys are specified, internally keys are split into multiple batches and fetched concurrently, honoring the max concurrency. If set to 0, the max batch size is unlimited. (default 100)
+  -blocks-storage.bucket-store.index-header-cache.memcached.max-get-multi-concurrency int
+    	The maximum number of concurrent connections running get operations. If set to 0, concurrency is unlimited. (default 100)
+  -blocks-storage.bucket-store.index-header-cache.memcached.max-idle-connections int
+    	The maximum number of idle connections that will be maintained per address. (default 100)
+  -blocks-storage.bucket-store.index-header-cache.memcached.max-item-size int
+    	The maximum size of an item stored in memcached, in bytes. Bigger items are not stored. If set to 0, no maximum size is enforced. (default 1048576)
+  -blocks-storage.bucket-store.index-header-cache.memcached.min-idle-connections-headroom-percentage float
+    	The minimum number of idle connections to keep open as a percentage (0-100) of the number of recently used idle connections. If negative, idle connections are kept open indefinitely. (default -1)
+  -blocks-storage.bucket-store.index-header-cache.memcached.timeout duration
+    	The socket read/write timeout. (default 200ms)
+  -blocks-storage.bucket-store.index-header-cache.memcached.tls-ca-path string
+    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
+  -blocks-storage.bucket-store.index-header-cache.memcached.tls-cert-path string
+    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -blocks-storage.bucket-store.index-header-cache.memcached.tls-cipher-suites string
+    	Override the default cipher suite list (separated by commas).
+  -blocks-storage.bucket-store.index-header-cache.memcached.tls-enabled
+    	Enable connecting to Memcached with TLS.
+  -blocks-storage.bucket-store.index-header-cache.memcached.tls-insecure-skip-verify
+    	Skip validating server certificate.
+  -blocks-storage.bucket-store.index-header-cache.memcached.tls-key-path string
+    	Path to the key for the client certificate. Also requires the client certificate to be configured.
+  -blocks-storage.bucket-store.index-header-cache.memcached.tls-min-version string
+    	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
+  -blocks-storage.bucket-store.index-header-cache.memcached.tls-server-name string
+    	Override the expected name on the server certificate.
+  -blocks-storage.bucket-store.index-header-cache.subrange-in-memory-max-items int
+    	[experimental] Maximum number of individual subrange items to keep in a first level in-memory LRU cache. Subranges will be stored and fetched in-memory before hitting the cache backend. 0 to disable the in-memory cache. (default 100000)
+  -blocks-storage.bucket-store.index-header-cache.subrange-ttl duration
+    	[experimental] TTL for caching individual index-header subranges. (default 24h0m0s)
   -blocks-storage.bucket-store.index-header.bucket-reader.enabled
     	[experimental] Enable reading TSDB index-header sections from object storage. When enabled, the configured -blocks-storage.bucket-store.index-header.bucket-reader.index-sections are not downloaded to local disk.
   -blocks-storage.bucket-store.index-header.bucket-reader.index-sections string
@@ -553,6 +613,10 @@ Usage of ./cmd/mimir/mimir:
     	How long to cache list of chunks for a block. (default 24h0m0s)
   -blocks-storage.bucket-store.metadata-cache.memcached.addresses comma-separated-list-of-strings
     	Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.
+  -blocks-storage.bucket-store.metadata-cache.memcached.addresses-lookup-period duration
+    	How often each address is resolved to an IP address or list of host names. (default 30s)
+  -blocks-storage.bucket-store.metadata-cache.memcached.addresses-lookup-pool-size uint
+    	How many idle connections to the DNS resolver are kept open. 0 disables keeping any idle connections open.
   -blocks-storage.bucket-store.metadata-cache.memcached.connect-timeout duration
     	The connection timeout. (default 200ms)
   -blocks-storage.bucket-store.metadata-cache.memcached.max-async-buffer-size int
@@ -853,12 +917,6 @@ Usage of ./cmd/mimir/mimir:
     	TSDB WAL segments files max size (bytes). (default 134217728)
   -common.client-cluster-validation.label string
     	[experimental] Primary cluster validation label.
-  -common.instrument-reference-leaks.before-reuse-period duration
-    	[experimental] Period after a buffer instrumented for referenced leaks is nominally freed until the buffer is uninstrumented and effectively freed to be reused. After this period, any lingering references to the buffer may potentially be dereferenced again with no detection. (default 2m0s)
-  -common.instrument-reference-leaks.max-inflight-instrumented-bytes uint
-    	[experimental] Maximum sum of length of buffers instrumented at any given time, in bytes. When surpassed, incoming buffers will not be instrumented, regardless of the configured percentage. Zero means no limit.
-  -common.instrument-reference-leaks.percentage float
-    	[experimental] Percentage [0-100] of request or message buffers to instrument for reference leaks. Set to 0 to disable.
   -common.storage.azure.account-key string
     	Azure storage account key. If unset, Azure managed identities will be used for authentication instead.
   -common.storage.azure.account-name string
@@ -1263,6 +1321,8 @@ Usage of ./cmd/mimir/mimir:
     	Primary backend storage used by multi-client.
   -distributor.ha-tracker.multi.secondary string
     	Secondary backend storage used by multi-client.
+  -distributor.ha-tracker.per-sample-dedupe
+    	[experimental] Experimental: evaluate HA deduplication per timeseries within a write request instead of applying the first series' decision to the whole request. Enables correct behavior for mixed-label requests such as Prometheus federation or metrics proxies.
   -distributor.ha-tracker.prefix string
     	The prefix for the keys in the store. Should end with a /. (default "ha-tracker/")
   -distributor.ha-tracker.replica string
@@ -1322,7 +1382,7 @@ Usage of ./cmd/mimir/mimir:
   -distributor.otel-native-delta-ingestion
     	[experimental] Whether to enable native ingestion of delta OTLP metrics, which will store the raw delta sample values without conversion. If disabled, delta metrics will be rejected. Delta support is in an early stage of development. The ingestion and querying process is likely to change over time.
   -distributor.otel-promote-resource-attributes comma-separated-list-of-strings
-    	[experimental] Optionally specify OTel resource attributes to promote to labels.
+    	[experimental] Optionally specify a comma-separated list of OTel resource attributes to promote to labels. E.g. 'k8s.cluster.name,host.name,cloud.region'
   -distributor.otel-promote-scope-metadata
     	[experimental] Whether to promote OTel scope metadata (scope name, version, schema URL, attributes) to corresponding metric labels, prefixed with otel_scope_.
   -distributor.otel-translation-strategy value
@@ -1416,7 +1476,7 @@ Usage of ./cmd/mimir/mimir:
   -distributor.retry-after-header.enabled
     	Enables inclusion of the Retry-After header in the response: true includes it for client retry guidance, false omits it. (default true)
   -distributor.retry-after-header.max-backoff duration
-    	Minimum duration of the Retry-After HTTP header in responses to 429/5xx errors. Must be greater than or equal to 1s. Backoff is calculated as MinBackoff*2^(RetryAttempt-1) seconds with random jitter of 50% in either direction. RetryAttempt is the value of the Retry-Attempt HTTP header. (default 1m36s)
+    	Maximum duration of the Retry-After HTTP header in responses to 429/5xx errors. Must be greater than or equal to 1s. Backoff is calculated as MinBackoff*2^(RetryAttempt-1) seconds with random jitter of 50% in either direction. RetryAttempt is the value of the Retry-Attempt HTTP header. (default 1m36s)
   -distributor.retry-after-header.min-backoff duration
     	Minimum duration of the Retry-After HTTP header in responses to 429/5xx errors. Must be greater than or equal to 1s. Backoff is calculated as MinBackoff*2^(RetryAttempt-1) seconds with random jitter of 50% in either direction. RetryAttempt is the value of the Retry-Attempt HTTP header. (default 6s)
   -distributor.reusable-ingester-push-workers int
@@ -1544,7 +1604,7 @@ Usage of ./cmd/mimir/mimir:
   -ingest-storage.kafka.ingestion-concurrency-batch-size int
     	The number of timeseries to batch together before ingesting to the TSDB head. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0. (default 150)
   -ingest-storage.kafka.ingestion-concurrency-estimated-bytes-per-sample int
-    	The estimated number of bytes a sample has at time of ingestion. This value is used to estimate the timeseries without decompressing them. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0. (default 500)
+    	The estimated number of bytes a sample has at time of ingestion. This value is used to estimate the timeseries without decompressing them. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0. (default 200)
   -ingest-storage.kafka.ingestion-concurrency-max int
     	The maximum number of concurrent ingestion streams to the TSDB head. Every tenant has their own set of streams. 0 to disable. (default 8)
   -ingest-storage.kafka.ingestion-concurrency-queue-capacity int
@@ -1564,7 +1624,7 @@ Usage of ./cmd/mimir/mimir:
   -ingest-storage.kafka.producer-max-record-size-bytes int
     	The maximum size of a Kafka record data that should be generated by the producer. An incoming write request larger than this size is split into multiple Kafka records. We strongly recommend to not change this setting unless for testing purposes. (default 15983616)
   -ingest-storage.kafka.producer-record-version int
-    	[experimental] The record version that this producer sends.
+    	The record version that this producer sends. (default 2)
   -ingest-storage.kafka.sasl-mechanism string
     	The SASL mechanism used to authenticate to Kafka. Supported values: PLAIN, SCRAM-SHA-256, SCRAM-SHA-512, OAUTHBEARER, AWS_MSK_IAM. For backwards-compatibility, PLAIN with no username nor password disables SASL. (default "PLAIN")
   -ingest-storage.kafka.sasl-msk-iam-access-key string
@@ -1689,6 +1749,12 @@ Usage of ./cmd/mimir/mimir:
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -ingester.client.tls-server-name string
     	Override the expected name on the server certificate.
+  -ingester.early-compaction-non-owned-series-enabled
+    	[experimental] When enabled, the ingester triggers an early TSDB head compaction for series that are no longer owned by the ingester after a ring change. Requires -ingester.track-ingester-owned-series or -ingester.use-ingester-owned-series-for-limits to be enabled.
+  -ingester.early-compaction-non-owned-series-max-grace-period duration
+    	[experimental] Maximum time a series may remain non-owned before it is evicted, regardless of the owned-series threshold. This ensures eventual eviction even for tenants below their threshold. A value of 0 disables the maximum grace period, so eviction depends solely on the owned-series threshold. (default 5m0s)
+  -ingester.early-compaction-non-owned-series-min-grace-period duration
+    	[experimental] Minimum time a series must remain non-owned before it can be evicted when the local owned-series threshold is exceeded. New non-owned series reset the timer. A value of 0 evicts immediately. A per-replica startup jitter spreads evictions across replicas. (default 30s)
   -ingester.early-head-compaction-min-estimated-series-reduction-percentage int
     	[experimental] Minimum estimated series reduction percentage (0-100) required to trigger per-tenant early compaction. (default 15)
   -ingester.early-head-compaction-owned-series-threshold int
@@ -1709,6 +1775,8 @@ Usage of ./cmd/mimir/mimir:
     	Max series that this ingester can hold (across all tenants). Requests to create additional series will be rejected. 0 = unlimited.
   -ingester.instance-limits.max-tenants int
     	Max tenants that this ingester can hold. Requests from additional tenants will be rejected. 0 = unlimited.
+  -ingester.label-values-count-max-concurrency int
+    	[experimental] Maximum concurrency used to compute a single label values count request. (default 16)
   -ingester.max-global-exemplars-per-user int
     	[experimental] The maximum number of exemplars in memory, across the cluster. 0 to disable exemplars ingestion.
   -ingester.max-global-metadata-per-metric int
@@ -1981,6 +2049,12 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Period with which to update the per-tenant TSDB configuration. (default 15s)
   -ingester.use-ingester-owned-series-for-limits
     	[experimental] When enabled, only series currently owned by ingester according to the ring are used when checking user per-tenant series limit.
+  -instrument-reference-leaks.before-reuse-period duration
+    	[experimental] Period after a buffer instrumented for referenced leaks is nominally freed until the buffer is uninstrumented and effectively freed to be reused. After this period, any lingering references to the buffer may potentially be dereferenced again with no detection. (default 2m0s)
+  -instrument-reference-leaks.max-inflight-instrumented-bytes uint
+    	[experimental] Maximum sum of length of buffers instrumented at any given time, in bytes. When surpassed, incoming buffers will not be instrumented, regardless of the configured percentage. Zero means no limit.
+  -instrument-reference-leaks.percentage float
+    	[experimental] Percentage [0-100] of request or message buffers to instrument for reference leaks. Set to 0 to disable.
   -log.format string
     	Output log messages in the given format. Valid formats: [logfmt, json] (default "logfmt")
   -log.level value
@@ -2017,6 +2091,8 @@ Usage of ./cmd/mimir/mimir:
     	The cluster label is an optional string to include in outbound packets and gossip streams. Other members in the memberlist cluster will discard any message whose label doesn't match the configured one, unless the 'cluster-label-verification-disabled' configuration option is set to true.
   -memberlist.cluster-label-verification-disabled
     	When true, memberlist doesn't verify that inbound packets and gossip streams have the cluster label matching the configured one. This verification should be disabled while rolling out the change to the configured cluster label in a live memberlist cluster.
+  -memberlist.compression-algorithm string
+    	Compression algorithm used for outgoing messages when -memberlist.compression-enabled is true. Supported values: lzw, snappy. Ignored when -memberlist.compression-enabled is false. (default "lzw")
   -memberlist.compression-enabled
     	Enable message compression. This can be used to reduce bandwidth usage at the cost of slightly more CPU utilization. (default true)
   -memberlist.dead-node-reclaim-time duration
@@ -2053,6 +2129,8 @@ Usage of ./cmd/mimir/mimir:
     	Timeout used when connecting to other nodes to send packet. (default 500ms)
   -memberlist.packet-write-timeout duration
     	Timeout for writing 'packet' data. (default 500ms)
+  -memberlist.processed-messages-queue-size int
+    	Size of the per-key internal queue for processing messages received from other nodes. Increasing this value may help to avoid dropping per-key updates when the node is processing many updates for the same key. (default 1024)
   -memberlist.propagation-delay-tracker.beacon-interval duration
     	[experimental] How often to publish beacons for propagation tracking. (default 1m0s)
   -memberlist.propagation-delay-tracker.beacon-lifetime duration
@@ -2197,6 +2275,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Enable the experimental PromQL feature for delayed name removal in the Prometheus engine. Note that this only applies when the Prometheus engine is selected or used as fallback from the Mimir Query Engine.
   -querier.enable-query-engine-fallback
     	[experimental] If set to true and the Mimir query engine is in use, fall back to using the Prometheus query engine for any queries not supported by the Mimir query engine. (default true)
+  -querier.experimental-search-api-enabled
+    	[experimental] If set to true, enables the experimental streaming label/value search HTTP endpoints (/api/v1/search/{metric_names,label_names,label_values}). Mirrors Prometheus's experimental.search-api feature gate.
   -querier.filter-queryables-enabled
     	[deprecated] If set to true, the header 'X-Filter-Queryables' can be used to filter down the list of queryables that shall be used. This is useful to test and monitor single queryables in isolation. Deprecated: has no effect.
   -querier.frontend-client.backoff-max-period duration
@@ -2291,10 +2371,10 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Enable computing multiple aggregations over the same data without buffering. Requires common subexpression elimination to be enabled. (default true)
   -querier.mimir-query-engine.enable-narrow-binary-selectors
     	[experimental] Enable generating selectors for one side of a binary expression based on results from the other side.
-  -querier.mimir-query-engine.enable-projection-pushdown
-    	[experimental] Enable projection pushdown to only fetch labels required for the query from storage.
   -querier.mimir-query-engine.enable-prune-toggles
     	[experimental] Enable pruning query expressions that are toggled off with constants. (default true)
+  -querier.mimir-query-engine.enable-range-query-range-vector-common-subexpression-elimination
+    	[experimental] Enable deduplication of range vector selectors in range queries as part of common subexpression elimination. Requires common subexpression elimination to be enabled.
   -querier.mimir-query-engine.enable-reduce-matchers
     	[experimental] Enable eliminating duplicate or redundant matchers that are part of selector expressions. (default true)
   -querier.mimir-query-engine.enable-remove-statically-empty-expressions
@@ -2309,6 +2389,10 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Enable splitting function over range vectors queries into smaller blocks for caching.
   -querier.mimir-query-engine.range-vector-splitting.memcached.addresses comma-separated-list-of-strings
     	Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.
+  -querier.mimir-query-engine.range-vector-splitting.memcached.addresses-lookup-period duration
+    	How often each address is resolved to an IP address or list of host names. (default 30s)
+  -querier.mimir-query-engine.range-vector-splitting.memcached.addresses-lookup-pool-size uint
+    	How many idle connections to the DNS resolver are kept open. 0 disables keeping any idle connections open.
   -querier.mimir-query-engine.range-vector-splitting.memcached.connect-timeout duration
     	The connection timeout. (default 200ms)
   -querier.mimir-query-engine.range-vector-splitting.memcached.max-async-buffer-size int
@@ -2649,6 +2733,8 @@ Usage of ./cmd/mimir/mimir:
     	False to disable query statistics tracking. When enabled, a message with some statistics is logged for every query. (default true)
   -query-frontend.remote-execution-batch-size uint
     	[experimental] Maximum number of series to send in a single remote execution response from a querier. (default 128)
+  -query-frontend.remote-execution-series-metadata-batch-size uint
+    	[experimental] Maximum number of series metadata entries to send in a single remote execution response from a querier. (default 128)
   -query-frontend.results-cache-ttl duration
     	Time to live duration for cached query results. If query falls into out-of-order time window, -query-frontend.results-cache-ttl-for-out-of-order-time-window is used instead. (default 1w)
   -query-frontend.results-cache-ttl-for-cardinality-query duration
@@ -2665,6 +2751,10 @@ Usage of ./cmd/mimir/mimir:
     	Enable cache compression, if not empty. Supported values are: snappy.
   -query-frontend.results-cache.memcached.addresses comma-separated-list-of-strings
     	Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.
+  -query-frontend.results-cache.memcached.addresses-lookup-period duration
+    	How often each address is resolved to an IP address or list of host names. (default 30s)
+  -query-frontend.results-cache.memcached.addresses-lookup-pool-size uint
+    	How many idle connections to the DNS resolver are kept open. 0 disables keeping any idle connections open.
   -query-frontend.results-cache.memcached.connect-timeout duration
     	The connection timeout. (default 200ms)
   -query-frontend.results-cache.memcached.max-async-buffer-size int
@@ -2709,14 +2799,10 @@ Usage of ./cmd/mimir/mimir:
     	How often to resolve the scheduler-address, in order to look for new query-scheduler instances. (default 10s)
   -query-frontend.scheduler-worker-concurrency int
     	Number of concurrent workers forwarding queries to single query-scheduler. (default 5)
-  -query-frontend.shard-active-series-queries
-    	[experimental] True to enable sharding of active series queries.
   -query-frontend.split-queries-by-interval duration
     	Split range queries by an interval and execute in parallel. You should use a multiple of 24 hours to optimize querying blocks. 0 to disable it. (default 24h0m0s)
   -query-frontend.subquery-spin-off-enabled
     	[experimental] Enable spinning off subqueries from instant queries as range queries to optimize their performance.
-  -query-frontend.use-active-series-decoder
-    	[experimental] Set to true to use the zero-allocation response decoder for active series queries.
   -query-frontend.use-mimir-query-engine-for-sharding
     	[experimental] Set to true to enable performing query sharding inside the Mimir query engine (MQE). This setting has no effect if sharding is disabled. Requires remote execution and MQE to be enabled.
   -query-scheduler.grpc-client-config.backoff-max-period duration
@@ -2765,6 +2851,8 @@ Usage of ./cmd/mimir/mimir:
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -query-scheduler.grpc-client-config.tls-server-name string
     	Override the expected name on the server certificate.
+  -query-scheduler.inflight-max-age-metric-enabled
+    	[experimental] Enable the cortex_query_scheduler_inflight_max_age_seconds metric, which reports the age of the oldest inflight request. Disabling it skips the per-tick scan over inflight requests. (default true)
   -query-scheduler.max-outstanding-requests-per-tenant int
     	Maximum number of outstanding requests per tenant per query-scheduler. In-flight requests above this limit will fail with HTTP response status code 429. (default 100)
   -query-scheduler.max-used-instances int
@@ -2885,6 +2973,10 @@ Usage of ./cmd/mimir/mimir:
     	Backend for ruler storage cache, if not empty. The cache is supported for any storage backend except "local". Supported values: memcached.
   -ruler-storage.cache.memcached.addresses comma-separated-list-of-strings
     	Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.
+  -ruler-storage.cache.memcached.addresses-lookup-period duration
+    	How often each address is resolved to an IP address or list of host names. (default 30s)
+  -ruler-storage.cache.memcached.addresses-lookup-pool-size uint
+    	How many idle connections to the DNS resolver are kept open. 0 disables keeping any idle connections open.
   -ruler-storage.cache.memcached.connect-timeout duration
     	The connection timeout. (default 200ms)
   -ruler-storage.cache.memcached.max-async-buffer-size int
@@ -3341,6 +3433,10 @@ Usage of ./cmd/mimir/mimir:
     	The tenant's shard size when sharding is used by ruler. Value of 0 disables shuffle sharding for the tenant, and tenant rules will be sharded across all ruler replicas.
   -runtime-config.file comma-separated-list-of-strings
     	Comma separated list of yaml files or URLs with the configuration that can be updated at runtime. Runtime config files will be merged from left to right.
+  -runtime-config.http-client-cluster-validation.label string
+    	[experimental] Primary cluster validation label.
+  -runtime-config.http-client-disable-keep-alives
+    	Disable HTTP keep-alives for the runtime config HTTP client. When enabled, each reload opens a new connection, which prevents long-lived connections from being pinned to a single backend when the runtime config URL is served by multiple replicas behind a connection-level (L4) load balancer, such as a Kubernetes Service. (default true)
   -runtime-config.http-client-timeout duration
     	HTTP client timeout when fetching runtime config from URLs. (default 30s)
   -runtime-config.reload-period duration
@@ -3619,7 +3715,7 @@ Usage of ./cmd/mimir/mimir:
     	The maximum number of series to write in a single request. (default 1000)
   -tests.write-endpoint string
     	The base endpoint on the write path. The URL should have no trailing slash. The specific API path is appended by the tool to the URL, for example /api/v1/push for the remote write API endpoint, so the configured URL must not include it.
-  -tests.write-protocol string
+  -tests.write-protocol value
     	The protocol to use to write series data. Supported values are: prometheus, prometheus2, otlp-http (default "prometheus")
   -tests.write-read-ooo-test.enabled
     	Enables a test that writes samples out-of-order and verifies query results.
@@ -3634,9 +3730,9 @@ Usage of ./cmd/mimir/mimir:
   -tests.write-read-series-test.histogram-samples-enabled
     	Set to true to use native histogram samples
   -tests.write-read-series-test.max-query-age duration
-    	How back in the past metrics can be queried at most. (default 168h0m0s)
+    	How back in the past metrics can be queried at most. (default 48h0m0s)
   -tests.write-read-series-test.num-series int
-    	Number of series used for the test. (default 10000)
+    	Number of series used for the test. (default 1000)
   -tests.write-timeout duration
     	The timeout for a single write request. (default 5s)
   -timeseries-unmarshal-caching-optimization-enabled
@@ -3647,10 +3743,14 @@ Usage of ./cmd/mimir/mimir:
     	Installation mode. Supported values: custom, helm, jsonnet. (default "custom")
   -validation.cost-attribution-cooldown duration
     	[experimental] Defines how long cost attribution stays in overflow before attempting a reset, with received/discarded samples extending the cooldown if overflow persists, while active series reset and restart tracking after the cooldown.
+  -validation.cost-attribution-trackers value
+    	[experimental] Base cost attribution trackers configuration as JSON. Each tracker defines labels to track for cost attribution. Example: '{"by-team":{"labels":[{"input":"team"}]}}'.
   -validation.create-grace-period duration
     	Controls how far into the future incoming samples and exemplars are accepted compared to the wall clock. Any sample or exemplar will be rejected if its timestamp is greater than '(now + creation_grace_period)'. This configuration is enforced in the distributor and ingester. (default 10m)
   -validation.enforce-metadata-metric-name
     	Enforce every metadata has a metric name. (default true)
+  -validation.enforce-out-of-order-window-on-distributor
+    	[experimental] When enabled and past_grace_period is 0, the distributor rejects samples whose timestamp is older than '(now - out_of_order_time_window)'. This matches what the ingester will reject. Has no effect when past_grace_period is greater than 0.
   -validation.label-value-length-over-limit-strategy value
     	[experimental] What to do for label values over the length limit. Options are: 'error', 'truncate', 'drop'. For 'truncate', the hash of the full value replaces the end portion of the value. For 'drop', the hash fully replaces the value.
   -validation.max-active-series-additional-custom-trackers int

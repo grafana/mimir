@@ -1071,6 +1071,56 @@
                                  }
                               }
                            ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byRegexp",
+                              "options": "/.*_api_v1_search_metric_names($|[^_])/"
+                           },
+                           "properties": [
+                              {
+                                 "id": "displayName",
+                                 "value": "\"search metric names\" queries"
+                              },
+                              {
+                                 "id": "color",
+                                 "value": {
+                                    "fixedColor": "#967302",
+                                    "mode": "fixed"
+                                 }
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byRegexp",
+                              "options": "/.*_api_v1_search_label_names($|[^_])/"
+                           },
+                           "properties": [
+                              {
+                                 "id": "displayName",
+                                 "value": "\"search label names\" queries"
+                              },
+                              {
+                                 "id": "color",
+                                 "value": {
+                                    "fixedColor": "#5794F2",
+                                    "mode": "fixed"
+                                 }
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byRegexp",
+                              "options": "/.*_api_v1_search_label_values($|[^_])/"
+                           },
+                           "properties": [
+                              {
+                                 "id": "displayName",
+                                 "value": "\"search label values\" queries"
+                              }
+                           ]
                         }
                      ]
                   },
@@ -1088,23 +1138,23 @@
                   "span": 3,
                   "targets": [
                      {
-                        "expr": "(sum by (route) (rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir))\",route=~\"(prometheus|api_prom)(_api_v1_query|_api_v1_query_range|_api_v1_labels|_api_v1_label_name_values|_api_v1_series|_api_v1_read|_api_v1_metadata|_api_v1_query_exemplars|_api_v1_cardinality_active_series|_api_v1_cardinality_label_names|_api_v1_cardinality_label_values)\"}[$__rate_interval]))) and on() (vector($latency_metrics) == 1)",
+                        "expr": "(sum by (route) (rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir))\",route=~\"(prometheus|api_prom)(_api_v1_query|_api_v1_query_range|_api_v1_labels|_api_v1_label_name_values|_api_v1_series|_api_v1_read|_api_v1_metadata|_api_v1_query_exemplars|_api_v1_cardinality_active_series|_api_v1_cardinality_label_names|_api_v1_cardinality_label_values|_api_v1_search_metric_names|_api_v1_search_label_names|_api_v1_search_label_values)\"}[$__rate_interval]))) and on() (vector($latency_metrics) == 1)",
                         "format": "time_series",
                         "legendLink": null
                      },
                      {
-                        "expr": "(sum by (route) (histogram_count(rate(cortex_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir))\",route=~\"(prometheus|api_prom)(_api_v1_query|_api_v1_query_range|_api_v1_labels|_api_v1_label_name_values|_api_v1_series|_api_v1_read|_api_v1_metadata|_api_v1_query_exemplars|_api_v1_cardinality_active_series|_api_v1_cardinality_label_names|_api_v1_cardinality_label_values)\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
+                        "expr": "(sum by (route) (histogram_count(rate(cortex_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir))\",route=~\"(prometheus|api_prom)(_api_v1_query|_api_v1_query_range|_api_v1_labels|_api_v1_label_name_values|_api_v1_series|_api_v1_read|_api_v1_metadata|_api_v1_query_exemplars|_api_v1_cardinality_active_series|_api_v1_cardinality_label_names|_api_v1_cardinality_label_values|_api_v1_search_metric_names|_api_v1_search_label_names|_api_v1_search_label_values)\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
                         "format": "time_series",
                         "legendLink": null
                      },
                      {
-                        "expr": "(sum (rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir))\",route=~\"(prometheus|api_prom)_api_v1_.*\",route!~\"(prometheus|api_prom)(_api_v1_query|_api_v1_query_range|_api_v1_labels|_api_v1_label_name_values|_api_v1_series|_api_v1_read|_api_v1_metadata|_api_v1_query_exemplars|_api_v1_cardinality_active_series|_api_v1_cardinality_label_names|_api_v1_cardinality_label_values)\"}[$__rate_interval]))) and on() (vector($latency_metrics) == 1)",
+                        "expr": "(sum (rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir))\",route=~\"(prometheus|api_prom)_api_v1_.*\",route!~\"(prometheus|api_prom)(_api_v1_query|_api_v1_query_range|_api_v1_labels|_api_v1_label_name_values|_api_v1_series|_api_v1_read|_api_v1_metadata|_api_v1_query_exemplars|_api_v1_cardinality_active_series|_api_v1_cardinality_label_names|_api_v1_cardinality_label_values|_api_v1_search_metric_names|_api_v1_search_label_names|_api_v1_search_label_values)\"}[$__rate_interval]))) and on() (vector($latency_metrics) == 1)",
                         "format": "time_series",
                         "legendFormat": "other",
                         "legendLink": null
                      },
                      {
-                        "expr": "(sum (histogram_count(rate(cortex_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir))\",route=~\"(prometheus|api_prom)_api_v1_.*\",route!~\"(prometheus|api_prom)(_api_v1_query|_api_v1_query_range|_api_v1_labels|_api_v1_label_name_values|_api_v1_series|_api_v1_read|_api_v1_metadata|_api_v1_query_exemplars|_api_v1_cardinality_active_series|_api_v1_cardinality_label_names|_api_v1_cardinality_label_values)\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
+                        "expr": "(sum (histogram_count(rate(cortex_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir))\",route=~\"(prometheus|api_prom)_api_v1_.*\",route!~\"(prometheus|api_prom)(_api_v1_query|_api_v1_query_range|_api_v1_labels|_api_v1_label_name_values|_api_v1_series|_api_v1_read|_api_v1_metadata|_api_v1_query_exemplars|_api_v1_cardinality_active_series|_api_v1_cardinality_label_names|_api_v1_cardinality_label_values|_api_v1_search_metric_names|_api_v1_search_label_names|_api_v1_search_label_values)\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
                         "format": "time_series",
                         "legendFormat": "other",
                         "legendLink": null

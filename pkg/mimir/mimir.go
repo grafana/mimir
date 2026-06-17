@@ -51,6 +51,7 @@ import (
 	blockbuilderscheduler "github.com/grafana/mimir/pkg/blockbuilder/scheduler"
 	"github.com/grafana/mimir/pkg/compactor"
 	compactorscheduler "github.com/grafana/mimir/pkg/compactor/scheduler"
+	"github.com/grafana/mimir/pkg/compartments"
 	"github.com/grafana/mimir/pkg/continuoustest"
 	"github.com/grafana/mimir/pkg/costattribution"
 	"github.com/grafana/mimir/pkg/distributor"
@@ -127,6 +128,7 @@ type Config struct {
 	Worker                         querier_worker.Config           `yaml:"frontend_worker"`
 	Frontend                       frontend.CombinedFrontendConfig `yaml:"frontend"`
 	IngestStorage                  ingest.Config                   `yaml:"ingest_storage"`
+	Compartments                   compartments.Config             `yaml:"compartments" doc:"hidden"`
 	BlockBuilder                   blockbuilder.Config             `yaml:"block_builder" doc:"hidden"`
 	BlockBuilderScheduler          blockbuilderscheduler.Config    `yaml:"block_builder_scheduler" doc:"hidden"`
 	BlocksStorage                  tsdb.BlocksStorageConfig        `yaml:"blocks_storage"`
@@ -161,6 +163,8 @@ type Config struct {
 	CostAttributionEvictionInterval time.Duration `yaml:"cost_attribution_eviction_interval" category:"experimental"`
 	CostAttributionRegistryPath     string        `yaml:"cost_attribution_registry_path" category:"experimental"`
 	CostAttributionCleanupInterval  time.Duration `yaml:"cost_attribution_cleanup_interval" category:"experimental"`
+
+	InstrumentRefLeaks mimirpb.InstrumentRefLeaksConfig `yaml:"instrument_ref_leaks" category:"experimental"`
 }
 
 // RegisterFlags registers flags.
@@ -202,6 +206,7 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	c.Worker.RegisterFlags(f)
 	c.Frontend.RegisterFlags(f, logger)
 	c.IngestStorage.RegisterFlags(f)
+	c.Compartments.RegisterFlags(f)
 	c.BlockBuilder.RegisterFlags(f, logger)
 	c.BlockBuilderScheduler.RegisterFlags(f)
 	c.BlocksStorage.RegisterFlags(f)
@@ -225,6 +230,8 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	c.Readcache.RegisterFlags(f, logger)
 
 	c.Common.RegisterFlags(f)
+
+	c.InstrumentRefLeaks.RegisterFlagsWithPrefix("instrument-reference-leaks.", f)
 }
 
 func (c *Config) CommonConfigInheritance() CommonConfigInheritance {
@@ -249,6 +256,7 @@ func (c *Config) CommonConfigInheritance() CommonConfigInheritance {
 			"ruler_query_frontend_client":      &c.Ruler.QueryFrontend.GRPCClientConfig.ClusterValidation,
 			"alert_manager_client":             &c.Alertmanager.AlertmanagerClient.GRPCClientConfig.ClusterValidation,
 			"usage_tracker_client":             &c.Distributor.UsageTrackerClient.GRPCClientConfig.ClusterValidation,
+			"runtime_config_http_client":       &c.RuntimeConfig.HTTPClientClusterValidation,
 		},
 	}
 }
@@ -289,6 +297,44 @@ func (c *Config) Validate(log log.Logger) error {
 	if err := c.NautilusRebalancer.Validate(); err != nil {
 		return errors.Wrap(err, "invalid nautilus_rebalancer config")
 	}
+	if err := c.Compartments.Validate(); err != nil {
+		return errors.Wrap(err, "invalid compartments config")
+	}
+	if c.Compartments.Enabled {
+		if !c.IngestStorage.Enabled {
+			return errors.New("compartments require ingest storage to be enabled")
+		}
+		if c.IngestStorage.Migration.DistributorSendToIngestersEnabled {
+			return errors.New("compartments cannot be enabled together with ingest storage migration's distributor-send-to-ingesters")
+		}
+		// Only distributors and ingesters currently support a topic parameterised by read compartment
+		// when compartments are enabled.
+		if c.isDistributorEnabled() || c.isIngesterEnabled() {
+			if !strings.Contains(c.IngestStorage.KafkaConfig.Topic, compartments.ReadCompartmentIDPlaceholder) {
+				return fmt.Errorf("when compartments are enabled, -ingest-storage.kafka.topic must contain the %q placeholder for the distributor and ingester", compartments.ReadCompartmentIDPlaceholder)
+			}
+			// The address is resolved per write compartment. Without the placeholder every write compartment
+			// resolves to the same Kafka cluster, so the ingester would ingest each partition once per write
+			// compartment. Each configured address is resolved independently, so they must all contain it.
+			for _, addr := range c.IngestStorage.KafkaConfig.Address {
+				if !strings.Contains(addr, compartments.WriteCompartmentIDPlaceholder) {
+					return fmt.Errorf("when compartments are enabled, every -ingest-storage.kafka.address must contain the %q placeholder for the distributor and ingester", compartments.WriteCompartmentIDPlaceholder)
+				}
+			}
+		}
+		// The distributor's writer is configured with the read-compartment-templated topic, which is not a
+		// real topic name and so cannot be auto-created; the resolved per-compartment topics are created by
+		// the ingesters' partition readers. The distributor must therefore have topic auto-creation disabled.
+		if c.isDistributorEnabled() && c.IngestStorage.KafkaConfig.AutoCreateTopicEnabled {
+			return errors.New("when compartments are enabled, -ingest-storage.kafka.auto-create-topic-enabled must be false on the distributor")
+		}
+		// The offset catalogue tracks a single Kafka offset per block, which is not representable when an
+		// ingester consumes from more than one write compartment's Kafka cluster (each has its own offset
+		// space). Multi-cluster support for the offset catalogue is not implemented yet.
+		if c.Compartments.Write.NumCompartments > 1 && c.BlocksStorage.TSDB.OffsetCatalogue.Enabled {
+			return errors.New("the offset catalogue (-blocks-storage.tsdb.offset-catalogue.enabled) cannot be enabled together with more than one write compartment")
+		}
+	}
 	if c.isIngesterEnabled() {
 		if !c.IngestStorage.Enabled && !c.Ingester.PushGrpcMethodEnabled {
 			return errors.New("cannot disable Push gRPC method in ingester, while ingest storage (-ingest-storage.enabled) is not enabled")
@@ -300,7 +346,7 @@ func (c *Config) Validate(log log.Logger) error {
 	if err := c.BlocksStorage.Validate(c.Ingester.ActiveSeriesMetrics); err != nil {
 		return errors.Wrap(err, "invalid TSDB config")
 	}
-	if err := c.Distributor.Validate(c.LimitsConfig); err != nil {
+	if err := c.Distributor.Validate(c.LimitsConfig, c.Compartments); err != nil {
 		return errors.Wrap(err, "invalid distributor config")
 	}
 	if err := c.Querier.Validate(); err != nil {
@@ -313,7 +359,7 @@ func (c *Config) Validate(log log.Logger) error {
 	if err := c.IngesterClient.Validate(); err != nil {
 		return errors.Wrap(err, "invalid ingester_client config")
 	}
-	if err := c.Ingester.Validate(log); err != nil {
+	if err := c.Ingester.Validate(c.Compartments); err != nil {
 		// We check for "ingester" module here because, as of today, its config has a special mode, that assumes
 		// passing a unique set of per instance flags, e.g. "-ingester.ring.instance-id".
 		// Such a scenario breaks the validation of other modules if those flags aren't also passed to each instance (ref
@@ -368,7 +414,7 @@ func (c *Config) Validate(log log.Logger) error {
 	if err := c.OverridesExporter.Validate(); err != nil {
 		return errors.Wrap(err, "invalid overrides-exporter config")
 	}
-	if err := c.Common.InstrumentRefLeaks.Validate(); err != nil {
+	if err := c.InstrumentRefLeaks.Validate(); err != nil {
 		return errors.Wrap(err, "invalid instrument-ref-leaks config")
 	}
 	if err := c.API.Validate(); err != nil {
@@ -385,6 +431,9 @@ func (c *Config) Validate(log log.Logger) error {
 
 // ValidateLimits validates the runtime limits.
 func (c *Config) ValidateLimits(limits *validation.Limits) error {
+	if err := limits.BlockedQueries.Validate(); err != nil {
+		return err
+	}
 	if err := c.Querier.ValidateLimits(*limits); err != nil {
 		return errors.Wrap(err, "invalid limits config for querier")
 	}
@@ -741,16 +790,11 @@ func UnmarshalCommonYAML(value *yaml.Node, inheriters ...CommonConfigInheriter) 
 		for name, loc := range inheritance.ClientClusterValidation {
 			specificClusterValidationLocations[name] = loc
 		}
-		specificInstrumentRefLeaksLocations := specificLocationsUnmarshaler{}
-		for name, loc := range inheritance.InstrumentRefLeaksConfig {
-			specificInstrumentRefLeaksLocations[name] = loc
-		}
 
 		common := configWithCustomCommonUnmarshaler{
 			Common: &commonConfigUnmarshaler{
 				Storage:                 &specificStorageLocations,
 				ClientClusterValidation: &specificClusterValidationLocations,
-				InstrumentRefLeaks:      &specificInstrumentRefLeaksLocations,
 			},
 		}
 
@@ -820,20 +864,17 @@ func inheritFlags(log log.Logger, orig flagext.RegisteredFlagsTracker, dest flag
 type CommonConfig struct {
 	Storage                 bucket.StorageBackendConfig         `yaml:"storage"`
 	ClientClusterValidation clusterutil.ClusterValidationConfig `yaml:"client_cluster_validation" category:"experimental"`
-	InstrumentRefLeaks      mimirpb.InstrumentRefLeaksConfig    `yaml:"instrument_ref_leaks" category:"experimental"`
 }
 
 type CommonConfigInheritance struct {
-	Storage                  map[string]*bucket.StorageBackendConfig
-	ClientClusterValidation  map[string]*clusterutil.ClusterValidationConfig
-	InstrumentRefLeaksConfig map[string]*mimirpb.InstrumentRefLeaksConfig
+	Storage                 map[string]*bucket.StorageBackendConfig
+	ClientClusterValidation map[string]*clusterutil.ClusterValidationConfig
 }
 
 // RegisterFlags registers flag.
 func (c *CommonConfig) RegisterFlags(f *flag.FlagSet) {
 	c.Storage.RegisterFlagsWithPrefix("common.storage.", f)
 	c.ClientClusterValidation.RegisterFlagsWithPrefix("common.client-cluster-validation.", f)
-	c.InstrumentRefLeaks.RegisterFlagsWithPrefix("common.instrument-reference-leaks.", f)
 }
 
 // configWithCustomCommonUnmarshaler unmarshals config with custom unmarshaler for the `common` field.
@@ -850,7 +891,6 @@ type configWithCustomCommonUnmarshaler struct {
 type commonConfigUnmarshaler struct {
 	Storage                 *specificLocationsUnmarshaler `yaml:"storage"`
 	ClientClusterValidation *specificLocationsUnmarshaler `yaml:"client_cluster_validation"`
-	InstrumentRefLeaks      *specificLocationsUnmarshaler `yaml:"instrument_ref_leaks"`
 }
 
 // specificLocationsUnmarshaler will unmarshal yaml into specific locations.
@@ -880,8 +920,8 @@ type Mimir struct {
 	Server                           *server.Server
 	ServerMetrics                    *server.Metrics
 	IngesterRing                     *ring.Ring
-	IngesterPartitionRingWatcher     *ring.PartitionRingWatcher
-	IngesterPartitionInstanceRing    *ring.PartitionInstanceRing
+	IngesterPartitionRingWatchers    *ingest.PartitionRingWatchers
+	IngesterPartitionInstanceRings   *ingest.PartitionInstanceRings
 	TenantLimits                     validation.TenantLimits
 	Overrides                        *validation.Overrides
 	QueryLimitsProvider              streamingpromql.QueryLimitsProvider
@@ -955,11 +995,7 @@ func New(cfg Config, reg prometheus.Registerer) (*Mimir, error) {
 	setUpGoRuntimeMetrics(cfg, reg)
 
 	mimirpb.CustomCodecConfig{
-		InstrumentRefLeaksConfig: mimirpb.InstrumentRefLeaksConfig{
-			Percentage:                   cfg.Common.InstrumentRefLeaks.Percentage,
-			BeforeReusePeriod:            cfg.Common.InstrumentRefLeaks.BeforeReusePeriod,
-			MaxInflightInstrumentedBytes: cfg.Common.InstrumentRefLeaks.MaxInflightInstrumentedBytes,
-		},
+		InstrumentRefLeaksConfig: cfg.InstrumentRefLeaks,
 	}.RegisterGlobally(reg)
 
 	if cfg.TenantFederation.Enabled && cfg.Ruler.TenantFederation.Enabled {

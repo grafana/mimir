@@ -38,6 +38,7 @@ import (
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
+	"github.com/grafana/mimir/pkg/streaminglabelvalues"
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/limiter"
@@ -1464,7 +1465,7 @@ func (m *errDistributor) LabelNamesAndValues(_ context.Context, _ []*labels.Matc
 
 var errDistributorError = fmt.Errorf("errDistributorError")
 
-func (m *errDistributor) QueryStream(context.Context, *stats.QueryMetrics, model.Time, model.Time, bool, []string, ...*labels.Matcher) (client.CombinedQueryStreamResponse, error) {
+func (m *errDistributor) QueryStream(context.Context, *stats.QueryMetrics, model.Time, model.Time, ...*labels.Matcher) (client.CombinedQueryStreamResponse, error) {
 	return client.CombinedQueryStreamResponse{}, errDistributorError
 }
 func (m *errDistributor) QueryExemplars(context.Context, model.Time, model.Time, ...[]*labels.Matcher) (*client.ExemplarQueryResponse, error) {
@@ -1494,6 +1495,14 @@ func (m *errDistributor) ActiveSeries(context.Context, []*labels.Matcher) ([]lab
 
 func (m *errDistributor) ActiveNativeHistogramMetrics(context.Context, []*labels.Matcher) (*cardinality.ActiveNativeHistogramMetricsResponse, error) {
 	return nil, errDistributorError
+}
+
+func (m *errDistributor) SearchLabelNames(context.Context, model.Time, model.Time, *streaminglabelvalues.Params, *storage.SearchHints, []*labels.Matcher) storage.SearchResultSet {
+	return storage.ErrSearchResultSet(errDistributorError)
+}
+
+func (m *errDistributor) SearchLabelValues(context.Context, model.Time, model.Time, string, *streaminglabelvalues.Params, *storage.SearchHints, []*labels.Matcher) storage.SearchResultSet {
+	return storage.ErrSearchResultSet(errDistributorError)
 }
 
 func TestQuerier_QueryStoreAfterConfig(t *testing.T) {

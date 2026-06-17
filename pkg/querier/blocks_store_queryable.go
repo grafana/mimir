@@ -211,10 +211,15 @@ func NewBlocksStoreQueryableFromConfig(querierCfg Config, gatewayCfg storegatewa
 		return nil, errors.Wrap(err, "failed to create bucket client")
 	}
 
-	// Blocks finder doesn't use chunks, but we pass config for consistency.
-	cachingBucket, err := mimir_tsdb.CreateCachingBucket(nil, storageCfg.BucketStore.ChunksCache, storageCfg.BucketStore.MetadataCache, bucketClient, logger, prometheus.WrapRegistererWith(prometheus.Labels{"component": "querier"}, reg))
+	querierReg := prometheus.WrapRegistererWith(prometheus.Labels{"component": "querier"}, reg)
+	cachingBucket, err := mimir_tsdb.NewMetadataCachingBucket(
+		storageCfg.BucketStore.MetadataCache,
+		bucketClient,
+		logger,
+		querierReg,
+	)
 	if err != nil {
-		return nil, errors.Wrap(err, "create caching bucket")
+		return nil, errors.Wrap(err, "failed to create caching bucket")
 	}
 	bucketClient = cachingBucket
 
@@ -818,22 +823,16 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(
 			defer clientSpanLog.Finish()
 			clientSpanLog.SetTag("store_gateway_address", c.RemoteAddress())
 
-			var (
-				skipChunks        bool
-				projectionInclude bool
-				projectionLabels  []string
-			)
+			var skipChunks bool
 			if sp != nil {
 				// See: https://github.com/prometheus/prometheus/pull/8050
 				// TODO(goutham): we should ideally be passing the hints down to the storage layer
 				// and let the TSDB return us data with no chunks as in prometheus#8050.
 				// But this is an acceptable workaround for now.
 				skipChunks = sp.Func == "series"
-				projectionInclude = sp.ProjectionInclude
-				projectionLabels = sp.ProjectionLabels
 			}
 
-			req, err := createSeriesRequest(minT, maxT, matchers, skipChunks, projectionInclude, projectionLabels, blockIDs, q.streamingChunksBatchSize)
+			req, err := createSeriesRequest(minT, maxT, matchers, skipChunks, blockIDs, q.streamingChunksBatchSize)
 			if err != nil {
 				return errors.Wrapf(err, "failed to create series request")
 			}
@@ -1282,7 +1281,7 @@ func grpcContextWithBucketStoreRequestMeta(ctx context.Context, tenantID string,
 	)
 }
 
-func createSeriesRequest(minT, maxT int64, matchers []storepb.LabelMatcher, skipChunks bool, projectionInclude bool, projectionLabels []string, blockIDs []ulid.ULID, streamingBatchSize uint64) (*storepb.SeriesRequest, error) {
+func createSeriesRequest(minT, maxT int64, matchers []storepb.LabelMatcher, skipChunks bool, blockIDs []ulid.ULID, streamingBatchSize uint64) (*storepb.SeriesRequest, error) {
 	// Selectively query only specific blocks.
 	requestHints := &storepb.SeriesRequestHints{
 		BlockMatchers: []storepb.LabelMatcher{
@@ -1292,8 +1291,6 @@ func createSeriesRequest(minT, maxT int64, matchers []storepb.LabelMatcher, skip
 				Value: strings.Join(convertULIDsToString(blockIDs), "|"),
 			},
 		},
-		ProjectionInclude: projectionInclude,
-		ProjectionLabels:  projectionLabels,
 	}
 
 	// We send both opaque and non-opaque request hints to store-gateways. New store-gateways
@@ -1307,8 +1304,6 @@ func createSeriesRequest(minT, maxT int64, matchers []storepb.LabelMatcher, skip
 				Value: strings.Join(convertULIDsToString(blockIDs), "|"),
 			},
 		},
-		ProjectionInclude: projectionInclude,
-		ProjectionLabels:  projectionLabels,
 	}
 
 	anyHints, err := types.MarshalAny(opaqueHints)

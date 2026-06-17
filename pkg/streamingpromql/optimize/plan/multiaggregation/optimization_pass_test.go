@@ -163,15 +163,35 @@ func TestOptimizationPass(t *testing.T) {
 			expectUnchanged:                     true,
 			expectedDuplicateNodesExaminedCount: 1,
 		},
-		"selector aggregated twice, but one is unsupported operation, and unsupported operation appears first": {
-			expr:                                `quantile(0.99, foo) + sum(foo)`,
-			expectUnchanged:                     true,
-			expectedDuplicateNodesExaminedCount: 1,
+		"same selector with quantile and sum aggregation, quantile appears first": {
+			expr: `quantile(0.99, foo) + sum(foo)`,
+			expectedPlan: `
+				- BinaryExpression: LHS + RHS
+					- LHS: MultiAggregationInstance: quantile
+						- expression: ref#1 MultiAggregationGroup
+							- VectorSelector: {__name__="foo"}
+						- parameter: NumberLiteral: 0.99
+					- RHS: MultiAggregationInstance: sum
+						- ref#1 MultiAggregationGroup ...
+			`,
+			expectedAggregationNodesReplacedCount: 2,
+			expectedDuplicateNodesExaminedCount:   1,
+			expectedDuplicateNodesReplacedCount:   1,
 		},
-		"selector aggregated twice, but one is unsupported operation, and unsupported operation appears last": {
-			expr:                                `sum(foo) + quantile(0.99, foo)`,
-			expectUnchanged:                     true,
-			expectedDuplicateNodesExaminedCount: 1,
+		"same selector with sum and quantile aggregation, quantile appears last": {
+			expr: `sum(foo) + quantile(0.99, foo)`,
+			expectedPlan: `
+				- BinaryExpression: LHS + RHS
+					- LHS: MultiAggregationInstance: sum
+						- ref#1 MultiAggregationGroup
+							- VectorSelector: {__name__="foo"}
+					- RHS: MultiAggregationInstance: quantile
+						- expression: ref#1 MultiAggregationGroup ...
+						- parameter: NumberLiteral: 0.99
+			`,
+			expectedAggregationNodesReplacedCount: 2,
+			expectedDuplicateNodesExaminedCount:   1,
+			expectedDuplicateNodesReplacedCount:   1,
 		},
 		"first selector of a binary expression is not aggregated, but other side of binary operation contains an aggregation over a duplicate selector": {
 			expr: `(foo + sum(bar)) / count(bar)`,
@@ -308,13 +328,39 @@ func TestOptimizationPass(t *testing.T) {
 			expectedDuplicateNodesExaminedCount:   1,
 			expectedDuplicateNodesReplacedCount:   1,
 		},
+		"same selector with two quantile aggregations with different params": {
+			expr: `quantile(0.99, foo) - quantile(0.5, foo)`,
+			expectedPlan: `
+				- BinaryExpression: LHS - RHS
+					- LHS: MultiAggregationInstance: quantile
+						- expression: ref#1 MultiAggregationGroup
+							- VectorSelector: {__name__="foo"}
+						- parameter: NumberLiteral: 0.99
+					- RHS: MultiAggregationInstance: quantile
+						- expression: ref#1 MultiAggregationGroup ...
+						- parameter: NumberLiteral: 0.5
+			`,
+			expectedAggregationNodesReplacedCount: 2,
+			expectedDuplicateNodesExaminedCount:   1,
+			expectedDuplicateNodesReplacedCount:   1,
+		},
+		"same selector with quantile aggregation with grouping": {
+			expr: `quantile(0.99, foo) by (group) + count by (group) (foo)`,
+			expectedPlan: `
+				- BinaryExpression: LHS + RHS
+					- LHS: MultiAggregationInstance: quantile by (group)
+						- expression: ref#1 MultiAggregationGroup
+							- VectorSelector: {__name__="foo"}
+						- parameter: NumberLiteral: 0.99
+					- RHS: MultiAggregationInstance: count by (group)
+						- ref#1 MultiAggregationGroup ...
+			`,
+			expectedAggregationNodesReplacedCount: 2,
+			expectedDuplicateNodesExaminedCount:   1,
+			expectedDuplicateNodesReplacedCount:   1,
+		},
 
 		// Test all of the unsupported aggregation operations are handled correctly.
-		"same selector but have both supported aggregation and unsupported quantile aggregation": {
-			expr:                                `sum(foo) + quantile(0.99, foo)`,
-			expectUnchanged:                     true,
-			expectedDuplicateNodesExaminedCount: 1,
-		},
 		"same selector but have both supported aggregation and unsupported count_values aggregation": {
 			expr:                                `sum(foo) + count_values("value", foo)`,
 			expectUnchanged:                     true,
@@ -345,9 +391,9 @@ func TestOptimizationPass(t *testing.T) {
 			expr: `sum(foo{status="success"}) / sum(foo)`,
 			expectedPlan: `
 				- BinaryExpression: LHS / RHS
-					- LHS: MultiAggregationInstance: sum, filters: {status="success"}
+					- LHS: MultiAggregationInstance: sum, filters: {status="success"}, subset index: 0
 						- ref#1 MultiAggregationGroup
-							- VectorSelector: {__name__="foo"}
+							- VectorSelector: {__name__="foo"}, subsets: {status="success"}
 					- RHS: MultiAggregationInstance: sum
 						- ref#1 MultiAggregationGroup ...
 			`,
@@ -360,9 +406,9 @@ func TestOptimizationPass(t *testing.T) {
 			expectedPlan: `
 				- DeduplicateAndMerge
 					- BinaryExpression: LHS / RHS
-						- LHS: MultiAggregationInstance: sum by (region), filters: {status="success"}
+						- LHS: MultiAggregationInstance: sum by (region), filters: {status="success"}, subset index: 0
 							- ref#1 MultiAggregationGroup
-								- VectorSelector: {__name__="foo"}
+								- VectorSelector: {__name__="foo"}, subsets: {status="success"}
 						- RHS: FunctionCall: scalar(...)
 							- MultiAggregationInstance: sum
 								- ref#1 MultiAggregationGroup ...
@@ -375,9 +421,9 @@ func TestOptimizationPass(t *testing.T) {
 			expr: `sum(foo{status="success"}) / count(foo)`,
 			expectedPlan: `
 				- BinaryExpression: LHS / RHS
-					- LHS: MultiAggregationInstance: sum, filters: {status="success"}
+					- LHS: MultiAggregationInstance: sum, filters: {status="success"}, subset index: 0
 						- ref#1 MultiAggregationGroup
-							- VectorSelector: {__name__="foo"}
+							- VectorSelector: {__name__="foo"}, subsets: {status="success"}
 					- RHS: MultiAggregationInstance: count
 						- ref#1 MultiAggregationGroup ...
 			`,
@@ -390,12 +436,12 @@ func TestOptimizationPass(t *testing.T) {
 			expectedPlan: `
 				- BinaryExpression: LHS / RHS
 					- LHS: BinaryExpression: LHS / RHS
-						- LHS: MultiAggregationInstance: sum, filters: {status="success"}
+						- LHS: MultiAggregationInstance: sum, filters: {status="success"}, subset index: 0
 							- ref#1 MultiAggregationGroup
-								- VectorSelector: {__name__="foo"}
+								- VectorSelector: {__name__="foo"}, subsets: {status="success"}, {status="error"}
 						- RHS: MultiAggregationInstance: sum
 							- ref#1 MultiAggregationGroup ...
-					- RHS: MultiAggregationInstance: count, filters: {status="error"}
+					- RHS: MultiAggregationInstance: count, filters: {status="error"}, subset index: 1
 						- ref#1 MultiAggregationGroup ...
 			`,
 			expectedDuplicateNodesExaminedCount:   1,
@@ -406,11 +452,11 @@ func TestOptimizationPass(t *testing.T) {
 			expr: `sum(rate(foo{status="success"}[5m])) / sum(rate(foo[5m]))`,
 			expectedPlan: `
 				- BinaryExpression: LHS / RHS
-					- LHS: MultiAggregationInstance: sum, filters: {status="success"}
+					- LHS: MultiAggregationInstance: sum, filters: {status="success"}, subset index: 0
 						- ref#1 MultiAggregationGroup
 							- DeduplicateAndMerge
 								- FunctionCall: rate(...)
-									- MatrixSelector: {__name__="foo"}[5m0s]
+									- MatrixSelector: {__name__="foo"}[5m0s], subsets: {status="success"}
 					- RHS: MultiAggregationInstance: sum
 						- ref#1 MultiAggregationGroup ...
 			`,
@@ -471,14 +517,23 @@ func TestOptimizationPass_SupportedQueryPlanVersionTooLow_Filtering(t *testing.T
 	expected := `
 		- BinaryExpression: LHS / RHS
 			- LHS: AggregateExpression: sum
-				- DuplicateFilter: {status="success"}
+				- DuplicateFilter: {status="success"}, subset index: 0
 					- ref#1 Duplicate
-						- VectorSelector: {__name__="foo"}
+						- VectorSelector: {__name__="foo"}, subsets: {status="success"}
 			- RHS: AggregateExpression: min
 				- ref#1 Duplicate ...
 	`
 
 	require.Equal(t, testutils.TrimIndent(expected), plan)
+}
+
+func TestOptimizationPass_SupportedQueryPlanVersionTooLow_Quantile(t *testing.T) {
+	expr := `sum(foo) + quantile(0.99, foo)`
+
+	planWithout := createPlan(t, expr, false, planning.QueryPlanV14, nil)
+	planWith := createPlan(t, expr, true, planning.QueryPlanV14, nil)
+
+	require.Equal(t, planWithout, planWith)
 }
 
 func createPlan(t *testing.T, expr string, enableOptimizationPass bool, minimumQueryPlanVersion planning.QueryPlanVersion, reg prometheus.Registerer) string {
@@ -491,7 +546,7 @@ func createPlan(t *testing.T, expr string, enableOptimizationPass bool, minimumQ
 	planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts, streamingpromql.NewStaticQueryPlanVersionProvider(minimumQueryPlanVersion))
 	require.NoError(t, err)
 	planner.RegisterASTOptimizationPass(&ast.SortLabelsAndMatchers{}) // This is a prerequisite for the CSE optimization pass
-	planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, opts.CommonOpts.Reg, opts.Logger))
+	planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, true, opts.CommonOpts.Reg, opts.Logger))
 
 	if enableOptimizationPass {
 		planner.RegisterQueryPlanOptimizationPass(multiaggregation.NewOptimizationPass(opts.CommonOpts.Reg))
@@ -510,7 +565,7 @@ func TestIsSupportedAggregationOperation(t *testing.T) {
 			continue
 		}
 
-		_, err := multiaggregation.IsSupportedAggregationOperation(op)
+		_, err := multiaggregation.IsSupportedAggregationOperation(op, planning.MaximumSupportedQueryPlanVersion)
 		require.NoErrorf(t, err, "got error for operation %s", name)
 	}
 }

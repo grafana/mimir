@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -62,14 +63,13 @@ func minimalDistributorForRouting(t *testing.T, required bool) *Distributor {
 	d := &Distributor{
 		cfg: Config{NautilusRequired: required},
 		log: log.NewNopLogger(),
-		nautilusRoutingRejected: prometheus.NewCounterVec(prometheus.CounterOpts{
+		nautilusRoutingRejected: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_distributor_nautilus_routing_rejected_total",
 			Help: "test",
 		}, []string{"reason"}),
 		now: time.Now,
 	}
 	d.nautilusStreamConnected = atomic.Bool{}
-	require.NoError(t, reg.Register(d.nautilusRoutingRejected))
 	return d
 }
 
@@ -83,7 +83,7 @@ func TestGetKeysByAssignment_RequiredRejectsKeyNotCovered(t *testing.T) {
 	}).ActiveTable(time.Now())
 	require.NotNil(t, gappy)
 
-	_, err := d.getKeysByAssignment(context.Background(), "test", gappy, []uint32{50, 1000})
+	_, err := d.getKeysByAssignment(context.Background(), "test", gappy, nil, []uint32{50, 1000})
 	require.Error(t, err)
 	var rejErr nautilusRoutingUnavailableError
 	require.ErrorAs(t, err, &rejErr)
@@ -99,7 +99,7 @@ func TestGetKeysByAssignment_RequiredPassesThroughWhenCovered(t *testing.T) {
 	tbl := buildActiveTable(t, []int32{1, 2, 3}, []uint32{99, 199})
 
 	// Keys at 50, 150, 250 should map to partitions 1, 2, 3.
-	got, err := d.getKeysByAssignment(context.Background(), "test", tbl, []uint32{50, 150, 250})
+	got, err := d.getKeysByAssignment(context.Background(), "test", tbl, nil, []uint32{50, 150, 250})
 	require.NoError(t, err)
 
 	byPID := map[int32][]int{}
@@ -126,7 +126,7 @@ func TestGetKeysByAssignment_NotRequiredFallsBackToPartitionRing(t *testing.T) {
 	tbl := buildActiveTable(t, []int32{1, 2}, []uint32{math.MaxUint32 / 2})
 
 	// All keys covered → no fallback.
-	got, err := d.getKeysByAssignment(context.Background(), "test", tbl, []uint32{0, math.MaxUint32})
+	got, err := d.getKeysByAssignment(context.Background(), "test", tbl, nil, []uint32{0, math.MaxUint32})
 	require.NoError(t, err)
 	require.Len(t, got, 2)
 
@@ -176,11 +176,10 @@ func TestWriteRequestSampleCount(t *testing.T) {
 
 func TestObserveNautilusPartitionWrites(t *testing.T) {
 	reg := prometheus.NewPedanticRegistry()
-	partitionSamples := prometheus.NewCounterVec(prometheus.CounterOpts{
+	partitionSamples := promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 		Name: "cortex_distributor_nautilus_partition_samples_written_total",
 		Help: "test",
 	}, []string{"partition", "user"})
-	require.NoError(t, reg.Register(partitionSamples))
 
 	d := &Distributor{
 		cfg:                             Config{NautilusIngestTopic: "nautilus_ingest"},

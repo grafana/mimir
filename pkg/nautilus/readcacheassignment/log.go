@@ -213,7 +213,6 @@ func (l *Log) Apply(at time.Time, next *Assignment, leaseDuration, lookahead, sa
 				e := &l.entries[idx]
 				if !e.To.Equal(e.From) {
 					e.To = e.From
-					changed = true
 				}
 			}
 			l.entries = append(l.entries, LogEntry{

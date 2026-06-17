@@ -4,7 +4,10 @@ package multiaggregation
 
 import (
 	"context"
+	"errors"
 
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
@@ -18,6 +21,8 @@ import (
 type MultiAggregatorGroupEvaluator struct {
 	inner                    types.InstantVectorOperator
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
+	timeRange                types.QueryTimeRange
+	logger                   log.Logger
 
 	instances []*MultiAggregatorInstanceOperator
 
@@ -26,17 +31,21 @@ type MultiAggregatorGroupEvaluator struct {
 	prepareCalled              bool
 	afterPrepareCalled         bool
 
-	cachedQueryStats    *types.OperatorEvaluationStats
-	queryStatsCallCount int
+	cachedStats       *types.OperatorEvaluationStats
+	cachedAnnotations annotations.Annotations
 }
 
 func NewMultiAggregatorGroupEvaluator(
 	inner types.InstantVectorOperator,
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
+	timeRange types.QueryTimeRange,
+	logger log.Logger,
 ) *MultiAggregatorGroupEvaluator {
 	return &MultiAggregatorGroupEvaluator{
 		inner:                    inner,
 		memoryConsumptionTracker: memoryConsumptionTracker,
+		timeRange:                timeRange,
+		logger:                   logger,
 	}
 }
 
@@ -123,39 +132,92 @@ func (m *MultiAggregatorGroupEvaluator) findIndexOfLastInstanceToConsumeSeries(u
 	return -1
 }
 
-func (m *MultiAggregatorGroupEvaluator) Finalize(ctx context.Context) error {
-	// Only finalize the inner operator if all instances have been finalized.
+func (m *MultiAggregatorGroupEvaluator) FinishedReading(ctx context.Context) error {
+	// Only call FinishedReading on the inner operator if all instances have had FinishedReading called.
 	for _, instance := range m.instances {
-		if !instance.finalized {
+		if !instance.finishedReadingCalled {
 			return nil
 		}
 	}
 
-	return m.inner.Finalize(ctx)
+	return m.inner.FinishedReading(ctx)
 }
 
-func (m *MultiAggregatorGroupEvaluator) QueryStats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
-	// TODO: handle subsets
+func (m *MultiAggregatorGroupEvaluator) Finalize(ctx context.Context, instance *MultiAggregatorInstanceOperator) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
+	if !m.allInstancesFinishedReading() {
+		return nil, nil, errors.New("MultiAggregatorGroupEvaluator: cannot finalize when one or more instances have not had FinishedReading called")
+	}
 
-	if m.queryStatsCallCount == 0 {
+	if instance.finalized {
+		return nil, nil, errors.New("MultiAggregatorGroupEvaluator: cannot finalize the same instance twice")
+	}
+
+	if m.cachedStats == nil {
 		var err error
-		m.cachedQueryStats, err = m.inner.Stats(ctx)
+		m.cachedStats, m.cachedAnnotations, err = m.inner.Finalize(ctx)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 
-	m.queryStatsCallCount++
+	instance.finalized = true
+	stats := m.cachedStats
+	annos := m.cachedAnnotations
 
-	if m.queryStatsCallCount == len(m.instances) {
-		// Last call: return the cached stats directly, transferring ownership to the caller.
-		stats := m.cachedQueryStats
-		m.cachedQueryStats = nil
-		return stats, nil
+	if m.allInstancesFinalized() {
+		// Last call: return stats without cloning, and clear references to existing stats and annotations.
+		m.cachedStats = nil
+		m.cachedAnnotations = nil
+	} else {
+		var err error
+		stats, err = stats.Clone() // FIXME: this is wasteful, we could just clone the subset needed
+		if err != nil {
+			return nil, nil, err
+		}
+
+		annos = types.CloneAnnotations(annos)
 	}
 
-	// Not the last call: return a clone so the cached copy remains available.
-	return m.cachedQueryStats.Clone()
+	if len(instance.filters) > 0 {
+		// If the inner operator was remotely executed on a querier that does not report stats or subset stats,
+		// then the subset at the requested index won't be present.
+		//
+		// For simplicity during upgrades, and for consistency with remote execution's behaviour during the same circumstances,
+		// we return an empty set of stats.
+		if !stats.HasSubsets() {
+			stats.Close()
+
+			level.Warn(m.logger).Log("msg", "MultiAggregatorGroupEvaluator expected subset statistics, but none were present, so returning empty set of statistics. This is expected during an upgrade from queriers without stats support to those with stats support, but a bug otherwise.")
+			emptyStats, err := types.NewOperatorEvaluationStats(ctx, m.timeRange, m.memoryConsumptionTracker, 0)
+			return emptyStats, annos, err
+		}
+
+		stats.UseSubset(instance.subsetIndex)
+	} else {
+		stats.RemoveAllSubsets()
+	}
+
+	return stats, annos, nil
+}
+
+func (m *MultiAggregatorGroupEvaluator) allInstancesFinishedReading() bool {
+	for _, instance := range m.instances {
+		if !instance.finishedReadingCalled {
+			return false
+		}
+	}
+
+	return true
+}
+
+func (m *MultiAggregatorGroupEvaluator) allInstancesFinalized() bool {
+	for _, instance := range m.instances {
+		if !instance.finalized {
+			return false
+		}
+	}
+
+	return true
 }
 
 func (m *MultiAggregatorGroupEvaluator) Close() {
@@ -168,9 +230,9 @@ func (m *MultiAggregatorGroupEvaluator) Close() {
 
 	m.inner.Close()
 
-	if m.cachedQueryStats != nil {
-		m.cachedQueryStats.Close()
-		m.cachedQueryStats = nil
+	if m.cachedStats != nil {
+		m.cachedStats.Close()
+		m.cachedStats = nil
 	}
 }
 
@@ -178,7 +240,13 @@ type MultiAggregatorInstanceOperator struct {
 	group              *MultiAggregatorGroupEvaluator
 	expressionPosition posrange.PositionRange
 	aggregator         *aggregations.Aggregator
-	filters            []*labels.Matcher
+
+	filters     []*labels.Matcher
+	subsetIndex int // If filters is non-empty, the index in the inner operator's stats that we expect to find the subset statistics for this instance.
+
+	// param is the scalar operator providing the parameter value for parameterized aggregations (eg. quantile).
+	// nil for non-parameterized aggregations.
+	param types.ScalarOperator
 
 	// unfilteredSeriesBitmap contains one entry per unfiltered input series, where true indicates that it passes this instance's filters.
 	// If this instance has no filters, this is nil.
@@ -186,8 +254,9 @@ type MultiAggregatorInstanceOperator struct {
 
 	outputSeriesMetadata []types.SeriesMetadata
 
-	finalized bool
-	closed    bool
+	finishedReadingCalled bool
+	finalized             bool
+	closed                bool
 }
 
 var _ types.InstantVectorOperator = (*MultiAggregatorInstanceOperator)(nil)
@@ -197,34 +266,66 @@ func (m *MultiAggregatorInstanceOperator) Configure(
 	grouping []string,
 	without bool,
 	filters []*labels.Matcher,
+	subsetIndex int,
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
-	annotations *annotations.Annotations,
 	timeRange types.QueryTimeRange,
 	expressionPosition posrange.PositionRange,
+	param types.ScalarOperator,
 ) error {
 	var err error
-	m.aggregator, err = aggregations.NewAggregator(op, grouping, without, memoryConsumptionTracker, annotations, timeRange, m.group.inner.ExpressionPosition())
+	m.aggregator, err = aggregations.NewAggregator(op, grouping, without, memoryConsumptionTracker, timeRange, m.group.inner.ExpressionPosition())
 	if err != nil {
 		return err
 	}
 
 	m.expressionPosition = expressionPosition
 	m.filters = filters
+	m.subsetIndex = subsetIndex
+	m.param = param
 
 	return nil
 }
 
 func (m *MultiAggregatorInstanceOperator) Prepare(ctx context.Context, params *types.PrepareParams) error {
-	return m.group.Prepare(ctx, params)
+	if err := m.group.Prepare(ctx, params); err != nil {
+		return err
+	}
+
+	if m.param != nil {
+		return m.param.Prepare(ctx, params)
+	}
+
+	return nil
 }
 
 func (m *MultiAggregatorInstanceOperator) AfterPrepare(ctx context.Context) error {
-	return m.group.AfterPrepare(ctx)
+	if err := m.group.AfterPrepare(ctx); err != nil {
+		return err
+	}
+
+	if m.param != nil {
+		return m.param.AfterPrepare(ctx)
+	}
+
+	return nil
 }
 
 func (m *MultiAggregatorInstanceOperator) SeriesMetadata(ctx context.Context, _ types.Matchers) ([]types.SeriesMetadata, error) {
 	// Note that we deliberately ignore the matchers passed here as we can't use them: there's no
 	// guarantee that they apply to other instances in the same group.
+
+	// For parameterized aggregations (eg. quantile), fetch and validate the parameter values
+	// before computing output series, so that ParamData is available when ComputeNextOutputSeries is called.
+	if m.param != nil {
+		paramData, err := m.param.GetValues(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		aggregations.ValidateQuantileParam(paramData, m.param.ExpressionPosition(), &m.aggregator.Annotations)
+
+		m.aggregator.ParamData = paramData
+	}
 
 	if !m.group.haveComputedSeriesMetadata {
 		if err := m.group.ComputeOutputSeriesForAllInstances(ctx); err != nil {
@@ -305,8 +406,7 @@ func (m *MultiAggregatorInstanceOperator) NextSeries(ctx context.Context) (types
 }
 
 func (m *MultiAggregatorInstanceOperator) needToConsumeSeries(unfilteredSeriesIndex int) bool {
-	if m.aggregator == nil {
-		// Closed.
+	if m.finishedReadingCalled {
 		return false
 	}
 
@@ -317,30 +417,56 @@ func (m *MultiAggregatorInstanceOperator) needToConsumeSeries(unfilteredSeriesIn
 	return m.unfilteredSeriesBitmap[unfilteredSeriesIndex]
 }
 
-func (m *MultiAggregatorInstanceOperator) Finalize(ctx context.Context) error {
-	if m.finalized {
+func (m *MultiAggregatorInstanceOperator) FinishedReading(ctx context.Context) error {
+	if m.finishedReadingCalled {
 		return nil
 	}
 
-	if m.aggregator != nil {
-		m.aggregator.Finalize()
-		m.aggregator = nil
-	}
+	m.aggregator.FinishedReading()
 
 	types.BoolSlicePool.Put(&m.unfilteredSeriesBitmap, m.group.memoryConsumptionTracker)
 	types.SeriesMetadataSlicePool.Put(&m.outputSeriesMetadata, m.group.memoryConsumptionTracker)
 
-	m.finalized = true
-	return m.group.Finalize(ctx)
+	if m.param != nil {
+		if err := m.param.FinishedReading(ctx); err != nil {
+			return err
+		}
+	}
+
+	m.finishedReadingCalled = true
+	return m.group.FinishedReading(ctx)
 }
 
-func (m *MultiAggregatorInstanceOperator) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
-	return m.group.QueryStats(ctx)
+func (m *MultiAggregatorInstanceOperator) Finalize(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
+	stats, childAnnos, err := m.group.Finalize(ctx, m)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	m.aggregator.Annotations.Merge(childAnnos)
+
+	if m.param != nil {
+		paramStats, paramAnnos, err := m.param.Finalize(ctx)
+		if err != nil {
+			return nil, nil, err
+		}
+		if err := stats.Add(paramStats); err != nil {
+			return nil, nil, err
+		}
+		paramStats.Close()
+		m.aggregator.Annotations.Merge(paramAnnos)
+	}
+
+	return stats, m.aggregator.Annotations, nil
 }
 
 func (m *MultiAggregatorInstanceOperator) Close() {
 	if m.closed {
 		return
+	}
+
+	if m.param != nil {
+		m.param.Close()
 	}
 
 	m.closed = true

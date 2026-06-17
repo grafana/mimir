@@ -24,8 +24,8 @@ import (
 //   - StressScale: K=5000,  N=50000  (worst-case future growth)
 func BenchmarkRunPhase3CooldownLookup(b *testing.B) {
 	cases := []struct {
-		name              string
-		numCooldowns      int
+		name               string
+		numCooldowns       int
 		numCandidateRanges int
 	}{
 		{"SmallScale_K100_N2000", 100, 2000},

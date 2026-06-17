@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -59,7 +60,7 @@ func TestReadcache_FreezeKeepsSliceQueryableThenReaps(t *testing.T) {
 
 	sampleTS := time.Now().Add(-2 * time.Minute).UnixMilli()
 	app := db.Appender(context.Background())
-	_, err = app.Append(0, labels.FromStrings(labels.MetricName, "up"), sampleTS, 1)
+	_, err = app.Append(0, labels.FromStrings(model.MetricNameLabel, "up"), sampleTS, 1)
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 

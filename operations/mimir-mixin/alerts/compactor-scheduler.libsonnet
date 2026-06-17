@@ -40,10 +40,10 @@
           alert: $.alertName('CompactorSchedulerRepeatedJobFailure'),
           expr: |||
             sum by(%(alert_aggregation_labels)s) (
-              increase(cortex_compactor_scheduler_repeated_job_failures_total[%(range_interval)s])
+              increase(cortex_compactor_scheduler_repeated_job_failures_total[%(rate_interval)s])
             ) > 0
           ||| % $._config {
-            range_interval: $.alertRangeInterval(5),
+            rate_interval: $.rateInterval('5m'),
           },
           labels: {
             severity: 'warning',
@@ -58,10 +58,10 @@
           'for': '30m',
           expr: |||
             sum by(%(alert_aggregation_labels)s) (
-              increase(cortex_compactor_scheduler_jobs_completed_total[%(range_interval)s])
+              increase(cortex_compactor_scheduler_jobs_completed_total[%(rate_interval)s])
             ) == 0
           ||| % $._config {
-            range_interval: '6h',
+            rate_interval: $.rateInterval('6h'),
           },
           labels: {
             severity: 'critical',

@@ -15,9 +15,9 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/promql/parser"
 
-	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
+	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
@@ -123,9 +123,7 @@ func (h *handler) performAnalysis(w http.ResponseWriter, r *http.Request) ([]byt
 	}
 
 	ctx := r.Context()
-	var options querymiddleware.Options
-	querymiddleware.DecodeOptions(r, &options)
-	ctx = querymiddleware.ContextWithRequestHintsAndOptions(ctx, nil, options) // FIXME: populate hints as well (need cardinality estimation middleware for this)
+	ctx = requestoptions.ContextWithOptions(ctx, requestoptions.DecodeOptions(r)) // FIXME: populate hints as well via querymiddleware.ContextWithRequestHints once cardinality estimation middleware is wired in.
 
 	result, err := Analyze(ctx, h.planner, qs, timeRange, lookbackDelta, enableDelayedNameRemoval)
 	if err != nil {

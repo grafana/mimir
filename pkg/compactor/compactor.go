@@ -551,7 +551,7 @@ func (c *MultitenantCompactor) starting(ctx context.Context) error {
 
 	if c.compactorCfg.SchedulerClientConfig.Enabled {
 		// Leases planning and compaction jobs from the compaction scheduler
-		c.executor, err = newSchedulerExecutor(c.compactorCfg.SchedulerClientConfig, c.logger, c.invalidClusterValidation)
+		c.executor, err = newSchedulerExecutor(c.compactorCfg.SchedulerClientConfig, c.logger, c.invalidClusterValidation, c.registerer)
 		if err != nil {
 			return fmt.Errorf("failed to create scheduler executor: %w", err)
 		}
@@ -616,6 +616,7 @@ func (c *MultitenantCompactor) starting(ctx context.Context) error {
 		GetDeletionMarkersConcurrency: defaultGetDeletionMarkersConcurrency,
 		UpdateBlocksConcurrency:       c.compactorCfg.UpdateBlocksConcurrency,
 		CompactionBlockRanges:         c.compactorCfg.BlockRanges,
+		EstimateCompactionJobs:        !c.compactorCfg.SchedulerClientConfig.Enabled,
 	}, c.bucketClient, c.shardingStrategy.blocksCleanerOwnsUser, c.cfgProvider, c.parentLogger, c.registerer)
 
 	// Start blocks cleaner asynchronously, don't wait until initial cleanup is finished.
@@ -623,6 +624,9 @@ func (c *MultitenantCompactor) starting(ctx context.Context) error {
 		c.ringSubservices.StopAsync()
 		return fmt.Errorf("failed to start the blocks cleaner: %w", err)
 	}
+
+	// Remove validation directories possibly left behind by block upload
+	c.cleanupLeftoverValidationDirectories()
 
 	return nil
 }

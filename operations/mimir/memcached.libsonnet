@@ -127,7 +127,7 @@ memcached {
     },
 
   memcached_range_vector_splitting:
-    if $._config.query_engine_range_vector_splitting_enabled then
+    if $._config.range_vector_splitting_cache_enabled then
       $.newMemcachedRangeVectorSplitting('memcached-range-vector-splitting', $.memcached_range_vector_splitting_node_affinity_matchers)
     else {},
 }

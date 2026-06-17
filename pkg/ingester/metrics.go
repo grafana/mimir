@@ -66,13 +66,14 @@ type ingesterMetrics struct {
 	maxLocalSeriesPerUser *prometheus.GaugeVec
 
 	// Head compactions metrics.
-	compactionsTriggered               prometheus.Counter
-	compactionsFailed                  prometheus.Counter
-	forcedCompactionInProgress         prometheus.Gauge
-	perTenantEarlyCompactionsTriggered prometheus.Counter
-	appenderAddDuration                prometheus.Histogram
-	appenderCommitDuration             prometheus.Histogram
-	idleTsdbChecks                     *prometheus.CounterVec
+	compactionsTriggered                   prometheus.Counter
+	compactionsFailed                      prometheus.Counter
+	forcedCompactionInProgress             prometheus.Gauge
+	perTenantEarlyCompactionsTriggered     prometheus.Counter
+	earlyCompactionNonOwnedSeriesTriggered *prometheus.CounterVec
+	appenderAddDuration                    prometheus.Histogram
+	appenderCommitDuration                 prometheus.Histogram
+	idleTsdbChecks                         *prometheus.CounterVec
 
 	// Reference counter for forced/idle compactions across all user TSDBs.
 	// Used to set forcedCompactionInProgress to 1 when any compaction is running, 0 when all complete.
@@ -97,11 +98,6 @@ type ingesterMetrics struct {
 
 	// Index lookup planning comparison outcomes.
 	indexLookupComparisonOutcomes *prometheus.CounterVec
-
-	// Quantify how much the projections optimization helps reduce labels sent to queriers.
-	originalLabelBytes prometheus.Counter
-	reducedLabelBytes  prometheus.Counter
-	skippedLabelBytes  prometheus.Counter
 }
 
 func newIngesterMetrics(
@@ -388,6 +384,10 @@ func newIngesterMetrics(
 			Name: "cortex_ingester_tsdb_per_tenant_early_compactions_triggered_total",
 			Help: "Total number of triggered per-tenant early compactions.",
 		}),
+		earlyCompactionNonOwnedSeriesTriggered: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_ingester_tsdb_early_compaction_non_owned_series_triggered_total",
+			Help: "Total number of triggered early head compactions of non-owned series, per tenant.",
+		}, []string{"user"}),
 
 		appenderAddDuration: promauto.With(r).NewHistogram(prometheus.HistogramOpts{
 			Name:    "cortex_ingester_tsdb_appender_add_duration_seconds",
@@ -425,19 +425,6 @@ func newIngesterMetrics(
 			Name: "cortex_ingester_index_lookup_planning_comparison_outcomes_total",
 			Help: "Total number of index lookup planning comparison outcomes when using mirrored chunk querier.",
 		}, []string{"outcome", "user"}),
-
-		originalLabelBytes: promauto.With(r).NewCounter(prometheus.CounterOpts{
-			Name: "cortex_ingester_projection_original_label_bytes_total",
-			Help: "Total number of bytes of original labels transferred to queriers when projections are used.",
-		}),
-		reducedLabelBytes: promauto.With(r).NewCounter(prometheus.CounterOpts{
-			Name: "cortex_ingester_projection_reduced_label_bytes_total",
-			Help: "Total number of bytes of reduced labels transferred to queriers when projections are used.",
-		}),
-		skippedLabelBytes: promauto.With(r).NewCounter(prometheus.CounterOpts{
-			Name: "cortex_ingester_projection_skipped_label_bytes_total",
-			Help: "Total number of bytes of labels transferred to queriers when projections are not used.",
-		}),
 	}
 
 	// Initialize expected rejected request labels
@@ -469,6 +456,7 @@ func (m *ingesterMetrics) deletePerUserMetrics(userID string) {
 
 	m.maxLocalSeriesPerUser.DeleteLabelValues(userID)
 	m.ownedSeriesPerUser.DeleteLabelValues(userID)
+	m.earlyCompactionNonOwnedSeriesTriggered.DeleteLabelValues(userID)
 	m.attributedActiveSeriesFailuresPerUser.DeleteLabelValues(userID)
 }
 

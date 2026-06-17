@@ -5,18 +5,20 @@ local utils = import 'mixin-utils/utils.libsonnet';
     // This is an experiment. We compute derivation (ie. rate of consumption lag change) over 5 minutes. If derivation is above 0, it means consumption lag is increasing, instead of decreasing.
     alert: $.alertName('StartingIngesterKafkaDelayGrowing'),
     local sum_by = [$._config.alert_aggregation_labels, $._config.per_instance_label],
-    local range_interval = $.alertRangeInterval(1),
-    local numerator = utils.ncHistogramSumBy(utils.ncHistogramSumRate('cortex_ingest_storage_reader_receive_delay_seconds', 'phase="starting"', rate_interval=range_interval, from_recording=false), sum_by),
-    local denominator = utils.ncHistogramSumBy(utils.ncHistogramCountRate('cortex_ingest_storage_reader_receive_delay_seconds', 'phase="starting"', rate_interval=range_interval, from_recording=false), sum_by),
+    local rate_interval = $.rateInterval('1m'),
+    local numerator = utils.ncHistogramSumBy(utils.ncHistogramSumRate('cortex_ingest_storage_reader_receive_delay_seconds', 'phase="starting"', rate_interval=rate_interval, from_recording=false), sum_by),
+    local denominator = utils.ncHistogramSumBy(utils.ncHistogramCountRate('cortex_ingest_storage_reader_receive_delay_seconds', 'phase="starting"', rate_interval=rate_interval, from_recording=false), sum_by),
     expr: |||
       deriv((
           %(numerator)s
           /
           %(denominator)s
-      )[5m:1m]) > 0
+      )[%(rate_interval)s:%(step_interval)s]) > 0
     ||| % {
       numerator: numerator[histogram_type],
       denominator: denominator[histogram_type],
+      rate_interval: $.rateInterval('5m'),
+      step_interval: $.stepInterval('1m'),
     },
     'for': '5m',
     labels: $.histogramLabels({ severity: 'warning' }, histogram_type, nhcb=false),
@@ -28,9 +30,9 @@ local utils = import 'mixin-utils/utils.libsonnet';
   local runningIngesterReceiveDelayTooHigh(histogram_type, threshold_value, for_duration, threshold_label) = {
     alert: $.alertName('RunningIngesterReceiveDelayTooHigh'),
     local sum_by = [$._config.alert_aggregation_labels, $._config.per_instance_label],
-    local range_interval = $.alertRangeInterval(1),
-    local numerator = utils.ncHistogramSumBy(utils.ncHistogramSumRate('cortex_ingest_storage_reader_receive_delay_seconds', 'phase="running"', rate_interval=range_interval, from_recording=false), sum_by),
-    local denominator = utils.ncHistogramSumBy(utils.ncHistogramCountRate('cortex_ingest_storage_reader_receive_delay_seconds', 'phase="running"', rate_interval=range_interval, from_recording=false), sum_by),
+    local rate_interval = $.rateInterval('1m'),
+    local numerator = utils.ncHistogramSumBy(utils.ncHistogramSumRate('cortex_ingest_storage_reader_receive_delay_seconds', 'phase="running"', rate_interval=rate_interval, from_recording=false), sum_by),
+    local denominator = utils.ncHistogramSumBy(utils.ncHistogramCountRate('cortex_ingest_storage_reader_receive_delay_seconds', 'phase="running"', rate_interval=rate_interval, from_recording=false), sum_by),
     expr: |||
       (
         %(numerator)s
@@ -68,11 +70,13 @@ local utils = import 'mixin-utils/utils.libsonnet';
           alert: $.alertName('IngesterOffsetCommitFailed'),
           'for': '15m',
           expr: |||
-            sum by(%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ingest_storage_reader_offset_commit_failures_total[5m]))
+            sum by(%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ingest_storage_reader_offset_commit_failures_total[%(rate_interval)s]))
             /
-            sum by(%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ingest_storage_reader_offset_commit_requests_total[5m]))
+            sum by(%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ingest_storage_reader_offset_commit_requests_total[%(rate_interval)s]))
             > 0.2
-          ||| % $._config,
+          ||| % $._config {
+            rate_interval: $.rateInterval('5m'),
+          },
           labels: {
             severity: 'critical',
           },
@@ -89,9 +93,13 @@ local utils = import 'mixin-utils/utils.libsonnet';
           // We use node_id to only alert if problems to the same Kafka node are repeating.
           // If problems are for different nodes (eg. during rollout), that is not a problem, and we don't need to trigger alert.
           expr: |||
-            sum by(%(alert_aggregation_labels)s, %(per_instance_label)s, node_id) (rate(cortex_ingest_storage_reader_read_errors_total[1m]))
+            sum by(%(alert_aggregation_labels)s, %(per_instance_label)s, node_id) (rate(cortex_ingest_storage_reader_read_errors_total[%(range)s]))
             > 0
-          ||| % $._config,
+          ||| % {
+            alert_aggregation_labels: $._config.alert_aggregation_labels,
+            per_instance_label: $._config.per_instance_label,
+            range: $.rateInterval('1m'),
+          },
           labels: {
             severity: 'critical',
           },
@@ -105,11 +113,13 @@ local utils = import 'mixin-utils/utils.libsonnet';
           'for': '15m',
           // See https://github.com/grafana/mimir/blob/24591ae56cd7d6ef24a7cc1541a41405676773f4/vendor/github.com/twmb/franz-go/pkg/kgo/record_and_fetch.go#L332-L366 for errors that can be reported here.
           expr: |||
-            sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate (cortex_ingest_storage_reader_fetch_errors_total[5m]))
+            sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate (cortex_ingest_storage_reader_fetch_errors_total[%(rate_interval)s]))
             /
-            sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate (cortex_ingest_storage_reader_fetches_total[5m]))
+            sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate (cortex_ingest_storage_reader_fetches_total[%(rate_interval)s]))
             > 0.1
-          ||| % $._config,
+          ||| % $._config {
+            rate_interval: $.rateInterval('5m'),
+          },
           labels: {
             severity: 'critical',
           },
@@ -133,16 +143,20 @@ local utils = import 'mixin-utils/utils.libsonnet';
             (
               sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (
                   # This is the old metric name. We're keeping support for backward compatibility.
-                rate(cortex_ingest_storage_reader_records_failed_total{cause="server"}[1m])
+                rate(cortex_ingest_storage_reader_records_failed_total{cause="server"}[%(range)s])
                 or
-                rate(cortex_ingest_storage_reader_requests_failed_total{cause="server"}[1m])
+                rate(cortex_ingest_storage_reader_requests_failed_total{cause="server"}[%(range)s])
               ) > 0
             )
 
             # Tolerate failures during the forced TSDB head compaction, because samples older than the
             # new "head min time" will fail to be appended while the forced compaction is running.
-            unless (max by (%(alert_aggregation_labels)s, %(per_instance_label)s) (max_over_time(cortex_ingester_tsdb_forced_compactions_in_progress[1m])) > 0)
-          ||| % $._config,
+            unless (max by (%(alert_aggregation_labels)s, %(per_instance_label)s) (max_over_time(cortex_ingester_tsdb_forced_compactions_in_progress[%(range)s])) > 0)
+          ||| % {
+            alert_aggregation_labels: $._config.alert_aggregation_labels,
+            per_instance_label: $._config.per_instance_label,
+            range: $.rateInterval('1m'),
+          },
           labels: {
             severity: 'critical',
           },
@@ -159,13 +173,15 @@ local utils = import 'mixin-utils/utils.libsonnet';
             # Alert if the reader is not processing any records, but there buffered records to process in the Kafka client.
             (sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (
                 # This is the old metric name. We're keeping support for backward compatibility.
-              rate(cortex_ingest_storage_reader_records_total[5m])
+              rate(cortex_ingest_storage_reader_records_total[%(rate_interval)s])
               or
-              rate(cortex_ingest_storage_reader_requests_total[5m])
+              rate(cortex_ingest_storage_reader_requests_total[%(rate_interval)s])
             ) == 0)
             and
             (sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (cortex_ingest_storage_reader_buffered_fetched_records) > 0)
-          ||| % $._config,
+          ||| % $._config {
+            rate_interval: $.rateInterval('5m'),
+          },
           labels: {
             severity: 'critical',
           },
@@ -180,7 +196,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
           expr: |||
             # Alert if the ingester missed some records from Kafka.
             increase(cortex_ingest_storage_reader_missed_records_total[%s]) > 0
-          ||| % $.alertRangeInterval(10),
+          ||| % $.rateInterval('10m'),
           labels: {
             severity: 'critical',
           },
@@ -194,8 +210,12 @@ local utils = import 'mixin-utils/utils.libsonnet';
           alert: $.alertName('StrongConsistencyEnforcementFailed'),
           'for': '5m',
           expr: |||
-            sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ingest_storage_strong_consistency_failures_total[1m])) > 0
-          ||| % $._config,
+            sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ingest_storage_strong_consistency_failures_total[%(range)s])) > 0
+          ||| % {
+            alert_aggregation_labels: $._config.alert_aggregation_labels,
+            per_instance_label: $._config.per_instance_label,
+            range: $.rateInterval('1m'),
+          },
           labels: {
             severity: 'critical',
           },
@@ -209,11 +229,14 @@ local utils = import 'mixin-utils/utils.libsonnet';
           alert: $.alertName('StrongConsistencyOffsetMissing'),
           'for': '5m',
           expr: |||
-            sum by (%(alert_aggregation_labels)s) (rate(cortex_ingest_storage_strong_consistency_requests_total{component="partition-reader", with_offset="false"}[1m]))
+            sum by (%(alert_aggregation_labels)s) (rate(cortex_ingest_storage_strong_consistency_requests_total{component="partition-reader", with_offset="false"}[%(range)s]))
             /
-            sum by (%(alert_aggregation_labels)s) (rate(cortex_ingest_storage_strong_consistency_requests_total{component="partition-reader"}[1m]))
+            sum by (%(alert_aggregation_labels)s) (rate(cortex_ingest_storage_strong_consistency_requests_total{component="partition-reader"}[%(range)s]))
             * 100 > 5
-          ||| % $._config,
+          ||| % {
+            alert_aggregation_labels: $._config.alert_aggregation_labels,
+            range: $.rateInterval('1m'),
+          },
           labels: {
             severity: 'warning',
           },
@@ -229,15 +252,19 @@ local utils = import 'mixin-utils/utils.libsonnet';
           expr: |||
             max by(%(alert_aggregation_labels)s, %(per_instance_label)s) (
                 # New metric.
-                max_over_time(cortex_ingest_storage_writer_buffered_produce_bytes_distribution{quantile="1.0"}[1m])
+                max_over_time(cortex_ingest_storage_writer_buffered_produce_bytes_distribution{quantile="1.0"}[%(range)s])
                 or
                 # Old metric.
-                max_over_time(cortex_ingest_storage_writer_buffered_produce_bytes{quantile="1.0"}[1m])
+                max_over_time(cortex_ingest_storage_writer_buffered_produce_bytes{quantile="1.0"}[%(range)s])
             )
             /
-            min by(%(alert_aggregation_labels)s, %(per_instance_label)s) (min_over_time(cortex_ingest_storage_writer_buffered_produce_bytes_limit[1m]))
+            min by(%(alert_aggregation_labels)s, %(per_instance_label)s) (min_over_time(cortex_ingest_storage_writer_buffered_produce_bytes_limit[%(range)s]))
             * 100 > 50
-          ||| % $._config,
+          ||| % {
+            alert_aggregation_labels: $._config.alert_aggregation_labels,
+            per_instance_label: $._config.per_instance_label,
+            range: $.rateInterval('1m'),
+          },
           labels: {
             severity: 'critical',
           },
@@ -265,8 +292,13 @@ local utils = import 'mixin-utils/utils.libsonnet';
         {
           alert: $.alertName('BlockBuilderCompactAndUploadFailed'),
           expr: |||
-            sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_blockbuilder_tsdb_compact_and_upload_failed_total[1m])) > 0
-          ||| % $._config,
+            sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_blockbuilder_tsdb_compact_and_upload_failed_total[%(range)s])) > 0
+          ||| % {
+
+            alert_aggregation_labels: $._config.alert_aggregation_labels,
+            per_instance_label: $._config.per_instance_label,
+            range: $.rateInterval('1m'),
+          },
           labels: {
             severity: 'critical',
           },
@@ -304,8 +336,10 @@ local utils = import 'mixin-utils/utils.libsonnet';
           // if the series was previously present. Thus we do not need to predicate the alert on presence of
           // a block-builder-scheduler.
           expr: |||
-            max by (%(alert_aggregation_labels)s, %(per_instance_label)s) (histogram_count(increase(cortex_blockbuilder_scheduler_schedule_update_seconds[5m])) == 0)
-          ||| % $._config,
+            max by (%(alert_aggregation_labels)s, %(per_instance_label)s) (histogram_count(increase(cortex_blockbuilder_scheduler_schedule_update_seconds[%(rate_interval)s])) == 0)
+          ||| % $._config {
+            rate_interval: $.rateInterval('5m'),
+          },
           labels: {
             severity: 'warning',
           },
@@ -334,8 +368,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
         {
           alert: $.alertName('BlockBuilderPersistentJobFailure'),
           expr: |||
-            increase(cortex_blockbuilder_scheduler_persistent_job_failures_total[1m]) > 0
-          ||| % $._config,
+            increase(cortex_blockbuilder_scheduler_persistent_job_failures_total[20m]) > 0
+          |||,
           labels: {
             severity: 'critical',
           },

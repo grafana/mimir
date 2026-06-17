@@ -354,7 +354,7 @@
             sum by (%(alert_aggregation_labels)s, deployment) (
               label_replace(
                 label_replace(
-                  sum by (%(alert_aggregation_labels)s, %(per_instance_label)s)(rate(container_cpu_usage_seconds_total[%(recording_rules_range_interval)s])),
+                  sum by (%(alert_aggregation_labels)s, %(per_instance_label)s)(rate(container_cpu_usage_seconds_total[%(rate_interval)s])),
                   "deployment", "$1", "%(per_instance_label)s", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
                 ),
                 # The question mark in "(.*?)" is used to make it non-greedy, otherwise it
@@ -754,7 +754,7 @@
     ],
 
     // All query methods from IngesterServer interface. Basically everything except Push.
-    ingester_read_path_routes_regex: '/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries)',
+    ingester_read_path_routes_regex: '/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues)',
 
     // All query methods from StoregatewayServer interface.
     store_gateway_read_path_routes_regex: '/gatewaypb.StoreGateway/.*',
@@ -763,14 +763,10 @@
     dashboard_datasource: 'default',
     datasource_regex: '',
 
-    // Tunes histogram recording rules to aggregate over this interval.
-    // Set to at least twice the scrape interval; otherwise, recording rules will output no data.
-    // Set to four times the scrape interval to account for edge cases: https://www.robustperception.io/what-range-should-i-use-with-rate/
-    recording_rules_range_interval: '1m',
-
-    // Used to calculate range interval in alerts with default range selector under 10 minutes.
-    // Needed to account for edge cases: https://www.robustperception.io/what-range-should-i-use-with-rate/
-    base_alerts_range_interval_minutes: 1,
+    // The Prometheus scrape interval configured in your Prometheus. Used by rateInterval() and
+    // stepInterval() to compute safe windows automatically.
+    // See https://www.robustperception.io/what-range-should-i-use-with-rate/
+    scrape_interval: '15s',
 
     // Used to inject rows into dashboards at specific places that support it.
     injectRows: {},

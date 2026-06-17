@@ -7,6 +7,7 @@ package client
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"io"
 	"net/http"
@@ -30,7 +31,7 @@ const (
 
 var (
 	ErrResourceNotFound = errors.New("requested resource not found")
-	errConflict         = errors.New("conflict with current state of target resource")
+	ErrConflict         = errors.New("conflict with current state of target resource")
 	errTooManyRequests  = errors.New("too many requests")
 )
 
@@ -46,10 +47,20 @@ type Config struct {
 	Address         string `yaml:"address"`
 	ID              string `yaml:"id"`
 	TLS             tls.ClientConfig
+	SigV4           SigV4Config       `yaml:"sigv4"`
 	UseLegacyRoutes bool              `yaml:"use_legacy_routes"`
 	MimirHTTPPrefix string            `yaml:"mimir_http_prefix"`
 	AuthToken       string            `yaml:"auth_token"`
 	ExtraHeaders    map[string]string `yaml:"extra_headers"`
+}
+
+func (cfg *Config) RegisterConnectionFlagsWithPrefix(prefix string, f *flag.FlagSet) {
+	prefix = strings.TrimRight(prefix, ".")
+	f.StringVar(&cfg.Address, prefix+".address", "", "Address of the Mimir instance.")
+	f.StringVar(&cfg.Key, prefix+".key", "", "Basic auth password. The tenant ID is used as the username.")
+	f.StringVar(&cfg.AuthToken, prefix+".auth-token", "", "Bearer token for authentication.")
+	f.StringVar(&cfg.ID, prefix+".id", "", "Tenant ID (X-Scope-OrgID header).")
+	cfg.TLS.RegisterFlagsWithPrefix(prefix, f)
 }
 
 // MimirClient is a client to the Mimir API.
@@ -72,9 +83,14 @@ func New(cfg Config, logger log.Logger) (*MimirClient, error) {
 		return nil, err
 	}
 
+	if err := validateAuthConfig(cfg.User, cfg.Key, cfg.AuthToken, cfg.SigV4.IsConfigured()); err != nil {
+		return nil, err
+	}
+
 	level.Debug(logger).Log("msg", "New Mimir client created", "address", cfg.Address, "id", cfg.ID)
 
 	client := http.Client{}
+	var transport http.RoundTripper
 
 	// Setup TLS client
 	tlsConfig, err := cfg.TLS.GetTLSConfig()
@@ -85,10 +101,19 @@ func New(cfg Config, logger log.Logger) (*MimirClient, error) {
 	}
 
 	if tlsConfig != nil {
-		transport := &http.Transport{
+		transport = &http.Transport{
 			Proxy:           http.ProxyFromEnvironment,
 			TLSClientConfig: tlsConfig,
 		}
+	}
+
+	transport, err = wrapSigV4RoundTripper(cfg.SigV4, transport)
+	if err != nil {
+		level.Error(logger).Log("msg", "error configuring SigV4 for Mimir client", "err", err)
+		return nil, err
+	}
+
+	if transport != nil {
 		client = http.Client{Transport: transport}
 	}
 
@@ -126,17 +151,29 @@ func (c *MimirClient) Query(ctx context.Context, query string) (*http.Response, 
 }
 
 func (c *MimirClient) doRequest(ctx context.Context, path, method string, payload io.Reader, contentLength int64) (*http.Response, error) {
-	req, err := buildRequest(ctx, path, method, *c.endpoint, payload, contentLength)
+	req, resp, err := c.executeRequest(ctx, path, method, payload, contentLength)
 	if err != nil {
 		return nil, err
 	}
 
-	switch {
-	case (c.user != "" || c.key != "") && c.authToken != "":
-		err := errors.New("at most one of basic auth or auth token should be configured")
-		level.Error(c.logger).Log("msg", "error during setting up request to mimir api", "url", req.URL.String(), "method", req.Method, "err", err)
-		return nil, err
+	if err := c.checkResponse(resp); err != nil {
+		_ = resp.Body.Close()
+		return nil, errors.Wrapf(err, "%s request to %s failed", req.Method, req.URL.String())
+	}
 
+	return resp, nil
+}
+
+// executeRequest sends the HTTP request and returns the raw response without inspecting its status.
+// Callers that need to interpret specific status codes themselves should use this and then either
+// handle the response directly or fall back to checkResponse.
+func (c *MimirClient) executeRequest(ctx context.Context, path, method string, payload io.Reader, contentLength int64) (*http.Request, *http.Response, error) {
+	req, err := buildRequest(ctx, path, method, *c.endpoint, payload, contentLength)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	switch {
 	case c.user != "":
 		req.SetBasicAuth(c.user, c.key)
 
@@ -158,15 +195,30 @@ func (c *MimirClient) doRequest(ctx context.Context, path, method string, payloa
 	resp, err := c.Client.Do(req)
 	if err != nil {
 		level.Error(c.logger).Log("msg", "error during request to Grafana Mimir API", "url", req.URL.String(), "method", req.Method, "err", err.Error())
-		return nil, err
+		return nil, nil, err
 	}
 
-	if err := c.checkResponse(resp); err != nil {
-		_ = resp.Body.Close()
-		return nil, errors.Wrapf(err, "%s request to %s failed", req.Method, req.URL.String())
+	return req, resp, nil
+}
+
+func validateAuthConfig(user, key, authToken string, sigV4Configured bool) error {
+	var authConfigured []string
+
+	if user != "" || key != "" {
+		authConfigured = append(authConfigured, "basic_auth")
+	}
+	if authToken != "" {
+		authConfigured = append(authConfigured, "auth_token")
+	}
+	if sigV4Configured {
+		authConfigured = append(authConfigured, "sigv4")
 	}
 
-	return resp, nil
+	if len(authConfigured) > 1 {
+		return fmt.Errorf("at most one of basic_auth, auth_token or sigv4 must be configured, got: %s", strings.Join(authConfigured, ", "))
+	}
+
+	return nil
 }
 
 // checkResponse checks an API response for errors.
@@ -188,7 +240,7 @@ func (c *MimirClient) checkResponse(r *http.Response) error {
 	}
 	if r.StatusCode == http.StatusConflict {
 		level.Debug(c.logger).Log("msg", msg, "status", r.Status, "body", bodyStr)
-		return errConflict
+		return ErrConflict
 	}
 	if r.StatusCode == http.StatusTooManyRequests {
 		level.Debug(c.logger).Log("msg", msg, "status", r.Status, "body", bodyStr)

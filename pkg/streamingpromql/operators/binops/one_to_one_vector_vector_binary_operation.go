@@ -18,7 +18,6 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/operators"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
-	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 // OneToOneVectorVectorBinaryOperation represents a one-to-one binary operation between instant vectors such as "<expr> + <expr>" or "<expr> - <expr>".
@@ -41,10 +40,9 @@ type OneToOneVectorVectorBinaryOperation struct {
 	remainingSeries []*oneToOneBinaryOperationOutputSeries
 	leftBuffer      *operators.InstantVectorOperatorBuffer
 	rightBuffer     *operators.InstantVectorOperatorBuffer
-	evaluator       vectorVectorBinaryOperationEvaluator
+	evaluator       *vectorVectorBinaryOperationEvaluator
 
 	expressionPosition posrange.PositionRange
-	annotations        *annotations.Annotations
 	timeRange          types.QueryTimeRange
 	hints              *Hints
 	logger             log.Logger
@@ -107,11 +105,11 @@ func (g *oneToOneBinaryOperationRightSide) latestRightSeriesIndex() int {
 	return g.rightSeriesIndices[len(g.rightSeriesIndices)-1]
 }
 
-func (g *oneToOneBinaryOperationRightSide) Finalize(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
+func (g *oneToOneBinaryOperationRightSide) FinishedReading(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
 	types.IntSlicePool.Put(&g.leftSidePresence, memoryConsumptionTracker)
 
 	// If this right side was used for all of its corresponding output series, then mergedData will have already been returned to the pool by the evaluator's computeResult.
-	// However, if the operator is being finalized early, then we need to return mergedData to the pool.
+	// However, if the operator is having FinishedReading called early, then we need to return mergedData to the pool.
 	types.PutInstantVectorSeriesData(g.mergedData, memoryConsumptionTracker)
 	g.mergedData = types.InstantVectorSeriesData{}
 }
@@ -128,13 +126,12 @@ func NewOneToOneVectorVectorBinaryOperation(
 	op parser.ItemType,
 	returnBool bool,
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
-	annotations *annotations.Annotations,
 	expressionPosition posrange.PositionRange,
 	timeRange types.QueryTimeRange,
 	hints *Hints,
 	logger log.Logger,
 ) (*OneToOneVectorVectorBinaryOperation, error) {
-	e, err := newVectorVectorBinaryOperationEvaluator(op, returnBool, memoryConsumptionTracker, annotations, expressionPosition)
+	e, err := newVectorVectorBinaryOperationEvaluator(op, returnBool, memoryConsumptionTracker, expressionPosition)
 	if err != nil {
 		return nil, err
 	}
@@ -149,7 +146,6 @@ func NewOneToOneVectorVectorBinaryOperation(
 
 		evaluator:          e,
 		expressionPosition: expressionPosition,
-		annotations:        annotations,
 		timeRange:          timeRange,
 		hints:              hints,
 		logger:             logger,
@@ -184,7 +180,7 @@ func (b *OneToOneVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context
 		return nil, err
 	} else if len(b.leftMetadata) == 0 {
 		// No series on left-hand side, we'll never have any output series.
-		if err = b.Finalize(ctx); err != nil {
+		if err = b.FinishedReading(ctx); err != nil {
 			return nil, err
 		}
 
@@ -194,22 +190,13 @@ func (b *OneToOneVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context
 	// If there are labels that this binary operation selects on or aggregations being done
 	// on the LHS, we can use the series and their values for those labels to reduce the amount
 	// of data fetched on the RHS.
+	// Note we are reassigning `matchers` here before passing to the RHS and dropping any
+	// other extra matchers passed to this binary operation. Hints from the optimization
+	// pass are set specifically for each binary operation and include only fields that are
+	// valid to be passed to its RHS. We drop existing extra matchers since they may refer
+	// to labels that don't exist on the RHS of this binary operation.
 	if b.hints != nil {
-		// Note we are reassigning `matchers` here before passing to the RHS and dropping any
-		// other extra matchers passed to this binary operation. Hints from the optimization
-		// pass are set specifically for each binary operation and include only fields that are
-		// valid to be passed to its RHS. We drop existing extra matchers since they may refer
-		// to labels that don't exist on the RHS of this binary operation.
-		ignored := matchers
-		matchers = BuildMatchers(b.leftMetadata, b.hints)
-
-		sl := spanlogger.FromContext(ctx, b.logger)
-		sl.DebugLog(
-			"msg", "binary operator passing additional matchers to RHS",
-			"fields", b.hints.Include,
-			"hint_matchers", len(matchers),
-			"ignored_matchers", len(ignored),
-		)
+		matchers = BuildMatchers(ctx, b.logger, b.leftMetadata, b.hints)
 	}
 
 	b.rightMetadata, err = b.Right.SeriesMetadata(ctx, matchers)
@@ -217,7 +204,7 @@ func (b *OneToOneVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context
 		return nil, err
 	} else if len(b.rightMetadata) == 0 {
 		// No series on right-hand side, we'll never have any output series.
-		if err = b.Finalize(ctx); err != nil {
+		if err = b.FinishedReading(ctx); err != nil {
 			return nil, err
 		}
 
@@ -234,7 +221,7 @@ func (b *OneToOneVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context
 		types.BoolSlicePool.Put(&leftSeriesUsed, b.MemoryConsumptionTracker)
 		types.BoolSlicePool.Put(&rightSeriesUsed, b.MemoryConsumptionTracker)
 
-		if err := b.Finalize(ctx); err != nil {
+		if err := b.FinishedReading(ctx); err != nil {
 			return nil, err
 		}
 
@@ -521,10 +508,10 @@ func (b *OneToOneVectorVectorBinaryOperation) NextSeries(ctx context.Context) (t
 	}
 
 	if isLastUseOfRightSide {
-		// We've passed ownership of mergedData to the evaluator, so clear it now to avoid returning it to the pool in Finalize().
+		// We've passed ownership of mergedData to the evaluator, so clear it now to avoid returning it to the pool in FinishedReading().
 		rightSide.mergedData = types.InstantVectorSeriesData{}
 
-		rightSide.Finalize(b.MemoryConsumptionTracker)
+		rightSide.FinishedReading(b.MemoryConsumptionTracker)
 	}
 
 	return finalResult, nil
@@ -623,35 +610,42 @@ func (b *OneToOneVectorVectorBinaryOperation) AfterPrepare(ctx context.Context) 
 	return b.Right.AfterPrepare(ctx)
 }
 
-func (b *OneToOneVectorVectorBinaryOperation) Finalize(ctx context.Context) error {
+func (b *OneToOneVectorVectorBinaryOperation) FinishedReading(ctx context.Context) error {
 	types.SeriesMetadataSlicePool.Put(&b.leftMetadata, b.MemoryConsumptionTracker)
 	types.SeriesMetadataSlicePool.Put(&b.rightMetadata, b.MemoryConsumptionTracker)
 
 	if b.leftBuffer != nil {
-		b.leftBuffer.Finalize()
+		b.leftBuffer.FinishedReading()
 		b.leftBuffer = nil
 	}
 
 	if b.rightBuffer != nil {
-		b.rightBuffer.Finalize()
+		b.rightBuffer.FinishedReading()
 		b.rightBuffer = nil
 	}
 
 	for _, s := range b.remainingSeries {
-		s.rightSide.Finalize(b.MemoryConsumptionTracker)
+		s.rightSide.FinishedReading(b.MemoryConsumptionTracker)
 	}
 
 	b.remainingSeries = nil
 
-	if err := b.Left.Finalize(ctx); err != nil {
+	if err := b.Left.FinishedReading(ctx); err != nil {
 		return err
 	}
 
-	return b.Right.Finalize(ctx)
+	return b.Right.FinishedReading(ctx)
 }
 
-func (b *OneToOneVectorVectorBinaryOperation) Stats(ctx context.Context) (*types.OperatorEvaluationStats, error) {
-	return types.CombineStats(ctx, b.Left, b.Right)
+func (b *OneToOneVectorVectorBinaryOperation) Finalize(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
+	stats, childAnnos, err := types.FinalizeAndCombine(ctx, b.Left, b.Right)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	b.evaluator.annotations.Merge(childAnnos)
+
+	return stats, b.evaluator.annotations, nil
 }
 
 func (b *OneToOneVectorVectorBinaryOperation) Close() {

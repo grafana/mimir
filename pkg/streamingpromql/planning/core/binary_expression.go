@@ -19,12 +19,13 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
-var errCannotMergeBinaryExpressionHints = errors.New("cannot merge hints for binary expressions with different included labels")
+var errCannotMergeBinaryExpressionHints = errors.New("cannot merge hints for binary expressions with different hints")
 
+//node:generate
 type BinaryExpression struct {
 	*BinaryExpressionDetails
-	LHS planning.Node
-	RHS planning.Node
+	LHS planning.Node `node:"child"`
+	RHS planning.Node `node:"child"`
 }
 
 func (b *BinaryExpression) Describe() string {
@@ -78,13 +79,24 @@ func (b *BinaryExpression) Describe() string {
 	builder.WriteString(" RHS")
 
 	if b.Hints != nil {
-		builder.WriteString(", hints (")
-		for i, l := range b.Hints.Include {
-			if i > 0 {
-				builder.WriteString(", ")
-			}
+		if b.Hints.IsExcludeMatching() {
+			builder.WriteString(", hints exclude (")
+			for i, l := range b.Hints.Exclude {
+				if i > 0 {
+					builder.WriteString(", ")
+				}
 
-			builder.WriteString(l)
+				builder.WriteString(l)
+			}
+		} else {
+			builder.WriteString(", hints include (")
+			for i, l := range b.Hints.Include {
+				if i > 0 {
+					builder.WriteString(", ")
+				}
+
+				builder.WriteString(l)
+			}
 		}
 
 		builder.WriteByte(')')
@@ -105,44 +117,6 @@ func (b *BinaryExpression) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_BINARY_EXPRESSION
 }
 
-func (b *BinaryExpression) Child(idx int) planning.Node {
-	switch idx {
-	case 0:
-		return b.LHS
-	case 1:
-		return b.RHS
-	default:
-		panic(fmt.Sprintf("node of type BinaryExpression supports 2 children, but attempted to get child at index %d", idx))
-	}
-}
-
-func (b *BinaryExpression) ChildCount() int {
-	return 2
-}
-
-func (b *BinaryExpression) SetChildren(children []planning.Node) error {
-	if len(children) != 2 {
-		return fmt.Errorf("node of type BinaryExpression expects 2 children, but got %d", len(children))
-	}
-
-	b.LHS, b.RHS = children[0], children[1]
-
-	return nil
-}
-
-func (b *BinaryExpression) ReplaceChild(idx int, node planning.Node) error {
-	switch idx {
-	case 0:
-		b.LHS = node
-		return nil
-	case 1:
-		b.RHS = node
-		return nil
-	default:
-		return fmt.Errorf("node of type BinaryExpression expects 1 or 2 children, but attempted to replace child at index %d", idx)
-	}
-}
-
 func (b *BinaryExpression) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
 	otherBinaryExpression, ok := other.(*BinaryExpression)
 
@@ -152,27 +126,49 @@ func (b *BinaryExpression) EquivalentToIgnoringHintsAndChildren(other planning.N
 		b.ReturnBool == otherBinaryExpression.ReturnBool
 }
 
+// MergeHints merges the hints from other into b. It returns an error if the
+// hints are incompatible.
+//
+// nil hints and non-nil hints with an empty Include (exclude-matching mode)
+// are intentionally treated as distinct, incompatible states:
+//   - nil hints means no optimization was applied (e.g. from an older query-frontend).
+//   - Non-nil hints with empty Include means exclude-matching mode (without/ignoring/default).
+//
+// Merging these two would be incorrect because nil hints signal that the sender
+// did not compute any narrowing information, so we cannot assume exclude-matching
+// semantics. See IsExcludeMatching for the full convention.
 func (b *BinaryExpression) MergeHints(other planning.Node) error {
 	otherBinaryExpression, ok := other.(*BinaryExpression)
 	if !ok {
 		return fmt.Errorf("cannot merge hints from %T into %T", other, b)
 	}
 
-	var thisLabels []string
-	var otherLabels []string
+	thisExclude := b.Hints.IsExcludeMatching()
+	otherExclude := otherBinaryExpression.Hints.IsExcludeMatching()
 
+	if thisExclude != otherExclude {
+		return errCannotMergeBinaryExpressionHints
+	}
+
+	if thisExclude {
+		// When thisExclude is true, b.Hints != nil and otherBinaryExpression.Hints != nil
+		// are guaranteed by the expressions above that set thisExclude/otherExclude.
+		if slices.Equal(b.Hints.Exclude, otherBinaryExpression.Hints.Exclude) {
+			return nil
+		}
+		return errCannotMergeBinaryExpressionHints
+	}
+
+	var thisInclude, otherInclude []string
 	if b.Hints != nil {
-		thisLabels = b.Hints.Include
+		thisInclude = b.Hints.Include
 	}
-
 	if otherBinaryExpression.Hints != nil {
-		otherLabels = otherBinaryExpression.Hints.Include
+		otherInclude = otherBinaryExpression.Hints.Include
 	}
-
-	if slices.Equal(thisLabels, otherLabels) {
+	if slices.Equal(thisInclude, otherInclude) {
 		return nil
 	}
-
 	return errCannotMergeBinaryExpressionHints
 }
 
@@ -197,7 +193,7 @@ func MaterializeBinaryExpression(b *BinaryExpression, materializer *planning.Mat
 	}
 
 	if lhsScalar != nil && rhsScalar != nil {
-		o, err := binops.NewScalarScalarBinaryOperation(lhsScalar, rhsScalar, op, params.MemoryConsumptionTracker, params.Annotations, b.GetExpressionPosition().ToPrometheusType())
+		o, err := binops.NewScalarScalarBinaryOperation(lhsScalar, rhsScalar, op, params.MemoryConsumptionTracker, b.GetExpressionPosition().ToPrometheusType())
 		if err != nil {
 			return nil, err
 		}
@@ -254,15 +250,15 @@ func (b *BinaryExpression) getChildOperator(node planning.Node, timeRange types.
 func (b *BinaryExpression) createVectorVectorOperator(lhs, rhs types.InstantVectorOperator, op parser.ItemType, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (types.InstantVectorOperator, error) {
 	switch op {
 	case parser.LAND, parser.LUNLESS:
-		return binops.NewAndUnlessBinaryOperation(lhs, rhs, *b.VectorMatching.ToPrometheusType(), params.MemoryConsumptionTracker, op == parser.LUNLESS, timeRange, b.GetExpressionPosition().ToPrometheusType()), nil
+		return binops.NewAndUnlessBinaryOperation(lhs, rhs, *b.VectorMatching.ToPrometheusType(), params.MemoryConsumptionTracker, op == parser.LUNLESS, timeRange, b.GetExpressionPosition().ToPrometheusType(), b.Hints.ToOperatorType(), params.Logger), nil
 	case parser.LOR:
 		return binops.NewOrBinaryOperation(lhs, rhs, *b.VectorMatching.ToPrometheusType(), params.MemoryConsumptionTracker, timeRange, b.GetExpressionPosition().ToPrometheusType()), nil
 	default:
 		switch b.VectorMatching.Card {
 		case parser.CardOneToMany, parser.CardManyToOne:
-			return binops.NewGroupedVectorVectorBinaryOperation(lhs, rhs, *b.VectorMatching.ToPrometheusType(), op, b.ReturnBool, params.MemoryConsumptionTracker, params.Annotations, b.GetExpressionPosition().ToPrometheusType(), timeRange)
+			return binops.NewGroupedVectorVectorBinaryOperation(lhs, rhs, *b.VectorMatching.ToPrometheusType(), op, b.ReturnBool, params.MemoryConsumptionTracker, b.GetExpressionPosition().ToPrometheusType(), timeRange, b.Hints.ToOperatorType(), params.Logger)
 		case parser.CardOneToOne:
-			return binops.NewOneToOneVectorVectorBinaryOperation(lhs, rhs, *b.VectorMatching.ToPrometheusType(), op, b.ReturnBool, params.MemoryConsumptionTracker, params.Annotations, b.GetExpressionPosition().ToPrometheusType(), timeRange, b.Hints.ToOperatorType(), params.Logger)
+			return binops.NewOneToOneVectorVectorBinaryOperation(lhs, rhs, *b.VectorMatching.ToPrometheusType(), op, b.ReturnBool, params.MemoryConsumptionTracker, b.GetExpressionPosition().ToPrometheusType(), timeRange, b.Hints.ToOperatorType(), params.Logger)
 		default:
 			return nil, compat.NewNotSupportedError(fmt.Sprintf("binary expression with %v matching for '%v'", b.VectorMatching.Card, b.Op.String()))
 		}
@@ -313,8 +309,8 @@ func (b *BinaryExpression) ExpressionPosition() (posrange.PositionRange, error) 
 	return b.GetExpressionPosition().ToPrometheusType(), nil
 }
 
-func (b *BinaryExpression) MinimumRequiredPlanVersion() planning.QueryPlanVersion {
-	return planning.QueryPlanVersionZero
+func (b *BinaryExpression) MinimumRequiredPlanVersion(types.QueryTimeRange) (planning.QueryPlanVersion, error) {
+	return planning.QueryPlanVersionZero, nil
 }
 
 func (v *VectorMatching) Equals(other *VectorMatching) bool {

@@ -230,6 +230,15 @@ func TestCases(metricSizes []int) []BenchCase {
 		{
 			Expr: "h_X * on(l) group_left() a_X",
 		},
+		// Test the hint-based narrowing for group_left/group_right: the one side selects only 2
+		// out of 2000 distinct "l" values, so the optimizer passes {l=~"1|3"} to the many side
+		// and reduces the series it needs to fetch from ~12000 down to ~12.
+		{
+			Expr: `h_2000 * on(l) group_left() a_2000{l=~"[13]"}`,
+		},
+		{
+			Expr: `a_2000{l=~"[13]"} * on(l) group_right() h_2000`,
+		},
 		// Test the case where one side of a binary operation has many more series than the other.
 		{
 			Expr: `a_100{l=~"[13579]."} - b_100`,
@@ -397,6 +406,13 @@ func TestCases(metricSizes []int) []BenchCase {
 		// Common subexpression elimination cases
 		{
 			Expr: "a_X + a_X",
+		},
+		// Multi-aggregation with quantile
+		{
+			Expr: "quantile(0.95, a_X) - min(a_X)",
+		},
+		{
+			Expr: "quantile(0.95, a_X) - quantile(0.4, a_X)",
 		},
 		{
 			Expr: "sum(a_X) + sum(a_X)",

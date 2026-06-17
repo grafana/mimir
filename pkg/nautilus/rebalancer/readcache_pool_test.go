@@ -5,7 +5,7 @@ package rebalancer
 import (
 	"context"
 	"net"
-	"sync/atomic"
+	"sync/atomic" //lint:ignore faillint this test uses atomic.Value.
 	"testing"
 	"time"
 

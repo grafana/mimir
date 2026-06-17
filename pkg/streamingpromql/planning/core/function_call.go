@@ -19,9 +19,10 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
+//node:generate
 type FunctionCall struct {
 	*FunctionCallDetails
-	Args []planning.Node `json:"-"`
+	Args []planning.Node `json:"-" node:"children"`
 }
 
 func (f *FunctionCall) Describe() string {
@@ -44,32 +45,6 @@ func (f *FunctionCall) Details() proto.Message {
 
 func (f *FunctionCall) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_FUNCTION_CALL
-}
-
-func (f *FunctionCall) Child(idx int) planning.Node {
-	if idx >= len(f.Args) {
-		panic(fmt.Sprintf("this FunctionCall node has %d children, but attempted to get child at index %d", len(f.Args), idx))
-	}
-
-	return f.Args[idx]
-}
-
-func (f *FunctionCall) ChildCount() int {
-	return len(f.Args)
-}
-
-func (f *FunctionCall) SetChildren(children []planning.Node) error {
-	f.Args = children
-	return nil
-}
-
-func (f *FunctionCall) ReplaceChild(idx int, node planning.Node) error {
-	if idx >= len(f.Args) {
-		return fmt.Errorf("this FunctionCall node has %d children, but attempted to replace child at index %d", len(f.Args), idx)
-	}
-
-	f.Args[idx] = node
-	return nil
 }
 
 func (f *FunctionCall) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
@@ -160,6 +135,6 @@ func (f *FunctionCall) ExpressionPosition() (posrange.PositionRange, error) {
 	return f.GetExpressionPosition().ToPrometheusType(), nil
 }
 
-func (f *FunctionCall) MinimumRequiredPlanVersion() planning.QueryPlanVersion {
-	return planning.QueryPlanVersionZero
+func (f *FunctionCall) MinimumRequiredPlanVersion(types.QueryTimeRange) (planning.QueryPlanVersion, error) {
+	return planning.QueryPlanVersionZero, nil
 }

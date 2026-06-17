@@ -250,7 +250,7 @@ func (cb *CachingBucket) Iter(ctx context.Context, dir string, f func(string) er
 	if err == nil && remainingTTL > 0 {
 		data, encErr := cfg.codec.Encode(list)
 		if encErr == nil {
-			cfg.cache.SetMultiAsync(map[string][]byte{key: data}, remainingTTL)
+			cfg.cache.SetAsync(key, data, remainingTTL)
 			return nil
 		}
 		level.Warn(cb.logger).Log("msg", "failed to encode Iter result", "key", key, "err", encErr)
@@ -303,7 +303,7 @@ func storeExistsCacheEntry(ctx context.Context, cachingKey, lockKey string, exis
 
 	if ttl > 0 {
 		if addErr := cache.Add(ctx, lockKey, []byte{}, invalidationLockTTL); addErr == nil {
-			cache.SetMultiAsync(map[string][]byte{cachingKey: []byte(strconv.FormatBool(exists))}, ttl)
+			cache.SetAsync(cachingKey, []byte(strconv.FormatBool(exists)), ttl)
 		}
 	}
 }
@@ -445,7 +445,7 @@ func (cb *CachingBucket) cachedAttributes(ctx context.Context, name string, keyG
 		// content when we were able to insert the lock key meaning this object isn't being updated
 		// by another request.
 		if addErr := cache.Add(ctx, lockKey, []byte{}, invalidationLockTTL); addErr == nil {
-			cache.SetMultiAsync(map[string][]byte{key: raw}, ttl)
+			cache.SetAsync(key, raw, ttl)
 		}
 	} else {
 		level.Warn(cb.logger).Log("msg", "failed to encode cached Attributes result", "key", key, "err", err)
@@ -611,7 +611,7 @@ func (cb *CachingBucket) fetchMissingSubranges(ctx context.Context, name string,
 
 				if storeToCache {
 					cb.fetchedGetRangeBytes.WithLabelValues(originBucket, cfgName).Add(float64(len(subrangeData)))
-					cfg.cache.SetMultiAsync(map[string][]byte{key: subrangeData}, cfg.subrangeTTL)
+					cfg.cache.SetAsync(key, subrangeData, cfg.subrangeTTL)
 				} else {
 					cb.refetchedGetRangeBytes.WithLabelValues(originCache, cfgName).Add(float64(len(subrangeData)))
 				}
@@ -871,6 +871,13 @@ func composeCachingKey(op, bucketID string, values ...string) string {
 	return b.String()
 }
 
+// ContentKey builds a cache key for content so callers may access
+// a cache directly outside of the caching bucket flow when needed.
+// Example cases are a GetMulti or a read without population on miss.
+func ContentKey(bucketID, name string) string {
+	return newCacheKeyBuilder(bucketID, name).content()
+}
+
 // Reader implementation that uses in-memory subranges.
 type subrangesReader struct {
 	subrangeSize int64
@@ -985,7 +992,7 @@ func (g *getReader) Read(p []byte) (n int, err error) {
 			// content when we were able to insert the lock key meaning this object isn't being updated
 			// by another request.
 			if addErr := g.c.Add(context.Background(), g.lockKey, []byte{}, invalidationLockTTL); addErr == nil {
-				g.c.SetMultiAsync(map[string][]byte{g.cacheKey: g.buf.Bytes()}, remainingTTL)
+				g.c.SetAsync(g.cacheKey, g.buf.Bytes(), remainingTTL)
 			}
 		}
 		// Clear reference, to avoid doing another Store on next read.

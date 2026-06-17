@@ -17,12 +17,13 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
+//node:generate
 type VectorSelector struct {
 	*VectorSelectorDetails
 }
 
 func (v *VectorSelector) Describe() string {
-	d := describeSelector(v.Matchers, v.Timestamp, v.Offset, nil, v.SkipHistogramBuckets, false, v.Smoothed, false, v.ProjectionLabels, v.ProjectionInclude)
+	d := describeSelector(v.Matchers, v.Timestamp, v.Offset, nil, v.SkipHistogramBuckets, false, v.Smoothed, false, v.Subsets)
 
 	if v.ReturnSampleTimestamps {
 		d = d + ", return sample timestamps"
@@ -47,31 +48,12 @@ func (v *VectorSelector) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_VECTOR_SELECTOR
 }
 
-func (v *VectorSelector) Child(idx int) planning.Node {
-	panic(fmt.Sprintf("node of type VectorSelector has no children, but attempted to get child at index %d", idx))
-}
-
-func (v *VectorSelector) ChildCount() int {
-	return 0
-}
-
-func (v *VectorSelector) SetChildren(children []planning.Node) error {
-	if len(children) != 0 {
-		return fmt.Errorf("node of type VectorSelector expects 0 children, but got %d", len(children))
-	}
-
-	return nil
-}
-
-func (v *VectorSelector) ReplaceChild(idx int, node planning.Node) error {
-	return fmt.Errorf("node of type VectorSelector supports no children, but attempted to replace child at index %d", idx)
-}
-
 func (v *VectorSelector) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
 	otherVectorSelector, ok := other.(*VectorSelector)
 
 	return ok &&
 		slices.EqualFunc(v.Matchers, otherVectorSelector.Matchers, matchersEqual) &&
+		slices.EqualFunc(v.Subsets, otherVectorSelector.Subsets, subsetsEqual) &&
 		v.EquivalentToIgnoringMatchersAndHints(otherVectorSelector)
 }
 
@@ -97,13 +79,6 @@ func (v *VectorSelector) MergeHints(other planning.Node) error {
 	}
 
 	v.SkipHistogramBuckets = v.SkipHistogramBuckets && otherVectorSelector.SkipHistogramBuckets
-	v.ProjectionInclude, v.ProjectionLabels = mergeProjectionLabels(
-		v.ProjectionInclude,
-		v.ProjectionLabels,
-		otherVectorSelector.ProjectionInclude,
-		otherVectorSelector.ProjectionLabels,
-	)
-
 	return nil
 }
 
@@ -112,6 +87,11 @@ func (v *VectorSelector) ChildrenLabels() []string {
 }
 
 func MaterializeVectorSelector(v *VectorSelector, _ *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
+	subsets, err := SubsetsToSelectorType(v.Subsets)
+	if err != nil {
+		return nil, err
+	}
+
 	selector := &selectors.Selector{
 		Queryable:                params.Queryable,
 		TimeRange:                timeRange,
@@ -124,11 +104,10 @@ func MaterializeVectorSelector(v *VectorSelector, _ *planning.Materializer, time
 		ExpressionPosition:       v.GetExpressionPosition().ToPrometheusType(),
 		MemoryConsumptionTracker: params.MemoryConsumptionTracker,
 		Smoothed:                 v.Smoothed,
-		ProjectionInclude:        v.ProjectionInclude,
-		ProjectionLabels:         v.ProjectionLabels,
+		Subsets:                  subsets,
 	}
 
-	return planning.NewSingleUseOperatorFactory(selectors.NewInstantVectorSelector(selector, params.MemoryConsumptionTracker, params.QueryStats, v.ReturnSampleTimestamps, v.ReturnSampleTimestampsPreserveHistograms)), nil
+	return planning.NewSingleUseOperatorFactory(selectors.NewInstantVectorSelector(selector, params.MemoryConsumptionTracker, v.ReturnSampleTimestamps, v.ReturnSampleTimestampsPreserveHistograms)), nil
 }
 
 func (v *VectorSelector) ResultType() (parser.ValueType, error) {
@@ -144,9 +123,9 @@ func (v *VectorSelector) ExpressionPosition() (posrange.PositionRange, error) {
 	return v.GetExpressionPosition().ToPrometheusType(), nil
 }
 
-func (v *VectorSelector) MinimumRequiredPlanVersion() planning.QueryPlanVersion {
+func (v *VectorSelector) MinimumRequiredPlanVersion(types.QueryTimeRange) (planning.QueryPlanVersion, error) {
 	if v.Smoothed {
-		return planning.QueryPlanV4
+		return planning.QueryPlanV4, nil
 	}
-	return planning.QueryPlanVersionZero
+	return planning.QueryPlanVersionZero, nil
 }

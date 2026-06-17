@@ -9,6 +9,7 @@ import (
 	"context"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/rangevectorsplitting"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 )
@@ -42,6 +43,12 @@ func (s *SkipHistogramDecodingOptimizationPass) applyToNode(node planning.Node, 
 
 	// If we see a subquery, don't skip buckets. We need the buckets for correct counter reset detection.
 	if _, ok := node.(*core.Subquery); ok {
+		skipHistogramBuckets = false
+	}
+
+	// Don't skip buckets for range vector splitting either, buckets needed for counter reset detection at the boundary
+	// between splits.
+	if _, ok := node.(*rangevectorsplitting.SplitFunctionCall); ok {
 		skipHistogramBuckets = false
 	}
 

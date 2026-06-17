@@ -307,6 +307,7 @@ rules:
   - get
   - watch
   - delete
+  - patch
 - apiGroups:
   - apps
   resources:
@@ -955,7 +956,7 @@ spec:
         - -ingest-storage.ingestion-partition-tenant-shard-size=1
         - -ingest-storage.kafka.address=kafka.default.svc.cluster.local.:9092
         - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
-        - -ingest-storage.kafka.producer-record-version=1
+        - -ingest-storage.kafka.producer-record-version=2
         - -ingest-storage.kafka.topic=ingest
         - -ingester.partition-ring.prefix=
         - -ingester.ring.heartbeat-timeout=10m
@@ -980,7 +981,7 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "8"
-        image: grafana/mimir:3.0.5
+        image: grafana/mimir:3.1.1
         imagePullPolicy: IfNotPresent
         name: distributor
         ports:
@@ -1086,7 +1087,7 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "5"
-        image: grafana/mimir:3.0.5
+        image: grafana/mimir:3.1.1
         imagePullPolicy: IfNotPresent
         name: querier
         ports:
@@ -1160,7 +1161,7 @@ spec:
         - -query-frontend.query-sharding-target-series-per-shard=2500
         - -query-frontend.results-cache.backend=memcached
         - -query-frontend.results-cache.memcached.addresses=dnssrvnoa+memcached-frontend.default.svc.cluster.local.:11211
-        - -query-frontend.results-cache.memcached.max-item-size=5242880
+        - -query-frontend.results-cache.memcached.max-item-size=26214400
         - -query-frontend.results-cache.memcached.timeout=500ms
         - -query-frontend.scheduler-address=query-scheduler-discovery.default.svc.cluster.local.:9095
         - -runtime-config.file=/etc/mimir/overrides.yaml
@@ -1171,7 +1172,7 @@ spec:
         - -shutdown-delay=90s
         - -target=query-frontend
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.5
+        image: grafana/mimir:3.1.1
         imagePullPolicy: IfNotPresent
         name: query-frontend
         ports:
@@ -1187,10 +1188,10 @@ spec:
           timeoutSeconds: 1
         resources:
           limits:
-            memory: 1200Mi
+            memory: 4Gi
           requests:
             cpu: "2"
-            memory: 600Mi
+            memory: 2Gi
         volumeMounts:
         - mountPath: /etc/mimir
           name: overrides
@@ -1248,7 +1249,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=query-scheduler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.5
+        image: grafana/mimir:3.1.1
         imagePullPolicy: IfNotPresent
         name: query-scheduler
         ports:
@@ -1304,7 +1305,8 @@ spec:
         - -server-tls.enabled=true
         - -use-zone-tracker=true
         - -zone-tracker.config-map-name=rollout-operator-zone-tracker
-        image: grafana/rollout-operator:v0.36.1
+        - -zpdb.pod-ready-annotation-patch-timeout=5s
+        image: grafana/rollout-operator:v0.38.0
         imagePullPolicy: IfNotPresent
         name: rollout-operator
         ports:
@@ -1366,7 +1368,7 @@ spec:
         - -ingest-storage.kafka.address=kafka.default.svc.cluster.local.:9092
         - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
         - -ingest-storage.kafka.producer-max-buffered-bytes=1073741824
-        - -ingest-storage.kafka.producer-record-version=1
+        - -ingest-storage.kafka.producer-record-version=2
         - -ingest-storage.kafka.topic=ingest
         - -ingester.partition-ring.prefix=
         - -ingester.ring.heartbeat-timeout=10m
@@ -1404,7 +1406,7 @@ spec:
         - -store-gateway.tenant-shard-size=3
         - -target=ruler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.5
+        image: grafana/mimir:3.1.1
         imagePullPolicy: IfNotPresent
         name: ruler
         ports:
@@ -1508,7 +1510,7 @@ spec:
         - -target=querier
         - -usage-stats.installation-mode=jsonnet
         env: []
-        image: grafana/mimir:3.0.5
+        image: grafana/mimir:3.1.1
         imagePullPolicy: IfNotPresent
         name: ruler-querier
         ports:
@@ -1583,7 +1585,7 @@ spec:
         - -query-frontend.query-sharding-target-series-per-shard=2500
         - -query-frontend.results-cache.backend=memcached
         - -query-frontend.results-cache.memcached.addresses=dnssrvnoa+memcached-frontend.default.svc.cluster.local.:11211
-        - -query-frontend.results-cache.memcached.max-item-size=5242880
+        - -query-frontend.results-cache.memcached.max-item-size=26214400
         - -query-frontend.results-cache.memcached.timeout=500ms
         - -query-frontend.scheduler-address=ruler-query-scheduler-discovery.default.svc.cluster.local.:9095
         - -runtime-config.file=/etc/mimir/overrides.yaml
@@ -1599,7 +1601,7 @@ spec:
         - -shutdown-delay=90s
         - -target=query-frontend
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.5
+        image: grafana/mimir:3.1.1
         imagePullPolicy: IfNotPresent
         name: ruler-query-frontend
         ports:
@@ -1615,10 +1617,10 @@ spec:
           timeoutSeconds: 1
         resources:
           limits:
-            memory: 1200Mi
+            memory: 4Gi
           requests:
             cpu: "2"
-            memory: 600Mi
+            memory: 2Gi
         volumeMounts:
         - mountPath: /etc/mimir
           name: overrides
@@ -1676,7 +1678,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=query-scheduler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.5
+        image: grafana/mimir:3.1.1
         imagePullPolicy: IfNotPresent
         name: ruler-query-scheduler
         ports:
@@ -1750,7 +1752,7 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: status.podIP
-        image: grafana/mimir:3.0.5
+        image: grafana/mimir:3.1.1
         imagePullPolicy: IfNotPresent
         name: alertmanager
         ports:
@@ -1853,7 +1855,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=compactor
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.5
+        image: grafana/mimir:3.1.1
         imagePullPolicy: IfNotPresent
         name: compactor
         ports:
@@ -1965,7 +1967,7 @@ spec:
         - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
         - -ingest-storage.kafka.client-rack=zone-a
         - -ingest-storage.kafka.consumer-group-offset-commit-interval=5s
-        - -ingest-storage.kafka.ingestion-concurrency-estimated-bytes-per-sample=500
+        - -ingest-storage.kafka.ingestion-concurrency-estimated-bytes-per-sample=200
         - -ingest-storage.kafka.last-produced-offset-poll-interval=500ms
         - -ingest-storage.kafka.topic=ingest
         - -ingester.max-global-metadata-per-metric=10
@@ -2004,7 +2006,7 @@ spec:
           value: 1Gi
         - name: Z
           value: "123"
-        image: grafana/mimir:3.0.5
+        image: grafana/mimir:3.1.1
         imagePullPolicy: IfNotPresent
         name: ingester
         ports:
@@ -2112,7 +2114,7 @@ spec:
         - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
         - -ingest-storage.kafka.client-rack=zone-b
         - -ingest-storage.kafka.consumer-group-offset-commit-interval=5s
-        - -ingest-storage.kafka.ingestion-concurrency-estimated-bytes-per-sample=500
+        - -ingest-storage.kafka.ingestion-concurrency-estimated-bytes-per-sample=200
         - -ingest-storage.kafka.last-produced-offset-poll-interval=500ms
         - -ingest-storage.kafka.topic=ingest
         - -ingester.max-global-metadata-per-metric=10
@@ -2145,7 +2147,7 @@ spec:
           value: all-ingesters
         - name: GOMAXPROCS
           value: "9"
-        image: grafana/mimir:3.0.5
+        image: grafana/mimir:3.1.1
         imagePullPolicy: IfNotPresent
         name: ingester
         ports:
@@ -2253,7 +2255,7 @@ spec:
         - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
         - -ingest-storage.kafka.client-rack=zone-c
         - -ingest-storage.kafka.consumer-group-offset-commit-interval=5s
-        - -ingest-storage.kafka.ingestion-concurrency-estimated-bytes-per-sample=500
+        - -ingest-storage.kafka.ingestion-concurrency-estimated-bytes-per-sample=200
         - -ingest-storage.kafka.last-produced-offset-poll-interval=500ms
         - -ingest-storage.kafka.topic=ingest
         - -ingester.max-global-metadata-per-metric=10
@@ -2286,7 +2288,7 @@ spec:
           value: all-ingesters
         - name: GOMAXPROCS
           value: "9"
-        image: grafana/mimir:3.0.5
+        image: grafana/mimir:3.1.1
         imagePullPolicy: IfNotPresent
         name: ingester
         ports:
@@ -2422,7 +2424,7 @@ spec:
       containers:
       - args:
         - -m 1024
-        - -I 5m
+        - -I 25m
         - -c 16384
         - -v
         image: memcached:1.6.34-alpine
@@ -2670,7 +2672,7 @@ spec:
           value: "5"
         - name: GOMEMLIMIT
           value: "12884901888"
-        image: grafana/mimir:3.0.5
+        image: grafana/mimir:3.1.1
         imagePullPolicy: IfNotPresent
         name: store-gateway
         ports:
@@ -2816,7 +2818,7 @@ spec:
           value: "5"
         - name: GOMEMLIMIT
           value: "12884901888"
-        image: grafana/mimir:3.0.5
+        image: grafana/mimir:3.1.1
         imagePullPolicy: IfNotPresent
         name: store-gateway
         ports:
@@ -2960,7 +2962,7 @@ spec:
           value: "5"
         - name: GOMEMLIMIT
           value: "12884901888"
-        image: grafana/mimir:3.0.5
+        image: grafana/mimir:3.1.1
         imagePullPolicy: IfNotPresent
         name: store-gateway
         ports:

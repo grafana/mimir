@@ -164,7 +164,7 @@ func (m *RevertibleExtendedPointsState) ApplyBoundaryMutations(rangeStart, range
 
 	// Add synthetic or clamp start boundary
 	if m.first.T > rangeStart {
-		if err := m.buff.AppendAtStart(promql.FPoint{T: rangeStart, F: m.first.F}); err != nil {
+		if _, err := m.buff.AppendAtStart(promql.FPoint{T: rangeStart, F: m.first.F}); err != nil {
 			return err
 		}
 		m.undoHeadModifications = removed
@@ -183,7 +183,7 @@ func (m *RevertibleExtendedPointsState) ApplyBoundaryMutations(rangeStart, range
 
 	// Add synthetic or clamp end boundary
 	if m.last.T < rangeEnd {
-		if err := m.buff.Append(promql.FPoint{T: rangeEnd, F: m.last.F}); err != nil {
+		if _, err := m.buff.Append(promql.FPoint{T: rangeEnd, F: m.last.F}); err != nil {
 			return err
 		}
 		m.undoTailModifications = removed
@@ -229,13 +229,13 @@ func (m *RevertibleExtendedPointsState) UndoChanges() error {
 	}
 
 	if m.restoreExcludedLast {
-		if err := m.buff.Append(m.excludedLast); err != nil {
+		if _, err := m.buff.Append(m.excludedLast); err != nil {
 			return err
 		}
 	}
 
 	if m.restoreExcludedFirst {
-		if err := m.buff.AppendAtStart(m.excludedFirst); err != nil {
+		if _, err := m.buff.AppendAtStart(m.excludedFirst); err != nil {
 			return err
 		}
 	}

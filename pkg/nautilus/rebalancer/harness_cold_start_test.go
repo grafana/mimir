@@ -184,9 +184,9 @@ func TestHarness_KnownBug_SecondRoundFixesTheMissedPush(t *testing.T) {
 	rc0 := h.addReadcache("readcache-0")
 	rc1 := h.addReadcache("readcache-1")
 
-	require.NoError(t, h.runRound())          // cold start, push silently fails
-	h.advance(30 * time.Second)               // inside lease window
-	require.NoError(t, h.runRound())          // steady-state round; this push lands
+	require.NoError(t, h.runRound()) // cold start, push silently fails
+	h.advance(30 * time.Second)      // inside lease window
+	require.NoError(t, h.runRound()) // steady-state round; this push lands
 
 	totalOwned := len(rc0.ownedPartitions()) + len(rc1.ownedPartitions())
 	assert.Equalf(t, 4, totalOwned,

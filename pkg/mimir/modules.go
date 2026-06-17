@@ -103,6 +103,7 @@ const (
 	IngesterRing                     string = "ingester-ring"
 	IngesterService                  string = "ingester-service"
 	MemberlistKV                     string = "memberlist-kv"
+	NautilusRebalancer               string = "nautilus-rebalancer"
 	Overrides                        string = "overrides"
 	OverridesExporter                string = "overrides-exporter"
 	Querier                          string = "querier"
@@ -116,6 +117,8 @@ const (
 	QueryFrontendTripperware         string = "query-frontend-tripperware"
 	QueryScheduler                   string = "query-scheduler"
 	Queryable                        string = "queryable"
+	Readcache                        string = "readcache"
+	ReadcacheInstanceRing            string = "readcache-instance-ring"
 	Ruler                            string = "ruler"
 	RulerStorage                     string = "ruler-storage"
 	RuntimeConfig                    string = "runtime-config"
@@ -128,9 +131,6 @@ const (
 	UsageTracker                     string = "usage-tracker"
 	UsageTrackerInstanceRing         string = "usage-tracker-instance-ring"
 	UsageTrackerPartitionRing        string = "usage-tracker-partition-ring"
-	NautilusRebalancer               string = "nautilus-rebalancer"
-	Readcache                        string = "readcache"
-	ReadcacheInstanceRing            string = "readcache-instance-ring"
 	Vault                            string = "vault"
 
 	All string = "all"
@@ -408,16 +408,23 @@ func (t *Mimir) initIngesterPartitionRing() (services.Service, error) {
 		return nil, errors.Wrap(err, "creating KV store for ingester partitions ring watcher")
 	}
 
-	t.IngesterPartitionRingWatcher = ring.NewPartitionRingWatcher(ingester.PartitionRingName, ingester.PartitionRingKey, kvClient, util_log.Logger, prometheus.WrapRegistererWithPrefix("cortex_", t.Registerer))
-	t.IngesterPartitionInstanceRing = ring.NewPartitionInstanceRing(t.IngesterPartitionRingWatcher, t.IngesterRing, t.Cfg.Ingester.IngesterRing.HeartbeatTimeout)
+	t.IngesterPartitionRingWatchers, err = ingest.NewPartitionRingWatchers(t.Cfg.Compartments.Enabled, t.Cfg.Compartments.Read.NumCompartments, ingester.PartitionRingName, ingester.PartitionRingKey, kvClient, util_log.Logger, prometheus.WrapRegistererWithPrefix("cortex_", t.Registerer))
+	if err != nil {
+		return nil, errors.Wrap(err, "creating ingester partition rings watcher")
+	}
 
-	// Expose a web page to view the partitions ring state.
-	t.API.RegisterIngesterPartitionRing(ring.NewPartitionRingPageHandler(t.IngesterPartitionRingWatcher, ring.NewPartitionRingEditor(ingester.PartitionRingKey, kvClient)))
+	// One partition-instance ring per read compartment, pairing each compartment's partition ring with
+	// the shared ingester instance ring.
+	t.IngesterPartitionInstanceRings = ingest.NewPartitionInstanceRings(t.IngesterPartitionRingWatchers, t.IngesterRing, t.Cfg.Ingester.IngesterRing.HeartbeatTimeout)
+
+	// Expose a web page to view the partition ring state. With compartments enabled there's one page
+	// per read compartment, linked from an index page.
+	t.API.RegisterIngesterPartitionRings(t.Cfg.Compartments.Enabled, t.IngesterPartitionRingWatchers, ingester.PartitionRingKey, kvClient)
 
 	// Track anonymous usage statistics.
 	usagestats.SetMode(usagestats.ModeIngestStorage)
 
-	return t.IngesterPartitionRingWatcher, nil
+	return t.IngesterPartitionRingWatchers, nil
 }
 
 func (t *Mimir) initRuntimeConfig() (services.Service, error) {
@@ -527,10 +534,11 @@ func (t *Mimir) initDistributorService() (serv services.Service, err error) {
 	t.Cfg.Distributor.MinimiseIngesterRequestsHedgingDelay = t.Cfg.Querier.MinimiseIngesterRequestsHedgingDelay
 	t.Cfg.Distributor.PreferAvailabilityZones = t.Cfg.Querier.PreferAvailabilityZones
 	t.Cfg.Distributor.IngestStorageConfig = t.Cfg.IngestStorage
+	t.Cfg.Distributor.Compartments = t.Cfg.Compartments
 	t.Cfg.Distributor.UsageTrackerEnabled = t.Cfg.UsageTracker.Enabled
 
 	t.Distributor, err = distributor.New(t.Cfg.Distributor, t.Cfg.IngesterClient, t.Overrides,
-		t.ActiveGroupsCleanup, t.CostAttributionManager, t.IngesterRing, t.IngesterPartitionInstanceRing,
+		t.ActiveGroupsCleanup, t.CostAttributionManager, t.IngesterRing, t.IngesterPartitionInstanceRings, t.IngesterPartitionRingWatchers,
 		canJoinDistributorsRing, t.UsageTrackerPartitionRing, t.UsageTrackerInstanceRing, t.ReadcacheInstanceRing, t.Registerer, util_log.Logger)
 	if err != nil {
 		return
@@ -785,15 +793,24 @@ func (t *Mimir) initIngesterService() (serv services.Service, err error) {
 	t.Cfg.Ingester.IngesterRing.HideTokensInStatusPage = t.Cfg.IngestStorage.Enabled
 	t.Cfg.Ingester.InstanceLimitsFn = ingesterInstanceLimits(t.RuntimeConfig)
 	t.Cfg.Ingester.IngestStorageConfig = t.Cfg.IngestStorage
+	t.Cfg.Ingester.Compartments = t.Cfg.Compartments
 	t.tsdbIngesterConfig()
 
-	t.Ingester, err = ingester.New(t.Cfg.Ingester, t.Overrides, t.IngesterRing, t.IngesterPartitionRingWatcher, t.ActiveGroupsCleanup, t.CostAttributionManager, t.Registerer, util_log.Logger)
+	// The partition rings watcher is only built when ingest storage is enabled (otherwise
+	// initIngesterPartitionRing returns nil), so it's nil for classic ingesters. When present, the
+	// ingester owns only the partition ring of its own read compartment.
+	var partitionRingWatcher *ring.PartitionRingWatcher
+	if t.IngesterPartitionRingWatchers != nil {
+		partitionRingWatcher = t.IngesterPartitionRingWatchers.Watcher(t.Cfg.Ingester.ReadCompartmentID)
+	}
+
+	t.Ingester, err = ingester.New(t.Cfg.Ingester, t.Overrides, t.IngesterRing, partitionRingWatcher, t.ActiveGroupsCleanup, t.CostAttributionManager, t.Registerer, util_log.Logger)
 	if err != nil {
 		return
 	}
 
-	if t.IngesterPartitionRingWatcher != nil {
-		t.IngesterPartitionRingWatcher = t.IngesterPartitionRingWatcher.WithDelegate(t.Ingester)
+	if partitionRingWatcher != nil {
+		partitionRingWatcher.WithDelegate(t.Ingester)
 	}
 	if t.ActiveGroupsCleanup != nil {
 		t.ActiveGroupsCleanup.Register(t.Ingester)
@@ -855,7 +872,8 @@ func (t *Mimir) initQueryFrontendTopicOffsetsReaders() (services.Service, error)
 	// must be queried, and PENDING partitions may switch to ACTIVE between when the query-frontend fetch the offsets
 	// and the querier builds the replicaset of partitions to query.
 	getPartitionIDs := func(_ context.Context) ([]int32, error) {
-		return t.IngesterPartitionRingWatcher.PartitionRing().PartitionIDs(), nil
+		// Read path: uses the first read compartment's ring (not yet compartment-aware when enabled).
+		return t.IngesterPartitionRingWatchers.Watcher(0).PartitionRing().PartitionIDs(), nil
 	}
 
 	ingestTopicOffsetsReader := ingest.NewTopicOffsetsReader(kafkaClient, t.Cfg.IngestStorage.KafkaConfig.Topic, getPartitionIDs, t.Cfg.IngestStorage.KafkaConfig.LastProducedOffsetPollInterval, t.Registerer, util_log.Logger)
@@ -879,6 +897,9 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 	mqeOpts.EagerLoadSelectors = true
 
 	t.Cfg.Frontend.QueryMiddleware.InternalFunctionNames.Add(sharding.ConcatFunction.Name)
+	t.Cfg.Frontend.QueryMiddleware.InternalFunctionNames.Add(sharding.AvgFunction.Name)
+
+	var memoryConsumptionTrackerFactory *limiter.InflightMemoryConsumptionTracker
 
 	// Use either the Prometheus engine or Mimir Query Engine (with optional fallback to Prometheus
 	// if it has been configured) for middlewares that require executing queries using a PromQL engine.
@@ -886,9 +907,14 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 	switch t.Cfg.Frontend.QueryEngine {
 	case querier.PrometheusEngine:
 		eng = limiter.NewUnlimitedMemoryTrackerPromQLEngine(promql.NewEngine(promOpts))
+		memoryConsumptionTrackerFactory = limiter.NewUnlimintedInflightMemoryConsumptionTracker(promqlEngineRegisterer)
 	case querier.MimirEngine:
 		var err error
-		t.QueryFrontendStreamingEngine, err = streamingpromql.NewEngine(mqeOpts, stats.NewQueryMetrics(mqeOpts.CommonOpts.Reg), t.QueryFrontendQueryPlanner)
+		// The streaming engine will use this same MemoryConsumptionTrackerFactory
+		queryMetrics := stats.NewQueryMetrics(mqeOpts.CommonOpts.Reg)
+		memoryConsumptionTrackerFactory = limiter.NewInflightMemoryConsumptionTracker(mqeOpts.CommonOpts.Reg, queryMetrics.QueriesRejectedTotal.WithLabelValues(stats.RejectReasonMaxEstimatedQueryMemoryConsumption))
+		mqeOpts.MemoryConsumptionTrackerFactory = memoryConsumptionTrackerFactory
+		t.QueryFrontendStreamingEngine, err = streamingpromql.NewEngine(mqeOpts, queryMetrics, t.QueryFrontendQueryPlanner)
 		if err != nil {
 			return nil, fmt.Errorf("unable to create Mimir Query Engine: %w", err)
 		}
@@ -906,6 +932,7 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 		t.Cfg.Frontend.QueryMiddleware,
 		util_log.Logger,
 		t.Overrides,
+		t.QueryLimitsProvider,
 		t.QueryFrontendCodec,
 		querymiddleware.PrometheusResponseExtractor{},
 		eng,
@@ -914,6 +941,12 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 		t.Cfg.Frontend.QueryMiddleware.EnableRemoteExecution,
 		t.QueryFrontendStreamingEngine,
 		t.Registerer,
+
+		// The memoryConsumptionTrackerFactory is shared between the engine and the middleware.
+		// The tracker will be used in the query time split middleware to ensure that all split queries
+		// are tracked under a common memory consumption tracker.
+		// This is only set when using the streamingpromql engine.
+		memoryConsumptionTrackerFactory,
 	)
 	if err != nil {
 		return nil, err
@@ -1087,8 +1120,9 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 	//   - Query execution (engine selection, memory tracking, etc.) happens in remote querier
 	// When query-frontend is NOT configured (local/embedded mode):
 	//   - If tenant federation is enabled: queryFunc routes to federated or regular execution based on query
-	//   - If tenant federation is disabled: queryFunc directly executes via rules.EngineQueryFunc(engine, queryable)
-	//     which creates a Query object from the PromQL string and calls Query.Exec()
+	//   - If tenant federation is disabled: queryFunc directly executes via ruler.EngineQueryFunc(engine, queryable)
+	//     which is a Mimir-specific replacement for rules.EngineQueryFunc that Closes the underlying
+	//     promql.Query after every evaluation (required for MQE memory tracker cleanup).
 	var queryFunc rules.QueryFunc
 
 	if t.Cfg.Ruler.QueryFrontend.Address != "" {
@@ -1140,15 +1174,15 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 
 			federatedQueryable = tenantfederation.NewQueryable(queryable, bypassForSingleQuerier, t.Cfg.TenantFederation.MaxConcurrent, rulerRegisterer, util_log.Logger)
 
-			regularQueryFunc := rules.EngineQueryFunc(eng, queryable)
-			federatedQueryFunc := rules.EngineQueryFunc(eng, federatedQueryable)
+			regularQueryFunc := ruler.EngineQueryFunc(eng, queryable)
+			federatedQueryFunc := ruler.EngineQueryFunc(eng, federatedQueryable)
 
 			embeddedQueryable = federatedQueryable
 			queryFunc = ruler.TenantFederationQueryFunc(regularQueryFunc, federatedQueryFunc)
 
 		} else {
 			embeddedQueryable = queryable
-			queryFunc = rules.EngineQueryFunc(eng, queryable)
+			queryFunc = ruler.EngineQueryFunc(eng, queryable)
 		}
 	}
 
@@ -1185,7 +1219,7 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 		),
 	)
 
-	dnsResolver := dns.NewProvider(util_log.Logger, dnsProviderReg, dns.GolangResolverType)
+	dnsResolver := dns.NewProvider(dns.GolangResolverType, 0, util_log.Logger, dnsProviderReg)
 	manager, err := ruler.NewDefaultMultiTenantManager(t.Cfg.Ruler, managerFactory, t.Registerer, util_log.Logger, dnsResolver, t.Overrides, rulesFS)
 	if err != nil {
 		return nil, err
@@ -1299,7 +1333,7 @@ func (t *Mimir) initMemberlistKV() (services.Service, error) {
 			t.Registerer,
 		),
 	)
-	dnsProvider := dns.NewProvider(util_log.Logger, dnsProviderReg, dns.GolangResolverType)
+	dnsProvider := dns.NewProvider(dns.GolangResolverType, 0, util_log.Logger, dnsProviderReg)
 	t.MemberlistKV = memberlist.NewKVInitService(
 		&t.Cfg.MemberlistKV,
 		log.With(util_log.Logger, "component", "memberlist"),
@@ -1464,7 +1498,7 @@ func (t *Mimir) initContinuousTest() (services.Service, error) {
 	}
 
 	t.ContinuousTestManager = continuoustest.NewManager(t.Cfg.ContinuousTest.Manager, util_log.Logger)
-	t.ContinuousTestManager.AddTest(continuoustest.NewWriteReadSeriesTest(t.Cfg.ContinuousTest.WriteReadSeriesTest, client, util_log.Logger, t.Registerer))
+	t.ContinuousTestManager.AddTest(continuoustest.NewWriteReadSeriesTest(t.Cfg.ContinuousTest.WriteReadSeriesTest, client, t.Cfg.ContinuousTest.Client.WriteProtocol, util_log.Logger, t.Registerer))
 	t.ContinuousTestManager.AddTest(continuoustest.NewIngestStorageRecordTest(t.Cfg.ContinuousTest.IngestStorageRecordTest, util_log.Logger, t.Registerer))
 	t.ContinuousTestManager.AddTest(continuoustest.NewWriteReadOOOTest(t.Cfg.ContinuousTest.WriteReadOOOTest, client, util_log.Logger, t.Registerer))
 

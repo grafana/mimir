@@ -19,11 +19,12 @@ import (
 	"github.com/grafana/e2e"
 	e2edb "github.com/grafana/e2e/db"
 	amlabels "github.com/prometheus/alertmanager/pkg/labels"
-	"github.com/prometheus/alertmanager/types"
+	amsilence "github.com/prometheus/alertmanager/silence"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/grafana/mimir/integration/e2emimir"
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
@@ -63,7 +64,7 @@ func uploadAlertmanagerConfig(minio *e2e.HTTPService, bucket, user, config strin
 		Templates: []*alertspb.TemplateDesc{},
 	}
 
-	d, err := desc.Marshal()
+	d, err := proto.Marshal(&desc)
 	if err != nil {
 		return err
 	}
@@ -170,26 +171,28 @@ func TestAlertmanagerClassicMode(t *testing.T) {
 	require.EqualError(t, c.SetAlertmanagerConfig(ctx, mimirAlertmanagerUserUTF8ConfigYaml, nil), "setting config failed with status 400 and error error validating Alertmanager config: bad matcher format: bar🙂=baz\n")
 
 	// Should be able to create a silence with classic matchers, but not UTF-8 matchers.
-	silenceID, err := c.CreateSilence(ctx, types.Silence{
+	silenceID, err := c.CreateSilence(ctx, e2emimir.Silence{
 		Matchers: amlabels.Matchers{
 			{Name: "foo", Value: "bar"},
 		},
-		Comment:  "This is a test silence.",
-		StartsAt: time.Now(),
-		EndsAt:   time.Now().Add(time.Minute),
+		Comment:   "This is a test silence.",
+		CreatedBy: "test",
+		StartsAt:  time.Now(),
+		EndsAt:    time.Now().Add(time.Minute),
 	})
 	require.NoError(t, err)
 	require.NotEmpty(t, silenceID)
 
-	silenceID, err = c.CreateSilence(ctx, types.Silence{
+	silenceID, err = c.CreateSilence(ctx, e2emimir.Silence{
 		Matchers: amlabels.Matchers{
 			{Name: "bar🙂", Value: "baz"},
 		},
-		Comment:  "This is a test silence.",
-		StartsAt: time.Now(),
-		EndsAt:   time.Now().Add(time.Minute),
+		Comment:   "This is a test silence.",
+		CreatedBy: "test",
+		StartsAt:  time.Now(),
+		EndsAt:    time.Now().Add(time.Minute),
 	})
-	require.EqualError(t, err, "creating the silence failed with status 400 and error \"invalid silence: invalid label matcher 0: invalid label name \\\"bar🙂\\\"\"\n")
+	require.EqualError(t, err, "creating the silence failed with status 400 and error \"invalid silence: invalid label matcher 0 in set 0: invalid label name \\\"bar🙂\\\"\"\n")
 	require.Empty(t, silenceID)
 
 	// Should be able to post alerts with classic labels but not UTF-8 labels.
@@ -249,24 +252,26 @@ func TestAlertmanagerUTF8StrictMode(t *testing.T) {
 	require.NoError(t, c.SetAlertmanagerConfig(ctx, mimirAlertmanagerUserUTF8ConfigYaml, nil))
 
 	// Should be able to create a silence with both classic matchers and UTF-8 matchers.
-	silenceID, err := c.CreateSilence(ctx, types.Silence{
+	silenceID, err := c.CreateSilence(ctx, e2emimir.Silence{
 		Matchers: amlabels.Matchers{
 			{Name: "foo", Value: "bar"},
 		},
-		Comment:  "This is a test silence.",
-		StartsAt: time.Now(),
-		EndsAt:   time.Now().Add(time.Minute),
+		Comment:   "This is a test silence.",
+		CreatedBy: "test",
+		StartsAt:  time.Now(),
+		EndsAt:    time.Now().Add(time.Minute),
 	})
 	require.NoError(t, err)
 	require.NotEmpty(t, silenceID)
 
-	silenceID, err = c.CreateSilence(ctx, types.Silence{
+	silenceID, err = c.CreateSilence(ctx, e2emimir.Silence{
 		Matchers: amlabels.Matchers{
 			{Name: "bar🙂", Value: "baz"},
 		},
-		Comment:  "This is a test silence.",
-		StartsAt: time.Now(),
-		EndsAt:   time.Now().Add(time.Minute),
+		Comment:   "This is a test silence.",
+		CreatedBy: "test",
+		StartsAt:  time.Now(),
+		EndsAt:    time.Now().Add(time.Minute),
 	})
 	require.NoError(t, err)
 	require.NotEmpty(t, silenceID)
@@ -490,7 +495,7 @@ func TestAlertmanagerSharding(t *testing.T) {
 					Templates: []*alertspb.TemplateDesc{},
 				}
 
-				d, err := desc.Marshal()
+				d, err := proto.Marshal(&desc)
 				require.NoError(t, err)
 				err = client.Upload(context.Background(), fmt.Sprintf("/alerts/%s", user), bytes.NewReader(d))
 				require.NoError(t, err)
@@ -531,14 +536,15 @@ func TestAlertmanagerSharding(t *testing.T) {
 			comment := func(i int) string {
 				return fmt.Sprintf("Silence Comment #%d", i)
 			}
-			silence := func(i int) types.Silence {
-				return types.Silence{
+			silence := func(i int) e2emimir.Silence {
+				return e2emimir.Silence{
 					Matchers: amlabels.Matchers{
 						{Name: "instance", Value: "prometheus-one"},
 					},
-					Comment:  comment(i),
-					StartsAt: time.Now(),
-					EndsAt:   time.Now().Add(time.Hour),
+					Comment:   comment(i),
+					CreatedBy: "test",
+					StartsAt:  time.Now(),
+					EndsAt:    time.Now().Add(time.Hour),
 				}
 			}
 
@@ -581,10 +587,10 @@ func TestAlertmanagerSharding(t *testing.T) {
 				require.NoError(t, waitForSilences("active", 3*testCfg.replicationFactor))
 			}
 
-			assertSilences := func(list []types.Silence, s1, s2, s3 types.SilenceState) {
+			assertSilences := func(list []e2emimir.Silence, s1, s2, s3 amsilence.SilenceState) {
 				assert.Equal(t, 3, len(list))
 
-				ids := make(map[string]types.Silence, len(list))
+				ids := make(map[string]e2emimir.Silence, len(list))
 				for _, s := range list {
 					ids[s.ID] = s
 				}
@@ -605,7 +611,7 @@ func TestAlertmanagerSharding(t *testing.T) {
 				for _, c := range clients {
 					list, err := c.GetSilences(context.Background())
 					require.NoError(t, err)
-					assertSilences(list, types.SilenceStateActive, types.SilenceStateActive, types.SilenceStateActive)
+					assertSilences(list, amsilence.SilenceStateActive, amsilence.SilenceStateActive, amsilence.SilenceStateActive)
 				}
 			}
 
@@ -615,17 +621,17 @@ func TestAlertmanagerSharding(t *testing.T) {
 					sil1, err := c.GetSilence(context.Background(), id1)
 					require.NoError(t, err)
 					assert.Equal(t, comment(1), sil1.Comment)
-					assert.Equal(t, types.SilenceStateActive, sil1.Status.State)
+					assert.Equal(t, amsilence.SilenceStateActive, sil1.Status.State)
 
 					sil2, err := c.GetSilence(context.Background(), id2)
 					require.NoError(t, err)
 					assert.Equal(t, comment(2), sil2.Comment)
-					assert.Equal(t, types.SilenceStateActive, sil2.Status.State)
+					assert.Equal(t, amsilence.SilenceStateActive, sil2.Status.State)
 
 					sil3, err := c.GetSilence(context.Background(), id3)
 					require.NoError(t, err)
 					assert.Equal(t, comment(3), sil3.Comment)
-					assert.Equal(t, types.SilenceStateActive, sil3.Status.State)
+					assert.Equal(t, amsilence.SilenceStateActive, sil3.Status.State)
 				}
 			}
 
@@ -669,7 +675,7 @@ func TestAlertmanagerSharding(t *testing.T) {
 				for _, c := range clients {
 					list, err := c.GetSilences(context.Background())
 					require.NoError(t, err)
-					assertSilences(list, types.SilenceStateActive, types.SilenceStateExpired, types.SilenceStateActive)
+					assertSilences(list, amsilence.SilenceStateActive, amsilence.SilenceStateExpired, amsilence.SilenceStateActive)
 				}
 
 				err = c2.DeleteSilence(context.Background(), id3)
@@ -679,7 +685,7 @@ func TestAlertmanagerSharding(t *testing.T) {
 				for _, c := range clients {
 					list, err := c.GetSilences(context.Background())
 					require.NoError(t, err)
-					assertSilences(list, types.SilenceStateActive, types.SilenceStateExpired, types.SilenceStateExpired)
+					assertSilences(list, amsilence.SilenceStateActive, amsilence.SilenceStateExpired, amsilence.SilenceStateExpired)
 				}
 
 				err = c3.DeleteSilence(context.Background(), id1)
@@ -689,7 +695,7 @@ func TestAlertmanagerSharding(t *testing.T) {
 				for _, c := range clients {
 					list, err := c.GetSilences(context.Background())
 					require.NoError(t, err)
-					assertSilences(list, types.SilenceStateExpired, types.SilenceStateExpired, types.SilenceStateExpired)
+					assertSilences(list, amsilence.SilenceStateExpired, amsilence.SilenceStateExpired, amsilence.SilenceStateExpired)
 				}
 			}
 
@@ -761,25 +767,17 @@ func TestAlertmanagerSharding(t *testing.T) {
 				[]string{"cortex_alertmanager_alerts_received_total"},
 				e2e.SkipMissingMetrics))
 
-			// Endpoint: Non-API endpoints such as the web user interface
+			// Endpoint: Non-API endpoints.
+			// /script.js, /favicon.ico, /-/healthy and /-/ready were positive endpoints
+			// served by alertmanager's UI package in v0.31.x. The UI package can no
+			// longer be used as a Go library in v0.32.0, so Mimir no longer registers
+			// it and those paths now return 404. We don't assert on them here (the
+			// assertions are dropped along with the routes) but verify the endpoints
+			// that Mimir explicitly disables remain 404.
 			{
 				for _, c := range clients {
-					// Static paths - just check route, not content.
-					_, err := c.GetAlertmanager(context.Background(), "/script.js")
-					assert.NoError(t, err)
-					_, err = c.GetAlertmanager(context.Background(), "/favicon.ico")
-					assert.NoError(t, err)
-
-					// Status paths - fixed response.
-					body, err := c.GetAlertmanager(context.Background(), "/-/healthy")
-					assert.NoError(t, err)
-					assert.Equal(t, "OK", body)
-					body, err = c.GetAlertmanager(context.Background(), "/-/ready")
-					assert.NoError(t, err)
-					assert.Equal(t, "OK", body)
-
 					// Disabled paths - should 404.
-					_, err = c.GetAlertmanager(context.Background(), "/metrics")
+					_, err := c.GetAlertmanager(context.Background(), "/metrics")
 					assert.EqualError(t, err, e2emimir.ErrNotFound.Error())
 					_, err = c.GetAlertmanager(context.Background(), "/debug/pprof")
 					assert.EqualError(t, err, e2emimir.ErrNotFound.Error())
@@ -837,7 +835,7 @@ func TestAlertmanagerShardingScaling(t *testing.T) {
 					Templates: []*alertspb.TemplateDesc{},
 				}
 
-				d, err := desc.Marshal()
+				d, err := proto.Marshal(&desc)
 				require.NoError(t, err)
 				err = client.Upload(context.Background(), fmt.Sprintf("/alerts/%s", user), bytes.NewReader(d))
 				require.NoError(t, err)
@@ -921,13 +919,14 @@ func TestAlertmanagerShardingScaling(t *testing.T) {
 					require.NoError(t, err)
 
 					for j := 1; j <= 10; j++ {
-						silence := types.Silence{
+						silence := e2emimir.Silence{
 							Matchers: amlabels.Matchers{
 								{Name: "instance", Value: "prometheus-one"},
 							},
-							Comment:  fmt.Sprintf("Silence Comment #%d", j),
-							StartsAt: time.Now(),
-							EndsAt:   time.Now().Add(time.Hour),
+							Comment:   fmt.Sprintf("Silence Comment #%d", j),
+							CreatedBy: "test",
+							StartsAt:  time.Now(),
+							EndsAt:    time.Now().Add(time.Hour),
 						}
 
 						_, err = client.CreateSilence(context.Background(), silence)

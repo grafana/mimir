@@ -62,7 +62,7 @@ spec:
           args:
             - -m 1024
             - --extended=modern
-            - -I 5m
+            - -I 25m
             - -c 16384
             - -v
             - -u 11211
@@ -94,3 +94,4 @@ spec:
               drop:
               - ALL
             readOnlyRootFilesystem: true
+

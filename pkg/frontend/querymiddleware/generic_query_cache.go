@@ -15,6 +15,7 @@ import (
 	"github.com/grafana/dskit/tenant"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
+	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -40,12 +41,12 @@ type genericQueryCache struct {
 	cache     cache.Cache
 	tenantTTL tenantCacheTTL
 	cacheKey  keyingFunc
-	metrics   *resultsCacheMetrics
+	metrics   *ResultsCacheMetrics
 	next      http.RoundTripper
 	logger    log.Logger
 }
 
-func newGenericQueryCacheRoundTripper(cache cache.Cache, cacheKey keyingFunc, tenantTTL tenantCacheTTL, next http.RoundTripper, logger log.Logger, metrics *resultsCacheMetrics) http.RoundTripper {
+func newGenericQueryCacheRoundTripper(cache cache.Cache, cacheKey keyingFunc, tenantTTL tenantCacheTTL, next http.RoundTripper, logger log.Logger, metrics *ResultsCacheMetrics) http.RoundTripper {
 	return &genericQueryCache{
 		cache:     cache,
 		tenantTTL: tenantTTL,
@@ -63,7 +64,7 @@ func (c *genericQueryCache) RoundTrip(req *http.Request) (*http.Response, error)
 	defer spanLog.Finish()
 
 	// Skip the cache if disabled for this request.
-	if decodeCacheDisabledOption(req) {
+	if requestoptions.DecodeCacheDisabledOption(req) {
 		spanLog.DebugLog("msg", "cache disabled for the request")
 		return c.next.RoundTrip(req)
 	}
@@ -95,11 +96,11 @@ func (c *genericQueryCache) RoundTrip(req *http.Request) (*http.Response, error)
 	}
 
 	// Lookup the cache.
-	c.metrics.cacheRequests.Inc()
+	c.metrics.CacheRequests.Inc()
 	cacheKey, hashedCacheKey := generateGenericQueryRequestCacheKey(tenantIDs, queryReq)
 	res := c.fetchCachedResponse(ctx, cacheKey, hashedCacheKey)
 	if res != nil {
-		c.metrics.cacheHits.Inc()
+		c.metrics.CacheHits.Inc()
 		spanLog.DebugLog("msg", "response fetched from the cache")
 		return res, nil
 	}
@@ -155,9 +156,8 @@ func (c *genericQueryCache) storeCachedResponse(ctx context.Context, cachedRes *
 		level.Warn(c.logger).Log("msg", "failed to encode cached query response", "err", err)
 		return
 	}
-	toStore := map[string][]byte{hashedCacheKey: encoded}
-	c.cache.SetMultiAsync(toStore, cacheTTL)
-	c.recordCacheStoreQueryDetails(ctx, toStore)
+	c.cache.SetAsync(hashedCacheKey, encoded, cacheTTL)
+	c.recordCacheStoreQueryDetails(ctx, encoded)
 }
 
 func (c *genericQueryCache) recordCacheHitQueryDetails(ctx context.Context, hits map[string][]byte) {
@@ -170,14 +170,12 @@ func (c *genericQueryCache) recordCacheHitQueryDetails(ctx context.Context, hits
 	}
 }
 
-func (c *genericQueryCache) recordCacheStoreQueryDetails(ctx context.Context, toStore map[string][]byte) {
+func (c *genericQueryCache) recordCacheStoreQueryDetails(ctx context.Context, value []byte) {
 	details := QueryDetailsFromContext(ctx)
 	if details == nil {
 		return
 	}
-	for _, val := range toStore {
-		details.ResultsCacheMissBytes += len(val)
-	}
+	details.ResultsCacheMissBytes += len(value)
 }
 
 func generateGenericQueryRequestCacheKey(tenantIDs []string, req *GenericQueryCacheKey) (cacheKey, hashedCacheKey string) {

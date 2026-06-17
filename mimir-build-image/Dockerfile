@@ -4,65 +4,105 @@
 # Provenance-includes-copyright: The Cortex Authors.
 
 FROM registry.k8s.io/kustomize/kustomize:v5.4.3 AS kustomize
-FROM alpine/helm:4.1.4@sha256:4b0bdd2cf18ff6bca12aba0b2c5671384dab5035c19c57f0c58b854a0baf65be AS helm
-FROM golang:1.25.9-trixie@sha256:091e6099f4a58e9393b8cc5615622a59c1cef64481b0ffcf349ec1574449059e
+FROM alpine/helm:4.2.1@sha256:8647f126de3578d74f947ba735e4cfa0ea6aea7d6e2f36bceb86f31415944dca AS helm
+FROM quay.io/skopeo/stable:v1.22.2-immutable@sha256:4a16d57b37617a04b3d643079a477a2848efe892dffcdf0ce56df4262b65f810 AS skopeo
+FROM golang:1.26.4-trixie@sha256:0dcba0d95dbfb072e9917a106b9e07d7cc298097dc83e9307056ef1889de654d
 ARG goproxyValue
 ENV GOPROXY=${goproxyValue}
-ENV SKOPEO_DEPS="libgpgme-dev libassuan-dev libbtrfs-dev libdevmapper-dev pkg-config"
 # Override toolchain directive in go.mod, to ensure the image's Go version is used.
 # Be aware that the official Go Dockerfiles already do this, but let's be explicit.
 # https://github.com/docker-library/golang/issues/472
 ENV GOTOOLCHAIN=local
-RUN apt-get update && apt-get install -y curl python3-requests python3-yaml file jq zip unzip protobuf-compiler libprotobuf-dev shellcheck libpcap-dev $SKOPEO_DEPS && \
+
+ENV NODE_MAJOR_VERSION=26
+RUN curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg
+RUN <<EOF cat > /etc/apt/sources.list.d/nodesource.sources
+Types: deb
+URIs: https://deb.nodesource.com/node_${NODE_MAJOR_VERSION}.x/
+Suites: nodistro
+Components: main
+Signed-By: /etc/apt/keyrings/nodesource.gpg
+EOF
+
+RUN apt-get update && \
+    apt-get install -y \
+      curl \
+      python3-requests \
+      python3-yaml \
+      file \
+      jq \
+      zip \
+      unzip \
+      protobuf-compiler \
+      libprotobuf-dev \
+      shellcheck \
+      libpcap-dev \
+      nodejs \
+      # Dependencies required to run Skopeo.
+      libgpgme11t64 libbtrfs0t64 libassuan9 libsubid5 \
+    && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
-RUN go install golang.org/x/tools/cmd/goimports@3fce476f0a782aeb5034d592c189e63be4ba6c9e
-RUN curl -sL https://deb.nodesource.com/setup_20.x | bash -
-RUN apt-get install -y nodejs && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
-RUN npm install -g prettier@2.3.2
+# Set --ignore-scripts to avoid arbitrary code execution in build hook scripts. (Prettier 2.3.2 doesn't happen to have any.)
+RUN npm install -g --ignore-scripts prettier@3.8.4
 
-# renovate: depName=github.com/mvdan/sh
-ENV SHFMT_VERSION=3.13.0
-RUN GOARCH=$(go env GOARCH) && \
-    URL=https://github.com/mvdan/sh/releases/download/v${SHFMT_VERSION}/shfmt_v${SHFMT_VERSION}_linux_${GOARCH}; \
-    curl -fsSLo shfmt "${URL}" && \
-	chmod +x shfmt && \
-	mv shfmt /usr/bin
+# renovate: datasource=github-release-attachments depName=mvdan/sh
+ENV SHFMT_VERSION=v3.13.1
+# renovate: datasource=github-release-attachments depName=mvdan/sh digestVersion=v3.13.1
+ENV SHFMT_AMD64_DIGEST=fb096c5d1ac6beabbdbaa2874d025badb03ee07929f0c9ff67563ce8c75398b1
+# renovate: datasource=github-release-attachments depName=mvdan/sh digestVersion=v3.13.1
+ENV SHFMT_ARM64_DIGEST=32d92acaa5cd8abb29fc49dac123dc412442d5713967819d8af2c29f1b3857c7
+RUN set -o pipefail && \
+    GOARCH=$(go env GOARCH) && \
+    DIGEST=$(case "$GOARCH" in amd64) echo $SHFMT_AMD64_DIGEST;; arm64) echo $SHFMT_ARM64_DIGEST;; *) echo "unknown architecture $GOARCH" >/dev/stderr && exit 1;; esac) && \
+    curl -fsSLo /usr/bin/shfmt "https://github.com/mvdan/sh/releases/download/${SHFMT_VERSION}/shfmt_${SHFMT_VERSION}_linux_${GOARCH}" && \
+    echo "$DIGEST  /usr/bin/shfmt" | sha256sum --check && \
+    chmod a+x /usr/bin/shfmt
 
-# renovate: depName=github.com/grafana/tanka
-ENV TANKA_VERSION=0.36.4
-RUN GOARCH=$(go env GOARCH) && \
-    curl -fSL -o "/usr/bin/tk" "https://github.com/grafana/tanka/releases/download/v${TANKA_VERSION}/tk-linux-${GOARCH}" && \
+# renovate: datasource=github-release-attachments depName=grafana/tanka
+ENV TANKA_VERSION=v0.37.2
+# renovate: datasource=github-release-attachments depName=grafana/tanka digestVersion=v0.37.2
+ENV TANKA_AMD64_DIGEST=cd79b6ec20092466184e8e8263a322384c1a2d484ae0bc53ef022495ac1fb926
+# renovate: datasource=github-release-attachments depName=grafana/tanka digestVersion=v0.37.2
+ENV TANKA_ARM64_DIGEST=6be39c524f8f405e023c58d4ba2f210dea25de0f74e9cdffe1a3a9f79cc26c74
+RUN set -o pipefail && \
+    GOARCH=$(go env GOARCH) && \
+    DIGEST=$(case "$GOARCH" in amd64) echo $TANKA_AMD64_DIGEST;; arm64) echo $TANKA_ARM64_DIGEST;; *) echo "unknown architecture $GOARCH" >/dev/stderr && exit 1;; esac) && \
+    curl -fsSLo /usr/bin/tk "https://github.com/grafana/tanka/releases/download/${TANKA_VERSION}/tk-linux-${GOARCH}" && \
+    echo "$DIGEST  /usr/bin/tk" | sha256sum --check && \
     chmod a+x /usr/bin/tk
 
-RUN curl -sfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh| sh -s -- -b /usr/bin v2.8.0
+# renovate: datasource=github-release-attachments depName=golangci/golangci-lint
+ENV GOLANGCI_LINT_VERSION=v2.12.2
+# renovate: datasource=github-release-attachments depName=golangci/golangci-lint digestVersion=v2.12.2
+ENV GOLANGCI_LINT_AMD64_DIGEST=8df580d2670fed8fa984aac0507099af8df275e665215f5c7a2ae3943893a553
+# renovate: datasource=github-release-attachments depName=golangci/golangci-lint digestVersion=v2.12.2
+ENV GOLANGCI_LINT_ARM64_DIGEST=44cd40a8c76c86755375adfeea52cfd3533cb43d7bd647771e0ae065e166df3a
+RUN set -o pipefail && \
+    GOARCH=$(go env GOARCH) && \
+    DIGEST=$(case "$GOARCH" in amd64) echo $GOLANGCI_LINT_AMD64_DIGEST;; arm64) echo $GOLANGCI_LINT_ARM64_DIGEST;; *) echo "unknown architecture $GOARCH" >/dev/stderr && exit 1;; esac) && \
+    VERSION_SLUG=golangci-lint-${GOLANGCI_LINT_VERSION#v}-linux-${GOARCH} && \
+    TARBALL=$VERSION_SLUG.tar.gz && \
+    cd /tmp && \
+    curl -fsSLo "/tmp/$TARBALL" "https://github.com/golangci/golangci-lint/releases/download/${GOLANGCI_LINT_VERSION}/$TARBALL" && \
+    echo "$DIGEST  /tmp/$TARBALL" | sha256sum --check && \
+    tar -xzvf "/tmp/$TARBALL" -C /usr/bin --strip-components=1 "$VERSION_SLUG/golangci-lint" && \
+    rm /tmp/$TARBALL
 
-# renovate: depName=github.com/containers/skopeo
-ENV SKOPEO_VERSION=v1.22.0
-RUN git clone --depth 1 --branch ${SKOPEO_VERSION} https://github.com/containers/skopeo /go/src/github.com/containers/skopeo && \
-    DISABLE_DOCS=1 make -C /go/src/github.com/containers/skopeo install && \
-    rm -rf /go/pkg /go/src /root/.cache
-
-RUN GO111MODULE=on \
-	go install github.com/client9/misspell/cmd/misspell@v0.3.4 && \
-	go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.11 && \
-	go install github.com/gogo/protobuf/protoc-gen-gogoslick@v1.3.2 && \
-	go install github.com/weaveworks/tools/cover@bdd647e92546027e12cdde3ae0714bb495e43013 && \
-	go install github.com/fatih/faillint@v1.15.0 && \
-	go install github.com/campoy/embedmd/v2@v2.0.0 && \
-	go install github.com/jsonnet-bundler/jsonnet-bundler/cmd/jb@v0.6.0 && \
-	go install github.com/monitoring-mixins/mixtool/cmd/mixtool@b97ae11 && \
-	go install github.com/mikefarah/yq/v4@v4.52.5 && \
-	go install github.com/google/go-jsonnet/cmd/jsonnet@v0.21.0 && \
-	go install github.com/google/go-jsonnet/cmd/jsonnetfmt@v0.21.0 && \
-	go install github.com/norwoodj/helm-docs/cmd/helm-docs@v1.14.2 && \
-	go install github.com/open-policy-agent/conftest@v0.66.0 && \
-	go install github.com/uber-go/gopatch@v0.4.0 && \
-	go install github.com/bufbuild/buf/cmd/buf@v1.67.0 && \
-	rm -rf /go/pkg /go/src /root/.cache
+COPY go.mod go.sum /tools/
+RUN \
+  cd /tools && \
+	go install tool && \
+	rm -rf /go/pkg /go/src /root/.cache /tools/go.mod /tools/go.sum
 
 COPY --from=helm /usr/bin/helm /usr/bin/helm
 COPY --from=kustomize /app/kustomize /usr/bin/kustomize
+
+COPY --from=skopeo /etc/containers /etc/containers
+COPY --from=skopeo /usr/bin/skopeo /usr/bin/skopeo
+COPY --from=skopeo /usr/share/containers /usr/share/containers
+COPY --from=skopeo /var/lib/containers /var/lib/containers
+
 ENV NODE_PATH=/usr/lib/node_modules
 COPY build.sh /
 ENV GOCACHE=/go/cache

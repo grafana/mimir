@@ -206,6 +206,22 @@ func (m Metadata) With(key string, val string) Metadata {
 	return m
 }
 
+// Has checks whether a specific metadata key is present.
+func (m Metadata) Has(key string) bool {
+	_, ok := m.Get(key)
+	return ok
+}
+
+// Get the value set for key.
+func (m Metadata) Get(key string) (string, bool) {
+	for k, v := range m.Iter() {
+		if k == key {
+			return v, true
+		}
+	}
+	return "", false
+}
+
 // WithTenant encodes the metadata as a tenant-prefixed string.
 // The format is "tenantID:key1=val1:key2=val2" with keys sorted alphabetically.
 func (m Metadata) WithTenant(tenantID string) string {
