@@ -51,12 +51,14 @@ import (
 	"github.com/grafana/mimir/pkg/frontend/transport"
 	v2 "github.com/grafana/mimir/pkg/frontend/v2"
 	"github.com/grafana/mimir/pkg/ingester"
+	"github.com/grafana/mimir/pkg/nautilus/rebalancer"
 	"github.com/grafana/mimir/pkg/querier"
 	querierapi "github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/querier/engine"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/querier/tenantfederation"
 	querier_worker "github.com/grafana/mimir/pkg/querier/worker"
+	"github.com/grafana/mimir/pkg/readcache"
 	"github.com/grafana/mimir/pkg/ruler"
 	"github.com/grafana/mimir/pkg/scheduler"
 	"github.com/grafana/mimir/pkg/storage/bucket"
@@ -101,6 +103,7 @@ const (
 	IngesterRing                     string = "ingester-ring"
 	IngesterService                  string = "ingester-service"
 	MemberlistKV                     string = "memberlist-kv"
+	NautilusRebalancer               string = "nautilus-rebalancer"
 	Overrides                        string = "overrides"
 	OverridesExporter                string = "overrides-exporter"
 	Querier                          string = "querier"
@@ -114,6 +117,8 @@ const (
 	QueryFrontendTripperware         string = "query-frontend-tripperware"
 	QueryScheduler                   string = "query-scheduler"
 	Queryable                        string = "queryable"
+	Readcache                        string = "readcache"
+	ReadcacheInstanceRing            string = "readcache-instance-ring"
 	Ruler                            string = "ruler"
 	RulerStorage                     string = "ruler-storage"
 	RuntimeConfig                    string = "runtime-config"
@@ -319,10 +324,19 @@ func (t *Mimir) initServer() (services.Service, error) {
 
 	ingFn := func() ingesterReceiver {
 		// Return explicit nil if there's no ingester. We don't want to return typed-nil as interface value.
-		if t.Ingester == nil {
-			return nil
+		if t.Ingester != nil {
+			return t.Ingester
 		}
-		return t.Ingester
+		// Readcache pods register on the same `/cortex.Ingester/*`
+		// gRPC namespace so distributors can dial them
+		// interchangeably with ingesters. Surface them to the
+		// limiter so read RPCs aren't rejected as "no ingester".
+		// Readcache's push-side stubs return Unimplemented, matching
+		// the Push RPC itself.
+		if t.Readcache != nil {
+			return t.Readcache
+		}
+		return nil
 	}
 
 	distFn := func() pushReceiver {
@@ -525,7 +539,7 @@ func (t *Mimir) initDistributorService() (serv services.Service, err error) {
 
 	t.Distributor, err = distributor.New(t.Cfg.Distributor, t.Cfg.IngesterClient, t.Overrides,
 		t.ActiveGroupsCleanup, t.CostAttributionManager, t.IngesterRing, t.IngesterPartitionInstanceRings, t.IngesterPartitionRingWatchers,
-		canJoinDistributorsRing, t.UsageTrackerPartitionRing, t.UsageTrackerInstanceRing, t.Registerer, util_log.Logger)
+		canJoinDistributorsRing, t.UsageTrackerPartitionRing, t.UsageTrackerInstanceRing, t.ReadcacheInstanceRing, t.Registerer, util_log.Logger)
 	if err != nil {
 		return
 	}
@@ -1339,6 +1353,7 @@ func (t *Mimir) initMemberlistKV() (services.Service, error) {
 	t.Cfg.OverridesExporter.Ring.Common.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
 	t.Cfg.Querier.Ring.Common.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
 	t.Cfg.QueryScheduler.ServiceDiscovery.SchedulerRing.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
+	t.Cfg.Readcache.InstanceRing.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
 	t.Cfg.Ruler.Ring.Common.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
 	t.Cfg.StoreGateway.ShardingRing.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
 	t.Cfg.UsageTracker.InstanceRing.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
@@ -1492,6 +1507,110 @@ func (t *Mimir) initContinuousTest() (services.Service, error) {
 	}, nil), nil
 }
 
+func (t *Mimir) initNautilusRebalancer() (services.Service, error) {
+	t.Cfg.NautilusRebalancer.Kafka = t.Cfg.IngestStorage.KafkaConfig
+
+	// Build a readcache client pool. Required: the rebalancer only
+	// operates against readcache pods in the nautilus pipeline.
+	var rcPool *rebalancer.ReadcachePool
+	if t.ReadcacheInstanceRing != nil {
+		p, err := rebalancer.NewReadcachePool(
+			t.Cfg.NautilusRebalancer.ReadcacheClient,
+			t.ReadcacheInstanceRing,
+			t.Cfg.IngesterClient.GRPCClientConfig.ClusterValidation.Label,
+			util_log.Logger,
+		)
+		if err != nil {
+			return nil, errors.Wrap(err, "rebalancer readcache pool init")
+		}
+		rcPool = p
+	}
+
+	if rcPool == nil {
+		return nil, errors.New("readcache instance ring is required for nautilus rebalancer")
+	}
+
+	var err error
+	t.NautilusRebalancer, err = rebalancer.New(
+		t.Cfg.NautilusRebalancer,
+		t.ReadcacheInstanceRing,
+		rcPool,
+		t.Registerer,
+		util_log.Logger,
+	)
+	if err != nil {
+		return nil, errors.Wrap(err, "nautilus rebalancer init")
+	}
+	rebalancer.RegisterNautilusRebalancerServer(t.Server.GRPC, t.NautilusRebalancer)
+
+	// Mount as a prefix so the rebalancer's ServeHTTP can dispatch
+	// sub-routes (e.g. /rounds.json, /rounds/{idx}.json) used by
+	// external trace-replay tools alongside the HTML dashboard.
+	// POST is also accepted so the admin page's "Reset to even
+	// split" form (which targets /nautilus/rebalancer/readcache/reset)
+	// can reach its handler — without POST in the method list, the
+	// router rejects the form submission with a 405 before the
+	// rebalancer's ServeHTTP runs.
+	t.API.RegisterRoutesWithPrefix("/nautilus/rebalancer", t.NautilusRebalancer, false, true, 0, "GET", "POST")
+
+	return t.NautilusRebalancer, nil
+}
+
+func (t *Mimir) initReadcache() (services.Service, error) {
+	// Copy Kafka config so readcache-specific tweaks do not mutate the
+	// ingester's ingest-storage struct. MaxReplayPeriod is required when
+	// consumer_group_offset_commit_file_enforced is true (partition reader
+	// startup); the ingester sets it from TSDB retention in NewIngester.
+	t.Cfg.Readcache.Kafka = t.Cfg.IngestStorage.KafkaConfig
+	t.Cfg.Readcache.Kafka.MaxReplayPeriod = t.Cfg.BlocksStorage.TSDB.Retention
+
+	t.Cfg.Readcache.BlocksStorage = t.Cfg.BlocksStorage
+	t.Cfg.Readcache.InstanceRing.ListenPort = t.Cfg.Server.GRPCListenPort
+
+	// Default the ring's instance ID to the readcache instance ID so
+	// operators only set it once. The config Validate() bounces
+	// disagreements when both are explicitly supplied.
+	if t.Cfg.Readcache.InstanceRing.InstanceID == "" {
+		t.Cfg.Readcache.InstanceRing.InstanceID = t.Cfg.Readcache.InstanceID
+	}
+
+	lifecycler, err := readcache.NewInstanceRingLifecycler(t.Cfg.Readcache.InstanceRing, util_log.Logger, t.Registerer)
+	if err != nil {
+		return nil, errors.Wrap(err, "readcache lifecycler init")
+	}
+
+	r, err := readcache.New(t.Cfg.Readcache, t.Overrides, lifecycler, util_log.Logger, t.Registerer)
+	if err != nil {
+		return nil, errors.Wrap(err, "readcache init")
+	}
+	t.Readcache = r
+	t.API.RegisterReadcache(r)
+	t.API.RegisterReadcacheAdmin(readcache.AdminPathPrefix, r)
+	return r, nil
+}
+
+func (t *Mimir) initReadcacheInstanceRing() (services.Service, error) {
+	// readcache is opt-in: the ring is meaningful only when the
+	// operator has configured a KV backend for it. When no KV store
+	// is set, return a nil service so the distributor and rebalancer
+	// see ReadcacheInstanceRing == nil and fall back to their static
+	// behaviours (resp. ingester-only reads and skip-slicer-round).
+	// This matches the UsageTracker pattern where the dependency is
+	// declared unconditionally and gated at init time.
+	if t.Cfg.Readcache.InstanceRing.KVStore.Store == "" {
+		return nil, nil
+	}
+
+	t.Cfg.Readcache.InstanceRing.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
+
+	r, err := readcache.NewInstanceRingClient(t.Cfg.Readcache.InstanceRing, util_log.Logger, t.Registerer)
+	if err != nil {
+		return nil, errors.Wrap(err, "readcache instance ring client init")
+	}
+	t.ReadcacheInstanceRing = r
+	return r, nil
+}
+
 func (t *Mimir) setupModuleManager() error {
 	mm := modules.NewManager(util_log.Logger)
 
@@ -1515,6 +1634,7 @@ func (t *Mimir) setupModuleManager() error {
 	mm.RegisterModule(IngesterRing, t.initIngesterRing, modules.UserInvisibleModule)
 	mm.RegisterModule(IngesterService, t.initIngesterService, modules.UserInvisibleModule)
 	mm.RegisterModule(MemberlistKV, t.initMemberlistKV)
+	mm.RegisterModule(NautilusRebalancer, t.initNautilusRebalancer)
 	mm.RegisterModule(Overrides, t.initOverrides, modules.UserInvisibleModule)
 	mm.RegisterModule(OverridesExporter, t.initOverridesExporter)
 	mm.RegisterModule(Querier, t.initQuerier)
@@ -1528,6 +1648,8 @@ func (t *Mimir) setupModuleManager() error {
 	mm.RegisterModule(QueryFrontendTripperware, t.initQueryFrontendTripperware, modules.UserInvisibleModule)
 	mm.RegisterModule(QueryScheduler, t.initQueryScheduler)
 	mm.RegisterModule(Queryable, t.initQueryable, modules.UserInvisibleModule)
+	mm.RegisterModule(Readcache, t.initReadcache)
+	mm.RegisterModule(ReadcacheInstanceRing, t.initReadcacheInstanceRing, modules.UserInvisibleModule)
 	mm.RegisterModule(Ruler, t.initRuler)
 	mm.RegisterModule(RulerStorage, t.initRulerStorage, modules.UserInvisibleModule)
 	mm.RegisterModule(RuntimeConfig, t.initRuntimeConfig, modules.UserInvisibleModule)
@@ -1556,12 +1678,13 @@ func (t *Mimir) setupModuleManager() error {
 		ContinuousTest:                   {API},
 		CostAttributionService:           {API, Overrides},
 		Distributor:                      {DistributorService, API, ActiveGroupsCleanupService, Vault},
-		DistributorService:               {IngesterRing, IngesterPartitionRing, Overrides, Vault, CostAttributionService, UsageTrackerInstanceRing, UsageTrackerPartitionRing},
+		DistributorService:               {IngesterRing, IngesterPartitionRing, Overrides, Vault, CostAttributionService, UsageTrackerInstanceRing, UsageTrackerPartitionRing, ReadcacheInstanceRing},
 		Ingester:                         {IngesterService, API, ActiveGroupsCleanupService, Vault},
 		IngesterPartitionRing:            {MemberlistKV, IngesterRing, API},
 		IngesterRing:                     {API, RuntimeConfig, MemberlistKV, Vault},
 		IngesterService:                  {IngesterRing, IngesterPartitionRing, Overrides, RuntimeConfig, MemberlistKV, CostAttributionService},
 		MemberlistKV:                     {API, Vault},
+		NautilusRebalancer:               {Distributor, ReadcacheInstanceRing},
 		Overrides:                        {RuntimeConfig},
 		OverridesExporter:                {Overrides, MemberlistKV, Vault},
 		Querier:                          {TenantFederation, Vault, QuerierLifecycler},
@@ -1574,6 +1697,8 @@ func (t *Mimir) setupModuleManager() error {
 		QueryFrontendTripperware:         {API, Overrides, QueryFrontendCodec, QueryFrontendTopicOffsetsReaders, QueryFrontendQueryPlanner},
 		QueryScheduler:                   {API, Overrides, MemberlistKV, Vault},
 		Queryable:                        {Overrides, DistributorService, IngesterRing, IngesterPartitionRing, API, StoreQueryable, MemberlistKV, QuerierQueryPlanner},
+		Readcache:                        {API, Overrides, MemberlistKV, ReadcacheInstanceRing},
+		ReadcacheInstanceRing:            {MemberlistKV},
 		Ruler:                            {DistributorService, StoreQueryable, RulerStorage, Vault, QuerierQueryPlanner},
 		RulerStorage:                     {Overrides},
 		RuntimeConfig:                    {API},

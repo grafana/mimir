@@ -15,6 +15,7 @@ import (
 	"github.com/grafana/dskit/test"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
+	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
@@ -678,7 +679,7 @@ func TestDistributor_QueryStream_InactivePartitionsLookback(t *testing.T) {
 				})
 
 				// Verify getIngesterReplicationSetsForQuery returns the expected partitions.
-				replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx)
+				replicationSets, _, err := d.getIngesterReplicationSetsForQuery(ctx, nil)
 				require.NoError(t, err)
 
 				var actualPartitionIDs []int
@@ -714,6 +715,141 @@ func TestDistributor_QueryStream_InactivePartitionsLookback(t *testing.T) {
 			})
 		}
 	}
+}
+
+// TestDistributor_QueryStream_AttributionHint exercises the named
+// path: an exact __name__ matcher must produce a non-nil
+// partitionByInstance map whose values are the partition IDs the
+// resolution selected. The map drives readcache routing (Phase 2C)
+// and the per-call QueryAttributionHint that the readcache pod uses
+// for load attribution. The full-fanout path (no exact __name__)
+// returns nil so the read recipient bills the unnamed bucket.
+func TestDistributor_QueryStream_AttributionHint(t *testing.T) {
+	const tenantID = "user"
+
+	ctx := user.InjectOrgID(context.Background(), tenantID)
+	ctx = limiter.ContextWithNewUnlimitedMemoryConsumptionTracker(ctx)
+	dedup := limiter.NewSeriesDeduplicatorMetrics(prometheus.NewPedanticRegistry())
+	ctx = limiter.ContextWithNewSeriesLabelsDeduplicator(ctx, dedup)
+
+	cfg := prepConfig{
+		numDistributors:         1,
+		ingestStorageEnabled:    true,
+		ingestStoragePartitions: 4,
+		ingesterStateByZone: map[string]ingesterZoneState{
+			"zone-a": {states: []ingesterState{ingesterStateHappy, ingesterStateHappy, ingesterStateHappy, ingesterStateHappy}},
+		},
+		ingesterDataByZone:   map[string][]*mimirpb.WriteRequest{},
+		ingesterDataTenantID: tenantID,
+		replicationFactor:    1,
+	}
+
+	distributors, _, _, _ := prepare(t, cfg)
+	require.Len(t, distributors, 1)
+	d := distributors[0]
+	test.Poll(t, 5*time.Second, 4, func() interface{} {
+		return d.ingesterPartitionRings.PartitionRing(0).PartitionsCount()
+	})
+
+	t.Run("named path populates partitionByInstance for every queried instance", func(t *testing.T) {
+		nameMatcher := mustEqualMatcher(model.MetricNameLabel, "foo")
+
+		sets, partitionByInstance, err := d.getIngesterReplicationSetsForQuery(ctx, []*labels.Matcher{nameMatcher})
+		require.NoError(t, err)
+		require.NotEmpty(t, sets, "named path must produce at least one replication set")
+		require.NotNil(t, partitionByInstance, "named path must produce a non-nil hint map")
+
+		// Every instance in every replication set must be mapped,
+		// and the partition the map points to must match the
+		// partition the instance owns.
+		for _, rs := range sets {
+			require.NotEmpty(t, rs.Instances)
+			expected, err := ingest.IngesterPartitionID(rs.Instances[0].Addr)
+			require.NoError(t, err)
+			for _, inst := range rs.Instances {
+				got, ok := partitionByInstance[inst.Id]
+				require.True(t, ok, "instance %q in named-path replication set must appear in the hint map", inst.Id)
+				assert.Equal(t, expected, got, "instance %q hint partition must match the replication set's partition", inst.Id)
+			}
+		}
+	})
+
+	t.Run("full-fanout path returns nil hint map", func(t *testing.T) {
+		// No exact __name__ matcher → falls through to fan-out.
+		barMatcher := mustEqualMatcher("bar", "baz")
+
+		sets, partitionByInstance, err := d.getIngesterReplicationSetsForQuery(ctx, []*labels.Matcher{barMatcher})
+		require.NoError(t, err)
+		require.NotEmpty(t, sets)
+		assert.Nil(t, partitionByInstance, "fan-out queries must leave the hint map nil; the read recipient bills the unnamed bucket")
+	})
+}
+
+// TestDistributor_QueryStream_EmitsReadcacheHitsHistogram verifies
+// that cortex_distributor_query_readcache_instances_hit_per_query
+// observes exactly one sample per Distributor.QueryStream call, and
+// that the value is 0 when the tenant is not on nautilus routing
+// (the "served entirely from ingesters" baseline). The zero
+// observation is load-bearing for read-path migration dashboards:
+// without it we couldn't tell apart "no readcache routing yet" from
+// "no query traffic at all".
+func TestDistributor_QueryStream_EmitsReadcacheHitsHistogram(t *testing.T) {
+	const tenantID = "user"
+
+	ctx := user.InjectOrgID(context.Background(), tenantID)
+	ctx = limiter.ContextWithNewUnlimitedMemoryConsumptionTracker(ctx)
+	dedup := limiter.NewSeriesDeduplicatorMetrics(prometheus.NewPedanticRegistry())
+	ctx = limiter.ContextWithNewSeriesLabelsDeduplicator(ctx, dedup)
+
+	cfg := prepConfig{
+		numDistributors:         1,
+		ingestStorageEnabled:    true,
+		ingestStoragePartitions: 4,
+		ingesterStateByZone: map[string]ingesterZoneState{
+			"zone-a": {states: []ingesterState{ingesterStateHappy, ingesterStateHappy, ingesterStateHappy, ingesterStateHappy}},
+		},
+		ingesterDataByZone:   map[string][]*mimirpb.WriteRequest{},
+		ingesterDataTenantID: tenantID,
+		replicationFactor:    1,
+	}
+
+	distributors, _, _, _ := prepare(t, cfg)
+	require.Len(t, distributors, 1)
+	d := distributors[0]
+	test.Poll(t, 5*time.Second, 4, func() interface{} {
+		return d.ingesterPartitionRings.PartitionRing(0).PartitionsCount()
+	})
+
+	queryMetrics := stats.NewQueryMetrics(prometheus.NewPedanticRegistry())
+	// Full-fanout matcher: avoids any reliance on readcache routing
+	// and exercises the simplest histogram path (no readcache
+	// dialed, observation should be 0).
+	_, err := d.QueryStream(ctx, queryMetrics, 0, 10, mustEqualMatcher("bar", "baz"))
+	require.NoError(t, err)
+
+	count, sum := histogramCountAndSum(t, d.queryReadcacheInstancesHit)
+	assert.Equal(t, uint64(1), count, "histogram must observe exactly once per Distributor.QueryStream call (got %d)", count)
+	assert.Equal(t, 0.0, sum, "value must be 0 when readcache routing is disabled (got %v)", sum)
+
+	// A second query continues to observe; this guards against an
+	// accidental "observe only on the first call" regression.
+	_, err = d.QueryStream(ctx, queryMetrics, 0, 10, mustEqualMatcher("bar", "baz"))
+	require.NoError(t, err)
+
+	count, sum = histogramCountAndSum(t, d.queryReadcacheInstancesHit)
+	assert.Equal(t, uint64(2), count)
+	assert.Equal(t, 0.0, sum)
+}
+
+// histogramCountAndSum reads the in-process sample count and sum of
+// h without going through a registry. Avoids the prom-text round-trip
+// of GatherAndCompare, which can't easily express "exactly one
+// observation with value 0" without also pinning bucket boundaries.
+func histogramCountAndSum(t *testing.T, h prometheus.Histogram) (uint64, float64) {
+	t.Helper()
+	var m dto.Metric
+	require.NoError(t, h.Write(&m))
+	return m.GetHistogram().GetSampleCount(), m.GetHistogram().GetSampleSum()
 }
 
 func countMockIngestersCalls(ingesters []*mockIngester, name string) int {

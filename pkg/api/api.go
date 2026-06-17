@@ -441,6 +441,25 @@ func (a *API) RegisterIngesterPartitionRings(compartmentsEnabled bool, partition
 	}
 }
 
+// RegisterReadcache registers the gRPC server for the readcache service.
+// Readcache implements the same read RPCs as the ingester (minus Push)
+// so a distributor can dial it interchangeably with an ingester.
+func (a *API) RegisterReadcache(r client.IngesterServer) {
+	client.RegisterIngesterServer(a.server.GRPC, r)
+}
+
+// RegisterReadcacheAdmin registers the readcache admin HTML page.
+// Kept separate from RegisterReadcache because the gRPC registration
+// uses the abstract IngesterServer interface (so test/mock servers
+// can be wired in) while the admin page is specific to a real
+// *readcache.Readcache.
+func (a *API) RegisterReadcacheAdmin(prefix string, h http.Handler) {
+	a.indexPage.AddLinks(defaultWeight, "Readcache", []IndexPageLink{
+		{Desc: "Readcache admin", Path: prefix},
+	})
+	a.RegisterRoute(prefix, h, false, true, "GET")
+}
+
 // RegisterStoreGateway registers the ring UI page associated with the store-gateway.
 func (a *API) RegisterStoreGateway(s *storegateway.StoreGateway) {
 	storegatewaypb.RegisterStoreGatewayServer(a.server.GRPC, s)

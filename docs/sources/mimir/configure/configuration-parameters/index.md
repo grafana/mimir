@@ -1182,6 +1182,19 @@ reactive_limiter:
   # current inflight requests, after which all requests are rejected
   # CLI flag: -distributor.reactive-limiter.max-rejection-factor
   [max_rejection_factor: <float> | default = 2]
+
+# (experimental) gRPC address of the nautilus rebalancer. When set, the
+# distributor polls it for hash-range-to-partition assignments.
+# CLI flag: -distributor.nautilus-rebalancer-address
+[nautilus_rebalancer_address: <string> | default = ""]
+
+# (experimental) If true, the distributor rejects write requests with a 503
+# Service Unavailable when the nautilus assignment log is unavailable or doesn't
+# cover a series key, instead of falling back to the partition ring's hash-based
+# routing. Use this in deployments where nautilus assignments are load-bearing
+# for query locality.
+# CLI flag: -distributor.nautilus-required
+[nautilus_required: <boolean> | default = false]
 ```
 
 ### ingester
@@ -1729,6 +1742,12 @@ read_reactive_limiter:
   # current inflight requests, after which all requests are rejected
   # CLI flag: -ingester.read-reactive-limiter.max-rejection-factor
   [max_rejection_factor: <float> | default = 3]
+
+# (experimental) Enable nautilus hash-range tracking. When enabled, the ingester
+# accepts SetHashRanges/HashRangeStats RPCs and tracks per-range ingestion
+# rates.
+# CLI flag: -ingester.nautilus-enabled
+[nautilus_enabled: <boolean> | default = false]
 
 # (experimental) Maximum concurrency used to compute a single label values count
 # request.

@@ -143,6 +143,18 @@ func (i *ActivityTrackerWrapper) ActiveSeries(request *client.ActiveSeriesReques
 	return i.ing.ActiveSeries(request, server)
 }
 
+func (i *ActivityTrackerWrapper) HashRangeStats(ctx context.Context, request *client.HashRangeStatsRequest) (*client.HashRangeStatsResponse, error) {
+	return i.ing.HashRangeStats(ctx, request)
+}
+
+func (i *ActivityTrackerWrapper) SetHashRanges(ctx context.Context, request *client.SetHashRangesRequest) (*client.SetHashRangesResponse, error) {
+	return i.ing.SetHashRanges(ctx, request)
+}
+
+func (i *ActivityTrackerWrapper) GetHashRanges(ctx context.Context, request *client.GetHashRangesRequest) (*client.GetHashRangesResponse, error) {
+	return i.ing.GetHashRanges(ctx, request)
+}
+
 func (i *ActivityTrackerWrapper) SearchLabelNames(request *client.SearchLabelNamesRequest, server client.Ingester_SearchLabelNamesServer) error {
 	ix := i.tracker.Insert(func() string {
 		return requestActivity(server.Context(), "Ingester/SearchLabelNames", request)
@@ -303,8 +315,24 @@ func queryRequestToString(sb *bytes.Buffer, req *client.QueryRequest) {
 	sb.WriteString("},")
 
 	b = b[:0]
+	sb.WriteString("QueryAttributionHint:")
+	queryAttributionHintToString(sb, req.QueryAttributionHint)
+	sb.WriteString(",")
+
+	b = b[:0]
 	sb.WriteString("StreamingChunksBatchSize:")
 	sb.Write(strconv.AppendUint(b, req.StreamingChunksBatchSize, 10))
+	sb.WriteString(",}")
+}
+
+func queryAttributionHintToString(sb *bytes.Buffer, h *client.QueryAttributionHint) {
+	if h == nil {
+		sb.WriteString("nil")
+		return
+	}
+	b := make([]byte, 0, 16)
+	sb.WriteString("&QueryAttributionHint{PartitionId:")
+	sb.Write(strconv.AppendInt(b, int64(h.PartitionId), 10))
 	sb.WriteString(",}")
 }
 

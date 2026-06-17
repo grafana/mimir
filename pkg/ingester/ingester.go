@@ -382,7 +382,7 @@ type Ingester struct {
 
 	utilizationBasedLimiter utilizationBasedLimiter
 
-	errorSamplers ingesterErrSamplers
+	errorSamplers IngesterErrSamplers
 
 	// The following is used by ingest storage (when enabled).
 	ingestReader              ingest.PartitionReader
@@ -453,7 +453,7 @@ func newIngester(cfg Config, limits *validation.Overrides, ingestersRing ring.Re
 				PostingsClonerFactory: lookupplan.ActualSelectedPostingsClonerFactory{},
 			},
 		),
-		errorSamplers: newIngesterErrSamplers(cfg.ErrorSampleRate),
+		errorSamplers: NewIngesterErrSamplers(cfg.ErrorSampleRate),
 	}, nil
 }
 

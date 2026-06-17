@@ -416,6 +416,7 @@ func (f *Handler) reportQueryStats(
 		queueTimeSeconds, stats.LoadQueueTime().Seconds(),
 		encodeTimeSeconds, stats.LoadEncodeTime().Seconds(),
 		remoteExecutionRequestCount, stats.LoadRemoteExecutionRequestCount(),
+		"readcache_query_stream_calls", stats.LoadReadcacheQueryStreamCalls(),
 		"samples_processed", samplesProcessed,
 		"equivalent_samples_read", equivalentSamplesRead,
 		"physical_samples_read", physicalSamplesRead,

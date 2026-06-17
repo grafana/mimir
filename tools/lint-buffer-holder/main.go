@@ -187,6 +187,9 @@ type linter struct {
 
 func (l *linter) analyzeGRPCServer(pkg *packages.Package, serviceName string) {
 	obj := pkg.Types.Scope().Lookup(serviceName + "Server")
+	if obj == nil {
+		return
+	}
 	typeName, ok := obj.(*types.TypeName)
 	if !ok {
 		l.report(obj.Pos(), "expected %s to be a type name, found %T", obj.Name(), obj)

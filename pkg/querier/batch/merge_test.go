@@ -42,6 +42,52 @@ func TestMergeIter(t *testing.T) {
 	}
 }
 
+// TestMergeIteratorWithNoChunks replicates a querier panic seen in
+// production: streamingChunkSeries.Iterator can legitimately call
+// NewChunkMergeIterator with zero chunks, because an ingester or
+// readcache advertises a series in the labels phase using
+// ChunkCount() (the chunk *meta* count from Select) but materializes
+// the chunks later, and the TSDB chunk querier's
+// populateWithDelChunkSeriesIterator may drop every chunk at
+// iteration time (e.g. OOO-head iterables or tombstone-trimmed
+// chunks that re-encode to no samples). The wire protocol cannot
+// skip the series at that point - its index was already advertised -
+// so the querier receives a series whose every source returns zero
+// chunks. A fresh mergeIterator built with zero chunks used to
+// dereference its nil batchStream and segfault; it must instead act
+// as an empty iterator.
+func TestMergeIteratorWithNoChunks(t *testing.T) {
+	t.Run("NewChunkMergeIterator with empty chunk slice", func(t *testing.T) {
+		// Mirrors streamingChunkSeries.Iterator: a nil reuse iterator and
+		// the output of client.FromChunks(...) for zero wire chunks.
+		iter := NewChunkMergeIterator(nil, labels.EmptyLabels(), []chunk.Chunk{})
+		require.Equal(t, chunkenc.ValNone, iter.Next())
+		require.NoError(t, iter.Err())
+		require.Equal(t, chunkenc.ValNone, iter.Seek(0))
+		require.NoError(t, iter.Err())
+	})
+
+	t.Run("NewChunkMergeIterator with nil chunk slice", func(t *testing.T) {
+		iter := NewChunkMergeIterator(nil, labels.EmptyLabels(), nil)
+		require.Equal(t, chunkenc.ValNone, iter.Next())
+		require.NoError(t, iter.Err())
+	})
+
+	t.Run("reused adapter with empty chunk slice", func(t *testing.T) {
+		// A reused iteratorAdapter already has a non-nil batchStream, so
+		// this case worked before the fix; pin it anyway.
+		enc := chunk.PrometheusXorChunk
+		iter := NewChunkMergeIterator(nil, labels.EmptyLabels(), []chunk.Chunk{mkChunk(t, 0, 100, enc)})
+		for iter.Next() != chunkenc.ValNone { //nolint:revive
+		}
+		require.NoError(t, iter.Err())
+
+		iter = NewChunkMergeIterator(iter, labels.EmptyLabels(), nil)
+		require.Equal(t, chunkenc.ValNone, iter.Next())
+		require.NoError(t, iter.Err())
+	})
+}
+
 func TestMergeHarder(t *testing.T) {
 	var (
 		numChunks = 24 * 15

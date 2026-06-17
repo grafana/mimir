@@ -38,6 +38,10 @@ service Ingester {
 
   rpc ActiveSeries(ActiveSeriesRequest) returns (stream ActiveSeriesResponse) {}
 
+  rpc HashRangeStats(HashRangeStatsRequest) returns (HashRangeStatsResponse) {}
+  rpc SetHashRanges(SetHashRangesRequest) returns (SetHashRangesResponse) {}
+  rpc GetHashRanges(GetHashRangesRequest) returns (GetHashRangesResponse) {}
+
   // SearchLabelNames streams label names matching the search filter.
   rpc SearchLabelNames(SearchLabelNamesRequest) returns (stream SearchResultBatch) {}
 
@@ -45,6 +49,115 @@ service Ingester {
   rpc SearchLabelValues(SearchLabelValuesRequest) returns (stream SearchResultBatch) {}
 
   // When adding more read-path methods here, please update ingester_read_path_routes_regex in operations/mimir-mixin/config.libsonnet as well.
+}
+
+message HashRangeStatsRequest {}
+
+message HashRangeRate {
+  uint32 lo = 1;
+  uint32 hi = 2;
+  reserved 3; // formerly samples_per_second on a slightly different
+  // (and confusingly named) scale. Don't reuse: the new throughput
+  // field is sample_rate at id 6 below, so old replay traces still
+  // skip the abandoned scale rather than silently misinterpreting
+  // it.
+  int64 active_series = 4;
+  // partition_id is the Kafka partition whose TSDB head contains the
+  // active_series counted in this entry. The same (lo, hi) range can
+  // appear multiple times in a single HashRangeStatsResponse when more
+  // than one of the reporter's partitions has head series with hashes
+  // in the range — typically the current owner of the range (growth)
+  // plus any partitions that used to own it and still hold the series
+  // as head residue until the next compaction. The rebalancer keys
+  // load by (partition_id, range) so it can attribute residue to the
+  // partition that actually has it, instead of summing it onto the
+  // current owner. Zero is a valid partition id; the field is required
+  // for readcache reporters and ignored by ingester reporters.
+  int32 partition_id = 5;
+  // sample_rate is the EWMA of samples-per-second observed on the
+  // ingest hot path for this (partition, range), advanced once per
+  // loadstats.TickInterval (15s) with the same alpha as
+  // PartitionQueryLoad.samples_ewma. Used by the rebalancer as the
+  // primary load signal when balancing hash ranges: balancing on
+  // samples/sec is closer to "what work does this readcache do?"
+  // than active_series, which only measures churn-free cardinality
+  // and lags new tenants by minutes.
+  //
+  // Always zero for ingester reporters (they don't compute it).
+  // Newly-adopted ranges report 0 for the first ~15s while the EWMA
+  // is uninitialised; the rebalancer's slicer treats 0 the same as
+  // "no movable load" so cold ranges aren't yanked around.
+  double sample_rate = 6;
+}
+
+message HashRangeStatsResponse {
+  // rates carries one entry per (partition, range) the reporter
+  // owns or has residue for. Each entry includes both the cardinality
+  // signal (active_series) and the throughput signal (sample_rate);
+  // the rebalancer decides which to balance on.
+  repeated HashRangeRate rates = 1 [(gogoproto.nullable) = false];
+  // total_active_series is the total number of in-memory series on the
+  // ingester, across all tenants. It includes series whose hashes fall
+  // outside of any currently-owned range (i.e. series the ingester used
+  // to own but that haven't yet been GC'd by head compaction). The
+  // rebalancer can compare this to sum(rates[].active_series) to detect
+  // stale post-move cardinality and weight source-side load accordingly.
+  int64 total_active_series = 2;
+  // unnamed_query_samples_ewma is the EWMA of samples-per-second
+  // scanned by queries that arrived without an attribution hint
+  // (full-fanout queries: no resolvable __name__, complex regexes,
+  // count({namespace="prod"})-style queries). Reported per ingester;
+  // the rebalancer surfaces it as an observability gauge but does not
+  // feed it into per-partition deltas, because the work is intrinsic
+  // to "scour all owned partitions" and can't be moved to a specific
+  // partition.
+  double unnamed_query_samples_ewma = 3;
+  // partition_query_loads carries per-partition EWMAs of samples-per-
+  // second scanned by queries the distributor attributed to that
+  // partition via QueryRequest.query_attribution_hint. Today an
+  // ingester typically owns one partition (1:1) so this is a single
+  // entry; under the future N:1 architecture (David I) it carries one
+  // entry per owned partition.
+  repeated PartitionQueryLoad partition_query_loads = 4 [(gogoproto.nullable) = false];
+  // partition_active_series carries per-partition TSDB head-series
+  // counts. Readcache reports one entry per Kafka partition it
+  // currently holds; the rebalancer uses these for partition-level L
+  // instead of fanning out instance totals.
+  repeated PartitionActiveSeries partition_active_series = 5 [(gogoproto.nullable) = false];
+}
+
+message PartitionQueryLoad {
+  int32 partition_id = 1;
+  double samples_ewma = 2;
+}
+
+message PartitionActiveSeries {
+  int32 partition_id = 1;
+  int64 active_series = 2;
+}
+
+message HashRangeEntry {
+  uint32 lo = 1;
+  uint32 hi = 2;
+  // partition_id is the Kafka partition this range is currently
+  // assigned to. SetHashRanges uses it to route the new range set to
+  // the right per-partition bookkeeping on the readcache; GetHashRanges
+  // returns it so the rebalancer can rebuild a (partition, range)
+  // assignment from what the readcache currently believes it owns.
+  // Zero is a valid partition id.
+  int32 partition_id = 3;
+}
+
+message SetHashRangesRequest {
+  repeated HashRangeEntry ranges = 1 [(gogoproto.nullable) = false];
+}
+
+message SetHashRangesResponse {}
+
+message GetHashRangesRequest {}
+
+message GetHashRangesResponse {
+  repeated HashRangeEntry ranges = 1 [(gogoproto.nullable) = false];
 }
 
 message LabelNamesAndValuesRequest {
@@ -88,8 +201,24 @@ message QueryRequest {
   reserved 4; // projections include, not used anymore.
   reserved 5; // projections labels, not used anymore.
 
+  // query_attribution_hint records the routing decision the
+  // distributor (or future querier) made for this call. nil means no
+  // single-partition decision (full fan-out, old sender that doesn't
+  // populate the field, or resolution failed). Non-nil names the
+  // partition this call was routed for: the ingester buckets samples-
+  // scanned by partition_id for query-load attribution, and (under
+  // the future per-(tenant, partition) TSDB architecture, David I)
+  // uses it as a TSDB selector. The field is intentionally nullable:
+  // partition 0 is a real partition, so we cannot use a sentinel int
+  // to mean "unset" without conflating it with partition 0.
+  QueryAttributionHint query_attribution_hint = 6;
+
   // Why 100? This QueryRequest message is also used for remote read requests, so we need to avoid any field numbers added in the future.
   uint64 streaming_chunks_batch_size = 100;
+}
+
+message QueryAttributionHint {
+  int32 partition_id = 1;
 }
 
 message ExemplarQueryRequest {

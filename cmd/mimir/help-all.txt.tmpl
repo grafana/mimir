@@ -1359,6 +1359,14 @@ Usage of ./cmd/mimir/mimir:
     	Max message size in bytes that the distributors will accept for incoming push requests to the remote write API. If exceeded, the request will be rejected. (default 104857600)
   -distributor.max-request-pool-buffer-size int
     	[experimental] Max size of the pooled buffers used for marshaling write requests. If 0, no max size is enforced.
+  -distributor.nautilus-ingest-routing string
+    	[experimental] Which Kafka topic this tenant's writes are forwarded to. Valid values: 'disabled' (production ingest topic), 'nautilus-only' (experimental nautilus_ingest topic consumed by readcache). Must move in lockstep with readcache_read_routing. (default "disabled")
+  -distributor.nautilus-ingest-topic string
+    	[experimental] Kafka topic to which writes for tenants in nautilus_ingest_routing=nautilus-only are forwarded. The production -ingest-storage.kafka.topic is unaffected. Must match the topic the readcache pods consume from. (default "nautilus_ingest")
+  -distributor.nautilus-rebalancer-address string
+    	[experimental] gRPC address of the nautilus rebalancer. When set, the distributor polls it for hash-range-to-partition assignments.
+  -distributor.nautilus-required
+    	[experimental] If true, the distributor rejects write requests with a 503 Service Unavailable when the nautilus assignment log is unavailable or doesn't cover a series key, instead of falling back to the partition ring's hash-based routing. Use this in deployments where nautilus assignments are load-bearing for query locality.
   -distributor.otel-convert-histograms-to-nhcb
     	[experimental] Whether to convert OTel explicit histograms into native histograms with custom buckets.
   -distributor.otel-created-timestamp-zero-ingestion-enabled
@@ -1409,6 +1417,56 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Minimum duration of the window that is used to collect recent response time samples (default 1s)
   -distributor.reactive-limiter.recent-window-min-samples uint
     	[experimental] Minimum number of samples that must be recorded in the recent window before updating the limit (default 50)
+  -distributor.readcache-read-routing string
+    	[experimental] Which read path this tenant's queries are routed through. Valid values: 'disabled' (queries served by ingesters), 'nautilus-only' (queries served by readcache). Must move in lockstep with nautilus_ingest_routing. (default "disabled")
+  -distributor.readcache.addresses string
+    	[experimental] Optional comma-separated list of instance_id=host:port pairs identifying readcache pods. When set, each listed instance overrides ring-based discovery; when empty (the default), the distributor resolves addresses from the readcache instance ring.
+  -distributor.readcache.grpc-client-config.backoff-max-period duration
+    	Maximum delay when backing off. (default 10s)
+  -distributor.readcache.grpc-client-config.backoff-min-period duration
+    	Minimum delay when backing off. (default 100ms)
+  -distributor.readcache.grpc-client-config.backoff-on-ratelimits
+    	Enable backoff and retry when we hit rate limits.
+  -distributor.readcache.grpc-client-config.backoff-retries int
+    	Number of times to backoff and retry before failing. (default 10)
+  -distributor.readcache.grpc-client-config.cluster-validation.label string
+    	[experimental] Primary cluster validation label.
+  -distributor.readcache.grpc-client-config.connect-backoff-base-delay duration
+    	Initial backoff delay after first connection failure. Only relevant if ConnectTimeout > 0. (default 1s)
+  -distributor.readcache.grpc-client-config.connect-backoff-max-delay duration
+    	Maximum backoff delay when establishing a connection. Only relevant if ConnectTimeout > 0. (default 5s)
+  -distributor.readcache.grpc-client-config.connect-timeout duration
+    	The maximum amount of time to establish a connection. A value of 0 means default gRPC client connect timeout and backoff. (default 5s)
+  -distributor.readcache.grpc-client-config.grpc-client-rate-limit float
+    	Rate limit for gRPC client; 0 means disabled.
+  -distributor.readcache.grpc-client-config.grpc-client-rate-limit-burst int
+    	Rate limit burst for gRPC client.
+  -distributor.readcache.grpc-client-config.grpc-compression string
+    	Use compression when sending messages. Supported values are: 'gzip', 'snappy' and '' (disable compression)
+  -distributor.readcache.grpc-client-config.grpc-max-recv-msg-size int
+    	gRPC client max receive message size (bytes). (default 104857600)
+  -distributor.readcache.grpc-client-config.grpc-max-send-msg-size int
+    	gRPC client max send message size (bytes). (default 104857600)
+  -distributor.readcache.grpc-client-config.initial-connection-window-size value
+    	[experimental] Initial connection window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator. (default 63KiB1023B)
+  -distributor.readcache.grpc-client-config.initial-stream-window-size value
+    	[experimental] Initial stream window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator. (default 63KiB1023B)
+  -distributor.readcache.grpc-client-config.tls-ca-path string
+    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
+  -distributor.readcache.grpc-client-config.tls-cert-path string
+    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -distributor.readcache.grpc-client-config.tls-cipher-suites string
+    	Override the default cipher suite list (separated by commas).
+  -distributor.readcache.grpc-client-config.tls-enabled
+    	Enable TLS in the gRPC client. This flag needs to be enabled when any other TLS flag is set. If set to false, insecure connection to gRPC server will be used.
+  -distributor.readcache.grpc-client-config.tls-insecure-skip-verify
+    	Skip validating server certificate.
+  -distributor.readcache.grpc-client-config.tls-key-path string
+    	Path to the key for the client certificate. Also requires the client certificate to be configured.
+  -distributor.readcache.grpc-client-config.tls-min-version string
+    	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
+  -distributor.readcache.grpc-client-config.tls-server-name string
+    	Override the expected name on the server certificate.
   -distributor.remote-timeout duration
     	Timeout for downstream ingesters. (default 2s)
   -distributor.request-burst-size int

@@ -17,6 +17,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	syncatomic "sync/atomic" //lint:ignore faillint generic atomic.Pointer isn't available in go.uber.org/atomic.
 	"time"
 
 	"github.com/go-kit/log"
@@ -47,12 +48,17 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 
 	"github.com/grafana/mimir/pkg/cardinality"
 	"github.com/grafana/mimir/pkg/compartments"
 	"github.com/grafana/mimir/pkg/costattribution"
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/nautilus/assignment"
+	"github.com/grafana/mimir/pkg/nautilus/readcacheassignment"
+	"github.com/grafana/mimir/pkg/nautilus/rebalancer"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/usagetracker/usagetrackerclient"
@@ -71,7 +77,8 @@ var tracer = otel.Tracer("pkg/distributor")
 
 var (
 	// Validation errors.
-	errInvalidTenantShardSize = errors.New("invalid tenant shard size, the value must be greater than or equal to zero")
+	errInvalidTenantShardSize         = errors.New("invalid tenant shard size, the value must be greater than or equal to zero")
+	errNautilusRequiredWithoutAddress = errors.New("-distributor.nautilus-required is set but -distributor.nautilus-rebalancer-address is empty; nautilus routing cannot be enforced without a rebalancer to consult")
 
 	reasonDistributorMaxIngestionRate             = globalerror.DistributorMaxIngestionRate.LabelValue()
 	reasonDistributorMaxInflightPushRequests      = globalerror.DistributorMaxInflightPushRequests.LabelValue()
@@ -103,6 +110,13 @@ const (
 	ingestionRateLimitCleanupInterval = time.Hour
 	// duration after which ingestion rate limiters are considered stale.
 	ingestionRateLimitStalenessDuration = 24 * time.Hour
+
+	// nautilusRebalancerMaxRecvMsgSize bounds the size of a single
+	// WatchAssignments snapshot the distributor will accept. The
+	// default 4 MiB gRPC cap is too small once the rebalancer's
+	// live-entry snapshot grows past a few thousand tiles. See the
+	// dial-options site for the full rationale.
+	nautilusRebalancerMaxRecvMsgSize = 64 << 20
 )
 
 type usageTrackerGenericClient interface {
@@ -162,6 +176,7 @@ type Distributor struct {
 
 	// Metrics
 	queryDuration                    *instrument.HistogramCollector
+	queryReadcacheInstancesHit       prometheus.Histogram
 	receivedRequests                 *prometheus.CounterVec
 	receivedSamples                  *prometheus.CounterVec
 	receivedExemplars                *prometheus.CounterVec
@@ -241,6 +256,72 @@ type Distributor struct {
 
 	reactiveLimiter reactivelimiter.ReactiveLimiter
 
+	// nautilusLog holds the wallclock-keyed assignment log streamed from
+	// the nautilus rebalancer via WatchAssignments. The log is the
+	// authoritative record of (Range, PartitionID) leases over time;
+	// the distributor routes writes via nautilusActiveTable below
+	// (which is a query-optimized view of the log's currently-active
+	// entries). The full Log is retained so that, when the active
+	// table goes stale, we can rebuild it — including any pre-issued
+	// successor leases — without waiting for a fresh stream snapshot.
+	nautilusLog syncatomic.Pointer[assignment.Log]
+
+	// nautilusActiveTable is a sorted-by-Range.Lo view of the entries
+	// in nautilusLog whose leases are active right now. Lookups are
+	// O(log N), so the per-series routing cost stays tiny even with
+	// many active tiles or a long expired-history retention. The
+	// table carries an explicit ValidUntil; once wall-clock crosses
+	// it, the table is rebuilt from nautilusLog under
+	// nautilusActiveTableMu (which means the subsequent pre-issued
+	// successor takes over without a stream round-trip).
+	nautilusActiveTable   syncatomic.Pointer[assignment.ActiveTable]
+	nautilusActiveTableMu sync.Mutex
+
+	// readcacheLog mirrors nautilusLog for the (partition -> readcache
+	// instance) log streamed from the rebalancer's
+	// WatchReadcacheAssignments RPC. Used by the read path to route
+	// queries to the readcache pod currently owning the partition.
+	readcacheLog syncatomic.Pointer[readcacheassignment.Log]
+
+	// readcachePool dials readcache pods by instance ID. Until a
+	// readcache ring exists, addresses are resolved from a static
+	// flag-driven map (see ReadcacheConfig.Addresses). nil if no
+	// readcache addresses are configured.
+	readcachePool *readcachePool
+
+	// readcacheRouteLogSeq counts readcache routing resolutions so
+	// getReadcacheReplicationSetsForQuery can emit its
+	// routing-decision diagnostic log for 1 in every
+	// readcacheRouteLogEvery queries instead of all of them.
+	readcacheRouteLogSeq atomic.Uint64
+
+	// nautilusRebalancerConn is the gRPC connection to the rebalancer.
+	nautilusRebalancerConn io.Closer
+	// nautilusStreamConnected is 1 while a WatchAssignments stream is
+	// open and exposed as a gauge for alerting on disconnects.
+	nautilusStreamConnected      atomic.Bool
+	nautilusAssignmentsReceived  prometheus.Counter
+	nautilusStreamConnectedGauge prometheus.GaugeFunc
+	// nautilusRoutingRejected counts series keys that this
+	// distributor refused to route because -distributor.nautilus-required
+	// is set and either the assignment log was unavailable or did
+	// not cover the key. The "reason" label distinguishes the two
+	// failure modes so SREs can alert on a sustained imbalance
+	// between them.
+	nautilusRoutingRejected *prometheus.CounterVec
+	// nautilusPartitionSamplesWritten counts samples successfully
+	// written to the nautilus ingest topic, per partition and tenant.
+	nautilusPartitionSamplesWritten *prometheus.CounterVec
+
+	// spotlights is the distributor's local cache of the
+	// rebalancer's "spotlighted hash range" set plus an accumulator
+	// of per-(spotlight, partition) sample counts. Populated by a
+	// background poller (runSpotlightLoop) and read on the write
+	// path. Always non-nil after NewDistributor.
+	spotlights *distributorSpotlightTracker
+
+	clusterValidationLabel string
+
 	// For testing functionality that relies on timing without having to sleep in unit tests.
 	sleep func(time.Duration)
 	now   func() time.Time
@@ -248,6 +329,18 @@ type Distributor struct {
 
 func defaultSleep(d time.Duration) { time.Sleep(d) }
 func defaultNow() time.Time        { return time.Now() }
+
+// GetNautilusLog returns the current assignment log streamed from the
+// nautilus rebalancer, or nil if no snapshot has been received yet.
+func (d *Distributor) GetNautilusLog() *assignment.Log {
+	return d.nautilusLog.Load()
+}
+
+// GetIngesterPool returns the ingester client pool, allowing other modules
+// (such as the nautilus rebalancer) to communicate with ingesters via gRPC.
+func (d *Distributor) GetIngesterPool() *ring_client.Pool {
+	return d.ingesterPool
+}
 
 // OTelResourceAttributePromotionConfig contains methods for configuring OTel resource attribute promotion.
 type OTelResourceAttributePromotionConfig interface {
@@ -339,6 +432,37 @@ type Config struct {
 	UsageTrackerClient  usagetrackerclient.Config `yaml:"usage_tracker_client" doc:"hidden"`
 
 	ReactiveLimiter reactivelimiter.Config `yaml:"reactive_limiter"`
+
+	// NautilusRebalancerAddress is the gRPC address of the nautilus
+	// rebalancer. When set, the distributor polls it for assignments.
+	NautilusRebalancerAddress string `yaml:"nautilus_rebalancer_address" category:"experimental"`
+
+	// NautilusRequired makes nautilus assignment authoritative for
+	// partition routing: when set, write requests are rejected
+	// (instead of falling back to the partition ring) if the
+	// nautilus assignment log is unavailable or doesn't cover a
+	// key. Used in deployments where the nautilus assignment is
+	// load-bearing for query locality and silent fallback to
+	// hash-mod sharding would defeat the contract.
+	NautilusRequired bool `yaml:"nautilus_required" category:"experimental"`
+
+	// NautilusIngestTopic is the Kafka topic to which the
+	// distributor forwards writes for tenants whose
+	// nautilus_ingest_routing runtime knob is set to "nautilus-only".
+	// Other tenants continue to write to the production
+	// IngestStorageConfig.KafkaConfig.Topic.
+	//
+	// Default is "nautilus_ingest", matching the topic name
+	// auto-created by the nautilus rebalancer. Override only when
+	// running against a manually-created topic with a different
+	// name (e.g. shared-cluster experiments).
+	NautilusIngestTopic string `yaml:"nautilus_ingest_topic" category:"experimental"`
+
+	// Readcache configures dialing readcache pods for the read path.
+	// Independent from NautilusRebalancerAddress because a
+	// distributor may know about readcache pods without itself
+	// subscribing to the rebalancer (e.g. in tests).
+	Readcache ReadcacheConfig `yaml:"readcache" category:"experimental"`
 }
 
 // PushWrapper wraps around a push. It is similar to middleware.Interface.
@@ -380,6 +504,10 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.BoolVar(&cfg.EnableInfluxEndpoint, "distributor.influx-endpoint-enabled", false, "Enable Influx endpoint.")
 	f.IntVar(&cfg.ReusableIngesterPushWorkers, "distributor.reusable-ingester-push-workers", 2000, "Number of pre-allocated workers used to forward push requests to the ingesters. If 0, no workers will be used and a new goroutine will be spawned for each ingester push request. If not enough workers available, new goroutine will be spawned. (Note: this is a performance optimization, not a limiting feature.)")
 	f.BoolVar(&cfg.EnableStartTimeQuietZero, "distributor.otel-start-time-quiet-zero", false, "Change the implementation of OTel startTime from a real zero to a special NaN value.")
+	f.StringVar(&cfg.NautilusRebalancerAddress, "distributor.nautilus-rebalancer-address", "", "gRPC address of the nautilus rebalancer. When set, the distributor polls it for hash-range-to-partition assignments.")
+	f.BoolVar(&cfg.NautilusRequired, "distributor.nautilus-required", false, "If true, the distributor rejects write requests with a 503 Service Unavailable when the nautilus assignment log is unavailable or doesn't cover a series key, instead of falling back to the partition ring's hash-based routing. Use this in deployments where nautilus assignments are load-bearing for query locality.")
+	f.StringVar(&cfg.NautilusIngestTopic, "distributor.nautilus-ingest-topic", "nautilus_ingest", "Kafka topic to which writes for tenants in nautilus_ingest_routing=nautilus-only are forwarded. The production -ingest-storage.kafka.topic is unaffected. Must match the topic the readcache pods consume from.")
+	cfg.Readcache.RegisterFlagsWithPrefix("distributor.readcache.", f)
 	f.IntVar(&cfg.WriteCompartmentID, "distributor.write-compartment-id", 0, "The write compartment this distributor belongs to. Only used when compartments are enabled.")
 
 	cfg.DefaultLimits.RegisterFlags(f)
@@ -389,6 +517,10 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 func (cfg *Config) Validate(limits validation.Limits, compartmentsCfg compartments.Config) error {
 	if limits.IngestionTenantShardSize < 0 {
 		return errInvalidTenantShardSize
+	}
+
+	if cfg.NautilusRequired && cfg.NautilusRebalancerAddress == "" {
+		return errNautilusRequiredWithoutAddress
 	}
 
 	// The distributor produces to its own write compartment's Kafka cluster, so its write compartment
@@ -521,7 +653,7 @@ func (m *PushMetrics) deleteUserMetrics(user string) {
 }
 
 // New constructs a new Distributor
-func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Overrides, activeGroupsCleanupService *util.ActiveGroupsCleanupService, costAttributionMgr *costattribution.Manager, ingestersRing ring.ReadRing, partitionInstanceRings *ingest.PartitionInstanceRings, partitionRings *ingest.PartitionRingWatchers, canJoinDistributorsRing bool, usageTrackerPartitionRing *ring.MultiPartitionInstanceRing, usageTrackerInstanceRing ring.ReadRing, reg prometheus.Registerer, log log.Logger) (*Distributor, error) {
+func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Overrides, activeGroupsCleanupService *util.ActiveGroupsCleanupService, costAttributionMgr *costattribution.Manager, ingestersRing ring.ReadRing, partitionInstanceRings *ingest.PartitionInstanceRings, partitionRings *ingest.PartitionRingWatchers, canJoinDistributorsRing bool, usageTrackerPartitionRing *ring.MultiPartitionInstanceRing, usageTrackerInstanceRing ring.ReadRing, readcacheRing *ring.Ring, reg prometheus.Registerer, log log.Logger) (*Distributor, error) {
 	clientMetrics := ingester_client.NewMetrics(reg)
 	if cfg.IngesterClientFactory == nil {
 		cfg.IngesterClientFactory = ring_client.PoolInstFunc(func(inst ring.InstanceDesc) (ring_client.PoolClient, error) {
@@ -557,6 +689,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		ingesterPartitionRings:      partitionRings,
 		ingesterPool:                NewPool(cfg.PoolConfig, ingestersRing, cfg.IngesterClientFactory, log),
 		healthyInstancesCount:       atomic.NewUint32(0),
+		clusterValidationLabel:      clientConfig.GRPCClientConfig.ClusterValidation.Label,
 		healthyInstancesInZoneCount: atomic.NewUint32(0),
 		ringZonesCount:              atomic.NewUint32(1),
 		limits:                      limits,
@@ -568,6 +701,17 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 			Help:    "Time spent executing expression and exemplar queries.",
 			Buckets: []float64{.005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5, 10, 20, 30},
 		}, []string{"method", "status_code"})),
+		queryReadcacheInstancesHit: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
+			Name: "cortex_distributor_query_readcache_instances_hit_per_query",
+			// One observation per Distributor.QueryStream call. The count is the
+			// number of *distinct* readcache instances the distributor committed
+			// to using to serve the query (deduped across partitions). A value
+			// of 0 means the query was served entirely from ingesters; tracking
+			// it explicitly lets us watch the read-path migration drift upward
+			// without needing a separate "any readcache used" counter.
+			Help:    "Number of distinct readcache instances queried while serving a Distributor.QueryStream call. 0 means the query was served entirely from ingesters.",
+			Buckets: []float64{0, 1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048},
+		}),
 		receivedRequests: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_distributor_received_requests_total",
 			Help: "The total number of received requests, excluding rejected and deduped requests.",
@@ -686,10 +830,37 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 			Help: "Number of times a hash collision was detected when de-duplicating samples.",
 		}),
 
+		nautilusAssignmentsReceived: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_distributor_nautilus_assignments_received_total",
+			Help: "Total number of assignment-log snapshots received from the nautilus rebalancer over the WatchAssignments stream.",
+		}),
+
+		nautilusRoutingRejected: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_distributor_nautilus_routing_rejected_total",
+			Help: "Total number of write requests rejected because -distributor.nautilus-required is set and the assignment log could not route them. Reason 'table_unavailable' means no live snapshot was available; 'key_not_covered' means the live snapshot had a gap covering the series key.",
+		}, []string{"reason"}),
+
+		nautilusPartitionSamplesWritten: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_distributor_nautilus_partition_samples_written_total",
+			Help: "Total number of float and native histogram samples successfully written to the nautilus ingest Kafka topic (-distributor.nautilus-ingest-topic), per partition and tenant. Only incremented for tenants with nautilus_ingest_routing=nautilus-only.",
+		}, []string{"partition", "user"}),
+
+		spotlights: newDistributorSpotlightTracker(),
+
 		PushMetrics: newPushMetrics(reg),
 		now:         defaultNow,
 		sleep:       defaultSleep,
 	}
+
+	d.nautilusStreamConnectedGauge = promauto.With(reg).NewGaugeFunc(prometheus.GaugeOpts{
+		Name: "cortex_distributor_nautilus_stream_connected",
+		Help: "1 if the distributor's WatchAssignments stream to the nautilus rebalancer is currently open, 0 otherwise.",
+	}, func() float64 {
+		if d.nautilusStreamConnected.Load() {
+			return 1
+		}
+		return 0
+	})
 
 	// Initialize expected rejected request labels
 	d.rejectedRequests.WithLabelValues(reasonDistributorMaxIngestionRate)
@@ -856,6 +1027,21 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 	// Some queries in the mixin use the presence of these metrics as indication whether Mimir is running with ingest storage or not.
 	exportStorageModeMetrics(reg, cfg.IngestStorageConfig.Migration.DistributorSendToIngestersEnabled || !cfg.IngestStorageConfig.Enabled, cfg.IngestStorageConfig.Enabled, ingestersRing.ReplicationFactor())
 
+	// Build the readcache pool when either the ring or the static
+	// address map is available. The ring is the production source of
+	// truth; the static map is an operator escape hatch for tests
+	// and degraded-mode bring-ups. When neither is wired, the
+	// distributor still works against ingesters — read-routing to
+	// readcache is simply a no-op (resolveReadcacheClientForPartition
+	// short-circuits on d.readcachePool == nil).
+	if readcacheRing != nil || cfg.Readcache.Addresses != "" {
+		pool, err := newReadcachePool(cfg.Readcache, readcacheRing, clientConfig.GRPCClientConfig.ClusterValidation.Label, log)
+		if err != nil {
+			return nil, err
+		}
+		d.readcachePool = pool
+	}
+
 	d.subservices, err = services.NewManager(subservices...)
 	if err != nil {
 		return nil, err
@@ -933,12 +1119,51 @@ func (d *Distributor) starting(ctx context.Context) error {
 		}
 	}
 
+	if d.cfg.NautilusRebalancerAddress != "" {
+		dialOpts := []grpc.DialOption{
+			grpc.WithTransportCredentials(insecure.NewCredentials()),
+			grpc.WithBlock(), //nolint:staticcheck // Keep blocking DialContext semantics until the gRPC 2 migration.
+			// The WatchAssignments stream snapshot grows with the
+			// number of active hash-range tiles plus pre-issued
+			// successors. With ~6k ranges and a few successors per
+			// range it can comfortably exceed gRPC's 4 MiB default
+			// receive cap. If the cap is hit, the stream errors and
+			// reconnects in a tight loop, leaving this distributor
+			// without an ActiveTable and silently falling back to
+			// the partition ring's hash-mod routing — which both
+			// defeats the slicer's assignment and pegs the
+			// rebalancer re-broadcasting the same snapshot. 64 MiB
+			// is more than 6× the largest snapshot we've observed
+			// in production (~10 MiB) and leaves headroom for
+			// future growth.
+			grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(nautilusRebalancerMaxRecvMsgSize)),
+		}
+		if d.clusterValidationLabel != "" {
+			dialOpts = append(dialOpts, grpc.WithUnaryInterceptor(
+				middleware.ClusterUnaryClientInterceptor(d.clusterValidationLabel, middleware.NoOpInvalidClusterValidationReporter),
+			))
+		}
+		// nolint:staticcheck // grpc.DialContext() has been deprecated; we'll address it before upgrading to gRPC 2.
+		conn, err := grpc.DialContext(ctx, d.cfg.NautilusRebalancerAddress, dialOpts...)
+		if err != nil {
+			return errors.Wrap(err, "connecting to nautilus rebalancer")
+		}
+		d.nautilusRebalancerConn = conn
+		level.Info(d.log).Log("msg", "connected to nautilus rebalancer", "address", d.cfg.NautilusRebalancerAddress)
+	}
+
 	return nil
 }
 
 func (d *Distributor) running(ctx context.Context) error {
 	ingestionRateTicker := time.NewTicker(instanceIngestionRateTickInterval)
 	defer ingestionRateTicker.Stop()
+
+	if d.nautilusRebalancerConn != nil {
+		go d.watchNautilusAssignments(ctx)
+		go d.watchReadcacheAssignments(ctx)
+		go d.runSpotlightLoop(ctx)
+	}
 
 	for {
 		select {
@@ -952,6 +1177,142 @@ func (d *Distributor) running(ctx context.Context) error {
 			return errors.Wrap(err, "distributor subservice failed")
 		}
 	}
+}
+
+// watchNautilusAssignments maintains a long-lived WatchAssignments
+// server-streaming RPC against the nautilus rebalancer. Each received
+// snapshot atomically replaces d.nautilusLog. Stream errors trigger a
+// reconnect with capped exponential backoff. Reduces staleness from
+// the previous 10s polling interval to roughly RPC propagation time;
+// per-distributor clocks still differ from the rebalancer's, so a
+// brief routing split across rebalance boundaries remains possible.
+//
+// The log itself is self-expiring: each entry is a time-boxed lease,
+// so if this loop fails to reconnect for longer than the lease
+// duration, Lookup returns false and routing falls back to the
+// partition ring without any extra liveness checks here.
+func (d *Distributor) watchNautilusAssignments(ctx context.Context) {
+	conn, ok := d.nautilusRebalancerConn.(*grpc.ClientConn)
+	if !ok || conn == nil {
+		return
+	}
+	client := rebalancer.NewNautilusRebalancerClient(conn)
+
+	const (
+		minBackoff = 250 * time.Millisecond
+		maxBackoff = 8 * time.Second
+	)
+	backoff := minBackoff
+
+	for ctx.Err() == nil {
+		stream, err := client.WatchAssignments(ctx, &rebalancer.WatchAssignmentsRequest{SupportsDeltas: true})
+		if err != nil {
+			level.Warn(d.log).Log("msg", "failed to open nautilus WatchAssignments stream", "err", err, "backoff", backoff)
+			d.sleepWithCtx(ctx, backoff)
+			backoff = nextBackoff(backoff, maxBackoff)
+			continue
+		}
+		d.nautilusStreamConnected.Store(true)
+		// Reset backoff once we've successfully connected.
+		backoff = minBackoff
+
+		err = d.consumeNautilusStream(stream)
+		d.nautilusStreamConnected.Store(false)
+		if ctx.Err() != nil {
+			return
+		}
+		if err != nil {
+			level.Warn(d.log).Log("msg", "nautilus WatchAssignments stream ended", "err", err, "backoff", backoff)
+		}
+		d.sleepWithCtx(ctx, backoff)
+		backoff = nextBackoff(backoff, maxBackoff)
+	}
+}
+
+// consumeNautilusStream loops on Recv and atomically swaps
+// d.nautilusLog plus its derived d.nautilusActiveTable on each
+// message. Returns the error that ended the stream so the caller
+// can decide whether to reconnect.
+//
+// We subscribe with SupportsDeltas, so a message is either a full
+// snapshot (reset=true; always the first message on a stream) that
+// replaces the local log wholesale, or a delta (reset=false) whose
+// entries are upserted into the previous log by lease identity. The
+// merged log is then pruned to the server's retention horizon. The
+// first message is treated as a snapshot regardless of the flag so
+// a mixed-version rollout (old rebalancer that never sets reset)
+// degrades to the legacy replace-wholesale behavior instead of
+// merging snapshots into each other.
+func (d *Distributor) consumeNautilusStream(stream rebalancer.NautilusRebalancer_WatchAssignmentsClient) error {
+	first := true
+	for {
+		resp, err := stream.Recv()
+		if err != nil {
+			return err
+		}
+		entries := rebalancer.EntriesFromProto(resp.Entries)
+		var log *assignment.Log
+		if resp.Reset_ || first {
+			log = assignment.NewLogFromEntries(entries)
+		} else {
+			log = d.nautilusLog.Load().MergedWithEntries(entries)
+		}
+		if resp.PruneBeforeUnixMs > 0 {
+			log.Prune(time.UnixMilli(resp.PruneBeforeUnixMs))
+		}
+		first = false
+		d.nautilusLog.Store(log)
+		// Pre-build the active table for "now" so the next write
+		// request hits the fast path immediately. Hold the rebuild
+		// mutex so a concurrent stale-rebuild from getKeysByAssignment
+		// doesn't overwrite us with an older snapshot.
+		now := d.now()
+		table := log.ActiveTable(now)
+		d.nautilusActiveTableMu.Lock()
+		d.nautilusActiveTable.Store(table)
+		d.nautilusActiveTableMu.Unlock()
+		d.nautilusAssignmentsReceived.Inc()
+
+		fields := []interface{}{
+			"msg", "received nautilus assignment update",
+			"entries", len(resp.Entries),
+			"reset", resp.Reset_,
+			"log_entries", log.Len(),
+		}
+		if table != nil {
+			fields = append(fields,
+				"active_tiles", table.Len(),
+				"valid_until", table.ValidUntil().Format(time.RFC3339),
+				"built_at", table.BuiltAt().Format(time.RFC3339),
+			)
+		} else {
+			fields = append(fields, "active_tiles", 0)
+		}
+		if err := log.ActiveTilesFullSpace(now); err != nil {
+			level.Warn(d.log).Log(append(fields, "validation_err", err.Error())...)
+		} else {
+			level.Info(d.log).Log(fields...)
+		}
+	}
+}
+
+// sleepWithCtx sleeps for dur but returns early if ctx is cancelled.
+func (d *Distributor) sleepWithCtx(ctx context.Context, dur time.Duration) {
+	t := time.NewTimer(dur)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+	case <-t.C:
+	}
+}
+
+// nextBackoff returns a doubled backoff capped at max.
+func nextBackoff(cur, max time.Duration) time.Duration {
+	next := cur * 2
+	if next > max {
+		next = max
+	}
+	return next
 }
 
 func (d *Distributor) cleanupInactiveUser(userID string) {
@@ -1006,6 +1367,12 @@ func (d *Distributor) RemoveGroupMetricsForUser(userID, group string) {
 
 // Called after distributor is asked to stop via StopAsync.
 func (d *Distributor) stopping(_ error) error {
+	if d.nautilusRebalancerConn != nil {
+		_ = d.nautilusRebalancerConn.Close()
+	}
+	if d.readcachePool != nil {
+		_ = d.readcachePool.Close()
+	}
 	return services.StopManagerAndAwaitStopped(context.Background(), d.subservices)
 }
 
@@ -2339,8 +2706,40 @@ func (d *Distributor) sendWriteRequestToIngesters(ctx context.Context, tenantRin
 func (d *Distributor) sendWriteRequestToPartitions(ctx context.Context, tenantID string, tenantRing *ring.ActivePartitionBatchRing, req *mimirpb.WriteRequest, keys []uint32, initialMetadataIndex int, remoteRequestContext func() context.Context, cleanup func()) error {
 	defer cleanup()
 
-	// Group keys by partition.
-	partitionKeys, err := tenantRing.GetKeysByPartition(ctx, keys)
+	var partitionKeys []ring.PartitionKeys
+	var err error
+
+	// Capture `now` once so all keys in this write request consult
+	// the same point-in-time view of the assignment log.
+	now := d.now()
+	usedNautilusRouting := false
+	if table := d.nautilusActiveTableFor(now); table != nil {
+		partitionKeys, err = d.getKeysByAssignment(ctx, tenantID, table, tenantRing, keys)
+		usedNautilusRouting = err == nil
+	} else if d.cfg.NautilusRequired {
+		level.Warn(d.log).Log(
+			"msg", "nautilus routing rejected: assignment table unavailable",
+			"tenant", tenantID,
+			"keys", len(keys),
+			"nautilus_required", true,
+		)
+		// Authoritative-nautilus mode: refuse to silently route via
+		// the partition ring's hash-mod sharding, since that would
+		// defeat query locality. The writer will see a 503 and
+		// retry; if the rebalancer outage is sustained the writer's
+		// own retry/backoff is the right place for that to surface,
+		// not silent fallthrough.
+		d.nautilusRoutingRejected.WithLabelValues("table_unavailable").Inc()
+		return errors.Wrap(newNautilusRoutingUnavailableError("no live assignment log snapshot is available"), "send data to partitions")
+	} else {
+		level.Warn(d.log).Log(
+			"msg", "nautilus assignment table unavailable; using partition ring",
+			"tenant", tenantID,
+			"keys", len(keys),
+			"nautilus_required", false,
+		)
+		partitionKeys, err = tenantRing.GetKeysByPartition(ctx, keys)
+	}
 	if err != nil {
 		return errors.Wrap(err, "send data to partitions")
 	}
@@ -2354,14 +2753,77 @@ func (d *Distributor) sendWriteRequestToPartitions(ctx context.Context, tenantID
 		})
 	}
 
+	// Choose the Kafka topic based on the tenant's
+	// nautilus_ingest_routing runtime knob: nautilus-only tenants
+	// land on the experimental topic consumed by readcache;
+	// everyone else uses the production ingest topic. Topic-
+	// isolation (rather than per-message routing keys) keeps the
+	// experimental rollout cleanly separable: if readcache misbehaves
+	// the production ingest path is untouched, and a single
+	// pkg/storage/ingest.Writer pool stays sufficient.
+	topic := d.cfg.IngestStorageConfig.KafkaConfig.Topic
+	if d.limits != nil && d.limits.NautilusIngestRouting(tenantID) == validation.NautilusIngestRoutingNautilus && d.cfg.NautilusIngestTopic != "" {
+		topic = d.cfg.NautilusIngestTopic
+	}
+
+	level.Debug(d.log).Log(
+		"msg", "routed write request to partitions",
+		"tenant", tenantID,
+		"keys", len(keys),
+		"partitions", len(partitionKeys),
+		"partition_summary", formatPartitionKeySummary(partitionKeys),
+		"nautilus_ingest_topic", topic != d.cfg.IngestStorageConfig.KafkaConfig.Topic,
+		"topic", topic,
+	)
+
 	// Write all partitions in a single ProduceSync call.
 	writeCtx := remoteRequestContext()
-	err = d.ingestStorageWriter.MultiWriteSync(writeCtx, d.cfg.IngestStorageConfig.KafkaConfig.Topic, tenantID, partitionRequests)
+	err = d.ingestStorageWriter.MultiWriteSync(writeCtx, topic, tenantID, partitionRequests)
+	if err == nil {
+		d.observeNautilusPartitionWrites(tenantID, topic, partitionRequests)
+		// Spotlight observation only makes sense for writes that
+		// actually consulted the assignment table: with partition-
+		// ring fallback the (key -> partition) mapping doesn't
+		// reflect what the rebalancer thinks, so counting hash hits
+		// against spotlights would attribute samples to whichever
+		// partition the ring's hash-mod happened to land on.
+		if usedNautilusRouting && d.spotlights != nil {
+			d.spotlights.observeWrite(keys, partitionKeys, req, initialMetadataIndex)
+		}
+	}
 	err = wrapPartitionsPushError(err)
 	err = wrapDeadlineExceededPushError(err)
 
 	// Since data may be written to different backends it may be helpful to clearly identify which backend failed.
 	return errors.Wrap(err, "send data to partitions")
+}
+
+// writeRequestSampleCount returns the number of float and native
+// histogram samples in req, matching cortex_distributor_samples_in_total.
+func writeRequestSampleCount(req *mimirpb.WriteRequest) int {
+	if req == nil {
+		return 0
+	}
+	n := 0
+	for _, ts := range req.Timeseries {
+		n += len(ts.Samples) + len(ts.Histograms)
+	}
+	return n
+}
+
+// observeNautilusPartitionWrites records per-partition sample counts
+// for tenants writing to the nautilus ingest topic.
+func (d *Distributor) observeNautilusPartitionWrites(tenantID, topic string, partitionRequests []ingest.PartitionWriteRequest) {
+	if d.nautilusPartitionSamplesWritten == nil || d.cfg.NautilusIngestTopic == "" || topic != d.cfg.NautilusIngestTopic {
+		return
+	}
+	for _, pr := range partitionRequests {
+		n := writeRequestSampleCount(pr.WriteRequest)
+		if n == 0 {
+			continue
+		}
+		d.nautilusPartitionSamplesWritten.WithLabelValues(strconv.FormatInt(int64(pr.PartitionID), 10), tenantID).Add(float64(n))
+	}
 }
 
 // sendWriteRequestToCompartments shards the write request across read compartments (each with its own
@@ -2422,6 +2884,106 @@ func getSeriesAndMetadataTokens(userID string, req *mimirpb.WriteRequest) (keys 
 	return keys, initialMetadataIndex
 }
 
+// nautilusActiveTableFor returns an ActiveTable suitable for routing
+// at wall-clock at, rebuilding from the latest stream snapshot if
+// the cached table is missing, hasn't yet started, or has gone
+// stale (e.g. its leases just expired and a pre-issued successor
+// became active). Returns nil if no log has ever been received or
+// every entry in the latest log has expired (rebalancer outage),
+// signalling the caller to fall back to the partition ring.
+//
+// The fast path is a single atomic load. The slow path takes the
+// rebuild mutex so simultaneous lookups don't all rebuild
+// independently.
+func (d *Distributor) nautilusActiveTableFor(at time.Time) *assignment.ActiveTable {
+	if t := d.nautilusActiveTable.Load(); t != nil && t.CoversAt(at) {
+		return t
+	}
+	d.nautilusActiveTableMu.Lock()
+	defer d.nautilusActiveTableMu.Unlock()
+
+	// Re-check under the lock: another goroutine may have just
+	// rebuilt the table.
+	if t := d.nautilusActiveTable.Load(); t != nil && t.CoversAt(at) {
+		return t
+	}
+	log := d.nautilusLog.Load()
+	if log == nil {
+		return nil
+	}
+	t := log.ActiveTable(at)
+	d.nautilusActiveTable.Store(t)
+	return t
+}
+
+// getKeysByAssignment groups keys by partition using a nautilus
+// ActiveTable. When the table doesn't cover a given key (e.g. a
+// hash gap or a transition edge case) the behaviour depends on
+// d.cfg.NautilusRequired: if false, fall back per-key to the
+// tenantRing's ActivePartitionForKey; if true, return a 503
+// nautilusRoutingUnavailableError so the writer retries instead of
+// silently routing through hash-mod sharding.
+func (d *Distributor) getKeysByAssignment(ctx context.Context, tenantID string, table *assignment.ActiveTable, tenantRing *ring.ActivePartitionBatchRing, keys []uint32) ([]ring.PartitionKeys, error) {
+	// tenantRing is consulted only for keys missing from the assignment table, and never in
+	// NautilusRequired mode.
+	var ringFallbackKeys int
+
+	partitionIndexes := make(map[int32][]int)
+	for i, key := range keys {
+		if i%10e3 == 0 {
+			if err := context.Cause(ctx); err != nil {
+				return nil, err
+			}
+		}
+
+		pid, ok := table.Lookup(key)
+		if !ok {
+			if d.cfg.NautilusRequired {
+				d.nautilusRoutingRejected.WithLabelValues("key_not_covered").Inc()
+				level.Warn(d.log).Log(
+					"msg", "nautilus routing rejected: key not covered by assignment",
+					"tenant", tenantID,
+					"key", key,
+					"total_keys", len(keys),
+				)
+				return nil, newNautilusRoutingUnavailableError(fmt.Sprintf("assignment log does not cover key %d", key))
+			}
+			ringFallbackKeys++
+			if tenantRing == nil {
+				return nil, errors.New("partition ring is required for nautilus fallback routing")
+			}
+			rs, err := tenantRing.Get(key, ring.WriteNoExtend, nil, nil, nil)
+			if err != nil {
+				return nil, err
+			}
+			pid64, err := strconv.ParseInt(rs.Instances[0].Id, 10, 32)
+			if err != nil {
+				return nil, err
+			}
+			pid = int32(pid64)
+		}
+		partitionIndexes[pid] = append(partitionIndexes[pid], i)
+	}
+
+	if ringFallbackKeys > 0 {
+		level.Warn(d.log).Log(
+			"msg", "keys missing from nautilus assignment; fell back to partition ring",
+			"tenant", tenantID,
+			"ring_fallback_keys", ringFallbackKeys,
+			"total_keys", len(keys),
+		)
+	}
+
+	result := make([]ring.PartitionKeys, 0, len(partitionIndexes))
+	for pid, indexes := range partitionIndexes {
+		result = append(result, ring.PartitionKeys{
+			PartitionID: pid,
+			Indexes:     indexes,
+		})
+	}
+	return result, nil
+}
+
 func getTokensForSeries(userID string, series []mimirpb.PreallocTimeseries) []uint32 {
 	if len(series) == 0 {
 		return nil
@@ -2446,8 +3008,15 @@ func getTokensForMetadata(userID string, metadata []*mimirpb.MetricMetadata) []u
 	return metadataKeys
 }
 
-func tokenForLabels(userID string, labels []mimirpb.LabelAdapter) uint32 {
-	return mimirpb.ShardByAllLabelAdapters(userID, labels)
+func tokenForLabels(userID string, lbls []mimirpb.LabelAdapter) uint32 {
+	metricName := ""
+	for _, l := range lbls {
+		if l.Name == model.MetricNameLabel {
+			metricName = l.Value
+			break
+		}
+	}
+	return mimirpb.ShardByMetricNameLocality(userID, metricName, lbls)
 }
 
 func tokenForMetadata(userID string, metricName string) uint32 {
@@ -2590,7 +3159,7 @@ func queryIngesterPartitionsRingZoneSorter(preferredZones []string) ring.ZoneSor
 // LabelValuesForLabelName returns the label values associated with the given labelName, among all series with samples
 // timestamp between from and to, and series labels matching the optional matchers.
 func (d *Distributor) LabelValuesForLabelName(ctx context.Context, from, to model.Time, labelName model.LabelName, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, error) {
-	replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx)
+	replicationSets, _, err := d.getIngesterReplicationSetsForQuery(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -2635,7 +3204,7 @@ func (d *Distributor) LabelValuesForLabelName(ctx context.Context, from, to mode
 //   - inmemory: in-memory series in ingesters.
 //   - active: in-memory series in ingesters which are also tracked as active ones.
 func (d *Distributor) LabelNamesAndValues(ctx context.Context, matchers []*labels.Matcher, countMethod cardinality.CountMethod) (*ingester_client.LabelNamesAndValuesResponse, error) {
-	replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx)
+	replicationSets, _, err := d.getIngesterReplicationSetsForQuery(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -2791,7 +3360,7 @@ func (d *Distributor) LabelValuesCardinality(ctx context.Context, labelNames []m
 // labelValuesCardinality queries ingesters for label values cardinality of a set of labelNames
 // Returns a LabelValuesCardinalityResponse where each item contains an exclusive label name and associated label values
 func (d *Distributor) labelValuesCardinality(ctx context.Context, labelNames []model.LabelName, matchers []*labels.Matcher, countMethod cardinality.CountMethod) (*ingester_client.LabelValuesCardinalityResponse, error) {
-	replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx)
+	replicationSets, _, err := d.getIngesterReplicationSetsForQuery(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -3015,7 +3584,7 @@ func (d *Distributor) ActiveNativeHistogramMetrics(ctx context.Context, matchers
 }
 
 func (d *Distributor) deduplicateActiveSeries(ctx context.Context, matchers []*labels.Matcher, nativeHistograms bool) (*activeSeriesResponse, error) {
-	replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx)
+	replicationSets, _, err := d.getIngesterReplicationSetsForQuery(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -3318,7 +3887,7 @@ func maxFromZones[T ~float64 | ~uint64](seriesCountByZone map[string]T) (val T) 
 // LabelNames returns the names of all labels from series with samples timestamp between from and to, and matching
 // the input optional series label matchers. The returned label names are sorted.
 func (d *Distributor) LabelNames(ctx context.Context, from, to model.Time, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, error) {
-	replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx)
+	replicationSets, _, err := d.getIngesterReplicationSetsForQuery(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -3359,7 +3928,7 @@ func (d *Distributor) LabelNames(ctx context.Context, from, to model.Time, hints
 // MetricsForLabelMatchers returns a list of series with samples timestamps between from and through, and series labels
 // matching the optional label matchers. The returned series are not sorted.
 func (d *Distributor) MetricsForLabelMatchers(ctx context.Context, from, through model.Time, hints *storage.SelectHints, matchers ...*labels.Matcher) ([]labels.Labels, error) {
-	replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx)
+	replicationSets, _, err := d.getIngesterReplicationSetsForQuery(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -3472,7 +4041,7 @@ func (d *Distributor) adjustQueryRequestLimit(ctx context.Context, userID string
 
 // MetricsMetadata returns the metrics metadata based on the provided req.
 func (d *Distributor) MetricsMetadata(ctx context.Context, req *ingester_client.MetricsMetadataRequest) ([]scrape.MetricMetadata, error) {
-	replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx)
+	replicationSets, _, err := d.getIngesterReplicationSetsForQuery(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -3509,7 +4078,7 @@ func (d *Distributor) MetricsMetadata(ctx context.Context, req *ingester_client.
 
 // UserStats returns statistics about the current user.
 func (d *Distributor) UserStats(ctx context.Context, countMethod cardinality.CountMethod) (*UserStats, error) {
-	replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx)
+	replicationSets, _, err := d.getIngesterReplicationSetsForQuery(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
