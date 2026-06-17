@@ -523,6 +523,9 @@ func TestCacheOperator(t *testing.T) {
 				types.PutInstantVectorSeriesData(data, memoryConsumptionTracker)
 			}
 
+			_, err = o.NextSeries(ctx)
+			require.Equal(t, types.EOS, err, "expected EOS error when reading past end of series")
+
 			mangleSeriesMetadata(series) // Mangle the series metadata to simulate the consumer mutating the slice, to ensure the cached data is not affected.
 			types.SeriesMetadataSlicePool.Put(&series, memoryConsumptionTracker)
 

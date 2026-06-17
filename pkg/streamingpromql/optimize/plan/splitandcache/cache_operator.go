@@ -549,7 +549,9 @@ func (c *CacheOperator) getDataForNextSeries(ctx context.Context) (desiredTimeRa
 		// sole extent, so we have to construct it here.
 		sourceSeriesIndices = []int{c.nextOutputSeriesIdx}
 	} else {
-		if len(c.outputSeries) == 0 {
+		if c.nextOutputSeriesIdx >= len(c.outputSeries) {
+			// We've reached the end of the output series, so we're done.
+			// We don't need a similar check in the one-extent case above, as we rely on the inner operator to return EOS in that case.
 			return types.InstantVectorSeriesData{}, types.InstantVectorSeriesData{}, types.EOS
 		}
 
@@ -1040,6 +1042,10 @@ func (c *cachedExtentReader) SeriesMetadata(_ context.Context) ([]types.SeriesMe
 }
 
 func (c *cachedExtentReader) GetSeries(_ context.Context, seriesIdx int) (types.InstantVectorSeriesData, error) {
+	if seriesIdx >= len(c.extent.Data) {
+		return types.InstantVectorSeriesData{}, types.EOS
+	}
+
 	cachedData := c.extent.Data[seriesIdx]
 
 	mqeData := types.InstantVectorSeriesData{
