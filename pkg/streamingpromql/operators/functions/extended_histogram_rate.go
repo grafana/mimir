@@ -106,7 +106,7 @@ func validateHistogramRange(h []promql.HPoint, isCounter bool, emitAnnotation ty
 // (nil if none) and false if combining histograms failed.
 func correctForCounterResetsHistogram(h []promql.HPoint, firstSampleIndex, lastSampleIndex int, left, right *histogram.FloatHistogram, rangeStart int64, smoothed bool, emitAnnotation types.EmitAnnotationFunc) (*histogram.FloatHistogram, bool, error) {
 	// firstSampleIndex is represented by left, so the loop starts one beyond.
-	first := firstSampleIndex + 1
+	firstToCheck := firstSampleIndex + 1
 	prev := left
 	if smoothed && h[firstSampleIndex].T < rangeStart && h[firstSampleIndex+1].H.DetectReset(h[firstSampleIndex].H) {
 		// There is a reset somewhere between the point just outside the range
@@ -114,22 +114,22 @@ func correctForCounterResetsHistogram(h []promql.HPoint, firstSampleIndex, lastS
 		// already accounted for by the left interpolation, so skip h[firstSampleIndex+1] from the
 		// loop and use it as the comparison anchor for any reset that immediately follows.
 		prev = h[firstSampleIndex+1].H
-		first++
+		firstToCheck++
 	}
 	// lastSampleIndex is always excluded: right is either a direct copy of h[lastSampleIndex]
 	// or an interpolation that inherits its CounterResetHint. Including h[lastSampleIndex] in
 	// the loop would make right.DetectReset self-detect on the same hint. The final
 	// right.DetectReset(prev) below handles the right-boundary reset safely once
 	// h[lastSampleIndex] is not prev.
-	last := lastSampleIndex - 1
+	lastToCheck := lastSampleIndex - 1
 
-	// first > last+1 when there is nothing between the two boundary samples to check. This
-	// happens when firstSampleIndex == lastSampleIndex (single-sample window), or when the
+	// firstToCheck > lastToCheck+1 when there is nothing between the two boundary samples to check.
+	// This happens when firstSampleIndex == lastSampleIndex (single-sample window), or when the
 	// smoothed left interpolation already spanned the only reset interval
-	// (lastSampleIndex == firstSampleIndex+1 and first was incremented above). Both
+	// (lastSampleIndex == firstSampleIndex+1 and firstToCheck was incremented above). Both
 	// boundaries were interpolated from the same reset segment, so there is nothing more to
 	// correct.
-	if first > last+1 {
+	if firstToCheck > lastToCheck+1 {
 		return nil, true, nil
 	}
 
@@ -143,7 +143,7 @@ func correctForCounterResetsHistogram(h []promql.HPoint, firstSampleIndex, lastS
 		return addHistogramWithAnnotations(correction, h, emitAnnotation)
 	}
 
-	for _, p := range h[first : last+1] {
+	for _, p := range h[firstToCheck : lastToCheck+1] {
 		if p.H.DetectReset(prev) {
 			if ok, err := addCorrection(prev); !ok {
 				return nil, false, err
