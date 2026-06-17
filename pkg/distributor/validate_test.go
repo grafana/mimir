@@ -76,7 +76,7 @@ func TestValidateLabels(t *testing.T) {
 	perTenant[droppingUserID].MaxLabelValueLength = 75 // must be higher than validation.LabelValueHashLen
 
 	overrides := func(limits *validation.Limits) *validation.Overrides {
-		return testutils.NewMockCostAttributionOverrides(*limits, perTenant, 0,
+		return testutils.NewMockCostAttributionOverrides(*limits, perTenant,
 			[]string{defaultUserID, "team"},
 			[]string{utf8UserID, "team"},
 		)
@@ -1063,7 +1063,7 @@ func TestValidateLabel_UseAfterRelease(t *testing.T) {
 		nameValidationScheme: model.UTF8Validation,
 	}
 	const userID = "testUser"
-	limits := testutils.NewMockCostAttributionLimits(0, []string{userID, "team"})
+	limits := testutils.NewMockCostAttributionLimits([]string{userID, "team"})
 	reg := prometheus.NewPedanticRegistry()
 	s := newSampleValidationMetrics(reg)
 	careg := prometheus.NewRegistry()

@@ -307,7 +307,7 @@ func (m *mockIndex) Series(ref storage.SeriesRef, builder *labels.ScratchBuilder
 }
 
 func TestActiveSeries_UpdateSeries_WithCostAttribution(t *testing.T) {
-	limits := catestutils.NewMockCostAttributionLimits(0)
+	limits := catestutils.NewMockCostAttributionLimits()
 	reg := prometheus.NewRegistry()
 	manager, err := costattribution.NewManager(5*time.Second, 10*time.Second, log.NewNopLogger(), limits, reg, reg)
 	require.NoError(t, err)

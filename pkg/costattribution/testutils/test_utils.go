@@ -20,11 +20,11 @@ func defaultTracker(labels ...costattributionmodel.Label) costattributionmodel.T
 	}
 }
 
-func NewMockCostAttributionLimits(idx int, userLabels ...[]string) *validation.Overrides {
-	return NewMockCostAttributionOverrides(validation.Limits{}, nil, idx, userLabels...)
+func NewMockCostAttributionLimits(userLabels ...[]string) *validation.Overrides {
+	return NewMockCostAttributionOverrides(validation.Limits{}, nil, userLabels...)
 }
 
-func NewMockCostAttributionOverrides(limits validation.Limits, overrides map[string]*validation.Limits, idx int, userLabels ...[]string) *validation.Overrides {
+func NewMockCostAttributionOverrides(limits validation.Limits, overrides map[string]*validation.Limits, userLabels ...[]string) *validation.Overrides {
 	if overrides == nil {
 		overrides = map[string]*validation.Limits{}
 	}
@@ -79,22 +79,6 @@ func NewMockCostAttributionOverrides(limits validation.Limits, overrides map[str
 			overrides[userID].AdditionalCostAttributionTrackers = l.AdditionalCostAttributionTrackers
 		}
 	}
-	switch idx {
-	case 1:
-		overrides["user1"].CostAttributionBaseTrackers = nil
-	case 2:
-		overrides["user3"].CostAttributionBaseTrackers = defaultTracker(
-			costattributionmodel.Label{Input: "team", Output: "my_team"},
-			costattributionmodel.Label{Input: "feature", Output: "my_feature"},
-		)
-	case 3:
-		overrides["user3"].MaxCostAttributionCardinality = 3
-	case 4:
-		overrides["user1"].MaxCostAttributionCardinality = 2
-	case 5:
-		overrides["user1"].CostAttributionBaseTrackers = defaultTracker(costattributionmodel.Label{Input: "department", Output: "my_department"})
-	}
-
 	for _, l := range overrides {
 		l.CostAttributionBaseTrackers.Canonicalize()
 		l.AdditionalCostAttributionTrackers.Canonicalize()
