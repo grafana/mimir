@@ -22,21 +22,22 @@ import (
 // can be passed to multiple BucketStore and metrics MUST be correct even after a
 // BucketStore is offloaded.
 type BucketStoreMetrics struct {
-	blockLoads            prometheus.Counter
-	blockLoadFailures     prometheus.Counter
-	blockDrops            prometheus.Counter
-	blockDropFailures     prometheus.Counter
-	blockDiscoveryLatency prometheus.Histogram
-	seriesDataTouched     *prometheus.SummaryVec
-	seriesDataFetched     *prometheus.SummaryVec
-	seriesDataSizeTouched *prometheus.SummaryVec
-	seriesDataSizeFetched *prometheus.SummaryVec
-	seriesBlocksQueried   *prometheus.SummaryVec
-	resultSeriesCount     prometheus.Summary
-	chunkSizeBytes        prometheus.Histogram
-	chunkSizeEstimateType *prometheus.CounterVec
-	queriesDropped        *prometheus.CounterVec
-	seriesRefetches       prometheus.Counter
+	blockLoads              prometheus.Counter
+	blockLoadFailures       prometheus.Counter
+	blockDrops              prometheus.Counter
+	blockDropFailures       prometheus.Counter
+	blockDiscoveryLatency   prometheus.Histogram
+	seriesDataTouched       *prometheus.SummaryVec
+	seriesDataFetched       *prometheus.SummaryVec
+	seriesDataSizeTouched   *prometheus.SummaryVec
+	seriesDataSizeFetched   *prometheus.SummaryVec
+	seriesBlocksQueried     *prometheus.SummaryVec
+	blocksQueriedPerRequest prometheus.Histogram
+	resultSeriesCount       prometheus.Summary
+	chunkSizeBytes          prometheus.Histogram
+	chunkSizeEstimateType   *prometheus.CounterVec
+	queriesDropped          *prometheus.CounterVec
+	seriesRefetches         prometheus.Counter
 
 	bucketIndexVersionDiffSeconds prometheus.Histogram
 
@@ -118,6 +119,15 @@ func NewBucketStoreMetrics(reg prometheus.Registerer) *BucketStoreMetrics {
 		Name: "cortex_bucket_store_series_blocks_queried",
 		Help: "Number of blocks in a bucket store that were touched to satisfy a query. level|source=unknown/old_block means that the block was created before we started collecting these statistics in 2.12.0.",
 	}, []string{"source", "level", "out_of_order"})
+	m.blocksQueriedPerRequest = promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
+		Name:    "cortex_bucket_store_blocks_queried_per_request",
+		Help:    "Total number of blocks queried by a single Series/LabelValues/LabelNames request, observed when it starts.",
+		Buckets: prometheus.ExponentialBuckets(1, 2, 13), // 1 to 4096 blocks.
+
+		NativeHistogramBucketFactor:     1.1,
+		NativeHistogramMaxBucketNumber:  100,
+		NativeHistogramMinResetDuration: 1 * time.Hour,
+	})
 	m.seriesRefetches = promauto.With(reg).NewCounter(prometheus.CounterOpts{
 		Name: "cortex_bucket_store_series_refetches_total",
 		Help: "Total number of cases where the built-in max series size was not enough to fetch series from index, resulting in refetch.",

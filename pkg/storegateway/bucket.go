@@ -621,6 +621,7 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storegatewaypb.Stor
 	defer s.recordBucketIndexDiscoveryDiff(ctx)
 
 	blocks, indexReaders, chunkReaders := s.openBlocksForReading(ctx, req.SkipChunks, req.MinTime, req.MaxTime, reqBlockMatchers, stats)
+	s.metrics.blocksQueriedPerRequest.Observe(float64(len(blocks)))
 	// We must keep the readers open until all their data has been sent.
 	defer func() {
 		for _, r := range indexReaders {
@@ -1312,12 +1313,14 @@ func (s *BucketStore) LabelNames(ctx context.Context, req *storepb.LabelNamesReq
 
 	var setsMtx sync.Mutex
 	var sets [][]string
+	var numBlocks int
 	var blocksQueriedByBlockMeta = make(map[blockQueriedMeta]int)
 	seriesLimiter := s.seriesLimiterFactory(s.metrics.queriesDropped.WithLabelValues("series"))
 
 	s.blockSet.filter(req.Start, req.End, reqBlockMatchers, func(b *bucketBlock) {
 		resHints.AddQueriedBlock(b.meta.ULID)
 
+		numBlocks++
 		blocksQueriedByBlockMeta[newBlockQueriedMeta(b.meta)]++
 
 		// This indexReader is here to make sure its block is held open inside the goroutine below.
@@ -1342,6 +1345,7 @@ func (s *BucketStore) LabelNames(ctx context.Context, req *storepb.LabelNamesReq
 			return nil
 		})
 	})
+	s.metrics.blocksQueriedPerRequest.Observe(float64(numBlocks))
 
 	if err := g.Wait(); err != nil {
 		if errors.Is(err, context.Canceled) {
@@ -1506,8 +1510,11 @@ func (s *BucketStore) LabelValues(ctx context.Context, req *storepb.LabelValuesR
 
 	var setsMtx sync.Mutex
 	var sets [][]string
+	var numBlocks int
 	s.blockSet.filter(req.Start, req.End, reqBlockMatchers, func(b *bucketBlock) {
 		resHints.AddQueriedBlock(b.meta.ULID)
+
+		numBlocks++
 
 		// This index reader shouldn't be used for ExpandedPostings, since it doesn't have the correct strategy.
 		// It's here only to make sure the block is held open inside the goroutine below.
@@ -1532,6 +1539,7 @@ func (s *BucketStore) LabelValues(ctx context.Context, req *storepb.LabelValuesR
 			return nil
 		})
 	})
+	s.metrics.blocksQueriedPerRequest.Observe(float64(numBlocks))
 
 	if err := g.Wait(); err != nil {
 		if errors.Is(err, context.Canceled) {
