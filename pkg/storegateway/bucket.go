@@ -655,7 +655,7 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storegatewaypb.Stor
 		seriesLimiter        = s.seriesLimiterFactory(s.metrics.queriesDropped.WithLabelValues("series"))
 	)
 
-	seriesSet, streamingIterators, err = s.createIteratorForChunksStreamingLabelsPhase(ctx, req, blocks, indexReaders, shardSelector, matchers, chunksLimiter, seriesLimiter, stats)
+	seriesSet, streamingIterators, err = s.createIteratorForChunksStreamingLabelsPhase(ctx, req.MinTime, req.MaxTime, blocks, indexReaders, shardSelector, matchers, chunksLimiter, seriesLimiter, stats)
 	if err != nil {
 		return err
 	}
@@ -989,7 +989,7 @@ func chunksSize(chks []storepb.AggrChunk) (size int) {
 // The streamingSeriesIterators should be re-used when getting chunks to save on computation.
 func (s *BucketStore) createIteratorForChunksStreamingLabelsPhase(
 	ctx context.Context,
-	req *storepb.SeriesRequest,
+	minT, maxT int64,
 	blocks []*bucketBlock,
 	indexReaders map[ulid.ULID]*bucketIndexReader,
 	shardSelector *sharding.ShardSelector,
@@ -999,7 +999,7 @@ func (s *BucketStore) createIteratorForChunksStreamingLabelsPhase(
 	stats *safeQueryStats,
 ) (storepb.SeriesSet, *streamingSeriesIterators, error) {
 	streamingIterators := newStreamingSeriesIterators()
-	it, err := s.getSeriesIteratorFromBlocks(ctx, req, blocks, indexReaders, shardSelector, matchers, chunksLimiter, seriesLimiter, stats, overlapMintMaxt, streamingIterators)
+	it, err := s.getSeriesIteratorFromBlocks(ctx, minT, maxT, blocks, indexReaders, shardSelector, matchers, chunksLimiter, seriesLimiter, stats, overlapMintMaxt, streamingIterators)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1027,7 +1027,7 @@ func (s *BucketStore) createIteratorForChunksStreamingChunksPhase(
 
 func (s *BucketStore) getSeriesIteratorFromBlocks(
 	ctx context.Context,
-	req *storepb.SeriesRequest,
+	minT, maxT int64,
 	blocks []*bucketBlock,
 	indexReaders map[ulid.ULID]*bucketIndexReader,
 	shardSelector *sharding.ShardSelector,
@@ -1067,7 +1067,7 @@ func (s *BucketStore) getSeriesIteratorFromBlocks(
 				shardSelector,
 				cachedSeriesHasher{blockSeriesHashCache},
 				strategy,
-				req.MinTime, req.MaxTime,
+				minT, maxT,
 				stats,
 				s.logger,
 				streamingIterators,
@@ -1468,8 +1468,119 @@ func storeCachedLabelNames(ctx context.Context, indexCache indexcache.IndexCache
 	indexCache.StoreLabelNames(userID, blockID, entry.MatchersKey, data)
 }
 
-// LabelValues implements the storegatewaypb.StoreGatewayServer interface.
 func (s *BucketStore) LabelValues(ctx context.Context, req *storepb.LabelValuesRequest) (*storepb.LabelValuesResponse, error) {
+	spanLogger := spanlogger.FromContext(ctx, s.logger)
+
+	reqSeriesMatchers, err := storepb.MatchersToPromMatchers(req.Matchers...)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, errors.Wrap(err, "translate request labels matchers").Error())
+	}
+	labelNameMatcher, err := labels.NewMatcher(
+		labels.MatchNotEqual, req.Label, "",
+	)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, errors.Wrap(err, "translate request labels matchers").Error())
+	}
+	reqSeriesMatchers = slices.Insert(reqSeriesMatchers, 0, labelNameMatcher)
+
+	stats := newSafeQueryStats()
+	defer s.recordLabelValuesCallResult(stats)
+	defer s.recordRequestAmbientTime(stats, time.Now())
+
+	resHints := &storepb.LabelValuesResponseHints{}
+	var reqBlockMatchers []*labels.Matcher
+	if req.RequestHints != nil {
+		reqBlockMatchers, err = storepb.MatchersToPromMatchers(req.RequestHints.BlockMatchers...)
+		if err != nil {
+			return nil, status.Error(codes.InvalidArgument, errors.Wrap(err, "translate request hints labels matchers").Error())
+		}
+	} else if req.Hints != nil { //nolint:staticcheck // Ignore SA1019. This use will be removed in Mimir 3.2
+		reqHints := &hintspb.LabelValuesRequestHints{}
+		//nolint:staticcheck // Ignore SA1019. This use will be removed in Mimir 3.2
+		err := types.UnmarshalAny(req.Hints, reqHints)
+		if err != nil {
+			return nil, status.Error(codes.InvalidArgument, errors.Wrap(err, "unmarshal label values request hints").Error())
+		}
+
+		reqBlockMatchers, err = storepb.MatchersToPromMatchers(reqHints.BlockMatchers...)
+		if err != nil {
+			return nil, status.Error(codes.InvalidArgument, errors.Wrap(err, "translate request hints labels matchers").Error())
+		}
+	}
+
+	// log LabelValues request to span?
+
+	// No chunk readers returned when skipChunks=true
+	blocks, indexReaders, _ := s.openBlocksForReading(ctx, true, req.Start, req.End, reqBlockMatchers, stats)
+	// We must keep the readers open until all their data has been sent.
+	defer func() {
+		for _, r := range indexReaders {
+			runutil.CloseWithLogOnErr(s.logger, r, "close block index reader")
+		}
+	}()
+
+	defer s.recordBucketIndexDiscoveryDiff(ctx)
+
+	// Wait for the query gate only after opening blocks. Opening blocks is usually fast (~1ms),
+	// but sometimes it can take minutes if the block isn't loaded and there is a surge in queries for unloaded blocks.
+	done, err := s.limitConcurrentQueries(ctx, stats)
+	if err != nil {
+		return nil, err
+	}
+	defer done()
+
+	for _, b := range blocks {
+		resHints.AddQueriedBlock(b.meta.ULID)
+		b.queried.Store(true)
+	}
+
+	var (
+		shardSelector *sharding.ShardSelector
+		seriesSet     storepb.SeriesSet
+		chunksLimiter = s.chunksLimiterFactory(s.metrics.queriesDropped.WithLabelValues("chunks"))
+		seriesLimiter = s.seriesLimiterFactory(s.metrics.queriesDropped.WithLabelValues("series"))
+	)
+
+	// streamingIterators is discarded: LabelValues uses skipChunks=true and never enters the chunks phase.
+	seriesSet, _, err = s.createIteratorForChunksStreamingLabelsPhase(
+		ctx, req.Start, req.End, blocks, indexReaders, shardSelector, reqSeriesMatchers, chunksLimiter, seriesLimiter, stats,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	// Series are sorted lexicographically, so equal values for req.Label are always adjacent.
+	// A single linear scan is sufficient to deduplicate without a map allocation.
+	var (
+		values  []string
+		prevVal string
+	)
+	for seriesSet.Next() {
+		lset, _ := seriesSet.At()
+		val := lset.Get(req.Label)
+		if val != "" && val != prevVal {
+			values = append(values, val)
+			prevVal = val
+		}
+	}
+	if err := seriesSet.Err(); err != nil {
+		return nil, status.Error(codes.Internal, errors.Wrap(err, "iterate series for label values").Error())
+	}
+
+	spanLogger.DebugLog("msg", "collected label values", "label", req.Label, "num_values", len(values))
+
+	if req.Limit > 0 && len(values) > int(req.Limit) {
+		values = values[:req.Limit]
+	}
+
+	return &storepb.LabelValuesResponse{
+		Values:        values,
+		ResponseHints: resHints,
+	}, nil
+}
+
+// LabelValues implements the storegatewaypb.StoreGatewayServer interface.
+func (s *BucketStore) LabelValuesOld(ctx context.Context, req *storepb.LabelValuesRequest) (*storepb.LabelValuesResponse, error) {
 	reqSeriesMatchers, err := storepb.MatchersToPromMatchers(req.Matchers...)
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, errors.Wrap(err, "translate request labels matchers").Error())

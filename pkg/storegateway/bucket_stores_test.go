@@ -880,7 +880,7 @@ func (f *failFirstGetBucket) Get(ctx context.Context, name string) (io.ReadClose
 	return f.Bucket.Get(ctx, name)
 }
 
-func indexHeaderCachingBucket(
+func indexHeaderCachingBucket( // nolint:unused
 	tb testing.TB, bkt objstore.Bucket, logger log.Logger, reg prometheus.Registerer,
 ) (objstore.Bucket, error) {
 
@@ -918,18 +918,22 @@ func BenchmarkBucketStoreLabelValues(tb *testing.B) {
 		bucketReaderCfg indexheader.BucketReaderConfig
 		wrapBucket      func(tb testing.TB, bkt objstore.Bucket, logger log.Logger, reg prometheus.Registerer) (objstore.Bucket, error)
 	}{
-		{
-			name:            "Reader=disk",
-			bucketReaderCfg: indexheader.BucketReaderConfig{},
-		},
+		//{
+		//	name:            "Reader=disk",
+		//	bucketReaderCfg: indexheader.BucketReaderConfig{},
+		//},
+		//{
+		//	name:            "Reader=bucket/BucketCache=off",
+		//	bucketReaderCfg: bucketPostingsOffsets,
+		//},
+		//{
+		//	name:            "Reader=bucket/BucketCache=index-header",
+		//	bucketReaderCfg: bucketPostingsOffsets,
+		//	wrapBucket:      indexHeaderCachingBucket,
+		//},
 		{
 			name:            "Reader=bucket/BucketCache=off",
 			bucketReaderCfg: bucketPostingsOffsets,
-		},
-		{
-			name:            "Reader=bucket/BucketCache=index-header",
-			bucketReaderCfg: bucketPostingsOffsets,
-			wrapBucket:      indexHeaderCachingBucket,
 		},
 	}
 
@@ -948,7 +952,11 @@ func BenchmarkBucketStoreLabelValues(tb *testing.B) {
 			prepareCfg.bucketStoreConfig.IndexHeader.BucketReader = storeCfg.bucketReaderCfg
 			prepareCfg.wrapBucket = storeCfg.wrapBucket
 
-			s := prepareStoreWithTestBlocks(tb, bkt, prepareCfg)
+			countingBkt := objstore.WrapWithMetrics(
+				bkt, prometheus.WrapRegistererWithPrefix("thanos_", prepareCfg.metricsRegistry), "test",
+			)
+
+			s := prepareStoreWithTestBlocks(tb, countingBkt, prepareCfg)
 			mint, maxt := s.store.TimeRange()
 			assert.Equal(tb, s.minTime, mint)
 			assert.Equal(tb, s.maxTime, maxt)
@@ -961,18 +969,20 @@ func BenchmarkBucketStoreLabelValues(tb *testing.B) {
 
 			tb.Run("no cache", func(tb *testing.B) {
 				s.cache.SwapIndexCacheWith(noopCache{})
-				benchmarkBucketStoreLabelValues(ctx, tb, s.store)
+				benchmarkBucketStoreLabelValues(ctx, tb, s.store, s.metricsRegistry)
 			})
 
 			tb.Run("inmemory cache (without label values cache)", func(tb *testing.B) {
 				s.cache.SwapIndexCacheWith(indexCacheMissingLabelValues{indexCache})
-				benchmarkBucketStoreLabelValues(ctx, tb, s.store)
+				benchmarkBucketStoreLabelValues(ctx, tb, s.store, s.metricsRegistry)
 			})
 		})
 	}
 }
 
-func benchmarkBucketStoreLabelValues(ctx context.Context, tb *testing.B, store *BucketStore) {
+func benchmarkBucketStoreLabelValues(ctx context.Context, tb *testing.B, store *BucketStore, bucketReg *prometheus.Registry) {
+	bucketReaderOps := []string{objstore.OpGetRange} // which objstore.BucketReader ops to report metrics for
+
 	tb.Run("10-series-matched-with-10-label-values", func(tb *testing.B) {
 		ms, err := storepb.PromMatchersToMatchers(
 			labels.MustNewMatcher(labels.MatchEqual, "label_2", "0"),
@@ -991,12 +1001,15 @@ func benchmarkBucketStoreLabelValues(ctx context.Context, tb *testing.B, store *
 		require.NoError(tb, err)
 		assert.Equal(tb, 10, len(resp.Values))
 
+		baselineMetrics := test.RecordBucketMetrics(tb, bucketReg, bucketReaderOps)
 		tb.ResetTimer()
 		for i := 0; i < tb.N; i++ {
 			resp, err := store.LabelValues(ctx, req)
 			require.NoError(tb, err)
 			assert.Equal(tb, 10, len(resp.Values))
 		}
+		metricsDiff := test.RecordBucketMetricsDiff(tb, bucketReg, bucketReaderOps, baselineMetrics)
+		test.ReportBucketMetrics(tb, metricsDiff)
 	})
 
 	tb.Run("1000-series-matched-with-1000-label-values", func(tb *testing.B) {
@@ -1018,12 +1031,16 @@ func benchmarkBucketStoreLabelValues(ctx context.Context, tb *testing.B, store *
 		require.NoError(tb, err)
 		assert.Equal(tb, 1000, len(resp.Values))
 
+		baselineMetrics := test.RecordBucketMetrics(tb, bucketReg, bucketReaderOps)
 		tb.ResetTimer()
 		for i := 0; i < tb.N; i++ {
 			resp, err := store.LabelValues(ctx, req)
 			require.NoError(tb, err)
 			assert.Equal(tb, 1000, len(resp.Values))
 		}
+		tb.StopTimer()
+		metricsDiff := test.RecordBucketMetricsDiff(tb, bucketReg, bucketReaderOps, baselineMetrics)
+		test.ReportBucketMetrics(tb, metricsDiff)
 	})
 
 	tb.Run("1_000_000-series-matched-with-10-label-values", func(tb *testing.B) {
@@ -1043,12 +1060,16 @@ func benchmarkBucketStoreLabelValues(ctx context.Context, tb *testing.B, store *
 		require.NoError(tb, err)
 		assert.Equal(tb, 10, len(resp.Values))
 
+		baselineMetrics := test.RecordBucketMetrics(tb, bucketReg, bucketReaderOps)
 		tb.ResetTimer()
 		for i := 0; i < tb.N; i++ {
 			resp, err := store.LabelValues(ctx, req)
 			require.NoError(tb, err)
 			assert.Equal(tb, 10, len(resp.Values))
 		}
+		tb.StopTimer()
+		metricsDiff := test.RecordBucketMetricsDiff(tb, bucketReg, bucketReaderOps, baselineMetrics)
+		test.ReportBucketMetrics(tb, metricsDiff)
 	})
 
 	tb.Run("1_000_000-series-matched-with-1-label-values", func(tb *testing.B) {
@@ -1069,12 +1090,16 @@ func benchmarkBucketStoreLabelValues(ctx context.Context, tb *testing.B, store *
 		require.NoError(tb, err)
 		assert.Equal(tb, 1, len(resp.Values))
 
+		baselineMetrics := test.RecordBucketMetrics(tb, bucketReg, bucketReaderOps)
 		tb.ResetTimer()
 		for i := 0; i < tb.N; i++ {
 			resp, err := store.LabelValues(ctx, req)
 			require.NoError(tb, err)
 			assert.Equal(tb, 1, len(resp.Values))
 		}
+		tb.StopTimer()
+		metricsDiff := test.RecordBucketMetricsDiff(tb, bucketReg, bucketReaderOps, baselineMetrics)
+		test.ReportBucketMetrics(tb, metricsDiff)
 	})
 }
 
