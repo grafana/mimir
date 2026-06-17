@@ -20,12 +20,14 @@ BUILD_IMAGE=$(make -s -C "${SCRIPT_DIR}"/../.. print-build-image)
 # Make sure docker-compose.yml is up-to-date.
 cd "$SCRIPT_DIR" && make
 
-# Returns 0 (true) if the binary doesn't exist or any .go file under the given
-# source directories is newer than the binary.
+# Returns 0 (true) if the binary doesn't exist or any source file under the given
+# directories is newer than the binary. We consider all files (not just *.go) so
+# go:embed assets (e.g. .gohtml templates, static/, JSON descriptors) trigger a
+# rebuild too, but skip docs like .md which can't affect the compiled binary.
 needs_build() {
     local binary="$1"; shift
     [ ! -f "$binary" ] && return 0
-    find "$@" -name '*.go' -newer "$binary" -print -quit 2>/dev/null | grep -q .
+    find "$@" -type f ! -name '*.md' -newer "$binary" -print -quit 2>/dev/null | grep -q .
 }
 
 # -gcflags "all=-N -l" disables optimizations that allow for better run with combination with Delve debugger.
