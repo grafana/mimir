@@ -235,7 +235,7 @@ About to add partition(s) %v with state '%s' to the ring.`, partitionIDs, state.
 	fmt.Fprintln(os.Stderr, "Successfully joined memberlist cluster.")
 
 	// Perform the CAS operation to add the partitions.
-	if err := addPartitions(ctx, kvClient, resolveRingKey(c.ringKey), partitionIDs, state); err != nil {
+	if err := addPartitions(ctx, kvClient, c.ringKey, partitionIDs, state); err != nil {
 		return err
 	}
 
@@ -272,7 +272,7 @@ About to remove partition(s) %v from the ring.`, partitionIDs)
 	fmt.Fprintln(os.Stderr, "Successfully joined memberlist cluster.")
 
 	// Perform the CAS operation to remove the partitions.
-	if err := removePartitions(ctx, kvClient, resolveRingKey(c.ringKey), partitionIDs); err != nil {
+	if err := removePartitions(ctx, kvClient, c.ringKey, partitionIDs); err != nil {
 		return err
 	}
 
@@ -374,7 +374,7 @@ About to add owner(s) %v to partition %d.`, ownerIDs, partitionID)
 	fmt.Fprintln(os.Stderr, "Successfully joined memberlist cluster.")
 
 	// Perform the CAS operation to add the owners.
-	if err := addOwners(ctx, kvClient, resolveRingKey(c.ringKey), ownerIDs, ring.OwnerActive, partitionID); err != nil {
+	if err := addOwners(ctx, kvClient, c.ringKey, ownerIDs, ring.OwnerActive, partitionID); err != nil {
 		return err
 	}
 
@@ -418,7 +418,7 @@ About to remove owner(s) %v from the ring.`, ownerIDs)
 	fmt.Fprintln(os.Stderr, "Successfully joined memberlist cluster.")
 
 	// Perform the CAS operation to remove the owners.
-	if err := removeOwners(ctx, kvClient, resolveRingKey(c.ringKey), ownerIDs); err != nil {
+	if err := removeOwners(ctx, kvClient, c.ringKey, ownerIDs); err != nil {
 		return err
 	}
 
@@ -512,15 +512,6 @@ func initMemberlistKV(ctx context.Context, joinAddrs []string, clusterLabel stri
 	}
 
 	return kvClient, cleanup, nil
-}
-
-// resolveRingKey returns the ring key to operate on, falling back to the default
-// (non-compartment) partition ring key when none is explicitly provided.
-func resolveRingKey(ringKey string) string {
-	if ringKey == "" {
-		return ingester.PartitionRingKey
-	}
-	return ringKey
 }
 
 func addPartitions(ctx context.Context, kvClient kv.Client, ringKey string, partitionIDs []int32, state ring.PartitionState) error {
