@@ -3389,7 +3389,7 @@ func (d *Distributor) MetricsForLabelMatchers(ctx context.Context, from, through
 		}
 
 		// Adjust the limit passed with the downstream request to ingesters with respect to how series are sharded.
-		req.Limit = int64(d.adjustQueryRequestLimit(ctx, userID, resultLimit))
+		req.Limit = int64(d.adjustQueryRequestLimit(ctx, userID, matchers, resultLimit))
 	}
 
 	resps, err := forReplicationSets(ctx, d, replicationSets, func(ctx context.Context, client ingester_client.IngesterClient) (*ingester_client.MetricsForLabelMatchersResponse, error) {
@@ -3443,15 +3443,17 @@ respsLoop:
 
 // adjustQueryRequestLimit recalculated the query request limit.
 // The returned value is the approximation, a query to an individual shard needs to be limited with.
-func (d *Distributor) adjustQueryRequestLimit(ctx context.Context, userID string, limit int) int {
+func (d *Distributor) adjustQueryRequestLimit(ctx context.Context, userID string, matchers []*labels.Matcher, limit int) int {
 	if limit == 0 {
 		return limit
 	}
 
 	var shardSize int
 	if d.cfg.Compartments.Enabled {
-		// Get the number of active partitions in the ring, across all compartments.
-		for c := 0; c < d.partitionInstanceRings.Count(); c++ {
+		// Sum the active partitions only across the compartments this query actually targets (the same set
+		// getIngesterReplicationSetsForQuery queries), otherwise a query pinned to a subset of compartments
+		// would divide its limit by the whole cluster's partitions and cap results below the requested limit.
+		for _, c := range d.compartmentRouter.CompartmentsForMatchers(userID, matchers) {
 			// ShuffleShardSize handles cases when a tenant has 0 or negative number of shards, or more shards than
 			// the number of active partitions in the ring.
 			shardSize += d.partitionInstanceRings.Get(c).PartitionRing().ShuffleShardSize(d.limits.IngestionPartitionsTenantShardSize(userID))

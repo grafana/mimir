@@ -321,7 +321,7 @@ func TestDistributor_LabelNames_Compartments(t *testing.T) {
 }
 
 // TestDistributor_adjustQueryRequestLimit_Compartments verifies the per-query limit is divided by the
-// active partition count summed across all compartments, not just one compartment's.
+// active partition count of only the compartments the query targets, not the whole cluster.
 func TestDistributor_adjustQueryRequestLimit_Compartments(t *testing.T) {
 	const (
 		tenantID        = "user"
@@ -329,16 +329,20 @@ func TestDistributor_adjustQueryRequestLimit_Compartments(t *testing.T) {
 	)
 
 	ctx := user.InjectOrgID(context.Background(), tenantID)
-	d, _, _ := prepareCompartmentsQueryTestDistributor(t, tenantID, numCompartments)
+	d, _, metricForCompartment := prepareCompartmentsQueryTestDistributor(t, tenantID, numCompartments)
 
-	// Each compartment has one active partition, so the shard size sums to numCompartments across them.
-	// A limit larger than that shard size is divided by it (rounded up); had it summed a single
-	// compartment (shard size 1) the limit would be returned unchanged.
-	assert.Equal(t, 5, d.adjustQueryRequestLimit(ctx, tenantID, 10))
+	// A fan-out query (no metric-name matcher) targets all compartments; with one active partition each,
+	// the shard size sums to numCompartments, so a larger limit is divided by it (rounded up).
+	assert.Equal(t, 5, d.adjustQueryRequestLimit(ctx, tenantID, nil, 10))
 	// A limit not larger than the shard size is returned unchanged.
-	assert.Equal(t, numCompartments, d.adjustQueryRequestLimit(ctx, tenantID, numCompartments))
+	assert.Equal(t, numCompartments, d.adjustQueryRequestLimit(ctx, tenantID, nil, numCompartments))
 	// A zero limit (no limit) is returned unchanged.
-	assert.Equal(t, 0, d.adjustQueryRequestLimit(ctx, tenantID, 0))
+	assert.Equal(t, 0, d.adjustQueryRequestLimit(ctx, tenantID, nil, 0))
+
+	// A query pinned to a single compartment is divided by only that compartment's shard size (1 active
+	// partition here), so the limit is left intact rather than over-divided by the whole cluster.
+	pinned := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, metricForCompartment[0])}
+	assert.Equal(t, 10, d.adjustQueryRequestLimit(ctx, tenantID, pinned, 10))
 }
 
 // assertCompartmentsHitObservation asserts the compartments-hit histogram recorded a single observation
