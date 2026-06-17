@@ -15,42 +15,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
-
-	"github.com/grafana/mimir/pkg/compactor/scheduler/compactorschedulerpb"
 )
-
-func jobIDs(l *list.List) []string {
-	var ids []string
-	for e := l.Front(); e != nil; e = e.Next() {
-		ids = append(ids, e.Value.(TrackedJob).ID())
-	}
-	return ids
-}
-
-// pendingIDs returns pending job IDs across all lanes in priority order.
-func pendingIDs(jt *JobTracker) []string {
-	var ids []string
-	for _, l := range jt.lanePolicy.AllLanes() {
-		if lst := jt.pending[l]; lst != nil {
-			ids = append(ids, jobIDs(lst)...)
-		}
-	}
-	return ids
-}
-
-// leaseAny leases the highest-priority pending job across all lanes.
-func leaseAny(jt *JobTracker) (*compactorschedulerpb.LeaseJobResponse, error) {
-	for _, l := range jt.lanePolicy.AllLanes() {
-		resp, _, err := jt.Lease(l)
-		if err != nil {
-			return nil, err
-		}
-		if resp != nil {
-			return resp, nil
-		}
-	}
-	return nil, nil
-}
 
 func at(hour, minute int) time.Time {
 	return time.Date(2026, 1, 2, hour, minute, 0, 0, time.UTC)
@@ -172,22 +137,6 @@ func TestJobTracker_Maintenance_Planning(t *testing.T) {
 		require.NotEmpty(t, transition)
 		require.Contains(t, jt.incompleteJobs, planJobId)
 	})
-
-	t.Run("new plan job is leased ahead of existing pending compactions", func(t *testing.T) {
-		clk := clock.NewMock()
-		clk.Set(at(3, 0))
-		jt, _ := newTestJobTracker(clk)
-		jt.recoverFrom([]*TrackedCompactionJob{
-			NewTrackedCompactionJob("compactionId", &CompactionJob{}, 1, 0, at(1, 0)),
-		}, nil)
-
-		_, err := jt.Maintenance(leaseDuration, false, true, planningInterval, compactionWaitPeriod)
-		require.NoError(t, err)
-
-		leaseResp, err := leaseAny(jt)
-		require.NoError(t, err)
-		require.Equal(t, planJobId, leaseResp.Key.Id)
-	})
 }
 
 func TestJobTracker_recoverFrom(t *testing.T) {
@@ -260,14 +209,6 @@ func TestJobTracker_recoverFrom(t *testing.T) {
 			},
 			expectedPending: []string{"aa", "bb", "cc"},
 		},
-		"pending plan job sorts ahead of pending compactions": {
-			compactionJobs: []*TrackedCompactionJob{
-				newAvailableCompaction("aa", 1),
-				newAvailableCompaction("bb", 2),
-			},
-			planJob:         NewTrackedPlanJob(at(1, 0)),
-			expectedPending: []string{planJobId, "aa", "bb"},
-		},
 		"active jobs sorted by status time": {
 			compactionJobs: []*TrackedCompactionJob{
 				newLeasedCompaction("cc", 1, at(3, 0)),
@@ -278,14 +219,23 @@ func TestJobTracker_recoverFrom(t *testing.T) {
 		},
 	}
 
+	toSlice := func(l *list.List) []string {
+		var s []string
+		for e := l.Front(); e != nil; e = e.Next() {
+			s = append(s, e.Value.(TrackedJob).ID())
+		}
+		return s
+	}
+
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			jt, _ := newTestJobTracker(clock.NewMock())
 
 			jt.recoverFrom(tc.compactionJobs, tc.planJob)
+			pendingIDs := append(toSlice(jt.pending[planLane]), toSlice(jt.pending[compactionLane])...)
+			require.Equal(t, tc.expectedPending, pendingIDs)
 
-			require.Equal(t, tc.expectedPending, pendingIDs(jt))
-			require.Equal(t, tc.expectedActive, jobIDs(jt.active))
+			require.Equal(t, tc.expectedActive, toSlice(jt.active))
 			var completeIDs []string
 			for _, j := range jt.completeCompactionJobs {
 				completeIDs = append(completeIDs, j.ID())
@@ -318,7 +268,7 @@ func TestJobTracker_ByteTracking(t *testing.T) {
 	jt.recoverFrom([]*TrackedCompactionJob{splitJob, mergeJob}, nil)
 	assertTrackerBytes(t, reg, "both jobs pending after recovery", 100, 200)
 
-	leaseResp, err := leaseAny(jt)
+	leaseResp, _, err := jt.Lease(compactionLane)
 	require.NoError(t, err)
 	assertTrackerBytes(t, reg, "split job leased (still incomplete)", 100, 200)
 
@@ -327,13 +277,13 @@ func TestJobTracker_ByteTracking(t *testing.T) {
 	require.True(t, canceled)
 	assertTrackerBytes(t, reg, "split job revived to pending (bytes unchanged)", 100, 200)
 
-	leaseResp, err = leaseAny(jt)
+	leaseResp, _, err = jt.Lease(compactionLane)
 	require.NoError(t, err)
 	_, _, err = jt.Remove(leaseResp.Key.Id, leaseResp.Key.Epoch, true)
 	require.NoError(t, err)
 	assertTrackerBytes(t, reg, "split job complete", 0, 200)
 
-	leaseResp, err = leaseAny(jt)
+	leaseResp, _, err = jt.Lease(compactionLane)
 	require.NoError(t, err)
 	_, _, err = jt.Remove(leaseResp.Key.Id, leaseResp.Key.Epoch, true)
 	require.NoError(t, err)
@@ -365,7 +315,7 @@ func TestJobTracker_PlanJobTracking(t *testing.T) {
 	require.NoError(t, err)
 	assertPlanJobLocation("plan job pending", 1, 0)
 
-	leaseResp, err := leaseAny(jt)
+	leaseResp, _, err := jt.Lease(planLane)
 	require.NoError(t, err)
 	require.Equal(t, planJobId, leaseResp.Key.Id)
 	assertPlanJobLocation("plan job active", 0, 1)
@@ -375,7 +325,7 @@ func TestJobTracker_PlanJobTracking(t *testing.T) {
 	require.True(t, canceled)
 	assertPlanJobLocation("plan job revived to pending", 1, 0)
 
-	leaseResp, err = leaseAny(jt)
+	leaseResp, _, err = jt.Lease(planLane)
 	require.NoError(t, err)
 	_, _, err = jt.Remove(leaseResp.Key.Id, leaseResp.Key.Epoch, true)
 	require.NoError(t, err)
@@ -407,8 +357,8 @@ func TestJobTracker_Cleanup(t *testing.T) {
 	require.NoError(t, err)
 
 	// Lease both of tenant1's jobs
-	for range 2 {
-		_, err := leaseAny(jt1)
+	for _, lane := range []lane{planLane, compactionLane} {
+		_, _, err := jt1.Lease(lane)
 		require.NoError(t, err)
 	}
 
@@ -454,7 +404,7 @@ func TestJobTracker_CancelLease_PlanJobAlwaysRevives(t *testing.T) {
 	require.NoError(t, err)
 
 	for range maxLeases + 1 {
-		job, err := leaseAny(jt)
+		job, _, err := jt.Lease(planLane)
 		require.NoError(t, err)
 		require.NotNil(t, job, "plan job should always be leaseable")
 

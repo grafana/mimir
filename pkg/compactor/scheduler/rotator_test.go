@@ -259,7 +259,7 @@ func TestRotator_LeaseJob_LanePriority(t *testing.T) {
 	require.Equal(t, "t1", resp.Spec.Tenant)
 
 	// only plan lane is checked, nothing found
-	resp, ok, err = r.LeaseJob(context.Background(), []lane{planLane})
+	_, ok, err = r.LeaseJob(context.Background(), []lane{planLane})
 	require.NoError(t, err)
 	require.False(t, ok)
 
@@ -271,7 +271,7 @@ func TestRotator_LeaseJob_LanePriority(t *testing.T) {
 	require.Equal(t, "t2", resp.Spec.Tenant)
 
 	// both lanes are checked, nothing found
-	resp, ok, err = r.LeaseJob(context.Background(), []lane{planLane, compactionLane})
+	_, ok, err = r.LeaseJob(context.Background(), []lane{planLane, compactionLane})
 	require.NoError(t, err)
 	require.False(t, ok)
 }
