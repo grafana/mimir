@@ -26,7 +26,7 @@ import (
 	"github.com/grafana/mimir/pkg/util/testkafka"
 )
 
-const compartmentsTestTopicFormat = "comp-<compartment-id>"
+const compartmentsTestTopicFormat = "comp-<read-compartment-id>"
 
 func TestDistributor_Push_ShouldSupportCompartments(t *testing.T) {
 	ctx := user.InjectOrgID(context.Background(), "user")
@@ -273,7 +273,7 @@ func prepareCompartmentsTestDistributor(t *testing.T, numCompartments int) (*Dis
 		configure: func(cfg *Config) {
 			cfg.Compartments.Enabled = true
 			cfg.Compartments.Read.NumCompartments = numCompartments
-			cfg.Compartments.Read.KafkaTopicFormat = compartmentsTestTopicFormat
+			cfg.IngestStorageConfig.KafkaConfig.Topic = compartmentsTestTopicFormat
 		},
 	})
 	require.Len(t, distributors, 1)
@@ -282,5 +282,5 @@ func prepareCompartmentsTestDistributor(t *testing.T, numCompartments int) (*Dis
 }
 
 func compartmentsTestRouter(numCompartments int) *compartments.Router {
-	return compartments.NewRouter(compartments.ReadConfig{NumCompartments: numCompartments, KafkaTopicFormat: compartmentsTestTopicFormat})
+	return compartments.NewRouter(numCompartments, compartmentsTestTopicFormat)
 }

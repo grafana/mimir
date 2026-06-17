@@ -27,14 +27,14 @@ type indexPageData struct {
 }
 
 // NewIndexPageHandler returns an http.Handler that renders an index page with one link per
-// compartment. linkPathFormat is a link path containing the CompartmentIDPlaceholder, which is
+// compartment. linkPathFormat is a link path containing the ReadCompartmentIDPlaceholder, which is
 // replaced with each compartment ID to build the per-compartment links.
 func NewIndexPageHandler(pageTitle, linkPathFormat string, numCompartments int) http.Handler {
 	data := indexPageData{Title: pageTitle, Links: make([]indexPageLink, numCompartments)}
 	for id := range data.Links {
 		data.Links[id] = indexPageLink{
 			Title: fmt.Sprintf("Compartment %d", id),
-			Path:  strings.ReplaceAll(linkPathFormat, CompartmentIDPlaceholder, strconv.Itoa(id)),
+			Path:  strings.ReplaceAll(linkPathFormat, ReadCompartmentIDPlaceholder, strconv.Itoa(id)),
 		}
 	}
 

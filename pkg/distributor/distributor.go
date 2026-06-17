@@ -303,6 +303,10 @@ type Config struct {
 	// Compartments is dynamically injected because defined outside of distributor config.
 	Compartments compartments.Config `yaml:"-"`
 
+	// WriteCompartmentID is the write compartment this distributor belongs to. It selects which write
+	// compartment's Kafka cluster the distributor produces to. Only used when compartments are enabled.
+	WriteCompartmentID int `yaml:"write_compartment_id" category:"experimental" doc:"hidden"`
+
 	// Limits for distributor
 	DefaultLimits    InstanceLimits         `yaml:"instance_limits"`
 	InstanceLimitsFn func() *InstanceLimits `yaml:"-"`
@@ -376,14 +380,27 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.BoolVar(&cfg.EnableInfluxEndpoint, "distributor.influx-endpoint-enabled", false, "Enable Influx endpoint.")
 	f.IntVar(&cfg.ReusableIngesterPushWorkers, "distributor.reusable-ingester-push-workers", 2000, "Number of pre-allocated workers used to forward push requests to the ingesters. If 0, no workers will be used and a new goroutine will be spawned for each ingester push request. If not enough workers available, new goroutine will be spawned. (Note: this is a performance optimization, not a limiting feature.)")
 	f.BoolVar(&cfg.EnableStartTimeQuietZero, "distributor.otel-start-time-quiet-zero", false, "Change the implementation of OTel startTime from a real zero to a special NaN value.")
+	f.IntVar(&cfg.WriteCompartmentID, "distributor.write-compartment-id", 0, "The write compartment this distributor belongs to. Only used when compartments are enabled.")
 
 	cfg.DefaultLimits.RegisterFlags(f)
 }
 
 // Validate config and returns error on failure
-func (cfg *Config) Validate(limits validation.Limits) error {
+func (cfg *Config) Validate(limits validation.Limits, compartmentsCfg compartments.Config) error {
 	if limits.IngestionTenantShardSize < 0 {
 		return errInvalidTenantShardSize
+	}
+
+	// The distributor produces to its own write compartment's Kafka cluster, so its write compartment
+	// must be in range.
+	if compartmentsCfg.Enabled {
+		if cfg.WriteCompartmentID < 0 || cfg.WriteCompartmentID >= compartmentsCfg.Write.NumCompartments {
+			return fmt.Errorf("distributor write compartment ID %d is out of range [0, %d)", cfg.WriteCompartmentID, compartmentsCfg.Write.NumCompartments)
+		}
+	} else if cfg.WriteCompartmentID != 0 {
+		// When compartments are disabled the write compartment ID must be 0, as it's only meaningful with
+		// compartments enabled.
+		return errors.New("distributor write compartment ID must be 0 when compartments are disabled")
 	}
 
 	if err := cfg.ReactiveLimiter.Validate(); err != nil {
@@ -806,11 +823,19 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 	}
 
 	if cfg.IngestStorageConfig.Enabled {
-		d.ingestStorageWriter = ingest.NewWriter(d.cfg.IngestStorageConfig.KafkaConfig, log, reg)
+		writerKafkaCfg := d.cfg.IngestStorageConfig.KafkaConfig
+		if cfg.Compartments.Enabled {
+			// Resolve the writer's Kafka address and credentials for this distributor's write compartment.
+			// Topic auto-creation is required to be disabled by config validation, because the writer's topic
+			// is the read-compartment template; the resolved topics are created by the ingesters' readers.
+			writerKafkaCfg = writerKafkaCfg.WriteCompartmentConfig(cfg.WriteCompartmentID)
+		}
+
+		d.ingestStorageWriter = ingest.NewWriter(writerKafkaCfg, log, reg)
 		subservices = append(subservices, d.ingestStorageWriter)
 
 		if cfg.Compartments.Enabled {
-			d.compartmentRouter = compartments.NewRouter(cfg.Compartments.Read)
+			d.compartmentRouter = compartments.NewRouter(cfg.Compartments.Read.NumCompartments, cfg.IngestStorageConfig.KafkaConfig.Topic)
 		}
 	}
 

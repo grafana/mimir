@@ -3,6 +3,7 @@
 package testkafka
 
 import (
+	"net"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -50,6 +51,15 @@ func WithSASLScramSHA512(username, password string) Opt {
 func WithNumBrokers(n int) Opt {
 	return func() []kfake.Opt {
 		return []kfake.Opt{kfake.NumBrokers(n)}
+	}
+}
+
+// WithListener makes the (single-broker) fake cluster accept connections on the given already-bound
+// listener instead of binding a new random port. The cluster takes ownership of the listener and closes
+// it on shutdown. This lets the caller control the cluster's address (e.g. to use predictable ports).
+func WithListener(ln net.Listener) Opt {
+	return func() []kfake.Opt {
+		return []kfake.Opt{kfake.ListenFn(func(string, string) (net.Listener, error) { return ln, nil })}
 	}
 }
 

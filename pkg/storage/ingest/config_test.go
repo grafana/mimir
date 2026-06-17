@@ -460,3 +460,25 @@ func TestExhaustiveSASLMechanismOptions(t *testing.T) {
 		require.NotErrorIs(t, (&KafkaAuthConfig{Mechanism: o}).Validate(), ErrInvalidSASLMechanism)
 	}
 }
+
+func TestKafkaConfig_WriteCompartmentConfig(t *testing.T) {
+	base := KafkaConfig{}
+	flagext.DefaultValues(&base)
+	base.Address = flagext.StringSliceCSV{"kafka-wc-<write-compartment-id>:9092"}
+	base.Topic = "ingest-rc-<read-compartment-id>"
+	base.SASL.Username = "user-wc-<write-compartment-id>"
+	base.SASL.Password = flagext.SecretWithValue("pass-wc-<write-compartment-id>")
+
+	for writeCompartmentID := 0; writeCompartmentID < 3; writeCompartmentID++ {
+		cfg := base.WriteCompartmentConfig(writeCompartmentID)
+
+		// The connection coordinates are resolved for the write compartment.
+		assert.Equal(t, flagext.StringSliceCSV{fmt.Sprintf("kafka-wc-%d:9092", writeCompartmentID)}, cfg.Address)
+		assert.Equal(t, fmt.Sprintf("user-wc-%d", writeCompartmentID), cfg.SASL.Username)
+		assert.Equal(t, fmt.Sprintf("pass-wc-%d", writeCompartmentID), cfg.SASL.Password.String())
+		// The topic is templated by read compartment, not write compartment, so it's left unchanged.
+		assert.Equal(t, "ingest-rc-<read-compartment-id>", cfg.Topic)
+		// Inherited defaults are preserved.
+		assert.Equal(t, base.SASL.Mechanism, cfg.SASL.Mechanism)
+	}
+}

@@ -3,9 +3,6 @@
 package compartments
 
 import (
-	"strconv"
-	"strings"
-
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
@@ -15,11 +12,13 @@ type Router struct {
 	topics []string
 }
 
-// NewRouter creates a Router.
-func NewRouter(cfg ReadConfig) *Router {
-	topics := make([]string, cfg.NumCompartments)
+// NewRouter creates a Router. kafkaTopicTemplate is the Kafka topic name containing the
+// ReadCompartmentIDPlaceholder, which is replaced with each read compartment ID to derive
+// that compartment's topic.
+func NewRouter(numReadCompartments int, kafkaTopicTemplate string) *Router {
+	topics := make([]string, numReadCompartments)
 	for id := range topics {
-		topics[id] = strings.ReplaceAll(cfg.KafkaTopicFormat, CompartmentIDPlaceholder, strconv.Itoa(id))
+		topics[id] = ReplaceReadCompartment(kafkaTopicTemplate, id)
 	}
 	return &Router{topics: topics}
 }

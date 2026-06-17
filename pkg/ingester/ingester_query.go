@@ -27,6 +27,7 @@ import (
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/api"
+	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
@@ -922,12 +923,17 @@ func (i *Ingester) enforceReadConsistency(ctx context.Context, tenantID string) 
 	}
 
 	if level == api.ReadConsistencyStrong {
-		// Check if request already contains the minimum offset we have to guarantee being queried
-		// for our partition.
-		if offsets, ok := api.ReadConsistencyEncodedOffsetsFromContext(ctx); ok {
-			if offset, ok := offsets.Lookup(i.ingestPartitionID); ok {
-				spanLog.DebugLog("msg", "enforcing strong read consistency", "offset", offset)
-				return errors.Wrap(i.ingestReader.WaitReadConsistencyUntilOffset(ctx, offset), "wait for read consistency")
+		// When compartments are enabled, per-compartment offsets are not yet propagated by the
+		// query-frontend and querier, so we ignore the encoded offset and fall back to waiting until the
+		// last produced offset.
+		if !i.cfg.Compartments.Enabled {
+			// Check if request already contains the minimum offset we have to guarantee being queried
+			// for our partition.
+			if offsets, ok := api.ReadConsistencyEncodedOffsetsFromContext(ctx); ok {
+				if offset, ok := offsets.Lookup(i.ingestPartitionID); ok {
+					spanLog.DebugLog("msg", "enforcing strong read consistency", "offset", offset)
+					return errors.Wrap(i.ingestReader.WaitReadConsistencyUntilOffsets(ctx, ingest.NewSingleClusterPartitionOffsets(offset)), "wait for read consistency")
+				}
 			}
 		}
 
