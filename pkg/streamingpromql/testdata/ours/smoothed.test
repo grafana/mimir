@@ -550,20 +550,20 @@ eval instant at 5m delta(metric{instance="2"}[1m] smoothed)
 # series emits MixedFloatsHistogramsWarning and is dropped. instance="1" and instance="2" return
 # their float-only smoothed results.
 eval instant at 11s increase(metric[1m] smoothed)
-  expect info
-  expect warn
+  expect info msg: PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "metric"
+  expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "metric"
   {instance="1"} 13.333333333333334
   {instance="2"} NaN
 
 eval instant at 11s rate(metric[1m] smoothed)
-  expect info
-  expect warn
+  expect info msg: PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "metric"
+  expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "metric"
   {instance="1"} 0.22222222222222224
   {instance="2"} NaN
 
 eval instant at 11s delta(metric[1m] smoothed)
   expect no_info
-  expect warn
+  expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "metric"
   {instance="1"} 9.666666666666666
   {instance="2"} NaN
 
