@@ -11,29 +11,29 @@ in the editor; the canonical contract this stack exercises is:
   `nautilus_ingest` (no ingester involvement);
 - reads for `nautilus-tenant` are routed to the readcache pod
   currently owning the queried partition;
-- the same end-to-end path works *without* the rebalancer running
+- the same end-to-end path works _without_ the rebalancer running
   long-running rebalances; static partition ownership is configured
   via `-readcache.owned-partitions=`.
 
 ## Topology
 
-| service              | role                                          |
-| -------------------- | --------------------------------------------- |
-| `distributor-1`      | accepts writes, routes per tenant             |
-| `ingester-1`         | vanilla ingester for the production tenant    |
-| `readcache-1`        | owns partitions `0..3`                        |
-| `readcache-2`        | owns partitions `4..7`                        |
-| `nautilus-rebalancer`| rebalances readcache ownership, persists logs |
-| `block-builder-*`    | converts Kafka segments to TSDB blocks        |
-| `query-frontend`     | PromQL entrypoint                             |
-| `querier`            | scatter/gather over ingesters + store-gateway |
-| `store-gateway`      | reads compacted blocks from MinIO             |
-| `compactor`          | compacts blocks                               |
-| `kafka_{1,2,3}`      | KRaft Kafka cluster                           |
-| `minio`              | S3-compatible blocks store                    |
-| `grafana`            | UI on http://localhost:3000                   |
-| `tempo`              | OTel traces                                   |
-| `redpanda_console`   | Kafka UI on http://localhost:8090             |
+| service               | role                                          |
+| --------------------- | --------------------------------------------- |
+| `distributor-1`       | accepts writes, routes per tenant             |
+| `ingester-1`          | vanilla ingester for the production tenant    |
+| `readcache-1`         | owns partitions `0..3`                        |
+| `readcache-2`         | owns partitions `4..7`                        |
+| `nautilus-rebalancer` | rebalances readcache ownership, persists logs |
+| `block-builder-*`     | converts Kafka segments to TSDB blocks        |
+| `query-frontend`      | PromQL entrypoint                             |
+| `querier`             | scatter/gather over ingesters + store-gateway |
+| `store-gateway`       | reads compacted blocks from MinIO             |
+| `compactor`           | compacts blocks                               |
+| `kafka_{1,2,3}`       | KRaft Kafka cluster                           |
+| `minio`               | S3-compatible blocks store                    |
+| `grafana`             | UI on http://localhost:3000                   |
+| `tempo`               | OTel traces                                   |
+| `redpanda_console`    | Kafka UI on http://localhost:8090             |
 
 The rebalancer mounts a named volume at `/data/nautilus-rebalancer`
 so its assignment logs survive container restarts; without that the

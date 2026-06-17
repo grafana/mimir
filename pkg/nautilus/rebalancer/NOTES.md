@@ -64,10 +64,10 @@ single tuning knob.
     - P_new has growing head + writes.
     - Both look "hot" to the slicer, simultaneously, for up to 2h per
       move.
-    Confirmed live: P11 reports L=2.27M with **0** distributor
-    samples/30s and owns only 0.01% of the hash space; P7 receives
-    **3,049** samples/30s on 0.19% of the hash space but reports
-    L=0.
+      Confirmed live: P11 reports L=2.27M with **0** distributor
+      samples/30s and owns only 0.01% of the hash space; P7 receives
+      **3,049** samples/30s on 0.19% of the hash space but reports
+      L=0.
 
 2.  **Per-range counts are ~99% zero because the walk uses current
     ranges as the bucket key.**
@@ -87,9 +87,9 @@ single tuning knob.
     |---|---|---|---|---|
     | P11 | 2.27M | 7 | 0.01% | 0 |
     | P71 | 632K | **0** | 0.00% | 0 |
-    | P5  | 605K | **0** | 0.00% | 0 |
-    | P7  | 0    | 118 | 0.19% | 3,049 |
-    | P49 | 0    | 44  | 1.94% | 1,201 |
+    | P5 | 605K | **0** | 0.00% | 0 |
+    | P7 | 0 | 118 | 0.19% | 3,049 |
+    | P49 | 0 | 44 | 1.94% | 1,201 |
     Phase 3 picks P11/P71/P5 as "hottest" by L, finds nothing to move,
     excludes them from this round (`excludedHot[pid]=true`), and falls
     through to merely-warm partitions where moves are tiny (sub-200-
@@ -120,7 +120,7 @@ single tuning knob.
     snapshot, distributed extremely unevenly across the 22 pods
     (one pod has 18, seven pods have 0). Same partitions show up as
     actively-consumed in per-pod `cortex_readcache_memory_series_*`
-    counters, so the readcache slicer's *plan* is reaching readcaches
+    counters, so the readcache slicer's _plan_ is reaching readcaches
     over `WatchReadcacheAssignments` — but the rebalancer's own
     in-memory log appears to under-report. Two suspects worth
     investigating before adding more signal:
@@ -155,10 +155,11 @@ series, two partitions with similar samples/s can have wildly
 different head sizes. Spike-prone if smoothing is wrong.
 
 **B. Hybrid (preferred direction).** Pick the move target by
-*ingestion rate*, but gate the per-source movable budget by L_pid.
+_ingestion rate_, but gate the per-source movable budget by L_pid.
 Concretely: Phase 3 still picks "hottest" by L (memory pressure
 ceiling), but selects the range to move by ingest rate within the
 hottest partition. Result:
+
 - Slicer can't act on partitions where L is high but ingest is zero
   (residue, P11/P71/P5 above) because the rate-based "best range"
   for them is empty.
