@@ -30,6 +30,8 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
+* [CHANGE] Allow the Mimir Alertmanager to use a fallback configuration from an existing Kubernetes secret. #15723
+
 ## 6.1.0
 
 * [CHANGE] Kafka: Removed `kafka.extraEnv`. Use `kafka.env` instead. #14892
@@ -39,7 +41,6 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [CHANGE] Set docker.io as the default registry for mimir image. #13267
 * [CHANGE] Query-frontend: Increase default query-frontend cache size limit to 25MB. #14857
 * [CHANGE] Query-frontend: Increase default query-frontend memory limit to 4GiB. #15688
-* [CHANGE] Allow the Mimir Alertmanager to use a fallback configuration from an existing Kubernetes secret. #12157
 * [ENHANCEMENT] Add Support to customize gossip ring k8s service annotations. #12718
 * [ENHANCEMENT] Ruler querier and query-frontend: Add support for newly-introduced querier ring, which is used when performing query planning in query-frontends and distributing portions of the plan to queriers for execution. #13017
 * [ENHANCEMENT] Upgrade rollout-operator chart to [0.38.0](https://github.com/grafana/helm-charts/blob/main/charts/rollout-operator/README.md#upgrade-of-grafana-rollout-operator--v0380). Note required actions for upgrading the rollout-operator chart. #13245, #15626
