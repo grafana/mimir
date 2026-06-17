@@ -173,6 +173,13 @@ func extendedHistogramRate(hExtended []promql.HPoint, originalRangeStart, origin
 		return nil, nil
 	}
 	lastSampleIndex := len(hExtended) - 1
+	// firstSampleIndex is the last sample at or before originalRangeStart (the left boundary
+	// neighbour). This is not necessarily index 0 or 1: the selector extends the look-back by the
+	// full LookbackDelta (see rangeStart adjustment in range_vector_selector.go), so hExtended
+	// retains every sample within LookbackDelta before originalRangeStart.
+	// Note that this is different to the handling of floats in range_vector_selector where the view
+	// used by the functions is already trimmed to the boundary points.
+	// A binary search matches upstream Prometheus's extendedHistogramRate.
 	firstSampleIndex := sort.Search(lastSampleIndex, func(i int) bool { return hExtended[i].T > originalRangeStart }) - 1
 	if firstSampleIndex < 0 {
 		firstSampleIndex = 0
