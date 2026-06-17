@@ -277,8 +277,8 @@ func (e *schedulerExecutor) run(ctx context.Context, c *MultitenantCompactor) er
 
 	compactDir := filepath.Join(c.compactorCfg.DataDir, "compact")
 
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
+	ctx, cancel := context.WithCancelCause(ctx)
+	defer cancel(nil)
 
 	// subErr is written only by the watcher goroutine below; wg.Wait establishes the happens-before
 	// for reading it. A plain shutdown leaves it nil, matching the previous single-loop behavior.
@@ -290,7 +290,7 @@ func (e *schedulerExecutor) run(ctx context.Context, c *MultitenantCompactor) er
 		case <-ctx.Done():
 		case err := <-c.ringSubservicesWatcher.Chan():
 			subErr = fmt.Errorf("compactor subservice failed: %w", err)
-			cancel()
+			cancel(subErr)
 		}
 	})
 
