@@ -109,10 +109,10 @@ func correctForCounterResetsHistogram(h []promql.HPoint, firstSampleIndex, lastS
 	first := firstSampleIndex + 1
 	prev := left
 	if smoothed && h[firstSampleIndex].T < rangeStart && h[firstSampleIndex+1].H.DetectReset(h[firstSampleIndex].H) {
-		// The left interpolation spanned the reset between h[firstSampleIndex] and
-		// h[firstSampleIndex+1]. That reset is already accounted for, so skip
-		// h[firstSampleIndex+1] from the loop and use it as the comparison anchor for any
-		// reset that immediately follows.
+		// There is a reset somewhere between the point just outside the range
+		// (h[firstSampleIndex]) and the point just inside it (h[firstSampleIndex+1]). That reset is
+		// already accounted for by the left interpolation, so skip h[firstSampleIndex+1] from the
+		// loop and use it as the comparison anchor for any reset that immediately follows.
 		prev = h[firstSampleIndex+1].H
 		first++
 	}
