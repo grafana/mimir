@@ -769,13 +769,13 @@ The body is a sequence of newline-delimited JSON objects.
 Result objects are streamed first, each wrapping a batch of up to `batch_size` results in a `results` array:
 
 ```json
-{"results":[{"name":"up"},{"name":"go_goroutines"}]}
+{ "results": [{ "name": "up" }, { "name": "go_goroutines" }] }
 ```
 
 For the `search/label_values` endpoint, each result uses a `value` key instead of `name`:
 
 ```json
-{"results":[{"value":"prometheus"},{"value":"node"}]}
+{ "results": [{ "value": "prometheus" }, { "value": "node" }] }
 ```
 
 When `include_score=true`, each result also carries a `score` field. When `include_metadata=true` on the `search/metric_names` endpoint, each result can also carry `type`, `help`, and `unit` fields.
@@ -783,7 +783,7 @@ When `include_score=true`, each result also carries a `score` field. When `inclu
 The stream always ends with a single trailer object reporting the final status:
 
 ```json
-{"status":"success","has_more":false}
+{ "status": "success", "has_more": false }
 ```
 
 - **status** - `success` when iteration completed without error.
@@ -801,7 +801,11 @@ If the request is rejected before any results are streamed, the endpoint respond
 If an error occurs after one or more result batches have already been streamed, the HTTP status is already `200` and the error is instead reported as the final NDJSON trailer object:
 
 ```json
-{"status":"error","errorType":"timeout","error":"context deadline exceeded"}
+{
+  "status": "error",
+  "errorType": "timeout",
+  "error": "context deadline exceeded"
+}
 ```
 
 ### Get metric metadata
