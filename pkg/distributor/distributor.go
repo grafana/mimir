@@ -826,13 +826,9 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		writerKafkaCfg := d.cfg.IngestStorageConfig.KafkaConfig
 		if cfg.Compartments.Enabled {
 			// Resolve the writer's Kafka address and credentials for this distributor's write compartment.
+			// Topic auto-creation is required to be disabled by config validation, because the writer's topic
+			// is the read-compartment template; the resolved topics are created by the ingesters' readers.
 			writerKafkaCfg = writerKafkaCfg.WriteCompartmentConfig(cfg.WriteCompartmentID)
-
-			// The distributor produces to one topic per read compartment (resolved by the router), not to
-			// the read-compartment-templated base topic, so disable the writer's single-topic
-			// auto-creation. The read compartment topics are created by the ingesters' partition readers
-			// (or pre-provisioned).
-			writerKafkaCfg.AutoCreateTopicEnabled = false
 		}
 
 		d.ingestStorageWriter = ingest.NewWriter(writerKafkaCfg, log, reg)

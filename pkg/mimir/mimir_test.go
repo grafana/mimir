@@ -615,6 +615,15 @@ func TestConfigValidation(t *testing.T) {
 			expectAnyError: true,
 		},
 		{
+			name: "should fail if compartments and the distributor are enabled but Kafka topic auto-creation is on",
+			getTestConfig: func() *Config {
+				cfg := validCompartmentsConfig()
+				cfg.IngestStorage.KafkaConfig.AutoCreateTopicEnabled = true
+				return cfg
+			},
+			expectAnyError: true,
+		},
+		{
 			name: "should fail if the offset catalogue is enabled together with more than one write compartment",
 			getTestConfig: func() *Config {
 				cfg := validCompartmentsConfig()
@@ -675,6 +684,7 @@ func validCompartmentsConfig() *Config {
 	cfg.IngestStorage.Enabled = true
 	cfg.IngestStorage.KafkaConfig.Address = flagext.StringSliceCSV{"kafka-wc-<write-compartment-id>:9092"}
 	cfg.IngestStorage.KafkaConfig.Topic = "mimir-ingest-rc-<read-compartment-id>"
+	cfg.IngestStorage.KafkaConfig.AutoCreateTopicEnabled = false
 	cfg.Compartments.Enabled = true
 	cfg.Compartments.Read.NumCompartments = 2
 	cfg.Compartments.Write.NumCompartments = 2
