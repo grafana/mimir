@@ -4,6 +4,103 @@
 
 ### Grafana Mimir
 
+* [CHANGE] Query-frontend: `-query-frontend.log-query-request-headers` now rejects headers that carry credentials or session material (e.g. `Authorization`, `Cookie`, `X-Api-Key`) at startup, and any such headers that reach the slow-query/query-stats log paths are redacted as defense in depth. Operators that previously allow-listed such headers must remove them from the flag. #15487
+* [CHANGE] Alertmanager: Upgraded the embedded `prometheus/alertmanager` library to v0.32.0. The per-tenant alertmanager web UI and the `/-/healthy`, `/-/ready`, `/-/reload`, `/script.js`, and `/favicon.ico` endpoints under the alertmanager prefix are no longer served because upstream removed the embeddable UI package. The v2 API endpoints and request/response shapes are unchanged, but a few error message strings from the upstream parser have been reformatted (for example, matcher-validation errors now include `in set N`). #15144
+* [CHANGE] Alertmanager: The `cortex_alertmanager_dispatcher_aggregation_group_limit_reached_total` counter is now best-effort under concurrent alert ingest. The upstream alertmanager v0.32.0 ingests alerts via worker goroutines and the group-limit check is a racy check-then-act, so the configured limit can be exceeded under burst load. #15144
+* [CHANGE] Querier: The experimental PromQL duration arithmetic helpers `min(...)` and `max(...)` used inside `[...]` range/subquery brackets and `offset` clauses have been renamed to `min_of(...)` and `max_of(...)`. #15593 #15603
+* [CHANGE] Querier, Store-gateway: Only send non-opaque GRPC types between queriers and store-gateways. Note that this change requires upgrading from Mimir 3.1. See associated release notes for more information. #15358
+* [CHANGE] Querier: Remove experimental MQE Projection Pushdown optimization pass and associated CLI flag `querier.mimir-query-engine.enable-projection-pushdown`. #15618
+* [CHANGE] Continuous-test: Change default values for `tests.write-read-series-test.num-series` and `tests.write-read-series-test.max-query-age` to match the values being set in jsonnet. #15705
+* [CHANGE] Update Docker image bases from Debian 12 to Debian 13 (`gcr.io/distroless/static-debian13`; race images use `base-nossl-debian13`). #15629
+* [FEATURE] API: Add alertmanager limits (alertmanager_notification_rate_limit, alertmanager_max_dispatcher_aggregation_groups, alertmanager_max_templates_count) to the user limits API response. #15308
+* [FEATURE] Mimirtool: Add AWS Signature Version 4 (SigV4) support for shared Mimir API client commands including `mimirtool rules`, `mimirtool alertmanager`, `mimirtool alerts`, `mimirtool backfill`, and `mimirtool analyze ruler`. #14959
+* [FEATURE] Cost attribution: Support multiple named cost attribution trackers per tenant via new `additional_cost_attribution_trackers` config field. #15302
+* [FEATURE] MQE: Add `cortex_querier_inflight_query_max_age_seconds` metric reporting the age of the oldest in-flight query memory consumption tracker. #15300
+* [FEATURE] MQE: Add experimental support for splitting and caching `present_over_time` over range vectors in instant queries. #15386
+* [FEATURE] Query-scheduler: Add experimental `cortex_query_scheduler_inflight_max_age_seconds` metric reporting how long the oldest inflight request has been waiting since it was enqueued. Reports 0 when no requests are inflight. Enabled by default; can be disabled with `-query-scheduler.inflight-max-age-metric-enabled=false`. #15419
+* [FEATURE] MQE: Add support for experimental PromQL functions `min_of` and `max_of`. #15597
+* [FEATURE] Ingester: Add experimental early compaction of non-owned series. After a ring change, the ingester tracks series whose ownership shifted to another replica and flushes them into a block, evicting them from the TSDB head ahead of the regular head-compaction cycle. Eviction triggers when both (a) the in-memory series count exceeds the local threshold derived from `-ingester.early-head-compaction-owned-series-threshold` and the `-ingester.early-compaction-non-owned-series-min-grace-period` has elapsed, or (b) the `-ingester.early-compaction-non-owned-series-max-grace-period` has elapsed, regardless of the threshold. Disabled by default; enable with `-ingester.early-compaction-non-owned-series-enabled`. Requires `-ingester.track-ingester-owned-series` or `-ingester.use-ingester-owned-series-for-limits` to be enabled. Adds the `cortex_ingester_tsdb_early_compaction_non_owned_series_triggered_total` counter. #15314 #15653 #15657 #15661
+* [FEATURE] Ingester: Add experimental `cortex_ingester_tsdb_head_chunks_max_mmapped` gauge reporting the maximum, across all per-tenant TSDBs, of the maximum number of head chunks memory-mapped for any individual series during the last memory-mapping pass. Temporary measurement metric; will be removed once we have collected enough data. #15616
+* [FEATURE] kafkatool: Add `dump find-duplicates` command to scan an exported dump and report float samples re-sent with the same timestamp and value as the previous sample for a series. These exact duplicates are silently dropped by the ingester but still count toward received-samples metrics. An optional `--tenant` flag restricts the scan to a single tenant. #15506
+* [ENHANCEMENT] Store-gateway, Ingester: Add read support for XOR2 chunk encoding. XOR2 is a new Prometheus TSDB encoding that provides better compression than XOR, particularly for stale markers. #15371
+* [ENHANCEMENT] MQE: Improve experimental support for reporting the number of samples read per query. #14838 #15179 #15191 #15220 #15223 #15232 #15237 #15255 #15276 #15282 #15285
+* [ENHANCEMENT] Distributor: Relabel middleware returns early if neither label dropping nor relabeling is configured. #15246
+* [ENHANCEMENT] Distributor: Improve distributor push middleware cleanup handling. #15245
+* [ENHANCEMENT] Ingest storage: Reject the whole batch of records of a Kafka write call when the configured `-ingest-storage.kafka.producer-max-buffered-bytes` limit is reached, instead of rejecting individual records. #15227
+* [ENHANCEMENT] MQE: Simplify `unless` and `or` operations where one side can be proven to be empty by inspecting the expression. #15198
+* [ENHANCEMENT] Store-gateway: Remove outdated limit on caching LabelValues responses that contain more than 655360 values. The gob library panic which required workaround was fixed. #5021 #15271
+* [ENHANCEMENT] MQE: Reduce memory consumption of range vector splitting when many consecutive intervals are not cached. #15173
+* [ENHANCEMENT] Ingester: Make max concurrency for label values count endpoint configurable with `-ingester.label-values-count-max-concurrency`. #15299
+* [ENHANCEMENT] Ingest storage: Add `cortex_ingest_storage_writer_serialize_duration_seconds` native histogram metric tracking the time spent serializing an incoming request to Kafka records. #15527
+* [ENHANCEMENT] Memberlist: Add `-memberlist.compression-algorithm` flag to select the algorithm used to compress outgoing messages. Supported values: `lzw` (default) and `snappy`. The flag is ignored when `-memberlist.compression-enabled` is false. Before reconfiguring any node to emit a new algorithm, upgrade every cluster member to a build that can decode it, otherwise messages are dropped. #15357
+* [ENHANCEMENT] Memberlist: TCP push-pull and other TCP stream messages now skip compression when the compressed output is no smaller than the input, falling back to a plaintext frame. Mirrors existing UDP behaviour; receivers continue to decode both compressed and plaintext frames so the change is wire-compatible. #15357
+* [ENHANCEMENT] Memberlist: Reduce per-call allocations on the compression and TCP state-sync receive paths via internal buffer pools. #15357
+* [ENHANCEMENT] Memberlist: Add `memberlist.processed-messages-queue-size` flag to set the size of the per-key internal queue for processing messages received from other nodes. Increasing this value may help to avoid dropping per-key updates when the node is processing many updates for the same key. #15536
+* [ENHANCEMENT] MQE: Respect the `Cache-Control: no-store` request header when caching intermediate results for range vector splitting. #15148
+* [ENHANCEMENT] MQE: Extend experimental support for computing multiple aggregations over the same data without buffering to quantile aggregations. #15624
+* [ENHANCEMENT] Ingest storage: skip per-record tracing span and attribute allocations on the Kafka fetch path when the producer trace is not sampled. The producer's trace context is still extracted from record headers for every record. #15614
+* [ENHANCEMENT] Distributor: Add a tracing span around the OTLP to Prometheus conversion so its latency is independently visible in traces. #15682
+* [ENHANCEMENET] Runtimeconfig: The HTTP client used to fetch runtime configurations from HTTP endpoints now has keep-alives disabled by default. New CLI flag `-runtime-config.http-client-disable-keep-alives` is enabled by default, an can be set to `false` in-order to re-enable keep-alives. #15695
+* [BUGFIX] Query-frontend: Fix `cardinality_analysis_max_results` being ignored when set higher than the default of 500. #15581
+* [BUGFIX] Ingest storage: Fix `KafkaProducer.ProduceSync()` returning a single result with a nil record when the context is canceled, instead of one result per input record (with the record set) as the underlying franz-go client does. #15199
+* [BUGFIX] Ingest storage: Fix `cortex_ingest_storage_reader_receive_delay_seconds` inflation by no longer setting the Kafka record `Timestamp` on the distributor side; the Kafka client now sets it at produce time. #15572
+* [BUGFIX] Distributor: Return HTTP 200 with OTLP partial-success when only some samples in an OTLP request are rejected by distributor-level validation (e.g. `too_far_in_past`). #15253
+* [BUGFIX] MQE: Bugfixes for experimental range vector splitting. #15147 #15270 #14878
+* [BUGFIX] Querier: Fix querier ScaledObjects native histogram querying and triggering `MimirAutoscalerKedaFailing` when queriers have no traffic because `cortex_querier_request_duration_seconds_sum` is not published until the first request is received. #15106
+* [BUGFIX] Fix build failure on Windows and FreeBSD due to reference leaks instrumentation code. Enabling reference leaks instrumentation in those platforms now causes a configuration validation error instead. #15291
+* [BUGFIX] Query-frontend: Fixed a memory leak caused that could occur on some error paths if MQE was enabled. #15392
+* [BUGFIX] MQE: Fix issue where subqueries unnecessarily compute and then discard an additional step if the parent query is not aligned to the step. #15438
+* [BUGFIX] Upgrade Go to 1.26.4 to address [CVE-2026-42507](https://pkg.go.dev/vuln/GO-2026-5039). #15566
+* [BUGFIX] Memcached: Disable TCP DNS connection pooling used for service discovery by default. #15573
+* [BUGFIX] Ingest storage: Fix `cortex_ingest_storage_writer_produce_records_enqueued_total` not being incremented when `KafkaProducer.ProduceSync()` rejects a batch because a record has its `Timestamp` set by the caller. #15610
+* [BUGFIX] Compactor: Remove temporary block upload validation directories left behind in the data directory when the compactor crashes mid-validation. This prevents leaking disk space. #15647
+* [BUGFIX] Continuous-test: Fix a crash when histogram tests were enabled in combination with the OTLP-HTTP write protocol. #15641
+
+### Mixin
+
+* [CHANGE] Dashboards: Show maximum queue length, not minimum queue length, on the "Queue length" panel in the "Query-scheduler" row of the "Reads" and "Remote ruler reads" dashboards. #15326
+* [ENHANCEMENT] Alerts: Make `MimirInconsistentRuntimeConfig` alert less flaky when performing multiple configuration changes in a row in a large Kubernetes cluster. #15257
+* [ENHANCEMENT] Alerts: Widen the `MimirBlockBuilderPersistentJobFailure` lookback window to 20m to prevent the alert from flapping. #15332
+* [ENHANCEMENT] Alerts: Add a native histogram variant of the `MimirRequestLatency` alert, distinguished by the `histogram` label (`classic` or `native`). #15413
+* [ENHANCEMENT] Dashboards: Add "Rejected queries rate" panel to the Tenants dashboard showing the per-tenant rate of queries rejected by the query-frontend, split by reason. #14979
+* [ENHANCEMENT] Dashboards: Add 100th percentile to query expression percentiles graph. #15421
+* [ENHANCEMENT] Dashboards: Add the experimental streaming search API endpoints to the "Overview" per-endpoint query breakdown, and include the ingester `SearchLabelNames`/`SearchLabelValues` gRPC routes in the ingester panels of the "Reads", "Queries", and "Remote ruler reads" dashboards. #15571
+* [ENHANCEMENT] Dashboards: Add "p90 compaction delay by level" and "Store-gateway blocks queried by level" panels to the "Compaction" row of the "Compactor" dashboard. #15619
+* [BUGFIX] Dashboards: Fix the classic/ingest-storage split in the "Tenants", "Top tenants" and "Writes" dashboards so that selecting multiple clusters with a mix of architectures no longer drops the classic clusters' data. The `unless on (job)` filter against `cortex_partition_ring_partitions` now also matches on the cluster aggregation labels. #15400
+
+### Jsonnet
+
+* [CHANGE] Query-frontend: Increase default query-frontend cache size limit to 25MB. #14857
+* [CHANGE] Query-frontend: Increase memory requested and limit to 2GiB and 4GiB respectively. #15688
+* [CHANGE] Continuous-test: Don't explicitly set `tests.write-read-series-test.num-series` and `tests.write-read-series-test.max-query-age` to their default values. #15705
+* [ENHANCEMENT] Updated rollout-operator jsonnet library to v0.38.0. #15328, #15626
+* [ENHANCEMENT] Make range vector splitting configurable per query path. #15706
+
+
+### Documentation
+
+### Tools
+
+* [FEATURE] Copyblocks: add support for the block upload API as a copy destination. #15330
+* [ENHANCEMENT] Mimirtool: `partition-ring` subcommands now accept an optional `--partition-ring.key` flag to select the KV store key of the partition ring to operate on. It defaults to `ingester-partitions`. #15719
+* [ENHANCEMENT] Makefile: `build-mixin` and `mixin-screenshots` can now be configured to use native histograms for latency panels in dashboards. #15269
+
+### Query-tee
+
+## 3.1.1
+
+### Grafana Mimir
+
+* [CHANGE] Update Docker image bases from Debian 12 to Debian 13 (`gcr.io/distroless/static-debian13`; race images use `base-nossl-debian13`). #15629
+* [BUGFIX] Upgrade Go to 1.26.4 to address [CVE-2026-42507](https://pkg.go.dev/vuln/GO-2026-5039). #15659
+* [BUGFIX] Update `golang.org/x/crypto` to v0.52.0, `golang.org/x/net` to v0.55.0, and `golang.org/x/sys` to v0.44.0 to address [CVE-2026-39833](https://nvd.nist.gov/vuln/detail/CVE-2026-39833), [CVE-2026-39832](https://nvd.nist.gov/vuln/detail/CVE-2026-39832), [CVE-2026-46597](https://nvd.nist.gov/vuln/detail/CVE-2026-46597), [CVE-2026-42506](https://nvd.nist.gov/vuln/detail/CVE-2026-42506), [CVE-2026-39821](https://nvd.nist.gov/vuln/detail/CVE-2026-39821), [CVE-2026-42502](https://nvd.nist.gov/vuln/detail/CVE-2026-42502), [CVE-2026-25680](https://nvd.nist.gov/vuln/detail/CVE-2026-25680), [CVE-2026-25681](https://nvd.nist.gov/vuln/detail/CVE-2026-25681), [CVE-2026-27136](https://nvd.nist.gov/vuln/detail/CVE-2026-27136), [CVE-2026-39824](https://nvd.nist.gov/vuln/detail/CVE-2026-39824). #15636 #15637 #15638 #15639
+
+## 3.1.0
+
+### Grafana Mimir
+
+* [CHANGE] Query-frontend: Renamed `minimum_step_size` filter in `blocked_queries` configuration to `step_size_shorter_than` to follow the naming convention of `time_range_longer_than`. Users with `minimum_step_size` in their runtime configuration must rename the field. #15081
+* [CHANGE] Query-frontend: `blocked_queries` configuration is now validated at load time; a configuration error is returned if a rule has an empty `pattern`, or has `regex: true` with a `pattern` that is not a valid regular expression. #14978
 * [CHANGE] Ingester: Changed default value of `-include-tenant-id-in-profile-labels` from false to true. #13375
 * [CHANGE] Hash ring: removed experimental support for disabling heartbeats (setting `-*.ring.heartbeat-period=0`) and heartbeat timeouts (setting `-*.ring.heartbeat-timeout=0`). These configurations are now invalid. #13104
 * [CHANGE] Distributor: removed experimental flag `-distributor.metric-relabeling-enabled`. #13143
@@ -22,6 +119,7 @@
 * [CHANGE] Query-frontend: Removed support for calculating 'cache-adjusted samples processed' query statistic. The `-query-frontend.cache-samples-processed-stats` CLI flag has been deprecated and will be removed in a future release. Setting it has now no effect. #13582
 * [CHANGE] Querier: Renamed experimental flag `-querier.prefer-availability-zone` to `-querier.prefer-availability-zones` and changed it to accept a comma-separated list of availability zones. All zones in the list are given equal priority when querying ingesters and store-gateways. #13756 #13758
 * [CHANGE] Ingester: Stabilize experimental flag `-ingest-storage.write-logs-fsync-before-kafka-commit-concurrency` to fsync write logs before the offset is committed to Kafka. Remove `-ingest-storage.write-logs-fsync-before-kafka-commit-enabled` since this is always enabled now. #13591
+* [CHANGE] Query-frontend: Remove experimental flags `-query-frontend.shard-active-series-queries`, `-query-frontend.use-active-series-decoder`. These settings are always enabled now. #15091
 * [CHANGE] Ingester: Remove metric `cortex_ingester_owned_target_info_series`; if needed this is better done as a custom active series tracker. #13831
 * [CHANGE] Querier: Remove experimental flag `-querier.response-streaming-enabled`, active series responses are now always streamed to query-frontends. #14095 #14114
 * [CHANGE] Store-gateway: Warn when loading index headers based on TSDB blocks that use v1 of the index file format. #13834
@@ -34,7 +132,12 @@
 * [CHANGE] Ingest storage: The `cortex_ingest_storage_writer_latency_seconds` metric now tracks the latency to write an incoming request to all Kafka partitions in a single call, instead of tracking latency individually for each partition. #14898
 * [CHANGE] Ingest storage: deprecated `-ingest-storage.kafka.write-clients` CLI flag. The flag is now ignored and Mimir always uses a single Kafka write client. The flag will be removed in Mimir 3.3. #14903
 * [CHANGE] Alertmanager: `-alertmanager.grafana-alertmanager-idle-grace-period` renamed to `-alertmanager.strict-initialization-idle-grace-period`. #14960
-* [FEATURE] Runtime config: Support loading configuration from `http://` and `https://` URLs in addition to local files via `-runtime-config.file`. Added `-runtime-config.http-client-timeout` (default `30s`) to control the HTTP fetch timeout. #15052
+* [CHANGE] Query-frontend: The per-query memory consumption limit now spans all time-split sub-queries when MQE is enabled rather than applying per split query. #14980
+* [CHANGE] Query-frontend: Rewriting middleware now runs before user-injected middlewares. #15111
+* [FEATURE] Querier: experimental streaming label/value search HTTP endpoints `/api/v1/search/{metric_names,label_names,label_values}`. Gated by `-querier.experimental-search-api-enabled` (default false). #15233, #15349, #15301, #15347, #15364
+* [FEATURE] Distributor: experimental per-tenant limit `-distributor.ha-tracker.per-sample-dedupe` (per-tenant `ha_tracker_per_sample_dedupe`) to evaluate HA deduplication for each timeseries within a write request rather than making a single decision based on the first series. Enables correct behavior for mixed-label requests (e.g. Prometheus federation, metrics proxies) without affecting standard setups that have uniform HA labels within a single request. Disabled by default. #15064
+* [FEATURE] Distributor: add `-validation.enforce-out-of-order-window-on-distributor` per-tenant option. When enabled and `past_grace_period` is 0, distributors reject samples older than `out_of_order_time_window`, matching ingester behavior, without relying on a small `past_grace_period`. #15090
+* [FEATURE] Runtime config: Support loading configuration from `http://` and `https://` URLs in addition to local files via `-runtime-config.file`. Added `-runtime-config.http-client-timeout` (default `30s`) to control the HTTP fetch timeout. Added `-runtime-config.http-client-cluster-validation.label` (inheritable from `-common.client-cluster-validation.label`) to send the `X-Cluster` validation header when fetching from a cluster-validated HTTP endpoint. #15052 #15244
 * [FEATURE] Distributor: Derive limits based on tenant metadata. Supported limits are `max_active_series_per_user`, `ingestion_rate`, `ingestion_burst_size`, `ingestion_burst_factor`, `otel_metric_suffixes_enabled`, `name_validation_scheme` and `otel_translation_strategy`. #14289
 * [FEATURE] Distributor: add `cortex_distributor_request_body_compression_ratio` histogram that tracks the compression of write requests. #14232
 * [FEATURE] Distributor: add `-distributor.otel-label-name-underscore-sanitization` and `-distributor.otel-label-name-preserve-underscores` that control sanitization of underscores during OTLP translation. #13133
@@ -55,16 +158,10 @@
 * [FEATURE] Ingest storage: Add `-ingest-storage.kafka.tls*` flags to connect to Kafka using TLS. #14550
 * [FEATURE] Ingest storage: Add `-ingest-storage.ingestion-partition-tenant-write-shard-size` to limit the number of partitions used for writes independently from reads, allowing safely reducing the shard size without losing query coverage during the migration. #14780
 * [FEATURE] MQE: Add experimental support for splitting and caching intermediate results for functions over range vectors in instant queries. #13472 #14479 #14506 #14499 #14517 #14536 #14614 #14645 #14677 #14788
-* [FEATURE] MQE: Add experimental support for reporting the number of samples read per query. #14828 #14839 #14952
+* [FEATURE] MQE: Add experimental support for reporting the number of samples read per query. #14828 #14839 #14952 #15035 #15045 #15220
 * [FEATURE] Compactor: Add `-compactor.ooo-split-and-merge-shards` per-tenant limit to allow a separate shard count for blocks with the out-of-order external label. #14704
 * [FEATURE] Distributor: add experimental support for controlling OTLP metric name suffix addition and translation strategy via `X-Mimir-OTLP-AddSuffixes` and `X-Mimir-OTLP-TranslationStrategy` request headers on the OTLP push path, gated by `-api.otlp-translation-headers-enabled` (off by default). #14782
-* [ENHANCEMENT] Nautilus readcache and rebalancer: collect per-(partition, range) samples-per-second EWMA in the readcache, expose it via `HashRangeStatsResponse.rates[].sample_rate`, and balance hash ranges on this signal in the rebalancer's slicer instead of head-series counts. Slicer trace format bumps to version "4"; v3 traces are not replayable against this binary. The admin page on each readcache now surfaces the rate per range alongside the existing series count. Legacy ingester reporters (which do not populate `sample_rate`) fall back to using their `active_series` count as the load signal for backwards compatibility during the readcache rollout. #15402
-* [ENHANCEMENT] Nautilus distributor: emit `cortex_distributor_query_readcache_instances_hit_per_query`, a histogram that records the number of distinct readcache instances each `Distributor.QueryStream` call ended up dialing (after assignment-log lookup and any warmup-fallback to a previous lease owner). The histogram is observed exactly once per call, including the error path and the all-ingester baseline (value 0), so dashboards can watch the read-path migration drift upward as more tenants flip to `readcache_read_routing=nautilus-only`. Buckets mirror `cortex_querier_storegateway_instances_hit_per_query`. #15405
-* [FEATURE] Nautilus rebalancer: spotlight a sampled fraction (5%) of Phase 3 move decisions for fine-grained diagnostic logging. The rebalancer emits a decision-time `nautilus spotlight: move decision` log line with `spotlight_id`, range, partitions, and load signals, then exposes the active set via a new `GetSpotlightedRanges` gRPC method on `nautilus.rebalancer.NautilusRebalancer`. Distributors and readcache pods poll this RPC every 10s; for the 10 minutes following a sampled move they emit additional `distributor observation` and `readcache observation` lines tagged with the same `spotlight_id`, letting operators correlate the causal chain of a single move (write rates per partition, residue on the previous owner, EWMA convergence on the new one) across pods by greppping a single ID. #15528
-* [ENHANCEMENT] Nautilus rebalancer: cap each Phase 3 move at half the hot/cold partition gap so a move can never leave the recipient hotter than the donor. This eliminates the overshoot-and-correct oscillation where a large hash range shed off the hottest partition lands whole on the coldest one, makes it the new hottest, and forces a corrective move the following round. Convergence is unaffected or improved (the gap shrinks monotonically each iteration); oversized indivisible ranges are left in place for Phase 4 to split. #15528
-* [ENHANCEMENT] Nautilus rebalancer: extend the spotlight sampler to also cover Phase 2 merges (`reason=phase2-merge`) and Phase 4 splits (`reason=phase4-split`). Merge decisions distinguish same-partition vs cross-partition merges via a `merge_type` field; split decisions include the parent range, per-half load estimates, and the split threshold so an operator can see whether a split actually distributed load as the rebalancer predicted. Downstream distributor and readcache observers consume the new spotlights transparently — no client changes are required. #15528
-* [ENHANCEMENT] Nautilus rebalancer: surface a second per-partition imbalance figure (`max/mean` over samples-per-second) on the admin page alongside the existing cardinality-based imbalance, and add a "Recent Readcache Slicer Rounds" history section that records each (partition → readcache) move with a human-readable reason (source over target, by how much, destination's load at the time). Every `readcacheMove` now carries a `Reason` string populated by `planReadcacheAssignment`. #15403
-* [CHANGE] Nautilus rebalancer: the slicer now balances exclusively on the samples-per-second EWMA signal. The legacy series-count fallback in `buildLoadMap` and `partitionLoadFromRates` is removed (reporters that don't populate `sample_rate` now contribute zero load instead of `float64(series)`). The cross-round movable-budget bookkeeping is gone alongside the `-nautilus-rebalancer.compaction-interval` flag, since sample-rate is a near-instantaneous signal with no TSDB-head compaction lag to discount. The second-tier slicer's `-nautilus-rebalancer.readcache-slicer.alpha` now weights samples-per-second (write rate) rather than `active_series`, matching the first-tier slicer's signal. Slicer trace format bumps to version "5"; v4 traces are not replayable against this binary, and the `compaction_interval` and `recent_moves` fields are no longer emitted. The rebalancer admin page drops the "Compaction Window" stat and the per-partition "movable" budget column accordingly. #15404
+* [ENHANCEMENT] Ingest storage: Default to the more efficient `-ingest-storage.kafka.producer-record-version=2` based on Remote-Write 2.0, which reduces Kafka record size and improves write throughput. #15185
 * [ENHANCEMENT] Distributor: Add per-tenant `-distributor.active-series-limit-response-code` override to configure the HTTP response code returned when rejecting series due to the active series limit. Defaults to 429 (Too Many Requests). Set to 400 (Bad Request) to prevent clients from retrying rejected requests. #14981
 * [ENHANCEMENT] Query-frontend: Add `minimum_step_size` filter to blocked queries config to reject range queries with a step smaller than the configured threshold. #14885
 * [ENHANCEMENT] Query-frontend: Add support for blocking queries exceeding a time range duration with `time_range_longer_than`. #14609
@@ -189,17 +286,26 @@
 * [ENHANCEMENT] Query-frontend: Stream JSON encoding directly to the response body to avoid a full-copy allocation of the serialized payload. #14840
 * [ENHANCEMENT] Activity tracker: Added `activity_tracker_unfinished_activities_loaded` metric to report the number of unfinished activities detected on startup. #14860
 * [ENHANCEMENT] Distributor now uses record validation time as Kafka record timestamp to reduce rejections among consumers. #14921
-* [ENHANCEMENT] MQE: Add optimisation pass to optimise away expressions containing comparisons with `timestamp()` that can't produce results due to the query time range. #14989
+* [ENHANCEMENT] MQE: Add optimisation pass to optimise away expressions that can't produce results such as those containing comparisons with `timestamp()` due to the query time range or conflicting matchers. #14989 #15014 #15163 #15117 #15260
 * [ENHANCEMENT] Distributor: OTLP endpoint now returns partial success (HTTP 200) instead of HTTP 429 when the usage tracker rejects some series due to the active series limit but other series are successfully ingested. The `RejectedDataPoints` field reports the count of distributor-side rejections (usage tracker filtering). #14789
 * [ENHANCEMENT] MQE: Account for memory consumption of labels returned by binary operations in query memory consumption estimate earlier. #15033
 * [ENHANCEMENT] Query-frontend: Log the number of series and samples returned for queries in `query stats` log lines. #15044
+* [ENHANCEMENT] Querier and query-frontend: When remote execution is enabled, send series metadata in batches, rather than in a single large message. The batch size can be configured with `-query-frontend.remote-execution-series-metadata-batch-size`. #15047
 * [ENHANCEMENT] Ingest storage: Update the default configuration to enable ingest storage concurrency: #15072
   * `-ingest-storage.kafka.fetch-concurrency-max` from `0` to `12`
   * `-ingest-storage.kafka.ingestion-concurrency-max` from `0` to `8`
   * `-ingest-storage.kafka.ingestion-concurrency-queue-capacity` from `5` to `3`
   * `-ingest-storage.kafka.ingestion-concurrency-target-flushes-per-shard` from `80` to `40`
   * `-ingest-storage.kafka.max-buffered-bytes` from `100MB` to `1GB`
-* [BUGFIX] Nautilus rebalancer: propagate `X-Scope-OrgID` on outbound RPCs to readcache pods so `HashRangeStats`, `SetHashRanges`, and `GetHashRanges` are not rejected with "no org id" by the server-side user-header gate; without this every `reconstructAssignmentFromReadcache` quorum failed and the rebalancer dropped into a `FineEvenSplit` cold-start loop that grew the assignment log unboundedly and left distributors returning 500 ("no live assignment log snapshot is available") once leases expired. #15401
+* [ENHANCEMENT] MQE: Enable narrow selectors optimisation and hints passing for `and`/`unless` binary operation. #15096
+* [ENHANCEMENT] MQE: Add support for common subexpression elimination and subset selector elimination of range vector selectors in range queries. Enable with `-querier.mimir-query-engine.enable-range-query-range-vector-common-subexpression-elimination=true`. #15127
+* [ENHANCEMENT] MQE: Use series selected for one side to reduce data selected on the other side in one-to-many and many-to-one binary operations (eg. `group_left` and `group_right`). #15137
+* [ENHANCEMENT] MQE: Use series selected for one side to reduce data selected on the other side in binary operations that use `ignoring` or no `on`/`ignoring` clause. #15178
+* [ENHANCEMENT] MQE: Reduced per-query memory overhead by no longer holding a reference to the HTTP request for the lifetime of a query. #15251
+* [BUGFIX] Query-frontend: Fixed a memory leak caused that could occur on some error paths if MQE was enabled. #15251
+* [BUGFIX] Alertmanager: Skip empty/zero config. #15184
+* [BUGFIX] Tracing: Respect `OTEL_TRACES_SAMPLER` and `OTEL_TRACES_SAMPLER_ARG` environment variables in `NewOTelFromEnv()`. Previously, the sampler was always hardcoded to `AlwaysSample()` when no Jaeger remote sampler was configured, making it impossible to control trace volume through standard OpenTelemetry configuration. #15128
+* [BUGFIX] API: Scope activity tracking middleware to query routes only, preventing it from rejecting write requests that have an unexpected `Content-Type` header with HTTP 500. #15129
 * [BUGFIX] Ingester: enforce a minimum 10s delay between TSDB head compaction iterations when an iteration approaches or exceeds the configured `-blocks-storage.tsdb.head-compaction-interval`, so ingestion is not starved by back-to-back compactions. #15061
 * [BUGFIX] Update to Go v1.25.9. #15030
 * [BUGFIX] Distributor: OTLP partial success responses now correctly populate `RejectedDataPoints` with the actual count of rejected samples, instead of always reporting 0. In classical architecture, this includes rejected samples propagated from the ingester. #14789
@@ -211,6 +317,7 @@
 * [BUGFIX] Distributor: Fix ingestion rate limit error message reporting incorrect burst size when `ingestion_burst_factor` is configured. #14471
 * [BUGFIX] Mimir: Fix nil pointer dereference when `-target` is set to an empty string. #14381
 * [BUGFIX] API: Fixed web UI links not respecting `-server.path-prefix` configuration. #14090
+* [BUGFIX] API: Fixed embedded web UI static assets (CSS, JS, images) returning 404 when `-server.path-prefix` is configured. #15181
 * [BUGFIX] Distributor: Fix issue where distributors didn't send custom values of native histograms. #13849
 * [BUGFIX] Compactor: Fix potential concurrent map writes. #13053
 * [BUGFIX] Query-frontend: Fix issue where queries sometimes fail with `failed to receive query result stream message: rpc error: code = Canceled desc = context canceled` if remote execution is enabled. #13084
@@ -273,9 +380,18 @@
 * [BUGFIX] Alertmanager: Fix deadlock when trying to broadcast after stopping a tenant #14922
 * [BUGFIX] Query-frontend: Fix max total query length limit (`-query-frontend.max-total-query-length`) not being enforced on instant queries with subqueries or range selectors. #14985
 * [BUGFIX] Compactor: Fix potential goroutine leak when compaction iteration exits early due to errors. #13420
+* [BUGFIX] Query-frontend: Fix bugs with matcher propagation for binary operations where it was not being properly applied within nested expressions and also wrongly propagating internal label matchers. #15110
+* [BUGFIX] Distributor: Cancel DoUntilQuorum in cardinality analysis API when active_series_results_max_size_bytes is breached. #15177
+* [BUGFIX] MQE: Fix issue where queries with step-invariant range vector expressions (eg. `quantile_over_time(scalar(arg), metric[5m] @ 1000)`) could return incorrect results. #15192
+* [BUGFIX] MQE: Fix `info()` function not enriching series when inner series are missing one identifying label (instance/job) but matching info series exist. #14832
+* [BUGFIX] MQE: Fix `info()` function only retaining one matcher when multiple data label matchers target the same label name. #14832
+* [BUGFIX] MQE: Fix `info()` function silently overwriting conflicting labels from different info metrics instead of returning an error. #14832
+* [BUGFIX] MQE: Fix `info()` function incorrectly grouping labels from replaced info series at the same evaluation timestamp due to lookback. #14832
+* [BUGFIX] Update to Go v1.26.3 to address [CVE-2026-42501](https://www.cve.org/CVERecord?id=CVE-2026-42501), [CVE-2026-42499](https://www.cve.org/CVERecord?id=CVE-2026-42499), [CVE-2026-39836](https://www.cve.org/CVERecord?id=CVE-2026-39836), [CVE-2026-39820](https://www.cve.org/CVERecord?id=CVE-2026-39820), [CVE-2026-33814](https://www.cve.org/CVERecord?id=CVE-2026-33814), [CVE-2026-33811](https://www.cve.org/CVERecord?id=CVE-2026-33811), [CVE-2026-39826](https://www.cve.org/CVERecord?id=CVE-2026-39826), [CVE-2026-39823](https://www.cve.org/CVERecord?id=CVE-2026-39823), [CVE-2026-39817](https://www.cve.org/CVERecord?id=CVE-2026-39817), [CVE-2026-39825](https://www.cve.org/CVERecord?id=CVE-2026-39825), [CVE-2026-39819](https://www.cve.org/CVERecord?id=CVE-2026-39819). #15263
 
 ### Mixin
 
+* [CHANGE] Alerts and rules: Replaced `_config.base_alerts_range_interval_minutes` and `_config.recording_rules_range_interval` with `_config.scrape_interval` (default `15s`). Instead of configuring a pre-multiplied number of minutes, configure your actual Prometheus scrape interval and the mixin will compute safe rate-function windows automatically (at least 4× the scrape interval). #15174 #15176
 * [CHANGE] Dashboards: Add configuration option `dashboards_default_latency_mode` to control the default value of the native/classic latency variable (uses 'classic' if unset). #14424
 * [CHANGE] Alerts: Renamed the following alerts to fit within 40 characters: #13363
   * `MimirAlertmanagerPartialStateMergeFailing` → `MimirAlertmanagerStateMergeFailing`
@@ -300,6 +416,7 @@
 * [CHANGE] Alerts: Replaced `MimirCompactorSkippedUnhealthyBlocks` with more generic `MimirCompactorSkippedBlocks`. #13876
 * [CHANGE] Dashboards: replace usage of `container_spec_cpu_quota / container_spec_cpu_period` with `kube_pod_container_resource_limits` for calculation of CPU limits. #14425
 * [CHANGE] Dashboards: The queries used in latency panels no longer convert seconds to milliseconds. The dashboard panels now use "seconds" unit instead of "milliseconds". #14896
+* [CHANGE] Alerts: Changed `MimirRulerMissedEvaluations` alert to monitor the per ruler evaluation rate, instead of the per ruler and rule groups one. Added `MimirRulersMissedEvaluations` alert to monitor the global missed evaluations rate. #15290
 * [ENHANCEMENT] Dashboards: Group compactor compaction-related panels into a single collapsible "Compaction" row. #14784
 * [ENHANCEMENT] Dashboards: Merge CPU and memory panels in the "Compactor resources" dashboard into a single collapsible row. #14866
 * [ENHANCEMENT] Alerts: Add more native histogram versions of alerts using classic histograms. #13814
@@ -332,10 +449,10 @@
 * [ENHANCEMENT] Dashboards: Split the "All series" panel in the Tenants dashboard into "Active series" and "Owned & in-memory series" panels, and added the active series limit. #14648 #14771
 * [ENHANCEMENT] Dashboards: Add "In memory series" panel to experimental "Mimir / Block-builder" dashboard. #14700
 * [ENHANCEMENT] Dashboards: Unify object store rows into a single collapsible row across Alertmanager, Compactor, Reads, and Ruler dashboards. #14850
-* [ENHANCEMENT] Alerts: Make `MimirInconsistentRuntimeConfig` alert less flaky when performing multiple configuration changes in a row in a large Kubernetes cluster. #14743 #14933 #15051
+* [ENHANCEMENT] Alerts: Make `MimirInconsistentRuntimeConfig` alert less flaky when performing multiple configuration changes in a row in a large Kubernetes cluster. #14743 #14933 #15051 #15257
 * [ENHANCEMENT] Alerts: Suppress `MimirRingMembersMismatch` alert during ingester rollouts. The alert now uses an `unless` clause to avoid false positives when ingester statefulsets are being updated. #14895
 * [ENHANCEMENT] Recording rules: add a low-cardinality recorded version of usage_tracker_active_series. #14901
-* [ENHANCEMENT] Alerts: Fix `MimirSchedulerQueriesStuck` false positives by only looking for cases where the number of enqueued queries doesn't decrease. #14943
+* [ENHANCEMENT] Alerts: Fix `MimirSchedulerQueriesStuck` false positives by only looking for cases where the number of enqueued queries doesn't decrease. #14943 #15193
 * [ENHANCEMENT] Dashboards: Add ephemeral storage panels to "Resources" dashboards. #14999
 * [ENHANCEMENT] Dashboards: Add disk utilization panels to experimental Block-builder dashboard. #15029
 * [BUGFIX] Dashboards: Fix compactor dashboard to exclude instances without the last successful run metric in the "Last successful run per-compactor replica" table. #14784
@@ -343,6 +460,9 @@
 * [BUGFIX] Dashboards: Filter out 0s from `max_series` limit on Writes Resources > Ingester > In-memory series panel. #13419
 * [BUGFIX] Dashboards: Fix issue where the "Tenant gateway requests" panels on Tenants dashboard would show data from all components. #13940
 * [BUGFIX] Dashboards: Fix issue where the MQE-related dashboard panels on the Queries dashboard would show data from both queriers and query-frontends, instead of just queriers. #14029
+* [BUGFIX] Alerts: Fix alert definitions with short range vector selectors that did not respect the configured `base_alerts_range_interval_minutes`. #15083
+* [BUGFIX] Dashboards: Fix mixin build failure when `singleBinary` is `true`. #15108
+* [BUGFIX] Alerts: Fix alert for store-gateway object storage operation failures to alert based on percentage of failed operations, not raw number of them. #15196
 
 ### Jsonnet
 
@@ -432,6 +552,8 @@
 * [FEATURE] kafkatool: Add `create-topic` command to create a Kafka topic with a specified number of partitions. #14639
 * [FEATURE] kafkatool: Add `list-topics` command to list all Kafka topics and their partition counts. #14639
 * [ENHANCEMENT] mimir-tool: Add `__ignore_usage__=""` label selector to queries used in `analyze prometheus` command, so that Adaptive Metrics' recommendations service ignores them. #14474
+* [ENHANCEMENT] mimir-tool: Add TLS client flags (`--tls-ca-path`, `--tls-cert-path`, `--tls-key-path`, `--tls-server-name`, `--tls-insecure-skip-verify`) to the `remote-read` subcommands so they can talk to an endpoint protected by mTLS or a private CA. #15132
+* [ENHANCEMENT] copyblocks: Support resolving S3 credentials from the environment (IAM roles for service accounts, ECS task roles, and EC2 instance metadata) when `-s3.<source|destination>.access-key-id` and `-s3.<source|destination>.secret-access-key` are omitted. #15075
 * [BUGFIX] mimir-tool-action: Fix base image of the Github action. #13303
 * [BUGFIX] mimir-tool: do not fail on `$latency_metrics` dashboard variable, documented for native histograms migrations. #13526
 * [BUGFIX] kafkatool: Fix `kafkatool dump print` to support RW2 records. #13848
@@ -444,6 +566,22 @@
 * [CHANGE] Make HTTP and gRPC server options configurable through the same dskit `server` flags and config block as Mimir. This begins the deprecation cycle for query-tee's `server.http-service-address`, `server.http-service-port`, `"server.grpc-service-address`, and `server.grpc-service-port` flags. #13328 #13355 #13360
 * [ENHANCEMENT] Add `/ready` endpoint that returns HTTP 200 when the proxy is running. #14478
 * [BUGFIX] Fix bug where query-tee can panic if forwarding a request fails. #14015
+
+## 3.0.7
+
+### Grafana Mimir
+
+* [CHANGE] Update Docker image bases from Debian 12 to Debian 13 (`gcr.io/distroless/static-debian13`; race images use `base-nossl-debian13`). #15629
+* [BUGFIX] Distributor: Fix nil pointer panic in `WriteRequest.Unmarshal` when receiving a Remote Write 2.0 request with zero timeseries. #14698
+* [BUGFIX] Update to Go v1.26.4 to address [CVE-2026-42501](https://pkg.go.dev/vuln/GO-2026-4984), [CVE-2026-39836](https://pkg.go.dev/vuln/GO-2026-4971), [CVE-2026-33811](https://pkg.go.dev/vuln/GO-2026-4981), [CVE-2026-33814](https://pkg.go.dev/vuln/GO-2026-4918), [CVE-2026-42499](https://pkg.go.dev/vuln/GO-2026-4977), [CVE-2026-39820](https://pkg.go.dev/vuln/GO-2026-4986), [CVE-2026-42507](https://pkg.go.dev/vuln/GO-2026-5039) and other lower-severity CVEs. #15402 #15660
+
+## 3.0.6
+
+### Grafana Mimir
+
+* [BUGFIX] Update go.opentelemetry.io/otel/sdk to v1.43.0 to address [CVE-2026-39883](https://www.cve.org/CVERecord?id=CVE-2026-39883). #15048
+* [BUGFIX] Update github.com/aws/aws-sdk-go-v2/service/s3 to v1.97.3 to address [GHSA-xmrv-pmrh-hhx2](https://github.com/advisories/GHSA-xmrv-pmrh-hhx2). #15048
+* [BUGFIX] Update to Go v1.25.9 to address [CVE-2026-32283](https://pkg.go.dev/vuln/GO-2026-4870), [CVE-2026-32282](https://pkg.go.dev/vuln/GO-2026-4864), [CVE-2026-27144](https://pkg.go.dev/vuln/GO-2026-4867), [CVE-2026-27143](https://pkg.go.dev/vuln/GO-2026-4868), [CVE-2026-27140](https://pkg.go.dev/vuln/GO-2026-4871), [CVE-2026-32289](https://pkg.go.dev/vuln/GO-2026-4865), [CVE-2026-32288](https://pkg.go.dev/vuln/GO-2026-4869), [CVE-2026-32280](https://pkg.go.dev/vuln/GO-2026-4947), [CVE-2026-32281](https://pkg.go.dev/vuln/GO-2026-4946). #15043
 
 ## 3.0.5
 
@@ -664,6 +802,38 @@
 
 * [CHANGE] If you configure multiple secondary backends and enable comparisons, query-tee reports comparison results of the preferred backend against each of the secondaries. #13022
 * [CHANGE] Add backend configuration options for request proportion sampling and time-based query filtering. #13037
+
+## 2.17.11
+
+### Grafana Mimir
+
+* [BUGFIX] Update golang.org/x/net to v0.51.0 to address [CVE-2026-27141](https://nvd.nist.gov/vuln/detail/CVE-2026-27141). #15068
+* [BUGFIX] Update golang.org/x/net to v0.53.0 to address [CVE-2026-33814](https://nvd.nist.gov/vuln/detail/CVE-2026-33814). #15281
+* [BUGFIX] Update go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp to v1.43.0 to address [CVE-2026-39882](https://nvd.nist.gov/vuln/detail/CVE-2026-39882). #15329
+* [BUGFIX] Update go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp to v0.19.0 to address [CVE-2026-39882](https://nvd.nist.gov/vuln/detail/CVE-2026-39882). #15329
+* [BUGFIX] Update go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp to v1.43.0 to address [CVE-2026-39882](https://nvd.nist.gov/vuln/detail/CVE-2026-39882). #15329
+* [BUGFIX] Update go.opentelemetry.io/otel/exporters/stdout/stdoutlog to v0.19.0 for compatibility with updated OTLP exporters. #15329
+
+## 2.17.10
+
+### Grafana Mimir
+
+* [BUGFIX] Update go.opentelemetry.io/otel/sdk to v1.43.0 to address [CVE-2026-39883](https://www.cve.org/CVERecord?id=CVE-2026-39883). #15050
+* [BUGFIX] Update github.com/aws/aws-sdk-go-v2/service/s3 to v1.97.3 to address [GHSA-xmrv-pmrh-hhx2](https://github.com/advisories/GHSA-xmrv-pmrh-hhx2). #15050
+* [BUGFIX] Update to Go v1.25.9 to address [CVE-2026-32283](https://pkg.go.dev/vuln/GO-2026-4870), [CVE-2026-32282](https://pkg.go.dev/vuln/GO-2026-4864), [CVE-2026-27144](https://pkg.go.dev/vuln/GO-2026-4867), [CVE-2026-27143](https://pkg.go.dev/vuln/GO-2026-4868), [CVE-2026-27140](https://pkg.go.dev/vuln/GO-2026-4871), [CVE-2026-32289](https://pkg.go.dev/vuln/GO-2026-4865), [CVE-2026-32288](https://pkg.go.dev/vuln/GO-2026-4869), [CVE-2026-32280](https://pkg.go.dev/vuln/GO-2026-4947), [CVE-2026-32281](https://pkg.go.dev/vuln/GO-2026-4946). #15042
+* [BUGFIX] Ruler: Fix parsing of rule expressions with leading newlines. #14947 #15032
+
+## 2.17.9
+
+### Grafana Mimir
+
+* [BUGFIX] Update to Go v1.25.8 to address [CVE-2026-27142](https://pkg.go.dev/vuln/GO-2026-4603), [CVE-2026-27139](https://pkg.go.dev/vuln/GO-2026-4602), [CVE-2026-25679](https://pkg.go.dev/vuln/GO-2026-4601), [CVE-2026-27138](https://pkg.go.dev/vuln/GO-2026-4600), [CVE-2026-27137](https://pkg.go.dev/vuln/GO-2026-4599). #14908
+
+## 2.17.8
+
+### Grafana Mimir
+
+* [BUGFIX] Update module google.golang.org/grpc to v1.79.3 to address [CVE-2026-33186](https://nvd.nist.gov/vuln/detail/CVE-2026-33186) #14762
 
 ## 2.17.7
 
