@@ -67,7 +67,6 @@ func (slp *simpleLanePolicy) LaneForJob(j TrackedJob) lane {
 	return compactionLane
 }
 
-// allLanes returns every lane in priority order: plan first, then compaction buckets ascending. Used to pre-create rotations and as the default when a worker requests no lanes.
 func (slp *simpleLanePolicy) AllLanes() []lane {
 	return slp.allLanes
 }
