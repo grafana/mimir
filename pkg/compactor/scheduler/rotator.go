@@ -267,7 +267,7 @@ func (r *Rotator) CancelJobLease(tenant string, key string, epoch int64) (bool, 
 	}
 
 	l := *becamePending
-	if tenantState.elements[l] == nil && !tenantState.tracker.isLanePendingEmpty(l) {
+	if tenantState.elements[l] == nil && !tenantState.tracker.isPendingEmpty(l) {
 		r.addToRotation(l, tenant, tenantState)
 	}
 
@@ -306,11 +306,11 @@ func (r *Rotator) OfferCompactionJobs(tenant string, jobs []*TrackedCompactionJo
 	for _, t := range transitions {
 		switch t.kind {
 		case rotationAddTracker:
-			if tenantState.elements[t.lane] == nil && !tenantState.tracker.isLanePendingEmpty(t.lane) {
+			if tenantState.elements[t.lane] == nil && !tenantState.tracker.isPendingEmpty(t.lane) {
 				r.addToRotation(t.lane, tenant, tenantState)
 			}
 		case rotationRemoveTracker:
-			if tenantState.elements[t.lane] != nil && tenantState.tracker.isLanePendingEmpty(t.lane) {
+			if tenantState.elements[t.lane] != nil && tenantState.tracker.isPendingEmpty(t.lane) {
 				r.removeFromRotation(t.lane, tenantState)
 			}
 		}
@@ -419,7 +419,7 @@ func (r *Rotator) Maintenance(ctx context.Context, enforceLeaseExpiration, plan 
 	defer r.mtx.Unlock()
 	for _, tl := range addRotationFor {
 		tenantState, ok := r.tenantStateMap[tl.tenant]
-		if ok && tenantState.elements[tl.lane] == nil && !tenantState.tracker.isLanePendingEmpty(tl.lane) {
+		if ok && tenantState.elements[tl.lane] == nil && !tenantState.tracker.isPendingEmpty(tl.lane) {
 			r.addToRotation(tl.lane, tl.tenant, tenantState)
 		}
 	}
@@ -431,9 +431,9 @@ func (r *Rotator) possiblyRemoveFromRotation(l lane, tenant string) {
 
 	// State may have changed by the time this lock was acquired, double check.
 	// Since we hold the write lock, we have exclusive access to all trackers.
-	// Therefore, the tracker lock isn't necessary for isLanePendingEmpty(). Be quick.
+	// Therefore, the tracker lock isn't necessary for isPendingEmpty(). Be quick.
 	tenantState, ok := r.tenantStateMap[tenant]
-	if ok && tenantState.elements[l] != nil && tenantState.tracker.isLanePendingEmpty(l) {
+	if ok && tenantState.elements[l] != nil && tenantState.tracker.isPendingEmpty(l) {
 		r.removeFromRotation(l, tenantState)
 	}
 }

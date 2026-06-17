@@ -96,8 +96,9 @@ func (jt *JobTracker) toPendingBack(j TrackedJob) {
 // lane was empty beforehand.
 func (jt *JobTracker) toPendingFront(j TrackedJob) (lane, bool) {
 	l := jt.lanePolicy.LaneForJob(j)
-	wasEmpty := jt.isLanePendingEmpty(l)
-	jt.incompleteJobs[j.ID()] = jobLocation{element: jt.pending[l].PushFront(j), lane: l}
+	p := jt.pending[l]
+	wasEmpty := p.Len() == 0
+	jt.incompleteJobs[j.ID()] = jobLocation{element: p.PushFront(j), lane: l}
 	jt.pendingCount++
 	return l, wasEmpty
 }
@@ -153,11 +154,11 @@ func (jt *JobTracker) Lease(l lane) (response *compactorschedulerpb.LeaseJobResp
 	jt.mtx.Lock()
 	defer jt.mtx.Unlock()
 
-	lst := jt.pending[l]
-	if lst.Front() == nil {
+	p := jt.pending[l]
+	if p.Front() == nil {
 		return nil, false, nil
 	}
-	e := lst.Front()
+	e := p.Front()
 
 	j := e.Value.(TrackedJob)
 	// Copy the value, don't want to leave a modification if the write fails
@@ -168,7 +169,7 @@ func (jt *JobTracker) Lease(l lane) (response *compactorschedulerpb.LeaseJobResp
 		return nil, false, err
 	}
 
-	lst.Remove(e)
+	p.Remove(e)
 	jt.pendingCount--
 
 	id := jj.ID()
@@ -178,11 +179,11 @@ func (jt *JobTracker) Lease(l lane) (response *compactorschedulerpb.LeaseJobResp
 	jt.incompleteJobs[id] = jobLocation{element: jt.active.PushBack(jj), leased: true}
 	jt.metrics.queue.Leased(jj)
 
-	return jj.ToLeaseResponse(jt.tenant), jt.isLanePendingEmpty(l), nil
+	return jj.ToLeaseResponse(jt.tenant), p.Len() == 0, nil
 }
 
-// isLanePendingEmpty reports whether a lane has no pending jobs. Callers must have exclusive access.
-func (jt *JobTracker) isLanePendingEmpty(l lane) bool {
+// isPendingEmpty reports whether the provided lane has no pending jobs. Callers must have exclusive access.
+func (jt *JobTracker) isPendingEmpty(l lane) bool {
 	return jt.pending[l].Len() == 0
 }
 
@@ -244,10 +245,11 @@ func (jt *JobTracker) Remove(id string, epoch int64, complete bool) (removed boo
 		return true, nil, nil
 	}
 
-	jt.pending[loc.lane].Remove(loc.element)
+	p := jt.pending[loc.lane]
+	p.Remove(loc.element)
 	jt.pendingCount--
 	jt.metrics.queue.DropPending(j)
-	if jt.isLanePendingEmpty(loc.lane) {
+	if p.Len() == 0 {
 		l := loc.lane
 		return true, &l, nil
 	}
