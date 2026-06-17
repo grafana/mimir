@@ -37,7 +37,7 @@ fi
 
 if [ "$(yq '.services."query-tee"' "${SCRIPT_DIR}"/docker-compose.yml)" != "null" ]; then
   # If query-tee is enabled, build its binary and image as well.
-  if needs_build "${SCRIPT_DIR}/../../cmd/query-tee/query-tee" "${SCRIPT_DIR}/../../cmd/query-tee" "${SCRIPT_DIR}/../../vendor"; then
+  if needs_build "${SCRIPT_DIR}/../../cmd/query-tee/query-tee" "${SCRIPT_DIR}/../../cmd/query-tee" "${SCRIPT_DIR}/../../pkg" "${SCRIPT_DIR}/../../tools/querytee" "${SCRIPT_DIR}/../../vendor"; then
     CGO_ENABLED=0 GOOS=linux go build -mod=vendor -tags=netgo,stringlabels -gcflags "all=-N -l" -o "${SCRIPT_DIR}"/../../cmd/query-tee "${SCRIPT_DIR}"/../../cmd/query-tee
     docker_compose -f "${SCRIPT_DIR}"/docker-compose.yml build --build-arg BUILD_IMAGE="${BUILD_IMAGE}" query-tee
   fi
