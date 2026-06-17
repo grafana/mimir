@@ -5,10 +5,7 @@
 load 1s
   mixed 0 {{schema:0 sum:5 count:4 buckets:[1 2 1]}} 2 {{schema:0 sum:5 count:4 buckets:[1 2 1]}} 4 {{schema:0 sum:5 count:4 buckets:[1 2 1]}} 6 {{schema:0 sum:5 count:4 buckets:[1 2 1]}}
 
-# MQE-only: instant `smoothed` over a series with histogram samples returns the histogram via
-# exact match (t=1s) or lookback (t=8s). Prometheus's engine has a separate bug that panics on
-# this expression (vendor/.../promql/engine.go:844 dereferences s.Floats[0] when both Floats and
-# Histograms are empty), so these cases are kept here to skip Prometheus's engine.
+# This test is here until https://github.com/prometheus/prometheus/pull/18943 is merged/vendored.
 eval instant at 1s mixed smoothed
   mixed {{schema:0 sum:5 count:4 buckets:[1 2 1]}}
 
