@@ -1,14 +1,100 @@
-# These tests have been added here since upstream Prometheus has recently
-# added support for smoothed/anchored histograms.
-# These tests will be removed once our Mimir implementation is completed.
+# These tests cover the anchored modifier applied to resets() and changes() over series that contain
+# native histograms. They mirror upstream Prometheus PR #18906
+# (https://github.com/prometheus/prometheus/pull/18906), which fixes the anchor selection so that the
+# anchor (the last sample at or before rangeStart) is chosen across both floats and histograms, and the
+# float<->histogram transition at the boundary is counted.
+#
+# They live here (ours-only) because Mimir still vendors the pre-#18906 Prometheus engine, which drops or
+# miscounts these cases. Once #18906 is vendored these should move to testdata/ours/anchored.test.
 
 load 1m
-  mixed 1 2 3 {{schema:0 sum:5 count:4 buckets:[1 2 1]}} 4 5 6 7+1x60
+  ftohmixed 1 2 3 {{schema:0 sum:5 count:4 buckets:[1 2 1]}} 4 5 6 7+1x60
+  htofmixed {{schema:0 sum:1 count:1 buckets:[1]}} {{schema:0 sum:2 count:2 buckets:[2]}} {{schema:0 sum:3 count:3 buckets:[3]}} 5
+  floats 2 1 2 1 2 1
+  histograms {{schema:0 sum:5 count:2}} {{schema:0 sum:5 count:1}} {{schema:0 sum:5 count:2}} {{schema:0 sum:5 count:1}} {{schema:0 sum:5 count:2}}
+  honlywithreset {{schema:0 sum:1 count:1 buckets:[1]}} {{schema:0 sum:2 count:2 buckets:[2]}} {{schema:0 sum:3 count:3 buckets:[3]}} {{schema:0 sum:1 count:1 buckets:[1] counter_reset_hint:reset}}
+  hhffmixed {{schema:0 sum:1 count:1 buckets:[1]}} {{schema:0 sum:2 count:2 buckets:[2]}} 5 2 3
+  anchorhasreset _ {{schema:0 sum:1 count:1 buckets:[1] counter_reset_hint:reset}} {{schema:0 sum:2 count:2 buckets:[2]}}
+  resetmidanchor {{schema:0 sum:5 count:5 buckets:[5]}} {{schema:0 sum:1 count:1 buckets:[1]}} {{schema:0 sum:2 count:2 buckets:[2]}}
 
-# MQE-only: when the boundary-aligned anchored range puts the histogram exactly at rangeEnd
-# (t=3m here), Prometheus's engine drops the series entirely, while MQE returns {} 0 because the
-# resulting buffer has only a single histogram sample with no float reset partner. The float
-# samples in the original window are removed by anchored boundary mutation (lookback float at
-# rangeStart is consumed as the synthetic anchor, no float remains in (rangeStart, rangeEnd]).
-eval instant at 3m resets(mixed[1m] anchored)
+# Anchored window (2m, 3m]: the anchor is the t=2m sample and the in-range sample is the t=3m sample.
+# In every representation the t=2m -> t=3m transition counts as exactly one reset/change.
+eval instant at 3m resets(ftohmixed[1m] anchored)
+  {} 1
+
+eval instant at 3m resets(htofmixed[1m] anchored)
+  {} 1
+
+eval instant at 3m resets(floats[1m] anchored)
+  {} 1
+
+eval instant at 3m resets(histograms[1m] anchored)
+  {} 1
+
+eval instant at 3m resets(honlywithreset[1m] anchored)
+  {} 1
+
+# hhffmixed has pre-anchor histograms at t=0 and t=1m, a float anchor at t=2m, and an in-range float at
+# t=3m. The pre-anchor histograms must be skipped so that only the t=2m -> t=3m (5 -> 2) float transition
+# is counted; counting the leading histograms would over-count.
+eval instant at 3m resets(hhffmixed[1m] anchored)
+  {} 1
+
+# Anchored window (3m, 4m]: the anchor is the t=3m float (2) and the in-range sample is the t=4m float (3),
+# a 2 -> 3 increase, so there is no reset.
+eval instant at 4m resets(hhffmixed[1m] anchored)
+  {} 0
+
+eval instant at 3m changes(ftohmixed[1m] anchored)
+  {} 1
+
+eval instant at 3m changes(htofmixed[1m] anchored)
+  {} 1
+
+eval instant at 3m changes(floats[1m] anchored)
+  {} 1
+
+eval instant at 3m changes(histograms[1m] anchored)
+  {} 1
+
+eval instant at 3m changes(honlywithreset[1m] anchored)
+  {} 1
+
+# Same skip-the-pre-anchor-histograms case as resets: only the t=2m -> t=3m (5 -> 2) transition is counted.
+eval instant at 3m changes(hhffmixed[1m] anchored)
+  {} 1
+
+# resets() and changes() over the same anchored selector are de-duplicated by common subexpression
+# elimination. Both take the anchor-selection path, so the shared range vector buffer must serve both.
+eval instant at 3m resets(histograms[1m] anchored) + changes(histograms[1m] anchored)
+  {} 2
+
+# The anchor itself carries counter_reset_hint:reset. The anchor seeds the comparison baseline and must
+# not be compared against itself, so its reset hint must not be counted: the only transition is the
+# in-range count increase 1 -> 2, which is not a reset.
+eval instant at 2m resets(anchorhasreset[1m] anchored)
+  {} 0
+
+# Same, but the anchor is a mid-series histogram that is itself a genuine counter reset (count 5 -> 1),
+# so it carries CounterResetHint=CounterReset on read-back. It is still only the baseline; the in-range
+# transition 1 -> 2 is not a reset. Expected: 0.
+eval instant at 2m resets(resetmidanchor[1m] anchored)
+  {} 0
+
+# Sweeping the evaluation time over the ftohmixed series shows that the t=3m histogram contributes a reset
+# only while it is the anchor (eval 4m) or the in-range sample (eval 3m). Once it falls before the anchor it
+# is no longer counted.
+eval instant at 1m resets(ftohmixed[1m] anchored)
+  {} 0
+
+eval instant at 4m resets(ftohmixed[1m] anchored)
+  {} 1
+
+eval instant at 5m resets(ftohmixed[1m] anchored)
+  {} 0
+
+eval instant at 8m resets(ftohmixed[1m] anchored)
+  {} 0
+
+eval instant at 10m resets(ftohmixed[1m] anchored)
   {} 0

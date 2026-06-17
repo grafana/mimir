@@ -178,6 +178,11 @@ message MatrixSelectorDetails {
   reserved 11; // projectionLabels is no longer used.
 
   repeated SubsetMatchers subsets = 12 [(gogoproto.nullable) = false];
+
+  // anchoredResetsChanges is set when the anchored modifier is applied to resets() or changes(). These
+  // functions select the anchor across both floats and histograms rather than synthesising float boundary
+  // values, so they take a different path through the range vector selector.
+  bool anchoredResetsChanges = 13;
 }
 
 // SubsetMatchers defines a subset for a selector to report in its statistics.

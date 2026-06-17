@@ -336,35 +336,9 @@ eval instant at 1m changes(foo[3m] anchored)
 
 clear
 
-load 1m
-  mixed 1 2 3 {{schema:0 sum:5 count:4 buckets:[1 2 1]}} 4 5 6 7+1x60
-
-eval instant at 1m resets(mixed[1m] anchored)
-  {} 0
-
-# With native-histogram support enabled for the anchored modifier the histogram at t=3m is
-# visible to resets() across the extended look-back window. The float->histogram transition at
-# t=3m and histogram->float at t=4m show up as resets while the histogram is reachable; once it
-# falls out of the extended window the count returns to zero.
-#
-# The t=3m case (where the histogram sits exactly at rangeEnd) is covered in
-# ours-only/anchored.test because Prometheus's engine drops the series under that boundary
-# condition while MQE returns {} 0.
-eval instant at 4m resets(mixed[1m] anchored)
-  {} 2
-
-eval instant at 5m resets(mixed[1m] anchored)
-  {} 1
-
-# Whilst the histogram is within the range + look-back window the float<->histogram transition is
-# still counted.
-eval instant at 8m resets(mixed[1m] anchored)
-  {} 1
-
-eval instant at 10m resets(mixed[1m] anchored)
-  {} 0
-
-clear
+# Note: anchored resets()/changes() over series containing native histograms are covered in
+# testdata/ours-only/anchored.test (mirroring Prometheus PR #18906). Tests will be updated
+# once this PR is merged and vendored.
 
 load 1m
   metric 1 2 3 NaN -NaN 4 5 6

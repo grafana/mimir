@@ -180,7 +180,14 @@ func (m *RangeVectorSelector) NextStepSamples(ctx context.Context) (*types.Range
 		m.floats.CountBetween(rangeStart, rangeEnd) > 0 &&
 		m.histograms.CountBetween(rangeStart, rangeEnd) > 0
 
-	if m.Selector.Anchored || m.Selector.Smoothed {
+	if m.Selector.AnchoredResetsChanges {
+		// Anchored resets()/changes() select the anchor (the last sample at or before rangeStart) across both
+		// floats and histograms and count transitions through the in-range samples. They do not need synthetic
+		// float boundary values, so we leave the float buffer un-mutated and return the raw view spanning the
+		// extended look-back window (which retains the pre-rangeStart anchor candidates). The anchor selection
+		// itself happens in the resetsChanges step function.
+		m.stepData.Floats = m.floats.ViewUntilSearchingBackwards(originalRangeEnd, m.stepData.Floats)
+	} else if m.Selector.Anchored || m.Selector.Smoothed {
 		if m.floats.Count() > 0 && m.floats.PointAt(0).T > originalRangeEnd {
 			// This will be an empty set
 			m.stepData.Floats = m.floats.ViewUntilSearchingBackwards(originalRangeEnd, m.stepData.Floats)
@@ -200,11 +207,12 @@ func (m *RangeVectorSelector) NextStepSamples(ctx context.Context) (*types.Range
 	}
 
 	// For histograms we do not mutate the underlying ring buffer. The view spans the extended
-	// look-back/look-ahead window (up to the extended rangeEnd) so that the rate/increase/
-	// delta family can pick or interpolate boundary values from points outside the original
-	// range, mirroring Prometheus's extendedHistogramRate. Other histogram-aware functions
-	// (e.g. resets, changes) see the same wider window, matching upstream Prometheus's
-	// behaviour where the engine's range buffer is uniformly extended for the modifier.
+	// look-back/look-ahead window (up to the extended rangeEnd).
+	//
+	// For the rate/increase/delta family this lets them pick or interpolate boundary values from points
+	// outside the original range, mirroring Prometheus's extendedHistogramRate. For anchored resets()/changes()
+	// the same raw view supplies the histogram anchor candidates and in-range histograms, which the resetsChanges
+	// step function then anchors to match upstream Prometheus's pickFirstSampleIndices.
 	m.stepData.Histograms = m.histograms.ViewUntilSearchingBackwards(rangeEnd, m.stepData.Histograms)
 	m.stepData.RangeStart = originalRangeStart // important to return the original range start so that functions like rate() can determine the range duration regardless of smoothed / anchored
 	m.stepData.RangeEnd = originalRangeEnd
