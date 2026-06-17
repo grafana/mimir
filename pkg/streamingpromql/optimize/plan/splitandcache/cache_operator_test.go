@@ -460,7 +460,7 @@ func TestCacheOperator(t *testing.T) {
 				limits.oooWindow = 0
 			}
 
-			ctx := user.InjectUserID(context.Background(), "some-user")
+			ctx := user.InjectOrgID(context.Background(), "some-user")
 			memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 			cache := newTestCache()
 			materializer := &testMaterializer{
@@ -574,7 +574,7 @@ func TestCacheOperator(t *testing.T) {
 }
 
 func TestCacheOperator_DoesNotSaveCacheEntryIfSeriesMetadataNotCalled(t *testing.T) {
-	ctx := user.InjectUserID(context.Background(), "some-user")
+	ctx := user.InjectOrgID(context.Background(), "some-user")
 	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 	cache := newTestCache()
 	materializer := &testMaterializer{
@@ -600,7 +600,7 @@ func TestCacheOperator_DoesNotSaveCacheEntryIfSeriesMetadataNotCalled(t *testing
 }
 
 func TestCacheOperator_DoesNotSaveCacheEntryIfNotAllSeriesRead(t *testing.T) {
-	ctx := user.InjectUserID(context.Background(), "some-user")
+	ctx := user.InjectOrgID(context.Background(), "some-user")
 	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 	cache := newTestCache()
 	materializer := &testMaterializer{
@@ -634,7 +634,7 @@ func TestCacheOperator_DoesNotSaveCacheEntryIfNotAllSeriesRead(t *testing.T) {
 }
 
 func TestCacheOperator_DoesNotSaveCacheEntryIfFinishedReadingNotCalled(t *testing.T) {
-	ctx := user.InjectUserID(context.Background(), "some-user")
+	ctx := user.InjectOrgID(context.Background(), "some-user")
 	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 	cache := newTestCache()
 	materializer := &testMaterializer{
@@ -890,7 +890,7 @@ func (m *mockLimitsProvider) GetMaxCacheFreshness(ctx context.Context) (time.Dur
 func TestCacheOperator_CacheKey(t *testing.T) {
 	generateCacheKey := func(tenantID string, desiredTimeRange types.QueryTimeRange, node planning.Node, params *planning.QueryParameters) []byte {
 		o := newCacheOperator(nil, nil, node, desiredTimeRange, nil, posrange.PositionRange{}, params, nil, log.NewNopLogger(), cacheEntryInterval)
-		ctx := user.InjectUserID(context.Background(), tenantID)
+		ctx := user.InjectOrgID(context.Background(), tenantID)
 
 		key, err := o.computeCacheKey(ctx)
 		require.NoError(t, err)

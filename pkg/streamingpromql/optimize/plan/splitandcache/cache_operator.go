@@ -119,7 +119,7 @@ func newCacheOperator(
 }
 
 func (c *CacheOperator) computeCacheKey(ctx context.Context) ([]byte, error) {
-	tenantID, err := user.ExtractUserID(ctx)
+	orgID, err := user.ExtractOrgID(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -140,7 +140,7 @@ func (c *CacheOperator) computeCacheKey(ctx context.Context) ([]byte, error) {
 
 	key := bytes.Join(
 		[][]byte{
-			[]byte(tenantID),
+			[]byte(orgID),
 			[]byte(strconv.FormatInt(cacheEntryStartT, 10)),
 			[]byte(strconv.FormatInt(c.DesiredTimeRange.IntervalMilliseconds, 10)),
 			[]byte(strconv.FormatInt(offsetFromStepGrid, 10)),
