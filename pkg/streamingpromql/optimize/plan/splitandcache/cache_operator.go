@@ -65,6 +65,8 @@ type CacheOperator struct {
 	shouldWriteCacheEntry bool
 
 	// extentsForDesiredTimeRange contains all extents that contain data for the desired time range, in time order (earliest extents first).
+	// If there are any existing extents that are immediately adjacent to the desired time range, they are also included here so that they
+	// can be merged with the extents inside the desired time range, rather than fragmenting the cache entry.
 	extentsForDesiredTimeRange []extent
 
 	// cacheableRangeStartT and cacheableRangeEndT are the start and end timestamps of the cacheable range of the extents in extentsForDesiredTimeRange.
@@ -295,22 +297,18 @@ func (c *CacheOperator) calculateExtents(ctx context.Context, existingExtents []
 	c.cacheableRangeEndT = calculateLastStepAlignedPoint(c.DesiredTimeRange.StartT, min(maxFreshnessThreshold, stepAlignedEndT), c.DesiredTimeRange.IntervalMilliseconds)
 
 	for nextStartT <= stepAlignedEndT {
-		// Advance past any extents that finish before the desired time range.
 		if nextExistingExtentIdx < len(existingExtents) && existingExtents[nextExistingExtentIdx].StartT <= nextStartT {
-			inDesiredTimeRange := existingExtents[nextExistingExtentIdx].EndT >= nextStartT
 			extent := existingExtents[nextExistingExtentIdx]
+			inDesiredTimeRange := extent.EndT >= nextStartT
+			endsOneStepBeforeDesiredTimeRange := extent.EndT >= nextStartT-c.DesiredTimeRange.IntervalMilliseconds
+			willWriteCacheEntry := nextStartT < maxFreshnessThreshold
+			shouldMergeThisExtentWithExtentsInDesiredTimeRange := endsOneStepBeforeDesiredTimeRange && willWriteCacheEntry
 
-			if inDesiredTimeRange {
-				c.appendExtentInDesiredTimeRange(newCachedExtentReader(extent, c), extent.StartT)
+			if inDesiredTimeRange || shouldMergeThisExtentWithExtentsInDesiredTimeRange {
+				c.appendExtentInDesiredTimeRange(newCachedExtentReader(extent, c), extent.StartT, extent.EndT, maxFreshnessThreshold, true)
 
 				// Note that we don't have to align the extent's end time to the step, as it would have been aligned when the extent was written.
 				nextStartT = extent.EndT + c.DesiredTimeRange.IntervalMilliseconds
-
-				if extent.EndT > stepAlignedEndT {
-					// If this cached extent extends beyond the desired time range, then don't drop any samples between the end of the desired time range
-					// and the max freshness threshold.
-					c.cacheableRangeEndT = min(extent.EndT, maxFreshnessThreshold)
-				}
 			} else {
 				c.cacheableExtentsBeforeDesiredTimeRange = append(c.cacheableExtentsBeforeDesiredTimeRange, extent)
 			}
@@ -335,8 +333,8 @@ func (c *CacheOperator) calculateExtents(ctx context.Context, existingExtents []
 			return err
 		}
 
-		extent := newEvaluatedExtent(operator, c)
-		c.appendExtentInDesiredTimeRange(extent, extentStartT)
+		extent := newEvaluatedExtent(operator, c, extentStartT, extentEndT)
+		c.appendExtentInDesiredTimeRange(extent, extentStartT, extentEndT, maxFreshnessThreshold, false)
 
 		if extentStartT <= maxFreshnessThreshold {
 			// Only write a cache entry if the extent is cacheable (not entirely within the max freshness window).
@@ -344,6 +342,18 @@ func (c *CacheOperator) calculateExtents(ctx context.Context, existingExtents []
 		}
 
 		nextStartT = extentEndT + c.DesiredTimeRange.IntervalMilliseconds
+	}
+
+	// If there is an extent just after the desired time range, include that in extentsForDesiredTimeRange
+	// so that it is merged with the extents in the desired time range when we write the cache entry.
+	if len(existingExtents) > nextExistingExtentIdx && c.shouldWriteCacheEntry {
+		extent := existingExtents[nextExistingExtentIdx]
+		startsOneStepAfterDesiredTimeRange := extent.StartT <= c.DesiredTimeRange.EndT+c.DesiredTimeRange.IntervalMilliseconds
+
+		if startsOneStepAfterDesiredTimeRange {
+			c.appendExtentInDesiredTimeRange(newCachedExtentReader(extent, c), extent.StartT, extent.EndT, maxFreshnessThreshold, true)
+			nextExistingExtentIdx++
+		}
 	}
 
 	c.cacheableExtentsAfterDesiredTimeRange = existingExtents[nextExistingExtentIdx:]
@@ -378,9 +388,15 @@ func calculateLastStepAlignedPoint(start int64, end int64, step int64) int64 {
 
 // appendExtentInDesiredTimeRange appends an extent to the list of extents for the desired time range.
 // It must be called in time order (earliest extents first).
-func (c *CacheOperator) appendExtentInDesiredTimeRange(extent extent, startT int64) {
+func (c *CacheOperator) appendExtentInDesiredTimeRange(extent extent, startT int64, endT int64, maxFreshnessThreshold int64, isCachedExtent bool) {
 	if len(c.extentsForDesiredTimeRange) == 0 {
 		c.cacheableRangeStartT = startT
+	}
+
+	if isCachedExtent && endT > c.cacheableRangeEndT {
+		// If this cached extent extends beyond the desired time range, then don't drop any samples between the end of the desired time range
+		// and the max freshness threshold.
+		c.cacheableRangeEndT = min(endT, maxFreshnessThreshold)
 	}
 
 	c.extentsForDesiredTimeRange = append(c.extentsForDesiredTimeRange, extent)
@@ -681,16 +697,19 @@ func (c *CacheOperator) accumulateCacheableHistograms(data types.InstantVectorSe
 // It takes ownership of data.Floats, either returning it as desiredTimeRangeData.Floats or returning it to a pool.
 func (c *CacheOperator) accumulateDesiredFloats(data types.InstantVectorSeriesData, desiredTimeRangeData *types.InstantVectorSeriesData) error {
 	if len(data.Floats) == 0 {
+		types.FPointSlicePool.Put(&data.Floats, c.MemoryConsumptionTracker)
 		return nil
 	}
 
 	firstDesiredIndex := c.indexOfFirstFPointAtOrAfter(data.Floats, c.DesiredTimeRange.StartT)
 	if firstDesiredIndex == -1 {
+		types.FPointSlicePool.Put(&data.Floats, c.MemoryConsumptionTracker)
 		return nil
 	}
 
 	lastDesiredIndex := c.indexOfLastFPointAtOrBefore(data.Floats, c.DesiredTimeRange.EndT)
 	if lastDesiredIndex < firstDesiredIndex {
+		types.FPointSlicePool.Put(&data.Floats, c.MemoryConsumptionTracker)
 		return nil
 	}
 
@@ -720,16 +739,19 @@ func (c *CacheOperator) accumulateDesiredFloats(data types.InstantVectorSeriesDa
 // It takes ownership of data.Histograms, either returning it as desiredTimeRangeData.Histograms or returning it to a pool.
 func (c *CacheOperator) accumulateDesiredHistograms(data types.InstantVectorSeriesData, desiredTimeRangeData *types.InstantVectorSeriesData) error {
 	if len(data.Histograms) == 0 {
+		types.HPointSlicePool.Put(&data.Histograms, c.MemoryConsumptionTracker)
 		return nil
 	}
 
 	firstDesiredIndex := c.indexOfFirstHPointAtOrAfter(data.Histograms, c.DesiredTimeRange.StartT)
 	if firstDesiredIndex == -1 {
+		types.HPointSlicePool.Put(&data.Histograms, c.MemoryConsumptionTracker)
 		return nil
 	}
 
 	lastDesiredIndex := c.indexOfLastHPointAtOrBefore(data.Histograms, c.DesiredTimeRange.EndT)
 	if lastDesiredIndex < firstDesiredIndex {
+		types.HPointSlicePool.Put(&data.Histograms, c.MemoryConsumptionTracker)
 		return nil
 	}
 
@@ -820,15 +842,22 @@ func (c *CacheOperator) finalizeExtents(ctx context.Context) (desiredTimeRangeSt
 			return nil, nil, nil, err
 		}
 
-		if desiredTimeRangeStats == nil {
-			desiredTimeRangeStats, err = types.NewOperatorEvaluationStats(ctx, c.DesiredTimeRange, c.MemoryConsumptionTracker, extentStats.GetSubsetCount())
-			if err != nil {
+		if extent.GetEndT() >= c.DesiredTimeRange.StartT && extent.GetStartT() <= c.DesiredTimeRange.EndT {
+			// Only try to add the extent to the desired time range stats if it overlaps with the desired time range.
+			// We might have an extent that starts or ends one step either side of the desired time range, and we want to merge them into
+			// a single extent with the extents inside the desired time range, but they don't contribute to the stats
+			// (and AddSubRange below will return an error if they don't overlap with the desired time range).
+
+			if desiredTimeRangeStats == nil {
+				desiredTimeRangeStats, err = types.NewOperatorEvaluationStats(ctx, c.DesiredTimeRange, c.MemoryConsumptionTracker, extentStats.GetSubsetCount())
+				if err != nil {
+					return nil, nil, nil, err
+				}
+			}
+
+			if err := desiredTimeRangeStats.AddSubRange(extentStats); err != nil {
 				return nil, nil, nil, err
 			}
-		}
-
-		if err := desiredTimeRangeStats.AddSubRange(extentStats); err != nil {
-			return nil, nil, nil, err
 		}
 
 		if c.shouldWriteCacheEntry {
@@ -984,6 +1013,9 @@ func (c *CacheOperator) Close() {
 }
 
 type extent interface {
+	GetStartT() int64
+	GetEndT() int64
+
 	Prepare(ctx context.Context, params *types.PrepareParams) error
 	AfterPrepare(ctx context.Context) error
 	FinishedReading(ctx context.Context) error
@@ -1010,6 +1042,14 @@ type cachedExtentReader struct {
 
 func newCachedExtentReader(extent CachedExtent, parent *CacheOperator) *cachedExtentReader {
 	return &cachedExtentReader{extent: extent, parent: parent}
+}
+
+func (c *cachedExtentReader) GetStartT() int64 {
+	return c.extent.StartT
+}
+
+func (c *cachedExtentReader) GetEndT() int64 {
+	return c.extent.EndT
 }
 
 func (c *cachedExtentReader) Prepare(_ context.Context, _ *types.PrepareParams) error {
@@ -1101,13 +1141,25 @@ type evaluatedExtent struct {
 	inner  types.InstantVectorOperator
 	parent *CacheOperator
 	buffer *operators.InstantVectorOperatorBuffer
+	startT int64
+	endT   int64
 }
 
-func newEvaluatedExtent(inner types.InstantVectorOperator, parent *CacheOperator) *evaluatedExtent {
+func newEvaluatedExtent(inner types.InstantVectorOperator, parent *CacheOperator, startT int64, endT int64) *evaluatedExtent {
 	return &evaluatedExtent{
 		inner:  inner,
 		parent: parent,
+		startT: startT,
+		endT:   endT,
 	}
+}
+
+func (e *evaluatedExtent) GetStartT() int64 {
+	return e.startT
+}
+
+func (e *evaluatedExtent) GetEndT() int64 {
+	return e.endT
 }
 
 func (e *evaluatedExtent) Prepare(ctx context.Context, params *types.PrepareParams) error {

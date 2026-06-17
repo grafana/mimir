@@ -318,6 +318,26 @@ func TestCacheOperator(t *testing.T) {
 			expectedAnyCachedExtentsRetained: true,
 		},
 
+		"cache hit, but extents are just before and just after the desired time range": {
+			existingCacheEntry: &CacheEntry{
+				Extents: []CachedExtent{
+					extentFor(types.NewRangeQueryTimeRange(desiredStart.Add(-5*step), desiredStart.Add(-step), step), withinTTL, existingTraceID),
+					extentFor(types.NewRangeQueryTimeRange(desiredEnd.Add(step), desiredEnd.Add(5*step), step), withinTTL, existingTraceID),
+				},
+			},
+
+			expectedFreshlyEvaluatedRanges: []types.QueryTimeRange{defaultTimeRange},
+			expectedWrittenCacheEntry: &CacheEntry{
+				Extents: []CachedExtent{
+					// Even though the extents don't overlap the desired time range, we still expect them to be merged into a single extent,
+					// to avoid fragmentation of extents.
+					extentFor(types.NewRangeQueryTimeRange(desiredStart.Add(-5*step), desiredEnd.Add(5*step), step), withinTTL, newTraceID),
+				},
+			},
+			expectedAnnotationTimeRange:      types.NewRangeQueryTimeRange(desiredStart.Add(-5*step), desiredEnd.Add(5*step), step),
+			expectedAnyCachedExtentsRetained: true,
+		},
+
 		"cache miss, evaluated range overlaps max freshness window": {
 			timeRange:          types.NewRangeQueryTimeRange(timeNow.Add(-10*time.Minute), timeNow, step),
 			existingCacheEntry: nil,
@@ -355,7 +375,7 @@ func TestCacheOperator(t *testing.T) {
 			existingCacheEntry: &CacheEntry{
 				Extents: []CachedExtent{
 					extentFor(types.NewRangeQueryTimeRange(desiredStart.Add(-10*time.Minute), desiredStart.Add(-5*time.Minute), step), beforeTTLThreshold, existingTraceID),
-					extentFor(types.NewRangeQueryTimeRange(desiredStart.Add(-3*time.Minute), desiredStart.Add(-1*time.Minute), step), withinTTL, existingTraceID),
+					extentFor(types.NewRangeQueryTimeRange(desiredStart.Add(-3*time.Minute), desiredStart.Add(-2*time.Minute), step), withinTTL, existingTraceID),
 					extentFor(types.NewRangeQueryTimeRange(desiredStart.Add(time.Minute), desiredStart.Add(5*time.Minute), step), beforeTTLThreshold, existingTraceID),
 					extentFor(types.NewRangeQueryTimeRange(desiredStart.Add(6*time.Minute), desiredStart.Add(8*time.Minute), step), withinTTL, existingTraceID),
 					extentFor(types.NewRangeQueryTimeRange(desiredEnd.Add(2*time.Minute), desiredEnd.Add(4*time.Minute), step), beforeTTLThreshold, existingTraceID),
@@ -369,7 +389,7 @@ func TestCacheOperator(t *testing.T) {
 			},
 			expectedWrittenCacheEntry: &CacheEntry{
 				Extents: []CachedExtent{
-					extentFor(types.NewRangeQueryTimeRange(desiredStart.Add(-3*time.Minute), desiredStart.Add(-1*time.Minute), step), withinTTL, existingTraceID),
+					extentFor(types.NewRangeQueryTimeRange(desiredStart.Add(-3*time.Minute), desiredStart.Add(-2*time.Minute), step), withinTTL, existingTraceID),
 					extentFor(defaultTimeRange, withinTTL, newTraceID), // This should contain data from the T=6m to T=8m cached entry, plus the freshly evaluated extents either side.
 					extentFor(types.NewRangeQueryTimeRange(desiredEnd.Add(6*time.Minute), desiredEnd.Add(8*time.Minute), step), withinTTL, existingTraceID),
 				},
