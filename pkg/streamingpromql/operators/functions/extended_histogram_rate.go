@@ -225,22 +225,26 @@ func extendedHistogramRate(hExtended []promql.HPoint, originalRangeStart, origin
 		emitAnnotation(annotations.NewNativeHistogramNotGaugeWarning)
 	}
 
-	// Copy right before subtracting left so that correctForCounterResetsHistogram can still
-	// call right.DetectReset against the original boundary value rather than (right - left).
-	delta := right.Copy()
-	if ok, err := subHistogramWithAnnotations(delta, left, emitAnnotation); !ok {
-		return nil, err
-	}
-
+	// Accumulate the counter-reset correction before subtracting left from right, because it
+	// needs right.DetectReset against the original boundary value rather than (right - left).
+	// Doing it first lets us subtract into right in place (it is always a freshly-owned copy
+	// from pickOrInterpolateRightHistogram) and avoid an extra Copy.
+	var correction *histogram.FloatHistogram
 	if isCounter {
-		correction, ok, err := correctForCounterResetsHistogram(hExtended, firstSampleIndex, lastSampleIndex, left, right, originalRangeStart, smoothed, emitAnnotation)
+		var ok bool
+		correction, ok, err = correctForCounterResetsHistogram(hExtended, firstSampleIndex, lastSampleIndex, left, right, originalRangeStart, smoothed, emitAnnotation)
 		if !ok {
 			return nil, err
 		}
-		if correction != nil {
-			if ok, err := addHistogramWithAnnotations(delta, correction, emitAnnotation); !ok {
-				return nil, err
-			}
+	}
+
+	delta := right
+	if ok, err := subHistogramWithAnnotations(delta, left, emitAnnotation); !ok {
+		return nil, err
+	}
+	if correction != nil {
+		if ok, err := addHistogramWithAnnotations(delta, correction, emitAnnotation); !ok {
+			return nil, err
 		}
 	}
 
