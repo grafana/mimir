@@ -120,7 +120,7 @@ func (cfg *SchedulerClientConfig) RegisterFlags(f *flag.FlagSet) {
 	f.DurationVar(&cfg.UpdateMaxBackoff, flagPrefix+"update-max-backoff", 32*time.Second, "Maximum backoff time for compaction executor retries when sending scheduler status updates.")
 	f.DurationVar(&cfg.CompactionDirCleanupInterval, flagPrefix+"compaction-dir-cleanup-interval", 30*time.Minute, "Defines how frequently to clean up the compaction working directory. The directory is cleaned on startup and then only when this interval has elapsed since the last cleanup. Set to 0 to disable periodic cleanup.")
 	f.DurationVar(&cfg.TerminatingFinalStatusTimeout, flagPrefix+"terminating-final-status-timeout", 30*time.Second, "Timeout for sending a final job status update to the scheduler when the parent context is canceled (e.g. during shutdown).")
-	f.Var(&cfg.Lanes, flagPrefix+"lanes", "Lanes of work this worker will lease, in priority order. Each entry is a '+'-separated list of job types (compact, plan). Multiple entries are comma-separated, each running in its own goroutine. Example: compact+plan,plan")
+	f.Var(&cfg.Lanes, flagPrefix+"lanes", "Lanes to request for each worker goroutine. Each entry is a '+'-separated list of job types in priority order.")
 	cfg.GRPCClientConfig.RegisterFlagsWithPrefix(flagPrefix+"grpc-client-config", f)
 	cfg.MetadataCacheConfig.RegisterFlagsWithPrefix(f, flagPrefix+"metadata-cache.")
 }
@@ -280,17 +280,14 @@ func (e *schedulerExecutor) run(ctx context.Context, c *MultitenantCompactor) er
 	ctx, cancel := context.WithCancelCause(ctx)
 	defer cancel(nil)
 
-	// subErr is written only by the watcher goroutine below; wg.Wait establishes the happens-before
-	// for reading it. A plain shutdown leaves it nil, matching the previous single-loop behavior.
-	var subErr error
-
+	var subserviceErr error
 	var wg sync.WaitGroup
 	wg.Go(func() {
 		select {
 		case <-ctx.Done():
 		case err := <-c.ringSubservicesWatcher.Chan():
-			subErr = fmt.Errorf("compactor subservice failed: %w", err)
-			cancel(subErr)
+			subserviceErr = fmt.Errorf("compactor subservice failed: %w", err)
+			cancel(subserviceErr)
 		}
 	})
 
@@ -313,7 +310,7 @@ func (e *schedulerExecutor) run(ctx context.Context, c *MultitenantCompactor) er
 	}
 
 	wg.Wait()
-	return subErr
+	return subserviceErr
 }
 
 func (e *schedulerExecutor) runWorker(ctx context.Context, c *MultitenantCompactor, compactDir string, cleanup bool, req *compactorschedulerpb.LeaseJobRequest) {

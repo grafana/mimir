@@ -53,17 +53,15 @@ type Rotator struct {
 	laneRotations  map[lane]*laneRotation
 }
 
-// laneRotation is the rotation of tenants with pending work in one lane. cursor points to the next
-// element in rotation and is nil iff the rotation is empty.
+// rotation of tenants with pending work in a lane
 type laneRotation struct {
 	rotation *list.List
-	cursor   atomic.Pointer[list.Element]
+	cursor   atomic.Pointer[list.Element] // points to next element (tenant) in the rotation; nil iff rotation is empty
 }
 
 type tenantRotationState struct {
-	tracker *JobTracker
-	// elements holds the tenant's slot in each lane's rotation where the tenant has pending work (or had and is awaiting removal)
-	elements map[lane]*list.Element
+	tracker  *JobTracker
+	elements map[lane]*list.Element // tenant's slot in each lane's rotation (if they are present in that lane)
 }
 
 func NewRotator(leaseDuration, planningInterval, compactionWaitPeriod, maintenanceInterval time.Duration, intervalsBeforeLeaseExpiration, intervalsBeforeColdStartPlanning int, lanePolicy lanePolicy, pendingJobsLastEmpty prometheus.Gauge, logger log.Logger) *Rotator {

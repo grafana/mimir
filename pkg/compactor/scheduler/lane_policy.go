@@ -10,7 +10,7 @@ import (
 	"github.com/grafana/mimir/pkg/compactor/scheduler/compactorschedulerpb"
 )
 
-// lane is an in-memory identifier of pending work logically enqueued together.
+// lane is an in-memory identifier of pending work logically enqueued together
 type lane uint8
 
 const (
@@ -27,9 +27,9 @@ type laneTransition struct {
 
 // Defines how to map jobs and requests into lanes
 type lanePolicy interface {
-	AllLanes() []lane                                                      // All possible lanes defined by this policy
+	AllLanes() []lane                                                      // All possible lanes defined by this policy.
 	LaneForJob(TrackedJob) lane                                            // The lane this job is assigned to. A job must always map to some lane.
-	LanesForRequest(*compactorschedulerpb.LeaseJobRequest) ([]lane, error) // The lanes this worker requested, or an error
+	LanesForRequest(*compactorschedulerpb.LeaseJobRequest) ([]lane, error) // The lanes this worker requested, or an error.
 }
 
 type LanePolicyConfig struct {
@@ -71,7 +71,7 @@ func (slp *simpleLanePolicy) AllLanes() []lane {
 	return slp.allLanes
 }
 
-// requestedLanes maps a worker-requested lane to the internal lanes it should be served from, in priority order.
+// requestedLanes maps a lease request to scheduler lanes
 func (slp *simpleLanePolicy) LanesForRequest(req *compactorschedulerpb.LeaseJobRequest) ([]lane, error) {
 	numLanes := len(req.LaneRequests)
 	if numLanes == 0 {
