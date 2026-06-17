@@ -65,8 +65,8 @@ func TestReplaceWriteCompartment(t *testing.T) {
 }
 
 func TestReadCompartmentRingKeyAndName(t *testing.T) {
-	assert.Equal(t, "rc-0-ingester-partitions", ReadCompartmentRingKey(0, "ingester-partitions"))
-	assert.Equal(t, "rc-3-ingester-partitions", ReadCompartmentRingKey(3, "ingester-partitions"))
-	assert.Equal(t, "rc-0-partition-ring", ReadCompartmentRingName(0, "partition-ring"))
-	assert.Equal(t, "rc-2-partition-ring", ReadCompartmentRingName(2, "partition-ring"))
+	assert.Equal(t, "ingester-partitions-rc-0", ReadCompartmentRingKey(0, "ingester-partitions"))
+	assert.Equal(t, "ingester-partitions-rc-3", ReadCompartmentRingKey(3, "ingester-partitions"))
+	assert.Equal(t, "partition-ring-rc-0", ReadCompartmentRingName(0, "partition-ring"))
+	assert.Equal(t, "partition-ring-rc-2", ReadCompartmentRingName(2, "partition-ring"))
 }
