@@ -317,7 +317,6 @@ func (c *Config) Validate(log log.Logger) error {
 		if c.Compartments.Write.NumCompartments > 1 && c.BlocksStorage.TSDB.OffsetCatalogue.Enabled {
 			return errors.New("the offset catalogue (-blocks-storage.tsdb.offset-catalogue.enabled) cannot be enabled together with more than one write compartment")
 		}
-		// The distributor's write compartment ID is validated in Distributor.Config.Validate.
 	}
 	if c.isIngesterEnabled() {
 		if !c.IngestStorage.Enabled && !c.Ingester.PushGrpcMethodEnabled {
