@@ -810,3 +810,20 @@ load 10s
 
 eval instant at 100s rate(mixed[1m] smoothed)
   expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "mixed"
+
+# Range-query variant of the look-ahead mixed-window check. A stepped smoothed range query reuses
+# the range vector ring buffer across steps, so this exercises the fillBuffer guard's "skip re-fill"
+# path that a single instant query never reaches. Floats sit at t=0m..9m and a single histogram at
+# t=10m. From t=5m onwards the smoothed look-ahead window (rangeEnd, rangeEnd+5m] reaches the t=10m
+# histogram, so those steps are a mixed float/histogram window and must be dropped with
+# MixedFloatsHistogramsWarning - matching Prometheus, which scans the full extended matrix. If the
+# look-ahead were only filled to the first sample past rangeEnd, MQE would miss the t=10m histogram
+# on the reused buffer and emit spurious rate values for t>=5m.
+clear
+load 1m
+  ramp 0 1 2 3 4 5 6 7 8 9 {{schema:0 count:1 sum:1}}
+
+eval range from 1m to 12m step 1m rate(ramp[2m] smoothed)
+  expect info msg: PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "ramp"
+  expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "ramp"
+  {} 0.008333333333333333 0.016666666666666666 0.016666666666666666 0.016666666666666666 _ _ _ _ _ _ _ _

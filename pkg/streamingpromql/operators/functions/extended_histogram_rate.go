@@ -185,6 +185,11 @@ func extendedHistogramRate(hExtended []promql.HPoint, originalRangeStart, origin
 		firstSampleIndex = 0
 	}
 	if smoothed {
+		// Smoothed extends the look-ahead by the full LookbackDelta (see rangeEnd adjustment in
+		// range_vector_selector.go), so hExtended commonly holds several samples past
+		// originalRangeEnd. lastSampleIndex is set to the first sample at or after originalRangeEnd
+		// (the right boundary neighbour used to interpolate at originalRangeEnd); a binary search
+		// keeps this O(log n), matching upstream Prometheus's extendedHistogramRate.
 		lastSampleIndex = sort.Search(lastSampleIndex, func(i int) bool { return hExtended[i].T >= originalRangeEnd })
 	} else if hExtended[lastSampleIndex].T > originalRangeEnd {
 		// fillBuffer always appends the first sample >= rangeEnd as the right-neighbour anchor,
