@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/grafana/dskit/kv/consul"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/test"
 	"github.com/grafana/dskit/user"
@@ -21,6 +22,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/compartments"
+	"github.com/grafana/mimir/pkg/ingester"
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
@@ -209,6 +211,81 @@ func TestDistributor_getIngesterReplicationSetsForQuery_Compartments(t *testing.
 		cortex_querier_compartments_hit_per_query_count{storage="ingester"} 3
 	`
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), "cortex_querier_compartments_hit_per_query"))
+}
+
+// TestDistributor_getIngesterReplicationSetsForQuery_CompartmentsQueryIngestersWithin verifies that,
+// with read compartments enabled, the query-ingesters-within bound is applied per compartment: a
+// partition inactive for longer than query-ingesters-within is dropped from its compartment's shard,
+// even though it is still within the (longer) ingesters lookback period.
+func TestDistributor_getIngesterReplicationSetsForQuery_CompartmentsQueryIngestersWithin(t *testing.T) {
+	const (
+		tenantID             = "user"
+		lookbackPeriod       = 12 * time.Hour
+		queryIngestersWithin = 2 * time.Hour
+	)
+
+	ctx := user.InjectOrgID(context.Background(), tenantID)
+
+	limits := prepareDefaultLimits()
+	limits.QueryIngestersWithin = model.Duration(queryIngestersWithin)
+
+	distributors, _, _, _ := prepare(t, prepConfig{
+		numDistributors:         1,
+		ingestStorageEnabled:    true,
+		ingestStoragePartitions: 2,
+		ingesterStateByZone: map[string]ingesterZoneState{
+			"zone-a": {states: []ingesterState{ingesterStateHappy, ingesterStateHappy}},
+		},
+		ingesterDataTenantID:        tenantID,
+		replicationFactor:           1,
+		numCompartments:             1,
+		compartmentActivePartitions: map[int][]int32{0: {0, 1}},
+		limits:                      limits,
+		configure: func(cfg *Config) {
+			cfg.Compartments.Enabled = true
+			cfg.Compartments.Read.NumCompartments = 1
+			cfg.IngestStorageConfig.KafkaConfig.Topic = compartmentsTestTopicFormat
+			cfg.IngestersLookbackPeriod = lookbackPeriod
+		},
+	})
+	require.Len(t, distributors, 1)
+	d := distributors[0]
+
+	// Wait for compartment 0's partition ring to discover both partitions.
+	test.Poll(t, 5*time.Second, 2, func() interface{} {
+		return d.partitionInstanceRings.Get(0).PartitionRing().PartitionsCount()
+	})
+
+	// Switch partition 1 to Inactive since longer ago than query-ingesters-within, but within the
+	// ingesters lookback period.
+	partitionsStore := d.cfg.DistributorRing.Common.KVStore.Mock.(*consul.Client).WithCodec(ring.GetPartitionRingCodec())
+	key := compartments.WithReadCompartmentSuffix(ingester.PartitionRingKey, 0)
+	now := time.Now()
+	require.NoError(t, partitionsStore.CAS(ctx, key, func(in interface{}) (interface{}, bool, error) {
+		desc := ring.GetOrCreatePartitionRingDesc(in)
+		if _, err := desc.UpdatePartitionState(1, ring.PartitionInactive, now.Add(-6*time.Hour)); err != nil {
+			return nil, false, err
+		}
+		return desc, true, nil
+	}))
+
+	// Wait for the watcher to see partition 1 leave the active set.
+	test.Poll(t, 5*time.Second, 1, func() interface{} {
+		return d.partitionInstanceRings.Get(0).PartitionRing().ActivePartitionsCount()
+	})
+
+	replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx, nil)
+	require.NoError(t, err)
+
+	var partitionIDs []int
+	for _, rs := range replicationSets {
+		require.NotEmpty(t, rs.Instances)
+		partitionID, err := ingest.IngesterPartitionID(rs.Instances[0].Addr)
+		require.NoError(t, err)
+		partitionIDs = append(partitionIDs, int(partitionID))
+	}
+	sort.Ints(partitionIDs)
+	assert.Equal(t, []int{0}, partitionIDs, "partition 1 must be excluded because it is inactive longer than query-ingesters-within")
 }
 
 // TestDistributor_QueryExemplars_Compartments verifies that the exemplars API, which accepts multiple
