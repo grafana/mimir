@@ -5,6 +5,7 @@ package functions
 import (
 	"context"
 	"errors"
+	"math"
 	"testing"
 
 	"github.com/prometheus/prometheus/model/histogram"
@@ -16,34 +17,17 @@ import (
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
-// TestReturnJoinedHistogramPoints_DoesNotMangleAliasedHistograms verifies that returning a
-// joined-and-pooled HPoint slice to the pool does not corrupt the *histogram.FloatHistogram
-// instances it aliases from the range vector's ring buffer. With slice mangling enabled (as in
-// engine tests), the pool's mangle hook would otherwise mutate those shared instances in place.
-func TestReturnJoinedHistogramPoints_DoesNotMangleAliasedHistograms(t *testing.T) {
-	prev := types.EnableManglingReturnedSlices
-	types.EnableManglingReturnedSlices = true
-	t.Cleanup(func() { types.EnableManglingReturnedSlices = prev })
-
+// newHistogramView builds an HPointRingBufferView containing points, which must be in ascending
+// timestamp order. It is used to exercise the view-based helpers in this file.
+func newHistogramView(t *testing.T, points []promql.HPoint) *types.HPointRingBufferView {
+	t.Helper()
 	tracker := limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, "")
-
-	h1 := &histogram.FloatHistogram{Count: 5, Sum: 50}
-	h2 := &histogram.FloatHistogram{Count: 6, Sum: 60}
-	// A non-empty tail forces joinHistogramPoints to take a pooled slice (the case that gets
-	// returned to the pool); its points still alias h1 and h2.
-	head := []promql.HPoint{{T: 0, H: h1}}
-	tail := []promql.HPoint{{T: 1, H: h2}}
-
-	joined, pooled, err := joinHistogramPoints(head, tail, tracker)
-	require.NoError(t, err)
-	require.True(t, pooled)
-
-	returnJoinedHistogramPoints(joined, pooled, tracker)
-
-	require.Equal(t, float64(5), h1.Count, "aliased histogram must not be mangled after Put")
-	require.Equal(t, float64(50), h1.Sum, "aliased histogram must not be mangled after Put")
-	require.Equal(t, float64(6), h2.Count, "aliased histogram must not be mangled after Put")
-	require.Equal(t, float64(60), h2.Sum, "aliased histogram must not be mangled after Put")
+	buf := types.NewHPointRingBuffer(tracker)
+	for _, p := range points {
+		_, err := buf.Append(p)
+		require.NoError(t, err)
+	}
+	return buf.ViewUntilSearchingForwards(math.MaxInt64, nil)
 }
 
 // recordingEmitter returns an EmitAnnotationFunc that records the rendered message of every
@@ -230,30 +214,30 @@ func TestSubHistogramWithAnnotations(t *testing.T) {
 func TestValidateHistogramRange(t *testing.T) {
 	t.Run("uniform exponential schemas are valid", func(t *testing.T) {
 		emit, msgs := recordingEmitter()
-		h := []promql.HPoint{
+		view := newHistogramView(t, []promql.HPoint{
 			{T: 0, H: expHist(10, 100, histogram.UnknownCounterReset)},
 			{T: 10, H: expHist(20, 200, histogram.UnknownCounterReset)},
-		}
-		require.True(t, validateHistogramRange(h, true, emit))
+		})
+		require.True(t, validateHistogramRange(view, 0, view.Count()-1, true, emit))
 		require.Empty(t, *msgs)
 	})
 
 	t.Run("mixing exponential and custom buckets is invalid and warns", func(t *testing.T) {
 		emit, msgs := recordingEmitter()
-		h := []promql.HPoint{
+		view := newHistogramView(t, []promql.HPoint{
 			{T: 0, H: expHist(10, 100, histogram.UnknownCounterReset)},
 			{T: 10, H: customHist(20, 200, histogram.UnknownCounterReset)},
-		}
-		require.False(t, validateHistogramRange(h, true, emit))
+		})
+		require.False(t, validateHistogramRange(view, 0, view.Count()-1, true, emit))
 		requireSingleAnnotation(t, msgs, mixedExpCustomWarning)
 	})
 
 	t.Run("a gauge sample under a counter function warns but remains valid", func(t *testing.T) {
 		emit, msgs := recordingEmitter()
-		h := []promql.HPoint{
+		view := newHistogramView(t, []promql.HPoint{
 			{T: 0, H: expHist(10, 100, histogram.GaugeType)},
-		}
-		require.True(t, validateHistogramRange(h, true, emit))
+		})
+		require.True(t, validateHistogramRange(view, 0, view.Count()-1, true, emit))
 		requireSingleAnnotation(t, msgs, "this native histogram metric is not a counter")
 	})
 }
@@ -346,10 +330,11 @@ func TestCorrectForCounterResetsHistogram(t *testing.T) {
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
 			emit, msgs := recordingEmitter()
-			left := tc.h[tc.firstSampleIndex].H
-			right := tc.h[tc.lastSampleIndex].H
+			view := newHistogramView(t, tc.h)
+			left := view.PointAt(tc.firstSampleIndex).H
+			right := view.PointAt(tc.lastSampleIndex).H
 
-			correction, ok, err := correctForCounterResetsHistogram(tc.h, tc.firstSampleIndex, tc.lastSampleIndex, left, right, tc.rangeStart, tc.smoothed, emit)
+			correction, ok, err := correctForCounterResetsHistogram(view, tc.firstSampleIndex, tc.lastSampleIndex, left, right, tc.rangeStart, tc.smoothed, emit)
 			require.True(t, ok)
 			require.NoError(t, err)
 
@@ -367,26 +352,26 @@ func TestExtendedHistogramRate(t *testing.T) {
 	emit, _ := recordingEmitter()
 
 	t.Run("empty input returns no result", func(t *testing.T) {
-		got, err := extendedHistogramRate(nil, 0, 10, 0.01, true, true, false, emit)
+		got, err := extendedHistogramRate(newHistogramView(t, nil), 0, 10, 0.01, true, true, false, emit)
 		require.NoError(t, err)
 		require.Nil(t, got)
 	})
 
 	t.Run("a window with no sample after rangeStart returns no result", func(t *testing.T) {
-		h := []promql.HPoint{{T: 0, H: expHist(10, 100, histogram.UnknownCounterReset)}}
+		view := newHistogramView(t, []promql.HPoint{{T: 0, H: expHist(10, 100, histogram.UnknownCounterReset)}})
 		// originalRangeStart=5 is at/after the only sample's timestamp.
-		got, err := extendedHistogramRate(h, 5, 15, 0.01, true, true, false, emit)
+		got, err := extendedHistogramRate(view, 5, 15, 0.01, true, true, false, emit)
 		require.NoError(t, err)
 		require.Nil(t, got)
 	})
 
 	t.Run("anchored increase subtracts the boundary values", func(t *testing.T) {
-		h := []promql.HPoint{
+		view := newHistogramView(t, []promql.HPoint{
 			{T: 0, H: expHist(10, 100, histogram.UnknownCounterReset)},
 			{T: 10, H: expHist(30, 300, histogram.UnknownCounterReset)},
-		}
+		})
 		// increase over [0,10]: right(30) - left(10) = 20, no resets, isRate=false.
-		got, err := extendedHistogramRate(h, 0, 10, 0.01, true, false, false, emit)
+		got, err := extendedHistogramRate(view, 0, 10, 0.01, true, false, false, emit)
 		require.NoError(t, err)
 		requireHistogramCountSum(t, got, 20, 200)
 		require.Equal(t, histogram.GaugeType, got.CounterResetHint)

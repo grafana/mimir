@@ -39,7 +39,7 @@ var Delta = FunctionOverRangeVectorDefinition{
 
 // isRate is true for `rate` function, or false for `instant` function
 func rate(isRate bool) RangeVectorStepFunction {
-	return func(step *types.RangeVectorStepData, _ []types.ScalarData, _ types.QueryTimeRange, emitAnnotation types.EmitAnnotationFunc, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
+	return func(step *types.RangeVectorStepData, _ []types.ScalarData, _ types.QueryTimeRange, emitAnnotation types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
 		fHead, fTail := step.Floats.UnsafePoints()
 		fCount := len(fHead) + len(fTail)
 
@@ -66,7 +66,7 @@ func rate(isRate bool) RangeVectorStepFunction {
 		}
 
 		if hCount >= minHistogramPoints(smoothedOrAnchored) {
-			val, err := histogramRate(isRate, hCount, hHead, hTail, step.RangeStart, step.RangeEnd, rangeSeconds, step.Smoothed, step.Anchored, emitAnnotation, memoryConsumptionTracker)
+			val, err := histogramRate(isRate, hCount, step.Histograms, step.RangeStart, step.RangeEnd, rangeSeconds, step.Smoothed, step.Anchored, emitAnnotation)
 			if err != nil {
 				err = NativeHistogramErrorToAnnotation(err, emitAnnotation)
 				return 0, false, nil, err
@@ -89,62 +89,20 @@ func minHistogramPoints(smoothedOrAnchored bool) int {
 	return 2
 }
 
-// joinHistogramPoints concatenates the head and tail slices returned by UnsafePoints into a
-// single slice. When tail is empty the result aliases head and pooled is false. When tail is
-// non-empty a slice is taken from HPointSlicePool, populated, and returned with pooled=true so
-// the caller can return it to the pool when finished.
-func joinHistogramPoints(head, tail []promql.HPoint, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (joined []promql.HPoint, pooled bool, err error) {
-	if len(tail) == 0 {
-		return head, false, nil
-	}
-	joined, err = types.HPointSlicePool.Get(len(head)+len(tail), memoryConsumptionTracker)
-	if err != nil {
-		return nil, false, err
-	}
-	joined = append(joined, head...)
-	joined = append(joined, tail...)
-	return joined, true, nil
-}
-
-// returnJoinedHistogramPoints returns a slice obtained from joinHistogramPoints to the pool when
-// it was pooled. The slice's points alias *histogram.FloatHistogram instances owned by the
-// range vector's ring buffer, so the histogram references are cleared before the slice is put
-// back: HPointSlicePool's mangle hook (enabled in tests) would otherwise mutate those shared
-// instances in place and corrupt the ring buffer. The backing array is still recycled.
-func returnJoinedHistogramPoints(joined []promql.HPoint, pooled bool, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
-	if !pooled {
-		return
-	}
-	for i := range joined {
-		joined[i].H = nil
-	}
-	types.HPointSlicePool.Put(&joined, memoryConsumptionTracker)
-}
-
-func histogramRate(isRate bool, hCount int, hHead []promql.HPoint, hTail []promql.HPoint, rangeStart int64, rangeEnd int64, rangeSeconds float64, smoothed, anchored bool, emitAnnotation types.EmitAnnotationFunc, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (*histogram.FloatHistogram, error) {
+func histogramRate(isRate bool, hCount int, hView *types.HPointRingBufferView, rangeStart int64, rangeEnd int64, rangeSeconds float64, smoothed, anchored bool, emitAnnotation types.EmitAnnotationFunc) (*histogram.FloatHistogram, error) {
 	if smoothed || anchored {
-		return extendedHistogramRateFromPoints(hHead, hTail, rangeStart, rangeEnd, rangeSeconds, true, isRate, smoothed, emitAnnotation, memoryConsumptionTracker)
+		// extendedHistogramRate reads the extended window directly through the ring buffer view's
+		// random access, so there is no need to materialise a joined slice.
+		return extendedHistogramRate(hView, rangeStart, rangeEnd, rangeSeconds, true, isRate, smoothed, emitAnnotation)
 	}
 
+	hHead, hTail := hView.UnsafePoints()
 	firstPoint, lastPoint, delta, fpHistCount, err := CalculateHistogramDelta(hHead, hTail, emitAnnotation)
 	if err != nil {
 		return nil, err
 	}
 
 	val := CalculateHistogramRate(true, isRate, rangeStart, rangeEnd, rangeSeconds, firstPoint, lastPoint, delta, hCount, fpHistCount)
-	return val, err
-}
-
-// extendedHistogramRateFromPoints joins the head and tail of the extended look-back/look-ahead
-// window into a single slice and computes the smoothed/anchored histogram rate, increase or delta
-// via extendedHistogramRate. It returns the joined slice to the pool before returning.
-func extendedHistogramRateFromPoints(hHead, hTail []promql.HPoint, rangeStart, rangeEnd int64, rangeSeconds float64, isCounter, isRate, smoothed bool, emitAnnotation types.EmitAnnotationFunc, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (*histogram.FloatHistogram, error) {
-	hExt, hExtPooled, err := joinHistogramPoints(hHead, hTail, memoryConsumptionTracker)
-	if err != nil {
-		return nil, err
-	}
-	val, err := extendedHistogramRate(hExt, rangeStart, rangeEnd, rangeSeconds, isCounter, isRate, smoothed, emitAnnotation)
-	returnJoinedHistogramPoints(hExt, hExtPooled, memoryConsumptionTracker)
 	return val, err
 }
 
@@ -407,7 +365,7 @@ func rateSeriesValidator() RangeVectorSeriesValidationFunction {
 	}
 }
 
-func delta(step *types.RangeVectorStepData, _ []types.ScalarData, _ types.QueryTimeRange, emitAnnotation types.EmitAnnotationFunc, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
+func delta(step *types.RangeVectorStepData, _ []types.ScalarData, _ types.QueryTimeRange, emitAnnotation types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
 	fHead, fTail := step.Floats.UnsafePoints()
 	fCount := len(fHead) + len(fTail)
 
@@ -430,7 +388,7 @@ func delta(step *types.RangeVectorStepData, _ []types.ScalarData, _ types.QueryT
 	}
 
 	if hCount >= minHistogramPoints(smoothedOrAnchored) {
-		val, err := histogramDelta(hCount, hHead, hTail, step.RangeStart, step.RangeEnd, rangeSeconds, step.Smoothed, step.Anchored, emitAnnotation, memoryConsumptionTracker)
+		val, err := histogramDelta(hCount, step.Histograms, step.RangeStart, step.RangeEnd, rangeSeconds, step.Smoothed, step.Anchored, emitAnnotation)
 		if err != nil {
 			err = NativeHistogramErrorToAnnotation(err, emitAnnotation)
 			return 0, false, nil, err
@@ -455,11 +413,14 @@ func floatDelta(fCount int, fHead []promql.FPoint, fTail []promql.FPoint, rangeS
 	return CalculateFloatRate(false, false, rangeStart, rangeEnd, rangeSeconds, firstPoint, lastPoint, delta, fCount, anchoredOrSmoothed)
 }
 
-func histogramDelta(hCount int, hHead []promql.HPoint, hTail []promql.HPoint, rangeStart int64, rangeEnd int64, rangeSeconds float64, smoothed, anchored bool, emitAnnotation types.EmitAnnotationFunc, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (*histogram.FloatHistogram, error) {
+func histogramDelta(hCount int, hView *types.HPointRingBufferView, rangeStart int64, rangeEnd int64, rangeSeconds float64, smoothed, anchored bool, emitAnnotation types.EmitAnnotationFunc) (*histogram.FloatHistogram, error) {
 	if smoothed || anchored {
-		return extendedHistogramRateFromPoints(hHead, hTail, rangeStart, rangeEnd, rangeSeconds, false, false, smoothed, emitAnnotation, memoryConsumptionTracker)
+		// extendedHistogramRate reads the extended window directly through the ring buffer view's
+		// random access, so there is no need to materialise a joined slice.
+		return extendedHistogramRate(hView, rangeStart, rangeEnd, rangeSeconds, false, false, smoothed, emitAnnotation)
 	}
 
+	hHead, hTail := hView.UnsafePoints()
 	firstPoint := hHead[0]
 
 	var lastPoint promql.HPoint
