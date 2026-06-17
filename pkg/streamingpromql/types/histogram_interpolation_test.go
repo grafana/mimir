@@ -102,15 +102,15 @@ func TestInterpolateHistograms(t *testing.T) {
 
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
-			var ops []annotations.HistogramOperation
-			emit := func(op annotations.HistogramOperation) { ops = append(ops, op) }
+			var annotationEmittedForOps []annotations.HistogramOperation
+			emit := func(op annotations.HistogramOperation) { annotationEmittedForOps = append(annotationEmittedForOps, op) }
 
 			got, err := InterpolateHistograms(tc.h1, tc.t1, tc.h2, tc.t2, tc.t, tc.isCounter, emit)
 
 			if tc.expectedErr != nil {
 				require.ErrorIs(t, err, tc.expectedErr)
 				require.Nil(t, got)
-				require.Empty(t, ops)
+				require.Empty(t, annotationEmittedForOps)
 				return
 			}
 
@@ -121,22 +121,22 @@ func TestInterpolateHistograms(t *testing.T) {
 			require.Equal(t, tc.expectedBuckets, got.PositiveBuckets)
 			require.NotSame(t, tc.h1, got, "must return a copy, not an input histogram")
 			require.NotSame(t, tc.h2, got, "must return a copy, not an input histogram")
-			require.Empty(t, ops)
+			require.Empty(t, annotationEmittedForOps)
 		})
 	}
 }
 
 func TestInterpolateHistograms_EmitsInfoOnCustomBucketReconciliation(t *testing.T) {
 	// Two custom-bucket histograms with mismatched bounds force FloatHistogram.Sub to reconcile
-	// the bucket layout, which must surface a HistogramSub info via the emitInfo callback.
+	// the bucket layout, which must surface a HistogramSub info via the emitNHCBReconciledAnnotation callback.
 	h1 := customHist([]float64{1, 2}, []float64{1, 1}, 2, 3, histogram.GaugeType)
 	h2 := customHist([]float64{1, 2, 3}, []float64{2, 2, 2}, 6, 12, histogram.GaugeType)
 
-	var ops []annotations.HistogramOperation
-	emit := func(op annotations.HistogramOperation) { ops = append(ops, op) }
+	var annotationEmittedForOps []annotations.HistogramOperation
+	emit := func(op annotations.HistogramOperation) { annotationEmittedForOps = append(annotationEmittedForOps, op) }
 
 	got, err := InterpolateHistograms(h1, 0, h2, 10, 5, false, emit)
 	require.NoError(t, err)
 	require.NotNil(t, got)
-	require.Contains(t, ops, annotations.HistogramSub)
+	require.Contains(t, annotationEmittedForOps, annotations.HistogramSub)
 }
