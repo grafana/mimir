@@ -132,7 +132,7 @@ mimir:
       sharding_ring:
         zone_awareness_enabled: true
       {{- end }}
-      {{- if .Values.alertmanager.fallbackConfig }}
+      {{- if or .Values.alertmanager.fallbackConfig .Values.alertmanager.externalFallbackConfigSecret }}
       fallback_config_file: /configs/alertmanager_fallback_config.yaml
       {{- end }}
 
@@ -519,6 +519,7 @@ alertmanager:
 
   # -- Fallback config for alertmanager.
   # When a tenant doesn't have an Alertmanager configuration, the Grafana Mimir Alertmanager uses the fallback configuration.
+  # Ignored when alertmanager.externalFallbackConfigSecret is set.
   fallbackConfig: |
     receivers:
         - name: default-receiver
@@ -526,8 +527,10 @@ alertmanager:
         receiver: default-receiver
 
   # -- use an existing Kubernetes secret for the fallback config for alertmanager.
-  # if set, ignores alertmanager.fallbackConfig
-  fallbackConfigExistingSecret: ""
+  # If set, overrides alertmanager.fallbackConfig
+  externalFallbackConfigSecret: {}
+  #   name: secret-name
+  #   key: secret-key
 
   extraArgs: {}
 

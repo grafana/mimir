@@ -1,4 +1,4 @@
-{{- if and .Values.alertmanager.enabled (not .Values.alertmanager.fallbackConfigExistingSecret)-}}
+{{- if and .Values.alertmanager.enabled (not .Values.alertmanager.externalFallbackConfigSecret)-}}
 {{- if .Values.alertmanager.fallbackConfig -}}
 apiVersion: v1
 kind: ConfigMap
