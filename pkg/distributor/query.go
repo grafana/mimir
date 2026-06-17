@@ -131,7 +131,16 @@ func (d *Distributor) getIngesterReplicationSetsForQuery(ctx context.Context) ([
 		if d.cfg.ShuffleShardingEnabled {
 			shardSize = d.limits.IngestionPartitionsTenantShardSize(userID)
 		}
-		r, err = r.ShuffleShardWithLookback(userID, shardSize, d.cfg.IngestersLookbackPeriod, time.Now())
+
+		// Cap the inactive-partition lookback at query-ingesters-within: a partition inactive for longer
+		// than that holds no data the querier would request from ingesters, and may have no healthy owners
+		// left, which would otherwise fail the query. query-ingesters-within of 0 means unbounded, so it
+		// only tightens the bound when set and smaller than the lookback period.
+		lookbackPeriod := d.cfg.IngestersLookbackPeriod
+		if queryIngestersWithin := d.limits.QueryIngestersWithin(userID); queryIngestersWithin > 0 && queryIngestersWithin < lookbackPeriod {
+			lookbackPeriod = queryIngestersWithin
+		}
+		r, err = r.ShuffleShardWithLookback(userID, shardSize, lookbackPeriod, time.Now())
 		if err != nil {
 			return nil, err
 		}

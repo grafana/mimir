@@ -576,27 +576,45 @@ func TestDistributor_QueryStream_InactivePartitionsLookback(t *testing.T) {
 	}
 
 	scenarios := map[string]struct {
+		queryIngestersWithin    time.Duration // Per-tenant -querier.query-ingesters-within. 0 means no additional bound.
 		partition3InactiveSince time.Duration // How long ago partition 3 became inactive.
 		partition3Healthy       bool          // Whether the ingester owning partition 3 is healthy.
 		expectedPartitionIDs    []int         // Expected partition IDs returned by getIngesterReplicationSetsForQuery.
 		expectQueryError        bool          // Whether the query should fail.
 	}{
 		"partition outside lookback with unhealthy ingester": {
+			queryIngestersWithin:    13 * time.Hour, // Larger than lookback (12h), so lookback is the binding bound.
 			partition3InactiveSince: 24 * time.Hour, // Outside lookback (12h).
 			partition3Healthy:       false,
 			expectedPartitionIDs:    []int{0, 1, 2}, // Partition 3 excluded due to lookback.
 			expectQueryError:        false,          // Query succeeds because partition 3 is not queried.
 		},
 		"partition outside lookback with healthy ingester": {
+			queryIngestersWithin:    13 * time.Hour, // Larger than lookback (12h), so lookback is the binding bound.
 			partition3InactiveSince: 24 * time.Hour, // Outside lookback (12h).
 			partition3Healthy:       true,
 			expectedPartitionIDs:    []int{0, 1, 2}, // Partition 3 excluded due to lookback.
 			expectQueryError:        false,          // Query succeeds, partition 3 is not queried anyway.
 		},
 		"partition within lookback with unhealthy ingester": {
-			partition3InactiveSince: 1 * time.Hour, // Within lookback (12h).
+			queryIngestersWithin:    13 * time.Hour, // Larger than lookback (12h), so lookback is the binding bound.
+			partition3InactiveSince: 1 * time.Hour,  // Within lookback (12h).
 			partition3Healthy:       false,
 			expectedPartitionIDs:    []int{0, 1, 2, 3}, // Partition 3 included because within lookback.
+			expectQueryError:        true,              // Query fails because partition 3 must be queried but ingester is unhealthy.
+		},
+		"partition within lookback but outside query-ingesters-within with unhealthy ingester": {
+			queryIngestersWithin:    2 * time.Hour, // Smaller than lookback (12h), so it is the binding bound.
+			partition3InactiveSince: 6 * time.Hour, // Within lookback (12h) but outside query-ingesters-within (2h).
+			partition3Healthy:       false,
+			expectedPartitionIDs:    []int{0, 1, 2}, // Partition 3 excluded due to query-ingesters-within.
+			expectQueryError:        false,          // Query succeeds because partition 3 is not queried.
+		},
+		"partition within query-ingesters-within with unhealthy ingester": {
+			queryIngestersWithin:    2 * time.Hour, // Smaller than lookback (12h), so it is the binding bound.
+			partition3InactiveSince: 1 * time.Hour, // Within query-ingesters-within (2h).
+			partition3Healthy:       false,
+			expectedPartitionIDs:    []int{0, 1, 2, 3}, // Partition 3 included because within query-ingesters-within.
 			expectQueryError:        true,              // Query fails because partition 3 must be queried but ingester is unhealthy.
 		},
 	}
@@ -613,6 +631,7 @@ func TestDistributor_QueryStream_InactivePartitionsLookback(t *testing.T) {
 
 				limits := prepareDefaultLimits()
 				limits.IngestionPartitionsTenantShardSize = shardingCfg.tenantShardSize
+				limits.QueryIngestersWithin = model.Duration(scenario.queryIngestersWithin)
 
 				ingester3State := ingesterStateFailed
 				var ingester3Data *mimirpb.WriteRequest
