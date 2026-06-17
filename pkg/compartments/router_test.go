@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -68,7 +69,7 @@ func TestRouter_CompartmentsForMatchers(t *testing.T) {
 
 	t.Run("exact __name__ matcher pins to the routing compartment", func(t *testing.T) {
 		want := r.CompartmentForMetric(userID, "my_metric")
-		got := r.CompartmentsForMatchers(userID, []*labels.Matcher{eq(labels.MetricName, "my_metric"), eq("job", "x")})
+		got := r.CompartmentsForMatchers(userID, []*labels.Matcher{eq(model.MetricNameLabel, "my_metric"), eq("job", "x")})
 		assert.Equal(t, []int{want}, got)
 	})
 
@@ -79,7 +80,7 @@ func TestRouter_CompartmentsForMatchers(t *testing.T) {
 			want[r.CompartmentForMetric(userID, n)] = struct{}{}
 		}
 
-		got := r.CompartmentsForMatchers(userID, []*labels.Matcher{re(labels.MetricName, strings.Join(names, "|"))})
+		got := r.CompartmentsForMatchers(userID, []*labels.Matcher{re(model.MetricNameLabel, strings.Join(names, "|"))})
 		assert.Len(t, got, len(want), "should return one entry per distinct compartment")
 		gotSet := map[int]struct{}{}
 		for _, c := range got {
@@ -90,13 +91,13 @@ func TestRouter_CompartmentsForMatchers(t *testing.T) {
 
 	t.Run("exact matcher wins over a regexp set", func(t *testing.T) {
 		want := r.CompartmentForMetric(userID, "metric_a")
-		got := r.CompartmentsForMatchers(userID, []*labels.Matcher{eq(labels.MetricName, "metric_a"), re(labels.MetricName, "metric_a|metric_b|metric_c")})
+		got := r.CompartmentsForMatchers(userID, []*labels.Matcher{eq(model.MetricNameLabel, "metric_a"), re(model.MetricNameLabel, "metric_a|metric_b|metric_c")})
 		assert.Equal(t, []int{want}, got)
 	})
 
 	t.Run("conflicting exact names pin to the first one (the query matches no series anyway)", func(t *testing.T) {
 		want := r.CompartmentForMetric(userID, "metric_a")
-		got := r.CompartmentsForMatchers(userID, []*labels.Matcher{eq(labels.MetricName, "metric_a"), eq(labels.MetricName, "metric_b")})
+		got := r.CompartmentsForMatchers(userID, []*labels.Matcher{eq(model.MetricNameLabel, "metric_a"), eq(model.MetricNameLabel, "metric_b")})
 		assert.Equal(t, []int{want}, got)
 	})
 
@@ -105,8 +106,8 @@ func TestRouter_CompartmentsForMatchers(t *testing.T) {
 		cases := map[string][]*labels.Matcher{
 			"no matchers":         nil,
 			"no __name__ matcher": {eq("job", "x")},
-			"unbounded regex":     {re(labels.MetricName, "foo.*")},
-			"negative __name__":   {neq(labels.MetricName, "x")},
+			"unbounded regex":     {re(model.MetricNameLabel, "foo.*")},
+			"negative __name__":   {neq(model.MetricNameLabel, "x")},
 		}
 		for name, matchers := range cases {
 			t.Run(name, func(t *testing.T) {
