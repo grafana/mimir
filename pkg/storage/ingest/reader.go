@@ -932,9 +932,9 @@ func (r *SingleClusterPartitionReader) WaitReadConsistencyUntilLastProducedOffse
 // consumed by the reader. A single-cluster reader only ever deals with Kafka cluster 0; the multi-cluster
 // reader remaps each per-cluster offset onto the corresponding cluster's reader.
 func (r *SingleClusterPartitionReader) WaitReadConsistencyUntilOffsets(ctx context.Context, offsets PartitionOffsets) (returnErr error) {
-	// A single-cluster reader consumes from exactly one Kafka cluster, so being given offsets for more
-	// than one cluster is an invariant violation by the caller.
-	if offsets.NumKafkaClusters() > 1 {
+	// A single-cluster reader consumes from exactly one Kafka cluster, so being given offsets for any
+	// other number of clusters is an invariant violation by the caller.
+	if offsets.NumKafkaClusters() != 1 {
 		return fmt.Errorf("a single-cluster partition reader was given read consistency offsets for %d Kafka clusters", offsets.NumKafkaClusters())
 	}
 

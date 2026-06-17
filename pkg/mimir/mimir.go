@@ -304,11 +304,11 @@ func (c *Config) Validate(log log.Logger) error {
 			}
 			// The address is resolved per write compartment. Without the placeholder every write compartment
 			// resolves to the same Kafka cluster, so the ingester would ingest each partition once per write
-			// compartment.
-			if !slices.ContainsFunc(c.IngestStorage.KafkaConfig.Address, func(addr string) bool {
-				return strings.Contains(addr, compartments.WriteCompartmentIDPlaceholder)
-			}) {
-				return fmt.Errorf("when compartments are enabled, -ingest-storage.kafka.address must contain the %q placeholder for the distributor and ingester", compartments.WriteCompartmentIDPlaceholder)
+			// compartment. Each configured address is resolved independently, so they must all contain it.
+			for _, addr := range c.IngestStorage.KafkaConfig.Address {
+				if !strings.Contains(addr, compartments.WriteCompartmentIDPlaceholder) {
+					return fmt.Errorf("when compartments are enabled, every -ingest-storage.kafka.address must contain the %q placeholder for the distributor and ingester", compartments.WriteCompartmentIDPlaceholder)
+				}
 			}
 		}
 		// The offset catalogue tracks a single Kafka offset per block, which is not representable when an

@@ -556,12 +556,18 @@
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
-  "redpanda_console":
+  "redpanda-console-wc-0":
     "environment":
       - "KAFKA_BROKERS=kafka-wc-0:9092"
     "image": "docker.redpanda.com/redpandadata/console:latest"
     "ports":
       - "8090:8080"
+  "redpanda-console-wc-1":
+    "environment":
+      - "KAFKA_BROKERS=kafka-wc-1:9092"
+    "image": "docker.redpanda.com/redpandadata/console:latest"
+    "ports":
+      - "8091:8080"
   "ruler-1":
     "build":
       "context": "."

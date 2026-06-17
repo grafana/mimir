@@ -606,6 +606,15 @@ func TestConfigValidation(t *testing.T) {
 			expectAnyError: true,
 		},
 		{
+			name: "should fail if compartments are enabled but only some of the Kafka addresses are parameterised by write compartment",
+			getTestConfig: func() *Config {
+				cfg := validCompartmentsConfig()
+				cfg.IngestStorage.KafkaConfig.Address = flagext.StringSliceCSV{"kafka-wc-<write-compartment-id>:9092", "localhost:9092"}
+				return cfg
+			},
+			expectAnyError: true,
+		},
+		{
 			name: "should fail if the offset catalogue is enabled together with more than one write compartment",
 			getTestConfig: func() *Config {
 				cfg := validCompartmentsConfig()

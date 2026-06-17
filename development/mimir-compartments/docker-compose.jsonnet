@@ -299,17 +299,20 @@ std.manifestYamlDoc({
     }
     for wc in std.range(0, numWriteCompartments - 1)
   },
+  // One Redpanda console per write compartment, each connected to that write compartment's Kafka cluster
+  // (every cluster is independent, so a single console would only show one cluster). The host port is
+  // 8090 + write compartment ID.
   redpanda_console:: {
-    redpanda_console: {
+    ['redpanda-console-wc-%d' % wc]: {
       image: 'docker.redpanda.com/redpandadata/console:latest',
       environment: [
-        // The console connects to a single Kafka cluster: write compartment 0's.
-        'KAFKA_BROKERS=kafka-wc-0:9092',
+        'KAFKA_BROKERS=kafka-wc-%d:9092' % wc,
       ],
       ports: [
-        '8090:8080',
+        '%d:8080' % (8090 + wc),
       ],
-    },
+    }
+    for wc in std.range(0, numWriteCompartments - 1)
   },
 
   memcached:: {

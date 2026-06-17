@@ -159,9 +159,9 @@ func (r *MultiClusterPartitionReader) EnforceReadMaxDelay(maxDelay time.Duration
 
 // WaitReadConsistencyUntilOffsets waits, for every Kafka cluster in parallel, until that cluster's reader
 // has consumed up to its own offset. The offsets must cover exactly one offset per Kafka cluster; a
-// mismatch is an invariant violation by the caller. A cluster whose offset is negative (unknown) falls
-// back to waiting until its last-produced offset, which is a stronger guarantee, so strong read
-// consistency is never silently under-enforced.
+// mismatch is an invariant violation by the caller. Each per-cluster offset is forwarded to that cluster's
+// reader as-is, so a negative offset is handled identically to the single-cluster reader (an empty
+// partition returns immediately).
 func (r *MultiClusterPartitionReader) WaitReadConsistencyUntilOffsets(ctx context.Context, offsets PartitionOffsets) error {
 	if offsets.NumKafkaClusters() != len(r.readers) {
 		return fmt.Errorf("the multi-cluster partition reader consumes from %d Kafka clusters but was given read consistency offsets for %d", len(r.readers), offsets.NumKafkaClusters())
@@ -173,12 +173,8 @@ func (r *MultiClusterPartitionReader) WaitReadConsistencyUntilOffsets(ctx contex
 	g, gctx := errgroup.WithContext(ctx)
 	for kafkaClusterID, reader := range r.readers {
 		g.Go(func() error {
-			var err error
-			if offset := offsets.ForKafkaCluster(kafkaClusterID); offset >= 0 {
-				err = reader.WaitReadConsistencyUntilOffsets(gctx, NewSingleClusterPartitionOffsets(offset))
-			} else {
-				err = reader.WaitReadConsistencyUntilLastProducedOffset(gctx)
-			}
+			offset := offsets.ForKafkaCluster(kafkaClusterID)
+			err := reader.WaitReadConsistencyUntilOffsets(gctx, NewSingleClusterPartitionOffsets(offset))
 			return errors.Wrapf(err, "write compartment %d", kafkaClusterID)
 		})
 	}
