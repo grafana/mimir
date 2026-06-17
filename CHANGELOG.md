@@ -80,6 +80,7 @@
 ### Tools
 
 * [FEATURE] Copyblocks: add support for the block upload API as a copy destination. #15330
+* [ENHANCEMENT] Mimirtool: `partition-ring` subcommands now accept an optional `--partition-ring.key` flag to select the KV store key of the partition ring to operate on. It defaults to `ingester-partitions`. #15719
 * [ENHANCEMENT] Makefile: `build-mixin` and `mixin-screenshots` can now be configured to use native histograms for latency panels in dashboards. #15269
 
 ### Query-tee

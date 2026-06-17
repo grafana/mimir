@@ -34,6 +34,7 @@ type AddPartitionCommand struct {
 	memberlistJoin         []string
 	memberlistClusterLabel string
 	memberlistBindPort     int
+	ringKey                string
 	partitionIDs           string
 	partitionState         string
 	verbose                bool
@@ -46,6 +47,7 @@ type RemovePartitionCommand struct {
 	memberlistJoin         []string
 	memberlistClusterLabel string
 	memberlistBindPort     int
+	ringKey                string
 	partitionIDs           string
 	verbose                bool
 	logger                 log.Logger
@@ -57,6 +59,7 @@ type AddOwnerCommand struct {
 	memberlistJoin         []string
 	memberlistClusterLabel string
 	memberlistBindPort     int
+	ringKey                string
 	ownerIDs               string
 	partitionID            string
 	verbose                bool
@@ -69,6 +72,7 @@ type RemoveOwnerCommand struct {
 	memberlistJoin         []string
 	memberlistClusterLabel string
 	memberlistBindPort     int
+	ringKey                string
 	ownerIDs               string
 	verbose                bool
 	logger                 log.Logger
@@ -164,12 +168,13 @@ func (c *PartitionRingCommand) Register(app *kingpin.Application, _ EnvVarNames,
 		memberlistJoin         *[]string
 		memberlistClusterLabel *string
 		memberlistBindPort     *int
+		ringKey                *string
 		verbose                *bool
 	}{
-		{addPartitionCmd, &addCmd.memberlistJoin, &addCmd.memberlistClusterLabel, &addCmd.memberlistBindPort, &addCmd.verbose},
-		{removePartitionCmd, &removeCmd.memberlistJoin, &removeCmd.memberlistClusterLabel, &removeCmd.memberlistBindPort, &removeCmd.verbose},
-		{addOwnerCmdClause, &addOwnerCmd.memberlistJoin, &addOwnerCmd.memberlistClusterLabel, &addOwnerCmd.memberlistBindPort, &addOwnerCmd.verbose},
-		{removeOwnerCmdClause, &removeOwnerCmd.memberlistJoin, &removeOwnerCmd.memberlistClusterLabel, &removeOwnerCmd.memberlistBindPort, &removeOwnerCmd.verbose},
+		{addPartitionCmd, &addCmd.memberlistJoin, &addCmd.memberlistClusterLabel, &addCmd.memberlistBindPort, &addCmd.ringKey, &addCmd.verbose},
+		{removePartitionCmd, &removeCmd.memberlistJoin, &removeCmd.memberlistClusterLabel, &removeCmd.memberlistBindPort, &removeCmd.ringKey, &removeCmd.verbose},
+		{addOwnerCmdClause, &addOwnerCmd.memberlistJoin, &addOwnerCmd.memberlistClusterLabel, &addOwnerCmd.memberlistBindPort, &addOwnerCmd.ringKey, &addOwnerCmd.verbose},
+		{removeOwnerCmdClause, &removeOwnerCmd.memberlistJoin, &removeOwnerCmd.memberlistClusterLabel, &removeOwnerCmd.memberlistBindPort, &removeOwnerCmd.ringKey, &removeOwnerCmd.verbose},
 	} {
 		cfg.cmd.Flag("memberlist.join", "Address of a memberlist node to join. Can be specified multiple times.").
 			Required().
@@ -182,6 +187,12 @@ func (c *PartitionRingCommand) Register(app *kingpin.Application, _ EnvVarNames,
 		cfg.cmd.Flag("memberlist.bind-port", "Port to listen on for memberlist gossip messages.").
 			Default("7946").
 			IntVar(cfg.memberlistBindPort)
+
+		// The ring key defaults to the default (non-compartment) partition ring. With compartments,
+		// each compartment has its own partition ring stored under a different key.
+		cfg.cmd.Flag("partition-ring.key", "The KV store key under which the partition ring is stored.").
+			Default(ingester.PartitionRingKey).
+			StringVar(cfg.ringKey)
 
 		cfg.cmd.Flag("verbose", "Enable verbose logging.").
 			Default("false").
@@ -224,7 +235,7 @@ About to add partition(s) %v with state '%s' to the ring.`, partitionIDs, state.
 	fmt.Fprintln(os.Stderr, "Successfully joined memberlist cluster.")
 
 	// Perform the CAS operation to add the partitions.
-	if err := addPartitions(ctx, kvClient, partitionIDs, state); err != nil {
+	if err := addPartitions(ctx, kvClient, resolveRingKey(c.ringKey), partitionIDs, state); err != nil {
 		return err
 	}
 
@@ -261,7 +272,7 @@ About to remove partition(s) %v from the ring.`, partitionIDs)
 	fmt.Fprintln(os.Stderr, "Successfully joined memberlist cluster.")
 
 	// Perform the CAS operation to remove the partitions.
-	if err := removePartitions(ctx, kvClient, partitionIDs); err != nil {
+	if err := removePartitions(ctx, kvClient, resolveRingKey(c.ringKey), partitionIDs); err != nil {
 		return err
 	}
 
@@ -363,7 +374,7 @@ About to add owner(s) %v to partition %d.`, ownerIDs, partitionID)
 	fmt.Fprintln(os.Stderr, "Successfully joined memberlist cluster.")
 
 	// Perform the CAS operation to add the owners.
-	if err := addOwners(ctx, kvClient, ownerIDs, ring.OwnerActive, partitionID); err != nil {
+	if err := addOwners(ctx, kvClient, resolveRingKey(c.ringKey), ownerIDs, ring.OwnerActive, partitionID); err != nil {
 		return err
 	}
 
@@ -407,7 +418,7 @@ About to remove owner(s) %v from the ring.`, ownerIDs)
 	fmt.Fprintln(os.Stderr, "Successfully joined memberlist cluster.")
 
 	// Perform the CAS operation to remove the owners.
-	if err := removeOwners(ctx, kvClient, ownerIDs); err != nil {
+	if err := removeOwners(ctx, kvClient, resolveRingKey(c.ringKey), ownerIDs); err != nil {
 		return err
 	}
 
@@ -503,8 +514,17 @@ func initMemberlistKV(ctx context.Context, joinAddrs []string, clusterLabel stri
 	return kvClient, cleanup, nil
 }
 
-func addPartitions(ctx context.Context, kvClient kv.Client, partitionIDs []int32, state ring.PartitionState) error {
-	return kvClient.CAS(ctx, ingester.PartitionRingKey, func(in interface{}) (out interface{}, retry bool, err error) {
+// resolveRingKey returns the ring key to operate on, falling back to the default
+// (non-compartment) partition ring key when none is explicitly provided.
+func resolveRingKey(ringKey string) string {
+	if ringKey == "" {
+		return ingester.PartitionRingKey
+	}
+	return ringKey
+}
+
+func addPartitions(ctx context.Context, kvClient kv.Client, ringKey string, partitionIDs []int32, state ring.PartitionState) error {
+	return kvClient.CAS(ctx, ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
 		ringDesc := ring.GetOrCreatePartitionRingDesc(in)
 
 		// First pass: validate ALL partitions before making any changes.
@@ -524,8 +544,8 @@ func addPartitions(ctx context.Context, kvClient kv.Client, partitionIDs []int32
 	})
 }
 
-func removePartitions(ctx context.Context, kvClient kv.Client, partitionIDs []int32) error {
-	return kvClient.CAS(ctx, ingester.PartitionRingKey, func(in interface{}) (out interface{}, retry bool, err error) {
+func removePartitions(ctx context.Context, kvClient kv.Client, ringKey string, partitionIDs []int32) error {
+	return kvClient.CAS(ctx, ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
 		ringDesc := ring.GetOrCreatePartitionRingDesc(in)
 
 		// First pass: validate ALL partitions before making any changes.
@@ -547,8 +567,8 @@ func removePartitions(ctx context.Context, kvClient kv.Client, partitionIDs []in
 	})
 }
 
-func addOwners(ctx context.Context, kvClient kv.Client, ownerIDs []string, state ring.OwnerState, partitionID int32) error {
-	return kvClient.CAS(ctx, ingester.PartitionRingKey, func(in interface{}) (out interface{}, retry bool, err error) {
+func addOwners(ctx context.Context, kvClient kv.Client, ringKey string, ownerIDs []string, state ring.OwnerState, partitionID int32) error {
+	return kvClient.CAS(ctx, ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
 		ringDesc := ring.GetOrCreatePartitionRingDesc(in)
 
 		// Validate the target partition exists before making any changes.
@@ -573,8 +593,8 @@ func addOwners(ctx context.Context, kvClient kv.Client, ownerIDs []string, state
 	})
 }
 
-func removeOwners(ctx context.Context, kvClient kv.Client, ownerIDs []string) error {
-	return kvClient.CAS(ctx, ingester.PartitionRingKey, func(in interface{}) (out interface{}, retry bool, err error) {
+func removeOwners(ctx context.Context, kvClient kv.Client, ringKey string, ownerIDs []string) error {
+	return kvClient.CAS(ctx, ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
 		ringDesc := ring.GetOrCreatePartitionRingDesc(in)
 
 		// First pass: validate ALL owners before making any changes.

@@ -761,6 +761,48 @@ func TestRemoveOwnerCommand(t *testing.T) {
 	})
 }
 
+func TestPartitionRingCommand_CustomRingKey(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	const customRingKey = "ingester-partitions-compartment-1"
+
+	// Start a seed memberlist node.
+	seedKV, seedClient := startMemberlistKV(t)
+	seedAddr := net.JoinHostPort("127.0.0.1", strconv.Itoa(seedKV.GetListeningPort()))
+
+	// Add a partition under a custom ring key.
+	cmd := &AddPartitionCommand{
+		memberlistJoin:     []string{seedAddr},
+		memberlistBindPort: 0, // random port
+		ringKey:            customRingKey,
+		partitionIDs:       "0",
+		partitionState:     "active",
+		stdin:              strings.NewReader("yes\n"),
+		logger:             log.NewNopLogger(),
+	}
+	require.NoError(t, cmd.run())
+
+	// Verify the partition was added under the custom ring key.
+	require.Eventually(t, func() bool {
+		val, err := seedClient.Get(ctx, customRingKey)
+		if err != nil || val == nil {
+			return false
+		}
+		ringDesc, ok := val.(*ring.PartitionRingDesc)
+		return ok && ringDesc.HasPartition(0)
+	}, 5*time.Second, 100*time.Millisecond, "partition 0 should be added under the custom ring key")
+
+	// Verify nothing was written under the default ring key.
+	val, err := seedClient.Get(ctx, ingester.PartitionRingKey)
+	require.NoError(t, err)
+	if val != nil {
+		ringDesc, ok := val.(*ring.PartitionRingDesc)
+		require.True(t, ok)
+		require.False(t, ringDesc.HasPartition(0), "partition must not be added under the default ring key")
+	}
+}
+
 func TestParsePartitionIDs(t *testing.T) {
 	t.Parallel()
 
