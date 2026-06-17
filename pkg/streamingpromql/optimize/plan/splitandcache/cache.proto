@@ -9,13 +9,13 @@ import "github.com/grafana/mimir/pkg/streamingpromql/types/types.proto";
 import "gogoproto/gogo.proto";
 
 option (gogoproto.equal_all) = false;
-option (gogoproto.marshaler_all) = true;
-option (gogoproto.messagename_all) = true;
-option (gogoproto.unmarshaler_all) = true;
 option (gogoproto.goproto_sizecache_all) = false;
 option (gogoproto.goproto_unkeyed_all) = false;
 option (gogoproto.goproto_unrecognized_all) = false;
+option (gogoproto.marshaler_all) = true;
+option (gogoproto.messagename_all) = true;
 option (gogoproto.sizer_all) = true;
+option (gogoproto.unmarshaler_all) = true;
 
 message CacheEntry {
   bytes cacheKey = 1; // cacheKey is the original (unhashed) cache key, used to detect hash collisions.

@@ -19,5 +19,4 @@ message TimeRangeSplitDetails {
   ];
 }
 
-message CacheDetails {
-}
+message CacheDetails {}
