@@ -15,11 +15,11 @@ import (
 // true, the counter is modelled as restarting from zero, so the result is h2 scaled by the
 // fraction (t-t1)/(t2-t1). Returns an error when the two histograms have incompatible schemas
 // (mixing exponential and custom buckets). When a Sub or Add reconciles mismatched custom-bucket
-// bounds, emitInfo is called with the corresponding operation so the caller can surface the
+// bounds, emitNHCBReconciledAnnotation is called with the corresponding operation so the caller can surface the
 // matching info annotation. The returned histogram is always a freshly allocated instance; h1 and h2
 // are never returned as-is, even when t == t1 or t == t2. Mirrors interpolateHistograms in upstream
 // Prometheus.
-func InterpolateHistograms(h1 *histogram.FloatHistogram, t1 int64, h2 *histogram.FloatHistogram, t2, t int64, isCounter bool, emitInfo func(annotations.HistogramOperation)) (*histogram.FloatHistogram, error) {
+func InterpolateHistograms(h1 *histogram.FloatHistogram, t1 int64, h2 *histogram.FloatHistogram, t2, t int64, isCounter bool, emitNHCBReconciledAnnotation func(annotations.HistogramOperation)) (*histogram.FloatHistogram, error) {
 	if t == t1 {
 		return h1.Copy(), nil
 	}
@@ -41,13 +41,13 @@ func InterpolateHistograms(h1 *histogram.FloatHistogram, t1 int64, h2 *histogram
 	if _, _, nhcbReconciled, err := result.Sub(h1); err != nil {
 		return nil, err
 	} else if nhcbReconciled {
-		emitInfo(annotations.HistogramSub)
+		emitNHCBReconciledAnnotation(annotations.HistogramSub)
 	}
 	result.Mul(fraction)
 	if _, _, nhcbReconciled, err := result.Add(h1); err != nil {
 		return nil, err
 	} else if nhcbReconciled {
-		emitInfo(annotations.HistogramAdd)
+		emitNHCBReconciledAnnotation(annotations.HistogramAdd)
 	}
 	return result, nil
 }
