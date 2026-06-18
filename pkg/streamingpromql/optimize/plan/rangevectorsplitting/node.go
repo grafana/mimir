@@ -84,10 +84,6 @@ func (s *SplitFunctionCall) Describe() string {
 	return b.String()
 }
 
-func (s *SplitFunctionCall) ChildrenLabels() []string {
-	return []string{""}
-}
-
 func (s *SplitFunctionCall) ChildrenTimeRange(parentTimeRange types.QueryTimeRange) types.QueryTimeRange {
 	return parentTimeRange
 }

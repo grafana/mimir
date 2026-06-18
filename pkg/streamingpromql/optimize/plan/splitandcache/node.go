@@ -49,10 +49,6 @@ func (s *TimeRangeSplit) Describe() string {
 	return fmt.Sprintf("interval %s", s.SplitInterval.String())
 }
 
-func (s *TimeRangeSplit) ChildrenLabels() []string {
-	return []string{""}
-}
-
 func (s *TimeRangeSplit) ChildrenTimeRange(timeRange types.QueryTimeRange) types.QueryTimeRange {
 	return timeRange
 }

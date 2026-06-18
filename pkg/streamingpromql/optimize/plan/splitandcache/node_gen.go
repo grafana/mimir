@@ -35,3 +35,7 @@ func (t *TimeRangeSplit) ReplaceChild(idx int, node planning.Node) error {
 	t.Inner = node
 	return nil
 }
+
+func (t *TimeRangeSplit) ChildrenLabels() []string {
+	return []string{""}
+}

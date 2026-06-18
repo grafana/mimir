@@ -22,8 +22,8 @@ import (
 //node:generate
 type AggregateExpression struct {
 	*AggregateExpressionDetails
-	Inner planning.Node `node:"child"`
-	Param planning.Node `node:"child,nilable"`
+	Inner planning.Node `node:"child,label=expression"`
+	Param planning.Node `node:"child,nilable,label=parameter"`
 }
 
 func (a *AggregateExpression) Describe() string {
@@ -90,14 +90,6 @@ func (a *AggregateExpression) MergeHints(other planning.Node) error {
 func (a *AggregateExpressionDetails) MergeHints(other *AggregateExpressionDetails) error {
 	// Nothing to do.
 	return nil
-}
-
-func (a *AggregateExpression) ChildrenLabels() []string {
-	if a.Param == nil {
-		return []string{""}
-	}
-
-	return []string{"expression", "parameter"}
 }
 
 func MaterializeAggregateExpression(a *AggregateExpression, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {

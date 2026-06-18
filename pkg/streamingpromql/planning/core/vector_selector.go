@@ -82,10 +82,6 @@ func (v *VectorSelector) MergeHints(other planning.Node) error {
 	return nil
 }
 
-func (v *VectorSelector) ChildrenLabels() []string {
-	return nil
-}
-
 func MaterializeVectorSelector(v *VectorSelector, _ *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
 	subsets, err := SubsetsToSelectorType(v.Subsets)
 	if err != nil {

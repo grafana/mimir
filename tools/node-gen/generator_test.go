@@ -21,7 +21,7 @@ func TestRenderPackage(t *testing.T) {
                      }
                      //node:generate
                      type FunctionCall struct {
-                     	Args []planning.Node `+"`"+`node:"children"`+"`"+`
+                     	Args []planning.Node `+"`"+`node:"children,labelfmt=param %d"`+"`"+`
                      }`)
 
 	out, err := RenderGenerators(pkg, CreateGenerators(), "node_gen.go")
