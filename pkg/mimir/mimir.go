@@ -159,6 +159,8 @@ type Config struct {
 	CostAttributionCleanupInterval  time.Duration `yaml:"cost_attribution_cleanup_interval" category:"experimental"`
 
 	InstrumentRefLeaks mimirpb.InstrumentRefLeaksConfig `yaml:"instrument_ref_leaks" category:"experimental"`
+
+	LabelAccessControlEnabled bool `yaml:"label_access_control_enabled" category:"experimental"`
 }
 
 // RegisterFlags registers flags.
@@ -179,6 +181,7 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 
 	f.BoolVar(&c.MultitenancyEnabled, "auth.multitenancy-enabled", true, "When set to true, incoming HTTP requests must specify tenant ID in HTTP X-Scope-OrgId header. When set to false, tenant ID from -auth.no-auth-tenant is used instead.")
 	f.StringVar(&c.NoAuthTenant, "auth.no-auth-tenant", "anonymous", "Tenant ID to use when multitenancy is disabled.")
+	f.BoolVar(&c.LabelAccessControlEnabled, "auth.label-access-control-enabled", false, "If enabled, Mimir enforces label-based access control on metric read queries using the X-Prom-Label-Policy HTTP header.")
 	f.BoolVar(&c.PrintConfig, "print.config", false, "Print the config and exit.")
 	f.DurationVar(&c.ShutdownDelay, "shutdown-delay", 0, "How long to wait between SIGTERM and shutdown. After receiving SIGTERM, Mimir will report not-ready status via /ready endpoint.")
 	f.IntVar(&c.MaxSeparateMetricsGroupsPerUser, "max-separate-metrics-groups-per-user", 1000, "Maximum number of groups allowed per user by which specified distributor and ingester metrics can be further separated.")
