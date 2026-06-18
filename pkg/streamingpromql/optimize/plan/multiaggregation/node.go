@@ -83,8 +83,8 @@ func (g *MultiAggregationGroup) MinimumRequiredPlanVersion(types.QueryTimeRange)
 //node:generate
 type MultiAggregationInstance struct {
 	*MultiAggregationInstanceDetails
-	Group *MultiAggregationGroup `node:"child"`
-	Param planning.Node          `node:"child,nilable"` // nil for non-parameterized aggregations (eg. sum), set for quantile.
+	Group *MultiAggregationGroup `node:"child,label=expression"`
+	Param planning.Node          `node:"child,nilable,label=parameter"` // nil for non-parameterized aggregations (eg. sum), set for quantile.
 }
 
 func (a *MultiAggregationInstance) Details() proto.Message {

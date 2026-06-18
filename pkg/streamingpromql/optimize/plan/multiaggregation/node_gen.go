@@ -101,5 +101,8 @@ func (m *MultiAggregationInstance) ReplaceChild(idx int, node planning.Node) err
 }
 
 func (m *MultiAggregationInstance) ChildrenLabels() []string {
-	return []string{""}
+	if m.Param == nil {
+		return []string{""}
+	}
+	return []string{"expression", "parameter"}
 }
