@@ -1705,11 +1705,13 @@ func labelValuesFromSeries(ctx context.Context, labelName string, seriesPerBatch
 
 func labelValuesFromPostings(ctx context.Context, labelName string, indexr *bucketIndexReader, allValues []streamindex.PostingListOffset, p []storage.SeriesRef, stats *safeQueryStats) ([]string, error) {
 	keys := make([]labels.Label, len(allValues))
+	keysOffsets := make([]index.Range, len(allValues))
 	for i, value := range allValues {
 		keys[i] = labels.Label{Name: labelName, Value: value.LabelValue}
+		keysOffsets[i] = value.Off
 	}
 
-	fetchedPostings, err := indexr.FetchPostings(ctx, keys, stats)
+	fetchedPostings, err := indexr.FetchPostingsWithOffsets(ctx, keys, keysOffsets, stats)
 	if err != nil {
 		return nil, errors.Wrap(err, "get postings")
 	}
