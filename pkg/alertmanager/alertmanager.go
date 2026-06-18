@@ -29,8 +29,10 @@ import (
 	"github.com/prometheus/alertmanager/cluster/clusterpb"
 	"github.com/prometheus/alertmanager/config"
 	"github.com/prometheus/alertmanager/dispatch"
+	"github.com/prometheus/alertmanager/eventrecorder"
 	"github.com/prometheus/alertmanager/featurecontrol"
 	"github.com/prometheus/alertmanager/inhibit"
+	"github.com/prometheus/alertmanager/marker"
 	"github.com/prometheus/alertmanager/nflog"
 	"github.com/prometheus/alertmanager/notify"
 	discord "github.com/prometheus/alertmanager/notify/discord"
@@ -51,7 +53,6 @@ import (
 	"github.com/prometheus/alertmanager/silence"
 	"github.com/prometheus/alertmanager/template"
 	"github.com/prometheus/alertmanager/timeinterval"
-	"github.com/prometheus/alertmanager/types"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	commoncfg "github.com/prometheus/common/config"
@@ -112,7 +113,7 @@ type Alertmanager struct {
 	persister       *statePersister
 	nflog           *nflog.Log
 	silences        *silence.Silences
-	marker          *types.MemMarker
+	marker          marker.GroupMarker
 	alerts          *mem.Alerts
 	dispatcher      *dispatch.Dispatcher
 	inhibitor       *inhibit.Inhibitor
@@ -217,7 +218,7 @@ func New(cfg *Config, reg *prometheus.Registry) (*Alertmanager, error) {
 	c := am.state.AddState(nflogStateKeyPrefix+cfg.UserID, am.nflog, am.registry)
 	am.nflog.SetBroadcast(c.Broadcast)
 
-	am.marker = types.NewMarker(am.registry)
+	am.marker = marker.NewGroupMarker()
 
 	silencesFile := filepath.Join(cfg.TenantDataDir, silencesSnapshot)
 	am.silences, err = silence.New(silence.Options{
@@ -246,7 +247,7 @@ func New(cfg *Config, reg *prometheus.Registry) (*Alertmanager, error) {
 		return nil, fmt.Errorf("failed to start state persister service: %w", err)
 	}
 
-	am.pipelineBuilder = notify.NewPipelineBuilder(am.registry, cfg.Features)
+	am.pipelineBuilder = notify.NewPipelineBuilder(am.registry, cfg.Features, eventrecorder.Recorder{})
 
 	// Run the silences maintenance in a dedicated goroutine.
 	am.wg.Add(1)
@@ -260,17 +261,16 @@ func New(cfg *Config, reg *prometheus.Registry) (*Alertmanager, error) {
 		callback = newAlertsLimiter(am.cfg.UserID, am.cfg.Limits, reg)
 	}
 
-	am.alerts, err = mem.NewAlerts(context.Background(), am.marker, 30*time.Minute, 0, callback, utillog.SlogFromGoKit(am.logger), reg, cfg.Features)
+	am.alerts, err = mem.NewAlerts(context.Background(), 30*time.Minute, 0, callback, utillog.SlogFromGoKit(am.logger), eventrecorder.Recorder{}, reg, cfg.Features)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create alerts: %v", err)
 	}
 
 	am.api, err = api.New(api.Options{
-		Alerts:          am.alerts,
-		Silences:        am.silences,
-		AlertStatusFunc: am.marker.Status,
-		GroupMutedFunc:  am.marker.Muted,
-		Concurrency:     cfg.MaxConcurrentGetRequestsPerTenant,
+		Alerts:         am.alerts,
+		Silences:       am.silences,
+		GroupMutedFunc: am.marker.Muted,
+		Concurrency:    cfg.MaxConcurrentGetRequestsPerTenant,
 		// Mimir should not expose cluster information back to its tenants.
 		Peer:     &NilPeer{},
 		Registry: am.registry,
@@ -309,7 +309,7 @@ func New(cfg *Config, reg *prometheus.Registry) (*Alertmanager, error) {
 		am.mux.Handle(a, http.NotFoundHandler())
 	}
 
-	am.dispatcherMetrics = dispatch.NewDispatcherMetrics(true, am.registry)
+	am.dispatcherMetrics = dispatch.NewDispatcherMetrics(true, am.registry, cfg.Features)
 
 	// TODO: From this point onward, the alertmanager _might_ receive requests - we need to make sure we've settled and are ready.
 	return am, nil
@@ -358,7 +358,7 @@ func (am *Alertmanager) ApplyConfig(conf *config.Config, tmpls []*alertspb.Templ
 		am.dispatcher.Stop()
 	}
 
-	am.inhibitor = inhibit.NewInhibitor(am.alerts, conf.InhibitRules, am.marker, utillog.SlogFromGoKit(log.With(am.logger, "component", "inhibitor")))
+	am.inhibitor = inhibit.NewInhibitor(am.alerts, conf.InhibitRules, utillog.SlogFromGoKit(log.With(am.logger, "component", "inhibitor")), eventrecorder.Recorder{})
 
 	waitFunc := clusterWait(am.state.Position, am.cfg.PeerTimeout)
 
@@ -384,7 +384,7 @@ func (am *Alertmanager) ApplyConfig(conf *config.Config, tmpls []*alertspb.Templ
 		integrationsMap,
 		waitFunc,
 		am.inhibitor,
-		silence.NewSilencer(am.silences, am.marker, utillog.SlogFromGoKit(am.logger)),
+		silence.NewSilencer(am.silences, utillog.SlogFromGoKit(am.logger), eventrecorder.Recorder{}),
 		intervener,
 		am.marker,
 		am.nflog,
@@ -400,6 +400,7 @@ func (am *Alertmanager) ApplyConfig(conf *config.Config, tmpls []*alertspb.Templ
 		maintenancePeriod,
 		&dispatcherLimits{tenant: am.cfg.UserID, limits: am.cfg.Limits},
 		utillog.SlogFromGoKit(log.With(am.logger, "component", "dispatcher", "insight", "true")),
+		eventrecorder.Recorder{},
 		am.dispatcherMetrics,
 	)
 
