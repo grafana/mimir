@@ -35,7 +35,7 @@ func (t *DataLabelSelector) MergeHints(other planning.Node) error {
 }
 
 func (t *DataLabelSelector) Describe() string {
-	return describeSelector(t.Matchers, nil, 0, nil, false, false, false, false, nil)
+	return describeSelector(t.Matchers, time.Time{}, 0, nil, false, false, false, false, nil)
 }
 
 func (t *DataLabelSelector) ChildrenTimeRange(timeRange types.QueryTimeRange) types.QueryTimeRange {

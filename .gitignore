@@ -58,4 +58,5 @@ vendor/**/AGENTS.md
 # AI agent configuration files
 AGENTS.md
 # Claude configuration and project memory files: https://code.claude.com/docs/en/memory
-CLAUDE.local.md
+CLAUDE.local.md/.streamingpromql-stage/
+/.streamingpromql-out/

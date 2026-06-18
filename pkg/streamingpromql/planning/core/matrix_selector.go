@@ -49,7 +49,7 @@ func (m *MatrixSelector) EquivalentToIgnoringMatchersAndHints(other planning.Nod
 	otherMatrixSelector, ok := other.(*MatrixSelector)
 
 	return ok &&
-		((m.Timestamp == nil && otherMatrixSelector.Timestamp == nil) || (m.Timestamp != nil && otherMatrixSelector.Timestamp != nil && m.Timestamp.Equal(*otherMatrixSelector.Timestamp))) &&
+		m.Timestamp.Equal(otherMatrixSelector.Timestamp) &&
 		m.Offset == otherMatrixSelector.Offset &&
 		m.Range == otherMatrixSelector.Range &&
 		m.Anchored == otherMatrixSelector.Anchored &&
@@ -79,9 +79,9 @@ func MaterializeMatrixSelector(_ context.Context, m *MatrixSelector, _ *planning
 	if overrideTimeParams.IsSet {
 		selectorRange = overrideTimeParams.Range
 		if overrideTimeParams.HasTimestamp {
-			selectorTs = &overrideTimeParams.Timestamp
+			selectorTs = overrideTimeParams.Timestamp
 		} else {
-			selectorTs = nil
+			selectorTs = time.Time{}
 		}
 		selectorOffset = overrideTimeParams.Offset.Milliseconds()
 	}
@@ -152,9 +152,9 @@ func (m *MatrixSelector) GetRangeParams() planning.RangeParams {
 		Range:  m.Range,
 		Offset: m.Offset,
 	}
-	if m.Timestamp != nil {
+	if !m.Timestamp.IsZero() {
 		params.HasTimestamp = true
-		params.Timestamp = *m.Timestamp
+		params.Timestamp = m.Timestamp
 	}
 	return params
 }
