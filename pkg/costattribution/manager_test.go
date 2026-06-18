@@ -16,17 +16,41 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/costattribution/costattributionmodel"
-	"github.com/grafana/mimir/pkg/costattribution/testutils"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
+// newTestManager builds a Manager with a fixed catalog of tenants (user1..user9) used by the
+// older manager/sample/active tracker tests. Each tenant's cost-attribution config is spelled out
+// here so the scenarios are visible without indirection.
 func newTestManager() (manager *Manager, reg, costAttributionReg *prometheus.Registry) {
-	logger := log.NewNopLogger()
-	limits := testutils.NewMockCostAttributionLimits()
+	overrides := costAttributionOverrides(map[string]*validation.Limits{
+		"user1": {MaxCostAttributionCardinality: 5, CostAttributionBaseTrackers: defaultTrackerConfig(caLabels("team", "my_team"))},
+		"user2": {MaxCostAttributionCardinality: 2},
+		"user3": {MaxCostAttributionCardinality: 2, CostAttributionBaseTrackers: defaultTrackerConfig(caLabels("department", "my_department", "service", "my_service"))},
+		"user4": {MaxCostAttributionCardinality: 5, CostAttributionBaseTrackers: defaultTrackerConfig(caLabels("platform", "my_platform"))},
+		"user5": {MaxCostAttributionCardinality: 10, CostAttributionBaseTrackers: defaultTrackerConfig(caLabels("a", "a"))},
+		// user6 renames team to eng_team.
+		"user6": {MaxCostAttributionCardinality: 5, CostAttributionBaseTrackers: defaultTrackerConfig(caLabels("team", "eng_team"))},
+		"user7": {MaxCostAttributionCardinality: 2, CostAttributionBaseTrackers: defaultTrackerConfig(caLabels("team", "my_team")), CostAttributionCooldown: model.Duration(testAttributionCooldown)},
+		// user8 has a base tracker and an additional tracker.
+		"user8": {
+			MaxCostAttributionCardinality:     5,
+			CostAttributionBaseTrackers:       defaultTrackerConfig(caLabels("team", "my_team")),
+			AdditionalCostAttributionTrackers: costattributionmodel.TrackerConfigs{"by-platform": {Labels: caLabels("platform", "my_platform")}},
+		},
+		// user9 has only internal additional trackers (no base).
+		"user9": {
+			MaxCostAttributionCardinality: 3,
+			AdditionalCostAttributionTrackers: costattributionmodel.TrackerConfigs{
+				"by-team":    {Labels: caLabels("team", "my_team"), Internal: true},
+				"by-service": {Labels: caLabels("service", "my_service"), Internal: true},
+			},
+		},
+	})
 	reg = prometheus.NewRegistry()
 	costAttributionReg = prometheus.NewRegistry()
-	manager, err := NewManager(5*time.Second, 10*time.Second, logger, limits, reg, costAttributionReg)
+	manager, err := NewManager(5*time.Second, 10*time.Second, log.NewNopLogger(), overrides, reg, costAttributionReg)
 	if err != nil {
 		panic(err)
 	}
@@ -67,6 +91,34 @@ func newManagerWithLimits(t *testing.T, tenantLimits map[string]*validation.Limi
 	manager, err := NewManager(5*time.Second, 10*time.Second, log.NewNopLogger(), costAttributionOverrides(tenantLimits), reg, costAttributionReg)
 	require.NoError(t, err)
 	return manager, reg, costAttributionReg
+}
+
+// testAttributionCooldown is the cooldown used by trackers in tests that exercise overflow recovery.
+const testAttributionCooldown = 20 * time.Minute
+
+// series is a minimal description of a time series used to build write requests in tests.
+type series struct {
+	LabelValues  []string
+	SamplesCount int
+}
+
+// createRequest builds a *mimirpb.WriteRequest from the given series descriptions. Each series'
+// LabelValues is a flat list of alternating label names and values.
+func createRequest(data []series) *mimirpb.WriteRequest {
+	timeSeries := make([]mimirpb.PreallocTimeseries, 0, len(data))
+	for i := range data {
+		var lbls []mimirpb.LabelAdapter
+		for j := 0; j+1 < len(data[i].LabelValues); j += 2 {
+			lbls = append(lbls, mimirpb.LabelAdapter{Name: data[i].LabelValues[j], Value: data[i].LabelValues[j+1]})
+		}
+		timeSeries = append(timeSeries, mimirpb.PreallocTimeseries{
+			TimeSeries: &mimirpb.TimeSeries{
+				Labels:  lbls,
+				Samples: make([]mimirpb.Sample, data[i].SamplesCount),
+			},
+		})
+	}
+	return &mimirpb.WriteRequest{Timeseries: timeSeries}
 }
 
 // trackerByName returns the individual tracker with the given name from the user's composite,
@@ -145,7 +197,7 @@ func TestManager_CreateDeleteTracker(t *testing.T) {
 
 		manager.SampleTracker("user1").IncrementDiscardedSamples([]mimirpb.LabelAdapter{{Name: "team", Value: "bar"}}, 1, "invalid-metrics-name", time.Unix(6, 0))
 		manager.SampleTracker("user1").IncrementDiscardedSamples([]mimirpb.LabelAdapter{{Name: "team", Value: "foo"}}, 1, "invalid-metrics-name", time.Unix(12, 0))
-		manager.SampleTracker("user3").IncrementReceivedSamples(testutils.CreateRequest([]testutils.Series{{LabelValues: []string{"department", "foo", "service", "dodo"}, SamplesCount: 1}}), time.Unix(20, 0))
+		manager.SampleTracker("user3").IncrementReceivedSamples(createRequest([]series{{LabelValues: []string{"department", "foo", "service", "dodo"}, SamplesCount: 1}}), time.Unix(20, 0))
 		manager.ActiveSeriesTracker("user3") // Create the (empty) tracker so its operational and overflow-label metrics are exported.
 		manager.ActiveSeriesTracker("user1").Increment(labels.FromStrings("team", "bar"), time.Unix(10, 0), 50)
 		manager.ActiveSeriesTracker("user1").Increment(labels.FromStrings("team", "bar"), time.Unix(10, 0), -1)
@@ -281,7 +333,7 @@ func TestManager_CreateDeleteTracker(t *testing.T) {
 			"user3": {MaxCostAttributionCardinality: 2, CostAttributionBaseTrackers: defaultTrackerConfig(caLabels("department", "my_department", "service", "my_service"))},
 		})
 		manager.SampleTracker("user1").IncrementDiscardedSamples([]mimirpb.LabelAdapter{{Name: "team", Value: "foo"}}, 1, "invalid-metrics-name", time.Unix(12, 0))
-		manager.SampleTracker("user3").IncrementReceivedSamples(testutils.CreateRequest([]testutils.Series{{LabelValues: []string{"department", "foo", "service", "dodo"}, SamplesCount: 1}}), time.Unix(20, 0))
+		manager.SampleTracker("user3").IncrementReceivedSamples(createRequest([]series{{LabelValues: []string{"department", "foo", "service", "dodo"}, SamplesCount: 1}}), time.Unix(20, 0))
 		require.Equal(t, 2, len(manager.sampleTrackers.composite))
 
 		// Reload with cost attribution disabled for user1 (no trackers), keeping user3 unchanged.
@@ -305,7 +357,7 @@ func TestManager_CreateDeleteTracker(t *testing.T) {
 		manager, _, costAttributionReg := newManagerWithLimits(t, map[string]*validation.Limits{
 			"user3": {MaxCostAttributionCardinality: 2, CostAttributionBaseTrackers: defaultTrackerConfig(caLabels("department", "my_department", "service", "my_service"))},
 		})
-		manager.SampleTracker("user3").IncrementReceivedSamples(testutils.CreateRequest([]testutils.Series{{LabelValues: []string{"department", "foo", "service", "dodo"}, SamplesCount: 1}}), time.Unix(20, 0))
+		manager.SampleTracker("user3").IncrementReceivedSamples(createRequest([]series{{LabelValues: []string{"department", "foo", "service", "dodo"}, SamplesCount: 1}}), time.Unix(20, 0))
 
 		// Reload user3 with a different set of labels: the trackers are rebuilt with the new labels.
 		manager.limits = costAttributionOverrides(map[string]*validation.Limits{
@@ -340,9 +392,9 @@ func TestManager_CreateDeleteTracker(t *testing.T) {
 		manager.SampleTracker("user3").IncrementDiscardedSamples([]mimirpb.LabelAdapter{{Name: "team", Value: "foo"}}, 1, "invalid-metrics-name", time.Unix(13, 0))
 
 		// Three more distinct combinations exceed maxCardinality (2), so the tracker overflows.
-		manager.SampleTracker("user3").IncrementReceivedSamples(testutils.CreateRequest([]testutils.Series{{LabelValues: []string{"team", "bar", "feature", "bar"}, SamplesCount: 1}}), time.Unix(15, 0))
-		manager.SampleTracker("user3").IncrementReceivedSamples(testutils.CreateRequest([]testutils.Series{{LabelValues: []string{"team", "baz", "feature", "baz"}, SamplesCount: 1}}), time.Unix(16, 0))
-		manager.SampleTracker("user3").IncrementReceivedSamples(testutils.CreateRequest([]testutils.Series{{LabelValues: []string{"team", "foo", "feature", "foo"}, SamplesCount: 1}}), time.Unix(17, 0))
+		manager.SampleTracker("user3").IncrementReceivedSamples(createRequest([]series{{LabelValues: []string{"team", "bar", "feature", "bar"}, SamplesCount: 1}}), time.Unix(15, 0))
+		manager.SampleTracker("user3").IncrementReceivedSamples(createRequest([]series{{LabelValues: []string{"team", "baz", "feature", "baz"}, SamplesCount: 1}}), time.Unix(16, 0))
+		manager.SampleTracker("user3").IncrementReceivedSamples(createRequest([]series{{LabelValues: []string{"team", "foo", "feature", "foo"}, SamplesCount: 1}}), time.Unix(17, 0))
 		expectedMetrics := `
 		# HELP cortex_distributor_received_attributed_samples_total The total number of samples that were received per attribution.
 		# TYPE cortex_distributor_received_attributed_samples_total counter
@@ -374,7 +426,7 @@ func TestManager_CreateDeleteTracker(t *testing.T) {
 func TestManager_PurgeInactiveAttributionsUntil(t *testing.T) {
 	manager, _, costAttributionReg := newTestManager()
 
-	manager.SampleTracker("user1").IncrementReceivedSamples(testutils.CreateRequest([]testutils.Series{{LabelValues: []string{"team", "foo"}, SamplesCount: 1}}), time.Unix(1, 0))
+	manager.SampleTracker("user1").IncrementReceivedSamples(createRequest([]series{{LabelValues: []string{"team", "foo"}, SamplesCount: 1}}), time.Unix(1, 0))
 	manager.SampleTracker("user1").IncrementDiscardedSamples([]mimirpb.LabelAdapter{{Name: "team", Value: "foo"}}, 1, "invalid-metrics-name", time.Unix(1, 0))
 	manager.SampleTracker("user3").IncrementDiscardedSamples([]mimirpb.LabelAdapter{{Name: "department", Value: "foo"}, {Name: "service", Value: "bar"}}, 1, "out-of-window", time.Unix(10, 0))
 
@@ -396,7 +448,7 @@ func TestManager_PurgeInactiveAttributionsUntil(t *testing.T) {
 		manager.limits = costAttributionOverrides(map[string]*validation.Limits{
 			"user1": {MaxCostAttributionCardinality: 5},
 			"user3": {MaxCostAttributionCardinality: 2, CostAttributionBaseTrackers: defaultTrackerConfig(caLabels("department", "my_department", "service", "my_service"))},
-			"user7": {MaxCostAttributionCardinality: 2, CostAttributionBaseTrackers: defaultTrackerConfig(caLabels("team", "my_team")), CostAttributionCooldown: model.Duration(testutils.TestAttributionCooldown)},
+			"user7": {MaxCostAttributionCardinality: 2, CostAttributionBaseTrackers: defaultTrackerConfig(caLabels("team", "my_team")), CostAttributionCooldown: model.Duration(testAttributionCooldown)},
 		})
 		manager.purgeInactiveAttributionsUntil(time.Unix(5, 0).Add(manager.inactiveTimeout))
 
@@ -449,7 +501,7 @@ func TestManager_PurgeInactiveAttributionsUntil(t *testing.T) {
 			require.Equal(t, int64(2), ast.overflowCounter.activeSeries.Load(), "Overflow counter should be 1")
 		})
 
-		now = now.Add(testutils.TestAttributionCooldown)
+		now = now.Add(testAttributionCooldown)
 		manager.purgeInactiveAttributionsUntil(now)
 
 		withLockedActiveSeriesTracker(manager, "user7", func(ast *activeSeriesTracker) {
@@ -458,7 +510,7 @@ func TestManager_PurgeInactiveAttributionsUntil(t *testing.T) {
 			require.Equal(t, int64(2), ast.overflowCounter.activeSeries.Load(), "Overflow counter should be 1")
 		})
 
-		now = now.Add(testutils.TestAttributionCooldown / 10)
+		now = now.Add(testAttributionCooldown / 10)
 		manager.ActiveSeriesTracker("user7").Decrement(labels.FromStrings("team", "1"), 0)
 		manager.ActiveSeriesTracker("user7").Decrement(labels.FromStrings("team", "6"), 0)
 
@@ -468,7 +520,7 @@ func TestManager_PurgeInactiveAttributionsUntil(t *testing.T) {
 			require.Equal(t, int64(1), ast.overflowCounter.activeSeries.Load(), "Overflow counter should be 1")
 		})
 
-		now = now.Add(testutils.TestAttributionCooldown)
+		now = now.Add(testAttributionCooldown)
 		manager.purgeInactiveAttributionsUntil(now)
 
 		withLockedActiveSeriesTracker(manager, "user7", func(ast *activeSeriesTracker) {
@@ -477,7 +529,7 @@ func TestManager_PurgeInactiveAttributionsUntil(t *testing.T) {
 			require.Equal(t, int64(1), ast.overflowCounter.activeSeries.Load(), "Overflow counter should be 1")
 		})
 
-		now = now.Add(testutils.TestAttributionCooldown / 10)
+		now = now.Add(testAttributionCooldown / 10)
 		manager.ActiveSeriesTracker("user7").Increment(labels.FromStrings("team", "7"), now, 0)
 		withLockedActiveSeriesTracker(manager, "user7", func(ast *activeSeriesTracker) {
 			require.Equal(t, 4, len(ast.observed), "Should have 4 series tracked")
@@ -485,7 +537,7 @@ func TestManager_PurgeInactiveAttributionsUntil(t *testing.T) {
 			require.Equal(t, int64(1), ast.overflowCounter.activeSeries.Load(), "Overflow counter should be 1")
 		})
 
-		now = now.Add(testutils.TestAttributionCooldown / 10)
+		now = now.Add(testAttributionCooldown / 10)
 		manager.ActiveSeriesTracker("user7").Decrement(labels.FromStrings("team", "3"), 0)
 		manager.ActiveSeriesTracker("user7").Decrement(labels.FromStrings("team", "4"), 0)
 
@@ -495,7 +547,7 @@ func TestManager_PurgeInactiveAttributionsUntil(t *testing.T) {
 			require.Equal(t, int64(1), ast.overflowCounter.activeSeries.Load(), "Overflow counter should be 1")
 		})
 
-		now = now.Add(testutils.TestAttributionCooldown)
+		now = now.Add(testAttributionCooldown)
 		manager.purgeInactiveAttributionsUntil(now)
 		withLockedActiveSeriesTracker(manager, "user7", func(ast *activeSeriesTracker) {
 			require.Equal(t, 0, len(ast.observed), "Should have no series tracked")
@@ -510,7 +562,7 @@ func TestManager_OutputLabels(t *testing.T) {
 
 	manager.SampleTracker("user6").IncrementDiscardedSamples([]mimirpb.LabelAdapter{{Name: "team", Value: "bar"}}, 1, "invalid-metrics-name", time.Unix(6, 0))
 	manager.SampleTracker("user6").IncrementDiscardedSamples([]mimirpb.LabelAdapter{{Name: "team", Value: "foo"}}, 1, "invalid-metrics-name", time.Unix(12, 0))
-	manager.SampleTracker("user6").IncrementReceivedSamples(testutils.CreateRequest([]testutils.Series{{LabelValues: []string{"team", "foo", "feature", "dodo"}, SamplesCount: 1}}), time.Unix(20, 0))
+	manager.SampleTracker("user6").IncrementReceivedSamples(createRequest([]series{{LabelValues: []string{"team", "foo", "feature", "dodo"}, SamplesCount: 1}}), time.Unix(20, 0))
 	manager.ActiveSeriesTracker("user6").Increment(labels.FromStrings("team", "bar"), time.Unix(10, 0), 50)
 	manager.ActiveSeriesTracker("user6").Increment(labels.FromStrings("team", "bar"), time.Unix(10, 0), -1)
 	manager.ActiveSeriesTracker("user6").Increment(labels.FromStrings("team", "bar"), time.Unix(10, 0), 2)
@@ -608,7 +660,7 @@ func TestManager_MultipleTrackers(t *testing.T) {
 		manager, _, costAttributionReg := newManagerWithLimits(t, map[string]*validation.Limits{"user8": multiTrackerUser8Limits()})
 
 		// Increment samples on user8 — both trackers should see the data.
-		manager.SampleTracker("user8").IncrementReceivedSamples(testutils.CreateRequest([]testutils.Series{
+		manager.SampleTracker("user8").IncrementReceivedSamples(createRequest([]series{
 			{LabelValues: []string{"team", "backend", "platform", "k8s"}, SamplesCount: 5},
 		}), time.Unix(10, 0))
 
@@ -667,7 +719,7 @@ func TestManager_MultipleTrackers(t *testing.T) {
 			"user9": multiTrackerUser9Limits(),
 		})
 		// user8 gets one observed combination in each of its sample and active series trackers.
-		manager.SampleTracker("user8").IncrementReceivedSamples(testutils.CreateRequest([]testutils.Series{
+		manager.SampleTracker("user8").IncrementReceivedSamples(createRequest([]series{
 			{LabelValues: []string{"team", "backend", "platform", "k8s"}, SamplesCount: 5},
 		}), time.Unix(10, 0))
 		manager.ActiveSeriesTracker("user8").Increment(labels.FromStrings("team", "frontend", "platform", "bare-metal"), time.Unix(20, 0), 3)
@@ -696,7 +748,7 @@ func TestManager_MultipleTrackers(t *testing.T) {
 		t.Parallel()
 		manager, reg, _ := newManagerWithLimits(t, map[string]*validation.Limits{"user9": multiTrackerUser9Limits()})
 
-		manager.SampleTracker("user9").IncrementReceivedSamples(testutils.CreateRequest([]testutils.Series{
+		manager.SampleTracker("user9").IncrementReceivedSamples(createRequest([]series{
 			{LabelValues: []string{"__name__", "testing", "team", "ops", "service", "gateway"}, SamplesCount: 1},
 		}), time.Unix(100, 0))
 		manager.ActiveSeriesTracker("user9").Increment(
@@ -724,7 +776,7 @@ func TestManager_MultipleTrackers(t *testing.T) {
 		manager, _, _ := newManagerWithLimits(t, map[string]*validation.Limits{"user9": multiTrackerUser9Limits()})
 
 		// user9 with two additional trackers — add some data then purge.
-		manager.SampleTracker("user9").IncrementReceivedSamples(testutils.CreateRequest([]testutils.Series{
+		manager.SampleTracker("user9").IncrementReceivedSamples(createRequest([]series{
 			{LabelValues: []string{"team", "ops", "service", "gateway"}, SamplesCount: 1},
 		}), time.Unix(100, 0))
 
@@ -771,7 +823,7 @@ func TestManager_InvalidTrackers(t *testing.T) {
 
 		manager.SampleTracker("user1").IncrementDiscardedSamples([]mimirpb.LabelAdapter{{Name: "team", Value: "bar"}}, 1, "invalid-metrics-name", time.Unix(6, 0))
 		manager.SampleTracker("user1").IncrementDiscardedSamples([]mimirpb.LabelAdapter{{Name: "team", Value: "foo"}}, 1, "invalid-metrics-name", time.Unix(12, 0))
-		manager.SampleTracker("user3").IncrementReceivedSamples(testutils.CreateRequest([]testutils.Series{{LabelValues: []string{"department", "foo", "service", "dodo"}, SamplesCount: 1}}), time.Unix(20, 0))
+		manager.SampleTracker("user3").IncrementReceivedSamples(createRequest([]series{{LabelValues: []string{"department", "foo", "service", "dodo"}, SamplesCount: 1}}), time.Unix(20, 0))
 		manager.ActiveSeriesTracker("user1").Increment(labels.FromStrings("team", "bar"), time.Unix(10, 0), 50)
 		manager.ActiveSeriesTracker("user1").Increment(labels.FromStrings("team", "bar"), time.Unix(10, 0), -1)
 		manager.ActiveSeriesTracker("user3").Increment(labels.FromStrings("department", "foo", "service", "dodo"), time.Unix(10, 0), 2)
@@ -839,7 +891,7 @@ func TestManager_InvalidTrackers(t *testing.T) {
 		// Seed user1 (so the reload rebuilds its trackers) and user3 (so it survives the reload+purge).
 		manager.SampleTracker("user1").IncrementDiscardedSamples([]mimirpb.LabelAdapter{{Name: "team", Value: "bar"}}, 1, "invalid-metrics-name", time.Unix(6, 0))
 		manager.ActiveSeriesTracker("user1").Increment(labels.FromStrings("team", "bar"), time.Unix(10, 0), 50)
-		manager.SampleTracker("user3").IncrementReceivedSamples(testutils.CreateRequest([]testutils.Series{{LabelValues: []string{"department", "foo", "service", "dodo"}, SamplesCount: 1}}), time.Unix(20, 0))
+		manager.SampleTracker("user3").IncrementReceivedSamples(createRequest([]series{{LabelValues: []string{"department", "foo", "service", "dodo"}, SamplesCount: 1}}), time.Unix(20, 0))
 		manager.ActiveSeriesTracker("user3").Increment(labels.FromStrings("department", "foo", "service", "dodo"), time.Unix(10, 0), 2)
 
 		// Reload user1 with an invalid (reserved) output label name: its trackers can't be created and user1 is dropped.
@@ -906,7 +958,7 @@ func TestManager_InvalidTrackers(t *testing.T) {
 		// Seed user1's active series tracker (with the renamed label) so the reload rebuilds it,
 		// and user3 so it survives the reload+purge.
 		manager.ActiveSeriesTracker("user1").Increment(labels.FromStrings("team", "bar"), time.Unix(10, 0), 50)
-		manager.SampleTracker("user3").IncrementReceivedSamples(testutils.CreateRequest([]testutils.Series{{LabelValues: []string{"department", "foo", "service", "dodo"}, SamplesCount: 1}}), time.Unix(20, 0))
+		manager.SampleTracker("user3").IncrementReceivedSamples(createRequest([]series{{LabelValues: []string{"department", "foo", "service", "dodo"}, SamplesCount: 1}}), time.Unix(20, 0))
 		manager.ActiveSeriesTracker("user3").Increment(labels.FromStrings("department", "foo", "service", "dodo"), time.Unix(10, 0), 2)
 
 		// Reload user1 to attribute by the raw "team" label (output defaults to the input name), which is valid.
@@ -1089,7 +1141,7 @@ func TestManager_ActiveSeriesTrackerRebuiltFreshOnConfigReload(t *testing.T) {
 
 	stBefore := m.SampleTracker(userID)
 	require.NotNil(t, stBefore)
-	stBefore.IncrementReceivedSamples(testutils.CreateRequest([]testutils.Series{{LabelValues: []string{"a", "v1"}, SamplesCount: 1}}), time.Unix(0, 0))
+	stBefore.IncrementReceivedSamples(createRequest([]series{{LabelValues: []string{"a", "v1"}, SamplesCount: 1}}), time.Unix(0, 0))
 
 	activeT1Before := m.activeSeriesTrackers.trackerByName(userID, "t1")
 	sampleT1Before := m.sampleTrackers.trackerByName(userID, "t1")

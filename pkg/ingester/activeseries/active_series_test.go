@@ -28,8 +28,8 @@ import (
 
 	"github.com/grafana/mimir/pkg/costattribution"
 	"github.com/grafana/mimir/pkg/costattribution/costattributionmodel"
-	catestutils "github.com/grafana/mimir/pkg/costattribution/testutils"
 	asmodel "github.com/grafana/mimir/pkg/ingester/activeseries/model"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 func MustNewCustomTrackersConfigFromMap(t require.TestingT, source map[string]string) asmodel.CustomTrackersConfig {
@@ -307,7 +307,16 @@ func (m *mockIndex) Series(ref storage.SeriesRef, builder *labels.ScratchBuilder
 }
 
 func TestActiveSeries_UpdateSeries_WithCostAttribution(t *testing.T) {
-	limits := catestutils.NewMockCostAttributionLimits()
+	// user5 attributes cost by the "a" label.
+	user5 := &validation.Limits{
+		MaxCostAttributionCardinality: 10,
+		CostAttributionBaseTrackers: costattributionmodel.TrackerConfigs{
+			costattributionmodel.DefaultTrackerName: {Labels: costattributionmodel.Labels{{Input: "a", Output: "a"}}},
+		},
+	}
+	user5.CostAttributionBaseTrackers.Canonicalize()
+	user5.ComputeCostAttributionConfigHash()
+	limits := validation.NewOverrides(validation.Limits{}, validation.NewMockTenantLimits(map[string]*validation.Limits{"user5": user5}))
 	reg := prometheus.NewRegistry()
 	manager, err := costattribution.NewManager(5*time.Second, 10*time.Second, log.NewNopLogger(), limits, reg, reg)
 	require.NoError(t, err)
