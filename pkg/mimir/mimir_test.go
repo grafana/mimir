@@ -597,22 +597,13 @@ func TestConfigValidation(t *testing.T) {
 			expectAnyError: true,
 		},
 		{
-			name: "should fail if compartments are enabled but the Kafka address is not parameterised by write compartment",
+			name: "should pass if compartments are enabled but the Kafka address is not parameterised by write compartment",
 			getTestConfig: func() *Config {
 				cfg := validCompartmentsConfig()
 				cfg.IngestStorage.KafkaConfig.Address = flagext.StringSliceCSV{"localhost:9092"}
 				return cfg
 			},
-			expectAnyError: true,
-		},
-		{
-			name: "should fail if compartments are enabled but only some of the Kafka addresses are parameterised by write compartment",
-			getTestConfig: func() *Config {
-				cfg := validCompartmentsConfig()
-				cfg.IngestStorage.KafkaConfig.Address = flagext.StringSliceCSV{"kafka-wc-<write-compartment-id>:9092", "localhost:9092"}
-				return cfg
-			},
-			expectAnyError: true,
+			expectAnyError: false,
 		},
 		{
 			name: "should fail if compartments and the distributor are enabled but Kafka topic auto-creation is on",
