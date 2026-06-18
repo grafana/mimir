@@ -1763,3 +1763,79 @@ func TestRingBuffer_CountAndLast(t *testing.T) {
 		require.Equal(t, points[len(points)-1], buff.Last())
 	})
 }
+
+func TestHPointRingBufferView_UnsafePointsInIndexRange(t *testing.T) {
+	setupRingBufferTestingPools(t)
+
+	points := []promql.HPoint{
+		{T: 1, H: &histogram.FloatHistogram{Count: 100}},
+		{T: 2, H: &histogram.FloatHistogram{Count: 200}},
+		{T: 3, H: &histogram.FloatHistogram{Count: 300}},
+		{T: 4, H: &histogram.FloatHistogram{Count: 400}},
+		{T: 5, H: &histogram.FloatHistogram{Count: 500}},
+		{T: 6, H: &histogram.FloatHistogram{Count: 600}},
+	}
+
+	// assertMatchesPointAt checks that, for every valid sub-range, the two slices returned by
+	// UnsafePointsInIndexRange concatenate to exactly the points PointAt reports for that range.
+	assertMatchesPointAt := func(t *testing.T, view *HPointRingBufferView) {
+		t.Helper()
+		n := view.Count()
+		for first := 0; first < n; first++ {
+			for last := first; last < n; last++ {
+				head, tail := view.UnsafePointsInIndexRange(first, last)
+				combined := append(append([]promql.HPoint{}, head...), tail...)
+
+				expected := make([]promql.HPoint, 0, last-first+1)
+				for i := first; i <= last; i++ {
+					expected = append(expected, view.PointAt(i))
+				}
+				require.Equal(t, expected, combined, "range [%d,%d]", first, last)
+			}
+		}
+	}
+
+	t.Run("contiguous (non-wrapping) view", func(t *testing.T) {
+		buf := &hPointRingBufferWrapper{NewHPointRingBuffer(limiter.NewUnlimitedMemoryConsumptionTracker(context.Background()))}
+		for _, p := range points {
+			mustAppend(t, buf, p)
+		}
+		view := buf.ViewUntilSearchingForwards(math.MaxInt64, nil)
+		require.Equal(t, len(points), view.Count())
+		_, tail := view.UnsafePoints()
+		require.Empty(t, tail, "test setup expects a non-wrapping view")
+		assertMatchesPointAt(t, view)
+	})
+
+	t.Run("wrapping view", func(t *testing.T) {
+		// Force the buffer to wrap so the view spans both the head and tail segments, mirroring the
+		// setup in testDiscardPointsBeforeThroughWrapAround.
+		buf := &hPointRingBufferWrapper{NewHPointRingBuffer(limiter.NewUnlimitedMemoryConsumptionTracker(context.Background()))}
+		for _, p := range points[:4] {
+			mustAppend(t, buf, p)
+		}
+		require.Equal(t, 4, cap(buf.GetPoints()), "test setup expects underlying capacity 4")
+		buf.DiscardPointsAtOrBefore(2)
+		mustAppend(t, buf, points[4])
+		mustAppend(t, buf, points[5])
+		require.Equal(t, 2, buf.GetFirstIndex(), "test setup expects a wrapped buffer")
+
+		view := buf.ViewUntilSearchingForwards(math.MaxInt64, nil)
+		require.Equal(t, 4, view.Count())
+		head, tail := view.UnsafePoints()
+		require.NotEmpty(t, head)
+		require.NotEmpty(t, tail, "test setup expects the view to wrap (non-empty tail)")
+		assertMatchesPointAt(t, view)
+	})
+
+	t.Run("panics on invalid ranges", func(t *testing.T) {
+		buf := &hPointRingBufferWrapper{NewHPointRingBuffer(limiter.NewUnlimitedMemoryConsumptionTracker(context.Background()))}
+		for _, p := range points[:3] {
+			mustAppend(t, buf, p)
+		}
+		view := buf.ViewUntilSearchingForwards(math.MaxInt64, nil)
+		require.Panics(t, func() { view.UnsafePointsInIndexRange(-1, 0) })
+		require.Panics(t, func() { view.UnsafePointsInIndexRange(0, view.Count()) })
+		require.Panics(t, func() { view.UnsafePointsInIndexRange(2, 1) })
+	})
+}

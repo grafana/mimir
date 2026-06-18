@@ -9,6 +9,7 @@ import (
 	"sort"
 
 	"github.com/prometheus/prometheus/model/histogram"
+	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -98,14 +99,19 @@ func subHistogramWithAnnotations(base, other *histogram.FloatHistogram, emitAnno
 // NativeHistogramNotCounterWarning for any sample carrying a gauge hint while isCounter is true.
 func validateHistogramRange(view *types.HPointRingBufferView, first, last int, isCounter bool, emitAnnotation types.EmitAnnotationFunc) bool {
 	usingCustomBuckets := view.PointAt(first).H.UsesCustomBuckets()
-	for i := first; i <= last; i++ {
-		p := view.PointAt(i)
-		if p.H.UsesCustomBuckets() != usingCustomBuckets {
-			emitAnnotation(annotations.NewMixedExponentialCustomHistogramsWarning)
-			return false
-		}
-		if isCounter && p.H.CounterResetHint == histogram.GaugeType {
-			emitAnnotation(annotations.NewNativeHistogramNotCounterWarning)
+	// Iterate the underlying contiguous slices rather than calling PointAt per sample: this is the
+	// idiom used elsewhere in the package and lets the compiler range over a slice. The second
+	// segment is only non-empty when the range wraps the ring buffer.
+	head, tail := view.UnsafePointsInIndexRange(first, last)
+	for _, segment := range [...][]promql.HPoint{head, tail} {
+		for _, p := range segment {
+			if p.H.UsesCustomBuckets() != usingCustomBuckets {
+				emitAnnotation(annotations.NewMixedExponentialCustomHistogramsWarning)
+				return false
+			}
+			if isCounter && p.H.CounterResetHint == histogram.GaugeType {
+				emitAnnotation(annotations.NewNativeHistogramNotCounterWarning)
+			}
 		}
 	}
 	return true
@@ -158,14 +164,23 @@ func correctForCounterResetsHistogram(view *types.HPointRingBufferView, firstSam
 		return addHistogramWithAnnotations(correction, h, emitAnnotation)
 	}
 
-	for i := firstToCheck; i <= lastToCheck; i++ {
-		p := view.PointAt(i)
-		if p.H.DetectReset(prev) {
-			if ok, err := addCorrection(prev); !ok {
-				return nil, false, err
+	// Iterate the underlying contiguous slices rather than calling PointAt per sample. prev and
+	// addCorrection are declared above, so the reset-detection state carries across the two
+	// segments (the second is only non-empty when the range wraps the ring buffer).
+	// firstToCheck == lastToCheck+1 is a valid empty interior range (e.g. adjacent boundaries); it
+	// is not caught by the firstToCheck > lastToCheck+1 guard above, so skip the slice lookup here.
+	if firstToCheck <= lastToCheck {
+		head, tail := view.UnsafePointsInIndexRange(firstToCheck, lastToCheck)
+		for _, segment := range [...][]promql.HPoint{head, tail} {
+			for _, p := range segment {
+				if p.H.DetectReset(prev) {
+					if ok, err := addCorrection(prev); !ok {
+						return nil, false, err
+					}
+				}
+				prev = p.H
 			}
 		}
-		prev = p.H
 	}
 	if right.DetectReset(prev) {
 		if ok, err := addCorrection(prev); !ok {

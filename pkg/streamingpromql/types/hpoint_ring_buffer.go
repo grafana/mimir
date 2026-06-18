@@ -341,6 +341,23 @@ func (v HPointRingBufferView) UnsafePoints() (head []promql.HPoint, tail []promq
 	return v.buffer.points[startIndex:endOfHeadSegment], nil
 }
 
+// UnsafePointsInIndexRange returns the points with logical indices in [first, last] (inclusive) as
+// up to two contiguous slices. The second slice is non-empty only when the requested range wraps
+// the underlying ring buffer. It is the index-range equivalent of UnsafePoints, and lets callers
+// iterate a sub-range with a plain slice range loop instead of repeated PointAt calls.
+// Like UnsafePoints, the returned slices alias the buffer and must not be modified nor returned to
+// a pool.
+func (v HPointRingBufferView) UnsafePointsInIndexRange(first, last int) (head []promql.HPoint, tail []promql.HPoint) {
+	if first < 0 || last >= v.size || first > last {
+		panic("HPointRingBufferView.UnsafePointsInIndexRange(): index out of range")
+	}
+
+	// A view starting at v.offset+first holding (last-first+1) points has the same wraparound
+	// structure as any other view, so delegate to UnsafePoints to keep that logic in one place.
+	sub := HPointRingBufferView{buffer: v.buffer, offset: v.offset + first, size: last - first + 1}
+	return sub.UnsafePoints()
+}
+
 // CopyPoints returns a single slice of the points in this buffer view.
 // Callers may modify the values in the returned slice, and should return the slice to the pool by calling
 // PutHPointSlice when it is no longer needed.
