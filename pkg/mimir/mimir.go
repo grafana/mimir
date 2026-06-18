@@ -303,6 +303,19 @@ func (c *Config) Validate(log log.Logger) error {
 				return fmt.Errorf("when compartments are enabled, -ingest-storage.kafka.topic must contain the %q placeholder for the distributor and ingester", compartments.ReadCompartmentIDPlaceholder)
 			}
 		}
+		// The ingester consumes its partition from every write compartment's Kafka cluster, resolving each
+		// configured address per write compartment. With more than one write compartment and an address
+		// without the placeholder, every compartment resolves to the same cluster, so the ingester would
+		// consume each partition once per write compartment and duplicate samples. A single write
+		// compartment (or other components, like the distributor, that target just one cluster) doesn't
+		// need the placeholder.
+		if c.isIngesterEnabled() && c.Compartments.Write.NumCompartments > 1 {
+			for _, addr := range c.IngestStorage.KafkaConfig.Address {
+				if !strings.Contains(addr, compartments.WriteCompartmentIDPlaceholder) {
+					return fmt.Errorf("when compartments are enabled with more than one write compartment, every -ingest-storage.kafka.address must contain the %q placeholder for the ingester", compartments.WriteCompartmentIDPlaceholder)
+				}
+			}
+		}
 		// The distributor's writer is configured with the read-compartment-templated topic, which is not a
 		// real topic name and so cannot be auto-created; the resolved per-compartment topics are created by
 		// the ingesters' partition readers. The distributor must therefore have topic auto-creation disabled.
