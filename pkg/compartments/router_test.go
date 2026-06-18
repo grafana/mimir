@@ -26,6 +26,15 @@ func TestRouter_TopicForCompartment(t *testing.T) {
 	assert.Equal(t, "mimir-rc-2", r.TopicForCompartment(2))
 }
 
+func TestRouter_Topics(t *testing.T) {
+	r := newTestRouter(3)
+	assert.Equal(t, []string{"mimir-rc-0", "mimir-rc-1", "mimir-rc-2"}, r.Topics())
+
+	// The returned slice is a copy: mutating it must not affect the router.
+	r.Topics()[0] = "mutated"
+	assert.Equal(t, "mimir-rc-0", r.TopicForCompartment(0))
+}
+
 func TestRouter_CompartmentForMetric(t *testing.T) {
 	r := newTestRouter(4)
 

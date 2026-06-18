@@ -63,6 +63,10 @@ type Writer struct {
 	logger     log.Logger
 	registerer prometheus.Registerer
 
+	// autoCreateTopics is the set of topics to auto-create on startup. It defaults to the configured
+	// kafkaCfg.Topic and can be overridden via WithAutoCreateTopics.
+	autoCreateTopics []string
+
 	client     atomic.Pointer[KafkaProducer]
 	serializer recordSerializer
 
@@ -75,7 +79,16 @@ type Writer struct {
 	serializeDuration   prometheus.Histogram
 }
 
-func NewWriter(kafkaCfg KafkaConfig, logger log.Logger, reg prometheus.Registerer) *Writer {
+// WriterOption customizes a Writer built by NewWriter.
+type WriterOption func(*Writer)
+
+// WithAutoCreateTopics sets the explicit set of topics the writer auto-creates on startup, instead of
+// the single configured KafkaConfig.Topic.
+func WithAutoCreateTopics(topics []string) WriterOption {
+	return func(w *Writer) { w.autoCreateTopics = topics }
+}
+
+func NewWriter(kafkaCfg KafkaConfig, logger log.Logger, reg prometheus.Registerer, opts ...WriterOption) *Writer {
 	writeLatency := promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
 		Name:                            "cortex_ingest_storage_writer_latency_seconds",
 		Help:                            "Latency to write an incoming request to Kafka partitions.",
@@ -86,10 +99,11 @@ func NewWriter(kafkaCfg KafkaConfig, logger log.Logger, reg prometheus.Registere
 	}, []string{"outcome"})
 
 	w := &Writer{
-		kafkaCfg:   kafkaCfg,
-		logger:     logger,
-		registerer: reg,
-		serializer: recordSerializerFromCfg(kafkaCfg),
+		kafkaCfg:         kafkaCfg,
+		logger:           logger,
+		registerer:       reg,
+		serializer:       recordSerializerFromCfg(kafkaCfg),
+		autoCreateTopics: []string{kafkaCfg.Topic},
 
 		// Metrics.
 		writeSuccessLatency: writeLatency.WithLabelValues("success"),
@@ -117,6 +131,10 @@ func NewWriter(kafkaCfg KafkaConfig, logger log.Logger, reg prometheus.Registere
 		}),
 	}
 
+	for _, opt := range opts {
+		opt(w)
+	}
+
 	w.Service = services.NewIdleService(w.starting, w.stopping)
 
 	return w
@@ -124,7 +142,7 @@ func NewWriter(kafkaCfg KafkaConfig, logger log.Logger, reg prometheus.Registere
 
 func (w *Writer) starting(_ context.Context) error {
 	if w.kafkaCfg.AutoCreateTopicEnabled {
-		if err := CreateTopic(w.kafkaCfg, w.logger); err != nil {
+		if err := CreateTopics(w.kafkaCfg, w.logger, w.autoCreateTopics...); err != nil {
 			return err
 		}
 	}
