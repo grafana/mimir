@@ -21,8 +21,7 @@ import (
 type rotationTransition int
 
 const (
-	rotationNoChange rotationTransition = iota
-	rotationAddTracker
+	rotationAddTracker rotationTransition = iota
 	rotationRemoveTracker
 )
 

@@ -76,14 +76,14 @@ func NewJobTracker(jobPersister JobPersister, tenant string, clock clock.Clock, 
 	return jt
 }
 
-// toPendingBack adds a job to the back of its lane's queue.
+// toPendingBack adds a job to the back of its lane's queue. Callers must have exclusive access.
 func (jt *JobTracker) toPendingBack(j TrackedJob) {
 	l := jt.lanePolicy.LaneForJob(j)
 	jt.incompleteJobs[j.ID()] = jt.pending[l].PushBack(j)
 }
 
 // toPendingFront adds a job to the front of its lane's queue, reporting whether that
-// lane was empty beforehand.
+// lane was empty beforehand. Callers must have exclusive access.
 func (jt *JobTracker) toPendingFront(j TrackedJob) (lane, bool) {
 	l := jt.lanePolicy.LaneForJob(j)
 	p := jt.pending[l]
