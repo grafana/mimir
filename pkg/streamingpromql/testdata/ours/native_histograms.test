@@ -296,22 +296,22 @@ eval instant at 0 cbh_for_join >/ on (label) group_left float_for_join
 
 # float </ float
 eval instant at 0 float_for_join </ on (label) float_for_join
-  expect info
+  expect info msg: PromQL info: incompatible sample types encountered for binary operator "</": float </ float
   expect no_warn
 
 # float >/ histogram (histogram on the right side is not a valid trim)
 eval instant at 0 float_for_join >/ on (label) cbh_for_join
-  expect info
+  expect info msg: PromQL info: incompatible sample types encountered for binary operator ">/": float >/ histogram
   expect no_warn
 
 # histogram </ histogram
 eval instant at 0 cbh_for_join </ on (label) cbh_for_join
-  expect info
+  expect info msg: PromQL info: incompatible sample types encountered for binary operator "</": histogram </ histogram
   expect no_warn
 
 # Trim operators are not defined between two scalars: this must return a query error rather than panic.
 eval_fail instant at 0 2 </ 3
-  expected_fail_regexp operator "<\/" not allowed for [Ss]calar operations
+  expected_fail_regexp operator "<\/" not allowed .* [Ss]calar
 
 eval_fail instant at 0 2 >/ 3
-  expected_fail_regexp operator ">\/" not allowed for [Ss]calar operations
+  expected_fail_regexp operator ">\/" not allowed .* [Ss]calar
