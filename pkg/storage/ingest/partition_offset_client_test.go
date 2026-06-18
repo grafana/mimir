@@ -42,7 +42,7 @@ func TestPartitionOffsetClient_FetchPartitionLastProducedOffset(t *testing.T) {
 			kafkaCfg       = createTestKafkaConfig(clusterAddr, topicName)
 			client         = createTestKafkaClient(t, kafkaCfg)
 			reg            = prometheus.NewPedanticRegistry()
-			reader         = newPartitionOffsetClient(client, topicName, reg, logger)
+			reader         = newPartitionOffsetClient(client, topicName, "test", reg, logger)
 		)
 
 		offset, err := reader.FetchPartitionLastProducedOffset(ctx, partitionID)
@@ -66,11 +66,11 @@ func TestPartitionOffsetClient_FetchPartitionLastProducedOffset(t *testing.T) {
 		assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
 			# HELP cortex_ingest_storage_reader_last_produced_offset_failures_total Total number of failed requests to get the last produced offset.
 			# TYPE cortex_ingest_storage_reader_last_produced_offset_failures_total counter
-			cortex_ingest_storage_reader_last_produced_offset_failures_total{partition="0",topic="test"} 0
+			cortex_ingest_storage_reader_last_produced_offset_failures_total{component="test",partition="0",topic="test"} 0
 
 			# HELP cortex_ingest_storage_reader_last_produced_offset_requests_total Total number of requests issued to get the last produced offset.
 			# TYPE cortex_ingest_storage_reader_last_produced_offset_requests_total counter
-			cortex_ingest_storage_reader_last_produced_offset_requests_total{partition="0",topic="test"} 3
+			cortex_ingest_storage_reader_last_produced_offset_requests_total{component="test",partition="0",topic="test"} 3
 		`), "cortex_ingest_storage_reader_last_produced_offset_requests_total",
 			"cortex_ingest_storage_reader_last_produced_offset_failures_total"))
 	})
@@ -83,7 +83,7 @@ func TestPartitionOffsetClient_FetchPartitionLastProducedOffset(t *testing.T) {
 			kafkaCfg             = createTestKafkaConfig(clusterAddr, topicName)
 			client               = createTestKafkaClient(t, kafkaCfg)
 			reg                  = prometheus.NewPedanticRegistry()
-			reader               = newPartitionOffsetClient(client, topicName, reg, logger)
+			reader               = newPartitionOffsetClient(client, topicName, "test", reg, logger)
 
 			firstRequest         = atomic.NewBool(true)
 			firstRequestReceived = make(chan struct{})
@@ -148,7 +148,7 @@ func TestPartitionOffsetClient_FetchPartitionStartOffset(t *testing.T) {
 			kafkaCfg       = createTestKafkaConfig(clusterAddr, topicName)
 			client         = createTestKafkaClient(t, kafkaCfg)
 			reg            = prometheus.NewPedanticRegistry()
-			reader         = newPartitionOffsetClient(client, topicName, reg, logger)
+			reader         = newPartitionOffsetClient(client, topicName, "test", reg, logger)
 		)
 
 		offset, err := reader.FetchPartitionStartOffset(ctx, partitionID)
@@ -184,11 +184,11 @@ func TestPartitionOffsetClient_FetchPartitionStartOffset(t *testing.T) {
 		assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
 			# HELP cortex_ingest_storage_reader_partition_start_offset_failures_total Total number of failed requests to get the partition start offset.
 			# TYPE cortex_ingest_storage_reader_partition_start_offset_failures_total counter
-			cortex_ingest_storage_reader_partition_start_offset_failures_total{partition="0",topic="test"} 0
+			cortex_ingest_storage_reader_partition_start_offset_failures_total{component="test",partition="0",topic="test"} 0
 
 			# HELP cortex_ingest_storage_reader_partition_start_offset_requests_total Total number of requests issued to get the partition start offset.
 			# TYPE cortex_ingest_storage_reader_partition_start_offset_requests_total counter
-			cortex_ingest_storage_reader_partition_start_offset_requests_total{partition="0",topic="test"} 4
+			cortex_ingest_storage_reader_partition_start_offset_requests_total{component="test",partition="0",topic="test"} 4
 		`), "cortex_ingest_storage_reader_partition_start_offset_requests_total",
 			"cortex_ingest_storage_reader_partition_start_offset_failures_total"))
 	})
@@ -201,7 +201,7 @@ func TestPartitionOffsetClient_FetchPartitionStartOffset(t *testing.T) {
 			kafkaCfg             = createTestKafkaConfig(clusterAddr, topicName)
 			client               = createTestKafkaClient(t, kafkaCfg)
 			reg                  = prometheus.NewPedanticRegistry()
-			reader               = newPartitionOffsetClient(client, topicName, reg, logger)
+			reader               = newPartitionOffsetClient(client, topicName, "test", reg, logger)
 
 			firstRequest         = atomic.NewBool(true)
 			firstRequestReceived = make(chan struct{})
@@ -276,7 +276,7 @@ func TestPartitionOffsetClient_FetchPartitionsLastProducedOffsets(t *testing.T) 
 			kafkaCfg       = createTestKafkaConfig(clusterAddr, topicName)
 			client         = createTestKafkaClient(t, kafkaCfg)
 			reg            = prometheus.NewPedanticRegistry()
-			reader         = newPartitionOffsetClient(client, topicName, reg, logger)
+			reader         = newPartitionOffsetClient(client, topicName, "test", reg, logger)
 		)
 
 		offsets, err := reader.FetchPartitionsLastProducedOffsets(ctx, allPartitionIDs)
@@ -309,11 +309,11 @@ func TestPartitionOffsetClient_FetchPartitionsLastProducedOffsets(t *testing.T) 
 		assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
 			# HELP cortex_ingest_storage_reader_last_produced_offset_failures_total Total number of failed requests to get the last produced offset.
 			# TYPE cortex_ingest_storage_reader_last_produced_offset_failures_total counter
-			cortex_ingest_storage_reader_last_produced_offset_failures_total{partition="mixed",topic="test"} 0
+			cortex_ingest_storage_reader_last_produced_offset_failures_total{component="test",partition="mixed",topic="test"} 0
 
 			# HELP cortex_ingest_storage_reader_last_produced_offset_requests_total Total number of requests issued to get the last produced offset.
 			# TYPE cortex_ingest_storage_reader_last_produced_offset_requests_total counter
-			cortex_ingest_storage_reader_last_produced_offset_requests_total{partition="mixed",topic="test"} 4
+			cortex_ingest_storage_reader_last_produced_offset_requests_total{component="test",partition="mixed",topic="test"} 4
 		`), "cortex_ingest_storage_reader_last_produced_offset_requests_total",
 			"cortex_ingest_storage_reader_last_produced_offset_failures_total"))
 	})
@@ -326,7 +326,7 @@ func TestPartitionOffsetClient_FetchPartitionsLastProducedOffsets(t *testing.T) 
 			kafkaCfg       = createTestKafkaConfig(clusterAddr, topicName)
 			client         = createTestKafkaClient(t, kafkaCfg)
 			reg            = prometheus.NewPedanticRegistry()
-			reader         = newPartitionOffsetClient(client, topicName, reg, logger)
+			reader         = newPartitionOffsetClient(client, topicName, "test", reg, logger)
 		)
 
 		// Write some records.
@@ -351,7 +351,7 @@ func TestPartitionOffsetClient_FetchPartitionsLastProducedOffsets(t *testing.T) 
 			kafkaCfg             = createTestKafkaConfig(clusterAddr, topicName)
 			client               = createTestKafkaClient(t, kafkaCfg)
 			reg                  = prometheus.NewPedanticRegistry()
-			reader               = newPartitionOffsetClient(client, topicName, reg, logger)
+			reader               = newPartitionOffsetClient(client, topicName, "test", reg, logger)
 
 			firstRequest         = atomic.NewBool(true)
 			firstRequestReceived = make(chan struct{})
@@ -406,7 +406,7 @@ func TestPartitionOffsetClient_FetchPartitionsLastProducedOffsets(t *testing.T) 
 
 		client := createTestKafkaClient(t, kafkaCfg)
 		reg := prometheus.NewPedanticRegistry()
-		reader := newPartitionOffsetClient(client, topicName, reg, logger)
+		reader := newPartitionOffsetClient(client, topicName, "test", reg, logger)
 
 		cluster.ControlKey(int16(kmsg.ListOffsets), func(kreq kmsg.Request) (kmsg.Response, error, bool) {
 			cluster.KeepControl()
@@ -438,7 +438,7 @@ func TestPartitionOffsetClient_FetchPartitionsLastProducedOffsets(t *testing.T) 
 
 		client := createTestKafkaClient(t, kafkaCfg)
 		reg := prometheus.NewPedanticRegistry()
-		reader := newPartitionOffsetClient(client, topicName, reg, logger)
+		reader := newPartitionOffsetClient(client, topicName, "test", reg, logger)
 
 		cluster.ControlKey(int16(kmsg.ListOffsets), func(kreq kmsg.Request) (kmsg.Response, error, bool) {
 			cluster.KeepControl()
@@ -469,7 +469,7 @@ func TestPartitionOffsetClient_FetchPartitionsLastProducedOffsets(t *testing.T) 
 
 		client := createTestKafkaClient(t, kafkaCfg)
 		reg := prometheus.NewPedanticRegistry()
-		reader := newPartitionOffsetClient(client, topicName, reg, logger)
+		reader := newPartitionOffsetClient(client, topicName, "test", reg, logger)
 
 		cluster.ControlKey(int16(kmsg.ListOffsets), func(kreq kmsg.Request) (kmsg.Response, error, bool) {
 			cluster.KeepControl()
@@ -518,7 +518,7 @@ func TestPartitionOffsetClient_ListTopicPartitionIDs(t *testing.T) {
 			_, clusterAddr = testkafka.CreateCluster(t, numPartitions, topicName)
 			kafkaCfg       = createTestKafkaConfig(clusterAddr, topicName)
 			client         = createTestKafkaClient(t, kafkaCfg)
-			reader         = newPartitionOffsetClient(client, topicName, nil, logger)
+			reader         = newPartitionOffsetClient(client, topicName, "test", nil, logger)
 		)
 
 		actualIDs, actualErr := reader.ListTopicPartitionIDs(ctx)
@@ -535,7 +535,7 @@ func TestPartitionOffsetClient_ListTopicPartitionIDs(t *testing.T) {
 			cluster, clusterAddr = testkafka.CreateCluster(t, numPartitions, topicName)
 			kafkaCfg             = createTestKafkaConfig(clusterAddr, topicName)
 			client               = createTestKafkaClient(t, kafkaCfg)
-			reader               = newPartitionOffsetClient(client, topicName, nil, logger)
+			reader               = newPartitionOffsetClient(client, topicName, "test", nil, logger)
 		)
 
 		cluster.ControlKey(int16(kmsg.Metadata), func(kreq kmsg.Request) (kmsg.Response, error, bool) {

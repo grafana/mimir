@@ -124,8 +124,8 @@ type partitionOffsetReader struct {
 	partitionID int32
 }
 
-func newPartitionOffsetReader(client *kgo.Client, topic string, partitionID int32, pollInterval time.Duration, reg prometheus.Registerer, logger log.Logger) *partitionOffsetReader {
-	offsetClient := newPartitionOffsetClient(client, topic, reg, logger)
+func newPartitionOffsetReader(client *kgo.Client, topic string, component string, partitionID int32, pollInterval time.Duration, reg prometheus.Registerer, logger log.Logger) *partitionOffsetReader {
+	offsetClient := newPartitionOffsetClient(client, topic, component, reg, logger)
 	return newPartitionOffsetReaderWithOffsetClient(offsetClient, partitionID, pollInterval, logger)
 }
 
@@ -167,9 +167,9 @@ type TopicOffsetsReader struct {
 	logger          log.Logger
 }
 
-func NewTopicOffsetsReader(client *kgo.Client, topic string, getPartitionIDs GetPartitionIDsFunc, pollInterval time.Duration, reg prometheus.Registerer, logger log.Logger) *TopicOffsetsReader {
+func NewTopicOffsetsReader(client *kgo.Client, topic string, component string, getPartitionIDs GetPartitionIDsFunc, pollInterval time.Duration, reg prometheus.Registerer, logger log.Logger) *TopicOffsetsReader {
 	r := &TopicOffsetsReader{
-		client:          newPartitionOffsetClient(client, topic, reg, logger),
+		client:          newPartitionOffsetClient(client, topic, component, reg, logger),
 		topic:           topic,
 		getPartitionIDs: getPartitionIDs,
 		logger:          logger,
@@ -183,10 +183,14 @@ func NewTopicOffsetsReader(client *kgo.Client, topic string, getPartitionIDs Get
 // NewTopicOffsetsReaderForAllPartitions returns a TopicOffsetsReader instance that fetches the offsets for all
 // existing partitions in a topic. The list of partitions is refreshed each time FetchLastProducedOffset() is called,
 // so using a TopicOffsetsReader created by this function adds an extra latency to refresh partitions each time.
-func NewTopicOffsetsReaderForAllPartitions(client *kgo.Client, topic string, pollInterval time.Duration, reg prometheus.Registerer, logger log.Logger) *TopicOffsetsReader {
-	offsetsClient := newPartitionOffsetClient(client, topic, reg, logger)
+func NewTopicOffsetsReaderForAllPartitions(client *kgo.Client, topic string, component string, pollInterval time.Duration, reg prometheus.Registerer, logger log.Logger) *TopicOffsetsReader {
+	// This client is only used for ListTopicPartitionIDs (it tracks no offset metrics of its
+	// own that callers read), but it still registers the offset-client metric vectors, so it
+	// must use a distinct component from the reader created below to avoid colliding on the
+	// shared registry. See grafana/mimir#13468.
+	offsetsClient := newPartitionOffsetClient(client, topic, component+"-partition-lister", reg, logger)
 
-	return NewTopicOffsetsReader(client, topic, offsetsClient.ListTopicPartitionIDs, pollInterval, reg, logger)
+	return NewTopicOffsetsReader(client, topic, component, offsetsClient.ListTopicPartitionIDs, pollInterval, reg, logger)
 }
 
 // FetchLastProducedOffset fetches and returns the last produced offset for each requested partition in the topic.

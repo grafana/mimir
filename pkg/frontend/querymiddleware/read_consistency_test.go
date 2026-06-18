@@ -88,7 +88,7 @@ func TestReadConsistencyRoundTripper(t *testing.T) {
 			require.NoError(t, err)
 			t.Cleanup(readClient.Close)
 
-			reader := ingest.NewTopicOffsetsReaderForAllPartitions(readClient, topic, 100*time.Millisecond, nil, logger)
+			reader := ingest.NewTopicOffsetsReaderForAllPartitions(readClient, topic, "test", 100*time.Millisecond, nil, logger)
 			require.NoError(t, services.StartAndAwaitRunning(ctx, reader))
 			t.Cleanup(func() {
 				require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
