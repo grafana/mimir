@@ -44,11 +44,11 @@ type JobTracker struct {
 
 	mtx                    sync.Mutex
 	pending                map[lane]*list.List
-	active                 *list.List              // ordered by oldest lease first
-	isPlanJobLeased        bool                    // used to decide whether to retain completed compaction jobs
+	active                 *list.List               // ordered by oldest lease first
+	isPlanJobLeased        bool                     // used to decide whether to retain completed compaction jobs
 	incompleteJobs         map[string]*list.Element // all incomplete jobs; element is in active or in exactly one lane's pending list
-	completePlanTime       time.Time               // time of the last completed plan job. Zero time if planning has never completed or a plan job is currently incomplete (pending or active).
-	completeCompactionJobs []*TrackedCompactionJob // tracked in order to reject jobs that may be from a stale planning view.
+	completePlanTime       time.Time                // time of the last completed plan job. Zero time if planning has never completed or a plan job is currently incomplete (pending or active).
+	completeCompactionJobs []*TrackedCompactionJob  // tracked in order to reject jobs that may be from a stale planning view.
 }
 
 func NewJobTracker(jobPersister JobPersister, tenant string, clock clock.Clock, lanePolicy lanePolicy, maxLeases int, repeatedFailureReportThreshold int, metrics *trackerMetrics, logger log.Logger) *JobTracker {
