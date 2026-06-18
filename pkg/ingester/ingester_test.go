@@ -12452,3 +12452,81 @@ func makeTestRW2WriteRequest(syms *rw2util.SymbolTableBuilder) *mimirpb.WriteReq
 
 	return req
 }
+
+func TestHeadMaxTimestampFutureExcessMillis(t *testing.T) {
+	const nowMs = int64(1_700_000_000_000)
+	const grace = time.Hour
+
+	for name, tc := range map[string]struct {
+		headMaxMs int64
+		grace     time.Duration
+		expected  int64
+	}{
+		"within grace":             {headMaxMs: nowMs + (30 * time.Minute).Milliseconds(), grace: grace, expected: -(30 * time.Minute).Milliseconds()},
+		"exactly at grace bound":   {headMaxMs: nowMs + grace.Milliseconds(), grace: grace, expected: 0},
+		"beyond grace":             {headMaxMs: nowMs + (90 * time.Minute).Milliseconds(), grace: grace, expected: (30 * time.Minute).Milliseconds()},
+		"head in the past":         {headMaxMs: nowMs - (10 * time.Minute).Milliseconds(), grace: grace, expected: -(70 * time.Minute).Milliseconds()},
+		"zero grace, sample now":   {headMaxMs: nowMs, grace: 0, expected: 0},
+		"zero grace, future":       {headMaxMs: nowMs + time.Minute.Milliseconds(), grace: 0, expected: time.Minute.Milliseconds()},
+		"empty head not in future": {headMaxMs: math.MinInt64, grace: grace, expected: 0},
+		// A head ~400 years ahead overflows an int64-nanosecond time.Duration but is correct in
+		// milliseconds; regression guard for the overflow this helper was changed to avoid.
+		"far future beyond ns range": {headMaxMs: nowMs + 400*365*24*time.Hour.Milliseconds(), grace: grace, expected: 400*365*24*time.Hour.Milliseconds() - time.Hour.Milliseconds()},
+	} {
+		t.Run(name, func(t *testing.T) {
+			require.Equal(t, tc.expected, headMaxTimestampFutureExcessMillis(tc.headMaxMs, nowMs, tc.grace))
+		})
+	}
+}
+
+func TestIngester_HeadMaxTimestampTooFarInFutureMetric(t *testing.T) {
+	const userID = "test-user"
+
+	cfg := defaultIngesterTestConfig(t)
+	// Pin the background limit-metrics updater far out so the test deterministically controls when
+	// updateLimitMetrics runs (we call it explicitly below).
+	cfg.limitMetricsUpdatePeriod = time.Hour
+
+	// Per-tenant limits we can mutate at runtime. Start with a generous creation grace period so the
+	// future-dated sample is accepted, then tighten it to reproduce the real trigger (grace reduced
+	// below already-admitted data).
+	defaults := defaultLimitsTestConfig()
+	tenantLimits := defaultLimitsTestConfig()
+	tenantLimits.CreationGracePeriod = model.Duration(2 * time.Hour)
+	override := validation.NewOverrides(defaults, validation.NewMockTenantLimits(map[string]*validation.Limits{userID: &tenantLimits}))
+
+	i, r, err := prepareIngesterWithBlockStorageAndOverrides(t, cfg, override, nil, "", "", nil)
+	require.NoError(t, err)
+	startAndWaitHealthy(t, i, r)
+
+	gauge := i.metrics.headMaxTimestampTooFarInFuture
+
+	// Admit a sample 30m in the future (within the 2h grace).
+	ctx := user.InjectOrgID(t.Context(), userID)
+	futureMs := time.Now().Add(30 * time.Minute).UnixMilli()
+	_, err = i.Push(ctx, mockWriteRequest(t, labels.FromStrings(model.MetricNameLabel, "test_metric"), 1, futureMs))
+	require.NoError(t, err)
+
+	// Within grace: the head is ahead of now but inside the tenant's 2h grace, so nothing is emitted.
+	i.updateLimitMetrics()
+	require.Equal(t, 0, testutil.CollectAndCount(gauge), "no series expected while the head is within the tenant's creation grace period")
+
+	// Tighten the grace to 5m: the already-admitted +30m sample now exceeds it, so the gauge appears.
+	tenantLimits.CreationGracePeriod = model.Duration(5 * time.Minute)
+	i.updateLimitMetrics()
+	require.Equal(t, 1, testutil.CollectAndCount(gauge))
+	require.InDelta(t, (25 * time.Minute).Seconds(), testutil.ToFloat64(gauge.WithLabelValues(userID)), 60,
+		"gauge should report ~ (30m head offset - 5m grace) seconds")
+
+	// Widen the grace again: the head is back within grace and the series is removed.
+	tenantLimits.CreationGracePeriod = model.Duration(2 * time.Hour)
+	i.updateLimitMetrics()
+	require.Equal(t, 0, testutil.CollectAndCount(gauge), "series should be removed once the head is within grace again")
+
+	// Re-trigger, then confirm per-tenant cleanup removes the series (TSDB close / tenant removal path).
+	tenantLimits.CreationGracePeriod = model.Duration(5 * time.Minute)
+	i.updateLimitMetrics()
+	require.Equal(t, 1, testutil.CollectAndCount(gauge))
+	i.metrics.deletePerUserMetrics(userID)
+	require.Equal(t, 0, testutil.CollectAndCount(gauge), "deletePerUserMetrics should remove the tenant's series")
+}

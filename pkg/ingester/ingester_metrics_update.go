@@ -228,6 +228,8 @@ func (i *Ingester) updateUsageStats() {
 }
 
 func (i *Ingester) updateLimitMetrics() {
+	nowMillis := time.Now().UnixMilli()
+
 	for _, userID := range i.getTSDBUsers() {
 		db := i.getTSDB(userID)
 		if db == nil {
@@ -246,5 +248,13 @@ func (i *Ingester) updateLimitMetrics() {
 
 		localLimit := i.limiter.maxSeriesPerUser(userID, minLocalSeriesLimit)
 		i.metrics.maxLocalSeriesPerUser.WithLabelValues(userID).Set(float64(localLimit))
+
+		// Report how far the head's max timestamp is beyond what the tenant's creation grace period
+		// allows. Only emitted while positive, so the series exists exactly for tenants in violation.
+		if excessMs := headMaxTimestampFutureExcessMillis(db.Head().MaxTime(), nowMillis, i.limits.CreationGracePeriod(userID)); excessMs > 0 {
+			i.metrics.headMaxTimestampTooFarInFuture.WithLabelValues(userID).Set(float64(excessMs) / 1000)
+		} else {
+			i.metrics.headMaxTimestampTooFarInFuture.DeleteLabelValues(userID)
+		}
 	}
 }

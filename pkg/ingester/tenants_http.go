@@ -98,8 +98,8 @@ func (i *Ingester) TenantsHandler(w http.ResponseWriter, req *http.Request) {
 		maxMillis := db.Head().MaxTime()
 		s.MaxTime = formatMillisTime(maxMillis)
 
-		if delta := maxMillis - nowMillis; delta > s.FutureGracePeriod.Milliseconds() {
-			deltaDuration := time.Duration(delta) * time.Millisecond
+		if excessMs := headMaxTimestampFutureExcessMillis(maxMillis, nowMillis, s.FutureGracePeriod); excessMs > 0 {
+			deltaDuration := time.Duration(maxMillis-nowMillis) * time.Millisecond
 			warning := fmt.Sprintf("TSDB Head max timestamp too far in the future: %v", deltaDuration)
 			warnings = append(warnings, warning)
 		}

@@ -583,6 +583,21 @@ func (i *Ingester) maxTsdbHeadTimestamp() float64 {
 	return float64(maxTime) / 1000
 }
 
+// headMaxTimestampFutureExcessMillis returns by how many milliseconds a TSDB head's max timestamp
+// is further into the future than the furthest-into-the-future timestamp we currently accept for
+// the tenant, i.e. (now + creationGracePeriod). A positive result means the head holds data beyond
+// what the tenant's grace period permits; zero or negative means it's within grace.
+//
+// It works in milliseconds rather than a time.Duration to avoid the int64-nanosecond overflow that
+// would occur for a head very far in the future.
+func headMaxTimestampFutureExcessMillis(headMaxMs, nowMs int64, creationGracePeriod time.Duration) int64 {
+	// An empty head reports math.MinInt64 as its max time; treat it as not in the future.
+	if headMaxMs == math.MinInt64 {
+		return 0
+	}
+	return headMaxMs - nowMs - creationGracePeriod.Milliseconds()
+}
+
 func (i *Ingester) closeAndDeleteIdleUserTSDBs(ctx context.Context) error {
 	for _, userID := range i.getTSDBUsers() {
 		if ctx.Err() != nil {
