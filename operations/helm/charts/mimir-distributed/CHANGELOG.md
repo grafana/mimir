@@ -36,6 +36,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] Add support for `revisionHistoryLimit` on StatefulSet-based components: `alertmanager`, `ingester`, `store_gateway`, `compactor`, and the `chunks-cache`, `index-cache`, `metadata-cache`, and `results-cache` memcached StatefulSets. Previously `revisionHistoryLimit` was only honored on Deployment-based components. #PR
 * [ENHANCEMENT] Add support for `revisionHistoryLimit` on StatefulSet-based components: `alertmanager`, `ingester`, `store_gateway`, `compactor`, and the `chunks-cache`, `index-cache`, `metadata-cache`, and `results-cache` memcached StatefulSets. Previously `revisionHistoryLimit` was only honored on Deployment-based components. #15950
 * [BUGFIX]: Fix bug in `ScaledObject` templates when using `kedaAutoscaling.fallback` #15793
+* [BUGFIX] Alertmanager: Create a plain `<release>-alertmanager` ClusterIP service when `alertmanager.zoneAwareReplication.enabled=true` so that the Ingress and other consumers that reference the stable service name keep working. Previously only per-zone services were created, which broke the Ingress with `services <release>-alertmanager not found`. #15740
 
 ## 6.1.0
 
