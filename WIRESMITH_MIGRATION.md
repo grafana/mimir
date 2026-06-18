@@ -51,7 +51,20 @@ pinned compiler. No `replace` remains; the vendored runtime
 | `pkg/distributor/ha_tracker.proto` | migrated (phase 2)                     | none                                                                                        |
 | `pkg/querier/stats/stats.proto`    | migrated (phase 2)                     | none (one hand-written `GoString` shim)                                                     |
 | `pkg/ruler/rulespb/rules.proto`    | migrated (7m6/Any, validate branch)    | none (no shim needed)                                                                        |
-| all other protos (~21)             | still gogoproto                        | —                                                                                           |
+| `pkg/streamingpromql/**` (9 protos) | migrated (cqa.1)                       | none (2 `GoString` shim methods; stdtime call-site churn)                                   |
+| all other protos (~12)             | still gogoproto                        | —                                                                                           |
+
+The streamingpromql cluster (cqa.1): `types/types.proto`,
+`planning/plan.proto`, `planning/core/core.proto`, and the optimize/plan node
+protos `commonsubexpressionelimination/node.proto`,
+`rangevectorsplitting/{node,functions}.proto`, `multiaggregation/node.proto`,
+`splitandcache/node.proto`, `remoteexec/node.proto`. See the
+"streamingpromql cluster" section below. **Deferred (DB-2):**
+`rangevectorsplitting/cache/cache.proto` uses `querierpb.SeriesMetadata` /
+`querierpb.Annotations` value message fields, so a wiresmith `cache.proto` would
+call `UnmarshalWithDepth`/`EqualWiresmith`/`CompareWiresmith` on gogo-generated
+querierpb types — it can only migrate once querierpb (cqa.2) does. Listed in
+the cqa.1 bead but moved to cqa.2 for this reason.
 
 Full repo builds; pkg/mimirpb, pkg/distributor, pkg/ingester,
 pkg/storage/ingest, pkg/querier(+stats), pkg/frontend/... test suites green.
@@ -258,6 +271,78 @@ opaque passthrough.
   `-M github.com/grafana/mimir/pkg/mimirpb/mimir.proto=github.com/grafana/mimir/pkg/mimirpb`,
   and copies the four outputs back. Regen is byte-for-byte reproducible.
 
+## streamingpromql cluster (cqa.1)
+
+Nine protos forming an internal dependency cluster, migrated leaf-first
+(`types` → `planning/plan` → `planning/core` → `optimize/plan/*` nodes). All
+adopt `(wiresmith.options.no_presence_all) = true` (gogo `nullable=false`
+layout parity — the cluster is wire-serialized through the `EncodedNode.details`
+bytes via gogo `proto.Marshal`/`Unmarshal`, which dispatch to wiresmith's
+`Marshal()`/`Unmarshal()` methods). None needed an expdiff (all plain messages).
+
+### Per-proto annotations
+
+- `types/types.proto` — plain int64/bool messages; `no_presence_all` only.
+- `planning/plan.proto` — `enum_no_prefix_all` (gogoslick emitted unprefixed
+  `NODE_TYPE_*`); `version` field: `casttype = "QueryPlanVersion"` +
+  `jsontag = "version"` (suppresses `,omitempty`); `lookbackDelta`:
+  `stdduration`; `nodes`: `pointer` (gogo `[]*EncodedNode`).
+- `planning/core/core.proto` — `enum_no_prefix_all` (4 enums, distinct prefixes,
+  no bare-constant collisions); `casttype` on `PositionRange.{start,end}`
+  (`posrange.Pos`), `VectorMatching.card`, `LabelMatcher.type`; `customtype =
+  "...mimirpb.LabelAdapter"` on `FunctionCallDetails.absentLabels` (reuses the
+  mimirpb adapter); `stdtime` on the three `timestamp` fields; `stdduration` on
+  the offset/range/step fields; `pointer` on all `matchers` (`[]*LabelMatcher`)
+  and on `BinaryExpressionDetails.{vectorMatching,hints}` (gogo `*T`).
+- optimize/plan nodes — `commonsubexpressionelimination` and `multiaggregation`
+  import core and use `pointer` on `core.LabelMatcher`/`AggregateExpressionDetails`
+  fields; `rangevectorsplitting/functions.proto` uses `pointer` on its singular
+  `cortexpb.Histogram`/`Sample` fields (gogo `*mimirpb.*`); `splitandcache` uses
+  `stdduration`; `remoteexec` is plain.
+
+### Call-site changes (legitimate adaptation, not workarounds)
+
+- **stdtime is value-only.** gogo `stdtime + nullable` produced `*time.Time` on
+  the `VectorSelectorDetails`/`MatrixSelectorDetails`/`SubqueryDetails.Timestamp`
+  fields; wiresmith stdtime is value `time.Time`. The "unset" sentinel moved
+  from `nil` to the zero `time.Time` (`IsZero()`), gogoproto-compatible on the
+  wire. `core.TimeFromTimestamp`/`TimestampFromTime` and `describeSelector` were
+  retyped to value `time.Time`; the nil-checks in `matrix_selector.go`,
+  `vector_selector.go`, `subquery.go`, `info.go` and the two `timestampOf` test
+  helpers were updated.
+- **`LabelMatcher.Equal`**: gogo's `equal_all = false` suppressed generation, so
+  `matchers.go` hand-wrote `Equal(*LabelMatcher)`. wiresmith always generates
+  `Equal(interface{})` (compares Type/Name/Value identically), so the
+  hand-written method was removed to avoid the duplicate-method collision; the
+  one caller (`matchersEqual`) passes `*LabelMatcher`, which the generated
+  signature accepts.
+
+### GoString shims (retire when querierpb/cache migrate, cqa.2)
+
+`pkg/streamingpromql/{types,planning}/wiresmith_compat.go` add `GoString()` to
+`types.EncodedQueryTimeRange`, `types.EncodedOperatorEvaluationStats`, and
+`planning.EncodedQueryPlan` — the still-gogo `pkg/querier/querierpb` and
+`.../rangevectorsplitting/cache` importers call `GoString()` on embedded values
+and wiresmith emits none (same pattern/limitation as stats.proto's shim, DB-5).
+
+### Generator invocation
+
+The cluster's protos import each other by Go module path. `make protos` runs
+`tools/wiresmith-streamingpromql.sh`, which stages the nine emitted protos plus
+the two imported-but-not-emitted protos (`mimir.proto`, already wiresmith;
+`operators/functions/functions.proto`, an enum-only gogo leaf with no options)
+into a `.streamingpromql-stage` tree mirroring the module-path layout, then runs
+a single wiresmith invocation with `-M` pinning every staged proto to its real
+Go import path and the nine emitted protos passed positionally. Regen is
+byte-for-byte reproducible. The gogo importers regenerate via protoc with
+`./proto-include` supplying `wiresmith/options.proto`.
+
+### Benchmark
+
+`BenchmarkPlanEncodingAndDecoding` (pkg/streamingpromql) — the plan
+encode/decode path that marshals/unmarshals every migrated type through the
+`EncodedNode.details` bytes. See the Benchmarks section below.
+
 ## Deferred Any-using protos (7m6)
 
 The other three Any-using protos are deferred — each is a separate dependency
@@ -293,6 +378,33 @@ cluster matching a later migration phase, not a blocker:
 | `./pkg/frontend/...`                   | ok                                              |
 | `./pkg/util/test`                      | ok                                              |
 | `go build ./...`, `go vet`             | clean (modulo pre-existing `Seek` vet warnings) |
+
+## Benchmarks (Apple M4 Pro, benchstat-grade — streamingpromql cqa.1, 2026-06-18)
+
+`BenchmarkPlanEncodingAndDecoding` (pkg/streamingpromql) — gogo baseline at the
+cqa.1 branch fork point (`wiresmith` @ `eccdd5b`) vs wiresmith after. Method:
+two `go test -c` binaries, **alternated** 20 rounds; `-benchtime=1s -benchmem`,
+`benchstat` n=20. This benchmark marshals/unmarshals the whole `EncodedQueryPlan`
+(every migrated Details type, via the `EncodedNode.details` bytes) across 18
+PromQL expressions, each with an `encode` and a `decode` sub-benchmark.
+
+Geomean across all 36 sub-benchmarks:
+
+| Metric    | gogo     | wiresmith | Δ                |
+| --------- | -------- | --------- | ---------------- |
+| sec/op    | 657.1n   | 610.4n    | **−7.11%**       |
+| B (wire)  | 145.4    | 140.4     | **−3.44%**       |
+| B/op      | 1.389Ki  | 1.298Ki   | **−6.52%**       |
+| allocs/op | 26.98    | 25.50     | **−5.49%**       |
+
+**No regression on any sub-benchmark.** Every `decode` is a significant win
+(−5% to −20% wall, −5% to −25% B/op, −5% to −15% allocs) from the no_presence
+struct layout plus wiresmith unmarshal; `encode` is −1% to −7% wall and emits
+**fewer wire bytes** (wiresmith's single-byte length-prefix fast-path). The
+migration is wire-neutral: the generated marshal field tags are byte-identical
+to gogo (verified by diffing the emitted tag bytes, modulo cosmetic hex
+zero-padding in the source). Encode B/op is flat on a few small expressions
+(`123`, `sum(rate(foo[5m]))`) — those are the noise floor.
 
 ## Benchmarks (Apple M4 Pro, benchstat-grade — UnmarshalNoPrescan, 2026-06-12)
 

@@ -61,7 +61,7 @@ func (v *VectorSelector) EquivalentToIgnoringMatchersAndHints(other planning.Nod
 	otherVectorSelector, ok := other.(*VectorSelector)
 
 	return ok &&
-		((v.Timestamp == nil && otherVectorSelector.Timestamp == nil) || (v.Timestamp != nil && otherVectorSelector.Timestamp != nil && v.Timestamp.Equal(*otherVectorSelector.Timestamp))) &&
+		v.Timestamp.Equal(otherVectorSelector.Timestamp) &&
 		v.Offset == otherVectorSelector.Offset &&
 		v.ReturnSampleTimestamps == otherVectorSelector.ReturnSampleTimestamps &&
 		v.ReturnSampleTimestampsPreserveHistograms == otherVectorSelector.ReturnSampleTimestampsPreserveHistograms &&

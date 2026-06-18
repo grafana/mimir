@@ -220,7 +220,34 @@ PROTO_WIRESMITH_GOS := \
 	pkg/querier/stats/stats_reflect.pb.go \
 	pkg/ruler/rulespb/rules_compare.pb.go \
 	pkg/ruler/rulespb/rules_equal.pb.go \
-	pkg/ruler/rulespb/rules_reflect.pb.go
+	pkg/ruler/rulespb/rules_reflect.pb.go \
+	pkg/streamingpromql/types/types_compare.pb.go \
+	pkg/streamingpromql/types/types_equal.pb.go \
+	pkg/streamingpromql/types/types_reflect.pb.go \
+	pkg/streamingpromql/planning/plan_compare.pb.go \
+	pkg/streamingpromql/planning/plan_equal.pb.go \
+	pkg/streamingpromql/planning/plan_reflect.pb.go \
+	pkg/streamingpromql/planning/core/core_compare.pb.go \
+	pkg/streamingpromql/planning/core/core_equal.pb.go \
+	pkg/streamingpromql/planning/core/core_reflect.pb.go \
+	pkg/streamingpromql/optimize/plan/commonsubexpressionelimination/node_compare.pb.go \
+	pkg/streamingpromql/optimize/plan/commonsubexpressionelimination/node_equal.pb.go \
+	pkg/streamingpromql/optimize/plan/commonsubexpressionelimination/node_reflect.pb.go \
+	pkg/streamingpromql/optimize/plan/rangevectorsplitting/node_compare.pb.go \
+	pkg/streamingpromql/optimize/plan/rangevectorsplitting/node_equal.pb.go \
+	pkg/streamingpromql/optimize/plan/rangevectorsplitting/node_reflect.pb.go \
+	pkg/streamingpromql/optimize/plan/rangevectorsplitting/functions_compare.pb.go \
+	pkg/streamingpromql/optimize/plan/rangevectorsplitting/functions_equal.pb.go \
+	pkg/streamingpromql/optimize/plan/rangevectorsplitting/functions_reflect.pb.go \
+	pkg/streamingpromql/optimize/plan/multiaggregation/node_compare.pb.go \
+	pkg/streamingpromql/optimize/plan/multiaggregation/node_equal.pb.go \
+	pkg/streamingpromql/optimize/plan/multiaggregation/node_reflect.pb.go \
+	pkg/streamingpromql/optimize/plan/splitandcache/node_compare.pb.go \
+	pkg/streamingpromql/optimize/plan/splitandcache/node_equal.pb.go \
+	pkg/streamingpromql/optimize/plan/splitandcache/node_reflect.pb.go \
+	pkg/streamingpromql/optimize/plan/remoteexec/node_compare.pb.go \
+	pkg/streamingpromql/optimize/plan/remoteexec/node_equal.pb.go \
+	pkg/streamingpromql/optimize/plan/remoteexec/node_reflect.pb.go
 
 # Packages containing //node:generate-annotated structs, and the corresponding
 # generated files. Discovered at make-parse time.
@@ -435,6 +462,42 @@ ifeq ($(GENERATE_FILES),true)
 else
 	@echo "Warning: generating files has been disabled, but the following files need to be regenerated: $@"
 	@echo "If this is unexpected, check if the last modified timestamps on the outputs and $< are correct."
+endif
+
+# pkg/streamingpromql/{types,planning,planning/core,optimize/plan/*} are compiled
+# by wiresmith. The cluster's protos import each other by Go module path
+# (github.com/grafana/mimir/pkg/streamingpromql/...), and wiresmith resolves
+# imports by their import-statement path under --proto_path, so we stage a
+# temporary tree mirroring the module-path layout and emit the whole cluster in
+# one invocation. The imported-but-not-emitted protos (mimir.proto, already
+# wiresmith; operators/functions/functions.proto, an enum-only gogo leaf) are
+# staged too and pinned import-only with -M to their real Go import paths.
+# core.proto imports mimir.proto (LabelAdapter customtype) and the functions
+# enum; types.proto, planning/plan.proto, and the optimize/plan/* node protos
+# round out the cluster. These migrated protos are still imported by the
+# gogo-compiled pkg/querier/querierpb and .../rangevectorsplitting/cache; their
+# wiresmith/options.proto import is resolved for protoc via ./proto-include, and
+# pkg/streamingpromql/{types,planning}/wiresmith_compat.go supplies the GoString
+# shims those gogo importers need.
+STREAMINGPROMQL_WIRESMITH_PROTOS := \
+	pkg/streamingpromql/types/types.proto \
+	pkg/streamingpromql/planning/plan.proto \
+	pkg/streamingpromql/planning/core/core.proto \
+	pkg/streamingpromql/optimize/plan/commonsubexpressionelimination/node.proto \
+	pkg/streamingpromql/optimize/plan/rangevectorsplitting/node.proto \
+	pkg/streamingpromql/optimize/plan/rangevectorsplitting/functions.proto \
+	pkg/streamingpromql/optimize/plan/multiaggregation/node.proto \
+	pkg/streamingpromql/optimize/plan/splitandcache/node.proto \
+	pkg/streamingpromql/optimize/plan/remoteexec/node.proto
+
+STREAMINGPROMQL_WIRESMITH_PBGO := $(patsubst %.proto,%.pb.go,$(STREAMINGPROMQL_WIRESMITH_PROTOS))
+
+$(STREAMINGPROMQL_WIRESMITH_PBGO) &: $(STREAMINGPROMQL_WIRESMITH_PROTOS) pkg/mimirpb/mimir.proto pkg/streamingpromql/operators/functions/functions.proto
+ifeq ($(GENERATE_FILES),true)
+	./tools/wiresmith-streamingpromql.sh
+else
+	@echo "Warning: generating files has been disabled, but the following files need to be regenerated: $(STREAMINGPROMQL_WIRESMITH_PBGO)"
+	@echo "If this is unexpected, check if the last modified timestamps on the outputs and their .proto sources are correct."
 endif
 
 %.pb.go: %.proto

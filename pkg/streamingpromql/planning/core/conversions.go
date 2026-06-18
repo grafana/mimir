@@ -340,20 +340,25 @@ func invert[A, B comparable](original map[A]B) map[B]A {
 	return inverted
 }
 
-func TimeFromTimestamp(ts *int64) *time.Time {
+// TimeFromTimestamp converts an optional millisecond timestamp into the value
+// time.Time shape used by the wiresmith-generated selector details. A nil
+// timestamp (no `@` modifier) maps to the zero time.Time, which the stdtime
+// option treats as "not set" (gogoproto-compatible).
+func TimeFromTimestamp(ts *int64) time.Time {
 	if ts == nil {
-		return nil
+		return time.Time{}
 	}
 
-	t := timestamp.Time(*ts)
-	return &t
+	return timestamp.Time(*ts)
 }
 
-func TimestampFromTime(t *time.Time) *int64 {
-	if t == nil {
+// TimestampFromTime is the inverse of TimeFromTimestamp: the zero time.Time
+// (an unset stdtime field) maps back to a nil millisecond timestamp.
+func TimestampFromTime(t time.Time) *int64 {
+	if t.IsZero() {
 		return nil
 	}
 
-	ts := timestamp.FromTime(*t)
+	ts := timestamp.FromTime(t)
 	return &ts
 }

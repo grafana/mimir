@@ -12,7 +12,7 @@ import (
 
 func describeSelector(
 	matchers []*LabelMatcher,
-	ts *time.Time,
+	ts time.Time,
 	offset time.Duration,
 	rng *time.Duration,
 	skipHistogramBuckets, anchored, smooothed, counterAware bool,
@@ -27,9 +27,10 @@ func describeSelector(
 		builder.WriteRune(']')
 	}
 
-	if ts != nil {
+	// The zero time.Time marks an unset stdtime field (no `@` modifier).
+	if !ts.IsZero() {
 		builder.WriteString(" @ ")
-		builder.WriteString(strconv.FormatInt(timestamp.FromTime(*ts), 10))
+		builder.WriteString(strconv.FormatInt(timestamp.FromTime(ts), 10))
 		builder.WriteString(" (")
 		builder.WriteString(ts.Format(time.RFC3339Nano))
 		builder.WriteRune(')')

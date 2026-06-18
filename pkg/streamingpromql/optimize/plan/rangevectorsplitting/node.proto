@@ -4,16 +4,12 @@ syntax = "proto3";
 
 package rangevectorsplitting;
 
-import "gogoproto/gogo.proto";
-import "google/protobuf/duration.proto";
+import "wiresmith/options.proto";
 
-option (gogoproto.equal_all) = false;
-option (gogoproto.marshaler_all) = true;
-option (gogoproto.messagename_all) = true;
-option (gogoproto.unmarshaler_all) = true;
+option (wiresmith.options.no_presence_all) = true;
 
 message SplitFunctionCallDetails {
-  repeated SplitRange splitRanges = 1 [(gogoproto.nullable) = false];
+  repeated SplitRange splitRanges = 1;
   // Deprecated: no longer populated as of QueryPlanV13. The cache key is now derived from the inner node at materialize time.
   reserved 2; // was: innerNodeCacheKey
 }

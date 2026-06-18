@@ -4,16 +4,15 @@ syntax = "proto3";
 
 package types;
 
-import "gogoproto/gogo.proto";
+import "wiresmith/options.proto";
 
 option go_package = "types";
-option (gogoproto.marshaler_all) = true;
-option (gogoproto.unmarshaler_all) = true;
+option (wiresmith.options.no_presence_all) = true;
 
 message EncodedOperatorEvaluationStats {
-  EncodedSubsetStats allSeries = 1 [(gogoproto.nullable) = false];
-  repeated EncodedSubsetStats subsets = 2 [(gogoproto.nullable) = false];
-  EncodedQueryTimeRange timeRange = 3 [(gogoproto.nullable) = false];
+  EncodedSubsetStats allSeries = 1;
+  repeated EncodedSubsetStats subsets = 2;
+  EncodedQueryTimeRange timeRange = 3;
 }
 
 message EncodedSubsetStats {

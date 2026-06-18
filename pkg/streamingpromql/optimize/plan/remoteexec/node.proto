@@ -4,12 +4,9 @@ syntax = "proto3";
 
 package remoteexec;
 
-import "gogoproto/gogo.proto";
+import "wiresmith/options.proto";
 
-option (gogoproto.equal_all) = false;
-option (gogoproto.marshaler_all) = true;
-option (gogoproto.messagename_all) = true;
-option (gogoproto.unmarshaler_all) = true;
+option (wiresmith.options.no_presence_all) = true;
 
 message RemoteExecutionGroupDetails {
   // If the query has been sharded, we need to eagerly load and buffer the response from queriers in query-frontends
