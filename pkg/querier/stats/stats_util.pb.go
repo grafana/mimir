@@ -4,22 +4,29 @@
 package stats
 
 import (
+	"fmt"
 	"github.com/grafana/wiresmith/protohelpers"
 	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/runtime/protoimpl"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"reflect"
+	"strings"
 	"unsafe"
 )
 
-// Reflection / registration glue for stats/stats.proto.
+// Cold companion utilities for stats/stats.proto.
 //
-// This file holds the per-message ProtoReflect() methods, the per-enum
-// Descriptor()/Type()/Number() methods, the embedded FileDescriptorProto
-// blob, the file_*_msgTypes / file_*_enumTypes arrays, and the init()
-// that registers everything with protoregistry.GlobalFiles and
-// protoregistry.GlobalTypes. None of these are called on the marshal /
-// unmarshal / size hot path.
+// This file holds two cold concerns merged into one compilation unit:
+//
+//   - Reflection / registration glue: the per-message ProtoReflect()
+//     methods, the per-enum Descriptor()/Type()/Number() methods, the
+//     embedded FileDescriptorProto blob, the file_*_msgTypes /
+//     file_*_enumTypes arrays, and the init() that registers everything
+//     with protoregistry.GlobalFiles and protoregistry.GlobalTypes.
+//   - The per-message String() debug dumps (hand-rolled, deterministic,
+//     non-reflection — see compiler/generator/emit_string.go).
+//
+// None of these are called on the marshal / unmarshal / size hot path.
 //
 // Why a separate file? Putting this code (plus its descriptorpb /
 // protoreflect / protoimpl imports — ~64KB of descriptorpb alone, ~377KB
@@ -30,11 +37,119 @@ import (
 // in the same compilation unit shifted hot functions onto different
 // cache sets and pushed them ~131KB further into the binary. Emitting
 // the cold half here, in its own .o, lets the linker place it away
-// from the hot half and recovers that throughput.
+// from the hot half and recovers that throughput. reflect and String()
+// are both cold and were already split out, so merging them (cold→cold)
+// preserves the rationale while halving the companion-file count.
 //
 // See compiler/generator/emit_registration.go for the full rationale
 // and the benchmark methodology. DO NOT inline this file's contents
 // back into the main .pb.go without re-measuring.
+
+func (m *Stats) String() string {
+	if m == nil {
+		return "<nil>"
+	}
+	var b strings.Builder
+	b.WriteString("wall_time: ")
+	fmt.Fprintf(&b, "%v", m.WallTime)
+	b.WriteString(" ")
+	if m.FetchedSeriesCount != 0 {
+		b.WriteString("fetched_series_count: ")
+		fmt.Fprintf(&b, "%v", m.FetchedSeriesCount)
+		b.WriteString(" ")
+	}
+	if m.FetchedChunkBytes != 0 {
+		b.WriteString("fetched_chunk_bytes: ")
+		fmt.Fprintf(&b, "%v", m.FetchedChunkBytes)
+		b.WriteString(" ")
+	}
+	if m.FetchedChunksCount != 0 {
+		b.WriteString("fetched_chunks_count: ")
+		fmt.Fprintf(&b, "%v", m.FetchedChunksCount)
+		b.WriteString(" ")
+	}
+	if m.ShardedQueries != 0 {
+		b.WriteString("sharded_queries: ")
+		fmt.Fprintf(&b, "%v", m.ShardedQueries)
+		b.WriteString(" ")
+	}
+	if m.SplitQueries != 0 {
+		b.WriteString("split_queries: ")
+		fmt.Fprintf(&b, "%v", m.SplitQueries)
+		b.WriteString(" ")
+	}
+	if m.FetchedIndexBytes != 0 {
+		b.WriteString("fetched_index_bytes: ")
+		fmt.Fprintf(&b, "%v", m.FetchedIndexBytes)
+		b.WriteString(" ")
+	}
+	if m.EstimatedSeriesCount != 0 {
+		b.WriteString("estimated_series_count: ")
+		fmt.Fprintf(&b, "%v", m.EstimatedSeriesCount)
+		b.WriteString(" ")
+	}
+	b.WriteString("queue_time: ")
+	fmt.Fprintf(&b, "%v", m.QueueTime)
+	b.WriteString(" ")
+	b.WriteString("encode_time: ")
+	fmt.Fprintf(&b, "%v", m.EncodeTime)
+	b.WriteString(" ")
+	if m.SamplesProcessed != 0 {
+		b.WriteString("samples_processed: ")
+		fmt.Fprintf(&b, "%v", m.SamplesProcessed)
+		b.WriteString(" ")
+	}
+	if m.SpunOffSubqueries != 0 {
+		b.WriteString("spun_off_subqueries: ")
+		fmt.Fprintf(&b, "%v", m.SpunOffSubqueries)
+		b.WriteString(" ")
+	}
+	if m.RemoteExecutionRequestCount != 0 {
+		b.WriteString("remote_execution_request_count: ")
+		fmt.Fprintf(&b, "%v", m.RemoteExecutionRequestCount)
+		b.WriteString(" ")
+	}
+	if m.SplitRangeVectors != 0 {
+		b.WriteString("split_range_vectors: ")
+		fmt.Fprintf(&b, "%v", m.SplitRangeVectors)
+		b.WriteString(" ")
+	}
+	if m.EquivalentSamplesRead != 0 {
+		b.WriteString("equivalent_samples_read: ")
+		fmt.Fprintf(&b, "%v", m.EquivalentSamplesRead)
+		b.WriteString(" ")
+	}
+	if m.PhysicalSamplesRead != 0 {
+		b.WriteString("physical_samples_read: ")
+		fmt.Fprintf(&b, "%v", m.PhysicalSamplesRead)
+		b.WriteString(" ")
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func (m *Stats) Clone() *Stats {
+	if m == nil {
+		return nil
+	}
+	out := &Stats{}
+	out.WallTime = m.WallTime
+	out.FetchedSeriesCount = m.FetchedSeriesCount
+	out.FetchedChunkBytes = m.FetchedChunkBytes
+	out.FetchedChunksCount = m.FetchedChunksCount
+	out.ShardedQueries = m.ShardedQueries
+	out.SplitQueries = m.SplitQueries
+	out.FetchedIndexBytes = m.FetchedIndexBytes
+	out.EstimatedSeriesCount = m.EstimatedSeriesCount
+	out.QueueTime = m.QueueTime
+	out.EncodeTime = m.EncodeTime
+	out.SamplesProcessed = m.SamplesProcessed
+	out.SpunOffSubqueries = m.SpunOffSubqueries
+	out.RemoteExecutionRequestCount = m.RemoteExecutionRequestCount
+	out.SplitRangeVectors = m.SplitRangeVectors
+	out.EquivalentSamplesRead = m.EquivalentSamplesRead
+	out.PhysicalSamplesRead = m.PhysicalSamplesRead
+	return out
+}
 
 func (x *Stats) ProtoReflect() protoreflect.Message {
 	file_stats_stats_proto_init()

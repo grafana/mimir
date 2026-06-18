@@ -3,23 +3,140 @@
 
 package types
 
-// Per-message Compare() methods for github.com/grafana/mimir/pkg/streamingpromql/types/types.proto.
+// Per-message value-comparison methods (Equal + Compare) for github.com/grafana/mimir/pkg/streamingpromql/types/types.proto.
 //
-// Compare returns -1/0/+1 like bytes.Compare with the gogoproto.compare
-// nil/wrong-type preamble. Always emitted on every message; callers that
-// don't use it can rely on Go's dead-code elimination to drop the body.
+// Equal returns bool; Compare returns -1/0/+1 like bytes.Compare with the
+// gogoproto.compare nil/wrong-type preamble. Both are emitted on every
+// message; callers that don't use one can rely on Go's dead-code
+// elimination to drop the body.
 //
-// Why a separate file? Compare is never called from Marshal/Unmarshal/Size,
-// but emitting it next to those hot functions in the main .pb.go pushed
-// them onto different cache sets and produced a measured ~9% geomean
+// Why a separate file? Equal/Compare are never called from Marshal/Unmarshal/
+// Size, but emitting them next to those hot functions in the main .pb.go
+// pushed them onto different cache sets and produced a measured ~9% geomean
 // regression on OTel benchmarks (UnmarshalMap +14%, MarshalSingleSpan +13%)
-// purely from icache / iTLB / BTB pressure. Splitting Compare into its own
+// purely from icache / iTLB / BTB pressure. Splitting them into their own
 // compilation unit gives the linker freedom to place the cold half away
-// from the hot half — same trick the _reflect.pb.go split uses.
+// from the hot half — same trick the _util.pb.go split uses.
 //
-// See compiler/generator/emit_compare.go for the full rationale and the
-// benchmark methodology. DO NOT inline this file's contents back into
-// the main .pb.go without re-measuring.
+// See compiler/generator/emit_compare.go / emit_equal.go for the full
+// rationale and the benchmark methodology. DO NOT inline this file's
+// contents back into the main .pb.go without re-measuring.
+
+func (this *EncodedOperatorEvaluationStats) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*EncodedOperatorEvaluationStats)
+	if !ok {
+		that2, ok := that.(EncodedOperatorEvaluationStats)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if !this.AllSeries.Equal(that1.AllSeries) {
+		return false
+	}
+	if len(this.Subsets) != len(that1.Subsets) {
+		return false
+	}
+	for i := range this.Subsets {
+		if !this.Subsets[i].Equal(that1.Subsets[i]) {
+			return false
+		}
+	}
+	if !this.TimeRange.Equal(that1.TimeRange) {
+		return false
+	}
+	return true
+}
+
+func (this *EncodedSubsetStats) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*EncodedSubsetStats)
+	if !ok {
+		that2, ok := that.(EncodedSubsetStats)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if len(this.SamplesProcessedPerStep) != len(that1.SamplesProcessedPerStep) {
+		return false
+	}
+	for i := range this.SamplesProcessedPerStep {
+		if this.SamplesProcessedPerStep[i] != that1.SamplesProcessedPerStep[i] {
+			return false
+		}
+	}
+	if len(this.SamplesReadIfSubsequentStep) != len(that1.SamplesReadIfSubsequentStep) {
+		return false
+	}
+	for i := range this.SamplesReadIfSubsequentStep {
+		if this.SamplesReadIfSubsequentStep[i] != that1.SamplesReadIfSubsequentStep[i] {
+			return false
+		}
+	}
+	if len(this.SamplesReadIfFirstStep) != len(that1.SamplesReadIfFirstStep) {
+		return false
+	}
+	for i := range this.SamplesReadIfFirstStep {
+		if this.SamplesReadIfFirstStep[i] != that1.SamplesReadIfFirstStep[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func (this *EncodedQueryTimeRange) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*EncodedQueryTimeRange)
+	if !ok {
+		that2, ok := that.(EncodedQueryTimeRange)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if this.StartT != that1.StartT {
+		return false
+	}
+	if this.EndT != that1.EndT {
+		return false
+	}
+	if this.IntervalMilliseconds != that1.IntervalMilliseconds {
+		return false
+	}
+	if this.IsInstant != that1.IsInstant {
+		return false
+	}
+	return true
+}
 
 func (this *EncodedOperatorEvaluationStats) Compare(that interface{}) int {
 	if that == nil {

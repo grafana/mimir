@@ -30,12 +30,6 @@ func (m *MultiAggregationGroupDetails) Reset() {
 	*m = MultiAggregationGroupDetails{}
 }
 func (*MultiAggregationGroupDetails) ProtoMessage() {}
-func (m *MultiAggregationGroupDetails) String() string {
-	if m == nil {
-		return "<nil>"
-	}
-	return fmt.Sprintf("%v", *m)
-}
 
 func (m *MultiAggregationInstanceDetails) Reset() {
 	if m == nil {
@@ -44,12 +38,6 @@ func (m *MultiAggregationInstanceDetails) Reset() {
 	*m = MultiAggregationInstanceDetails{}
 }
 func (*MultiAggregationInstanceDetails) ProtoMessage() {}
-func (m *MultiAggregationInstanceDetails) String() string {
-	if m == nil {
-		return "<nil>"
-	}
-	return fmt.Sprintf("%v", *m)
-}
 
 func (m *MultiAggregationInstanceDetails) GetAggregation() *core.AggregateExpressionDetails {
 	if m != nil {

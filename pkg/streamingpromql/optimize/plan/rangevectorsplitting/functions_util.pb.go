@@ -4,22 +4,30 @@
 package rangevectorsplitting
 
 import (
+	"fmt"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/wiresmith/protohelpers"
 	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/runtime/protoimpl"
 	"reflect"
+	"slices"
+	"strings"
 	"unsafe"
 )
 
-// Reflection / registration glue for github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/rangevectorsplitting/functions.proto.
+// Cold companion utilities for github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/rangevectorsplitting/functions.proto.
 //
-// This file holds the per-message ProtoReflect() methods, the per-enum
-// Descriptor()/Type()/Number() methods, the embedded FileDescriptorProto
-// blob, the file_*_msgTypes / file_*_enumTypes arrays, and the init()
-// that registers everything with protoregistry.GlobalFiles and
-// protoregistry.GlobalTypes. None of these are called on the marshal /
-// unmarshal / size hot path.
+// This file holds two cold concerns merged into one compilation unit:
+//
+//   - Reflection / registration glue: the per-message ProtoReflect()
+//     methods, the per-enum Descriptor()/Type()/Number() methods, the
+//     embedded FileDescriptorProto blob, the file_*_msgTypes /
+//     file_*_enumTypes arrays, and the init() that registers everything
+//     with protoregistry.GlobalFiles and protoregistry.GlobalTypes.
+//   - The per-message String() debug dumps (hand-rolled, deterministic,
+//     non-reflection — see compiler/generator/emit_string.go).
+//
+// None of these are called on the marshal / unmarshal / size hot path.
 //
 // Why a separate file? Putting this code (plus its descriptorpb /
 // protoreflect / protoimpl imports — ~64KB of descriptorpb alone, ~377KB
@@ -30,11 +38,528 @@ import (
 // in the same compilation unit shifted hot functions onto different
 // cache sets and pushed them ~131KB further into the binary. Emitting
 // the cold half here, in its own .o, lets the linker place it away
-// from the hot half and recovers that throughput.
+// from the hot half and recovers that throughput. reflect and String()
+// are both cold and were already split out, so merging them (cold→cold)
+// preserves the rationale while halving the companion-file count.
 //
 // See compiler/generator/emit_registration.go for the full rationale
 // and the benchmark methodology. DO NOT inline this file's contents
 // back into the main .pb.go without re-measuring.
+
+func (m *SumOverTimeIntermediate) String() string {
+	if m == nil {
+		return "<nil>"
+	}
+	var b strings.Builder
+	if m.SumF != 0 {
+		b.WriteString("sumF: ")
+		fmt.Fprintf(&b, "%v", m.SumF)
+		b.WriteString(" ")
+	}
+	if m.HasFloat {
+		b.WriteString("hasFloat: ")
+		fmt.Fprintf(&b, "%v", m.HasFloat)
+		b.WriteString(" ")
+	}
+	if m.SumC != 0 {
+		b.WriteString("sumC: ")
+		fmt.Fprintf(&b, "%v", m.SumC)
+		b.WriteString(" ")
+	}
+	if m.SumH != nil {
+		b.WriteString("sumH: ")
+		b.WriteString("{")
+		b.WriteString(m.SumH.String())
+		b.WriteString("}")
+		b.WriteString(" ")
+	}
+	if m.ForceEmptyResult {
+		b.WriteString("forceEmptyResult: ")
+		fmt.Fprintf(&b, "%v", m.ForceEmptyResult)
+		b.WriteString(" ")
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func (m *SumOverTimeIntermediateList) String() string {
+	if m == nil {
+		return "<nil>"
+	}
+	var b strings.Builder
+	for _, e := range m.Results {
+		b.WriteString("results: ")
+		b.WriteString("{")
+		b.WriteString(e.String())
+		b.WriteString("}")
+		b.WriteString(" ")
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func (m *CountOverTimeIntermediate) String() string {
+	if m == nil {
+		return "<nil>"
+	}
+	var b strings.Builder
+	if m.F != 0 {
+		b.WriteString("f: ")
+		fmt.Fprintf(&b, "%v", m.F)
+		b.WriteString(" ")
+	}
+	if m.HasFloat {
+		b.WriteString("hasFloat: ")
+		fmt.Fprintf(&b, "%v", m.HasFloat)
+		b.WriteString(" ")
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func (m *CountOverTimeIntermediateList) String() string {
+	if m == nil {
+		return "<nil>"
+	}
+	var b strings.Builder
+	for _, e := range m.Results {
+		b.WriteString("results: ")
+		b.WriteString("{")
+		b.WriteString(e.String())
+		b.WriteString("}")
+		b.WriteString(" ")
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func (m *MinMaxOverTimeIntermediate) String() string {
+	if m == nil {
+		return "<nil>"
+	}
+	var b strings.Builder
+	if m.F != 0 {
+		b.WriteString("f: ")
+		fmt.Fprintf(&b, "%v", m.F)
+		b.WriteString(" ")
+	}
+	if m.HasFloat {
+		b.WriteString("hasFloat: ")
+		fmt.Fprintf(&b, "%v", m.HasFloat)
+		b.WriteString(" ")
+	}
+	if m.HasHistogram {
+		b.WriteString("hasHistogram: ")
+		fmt.Fprintf(&b, "%v", m.HasHistogram)
+		b.WriteString(" ")
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func (m *MinMaxOverTimeIntermediateList) String() string {
+	if m == nil {
+		return "<nil>"
+	}
+	var b strings.Builder
+	for _, e := range m.Results {
+		b.WriteString("results: ")
+		b.WriteString("{")
+		b.WriteString(e.String())
+		b.WriteString("}")
+		b.WriteString(" ")
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func (m *RateIntermediate) String() string {
+	if m == nil {
+		return "<nil>"
+	}
+	var b strings.Builder
+	if m.SampleCount != 0 {
+		b.WriteString("sample_count: ")
+		fmt.Fprintf(&b, "%v", m.SampleCount)
+		b.WriteString(" ")
+	}
+	if m.IsHistogram {
+		b.WriteString("is_histogram: ")
+		fmt.Fprintf(&b, "%v", m.IsHistogram)
+		b.WriteString(" ")
+	}
+	if m.FirstSample != nil {
+		b.WriteString("first_sample: ")
+		b.WriteString("{")
+		b.WriteString(m.FirstSample.String())
+		b.WriteString("}")
+		b.WriteString(" ")
+	}
+	if m.LastSample != nil {
+		b.WriteString("last_sample: ")
+		b.WriteString("{")
+		b.WriteString(m.LastSample.String())
+		b.WriteString("}")
+		b.WriteString(" ")
+	}
+	if m.Delta != 0 {
+		b.WriteString("delta: ")
+		fmt.Fprintf(&b, "%v", m.Delta)
+		b.WriteString(" ")
+	}
+	if m.FirstHistogram != nil {
+		b.WriteString("first_histogram: ")
+		b.WriteString("{")
+		b.WriteString(m.FirstHistogram.String())
+		b.WriteString("}")
+		b.WriteString(" ")
+	}
+	if m.LastHistogram != nil {
+		b.WriteString("last_histogram: ")
+		b.WriteString("{")
+		b.WriteString(m.LastHistogram.String())
+		b.WriteString("}")
+		b.WriteString(" ")
+	}
+	if m.DeltaHistogram != nil {
+		b.WriteString("delta_histogram: ")
+		b.WriteString("{")
+		b.WriteString(m.DeltaHistogram.String())
+		b.WriteString("}")
+		b.WriteString(" ")
+	}
+	if m.FirstHistogramTimestamp != 0 {
+		b.WriteString("first_histogram_timestamp: ")
+		fmt.Fprintf(&b, "%v", m.FirstHistogramTimestamp)
+		b.WriteString(" ")
+	}
+	if m.LastHistogramTimestamp != 0 {
+		b.WriteString("last_histogram_timestamp: ")
+		fmt.Fprintf(&b, "%v", m.LastHistogramTimestamp)
+		b.WriteString(" ")
+	}
+	if m.ForceEmptyResult {
+		b.WriteString("force_empty_result: ")
+		fmt.Fprintf(&b, "%v", m.ForceEmptyResult)
+		b.WriteString(" ")
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func (m *RateIntermediateList) String() string {
+	if m == nil {
+		return "<nil>"
+	}
+	var b strings.Builder
+	for _, e := range m.Results {
+		b.WriteString("results: ")
+		b.WriteString("{")
+		b.WriteString(e.String())
+		b.WriteString("}")
+		b.WriteString(" ")
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func (m *FirstLastOverTimeIntermediate) String() string {
+	if m == nil {
+		return "<nil>"
+	}
+	var b strings.Builder
+	if m.F != 0 {
+		b.WriteString("f: ")
+		fmt.Fprintf(&b, "%v", m.F)
+		b.WriteString(" ")
+	}
+	if m.HasFloat {
+		b.WriteString("hasFloat: ")
+		fmt.Fprintf(&b, "%v", m.HasFloat)
+		b.WriteString(" ")
+	}
+	if m.H != nil {
+		b.WriteString("h: ")
+		b.WriteString("{")
+		b.WriteString(m.H.String())
+		b.WriteString("}")
+		b.WriteString(" ")
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func (m *FirstLastOverTimeIntermediateList) String() string {
+	if m == nil {
+		return "<nil>"
+	}
+	var b strings.Builder
+	for _, e := range m.Results {
+		b.WriteString("results: ")
+		b.WriteString("{")
+		b.WriteString(e.String())
+		b.WriteString("}")
+		b.WriteString(" ")
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func (m *AvgOverTimeIntermediate) String() string {
+	if m == nil {
+		return "<nil>"
+	}
+	var b strings.Builder
+	if m.SumF != 0 {
+		b.WriteString("sumF: ")
+		fmt.Fprintf(&b, "%v", m.SumF)
+		b.WriteString(" ")
+	}
+	if m.IncrementalAvg != 0 {
+		b.WriteString("incrementalAvg: ")
+		fmt.Fprintf(&b, "%v", m.IncrementalAvg)
+		b.WriteString(" ")
+	}
+	if m.CountF != 0 {
+		b.WriteString("countF: ")
+		fmt.Fprintf(&b, "%v", m.CountF)
+		b.WriteString(" ")
+	}
+	if m.UseIncrementalCalc {
+		b.WriteString("useIncrementalCalc: ")
+		fmt.Fprintf(&b, "%v", m.UseIncrementalCalc)
+		b.WriteString(" ")
+	}
+	if m.CompF != 0 {
+		b.WriteString("compF: ")
+		fmt.Fprintf(&b, "%v", m.CompF)
+		b.WriteString(" ")
+	}
+	if m.AvgH != nil {
+		b.WriteString("avgH: ")
+		b.WriteString("{")
+		b.WriteString(m.AvgH.String())
+		b.WriteString("}")
+		b.WriteString(" ")
+	}
+	if m.CountH != 0 {
+		b.WriteString("countH: ")
+		fmt.Fprintf(&b, "%v", m.CountH)
+		b.WriteString(" ")
+	}
+	if m.ForceEmptyResult {
+		b.WriteString("forceEmptyResult: ")
+		fmt.Fprintf(&b, "%v", m.ForceEmptyResult)
+		b.WriteString(" ")
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func (m *AvgOverTimeIntermediateList) String() string {
+	if m == nil {
+		return "<nil>"
+	}
+	var b strings.Builder
+	for _, e := range m.Results {
+		b.WriteString("results: ")
+		b.WriteString("{")
+		b.WriteString(e.String())
+		b.WriteString("}")
+		b.WriteString(" ")
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func (m *PresentOverTimeIntermediate) String() string {
+	if m == nil {
+		return "<nil>"
+	}
+	var b strings.Builder
+	if m.Present {
+		b.WriteString("present: ")
+		fmt.Fprintf(&b, "%v", m.Present)
+		b.WriteString(" ")
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func (m *PresentOverTimeIntermediateList) String() string {
+	if m == nil {
+		return "<nil>"
+	}
+	var b strings.Builder
+	for _, e := range m.Results {
+		b.WriteString("results: ")
+		b.WriteString("{")
+		b.WriteString(e.String())
+		b.WriteString("}")
+		b.WriteString(" ")
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func (m *SumOverTimeIntermediate) Clone() *SumOverTimeIntermediate {
+	if m == nil {
+		return nil
+	}
+	out := &SumOverTimeIntermediate{}
+	out.SumF = m.SumF
+	out.HasFloat = m.HasFloat
+	out.SumC = m.SumC
+	out.SumH = m.SumH.Clone()
+	out.ForceEmptyResult = m.ForceEmptyResult
+	return out
+}
+
+func (m *SumOverTimeIntermediateList) Clone() *SumOverTimeIntermediateList {
+	if m == nil {
+		return nil
+	}
+	out := &SumOverTimeIntermediateList{}
+	out.Results = slices.Clone(m.Results)
+	for i := range out.Results {
+		out.Results[i] = *m.Results[i].Clone()
+	}
+	return out
+}
+
+func (m *CountOverTimeIntermediate) Clone() *CountOverTimeIntermediate {
+	if m == nil {
+		return nil
+	}
+	out := &CountOverTimeIntermediate{}
+	out.F = m.F
+	out.HasFloat = m.HasFloat
+	return out
+}
+
+func (m *CountOverTimeIntermediateList) Clone() *CountOverTimeIntermediateList {
+	if m == nil {
+		return nil
+	}
+	out := &CountOverTimeIntermediateList{}
+	out.Results = slices.Clone(m.Results)
+	for i := range out.Results {
+		out.Results[i] = *m.Results[i].Clone()
+	}
+	return out
+}
+
+func (m *MinMaxOverTimeIntermediate) Clone() *MinMaxOverTimeIntermediate {
+	if m == nil {
+		return nil
+	}
+	out := &MinMaxOverTimeIntermediate{}
+	out.F = m.F
+	out.HasFloat = m.HasFloat
+	out.HasHistogram = m.HasHistogram
+	return out
+}
+
+func (m *MinMaxOverTimeIntermediateList) Clone() *MinMaxOverTimeIntermediateList {
+	if m == nil {
+		return nil
+	}
+	out := &MinMaxOverTimeIntermediateList{}
+	out.Results = slices.Clone(m.Results)
+	for i := range out.Results {
+		out.Results[i] = *m.Results[i].Clone()
+	}
+	return out
+}
+
+func (m *RateIntermediate) Clone() *RateIntermediate {
+	if m == nil {
+		return nil
+	}
+	out := &RateIntermediate{}
+	out.SampleCount = m.SampleCount
+	out.IsHistogram = m.IsHistogram
+	out.FirstSample = m.FirstSample.Clone()
+	out.LastSample = m.LastSample.Clone()
+	out.Delta = m.Delta
+	out.FirstHistogram = m.FirstHistogram.Clone()
+	out.LastHistogram = m.LastHistogram.Clone()
+	out.DeltaHistogram = m.DeltaHistogram.Clone()
+	out.FirstHistogramTimestamp = m.FirstHistogramTimestamp
+	out.LastHistogramTimestamp = m.LastHistogramTimestamp
+	out.ForceEmptyResult = m.ForceEmptyResult
+	return out
+}
+
+func (m *RateIntermediateList) Clone() *RateIntermediateList {
+	if m == nil {
+		return nil
+	}
+	out := &RateIntermediateList{}
+	out.Results = slices.Clone(m.Results)
+	for i := range out.Results {
+		out.Results[i] = *m.Results[i].Clone()
+	}
+	return out
+}
+
+func (m *FirstLastOverTimeIntermediate) Clone() *FirstLastOverTimeIntermediate {
+	if m == nil {
+		return nil
+	}
+	out := &FirstLastOverTimeIntermediate{}
+	out.F = m.F
+	out.HasFloat = m.HasFloat
+	out.H = m.H.Clone()
+	return out
+}
+
+func (m *FirstLastOverTimeIntermediateList) Clone() *FirstLastOverTimeIntermediateList {
+	if m == nil {
+		return nil
+	}
+	out := &FirstLastOverTimeIntermediateList{}
+	out.Results = slices.Clone(m.Results)
+	for i := range out.Results {
+		out.Results[i] = *m.Results[i].Clone()
+	}
+	return out
+}
+
+func (m *AvgOverTimeIntermediate) Clone() *AvgOverTimeIntermediate {
+	if m == nil {
+		return nil
+	}
+	out := &AvgOverTimeIntermediate{}
+	out.SumF = m.SumF
+	out.IncrementalAvg = m.IncrementalAvg
+	out.CountF = m.CountF
+	out.UseIncrementalCalc = m.UseIncrementalCalc
+	out.CompF = m.CompF
+	out.AvgH = m.AvgH.Clone()
+	out.CountH = m.CountH
+	out.ForceEmptyResult = m.ForceEmptyResult
+	return out
+}
+
+func (m *AvgOverTimeIntermediateList) Clone() *AvgOverTimeIntermediateList {
+	if m == nil {
+		return nil
+	}
+	out := &AvgOverTimeIntermediateList{}
+	out.Results = slices.Clone(m.Results)
+	for i := range out.Results {
+		out.Results[i] = *m.Results[i].Clone()
+	}
+	return out
+}
+
+func (m *PresentOverTimeIntermediate) Clone() *PresentOverTimeIntermediate {
+	if m == nil {
+		return nil
+	}
+	out := &PresentOverTimeIntermediate{}
+	out.Present = m.Present
+	return out
+}
+
+func (m *PresentOverTimeIntermediateList) Clone() *PresentOverTimeIntermediateList {
+	if m == nil {
+		return nil
+	}
+	out := &PresentOverTimeIntermediateList{}
+	out.Results = slices.Clone(m.Results)
+	for i := range out.Results {
+		out.Results[i] = *m.Results[i].Clone()
+	}
+	return out
+}
 
 func (x *SumOverTimeIntermediate) ProtoReflect() protoreflect.Message {
 	file_github_com_grafana_mimir_pkg_streamingpromql_optimize_plan_rangevectorsplitting_functions_proto_init()

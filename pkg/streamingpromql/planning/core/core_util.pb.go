@@ -4,6 +4,7 @@
 package core
 
 import (
+	"fmt"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
 	"github.com/grafana/wiresmith/protohelpers"
@@ -12,17 +13,25 @@ import (
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	"reflect"
+	"slices"
+	"strconv"
+	"strings"
 	"unsafe"
 )
 
-// Reflection / registration glue for github.com/grafana/mimir/pkg/streamingpromql/planning/core/core.proto.
+// Cold companion utilities for github.com/grafana/mimir/pkg/streamingpromql/planning/core/core.proto.
 //
-// This file holds the per-message ProtoReflect() methods, the per-enum
-// Descriptor()/Type()/Number() methods, the embedded FileDescriptorProto
-// blob, the file_*_msgTypes / file_*_enumTypes arrays, and the init()
-// that registers everything with protoregistry.GlobalFiles and
-// protoregistry.GlobalTypes. None of these are called on the marshal /
-// unmarshal / size hot path.
+// This file holds two cold concerns merged into one compilation unit:
+//
+//   - Reflection / registration glue: the per-message ProtoReflect()
+//     methods, the per-enum Descriptor()/Type()/Number() methods, the
+//     embedded FileDescriptorProto blob, the file_*_msgTypes /
+//     file_*_enumTypes arrays, and the init() that registers everything
+//     with protoregistry.GlobalFiles and protoregistry.GlobalTypes.
+//   - The per-message String() debug dumps (hand-rolled, deterministic,
+//     non-reflection — see compiler/generator/emit_string.go).
+//
+// None of these are called on the marshal / unmarshal / size hot path.
 //
 // Why a separate file? Putting this code (plus its descriptorpb /
 // protoreflect / protoimpl imports — ~64KB of descriptorpb alone, ~377KB
@@ -33,11 +42,743 @@ import (
 // in the same compilation unit shifted hot functions onto different
 // cache sets and pushed them ~131KB further into the binary. Emitting
 // the cold half here, in its own .o, lets the linker place it away
-// from the hot half and recovers that throughput.
+// from the hot half and recovers that throughput. reflect and String()
+// are both cold and were already split out, so merging them (cold→cold)
+// preserves the rationale while halving the companion-file count.
 //
 // See compiler/generator/emit_registration.go for the full rationale
 // and the benchmark methodology. DO NOT inline this file's contents
 // back into the main .pb.go without re-measuring.
+
+func (m *PositionRange) String() string {
+	if m == nil {
+		return "<nil>"
+	}
+	var b strings.Builder
+	if m.Start != 0 {
+		b.WriteString("start: ")
+		fmt.Fprintf(&b, "%v", m.Start)
+		b.WriteString(" ")
+	}
+	if m.End != 0 {
+		b.WriteString("end: ")
+		fmt.Fprintf(&b, "%v", m.End)
+		b.WriteString(" ")
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func (m *BinaryExpressionHints) String() string {
+	if m == nil {
+		return "<nil>"
+	}
+	var b strings.Builder
+	for _, e := range m.Include {
+		b.WriteString("include: ")
+		b.WriteString(strconv.Quote(e))
+		b.WriteString(" ")
+	}
+	for _, e := range m.Exclude {
+		b.WriteString("exclude: ")
+		b.WriteString(strconv.Quote(e))
+		b.WriteString(" ")
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func (m *AggregateExpressionDetails) String() string {
+	if m == nil {
+		return "<nil>"
+	}
+	var b strings.Builder
+	if m.Op != 0 {
+		b.WriteString("op: ")
+		b.WriteString(m.Op.String())
+		b.WriteString(" ")
+	}
+	for _, e := range m.Grouping {
+		b.WriteString("grouping: ")
+		b.WriteString(strconv.Quote(e))
+		b.WriteString(" ")
+	}
+	if m.Without {
+		b.WriteString("without: ")
+		fmt.Fprintf(&b, "%v", m.Without)
+		b.WriteString(" ")
+	}
+	if m.ExpressionPosition.Size() > 0 {
+		b.WriteString("expressionPosition: ")
+		b.WriteString("{")
+		b.WriteString(m.ExpressionPosition.String())
+		b.WriteString("}")
+		b.WriteString(" ")
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func (m *BinaryExpressionDetails) String() string {
+	if m == nil {
+		return "<nil>"
+	}
+	var b strings.Builder
+	if m.Op != 0 {
+		b.WriteString("op: ")
+		b.WriteString(m.Op.String())
+		b.WriteString(" ")
+	}
+	if m.VectorMatching != nil {
+		b.WriteString("vectorMatching: ")
+		b.WriteString("{")
+		b.WriteString(m.VectorMatching.String())
+		b.WriteString("}")
+		b.WriteString(" ")
+	}
+	if m.ReturnBool {
+		b.WriteString("returnBool: ")
+		fmt.Fprintf(&b, "%v", m.ReturnBool)
+		b.WriteString(" ")
+	}
+	if m.ExpressionPosition.Size() > 0 {
+		b.WriteString("expressionPosition: ")
+		b.WriteString("{")
+		b.WriteString(m.ExpressionPosition.String())
+		b.WriteString("}")
+		b.WriteString(" ")
+	}
+	if m.Hints != nil {
+		b.WriteString("hints: ")
+		b.WriteString("{")
+		b.WriteString(m.Hints.String())
+		b.WriteString("}")
+		b.WriteString(" ")
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func (m *VectorMatching) String() string {
+	if m == nil {
+		return "<nil>"
+	}
+	var b strings.Builder
+	if m.Card != 0 {
+		b.WriteString("card: ")
+		fmt.Fprintf(&b, "%v", m.Card)
+		b.WriteString(" ")
+	}
+	for _, e := range m.MatchingLabels {
+		b.WriteString("matchingLabels: ")
+		b.WriteString(strconv.Quote(e))
+		b.WriteString(" ")
+	}
+	if m.On {
+		b.WriteString("on: ")
+		fmt.Fprintf(&b, "%v", m.On)
+		b.WriteString(" ")
+	}
+	for _, e := range m.Include {
+		b.WriteString("include: ")
+		b.WriteString(strconv.Quote(e))
+		b.WriteString(" ")
+	}
+	if m.FillValues.Size() > 0 {
+		b.WriteString("fillValues: ")
+		b.WriteString("{")
+		b.WriteString(m.FillValues.String())
+		b.WriteString("}")
+		b.WriteString(" ")
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func (m *FunctionCallDetails) String() string {
+	if m == nil {
+		return "<nil>"
+	}
+	var b strings.Builder
+	if m.Function != 0 {
+		b.WriteString("function: ")
+		b.WriteString(m.Function.String())
+		b.WriteString(" ")
+	}
+	for _, e := range m.AbsentLabels {
+		b.WriteString("absentLabels: ")
+		fmt.Fprintf(&b, "%v", e)
+		b.WriteString(" ")
+	}
+	if m.ExpressionPosition.Size() > 0 {
+		b.WriteString("expressionPosition: ")
+		b.WriteString("{")
+		b.WriteString(m.ExpressionPosition.String())
+		b.WriteString("}")
+		b.WriteString(" ")
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func (m *NumberLiteralDetails) String() string {
+	if m == nil {
+		return "<nil>"
+	}
+	var b strings.Builder
+	if m.Value != 0 {
+		b.WriteString("value: ")
+		fmt.Fprintf(&b, "%v", m.Value)
+		b.WriteString(" ")
+	}
+	if m.ExpressionPosition.Size() > 0 {
+		b.WriteString("expressionPosition: ")
+		b.WriteString("{")
+		b.WriteString(m.ExpressionPosition.String())
+		b.WriteString("}")
+		b.WriteString(" ")
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func (m *StringLiteralDetails) String() string {
+	if m == nil {
+		return "<nil>"
+	}
+	var b strings.Builder
+	if len(m.Value) > 0 {
+		b.WriteString("value: ")
+		b.WriteString(strconv.Quote(m.Value))
+		b.WriteString(" ")
+	}
+	if m.ExpressionPosition.Size() > 0 {
+		b.WriteString("expressionPosition: ")
+		b.WriteString("{")
+		b.WriteString(m.ExpressionPosition.String())
+		b.WriteString("}")
+		b.WriteString(" ")
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func (m *UnaryExpressionDetails) String() string {
+	if m == nil {
+		return "<nil>"
+	}
+	var b strings.Builder
+	if m.Op != 0 {
+		b.WriteString("op: ")
+		b.WriteString(m.Op.String())
+		b.WriteString(" ")
+	}
+	if m.ExpressionPosition.Size() > 0 {
+		b.WriteString("expressionPosition: ")
+		b.WriteString("{")
+		b.WriteString(m.ExpressionPosition.String())
+		b.WriteString("}")
+		b.WriteString(" ")
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func (m *VectorSelectorDetails) String() string {
+	if m == nil {
+		return "<nil>"
+	}
+	var b strings.Builder
+	for _, e := range m.Matchers {
+		b.WriteString("matchers: ")
+		b.WriteString("{")
+		b.WriteString(e.String())
+		b.WriteString("}")
+		b.WriteString(" ")
+	}
+	b.WriteString("timestamp: ")
+	fmt.Fprintf(&b, "%v", m.Timestamp)
+	b.WriteString(" ")
+	b.WriteString("offset: ")
+	fmt.Fprintf(&b, "%v", m.Offset)
+	b.WriteString(" ")
+	if m.ExpressionPosition.Size() > 0 {
+		b.WriteString("expressionPosition: ")
+		b.WriteString("{")
+		b.WriteString(m.ExpressionPosition.String())
+		b.WriteString("}")
+		b.WriteString(" ")
+	}
+	if m.ReturnSampleTimestamps {
+		b.WriteString("returnSampleTimestamps: ")
+		fmt.Fprintf(&b, "%v", m.ReturnSampleTimestamps)
+		b.WriteString(" ")
+	}
+	if m.SkipHistogramBuckets {
+		b.WriteString("skipHistogramBuckets: ")
+		fmt.Fprintf(&b, "%v", m.SkipHistogramBuckets)
+		b.WriteString(" ")
+	}
+	if m.Smoothed {
+		b.WriteString("smoothed: ")
+		fmt.Fprintf(&b, "%v", m.Smoothed)
+		b.WriteString(" ")
+	}
+	if m.ReturnSampleTimestampsPreserveHistograms {
+		b.WriteString("returnSampleTimestampsPreserveHistograms: ")
+		fmt.Fprintf(&b, "%v", m.ReturnSampleTimestampsPreserveHistograms)
+		b.WriteString(" ")
+	}
+	for _, e := range m.Subsets {
+		b.WriteString("subsets: ")
+		b.WriteString("{")
+		b.WriteString(e.String())
+		b.WriteString("}")
+		b.WriteString(" ")
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func (m *MatrixSelectorDetails) String() string {
+	if m == nil {
+		return "<nil>"
+	}
+	var b strings.Builder
+	for _, e := range m.Matchers {
+		b.WriteString("matchers: ")
+		b.WriteString("{")
+		b.WriteString(e.String())
+		b.WriteString("}")
+		b.WriteString(" ")
+	}
+	b.WriteString("timestamp: ")
+	fmt.Fprintf(&b, "%v", m.Timestamp)
+	b.WriteString(" ")
+	b.WriteString("offset: ")
+	fmt.Fprintf(&b, "%v", m.Offset)
+	b.WriteString(" ")
+	b.WriteString("range: ")
+	fmt.Fprintf(&b, "%v", m.Range)
+	b.WriteString(" ")
+	if m.ExpressionPosition.Size() > 0 {
+		b.WriteString("expressionPosition: ")
+		b.WriteString("{")
+		b.WriteString(m.ExpressionPosition.String())
+		b.WriteString("}")
+		b.WriteString(" ")
+	}
+	if m.SkipHistogramBuckets {
+		b.WriteString("skipHistogramBuckets: ")
+		fmt.Fprintf(&b, "%v", m.SkipHistogramBuckets)
+		b.WriteString(" ")
+	}
+	if m.Smoothed {
+		b.WriteString("smoothed: ")
+		fmt.Fprintf(&b, "%v", m.Smoothed)
+		b.WriteString(" ")
+	}
+	if m.Anchored {
+		b.WriteString("anchored: ")
+		fmt.Fprintf(&b, "%v", m.Anchored)
+		b.WriteString(" ")
+	}
+	if m.CounterAware {
+		b.WriteString("counterAware: ")
+		fmt.Fprintf(&b, "%v", m.CounterAware)
+		b.WriteString(" ")
+	}
+	for _, e := range m.Subsets {
+		b.WriteString("subsets: ")
+		b.WriteString("{")
+		b.WriteString(e.String())
+		b.WriteString("}")
+		b.WriteString(" ")
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func (m *SubsetMatchers) String() string {
+	if m == nil {
+		return "<nil>"
+	}
+	var b strings.Builder
+	for _, e := range m.Matchers {
+		b.WriteString("matchers: ")
+		b.WriteString("{")
+		b.WriteString(e.String())
+		b.WriteString("}")
+		b.WriteString(" ")
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func (m *SubqueryDetails) String() string {
+	if m == nil {
+		return "<nil>"
+	}
+	var b strings.Builder
+	b.WriteString("timestamp: ")
+	fmt.Fprintf(&b, "%v", m.Timestamp)
+	b.WriteString(" ")
+	b.WriteString("offset: ")
+	fmt.Fprintf(&b, "%v", m.Offset)
+	b.WriteString(" ")
+	b.WriteString("range: ")
+	fmt.Fprintf(&b, "%v", m.Range)
+	b.WriteString(" ")
+	b.WriteString("step: ")
+	fmt.Fprintf(&b, "%v", m.Step)
+	b.WriteString(" ")
+	if m.ExpressionPosition.Size() > 0 {
+		b.WriteString("expressionPosition: ")
+		b.WriteString("{")
+		b.WriteString(m.ExpressionPosition.String())
+		b.WriteString("}")
+		b.WriteString(" ")
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func (m *StepInvariantExpressionDetails) String() string {
+	if m == nil {
+		return "<nil>"
+	}
+	var b strings.Builder
+	return strings.TrimSpace(b.String())
+}
+
+func (m *LabelMatcher) String() string {
+	if m == nil {
+		return "<nil>"
+	}
+	var b strings.Builder
+	if m.Type != 0 {
+		b.WriteString("type: ")
+		fmt.Fprintf(&b, "%v", m.Type)
+		b.WriteString(" ")
+	}
+	if len(m.Name) > 0 {
+		b.WriteString("name: ")
+		b.WriteString(strconv.Quote(m.Name))
+		b.WriteString(" ")
+	}
+	if len(m.Value) > 0 {
+		b.WriteString("value: ")
+		b.WriteString(strconv.Quote(m.Value))
+		b.WriteString(" ")
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func (m *DeduplicateAndMergeDetails) String() string {
+	if m == nil {
+		return "<nil>"
+	}
+	var b strings.Builder
+	return strings.TrimSpace(b.String())
+}
+
+func (m *DropNameDetails) String() string {
+	if m == nil {
+		return "<nil>"
+	}
+	var b strings.Builder
+	return strings.TrimSpace(b.String())
+}
+
+func (m *NoOpDetails) String() string {
+	if m == nil {
+		return "<nil>"
+	}
+	var b strings.Builder
+	if m.MatrixSelector {
+		b.WriteString("matrixSelector: ")
+		fmt.Fprintf(&b, "%v", m.MatrixSelector)
+		b.WriteString(" ")
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func (m *VectorMatchFillValues) String() string {
+	if m == nil {
+		return "<nil>"
+	}
+	var b strings.Builder
+	if m.Rhs != 0 {
+		b.WriteString("rhs: ")
+		fmt.Fprintf(&b, "%v", m.Rhs)
+		b.WriteString(" ")
+	}
+	if m.Lhs != 0 {
+		b.WriteString("lhs: ")
+		fmt.Fprintf(&b, "%v", m.Lhs)
+		b.WriteString(" ")
+	}
+	if m.RhsSet {
+		b.WriteString("rhsSet: ")
+		fmt.Fprintf(&b, "%v", m.RhsSet)
+		b.WriteString(" ")
+	}
+	if m.LhsSet {
+		b.WriteString("lhsSet: ")
+		fmt.Fprintf(&b, "%v", m.LhsSet)
+		b.WriteString(" ")
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func (m *DataLabelSelectorDetails) String() string {
+	if m == nil {
+		return "<nil>"
+	}
+	var b strings.Builder
+	for _, e := range m.Matchers {
+		b.WriteString("matchers: ")
+		b.WriteString("{")
+		b.WriteString(e.String())
+		b.WriteString("}")
+		b.WriteString(" ")
+	}
+	if m.ExpressionPosition.Size() > 0 {
+		b.WriteString("expressionPosition: ")
+		b.WriteString("{")
+		b.WriteString(m.ExpressionPosition.String())
+		b.WriteString("}")
+		b.WriteString(" ")
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func (m *PositionRange) Clone() *PositionRange {
+	if m == nil {
+		return nil
+	}
+	out := &PositionRange{}
+	out.Start = m.Start
+	out.End = m.End
+	return out
+}
+
+func (m *BinaryExpressionHints) Clone() *BinaryExpressionHints {
+	if m == nil {
+		return nil
+	}
+	out := &BinaryExpressionHints{}
+	out.Include = slices.Clone(m.Include)
+	out.Exclude = slices.Clone(m.Exclude)
+	return out
+}
+
+func (m *AggregateExpressionDetails) Clone() *AggregateExpressionDetails {
+	if m == nil {
+		return nil
+	}
+	out := &AggregateExpressionDetails{}
+	out.Op = m.Op
+	out.Grouping = slices.Clone(m.Grouping)
+	out.Without = m.Without
+	out.ExpressionPosition = *m.ExpressionPosition.Clone()
+	return out
+}
+
+func (m *BinaryExpressionDetails) Clone() *BinaryExpressionDetails {
+	if m == nil {
+		return nil
+	}
+	out := &BinaryExpressionDetails{}
+	out.Op = m.Op
+	out.VectorMatching = m.VectorMatching.Clone()
+	out.ReturnBool = m.ReturnBool
+	out.ExpressionPosition = *m.ExpressionPosition.Clone()
+	out.Hints = m.Hints.Clone()
+	return out
+}
+
+func (m *VectorMatching) Clone() *VectorMatching {
+	if m == nil {
+		return nil
+	}
+	out := &VectorMatching{}
+	out.Card = m.Card
+	out.MatchingLabels = slices.Clone(m.MatchingLabels)
+	out.On = m.On
+	out.Include = slices.Clone(m.Include)
+	out.FillValues = *m.FillValues.Clone()
+	return out
+}
+
+func (m *FunctionCallDetails) Clone() *FunctionCallDetails {
+	if m == nil {
+		return nil
+	}
+	out := &FunctionCallDetails{}
+	out.Function = m.Function
+	out.AbsentLabels = slices.Clone(m.AbsentLabels)
+	out.ExpressionPosition = *m.ExpressionPosition.Clone()
+	return out
+}
+
+func (m *NumberLiteralDetails) Clone() *NumberLiteralDetails {
+	if m == nil {
+		return nil
+	}
+	out := &NumberLiteralDetails{}
+	out.Value = m.Value
+	out.ExpressionPosition = *m.ExpressionPosition.Clone()
+	return out
+}
+
+func (m *StringLiteralDetails) Clone() *StringLiteralDetails {
+	if m == nil {
+		return nil
+	}
+	out := &StringLiteralDetails{}
+	out.Value = m.Value
+	out.ExpressionPosition = *m.ExpressionPosition.Clone()
+	return out
+}
+
+func (m *UnaryExpressionDetails) Clone() *UnaryExpressionDetails {
+	if m == nil {
+		return nil
+	}
+	out := &UnaryExpressionDetails{}
+	out.Op = m.Op
+	out.ExpressionPosition = *m.ExpressionPosition.Clone()
+	return out
+}
+
+func (m *VectorSelectorDetails) Clone() *VectorSelectorDetails {
+	if m == nil {
+		return nil
+	}
+	out := &VectorSelectorDetails{}
+	out.Matchers = slices.Clone(m.Matchers)
+	for i := range out.Matchers {
+		out.Matchers[i] = out.Matchers[i].Clone()
+	}
+	out.Timestamp = m.Timestamp
+	out.Offset = m.Offset
+	out.ExpressionPosition = *m.ExpressionPosition.Clone()
+	out.ReturnSampleTimestamps = m.ReturnSampleTimestamps
+	out.SkipHistogramBuckets = m.SkipHistogramBuckets
+	out.Smoothed = m.Smoothed
+	out.ReturnSampleTimestampsPreserveHistograms = m.ReturnSampleTimestampsPreserveHistograms
+	out.Subsets = slices.Clone(m.Subsets)
+	for i := range out.Subsets {
+		out.Subsets[i] = *m.Subsets[i].Clone()
+	}
+	return out
+}
+
+func (m *MatrixSelectorDetails) Clone() *MatrixSelectorDetails {
+	if m == nil {
+		return nil
+	}
+	out := &MatrixSelectorDetails{}
+	out.Matchers = slices.Clone(m.Matchers)
+	for i := range out.Matchers {
+		out.Matchers[i] = out.Matchers[i].Clone()
+	}
+	out.Timestamp = m.Timestamp
+	out.Offset = m.Offset
+	out.Range = m.Range
+	out.ExpressionPosition = *m.ExpressionPosition.Clone()
+	out.SkipHistogramBuckets = m.SkipHistogramBuckets
+	out.Smoothed = m.Smoothed
+	out.Anchored = m.Anchored
+	out.CounterAware = m.CounterAware
+	out.Subsets = slices.Clone(m.Subsets)
+	for i := range out.Subsets {
+		out.Subsets[i] = *m.Subsets[i].Clone()
+	}
+	return out
+}
+
+func (m *SubsetMatchers) Clone() *SubsetMatchers {
+	if m == nil {
+		return nil
+	}
+	out := &SubsetMatchers{}
+	out.Matchers = slices.Clone(m.Matchers)
+	for i := range out.Matchers {
+		out.Matchers[i] = out.Matchers[i].Clone()
+	}
+	return out
+}
+
+func (m *SubqueryDetails) Clone() *SubqueryDetails {
+	if m == nil {
+		return nil
+	}
+	out := &SubqueryDetails{}
+	out.Timestamp = m.Timestamp
+	out.Offset = m.Offset
+	out.Range = m.Range
+	out.Step = m.Step
+	out.ExpressionPosition = *m.ExpressionPosition.Clone()
+	return out
+}
+
+func (m *StepInvariantExpressionDetails) Clone() *StepInvariantExpressionDetails {
+	if m == nil {
+		return nil
+	}
+	out := &StepInvariantExpressionDetails{}
+	return out
+}
+
+func (m *LabelMatcher) Clone() *LabelMatcher {
+	if m == nil {
+		return nil
+	}
+	out := &LabelMatcher{}
+	out.Type = m.Type
+	out.Name = m.Name
+	out.Value = m.Value
+	return out
+}
+
+func (m *DeduplicateAndMergeDetails) Clone() *DeduplicateAndMergeDetails {
+	if m == nil {
+		return nil
+	}
+	out := &DeduplicateAndMergeDetails{}
+	return out
+}
+
+func (m *DropNameDetails) Clone() *DropNameDetails {
+	if m == nil {
+		return nil
+	}
+	out := &DropNameDetails{}
+	return out
+}
+
+func (m *NoOpDetails) Clone() *NoOpDetails {
+	if m == nil {
+		return nil
+	}
+	out := &NoOpDetails{}
+	out.MatrixSelector = m.MatrixSelector
+	return out
+}
+
+func (m *VectorMatchFillValues) Clone() *VectorMatchFillValues {
+	if m == nil {
+		return nil
+	}
+	out := &VectorMatchFillValues{}
+	out.Rhs = m.Rhs
+	out.Lhs = m.Lhs
+	out.RhsSet = m.RhsSet
+	out.LhsSet = m.LhsSet
+	return out
+}
+
+func (m *DataLabelSelectorDetails) Clone() *DataLabelSelectorDetails {
+	if m == nil {
+		return nil
+	}
+	out := &DataLabelSelectorDetails{}
+	out.Matchers = slices.Clone(m.Matchers)
+	for i := range out.Matchers {
+		out.Matchers[i] = out.Matchers[i].Clone()
+	}
+	out.ExpressionPosition = *m.ExpressionPosition.Clone()
+	return out
+}
 
 func (x AggregationOperation) Descriptor() protoreflect.EnumDescriptor {
 	file_github_com_grafana_mimir_pkg_streamingpromql_planning_core_core_proto_init()

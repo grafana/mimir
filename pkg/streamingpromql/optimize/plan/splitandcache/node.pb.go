@@ -23,12 +23,6 @@ func (m *TimeRangeSplitDetails) Reset() {
 	*m = TimeRangeSplitDetails{}
 }
 func (*TimeRangeSplitDetails) ProtoMessage() {}
-func (m *TimeRangeSplitDetails) String() string {
-	if m == nil {
-		return "<nil>"
-	}
-	return fmt.Sprintf("%v", *m)
-}
 
 func (m *TimeRangeSplitDetails) GetSplitInterval() time.Duration {
 	if m != nil {

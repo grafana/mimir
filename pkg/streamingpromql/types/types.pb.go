@@ -37,12 +37,6 @@ func (m *EncodedOperatorEvaluationStats) Reset() {
 	*m = EncodedOperatorEvaluationStats{}
 }
 func (*EncodedOperatorEvaluationStats) ProtoMessage() {}
-func (m *EncodedOperatorEvaluationStats) String() string {
-	if m == nil {
-		return "<nil>"
-	}
-	return fmt.Sprintf("%v", *m)
-}
 
 func (m *EncodedSubsetStats) Reset() {
 	if m == nil {
@@ -51,12 +45,6 @@ func (m *EncodedSubsetStats) Reset() {
 	*m = EncodedSubsetStats{}
 }
 func (*EncodedSubsetStats) ProtoMessage() {}
-func (m *EncodedSubsetStats) String() string {
-	if m == nil {
-		return "<nil>"
-	}
-	return fmt.Sprintf("%v", *m)
-}
 
 func (m *EncodedQueryTimeRange) Reset() {
 	if m == nil {
@@ -65,12 +53,6 @@ func (m *EncodedQueryTimeRange) Reset() {
 	*m = EncodedQueryTimeRange{}
 }
 func (*EncodedQueryTimeRange) ProtoMessage() {}
-func (m *EncodedQueryTimeRange) String() string {
-	if m == nil {
-		return "<nil>"
-	}
-	return fmt.Sprintf("%v", *m)
-}
 
 func (m *EncodedOperatorEvaluationStats) GetAllSeries() *EncodedSubsetStats {
 	if m != nil {

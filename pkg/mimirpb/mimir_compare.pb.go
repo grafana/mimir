@@ -8,23 +8,1237 @@ import (
 	"math"
 )
 
-// Per-message Compare() methods for cortexpb/mimir.proto.
+// Per-message value-comparison methods (Equal + Compare) for cortexpb/mimir.proto.
 //
-// Compare returns -1/0/+1 like bytes.Compare with the gogoproto.compare
-// nil/wrong-type preamble. Always emitted on every message; callers that
-// don't use it can rely on Go's dead-code elimination to drop the body.
+// Equal returns bool; Compare returns -1/0/+1 like bytes.Compare with the
+// gogoproto.compare nil/wrong-type preamble. Both are emitted on every
+// message; callers that don't use one can rely on Go's dead-code
+// elimination to drop the body.
 //
-// Why a separate file? Compare is never called from Marshal/Unmarshal/Size,
-// but emitting it next to those hot functions in the main .pb.go pushed
-// them onto different cache sets and produced a measured ~9% geomean
+// Why a separate file? Equal/Compare are never called from Marshal/Unmarshal/
+// Size, but emitting them next to those hot functions in the main .pb.go
+// pushed them onto different cache sets and produced a measured ~9% geomean
 // regression on OTel benchmarks (UnmarshalMap +14%, MarshalSingleSpan +13%)
-// purely from icache / iTLB / BTB pressure. Splitting Compare into its own
+// purely from icache / iTLB / BTB pressure. Splitting them into their own
 // compilation unit gives the linker freedom to place the cold half away
-// from the hot half — same trick the _reflect.pb.go split uses.
+// from the hot half — same trick the _util.pb.go split uses.
 //
-// See compiler/generator/emit_compare.go for the full rationale and the
-// benchmark methodology. DO NOT inline this file's contents back into
-// the main .pb.go without re-measuring.
+// See compiler/generator/emit_compare.go / emit_equal.go for the full
+// rationale and the benchmark methodology. DO NOT inline this file's
+// contents back into the main .pb.go without re-measuring.
+
+func (this *WriteRequest) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*WriteRequest)
+	if !ok {
+		that2, ok := that.(WriteRequest)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if len(this.Timeseries) != len(that1.Timeseries) {
+		return false
+	}
+	for i := range this.Timeseries {
+		if !this.Timeseries[i].EqualWiresmith(that1.Timeseries[i]) {
+			return false
+		}
+	}
+	if this.Source != that1.Source {
+		return false
+	}
+	if len(this.Metadata) != len(that1.Metadata) {
+		return false
+	}
+	for i := range this.Metadata {
+		if (this.Metadata[i] == nil) != (that1.Metadata[i] == nil) {
+			return false
+		}
+		if this.Metadata[i] != nil && !this.Metadata[i].Equal(that1.Metadata[i]) {
+			return false
+		}
+	}
+	if len(this.SymbolsRW2) != len(that1.SymbolsRW2) {
+		return false
+	}
+	for i := range this.SymbolsRW2 {
+		if this.SymbolsRW2[i] != that1.SymbolsRW2[i] {
+			return false
+		}
+	}
+	if len(this.TimeseriesRW2) != len(that1.TimeseriesRW2) {
+		return false
+	}
+	for i := range this.TimeseriesRW2 {
+		if !this.TimeseriesRW2[i].Equal(that1.TimeseriesRW2[i]) {
+			return false
+		}
+	}
+	if this.SkipLabelValidation != that1.SkipLabelValidation {
+		return false
+	}
+	if this.SkipLabelCountValidation != that1.SkipLabelCountValidation {
+		return false
+	}
+	return true
+}
+
+func (this *WriteResponse) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*WriteResponse)
+	if !ok {
+		that2, ok := that.(WriteResponse)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	return true
+}
+
+func (this *ErrorDetails) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*ErrorDetails)
+	if !ok {
+		that2, ok := that.(ErrorDetails)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if this.Cause != that1.Cause {
+		return false
+	}
+	if this.Soft != that1.Soft {
+		return false
+	}
+	if this.RejectedSamples != that1.RejectedSamples {
+		return false
+	}
+	return true
+}
+
+func (this *TimeSeries) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*TimeSeries)
+	if !ok {
+		that2, ok := that.(TimeSeries)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if len(this.Labels) != len(that1.Labels) {
+		return false
+	}
+	for i := range this.Labels {
+		if !this.Labels[i].EqualWiresmith(that1.Labels[i]) {
+			return false
+		}
+	}
+	if len(this.Samples) != len(that1.Samples) {
+		return false
+	}
+	for i := range this.Samples {
+		if !this.Samples[i].Equal(that1.Samples[i]) {
+			return false
+		}
+	}
+	if len(this.Exemplars) != len(that1.Exemplars) {
+		return false
+	}
+	for i := range this.Exemplars {
+		if !this.Exemplars[i].Equal(that1.Exemplars[i]) {
+			return false
+		}
+	}
+	if len(this.Histograms) != len(that1.Histograms) {
+		return false
+	}
+	for i := range this.Histograms {
+		if !this.Histograms[i].Equal(that1.Histograms[i]) {
+			return false
+		}
+	}
+	if this.CreatedTimestamp != that1.CreatedTimestamp {
+		return false
+	}
+	return true
+}
+
+func (this *LabelPair) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*LabelPair)
+	if !ok {
+		that2, ok := that.(LabelPair)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if !bytes.Equal(this.Name, that1.Name) {
+		return false
+	}
+	if !bytes.Equal(this.Value, that1.Value) {
+		return false
+	}
+	return true
+}
+
+func (this *Sample) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*Sample)
+	if !ok {
+		that2, ok := that.(Sample)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if this.TimestampMs != that1.TimestampMs {
+		return false
+	}
+	if math.Float64bits(this.Value) != math.Float64bits(that1.Value) {
+		return false
+	}
+	return true
+}
+
+func (this *MetricMetadata) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*MetricMetadata)
+	if !ok {
+		that2, ok := that.(MetricMetadata)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if this.Type != that1.Type {
+		return false
+	}
+	if this.MetricFamilyName != that1.MetricFamilyName {
+		return false
+	}
+	if this.Help != that1.Help {
+		return false
+	}
+	if this.Unit != that1.Unit {
+		return false
+	}
+	return true
+}
+
+func (this *Metric) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*Metric)
+	if !ok {
+		that2, ok := that.(Metric)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if len(this.Labels) != len(that1.Labels) {
+		return false
+	}
+	for i := range this.Labels {
+		if !this.Labels[i].EqualWiresmith(that1.Labels[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+func (this *Exemplar) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*Exemplar)
+	if !ok {
+		that2, ok := that.(Exemplar)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if len(this.Labels) != len(that1.Labels) {
+		return false
+	}
+	for i := range this.Labels {
+		if !this.Labels[i].EqualWiresmith(that1.Labels[i]) {
+			return false
+		}
+	}
+	if math.Float64bits(this.Value) != math.Float64bits(that1.Value) {
+		return false
+	}
+	if this.TimestampMs != that1.TimestampMs {
+		return false
+	}
+	return true
+}
+
+func (this *Histogram) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*Histogram)
+	if !ok {
+		that2, ok := that.(Histogram)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if (this.Count == nil) != (that1.Count == nil) {
+		return false
+	}
+	if this.Count != nil {
+		switch v := this.Count.(type) {
+		case *Histogram_CountInt:
+			v2, ok := that1.Count.(*Histogram_CountInt)
+			if !ok {
+				return false
+			}
+			if v.CountInt != v2.CountInt {
+				return false
+			}
+		case *Histogram_CountFloat:
+			v2, ok := that1.Count.(*Histogram_CountFloat)
+			if !ok {
+				return false
+			}
+			if math.Float64bits(v.CountFloat) != math.Float64bits(v2.CountFloat) {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	if math.Float64bits(this.Sum) != math.Float64bits(that1.Sum) {
+		return false
+	}
+	if this.Schema != that1.Schema {
+		return false
+	}
+	if math.Float64bits(this.ZeroThreshold) != math.Float64bits(that1.ZeroThreshold) {
+		return false
+	}
+	if (this.ZeroCount == nil) != (that1.ZeroCount == nil) {
+		return false
+	}
+	if this.ZeroCount != nil {
+		switch v := this.ZeroCount.(type) {
+		case *Histogram_ZeroCountInt:
+			v2, ok := that1.ZeroCount.(*Histogram_ZeroCountInt)
+			if !ok {
+				return false
+			}
+			if v.ZeroCountInt != v2.ZeroCountInt {
+				return false
+			}
+		case *Histogram_ZeroCountFloat:
+			v2, ok := that1.ZeroCount.(*Histogram_ZeroCountFloat)
+			if !ok {
+				return false
+			}
+			if math.Float64bits(v.ZeroCountFloat) != math.Float64bits(v2.ZeroCountFloat) {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	if len(this.NegativeSpans) != len(that1.NegativeSpans) {
+		return false
+	}
+	for i := range this.NegativeSpans {
+		if !this.NegativeSpans[i].Equal(that1.NegativeSpans[i]) {
+			return false
+		}
+	}
+	if len(this.NegativeDeltas) != len(that1.NegativeDeltas) {
+		return false
+	}
+	for i := range this.NegativeDeltas {
+		if this.NegativeDeltas[i] != that1.NegativeDeltas[i] {
+			return false
+		}
+	}
+	if len(this.NegativeCounts) != len(that1.NegativeCounts) {
+		return false
+	}
+	for i := range this.NegativeCounts {
+		if math.Float64bits(this.NegativeCounts[i]) != math.Float64bits(that1.NegativeCounts[i]) {
+			return false
+		}
+	}
+	if len(this.PositiveSpans) != len(that1.PositiveSpans) {
+		return false
+	}
+	for i := range this.PositiveSpans {
+		if !this.PositiveSpans[i].Equal(that1.PositiveSpans[i]) {
+			return false
+		}
+	}
+	if len(this.PositiveDeltas) != len(that1.PositiveDeltas) {
+		return false
+	}
+	for i := range this.PositiveDeltas {
+		if this.PositiveDeltas[i] != that1.PositiveDeltas[i] {
+			return false
+		}
+	}
+	if len(this.PositiveCounts) != len(that1.PositiveCounts) {
+		return false
+	}
+	for i := range this.PositiveCounts {
+		if math.Float64bits(this.PositiveCounts[i]) != math.Float64bits(that1.PositiveCounts[i]) {
+			return false
+		}
+	}
+	if this.ResetHint != that1.ResetHint {
+		return false
+	}
+	if this.Timestamp != that1.Timestamp {
+		return false
+	}
+	if len(this.CustomValues) != len(that1.CustomValues) {
+		return false
+	}
+	for i := range this.CustomValues {
+		if math.Float64bits(this.CustomValues[i]) != math.Float64bits(that1.CustomValues[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+func (this *FloatHistogram) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*FloatHistogram)
+	if !ok {
+		that2, ok := that.(FloatHistogram)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if this.CounterResetHint != that1.CounterResetHint {
+		return false
+	}
+	if this.Schema != that1.Schema {
+		return false
+	}
+	if math.Float64bits(this.ZeroThreshold) != math.Float64bits(that1.ZeroThreshold) {
+		return false
+	}
+	if math.Float64bits(this.ZeroCount) != math.Float64bits(that1.ZeroCount) {
+		return false
+	}
+	if math.Float64bits(this.Count) != math.Float64bits(that1.Count) {
+		return false
+	}
+	if math.Float64bits(this.Sum) != math.Float64bits(that1.Sum) {
+		return false
+	}
+	if len(this.PositiveSpans) != len(that1.PositiveSpans) {
+		return false
+	}
+	for i := range this.PositiveSpans {
+		if !this.PositiveSpans[i].Equal(that1.PositiveSpans[i]) {
+			return false
+		}
+	}
+	if len(this.NegativeSpans) != len(that1.NegativeSpans) {
+		return false
+	}
+	for i := range this.NegativeSpans {
+		if !this.NegativeSpans[i].Equal(that1.NegativeSpans[i]) {
+			return false
+		}
+	}
+	if len(this.PositiveBuckets) != len(that1.PositiveBuckets) {
+		return false
+	}
+	for i := range this.PositiveBuckets {
+		if math.Float64bits(this.PositiveBuckets[i]) != math.Float64bits(that1.PositiveBuckets[i]) {
+			return false
+		}
+	}
+	if len(this.NegativeBuckets) != len(that1.NegativeBuckets) {
+		return false
+	}
+	for i := range this.NegativeBuckets {
+		if math.Float64bits(this.NegativeBuckets[i]) != math.Float64bits(that1.NegativeBuckets[i]) {
+			return false
+		}
+	}
+	if len(this.CustomValues) != len(that1.CustomValues) {
+		return false
+	}
+	for i := range this.CustomValues {
+		if math.Float64bits(this.CustomValues[i]) != math.Float64bits(that1.CustomValues[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+func (this *BucketSpan) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*BucketSpan)
+	if !ok {
+		that2, ok := that.(BucketSpan)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if this.Offset != that1.Offset {
+		return false
+	}
+	if this.Length != that1.Length {
+		return false
+	}
+	return true
+}
+
+func (this *FloatHistogramPair) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*FloatHistogramPair)
+	if !ok {
+		that2, ok := that.(FloatHistogramPair)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if this.TimestampMs != that1.TimestampMs {
+		return false
+	}
+	if (this.Histogram == nil) != (that1.Histogram == nil) {
+		return false
+	}
+	if this.Histogram != nil && !this.Histogram.Equal(that1.Histogram) {
+		return false
+	}
+	return true
+}
+
+func (this *SampleHistogram) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*SampleHistogram)
+	if !ok {
+		that2, ok := that.(SampleHistogram)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if math.Float64bits(this.Count) != math.Float64bits(that1.Count) {
+		return false
+	}
+	if math.Float64bits(this.Sum) != math.Float64bits(that1.Sum) {
+		return false
+	}
+	if len(this.Buckets) != len(that1.Buckets) {
+		return false
+	}
+	for i := range this.Buckets {
+		if (this.Buckets[i] == nil) != (that1.Buckets[i] == nil) {
+			return false
+		}
+		if this.Buckets[i] != nil && !this.Buckets[i].Equal(that1.Buckets[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+func (this *HistogramBucket) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*HistogramBucket)
+	if !ok {
+		that2, ok := that.(HistogramBucket)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if this.Boundaries != that1.Boundaries {
+		return false
+	}
+	if math.Float64bits(this.Lower) != math.Float64bits(that1.Lower) {
+		return false
+	}
+	if math.Float64bits(this.Upper) != math.Float64bits(that1.Upper) {
+		return false
+	}
+	if math.Float64bits(this.Count) != math.Float64bits(that1.Count) {
+		return false
+	}
+	return true
+}
+
+func (this *SampleHistogramPair) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*SampleHistogramPair)
+	if !ok {
+		that2, ok := that.(SampleHistogramPair)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if this.Timestamp != that1.Timestamp {
+		return false
+	}
+	if (this.Histogram == nil) != (that1.Histogram == nil) {
+		return false
+	}
+	if this.Histogram != nil && !this.Histogram.Equal(that1.Histogram) {
+		return false
+	}
+	return true
+}
+
+func (this *QueryResponse) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*QueryResponse)
+	if !ok {
+		that2, ok := that.(QueryResponse)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if this.Status != that1.Status {
+		return false
+	}
+	if this.ErrorType != that1.ErrorType {
+		return false
+	}
+	if this.Error != that1.Error {
+		return false
+	}
+	if (this.Data == nil) != (that1.Data == nil) {
+		return false
+	}
+	if this.Data != nil {
+		switch v := this.Data.(type) {
+		case *QueryResponse_String:
+			v2, ok := that1.Data.(*QueryResponse_String)
+			if !ok {
+				return false
+			}
+			if !v.String.Equal(v2.String) {
+				return false
+			}
+		case *QueryResponse_Vector:
+			v2, ok := that1.Data.(*QueryResponse_Vector)
+			if !ok {
+				return false
+			}
+			if !v.Vector.Equal(v2.Vector) {
+				return false
+			}
+		case *QueryResponse_Scalar:
+			v2, ok := that1.Data.(*QueryResponse_Scalar)
+			if !ok {
+				return false
+			}
+			if !v.Scalar.Equal(v2.Scalar) {
+				return false
+			}
+		case *QueryResponse_Matrix:
+			v2, ok := that1.Data.(*QueryResponse_Matrix)
+			if !ok {
+				return false
+			}
+			if !v.Matrix.Equal(v2.Matrix) {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	if len(this.Warnings) != len(that1.Warnings) {
+		return false
+	}
+	for i := range this.Warnings {
+		if this.Warnings[i] != that1.Warnings[i] {
+			return false
+		}
+	}
+	if len(this.Infos) != len(that1.Infos) {
+		return false
+	}
+	for i := range this.Infos {
+		if this.Infos[i] != that1.Infos[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func (this *StringData) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*StringData)
+	if !ok {
+		that2, ok := that.(StringData)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if this.Value != that1.Value {
+		return false
+	}
+	if this.TimestampMs != that1.TimestampMs {
+		return false
+	}
+	return true
+}
+
+func (this *VectorData) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*VectorData)
+	if !ok {
+		that2, ok := that.(VectorData)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if len(this.Samples) != len(that1.Samples) {
+		return false
+	}
+	for i := range this.Samples {
+		if !this.Samples[i].Equal(that1.Samples[i]) {
+			return false
+		}
+	}
+	if len(this.Histograms) != len(that1.Histograms) {
+		return false
+	}
+	for i := range this.Histograms {
+		if !this.Histograms[i].Equal(that1.Histograms[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+func (this *VectorSample) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*VectorSample)
+	if !ok {
+		that2, ok := that.(VectorSample)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if len(this.Metric) != len(that1.Metric) {
+		return false
+	}
+	for i := range this.Metric {
+		if this.Metric[i] != that1.Metric[i] {
+			return false
+		}
+	}
+	if math.Float64bits(this.Value) != math.Float64bits(that1.Value) {
+		return false
+	}
+	if this.TimestampMs != that1.TimestampMs {
+		return false
+	}
+	return true
+}
+
+func (this *VectorHistogram) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*VectorHistogram)
+	if !ok {
+		that2, ok := that.(VectorHistogram)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if len(this.Metric) != len(that1.Metric) {
+		return false
+	}
+	for i := range this.Metric {
+		if this.Metric[i] != that1.Metric[i] {
+			return false
+		}
+	}
+	if !this.Histogram.Equal(that1.Histogram) {
+		return false
+	}
+	if this.TimestampMs != that1.TimestampMs {
+		return false
+	}
+	return true
+}
+
+func (this *ScalarData) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*ScalarData)
+	if !ok {
+		that2, ok := that.(ScalarData)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if math.Float64bits(this.Value) != math.Float64bits(that1.Value) {
+		return false
+	}
+	if this.TimestampMs != that1.TimestampMs {
+		return false
+	}
+	return true
+}
+
+func (this *MatrixData) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*MatrixData)
+	if !ok {
+		that2, ok := that.(MatrixData)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if len(this.Series) != len(that1.Series) {
+		return false
+	}
+	for i := range this.Series {
+		if !this.Series[i].Equal(that1.Series[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+func (this *MatrixSeries) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*MatrixSeries)
+	if !ok {
+		that2, ok := that.(MatrixSeries)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if len(this.Metric) != len(that1.Metric) {
+		return false
+	}
+	for i := range this.Metric {
+		if this.Metric[i] != that1.Metric[i] {
+			return false
+		}
+	}
+	if len(this.Samples) != len(that1.Samples) {
+		return false
+	}
+	for i := range this.Samples {
+		if !this.Samples[i].Equal(that1.Samples[i]) {
+			return false
+		}
+	}
+	if len(this.Histograms) != len(that1.Histograms) {
+		return false
+	}
+	for i := range this.Histograms {
+		if !this.Histograms[i].Equal(that1.Histograms[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+func (this *WriteRequestRW2) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*WriteRequestRW2)
+	if !ok {
+		that2, ok := that.(WriteRequestRW2)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if len(this.Symbols) != len(that1.Symbols) {
+		return false
+	}
+	for i := range this.Symbols {
+		if this.Symbols[i] != that1.Symbols[i] {
+			return false
+		}
+	}
+	if len(this.Timeseries) != len(that1.Timeseries) {
+		return false
+	}
+	for i := range this.Timeseries {
+		if !this.Timeseries[i].Equal(that1.Timeseries[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+func (this *TimeSeriesRW2) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*TimeSeriesRW2)
+	if !ok {
+		that2, ok := that.(TimeSeriesRW2)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if len(this.LabelsRefs) != len(that1.LabelsRefs) {
+		return false
+	}
+	for i := range this.LabelsRefs {
+		if this.LabelsRefs[i] != that1.LabelsRefs[i] {
+			return false
+		}
+	}
+	if len(this.Samples) != len(that1.Samples) {
+		return false
+	}
+	for i := range this.Samples {
+		if !this.Samples[i].Equal(that1.Samples[i]) {
+			return false
+		}
+	}
+	if len(this.Histograms) != len(that1.Histograms) {
+		return false
+	}
+	for i := range this.Histograms {
+		if !this.Histograms[i].Equal(that1.Histograms[i]) {
+			return false
+		}
+	}
+	if len(this.Exemplars) != len(that1.Exemplars) {
+		return false
+	}
+	for i := range this.Exemplars {
+		if !this.Exemplars[i].Equal(that1.Exemplars[i]) {
+			return false
+		}
+	}
+	if !this.Metadata.Equal(that1.Metadata) {
+		return false
+	}
+	if this.CreatedTimestamp != that1.CreatedTimestamp {
+		return false
+	}
+	return true
+}
+
+func (this *ExemplarRW2) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*ExemplarRW2)
+	if !ok {
+		that2, ok := that.(ExemplarRW2)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if len(this.LabelsRefs) != len(that1.LabelsRefs) {
+		return false
+	}
+	for i := range this.LabelsRefs {
+		if this.LabelsRefs[i] != that1.LabelsRefs[i] {
+			return false
+		}
+	}
+	if math.Float64bits(this.Value) != math.Float64bits(that1.Value) {
+		return false
+	}
+	if this.Timestamp != that1.Timestamp {
+		return false
+	}
+	return true
+}
+
+func (this *MetadataRW2) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*MetadataRW2)
+	if !ok {
+		that2, ok := that.(MetadataRW2)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if this.Type != that1.Type {
+		return false
+	}
+	if this.HelpRef != that1.HelpRef {
+		return false
+	}
+	if this.UnitRef != that1.UnitRef {
+		return false
+	}
+	return true
+}
 
 func (this *WriteRequest) Compare(that interface{}) int {
 	if that == nil {

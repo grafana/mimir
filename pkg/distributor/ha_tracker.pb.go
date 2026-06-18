@@ -34,12 +34,6 @@ func (m *ReplicaDesc) Reset() {
 	*m = ReplicaDesc{}
 }
 func (*ReplicaDesc) ProtoMessage() {}
-func (m *ReplicaDesc) String() string {
-	if m == nil {
-		return "<nil>"
-	}
-	return fmt.Sprintf("%v", *m)
-}
 
 func (m *ReplicaDesc) GetReplica() string {
 	if m != nil {

@@ -4,6 +4,7 @@
 package rulespb
 
 import (
+	"fmt"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/wiresmith/protohelpers"
 	"github.com/grafana/wiresmith/types/known/anypb"
@@ -11,17 +12,25 @@ import (
 	"google.golang.org/protobuf/runtime/protoimpl"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"reflect"
+	"slices"
+	"strconv"
+	"strings"
 	"unsafe"
 )
 
-// Reflection / registration glue for rulespb/rules.proto.
+// Cold companion utilities for rulespb/rules.proto.
 //
-// This file holds the per-message ProtoReflect() methods, the per-enum
-// Descriptor()/Type()/Number() methods, the embedded FileDescriptorProto
-// blob, the file_*_msgTypes / file_*_enumTypes arrays, and the init()
-// that registers everything with protoregistry.GlobalFiles and
-// protoregistry.GlobalTypes. None of these are called on the marshal /
-// unmarshal / size hot path.
+// This file holds two cold concerns merged into one compilation unit:
+//
+//   - Reflection / registration glue: the per-message ProtoReflect()
+//     methods, the per-enum Descriptor()/Type()/Number() methods, the
+//     embedded FileDescriptorProto blob, the file_*_msgTypes /
+//     file_*_enumTypes arrays, and the init() that registers everything
+//     with protoregistry.GlobalFiles and protoregistry.GlobalTypes.
+//   - The per-message String() debug dumps (hand-rolled, deterministic,
+//     non-reflection — see compiler/generator/emit_string.go).
+//
+// None of these are called on the marshal / unmarshal / size hot path.
 //
 // Why a separate file? Putting this code (plus its descriptorpb /
 // protoreflect / protoimpl imports — ~64KB of descriptorpb alone, ~377KB
@@ -32,11 +41,159 @@ import (
 // in the same compilation unit shifted hot functions onto different
 // cache sets and pushed them ~131KB further into the binary. Emitting
 // the cold half here, in its own .o, lets the linker place it away
-// from the hot half and recovers that throughput.
+// from the hot half and recovers that throughput. reflect and String()
+// are both cold and were already split out, so merging them (cold→cold)
+// preserves the rationale while halving the companion-file count.
 //
 // See compiler/generator/emit_registration.go for the full rationale
 // and the benchmark methodology. DO NOT inline this file's contents
 // back into the main .pb.go without re-measuring.
+
+func (m *RuleGroupDesc) String() string {
+	if m == nil {
+		return "<nil>"
+	}
+	var b strings.Builder
+	if len(m.Name) > 0 {
+		b.WriteString("name: ")
+		b.WriteString(strconv.Quote(m.Name))
+		b.WriteString(" ")
+	}
+	if len(m.Namespace) > 0 {
+		b.WriteString("namespace: ")
+		b.WriteString(strconv.Quote(m.Namespace))
+		b.WriteString(" ")
+	}
+	b.WriteString("interval: ")
+	fmt.Fprintf(&b, "%v", m.Interval)
+	b.WriteString(" ")
+	for _, e := range m.Rules {
+		b.WriteString("rules: ")
+		b.WriteString("{")
+		b.WriteString(e.String())
+		b.WriteString("}")
+		b.WriteString(" ")
+	}
+	if len(m.User) > 0 {
+		b.WriteString("user: ")
+		b.WriteString(strconv.Quote(m.User))
+		b.WriteString(" ")
+	}
+	for _, e := range m.Options {
+		b.WriteString("options: ")
+		b.WriteString("{")
+		b.WriteString(e.String())
+		b.WriteString("}")
+		b.WriteString(" ")
+	}
+	for _, e := range m.SourceTenants {
+		b.WriteString("sourceTenants: ")
+		b.WriteString(strconv.Quote(e))
+		b.WriteString(" ")
+	}
+	b.WriteString("evaluationDelay: ")
+	fmt.Fprintf(&b, "%v", m.EvaluationDelay)
+	b.WriteString(" ")
+	if m.AlignEvaluationTimeOnInterval {
+		b.WriteString("align_evaluation_time_on_interval: ")
+		fmt.Fprintf(&b, "%v", m.AlignEvaluationTimeOnInterval)
+		b.WriteString(" ")
+	}
+	b.WriteString("queryOffset: ")
+	fmt.Fprintf(&b, "%v", m.QueryOffset)
+	b.WriteString(" ")
+	for _, e := range m.Labels {
+		b.WriteString("labels: ")
+		fmt.Fprintf(&b, "%v", e)
+		b.WriteString(" ")
+	}
+	if m.Limit != 0 {
+		b.WriteString("limit: ")
+		fmt.Fprintf(&b, "%v", m.Limit)
+		b.WriteString(" ")
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func (m *RuleDesc) String() string {
+	if m == nil {
+		return "<nil>"
+	}
+	var b strings.Builder
+	if len(m.Expr) > 0 {
+		b.WriteString("expr: ")
+		b.WriteString(strconv.Quote(m.Expr))
+		b.WriteString(" ")
+	}
+	if len(m.Record) > 0 {
+		b.WriteString("record: ")
+		b.WriteString(strconv.Quote(m.Record))
+		b.WriteString(" ")
+	}
+	if len(m.Alert) > 0 {
+		b.WriteString("alert: ")
+		b.WriteString(strconv.Quote(m.Alert))
+		b.WriteString(" ")
+	}
+	b.WriteString("for: ")
+	fmt.Fprintf(&b, "%v", m.For)
+	b.WriteString(" ")
+	for _, e := range m.Labels {
+		b.WriteString("labels: ")
+		fmt.Fprintf(&b, "%v", e)
+		b.WriteString(" ")
+	}
+	for _, e := range m.Annotations {
+		b.WriteString("annotations: ")
+		fmt.Fprintf(&b, "%v", e)
+		b.WriteString(" ")
+	}
+	b.WriteString("keep_firing_for: ")
+	fmt.Fprintf(&b, "%v", m.KeepFiringFor)
+	b.WriteString(" ")
+	return strings.TrimSpace(b.String())
+}
+
+func (m *RuleGroupDesc) Clone() *RuleGroupDesc {
+	if m == nil {
+		return nil
+	}
+	out := &RuleGroupDesc{}
+	out.Name = m.Name
+	out.Namespace = m.Namespace
+	out.Interval = m.Interval
+	out.Rules = slices.Clone(m.Rules)
+	for i := range out.Rules {
+		out.Rules[i] = out.Rules[i].Clone()
+	}
+	out.User = m.User
+	out.Options = slices.Clone(m.Options)
+	for i := range out.Options {
+		out.Options[i] = out.Options[i].Clone()
+	}
+	out.SourceTenants = slices.Clone(m.SourceTenants)
+	out.EvaluationDelay = m.EvaluationDelay
+	out.QueryOffset = m.QueryOffset
+	out.AlignEvaluationTimeOnInterval = m.AlignEvaluationTimeOnInterval
+	out.Labels = slices.Clone(m.Labels)
+	out.Limit = m.Limit
+	return out
+}
+
+func (m *RuleDesc) Clone() *RuleDesc {
+	if m == nil {
+		return nil
+	}
+	out := &RuleDesc{}
+	out.Expr = m.Expr
+	out.Record = m.Record
+	out.Alert = m.Alert
+	out.For = m.For
+	out.KeepFiringFor = m.KeepFiringFor
+	out.Labels = slices.Clone(m.Labels)
+	out.Annotations = slices.Clone(m.Annotations)
+	return out
+}
 
 func (x *RuleGroupDesc) ProtoReflect() protoreflect.Message {
 	file_rulespb_rules_proto_init()

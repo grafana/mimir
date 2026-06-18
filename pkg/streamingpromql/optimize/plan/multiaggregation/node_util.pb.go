@@ -4,22 +4,30 @@
 package multiaggregation
 
 import (
+	"fmt"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"github.com/grafana/wiresmith/protohelpers"
 	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/runtime/protoimpl"
 	"reflect"
+	"slices"
+	"strings"
 	"unsafe"
 )
 
-// Reflection / registration glue for github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/multiaggregation/node.proto.
+// Cold companion utilities for github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/multiaggregation/node.proto.
 //
-// This file holds the per-message ProtoReflect() methods, the per-enum
-// Descriptor()/Type()/Number() methods, the embedded FileDescriptorProto
-// blob, the file_*_msgTypes / file_*_enumTypes arrays, and the init()
-// that registers everything with protoregistry.GlobalFiles and
-// protoregistry.GlobalTypes. None of these are called on the marshal /
-// unmarshal / size hot path.
+// This file holds two cold concerns merged into one compilation unit:
+//
+//   - Reflection / registration glue: the per-message ProtoReflect()
+//     methods, the per-enum Descriptor()/Type()/Number() methods, the
+//     embedded FileDescriptorProto blob, the file_*_msgTypes /
+//     file_*_enumTypes arrays, and the init() that registers everything
+//     with protoregistry.GlobalFiles and protoregistry.GlobalTypes.
+//   - The per-message String() debug dumps (hand-rolled, deterministic,
+//     non-reflection — see compiler/generator/emit_string.go).
+//
+// None of these are called on the marshal / unmarshal / size hot path.
 //
 // Why a separate file? Putting this code (plus its descriptorpb /
 // protoreflect / protoimpl imports — ~64KB of descriptorpb alone, ~377KB
@@ -30,11 +38,70 @@ import (
 // in the same compilation unit shifted hot functions onto different
 // cache sets and pushed them ~131KB further into the binary. Emitting
 // the cold half here, in its own .o, lets the linker place it away
-// from the hot half and recovers that throughput.
+// from the hot half and recovers that throughput. reflect and String()
+// are both cold and were already split out, so merging them (cold→cold)
+// preserves the rationale while halving the companion-file count.
 //
 // See compiler/generator/emit_registration.go for the full rationale
 // and the benchmark methodology. DO NOT inline this file's contents
 // back into the main .pb.go without re-measuring.
+
+func (m *MultiAggregationGroupDetails) String() string {
+	if m == nil {
+		return "<nil>"
+	}
+	var b strings.Builder
+	return strings.TrimSpace(b.String())
+}
+
+func (m *MultiAggregationInstanceDetails) String() string {
+	if m == nil {
+		return "<nil>"
+	}
+	var b strings.Builder
+	if m.Aggregation != nil {
+		b.WriteString("aggregation: ")
+		b.WriteString("{")
+		b.WriteString(m.Aggregation.String())
+		b.WriteString("}")
+		b.WriteString(" ")
+	}
+	for _, e := range m.Filters {
+		b.WriteString("filters: ")
+		b.WriteString("{")
+		b.WriteString(e.String())
+		b.WriteString("}")
+		b.WriteString(" ")
+	}
+	if m.SubsetIndex != 0 {
+		b.WriteString("subsetIndex: ")
+		fmt.Fprintf(&b, "%v", m.SubsetIndex)
+		b.WriteString(" ")
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func (m *MultiAggregationGroupDetails) Clone() *MultiAggregationGroupDetails {
+	if m == nil {
+		return nil
+	}
+	out := &MultiAggregationGroupDetails{}
+	return out
+}
+
+func (m *MultiAggregationInstanceDetails) Clone() *MultiAggregationInstanceDetails {
+	if m == nil {
+		return nil
+	}
+	out := &MultiAggregationInstanceDetails{}
+	out.Aggregation = m.Aggregation.Clone()
+	out.Filters = slices.Clone(m.Filters)
+	for i := range out.Filters {
+		out.Filters[i] = out.Filters[i].Clone()
+	}
+	out.SubsetIndex = m.SubsetIndex
+	return out
+}
 
 func (x *MultiAggregationGroupDetails) ProtoReflect() protoreflect.Message {
 	file_github_com_grafana_mimir_pkg_streamingpromql_optimize_plan_multiaggregation_node_proto_init()

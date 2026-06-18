@@ -4,21 +4,29 @@
 package rangevectorsplitting
 
 import (
+	"fmt"
 	"github.com/grafana/wiresmith/protohelpers"
 	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/runtime/protoimpl"
 	"reflect"
+	"slices"
+	"strings"
 	"unsafe"
 )
 
-// Reflection / registration glue for github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/rangevectorsplitting/node.proto.
+// Cold companion utilities for github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/rangevectorsplitting/node.proto.
 //
-// This file holds the per-message ProtoReflect() methods, the per-enum
-// Descriptor()/Type()/Number() methods, the embedded FileDescriptorProto
-// blob, the file_*_msgTypes / file_*_enumTypes arrays, and the init()
-// that registers everything with protoregistry.GlobalFiles and
-// protoregistry.GlobalTypes. None of these are called on the marshal /
-// unmarshal / size hot path.
+// This file holds two cold concerns merged into one compilation unit:
+//
+//   - Reflection / registration glue: the per-message ProtoReflect()
+//     methods, the per-enum Descriptor()/Type()/Number() methods, the
+//     embedded FileDescriptorProto blob, the file_*_msgTypes /
+//     file_*_enumTypes arrays, and the init() that registers everything
+//     with protoregistry.GlobalFiles and protoregistry.GlobalTypes.
+//   - The per-message String() debug dumps (hand-rolled, deterministic,
+//     non-reflection — see compiler/generator/emit_string.go).
+//
+// None of these are called on the marshal / unmarshal / size hot path.
 //
 // Why a separate file? Putting this code (plus its descriptorpb /
 // protoreflect / protoimpl imports — ~64KB of descriptorpb alone, ~377KB
@@ -29,11 +37,74 @@ import (
 // in the same compilation unit shifted hot functions onto different
 // cache sets and pushed them ~131KB further into the binary. Emitting
 // the cold half here, in its own .o, lets the linker place it away
-// from the hot half and recovers that throughput.
+// from the hot half and recovers that throughput. reflect and String()
+// are both cold and were already split out, so merging them (cold→cold)
+// preserves the rationale while halving the companion-file count.
 //
 // See compiler/generator/emit_registration.go for the full rationale
 // and the benchmark methodology. DO NOT inline this file's contents
 // back into the main .pb.go without re-measuring.
+
+func (m *SplitFunctionCallDetails) String() string {
+	if m == nil {
+		return "<nil>"
+	}
+	var b strings.Builder
+	for _, e := range m.SplitRanges {
+		b.WriteString("splitRanges: ")
+		b.WriteString("{")
+		b.WriteString(e.String())
+		b.WriteString("}")
+		b.WriteString(" ")
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func (m *SplitRange) String() string {
+	if m == nil {
+		return "<nil>"
+	}
+	var b strings.Builder
+	if m.Start != 0 {
+		b.WriteString("start: ")
+		fmt.Fprintf(&b, "%v", m.Start)
+		b.WriteString(" ")
+	}
+	if m.End != 0 {
+		b.WriteString("end: ")
+		fmt.Fprintf(&b, "%v", m.End)
+		b.WriteString(" ")
+	}
+	if m.Cacheable {
+		b.WriteString("cacheable: ")
+		fmt.Fprintf(&b, "%v", m.Cacheable)
+		b.WriteString(" ")
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func (m *SplitFunctionCallDetails) Clone() *SplitFunctionCallDetails {
+	if m == nil {
+		return nil
+	}
+	out := &SplitFunctionCallDetails{}
+	out.SplitRanges = slices.Clone(m.SplitRanges)
+	for i := range out.SplitRanges {
+		out.SplitRanges[i] = *m.SplitRanges[i].Clone()
+	}
+	return out
+}
+
+func (m *SplitRange) Clone() *SplitRange {
+	if m == nil {
+		return nil
+	}
+	out := &SplitRange{}
+	out.Start = m.Start
+	out.End = m.End
+	out.Cacheable = m.Cacheable
+	return out
+}
 
 func (x *SplitFunctionCallDetails) ProtoReflect() protoreflect.Message {
 	file_github_com_grafana_mimir_pkg_streamingpromql_optimize_plan_rangevectorsplitting_node_proto_init()

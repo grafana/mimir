@@ -27,12 +27,6 @@ func (m *DuplicateDetails) Reset() {
 	*m = DuplicateDetails{}
 }
 func (*DuplicateDetails) ProtoMessage() {}
-func (m *DuplicateDetails) String() string {
-	if m == nil {
-		return "<nil>"
-	}
-	return fmt.Sprintf("%v", *m)
-}
 
 func (m *DuplicateFilterDetails) Reset() {
 	if m == nil {
@@ -41,12 +35,6 @@ func (m *DuplicateFilterDetails) Reset() {
 	*m = DuplicateFilterDetails{}
 }
 func (*DuplicateFilterDetails) ProtoMessage() {}
-func (m *DuplicateFilterDetails) String() string {
-	if m == nil {
-		return "<nil>"
-	}
-	return fmt.Sprintf("%v", *m)
-}
 
 func (m *DuplicateFilterDetails) GetFilters() []*core.LabelMatcher {
 	if m != nil {
