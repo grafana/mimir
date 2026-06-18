@@ -302,12 +302,17 @@ func (c *Config) Validate(log log.Logger) error {
 			if !strings.Contains(c.IngestStorage.KafkaConfig.Topic, compartments.ReadCompartmentIDPlaceholder) {
 				return fmt.Errorf("when compartments are enabled, -ingest-storage.kafka.topic must contain the %q placeholder for the distributor and ingester", compartments.ReadCompartmentIDPlaceholder)
 			}
-			// The address is resolved per write compartment. Without the placeholder every write compartment
-			// resolves to the same Kafka cluster, so the ingester would ingest each partition once per write
-			// compartment. Each configured address is resolved independently, so they must all contain it.
+		}
+		// The ingester consumes its partition from every write compartment's Kafka cluster, resolving each
+		// configured address per write compartment. With more than one write compartment and an address
+		// without the placeholder, every compartment resolves to the same cluster, so the ingester would
+		// consume each partition once per write compartment and duplicate samples. A single write
+		// compartment (or other components, like the distributor, that target just one cluster) doesn't
+		// need the placeholder.
+		if c.isIngesterEnabled() && c.Compartments.Write.NumCompartments > 1 {
 			for _, addr := range c.IngestStorage.KafkaConfig.Address {
 				if !strings.Contains(addr, compartments.WriteCompartmentIDPlaceholder) {
-					return fmt.Errorf("when compartments are enabled, every -ingest-storage.kafka.address must contain the %q placeholder for the distributor and ingester", compartments.WriteCompartmentIDPlaceholder)
+					return fmt.Errorf("when compartments are enabled with more than one write compartment, every -ingest-storage.kafka.address must contain the %q placeholder for the ingester", compartments.WriteCompartmentIDPlaceholder)
 				}
 			}
 		}
