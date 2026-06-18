@@ -92,7 +92,7 @@ func (s *ScalarScalarBinaryOperation) GetValues(ctx context.Context) (types.Scal
 			// Some operators (e.g. the native histogram trim operators "</" and ">/") are not defined
 			// between two scalars. The parser allows such expressions, so we report them as a query error
 			// here rather than panicking, matching Prometheus' behaviour.
-			return types.ScalarData{}, fmt.Errorf("operator %q not allowed for Scalar operations", s.Op.String())
+			return types.ScalarData{}, fmt.Errorf("operator %q not allowed between two scalars", s.Op.String())
 		}
 
 		if !ok {
