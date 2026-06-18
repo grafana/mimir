@@ -217,7 +217,10 @@ PROTO_WIRESMITH_GOS := \
 	pkg/distributor/ha_tracker_reflect.pb.go \
 	pkg/querier/stats/stats_compare.pb.go \
 	pkg/querier/stats/stats_equal.pb.go \
-	pkg/querier/stats/stats_reflect.pb.go
+	pkg/querier/stats/stats_reflect.pb.go \
+	pkg/ruler/rulespb/rules_compare.pb.go \
+	pkg/ruler/rulespb/rules_equal.pb.go \
+	pkg/ruler/rulespb/rules_reflect.pb.go
 
 # Packages containing //node:generate-annotated structs, and the corresponding
 # generated files. Discovered at make-parse time.
@@ -398,6 +401,37 @@ pkg/querier/stats/stats_equal.pb.go \
 pkg/querier/stats/stats_reflect.pb.go &: pkg/querier/stats/stats.proto
 ifeq ($(GENERATE_FILES),true)
 	wiresmith --proto_path=./pkg/querier/stats --out=./pkg/querier --module=github.com/grafana/mimir pkg/querier/stats/stats.proto
+else
+	@echo "Warning: generating files has been disabled, but the following files need to be regenerated: $@"
+	@echo "If this is unexpected, check if the last modified timestamps on the outputs and $< are correct."
+endif
+
+# pkg/ruler/rulespb/rules.proto is compiled by wiresmith. Unlike the protos
+# above it imports another wiresmith proto by Go module path
+# (github.com/grafana/mimir/pkg/mimirpb/mimir.proto), and wiresmith resolves
+# imports by their import-statement path under --proto_path. The repo layout
+# does not place mimir.proto at that path, so we stage a temporary tree mirroring
+# the module-path layout, run wiresmith against it, and copy the outputs back.
+# The -M flag maps the imported mimir.proto to its real Go import path. The
+# google.protobuf.Any "options" field resolves to wiresmith's shipped
+# types/known/anypb replacement. rules.proto is still imported by the gogo-
+# compiled pkg/ruler/ruler.proto; protoc resolves the wiresmith/options.proto
+# import via ./proto-include.
+pkg/ruler/rulespb/rules.pb.go \
+pkg/ruler/rulespb/rules_compare.pb.go \
+pkg/ruler/rulespb/rules_equal.pb.go \
+pkg/ruler/rulespb/rules_reflect.pb.go &: pkg/ruler/rulespb/rules.proto pkg/mimirpb/mimir.proto
+ifeq ($(GENERATE_FILES),true)
+	rm -rf .rules-stage .rules-out
+	mkdir -p .rules-stage/github.com/grafana/mimir/pkg/mimirpb .rules-stage/rulespb
+	cp pkg/mimirpb/mimir.proto .rules-stage/github.com/grafana/mimir/pkg/mimirpb/mimir.proto
+	cp pkg/ruler/rulespb/rules.proto .rules-stage/rulespb/rules.proto
+	wiresmith --proto_path=./.rules-stage --out=./.rules-out --module=github.com/grafana/mimir -M github.com/grafana/mimir/pkg/mimirpb/mimir.proto=github.com/grafana/mimir/pkg/mimirpb ./.rules-stage/rulespb/rules.proto
+	cp .rules-out/rulespb/rules.pb.go pkg/ruler/rulespb/rules.pb.go
+	cp .rules-out/rulespb/rules_compare.pb.go pkg/ruler/rulespb/rules_compare.pb.go
+	cp .rules-out/rulespb/rules_equal.pb.go pkg/ruler/rulespb/rules_equal.pb.go
+	cp .rules-out/rulespb/rules_reflect.pb.go pkg/ruler/rulespb/rules_reflect.pb.go
+	rm -rf .rules-stage .rules-out
 else
 	@echo "Warning: generating files has been disabled, but the following files need to be regenerated: $@"
 	@echo "If this is unexpected, check if the last modified timestamps on the outputs and $< are correct."

@@ -47,8 +47,15 @@ coverage.txt
 # Go Telemetry
 .config/go/telemetry/
 
+# wiresmith rules.proto staging dirs (transient; created/removed by the
+# pkg/ruler/rulespb/rules.pb.go make rule)
+/.rules-stage/
+/.rules-out/
+
 # Vendored AI agent configuration files
 vendor/**/AGENTS.md
 
+# AI agent configuration files
+AGENTS.md
 # Claude configuration and project memory files: https://code.claude.com/docs/en/memory
 CLAUDE.local.md

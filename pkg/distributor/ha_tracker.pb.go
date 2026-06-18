@@ -151,7 +151,12 @@ func (m *ReplicaDesc) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	if len(m.Replica) > 0 {
 		i -= len(m.Replica)
 		copy(dAtA[i:], m.Replica)
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.Replica)))
+		if len(m.Replica) <= 0x7F {
+			dAtA[i-1] = uint8(len(m.Replica))
+			i--
+		} else {
+			i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.Replica)))
+		}
 		i--
 		dAtA[i] = 0x0a
 	}
