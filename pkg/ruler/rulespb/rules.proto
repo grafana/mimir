@@ -8,48 +8,45 @@ syntax = "proto3";
 package rules;
 
 import "github.com/grafana/mimir/pkg/mimirpb/mimir.proto";
-import "gogoproto/gogo.proto";
 import "google/protobuf/any.proto";
 import "google/protobuf/duration.proto";
+import "wiresmith/options.proto";
 
 option go_package = "rulespb";
-option (gogoproto.marshaler_all) = true;
-option (gogoproto.unmarshaler_all) = true;
+// Note: gogoproto.marshaler_all / unmarshaler_all are unnecessary under
+// wiresmith — Marshal/Unmarshal methods are always emitted. no_presence_all
+// keeps gogoproto value semantics (no presence bitmap, declared-fields-only
+// struct layout).
+option (wiresmith.options.no_presence_all) = true;
 
 // RuleGroupDesc is a proto representation of a mimir rule group.
 message RuleGroupDesc {
   reserved 5, 7, 8;
   string name = 1;
   string namespace = 2;
-  google.protobuf.Duration interval = 3 [
-    (gogoproto.nullable) = false,
-    (gogoproto.stdduration) = true
-  ];
-  repeated RuleDesc rules = 4;
+  // wiresmith stdduration is the time.Duration value shape, matching
+  // gogoproto stdduration+nullable=false.
+  google.protobuf.Duration interval = 3 [(wiresmith.options.stdduration) = true];
+  // pointer keeps the gogoproto []*RuleDesc shape (no nullable=false under
+  // gogo), minimizing call-site churn.
+  repeated RuleDesc rules = 4 [(wiresmith.options.pointer) = true];
   string user = 6;
   // The options field can be used to extend Mimir Ruler functionality without
   // having to repeatedly redefine the proto description. It can also be leveraged
   // to create custom `ManagerOpts` based on rule configs which can then be passed
   // to the Prometheus Manager.
-  repeated google.protobuf.Any options = 9;
+  // pointer keeps the gogoproto []*Any shape (gogo renders message fields as
+  // pointers), minimizing call-site churn for the opaque options passthrough.
+  repeated google.protobuf.Any options = 9 [(wiresmith.options.pointer) = true];
   repeated string sourceTenants = 10;
 
   // Deprecated: use queryOffset instead.
-  google.protobuf.Duration evaluationDelay = 11 [
-    (gogoproto.nullable) = false,
-    (gogoproto.stdduration) = true
-  ];
-  google.protobuf.Duration queryOffset = 13 [
-    (gogoproto.nullable) = false,
-    (gogoproto.stdduration) = true
-  ];
+  google.protobuf.Duration evaluationDelay = 11 [(wiresmith.options.stdduration) = true];
+  google.protobuf.Duration queryOffset = 13 [(wiresmith.options.stdduration) = true];
 
   bool align_evaluation_time_on_interval = 12;
 
-  repeated cortexpb.LabelPair labels = 14 [
-    (gogoproto.nullable) = false,
-    (gogoproto.customtype) = "github.com/grafana/mimir/pkg/mimirpb.LabelAdapter"
-  ];
+  repeated cortexpb.LabelPair labels = 14 [(wiresmith.options.customtype) = "github.com/grafana/mimir/pkg/mimirpb.LabelAdapter"];
 
   // The limit is enforced in Mimir per-user.
   int32 limit = 15;
@@ -61,20 +58,8 @@ message RuleDesc {
   string expr = 1;
   string record = 2;
   string alert = 3;
-  google.protobuf.Duration for = 4 [
-    (gogoproto.nullable) = false,
-    (gogoproto.stdduration) = true
-  ];
-  google.protobuf.Duration keep_firing_for = 13 [
-    (gogoproto.nullable) = false,
-    (gogoproto.stdduration) = true
-  ];
-  repeated cortexpb.LabelPair labels = 5 [
-    (gogoproto.nullable) = false,
-    (gogoproto.customtype) = "github.com/grafana/mimir/pkg/mimirpb.LabelAdapter"
-  ];
-  repeated cortexpb.LabelPair annotations = 6 [
-    (gogoproto.nullable) = false,
-    (gogoproto.customtype) = "github.com/grafana/mimir/pkg/mimirpb.LabelAdapter"
-  ];
+  google.protobuf.Duration for = 4 [(wiresmith.options.stdduration) = true];
+  google.protobuf.Duration keep_firing_for = 13 [(wiresmith.options.stdduration) = true];
+  repeated cortexpb.LabelPair labels = 5 [(wiresmith.options.customtype) = "github.com/grafana/mimir/pkg/mimirpb.LabelAdapter"];
+  repeated cortexpb.LabelPair annotations = 6 [(wiresmith.options.customtype) = "github.com/grafana/mimir/pkg/mimirpb.LabelAdapter"];
 }

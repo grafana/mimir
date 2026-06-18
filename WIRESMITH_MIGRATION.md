@@ -3,24 +3,45 @@
 Migration of Grafana Mimir protos from gogoproto (`protoc` + `gogoslick`) to
 the [wiresmith](https://github.com/grafana/wiresmith) compiler.
 
-Toolchain: wiresmith pinned to the public `databases`-branch pseudo-version
-`github.com/grafana/wiresmith v0.0.0-20260612130815-854b4c6268c2`
-(`databases` @ `854b4c6`, which emits `UnmarshalNoPrescan`). The module is
-public and go-installable — no `replace`, `GOPRIVATE`, or `url.insteadOf`
-needed. Install the compiler with
-`go install github.com/grafana/wiresmith/cmd/wiresmith@v0.0.0-20260612130815-854b4c6268c2`.
-Generated code depends on `protohelpers.SkipValue` /
-`protohelpers.MaxUnmarshalDepth`, vendored from that release (protohelpers is
-unchanged from the prior `4f41063` pin, so the vendored runtime is identical).
+Toolchain: wiresmith pinned to the public pseudo-version
+`github.com/grafana/wiresmith v0.0.0-20260618101418-7b3348950083`
+(`grafana/wiresmith` @ `7b33489`, which adds der5 uniform pointer getters +
+7m6 `google.protobuf.Any` support; supersedes the earlier
+`854b4c6`/`UnmarshalNoPrescan` pin). The module is public and go-installable —
+no `replace`, `GOPRIVATE`, or `url.insteadOf` needed. Install the compiler with
+`go install github.com/grafana/wiresmith/cmd/wiresmith@v0.0.0-20260618101418-7b3348950083`
+(use `GOPROXY=direct` if the module proxy lags). Generated code depends on
+`protohelpers.SkipValue` / `protohelpers.MaxUnmarshalDepth` and (for Any-using
+protos) `types/known/anypb`, vendored from that release.
 
-**Pin status:** the go.mod pin now matches the checked-in `mimir.pb.go`. Both
-were produced with `databases` @ `854b4c6` (the compiler that emits
-`UnmarshalNoPrescan` — see the RW2 pre-scan section below), so
-`make check-protos` round-trips against the pinned compiler. Remaining step:
-bump to the corresponding `wiresmith` main pseudo-version once `databases`
-merges to main. A squash-merge orphans the `854b4c6` commit, but the Go module
-proxy keeps the pseudo-version fetchable, so the pin stays installable in the
-interim.
+> **der5 + 7m6 validation branch (`wiresmith-der5-7m6-validate`).** This branch
+> validates and adopts two compiler changes pinned above (`7b33489`): **der5** —
+> singular message-field getters are now uniformly `*T` in *every* presence mode
+> (no_presence previously emitted value `T` getters); and **7m6** —
+> `google.protobuf.Any` is supported, resolving to wiresmith's shipped
+> `github.com/grafana/wiresmith/types/known/anypb` (struct `{TypeUrl, Value}` +
+> wiresmith wire methods + `MarshalFrom`/`UnmarshalTo`/`UnmarshalNew`/`TypeName`
+> helpers; no gogo-registry registration — `ProtoReflect` delegates to the
+> official Any descriptor). The pin is the published pseudo-version with **no
+> `replace`** (the vendored `anypb` is byte-identical to the `7b33489` worktree).
+> Regenerating `mimir`/`ha_tracker`/`stats` against `7b33489` produced only:
+> (a) two der5 getters on `mimir.proto` (`VectorHistogram.GetHistogram`,
+> `TimeSeriesRW2.GetMetadata`) flipping `T → *T` (no call-site fallout — neither
+> getter is called as a value getter anywhere in the repo; `go build ./...`
+> clean), and (b) an unrelated marshal codegen improvement (single-byte
+> length-prefix fast-path: `if len <= 0x7F { dAtA[i-1] = uint8(len); i-- } else
+> { EncodeVarint }`) on every length-delimited field. The mimir expdiff still
+> reverse-applies cleanly onto fresh `7b33489` output, reproducing the committed
+> `mimir.pb.go` byte-for-byte (the expdiff's `@@` hunk line numbers drift ~225
+> lines from the der5/fast-path shifts, but the patch body is unchanged and git
+> apply's context matching absorbs the drift — verified round-trip).
+
+**Pin status:** the go.mod pin (`v0.0.0-20260618101418-7b3348950083`, `7b33489`)
+matches the checked-in generated code: `mimir`/`ha_tracker`/`stats`/`rules`
+regenerate against it and (for mimir) the expdiff reverse-applies to reproduce
+`mimir.pb.go` byte-for-byte, so `make check-protos` round-trips against the
+pinned compiler. No `replace` remains; the vendored runtime
+(`protohelpers` + `types/known/anypb`) is consistent with the pin.
 
 ## Status
 
@@ -29,7 +50,8 @@ interim.
 | `pkg/mimirpb/mimir.proto`          | migrated (phase 1+2+3+DB-18+NoPrescan) | 1081 lines (1084 w/ guard hunk, 1094 pre-4f41063, 1087 phase 3, 1103 phase 2, 2144 phase 1) |
 | `pkg/distributor/ha_tracker.proto` | migrated (phase 2)                     | none                                                                                        |
 | `pkg/querier/stats/stats.proto`    | migrated (phase 2)                     | none (one hand-written `GoString` shim)                                                     |
-| all other protos (~22)             | still gogoproto                        | —                                                                                           |
+| `pkg/ruler/rulespb/rules.proto`    | migrated (7m6/Any, validate branch)    | none (no shim needed)                                                                        |
+| all other protos (~21)             | still gogoproto                        | —                                                                                           |
 
 Full repo builds; pkg/mimirpb, pkg/distributor, pkg/ingester,
 pkg/storage/ingest, pkg/querier(+stats), pkg/frontend/... test suites green.
@@ -196,6 +218,69 @@ points one level up. (This replaces the earlier scratch-dir staging recipe.)
   un-breaks regeneration of gogo protos importing `pkg/mimirpb/mimir.proto`,
   latent since phase 1). `proto-include` is pruned from `PROTO_DEFS`.
 
+## rules.proto (pkg/ruler/rulespb) — 7m6/Any migration
+
+First proto migrated for `google.protobuf.Any` (7m6) and first to import another
+**wiresmith** proto by Go module path. Chosen as the cleanest Any vehicle: its
+non-WKT imports are already migrated (`mimir.proto`) and the Any field is pure
+opaque passthrough.
+
+- **Any field**: `RuleGroupDesc.options` (`repeated google.protobuf.Any`)
+  resolves to `[]*anypb.Any` (`github.com/grafana/wiresmith/types/known/anypb`).
+  `(wiresmith.options.pointer) = true` keeps the gogo `[]*types.Any` shape. The
+  options field is an extension point for downstream `ManagerOpts`; mimir never
+  populates or reads it, so no Any helper call sites needed bridging. The one
+  test literal (`ruler_test.go`: `Options: []*types.Any{}`) was retargeted to
+  `[]*anypb.Any{}` and the now-unused `github.com/gogo/protobuf/types` import
+  dropped.
+- **Annotations**: `interval`/`for`/`keep_firing_for`/`evaluationDelay`/
+  `queryOffset` → `(wiresmith.options.stdduration)` (value `time.Duration`,
+  matching gogo `stdduration+nullable=false`); `labels`/`annotations` →
+  `(wiresmith.options.customtype) = ".../mimirpb.LabelAdapter"` (reuses the
+  existing `LabelAdapter` `*Wiresmith` adapter methods in mimirpb); `rules` →
+  `(wiresmith.options.pointer)` (gogo had no `nullable=false`, so `[]*RuleDesc`);
+  `no_presence_all` file-wide.
+- **No shims required.** `pkg/ruler/ruler.proto` is still gogo and embeds
+  `*rulespb.RuleGroupDesc`/`*RuleDesc`; the gogo-generated `ruler.pb.go` compiles
+  against the wiresmith output because the method surface matches
+  (`Marshal`/`Unmarshal`/`Size`/`Equal`/`Reset`/`String`/`ProtoMessage`). Its
+  `fmt.Sprintf("%#v", ...)` calls do not require a `GoStringer` (fall back to
+  default formatting), and no test asserts on `GoString` output, so — unlike
+  stats.proto — **no `GoString` shim is needed**. Persisted rule groups are
+  written via gogo `proto.Marshal(group)` (bucketclient), which dispatches to the
+  generated `Marshal()` method → wire-identical bytes.
+- **Generator invocation**: rules.proto imports
+  `github.com/grafana/mimir/pkg/mimirpb/mimir.proto` by module path, and
+  wiresmith resolves imports by import-statement path under `--proto_path`. The
+  repo does not place mimir.proto at that path, so the Makefile rule stages a
+  temporary tree (`.rules-stage/github.com/grafana/mimir/pkg/mimirpb/mimir.proto`
+  + `.rules-stage/rulespb/rules.proto`), runs wiresmith with
+  `-M github.com/grafana/mimir/pkg/mimirpb/mimir.proto=github.com/grafana/mimir/pkg/mimirpb`,
+  and copies the four outputs back. Regen is byte-for-byte reproducible.
+
+## Deferred Any-using protos (7m6)
+
+The other three Any-using protos are deferred — each is a separate dependency
+cluster matching a later migration phase, not a blocker:
+
+- **`pkg/scheduler/schedulerpb/scheduler.proto`** (`SchedulerToFrontend.payload`
+  Any): imports dskit `httpgrpc.proto` (gogo-annotated) — needs the staged
+  `sed '/gogoproto/d'` vendored-copy treatment (Tempo's pattern) plus two
+  streaming services. Cluster-sized; deferred to the scheduler phase.
+- **`pkg/frontend/querymiddleware/model.proto`** (`PrometheusResponse` Any):
+  imports already-migrated `mimir.proto` + `stats.proto`, so the same staged
+  module-path regen as rules.proto applies — but it is JSON-heavy
+  (`jsontag` everywhere, jsonpb), needing JSON golden pins first. Deferred to the
+  querymiddleware phase (it is one of the stats.proto importers listed in the
+  ordering notes).
+- **`pkg/storegateway/storepb/rpc.proto`** (six `hints` Any fields on DEPRECATED
+  fields): **not reserved-out** — the deprecated `hints` fields are still read on
+  the backward-compat path (`pkg/storegateway/bucket.go`:
+  `if req.Hints != nil { types.UnmarshalAny(req.Hints, ...) }`), so removing them
+  would break compatibility with older clients. rpc.proto also imports its gogo
+  sibling `types.proto`, so it can only migrate as part of the whole storepb
+  3-proto cluster (phase 3). Deferred.
+
 ## Test results (phase 2, all `-count=1`)
 
 | Package                                | Result                                          |
@@ -310,7 +395,10 @@ NoPrescan entry point.
 6. Cosmetic API churn (documented, handled at call sites): oneof wrappers
    hold values; `QueryResponse_String`/`String` naming (no trailing
    underscore); exported oneof interface names; no `Equal` on oneof wrapper
-   types; getters for singular value message fields return `*T`.
+   types; singular message getters return `*T` in every presence mode
+   (der5, `databases` @ `7b33489` — previously no_presence emitted value `T`
+   getters; the change is now uniform and chained-call compatible, and caused
+   zero call-site fallout in mimir).
 
 ## Migration ordering notes / next targets
 
