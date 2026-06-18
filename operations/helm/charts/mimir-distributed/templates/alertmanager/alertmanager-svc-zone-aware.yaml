@@ -1,12 +1,13 @@
 {{- /*
 When zone-aware replication is enabled (and migration is not in progress) the
 alertmanager only gets per-zone services and a headless service; the plain
-"mimir-alertmanager" ClusterIP service is not created. The Ingress and other
-consumers still reference that name, so without it those routes break with
+"mimir-alertmanager" service is not created. The Ingress and other consumers
+still reference that name, so without it those routes break with
 "services mimir-alertmanager not found".
 
-This renders a plain ClusterIP service that load-balances across all zones so
-the stable name keeps working. It is excluded from metrics scraping via the
+This renders a service (type taken from alertmanager.service.type, ClusterIP by
+default) that load-balances across all zones so the stable name keeps working.
+It is excluded from metrics scraping via the
 prometheus.io/service-monitor label because the per-zone services already
 expose the pods to the ServiceMonitor and scraping here too would produce
 duplicate metrics.
