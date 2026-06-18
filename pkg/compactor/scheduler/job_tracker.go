@@ -47,17 +47,9 @@ type JobTracker struct {
 	pendingCount           int
 	active                 *list.List              // ordered by oldest lease first
 	isPlanJobLeased        bool                    // used to decide whether to retain completed compaction jobs
-	incompleteJobs         map[string]jobLocation  // all incomplete jobs, located in one pending lane or in active
+	incompleteJobs         map[string]*list.Element // all incomplete jobs; element is in active or in exactly one lane's pending list
 	completePlanTime       time.Time               // time of the last completed plan job. Zero time if planning has never completed or a plan job is currently incomplete (pending or active).
 	completeCompactionJobs []*TrackedCompactionJob // tracked in order to reject jobs that may be from a stale planning view.
-}
-
-// jobLocation records where an incomplete job lives. When leased, element is in active; otherwise it
-// is in pending[lane].
-type jobLocation struct {
-	element *list.Element
-	lane    lane // meaningful only when not leased
-	leased  bool
 }
 
 func NewJobTracker(jobPersister JobPersister, tenant string, clock clock.Clock, lanePolicy lanePolicy, maxLeases int, repeatedFailureReportThreshold int, metrics *trackerMetrics, logger log.Logger) *JobTracker {
@@ -79,7 +71,7 @@ func NewJobTracker(jobPersister JobPersister, tenant string, clock clock.Clock, 
 		pending:                        pending,
 		active:                         list.New(),
 		isPlanJobLeased:                false,
-		incompleteJobs:                 make(map[string]jobLocation),
+		incompleteJobs:                 make(map[string]*list.Element),
 		completeCompactionJobs:         make([]*TrackedCompactionJob, 0),
 	}
 	return jt
@@ -88,7 +80,7 @@ func NewJobTracker(jobPersister JobPersister, tenant string, clock clock.Clock, 
 // toPendingBack adds a job to the back of its lane's queue.
 func (jt *JobTracker) toPendingBack(j TrackedJob) {
 	l := jt.lanePolicy.LaneForJob(j)
-	jt.incompleteJobs[j.ID()] = jobLocation{element: jt.pending[l].PushBack(j), lane: l}
+	jt.incompleteJobs[j.ID()] = jt.pending[l].PushBack(j)
 	jt.pendingCount++
 }
 
@@ -98,7 +90,7 @@ func (jt *JobTracker) toPendingFront(j TrackedJob) (lane, bool) {
 	l := jt.lanePolicy.LaneForJob(j)
 	p := jt.pending[l]
 	wasEmpty := p.Len() == 0
-	jt.incompleteJobs[j.ID()] = jobLocation{element: p.PushFront(j), lane: l}
+	jt.incompleteJobs[j.ID()] = p.PushFront(j)
 	jt.pendingCount++
 	return l, wasEmpty
 }
@@ -142,7 +134,7 @@ func (jt *JobTracker) recoverFrom(compactionJobs []*TrackedCompactionJob, planJo
 		return a.StatusTime().Compare(b.StatusTime())
 	})
 	for _, job := range leased {
-		jt.incompleteJobs[job.ID()] = jobLocation{element: jt.active.PushBack(job), leased: true}
+		jt.incompleteJobs[job.ID()] = jt.active.PushBack(job)
 	}
 
 	jt.metrics.queue.Recover(pending, leased)
@@ -176,7 +168,7 @@ func (jt *JobTracker) Lease(l lane) (response *compactorschedulerpb.LeaseJobResp
 	if id == planJobId {
 		jt.isPlanJobLeased = true
 	}
-	jt.incompleteJobs[id] = jobLocation{element: jt.active.PushBack(jj), leased: true}
+	jt.incompleteJobs[id] = jt.active.PushBack(jj)
 	jt.metrics.queue.Leased(jj)
 
 	return jj.ToLeaseResponse(jt.tenant), p.Len() == 0, nil
@@ -202,12 +194,12 @@ func (jt *JobTracker) Remove(id string, epoch int64, complete bool) (removed boo
 	jt.mtx.Lock()
 	defer jt.mtx.Unlock()
 
-	loc, ok := jt.incompleteJobs[id]
+	e, ok := jt.incompleteJobs[id]
 	if !ok {
 		return false, nil, nil
 	}
 
-	j := loc.element.Value.(TrackedJob)
+	j := e.Value.(TrackedJob)
 	if j.Epoch() != epoch {
 		return false, nil, nil
 	}
@@ -239,18 +231,18 @@ func (jt *JobTracker) Remove(id string, epoch int64, complete bool) (removed boo
 	}
 
 	delete(jt.incompleteJobs, id)
-	if loc.leased {
-		jt.active.Remove(loc.element)
+	if j.IsLeased() {
+		jt.active.Remove(e)
 		jt.metrics.queue.Complete(j)
 		return true, nil, nil
 	}
 
-	p := jt.pending[loc.lane]
-	p.Remove(loc.element)
+	l := jt.lanePolicy.LaneForJob(j)
+	p := jt.pending[l]
+	p.Remove(e)
 	jt.pendingCount--
 	jt.metrics.queue.DropPending(j)
 	if p.Len() == 0 {
-		l := loc.lane
 		return true, &l, nil
 	}
 	return true, nil, nil
@@ -305,7 +297,7 @@ func (jt *JobTracker) Maintenance(leaseDuration time.Duration, enforceLeaseExpir
 			jt.stopTrackingCompleteCompactionJobs()
 		}
 
-		jt.active.Remove(jt.incompleteJobs[id].element)
+		jt.active.Remove(jt.incompleteJobs[id])
 		if l, wasEmpty := jt.toPendingFront(j); wasEmpty {
 			becameNonEmpty = append(becameNonEmpty, l)
 		}
@@ -316,7 +308,7 @@ func (jt *JobTracker) Maintenance(leaseDuration time.Duration, enforceLeaseExpir
 		if j.IsLeased() {
 			jt.trackFailure(j)
 			jt.metrics.queue.Complete(j)
-			jt.active.Remove(jt.incompleteJobs[j.ID()].element)
+			jt.active.Remove(jt.incompleteJobs[j.ID()])
 			delete(jt.incompleteJobs, j.ID())
 		}
 	}
@@ -398,15 +390,15 @@ func (jt *JobTracker) RenewLease(id string, epoch int64) bool {
 	jt.mtx.Lock()
 	defer jt.mtx.Unlock()
 
-	loc, ok := jt.incompleteJobs[id]
+	e, ok := jt.incompleteJobs[id]
 	if !ok {
 		return false
 	}
 
-	j := loc.element.Value.(TrackedJob)
+	j := e.Value.(TrackedJob)
 	if j.IsLeased() && j.Epoch() == epoch {
 		j.RenewLease(jt.clock.Now())
-		jt.active.MoveToBack(loc.element)
+		jt.active.MoveToBack(e)
 		return true
 	}
 	return false
@@ -416,12 +408,12 @@ func (jt *JobTracker) CancelLease(id string, epoch int64) (canceled bool, became
 	jt.mtx.Lock()
 	defer jt.mtx.Unlock()
 
-	loc, ok := jt.incompleteJobs[id]
+	e, ok := jt.incompleteJobs[id]
 	if !ok {
 		return false, nil, nil
 	}
 
-	j := loc.element.Value.(TrackedJob)
+	j := e.Value.(TrackedJob)
 	if !j.IsLeased() || j.Epoch() != epoch {
 		return false, nil, nil
 	}
@@ -443,7 +435,7 @@ func (jt *JobTracker) CancelLease(id string, epoch int64) (canceled bool, became
 				return false, nil, err
 			}
 		}
-		jt.active.Remove(loc.element)
+		jt.active.Remove(e)
 		l, wasEmpty := jt.toPendingFront(jj)
 		jt.metrics.queue.Revive(jj)
 		if wasEmpty {
@@ -455,7 +447,7 @@ func (jt *JobTracker) CancelLease(id string, epoch int64) (canceled bool, became
 			return false, nil, err
 		}
 		jt.metrics.queue.Complete(j)
-		jt.active.Remove(loc.element)
+		jt.active.Remove(e)
 		delete(jt.incompleteJobs, id)
 	}
 	jt.trackFailure(j)
@@ -509,9 +501,9 @@ func (jt *JobTracker) OfferCompactionJobs(jobs []*TrackedCompactionJob, planJobE
 
 	acceptedJobs := make([]TrackedJob, 0, len(jobs)+1)
 	for _, j := range jobs {
-		loc, ok := jt.incompleteJobs[j.ID()]
+		e, ok := jt.incompleteJobs[j.ID()]
 		if ok {
-			prevJ := loc.element.Value.(TrackedJob)
+			prevJ := e.Value.(TrackedJob)
 			if prevJ.IsLeased() {
 				// We never replace jobs that are in progress
 				continue
@@ -587,8 +579,7 @@ func (jt *JobTracker) OfferCompactionJobs(jobs []*TrackedCompactionJob, planJobE
 	jt.stopTrackingCompleteCompactionJobs()
 
 	// Remove the plan job
-	planLoc := jt.incompleteJobs[planJobId]
-	jt.active.Remove(planLoc.element)
+	jt.active.Remove(jt.incompleteJobs[planJobId])
 	delete(jt.incompleteJobs, planJobId)
 	jt.metrics.queue.Complete(planJob)
 	accepted = len(acceptedJobs)
@@ -642,11 +633,11 @@ func jobConflicts(conflict map[string]struct{}, job *TrackedCompactionJob) bool 
 }
 
 func (jt *JobTracker) checkPlanJobEpoch(epoch int64) (*TrackedPlanJob, bool) {
-	loc, ok := jt.incompleteJobs[planJobId]
+	pje, ok := jt.incompleteJobs[planJobId]
 	if !ok {
 		return nil, false
 	}
-	planJob, ok := loc.element.Value.(*TrackedPlanJob)
+	planJob, ok := pje.Value.(*TrackedPlanJob)
 	if !ok {
 		// This should never happen
 		return nil, false
