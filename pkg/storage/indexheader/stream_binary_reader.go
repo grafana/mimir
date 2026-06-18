@@ -279,6 +279,11 @@ func (r *StreamBinaryReader) IndexHeaderVersion() int {
 	return BinaryFormatV1
 }
 
+func (r *StreamBinaryReader) IsRemotePostingsOffsets(context.Context) (bool, error) {
+	_, ok := r.postingsOffsetsDecbufFactory.(*streamencoding.BucketDecbufFactory)
+	return ok, nil
+}
+
 func (r *StreamBinaryReader) PostingsOffset(_ context.Context, name string, value string) (index.Range, error) {
 	rng, found, err := r.postingsOffsetTable.PostingsOffset(name, value)
 	if err != nil {
