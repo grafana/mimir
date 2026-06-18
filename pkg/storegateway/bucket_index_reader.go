@@ -14,7 +14,6 @@ import (
 	"fmt"
 	"io"
 	"slices"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -487,11 +486,13 @@ func (r *bucketIndexReader) fetchPostingsForKnownOffsets(ctx context.Context, ke
 			postings[ix] = index.EmptyPostings()
 			continue
 		}
-		foundPos := sort.Search(len(offsets), func(i int) bool {
-			return offsets[i].LabelValue >= key.Value
+
+		foundPos, ok := slices.BinarySearchFunc(offsets, key.Value, func(offset streamindex.PostingListOffset, value string) int {
+			return strings.Compare(offset.LabelValue, value)
 		})
+
 		// Again, if we can't find offsets in knownOffsets, we treat these postings as empty.
-		if foundPos >= len(offsets) || offsets[foundPos].LabelValue != key.Value {
+		if !ok {
 			postings[ix] = index.EmptyPostings()
 			continue
 		}
@@ -510,6 +511,9 @@ func (r *bucketIndexReader) fetchPostingsForKnownOffsets(ctx context.Context, ke
 // and fills the resulting postings in at position postingPtr.keyID in output.
 // It also caches these postings before returning.
 func (r *bucketIndexReader) fetchPostingsForPtrs(ctx context.Context, ptrs []postingPtr, keys []labels.Label, output []index.Postings, stats *safeQueryStats) ([]index.Postings, error) {
+	timer := prometheus.NewTimer(r.block.metrics.postingsFetchDuration)
+	defer timer.ObserveDuration()
+
 	slices.SortFunc(ptrs, func(a, b postingPtr) int {
 		return cmp.Compare(a.ptr.Start, b.ptr.Start)
 	})
@@ -613,9 +617,6 @@ func (r *bucketIndexReader) fetchPostingsForPtrs(ctx context.Context, ptrs []pos
 // Callers of this method may need to add padding to the results.
 // If postings for given key is not fetched, entry at given index will be nil.
 func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Label, stats *safeQueryStats) ([]index.Postings, error) {
-	timer := prometheus.NewTimer(r.block.metrics.postingsFetchDuration)
-	defer timer.ObserveDuration()
-
 	var ptrs []postingPtr
 
 	output := make([]index.Postings, len(keys))

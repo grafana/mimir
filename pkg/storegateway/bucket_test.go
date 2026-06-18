@@ -1103,7 +1103,6 @@ func TestBucketIndexReader_FetchPostingsForKnownOffsets(t *testing.T) {
 	testBlock := fixtures.SetupTestBlock(tb, fixtures.AppendTestSeries(series))
 	newTestBucketBlock := testBlockToBucketBlock(tb, testBlock)
 
-	// Used to set up known offsets
 	offsetsForLabel := func(b *bucketBlock, name, prefix string) []streamindex.PostingListOffset {
 		offsets, err := b.indexHeaderReader.LabelValuesOffsets(ctx, name, prefix, nil)
 		require.NoError(t, err)
@@ -1119,8 +1118,6 @@ func TestBucketIndexReader_FetchPostingsForKnownOffsets(t *testing.T) {
 		return keys
 	}
 
-	// expectedRefs resolves the series refs for a single label/value pair independently, through
-	// ExpandedPostings, to compare against the FetchPostingsForKnownOffsets output for the same key.
 	expectedRefs := func(b *bucketBlock, name, value string) []storage.SeriesRef {
 		matcher := labels.MustNewMatcher(labels.MatchEqual, name, value)
 		refs, _, err := b.indexReader(selectAllStrategy{}).ExpandedPostings(ctx, []*labels.Matcher{matcher}, newSafeQueryStats())
@@ -1166,12 +1163,12 @@ func TestBucketIndexReader_FetchPostingsForKnownOffsets(t *testing.T) {
 	t.Run("returns empty postings for values not matching the prefix", func(t *testing.T) {
 		b := newTestBucketBlock()
 		prefix := "1"
-		offsets := offsetsForLabel(b, labelName, "")
+		allOffsets := offsetsForLabel(b, labelName, "")
 		offsetsWithPrefix := offsetsForLabel(b, labelName, prefix)
 
 		var keys []labels.Label
 		var wantFound []bool
-		for _, o := range offsets {
+		for _, o := range allOffsets {
 			keys = append(keys, labels.Label{Name: labelName, Value: o.LabelValue})
 			wantFound = append(wantFound, strings.HasPrefix(o.LabelValue, prefix))
 		}
@@ -1204,15 +1201,14 @@ func TestBucketIndexReader_FetchPostingsForKnownOffsets(t *testing.T) {
 		offsets := offsetsForLabel(b, labelName, "")
 		keys := keysFromOffsets(labelName, offsets)
 
-		// The first call fetches the postings from the bucket and stores them in the cache.
+		// First call misses cache, does the fetch
 		first, err := b.indexReader(selectAllStrategy{}).FetchPostingsForKnownOffsets(ctx, keys, map[string][]streamindex.PostingListOffset{labelName: offsets}, newSafeQueryStats())
 		require.NoError(t, err)
 		require.Len(t, first, len(keys))
 
-		// The second call passes no known offsets: if the cache wasn't consulted, every key would
-		// resolve to empty postings. Instead, postings must be served from the cache.
-		stats := newSafeQueryStats()
-		second, err := b.indexReader(selectAllStrategy{}).FetchPostingsForKnownOffsets(ctx, keys, nil, stats)
+		// The second call passes no known offsets, but should still hit the cache when resolving postings offsets to postings
+		secondCallStats := newSafeQueryStats()
+		second, err := b.indexReader(selectAllStrategy{}).FetchPostingsForKnownOffsets(ctx, keys, nil, secondCallStats)
 		require.NoError(t, err)
 		require.Len(t, second, len(keys))
 
@@ -1221,9 +1217,8 @@ func TestBucketIndexReader_FetchPostingsForKnownOffsets(t *testing.T) {
 		}
 
 		// All postings were served from the cache, so nothing should have been fetched from the bucket.
-		assert.Zero(t, stats.export().postingsFetchCount)
+		assert.Zero(t, secondCallStats.export().postingsFetchCount)
 	})
-
 }
 
 func newInMemoryIndexCache(t testing.TB) indexcache.IndexCache {
