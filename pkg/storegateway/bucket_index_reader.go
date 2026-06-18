@@ -379,12 +379,6 @@ func toPostingGroups(ctx context.Context, ms []*labels.Matcher, indexhdr indexhe
 		hasAdds = hasAdds || !pg.isSubtract
 	}
 
-	// We only need special All postings if there are no other adds. If there are, we can skip fetching
-	// special All postings completely.
-	if allRequested && !hasAdds {
-		postingGroups = append(postingGroups, postingGroup{isSubtract: false, keys: []labels.Label{allPostingsKey}})
-	}
-
 	// If hasAdds is false, then there were no posting lists for any labels that we will intersect.
 	// If all postings also weren't requested, then we will only be subtracting from an empty set.
 	// Shortcut doing any set operations and just return an empty set here.
