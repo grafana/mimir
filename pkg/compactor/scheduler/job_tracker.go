@@ -44,7 +44,6 @@ type JobTracker struct {
 
 	mtx                    sync.Mutex
 	pending                map[lane]*list.List
-	pendingCount           int
 	active                 *list.List              // ordered by oldest lease first
 	isPlanJobLeased        bool                    // used to decide whether to retain completed compaction jobs
 	incompleteJobs         map[string]*list.Element // all incomplete jobs; element is in active or in exactly one lane's pending list
@@ -81,7 +80,6 @@ func NewJobTracker(jobPersister JobPersister, tenant string, clock clock.Clock, 
 func (jt *JobTracker) toPendingBack(j TrackedJob) {
 	l := jt.lanePolicy.LaneForJob(j)
 	jt.incompleteJobs[j.ID()] = jt.pending[l].PushBack(j)
-	jt.pendingCount++
 }
 
 // toPendingFront adds a job to the front of its lane's queue, reporting whether that
@@ -91,7 +89,6 @@ func (jt *JobTracker) toPendingFront(j TrackedJob) (lane, bool) {
 	p := jt.pending[l]
 	wasEmpty := p.Len() == 0
 	jt.incompleteJobs[j.ID()] = p.PushFront(j)
-	jt.pendingCount++
 	return l, wasEmpty
 }
 
@@ -147,10 +144,10 @@ func (jt *JobTracker) Lease(l lane) (response *compactorschedulerpb.LeaseJobResp
 	defer jt.mtx.Unlock()
 
 	p := jt.pending[l]
-	if p.Front() == nil {
+	e := p.Front()
+	if e == nil {
 		return nil, false, nil
 	}
-	e := p.Front()
 
 	j := e.Value.(TrackedJob)
 	// Copy the value, don't want to leave a modification if the write fails
@@ -162,7 +159,6 @@ func (jt *JobTracker) Lease(l lane) (response *compactorschedulerpb.LeaseJobResp
 	}
 
 	p.Remove(e)
-	jt.pendingCount--
 
 	id := jj.ID()
 	if id == planJobId {
@@ -240,7 +236,6 @@ func (jt *JobTracker) Remove(id string, epoch int64, complete bool) (removed boo
 	l := jt.lanePolicy.LaneForJob(j)
 	p := jt.pending[l]
 	p.Remove(e)
-	jt.pendingCount--
 	jt.metrics.queue.DropPending(j)
 	if p.Len() == 0 {
 		return true, &l, nil
@@ -524,7 +519,11 @@ func (jt *JobTracker) OfferCompactionJobs(jobs []*TrackedCompactionJob, planJobE
 		preventDeleteIds[j.ID()] = struct{}{}
 	}
 
-	deleteJobs := make([]TrackedJob, 0, len(jt.completeCompactionJobs)+jt.pendingCount)
+	pendingCount := 0
+	for _, lst := range jt.pending {
+		pendingCount += lst.Len()
+	}
+	deleteJobs := make([]TrackedJob, 0, len(jt.completeCompactionJobs)+pendingCount)
 	// Delete completed jobs, unless they will be overwritten anyway by an accepted job.
 	for _, j := range jt.completeCompactionJobs {
 		id := j.ID()
@@ -570,7 +569,6 @@ func (jt *JobTracker) OfferCompactionJobs(jobs []*TrackedCompactionJob, planJobE
 	for _, l := range jt.lanePolicy.AllLanes() {
 		jt.pending[l] = list.New()
 	}
-	jt.pendingCount = 0
 	for _, j := range acceptedJobs {
 		jt.toPendingBack(j)
 		jt.metrics.queue.Pending(j)
