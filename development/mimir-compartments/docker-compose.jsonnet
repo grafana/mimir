@@ -41,9 +41,6 @@ std.manifestYamlDoc({
         '-distributor.write-compartment-id=%d' % id,
         "-ingest-storage.kafka.address='kafka-wc-<write-compartment-id>:9092'",
         "-ingest-storage.kafka.topic='mimir-ingest-rc-<read-compartment-id>'",
-        // The writer's topic is the read-compartment template, which cannot be auto-created; the resolved
-        // topics are created by the ingesters' readers. Compartments config validation requires this.
-        '-ingest-storage.kafka.auto-create-topic-enabled=false',
       ],
     }) + {
       // Share a "distributor" network alias so nginx (DISTRIBUTOR_HOST=distributor) balances across both.

@@ -319,12 +319,6 @@ func (c *Config) Validate(log log.Logger) error {
 				}
 			}
 		}
-		// The distributor's writer is configured with the read-compartment-templated topic, which is not a
-		// real topic name and so cannot be auto-created; the resolved per-compartment topics are created by
-		// the ingesters' partition readers. The distributor must therefore have topic auto-creation disabled.
-		if c.isDistributorEnabled() && c.IngestStorage.KafkaConfig.AutoCreateTopicEnabled {
-			return errors.New("when compartments are enabled, -ingest-storage.kafka.auto-create-topic-enabled must be false on the distributor")
-		}
 		// The offset catalogue tracks a single Kafka offset per block, which is not representable when an
 		// ingester consumes from more than one write compartment's Kafka cluster (each has its own offset
 		// space). Multi-cluster support for the offset catalogue is not implemented yet.

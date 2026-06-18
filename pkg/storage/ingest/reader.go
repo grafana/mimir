@@ -217,7 +217,7 @@ func (r *SingleClusterPartitionReader) LastCommittedOffset() int64 {
 
 func (r *SingleClusterPartitionReader) start(ctx context.Context) (returnErr error) {
 	if r.kafkaCfg.AutoCreateTopicEnabled {
-		if err := CreateTopic(r.kafkaCfg, r.logger); err != nil {
+		if err := CreateTopics(r.kafkaCfg, r.logger, r.kafkaCfg.Topic); err != nil {
 			return err
 		}
 	}

@@ -825,17 +825,12 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 
 	if cfg.IngestStorageConfig.Enabled {
 		writerKafkaCfg := d.cfg.IngestStorageConfig.KafkaConfig
+		var writerOpts []ingest.WriterOption
+
 		if cfg.Compartments.Enabled {
 			// Resolve the writer's Kafka address and credentials for this distributor's write compartment.
-			// Topic auto-creation is required to be disabled by config validation, because the writer's topic
-			// is the read-compartment template; the resolved topics are created by the ingesters' readers.
 			writerKafkaCfg = writerKafkaCfg.WriteCompartmentConfig(cfg.WriteCompartmentID)
-		}
 
-		d.ingestStorageWriter = ingest.NewWriter(writerKafkaCfg, log, reg)
-		subservices = append(subservices, d.ingestStorageWriter)
-
-		if cfg.Compartments.Enabled {
 			d.compartmentRouter = compartments.NewRouter(cfg.Compartments.Read.NumCompartments, cfg.IngestStorageConfig.KafkaConfig.Topic)
 
 			d.queryIngesterCompartmentsHit = promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
@@ -846,7 +841,17 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 				ConstLabels: prometheus.Labels{"storage": "ingester"},
 				Buckets:     prometheus.LinearBuckets(1, 1, cfg.Compartments.Read.NumCompartments),
 			})
+
+			// The writer's configured topic is the read-compartment template, which is not a real topic
+			// name. Auto-create every resolved read-compartment topic in this distributor's write
+			// compartment's Kafka cluster instead.
+			if writerKafkaCfg.AutoCreateTopicEnabled {
+				writerOpts = append(writerOpts, ingest.WithAutoCreateTopics(d.compartmentRouter.Topics()))
+			}
 		}
+
+		d.ingestStorageWriter = ingest.NewWriter(writerKafkaCfg, log, reg, writerOpts...)
+		subservices = append(subservices, d.ingestStorageWriter)
 	}
 
 	// Init usage-tracker client (if enabled).

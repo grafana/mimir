@@ -259,7 +259,7 @@ func TestResultPromise(t *testing.T) {
 	})
 }
 
-func TestCreateTopic(t *testing.T) {
+func TestCreateTopics(t *testing.T) {
 	createKafkaCluster := func(t *testing.T) (string, *kfake.Cluster) {
 		cluster, err := kfake.NewCluster(kfake.NumBrokers(1))
 		require.NoError(t, err)
@@ -306,7 +306,91 @@ func TestCreateTopic(t *testing.T) {
 
 		logger := log.NewNopLogger()
 
-		require.NoError(t, CreateTopic(cfg, logger))
+		require.NoError(t, CreateTopics(cfg, logger, cfg.Topic))
+	})
+
+	t.Run("should create all the requested topics", func(t *testing.T) {
+		var (
+			addr, cluster = createKafkaCluster(t)
+			cfg           = KafkaConfig{
+				AutoCreateTopicDefaultPartitions: 100,
+			}
+			topics = []string{"topic-a", "topic-b"}
+		)
+		require.NoError(t, cfg.Address.Set(addr))
+
+		cluster.ControlKey(kmsg.CreateTopics.Int16(), func(request kmsg.Request) (kmsg.Response, error, bool) {
+			r := request.(*kmsg.CreateTopicsRequest)
+
+			require.Len(t, r.Topics, 2)
+			respTopics := make([]kmsg.CreateTopicsResponseTopic, 0, len(r.Topics))
+			for _, res := range r.Topics {
+				assert.Equal(t, int32(100), res.NumPartitions)
+				assert.Equal(t, int16(-1), res.ReplicationFactor)
+				respTopics = append(respTopics, kmsg.CreateTopicsResponseTopic{
+					Topic:             res.Topic,
+					NumPartitions:     res.NumPartitions,
+					ReplicationFactor: 3,
+				})
+			}
+
+			return &kmsg.CreateTopicsResponse{Version: r.Version, Topics: respTopics}, nil, true
+		})
+
+		require.NoError(t, CreateTopics(cfg, log.NewNopLogger(), topics...))
+	})
+
+	t.Run("should return an error if one of multiple topics fails to be created", func(t *testing.T) {
+		var (
+			addr, cluster = createKafkaCluster(t)
+			cfg           = KafkaConfig{
+				AutoCreateTopicDefaultPartitions: 100,
+			}
+			topics = []string{"topic-a", "topic-b"}
+		)
+		require.NoError(t, cfg.Address.Set(addr))
+
+		// topic-a already exists (tolerated), topic-b genuinely fails: the call must surface topic-b's error.
+		cluster.ControlKey(kmsg.CreateTopics.Int16(), func(request kmsg.Request) (kmsg.Response, error, bool) {
+			r := request.(*kmsg.CreateTopicsRequest)
+			return &kmsg.CreateTopicsResponse{
+				Version: r.Version,
+				Topics: []kmsg.CreateTopicsResponseTopic{
+					{Topic: "topic-a", ErrorCode: kerr.TopicAlreadyExists.Code},
+					{Topic: "topic-b", ErrorCode: kerr.NotLeaderForPartition.Code},
+				},
+			}, nil, true
+		})
+
+		err := CreateTopics(cfg, log.NewNopLogger(), topics...)
+		require.Error(t, err)
+		assert.ErrorContains(t, err, "topic-b")
+	})
+
+	t.Run("should return an error if a requested topic is missing from the response", func(t *testing.T) {
+		var (
+			addr, cluster = createKafkaCluster(t)
+			cfg           = KafkaConfig{
+				AutoCreateTopicDefaultPartitions: 100,
+			}
+			topics = []string{"topic-a", "topic-b"}
+		)
+		require.NoError(t, cfg.Address.Set(addr))
+
+		// The broker omits topic-b from the response: we can't confirm its creation, so it must error.
+		cluster.ControlKey(kmsg.CreateTopics.Int16(), func(request kmsg.Request) (kmsg.Response, error, bool) {
+			r := request.(*kmsg.CreateTopicsRequest)
+			return &kmsg.CreateTopicsResponse{
+				Version: r.Version,
+				Topics: []kmsg.CreateTopicsResponseTopic{
+					{Topic: "topic-a", NumPartitions: 100, ReplicationFactor: 3},
+				},
+			}, nil, true
+		})
+
+		err := CreateTopics(cfg, log.NewNopLogger(), topics...)
+		require.Error(t, err)
+		assert.ErrorContains(t, err, "topic-b")
 	})
 
 	t.Run("should return an error if the request fails", func(t *testing.T) {
@@ -318,8 +402,10 @@ func TestCreateTopic(t *testing.T) {
 		)
 		require.NoError(t, cfg.Address.Set(addr))
 
-		cluster.ControlKey(kmsg.CreateTopics.Int16(), func(_ kmsg.Request) (kmsg.Response, error, bool) {
+		cluster.ControlKey(kmsg.CreateTopics.Int16(), func(request kmsg.Request) (kmsg.Response, error, bool) {
+			r := request.(*kmsg.CreateTopicsRequest)
 			return &kmsg.CreateTopicsResponse{
+				Version: r.Version,
 				Topics: []kmsg.CreateTopicsResponseTopic{
 					{
 						Topic:     cfg.Topic,
@@ -331,7 +417,7 @@ func TestCreateTopic(t *testing.T) {
 
 		logger := log.NewNopLogger()
 
-		require.Error(t, CreateTopic(cfg, logger))
+		require.Error(t, CreateTopics(cfg, logger, cfg.Topic))
 	})
 
 	t.Run("should return an error if the request succeed but the response contains an error", func(t *testing.T) {
@@ -368,7 +454,7 @@ func TestCreateTopic(t *testing.T) {
 
 		logger := log.NewNopLogger()
 
-		require.NoError(t, CreateTopic(cfg, logger))
+		require.NoError(t, CreateTopics(cfg, logger, cfg.Topic))
 	})
 
 	t.Run("should not return error when topic already exists", func(t *testing.T) {
@@ -383,10 +469,10 @@ func TestCreateTopic(t *testing.T) {
 		require.NoError(t, cfg.Address.Set(addr))
 
 		// First call should create the topic
-		assert.NoError(t, CreateTopic(cfg, logger))
+		assert.NoError(t, CreateTopics(cfg, logger, cfg.Topic))
 
 		// Second call should succeed because topic already exists
-		assert.NoError(t, CreateTopic(cfg, logger))
+		assert.NoError(t, CreateTopics(cfg, logger, cfg.Topic))
 	})
 }
 

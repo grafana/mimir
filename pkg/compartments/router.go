@@ -113,6 +113,11 @@ func (r *Router) TopicForCompartment(compartmentID int) string {
 	return r.topics[compartmentID]
 }
 
+// Topics returns the Kafka topic of every read compartment.
+func (r *Router) Topics() []string {
+	return slices.Clone(r.topics)
+}
+
 // appendUnique appends v to s only if absent, deduplicating because several matched metric names can
 // hash to the same compartment.
 func appendUnique[T comparable](s []T, v T) []T {

@@ -636,13 +636,13 @@ func TestConfigValidation(t *testing.T) {
 			expectAnyError: false,
 		},
 		{
-			name: "should fail if compartments and the distributor are enabled but Kafka topic auto-creation is on",
+			name: "should pass if compartments and the distributor are enabled with Kafka topic auto-creation on",
 			getTestConfig: func() *Config {
 				cfg := validCompartmentsConfig()
 				cfg.IngestStorage.KafkaConfig.AutoCreateTopicEnabled = true
 				return cfg
 			},
-			expectAnyError: true,
+			expectAnyError: false,
 		},
 		{
 			name: "should fail if the offset catalogue is enabled together with more than one write compartment",
