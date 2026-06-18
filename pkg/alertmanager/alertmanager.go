@@ -359,6 +359,22 @@ func (am *Alertmanager) ApplyConfig(conf *config.Config, tmpls []*alertspb.Templ
 	am.inhibitor = inhibit.NewInhibitor(am.alerts, conf.InhibitRules, utillog.SlogFromGoKit(log.With(am.logger, "component", "inhibitor")), eventrecorder.Recorder{})
 	silencer := silence.NewSilencer(am.silences, utillog.SlogFromGoKit(am.logger), eventrecorder.Recorder{})
 
+	// Wire the API's alert-status callback to this config's inhibitor and silencer as part of the
+	// config swap. From the alertmanager v0.33 bump the API computes silenced/inhibited status on
+	// demand by invoking this callback with a per-request marker in the context (see api/v2
+	// predictAlertStatus / alertFilter); the inhibitor and silencer write status to that marker.
+	// We register it here, with the new config, rather than after the inhibitor finishes loading,
+	// so the API immediately reflects the new config and never routes status through the
+	// just-stopped previous inhibitor, and so an apply aborted at a later barrier still leaves the
+	// API consistent with the dispatcher. Mutes is safe to call before the inhibitor has loaded: it
+	// reports no inhibition until the per-rule state cache is populated, then becomes accurate. We
+	// close over a local (not am.inhibitor) so a concurrent API request can't race the field write.
+	apiInhibitor := am.inhibitor
+	am.api.Update(conf, func(ctx context.Context, labels model.LabelSet) {
+		apiInhibitor.Mutes(ctx, labels)
+		silencer.Mutes(ctx, labels)
+	})
+
 	waitFunc := clusterWait(am.state.Position, am.cfg.PeerTimeout)
 
 	timeoutFunc := func(d time.Duration) time.Duration {
@@ -443,16 +459,6 @@ func (am *Alertmanager) ApplyConfig(conf *config.Config, tmpls []*alertspb.Templ
 	inhibitor := am.inhibitor
 	go inhibitor.Run()
 	inhibitor.WaitForLoading()
-
-	// Wire the API's alert-status callback to the active inhibitor and silencer. From the
-	// alertmanager v0.33 bump, the API computes silenced/inhibited status on demand by invoking
-	// this callback with a per-request marker in the context (see api/v2 predictAlertStatus /
-	// alertFilter); the inhibitor and silencer write the status to that marker. Register it only
-	// after the inhibitor has loaded so its state cache is populated when Mutes runs.
-	am.api.Update(conf, func(ctx context.Context, labels model.LabelSet) {
-		inhibitor.Mutes(ctx, labels)
-		silencer.Mutes(ctx, labels)
-	})
 
 	return nil
 }
