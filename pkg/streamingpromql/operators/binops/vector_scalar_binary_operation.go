@@ -17,6 +17,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
+	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
 // VectorScalarBinaryOperation represents a binary operation between an instant vector and a scalar such as "<expr> + 2" or "3 * <expr>".
@@ -108,9 +109,9 @@ func (v *VectorScalarBinaryOperation) SeriesMetadata(ctx context.Context, matche
 		return nil, err
 	}
 
-	if (!v.Op.IsComparisonOperator() || v.ReturnBool) && v.Op != parser.TRIM_UPPER && v.Op != parser.TRIM_LOWER {
-		// We don't need to do deduplication and merging of series in this operator: we expect that this operator
-		// is wrapped in a DeduplicateAndMerge.
+	if !promqlext.RetainsMetricName(v.Op, v.ReturnBool) {
+		// This operation drops the metric name, so we need to deduplicate and merge series: we expect that
+		// this operator is wrapped in a DeduplicateAndMerge.
 		return functions.DropSeriesName.Func(metadata, v.MemoryConsumptionTracker, v.EnableDelayedNameRemoval)
 	}
 

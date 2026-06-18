@@ -25,6 +25,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
+	"github.com/grafana/mimir/pkg/util/promqlext"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
@@ -84,9 +85,8 @@ func groupLabelsFunc(vectorMatching parser.VectorMatching, op parser.ItemType, r
 		}
 	}
 
-	if (op.IsComparisonOperator() && !returnBool) || op == parser.TRIM_UPPER || op == parser.TRIM_LOWER {
-		// If this is a comparison operator, we want to retain the metric name, as the comparison acts like a filter.
-		// Similarly, trim operators retain the metric name.
+	if promqlext.RetainsMetricName(op, returnBool) {
+		// Comparison operators (acting as filters) and trim operators retain the metric name.
 		return func(l labels.Labels) labels.Labels {
 			lb.Reset(l)
 			lb.Del(vectorMatching.MatchingLabels...)

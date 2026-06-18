@@ -22,6 +22,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/operators"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
+	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
 var errMultipleMatchesOnManySide = errors.New("multiple matches for labels: grouping labels must ensure unique matches")
@@ -551,16 +552,9 @@ func (g *GroupedVectorVectorBinaryOperation) outputSeriesLabelsFunc() func(oneSi
 }
 
 func (g *GroupedVectorVectorBinaryOperation) shouldRemoveMetricNameFromManySide() bool {
-	if g.Op.IsComparisonOperator() {
-		return g.ReturnBool
-	}
-
-	if g.Op == parser.TRIM_UPPER || g.Op == parser.TRIM_LOWER {
-		// Trim operators act like a filter on the "many" side, so retain its metric name.
-		return false
-	}
-
-	return true
+	// Operations that retain the metric name (comparison filters and trim operators) keep the name of
+	// the "many" side; all others drop it.
+	return !promqlext.RetainsMetricName(g.Op, g.ReturnBool)
 }
 
 // sortSeries sorts metadata and series in place to try to minimise the number of input series we'll need to buffer in memory.
