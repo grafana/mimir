@@ -210,44 +210,31 @@ PROTO_GRPC_GOS := pkg/alertmanager/alertmanagerpb/alertmanager_grpc.pb.go
 # the %.proto -> %.pb.go patsubst, so are tracked explicitly here.
 PROTO_WIRESMITH_GOS := \
 	pkg/mimirpb/mimir_compare.pb.go \
-	pkg/mimirpb/mimir_equal.pb.go \
-	pkg/mimirpb/mimir_reflect.pb.go \
+	pkg/mimirpb/mimir_util.pb.go \
 	pkg/distributor/ha_tracker_compare.pb.go \
-	pkg/distributor/ha_tracker_equal.pb.go \
-	pkg/distributor/ha_tracker_reflect.pb.go \
+	pkg/distributor/ha_tracker_util.pb.go \
 	pkg/querier/stats/stats_compare.pb.go \
-	pkg/querier/stats/stats_equal.pb.go \
-	pkg/querier/stats/stats_reflect.pb.go \
+	pkg/querier/stats/stats_util.pb.go \
 	pkg/ruler/rulespb/rules_compare.pb.go \
-	pkg/ruler/rulespb/rules_equal.pb.go \
-	pkg/ruler/rulespb/rules_reflect.pb.go \
+	pkg/ruler/rulespb/rules_util.pb.go \
 	pkg/streamingpromql/types/types_compare.pb.go \
-	pkg/streamingpromql/types/types_equal.pb.go \
-	pkg/streamingpromql/types/types_reflect.pb.go \
+	pkg/streamingpromql/types/types_util.pb.go \
 	pkg/streamingpromql/planning/plan_compare.pb.go \
-	pkg/streamingpromql/planning/plan_equal.pb.go \
-	pkg/streamingpromql/planning/plan_reflect.pb.go \
+	pkg/streamingpromql/planning/plan_util.pb.go \
 	pkg/streamingpromql/planning/core/core_compare.pb.go \
-	pkg/streamingpromql/planning/core/core_equal.pb.go \
-	pkg/streamingpromql/planning/core/core_reflect.pb.go \
+	pkg/streamingpromql/planning/core/core_util.pb.go \
 	pkg/streamingpromql/optimize/plan/commonsubexpressionelimination/node_compare.pb.go \
-	pkg/streamingpromql/optimize/plan/commonsubexpressionelimination/node_equal.pb.go \
-	pkg/streamingpromql/optimize/plan/commonsubexpressionelimination/node_reflect.pb.go \
+	pkg/streamingpromql/optimize/plan/commonsubexpressionelimination/node_util.pb.go \
 	pkg/streamingpromql/optimize/plan/rangevectorsplitting/node_compare.pb.go \
-	pkg/streamingpromql/optimize/plan/rangevectorsplitting/node_equal.pb.go \
-	pkg/streamingpromql/optimize/plan/rangevectorsplitting/node_reflect.pb.go \
+	pkg/streamingpromql/optimize/plan/rangevectorsplitting/node_util.pb.go \
 	pkg/streamingpromql/optimize/plan/rangevectorsplitting/functions_compare.pb.go \
-	pkg/streamingpromql/optimize/plan/rangevectorsplitting/functions_equal.pb.go \
-	pkg/streamingpromql/optimize/plan/rangevectorsplitting/functions_reflect.pb.go \
+	pkg/streamingpromql/optimize/plan/rangevectorsplitting/functions_util.pb.go \
 	pkg/streamingpromql/optimize/plan/multiaggregation/node_compare.pb.go \
-	pkg/streamingpromql/optimize/plan/multiaggregation/node_equal.pb.go \
-	pkg/streamingpromql/optimize/plan/multiaggregation/node_reflect.pb.go \
+	pkg/streamingpromql/optimize/plan/multiaggregation/node_util.pb.go \
 	pkg/streamingpromql/optimize/plan/splitandcache/node_compare.pb.go \
-	pkg/streamingpromql/optimize/plan/splitandcache/node_equal.pb.go \
-	pkg/streamingpromql/optimize/plan/splitandcache/node_reflect.pb.go \
+	pkg/streamingpromql/optimize/plan/splitandcache/node_util.pb.go \
 	pkg/streamingpromql/optimize/plan/remoteexec/node_compare.pb.go \
-	pkg/streamingpromql/optimize/plan/remoteexec/node_equal.pb.go \
-	pkg/streamingpromql/optimize/plan/remoteexec/node_reflect.pb.go
+	pkg/streamingpromql/optimize/plan/remoteexec/node_util.pb.go
 
 # Packages containing //node:generate-annotated structs, and the corresponding
 # generated files. Discovered at make-parse time.
@@ -379,7 +366,7 @@ endif
 
 # pkg/mimirpb/mimir.proto is compiled by wiresmith (a non-reflective Go marshal
 # code generator). Grouped target (&:) so the single wiresmith invocation
-# produces all four outputs atomically -- deleting any one of them forces a
+# produces all outputs atomically -- deleting any one of them forces a
 # regeneration of the set.
 #
 # wiresmith routes flat (single-file) layouts under <proto-package>/<basename>
@@ -388,14 +375,12 @@ endif
 # directory to keep the Go package import path stable for downstream consumers.
 pkg/mimirpb/mimir.pb.go \
 pkg/mimirpb/mimir_compare.pb.go \
-pkg/mimirpb/mimir_equal.pb.go \
-pkg/mimirpb/mimir_reflect.pb.go &: pkg/mimirpb/mimir.proto
+pkg/mimirpb/mimir_util.pb.go &: pkg/mimirpb/mimir.proto
 ifeq ($(GENERATE_FILES),true)
 	wiresmith --proto_path=./pkg/mimirpb --out=./pkg/mimirpb --module=github.com/grafana/mimir pkg/mimirpb/mimir.proto
 	mv pkg/mimirpb/cortexpb/mimir.pb.go pkg/mimirpb/mimir.pb.go
 	mv pkg/mimirpb/cortexpb/mimir_compare.pb.go pkg/mimirpb/mimir_compare.pb.go
-	mv pkg/mimirpb/cortexpb/mimir_equal.pb.go pkg/mimirpb/mimir_equal.pb.go
-	mv pkg/mimirpb/cortexpb/mimir_reflect.pb.go pkg/mimirpb/mimir_reflect.pb.go
+	mv pkg/mimirpb/cortexpb/mimir_util.pb.go pkg/mimirpb/mimir_util.pb.go
 	rmdir pkg/mimirpb/cortexpb
 else
 	@echo "Warning: generating files has been disabled, but the following files need to be regenerated: $@"
@@ -409,8 +394,7 @@ endif
 # lines up with the target directory when --out points one level up.
 pkg/distributor/ha_tracker.pb.go \
 pkg/distributor/ha_tracker_compare.pb.go \
-pkg/distributor/ha_tracker_equal.pb.go \
-pkg/distributor/ha_tracker_reflect.pb.go &: pkg/distributor/ha_tracker.proto
+pkg/distributor/ha_tracker_util.pb.go &: pkg/distributor/ha_tracker.proto
 ifeq ($(GENERATE_FILES),true)
 	wiresmith --proto_path=./pkg/distributor --out=./pkg --module=github.com/grafana/mimir pkg/distributor/ha_tracker.proto
 else
@@ -424,8 +408,7 @@ endif
 # wiresmith/options.proto import via ./proto-include.
 pkg/querier/stats/stats.pb.go \
 pkg/querier/stats/stats_compare.pb.go \
-pkg/querier/stats/stats_equal.pb.go \
-pkg/querier/stats/stats_reflect.pb.go &: pkg/querier/stats/stats.proto
+pkg/querier/stats/stats_util.pb.go &: pkg/querier/stats/stats.proto
 ifeq ($(GENERATE_FILES),true)
 	wiresmith --proto_path=./pkg/querier/stats --out=./pkg/querier --module=github.com/grafana/mimir pkg/querier/stats/stats.proto
 else
@@ -446,8 +429,7 @@ endif
 # import via ./proto-include.
 pkg/ruler/rulespb/rules.pb.go \
 pkg/ruler/rulespb/rules_compare.pb.go \
-pkg/ruler/rulespb/rules_equal.pb.go \
-pkg/ruler/rulespb/rules_reflect.pb.go &: pkg/ruler/rulespb/rules.proto pkg/mimirpb/mimir.proto
+pkg/ruler/rulespb/rules_util.pb.go &: pkg/ruler/rulespb/rules.proto pkg/mimirpb/mimir.proto
 ifeq ($(GENERATE_FILES),true)
 	rm -rf .rules-stage .rules-out
 	mkdir -p .rules-stage/github.com/grafana/mimir/pkg/mimirpb .rules-stage/rulespb
@@ -456,8 +438,7 @@ ifeq ($(GENERATE_FILES),true)
 	wiresmith --proto_path=./.rules-stage --out=./.rules-out --module=github.com/grafana/mimir -M github.com/grafana/mimir/pkg/mimirpb/mimir.proto=github.com/grafana/mimir/pkg/mimirpb ./.rules-stage/rulespb/rules.proto
 	cp .rules-out/rulespb/rules.pb.go pkg/ruler/rulespb/rules.pb.go
 	cp .rules-out/rulespb/rules_compare.pb.go pkg/ruler/rulespb/rules_compare.pb.go
-	cp .rules-out/rulespb/rules_equal.pb.go pkg/ruler/rulespb/rules_equal.pb.go
-	cp .rules-out/rulespb/rules_reflect.pb.go pkg/ruler/rulespb/rules_reflect.pb.go
+	cp .rules-out/rulespb/rules_util.pb.go pkg/ruler/rulespb/rules_util.pb.go
 	rm -rf .rules-stage .rules-out
 else
 	@echo "Warning: generating files has been disabled, but the following files need to be regenerated: $@"

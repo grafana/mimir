@@ -7,23 +7,125 @@ import (
 	"bytes"
 )
 
-// Per-message Compare() methods for github.com/grafana/mimir/pkg/streamingpromql/planning/plan.proto.
+// Per-message value-comparison methods (Equal + Compare) for github.com/grafana/mimir/pkg/streamingpromql/planning/plan.proto.
 //
-// Compare returns -1/0/+1 like bytes.Compare with the gogoproto.compare
-// nil/wrong-type preamble. Always emitted on every message; callers that
-// don't use it can rely on Go's dead-code elimination to drop the body.
+// Equal returns bool; Compare returns -1/0/+1 like bytes.Compare with the
+// gogoproto.compare nil/wrong-type preamble. Both are emitted on every
+// message; callers that don't use one can rely on Go's dead-code
+// elimination to drop the body.
 //
-// Why a separate file? Compare is never called from Marshal/Unmarshal/Size,
-// but emitting it next to those hot functions in the main .pb.go pushed
-// them onto different cache sets and produced a measured ~9% geomean
+// Why a separate file? Equal/Compare are never called from Marshal/Unmarshal/
+// Size, but emitting them next to those hot functions in the main .pb.go
+// pushed them onto different cache sets and produced a measured ~9% geomean
 // regression on OTel benchmarks (UnmarshalMap +14%, MarshalSingleSpan +13%)
-// purely from icache / iTLB / BTB pressure. Splitting Compare into its own
+// purely from icache / iTLB / BTB pressure. Splitting them into their own
 // compilation unit gives the linker freedom to place the cold half away
-// from the hot half — same trick the _reflect.pb.go split uses.
+// from the hot half — same trick the _util.pb.go split uses.
 //
-// See compiler/generator/emit_compare.go for the full rationale and the
-// benchmark methodology. DO NOT inline this file's contents back into
-// the main .pb.go without re-measuring.
+// See compiler/generator/emit_compare.go / emit_equal.go for the full
+// rationale and the benchmark methodology. DO NOT inline this file's
+// contents back into the main .pb.go without re-measuring.
+
+func (this *EncodedQueryPlan) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*EncodedQueryPlan)
+	if !ok {
+		that2, ok := that.(EncodedQueryPlan)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if !this.TimeRange.Equal(that1.TimeRange) {
+		return false
+	}
+	if len(this.Nodes) != len(that1.Nodes) {
+		return false
+	}
+	for i := range this.Nodes {
+		if (this.Nodes[i] == nil) != (that1.Nodes[i] == nil) {
+			return false
+		}
+		if this.Nodes[i] != nil && !this.Nodes[i].Equal(that1.Nodes[i]) {
+			return false
+		}
+	}
+	if this.RootNode != that1.RootNode {
+		return false
+	}
+	if this.OriginalExpression != that1.OriginalExpression {
+		return false
+	}
+	if this.EnableDelayedNameRemoval != that1.EnableDelayedNameRemoval {
+		return false
+	}
+	if this.Version != that1.Version {
+		return false
+	}
+	if this.LookbackDelta != that1.LookbackDelta {
+		return false
+	}
+	return true
+}
+
+func (this *EncodedNode) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*EncodedNode)
+	if !ok {
+		that2, ok := that.(EncodedNode)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if this.NodeType != that1.NodeType {
+		return false
+	}
+	if !bytes.Equal(this.Details, that1.Details) {
+		return false
+	}
+	if len(this.Children) != len(that1.Children) {
+		return false
+	}
+	for i := range this.Children {
+		if this.Children[i] != that1.Children[i] {
+			return false
+		}
+	}
+	if this.Type != that1.Type {
+		return false
+	}
+	if this.Description != that1.Description {
+		return false
+	}
+	if len(this.ChildrenLabels) != len(that1.ChildrenLabels) {
+		return false
+	}
+	for i := range this.ChildrenLabels {
+		if this.ChildrenLabels[i] != that1.ChildrenLabels[i] {
+			return false
+		}
+	}
+	return true
+}
 
 func (this *EncodedQueryPlan) Compare(that interface{}) int {
 	if that == nil {

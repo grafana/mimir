@@ -33,12 +33,6 @@ func (m *RemoteExecutionGroupDetails) Reset() {
 	*m = RemoteExecutionGroupDetails{}
 }
 func (*RemoteExecutionGroupDetails) ProtoMessage() {}
-func (m *RemoteExecutionGroupDetails) String() string {
-	if m == nil {
-		return "<nil>"
-	}
-	return fmt.Sprintf("%v", *m)
-}
 
 func (m *RemoteExecutionConsumerDetails) Reset() {
 	if m == nil {
@@ -47,12 +41,6 @@ func (m *RemoteExecutionConsumerDetails) Reset() {
 	*m = RemoteExecutionConsumerDetails{}
 }
 func (*RemoteExecutionConsumerDetails) ProtoMessage() {}
-func (m *RemoteExecutionConsumerDetails) String() string {
-	if m == nil {
-		return "<nil>"
-	}
-	return fmt.Sprintf("%v", *m)
-}
 
 func (m *RemoteExecutionGroupDetails) GetEagerLoad() bool {
 	if m != nil {

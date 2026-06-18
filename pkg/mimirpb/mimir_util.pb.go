@@ -4,21 +4,30 @@
 package mimirpb
 
 import (
+	"fmt"
 	"github.com/grafana/wiresmith/protohelpers"
 	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/runtime/protoimpl"
 	"reflect"
+	"slices"
+	"strconv"
+	"strings"
 	"unsafe"
 )
 
-// Reflection / registration glue for cortexpb/mimir.proto.
+// Cold companion utilities for cortexpb/mimir.proto.
 //
-// This file holds the per-message ProtoReflect() methods, the per-enum
-// Descriptor()/Type()/Number() methods, the embedded FileDescriptorProto
-// blob, the file_*_msgTypes / file_*_enumTypes arrays, and the init()
-// that registers everything with protoregistry.GlobalFiles and
-// protoregistry.GlobalTypes. None of these are called on the marshal /
-// unmarshal / size hot path.
+// This file holds two cold concerns merged into one compilation unit:
+//
+//   - Reflection / registration glue: the per-message ProtoReflect()
+//     methods, the per-enum Descriptor()/Type()/Number() methods, the
+//     embedded FileDescriptorProto blob, the file_*_msgTypes /
+//     file_*_enumTypes arrays, and the init() that registers everything
+//     with protoregistry.GlobalFiles and protoregistry.GlobalTypes.
+//   - The per-message String() debug dumps (hand-rolled, deterministic,
+//     non-reflection — see compiler/generator/emit_string.go).
+//
+// None of these are called on the marshal / unmarshal / size hot path.
 //
 // Why a separate file? Putting this code (plus its descriptorpb /
 // protoreflect / protoimpl imports — ~64KB of descriptorpb alone, ~377KB
@@ -29,11 +38,1220 @@ import (
 // in the same compilation unit shifted hot functions onto different
 // cache sets and pushed them ~131KB further into the binary. Emitting
 // the cold half here, in its own .o, lets the linker place it away
-// from the hot half and recovers that throughput.
+// from the hot half and recovers that throughput. reflect and String()
+// are both cold and were already split out, so merging them (cold→cold)
+// preserves the rationale while halving the companion-file count.
 //
 // See compiler/generator/emit_registration.go for the full rationale
 // and the benchmark methodology. DO NOT inline this file's contents
 // back into the main .pb.go without re-measuring.
+
+func (m *WriteRequest) String() string {
+	if m == nil {
+		return "<nil>"
+	}
+	var b strings.Builder
+	for _, e := range m.Timeseries {
+		b.WriteString("timeseries: ")
+		fmt.Fprintf(&b, "%v", e)
+		b.WriteString(" ")
+	}
+	if m.Source != 0 {
+		b.WriteString("Source: ")
+		b.WriteString(m.Source.String())
+		b.WriteString(" ")
+	}
+	for _, e := range m.Metadata {
+		b.WriteString("metadata: ")
+		b.WriteString("{")
+		b.WriteString(e.String())
+		b.WriteString("}")
+		b.WriteString(" ")
+	}
+	for _, e := range m.SymbolsRW2 {
+		b.WriteString("symbolsRW2: ")
+		b.WriteString(strconv.Quote(e))
+		b.WriteString(" ")
+	}
+	for _, e := range m.TimeseriesRW2 {
+		b.WriteString("timeseriesRW2: ")
+		b.WriteString("{")
+		b.WriteString(e.String())
+		b.WriteString("}")
+		b.WriteString(" ")
+	}
+	if m.SkipLabelValidation {
+		b.WriteString("skip_label_validation: ")
+		fmt.Fprintf(&b, "%v", m.SkipLabelValidation)
+		b.WriteString(" ")
+	}
+	if m.SkipLabelCountValidation {
+		b.WriteString("skip_label_count_validation: ")
+		fmt.Fprintf(&b, "%v", m.SkipLabelCountValidation)
+		b.WriteString(" ")
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func (m *WriteResponse) String() string {
+	if m == nil {
+		return "<nil>"
+	}
+	var b strings.Builder
+	return strings.TrimSpace(b.String())
+}
+
+func (m *ErrorDetails) String() string {
+	if m == nil {
+		return "<nil>"
+	}
+	var b strings.Builder
+	if m.Cause != 0 {
+		b.WriteString("Cause: ")
+		b.WriteString(m.Cause.String())
+		b.WriteString(" ")
+	}
+	if m.Soft {
+		b.WriteString("Soft: ")
+		fmt.Fprintf(&b, "%v", m.Soft)
+		b.WriteString(" ")
+	}
+	if m.RejectedSamples != 0 {
+		b.WriteString("RejectedSamples: ")
+		fmt.Fprintf(&b, "%v", m.RejectedSamples)
+		b.WriteString(" ")
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func (m *TimeSeries) String() string {
+	if m == nil {
+		return "<nil>"
+	}
+	var b strings.Builder
+	for _, e := range m.Labels {
+		b.WriteString("labels: ")
+		fmt.Fprintf(&b, "%v", e)
+		b.WriteString(" ")
+	}
+	for _, e := range m.Samples {
+		b.WriteString("samples: ")
+		b.WriteString("{")
+		b.WriteString(e.String())
+		b.WriteString("}")
+		b.WriteString(" ")
+	}
+	for _, e := range m.Exemplars {
+		b.WriteString("exemplars: ")
+		b.WriteString("{")
+		b.WriteString(e.String())
+		b.WriteString("}")
+		b.WriteString(" ")
+	}
+	for _, e := range m.Histograms {
+		b.WriteString("histograms: ")
+		b.WriteString("{")
+		b.WriteString(e.String())
+		b.WriteString("}")
+		b.WriteString(" ")
+	}
+	if m.CreatedTimestamp != 0 {
+		b.WriteString("created_timestamp: ")
+		fmt.Fprintf(&b, "%v", m.CreatedTimestamp)
+		b.WriteString(" ")
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func (m *LabelPair) String() string {
+	if m == nil {
+		return "<nil>"
+	}
+	var b strings.Builder
+	if len(m.Name) > 0 {
+		b.WriteString("name: ")
+		b.WriteString(strconv.Quote(string(m.Name)))
+		b.WriteString(" ")
+	}
+	if len(m.Value) > 0 {
+		b.WriteString("value: ")
+		b.WriteString(strconv.Quote(string(m.Value)))
+		b.WriteString(" ")
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func (m *Sample) String() string {
+	if m == nil {
+		return "<nil>"
+	}
+	var b strings.Builder
+	if m.Value != 0 {
+		b.WriteString("value: ")
+		fmt.Fprintf(&b, "%v", m.Value)
+		b.WriteString(" ")
+	}
+	if m.TimestampMs != 0 {
+		b.WriteString("timestamp_ms: ")
+		fmt.Fprintf(&b, "%v", m.TimestampMs)
+		b.WriteString(" ")
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func (m *MetricMetadata) String() string {
+	if m == nil {
+		return "<nil>"
+	}
+	var b strings.Builder
+	if m.Type != 0 {
+		b.WriteString("type: ")
+		b.WriteString(m.Type.String())
+		b.WriteString(" ")
+	}
+	if len(m.MetricFamilyName) > 0 {
+		b.WriteString("metric_family_name: ")
+		b.WriteString(strconv.Quote(m.MetricFamilyName))
+		b.WriteString(" ")
+	}
+	if len(m.Help) > 0 {
+		b.WriteString("help: ")
+		b.WriteString(strconv.Quote(m.Help))
+		b.WriteString(" ")
+	}
+	if len(m.Unit) > 0 {
+		b.WriteString("unit: ")
+		b.WriteString(strconv.Quote(m.Unit))
+		b.WriteString(" ")
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func (m *Metric) String() string {
+	if m == nil {
+		return "<nil>"
+	}
+	var b strings.Builder
+	for _, e := range m.Labels {
+		b.WriteString("labels: ")
+		fmt.Fprintf(&b, "%v", e)
+		b.WriteString(" ")
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func (m *Exemplar) String() string {
+	if m == nil {
+		return "<nil>"
+	}
+	var b strings.Builder
+	for _, e := range m.Labels {
+		b.WriteString("labels: ")
+		fmt.Fprintf(&b, "%v", e)
+		b.WriteString(" ")
+	}
+	if m.Value != 0 {
+		b.WriteString("value: ")
+		fmt.Fprintf(&b, "%v", m.Value)
+		b.WriteString(" ")
+	}
+	if m.TimestampMs != 0 {
+		b.WriteString("timestamp_ms: ")
+		fmt.Fprintf(&b, "%v", m.TimestampMs)
+		b.WriteString(" ")
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func (m *Histogram) String() string {
+	if m == nil {
+		return "<nil>"
+	}
+	var b strings.Builder
+	switch v := m.Count.(type) {
+	case *Histogram_CountInt:
+		b.WriteString("count_int: ")
+		fmt.Fprintf(&b, "%v", v.CountInt)
+		b.WriteString(" ")
+	case *Histogram_CountFloat:
+		b.WriteString("count_float: ")
+		fmt.Fprintf(&b, "%v", v.CountFloat)
+		b.WriteString(" ")
+	}
+	if m.Sum != 0 {
+		b.WriteString("sum: ")
+		fmt.Fprintf(&b, "%v", m.Sum)
+		b.WriteString(" ")
+	}
+	if m.Schema != 0 {
+		b.WriteString("schema: ")
+		fmt.Fprintf(&b, "%v", m.Schema)
+		b.WriteString(" ")
+	}
+	if m.ZeroThreshold != 0 {
+		b.WriteString("zero_threshold: ")
+		fmt.Fprintf(&b, "%v", m.ZeroThreshold)
+		b.WriteString(" ")
+	}
+	switch v := m.ZeroCount.(type) {
+	case *Histogram_ZeroCountInt:
+		b.WriteString("zero_count_int: ")
+		fmt.Fprintf(&b, "%v", v.ZeroCountInt)
+		b.WriteString(" ")
+	case *Histogram_ZeroCountFloat:
+		b.WriteString("zero_count_float: ")
+		fmt.Fprintf(&b, "%v", v.ZeroCountFloat)
+		b.WriteString(" ")
+	}
+	for _, e := range m.NegativeSpans {
+		b.WriteString("negative_spans: ")
+		b.WriteString("{")
+		b.WriteString(e.String())
+		b.WriteString("}")
+		b.WriteString(" ")
+	}
+	for _, e := range m.NegativeDeltas {
+		b.WriteString("negative_deltas: ")
+		fmt.Fprintf(&b, "%v", e)
+		b.WriteString(" ")
+	}
+	for _, e := range m.NegativeCounts {
+		b.WriteString("negative_counts: ")
+		fmt.Fprintf(&b, "%v", e)
+		b.WriteString(" ")
+	}
+	for _, e := range m.PositiveSpans {
+		b.WriteString("positive_spans: ")
+		b.WriteString("{")
+		b.WriteString(e.String())
+		b.WriteString("}")
+		b.WriteString(" ")
+	}
+	for _, e := range m.PositiveDeltas {
+		b.WriteString("positive_deltas: ")
+		fmt.Fprintf(&b, "%v", e)
+		b.WriteString(" ")
+	}
+	for _, e := range m.PositiveCounts {
+		b.WriteString("positive_counts: ")
+		fmt.Fprintf(&b, "%v", e)
+		b.WriteString(" ")
+	}
+	if m.ResetHint != 0 {
+		b.WriteString("reset_hint: ")
+		b.WriteString(m.ResetHint.String())
+		b.WriteString(" ")
+	}
+	if m.Timestamp != 0 {
+		b.WriteString("timestamp: ")
+		fmt.Fprintf(&b, "%v", m.Timestamp)
+		b.WriteString(" ")
+	}
+	for _, e := range m.CustomValues {
+		b.WriteString("custom_values: ")
+		fmt.Fprintf(&b, "%v", e)
+		b.WriteString(" ")
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func (m *FloatHistogram) String() string {
+	if m == nil {
+		return "<nil>"
+	}
+	var b strings.Builder
+	if m.Count != 0 {
+		b.WriteString("count: ")
+		fmt.Fprintf(&b, "%v", m.Count)
+		b.WriteString(" ")
+	}
+	if m.Sum != 0 {
+		b.WriteString("sum: ")
+		fmt.Fprintf(&b, "%v", m.Sum)
+		b.WriteString(" ")
+	}
+	if m.Schema != 0 {
+		b.WriteString("schema: ")
+		fmt.Fprintf(&b, "%v", m.Schema)
+		b.WriteString(" ")
+	}
+	if m.ZeroThreshold != 0 {
+		b.WriteString("zero_threshold: ")
+		fmt.Fprintf(&b, "%v", m.ZeroThreshold)
+		b.WriteString(" ")
+	}
+	if m.ZeroCount != 0 {
+		b.WriteString("zero_count: ")
+		fmt.Fprintf(&b, "%v", m.ZeroCount)
+		b.WriteString(" ")
+	}
+	for _, e := range m.NegativeSpans {
+		b.WriteString("negative_spans: ")
+		b.WriteString("{")
+		b.WriteString(e.String())
+		b.WriteString("}")
+		b.WriteString(" ")
+	}
+	for _, e := range m.NegativeBuckets {
+		b.WriteString("negative_buckets: ")
+		fmt.Fprintf(&b, "%v", e)
+		b.WriteString(" ")
+	}
+	for _, e := range m.PositiveSpans {
+		b.WriteString("positive_spans: ")
+		b.WriteString("{")
+		b.WriteString(e.String())
+		b.WriteString("}")
+		b.WriteString(" ")
+	}
+	for _, e := range m.PositiveBuckets {
+		b.WriteString("positive_buckets: ")
+		fmt.Fprintf(&b, "%v", e)
+		b.WriteString(" ")
+	}
+	if m.CounterResetHint != 0 {
+		b.WriteString("counter_reset_hint: ")
+		fmt.Fprintf(&b, "%v", m.CounterResetHint)
+		b.WriteString(" ")
+	}
+	for _, e := range m.CustomValues {
+		b.WriteString("custom_values: ")
+		fmt.Fprintf(&b, "%v", e)
+		b.WriteString(" ")
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func (m *BucketSpan) String() string {
+	if m == nil {
+		return "<nil>"
+	}
+	var b strings.Builder
+	if m.Offset != 0 {
+		b.WriteString("offset: ")
+		fmt.Fprintf(&b, "%v", m.Offset)
+		b.WriteString(" ")
+	}
+	if m.Length != 0 {
+		b.WriteString("length: ")
+		fmt.Fprintf(&b, "%v", m.Length)
+		b.WriteString(" ")
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func (m *FloatHistogramPair) String() string {
+	if m == nil {
+		return "<nil>"
+	}
+	var b strings.Builder
+	if m.Histogram != nil {
+		b.WriteString("histogram: ")
+		b.WriteString("{")
+		b.WriteString(m.Histogram.String())
+		b.WriteString("}")
+		b.WriteString(" ")
+	}
+	if m.TimestampMs != 0 {
+		b.WriteString("timestamp_ms: ")
+		fmt.Fprintf(&b, "%v", m.TimestampMs)
+		b.WriteString(" ")
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func (m *SampleHistogram) String() string {
+	if m == nil {
+		return "<nil>"
+	}
+	var b strings.Builder
+	if m.Count != 0 {
+		b.WriteString("count: ")
+		fmt.Fprintf(&b, "%v", m.Count)
+		b.WriteString(" ")
+	}
+	if m.Sum != 0 {
+		b.WriteString("sum: ")
+		fmt.Fprintf(&b, "%v", m.Sum)
+		b.WriteString(" ")
+	}
+	for _, e := range m.Buckets {
+		b.WriteString("buckets: ")
+		b.WriteString("{")
+		b.WriteString(e.String())
+		b.WriteString("}")
+		b.WriteString(" ")
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func (m *HistogramBucket) String() string {
+	if m == nil {
+		return "<nil>"
+	}
+	var b strings.Builder
+	if m.Boundaries != 0 {
+		b.WriteString("boundaries: ")
+		fmt.Fprintf(&b, "%v", m.Boundaries)
+		b.WriteString(" ")
+	}
+	if m.Lower != 0 {
+		b.WriteString("lower: ")
+		fmt.Fprintf(&b, "%v", m.Lower)
+		b.WriteString(" ")
+	}
+	if m.Upper != 0 {
+		b.WriteString("upper: ")
+		fmt.Fprintf(&b, "%v", m.Upper)
+		b.WriteString(" ")
+	}
+	if m.Count != 0 {
+		b.WriteString("count: ")
+		fmt.Fprintf(&b, "%v", m.Count)
+		b.WriteString(" ")
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func (m *SampleHistogramPair) String() string {
+	if m == nil {
+		return "<nil>"
+	}
+	var b strings.Builder
+	if m.Histogram != nil {
+		b.WriteString("histogram: ")
+		b.WriteString("{")
+		b.WriteString(m.Histogram.String())
+		b.WriteString("}")
+		b.WriteString(" ")
+	}
+	if m.Timestamp != 0 {
+		b.WriteString("timestamp: ")
+		fmt.Fprintf(&b, "%v", m.Timestamp)
+		b.WriteString(" ")
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func (m *QueryResponse) String() string {
+	if m == nil {
+		return "<nil>"
+	}
+	var b strings.Builder
+	if m.Status != 0 {
+		b.WriteString("status: ")
+		b.WriteString(m.Status.String())
+		b.WriteString(" ")
+	}
+	if m.ErrorType != 0 {
+		b.WriteString("error_type: ")
+		b.WriteString(m.ErrorType.String())
+		b.WriteString(" ")
+	}
+	if len(m.Error) > 0 {
+		b.WriteString("error: ")
+		b.WriteString(strconv.Quote(m.Error))
+		b.WriteString(" ")
+	}
+	switch v := m.Data.(type) {
+	case *QueryResponse_String:
+		b.WriteString("string: ")
+		b.WriteString("{")
+		b.WriteString(v.String.String())
+		b.WriteString("}")
+		b.WriteString(" ")
+	case *QueryResponse_Vector:
+		b.WriteString("vector: ")
+		b.WriteString("{")
+		b.WriteString(v.Vector.String())
+		b.WriteString("}")
+		b.WriteString(" ")
+	case *QueryResponse_Scalar:
+		b.WriteString("scalar: ")
+		b.WriteString("{")
+		b.WriteString(v.Scalar.String())
+		b.WriteString("}")
+		b.WriteString(" ")
+	case *QueryResponse_Matrix:
+		b.WriteString("matrix: ")
+		b.WriteString("{")
+		b.WriteString(v.Matrix.String())
+		b.WriteString("}")
+		b.WriteString(" ")
+	}
+	for _, e := range m.Warnings {
+		b.WriteString("warnings: ")
+		b.WriteString(strconv.Quote(e))
+		b.WriteString(" ")
+	}
+	for _, e := range m.Infos {
+		b.WriteString("infos: ")
+		b.WriteString(strconv.Quote(e))
+		b.WriteString(" ")
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func (m *StringData) String() string {
+	if m == nil {
+		return "<nil>"
+	}
+	var b strings.Builder
+	if len(m.Value) > 0 {
+		b.WriteString("value: ")
+		b.WriteString(strconv.Quote(m.Value))
+		b.WriteString(" ")
+	}
+	if m.TimestampMs != 0 {
+		b.WriteString("timestamp_ms: ")
+		fmt.Fprintf(&b, "%v", m.TimestampMs)
+		b.WriteString(" ")
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func (m *VectorData) String() string {
+	if m == nil {
+		return "<nil>"
+	}
+	var b strings.Builder
+	for _, e := range m.Samples {
+		b.WriteString("samples: ")
+		b.WriteString("{")
+		b.WriteString(e.String())
+		b.WriteString("}")
+		b.WriteString(" ")
+	}
+	for _, e := range m.Histograms {
+		b.WriteString("histograms: ")
+		b.WriteString("{")
+		b.WriteString(e.String())
+		b.WriteString("}")
+		b.WriteString(" ")
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func (m *VectorSample) String() string {
+	if m == nil {
+		return "<nil>"
+	}
+	var b strings.Builder
+	for _, e := range m.Metric {
+		b.WriteString("metric: ")
+		b.WriteString(strconv.Quote(e))
+		b.WriteString(" ")
+	}
+	if m.Value != 0 {
+		b.WriteString("value: ")
+		fmt.Fprintf(&b, "%v", m.Value)
+		b.WriteString(" ")
+	}
+	if m.TimestampMs != 0 {
+		b.WriteString("timestamp_ms: ")
+		fmt.Fprintf(&b, "%v", m.TimestampMs)
+		b.WriteString(" ")
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func (m *VectorHistogram) String() string {
+	if m == nil {
+		return "<nil>"
+	}
+	var b strings.Builder
+	for _, e := range m.Metric {
+		b.WriteString("metric: ")
+		b.WriteString(strconv.Quote(e))
+		b.WriteString(" ")
+	}
+	if m.Histogram.Size() > 0 {
+		b.WriteString("histogram: ")
+		b.WriteString("{")
+		b.WriteString(m.Histogram.String())
+		b.WriteString("}")
+		b.WriteString(" ")
+	}
+	if m.TimestampMs != 0 {
+		b.WriteString("timestamp_ms: ")
+		fmt.Fprintf(&b, "%v", m.TimestampMs)
+		b.WriteString(" ")
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func (m *ScalarData) String() string {
+	if m == nil {
+		return "<nil>"
+	}
+	var b strings.Builder
+	if m.Value != 0 {
+		b.WriteString("value: ")
+		fmt.Fprintf(&b, "%v", m.Value)
+		b.WriteString(" ")
+	}
+	if m.TimestampMs != 0 {
+		b.WriteString("timestamp_ms: ")
+		fmt.Fprintf(&b, "%v", m.TimestampMs)
+		b.WriteString(" ")
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func (m *MatrixData) String() string {
+	if m == nil {
+		return "<nil>"
+	}
+	var b strings.Builder
+	for _, e := range m.Series {
+		b.WriteString("series: ")
+		b.WriteString("{")
+		b.WriteString(e.String())
+		b.WriteString("}")
+		b.WriteString(" ")
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func (m *MatrixSeries) String() string {
+	if m == nil {
+		return "<nil>"
+	}
+	var b strings.Builder
+	for _, e := range m.Metric {
+		b.WriteString("metric: ")
+		b.WriteString(strconv.Quote(e))
+		b.WriteString(" ")
+	}
+	for _, e := range m.Samples {
+		b.WriteString("samples: ")
+		b.WriteString("{")
+		b.WriteString(e.String())
+		b.WriteString("}")
+		b.WriteString(" ")
+	}
+	for _, e := range m.Histograms {
+		b.WriteString("histograms: ")
+		b.WriteString("{")
+		b.WriteString(e.String())
+		b.WriteString("}")
+		b.WriteString(" ")
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func (m *WriteRequestRW2) String() string {
+	if m == nil {
+		return "<nil>"
+	}
+	var b strings.Builder
+	for _, e := range m.Symbols {
+		b.WriteString("symbols: ")
+		b.WriteString(strconv.Quote(e))
+		b.WriteString(" ")
+	}
+	for _, e := range m.Timeseries {
+		b.WriteString("timeseries: ")
+		b.WriteString("{")
+		b.WriteString(e.String())
+		b.WriteString("}")
+		b.WriteString(" ")
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func (m *TimeSeriesRW2) String() string {
+	if m == nil {
+		return "<nil>"
+	}
+	var b strings.Builder
+	for _, e := range m.LabelsRefs {
+		b.WriteString("labels_refs: ")
+		fmt.Fprintf(&b, "%v", e)
+		b.WriteString(" ")
+	}
+	for _, e := range m.Samples {
+		b.WriteString("samples: ")
+		b.WriteString("{")
+		b.WriteString(e.String())
+		b.WriteString("}")
+		b.WriteString(" ")
+	}
+	for _, e := range m.Histograms {
+		b.WriteString("histograms: ")
+		b.WriteString("{")
+		b.WriteString(e.String())
+		b.WriteString("}")
+		b.WriteString(" ")
+	}
+	for _, e := range m.Exemplars {
+		b.WriteString("exemplars: ")
+		b.WriteString("{")
+		b.WriteString(e.String())
+		b.WriteString("}")
+		b.WriteString(" ")
+	}
+	if m.Metadata.Size() > 0 {
+		b.WriteString("metadata: ")
+		b.WriteString("{")
+		b.WriteString(m.Metadata.String())
+		b.WriteString("}")
+		b.WriteString(" ")
+	}
+	if m.CreatedTimestamp != 0 {
+		b.WriteString("created_timestamp: ")
+		fmt.Fprintf(&b, "%v", m.CreatedTimestamp)
+		b.WriteString(" ")
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func (m *ExemplarRW2) String() string {
+	if m == nil {
+		return "<nil>"
+	}
+	var b strings.Builder
+	for _, e := range m.LabelsRefs {
+		b.WriteString("labels_refs: ")
+		fmt.Fprintf(&b, "%v", e)
+		b.WriteString(" ")
+	}
+	if m.Value != 0 {
+		b.WriteString("value: ")
+		fmt.Fprintf(&b, "%v", m.Value)
+		b.WriteString(" ")
+	}
+	if m.Timestamp != 0 {
+		b.WriteString("timestamp: ")
+		fmt.Fprintf(&b, "%v", m.Timestamp)
+		b.WriteString(" ")
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func (m *MetadataRW2) String() string {
+	if m == nil {
+		return "<nil>"
+	}
+	var b strings.Builder
+	if m.Type != 0 {
+		b.WriteString("type: ")
+		b.WriteString(m.Type.String())
+		b.WriteString(" ")
+	}
+	if m.HelpRef != 0 {
+		b.WriteString("help_ref: ")
+		fmt.Fprintf(&b, "%v", m.HelpRef)
+		b.WriteString(" ")
+	}
+	if m.UnitRef != 0 {
+		b.WriteString("unit_ref: ")
+		fmt.Fprintf(&b, "%v", m.UnitRef)
+		b.WriteString(" ")
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func (m *WriteRequest) Clone() *WriteRequest {
+	if m == nil {
+		return nil
+	}
+	out := &WriteRequest{}
+	out.Timeseries = slices.Clone(m.Timeseries)
+	out.Source = m.Source
+	out.Metadata = slices.Clone(m.Metadata)
+	for i := range out.Metadata {
+		out.Metadata[i] = out.Metadata[i].Clone()
+	}
+	out.SymbolsRW2 = slices.Clone(m.SymbolsRW2)
+	out.TimeseriesRW2 = slices.Clone(m.TimeseriesRW2)
+	for i := range out.TimeseriesRW2 {
+		out.TimeseriesRW2[i] = *m.TimeseriesRW2[i].Clone()
+	}
+	out.SkipLabelValidation = m.SkipLabelValidation
+	out.SkipLabelCountValidation = m.SkipLabelCountValidation
+	return out
+}
+
+func (m *WriteResponse) Clone() *WriteResponse {
+	if m == nil {
+		return nil
+	}
+	out := &WriteResponse{}
+	return out
+}
+
+func (m *ErrorDetails) Clone() *ErrorDetails {
+	if m == nil {
+		return nil
+	}
+	out := &ErrorDetails{}
+	out.Cause = m.Cause
+	out.Soft = m.Soft
+	out.RejectedSamples = m.RejectedSamples
+	return out
+}
+
+func (m *TimeSeries) Clone() *TimeSeries {
+	if m == nil {
+		return nil
+	}
+	out := &TimeSeries{}
+	out.Labels = slices.Clone(m.Labels)
+	out.Samples = slices.Clone(m.Samples)
+	for i := range out.Samples {
+		out.Samples[i] = *m.Samples[i].Clone()
+	}
+	out.Exemplars = slices.Clone(m.Exemplars)
+	for i := range out.Exemplars {
+		out.Exemplars[i] = *m.Exemplars[i].Clone()
+	}
+	out.Histograms = slices.Clone(m.Histograms)
+	for i := range out.Histograms {
+		out.Histograms[i] = *m.Histograms[i].Clone()
+	}
+	out.CreatedTimestamp = m.CreatedTimestamp
+	return out
+}
+
+func (m *LabelPair) Clone() *LabelPair {
+	if m == nil {
+		return nil
+	}
+	out := &LabelPair{}
+	out.Name = slices.Clone(m.Name)
+	out.Value = slices.Clone(m.Value)
+	return out
+}
+
+func (m *Sample) Clone() *Sample {
+	if m == nil {
+		return nil
+	}
+	out := &Sample{}
+	out.TimestampMs = m.TimestampMs
+	out.Value = m.Value
+	return out
+}
+
+func (m *MetricMetadata) Clone() *MetricMetadata {
+	if m == nil {
+		return nil
+	}
+	out := &MetricMetadata{}
+	out.Type = m.Type
+	out.MetricFamilyName = m.MetricFamilyName
+	out.Help = m.Help
+	out.Unit = m.Unit
+	return out
+}
+
+func (m *Metric) Clone() *Metric {
+	if m == nil {
+		return nil
+	}
+	out := &Metric{}
+	out.Labels = slices.Clone(m.Labels)
+	return out
+}
+
+func (m *Exemplar) Clone() *Exemplar {
+	if m == nil {
+		return nil
+	}
+	out := &Exemplar{}
+	out.Labels = slices.Clone(m.Labels)
+	out.Value = m.Value
+	out.TimestampMs = m.TimestampMs
+	return out
+}
+
+func (m *Histogram) Clone() *Histogram {
+	if m == nil {
+		return nil
+	}
+	out := &Histogram{}
+	switch v := m.Count.(type) {
+	case *Histogram_CountInt:
+		out.Count = &Histogram_CountInt{CountInt: v.CountInt}
+	case *Histogram_CountFloat:
+		out.Count = &Histogram_CountFloat{CountFloat: v.CountFloat}
+	}
+	out.Sum = m.Sum
+	out.Schema = m.Schema
+	out.ZeroThreshold = m.ZeroThreshold
+	switch v := m.ZeroCount.(type) {
+	case *Histogram_ZeroCountInt:
+		out.ZeroCount = &Histogram_ZeroCountInt{ZeroCountInt: v.ZeroCountInt}
+	case *Histogram_ZeroCountFloat:
+		out.ZeroCount = &Histogram_ZeroCountFloat{ZeroCountFloat: v.ZeroCountFloat}
+	}
+	out.NegativeSpans = slices.Clone(m.NegativeSpans)
+	for i := range out.NegativeSpans {
+		out.NegativeSpans[i] = *m.NegativeSpans[i].Clone()
+	}
+	out.NegativeDeltas = slices.Clone(m.NegativeDeltas)
+	out.NegativeCounts = slices.Clone(m.NegativeCounts)
+	out.PositiveSpans = slices.Clone(m.PositiveSpans)
+	for i := range out.PositiveSpans {
+		out.PositiveSpans[i] = *m.PositiveSpans[i].Clone()
+	}
+	out.PositiveDeltas = slices.Clone(m.PositiveDeltas)
+	out.PositiveCounts = slices.Clone(m.PositiveCounts)
+	out.ResetHint = m.ResetHint
+	out.Timestamp = m.Timestamp
+	out.CustomValues = slices.Clone(m.CustomValues)
+	return out
+}
+
+func (m *FloatHistogram) Clone() *FloatHistogram {
+	if m == nil {
+		return nil
+	}
+	out := &FloatHistogram{}
+	out.CounterResetHint = m.CounterResetHint
+	out.Schema = m.Schema
+	out.ZeroThreshold = m.ZeroThreshold
+	out.ZeroCount = m.ZeroCount
+	out.Count = m.Count
+	out.Sum = m.Sum
+	out.PositiveSpans = slices.Clone(m.PositiveSpans)
+	for i := range out.PositiveSpans {
+		out.PositiveSpans[i] = *m.PositiveSpans[i].Clone()
+	}
+	out.NegativeSpans = slices.Clone(m.NegativeSpans)
+	for i := range out.NegativeSpans {
+		out.NegativeSpans[i] = *m.NegativeSpans[i].Clone()
+	}
+	out.PositiveBuckets = slices.Clone(m.PositiveBuckets)
+	out.NegativeBuckets = slices.Clone(m.NegativeBuckets)
+	out.CustomValues = slices.Clone(m.CustomValues)
+	return out
+}
+
+func (m *BucketSpan) Clone() *BucketSpan {
+	if m == nil {
+		return nil
+	}
+	out := &BucketSpan{}
+	out.Offset = m.Offset
+	out.Length = m.Length
+	return out
+}
+
+func (m *FloatHistogramPair) Clone() *FloatHistogramPair {
+	if m == nil {
+		return nil
+	}
+	out := &FloatHistogramPair{}
+	out.TimestampMs = m.TimestampMs
+	out.Histogram = m.Histogram.Clone()
+	return out
+}
+
+func (m *SampleHistogram) Clone() *SampleHistogram {
+	if m == nil {
+		return nil
+	}
+	out := &SampleHistogram{}
+	out.Count = m.Count
+	out.Sum = m.Sum
+	out.Buckets = slices.Clone(m.Buckets)
+	for i := range out.Buckets {
+		out.Buckets[i] = out.Buckets[i].Clone()
+	}
+	return out
+}
+
+func (m *HistogramBucket) Clone() *HistogramBucket {
+	if m == nil {
+		return nil
+	}
+	out := &HistogramBucket{}
+	out.Boundaries = m.Boundaries
+	out.Lower = m.Lower
+	out.Upper = m.Upper
+	out.Count = m.Count
+	return out
+}
+
+func (m *SampleHistogramPair) Clone() *SampleHistogramPair {
+	if m == nil {
+		return nil
+	}
+	out := &SampleHistogramPair{}
+	out.Timestamp = m.Timestamp
+	out.Histogram = m.Histogram.Clone()
+	return out
+}
+
+func (m *QueryResponse) Clone() *QueryResponse {
+	if m == nil {
+		return nil
+	}
+	out := &QueryResponse{}
+	out.Status = m.Status
+	out.ErrorType = m.ErrorType
+	out.Error = m.Error
+	switch v := m.Data.(type) {
+	case *QueryResponse_String:
+		out.Data = &QueryResponse_String{String: *v.String.Clone()}
+	case *QueryResponse_Vector:
+		out.Data = &QueryResponse_Vector{Vector: *v.Vector.Clone()}
+	case *QueryResponse_Scalar:
+		out.Data = &QueryResponse_Scalar{Scalar: *v.Scalar.Clone()}
+	case *QueryResponse_Matrix:
+		out.Data = &QueryResponse_Matrix{Matrix: *v.Matrix.Clone()}
+	}
+	out.Warnings = slices.Clone(m.Warnings)
+	out.Infos = slices.Clone(m.Infos)
+	return out
+}
+
+func (m *StringData) Clone() *StringData {
+	if m == nil {
+		return nil
+	}
+	out := &StringData{}
+	out.Value = m.Value
+	out.TimestampMs = m.TimestampMs
+	return out
+}
+
+func (m *VectorData) Clone() *VectorData {
+	if m == nil {
+		return nil
+	}
+	out := &VectorData{}
+	out.Samples = slices.Clone(m.Samples)
+	for i := range out.Samples {
+		out.Samples[i] = *m.Samples[i].Clone()
+	}
+	out.Histograms = slices.Clone(m.Histograms)
+	for i := range out.Histograms {
+		out.Histograms[i] = *m.Histograms[i].Clone()
+	}
+	return out
+}
+
+func (m *VectorSample) Clone() *VectorSample {
+	if m == nil {
+		return nil
+	}
+	out := &VectorSample{}
+	out.Metric = slices.Clone(m.Metric)
+	out.Value = m.Value
+	out.TimestampMs = m.TimestampMs
+	return out
+}
+
+func (m *VectorHistogram) Clone() *VectorHistogram {
+	if m == nil {
+		return nil
+	}
+	out := &VectorHistogram{}
+	out.Metric = slices.Clone(m.Metric)
+	out.Histogram = *m.Histogram.Clone()
+	out.TimestampMs = m.TimestampMs
+	return out
+}
+
+func (m *ScalarData) Clone() *ScalarData {
+	if m == nil {
+		return nil
+	}
+	out := &ScalarData{}
+	out.Value = m.Value
+	out.TimestampMs = m.TimestampMs
+	return out
+}
+
+func (m *MatrixData) Clone() *MatrixData {
+	if m == nil {
+		return nil
+	}
+	out := &MatrixData{}
+	out.Series = slices.Clone(m.Series)
+	for i := range out.Series {
+		out.Series[i] = *m.Series[i].Clone()
+	}
+	return out
+}
+
+func (m *MatrixSeries) Clone() *MatrixSeries {
+	if m == nil {
+		return nil
+	}
+	out := &MatrixSeries{}
+	out.Metric = slices.Clone(m.Metric)
+	out.Samples = slices.Clone(m.Samples)
+	for i := range out.Samples {
+		out.Samples[i] = *m.Samples[i].Clone()
+	}
+	out.Histograms = slices.Clone(m.Histograms)
+	for i := range out.Histograms {
+		out.Histograms[i] = *m.Histograms[i].Clone()
+	}
+	return out
+}
+
+func (m *WriteRequestRW2) Clone() *WriteRequestRW2 {
+	if m == nil {
+		return nil
+	}
+	out := &WriteRequestRW2{}
+	out.Symbols = slices.Clone(m.Symbols)
+	out.Timeseries = slices.Clone(m.Timeseries)
+	for i := range out.Timeseries {
+		out.Timeseries[i] = *m.Timeseries[i].Clone()
+	}
+	return out
+}
+
+func (m *TimeSeriesRW2) Clone() *TimeSeriesRW2 {
+	if m == nil {
+		return nil
+	}
+	out := &TimeSeriesRW2{}
+	out.LabelsRefs = slices.Clone(m.LabelsRefs)
+	out.Samples = slices.Clone(m.Samples)
+	for i := range out.Samples {
+		out.Samples[i] = *m.Samples[i].Clone()
+	}
+	out.Histograms = slices.Clone(m.Histograms)
+	for i := range out.Histograms {
+		out.Histograms[i] = *m.Histograms[i].Clone()
+	}
+	out.Exemplars = slices.Clone(m.Exemplars)
+	for i := range out.Exemplars {
+		out.Exemplars[i] = *m.Exemplars[i].Clone()
+	}
+	out.Metadata = *m.Metadata.Clone()
+	out.CreatedTimestamp = m.CreatedTimestamp
+	return out
+}
+
+func (m *ExemplarRW2) Clone() *ExemplarRW2 {
+	if m == nil {
+		return nil
+	}
+	out := &ExemplarRW2{}
+	out.LabelsRefs = slices.Clone(m.LabelsRefs)
+	out.Value = m.Value
+	out.Timestamp = m.Timestamp
+	return out
+}
+
+func (m *MetadataRW2) Clone() *MetadataRW2 {
+	if m == nil {
+		return nil
+	}
+	out := &MetadataRW2{}
+	out.Type = m.Type
+	out.HelpRef = m.HelpRef
+	out.UnitRef = m.UnitRef
+	return out
+}
 
 func (x ErrorCause) Descriptor() protoreflect.EnumDescriptor {
 	file_cortexpb_mimir_proto_init()

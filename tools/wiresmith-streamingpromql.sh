@@ -68,12 +68,12 @@ wiresmith --proto_path="./${STAGE}" --out="./${OUT}" --module="${MODULE}" \
 	"${M_FLAGS[@]}" \
 	"${EMIT_ARGS[@]}"
 
-# Copy the generated set (X.pb.go + the _compare/_equal/_reflect siblings) back
+# Copy the generated set (X.pb.go + the _compare/_util siblings) back
 # into the real package directories.
 for proto in "${EMIT_PROTOS[@]}"; do
 	dir=$(dirname "${proto}")
 	base=$(basename "${proto}" .proto)
-	for sfx in .pb.go _compare.pb.go _equal.pb.go _reflect.pb.go; do
+	for sfx in .pb.go _compare.pb.go _util.pb.go; do
 		cp "${OUT}/${P}/${dir#pkg/}/${base}${sfx}" "${dir}/${base}${sfx}"
 	done
 done

@@ -60,12 +60,6 @@ func (m *RuleGroupDesc) Reset() {
 	*m = RuleGroupDesc{}
 }
 func (*RuleGroupDesc) ProtoMessage() {}
-func (m *RuleGroupDesc) String() string {
-	if m == nil {
-		return "<nil>"
-	}
-	return fmt.Sprintf("%v", *m)
-}
 
 func (m *RuleDesc) Reset() {
 	if m == nil {
@@ -74,12 +68,6 @@ func (m *RuleDesc) Reset() {
 	*m = RuleDesc{}
 }
 func (*RuleDesc) ProtoMessage() {}
-func (m *RuleDesc) String() string {
-	if m == nil {
-		return "<nil>"
-	}
-	return fmt.Sprintf("%v", *m)
-}
 
 func (m *RuleGroupDesc) GetName() string {
 	if m != nil {

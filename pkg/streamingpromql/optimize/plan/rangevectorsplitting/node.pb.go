@@ -31,12 +31,6 @@ func (m *SplitFunctionCallDetails) Reset() {
 	*m = SplitFunctionCallDetails{}
 }
 func (*SplitFunctionCallDetails) ProtoMessage() {}
-func (m *SplitFunctionCallDetails) String() string {
-	if m == nil {
-		return "<nil>"
-	}
-	return fmt.Sprintf("%v", *m)
-}
 
 func (m *SplitRange) Reset() {
 	if m == nil {
@@ -45,12 +39,6 @@ func (m *SplitRange) Reset() {
 	*m = SplitRange{}
 }
 func (*SplitRange) ProtoMessage() {}
-func (m *SplitRange) String() string {
-	if m == nil {
-		return "<nil>"
-	}
-	return fmt.Sprintf("%v", *m)
-}
 
 func (m *SplitFunctionCallDetails) GetSplitRanges() []SplitRange {
 	if m != nil {

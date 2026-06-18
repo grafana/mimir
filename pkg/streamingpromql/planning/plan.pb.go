@@ -141,12 +141,6 @@ func (m *EncodedQueryPlan) Reset() {
 	*m = EncodedQueryPlan{}
 }
 func (*EncodedQueryPlan) ProtoMessage() {}
-func (m *EncodedQueryPlan) String() string {
-	if m == nil {
-		return "<nil>"
-	}
-	return fmt.Sprintf("%v", *m)
-}
 
 func (m *EncodedNode) Reset() {
 	if m == nil {
@@ -155,12 +149,6 @@ func (m *EncodedNode) Reset() {
 	*m = EncodedNode{}
 }
 func (*EncodedNode) ProtoMessage() {}
-func (m *EncodedNode) String() string {
-	if m == nil {
-		return "<nil>"
-	}
-	return fmt.Sprintf("%v", *m)
-}
 
 func (m *EncodedQueryPlan) GetTimeRange() *types.EncodedQueryTimeRange {
 	if m != nil {

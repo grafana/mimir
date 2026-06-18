@@ -7,23 +7,511 @@ import (
 	"math"
 )
 
-// Per-message Compare() methods for github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/rangevectorsplitting/functions.proto.
+// Per-message value-comparison methods (Equal + Compare) for github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/rangevectorsplitting/functions.proto.
 //
-// Compare returns -1/0/+1 like bytes.Compare with the gogoproto.compare
-// nil/wrong-type preamble. Always emitted on every message; callers that
-// don't use it can rely on Go's dead-code elimination to drop the body.
+// Equal returns bool; Compare returns -1/0/+1 like bytes.Compare with the
+// gogoproto.compare nil/wrong-type preamble. Both are emitted on every
+// message; callers that don't use one can rely on Go's dead-code
+// elimination to drop the body.
 //
-// Why a separate file? Compare is never called from Marshal/Unmarshal/Size,
-// but emitting it next to those hot functions in the main .pb.go pushed
-// them onto different cache sets and produced a measured ~9% geomean
+// Why a separate file? Equal/Compare are never called from Marshal/Unmarshal/
+// Size, but emitting them next to those hot functions in the main .pb.go
+// pushed them onto different cache sets and produced a measured ~9% geomean
 // regression on OTel benchmarks (UnmarshalMap +14%, MarshalSingleSpan +13%)
-// purely from icache / iTLB / BTB pressure. Splitting Compare into its own
+// purely from icache / iTLB / BTB pressure. Splitting them into their own
 // compilation unit gives the linker freedom to place the cold half away
-// from the hot half — same trick the _reflect.pb.go split uses.
+// from the hot half — same trick the _util.pb.go split uses.
 //
-// See compiler/generator/emit_compare.go for the full rationale and the
-// benchmark methodology. DO NOT inline this file's contents back into
-// the main .pb.go without re-measuring.
+// See compiler/generator/emit_compare.go / emit_equal.go for the full
+// rationale and the benchmark methodology. DO NOT inline this file's
+// contents back into the main .pb.go without re-measuring.
+
+func (this *SumOverTimeIntermediate) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*SumOverTimeIntermediate)
+	if !ok {
+		that2, ok := that.(SumOverTimeIntermediate)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if math.Float64bits(this.SumF) != math.Float64bits(that1.SumF) {
+		return false
+	}
+	if this.HasFloat != that1.HasFloat {
+		return false
+	}
+	if math.Float64bits(this.SumC) != math.Float64bits(that1.SumC) {
+		return false
+	}
+	if (this.SumH == nil) != (that1.SumH == nil) {
+		return false
+	}
+	if this.SumH != nil && !this.SumH.Equal(that1.SumH) {
+		return false
+	}
+	if this.ForceEmptyResult != that1.ForceEmptyResult {
+		return false
+	}
+	return true
+}
+
+func (this *SumOverTimeIntermediateList) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*SumOverTimeIntermediateList)
+	if !ok {
+		that2, ok := that.(SumOverTimeIntermediateList)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if len(this.Results) != len(that1.Results) {
+		return false
+	}
+	for i := range this.Results {
+		if !this.Results[i].Equal(that1.Results[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+func (this *CountOverTimeIntermediate) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*CountOverTimeIntermediate)
+	if !ok {
+		that2, ok := that.(CountOverTimeIntermediate)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if math.Float64bits(this.F) != math.Float64bits(that1.F) {
+		return false
+	}
+	if this.HasFloat != that1.HasFloat {
+		return false
+	}
+	return true
+}
+
+func (this *CountOverTimeIntermediateList) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*CountOverTimeIntermediateList)
+	if !ok {
+		that2, ok := that.(CountOverTimeIntermediateList)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if len(this.Results) != len(that1.Results) {
+		return false
+	}
+	for i := range this.Results {
+		if !this.Results[i].Equal(that1.Results[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+func (this *MinMaxOverTimeIntermediate) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*MinMaxOverTimeIntermediate)
+	if !ok {
+		that2, ok := that.(MinMaxOverTimeIntermediate)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if math.Float64bits(this.F) != math.Float64bits(that1.F) {
+		return false
+	}
+	if this.HasFloat != that1.HasFloat {
+		return false
+	}
+	if this.HasHistogram != that1.HasHistogram {
+		return false
+	}
+	return true
+}
+
+func (this *MinMaxOverTimeIntermediateList) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*MinMaxOverTimeIntermediateList)
+	if !ok {
+		that2, ok := that.(MinMaxOverTimeIntermediateList)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if len(this.Results) != len(that1.Results) {
+		return false
+	}
+	for i := range this.Results {
+		if !this.Results[i].Equal(that1.Results[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+func (this *RateIntermediate) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*RateIntermediate)
+	if !ok {
+		that2, ok := that.(RateIntermediate)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if this.SampleCount != that1.SampleCount {
+		return false
+	}
+	if this.IsHistogram != that1.IsHistogram {
+		return false
+	}
+	if (this.FirstSample == nil) != (that1.FirstSample == nil) {
+		return false
+	}
+	if this.FirstSample != nil && !this.FirstSample.Equal(that1.FirstSample) {
+		return false
+	}
+	if (this.LastSample == nil) != (that1.LastSample == nil) {
+		return false
+	}
+	if this.LastSample != nil && !this.LastSample.Equal(that1.LastSample) {
+		return false
+	}
+	if math.Float64bits(this.Delta) != math.Float64bits(that1.Delta) {
+		return false
+	}
+	if (this.FirstHistogram == nil) != (that1.FirstHistogram == nil) {
+		return false
+	}
+	if this.FirstHistogram != nil && !this.FirstHistogram.Equal(that1.FirstHistogram) {
+		return false
+	}
+	if (this.LastHistogram == nil) != (that1.LastHistogram == nil) {
+		return false
+	}
+	if this.LastHistogram != nil && !this.LastHistogram.Equal(that1.LastHistogram) {
+		return false
+	}
+	if (this.DeltaHistogram == nil) != (that1.DeltaHistogram == nil) {
+		return false
+	}
+	if this.DeltaHistogram != nil && !this.DeltaHistogram.Equal(that1.DeltaHistogram) {
+		return false
+	}
+	if this.FirstHistogramTimestamp != that1.FirstHistogramTimestamp {
+		return false
+	}
+	if this.LastHistogramTimestamp != that1.LastHistogramTimestamp {
+		return false
+	}
+	if this.ForceEmptyResult != that1.ForceEmptyResult {
+		return false
+	}
+	return true
+}
+
+func (this *RateIntermediateList) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*RateIntermediateList)
+	if !ok {
+		that2, ok := that.(RateIntermediateList)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if len(this.Results) != len(that1.Results) {
+		return false
+	}
+	for i := range this.Results {
+		if !this.Results[i].Equal(that1.Results[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+func (this *FirstLastOverTimeIntermediate) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*FirstLastOverTimeIntermediate)
+	if !ok {
+		that2, ok := that.(FirstLastOverTimeIntermediate)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if math.Float64bits(this.F) != math.Float64bits(that1.F) {
+		return false
+	}
+	if this.HasFloat != that1.HasFloat {
+		return false
+	}
+	if (this.H == nil) != (that1.H == nil) {
+		return false
+	}
+	if this.H != nil && !this.H.Equal(that1.H) {
+		return false
+	}
+	return true
+}
+
+func (this *FirstLastOverTimeIntermediateList) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*FirstLastOverTimeIntermediateList)
+	if !ok {
+		that2, ok := that.(FirstLastOverTimeIntermediateList)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if len(this.Results) != len(that1.Results) {
+		return false
+	}
+	for i := range this.Results {
+		if !this.Results[i].Equal(that1.Results[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+func (this *AvgOverTimeIntermediate) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*AvgOverTimeIntermediate)
+	if !ok {
+		that2, ok := that.(AvgOverTimeIntermediate)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if math.Float64bits(this.SumF) != math.Float64bits(that1.SumF) {
+		return false
+	}
+	if math.Float64bits(this.IncrementalAvg) != math.Float64bits(that1.IncrementalAvg) {
+		return false
+	}
+	if math.Float64bits(this.CountF) != math.Float64bits(that1.CountF) {
+		return false
+	}
+	if this.UseIncrementalCalc != that1.UseIncrementalCalc {
+		return false
+	}
+	if math.Float64bits(this.CompF) != math.Float64bits(that1.CompF) {
+		return false
+	}
+	if (this.AvgH == nil) != (that1.AvgH == nil) {
+		return false
+	}
+	if this.AvgH != nil && !this.AvgH.Equal(that1.AvgH) {
+		return false
+	}
+	if this.CountH != that1.CountH {
+		return false
+	}
+	if this.ForceEmptyResult != that1.ForceEmptyResult {
+		return false
+	}
+	return true
+}
+
+func (this *AvgOverTimeIntermediateList) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*AvgOverTimeIntermediateList)
+	if !ok {
+		that2, ok := that.(AvgOverTimeIntermediateList)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if len(this.Results) != len(that1.Results) {
+		return false
+	}
+	for i := range this.Results {
+		if !this.Results[i].Equal(that1.Results[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+func (this *PresentOverTimeIntermediate) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*PresentOverTimeIntermediate)
+	if !ok {
+		that2, ok := that.(PresentOverTimeIntermediate)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if this.Present != that1.Present {
+		return false
+	}
+	return true
+}
+
+func (this *PresentOverTimeIntermediateList) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*PresentOverTimeIntermediateList)
+	if !ok {
+		that2, ok := that.(PresentOverTimeIntermediateList)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if len(this.Results) != len(that1.Results) {
+		return false
+	}
+	for i := range this.Results {
+		if !this.Results[i].Equal(that1.Results[i]) {
+			return false
+		}
+	}
+	return true
+}
 
 func (this *SumOverTimeIntermediate) Compare(that interface{}) int {
 	if that == nil {

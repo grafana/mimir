@@ -60,12 +60,6 @@ func (m *Stats) Reset() {
 	*m = Stats{}
 }
 func (*Stats) ProtoMessage() {}
-func (m *Stats) String() string {
-	if m == nil {
-		return "<nil>"
-	}
-	return fmt.Sprintf("%v", *m)
-}
 
 func (m *Stats) GetWallTime() time.Duration {
 	if m != nil {

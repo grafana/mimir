@@ -687,12 +687,6 @@ func (m *WriteRequest) Reset() {
 	*m = WriteRequest{}
 }
 func (*WriteRequest) ProtoMessage() {}
-func (m *WriteRequest) String() string {
-	if m == nil {
-		return "<nil>"
-	}
-	return fmt.Sprintf("%v", *m)
-}
 
 func (m *WriteResponse) Reset() {
 	if m == nil {
@@ -701,12 +695,6 @@ func (m *WriteResponse) Reset() {
 	*m = WriteResponse{}
 }
 func (*WriteResponse) ProtoMessage() {}
-func (m *WriteResponse) String() string {
-	if m == nil {
-		return "<nil>"
-	}
-	return fmt.Sprintf("%v", *m)
-}
 
 func (m *ErrorDetails) Reset() {
 	if m == nil {
@@ -715,12 +703,6 @@ func (m *ErrorDetails) Reset() {
 	*m = ErrorDetails{}
 }
 func (*ErrorDetails) ProtoMessage() {}
-func (m *ErrorDetails) String() string {
-	if m == nil {
-		return "<nil>"
-	}
-	return fmt.Sprintf("%v", *m)
-}
 
 func (m *TimeSeries) Reset() {
 	if m == nil {
@@ -729,12 +711,6 @@ func (m *TimeSeries) Reset() {
 	*m = TimeSeries{}
 }
 func (*TimeSeries) ProtoMessage() {}
-func (m *TimeSeries) String() string {
-	if m == nil {
-		return "<nil>"
-	}
-	return fmt.Sprintf("%v", *m)
-}
 
 func (m *LabelPair) Reset() {
 	if m == nil {
@@ -743,12 +719,6 @@ func (m *LabelPair) Reset() {
 	*m = LabelPair{}
 }
 func (*LabelPair) ProtoMessage() {}
-func (m *LabelPair) String() string {
-	if m == nil {
-		return "<nil>"
-	}
-	return fmt.Sprintf("%v", *m)
-}
 
 func (m *Sample) Reset() {
 	if m == nil {
@@ -757,12 +727,6 @@ func (m *Sample) Reset() {
 	*m = Sample{}
 }
 func (*Sample) ProtoMessage() {}
-func (m *Sample) String() string {
-	if m == nil {
-		return "<nil>"
-	}
-	return fmt.Sprintf("%v", *m)
-}
 
 func (m *MetricMetadata) Reset() {
 	if m == nil {
@@ -771,12 +735,6 @@ func (m *MetricMetadata) Reset() {
 	*m = MetricMetadata{}
 }
 func (*MetricMetadata) ProtoMessage() {}
-func (m *MetricMetadata) String() string {
-	if m == nil {
-		return "<nil>"
-	}
-	return fmt.Sprintf("%v", *m)
-}
 
 func (m *Metric) Reset() {
 	if m == nil {
@@ -785,12 +743,6 @@ func (m *Metric) Reset() {
 	*m = Metric{}
 }
 func (*Metric) ProtoMessage() {}
-func (m *Metric) String() string {
-	if m == nil {
-		return "<nil>"
-	}
-	return fmt.Sprintf("%v", *m)
-}
 
 func (m *Exemplar) Reset() {
 	if m == nil {
@@ -799,12 +751,6 @@ func (m *Exemplar) Reset() {
 	*m = Exemplar{}
 }
 func (*Exemplar) ProtoMessage() {}
-func (m *Exemplar) String() string {
-	if m == nil {
-		return "<nil>"
-	}
-	return fmt.Sprintf("%v", *m)
-}
 
 func (m *Histogram) Reset() {
 	if m == nil {
@@ -813,12 +759,6 @@ func (m *Histogram) Reset() {
 	*m = Histogram{}
 }
 func (*Histogram) ProtoMessage() {}
-func (m *Histogram) String() string {
-	if m == nil {
-		return "<nil>"
-	}
-	return fmt.Sprintf("%v", *m)
-}
 
 func (m *FloatHistogram) Reset() {
 	if m == nil {
@@ -827,12 +767,6 @@ func (m *FloatHistogram) Reset() {
 	*m = FloatHistogram{}
 }
 func (*FloatHistogram) ProtoMessage() {}
-func (m *FloatHistogram) String() string {
-	if m == nil {
-		return "<nil>"
-	}
-	return fmt.Sprintf("%v", *m)
-}
 
 func (m *BucketSpan) Reset() {
 	if m == nil {
@@ -841,12 +775,6 @@ func (m *BucketSpan) Reset() {
 	*m = BucketSpan{}
 }
 func (*BucketSpan) ProtoMessage() {}
-func (m *BucketSpan) String() string {
-	if m == nil {
-		return "<nil>"
-	}
-	return fmt.Sprintf("%v", *m)
-}
 
 func (m *FloatHistogramPair) Reset() {
 	if m == nil {
@@ -855,12 +783,6 @@ func (m *FloatHistogramPair) Reset() {
 	*m = FloatHistogramPair{}
 }
 func (*FloatHistogramPair) ProtoMessage() {}
-func (m *FloatHistogramPair) String() string {
-	if m == nil {
-		return "<nil>"
-	}
-	return fmt.Sprintf("%v", *m)
-}
 
 func (m *SampleHistogram) Reset() {
 	if m == nil {
@@ -869,12 +791,6 @@ func (m *SampleHistogram) Reset() {
 	*m = SampleHistogram{}
 }
 func (*SampleHistogram) ProtoMessage() {}
-func (m *SampleHistogram) String() string {
-	if m == nil {
-		return "<nil>"
-	}
-	return fmt.Sprintf("%v", *m)
-}
 
 func (m *HistogramBucket) Reset() {
 	if m == nil {
@@ -883,12 +799,6 @@ func (m *HistogramBucket) Reset() {
 	*m = HistogramBucket{}
 }
 func (*HistogramBucket) ProtoMessage() {}
-func (m *HistogramBucket) String() string {
-	if m == nil {
-		return "<nil>"
-	}
-	return fmt.Sprintf("%v", *m)
-}
 
 func (m *SampleHistogramPair) Reset() {
 	if m == nil {
@@ -897,12 +807,6 @@ func (m *SampleHistogramPair) Reset() {
 	*m = SampleHistogramPair{}
 }
 func (*SampleHistogramPair) ProtoMessage() {}
-func (m *SampleHistogramPair) String() string {
-	if m == nil {
-		return "<nil>"
-	}
-	return fmt.Sprintf("%v", *m)
-}
 
 func (m *QueryResponse) Reset() {
 	if m == nil {
@@ -911,12 +815,6 @@ func (m *QueryResponse) Reset() {
 	*m = QueryResponse{}
 }
 func (*QueryResponse) ProtoMessage() {}
-func (m *QueryResponse) String() string {
-	if m == nil {
-		return "<nil>"
-	}
-	return fmt.Sprintf("%v", *m)
-}
 
 func (m *StringData) Reset() {
 	if m == nil {
@@ -925,12 +823,6 @@ func (m *StringData) Reset() {
 	*m = StringData{}
 }
 func (*StringData) ProtoMessage() {}
-func (m *StringData) String() string {
-	if m == nil {
-		return "<nil>"
-	}
-	return fmt.Sprintf("%v", *m)
-}
 
 func (m *VectorData) Reset() {
 	if m == nil {
@@ -939,12 +831,6 @@ func (m *VectorData) Reset() {
 	*m = VectorData{}
 }
 func (*VectorData) ProtoMessage() {}
-func (m *VectorData) String() string {
-	if m == nil {
-		return "<nil>"
-	}
-	return fmt.Sprintf("%v", *m)
-}
 
 func (m *VectorSample) Reset() {
 	if m == nil {
@@ -953,12 +839,6 @@ func (m *VectorSample) Reset() {
 	*m = VectorSample{}
 }
 func (*VectorSample) ProtoMessage() {}
-func (m *VectorSample) String() string {
-	if m == nil {
-		return "<nil>"
-	}
-	return fmt.Sprintf("%v", *m)
-}
 
 func (m *VectorHistogram) Reset() {
 	if m == nil {
@@ -967,12 +847,6 @@ func (m *VectorHistogram) Reset() {
 	*m = VectorHistogram{}
 }
 func (*VectorHistogram) ProtoMessage() {}
-func (m *VectorHistogram) String() string {
-	if m == nil {
-		return "<nil>"
-	}
-	return fmt.Sprintf("%v", *m)
-}
 
 func (m *ScalarData) Reset() {
 	if m == nil {
@@ -981,12 +855,6 @@ func (m *ScalarData) Reset() {
 	*m = ScalarData{}
 }
 func (*ScalarData) ProtoMessage() {}
-func (m *ScalarData) String() string {
-	if m == nil {
-		return "<nil>"
-	}
-	return fmt.Sprintf("%v", *m)
-}
 
 func (m *MatrixData) Reset() {
 	if m == nil {
@@ -995,12 +863,6 @@ func (m *MatrixData) Reset() {
 	*m = MatrixData{}
 }
 func (*MatrixData) ProtoMessage() {}
-func (m *MatrixData) String() string {
-	if m == nil {
-		return "<nil>"
-	}
-	return fmt.Sprintf("%v", *m)
-}
 
 func (m *MatrixSeries) Reset() {
 	if m == nil {
@@ -1009,12 +871,6 @@ func (m *MatrixSeries) Reset() {
 	*m = MatrixSeries{}
 }
 func (*MatrixSeries) ProtoMessage() {}
-func (m *MatrixSeries) String() string {
-	if m == nil {
-		return "<nil>"
-	}
-	return fmt.Sprintf("%v", *m)
-}
 
 func (m *WriteRequestRW2) Reset() {
 	if m == nil {
@@ -1023,12 +879,6 @@ func (m *WriteRequestRW2) Reset() {
 	*m = WriteRequestRW2{}
 }
 func (*WriteRequestRW2) ProtoMessage() {}
-func (m *WriteRequestRW2) String() string {
-	if m == nil {
-		return "<nil>"
-	}
-	return fmt.Sprintf("%v", *m)
-}
 
 func (m *TimeSeriesRW2) Reset() {
 	if m == nil {
@@ -1037,12 +887,6 @@ func (m *TimeSeriesRW2) Reset() {
 	*m = TimeSeriesRW2{}
 }
 func (*TimeSeriesRW2) ProtoMessage() {}
-func (m *TimeSeriesRW2) String() string {
-	if m == nil {
-		return "<nil>"
-	}
-	return fmt.Sprintf("%v", *m)
-}
 
 func (m *ExemplarRW2) Reset() {
 	if m == nil {
@@ -1051,12 +895,6 @@ func (m *ExemplarRW2) Reset() {
 	*m = ExemplarRW2{}
 }
 func (*ExemplarRW2) ProtoMessage() {}
-func (m *ExemplarRW2) String() string {
-	if m == nil {
-		return "<nil>"
-	}
-	return fmt.Sprintf("%v", *m)
-}
 
 func (m *MetadataRW2) Reset() {
 	if m == nil {
@@ -1065,12 +903,6 @@ func (m *MetadataRW2) Reset() {
 	*m = MetadataRW2{}
 }
 func (*MetadataRW2) ProtoMessage() {}
-func (m *MetadataRW2) String() string {
-	if m == nil {
-		return "<nil>"
-	}
-	return fmt.Sprintf("%v", *m)
-}
 
 func (m *WriteRequest) GetTimeseries() []PreallocTimeseries {
 	if m != nil {

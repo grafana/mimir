@@ -323,12 +323,6 @@ func (m *PositionRange) Reset() {
 	*m = PositionRange{}
 }
 func (*PositionRange) ProtoMessage() {}
-func (m *PositionRange) String() string {
-	if m == nil {
-		return "<nil>"
-	}
-	return fmt.Sprintf("%v", *m)
-}
 
 func (m *BinaryExpressionHints) Reset() {
 	if m == nil {
@@ -337,12 +331,6 @@ func (m *BinaryExpressionHints) Reset() {
 	*m = BinaryExpressionHints{}
 }
 func (*BinaryExpressionHints) ProtoMessage() {}
-func (m *BinaryExpressionHints) String() string {
-	if m == nil {
-		return "<nil>"
-	}
-	return fmt.Sprintf("%v", *m)
-}
 
 func (m *AggregateExpressionDetails) Reset() {
 	if m == nil {
@@ -351,12 +339,6 @@ func (m *AggregateExpressionDetails) Reset() {
 	*m = AggregateExpressionDetails{}
 }
 func (*AggregateExpressionDetails) ProtoMessage() {}
-func (m *AggregateExpressionDetails) String() string {
-	if m == nil {
-		return "<nil>"
-	}
-	return fmt.Sprintf("%v", *m)
-}
 
 func (m *BinaryExpressionDetails) Reset() {
 	if m == nil {
@@ -365,12 +347,6 @@ func (m *BinaryExpressionDetails) Reset() {
 	*m = BinaryExpressionDetails{}
 }
 func (*BinaryExpressionDetails) ProtoMessage() {}
-func (m *BinaryExpressionDetails) String() string {
-	if m == nil {
-		return "<nil>"
-	}
-	return fmt.Sprintf("%v", *m)
-}
 
 func (m *VectorMatching) Reset() {
 	if m == nil {
@@ -379,12 +355,6 @@ func (m *VectorMatching) Reset() {
 	*m = VectorMatching{}
 }
 func (*VectorMatching) ProtoMessage() {}
-func (m *VectorMatching) String() string {
-	if m == nil {
-		return "<nil>"
-	}
-	return fmt.Sprintf("%v", *m)
-}
 
 func (m *FunctionCallDetails) Reset() {
 	if m == nil {
@@ -393,12 +363,6 @@ func (m *FunctionCallDetails) Reset() {
 	*m = FunctionCallDetails{}
 }
 func (*FunctionCallDetails) ProtoMessage() {}
-func (m *FunctionCallDetails) String() string {
-	if m == nil {
-		return "<nil>"
-	}
-	return fmt.Sprintf("%v", *m)
-}
 
 func (m *NumberLiteralDetails) Reset() {
 	if m == nil {
@@ -407,12 +371,6 @@ func (m *NumberLiteralDetails) Reset() {
 	*m = NumberLiteralDetails{}
 }
 func (*NumberLiteralDetails) ProtoMessage() {}
-func (m *NumberLiteralDetails) String() string {
-	if m == nil {
-		return "<nil>"
-	}
-	return fmt.Sprintf("%v", *m)
-}
 
 func (m *StringLiteralDetails) Reset() {
 	if m == nil {
@@ -421,12 +379,6 @@ func (m *StringLiteralDetails) Reset() {
 	*m = StringLiteralDetails{}
 }
 func (*StringLiteralDetails) ProtoMessage() {}
-func (m *StringLiteralDetails) String() string {
-	if m == nil {
-		return "<nil>"
-	}
-	return fmt.Sprintf("%v", *m)
-}
 
 func (m *UnaryExpressionDetails) Reset() {
 	if m == nil {
@@ -435,12 +387,6 @@ func (m *UnaryExpressionDetails) Reset() {
 	*m = UnaryExpressionDetails{}
 }
 func (*UnaryExpressionDetails) ProtoMessage() {}
-func (m *UnaryExpressionDetails) String() string {
-	if m == nil {
-		return "<nil>"
-	}
-	return fmt.Sprintf("%v", *m)
-}
 
 func (m *VectorSelectorDetails) Reset() {
 	if m == nil {
@@ -449,12 +395,6 @@ func (m *VectorSelectorDetails) Reset() {
 	*m = VectorSelectorDetails{}
 }
 func (*VectorSelectorDetails) ProtoMessage() {}
-func (m *VectorSelectorDetails) String() string {
-	if m == nil {
-		return "<nil>"
-	}
-	return fmt.Sprintf("%v", *m)
-}
 
 func (m *MatrixSelectorDetails) Reset() {
 	if m == nil {
@@ -463,12 +403,6 @@ func (m *MatrixSelectorDetails) Reset() {
 	*m = MatrixSelectorDetails{}
 }
 func (*MatrixSelectorDetails) ProtoMessage() {}
-func (m *MatrixSelectorDetails) String() string {
-	if m == nil {
-		return "<nil>"
-	}
-	return fmt.Sprintf("%v", *m)
-}
 
 func (m *SubsetMatchers) Reset() {
 	if m == nil {
@@ -477,12 +411,6 @@ func (m *SubsetMatchers) Reset() {
 	*m = SubsetMatchers{}
 }
 func (*SubsetMatchers) ProtoMessage() {}
-func (m *SubsetMatchers) String() string {
-	if m == nil {
-		return "<nil>"
-	}
-	return fmt.Sprintf("%v", *m)
-}
 
 func (m *SubqueryDetails) Reset() {
 	if m == nil {
@@ -491,12 +419,6 @@ func (m *SubqueryDetails) Reset() {
 	*m = SubqueryDetails{}
 }
 func (*SubqueryDetails) ProtoMessage() {}
-func (m *SubqueryDetails) String() string {
-	if m == nil {
-		return "<nil>"
-	}
-	return fmt.Sprintf("%v", *m)
-}
 
 func (m *StepInvariantExpressionDetails) Reset() {
 	if m == nil {
@@ -505,12 +427,6 @@ func (m *StepInvariantExpressionDetails) Reset() {
 	*m = StepInvariantExpressionDetails{}
 }
 func (*StepInvariantExpressionDetails) ProtoMessage() {}
-func (m *StepInvariantExpressionDetails) String() string {
-	if m == nil {
-		return "<nil>"
-	}
-	return fmt.Sprintf("%v", *m)
-}
 
 func (m *LabelMatcher) Reset() {
 	if m == nil {
@@ -519,12 +435,6 @@ func (m *LabelMatcher) Reset() {
 	*m = LabelMatcher{}
 }
 func (*LabelMatcher) ProtoMessage() {}
-func (m *LabelMatcher) String() string {
-	if m == nil {
-		return "<nil>"
-	}
-	return fmt.Sprintf("%v", *m)
-}
 
 func (m *DeduplicateAndMergeDetails) Reset() {
 	if m == nil {
@@ -533,12 +443,6 @@ func (m *DeduplicateAndMergeDetails) Reset() {
 	*m = DeduplicateAndMergeDetails{}
 }
 func (*DeduplicateAndMergeDetails) ProtoMessage() {}
-func (m *DeduplicateAndMergeDetails) String() string {
-	if m == nil {
-		return "<nil>"
-	}
-	return fmt.Sprintf("%v", *m)
-}
 
 func (m *DropNameDetails) Reset() {
 	if m == nil {
@@ -547,12 +451,6 @@ func (m *DropNameDetails) Reset() {
 	*m = DropNameDetails{}
 }
 func (*DropNameDetails) ProtoMessage() {}
-func (m *DropNameDetails) String() string {
-	if m == nil {
-		return "<nil>"
-	}
-	return fmt.Sprintf("%v", *m)
-}
 
 func (m *NoOpDetails) Reset() {
 	if m == nil {
@@ -561,12 +459,6 @@ func (m *NoOpDetails) Reset() {
 	*m = NoOpDetails{}
 }
 func (*NoOpDetails) ProtoMessage() {}
-func (m *NoOpDetails) String() string {
-	if m == nil {
-		return "<nil>"
-	}
-	return fmt.Sprintf("%v", *m)
-}
 
 func (m *VectorMatchFillValues) Reset() {
 	if m == nil {
@@ -575,12 +467,6 @@ func (m *VectorMatchFillValues) Reset() {
 	*m = VectorMatchFillValues{}
 }
 func (*VectorMatchFillValues) ProtoMessage() {}
-func (m *VectorMatchFillValues) String() string {
-	if m == nil {
-		return "<nil>"
-	}
-	return fmt.Sprintf("%v", *m)
-}
 
 func (m *DataLabelSelectorDetails) Reset() {
 	if m == nil {
@@ -589,12 +475,6 @@ func (m *DataLabelSelectorDetails) Reset() {
 	*m = DataLabelSelectorDetails{}
 }
 func (*DataLabelSelectorDetails) ProtoMessage() {}
-func (m *DataLabelSelectorDetails) String() string {
-	if m == nil {
-		return "<nil>"
-	}
-	return fmt.Sprintf("%v", *m)
-}
 
 func (m *PositionRange) GetStart() posrange.Pos {
 	if m != nil {

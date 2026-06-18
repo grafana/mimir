@@ -4,21 +4,29 @@
 package types
 
 import (
+	"fmt"
 	"github.com/grafana/wiresmith/protohelpers"
 	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/runtime/protoimpl"
 	"reflect"
+	"slices"
+	"strings"
 	"unsafe"
 )
 
-// Reflection / registration glue for github.com/grafana/mimir/pkg/streamingpromql/types/types.proto.
+// Cold companion utilities for github.com/grafana/mimir/pkg/streamingpromql/types/types.proto.
 //
-// This file holds the per-message ProtoReflect() methods, the per-enum
-// Descriptor()/Type()/Number() methods, the embedded FileDescriptorProto
-// blob, the file_*_msgTypes / file_*_enumTypes arrays, and the init()
-// that registers everything with protoregistry.GlobalFiles and
-// protoregistry.GlobalTypes. None of these are called on the marshal /
-// unmarshal / size hot path.
+// This file holds two cold concerns merged into one compilation unit:
+//
+//   - Reflection / registration glue: the per-message ProtoReflect()
+//     methods, the per-enum Descriptor()/Type()/Number() methods, the
+//     embedded FileDescriptorProto blob, the file_*_msgTypes /
+//     file_*_enumTypes arrays, and the init() that registers everything
+//     with protoregistry.GlobalFiles and protoregistry.GlobalTypes.
+//   - The per-message String() debug dumps (hand-rolled, deterministic,
+//     non-reflection — see compiler/generator/emit_string.go).
+//
+// None of these are called on the marshal / unmarshal / size hot path.
 //
 // Why a separate file? Putting this code (plus its descriptorpb /
 // protoreflect / protoimpl imports — ~64KB of descriptorpb alone, ~377KB
@@ -29,11 +37,130 @@ import (
 // in the same compilation unit shifted hot functions onto different
 // cache sets and pushed them ~131KB further into the binary. Emitting
 // the cold half here, in its own .o, lets the linker place it away
-// from the hot half and recovers that throughput.
+// from the hot half and recovers that throughput. reflect and String()
+// are both cold and were already split out, so merging them (cold→cold)
+// preserves the rationale while halving the companion-file count.
 //
 // See compiler/generator/emit_registration.go for the full rationale
 // and the benchmark methodology. DO NOT inline this file's contents
 // back into the main .pb.go without re-measuring.
+
+func (m *EncodedOperatorEvaluationStats) String() string {
+	if m == nil {
+		return "<nil>"
+	}
+	var b strings.Builder
+	if m.AllSeries.Size() > 0 {
+		b.WriteString("allSeries: ")
+		b.WriteString("{")
+		b.WriteString(m.AllSeries.String())
+		b.WriteString("}")
+		b.WriteString(" ")
+	}
+	for _, e := range m.Subsets {
+		b.WriteString("subsets: ")
+		b.WriteString("{")
+		b.WriteString(e.String())
+		b.WriteString("}")
+		b.WriteString(" ")
+	}
+	if m.TimeRange.Size() > 0 {
+		b.WriteString("timeRange: ")
+		b.WriteString("{")
+		b.WriteString(m.TimeRange.String())
+		b.WriteString("}")
+		b.WriteString(" ")
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func (m *EncodedSubsetStats) String() string {
+	if m == nil {
+		return "<nil>"
+	}
+	var b strings.Builder
+	for _, e := range m.SamplesProcessedPerStep {
+		b.WriteString("samplesProcessedPerStep: ")
+		fmt.Fprintf(&b, "%v", e)
+		b.WriteString(" ")
+	}
+	for _, e := range m.SamplesReadIfSubsequentStep {
+		b.WriteString("samplesReadIfSubsequentStep: ")
+		fmt.Fprintf(&b, "%v", e)
+		b.WriteString(" ")
+	}
+	for _, e := range m.SamplesReadIfFirstStep {
+		b.WriteString("samplesReadIfFirstStep: ")
+		fmt.Fprintf(&b, "%v", e)
+		b.WriteString(" ")
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func (m *EncodedQueryTimeRange) String() string {
+	if m == nil {
+		return "<nil>"
+	}
+	var b strings.Builder
+	if m.StartT != 0 {
+		b.WriteString("startT: ")
+		fmt.Fprintf(&b, "%v", m.StartT)
+		b.WriteString(" ")
+	}
+	if m.EndT != 0 {
+		b.WriteString("endT: ")
+		fmt.Fprintf(&b, "%v", m.EndT)
+		b.WriteString(" ")
+	}
+	if m.IntervalMilliseconds != 0 {
+		b.WriteString("intervalMilliseconds: ")
+		fmt.Fprintf(&b, "%v", m.IntervalMilliseconds)
+		b.WriteString(" ")
+	}
+	if m.IsInstant {
+		b.WriteString("isInstant: ")
+		fmt.Fprintf(&b, "%v", m.IsInstant)
+		b.WriteString(" ")
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func (m *EncodedOperatorEvaluationStats) Clone() *EncodedOperatorEvaluationStats {
+	if m == nil {
+		return nil
+	}
+	out := &EncodedOperatorEvaluationStats{}
+	out.AllSeries = *m.AllSeries.Clone()
+	out.Subsets = slices.Clone(m.Subsets)
+	for i := range out.Subsets {
+		out.Subsets[i] = *m.Subsets[i].Clone()
+	}
+	out.TimeRange = *m.TimeRange.Clone()
+	return out
+}
+
+func (m *EncodedSubsetStats) Clone() *EncodedSubsetStats {
+	if m == nil {
+		return nil
+	}
+	out := &EncodedSubsetStats{}
+	out.SamplesProcessedPerStep = slices.Clone(m.SamplesProcessedPerStep)
+	out.SamplesReadIfSubsequentStep = slices.Clone(m.SamplesReadIfSubsequentStep)
+	out.SamplesReadIfFirstStep = slices.Clone(m.SamplesReadIfFirstStep)
+	return out
+}
+
+func (m *EncodedQueryTimeRange) Clone() *EncodedQueryTimeRange {
+	if m == nil {
+		return nil
+	}
+	out := &EncodedQueryTimeRange{}
+	out.StartT = m.StartT
+	out.EndT = m.EndT
+	out.IntervalMilliseconds = m.IntervalMilliseconds
+	out.IsInstant = m.IsInstant
+	return out
+}
 
 func (x *EncodedOperatorEvaluationStats) ProtoReflect() protoreflect.Message {
 	file_github_com_grafana_mimir_pkg_streamingpromql_types_types_proto_init()

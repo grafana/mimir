@@ -110,12 +110,6 @@ func (m *SumOverTimeIntermediate) Reset() {
 	*m = SumOverTimeIntermediate{}
 }
 func (*SumOverTimeIntermediate) ProtoMessage() {}
-func (m *SumOverTimeIntermediate) String() string {
-	if m == nil {
-		return "<nil>"
-	}
-	return fmt.Sprintf("%v", *m)
-}
 
 func (m *SumOverTimeIntermediateList) Reset() {
 	if m == nil {
@@ -124,12 +118,6 @@ func (m *SumOverTimeIntermediateList) Reset() {
 	*m = SumOverTimeIntermediateList{}
 }
 func (*SumOverTimeIntermediateList) ProtoMessage() {}
-func (m *SumOverTimeIntermediateList) String() string {
-	if m == nil {
-		return "<nil>"
-	}
-	return fmt.Sprintf("%v", *m)
-}
 
 func (m *CountOverTimeIntermediate) Reset() {
 	if m == nil {
@@ -138,12 +126,6 @@ func (m *CountOverTimeIntermediate) Reset() {
 	*m = CountOverTimeIntermediate{}
 }
 func (*CountOverTimeIntermediate) ProtoMessage() {}
-func (m *CountOverTimeIntermediate) String() string {
-	if m == nil {
-		return "<nil>"
-	}
-	return fmt.Sprintf("%v", *m)
-}
 
 func (m *CountOverTimeIntermediateList) Reset() {
 	if m == nil {
@@ -152,12 +134,6 @@ func (m *CountOverTimeIntermediateList) Reset() {
 	*m = CountOverTimeIntermediateList{}
 }
 func (*CountOverTimeIntermediateList) ProtoMessage() {}
-func (m *CountOverTimeIntermediateList) String() string {
-	if m == nil {
-		return "<nil>"
-	}
-	return fmt.Sprintf("%v", *m)
-}
 
 func (m *MinMaxOverTimeIntermediate) Reset() {
 	if m == nil {
@@ -166,12 +142,6 @@ func (m *MinMaxOverTimeIntermediate) Reset() {
 	*m = MinMaxOverTimeIntermediate{}
 }
 func (*MinMaxOverTimeIntermediate) ProtoMessage() {}
-func (m *MinMaxOverTimeIntermediate) String() string {
-	if m == nil {
-		return "<nil>"
-	}
-	return fmt.Sprintf("%v", *m)
-}
 
 func (m *MinMaxOverTimeIntermediateList) Reset() {
 	if m == nil {
@@ -180,12 +150,6 @@ func (m *MinMaxOverTimeIntermediateList) Reset() {
 	*m = MinMaxOverTimeIntermediateList{}
 }
 func (*MinMaxOverTimeIntermediateList) ProtoMessage() {}
-func (m *MinMaxOverTimeIntermediateList) String() string {
-	if m == nil {
-		return "<nil>"
-	}
-	return fmt.Sprintf("%v", *m)
-}
 
 func (m *RateIntermediate) Reset() {
 	if m == nil {
@@ -194,12 +158,6 @@ func (m *RateIntermediate) Reset() {
 	*m = RateIntermediate{}
 }
 func (*RateIntermediate) ProtoMessage() {}
-func (m *RateIntermediate) String() string {
-	if m == nil {
-		return "<nil>"
-	}
-	return fmt.Sprintf("%v", *m)
-}
 
 func (m *RateIntermediateList) Reset() {
 	if m == nil {
@@ -208,12 +166,6 @@ func (m *RateIntermediateList) Reset() {
 	*m = RateIntermediateList{}
 }
 func (*RateIntermediateList) ProtoMessage() {}
-func (m *RateIntermediateList) String() string {
-	if m == nil {
-		return "<nil>"
-	}
-	return fmt.Sprintf("%v", *m)
-}
 
 func (m *FirstLastOverTimeIntermediate) Reset() {
 	if m == nil {
@@ -222,12 +174,6 @@ func (m *FirstLastOverTimeIntermediate) Reset() {
 	*m = FirstLastOverTimeIntermediate{}
 }
 func (*FirstLastOverTimeIntermediate) ProtoMessage() {}
-func (m *FirstLastOverTimeIntermediate) String() string {
-	if m == nil {
-		return "<nil>"
-	}
-	return fmt.Sprintf("%v", *m)
-}
 
 func (m *FirstLastOverTimeIntermediateList) Reset() {
 	if m == nil {
@@ -236,12 +182,6 @@ func (m *FirstLastOverTimeIntermediateList) Reset() {
 	*m = FirstLastOverTimeIntermediateList{}
 }
 func (*FirstLastOverTimeIntermediateList) ProtoMessage() {}
-func (m *FirstLastOverTimeIntermediateList) String() string {
-	if m == nil {
-		return "<nil>"
-	}
-	return fmt.Sprintf("%v", *m)
-}
 
 func (m *AvgOverTimeIntermediate) Reset() {
 	if m == nil {
@@ -250,12 +190,6 @@ func (m *AvgOverTimeIntermediate) Reset() {
 	*m = AvgOverTimeIntermediate{}
 }
 func (*AvgOverTimeIntermediate) ProtoMessage() {}
-func (m *AvgOverTimeIntermediate) String() string {
-	if m == nil {
-		return "<nil>"
-	}
-	return fmt.Sprintf("%v", *m)
-}
 
 func (m *AvgOverTimeIntermediateList) Reset() {
 	if m == nil {
@@ -264,12 +198,6 @@ func (m *AvgOverTimeIntermediateList) Reset() {
 	*m = AvgOverTimeIntermediateList{}
 }
 func (*AvgOverTimeIntermediateList) ProtoMessage() {}
-func (m *AvgOverTimeIntermediateList) String() string {
-	if m == nil {
-		return "<nil>"
-	}
-	return fmt.Sprintf("%v", *m)
-}
 
 func (m *PresentOverTimeIntermediate) Reset() {
 	if m == nil {
@@ -278,12 +206,6 @@ func (m *PresentOverTimeIntermediate) Reset() {
 	*m = PresentOverTimeIntermediate{}
 }
 func (*PresentOverTimeIntermediate) ProtoMessage() {}
-func (m *PresentOverTimeIntermediate) String() string {
-	if m == nil {
-		return "<nil>"
-	}
-	return fmt.Sprintf("%v", *m)
-}
 
 func (m *PresentOverTimeIntermediateList) Reset() {
 	if m == nil {
@@ -292,12 +214,6 @@ func (m *PresentOverTimeIntermediateList) Reset() {
 	*m = PresentOverTimeIntermediateList{}
 }
 func (*PresentOverTimeIntermediateList) ProtoMessage() {}
-func (m *PresentOverTimeIntermediateList) String() string {
-	if m == nil {
-		return "<nil>"
-	}
-	return fmt.Sprintf("%v", *m)
-}
 
 func (m *SumOverTimeIntermediate) GetSumF() float64 {
 	if m != nil {

@@ -4,23 +4,32 @@
 package planning
 
 import (
+	"fmt"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/wiresmith/protohelpers"
 	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/runtime/protoimpl"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"reflect"
+	"slices"
+	"strconv"
+	"strings"
 	"unsafe"
 )
 
-// Reflection / registration glue for github.com/grafana/mimir/pkg/streamingpromql/planning/plan.proto.
+// Cold companion utilities for github.com/grafana/mimir/pkg/streamingpromql/planning/plan.proto.
 //
-// This file holds the per-message ProtoReflect() methods, the per-enum
-// Descriptor()/Type()/Number() methods, the embedded FileDescriptorProto
-// blob, the file_*_msgTypes / file_*_enumTypes arrays, and the init()
-// that registers everything with protoregistry.GlobalFiles and
-// protoregistry.GlobalTypes. None of these are called on the marshal /
-// unmarshal / size hot path.
+// This file holds two cold concerns merged into one compilation unit:
+//
+//   - Reflection / registration glue: the per-message ProtoReflect()
+//     methods, the per-enum Descriptor()/Type()/Number() methods, the
+//     embedded FileDescriptorProto blob, the file_*_msgTypes /
+//     file_*_enumTypes arrays, and the init() that registers everything
+//     with protoregistry.GlobalFiles and protoregistry.GlobalTypes.
+//   - The per-message String() debug dumps (hand-rolled, deterministic,
+//     non-reflection — see compiler/generator/emit_string.go).
+//
+// None of these are called on the marshal / unmarshal / size hot path.
 //
 // Why a separate file? Putting this code (plus its descriptorpb /
 // protoreflect / protoimpl imports — ~64KB of descriptorpb alone, ~377KB
@@ -31,11 +40,128 @@ import (
 // in the same compilation unit shifted hot functions onto different
 // cache sets and pushed them ~131KB further into the binary. Emitting
 // the cold half here, in its own .o, lets the linker place it away
-// from the hot half and recovers that throughput.
+// from the hot half and recovers that throughput. reflect and String()
+// are both cold and were already split out, so merging them (cold→cold)
+// preserves the rationale while halving the companion-file count.
 //
 // See compiler/generator/emit_registration.go for the full rationale
 // and the benchmark methodology. DO NOT inline this file's contents
 // back into the main .pb.go without re-measuring.
+
+func (m *EncodedQueryPlan) String() string {
+	if m == nil {
+		return "<nil>"
+	}
+	var b strings.Builder
+	if m.TimeRange.Size() > 0 {
+		b.WriteString("timeRange: ")
+		b.WriteString("{")
+		b.WriteString(m.TimeRange.String())
+		b.WriteString("}")
+		b.WriteString(" ")
+	}
+	for _, e := range m.Nodes {
+		b.WriteString("nodes: ")
+		b.WriteString("{")
+		b.WriteString(e.String())
+		b.WriteString("}")
+		b.WriteString(" ")
+	}
+	if m.RootNode != 0 {
+		b.WriteString("rootNode: ")
+		fmt.Fprintf(&b, "%v", m.RootNode)
+		b.WriteString(" ")
+	}
+	if len(m.OriginalExpression) > 0 {
+		b.WriteString("originalExpression: ")
+		b.WriteString(strconv.Quote(m.OriginalExpression))
+		b.WriteString(" ")
+	}
+	if m.EnableDelayedNameRemoval {
+		b.WriteString("enableDelayedNameRemoval: ")
+		fmt.Fprintf(&b, "%v", m.EnableDelayedNameRemoval)
+		b.WriteString(" ")
+	}
+	if m.Version != 0 {
+		b.WriteString("version: ")
+		fmt.Fprintf(&b, "%v", m.Version)
+		b.WriteString(" ")
+	}
+	b.WriteString("lookbackDelta: ")
+	fmt.Fprintf(&b, "%v", m.LookbackDelta)
+	b.WriteString(" ")
+	return strings.TrimSpace(b.String())
+}
+
+func (m *EncodedNode) String() string {
+	if m == nil {
+		return "<nil>"
+	}
+	var b strings.Builder
+	if m.NodeType != 0 {
+		b.WriteString("nodeType: ")
+		b.WriteString(m.NodeType.String())
+		b.WriteString(" ")
+	}
+	if len(m.Details) > 0 {
+		b.WriteString("details: ")
+		b.WriteString(strconv.Quote(string(m.Details)))
+		b.WriteString(" ")
+	}
+	for _, e := range m.Children {
+		b.WriteString("children: ")
+		fmt.Fprintf(&b, "%v", e)
+		b.WriteString(" ")
+	}
+	if len(m.Type) > 0 {
+		b.WriteString("type: ")
+		b.WriteString(strconv.Quote(m.Type))
+		b.WriteString(" ")
+	}
+	if len(m.Description) > 0 {
+		b.WriteString("description: ")
+		b.WriteString(strconv.Quote(m.Description))
+		b.WriteString(" ")
+	}
+	for _, e := range m.ChildrenLabels {
+		b.WriteString("childrenLabels: ")
+		b.WriteString(strconv.Quote(e))
+		b.WriteString(" ")
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func (m *EncodedQueryPlan) Clone() *EncodedQueryPlan {
+	if m == nil {
+		return nil
+	}
+	out := &EncodedQueryPlan{}
+	out.TimeRange = *m.TimeRange.Clone()
+	out.Nodes = slices.Clone(m.Nodes)
+	for i := range out.Nodes {
+		out.Nodes[i] = out.Nodes[i].Clone()
+	}
+	out.RootNode = m.RootNode
+	out.OriginalExpression = m.OriginalExpression
+	out.EnableDelayedNameRemoval = m.EnableDelayedNameRemoval
+	out.Version = m.Version
+	out.LookbackDelta = m.LookbackDelta
+	return out
+}
+
+func (m *EncodedNode) Clone() *EncodedNode {
+	if m == nil {
+		return nil
+	}
+	out := &EncodedNode{}
+	out.NodeType = m.NodeType
+	out.Details = slices.Clone(m.Details)
+	out.Children = slices.Clone(m.Children)
+	out.Type = m.Type
+	out.Description = m.Description
+	out.ChildrenLabels = slices.Clone(m.ChildrenLabels)
+	return out
+}
 
 func (x NodeType) Descriptor() protoreflect.EnumDescriptor {
 	file_github_com_grafana_mimir_pkg_streamingpromql_planning_plan_proto_init()

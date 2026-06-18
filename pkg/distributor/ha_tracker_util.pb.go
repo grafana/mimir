@@ -4,21 +4,29 @@
 package distributor
 
 import (
+	"fmt"
 	"github.com/grafana/wiresmith/protohelpers"
 	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/runtime/protoimpl"
 	"reflect"
+	"strconv"
+	"strings"
 	"unsafe"
 )
 
-// Reflection / registration glue for distributor/ha_tracker.proto.
+// Cold companion utilities for distributor/ha_tracker.proto.
 //
-// This file holds the per-message ProtoReflect() methods, the per-enum
-// Descriptor()/Type()/Number() methods, the embedded FileDescriptorProto
-// blob, the file_*_msgTypes / file_*_enumTypes arrays, and the init()
-// that registers everything with protoregistry.GlobalFiles and
-// protoregistry.GlobalTypes. None of these are called on the marshal /
-// unmarshal / size hot path.
+// This file holds two cold concerns merged into one compilation unit:
+//
+//   - Reflection / registration glue: the per-message ProtoReflect()
+//     methods, the per-enum Descriptor()/Type()/Number() methods, the
+//     embedded FileDescriptorProto blob, the file_*_msgTypes /
+//     file_*_enumTypes arrays, and the init() that registers everything
+//     with protoregistry.GlobalFiles and protoregistry.GlobalTypes.
+//   - The per-message String() debug dumps (hand-rolled, deterministic,
+//     non-reflection — see compiler/generator/emit_string.go).
+//
+// None of these are called on the marshal / unmarshal / size hot path.
 //
 // Why a separate file? Putting this code (plus its descriptorpb /
 // protoreflect / protoimpl imports — ~64KB of descriptorpb alone, ~377KB
@@ -29,11 +37,59 @@ import (
 // in the same compilation unit shifted hot functions onto different
 // cache sets and pushed them ~131KB further into the binary. Emitting
 // the cold half here, in its own .o, lets the linker place it away
-// from the hot half and recovers that throughput.
+// from the hot half and recovers that throughput. reflect and String()
+// are both cold and were already split out, so merging them (cold→cold)
+// preserves the rationale while halving the companion-file count.
 //
 // See compiler/generator/emit_registration.go for the full rationale
 // and the benchmark methodology. DO NOT inline this file's contents
 // back into the main .pb.go without re-measuring.
+
+func (m *ReplicaDesc) String() string {
+	if m == nil {
+		return "<nil>"
+	}
+	var b strings.Builder
+	if len(m.Replica) > 0 {
+		b.WriteString("replica: ")
+		b.WriteString(strconv.Quote(m.Replica))
+		b.WriteString(" ")
+	}
+	if m.ReceivedAt != 0 {
+		b.WriteString("received_at: ")
+		fmt.Fprintf(&b, "%v", m.ReceivedAt)
+		b.WriteString(" ")
+	}
+	if m.DeletedAt != 0 {
+		b.WriteString("deleted_at: ")
+		fmt.Fprintf(&b, "%v", m.DeletedAt)
+		b.WriteString(" ")
+	}
+	if m.ElectedAt != 0 {
+		b.WriteString("elected_at: ")
+		fmt.Fprintf(&b, "%v", m.ElectedAt)
+		b.WriteString(" ")
+	}
+	if m.ElectedChanges != 0 {
+		b.WriteString("elected_changes: ")
+		fmt.Fprintf(&b, "%v", m.ElectedChanges)
+		b.WriteString(" ")
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func (m *ReplicaDesc) Clone() *ReplicaDesc {
+	if m == nil {
+		return nil
+	}
+	out := &ReplicaDesc{}
+	out.Replica = m.Replica
+	out.ReceivedAt = m.ReceivedAt
+	out.DeletedAt = m.DeletedAt
+	out.ElectedAt = m.ElectedAt
+	out.ElectedChanges = m.ElectedChanges
+	return out
+}
 
 func (x *ReplicaDesc) ProtoReflect() protoreflect.Message {
 	file_distributor_ha_tracker_proto_init()
