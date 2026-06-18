@@ -30,6 +30,8 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
+* [BUGFIX] Alertmanager: Create a plain `<release>-alertmanager` ClusterIP service when `alertmanager.zoneAwareReplication.enabled=true` so that the Ingress and other consumers that reference the stable service name keep working. Previously only per-zone services were created, which broke the Ingress with `services <release>-alertmanager not found`. #15740
+
 ## 6.1.0
 
 * [CHANGE] Kafka: Removed `kafka.extraEnv`. Use `kafka.env` instead. #14892
