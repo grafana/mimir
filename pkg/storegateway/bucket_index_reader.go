@@ -409,7 +409,7 @@ func toPostingGroups(ctx context.Context, ms []*labels.Matcher, indexhdr indexhe
 // FetchPostings fills postings requested by posting groups.
 // It returns one postings for each key, in the same order.
 // If postings for given key is not fetched, entry at given index will be an ErrPostings
-func (r *bucketIndexReader) FetchPostings(ctx context.Context, keys []labels.Label, stats *safeQueryStats) ([]index.Postings, error) {
+func (r *bucketIndexReader) FetchPostings(ctx context.Context, keys []labels.Label, stats *safeQueryStats) (returnPostings []index.Postings, returnErr error) {
 	ps, err := r.fetchPostings(ctx, keys, stats)
 	if err != nil {
 		return nil, err
@@ -433,13 +433,24 @@ func (r *bucketIndexReader) FetchPostings(ctx context.Context, keys []labels.Lab
 // fetchPostings is the version-unaware private implementation of FetchPostings.
 // callers of this method may need to add padding to the results.
 // If postings for given key is not fetched, entry at given index will be nil.
-func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Label, stats *safeQueryStats) ([]index.Postings, error) {
+func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Label, stats *safeQueryStats) (output []index.Postings, returnErr error) {
+	ctx, span := tracer.Start(ctx, "fetchPostings()")
+	defer func() {
+		span.SetAttributes(
+			attribute.Int("keys", len(keys)),
+			attribute.Stringer("block_id", r.block.meta.ULID),
+		)
+		if returnErr != nil {
+			span.RecordError(returnErr)
+		}
+		span.End()
+	}()
 	timer := prometheus.NewTimer(r.block.metrics.postingsFetchDuration)
 	defer timer.ObserveDuration()
 
 	var ptrs []postingPtr
 
-	output := make([]index.Postings, len(keys))
+	output = make([]index.Postings, len(keys))
 
 	// Fetch postings from the cache with a single call.
 	fromCache := r.block.indexCache.FetchMultiPostings(ctx, r.block.userID, r.block.meta.ULID, keys)
