@@ -337,8 +337,6 @@ func (am *Alertmanager) ApplyConfig(conf *config.Config, tmpls []*alertspb.Templ
 		return err
 	}
 
-	am.api.Update(conf, func(_ context.Context, _ model.LabelSet) {})
-
 	// Hold stopMu across the field mutations so that Stop, which reads these
 	// same fields under stopMu, can't race with us. If Stop has already run,
 	// bail out here without disturbing the existing inhibitor/dispatcher.
@@ -359,6 +357,7 @@ func (am *Alertmanager) ApplyConfig(conf *config.Config, tmpls []*alertspb.Templ
 	}
 
 	am.inhibitor = inhibit.NewInhibitor(am.alerts, conf.InhibitRules, utillog.SlogFromGoKit(log.With(am.logger, "component", "inhibitor")), eventrecorder.Recorder{})
+	silencer := silence.NewSilencer(am.silences, utillog.SlogFromGoKit(am.logger), eventrecorder.Recorder{})
 
 	waitFunc := clusterWait(am.state.Position, am.cfg.PeerTimeout)
 
@@ -384,7 +383,7 @@ func (am *Alertmanager) ApplyConfig(conf *config.Config, tmpls []*alertspb.Templ
 		integrationsMap,
 		waitFunc,
 		am.inhibitor,
-		silence.NewSilencer(am.silences, utillog.SlogFromGoKit(am.logger), eventrecorder.Recorder{}),
+		silencer,
 		intervener,
 		am.marker,
 		am.nflog,
@@ -444,6 +443,16 @@ func (am *Alertmanager) ApplyConfig(conf *config.Config, tmpls []*alertspb.Templ
 	inhibitor := am.inhibitor
 	go inhibitor.Run()
 	inhibitor.WaitForLoading()
+
+	// Wire the API's alert-status callback to the active inhibitor and silencer. From the
+	// alertmanager v0.33 bump, the API computes silenced/inhibited status on demand by invoking
+	// this callback with a per-request marker in the context (see api/v2 predictAlertStatus /
+	// alertFilter); the inhibitor and silencer write the status to that marker. Register it only
+	// after the inhibitor has loaded so its state cache is populated when Mutes runs.
+	am.api.Update(conf, func(ctx context.Context, labels model.LabelSet) {
+		inhibitor.Mutes(ctx, labels)
+		silencer.Mutes(ctx, labels)
+	})
 
 	return nil
 }
