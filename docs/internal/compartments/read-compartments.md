@@ -31,6 +31,31 @@ flowchart LR
     K1 --> ING
 ```
 
+## Querying read compartments
+
+The global query layer queries the ingesters of read compartments through the same path used without
+compartments, extended to be compartment-aware. Because series are sharded to read compartments by
+metric name (see [Sharding](./sharding.md)), the layer narrows a query to only the compartments that
+can hold the selected series:
+
+- **When the query pins a single metric name** — that is, it filters the metric name with an equality
+  matcher — all of its series live in exactly one compartment, so only that compartment's ingesters are
+  queried.
+- **When the query restricts the metric name to a finite set** — for example a regex matcher equivalent
+  to an alternation like `a|b|c` — the query is sent to the union of the compartments owning those
+  names, which can still be a subset of all compartments.
+- **Otherwise** — whenever the metric name can't be reduced to a finite set of names (no metric-name
+  equality matcher and no enumerable regex, for example an open-ended regex like `.+`) — the query fans
+  out to **every** compartment and the results are merged. Metadata and whole-tenant statistics queries,
+  which carry no metric-name filter, always fan out.
+
+This targeting is what delivers the query blast-radius reduction: a problem in one compartment only
+affects queries whose metric name routes to it, while queries for other metric names are unaffected.
+
+Targeting relies on the read-compartment count being **static**: the metric-name-to-compartment mapping
+must match the one used on the write path, so a query reads from the same compartment the series were
+written to. Changing the number of compartments would shift that mapping and is out of scope.
+
 ## Why a dedicated topic per read compartment
 
 A dedicated topic per read compartment simplifies partition management: each compartment's partitions

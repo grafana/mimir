@@ -40,10 +40,7 @@ func TestGetCompartmentTokensForWriteRequest(t *testing.T) {
 	userID := "user-1"
 
 	newTestCompartmentRouter := func(numCompartments int) *compartments.Router {
-		return compartments.NewRouter(compartments.ReadConfig{
-			NumCompartments:  numCompartments,
-			KafkaTopicFormat: "comp-<compartment-id>",
-		})
+		return compartments.NewRouter(numCompartments, "comp-<read-compartment-id>")
 	}
 
 	req := &mimirpb.WriteRequest{

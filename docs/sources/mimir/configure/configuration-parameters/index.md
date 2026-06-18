@@ -522,6 +522,11 @@ instrument_ref_leaks:
   # regardless of the configured percentage. Zero means no limit.
   # CLI flag: -instrument-reference-leaks.max-inflight-instrumented-bytes
   [max_inflight_instrumented_bytes: <int> | default = 0]
+
+# (experimental) If enabled, Mimir enforces label-based access control on metric
+# read queries using the X-Prom-Label-Policy HTTP header.
+# CLI flag: -auth.label-access-control-enabled
+[label_access_control_enabled: <boolean> | default = false]
 ```
 
 ### common

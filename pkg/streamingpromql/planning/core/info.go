@@ -43,10 +43,6 @@ func (t *DataLabelSelector) Describe() string {
 	return describeSelector(t.Matchers, nil, 0, nil, false, false, false, false, nil)
 }
 
-func (t *DataLabelSelector) ChildrenLabels() []string {
-	return nil
-}
-
 func (t *DataLabelSelector) ChildrenTimeRange(timeRange types.QueryTimeRange) types.QueryTimeRange {
 	return timeRange
 }

@@ -51,10 +51,6 @@ func (u *UnaryExpression) MergeHints(_ planning.Node) error {
 	return nil
 }
 
-func (u *UnaryExpression) ChildrenLabels() []string {
-	return []string{""}
-}
-
 func MaterializeUnaryExpression(u *UnaryExpression, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
 	inner, err := materializer.ConvertNodeToOperator(u.Inner, timeRange)
 	if err != nil {

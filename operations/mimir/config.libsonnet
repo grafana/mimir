@@ -136,6 +136,10 @@
     cache_metadata_min_ready_seconds: 60,
 
     query_engine_range_vector_splitting_enabled: false,
+    // Per-path overrides for range vector splitting.
+    query_engine_range_vector_splitting_regular_path_enabled: $._config.query_engine_range_vector_splitting_enabled,
+    query_engine_range_vector_splitting_ruler_path_enabled: $._config.query_engine_range_vector_splitting_enabled,
+    range_vector_splitting_cache_enabled: $._config.query_engine_range_vector_splitting_regular_path_enabled || $._config.query_engine_range_vector_splitting_ruler_path_enabled,
     cache_range_vector_splitting_max_item_size_mb: 5,
     cache_range_vector_splitting_connection_limit: 16384,
     cache_range_vector_splitting_min_ready_seconds: 60,
@@ -694,13 +698,25 @@
     'blocks-storage.bucket-store.bucket-index.enabled': false,
   },
 
-  range_vector_splitting_caching_config:: (
-    if $._config.query_engine_range_vector_splitting_enabled then {
-      'querier.mimir-query-engine.range-vector-splitting.enabled': true,
-      'querier.mimir-query-engine.range-vector-splitting.backend': 'memcached',
-      'querier.mimir-query-engine.range-vector-splitting.memcached.addresses': 'dnssrvnoa+memcached-range-vector-splitting.%(namespace)s.svc.%(cluster_domain)s:11211' % $._config,
-      'querier.mimir-query-engine.range-vector-splitting.memcached.max-item-size': $._config.cache_range_vector_splitting_max_item_size_mb * 1024 * 1024,
-      'querier.mimir-query-engine.range-vector-splitting.memcached.timeout': '500ms',
-    } else {}
+  base_range_vector_splitting_config:: {
+    'querier.mimir-query-engine.range-vector-splitting.enabled': true,
+    'querier.mimir-query-engine.range-vector-splitting.backend': 'memcached',
+    'querier.mimir-query-engine.range-vector-splitting.memcached.addresses': 'dnssrvnoa+memcached-range-vector-splitting.%(namespace)s.svc.%(cluster_domain)s:11211' % $._config,
+    'querier.mimir-query-engine.range-vector-splitting.memcached.max-item-size': $._config.cache_range_vector_splitting_max_item_size_mb * 1024 * 1024,
+    'querier.mimir-query-engine.range-vector-splitting.memcached.timeout': '500ms',
+  },
+
+  // Range vector splitting config for the regular query path (query-frontend and querier).
+  regular_range_vector_splitting_caching_config:: (
+    if $._config.query_engine_range_vector_splitting_regular_path_enabled then
+      $.base_range_vector_splitting_config
+    else {}
+  ),
+
+  // Range vector splitting config for the ruler query path (ruler-query-frontend and ruler-querier).
+  ruler_range_vector_splitting_caching_config:: (
+    if $._config.query_engine_range_vector_splitting_ruler_path_enabled then
+      $.base_range_vector_splitting_config
+    else {}
   ),
 }

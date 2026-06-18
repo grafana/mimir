@@ -12,7 +12,6 @@
     $._config.grpcConfig +
     $._config.querySchedulerRingClientConfig +
     $.query_frontend_caching_config +
-    $.range_vector_splitting_caching_config +
     $.queryFrontendUseQuerySchedulerArgs('query-scheduler') +
     {
       target: 'query-frontend',
@@ -33,7 +32,7 @@
 
   // CLI flags that are applied only to query-frontends, and not ruler-query-frontends.
   // Values take precedence over query_frontend_args.
-  query_frontend_only_args:: {},
+  query_frontend_only_args:: $.regular_range_vector_splitting_caching_config,
 
   // Timeout validation for query-frontend
   local validateQueryFrontendTimeouts() =

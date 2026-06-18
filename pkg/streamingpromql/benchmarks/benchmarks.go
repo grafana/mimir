@@ -451,6 +451,13 @@ func TestCases(metricSizes []int) []BenchCase {
 		{
 			Expr: "a_X + a_X",
 		},
+		// Multi-aggregation with quantile
+		{
+			Expr: "quantile(0.95, a_X) - min(a_X)",
+		},
+		{
+			Expr: "quantile(0.95, a_X) - quantile(0.4, a_X)",
+		},
 		{
 			Expr: "sum(a_X) + sum(a_X)",
 		},
