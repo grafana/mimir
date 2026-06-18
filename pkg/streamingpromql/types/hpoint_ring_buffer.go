@@ -474,7 +474,9 @@ func (v HPointRingBufferView) Any() bool {
 // It panics if i is outside the range of points in this view.
 func (v HPointRingBufferView) PointAt(i int) promql.HPoint {
 	if i >= v.size {
-		panic(fmt.Sprintf("PointAt(): out of range, requested index %v but have length %v", i, v.size))
+		// A constant-string panic (rather than fmt.Sprintf) keeps PointAt cheap enough to be
+		// inlined into hot loops, e.g. the per-sample passes in extendedHistogramRate.
+		panic("HPointRingBufferView.PointAt(): index out of range")
 	}
 
 	return v.buffer.PointAt(v.offset + i)

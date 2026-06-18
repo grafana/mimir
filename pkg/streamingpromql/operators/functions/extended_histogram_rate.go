@@ -31,16 +31,23 @@ func interpolateHistograms(h1 *histogram.FloatHistogram, t1 int64, h2 *histogram
 }
 
 // pickOrInterpolateLeftHistogram returns the histogram at the left boundary of the range.
-// If interpolation is needed (smoothed and the first sample is before rangeStart), it returns
-// the interpolated histogram at rangeStart; otherwise it returns a copy of the first sample's
-// histogram.
+// If interpolation is needed (smoothed and the first sample is before rangeStart), it returns a
+// freshly-allocated interpolated histogram at rangeStart; otherwise it returns the first sample's
+// histogram directly, which aliases the ring buffer.
+//
+// The returned histogram is only ever read by extendedHistogramRate (it is the subtrahend of an
+// in-place Sub, the initial DetectReset anchor, and is deep-copied if it becomes part of the
+// counter-reset correction), so the borrowed left boundary is never mutated and the result never
+// retains it. histogram.FloatHistogram.Sub and .Add are both documented not to modify their
+// argument, so reusing the buffer's histogram instead of copying it is safe and avoids a large
+// per-step allocation (the left copy alone accounted for ~44% of this path's allocations).
 func pickOrInterpolateLeftHistogram(view *types.HPointRingBufferView, first int, rangeStart int64, smoothed, isCounter bool, emitAnnotation types.EmitAnnotationFunc) (*histogram.FloatHistogram, error) {
 	firstPoint := view.PointAt(first)
 	if smoothed && firstPoint.T < rangeStart {
 		next := view.PointAt(first + 1)
 		return interpolateHistograms(firstPoint.H, firstPoint.T, next.H, next.T, rangeStart, isCounter, emitAnnotation)
 	}
-	return firstPoint.H.Copy(), nil
+	return firstPoint.H, nil
 }
 
 // pickOrInterpolateRightHistogram returns the histogram at the right boundary of the range.

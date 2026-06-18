@@ -376,4 +376,31 @@ func TestExtendedHistogramRate(t *testing.T) {
 		requireHistogramCountSum(t, got, 20, 200)
 		require.Equal(t, histogram.GaugeType, got.CounterResetHint)
 	})
+
+	t.Run("does not mutate the boundary histograms held by the buffer", func(t *testing.T) {
+		// pickOrInterpolateLeftHistogram returns the left boundary histogram by reference (it
+		// aliases the ring buffer rather than copying), so extendedHistogramRate must only ever
+		// read it. This guards against a future change that mutates the borrowed value and would
+		// corrupt the buffer for later steps of a range query.
+		view := newHistogramView(t, []promql.HPoint{
+			{T: 0, H: expHist(100, 1000, histogram.UnknownCounterReset)},
+			{T: 10, H: expHist(200, 2000, histogram.UnknownCounterReset)},
+			{T: 20, H: expHist(50, 500, histogram.UnknownCounterReset)}, // counter reset, exercises the correction path
+			{T: 30, H: expHist(150, 1500, histogram.UnknownCounterReset)},
+		})
+
+		originals := make([]*histogram.FloatHistogram, view.Count())
+		for i := range originals {
+			originals[i] = view.PointAt(i).H.Copy()
+		}
+
+		// anchored increase over [0,30]: (right-left)+correction = (150-100)+200 = 250.
+		got, err := extendedHistogramRate(view, 0, 30, 0.01, true, false, false, emit)
+		require.NoError(t, err)
+		requireHistogramCountSum(t, got, 250, 2500)
+
+		for i := range originals {
+			require.Equal(t, originals[i], view.PointAt(i).H, "buffer histogram at index %d was mutated", i)
+		}
+	})
 }
