@@ -28,8 +28,17 @@ var _ = math.Inf
 const _ = proto.GoGoProtoPackageIsVersion3 // please upgrade the proto package
 
 type CacheEntry struct {
-	CacheKey []byte         `protobuf:"bytes,1,opt,name=cacheKey,proto3" json:"cacheKey,omitempty"`
-	Extents  []CachedExtent `protobuf:"bytes,2,rep,name=extents,proto3" json:"extents"`
+	// cacheKey is the original (unhashed) cache key, used to detect hash collisions.
+	CacheKey []byte `protobuf:"bytes,1,opt,name=cacheKey,proto3" json:"cacheKey,omitempty"`
+	// extents contain all extents in this entry.
+	//
+	// The list must be sorted by timestamp (ascending).
+	// Entries must not overlap.
+	//
+	// Adjacent entries must be separated by at least one step.
+	// For example, with a step of 1m, an extent that ends at 08:04 may be followed by an extent that starts at 08:06,
+	// but not one that starts at 08:05.
+	Extents []CachedExtent `protobuf:"bytes,2,rep,name=extents,proto3" json:"extents"`
 }
 
 func (m *CacheEntry) Reset()      { *m = CacheEntry{} }

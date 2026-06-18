@@ -18,8 +18,18 @@ option (gogoproto.sizer_all) = true;
 option (gogoproto.unmarshaler_all) = true;
 
 message CacheEntry {
-  bytes cacheKey = 1; // cacheKey is the original (unhashed) cache key, used to detect hash collisions.
-  repeated CachedExtent extents = 2 [(gogoproto.nullable) = false]; // Must be sorted by timestamp (ascending) and entries must not overlap.
+  // cacheKey is the original (unhashed) cache key, used to detect hash collisions.
+  bytes cacheKey = 1;
+
+  // extents contain all extents in this entry.
+  //
+  // The list must be sorted by timestamp (ascending).
+  // Entries must not overlap.
+  //
+  // Adjacent entries must be separated by at least one step.
+  // For example, with a step of 1m, an extent that ends at 08:04 may be followed by an extent that starts at 08:06,
+  // but not one that starts at 08:05.
+  repeated CachedExtent extents = 2 [(gogoproto.nullable) = false];
 }
 
 message CachedExtent {
