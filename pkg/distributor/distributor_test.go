@@ -116,7 +116,7 @@ func TestConfig_Validate(t *testing.T) {
 
 			testData.initLimits(&limits)
 
-			assert.Equal(t, testData.expected, cfg.Validate(limits))
+			assert.Equal(t, testData.expected, cfg.Validate(limits, compartments.Config{}))
 		})
 	}
 }
@@ -6353,7 +6353,7 @@ func prepareIngesterZone(t testing.TB, zone string, state ingesterZoneState, cfg
 			kafkaCfg.LastProducedOffsetPollInterval = 100 * time.Millisecond
 			kafkaCfg.LastProducedOffsetRetryTimeout = 100 * time.Millisecond
 
-			ingester.partitionReader, err = ingest.NewPartitionReaderForPusher(kafkaCfg, ingester.partitionID(), ingester.instanceID(), filepath.Join(t.TempDir(), "test.json"), newMockIngesterPusherAdapter(ingester), log.NewNopLogger(), nil)
+			ingester.partitionReader, err = ingest.NewSingleClusterPartitionReader(kafkaCfg, ingester.partitionID(), ingester.instanceID(), filepath.Join(t.TempDir(), "test.json"), newMockIngesterPusherAdapter(ingester), log.NewNopLogger(), nil)
 			require.NoError(t, err)
 
 			// We start it async, and then we wait until running in a defer so that multiple partition
@@ -6399,12 +6399,24 @@ func prepareRingInstances(cfg prepConfig, ingesters []*mockIngester) *ring.Desc 
 
 // prepareCompartmentPartitionRing builds a partition ring desc with the given partitions set ACTIVE,
 // used to seed a single read compartment's partition ring in tests.
-func prepareCompartmentPartitionRing(activePartitions []int32) *ring.PartitionRingDesc {
+func prepareCompartmentPartitionRing(activePartitions []int32, ingesters []*mockIngester) *ring.PartitionRingDesc {
 	desc := ring.NewPartitionRingDesc()
 	timeBeforeShuffleShardingLookbackPeriod := time.Now().Add(-2 * time.Hour)
+
+	active := make(map[int32]struct{}, len(activePartitions))
 	for _, partitionID := range activePartitions {
 		desc.AddPartition(partitionID, ring.PartitionActive, timeBeforeShuffleShardingLookbackPeriod)
+		active[partitionID] = struct{}{}
 	}
+
+	// Add the ingesters owning this compartment's active partitions as owners, so the query path can
+	// resolve partition owners. An ingester owns the partition matching its instance ID.
+	for _, ingester := range ingesters {
+		if _, ok := active[ingester.partitionID()]; ok {
+			desc.AddOrUpdateOwner(ingester.instanceID(), ring.OwnerActive, ingester.partitionID(), timeBeforeShuffleShardingLookbackPeriod)
+		}
+	}
+
 	return desc
 }
 
@@ -6517,7 +6529,7 @@ func prepare(t testing.TB, cfg prepConfig) ([]*Distributor, []*mockIngester, []*
 				key := compartments.ReadCompartmentRingKey(c, ingester.PartitionRingKey)
 				activePartitions := cfg.compartmentActivePartitions[c]
 				require.NoError(t, partitionsStore.CAS(ctx, key, func(_ interface{}) (interface{}, bool, error) {
-					return prepareCompartmentPartitionRing(activePartitions), true, nil
+					return prepareCompartmentPartitionRing(activePartitions, ingesters), true, nil
 				}))
 			}
 		} else {
@@ -6991,7 +7003,7 @@ type mockIngester struct {
 
 	// partitionReader is responsible to consume a partition from Kafka when the
 	// ingest storage is enabled. This field is nil if the ingest storage is disabled.
-	partitionReader *ingest.PartitionReader
+	partitionReader ingest.PartitionReader
 
 	// Hooks.
 	hooksMx        sync.Mutex

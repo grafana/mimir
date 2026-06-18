@@ -289,11 +289,40 @@ func (c *Config) Validate(log log.Logger) error {
 	if err := c.Compartments.Validate(); err != nil {
 		return errors.Wrap(err, "invalid compartments config")
 	}
-	if c.Compartments.Enabled && !c.IngestStorage.Enabled {
-		return errors.New("compartments require ingest storage to be enabled")
-	}
-	if c.Compartments.Enabled && c.IngestStorage.Migration.DistributorSendToIngestersEnabled {
-		return errors.New("compartments cannot be enabled together with ingest storage migration's distributor-send-to-ingesters")
+	if c.Compartments.Enabled {
+		if !c.IngestStorage.Enabled {
+			return errors.New("compartments require ingest storage to be enabled")
+		}
+		if c.IngestStorage.Migration.DistributorSendToIngestersEnabled {
+			return errors.New("compartments cannot be enabled together with ingest storage migration's distributor-send-to-ingesters")
+		}
+		// Only distributors and ingesters currently support a topic parameterised by read compartment
+		// when compartments are enabled.
+		if c.isDistributorEnabled() || c.isIngesterEnabled() {
+			if !strings.Contains(c.IngestStorage.KafkaConfig.Topic, compartments.ReadCompartmentIDPlaceholder) {
+				return fmt.Errorf("when compartments are enabled, -ingest-storage.kafka.topic must contain the %q placeholder for the distributor and ingester", compartments.ReadCompartmentIDPlaceholder)
+			}
+			// The address is resolved per write compartment. Without the placeholder every write compartment
+			// resolves to the same Kafka cluster, so the ingester would ingest each partition once per write
+			// compartment. Each configured address is resolved independently, so they must all contain it.
+			for _, addr := range c.IngestStorage.KafkaConfig.Address {
+				if !strings.Contains(addr, compartments.WriteCompartmentIDPlaceholder) {
+					return fmt.Errorf("when compartments are enabled, every -ingest-storage.kafka.address must contain the %q placeholder for the distributor and ingester", compartments.WriteCompartmentIDPlaceholder)
+				}
+			}
+		}
+		// The distributor's writer is configured with the read-compartment-templated topic, which is not a
+		// real topic name and so cannot be auto-created; the resolved per-compartment topics are created by
+		// the ingesters' partition readers. The distributor must therefore have topic auto-creation disabled.
+		if c.isDistributorEnabled() && c.IngestStorage.KafkaConfig.AutoCreateTopicEnabled {
+			return errors.New("when compartments are enabled, -ingest-storage.kafka.auto-create-topic-enabled must be false on the distributor")
+		}
+		// The offset catalogue tracks a single Kafka offset per block, which is not representable when an
+		// ingester consumes from more than one write compartment's Kafka cluster (each has its own offset
+		// space). Multi-cluster support for the offset catalogue is not implemented yet.
+		if c.Compartments.Write.NumCompartments > 1 && c.BlocksStorage.TSDB.OffsetCatalogue.Enabled {
+			return errors.New("the offset catalogue (-blocks-storage.tsdb.offset-catalogue.enabled) cannot be enabled together with more than one write compartment")
+		}
 	}
 	if c.isIngesterEnabled() {
 		if !c.IngestStorage.Enabled && !c.Ingester.PushGrpcMethodEnabled {
@@ -306,7 +335,7 @@ func (c *Config) Validate(log log.Logger) error {
 	if err := c.BlocksStorage.Validate(c.Ingester.ActiveSeriesMetrics); err != nil {
 		return errors.Wrap(err, "invalid TSDB config")
 	}
-	if err := c.Distributor.Validate(c.LimitsConfig); err != nil {
+	if err := c.Distributor.Validate(c.LimitsConfig, c.Compartments); err != nil {
 		return errors.Wrap(err, "invalid distributor config")
 	}
 	if err := c.Querier.Validate(); err != nil {

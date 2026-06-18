@@ -431,7 +431,7 @@ func (a *API) RegisterIngesterPartitionRings(compartmentsEnabled bool, partition
 		return
 	}
 
-	index := compartments.NewIndexPageHandler("Partitions Ring Status", "partition-ring/compartment-"+compartments.CompartmentIDPlaceholder, partitionRings.Count())
+	index := compartments.NewIndexPageHandler("Partitions Ring Status", "partition-ring/compartment-"+compartments.ReadCompartmentIDPlaceholder, partitionRings.Count())
 	a.RegisterRoute("/ingester/partition-ring", index, false, true, "GET")
 
 	for compartmentID, partitionRing := range partitionRings.All() {

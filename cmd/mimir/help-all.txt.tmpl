@@ -3377,6 +3377,8 @@ Usage of ./cmd/mimir/mimir:
     	Comma separated list of yaml files or URLs with the configuration that can be updated at runtime. Runtime config files will be merged from left to right.
   -runtime-config.http-client-cluster-validation.label string
     	[experimental] Primary cluster validation label.
+  -runtime-config.http-client-disable-keep-alives
+    	Disable HTTP keep-alives for the runtime config HTTP client. When enabled, each reload opens a new connection, which prevents long-lived connections from being pinned to a single backend when the runtime config URL is served by multiple replicas behind a connection-level (L4) load balancer, such as a Kubernetes Service. (default true)
   -runtime-config.http-client-timeout duration
     	HTTP client timeout when fetching runtime config from URLs. (default 30s)
   -runtime-config.reload-period duration
@@ -3670,9 +3672,9 @@ Usage of ./cmd/mimir/mimir:
   -tests.write-read-series-test.histogram-samples-enabled
     	Set to true to use native histogram samples
   -tests.write-read-series-test.max-query-age duration
-    	How back in the past metrics can be queried at most. (default 168h0m0s)
+    	How back in the past metrics can be queried at most. (default 48h0m0s)
   -tests.write-read-series-test.num-series int
-    	Number of series used for the test. (default 10000)
+    	Number of series used for the test. (default 1000)
   -tests.write-timeout duration
     	The timeout for a single write request. (default 5s)
   -timeseries-unmarshal-caching-optimization-enabled

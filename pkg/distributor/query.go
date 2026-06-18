@@ -55,7 +55,18 @@ func (d *Distributor) QueryExemplars(ctx context.Context, from, to model.Time, m
 			return err
 		}
 
-		replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx)
+		// The exemplars API accepts multiple matcher sets that are OR-ed together. With compartments
+		// enabled we only restrict the query when there's exactly one set: targeting the union of the
+		// per-set compartments isn't worth the extra complexity for the exemplars API, which is a secondary,
+		// infrequently used API in Mimir, so for multiple sets we let the query fan out to all compartments.
+		// Note we must not flatten the sets into one: distinct exact __name__ matchers from different sets
+		// would otherwise be read as conflicting and collapse to a single (wrong) compartment.
+		var compartmentMatchers []*labels.Matcher
+		if len(matchers) == 1 {
+			compartmentMatchers = matchers[0]
+		}
+
+		replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx, compartmentMatchers)
 		if err != nil {
 			return err
 		}
@@ -92,7 +103,7 @@ func (d *Distributor) QueryStream(ctx context.Context, queryMetrics *stats.Query
 
 		req.StreamingChunksBatchSize = d.cfg.StreamingChunksPerIngesterSeriesBufferSize
 
-		replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx)
+		replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx, matchers)
 		if err != nil {
 			return err
 		}
@@ -114,16 +125,13 @@ func (d *Distributor) QueryStream(ctx context.Context, queryMetrics *stats.Query
 // that must be queried for a read operation.
 //
 // If multiple ring.ReplicationSets are returned, each must be queried separately, and results merged.
-func (d *Distributor) getIngesterReplicationSetsForQuery(ctx context.Context) ([]ring.ReplicationSet, error) {
+func (d *Distributor) getIngesterReplicationSetsForQuery(ctx context.Context, matchers []*labels.Matcher) ([]ring.ReplicationSet, error) {
 	userID, err := tenant.TenantID(ctx)
 	if err != nil {
 		return nil, err
 	}
 
 	if d.cfg.IngestStorageConfig.Enabled {
-		// Read path is not compartment-aware yet, so it always uses read compartment 0.
-		r := d.partitionInstanceRings.Get(0)
-
 		// Build a subring to query. We use ShuffleShardWithLookback() to limit the partitions to query
 		// to the tenant's shard (when shuffle sharding is enabled) and to filter out inactive partitions
 		// that have been inactive for longer than the lookback period.
@@ -131,7 +139,31 @@ func (d *Distributor) getIngesterReplicationSetsForQuery(ctx context.Context) ([
 		if d.cfg.ShuffleShardingEnabled {
 			shardSize = d.limits.IngestionPartitionsTenantShardSize(userID)
 		}
-		r, err = r.ShuffleShardWithLookback(userID, shardSize, d.cfg.IngestersLookbackPeriod, time.Now())
+
+		// When compartments are enabled, try to restrict the pool of compartments that need to be queried.
+		if d.cfg.Compartments.Enabled {
+			targets := d.compartmentRouter.CompartmentsForMatchers(userID, matchers)
+			var replicationSets []ring.ReplicationSet
+
+			for _, c := range targets {
+				r, err := d.partitionInstanceRings.Get(c).ShuffleShardWithLookback(userID, shardSize, d.cfg.IngestersLookbackPeriod, time.Now())
+				if err != nil {
+					return nil, err
+				}
+
+				sets, err := r.GetReplicationSetsForOperation(readNoExtend)
+				if err != nil {
+					return nil, err
+				}
+				replicationSets = append(replicationSets, sets...)
+			}
+
+			d.queryIngesterCompartmentsHit.Observe(float64(len(targets)))
+			return replicationSets, nil
+		}
+
+		// Compartments are disabled.
+		r, err := d.partitionInstanceRings.Get(0).ShuffleShardWithLookback(userID, shardSize, d.cfg.IngestersLookbackPeriod, time.Now())
 		if err != nil {
 			return nil, err
 		}

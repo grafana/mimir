@@ -71,7 +71,7 @@ jobs:
 
       - name: Upload regenerated helm tests and docs
         if: steps.check_updates.outputs.has_changes == 'true'
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: regenerated-helm
           path: regenerated-helm.tar
@@ -114,7 +114,7 @@ jobs:
           github_app: mimir-github-bot
 
       - name: Commit regenerated helm tests and docs to PR branch
-        uses: planetscale/ghcommit-action@57a6c787385af407a557374c794a09273aaebfd7 # v0.2.21
+        uses: planetscale/ghcommit-action@a6b150b81dca5dd027baa898604418eec9e11465 # v0.2.22
         with:
           commit_message: "Update build with regenerated helm tests and docs"
           repo: ${{ github.event.pull_request.head.repo.full_name }}

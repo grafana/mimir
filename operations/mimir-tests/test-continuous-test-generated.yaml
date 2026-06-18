@@ -450,8 +450,6 @@ spec:
         - -tests.read-endpoint=http://query-frontend.default.svc.cluster.local
         - -tests.tenant-id=1234
         - -tests.write-endpoint=http://distributor.default.svc.cluster.local
-        - -tests.write-read-series-test.max-query-age=48h
-        - -tests.write-read-series-test.num-series=1000
         image: grafana/mimir:3.1.1
         imagePullPolicy: IfNotPresent
         name: continuous-test
@@ -711,10 +709,10 @@ spec:
           timeoutSeconds: 1
         resources:
           limits:
-            memory: 1200Mi
+            memory: 4Gi
           requests:
             cpu: "2"
-            memory: 600Mi
+            memory: 2Gi
         volumeMounts:
         - mountPath: /etc/mimir
           name: overrides

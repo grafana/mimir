@@ -1370,6 +1370,7 @@
   "runtime-config.file": "",
   "runtime-config.http-client-timeout": 30000000000,
   "runtime-config.http-client-cluster-validation.label": "",
+  "runtime-config.http-client-disable-keep-alives": true,
   "memberlist.nodename": "",
   "memberlist.randomize-node-name": true,
   "memberlist.stream-timeout": 2000000000,
