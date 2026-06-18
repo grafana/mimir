@@ -36,7 +36,14 @@ type childField struct {
 	Nilable    bool
 	Type       string // source type (e.g. *core.FunctionCall)
 	TypeImport string
-	Label      string
+	Label      *string // nil when unset
+}
+
+func (c *childField) LabelText() string {
+	if c.Label == nil {
+		return ""
+	}
+	return *c.Label
 }
 
 //go:embed child_method.tmpl
@@ -212,6 +219,7 @@ func childrenLabelsMethodGenerate(s *Struct, imports *ImportsCollector) (string,
 // validateChildLabels validates the labels of the tagged fields.
 // Returns an error if:
 //   - a node:"children" field is missing a labelfmt,
+//   - a child sets an empty label,
 //   - two child fields share the same label.
 func validateChildLabels(data *templateStructData) error {
 	if data.ChildrenField != "" {
@@ -220,15 +228,16 @@ func validateChildLabels(data *templateStructData) error {
 		}
 		return nil
 	}
-	if len(data.ChildFields) <= 1 {
-		return nil
-	}
 	seenLabels := make(map[string]struct{}, len(data.ChildFields))
 	for _, field := range data.ChildFields {
-		if _, dup := seenLabels[field.Label]; dup {
-			return fmt.Errorf("child field %q has a duplicate label %q", field.Name, field.Label)
+		label := field.LabelText()
+		if field.Label != nil && label == "" {
+			return fmt.Errorf("child field %q has an empty label", field.Name)
 		}
-		seenLabels[field.Label] = struct{}{}
+		if _, dup := seenLabels[label]; dup {
+			return fmt.Errorf("child field %q has a duplicate label %q", field.Name, label)
+		}
+		seenLabels[label] = struct{}{}
 	}
 	return nil
 }

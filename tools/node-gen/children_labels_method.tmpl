@@ -8,7 +8,7 @@ func ({{.Receiver}} *{{.Type}}) ChildrenLabels() []string {
 
 {{define "child_fields" -}}
 func ({{.Receiver}} *{{.Type}}) ChildrenLabels() []string {
-	return []string{ {{- range $i, $f := .ChildFields}}{{if $i}}, {{end}}{{printf "%q" $f.Label}}{{end}}}
+	return []string{ {{- range $i, $f := .ChildFields}}{{if $i}}, {{end}}{{printf "%q" $f.LabelText}}{{end}}}
 }
 {{- end }}
 
@@ -20,10 +20,10 @@ func ({{.Receiver}} *{{.Type}}) ChildrenLabels() []string {
 		{{- else if eq .CountWithoutLast 1}}
 		return []string{""}
 		{{- else}}
-		return []string{ {{- range $i, $f := (slice .ChildFields 0 $.CountWithoutLast)}}{{if $i}}, {{end}}{{printf "%q" $f.Label}}{{end}}}
+		return []string{ {{- range $i, $f := (slice .ChildFields 0 $.CountWithoutLast)}}{{if $i}}, {{end}}{{printf "%q" $f.LabelText}}{{end}}}
 		{{- end}}
 	}
-	return []string{ {{- range $i, $f := .ChildFields}}{{if $i}}, {{end}}{{printf "%q" $f.Label}}{{end}}}
+	return []string{ {{- range $i, $f := .ChildFields}}{{if $i}}, {{end}}{{printf "%q" $f.LabelText}}{{end}}}
 }
 {{- end }}
 

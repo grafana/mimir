@@ -143,6 +143,17 @@ func TestChildrenLabelsMethod_Unsupported(t *testing.T) {
 			expectedErr: `child field "RHS" has a duplicate label ""`,
 		},
 		{
+			name: "empty label",
+			source: `package core
+                     import "planning"
+                     //node:generate
+                     type BinaryExpression struct {
+                     	LHS planning.Node ` + "`" + `node:"child,label="` + "`" + `
+                     	RHS planning.Node ` + "`" + `node:"child,label=RHS"` + "`" + `
+                     }`,
+			expectedErr: `child field "LHS" has an empty label`,
+		},
+		{
 			name: "duplicate labels",
 			source: `package core
                      import "planning"

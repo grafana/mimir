@@ -89,7 +89,8 @@ func TestParser_FieldTags(t *testing.T) {
 	require.Equal(t, &NodeTag{IsChild: true, Nilable: true}, fields[1].Tag)
 
 	require.Equal(t, "Labeled", fields[2].Name)
-	require.Equal(t, &NodeTag{IsChild: true, Label: "LHS"}, fields[2].Tag)
+	label := "LHS"
+	require.Equal(t, &NodeTag{IsChild: true, Label: &label}, fields[2].Tag)
 
 	require.Equal(t, "Args", fields[3].Name)
 	require.Equal(t, &NodeTag{IsChildren: true}, fields[3].Tag)

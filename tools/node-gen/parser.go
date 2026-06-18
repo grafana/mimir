@@ -46,11 +46,11 @@ type FieldType struct {
 type NodeTag struct {
 	IsChild    bool
 	IsChildren bool
-	Nilable    bool   // child only; non-nil by default; set true with the "nilable" tag option for the rare case (e.g. AggregateExpression.Param)
-	Label      string // child only; the child's label, set with the "label=X" tag option
-	Min        int    // children only; minimum required number of children, set with the "min=N" tag option (0 means no lower bound)
-	LabelFmt   string // children only; fmt format applied with each child's index to build its label (e.g. "labelfmt=node %d" yields "node 0", "node 1", ...)
-	NoCollapse bool   // children only; with "nocollapse", a single child keeps its labelfmt label instead of collapsing to ""
+	Nilable    bool    // child only; non-nil by default; set true with the "nilable" tag option for the rare case (e.g. AggregateExpression.Param)
+	Label      *string // child only; the child's label, set with the "label=X" tag option (nil when unset)
+	Min        int     // children only; minimum required number of children, set with the "min=N" tag option (0 means no lower bound)
+	LabelFmt   string  // children only; fmt format applied with each child's index to build its label (e.g. "labelfmt=node %d" yields "node 0", "node 1", ...)
+	NoCollapse bool    // children only; with "nocollapse", a single child keeps its labelfmt label instead of collapsing to ""
 }
 
 // ParsePackage reads all non-test .go files in packagePath (skipping the generated file named genFileName)
@@ -273,7 +273,8 @@ func parseChildTag(opts []string) (*NodeTag, error) {
 		case opt == "nilable":
 			t.Nilable = true
 		case strings.HasPrefix(opt, "label="):
-			t.Label = strings.TrimPrefix(opt, "label=")
+			label := strings.TrimPrefix(opt, "label=")
+			t.Label = &label
 		default:
 			return nil, fmt.Errorf("unknown child tag option %q", opt)
 		}
