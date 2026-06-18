@@ -160,6 +160,7 @@ func (t *Mimir) initAPI() (services.Service, error) {
 			QuerySharding:         strconv.FormatBool(t.Cfg.Frontend.QueryMiddleware.ShardedQueries),
 			RulerConfigAPI:        strconv.FormatBool(t.Cfg.Ruler.EnableAPI),
 			FederatedRules:        strconv.FormatBool(t.Cfg.Ruler.TenantFederation.Enabled),
+			IngestStorage:         strconv.FormatBool(t.Cfg.IngestStorage.Enabled),
 		})
 
 	t.API = a
