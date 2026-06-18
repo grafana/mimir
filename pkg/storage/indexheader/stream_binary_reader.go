@@ -20,6 +20,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/thanos-io/objstore"
+	"go.opentelemetry.io/otel/attribute"
 
 	streamencoding "github.com/grafana/mimir/pkg/storage/indexheader/encoding"
 	streamindex "github.com/grafana/mimir/pkg/storage/indexheader/index"
@@ -284,7 +285,18 @@ func (r *StreamBinaryReader) IsRemotePostingsOffsets(context.Context) (bool, err
 	return ok, nil
 }
 
-func (r *StreamBinaryReader) PostingsOffset(_ context.Context, name string, value string) (index.Range, error) {
+func (r *StreamBinaryReader) PostingsOffset(ctx context.Context, name string, value string) (rng index.Range, returnErr error) {
+	_, span := tracer.Start(ctx, "PostingsOffset()")
+	defer func() {
+		span.SetAttributes(
+			attribute.String("name", name),
+			attribute.String("value", value),
+		)
+		if returnErr != nil {
+			span.RecordError(returnErr)
+		}
+		span.End()
+	}()
 	rng, found, err := r.postingsOffsetTable.PostingsOffset(name, value)
 	if err != nil {
 		return index.Range{}, err
@@ -345,7 +357,18 @@ func (r *StreamBinaryReader) SymbolsReader(context.Context) (streamindex.Symbols
 	}, nil
 }
 
-func (r *StreamBinaryReader) LabelValuesOffsets(ctx context.Context, name string, prefix string, filter func(string) bool) ([]streamindex.PostingListOffset, error) {
+func (r *StreamBinaryReader) LabelValuesOffsets(ctx context.Context, name string, prefix string, filter func(string) bool) (offsets []streamindex.PostingListOffset, returnErr error) {
+	ctx, span := tracer.Start(ctx, "LabelValuesOffsets()")
+	defer func() {
+		span.SetAttributes(
+			attribute.String("name", name),
+			attribute.String("prefix", prefix),
+		)
+		if returnErr != nil {
+			span.RecordError(returnErr)
+		}
+		span.End()
+	}()
 	return r.postingsOffsetTable.LabelValuesOffsets(ctx, name, prefix, filter)
 }
 
