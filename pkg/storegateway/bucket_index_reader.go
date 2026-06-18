@@ -356,16 +356,27 @@ func toPostingGroups(ctx context.Context, ms []*labels.Matcher, indexhdr indexhe
 		return strings.Compare(a.labelName, b.labelName)
 	})
 
-	postingGroups := make([]postingGroup, 0, len(rawPostingGroups)+1) // +1 for the AllPostings group we might add
+	postingGroups := make([]postingGroup, len(rawPostingGroups), len(rawPostingGroups)+1) // +1 for the AllPostings group we might add
 	// Next we check whether the posting groups won't select an empty set of postings.
 	// Based on the previous sorting, we start with the ones that have a known set of values because it's less expensive to check them in
 	// the index header.
-	for _, rawGroup := range rawPostingGroups {
-		pg, err := rawGroup.toPostingGroup(ctx, indexhdr)
-		if err != nil {
-			return nil, errors.Wrap(err, "filtering posting group")
-		}
+	errGroup, ctx := errgroup.WithContext(ctx)
+	for i, rawGroup := range rawPostingGroups {
+		errGroup.Go(func() error {
+			pg, err := rawGroup.toPostingGroup(ctx, indexhdr)
+			if err != nil {
+				return errors.Wrap(err, "filtering posting group")
+			}
+			postingGroups[i] = pg
+			return nil
+		})
+	}
+	err := errGroup.Wait()
+	if err != nil {
+		return nil, err
+	}
 
+	for _, pg := range postingGroups {
 		// If this group has no keys to work though and is not a subtract group, then it's an empty group.
 		// We can shortcut this, since intersection with empty postings would return no postings.
 		// E.g. `label="non-existent-value"` returns empty group.
@@ -373,7 +384,6 @@ func toPostingGroups(ctx context.Context, ms []*labels.Matcher, indexhdr indexhe
 			return nil, nil
 		}
 
-		postingGroups = append(postingGroups, pg)
 		// If the group is a subtraction group, we must fetch all postings and remove the ones that this matcher selects.
 		allRequested = allRequested || pg.isSubtract
 		hasAdds = hasAdds || !pg.isSubtract
