@@ -367,6 +367,7 @@ func TestRemoteReadSamples_SampleCountStats(t *testing.T) {
 	tests := map[string]struct {
 		queries                       []*prompb.Query
 		seriesSets                    func() []storage.SeriesSet
+		expectedStatusCode            int
 		expectedPhysicalSampleCount   uint64
 		expectedEquivalentSampleCount uint64
 	}{
@@ -492,8 +493,37 @@ func TestRemoteReadSamples_SampleCountStats(t *testing.T) {
 			expectedPhysicalSampleCount:   3,
 			expectedEquivalentSampleCount: 3,
 		},
+		"stats reported after partial read error": {
+			queries: []*prompb.Query{
+				{StartTimestampMs: 0, EndTimestampMs: 10},
+			},
+			seriesSets: func() []storage.SeriesSet {
+				// The SeriesSet yields one series and then fails on Err(); the already-read
+				// series must still be counted, matching the streaming path's behaviour.
+				return []storage.SeriesSet{
+					&partiallyFailingSeriesSet{
+						ss: series.NewConcreteSeriesSetFromUnsortedSeries([]storage.Series{
+							series.NewConcreteSeries(
+								labels.FromStrings("foo", "bar"),
+								[]model.SamplePair{{Timestamp: 1, Value: 1}, {Timestamp: 2, Value: 2}},
+								nil,
+							),
+							series.NewConcreteSeries(
+								labels.FromStrings("foo", "baz"),
+								[]model.SamplePair{{Timestamp: 3, Value: 3}},
+								nil,
+							),
+						}),
+						failAfter: 1,
+						err:       errors.New("partial series set failure"),
+					},
+				}
+			},
+			expectedStatusCode:            http.StatusInternalServerError,
+			expectedPhysicalSampleCount:   2,
+			expectedEquivalentSampleCount: 2,
+		},
 	}
-
 	for testName, tc := range tests {
 		t.Run(testName, func(t *testing.T) {
 			seriesSets := tc.seriesSets()
@@ -510,13 +540,17 @@ func TestRemoteReadSamples_SampleCountStats(t *testing.T) {
 				},
 			}
 
-			queryStats, ctx := stats.ContextWithEmptyStats(context.Background())
+			queryStats, ctx := stats.ContextWithEmptyStats(t.Context())
 			w := httptest.NewRecorder()
 			req := &prompb.ReadRequest{Queries: tc.queries}
 
 			remoteReadSamples(ctx, q, w, req, 0, log.NewNopLogger())
 
-			require.Equal(t, http.StatusOK, w.Code)
+			expectedCode := tc.expectedStatusCode
+			if expectedCode == 0 {
+				expectedCode = http.StatusOK
+			}
+			require.Equal(t, expectedCode, w.Code)
 			require.Equal(t, tc.expectedPhysicalSampleCount, queryStats.LoadPhysicalSamplesRead())
 			require.Equal(t, tc.expectedEquivalentSampleCount, queryStats.LoadEquivalentSamplesRead())
 		})
@@ -628,6 +662,55 @@ func TestRemoteReadStreamedXORChunks_SampleCountStats(t *testing.T) {
 			expectedPhysicalSampleCount:   3,
 			expectedEquivalentSampleCount: 3,
 		},
+		"stale samples are not counted": {
+			queries: []*prompb.Query{
+				{StartTimestampMs: 0, EndTimestampMs: 10},
+			},
+			chunkSeriesSets: func() []storage.ChunkSeriesSet {
+				staleNaN := model.SampleValue(math.Float64frombits(value.StaleNaN))
+				return []storage.ChunkSeriesSet{
+					storage.NewSeriesSetToChunkSet(
+						series.NewConcreteSeriesSetFromUnsortedSeries([]storage.Series{
+							series.NewConcreteSeries(
+								labels.FromStrings("foo", "bar"),
+								[]model.SamplePair{
+									{Timestamp: 1, Value: 1},
+									{Timestamp: 2, Value: staleNaN},
+									{Timestamp: 3, Value: 3},
+									{Timestamp: 4, Value: staleNaN},
+									{Timestamp: 5, Value: 5},
+								},
+								nil,
+							),
+						}),
+					),
+				}
+			},
+			expectedPhysicalSampleCount:   3,
+			expectedEquivalentSampleCount: 3,
+		},
+		"over-read samples outside the query range are not counted": {
+			queries: []*prompb.Query{
+				{StartTimestampMs: 0, EndTimestampMs: 10},
+			},
+			chunkSeriesSets: func() []storage.ChunkSeriesSet {
+				// The querier can over-read whole chunks; the series spans t=1..20 but the
+				// query only asks for [0,10], so only 10 samples must be metered.
+				samples := make([]model.SamplePair, 0, 20)
+				for ts := int64(1); ts <= 20; ts++ {
+					samples = append(samples, model.SamplePair{Timestamp: model.Time(ts), Value: model.SampleValue(ts)})
+				}
+				return []storage.ChunkSeriesSet{
+					storage.NewSeriesSetToChunkSet(
+						series.NewConcreteSeriesSetFromUnsortedSeries([]storage.Series{
+							series.NewConcreteSeries(labels.FromStrings("foo", "bar"), samples, nil),
+						}),
+					),
+				}
+			},
+			expectedPhysicalSampleCount:   10,
+			expectedEquivalentSampleCount: 10,
+		},
 		"empty series set": {
 			queries: []*prompb.Query{
 				{StartTimestampMs: 0, EndTimestampMs: 10},
@@ -643,7 +726,6 @@ func TestRemoteReadStreamedXORChunks_SampleCountStats(t *testing.T) {
 			expectedEquivalentSampleCount: 0,
 		},
 	}
-
 	for testName, tc := range tests {
 		t.Run(testName, func(t *testing.T) {
 			chunkSeriesSets := tc.chunkSeriesSets()
@@ -660,7 +742,7 @@ func TestRemoteReadStreamedXORChunks_SampleCountStats(t *testing.T) {
 				},
 			}
 
-			queryStats, ctx := stats.ContextWithEmptyStats(context.Background())
+			queryStats, ctx := stats.ContextWithEmptyStats(t.Context())
 			w := httptest.NewRecorder()
 			req := &prompb.ReadRequest{
 				Queries:               tc.queries,
@@ -1303,8 +1385,8 @@ func equivalentSampleCountDecodeAll(chk chunkenc.Chunk) uint64 {
 }
 
 // makeChunk creates a chunkenc.Chunk with n samples of the given encoding.
-func makeChunk(b *testing.B, encoding chunkenc.Encoding, n int) chunkenc.Chunk {
-	b.Helper()
+func makeChunk(tb testing.TB, encoding chunkenc.Encoding, n int) chunkenc.Chunk {
+	tb.Helper()
 
 	var chk chunkenc.Chunk
 	switch encoding {
@@ -1315,79 +1397,146 @@ func makeChunk(b *testing.B, encoding chunkenc.Encoding, n int) chunkenc.Chunk {
 	case chunkenc.EncFloatHistogram:
 		chk = chunkenc.NewFloatHistogramChunk()
 	default:
-		b.Fatalf("unsupported encoding: %v", encoding)
+		tb.Fatalf("unsupported encoding: %v", encoding)
 	}
 
 	ap, err := chk.Appender()
-	require.NoError(b, err)
+	require.NoError(tb, err)
 
-	for i := 0; i < n; i++ {
+	for i := range n {
 		switch encoding {
 		case chunkenc.EncXOR:
 			ap.Append(0, int64(i), float64(i))
 		case chunkenc.EncHistogram:
 			_, _, _, err = ap.AppendHistogram(nil, 0, int64(i), test.GenerateTestHistogram(i), true)
-			require.NoError(b, err)
+			require.NoError(tb, err)
 		case chunkenc.EncFloatHistogram:
 			_, _, _, err = ap.AppendFloatHistogram(nil, 0, int64(i), test.GenerateTestFloatHistogram(i), true)
-			require.NoError(b, err)
+			require.NoError(tb, err)
 		}
 	}
 
 	return chk
 }
 
-func TestEquivalentSampleCountForChunk_StaleNaN(t *testing.T) {
+func TestSampleCountsForChunk(t *testing.T) {
 	staleSum := math.Float64frombits(value.StaleNaN)
+	// Wide bounds that include every sample, for cases not exercising the time filter.
+	const allTimes, allTimesEnd = int64(math.MinInt64), int64(math.MaxInt64)
+
+	t.Run("float samples within range are counted", func(t *testing.T) {
+		chk := chunkenc.NewXORChunk()
+		ap, err := chk.Appender()
+		require.NoError(t, err)
+		for i := range 5 {
+			ap.Append(0, int64(i), float64(i))
+		}
+
+		physical, equivalent, err := sampleCountsForChunk(chk, allTimes, allTimesEnd)
+		require.NoError(t, err)
+		require.Equal(t, uint64(5), physical)
+		require.Equal(t, uint64(5), equivalent)
+	})
+
+	t.Run("float samples outside the range are excluded", func(t *testing.T) {
+		chk := chunkenc.NewXORChunk()
+		ap, err := chk.Appender()
+		require.NoError(t, err)
+		for i := range 10 {
+			ap.Append(0, int64(i), float64(i)) // timestamps 0..9
+		}
+
+		// Only timestamps 3,4,5,6 are within [3,6].
+		physical, equivalent, err := sampleCountsForChunk(chk, 3, 6)
+		require.NoError(t, err)
+		require.Equal(t, uint64(4), physical)
+		require.Equal(t, uint64(4), equivalent)
+	})
+
+	t.Run("stale float samples are skipped including mid-chunk", func(t *testing.T) {
+		chk := chunkenc.NewXORChunk()
+		ap, err := chk.Appender()
+		require.NoError(t, err)
+		ap.Append(0, 0, 1)
+		ap.Append(0, 1, staleSum)
+		ap.Append(0, 2, 3)
+		ap.Append(0, 3, staleSum)
+		ap.Append(0, 4, 5)
+
+		physical, equivalent, err := sampleCountsForChunk(chk, allTimes, allTimesEnd)
+		require.NoError(t, err)
+		require.Equal(t, uint64(3), physical)
+		require.Equal(t, uint64(3), equivalent)
+	})
 
 	t.Run("all stale float histogram samples return zero", func(t *testing.T) {
 		chk := chunkenc.NewFloatHistogramChunk()
 		ap, err := chk.Appender()
 		require.NoError(t, err)
-
-		for i := 0; i < 3; i++ {
+		for i := range 3 {
 			_, _, _, err = ap.AppendFloatHistogram(nil, 0, int64(i), &histogram.FloatHistogram{Sum: staleSum}, true)
 			require.NoError(t, err)
 		}
-
 		require.Equal(t, 3, chk.NumSamples())
-		count, err := equivalentSampleCountForChunk(chk)
+
+		physical, equivalent, err := sampleCountsForChunk(chk, allTimes, allTimesEnd)
 		require.NoError(t, err)
-		require.Equal(t, uint64(0), count)
+		require.Equal(t, uint64(0), physical)
+		require.Equal(t, uint64(0), equivalent)
 	})
 
 	t.Run("all stale integer histogram samples return zero", func(t *testing.T) {
 		chk := chunkenc.NewHistogramChunk()
 		ap, err := chk.Appender()
 		require.NoError(t, err)
-
-		for i := 0; i < 3; i++ {
+		for i := range 3 {
 			_, _, _, err = ap.AppendHistogram(nil, 0, int64(i), &histogram.Histogram{Sum: staleSum}, true)
 			require.NoError(t, err)
 		}
-
 		require.Equal(t, 3, chk.NumSamples())
-		count, err := equivalentSampleCountForChunk(chk)
+
+		physical, equivalent, err := sampleCountsForChunk(chk, allTimes, allTimesEnd)
 		require.NoError(t, err)
-		require.Equal(t, uint64(0), count)
+		require.Equal(t, uint64(0), physical)
+		require.Equal(t, uint64(0), equivalent)
 	})
 
-	t.Run("non-stale histogram returns nonzero cost", func(t *testing.T) {
+	t.Run("histogram samples are counted and weighted within range", func(t *testing.T) {
 		chk := chunkenc.NewFloatHistogramChunk()
 		ap, err := chk.Appender()
 		require.NoError(t, err)
+		for i := range 5 {
+			_, _, _, err = ap.AppendFloatHistogram(nil, 0, int64(i), test.GenerateTestFloatHistogram(i), true)
+			require.NoError(t, err)
+		}
 
-		h := test.GenerateTestFloatHistogram(1)
-		_, _, _, err = ap.AppendFloatHistogram(nil, 0, 0, h, true)
-		require.NoError(t, err)
+		// All samples in the chunk share one bucket layout, so each has the same weight.
+		perSample := uint64(types.EquivalentFloatSampleCount(test.GenerateTestFloatHistogram(0)))
+		require.Greater(t, perSample, uint64(0))
 
-		count, err := equivalentSampleCountForChunk(chk)
+		// Only timestamps 2,3,4 are within [2,10].
+		physical, equivalent, err := sampleCountsForChunk(chk, 2, 10)
 		require.NoError(t, err)
-		require.Greater(t, count, uint64(0))
+		require.Equal(t, uint64(3), physical)
+		require.Equal(t, perSample*3, equivalent)
+	})
+
+	t.Run("cached histogram weight matches per-sample decode", func(t *testing.T) {
+		// sampleCountsForChunk reuses the first non-stale sample's weight for the whole chunk;
+		// that must equal summing every sample's weight, since all samples in a histogram chunk
+		// share one bucket layout. Guards the optimization against regressions.
+		for _, enc := range []chunkenc.Encoding{chunkenc.EncHistogram, chunkenc.EncFloatHistogram} {
+			for _, n := range []int{120, 500} {
+				chk := makeChunk(t, enc, n)
+				_, equivalent, err := sampleCountsForChunk(chk, allTimes, allTimesEnd)
+				require.NoError(t, err)
+				require.Equal(t, equivalentSampleCountDecodeAll(chk), equivalent)
+			}
+		}
 	})
 }
 
-func BenchmarkEquivalentSampleCount(b *testing.B) {
+func BenchmarkSampleCountsForChunk(b *testing.B) {
 	floatChunk120 := makeChunk(b, chunkenc.EncXOR, 120)
 	histChunk120 := makeChunk(b, chunkenc.EncHistogram, 120)
 	histChunk500 := makeChunk(b, chunkenc.EncHistogram, 500)
@@ -1397,24 +1546,24 @@ func BenchmarkEquivalentSampleCount(b *testing.B) {
 	require.Equal(b, 120, histChunk120.NumSamples())
 	require.Equal(b, 500, histChunk500.NumSamples())
 
+	const allTimes, allTimesEnd = int64(math.MinInt64), int64(math.MaxInt64)
+
 	// --- Float 120 ---
 
 	b.Run("float_120/NumSamples", func(b *testing.B) {
-		var v int
-		for i := 0; i < b.N; i++ {
-			v = floatChunk120.NumSamples()
+		for b.Loop() {
+			_ = floatChunk120.NumSamples()
 		}
-		_ = v
 	})
 
-	b.Run("float_120/DecodeFirst", func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
-			_, _ = equivalentSampleCountForChunk(floatChunk120)
+	b.Run("float_120/SampleCounts", func(b *testing.B) {
+		for b.Loop() {
+			_, _, _ = sampleCountsForChunk(floatChunk120, allTimes, allTimesEnd)
 		}
 	})
 
 	b.Run("float_120/DecodeAll", func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			_ = equivalentSampleCountDecodeAll(floatChunk120)
 		}
 	})
@@ -1422,21 +1571,19 @@ func BenchmarkEquivalentSampleCount(b *testing.B) {
 	// --- Histogram 120 ---
 
 	b.Run("hist_120/NumSamples", func(b *testing.B) {
-		var v int
-		for i := 0; i < b.N; i++ {
-			v = histChunk120.NumSamples()
+		for b.Loop() {
+			_ = histChunk120.NumSamples()
 		}
-		_ = v
 	})
 
-	b.Run("hist_120/DecodeFirst", func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
-			_, _ = equivalentSampleCountForChunk(histChunk120)
+	b.Run("hist_120/SampleCounts", func(b *testing.B) {
+		for b.Loop() {
+			_, _, _ = sampleCountsForChunk(histChunk120, allTimes, allTimesEnd)
 		}
 	})
 
 	b.Run("hist_120/DecodeAll", func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			_ = equivalentSampleCountDecodeAll(histChunk120)
 		}
 	})
@@ -1444,51 +1591,20 @@ func BenchmarkEquivalentSampleCount(b *testing.B) {
 	// --- Histogram 500 ---
 
 	b.Run("hist_500/NumSamples", func(b *testing.B) {
-		var v int
-		for i := 0; i < b.N; i++ {
-			v = histChunk500.NumSamples()
+		for b.Loop() {
+			_ = histChunk500.NumSamples()
 		}
-		_ = v
 	})
 
-	b.Run("hist_500/DecodeFirst", func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
-			_, _ = equivalentSampleCountForChunk(histChunk500)
+	b.Run("hist_500/SampleCounts", func(b *testing.B) {
+		for b.Loop() {
+			_, _, _ = sampleCountsForChunk(histChunk500, allTimes, allTimesEnd)
 		}
 	})
 
 	b.Run("hist_500/DecodeAll", func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			_ = equivalentSampleCountDecodeAll(histChunk500)
-		}
-	})
-
-	// --- Report accuracy values ---
-
-	b.Run("accuracy_report", func(b *testing.B) {
-		type chunkInfo struct {
-			name string
-			chk  chunkenc.Chunk
-		}
-		chunks := []chunkInfo{
-			{"float_120", floatChunk120},
-			{"hist_120", histChunk120},
-			{"hist_500", histChunk500},
-		}
-
-		for _, ci := range chunks {
-			numSamples := uint64(ci.chk.NumSamples())
-			decodeFirst, err := equivalentSampleCountForChunk(ci.chk)
-			require.NoError(b, err)
-			decodeAll := equivalentSampleCountDecodeAll(ci.chk)
-
-			b.Logf("%s: NumSamples=%d  DecodeFirst=%d  DecodeAll=%d  (first_vs_all_diff=%d)",
-				ci.name, numSamples, decodeFirst, decodeAll, int64(decodeFirst)-int64(decodeAll))
-		}
-
-		// Run a trivial loop so the sub-benchmark is valid.
-		for i := 0; i < b.N; i++ {
-			_ = i
 		}
 	})
 }
