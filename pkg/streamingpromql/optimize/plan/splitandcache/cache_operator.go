@@ -925,7 +925,8 @@ func (c *CacheOperator) writeCacheEntry(ctx context.Context, stats *types.Operat
 	ttl := c.ttlForExtents(extents)
 
 	// FIXME: this is potentially a large amount of memory, but we don't have a good way to consider it as part of the memory consumption estimate,
-	// as there's no way for us to know when the async set below is complete.
+	// as there's no way for us to know when the async set below is complete, and the cache client could also drop the set altogether if the
+	// entry is too large or its internal queue is full.
 	// Maybe we could simply include it in the memory consumption estimate for the rest of the life of the query evaluation?
 	value, err := entry.Marshal()
 	if err != nil {
