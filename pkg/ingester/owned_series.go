@@ -247,8 +247,11 @@ func (oss *ownedSeriesService) updateTenant(userID string, db *userTSDB, ringCha
 }
 
 func secondaryTSDBHashFunctionForUser(userID string) func(labels.Labels) uint32 {
+	// The userID is fixed for the returned function, so hash it once into a seed and reuse it for
+	// every series instead of re-hashing it inside ShardByAllLabels on each call.
+	seed := mimirpb.ShardByUser(userID)
 	return func(ls labels.Labels) uint32 {
-		return mimirpb.ShardByAllLabels(userID, ls)
+		return mimirpb.ShardByAllLabelsWithSeed(seed, ls)
 	}
 }
 

@@ -2442,9 +2442,12 @@ func getTokensForSeries(userID string, series []mimirpb.PreallocTimeseries) []ui
 		return nil
 	}
 
+	// The userID is constant for the whole request, so hash it once into a seed and
+	// reuse it for every series instead of re-hashing it inside ShardByAllLabelAdapters.
+	seed := mimirpb.ShardByUser(userID)
 	result := make([]uint32, 0, len(series))
 	for _, ts := range series {
-		result = append(result, tokenForLabels(userID, ts.Labels))
+		result = append(result, mimirpb.ShardByAllLabelAdaptersWithSeed(seed, ts.Labels))
 	}
 	return result
 }
@@ -2453,20 +2456,15 @@ func getTokensForMetadata(userID string, metadata []*mimirpb.MetricMetadata) []u
 	if len(metadata) == 0 {
 		return nil
 	}
-	metadataKeys := make([]uint32, 0, len(metadata))
 
+	// The userID is constant for the whole request, so hash it once into a seed and
+	// reuse it for every metadata entry instead of re-hashing it inside ShardByMetricName.
+	seed := mimirpb.ShardByUser(userID)
+	metadataKeys := make([]uint32, 0, len(metadata))
 	for _, m := range metadata {
-		metadataKeys = append(metadataKeys, tokenForMetadata(userID, m.MetricFamilyName))
+		metadataKeys = append(metadataKeys, mimirpb.ShardByMetricNameWithSeed(seed, m.MetricFamilyName))
 	}
 	return metadataKeys
-}
-
-func tokenForLabels(userID string, labels []mimirpb.LabelAdapter) uint32 {
-	return mimirpb.ShardByAllLabelAdapters(userID, labels)
-}
-
-func tokenForMetadata(userID string, metricName string) uint32 {
-	return mimirpb.ShardByMetricName(userID, metricName)
 }
 
 func (d *Distributor) updateReceivedMetrics(ctx context.Context, pushReq *Request, userID string) {
