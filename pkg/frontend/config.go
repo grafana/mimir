@@ -71,6 +71,19 @@ func (cfg *CombinedFrontendConfig) Validate() error {
 		}
 	}
 
+	if cfg.QueryMiddleware.UseMQEForSplittingAndCachingResults {
+		// We don't need to explicitly check that MQE is enabled here: remote execution is only supported when MQE is enabled, and we
+		// enforce that above.
+
+		if !cfg.QueryMiddleware.EnableRemoteExecution {
+			return errors.New("using MQE for splitting and caching results is only supported if remote execution is enabled")
+		}
+
+		if !cfg.QueryMiddleware.UseMQEForSharding {
+			return errors.New("using MQE for splitting and caching results is only supported if running sharding inside MQE is enabled")
+		}
+	}
+
 	if cfg.QueryMiddleware.EnableMultipleNodeRemoteExecutionRequests && !cfg.QueryMiddleware.EnableRemoteExecution {
 		return errors.New("multiple node remote execution requests are only supported when remote execution is enabled")
 	}

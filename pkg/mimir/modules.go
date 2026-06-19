@@ -15,6 +15,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/dns"
 	httpgrpc_server "github.com/grafana/dskit/httpgrpc/server"
 	"github.com/grafana/dskit/kv"
@@ -898,15 +899,37 @@ func (t *Mimir) initQueryFrontendTopicOffsetsReaders() (services.Service, error)
 // initQueryFrontendTripperware instantiates the tripperware used by the query frontend
 // to optimize Prometheus query requests.
 func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error) {
+	middlewareCfg := t.Cfg.Frontend.QueryMiddleware
+	var cacheClient cache.Cache
+
+	if middlewareCfg.CacheResults || middlewareCfg.CardinalityBasedShardingEnabled() {
+		var err error
+
+		cacheClient, err = querymiddleware.NewResultsCache(middlewareCfg.ResultsCache, util_log.Logger, t.Registerer)
+		if err != nil {
+			return nil, err
+		}
+		cacheClient = cache.NewCompression(middlewareCfg.ResultsCache.Compression, cacheClient, util_log.Logger)
+	}
+
 	promqlEngineRegisterer := prometheus.WrapRegistererWith(prometheus.Labels{"engine": "query-frontend"}, t.Registerer)
 	promOpts, mqeOpts := engine.NewPromQLEngineOptions(t.Cfg.Querier.EngineConfig, t.ActivityTracker, util_log.Logger, promqlEngineRegisterer, t.QueryLimitsProvider)
 	// Disable concurrency limits for sharded queries spawned by the query-frontend.
 	promOpts.ActiveQueryTracker = nil
+
 	// Always eagerly load selectors so that they are loaded in parallel in the background.
+	// This only applies locally, not to selectors evaluated by queriers (even with remote execution enabled).
 	mqeOpts.EagerLoadSelectors = true
 
-	t.Cfg.Frontend.QueryMiddleware.InternalFunctionNames.Add(sharding.ConcatFunction.Name)
-	t.Cfg.Frontend.QueryMiddleware.InternalFunctionNames.Add(sharding.AvgFunction.Name)
+	// Propagate the splitting and caching options to MQE, if it's enabled.
+	// FIXME: once we no longer support using middleware-based splitting and caching, we can define these CLI flags directly in the engine options.
+	mqeOpts.RangeQuerySplittingAndCaching.SplitEnabled = middlewareCfg.UseMQEForSplittingAndCachingResults && middlewareCfg.SplitQueriesByInterval > 0
+	mqeOpts.RangeQuerySplittingAndCaching.SplitInterval = middlewareCfg.SplitQueriesByInterval
+	mqeOpts.RangeQuerySplittingAndCaching.CacheEnabled = middlewareCfg.UseMQEForSplittingAndCachingResults && middlewareCfg.CacheResults
+	mqeOpts.RangeQuerySplittingAndCaching.CacheClient = cacheClient
+
+	middlewareCfg.InternalFunctionNames.Add(sharding.ConcatFunction.Name)
+	middlewareCfg.InternalFunctionNames.Add(sharding.AvgFunction.Name)
 
 	var memoryConsumptionTrackerFactory *limiter.InflightMemoryConsumptionTracker
 
@@ -938,24 +961,25 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 	}
 
 	if t.Cfg.LabelAccessControlEnabled {
-		cacheKeyGenerator := t.Cfg.Frontend.QueryMiddleware.CacheKeyGenerator
+		cacheKeyGenerator := middlewareCfg.CacheKeyGenerator
 		if cacheKeyGenerator == nil {
-			cacheKeyGenerator = querymiddleware.NewDefaultCacheKeyGenerator(t.QueryFrontendCodec, t.Cfg.Frontend.QueryMiddleware.SplitQueriesByInterval)
+			cacheKeyGenerator = querymiddleware.NewDefaultCacheKeyGenerator(t.QueryFrontendCodec, middlewareCfg.SplitQueriesByInterval)
 		}
-		t.Cfg.Frontend.QueryMiddleware.CacheKeyGenerator = frontend_labelaccess.NewCacheSplitter(cacheKeyGenerator)
+		middlewareCfg.CacheKeyGenerator = frontend_labelaccess.NewCacheSplitter(cacheKeyGenerator)
 	}
 
 	tripperware, err := querymiddleware.NewTripperware(
-		t.Cfg.Frontend.QueryMiddleware,
+		middlewareCfg,
 		util_log.Logger,
 		t.Overrides,
 		t.QueryLimitsProvider,
 		t.QueryFrontendCodec,
+		cacheClient,
 		querymiddleware.PrometheusResponseExtractor{},
 		eng,
 		promOpts,
 		t.QueryFrontendTopicOffsetsReader,
-		t.Cfg.Frontend.QueryMiddleware.EnableRemoteExecution,
+		middlewareCfg.EnableRemoteExecution,
 		t.QueryFrontendStreamingEngine,
 		t.Registerer,
 

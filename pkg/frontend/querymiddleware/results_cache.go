@@ -101,8 +101,8 @@ func NewResultsCacheMetrics(requestType string, reg prometheus.Registerer) *Resu
 	}
 }
 
-// newResultsCache creates a new results cache based on the input configuration.
-func newResultsCache(cfg ResultsCacheConfig, logger log.Logger, reg prometheus.Registerer) (cache.Cache, error) {
+// NewResultsCache creates a new results cache based on the input configuration.
+func NewResultsCache(cfg ResultsCacheConfig, logger log.Logger, reg prometheus.Registerer) (cache.Cache, error) {
 	// Add the "component" label similarly to other components, so that metrics don't clash and have the same labels set
 	// when running in monolithic mode.
 	reg = prometheus.WrapRegistererWith(prometheus.Labels{"component": "query-frontend"}, reg)
