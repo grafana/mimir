@@ -51,7 +51,8 @@ type splitOrCacheOutputSeries struct {
 // newTimeRangeSplitOperator creates a new TimeRangeSplitOperator.
 //
 // ranges must be sorted in descending time order and must not overlap.
-// ranges must not be empty.
+// ranges must contain at least two ranges: when there is only a single range, callers should use the inner operator
+// directly rather than wrapping it in a TimeRangeSplitOperator.
 func newTimeRangeSplitOperator(ranges []*splitRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, timeRange types.QueryTimeRange) *TimeRangeSplitOperator {
 	return &TimeRangeSplitOperator{
 		MemoryConsumptionTracker: memoryConsumptionTracker,
@@ -86,87 +87,22 @@ func (s *TimeRangeSplitOperator) AfterPrepare(ctx context.Context) error {
 }
 
 func (s *TimeRangeSplitOperator) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
-	// Use the slice from the first range as the base for the returned series metadata.
-	allSeries, err := s.ranges[0].SeriesMetadata(ctx, matchers)
+	if len(s.ranges) < 2 {
+		// mergeSeriesMetadata takes a fast path for a single source that leaves outputSeries unpopulated, but
+		// TimeRangeSplitOperator's NextSeries relies on outputSeries being populated. In production this is never
+		// hit, as MaterializeSplit returns the inner operator directly rather than constructing a
+		// TimeRangeSplitOperator when there is only one range.
+		return nil, fmt.Errorf("TimeRangeSplitOperator requires at least two ranges, but has %d", len(s.ranges))
+	}
+
+	series, outputSeries, err := mergeSeriesMetadata(ctx, s.ranges, matchers, s.MemoryConsumptionTracker)
 	if err != nil {
 		return nil, err
 	}
 
-	seriesIndices := make(map[string]int, len(allSeries))
-	labelBytesBuf := make([]byte, 0, 1024)
-	for seriesIdx, series := range allSeries {
-		labelBytesBuf = series.Labels.Bytes(labelBytesBuf)
-		seriesIndices[string(labelBytesBuf)] = seriesIdx // Important: don't extract the string(...) call here - passing it directly allows us to avoid allocating it.
+	s.outputSeries = outputSeries
 
-		if err := s.addNewOutputSeries(0, seriesIdx); err != nil {
-			return nil, err
-		}
-	}
-
-	// Now go through the remaining ranges.
-	for rangeIdx := 1; rangeIdx < len(s.ranges); rangeIdx++ {
-		r := s.ranges[rangeIdx]
-		rangeSeries, err := r.SeriesMetadata(ctx, matchers)
-		if err != nil {
-			return nil, err
-		}
-
-		for rangeSeriesIdx, series := range rangeSeries {
-			labelBytesBuf = series.Labels.Bytes(labelBytesBuf)
-
-			// Important: don't extract the string(...) call in the map lookup below - passing it directly allows us to avoid allocating it.
-			if outputSeriesIdx, seenAlready := seriesIndices[string(labelBytesBuf)]; seenAlready {
-				if series.DropName != allSeries[outputSeriesIdx].DropName {
-					return nil, fmt.Errorf("series with labels %s has conflicting drop name values in different ranges", series.Labels.String())
-				}
-
-				s.outputSeries[outputSeriesIdx].sourceSeriesIndices[rangeIdx] = rangeSeriesIdx
-
-				// We're not going to keep this labels instance (we already have it from a previous range), so
-				// decrease memory consumption now.
-				s.MemoryConsumptionTracker.DecreaseMemoryConsumptionForLabels(series.Labels)
-			} else {
-				seriesIndices[string(labelBytesBuf)] = len(allSeries)
-				allSeries, err = types.SeriesMetadataSlicePool.AppendToSlice(allSeries, s.MemoryConsumptionTracker, series)
-				if err != nil {
-					return nil, err
-				}
-
-				if err := s.addNewOutputSeries(rangeIdx, rangeSeriesIdx); err != nil {
-					return nil, err
-				}
-			}
-
-			// We've already accounted for the memory consumption of this series' labels with the DecreaseMemoryConsumptionForLabels
-			// or AppendToSlice calls above, so clear the labels now so they're not double-decremented when we return the series
-			// slice to the pool below.
-			rangeSeries[rangeSeriesIdx] = types.SeriesMetadata{}
-		}
-
-		types.SeriesMetadataSlicePool.Put(&rangeSeries, s.MemoryConsumptionTracker)
-	}
-
-	return allSeries, nil
-}
-
-func (s *TimeRangeSplitOperator) addNewOutputSeries(sourceRangeIndex int, sourceRangeSeriesIndex int) error {
-	sourceSeriesIndices, err := types.IntSlicePool.Get(len(s.ranges), s.MemoryConsumptionTracker)
-	if err != nil {
-		return err
-	}
-
-	sourceSeriesIndices = sourceSeriesIndices[:len(s.ranges)]
-
-	for idx := range s.ranges {
-		if idx == sourceRangeIndex {
-			sourceSeriesIndices[idx] = sourceRangeSeriesIndex
-		} else {
-			sourceSeriesIndices[idx] = -1
-		}
-	}
-
-	s.outputSeries = append(s.outputSeries, splitOrCacheOutputSeries{sourceSeriesIndices: sourceSeriesIndices})
-	return nil
+	return series, nil
 }
 
 func (s *TimeRangeSplitOperator) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {

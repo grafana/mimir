@@ -403,10 +403,14 @@ func (c *CacheOperator) AfterPrepare(ctx context.Context) error {
 }
 
 func (c *CacheOperator) SeriesMetadata(ctx context.Context, _ types.Matchers) ([]types.SeriesMetadata, error) {
-	series, err := c.computeMergedSeriesMetadata(ctx)
+	// Pass nil matchers: unlike TimeRangeSplitOperator, CacheOperator does not push matchers down, as we
+	// need the full set of series to store in the cache.
+	series, outputSeries, err := mergeSeriesMetadata(ctx, c.extents.inDesiredTimeRange, nil, c.MemoryConsumptionTracker)
 	if err != nil {
 		return nil, err
 	}
+
+	c.outputSeries = outputSeries
 
 	if c.extents.shouldWriteCacheEntry {
 		if err := c.bufferSeriesMetadataForCacheEntry(series); err != nil {
@@ -417,96 +421,6 @@ func (c *CacheOperator) SeriesMetadata(ctx context.Context, _ types.Matchers) ([
 	}
 
 	return series, nil
-}
-
-func (c *CacheOperator) computeMergedSeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
-	// Use the slice from the first extent as the base for the returned series metadata.
-	allSeries, err := c.extents.inDesiredTimeRange[0].SeriesMetadata(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	if len(c.extents.inDesiredTimeRange) == 1 {
-		// There are no extents to merge, so just return the series metadata from the first extent.
-		return allSeries, nil
-	}
-
-	// Build up a map of the series labels to their index in the output.
-	seriesIndices := make(map[string]int, len(allSeries))
-	labelBytesBuf := make([]byte, 0, 1024)
-	for seriesIdx, series := range allSeries {
-		labelBytesBuf = series.Labels.Bytes(labelBytesBuf)
-		seriesIndices[string(labelBytesBuf)] = seriesIdx // Important: don't extract the string(...) call here - passing it directly allows us to avoid allocating it.
-
-		if err := c.addNewOutputSeries(0, seriesIdx); err != nil {
-			return nil, err
-		}
-	}
-
-	// Now go through the remaining extents.
-	for extentIdx := 1; extentIdx < len(c.extents.inDesiredTimeRange); extentIdx++ {
-		e := c.extents.inDesiredTimeRange[extentIdx]
-		extentSeries, err := e.SeriesMetadata(ctx)
-		if err != nil {
-			return nil, err
-		}
-
-		for extentSeriesIdx, series := range extentSeries {
-			labelBytesBuf = series.Labels.Bytes(labelBytesBuf)
-
-			// Important: don't extract the string(...) call in the map lookup below - passing it directly allows us to avoid allocating it.
-			if outputSeriesIdx, seenAlready := seriesIndices[string(labelBytesBuf)]; seenAlready {
-				if series.DropName != allSeries[outputSeriesIdx].DropName {
-					return nil, fmt.Errorf("series with labels %s has conflicting drop name values in different extents", series.Labels.String())
-				}
-
-				c.outputSeries[outputSeriesIdx].sourceSeriesIndices[extentIdx] = extentSeriesIdx
-
-				// We're not going to keep this labels instance (we already have it from a previous extent), so
-				// decrease memory consumption now.
-				c.MemoryConsumptionTracker.DecreaseMemoryConsumptionForLabels(series.Labels)
-			} else {
-				seriesIndices[string(labelBytesBuf)] = len(allSeries)
-				allSeries, err = types.SeriesMetadataSlicePool.AppendToSlice(allSeries, c.MemoryConsumptionTracker, series)
-				if err != nil {
-					return nil, err
-				}
-
-				if err := c.addNewOutputSeries(extentIdx, extentSeriesIdx); err != nil {
-					return nil, err
-				}
-			}
-
-			// We've already accounted for the memory consumption of this series' labels with the DecreaseMemoryConsumptionForLabels
-			// or AppendToSlice calls above, so clear the labels now so they're not double-decremented when we return the series
-			// slice to the pool below.
-			extentSeries[extentSeriesIdx] = types.SeriesMetadata{}
-		}
-
-		types.SeriesMetadataSlicePool.Put(&extentSeries, c.MemoryConsumptionTracker)
-	}
-
-	return allSeries, nil
-}
-
-func (c *CacheOperator) addNewOutputSeries(sourceExtentIndex int, sourceExtentSeriesIndex int) error {
-	sourceSeriesIndices, err := types.IntSlicePool.Get(len(c.extents.inDesiredTimeRange), c.MemoryConsumptionTracker)
-	if err != nil {
-		return err
-	}
-
-	sourceSeriesIndices = sourceSeriesIndices[:len(c.extents.inDesiredTimeRange)]
-
-	for idx := range c.extents.inDesiredTimeRange {
-		if idx == sourceExtentIndex {
-			sourceSeriesIndices[idx] = sourceExtentSeriesIndex
-		} else {
-			sourceSeriesIndices[idx] = -1
-		}
-	}
-
-	c.outputSeries = append(c.outputSeries, splitOrCacheOutputSeries{sourceSeriesIndices: sourceSeriesIndices})
-	return nil
 }
 
 func (c *CacheOperator) bufferSeriesMetadataForCacheEntry(series []types.SeriesMetadata) error {
@@ -976,7 +890,7 @@ type extent interface {
 
 	// SeriesMetadata returns the metadata for all series in this extent.
 	// Callers may modify the returned slice.
-	SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error)
+	SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error)
 
 	// GetSeries returns the samples for the series at the given index.
 	// Callers may modify the returned slices.
@@ -1017,7 +931,7 @@ func (c *cachedExtentReader) AfterPrepare(_ context.Context) error {
 	return nil
 }
 
-func (c *cachedExtentReader) SeriesMetadata(_ context.Context) ([]types.SeriesMetadata, error) {
+func (c *cachedExtentReader) SeriesMetadata(_ context.Context, _ types.Matchers) ([]types.SeriesMetadata, error) {
 	seriesMetadata, err := types.SeriesMetadataSlicePool.Get(len(c.extent.SeriesMetadata), c.parent.MemoryConsumptionTracker)
 	if err != nil {
 		return nil, err
@@ -1122,8 +1036,8 @@ func (e *evaluatedExtent) AfterPrepare(ctx context.Context) error {
 	return e.inner.AfterPrepare(ctx)
 }
 
-func (e *evaluatedExtent) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
-	metadata, err := e.inner.SeriesMetadata(ctx, nil)
+func (e *evaluatedExtent) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
+	metadata, err := e.inner.SeriesMetadata(ctx, matchers)
 	if err != nil {
 		return nil, err
 	}
