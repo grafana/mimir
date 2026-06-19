@@ -2493,6 +2493,17 @@ spec:
                 values:
                 - "0"
             topologyKey: kubernetes.io/hostname
+          - labelSelector:
+              matchExpressions:
+              - key: rollout-group
+                operator: In
+                values:
+                - ingester-rc-0
+              - key: name
+                operator: NotIn
+                values:
+                - ingester-zone-a-rc-0
+            topologyKey: kubernetes.io/hostname
       containers:
       - args:
         - -blocks-storage.gcs.bucket-name=blocks-bucket
@@ -2662,6 +2673,17 @@ spec:
                 values:
                 - "1"
             topologyKey: kubernetes.io/hostname
+          - labelSelector:
+              matchExpressions:
+              - key: rollout-group
+                operator: In
+                values:
+                - ingester-rc-1
+              - key: name
+                operator: NotIn
+                values:
+                - ingester-zone-a-rc-1
+            topologyKey: kubernetes.io/hostname
       containers:
       - args:
         - -blocks-storage.gcs.bucket-name=blocks-bucket
@@ -2827,6 +2849,17 @@ spec:
                 values:
                 - "0"
             topologyKey: kubernetes.io/hostname
+          - labelSelector:
+              matchExpressions:
+              - key: rollout-group
+                operator: In
+                values:
+                - ingester-rc-0
+              - key: name
+                operator: NotIn
+                values:
+                - ingester-zone-b-rc-0
+            topologyKey: kubernetes.io/hostname
       containers:
       - args:
         - -blocks-storage.gcs.bucket-name=blocks-bucket
@@ -2985,6 +3018,17 @@ spec:
                 operator: NotIn
                 values:
                 - "1"
+            topologyKey: kubernetes.io/hostname
+          - labelSelector:
+              matchExpressions:
+              - key: rollout-group
+                operator: In
+                values:
+                - ingester-rc-1
+              - key: name
+                operator: NotIn
+                values:
+                - ingester-zone-b-rc-1
             topologyKey: kubernetes.io/hostname
       containers:
       - args:

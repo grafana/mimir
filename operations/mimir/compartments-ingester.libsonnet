@@ -52,7 +52,11 @@
     statefulSet.mixin.spec.template.metadata.withLabelsMixin({ 'mimir-rc': compartmentIdxStr }) +
     // Multi-compartment ingesters require multi-AZ too, so we can always configure the multi-zone toleration.
     statefulSet.spec.template.spec.withTolerationsMixin($.newMimirMultiZoneToleration()) +
-    // Spread read compartments across nodes: don't schedule onto a node already running a pod with a different mimir-rc value.
+    // Per-compartment node anti-affinity, replacing the base ingester rule. Keep different read
+    // compartments off the same node so a node failure only affects one compartment, and keep different
+    // zones of the same compartment off the same node. The latter is already enforced by per-AZ node
+    // affinity today (compartments require multi-AZ), but we keep the rule as a safety net in case that
+    // requirement is ever relaxed.
     { spec+: podAntiAffinity.withRequiredDuringSchedulingIgnoredDuringExecution([
       podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecutionType.new() +
       podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecutionType.mixin.labelSelector.withMatchExpressions([
@@ -60,7 +64,16 @@
         { key: 'mimir-rc', operator: 'NotIn', values: [compartmentIdxStr] },
       ]) +
       podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecutionType.withTopologyKey('kubernetes.io/hostname'),
-    ]).spec },
+    ] + (
+      if $._config.ingester_allow_multiple_replicas_on_same_node then [] else [
+        podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecutionType.new() +
+        podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecutionType.mixin.labelSelector.withMatchExpressions([
+          { key: 'rollout-group', operator: 'In', values: [rolloutGroup] },
+          { key: 'name', operator: 'NotIn', values: [name] },
+        ]) +
+        podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecutionType.withTopologyKey('kubernetes.io/hostname'),
+      ]
+    )).spec },
 
   // Null out no-compartment StatefulSets, Services, PDBs, and ScaledObjects when decommissioning.
   ingester_zone_a_statefulset: if !isNoCompartmentsEnabled && isZoneAEnabled then null else super.ingester_zone_a_statefulset,
