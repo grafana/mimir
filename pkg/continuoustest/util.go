@@ -165,6 +165,20 @@ func querySumHist(metricName string) string {
 	return fmt.Sprintf("sum(%s)", metricName)
 }
 
+// The fan-out query variants below match the metric by name using a regex (=~) matcher instead of an
+// exact (=) matcher. The matched series — and therefore the query result — are identical (the regex
+// matches exactly the one metric name, which contains no regex metacharacters), but the regex matcher
+// prevents the query from being pinned to a single ingest-storage compartment. This forces the read
+// path to fan out across all compartments and merge their results, letting continuous-test validate
+// cross-compartment query merging while reusing the same result verification as the pinned queries.
+func querySumFloatFanOut(metricName string) string {
+	return fmt.Sprintf(`sum(max_over_time({__name__=~"%s"}[1s]))`, metricName)
+}
+
+func querySumHistFanOut(metricName string) string {
+	return fmt.Sprintf(`sum({__name__=~"%s"})`, metricName)
+}
+
 func alignTimestampToInterval(ts time.Time, interval time.Duration) time.Time {
 	return ts.Truncate(interval)
 }

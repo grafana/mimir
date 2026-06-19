@@ -115,6 +115,47 @@ func TestWriteReadSeriesTest_Run(t *testing.T) {
 	})
 }
 
+func TestWriteReadSeriesTest_Run_FanOutQuery(t *testing.T) {
+	// With fan-out enabled, every test query is run twice: once pinned (exact metric-name matcher)
+	// and once with a regex metric-name matcher that forces the read path to fan out across all
+	// ingest-storage compartments. Verify both query variants are issued.
+	logger := log.NewNopLogger()
+
+	cfg := WriteReadSeriesTestConfig{}
+	flagext.DefaultValues(&cfg)
+	cfg.NumSeries = 2
+	cfg.WithFloats = true
+	cfg.WithHistograms = false
+	cfg.FanOutQuery = true
+
+	client := newMockClient()
+	client.On("WriteSeries", mock.Anything, mock.Anything, mock.Anything).Return(200, nil)
+	client.On("QueryRange", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Matrix{}, nil)
+	client.On("Query", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Vector{}, nil)
+	client.On("Metadata", mock.Anything, mock.Anything).Return(v1.Metadata{}, nil)
+
+	reg := prometheus.NewPedanticRegistry()
+	test := NewWriteReadSeriesTest(cfg, client, writeProtocolDefault, logger, reg)
+
+	now := time.Unix(1000, 0)
+	// Ignore this error. It will be non-nil because the query mock does not return any data.
+	_ = test.Run(context.Background(), now)
+
+	// Fan-out doubles the number of queries compared to a pinned-only run (4 -> 8 each).
+	client.AssertNumberOfCalls(t, "QueryRange", 8)
+	client.AssertNumberOfCalls(t, "Query", 8)
+
+	// Both the pinned and the fan-out query variants must be issued.
+	client.AssertCalled(t, "QueryRange", mock.Anything, querySumFloat(floatMetricName), time.Unix(1000, 0), time.Unix(1000, 0), writeInterval, mock.Anything)
+	client.AssertCalled(t, "QueryRange", mock.Anything, querySumFloatFanOut(floatMetricName), time.Unix(1000, 0), time.Unix(1000, 0), writeInterval, mock.Anything)
+	client.AssertCalled(t, "Query", mock.Anything, querySumFloat(floatMetricName), time.Unix(1000, 0), mock.Anything)
+	client.AssertCalled(t, "Query", mock.Anything, querySumFloatFanOut(floatMetricName), time.Unix(1000, 0), mock.Anything)
+
+	// The fan-out query must use a regex (=~) name matcher: that is what prevents the Mimir read
+	// path from pinning the query to a single compartment.
+	require.Contains(t, querySumFloatFanOut(floatMetricName), `{__name__=~"`+floatMetricName+`"}`)
+}
+
 func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, testTuples []WriteReadSeriesTestTuple) {
 	logger := log.NewNopLogger()
 	multiplier := len(testTuples)
