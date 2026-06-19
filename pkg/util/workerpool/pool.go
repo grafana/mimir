@@ -105,9 +105,14 @@ func New(cfg Config, name string, reg prometheus.Registerer, logger log.Logger) 
 		Name:        "mimir_workerpool_task_duration_seconds",
 		Help:        "Time taken to execute work items in the worker pool, per task dimension.",
 		ConstLabels: constLabels,
-		// Task execution ranges from sub-millisecond index lookups to multi-second
-		// high-cardinality counts; these buckets match cortex_ingester_tsdb_appender_add_duration_seconds.
-		Buckets: []float64{.001, .005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5, 10},
+		// Task durations depend on the work each caller submits.
+		// Today the pool's only caller submits chunked label-value counts
+		// that run in roughly the tens of microseconds,
+		// with a tail to seconds for high-cardinality work.
+		// The buckets use standard 1-2.5-5 spacing from 10 microseconds to 10 seconds,
+		// so the quantiles resolve that common case while still capturing the slow tail.
+		// New task types should aim to keep their work in a similar duration range.
+		Buckets: []float64{.00001, .000025, .00005, .0001, .00025, .0005, .001, .0025, .005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5, 10},
 	}, []string{"dimension"})
 
 	// The queue requires a per-tenant cap, but we don't want one, so pass an effectively unlimited value.
