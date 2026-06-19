@@ -63,7 +63,8 @@ func (m *MatrixSelector) EquivalentToIgnoringMatchersAndHints(other planning.Nod
 		m.Range == otherMatrixSelector.Range &&
 		m.Anchored == otherMatrixSelector.Anchored &&
 		m.Smoothed == otherMatrixSelector.Smoothed &&
-		m.CounterAware == otherMatrixSelector.CounterAware
+		m.CounterAware == otherMatrixSelector.CounterAware &&
+		m.AnchoredResetsChanges == otherMatrixSelector.AnchoredResetsChanges
 }
 
 func (m *MatrixSelector) GetMatchers() []*LabelMatcher {
@@ -113,6 +114,7 @@ func MaterializeMatrixSelector(m *MatrixSelector, _ *planning.Materializer, time
 		Anchored:                 m.Anchored,
 		Smoothed:                 m.Smoothed,
 		CounterAware:             m.CounterAware,
+		AnchoredResetsChanges:    m.AnchoredResetsChanges,
 		Subsets:                  subsets,
 	}
 

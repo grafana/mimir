@@ -336,32 +336,9 @@ eval instant at 1m changes(foo[3m] anchored)
 
 clear
 
-load 1m
-  mixed 1 2 3 {{schema:0 sum:5 count:4 buckets:[1 2 1]}} 4 5 6 7+1x60
-
-eval instant at 1m resets(mixed[1m] anchored)
-  {} 0
-
-# These tests have been commented out since upstream Prometheus has recently
-# added support for smoothed/anchored histograms.
-# These tests have been commented out whilst a Mimir implementation is completed.
-#eval instant at 3m resets(mixed[1m] anchored)
-#  expect fail msg: smoothed and anchored modifiers do not work with native histograms
-
-#eval instant at 4m resets(mixed[1m] anchored)
-#  expect fail msg: smoothed and anchored modifiers do not work with native histograms
-
-#eval instant at 5m resets(mixed[1m] anchored)
-#  expect fail msg: smoothed and anchored modifiers do not work with native histograms
-
-# Whilst the histogram is within the range + look-back window the query will fail
-#eval instant at 8m resets(mixed[1m] anchored)
-#  expect fail msg: smoothed and anchored modifiers do not work with native histograms
-
-eval instant at 10m resets(mixed[1m] anchored)
-  {} 0
-
-clear
+# Note: anchored resets()/changes() over series containing native histograms are covered in
+# testdata/ours-only/anchored.test (mirroring Prometheus PR #18906). Tests will be updated
+# once this PR is merged and vendored.
 
 load 1m
   metric 1 2 3 NaN -NaN 4 5 6
