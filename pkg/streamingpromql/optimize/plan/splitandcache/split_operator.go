@@ -28,8 +28,20 @@ type TimeRangeSplitOperator struct {
 var _ types.InstantVectorOperator = &TimeRangeSplitOperator{}
 
 type splitRange struct {
-	operator types.InstantVectorOperator
-	buffer   *operators.InstantVectorOperatorBuffer
+	operator                 types.InstantVectorOperator
+	buffer                   *operators.InstantVectorOperatorBuffer
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
+}
+
+func (r *splitRange) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
+	series, err := r.operator.SeriesMetadata(ctx, matchers)
+	if err != nil {
+		return nil, err
+	}
+
+	r.buffer = operators.NewInstantVectorOperatorBuffer(r.operator, nil, len(series)-1, r.memoryConsumptionTracker)
+
+	return series, nil
 }
 
 type splitOrCacheOutputSeries struct {
@@ -48,8 +60,8 @@ func newTimeRangeSplitOperator(ranges []*splitRange, memoryConsumptionTracker *l
 	}
 }
 
-func newSplitRange(operator types.InstantVectorOperator) *splitRange {
-	return &splitRange{operator: operator}
+func newSplitRange(operator types.InstantVectorOperator, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *splitRange {
+	return &splitRange{operator: operator, memoryConsumptionTracker: memoryConsumptionTracker}
 }
 
 func (s *TimeRangeSplitOperator) Prepare(ctx context.Context, params *types.PrepareParams) error {
@@ -75,12 +87,10 @@ func (s *TimeRangeSplitOperator) AfterPrepare(ctx context.Context) error {
 
 func (s *TimeRangeSplitOperator) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
 	// Use the slice from the first range as the base for the returned series metadata.
-	allSeries, err := s.ranges[0].operator.SeriesMetadata(ctx, matchers)
+	allSeries, err := s.ranges[0].SeriesMetadata(ctx, matchers)
 	if err != nil {
 		return nil, err
 	}
-
-	s.ranges[0].buffer = operators.NewInstantVectorOperatorBuffer(s.ranges[0].operator, nil, len(allSeries)-1, s.MemoryConsumptionTracker)
 
 	seriesIndices := make(map[string]int, len(allSeries))
 	labelBytesBuf := make([]byte, 0, 1024)
@@ -96,7 +106,7 @@ func (s *TimeRangeSplitOperator) SeriesMetadata(ctx context.Context, matchers ty
 	// Now go through the remaining ranges.
 	for rangeIdx := 1; rangeIdx < len(s.ranges); rangeIdx++ {
 		r := s.ranges[rangeIdx]
-		rangeSeries, err := r.operator.SeriesMetadata(ctx, matchers)
+		rangeSeries, err := r.SeriesMetadata(ctx, matchers)
 		if err != nil {
 			return nil, err
 		}
@@ -133,7 +143,6 @@ func (s *TimeRangeSplitOperator) SeriesMetadata(ctx context.Context, matchers ty
 			rangeSeries[rangeSeriesIdx] = types.SeriesMetadata{}
 		}
 
-		r.buffer = operators.NewInstantVectorOperatorBuffer(r.operator, nil, len(rangeSeries)-1, s.MemoryConsumptionTracker)
 		types.SeriesMetadataSlicePool.Put(&rangeSeries, s.MemoryConsumptionTracker)
 	}
 

@@ -91,7 +91,7 @@ func MaterializeSplit(node *TimeRangeSplit, materializer *planning.Materializer,
 			return nil, err
 		}
 
-		ranges = append(ranges, newSplitRange(inner))
+		ranges = append(ranges, newSplitRange(inner, params.MemoryConsumptionTracker))
 		start = end + timeRange.IntervalMilliseconds
 	}
 
