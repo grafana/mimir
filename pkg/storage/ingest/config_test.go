@@ -90,6 +90,31 @@ func TestConfig_Validate(t *testing.T) {
 			},
 			expectedErr: ErrInvalidProducerMaxRecordSizeBytes,
 		},
+		"should pass if ingest storage is enabled and producer compression is set to none": {
+			setup: func(cfg *Config) {
+				cfg.Enabled = true
+				cfg.KafkaConfig.Address = flagext.StringSliceCSV{"localhost"}
+				cfg.KafkaConfig.Topic = "test"
+				cfg.KafkaConfig.ProducerCompression = kafkaCompressionNone
+			},
+		},
+		"should pass if ingest storage is enabled and producer compression is set to zstd": {
+			setup: func(cfg *Config) {
+				cfg.Enabled = true
+				cfg.KafkaConfig.Address = flagext.StringSliceCSV{"localhost"}
+				cfg.KafkaConfig.Topic = "test"
+				cfg.KafkaConfig.ProducerCompression = kafkaCompressionZstd
+			},
+		},
+		"should fail if ingest storage is enabled and producer compression is set to an unsupported codec": {
+			setup: func(cfg *Config) {
+				cfg.Enabled = true
+				cfg.KafkaConfig.Address = flagext.StringSliceCSV{"localhost"}
+				cfg.KafkaConfig.Topic = "test"
+				cfg.KafkaConfig.ProducerCompression = "brotli"
+			},
+			expectedErr: ErrInvalidProducerCompression,
+		},
 		"should fail if target consumer lag is enabled but max consumer lag is not": {
 			setup: func(cfg *Config) {
 				cfg.Enabled = true
