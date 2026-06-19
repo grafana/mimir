@@ -8,8 +8,8 @@
           "subdir": "consul"
         }
       },
-      "version": "c19a92e586a6752f11745b47f309b13f02ef7147",
-      "sum": "qlVBnIShhHEPglAl1xYIAmOP/W8LD0wQmHCT0m9sTLU="
+      "version": "490bd3765972b0a73f06759243e6b593a0610c7a",
+      "sum": "Po3c1Ic96ngrJCtOazic/7OsLkoILOKZWXWyZWl+od8="
     },
     {
       "source": {
@@ -18,8 +18,8 @@
           "subdir": "etcd-operator"
         }
       },
-      "version": "815b0364886cc7bdf6bde2cdcd424bb8cef842b8",
-      "sum": "dnKsZ5FkKBtCycNVVSYa1AMNjCLofO4VGFrmzoz4344="
+      "version": "490bd3765972b0a73f06759243e6b593a0610c7a",
+      "sum": "duHm6wmUju5KHQurOe6dnXoKgl5gTUsfGplgbmAOsHw="
     },
     {
       "source": {
@@ -28,8 +28,8 @@
           "subdir": "ksonnet-util"
         }
       },
-      "version": "8fa7669cc7b1b1822eb0220f2eda9c6aaa5c5119",
-      "sum": "/l/RofjusGrnNpJMD0ST+jDgtARyjvBP5vC7kEjPoQI="
+      "version": "490bd3765972b0a73f06759243e6b593a0610c7a",
+      "sum": "0y3AFX9LQSpfWTxWKSwoLgbt0Wc9nnCwhMH2szKzHv0="
     },
     {
       "source": {
@@ -38,8 +38,8 @@
           "subdir": "memcached"
         }
       },
-      "version": "cd4dd9a04aa740b2644e12810e48382188c25adc",
-      "sum": "f+DYmgxR3spwx8DbIyY4+qSaFsshg/SE+MDG6jUQhJg="
+      "version": "490bd3765972b0a73f06759243e6b593a0610c7a",
+      "sum": "zNTCDRaCqJUHjQSQRsxGR3jLrMP9tU7YNQb13dbm1bU="
     }
   ],
   "legacyImports": false
