@@ -242,10 +242,11 @@ func (c *CacheOperator) fetchExistingExtents(ctx context.Context) ([]CachedExten
 	})
 
 	// If we have any extents that haven't expired, include their size in the memory consumption estimate.
-	c.cachedExtentsSize = c.estimateExtentsSize(cacheEntry.Extents)
-	if err := c.MemoryConsumptionTracker.IncreaseMemoryConsumption(c.cachedExtentsSize, limiter.CachedResponses); err != nil {
+	cachedExtentsSize := c.estimateExtentsSize(cacheEntry.Extents)
+	if err := c.MemoryConsumptionTracker.IncreaseMemoryConsumption(cachedExtentsSize, limiter.CachedResponses); err != nil {
 		return nil, err
 	}
+	c.cachedExtentsSize = cachedExtentsSize // Only set this now, so that if the increase above fails, calling Close doesn't call a panic for trying to apply a decrease of the same magnitude.
 
 	return cacheEntry.Extents, nil
 }
