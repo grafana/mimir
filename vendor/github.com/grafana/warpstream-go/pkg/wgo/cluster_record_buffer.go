@@ -84,6 +84,7 @@ func (c *ClusterRecordBuffer) Add(ctx context.Context, partitions []promisedRout
 	if len(partitions) == 0 {
 		return
 	}
+
 	// Wrap each partition's done with two layers:
 	//   - a once-fire that delivers either the produce outcome or
 	//     ctx.Err() (whichever first) to the original done;
@@ -150,6 +151,14 @@ func (c *ClusterRecordBuffer) addToBuffers(ctx context.Context, partitions []pro
 			p.done(ProduceResult{err: err})
 		}
 		return
+	}
+
+	// Stamp record timestamps here, to keep it consistent with franz-go.
+	now := time.Now()
+	for _, p := range partitions {
+		for _, r := range p.records {
+			ensureRecordTimestamp(r, now)
+		}
 	}
 
 	byAgent := make(map[int32][]promisedRoutedTopicPartitionRecords)
