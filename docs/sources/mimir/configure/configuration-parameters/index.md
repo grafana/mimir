@@ -5292,7 +5292,7 @@ kafka:
   [client_id: <string> | default = ""]
 
   # The rack identifier for this Kafka client. Corresponds to the Kafka
-  # client.rack setting.
+  # client.rack setting. Only supported when ingest-storage.kafka.backend=kafka.
   # CLI flag: -ingest-storage.kafka.client-rack
   [client_rack: <string> | default = ""]
 
