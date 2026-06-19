@@ -947,10 +947,9 @@ func (h *HistogramQuantilesFunction) SeriesMetadata(ctx context.Context, matcher
 		return nil, err
 	}
 
-	groupList := make([]*groupWithLabels, 0, len(groups))
+	groupList := make([]groupWithLabels, 0, len(groups))
 	for _, g := range groups {
-		g := g
-		groupList = append(groupList, &g)
+		groupList = append(groupList, g)
 	}
 
 	// Sort groups by last input series index
@@ -1094,6 +1093,7 @@ func (h *HistogramQuantilesFunction) FinishedReading(ctx context.Context) error 
 	bucketGroupPointerSlicePool.Put(&h.remainingGroups, h.memoryConsumptionTracker)
 	h.nextGroupIdx = 0
 	h.currentQuantileIdx = 0
+	h.currentInnerSeriesIndex = 0
 
 	// Return the scalar argument samples to the pool before signalling the scalar operators
 	// that produced them are done.
