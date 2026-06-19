@@ -120,10 +120,6 @@ func (s *Subquery) MergeHints(_ planning.Node) error {
 	return nil
 }
 
-func (s *Subquery) ChildrenLabels() []string {
-	return []string{""}
-}
-
 func MaterializeSubquery(s *Subquery, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
 	innerTimeRange := s.ChildrenTimeRange(timeRange)
 	inner, err := materializer.ConvertNodeToInstantVectorOperator(s.Inner, innerTimeRange)

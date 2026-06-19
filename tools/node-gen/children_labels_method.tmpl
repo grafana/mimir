@@ -1,0 +1,47 @@
+{{- /*gotype: github.com/grafana/mimir/tools/node-gen.templateStructData*/ -}}
+
+{{define "no_fields" -}}
+func ({{.Receiver}} *{{.Type}}) ChildrenLabels() []string {
+	return nil
+}
+{{- end }}
+
+{{define "child_fields" -}}
+func ({{.Receiver}} *{{.Type}}) ChildrenLabels() []string {
+	return []string{ {{- range $i, $f := .ChildFields}}{{if $i}}, {{end}}{{printf "%q" $f.LabelText}}{{end}}}
+}
+{{- end }}
+
+{{define "nilable_last" -}}
+func ({{.Receiver}} *{{.Type}}) ChildrenLabels() []string {
+	if {{.Receiver}}.{{.LastField.Name}} == nil {
+		{{- if eq .CountWithoutLast 0}}
+		return nil
+		{{- else if eq .CountWithoutLast 1}}
+		return []string{""}
+		{{- else}}
+		return []string{ {{- range $i, $f := (slice .ChildFields 0 $.CountWithoutLast)}}{{if $i}}, {{end}}{{printf "%q" $f.LabelText}}{{end}}}
+		{{- end}}
+	}
+	return []string{ {{- range $i, $f := .ChildFields}}{{if $i}}, {{end}}{{printf "%q" $f.LabelText}}{{end}}}
+}
+{{- end }}
+
+{{define "children_field" -}}
+func ({{.Receiver}} *{{.Type}}) ChildrenLabels() []string {
+	switch len({{.Receiver}}.{{.ChildrenField}}) {
+	case 0:
+		return nil
+	{{- if not .ChildrenNoCollapse}}
+	case 1:
+		return []string{""}
+	{{- end}}
+	default:
+		labels := make([]string, len({{.Receiver}}.{{.ChildrenField}}))
+		for i := range labels {
+			labels[i] = fmt.Sprintf({{printf "%q" .ChildrenLabelFmt}}, i)
+		}
+		return labels
+	}
+}
+{{- end }}

@@ -43,10 +43,6 @@ func (d *DeduplicateAndMerge) Describe() string {
 	return ""
 }
 
-func (d *DeduplicateAndMerge) ChildrenLabels() []string {
-	return []string{""}
-}
-
 func (d *DeduplicateAndMerge) ChildrenTimeRange(parentTimeRange types.QueryTimeRange) types.QueryTimeRange {
 	return parentTimeRange
 }

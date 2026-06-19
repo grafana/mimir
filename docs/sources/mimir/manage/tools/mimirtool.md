@@ -1259,6 +1259,7 @@ Forcefully adds one or more partitions to the partition ring.
 | `--memberlist.join`          | Required. Address of a memberlist node to join. Can be specified multiple times.                            |
 | `--memberlist.cluster-label` | The cluster label to use when joining the memberlist cluster.                                               |
 | `--memberlist.bind-port`     | Port to listen on for memberlist gossip messages. Default: `7946`. Use `0` to pick a random available port. |
+| `--partition-ring.key`       | The KV store key under which the partition ring is stored. Default: `ingester-partitions`.                  |
 | `--verbose`                  | Enable verbose logging.                                                                                     |
 
 ##### Example
@@ -1282,6 +1283,7 @@ Forcefully removes one or more partitions from the partition ring. A partition c
 | `--memberlist.join`          | Required. Address of a memberlist node to join. Can be specified multiple times.                            |
 | `--memberlist.cluster-label` | The cluster label to use when joining the memberlist cluster.                                               |
 | `--memberlist.bind-port`     | Port to listen on for memberlist gossip messages. Default: `7946`. Use `0` to pick a random available port. |
+| `--partition-ring.key`       | The KV store key under which the partition ring is stored. Default: `ingester-partitions`.                  |
 | `--verbose`                  | Enable verbose logging.                                                                                     |
 
 ##### Example
@@ -1305,6 +1307,7 @@ Forcefully adds one or more owners (ingester instances) to the partition ring, a
 | `--memberlist.join`          | Required. Address of a memberlist node to join. Can be specified multiple times.                            |
 | `--memberlist.cluster-label` | The cluster label to use when joining the memberlist cluster.                                               |
 | `--memberlist.bind-port`     | Port to listen on for memberlist gossip messages. Default: `7946`. Use `0` to pick a random available port. |
+| `--partition-ring.key`       | The KV store key under which the partition ring is stored. Default: `ingester-partitions`.                  |
 | `--verbose`                  | Enable verbose logging.                                                                                     |
 
 ##### Example
@@ -1328,6 +1331,7 @@ Forcefully removes one or more owners (ingester instances) from the partition ri
 | `--memberlist.join`          | Required. Address of a memberlist node to join. Can be specified multiple times.                            |
 | `--memberlist.cluster-label` | The cluster label to use when joining the memberlist cluster.                                               |
 | `--memberlist.bind-port`     | Port to listen on for memberlist gossip messages. Default: `7946`. Use `0` to pick a random available port. |
+| `--partition-ring.key`       | The KV store key under which the partition ring is stored. Default: `ingester-partitions`.                  |
 | `--verbose`                  | Enable verbose logging.                                                                                     |
 
 ##### Example

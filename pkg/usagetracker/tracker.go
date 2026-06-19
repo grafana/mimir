@@ -283,7 +283,7 @@ func NewUsageTracker(cfg Config, instanceRing *ring.Ring, partitionRing *ring.Mu
 
 	// Create Kafka writer for events storage.
 	if t.cfg.EventsStorageWriter.AutoCreateTopicEnabled {
-		if err := ingest.CreateTopic(t.cfg.EventsStorageWriter, t.logger); err != nil {
+		if err := ingest.CreateTopics(t.cfg.EventsStorageWriter, t.logger, t.cfg.EventsStorageWriter.Topic); err != nil {
 			return nil, errors.Wrap(err, "failed to create Kafka topic for usage-tracker events")
 		}
 	}
@@ -296,7 +296,7 @@ func NewUsageTracker(cfg Config, instanceRing *ring.Ring, partitionRing *ring.Mu
 
 	// Create Kafka writer for snapshots metadata storage.
 	if t.cfg.SnapshotsMetadataWriter.AutoCreateTopicEnabled {
-		if err := ingest.CreateTopic(t.cfg.SnapshotsMetadataWriter, t.logger); err != nil {
+		if err := ingest.CreateTopics(t.cfg.SnapshotsMetadataWriter, t.logger, t.cfg.SnapshotsMetadataWriter.Topic); err != nil {
 			return nil, errors.Wrap(err, "failed to create Kafka topic for usage-tracker snapshots metadata")
 		}
 	}

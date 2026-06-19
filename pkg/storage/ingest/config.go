@@ -17,6 +17,7 @@ import (
 	dskittls "github.com/grafana/dskit/crypto/tls"
 	"github.com/grafana/dskit/flagext"
 
+	"github.com/grafana/mimir/pkg/compartments"
 	"github.com/grafana/mimir/pkg/util"
 )
 
@@ -305,6 +306,25 @@ func (cfg *KafkaConfig) GetConsumerGroup(instanceID string, partitionID int32) s
 	}
 
 	return strings.ReplaceAll(cfg.ConsumerGroup, "<partition>", strconv.Itoa(int(partitionID)))
+}
+
+// WriteCompartmentConfig returns a copy of cfg targeting the given write compartment's Kafka cluster:
+// the compartments.WriteCompartmentIDPlaceholder in the Kafka address and SASL username/password is
+// replaced with the write compartment ID. The topic is left unchanged (it is templated by read
+// compartment, not by write compartment).
+func (cfg *KafkaConfig) WriteCompartmentConfig(writeCompartmentID int) KafkaConfig {
+	c := *cfg
+
+	addresses := make(flagext.StringSliceCSV, len(cfg.Address))
+	for i, addr := range cfg.Address {
+		addresses[i] = compartments.ReplaceWriteCompartment(addr, writeCompartmentID)
+	}
+	c.Address = addresses
+
+	c.SASL.Username = compartments.ReplaceWriteCompartment(cfg.SASL.Username, writeCompartmentID)
+	c.SASL.Password = flagext.SecretWithValue(compartments.ReplaceWriteCompartment(cfg.SASL.Password.String(), writeCompartmentID))
+
+	return c
 }
 
 // MigrationConfig holds the configuration used to migrate Mimir to ingest storage. This config shouldn't be

@@ -51,7 +51,7 @@ func TestKafkaEndOffset(t *testing.T) {
 	})
 }
 
-func TestPartitionReader(t *testing.T) {
+func TestSingleClusterPartitionReader(t *testing.T) {
 	const (
 		topicName   = "test"
 		partitionID = 1
@@ -87,14 +87,14 @@ func TestPartitionReader(t *testing.T) {
 	assert.Equal(t, 2, ParseRecordVersion(records[3]))
 }
 
-func TestPartitionReader_RequiresOffsetFilePath(t *testing.T) {
+func TestSingleClusterPartitionReader_RequiresOffsetFilePath(t *testing.T) {
 	cfg := defaultReaderTestConfig(t, "", "test", 1, nil)
-	_, err := newPartitionReader(cfg.kafka, cfg.partitionID, "test-group", "", cfg.consumer, &NoOpPreCommitNotifier{}, cfg.logger, cfg.registry)
+	_, err := newSingleClusterPartitionReader(cfg.kafka, cfg.partitionID, "test-group", "", cfg.consumer, &NoOpPreCommitNotifier{}, cfg.logger, cfg.registry)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "offset file path must be specified")
 }
 
-func TestPartitionReader_ShouldHonorConfiguredFetchMaxWait(t *testing.T) {
+func TestSingleClusterPartitionReader_ShouldHonorConfiguredFetchMaxWait(t *testing.T) {
 	const (
 		topicName    = "test"
 		partitionID  = 1
@@ -104,19 +104,19 @@ func TestPartitionReader_ShouldHonorConfiguredFetchMaxWait(t *testing.T) {
 	cfg := defaultReaderTestConfig(t, "", topicName, partitionID, nil)
 	cfg.kafka.FetchMaxWait = fetchMaxWait
 
-	reader, err := newPartitionReader(cfg.kafka, cfg.partitionID, "test-group", cfg.offsetFilePath, cfg.consumer, &NoOpPreCommitNotifier{}, cfg.logger, cfg.registry)
+	reader, err := newSingleClusterPartitionReader(cfg.kafka, cfg.partitionID, "test-group", cfg.offsetFilePath, cfg.consumer, &NoOpPreCommitNotifier{}, cfg.logger, cfg.registry)
 	require.NoError(t, err)
 	require.Equal(t, fetchMaxWait, reader.concurrentFetchersMinBytesMaxWaitTime)
 }
 
-func TestPartitionReader_logFetchErrors(t *testing.T) {
+func TestSingleClusterPartitionReader_logFetchErrors(t *testing.T) {
 	const (
 		topicName   = "test"
 		partitionID = 1
 	)
 
 	cfg := defaultReaderTestConfig(t, "", topicName, partitionID, nil)
-	reader, err := newPartitionReader(cfg.kafka, cfg.partitionID, "test-group", cfg.offsetFilePath, cfg.consumer, &NoOpPreCommitNotifier{}, cfg.logger, cfg.registry)
+	reader, err := newSingleClusterPartitionReader(cfg.kafka, cfg.partitionID, "test-group", cfg.offsetFilePath, cfg.consumer, &NoOpPreCommitNotifier{}, cfg.logger, cfg.registry)
 	require.NoError(t, err)
 
 	reader.logFetchErrors(kgo.Fetches{
@@ -140,7 +140,7 @@ func TestPartitionReader_logFetchErrors(t *testing.T) {
 	`), "cortex_ingest_storage_reader_fetch_errors_total"))
 }
 
-func TestPartitionReader_ConsumerError(t *testing.T) {
+func TestSingleClusterPartitionReader_ConsumerError(t *testing.T) {
 	t.Parallel()
 
 	const (
@@ -197,7 +197,7 @@ func TestPartitionReader_ConsumerError(t *testing.T) {
 	}
 }
 
-func TestPartitionReader_ConsumerStopping(t *testing.T) {
+func TestSingleClusterPartitionReader_ConsumerStopping(t *testing.T) {
 	const (
 		topicName   = "test"
 		partitionID = 1
@@ -272,7 +272,7 @@ func TestPartitionReader_ConsumerStopping(t *testing.T) {
 	}
 }
 
-func TestPartitionReader_WaitReadConsistencyUntilLastProducedOffset_And_WaitReadConsistencyUntilOffset(t *testing.T) {
+func TestSingleClusterPartitionReader_WaitReadConsistencyUntilLastProducedOffset_And_WaitReadConsistencyUntilOffsets(t *testing.T) {
 	const (
 		topicName   = "test"
 		partitionID = 0
@@ -280,7 +280,7 @@ func TestPartitionReader_WaitReadConsistencyUntilLastProducedOffset_And_WaitRead
 
 	ctx := t.Context()
 
-	setup := func(t *testing.T, consumer RecordConsumer, opts ...readerTestCfgOpt) (*PartitionReader, *kgo.Client, *prometheus.Registry) {
+	setup := func(t *testing.T, consumer RecordConsumer, opts ...readerTestCfgOpt) (*SingleClusterPartitionReader, *kgo.Client, *prometheus.Registry) {
 		reg := prometheus.NewPedanticRegistry()
 
 		_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
@@ -307,7 +307,7 @@ func TestPartitionReader_WaitReadConsistencyUntilLastProducedOffset_And_WaitRead
 				consumedRecords := atomic.NewInt64(0)
 
 				// We define a custom consume function which introduces a delay once the 2nd record
-				// has been consumed but before the function returns. From the PartitionReader perspective,
+				// has been consumed but before the function returns. From the SingleClusterPartitionReader perspective,
 				// the 2nd record consumption will be delayed.
 				consumer := consumerFunc(func(_ context.Context, records iter.Seq[*kgo.Record]) error {
 					for record := range records {
@@ -337,7 +337,7 @@ func TestPartitionReader_WaitReadConsistencyUntilLastProducedOffset_And_WaitRead
 				t.Log("started waiting for read consistency")
 
 				if withOffset {
-					require.NoError(t, reader.WaitReadConsistencyUntilOffset(ctx, lastRecordOffset))
+					require.NoError(t, reader.WaitReadConsistencyUntilOffsets(ctx, NewSingleClusterPartitionOffsets(lastRecordOffset)))
 				} else {
 					require.NoError(t, reader.WaitReadConsistencyUntilLastProducedOffset(ctx))
 				}
@@ -382,7 +382,7 @@ func TestPartitionReader_WaitReadConsistencyUntilLastProducedOffset_And_WaitRead
 				var err error
 
 				if withOffset {
-					err = reader.WaitReadConsistencyUntilOffset(waitCtx, lastRecordOffset)
+					err = reader.WaitReadConsistencyUntilOffsets(waitCtx, NewSingleClusterPartitionOffsets(lastRecordOffset))
 				} else {
 					err = reader.WaitReadConsistencyUntilLastProducedOffset(waitCtx)
 				}
@@ -435,7 +435,7 @@ func TestPartitionReader_WaitReadConsistencyUntilLastProducedOffset_And_WaitRead
 				var err error
 
 				if withOffset {
-					err = reader.WaitReadConsistencyUntilOffset(ctx, lastRecordOffset)
+					err = reader.WaitReadConsistencyUntilOffsets(ctx, NewSingleClusterPartitionOffsets(lastRecordOffset))
 				} else {
 					err = reader.WaitReadConsistencyUntilLastProducedOffset(ctx)
 				}
@@ -480,7 +480,7 @@ func TestPartitionReader_WaitReadConsistencyUntilLastProducedOffset_And_WaitRead
 				createTestContextWithTimeout(t, time.Second)
 
 				if withOffset {
-					require.NoError(t, reader.WaitReadConsistencyUntilOffset(waitCtx, -1))
+					require.NoError(t, reader.WaitReadConsistencyUntilOffsets(waitCtx, NewSingleClusterPartitionOffsets(-1)))
 				} else {
 					require.NoError(t, reader.WaitReadConsistencyUntilLastProducedOffset(waitCtx))
 				}
@@ -501,7 +501,7 @@ func TestPartitionReader_WaitReadConsistencyUntilLastProducedOffset_And_WaitRead
 		}
 	})
 
-	t.Run("should return an error if the PartitionReader is not running", func(t *testing.T) {
+	t.Run("should return an error if the SingleClusterPartitionReader is not running", func(t *testing.T) {
 		t.Parallel()
 
 		for _, withOffset := range []bool{false, true} {
@@ -515,7 +515,7 @@ func TestPartitionReader_WaitReadConsistencyUntilLastProducedOffset_And_WaitRead
 				var err error
 
 				if withOffset {
-					err = reader.WaitReadConsistencyUntilOffset(waitCtx, -1)
+					err = reader.WaitReadConsistencyUntilOffsets(waitCtx, NewSingleClusterPartitionOffsets(-1))
 				} else {
 					err = reader.WaitReadConsistencyUntilLastProducedOffset(waitCtx)
 				}
@@ -537,9 +537,19 @@ func TestPartitionReader_WaitReadConsistencyUntilLastProducedOffset_And_WaitRead
 			})
 		}
 	})
+
+	t.Run("should reject offsets for more than one Kafka cluster", func(t *testing.T) {
+		t.Parallel()
+
+		reader, _, _ := setup(t, newTestConsumer(0))
+
+		// A single-cluster reader given offsets for more than one Kafka cluster is an invariant violation.
+		err := reader.WaitReadConsistencyUntilOffsets(ctx, NewMultiClusterPartitionOffsets([]int64{1, 2}))
+		require.ErrorContains(t, err, "single-cluster partition reader was given read consistency offsets for 2 Kafka clusters")
+	})
 }
 
-func TestPartitionReader_EnforceReadMaxDelay(t *testing.T) {
+func TestSingleClusterPartitionReader_EnforceReadMaxDelay(t *testing.T) {
 	const (
 		topicName   = "test"
 		partitionID = 0
@@ -547,7 +557,7 @@ func TestPartitionReader_EnforceReadMaxDelay(t *testing.T) {
 
 	ctx := t.Context()
 
-	setup := func(t *testing.T, consumer RecordConsumer) (*PartitionReader, *kgo.Client) {
+	setup := func(t *testing.T, consumer RecordConsumer) (*SingleClusterPartitionReader, *kgo.Client) {
 		_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
 		reader := createAndStartReader(ctx, t, clusterAddr, topicName, partitionID, consumer)
 
@@ -667,7 +677,7 @@ func TestPartitionReader_EnforceReadMaxDelay(t *testing.T) {
 	})
 }
 
-func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
+func TestSingleClusterPartitionReader_ConsumeAtStartup(t *testing.T) {
 	const (
 		topicName   = "test"
 		partitionID = 1
@@ -2014,7 +2024,7 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 	})
 }
 
-func TestPartitionReader_ShouldNotBufferRecordsInTheKafkaClientWhenDone(t *testing.T) {
+func TestSingleClusterPartitionReader_ShouldNotBufferRecordsInTheKafkaClientWhenDone(t *testing.T) {
 	const (
 		topicName        = "test"
 		partitionID      = 1
@@ -2227,7 +2237,7 @@ func TestPartitionReader_ShouldNotBufferRecordsInTheKafkaClientWhenDone(t *testi
 	}
 }
 
-func TestPartitionReader_ShouldNotPanicIfBufferedRecordsIsCalledBeforeStarting(t *testing.T) {
+func TestSingleClusterPartitionReader_ShouldNotPanicIfBufferedRecordsIsCalledBeforeStarting(t *testing.T) {
 	const (
 		topicName   = "test"
 		partitionID = 1
@@ -2240,11 +2250,11 @@ func TestPartitionReader_ShouldNotPanicIfBufferedRecordsIsCalledBeforeStarting(t
 }
 
 // This test is critical because it reproduces a bug that caused data loss. This test has been designed to
-// *not* mock PartitionReader or concurrentFetchers, and just mock responses from Kafka to reproduce a scenario
+// *not* mock SingleClusterPartitionReader or concurrentFetchers, and just mock responses from Kafka to reproduce a scenario
 // where *both* conditions are met:
 // 1. Fetch request failures
 // 2. Fetch responses containing less records than requested
-func TestPartitionReader_ShouldNotMissRecordsIfFetchRequestContainPartialFailuresWithConcurrentFetcherIsUsed(t *testing.T) {
+func TestSingleClusterPartitionReader_ShouldNotMissRecordsIfFetchRequestContainPartialFailuresWithConcurrentFetcherIsUsed(t *testing.T) {
 	t.Parallel()
 
 	const (
@@ -2327,7 +2337,7 @@ func TestPartitionReader_ShouldNotMissRecordsIfFetchRequestContainPartialFailure
 		return nil, nil, false
 	})
 
-	// Consume all the records using the PartitionReader.
+	// Consume all the records using the SingleClusterPartitionReader.
 	var (
 		totalConsumedRecords = atomic.NewInt64(0)
 		consumedRecordIDs    = sync.Map{}
@@ -2376,7 +2386,7 @@ func TestPartitionReader_ShouldNotMissRecordsIfFetchRequestContainPartialFailure
 // This test reproduces a scenario that we don't think should happen but, if it happens, we want to make sure
 // that we don't lose records. The scenario is when Kafka returns a Fetch response for a *single* topic-partition
 // containing *both* the error code set and some records.
-func TestPartitionReader_ShouldNotMissRecordsIfKafkaReturnsAFetchBothWithAnErrorAndSomeRecords(t *testing.T) {
+func TestSingleClusterPartitionReader_ShouldNotMissRecordsIfKafkaReturnsAFetchBothWithAnErrorAndSomeRecords(t *testing.T) {
 	t.Parallel()
 
 	const (
@@ -2535,7 +2545,7 @@ func TestPartitionReader_ShouldNotMissRecordsIfKafkaReturnsAFetchBothWithAnError
 	}
 }
 
-func TestPartitionReader_fetchLastCommittedOffset(t *testing.T) {
+func TestSingleClusterPartitionReader_fetchLastCommittedOffset(t *testing.T) {
 	const (
 		topicName   = "test"
 		partitionID = 1
@@ -2596,7 +2606,8 @@ func TestPartitionReader_fetchLastCommittedOffset(t *testing.T) {
 					Group: reader.consumerGroup,
 					Topics: []kmsg.OffsetFetchResponseGroupTopic{
 						{
-							Topic: topicName,
+							Topic:   topicName,
+							TopicID: cluster.TopicInfo(topicName).TopicID,
 							Partitions: []kmsg.OffsetFetchResponseGroupTopicPartition{
 								{
 									Partition: partitionID + 1, // Another partition.
@@ -2637,7 +2648,8 @@ func TestPartitionReader_fetchLastCommittedOffset(t *testing.T) {
 					Group: reader.consumerGroup,
 					Topics: []kmsg.OffsetFetchResponseGroupTopic{
 						{
-							Topic: topicName,
+							Topic:   topicName,
+							TopicID: cluster.TopicInfo(topicName).TopicID,
 							Partitions: []kmsg.OffsetFetchResponseGroupTopicPartition{
 								{
 									Partition: partitionID, // Our partition.
@@ -2663,7 +2675,7 @@ func TestPartitionReader_fetchLastCommittedOffset(t *testing.T) {
 	})
 }
 
-func TestPartitionReader_getStartOffset_RetentionPeriodFallback(t *testing.T) {
+func TestSingleClusterPartitionReader_getStartOffset_RetentionPeriodFallback(t *testing.T) {
 	const (
 		topicName   = "test-topic"
 		partitionID = int32(1)
@@ -2913,11 +2925,11 @@ func TestPartitionCommitter(t *testing.T) {
 
 			if commitRequestsShouldFail.Load() {
 				res.Topics = []kmsg.OffsetCommitResponseTopic{
-					{Topic: topicName, Partitions: []kmsg.OffsetCommitResponseTopicPartition{{Partition: partitionID, ErrorCode: kerr.InvalidCommitOffsetSize.Code}}},
+					{Topic: topicName, TopicID: cluster.TopicInfo(topicName).TopicID, Partitions: []kmsg.OffsetCommitResponseTopicPartition{{Partition: partitionID, ErrorCode: kerr.InvalidCommitOffsetSize.Code}}},
 				}
 			} else {
 				res.Topics = []kmsg.OffsetCommitResponseTopic{
-					{Topic: topicName, Partitions: []kmsg.OffsetCommitResponseTopicPartition{{Partition: partitionID}}},
+					{Topic: topicName, TopicID: cluster.TopicInfo(topicName).TopicID, Partitions: []kmsg.OffsetCommitResponseTopicPartition{{Partition: partitionID}}},
 				}
 			}
 
@@ -3418,7 +3430,7 @@ func defaultReaderTestConfig(t *testing.T, addr string, topicName string, partit
 	}
 }
 
-func createReader(t *testing.T, addr string, topicName string, partitionID int32, consumer RecordConsumer, opts ...readerTestCfgOpt) *PartitionReader {
+func createReader(t *testing.T, addr string, topicName string, partitionID int32, consumer RecordConsumer, opts ...readerTestCfgOpt) *SingleClusterPartitionReader {
 	cfg := defaultReaderTestConfig(t, addr, topicName, partitionID, consumer)
 	for _, o := range opts {
 		o(cfg)
@@ -3442,7 +3454,7 @@ func createReader(t *testing.T, addr string, topicName string, partitionID int32
 	}
 
 	cfg.kafka.MaxReplayPeriod = cfg.replayFromDurationWhenFileOffsetMissing
-	reader, err := newPartitionReader(cfg.kafka, cfg.partitionID, "test-group", cfg.offsetFilePath, cfg.consumer, notifier, cfg.logger, cfg.registry)
+	reader, err := newSingleClusterPartitionReader(cfg.kafka, cfg.partitionID, "test-group", cfg.offsetFilePath, cfg.consumer, notifier, cfg.logger, cfg.registry)
 	require.NoError(t, err)
 
 	// Reduce the time the fake kafka would wait for new records. Sometimes this blocks startup.
@@ -3451,7 +3463,7 @@ func createReader(t *testing.T, addr string, topicName string, partitionID int32
 	return reader
 }
 
-func createAndStartReader(ctx context.Context, t *testing.T, addr string, topicName string, partitionID int32, consumer RecordConsumer, opts ...readerTestCfgOpt) *PartitionReader {
+func createAndStartReader(ctx context.Context, t *testing.T, addr string, topicName string, partitionID int32, consumer RecordConsumer, opts ...readerTestCfgOpt) *SingleClusterPartitionReader {
 	reader := createReader(t, addr, topicName, partitionID, consumer, opts...)
 
 	require.NoError(t, services.StartAndAwaitRunning(ctx, reader))
@@ -3462,7 +3474,7 @@ func createAndStartReader(ctx context.Context, t *testing.T, addr string, topicN
 	return reader
 }
 
-func TestPartitionReader_Commit(t *testing.T) {
+func TestSingleClusterPartitionReader_Commit(t *testing.T) {
 	const (
 		topicName   = "test"
 		partitionID = 1
@@ -3590,7 +3602,7 @@ func TestPartitionReader_Commit(t *testing.T) {
 	})
 }
 
-func TestPartitionReader_LastCommittedOffset(t *testing.T) {
+func TestSingleClusterPartitionReader_LastCommittedOffset(t *testing.T) {
 	const (
 		topicName   = "test"
 		partitionID = 1

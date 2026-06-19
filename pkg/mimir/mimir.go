@@ -159,6 +159,8 @@ type Config struct {
 	CostAttributionCleanupInterval  time.Duration `yaml:"cost_attribution_cleanup_interval" category:"experimental"`
 
 	InstrumentRefLeaks mimirpb.InstrumentRefLeaksConfig `yaml:"instrument_ref_leaks" category:"experimental"`
+
+	LabelAccessControlEnabled bool `yaml:"label_access_control_enabled" category:"experimental"`
 }
 
 // RegisterFlags registers flags.
@@ -179,6 +181,7 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 
 	f.BoolVar(&c.MultitenancyEnabled, "auth.multitenancy-enabled", true, "When set to true, incoming HTTP requests must specify tenant ID in HTTP X-Scope-OrgId header. When set to false, tenant ID from -auth.no-auth-tenant is used instead.")
 	f.StringVar(&c.NoAuthTenant, "auth.no-auth-tenant", "anonymous", "Tenant ID to use when multitenancy is disabled.")
+	f.BoolVar(&c.LabelAccessControlEnabled, "auth.label-access-control-enabled", false, "If enabled, Mimir enforces label-based access control on metric read queries using the X-Prom-Label-Policy HTTP header.")
 	f.BoolVar(&c.PrintConfig, "print.config", false, "Print the config and exit.")
 	f.DurationVar(&c.ShutdownDelay, "shutdown-delay", 0, "How long to wait between SIGTERM and shutdown. After receiving SIGTERM, Mimir will report not-ready status via /ready endpoint.")
 	f.IntVar(&c.MaxSeparateMetricsGroupsPerUser, "max-separate-metrics-groups-per-user", 1000, "Maximum number of groups allowed per user by which specified distributor and ingester metrics can be further separated.")
@@ -289,11 +292,39 @@ func (c *Config) Validate(log log.Logger) error {
 	if err := c.Compartments.Validate(); err != nil {
 		return errors.Wrap(err, "invalid compartments config")
 	}
-	if c.Compartments.Enabled && !c.IngestStorage.Enabled {
-		return errors.New("compartments require ingest storage to be enabled")
-	}
-	if c.Compartments.Enabled && c.IngestStorage.Migration.DistributorSendToIngestersEnabled {
-		return errors.New("compartments cannot be enabled together with ingest storage migration's distributor-send-to-ingesters")
+	if c.Compartments.Enabled {
+		if !c.IngestStorage.Enabled {
+			return errors.New("compartments require ingest storage to be enabled")
+		}
+		if c.IngestStorage.Migration.DistributorSendToIngestersEnabled {
+			return errors.New("compartments cannot be enabled together with ingest storage migration's distributor-send-to-ingesters")
+		}
+		// Only distributors and ingesters currently support a topic parameterised by read compartment
+		// when compartments are enabled.
+		if c.isDistributorEnabled() || c.isIngesterEnabled() {
+			if !strings.Contains(c.IngestStorage.KafkaConfig.Topic, compartments.ReadCompartmentIDPlaceholder) {
+				return fmt.Errorf("when compartments are enabled, -ingest-storage.kafka.topic must contain the %q placeholder for the distributor and ingester", compartments.ReadCompartmentIDPlaceholder)
+			}
+		}
+		// The ingester consumes its partition from every write compartment's Kafka cluster, resolving each
+		// configured address per write compartment. With more than one write compartment and an address
+		// without the placeholder, every compartment resolves to the same cluster, so the ingester would
+		// consume each partition once per write compartment and duplicate samples. A single write
+		// compartment (or other components, like the distributor, that target just one cluster) doesn't
+		// need the placeholder.
+		if c.isIngesterEnabled() && c.Compartments.Write.NumCompartments > 1 {
+			for _, addr := range c.IngestStorage.KafkaConfig.Address {
+				if !strings.Contains(addr, compartments.WriteCompartmentIDPlaceholder) {
+					return fmt.Errorf("when compartments are enabled with more than one write compartment, every -ingest-storage.kafka.address must contain the %q placeholder for the ingester", compartments.WriteCompartmentIDPlaceholder)
+				}
+			}
+		}
+		// The offset catalogue tracks a single Kafka offset per block, which is not representable when an
+		// ingester consumes from more than one write compartment's Kafka cluster (each has its own offset
+		// space). Multi-cluster support for the offset catalogue is not implemented yet.
+		if c.Compartments.Write.NumCompartments > 1 && c.BlocksStorage.TSDB.OffsetCatalogue.Enabled {
+			return errors.New("the offset catalogue (-blocks-storage.tsdb.offset-catalogue.enabled) cannot be enabled together with more than one write compartment")
+		}
 	}
 	if c.isIngesterEnabled() {
 		if !c.IngestStorage.Enabled && !c.Ingester.PushGrpcMethodEnabled {
@@ -306,7 +337,7 @@ func (c *Config) Validate(log log.Logger) error {
 	if err := c.BlocksStorage.Validate(c.Ingester.ActiveSeriesMetrics); err != nil {
 		return errors.Wrap(err, "invalid TSDB config")
 	}
-	if err := c.Distributor.Validate(c.LimitsConfig); err != nil {
+	if err := c.Distributor.Validate(c.LimitsConfig, c.Compartments); err != nil {
 		return errors.Wrap(err, "invalid distributor config")
 	}
 	if err := c.Querier.Validate(); err != nil {

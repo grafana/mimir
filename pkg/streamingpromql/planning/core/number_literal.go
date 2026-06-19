@@ -47,10 +47,6 @@ func (n *NumberLiteral) MergeHints(_ planning.Node) error {
 	return nil
 }
 
-func (n *NumberLiteral) ChildrenLabels() []string {
-	return nil
-}
-
 func MaterializeNumberLiteral(n *NumberLiteral, _ *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
 	o := scalars.NewScalarConstant(n.Value, timeRange, params.MemoryConsumptionTracker, n.GetExpressionPosition().ToPrometheusType())
 

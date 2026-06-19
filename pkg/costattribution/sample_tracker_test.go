@@ -15,7 +15,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/costattribution/costattributionmodel"
-	"github.com/grafana/mimir/pkg/costattribution/testutils"
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
@@ -74,7 +73,7 @@ func TestSampleTracker_IncrementReceviedSamples(t *testing.T) {
 	manager, _, costAttributionReg := newTestManager()
 	st := manager.SampleTracker("user4")
 	t.Run("One Single Series in Request", func(t *testing.T) {
-		st.IncrementReceivedSamples(testutils.CreateRequest([]testutils.Series{{LabelValues: []string{"platform", "foo", "service", "dodo"}, SamplesCount: 3}}), time.Unix(10, 0))
+		st.IncrementReceivedSamples(createRequest([]series{{LabelValues: []string{"platform", "foo", "service", "dodo"}, SamplesCount: 3}}), time.Unix(10, 0))
 
 		expectedMetrics := `
 	# HELP cortex_distributor_received_attributed_samples_total The total number of samples that were received per attribution.
@@ -84,7 +83,7 @@ func TestSampleTracker_IncrementReceviedSamples(t *testing.T) {
 		assert.NoError(t, testutil.GatherAndCompare(costAttributionReg, strings.NewReader(expectedMetrics), "cortex_distributor_received_attributed_samples_total"))
 	})
 	t.Run("Multiple Different Series in Request", func(t *testing.T) {
-		st.IncrementReceivedSamples(testutils.CreateRequest([]testutils.Series{
+		st.IncrementReceivedSamples(createRequest([]series{
 			{LabelValues: []string{"platform", "foo", "service", "dodo"}, SamplesCount: 3},
 			{LabelValues: []string{"platform", "bar", "service", "yoyo"}, SamplesCount: 5},
 		}), time.Unix(20, 0))
@@ -99,7 +98,7 @@ func TestSampleTracker_IncrementReceviedSamples(t *testing.T) {
 	})
 
 	t.Run("Multiple Series in Request with Same Labels", func(t *testing.T) {
-		st.IncrementReceivedSamples(testutils.CreateRequest([]testutils.Series{
+		st.IncrementReceivedSamples(createRequest([]series{
 			{LabelValues: []string{"platform", "foo", "service", "dodo"}, SamplesCount: 3},
 			{LabelValues: []string{"platform", "foo", "service", "yoyo"}, SamplesCount: 5},
 		}), time.Unix(30, 0))
@@ -217,7 +216,7 @@ func TestSampleTracker_Concurrency(t *testing.T) {
 		wg.Add(1)
 		go func(i int64) {
 			defer wg.Done()
-			cst.IncrementReceivedSamples(testutils.CreateRequest([]testutils.Series{{LabelValues: []string{"team", string(rune('A' + (i % 26)))}, SamplesCount: 1}}), time.Unix(i, 0))
+			cst.IncrementReceivedSamples(createRequest([]series{{LabelValues: []string{"team", string(rune('A' + (i % 26)))}, SamplesCount: 1}}), time.Unix(i, 0))
 			cst.IncrementDiscardedSamples([]mimirpb.LabelAdapter{{Name: "team", Value: string(rune('A' + (i % 26)))}}, 1, "sample-out-of-order", time.Unix(i, 0))
 		}(i)
 	}

@@ -56,10 +56,6 @@ func (s *StepInvariantExpression) MergeHints(_ planning.Node) error {
 	return nil
 }
 
-func (s *StepInvariantExpression) ChildrenLabels() []string {
-	return []string{""}
-}
-
 func MaterializeStepInvariantExpression(s *StepInvariantExpression, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
 	resultType, err := s.Inner.ResultType()
 	if err != nil {

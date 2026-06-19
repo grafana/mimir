@@ -22429,6 +22429,17 @@
       ],
       "fieldValue": null,
       "fieldDefaultValue": null
+    },
+    {
+      "kind": "field",
+      "name": "label_access_control_enabled",
+      "required": false,
+      "desc": "If enabled, Mimir enforces label-based access control on metric read queries using the X-Prom-Label-Policy HTTP header.",
+      "fieldValue": null,
+      "fieldDefaultValue": false,
+      "fieldFlag": "auth.label-access-control-enabled",
+      "fieldType": "boolean",
+      "fieldCategory": "experimental"
     }
   ],
   "fieldValue": null,

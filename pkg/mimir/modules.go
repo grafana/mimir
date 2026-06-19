@@ -47,6 +47,7 @@ import (
 	"github.com/grafana/mimir/pkg/costattribution"
 	"github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/frontend"
+	frontend_labelaccess "github.com/grafana/mimir/pkg/frontend/labelaccess"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	"github.com/grafana/mimir/pkg/frontend/transport"
 	v2 "github.com/grafana/mimir/pkg/frontend/v2"
@@ -54,6 +55,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier"
 	querierapi "github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/querier/engine"
+	querier_labelaccess "github.com/grafana/mimir/pkg/querier/labelaccess"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/querier/tenantfederation"
 	querier_worker "github.com/grafana/mimir/pkg/querier/worker"
@@ -160,6 +162,7 @@ func (t *Mimir) initAPI() (services.Service, error) {
 			QuerySharding:         strconv.FormatBool(t.Cfg.Frontend.QueryMiddleware.ShardedQueries),
 			RulerConfigAPI:        strconv.FormatBool(t.Cfg.Ruler.EnableAPI),
 			FederatedRules:        strconv.FormatBool(t.Cfg.Ruler.TenantFederation.Enabled),
+			IngestStorage:         strconv.FormatBool(t.Cfg.IngestStorage.Enabled),
 		})
 
 	t.API = a
@@ -670,6 +673,11 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 	t.Cfg.Worker.MaxConcurrentRequests = t.Cfg.Querier.EngineConfig.MaxConcurrent
 	t.Cfg.Worker.QuerySchedulerDiscovery = t.Cfg.QueryScheduler.ServiceDiscovery
 
+	if t.Cfg.LabelAccessControlEnabled {
+		t.QuerierQueryable = querier_labelaccess.WrapQueryable(t.QuerierQueryable, util_log.Logger)
+		t.ExemplarQueryable = querier_labelaccess.WrapExemplarQueryable(t.ExemplarQueryable, util_log.Logger)
+	}
+
 	// Add the default propagators.
 	t.Extractors = append(
 		t.Extractors,
@@ -679,6 +687,10 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 		// Since we don't use the regular RegisterQueryAPI, we need to register the consistency extractor here too.
 		&querierapi.ConsistencyExtractor{},
 	)
+
+	if t.Cfg.LabelAccessControlEnabled {
+		t.Extractors = append(t.Extractors, querier_labelaccess.NewExtractor())
+	}
 
 	extractor := &propagation.MultiExtractor{Extractors: t.Extractors}
 	metrics := querier.NewRequestMetrics(t.Registerer)
@@ -704,6 +716,10 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 		t.Overrides,
 		extractor,
 	)
+
+	if t.Cfg.LabelAccessControlEnabled {
+		internalQuerierRouter = querier_labelaccess.NewLabelAccessMiddleware(util_log.Logger).Wrap(internalQuerierRouter)
+	}
 
 	// If the querier is running standalone without the query-frontend or query-scheduler, we must register it's internal
 	// HTTP handler externally and provide the external Mimir Server HTTP handler to the frontend worker
@@ -825,6 +841,10 @@ func (t *Mimir) initQueryFrontendCodec() (services.Service, error) {
 	// Add our default injectors.
 	t.Injectors = append(t.Injectors, &querierapi.ConsistencyInjector{})
 
+	if t.Cfg.LabelAccessControlEnabled {
+		t.Injectors = append(t.Injectors, frontend_labelaccess.NewInjector())
+	}
+
 	t.QueryFrontendCodec = querymiddleware.NewCodec(
 		t.Registerer,
 		t.Cfg.Querier.EngineConfig.LookbackDelta,
@@ -914,6 +934,14 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 		panic(fmt.Sprintf("invalid config not caught by validation: unknown PromQL engine '%s'", t.Cfg.Frontend.QueryEngine))
 	}
 
+	if t.Cfg.LabelAccessControlEnabled {
+		cacheKeyGenerator := t.Cfg.Frontend.QueryMiddleware.CacheKeyGenerator
+		if cacheKeyGenerator == nil {
+			cacheKeyGenerator = querymiddleware.NewDefaultCacheKeyGenerator(t.QueryFrontendCodec, t.Cfg.Frontend.QueryMiddleware.SplitQueriesByInterval)
+		}
+		t.Cfg.Frontend.QueryMiddleware.CacheKeyGenerator = frontend_labelaccess.NewCacheSplitter(cacheKeyGenerator)
+	}
+
 	tripperware, err := querymiddleware.NewTripperware(
 		t.Cfg.Frontend.QueryMiddleware,
 		util_log.Logger,
@@ -936,6 +964,10 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 	)
 	if err != nil {
 		return nil, err
+	}
+
+	if t.Cfg.LabelAccessControlEnabled {
+		tripperware = frontend_labelaccess.WrapTripperware(tripperware)
 	}
 
 	t.QueryFrontendTripperware = tripperware
@@ -984,7 +1016,14 @@ func (t *Mimir) initQueryFrontend() (serv services.Service, err error) {
 	handler := transport.NewHandler(t.Cfg.Frontend.Handler, roundTripper, util_log.Logger, t.Registerer)
 	// Allow the Prometheus engine to be explicitly selected if MQE is in use and a fallback is configured.
 	fallbackInjector := propagation.Middleware(&streamingpromqlcompat.EngineFallbackExtractor{})
-	t.API.RegisterQueryFrontendHandler(fallbackInjector.Wrap(handler), t.BuildInfoHandler, t.Cfg.Frontend.Handler.MaxBodySize)
+	wrappedHandler := fallbackInjector.Wrap(handler)
+	if t.Cfg.LabelAccessControlEnabled {
+		// Wrap the handler so LBAC policies from the X-Prom-Label-Policy header are
+		// extracted into the request context before the round tripper runs. This is
+		// required for WrapTripperware to see the policy set when computing the cache key.
+		wrappedHandler = querier_labelaccess.NewLabelAccessMiddleware(util_log.Logger).Wrap(wrappedHandler)
+	}
+	t.API.RegisterQueryFrontendHandler(wrappedHandler, t.BuildInfoHandler, t.Cfg.Frontend.Handler.MaxBodySize)
 
 	w := services.NewFailureWatcher()
 	return services.NewBasicService(func(_ context.Context) error {

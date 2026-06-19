@@ -21,6 +21,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
@@ -1697,6 +1698,59 @@ func assertHistogramSampleCount(t *testing.T, reg prometheus.Gatherer, metricNam
 	hist, err := dskit_metrics.FindHistogramWithNameAndLabels(mfm, metricName)
 	require.NoError(t, err)
 	assert.Equal(t, expected, hist.GetSampleCount())
+}
+
+func TestWriter_AutoCreateTopics(t *testing.T) {
+	const baseTopic = "test"
+
+	listTopics := func(t *testing.T, clusterAddr string) map[string]struct{} {
+		client, err := kgo.NewClient(commonKafkaClientOptions(createTestKafkaConfig(clusterAddr, baseTopic), nil, test.NewTestingLogger(t))...)
+		require.NoError(t, err)
+		t.Cleanup(client.Close)
+
+		adm := kadm.NewClient(client)
+		details, err := adm.ListTopics(context.Background())
+		require.NoError(t, err)
+
+		names := make(map[string]struct{}, len(details))
+		for name := range details {
+			names[name] = struct{}{}
+		}
+		return names
+	}
+
+	t.Run("auto-creates the configured topic when no explicit set is provided", func(t *testing.T) {
+		_, clusterAddr := testkafka.CreateCluster(t, 1, baseTopic)
+
+		cfg := createTestKafkaConfig(clusterAddr, "auto-created")
+		cfg.AutoCreateTopicEnabled = true
+		cfg.AutoCreateTopicDefaultPartitions = 1
+
+		writer := NewWriter(cfg, test.NewTestingLogger(t), prometheus.NewPedanticRegistry())
+		require.NoError(t, services.StartAndAwaitRunning(context.Background(), writer))
+		t.Cleanup(func() { require.NoError(t, services.StopAndAwaitTerminated(context.Background(), writer)) })
+
+		topics := listTopics(t, clusterAddr)
+		assert.Contains(t, topics, "auto-created")
+	})
+
+	t.Run("auto-creates the explicit set of topics, not the configured topic", func(t *testing.T) {
+		_, clusterAddr := testkafka.CreateCluster(t, 1, baseTopic)
+
+		// The configured topic is a template that must never be created literally.
+		cfg := createTestKafkaConfig(clusterAddr, "mimir-ingest-rc-<read-compartment-id>")
+		cfg.AutoCreateTopicEnabled = true
+		cfg.AutoCreateTopicDefaultPartitions = 1
+
+		writer := NewWriter(cfg, test.NewTestingLogger(t), prometheus.NewPedanticRegistry(), WithAutoCreateTopics([]string{"mimir-ingest-rc-0", "mimir-ingest-rc-1"}))
+		require.NoError(t, services.StartAndAwaitRunning(context.Background(), writer))
+		t.Cleanup(func() { require.NoError(t, services.StopAndAwaitTerminated(context.Background(), writer)) })
+
+		topics := listTopics(t, clusterAddr)
+		assert.Contains(t, topics, "mimir-ingest-rc-0")
+		assert.Contains(t, topics, "mimir-ingest-rc-1")
+		assert.NotContains(t, topics, "mimir-ingest-rc-<read-compartment-id>")
+	})
 }
 
 func createTestWriter(t *testing.T, cfg KafkaConfig) (*Writer, prometheus.Gatherer) {

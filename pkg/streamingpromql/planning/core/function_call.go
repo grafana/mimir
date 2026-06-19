@@ -22,7 +22,7 @@ import (
 //node:generate
 type FunctionCall struct {
 	*FunctionCallDetails
-	Args []planning.Node `json:"-" node:"children"`
+	Args []planning.Node `json:"-" node:"children,labelfmt=param %d"`
 }
 
 func (f *FunctionCall) Describe() string {
@@ -58,24 +58,6 @@ func (f *FunctionCall) EquivalentToIgnoringHintsAndChildren(other planning.Node)
 func (f *FunctionCall) MergeHints(_ planning.Node) error {
 	// Nothing to do.
 	return nil
-}
-
-func (f *FunctionCall) ChildrenLabels() []string {
-	if len(f.Args) == 0 {
-		return nil
-	}
-
-	if len(f.Args) == 1 {
-		return []string{""}
-	}
-
-	l := make([]string, len(f.Args))
-
-	for i := range l {
-		l[i] = fmt.Sprintf("param %v", i)
-	}
-
-	return l
 }
 
 func MaterializeFunctionCall(f *FunctionCall, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {

@@ -57,10 +57,6 @@ func (d *Duplicate) Describe() string {
 	return ""
 }
 
-func (d *Duplicate) ChildrenLabels() []string {
-	return []string{""}
-}
-
 func (d *Duplicate) ChildrenTimeRange(parentTimeRange types.QueryTimeRange) types.QueryTimeRange {
 	return parentTimeRange
 }
@@ -180,10 +176,6 @@ func (f *DuplicateFilter) Describe() string {
 	builder.WriteString(strconv.FormatInt(f.SubsetIndex, 10))
 
 	return builder.String()
-}
-
-func (f *DuplicateFilter) ChildrenLabels() []string {
-	return []string{""}
 }
 
 func (f *DuplicateFilter) ChildrenTimeRange(parentTimeRange types.QueryTimeRange) types.QueryTimeRange {
