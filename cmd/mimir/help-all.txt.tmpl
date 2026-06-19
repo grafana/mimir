@@ -1721,6 +1721,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] When the number of owned series for a tenant across the cluster exceeds this threshold, trigger early head compaction. 0 to disable.
   -ingester.error-sample-rate int
     	Each error will be logged once in this many times. Use 0 to log all of them. (default 10)
+  -ingester.float-chunk-encoding string
+    	[experimental] Encoding used for float chunks in the ingester and block builder for this tenant. Valid values are 'xor' and 'xor2'. (default "xor")
   -ingester.ignore-ooo-exemplars
     	[experimental] Whether to ignore exemplars with out-of-order timestamps. If enabled, exemplars with out-of-order timestamps are silently dropped, otherwise they cause partial errors.
   -ingester.ignore-series-limit-for-metric-names string
