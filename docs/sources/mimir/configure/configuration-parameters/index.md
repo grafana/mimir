@@ -5317,40 +5317,40 @@ kafka:
 
   # (experimental) Mark an agent as slow when its window-average latency exceeds
   # this multiple of the cluster baseline. Only applies when
-  # ingest-storage.kafka.backend=warpstream.
+  # -ingest-storage.kafka.backend=warpstream.
   # CLI flag: -ingest-storage.kafka.warpstream-health-check-slow-multiplier
   [warpstream_health_check_slow_multiplier: <float> | default = 2]
 
   # (experimental) Suppress slow-based hedging when more than this fraction of
   # agents are slow (cluster-wide issue). Only applies when
-  # ingest-storage.kafka.backend=warpstream.
+  # -ingest-storage.kafka.backend=warpstream.
   # CLI flag: -ingest-storage.kafka.warpstream-health-check-max-slow-fraction
   [warpstream_health_check_max_slow_fraction: <float> | default = 0.3]
 
   # (experimental) Mark an agent as faulty when its observed error rate exceeds
-  # this fraction. Only applies when ingest-storage.kafka.backend=warpstream.
+  # this fraction. Only applies when -ingest-storage.kafka.backend=warpstream.
   # CLI flag: -ingest-storage.kafka.warpstream-health-check-faulty-threshold
   [warpstream_health_check_faulty_threshold: <float> | default = 0.2]
 
   # (experimental) Suppress faulty-based hedging and demotion when more than
   # this fraction of agents are faulty (cluster-wide issue). Only applies when
-  # ingest-storage.kafka.backend=warpstream.
+  # -ingest-storage.kafka.backend=warpstream.
   # CLI flag: -ingest-storage.kafka.warpstream-health-check-max-faulty-fraction
   [warpstream_health_check_max_faulty_fraction: <float> | default = 0.3]
 
   # (experimental) Floor on the dynamically-computed hedge delay. Only applies
-  # when ingest-storage.kafka.backend=warpstream.
+  # when -ingest-storage.kafka.backend=warpstream.
   # CLI flag: -ingest-storage.kafka.warpstream-hedge-min-delay
   [warpstream_hedge_min_delay: <duration> | default = 500ms]
 
   # (experimental) Cap on how many per-partition candidates the hedge fanout
   # considers when picking a fallback (excluding the primary and any agent
-  # already tried). Only applies when ingest-storage.kafka.backend=warpstream.
+  # already tried). Only applies when -ingest-storage.kafka.backend=warpstream.
   # CLI flag: -ingest-storage.kafka.warpstream-hedge-max-agents
   [warpstream_hedge_max_agents: <int> | default = 3]
 
   # (experimental) Minimum wall-clock gap between probes to a demoted agent.
-  # Only applies when ingest-storage.kafka.backend=warpstream.
+  # Only applies when -ingest-storage.kafka.backend=warpstream.
   # CLI flag: -ingest-storage.kafka.warpstream-demoter-probe-interval
   [warpstream_demoter_probe_interval: <duration> | default = 1s]
 
