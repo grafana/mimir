@@ -279,6 +279,25 @@ func TestCacheOperator(t *testing.T) {
 			expectedAnyCachedExtentsRetained: true,
 		},
 
+		"cache hit with single extent that starts on last step of desired time range": {
+			existingCacheEntry: &CacheEntry{
+				Extents: []CachedExtent{
+					extentFor(types.NewRangeQueryTimeRange(desiredEnd, desiredEnd.Add(3*time.Minute), step), withinTTL, existingTraceID),
+				},
+			},
+
+			expectedFreshlyEvaluatedRanges: []types.QueryTimeRange{
+				types.NewRangeQueryTimeRange(desiredStart, desiredEnd.Add(-step), step),
+			},
+			expectedWrittenCacheEntry: &CacheEntry{
+				Extents: []CachedExtent{
+					extentFor(types.NewRangeQueryTimeRange(desiredStart, desiredEnd.Add(3*time.Minute), step), withinTTL, newTraceID),
+				},
+			},
+			expectedAnyCachedExtentsRetained: true,
+			expectedAnnotationTimeRange:      types.NewRangeQueryTimeRange(desiredStart, desiredEnd.Add(3*time.Minute), step),
+		},
+
 		"cache hit with extents before and after desired time range that overlap desired time range": {
 			existingCacheEntry: &CacheEntry{
 				Extents: []CachedExtent{

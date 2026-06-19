@@ -322,7 +322,7 @@ func (c *CacheOperator) calculateExtents(ctx context.Context, existingExtents []
 
 		if nextExistingExtentIdx < len(existingExtents) {
 			nextExtent := existingExtents[nextExistingExtentIdx]
-			if nextExtent.StartT < stepAlignedEndT {
+			if nextExtent.StartT <= stepAlignedEndT {
 				extentEndT = nextExtent.StartT - c.DesiredTimeRange.IntervalMilliseconds
 			}
 		}
