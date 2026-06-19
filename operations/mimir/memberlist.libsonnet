@@ -103,6 +103,12 @@
   // Don't add label to matcher, only to pod labels.
   local gossipLabel = $.apps.v1.statefulSet.spec.template.metadata.withLabelsMixin({ [$._config.gossip_member_label]: 'true' }),
 
+  // Like overrideSuperIfExists, but merges the override into each entry of a per-compartment workload
+  // map. Inlined so memberlist.libsonnet works in environments without the compartments libraries.
+  local overrideSuperCompartmentsIfExists(name, override) =
+    if !( name in super) || !std.isObject(super[name]) then {}
+    else { [compartment]+: override for compartment in std.objectFields(super[name]) },
+
   alertmanager_statefulset: overrideSuperIfExists('alertmanager_statefulset', if !$._config.memberlist_ring_enabled then {} else gossipLabel),
   compactor_statefulset: overrideSuperIfExists('compactor_statefulset', if !$._config.memberlist_ring_enabled then {} else gossipLabel),
   distributor_deployment: overrideSuperIfExists('distributor_deployment', if !$._config.memberlist_ring_enabled then {} else gossipLabel),
@@ -148,6 +154,14 @@
   store_gateway_zone_a_statefulset: overrideSuperIfExists('store_gateway_zone_a_statefulset', if !$._config.memberlist_ring_enabled then {} else gossipLabel),
   store_gateway_zone_b_statefulset: overrideSuperIfExists('store_gateway_zone_b_statefulset', if !$._config.memberlist_ring_enabled then {} else gossipLabel),
   store_gateway_zone_c_statefulset: overrideSuperIfExists('store_gateway_zone_c_statefulset', if !$._config.memberlist_ring_enabled then {} else gossipLabel),
+
+  // Compartments: per-compartment Deployment/StatefulSet maps; label each entry's pod template.
+  distributor_zone_a_deployments+: overrideSuperCompartmentsIfExists('distributor_zone_a_deployments', if !$._config.memberlist_ring_enabled then {} else gossipLabel),
+  distributor_zone_b_deployments+: overrideSuperCompartmentsIfExists('distributor_zone_b_deployments', if !$._config.memberlist_ring_enabled then {} else gossipLabel),
+  distributor_zone_c_deployments+: overrideSuperCompartmentsIfExists('distributor_zone_c_deployments', if !$._config.memberlist_ring_enabled then {} else gossipLabel),
+  ingester_zone_a_statefulsets+: overrideSuperCompartmentsIfExists('ingester_zone_a_statefulsets', if !$._config.memberlist_ring_enabled then {} else gossipLabel),
+  ingester_zone_b_statefulsets+: overrideSuperCompartmentsIfExists('ingester_zone_b_statefulsets', if !$._config.memberlist_ring_enabled then {} else gossipLabel),
+  ingester_zone_c_statefulsets+: overrideSuperCompartmentsIfExists('ingester_zone_c_statefulsets', if !$._config.memberlist_ring_enabled then {} else gossipLabel),
 
   // Headless service (= no assigned IP, DNS returns all targets instead) pointing to gossip network members.
   gossip_ring_service:
