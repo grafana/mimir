@@ -120,7 +120,8 @@ func (cfg *SchedulerClientConfig) RegisterFlags(f *flag.FlagSet) {
 	f.DurationVar(&cfg.UpdateMaxBackoff, flagPrefix+"update-max-backoff", 32*time.Second, "Maximum backoff time for compaction executor retries when sending scheduler status updates.")
 	f.DurationVar(&cfg.CompactionDirCleanupInterval, flagPrefix+"compaction-dir-cleanup-interval", 30*time.Minute, "Defines how frequently to clean up the compaction working directory. The directory is cleaned on startup and then only when this interval has elapsed since the last cleanup. Set to 0 to disable periodic cleanup.")
 	f.DurationVar(&cfg.TerminatingFinalStatusTimeout, flagPrefix+"terminating-final-status-timeout", 30*time.Second, "Timeout for sending a final job status update to the scheduler when the parent context is canceled (e.g. during shutdown).")
-	f.Var(&cfg.Lanes, flagPrefix+"lanes", "Lanes to request for each worker goroutine. Each entry is a '+'-separated list of job types in priority order.")
+	cfg.Lanes = flagext.StringSliceCSV{"compact+plan", "plan"}
+	f.Var(&cfg.Lanes, flagPrefix+"lanes", "Lanes to request for each worker goroutine. Each entry is a '+'-separated list of job types in priority order. Defaults to compact+plan,plan")
 	cfg.GRPCClientConfig.RegisterFlagsWithPrefix(flagPrefix+"grpc-client-config", f)
 	cfg.MetadataCacheConfig.RegisterFlagsWithPrefix(f, flagPrefix+"metadata-cache.")
 }
@@ -228,22 +229,17 @@ func newSchedulerExecutor(cfg SchedulerClientConfig, logger log.Logger, invalidC
 // parseLaneRequests parses the requested lanes for each goroutine.
 // An example value is compact+plan,plan
 // '+' separates multiple job types per goroutine, and ',' separates goroutines.
-// If the provided argument is empty then a default is supplied.
 func parseLaneRequests(configuredLanes flagext.StringSliceCSV) ([][]*compactorschedulerpb.LaneRequest, error) {
 	if len(configuredLanes) == 0 {
-		// Supply a default
-		return [][]*compactorschedulerpb.LaneRequest{
-			{&compactorschedulerpb.LaneRequest{JobType: compactorschedulerpb.JOB_TYPE_COMPACTION}, &compactorschedulerpb.LaneRequest{JobType: compactorschedulerpb.JOB_TYPE_PLANNING}},
-			{&compactorschedulerpb.LaneRequest{JobType: compactorschedulerpb.JOB_TYPE_PLANNING}},
-		}, nil
+		return nil, fmt.Errorf("invalid empty lane configuration")
 	}
 
 	combined := make([][]*compactorschedulerpb.LaneRequest, 0, len(configuredLanes))
 	for _, workerLane := range configuredLanes {
-		split := strings.Split(workerLane, "+")
-		if len(split) == 0 {
+		if workerLane == "" {
 			return nil, fmt.Errorf("invalid lane configuration: %q", workerLane)
 		}
+		split := strings.Split(workerLane, "+")
 		requests := make([]*compactorschedulerpb.LaneRequest, 0, len(split))
 		seen := make(map[string]struct{}, len(split))
 		for _, lane := range split {

@@ -194,12 +194,13 @@ func TestParseLaneRequests(t *testing.T) {
 		wantErr bool
 		workers [][]compactorschedulerpb.JobType
 	}{
-		"empty input returns default two-worker config": {
-			input: nil,
-			workers: [][]compactorschedulerpb.JobType{
-				{compaction, planning},
-				{planning},
-			},
+		"no lanes rejected": {
+			input:   flagext.StringSliceCSV{},
+			wantErr: true,
+		},
+		"empty lane rejected": {
+			input:   flagext.StringSliceCSV{""},
+			wantErr: true,
 		},
 		"single worker compaction then planning": {
 			input:   flagext.StringSliceCSV{"compact+plan"},
