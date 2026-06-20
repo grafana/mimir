@@ -858,7 +858,7 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 	reg := prometheus.NewRegistry()
 	defer c.syncerMetrics.gatherThanosSyncerMetrics(reg, userLogger)
 
-	compactor, err := c.newBucketCompactor(ctx, userID, userLogger, userBucket, reg)
+	compactor, err := c.newBucketCompactor(ctx, userID, userLogger, userBucket, path.Join(c.compactorCfg.DataDir, "compact"), reg)
 	if err != nil {
 		return fmt.Errorf("failed to create bucket compactor: %w", err)
 	}
@@ -875,13 +875,13 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 	return nil
 }
 
-func (c *MultitenantCompactor) newBucketCompactor(ctx context.Context, userID string, userLogger log.Logger, userBucket objstore.Bucket, reg *prometheus.Registry) (*BucketCompactor, error) {
+func (c *MultitenantCompactor) newBucketCompactor(ctx context.Context, userID string, userLogger log.Logger, userBucket objstore.Bucket, compactDir string, reg *prometheus.Registry) (*BucketCompactor, error) {
 	return NewBucketCompactor(
 		userLogger,
 		c.blocksGrouperFactory(ctx, c.compactorCfg, c.cfgProvider, userID, userLogger, reg),
 		c.blocksPlanner,
 		c.blocksCompactor,
-		path.Join(c.compactorCfg.DataDir, "compact"),
+		compactDir,
 		userBucket,
 		c.compactorCfg.CompactionConcurrency,
 		true, // Skip unhealthy blocks, and mark them for no-compaction.

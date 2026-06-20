@@ -171,7 +171,6 @@ type schedulerExecutor struct {
 	schedulerConn            *grpc.ClientConn
 	invalidClusterValidation *prometheus.CounterVec
 	retryable                failsafe.Executor[any]
-	lastCleanupTime          time.Time
 	metadataCache            cache.Cache
 	laneRequests             [][]*compactorschedulerpb.LaneRequest
 }
@@ -240,23 +239,23 @@ func parseLaneRequests(configuredLanes flagext.StringSliceCSV) ([][]*compactorsc
 	}
 
 	combined := make([][]*compactorschedulerpb.LaneRequest, 0, len(configuredLanes))
-	compactionSeen := false
 	for _, workerLane := range configuredLanes {
 		split := strings.Split(workerLane, "+")
 		if len(split) == 0 {
 			return nil, fmt.Errorf("invalid lane configuration: %q", workerLane)
 		}
 		requests := make([]*compactorschedulerpb.LaneRequest, 0, len(split))
+		seen := make(map[string]struct{}, len(split))
 		for _, lane := range split {
+			if _, ok := seen[lane]; ok {
+				return nil, fmt.Errorf("duplicate job type %q in lane configuration: %q", lane, workerLane)
+			}
+			seen[lane] = struct{}{}
 			switch lane {
 			case "plan":
 				requests = append(requests, &compactorschedulerpb.LaneRequest{JobType: compactorschedulerpb.JOB_TYPE_PLANNING})
 			case "compact":
 				requests = append(requests, &compactorschedulerpb.LaneRequest{JobType: compactorschedulerpb.JOB_TYPE_COMPACTION})
-				if compactionSeen {
-					return nil, fmt.Errorf("concurrent compaction in requested lanes is not supported: %s", configuredLanes)
-				}
-				compactionSeen = true
 			default:
 				return nil, fmt.Errorf("unknown job type in lane configuration: %q", lane)
 			}
@@ -277,6 +276,11 @@ func (e *schedulerExecutor) run(ctx context.Context, c *MultitenantCompactor) er
 
 	compactDir := filepath.Join(c.compactorCfg.DataDir, "compact")
 
+	// Clean the compaction directory on startup to reclaim any worker subdirectories left over
+	if err := emptyCompactionDir(compactDir); err != nil {
+		level.Warn(e.logger).Log("msg", "failed to clean up compaction directory on startup", "path", compactDir, "err", err)
+	}
+
 	ctx, cancel := context.WithCancelCause(ctx)
 	defer cancel(nil)
 
@@ -296,7 +300,9 @@ func (e *schedulerExecutor) run(ctx context.Context, c *MultitenantCompactor) er
 		if len(e.laneRequests) > 1 {
 			workerID = fmt.Sprintf("%s-%d", baseWorkerID, i)
 		}
-		// Only one worker should clean up and it has to be the one compacting
+		// Each worker compacts into its own subdirectory so that they can independently perform periodic cleanup
+		workerCompactDir := filepath.Join(compactDir, fmt.Sprintf("compact-%d", i))
+		// Only compaction workers write to the compaction directory, so only they perform cleanup
 		cleanup := slices.ContainsFunc(lanes, func(lr *compactorschedulerpb.LaneRequest) bool {
 			return lr.JobType == compactorschedulerpb.JOB_TYPE_COMPACTION
 		})
@@ -305,7 +311,7 @@ func (e *schedulerExecutor) run(ctx context.Context, c *MultitenantCompactor) er
 			LaneRequests: lanes,
 		}
 		wg.Go(func() {
-			e.runWorker(ctx, c, compactDir, cleanup, req)
+			e.runWorker(ctx, c, workerCompactDir, cleanup, req)
 		})
 	}
 
@@ -319,14 +325,18 @@ func (e *schedulerExecutor) runWorker(ctx context.Context, c *MultitenantCompact
 		MaxBackoff: e.cfg.LeasingMaxBackoff,
 	})
 
+	// The compaction directory is cleaned on startup in run() before workers start
+	lastCleanup := time.Now()
 	for {
-		if cleanup && e.cfg.CompactionDirCleanupInterval > 0 {
-			if err := e.cleanupCompactionDir(compactDir); err != nil {
+		if cleanup && e.cfg.CompactionDirCleanupInterval > 0 && time.Since(lastCleanup) >= e.cfg.CompactionDirCleanupInterval {
+			if err := emptyCompactionDir(compactDir); err != nil {
 				level.Warn(e.logger).Log("msg", "failed to cleanup compaction directory", "path", compactDir, "err", err)
+			} else {
+				lastCleanup = time.Now()
 			}
 		}
 
-		ok, err := e.leaseAndExecuteJob(ctx, c, req)
+		ok, err := e.leaseAndExecuteJob(ctx, c, compactDir, req)
 		if err != nil {
 			level.Warn(e.logger).Log("msg", "failed to lease or execute job", "err", err)
 		}
@@ -373,24 +383,6 @@ func emptyCompactionDir(compactDir string) error {
 			return fmt.Errorf("failed to remove %q: %w", path, err)
 		}
 	}
-	return nil
-}
-
-// cleanupCompactionDir cleans up the compaction directory if the configured
-// cleanup interval has elapsed since the last cleanup.
-func (e *schedulerExecutor) cleanupCompactionDir(compactDir string) error {
-	elapsed := time.Since(e.lastCleanupTime)
-	shouldCleanup := elapsed >= e.cfg.CompactionDirCleanupInterval
-
-	if !shouldCleanup {
-		return nil
-	}
-
-	if err := emptyCompactionDir(compactDir); err != nil {
-		return err
-	}
-
-	e.lastCleanupTime = time.Now()
 	return nil
 }
 
@@ -484,7 +476,7 @@ func (e *schedulerExecutor) makeSchedulerClient() (compactorschedulerpb.Compacto
 	return client, conn, nil
 }
 
-func (e *schedulerExecutor) leaseAndExecuteJob(ctx context.Context, c *MultitenantCompactor, req *compactorschedulerpb.LeaseJobRequest) (bool, error) {
+func (e *schedulerExecutor) leaseAndExecuteJob(ctx context.Context, c *MultitenantCompactor, compactDir string, req *compactorschedulerpb.LeaseJobRequest) (bool, error) {
 	resp, err := e.schedulerClient.LeaseJob(ctx, req)
 	if err != nil {
 		return false, err
@@ -515,7 +507,7 @@ func (e *schedulerExecutor) leaseAndExecuteJob(ctx context.Context, c *Multitena
 
 	switch jobType {
 	case compactorschedulerpb.JOB_TYPE_COMPACTION:
-		status, err := e.executeCompactionJob(jobCtx, c, resp.Key, resp.Spec)
+		status, err := e.executeCompactionJob(jobCtx, c, compactDir, resp.Key, resp.Spec)
 		cancelJob(err)
 		wg.Wait()
 		if err != nil {
@@ -529,7 +521,7 @@ func (e *schedulerExecutor) leaseAndExecuteJob(ctx context.Context, c *Multitena
 		return true, nil
 	case compactorschedulerpb.JOB_TYPE_PLANNING:
 		planStartTime := time.Now()
-		plannedJobs, planErr := e.executePlanningJob(jobCtx, c, jobTenant)
+		plannedJobs, planErr := e.executePlanningJob(jobCtx, c, compactDir, jobTenant)
 		cancelJob(planErr)
 		wg.Wait()
 		if planErr != nil {
@@ -578,7 +570,7 @@ func (e *schedulerExecutor) updateJobStatus(ctx context.Context, key *compactors
 	}
 }
 
-func (e *schedulerExecutor) executeCompactionJob(ctx context.Context, c *MultitenantCompactor, key *compactorschedulerpb.JobKey, spec *compactorschedulerpb.JobSpec) (compactorschedulerpb.UpdateType, error) {
+func (e *schedulerExecutor) executeCompactionJob(ctx context.Context, c *MultitenantCompactor, compactDir string, key *compactorschedulerpb.JobKey, spec *compactorschedulerpb.JobSpec) (compactorschedulerpb.UpdateType, error) {
 	if spec.Job == nil || len(spec.Job.BlockIds) == 0 {
 		level.Error(e.logger).Log("msg", "invalid compaction plan, abandoning job", "tenant", spec.Tenant)
 		return compactorschedulerpb.UPDATE_TYPE_ABANDON, errCompactionJobHasNoBlocks
@@ -631,7 +623,7 @@ func (e *schedulerExecutor) executeCompactionJob(ctx context.Context, c *Multite
 		return compactorschedulerpb.UPDATE_TYPE_REASSIGN, err
 	}
 
-	compactor, err := c.newBucketCompactor(ctx, userID, userLogger, userBucket, reg)
+	compactor, err := c.newBucketCompactor(ctx, userID, userLogger, userBucket, compactDir, reg)
 	if err != nil {
 		return compactorschedulerpb.UPDATE_TYPE_REASSIGN, fmt.Errorf("failed to create bucket compactor: %w", err)
 	}
@@ -675,14 +667,14 @@ func (e *schedulerExecutor) executeCompactionJob(ctx context.Context, c *Multite
 	return compactorschedulerpb.UPDATE_TYPE_REASSIGN, err
 }
 
-func (e *schedulerExecutor) executePlanningJob(ctx context.Context, c *MultitenantCompactor, tenant string) ([]*compactorschedulerpb.PlannedCompactionJob, error) {
+func (e *schedulerExecutor) executePlanningJob(ctx context.Context, c *MultitenantCompactor, compactDir string, tenant string) ([]*compactorschedulerpb.PlannedCompactionJob, error) {
 	userBucket := bucket.NewUserBucketClient(tenant, c.bucketClient, c.cfgProvider)
 	userLogger := log.With(e.logger, "user", tenant)
 
 	reg := prometheus.NewRegistry()
 	defer c.syncerMetrics.gatherThanosSyncerMetrics(reg, userLogger)
 
-	bucketCompactor, err := c.newBucketCompactor(ctx, tenant, userLogger, userBucket, reg)
+	bucketCompactor, err := c.newBucketCompactor(ctx, tenant, userLogger, userBucket, compactDir, reg)
 	if err != nil {
 		return nil, fmt.Errorf("creating bucket compactor: %w", err)
 	}

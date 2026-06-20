@@ -216,12 +216,19 @@ func TestParseLaneRequests(t *testing.T) {
 				{planning},
 			},
 		},
-		"duplicate compaction across workers rejected": {
-			input:   flagext.StringSliceCSV{"compact", "compact"},
-			wantErr: true,
+		"compaction across multiple workers allowed": {
+			input: flagext.StringSliceCSV{"compact", "compact"},
+			workers: [][]compactorschedulerpb.JobType{
+				{compaction},
+				{compaction},
+			},
 		},
 		"duplicate compaction within single worker rejected": {
 			input:   flagext.StringSliceCSV{"compact+compact"},
+			wantErr: true,
+		},
+		"duplicate planning within single worker rejected": {
+			input:   flagext.StringSliceCSV{"plan+plan"},
 			wantErr: true,
 		},
 		"unknown job type rejected": {
@@ -330,7 +337,7 @@ func TestSchedulerExecutor_JobStatusUpdates(t *testing.T) {
 			schedulerExec := newTestSchedulerExecutor(t, cfg, mockSchedulerClient)
 			c := prepareCompactorForExecutorTest(t, cfg, bucketClient, newMockConfigProvider())
 
-			gotWork, err := schedulerExec.leaseAndExecuteJob(context.Background(), c, testLeaseJobRequest())
+			gotWork, err := schedulerExec.leaseAndExecuteJob(context.Background(), c, t.TempDir(), testLeaseJobRequest())
 			if tc.expectError {
 				require.Error(t, err)
 			} else {
@@ -566,7 +573,7 @@ func TestSchedulerExecutor_PlannedJobsRetryBehavior(t *testing.T) {
 
 	// Wrap with synctest to avoid sleeping in real time during retries
 	synctest.Test(t, func(t *testing.T) {
-		gotWork, err := schedulerExec.leaseAndExecuteJob(context.Background(), c, testLeaseJobRequest())
+		gotWork, err := schedulerExec.leaseAndExecuteJob(context.Background(), c, t.TempDir(), testLeaseJobRequest())
 		require.NoError(t, err, "should eventually succeed with plannedJobs retry policy")
 		require.True(t, gotWork)
 		require.Equal(t, failuresBeforeSuccess+1, callCount)
@@ -601,7 +608,7 @@ func TestSchedulerExecutor_NoGoRoutineLeak(t *testing.T) {
 
 	c := prepareCompactorForExecutorTest(t, cfg, bucketClient, newMockConfigProvider())
 
-	gotWork, err := schedulerExec.leaseAndExecuteJob(context.Background(), c, testLeaseJobRequest())
+	gotWork, err := schedulerExec.leaseAndExecuteJob(context.Background(), c, t.TempDir(), testLeaseJobRequest())
 	require.Error(t, err) // expect an error since bucket has no test block
 	require.True(t, gotWork)
 }
@@ -764,7 +771,7 @@ func TestSchedulerExecutor_ExecuteCompactionJob_InvalidInput(t *testing.T) {
 			c, _, _, _, _ := prepareWithConfigProvider(t, cfg, &bucket.ClientMock{}, newMockConfigProvider())
 
 			key := &compactorschedulerpb.JobKey{Id: "test-job-id"}
-			status, err := schedulerExec.executeCompactionJob(context.Background(), c, key, tc.spec)
+			status, err := schedulerExec.executeCompactionJob(context.Background(), c, t.TempDir(), key, tc.spec)
 
 			require.Error(t, err)
 			assert.Equal(t, tc.expectedStatus, status)
@@ -893,7 +900,7 @@ func TestSchedulerExecutor_ExecuteCompactionJob_Compaction(t *testing.T) {
 			}
 
 			key := &compactorschedulerpb.JobKey{Id: "test-job-id"}
-			status, err := schedulerExec.executeCompactionJob(context.Background(), c, key, spec)
+			status, err := schedulerExec.executeCompactionJob(context.Background(), c, t.TempDir(), key, spec)
 
 			if tc.expectError {
 				require.Error(t, err)
@@ -1128,7 +1135,7 @@ func TestSchedulerExecutor_SchedulerCancellation_SkipsFinalStatus(t *testing.T) 
 			synctest.Test(t, func(t *testing.T) {
 				errCh := make(chan error, 1)
 				go func() {
-					_, err := schedulerExec.leaseAndExecuteJob(context.Background(), c, testLeaseJobRequest())
+					_, err := schedulerExec.leaseAndExecuteJob(context.Background(), c, t.TempDir(), testLeaseJobRequest())
 					errCh <- err
 				}()
 
