@@ -47,6 +47,7 @@
 * [ENHANCEMENT] MQE: Support for native histograms in `smoothed` and `anchored` extended range selector modifiers. #15398
 * [ENHANCEMENT] Mimir: Expose `ingest_storage` feature flag in the `/api/v1/status/buildinfo` endpoint, reflecting whether Mimir runs with ingest storage architecture. #15743
 * [BUGFIX] Query-frontend: Fix `cardinality_analysis_max_results` being ignored when set higher than the default of 500. #15581
+* [BUGFIX] Mimirtool: Resolve Grafana library panel references when running `mimirtool analyze grafana`, so metrics used only by library panels are included in the generated metrics report. #15763
 * [BUGFIX] Ingest storage: Fix `KafkaProducer.ProduceSync()` returning a single result with a nil record when the context is canceled, instead of one result per input record (with the record set) as the underlying franz-go client does. #15199
 * [BUGFIX] Ingest storage: Fix `cortex_ingest_storage_reader_receive_delay_seconds` inflation by no longer setting the Kafka record `Timestamp` on the distributor side; the Kafka client now sets it at produce time. #15572
 * [BUGFIX] Distributor: Return HTTP 200 with OTLP partial-success when only some samples in an OTLP request are rejected by distributor-level validation (e.g. `too_far_in_past`). #15253
