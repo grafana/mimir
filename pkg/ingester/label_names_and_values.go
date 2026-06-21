@@ -22,7 +22,7 @@ const (
 )
 
 // LabelValuesCountConfig holds the label-values-cardinality-specific settings.
-// The work itself runs on the ingester's shared query pool (see Config.QueryWorkers);
+// The work itself runs on the ingester's shared compute pool (see Config.ComputeWorkers);
 // this config only carries the knobs specific to label-values.
 type LabelValuesCountConfig struct {
 	ChunkSize int `yaml:"chunk_size" category:"experimental"`
@@ -33,7 +33,7 @@ func (cfg *LabelValuesCountConfig) RegisterFlags(f *flag.FlagSet) {
 	// 32 is a gut-feel default (not benchmarked):
 	// big enough to amortize per-task dispatch overhead,
 	// small enough to stay fair across tenants.
-	f.IntVar(&cfg.ChunkSize, "ingester.label-values-count-chunk-size", 32, "Number of label values processed per work unit submitted to the ingester query worker pool. Smaller values improve cross-tenant fairness at the cost of more scheduling overhead.")
+	f.IntVar(&cfg.ChunkSize, "ingester.label-values-count-chunk-size", 32, "Number of label values processed per work unit submitted to the ingester compute worker pool. Smaller values improve cross-tenant fairness at the cost of more scheduling overhead.")
 }
 
 // Validate returns an error if the config is invalid.

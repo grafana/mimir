@@ -190,11 +190,11 @@ type Config struct {
 	PushReactiveLimiter  reactivelimiter.Config            `yaml:"push_reactive_limiter"`
 	ReadReactiveLimiter  reactivelimiter.Config            `yaml:"read_reactive_limiter"`
 
-	// QueryWorkers sets the number of workers in the ingester's shared query pool, which parallelizes read-path work fairly across tenants.
+	// ComputeWorkers sets the number of workers in the ingester's shared compute pool, which parallelizes CPU-bound work fairly across tenants.
 	// The pool isn't tied to one endpoint on purpose:
 	// label-values-cardinality is its only user today,
-	// but other query types should submit to the same pool rather than each spinning up its own GOMAXPROCS goroutines.
-	QueryWorkers int `yaml:"query_workers" category:"experimental"`
+	// but other CPU-bound work should submit to the same pool rather than each spinning up its own GOMAXPROCS goroutines.
+	ComputeWorkers int `yaml:"compute_workers" category:"experimental"`
 
 	LabelValuesCount LabelValuesCountConfig `yaml:"label_values_count"`
 
@@ -232,7 +232,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.BoolVar(&cfg.EarlyCompactionNonOwnedSeriesEnabled, "ingester.early-compaction-non-owned-series-enabled", false, "When enabled, the ingester triggers an early TSDB head compaction for series that are no longer owned by the ingester after a ring change. Requires -ingester.track-ingester-owned-series or -ingester.use-ingester-owned-series-for-limits to be enabled.")
 	f.DurationVar(&cfg.EarlyCompactionNonOwnedSeriesMinGracePeriod, "ingester.early-compaction-non-owned-series-min-grace-period", 30*time.Second, "Minimum time a series must remain non-owned before it can be evicted when the local owned-series threshold is exceeded. New non-owned series reset the timer. A value of 0 evicts immediately. A per-replica startup jitter spreads evictions across replicas.")
 	f.DurationVar(&cfg.EarlyCompactionNonOwnedSeriesMaxGracePeriod, "ingester.early-compaction-non-owned-series-max-grace-period", 5*time.Minute, "Maximum time a series may remain non-owned before it is evicted, regardless of the owned-series threshold. This ensures eventual eviction even for tenants below their threshold. A value of 0 disables the maximum grace period, so eviction depends solely on the owned-series threshold.")
-	f.IntVar(&cfg.QueryWorkers, "ingester.query-workers", 0, "Number of worker goroutines in the ingester's shared tenant-fair query worker pool, used to parallelize read-path work (currently label-values-cardinality) fairly across tenants. 0 uses GOMAXPROCS.")
+	f.IntVar(&cfg.ComputeWorkers, "ingester.compute-workers", 0, "Number of worker goroutines in the ingester's shared tenant-fair compute worker pool, used to parallelize CPU-bound work (currently label-values-cardinality) fairly across tenants. 0 uses GOMAXPROCS.")
 	cfg.LabelValuesCount.RegisterFlags(f)
 	f.BoolVar(&cfg.PushGrpcMethodEnabled, "ingester.push-grpc-method-enabled", true, "Enables Push gRPC method on ingester. Can be only disabled when using ingest-storage to make sure ingesters only receive data from Kafka.")
 
@@ -258,8 +258,8 @@ func (cfg *Config) Validate() error {
 		return fmt.Errorf("-ingester.early-compaction-non-owned-series-max-grace-period must be greater than -ingester.early-compaction-non-owned-series-min-grace-period when set to a non-zero value")
 	}
 
-	if cfg.QueryWorkers < 0 {
-		return fmt.Errorf("-ingester.query-workers must be >= 0")
+	if cfg.ComputeWorkers < 0 {
+		return fmt.Errorf("-ingester.compute-workers must be >= 0")
 	}
 
 	if err := cfg.LabelValuesCount.Validate(); err != nil {
@@ -318,7 +318,7 @@ type Ingester struct {
 	metricsUpdaterService services.Service
 	metadataPurgerService services.Service
 	statisticsService     services.Service
-	queryWorkerPool       *workerpool.Pool
+	computeWorkerPool     *workerpool.Pool
 
 	// Index lookup planning
 	lookupPlanMetrics lookupplan.Metrics
@@ -642,11 +642,11 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 		}
 	}
 
-	i.queryWorkerPool, err = workerpool.New(workerpool.Config{Size: cfg.QueryWorkers}, "ingester-worker-pool", registerer, logger)
+	i.computeWorkerPool, err = workerpool.New(workerpool.Config{Size: cfg.ComputeWorkers}, "ingester-worker-pool", registerer, logger)
 	if err != nil {
-		return nil, errors.Wrap(err, "creating ingester query worker pool")
+		return nil, errors.Wrap(err, "creating ingester compute worker pool")
 	}
-	i.subservicesWatcher.WatchService(i.queryWorkerPool)
+	i.subservicesWatcher.WatchService(i.computeWorkerPool)
 
 	i.BasicService = services.NewBasicService(i.starting, i.ingesterRunning, i.stopping).WithName("ingester")
 	return i, nil
@@ -755,7 +755,7 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 	// Finally we start all services that should run after the ingester ring lifecycler.
 	var servs []services.Service
 
-	servs = append(servs, i.queryWorkerPool)
+	servs = append(servs, i.computeWorkerPool)
 
 	if i.shippingService != nil {
 		servs = append(servs, i.shippingService)

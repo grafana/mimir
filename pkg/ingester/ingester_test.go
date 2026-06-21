@@ -6953,7 +6953,7 @@ func prepareIngesterWithBlockStorageAndOverridesAndPartitionRing(t testing.TB, i
 		ingester.compactionService.StopAsync()
 		ingester.metricsUpdaterService.StopAsync()
 		ingester.metadataPurgerService.StopAsync()
-		ingester.queryWorkerPool.StopAsync()
+		ingester.computeWorkerPool.StopAsync()
 	})
 
 	return ingester, ingestersRing, nil

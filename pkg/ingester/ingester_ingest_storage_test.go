@@ -1147,7 +1147,7 @@ func createTestIngesterWithIngestStorage(
 		ingester.compactionService.StopAsync()
 		ingester.metricsUpdaterService.StopAsync()
 		ingester.metadataPurgerService.StopAsync()
-		ingester.queryWorkerPool.StopAsync()
+		ingester.computeWorkerPool.StopAsync()
 	})
 
 	return ingester, kafkaCluster, prw

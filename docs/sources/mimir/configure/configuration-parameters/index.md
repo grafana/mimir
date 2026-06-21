@@ -1723,14 +1723,14 @@ read_reactive_limiter:
   [max_rejection_factor: <float> | default = 3]
 
 # (experimental) Number of worker goroutines in the ingester's shared
-# tenant-fair query worker pool, used to parallelize read-path work (currently
+# tenant-fair compute worker pool, used to parallelize CPU-bound work (currently
 # label-values-cardinality) fairly across tenants. 0 uses GOMAXPROCS.
-# CLI flag: -ingester.query-workers
-[query_workers: <int> | default = 0]
+# CLI flag: -ingester.compute-workers
+[compute_workers: <int> | default = 0]
 
 label_values_count:
   # (experimental) Number of label values processed per work unit submitted to
-  # the ingester query worker pool. Smaller values improve cross-tenant fairness
+  # the ingester compute worker pool. Smaller values improve cross-tenant fairness
   # at the cost of more scheduling overhead.
   # CLI flag: -ingester.label-values-count-chunk-size
   [chunk_size: <int> | default = 32]
