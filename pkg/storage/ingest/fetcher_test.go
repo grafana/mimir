@@ -794,10 +794,10 @@ func TestConcurrentFetchers(t *testing.T) {
 		// This is usually done by franz-go, but since now we use the metrics ourselves, we need to instantiate the metrics ourselves.
 		kpromMetrics.OnNewClient(client)
 
-		offsetReader := newPartitionOffsetClient(client, topicName, reg, logger)
+		offsetReader := newPartitionOffsetClient(client, reg, logger)
 
 		startOffsetsReader := NewGenericOffsetReader(func(ctx context.Context) (int64, error) {
-			return offsetReader.FetchPartitionStartOffset(ctx, partitionID)
+			return offsetReader.FetchPartitionStartOffset(ctx, topicName, partitionID)
 		}, time.Second, logger)
 
 		_, err := NewConcurrentFetchers(
@@ -1296,10 +1296,10 @@ func createConcurrentFetchers(ctx context.Context, t *testing.T, client *kgo.Cli
 	// This is usually done by franz-go, but since now we use the metrics ourselves, we need to instantiate the metrics ourselves.
 	kpromMetrics.OnNewClient(client)
 
-	offsetReader := newPartitionOffsetClient(client, topic, reg, logger)
+	offsetReader := newPartitionOffsetClient(client, reg, logger)
 
 	startOffsetsReader := NewGenericOffsetReader(func(ctx context.Context) (int64, error) {
-		return offsetReader.FetchPartitionStartOffset(ctx, partition)
+		return offsetReader.FetchPartitionStartOffset(ctx, topic, partition)
 	}, time.Second, logger)
 
 	f, err := NewConcurrentFetchers(
