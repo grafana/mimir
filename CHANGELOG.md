@@ -62,6 +62,7 @@
 * [BUGFIX] Compactor: Remove temporary block upload validation directories left behind in the data directory when the compactor crashes mid-validation. This prevents leaking disk space. #15647
 * [BUGFIX] Continuous-test: Fix a crash when histogram tests were enabled in combination with the OTLP-HTTP write protocol. #15641
 * [BUGFIX] Ingest storage: Cap maximum Kafka protocol version, the client negotiates with the broker to v3.9.0. #15745
+* [BUGFIX] MQE: Report a query that panics during evaluation as failed in the `evaluation stats` log, instead of logging it as successful. The querier still re-panics afterwards, crash behaviour is unchanged. #15753
 
 ### Mixin
 

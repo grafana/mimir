@@ -41,8 +41,10 @@ import (
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/lazyquery"
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
+	"github.com/grafana/mimir/pkg/streamingpromql/operators"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/aggregations"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
+	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	mqetest "github.com/grafana/mimir/pkg/streamingpromql/testutils"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/globalerror"
@@ -1765,6 +1767,70 @@ func assertEstimatedPeakMemoryConsumption(
 	}
 
 	require.ElementsMatch(t, expectedFields, logEvent.Attributes)
+}
+
+type panickingOperator struct {
+	*operators.TestOperator
+	panicValue string
+}
+
+func (o *panickingOperator) SeriesMetadata(context.Context, types.Matchers) ([]types.SeriesMetadata, error) {
+	panic(o.panicValue)
+}
+
+func TestEvaluator_PanicDuringEvaluationIsLoggedAsFailedAndRePanics(t *testing.T) {
+	opts := NewTestEngineOpts()
+	opts.CommonOpts.Reg = prometheus.NewPedanticRegistry()
+
+	spanExporter.Reset()
+
+	planner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
+	require.NoError(t, err)
+	engine, err := NewEngine(opts, stats.NewQueryMetrics(opts.CommonOpts.Reg), planner)
+	require.NoError(t, err)
+
+	memoryConsumptionTracker := engine.memoryConsumptionTrackerFactory.NewMemoryConsumptionTracker(context.Background(), 0, "")
+	timeRange := types.NewInstantQueryTimeRange(timestamp.Time(0))
+
+	node := &core.VectorSelector{VectorSelectorDetails: &core.VectorSelectorDetails{
+		Matchers: []*core.LabelMatcher{
+			{Type: labels.MatchEqual, Name: "__name__", Value: "some_metric"},
+		},
+	}}
+	op := &panickingOperator{
+		TestOperator: &operators.TestOperator{MemoryConsumptionTracker: memoryConsumptionTracker},
+		panicValue:   "injected panic during evaluation",
+	}
+
+	nodeRequests := []NodeEvaluationRequest{
+		{Node: node, TimeRange: timeRange, operator: op},
+	}
+	params := &planning.OperatorParameters{MemoryConsumptionTracker: memoryConsumptionTracker}
+
+	evaluator, err := NewEvaluator(nodeRequests, params, engine, "panicking_query")
+	require.NoError(t, err)
+
+	observer := &noopEvaluationObserver{}
+
+	// The panic must propagate: we only add diagnostics, we do not contain it.
+	require.PanicsWithValue(t, "injected panic during evaluation", func() {
+		_ = evaluator.Evaluate(context.Background(), observer)
+	})
+
+	// The deferred "evaluation stats" log event must report the query as failed (not successful) and
+	// include the original expression, so the offending query is diagnosable.
+	spans := filter(spanExporter.GetSpans(), func(s tracetest.SpanStub) bool {
+		return s.Name == "Evaluator.Evaluate"
+	})
+	require.Len(t, spans, 1)
+
+	logEvents := filter(spans[0].Events, func(e tracesdk.Event) bool {
+		return e.Name == "log" && slices.Contains(e.Attributes, attribute.String("msg", "evaluation stats"))
+	})
+	require.Len(t, logEvents, 1)
+
+	require.Contains(t, logEvents[0].Attributes, attribute.String("status", "failed"))
+	require.Contains(t, logEvents[0].Attributes, attribute.String("originalExpression", "panicking_query"))
 }
 
 func TestMemoryConsumptionLimit_MultipleQueries(t *testing.T) {
