@@ -518,6 +518,12 @@ func (t *Mimir) initDistributorService() (serv services.Service, err error) {
 	// ruler's dependency)
 	canJoinDistributorsRing := t.Cfg.isDistributorEnabled()
 
+	// Only run the ingest-storage writer in processes that actually push (the distributor and the ruler,
+	// which writes rule results). When the distributor is used purely as a query dependency (querier), the
+	// writer is unnecessary and, under compartments, would fail to start trying to auto-create topics it
+	// has no write-compartment context for.
+	writerEnabled := t.Cfg.isDistributorEnabled() || t.Cfg.isRulerEnabled()
+
 	t.Cfg.Distributor.StreamingChunksPerIngesterSeriesBufferSize = t.Cfg.Querier.StreamingChunksPerIngesterSeriesBufferSize
 	t.Cfg.Distributor.MinimizeIngesterRequests = t.Cfg.Querier.MinimizeIngesterRequests
 	t.Cfg.Distributor.MinimiseIngesterRequestsHedgingDelay = t.Cfg.Querier.MinimiseIngesterRequestsHedgingDelay
@@ -528,7 +534,7 @@ func (t *Mimir) initDistributorService() (serv services.Service, err error) {
 
 	t.Distributor, err = distributor.New(t.Cfg.Distributor, t.Cfg.IngesterClient, t.Overrides,
 		t.ActiveGroupsCleanup, t.CostAttributionManager, t.IngesterRing, t.IngesterPartitionInstanceRings, t.IngesterPartitionRingWatchers,
-		canJoinDistributorsRing, t.UsageTrackerPartitionRing, t.UsageTrackerInstanceRing, t.Registerer, util_log.Logger)
+		canJoinDistributorsRing, writerEnabled, t.UsageTrackerPartitionRing, t.UsageTrackerInstanceRing, t.Registerer, util_log.Logger)
 	if err != nil {
 		return
 	}
