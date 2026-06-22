@@ -567,35 +567,35 @@ func (c *CacheOperator) bufferSeriesMetadataForCacheEntry(series []types.SeriesM
 }
 
 func (c *CacheOperator) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
-	desiredTimeRangeData, cacheableTimeRangeData, err := c.getDataForNextSeries(ctx)
+	desiredTimeRangeData, cacheableTimeRangeData, seriesIdx, err := c.getDataForNextSeries(ctx)
 	if err != nil {
 		return types.InstantVectorSeriesData{}, err
 	}
 
 	if c.extents.shouldWriteCacheEntry {
-		c.data[c.nextOutputSeriesIdx] = cacheableTimeRangeData
+		c.data[seriesIdx] = cacheableTimeRangeData
 	}
-
-	c.nextOutputSeriesIdx++
 
 	return desiredTimeRangeData, nil
 }
 
-func (c *CacheOperator) getDataForNextSeries(ctx context.Context) (desiredTimeRangeData types.InstantVectorSeriesData, cacheableTimeRangeData types.InstantVectorSeriesData, err error) {
+func (c *CacheOperator) getDataForNextSeries(ctx context.Context) (desiredTimeRangeData types.InstantVectorSeriesData, cacheableTimeRangeData types.InstantVectorSeriesData, seriesIdx int, err error) {
 	var sourceSeriesIndices []int
+	thisSeriesIndex := c.nextOutputSeriesIdx
+	c.nextOutputSeriesIdx++
 
 	if len(c.extents.inDesiredTimeRange) == 1 {
 		// We only have one extent, and therefore outputSeries isn't populated because we'll just return all series from that
 		// sole extent, so we have to construct it here.
-		sourceSeriesIndices = []int{c.nextOutputSeriesIdx}
+		sourceSeriesIndices = []int{thisSeriesIndex}
 	} else {
-		if c.nextOutputSeriesIdx >= len(c.outputSeries) {
+		if thisSeriesIndex >= len(c.outputSeries) {
 			// We've reached the end of the output series, so we're done.
 			// We don't need a similar check in the one-extent case above, as we rely on the inner operator to return EOS in that case.
-			return types.InstantVectorSeriesData{}, types.InstantVectorSeriesData{}, types.EOS
+			return types.InstantVectorSeriesData{}, types.InstantVectorSeriesData{}, -1, types.EOS
 		}
 
-		thisOutputSeries := c.outputSeries[c.nextOutputSeriesIdx]
+		thisOutputSeries := c.outputSeries[thisSeriesIndex]
 		sourceSeriesIndices = thisOutputSeries.sourceSeriesIndices
 
 		defer types.IntSlicePool.Put(&thisOutputSeries.sourceSeriesIndices, c.MemoryConsumptionTracker)
@@ -609,15 +609,15 @@ func (c *CacheOperator) getDataForNextSeries(ctx context.Context) (desiredTimeRa
 		extent := c.extents.inDesiredTimeRange[extentIdx]
 		data, err := extent.GetSeries(ctx, sourceSeriesIdx)
 		if err != nil {
-			return types.InstantVectorSeriesData{}, types.InstantVectorSeriesData{}, err
+			return types.InstantVectorSeriesData{}, types.InstantVectorSeriesData{}, -1, err
 		}
 
 		if err := c.accumulateDataForSeries(data, &desiredTimeRangeData, &cacheableTimeRangeData); err != nil {
-			return types.InstantVectorSeriesData{}, types.InstantVectorSeriesData{}, err
+			return types.InstantVectorSeriesData{}, types.InstantVectorSeriesData{}, -1, err
 		}
 	}
 
-	return desiredTimeRangeData, cacheableTimeRangeData, nil
+	return desiredTimeRangeData, cacheableTimeRangeData, thisSeriesIndex, nil
 }
 
 func (c *CacheOperator) accumulateDataForSeries(data types.InstantVectorSeriesData, desiredTimeRangeData *types.InstantVectorSeriesData, cacheableTimeRangeData *types.InstantVectorSeriesData) error {
@@ -871,7 +871,7 @@ func (c *CacheOperator) writeCacheEntry(ctx context.Context, stats *types.Operat
 		return nil
 	}
 
-	if c.nextOutputSeriesIdx != len(c.seriesMetadata) {
+	if c.nextOutputSeriesIdx < len(c.seriesMetadata) {
 		// Not all series were read, don't write cache entry.
 		return nil
 	}
@@ -973,7 +973,7 @@ func (c *CacheOperator) Close() {
 
 	c.extents.inDesiredTimeRange = nil
 
-	if len(c.outputSeries) > 0 {
+	if len(c.outputSeries) > 0 && c.nextOutputSeriesIdx < len(c.outputSeries) {
 		for _, e := range c.outputSeries[c.nextOutputSeriesIdx:] {
 			types.IntSlicePool.Put(&e.sourceSeriesIndices, c.MemoryConsumptionTracker)
 		}
