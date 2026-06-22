@@ -716,7 +716,7 @@ Each endpoint requires [authentication](#authentication).
 
 #### Search metric names
 
-```
+```bash
 GET,POST <prometheus-http-prefix>/api/v1/search/metric_names
 ```
 
