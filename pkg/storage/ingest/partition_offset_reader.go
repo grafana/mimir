@@ -182,19 +182,6 @@ func NewTopicOffsetsReader(client *kgo.Client, topic string, getPartitionIDs Get
 	return r
 }
 
-// NewTopicOffsetsReaderForAllPartitions returns a TopicOffsetsReader instance that fetches the offsets for all
-// existing partitions in a topic. The list of partitions is refreshed each time FetchLastProducedOffset() is called,
-// so using a TopicOffsetsReader created by this function adds an extra latency to refresh partitions each time.
-func NewTopicOffsetsReaderForAllPartitions(client *kgo.Client, topic string, pollInterval time.Duration, reg prometheus.Registerer, logger log.Logger) *TopicOffsetsReader {
-	offsetsClient := newPartitionOffsetClient(client, reg, logger)
-
-	getPartitionIDs := func(ctx context.Context) ([]int32, error) {
-		return offsetsClient.ListTopicPartitionIDs(ctx, topic)
-	}
-
-	return NewTopicOffsetsReader(client, topic, getPartitionIDs, pollInterval, reg, logger)
-}
-
 // FetchLastProducedOffset fetches and returns the last produced offset for each requested partition in the topic.
 // The offset is -1 if a partition has been created but no record has been produced yet.
 func (p *TopicOffsetsReader) FetchLastProducedOffset(ctx context.Context) (map[int32]int64, error) {

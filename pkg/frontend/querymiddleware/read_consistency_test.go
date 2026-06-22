@@ -88,7 +88,7 @@ func TestReadConsistencyRoundTripper(t *testing.T) {
 			require.NoError(t, err)
 			t.Cleanup(readClient.Close)
 
-			reader := ingest.NewTopicOffsetsReaderForAllPartitions(readClient, topic, 100*time.Millisecond, nil, logger)
+			reader := newTestTopicOffsetsReader(readClient, topic, numPartitions, 100*time.Millisecond, logger)
 			require.NoError(t, services.StartAndAwaitRunning(ctx, reader))
 			t.Cleanup(func() {
 				require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
@@ -184,6 +184,20 @@ func createKafkaConfig(clusterAddr, topic string) ingest.KafkaConfig {
 	cfg.Topic = topic
 
 	return cfg
+}
+
+// newTestTopicOffsetsReader returns a TopicOffsetsReader that fetches the offsets of partitions [0, numPartitions)
+// of the given topic.
+func newTestTopicOffsetsReader(client *kgo.Client, topic string, numPartitions int, pollInterval time.Duration, logger log.Logger) *ingest.TopicOffsetsReader {
+	getPartitionIDs := func(context.Context) ([]int32, error) {
+		ids := make([]int32, numPartitions)
+		for i := range ids {
+			ids[i] = int32(i)
+		}
+		return ids, nil
+	}
+
+	return ingest.NewTopicOffsetsReader(client, topic, getPartitionIDs, pollInterval, nil, logger)
 }
 
 // produceKafkaRecords produces the input records to Kafka and returns the highest produced offset
