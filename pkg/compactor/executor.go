@@ -270,7 +270,7 @@ func (e *schedulerExecutor) run(ctx context.Context, c *MultitenantCompactor) er
 	// that may have been left over from standalone mode.
 	c.deleteUnownedMetaSyncDirs(nil)
 
-	compactDir := filepath.Join(c.compactorCfg.DataDir, "compact")
+	compactDir := c.baseCompactDir()
 
 	// Clean the compaction directory on startup to reclaim any worker subdirectories left over
 	if err := emptyCompactionDir(compactDir); err != nil {
