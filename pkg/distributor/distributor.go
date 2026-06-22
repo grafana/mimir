@@ -446,17 +446,31 @@ type Config struct {
 	// hash-mod sharding would defeat the contract.
 	NautilusRequired bool `yaml:"nautilus_required" category:"experimental"`
 
-	// NautilusIngestTopic is the Kafka topic to which the
-	// distributor forwards writes for tenants whose
-	// nautilus_ingest_routing runtime knob is set to "nautilus-only".
-	// Other tenants continue to write to the production
-	// IngestStorageConfig.KafkaConfig.Topic.
+	// NautilusIngestTopic is the experimental Kafka topic for tenants
+	// whose nautilus_ingest_routing runtime knob enrolls them in the
+	// Nautilus write path. Startup write-destination flags decide
+	// whether those tenants write this topic, the production
+	// IngestStorageConfig.KafkaConfig.Topic, or both.
 	//
 	// Default is "nautilus_ingest", matching the topic name
 	// auto-created by the nautilus rebalancer. Override only when
 	// running against a manually-created topic with a different
 	// name (e.g. shared-cluster experiments).
 	NautilusIngestTopic string `yaml:"nautilus_ingest_topic" category:"experimental"`
+
+	// NautilusIngestWriteToIngestTopic controls whether tenants enrolled
+	// in nautilus_ingest_routing also write to the production ingest
+	// storage Kafka topic. Together with
+	// NautilusIngestWriteToNautilusTopic this lets operators run
+	// ingest-only, nautilus-only, or tee-to-both for enrolled tenants
+	// using startup config, without changing tenant runtime overrides.
+	NautilusIngestWriteToIngestTopic bool `yaml:"nautilus_ingest_write_to_ingest_topic" category:"experimental"`
+
+	// NautilusIngestWriteToNautilusTopic controls whether tenants enrolled
+	// in nautilus_ingest_routing write to the experimental nautilus ingest
+	// Kafka topic. Defaults to true to preserve the historical
+	// nautilus-only behavior for enrolled tenants.
+	NautilusIngestWriteToNautilusTopic bool `yaml:"nautilus_ingest_write_to_nautilus_topic" category:"experimental"`
 
 	// Readcache configures dialing readcache pods for the read path.
 	// Independent from NautilusRebalancerAddress because a
@@ -507,6 +521,8 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.StringVar(&cfg.NautilusRebalancerAddress, "distributor.nautilus-rebalancer-address", "", "gRPC address of the nautilus rebalancer. When set, the distributor polls it for hash-range-to-partition assignments.")
 	f.BoolVar(&cfg.NautilusRequired, "distributor.nautilus-required", false, "If true, the distributor rejects write requests with a 503 Service Unavailable when the nautilus assignment log is unavailable or doesn't cover a series key, instead of falling back to the partition ring's hash-based routing. Use this in deployments where nautilus assignments are load-bearing for query locality.")
 	f.StringVar(&cfg.NautilusIngestTopic, "distributor.nautilus-ingest-topic", "nautilus_ingest", "Kafka topic to which writes for tenants in nautilus_ingest_routing=nautilus-only are forwarded. The production -ingest-storage.kafka.topic is unaffected. Must match the topic the readcache pods consume from.")
+	f.BoolVar(&cfg.NautilusIngestWriteToIngestTopic, "distributor.nautilus-ingest-write-to-ingest-topic", false, "When true, tenants enrolled in nautilus_ingest_routing also write to the production ingest-storage Kafka topic. Enable with -distributor.nautilus-ingest-write-to-nautilus-topic=true to tee enrolled tenants to both topics.")
+	f.BoolVar(&cfg.NautilusIngestWriteToNautilusTopic, "distributor.nautilus-ingest-write-to-nautilus-topic", true, "When true, tenants enrolled in nautilus_ingest_routing write to -distributor.nautilus-ingest-topic. Disable only with -distributor.nautilus-ingest-write-to-ingest-topic=true to keep enrolled tenants on production ingest while leaving tenant runtime overrides unchanged.")
 	cfg.Readcache.RegisterFlagsWithPrefix("distributor.readcache.", f)
 	f.IntVar(&cfg.WriteCompartmentID, "distributor.write-compartment-id", 0, "The write compartment this distributor belongs to. Only used when compartments are enabled.")
 
@@ -521,6 +537,9 @@ func (cfg *Config) Validate(limits validation.Limits, compartmentsCfg compartmen
 
 	if cfg.NautilusRequired && cfg.NautilusRebalancerAddress == "" {
 		return errNautilusRequiredWithoutAddress
+	}
+	if cfg.NautilusIngestTopic != "" && !cfg.NautilusIngestWriteToIngestTopic && !cfg.NautilusIngestWriteToNautilusTopic {
+		return errors.New("at least one of -distributor.nautilus-ingest-write-to-ingest-topic or -distributor.nautilus-ingest-write-to-nautilus-topic must be enabled")
 	}
 
 	// The distributor produces to its own write compartment's Kafka cluster, so its write compartment
@@ -842,7 +861,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 
 		nautilusPartitionSamplesWritten: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_distributor_nautilus_partition_samples_written_total",
-			Help: "Total number of float and native histogram samples successfully written to the nautilus ingest Kafka topic (-distributor.nautilus-ingest-topic), per partition and tenant. Only incremented for tenants with nautilus_ingest_routing=nautilus-only.",
+			Help: "Total number of float and native histogram samples successfully written to the nautilus ingest Kafka topic (-distributor.nautilus-ingest-topic), per partition and tenant. Only incremented for tenants enrolled in nautilus_ingest_routing when the startup write policy includes the nautilus topic.",
 		}, []string{"partition", "user"}),
 
 		spotlights: newDistributorSpotlightTracker(),
@@ -2753,18 +2772,7 @@ func (d *Distributor) sendWriteRequestToPartitions(ctx context.Context, tenantID
 		})
 	}
 
-	// Choose the Kafka topic based on the tenant's
-	// nautilus_ingest_routing runtime knob: nautilus-only tenants
-	// land on the experimental topic consumed by readcache;
-	// everyone else uses the production ingest topic. Topic-
-	// isolation (rather than per-message routing keys) keeps the
-	// experimental rollout cleanly separable: if readcache misbehaves
-	// the production ingest path is untouched, and a single
-	// pkg/storage/ingest.Writer pool stays sufficient.
-	topic := d.cfg.IngestStorageConfig.KafkaConfig.Topic
-	if d.limits != nil && d.limits.NautilusIngestRouting(tenantID) == validation.NautilusIngestRoutingNautilus && d.cfg.NautilusIngestTopic != "" {
-		topic = d.cfg.NautilusIngestTopic
-	}
+	topics := d.ingestStorageTopicsForTenant(tenantID)
 
 	level.Debug(d.log).Log(
 		"msg", "routed write request to partitions",
@@ -2772,30 +2780,65 @@ func (d *Distributor) sendWriteRequestToPartitions(ctx context.Context, tenantID
 		"keys", len(keys),
 		"partitions", len(partitionKeys),
 		"partition_summary", formatPartitionKeySummary(partitionKeys),
-		"nautilus_ingest_topic", topic != d.cfg.IngestStorageConfig.KafkaConfig.Topic,
-		"topic", topic,
+		"topics", strings.Join(topics, ","),
 	)
 
-	// Write all partitions in a single ProduceSync call.
+	// Write all partitions in one ProduceSync call per destination
+	// topic. Nautilus-enrolled tenants can be configured to write the
+	// production ingest topic, the Nautilus topic, or both (tee). We
+	// treat any destination failure as a failed write so callers retry:
+	// a partial tee is worse than a duplicate on retry.
 	writeCtx := remoteRequestContext()
-	err = d.ingestStorageWriter.MultiWriteSync(writeCtx, topic, tenantID, partitionRequests)
-	if err == nil {
-		d.observeNautilusPartitionWrites(tenantID, topic, partitionRequests)
-		// Spotlight observation only makes sense for writes that
-		// actually consulted the assignment table: with partition-
-		// ring fallback the (key -> partition) mapping doesn't
-		// reflect what the rebalancer thinks, so counting hash hits
-		// against spotlights would attribute samples to whichever
-		// partition the ring's hash-mod happened to land on.
-		if usedNautilusRouting && d.spotlights != nil {
-			d.spotlights.observeWrite(keys, partitionKeys, req, initialMetadataIndex)
+	for _, topic := range topics {
+		err = d.ingestStorageWriter.MultiWriteSync(writeCtx, topic, tenantID, partitionRequests)
+		if err != nil {
+			err = wrapPartitionsPushError(err)
+			err = wrapDeadlineExceededPushError(err)
+			return errors.Wrapf(err, "send data to partitions topic %q", topic)
 		}
-	}
-	err = wrapPartitionsPushError(err)
-	err = wrapDeadlineExceededPushError(err)
 
-	// Since data may be written to different backends it may be helpful to clearly identify which backend failed.
-	return errors.Wrap(err, "send data to partitions")
+		d.observeNautilusPartitionWrites(tenantID, topic, partitionRequests)
+	}
+
+	// Spotlight observation only makes sense for writes that actually
+	// consulted the assignment table: with partition-ring fallback the
+	// (key -> partition) mapping doesn't reflect what the rebalancer
+	// thinks, so counting hash hits against spotlights would attribute
+	// samples to whichever partition the ring's hash-mod happened to
+	// land on. Count once per logical write request, even when the
+	// request was teed to both topics.
+	if usedNautilusRouting && d.spotlights != nil {
+		d.spotlights.observeWrite(keys, partitionKeys, req, initialMetadataIndex)
+	}
+
+	return nil
+}
+
+// ingestStorageTopicsForTenant returns the Kafka topics this write
+// should be produced to. Tenants not enrolled in
+// nautilus_ingest_routing always write only the production ingest
+// topic. Enrolled tenants are controlled by startup config:
+// production-only, nautilus-only (historical default), or tee-to-both.
+func (d *Distributor) ingestStorageTopicsForTenant(tenantID string) []string {
+	productionTopic := d.cfg.IngestStorageConfig.KafkaConfig.Topic
+	if d.limits == nil || d.limits.NautilusIngestRouting(tenantID) != validation.NautilusIngestRoutingNautilus || d.cfg.NautilusIngestTopic == "" {
+		return []string{productionTopic}
+	}
+
+	topics := make([]string, 0, 2)
+	if d.cfg.NautilusIngestWriteToIngestTopic {
+		topics = append(topics, productionTopic)
+	}
+	if d.cfg.NautilusIngestWriteToNautilusTopic && d.cfg.NautilusIngestTopic != productionTopic {
+		topics = append(topics, d.cfg.NautilusIngestTopic)
+	}
+	if len(topics) == 0 {
+		// Defensive fallback for tests that construct Config without
+		// RegisterFlags defaults. Validate rejects this in production
+		// when NautilusIngestTopic is configured.
+		topics = append(topics, productionTopic)
+	}
+	return topics
 }
 
 // writeRequestSampleCount returns the number of float and native

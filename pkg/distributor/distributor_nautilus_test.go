@@ -19,6 +19,7 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/nautilus/assignment"
 	"github.com/grafana/mimir/pkg/storage/ingest"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 // buildActiveTable returns an ActiveTable that tiles the given hash
@@ -209,4 +210,71 @@ func TestObserveNautilusPartitionWrites(t *testing.T) {
 	})
 	assert.Equal(t, float64(2), testutil.ToFloat64(partitionSamples.WithLabelValues("1", "tenant-a")))
 	assert.Equal(t, float64(1), testutil.ToFloat64(partitionSamples.WithLabelValues("42", "tenant-a")))
+}
+
+func TestIngestStorageTopicsForTenant(t *testing.T) {
+	const tenantID = "tenant-a"
+
+	nautilusLimits := validation.NewOverrides(validation.Limits{
+		NautilusIngestRouting: validation.NautilusIngestRoutingNautilus,
+		ReadcacheReadRouting:  validation.ReadcacheReadRoutingNautilus,
+	}, nil)
+	disabledLimits := validation.NewOverrides(validation.Limits{}, nil)
+
+	tests := map[string]struct {
+		limits          *validation.Overrides
+		writeIngest     bool
+		writeNautilus   bool
+		nautilusTopic   string
+		expectedTopics  []string
+		expectedComment string
+	}{
+		"non-enrolled tenant writes production only": {
+			limits:         disabledLimits,
+			writeNautilus:  true,
+			nautilusTopic:  "nautilus",
+			expectedTopics: []string{"ingest"},
+		},
+		"enrolled tenant defaults to nautilus only": {
+			limits:         nautilusLimits,
+			writeNautilus:  true,
+			nautilusTopic:  "nautilus",
+			expectedTopics: []string{"nautilus"},
+		},
+		"enrolled tenant can tee to production and nautilus": {
+			limits:         nautilusLimits,
+			writeIngest:    true,
+			writeNautilus:  true,
+			nautilusTopic:  "nautilus",
+			expectedTopics: []string{"ingest", "nautilus"},
+		},
+		"enrolled tenant can write production only by startup config": {
+			limits:         nautilusLimits,
+			writeIngest:    true,
+			nautilusTopic:  "nautilus",
+			expectedTopics: []string{"ingest"},
+		},
+		"empty nautilus topic preserves production fallback": {
+			limits:         nautilusLimits,
+			writeNautilus:  true,
+			expectedTopics: []string{"ingest"},
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			d := &Distributor{
+				cfg: Config{
+					IngestStorageConfig: ingest.Config{
+						KafkaConfig: ingest.KafkaConfig{Topic: "ingest"},
+					},
+					NautilusIngestTopic:                tc.nautilusTopic,
+					NautilusIngestWriteToIngestTopic:   tc.writeIngest,
+					NautilusIngestWriteToNautilusTopic: tc.writeNautilus,
+				},
+				limits: tc.limits,
+			}
+			assert.Equal(t, tc.expectedTopics, d.ingestStorageTopicsForTenant(tenantID), tc.expectedComment)
+		})
+	}
 }
