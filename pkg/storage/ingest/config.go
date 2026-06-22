@@ -3,11 +3,13 @@
 package ingest
 
 import (
+	"context"
 	"crypto/tls"
 	"errors"
 	"flag"
 	"fmt"
 	"math"
+	"net"
 	"slices"
 	"strconv"
 	"strings"
@@ -193,6 +195,10 @@ type KafkaConfig struct {
 	// MaxInflightProduceRequests is the max number of in-flight Produce requests per broker.
 	// This setting is just used in tests. 0 uses the default.
 	MaxInflightProduceRequests int `yaml:"-"`
+
+	// Dialer replaces the default TCP dialer with a custom dialer function.
+	// Used in tests with kfake.VirtualNetwork for testing/synctest support.
+	Dialer func(ctx context.Context, network, address string) (net.Conn, error) `yaml:"-"`
 }
 
 func (cfg *KafkaConfig) RegisterFlags(f *flag.FlagSet) {
@@ -342,6 +348,13 @@ func (cfg *KafkaConfig) Validate() error {
 	// the overhead; below that the split stops making sense.
 	if cfg.Backend == KafkaBackendWarpstream && cfg.WriteTimeout <= writerRequestTimeoutOverhead*2 {
 		return ErrInvalidWarpstreamWriteTimeout
+	}
+
+	// The dialer is only expected to be used in tests.
+	if cfg.Dialer != nil {
+		if cfg.TLSEnabled {
+			return fmt.Errorf("kafka config: can't enable TSL with custom dialer")
+		}
 	}
 
 	return nil
