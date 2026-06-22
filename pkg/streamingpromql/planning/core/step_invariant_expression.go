@@ -57,6 +57,18 @@ func (s *StepInvariantExpression) MergeHints(_ planning.Node) error {
 	return nil
 }
 
+func (s *StepInvariantExpression) ResultType() (parser.ValueType, error) {
+	return s.Inner.ResultType()
+}
+
+func (s *StepInvariantExpression) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) (planning.QueriedTimeRange, error) {
+	return s.Inner.QueriedTimeRange(s.ChildrenTimeRange(queryTimeRange), lookbackDelta)
+}
+
+func (s *StepInvariantExpression) ExpressionPosition() (posrange.PositionRange, error) {
+	return s.Inner.ExpressionPosition()
+}
+
 func MaterializeStepInvariantExpression(s *StepInvariantExpression, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
 	resultType, err := s.Inner.ResultType()
 	if err != nil {
@@ -91,16 +103,4 @@ func MaterializeStepInvariantExpression(s *StepInvariantExpression, materializer
 	}
 
 	return nil, fmt.Errorf("unable to materialize step invariant expression with inner node type %T", op)
-}
-
-func (s *StepInvariantExpression) ResultType() (parser.ValueType, error) {
-	return s.Inner.ResultType()
-}
-
-func (s *StepInvariantExpression) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) (planning.QueriedTimeRange, error) {
-	return s.Inner.QueriedTimeRange(s.ChildrenTimeRange(queryTimeRange), lookbackDelta)
-}
-
-func (s *StepInvariantExpression) ExpressionPosition() (posrange.PositionRange, error) {
-	return s.Inner.ExpressionPosition()
 }
