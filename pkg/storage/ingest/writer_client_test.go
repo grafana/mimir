@@ -505,13 +505,19 @@ func TestKafkaProducer_ProduceSync_LatencyShouldBeDrivenByKafkaProduceLatency(t 
 	t.Parallel()
 
 	const (
-		topicName                     = "test"
-		tenantID                      = "user-1"
-		numPartitions                 = 100
-		produceRecordsInterval        = 2 * time.Millisecond
-		produceRecordsDuration        = 10 * time.Second
-		produceRecordsTotal           = produceRecordsDuration / produceRecordsInterval
-		produceRecordsThroughputBytes = 50_000_000
+		topicName              = "test"
+		tenantID               = "user-1"
+		numPartitions          = 100
+		produceRecordsInterval = 2 * time.Millisecond
+		produceRecordsDuration = 10 * time.Second
+		produceRecordsTotal    = produceRecordsDuration / produceRecordsInterval
+
+		// The byte throughput is kept modest on purpose. The latency we measure does not depend on the
+		// record size (it's driven by the produce rate, linger and in-flight limit), but a high byte
+		// throughput makes the fake Kafka's single control loop spend significant CPU compressing,
+		// storing and copying payloads. On a busy CI runner this starves the control loop, delaying
+		// when Produce requests are evaluated and inflating the measured latency.
+		produceRecordsThroughputBytes = 5_000_000
 		produceRecordSizeBytes        = produceRecordsThroughputBytes / int(time.Second/produceRecordsInterval)
 
 		// produceLatency is the latency we simulate on each Produce request to the Kafka backend.
