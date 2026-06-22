@@ -158,6 +158,29 @@ func TestBuildMatchers(t *testing.T) {
 		res := BuildMatchers(context.Background(), log.NewNopLogger(), series, hints)
 		require.Nil(t, res)
 	})
+
+	t.Run("without matching with multi-entity heterogeneous labels: each entity-specific label includes empty alternative", func(t *testing.T) {
+		// Simulates asserts:request:rate5m with Service and Node entity types.
+		// "service" is present only on Service entities; "node" only on Node entities.
+		// The optimizer must include "" in both matchers so the RHS can match
+		// series of either entity type.
+		series := []types.SeriesMetadata{
+			{Labels: labels.FromStrings("entity_type", "Service", "env", "prod", "service", "checkout")},
+			{Labels: labels.FromStrings("entity_type", "Service", "env", "prod", "service", "payments")},
+			{Labels: labels.FromStrings("entity_type", "Node", "env", "prod", "node", "host-1")},
+			{Labels: labels.FromStrings("entity_type", "Node", "env", "prod", "node", "host-2")},
+		}
+		hints := &Hints{} // exclude-matching, no exclusions (default matching)
+		expected := types.Matchers{
+			{Type: labels.MatchRegexp, Name: "entity_type", Value: "Node|Service"},
+			{Type: labels.MatchRegexp, Name: "env", Value: "prod"},
+			{Type: labels.MatchRegexp, Name: "node", Value: "|host-1|host-2"},
+			{Type: labels.MatchRegexp, Name: "service", Value: "|checkout|payments"},
+		}
+
+		res := BuildMatchers(context.Background(), log.NewNopLogger(), series, hints)
+		require.Equal(t, expected, res)
+	})
 }
 
 func generateSeriesMetadata(name string, num int) []types.SeriesMetadata {

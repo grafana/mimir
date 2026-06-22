@@ -220,3 +220,68 @@ func TestLabelValuesPostingsStrategy(t *testing.T) {
 		})
 	}
 }
+
+func TestToRawPostingGroup_RegexpWithEmptyAlternative(t *testing.T) {
+	// This test verifies that toRawPostingGroup correctly handles MatchRegexp
+	// matchers where the regex includes an empty-string alternative (e.g. "|val1|val2").
+	// Such matchers match the empty string, which means they should also match
+	// series where the label is completely absent. This requires a subtracting
+	// posting group (allPostings minus non-matching), NOT an intersecting one
+	// (which only looks up specific label values and misses absent labels).
+	//
+	// Background: the binary operation exclude-hints optimization generates matchers
+	// like service=~"|checkout|payments" for labels that are absent from some LHS
+	// series. The empty alternative ensures RHS series without that label are included.
+	// If toRawPostingGroup creates an intersecting group, it looks up postings for
+	// {service,""} (explicit empty — rarely exists in the index) but NOT the implicit
+	// "no service label" postings, causing series without the label to be incorrectly
+	// filtered out.
+
+	testCases := map[string]struct {
+		matcher          *labels.Matcher
+		expectIsSubtract bool
+		expectIsLazy     bool
+		description      string
+	}{
+		"MatchRegexp with empty alternative should use subtraction": {
+			matcher:          labels.MustNewMatcher(labels.MatchRegexp, "service", "|checkout|payments"),
+			expectIsSubtract: true,
+			expectIsLazy:     true,
+			description:      "matcher matches empty string, must use subtraction to include series without the label",
+		},
+		"MatchRegexp without empty alternative should use intersection": {
+			matcher:          labels.MustNewMatcher(labels.MatchRegexp, "service", "checkout|payments"),
+			expectIsSubtract: false,
+			expectIsLazy:     false,
+			description:      "matcher does not match empty string, intersection is correct",
+		},
+		"MatchRegexp with only empty value should use subtraction": {
+			matcher:          labels.MustNewMatcher(labels.MatchRegexp, "service", ""),
+			expectIsSubtract: true,
+			expectIsLazy:     true,
+			description:      "matcher matches empty string only, must use subtraction",
+		},
+		"MatchNotRegexp with SetMatches uses subtraction (existing fast path)": {
+			matcher:          labels.MustNewMatcher(labels.MatchNotRegexp, "service", "|checkout"),
+			expectIsSubtract: true,
+			expectIsLazy:     false,
+			description:      "MatchNotRegexp with SetMatches correctly uses subtraction via existing fast path",
+		},
+		"MatchRegexp with many alternatives including empty should use subtraction": {
+			matcher:          labels.MustNewMatcher(labels.MatchRegexp, "node", "|host-1|host-2|host-3"),
+			expectIsSubtract: true,
+			expectIsLazy:     true,
+			description:      "matcher with empty among many alternatives must still use subtraction",
+		},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			group := toRawPostingGroup(tc.matcher)
+			assert.Equal(t, tc.expectIsSubtract, group.isSubtract,
+				"isSubtract mismatch for %s: %s", tc.matcher, tc.description)
+			assert.Equal(t, tc.expectIsLazy, group.isLazy,
+				"isLazy mismatch for %s: %s", tc.matcher, tc.description)
+		})
+	}
+}
