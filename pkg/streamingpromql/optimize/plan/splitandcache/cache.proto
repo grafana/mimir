@@ -35,8 +35,14 @@ message CacheEntry {
 message CachedExtent {
   int64 startT = 1; // Start timestamp, in milliseconds since Unix epoch.
   int64 endT = 2; // End timestamp, in milliseconds since Unix epoch.
+
+  // Series metadata for each series stored in this extent.
   repeated querierpb.SeriesMetadata seriesMetadata = 3 [(gogoproto.nullable) = false];
+
+  // Series data for each series stored in this extent, one per series in seriesMetadata.
+  // The entries must be in the same order as seriesMetadata.
   repeated querierpb.InstantVectorSeriesData data = 4 [(gogoproto.nullable) = false];
+
   querierpb.Annotations annotations = 5 [(gogoproto.nullable) = false];
   types.EncodedOperatorEvaluationStats stats = 6 [(gogoproto.nullable) = false];
 

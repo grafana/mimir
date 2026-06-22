@@ -92,12 +92,15 @@ func (*CacheEntry) XXX_MessageName() string {
 }
 
 type CachedExtent struct {
-	StartT         int64                                `protobuf:"varint,1,opt,name=startT,proto3" json:"startT,omitempty"`
-	EndT           int64                                `protobuf:"varint,2,opt,name=endT,proto3" json:"endT,omitempty"`
-	SeriesMetadata []querierpb.SeriesMetadata           `protobuf:"bytes,3,rep,name=seriesMetadata,proto3" json:"seriesMetadata"`
-	Data           []querierpb.InstantVectorSeriesData  `protobuf:"bytes,4,rep,name=data,proto3" json:"data"`
-	Annotations    querierpb.Annotations                `protobuf:"bytes,5,opt,name=annotations,proto3" json:"annotations"`
-	Stats          types.EncodedOperatorEvaluationStats `protobuf:"bytes,6,opt,name=stats,proto3" json:"stats"`
+	StartT int64 `protobuf:"varint,1,opt,name=startT,proto3" json:"startT,omitempty"`
+	EndT   int64 `protobuf:"varint,2,opt,name=endT,proto3" json:"endT,omitempty"`
+	// Series metadata for each series stored in this extent.
+	SeriesMetadata []querierpb.SeriesMetadata `protobuf:"bytes,3,rep,name=seriesMetadata,proto3" json:"seriesMetadata"`
+	// Series data for each series stored in this extent, one per series in seriesMetadata.
+	// The entries must be in the same order as seriesMetadata.
+	Data        []querierpb.InstantVectorSeriesData  `protobuf:"bytes,4,rep,name=data,proto3" json:"data"`
+	Annotations querierpb.Annotations                `protobuf:"bytes,5,opt,name=annotations,proto3" json:"annotations"`
+	Stats       types.EncodedOperatorEvaluationStats `protobuf:"bytes,6,opt,name=stats,proto3" json:"stats"`
 	// ID of the trace that wrote this extent.
 	// If this extent is the combination of multiple separate evaluations, this is the ID of the most recent evaluation.
 	NewestEvaluationTraceID string `protobuf:"bytes,7,opt,name=newestEvaluationTraceID,proto3" json:"newestEvaluationTraceID,omitempty"`
