@@ -50,10 +50,9 @@ type CacheOperator struct {
 	ttlForOOOExtent    time.Duration
 	oooWindow          time.Duration
 
-	key               []byte
-	hashedKey         string
-	cachedExtentsSize uint64 // Approximate size, in bytes, of extents loaded from the cache that have not expired.
-	extents           extents
+	key       []byte
+	hashedKey string
+	extents   extents
 
 	// outputSeries contains one entry per output series, with each entry containing the source series index into each source extent.
 	// outputSeries is nil if there is only one extent in the desired time range.
@@ -231,46 +230,13 @@ func (c *CacheOperator) fetchExistingExtents(ctx context.Context) ([]CachedExten
 	})
 
 	// If we have any extents that haven't expired, include their size in the memory consumption estimate.
-	cachedExtentsSize := c.estimateExtentsSize(cacheEntry.Extents)
-	if err := c.MemoryConsumptionTracker.IncreaseMemoryConsumption(cachedExtentsSize, limiter.CachedResponses); err != nil {
-		return nil, err
+	for _, e := range cacheEntry.Extents {
+		if err := e.addToMemoryConsumptionEstimate(c.MemoryConsumptionTracker); err != nil {
+			return nil, err
+		}
 	}
-	c.cachedExtentsSize = cachedExtentsSize // Only set this now, so that if the increase above fails, calling Close doesn't cause a panic for trying to apply a decrease of the same magnitude.
 
 	return cacheEntry.Extents, nil
-}
-
-// estimateExtentsSize estimates the memory consumption of the given extents.
-// This allows us to include them in the memory consumption estimate for the query, as they would if
-// they were evaluated fresh.
-func (c *CacheOperator) estimateExtentsSize(extents []CachedExtent) uint64 {
-	seriesCount := uint64(0)
-	labelsSize := uint64(0)
-	fPointCount := uint64(0)
-	hPointCount := uint64(0)
-
-	for _, e := range extents {
-		seriesCount += uint64(cap(e.SeriesMetadata))
-
-		for _, s := range e.SeriesMetadata {
-			labelsSize += estimateLabelsSize(s.Labels)
-		}
-
-		for _, d := range e.Data {
-			fPointCount += uint64(cap(d.Floats))
-			hPointCount += uint64(cap(d.Histograms))
-		}
-	}
-
-	return seriesCount*types.SeriesMetadataSize + labelsSize + fPointCount*types.FPointSize + hPointCount*types.HPointSize
-}
-
-func estimateLabelsSize(labels []mimirpb.LabelAdapter) uint64 {
-	var size uint64
-	for _, l := range labels {
-		size += uint64(len(l.Name)) + uint64(len(l.Value))
-	}
-	return size
 }
 
 func (c *CacheOperator) calculateExtents(ctx context.Context, existingExtents []CachedExtent) (extents, error) {
@@ -688,6 +654,7 @@ func (c *CacheOperator) accumulateCacheableHistograms(data types.InstantVectorSe
 
 // accumulateDesiredFloats accumulates desired float points from the given data into desiredTimeRangeData.
 // It takes ownership of data.Floats, either returning it as desiredTimeRangeData.Floats or returning it to a pool.
+// It expects that data.Floats has already been accounted for in the memory consumption estimate.
 func (c *CacheOperator) accumulateDesiredFloats(data types.InstantVectorSeriesData, desiredTimeRangeData *types.InstantVectorSeriesData) error {
 	if len(data.Floats) == 0 {
 		types.FPointSlicePool.Put(&data.Floats, c.MemoryConsumptionTracker)
@@ -730,6 +697,7 @@ func (c *CacheOperator) accumulateDesiredFloats(data types.InstantVectorSeriesDa
 
 // accumulateDesiredHistograms accumulates desired histograms points from the given data into desiredTimeRangeData.
 // It takes ownership of data.Histograms, either returning it as desiredTimeRangeData.Histograms or returning it to a pool.
+// It expects that data.Floats has already been accounted for in the memory consumption estimate.
 func (c *CacheOperator) accumulateDesiredHistograms(data types.InstantVectorSeriesData, desiredTimeRangeData *types.InstantVectorSeriesData) error {
 	if len(data.Histograms) == 0 {
 		types.HPointSlicePool.Put(&data.Histograms, c.MemoryConsumptionTracker)
@@ -962,6 +930,12 @@ func (c *CacheOperator) ExpressionPosition() posrange.PositionRange {
 }
 
 func (c *CacheOperator) Close() {
+	for _, s := range [][]CachedExtent{c.extents.cacheableExtentsBeforeDesiredTimeRange, c.extents.cacheableExtentsAfterDesiredTimeRange} {
+		for _, e := range s {
+			e.close(c.MemoryConsumptionTracker)
+		}
+	}
+
 	c.extents.cacheableExtentsBeforeDesiredTimeRange = nil
 	c.extents.cacheableExtentsAfterDesiredTimeRange = nil
 
@@ -987,8 +961,6 @@ func (c *CacheOperator) Close() {
 
 	c.data = nil
 
-	c.MemoryConsumptionTracker.DecreaseMemoryConsumption(c.cachedExtentsSize, limiter.CachedResponses)
-	c.cachedExtentsSize = 0
 }
 
 type extent interface {
@@ -1005,6 +977,7 @@ type extent interface {
 
 	// GetSeries returns the samples for the series at the given index.
 	// Callers may modify the returned slices.
+	// The returned slices must be accounted for in the memory consumption estimate.
 	GetSeries(ctx context.Context, seriesIdx int) (types.InstantVectorSeriesData, error)
 
 	Finalize(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error)
@@ -1056,6 +1029,8 @@ func (c *cachedExtentReader) SeriesMetadata(_ context.Context) ([]types.SeriesMe
 		}
 	}
 
+	c.extent.closeSeriesMetadata(c.parent.MemoryConsumptionTracker)
+
 	return seriesMetadata, nil
 }
 
@@ -1065,16 +1040,15 @@ func (c *cachedExtentReader) GetSeries(_ context.Context, seriesIdx int) (types.
 	}
 
 	cachedData := c.extent.Data[seriesIdx]
+
+	// DecodeInstantVectorSeriesData returns shallow copies of the FPoint / HPoint slices.
+	// This is OK as CacheOperator.NextSeries will copy any data it needs to retain for the merged extent before returning it to the caller.
+	// We don't need to add this to the memory consumption estimate as this was already accounted for in CacheOperator.fetchExistingExtents.
 	mqeData := querierpb.DecodeInstantVectorSeriesData(cachedData)
 
-	// FromSamplesToFPoints and FromHistogramsToHPoints don't account for memory consumption, so do that now.
-	if err := c.parent.MemoryConsumptionTracker.IncreaseMemoryConsumption(uint64(cap(mqeData.Floats))*types.FPointSize, limiter.FPointSlices); err != nil {
-		return types.InstantVectorSeriesData{}, err
-	}
-
-	if err := c.parent.MemoryConsumptionTracker.IncreaseMemoryConsumption(uint64(cap(mqeData.Histograms))*types.HPointSize, limiter.HPointSlices); err != nil {
-		return types.InstantVectorSeriesData{}, err
-	}
+	// Clear the cached data so we don't try to remove it from the memory consumption estimate later.
+	// We don't need to retain this data here if this extent will be merged into others: that is the responsibility of CacheOperator.
+	c.extent.Data[seriesIdx] = querierpb.InstantVectorSeriesData{}
 
 	var err error
 
@@ -1090,7 +1064,8 @@ func (c *cachedExtentReader) GetSeries(_ context.Context, seriesIdx int) (types.
 }
 
 func (c *cachedExtentReader) FinishedReading(_ context.Context) error {
-	// Nothing to do.
+	c.extent.closeSeriesMetadata(c.parent.MemoryConsumptionTracker)
+	c.extent.closeRemainingData(c.parent.MemoryConsumptionTracker)
 	return nil
 }
 
@@ -1108,7 +1083,7 @@ func (c *cachedExtentReader) GetEvaluationTimestamp() int64 {
 }
 
 func (c *cachedExtentReader) Close() {
-	// Nothing to do.
+	c.extent.close(c.parent.MemoryConsumptionTracker)
 }
 
 type evaluatedExtent struct {
@@ -1191,4 +1166,79 @@ type LimitsProvider interface {
 	GetMinOutOfOrderResultsCacheTTL(ctx context.Context) (time.Duration, error)
 	GetMaxCacheFreshness(ctx context.Context) (time.Duration, error)
 	GetMaxOutOfOrderTimeWindow(ctx context.Context) (time.Duration, error)
+}
+
+// estimateExtentsSize estimates the memory consumption of the given extents.
+// This allows us to include them in the memory consumption estimate for the query, as they would if
+// they were evaluated fresh.
+func (e *CachedExtent) addToMemoryConsumptionEstimate(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) error {
+	if err := memoryConsumptionTracker.IncreaseMemoryConsumption(uint64(cap(e.SeriesMetadata))*types.SeriesMetadataSize, limiter.SeriesMetadataSlices); err != nil {
+		return err
+	}
+
+	if err := memoryConsumptionTracker.IncreaseMemoryConsumption(e.estimateLabelsMemoryConsumption(), limiter.Labels); err != nil {
+		return err
+	}
+
+	fPointCount := uint64(0)
+	hPointCount := uint64(0)
+
+	for _, d := range e.Data {
+		fPointCount += uint64(cap(d.Floats))
+		hPointCount += uint64(cap(d.Histograms))
+	}
+
+	if err := memoryConsumptionTracker.IncreaseMemoryConsumption(fPointCount*types.FPointSize, limiter.FPointSlices); err != nil {
+		return err
+	}
+
+	if err := memoryConsumptionTracker.IncreaseMemoryConsumption(hPointCount*types.HPointSize, limiter.HPointSlices); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (e *CachedExtent) estimateLabelsMemoryConsumption() uint64 {
+	labelsSize := uint64(0)
+
+	for _, s := range e.SeriesMetadata {
+		labelsSize += estimateLabelsSize(s.Labels)
+	}
+
+	return labelsSize
+}
+
+func (e *CachedExtent) closeSeriesMetadata(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
+	memoryConsumptionTracker.DecreaseMemoryConsumption(uint64(cap(e.SeriesMetadata))*types.SeriesMetadataSize, limiter.SeriesMetadataSlices)
+	memoryConsumptionTracker.DecreaseMemoryConsumption(e.estimateLabelsMemoryConsumption(), limiter.Labels)
+	e.SeriesMetadata = nil
+}
+
+func (e *CachedExtent) closeRemainingData(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
+	fPointCount := uint64(0)
+	hPointCount := uint64(0)
+
+	for _, d := range e.Data {
+		fPointCount += uint64(cap(d.Floats))
+		hPointCount += uint64(cap(d.Histograms))
+	}
+
+	memoryConsumptionTracker.DecreaseMemoryConsumption(fPointCount*types.FPointSize, limiter.FPointSlices)
+	memoryConsumptionTracker.DecreaseMemoryConsumption(hPointCount*types.HPointSize, limiter.HPointSlices)
+
+	e.Data = nil
+}
+
+func (e *CachedExtent) close(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
+	e.closeSeriesMetadata(memoryConsumptionTracker)
+	e.closeRemainingData(memoryConsumptionTracker)
+}
+
+func estimateLabelsSize(labels []mimirpb.LabelAdapter) uint64 {
+	var size uint64
+	for _, l := range labels {
+		size += uint64(len(l.Name)) + uint64(len(l.Value))
+	}
+	return size
 }

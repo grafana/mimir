@@ -536,9 +536,9 @@ func TestCacheOperator(t *testing.T) {
 			}
 
 			if testCase.expectedAnyCachedExtentsRetained {
-				require.NotZero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytesBySource(limiter.CachedResponses), "expected some cached extents to be included in memory consumption estimate")
+				require.NotZero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytesBySource(limiter.SeriesMetadataSlices), "expected some cached extents to be included in memory consumption estimate")
 			} else {
-				require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytesBySource(limiter.CachedResponses), "expected no cached extents to be included in memory consumption estimate")
+				require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytesBySource(limiter.SeriesMetadataSlices), "expected no cached extents to be included in memory consumption estimate")
 			}
 
 			require.NoError(t, o.AfterPrepare(ctx))
