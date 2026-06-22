@@ -1784,7 +1784,7 @@ func TestEvaluator_PanicDuringEvaluationIsLoggedAsFailedAndRePanics(t *testing.T
 
 	spanExporter.Reset()
 
-	planner, err := NewQueryPlanner(opts, NewStaticQueryPlanVersionProvider(planning.MaximumSupportedQueryPlanVersion))
+	planner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
 	engine, err := NewEngine(opts, stats.NewQueryMetrics(opts.CommonOpts.Reg), planner)
 	require.NoError(t, err)
@@ -1810,7 +1810,7 @@ func TestEvaluator_PanicDuringEvaluationIsLoggedAsFailedAndRePanics(t *testing.T
 	evaluator, err := NewEvaluator(nodeRequests, params, engine, "panicking_query")
 	require.NoError(t, err)
 
-	observer := &loggingEvaluationObserver{nodeNames: map[planning.Node]string{node: "node"}}
+	observer := &noopEvaluationObserver{}
 
 	// The panic must propagate: we only add diagnostics, we do not contain it.
 	require.PanicsWithValue(t, "injected panic during evaluation", func() {
