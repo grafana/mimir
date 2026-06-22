@@ -319,25 +319,25 @@ func (c *Client) PushOTLPPayload(payload []byte, contentType string) (*http.Resp
 }
 
 // Query runs an instant query.
-func (c *Client) Query(query string, ts time.Time, opts ...promv1.Option) (model.Value, error) {
+func (c *Client) Query(query string, ts time.Time, opts ...promv1.Option) (model.Value, promv1.Warnings, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
 	defer cancel()
 
-	value, _, err := c.querierClient.Query(ctx, query, ts, opts...)
-	return value, err
+	value, annos, err := c.querierClient.Query(ctx, query, ts, opts...)
+	return value, annos, err
 }
 
 // QueryRange runs a range query.
-func (c *Client) QueryRange(query string, start, end time.Time, step time.Duration, opts ...promv1.Option) (model.Value, error) {
+func (c *Client) QueryRange(query string, start, end time.Time, step time.Duration, opts ...promv1.Option) (model.Value, promv1.Warnings, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
 	defer cancel()
 
-	value, _, err := c.querierClient.QueryRange(ctx, query, promv1.Range{
+	value, annos, err := c.querierClient.QueryRange(ctx, query, promv1.Range{
 		Start: start,
 		End:   end,
 		Step:  step,
 	}, opts...)
-	return value, err
+	return value, annos, err
 }
 
 // QueryRangeRaw runs a ranged query directly against the querier API.
