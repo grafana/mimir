@@ -40,6 +40,7 @@ import (
 	querier_stats "github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/httpgrpcpb"
 	"github.com/grafana/mimir/pkg/util/httpgrpcutil"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/propagation"
@@ -254,11 +255,8 @@ func (sp *schedulerProcessor) querierLoop(execCtx context.Context, c schedulerpb
 				var spanDescription string
 
 				if request.GetProtobufRequest() != nil {
-					if messageName, err := types.AnyMessageName(request.GetProtobufRequest().Payload); err == nil {
-						spanDescription = messageName
-					} else {
-						spanDescription = request.GetProtobufRequest().Payload.TypeUrl
-					}
+					// ProtobufRequest.Payload is now wiresmith anypb.Any; TypeUrl carries the message name directly.
+					spanDescription = request.GetProtobufRequest().Payload.TypeUrl
 				} else {
 					spanDescription = "HTTP-over-gRPC"
 				}
@@ -279,10 +277,13 @@ func (sp *schedulerProcessor) querierLoop(execCtx context.Context, c schedulerpb
 			case *schedulerpb.SchedulerToQuerier_HttpRequest:
 				// We might have created a new span above, so reset the trace ID and span ID in the embedded HTTP request so
 				// the HTTP tracing middleware creates its span beneath the one created above.
-				otel.GetTextMapPropagator().Inject(ctx, (*httpgrpcutil.HttpgrpcHeadersCarrier)(request.GetHttpRequest()))
-				sp.runHttpRequest(ctx, logger, request.QueryID, request.FrontendAddress, stats, payload.HttpRequest)
+				// Convert httpgrpcpb.HTTPRequest → httpgrpc.HTTPRequest for the tracing carrier.
+				httpReq := httpgrpcpb.ToHTTPRequest(&payload.HttpRequest)
+				otel.GetTextMapPropagator().Inject(ctx, (*httpgrpcutil.HttpgrpcHeadersCarrier)(httpReq))
+				sp.runHttpRequest(ctx, logger, request.QueryID, request.FrontendAddress, stats, httpReq)
 			case *schedulerpb.SchedulerToQuerier_ProtobufRequest:
-				sp.runProtobufRequest(ctx, logger, request.QueryID, request.FrontendAddress, payload.ProtobufRequest)
+				// ProtobufRequest is a value in the oneof wrapper; take its address.
+				sp.runProtobufRequest(ctx, logger, request.QueryID, request.FrontendAddress, &payload.ProtobufRequest)
 			default:
 				response := &httpgrpc.HTTPResponse{
 					Code: http.StatusBadRequest,
@@ -330,7 +331,8 @@ func (sp *schedulerProcessor) querierLoop(execCtx context.Context, c schedulerpb
 func contextWithSpanFromRequest(ctx context.Context, request *schedulerpb.SchedulerToQuerier) (context.Context, bool) {
 	switch request.Payload.(type) {
 	case *schedulerpb.SchedulerToQuerier_HttpRequest:
-		return httpgrpcutil.ContextWithSpanFromRequest(ctx, request.GetHttpRequest())
+		// Convert httpgrpcpb.HTTPRequest → httpgrpc.HTTPRequest for span extraction.
+		return httpgrpcutil.ContextWithSpanFromRequest(ctx, httpgrpcpb.ToHTTPRequest(request.GetHttpRequest()))
 	case *schedulerpb.SchedulerToQuerier_ProtobufRequest:
 		carrier := schedulerpb.MetadataMapTracingCarrier(schedulerpb.MetadataSliceToMap(request.GetProtobufRequest().Metadata))
 		ctx = otel.GetTextMapPropagator().Extract(ctx, carrier)
@@ -392,10 +394,15 @@ func (sp *schedulerProcessor) sendHttpResponseToQueryFrontend(ctx context.Contex
 			err = sp.streamResponse(frontendCtx, ctx, c, queryID, response, stats, sp.log)
 		} else {
 			// Response is empty and uninteresting.
+			// QueryResultRequest.HttpResponse uses the httpgrpcpb bridge type; Stats is a value customtype.
+			var statsVal querier_stats.SafeStats
+			if stats != nil {
+				statsVal = *stats
+			}
 			_, err = c.(frontendv2pb.FrontendForQuerierClient).QueryResult(frontendCtx, &frontendv2pb.QueryResultRequest{
 				QueryID:      queryID,
-				HttpResponse: response,
-				Stats:        stats,
+				HttpResponse: httpgrpcpb.FromHTTPResponse(response),
+				Stats:        statsVal,
 			})
 		}
 		if err == nil {
@@ -447,13 +454,19 @@ func streamResponse(
 		return fmt.Errorf("error creating stream to frontend: %w", err)
 	}
 
-	// Send metadata
+	// Send metadata.
+	// QueryResultStreamRequest_Metadata.Metadata is a value (no_presence_all); Headers uses the
+	// httpgrpcpb bridge type; Stats is a value customtype.
+	var statsVal querier_stats.SafeStats
+	if stats != nil {
+		statsVal = *stats
+	}
 	err = sc.Send(&frontendv2pb.QueryResultStreamRequest{
 		QueryID: queryID,
-		Data: &frontendv2pb.QueryResultStreamRequest_Metadata{Metadata: &frontendv2pb.QueryResultMetadata{
+		Data: &frontendv2pb.QueryResultStreamRequest_Metadata{Metadata: frontendv2pb.QueryResultMetadata{
 			Code:    response.Code,
-			Headers: response.Headers,
-			Stats:   stats,
+			Headers: httpgrpcpb.FromHeaders(response.Headers),
+			Stats:   statsVal,
 		}},
 	})
 	if err != nil {
@@ -473,7 +486,7 @@ sendBody:
 		default:
 			err = sc.Send(&frontendv2pb.QueryResultStreamRequest{
 				QueryID: queryID,
-				Data: &frontendv2pb.QueryResultStreamRequest_Body{Body: &frontendv2pb.QueryResultBody{
+				Data: &frontendv2pb.QueryResultStreamRequest_Body{Body: frontendv2pb.QueryResultBody{
 					Chunk: response.Body[offset:min(offset+responseStreamingBodyChunkSizeBytes, len(response.Body))],
 				}},
 			})
@@ -494,7 +507,10 @@ sendBody:
 func (sp *schedulerProcessor) runProtobufRequest(ctx context.Context, logger log.Logger, queryID uint64, frontendAddress string, request *schedulerpb.ProtobufRequest) {
 	writer := newGrpcStreamWriter(queryID, frontendAddress, sp.frontendPool, logger)
 	metadataMap := schedulerpb.MetadataSliceToMap(request.Metadata)
-	sp.protobufHandler.HandleProtobuf(ctx, request.Payload, propagation.MapCarrier(metadataMap), writer)
+	// ProtobufRequest.Payload is wiresmith anypb.Any; HandleProtobuf expects gogo *types.Any.
+	// The two types are structurally identical (TypeUrl string, Value []byte).
+	gogoAny := &types.Any{TypeUrl: request.Payload.TypeUrl, Value: request.Payload.Value}
+	sp.protobufHandler.HandleProtobuf(ctx, gogoAny, propagation.MapCarrier(metadataMap), writer)
 	writer.Close(ctx)
 }
 
@@ -628,8 +644,9 @@ func (g *grpcStreamWriter) Close(ctx context.Context) {
 		// This should never happen, but if it does, send a message to the query-frontend so it's not waiting
 		// for a response that will never come.
 		msg := &frontendv2pb.QueryResultStreamRequest{
+			// QueryResultStreamRequest_Error.Error is a value type (no_presence_all).
 			Data: &frontendv2pb.QueryResultStreamRequest_Error{
-				Error: &querierpb.Error{
+				Error: querierpb.Error{
 					Type:    mimirpb.QUERY_ERROR_TYPE_INTERNAL,
 					Message: "query execution completed without sending any messages (this is a bug)",
 				},

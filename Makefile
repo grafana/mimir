@@ -234,7 +234,23 @@ PROTO_WIRESMITH_GOS := \
 	pkg/streamingpromql/optimize/plan/splitandcache/node_compare.pb.go \
 	pkg/streamingpromql/optimize/plan/splitandcache/node_util.pb.go \
 	pkg/streamingpromql/optimize/plan/remoteexec/node_compare.pb.go \
-	pkg/streamingpromql/optimize/plan/remoteexec/node_util.pb.go
+	pkg/streamingpromql/optimize/plan/remoteexec/node_util.pb.go \
+	pkg/querier/querierpb/querier_compare.pb.go \
+	pkg/querier/querierpb/querier_util.pb.go \
+	pkg/streamingpromql/optimize/plan/rangevectorsplitting/cache/cache_compare.pb.go \
+	pkg/streamingpromql/optimize/plan/rangevectorsplitting/cache/cache_util.pb.go \
+	pkg/util/httpgrpcpb/httpgrpcpb_compare.pb.go \
+	pkg/util/httpgrpcpb/httpgrpcpb_util.pb.go \
+	pkg/scheduler/schedulerpb/scheduler_compare.pb.go \
+	pkg/scheduler/schedulerpb/scheduler_util.pb.go \
+	pkg/ruler/ruler_compare.pb.go \
+	pkg/ruler/ruler_util.pb.go \
+	pkg/blockbuilder/schedulerpb/scheduler_compare.pb.go \
+	pkg/blockbuilder/schedulerpb/scheduler_util.pb.go \
+	pkg/compactor/scheduler/compactorschedulerpb/compactorscheduler_compare.pb.go \
+	pkg/compactor/scheduler/compactorschedulerpb/compactorscheduler_util.pb.go \
+	pkg/frontend/v2/frontendv2pb/frontend_compare.pb.go \
+	pkg/frontend/v2/frontendv2pb/frontend_util.pb.go
 
 # Packages containing //node:generate-annotated structs, and the corresponding
 # generated files. Discovered at make-parse time.
@@ -403,9 +419,9 @@ else
 endif
 
 # pkg/querier/stats/stats.proto is compiled by wiresmith (positionally scoped
-# like ha_tracker.proto above). It is still imported by gogo-compiled protos
-# (querierpb, querymiddleware model, frontendv2pb); protoc resolves the
-# wiresmith/options.proto import via ./proto-include.
+# like ha_tracker.proto above). It is still imported by the gogo-compiled
+# querymiddleware model proto; protoc resolves the wiresmith/options.proto
+# import via ./proto-include.
 pkg/querier/stats/stats.pb.go \
 pkg/querier/stats/stats_compare.pb.go \
 pkg/querier/stats/stats_util.pb.go &: pkg/querier/stats/stats.proto
@@ -456,10 +472,7 @@ endif
 # core.proto imports mimir.proto (LabelAdapter customtype) and the functions
 # enum; types.proto, planning/plan.proto, and the optimize/plan/* node protos
 # round out the cluster. These migrated protos are still imported by the
-# gogo-compiled pkg/querier/querierpb and .../rangevectorsplitting/cache; their
-# wiresmith/options.proto import is resolved for protoc via ./proto-include, and
-# pkg/streamingpromql/{types,planning}/wiresmith_compat.go supplies the GoString
-# shims those gogo importers need.
+# wiresmith/options.proto import is resolved for protoc via ./proto-include.
 STREAMINGPROMQL_WIRESMITH_PROTOS := \
 	pkg/streamingpromql/types/types.proto \
 	pkg/streamingpromql/planning/plan.proto \
@@ -478,6 +491,46 @@ ifeq ($(GENERATE_FILES),true)
 	./tools/wiresmith-streamingpromql.sh
 else
 	@echo "Warning: generating files has been disabled, but the following files need to be regenerated: $(STREAMINGPROMQL_WIRESMITH_PBGO)"
+	@echo "If this is unexpected, check if the last modified timestamps on the outputs and their .proto sources are correct."
+endif
+
+# pkg/querier/querierpb and .../rangevectorsplitting/cache are compiled by
+# wiresmith (cqa.2). They import the previously migrated wiresmith cluster
+# (mimir.proto, stats.proto, plan.proto, types.proto) and each other.
+CQA2_WIRESMITH_PROTOS := \
+	pkg/querier/querierpb/querier.proto \
+	pkg/streamingpromql/optimize/plan/rangevectorsplitting/cache/cache.proto
+
+CQA2_WIRESMITH_PBGO := $(patsubst %.proto,%.pb.go,$(CQA2_WIRESMITH_PROTOS))
+
+$(CQA2_WIRESMITH_PBGO) &: $(CQA2_WIRESMITH_PROTOS) pkg/mimirpb/mimir.proto pkg/querier/stats/stats.proto pkg/streamingpromql/planning/plan.proto pkg/streamingpromql/types/types.proto
+ifeq ($(GENERATE_FILES),true)
+	./tools/wiresmith-cqa2.sh
+else
+	@echo "Warning: generating files has been disabled, but the following files need to be regenerated: $(CQA2_WIRESMITH_PBGO)"
+	@echo "If this is unexpected, check if the last modified timestamps on the outputs and their .proto sources are correct."
+endif
+
+# pkg/util/httpgrpcpb, pkg/scheduler/schedulerpb, pkg/ruler,
+# pkg/blockbuilder/schedulerpb, pkg/compactor/scheduler/compactorschedulerpb,
+# and pkg/frontend/v2/frontendv2pb are compiled by wiresmith (cqa.3).
+# They import the local httpgrpcpb bridge, the previously migrated wiresmith
+# cluster (mimir.proto, stats.proto, querierpb, rulespb, etc.), and each other.
+CQA3_WIRESMITH_PROTOS := \
+	pkg/util/httpgrpcpb/httpgrpcpb.proto \
+	pkg/scheduler/schedulerpb/scheduler.proto \
+	pkg/ruler/ruler.proto \
+	pkg/blockbuilder/schedulerpb/scheduler.proto \
+	pkg/compactor/scheduler/compactorschedulerpb/compactorscheduler.proto \
+	pkg/frontend/v2/frontendv2pb/frontend.proto
+
+CQA3_WIRESMITH_PBGO := $(patsubst %.proto,%.pb.go,$(CQA3_WIRESMITH_PROTOS))
+
+$(CQA3_WIRESMITH_PBGO) &: $(CQA3_WIRESMITH_PROTOS) pkg/mimirpb/mimir.proto pkg/querier/stats/stats.proto pkg/ruler/rulespb/rules.proto pkg/querier/querierpb/querier.proto pkg/streamingpromql/planning/plan.proto pkg/streamingpromql/types/types.proto
+ifeq ($(GENERATE_FILES),true)
+	./tools/wiresmith-cqa3.sh
+else
+	@echo "Warning: generating files has been disabled, but the following files need to be regenerated: $(CQA3_WIRESMITH_PBGO)"
 	@echo "If this is unexpected, check if the last modified timestamps on the outputs and their .proto sources are correct."
 endif
 

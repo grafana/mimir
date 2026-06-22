@@ -351,6 +351,7 @@ type MultiTenantManager interface {
 //	+---------------------------------------------------------------+
 type Ruler struct {
 	services.Service
+	UnimplementedRulerServer
 
 	cfg        Config
 	lifecycler *ring.BasicLifecycler

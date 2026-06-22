@@ -7,13 +7,15 @@ syntax = "proto3";
 
 package schedulerpb;
 
-import "github.com/grafana/dskit/httpgrpc/httpgrpc.proto";
-import "gogoproto/gogo.proto";
+import "github.com/grafana/mimir/pkg/util/httpgrpcpb/httpgrpcpb.proto";
 import "google/protobuf/any.proto";
 
-option go_package = "schedulerpb";
-option (gogoproto.marshaler_all) = true;
-option (gogoproto.unmarshaler_all) = true;
+import "wiresmith/options.proto";
+
+option go_package = "github.com/grafana/mimir/pkg/scheduler/schedulerpb";
+
+option (wiresmith.options.no_presence_all) = true;
+option (wiresmith.options.enum_no_prefix_all) = true;
 
 // Scheduler interface exposed to Queriers.
 service SchedulerForQuerier {
@@ -41,7 +43,7 @@ message SchedulerToQuerier {
   uint64 queryID = 1;
 
   oneof payload {
-    httpgrpc.HTTPRequest httpRequest = 2;
+    mimir.httpgrpcpb.HTTPRequest httpRequest = 2;
     ProtobufRequest protobufRequest = 7;
   }
 
@@ -65,7 +67,7 @@ message ProtobufRequest {
   // Metadata is metadata orthogonal to the request itself, analogous to HTTP headers or gRPC metadata.
   // We can't use gRPC metadata in this context because this message is sent over long-lived streams, rather
   // than as an individual request.
-  repeated MetadataItem metadata = 2 [(gogoproto.nullable) = false];
+  repeated MetadataItem metadata = 2;
 }
 
 message MetadataItem {
@@ -103,7 +105,7 @@ message FrontendToScheduler {
   // Following are used by ENQUEUE only.
   string userID = 4;
   oneof payload {
-    httpgrpc.HTTPRequest httpRequest = 5;
+    mimir.httpgrpcpb.HTTPRequest httpRequest = 5;
     ProtobufRequest protobufRequest = 8;
   }
   bool statsEnabled = 6;

@@ -126,7 +126,7 @@ func TestSchedulerProcessor_processQueriesOnSingleStream(t *testing.T) {
 			case 1:
 				return &schedulerpb.SchedulerToQuerier{
 					QueryID:         1,
-					Payload:         &schedulerpb.SchedulerToQuerier_ProtobufRequest{ProtobufRequest: &schedulerpb.ProtobufRequest{}},
+					Payload:         &schedulerpb.SchedulerToQuerier_ProtobufRequest{ProtobufRequest: schedulerpb.ProtobufRequest{}},
 					FrontendAddress: frontend.addr,
 					UserID:          "user-1",
 				}, nil
@@ -257,7 +257,7 @@ func TestSchedulerProcessor_processQueriesOnSingleStream(t *testing.T) {
 			case 1:
 				return &schedulerpb.SchedulerToQuerier{
 					QueryID:         1,
-					Payload:         &schedulerpb.SchedulerToQuerier_ProtobufRequest{ProtobufRequest: &schedulerpb.ProtobufRequest{}},
+					Payload:         &schedulerpb.SchedulerToQuerier_ProtobufRequest{ProtobufRequest: schedulerpb.ProtobufRequest{}},
 					FrontendAddress: frontend.addr,
 					UserID:          "user-1",
 				}, nil
@@ -429,7 +429,7 @@ func TestSchedulerProcessor_QueryTime(t *testing.T) {
 					msg.Payload = &schedulerpb.SchedulerToQuerier_HttpRequest{}
 				} else {
 					msg.Payload = &schedulerpb.SchedulerToQuerier_ProtobufRequest{
-						ProtobufRequest: &schedulerpb.ProtobufRequest{},
+						ProtobufRequest: schedulerpb.ProtobufRequest{},
 					}
 				}
 
@@ -1024,6 +1024,7 @@ func (m *protobufRequestHandlerMock) HandleProtobuf(ctx context.Context, t *type
 }
 
 type frontendForQuerierMockServer struct {
+	frontendv2pb.UnimplementedFrontendForQuerierServer
 	addr             string
 	queryResultCalls atomic.Int64
 
@@ -1072,7 +1073,7 @@ func (f *frontendForQuerierMockServer) QueryResultStream(s frontendv2pb.Frontend
 		case *frontendv2pb.QueryResultStreamRequest_Metadata:
 			f.queryResultStreamMetadataCalls.Inc()
 			metadataSent = true
-			f.responses[resp.QueryID] = &queryResult{metadata: data.Metadata}
+			f.responses[resp.QueryID] = &queryResult{metadata: &data.Metadata}
 		case *frontendv2pb.QueryResultStreamRequest_Body:
 			once.Do(func() {
 				// Signal that response streaming has begun.
@@ -1362,7 +1363,7 @@ func TestGrpcStreamWriter_ClosedWithNoMessagesSent_HappyPath(t *testing.T) {
 	expectedMessage := &frontendv2pb.QueryResultStreamRequest{
 		QueryID: queryID,
 		Data: &frontendv2pb.QueryResultStreamRequest_Error{
-			Error: &querierpb.Error{
+			Error: querierpb.Error{
 				Message: "query execution completed without sending any messages (this is a bug)",
 				Type:    mimirpb.QUERY_ERROR_TYPE_INTERNAL,
 			},
@@ -1438,7 +1439,7 @@ func TestGrpcStreamWriter_CancelledRequestContext(t *testing.T) {
 func createTestStreamingMessage(msg string) *frontendv2pb.QueryResultStreamRequest {
 	return &frontendv2pb.QueryResultStreamRequest{
 		Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
-			EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
+			EvaluateQueryResponse: querierpb.EvaluateQueryResponse{
 				Message: &querierpb.EvaluateQueryResponse_StringValue{
 					StringValue: querierpb.EvaluateQueryResponseStringValue{
 						Value: msg,
@@ -1452,7 +1453,7 @@ func createTestStreamingMessage(msg string) *frontendv2pb.QueryResultStreamReque
 func createErrorMessage(msg string) *frontendv2pb.QueryResultStreamRequest {
 	return &frontendv2pb.QueryResultStreamRequest{
 		Data: &frontendv2pb.QueryResultStreamRequest_Error{
-			Error: &querierpb.Error{
+			Error: querierpb.Error{
 				Message: msg,
 				Type:    mimirpb.QUERY_ERROR_TYPE_NOT_ACCEPTABLE,
 			},

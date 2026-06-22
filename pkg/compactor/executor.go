@@ -321,9 +321,13 @@ func (e *schedulerExecutor) run(ctx context.Context, c *MultitenantCompactor) er
 		cleanup := slices.ContainsFunc(lanes, func(lr *compactorschedulerpb.LaneRequest) bool {
 			return lr.JobType == compactorschedulerpb.JOB_TYPE_COMPACTION
 		})
+		laneRequestValues := make([]compactorschedulerpb.LaneRequest, len(lanes))
+		for j, lr := range lanes {
+			laneRequestValues[j] = *lr
+		}
 		req := &compactorschedulerpb.LeaseJobRequest{
 			WorkerId:     workerID,
-			LaneRequests: lanes,
+			LaneRequests: laneRequestValues,
 		}
 		wg.Go(func() {
 			e.runWorker(ctx, c, workerCompactDir, cleanup, req)

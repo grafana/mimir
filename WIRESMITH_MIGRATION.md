@@ -49,14 +49,19 @@ pinned compiler. No `replace` remains; the vendored runtime
 | ---------------------------------- | -------------------------------------- | ------------------------------------------------------------------------------------------- |
 | `pkg/mimirpb/mimir.proto`          | migrated (phase 1+2+3+DB-18+NoPrescan) | 1081 lines (1084 w/ guard hunk, 1094 pre-4f41063, 1087 phase 3, 1103 phase 2, 2144 phase 1) |
 | `pkg/distributor/ha_tracker.proto` | migrated (phase 2)                     | none                                                                                        |
-| `pkg/querier/stats/stats.proto`    | migrated (phase 2)                     | none (one hand-written `GoString` shim, kept while frontendv2pb/querymiddleware are gogo)   |
+| `pkg/querier/stats/stats.proto`    | migrated (phase 2)                     | none (one hand-written `GoString` shim, kept while querymiddleware/querierpb are gogo)       |
 | `pkg/ruler/rulespb/rules.proto`    | migrated (7m6/Any, validate branch)    | none (no shim needed)                                                                        |
 | `pkg/streamingpromql/**` (9 protos) | migrated (cqa.1)                       | none (2 `GoString` shim methods retired in cqa.2)                                          |
 | `pkg/querier/querierpb/querier.proto` | migrated (cqa.2)                     | none (gogoproto_registry.go for gogo interop)                                               |
 | `pkg/streamingpromql/optimize/plan/rangevectorsplitting/cache/cache.proto` | migrated (cqa.2) | none                                         |
-| `pkg/frontend/v2/frontendv2pb/frontend.proto` | **deferred** — httpgrpc gogo incompatibility | —                                                                    |
+| `pkg/scheduler/schedulerpb/scheduler.proto`   | migrated (cqa.3)                     | none                                                                 |
+| `pkg/ruler/ruler.proto`                       | migrated (cqa.3)                     | none                                                                 |
+| `pkg/blockbuilder/schedulerpb/scheduler.proto` | migrated (cqa.3)                    | none                                                                 |
+| `pkg/compactor/scheduler/compactorschedulerpb/compactorscheduler.proto` | migrated (cqa.3) | none                                              |
+| `pkg/frontend/v2/frontendv2pb/frontend.proto` | migrated (cqa.3)                     | none (wiresmith_compat.go: FreeBuffer/Buffer/SetBuffer for gRPC frame retention)             |
+| `pkg/util/httpgrpcpb/httpgrpcpb.proto`        | new (cqa.3 bridge)                   | none (dskit httpgrpc local-copy bridge with conversion helpers + HeadersCarrier)             |
 | `pkg/frontend/querymiddleware/model.proto`    | **deferred** — gogo Any registry dependency  | —                                                                    |
-| all other protos (~10)             | still gogoproto                        | —                                                                                           |
+| all other protos (~5)              | still gogoproto                        | —                                                                                           |
 
 The streamingpromql cluster (cqa.1): `types/types.proto`,
 `planning/plan.proto`, `planning/core/core.proto`, and the optimize/plan node
@@ -71,7 +76,8 @@ querierpb types — it can only migrate once querierpb (cqa.2) does. Listed in
 the cqa.1 bead but moved to cqa.2 for this reason.
 
 Full repo builds; pkg/mimirpb, pkg/distributor, pkg/ingester,
-pkg/storage/ingest, pkg/querier(+stats), pkg/frontend/... test suites green.
+pkg/storage/ingest, pkg/querier(+stats+worker), pkg/frontend/v2, pkg/ruler,
+pkg/scheduler, pkg/blockbuilder, pkg/compactor/scheduler test suites green.
 
 Regen reproducibility (against the pinned `databases` @ `854b4c6` compiler,
 2026-06-12): `ha_tracker.{pb,_compare,_equal,_reflect}.go`, `stats.{...}.go`,
@@ -570,6 +576,38 @@ runtime flag is **kept** — it still drives `ProtocolVersion()` and the entire
 RW2→RW1 decode dispatch (RW1-rejection in RW2 mode, paged-symbol handling,
 field-5 redirect, metadata flush); only its pre-scan-gating role moved to the
 NoPrescan entry point.
+
+## Known limitations
+
+### cqa.3: bounded permanent leak in QueryResultStreamRequest buffer retention
+
+`pkg/frontend/v2/frontendv2pb/wiresmith_compat.go` implements `SetBuffer` /
+`FreeBuffer` / `Buffer` on `QueryResultStreamRequest` via a global `sync.Map`
+keyed by `*QueryResultStreamRequest`. The mechanism is needed because
+`mimirpb.LabelAdapter.UnmarshalWiresmith` (see `pkg/mimirpb/timeseries.go`)
+aliases `Name` and `Value` directly into the gRPC receive-frame buffer using
+`yoloString`; that buffer must be kept alive until the caller is done with the
+label strings.
+
+**The leak:** `ProtobufResponseStream` passes decoded messages through a
+1-element buffered channel. If a consumer calls `Close()` while a message is
+already committed to that channel buffer, Go's runtime may select the
+`notifyClosed` branch in `Next()`'s select rather than the `messages` branch.
+The abandoned message is never read, `FreeBuffer` is never called, and the
+`sync.Map` entry — holding strong references to both the
+`*QueryResultStreamRequest` key and the `mem.Buffer` value — is never removed
+and cannot be GC'd.
+
+The leak is **bounded**: at most one entry per early-closed stream, so the
+total retained memory is proportional to the number of streams abandoned with a
+buffered message at any moment.
+
+**Proper fix:** wiresmith bead **wiresmith-egvq** (P1) will add `unique`-interned
+buffer-independent strings, eliminating `yoloString` frame-aliasing in
+`LabelAdapter.UnmarshalWiresmith` entirely. Once that ships, the
+`wiresmith_compat.go` `sync.Map` mechanism and the `SetBuffer`/`FreeBuffer`
+call sites can all be removed. This bead is a prerequisite for the mimir
+migration's upstream merge.
 
 ## Remaining wiresmith blockers / friction (ranked)
 
