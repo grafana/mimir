@@ -135,7 +135,7 @@ func (c *CacheOperator) computeCacheKey(ctx context.Context) ([]byte, error) {
 	// while the second will have points at 08:00:30, 08:01:30 etc.
 	offsetFromStepGrid := (c.DesiredTimeRange.StartT - cacheEntryStartT) % c.DesiredTimeRange.IntervalMilliseconds
 
-	encodedQueryPlanBytes, err := c.encodeNodeForCacheKey()
+	encodedQueryPlanBytes, err := c.encodeNodeForCacheKey() // This includes the query, time range and all other parameters that affect query results.
 	if err != nil {
 		return nil, err
 	}
