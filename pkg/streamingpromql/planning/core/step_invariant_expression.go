@@ -29,9 +29,10 @@ func (s *StepInvariantExpression) Describe() string {
 	return ""
 }
 
-func (s *StepInvariantExpression) ChildrenTimeRange(timeRange types.QueryTimeRange) types.QueryTimeRange {
-	// note that we set the StartT == EndT with a single step count.
-	return types.NewInstantQueryTimeRange(timestamp.Time(timeRange.StartT))
+func (s *StepInvariantExpression) ChildrenTimeRange(_ types.QueryTimeRange) types.QueryTimeRange {
+	// The time range used doesn't matter as long as it is a single step, given the expression is step invariant.
+	// So use T=0, to ensure there's no accidental dependency on the actual time range.
+	return types.NewInstantQueryTimeRange(timestamp.Time(0))
 }
 
 func (s *StepInvariantExpression) Details() proto.Message {
