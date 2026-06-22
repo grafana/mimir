@@ -1084,8 +1084,7 @@ func (c *cachedExtentReader) SeriesMetadata(_ context.Context) ([]types.SeriesMe
 	seriesMetadata = seriesMetadata[:len(c.extent.SeriesMetadata)]
 
 	for i, entry := range c.extent.SeriesMetadata {
-		seriesMetadata[i].Labels = mimirpb.FromLabelAdaptersToLabels(entry.Labels)
-		seriesMetadata[i].DropName = entry.DropName
+		seriesMetadata[i] = querierpb.DecodeSeriesMetadata(entry)
 		if err := c.parent.MemoryConsumptionTracker.IncreaseMemoryConsumptionForLabels(seriesMetadata[i].Labels); err != nil {
 			return nil, err
 		}

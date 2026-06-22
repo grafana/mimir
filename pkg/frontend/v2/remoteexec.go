@@ -811,11 +811,7 @@ func readSeriesMetadata(ctx context.Context, group *RemoteExecutionGroupEvaluato
 		}
 
 		for _, s := range msg.Series {
-			m := types.SeriesMetadata{
-				Labels:   mimirpb.FromLabelAdaptersToLabels(s.Labels),
-				DropName: s.DropName,
-			}
-			combinedMetadata, err = types.AppendSeriesMetadata(memoryConsumptionTracker, combinedMetadata, m)
+			combinedMetadata, err = types.AppendSeriesMetadata(memoryConsumptionTracker, combinedMetadata, querierpb.DecodeSeriesMetadata(s))
 			if err != nil {
 				return -1, err
 			}
