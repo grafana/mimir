@@ -936,7 +936,7 @@ func (c *CacheOperator) ttlForExtents(extents []CachedExtent) time.Duration {
 func (c *CacheOperator) ttlForExtent(extent CachedExtent) time.Duration {
 	oooThreshold := timestamp.Time(extent.OldestEvaluationTime).Add(-c.oooWindow)
 
-	if timestamp.Time(extent.EndT).After(oooThreshold) {
+	if c.oooWindow != 0 && timestamp.Time(extent.EndT).After(oooThreshold) {
 		return c.ttlForOOOExtent
 	}
 
