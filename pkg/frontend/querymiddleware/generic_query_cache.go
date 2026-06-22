@@ -15,6 +15,7 @@ import (
 	"github.com/grafana/dskit/tenant"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/splitandcache"
 	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -41,12 +42,12 @@ type genericQueryCache struct {
 	cache     cache.Cache
 	tenantTTL tenantCacheTTL
 	cacheKey  keyingFunc
-	metrics   *ResultsCacheMetrics
+	metrics   *splitandcache.ResultsCacheMetrics
 	next      http.RoundTripper
 	logger    log.Logger
 }
 
-func newGenericQueryCacheRoundTripper(cache cache.Cache, cacheKey keyingFunc, tenantTTL tenantCacheTTL, next http.RoundTripper, logger log.Logger, metrics *ResultsCacheMetrics) http.RoundTripper {
+func newGenericQueryCacheRoundTripper(cache cache.Cache, cacheKey keyingFunc, tenantTTL tenantCacheTTL, next http.RoundTripper, logger log.Logger, metrics *splitandcache.ResultsCacheMetrics) http.RoundTripper {
 	return &genericQueryCache{
 		cache:     cache,
 		tenantTTL: tenantTTL,

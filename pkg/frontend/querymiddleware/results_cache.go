@@ -23,7 +23,6 @@ import (
 	"github.com/grafana/dskit/tenant"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
@@ -31,6 +30,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/splitandcache"
 	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
 	"github.com/grafana/mimir/pkg/util/promqlext"
 )
@@ -79,26 +79,6 @@ func (cfg *ResultsCacheConfig) Validate() error {
 
 func errUnsupportedResultsCacheBackend(backend string) error {
 	return fmt.Errorf("%w: %q, supported values: %v", errUnsupportedBackend, backend, supportedResultsCacheBackends)
-}
-
-type ResultsCacheMetrics struct {
-	CacheRequests prometheus.Counter
-	CacheHits     prometheus.Counter
-}
-
-func NewResultsCacheMetrics(requestType string, reg prometheus.Registerer) *ResultsCacheMetrics {
-	return &ResultsCacheMetrics{
-		CacheRequests: promauto.With(reg).NewCounter(prometheus.CounterOpts{
-			Name:        "cortex_frontend_query_result_cache_requests_total",
-			Help:        "Total number of requests (or partial requests) looked up in the results cache.",
-			ConstLabels: map[string]string{"request_type": requestType},
-		}),
-		CacheHits: promauto.With(reg).NewCounter(prometheus.CounterOpts{
-			Name:        "cortex_frontend_query_result_cache_hits_total",
-			Help:        "Total number of requests (or partial requests) fetched from the results cache.",
-			ConstLabels: map[string]string{"request_type": requestType},
-		}),
-	}
 }
 
 // NewResultsCache creates a new results cache based on the input configuration.
@@ -274,12 +254,12 @@ func isRequestCachable(req MetricsQueryRequest, maxCacheTime int64, cacheUnalign
 	// We can run with step alignment disabled because Grafana does it already. Mimir automatically aligning start and end is not
 	// PromQL compatible. But this means we cannot cache queries that do not have their start and end aligned.
 	if !cacheUnalignedRequests && !isRequestStepAligned(req) {
-		return false, NotCachableReasonUnalignedTimeRange
+		return false, splitandcache.NotCachableReasonUnalignedTimeRange
 	}
 
 	// Do not cache it at all if the query time range is more recent than the configured max cache freshness.
 	if req.GetStart() > maxCacheTime {
-		return false, NotCachableReasonTooNew
+		return false, splitandcache.NotCachableReasonTooNew
 	}
 
 	if cachable, reason := areEvaluationTimeModifiersCachable(req, maxCacheTime, logger); !cachable {
@@ -358,7 +338,7 @@ func areEvaluationTimeModifiersCachable(r MetricsQueryRequest, maxCacheTime int6
 	})
 
 	if !cachable {
-		return false, NotCachableReasonModifiersNotCachable
+		return false, splitandcache.NotCachableReasonModifiersNotCachable
 	}
 	return true, ""
 }
