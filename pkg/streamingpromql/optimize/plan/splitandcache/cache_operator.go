@@ -938,13 +938,9 @@ func (c *CacheOperator) ttlForExtent(extent CachedExtent) time.Duration {
 }
 
 func (c *CacheOperator) determineNewExtentEvaluationTimestamp() int64 {
-	t := c.extentsForDesiredTimeRange[0].GetEvaluationTimestamp()
-
-	for _, e := range c.extentsForDesiredTimeRange[1:] {
-		t = min(e.GetEvaluationTimestamp(), t)
-	}
-
-	return t
+	return slices.MinFunc(c.extentsForDesiredTimeRange, func(a, b extent) int {
+		return int(a.GetEvaluationTimestamp() - b.GetEvaluationTimestamp())
+	}).GetEvaluationTimestamp()
 }
 
 func (c *CacheOperator) encodeDataForCacheEntry() []querierpb.InstantVectorSeriesData {
