@@ -698,7 +698,7 @@ func TestSplitOperator_ConflictingDropNameValuesForSameSeries(t *testing.T) {
 	require.NoError(t, o.AfterPrepare(ctx))
 
 	_, err := o.SeriesMetadata(ctx, nil)
-	require.EqualError(t, err, `series with labels {idx="0"} has conflicting drop name values in different ranges`)
+	require.EqualError(t, err, `series with labels {idx="0"} has conflicting drop name values in different ranges / extents`)
 }
 
 type testRange struct {

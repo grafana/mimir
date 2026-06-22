@@ -157,7 +157,7 @@ func TestMergeSeriesMetadata_ConflictingDropNameValuesForSameSeries(t *testing.T
 	}
 
 	_, _, err := mergeSeriesMetadata(ctx, sources, nil, memoryConsumptionTracker)
-	require.EqualError(t, err, `series with labels {idx="0"} has conflicting drop name values in different ranges`)
+	require.EqualError(t, err, `series with labels {idx="0"} has conflicting drop name values in different ranges / extents`)
 }
 
 func TestMergeSeriesMetadata_PassesMatchersToSources(t *testing.T) {

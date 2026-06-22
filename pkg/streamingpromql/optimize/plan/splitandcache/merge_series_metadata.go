@@ -85,7 +85,7 @@ func mergeSeriesMetadata[S seriesMetadataSource](ctx context.Context, sources []
 			// Important: don't extract the string(...) call in the map lookup below - passing it directly allows us to avoid allocating it.
 			if outputSeriesIdx, seenAlready := seriesIndices[string(labelBytesBuf)]; seenAlready {
 				if series.DropName != allSeries[outputSeriesIdx].DropName {
-					return nil, nil, fmt.Errorf("series with labels %s has conflicting drop name values in different ranges", series.Labels.String())
+					return nil, nil, fmt.Errorf("series with labels %s has conflicting drop name values in different ranges / extents", series.Labels.String())
 				}
 
 				outputSeries[outputSeriesIdx].sourceSeriesIndices[sourceIdx] = seriesIdx
