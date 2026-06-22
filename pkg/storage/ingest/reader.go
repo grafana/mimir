@@ -250,7 +250,7 @@ func (r *SingleClusterPartitionReader) start(ctx context.Context) (returnErr err
 
 	r.committer = newPartitionCommitter(r.kafkaCfg, kadm.NewClient(r.client.Load()), r.partitionID, r.consumerGroup, r.notifier, r.offsetFile, r.logger, r.reg)
 
-	offsetsClient := newPartitionOffsetClient(r.client.Load(), r.kafkaCfg.Topic, r.reg, r.logger)
+	offsetsClient := newPartitionOffsetClient(r.client.Load(), r.reg, r.logger)
 
 	// It's ok to have the start offset slightly outdated.
 	// We only need this offset accurate if we fall behind or if we start and the log gets truncated from beneath us.
@@ -258,11 +258,11 @@ func (r *SingleClusterPartitionReader) start(ctx context.Context) (returnErr err
 	// In the more common case where this offset is used when we're fetching from after the end, there we don't need an accurate value.
 	const startOffsetReaderRefreshDuration = 10 * time.Second
 	getPartitionStart := func(ctx context.Context) (int64, error) {
-		return offsetsClient.FetchPartitionStartOffset(ctx, r.partitionID)
+		return offsetsClient.FetchPartitionStartOffset(ctx, r.kafkaCfg.Topic, r.partitionID)
 	}
 	startOffsetReader := NewGenericOffsetReader(getPartitionStart, startOffsetReaderRefreshDuration, r.logger)
 
-	r.offsetReader = newPartitionOffsetReaderWithOffsetClient(offsetsClient, r.partitionID, r.kafkaCfg.LastProducedOffsetPollInterval, r.logger)
+	r.offsetReader = newPartitionOffsetReaderWithOffsetClient(offsetsClient, r.kafkaCfg.Topic, r.partitionID, r.kafkaCfg.LastProducedOffsetPollInterval, r.logger)
 
 	r.dependencies, err = services.NewManager(r.committer, r.offsetReader, r.consumedOffsetWatcher, startOffsetReader, r.metrics)
 	if err != nil {
