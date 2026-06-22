@@ -1171,9 +1171,7 @@ type LimitsProvider interface {
 	GetMaxOutOfOrderTimeWindow(ctx context.Context) (time.Duration, error)
 }
 
-// estimateExtentsSize estimates the memory consumption of the given extents.
-// This allows us to include them in the memory consumption estimate for the query, as they would if
-// they were evaluated fresh.
+// addToMemoryConsumptionEstimate estimates the memory consumption of this extent and adds it to the given memory consumption tracker.
 func (e *CachedExtent) addToMemoryConsumptionEstimate(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) error {
 	if err := memoryConsumptionTracker.IncreaseMemoryConsumption(uint64(cap(e.SeriesMetadata))*types.SeriesMetadataSize, limiter.SeriesMetadataSlices); err != nil {
 		return err

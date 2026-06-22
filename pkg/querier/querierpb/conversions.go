@@ -51,7 +51,7 @@ func EncodeInstantVectorSeriesData(d types.InstantVectorSeriesData) InstantVecto
 // The returned instance may reference data in d (ie. this is a shallow copy, not a deep copy).
 func DecodeInstantVectorSeriesData(d InstantVectorSeriesData) types.InstantVectorSeriesData {
 	// Note that we deliberately don't use the field names below, so that this breaks if the definition of InstantVectorSeriesData changes.
-	// If you're making a change below to add a new field, you likely also need to update EncodeInstantVectorData above.
+	// If you're making a change below to add a new field, you likely also need to update EncodeInstantVectorSeriesData above.
 	return types.InstantVectorSeriesData{ //nolint:govet
 		// The methods below do unsafe casts and do not copy the data from the slices.
 		mimirpb.FromSamplesToFPoints(d.Floats),
