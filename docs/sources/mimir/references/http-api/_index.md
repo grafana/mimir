@@ -736,7 +736,7 @@ Returns label names matching the request's [query parameters](#search-query-para
 
 #### Search label values
 
-```
+```bash
 GET,POST <prometheus-http-prefix>/api/v1/search/label_values
 ```
 
