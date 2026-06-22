@@ -36,8 +36,8 @@ type CacheEntry struct {
 	// Entries must not overlap.
 	//
 	// Adjacent entries must be separated by at least one step.
-	// For example, with a step of 1m, an extent that ends at 08:04 may be followed by an extent that starts at 08:06,
-	// but not one that starts at 08:05.
+	// For example, with a step of 1m, an extent that ends at 08:04:00 may be followed by an extent that starts at 08:06:00,
+	// but not one that starts at 08:05:00.
 	Extents []CachedExtent `protobuf:"bytes,2,rep,name=extents,proto3" json:"extents"`
 }
 
