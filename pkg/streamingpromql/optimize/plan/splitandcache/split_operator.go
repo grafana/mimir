@@ -88,14 +88,14 @@ func (s *TimeRangeSplitOperator) AfterPrepare(ctx context.Context) error {
 
 func (s *TimeRangeSplitOperator) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
 	if len(s.ranges) < 2 {
-		// mergeSeriesMetadata takes a fast path for a single source that leaves outputSeries unpopulated, but
+		// mergeSeriesMetadataFromMultipleSources takes a fast path for a single source that leaves outputSeries unpopulated, but
 		// TimeRangeSplitOperator's NextSeries relies on outputSeries being populated. In production this is never
 		// hit, as MaterializeSplit returns the inner operator directly rather than constructing a
 		// TimeRangeSplitOperator when there is only one range.
 		return nil, fmt.Errorf("TimeRangeSplitOperator requires at least two ranges, but has %d", len(s.ranges))
 	}
 
-	series, outputSeries, err := mergeSeriesMetadata(ctx, s.ranges, matchers, s.MemoryConsumptionTracker)
+	series, outputSeries, err := mergeSeriesMetadataFromMultipleSources(ctx, s.ranges, matchers, s.MemoryConsumptionTracker)
 	if err != nil {
 		return nil, err
 	}

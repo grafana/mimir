@@ -16,7 +16,7 @@ import (
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
-// These test cases mirror the scenarios covered by TestSplitOperator, but exercise the shared mergeSeriesMetadata
+// These test cases mirror the scenarios covered by TestSplitOperator, but exercise the shared mergeSeriesMetadataFromMultipleSources
 // helper directly: they verify both the merged series metadata and the mapping from each output series back to the
 // corresponding series index in each source.
 func TestMergeSeriesMetadata(t *testing.T) {
@@ -108,7 +108,7 @@ func TestMergeSeriesMetadata(t *testing.T) {
 
 			sources := newSplitRangeSources(testCase.sources, memoryConsumptionTracker)
 
-			series, outputSeries, err := mergeSeriesMetadata(ctx, sources, nil, memoryConsumptionTracker)
+			series, outputSeries, err := mergeSeriesMetadataFromMultipleSources(ctx, sources, nil, memoryConsumptionTracker)
 			require.NoError(t, err)
 			require.Equal(t, testutils.LabelsToSeriesMetadata(testCase.expectedMergedLabels), series, "expected merged series metadata to match expected")
 			require.Equal(t, testCase.expectedOutputSeries, outputSeries, "expected output series to match expected")
@@ -126,7 +126,7 @@ func TestMergeSeriesMetadata_SingleSourceFastPath(t *testing.T) {
 	sourceLabels := []labels.Labels{labelsForIdx(0), labelsForIdx(1), labelsForIdx(2)}
 	sources := newSplitRangeSources([][]labels.Labels{sourceLabels}, memoryConsumptionTracker)
 
-	series, outputSeries, err := mergeSeriesMetadata(ctx, sources, nil, memoryConsumptionTracker)
+	series, outputSeries, err := mergeSeriesMetadataFromMultipleSources(ctx, sources, nil, memoryConsumptionTracker)
 	require.NoError(t, err)
 	require.Equal(t, testutils.LabelsToSeriesMetadata(sourceLabels), series, "expected the sole source's series metadata to be returned unchanged")
 	require.Nil(t, outputSeries, "expected the fast path to leave the output series mapping unpopulated")
@@ -156,7 +156,7 @@ func TestMergeSeriesMetadata_ConflictingDropNameValuesForSameSeries(t *testing.T
 		newSplitRange(source2, memoryConsumptionTracker),
 	}
 
-	_, _, err := mergeSeriesMetadata(ctx, sources, nil, memoryConsumptionTracker)
+	_, _, err := mergeSeriesMetadataFromMultipleSources(ctx, sources, nil, memoryConsumptionTracker)
 	require.EqualError(t, err, `series with labels {idx="0"} has conflicting drop name values in different ranges / extents`)
 }
 
@@ -176,7 +176,7 @@ func TestMergeSeriesMetadata_PassesMatchersToSources(t *testing.T) {
 
 	matchers := types.Matchers{{Type: labels.MatchEqual, Name: "foo", Value: "bar"}}
 
-	series, outputSeries, err := mergeSeriesMetadata(ctx, sources, matchers, memoryConsumptionTracker)
+	series, outputSeries, err := mergeSeriesMetadataFromMultipleSources(ctx, sources, matchers, memoryConsumptionTracker)
 	require.NoError(t, err)
 
 	for i, o := range innerOperators {

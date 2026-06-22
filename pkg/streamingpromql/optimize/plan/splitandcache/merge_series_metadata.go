@@ -16,7 +16,7 @@ type seriesMetadataSource interface {
 	SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error)
 }
 
-// mergeSeriesMetadata merges the series metadata from each of sources into a single deduplicated slice, returning that
+// mergeSeriesMetadataFromMultipleSources merges the series metadata from each of sources into a single deduplicated slice, returning that
 // slice along with a mapping from each output series to the corresponding series index in each source.
 //
 // The provided matchers are passed through to each source's SeriesMetadata method.
@@ -26,7 +26,7 @@ type seriesMetadataSource interface {
 // the series' data.
 //
 // sources must not be empty.
-func mergeSeriesMetadata[S seriesMetadataSource](ctx context.Context, sources []S, matchers types.Matchers, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) ([]types.SeriesMetadata, []splitOrCacheOutputSeries, error) {
+func mergeSeriesMetadataFromMultipleSources[S seriesMetadataSource](ctx context.Context, sources []S, matchers types.Matchers, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) ([]types.SeriesMetadata, []splitOrCacheOutputSeries, error) {
 	// Use the slice from the first source as the base for the returned series metadata.
 	allSeries, err := sources[0].SeriesMetadata(ctx, matchers)
 	if err != nil {

@@ -405,7 +405,7 @@ func (c *CacheOperator) AfterPrepare(ctx context.Context) error {
 func (c *CacheOperator) SeriesMetadata(ctx context.Context, _ types.Matchers) ([]types.SeriesMetadata, error) {
 	// Pass nil matchers: unlike TimeRangeSplitOperator, CacheOperator does not push matchers down, as we
 	// need the full set of series to store in the cache.
-	series, outputSeries, err := mergeSeriesMetadata(ctx, c.extents.inDesiredTimeRange, nil, c.MemoryConsumptionTracker)
+	series, outputSeries, err := mergeSeriesMetadataFromMultipleSources(ctx, c.extents.inDesiredTimeRange, nil, c.MemoryConsumptionTracker)
 	if err != nil {
 		return nil, err
 	}
