@@ -92,6 +92,10 @@ func (s *BlockBuilderScheduler) stopping(_ error) error {
 }
 
 func (s *BlockBuilderScheduler) running(ctx context.Context) error {
+	// Throughout this function we map ctx.Done/context.Canceled to nil, as this
+	// is a normal shutdown and we don't want the service framework to interpret
+	// it as an error.
+
 	level.Info(s.logger).Log("msg", "entering observation mode")
 
 	observeComplete := time.After(s.cfg.StartupObserveTime)
