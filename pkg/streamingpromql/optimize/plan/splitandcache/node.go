@@ -116,9 +116,10 @@ func nextIntervalBoundary(t, step int64, interval time.Duration) int64 {
 	return target
 }
 
+//node:generate
 type Cache struct {
 	*CacheDetails
-	Inner planning.Node
+	Inner planning.Node `node:"child"`
 }
 
 func (c *Cache) Details() proto.Message {
@@ -127,36 +128,6 @@ func (c *Cache) Details() proto.Message {
 
 func (c *Cache) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_CACHE
-}
-
-func (c *Cache) Child(idx int) planning.Node {
-	if idx != 0 {
-		panic(fmt.Sprintf("node of type Cache supports 1 child, but attempted to get child at index %d", idx))
-	}
-
-	return c.Inner
-}
-
-func (c *Cache) ChildCount() int {
-	return 1
-}
-
-func (c *Cache) SetChildren(children []planning.Node) error {
-	if len(children) != 1 {
-		return fmt.Errorf("node of type Cache requires 1 child, but got %d", len(children))
-	}
-
-	c.Inner = children[0]
-	return nil
-}
-
-func (c *Cache) ReplaceChild(idx int, child planning.Node) error {
-	if idx != 0 {
-		return fmt.Errorf("node of type Cache supports 1 child, but attempted to replace child at index %d", idx)
-	}
-
-	c.Inner = child
-	return nil
 }
 
 func (c *Cache) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
@@ -171,10 +142,6 @@ func (c *Cache) MergeHints(other planning.Node) error {
 
 func (c *Cache) Describe() string {
 	return ""
-}
-
-func (c *Cache) ChildrenLabels() []string {
-	return []string{""}
 }
 
 func (c *Cache) ChildrenTimeRange(timeRange types.QueryTimeRange) types.QueryTimeRange {
