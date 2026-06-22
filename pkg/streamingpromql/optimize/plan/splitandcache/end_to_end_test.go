@@ -24,20 +24,23 @@ func TestEndToEnd(t *testing.T) {
 	timeZero := timestamp.Time(0)
 	millisecondsInHour := time.Hour.Milliseconds()
 
+	data := `
+		load 1h
+			metric 1+1x48
+	`
+	storage := promqltest.LoadedStorage(t, data)
+	t.Cleanup(func() { require.NoError(t, storage.Close()) })
+
 	testCases := map[string]struct {
-		data  string
 		expr  string
 		start time.Time
 		end   time.Time
 		step  time.Duration
 
-		expectedResult promql.Result
+		expectedResult       promql.Result
+		expectedCacheEntries int
 	}{
 		"simple range query": {
-			data: `
-				load 1h
-					metric 1+1x48
-			`,
 			expr:  "metric",
 			start: timeZero,
 			end:   timeZero.Add(48 * time.Hour),
@@ -65,14 +68,47 @@ func TestEndToEnd(t *testing.T) {
 					},
 				},
 			},
+			expectedCacheEntries: 3, // 0-20h, 24-44h, 48h (single step)
+		},
+		"query with step-invariant expression": {
+			// This case tests two things:
+			// - that "@ end()" is correctly handled across splits
+			// - that step invariant expressions are correctly handled (a single materialized node cannot be reused,
+			//   so if the step-invariant node was reused, this query would fail or return incorrect results)
+
+			expr:  "metric @ end()",
+			start: timeZero,
+			end:   timeZero.Add(48 * time.Hour),
+			step:  4 * time.Hour,
+
+			expectedResult: promql.Result{
+				Value: promql.Matrix{
+					{
+						Metric: labels.FromStrings(model.MetricNameLabel, "metric"),
+						Floats: []promql.FPoint{
+							{T: 0, F: 49},
+							{T: 4 * millisecondsInHour, F: 49},
+							{T: 8 * millisecondsInHour, F: 49},
+							{T: 12 * millisecondsInHour, F: 49},
+							{T: 16 * millisecondsInHour, F: 49},
+							{T: 20 * millisecondsInHour, F: 49},
+							{T: 24 * millisecondsInHour, F: 49},
+							{T: 28 * millisecondsInHour, F: 49},
+							{T: 32 * millisecondsInHour, F: 49},
+							{T: 36 * millisecondsInHour, F: 49},
+							{T: 40 * millisecondsInHour, F: 49},
+							{T: 44 * millisecondsInHour, F: 49},
+							{T: 48 * millisecondsInHour, F: 49},
+						},
+					},
+				},
+			},
+			expectedCacheEntries: 3, // 0-20h, 24-44h, 48h (single step)
 		},
 	}
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			storage := promqltest.LoadedStorage(t, testCase.data)
-			t.Cleanup(func() { require.NoError(t, storage.Close()) })
-
 			opts := streamingpromql.NewTestEngineOpts()
 			opts.RangeQuerySplittingAndCaching.SplitEnabled = true
 			opts.RangeQuerySplittingAndCaching.SplitInterval = 24 * time.Hour
@@ -102,6 +138,7 @@ func TestEndToEnd(t *testing.T) {
 			// Run query once with an empty cache, confirm we get the expected result.
 			runQuery("not from cache")
 			require.NotEmpty(t, cache.GetItems(), "expected cache to be populated")
+			require.Lenf(t, cache.GetItems(), testCase.expectedCacheEntries, "expected %d cache entries, but got %d", testCase.expectedCacheEntries, len(cache.GetItems()))
 
 			// Run it again with a populated cache, confirm we still get the expected result.
 			runQuery("from cache")
