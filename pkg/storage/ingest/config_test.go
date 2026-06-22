@@ -43,6 +43,68 @@ func TestConfig_Validate(t *testing.T) {
 				cfg.KafkaConfig.Topic = "test"
 			},
 		},
+		"should pass if backend is explicitly set to warpstream": {
+			setup: func(cfg *Config) {
+				cfg.Enabled = true
+				cfg.KafkaConfig.Address = flagext.StringSliceCSV{"localhost"}
+				cfg.KafkaConfig.Topic = "test"
+				cfg.KafkaConfig.Backend = KafkaBackendWarpstream
+			},
+		},
+		"should fail if backend is warpstream and write timeout is not greater than twice the request overhead": {
+			setup: func(cfg *Config) {
+				cfg.Enabled = true
+				cfg.KafkaConfig.Address = flagext.StringSliceCSV{"localhost"}
+				cfg.KafkaConfig.Topic = "test"
+				cfg.KafkaConfig.Backend = KafkaBackendWarpstream
+				cfg.KafkaConfig.WriteTimeout = writerRequestTimeoutOverhead * 2
+			},
+			expectedErr: ErrInvalidWarpstreamWriteTimeout,
+		},
+		"should pass if backend is warpstream and write timeout is just above twice the request overhead": {
+			setup: func(cfg *Config) {
+				cfg.Enabled = true
+				cfg.KafkaConfig.Address = flagext.StringSliceCSV{"localhost"}
+				cfg.KafkaConfig.Topic = "test"
+				cfg.KafkaConfig.Backend = KafkaBackendWarpstream
+				cfg.KafkaConfig.WriteTimeout = writerRequestTimeoutOverhead*2 + time.Millisecond
+			},
+		},
+		"should not enforce the warpstream write timeout floor for the kafka backend": {
+			setup: func(cfg *Config) {
+				cfg.Enabled = true
+				cfg.KafkaConfig.Address = flagext.StringSliceCSV{"localhost"}
+				cfg.KafkaConfig.Topic = "test"
+				cfg.KafkaConfig.WriteTimeout = time.Second
+			},
+		},
+		"should fail if backend is empty": {
+			setup: func(cfg *Config) {
+				cfg.Enabled = true
+				cfg.KafkaConfig.Address = flagext.StringSliceCSV{"localhost"}
+				cfg.KafkaConfig.Topic = "test"
+				cfg.KafkaConfig.Backend = ""
+			},
+			expectedErr: ErrInvalidKafkaBackend,
+		},
+		"should fail if backend is unknown": {
+			setup: func(cfg *Config) {
+				cfg.Enabled = true
+				cfg.KafkaConfig.Address = flagext.StringSliceCSV{"localhost"}
+				cfg.KafkaConfig.Topic = "test"
+				cfg.KafkaConfig.Backend = "confluent"
+			},
+			expectedErr: ErrInvalidKafkaBackend,
+		},
+		"should fail if backend value is not lowercase": {
+			setup: func(cfg *Config) {
+				cfg.Enabled = true
+				cfg.KafkaConfig.Address = flagext.StringSliceCSV{"localhost"}
+				cfg.KafkaConfig.Topic = "test"
+				cfg.KafkaConfig.Backend = "Kafka"
+			},
+			expectedErr: ErrInvalidKafkaBackend,
+		},
 		"should fail if ingest storage is enabled and consume position is invalid": {
 			setup: func(cfg *Config) {
 				cfg.Enabled = true
@@ -481,4 +543,54 @@ func TestKafkaConfig_WriteCompartmentConfig(t *testing.T) {
 		// Inherited defaults are preserved.
 		assert.Equal(t, base.SASL.Mechanism, cfg.SASL.Mechanism)
 	}
+}
+
+func TestKafkaConfig_ToWarpstreamClientConfig(t *testing.T) {
+	t.Run("maps warpstream-relevant fields", func(t *testing.T) {
+		cfg := KafkaConfig{
+			Backend:                                KafkaBackendWarpstream,
+			Address:                                []string{"a:9092", "b:9092"},
+			Topic:                                  "ingest",
+			ClientID:                               "client-1",
+			DialTimeout:                            3 * time.Second,
+			WriteTimeout:                           7 * time.Second,
+			WarpstreamHealthCheckSlowMultiplier:    1.5,
+			WarpstreamHealthCheckMaxSlowFraction:   0.4,
+			WarpstreamHealthCheckFaultyThreshold:   0.06,
+			WarpstreamHealthCheckMaxFaultyFraction: 0.5,
+			WarpstreamHedgeMinDelay:                15 * time.Millisecond,
+			WarpstreamHedgeMaxAgents:               4,
+			WarpstreamDemoterProbeInterval:         2 * time.Second,
+		}
+
+		wsCfg, err := cfg.ToWarpstreamClientConfig()
+		require.NoError(t, err)
+		assert.Equal(t, []string{"a:9092", "b:9092"}, []string(wsCfg.Address))
+		assert.Equal(t, "ingest", wsCfg.Topic)
+		assert.Equal(t, "client-1", wsCfg.ClientID)
+		assert.Equal(t, 3*time.Second, wsCfg.DialTimeout)
+		assert.Equal(t, 7*time.Second, wsCfg.WriteTimeout)
+		// Linger, max batch bytes, and metadata refresh interval mirror the
+		// kafka-backend defaults; ClusterStatsTTL is hardcoded to 1s.
+		assert.Equal(t, defaultProducerLinger, wsCfg.Linger)
+		assert.Equal(t, int32(producerBatchMaxBytes), wsCfg.MaxBatchBytes)
+		assert.Equal(t, defaultMetadataRefreshInterval, wsCfg.MetadataRefreshInterval)
+		assert.Equal(t, time.Second, wsCfg.ClusterStatsTTL)
+		assert.Equal(t, 1.5, wsCfg.HealthCheck.SlowMultiplier)
+		assert.Equal(t, 0.4, wsCfg.HealthCheck.MaxSlowFraction)
+		assert.Equal(t, 0.06, wsCfg.HealthCheck.FaultyThreshold)
+		assert.Equal(t, 0.5, wsCfg.HealthCheck.MaxFaultyFraction)
+		assert.Equal(t, 15*time.Millisecond, wsCfg.Hedger.MinHedgeDelay)
+		assert.Equal(t, 4, wsCfg.Hedger.MaxHedgeAgents)
+		assert.Equal(t, 2*time.Second, wsCfg.Demoter.ProbeInterval)
+		// The per-attempt produce timeout plus its overhead must sum to
+		// WriteTimeout so the whole hedge cascade fits within it.
+		assert.Equal(t, 7*time.Second-writerRequestTimeoutOverhead, wsCfg.DirectProducer.ProduceRequestTimeout)
+		assert.Equal(t, writerRequestTimeoutOverhead, wsCfg.DirectProducer.ProduceRequestTimeoutOverhead)
+		assert.False(t, wsCfg.TLSEnabled)
+		assert.Nil(t, wsCfg.TLSConfig)
+
+		// The mapped config must satisfy wgo's own validation.
+		require.NoError(t, wsCfg.Validate())
+	})
 }
