@@ -6,9 +6,11 @@ import (
 	"errors"
 
 	"github.com/gogo/protobuf/types"
+	"github.com/grafana/wiresmith/types/known/anypb"
 	"go.opentelemetry.io/otel"
 
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
+	"github.com/grafana/mimir/pkg/util/httpgrpcpb"
 	"github.com/grafana/mimir/pkg/util/httpgrpcutil"
 )
 
@@ -40,7 +42,7 @@ func (a *frontendToSchedulerAdapter) frontendToSchedulerEnqueueRequest(
 		// that handles many queries.
 		otel.GetTextMapPropagator().Inject(req.ctx, (*httpgrpcutil.HttpgrpcHeadersCarrier)(req.httpRequest))
 
-		msg.Payload = &schedulerpb.FrontendToScheduler_HttpRequest{HttpRequest: req.httpRequest}
+		msg.Payload = &schedulerpb.FrontendToScheduler_HttpRequest{HttpRequest: *httpgrpcpb.FromHTTPRequest(req.httpRequest)}
 	} else {
 		encodedRequest, err := types.MarshalAny(req.protobufRequest)
 		if err != nil {
@@ -54,8 +56,8 @@ func (a *frontendToSchedulerAdapter) frontendToSchedulerEnqueueRequest(
 		otel.GetTextMapPropagator().Inject(req.ctx, schedulerpb.MetadataMapTracingCarrier(metadata))
 
 		msg.Payload = &schedulerpb.FrontendToScheduler_ProtobufRequest{
-			ProtobufRequest: &schedulerpb.ProtobufRequest{
-				Payload:  encodedRequest,
+			ProtobufRequest: schedulerpb.ProtobufRequest{
+				Payload:  anypb.Any{TypeUrl: encodedRequest.TypeUrl, Value: encodedRequest.Value},
 				Metadata: schedulerpb.MapToMetadataSlice(metadata),
 			},
 		}

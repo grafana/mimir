@@ -28,6 +28,7 @@ import (
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/netutil"
+
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/tenant"
 	"github.com/pkg/errors"
@@ -47,6 +48,7 @@ import (
 	"github.com/grafana/mimir/pkg/scheduler/schedulerdiscovery"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	"github.com/grafana/mimir/pkg/util/grpcencoding/s2"
+	"github.com/grafana/mimir/pkg/util/httpgrpcpb"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -130,6 +132,7 @@ type Limits interface {
 // dispatches them to backends via gRPC, and handles retries for requests which failed.
 type Frontend struct {
 	services.Service
+	frontendv2pb.UnimplementedFrontendForQuerierServer
 
 	cfg    Config
 	log    log.Logger
@@ -352,9 +355,9 @@ func (f *Frontend) RoundTripGRPC(ctx context.Context, httpRequest *httpgrpc.HTTP
 	case resp := <-freq.httpResponse:
 		freq.spanLogger.DebugLog("msg", "received response")
 
-		if stats.ShouldTrackHTTPGRPCResponse(resp.queryResult.HttpResponse) {
+		if stats.ShouldTrackHTTPGRPCResponse(httpgrpcpb.ToHTTPResponse(resp.queryResult.HttpResponse)) {
 			stats := stats.FromContext(ctx)
-			stats.Merge(resp.queryResult.Stats) // Safe if stats is nil.
+			stats.Merge(&resp.queryResult.Stats) // Safe if stats is nil.
 		}
 
 		// the cleanup will be triggered by the caller closing the body.
@@ -365,7 +368,7 @@ func (f *Frontend) RoundTripGRPC(ctx context.Context, httpRequest *httpgrpc.HTTP
 		} else {
 			body.rc = io.NopCloser(bytes.NewReader(resp.queryResult.HttpResponse.Body))
 		}
-		return resp.queryResult.HttpResponse, body, nil
+		return httpgrpcpb.ToHTTPResponse(resp.queryResult.HttpResponse), body, nil
 	}
 }
 
@@ -682,8 +685,8 @@ func (f *Frontend) enqueueRequestWithRetries(ctx context.Context, freq *frontend
 				if freq.httpRequest != nil {
 					freq.httpResponse <- queryResultWithBody{
 						queryResult: &frontendv2pb.QueryResultRequest{
-							HttpResponse: &httpgrpc.HTTPResponse{
-								Code: http.StatusInternalServerError,
+							HttpResponse: &httpgrpcpb.HTTPResponse{
+								Code: int32(http.StatusInternalServerError),
 								Body: []byte(enqRes.schedulerErr),
 							},
 						}}
@@ -697,8 +700,8 @@ func (f *Frontend) enqueueRequestWithRetries(ctx context.Context, freq *frontend
 				if freq.httpRequest != nil {
 					freq.httpResponse <- queryResultWithBody{
 						queryResult: &frontendv2pb.QueryResultRequest{
-							HttpResponse: &httpgrpc.HTTPResponse{
-								Code: http.StatusTooManyRequests,
+							HttpResponse: &httpgrpcpb.HTTPResponse{
+								Code: int32(http.StatusTooManyRequests),
 								Body: []byte("too many outstanding requests"),
 							},
 						}}
@@ -874,7 +877,7 @@ func (f *Frontend) receiveResultForHTTPRequest(req *frontendRequest, firstMessag
 		queryResult: &frontendv2pb.QueryResultRequest{
 			QueryID: firstMessage.QueryID,
 			Stats:   metadata.Metadata.Stats,
-			HttpResponse: &httpgrpc.HTTPResponse{
+			HttpResponse: &httpgrpcpb.HTTPResponse{
 				Code:    metadata.Metadata.Code,
 				Headers: metadata.Metadata.Headers,
 			},

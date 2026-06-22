@@ -1049,7 +1049,7 @@ func TestDecodeEvaluationCompletedMessage(t *testing.T) {
 func newScalarValue(samples ...mimirpb.Sample) *frontendv2pb.QueryResultStreamRequest {
 	return &frontendv2pb.QueryResultStreamRequest{
 		Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
-			EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
+			EvaluateQueryResponse: querierpb.EvaluateQueryResponse{
 				Message: &querierpb.EvaluateQueryResponse_ScalarValue{
 					ScalarValue: querierpb.EvaluateQueryResponseScalarValue{
 						Values: samples,
@@ -1075,7 +1075,7 @@ func newSeriesMetadataBatch(nodeIndex int64, dropName bool, totalSeriesCount int
 
 	return &frontendv2pb.QueryResultStreamRequest{
 		Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
-			EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
+			EvaluateQueryResponse: querierpb.EvaluateQueryResponse{
 				Message: &querierpb.EvaluateQueryResponse_SeriesMetadata{
 					SeriesMetadata: querierpb.EvaluateQueryResponseSeriesMetadata{
 						NodeIndex:               nodeIndex,
@@ -1091,7 +1091,7 @@ func newSeriesMetadataBatch(nodeIndex int64, dropName bool, totalSeriesCount int
 func newInstantVectorSeriesData(nodeIndex int64, floats []promql.FPoint, histograms []promql.HPoint) *frontendv2pb.QueryResultStreamRequest {
 	return &frontendv2pb.QueryResultStreamRequest{
 		Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
-			EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
+			EvaluateQueryResponse: querierpb.EvaluateQueryResponse{
 				Message: &querierpb.EvaluateQueryResponse_InstantVectorSeriesData{
 					InstantVectorSeriesData: querierpb.EvaluateQueryResponseInstantVectorSeriesData{
 						NodeIndex: nodeIndex,
@@ -1111,7 +1111,7 @@ func newInstantVectorSeriesData(nodeIndex int64, floats []promql.FPoint, histogr
 func newBatchedInstantVectorSeriesData(series ...querierpb.InstantVectorSeriesData) *frontendv2pb.QueryResultStreamRequest {
 	return &frontendv2pb.QueryResultStreamRequest{
 		Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
-			EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
+			EvaluateQueryResponse: querierpb.EvaluateQueryResponse{
 				Message: &querierpb.EvaluateQueryResponse_InstantVectorSeriesData{
 					InstantVectorSeriesData: querierpb.EvaluateQueryResponseInstantVectorSeriesData{
 						Series: series,
@@ -1125,7 +1125,7 @@ func newBatchedInstantVectorSeriesData(series ...querierpb.InstantVectorSeriesDa
 func newRangeVectorStepData(seriesIndex int64, stepT int64, rangeStart int64, rangeEnd int64, floats []promql.FPoint, histograms []promql.HPoint) *frontendv2pb.QueryResultStreamRequest {
 	return &frontendv2pb.QueryResultStreamRequest{
 		Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
-			EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
+			EvaluateQueryResponse: querierpb.EvaluateQueryResponse{
 				Message: &querierpb.EvaluateQueryResponse_RangeVectorStepData{
 					RangeVectorStepData: querierpb.EvaluateQueryResponseRangeVectorStepData{
 						SeriesIndex: seriesIndex,
@@ -1148,7 +1148,7 @@ func newEvaluationCompleted(totalSamples uint64, warnings []string, infos []stri
 func newEvaluationCompletedWithPerNodeStats(totalSamples uint64, warnings []string, infos []string, perNodeStats map[int64]types.EncodedOperatorEvaluationStats) *frontendv2pb.QueryResultStreamRequest {
 	return &frontendv2pb.QueryResultStreamRequest{
 		Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
-			EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
+			EvaluateQueryResponse: querierpb.EvaluateQueryResponse{
 				Message: &querierpb.EvaluateQueryResponse_EvaluationCompleted{
 					EvaluationCompleted: querierpb.EvaluateQueryResponseEvaluationCompleted{
 						Annotations: querierpb.Annotations{
@@ -1169,7 +1169,7 @@ func newEvaluationCompletedWithPerNodeStats(totalSamples uint64, warnings []stri
 func newEvaluationCompletedWithPerNodeAnnotations(totalSamples uint64, perNodeAnnotations map[int64]querierpb.Annotations) *frontendv2pb.QueryResultStreamRequest {
 	return &frontendv2pb.QueryResultStreamRequest{
 		Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
-			EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
+			EvaluateQueryResponse: querierpb.EvaluateQueryResponse{
 				Message: &querierpb.EvaluateQueryResponse_EvaluationCompleted{
 					EvaluationCompleted: querierpb.EvaluateQueryResponseEvaluationCompleted{
 						Stats: stats.Stats{
@@ -2530,7 +2530,8 @@ func runQueryParallelismTestCase(t *testing.T, enableMQESharding bool) {
 
 func requestedNodeIndex(t *testing.T, msg *schedulerpb.FrontendToScheduler) int64 {
 	request := querierpb.EvaluateQueryRequest{}
-	require.NoError(t, prototypes.UnmarshalAny(msg.GetProtobufRequest().Payload, &request))
+	pl := msg.GetProtobufRequest().Payload
+	require.NoError(t, prototypes.UnmarshalAny(&prototypes.Any{TypeUrl: pl.TypeUrl, Value: pl.Value}, &request))
 	require.Len(t, request.Nodes, 1)
 
 	return request.Nodes[0].NodeIndex
@@ -2627,7 +2628,7 @@ func generateBenchmarkResponse(seriesCount int, pointCount int, batchSize int) [
 	appendSeriesDataMessage := func() {
 		msgs = append(msgs, &frontendv2pb.QueryResultStreamRequest{
 			Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
-				EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
+				EvaluateQueryResponse: querierpb.EvaluateQueryResponse{
 					Message: &querierpb.EvaluateQueryResponse_InstantVectorSeriesData{
 						InstantVectorSeriesData: querierpb.EvaluateQueryResponseInstantVectorSeriesData{
 							Series: pendingSeriesData,

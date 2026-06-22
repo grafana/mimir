@@ -273,9 +273,10 @@ func (w *queryResponseWriter) Finish() {
 }
 
 func (w *queryResponseWriter) Write(ctx context.Context, r querierpb.EvaluateQueryResponse) error {
+	// QueryResultStreamRequest_EvaluateQueryResponse.EvaluateQueryResponse is a value (no_presence_all).
 	resp := &frontendv2pb.QueryResultStreamRequest{
 		Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
-			EvaluateQueryResponse: &r,
+			EvaluateQueryResponse: r,
 		},
 	}
 
@@ -307,9 +308,10 @@ func (w *queryResponseWriter) WriteError(ctx context.Context, fallbackType apier
 
 	w.status = "ERROR_" + strings.TrimPrefix(typ.String(), "QUERY_ERROR_TYPE_")
 
+	// QueryResultStreamRequest_Error.Error is a value type (no_presence_all).
 	resp := &frontendv2pb.QueryResultStreamRequest{
 		Data: &frontendv2pb.QueryResultStreamRequest_Error{
-			Error: &querierpb.Error{
+			Error: querierpb.Error{
 				Type:    typ,
 				Message: errMsg,
 			},

@@ -4,17 +4,15 @@
 # Regenerates the cqa.2 wiresmith proto cluster:
 #   - pkg/querier/querierpb/querier.proto
 #   - pkg/streamingpromql/optimize/plan/rangevectorsplitting/cache/cache.proto
-#   - pkg/frontend/v2/frontendv2pb/frontend.proto
 #
-# These three protos form a dependency cluster:
+# These protos form a dependency cluster:
 #   cache.proto imports querier.proto (same cluster)
-#   frontend.proto imports querier.proto (same cluster)
 #   querier.proto imports mimir.proto, stats.proto, plan.proto, types.proto
 #     (all previously migrated wiresmith protos)
-#   frontend.proto imports httpgrpc.proto (dskit, gogo-annotated) — staged with
-#     gogoproto annotations stripped so wiresmith can parse it as an import-only
-#     proto. The generated Go code for httpgrpc fields references the real
-#     gogo-generated github.com/grafana/dskit/httpgrpc types via -M mapping.
+#
+# Note: pkg/frontend/v2/frontendv2pb/frontend.proto was part of this cluster
+# before cqa.3. It has since been moved to wiresmith-cqa3.sh, which uses the
+# local httpgrpcpb bridge instead of the dskit httpgrpc dependency.
 #
 # wiresmith resolves imports by their import-statement path under --proto_path,
 # so we stage a temporary tree mirroring the module-path layout.
@@ -22,7 +20,6 @@
 set -eu -o pipefail
 
 MODULE=github.com/grafana/mimir
-DSKIT=github.com/grafana/dskit
 P=${MODULE}/pkg
 STAGE=.cqa2-stage
 OUT=.cqa2-out
@@ -31,7 +28,6 @@ OUT=.cqa2-out
 EMIT_PROTOS=(
 	pkg/querier/querierpb/querier.proto
 	pkg/streamingpromql/optimize/plan/rangevectorsplitting/cache/cache.proto
-	pkg/frontend/v2/frontendv2pb/frontend.proto
 )
 
 # Imported-but-not-emitted wiresmith protos (staged for cross-file reference resolution).
@@ -59,17 +55,7 @@ for proto in "${IMPORT_PROTOS[@]}"; do
 	stage_proto "${proto}"
 done
 
-# Stage httpgrpc.proto with gogoproto annotations stripped so wiresmith can
-# parse it. The gogoproto import line and all option lines using gogoproto
-# options are removed; the message/field definitions are left intact.
-# The -M flag below maps the staged path to the real Go import path so that
-# wiresmith emits `github.com/grafana/dskit/httpgrpc` in the generated Go
-# import block.
-mkdir -p "${STAGE}/${DSKIT}/httpgrpc"
-sed '/gogoproto/d' vendor/github.com/grafana/dskit/httpgrpc/httpgrpc.proto \
-	>"${STAGE}/${DSKIT}/httpgrpc/httpgrpc.proto"
-
-# Build -M flags for all staged protos (emitted + imported + httpgrpc).
+# Build -M flags for all staged protos (emitted + imported).
 M_FLAGS=()
 for proto in "${EMIT_PROTOS[@]}"; do
 	M_FLAGS+=(-M "${P}/${proto#pkg/}=${P}/$(dirname "${proto#pkg/}")")
@@ -80,7 +66,6 @@ for proto in "${IMPORT_PROTOS[@]}"; do
 	# parent dir).
 	M_FLAGS+=(-M "${P}/${proto#pkg/}=${P}/$(dirname "${proto#pkg/}")")
 done
-M_FLAGS+=(-M "${DSKIT}/httpgrpc/httpgrpc.proto=${DSKIT}/httpgrpc")
 
 # Positional emit args (paths under STAGE).
 EMIT_ARGS=()

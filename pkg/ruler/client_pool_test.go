@@ -212,7 +212,9 @@ func TestClientPool_ClusterValidation(t *testing.T) {
 	}
 }
 
-type mockRulerServer struct{}
+type mockRulerServer struct {
+	UnimplementedRulerServer
+}
 
 func (m *mockRulerServer) Rules(context.Context, *RulesRequest) (*RulesResponse, error) {
 	return &RulesResponse{}, nil
