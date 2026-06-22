@@ -301,7 +301,7 @@ func (c *CacheOperator) calculateExtents(ctx context.Context, existingExtents []
 		extent := newEvaluatedExtent(operator, c, extentStartT, extentEndT)
 		result.appendExtentInDesiredTimeRange(extent, extentStartT, extentEndT, maxFreshnessThreshold, false)
 
-		if extentStartT <= maxFreshnessThreshold {
+		if extentStartT < maxFreshnessThreshold {
 			// Only write a cache entry if the extent is cacheable (not entirely within the max freshness window).
 			result.shouldWriteCacheEntry = true
 		}
