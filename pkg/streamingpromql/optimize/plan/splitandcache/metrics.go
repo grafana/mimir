@@ -17,6 +17,20 @@ const (
 	NotCachableReasonModifiersNotCachable = "has-modifiers"
 )
 
+func NewQueryResultCacheSkippedCounter(reg prometheus.Registerer) *prometheus.CounterVec {
+	counter := promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+		Name: "cortex_frontend_query_result_cache_skipped_total",
+		Help: "Total number of times a query was not cacheable because of a reason. This metric is tracked for each request when splitting is running inside MQE, and for each partial query otherwise.",
+	}, []string{"reason"})
+
+	// Initialize known label values.
+	for _, reason := range []string{NotCachableReasonUnalignedTimeRange, NotCachableReasonTooNew, NotCachableReasonModifiersNotCachable} {
+		counter.WithLabelValues(reason)
+	}
+
+	return counter
+}
+
 type SplitAndCacheMetrics struct {
 	*ResultsCacheMetrics
 
@@ -36,15 +50,7 @@ func NewSplitAndCacheMetrics(reg prometheus.Registerer) *SplitAndCacheMetrics {
 			Name: "cortex_frontend_query_result_cache_attempted_total",
 			Help: "Total number of queries that were attempted to be fetched from cache.",
 		}),
-		QueryResultCacheSkippedCount: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
-			Name: "cortex_frontend_query_result_cache_skipped_total",
-			Help: "Total number of times a query was not cacheable because of a reason. This metric is tracked for each partial query when time-splitting is enabled.",
-		}, []string{"reason"}),
-	}
-
-	// Initialize known label values.
-	for _, reason := range []string{NotCachableReasonUnalignedTimeRange, NotCachableReasonTooNew, NotCachableReasonModifiersNotCachable} {
-		m.QueryResultCacheSkippedCount.WithLabelValues(reason)
+		QueryResultCacheSkippedCount: NewQueryResultCacheSkippedCounter(reg),
 	}
 
 	return m

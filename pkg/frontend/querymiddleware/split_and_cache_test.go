@@ -221,7 +221,7 @@ func TestSplitAndCacheMiddleware_SplitByInterval(t *testing.T) {
 		# HELP cortex_frontend_query_result_cache_attempted_total Total number of queries that were attempted to be fetched from cache.
 		# TYPE cortex_frontend_query_result_cache_attempted_total counter
 		cortex_frontend_query_result_cache_attempted_total 0
-		# HELP cortex_frontend_query_result_cache_skipped_total Total number of times a query was not cacheable because of a reason. This metric is tracked for each partial query when time-splitting is enabled.
+		# HELP cortex_frontend_query_result_cache_skipped_total Total number of times a query was not cacheable because of a reason. This metric is tracked for each request when splitting is running inside MQE, and for each partial query otherwise.
 		# TYPE cortex_frontend_query_result_cache_skipped_total counter
 		cortex_frontend_query_result_cache_skipped_total{reason="has-modifiers"} 0
 		cortex_frontend_query_result_cache_skipped_total{reason="too-new"} 0
@@ -380,7 +380,7 @@ func TestSplitAndCacheMiddleware_ResultsCache(t *testing.T) {
 		# TYPE cortex_frontend_query_result_cache_attempted_total counter
 		cortex_frontend_query_result_cache_attempted_total 3
 
-		# HELP cortex_frontend_query_result_cache_skipped_total Total number of times a query was not cacheable because of a reason. This metric is tracked for each partial query when time-splitting is enabled.
+		# HELP cortex_frontend_query_result_cache_skipped_total Total number of times a query was not cacheable because of a reason. This metric is tracked for each request when splitting is running inside MQE, and for each partial query otherwise.
 		# TYPE cortex_frontend_query_result_cache_skipped_total counter
 		cortex_frontend_query_result_cache_skipped_total{reason="has-modifiers"} 0
 		cortex_frontend_query_result_cache_skipped_total{reason="too-new"} 0
@@ -645,7 +645,7 @@ func TestSplitAndCacheMiddleware_ResultsCacheNoStore(t *testing.T) {
 		# TYPE cortex_frontend_query_result_cache_attempted_total counter
 		cortex_frontend_query_result_cache_attempted_total 0
 
-		# HELP cortex_frontend_query_result_cache_skipped_total Total number of times a query was not cacheable because of a reason. This metric is tracked for each partial query when time-splitting is enabled.
+		# HELP cortex_frontend_query_result_cache_skipped_total Total number of times a query was not cacheable because of a reason. This metric is tracked for each request when splitting is running inside MQE, and for each partial query otherwise.
 		# TYPE cortex_frontend_query_result_cache_skipped_total counter
 		cortex_frontend_query_result_cache_skipped_total{reason="has-modifiers"} 0
 		cortex_frontend_query_result_cache_skipped_total{reason="too-new"} 0
@@ -763,7 +763,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotLookupCacheIfStepIsNotAli
 		# HELP cortex_frontend_query_result_cache_attempted_total Total number of queries that were attempted to be fetched from cache.
 		# TYPE cortex_frontend_query_result_cache_attempted_total counter
 		cortex_frontend_query_result_cache_attempted_total 1
-		# HELP cortex_frontend_query_result_cache_skipped_total Total number of times a query was not cacheable because of a reason. This metric is tracked for each partial query when time-splitting is enabled.
+		# HELP cortex_frontend_query_result_cache_skipped_total Total number of times a query was not cacheable because of a reason. This metric is tracked for each request when splitting is running inside MQE, and for each partial query otherwise.
 		# TYPE cortex_frontend_query_result_cache_skipped_total counter
 		cortex_frontend_query_result_cache_skipped_total{reason="has-modifiers"} 0
 		cortex_frontend_query_result_cache_skipped_total{reason="too-new"} 0
@@ -921,7 +921,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotCacheRequestEarlierThanMa
 				# HELP cortex_frontend_query_result_cache_attempted_total Total number of queries that were attempted to be fetched from cache.
 				# TYPE cortex_frontend_query_result_cache_attempted_total counter
 				cortex_frontend_query_result_cache_attempted_total 2
-				# HELP cortex_frontend_query_result_cache_skipped_total Total number of times a query was not cacheable because of a reason. This metric is tracked for each partial query when time-splitting is enabled.
+				# HELP cortex_frontend_query_result_cache_skipped_total Total number of times a query was not cacheable because of a reason. This metric is tracked for each request when splitting is running inside MQE, and for each partial query otherwise.
 				# TYPE cortex_frontend_query_result_cache_skipped_total counter
 				cortex_frontend_query_result_cache_skipped_total{reason="has-modifiers"} 0
 				cortex_frontend_query_result_cache_skipped_total{reason="too-new"} 2

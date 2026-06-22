@@ -157,7 +157,13 @@ func NewQueryPlannerWithTime(opts EngineOpts, versionProvider QueryPlanVersionPr
 	}
 
 	if opts.RangeQuerySplittingAndCaching.SplitEnabled || opts.RangeQuerySplittingAndCaching.CacheEnabled {
-		planner.RegisterQueryPlanOptimizationPass(splitandcache.NewOptimizationPass(opts.RangeQuerySplittingAndCaching.SplitEnabled, opts.RangeQuerySplittingAndCaching.SplitInterval, opts.RangeQuerySplittingAndCaching.CacheEnabled, opts.Limits))
+		planner.RegisterQueryPlanOptimizationPass(splitandcache.NewOptimizationPass(
+			opts.RangeQuerySplittingAndCaching.SplitEnabled,
+			opts.RangeQuerySplittingAndCaching.SplitInterval,
+			opts.RangeQuerySplittingAndCaching.CacheEnabled,
+			opts.Limits,
+			opts.CommonOpts.Reg,
+		))
 	}
 
 	return planner, nil

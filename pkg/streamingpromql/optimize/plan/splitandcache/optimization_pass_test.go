@@ -4,9 +4,13 @@ package splitandcache_test
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/stretchr/testify/require"
 
@@ -36,8 +40,9 @@ func TestOptimizationPass(t *testing.T) {
 		cachingDisabledByRequestOption bool
 		allowCachingUnalignedRequests  bool
 
-		expectUnchanged bool
-		expectedPlan    string
+		expectUnchanged           bool
+		expectedPlan              string
+		expectedNotCachableReason string
 	}{
 		"instant query": {
 			expr:            "foo{}",
@@ -105,7 +110,7 @@ func TestOptimizationPass(t *testing.T) {
 				- TimeRangeSplit: interval 24h0m0s
 					- VectorSelector: {__name__="foo"} offset -1h0m0s
 			`,
-			// TODO: expectedNotCachableReason: NotCachableReasonModifiersNotCachable
+			expectedNotCachableReason: splitandcache.NotCachableReasonModifiersNotCachable,
 		},
 		"range vector selector with positive offset": {
 			expr:      "max_over_time(foo{}[5m] offset 1h)",
@@ -127,7 +132,7 @@ func TestOptimizationPass(t *testing.T) {
 						- FunctionCall: max_over_time(...)
 							- MatrixSelector: {__name__="foo"}[5m0s] offset -1h0m0s
 			`,
-			// TODO: expectedNotCachableReason: NotCachableReasonModifiersNotCachable
+			expectedNotCachableReason: splitandcache.NotCachableReasonModifiersNotCachable,
 		},
 		"subquery with positive offset": {
 			expr:      "max_over_time((foo{})[5m:] offset 1h)",
@@ -151,7 +156,7 @@ func TestOptimizationPass(t *testing.T) {
 							- Subquery: [5m0s:1m0s] offset -1h0m0s
 								- VectorSelector: {__name__="foo"}
 			`,
-			// TODO: expectedNotCachableReason: NotCachableReasonModifiersNotCachable
+			expectedNotCachableReason: splitandcache.NotCachableReasonModifiersNotCachable,
 		},
 		"subquery with inner selector with negative offset": {
 			expr:      "max_over_time((foo{} offset -1h)[5m:])",
@@ -163,7 +168,7 @@ func TestOptimizationPass(t *testing.T) {
 							- Subquery: [5m0s:1m0s]
 								- VectorSelector: {__name__="foo"} offset -1h0m0s
 			`,
-			// TODO: expectedNotCachableReason: NotCachableReasonModifiersNotCachable
+			expectedNotCachableReason: splitandcache.NotCachableReasonModifiersNotCachable,
 		},
 
 		"request entirely in freshness window": {
@@ -173,7 +178,7 @@ func TestOptimizationPass(t *testing.T) {
 				- TimeRangeSplit: interval 24h0m0s
 					- VectorSelector: {__name__="foo"}
 			`,
-			// TODO: expectedNotCachableReason: NotCachableReasonTooNew
+			expectedNotCachableReason: splitandcache.NotCachableReasonTooNew,
 		},
 		"request straddles freshness window": {
 			expr:      "foo{}",
@@ -241,7 +246,7 @@ func TestOptimizationPass(t *testing.T) {
 					- StepInvariantExpression
 						- VectorSelector: {__name__="foo"} @ 200000000 (1970-01-03T07:33:20Z)
 			`,
-			// TODO: expectedNotCachableReason: NotCachableReasonModifiersNotCachable
+			expectedNotCachableReason: splitandcache.NotCachableReasonModifiersNotCachable,
 		},
 		"range vector selector with @ modifier after end time of query range": {
 			expr:      "max_over_time(foo[5m] @ 200000)",
@@ -253,7 +258,7 @@ func TestOptimizationPass(t *testing.T) {
 							- FunctionCall: max_over_time(...)
 								- MatrixSelector: {__name__="foo"}[5m0s] @ 200000000 (1970-01-03T07:33:20Z)
 			`,
-			// TODO: expectedNotCachableReason: NotCachableReasonModifiersNotCachable
+			expectedNotCachableReason: splitandcache.NotCachableReasonModifiersNotCachable,
 		},
 		"subquery with @ modifier after end time of query range": {
 			expr:      "max_over_time((foo)[5m:] @ 200000)",
@@ -266,7 +271,7 @@ func TestOptimizationPass(t *testing.T) {
 								- Subquery: [5m0s:1m0s] @ 200000000 (1970-01-03T07:33:20Z)
 									- VectorSelector: {__name__="foo"}
 			`,
-			// TODO: expectedNotCachableReason: NotCachableReasonModifiersNotCachable
+			expectedNotCachableReason: splitandcache.NotCachableReasonModifiersNotCachable,
 		},
 		"subquery with nested selector with @ modifier after end time of query range": {
 			expr:      "max_over_time((foo @ 200000)[5m:])",
@@ -279,7 +284,7 @@ func TestOptimizationPass(t *testing.T) {
 								- StepInvariantExpression
 									- VectorSelector: {__name__="foo"} @ 200000000 (1970-01-03T07:33:20Z)
 			`,
-			// TODO: expectedNotCachableReason: NotCachableReasonModifiersNotCachable
+			expectedNotCachableReason: splitandcache.NotCachableReasonModifiersNotCachable,
 		},
 		"instant vector selector with @ modifier before max freshness threshold, query straddles max freshness threshold": {
 			expr:      "foo{} @ 100",
@@ -337,7 +342,7 @@ func TestOptimizationPass(t *testing.T) {
 					- StepInvariantExpression
 						- VectorSelector: {__name__="foo"} @ 1704160800000 (2024-01-02T02:00:00Z)
 			`,
-			// TODO: expectedNotCachableReason: NotCachableReasonModifiersNotCachable
+			expectedNotCachableReason: splitandcache.NotCachableReasonModifiersNotCachable,
 		},
 		"range vector selector with @ modifier after max freshness threshold, query straddles max freshness threshold": {
 			expr:      "max_over_time(foo[5m] @ 1704160800)",
@@ -349,7 +354,7 @@ func TestOptimizationPass(t *testing.T) {
 							- FunctionCall: max_over_time(...)
 								- MatrixSelector: {__name__="foo"}[5m0s] @ 1704160800000 (2024-01-02T02:00:00Z)
 			`,
-			// TODO: expectedNotCachableReason: NotCachableReasonModifiersNotCachable
+			expectedNotCachableReason: splitandcache.NotCachableReasonModifiersNotCachable,
 		},
 		"subquery with @ modifier after max freshness threshold, query straddles max freshness threshold": {
 			expr:      "max_over_time((foo)[5m:] @ 1704160800)",
@@ -362,7 +367,7 @@ func TestOptimizationPass(t *testing.T) {
 								- Subquery: [5m0s:1m0s] @ 1704160800000 (2024-01-02T02:00:00Z)
 									- VectorSelector: {__name__="foo"}
 			`,
-			// TODO: expectedNotCachableReason: NotCachableReasonModifiersNotCachable
+			expectedNotCachableReason: splitandcache.NotCachableReasonModifiersNotCachable,
 		},
 		"subquery with nested selector with @ modifier after max freshness threshold, query straddles max freshness threshold": {
 			expr:      "max_over_time((foo @ 1704160800)[5m:])",
@@ -375,7 +380,7 @@ func TestOptimizationPass(t *testing.T) {
 								- StepInvariantExpression
 									- VectorSelector: {__name__="foo"} @ 1704160800000 (2024-01-02T02:00:00Z)
 			`,
-			// TODO: expectedNotCachableReason: NotCachableReasonModifiersNotCachable
+			expectedNotCachableReason: splitandcache.NotCachableReasonModifiersNotCachable,
 		},
 
 		"time range not step aligned and tenant does not have unaligned request caching enabled": {
@@ -386,7 +391,7 @@ func TestOptimizationPass(t *testing.T) {
 				- TimeRangeSplit: interval 24h0m0s
 					- VectorSelector: {__name__="foo"}
 			`,
-			// TODO: expectedNotCachableReason: // TODO: NotCachableReasonTooNew
+			expectedNotCachableReason: splitandcache.NotCachableReasonUnalignedTimeRange,
 		},
 		"time range not step aligned and tenant has unaligned request caching enabled": {
 			expr:                          "foo{}",
@@ -408,13 +413,35 @@ func TestOptimizationPass(t *testing.T) {
 			limits.CacheUnalignedQueries = testCase.allowCachingUnalignedRequests
 
 			if testCase.expectUnchanged {
-				testCase.expectedPlan = runOptimizationPass(t, ctx, testCase.expr, testCase.timeRange, false, false, false, limits, timeNow)
+				testCase.expectedPlan = runOptimizationPass(t, ctx, testCase.expr, testCase.timeRange, false, false, false, limits, prometheus.NewPedanticRegistry(), timeNow)
 			}
 
-			actual := runOptimizationPass(t, ctx, testCase.expr, testCase.timeRange, true, !testCase.disableSplitting, !testCase.disableCaching, limits, timeNow)
+			reg := prometheus.NewPedanticRegistry()
+			actual := runOptimizationPass(t, ctx, testCase.expr, testCase.timeRange, true, !testCase.disableSplitting, !testCase.disableCaching, limits, reg, timeNow)
 			require.Equal(t, testutils.TrimIndent(testCase.expectedPlan), actual)
+
+			expectedMetrics := fmt.Sprintf(`
+				# HELP cortex_frontend_query_result_cache_skipped_total Total number of times a query was not cacheable because of a reason. This metric is tracked for each request when splitting is running inside MQE, and for each partial query otherwise.
+				# TYPE cortex_frontend_query_result_cache_skipped_total counter
+				cortex_frontend_query_result_cache_skipped_total{reason="unaligned-time-range"} %d
+				cortex_frontend_query_result_cache_skipped_total{reason="too-new"} %d
+				cortex_frontend_query_result_cache_skipped_total{reason="has-modifiers"} %d
+			`,
+				countForSkipReason(splitandcache.NotCachableReasonUnalignedTimeRange, testCase.expectedNotCachableReason),
+				countForSkipReason(splitandcache.NotCachableReasonTooNew, testCase.expectedNotCachableReason),
+				countForSkipReason(splitandcache.NotCachableReasonModifiersNotCachable, testCase.expectedNotCachableReason),
+			)
+
+			require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), "cortex_frontend_query_result_cache_skipped_total"))
 		})
 	}
+}
+
+func countForSkipReason(desiredSkipReason string, expectedSkipReason string) int {
+	if desiredSkipReason == expectedSkipReason {
+		return 1
+	}
+	return 0
 }
 
 func runOptimizationPass(
@@ -426,6 +453,7 @@ func runOptimizationPass(
 	enableSplitting bool,
 	enableCaching bool,
 	limits splitandcache.LimitsProvider,
+	reg prometheus.Registerer,
 	timeNow time.Time,
 ) string {
 	opts := streamingpromql.NewTestEngineOpts()
@@ -433,7 +461,7 @@ func runOptimizationPass(
 	require.NoError(t, err)
 
 	if enableOptimizationPass {
-		optimizationPass := splitandcache.NewOptimizationPass(enableSplitting, 24*time.Hour, enableCaching, limits)
+		optimizationPass := splitandcache.NewOptimizationPass(enableSplitting, 24*time.Hour, enableCaching, limits, reg)
 		optimizationPass.OverrideTimeNow(func() time.Time {
 			return timeNow
 		})

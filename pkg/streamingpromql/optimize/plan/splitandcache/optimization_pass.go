@@ -6,6 +6,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/timestamp"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
@@ -19,17 +20,19 @@ type OptimizationPass struct {
 	splitInterval time.Duration
 	cacheEnabled  bool
 
-	limits  LimitsProvider
-	timeNow func() time.Time
+	limits              LimitsProvider
+	cacheSkippedCounter *prometheus.CounterVec
+	timeNow             func() time.Time
 }
 
-func NewOptimizationPass(splitEnabled bool, splitInterval time.Duration, cacheEnabled bool, limits LimitsProvider) *OptimizationPass {
+func NewOptimizationPass(splitEnabled bool, splitInterval time.Duration, cacheEnabled bool, limits LimitsProvider, reg prometheus.Registerer) *OptimizationPass {
 	return &OptimizationPass{
-		splitEnabled:  splitEnabled,
-		splitInterval: splitInterval,
-		cacheEnabled:  cacheEnabled,
-		limits:        limits,
-		timeNow:       time.Now,
+		splitEnabled:        splitEnabled,
+		splitInterval:       splitInterval,
+		cacheEnabled:        cacheEnabled,
+		limits:              limits,
+		cacheSkippedCounter: NewQueryResultCacheSkippedCounter(reg),
+		timeNow:             time.Now,
 	}
 }
 
@@ -80,7 +83,7 @@ func (o *OptimizationPass) applyCaching(ctx context.Context, node planning.Node,
 		// The query starts after the freshness threshold, so the entire query is not cacheable.
 		// If the query straddles the freshness threshold, the cache operator will only cache the
 		// portion of the query that is before the freshness threshold.
-		// TODO: NotCachableReasonTooNew
+		o.cacheSkippedCounter.WithLabelValues(NotCachableReasonTooNew).Inc()
 		return node, nil
 	}
 
@@ -88,13 +91,13 @@ func (o *OptimizationPass) applyCaching(ctx context.Context, node planning.Node,
 		if allowed, err := o.limits.AllowCachingUnalignedQueries(ctx); err != nil {
 			return nil, err
 		} else if !allowed {
-			// TODO: NotCachableReasonTooNew
+			o.cacheSkippedCounter.WithLabelValues(NotCachableReasonUnalignedTimeRange).Inc()
 			return node, nil
 		}
 	}
 
 	if !o.modifiersAllowCaching(node, timeRange, freshnessThreshold) {
-		// TODO: NotCachableReasonModifiersNotCachable
+		o.cacheSkippedCounter.WithLabelValues(NotCachableReasonModifiersNotCachable).Inc()
 		return node, nil
 	}
 
