@@ -49,10 +49,14 @@ pinned compiler. No `replace` remains; the vendored runtime
 | ---------------------------------- | -------------------------------------- | ------------------------------------------------------------------------------------------- |
 | `pkg/mimirpb/mimir.proto`          | migrated (phase 1+2+3+DB-18+NoPrescan) | 1081 lines (1084 w/ guard hunk, 1094 pre-4f41063, 1087 phase 3, 1103 phase 2, 2144 phase 1) |
 | `pkg/distributor/ha_tracker.proto` | migrated (phase 2)                     | none                                                                                        |
-| `pkg/querier/stats/stats.proto`    | migrated (phase 2)                     | none (one hand-written `GoString` shim)                                                     |
+| `pkg/querier/stats/stats.proto`    | migrated (phase 2)                     | none (one hand-written `GoString` shim, kept while frontendv2pb/querymiddleware are gogo)   |
 | `pkg/ruler/rulespb/rules.proto`    | migrated (7m6/Any, validate branch)    | none (no shim needed)                                                                        |
-| `pkg/streamingpromql/**` (9 protos) | migrated (cqa.1)                       | none (2 `GoString` shim methods; stdtime call-site churn)                                   |
-| all other protos (~12)             | still gogoproto                        | —                                                                                           |
+| `pkg/streamingpromql/**` (9 protos) | migrated (cqa.1)                       | none (2 `GoString` shim methods retired in cqa.2)                                          |
+| `pkg/querier/querierpb/querier.proto` | migrated (cqa.2)                     | none (gogoproto_registry.go for gogo interop)                                               |
+| `pkg/streamingpromql/optimize/plan/rangevectorsplitting/cache/cache.proto` | migrated (cqa.2) | none                                         |
+| `pkg/frontend/v2/frontendv2pb/frontend.proto` | **deferred** — httpgrpc gogo incompatibility | —                                                                    |
+| `pkg/frontend/querymiddleware/model.proto`    | **deferred** — gogo Any registry dependency  | —                                                                    |
+| all other protos (~10)             | still gogoproto                        | —                                                                                           |
 
 The streamingpromql cluster (cqa.1): `types/types.proto`,
 `planning/plan.proto`, `planning/core/core.proto`, and the optimize/plan node
@@ -317,13 +321,16 @@ bytes via gogo `proto.Marshal`/`Unmarshal`, which dispatch to wiresmith's
   one caller (`matchersEqual`) passes `*LabelMatcher`, which the generated
   signature accepts.
 
-### GoString shims (retire when querierpb/cache migrate, cqa.2)
+### GoString shims (retired in cqa.2)
 
-`pkg/streamingpromql/{types,planning}/wiresmith_compat.go` add `GoString()` to
-`types.EncodedQueryTimeRange`, `types.EncodedOperatorEvaluationStats`, and
-`planning.EncodedQueryPlan` — the still-gogo `pkg/querier/querierpb` and
-`.../rangevectorsplitting/cache` importers call `GoString()` on embedded values
-and wiresmith emits none (same pattern/limitation as stats.proto's shim, DB-5).
+`pkg/streamingpromql/{types,planning}/wiresmith_compat.go` previously added
+`GoString()` to `types.EncodedQueryTimeRange`, `types.EncodedOperatorEvaluationStats`,
+and `planning.EncodedQueryPlan` — the still-gogo `pkg/querier/querierpb` and
+`.../rangevectorsplitting/cache` importers called `GoString()` on embedded values.
+Both files were **deleted in cqa.2**: once querierpb and cache are wiresmith they
+no longer call `GoString()` on these types. The `pkg/querier/stats/wiresmith_compat.go`
+shim is kept because gogo frontendv2pb still embeds `Stats` and calls
+`fmt.Sprintf("%#v", this.Stats)` in its generated `GoString()`.
 
 ### Generator invocation
 
@@ -342,6 +349,89 @@ byte-for-byte reproducible. The gogo importers regenerate via protoc with
 `BenchmarkPlanEncodingAndDecoding` (pkg/streamingpromql) — the plan
 encode/decode path that marshals/unmarshals every migrated type through the
 `EncodedNode.details` bytes. See the Benchmarks section below.
+
+## querier/frontend stats-importer cluster (cqa.2)
+
+Four protos; two migrated, two deferred.
+
+### Migrated: `pkg/querier/querierpb/querier.proto`
+
+`EvaluateQueryRequest`, `EvaluationNode`, `EvaluateQueryResponse` (streaming
+oneof), `SeriesMetadata`, `InstantVectorSeriesData`, `Error`, `Annotations`, etc.
+Messages only — no gRPC service in this file (gRPC is on the frontendv2pb side).
+
+- `no_presence_all` file-wide.
+- `(wiresmith.options.customtype) = "github.com/grafana/mimir/pkg/mimirpb.LabelAdapter"`
+  on `SeriesMetadata.labels` (same adapter as mimirpb + rules).
+- **`SafeStats` customtype on `EvaluateQueryResponseEvaluationCompleted.stats`**:
+  `stats.SafeStats` is a struct that embeds the wiresmith-generated `stats.Stats`
+  with atomic-safe methods. Adapters added to `pkg/querier/stats/wiresmith_adapters.go`:
+  `SizeWiresmith()` delegates to `Size()`; `MarshalWiresmith(buf)` delegates to
+  `MarshalToSizedBuffer(buf)`; `UnmarshalWiresmith(buf)` delegates to `Unmarshal(buf)`;
+  `EqualWiresmith` / `CompareWiresmith` unwrap the inner `Stats` (same pattern as
+  `PreallocTimeseries` in mimirpb). The customtype value shape is `SafeStats`
+  (not pointer), matching the existing gogo field layout.
+- **`gogoproto_registry.go`**: `dispatcher.go` calls `proto.MessageName(&EvaluateQueryRequest{})`
+  using gogo's registry. Wiresmith does not register with gogo's registry, so
+  `pkg/querier/querierpb/gogoproto_registry.go` calls `proto.RegisterType()` for
+  every querierpb message type in its `init()`. The wiresmith-generated types satisfy
+  gogo's `proto.Message` interface (`Reset`/`String`/`ProtoMessage`/`Unmarshal`).
+- **Oneof wrapper API**: wiresmith oneof wrappers hold the inner type by VALUE,
+  not pointer. All call sites in `dispatcher.go`, `dispatcher_test.go`,
+  `scheduler_processor_test.go`, `frontend_test.go`, and `remoteexec_test.go` were
+  updated: `SeriesMetadata: &querierpb.EvaluateQueryResponseSeriesMetadata{...}` →
+  `SeriesMetadata: querierpb.EvaluateQueryResponseSeriesMetadata{...}` (and similarly
+  for all other wrapper fields). The `EvaluateQueryResponse` itself is embedded as
+  `*querierpb.EvaluateQueryResponse` in the still-gogo `frontendv2pb` message — that
+  pointer is unchanged.
+
+### Migrated: `pkg/streamingpromql/optimize/plan/rangevectorsplitting/cache/cache.proto`
+
+Plain messages (`CachedSeries`, etc.) that import querierpb types. Deferred from
+cqa.1 because wiresmith-generated cache.pb.go would call `UnmarshalWithDepth` /
+`EqualWiresmith` / `CompareWiresmith` on gogo-generated querierpb types (which lack
+those methods). Migrates cleanly now that querierpb is wiresmith. No expdiff, no
+shims.
+
+### Generator invocation
+
+Script: `tools/wiresmith-cqa2.sh`. Stages the emitted protos plus all transitive
+imports (mimir.proto, stats.proto, plan.proto, types.proto) into `.cqa2-stage/`
+mirroring the module-path layout, runs wiresmith with `-M` flags, copies outputs back.
+
+### Deferred: `pkg/frontend/v2/frontendv2pb/frontend.proto`
+
+Blocker: `frontend.proto` imports `dskit/httpgrpc/httpgrpc.proto`, which is a
+gogo-annotated proto. The staged `sed '/gogoproto/d'` strip solves the proto-parsing
+issue, but wiresmith's generated code calls `UnmarshalWithDepth(...)`, `Clone()`, and
+`Compare(...)` on embedded `*httpgrpc.HTTPResponse` and `httpgrpc.Header` fields,
+assuming those types are wiresmith-generated. Since httpgrpc is gogo-generated and
+lacks these methods, the output does not compile. No available workaround that
+preserves the `*httpgrpc.HTTPResponse` field type at call sites. Deferred until
+`dskit/httpgrpc` migrates to wiresmith or wiresmith gains a "fallback to gogo methods"
+mode for cross-toolchain embedded fields.
+
+The original gogo `frontend.proto` and its generated files are restored unchanged.
+The `pkg/querier/stats/wiresmith_compat.go` `GoString` shim is kept because gogo
+frontendv2pb still calls `GoString` on the embedded `Stats` field.
+
+### Deferred: `pkg/frontend/querymiddleware/model.proto`
+
+Blocker: `Extent.response` is `google.protobuf.Any`, and `results_cache.go` uses
+`types.MarshalAny` / `types.UnmarshalAny` / `types.EmptyAny` from gogo's registry
+system. Wiresmith's `anypb.Any` (`github.com/grafana/wiresmith/types/known/anypb`)
+does not register with the gogo registry, so the Any helpers cannot resolve wiresmith
+types. Deferred until the querymiddleware layer is decoupled from the gogo Any
+registry (the same class of blocker as storepb/rpc.proto).
+
+### Test results (cqa.2, all `-count=1`)
+
+| Package                                                            | Result |
+| ------------------------------------------------------------------ | ------ |
+| `./pkg/querier/...`                                                | ok     |
+| `./pkg/frontend/...`                                               | ok     |
+| `./pkg/streamingpromql/optimize/...`                               | ok     |
+| `go build ./pkg/querier/... ./pkg/frontend/... ./pkg/streamingpromql/optimize/...` | clean  |
 
 ## Deferred Any-using protos (7m6)
 
@@ -378,6 +468,14 @@ cluster matching a later migration phase, not a blocker:
 | `./pkg/frontend/...`                   | ok                                              |
 | `./pkg/util/test`                      | ok                                              |
 | `go build ./...`, `go vet`             | clean (modulo pre-existing `Seek` vet warnings) |
+
+## Test results (cqa.2, all `-count=1`)
+
+| Package                               | Result |
+| ------------------------------------- | ------ |
+| `./pkg/querier/...`                   | ok     |
+| `./pkg/frontend/...`                  | ok     |
+| `./pkg/streamingpromql/optimize/...`  | ok     |
 
 ## Benchmarks (Apple M4 Pro, benchstat-grade — streamingpromql cqa.1, 2026-06-18)
 
@@ -518,17 +616,15 @@ Multiple `.proto` files per Go package now work in wiresmith, and a migrated
 proto can keep gogo importers (method surface compatible + `GoString` shim +
 `proto-include` for protoc). Recommended order:
 
-1. `pkg/querier/querierpb/querier.proto` + `pkg/frontend/querymiddleware/model.proto`
-   - `pkg/frontend/v2/frontendv2pb/frontend.proto` — the stats.proto
-     importers; note `frontend.proto` uses gogo `customtype = SafeStats` on a
-     message field, which wiresmith customtype can express (needs
-     `SizeWiresmith`-family adapters on `SafeStats`, same recipe as
-     `PreallocTimeseries`). querier.proto declares a service → exercises
-     wiresmith's grpc emission. They also import mimir.proto — wiresmith
-     compiles imports by module path only if present under `--proto_path`;
-     staging must include the imported protos (or symlinks).
-2. `pkg/ruler/rulespb/rules.proto`, `pkg/scheduler/schedulerpb/scheduler.proto`
-   (streaming services), `pkg/alertmanager/alertspb/alerts.proto`.
+1. **DONE (cqa.2)**: `pkg/querier/querierpb/querier.proto`,
+   `pkg/streamingpromql/optimize/plan/rangevectorsplitting/cache/cache.proto`.
+   **Deferred (cqa.2)**: `pkg/frontend/v2/frontendv2pb/frontend.proto` (httpgrpc
+   gogo incompatibility — needs dskit httpgrpc migration or wiresmith cross-toolchain
+   embedded field support); `pkg/frontend/querymiddleware/model.proto` (gogo Any
+   registry dependency).
+2. `pkg/ruler/rulespb/rules.proto` — **DONE (validate branch)**. Next:
+   `pkg/scheduler/schedulerpb/scheduler.proto` (streaming services),
+   `pkg/alertmanager/alertspb/alerts.proto`.
 3. `pkg/storegateway/storepb/*` — three protos in one Go package
    (now supported), cross-package hintspb imports, heavy custom code.
 4. `pkg/ingester/client/ingester.proto` — large, imports mimir.proto,
