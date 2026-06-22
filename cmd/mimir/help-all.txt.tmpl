@@ -3685,6 +3685,8 @@ Usage of ./cmd/mimir/mimir:
     	How back in the past metrics can be queried at most. (default 168h0m0s)
   -tests.write-read-ooo-test.num-series int
     	Number of series used for the test. (default 5000)
+  -tests.write-read-series-test.fan-out-query-enabled
+    	Set to true to additionally run each test query with a regex metric-name matcher. This prevents the query from being pinned to a single ingest-storage compartment, forcing the read path to fan out across all compartments and validating cross-compartment query result merging. Roughly doubles the number of queries issued per run.
   -tests.write-read-series-test.float-samples-enabled
     	Set to true to use float samples (default true)
   -tests.write-read-series-test.histogram-samples-enabled
