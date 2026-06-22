@@ -151,9 +151,10 @@ func TestWriteReadSeriesTest_Run_FanOutQuery(t *testing.T) {
 	client.AssertCalled(t, "Query", mock.Anything, querySumFloat(floatMetricName), time.Unix(1000, 0), mock.Anything)
 	client.AssertCalled(t, "Query", mock.Anything, querySumFloatFanOut(floatMetricName), time.Unix(1000, 0), mock.Anything)
 
-	// The fan-out query must use a regex (=~) name matcher: that is what prevents the Mimir read
-	// path from pinning the query to a single compartment.
-	require.Contains(t, querySumFloatFanOut(floatMetricName), `{__name__=~"`+floatMetricName+`"}`)
+	// The fan-out query must use a regex (=~) name matcher with a trailing ".*": a regex matching a
+	// single literal value is optimized back into an equality matcher, which would re-pin the query to
+	// one compartment. The ".*" keeps it a set-matcher so the Mimir read path fans out.
+	require.Contains(t, querySumFloatFanOut(floatMetricName), `{__name__=~"`+floatMetricName+`.*"}`)
 }
 
 func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, testTuples []WriteReadSeriesTestTuple) {
