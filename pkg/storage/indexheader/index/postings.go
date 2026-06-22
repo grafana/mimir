@@ -63,9 +63,12 @@ func NewPostingsOffsetsTableReader(
 	sparsePostingsOffsets map[string]*SparseTableOffsetsForLabel,
 	sparseSampleFactor int,
 ) (PostingsOffsetsTable, error) {
+	_, isRemote := decbufFactory.(*streamencoding.BucketDecbufFactory)
+
 	switch indexVersion {
 	case index.FormatV2:
 		return &PostingsOffsetsTableV2{
+			isRemote:              isRemote,
 			decbufFactory:         decbufFactory,
 			tableOffset:           tableOffset,
 			SparsePostingsOffsets: sparsePostingsOffsets,
@@ -83,6 +86,9 @@ type PostingsOffsetsTableV2 struct {
 
 	SparseSampleFactor int
 
+	// isRemote marks Postings Offset table is accessed by a bucket reader;
+	// may be used to conditionally enable optimizations or set spans.
+	isRemote      bool
 	decbufFactory streamencoding.DecbufFactory
 	tableOffset   int
 }
@@ -111,7 +117,7 @@ func (t *PostingsOffsetsTableV2) PostingsOffset(name string, value string) (r in
 	}
 
 	var d streamencoding.Decbuf
-	if bf, ok := t.decbufFactory.(*streamencoding.BucketDecbufFactory); ok {
+	if t.isRemote {
 		var sectionEndOffset int
 
 		// In order to correctly set Range.End, we need to read the next entry beyond the one we are looking for.
@@ -125,7 +131,7 @@ func (t *PostingsOffsetsTableV2) PostingsOffset(name string, value string) (r in
 		}
 		// At this point we know that our value is somewhere between the i-th offset and the next one;
 		// we shouldn't need to read/cache bucket ops beyond that.
-		d = bf.NewDecbufInSection(t.tableOffset, e.SparseTableOffsets[i].Offset, sectionEndOffset)
+		d = t.decbufFactory.NewDecbufInSection(t.tableOffset, e.SparseTableOffsets[i].Offset, sectionEndOffset)
 	} else {
 		d = t.decbufFactory.NewDecbufAtUnchecked(t.tableOffset)
 		d.ResetAt(e.SparseTableOffsets[i].Offset)
@@ -206,7 +212,7 @@ func (t *PostingsOffsetsTableV2) LabelValuesOffsets(ctx context.Context, name, p
 	offsets := make([]PostingListOffset, 0, (offsetsEnd-offsetsStart)*t.SparseSampleFactor)
 
 	var d streamencoding.Decbuf
-	if bf, ok := t.decbufFactory.(*streamencoding.BucketDecbufFactory); ok {
+	if t.isRemote {
 		var sectionEndOffset int
 
 		if offsetsEnd+1 < len(e.SparseTableOffsets) {
@@ -217,7 +223,7 @@ func (t *PostingsOffsetsTableV2) LabelValuesOffsets(ctx context.Context, name, p
 		}
 		// For the BucketDecbufFactory, we only read the section we care about to optimize
 		// the size of cached GetRange bucket ops.
-		d = bf.NewDecbufInSection(t.tableOffset, e.SparseTableOffsets[offsetsStart].Offset, sectionEndOffset)
+		d = t.decbufFactory.NewDecbufInSection(t.tableOffset, e.SparseTableOffsets[offsetsStart].Offset, sectionEndOffset)
 	} else {
 		// Don't Crc32 the entire postings offset table, this is very slow
 		// so hope any issues were caught at startup.
