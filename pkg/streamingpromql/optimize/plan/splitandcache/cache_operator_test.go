@@ -629,7 +629,7 @@ func TestCacheOperator_DoesNotSaveCacheEntryIfSeriesMetadataNotCalled(t *testing
 	require.NoError(t, o.Prepare(ctx, &types.PrepareParams{}))
 	require.NoError(t, o.AfterPrepare(ctx))
 
-	require.True(t, o.shouldWriteCacheEntry, "invalid test case: no cache entry to write")
+	require.True(t, o.extents.shouldWriteCacheEntry, "invalid test case: no cache entry to write")
 
 	// Finalize the operator without calling SeriesMetadata().
 	_, _, err := o.Finalize(ctx)
@@ -663,7 +663,7 @@ func TestCacheOperator_DoesNotSaveCacheEntryIfNotAllSeriesRead(t *testing.T) {
 	_, err = o.NextSeries(ctx)
 	require.NoError(t, err)
 
-	require.True(t, o.shouldWriteCacheEntry, "invalid test case: no cache entry to write")
+	require.True(t, o.extents.shouldWriteCacheEntry, "invalid test case: no cache entry to write")
 
 	// Finalize the operator without reading the later series.
 	_, _, err = o.Finalize(ctx)
@@ -698,7 +698,7 @@ func TestCacheOperator_DoesNotSaveCacheEntryIfFinishedReadingNotCalled(t *testin
 		require.NoError(t, err)
 	}
 
-	require.True(t, o.shouldWriteCacheEntry, "invalid test case: no cache entry to write")
+	require.True(t, o.extents.shouldWriteCacheEntry, "invalid test case: no cache entry to write")
 
 	// Finalize the operator without calling FinishedReading.
 	_, _, err = o.Finalize(ctx)
