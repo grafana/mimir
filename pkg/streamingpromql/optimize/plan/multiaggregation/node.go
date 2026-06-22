@@ -60,10 +60,6 @@ func (g *MultiAggregationGroup) Describe() string {
 	return ""
 }
 
-func (g *MultiAggregationGroup) ChildrenLabels() []string {
-	return []string{""}
-}
-
 func (g *MultiAggregationGroup) ChildrenTimeRange(parentTimeRange types.QueryTimeRange) types.QueryTimeRange {
 	return parentTimeRange
 }
@@ -87,8 +83,8 @@ func (g *MultiAggregationGroup) MinimumRequiredPlanVersion(types.QueryTimeRange)
 //node:generate
 type MultiAggregationInstance struct {
 	*MultiAggregationInstanceDetails
-	Group *MultiAggregationGroup `node:"child"`
-	Param planning.Node          `node:"child,nilable"` // nil for non-parameterized aggregations (eg. sum), set for quantile.
+	Group *MultiAggregationGroup `node:"child,label=expression"`
+	Param planning.Node          `node:"child,nilable,label=parameter"` // nil for non-parameterized aggregations (eg. sum), set for quantile.
 }
 
 func (a *MultiAggregationInstance) Details() proto.Message {
@@ -132,14 +128,6 @@ func (a *MultiAggregationInstance) Describe() string {
 	}
 
 	return builder.String()
-}
-
-func (a *MultiAggregationInstance) ChildrenLabels() []string {
-	if a.Param == nil {
-		return []string{""}
-	}
-
-	return []string{"expression", "parameter"}
 }
 
 func (a *MultiAggregationInstance) ChildrenTimeRange(parentTimeRange types.QueryTimeRange) types.QueryTimeRange {

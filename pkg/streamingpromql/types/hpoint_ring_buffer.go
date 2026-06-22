@@ -236,6 +236,37 @@ func (b *HPointRingBuffer) RemoveLastPoint() {
 	}
 }
 
+// CountUntil returns the number of samples in this buffer with timestamp up to and including maxT.
+func (b *HPointRingBuffer) CountUntil(maxT int64) int {
+	count := b.size
+
+	for count > 0 && b.PointAt(count-1).T > maxT {
+		count--
+	}
+
+	return count
+}
+
+// CountBetween returns the number of samples in this buffer with timestamp after minT and up to and including maxT.
+func (b *HPointRingBuffer) CountBetween(minT, maxT int64) int {
+	// Why do this rather than just loop over all the elements?
+	// It's expected that most of the elements in the buffer are in the time range, so it's faster
+	// to check for points outside the range at the start and end to count how many are in the range.
+	countToMaxT := b.CountUntil(maxT)
+
+	if countToMaxT == 0 {
+		return 0
+	}
+
+	countAtOrBeforeMinT := 0
+
+	for countAtOrBeforeMinT < countToMaxT && b.PointAt(countAtOrBeforeMinT).T <= minT {
+		countAtOrBeforeMinT++
+	}
+
+	return countToMaxT - countAtOrBeforeMinT
+}
+
 // Reset clears the contents of this buffer, but retains the underlying point slice for future reuse.
 func (b *HPointRingBuffer) Reset() {
 	b.firstIndex = 0
@@ -308,6 +339,23 @@ func (v HPointRingBufferView) UnsafePoints() (head []promql.HPoint, tail []promq
 	}
 
 	return v.buffer.points[startIndex:endOfHeadSegment], nil
+}
+
+// UnsafePointsInIndexRange returns the points with logical indices in [first, last] (inclusive) as
+// up to two contiguous slices. The second slice is non-empty only when the requested range wraps
+// the underlying ring buffer. It is the index-range equivalent of UnsafePoints, and lets callers
+// iterate a sub-range with a plain slice range loop instead of repeated PointAt calls.
+// Like UnsafePoints, the returned slices alias the buffer and must not be modified nor returned to
+// a pool.
+func (v HPointRingBufferView) UnsafePointsInIndexRange(first, last int) (head []promql.HPoint, tail []promql.HPoint) {
+	if first < 0 || last >= v.size || first > last {
+		panic("HPointRingBufferView.UnsafePointsInIndexRange(): index out of range")
+	}
+
+	// A view starting at v.offset+first holding (last-first+1) points has the same wraparound
+	// structure as any other view, so delegate to UnsafePoints to keep that logic in one place.
+	sub := HPointRingBufferView{buffer: v.buffer, offset: v.offset + first, size: last - first + 1}
+	return sub.UnsafePoints()
 }
 
 // CopyPoints returns a single slice of the points in this buffer view.
@@ -443,7 +491,9 @@ func (v HPointRingBufferView) Any() bool {
 // It panics if i is outside the range of points in this view.
 func (v HPointRingBufferView) PointAt(i int) promql.HPoint {
 	if i >= v.size {
-		panic(fmt.Sprintf("PointAt(): out of range, requested index %v but have length %v", i, v.size))
+		// A constant-string panic (rather than fmt.Sprintf) keeps PointAt cheap enough to be
+		// inlined into hot loops, e.g. the per-sample passes in extendedHistogramRate.
+		panic("HPointRingBufferView.PointAt(): index out of range")
 	}
 
 	return v.buffer.PointAt(v.offset + i)

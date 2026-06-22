@@ -13,12 +13,14 @@ the other files is implemented today; this page tracks the gap.
 - **Multi-cluster consumption**: an ingester consumes its read compartment's topic from **every** write
   compartment's Kafka cluster and unions the records into its TSDB. Each per-cluster consumption tracks
   its own offsets independently.
+- **Compartment-aware querying of ingesters**: the query layer narrows a query to the compartments that
+  can hold the selected metric names (a single compartment for an equality matcher, the union for an
+  enumerable metric-name set) and fans out to all compartments otherwise (see
+  [Read compartments](./read-compartments.md)).
 - A local development environment (`development/mimir-compartments`).
 
-## The query path is not compartment-aware yet
+## Strong read consistency is not compartment-aware yet
 
-- Queries only consult **read compartment 0**. Series that hash to any other compartment are ingested
-  correctly but are **not queryable** yet.
 - Strong read consistency does not propagate per-compartment offsets from the query-frontend and querier
   to the ingester, so an ingester enforcing read consistency waits for the last produced offset of every
   Kafka cluster rather than for the specific requested offsets.
@@ -39,7 +41,5 @@ compartment has its own single-broker Kafka cluster, and each read compartment h
 ingester set. The ingesters of each read compartment consume that compartment's topic from both Kafka
 clusters.
 
-Because the query path only reads compartment 0, only metrics that hash to compartment 0 are queryable
-in this environment. In particular, the metric used to populate the bundled dashboards' template
-variables happens to hash to a different compartment, so those dashboards render blank. Querying metrics
-that hash to compartment 0 returns data as expected.
+Metrics in either compartment are queryable: a query that pins a metric name is served from the owning
+compartment, and a query without a metric-name equality matcher fans out to both.

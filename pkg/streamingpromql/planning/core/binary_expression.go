@@ -24,8 +24,8 @@ var errCannotMergeBinaryExpressionHints = errors.New("cannot merge hints for bin
 //node:generate
 type BinaryExpression struct {
 	*BinaryExpressionDetails
-	LHS planning.Node `node:"child"`
-	RHS planning.Node `node:"child"`
+	LHS planning.Node `node:"child,label=LHS"`
+	RHS planning.Node `node:"child,label=RHS"`
 }
 
 func (b *BinaryExpression) Describe() string {
@@ -170,10 +170,6 @@ func (b *BinaryExpression) MergeHints(other planning.Node) error {
 		return nil
 	}
 	return errCannotMergeBinaryExpressionHints
-}
-
-func (b *BinaryExpression) ChildrenLabels() []string {
-	return []string{"LHS", "RHS"}
 }
 
 func MaterializeBinaryExpression(b *BinaryExpression, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {

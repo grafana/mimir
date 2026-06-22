@@ -36,6 +36,10 @@ func (m *MultiAggregationGroup) ReplaceChild(idx int, node planning.Node) error 
 	return nil
 }
 
+func (m *MultiAggregationGroup) ChildrenLabels() []string {
+	return []string{""}
+}
+
 func (m *MultiAggregationInstance) Child(idx int) planning.Node {
 	switch idx {
 	case 0:
@@ -94,4 +98,11 @@ func (m *MultiAggregationInstance) ReplaceChild(idx int, node planning.Node) err
 	default:
 		return fmt.Errorf("node of type MultiAggregationInstance supports 2 children, but attempted to replace child at index %d", idx)
 	}
+}
+
+func (m *MultiAggregationInstance) ChildrenLabels() []string {
+	if m.Param == nil {
+		return []string{""}
+	}
+	return []string{"expression", "parameter"}
 }

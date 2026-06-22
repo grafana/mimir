@@ -31,7 +31,7 @@ func init() {
 //node:generate
 type RemoteExecutionGroup struct {
 	*RemoteExecutionGroupDetails
-	Nodes []planning.Node `node:"children,min=1"`
+	Nodes []planning.Node `node:"children,min=1,labelfmt=node %d,nocollapse"`
 }
 
 func (r *RemoteExecutionGroup) Details() proto.Message {
@@ -67,16 +67,6 @@ func (r *RemoteExecutionGroup) Describe() string {
 	}
 
 	return ""
-}
-
-func (r *RemoteExecutionGroup) ChildrenLabels() []string {
-	lbls := make([]string, 0, len(r.Nodes))
-
-	for idx := range r.Nodes {
-		lbls = append(lbls, fmt.Sprintf("node %d", idx))
-	}
-
-	return lbls
 }
 
 func (r *RemoteExecutionGroup) ChildrenTimeRange(parentTimeRange types.QueryTimeRange) types.QueryTimeRange {
@@ -138,10 +128,6 @@ func (c *RemoteExecutionConsumer) MergeHints(other planning.Node) error {
 
 func (c *RemoteExecutionConsumer) Describe() string {
 	return fmt.Sprintf("node %d", c.NodeIndex)
-}
-
-func (c *RemoteExecutionConsumer) ChildrenLabels() []string {
-	return []string{""}
 }
 
 func (c *RemoteExecutionConsumer) ChildrenTimeRange(parentTimeRange types.QueryTimeRange) types.QueryTimeRange {

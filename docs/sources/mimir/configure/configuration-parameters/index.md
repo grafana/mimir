@@ -522,6 +522,11 @@ instrument_ref_leaks:
   # regardless of the configured percentage. Zero means no limit.
   # CLI flag: -instrument-reference-leaks.max-inflight-instrumented-bytes
   [max_inflight_instrumented_bytes: <int> | default = 0]
+
+# (experimental) If enabled, Mimir enforces label-based access control on metric
+# read queries using the X-Prom-Label-Policy HTTP header.
+# CLI flag: -auth.label-access-control-enabled
+[label_access_control_enabled: <boolean> | default = false]
 ```
 
 ### common
@@ -5268,6 +5273,11 @@ The `ingest_storage` block configures the Kafka-based ingest storage.
 [enabled: <boolean> | default = false]
 
 kafka:
+  # (experimental) The Kafka backend implementation. Supported values: kafka,
+  # warpstream.
+  # CLI flag: -ingest-storage.kafka.backend
+  [backend: <string> | default = "kafka"]
+
   # The Kafka seed broker address, or a comma-separated list of seed broker
   # addresses.
   # CLI flag: -ingest-storage.kafka.address
@@ -5282,11 +5292,13 @@ kafka:
   [client_id: <string> | default = ""]
 
   # The rack identifier for this Kafka client. Corresponds to the Kafka
-  # client.rack setting.
+  # client.rack setting. Only supported when ingest-storage.kafka.backend=kafka.
   # CLI flag: -ingest-storage.kafka.client-rack
   [client_rack: <string> | default = ""]
 
-  # The maximum time allowed to open a connection to a Kafka broker.
+  # The maximum time allowed to establish the TCP connection to a Kafka broker,
+  # including the TLS handshake when TLS is enabled. It does not include the
+  # subsequent SASL authentication handshake.
   # CLI flag: -ingest-storage.kafka.dial-timeout
   [dial_timeout: <duration> | default = 2s]
 
@@ -5302,6 +5314,45 @@ kafka:
   # Deprecated: has no effect (Mimir always uses a single Kafka write client).
   # CLI flag: -ingest-storage.kafka.write-clients
   [write_clients: <int> | default = 1]
+
+  # (experimental) Mark an agent as slow when its window-average latency exceeds
+  # this multiple of the cluster baseline. Only applies when
+  # -ingest-storage.kafka.backend=warpstream.
+  # CLI flag: -ingest-storage.kafka.warpstream-health-check-slow-multiplier
+  [warpstream_health_check_slow_multiplier: <float> | default = 2]
+
+  # (experimental) Suppress slow-based hedging when more than this fraction of
+  # agents are slow (cluster-wide issue). Only applies when
+  # -ingest-storage.kafka.backend=warpstream.
+  # CLI flag: -ingest-storage.kafka.warpstream-health-check-max-slow-fraction
+  [warpstream_health_check_max_slow_fraction: <float> | default = 0.3]
+
+  # (experimental) Mark an agent as faulty when its observed error rate exceeds
+  # this fraction. Only applies when -ingest-storage.kafka.backend=warpstream.
+  # CLI flag: -ingest-storage.kafka.warpstream-health-check-faulty-threshold
+  [warpstream_health_check_faulty_threshold: <float> | default = 0.2]
+
+  # (experimental) Suppress faulty-based hedging and demotion when more than
+  # this fraction of agents are faulty (cluster-wide issue). Only applies when
+  # -ingest-storage.kafka.backend=warpstream.
+  # CLI flag: -ingest-storage.kafka.warpstream-health-check-max-faulty-fraction
+  [warpstream_health_check_max_faulty_fraction: <float> | default = 0.3]
+
+  # (experimental) Floor on the dynamically-computed hedge delay. Only applies
+  # when -ingest-storage.kafka.backend=warpstream.
+  # CLI flag: -ingest-storage.kafka.warpstream-hedge-min-delay
+  [warpstream_hedge_min_delay: <duration> | default = 500ms]
+
+  # (experimental) Cap on how many per-partition candidates the hedge fanout
+  # considers when picking a fallback (excluding the primary and any agent
+  # already tried). Only applies when -ingest-storage.kafka.backend=warpstream.
+  # CLI flag: -ingest-storage.kafka.warpstream-hedge-max-agents
+  [warpstream_hedge_max_agents: <int> | default = 3]
+
+  # (experimental) Minimum wall-clock gap between probes to a demoted agent.
+  # Only applies when -ingest-storage.kafka.backend=warpstream.
+  # CLI flag: -ingest-storage.kafka.warpstream-demoter-probe-interval
+  [warpstream_demoter_probe_interval: <duration> | default = 1s]
 
   # The SASL mechanism used to authenticate to Kafka. Supported values: PLAIN,
   # SCRAM-SHA-256, SCRAM-SHA-512, OAUTHBEARER, AWS_MSK_IAM. For

@@ -121,17 +121,19 @@ type partitionOffsetReader struct {
 
 	client      *partitionOffsetClient
 	logger      log.Logger
+	topic       string
 	partitionID int32
 }
 
 func newPartitionOffsetReader(client *kgo.Client, topic string, partitionID int32, pollInterval time.Duration, reg prometheus.Registerer, logger log.Logger) *partitionOffsetReader {
-	offsetClient := newPartitionOffsetClient(client, topic, reg, logger)
-	return newPartitionOffsetReaderWithOffsetClient(offsetClient, partitionID, pollInterval, logger)
+	offsetClient := newPartitionOffsetClient(client, reg, logger)
+	return newPartitionOffsetReaderWithOffsetClient(offsetClient, topic, partitionID, pollInterval, logger)
 }
 
-func newPartitionOffsetReaderWithOffsetClient(offsetClient *partitionOffsetClient, partitionID int32, pollInterval time.Duration, logger log.Logger) *partitionOffsetReader {
+func newPartitionOffsetReaderWithOffsetClient(offsetClient *partitionOffsetClient, topic string, partitionID int32, pollInterval time.Duration, logger log.Logger) *partitionOffsetReader {
 	r := &partitionOffsetReader{
 		client:      offsetClient,
+		topic:       topic,
 		partitionID: partitionID,
 		logger:      logger, // Do not wrap with partition ID because it's already done by the caller.
 	}
@@ -145,14 +147,14 @@ func newPartitionOffsetReaderWithOffsetClient(offsetClient *partitionOffsetClien
 // been ever produced in the partition. This function issues a single request, but the Kafka client used under the
 // hood may retry a failed request until the retry timeout is hit.
 func (p *partitionOffsetReader) FetchLastProducedOffset(ctx context.Context) (_ int64, returnErr error) {
-	return p.client.FetchPartitionLastProducedOffset(ctx, p.partitionID)
+	return p.client.FetchPartitionLastProducedOffset(ctx, p.topic, p.partitionID)
 }
 
 // FetchPartitionStartOffset fetches and returns the start offset for a partition. This function returns 0 if no record has
 // been ever produced in the partition. This function issues a single request, but the Kafka client used under the
 // hood may retry a failed request until the retry timeout is hit.
 func (p *partitionOffsetReader) FetchPartitionStartOffset(ctx context.Context) (_ int64, returnErr error) {
-	return p.client.FetchPartitionStartOffset(ctx, p.partitionID)
+	return p.client.FetchPartitionStartOffset(ctx, p.topic, p.partitionID)
 }
 
 type GetPartitionIDsFunc func(ctx context.Context) ([]int32, error)
@@ -169,7 +171,7 @@ type TopicOffsetsReader struct {
 
 func NewTopicOffsetsReader(client *kgo.Client, topic string, getPartitionIDs GetPartitionIDsFunc, pollInterval time.Duration, reg prometheus.Registerer, logger log.Logger) *TopicOffsetsReader {
 	r := &TopicOffsetsReader{
-		client:          newPartitionOffsetClient(client, topic, reg, logger),
+		client:          newPartitionOffsetClient(client, reg, logger),
 		topic:           topic,
 		getPartitionIDs: getPartitionIDs,
 		logger:          logger,
@@ -180,15 +182,6 @@ func NewTopicOffsetsReader(client *kgo.Client, topic string, getPartitionIDs Get
 	return r
 }
 
-// NewTopicOffsetsReaderForAllPartitions returns a TopicOffsetsReader instance that fetches the offsets for all
-// existing partitions in a topic. The list of partitions is refreshed each time FetchLastProducedOffset() is called,
-// so using a TopicOffsetsReader created by this function adds an extra latency to refresh partitions each time.
-func NewTopicOffsetsReaderForAllPartitions(client *kgo.Client, topic string, pollInterval time.Duration, reg prometheus.Registerer, logger log.Logger) *TopicOffsetsReader {
-	offsetsClient := newPartitionOffsetClient(client, topic, reg, logger)
-
-	return NewTopicOffsetsReader(client, topic, offsetsClient.ListTopicPartitionIDs, pollInterval, reg, logger)
-}
-
 // FetchLastProducedOffset fetches and returns the last produced offset for each requested partition in the topic.
 // The offset is -1 if a partition has been created but no record has been produced yet.
 func (p *TopicOffsetsReader) FetchLastProducedOffset(ctx context.Context) (map[int32]int64, error) {
@@ -197,7 +190,12 @@ func (p *TopicOffsetsReader) FetchLastProducedOffset(ctx context.Context) (map[i
 		return nil, err
 	}
 
-	return p.client.FetchPartitionsLastProducedOffsets(ctx, partitionIDs)
+	offsetsByTopic, err := p.client.FetchPartitionsLastProducedOffsets(ctx, map[string][]int32{p.topic: partitionIDs})
+	if err != nil {
+		return nil, err
+	}
+
+	return offsetsByTopic[p.topic], nil
 }
 
 func (p *TopicOffsetsReader) Topic() string {

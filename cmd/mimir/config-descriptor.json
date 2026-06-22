@@ -8994,6 +8994,17 @@
           "blockEntries": [
             {
               "kind": "field",
+              "name": "backend",
+              "required": false,
+              "desc": "The Kafka backend implementation. Supported values: kafka, warpstream.",
+              "fieldValue": null,
+              "fieldDefaultValue": "kafka",
+              "fieldFlag": "ingest-storage.kafka.backend",
+              "fieldType": "string",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
               "name": "address",
               "required": false,
               "desc": "The Kafka seed broker address, or a comma-separated list of seed broker addresses.",
@@ -9026,7 +9037,7 @@
               "kind": "field",
               "name": "client_rack",
               "required": false,
-              "desc": "The rack identifier for this Kafka client. Corresponds to the Kafka client.rack setting.",
+              "desc": "The rack identifier for this Kafka client. Corresponds to the Kafka client.rack setting. Only supported when ingest-storage.kafka.backend=kafka.",
               "fieldValue": null,
               "fieldDefaultValue": "",
               "fieldFlag": "ingest-storage.kafka.client-rack",
@@ -9036,7 +9047,7 @@
               "kind": "field",
               "name": "dial_timeout",
               "required": false,
-              "desc": "The maximum time allowed to open a connection to a Kafka broker.",
+              "desc": "The maximum time allowed to establish the TCP connection to a Kafka broker, including the TLS handshake when TLS is enabled. It does not include the subsequent SASL authentication handshake.",
               "fieldValue": null,
               "fieldDefaultValue": 2000000000,
               "fieldFlag": "ingest-storage.kafka.dial-timeout",
@@ -9062,6 +9073,83 @@
               "fieldFlag": "ingest-storage.kafka.write-clients",
               "fieldType": "int",
               "fieldCategory": "deprecated"
+            },
+            {
+              "kind": "field",
+              "name": "warpstream_health_check_slow_multiplier",
+              "required": false,
+              "desc": "Mark an agent as slow when its window-average latency exceeds this multiple of the cluster baseline. Only applies when -ingest-storage.kafka.backend=warpstream.",
+              "fieldValue": null,
+              "fieldDefaultValue": 2,
+              "fieldFlag": "ingest-storage.kafka.warpstream-health-check-slow-multiplier",
+              "fieldType": "float",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "warpstream_health_check_max_slow_fraction",
+              "required": false,
+              "desc": "Suppress slow-based hedging when more than this fraction of agents are slow (cluster-wide issue). Only applies when -ingest-storage.kafka.backend=warpstream.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0.3,
+              "fieldFlag": "ingest-storage.kafka.warpstream-health-check-max-slow-fraction",
+              "fieldType": "float",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "warpstream_health_check_faulty_threshold",
+              "required": false,
+              "desc": "Mark an agent as faulty when its observed error rate exceeds this fraction. Only applies when -ingest-storage.kafka.backend=warpstream.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0.2,
+              "fieldFlag": "ingest-storage.kafka.warpstream-health-check-faulty-threshold",
+              "fieldType": "float",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "warpstream_health_check_max_faulty_fraction",
+              "required": false,
+              "desc": "Suppress faulty-based hedging and demotion when more than this fraction of agents are faulty (cluster-wide issue). Only applies when -ingest-storage.kafka.backend=warpstream.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0.3,
+              "fieldFlag": "ingest-storage.kafka.warpstream-health-check-max-faulty-fraction",
+              "fieldType": "float",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "warpstream_hedge_min_delay",
+              "required": false,
+              "desc": "Floor on the dynamically-computed hedge delay. Only applies when -ingest-storage.kafka.backend=warpstream.",
+              "fieldValue": null,
+              "fieldDefaultValue": 500000000,
+              "fieldFlag": "ingest-storage.kafka.warpstream-hedge-min-delay",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "warpstream_hedge_max_agents",
+              "required": false,
+              "desc": "Cap on how many per-partition candidates the hedge fanout considers when picking a fallback (excluding the primary and any agent already tried). Only applies when -ingest-storage.kafka.backend=warpstream.",
+              "fieldValue": null,
+              "fieldDefaultValue": 3,
+              "fieldFlag": "ingest-storage.kafka.warpstream-hedge-max-agents",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "warpstream_demoter_probe_interval",
+              "required": false,
+              "desc": "Minimum wall-clock gap between probes to a demoted agent. Only applies when -ingest-storage.kafka.backend=warpstream.",
+              "fieldValue": null,
+              "fieldDefaultValue": 1000000000,
+              "fieldFlag": "ingest-storage.kafka.warpstream-demoter-probe-interval",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
             },
             {
               "kind": "field",
@@ -22429,6 +22517,17 @@
       ],
       "fieldValue": null,
       "fieldDefaultValue": null
+    },
+    {
+      "kind": "field",
+      "name": "label_access_control_enabled",
+      "required": false,
+      "desc": "If enabled, Mimir enforces label-based access control on metric read queries using the X-Prom-Label-Policy HTTP header.",
+      "fieldValue": null,
+      "fieldDefaultValue": false,
+      "fieldFlag": "auth.label-access-control-enabled",
+      "fieldType": "boolean",
+      "fieldCategory": "experimental"
     }
   ],
   "fieldValue": null,
