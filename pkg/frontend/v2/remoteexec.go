@@ -633,11 +633,7 @@ func (r *instantVectorExecutionResponse) GetNextSeries(ctx context.Context) (typ
 
 	series := r.currentBatch[0]
 	r.currentBatch = r.currentBatch[1:]
-
-	mqeData := types.InstantVectorSeriesData{
-		Floats:     mimirpb.FromSamplesToFPoints(series.Floats),
-		Histograms: mimirpb.FromHistogramsToHPoints(series.Histograms),
-	}
+	mqeData := querierpb.DecodeInstantVectorSeriesData(series)
 
 	var err error
 

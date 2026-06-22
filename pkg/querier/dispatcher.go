@@ -434,12 +434,9 @@ func (o *evaluationObserver) sendInstantVectorSeriesDataBatch(ctx context.Contex
 	series := make([]querierpb.InstantVectorSeriesData, 0, len(batch.unsentSeries))
 
 	for _, d := range batch.unsentSeries {
-		series = append(series, querierpb.InstantVectorSeriesData{
-			// The methods below do unsafe casts and do not copy the data from the slices, but this is OK as we're immediately
-			// serializing the message and sending it before the deferred return to the pool occurs above.
-			Floats:     mimirpb.FromFPointsToSamples(d.Floats),
-			Histograms: mimirpb.FromHPointsToHistograms(d.Histograms),
-		})
+		// EncodeInstantVectorData does unsafe casts and does not copy the data from the slices, but this is OK as we're immediately
+		// serializing the message and sending it before the deferred return to the pool occurs above.
+		series = append(series, querierpb.EncodeInstantVectorSeriesData(d))
 	}
 
 	msg := querierpb.EvaluateQueryResponse{

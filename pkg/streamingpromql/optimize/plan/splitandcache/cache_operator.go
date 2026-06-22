@@ -948,12 +948,11 @@ func (c *CacheOperator) determineNewExtentEvaluationTimestamp() int64 {
 }
 
 func (c *CacheOperator) encodeDataForCacheEntry() []querierpb.InstantVectorSeriesData {
-	encoded := make([]querierpb.InstantVectorSeriesData, len(c.data))
-	for i, d := range c.data {
-		// The methods below do unsafe casts and do not copy the data from the slices, but this is OK as we're immediately
+	encoded := make([]querierpb.InstantVectorSeriesData, 0, len(c.data))
+	for _, d := range c.data {
+		// EncodeInstantVectorData does unsafe casts and does not copy the data from the slices, but this is OK as we're immediately
 		// serializing the message and writing it to the cache before these slices are returned to their respective pools.
-		encoded[i].Floats = mimirpb.FromFPointsToSamples(d.Floats)
-		encoded[i].Histograms = mimirpb.FromHPointsToHistograms(d.Histograms)
+		encoded = append(encoded, querierpb.EncodeInstantVectorSeriesData(d))
 	}
 	return encoded
 }
@@ -1066,11 +1065,7 @@ func (c *cachedExtentReader) GetSeries(_ context.Context, seriesIdx int) (types.
 	}
 
 	cachedData := c.extent.Data[seriesIdx]
-
-	mqeData := types.InstantVectorSeriesData{
-		Floats:     mimirpb.FromSamplesToFPoints(cachedData.Floats),
-		Histograms: mimirpb.FromHistogramsToHPoints(cachedData.Histograms),
-	}
+	mqeData := querierpb.DecodeInstantVectorSeriesData(cachedData)
 
 	// FromSamplesToFPoints and FromHistogramsToHPoints don't account for memory consumption, so do that now.
 	if err := c.parent.MemoryConsumptionTracker.IncreaseMemoryConsumption(uint64(cap(mqeData.Floats))*types.FPointSize, limiter.FPointSlices); err != nil {
