@@ -754,7 +754,7 @@ All three endpoints accept the following parameters, supplied either as URL quer
 - **case_sensitive** - _optional_ - whether `search[]` term matching is case-sensitive. Defaults to `true`.
 - **fuzz_alg** - _optional_ - the fuzzy-matching algorithm used to score `search[]` terms. Either `subsequence` (the default) or `jarowinkler`.
 - **fuzz_threshold** - _optional_ - the minimum match score a candidate must reach to be returned, as an integer between `0` and `100`. Defaults to `0`.
-- **sort_by** - _optional_ - the result ordering. One of `alpha` (the default), which sorts alphabetically, or `score`, which sorts by descending relevance score. Using `score` requires at least one `search[]` term.
+- **sort_by** - _optional_ - the result ordering. Either `alpha` (the default), which sorts alphabetically, or `score`, which sorts by descending relevance score. Using `score` requires at least one `search[]` term.
 - **sort_dir** - _optional_ - the sort direction when `sort_by=alpha`. One of `asc` (the default) or `dsc`. Cannot be combined with `sort_by=score`.
 - **limit** - _optional_ - the maximum number of results to return. Defaults to `100`. A value of `0` means no limit. The effective limit can be further reduced by the `-querier.max-label-names-limit` and `-querier.max-label-values-limit` per-tenant limits; when this happens, a warning is included in the response trailer.
 - **batch_size** - _optional_ - the maximum number of results carried in each streamed NDJSON batch. Defaults to `100`, and must not exceed `10000`. This parameter controls only the response framing, not the total number of results.
