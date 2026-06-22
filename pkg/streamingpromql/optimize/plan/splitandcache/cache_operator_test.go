@@ -963,6 +963,10 @@ func (m *mockLimitsProvider) GetMaxCacheFreshness(ctx context.Context) (time.Dur
 	return m.maxFreshness, nil
 }
 
+func (m *mockLimitsProvider) AllowCachingUnalignedQueries(ctx context.Context) (bool, error) {
+	return false, nil
+}
+
 func TestCacheOperator_CacheKey(t *testing.T) {
 	generateCacheKey := func(tenantID string, desiredTimeRange types.QueryTimeRange, node planning.Node, params *planning.QueryParameters) []byte {
 		o := newCacheOperator(nil, nil, node, desiredTimeRange, nil, posrange.PositionRange{}, params, nil, log.NewNopLogger(), cacheEntryInterval)

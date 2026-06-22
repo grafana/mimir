@@ -924,6 +924,15 @@ func (p *TenantQueryLimitsProvider) GetMaxCacheFreshness(ctx context.Context) (t
 	return validation.MaxDurationPerTenant(tenantIDs, p.limits.MaxCacheFreshness), nil
 }
 
+func (p *TenantQueryLimitsProvider) AllowCachingUnalignedQueries(ctx context.Context) (bool, error) {
+	tenantIDs, err := tenant.TenantIDs(ctx)
+	if err != nil {
+		return false, err
+	}
+
+	return validation.AllTrueBooleansPerTenant(tenantIDs, p.limits.ResultsCacheForUnalignedQueryEnabled), nil
+}
+
 type RequestMetrics struct {
 	RequestDuration                *prometheus.HistogramVec
 	ReceivedMessageSize            *prometheus.HistogramVec

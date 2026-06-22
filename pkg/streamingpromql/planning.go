@@ -31,6 +31,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/commonsubexpressionelimination"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/multiaggregation"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/rangevectorsplitting"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/splitandcache"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	planningmetrics "github.com/grafana/mimir/pkg/streamingpromql/planning/metrics"
@@ -88,10 +89,6 @@ func NewQueryPlannerWithTime(opts EngineOpts, versionProvider QueryPlanVersionPr
 		return nil, err
 	}
 
-	// FIXME: it makes sense to register these common optimization passes here, but we'll likely need to rework this once
-	// we introduce query-frontend-specific optimization passes like sharding and splitting for two reasons:
-	//  1. We want to avoid a circular dependency between this package and the query-frontend package where most of the logic for these optimization passes lives.
-	//  2. We don't want to register these optimization passes in queriers.
 	planner.RegisterASTOptimizationPass(&ast.InsertOmittedTargetInfoSelector{}) // We apply this first so that all other optimization passes can safely assume that info functions have exactly 2 arguments.
 	planner.RegisterASTOptimizationPass(&ast.CollapseConstants{})               // We expect this to be applied early to simplify the logic for the rest of the optimization passes.
 
@@ -157,6 +154,10 @@ func NewQueryPlannerWithTime(opts EngineOpts, versionProvider QueryPlanVersionPr
 
 	if opts.EnableNarrowBinarySelectors {
 		planner.RegisterQueryPlanOptimizationPass(plan.NewNarrowSelectorsOptimizationPass(opts.CommonOpts.Reg, opts.Logger))
+	}
+
+	if opts.RangeQuerySplittingAndCaching.SplitEnabled || opts.RangeQuerySplittingAndCaching.CacheEnabled {
+		planner.RegisterQueryPlanOptimizationPass(splitandcache.NewOptimizationPass(opts.RangeQuerySplittingAndCaching.SplitEnabled, opts.RangeQuerySplittingAndCaching.SplitInterval, opts.RangeQuerySplittingAndCaching.CacheEnabled, opts.Limits))
 	}
 
 	return planner, nil
