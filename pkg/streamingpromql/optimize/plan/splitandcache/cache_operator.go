@@ -809,7 +809,10 @@ func (c *CacheOperator) finalizeExtents(ctx context.Context) (desiredTimeRangeSt
 			}
 		}
 
-		if c.extents.shouldWriteCacheEntry {
+		if c.extents.shouldWriteCacheEntry && extent.GetStartT() <= c.extents.cacheableRangeEndT {
+			// Only try to add the extent to the cached time range stats if it overlaps with the cached time range.
+			// We might have an extent that starts after the cached time range (due to the max freshness window),
+			// and AddSubRange below will return an error if they don't overlap with the cached time range.
 			if cacheableTimeRangeStats == nil {
 				cacheableTimeRange := types.NewRangeQueryTimeRange(timestamp.Time(c.extents.cacheableRangeStartT), timestamp.Time(c.extents.cacheableRangeEndT), time.Duration(c.DesiredTimeRange.IntervalMilliseconds)*time.Millisecond)
 				cacheableTimeRangeStats, err = types.NewOperatorEvaluationStats(ctx, cacheableTimeRange, c.MemoryConsumptionTracker, extentStats.GetSubsetCount())

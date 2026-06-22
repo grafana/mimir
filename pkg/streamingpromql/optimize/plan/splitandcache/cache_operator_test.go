@@ -475,6 +475,43 @@ func TestCacheOperator(t *testing.T) {
 			expectedTTL:                      oooTTL,
 			expectedAnyCachedExtentsRetained: true,
 		},
+
+		"cache hit, but extent was somehow written entirely within max freshness window": {
+			timeRange: types.NewRangeQueryTimeRange(timeNow.Add(-limits.maxFreshness).Add(-10*time.Minute), timeNow, step),
+			existingCacheEntry: &CacheEntry{
+				Extents: []CachedExtent{
+					extentFor(types.NewRangeQueryTimeRange(timeNow.Add(-limits.maxFreshness).Add(2*time.Minute), timeNow, step), timeNow, existingTraceID),
+				},
+			},
+
+			expectedFreshlyEvaluatedRanges: []types.QueryTimeRange{
+				types.NewRangeQueryTimeRange(timeNow.Add(-limits.maxFreshness).Add(-10*time.Minute), timeNow.Add(-limits.maxFreshness).Add(time.Minute), step),
+			},
+			expectedWrittenCacheEntry: &CacheEntry{
+				Extents: []CachedExtent{
+					withAnnotationsForTimeRange(
+						extentFor(types.NewRangeQueryTimeRange(timeNow.Add(-limits.maxFreshness).Add(-10*time.Minute), timeNow.Add(-limits.maxFreshness), step), timeNow, newTraceID),
+						types.NewRangeQueryTimeRange(timeNow.Add(-limits.maxFreshness).Add(-10*time.Minute), timeNow, step),
+					),
+				},
+			},
+			expectedAnyCachedExtentsRetained: true,
+		},
+
+		"cache hit, existing extent covers entire period up to max freshness window": {
+			timeRange: types.NewRangeQueryTimeRange(timeNow.Add(-limits.maxFreshness).Add(-10*time.Minute), timeNow, step),
+			existingCacheEntry: &CacheEntry{
+				Extents: []CachedExtent{
+					extentFor(types.NewRangeQueryTimeRange(timeNow.Add(-limits.maxFreshness).Add(-10*time.Minute), timeNow.Add(-limits.maxFreshness), step), timeNow, existingTraceID),
+				},
+			},
+
+			expectedFreshlyEvaluatedRanges: []types.QueryTimeRange{
+				types.NewRangeQueryTimeRange(timeNow.Add(-limits.maxFreshness).Add(step), timeNow, step),
+			},
+			expectedWrittenCacheEntry:        nil,
+			expectedAnyCachedExtentsRetained: true,
+		},
 	}
 
 	for name, testCase := range testCases {
