@@ -91,23 +91,25 @@ func (x AggregationOperation) String() string {
 type BinaryOperation int32
 
 const (
-	BINARY_UNKNOWN BinaryOperation = 0
-	BINARY_LAND    BinaryOperation = 1
-	BINARY_LOR     BinaryOperation = 2
-	BINARY_LUNLESS BinaryOperation = 3
-	BINARY_ATAN2   BinaryOperation = 4
-	BINARY_SUB     BinaryOperation = 5
-	BINARY_ADD     BinaryOperation = 6
-	BINARY_MUL     BinaryOperation = 7
-	BINARY_MOD     BinaryOperation = 8
-	BINARY_DIV     BinaryOperation = 9
-	BINARY_POW     BinaryOperation = 10
-	BINARY_EQLC    BinaryOperation = 11
-	BINARY_NEQ     BinaryOperation = 12
-	BINARY_LTE     BinaryOperation = 13
-	BINARY_LSS     BinaryOperation = 14
-	BINARY_GTE     BinaryOperation = 15
-	BINARY_GTR     BinaryOperation = 16
+	BINARY_UNKNOWN    BinaryOperation = 0
+	BINARY_LAND       BinaryOperation = 1
+	BINARY_LOR        BinaryOperation = 2
+	BINARY_LUNLESS    BinaryOperation = 3
+	BINARY_ATAN2      BinaryOperation = 4
+	BINARY_SUB        BinaryOperation = 5
+	BINARY_ADD        BinaryOperation = 6
+	BINARY_MUL        BinaryOperation = 7
+	BINARY_MOD        BinaryOperation = 8
+	BINARY_DIV        BinaryOperation = 9
+	BINARY_POW        BinaryOperation = 10
+	BINARY_EQLC       BinaryOperation = 11
+	BINARY_NEQ        BinaryOperation = 12
+	BINARY_LTE        BinaryOperation = 13
+	BINARY_LSS        BinaryOperation = 14
+	BINARY_GTE        BinaryOperation = 15
+	BINARY_GTR        BinaryOperation = 16
+	BINARY_TRIM_UPPER BinaryOperation = 17
+	BINARY_TRIM_LOWER BinaryOperation = 18
 )
 
 var BinaryOperation_name = map[int32]string{
@@ -128,26 +130,30 @@ var BinaryOperation_name = map[int32]string{
 	14: "BINARY_LSS",
 	15: "BINARY_GTE",
 	16: "BINARY_GTR",
+	17: "BINARY_TRIM_UPPER",
+	18: "BINARY_TRIM_LOWER",
 }
 
 var BinaryOperation_value = map[string]int32{
-	"BINARY_UNKNOWN": 0,
-	"BINARY_LAND":    1,
-	"BINARY_LOR":     2,
-	"BINARY_LUNLESS": 3,
-	"BINARY_ATAN2":   4,
-	"BINARY_SUB":     5,
-	"BINARY_ADD":     6,
-	"BINARY_MUL":     7,
-	"BINARY_MOD":     8,
-	"BINARY_DIV":     9,
-	"BINARY_POW":     10,
-	"BINARY_EQLC":    11,
-	"BINARY_NEQ":     12,
-	"BINARY_LTE":     13,
-	"BINARY_LSS":     14,
-	"BINARY_GTE":     15,
-	"BINARY_GTR":     16,
+	"BINARY_UNKNOWN":    0,
+	"BINARY_LAND":       1,
+	"BINARY_LOR":        2,
+	"BINARY_LUNLESS":    3,
+	"BINARY_ATAN2":      4,
+	"BINARY_SUB":        5,
+	"BINARY_ADD":        6,
+	"BINARY_MUL":        7,
+	"BINARY_MOD":        8,
+	"BINARY_DIV":        9,
+	"BINARY_POW":        10,
+	"BINARY_EQLC":       11,
+	"BINARY_NEQ":        12,
+	"BINARY_LTE":        13,
+	"BINARY_LSS":        14,
+	"BINARY_GTE":        15,
+	"BINARY_GTR":        16,
+	"BINARY_TRIM_UPPER": 17,
+	"BINARY_TRIM_LOWER": 18,
 }
 
 func (x BinaryOperation) String() string {
@@ -269,6 +275,10 @@ type MatrixSelectorDetails struct {
 	Anchored             bool             `protobuf:"varint,8,opt,name=anchored,proto3" json:"anchored,omitempty"`
 	CounterAware         bool             `protobuf:"varint,9,opt,name=counterAware,proto3" json:"counterAware,omitempty"`
 	Subsets              []SubsetMatchers `protobuf:"bytes,12,rep,name=subsets,proto3" json:"subsets,omitempty"`
+	// anchoredResetsChanges is set when the anchored modifier is applied to resets() or changes(). These
+	// functions select the anchor across both floats and histograms rather than synthesising float boundary
+	// values, so they take a different path through the range vector selector.
+	AnchoredResetsChanges bool `protobuf:"varint,13,opt,name=anchoredResetsChanges,proto3" json:"anchoredResetsChanges,omitempty"`
 }
 
 // SubsetMatchers defines a subset for a selector to report in its statistics.
@@ -801,6 +811,13 @@ func (m *MatrixSelectorDetails) GetSubsets() []SubsetMatchers {
 	return nil
 }
 
+func (m *MatrixSelectorDetails) GetAnchoredResetsChanges() bool {
+	if m != nil {
+		return m.AnchoredResetsChanges
+	}
+	return false
+}
+
 func (m *SubsetMatchers) GetMatchers() []*LabelMatcher {
 	if m != nil {
 		return m.Matchers
@@ -1181,6 +1198,9 @@ func (m *MatrixSelectorDetails) Size() int {
 	for i := range m.Subsets {
 		s := m.Subsets[i].Size()
 		n += 1 + protowire.SizeVarint(uint64(s)) + s
+	}
+	if m.AnchoredResetsChanges {
+		n += 2
 	}
 	return n
 }
@@ -2086,6 +2106,16 @@ func (m *MatrixSelectorDetails) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 		return 0, nil
 	}
 	i := len(dAtA)
+	if m.AnchoredResetsChanges {
+		i--
+		if m.AnchoredResetsChanges {
+			dAtA[i] = 1
+		} else {
+			dAtA[i] = 0
+		}
+		i--
+		dAtA[i] = 0x68
+	}
 	for iNdEx := len(m.Subsets) - 1; iNdEx >= 0; iNdEx-- {
 		size, err := m.Subsets[iNdEx].MarshalToSizedBuffer(dAtA[:i])
 		if err != nil {
@@ -5540,6 +5570,34 @@ func (m *MatrixSelectorDetails) unmarshal(dAtA []byte, depth int) error {
 				return err
 			}
 			iNdEx = postIndex
+		case 13: // anchoredResetsChanges
+			if wireType != 0 {
+				n, err := protohelpers.SkipValue(dAtA[iNdEx:], wireType, fieldNum)
+				if err != nil {
+					return err
+				}
+				iNdEx += n
+				continue
+			}
+			var v uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return fmt.Errorf("proto: integer overflow")
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				v |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					if shift == 63 && b > 1 {
+						return fmt.Errorf("proto: varint overflow")
+					}
+					break
+				}
+			}
+			m.AnchoredResetsChanges = v != 0
 		default:
 			n, err := protohelpers.SkipValue(dAtA[iNdEx:], wireType, fieldNum)
 			if err != nil {

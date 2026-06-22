@@ -465,6 +465,9 @@ func (this *MatrixSelectorDetails) Equal(that interface{}) bool {
 			return false
 		}
 	}
+	if this.AnchoredResetsChanges != that1.AnchoredResetsChanges {
+		return false
+	}
 	return true
 }
 
@@ -1365,6 +1368,12 @@ func (this *MatrixSelectorDetails) Compare(that interface{}) int {
 		if c := this.Subsets[i].Compare(that1.Subsets[i]); c != 0 {
 			return c
 		}
+	}
+	if this.AnchoredResetsChanges != that1.AnchoredResetsChanges {
+		if !this.AnchoredResetsChanges && that1.AnchoredResetsChanges {
+			return -1
+		}
+		return 1
 	}
 	return 0
 }
