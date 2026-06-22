@@ -235,7 +235,15 @@ func (c *CacheOperator) fetchExistingExtents(ctx context.Context) ([]CachedExten
 		hasExpired := c.evaluationTime.After(expirationTime)
 
 		if hasExpired {
-			spanLogger.DebugLog("msg", "ignoring cached extent as it has expired", "extent_oldest_evaluation_time", extent.OldestEvaluationTime, "extent_end_ts", extent.EndT, "ttl", ttl, "expiration_time", expirationTime)
+			spanLogger.DebugLog(
+				"msg", "ignoring cached extent as it has expired",
+				"hashed_key", c.hashedKey,
+				"extent_oldest_evaluation_time", extent.OldestEvaluationTime,
+				"extent_end_ts", extent.EndT,
+				"ttl", ttl,
+				"expiration_time", expirationTime,
+				"evaluation_time", c.evaluationTime,
+			)
 		}
 
 		return hasExpired
@@ -246,7 +254,7 @@ func (c *CacheOperator) fetchExistingExtents(ctx context.Context) ([]CachedExten
 	if err := c.MemoryConsumptionTracker.IncreaseMemoryConsumption(cachedExtentsSize, limiter.CachedResponses); err != nil {
 		return nil, err
 	}
-	c.cachedExtentsSize = cachedExtentsSize // Only set this now, so that if the increase above fails, calling Close doesn't call a panic for trying to apply a decrease of the same magnitude.
+	c.cachedExtentsSize = cachedExtentsSize // Only set this now, so that if the increase above fails, calling Close doesn't cause a panic for trying to apply a decrease of the same magnitude.
 
 	return cacheEntry.Extents, nil
 }
