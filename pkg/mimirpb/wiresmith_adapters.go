@@ -2,6 +2,8 @@
 
 package mimirpb
 
+import "bytes"
+
 // This file implements the wiresmith customtype contract
 // (SizeWiresmith/MarshalWiresmith/UnmarshalWiresmith/EqualWiresmith/CompareWiresmith)
 // for the custom types referenced from mimir.proto via
@@ -82,4 +84,39 @@ func (bs *LabelAdapter) CompareWiresmith(other any) int {
 		return -1
 	}
 	return bs.Compare(o)
+}
+
+// SizeWiresmith implements the wiresmith customtype contract.
+func (t *UnsafeByteSlice) SizeWiresmith() int {
+	return t.Size()
+}
+
+// MarshalWiresmith implements the wiresmith customtype contract: buf is exactly
+// SizeWiresmith() bytes; copy the raw bytes forward into it.
+func (t *UnsafeByteSlice) MarshalWiresmith(buf []byte) (int, error) {
+	return t.MarshalTo(buf)
+}
+
+// UnmarshalWiresmith implements the wiresmith customtype contract. It keeps an
+// unsafe reference into buf rather than copying; see UnsafeByteSlice docs.
+func (t *UnsafeByteSlice) UnmarshalWiresmith(buf []byte) error {
+	return t.Unmarshal(buf)
+}
+
+// EqualWiresmith implements the wiresmith customtype contract.
+func (t *UnsafeByteSlice) EqualWiresmith(other any) bool {
+	o, ok := other.(UnsafeByteSlice)
+	if !ok {
+		return false
+	}
+	return t.Equal(o)
+}
+
+// CompareWiresmith implements the wiresmith customtype contract.
+func (t *UnsafeByteSlice) CompareWiresmith(other any) int {
+	o, ok := other.(UnsafeByteSlice)
+	if !ok {
+		return -1
+	}
+	return bytes.Compare([]byte(*t), []byte(o))
 }

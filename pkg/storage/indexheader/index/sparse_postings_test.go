@@ -102,8 +102,8 @@ func TestSparsePostingsOffsetsTableFromProto(t *testing.T) {
 	for testName, testCase := range testCases {
 		t.Run(testName, func(t *testing.T) {
 
-			postingsMap := make(map[string]*indexheaderpb.PostingValueOffsets)
-			postingsMap["__name__"] = &indexheaderpb.PostingValueOffsets{
+			postingsMap := make(map[string]indexheaderpb.PostingValueOffsets)
+			postingsMap["__name__"] = indexheaderpb.PostingValueOffsets{
 				Offsets: createPostingsOffsetsProto(testCase.existingOffsetsLen),
 			}
 

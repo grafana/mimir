@@ -4,11 +4,10 @@ syntax = "proto3";
 
 package usagetrackerpb;
 
-import "gogoproto/gogo.proto";
+import "wiresmith/options.proto";
 
-option go_package = "usagetrackerpb";
-option (gogoproto.marshaler_all) = true;
-option (gogoproto.unmarshaler_all) = true;
+option go_package = "github.com/grafana/mimir/pkg/usagetracker/usagetrackerpb";
+option (wiresmith.options.no_presence_all) = true;
 
 service UsageTracker {
   rpc TrackSeries(TrackSeriesRequest) returns (TrackSeriesResponse);
@@ -45,11 +44,13 @@ message TrackSeriesBatchPartition {
   int32 partition = 1;
 
   // The users along with their series to track.
-  repeated TrackSeriesBatchUser users = 2;
+  // pointer=true preserves the []*TrackSeriesBatchUser shape from gogo's nullable=true default.
+  repeated TrackSeriesBatchUser users = 2 [(wiresmith.options.pointer) = true];
 }
 
 message TrackSeriesBatchRequest {
-  repeated TrackSeriesBatchPartition partitions = 1;
+  // pointer=true preserves the []*TrackSeriesBatchPartition shape from gogo's nullable=true default.
+  repeated TrackSeriesBatchPartition partitions = 1 [(wiresmith.options.pointer) = true];
 }
 
 message TrackSeriesBatchRejectionUser {
@@ -65,11 +66,13 @@ message TrackSeriesBatchRejection {
   int32 partition = 1;
 
   // The users along with their rejected series.
-  repeated TrackSeriesBatchRejectionUser users = 2;
+  // pointer=true preserves the []*TrackSeriesBatchRejectionUser shape from gogo's nullable=true default.
+  repeated TrackSeriesBatchRejectionUser users = 2 [(wiresmith.options.pointer) = true];
 }
 
 message TrackSeriesBatchResponse {
-  repeated TrackSeriesBatchRejection rejections = 1;
+  // pointer=true preserves the []*TrackSeriesBatchRejection shape from gogo's nullable=true default.
+  repeated TrackSeriesBatchRejection rejections = 1 [(wiresmith.options.pointer) = true];
 }
 
 message SeriesCreatedEvent {

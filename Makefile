@@ -250,7 +250,14 @@ PROTO_WIRESMITH_GOS := \
 	pkg/compactor/scheduler/compactorschedulerpb/compactorscheduler_compare.pb.go \
 	pkg/compactor/scheduler/compactorschedulerpb/compactorscheduler_util.pb.go \
 	pkg/frontend/v2/frontendv2pb/frontend_compare.pb.go \
-	pkg/frontend/v2/frontendv2pb/frontend_util.pb.go
+	pkg/frontend/v2/frontendv2pb/frontend_util.pb.go \
+	pkg/ingester/client/ingester_compare.pb.go \
+	pkg/ingester/client/ingester_util.pb.go \
+	pkg/distributor/distributorpb/distributor_util.pb.go \
+	pkg/usagetracker/usagetrackerpb/usagetracker_compare.pb.go \
+	pkg/usagetracker/usagetrackerpb/usagetracker_util.pb.go \
+	pkg/storage/indexheader/indexheaderpb/sparse_compare.pb.go \
+	pkg/storage/indexheader/indexheaderpb/sparse_util.pb.go
 
 # Packages containing //node:generate-annotated structs, and the corresponding
 # generated files. Discovered at make-parse time.
@@ -531,6 +538,27 @@ ifeq ($(GENERATE_FILES),true)
 	./tools/wiresmith-cqa3.sh
 else
 	@echo "Warning: generating files has been disabled, but the following files need to be regenerated: $(CQA3_WIRESMITH_PBGO)"
+	@echo "If this is unexpected, check if the last modified timestamps on the outputs and their .proto sources are correct."
+endif
+
+# pkg/ingester/client, pkg/distributor/distributorpb, pkg/usagetracker/usagetrackerpb,
+# and pkg/storage/indexheader/indexheaderpb are compiled by wiresmith (cqa.5).
+# ingester.proto and distributor.proto import mimir.proto by Go module path and are
+# staged together; usagetrackerpb and indexheaderpb have no cross-module imports and
+# are compiled separately with simple --proto_path.
+CQA5_WIRESMITH_PROTOS := \
+	pkg/ingester/client/ingester.proto \
+	pkg/distributor/distributorpb/distributor.proto \
+	pkg/usagetracker/usagetrackerpb/usagetracker.proto \
+	pkg/storage/indexheader/indexheaderpb/sparse.proto
+
+CQA5_WIRESMITH_PBGO := $(patsubst %.proto,%.pb.go,$(CQA5_WIRESMITH_PROTOS))
+
+$(CQA5_WIRESMITH_PBGO) &: $(CQA5_WIRESMITH_PROTOS) pkg/mimirpb/mimir.proto
+ifeq ($(GENERATE_FILES),true)
+	./tools/wiresmith-cqa5.sh
+else
+	@echo "Warning: generating files has been disabled, but the following files need to be regenerated: $(CQA5_WIRESMITH_PBGO)"
 	@echo "If this is unexpected, check if the last modified timestamps on the outputs and their .proto sources are correct."
 endif
 

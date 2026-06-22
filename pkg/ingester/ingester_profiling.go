@@ -16,6 +16,9 @@ import (
 
 // ProfilingWrapper is a wrapper around Ingester that adds tenant ID to pprof labels.
 type ProfilingWrapper struct {
+	// wiresmith-generated IngesterServer requires this embedded field; all
+	// unimplemented methods are delegated to ing via explicit forwarding methods.
+	client.UnimplementedIngesterServer
 	ing API
 }
 

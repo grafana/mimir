@@ -8,11 +8,10 @@ syntax = "proto3";
 package distributor;
 
 import "github.com/grafana/mimir/pkg/mimirpb/mimir.proto";
-import "gogoproto/gogo.proto";
+import "wiresmith/options.proto";
 
-option go_package = "distributorpb";
-option (gogoproto.marshaler_all) = true;
-option (gogoproto.unmarshaler_all) = true;
+option go_package = "github.com/grafana/mimir/pkg/distributor/distributorpb";
+option (wiresmith.options.no_presence_all) = true;
 
 service Distributor {
   rpc Push(cortexpb.WriteRequest) returns (cortexpb.WriteResponse) {}
