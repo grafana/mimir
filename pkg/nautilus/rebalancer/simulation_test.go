@@ -111,6 +111,7 @@ type simulation struct {
 	rebalancer *Rebalancer
 	assignment *assignment.Assignment
 	sources    []loadSource
+	now        time.Time
 }
 
 func newSimulation(numPartitions int, cfg Config) *simulation {
@@ -126,6 +127,7 @@ func newSimulation(numPartitions int, cfg Config) *simulation {
 		ingesters:  ingesters,
 		rebalancer: &Rebalancer{cfg: cfg},
 		assignment: assignment.FineEvenSplit(partitions, initialSlicesPerPartition),
+		now:        time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
 	}
 }
 
@@ -154,6 +156,7 @@ func (s *simulation) ingestTick() {
 	for _, ing := range s.ingesters {
 		ing.tick()
 	}
+	s.now = s.now.Add(time.Second)
 }
 
 func (s *simulation) collectRates() []rangeRate {
@@ -164,14 +167,85 @@ func (s *simulation) collectRates() []rangeRate {
 	return all
 }
 
-func (s *simulation) rebalance() {
+func (s *simulation) rebalance() []Action {
 	rates := s.collectRates()
-	now := time.Now()
+	now := s.now
 	s.rebalancer.pruneExpiredCooldowns(now)
 	var actions []Action
 	s.assignment, actions = s.rebalancer.runSlicer(s.assignment, rates, nil, s.partitions, nil, now)
 	s.rebalancer.recordMoveCooldowns(now, actions)
 	s.pushRangesToIngesters()
+	return actions
+}
+
+type simulationRound struct {
+	Round      int
+	Loads      map[int32]float64
+	Imbalance  float64
+	Entries    int
+	Actions    []Action
+	Assignment string
+}
+
+// runScenario executes the closed loop for a fixed number of
+// rebalance rounds and returns one history entry per observed state
+// (round 0 is before the first rebalance). Tests assert against this
+// history instead of open-coding the same warmup/rebalance/tick loops.
+func (s *simulation) runScenario(warmupTicks, rebalanceRounds, ticksPerRound int) []simulationRound {
+	s.pushRangesToIngesters()
+	for tick := 0; tick < warmupTicks; tick++ {
+		s.ingestTick()
+	}
+
+	history := []simulationRound{s.snapshotRound(0, nil)}
+	for round := 1; round <= rebalanceRounds; round++ {
+		actions := s.rebalance()
+		for tick := 0; tick < ticksPerRound; tick++ {
+			s.ingestTick()
+		}
+		history = append(history, s.snapshotRound(round, actions))
+	}
+	return history
+}
+
+func (s *simulation) snapshotRound(round int, actions []Action) simulationRound {
+	return simulationRound{
+		Round:      round,
+		Loads:      s.partitionLoads(),
+		Imbalance:  s.imbalanceRatio(),
+		Entries:    len(s.assignment.Entries),
+		Actions:    append([]Action(nil), actions...),
+		Assignment: assignmentDigest(s.assignment),
+	}
+}
+
+func assignmentDigest(a *assignment.Assignment) string {
+	if a == nil {
+		return ""
+	}
+	entries := append([]assignment.Entry(nil), a.Entries...)
+	sort.Slice(entries, func(i, j int) bool {
+		if entries[i].Range.Lo != entries[j].Range.Lo {
+			return entries[i].Range.Lo < entries[j].Range.Lo
+		}
+		if entries[i].Range.Hi != entries[j].Range.Hi {
+			return entries[i].Range.Hi < entries[j].Range.Hi
+		}
+		return entries[i].PartitionID < entries[j].PartitionID
+	})
+	var b strings.Builder
+	for _, e := range entries {
+		fmt.Fprintf(&b, "%08x-%08x:p%d;", e.Range.Lo, e.Range.Hi, e.PartitionID)
+	}
+	return b.String()
+}
+
+func totalActions(history []simulationRound) int {
+	total := 0
+	for _, r := range history {
+		total += len(r.Actions)
+	}
+	return total
 }
 
 func (s *simulation) partitionLoads() map[int32]float64 {
@@ -221,6 +295,22 @@ func logRound(t *testing.T, round int, s *simulation) {
 		round, strings.Join(parts, " "), total, avg, imbalance, len(s.assignment.Entries))
 }
 
+func logSimulationRound(t *testing.T, r simulationRound) {
+	parts := make([]string, 0, len(r.Loads))
+	total := 0.0
+	for pid, load := range r.Loads {
+		total += load
+		parts = append(parts, fmt.Sprintf("p%d=%.0f", pid, load))
+	}
+	sort.Strings(parts)
+	avg := 0.0
+	if len(r.Loads) > 0 {
+		avg = total / float64(len(r.Loads))
+	}
+	t.Logf("Round %2d: %s | total=%.0f avg=%.0f imbalance=%.2f entries=%d actions=%d",
+		r.Round, strings.Join(parts, " "), total, avg, r.Imbalance, r.Entries, len(r.Actions))
+}
+
 // simCfg returns a Config suited for the simulation: the rebalancer
 // runs the same way it does in production, with MovementBudget /
 // MoveCooldown as the only churn guards.
@@ -228,6 +318,86 @@ func simCfg(movementBudget float64) Config {
 	return Config{
 		MovementBudget: movementBudget,
 	}
+}
+
+// TestSimulation_SixImbalancedReplicasBalanceOverTime is the compact
+// regression scenario for "6 imbalanced replicas under constant load
+// balance over time": the traffic mix is fixed for the whole test, but
+// initially most hot hashes land in partition 0. The slicer should move
+// ranges until max/mean drops materially.
+func TestSimulation_SixImbalancedReplicasBalanceOverTime(t *testing.T) {
+	const (
+		numPartitions   = 6
+		ewmaWarmupTicks = 30
+		rebalanceRounds = 24
+		ticksPerRound   = 60
+	)
+
+	sim := newSimulation(numPartitions, simCfg(0.09))
+	hashSpacePerPartition := uint64(math.MaxUint32+1) / uint64(numPartitions)
+
+	// Heavy constant load in partition 0's initial hash space.
+	for i := 0; i < 24; i++ {
+		hash := uint32(uint64(i) * hashSpacePerPartition / 32)
+		sim.sources = append(sim.sources, loadSource{hash: hash, samplesPerTick: 1500})
+	}
+	// Lighter constant background load everywhere, so the target is
+	// not "move all load away from p0" but a balanced distribution.
+	for pid := int32(0); pid < int32(numPartitions); pid++ {
+		for i := 0; i < 8; i++ {
+			hash := uint32(uint64(pid)*hashSpacePerPartition + uint64(i)*hashSpacePerPartition/12)
+			sim.sources = append(sim.sources, loadSource{hash: hash, samplesPerTick: 75})
+		}
+	}
+
+	history := sim.runScenario(ewmaWarmupTicks, rebalanceRounds, ticksPerRound)
+	for _, r := range history {
+		logSimulationRound(t, r)
+	}
+
+	initial := history[0].Imbalance
+	final := history[len(history)-1].Imbalance
+	t.Logf("--- Six-replica constant-load convergence: %.2f -> %.2f, actions=%d ---", initial, final, totalActions(history))
+
+	require.Greater(t, initial, 3.0, "fixture should start heavily imbalanced")
+	require.NotZero(t, totalActions(history), "imbalanced constant load should trigger reassignment actions")
+	require.Less(t, final, 1.5, "six imbalanced replicas should converge under constant load")
+	require.Less(t, final-1.0, (initial-1.0)*0.5, "imbalance deviation should be cut at least in half")
+}
+
+// TestSimulation_SixBalancedReplicasStayStable is the compact
+// regression scenario for "6 balanced replicas under constant load do
+// not have their assignments changed": each partition receives the
+// same number of equally-weighted source hashes inside its initial
+// hash-space slice, so the current fine-even assignment is already a
+// fixed point.
+func TestSimulation_SixBalancedReplicasStayStable(t *testing.T) {
+	const (
+		numPartitions   = 6
+		ewmaWarmupTicks = 30
+		rebalanceRounds = 12
+		ticksPerRound   = 60
+	)
+
+	sim := newSimulation(numPartitions, simCfg(0.09))
+	for _, e := range sim.assignment.Entries {
+		hash := e.Range.Lo + uint32((uint64(e.Range.Hi)-uint64(e.Range.Lo))/2)
+		sim.sources = append(sim.sources, loadSource{hash: hash, samplesPerTick: 100})
+	}
+
+	history := sim.runScenario(ewmaWarmupTicks, rebalanceRounds, ticksPerRound)
+	for _, r := range history {
+		logSimulationRound(t, r)
+	}
+
+	initialAssignment := history[0].Assignment
+	for _, r := range history[1:] {
+		require.Empty(t, r.Actions, "balanced constant load should not produce slicer actions in round %d", r.Round)
+		require.Equal(t, initialAssignment, r.Assignment, "balanced constant load should not change assignments in round %d", r.Round)
+	}
+
+	final := history[len(history)-1].Imbalance
+	require.Less(t, final, 1.05, "balanced constant load should remain near perfectly balanced")
 }
 
 // TestSimulation_SkewedLoadConverges simulates a realistic scenario:
