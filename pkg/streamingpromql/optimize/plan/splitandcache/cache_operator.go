@@ -677,38 +677,9 @@ func (c *CacheOperator) accumulateCacheableHistograms(data types.InstantVectorSe
 		return nil
 	}
 
-	newPointCount := lastCacheableIndex - firstCacheableIndex + 1
-	existingPointCount := len(cacheableTimeRangeData.Histograms)
-	neededSliceCapacity := existingPointCount + newPointCount
-
-	if cap(cacheableTimeRangeData.Histograms) < neededSliceCapacity {
-		oldSlice := cacheableTimeRangeData.Histograms
-		var err error
-		cacheableTimeRangeData.Histograms, err = types.HPointSlicePool.Get(neededSliceCapacity, c.MemoryConsumptionTracker)
-		if err != nil {
-			return err
-		}
-		cacheableTimeRangeData.Histograms = append(cacheableTimeRangeData.Histograms, oldSlice...)
-		clear(oldSlice)
-		types.HPointSlicePool.Put(&oldSlice, c.MemoryConsumptionTracker)
-	}
-
-	cacheableTimeRangeData.Histograms = cacheableTimeRangeData.Histograms[:neededSliceCapacity]
-
-	for i := range newPointCount {
-		sourcePoint := data.Histograms[firstCacheableIndex+i]
-		destinationIdx := existingPointCount + i
-		cacheableTimeRangeData.Histograms[destinationIdx].T = sourcePoint.T
-
-		// Reuse existing FloatHistogram instance in the destination slice if we can.
-		if cacheableTimeRangeData.Histograms[destinationIdx].H == nil {
-			cacheableTimeRangeData.Histograms[destinationIdx].H = sourcePoint.H.Copy()
-		} else {
-			sourcePoint.H.CopyTo(cacheableTimeRangeData.Histograms[destinationIdx].H)
-		}
-	}
-
-	return nil
+	var err error
+	cacheableTimeRangeData.Histograms, err = types.CopyHPoints(cacheableTimeRangeData.Histograms, data.Histograms[firstCacheableIndex:lastCacheableIndex+1], c.MemoryConsumptionTracker)
+	return err
 }
 
 // accumulateDesiredFloats accumulates desired float points from the given data into desiredTimeRangeData.
