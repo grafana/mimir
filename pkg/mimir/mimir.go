@@ -907,49 +907,49 @@ type Mimir struct {
 	ServiceMap    map[string]services.Service
 	ModuleManager *modules.Manager
 
-	API                              *api.API
-	Server                           *server.Server
-	ServerMetrics                    *server.Metrics
-	IngesterRing                     *ring.Ring
-	IngesterPartitionRingWatchers    *ingest.PartitionRingWatchers
-	IngesterPartitionInstanceRings   *ingest.PartitionInstanceRings
-	TenantLimits                     validation.TenantLimits
-	Overrides                        *validation.Overrides
-	QueryLimitsProvider              streamingpromql.QueryLimitsProvider
-	ActiveGroupsCleanup              *util.ActiveGroupsCleanupService
-	Distributor                      *distributor.Distributor
-	Ingester                         *ingester.Ingester
-	RuntimeConfig                    *runtimeconfig.Manager
-	QuerierQueryable                 prom_storage.SampleAndChunkQueryable
-	ExemplarQueryable                prom_storage.ExemplarQueryable
-	StoreQueryable                   prom_storage.Queryable
-	MetadataSupplier                 querier.MetadataSupplier
-	QuerierEngine                    promql.QueryEngine
-	QuerierLifecycler                *ring.BasicLifecycler
-	QuerierRing                      *ring.Ring
-	QuerierStreamingEngine           *streamingpromql.Engine // The MQE instance in QuerierEngine (without fallback wrapper), or nil if MQE is disabled.
-	QueryFrontendStreamingEngine     *streamingpromql.Engine // The MQE instance used by the query-frontend (without fallback wrapper), or nil if MQE is disabled.
-	QueryFrontendTripperware         querymiddleware.Tripperware
-	QueryFrontendTopicOffsetsReaders map[string]*ingest.TopicOffsetsReader
-	QueryFrontendCodec               querymiddleware.Codec
-	Ruler                            *ruler.Ruler
-	RulerStorage                     rulestore.RuleStore
-	Alertmanager                     *alertmanager.MultitenantAlertmanager
-	Compactor                        *compactor.MultitenantCompactor
-	CompactorScheduler               *compactorscheduler.Scheduler
-	StoreGateway                     *storegateway.StoreGateway
-	MemberlistKV                     *memberlist.KVInitService
-	ActivityTracker                  *activitytracker.ActivityTracker
-	Vault                            *vault.Vault
-	UsageStatsReporter               *usagestats.Reporter
-	UsageTracker                     *usagetracker.UsageTracker
-	UsageTrackerPartitionRing        *ring.MultiPartitionInstanceRing
-	UsageTrackerInstanceRing         *ring.Ring
-	BlockBuilder                     *blockbuilder.BlockBuilder
-	BlockBuilderScheduler            *blockbuilderscheduler.BlockBuilderScheduler
-	ContinuousTestManager            *continuoustest.Manager
-	BuildInfoHandler                 http.Handler
-	CostAttributionManager           *costattribution.Manager
+	API                             *api.API
+	Server                          *server.Server
+	ServerMetrics                   *server.Metrics
+	IngesterRing                    *ring.Ring
+	IngesterPartitionRingWatchers   *ingest.PartitionRingWatchers
+	IngesterPartitionInstanceRings  *ingest.PartitionInstanceRings
+	TenantLimits                    validation.TenantLimits
+	Overrides                       *validation.Overrides
+	QueryLimitsProvider             streamingpromql.QueryLimitsProvider
+	ActiveGroupsCleanup             *util.ActiveGroupsCleanupService
+	Distributor                     *distributor.Distributor
+	Ingester                        *ingester.Ingester
+	RuntimeConfig                   *runtimeconfig.Manager
+	QuerierQueryable                prom_storage.SampleAndChunkQueryable
+	ExemplarQueryable               prom_storage.ExemplarQueryable
+	StoreQueryable                  prom_storage.Queryable
+	MetadataSupplier                querier.MetadataSupplier
+	QuerierEngine                   promql.QueryEngine
+	QuerierLifecycler               *ring.BasicLifecycler
+	QuerierRing                     *ring.Ring
+	QuerierStreamingEngine          *streamingpromql.Engine // The MQE instance in QuerierEngine (without fallback wrapper), or nil if MQE is disabled.
+	QueryFrontendStreamingEngine    *streamingpromql.Engine // The MQE instance used by the query-frontend (without fallback wrapper), or nil if MQE is disabled.
+	QueryFrontendTripperware        querymiddleware.Tripperware
+	QueryFrontendTopicOffsetsReader *ingest.TopicOffsetsReader
+	QueryFrontendCodec              querymiddleware.Codec
+	Ruler                           *ruler.Ruler
+	RulerStorage                    rulestore.RuleStore
+	Alertmanager                    *alertmanager.MultitenantAlertmanager
+	Compactor                       *compactor.MultitenantCompactor
+	CompactorScheduler              *compactorscheduler.Scheduler
+	StoreGateway                    *storegateway.StoreGateway
+	MemberlistKV                    *memberlist.KVInitService
+	ActivityTracker                 *activitytracker.ActivityTracker
+	Vault                           *vault.Vault
+	UsageStatsReporter              *usagestats.Reporter
+	UsageTracker                    *usagetracker.UsageTracker
+	UsageTrackerPartitionRing       *ring.MultiPartitionInstanceRing
+	UsageTrackerInstanceRing        *ring.Ring
+	BlockBuilder                    *blockbuilder.BlockBuilder
+	BlockBuilderScheduler           *blockbuilderscheduler.BlockBuilderScheduler
+	ContinuousTestManager           *continuoustest.Manager
+	BuildInfoHandler                http.Handler
+	CostAttributionManager          *costattribution.Manager
 
 	// Extractors are used by queriers to extract HTTP headers / metadata from incoming requests.
 	// We use an abstraction here to support both httpgrpc requests and Protobuf requests.

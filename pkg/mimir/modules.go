@@ -884,10 +884,7 @@ func (t *Mimir) initQueryFrontendTopicOffsetsReaders() (services.Service, error)
 
 	ingestTopicOffsetsReader := ingest.NewTopicOffsetsReader(kafkaClient, t.Cfg.IngestStorage.KafkaConfig.Topic, getPartitionIDs, t.Cfg.IngestStorage.KafkaConfig.LastProducedOffsetPollInterval, t.Registerer, util_log.Logger)
 
-	if t.QueryFrontendTopicOffsetsReaders == nil {
-		t.QueryFrontendTopicOffsetsReaders = make(map[string]*ingest.TopicOffsetsReader)
-	}
-	t.QueryFrontendTopicOffsetsReaders[querierapi.ReadConsistencyOffsetsHeader] = ingestTopicOffsetsReader
+	t.QueryFrontendTopicOffsetsReader = ingestTopicOffsetsReader
 
 	return ingestTopicOffsetsReader, nil
 }
@@ -951,7 +948,7 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 		querymiddleware.PrometheusResponseExtractor{},
 		eng,
 		promOpts,
-		t.QueryFrontendTopicOffsetsReaders,
+		t.QueryFrontendTopicOffsetsReader,
 		t.Cfg.Frontend.QueryMiddleware.EnableRemoteExecution,
 		t.QueryFrontendStreamingEngine,
 		t.Registerer,
