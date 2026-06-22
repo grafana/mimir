@@ -752,7 +752,7 @@ All three endpoints accept the following parameters, supplied either as URL quer
 - **start** - _optional_ - the start of the time range to search, as a Unix timestamp (in seconds, with optional decimal places) or RFC 3339 timestamp. Defaults to one hour before the current time.
 - **end** - _optional_ - the end of the time range to search, in the same formats as `start`. Defaults to the current time. The value must not be before `start`.
 - **case_sensitive** - _optional_ - whether `search[]` term matching is case-sensitive. Defaults to `true`.
-- **fuzz_alg** - _optional_ - the fuzzy-matching algorithm used to score `search[]` terms. One of `subsequence` (the default) or `jarowinkler`.
+- **fuzz_alg** - _optional_ - the fuzzy-matching algorithm used to score `search[]` terms. Either `subsequence` (the default) or `jarowinkler`.
 - **fuzz_threshold** - _optional_ - the minimum match score a candidate must reach to be returned, as an integer between `0` and `100`. Defaults to `0`.
 - **sort_by** - _optional_ - the result ordering. One of `alpha` (the default), which sorts alphabetically, or `score`, which sorts by descending relevance score. Using `score` requires at least one `search[]` term.
 - **sort_dir** - _optional_ - the sort direction when `sort_by=alpha`. One of `asc` (the default) or `dsc`. Cannot be combined with `sort_by=score`.
