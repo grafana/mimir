@@ -333,6 +333,10 @@ func (c *CacheOperator) calculateExtents(ctx context.Context, existingExtents []
 		extentStartT := nextStartT
 		extentEndT := stepAlignedEndT
 
+		// We need to evaluate some part of the desired time range.
+		// Check if there's another extent that overlaps the desired time range: if so, then we don't need to evaluate the
+		// time range covered by that extent.
+		// (We'll add this extent to cacheableExtentsBeforeDesiredTimeRange on the next iteration of this loop.)
 		if nextExistingExtentIdx < len(existingExtents) {
 			nextExtent := existingExtents[nextExistingExtentIdx]
 			if nextExtent.StartT <= stepAlignedEndT {
