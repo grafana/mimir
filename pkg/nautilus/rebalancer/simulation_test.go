@@ -400,6 +400,36 @@ func TestSimulation_SixBalancedReplicasStayStable(t *testing.T) {
 	require.Less(t, final, 1.05, "balanced constant load should remain near perfectly balanced")
 }
 
+// TestSimulation_RepeatedRebalanceRoundsStableConstantLoadDoNotChurn is
+// the long-horizon version of the balanced fixed-point test. It runs many
+// rebalance rounds over stable constant load and asserts that the slicer
+// doesn't slowly accumulate merges/splits/moves or assignment-log churn
+// when every partition already has the same load profile.
+func TestSimulation_RepeatedRebalanceRoundsStableConstantLoadDoNotChurn(t *testing.T) {
+	const (
+		numPartitions   = 6
+		ewmaWarmupTicks = 30
+		rebalanceRounds = 60
+		ticksPerRound   = 60
+	)
+
+	sim := newSimulation(numPartitions, simCfg(0.09))
+	for _, e := range sim.assignment.Entries {
+		hash := e.Range.Lo + uint32((uint64(e.Range.Hi)-uint64(e.Range.Lo))/2)
+		sim.sources = append(sim.sources, loadSource{hash: hash, samplesPerTick: 100})
+	}
+
+	history := sim.runScenario(ewmaWarmupTicks, rebalanceRounds, ticksPerRound)
+	first := history[0]
+	for _, r := range history {
+		logSimulationRound(t, r)
+		require.Empty(t, r.Actions, "stable constant load should not produce slicer actions in round %d", r.Round)
+		require.Equal(t, first.Assignment, r.Assignment, "stable constant load should not change assignments in round %d", r.Round)
+		require.Equal(t, first.Entries, r.Entries, "stable constant load should not change entry count in round %d", r.Round)
+		require.Less(t, r.Imbalance, 1.05, "stable constant load should remain balanced in round %d", r.Round)
+	}
+}
+
 // TestSimulation_SkewedLoadConverges simulates a realistic scenario:
 // 4 partitions, 1000 metric "sources" where ~10% of sources produce
 // 90% of the load (a common production pattern). The sources have

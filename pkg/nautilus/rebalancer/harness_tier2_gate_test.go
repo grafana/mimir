@@ -3,12 +3,16 @@
 package rebalancer
 
 import (
+	"errors"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/nautilus/assignment"
+	"github.com/grafana/mimir/pkg/nautilus/readcacheassignment"
 )
 
 // TestHarness_Tier2Gate_LegacyEveryRound verifies the
@@ -157,6 +161,137 @@ func TestHarness_Tier2Gate_InstanceChangeFiresEarly(t *testing.T) {
 	require.NoError(t, h.runRound())
 	assert.True(t, h.r.lastTier2RoundAt.After(prev),
 		"scale-down must force tier-2 to fire even though only 5min < 30min has elapsed since the previous fire")
+}
+
+// TestHarness_ReadcacheStatsMissDoesNotRemoveReplica documents the
+// "failed to hear once" policy: a readcache that remains healthy in
+// the ring but misses one HashRangeStats RPC is not removed from the
+// eligible instance set. The round proceeds with partial stats, and
+// when the tier-2 gate is otherwise closed the existing partition ->
+// readcache leases are simply refreshed.
+func TestHarness_ReadcacheStatsMissDoesNotRemoveReplica(t *testing.T) {
+	h := newHarness(t, harnessOpts{
+		captureLogs: true,
+		cfg: Config{
+			PartitionCount:       6,
+			LeaseDuration:        5 * time.Minute,
+			LeaseLookahead:       10 * time.Second,
+			MinRebalanceInterval: 30 * time.Second,
+			MaxRebalanceInterval: 2 * time.Minute,
+			ReadcacheSlicer: ReadcacheSlicerConfig{
+				Enabled:       true,
+				Alpha:         1.0,
+				RoundInterval: 30 * time.Minute,
+			},
+		},
+	})
+	h.addReadcache("readcache-0")
+	missingOnce := h.addReadcache("readcache-1")
+	h.addReadcache("readcache-2")
+
+	seedBalancedTierAssignments(t, h, []string{"readcache-0", "readcache-1", "readcache-2"})
+	startOwners := h.ownersByInstance()
+	require.Contains(t, startOwners, "readcache-1",
+		"test setup must assign some partitions to the replica that will miss one stats RPC")
+
+	missingOnce.hashRangeStatsErr = errors.New("temporary HashRangeStats miss")
+	h.advance(30 * time.Second)
+	pre := h.logOutput()
+	require.NoError(t, h.runRound())
+	roundLog := strings.TrimPrefix(h.logOutput(), pre)
+
+	assert.Contains(t, roundLog, "HashRangeStats RPC failed")
+	assert.Equal(t, startOwners, h.ownersByInstance(),
+		"a one-round stats miss should not remove a ring-healthy readcache or move its partitions when tier-2 is gated")
+
+	missingOnce.hashRangeStatsErr = nil
+	h.advance(30 * time.Second)
+	require.NoError(t, h.runRound())
+	assert.Equal(t, startOwners, h.ownersByInstance(), "ownership should remain stable after the replica reports again")
+}
+
+// TestHarness_ReadcacheRingDisappearanceFailsOverAndReturnIsSafe covers
+// a short actual disappearance from the healthy readcache ring. Unlike
+// a single stats miss, leaving the ring changes the eligible instance
+// set; the next tier-2 round fires immediately and moves partitions off
+// the missing replica. If the replica returns shortly after, another
+// instance-set-change round runs and the cluster remains fully owned.
+func TestHarness_ReadcacheRingDisappearanceFailsOverAndReturnIsSafe(t *testing.T) {
+	h := newHarness(t, harnessOpts{
+		cfg: Config{
+			PartitionCount:       6,
+			LeaseDuration:        5 * time.Minute,
+			LeaseLookahead:       10 * time.Second,
+			MinRebalanceInterval: 30 * time.Second,
+			MaxRebalanceInterval: 2 * time.Minute,
+			ReadcacheSlicer: ReadcacheSlicerConfig{
+				Enabled:       true,
+				Alpha:         1.0,
+				RoundInterval: 30 * time.Minute,
+			},
+		},
+	})
+	h.addReadcache("readcache-0")
+	h.addReadcache("readcache-1")
+	h.addReadcache("readcache-2")
+
+	seedBalancedTierAssignments(t, h, []string{"readcache-0", "readcache-1", "readcache-2"})
+	start := h.ownersByInstance()
+	require.Contains(t, start, "readcache-1",
+		"test setup must assign partitions to readcache-1 before it disappears")
+
+	h.removeReadcache("readcache-1")
+	prev := h.r.lastTier2RoundAt
+	h.advance(30 * time.Second)
+	require.NoError(t, h.runRound())
+
+	assert.True(t, h.r.lastTier2RoundAt.After(prev), "ring disappearance must force a tier-2 round immediately")
+	assert.NotContains(t, h.ownersByInstance(), "readcache-1",
+		"no active partition should remain assigned to a readcache that left the ring")
+	assert.Len(t, h.tier2Active(), 6, "every partition must remain owned while the replica is away")
+
+	h.addReadcache("readcache-1")
+	prev = h.r.lastTier2RoundAt
+	h.advance(30 * time.Second)
+	require.NoError(t, h.runRound())
+
+	assert.True(t, h.r.lastTier2RoundAt.After(prev), "replica return must also force a tier-2 round")
+	assert.Len(t, h.tier2Active(), 6, "every partition must remain owned after the replica returns")
+}
+
+func seedBalancedTierAssignments(t *testing.T, h *harness, instances []string) {
+	t.Helper()
+	now := h.clock.Now()
+	leaseEnd := now.Add(h.cfg.LeaseDuration)
+
+	partitions := make([]int32, h.cfg.PartitionCount)
+	for i := range partitions {
+		partitions[i] = int32(i)
+	}
+
+	hashEntries := make([]assignment.LogEntry, 0, h.cfg.PartitionCount)
+	for _, e := range assignment.EvenSplit(partitions).Entries {
+		hashEntries = append(hashEntries, assignment.LogEntry{
+			Range:       e.Range,
+			PartitionID: e.PartitionID,
+			From:        now.Add(-time.Second),
+			To:          leaseEnd,
+		})
+	}
+	h.r.store.seedFromEntries(hashEntries)
+
+	readcacheEntries := make([]readcacheassignment.LogEntry, 0, h.cfg.PartitionCount)
+	for _, pid := range partitions {
+		readcacheEntries = append(readcacheEntries, readcacheassignment.LogEntry{
+			PartitionID: pid,
+			InstanceID:  instances[int(pid)%len(instances)],
+			From:        now.Add(-time.Second),
+			To:          leaseEnd,
+		})
+	}
+	h.r.readcacheStore.seedFromEntries(readcacheEntries)
+	h.r.lastTier2RoundAt = now
+	h.r.lastTier2Instances = append([]string(nil), instances...)
 }
 
 // TestHarness_Tier2Gate_RefreshKeepsLeasesAliveOnSkippedRounds is
