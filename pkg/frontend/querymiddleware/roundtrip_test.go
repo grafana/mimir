@@ -991,7 +991,7 @@ func TestTripperware_ShouldSupportReadConsistencyOffsetsInjection(t *testing.T) 
 		nil,
 		promEngine,
 		promOpts,
-		map[string]*ingest.TopicOffsetsReader{querierapi.ReadConsistencyOffsetsHeader: offsetsReader},
+		offsetsReader,
 		false,
 		nil,
 		nil,
