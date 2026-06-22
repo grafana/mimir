@@ -55,7 +55,7 @@ func TestOptimizationPass(t *testing.T) {
 			timeRange: rangeQueryTimeRange,
 			expectedPlan: `
 				- TimeRangeSplit: interval 24h0m0s
-					- Cache
+					- Cache: split interval 24h0m0s
 						- VectorSelector: {__name__="foo"}
 			`,
 		},
@@ -73,7 +73,7 @@ func TestOptimizationPass(t *testing.T) {
 			timeRange:        rangeQueryTimeRange,
 			disableSplitting: true,
 			expectedPlan: `
-				- Cache
+				- Cache: split interval 24h0m0s
 					- VectorSelector: {__name__="foo"}
 			`,
 		},
@@ -99,7 +99,7 @@ func TestOptimizationPass(t *testing.T) {
 			timeRange: rangeQueryTimeRange,
 			expectedPlan: `
 				- TimeRangeSplit: interval 24h0m0s
-					- Cache
+					- Cache: split interval 24h0m0s
 						- VectorSelector: {__name__="foo"} offset 1h0m0s
 			`,
 		},
@@ -117,7 +117,7 @@ func TestOptimizationPass(t *testing.T) {
 			timeRange: rangeQueryTimeRange,
 			expectedPlan: `
 				- TimeRangeSplit: interval 24h0m0s
-					- Cache
+					- Cache: split interval 24h0m0s
 						- DeduplicateAndMerge
 							- FunctionCall: max_over_time(...)
 								- MatrixSelector: {__name__="foo"}[5m0s] offset 1h0m0s
@@ -139,7 +139,7 @@ func TestOptimizationPass(t *testing.T) {
 			timeRange: rangeQueryTimeRange,
 			expectedPlan: `
 				- TimeRangeSplit: interval 24h0m0s
-					- Cache
+					- Cache: split interval 24h0m0s
 						- DeduplicateAndMerge
 							- FunctionCall: max_over_time(...)
 								- Subquery: [5m0s:1m0s] offset 1h0m0s
@@ -185,7 +185,7 @@ func TestOptimizationPass(t *testing.T) {
 			timeRange: straddlesFreshnessWindow,
 			expectedPlan: `
 				- TimeRangeSplit: interval 24h0m0s
-					- Cache
+					- Cache: split interval 24h0m0s
 						- VectorSelector: {__name__="foo"}
 			`,
 		},
@@ -195,7 +195,7 @@ func TestOptimizationPass(t *testing.T) {
 			timeRange: rangeQueryTimeRange,
 			expectedPlan: `
 				- TimeRangeSplit: interval 24h0m0s
-					- Cache
+					- Cache: split interval 24h0m0s
 						- StepInvariantExpression
 							- VectorSelector: {__name__="foo"} @ 100000 (1970-01-01T00:01:40Z)
 			`,
@@ -205,7 +205,7 @@ func TestOptimizationPass(t *testing.T) {
 			timeRange: rangeQueryTimeRange,
 			expectedPlan: `
 				- TimeRangeSplit: interval 24h0m0s
-					- Cache
+					- Cache: split interval 24h0m0s
 						- StepInvariantExpression
 							- DeduplicateAndMerge
 								- FunctionCall: max_over_time(...)
@@ -217,7 +217,7 @@ func TestOptimizationPass(t *testing.T) {
 			timeRange: rangeQueryTimeRange,
 			expectedPlan: `
 				- TimeRangeSplit: interval 24h0m0s
-					- Cache
+					- Cache: split interval 24h0m0s
 						- StepInvariantExpression
 							- DeduplicateAndMerge
 								- FunctionCall: max_over_time(...)
@@ -230,7 +230,7 @@ func TestOptimizationPass(t *testing.T) {
 			timeRange: rangeQueryTimeRange,
 			expectedPlan: `
 				- TimeRangeSplit: interval 24h0m0s
-					- Cache
+					- Cache: split interval 24h0m0s
 						- DeduplicateAndMerge
 							- FunctionCall: max_over_time(...)
 								- Subquery: [5m0s:1m0s]
@@ -291,7 +291,7 @@ func TestOptimizationPass(t *testing.T) {
 			timeRange: straddlesFreshnessWindow,
 			expectedPlan: `
 				- TimeRangeSplit: interval 24h0m0s
-					- Cache
+					- Cache: split interval 24h0m0s
 						- StepInvariantExpression
 							- VectorSelector: {__name__="foo"} @ 100000 (1970-01-01T00:01:40Z)
 			`,
@@ -301,7 +301,7 @@ func TestOptimizationPass(t *testing.T) {
 			timeRange: straddlesFreshnessWindow,
 			expectedPlan: `
 				- TimeRangeSplit: interval 24h0m0s
-					- Cache
+					- Cache: split interval 24h0m0s
 						- StepInvariantExpression
 							- DeduplicateAndMerge
 								- FunctionCall: max_over_time(...)
@@ -313,7 +313,7 @@ func TestOptimizationPass(t *testing.T) {
 			timeRange: straddlesFreshnessWindow,
 			expectedPlan: `
 				- TimeRangeSplit: interval 24h0m0s
-					- Cache
+					- Cache: split interval 24h0m0s
 						- StepInvariantExpression
 							- DeduplicateAndMerge
 								- FunctionCall: max_over_time(...)
@@ -326,7 +326,7 @@ func TestOptimizationPass(t *testing.T) {
 			timeRange: straddlesFreshnessWindow,
 			expectedPlan: `
 				- TimeRangeSplit: interval 24h0m0s
-					- Cache
+					- Cache: split interval 24h0m0s
 						- DeduplicateAndMerge
 							- FunctionCall: max_over_time(...)
 								- Subquery: [5m0s:1m0s]
@@ -399,7 +399,7 @@ func TestOptimizationPass(t *testing.T) {
 			allowCachingUnalignedRequests: true,
 			expectedPlan: `
 				- TimeRangeSplit: interval 24h0m0s
-					- Cache
+					- Cache: split interval 24h0m0s
 						- VectorSelector: {__name__="foo"}
 			`,
 		},

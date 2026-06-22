@@ -30,6 +30,11 @@ import (
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
+// cacheVersion is the version of cache entries read and written by this operator.
+// If a backwards-incompatible change is made to the cache entry format, or a bug is discovered that means all existing
+// cache entries should be invalidated, this version number should be incremented.
+const cacheVersion = 1
+
 // CacheOperator is an operator that uses a cache to avoid recomputing previously computed results.
 // It works with a single cache entry made up of multiple extents.
 type CacheOperator struct {

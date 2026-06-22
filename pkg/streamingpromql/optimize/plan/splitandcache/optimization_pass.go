@@ -102,8 +102,10 @@ func (o *OptimizationPass) applyCaching(ctx context.Context, node planning.Node,
 	}
 
 	return &Cache{
-		CacheDetails: &CacheDetails{},
-		Inner:        node,
+		CacheDetails: &CacheDetails{
+			SplitInterval: o.splitInterval,
+		},
+		Inner: node,
 	}, nil
 }
 

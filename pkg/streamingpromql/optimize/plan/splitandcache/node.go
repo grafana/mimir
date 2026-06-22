@@ -6,11 +6,15 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/proto"
+	"github.com/grafana/dskit/cache"
+	"github.com/grafana/dskit/tenant"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 
+	"github.com/grafana/mimir/pkg/streamingpromql/caching"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
@@ -131,9 +135,9 @@ func (c *Cache) NodeType() planning.NodeType {
 }
 
 func (c *Cache) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
-	_, ok := other.(*Cache)
+	otherCache, ok := other.(*Cache)
 
-	return ok
+	return ok && c.SplitInterval == otherCache.SplitInterval
 }
 
 func (c *Cache) MergeHints(other planning.Node) error {
@@ -141,7 +145,8 @@ func (c *Cache) MergeHints(other planning.Node) error {
 }
 
 func (c *Cache) Describe() string {
-	return ""
+	return fmt.Sprintf("split interval %s", c.SplitInterval.String())
+
 }
 
 func (c *Cache) ChildrenTimeRange(timeRange types.QueryTimeRange) types.QueryTimeRange {
@@ -162,4 +167,51 @@ func (c *Cache) ExpressionPosition() (posrange.PositionRange, error) {
 
 func (c *Cache) MinimumRequiredPlanVersion(_ types.QueryTimeRange) (planning.QueryPlanVersion, error) {
 	return planning.QueryPlanV16, nil
+}
+
+type CacheMaterializer struct {
+	cache          caching.Backend
+	limitsProvider LimitsProvider
+}
+
+func NewCacheMaterializer(backend cache.Cache, limitsProvider LimitsProvider, logger log.Logger) *CacheMaterializer {
+	return &CacheMaterializer{
+		cache:          cache.NewVersioned(cache.NewSpanlessTracingCache(backend, logger, tenant.NewMultiResolver()), cacheVersion, logger),
+		limitsProvider: limitsProvider,
+	}
+}
+
+func (m *CacheMaterializer) Materialize(n planning.Node, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters, overrideRangeParams planning.RangeParams) (planning.OperatorFactory, error) {
+	if overrideRangeParams.IsSet {
+		return nil, fmt.Errorf("overrideRangeParams is not supported for CacheMaterializer")
+	}
+
+	if m.cache == nil {
+		return nil, fmt.Errorf("attempted to materialize a node of type %T, but no cache is configured", n)
+	}
+
+	node, ok := n.(*Cache)
+	if !ok {
+		return nil, fmt.Errorf("unexpected type passed to node CacheMaterializer: got %T", n)
+	}
+
+	expressionPosition, err := node.ExpressionPosition()
+	if err != nil {
+		return nil, err
+	}
+
+	operator := newCacheOperator(
+		m.cache,
+		materializer,
+		node.Inner,
+		timeRange,
+		params.MemoryConsumptionTracker,
+		expressionPosition,
+		params.QueryParameters,
+		m.limitsProvider,
+		params.Logger,
+		node.SplitInterval,
+	)
+
+	return planning.NewSingleUseOperatorFactory(operator), nil
 }
