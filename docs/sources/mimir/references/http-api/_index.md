@@ -728,7 +728,7 @@ Metadata is served only by ingesters, which hold it in memory keyed by metric na
 
 #### Search label names
 
-```
+```bash
 GET,POST <prometheus-http-prefix>/api/v1/search/label_names
 ```
 
