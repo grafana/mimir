@@ -170,8 +170,15 @@ type TopicOffsetsReader struct {
 }
 
 func NewTopicOffsetsReader(client *kgo.Client, topic string, getPartitionIDs GetPartitionIDsFunc, pollInterval time.Duration, reg prometheus.Registerer, logger log.Logger) *TopicOffsetsReader {
+	return newTopicOffsetsReader(newPartitionOffsetClient(client, reg, logger), topic, getPartitionIDs, pollInterval, logger)
+}
+
+// newTopicOffsetsReader builds a TopicOffsetsReader around an already-constructed offset client, so a
+// caller that needs the client before the reader (e.g. to list partitions) can reuse a single client
+// instead of constructing a second one on the same registerer (which would panic, see newPartitionOffsetClient).
+func newTopicOffsetsReader(offsetsClient *partitionOffsetClient, topic string, getPartitionIDs GetPartitionIDsFunc, pollInterval time.Duration, logger log.Logger) *TopicOffsetsReader {
 	r := &TopicOffsetsReader{
-		client:          newPartitionOffsetClient(client, reg, logger),
+		client:          offsetsClient,
 		topic:           topic,
 		getPartitionIDs: getPartitionIDs,
 		logger:          logger,
@@ -192,7 +199,7 @@ func NewTopicOffsetsReaderForAllPartitions(client *kgo.Client, topic string, pol
 		return offsetsClient.ListTopicPartitionIDs(ctx, topic)
 	}
 
-	return NewTopicOffsetsReader(client, topic, getPartitionIDs, pollInterval, reg, logger)
+	return newTopicOffsetsReader(offsetsClient, topic, getPartitionIDs, pollInterval, logger)
 }
 
 // FetchLastProducedOffset fetches and returns the last produced offset for each requested partition in the topic.

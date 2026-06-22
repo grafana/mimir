@@ -5,12 +5,15 @@ package ingest
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/services"
+	"github.com/prometheus/client_golang/prometheus"
+	promtest "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kmsg"
@@ -200,6 +203,40 @@ func TestTopicOffsetsReader(t *testing.T) {
 		_, err := reader.WaitNextFetchLastProducedOffset(ctx)
 		assert.Equal(t, errPartitionOffsetReaderStopped, err)
 	})
+}
+
+// TestNewTopicOffsetsReaderForAllPartitions makes sure that NewTopicOffsetsReaderForAllPartitions doesn't double-register metrics.
+func TestNewTopicOffsetsReaderForAllPartitions(t *testing.T) {
+	const (
+		numPartitions = 1
+		topicName     = "test"
+		pollInterval  = time.Second
+	)
+
+	var (
+		ctx            = t.Context()
+		logger         = log.NewNopLogger()
+		_, clusterAddr = testkafka.CreateCluster(t, numPartitions, topicName)
+		client         = createTestKafkaClient(t, createTestKafkaConfig(clusterAddr, topicName))
+		reg            = prometheus.NewPedanticRegistry()
+	)
+
+	var reader *TopicOffsetsReader
+	require.NotPanics(t, func() {
+		reader = NewTopicOffsetsReaderForAllPartitions(client, topicName, pollInterval, reg, logger)
+	})
+
+	// The single shared client works end-to-end: no records have been produced, so the last produced offset is -1.
+	offsets, err := reader.FetchLastProducedOffset(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, map[int32]int64{0: -1}, offsets)
+
+	// The offset request is tracked once, under the actual topic name (a single topic was requested).
+	assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
+		# HELP cortex_ingest_storage_reader_last_produced_offset_requests_total Total number of requests issued to get the last produced offset.
+		# TYPE cortex_ingest_storage_reader_last_produced_offset_requests_total counter
+		cortex_ingest_storage_reader_last_produced_offset_requests_total{partition="mixed",topic="test"} 1
+	`), "cortex_ingest_storage_reader_last_produced_offset_requests_total"))
 }
 
 func TestTopicOffsetsReader_WaitNextFetchLastProducedOffset(t *testing.T) {

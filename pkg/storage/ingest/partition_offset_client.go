@@ -35,6 +35,10 @@ type partitionOffsetClient struct {
 	partitionStartOffsetLatency       *prometheus.HistogramVec
 }
 
+// newPartitionOffsetClient creates a client to read partition offsets. The metrics it registers use variable
+// "topic" and "partition" labels, so a given prometheus.Registerer must be used by at most one partitionOffsetClient:
+// create a single client per registerer (e.g. one per Kafka cluster) and reuse it across topics by passing the topic
+// to each method. Registering a second client on the same registerer panics with a duplicate-registration error.
 func newPartitionOffsetClient(client *kgo.Client, reg prometheus.Registerer, logger log.Logger) *partitionOffsetClient {
 	return &partitionOffsetClient{
 		client: client,
