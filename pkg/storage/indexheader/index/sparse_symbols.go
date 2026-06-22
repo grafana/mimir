@@ -6,6 +6,7 @@
 package index
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/grafana/dskit/runutil"
@@ -15,15 +16,16 @@ import (
 )
 
 func SparseValuesFromSymbolsTable(
+	ctx context.Context,
 	decbufFactory streamencoding.DecbufFactory,
 	tableOffset int,
 	doChecksum bool,
 ) (allSymbolsCount int, sparseSymbolsOffsets []int, err error) {
 	var decbuf streamencoding.Decbuf
 	if doChecksum {
-		decbuf = decbufFactory.NewDecbufAtChecked(tableOffset, castagnoliTable)
+		decbuf = decbufFactory.NewDecbufAtChecked(ctx, tableOffset, castagnoliTable)
 	} else {
-		decbuf = decbufFactory.NewDecbufAtUnchecked(tableOffset)
+		decbuf = decbufFactory.NewDecbufAtUnchecked(ctx, tableOffset)
 	}
 
 	defer runutil.CloseWithErrCapture(&err, &decbuf, "decode symbols table")

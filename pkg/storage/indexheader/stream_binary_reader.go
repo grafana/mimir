@@ -146,7 +146,7 @@ func NewStreamBinaryReader(
 	filePoolDecbufFactory := streamencoding.NewFilePoolDecbufFactory(
 		localIndexHeaderPath, cfg.MaxIdleFileHandles, metrics.filePool,
 	)
-	indexHeaderTOC, _, err := TOCFromIndexHeader(castagnoliTable, filePoolDecbufFactory, l)
+	indexHeaderTOC, _, err := TOCFromIndexHeader(ctx, castagnoliTable, filePoolDecbufFactory, l)
 	if err != nil {
 		// TOC read checks CRC32; assume a failure here is file corruption and attempt to recreate the index-header.
 		level.Debug(spanLog).Log(
@@ -161,7 +161,7 @@ func NewStreamBinaryReader(
 			"msg", "created index-header on local disk from bucket block index",
 			"path", localIndexHeaderPath, "elapsed", time.Since(start),
 		)
-		indexHeaderTOC, _, err = TOCFromIndexHeader(castagnoliTable, filePoolDecbufFactory, l)
+		indexHeaderTOC, _, err = TOCFromIndexHeader(ctx, castagnoliTable, filePoolDecbufFactory, l)
 		if err != nil {
 			// Failure after recreating index-header from bucket; assume this is unrecoverable.
 			return nil, fmt.Errorf("failed to read table of contents from index-header on disk after recreate from bucket block index: %w", err)
@@ -173,7 +173,7 @@ func NewStreamBinaryReader(
 	if !sparseHeaderLoaded {
 		start := time.Now()
 		allSymbolsCount, sparseSymbolsOffsets, sparsePostingsOffsets, err = buildInMemorySparseHeaderFromIndexHeader(
-			indexHeaderTOC, filePoolDecbufFactory, sparseSampleFactor, cfg.VerifyOnLoad, l,
+			ctx, indexHeaderTOC, filePoolDecbufFactory, sparseSampleFactor, cfg.VerifyOnLoad, l,
 		)
 		if err != nil {
 			// Exhausted all options to load sparse index-header to memory. Not recoverable.
@@ -211,7 +211,7 @@ func NewStreamBinaryReader(
 
 	if cfg.BucketReader.Enabled {
 		bucketBlockIndexPath := filepath.Join(blockID.String(), block.IndexFilename)
-		bucketBlockIndexDecbufFactory := streamencoding.NewBucketDecbufFactory(ctx, bkt, bucketBlockIndexPath)
+		bucketBlockIndexDecbufFactory := streamencoding.NewBucketDecbufFactory(bkt, bucketBlockIndexPath)
 		indexAttrs, err := bkt.Attributes(ctx, bucketBlockIndexPath)
 		if err != nil {
 			return nil, fmt.Errorf("get index file attributes: %w", err)
@@ -297,7 +297,7 @@ func (r *StreamBinaryReader) PostingsOffset(ctx context.Context, name string, va
 		}
 		span.End()
 	}()
-	rng, found, err := r.postingsOffsetTable.PostingsOffset(name, value)
+	rng, found, err := r.postingsOffsetTable.PostingsOffset(ctx, name, value)
 	if err != nil {
 		return index.Range{}, err
 	}
