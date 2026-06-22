@@ -648,7 +648,7 @@ func (c *CacheOperator) accumulateCacheableHistograms(data types.InstantVectorSe
 	}
 
 	var err error
-	cacheableTimeRangeData.Histograms, err = types.CopyHPoints(cacheableTimeRangeData.Histograms, data.Histograms[firstCacheableIndex:lastCacheableIndex+1], c.MemoryConsumptionTracker)
+	cacheableTimeRangeData.Histograms, err = types.AppendHPointCopies(cacheableTimeRangeData.Histograms, data.Histograms[firstCacheableIndex:lastCacheableIndex+1], c.MemoryConsumptionTracker)
 	return err
 }
 
@@ -921,7 +921,7 @@ func (c *CacheOperator) determineNewExtentEvaluationTimestamp() int64 {
 func (c *CacheOperator) encodeDataForCacheEntry() []querierpb.InstantVectorSeriesData {
 	encoded := make([]querierpb.InstantVectorSeriesData, 0, len(c.data))
 	for _, d := range c.data {
-		// EncodeInstantVectorData does unsafe casts and does not copy the data from the slices, but this is OK as we're immediately
+		// EncodeInstantVectorSeriesData does unsafe casts and does not copy the data from the slices, but this is OK as we're immediately
 		// serializing the message and writing it to the cache before these slices are returned to their respective pools.
 		encoded = append(encoded, querierpb.EncodeInstantVectorSeriesData(d))
 	}

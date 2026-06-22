@@ -320,10 +320,10 @@ func MatchersMatch(matchers []*labels.Matcher, lbls labels.Labels) bool {
 	return true
 }
 
-// CopyHPoints copies the points in src to the end of dest, acquiring a new slice from the pool if needed.
+// AppendHPointCopies copies the points in src to the end of dest, acquiring a new slice from the pool if needed.
 // FloatHistogram instances in src are deep copied. Existing FloatHistogram instances in dest are reused if possible.
 // src is not modified and not returned to the pool.
-func CopyHPoints(dest []promql.HPoint, src []promql.HPoint, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) ([]promql.HPoint, error) {
+func AppendHPointCopies(dest []promql.HPoint, src []promql.HPoint, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) ([]promql.HPoint, error) {
 	newPointCount := len(src)
 	existingPointCount := len(dest)
 	neededSliceCapacity := existingPointCount + newPointCount
