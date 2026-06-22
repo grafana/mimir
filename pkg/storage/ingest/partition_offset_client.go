@@ -211,13 +211,21 @@ func (p *partitionOffsetClient) FetchPartitionsLastProducedOffsets(ctx context.C
 		return nil, nil
 	}
 
+	// The request covers all the requested partitions, so the "partition" label is tracked as "mixed".
+	// When a single topic is requested we track its actual name; otherwise the "topic" label is "mixed".
+	topicLabel := "mixed"
+	if len(partitionsByTopic) == 1 {
+		for topic := range partitionsByTopic {
+			topicLabel = topic
+		}
+	}
+
 	var (
 		startTime = time.Now()
 
-		// The request covers multiple topics and partitions, so the metrics are tracked with the "mixed" label.
-		requestsTotal   = p.lastProducedOffsetRequestsTotal.WithLabelValues("mixed", "mixed")
-		requestsLatency = p.lastProducedOffsetLatency.WithLabelValues("mixed", "mixed")
-		failuresTotal   = p.lastProducedOffsetFailuresTotal.WithLabelValues("mixed", "mixed")
+		requestsTotal   = p.lastProducedOffsetRequestsTotal.WithLabelValues(topicLabel, "mixed")
+		requestsLatency = p.lastProducedOffsetLatency.WithLabelValues(topicLabel, "mixed")
+		failuresTotal   = p.lastProducedOffsetFailuresTotal.WithLabelValues(topicLabel, "mixed")
 	)
 
 	requestsTotal.Inc()
@@ -243,7 +251,7 @@ func (p *partitionOffsetClient) FetchPartitionsLastProducedOffsets(ctx context.C
 	offsets := make(map[string]map[int32]int64, len(res))
 	res.Each(func(offset kadm.ListedOffset) {
 		if offsets[offset.Topic] == nil {
-			offsets[offset.Topic] = make(map[int32]int64)
+			offsets[offset.Topic] = make(map[int32]int64, len(partitionsByTopic[offset.Topic]))
 		}
 
 		// The offset we get is the offset at which the next message will be written, so to get the last produced offset

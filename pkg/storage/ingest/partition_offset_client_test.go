@@ -306,14 +306,15 @@ func TestPartitionOffsetClient_FetchPartitionsLastProducedOffsets(t *testing.T) 
 		require.NoError(t, err)
 		assert.Equal(t, map[int32]int64{0: 2, 2: 0}, offsets[topicName])
 
+		// A single topic was requested, so the "topic" label tracks its actual name.
 		assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
 			# HELP cortex_ingest_storage_reader_last_produced_offset_failures_total Total number of failed requests to get the last produced offset.
 			# TYPE cortex_ingest_storage_reader_last_produced_offset_failures_total counter
-			cortex_ingest_storage_reader_last_produced_offset_failures_total{partition="mixed",topic="mixed"} 0
+			cortex_ingest_storage_reader_last_produced_offset_failures_total{partition="mixed",topic="test"} 0
 
 			# HELP cortex_ingest_storage_reader_last_produced_offset_requests_total Total number of requests issued to get the last produced offset.
 			# TYPE cortex_ingest_storage_reader_last_produced_offset_requests_total counter
-			cortex_ingest_storage_reader_last_produced_offset_requests_total{partition="mixed",topic="mixed"} 4
+			cortex_ingest_storage_reader_last_produced_offset_requests_total{partition="mixed",topic="test"} 4
 		`), "cortex_ingest_storage_reader_last_produced_offset_requests_total",
 			"cortex_ingest_storage_reader_last_produced_offset_failures_total"))
 	})
@@ -508,10 +509,15 @@ func TestPartitionOffsetClient_FetchPartitionsLastProducedOffsets(t *testing.T) 
 		)
 
 		cluster, clusterAddr := testkafka.CreateCluster(t, numPartitions, topic0)
-		createAdditionalTestTopic(t, clusterAddr, topic1, numPartitions)
 
+		// Create the second topic on the already-running cluster (testkafka.CreateCluster only seeds one topic).
+		topic1Client := createTestKafkaClient(t, createTestKafkaConfig(clusterAddr, topic1))
+		_, err := kadm.NewClient(topic1Client).CreateTopic(context.Background(), numPartitions, 1, nil, topic1)
+		require.NoError(t, err)
+
+		reg := prometheus.NewPedanticRegistry()
 		client := createTestKafkaClient(t, createTestKafkaConfig(clusterAddr, topic0))
-		reader := newPartitionOffsetClient(client, prometheus.NewPedanticRegistry(), logger)
+		reader := newPartitionOffsetClient(client, reg, logger)
 
 		// topic0: partition 0 → 2 records (last offset 1), partition 1 → 1 record (last offset 0).
 		// topic1: partition 0 → 1 record (last offset 0), partition 1 → empty (-1).
@@ -540,6 +546,18 @@ func TestPartitionOffsetClient_FetchPartitionsLastProducedOffsets(t *testing.T) 
 
 		// All topics and partitions are fetched in a single ListOffsets request (the fake cluster has one broker).
 		assert.Equal(t, int64(1), listOffsetsRequests.Load())
+
+		// Multiple topics were requested, so the "topic" label is tracked as "mixed".
+		assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
+			# HELP cortex_ingest_storage_reader_last_produced_offset_failures_total Total number of failed requests to get the last produced offset.
+			# TYPE cortex_ingest_storage_reader_last_produced_offset_failures_total counter
+			cortex_ingest_storage_reader_last_produced_offset_failures_total{partition="mixed",topic="mixed"} 0
+
+			# HELP cortex_ingest_storage_reader_last_produced_offset_requests_total Total number of requests issued to get the last produced offset.
+			# TYPE cortex_ingest_storage_reader_last_produced_offset_requests_total counter
+			cortex_ingest_storage_reader_last_produced_offset_requests_total{partition="mixed",topic="mixed"} 1
+		`), "cortex_ingest_storage_reader_last_produced_offset_requests_total",
+			"cortex_ingest_storage_reader_last_produced_offset_failures_total"))
 	})
 
 	t.Run("should return error if the response is missing a requested topic-partition", func(t *testing.T) {
@@ -632,12 +650,4 @@ func TestPartitionOffsetClient_ListTopicPartitionIDs(t *testing.T) {
 
 func pointerOf[T any](v T) *T {
 	return &v
-}
-
-// createAdditionalTestTopic creates a topic on an already-running fake cluster (testkafka.CreateCluster
-// only seeds a single topic).
-func createAdditionalTestTopic(t *testing.T, clusterAddr, topic string, numPartitions int32) {
-	client := createTestKafkaClient(t, createTestKafkaConfig(clusterAddr, topic))
-	_, err := kadm.NewClient(client).CreateTopic(context.Background(), numPartitions, 1, nil, topic)
-	require.NoError(t, err)
 }
