@@ -24,6 +24,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/caching"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
+	"github.com/grafana/mimir/pkg/streamingpromql/sliceutil"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
@@ -800,13 +801,7 @@ func (c *CacheOperator) indexOfFirstFPointAtOrAfter(p []promql.FPoint, t int64) 
 }
 
 func (c *CacheOperator) indexOfLastFPointAtOrBefore(p []promql.FPoint, t int64) int {
-	i := len(p) - 1
-
-	for i >= 0 && p[i].T > t {
-		i--
-	}
-
-	return i
+	return sliceutil.BackwardsIndexFunc(p, func(p promql.FPoint) bool { return p.T <= t })
 }
 
 func (c *CacheOperator) indexOfFirstHPointAtOrAfter(p []promql.HPoint, t int64) int {
@@ -814,13 +809,7 @@ func (c *CacheOperator) indexOfFirstHPointAtOrAfter(p []promql.HPoint, t int64) 
 }
 
 func (c *CacheOperator) indexOfLastHPointAtOrBefore(p []promql.HPoint, t int64) int {
-	i := len(p) - 1
-
-	for i >= 0 && p[i].T > t {
-		i--
-	}
-
-	return i
+	return sliceutil.BackwardsIndexFunc(p, func(p promql.HPoint) bool { return p.T <= t })
 }
 
 func (c *CacheOperator) FinishedReading(ctx context.Context) error {
