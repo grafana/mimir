@@ -52,6 +52,7 @@ import (
 	"github.com/grafana/mimir/pkg/cardinality"
 	"github.com/grafana/mimir/pkg/compartments"
 	"github.com/grafana/mimir/pkg/costattribution"
+	"github.com/grafana/mimir/pkg/distributor/distributorpb"
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
@@ -116,6 +117,8 @@ type usageTrackerGenericClient interface {
 // Distributor forwards appends and queries to individual ingesters.
 type Distributor struct {
 	services.Service
+	// wiresmith-generated DistributorServer requires this embedded field.
+	distributorpb.UnimplementedDistributorServer
 
 	cfg           Config
 	log           log.Logger

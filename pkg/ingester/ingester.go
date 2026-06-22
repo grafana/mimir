@@ -37,6 +37,7 @@ import (
 	"github.com/grafana/mimir/pkg/compartments"
 	"github.com/grafana/mimir/pkg/costattribution"
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
+	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/ingester/lookupplan"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/ingest"
@@ -321,6 +322,9 @@ func (cfg *Config) getIgnoreSeriesLimitForMetricNamesMap() map[string]struct{} {
 // MemorySeriesStorage.
 type Ingester struct {
 	*services.BasicService
+	// wiresmith-generated IngesterServer requires this embedded field;
+	// all unimplemented gRPC methods forward to the zero-value stub.
+	client.UnimplementedIngesterServer
 
 	cfg Config
 

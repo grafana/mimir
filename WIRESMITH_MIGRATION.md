@@ -60,6 +60,10 @@ pinned compiler. No `replace` remains; the vendored runtime
 | `pkg/compactor/scheduler/compactorschedulerpb/compactorscheduler.proto` | migrated (cqa.3) | none                                              |
 | `pkg/frontend/v2/frontendv2pb/frontend.proto` | migrated (cqa.3)                     | none (wiresmith_compat.go: FreeBuffer/Buffer/SetBuffer for gRPC frame retention)             |
 | `pkg/util/httpgrpcpb/httpgrpcpb.proto`        | new (cqa.3 bridge)                   | none (dskit httpgrpc local-copy bridge with conversion helpers + HeadersCarrier)             |
+| `pkg/ingester/client/ingester.proto`          | migrated (cqa.5)                     | ingester.pb.go.expdiff: injects mimirpb.BufferHolder into 4 response structs                |
+| `pkg/distributor/distributorpb/distributor.proto` | migrated (cqa.5)                 | pure-service proto; distributor.pb.go is a stub (no messages); Distributor struct gets UnimplementedDistributorServer |
+| `pkg/usagetracker/usagetrackerpb/usagetracker.proto` | migrated (cqa.5)            | UsageTracker struct gets UnimplementedUsageTrackerServer                                     |
+| `pkg/storage/indexheader/indexheaderpb/sparse.proto` | migrated (cqa.5)            | map[string]PostingValueOffsets value form (no pointer map values in wiresmith)               |
 | `pkg/frontend/querymiddleware/model.proto`    | **deferred** — gogo Any registry dependency  | —                                                                    |
 | all other protos (~5)              | still gogoproto                        | —                                                                                           |
 
@@ -438,6 +442,46 @@ registry (the same class of blocker as storepb/rpc.proto).
 | `./pkg/frontend/...`                                               | ok     |
 | `./pkg/streamingpromql/optimize/...`                               | ok     |
 | `go build ./pkg/querier/... ./pkg/frontend/... ./pkg/streamingpromql/optimize/...` | clean  |
+
+## standalone protos cluster (cqa.5)
+
+Four protos that previously had no inter-dependency and were still gogo-generated:
+`ingester/client/ingester.proto`, `distributor/distributorpb/distributor.proto`,
+`usagetracker/usagetrackerpb/usagetracker.proto`, and
+`storage/indexheader/indexheaderpb/sparse.proto`.
+
+### Key migration notes
+
+- **ingester.proto**: Large proto with gRPC streaming service. `Chunk.data` uses
+  `UnsafeByteSlice` customtype (wiresmith adapters in `wiresmith_adapters.go`).
+  `QueryStreamSeries.labels` uses `LabelAdapter` customtype. 4 response structs retain
+  `mimirpb.BufferHolder` via `ingester.pb.go.expdiff` (re-injected by `apply-expected-diffs.sh`
+  after each wiresmith regeneration). `Ingester`, `ActivityTrackerWrapper`, and
+  `ProfilingWrapper` structs embed `client.UnimplementedIngesterServer` to satisfy the
+  wiresmith-generated `IngesterServer` interface. `queryRequestToString` simplified to
+  delegate to wiresmith's generated `String()` method.
+
+- **distributor.proto**: Pure-service proto (no message types). Wiresmith emits only
+  `distributor_grpc.pb.go` and `distributor_util.pb.go`; the old gogo-generated
+  `distributor.pb.go` is replaced by a minimal stub written by the cqa5 script. `Distributor`
+  struct embeds `distributorpb.UnimplementedDistributorServer`.
+
+- **usagetracker.proto**: Standalone gRPC service. `UsageTracker` struct embeds
+  `usagetrackerpb.UnimplementedUsageTrackerServer`.
+
+- **sparse.proto**: Plain messages with no cross-module imports. `PostingOffsetTable.postings`
+  map uses value form (`map[string]PostingValueOffsets`) under `no_presence_all`; the single
+  call site in `sparse_postings.go` and the test in `sparse_postings_test.go` were updated.
+
+### Test results (cqa.5, all `-count=1`)
+
+| Package                                      | Result |
+| -------------------------------------------- | ------ |
+| `./pkg/ingester/...`                         | ok     |
+| `./pkg/distributor/...`                      | ok     |
+| `./pkg/usagetracker/...`                     | ok     |
+| `./pkg/storage/indexheader/...`              | ok     |
+| `go build ./...`                             | clean  |
 
 ## Deferred Any-using protos (7m6)
 

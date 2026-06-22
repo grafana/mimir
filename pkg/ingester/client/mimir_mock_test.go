@@ -14,6 +14,7 @@ import (
 )
 
 type IngesterServerMock struct {
+	UnimplementedIngesterServer
 	mock.Mock
 }
 

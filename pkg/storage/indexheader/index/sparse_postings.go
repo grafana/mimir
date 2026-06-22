@@ -240,19 +240,22 @@ func SparsePostingsOffsetsTableToProto(
 	sparseSampleFactor int,
 ) *indexheaderpb.PostingOffsetTable {
 	proto := &indexheaderpb.PostingOffsetTable{
-		Postings:                      make(map[string]*indexheaderpb.PostingValueOffsets, len(sparsePostingsOffsets)),
+		// wiresmith no_presence_all generates map[string]PostingValueOffsets (value form).
+		Postings:                      make(map[string]indexheaderpb.PostingValueOffsets, len(sparsePostingsOffsets)),
 		PostingOffsetInMemorySampling: int64(sparseSampleFactor),
 	}
 
 	for labelName, offsets := range sparsePostingsOffsets {
-		proto.Postings[labelName] = &indexheaderpb.PostingValueOffsets{}
 		postingOffsets := make([]*indexheaderpb.PostingOffset, len(offsets.SparseTableOffsets))
 
 		for i, tableOffset := range offsets.SparseTableOffsets {
 			postingOffsets[i] = &indexheaderpb.PostingOffset{Value: tableOffset.Value, TableOff: int64(tableOffset.Offset)}
 		}
-		proto.Postings[labelName].Offsets = postingOffsets
-		proto.Postings[labelName].LastValOffset = offsets.LastValOffset
+		// Map values are not addressable, so assign the whole struct at once.
+		proto.Postings[labelName] = indexheaderpb.PostingValueOffsets{
+			Offsets:       postingOffsets,
+			LastValOffset: offsets.LastValOffset,
+		}
 	}
 
 	return proto

@@ -198,6 +198,8 @@ func (c *Config) ValidateForUsageTracker() error {
 
 type UsageTracker struct {
 	services.Service
+	// wiresmith-generated UsageTrackerServer requires this embedded field.
+	usagetrackerpb.UnimplementedUsageTrackerServer
 
 	instanceID int32
 

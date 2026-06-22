@@ -296,8 +296,10 @@ func buildSearchLabelNamesRequest(from, to model.Time, params *streaminglabelval
 		StartTimestampMs: int64(from),
 		EndTimestampMs:   int64(to),
 		Matchers:         wireMatchers,
-		Filter:           paramsToProto(params),
 		Ordering:         orderingToProto(hints),
+	}
+	if f := paramsToProto(params); f != nil {
+		req.Filter = *f
 	}
 	if hints != nil {
 		req.Limit = int64(hints.Limit)
@@ -315,9 +317,11 @@ func buildSearchLabelValuesRequest(from, to model.Time, name string, params *str
 		StartTimestampMs: int64(from),
 		EndTimestampMs:   int64(to),
 		Matchers:         wireMatchers,
-		Filter:           paramsToProto(params),
 		Ordering:         orderingToProto(hints),
 		IncludeMetadata:  params != nil && params.IncludeMetadata,
+	}
+	if f := paramsToProto(params); f != nil {
+		req.Filter = *f
 	}
 	if hints != nil {
 		req.Limit = int64(hints.Limit)
