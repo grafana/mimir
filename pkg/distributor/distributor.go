@@ -3030,7 +3030,19 @@ func (d *Distributor) getKeysByAssignment(ctx context.Context, tenantID string, 
 					"msg", "nautilus routing rejected: key not covered by assignment",
 					"tenant", tenantID,
 					"key", key,
+					"key_index", i,
 					"total_keys", len(keys),
+					"table_len", table.Len(),
+					"table_built_at", table.BuiltAt().UTC().Format(time.RFC3339Nano),
+					"table_valid_until", table.ValidUntil().UTC().Format(time.RFC3339Nano),
+					"table_covers_now", table.CoversAt(d.now()),
+					"log_entries", func() int {
+						if log := d.nautilusLog.Load(); log != nil {
+							return log.Len()
+						}
+						return 0
+					}(),
+					"stream_connected", d.nautilusStreamConnected.Load(),
 				)
 				return nil, newNautilusRoutingUnavailableError(fmt.Sprintf("assignment log does not cover key %d", key))
 			}
