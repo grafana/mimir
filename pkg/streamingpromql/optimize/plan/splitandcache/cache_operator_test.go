@@ -702,7 +702,7 @@ func TestCacheOperator_DoesNotSaveCacheEntryIfFinishedReadingNotCalled(t *testin
 
 	// Finalize the operator without calling FinishedReading.
 	_, _, err = o.Finalize(ctx)
-	require.NoError(t, err)
+	require.EqualError(t, err, "CacheOperator.writeCacheEntry() called (via Finalize()) before FinishedReading(), this should never happen")
 
 	require.Zerof(t, cache.setCount, "expected no cache entry to be written, but at least one was: %v", cache.entries)
 }

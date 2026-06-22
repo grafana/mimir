@@ -5,6 +5,7 @@ package splitandcache
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strconv"
@@ -903,8 +904,7 @@ func (c *CacheOperator) writeCacheEntry(ctx context.Context, stats *types.Operat
 	}
 
 	if !c.finishedReading {
-		// FinishedReading() never called, don't write cache entry.
-		return nil
+		return errors.New("CacheOperator.writeCacheEntry() called (via Finalize()) before FinishedReading(), this should never happen")
 	}
 
 	extents := make([]CachedExtent, 0, len(c.cacheableExtentsBeforeDesiredTimeRange)+len(c.cacheableExtentsAfterDesiredTimeRange)+1)
