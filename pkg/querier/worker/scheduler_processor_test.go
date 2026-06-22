@@ -1440,7 +1440,7 @@ func createTestStreamingMessage(msg string) *frontendv2pb.QueryResultStreamReque
 		Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
 			EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
 				Message: &querierpb.EvaluateQueryResponse_StringValue{
-					StringValue: &querierpb.EvaluateQueryResponseStringValue{
+					StringValue: querierpb.EvaluateQueryResponseStringValue{
 						Value: msg,
 					},
 				},

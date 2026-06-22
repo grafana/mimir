@@ -384,7 +384,7 @@ func (o *evaluationObserver) SeriesMetadataEvaluated(ctx context.Context, evalua
 
 		if err := o.w.Write(ctx, querierpb.EvaluateQueryResponse{
 			Message: &querierpb.EvaluateQueryResponse_SeriesMetadata{
-				SeriesMetadata: &querierpb.EvaluateQueryResponseSeriesMetadata{
+				SeriesMetadata: querierpb.EvaluateQueryResponseSeriesMetadata{
 					NodeIndex:               nodeIndex,
 					Series:                  protoSeries,
 					TotalSeriesCountForNode: int64(len(series)),
@@ -441,7 +441,7 @@ func (o *evaluationObserver) sendInstantVectorSeriesDataBatch(ctx context.Contex
 
 	msg := querierpb.EvaluateQueryResponse{
 		Message: &querierpb.EvaluateQueryResponse_InstantVectorSeriesData{
-			InstantVectorSeriesData: &querierpb.EvaluateQueryResponseInstantVectorSeriesData{
+			InstantVectorSeriesData: querierpb.EvaluateQueryResponseInstantVectorSeriesData{
 				NodeIndex: batch.nodeIndex,
 				Series:    series,
 			},
@@ -489,7 +489,7 @@ func (o *evaluationObserver) RangeVectorStepSamplesEvaluated(ctx context.Context
 
 	return o.w.Write(ctx, querierpb.EvaluateQueryResponse{
 		Message: &querierpb.EvaluateQueryResponse_RangeVectorStepData{
-			RangeVectorStepData: &querierpb.EvaluateQueryResponseRangeVectorStepData{
+			RangeVectorStepData: querierpb.EvaluateQueryResponseRangeVectorStepData{
 				NodeIndex:   nodeIndex,
 				SeriesIndex: int64(seriesIndex),
 				StepT:       stepData.StepT,
@@ -538,7 +538,7 @@ func (o *evaluationObserver) ScalarEvaluated(ctx context.Context, evaluator *str
 
 	return o.w.Write(ctx, querierpb.EvaluateQueryResponse{
 		Message: &querierpb.EvaluateQueryResponse_ScalarValue{
-			ScalarValue: &querierpb.EvaluateQueryResponseScalarValue{
+			ScalarValue: querierpb.EvaluateQueryResponseScalarValue{
 				NodeIndex: nodeIndex,
 
 				// The method below does and unsafe cast and does not copy the data from the slice, but this is OK as we're immediately
@@ -557,7 +557,7 @@ func (o *evaluationObserver) StringEvaluated(ctx context.Context, evaluator *str
 
 	return o.w.Write(ctx, querierpb.EvaluateQueryResponse{
 		Message: &querierpb.EvaluateQueryResponse_StringValue{
-			StringValue: &querierpb.EvaluateQueryResponseStringValue{
+			StringValue: querierpb.EvaluateQueryResponseStringValue{
 				NodeIndex: nodeIndex,
 				Value:     data,
 			},
@@ -607,7 +607,7 @@ func (o *evaluationObserver) EvaluationCompleted(ctx context.Context, evaluator 
 
 	return o.w.Write(ctx, querierpb.EvaluateQueryResponse{
 		Message: &querierpb.EvaluateQueryResponse_EvaluationCompleted{
-			EvaluationCompleted: &querierpb.EvaluateQueryResponseEvaluationCompleted{
+			EvaluationCompleted: querierpb.EvaluateQueryResponseEvaluationCompleted{
 				Annotations:        querierpb.EncodeAnnotations(combinedAnnos, o.originalExpression),
 				Stats:              o.populateStats(ctx, nodeInfo),
 				PerNodeStats:       encodedStats,

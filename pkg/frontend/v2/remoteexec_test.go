@@ -875,7 +875,7 @@ func newScalarValue(samples ...mimirpb.Sample) *frontendv2pb.QueryResultStreamRe
 		Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
 			EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
 				Message: &querierpb.EvaluateQueryResponse_ScalarValue{
-					ScalarValue: &querierpb.EvaluateQueryResponseScalarValue{
+					ScalarValue: querierpb.EvaluateQueryResponseScalarValue{
 						Values: samples,
 					},
 				},
@@ -901,7 +901,7 @@ func newSeriesMetadataBatch(nodeIndex int64, dropName bool, totalSeriesCount int
 		Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
 			EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
 				Message: &querierpb.EvaluateQueryResponse_SeriesMetadata{
-					SeriesMetadata: &querierpb.EvaluateQueryResponseSeriesMetadata{
+					SeriesMetadata: querierpb.EvaluateQueryResponseSeriesMetadata{
 						NodeIndex:               nodeIndex,
 						Series:                  protoSeries,
 						TotalSeriesCountForNode: totalSeriesCount,
@@ -917,7 +917,7 @@ func newInstantVectorSeriesData(nodeIndex int64, floats []promql.FPoint, histogr
 		Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
 			EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
 				Message: &querierpb.EvaluateQueryResponse_InstantVectorSeriesData{
-					InstantVectorSeriesData: &querierpb.EvaluateQueryResponseInstantVectorSeriesData{
+					InstantVectorSeriesData: querierpb.EvaluateQueryResponseInstantVectorSeriesData{
 						NodeIndex: nodeIndex,
 						Series: []querierpb.InstantVectorSeriesData{
 							{
@@ -937,7 +937,7 @@ func newBatchedInstantVectorSeriesData(series ...querierpb.InstantVectorSeriesDa
 		Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
 			EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
 				Message: &querierpb.EvaluateQueryResponse_InstantVectorSeriesData{
-					InstantVectorSeriesData: &querierpb.EvaluateQueryResponseInstantVectorSeriesData{
+					InstantVectorSeriesData: querierpb.EvaluateQueryResponseInstantVectorSeriesData{
 						Series: series,
 					},
 				},
@@ -951,7 +951,7 @@ func newRangeVectorStepData(seriesIndex int64, stepT int64, rangeStart int64, ra
 		Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
 			EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
 				Message: &querierpb.EvaluateQueryResponse_RangeVectorStepData{
-					RangeVectorStepData: &querierpb.EvaluateQueryResponseRangeVectorStepData{
+					RangeVectorStepData: querierpb.EvaluateQueryResponseRangeVectorStepData{
 						SeriesIndex: seriesIndex,
 						StepT:       stepT,
 						RangeStart:  rangeStart,
@@ -974,7 +974,7 @@ func newEvaluationCompletedWithPerNodeStats(totalSamples uint64, warnings []stri
 		Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
 			EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
 				Message: &querierpb.EvaluateQueryResponse_EvaluationCompleted{
-					EvaluationCompleted: &querierpb.EvaluateQueryResponseEvaluationCompleted{
+					EvaluationCompleted: querierpb.EvaluateQueryResponseEvaluationCompleted{
 						Annotations: querierpb.Annotations{
 							Warnings: warnings,
 							Infos:    infos,
@@ -995,7 +995,7 @@ func newEvaluationCompletedWithPerNodeAnnotations(totalSamples uint64, perNodeAn
 		Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
 			EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
 				Message: &querierpb.EvaluateQueryResponse_EvaluationCompleted{
-					EvaluationCompleted: &querierpb.EvaluateQueryResponseEvaluationCompleted{
+					EvaluationCompleted: querierpb.EvaluateQueryResponseEvaluationCompleted{
 						Stats: stats.Stats{
 							SamplesProcessed: totalSamples,
 						},
@@ -2457,7 +2457,7 @@ func generateBenchmarkResponse(seriesCount int, pointCount int, batchSize int) [
 			Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
 				EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
 					Message: &querierpb.EvaluateQueryResponse_InstantVectorSeriesData{
-						InstantVectorSeriesData: &querierpb.EvaluateQueryResponseInstantVectorSeriesData{
+						InstantVectorSeriesData: querierpb.EvaluateQueryResponseInstantVectorSeriesData{
 							Series: pendingSeriesData,
 						},
 					},
