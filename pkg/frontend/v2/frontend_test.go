@@ -35,6 +35,7 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
 	"github.com/grafana/dskit/user"
+	"github.com/grafana/mimir/pkg/util/httpgrpcpb"
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/prometheus/model/labels"
@@ -156,8 +157,8 @@ func sendResponseWithDelay(f *Frontend, delay time.Duration, userID string, quer
 	ctx := user.InjectOrgID(context.Background(), userID)
 	_, err := f.QueryResult(ctx, &frontendv2pb.QueryResultRequest{
 		QueryID:      queryID,
-		HttpResponse: resp,
-		Stats:        &stats.SafeStats{},
+		HttpResponse: httpgrpcpb.FromHTTPResponse(resp),
+		Stats:        stats.SafeStats{},
 	})
 	return err
 }
@@ -1380,7 +1381,8 @@ func TestFrontend_Protobuf_MultipleConcurrentResponses(t *testing.T) {
 
 		go func() {
 			req := &querierpb.EvaluateQueryRequest{}
-			require.NoError(t, prototypes.UnmarshalAny(msg.GetProtobufRequest().Payload, req))
+			pl := msg.GetProtobufRequest().Payload
+			require.NoError(t, prototypes.UnmarshalAny(&prototypes.Any{TypeUrl: pl.TypeUrl, Value: pl.Value}, req))
 
 			resp := generateConcurrencyTestResponse(req.BatchSize)
 			sendStreamingResponse(t, f, msg.UserID, msg.QueryID, resp)
@@ -1595,10 +1597,10 @@ func TestFrontendStreamingResponse(t *testing.T) {
 func metadataRequest(msg *schedulerpb.FrontendToScheduler, statusCode int, headers []*httpgrpc.Header) *frontendv2pb.QueryResultStreamRequest {
 	return &frontendv2pb.QueryResultStreamRequest{
 		QueryID: msg.QueryID,
-		Data: &frontendv2pb.QueryResultStreamRequest_Metadata{Metadata: &frontendv2pb.QueryResultMetadata{
+		Data: &frontendv2pb.QueryResultStreamRequest_Metadata{Metadata: frontendv2pb.QueryResultMetadata{
 			Code:    int32(statusCode),
-			Headers: headers,
-			Stats:   &stats.SafeStats{},
+			Headers: httpgrpcpb.FromHeaders(headers),
+			Stats:   stats.SafeStats{},
 		}},
 	}
 }
@@ -1606,7 +1608,7 @@ func metadataRequest(msg *schedulerpb.FrontendToScheduler, statusCode int, heade
 func bodyChunkRequest(msg *schedulerpb.FrontendToScheduler, content []byte) *frontendv2pb.QueryResultStreamRequest {
 	return &frontendv2pb.QueryResultStreamRequest{
 		QueryID: msg.QueryID,
-		Data:    &frontendv2pb.QueryResultStreamRequest_Body{Body: &frontendv2pb.QueryResultBody{Chunk: content}},
+		Data:    &frontendv2pb.QueryResultStreamRequest_Body{Body: frontendv2pb.QueryResultBody{Chunk: content}},
 	}
 }
 
@@ -1687,6 +1689,7 @@ func (s *mockUnmarshallingQueryResultStreamServer) Recv() (*frontendv2pb.QueryRe
 }
 
 type mockScheduler struct {
+	schedulerpb.UnimplementedSchedulerForFrontendServer
 	t testing.TB
 	f *Frontend
 
@@ -1859,9 +1862,9 @@ func (l limits) QueryIngestersWithin(string) time.Duration {
 func newStringMessage(s string) *frontendv2pb.QueryResultStreamRequest {
 	return &frontendv2pb.QueryResultStreamRequest{
 		Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
-			EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
+			EvaluateQueryResponse: querierpb.EvaluateQueryResponse{
 				Message: &querierpb.EvaluateQueryResponse_StringValue{
-					StringValue: &querierpb.EvaluateQueryResponseStringValue{
+					StringValue: querierpb.EvaluateQueryResponseStringValue{
 						Value: s,
 					},
 				},
@@ -1873,7 +1876,7 @@ func newStringMessage(s string) *frontendv2pb.QueryResultStreamRequest {
 func newErrorMessage(typ mimirpb.QueryErrorType, msg string) *frontendv2pb.QueryResultStreamRequest {
 	return &frontendv2pb.QueryResultStreamRequest{
 		Data: &frontendv2pb.QueryResultStreamRequest_Error{
-			Error: &querierpb.Error{
+			Error: querierpb.Error{
 				Type:    typ,
 				Message: msg,
 			},

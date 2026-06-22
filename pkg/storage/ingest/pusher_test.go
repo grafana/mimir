@@ -117,7 +117,7 @@ func TestPusherConsumer(t *testing.T) {
 			expectedWRs: writeReqs[0:2],
 			expErr:      "",
 			expectedLogLines: []string{
-				"level=error msg=\"failed to parse write request; skipping\" err=\"parsing ingest consumer write request: proto: WriteRequest: illegal tag 0 (wire type 0)\"",
+				"level=error msg=\"failed to parse write request; skipping\" err=\"parsing ingest consumer write request: invalid field number\"",
 			},
 		},
 		"mixed record versions": {

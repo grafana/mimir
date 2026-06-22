@@ -68,7 +68,7 @@ func TestIngesterSearchLabelNames(t *testing.T) {
 			req := &client.SearchLabelNamesRequest{
 				StartTimestampMs: 0,
 				EndTimestampMs:   200_000,
-				Filter:           &client.SearchFilter{Terms: tc.filterTerms, CaseInsensitive: tc.caseInsens},
+				Filter:           client.SearchFilter{Terms: tc.filterTerms, CaseInsensitive: tc.caseInsens},
 				Ordering:         tc.ordering,
 				Limit:            tc.limit,
 			}
@@ -133,7 +133,7 @@ func TestIngesterSearchLabelValues(t *testing.T) {
 				StartTimestampMs: 0,
 				EndTimestampMs:   200_000,
 				Name:             tc.labelName,
-				Filter: &client.SearchFilter{
+				Filter: client.SearchFilter{
 					Terms:           tc.filterTerms,
 					CaseInsensitive: tc.caseInsens,
 					FuzzAlg:         tc.fuzzAlg,
@@ -317,7 +317,7 @@ func TestIngesterSearchLabelValuesRejectsInvalidFuzzThresholdAsInvalidArgument(t
 		StartTimestampMs: 0,
 		EndTimestampMs:   200_000,
 		Name:             "status",
-		Filter:           &client.SearchFilter{Terms: []string{"x"}, FuzzThreshold: 200},
+		Filter:           client.SearchFilter{Terms: []string{"x"}, FuzzThreshold: 200},
 	}
 	s := &mockSearchLabelValuesStream{ctx: ctx}
 	err := i.SearchLabelValues(req, s)
@@ -669,7 +669,7 @@ func BenchmarkIngester_SearchLabelValues(b *testing.B) {
 			StartTimestampMs: 0,
 			EndTimestampMs:   searchBenchEndTimeMs,
 			Name:             heavyCardLabel,
-			Filter:           &client.SearchFilter{Terms: []string{substringTerm}},
+			Filter:           client.SearchFilter{Terms: []string{substringTerm}},
 			Ordering:         client.ORDER_BY_VALUE_ASC,
 			Limit:            searchBenchLimitLarge,
 		})
@@ -679,7 +679,7 @@ func BenchmarkIngester_SearchLabelValues(b *testing.B) {
 			StartTimestampMs: 0,
 			EndTimestampMs:   searchBenchEndTimeMs,
 			Name:             heavyCardLabel,
-			Filter:           &client.SearchFilter{Terms: []string{substringTerm}},
+			Filter:           client.SearchFilter{Terms: []string{substringTerm}},
 			Ordering:         client.ORDER_BY_VALUE_DESC,
 			Limit:            searchBenchLimitLarge,
 		})
@@ -689,7 +689,7 @@ func BenchmarkIngester_SearchLabelValues(b *testing.B) {
 			StartTimestampMs: 0,
 			EndTimestampMs:   searchBenchEndTimeMs,
 			Name:             heavyCardLabel,
-			Filter:           &client.SearchFilter{Terms: []string{substringTerm}},
+			Filter:           client.SearchFilter{Terms: []string{substringTerm}},
 			Ordering:         client.ORDER_BY_SCORE_DESC,
 			Limit:            searchBenchLimitLarge,
 		})
@@ -699,7 +699,7 @@ func BenchmarkIngester_SearchLabelValues(b *testing.B) {
 			StartTimestampMs: 0,
 			EndTimestampMs:   searchBenchEndTimeMs,
 			Name:             heavyCardLabel,
-			Filter:           &client.SearchFilter{Terms: []string{substringTerm}},
+			Filter:           client.SearchFilter{Terms: []string{substringTerm}},
 			Ordering:         client.ORDER_BY_VALUE_ASC,
 			Limit:            searchBenchLimitSmall,
 		})
@@ -709,7 +709,7 @@ func BenchmarkIngester_SearchLabelValues(b *testing.B) {
 			StartTimestampMs: 0,
 			EndTimestampMs:   searchBenchEndTimeMs,
 			Name:             heavyCardLabel,
-			Filter: &client.SearchFilter{
+			Filter: client.SearchFilter{
 				Terms:         []string{fuzzyTerm},
 				FuzzAlg:       client.FUZZ_ALG_JARO_WINKLER,
 				FuzzThreshold: searchBenchFuzzPercent,
@@ -769,7 +769,7 @@ func BenchmarkIngester_SearchLabelNames(b *testing.B) {
 		run(b, &client.SearchLabelNamesRequest{
 			StartTimestampMs: 0,
 			EndTimestampMs:   searchBenchEndTimeMs,
-			Filter:           &client.SearchFilter{Terms: []string{"mod"}},
+			Filter:           client.SearchFilter{Terms: []string{"mod"}},
 			Ordering:         client.ORDER_BY_VALUE_ASC,
 			Limit:            searchBenchLimitLarge,
 		})

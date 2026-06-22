@@ -4,17 +4,11 @@ syntax = "proto3";
 
 package splitandcache;
 
-import "gogoproto/gogo.proto";
 import "google/protobuf/duration.proto";
+import "wiresmith/options.proto";
 
-option (gogoproto.equal_all) = false;
-option (gogoproto.marshaler_all) = true;
-option (gogoproto.messagename_all) = true;
-option (gogoproto.unmarshaler_all) = true;
+option (wiresmith.options.no_presence_all) = true;
 
 message TimeRangeSplitDetails {
-  google.protobuf.Duration splitInterval = 1 [
-    (gogoproto.stdduration) = true,
-    (gogoproto.nullable) = false
-  ];
+  google.protobuf.Duration splitInterval = 1 [(wiresmith.options.stdduration) = true];
 }

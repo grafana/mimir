@@ -536,7 +536,7 @@ func TestRemoteQuerier_QueryProtobufDecoding(t *testing.T) {
 			body: mimirpb.QueryResponse{
 				Status: mimirpb.QUERY_STATUS_SUCCESS,
 				Data: &mimirpb.QueryResponse_Vector{
-					Vector: &mimirpb.VectorData{},
+					Vector: mimirpb.VectorData{},
 				},
 			},
 			expected: promql.Vector{},
@@ -545,7 +545,7 @@ func TestRemoteQuerier_QueryProtobufDecoding(t *testing.T) {
 			body: mimirpb.QueryResponse{
 				Status: mimirpb.QUERY_STATUS_SUCCESS,
 				Data: &mimirpb.QueryResponse_Vector{
-					Vector: &mimirpb.VectorData{
+					Vector: mimirpb.VectorData{
 						Samples: []mimirpb.VectorSample{
 							{
 								Metric:      []string{"foo", "bar"},
@@ -568,7 +568,7 @@ func TestRemoteQuerier_QueryProtobufDecoding(t *testing.T) {
 			body: mimirpb.QueryResponse{
 				Status: mimirpb.QUERY_STATUS_SUCCESS,
 				Data: &mimirpb.QueryResponse_Vector{
-					Vector: &mimirpb.VectorData{
+					Vector: mimirpb.VectorData{
 						Samples: []mimirpb.VectorSample{
 							{
 								Metric:      []string{"foo", "bar"},
@@ -601,7 +601,7 @@ func TestRemoteQuerier_QueryProtobufDecoding(t *testing.T) {
 			body: mimirpb.QueryResponse{
 				Status: mimirpb.QUERY_STATUS_SUCCESS,
 				Data: &mimirpb.QueryResponse_Vector{
-					Vector: &mimirpb.VectorData{
+					Vector: mimirpb.VectorData{
 						Samples: []mimirpb.VectorSample{
 							{
 								Metric:      []string{"bar", "baz", "foo", "blah"},
@@ -624,7 +624,7 @@ func TestRemoteQuerier_QueryProtobufDecoding(t *testing.T) {
 			body: mimirpb.QueryResponse{
 				Status: mimirpb.QUERY_STATUS_SUCCESS,
 				Data: &mimirpb.QueryResponse_Vector{
-					Vector: &mimirpb.VectorData{
+					Vector: mimirpb.VectorData{
 						Histograms: []mimirpb.VectorHistogram{
 							{
 								Metric:      []string{"foo", "baz"},
@@ -647,7 +647,7 @@ func TestRemoteQuerier_QueryProtobufDecoding(t *testing.T) {
 			body: mimirpb.QueryResponse{
 				Status: mimirpb.QUERY_STATUS_SUCCESS,
 				Data: &mimirpb.QueryResponse_Vector{
-					Vector: &mimirpb.VectorData{
+					Vector: mimirpb.VectorData{
 						Samples: []mimirpb.VectorSample{
 							{
 								Metric:      []string{"foo", "baz"},
@@ -682,7 +682,7 @@ func TestRemoteQuerier_QueryProtobufDecoding(t *testing.T) {
 			body: mimirpb.QueryResponse{
 				Status: mimirpb.QUERY_STATUS_SUCCESS,
 				Data: &mimirpb.QueryResponse_Vector{
-					Vector: &mimirpb.VectorData{
+					Vector: mimirpb.VectorData{
 						Samples: []mimirpb.VectorSample{
 							{
 								Metric:      []string{"foo", "bar", "baz"},
@@ -699,7 +699,7 @@ func TestRemoteQuerier_QueryProtobufDecoding(t *testing.T) {
 			body: mimirpb.QueryResponse{
 				Status: mimirpb.QUERY_STATUS_SUCCESS,
 				Data: &mimirpb.QueryResponse_Scalar{
-					Scalar: &mimirpb.ScalarData{
+					Scalar: mimirpb.ScalarData{
 						TimestampMs: 1649092025515,
 						Value:       1.23,
 					},
@@ -717,7 +717,7 @@ func TestRemoteQuerier_QueryProtobufDecoding(t *testing.T) {
 			body: mimirpb.QueryResponse{
 				Status: mimirpb.QUERY_STATUS_SUCCESS,
 				Data: &mimirpb.QueryResponse_Matrix{
-					Matrix: &mimirpb.MatrixData{},
+					Matrix: mimirpb.MatrixData{},
 				},
 			},
 			expectedError: errors.New("rule result is not a vector or scalar: \"matrix\""),

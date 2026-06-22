@@ -4,17 +4,20 @@ syntax = "proto3";
 
 package indexheaderpb;
 
-import "gogoproto/gogo.proto";
+import "wiresmith/options.proto";
 
-option go_package = "indexheaderpb";
-// Do not generate XXX fields to reduce memory footprint.
-option (gogoproto.goproto_sizecache_all) = false;
-option (gogoproto.goproto_unkeyed_all) = false;
-option (gogoproto.goproto_unrecognized_all) = false;
+option go_package = "github.com/grafana/mimir/pkg/storage/indexheader/indexheaderpb";
+// Drop the per-message presence bitmap everywhere: the gogo layout had no
+// presence tracking for proto3 non-optional fields. The gogo options
+// goproto_sizecache_all/goproto_unkeyed_all/goproto_unrecognized_all=false are
+// the wiresmith default (no XXX fields are emitted).
+option (wiresmith.options.no_presence_all) = true;
 
 message Sparse {
-  Symbols symbols = 1;
-  PostingOffsetTable postingsOffsetTable = 2;
+  // pointer=true preserves the *Symbols shape from gogo's nullable=true default.
+  Symbols symbols = 1 [(wiresmith.options.pointer) = true];
+  // pointer=true preserves the *PostingOffsetTable shape from gogo's nullable=true default.
+  PostingOffsetTable postingsOffsetTable = 2 [(wiresmith.options.pointer) = true];
 }
 
 message Symbols {
@@ -30,7 +33,8 @@ message PostingOffsetTable {
 
 // PostingValueOffsets stores a list of the first, last, and every 32nd (config default) PostingOffset for this label name.
 message PostingValueOffsets {
-  repeated PostingOffset offsets = 1;
+  // pointer=true preserves the []*PostingOffset shape from gogo's nullable=true default.
+  repeated PostingOffset offsets = 1 [(wiresmith.options.pointer) = true];
   // LastValOffset is the offset of the last value for this label name relative to the start of the postings offset table.
   int64 lastValOffset = 2;
 }

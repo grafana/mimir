@@ -30,6 +30,8 @@ import (
 
 type BlockBuilderScheduler struct {
 	services.Service
+	// Required by the wiresmith gRPC stub (grpc-go v2 forward-compatibility).
+	schedulerpb.UnimplementedBlockBuilderSchedulerServer
 
 	adminClient *kadm.Client
 	jobs        *jobQueue[schedulerpb.JobSpec]

@@ -21,7 +21,6 @@ import (
 	"github.com/grafana/dskit/cancellation"
 	"github.com/grafana/dskit/grpcclient"
 	"github.com/grafana/dskit/grpcutil"
-	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
@@ -45,6 +44,7 @@ import (
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/grpcencoding/s2"
+	"github.com/grafana/mimir/pkg/util/httpgrpcpb"
 	"github.com/grafana/mimir/pkg/util/httpgrpcutil"
 )
 
@@ -56,6 +56,8 @@ var tracer = otel.Tracer("pkg/scheduler")
 // Scheduler is responsible for queueing and dispatching queries to Queriers.
 type Scheduler struct {
 	services.Service
+	schedulerpb.UnimplementedSchedulerForFrontendServer
+	schedulerpb.UnimplementedSchedulerForQuerierServer
 
 	cfg Config
 	log log.Logger
@@ -283,7 +285,8 @@ func (s *Scheduler) FrontendLoop(frontend schedulerpb.SchedulerForFrontend_Front
 
 			switch req := msg.Payload.(type) {
 			case *schedulerpb.FrontendToScheduler_HttpRequest:
-				parentSpanContext, _ = httpgrpcutil.ContextWithSpanFromRequest(frontendCtx, req.HttpRequest)
+				// Convert from httpgrpcpb (wiresmith bridge type) to httpgrpc (dskit gogo type) for the carrier.
+				parentSpanContext, _ = httpgrpcutil.ContextWithSpanFromRequest(frontendCtx, httpgrpcpb.ToHTTPRequest(&req.HttpRequest))
 			case *schedulerpb.FrontendToScheduler_ProtobufRequest:
 				carrier := schedulerpb.MetadataMapTracingCarrier(schedulerpb.MetadataSliceToMap(req.ProtobufRequest.Metadata))
 				parentSpanContext = otel.GetTextMapPropagator().Extract(frontendCtx, carrier)
@@ -392,9 +395,11 @@ func (s *Scheduler) enqueueRequest(requestContext context.Context, frontendAddr 
 
 	switch p := msg.Payload.(type) {
 	case *schedulerpb.FrontendToScheduler_HttpRequest:
-		req.HttpRequest = p.HttpRequest
+		// Convert from httpgrpcpb bridge type to the dskit gogo type used in SchedulerRequest.
+		req.HttpRequest = httpgrpcpb.ToHTTPRequest(&p.HttpRequest)
 	case *schedulerpb.FrontendToScheduler_ProtobufRequest:
-		req.ProtobufRequest = p.ProtobufRequest
+		// ProtobufRequest is a value in the oneof wrapper; take its address.
+		req.ProtobufRequest = &p.ProtobufRequest
 	default:
 		return fmt.Errorf("unsupported payload type: %T", msg.Payload)
 	}
@@ -548,9 +553,11 @@ func (s *Scheduler) forwardRequestToQuerier(querier schedulerpb.SchedulerForQuer
 		}
 
 		if req.HttpRequest != nil {
-			msg.Payload = &schedulerpb.SchedulerToQuerier_HttpRequest{HttpRequest: req.HttpRequest}
+			// Convert from the dskit gogo type to the httpgrpcpb bridge type used in the proto oneof (value, no_presence_all).
+			msg.Payload = &schedulerpb.SchedulerToQuerier_HttpRequest{HttpRequest: *httpgrpcpb.FromHTTPRequest(req.HttpRequest)}
 		} else if req.ProtobufRequest != nil {
-			msg.Payload = &schedulerpb.SchedulerToQuerier_ProtobufRequest{ProtobufRequest: req.ProtobufRequest}
+			// ProtobufRequest is a value in the oneof wrapper; dereference the pointer.
+			msg.Payload = &schedulerpb.SchedulerToQuerier_ProtobufRequest{ProtobufRequest: *req.ProtobufRequest}
 		}
 
 		var err error
@@ -645,7 +652,8 @@ func (s *Scheduler) forwardErrorToFrontend(ctx context.Context, req *SchedulerRe
 	if req.HttpRequest != nil {
 		_, err = client.QueryResult(userCtx, &frontendv2pb.QueryResultRequest{
 			QueryID: req.QueryID,
-			HttpResponse: &httpgrpc.HTTPResponse{
+			// QueryResultRequest.HttpResponse uses the httpgrpcpb bridge type (*httpgrpcpb.HTTPResponse).
+			HttpResponse: &httpgrpcpb.HTTPResponse{
 				Code: http.StatusInternalServerError,
 				Body: []byte(requestErr.Error()),
 			},
@@ -664,8 +672,9 @@ func (s *Scheduler) forwardErrorToFrontend(ctx context.Context, req *SchedulerRe
 
 		msg := frontendv2pb.QueryResultStreamRequest{
 			QueryID: req.QueryID,
+			// QueryResultStreamRequest_Error.Error is a value type (no_presence_all).
 			Data: &frontendv2pb.QueryResultStreamRequest_Error{
-				Error: &querierpb.Error{
+				Error: querierpb.Error{
 					Type:    mimirpb.QUERY_ERROR_TYPE_INTERNAL,
 					Message: requestErr.Error(),
 				},

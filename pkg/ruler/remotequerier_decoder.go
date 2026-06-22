@@ -115,9 +115,9 @@ func (d protobufDecoder) Decode(body []byte) (promql.Vector, error) {
 
 	switch data := resp.Data.(type) {
 	case *mimirpb.QueryResponse_Scalar:
-		return d.decodeScalar(data.Scalar), nil
+		return d.decodeScalar(&data.Scalar), nil
 	case *mimirpb.QueryResponse_Vector:
-		return d.decodeVector(data.Vector)
+		return d.decodeVector(&data.Vector)
 	default:
 		return promql.Vector{}, fmt.Errorf("rule result is not a vector or scalar: \"%s\"", d.dataTypeToHumanFriendlyName(resp))
 	}
@@ -184,7 +184,7 @@ func (protobufDecoder) dataTypeToHumanFriendlyName(resp mimirpb.QueryResponse) s
 	switch resp.Data.(type) {
 	case *mimirpb.QueryResponse_Scalar:
 		return "scalar"
-	case *mimirpb.QueryResponse_String_:
+	case *mimirpb.QueryResponse_String:
 		return "string"
 	case *mimirpb.QueryResponse_Vector:
 		return "vector"

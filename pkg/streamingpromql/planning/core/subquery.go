@@ -33,9 +33,10 @@ func (s *Subquery) Describe() string {
 	builder.WriteString(s.Step.String())
 	builder.WriteRune(']')
 
-	if s.Timestamp != nil {
+	// The zero time.Time marks an unset stdtime field (no `@` modifier).
+	if !s.Timestamp.IsZero() {
 		builder.WriteString(" @ ")
-		builder.WriteString(strconv.FormatInt(timestamp.FromTime(*s.Timestamp), 10))
+		builder.WriteString(strconv.FormatInt(timestamp.FromTime(s.Timestamp), 10))
 		builder.WriteString(" (")
 		builder.WriteString(s.Timestamp.Format(time.RFC3339Nano))
 		builder.WriteRune(')')
@@ -68,8 +69,8 @@ func (s *Subquery) ChildrenTimeRange(timeRange types.QueryTimeRange) types.Query
 	end := timeRange.EndT
 	stepMilliseconds := s.Step.Milliseconds()
 
-	if s.Timestamp != nil {
-		start = timestamp.FromTime(*s.Timestamp)
+	if !s.Timestamp.IsZero() {
+		start = timestamp.FromTime(s.Timestamp)
 		end = start
 	} else if !timeRange.IsInstant {
 		// Align the parent end timestamp down to the parent's step grid before applying the
@@ -109,7 +110,7 @@ func (s *Subquery) EquivalentToIgnoringHintsAndChildren(other planning.Node) boo
 	otherSubquery, ok := other.(*Subquery)
 
 	return ok &&
-		((s.Timestamp == nil && otherSubquery.Timestamp == nil) || (s.Timestamp != nil && otherSubquery.Timestamp != nil && s.Timestamp.Equal(*otherSubquery.Timestamp))) &&
+		s.Timestamp.Equal(otherSubquery.Timestamp) &&
 		s.Offset == otherSubquery.Offset &&
 		s.Range == otherSubquery.Range &&
 		s.Step == otherSubquery.Step

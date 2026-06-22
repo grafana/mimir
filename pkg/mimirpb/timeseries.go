@@ -84,6 +84,14 @@ func (p *PreallocWriteRequest) Unmarshal(dAtA []byte) error {
 	p.unmarshalFromRW2 = p.UnmarshalFromRW2
 	p.rw2symbols.offset = p.RW2SymbolOffset
 	p.rw2symbols.commonSymbols = p.RW2CommonSymbols
+	if p.UnmarshalFromRW2 {
+		// In RW2 mode the top-level pre-scan is pure cost: symbols (field 4) are
+		// paged into m.rw2symbols and timeseries (field 5) are decoded straight
+		// into the RW1 representation, so neither pre-scanned slice gets
+		// preallocated. UnmarshalNoPrescan skips that top-level walk (it still
+		// preserves nested pre-scans) instead of guarding it on unmarshalFromRW2.
+		return p.UnmarshalNoPrescan(dAtA)
+	}
 	return p.WriteRequest.Unmarshal(dAtA)
 }
 
@@ -713,8 +721,8 @@ func copyToYoloString(buf []byte, src string) (string, []byte) {
 // The returned histogram does not share any memory with the given one.
 func copyHistogram(src Histogram) Histogram {
 	var (
-		dstCount     isHistogram_Count
-		dstZeroCount isHistogram_ZeroCount
+		dstCount     Histogram_Count
+		dstZeroCount Histogram_ZeroCount
 	)
 	// Copy count.
 	switch src.Count.(type) {
@@ -789,16 +797,16 @@ func preallocSliceIfNeeded[T any](size int) []T {
 	return nil
 }
 
-// MakeReferencesSafeToRetain converts all of ts' unsafe references to safe copies.
-func (ts *TimeSeries) MakeReferencesSafeToRetain() {
-	for i, l := range ts.Labels {
-		ts.Labels[i].Name = strings.Clone(l.Name)
-		ts.Labels[i].Value = strings.Clone(l.Value)
+// MakeReferencesSafeToRetain converts all of the TimeSeries' unsafe references to safe copies.
+func (m *TimeSeries) MakeReferencesSafeToRetain() {
+	for i, l := range m.Labels {
+		m.Labels[i].Name = strings.Clone(l.Name)
+		m.Labels[i].Value = strings.Clone(l.Value)
 	}
-	for i, e := range ts.Exemplars {
+	for i, e := range m.Exemplars {
 		for j, l := range e.Labels {
-			ts.Exemplars[i].Labels[j].Name = strings.Clone(l.Name)
-			ts.Exemplars[i].Labels[j].Value = strings.Clone(l.Value)
+			m.Exemplars[i].Labels[j].Name = strings.Clone(l.Name)
+			m.Exemplars[i].Labels[j].Value = strings.Clone(l.Value)
 		}
 	}
 }

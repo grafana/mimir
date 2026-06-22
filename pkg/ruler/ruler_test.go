@@ -23,7 +23,6 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/gogo/protobuf/types"
 	"github.com/gorilla/mux"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/kv"
@@ -33,6 +32,7 @@ import (
 	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/dskit/test"
 	"github.com/grafana/dskit/user"
+	"github.com/grafana/wiresmith/types/known/anypb"
 	"github.com/prometheus/client_golang/prometheus"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
@@ -2762,7 +2762,7 @@ func createRuleGroup(name, user string, rules ...*rulespb.RuleDesc) *rulespb.Rul
 		Interval:                      time.Minute,
 		Rules:                         rules,
 		User:                          user,
-		Options:                       []*types.Any{},
+		Options:                       []*anypb.Any{},
 		SourceTenants:                 []string{},
 		EvaluationDelay:               1 * time.Minute,
 		QueryOffset:                   1 * time.Minute,

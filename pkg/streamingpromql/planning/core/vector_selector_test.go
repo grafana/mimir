@@ -523,7 +523,7 @@ func TestVectorSelector_MergeHints_SkipHistogramBuckets(t *testing.T) {
 	})
 }
 
-func timestampOf(ts int64) *time.Time {
+func timestampOf(ts int64) time.Time {
 	return TimeFromTimestamp(&ts)
 }
 
@@ -549,7 +549,7 @@ func TestVectorSelector_QueriedTimeRange(t *testing.T) {
 		"timestamp set, no offset": {
 			selector: &VectorSelector{
 				VectorSelectorDetails: &VectorSelectorDetails{
-					Timestamp: &ts,
+					Timestamp: ts,
 				},
 			},
 			expected: planning.NewQueriedTimeRange(ts.Add(-lookbackDelta).Add(excludeLowerBoundary), ts),
@@ -566,7 +566,7 @@ func TestVectorSelector_QueriedTimeRange(t *testing.T) {
 			selector: &VectorSelector{
 				VectorSelectorDetails: &VectorSelectorDetails{
 					Offset:    offset,
-					Timestamp: &ts,
+					Timestamp: ts,
 				},
 			},
 			expected: planning.NewQueriedTimeRange(ts.Add(-lookbackDelta).Add(-offset).Add(excludeLowerBoundary), ts.Add(-offset)),

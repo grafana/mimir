@@ -6,25 +6,20 @@ package rangevectorsplittingcache;
 
 import "github.com/grafana/mimir/pkg/querier/querierpb/querier.proto";
 import "github.com/grafana/mimir/pkg/streamingpromql/types/types.proto";
-import "gogoproto/gogo.proto";
+import "wiresmith/options.proto";
 
 option go_package = "cache";
-option (gogoproto.goproto_getters_all) = false;
-option (gogoproto.goproto_sizecache_all) = false;
-// Do not generate XXX fields to reduce memory footprint.
-option (gogoproto.goproto_unkeyed_all) = false;
-option (gogoproto.goproto_unrecognized_all) = false;
-option (gogoproto.marshaler_all) = true;
-option (gogoproto.sizer_all) = true;
-option (gogoproto.unmarshaler_all) = true;
+// no_presence_all keeps gogoproto value semantics (no presence bitmap,
+// declared-fields-only struct layout), matching the rest of the cluster.
+option (wiresmith.options.no_presence_all) = true;
 
 message CachedSeries {
   // cacheKey contains the non-hashed cache key, to detect hash collision.
   bytes cacheKey = 1;
   int64 start = 2;
   int64 end = 3;
-  repeated querierpb.SeriesMetadata series_metadata = 4 [(gogoproto.nullable) = false];
+  repeated querierpb.SeriesMetadata series_metadata = 4;
   bytes results = 5;
-  querierpb.Annotations annotations = 6 [(gogoproto.nullable) = false];
-  types.EncodedOperatorEvaluationStats stats = 7 [(gogoproto.nullable) = false];
+  querierpb.Annotations annotations = 6;
+  types.EncodedOperatorEvaluationStats stats = 7;
 }

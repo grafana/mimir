@@ -4,10 +4,11 @@ syntax = "proto3";
 
 package schedulerpb;
 
-import "gogoproto/gogo.proto";
+import "wiresmith/options.proto";
 
-option (gogoproto.marshaler_all) = true;
-option (gogoproto.unmarshaler_all) = true;
+option go_package = "github.com/grafana/mimir/pkg/blockbuilder/schedulerpb";
+
+option (wiresmith.options.no_presence_all) = true;
 
 message JobKey {
   string id = 1;
@@ -31,14 +32,14 @@ message AssignJobRequest {
 }
 
 message AssignJobResponse {
-  JobKey key = 1;
-  JobSpec spec = 2;
+  JobKey key = 1 [(wiresmith.options.pointer) = true];
+  JobSpec spec = 2 [(wiresmith.options.pointer) = true];
 }
 
 message UpdateJobRequest {
-  JobKey key = 1;
+  JobKey key = 1 [(wiresmith.options.pointer) = true];
   string worker_id = 2;
-  JobSpec spec = 3;
+  JobSpec spec = 3 [(wiresmith.options.pointer) = true];
   bool complete = 4;
 }
 

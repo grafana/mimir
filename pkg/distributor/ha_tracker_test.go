@@ -97,7 +97,8 @@ func waitForHaTrackerCacheEntryRemoval(t require.TestingT, tracker *defaultHaTra
 }
 
 func merge(r1, r2 *ReplicaDesc) (*ReplicaDesc, *ReplicaDesc) {
-	change, err := r1.Merge(r2, false)
+	m1 := &mergeableReplicaDesc{ReplicaDesc: r1}
+	change, err := m1.Merge(&mergeableReplicaDesc{ReplicaDesc: r2}, false)
 	if err != nil {
 		panic(err)
 	}
@@ -106,8 +107,8 @@ func merge(r1, r2 *ReplicaDesc) (*ReplicaDesc, *ReplicaDesc) {
 		return r1, nil
 	}
 
-	changeRDesc := change.(*ReplicaDesc)
-	return r1, changeRDesc
+	changeRDesc := change.(*mergeableReplicaDesc)
+	return r1, changeRDesc.ReplicaDesc
 }
 func TestReplicaDescMerge(t *testing.T) {
 	now := time.Now().Unix()
@@ -385,8 +386,8 @@ func TestHaTrackerWithMemberlistWhenReplicaDescIsMarkedDeletedThenKVStoreUpdateI
 
 	// Mark the ReplicaDesc as deleted in the KVStore, which will also remove it from the tracker cache.
 	err = tracker.client.CAS(ctx, key, func(in interface{}) (out interface{}, retry bool, err error) {
-		d, ok := in.(*ReplicaDesc)
-		if !ok || d == nil {
+		d, ok := in.(*mergeableReplicaDesc)
+		if !ok || d == nil || d.ReplicaDesc == nil {
 			return nil, false, nil
 		}
 		d.DeletedAt = timestamp.FromTime(time.Now())
@@ -1340,7 +1341,7 @@ func checkReplicaDeletionState(t *testing.T, duration time.Duration, c *defaultH
 	require.Equal(t, expectedExistsInKV, existsInKV, "exists in KV")
 
 	if val != nil {
-		markedForDeletion := val.(*ReplicaDesc).DeletedAt > 0
+		markedForDeletion := val.(*mergeableReplicaDesc).DeletedAt > 0
 		require.Equal(t, expectedMarkedForDeletion, markedForDeletion, "KV entry marked for deletion")
 	}
 }

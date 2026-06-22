@@ -77,8 +77,8 @@ var protobufCodecScenarios = []struct {
 		name: "successful string response",
 		payload: mimirpb.QueryResponse{
 			Status: mimirpb.QUERY_STATUS_SUCCESS,
-			Data: &mimirpb.QueryResponse_String_{
-				String_: &mimirpb.StringData{Value: "foo", TimestampMs: 1500},
+			Data: &mimirpb.QueryResponse_String{
+				String: mimirpb.StringData{Value: "foo", TimestampMs: 1500},
 			},
 		},
 		response: &PrometheusResponse{
@@ -100,7 +100,7 @@ var protobufCodecScenarios = []struct {
 		payload: mimirpb.QueryResponse{
 			Status: mimirpb.QUERY_STATUS_SUCCESS,
 			Data: &mimirpb.QueryResponse_Scalar{
-				Scalar: &mimirpb.ScalarData{
+				Scalar: mimirpb.ScalarData{
 					Value:       200,
 					TimestampMs: 1000,
 				},
@@ -122,7 +122,7 @@ var protobufCodecScenarios = []struct {
 		payload: mimirpb.QueryResponse{
 			Status: mimirpb.QUERY_STATUS_SUCCESS,
 			Data: &mimirpb.QueryResponse_Vector{
-				Vector: &mimirpb.VectorData{},
+				Vector: mimirpb.VectorData{},
 			},
 		},
 		response: &PrometheusResponse{
@@ -139,7 +139,7 @@ var protobufCodecScenarios = []struct {
 		payload: mimirpb.QueryResponse{
 			Status: mimirpb.QUERY_STATUS_SUCCESS,
 			Data: &mimirpb.QueryResponse_Vector{
-				Vector: &mimirpb.VectorData{
+				Vector: mimirpb.VectorData{
 					Samples: []mimirpb.VectorSample{
 						{Metric: nil, TimestampMs: 1_000, Value: 200},
 					},
@@ -162,7 +162,7 @@ var protobufCodecScenarios = []struct {
 		payload: mimirpb.QueryResponse{
 			Status: mimirpb.QUERY_STATUS_SUCCESS,
 			Data: &mimirpb.QueryResponse_Vector{
-				Vector: &mimirpb.VectorData{
+				Vector: mimirpb.VectorData{
 					Samples: []mimirpb.VectorSample{
 						{Metric: []string{"foo", "bar"}, TimestampMs: 1_000, Value: 200},
 					},
@@ -185,7 +185,7 @@ var protobufCodecScenarios = []struct {
 		payload: mimirpb.QueryResponse{
 			Status: mimirpb.QUERY_STATUS_SUCCESS,
 			Data: &mimirpb.QueryResponse_Vector{
-				Vector: &mimirpb.VectorData{
+				Vector: mimirpb.VectorData{
 					Samples: []mimirpb.VectorSample{
 						{Metric: []string{"foo", "bar", "baz", "blah"}, TimestampMs: 1_000, Value: 200},
 					},
@@ -214,7 +214,7 @@ var protobufCodecScenarios = []struct {
 		payload: mimirpb.QueryResponse{
 			Status: mimirpb.QUERY_STATUS_SUCCESS,
 			Data: &mimirpb.QueryResponse_Vector{
-				Vector: &mimirpb.VectorData{
+				Vector: mimirpb.VectorData{
 					Samples: []mimirpb.VectorSample{
 						{Metric: []string{"foo", "bar"}, TimestampMs: 1_000, Value: 200},
 						{Metric: []string{"bar", "baz"}, TimestampMs: 1_000, Value: 201},
@@ -239,7 +239,7 @@ var protobufCodecScenarios = []struct {
 		payload: mimirpb.QueryResponse{
 			Status: mimirpb.QUERY_STATUS_SUCCESS,
 			Data: &mimirpb.QueryResponse_Vector{
-				Vector: &mimirpb.VectorData{
+				Vector: mimirpb.VectorData{
 					Histograms: []mimirpb.VectorHistogram{
 						{
 							Metric:      []string{"name-1", "value-1"},
@@ -269,7 +269,7 @@ var protobufCodecScenarios = []struct {
 		payload: mimirpb.QueryResponse{
 			Status: mimirpb.QUERY_STATUS_SUCCESS,
 			Data: &mimirpb.QueryResponse_Vector{
-				Vector: &mimirpb.VectorData{
+				Vector: mimirpb.VectorData{
 					Samples: []mimirpb.VectorSample{
 						{Metric: []string{"foo", "bar"}, TimestampMs: 1000, Value: 200},
 					},
@@ -315,7 +315,7 @@ var protobufCodecScenarios = []struct {
 		payload: mimirpb.QueryResponse{
 			Status: mimirpb.QUERY_STATUS_SUCCESS,
 			Data: &mimirpb.QueryResponse_Vector{
-				Vector: &mimirpb.VectorData{
+				Vector: mimirpb.VectorData{
 					Samples: []mimirpb.VectorSample{
 						{Metric: []string{"foo"}, TimestampMs: 1_000, Value: 200},
 					},
@@ -329,7 +329,7 @@ var protobufCodecScenarios = []struct {
 		payload: mimirpb.QueryResponse{
 			Status: mimirpb.QUERY_STATUS_SUCCESS,
 			Data: &mimirpb.QueryResponse_Matrix{
-				Matrix: &mimirpb.MatrixData{},
+				Matrix: mimirpb.MatrixData{},
 			},
 		},
 		response: &PrometheusResponse{
@@ -346,7 +346,7 @@ var protobufCodecScenarios = []struct {
 		payload: mimirpb.QueryResponse{
 			Status: mimirpb.QUERY_STATUS_SUCCESS,
 			Data: &mimirpb.QueryResponse_Matrix{
-				Matrix: &mimirpb.MatrixData{
+				Matrix: mimirpb.MatrixData{
 					Series: []mimirpb.MatrixSeries{
 						{Metric: nil, Samples: nil},
 					},
@@ -369,7 +369,7 @@ var protobufCodecScenarios = []struct {
 		payload: mimirpb.QueryResponse{
 			Status: mimirpb.QUERY_STATUS_SUCCESS,
 			Data: &mimirpb.QueryResponse_Matrix{
-				Matrix: &mimirpb.MatrixData{
+				Matrix: mimirpb.MatrixData{
 					Series: []mimirpb.MatrixSeries{
 						{Metric: []string{"foo", "bar"}, Samples: nil},
 					},
@@ -392,7 +392,7 @@ var protobufCodecScenarios = []struct {
 		payload: mimirpb.QueryResponse{
 			Status: mimirpb.QUERY_STATUS_SUCCESS,
 			Data: &mimirpb.QueryResponse_Matrix{
-				Matrix: &mimirpb.MatrixData{
+				Matrix: mimirpb.MatrixData{
 					Series: []mimirpb.MatrixSeries{
 						{Metric: []string{"foo", "bar", "baz", "blah"}, Samples: nil},
 					},
@@ -420,7 +420,7 @@ var protobufCodecScenarios = []struct {
 		payload: mimirpb.QueryResponse{
 			Status: mimirpb.QUERY_STATUS_SUCCESS,
 			Data: &mimirpb.QueryResponse_Matrix{
-				Matrix: &mimirpb.MatrixData{
+				Matrix: mimirpb.MatrixData{
 					Series: []mimirpb.MatrixSeries{
 						{
 							Metric: []string{"foo", "bar", "baz", "blah"},
@@ -456,7 +456,7 @@ var protobufCodecScenarios = []struct {
 		payload: mimirpb.QueryResponse{
 			Status: mimirpb.QUERY_STATUS_SUCCESS,
 			Data: &mimirpb.QueryResponse_Matrix{
-				Matrix: &mimirpb.MatrixData{
+				Matrix: mimirpb.MatrixData{
 					Series: []mimirpb.MatrixSeries{
 						{
 							Metric: []string{"foo", "bar", "baz", "blah"},
@@ -494,7 +494,7 @@ var protobufCodecScenarios = []struct {
 		payload: mimirpb.QueryResponse{
 			Status: mimirpb.QUERY_STATUS_SUCCESS,
 			Data: &mimirpb.QueryResponse_Matrix{
-				Matrix: &mimirpb.MatrixData{
+				Matrix: mimirpb.MatrixData{
 					Series: []mimirpb.MatrixSeries{
 						{Metric: []string{"foo", "bar"}, Samples: []mimirpb.Sample{{TimestampMs: 1_000, Value: 100}, {TimestampMs: 2_000, Value: 200}}},
 						{Metric: []string{"bar", "baz"}, Samples: []mimirpb.Sample{{TimestampMs: 1_000, Value: 101}, {TimestampMs: 2_000, Value: 201}}},
@@ -525,7 +525,7 @@ var protobufCodecScenarios = []struct {
 		payload: mimirpb.QueryResponse{
 			Status: mimirpb.QUERY_STATUS_SUCCESS,
 			Data: &mimirpb.QueryResponse_Matrix{
-				Matrix: &mimirpb.MatrixData{
+				Matrix: mimirpb.MatrixData{
 					Series: []mimirpb.MatrixSeries{
 						{
 							Metric:     []string{"name-1", "value-1", "name-2", "value-2"},
@@ -554,7 +554,7 @@ var protobufCodecScenarios = []struct {
 		payload: mimirpb.QueryResponse{
 			Status: mimirpb.QUERY_STATUS_SUCCESS,
 			Data: &mimirpb.QueryResponse_Matrix{
-				Matrix: &mimirpb.MatrixData{
+				Matrix: mimirpb.MatrixData{
 					Series: []mimirpb.MatrixSeries{
 						{
 							Metric:     []string{"name-1", "value-1", "name-2", "value-2"},
@@ -585,7 +585,7 @@ var protobufCodecScenarios = []struct {
 		payload: mimirpb.QueryResponse{
 			Status: mimirpb.QUERY_STATUS_SUCCESS,
 			Data: &mimirpb.QueryResponse_Matrix{
-				Matrix: &mimirpb.MatrixData{
+				Matrix: mimirpb.MatrixData{
 					Series: []mimirpb.MatrixSeries{
 						{Metric: []string{"foo"}, Samples: []mimirpb.Sample{{TimestampMs: 1_000, Value: 100}, {TimestampMs: 2_000, Value: 200}}},
 					},
@@ -599,7 +599,7 @@ var protobufCodecScenarios = []struct {
 		payload: mimirpb.QueryResponse{
 			Status: mimirpb.QUERY_STATUS_SUCCESS,
 			Data: &mimirpb.QueryResponse_Matrix{
-				Matrix: &mimirpb.MatrixData{},
+				Matrix: mimirpb.MatrixData{},
 			},
 		},
 		response: &PrometheusResponse{
