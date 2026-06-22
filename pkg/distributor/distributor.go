@@ -7,12 +7,14 @@ package distributor
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
 	"math"
 	"math/rand"
 	"net/http"
+	"os"
 	"slices"
 	"strconv"
 	"strings"
@@ -2959,6 +2961,46 @@ func (d *Distributor) nautilusActiveTableFor(at time.Time) *assignment.ActiveTab
 	return t
 }
 
+// #region agent log
+func (d *Distributor) debugLogNautilusKeyNotCovered(tenantID string, key uint32, keyIndex, totalKeys int, table *assignment.ActiveTable) {
+	now := d.now()
+	logLen := 0
+	if log := d.nautilusLog.Load(); log != nil {
+		logLen = log.Len()
+	}
+	payload := map[string]interface{}{
+		"sessionId":    "cb075f",
+		"runId":        "pre-fix",
+		"hypothesisId": "H1,H2,H3,H4",
+		"location":     "pkg/distributor/distributor.go:getKeysByAssignment",
+		"message":      "nautilus key not covered",
+		"timestamp":    time.Now().UnixMilli(),
+		"data": map[string]interface{}{
+			"tenant":            tenantID,
+			"key":               key,
+			"key_index":         keyIndex,
+			"total_keys":        totalKeys,
+			"table_len":         table.Len(),
+			"table_built_at":    table.BuiltAt().UTC().Format(time.RFC3339Nano),
+			"table_valid_until": table.ValidUntil().UTC().Format(time.RFC3339Nano),
+			"table_covers_now":  table.CoversAt(now),
+			"now":               now.UTC().Format(time.RFC3339Nano),
+			"log_entries":       logLen,
+			"stream_connected":  d.nautilusStreamConnected.Load(),
+		},
+	}
+	b, err := json.Marshal(payload)
+	if err != nil {
+		return
+	}
+	if f, err := os.OpenFile("/Users/davidgrant/dev/mimir/.cursor/debug-cb075f.log", os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600); err == nil {
+		_, _ = f.Write(append(b, '\n'))
+		_ = f.Close()
+	}
+}
+
+// #endregion
+
 // getKeysByAssignment groups keys by partition using a nautilus
 // ActiveTable. When the table doesn't cover a given key (e.g. a
 // hash gap or a transition edge case) the behaviour depends on
@@ -2982,6 +3024,7 @@ func (d *Distributor) getKeysByAssignment(ctx context.Context, tenantID string, 
 		pid, ok := table.Lookup(key)
 		if !ok {
 			if d.cfg.NautilusRequired {
+				d.debugLogNautilusKeyNotCovered(tenantID, key, i, len(keys), table)
 				d.nautilusRoutingRejected.WithLabelValues("key_not_covered").Inc()
 				level.Warn(d.log).Log(
 					"msg", "nautilus routing rejected: key not covered by assignment",
