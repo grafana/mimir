@@ -595,10 +595,8 @@ func (c *CacheOperator) getDataForNextSeries(ctx context.Context) (desiredTimeRa
 			return types.InstantVectorSeriesData{}, types.InstantVectorSeriesData{}, -1, types.EOS
 		}
 
-		thisOutputSeries := c.outputSeries[thisSeriesIndex]
-		sourceSeriesIndices = thisOutputSeries.sourceSeriesIndices
-
-		defer types.IntSlicePool.Put(&thisOutputSeries.sourceSeriesIndices, c.MemoryConsumptionTracker)
+		sourceSeriesIndices = c.outputSeries[thisSeriesIndex].sourceSeriesIndices
+		defer types.IntSlicePool.Put(&c.outputSeries[thisSeriesIndex].sourceSeriesIndices, c.MemoryConsumptionTracker)
 	}
 
 	for extentIdx, sourceSeriesIdx := range sourceSeriesIndices {
