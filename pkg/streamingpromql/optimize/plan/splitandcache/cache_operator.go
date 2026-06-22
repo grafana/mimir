@@ -260,6 +260,9 @@ func (c *CacheOperator) fetchExistingExtents(ctx context.Context) ([]CachedExten
 	return cacheEntry.Extents, nil
 }
 
+// estimateExtentsSize estimates the memory consumption of the given extents.
+// This allows us to include them in the memory consumption estimate for the query, as they would if
+// they were evaluated fresh.
 func (c *CacheOperator) estimateExtentsSize(extents []CachedExtent) uint64 {
 	seriesCount := uint64(0)
 	labelsSize := uint64(0)
