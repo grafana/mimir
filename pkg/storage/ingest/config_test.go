@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/grafana/dskit/flagext"
+	"github.com/grafana/warpstream-go/pkg/wgo"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -545,9 +546,9 @@ func TestKafkaConfig_WriteCompartmentConfig(t *testing.T) {
 	}
 }
 
-func TestKafkaConfig_ToWarpstreamClientConfig(t *testing.T) {
-	t.Run("maps warpstream-relevant fields", func(t *testing.T) {
-		cfg := KafkaConfig{
+func TestKafkaConfig_ToWarpstreamClientOptions(t *testing.T) {
+	baseConfig := func() KafkaConfig {
+		return KafkaConfig{
 			Backend:                                KafkaBackendWarpstream,
 			Address:                                []string{"a:9092", "b:9092"},
 			Topic:                                  "ingest",
@@ -562,18 +563,26 @@ func TestKafkaConfig_ToWarpstreamClientConfig(t *testing.T) {
 			WarpstreamHedgeMaxAgents:               4,
 			WarpstreamDemoterProbeInterval:         2 * time.Second,
 		}
+	}
 
-		wsCfg, err := cfg.ToWarpstreamClientConfig()
+	t.Run("maps warpstream-relevant fields onto the applied config", func(t *testing.T) {
+		cfg := baseConfig()
+
+		opts, err := cfg.ToWarpstreamClientOptions()
 		require.NoError(t, err)
-		assert.Equal(t, []string{"a:9092", "b:9092"}, []string(wsCfg.Address))
+
+		// wgo.NewConfig applies the options on top of its defaults, so we can
+		// assert the resulting config field by field.
+		wsCfg := wgo.NewConfig(opts...)
+		assert.Equal(t, []string{"a:9092", "b:9092"}, wsCfg.Address)
 		assert.Equal(t, "ingest", wsCfg.Topic)
 		assert.Equal(t, "client-1", wsCfg.ClientID)
 		assert.Equal(t, 3*time.Second, wsCfg.DialTimeout)
 		assert.Equal(t, 7*time.Second, wsCfg.WriteTimeout)
-		// Linger, max batch bytes, and metadata refresh interval mirror the
+		// Linger, batch max bytes, and metadata refresh interval mirror the
 		// kafka-backend defaults; ClusterStatsTTL is hardcoded to 1s.
 		assert.Equal(t, defaultProducerLinger, wsCfg.Linger)
-		assert.Equal(t, int32(producerBatchMaxBytes), wsCfg.MaxBatchBytes)
+		assert.Equal(t, int32(producerBatchMaxBytes), wsCfg.BatchMaxBytes)
 		assert.Equal(t, defaultMetadataRefreshInterval, wsCfg.MetadataRefreshInterval)
 		assert.Equal(t, time.Second, wsCfg.ClusterStatsTTL)
 		assert.Equal(t, 1.5, wsCfg.HealthCheck.SlowMultiplier)
@@ -590,7 +599,30 @@ func TestKafkaConfig_ToWarpstreamClientConfig(t *testing.T) {
 		assert.False(t, wsCfg.TLSEnabled)
 		assert.Nil(t, wsCfg.TLSConfig)
 
-		// The mapped config must satisfy wgo's own validation.
+		// The applied config must satisfy wgo's own validation.
 		require.NoError(t, wsCfg.Validate())
+	})
+
+	t.Run("enables TLS on the applied config when configured", func(t *testing.T) {
+		cfg := baseConfig()
+		cfg.TLSEnabled = true
+		cfg.TLS.InsecureSkipVerify = true
+
+		opts, err := cfg.ToWarpstreamClientOptions()
+		require.NoError(t, err)
+
+		wsCfg := wgo.NewConfig(opts...)
+		assert.True(t, wsCfg.TLSEnabled)
+		assert.NotNil(t, wsCfg.TLSConfig)
+	})
+
+	t.Run("fails when TLS is enabled but misconfigured", func(t *testing.T) {
+		cfg := baseConfig()
+		cfg.TLSEnabled = true
+		// A client cert without a key fails GetTLSConfig.
+		cfg.TLS.CertPath = "/does/not/exist.crt"
+
+		_, err := cfg.ToWarpstreamClientOptions()
+		require.Error(t, err)
 	})
 }

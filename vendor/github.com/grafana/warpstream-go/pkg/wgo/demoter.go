@@ -332,6 +332,14 @@ func (d *Demoter) Refresh(currentAgents []int32) {
 }
 
 func (d *Demoter) demotedAgentsCount() float64 {
+	// While demotion is suppressed isDemoted treats every agent as non-demoted,
+	// so no agent is actually being routed around: report 0 rather than the
+	// stale lastDemotedProbe entries left from before suppression tripped, which
+	// would otherwise contradict demoter_demotion_suppressed.
+	clusterStats, hasClusterStats := d.tracker.ClusterStats(d.now(), d.healthCfg.SlowMultiplier, d.healthCfg.FaultyThreshold)
+	if suppressed, _ := d.isDemotionSuppressed(clusterStats, hasClusterStats); suppressed {
+		return 0
+	}
 	d.lastDemotedProbeMu.Lock()
 	defer d.lastDemotedProbeMu.Unlock()
 	return float64(len(d.lastDemotedProbe))
