@@ -1720,17 +1720,6 @@ func TestToEncodedPlan_SameNodeProvidedMultipleTimes(t *testing.T) {
 	require.Equal(t, planning.NODE_TYPE_AGGREGATE_EXPRESSION, encoded.Nodes[1].NodeType)
 }
 
-type optimizationPassThatGeneratesHigherVersionPlanThanAllowed struct{}
-
-func (o *optimizationPassThatGeneratesHigherVersionPlanThanAllowed) Name() string {
-	return "test optimization pass"
-}
-
-func (o *optimizationPassThatGeneratesHigherVersionPlanThanAllowed) Apply(ctx context.Context, plan *planning.QueryPlan, maximumSupportedQueryPlanVersion planning.QueryPlanVersion) (*planning.QueryPlan, error) {
-	plan.Root = newTestNode(maximumSupportedQueryPlanVersion + 1)
-	return plan, nil
-}
-
 func TestPlanVersioning(t *testing.T) {
 	planning.RegisterNodeFactory(func() planning.Node {
 		return &versioningTestNode{NumberLiteralDetails: &core.NumberLiteralDetails{}}
