@@ -184,9 +184,9 @@ func createKafkaConfig(clusterAddr, topic string) ingest.KafkaConfig {
 	return cfg
 }
 
-// newTestTopicOffsetsReader returns a TopicOffsetsReader that fetches the offsets of partitions [0, numPartitions)
+// newTestTopicOffsetsReader returns a SingleClusterTopicOffsetsReader that fetches the offsets of partitions [0, numPartitions)
 // of the given topic.
-func newTestTopicOffsetsReader(client *kgo.Client, topic string, numPartitions int, pollInterval time.Duration, logger log.Logger) *ingest.TopicOffsetsReader {
+func newTestTopicOffsetsReader(client *kgo.Client, topic string, numPartitions int, pollInterval time.Duration, logger log.Logger) *ingest.SingleClusterTopicOffsetsReader {
 	getPartitionIDs := func(context.Context) ([]int32, error) {
 		ids := make([]int32, numPartitions)
 		for i := range ids {
@@ -195,7 +195,7 @@ func newTestTopicOffsetsReader(client *kgo.Client, topic string, numPartitions i
 		return ids, nil
 	}
 
-	return ingest.NewTopicOffsetsReader(client, topic, getPartitionIDs, pollInterval, nil, logger)
+	return ingest.NewSingleClusterTopicOffsetsReader(client, topic, getPartitionIDs, pollInterval, nil, logger)
 }
 
 // produceKafkaRecords produces the input records to Kafka and returns the highest produced offset
