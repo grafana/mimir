@@ -23,6 +23,7 @@ import (
 
 	querierapi "github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/storage/ingest"
+	"github.com/grafana/mimir/pkg/storage/ingest/kmeta"
 	"github.com/grafana/mimir/pkg/util/testkafka"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -113,9 +114,9 @@ func TestReadConsistencyRoundTripper(t *testing.T) {
 				offsets := querierapi.EncodedOffsets(downstreamReq.Header.Get(querierapi.ReadConsistencyOffsetsHeader))
 
 				for partitionID, expectedOffset := range expectedOffsets {
-					actual, ok := offsets.Lookup(partitionID)
+					actual, ok := offsets.Lookup(0, partitionID)
 					assert.True(t, ok)
-					assert.Equal(t, expectedOffset, actual)
+					assert.Equal(t, kmeta.NewSingleClusterPartitionOffsets(expectedOffset), actual)
 				}
 			} else {
 				assert.Empty(t, downstreamReq.Header.Get(querierapi.ReadConsistencyOffsetsHeader))

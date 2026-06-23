@@ -13,6 +13,8 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 
+	//lint:ignore faillint Allow importing the kmeta package, since it's an isolated package (doesn't come with many other dependencies).
+	"github.com/grafana/mimir/pkg/storage/ingest/kmeta"
 	//lint:ignore faillint Allow to import the math util package, since it's an isolated package (doesn't come with many other deps).
 	"github.com/grafana/mimir/pkg/util/math"
 	//lint:ignore faillint Allow importing the propagation package, since it's an isolated package (doesn't come with many other dependencies).
@@ -231,8 +233,32 @@ func (ss ctxStream) Context() context.Context {
 // EncodedOffsets holds the encoded partition offsets.
 type EncodedOffsets string
 
-// Lookup the offset for the input partitionID.
-func (p EncodedOffsets) Lookup(partitionID int32) (int64, bool) {
+// Lookup returns the offsets for the input read compartment and partition, detecting the encoding version
+// and dispatching accordingly. Only the v1 encoding is supported for now; it has no read compartment
+// dimension, so it is only matched when readCompartment is 0.
+func (p EncodedOffsets) Lookup(readCompartment int, partitionID int32) (kmeta.PartitionOffsets, bool) {
+	const versionLen = 3
+	if len(p) < versionLen {
+		return kmeta.PartitionOffsets{}, false
+	}
+
+	switch p[:versionLen] {
+	case "v1=":
+		if readCompartment != 0 {
+			return kmeta.PartitionOffsets{}, false
+		}
+		offset, ok := p.lookupV1(partitionID)
+		if !ok {
+			return kmeta.PartitionOffsets{}, false
+		}
+		return kmeta.NewSingleClusterPartitionOffsets(offset), true
+	default:
+		return kmeta.PartitionOffsets{}, false
+	}
+}
+
+// lookupV1 returns the offset for the input partitionID, as encoded by EncodeOffsets.
+func (p EncodedOffsets) lookupV1(partitionID int32) (int64, bool) {
 	const versionLen = 3
 
 	if len(p) < versionLen {

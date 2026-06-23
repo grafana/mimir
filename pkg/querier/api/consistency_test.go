@@ -17,6 +17,8 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 
+	//lint:ignore faillint Allow importing the kmeta package, since it's an isolated package (doesn't come with many other dependencies).
+	"github.com/grafana/mimir/pkg/storage/ingest/kmeta"
 	//lint:ignore faillint Allow importing the propagation package, since it's an isolated package (doesn't come with many other dependencies).
 	"github.com/grafana/mimir/pkg/util/propagation"
 )
@@ -265,7 +267,7 @@ func TestEncodeOffsets(t *testing.T) {
 	})
 }
 
-func TestEncodedOffsets_Lookup_SpecialCases(t *testing.T) {
+func TestEncodedOffsets_LookupV1_SpecialCases(t *testing.T) {
 	tests := map[string]struct {
 		encoded              EncodedOffsets
 		expectedPartitions   map[int32]int64
@@ -320,33 +322,33 @@ func TestEncodedOffsets_Lookup_SpecialCases(t *testing.T) {
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			for expectedPartitionID, expectedOffset := range testData.expectedPartitions {
-				actualOffset, ok := testData.encoded.Lookup(expectedPartitionID)
+				actualOffset, ok := testData.encoded.lookupV1(expectedPartitionID)
 				require.True(t, ok)
 				assert.Equalf(t, expectedOffset, actualOffset, "partition ID: %d", expectedPartitionID)
 			}
 
 			for _, unexpectedPartitionID := range testData.unexpectedPartitions {
-				_, ok := testData.encoded.Lookup(unexpectedPartitionID)
+				_, ok := testData.encoded.lookupV1(unexpectedPartitionID)
 				assert.Falsef(t, ok, "partition ID: %d", unexpectedPartitionID)
 			}
 		})
 	}
 }
 
-func TestEncodedOffsets_Lookup_First1000Partitions(t *testing.T) {
+func TestEncodedOffsets_LookupV1_First1000Partitions(t *testing.T) {
 	const numPartitions = 1000
 
 	offsets := generateTestOffsets(numPartitions)
 	encoded := EncodeOffsets(offsets)
 
 	for partitionID, expected := range offsets {
-		actual, ok := encoded.Lookup(partitionID)
+		actual, ok := encoded.lookupV1(partitionID)
 		assert.True(t, ok)
 		assert.Equal(t, expected, actual)
 	}
 }
 
-func TestEncodedOffsets_Lookup_Fuzzy(t *testing.T) {
+func TestEncodedOffsets_LookupV1_Fuzzy(t *testing.T) {
 	const (
 		numRuns       = 100
 		numPartitions = 1000
@@ -366,7 +368,7 @@ func TestEncodedOffsets_Lookup_Fuzzy(t *testing.T) {
 		encoded := EncodeOffsets(offsets)
 
 		for partitionID, expected := range offsets {
-			actual, ok := encoded.Lookup(partitionID)
+			actual, ok := encoded.lookupV1(partitionID)
 			assert.True(t, ok)
 			assert.Equal(t, expected, actual)
 		}
@@ -386,7 +388,7 @@ func BenchmarkEncodeOffsets(b *testing.B) {
 	}
 }
 
-func BenchmarkEncodedOffsets_Lookup(b *testing.B) {
+func BenchmarkEncodedOffsets_LookupV1(b *testing.B) {
 	for _, numPartitions := range []int{1, 10, 100, 1000} {
 		b.Run(fmt.Sprintf("num partitions: %d", numPartitions), func(b *testing.B) {
 			encoded := EncodeOffsets(generateTestOffsets(numPartitions))
@@ -394,9 +396,62 @@ func BenchmarkEncodedOffsets_Lookup(b *testing.B) {
 			b.ResetTimer()
 			for n := 0; n < b.N; n++ {
 				partitionID := int32(n % numPartitions)
-				_, ok := encoded.Lookup(partitionID)
+				_, ok := encoded.lookupV1(partitionID)
 				if !ok {
 					b.Fatalf("not found offset for partition %d", partitionID)
+				}
+			}
+		})
+	}
+}
+
+func TestEncodedOffsets_Lookup(t *testing.T) {
+	type lookup struct {
+		readCompartment int
+		partition       int32
+		expected        kmeta.PartitionOffsets
+		found           bool
+	}
+
+	tests := map[string]struct {
+		encoded EncodedOffsets
+		lookups []lookup
+	}{
+		"empty": {
+			encoded: "",
+			lookups: []lookup{{0, 0, kmeta.PartitionOffsets{}, false}},
+		},
+		"unknown version": {
+			encoded: "v3=0/0:1",
+			lookups: []lookup{{0, 0, kmeta.PartitionOffsets{}, false}},
+		},
+		"v1 single cluster, read compartment 0": {
+			encoded: EncodeOffsets(map[int32]int64{0: 123, 1: -1}),
+			lookups: []lookup{
+				{0, 0, kmeta.NewSingleClusterPartitionOffsets(123), true},
+				{0, 1, kmeta.NewSingleClusterPartitionOffsets(-1), true},
+				{0, 2, kmeta.PartitionOffsets{}, false},
+			},
+		},
+		"v1 is only matched for read compartment 0": {
+			encoded: EncodeOffsets(map[int32]int64{0: 123}),
+			lookups: []lookup{
+				{1, 0, kmeta.PartitionOffsets{}, false},
+			},
+		},
+		"v1 corruption when reading the offset": {
+			encoded: "v1=0:x",
+			lookups: []lookup{{0, 0, kmeta.PartitionOffsets{}, false}},
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			for _, l := range testData.lookups {
+				actual, ok := testData.encoded.Lookup(l.readCompartment, l.partition)
+				assert.Equalf(t, l.found, ok, "read compartment: %d partition: %d", l.readCompartment, l.partition)
+				if l.found {
+					assert.Equalf(t, l.expected, actual, "read compartment: %d partition: %d", l.readCompartment, l.partition)
 				}
 			}
 		})
