@@ -38,3 +38,30 @@ eval instant at 0m histogram_quantiles(histogram, "q", 0.5, 0.5)
   expect fail
 
 clear
+
+# A quantile that varies over the query range: each step is labelled with that step's quantile value,
+# so a single input series fans out into one output series per distinct quantile value, each carrying
+# only the steps where that value applied.
+load 1m
+  histogram{job="api"} {{schema:0 sum:5 count:4 buckets:[1 2 1]}} {{schema:0 sum:5 count:4 buckets:[1 2 1]}} {{schema:0 sum:5 count:4 buckets:[1 2 1]}}
+  quantile                0.1 0.2 0.5
+
+eval range from 0m to 2m step 1m histogram_quantiles(histogram, "q", scalar(quantile))
+  expect no_warn
+  {job="api", q="0.1"} 0.6597539553864471 _ _
+  {job="api", q="0.2"} _ 0.8705505632961241 _
+  {job="api", q="0.5"} _ _ 1.414213562373095
+
+clear
+
+# Two quantiles that vary over the range and collide at a step (both 0.2 at the second step) must fail,
+# since that step would otherwise contain two series with the same label set.
+load 1m
+  histogram{job="api"} {{schema:0 sum:5 count:4 buckets:[1 2 1]}} {{schema:0 sum:5 count:4 buckets:[1 2 1]}} {{schema:0 sum:5 count:4 buckets:[1 2 1]}}
+  quantile                0.1 0.2 0.5
+  quantile2               0.2 0.2 0.7
+
+eval range from 0m to 2m step 1m histogram_quantiles(histogram, "q", scalar(quantile), scalar(quantile2))
+  expect fail
+
+clear
