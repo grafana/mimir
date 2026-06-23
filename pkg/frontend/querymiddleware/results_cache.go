@@ -94,11 +94,7 @@ func NewResultsCache(cfg ResultsCacheConfig, logger log.Logger, reg prometheus.R
 		return nil, errUnsupportedResultsCacheBackend(cfg.Backend)
 	}
 
-	return cache.NewVersioned(
-		cache.NewSpanlessTracingCache(client, logger, tenant.NewMultiResolver()),
-		resultsCacheVersion,
-		logger,
-	), nil
+	return cache.NewSpanlessTracingCache(client, logger, tenant.NewMultiResolver()), nil
 }
 
 // Extractor is used by the cache to extract a subset of a response from a cache entry.

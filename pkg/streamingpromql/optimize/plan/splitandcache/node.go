@@ -9,7 +9,6 @@ import (
 	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/proto"
 	"github.com/grafana/dskit/cache"
-	"github.com/grafana/dskit/tenant"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
@@ -175,8 +174,12 @@ type CacheMaterializer struct {
 }
 
 func NewCacheMaterializer(backend cache.Cache, limitsProvider LimitsProvider, logger log.Logger) *CacheMaterializer {
+	if backend != nil {
+		backend = cache.NewVersioned(backend, cacheVersion, logger)
+	}
+
 	return &CacheMaterializer{
-		cache:          cache.NewVersioned(cache.NewSpanlessTracingCache(backend, logger, tenant.NewMultiResolver()), cacheVersion, logger),
+		cache:          backend,
 		limitsProvider: limitsProvider,
 	}
 }

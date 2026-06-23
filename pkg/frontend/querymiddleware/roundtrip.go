@@ -269,6 +269,10 @@ func newQueryTripperware(
 		cacheKeyGenerator = NewDefaultCacheKeyGenerator(codec, cfg.SplitQueriesByInterval)
 	}
 
+	if cacheClient != nil {
+		cacheClient = cache.NewVersioned(cacheClient, resultsCacheVersion, log)
+	}
+
 	retryMetrics := newRetryMetrics(registerer)
 
 	queryRangeMiddleware, queryInstantMiddleware, remoteReadMiddleware := newQueryMiddlewares(
