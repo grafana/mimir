@@ -505,15 +505,29 @@ func TestKafkaProducer_ProduceSync_LatencyShouldBeDrivenByKafkaProduceLatency(t 
 	t.Parallel()
 
 	const (
-		topicName                     = "test"
-		tenantID                      = "user-1"
-		numPartitions                 = 100
-		produceRecordsInterval        = 2 * time.Millisecond
-		produceRecordsDuration        = 10 * time.Second
-		produceRecordsTotal           = produceRecordsDuration / produceRecordsInterval
-		produceRecordsThroughputBytes = 50_000_000
+		topicName              = "test"
+		tenantID               = "user-1"
+		numPartitions          = 100
+		produceRecordsInterval = 2 * time.Millisecond
+		produceRecordsDuration = 10 * time.Second
+		produceRecordsTotal    = produceRecordsDuration / produceRecordsInterval
+
+		// The byte throughput is kept modest on purpose. The latency we measure does not depend on the
+		// record size (it's driven by the produce rate, linger and in-flight limit), but a high byte
+		// throughput makes the fake Kafka's single control loop spend significant CPU compressing,
+		// storing and copying payloads. On a busy CI runner this starves the control loop, delaying
+		// when Produce requests are evaluated and inflating the measured latency.
+		produceRecordsThroughputBytes = 5_000_000
 		produceRecordSizeBytes        = produceRecordsThroughputBytes / int(time.Second/produceRecordsInterval)
-		produceLatency                = 2 * time.Second
+
+		// produceLatency is the latency we simulate on each Produce request to the Kafka backend.
+		//
+		// It must stay within the Kafka client in-flight budget, which is "producer linger * max
+		// in-flight Produce requests" (50ms * defaultMaxInflightProduceRequests = 1s; see the rationale
+		// in NewKafkaWriterClient). If the simulated latency exceeds this budget, the client can't keep
+		// enough Produce requests in-flight to cover it: records then queue client side waiting for an
+		// in-flight slot, which adds latency on top of the backend latency.
+		produceLatency = 1 * time.Second
 	)
 
 	// Set a max execution time for this test.
@@ -609,7 +623,7 @@ func TestKafkaProducer_ProduceSync_LatencyShouldBeDrivenByKafkaProduceLatency(t 
 	// We expect the average produce latency to be close to the simulated Kafka produce latency.
 	averageProduceLatencySeconds := produceLatencySecondsSum.Load() / float64(produceRecordsTotal)
 	t.Logf("average produce latency seconds: %.2f", averageProduceLatencySeconds)
-	require.InDelta(t, produceLatency.Seconds(), averageProduceLatencySeconds, 1.)
+	require.InDelta(t, produceLatency.Seconds(), averageProduceLatencySeconds, 0.5)
 }
 
 func getSummaryQuantileValue(t require.TestingT, reg prometheus.Gatherer, metricName string, quantile float64) float64 {
