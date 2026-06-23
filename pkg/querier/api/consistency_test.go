@@ -234,7 +234,7 @@ func (m serverStreamMock) Context() context.Context {
 	return m.ctx
 }
 
-func TestEncodeOffsets(t *testing.T) {
+func TestEncodeOffsetsV1(t *testing.T) {
 	t.Run("empty offsets", func(t *testing.T) {
 		assert.Equal(t, EncodedOffsets(""), EncodeOffsetsV1(nil))
 		assert.Equal(t, EncodedOffsets(""), EncodeOffsetsV1(map[int32]int64{}))
@@ -375,7 +375,7 @@ func TestEncodedOffsets_LookupV1_Fuzzy(t *testing.T) {
 	}
 }
 
-func BenchmarkEncodeOffsets(b *testing.B) {
+func BenchmarkEncodeOffsetsV1(b *testing.B) {
 	for _, numPartitions := range []int{1, 10, 100, 1000} {
 		b.Run(fmt.Sprintf("num partitions: %d", numPartitions), func(b *testing.B) {
 			offsets := generateTestOffsets(numPartitions)
