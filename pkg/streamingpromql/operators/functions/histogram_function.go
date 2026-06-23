@@ -907,37 +907,35 @@ func (h *HistogramQuantilesFunction) ExpressionPosition() posrange.PositionRange
 }
 
 func (h *HistogramQuantilesFunction) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
-	// Load quantile arguments once for the entire query. We format each arg's value at each step into
-	// its quantile label, and collect the distinct labels: one output series per group is produced for
-	// each distinct label, and at each step a series carries the value for whichever arg matches its
-	// label (see computeOutputSeriesForLabel).
-	if h.quantileValues == nil {
-		h.quantileValues = make([][]promql.FPoint, len(h.quantileArgs))
-		h.quantileStrings = make([][]string, len(h.quantileArgs))
-		seenLabels := map[string]struct{}{}
-		for i, arg := range h.quantileArgs {
-			values, err := arg.GetValues(ctx)
-			if err != nil {
-				return nil, err
+	// Load the quantile arguments. We format each arg's value at each step into its quantile label,
+	// and collect the distinct labels: one output series per group is produced for each distinct label,
+	// and at each step a series carries the value for whichever arg matches its label (see
+	// computeOutputSeriesForLabel).
+	h.quantileValues = make([][]promql.FPoint, len(h.quantileArgs))
+	h.quantileStrings = make([][]string, len(h.quantileArgs))
+	seenLabels := map[string]struct{}{}
+	for i, arg := range h.quantileArgs {
+		values, err := arg.GetValues(ctx)
+		if err != nil {
+			return nil, err
+		}
+		// Store the samples directly from the pool
+		h.quantileValues[i] = values.Samples
+		h.quantileStrings[i] = make([]string, len(values.Samples))
+
+		for step, s := range values.Samples {
+			ph := s.F
+			if math.IsNaN(ph) || ph < 0 || ph > 1 {
+				// Even when ph is invalid we still produce a series, as Bucket/HistogramQuantile
+				// returns +/-Inf or NaN, but we emit a warning.
+				h.annotations.Add(annotations.NewInvalidQuantileWarning(ph, arg.ExpressionPosition()))
 			}
-			// Store the samples directly from the pool
-			h.quantileValues[i] = values.Samples
-			h.quantileStrings[i] = make([]string, len(values.Samples))
 
-			for step, s := range values.Samples {
-				ph := s.F
-				if math.IsNaN(ph) || ph < 0 || ph > 1 {
-					// Even when ph is invalid we still produce a series, as Bucket/HistogramQuantile
-					// returns +/-Inf or NaN, but we emit a warning.
-					h.annotations.Add(annotations.NewInvalidQuantileWarning(ph, arg.ExpressionPosition()))
-				}
-
-				label := formatQuantileLabel(ph)
-				h.quantileStrings[i][step] = label
-				if _, ok := seenLabels[label]; !ok {
-					seenLabels[label] = struct{}{}
-					h.outputLabels = append(h.outputLabels, label)
-				}
+			label := formatQuantileLabel(ph)
+			h.quantileStrings[i][step] = label
+			if _, ok := seenLabels[label]; !ok {
+				seenLabels[label] = struct{}{}
+				h.outputLabels = append(h.outputLabels, label)
 			}
 		}
 	}
