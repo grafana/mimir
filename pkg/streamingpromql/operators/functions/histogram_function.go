@@ -41,6 +41,20 @@ func isMetricNameLabel(name string) bool {
 	return name == model.MetricNameLabel
 }
 
+// errDuplicateLabelSet matches the error Prometheus returns when an instant vector would contain two
+// samples with the same label set at the same step. histogram_quantiles returns it when two quantile
+// args format to the same label at the same step.
+var errDuplicateLabelSet = errors.New("vector cannot contain metrics with the same labelset")
+
+// formatQuantileLabel formats a quantile value as it appears in the configured quantile label,
+// matching Prometheus. NaN is rendered as "NaN" so it can be used as a label value and compared.
+func formatQuantileLabel(q float64) string {
+	if math.IsNaN(q) {
+		return "NaN"
+	}
+	return labels.FormatOpenMetricsFloat(q)
+}
+
 // histogramGrouper holds the state and logic shared by HistogramFunction and
 // HistogramQuantilesFunction for collating an instant vector's classic and native histogram series
 // into bucketGroups and accumulating their points.
@@ -498,12 +512,14 @@ func (g *histogramGrouper) appendOutputPoint(floatPoints []promql.FPoint, pointI
 // computeOutputPoints walks the group's points step by step, selecting the classic histogram buckets
 // or the native histogram present at each step. When both are present it emits a mixed-histogram
 // warning and skips the step; otherwise it calls computeClassic or computeNative to obtain the output
-// value and appends it. Shared by the computeOutputSeries* methods, which differ only in how they
-// compute each value and how they clean up afterwards.
+// value and appends it. A callback may return include=false to omit a step from this output series
+// (used by histogram_quantiles, where an output series only carries the steps whose quantile matches
+// its label). Shared by the computeOutputSeries* methods, which differ only in how they compute each
+// value and how they clean up afterwards.
 func (g *histogramGrouper) computeOutputPoints(
 	group *bucketGroup,
-	computeClassic func(pointIdx int, buckets promql.Buckets) (float64, error),
-	computeNative func(pointIdx int, h *histogram.FloatHistogram) (float64, error),
+	computeClassic func(pointIdx int, buckets promql.Buckets) (value float64, include bool, err error),
+	computeNative func(pointIdx int, h *histogram.FloatHistogram) (value float64, include bool, err error),
 ) ([]promql.FPoint, error) {
 	// We only allocate floatPoints from the pool once we know for certain we'll return some points.
 	var floatPoints []promql.FPoint
@@ -536,19 +552,23 @@ func (g *histogramGrouper) computeOutputPoints(
 		}
 
 		var (
-			res float64
-			err error
+			res     float64
+			include bool
+			err     error
 		)
 		switch {
 		case thisPointBuckets != nil:
-			res, err = computeClassic(pointIdx, thisPointBuckets)
+			res, include, err = computeClassic(pointIdx, thisPointBuckets)
 		case currentHistogram != nil:
-			res, err = computeNative(pointIdx, currentHistogram)
+			res, include, err = computeNative(pointIdx, currentHistogram)
 		default:
 			continue
 		}
 		if err != nil {
 			return nil, err
+		}
+		if !include {
+			continue
 		}
 
 		if floatPoints, err = g.appendOutputPoint(floatPoints, pointIdx, res); err != nil {
@@ -561,15 +581,15 @@ func (g *histogramGrouper) computeOutputPoints(
 
 func (h *HistogramFunction) computeOutputSeriesForGroup(g *bucketGroup) (types.InstantVectorSeriesData, error) {
 	floatPoints, err := h.computeOutputPoints(g,
-		func(pointIdx int, buckets promql.Buckets) (float64, error) {
-			return h.f.ComputeClassicHistogramResult(pointIdx, g.lastInputSeriesIdx, buckets), nil
+		func(pointIdx int, buckets promql.Buckets) (float64, bool, error) {
+			return h.f.ComputeClassicHistogramResult(pointIdx, g.lastInputSeriesIdx, buckets), true, nil
 		},
-		func(pointIdx int, hist *histogram.FloatHistogram) (float64, error) {
+		func(pointIdx int, hist *histogram.FloatHistogram) (float64, bool, error) {
 			res, annos := h.f.ComputeNativeHistogramResult(pointIdx, g.lastInputSeriesIdx, hist)
 			if annos != nil {
 				h.annotations.Merge(annos)
 			}
-			return res, nil
+			return res, true, nil
 		},
 	)
 	if err != nil {
@@ -835,20 +855,25 @@ func (f *histogramFraction) Close() {
 }
 
 // HistogramQuantilesFunction performs histogram_quantiles over each series in an instant vector.
-// It outputs multiple series per input group (one per quantile).
+//
+// It outputs one series per input group per distinct quantile-value label: the quantile label of an
+// output sample is derived from that step's quantile value, so a quantile that varies over the query
+// range fans a single input group out into multiple output series (matching Prometheus), and each
+// output series only carries the steps whose quantile matches its label.
 type HistogramQuantilesFunction struct {
 	histogramGrouper
 
 	quantileArgs    []types.ScalarOperator
 	quantileLabelOp types.StringOperator
 	quantileLabel   string
-	quantileValues  [][]promql.FPoint // Indexed by quantile, then by point index
-	quantileLabels  []string          // Formatted quantile strings
+	quantileValues  [][]promql.FPoint // Indexed by quantile arg, then by step.
+	quantileStrings [][]string        // Formatted quantile label for each arg at each step. Same shape as quantileValues.
+	outputLabels    []string          // Distinct quantile labels across all args and steps, in first-appearance order. One output series per group per entry.
 
 	// Tracking state for series output
-	remainingGroups    []*bucketGroup
-	nextGroupIdx       int
-	currentQuantileIdx int // Which quantile we're currently returning
+	remainingGroups []*bucketGroup
+	nextGroupIdx    int
+	currentLabelIdx int // Index into outputLabels of the series we're currently returning.
 
 	expressionPosition posrange.PositionRange
 }
@@ -886,10 +911,14 @@ func (h *HistogramQuantilesFunction) SeriesMetadata(ctx context.Context, matcher
 	// Load quantile label
 	h.quantileLabel = h.quantileLabelOp.GetValue()
 
-	// Load quantile arguments once for the entire query
+	// Load quantile arguments once for the entire query. We format each arg's value at each step into
+	// its quantile label, and collect the distinct labels: one output series per group is produced for
+	// each distinct label, and at each step a series carries the value for whichever arg matches its
+	// label (see computeOutputSeriesForLabel).
 	if h.quantileValues == nil {
 		h.quantileValues = make([][]promql.FPoint, len(h.quantileArgs))
-		h.quantileLabels = make([]string, len(h.quantileArgs))
+		h.quantileStrings = make([][]string, len(h.quantileArgs))
+		seenLabels := map[string]struct{}{}
 		for i, arg := range h.quantileArgs {
 			values, err := arg.GetValues(ctx)
 			if err != nil {
@@ -897,23 +926,22 @@ func (h *HistogramQuantilesFunction) SeriesMetadata(ctx context.Context, matcher
 			}
 			// Store the samples directly from the pool
 			h.quantileValues[i] = values.Samples
+			h.quantileStrings[i] = make([]string, len(values.Samples))
 
-			// Validate quantiles and format labels
-			for _, s := range values.Samples {
+			for step, s := range values.Samples {
 				ph := s.F
 				if math.IsNaN(ph) || ph < 0 || ph > 1 {
+					// Even when ph is invalid we still produce a series, as Bucket/HistogramQuantile
+					// returns +/-Inf or NaN, but we emit a warning.
 					h.annotations.Add(annotations.NewInvalidQuantileWarning(ph, arg.ExpressionPosition()))
 				}
-			}
-			// The quantile label value is derived from the first sample only. For the common case where
-			// the quantile is a literal (or any step-invariant scalar) this is constant across all steps
-			// and matches Prometheus. For a quantile that varies per step (e.g. a non-constant scalar
-			// subexpression in a range query), Prometheus would emit a different label value per step,
-			// potentially splitting a single output series into several. MQE cannot do that because output
-			// series labels are fixed here in SeriesMetadata before any values are read, so we keep the
-			// step-0 value. This is a known, minor divergence for an unusual usage.
-			if len(values.Samples) > 0 {
-				h.quantileLabels[i] = labels.FormatOpenMetricsFloat(values.Samples[0].F)
+
+				label := formatQuantileLabel(ph)
+				h.quantileStrings[i][step] = label
+				if _, ok := seenLabels[label]; !ok {
+					seenLabels[label] = struct{}{}
+					h.outputLabels = append(h.outputLabels, label)
+				}
 			}
 		}
 	}
@@ -936,8 +964,8 @@ func (h *HistogramQuantilesFunction) SeriesMetadata(ctx context.Context, matcher
 	}
 	lb := labels.NewBuilder(labels.EmptyLabels())
 
-	// Create output series: one per group per quantile
-	seriesMetadata, err := types.SeriesMetadataSlicePool.Get(len(groups)*len(h.quantileArgs), h.memoryConsumptionTracker)
+	// Create output series: one per group per distinct quantile label.
+	seriesMetadata, err := types.SeriesMetadataSlicePool.Get(len(groups)*len(h.outputLabels), h.memoryConsumptionTracker)
 	if err != nil {
 		return nil, err
 	}
@@ -960,18 +988,18 @@ func (h *HistogramQuantilesFunction) SeriesMetadata(ctx context.Context, matcher
 		return groupList[i].group.isClassicHistogramGroup && !groupList[j].group.isClassicHistogramGroup
 	})
 
-	// For each group, create output series for each quantile
+	// For each group, create output series for each distinct quantile label.
 	for _, g := range groupList {
 		h.remainingGroups = append(h.remainingGroups, g.group)
-		for i := range h.quantileArgs {
+		for _, quantileLabel := range h.outputLabels {
 			var labelsMetadata types.SeriesMetadata
 			if h.enableDelayedNameRemoval {
 				lb.Reset(g.labels)
-				lb.Set(h.quantileLabel, h.quantileLabels[i])
+				lb.Set(h.quantileLabel, quantileLabel)
 				labelsMetadata = types.SeriesMetadata{Labels: lb.Labels(), DropName: true}
 			} else {
 				lb.Reset(g.labels.DropReserved(isMetricNameLabel))
-				lb.Set(h.quantileLabel, h.quantileLabels[i])
+				lb.Set(h.quantileLabel, quantileLabel)
 				labelsMetadata = types.SeriesMetadata{Labels: lb.Labels()}
 			}
 			seriesMetadata, err = types.AppendSeriesMetadata(h.memoryConsumptionTracker, seriesMetadata, labelsMetadata)
@@ -985,8 +1013,8 @@ func (h *HistogramQuantilesFunction) SeriesMetadata(ctx context.Context, matcher
 }
 
 func (h *HistogramQuantilesFunction) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
-	groupIdx := h.nextGroupIdx / len(h.quantileArgs)
-	h.currentQuantileIdx = h.nextGroupIdx % len(h.quantileArgs)
+	groupIdx := h.nextGroupIdx / len(h.outputLabels)
+	h.currentLabelIdx = h.nextGroupIdx % len(h.outputLabels)
 
 	if groupIdx >= len(h.remainingGroups) {
 		return types.InstantVectorSeriesData{}, types.EOS
@@ -995,21 +1023,21 @@ func (h *HistogramQuantilesFunction) NextSeries(ctx context.Context) (types.Inst
 	thisGroup := h.remainingGroups[groupIdx]
 	h.nextGroupIdx++
 
-	// For the first quantile of each group, accumulate the data
-	if h.currentQuantileIdx == 0 {
+	// For the first output series of each group, accumulate the data.
+	if h.currentLabelIdx == 0 {
 		if err := h.accumulateUntilGroupComplete(ctx, thisGroup); err != nil {
 			return types.InstantVectorSeriesData{}, err
 		}
 	}
 
-	// Compute output for current quantile
-	result, err := h.computeOutputSeriesForQuantile(thisGroup, h.currentQuantileIdx)
+	// Compute output for the current quantile label.
+	result, err := h.computeOutputSeriesForLabel(thisGroup, h.currentLabelIdx)
 	if err != nil {
 		return types.InstantVectorSeriesData{}, err
 	}
 
-	// Clean up after the last quantile for this group
-	if h.currentQuantileIdx == len(h.quantileArgs)-1 {
+	// Clean up after the last output series for this group.
+	if h.currentLabelIdx == len(h.outputLabels)-1 {
 		thisGroup.lastInputSeriesIdx = 0
 		pointBucketPool.Put(&thisGroup.pointBuckets, h.memoryConsumptionTracker)
 		if thisGroup.nativeHistograms != nil {
@@ -1023,10 +1051,17 @@ func (h *HistogramQuantilesFunction) NextSeries(ctx context.Context) (types.Inst
 	return result, nil
 }
 
-func (h *HistogramQuantilesFunction) computeOutputSeriesForQuantile(g *bucketGroup, quantileIdx int) (types.InstantVectorSeriesData, error) {
+// computeOutputSeriesForLabel computes the output series for the group g carrying the quantile label
+// h.outputLabels[labelIdx]. At each step it uses the quantile value of whichever arg formats to that
+// label; if more than one arg matches the same label at the same step, the step would contain two
+// samples with the same label set, so it returns an error (matching Prometheus).
+func (h *HistogramQuantilesFunction) computeOutputSeriesForLabel(g *bucketGroup, labelIdx int) (types.InstantVectorSeriesData, error) {
 	floatPoints, err := h.computeOutputPoints(g,
-		func(pointIdx int, buckets promql.Buckets) (float64, error) {
-			phValue := h.quantileValues[quantileIdx][pointIdx].F
+		func(pointIdx int, buckets promql.Buckets) (float64, bool, error) {
+			phValue, ok, err := h.quantileForStep(labelIdx, pointIdx)
+			if err != nil || !ok {
+				return 0, ok, err
+			}
 			quantile, forcedMonotonicity, _, _, _, _ := promql.BucketQuantile(phValue, buckets)
 			if forcedMonotonicity {
 				h.annotations.Add(annotations.NewHistogramQuantileForcedMonotonicityInfo(
@@ -1035,15 +1070,18 @@ func (h *HistogramQuantilesFunction) computeOutputSeriesForQuantile(g *bucketGro
 					0, 0, 0, 0,
 				))
 			}
-			return quantile, nil
+			return quantile, true, nil
 		},
-		func(pointIdx int, hist *histogram.FloatHistogram) (float64, error) {
-			phValue := h.quantileValues[quantileIdx][pointIdx].F
+		func(pointIdx int, hist *histogram.FloatHistogram) (float64, bool, error) {
+			phValue, ok, err := h.quantileForStep(labelIdx, pointIdx)
+			if err != nil || !ok {
+				return 0, ok, err
+			}
 			hq, annos := promql.HistogramQuantile(phValue, hist, h.getMetricNameForSeries(g.lastInputSeriesIdx), h.inner.ExpressionPosition())
 			if annos != nil {
 				h.annotations.Merge(annos)
 			}
-			return hq, nil
+			return hq, true, nil
 		},
 	)
 	if err != nil {
@@ -1051,17 +1089,38 @@ func (h *HistogramQuantilesFunction) computeOutputSeriesForQuantile(g *bucketGro
 	}
 
 	// Note: native histograms are NOT returned to the pool here because we only process them
-	// for the first quantile and need them for subsequent quantiles. They're returned in NextSeries
-	// after the last quantile for this group is processed.
+	// for the first output series and need them for subsequent ones. They're returned in NextSeries
+	// after the last output series for this group is processed.
 
-	// Clean up point buckets for the last quantile of this group
-	if quantileIdx == len(h.quantileArgs)-1 {
+	// Clean up point buckets for the last output series of this group.
+	if labelIdx == len(h.outputLabels)-1 {
 		for _, b := range g.pointBuckets {
 			bucketSliceBucketedPool.Put(&b, h.memoryConsumptionTracker)
 		}
 	}
 
 	return types.InstantVectorSeriesData{Floats: floatPoints}, nil
+}
+
+// quantileForStep returns the quantile value to use at step pointIdx for the output series carrying
+// label h.outputLabels[labelIdx]: the value of whichever arg formats to that label at that step. ok
+// is false if no arg matches (the step is omitted from this series). If more than one arg matches,
+// the step would produce duplicate-labelled samples, so it returns errDuplicateLabelSet.
+func (h *HistogramQuantilesFunction) quantileForStep(labelIdx, pointIdx int) (value float64, ok bool, err error) {
+	label := h.outputLabels[labelIdx]
+	matched := -1
+	for argIdx := range h.quantileArgs {
+		if h.quantileStrings[argIdx][pointIdx] == label {
+			if matched >= 0 {
+				return 0, false, errDuplicateLabelSet
+			}
+			matched = argIdx
+		}
+	}
+	if matched < 0 {
+		return 0, false, nil
+	}
+	return h.quantileValues[matched][pointIdx].F, true, nil
 }
 
 func (h *HistogramQuantilesFunction) Prepare(ctx context.Context, params *types.PrepareParams) error {
@@ -1092,7 +1151,7 @@ func (h *HistogramQuantilesFunction) FinishedReading(ctx context.Context) error 
 	seriesGroupPairPool.Put(&h.seriesGroupPairs, h.memoryConsumptionTracker)
 	bucketGroupPointerSlicePool.Put(&h.remainingGroups, h.memoryConsumptionTracker)
 	h.nextGroupIdx = 0
-	h.currentQuantileIdx = 0
+	h.currentLabelIdx = 0
 	h.currentInnerSeriesIndex = 0
 
 	// Return the scalar argument samples to the pool before signalling the scalar operators
@@ -1101,7 +1160,8 @@ func (h *HistogramQuantilesFunction) FinishedReading(ctx context.Context) error 
 		types.FPointSlicePool.Put(&samples, h.memoryConsumptionTracker)
 	}
 	h.quantileValues = nil
-	h.quantileLabels = nil
+	h.quantileStrings = nil
+	h.outputLabels = nil
 
 	if err := h.quantileLabelOp.FinishedReading(ctx); err != nil {
 		return err
