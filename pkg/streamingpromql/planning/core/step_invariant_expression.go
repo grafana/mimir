@@ -29,9 +29,10 @@ func (s *StepInvariantExpression) Describe() string {
 	return ""
 }
 
-func (s *StepInvariantExpression) ChildrenTimeRange(timeRange types.QueryTimeRange) types.QueryTimeRange {
-	// note that we set the StartT == EndT with a single step count.
-	return types.NewInstantQueryTimeRange(timestamp.Time(timeRange.StartT))
+func (s *StepInvariantExpression) ChildrenTimeRange(_ types.QueryTimeRange) types.QueryTimeRange {
+	// The time range used doesn't matter as long as it is a single step, given the expression is step invariant.
+	// So use T=0, to ensure there's no accidental dependency on the actual time range.
+	return types.NewInstantQueryTimeRange(timestamp.Time(0))
 }
 
 func (s *StepInvariantExpression) Details() proto.Message {
@@ -54,6 +55,18 @@ func (s *StepInvariantExpression) EquivalentToIgnoringHintsAndChildren(other pla
 func (s *StepInvariantExpression) MergeHints(_ planning.Node) error {
 	// Nothing to do.
 	return nil
+}
+
+func (s *StepInvariantExpression) ResultType() (parser.ValueType, error) {
+	return s.Inner.ResultType()
+}
+
+func (s *StepInvariantExpression) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) (planning.QueriedTimeRange, error) {
+	return s.Inner.QueriedTimeRange(s.ChildrenTimeRange(queryTimeRange), lookbackDelta)
+}
+
+func (s *StepInvariantExpression) ExpressionPosition() (posrange.PositionRange, error) {
+	return s.Inner.ExpressionPosition()
 }
 
 func MaterializeStepInvariantExpression(s *StepInvariantExpression, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
@@ -90,16 +103,4 @@ func MaterializeStepInvariantExpression(s *StepInvariantExpression, materializer
 	}
 
 	return nil, fmt.Errorf("unable to materialize step invariant expression with inner node type %T", op)
-}
-
-func (s *StepInvariantExpression) ResultType() (parser.ValueType, error) {
-	return s.Inner.ResultType()
-}
-
-func (s *StepInvariantExpression) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) (planning.QueriedTimeRange, error) {
-	return s.Inner.QueriedTimeRange(s.ChildrenTimeRange(queryTimeRange), lookbackDelta)
-}
-
-func (s *StepInvariantExpression) ExpressionPosition() (posrange.PositionRange, error) {
-	return s.Inner.ExpressionPosition()
 }
