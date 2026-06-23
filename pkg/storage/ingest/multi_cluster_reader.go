@@ -138,12 +138,12 @@ func (r *MultiClusterPartitionReader) stopping(_ error) error {
 // LastSeenOffsets returns the highest record offset seen by each Kafka cluster's reader, indexed by
 // Kafka cluster ID.
 func (r *MultiClusterPartitionReader) LastSeenOffsets() kmeta.PartitionOffsets {
-	clusterOffsets := make([]int64, len(r.readers))
+	offsets := make([]int64, len(r.readers))
 	for kafkaClusterID, reader := range r.readers {
-		clusterOffsets[kafkaClusterID] = reader.LastSeenOffsets().ForKafkaCluster(0)
+		offsets[kafkaClusterID] = reader.LastSeenOffsets().ForKafkaCluster(0)
 	}
 
-	return kmeta.NewMultiClusterPartitionOffsets(clusterOffsets)
+	return kmeta.NewMultiClusterPartitionOffsets(offsets)
 }
 
 // EnforceReadMaxDelay returns an error if any Kafka cluster's reader is lagging behind more than
