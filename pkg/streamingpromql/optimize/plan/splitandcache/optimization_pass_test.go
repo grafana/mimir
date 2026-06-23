@@ -9,12 +9,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/streamingpromql"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/commonsubexpressionelimination"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/splitandcache"
 	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
 	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
@@ -190,6 +192,55 @@ func TestOptimizationPass(t *testing.T) {
 			`,
 		},
 
+		// We want to only evaluate step-invariant expressions once per query request, rather than once per split.
+		// Each child of a step-invariant expression will be evaluated at T=0, and the StepInvariantExpression will
+		// be evaluated over the split time range. So we need to duplicate the step-invariant expression for each split,
+		// so the result can be used for each split time range.
+		"single step-invariant expression": {
+			expr:      "foo @ 20",
+			timeRange: rangeQueryTimeRange,
+			expectedPlan: `
+				- TimeRangeSplit: interval 24h0m0s
+					- Cache: split interval 24h0m0s
+						- StepInvariantExpression
+							- Duplicate
+								- VectorSelector: {__name__="foo"} @ 20000 (1970-01-01T00:00:20Z)
+			`,
+		},
+		"duplicated step-invariant expression": {
+			expr:      "(foo @ 20 - bar) + foo @ 20",
+			timeRange: rangeQueryTimeRange,
+			expectedPlan: `
+				- TimeRangeSplit: interval 24h0m0s
+					- Cache: split interval 24h0m0s
+						- BinaryExpression: LHS + RHS
+							- LHS: BinaryExpression: LHS - RHS
+								- LHS: ref#1 Duplicate
+									- StepInvariantExpression
+										- Duplicate
+											- VectorSelector: {__name__="foo"} @ 20000 (1970-01-01T00:00:20Z)
+								- RHS: VectorSelector: {__name__="bar"}
+							- RHS: ref#1 Duplicate ...
+			`,
+		},
+		"multiple step-invariant expressions": {
+			expr:      "(foo @ 20 - bar) + bar @ 30",
+			timeRange: rangeQueryTimeRange,
+			expectedPlan: `
+				- TimeRangeSplit: interval 24h0m0s
+					- Cache: split interval 24h0m0s
+						- BinaryExpression: LHS + RHS
+							- LHS: BinaryExpression: LHS - RHS
+								- LHS: StepInvariantExpression
+									- Duplicate
+										- VectorSelector: {__name__="foo"} @ 20000 (1970-01-01T00:00:20Z)
+								- RHS: VectorSelector: {__name__="bar"}
+							- RHS: StepInvariantExpression
+								- Duplicate
+									- VectorSelector: {__name__="bar"} @ 30000 (1970-01-01T00:00:30Z)
+			`,
+		},
+
 		"instant vector selector with @ modifier before end time of query range": {
 			expr:      "foo{} @ 100",
 			timeRange: rangeQueryTimeRange,
@@ -197,7 +248,8 @@ func TestOptimizationPass(t *testing.T) {
 				- TimeRangeSplit: interval 24h0m0s
 					- Cache: split interval 24h0m0s
 						- StepInvariantExpression
-							- VectorSelector: {__name__="foo"} @ 100000 (1970-01-01T00:01:40Z)
+							- Duplicate
+								- VectorSelector: {__name__="foo"} @ 100000 (1970-01-01T00:01:40Z)
 			`,
 		},
 		"range vector selector with @ modifier before end time of query range": {
@@ -207,9 +259,10 @@ func TestOptimizationPass(t *testing.T) {
 				- TimeRangeSplit: interval 24h0m0s
 					- Cache: split interval 24h0m0s
 						- StepInvariantExpression
-							- DeduplicateAndMerge
-								- FunctionCall: max_over_time(...)
-									- MatrixSelector: {__name__="foo"}[5m0s] @ 100000 (1970-01-01T00:01:40Z)
+							- Duplicate
+								- DeduplicateAndMerge
+									- FunctionCall: max_over_time(...)
+										- MatrixSelector: {__name__="foo"}[5m0s] @ 100000 (1970-01-01T00:01:40Z)
 			`,
 		},
 		"subquery with @ modifier before end time of query range": {
@@ -219,10 +272,11 @@ func TestOptimizationPass(t *testing.T) {
 				- TimeRangeSplit: interval 24h0m0s
 					- Cache: split interval 24h0m0s
 						- StepInvariantExpression
-							- DeduplicateAndMerge
-								- FunctionCall: max_over_time(...)
-									- Subquery: [5m0s:1m0s] @ 100000 (1970-01-01T00:01:40Z)
-										- VectorSelector: {__name__="foo"}
+							- Duplicate
+								- DeduplicateAndMerge
+									- FunctionCall: max_over_time(...)
+										- Subquery: [5m0s:1m0s] @ 100000 (1970-01-01T00:01:40Z)
+											- VectorSelector: {__name__="foo"}
 			`,
 		},
 		"subquery with nested selector with @ modifier before end time of query range": {
@@ -235,7 +289,8 @@ func TestOptimizationPass(t *testing.T) {
 							- FunctionCall: max_over_time(...)
 								- Subquery: [5m0s:1m0s]
 									- StepInvariantExpression
-										- VectorSelector: {__name__="foo"} @ 100000 (1970-01-01T00:01:40Z)
+										- Duplicate
+											- VectorSelector: {__name__="foo"} @ 100000 (1970-01-01T00:01:40Z)
 			`,
 		},
 		"instant vector selector with @ modifier after end time of query range": {
@@ -244,7 +299,8 @@ func TestOptimizationPass(t *testing.T) {
 			expectedPlan: `
 				- TimeRangeSplit: interval 24h0m0s
 					- StepInvariantExpression
-						- VectorSelector: {__name__="foo"} @ 200000000 (1970-01-03T07:33:20Z)
+						- Duplicate
+							- VectorSelector: {__name__="foo"} @ 200000000 (1970-01-03T07:33:20Z)
 			`,
 			expectedNotCachableReason: splitandcache.NotCachableReasonModifiersNotCachable,
 		},
@@ -254,9 +310,10 @@ func TestOptimizationPass(t *testing.T) {
 			expectedPlan: `
 				- TimeRangeSplit: interval 24h0m0s
 					- StepInvariantExpression
-						- DeduplicateAndMerge
-							- FunctionCall: max_over_time(...)
-								- MatrixSelector: {__name__="foo"}[5m0s] @ 200000000 (1970-01-03T07:33:20Z)
+						- Duplicate
+							- DeduplicateAndMerge
+								- FunctionCall: max_over_time(...)
+									- MatrixSelector: {__name__="foo"}[5m0s] @ 200000000 (1970-01-03T07:33:20Z)
 			`,
 			expectedNotCachableReason: splitandcache.NotCachableReasonModifiersNotCachable,
 		},
@@ -266,10 +323,11 @@ func TestOptimizationPass(t *testing.T) {
 			expectedPlan: `
 				- TimeRangeSplit: interval 24h0m0s
 					- StepInvariantExpression
-						- DeduplicateAndMerge
-							- FunctionCall: max_over_time(...)
-								- Subquery: [5m0s:1m0s] @ 200000000 (1970-01-03T07:33:20Z)
-									- VectorSelector: {__name__="foo"}
+						- Duplicate
+							- DeduplicateAndMerge
+								- FunctionCall: max_over_time(...)
+									- Subquery: [5m0s:1m0s] @ 200000000 (1970-01-03T07:33:20Z)
+										- VectorSelector: {__name__="foo"}
 			`,
 			expectedNotCachableReason: splitandcache.NotCachableReasonModifiersNotCachable,
 		},
@@ -282,7 +340,8 @@ func TestOptimizationPass(t *testing.T) {
 						- FunctionCall: max_over_time(...)
 							- Subquery: [5m0s:1m0s]
 								- StepInvariantExpression
-									- VectorSelector: {__name__="foo"} @ 200000000 (1970-01-03T07:33:20Z)
+									- Duplicate
+										- VectorSelector: {__name__="foo"} @ 200000000 (1970-01-03T07:33:20Z)
 			`,
 			expectedNotCachableReason: splitandcache.NotCachableReasonModifiersNotCachable,
 		},
@@ -293,7 +352,8 @@ func TestOptimizationPass(t *testing.T) {
 				- TimeRangeSplit: interval 24h0m0s
 					- Cache: split interval 24h0m0s
 						- StepInvariantExpression
-							- VectorSelector: {__name__="foo"} @ 100000 (1970-01-01T00:01:40Z)
+							- Duplicate
+								- VectorSelector: {__name__="foo"} @ 100000 (1970-01-01T00:01:40Z)
 			`,
 		},
 		"range vector selector with @ modifier before max freshness threshold, query straddles max freshness threshold": {
@@ -303,9 +363,10 @@ func TestOptimizationPass(t *testing.T) {
 				- TimeRangeSplit: interval 24h0m0s
 					- Cache: split interval 24h0m0s
 						- StepInvariantExpression
-							- DeduplicateAndMerge
-								- FunctionCall: max_over_time(...)
-									- MatrixSelector: {__name__="foo"}[5m0s] @ 100000 (1970-01-01T00:01:40Z)
+							- Duplicate
+								- DeduplicateAndMerge
+									- FunctionCall: max_over_time(...)
+										- MatrixSelector: {__name__="foo"}[5m0s] @ 100000 (1970-01-01T00:01:40Z)
 			`,
 		},
 		"subquery with @ modifier before max freshness threshold, query straddles max freshness threshold": {
@@ -315,10 +376,11 @@ func TestOptimizationPass(t *testing.T) {
 				- TimeRangeSplit: interval 24h0m0s
 					- Cache: split interval 24h0m0s
 						- StepInvariantExpression
-							- DeduplicateAndMerge
-								- FunctionCall: max_over_time(...)
-									- Subquery: [5m0s:1m0s] @ 100000 (1970-01-01T00:01:40Z)
-										- VectorSelector: {__name__="foo"}
+							- Duplicate
+								- DeduplicateAndMerge
+									- FunctionCall: max_over_time(...)
+										- Subquery: [5m0s:1m0s] @ 100000 (1970-01-01T00:01:40Z)
+											- VectorSelector: {__name__="foo"}
 			`,
 		},
 		"subquery with nested selector with @ modifier before max freshness threshold, query straddles max freshness threshold": {
@@ -331,7 +393,8 @@ func TestOptimizationPass(t *testing.T) {
 							- FunctionCall: max_over_time(...)
 								- Subquery: [5m0s:1m0s]
 									- StepInvariantExpression
-										- VectorSelector: {__name__="foo"} @ 100000 (1970-01-01T00:01:40Z)
+										- Duplicate
+											- VectorSelector: {__name__="foo"} @ 100000 (1970-01-01T00:01:40Z)
 			`,
 		},
 		"instant vector selector with @ modifier after max freshness threshold, query straddles max freshness threshold": {
@@ -340,7 +403,8 @@ func TestOptimizationPass(t *testing.T) {
 			expectedPlan: `
 				- TimeRangeSplit: interval 24h0m0s
 					- StepInvariantExpression
-						- VectorSelector: {__name__="foo"} @ 1704160800000 (2024-01-02T02:00:00Z)
+						- Duplicate
+							- VectorSelector: {__name__="foo"} @ 1704160800000 (2024-01-02T02:00:00Z)
 			`,
 			expectedNotCachableReason: splitandcache.NotCachableReasonModifiersNotCachable,
 		},
@@ -350,9 +414,10 @@ func TestOptimizationPass(t *testing.T) {
 			expectedPlan: `
 				- TimeRangeSplit: interval 24h0m0s
 					- StepInvariantExpression
-						- DeduplicateAndMerge
-							- FunctionCall: max_over_time(...)
-								- MatrixSelector: {__name__="foo"}[5m0s] @ 1704160800000 (2024-01-02T02:00:00Z)
+						- Duplicate
+							- DeduplicateAndMerge
+								- FunctionCall: max_over_time(...)
+									- MatrixSelector: {__name__="foo"}[5m0s] @ 1704160800000 (2024-01-02T02:00:00Z)
 			`,
 			expectedNotCachableReason: splitandcache.NotCachableReasonModifiersNotCachable,
 		},
@@ -362,10 +427,11 @@ func TestOptimizationPass(t *testing.T) {
 			expectedPlan: `
 				- TimeRangeSplit: interval 24h0m0s
 					- StepInvariantExpression
-						- DeduplicateAndMerge
-							- FunctionCall: max_over_time(...)
-								- Subquery: [5m0s:1m0s] @ 1704160800000 (2024-01-02T02:00:00Z)
-									- VectorSelector: {__name__="foo"}
+						- Duplicate
+							- DeduplicateAndMerge
+								- FunctionCall: max_over_time(...)
+									- Subquery: [5m0s:1m0s] @ 1704160800000 (2024-01-02T02:00:00Z)
+										- VectorSelector: {__name__="foo"}
 			`,
 			expectedNotCachableReason: splitandcache.NotCachableReasonModifiersNotCachable,
 		},
@@ -378,7 +444,8 @@ func TestOptimizationPass(t *testing.T) {
 						- FunctionCall: max_over_time(...)
 							- Subquery: [5m0s:1m0s]
 								- StepInvariantExpression
-									- VectorSelector: {__name__="foo"} @ 1704160800000 (2024-01-02T02:00:00Z)
+									- Duplicate
+										- VectorSelector: {__name__="foo"} @ 1704160800000 (2024-01-02T02:00:00Z)
 			`,
 			expectedNotCachableReason: splitandcache.NotCachableReasonModifiersNotCachable,
 		},
@@ -459,6 +526,8 @@ func runOptimizationPass(
 	opts := streamingpromql.NewTestEngineOpts()
 	planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
+
+	planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(false, false, reg, log.NewNopLogger()))
 
 	if enableOptimizationPass {
 		optimizationPass := splitandcache.NewOptimizationPass(enableSplitting, 24*time.Hour, enableCaching, limits, reg)

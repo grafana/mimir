@@ -9,6 +9,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/timestamp"
 
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/commonsubexpressionelimination"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
@@ -68,7 +69,10 @@ func (o *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, 
 		return nil, err
 	}
 
-	root = o.applySplitting(root)
+	root, err = o.applySplitting(root)
+	if err != nil {
+		return nil, err
+	}
 
 	plan.Root = root
 	return plan, nil
@@ -143,20 +147,45 @@ func isStepAligned(timeRange types.QueryTimeRange) bool {
 	return timeRange.StartT%timeRange.IntervalMilliseconds == 0
 }
 
-func (o *OptimizationPass) applySplitting(node planning.Node) planning.Node {
+func (o *OptimizationPass) applySplitting(node planning.Node) (planning.Node, error) {
 	if !o.splitEnabled {
-		return node
+		return node, nil
+	}
+
+	if err := o.injectDuplicateNodesForStepInvariantExpressions(node); err != nil {
+		return nil, err
 	}
 
 	// If splitting is enabled, we always add a TimeRangeSplit node, regardless of the time range.
 	// This keeps the split time range calculation logic in one place, and simplifies the logic here.
 	// The materializer for TimeRangeSplit will omit the splitting operator if there is only one range.
-
 	return &TimeRangeSplit{
 		TimeRangeSplitDetails: &TimeRangeSplitDetails{
 			SplitInterval: o.splitInterval,
 		},
 		Inner: node,
+	}, nil
+}
+
+// We want to only evaluate step-invariant expressions once per query request, rather than once per split.
+// Each child of a step-invariant expression will be evaluated at T=0, and the StepInvariantExpression node itself will
+// be evaluated over the split time range. So we need to duplicate the step-invariant expression for each split,
+// so the result can be used for each split time range.
+func (o *OptimizationPass) injectDuplicateNodesForStepInvariantExpressions(node planning.Node) error {
+	if node, ok := node.(*core.StepInvariantExpression); ok {
+		if _, isDuplicate := node.Inner.(*commonsubexpressionelimination.Duplicate); !isDuplicate {
+			node.Inner = &commonsubexpressionelimination.Duplicate{
+				DuplicateDetails: &commonsubexpressionelimination.DuplicateDetails{},
+				Inner:            node.Inner,
+			}
+		}
 	}
 
+	for n := range planning.ChildrenIter(node) {
+		if err := o.injectDuplicateNodesForStepInvariantExpressions(n); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
