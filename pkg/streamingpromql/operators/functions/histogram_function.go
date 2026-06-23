@@ -300,14 +300,7 @@ func (h *HistogramFunction) NextSeries(ctx context.Context) (types.InstantVector
 
 	thisGroup := h.remainingGroups[h.nextGroupIdx]
 	h.nextGroupIdx++
-	defer func() {
-		// Reset the group before returning to the pool
-		thisGroup.lastInputSeriesIdx = 0
-		pointBucketPool.Put(&thisGroup.pointBuckets, h.memoryConsumptionTracker)
-		thisGroup.nativeHistograms = nil
-		thisGroup.remainingSeriesCount = 0
-		bucketGroupPool.Put(thisGroup)
-	}()
+	defer h.releaseGroup(thisGroup)
 
 	// Iterate through inner series until the desired group is complete
 	if err := h.accumulateUntilGroupComplete(ctx, thisGroup); err != nil {
@@ -491,6 +484,22 @@ func (g *histogramGrouper) saveNativeHistogramsToGroup(hPoints []promql.HPoint, 
 	return nil
 }
 
+// releaseGroup returns all of a group's pooled data (bucket slices, the point-bucket slice and any
+// native histograms) to their pools, resets the group and returns it to the pool. It must only be
+// called once the group's output series have all been computed.
+func (g *histogramGrouper) releaseGroup(group *bucketGroup) {
+	group.lastInputSeriesIdx = 0
+	for _, b := range group.pointBuckets {
+		bucketSliceBucketedPool.Put(&b, g.memoryConsumptionTracker)
+	}
+	pointBucketPool.Put(&group.pointBuckets, g.memoryConsumptionTracker)
+	if group.nativeHistograms != nil {
+		types.HPointSlicePool.Put(&group.nativeHistograms, g.memoryConsumptionTracker)
+	}
+	group.remainingSeriesCount = 0
+	bucketGroupPool.Put(group)
+}
+
 // appendOutputPoint appends a single output point at pointIdx to floatPoints, allocating the slice
 // from the pool on first use. The slice is only allocated once we know we'll return at least one
 // point, and is sized for the remaining steps. Shared by the computeOutputSeries* methods.
@@ -596,16 +605,7 @@ func (h *HistogramFunction) computeOutputSeriesForGroup(g *bucketGroup) (types.I
 		return types.InstantVectorSeriesData{}, err
 	}
 
-	// Return any retained native histogram to the pool
-	if g.nativeHistograms != nil {
-		types.HPointSlicePool.Put(&g.nativeHistograms, h.memoryConsumptionTracker)
-	}
-
-	// We are done with all the point buckets, so return all those to the pool too
-	for _, b := range g.pointBuckets {
-		bucketSliceBucketedPool.Put(&b, h.memoryConsumptionTracker)
-	}
-
+	// The group's pooled data is released by NextSeries via releaseGroup once we're done with it.
 	return types.InstantVectorSeriesData{Floats: floatPoints}, nil
 }
 
@@ -1031,16 +1031,9 @@ func (h *HistogramQuantilesFunction) NextSeries(ctx context.Context) (types.Inst
 		return types.InstantVectorSeriesData{}, err
 	}
 
-	// Clean up after the last output series for this group.
+	// Release the group once we've produced its last output series.
 	if h.currentLabelIdx == len(h.outputLabels)-1 {
-		thisGroup.lastInputSeriesIdx = 0
-		pointBucketPool.Put(&thisGroup.pointBuckets, h.memoryConsumptionTracker)
-		if thisGroup.nativeHistograms != nil {
-			types.HPointSlicePool.Put(&thisGroup.nativeHistograms, h.memoryConsumptionTracker)
-			thisGroup.nativeHistograms = nil
-		}
-		thisGroup.remainingSeriesCount = 0
-		bucketGroupPool.Put(thisGroup)
+		h.releaseGroup(thisGroup)
 	}
 
 	return result, nil
@@ -1083,17 +1076,8 @@ func (h *HistogramQuantilesFunction) computeOutputSeriesForLabel(g *bucketGroup,
 		return types.InstantVectorSeriesData{}, err
 	}
 
-	// Note: native histograms are NOT returned to the pool here because we only process them
-	// for the first output series and need them for subsequent ones. They're returned in NextSeries
-	// after the last output series for this group is processed.
-
-	// Clean up point buckets for the last output series of this group.
-	if labelIdx == len(h.outputLabels)-1 {
-		for _, b := range g.pointBuckets {
-			bucketSliceBucketedPool.Put(&b, h.memoryConsumptionTracker)
-		}
-	}
-
+	// The group's pooled data (point buckets and native histograms) is shared across all of its output
+	// series, so it's only released once the last one has been computed, by NextSeries via releaseGroup.
 	return types.InstantVectorSeriesData{Floats: floatPoints}, nil
 }
 
