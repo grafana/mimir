@@ -233,9 +233,7 @@ func (ss ctxStream) Context() context.Context {
 // EncodedOffsets holds the encoded partition offsets.
 type EncodedOffsets string
 
-// Lookup returns the offsets for the input read compartment and partition, supporting both the v1 and v2
-// encoding (it detects the version and dispatches accordingly). The v1 encoding has no read compartment
-// dimension, so it is only matched when readCompartment is 0.
+// Lookup returns the offsets for the input read compartment and partition.
 func (p EncodedOffsets) Lookup(readCompartment int, partitionID int32) (kmeta.PartitionOffsets, bool) {
 	const versionLen = 3
 	if len(p) < versionLen {
@@ -337,10 +335,13 @@ func EncodeOffsetsV1(offsets map[int32]int64) EncodedOffsets {
 	return EncodedOffsets(unsafe.String(unsafe.SliceData(buffer), len(buffer)))
 }
 
-// EncodeOffsetsV2 serialises the input read compartment → partition → per-Kafka-cluster offsets into a
-// string which is safe to be used as an HTTP header value. The format is
-// "v2=<read-compartment>/<partition>:<offset>;<offset>;...", with offsets indexed by Kafka cluster ID and
-// entries comma-separated (e.g. "v2=0/1:5;6,1/2:7;8"). Empty partitions (offset is -1) are NOT skipped.
+// EncodeOffsetsV2 serialises the input per-read-compartment kmeta.PartitionsOffsets into a
+// string which is safe to be used as an HTTP header value.
+//
+// The encoded format is:
+// "v2=<read-compartment>/<partition>:<offset>;<offset>;..."
+//
+// with offsets indexed by Kafka cluster ID.
 func EncodeOffsetsV2(offsets map[int]kmeta.PartitionsOffsets) EncodedOffsets {
 	const version = "v2="
 
