@@ -286,7 +286,7 @@ func (r *StreamBinaryReader) IsRemotePostingsOffsets(context.Context) (bool, err
 }
 
 func (r *StreamBinaryReader) PostingsOffset(ctx context.Context, name string, value string) (rng index.Range, returnErr error) {
-	_, span := tracer.Start(ctx, "PostingsOffset()")
+	ctx, span := tracer.Start(ctx, "PostingsOffset()")
 	defer func() {
 		span.SetAttributes(
 			attribute.String("name", name),
