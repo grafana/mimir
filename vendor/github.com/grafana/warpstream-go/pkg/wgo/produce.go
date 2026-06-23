@@ -49,10 +49,10 @@ const crcOffset = 17
 // batchFixedFieldsAfterLength.
 const recordBatchHeaderBytes = 4 + 8 + 4 + batchFixedFieldsAfterLength
 
-// maxBatchBytesCeiling is a sanity cap on Config.MaxBatchBytes. A value above
+// batchMaxBytesCeiling is a sanity cap on Config.BatchMaxBytes. A value above
 // this is almost certainly misconfiguration — the broker would reject such a
 // request anyway — so we fail validation early rather than buffer toward it.
-const maxBatchBytesCeiling int32 = 1 << 30 // 1 GiB
+const batchMaxBytesCeiling int32 = 1 << 30 // 1 GiB
 
 // ensureRecordTimestamp defaults an unset record timestamp to now (truncated to
 // the millisecond resolution Kafka stores), mirroring franz-go's bufferRecord.
@@ -85,7 +85,7 @@ func recordEstimateBytes(r *kgo.Record, offsetDelta int32, tsDelta int64) int64 
 
 // singleRecordBatchEstimateBytes returns the wire-byte size of a fresh single-
 // record batch carrying r. Used as the per-record rejection gate: a record
-// whose batch alone exceeds MaxBatchBytes can never be produced, so we fail
+// whose batch alone exceeds BatchMaxBytes can never be produced, so we fail
 // it synchronously instead of letting the broker reject the eventual
 // request. The estimate is on the uncompressed payload — Snappy can only
 // shrink it, so the gate stays sound under compression.

@@ -132,18 +132,18 @@ func mergePromisedRoutedTopicPartitionRecordsByTopicPartition(entries []promised
 	return out
 }
 
-// splitPromisedRoutedTopicPartitionRecordsByMaxBatchBytes splits in's records
-// so each returned group's standalone RecordBatch fits within maxBatchBytes.
+// splitPromisedRoutedTopicPartitionRecordsByBatchMaxBytes splits in's records
+// so each returned group's standalone RecordBatch fits within batchMaxBytes.
 //
 // The whole group is returned unchanged when it already fits (the common case).
 // When it must be split, the chunks share a fan-in done: in.done fires exactly once,
 // after every chunk has resolved, with a failing result if any chunk failed (else a
 // success).
 //
-// Each record's own batch is <= maxBatchBytes (enforced by the per-record gate), so
+// Each record's own batch is <= batchMaxBytes (enforced by the per-record gate), so
 // every chunk carries at least one record and the split always terminates.
-func splitPromisedRoutedTopicPartitionRecordsByMaxBatchBytes(in promisedRoutedTopicPartitionRecords, maxBatchBytes int32) []promisedRoutedTopicPartitionRecords {
-	if multiRecordBatchEstimateBytes(in.records) <= int64(maxBatchBytes) {
+func splitPromisedRoutedTopicPartitionRecordsByBatchMaxBytes(in promisedRoutedTopicPartitionRecords, batchMaxBytes int32) []promisedRoutedTopicPartitionRecords {
+	if multiRecordBatchEstimateBytes(in.records) <= int64(batchMaxBytes) {
 		return []promisedRoutedTopicPartitionRecords{in}
 	}
 
@@ -162,7 +162,7 @@ func splitPromisedRoutedTopicPartitionRecordsByMaxBatchBytes(in promisedRoutedTo
 		}
 
 		cost := recordEstimateBytes(r, int32(len(currRecords)), r.Timestamp.UnixMilli()-firstTS)
-		if currBytes+cost > int64(maxBatchBytes) {
+		if currBytes+cost > int64(batchMaxBytes) {
 			chunks = append(chunks, currRecords)
 			firstTS = r.Timestamp.UnixMilli()
 			currRecords = []*kgo.Record{r}
