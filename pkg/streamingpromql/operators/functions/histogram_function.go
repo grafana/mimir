@@ -1018,7 +1018,7 @@ func (h *HistogramQuantilesFunction) NextSeries(ctx context.Context) (types.Inst
 	thisGroup := h.remainingGroups[groupIdx]
 	h.nextGroupIdx++
 
-	// For the first output series of each group, accumulate the data.
+	// If this is the first output series of each group, accumulate the data.
 	if h.currentLabelIdx == 0 {
 		if err := h.accumulateUntilGroupComplete(ctx, thisGroup); err != nil {
 			return types.InstantVectorSeriesData{}, err
@@ -1031,7 +1031,7 @@ func (h *HistogramQuantilesFunction) NextSeries(ctx context.Context) (types.Inst
 		return types.InstantVectorSeriesData{}, err
 	}
 
-	// Release the group once we've produced its last output series.
+	// Release the group if this is its last output series.
 	if h.currentLabelIdx == len(h.outputLabels)-1 {
 		h.releaseGroup(thisGroup)
 	}
@@ -1052,6 +1052,8 @@ func (h *HistogramQuantilesFunction) computeOutputSeriesForLabel(g *bucketGroup,
 			}
 			quantile, forcedMonotonicity, _, _, _, _ := promql.BucketQuantile(phValue, buckets)
 			if forcedMonotonicity {
+				// Set the last few values to 0 to use original version of histogram quantile info
+				// annotations for now until merging annotations is fully supported in MQE.
 				h.annotations.Add(annotations.NewHistogramQuantileForcedMonotonicityInfo(
 					h.getMetricNameForSeries(g.lastInputSeriesIdx),
 					h.inner.ExpressionPosition(),
