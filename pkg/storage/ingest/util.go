@@ -20,6 +20,7 @@ import (
 	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
+	"github.com/twmb/franz-go/pkg/kversion"
 	"github.com/twmb/franz-go/pkg/sasl"
 	awssasl "github.com/twmb/franz-go/pkg/sasl/aws"
 	"github.com/twmb/franz-go/pkg/sasl/oauth"
@@ -146,6 +147,11 @@ func commonKafkaClientOptions(cfg KafkaConfig, metrics *kprom.Metrics, logger lo
 		kgo.SeedBrokers(cfg.Address...),
 		kgo.DialTimeout(cfg.DialTimeout),
 
+		// Mimir 3.1 and earlier doesn't fully support the newest Kafka protocols, resulting in failures to commit the offsets.
+		// As a workaround, we cap the maximum Kafka protocol version to negotiate with the broker to the older one.
+		// Ref to https://github.com/grafana/mimir/issues/15319
+		kgo.MaxVersions(kversion.V3_9_0()),
+
 		// A cluster metadata update is a request sent to a broker and getting back the map of partitions and
 		// the leader broker for each partition. The cluster metadata can be updated (a) periodically or
 		// (b) when some events occur (e.g. backoff due to errors).
@@ -164,8 +170,8 @@ func commonKafkaClientOptions(cfg KafkaConfig, metrics *kprom.Metrics, logger lo
 		//
 		// We currently set min and max age to the same value to have constant load on the Kafka backend: regardless
 		// there are errors or not, the metadata requests frequency doesn't change.
-		kgo.MetadataMinAge(10 * time.Second),
-		kgo.MetadataMaxAge(10 * time.Second),
+		kgo.MetadataMinAge(defaultMetadataRefreshInterval),
+		kgo.MetadataMaxAge(defaultMetadataRefreshInterval),
 
 		kgo.WithLogger(NewKafkaLogger(logger)),
 

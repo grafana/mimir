@@ -145,6 +145,50 @@ func TestCases(metricSizes []int) []BenchCase {
 			Expr:  "rate(a_X[2h] anchored)",
 			Steps: 10000,
 		},
+		// Native histogram equivalents of the smoothed/anchored cases above, to track parity with
+		// the float implementation.
+		{
+			Expr: "rate(nh_X[1m] smoothed)",
+		},
+		{
+			Expr:  "rate(nh_X[1m] smoothed)",
+			Steps: 10000,
+		},
+		{
+			Expr: "rate(nh_X[2h] smoothed)",
+		},
+		{
+			Expr:  "rate(nh_X[2h] smoothed)",
+			Steps: 10000,
+		},
+		{
+			Expr: "delta(nh_X[1m] smoothed)",
+		},
+		{
+			Expr:  "delta(nh_X[1m] smoothed)",
+			Steps: 10000,
+		},
+		{
+			Expr: "delta(nh_X[2h] smoothed)",
+		},
+		{
+			Expr:  "delta(nh_X[2h] smoothed)",
+			Steps: 10000,
+		},
+		{
+			Expr: "rate(nh_X[1m] anchored)",
+		},
+		{
+			Expr:  "rate(nh_X[1m] anchored)",
+			Steps: 10000,
+		},
+		{
+			Expr: "rate(nh_X[2h] anchored)",
+		},
+		{
+			Expr:  "rate(nh_X[2h] anchored)",
+			Steps: 10000,
+		},
 		//// Holt-Winters and long ranges.
 		//{
 		//	Expr: "holt_winters(a_X[1d], 0.3, 0.3)",

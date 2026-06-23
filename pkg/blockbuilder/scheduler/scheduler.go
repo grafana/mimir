@@ -92,12 +92,19 @@ func (s *BlockBuilderScheduler) stopping(_ error) error {
 }
 
 func (s *BlockBuilderScheduler) running(ctx context.Context) error {
+	// Throughout this function we map ctx.Done/context.Canceled to nil, as this
+	// is a normal shutdown and we don't want the service framework to interpret
+	// it as an error.
+
 	level.Info(s.logger).Log("msg", "entering observation mode")
 
 	observeComplete := time.After(s.cfg.StartupObserveTime)
 
 	c, err := s.fetchCommittedOffsets(ctx)
 	if err != nil {
+		if errors.Is(err, context.Canceled) {
+			return nil
+		}
 		level.Error(s.logger).Log("msg", "failed to fetch committed offsets", "err", err)
 		s.metrics.fetchOffsetsFailed.Inc()
 		return fmt.Errorf("fetch committed offsets: %w", err)
@@ -114,7 +121,7 @@ func (s *BlockBuilderScheduler) running(ctx context.Context) error {
 	select {
 	case <-observeComplete:
 	case <-ctx.Done():
-		return ctx.Err()
+		return nil
 	}
 
 	// Now we can transition to normal operation.

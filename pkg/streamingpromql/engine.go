@@ -340,13 +340,18 @@ type QueryLimitsProvider interface {
 	GetMaxOutOfOrderTimeWindow(ctx context.Context) (time.Duration, error)
 	// GetMinResultsCacheTTL returns the TTL for cached results for the tenant(s) in the context.
 	GetMinResultsCacheTTL(ctx context.Context) (time.Duration, error)
+	// GetMinOutOfOrderResultsCacheTTL returns the TTL for cached results possibly containing out-of-order data for the tenant(s) in the context.
+	GetMinOutOfOrderResultsCacheTTL(ctx context.Context) (time.Duration, error)
+	// GetMaxCacheFreshness returns the period after which results are cacheable for the tenant(s) in the context.
+	GetMaxCacheFreshness(ctx context.Context) (time.Duration, error)
 }
 
 // NewStaticQueryLimitsProvider returns a QueryLimitsProvider that always returns the provided limits.
 // This should generally only be used in tests.
 func NewStaticQueryLimitsProvider() StaticQueryLimitsProvider {
 	return StaticQueryLimitsProvider{
-		MinResultsCacheTTL: 7 * 24 * time.Hour,
+		MinResultsCacheTTL:           7 * 24 * time.Hour,
+		MinOutOfOrderResultsCacheTTL: 7 * 24 * time.Hour,
 	}
 }
 
@@ -355,6 +360,8 @@ type StaticQueryLimitsProvider struct {
 	EnableDelayedNameRemoval              bool
 	MaxOutOfOrderTimeWindow               time.Duration
 	MinResultsCacheTTL                    time.Duration
+	MinOutOfOrderResultsCacheTTL          time.Duration
+	MaxCacheFreshness                     time.Duration
 }
 
 func (p StaticQueryLimitsProvider) GetMaxEstimatedMemoryConsumptionPerQuery(_ context.Context) (uint64, error) {
@@ -371,6 +378,14 @@ func (p StaticQueryLimitsProvider) GetMaxOutOfOrderTimeWindow(_ context.Context)
 
 func (p StaticQueryLimitsProvider) GetMinResultsCacheTTL(_ context.Context) (time.Duration, error) {
 	return p.MinResultsCacheTTL, nil
+}
+
+func (p StaticQueryLimitsProvider) GetMinOutOfOrderResultsCacheTTL(ctx context.Context) (time.Duration, error) {
+	return p.MinOutOfOrderResultsCacheTTL, nil
+}
+
+func (p StaticQueryLimitsProvider) GetMaxCacheFreshness(_ context.Context) (time.Duration, error) {
+	return p.MaxCacheFreshness, nil
 }
 
 type NoopQueryTracker struct{}

@@ -765,20 +765,24 @@ jobs:
     steps:
       - name: Send Slack message for successful PR
         if: ${{ !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') }}
-        uses: grafana/shared-workflows/actions/send-slack-message@7b628e7352c2dea057c565cc4fcd5564d5f396c0 #v1.0.0
+        uses: grafana/shared-workflows/actions/send-slack-message@551bc8d50017d3e95d5da3f8a4826e733a208dc0 # send-slack-message/v3.0.2
         with:
-          channel-id: C04AF91LPFX #mimir-ci-notifications
+          method: chat.postMessage
+          # channel C04AF91LPFX is #mimir-ci-notifications
           payload: |
             {
+              "channel": "C04AF91LPFX",
               "text": ":happy-mac: *Automated vendoring of mimir-prometheus into Mimir has succeeded and is awaiting approval.*\n<!subteam^S03C2P8659U> please review <${{ github.event.pull_request.html_url }}|the PR>, then approve and merge it."
             }
       - name: Send Slack message for failed PR
         if: ${{ contains(needs.*.result, 'failure') }}
-        uses: grafana/shared-workflows/actions/send-slack-message@7b628e7352c2dea057c565cc4fcd5564d5f396c0 #v1.0.0
+        uses: grafana/shared-workflows/actions/send-slack-message@551bc8d50017d3e95d5da3f8a4826e733a208dc0 # send-slack-message/v3.0.2
         with:
-          channel-id: C04AF91LPFX #mimir-ci-notifications
+          method: chat.postMessage
+          # channel C04AF91LPFX is #mimir-ci-notifications
           payload: |
             {
+              "channel": "C04AF91LPFX",
               "text": ":sadcomputer: *Automated vendoring of mimir-prometheus into Mimir has failed.*\n<!subteam^S03C2P8659U> please check <${{ github.event.pull_request.html_url }}|the PR> and <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|build logs> and coordinate fixes for any issues."
             }
 

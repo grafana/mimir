@@ -19,6 +19,9 @@ func init() {
 	planning.RegisterNodeFactory(func() planning.Node {
 		return &TimeRangeSplit{TimeRangeSplitDetails: &TimeRangeSplitDetails{}}
 	})
+	planning.RegisterNodeFactory(func() planning.Node {
+		return &Cache{CacheDetails: &CacheDetails{}}
+	})
 }
 
 //node:generate
@@ -88,7 +91,7 @@ func MaterializeSplit(node *TimeRangeSplit, materializer *planning.Materializer,
 			return nil, err
 		}
 
-		ranges = append(ranges, newSplitRange(inner))
+		ranges = append(ranges, newSplitRange(inner, params.MemoryConsumptionTracker))
 		start = end + timeRange.IntervalMilliseconds
 	}
 
@@ -111,4 +114,52 @@ func nextIntervalBoundary(t, step int64, interval time.Duration) int64 {
 		target -= step
 	}
 	return target
+}
+
+//node:generate
+type Cache struct {
+	*CacheDetails
+	Inner planning.Node `node:"child"`
+}
+
+func (c *Cache) Details() proto.Message {
+	return c.CacheDetails
+}
+
+func (c *Cache) NodeType() planning.NodeType {
+	return planning.NODE_TYPE_CACHE
+}
+
+func (c *Cache) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
+	_, ok := other.(*Cache)
+
+	return ok
+}
+
+func (c *Cache) MergeHints(other planning.Node) error {
+	return nil
+}
+
+func (c *Cache) Describe() string {
+	return ""
+}
+
+func (c *Cache) ChildrenTimeRange(timeRange types.QueryTimeRange) types.QueryTimeRange {
+	return timeRange
+}
+
+func (c *Cache) ResultType() (parser.ValueType, error) {
+	return c.Inner.ResultType()
+}
+
+func (c *Cache) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) (planning.QueriedTimeRange, error) {
+	return c.Inner.QueriedTimeRange(queryTimeRange, lookbackDelta)
+}
+
+func (c *Cache) ExpressionPosition() (posrange.PositionRange, error) {
+	return c.Inner.ExpressionPosition()
+}
+
+func (c *Cache) MinimumRequiredPlanVersion(_ types.QueryTimeRange) (planning.QueryPlanVersion, error) {
+	return planning.QueryPlanV16, nil
 }

@@ -237,3 +237,35 @@ func TestSampleTracker_Concurrency(t *testing.T) {
 `
 	assert.NoError(t, testutil.GatherAndCompare(costAttributionReg, strings.NewReader(expectedMetrics), "cortex_distributor_received_attributed_samples_total", "cortex_discarded_attributed_samples_total"))
 }
+
+func BenchmarkSampleTracker_IncrementReceivedSamples(b *testing.B) {
+	const seriesPerRequest = 1000
+
+	// groups controls how many distinct cost-attribution keys the request maps to.
+	// In production a single WriteRequest usually maps to one or few groups, but we
+	// also measure the worst case where every series is its own group.
+	for _, groups := range []int{1, 10, 100, 1000} {
+		b.Run(fmt.Sprintf("groups=%d", groups), func(b *testing.B) {
+			st, err := newSampleTracker("tenant-1", costattributionmodel.DefaultTrackerName,
+				costattributionmodel.Labels{{Input: "platform", Output: "platform"}},
+				false, seriesPerRequest, time.Minute, log.NewNopLogger())
+			require.NoError(b, err)
+
+			data := make([]series, seriesPerRequest)
+			for i := range data {
+				data[i] = series{
+					LabelValues:  []string{"platform", fmt.Sprintf("platform-%d", i%groups), "pod", fmt.Sprintf("pod-%d", i)},
+					SamplesCount: 1,
+				}
+			}
+			req := createRequest(data)
+			now := time.Unix(0, 0)
+
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				st.IncrementReceivedSamples(req, now)
+			}
+		})
+	}
+}

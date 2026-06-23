@@ -141,6 +141,10 @@ type RangeVectorStepData struct {
 	// may be modified on subsequent calls to NextStepSamples.
 	Histograms *HPointRingBufferView
 
+	// MixedInExtendedRange is set to true when the extended look-back/look-ahead window of an
+	// Anchored or Smoothed range vector contains both floats and histograms.
+	MixedInExtendedRange bool
+
 	// StepT is the timestamp of this time step.
 	StepT int64
 
@@ -314,4 +318,42 @@ func MatchersMatch(matchers []*labels.Matcher, lbls labels.Labels) bool {
 	}
 
 	return true
+}
+
+// AppendHPointCopies copies the points in src to the end of dest, acquiring a new slice from the pool if needed.
+// FloatHistogram instances in src are deep copied. Existing FloatHistogram instances in dest are reused if possible.
+// src is not modified and not returned to the pool.
+func AppendHPointCopies(dest []promql.HPoint, src []promql.HPoint, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) ([]promql.HPoint, error) {
+	newPointCount := len(src)
+	existingPointCount := len(dest)
+	neededSliceCapacity := existingPointCount + newPointCount
+
+	if cap(dest) < neededSliceCapacity {
+		oldSlice := dest
+		var err error
+		dest, err = HPointSlicePool.Get(neededSliceCapacity, memoryConsumptionTracker)
+		if err != nil {
+			return nil, err
+		}
+		dest = append(dest, oldSlice...)
+		clear(oldSlice)
+		HPointSlicePool.Put(&oldSlice, memoryConsumptionTracker)
+	}
+
+	dest = dest[:neededSliceCapacity]
+
+	for i := range newPointCount {
+		sourcePoint := src[i]
+		destinationIdx := existingPointCount + i
+		dest[destinationIdx].T = sourcePoint.T
+
+		// Reuse existing FloatHistogram instance in the destination slice if we can.
+		if dest[destinationIdx].H == nil {
+			dest[destinationIdx].H = sourcePoint.H.Copy()
+		} else {
+			sourcePoint.H.CopyTo(dest[destinationIdx].H)
+		}
+	}
+
+	return dest, nil
 }

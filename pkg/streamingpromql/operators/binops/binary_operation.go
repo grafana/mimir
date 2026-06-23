@@ -25,6 +25,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
+	"github.com/grafana/mimir/pkg/util/promqlext"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
@@ -84,8 +85,8 @@ func groupLabelsFunc(vectorMatching parser.VectorMatching, op parser.ItemType, r
 		}
 	}
 
-	if op.IsComparisonOperator() && !returnBool {
-		// If this is a comparison operator, we want to retain the metric name, as the comparison acts like a filter.
+	if promqlext.RetainsMetricName(op, returnBool) {
+		// Comparison operators (acting as filters) and trim operators retain the metric name.
 		return func(l labels.Labels) labels.Labels {
 			lb.Reset(l)
 			lb.Del(vectorMatching.MatchingLabels...)
@@ -684,6 +685,24 @@ var arithmeticAndComparisonOperationFuncs = map[parser.ItemType]binaryOperationF
 		}
 
 		return 0, nil, false, true, nil
+	},
+	// canMutateLeft is unused for the trim operators: TrimBuckets always returns a freshly copied histogram,
+	// so there is never an opportunity to reuse the input histogram in place.
+	parser.TRIM_UPPER: func(lF, rF float64, lH, rH *histogram.FloatHistogram, _, _ bool, _ types.EmitAnnotationFunc) (float64, *histogram.FloatHistogram, bool, bool, error) {
+		if lH != nil && rH == nil {
+			// histogram </ float: trim upper
+			return 0, lH.TrimBuckets(rF, true), true, true, nil
+		}
+
+		return 0, nil, false, false, nil
+	},
+	parser.TRIM_LOWER: func(lF, rF float64, lH, rH *histogram.FloatHistogram, _, _ bool, _ types.EmitAnnotationFunc) (float64, *histogram.FloatHistogram, bool, bool, error) {
+		if lH != nil && rH == nil {
+			// histogram >/ float: trim lower
+			return 0, lH.TrimBuckets(rF, false), true, true, nil
+		}
+
+		return 0, nil, false, false, nil
 	},
 }
 

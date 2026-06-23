@@ -969,7 +969,7 @@ func TestTripperware_ShouldSupportReadConsistencyOffsetsInjection(t *testing.T) 
 	require.NoError(t, err)
 	t.Cleanup(readClient.Close)
 
-	offsetsReader := ingest.NewTopicOffsetsReaderForAllPartitions(readClient, topic, 100*time.Millisecond, nil, logger)
+	offsetsReader := newTestTopicOffsetsReader(readClient, topic, numPartitions, 100*time.Millisecond, logger)
 	require.NoError(t, services.StartAndAwaitRunning(ctx, offsetsReader))
 	t.Cleanup(func() {
 		require.NoError(t, services.StopAndAwaitTerminated(ctx, offsetsReader))
@@ -991,7 +991,7 @@ func TestTripperware_ShouldSupportReadConsistencyOffsetsInjection(t *testing.T) 
 		nil,
 		promEngine,
 		promOpts,
-		map[string]*ingest.TopicOffsetsReader{querierapi.ReadConsistencyOffsetsHeader: offsetsReader},
+		offsetsReader,
 		false,
 		nil,
 		nil,

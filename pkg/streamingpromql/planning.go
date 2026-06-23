@@ -561,9 +561,9 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr, timeRange types.QueryTimeR
 			(lhsType == parser.ValueTypeScalar && rhsType == parser.ValueTypeVector)
 
 		if isVectorScalar {
-			// Comparison vector-scalar operations without bool modifier don't drop the __name__ label.
-			// So don't need to wrap in DeduplicateAndMerge.
-			if expr.Op.IsComparisonOperator() && !expr.ReturnBool {
+			// Vector-scalar operations that retain the __name__ label (comparison filters and trim operators)
+			// don't need to be wrapped in DeduplicateAndMerge.
+			if promqlext.RetainsMetricName(expr.Op, expr.ReturnBool) {
 				return binExpr, nil
 			}
 
@@ -594,6 +594,10 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr, timeRange types.QueryTimeR
 				if !supported {
 					return nil, ErrAnchoredIncompatibleFunction{functionName: expr.Func.Name}
 				}
+				// resets and changes select the anchor across both floats and histograms and count
+				// transitions through the in-range samples; they do not need synthetic float boundary values.
+				// Flag this so the range vector selector skips the float boundary mutation for these functions.
+				matrixSelector.AnchoredResetsChanges = expr.Func.Name == "resets" || expr.Func.Name == "changes"
 			}
 			if ok && matrixSelector.Smoothed {
 				_, supported := promql.SmoothedSafeFunctions[expr.Func.Name]

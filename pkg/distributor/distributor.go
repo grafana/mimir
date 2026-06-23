@@ -522,7 +522,7 @@ func (m *PushMetrics) deleteUserMetrics(user string) {
 }
 
 // New constructs a new Distributor
-func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Overrides, activeGroupsCleanupService *util.ActiveGroupsCleanupService, costAttributionMgr *costattribution.Manager, ingestersRing ring.ReadRing, partitionInstanceRings *ingest.PartitionInstanceRings, partitionRings *ingest.PartitionRingWatchers, canJoinDistributorsRing bool, usageTrackerPartitionRing *ring.MultiPartitionInstanceRing, usageTrackerInstanceRing ring.ReadRing, reg prometheus.Registerer, log log.Logger) (*Distributor, error) {
+func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Overrides, activeGroupsCleanupService *util.ActiveGroupsCleanupService, costAttributionMgr *costattribution.Manager, ingestersRing ring.ReadRing, partitionInstanceRings *ingest.PartitionInstanceRings, partitionRings *ingest.PartitionRingWatchers, canJoinDistributorsRing bool, writerEnabled bool, usageTrackerPartitionRing *ring.MultiPartitionInstanceRing, usageTrackerInstanceRing ring.ReadRing, reg prometheus.Registerer, log log.Logger) (*Distributor, error) {
 	clientMetrics := ingester_client.NewMetrics(reg)
 	if cfg.IngesterClientFactory == nil {
 		cfg.IngesterClientFactory = ring_client.PoolInstFunc(func(inst ring.InstanceDesc) (ring_client.PoolClient, error) {
@@ -850,8 +850,14 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 			}
 		}
 
-		d.ingestStorageWriter = ingest.NewWriter(writerKafkaCfg, log, reg, writerOpts...)
-		subservices = append(subservices, d.ingestStorageWriter)
+		// Only components that push (distributor, ruler) run the writer. A query-only distributor — e.g. the
+		// one the querier embeds to query ingesters — must not start it: it never pushes, and starting it
+		// would needlessly connect to Kafka and (under compartments) try to auto-create topics it has no
+		// write-compartment context for.
+		if writerEnabled {
+			d.ingestStorageWriter = ingest.NewWriter(writerKafkaCfg, log, reg, writerOpts...)
+			subservices = append(subservices, d.ingestStorageWriter)
+		}
 	}
 
 	// Init usage-tracker client (if enabled).

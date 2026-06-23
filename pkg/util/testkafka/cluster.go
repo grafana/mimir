@@ -81,6 +81,11 @@ func CreateClusterWithoutCustomConsumerGroupsSupport(t testing.TB, numPartitions
 	cfg := []kfake.Opt{
 		kfake.NumBrokers(1),
 		kfake.SeedTopics(numPartitions, topicName),
+		// kfake defaults the max message size to ~1MB, but Mimir's producer batches records up to
+		// producerBatchMaxBytes (16MB) and production Kafka is configured to accept them. Match that
+		// here so the fake doesn't reject realistically-sized records with MESSAGE_TOO_LARGE.
+		// The broker-level config key is message.max.bytes (the topic-level key is max.message.bytes).
+		kfake.BrokerConfigs(map[string]string{"message.max.bytes": "16000000"}),
 	}
 
 	// Apply options.
@@ -123,6 +128,22 @@ func addSupportForConsumerGroups(t testing.TB, cluster *kfake.Cluster, topicName
 		}
 	}
 
+	// From OffsetCommit/OffsetFetch v10 (KIP-848) onwards, clients identify the topic by ID
+	// instead of name, leaving the name empty on the wire and matching responses by ID. We
+	// resolve the ID kfake assigned to our topic and echo it back in responses. Responses set
+	// both name and ID, and the kmsg encoder writes whichever the negotiated request version uses.
+	var topicID [16]byte
+	if info := cluster.TopicInfo(topicName); info != nil {
+		topicID = info.TopicID
+	}
+	assertRequestTopic := func(name string, id [16]byte) {
+		if name != "" {
+			assert.Equal(t, topicName, name)
+		} else {
+			assert.NotEqual(t, [16]byte{}, id, "offset request must identify the topic by name (v<10) or ID (v10+)")
+		}
+	}
+
 	cluster.ControlKey(kmsg.OffsetDelete.Int16(), func(request kmsg.Request) (kmsg.Response, error, bool) {
 		cluster.KeepControl()
 		deleteR := request.(*kmsg.OffsetDeleteRequest)
@@ -156,7 +177,7 @@ func addSupportForConsumerGroups(t testing.TB, cluster *kfake.Cluster, topicName
 		ensureConsumerGroupExists(consumerGroup)
 		assert.Len(t, commitR.Topics, 1, "test only has support for one topic per request")
 		topic := commitR.Topics[0]
-		assert.Equal(t, topicName, topic.Topic)
+		assertRequestTopic(topic.Topic, topic.TopicID)
 		assert.Len(t, topic.Partitions, 1, "test only has support for one partition per request")
 
 		partitionID := topic.Partitions[0].Partition
@@ -167,6 +188,7 @@ func addSupportForConsumerGroups(t testing.TB, cluster *kfake.Cluster, topicName
 		resp.Topics = []kmsg.OffsetCommitResponseTopic{
 			{
 				Topic:      topicName,
+				TopicID:    topicID,
 				Partitions: []kmsg.OffsetCommitResponseTopicPartition{{Partition: partitionID}},
 			},
 		}
@@ -188,9 +210,11 @@ func addSupportForConsumerGroups(t testing.TB, cluster *kfake.Cluster, topicName
 			// An empty request means fetch all topic-partitions for this group.
 			partitionID = allPartitions
 		} else {
-			partitionID = req.Groups[0].Topics[0].Partitions[0]
-			assert.Len(t, req.Groups[0], 1, "test only has support for one partition per request")
-			assert.Len(t, req.Groups[0].Topics[0].Partitions, 1, "test only has support for one partition per request")
+			reqTopic := req.Groups[0].Topics[0]
+			assertRequestTopic(reqTopic.Topic, reqTopic.TopicID)
+			partitionID = reqTopic.Partitions[0]
+			assert.Len(t, req.Groups[0].Topics, 1, "test only has support for one topic per request")
+			assert.Len(t, reqTopic.Partitions, 1, "test only has support for one partition per request")
 		}
 
 		// Prepare the list of partitions for which the offset has been committed.
@@ -221,6 +245,7 @@ func addSupportForConsumerGroups(t testing.TB, cluster *kfake.Cluster, topicName
 			topicsResp = []kmsg.OffsetFetchResponseGroupTopic{
 				{
 					Topic:      topicName,
+					TopicID:    topicID,
 					Partitions: partitionsResp,
 				},
 			}

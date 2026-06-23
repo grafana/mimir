@@ -19,6 +19,9 @@ import (
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/tenant"
 	"github.com/prometheus/alertmanager/config"
+	discord "github.com/prometheus/alertmanager/notify/discord"
+	msteams "github.com/prometheus/alertmanager/notify/msteams"
+	webhook "github.com/prometheus/alertmanager/notify/webhook"
 	"github.com/prometheus/alertmanager/template"
 	commoncfg "github.com/prometheus/common/config"
 	"go.yaml.in/yaml/v3"
@@ -347,8 +350,8 @@ func validateAlertmanagerConfig(cfg interface{}) error {
 			return err
 		}
 
-	case reflect.TypeOf(config.DiscordConfig{}):
-		if err := validateDiscordConfig(v.Interface().(config.DiscordConfig)); err != nil {
+	case reflect.TypeOf(discord.DiscordConfig{}):
+		if err := validateDiscordConfig(v.Interface().(discord.DiscordConfig)); err != nil {
 			return err
 		}
 
@@ -392,8 +395,8 @@ func validateAlertmanagerConfig(cfg interface{}) error {
 			return err
 		}
 
-	case reflect.TypeOf(config.MSTeamsConfig{}):
-		if err := validateMSTeamsConfig(v.Interface().(config.MSTeamsConfig)); err != nil {
+	case reflect.TypeOf(msteams.MSTeamsConfig{}):
+		if err := validateMSTeamsConfig(v.Interface().(msteams.MSTeamsConfig)); err != nil {
 			return err
 		}
 
@@ -407,8 +410,8 @@ func validateAlertmanagerConfig(cfg interface{}) error {
 			return err
 		}
 
-	case reflect.TypeOf(config.WebhookConfig{}):
-		if err := validateWebhookConfig(v.Interface().(config.WebhookConfig)); err != nil {
+	case reflect.TypeOf(webhook.WebhookConfig{}):
+		if err := validateWebhookConfig(v.Interface().(webhook.WebhookConfig)); err != nil {
 			return err
 		}
 	}
@@ -514,7 +517,7 @@ func validateGlobalConfig(cfg config.GlobalConfig) error {
 
 // validateDiscordConfig validates the Discord config and returns an error if it
 // contains settings not allowed by Mimir.
-func validateDiscordConfig(cfg config.DiscordConfig) error {
+func validateDiscordConfig(cfg discord.DiscordConfig) error {
 	if cfg.WebhookURLFile != "" {
 		return errWebhookURLFileNotAllowed
 	}
@@ -585,7 +588,7 @@ func validatePushoverConfig(cfg config.PushoverConfig) error {
 
 // validateMSTeamsConfig validates the Microsoft Teams config and returns an error if it
 // contains settings not allowed by Mimir.
-func validateMSTeamsConfig(cfg config.MSTeamsConfig) error {
+func validateMSTeamsConfig(cfg msteams.MSTeamsConfig) error {
 	if cfg.WebhookURLFile != "" {
 		return errWebhookURLFileNotAllowed
 	}
@@ -612,7 +615,7 @@ func validateTelegramConfig(cfg config.TelegramConfig) error {
 
 // validateWebhookConfig validates the Webhook config and returns an error if it contains
 // settings not allowed by Mimir.
-func validateWebhookConfig(cfg config.WebhookConfig) error {
+func validateWebhookConfig(cfg webhook.WebhookConfig) error {
 	if cfg.URLFile != "" {
 		return errWebhookURLFileNotAllowed
 	}

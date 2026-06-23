@@ -380,14 +380,7 @@ func (o *evaluationObserver) SeriesMetadataEvaluated(ctx context.Context, evalua
 	for startIdx := 0; startIdx < len(series) || (len(series) == 0 && !sentOne); startIdx += batchSize {
 		endIdx := min(startIdx+batchSize, len(series))
 		batch := series[startIdx:endIdx]
-
-		protoSeries := make([]querierpb.SeriesMetadata, 0, len(batch))
-		for _, s := range batch {
-			protoSeries = append(protoSeries, querierpb.SeriesMetadata{
-				Labels:   mimirpb.FromLabelsToLabelAdapters(s.Labels),
-				DropName: s.DropName,
-			})
-		}
+		protoSeries := querierpb.EncodeSeriesMetadataSlice(batch)
 
 		if err := o.w.Write(ctx, querierpb.EvaluateQueryResponse{
 			Message: &querierpb.EvaluateQueryResponse_SeriesMetadata{
@@ -441,12 +434,9 @@ func (o *evaluationObserver) sendInstantVectorSeriesDataBatch(ctx context.Contex
 	series := make([]querierpb.InstantVectorSeriesData, 0, len(batch.unsentSeries))
 
 	for _, d := range batch.unsentSeries {
-		series = append(series, querierpb.InstantVectorSeriesData{
-			// The methods below do unsafe casts and do not copy the data from the slices, but this is OK as we're immediately
-			// serializing the message and sending it before the deferred return to the pool occurs above.
-			Floats:     mimirpb.FromFPointsToSamples(d.Floats),
-			Histograms: mimirpb.FromHPointsToHistograms(d.Histograms),
-		})
+		// EncodeInstantVectorSeriesData does unsafe casts and does not copy the data from the slices, but this is OK as we're immediately
+		// serializing the message and sending it before the deferred return to the pool occurs above.
+		series = append(series, querierpb.EncodeInstantVectorSeriesData(d))
 	}
 
 	msg := querierpb.EvaluateQueryResponse{
@@ -603,7 +593,7 @@ func (o *evaluationObserver) EvaluationCompleted(ctx context.Context, evaluator 
 			combinedAnnos = combinedAnnos.Merge(s.Annotations)
 		} else if len(s.Annotations) > 0 {
 			// Only bother populating the map if there are any annotations.
-			encodedAnnotations[nodeIndex] = o.encodeAnnotations(s.Annotations)
+			encodedAnnotations[nodeIndex] = querierpb.EncodeAnnotations(s.Annotations, o.originalExpression)
 		}
 	}
 
@@ -618,26 +608,13 @@ func (o *evaluationObserver) EvaluationCompleted(ctx context.Context, evaluator 
 	return o.w.Write(ctx, querierpb.EvaluateQueryResponse{
 		Message: &querierpb.EvaluateQueryResponse_EvaluationCompleted{
 			EvaluationCompleted: &querierpb.EvaluateQueryResponseEvaluationCompleted{
-				Annotations:        o.encodeAnnotations(combinedAnnos),
+				Annotations:        querierpb.EncodeAnnotations(combinedAnnos, o.originalExpression),
 				Stats:              o.populateStats(ctx, nodeInfo),
 				PerNodeStats:       encodedStats,
 				PerNodeAnnotations: encodedAnnotations,
 			},
 		},
 	})
-}
-
-func (o *evaluationObserver) encodeAnnotations(a annotations.Annotations) querierpb.Annotations {
-	if len(a) == 0 {
-		return querierpb.Annotations{}
-	}
-
-	warnings, infos := a.AsStrings(o.originalExpression, 0, 0)
-
-	return querierpb.Annotations{
-		Warnings: warnings,
-		Infos:    infos,
-	}
 }
 
 func (o *evaluationObserver) populateStats(ctx context.Context, nodeInfo map[planning.Node]streamingpromql.NodeCompletionInfo) querier_stats.Stats {

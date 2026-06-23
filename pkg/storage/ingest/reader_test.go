@@ -2606,7 +2606,8 @@ func TestSingleClusterPartitionReader_fetchLastCommittedOffset(t *testing.T) {
 					Group: reader.consumerGroup,
 					Topics: []kmsg.OffsetFetchResponseGroupTopic{
 						{
-							Topic: topicName,
+							Topic:   topicName,
+							TopicID: cluster.TopicInfo(topicName).TopicID,
 							Partitions: []kmsg.OffsetFetchResponseGroupTopicPartition{
 								{
 									Partition: partitionID + 1, // Another partition.
@@ -2647,7 +2648,8 @@ func TestSingleClusterPartitionReader_fetchLastCommittedOffset(t *testing.T) {
 					Group: reader.consumerGroup,
 					Topics: []kmsg.OffsetFetchResponseGroupTopic{
 						{
-							Topic: topicName,
+							Topic:   topicName,
+							TopicID: cluster.TopicInfo(topicName).TopicID,
 							Partitions: []kmsg.OffsetFetchResponseGroupTopicPartition{
 								{
 									Partition: partitionID, // Our partition.
@@ -2923,11 +2925,11 @@ func TestPartitionCommitter(t *testing.T) {
 
 			if commitRequestsShouldFail.Load() {
 				res.Topics = []kmsg.OffsetCommitResponseTopic{
-					{Topic: topicName, Partitions: []kmsg.OffsetCommitResponseTopicPartition{{Partition: partitionID, ErrorCode: kerr.InvalidCommitOffsetSize.Code}}},
+					{Topic: topicName, TopicID: cluster.TopicInfo(topicName).TopicID, Partitions: []kmsg.OffsetCommitResponseTopicPartition{{Partition: partitionID, ErrorCode: kerr.InvalidCommitOffsetSize.Code}}},
 				}
 			} else {
 				res.Topics = []kmsg.OffsetCommitResponseTopic{
-					{Topic: topicName, Partitions: []kmsg.OffsetCommitResponseTopicPartition{{Partition: partitionID}}},
+					{Topic: topicName, TopicID: cluster.TopicInfo(topicName).TopicID, Partitions: []kmsg.OffsetCommitResponseTopicPartition{{Partition: partitionID}}},
 				}
 			}
 

@@ -412,7 +412,7 @@ Usage of ./cmd/mimir/mimir:
   -ingest-storage.kafka.client-id string
     	The Kafka client ID.
   -ingest-storage.kafka.client-rack string
-    	The rack identifier for this Kafka client. Corresponds to the Kafka client.rack setting.
+    	The rack identifier for this Kafka client. Corresponds to the Kafka client.rack setting. Only supported when ingest-storage.kafka.backend=kafka.
   -ingest-storage.kafka.consume-from-position-at-startup string
     	From which position to start consuming the partition at startup. Supported options: last-offset, start, end, timestamp. (default "last-offset")
   -ingest-storage.kafka.consume-from-timestamp-at-startup int
@@ -422,7 +422,7 @@ Usage of ./cmd/mimir/mimir:
   -ingest-storage.kafka.consumer-group-offset-commit-interval duration
     	How frequently a consumer should commit the consumed offset to Kafka. The last committed offset is used at startup to continue the consumption from where it was left. (default 1s)
   -ingest-storage.kafka.dial-timeout duration
-    	The maximum time allowed to open a connection to a Kafka broker. (default 2s)
+    	The maximum time allowed to establish the TCP connection to a Kafka broker, including the TLS handshake when TLS is enabled. It does not include the subsequent SASL authentication handshake. (default 2s)
   -ingest-storage.kafka.fetch-concurrency-max int
     	The maximum number of concurrent fetch requests that the ingester makes when reading data from Kafka during startup. Concurrent fetch requests are issued only when there is sufficient backlog of records to consume. Set to 0 to disable. (default 12)
   -ingest-storage.kafka.fetch-max-wait duration
@@ -967,6 +967,8 @@ Usage of ./cmd/mimir/mimir:
     	How back in the past metrics can be queried at most. (default 168h0m0s)
   -tests.write-read-ooo-test.num-series int
     	Number of series used for the test. (default 5000)
+  -tests.write-read-series-test.fan-out-query-enabled
+    	Set to true to additionally run each test query with a regex metric-name matcher. This prevents the query from being pinned to a single ingest-storage compartment, forcing the read path to fan out across all compartments and validating cross-compartment query result merging. Roughly doubles the number of queries issued per run.
   -tests.write-read-series-test.float-samples-enabled
     	Set to true to use float samples (default true)
   -tests.write-read-series-test.histogram-samples-enabled

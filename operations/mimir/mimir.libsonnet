@@ -61,6 +61,13 @@
 (import 'ingest-storage-ingester-autoscaling.libsonnet') +
 (import 'ingest-storage-migration.libsonnet') +
 
+// Experimental compartments support. Must come after autoscaling, multi-zone and ingest-storage
+// because it overrides their components and builds on their helpers.
+(import 'compartments-common.libsonnet') +
+(import 'compartments-distributor.libsonnet') +
+(import 'compartments-ingester.libsonnet') +
+(import 'compartments-querier.libsonnet') +
+
 // Add memberlist support. Keep it at the end because it overrides all Mimir components.
 (import 'memberlist.libsonnet') +
 (import 'multi-zone-memberlist-bridge.libsonnet')
