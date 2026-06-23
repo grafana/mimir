@@ -140,7 +140,7 @@ func timestampAllowsCaching(ts *time.Time, timeRange types.QueryTimeRange, fresh
 		return true
 	}
 
-	return timestamp.FromTime(*ts) <= timeRange.EndT && freshnessThreshold.After(*ts)
+	return timestamp.FromTime(*ts) <= timeRange.EndT && (*ts).Before(freshnessThreshold)
 }
 
 func isStepAligned(timeRange types.QueryTimeRange) bool {
