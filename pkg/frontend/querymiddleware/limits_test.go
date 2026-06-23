@@ -982,8 +982,17 @@ func (m mockQueryLimitsProvider) GetEnableDelayedNameRemoval(ctx context.Context
 func (m mockQueryLimitsProvider) GetMaxOutOfOrderTimeWindow(ctx context.Context) (time.Duration, error) {
 	return m.m.outOfOrderTimeWindow, nil
 }
+
 func (m mockQueryLimitsProvider) GetMinResultsCacheTTL(ctx context.Context) (time.Duration, error) {
 	return m.m.resultsCacheTTL, nil
+}
+
+func (m mockQueryLimitsProvider) GetMinOutOfOrderResultsCacheTTL(ctx context.Context) (time.Duration, error) {
+	return m.m.resultsCacheOutOfOrderWindowTTL, nil
+}
+
+func (m mockQueryLimitsProvider) GetMaxCacheFreshness(_ context.Context) (time.Duration, error) {
+	return m.m.maxCacheFreshness, nil
 }
 
 type mockHandler struct {

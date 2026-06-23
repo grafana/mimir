@@ -22,7 +22,7 @@ type TimeRangeSplitOperator struct {
 	TimeRange                types.QueryTimeRange
 
 	ranges       []*splitRange // Sorted in descending time order.
-	outputSeries []splitOutputSeries
+	outputSeries []splitOrCacheOutputSeries
 }
 
 var _ types.InstantVectorOperator = &TimeRangeSplitOperator{}
@@ -32,8 +32,8 @@ type splitRange struct {
 	buffer   *operators.InstantVectorOperatorBuffer
 }
 
-type splitOutputSeries struct {
-	sourceSeriesIndices []int // One entry per range. -1 indicates that the series is not present in the range.
+type splitOrCacheOutputSeries struct {
+	sourceSeriesIndices []int // One entry per range or extent. -1 indicates that the series is not present in the range/extent.
 }
 
 // newTimeRangeSplitOperator creates a new TimeRangeSplitOperator.
@@ -156,7 +156,7 @@ func (s *TimeRangeSplitOperator) addNewOutputSeries(sourceRangeIndex int, source
 		}
 	}
 
-	s.outputSeries = append(s.outputSeries, splitOutputSeries{sourceSeriesIndices: sourceSeriesIndices})
+	s.outputSeries = append(s.outputSeries, splitOrCacheOutputSeries{sourceSeriesIndices: sourceSeriesIndices})
 	return nil
 }
 
@@ -224,17 +224,20 @@ func (s *TimeRangeSplitOperator) FinishedReading(ctx context.Context) error {
 }
 
 func (s *TimeRangeSplitOperator) Finalize(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
-	combinedStats, err := types.NewOperatorEvaluationStats(ctx, s.TimeRange, s.MemoryConsumptionTracker, 0)
-	if err != nil {
-		return nil, nil, err
-	}
-
+	var combinedStats *types.OperatorEvaluationStats // We can't create this immediately as we don't know the subset count yet.
 	var combinedAnnotations annotations.Annotations
 
 	for _, r := range s.ranges {
 		rangeStats, rangeAnnotations, err := r.operator.Finalize(ctx)
 		if err != nil {
 			return nil, nil, err
+		}
+
+		if combinedStats == nil {
+			combinedStats, err = types.NewOperatorEvaluationStats(ctx, s.TimeRange, s.MemoryConsumptionTracker, rangeStats.GetSubsetCount())
+			if err != nil {
+				return nil, nil, err
+			}
 		}
 
 		if err := combinedStats.AddSubRange(rangeStats); err != nil {
