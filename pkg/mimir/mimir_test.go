@@ -597,6 +597,16 @@ func TestConfigValidation(t *testing.T) {
 			expectAnyError: true,
 		},
 		{
+			name: "should pass if only the ingester is enabled and the Kafka topic uses an explicit read compartment instead of the placeholder",
+			getTestConfig: func() *Config {
+				cfg := validCompartmentsConfig()
+				cfg.Target = flagext.StringSliceCSV{Ingester}
+				cfg.IngestStorage.KafkaConfig.Topic = "mimir-ingest-rc-0"
+				return cfg
+			},
+			expectAnyError: false,
+		},
+		{
 			name: "should fail if the ingester is enabled with more than one write compartment but the Kafka address is not parameterised by write compartment",
 			getTestConfig: func() *Config {
 				cfg := validCompartmentsConfig()

@@ -299,11 +299,13 @@ func (c *Config) Validate(log log.Logger) error {
 		if c.IngestStorage.Migration.DistributorSendToIngestersEnabled {
 			return errors.New("compartments cannot be enabled together with ingest storage migration's distributor-send-to-ingesters")
 		}
-		// Only distributors and ingesters currently support a topic parameterised by read compartment
-		// when compartments are enabled.
-		if c.isDistributorEnabled() || c.isIngesterEnabled() {
+		// The distributor produces to every read compartment's topic, so its topic must stay parameterised
+		// by read compartment. An ingester consumes a single read compartment's topic, so it may use either
+		// the placeholder (resolved at runtime from -ingester.read-compartment-id) or an already-resolved
+		// explicit topic.
+		if c.isDistributorEnabled() {
 			if !strings.Contains(c.IngestStorage.KafkaConfig.Topic, compartments.ReadCompartmentIDPlaceholder) {
-				return fmt.Errorf("when compartments are enabled, -ingest-storage.kafka.topic must contain the %q placeholder for the distributor and ingester", compartments.ReadCompartmentIDPlaceholder)
+				return fmt.Errorf("when compartments are enabled, -ingest-storage.kafka.topic must contain the %q placeholder for the distributor", compartments.ReadCompartmentIDPlaceholder)
 			}
 		}
 		// The ingester consumes its partition from every write compartment's Kafka cluster, resolving each
