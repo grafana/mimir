@@ -74,14 +74,18 @@ local jsonpath = import 'github.com/jsonnet-libs/xtd/jsonpath.libsonnet';
         false
       );
 
+    // Integer id that follows the last occurrence of marker in name.
+    local idAfterMarker(name, marker) =
+      local indices = std.findSubstr(marker, name);
+      local start = indices[std.length(indices) - 1] + std.length(marker);
+      std.parseInt(std.substr(name, start, std.length(name) - start));
+
     // {kind: 'write'|'read', id: int} extracted from a resource name, or null.
     local extractCompartment(name) =
       if std.length(std.findSubstr('-wc-', name)) > 0 then
-        local parts = std.split(name, '-wc-');
-        { kind: 'write', id: std.parseInt(parts[std.length(parts) - 1]) }
+        { kind: 'write', id: idAfterMarker(name, '-wc-') }
       else if std.length(std.findSubstr('-rc-', name)) > 0 then
-        local parts = std.split(name, '-rc-');
-        { kind: 'read', id: std.parseInt(parts[std.length(parts) - 1]) }
+        { kind: 'read', id: idAfterMarker(name, '-rc-') }
       else
         null;
 
