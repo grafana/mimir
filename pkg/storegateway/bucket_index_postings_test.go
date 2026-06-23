@@ -241,47 +241,39 @@ func TestToRawPostingGroup_RegexpWithEmptyAlternative(t *testing.T) {
 		matcher          *labels.Matcher
 		expectIsSubtract bool
 		expectIsLazy     bool
-		description      string
 	}{
 		"MatchRegexp with empty alternative should use subtraction": {
 			matcher:          labels.MustNewMatcher(labels.MatchRegexp, "service", "|checkout|payments"),
 			expectIsSubtract: true,
 			expectIsLazy:     true,
-			description:      "matcher matches empty string, must use subtraction to include series without the label",
 		},
 		"MatchRegexp without empty alternative should use intersection": {
 			matcher:          labels.MustNewMatcher(labels.MatchRegexp, "service", "checkout|payments"),
 			expectIsSubtract: false,
 			expectIsLazy:     false,
-			description:      "matcher does not match empty string, intersection is correct",
 		},
 		"MatchRegexp with only empty value should use subtraction": {
 			matcher:          labels.MustNewMatcher(labels.MatchRegexp, "service", ""),
 			expectIsSubtract: true,
 			expectIsLazy:     true,
-			description:      "matcher matches empty string only, must use subtraction",
 		},
 		"MatchNotRegexp with SetMatches uses subtraction (existing fast path)": {
 			matcher:          labels.MustNewMatcher(labels.MatchNotRegexp, "service", "|checkout"),
 			expectIsSubtract: true,
 			expectIsLazy:     false,
-			description:      "MatchNotRegexp with SetMatches correctly uses subtraction via existing fast path",
 		},
 		"MatchRegexp with many alternatives including empty should use subtraction": {
 			matcher:          labels.MustNewMatcher(labels.MatchRegexp, "node", "|host-1|host-2|host-3"),
 			expectIsSubtract: true,
 			expectIsLazy:     true,
-			description:      "matcher with empty among many alternatives must still use subtraction",
 		},
 	}
 
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
 			group := toRawPostingGroup(tc.matcher)
-			assert.Equal(t, tc.expectIsSubtract, group.isSubtract,
-				"isSubtract mismatch for %s: %s", tc.matcher, tc.description)
-			assert.Equal(t, tc.expectIsLazy, group.isLazy,
-				"isLazy mismatch for %s: %s", tc.matcher, tc.description)
+			assert.Equal(t, tc.expectIsSubtract, group.isSubtract)
+			assert.Equal(t, tc.expectIsLazy, group.isLazy)
 		})
 	}
 }

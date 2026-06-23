@@ -1926,12 +1926,12 @@ eval range from 0 to 18m step 6m one_side * on(env) group_right() many_side
   {env="staging", pod="c"} 18   _  _  _
 
 # Test that 'and' with default matching correctly handles heterogeneous labels across
-# entity types. This exercises the exclude-hints optimisation path where
+# series with different label sets. This exercises the exclude-hints optimisation path where
 # buildMatchersForIgnoring generates matchers with empty-string alternatives for labels
-# that are absent from some LHS series (e.g. "service" is absent on Node entities).
+# that are absent from some LHS series (e.g. "service" is absent on some series).
 #
 # The optimisation must produce matchers like service=~"|checkout|payments" so that
-# the RHS can return series of ALL entity types, not just those that happen to have
+# the RHS can return all matching series, not just those that happen to have
 # the "service" label. A correct storage layer treats the empty alternative as matching
 # series where the label is absent entirely.
 #
@@ -1956,7 +1956,7 @@ eval instant at 0m metric and metric
 eval instant at 0m count(metric and metric)
   {} 4
 
-# With a label filter restricting to one entity type, the result is narrower.
+# With a label filter restricting to one entity_type value, the result is narrower.
 eval instant at 0m count(metric{entity_type="Service"} and metric{entity_type="Service"})
   {} 2
 

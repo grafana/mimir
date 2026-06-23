@@ -10,20 +10,13 @@ import (
 )
 
 func TestTestOperator_MatchesHandlesAbsentLabels(t *testing.T) {
-	// This test documents a known deficiency in TestOperator.matches:
-	// it does not evaluate matchers against absent labels. A matcher
-	// like foo=~"bar" (which does NOT match empty string) should reject
-	// a series without the "foo" label, but TestOperator.matches returns
-	// true because it only iterates over labels that exist on the series.
-	//
-	// This means unit tests using TestOperator are more permissive than
-	// real storage (TSDB / store-gateway) when matchers target labels
-	// that are absent from some series.
+	// Verify that TestOperator.matches evaluates matchers against absent labels
+	// the same way real TSDB does: an absent label has value "".
 
 	op := &TestOperator{}
 
 	// A series WITHOUT the "service" label.
-	seriesWithoutService := labels.FromStrings("entity_type", "Node", "env", "prod")
+	seriesWithoutService := labels.FromStrings("env", "prod", "node", "host-1")
 
 	// Matcher that does NOT match empty string: service=~"checkout|payments"
 	matcherNoEmpty, err := labels.NewMatcher(labels.MatchRegexp, "service", "checkout|payments")
@@ -33,32 +26,25 @@ func TestTestOperator_MatchesHandlesAbsentLabels(t *testing.T) {
 	matcherWithEmpty, err := labels.NewMatcher(labels.MatchRegexp, "service", "|checkout|payments")
 	require.NoError(t, err)
 
-	// BUG: TestOperator.matches returns true for BOTH matchers when the label is absent.
-	// The correct behavior (matching real TSDB) would be:
-	//   matcherNoEmpty  -> false (absent label = "", which doesn't match "checkout|payments")
-	//   matcherWithEmpty -> true  (absent label = "", which matches "|checkout|payments")
-	//
-	// But TestOperator.matches returns true for both because it never evaluates
-	// the matcher when the label is absent from the series.
+	// Absent label = "". "checkout|payments" does not match "" → false.
 	result := op.matches(seriesWithoutService, []*labels.Matcher{matcherNoEmpty})
-	// This documents the current (incorrect) behavior:
-	require.True(t, result, "TestOperator.matches incorrectly returns true for absent label with non-empty-matching regex - this is a known bug")
+	require.False(t, result, "matcher without empty alternative should reject series with absent label")
 
-	// This is the correct behavior for both TestOperator AND real storage:
+	// Absent label = "". "|checkout|payments" matches "" → true.
 	result = op.matches(seriesWithoutService, []*labels.Matcher{matcherWithEmpty})
-	require.True(t, result, "matcher with empty alternative should match absent label")
+	require.True(t, result, "matcher with empty alternative should accept series with absent label")
 
-	// A series WITH the "service" label should work correctly in all cases:
-	seriesWithService := labels.FromStrings("entity_type", "Service", "env", "prod", "service", "checkout")
+	// A series WITH the "service" label — matching value.
+	seriesWithService := labels.FromStrings("env", "prod", "service", "checkout")
 
 	result = op.matches(seriesWithService, []*labels.Matcher{matcherNoEmpty})
-	require.True(t, result, "matcher without empty should match present label with matching value")
+	require.True(t, result, "matcher should accept present label with matching value")
 
 	result = op.matches(seriesWithService, []*labels.Matcher{matcherWithEmpty})
-	require.True(t, result, "matcher with empty should match present label with matching value")
+	require.True(t, result, "matcher with empty should accept present label with matching value")
 
-	// Non-matching present label should be rejected by both:
-	seriesWithOtherService := labels.FromStrings("entity_type", "Service", "env", "prod", "service", "unknown")
+	// A series WITH the "service" label — non-matching value.
+	seriesWithOtherService := labels.FromStrings("env", "prod", "service", "unknown")
 
 	result = op.matches(seriesWithOtherService, []*labels.Matcher{matcherNoEmpty})
 	require.False(t, result, "matcher should reject present label with non-matching value")

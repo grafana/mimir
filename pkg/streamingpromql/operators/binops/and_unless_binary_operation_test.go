@@ -254,7 +254,7 @@ func TestAndUnlessBinaryOperation_PassesExcludeHintMatchersToRHS(t *testing.T) {
 				labels.FromStrings("env", "prod", "foo", "a", "bar", "b", "region", "us-east"),
 			},
 		},
-		"and op with exclude hints and heterogeneous labels across entity types: RHS receives matchers with empty alternatives": {
+		"and op with exclude hints and heterogeneous labels across series: RHS receives matchers with empty alternatives": {
 			isUnless:       false,
 			vectorMatching: parser.VectorMatching{On: false, MatchingLabels: []string{}},
 			hints:          &Hints{Exclude: []string{}},

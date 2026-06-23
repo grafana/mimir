@@ -159,11 +159,11 @@ func TestBuildMatchers(t *testing.T) {
 		require.Nil(t, res)
 	})
 
-	t.Run("without matching with multi-entity heterogeneous labels: each entity-specific label includes empty alternative", func(t *testing.T) {
-		// Simulates asserts:request:rate5m with Service and Node entity types.
-		// "service" is present only on Service entities; "node" only on Node entities.
+	t.Run("without matching with heterogeneous labels across series: each series-specific label includes empty alternative", func(t *testing.T) {
+		// Some labels are present on only a subset of series: "service" appears on
+		// some series but not others, and "node" appears on a different subset.
 		// The optimizer must include "" in both matchers so the RHS can match
-		// series of either entity type.
+		// series regardless of which labels they have.
 		series := []types.SeriesMetadata{
 			{Labels: labels.FromStrings("entity_type", "Service", "env", "prod", "service", "checkout")},
 			{Labels: labels.FromStrings("entity_type", "Service", "env", "prod", "service", "payments")},
