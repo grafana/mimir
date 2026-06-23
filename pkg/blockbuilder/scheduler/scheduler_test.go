@@ -147,6 +147,18 @@ func TestService(t *testing.T) {
 	require.Equal(t, spec.EndOffset, o.At)
 }
 
+func TestServiceStopsCleanlyDuringStartupObservation(t *testing.T) {
+	sched, _ := mustScheduler(t, 4)
+	sched.cfg.StartupObserveTime = time.Hour
+	sched.cfg.LookbackOnNoCommit = time.Minute
+	sched.cfg.MaxScanAge = time.Hour
+
+	ctx := context.Background()
+	require.NoError(t, services.StartAndAwaitRunning(ctx, sched))
+	require.NoError(t, services.StopAndAwaitTerminated(ctx, sched))
+	require.NoError(t, sched.FailureCase())
+}
+
 func TestStartup(t *testing.T) {
 	sched, _ := mustScheduler(t, 4)
 	// (a new scheduler starts in observation mode.)

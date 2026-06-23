@@ -64,7 +64,29 @@ func (c consumerFactoryFunc) consumer() RecordConsumer {
 	return c()
 }
 
-type PartitionReader struct {
+// PartitionReader is the interface the ingester uses to consume its partition from the ingest storage.
+// It is implemented by SingleClusterPartitionReader, which consumes the partition from a single Kafka
+// cluster, and by MultiClusterPartitionReader, which consumes the same partition from multiple Kafka
+// clusters.
+type PartitionReader interface {
+	services.Service
+
+	// LastSeenOffsets returns the highest record offset seen by the reader for each Kafka cluster.
+	LastSeenOffsets() PartitionOffsets
+
+	// EnforceReadMaxDelay returns an error if the reader is lagging behind more than maxDelay.
+	EnforceReadMaxDelay(maxDelay time.Duration) error
+
+	// WaitReadConsistencyUntilOffsets waits until the per-Kafka-cluster offsets have been consumed. Each
+	// Kafka cluster's offset is honored independently against that cluster.
+	WaitReadConsistencyUntilOffsets(ctx context.Context, offsets PartitionOffsets) error
+
+	// WaitReadConsistencyUntilLastProducedOffset waits until the reader has caught up with the
+	// last-produced offset of every Kafka cluster.
+	WaitReadConsistencyUntilLastProducedOffset(ctx context.Context) error
+}
+
+type SingleClusterPartitionReader struct {
 	services.Service
 	dependencies *services.Manager
 
@@ -73,8 +95,8 @@ type PartitionReader struct {
 	consumerGroup                         string
 	concurrentFetchersMinBytesMaxWaitTime time.Duration
 
-	// client and fetcher are both start after PartitionReader creation. Fetcher could also be
-	// replaced during PartitionReader lifetime. To avoid concurrency issues with functions
+	// client and fetcher are both start after SingleClusterPartitionReader creation. Fetcher could also be
+	// replaced during SingleClusterPartitionReader lifetime. To avoid concurrency issues with functions
 	// getting their pointers (e.g. BufferedRecords()) we use atomic to protect.
 	client  atomic.Pointer[kgo.Client]
 	fetcher atomic.Pointer[fetcher]
@@ -88,7 +110,7 @@ type PartitionReader struct {
 	// consumedOffsetWatcher is used to wait until a given offset has been consumed.
 	// This gets initialised with -1 which means nothing has been consumed from the partition yet.
 	consumedOffsetWatcher *PartitionOffsetWatcher
-	offsetReader          *partitionOffsetReader
+	offsetReader          *singleClusterPartitionOffsetReader
 	offsetFile            *offsetFile
 
 	// The highest record timestamp consumed so far, or zero if no record was consumed yet or we've
@@ -101,19 +123,19 @@ type PartitionReader struct {
 	lastSeenOffset atomic.Int64
 }
 
-func NewPartitionReaderForPusher(kafkaCfg KafkaConfig, partitionID int32, instanceID string, offsetFilePath string, pusher Pusher, logger log.Logger, reg prometheus.Registerer) (*PartitionReader, error) {
+func NewSingleClusterPartitionReader(kafkaCfg KafkaConfig, partitionID int32, instanceID string, offsetFilePath string, pusher Pusher, logger log.Logger, reg prometheus.Registerer) (*SingleClusterPartitionReader, error) {
 	metrics := NewPusherConsumerMetrics(reg)
 	factory := consumerFactoryFunc(func() RecordConsumer {
 		return NewPusherConsumer(pusher, kafkaCfg, metrics, logger)
 	})
-	return newPartitionReader(kafkaCfg, partitionID, instanceID, offsetFilePath, factory, pusher, logger, reg)
+	return newSingleClusterPartitionReader(kafkaCfg, partitionID, instanceID, offsetFilePath, factory, pusher, logger, reg)
 }
 
-func newPartitionReader(kafkaCfg KafkaConfig, partitionID int32, instanceID string, offsetFilePath string, consumer consumerFactory, notifier PreCommitNotifier, logger log.Logger, reg prometheus.Registerer) (*PartitionReader, error) {
+func newSingleClusterPartitionReader(kafkaCfg KafkaConfig, partitionID int32, instanceID string, offsetFilePath string, consumer consumerFactory, notifier PreCommitNotifier, logger log.Logger, reg prometheus.Registerer) (*SingleClusterPartitionReader, error) {
 	if offsetFilePath == "" {
 		return nil, fmt.Errorf("offset file path must be specified")
 	}
-	r := &PartitionReader{
+	r := &SingleClusterPartitionReader{
 		kafkaCfg:                              kafkaCfg,
 		partitionID:                           partitionID,
 		newConsumer:                           consumer,
@@ -140,16 +162,16 @@ func newPartitionReader(kafkaCfg KafkaConfig, partitionID int32, instanceID stri
 }
 
 // Start implements fetcher.
-func (r *PartitionReader) Start(context.Context) {
+func (r *SingleClusterPartitionReader) Start(context.Context) {
 	// Given the partition reader has no concurrency it doesn't support starting anything.
 }
 
 // Stop implements fetcher.
-func (r *PartitionReader) Stop() {
+func (r *SingleClusterPartitionReader) Stop() {
 	// Given the partition reader has no concurrency it doesn't support stopping anything.
 }
 
-func (r *PartitionReader) BufferedRecords() int64 {
+func (r *SingleClusterPartitionReader) BufferedRecords() int64 {
 	var fcount, ccount int64
 
 	if f := r.getFetcher(); f != nil && f != r {
@@ -163,7 +185,7 @@ func (r *PartitionReader) BufferedRecords() int64 {
 	return fcount + ccount
 }
 
-func (r *PartitionReader) BufferedBytes() int64 {
+func (r *SingleClusterPartitionReader) BufferedBytes() int64 {
 	var fcount, ccount int64
 
 	if f := r.getFetcher(); f != nil && f != r {
@@ -177,7 +199,7 @@ func (r *PartitionReader) BufferedBytes() int64 {
 	return fcount + ccount
 }
 
-func (r *PartitionReader) EstimatedBytesPerRecord() int64 {
+func (r *SingleClusterPartitionReader) EstimatedBytesPerRecord() int64 {
 	if f := r.getFetcher(); f != nil && f != r {
 		return f.EstimatedBytesPerRecord()
 	}
@@ -185,17 +207,17 @@ func (r *PartitionReader) EstimatedBytesPerRecord() int64 {
 	return 0
 }
 
-func (r *PartitionReader) LastSeenOffset() int64 {
-	return r.lastSeenOffset.Load()
+func (r *SingleClusterPartitionReader) LastSeenOffsets() PartitionOffsets {
+	return NewSingleClusterPartitionOffsets(r.lastSeenOffset.Load())
 }
 
-func (r *PartitionReader) LastCommittedOffset() int64 {
+func (r *SingleClusterPartitionReader) LastCommittedOffset() int64 {
 	return r.committer.LastCommittedOffset()
 }
 
-func (r *PartitionReader) start(ctx context.Context) (returnErr error) {
+func (r *SingleClusterPartitionReader) start(ctx context.Context) (returnErr error) {
 	if r.kafkaCfg.AutoCreateTopicEnabled {
-		if err := CreateTopic(r.kafkaCfg, r.logger); err != nil {
+		if err := CreateTopics(r.kafkaCfg, r.logger, r.kafkaCfg.Topic); err != nil {
 			return err
 		}
 	}
@@ -228,7 +250,7 @@ func (r *PartitionReader) start(ctx context.Context) (returnErr error) {
 
 	r.committer = newPartitionCommitter(r.kafkaCfg, kadm.NewClient(r.client.Load()), r.partitionID, r.consumerGroup, r.notifier, r.offsetFile, r.logger, r.reg)
 
-	offsetsClient := newPartitionOffsetClient(r.client.Load(), r.kafkaCfg.Topic, r.reg, r.logger)
+	offsetsClient := newPartitionOffsetClient(r.client.Load(), r.reg, r.logger)
 
 	// It's ok to have the start offset slightly outdated.
 	// We only need this offset accurate if we fall behind or if we start and the log gets truncated from beneath us.
@@ -236,18 +258,18 @@ func (r *PartitionReader) start(ctx context.Context) (returnErr error) {
 	// In the more common case where this offset is used when we're fetching from after the end, there we don't need an accurate value.
 	const startOffsetReaderRefreshDuration = 10 * time.Second
 	getPartitionStart := func(ctx context.Context) (int64, error) {
-		return offsetsClient.FetchPartitionStartOffset(ctx, r.partitionID)
+		return offsetsClient.FetchPartitionStartOffset(ctx, r.kafkaCfg.Topic, r.partitionID)
 	}
 	startOffsetReader := NewGenericOffsetReader(getPartitionStart, startOffsetReaderRefreshDuration, r.logger)
 
-	r.offsetReader = newPartitionOffsetReaderWithOffsetClient(offsetsClient, r.partitionID, r.kafkaCfg.LastProducedOffsetPollInterval, r.logger)
+	r.offsetReader = newSingleClusterPartitionOffsetReaderWithOffsetClient(offsetsClient, r.kafkaCfg.Topic, r.partitionID, r.kafkaCfg.LastProducedOffsetPollInterval, r.logger)
 
 	r.dependencies, err = services.NewManager(r.committer, r.offsetReader, r.consumedOffsetWatcher, startOffsetReader, r.metrics)
 	if err != nil {
 		return errors.Wrap(err, "creating service manager")
 	}
-	// Use context.Background() because we want to stop all dependencies when the PartitionReader stops
-	// instead of stopping them when ctx is cancelled and while the PartitionReader is still running.
+	// Use context.Background() because we want to stop all dependencies when the SingleClusterPartitionReader stops
+	// instead of stopping them when ctx is cancelled and while the SingleClusterPartitionReader is still running.
 	err = services.StartManagerAndAwaitHealthy(context.Background(), r.dependencies)
 	if err != nil {
 		return errors.Wrap(err, "starting service manager")
@@ -302,13 +324,13 @@ func (r *PartitionReader) start(ctx context.Context) (returnErr error) {
 	return nil
 }
 
-func (r *PartitionReader) stop(error) error {
+func (r *SingleClusterPartitionReader) stop(error) error {
 	level.Info(r.logger).Log("msg", "stopping partition reader")
 
 	return r.stopDependencies()
 }
 
-func (r *PartitionReader) stopDependencies() error {
+func (r *SingleClusterPartitionReader) stopDependencies() error {
 	if r.dependencies != nil {
 		if err := services.StopManagerAndAwaitStopped(context.Background(), r.dependencies); err != nil {
 			return errors.Wrap(err, "stopping service manager")
@@ -326,7 +348,7 @@ func (r *PartitionReader) stopDependencies() error {
 	return nil
 }
 
-func (r *PartitionReader) run(ctx context.Context) error {
+func (r *SingleClusterPartitionReader) run(ctx context.Context) error {
 	for ctx.Err() == nil {
 		err := r.processNextFetches(ctx, r.metrics.receiveDelayWhenRunning, r.metrics.receiveAndConsumeDelayWhenRunning)
 		if err != nil && !errors.Is(err, context.Canceled) {
@@ -338,7 +360,7 @@ func (r *PartitionReader) run(ctx context.Context) error {
 	return nil
 }
 
-func (r *PartitionReader) processNextFetches(ctx context.Context, receiveDelayObserver, receiveAndConsumeDelayObserver prometheus.Observer) error {
+func (r *SingleClusterPartitionReader) processNextFetches(ctx context.Context, receiveDelayObserver, receiveAndConsumeDelayObserver prometheus.Observer) error {
 	fetches, fetchCtx := r.getFetcher().PollFetches(ctx)
 	// Propagate the fetching span to consuming the records.
 	ctx = trace.ContextWithSpan(ctx, trace.SpanFromContext(fetchCtx))
@@ -374,7 +396,7 @@ func lastOffset(fetches kgo.Fetches) int64 {
 // processNextFetchesUntilTargetOrMaxLagHonored process records from Kafka until at least the maxLag is honored.
 // This function does a best-effort to get lag below targetLag, but it's not guaranteed that it will be
 // reached once this function successfully returns (only maxLag is guaranteed).
-func (r *PartitionReader) processNextFetchesUntilTargetOrMaxLagHonored(ctx context.Context, targetLag, maxLag time.Duration) error {
+func (r *SingleClusterPartitionReader) processNextFetchesUntilTargetOrMaxLagHonored(ctx context.Context, targetLag, maxLag time.Duration) error {
 	logger := log.With(r.logger, "target_lag", targetLag, "max_lag", maxLag)
 	level.Info(logger).Log("msg", "partition reader is starting to consume partition until target and max consumer lag is honored")
 
@@ -431,7 +453,7 @@ func (r *PartitionReader) processNextFetchesUntilTargetOrMaxLagHonored(ctx conte
 	return nil
 }
 
-func (r *PartitionReader) processNextFetchesUntilLagHonored(ctx context.Context, maxLag time.Duration, logger log.Logger) (currLag time.Duration, _ error) {
+func (r *SingleClusterPartitionReader) processNextFetchesUntilLagHonored(ctx context.Context, maxLag time.Duration, logger log.Logger) (currLag time.Duration, _ error) {
 	boff := backoff.New(ctx, backoff.Config{
 		MinBackoff: 100 * time.Millisecond,
 		MaxBackoff: time.Second,
@@ -526,7 +548,7 @@ func loggerWithCurrentLagIfSet(logger log.Logger, currLag time.Duration) log.Log
 	return log.With(logger, "current_lag", currLag)
 }
 
-func (r *PartitionReader) logFetchErrors(fetches kgo.Fetches) {
+func (r *SingleClusterPartitionReader) logFetchErrors(fetches kgo.Fetches) {
 	mErr := multierror.New()
 	fetches.EachError(func(topic string, partition int32, err error) {
 		if errors.Is(err, context.Canceled) {
@@ -544,7 +566,7 @@ func (r *PartitionReader) logFetchErrors(fetches kgo.Fetches) {
 	level.Error(r.logger).Log("msg", "encountered error while fetching", "err", mErr.Err())
 }
 
-func (r *PartitionReader) enqueueCommit(fetches kgo.Fetches) {
+func (r *SingleClusterPartitionReader) enqueueCommit(fetches kgo.Fetches) {
 	if fetches.NumRecords() == 0 {
 		return
 	}
@@ -559,8 +581,8 @@ func (r *PartitionReader) enqueueCommit(fetches kgo.Fetches) {
 	r.committer.enqueueOffset(lastOffset)
 }
 
-func (r *PartitionReader) consumeFetches(ctx context.Context, fetches kgo.Fetches) error {
-	ctx, span := tracer.Start(ctx, "PartitionReader.consumeFetches")
+func (r *SingleClusterPartitionReader) consumeFetches(ctx context.Context, fetches kgo.Fetches) error {
+	ctx, span := tracer.Start(ctx, "SingleClusterPartitionReader.consumeFetches")
 	defer span.End()
 
 	if fetches.NumRecords() == 0 {
@@ -590,7 +612,7 @@ func (r *PartitionReader) consumeFetches(ctx context.Context, fetches kgo.Fetche
 	for boff.Ongoing() {
 		// We instantiate the consumer on each iteration because it is stateful, and we can't reuse it after closing.
 		consumer := r.newConsumer.consumer()
-		// If the PartitionReader is stopping and the ctx was cancelled, we don't want to interrupt the in-flight
+		// If the SingleClusterPartitionReader is stopping and the ctx was cancelled, we don't want to interrupt the in-flight
 		// processing midway. Instead, we let it finish, assuming it'll succeed.
 		// If the processing fails while stopping, we log the error and let the backoff stop and bail out.
 		// There is an edge-case when the processing gets stuck and doesn't let the stopping process. In such a case,
@@ -627,7 +649,7 @@ func recordsAll(fetches kgo.Fetches) iter.Seq[*kgo.Record] {
 	}
 }
 
-func (r *PartitionReader) notifyLastConsumedOffset(fetches kgo.Fetches) {
+func (r *SingleClusterPartitionReader) notifyLastConsumedOffset(fetches kgo.Fetches) {
 	fetches.EachPartition(func(partition kgo.FetchTopicPartition) {
 		// We expect all records to belong to the partition consumed by this reader,
 		// but we double check it here.
@@ -647,7 +669,7 @@ func (r *PartitionReader) notifyLastConsumedOffset(fetches kgo.Fetches) {
 	})
 }
 
-func (r *PartitionReader) recordFetchesMetrics(fetches kgo.Fetches, receiveDelayObserver prometheus.Observer) {
+func (r *SingleClusterPartitionReader) recordFetchesMetrics(fetches kgo.Fetches, receiveDelayObserver prometheus.Observer) {
 	var (
 		now        = time.Now()
 		numRecords = 0
@@ -662,7 +684,7 @@ func (r *PartitionReader) recordFetchesMetrics(fetches kgo.Fetches, receiveDelay
 	r.metrics.recordsPerFetch.Observe(float64(numRecords))
 }
 
-func (r *PartitionReader) updateHighestConsumedTimestampBeforeConsumption(fetches kgo.Fetches) {
+func (r *SingleClusterPartitionReader) updateHighestConsumedTimestampBeforeConsumption(fetches kgo.Fetches) {
 	// The only case we want to update the highest consumed timestamp before actually consuming the records
 	// is in the case we don't have any timestamp stored yet. This is used to detect a stuck consumption
 	// after a previous consumption up until the partition end.
@@ -689,7 +711,7 @@ func (r *PartitionReader) updateHighestConsumedTimestampBeforeConsumption(fetche
 	}
 }
 
-func (r *PartitionReader) updateHighestConsumedTimestampAfterConsumption(fetches kgo.Fetches, receiveAndConsumeDelayObserver prometheus.Observer) {
+func (r *SingleClusterPartitionReader) updateHighestConsumedTimestampAfterConsumption(fetches kgo.Fetches, receiveAndConsumeDelayObserver prometheus.Observer) {
 	var (
 		now              = time.Now()
 		highestTimestamp = time.Time{}
@@ -727,7 +749,7 @@ func (r *PartitionReader) updateHighestConsumedTimestampAfterConsumption(fetches
 	})
 }
 
-func (r *PartitionReader) getStartOffset(ctx context.Context) (startOffset, lastConsumedOffset int64, err error) {
+func (r *SingleClusterPartitionReader) getStartOffset(ctx context.Context) (startOffset, lastConsumedOffset int64, err error) {
 	switch r.kafkaCfg.ConsumeFromPositionAtStartup {
 	case consumeFromStart:
 		startOffset = kafkaOffsetStart
@@ -836,9 +858,9 @@ func (r *PartitionReader) getStartOffset(ctx context.Context) (startOffset, last
 	return 0, -1, err
 }
 
-// fetchLastCommittedOffset returns the last consumed offset which has been committed by the PartitionReader
+// fetchLastCommittedOffset returns the last consumed offset which has been committed by the SingleClusterPartitionReader
 // to the consumer group.
-func (r *PartitionReader) fetchLastCommittedOffset(ctx context.Context, cl *kgo.Client) (offset int64, exists bool, _ error) {
+func (r *SingleClusterPartitionReader) fetchLastCommittedOffset(ctx context.Context, cl *kgo.Client) (offset int64, exists bool, _ error) {
 	offsets, err := kadm.NewClient(cl).FetchOffsets(ctx, r.consumerGroup)
 	if errors.Is(err, kerr.GroupIDNotFound) || errors.Is(err, kerr.UnknownTopicOrPartition) {
 		return 0, false, nil
@@ -860,7 +882,7 @@ func (r *PartitionReader) fetchLastCommittedOffset(ctx context.Context, cl *kgo.
 
 // fetchPartitionStartOffset returns the earliest available offset for the partition (partition start).
 // Used to validate that a file-stored offset still exists when the ingester was lagging or retention compacted the log.
-func (r *PartitionReader) fetchPartitionStartOffset(ctx context.Context, cl *kgo.Client) (offset int64, exists bool, _ error) {
+func (r *SingleClusterPartitionReader) fetchPartitionStartOffset(ctx context.Context, cl *kgo.Client) (offset int64, exists bool, _ error) {
 	offsets, err := kadm.NewClient(cl).ListStartOffsets(ctx, r.kafkaCfg.Topic)
 	if errors.Is(err, kerr.UnknownTopicOrPartition) {
 		return 0, false, nil
@@ -879,7 +901,7 @@ func (r *PartitionReader) fetchPartitionStartOffset(ctx context.Context, cl *kgo
 }
 
 // fetchFirstOffsetAfterTime returns the first offset at or after the requested timestamp.
-func (r *PartitionReader) fetchFirstOffsetAfterTime(ctx context.Context, cl *kgo.Client, ts time.Time) (offset int64, exists bool, _ error) {
+func (r *SingleClusterPartitionReader) fetchFirstOffsetAfterTime(ctx context.Context, cl *kgo.Client, ts time.Time) (offset int64, exists bool, _ error) {
 	offsets, err := kadm.NewClient(cl).ListOffsetsAfterMilli(ctx, ts.UnixMilli(), r.kafkaCfg.Topic)
 	if errors.Is(err, kerr.UnknownTopicOrPartition) {
 		return 0, false, nil
@@ -900,20 +922,29 @@ func (r *PartitionReader) fetchFirstOffsetAfterTime(ctx context.Context, cl *kgo
 }
 
 // WaitReadConsistencyUntilLastProducedOffset waits until all data produced up until now has been consumed by the reader.
-func (r *PartitionReader) WaitReadConsistencyUntilLastProducedOffset(ctx context.Context) (returnErr error) {
+func (r *SingleClusterPartitionReader) WaitReadConsistencyUntilLastProducedOffset(ctx context.Context) (returnErr error) {
 	return r.waitReadConsistency(ctx, false, func(ctx context.Context) (int64, error) {
 		return r.offsetReader.WaitNextFetchLastProducedOffset(ctx)
 	})
 }
 
-// WaitReadConsistencyUntilOffset waits until all data up until input offset has been consumed by the reader.
-func (r *PartitionReader) WaitReadConsistencyUntilOffset(ctx context.Context, offset int64) (returnErr error) {
+// WaitReadConsistencyUntilOffsets waits until all data up until the offset of Kafka cluster 0 has been
+// consumed by the reader. A single-cluster reader only ever deals with Kafka cluster 0; the multi-cluster
+// reader remaps each per-cluster offset onto the corresponding cluster's reader.
+func (r *SingleClusterPartitionReader) WaitReadConsistencyUntilOffsets(ctx context.Context, offsets PartitionOffsets) (returnErr error) {
+	// A single-cluster reader consumes from exactly one Kafka cluster, so being given offsets for any
+	// other number of clusters is an invariant violation by the caller.
+	if offsets.NumKafkaClusters() != 1 {
+		return fmt.Errorf("a single-cluster partition reader was given read consistency offsets for %d Kafka clusters", offsets.NumKafkaClusters())
+	}
+
+	offset := offsets.ForKafkaCluster(0)
 	return r.waitReadConsistency(ctx, true, func(_ context.Context) (int64, error) {
 		return offset, nil
 	})
 }
 
-func (r *PartitionReader) waitReadConsistency(ctx context.Context, withOffset bool, getOffset func(context.Context) (int64, error)) error {
+func (r *SingleClusterPartitionReader) waitReadConsistency(ctx context.Context, withOffset bool, getOffset func(context.Context) (int64, error)) error {
 	_, err := ObserveStrongReadConsistency(r.metrics.strongConsistencyMetrics, r.kafkaCfg.Topic, withOffset, func() (struct{}, error) {
 		spanLog := spanlogger.FromContext(ctx, r.logger)
 		spanLog.DebugLog("msg", "waiting for read consistency")
@@ -945,9 +976,9 @@ func (r *PartitionReader) waitReadConsistency(ctx context.Context, withOffset bo
 	return err
 }
 
-// EnforceReadMaxDelay returns an error if the PartitionReader is lagging behind more than the
+// EnforceReadMaxDelay returns an error if the SingleClusterPartitionReader is lagging behind more than the
 // input maxDelay.
-func (r *PartitionReader) EnforceReadMaxDelay(maxDelay time.Duration) error {
+func (r *SingleClusterPartitionReader) EnforceReadMaxDelay(maxDelay time.Duration) error {
 	if maxDelay <= 0 {
 		return nil
 	}
@@ -966,11 +997,11 @@ func (r *PartitionReader) EnforceReadMaxDelay(maxDelay time.Duration) error {
 	return fmt.Errorf("partition reader is lagging behind more than the allowed max delay")
 }
 
-func (r *PartitionReader) setFetcher(f fetcher) {
+func (r *SingleClusterPartitionReader) setFetcher(f fetcher) {
 	r.fetcher.Store(&f)
 }
 
-func (r *PartitionReader) getFetcher() fetcher {
+func (r *SingleClusterPartitionReader) getFetcher() fetcher {
 	pointer := r.fetcher.Load()
 	if pointer == nil {
 		return nil
@@ -979,7 +1010,7 @@ func (r *PartitionReader) getFetcher() fetcher {
 	return *pointer
 }
 
-func (r *PartitionReader) PollFetches(ctx context.Context) (result kgo.Fetches, fetchContext context.Context) {
+func (r *SingleClusterPartitionReader) PollFetches(ctx context.Context) (result kgo.Fetches, fetchContext context.Context) {
 	defer func(start time.Time) {
 		r.metrics.fetchWaitDuration.Observe(time.Since(start).Seconds())
 	}(time.Now())

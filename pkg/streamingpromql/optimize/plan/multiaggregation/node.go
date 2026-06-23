@@ -60,10 +60,6 @@ func (g *MultiAggregationGroup) Describe() string {
 	return ""
 }
 
-func (g *MultiAggregationGroup) ChildrenLabels() []string {
-	return []string{""}
-}
-
 func (g *MultiAggregationGroup) ChildrenTimeRange(parentTimeRange types.QueryTimeRange) types.QueryTimeRange {
 	return parentTimeRange
 }
@@ -87,7 +83,8 @@ func (g *MultiAggregationGroup) MinimumRequiredPlanVersion(types.QueryTimeRange)
 //node:generate
 type MultiAggregationInstance struct {
 	*MultiAggregationInstanceDetails
-	Group *MultiAggregationGroup `node:"child"`
+	Group *MultiAggregationGroup `node:"child,label=expression"`
+	Param planning.Node          `node:"child,nilable,label=parameter"` // nil for non-parameterized aggregations (eg. sum), set for quantile.
 }
 
 func (a *MultiAggregationInstance) Details() proto.Message {
@@ -133,10 +130,6 @@ func (a *MultiAggregationInstance) Describe() string {
 	return builder.String()
 }
 
-func (a *MultiAggregationInstance) ChildrenLabels() []string {
-	return []string{""}
-}
-
 func (a *MultiAggregationInstance) ChildrenTimeRange(parentTimeRange types.QueryTimeRange) types.QueryTimeRange {
 	return parentTimeRange
 }
@@ -146,7 +139,21 @@ func (a *MultiAggregationInstance) ResultType() (parser.ValueType, error) {
 }
 
 func (a *MultiAggregationInstance) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) (planning.QueriedTimeRange, error) {
-	return a.Group.QueriedTimeRange(queryTimeRange, lookbackDelta)
+	groupRange, err := a.Group.QueriedTimeRange(queryTimeRange, lookbackDelta)
+	if err != nil {
+		return planning.NoDataQueried(), err
+	}
+
+	if a.Param == nil {
+		return groupRange, nil
+	}
+
+	paramRange, err := a.Param.QueriedTimeRange(queryTimeRange, lookbackDelta)
+	if err != nil {
+		return planning.NoDataQueried(), err
+	}
+
+	return groupRange.Union(paramRange), nil
 }
 
 func (a *MultiAggregationInstance) ExpressionPosition() (posrange.PositionRange, error) {
@@ -154,6 +161,10 @@ func (a *MultiAggregationInstance) ExpressionPosition() (posrange.PositionRange,
 }
 
 func (a *MultiAggregationInstance) MinimumRequiredPlanVersion(types.QueryTimeRange) (planning.QueryPlanVersion, error) {
+	if a.Param != nil {
+		return planning.QueryPlanV15, nil
+	}
+
 	if len(a.Filters) > 0 {
 		return planning.QueryPlanV8, nil
 	}
@@ -201,6 +212,14 @@ func MaterializeMultiAggregationInstance(node *MultiAggregationInstance, materia
 		return nil, err
 	}
 
+	var param types.ScalarOperator
+	if node.Param != nil {
+		param, err = materializer.ConvertNodeToScalarOperator(node.Param, timeRange)
+		if err != nil {
+			return nil, fmt.Errorf("could not create parameter operator for MultiAggregationInstance %s: %w", node.Aggregation.Op.String(), err)
+		}
+	}
+
 	err = instance.Configure(
 		op,
 		node.Aggregation.Grouping,
@@ -210,6 +229,7 @@ func MaterializeMultiAggregationInstance(node *MultiAggregationInstance, materia
 		params.MemoryConsumptionTracker,
 		timeRange,
 		node.Aggregation.ExpressionPosition.ToPrometheusType(),
+		param,
 	)
 
 	if err != nil {

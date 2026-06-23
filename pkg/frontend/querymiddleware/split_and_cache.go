@@ -217,10 +217,10 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req MetricsQueryReques
 			// Count the cached response against the queries memory consumption tracker
 			for _, resp := range responses {
 				bytes := uint64(proto.Size(resp))
-				if err := memoryTracker.IncreaseMemoryConsumption(bytes, limiter.SplitMiddlewareCachedResponses); err != nil {
+				if err := memoryTracker.IncreaseMemoryConsumption(bytes, limiter.CachedResponses); err != nil {
 					return nil, err
 				}
-				defer memoryTracker.DecreaseMemoryConsumption(bytes, limiter.SplitMiddlewareCachedResponses)
+				defer memoryTracker.DecreaseMemoryConsumption(bytes, limiter.CachedResponses)
 			}
 
 			if len(requests) == 0 {

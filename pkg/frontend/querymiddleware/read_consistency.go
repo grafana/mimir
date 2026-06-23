@@ -4,13 +4,11 @@ package querymiddleware
 
 import (
 	"net/http"
-	"sync"
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/tenant"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
-	"golang.org/x/sync/errgroup"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	querierapi "github.com/grafana/mimir/pkg/querier/api"
@@ -21,21 +19,20 @@ import (
 type readConsistencyRoundTripper struct {
 	next http.RoundTripper
 
-	// offsetsReaders is a map of offsets readers keyed by the request header the offsets get attached to.
-	offsetsReaders map[string]*ingest.TopicOffsetsReader
+	offsetsReader *ingest.SingleClusterTopicOffsetsReader
 
 	limits  Limits
 	logger  log.Logger
 	metrics *ingest.StrongReadConsistencyMetrics
 }
 
-func newReadConsistencyRoundTripper(next http.RoundTripper, offsetsReaders map[string]*ingest.TopicOffsetsReader, limits Limits, logger log.Logger, metrics *ingest.StrongReadConsistencyMetrics) http.RoundTripper {
+func newReadConsistencyRoundTripper(next http.RoundTripper, offsetsReader *ingest.SingleClusterTopicOffsetsReader, limits Limits, logger log.Logger, metrics *ingest.StrongReadConsistencyMetrics) http.RoundTripper {
 	return &readConsistencyRoundTripper{
-		next:           next,
-		offsetsReaders: offsetsReaders,
-		limits:         limits,
-		logger:         logger,
-		metrics:        metrics,
+		next:          next,
+		offsetsReader: offsetsReader,
+		limits:        limits,
+		logger:        logger,
+		metrics:       metrics,
 	}
 }
 
@@ -62,36 +59,17 @@ func (r *readConsistencyRoundTripper) RoundTrip(req *http.Request) (_ *http.Resp
 		return r.next.RoundTrip(req)
 	}
 
-	errGroup, ctx := errgroup.WithContext(ctx)
-	reqHeaderLock := &sync.Mutex{}
-
-	for headerKey, offsetsReader := range r.offsetsReaders {
-		headerKey := headerKey
-		offsetsReader := offsetsReader
-
-		errGroup.Go(func() error {
-			offsets, err := ingest.ObserveStrongReadConsistency(r.metrics, offsetsReader.Topic(), false, func() (map[int32]int64, error) {
-				return offsetsReader.WaitNextFetchLastProducedOffset(ctx)
-			})
-			if err != nil {
-				return errors.Wrapf(err, "wait for last produced offsets of topic '%s'", offsetsReader.Topic())
-			}
-
-			headerValue := string(querierapi.EncodeOffsets(offsets))
-			reqHeaderLock.Lock()
-			req.Header.Add(headerKey, headerValue)
-			reqHeaderLock.Unlock()
-
-			spanLog.DebugLog("msg", "got offsets for strong read consistency", "header", headerKey, "value", headerValue)
-
-			return nil
-		})
+	offsets, err := ingest.ObserveStrongReadConsistency(r.metrics, r.offsetsReader.Topic(), false, func() (map[int32]int64, error) {
+		return r.offsetsReader.WaitNextFetchLastProducedOffset(ctx)
+	})
+	if err != nil {
+		return nil, errors.Wrapf(err, "wait for last produced offsets of topic '%s'", r.offsetsReader.Topic())
 	}
 
-	if err = errGroup.Wait(); err != nil {
-		return nil, err
-	}
+	headerValue := string(querierapi.EncodeOffsetsV1(offsets))
+	req.Header.Add(querierapi.ReadConsistencyOffsetsHeader, headerValue)
 
+	spanLog.DebugLog("msg", "got offsets for strong read consistency", "header", querierapi.ReadConsistencyOffsetsHeader, "value", headerValue)
 	spanLog.DebugLog("msg", "evaluating query with strong read consistency")
 
 	return r.next.RoundTrip(req)
@@ -109,13 +87,9 @@ func getDefaultReadConsistency(tenantIDs []string, limits Limits) string {
 	return querierapi.ReadConsistencyEventual
 }
 
-func newReadConsistencyMetrics(reg prometheus.Registerer, offsetsReaders map[string]*ingest.TopicOffsetsReader) *ingest.StrongReadConsistencyMetrics {
+func newReadConsistencyMetrics(reg prometheus.Registerer, offsetsReader *ingest.SingleClusterTopicOffsetsReader) *ingest.StrongReadConsistencyMetrics {
 	const component = "query-frontend"
 
-	topics := make([]string, 0, len(offsetsReaders))
-	for _, r := range offsetsReaders {
-		topics = append(topics, r.Topic())
-	}
-
+	topics := []string{offsetsReader.Topic()}
 	return ingest.NewStrongReadConsistencyMetrics(reg, component, topics)
 }

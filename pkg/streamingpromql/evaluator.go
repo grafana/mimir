@@ -90,6 +90,17 @@ func (e *Evaluator) Evaluate(ctx context.Context, observer EvaluationObserver) (
 		e.engine.estimatedPeakMemoryConsumption.Observe(float64(e.MemoryConsumptionTracker.PeakEstimatedMemoryConsumptionBytes()))
 	}()
 
+	// Recover from panics during evaluation so the stats logging above reports the query as failed
+	// instead of successful. Re-panic afterward to crash.
+	defer func() {
+		if r := recover(); r != nil {
+			if err == nil {
+				err = fmt.Errorf("panic during query evaluation: %v", r)
+			}
+			panic(r)
+		}
+	}()
+
 	// Add the memory consumption tracker to the context of this query before executing it so
 	// that we can pass it to the rest of the read path and keep track of memory used loading
 	// chunks from store-gateways or ingesters.

@@ -15,7 +15,7 @@ func TestNewIndexPageHandler(t *testing.T) {
 	const numCompartments = 3
 
 	rec := httptest.NewRecorder()
-	NewIndexPageHandler("Partitions Ring Status", "partition-ring/compartment-<compartment-id>", numCompartments).
+	NewIndexPageHandler("Partitions Ring Status", "partition-ring/compartment-<read-compartment-id>", numCompartments).
 		ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
 
 	res := rec.Result()

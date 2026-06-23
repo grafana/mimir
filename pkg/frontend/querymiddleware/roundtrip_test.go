@@ -40,6 +40,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier"
 	querierapi "github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/storage/ingest"
+	"github.com/grafana/mimir/pkg/storage/ingest/kmeta"
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/testkafka"
@@ -969,7 +970,7 @@ func TestTripperware_ShouldSupportReadConsistencyOffsetsInjection(t *testing.T) 
 	require.NoError(t, err)
 	t.Cleanup(readClient.Close)
 
-	offsetsReader := ingest.NewTopicOffsetsReaderForAllPartitions(readClient, topic, 100*time.Millisecond, nil, logger)
+	offsetsReader := newTestTopicOffsetsReader(readClient, topic, numPartitions, 100*time.Millisecond, logger)
 	require.NoError(t, services.StartAndAwaitRunning(ctx, offsetsReader))
 	t.Cleanup(func() {
 		require.NoError(t, services.StopAndAwaitTerminated(ctx, offsetsReader))
@@ -991,7 +992,7 @@ func TestTripperware_ShouldSupportReadConsistencyOffsetsInjection(t *testing.T) 
 		nil,
 		promEngine,
 		promOpts,
-		map[string]*ingest.TopicOffsetsReader{querierapi.ReadConsistencyOffsetsHeader: offsetsReader},
+		offsetsReader,
 		false,
 		nil,
 		nil,
@@ -1035,9 +1036,9 @@ func TestTripperware_ShouldSupportReadConsistencyOffsetsInjection(t *testing.T) 
 						offsets := querierapi.EncodedOffsets(downstreamReq.Header.Get(querierapi.ReadConsistencyOffsetsHeader))
 
 						for partitionID, expectedOffset := range expectedOffsets {
-							actual, ok := offsets.Lookup(partitionID)
+							actual, ok := offsets.Lookup(0, partitionID)
 							assert.True(t, ok)
-							assert.Equal(t, expectedOffset, actual)
+							assert.Equal(t, kmeta.NewSingleClusterPartitionOffsets(expectedOffset), actual)
 						}
 					} else {
 						assert.Empty(t, downstreamReq.Header.Get(querierapi.ReadConsistencyOffsetsHeader))

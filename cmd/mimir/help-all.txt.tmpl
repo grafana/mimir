@@ -373,6 +373,8 @@ Usage of ./cmd/mimir/mimir:
     	Allows to disable enforcement of the label count limit "max_label_names_per_series" via X-Mimir-SkipLabelCountValidation header on the http write path. Allowing this for external clients allows any client to send invalid label counts. After enabling it, requests with a specific HTTP header set to true will not have label counts validated.
   -api.skip-label-name-validation-header-enabled
     	Allows to skip label name validation via X-Mimir-SkipLabelNameValidation header on the http write path. Use with caution as it breaks PromQL. Allowing this for external clients allows any client to send invalid label names. After enabling it, requests with a specific HTTP header set to true will not have label names validated.
+  -auth.label-access-control-enabled
+    	[experimental] If enabled, Mimir enforces label-based access control on metric read queries using the X-Prom-Label-Policy HTTP header.
   -auth.multitenancy-enabled
     	When set to true, incoming HTTP requests must specify tenant ID in HTTP X-Scope-OrgId header. When set to false, tenant ID from -auth.no-auth-tenant is used instead. (default true)
   -auth.no-auth-tenant string
@@ -1523,10 +1525,12 @@ Usage of ./cmd/mimir/mimir:
     	When auto-creation of Kafka topic is enabled and this value is positive, Mimir creates the topic with this number of partitions. When the value is -1 the Kafka broker uses the default number of partitions (num.partitions configuration). (default -1)
   -ingest-storage.kafka.auto-create-topic-enabled
     	Enable auto-creation of Kafka topic on startup if it doesn't exist. If creating the topic fails and the topic doesn't already exist, Mimir fails to start. (default true)
+  -ingest-storage.kafka.backend string
+    	[experimental] The Kafka backend implementation. Supported values: kafka, warpstream. (default "kafka")
   -ingest-storage.kafka.client-id string
     	The Kafka client ID.
   -ingest-storage.kafka.client-rack string
-    	The rack identifier for this Kafka client. Corresponds to the Kafka client.rack setting.
+    	The rack identifier for this Kafka client. Corresponds to the Kafka client.rack setting. Only supported when ingest-storage.kafka.backend=kafka.
   -ingest-storage.kafka.consume-from-position-at-startup string
     	From which position to start consuming the partition at startup. Supported options: last-offset, start, end, timestamp. (default "last-offset")
   -ingest-storage.kafka.consume-from-timestamp-at-startup int
@@ -1538,7 +1542,7 @@ Usage of ./cmd/mimir/mimir:
   -ingest-storage.kafka.consumer-group-offset-commit-interval duration
     	How frequently a consumer should commit the consumed offset to Kafka. The last committed offset is used at startup to continue the consumption from where it was left. (default 1s)
   -ingest-storage.kafka.dial-timeout duration
-    	The maximum time allowed to open a connection to a Kafka broker. (default 2s)
+    	The maximum time allowed to establish the TCP connection to a Kafka broker, including the TLS handshake when TLS is enabled. It does not include the subsequent SASL authentication handshake. (default 2s)
   -ingest-storage.kafka.fetch-concurrency-max int
     	The maximum number of concurrent fetch requests that the ingester makes when reading data from Kafka during startup. Concurrent fetch requests are issued only when there is sufficient backlog of records to consume. Set to 0 to disable. (default 12)
   -ingest-storage.kafka.fetch-max-wait duration
@@ -1623,6 +1627,20 @@ Usage of ./cmd/mimir/mimir:
     	When enabled, the fetch request MaxBytes field is computed using the compressed size of previous records. When disabled, MaxBytes is computed using uncompressed bytes. Different Kafka implementations interpret MaxBytes differently. (default true)
   -ingest-storage.kafka.wait-strong-read-consistency-timeout duration
     	The maximum allowed for a read requests processed by an ingester to wait until strong read consistency is enforced. 0 to disable the timeout. (default 20s)
+  -ingest-storage.kafka.warpstream-demoter-probe-interval duration
+    	[experimental] Minimum wall-clock gap between probes to a demoted agent. Only applies when -ingest-storage.kafka.backend=warpstream. (default 1s)
+  -ingest-storage.kafka.warpstream-health-check-faulty-threshold float
+    	[experimental] Mark an agent as faulty when its observed error rate exceeds this fraction. Only applies when -ingest-storage.kafka.backend=warpstream. (default 0.2)
+  -ingest-storage.kafka.warpstream-health-check-max-faulty-fraction float
+    	[experimental] Suppress faulty-based hedging and demotion when more than this fraction of agents are faulty (cluster-wide issue). Only applies when -ingest-storage.kafka.backend=warpstream. (default 0.3)
+  -ingest-storage.kafka.warpstream-health-check-max-slow-fraction float
+    	[experimental] Suppress slow-based hedging when more than this fraction of agents are slow (cluster-wide issue). Only applies when -ingest-storage.kafka.backend=warpstream. (default 0.3)
+  -ingest-storage.kafka.warpstream-health-check-slow-multiplier float
+    	[experimental] Mark an agent as slow when its window-average latency exceeds this multiple of the cluster baseline. Only applies when -ingest-storage.kafka.backend=warpstream. (default 2)
+  -ingest-storage.kafka.warpstream-hedge-max-agents int
+    	[experimental] Cap on how many per-partition candidates the hedge fanout considers when picking a fallback (excluding the primary and any agent already tried). Only applies when -ingest-storage.kafka.backend=warpstream. (default 3)
+  -ingest-storage.kafka.warpstream-hedge-min-delay duration
+    	[experimental] Floor on the dynamically-computed hedge delay. Only applies when -ingest-storage.kafka.backend=warpstream. (default 500ms)
   -ingest-storage.kafka.write-clients int
     	[deprecated] The number of Kafka clients used by producers. When the configured number of clients is greater than 1, partitions are sharded among Kafka clients. A higher number of clients may provide higher write throughput at the cost of additional Metadata requests pressure to Kafka. Deprecated: has no effect (Mimir always uses a single Kafka write client). (default 1)
   -ingest-storage.kafka.write-timeout duration
@@ -3667,6 +3685,8 @@ Usage of ./cmd/mimir/mimir:
     	How back in the past metrics can be queried at most. (default 168h0m0s)
   -tests.write-read-ooo-test.num-series int
     	Number of series used for the test. (default 5000)
+  -tests.write-read-series-test.fan-out-query-enabled
+    	Set to true to additionally run each test query with a regex metric-name matcher. This prevents the query from being pinned to a single ingest-storage compartment, forcing the read path to fan out across all compartments and validating cross-compartment query result merging. Roughly doubles the number of queries issued per run.
   -tests.write-read-series-test.float-samples-enabled
     	Set to true to use float samples (default true)
   -tests.write-read-series-test.histogram-samples-enabled

@@ -18,3 +18,5 @@ message TimeRangeSplitDetails {
     (gogoproto.nullable) = false
   ];
 }
+
+message CacheDetails {}

@@ -229,13 +229,13 @@ func NewTripperware(
 	cacheExtractor Extractor,
 	engine promql.QueryEngine,
 	engineOpts promql.EngineOpts,
-	ingestStorageTopicOffsetsReaders map[string]*ingest.TopicOffsetsReader,
+	ingestStorageTopicOffsetsReader *ingest.SingleClusterTopicOffsetsReader,
 	useRemoteExecution bool,
 	streamingEngine *streamingpromql.Engine,
 	registerer prometheus.Registerer,
 	memoryConsumptionTrackerFactory *limiter.InflightMemoryConsumptionTracker,
 ) (Tripperware, error) {
-	queryRangeTripperware, err := newQueryTripperware(cfg, log, limits, queryLimits, codec, cacheExtractor, engine, engineOpts, ingestStorageTopicOffsetsReaders, useRemoteExecution, streamingEngine, registerer, memoryConsumptionTrackerFactory)
+	queryRangeTripperware, err := newQueryTripperware(cfg, log, limits, queryLimits, codec, cacheExtractor, engine, engineOpts, ingestStorageTopicOffsetsReader, useRemoteExecution, streamingEngine, registerer, memoryConsumptionTrackerFactory)
 	if err != nil {
 		return nil, err
 	}
@@ -254,7 +254,7 @@ func newQueryTripperware(
 	cacheExtractor Extractor,
 	engine promql.QueryEngine,
 	engineOpts promql.EngineOpts,
-	ingestStorageTopicOffsetsReaders map[string]*ingest.TopicOffsetsReader,
+	ingestStorageTopicOffsetsReader *ingest.SingleClusterTopicOffsetsReader,
 	useRemoteExecution bool,
 	streamingEngine *streamingpromql.Engine,
 	registerer prometheus.Registerer,
@@ -333,18 +333,18 @@ func newQueryTripperware(
 		activeNativeHistogramMetrics = newShardActiveNativeHistogramMetricsMiddleware(activeNativeHistogramMetrics, limits, log)
 
 		// Enforce read consistency after caching.
-		if len(ingestStorageTopicOffsetsReaders) > 0 {
-			metrics := newReadConsistencyMetrics(registerer, ingestStorageTopicOffsetsReaders)
+		if ingestStorageTopicOffsetsReader != nil {
+			metrics := newReadConsistencyMetrics(registerer, ingestStorageTopicOffsetsReader)
 
-			queryrange = newReadConsistencyRoundTripper(queryrange, ingestStorageTopicOffsetsReaders, limits, log, metrics)
-			instant = newReadConsistencyRoundTripper(instant, ingestStorageTopicOffsetsReaders, limits, log, metrics)
-			cardinality = newReadConsistencyRoundTripper(cardinality, ingestStorageTopicOffsetsReaders, limits, log, metrics)
-			activeSeries = newReadConsistencyRoundTripper(activeSeries, ingestStorageTopicOffsetsReaders, limits, log, metrics)
-			activeNativeHistogramMetrics = newReadConsistencyRoundTripper(activeNativeHistogramMetrics, ingestStorageTopicOffsetsReaders, limits, log, metrics)
-			labels = newReadConsistencyRoundTripper(labels, ingestStorageTopicOffsetsReaders, limits, log, metrics)
-			series = newReadConsistencyRoundTripper(series, ingestStorageTopicOffsetsReaders, limits, log, metrics)
-			remoteRead = newReadConsistencyRoundTripper(remoteRead, ingestStorageTopicOffsetsReaders, limits, log, metrics)
-			next = newReadConsistencyRoundTripper(next, ingestStorageTopicOffsetsReaders, limits, log, metrics)
+			queryrange = newReadConsistencyRoundTripper(queryrange, ingestStorageTopicOffsetsReader, limits, log, metrics)
+			instant = newReadConsistencyRoundTripper(instant, ingestStorageTopicOffsetsReader, limits, log, metrics)
+			cardinality = newReadConsistencyRoundTripper(cardinality, ingestStorageTopicOffsetsReader, limits, log, metrics)
+			activeSeries = newReadConsistencyRoundTripper(activeSeries, ingestStorageTopicOffsetsReader, limits, log, metrics)
+			activeNativeHistogramMetrics = newReadConsistencyRoundTripper(activeNativeHistogramMetrics, ingestStorageTopicOffsetsReader, limits, log, metrics)
+			labels = newReadConsistencyRoundTripper(labels, ingestStorageTopicOffsetsReader, limits, log, metrics)
+			series = newReadConsistencyRoundTripper(series, ingestStorageTopicOffsetsReader, limits, log, metrics)
+			remoteRead = newReadConsistencyRoundTripper(remoteRead, ingestStorageTopicOffsetsReader, limits, log, metrics)
+			next = newReadConsistencyRoundTripper(next, ingestStorageTopicOffsetsReader, limits, log, metrics)
 		}
 
 		// Look up cache as first thing after validation.

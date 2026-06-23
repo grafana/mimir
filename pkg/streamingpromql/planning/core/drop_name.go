@@ -44,10 +44,6 @@ func (n *DropName) Describe() string {
 	return ""
 }
 
-func (n *DropName) ChildrenLabels() []string {
-	return []string{""}
-}
-
 func (n *DropName) ChildrenTimeRange(parentTimeRange types.QueryTimeRange) types.QueryTimeRange {
 	return parentTimeRange
 }

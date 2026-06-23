@@ -620,7 +620,7 @@ func TestSplitOperator(t *testing.T) {
 
 			ranges := make([]*splitRange, len(testCase.ranges))
 			for i, o := range innerOperators {
-				ranges[i] = newSplitRange(o)
+				ranges[i] = newSplitRange(o, memoryConsumptionTracker)
 			}
 
 			o := newTimeRangeSplitOperator(ranges, memoryConsumptionTracker, testCase.expectedStats.TimeRange.Decode())
@@ -685,13 +685,20 @@ func TestSplitOperator_ConflictingDropNameValuesForSameSeries(t *testing.T) {
 		MemoryConsumptionTracker: memoryConsumptionTracker,
 	}
 
-	o := newTimeRangeSplitOperator([]*splitRange{newSplitRange(range1), newSplitRange(range2)}, memoryConsumptionTracker, types.NewInstantQueryTimeRange(time.Now()))
+	o := newTimeRangeSplitOperator(
+		[]*splitRange{
+			newSplitRange(range1, memoryConsumptionTracker),
+			newSplitRange(range2, memoryConsumptionTracker),
+		},
+		memoryConsumptionTracker,
+		types.NewInstantQueryTimeRange(time.Now()),
+	)
 
 	require.NoError(t, o.Prepare(ctx, &types.PrepareParams{}))
 	require.NoError(t, o.AfterPrepare(ctx))
 
 	_, err := o.SeriesMetadata(ctx, nil)
-	require.EqualError(t, err, `series with labels {idx="0"} has conflicting drop name values in different ranges`)
+	require.EqualError(t, err, `series with labels {idx="0"} has conflicting drop name values in different ranges / extents`)
 }
 
 type testRange struct {

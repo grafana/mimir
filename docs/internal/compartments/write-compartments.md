@@ -20,6 +20,32 @@ Because series are sharded by read compartment but write requests are spread ran
 compartments, **every write compartment writes to every read compartment's topic**: each
 read-compartment topic exists in every write compartment's Kafka cluster.
 
+## Distributors share a single global ring
+
+Distributors do not have a per-write-compartment ring; every distributor in every write compartment
+joins one global distributor ring. This ring is used only to count how many distributors exist,
+which drives global per-tenant rate limiting: each distributor enforces a local limit equal to the
+tenant's global limit divided by the number of distributors in the ring.
+
+A global ring is required because write requests are spread randomly across all write compartments,
+so a tenant's traffic is served by all distributors in all write compartments. The rate-limit
+divisor must therefore count every distributor: scoping the ring per write compartment would divide
+the global limit by only a fraction of the distributors and over-admit each tenant by a factor equal
+to the number of write compartments.
+
+This requires all distributors across all write compartments to share a single ring backing store.
+Giving each write compartment an isolated store would re-introduce the per-compartment
+over-admission.
+
+## The HA tracker is global
+
+The HA tracker, which deduplicates samples from high-availability Prometheus pairs, is global across
+all write compartments. It does not use the distributor ring; it propagates its elected-replica
+state through a shared key-value store. It must be global because the two replicas of an HA pair are
+spread randomly across write compartments and can land on distributors in different ones — dedup
+only works if all distributors share one elected-replica state. This requires all distributors
+across all write compartments to share a single HA tracker key-value store.
+
 ## Why a dedicated Kafka cluster per write compartment
 
 Segregating Kafka per write compartment bounds how much ingestion load any single cluster must absorb,

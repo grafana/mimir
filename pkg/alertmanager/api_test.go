@@ -20,6 +20,9 @@ import (
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/alertmanager/config"
 	"github.com/prometheus/alertmanager/featurecontrol"
+	discord "github.com/prometheus/alertmanager/notify/discord"
+	msteams "github.com/prometheus/alertmanager/notify/msteams"
+	webhook "github.com/prometheus/alertmanager/notify/webhook"
 	"github.com/prometheus/client_golang/prometheus"
 	commoncfg "github.com/prometheus/common/config"
 	"github.com/stretchr/testify/assert"
@@ -1135,7 +1138,7 @@ func TestValidateAlertmanagerConfig(t *testing.T) {
 			expected: errPasswordFileNotAllowed,
 		},
 		"*DiscordConfig.HTTPConfig": {
-			input: &config.DiscordConfig{
+			input: &discord.DiscordConfig{
 				HTTPConfig: &commoncfg.HTTPClientConfig{
 					BearerTokenFile: "/file",
 				},
@@ -1143,7 +1146,7 @@ func TestValidateAlertmanagerConfig(t *testing.T) {
 			expected: errPasswordFileNotAllowed,
 		},
 		"DiscordConfig.HTTPConfig": {
-			input: &config.DiscordConfig{
+			input: &discord.DiscordConfig{
 				HTTPConfig: &commoncfg.HTTPClientConfig{
 					BearerTokenFile: "/file",
 				},
@@ -1151,13 +1154,13 @@ func TestValidateAlertmanagerConfig(t *testing.T) {
 			expected: errPasswordFileNotAllowed,
 		},
 		"*DiscordConfig.WebhookURLFile": {
-			input: &config.DiscordConfig{
+			input: &discord.DiscordConfig{
 				WebhookURLFile: "/file",
 			},
 			expected: errWebhookURLFileNotAllowed,
 		},
 		"DiscordConfig.WebhookURLFile": {
-			input: config.DiscordConfig{
+			input: discord.DiscordConfig{
 				WebhookURLFile: "/file",
 			},
 			expected: errWebhookURLFileNotAllowed,
@@ -1175,7 +1178,7 @@ func TestValidateAlertmanagerConfig(t *testing.T) {
 			expected: errPasswordFileNotAllowed,
 		},
 		"*MSTeams.HTTPConfig": {
-			input: &config.MSTeamsConfig{
+			input: &msteams.MSTeamsConfig{
 				HTTPConfig: &commoncfg.HTTPClientConfig{
 					BearerTokenFile: "/file",
 				},
@@ -1183,7 +1186,7 @@ func TestValidateAlertmanagerConfig(t *testing.T) {
 			expected: errPasswordFileNotAllowed,
 		},
 		"MSTeams.HTTPConfig": {
-			input: &config.MSTeamsConfig{
+			input: &msteams.MSTeamsConfig{
 				HTTPConfig: &commoncfg.HTTPClientConfig{
 					BearerTokenFile: "/file",
 				},
@@ -1191,13 +1194,13 @@ func TestValidateAlertmanagerConfig(t *testing.T) {
 			expected: errPasswordFileNotAllowed,
 		},
 		"*MSTeams.WebhookURLFile": {
-			input: &config.MSTeamsConfig{
+			input: &msteams.MSTeamsConfig{
 				WebhookURLFile: "/file",
 			},
 			expected: errWebhookURLFileNotAllowed,
 		},
 		"MSTeams.WebhookURLFile": {
-			input: config.MSTeamsConfig{
+			input: msteams.MSTeamsConfig{
 				WebhookURLFile: "/file",
 			},
 			expected: errWebhookURLFileNotAllowed,
@@ -1228,7 +1231,7 @@ func TestValidateAlertmanagerConfig(t *testing.T) {
 			input: config.Config{
 				Receivers: []config.Receiver{{
 					Name: "test",
-					WebhookConfigs: []*config.WebhookConfig{{
+					WebhookConfigs: []*webhook.WebhookConfig{{
 						HTTPConfig: &commoncfg.HTTPClientConfig{
 							BasicAuth: &commoncfg.BasicAuth{
 								PasswordFile: "/secrets",

@@ -23,6 +23,7 @@ import (
 
 	querierapi "github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/storage/ingest"
+	"github.com/grafana/mimir/pkg/storage/ingest/kmeta"
 	"github.com/grafana/mimir/pkg/util/testkafka"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -88,7 +89,7 @@ func TestReadConsistencyRoundTripper(t *testing.T) {
 			require.NoError(t, err)
 			t.Cleanup(readClient.Close)
 
-			reader := ingest.NewTopicOffsetsReaderForAllPartitions(readClient, topic, 100*time.Millisecond, nil, logger)
+			reader := newTestTopicOffsetsReader(readClient, topic, numPartitions, 100*time.Millisecond, logger)
 			require.NoError(t, services.StartAndAwaitRunning(ctx, reader))
 			t.Cleanup(func() {
 				require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
@@ -102,10 +103,8 @@ func TestReadConsistencyRoundTripper(t *testing.T) {
 				req = req.WithContext(querierapi.ContextWithReadConsistencyLevel(req.Context(), testData.reqConsistency))
 			}
 
-			offsetsReaders := map[string]*ingest.TopicOffsetsReader{querierapi.ReadConsistencyOffsetsHeader: reader}
-
 			reg := prometheus.NewPedanticRegistry()
-			rt := newReadConsistencyRoundTripper(downstream, offsetsReaders, testData.limits, log.NewNopLogger(), newReadConsistencyMetrics(reg, offsetsReaders))
+			rt := newReadConsistencyRoundTripper(downstream, reader, testData.limits, log.NewNopLogger(), newReadConsistencyMetrics(reg, reader))
 			_, err = rt.RoundTrip(req)
 			require.NoError(t, err)
 
@@ -115,9 +114,9 @@ func TestReadConsistencyRoundTripper(t *testing.T) {
 				offsets := querierapi.EncodedOffsets(downstreamReq.Header.Get(querierapi.ReadConsistencyOffsetsHeader))
 
 				for partitionID, expectedOffset := range expectedOffsets {
-					actual, ok := offsets.Lookup(partitionID)
+					actual, ok := offsets.Lookup(0, partitionID)
 					assert.True(t, ok)
-					assert.Equal(t, expectedOffset, actual)
+					assert.Equal(t, kmeta.NewSingleClusterPartitionOffsets(expectedOffset), actual)
 				}
 			} else {
 				assert.Empty(t, downstreamReq.Header.Get(querierapi.ReadConsistencyOffsetsHeader))
@@ -184,6 +183,20 @@ func createKafkaConfig(clusterAddr, topic string) ingest.KafkaConfig {
 	cfg.Topic = topic
 
 	return cfg
+}
+
+// newTestTopicOffsetsReader returns a SingleClusterTopicOffsetsReader that fetches the offsets of partitions [0, numPartitions)
+// of the given topic.
+func newTestTopicOffsetsReader(client *kgo.Client, topic string, numPartitions int, pollInterval time.Duration, logger log.Logger) *ingest.SingleClusterTopicOffsetsReader {
+	getPartitionIDs := func(context.Context) ([]int32, error) {
+		ids := make([]int32, numPartitions)
+		for i := range ids {
+			ids[i] = int32(i)
+		}
+		return ids, nil
+	}
+
+	return ingest.NewSingleClusterTopicOffsetsReader(client, topic, getPartitionIDs, pollInterval, nil, logger)
 }
 
 // produceKafkaRecords produces the input records to Kafka and returns the highest produced offset

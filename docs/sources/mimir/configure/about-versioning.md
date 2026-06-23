@@ -46,6 +46,9 @@ Experimental configuration and flags are subject to change.
 
 The following features are currently experimental:
 
+- Auth
+  - Label-Based Access Control (LBAC) for metric read queries
+    - `-auth.label-access-control-enabled`
 - Cost attribution
   - Configure labels for cost attribution
     - `-validation.cost-attribution-labels-structured`
@@ -204,6 +207,9 @@ The following features are currently experimental:
   - Per-tenant max number of active series additional custom trackers is configurable via `-validation.max-active-series-additional-custom-trackers`.
   - File based Kafka consumer group offset tracking enforcement
     - `-ingest-storage.kafka.consumer-group-offset-commit-file-enforced`
+  - WarpStream-aware Kafka producer backend
+    - `-ingest-storage.kafka.backend`
+    - all flags beginning with `-ingest-storage.kafka.warpstream-`
 - Querier
   - Streaming label/value search HTTP endpoints `/api/v1/search/{metric_names,label_names,label_values}` returning NDJSON, mirroring the [Prometheus search API](https://github.com/prometheus/prometheus/pull/18573) (`-querier.experimental-search-api-enabled`).
   - Max concurrency for tenant federated queries (`-tenant-federation.max-concurrent`)
