@@ -64,6 +64,7 @@
 * [BUGFIX] Block-builder-scheduler: Exit cleanly when shut down during startup observation. #15730
 * [BUGFIX] Ingest storage: Cap maximum Kafka protocol version, the client negotiates with the broker to v3.9.0. #15745
 * [BUGFIX] MQE: Report a query that panics during evaluation as failed in the `evaluation stats` log, instead of logging it as successful. The querier still re-panics afterwards, crash behaviour is unchanged. #15753
+* [BUGFIX] Memcached: Fix issue where cache-related trace spans included events emitted with an empty `name` label. #15794
 
 ### Mixin
 
