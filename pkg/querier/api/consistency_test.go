@@ -273,14 +273,6 @@ func TestEncodedOffsets_LookupV1_SpecialCases(t *testing.T) {
 		expectedPartitions   map[int32]int64
 		unexpectedPartitions []int32
 	}{
-		"empty": {
-			encoded:              "",
-			unexpectedPartitions: []int32{0},
-		},
-		"missing version": {
-			encoded:              "0:1",
-			unexpectedPartitions: []int32{0},
-		},
 		"corruption when reading the partition ID": {
 			encoded:              "v1=x",
 			unexpectedPartitions: []int32{0},

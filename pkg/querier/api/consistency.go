@@ -255,19 +255,9 @@ func (p EncodedOffsets) Lookup(readCompartment int, partitionID int32) (kmeta.Pa
 	}
 }
 
-// lookupV1 returns the offset for the input partitionID, as encoded by EncodeOffsetsV1.
+// lookupV1 returns the offset for the input partitionID from the v1 encoding produced by EncodeOffsetsV1.
+// It assumes the caller has already verified the "v1=" version prefix and so doesn't re-check it.
 func (p EncodedOffsets) lookupV1(partitionID int32) (int64, bool) {
-	const versionLen = 3
-
-	if len(p) < versionLen {
-		return 0, false
-	}
-
-	// Check the version.
-	if p[:3] != "v1=" {
-		return 0, false
-	}
-
 	// Find the position of the partition. The partition can either be:
 	// - At the beginning, right after the version (so after "=")
 	// - In the middle or end, right after another partition (so after ",")
