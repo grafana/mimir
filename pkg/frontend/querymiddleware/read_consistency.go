@@ -66,7 +66,7 @@ func (r *readConsistencyRoundTripper) RoundTrip(req *http.Request) (_ *http.Resp
 		return nil, errors.Wrapf(err, "wait for last produced offsets of topic '%s'", r.offsetsReader.Topic())
 	}
 
-	headerValue := string(querierapi.EncodeOffsets(offsets))
+	headerValue := string(querierapi.EncodeOffsetsV1(offsets))
 	req.Header.Add(querierapi.ReadConsistencyOffsetsHeader, headerValue)
 
 	spanLog.DebugLog("msg", "got offsets for strong read consistency", "header", querierapi.ReadConsistencyOffsetsHeader, "value", headerValue)
