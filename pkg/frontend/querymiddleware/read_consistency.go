@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/tenant"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -110,6 +111,9 @@ func readConsistencyMetricsTopicLabel(topics []string) string {
 // ReadConsistencyOffsetsReader fetches the last produced offsets used to enforce strong read consistency
 // and encodes them for the read consistency offsets header.
 type ReadConsistencyOffsetsReader interface {
+	// The reader polls Kafka in the background, so it's a service whose lifecycle the caller manages.
+	services.Service
+
 	// WaitNextEncodedOffsets returns the result of the next "last produced offsets" fetch, already encoded
 	// for the read consistency offsets header.
 	WaitNextEncodedOffsets(ctx context.Context) (querierapi.EncodedOffsets, error)
@@ -121,13 +125,14 @@ type ReadConsistencyOffsetsReader interface {
 // singleClusterReadConsistencyOffsetsReader monitors the offsets of a single topic in a single Kafka
 // cluster and encodes them with the v1 format. It is used when compartments are disabled.
 type singleClusterReadConsistencyOffsetsReader struct {
+	services.Service
 	reader *ingest.SingleClusterTopicOffsetsReader
 }
 
 // NewSingleClusterReadConsistencyOffsetsReader returns a ReadConsistencyOffsetsReader backed by a single
 // Kafka cluster's topic offsets reader. The reader is expected to monitor exactly one topic.
 func NewSingleClusterReadConsistencyOffsetsReader(reader *ingest.SingleClusterTopicOffsetsReader) ReadConsistencyOffsetsReader {
-	return singleClusterReadConsistencyOffsetsReader{reader: reader}
+	return singleClusterReadConsistencyOffsetsReader{Service: reader, reader: reader}
 }
 
 func (r singleClusterReadConsistencyOffsetsReader) WaitNextEncodedOffsets(ctx context.Context) (querierapi.EncodedOffsets, error) {
@@ -146,13 +151,14 @@ func (r singleClusterReadConsistencyOffsetsReader) Topics() []string {
 // write-compartment Kafka clusters and encodes them with the v2 format. It is used when compartments are
 // enabled.
 type multiClusterReadConsistencyOffsetsReader struct {
+	services.Service
 	reader *ingest.MultiClusterOffsetsReader
 }
 
 // NewMultiClusterReadConsistencyOffsetsReader returns a ReadConsistencyOffsetsReader backed by a
 // multi-cluster offsets reader.
 func NewMultiClusterReadConsistencyOffsetsReader(reader *ingest.MultiClusterOffsetsReader) ReadConsistencyOffsetsReader {
-	return multiClusterReadConsistencyOffsetsReader{reader: reader}
+	return multiClusterReadConsistencyOffsetsReader{Service: reader, reader: reader}
 }
 
 func (r multiClusterReadConsistencyOffsetsReader) WaitNextEncodedOffsets(ctx context.Context) (querierapi.EncodedOffsets, error) {

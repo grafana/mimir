@@ -206,11 +206,17 @@ func TestReadConsistencyRoundTripper_MultiCluster(t *testing.T) {
 	require.NoError(t, services.StartAndAwaitRunning(ctx, reader))
 	t.Cleanup(func() { require.NoError(t, services.StopAndAwaitTerminated(ctx, reader)) })
 
-	// The v2 encoding is keyed by topic index (topic 0 → 0, topic 1 → 1); each entry carries one offset per
-	// cluster, with -1 where a partition has no records on a cluster.
-	expectedOffsetsByTopic := map[int]map[int32][]int64{
-		0: mergeClusterOffsets(cluster0Topic0, cluster1Topic0),
-		1: mergeClusterOffsets(cluster0Topic1, nil),
+	// Merge the per-(write compartment, topic) offsets the same way the reader does: perCluster is indexed
+	// by write compartment ID; each maps topic → partition → last produced offset, defaulting to -1 where a
+	// partition has no records on a cluster. The reader indexes topics by read compartment ID (topic 0 → 0,
+	// topic 1 → 1).
+	merged := kmeta.MergeTopicsPartitionsOffsets([]map[string]map[int32]int64{
+		{topic0: cluster0Topic0, topic1: cluster0Topic1}, // write compartment 0
+		{topic0: cluster1Topic0},                         // write compartment 1 (topic 1 has no records)
+	})
+	expectedOffsetsByTopic := map[int]kmeta.PartitionsOffsets{
+		0: merged[topic0],
+		1: merged[topic1],
 	}
 
 	for testName, testData := range readConsistencyRoundTripperTestCases() {
@@ -248,7 +254,7 @@ func TestReadConsistencyRoundTripper_MultiCluster(t *testing.T) {
 					for partitionID, clusterOffsets := range partitions {
 						actual, ok := offsets.Lookup(topicIdx, partitionID)
 						assert.True(t, ok)
-						assert.Equal(t, kmeta.NewMultiClusterPartitionOffsets(clusterOffsets), actual)
+						assert.Equal(t, clusterOffsets, actual)
 					}
 				}
 			} else {
@@ -337,26 +343,6 @@ func allTopicPartitionIDs(numPartitions int) ingest.GetPartitionIDsFunc {
 		}
 		return ids, nil
 	}
-}
-
-// mergeClusterOffsets builds the expected per-partition offsets across two Kafka clusters from each
-// cluster's per-partition highest produced offsets, defaulting to -1 for a partition with no records on a
-// cluster. Only partitions present on at least one cluster are returned.
-func mergeClusterOffsets(cluster0, cluster1 map[int32]int64) map[int32][]int64 {
-	merged := make(map[int32][]int64)
-	ensure := func(partitionID int32) []int64 {
-		if _, ok := merged[partitionID]; !ok {
-			merged[partitionID] = []int64{-1, -1}
-		}
-		return merged[partitionID]
-	}
-	for partitionID, offset := range cluster0 {
-		ensure(partitionID)[0] = offset
-	}
-	for partitionID, offset := range cluster1 {
-		ensure(partitionID)[1] = offset
-	}
-	return merged
 }
 
 // produceKafkaRecords produces the input records to Kafka and returns the highest produced offset

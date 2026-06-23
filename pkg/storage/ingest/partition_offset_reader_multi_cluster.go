@@ -25,12 +25,13 @@ import (
 type MultiClusterOffsetsReader struct {
 	services.Service
 
-	logger          log.Logger
-	topics          []string
-	getPartitionIDs []GetPartitionIDsFunc
-	clients         []*kgo.Client
-	offsetClients   []*partitionOffsetClient
-	offsetsReader   *GenericOffsetReader[kmeta.TopicsPartitionsOffsets]
+	logger             log.Logger
+	topics             []string
+	getPartitionIDs    []GetPartitionIDsFunc
+	clients            []*kgo.Client
+	offsetClients      []*partitionOffsetClient
+	offsetsReader      *GenericOffsetReader[kmeta.TopicsPartitionsOffsets]
+	subservicesWatcher *services.FailureWatcher
 }
 
 // NewMultiClusterOffsetsReader creates a MultiClusterOffsetsReader. clusterConfigs holds one KafkaConfig
@@ -69,11 +70,12 @@ func NewMultiClusterOffsetsReader(clusterConfigs []KafkaConfig, topics []string,
 	}
 
 	r := &MultiClusterOffsetsReader{
-		logger:          logger,
-		topics:          topics,
-		getPartitionIDs: getPartitionIDs,
-		clients:         clients,
-		offsetClients:   offsetClients,
+		logger:             logger,
+		topics:             topics,
+		getPartitionIDs:    getPartitionIDs,
+		clients:            clients,
+		offsetClients:      offsetClients,
+		subservicesWatcher: services.NewFailureWatcher(),
 	}
 	// All clusters share the same poll interval (same base KafkaConfig).
 	r.offsetsReader = NewGenericOffsetReader[kmeta.TopicsPartitionsOffsets](r.fetchLastProducedOffsets, clusterConfigs[0].LastProducedOffsetPollInterval, logger)
@@ -82,14 +84,17 @@ func NewMultiClusterOffsetsReader(clusterConfigs []KafkaConfig, topics []string,
 }
 
 func (r *MultiClusterOffsetsReader) starting(ctx context.Context) error {
+	r.subservicesWatcher.WatchService(r.offsetsReader)
 	return errors.Wrap(services.StartAndAwaitRunning(ctx, r.offsetsReader), "starting offsets reader")
 }
 
 func (r *MultiClusterOffsetsReader) running(ctx context.Context) error {
-	// The offsets reader is a timer service that never fails (it logs and keeps polling on error), so there
-	// is nothing to watch: just wait for the context to be canceled.
-	<-ctx.Done()
-	return nil
+	select {
+	case <-ctx.Done():
+		return nil
+	case err := <-r.subservicesWatcher.Chan():
+		return errors.Wrap(err, "multi-cluster offsets reader subservice failed")
+	}
 }
 
 func (r *MultiClusterOffsetsReader) stopping(_ error) error {

@@ -14,16 +14,16 @@ import (
 )
 
 // SingleClusterTopicOffsetsReader reads the last produced offsets of the partitions of a single topic in a
-// single Kafka cluster, fetching all of them in a single ListOffsets request per poll. It owns the Kafka
-// client it creates and closes it when stopped.
+// single Kafka cluster.
 type SingleClusterTopicOffsetsReader struct {
 	services.Service
 
-	kafkaClient     *kgo.Client
-	offsetClient    *partitionOffsetClient
-	topic           string
-	getPartitionIDs GetPartitionIDsFunc
-	offsetsReader   *GenericOffsetReader[map[int32]int64]
+	kafkaClient        *kgo.Client
+	offsetClient       *partitionOffsetClient
+	offsetsReader      *GenericOffsetReader[map[int32]int64]
+	subservicesWatcher *services.FailureWatcher
+	topic              string
+	getPartitionIDs    GetPartitionIDsFunc
 }
 
 // NewSingleClusterTopicOffsetsReader creates a SingleClusterTopicOffsetsReader monitoring topic in the Kafka
@@ -36,10 +36,11 @@ func NewSingleClusterTopicOffsetsReader(cfg KafkaConfig, topic string, getPartit
 	}
 
 	r := &SingleClusterTopicOffsetsReader{
-		kafkaClient:     client,
-		offsetClient:    newPartitionOffsetClient(client, reg, logger),
-		topic:           topic,
-		getPartitionIDs: getPartitionIDs,
+		kafkaClient:        client,
+		offsetClient:       newPartitionOffsetClient(client, reg, logger),
+		subservicesWatcher: services.NewFailureWatcher(),
+		topic:              topic,
+		getPartitionIDs:    getPartitionIDs,
 	}
 	r.offsetsReader = NewGenericOffsetReader[map[int32]int64](r.FetchLastProducedOffsets, cfg.LastProducedOffsetPollInterval, logger)
 	r.Service = services.NewBasicService(r.starting, r.running, r.stopping).WithName("single-cluster-topic-offsets-reader")
@@ -47,14 +48,17 @@ func NewSingleClusterTopicOffsetsReader(cfg KafkaConfig, topic string, getPartit
 }
 
 func (r *SingleClusterTopicOffsetsReader) starting(ctx context.Context) error {
+	r.subservicesWatcher.WatchService(r.offsetsReader)
 	return errors.Wrap(services.StartAndAwaitRunning(ctx, r.offsetsReader), "starting offsets reader")
 }
 
 func (r *SingleClusterTopicOffsetsReader) running(ctx context.Context) error {
-	// The offsets reader is a timer service that never fails (it logs and keeps polling on error), so there
-	// is nothing to watch: just wait for the context to be canceled.
-	<-ctx.Done()
-	return nil
+	select {
+	case <-ctx.Done():
+		return nil
+	case err := <-r.subservicesWatcher.Chan():
+		return errors.Wrap(err, "single-cluster topic offsets reader subservice failed")
+	}
 }
 
 func (r *SingleClusterTopicOffsetsReader) stopping(_ error) error {

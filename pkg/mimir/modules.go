@@ -887,10 +887,7 @@ func (t *Mimir) initQueryFrontendTopicOffsetsReaders() (services.Service, error)
 		}
 	}
 
-	var (
-		reader  services.Service
-		wrapped querymiddleware.ReadConsistencyOffsetsReader
-	)
+	var reader querymiddleware.ReadConsistencyOffsetsReader
 
 	if t.Cfg.Compartments.Enabled {
 		// One Kafka cluster per write compartment, each holding every read compartment's topic.
@@ -910,8 +907,7 @@ func (t *Mimir) initQueryFrontendTopicOffsetsReaders() (services.Service, error)
 		if err != nil {
 			return nil, err
 		}
-		reader = multiClusterReader
-		wrapped = querymiddleware.NewMultiClusterReadConsistencyOffsetsReader(multiClusterReader)
+		reader = querymiddleware.NewMultiClusterReadConsistencyOffsetsReader(multiClusterReader)
 	} else {
 		topicOffsetsReader, err := ingest.NewSingleClusterTopicOffsetsReader(
 			t.Cfg.IngestStorage.KafkaConfig,
@@ -922,11 +918,10 @@ func (t *Mimir) initQueryFrontendTopicOffsetsReaders() (services.Service, error)
 		if err != nil {
 			return nil, err
 		}
-		reader = topicOffsetsReader
-		wrapped = querymiddleware.NewSingleClusterReadConsistencyOffsetsReader(topicOffsetsReader)
+		reader = querymiddleware.NewSingleClusterReadConsistencyOffsetsReader(topicOffsetsReader)
 	}
 
-	t.QueryFrontendOffsetsReader = wrapped
+	t.QueryFrontendOffsetsReader = reader
 
 	return reader, nil
 }
