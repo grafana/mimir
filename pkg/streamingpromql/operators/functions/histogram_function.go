@@ -865,7 +865,6 @@ type HistogramQuantilesFunction struct {
 
 	quantileArgs    []types.ScalarOperator
 	quantileLabelOp types.StringOperator
-	quantileLabel   string
 	quantileValues  [][]promql.FPoint // Indexed by quantile arg, then by step.
 	quantileStrings [][]string        // Formatted quantile label for each arg at each step. Same shape as quantileValues.
 	outputLabels    []string          // Distinct quantile labels across all args and steps, in first-appearance order. One output series per group per entry.
@@ -908,9 +907,6 @@ func (h *HistogramQuantilesFunction) ExpressionPosition() posrange.PositionRange
 }
 
 func (h *HistogramQuantilesFunction) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
-	// Load quantile label
-	h.quantileLabel = h.quantileLabelOp.GetValue()
-
 	// Load quantile arguments once for the entire query. We format each arg's value at each step into
 	// its quantile label, and collect the distinct labels: one output series per group is produced for
 	// each distinct label, and at each step a series carries the value for whichever arg matches its
@@ -989,17 +985,18 @@ func (h *HistogramQuantilesFunction) SeriesMetadata(ctx context.Context, matcher
 	})
 
 	// For each group, create output series for each distinct quantile label.
+	quantileLabelName := h.quantileLabelOp.GetValue()
 	for _, g := range groupList {
 		h.remainingGroups = append(h.remainingGroups, g.group)
-		for _, quantileLabel := range h.outputLabels {
+		for _, quantileLabelValue := range h.outputLabels {
 			var labelsMetadata types.SeriesMetadata
 			if h.enableDelayedNameRemoval {
 				lb.Reset(g.labels)
-				lb.Set(h.quantileLabel, quantileLabel)
+				lb.Set(quantileLabelName, quantileLabelValue)
 				labelsMetadata = types.SeriesMetadata{Labels: lb.Labels(), DropName: true}
 			} else {
 				lb.Reset(g.labels.DropReserved(isMetricNameLabel))
-				lb.Set(h.quantileLabel, quantileLabel)
+				lb.Set(quantileLabelName, quantileLabelValue)
 				labelsMetadata = types.SeriesMetadata{Labels: lb.Labels()}
 			}
 			seriesMetadata, err = types.AppendSeriesMetadata(h.memoryConsumptionTracker, seriesMetadata, labelsMetadata)
