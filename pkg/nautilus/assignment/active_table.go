@@ -3,6 +3,7 @@
 package assignment
 
 import (
+	"encoding/json"
 	"sort"
 	"time"
 )
@@ -42,6 +43,30 @@ type ActiveTable struct {
 	// wall-clock crosses this, at least one tile in the table is no
 	// longer active.
 	validUntil time.Time
+}
+
+// LookupMissDebug describes the ActiveTable state around a key whose
+// Lookup returned false. It is intended for low-volume diagnostics on
+// routing failures, not for the hot success path.
+type LookupMissDebug struct {
+	SearchIndex       int      `json:"search_index"`
+	HasByHiEntry      bool     `json:"has_by_hi_entry"`
+	ByHiEntry         LogEntry `json:"by_hi_entry,omitempty"`
+	ByLoIndex         int      `json:"by_lo_index"`
+	HasByLoEntry      bool     `json:"has_by_lo_entry"`
+	ByLoEntry         LogEntry `json:"by_lo_entry,omitempty"`
+	HasNextByLoEntry  bool     `json:"has_next_by_lo_entry"`
+	NextByLoEntry     LogEntry `json:"next_by_lo_entry,omitempty"`
+	CoveringEntries   int      `json:"covering_entries"`
+	CoveringPartition []int32  `json:"covering_partitions,omitempty"`
+}
+
+func (d LookupMissDebug) String() string {
+	b, err := json.Marshal(d)
+	if err != nil {
+		return "<lookup miss debug marshal error>"
+	}
+	return string(b)
 }
 
 // ActiveTable returns a new ActiveTable for the entries in l whose
@@ -104,6 +129,50 @@ func (t *ActiveTable) Lookup(key uint32) (int32, bool) {
 		return 0, false
 	}
 	return e.PartitionID, true
+}
+
+// DebugLookupMiss returns a compact diagnostic view around key after
+// Lookup(key) returned false.
+func (t *ActiveTable) DebugLookupMiss(key uint32) LookupMissDebug {
+	out := LookupMissDebug{ByLoIndex: -1}
+	out.SearchIndex = sort.Search(len(t.entries), func(i int) bool {
+		return t.entries[i].Range.Hi >= key
+	})
+	if out.SearchIndex < len(t.entries) {
+		out.HasByHiEntry = true
+		out.ByHiEntry = t.entries[out.SearchIndex]
+	}
+
+	byLo := sort.Search(len(t.entries), func(i int) bool {
+		return t.entries[i].Range.Lo > key
+	}) - 1
+	out.ByLoIndex = byLo
+	if byLo >= 0 {
+		out.HasByLoEntry = true
+		out.ByLoEntry = t.entries[byLo]
+	}
+	if byLo+1 >= 0 && byLo+1 < len(t.entries) {
+		out.HasNextByLoEntry = true
+		out.NextByLoEntry = t.entries[byLo+1]
+	}
+
+	seen := map[int32]struct{}{}
+	for i := range t.entries {
+		e := &t.entries[i]
+		if e.Range.Lo > key {
+			break
+		}
+		if !e.Range.Contains(key) {
+			continue
+		}
+		out.CoveringEntries++
+		if _, ok := seen[e.PartitionID]; ok {
+			continue
+		}
+		seen[e.PartitionID] = struct{}{}
+		out.CoveringPartition = append(out.CoveringPartition, e.PartitionID)
+	}
+	return out
 }
 
 // PartitionsOverlapping returns the distinct partition IDs of all

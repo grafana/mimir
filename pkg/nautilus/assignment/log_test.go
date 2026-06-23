@@ -411,6 +411,48 @@ func TestLog_LeaseHorizon_TakesMinAcrossChains(t *testing.T) {
 	assert.Equal(t, at.Add(5*time.Minute), l.LeaseHorizon(at))
 }
 
+func TestLog_LeaseHorizonIgnoresKilledFutureEntries(t *testing.T) {
+	l := NewLog()
+	at := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	killedAt := at.Add(time.Second)
+
+	l.entries = []LogEntry{
+		{Range: HashRange{Lo: 0, Hi: 99}, PartitionID: 1, From: at, To: at.Add(5 * time.Minute)},
+		{Range: HashRange{Lo: 100, Hi: math.MaxUint32}, PartitionID: 2, From: at, To: at.Add(5 * time.Minute)},
+		// Apply kills unwanted pre-issued successors by setting To=From.
+		// Such entries have To > at before their start time, but can never
+		// be active and must not collapse the lease horizon.
+		{Range: HashRange{Lo: 100, Hi: math.MaxUint32}, PartitionID: 3, From: killedAt, To: killedAt},
+	}
+
+	assert.Equal(t, at.Add(5*time.Minute), l.LeaseHorizon(at))
+	assert.Len(t, l.LiveEntries(at), 2)
+}
+
+func TestLog_ApplyIgnoresKilledFutureEntriesWhenExtendingChain(t *testing.T) {
+	l := NewLog()
+	at := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	activeTo := at.Add(time.Minute)
+	killedAt := at.Add(10 * time.Minute)
+	leaseDuration := 15 * time.Minute
+	lookahead := 5 * time.Minute
+	a := &Assignment{Entries: []Entry{
+		{Range: HashRange{Lo: 0, Hi: math.MaxUint32}, PartitionID: 1},
+	}}
+
+	l.entries = []LogEntry{
+		{Range: HashRange{Lo: 0, Hi: math.MaxUint32}, PartitionID: 1, From: at.Add(-time.Minute), To: activeTo},
+		// A killed future entry for the same chain has To > at, but it can
+		// never be active and must not make Apply skip the real successor.
+		{Range: HashRange{Lo: 0, Hi: math.MaxUint32}, PartitionID: 1, From: killedAt, To: killedAt},
+	}
+
+	require.True(t, l.Apply(at, a, leaseDuration, lookahead))
+	assert.Equal(t, activeTo.Add(leaseDuration), l.LeaseHorizon(at))
+	_, ok := l.Lookup(activeTo.Add(time.Second), 123)
+	assert.True(t, ok)
+}
+
 func TestLog_ActiveTilesFullSpace_DetectsGap(t *testing.T) {
 	l := NewLog()
 	at := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)

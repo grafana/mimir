@@ -3024,6 +3024,7 @@ func (d *Distributor) getKeysByAssignment(ctx context.Context, tenantID string, 
 		pid, ok := table.Lookup(key)
 		if !ok {
 			if d.cfg.NautilusRequired {
+				missDebug := table.DebugLookupMiss(key)
 				d.debugLogNautilusKeyNotCovered(tenantID, key, i, len(keys), table)
 				d.nautilusRoutingRejected.WithLabelValues("key_not_covered").Inc()
 				level.Warn(d.log).Log(
@@ -3036,6 +3037,7 @@ func (d *Distributor) getKeysByAssignment(ctx context.Context, tenantID string, 
 					"table_built_at", table.BuiltAt().UTC().Format(time.RFC3339Nano),
 					"table_valid_until", table.ValidUntil().UTC().Format(time.RFC3339Nano),
 					"table_covers_now", table.CoversAt(d.now()),
+					"lookup_miss_debug", fmt.Sprintf("%+v", missDebug),
 					"log_entries", func() int {
 						if log := d.nautilusLog.Load(); log != nil {
 							return log.Len()

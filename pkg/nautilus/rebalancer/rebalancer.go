@@ -456,6 +456,17 @@ func (r *Rebalancer) nextRoundDelay(now time.Time) time.Duration {
 	return delay
 }
 
+// hashLeaseLookahead is the runway hash leases need after a rebalance
+// apply. nextRoundDelay floors the next wakeup by MinRebalanceInterval,
+// so merely extending chains whose To <= now+LeaseLookahead can still
+// leave the next round scheduled at-or-after the horizon when
+// MinRebalanceInterval is large. Extending through
+// LeaseLookahead+MinRebalanceInterval keeps at least one schedulable
+// wakeup before the earliest live hash lease expires.
+func (r *Rebalancer) hashLeaseLookahead() time.Duration {
+	return r.cfg.LeaseLookahead + r.cfg.MinRebalanceInterval
+}
+
 // WatchAssignments implements NautilusRebalancerServer. It sends
 // a full snapshot of the retention-bounded assignment log (expired
 // entries, active leases, and pre-issued successors; reset=true)
@@ -658,7 +669,7 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 				"partitions", len(activePartitions),
 				"total_entries", len(current.Entries))
 		}
-		r.store.apply(now, current, r.cfg.LeaseDuration, r.cfg.LeaseLookahead, r.cfg.EntryRetention)
+		r.store.apply(now, current, r.cfg.LeaseDuration, r.hashLeaseLookahead(), r.cfg.EntryRetention)
 		level.Info(r.logger).Log(
 			"msg", "cold start hash assignment log seeded",
 			"entries", len(current.Entries),
@@ -739,6 +750,21 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 			"healed_entries", len(healed.Entries),
 		)
 		current = healed
+	}
+
+	// Extend the current tiling before doing any expensive round work.
+	// Runtime evidence from dev-us-east-0 showed rounds starting with
+	// lease_horizon at (or within ~1s of) now, while stats collection and
+	// slicing took several seconds. Distributors rebuilt active tables in
+	// that window and saw true hash-space gaps until the final apply below
+	// published successors. Pre-issuing successors first keeps the current
+	// assignment covered even if the rebalance round runs long.
+	if r.store.apply(now, current, r.cfg.LeaseDuration, r.hashLeaseLookahead(), r.cfg.EntryRetention) {
+		level.Info(r.logger).Log(
+			"msg", "hash assignment leases refreshed before rebalance",
+			"lease_horizon", r.store.leaseHorizon(now).Format(time.RFC3339),
+			"subscribers", r.store.numSubscribers(),
+		)
 	}
 
 	rates, _, partitionTotals, partitionQuerySamples, unnamedPerInstance, err := r.collectRoundStats(ctx, current)
@@ -860,7 +886,7 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 		)
 	}
 
-	hashLogChanged := r.store.apply(now, newAssignment, r.cfg.LeaseDuration, r.cfg.LeaseLookahead, r.cfg.EntryRetention)
+	hashLogChanged := r.store.apply(now, newAssignment, r.cfg.LeaseDuration, r.hashLeaseLookahead(), r.cfg.EntryRetention)
 	if hashLogChanged {
 		level.Info(r.logger).Log(
 			"msg", "hash assignment log updated",

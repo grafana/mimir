@@ -89,6 +89,8 @@ type fakeReadcache struct {
 	hashRangeStatsErr error
 	setHashRangesErr  error
 	getHashRangesErr  error
+
+	onHashRangeStats func()
 }
 
 func newFakeReadcache(id string) *fakeReadcache {
@@ -120,6 +122,9 @@ func (f *fakeReadcache) setLoad(pid int32, hr assignment.HashRange, sampleRate f
 // range) the readcache owns, plus per-partition totals. Returns
 // hashRangeStatsErr when set, simulating a transient RPC failure.
 func (f *fakeReadcache) HashRangeStats(_ context.Context, _ *ingester_client.HashRangeStatsRequest, _ ...grpc.CallOption) (*ingester_client.HashRangeStatsResponse, error) {
+	if f.onHashRangeStats != nil {
+		f.onHashRangeStats()
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.hashRangeStatsErr != nil {

@@ -5,6 +5,7 @@ package rebalancer
 import (
 	"fmt"
 	"math"
+	"sync"
 	"testing"
 	"time"
 
@@ -140,4 +141,48 @@ func TestHarness_GapsRecoverEvenAfterSeededGap(t *testing.T) {
 	round3 := h.logOutput()[len(preLogs):]
 	assert.NotContains(t, round3, "healed gappy current assignment",
 		"once healed, subsequent rounds should run unhealed")
+}
+
+func TestHarness_RefreshesHashLeasesBeforeSlowRebalanceWork(t *testing.T) {
+	h := newHarness(t, harnessOpts{
+		captureLogs: true,
+		cfg: Config{
+			PartitionCount:       4,
+			LeaseDuration:        15 * time.Minute,
+			LeaseLookahead:       5 * time.Minute,
+			MinRebalanceInterval: 5 * time.Minute,
+			MaxRebalanceInterval: 15 * time.Minute,
+			ReadcacheSlicer: ReadcacheSlicerConfig{
+				Enabled:        true,
+				Alpha:          1.0,
+				MovementBudget: 0.5,
+			},
+		},
+	})
+	rc := h.addReadcache("readcache-0")
+
+	require.NoError(t, h.runRound())
+	start := h.clock.Now()
+	h.advance(h.cfg.LeaseDuration - h.cfg.LeaseLookahead + time.Second)
+	roundStart := h.clock.Now()
+
+	var once sync.Once
+	rc.onHashRangeStats = func() {
+		once.Do(func() {
+			h.advance(3 * time.Second)
+			active := h.tier1Active()
+			require.NotNil(t, active)
+			require.NoError(t, active.Validate(), "hash assignment must stay covered while the round runs past the old lease horizon")
+		})
+	}
+
+	require.NoError(t, h.runRound())
+	require.Equal(t, start.Add(h.cfg.LeaseDuration-h.cfg.LeaseLookahead+4*time.Second), h.clock.Now())
+	assert.Contains(t, h.logOutput(), "hash assignment leases refreshed before rebalance")
+	assert.True(t, h.r.store.leaseHorizon(roundStart).After(roundStart.Add(h.cfg.LeaseLookahead+h.cfg.MinRebalanceInterval)),
+		"post-round lease horizon at round start should leave enough runway for the scheduler floor")
+
+	active := h.tier1Active()
+	require.NotNil(t, active)
+	require.NoError(t, active.Validate(), "hash assignment must stay covered after the slow round completes")
 }

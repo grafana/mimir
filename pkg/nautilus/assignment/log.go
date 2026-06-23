@@ -176,6 +176,9 @@ func (l *Log) Apply(at time.Time, next *Assignment, leaseDuration, lookahead tim
 	// the first pass is safe.
 	latestToIndex := make(map[key]time.Time, len(next.Entries))
 	for _, e := range l.entries {
+		if !e.To.After(e.From) {
+			continue
+		}
 		k := key{r: e.Range, pid: e.PartitionID}
 		if cur, ok := latestToIndex[k]; !ok || e.To.After(cur) {
 			latestToIndex[k] = e.To
@@ -222,7 +225,7 @@ func (l *Log) Apply(at time.Time, next *Assignment, leaseDuration, lookahead tim
 	futureEntriesByKey := make(map[key][]int, len(next.Entries))
 	for i := range l.entries {
 		e := &l.entries[i]
-		if !e.To.After(at) {
+		if !e.To.After(at) || !e.To.After(e.From) {
 			continue
 		}
 		k := key{r: e.Range, pid: e.PartitionID}
@@ -466,7 +469,7 @@ func (l *Log) Entries() []LogEntry {
 func (l *Log) LiveEntries(at time.Time) []LogEntry {
 	out := make([]LogEntry, 0, len(l.entries))
 	for _, e := range l.entries {
-		if e.To.After(at) {
+		if e.To.After(at) && e.To.After(e.From) {
 			out = append(out, e)
 		}
 	}
@@ -507,7 +510,7 @@ func (l *Log) LeaseHorizon(at time.Time) time.Time {
 	// rebalance round.
 	chainEnd := make(map[chainKey]time.Time)
 	for _, e := range l.entries {
-		if !e.To.After(at) {
+		if !e.To.After(at) || !e.To.After(e.From) {
 			continue
 		}
 		k := chainKey{e.Range, e.PartitionID}
