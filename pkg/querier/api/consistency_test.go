@@ -36,7 +36,7 @@ var (
 )
 
 func TestConsistencyExtractor(t *testing.T) {
-	encodedOffsets := EncodeOffsets(map[int32]int64{0: 1, 1: 2})
+	encodedOffsets := EncodeOffsetsV1(map[int32]int64{0: 1, 1: 2})
 	headers := http.Header{}
 	headers.Set(ReadConsistencyHeader, ReadConsistencyStrong)
 	headers.Set(ReadConsistencyOffsetsHeader, string(encodedOffsets))
@@ -64,7 +64,7 @@ func TestConsistencyInjector(t *testing.T) {
 	ctx := context.Background()
 	ctx = ContextWithReadConsistencyLevel(ctx, ReadConsistencyStrong)
 	ctx = ContextWithReadConsistencyMaxDelay(ctx, time.Minute)
-	ctx = ContextWithReadConsistencyEncodedOffsets(ctx, EncodeOffsets(map[int32]int64{0: 1, 1: 2}))
+	ctx = ContextWithReadConsistencyEncodedOffsets(ctx, EncodeOffsetsV1(map[int32]int64{0: 1, 1: 2}))
 
 	headers := http.Header{}
 
@@ -79,7 +79,7 @@ func TestConsistencyInjector(t *testing.T) {
 }
 
 func TestReadConsistencyClientUnaryInterceptor_And_ReadConsistencyServerUnaryInterceptor(t *testing.T) {
-	encodedOffsets := EncodeOffsets(map[int32]int64{0: 1, 1: 2})
+	encodedOffsets := EncodeOffsetsV1(map[int32]int64{0: 1, 1: 2})
 
 	// Run the gRPC client interceptor.
 	clientIncomingCtx := context.Background()
@@ -126,7 +126,7 @@ func TestReadConsistencyClientUnaryInterceptor_And_ReadConsistencyServerUnaryInt
 }
 
 func TestReadConsistencyClientStreamInterceptor_And_ReadConsistencyServerStreamInterceptor(t *testing.T) {
-	encodedOffsets := EncodeOffsets(map[int32]int64{0: 1, 1: 2})
+	encodedOffsets := EncodeOffsetsV1(map[int32]int64{0: 1, 1: 2})
 
 	// Run the gRPC client interceptor.
 	clientIncomingCtx := context.Background()
@@ -181,7 +181,7 @@ func BenchmarkReadConsistencyServerUnaryInterceptor(b *testing.B) {
 			if withReadConsistency {
 				md = metadata.Join(md, metadata.New(map[string]string{
 					consistencyLevelGrpcMdKey:    ReadConsistencyStrong,
-					consistencyOffsetsGrpcMdKey:  string(EncodeOffsets(generateTestOffsets(numPartitions))),
+					consistencyOffsetsGrpcMdKey:  string(EncodeOffsetsV1(generateTestOffsets(numPartitions))),
 					consistencyMaxDelayGrpcMdKey: "1m",
 				}))
 			}
@@ -207,7 +207,7 @@ func BenchmarkReadConsistencyServerStreamInterceptor(b *testing.B) {
 			if withReadConsistency {
 				md = metadata.Join(md, metadata.New(map[string]string{
 					consistencyLevelGrpcMdKey:    ReadConsistencyStrong,
-					consistencyOffsetsGrpcMdKey:  string(EncodeOffsets(generateTestOffsets(numPartitions))),
+					consistencyOffsetsGrpcMdKey:  string(EncodeOffsetsV1(generateTestOffsets(numPartitions))),
 					consistencyMaxDelayGrpcMdKey: "1m",
 				}))
 			}
@@ -236,21 +236,21 @@ func (m serverStreamMock) Context() context.Context {
 
 func TestEncodeOffsets(t *testing.T) {
 	t.Run("empty offsets", func(t *testing.T) {
-		assert.Equal(t, EncodedOffsets(""), EncodeOffsets(nil))
-		assert.Equal(t, EncodedOffsets(""), EncodeOffsets(map[int32]int64{}))
+		assert.Equal(t, EncodedOffsets(""), EncodeOffsetsV1(nil))
+		assert.Equal(t, EncodedOffsets(""), EncodeOffsetsV1(map[int32]int64{}))
 	})
 
 	t.Run("1 offset", func(t *testing.T) {
-		assert.Equal(t, EncodedOffsets("v1=0:1000"), EncodeOffsets(map[int32]int64{0: 1000}))
-		assert.Equal(t, EncodedOffsets("v1=123456:654321"), EncodeOffsets(map[int32]int64{123456: 654321}))
+		assert.Equal(t, EncodedOffsets("v1=0:1000"), EncodeOffsetsV1(map[int32]int64{0: 1000}))
+		assert.Equal(t, EncodedOffsets("v1=123456:654321"), EncodeOffsetsV1(map[int32]int64{123456: 654321}))
 	})
 
 	t.Run("multiple offsets", func(t *testing.T) {
-		assert.ElementsMatch(t, []string{"1:1", "2:2", "10:9", "123:456"}, strings.Split(string(EncodeOffsets(map[int32]int64{1: 1, 2: 2, 10: 9, 123: 456})[3:]), ","))
+		assert.ElementsMatch(t, []string{"1:1", "2:2", "10:9", "123:456"}, strings.Split(string(EncodeOffsetsV1(map[int32]int64{1: 1, 2: 2, 10: 9, 123: 456})[3:]), ","))
 	})
 
 	t.Run("should not skip empty partitions", func(t *testing.T) {
-		assert.ElementsMatch(t, []string{"123:321", "456:-1"}, strings.Split(string(EncodeOffsets(map[int32]int64{123: 321, 456: -1})[3:]), ","))
+		assert.ElementsMatch(t, []string{"123:321", "456:-1"}, strings.Split(string(EncodeOffsetsV1(map[int32]int64{123: 321, 456: -1})[3:]), ","))
 	})
 
 	t.Run("should allocate only once", func(t *testing.T) {
@@ -259,7 +259,7 @@ func TestEncodeOffsets(t *testing.T) {
 				offsets := generateTestOffsets(numPartitions)
 
 				assert.Equal(t, 1.0, testing.AllocsPerRun(100, func() {
-					EncodeOffsets(offsets)
+					EncodeOffsetsV1(offsets)
 				}))
 			})
 		}
@@ -290,21 +290,21 @@ func TestEncodedOffsets_LookupV1_SpecialCases(t *testing.T) {
 			unexpectedPartitions: []int32{0},
 		},
 		"single partition": {
-			encoded: EncodeOffsets(map[int32]int64{
+			encoded: EncodeOffsetsV1(map[int32]int64{
 				0: 123,
 			}),
 			expectedPartitions:   map[int32]int64{0: 123},
 			unexpectedPartitions: []int32{1},
 		},
 		"single partition with negative offset": {
-			encoded: EncodeOffsets(map[int32]int64{
+			encoded: EncodeOffsetsV1(map[int32]int64{
 				0: -123,
 			}),
 			expectedPartitions:   map[int32]int64{0: -123},
 			unexpectedPartitions: []int32{1},
 		},
 		"multiple partitions": {
-			encoded: EncodeOffsets(map[int32]int64{
+			encoded: EncodeOffsetsV1(map[int32]int64{
 				0: -123,
 				1: 456,
 				2: math.MaxInt64,
@@ -339,7 +339,7 @@ func TestEncodedOffsets_LookupV1_First1000Partitions(t *testing.T) {
 	const numPartitions = 1000
 
 	offsets := generateTestOffsets(numPartitions)
-	encoded := EncodeOffsets(offsets)
+	encoded := EncodeOffsetsV1(offsets)
 
 	for partitionID, expected := range offsets {
 		actual, ok := encoded.lookupV1(partitionID)
@@ -365,7 +365,7 @@ func TestEncodedOffsets_LookupV1_Fuzzy(t *testing.T) {
 			offsets[rnd.Int31n(math.MaxInt32)] = rnd.Int63n(math.MaxInt64)
 		}
 
-		encoded := EncodeOffsets(offsets)
+		encoded := EncodeOffsetsV1(offsets)
 
 		for partitionID, expected := range offsets {
 			actual, ok := encoded.lookupV1(partitionID)
@@ -382,7 +382,7 @@ func BenchmarkEncodeOffsets(b *testing.B) {
 
 			b.ResetTimer()
 			for n := 0; n < b.N; n++ {
-				EncodeOffsets(offsets)
+				EncodeOffsetsV1(offsets)
 			}
 		})
 	}
@@ -391,7 +391,7 @@ func BenchmarkEncodeOffsets(b *testing.B) {
 func BenchmarkEncodedOffsets_LookupV1(b *testing.B) {
 	for _, numPartitions := range []int{1, 10, 100, 1000} {
 		b.Run(fmt.Sprintf("num partitions: %d", numPartitions), func(b *testing.B) {
-			encoded := EncodeOffsets(generateTestOffsets(numPartitions))
+			encoded := EncodeOffsetsV1(generateTestOffsets(numPartitions))
 
 			b.ResetTimer()
 			for n := 0; n < b.N; n++ {
@@ -426,7 +426,7 @@ func TestEncodedOffsets_Lookup(t *testing.T) {
 			lookups: []lookup{{0, 0, kmeta.PartitionOffsets{}, false}},
 		},
 		"v1 single cluster, read compartment 0": {
-			encoded: EncodeOffsets(map[int32]int64{0: 123, 1: -1}),
+			encoded: EncodeOffsetsV1(map[int32]int64{0: 123, 1: -1}),
 			lookups: []lookup{
 				{0, 0, kmeta.NewSingleClusterPartitionOffsets(123), true},
 				{0, 1, kmeta.NewSingleClusterPartitionOffsets(-1), true},
@@ -434,7 +434,7 @@ func TestEncodedOffsets_Lookup(t *testing.T) {
 			},
 		},
 		"v1 is only matched for read compartment 0": {
-			encoded: EncodeOffsets(map[int32]int64{0: 123}),
+			encoded: EncodeOffsetsV1(map[int32]int64{0: 123}),
 			lookups: []lookup{
 				{1, 0, kmeta.PartitionOffsets{}, false},
 			},

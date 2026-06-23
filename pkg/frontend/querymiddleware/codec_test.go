@@ -959,7 +959,7 @@ func TestCodec_EncodeMetricsQueryRequest_ShouldPropagateHeadersInAllowList(t *te
 			// Allowed.
 			{Name: compat.ForceFallbackHeaderName, Values: []string{"true"}},
 			{Name: chunkinfologger.ChunkInfoLoggingHeader, Values: []string{"label"}},
-			{Name: api.ReadConsistencyOffsetsHeader, Values: []string{string(api.EncodeOffsets(expectedOffsets))}},
+			{Name: api.ReadConsistencyOffsetsHeader, Values: []string{string(api.EncodeOffsetsV1(expectedOffsets))}},
 
 			// Not allowed.
 			{Name: notAllowedHeader, Values: []string{"some-value"}},
