@@ -8,9 +8,11 @@ import (
 	"fmt"
 	"iter"
 	"math/rand"
+	"net"
 	"slices"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/grafana/dskit/flagext"
@@ -20,6 +22,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kadm"
+	"github.com/twmb/franz-go/pkg/kfake"
 	"github.com/twmb/franz-go/pkg/kgo"
 
 	"github.com/grafana/mimir/pkg/blockbuilder/schedulerpb"
@@ -28,22 +31,21 @@ import (
 	"github.com/grafana/mimir/pkg/util/testkafka"
 )
 
-func mustKafkaClient(t *testing.T, addrs ...string) *kgo.Client {
-	writeClient, err := kgo.NewClient(
-		kgo.SeedBrokers(addrs...),
-		// We will choose the partition of each record.
-		kgo.RecordPartitioner(kgo.ManualPartitioner()),
+type dialerFunc func(ctx context.Context, network string, address string) (net.Conn, error)
+
+func mustSchedulerWithKafkaAddrAndDialer(t *testing.T, addr string, dialer dialerFunc) (*BlockBuilderScheduler, *kgo.Client) {
+	cli, err := kgo.NewClient(
+		kgo.SeedBrokers(addr),
+		kgo.Dialer(dialer),
+		kgo.RecordPartitioner(kgo.ManualPartitioner()), // we will choose the partition of each record
 	)
 	require.NoError(t, err)
-	t.Cleanup(writeClient.Close)
-	return writeClient
-}
+	t.Cleanup(cli.Close)
 
-func mustSchedulerWithKafkaAddr(t *testing.T, addr string) (*BlockBuilderScheduler, *kgo.Client) {
-	cli := mustKafkaClient(t, addr)
 	cfg := Config{
 		Kafka: ingest.KafkaConfig{
 			Address:      flagext.StringSliceCSV{addr},
+			Dialer:       dialer,
 			Topic:        "ingest",
 			FetchMaxWait: 10 * time.Millisecond,
 		},
@@ -61,8 +63,9 @@ func mustSchedulerWithKafkaAddr(t *testing.T, addr string) (*BlockBuilderSchedul
 }
 
 func mustScheduler(t *testing.T, partitions int32) (*BlockBuilderScheduler, *kgo.Client) {
-	_, kafkaAddr := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, partitions, "ingest")
-	return mustSchedulerWithKafkaAddr(t, kafkaAddr)
+	var vnet kfake.VirtualNetwork
+	_, kafkaAddr := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, partitions, "ingest", testkafka.WithVirtualNetwork(&vnet))
+	return mustSchedulerWithKafkaAddrAndDialer(t, kafkaAddr, vnet.DialContext)
 }
 
 // observationCompleteLocked: a getter for tests.
@@ -74,77 +77,106 @@ func (s *BlockBuilderScheduler) observationCompleteLocked() bool {
 
 // TestService tests the scheduler in a very basic way through its Service interface.
 func TestService(t *testing.T) {
-	_, kafkaAddr := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, 4, "ingest")
-	sched, cli := mustSchedulerWithKafkaAddr(t, kafkaAddr)
+	synctest.Test(t, func(t *testing.T) {
+		var vnet kfake.VirtualNetwork
 
-	// Signal our channel any time the schedule is updated.
-	scheduleUpdated := make(chan struct{})
-	sched.onScheduleUpdated = func() {
-		select {
-		case scheduleUpdated <- struct{}{}:
-		default:
-		}
-	}
+		_, kafkaAddr := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, 4, "ingest", testkafka.WithVirtualNetwork(&vnet))
 
-	// Configure all timers and intervals to be muy rapido.
-	sched.cfg.SchedulingInterval = 5 * time.Millisecond
-	sched.cfg.EnqueueInterval = 5 * time.Millisecond
-	sched.cfg.StartupObserveTime = 10 * time.Millisecond
-	sched.cfg.JobLeaseExpiry = 10 * time.Millisecond
-	sched.cfg.LookbackOnNoCommit = 1 * time.Minute
-	sched.cfg.MaxScanAge = 1 * time.Hour
-	sched.cfg.JobSize = 3 * time.Millisecond
-
-	ctx := context.Background()
-	require.NoError(t, services.StartAndAwaitRunning(ctx, sched))
-
-	t.Cleanup(func() {
-		require.NoError(t, services.StopAndAwaitTerminated(context.WithoutCancel(ctx), sched))
-	})
-
-	require.Eventually(t, sched.observationCompleteLocked, 5*time.Second, 10*time.Millisecond)
-
-	// Partition i gets 10*i records.
-	for i := range int32(4) {
-		for n := range 10 * i {
-			<-scheduleUpdated
-
-			produceResult := cli.ProduceSync(ctx, &kgo.Record{
-				Timestamp: time.Now(),
-				Value:     fmt.Appendf(nil, "value-%d-%d", i, n),
-				Topic:     "ingest",
-				Partition: i,
-			})
-			require.NoError(t, produceResult.FirstErr())
-		}
-	}
-
-	require.Eventually(t, func() bool {
-		return sched.jobs.count() > 0
-	}, 30*time.Second, 10*time.Millisecond)
-
-	var spec schedulerpb.JobSpec
-	clientDone := make(chan struct{})
-
-	// Simulate a client doing some client stuff.
-	go func() {
-		var key jobKey
-		var err error
-		key, spec, err = sched.assignJob("w0")
+		cli, err := kgo.NewClient(
+			kgo.SeedBrokers(kafkaAddr),
+			kgo.Dialer(vnet.DialContext),
+			kgo.RecordPartitioner(kgo.ManualPartitioner()),
+		)
 		require.NoError(t, err)
-		require.NoError(t, sched.updateJob(key, "w0", true, spec))
-		close(clientDone)
-	}()
-	<-clientDone
+		t.Cleanup(cli.Close)
 
-	require.NoError(t, sched.flushOffsetsToKafka(ctx))
+		cfg := Config{
+			Kafka: ingest.KafkaConfig{
+				Address:      flagext.StringSliceCSV{kafkaAddr},
+				Topic:        "ingest",
+				FetchMaxWait: 10 * time.Millisecond,
+				Dialer:       vnet.DialContext,
+			},
+			ConsumerGroup:       "test-builder",
+			SchedulingInterval:  1000000 * time.Hour,
+			JobSize:             1 * time.Hour,
+			MaxJobsPerPartition: 1,
+		}
 
-	// And our offsets should have advanced.
-	offs, err := sched.fetchCommittedOffsets(ctx)
-	require.NoError(t, err)
-	o, ok := offs.Lookup(spec.Topic, spec.Partition)
-	require.True(t, ok)
-	require.Equal(t, spec.EndOffset, o.At)
+		reg := prometheus.NewPedanticRegistry()
+		sched, err := New(cfg, test.NewTestingLogger(t), reg)
+		require.NoError(t, err)
+		sched.adminClient = kadm.NewClient(cli)
+
+		// Signal our channel any time the schedule is updated.
+		scheduleUpdated := make(chan struct{})
+		sched.onScheduleUpdated = func() {
+			select {
+			case scheduleUpdated <- struct{}{}:
+			default:
+			}
+		}
+
+		// Configure all timers and intervals to be muy rapido.
+		sched.cfg.SchedulingInterval = 5 * time.Millisecond
+		sched.cfg.EnqueueInterval = 5 * time.Millisecond
+		sched.cfg.StartupObserveTime = 10 * time.Millisecond
+		sched.cfg.JobLeaseExpiry = 10 * time.Millisecond
+		sched.cfg.LookbackOnNoCommit = 1 * time.Minute
+		sched.cfg.MaxScanAge = 1 * time.Hour
+		sched.cfg.JobSize = 3 * time.Millisecond
+
+		ctx := context.Background()
+		require.NoError(t, services.StartAndAwaitRunning(ctx, sched))
+
+		t.Cleanup(func() {
+			require.NoError(t, services.StopAndAwaitTerminated(context.WithoutCancel(ctx), sched))
+		})
+
+		require.Eventually(t, sched.observationCompleteLocked, 5*time.Second, 10*time.Millisecond)
+
+		// Partition i gets 10*i records.
+		for i := range int32(4) {
+			for n := range 10 * i {
+				<-scheduleUpdated
+
+				produceResult := cli.ProduceSync(ctx, &kgo.Record{
+					Timestamp: time.Now(),
+					Value:     fmt.Appendf(nil, "value-%d-%d", i, n),
+					Topic:     "ingest",
+					Partition: i,
+				})
+				require.NoError(t, produceResult.FirstErr())
+			}
+		}
+
+		require.Eventually(t, func() bool {
+			return sched.jobs.count() > 0
+		}, 30*time.Second, 10*time.Millisecond)
+
+		var spec schedulerpb.JobSpec
+		clientDone := make(chan struct{})
+
+		// Simulate a client doing some client stuff.
+		go func() {
+			var key jobKey
+			var err error
+			key, spec, err = sched.assignJob("w0")
+			require.NoError(t, err)
+			require.NoError(t, sched.updateJob(key, "w0", true, spec))
+			close(clientDone)
+		}()
+		<-clientDone
+
+		require.NoError(t, sched.flushOffsetsToKafka(ctx))
+
+		// And our offsets should have advanced.
+		offs, err := sched.fetchCommittedOffsets(ctx)
+		require.NoError(t, err)
+		o, ok := offs.Lookup(spec.Topic, spec.Partition)
+		require.True(t, ok)
+		require.Equal(t, spec.EndOffset, o.At)
+	})
 }
 
 func TestStartup(t *testing.T) {
@@ -653,8 +685,10 @@ func TestUpdateSchedule(t *testing.T) {
 	ctx, cancel := context.WithCancelCause(context.Background())
 	t.Cleanup(func() { cancel(errors.New("test done")) })
 
-	_, kafkaAddr := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, 4, "ingest")
-	sched, cli := mustSchedulerWithKafkaAddr(t, kafkaAddr)
+	var vnet kfake.VirtualNetwork
+
+	_, kafkaAddr := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, 4, "ingest", testkafka.WithVirtualNetwork(&vnet))
+	sched, cli := mustSchedulerWithKafkaAddrAndDialer(t, kafkaAddr, vnet.DialContext)
 	reg := sched.register.(*prometheus.Registry)
 
 	sched.completeObservationMode(ctx)
@@ -1171,7 +1205,6 @@ func TestPartitionState_PartitionBecomesInactive(t *testing.T) {
 }
 
 func TestPartitionState_ParallelJobs(t *testing.T) {
-
 	t.Run("planned job order required", func(t *testing.T) {
 		sched, _ := mustScheduler(t, 4)
 		ps := sched.getPartitionState("ingest", 1)
