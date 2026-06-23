@@ -24,12 +24,13 @@ std.manifestYamlDoc({
     {},
 
   // Compartment-aware Kafka args for the components that run the ingest-storage writer (distributor, ruler).
-  // The <write-compartment-id> placeholder in the address is resolved from -distributor.write-compartment-id;
-  // the read-compartment-templated topic makes the writer auto-create one topic per read compartment. Values
-  // with "<...>" placeholders are single-quoted so "sh -c" doesn't treat them as shell redirections.
-  local compartmentWriterArgs(writeCompartmentID) = [
+  // Each writer targets its own write compartment's Kafka cluster, so the address is resolved to that
+  // compartment (matching the production jsonnet), not left as the "<write-compartment-id>" placeholder. The
+  // read-compartment-templated topic makes the writer auto-create one topic per read compartment; its
+  // "<read-compartment-id>" placeholder is single-quoted so "sh -c" doesn't treat it as a shell redirection.
+  local writeCompartmentArgs(writeCompartmentID) = [
     '-distributor.write-compartment-id=%d' % writeCompartmentID,
-    "-ingest-storage.kafka.address='kafka-wc-<write-compartment-id>:9092'",
+    '-ingest-storage.kafka.address=kafka-wc-%d:9092' % writeCompartmentID,
     "-ingest-storage.kafka.topic='mimir-ingest-rc-<read-compartment-id>'",
   ],
 
@@ -42,7 +43,7 @@ std.manifestYamlDoc({
       name: 'distributor-wc-%d' % id,
       target: 'distributor',
       publishedHttpPort: 8000 + id,
-      extraArguments: compartmentWriterArgs(id),
+      extraArguments: writeCompartmentArgs(id),
     }) + {
       // Share a "distributor" network alias so nginx (DISTRIBUTOR_HOST=distributor) balances across both.
       networks: { default: { aliases: ['distributor'] } },
@@ -164,7 +165,7 @@ std.manifestYamlDoc({
       // config as the distributors (otherwise it falls back to the concrete base topic and auto-creates
       // duplicate topics). A single ruler can't shard across write compartments, so pin it to write
       // compartment 0; ingesters consume every write compartment, so its writes are still read back.
-      extraArguments: compartmentWriterArgs(0),
+      extraArguments: writeCompartmentArgs(0),
     })
     for id in std.range(1, count)
   },

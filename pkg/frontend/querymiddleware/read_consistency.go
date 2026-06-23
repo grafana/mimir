@@ -108,9 +108,7 @@ func readConsistencyMetricsTopicLabel(topics []string) string {
 }
 
 // ReadConsistencyOffsetsReader fetches the last produced offsets used to enforce strong read consistency
-// and encodes them for the read consistency offsets header. It has two implementations: one for a single
-// Kafka cluster (v1 encoding) and one for the compartments architecture, which spans the read-compartment
-// topics across the write-compartment Kafka clusters (v2 encoding).
+// and encodes them for the read consistency offsets header.
 type ReadConsistencyOffsetsReader interface {
 	// WaitNextEncodedOffsets returns the result of the next "last produced offsets" fetch, already encoded
 	// for the read consistency offsets header.
@@ -152,7 +150,7 @@ type multiClusterReadConsistencyOffsetsReader struct {
 }
 
 // NewMultiClusterReadConsistencyOffsetsReader returns a ReadConsistencyOffsetsReader backed by a
-// multi-cluster offsets reader (compartments architecture).
+// multi-cluster offsets reader.
 func NewMultiClusterReadConsistencyOffsetsReader(reader *ingest.MultiClusterOffsetsReader) ReadConsistencyOffsetsReader {
 	return multiClusterReadConsistencyOffsetsReader{reader: reader}
 }
