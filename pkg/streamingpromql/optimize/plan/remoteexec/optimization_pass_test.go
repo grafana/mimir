@@ -16,6 +16,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/ast/sharding"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/commonsubexpressionelimination"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/remoteexec"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/splitandcache"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -24,13 +25,16 @@ import (
 
 func TestOptimizationPass(t *testing.T) {
 	testCases := map[string]struct {
-		expr                                string
-		expectedPlan                        string
-		expectedPlanWithMultiNodeRemoteExec string
-		expectedPlanWithMiddlewareSharding  string
+		expr                                         string
+		useInstantQuery                              bool
+		expectedPlan                                 string
+		expectedPlanWithMultiNodeRemoteExec          string
+		expectedPlanWithMiddlewareSharding           string
+		expectedPlanWithSplittingAndCachingInsideMQE string
 	}{
 		"string expression": {
-			expr: `"the string"`,
+			expr:            `"the string"`,
+			useInstantQuery: true,
 			expectedPlan: `
 				- StringLiteral: "the string"
 			`,
@@ -39,6 +43,11 @@ func TestOptimizationPass(t *testing.T) {
 			expr: `123`,
 			expectedPlan: `
 				- NumberLiteral: 123
+			`,
+			expectedPlanWithSplittingAndCachingInsideMQE: `
+				- TimeRangeSplit: interval 24h0m0s
+					- Cache: split interval 24h0m0s
+						- NumberLiteral: 123
 			`,
 		},
 		"scalar expression with selector": {
@@ -49,17 +58,42 @@ func TestOptimizationPass(t *testing.T) {
 						- node 0: FunctionCall: scalar(...)
 							- VectorSelector: {__name__="my_metric"}
 			`,
+			expectedPlanWithSplittingAndCachingInsideMQE: `
+				- TimeRangeSplit: interval 24h0m0s
+					- Cache: split interval 24h0m0s
+						- RemoteExecutionConsumer: node 0
+							- RemoteExecutionGroup
+								- node 0: FunctionCall: scalar(...)
+									- VectorSelector: {__name__="my_metric"}
+			`,
 		},
 		"range vector expression": {
-			expr: `my_metric[5m]`,
+			expr:            `my_metric[5m]`,
+			useInstantQuery: true,
 			expectedPlan: `
 				- RemoteExecutionConsumer: node 0
 					- RemoteExecutionGroup
 						- node 0: MatrixSelector: {__name__="my_metric"}[5m0s]
 			`,
 		},
-		"unshardable instant vector expression": {
+		"unshardable instant vector expression run as range query": {
 			expr: "my_metric",
+			expectedPlan: `
+				- RemoteExecutionConsumer: node 0
+					- RemoteExecutionGroup
+						- node 0: VectorSelector: {__name__="my_metric"}
+			`,
+			expectedPlanWithSplittingAndCachingInsideMQE: `
+				- TimeRangeSplit: interval 24h0m0s
+					- Cache: split interval 24h0m0s
+						- RemoteExecutionConsumer: node 0
+							- RemoteExecutionGroup
+								- node 0: VectorSelector: {__name__="my_metric"}
+			`,
+		},
+		"unshardable instant vector expression run as instant query": {
+			expr:            "my_metric",
+			useInstantQuery: true,
 			expectedPlan: `
 				- RemoteExecutionConsumer: node 0
 					- RemoteExecutionGroup
@@ -77,6 +111,17 @@ func TestOptimizationPass(t *testing.T) {
 								- param 1: NumberLiteral: 0
 								- param 2: NumberLiteral: 1
 			`,
+			expectedPlanWithSplittingAndCachingInsideMQE: `
+				- TimeRangeSplit: interval 24h0m0s
+					- Cache: split interval 24h0m0s
+						- RemoteExecutionConsumer: node 0
+							- RemoteExecutionGroup
+								- node 0: DeduplicateAndMerge
+									- FunctionCall: clamp(...)
+										- param 0: VectorSelector: {__name__="my_metric"}
+										- param 1: NumberLiteral: 0
+										- param 2: NumberLiteral: 1
+			`,
 		},
 		"unshardable instant vector expression with an aggregation with multiple arguments": {
 			expr: "topk(5, my_metric)",
@@ -86,6 +131,15 @@ func TestOptimizationPass(t *testing.T) {
 						- node 0: AggregateExpression: topk
 							- expression: VectorSelector: {__name__="my_metric"}
 							- parameter: NumberLiteral: 5
+			`,
+			expectedPlanWithSplittingAndCachingInsideMQE: `
+				- TimeRangeSplit: interval 24h0m0s
+					- Cache: split interval 24h0m0s
+						- RemoteExecutionConsumer: node 0
+							- RemoteExecutionGroup
+								- node 0: AggregateExpression: topk
+									- expression: VectorSelector: {__name__="my_metric"}
+									- parameter: NumberLiteral: 5
 			`,
 		},
 		"shardable instant vector expression": {
@@ -111,6 +165,21 @@ func TestOptimizationPass(t *testing.T) {
 				- AggregateExpression: sum
 					- VectorSelector: {__queries__="{\"Concat\":[{\"Expr\":\"sum(my_metric{__query_shard__=\\\"1_of_2\\\"})\"},{\"Expr\":\"sum(my_metric{__query_shard__=\\\"2_of_2\\\"})\"}]}", __name__="__embedded_queries__"}
 			`,
+
+			expectedPlanWithSplittingAndCachingInsideMQE: `
+				- TimeRangeSplit: interval 24h0m0s
+					- Cache: split interval 24h0m0s
+						- AggregateExpression: sum
+							- FunctionCall: __sharded_concat__(...)
+								- param 0: RemoteExecutionConsumer: node 0
+									- RemoteExecutionGroup: eager load
+										- node 0: AggregateExpression: sum
+											- VectorSelector: {__query_shard__="1_of_2", __name__="my_metric"}
+								- param 1: RemoteExecutionConsumer: node 0
+									- RemoteExecutionGroup: eager load
+										- node 0: AggregateExpression: sum
+											- VectorSelector: {__query_shard__="2_of_2", __name__="my_metric"}
+					`,
 		},
 		"multiple shardable expressions": {
 			expr: `sum(my_metric) + count(my_other_metric)`,
@@ -145,6 +214,32 @@ func TestOptimizationPass(t *testing.T) {
 					- RHS: AggregateExpression: sum
 						- VectorSelector: {__queries__="{\"Concat\":[{\"Expr\":\"count(my_other_metric{__query_shard__=\\\"1_of_2\\\"})\"},{\"Expr\":\"count(my_other_metric{__query_shard__=\\\"2_of_2\\\"})\"}]}", __name__="__embedded_queries__"}
 			`,
+
+			expectedPlanWithSplittingAndCachingInsideMQE: `
+				- TimeRangeSplit: interval 24h0m0s
+					- Cache: split interval 24h0m0s
+						- BinaryExpression: LHS + RHS
+							- LHS: AggregateExpression: sum
+								- FunctionCall: __sharded_concat__(...)
+									- param 0: RemoteExecutionConsumer: node 0
+										- RemoteExecutionGroup: eager load
+											- node 0: AggregateExpression: sum
+												- VectorSelector: {__query_shard__="1_of_2", __name__="my_metric"}
+									- param 1: RemoteExecutionConsumer: node 0
+										- RemoteExecutionGroup: eager load
+											- node 0: AggregateExpression: sum
+												- VectorSelector: {__query_shard__="2_of_2", __name__="my_metric"}
+							- RHS: AggregateExpression: sum
+								- FunctionCall: __sharded_concat__(...)
+									- param 0: RemoteExecutionConsumer: node 0
+										- RemoteExecutionGroup: eager load
+											- node 0: AggregateExpression: count
+												- VectorSelector: {__query_shard__="1_of_2", __name__="my_other_metric"}
+									- param 1: RemoteExecutionConsumer: node 0
+										- RemoteExecutionGroup: eager load
+											- node 0: AggregateExpression: count
+												- VectorSelector: {__query_shard__="2_of_2", __name__="my_other_metric"}
+			`,
 		},
 		"subquery with spin-off": {
 			expr: `sum_over_time(sum(my_metric)[6h:5m])`,
@@ -154,6 +249,14 @@ func TestOptimizationPass(t *testing.T) {
 				- DeduplicateAndMerge
 					- FunctionCall: sum_over_time(...)
 						- MatrixSelector: {__query__="sum(my_metric)", __range__="6h0m0s", __step__="5m0s", __name__="__subquery_spinoff__"}[6h0m0s]
+			`,
+
+			expectedPlanWithSplittingAndCachingInsideMQE: `
+				- TimeRangeSplit: interval 24h0m0s
+					- Cache: split interval 24h0m0s
+						- DeduplicateAndMerge
+							- FunctionCall: sum_over_time(...)
+								- MatrixSelector: {__query__="sum(my_metric)", __range__="6h0m0s", __step__="5m0s", __name__="__subquery_spinoff__"}[6h0m0s]
 			`,
 		},
 		"expression with common sharded subexpression": {
@@ -180,6 +283,24 @@ func TestOptimizationPass(t *testing.T) {
 							- VectorSelector: {__queries__="{\"Concat\":[{\"Expr\":\"sum(foo{__query_shard__=\\\"1_of_2\\\"})\"},{\"Expr\":\"sum(foo{__query_shard__=\\\"2_of_2\\\"})\"}]}", __name__="__embedded_queries__"}
 					- RHS: ref#1 Duplicate ...
 			`,
+
+			expectedPlanWithSplittingAndCachingInsideMQE: `
+				- TimeRangeSplit: interval 24h0m0s
+					- Cache: split interval 24h0m0s
+						- BinaryExpression: LHS + RHS
+							- LHS: ref#1 Duplicate
+								- AggregateExpression: sum
+									- FunctionCall: __sharded_concat__(...)
+										- param 0: RemoteExecutionConsumer: node 0
+											- RemoteExecutionGroup: eager load
+												- node 0: AggregateExpression: sum
+													- VectorSelector: {__query_shard__="1_of_2", __name__="foo"}
+										- param 1: RemoteExecutionConsumer: node 0
+											- RemoteExecutionGroup: eager load
+												- node 0: AggregateExpression: sum
+													- VectorSelector: {__query_shard__="2_of_2", __name__="foo"}
+							- RHS: ref#1 Duplicate ...
+			`,
 		},
 		"expression with common subexpression that is not sharded": {
 			expr: `foo + foo`,
@@ -190,6 +311,17 @@ func TestOptimizationPass(t *testing.T) {
 							- LHS: ref#1 Duplicate
 								- VectorSelector: {__name__="foo"}
 							- RHS: ref#1 Duplicate ...
+			`,
+
+			expectedPlanWithSplittingAndCachingInsideMQE: `
+				- TimeRangeSplit: interval 24h0m0s
+					- Cache: split interval 24h0m0s
+						- RemoteExecutionConsumer: node 0
+							- RemoteExecutionGroup
+								- node 0: BinaryExpression: LHS + RHS
+									- LHS: ref#1 Duplicate
+										- VectorSelector: {__name__="foo"}
+									- RHS: ref#1 Duplicate ...
 			`,
 		},
 		"expression with common instant vector selector but aggregation is different": {
@@ -250,6 +382,33 @@ func TestOptimizationPass(t *testing.T) {
 						- VectorSelector: {__queries__="{\"Concat\":[{\"Expr\":\"sum(foo{__query_shard__=\\\"1_of_2\\\"})\"},{\"Expr\":\"sum(foo{__query_shard__=\\\"2_of_2\\\"})\"}]}", __name__="__embedded_queries__"}
 					- RHS: AggregateExpression: max
 						- VectorSelector: {__queries__="{\"Concat\":[{\"Expr\":\"max(foo{__query_shard__=\\\"1_of_2\\\"})\"},{\"Expr\":\"max(foo{__query_shard__=\\\"2_of_2\\\"})\"}]}", __name__="__embedded_queries__"}
+			`,
+			expectedPlanWithSplittingAndCachingInsideMQE: `
+				- TimeRangeSplit: interval 24h0m0s
+					- Cache: split interval 24h0m0s
+						- BinaryExpression: LHS + RHS
+							- LHS: AggregateExpression: sum
+								- FunctionCall: __sharded_concat__(...)
+									- param 0: RemoteExecutionConsumer: node 0
+										- ref#3 RemoteExecutionGroup: eager load
+											- node 0: AggregateExpression: sum
+												- ref#1 Duplicate
+													- VectorSelector: {__query_shard__="1_of_2", __name__="foo"}
+											- node 1: AggregateExpression: max
+												- ref#1 Duplicate ...
+									- param 1: RemoteExecutionConsumer: node 0
+										- ref#4 RemoteExecutionGroup: eager load
+											- node 0: AggregateExpression: sum
+												- ref#2 Duplicate
+													- VectorSelector: {__query_shard__="2_of_2", __name__="foo"}
+											- node 1: AggregateExpression: max
+												- ref#2 Duplicate ...
+							- RHS: AggregateExpression: max
+								- FunctionCall: __sharded_concat__(...)
+									- param 0: RemoteExecutionConsumer: node 1
+										- ref#3 RemoteExecutionGroup ...
+									- param 1: RemoteExecutionConsumer: node 1
+										- ref#4 RemoteExecutionGroup ...
 			`,
 		},
 		"expression with common instant vector selectors and some common aggregations": {
@@ -320,6 +479,36 @@ func TestOptimizationPass(t *testing.T) {
 							- VectorSelector: {__queries__="{\"Concat\":[{\"Expr\":\"max(foo{__query_shard__=\\\"1_of_2\\\"})\"},{\"Expr\":\"max(foo{__query_shard__=\\\"2_of_2\\\"})\"}]}", __name__="__embedded_queries__"}
 					- RHS: ref#1 Duplicate ...
 			`,
+			expectedPlanWithSplittingAndCachingInsideMQE: `
+				- TimeRangeSplit: interval 24h0m0s
+					- Cache: split interval 24h0m0s
+						- BinaryExpression: LHS + RHS
+							- LHS: BinaryExpression: LHS + RHS
+								- LHS: ref#5 Duplicate
+									- AggregateExpression: sum
+										- FunctionCall: __sharded_concat__(...)
+											- param 0: RemoteExecutionConsumer: node 0
+												- ref#3 RemoteExecutionGroup: eager load
+													- node 0: AggregateExpression: sum
+														- ref#1 Duplicate
+															- VectorSelector: {__query_shard__="1_of_2", __name__="foo"}
+													- node 1: AggregateExpression: max
+														- ref#1 Duplicate ...
+											- param 1: RemoteExecutionConsumer: node 0
+												- ref#4 RemoteExecutionGroup: eager load
+													- node 0: AggregateExpression: sum
+														- ref#2 Duplicate
+															- VectorSelector: {__query_shard__="2_of_2", __name__="foo"}
+													- node 1: AggregateExpression: max
+														- ref#2 Duplicate ...
+								- RHS: AggregateExpression: max
+									- FunctionCall: __sharded_concat__(...)
+										- param 0: RemoteExecutionConsumer: node 1
+											- ref#3 RemoteExecutionGroup ...
+										- param 1: RemoteExecutionConsumer: node 1
+											- ref#4 RemoteExecutionGroup ...
+							- RHS: ref#5 Duplicate ...
+				`,
 		},
 		"expression with multiple common instant vector selectors": {
 			expr: `(sum(foo) + max(foo)) * (sum(bar) - min(bar))`,
@@ -434,6 +623,57 @@ func TestOptimizationPass(t *testing.T) {
 						- RHS: AggregateExpression: min
 							- VectorSelector: {__queries__="{\"Concat\":[{\"Expr\":\"min(bar{__query_shard__=\\\"1_of_2\\\"})\"},{\"Expr\":\"min(bar{__query_shard__=\\\"2_of_2\\\"})\"}]}", __name__="__embedded_queries__"}
 			`,
+			expectedPlanWithSplittingAndCachingInsideMQE: `
+				- TimeRangeSplit: interval 24h0m0s
+					- Cache: split interval 24h0m0s
+						- BinaryExpression: LHS * RHS
+							- LHS: BinaryExpression: LHS + RHS
+								- LHS: AggregateExpression: sum
+									- FunctionCall: __sharded_concat__(...)
+										- param 0: RemoteExecutionConsumer: node 0
+											- ref#3 RemoteExecutionGroup: eager load
+												- node 0: AggregateExpression: sum
+													- ref#1 Duplicate
+														- VectorSelector: {__query_shard__="1_of_2", __name__="foo"}
+												- node 1: AggregateExpression: max
+													- ref#1 Duplicate ...
+										- param 1: RemoteExecutionConsumer: node 0
+											- ref#4 RemoteExecutionGroup: eager load
+												- node 0: AggregateExpression: sum
+													- ref#2 Duplicate
+														- VectorSelector: {__query_shard__="2_of_2", __name__="foo"}
+												- node 1: AggregateExpression: max
+													- ref#2 Duplicate ...
+								- RHS: AggregateExpression: max
+									- FunctionCall: __sharded_concat__(...)
+										- param 0: RemoteExecutionConsumer: node 1
+											- ref#3 RemoteExecutionGroup ...
+										- param 1: RemoteExecutionConsumer: node 1
+											- ref#4 RemoteExecutionGroup ...
+							- RHS: BinaryExpression: LHS - RHS
+								- LHS: AggregateExpression: sum
+									- FunctionCall: __sharded_concat__(...)
+										- param 0: RemoteExecutionConsumer: node 0
+											- ref#7 RemoteExecutionGroup: eager load
+												- node 0: AggregateExpression: sum
+													- ref#5 Duplicate
+														- VectorSelector: {__query_shard__="1_of_2", __name__="bar"}
+												- node 1: AggregateExpression: min
+													- ref#5 Duplicate ...
+										- param 1: RemoteExecutionConsumer: node 0
+											- ref#8 RemoteExecutionGroup: eager load
+												- node 0: AggregateExpression: sum
+													- ref#6 Duplicate
+														- VectorSelector: {__query_shard__="2_of_2", __name__="bar"}
+												- node 1: AggregateExpression: min
+													- ref#6 Duplicate ...
+								- RHS: AggregateExpression: min
+									- FunctionCall: __sharded_concat__(...)
+										- param 0: RemoteExecutionConsumer: node 1
+											- ref#7 RemoteExecutionGroup ...
+										- param 1: RemoteExecutionConsumer: node 1
+											- ref#8 RemoteExecutionGroup ...
+			`,
 		},
 		"expression with common range vector selector but aggregation is different": {
 			expr: `sum(rate(foo[5m])) + max(rate(foo[5m]))`,
@@ -502,21 +742,63 @@ func TestOptimizationPass(t *testing.T) {
 					- RHS: AggregateExpression: max
 						- VectorSelector: {__queries__="{\"Concat\":[{\"Expr\":\"max(rate(foo{__query_shard__=\\\"1_of_2\\\"}[5m]))\"},{\"Expr\":\"max(rate(foo{__query_shard__=\\\"2_of_2\\\"}[5m]))\"}]}", __name__="__embedded_queries__"}
 			`,
+			expectedPlanWithSplittingAndCachingInsideMQE: `
+				- TimeRangeSplit: interval 24h0m0s
+					- Cache: split interval 24h0m0s
+						- BinaryExpression: LHS + RHS
+							- LHS: AggregateExpression: sum
+								- FunctionCall: __sharded_concat__(...)
+									- param 0: RemoteExecutionConsumer: node 0
+										- ref#3 RemoteExecutionGroup: eager load
+											- node 0: AggregateExpression: sum
+												- ref#1 Duplicate
+													- DeduplicateAndMerge
+														- FunctionCall: rate(...)
+															- MatrixSelector: {__query_shard__="1_of_2", __name__="foo"}[5m0s]
+											- node 1: AggregateExpression: max
+												- ref#1 Duplicate ...
+									- param 1: RemoteExecutionConsumer: node 0
+										- ref#4 RemoteExecutionGroup: eager load
+											- node 0: AggregateExpression: sum
+												- ref#2 Duplicate
+													- DeduplicateAndMerge
+														- FunctionCall: rate(...)
+															- MatrixSelector: {__query_shard__="2_of_2", __name__="foo"}[5m0s]
+											- node 1: AggregateExpression: max
+												- ref#2 Duplicate ...
+							- RHS: AggregateExpression: max
+								- FunctionCall: __sharded_concat__(...)
+									- param 0: RemoteExecutionConsumer: node 1
+										- ref#3 RemoteExecutionGroup ...
+									- param 1: RemoteExecutionConsumer: node 1
+										- ref#4 RemoteExecutionGroup ...
+			`,
+		},
+		"instant vector expression not eligible for caching": {
+			expr: "my_metric offset -5m", // Expressions with negative offsets are not eligible for caching, so the plan will only have a split node and no cache node.
+			expectedPlan: `
+				- RemoteExecutionConsumer: node 0
+					- RemoteExecutionGroup
+						- node 0: VectorSelector: {__name__="my_metric"} offset -5m0s
+			`,
+			expectedPlanWithSplittingAndCachingInsideMQE: `
+				- TimeRangeSplit: interval 24h0m0s
+					- RemoteExecutionConsumer: node 0
+						- RemoteExecutionGroup
+							- node 0: VectorSelector: {__name__="my_metric"} offset -5m0s
+			`,
 		},
 	}
 
 	ctx := user.InjectOrgID(context.Background(), "tenant-1")
 	observer := streamingpromql.NoopPlanningObserver{}
-	timeRange := types.NewInstantQueryTimeRange(time.Now())
 
-	runTestCase := func(t *testing.T, expr string, expected string, enableMiddlewareSharding bool, enableMultiNodeRemoteExec bool, supportedQueryPlanVersion planning.QueryPlanVersion) {
+	runTestCase := func(t *testing.T, expr string, useInstantQuery bool, expected string, enableMiddlewareSharding bool, enableMultiNodeRemoteExec bool, enableSplittingAndCachingInsideMQE bool, supportedQueryPlanVersion planning.QueryPlanVersion) {
 		require.False(t, enableMiddlewareSharding && enableMultiNodeRemoteExec, "invalid test case: cannot enable both middleware sharding and multi-node remote execution")
 
 		opts := streamingpromql.NewTestEngineOpts()
 		planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts, streamingpromql.NewStaticQueryPlanVersionProvider(supportedQueryPlanVersion))
 		require.NoError(t, err)
-		planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, true, opts.CommonOpts.Reg, opts.Logger))
-		planner.RegisterQueryPlanOptimizationPass(remoteexec.NewOptimizationPass(enableMultiNodeRemoteExec))
 
 		if enableMiddlewareSharding {
 			// Rewrite the query in a shardable form.
@@ -529,6 +811,23 @@ func TestOptimizationPass(t *testing.T) {
 		// And do the same for queries eligible for subquery spin-off.
 		expr, err = rewriteForSubquerySpinoff(ctx, expr)
 		require.NoError(t, err)
+
+		planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, true, opts.CommonOpts.Reg, opts.Logger))
+
+		if enableSplittingAndCachingInsideMQE {
+			planner.RegisterQueryPlanOptimizationPass(splitandcache.NewOptimizationPass(true, 24*time.Hour, true, opts.Limits, opts.CommonOpts.Reg))
+		}
+
+		planner.RegisterQueryPlanOptimizationPass(remoteexec.NewOptimizationPass(enableMultiNodeRemoteExec))
+
+		var timeRange types.QueryTimeRange
+
+		if useInstantQuery {
+			timeRange = types.NewInstantQueryTimeRange(time.Now())
+		} else {
+			timeNow := time.Now().Truncate(time.Minute)
+			timeRange = types.NewRangeQueryTimeRange(timeNow.Add(-48*time.Hour), timeNow.Add(-time.Hour), time.Minute)
+		}
 
 		p, err := planner.NewQueryPlan(ctx, expr, timeRange, streamingpromql.DefaultLookbackDelta, false, observer)
 		require.NoError(t, err)
@@ -545,21 +844,29 @@ func TestOptimizationPass(t *testing.T) {
 			testCase.expectedPlanWithMiddlewareSharding = testCase.expectedPlan
 		}
 
+		if testCase.expectedPlanWithSplittingAndCachingInsideMQE == "" {
+			testCase.expectedPlanWithSplittingAndCachingInsideMQE = testCase.expectedPlan
+		}
+
 		t.Run(name, func(t *testing.T) {
-			t.Run("MQE sharding: multi-node disabled", func(t *testing.T) {
-				runTestCase(t, testCase.expr, testCase.expectedPlan, false, false, planning.MaximumSupportedQueryPlanVersion)
+			t.Run("MQE sharding: multi-node remote execution disabled", func(t *testing.T) {
+				runTestCase(t, testCase.expr, testCase.useInstantQuery, testCase.expectedPlan, false, false, false, planning.MaximumSupportedQueryPlanVersion)
 			})
 
-			t.Run("MQE sharding: multi-node enabled but not supported by querier", func(t *testing.T) {
-				runTestCase(t, testCase.expr, testCase.expectedPlan, false, true, planning.QueryPlanV2)
+			t.Run("MQE sharding: multi-node remote execution enabled but not supported by querier", func(t *testing.T) {
+				runTestCase(t, testCase.expr, testCase.useInstantQuery, testCase.expectedPlan, false, true, false, planning.QueryPlanV2)
 			})
 
-			t.Run("MQE sharding: multi-node enabled and supported by querier", func(t *testing.T) {
-				runTestCase(t, testCase.expr, testCase.expectedPlanWithMultiNodeRemoteExec, false, true, planning.QueryPlanV3)
+			t.Run("MQE sharding: multi-node remote execution enabled and supported by querier", func(t *testing.T) {
+				runTestCase(t, testCase.expr, testCase.useInstantQuery, testCase.expectedPlanWithMultiNodeRemoteExec, false, true, false, planning.QueryPlanV3)
 			})
 
 			t.Run("middleware sharding", func(t *testing.T) {
-				runTestCase(t, testCase.expr, testCase.expectedPlanWithMiddlewareSharding, true, false, planning.MaximumSupportedQueryPlanVersion)
+				runTestCase(t, testCase.expr, testCase.useInstantQuery, testCase.expectedPlanWithMiddlewareSharding, true, false, false, planning.MaximumSupportedQueryPlanVersion)
+			})
+
+			t.Run("splitting and caching running inside MQE", func(t *testing.T) {
+				runTestCase(t, testCase.expr, testCase.useInstantQuery, testCase.expectedPlanWithSplittingAndCachingInsideMQE, false, true, true, planning.MaximumSupportedQueryPlanVersion)
 			})
 		})
 	}
