@@ -19,14 +19,14 @@ import (
 type readConsistencyRoundTripper struct {
 	next http.RoundTripper
 
-	offsetsReader *ingest.TopicOffsetsReader
+	offsetsReader *ingest.SingleClusterTopicOffsetsReader
 
 	limits  Limits
 	logger  log.Logger
 	metrics *ingest.StrongReadConsistencyMetrics
 }
 
-func newReadConsistencyRoundTripper(next http.RoundTripper, offsetsReader *ingest.TopicOffsetsReader, limits Limits, logger log.Logger, metrics *ingest.StrongReadConsistencyMetrics) http.RoundTripper {
+func newReadConsistencyRoundTripper(next http.RoundTripper, offsetsReader *ingest.SingleClusterTopicOffsetsReader, limits Limits, logger log.Logger, metrics *ingest.StrongReadConsistencyMetrics) http.RoundTripper {
 	return &readConsistencyRoundTripper{
 		next:          next,
 		offsetsReader: offsetsReader,
@@ -87,7 +87,7 @@ func getDefaultReadConsistency(tenantIDs []string, limits Limits) string {
 	return querierapi.ReadConsistencyEventual
 }
 
-func newReadConsistencyMetrics(reg prometheus.Registerer, offsetsReader *ingest.TopicOffsetsReader) *ingest.StrongReadConsistencyMetrics {
+func newReadConsistencyMetrics(reg prometheus.Registerer, offsetsReader *ingest.SingleClusterTopicOffsetsReader) *ingest.StrongReadConsistencyMetrics {
 	const component = "query-frontend"
 
 	topics := []string{offsetsReader.Topic()}

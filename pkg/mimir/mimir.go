@@ -932,7 +932,7 @@ type Mimir struct {
 	QuerierStreamingEngine          *streamingpromql.Engine // The MQE instance in QuerierEngine (without fallback wrapper), or nil if MQE is disabled.
 	QueryFrontendStreamingEngine    *streamingpromql.Engine // The MQE instance used by the query-frontend (without fallback wrapper), or nil if MQE is disabled.
 	QueryFrontendTripperware        querymiddleware.Tripperware
-	QueryFrontendTopicOffsetsReader *ingest.TopicOffsetsReader
+	QueryFrontendTopicOffsetsReader *ingest.SingleClusterTopicOffsetsReader
 	QueryFrontendCodec              querymiddleware.Codec
 	Ruler                           *ruler.Ruler
 	RulerStorage                    rulestore.RuleStore
