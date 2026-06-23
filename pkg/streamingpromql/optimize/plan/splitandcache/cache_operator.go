@@ -647,6 +647,11 @@ func (c *CacheOperator) accumulateDesiredHistograms(data types.InstantVectorSeri
 			return err
 		}
 
+		// AppendToSlice copied the desired points into desiredTimeRangeData, but those copies share their FloatHistogram
+		// instances with data.Histograms. Clear the copied range before returning data.Histograms to the pool so the
+		// pooled slice doesn't retain references to instances now owned by desiredTimeRangeData: otherwise a later reuse
+		// of the pooled slice could alias those instances and corrupt the result.
+		clear(data.Histograms[firstDesiredIndex : lastDesiredIndex+1])
 		types.HPointSlicePool.Put(&data.Histograms, c.MemoryConsumptionTracker)
 	}
 
