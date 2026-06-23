@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/model/timestamp"
@@ -346,7 +347,11 @@ func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange ty
 	}
 
 	if plan.Version > maximumSupportedQueryPlanVersion {
-		return nil, fmt.Errorf("maximum supported query plan version is %d, but generated plan version is %d - this is a bug", maximumSupportedQueryPlanVersion, plan.Version)
+		level.Warn(spanLogger).Log(
+			"msg", "generated query plan has version higher than maximum version supported by queriers - this may be OK if the affected nodes will only be evaluated by this query-frontend",
+			"generated_plan_version", plan.Version,
+			"maximum_supported_query_plan_version", maximumSupportedQueryPlanVersion,
+		)
 	}
 
 	p.generatedPlans.WithLabelValues(plan.Version.String()).Inc()
