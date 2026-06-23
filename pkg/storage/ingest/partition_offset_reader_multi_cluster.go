@@ -18,10 +18,7 @@ import (
 )
 
 // MultiClusterOffsetsReader monitors the last produced offsets of several topics across multiple Kafka
-// clusters, one per write compartment. It owns one Kafka client per write compartment and a single internal
-// GenericOffsetReader acting as a single-flight: WaitNextFetchLastProducedOffset just waits for the next
-// result, while the actual cross-cluster fan-out (one ListOffsets request per write compartment) happens
-// once per poll regardless of the number of read compartments or the number of concurrent callers.
+// clusters, one per write compartment.
 type MultiClusterOffsetsReader struct {
 	services.Service
 
