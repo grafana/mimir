@@ -641,7 +641,11 @@ func isShardableBinOp(expr *parser.BinaryExpr) bool {
 	case parser.GTR,
 		parser.GTE,
 		parser.LSS,
-		parser.LTE:
+		parser.LTE,
+		// Trim operators ("</", ">/") act as a per-series filter on the left-hand side vector,
+		// just like comparison operators, so they can be pushed down into each shard.
+		parser.TRIM_UPPER,
+		parser.TRIM_LOWER:
 		return true
 	default:
 		return false
