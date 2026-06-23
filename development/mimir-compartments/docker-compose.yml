@@ -538,7 +538,7 @@
     "command":
       - "sh"
       - "-c"
-      - "exec ./mimir -config.file=./config/mimir.yaml -target=query-frontend -activity-tracker.filepath=/activity/query-frontend"
+      - "exec ./mimir -config.file=./config/mimir.yaml -target=query-frontend -activity-tracker.filepath=/activity/query-frontend -ingest-storage.kafka.address='kafka-wc-<write-compartment-id>:9092' -ingest-storage.kafka.topic='mimir-ingest-rc-<read-compartment-id>'"
     "depends_on":
       "kafka-wc-0":
         "condition": "service_healthy"
@@ -600,7 +600,7 @@
     "command":
       - "sh"
       - "-c"
-      - "exec ./mimir -config.file=./config/mimir.yaml -target=ruler -activity-tracker.filepath=/activity/ruler-1"
+      - "exec ./mimir -config.file=./config/mimir.yaml -target=ruler -activity-tracker.filepath=/activity/ruler-1 -distributor.write-compartment-id=0 -ingest-storage.kafka.address='kafka-wc-<write-compartment-id>:9092' -ingest-storage.kafka.topic='mimir-ingest-rc-<read-compartment-id>'"
     "depends_on":
       "kafka-wc-0":
         "condition": "service_healthy"

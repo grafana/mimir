@@ -35,7 +35,6 @@ import (
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/api"
-	"github.com/grafana/mimir/pkg/storage/ingest/kmeta"
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
@@ -977,7 +976,7 @@ func TestCodec_EncodeMetricsQueryRequest_ShouldPropagateHeadersInAllowList(t *te
 	for partitionID, expectedOffset := range expectedOffsets {
 		actualOffset, ok := actualOffsets.Lookup(0, partitionID)
 		require.True(t, ok)
-		require.Equal(t, kmeta.NewSingleClusterPartitionOffsets(expectedOffset), actualOffset)
+		require.Equal(t, expectedOffset, actualOffset.ForKafkaCluster(0))
 	}
 }
 

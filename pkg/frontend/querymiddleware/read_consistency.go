@@ -3,6 +3,7 @@
 package querymiddleware
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/go-kit/log"
@@ -13,20 +14,21 @@ import (
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	querierapi "github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/storage/ingest"
+	"github.com/grafana/mimir/pkg/storage/ingest/kmeta"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 type readConsistencyRoundTripper struct {
 	next http.RoundTripper
 
-	offsetsReader *ingest.SingleClusterTopicOffsetsReader
+	offsetsReader ReadConsistencyOffsetsReader
 
 	limits  Limits
 	logger  log.Logger
 	metrics *ingest.StrongReadConsistencyMetrics
 }
 
-func newReadConsistencyRoundTripper(next http.RoundTripper, offsetsReader *ingest.SingleClusterTopicOffsetsReader, limits Limits, logger log.Logger, metrics *ingest.StrongReadConsistencyMetrics) http.RoundTripper {
+func newReadConsistencyRoundTripper(next http.RoundTripper, offsetsReader ReadConsistencyOffsetsReader, limits Limits, logger log.Logger, metrics *ingest.StrongReadConsistencyMetrics) http.RoundTripper {
 	return &readConsistencyRoundTripper{
 		next:          next,
 		offsetsReader: offsetsReader,
@@ -59,14 +61,15 @@ func (r *readConsistencyRoundTripper) RoundTrip(req *http.Request) (_ *http.Resp
 		return r.next.RoundTrip(req)
 	}
 
-	offsets, err := ingest.ObserveStrongReadConsistency(r.metrics, r.offsetsReader.Topic(), false, func() (map[int32]int64, error) {
-		return r.offsetsReader.WaitNextFetchLastProducedOffset(ctx)
+	topicLabel := readConsistencyMetricsTopicLabel(r.offsetsReader.Topics())
+	encoded, err := ingest.ObserveStrongReadConsistency(r.metrics, topicLabel, false, func() (querierapi.EncodedOffsets, error) {
+		return r.offsetsReader.WaitNextEncodedOffsets(ctx)
 	})
 	if err != nil {
-		return nil, errors.Wrapf(err, "wait for last produced offsets of topic '%s'", r.offsetsReader.Topic())
+		return nil, errors.Wrapf(err, "wait for last produced offsets of topics %v", r.offsetsReader.Topics())
 	}
 
-	headerValue := string(querierapi.EncodeOffsetsV1(offsets))
+	headerValue := string(encoded)
 	req.Header.Add(querierapi.ReadConsistencyOffsetsHeader, headerValue)
 
 	spanLog.DebugLog("msg", "got offsets for strong read consistency", "header", querierapi.ReadConsistencyOffsetsHeader, "value", headerValue)
@@ -87,9 +90,89 @@ func getDefaultReadConsistency(tenantIDs []string, limits Limits) string {
 	return querierapi.ReadConsistencyEventual
 }
 
-func newReadConsistencyMetrics(reg prometheus.Registerer, offsetsReader *ingest.SingleClusterTopicOffsetsReader) *ingest.StrongReadConsistencyMetrics {
+func newReadConsistencyMetrics(reg prometheus.Registerer, offsetsReader ReadConsistencyOffsetsReader) *ingest.StrongReadConsistencyMetrics {
 	const component = "query-frontend"
 
-	topics := []string{offsetsReader.Topic()}
+	topics := []string{readConsistencyMetricsTopicLabel(offsetsReader.Topics())}
 	return ingest.NewStrongReadConsistencyMetrics(reg, component, topics)
+}
+
+// readConsistencyMetricsTopicLabel builds the "topic" metric label for an offsets reader: the topic itself
+// when it monitors a single topic (compartments disabled), or "mixed" when it monitors multiple
+// read-compartment topics.
+func readConsistencyMetricsTopicLabel(topics []string) string {
+	if len(topics) == 1 {
+		return topics[0]
+	}
+	return "mixed"
+}
+
+// ReadConsistencyOffsetsReader fetches the last produced offsets used to enforce strong read consistency
+// and encodes them for the read consistency offsets header. It has two implementations: one for a single
+// Kafka cluster (v1 encoding) and one for the compartments architecture, which spans the read-compartment
+// topics across the write-compartment Kafka clusters (v2 encoding).
+type ReadConsistencyOffsetsReader interface {
+	// WaitNextEncodedOffsets returns the result of the next "last produced offsets" fetch, already encoded
+	// for the read consistency offsets header.
+	WaitNextEncodedOffsets(ctx context.Context) (querierapi.EncodedOffsets, error)
+
+	// Topics returns the monitored topics, used for metrics and logging.
+	Topics() []string
+}
+
+// singleClusterReadConsistencyOffsetsReader monitors the offsets of a single topic in a single Kafka
+// cluster and encodes them with the v1 format. It is used when compartments are disabled.
+type singleClusterReadConsistencyOffsetsReader struct {
+	reader *ingest.SingleClusterTopicOffsetsReader
+}
+
+// NewSingleClusterReadConsistencyOffsetsReader returns a ReadConsistencyOffsetsReader backed by a single
+// Kafka cluster's topic offsets reader. The reader is expected to monitor exactly one topic.
+func NewSingleClusterReadConsistencyOffsetsReader(reader *ingest.SingleClusterTopicOffsetsReader) ReadConsistencyOffsetsReader {
+	return singleClusterReadConsistencyOffsetsReader{reader: reader}
+}
+
+func (r singleClusterReadConsistencyOffsetsReader) WaitNextEncodedOffsets(ctx context.Context) (querierapi.EncodedOffsets, error) {
+	offsets, err := r.reader.WaitNextFetchLastProducedOffset(ctx)
+	if err != nil {
+		return "", err
+	}
+	return querierapi.EncodeOffsetsV1(offsets), nil
+}
+
+func (r singleClusterReadConsistencyOffsetsReader) Topics() []string {
+	return []string{r.reader.Topic()}
+}
+
+// multiClusterReadConsistencyOffsetsReader monitors the offsets of the read-compartment topics across all
+// write-compartment Kafka clusters and encodes them with the v2 format. It is used when compartments are
+// enabled.
+type multiClusterReadConsistencyOffsetsReader struct {
+	reader *ingest.MultiClusterOffsetsReader
+}
+
+// NewMultiClusterReadConsistencyOffsetsReader returns a ReadConsistencyOffsetsReader backed by a
+// multi-cluster offsets reader (compartments architecture).
+func NewMultiClusterReadConsistencyOffsetsReader(reader *ingest.MultiClusterOffsetsReader) ReadConsistencyOffsetsReader {
+	return multiClusterReadConsistencyOffsetsReader{reader: reader}
+}
+
+func (r multiClusterReadConsistencyOffsetsReader) WaitNextEncodedOffsets(ctx context.Context) (querierapi.EncodedOffsets, error) {
+	offsetsByTopic, err := r.reader.WaitNextFetchLastProducedOffset(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	// The reader returns offsets keyed by topic; map each topic back to its read compartment ID (topics are
+	// returned in read-compartment order, so the index is the read compartment ID) for the v2 encoding.
+	topics := r.reader.Topics()
+	offsetsByReadCompartment := make(map[int]kmeta.PartitionsOffsets, len(topics))
+	for readCompartmentID, topic := range topics {
+		offsetsByReadCompartment[readCompartmentID] = offsetsByTopic[topic]
+	}
+	return querierapi.EncodeOffsetsV2(offsetsByReadCompartment), nil
+}
+
+func (r multiClusterReadConsistencyOffsetsReader) Topics() []string {
+	return r.reader.Topics()
 }
