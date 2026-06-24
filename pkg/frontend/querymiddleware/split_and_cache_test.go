@@ -1046,7 +1046,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotCacheRequestEarlierThanMa
 	}
 }
 
-func TestSplitAndCacheMiddleware_ResultsCacheFuzzy(t *testing.T) {
+func TestSplitAndCacheMiddlewareAndMQEImplementations_ResultsCacheFuzzy(t *testing.T) {
 	const (
 		numSeries  = 1000
 		numQueries = 10
@@ -1168,52 +1168,81 @@ func TestSplitAndCacheMiddleware_ResultsCacheFuzzy(t *testing.T) {
 		return nil
 	}))
 
+	const splitInterval = 24 * time.Hour
+
 	for testName, testData := range tests {
+		limits := mockLimits{
+			maxCacheFreshness:   testData.maxCacheFreshness,
+			maxQueryParallelism: testData.maxQueryParallelism,
+		}
 		for _, maxConcurrency := range []int{1, numQueries} {
 			t.Run(fmt.Sprintf("%s (concurrency: %d)", testName, maxConcurrency), func(t *testing.T) {
-				t.Parallel()
-				reg := prometheus.NewPedanticRegistry()
-				limits := mockLimits{
-					maxCacheFreshness:   testData.maxCacheFreshness,
-					maxQueryParallelism: testData.maxQueryParallelism,
-				}
-				mw := newSplitAndCacheMiddleware(
-					testData.splitEnabled,
-					testData.cacheEnabled,
-					24*time.Hour,
-					limits,
-					newMockQueryLimitsProvider(&limits),
-					newTestCodec(),
-					cache.NewMockCache(),
-					DefaultCacheKeyGenerator{interval: day},
-					PrometheusResponseExtractor{},
-					resultsCacheAlwaysEnabled,
-					log.NewNopLogger(),
-					reg,
-					limiter.NewInflightMemoryConsumptionTracker(reg, nil),
-				).Wrap(downstream)
+				limitsProvider := newMockQueryLimitsProvider(&limits)
 
-				// Run requests honoring concurrency.
-				require.NoError(t, concurrency.ForEachJob(ctx, len(reqs), maxConcurrency, func(ctx context.Context, idx int) error {
-					actual, err := mw.Do(ctx, reqs[idx])
-					require.NoError(t, err)
+				t.Run("using middleware", func(t *testing.T) {
+					t.Parallel()
 
-					// Get the Prometheus response from the actual result
-					actualProm, actualOk := actual.GetPrometheusResponse()
-					require.True(t, actualOk)
+					reg := prometheus.NewPedanticRegistry()
+					mw := newSplitAndCacheMiddleware(
+						testData.splitEnabled,
+						testData.cacheEnabled,
+						splitInterval,
+						limits,
+						limitsProvider,
+						newTestCodec(),
+						cache.NewMockCache(),
+						DefaultCacheKeyGenerator{interval: splitInterval},
+						PrometheusResponseExtractor{},
+						resultsCacheAlwaysEnabled,
+						log.NewNopLogger(),
+						reg,
+						limiter.NewInflightMemoryConsumptionTracker(reg, nil),
+					).Wrap(downstream)
 
-					// Get the Prometheus response from the expected result
-					expectedProm, expectedOk := expectedRes[reqs[idx].GetID()].GetPrometheusResponse()
-					require.True(t, expectedOk)
+					runSplitAndCacheFuzzTestAgainstMiddleware(t, ctx, mw, reqs, expectedRes, maxConcurrency)
+				})
 
-					// Compare the Prometheus responses instead of the wrapper types
-					require.Equal(t, expectedProm, actualProm)
+				t.Run("using MQE implementation", func(t *testing.T) {
+					t.Parallel()
 
-					return nil
-				}))
+					_, engine := newEngineForTesting(
+						t,
+						querier.MimirEngine,
+						withSplittingAndCachingRunningInsideMQE(testData.splitEnabled, splitInterval, testData.cacheEnabled),
+						withLimitsProvider(limitsProvider),
+					)
+
+					downstream := &downstreamHandler{
+						engine:    engine,
+						queryable: queryable,
+					}
+
+					runSplitAndCacheFuzzTestAgainstMiddleware(t, ctx, downstream, reqs, expectedRes, maxConcurrency)
+				})
 			})
 		}
 	}
+}
+
+func runSplitAndCacheFuzzTestAgainstMiddleware(t *testing.T, ctx context.Context, downstream MetricsQueryHandler, reqs []MetricsQueryRequest, expectedRes map[int64]Response, maxConcurrency int) {
+	// Run requests honoring concurrency.
+	require.NoError(t, concurrency.ForEachJob(ctx, len(reqs), maxConcurrency, func(ctx context.Context, idx int) error {
+		actual, err := downstream.Do(ctx, reqs[idx])
+		require.NoError(t, err)
+
+		// Get the Prometheus response from the actual result
+		actualProm, actualOk := actual.GetPrometheusResponse()
+		require.True(t, actualOk)
+
+		// Get the Prometheus response from the expected result
+		expectedProm, expectedOk := expectedRes[reqs[idx].GetID()].GetPrometheusResponse()
+		require.True(t, expectedOk)
+
+		// Compare the Prometheus responses instead of the wrapper types
+		require.Equal(t, expectedProm, actualProm)
+
+		return nil
+	}))
 }
 
 func TestSplitAndCacheMiddleware_ResultsCache_ExtentsEdgeCases(t *testing.T) {
