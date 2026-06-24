@@ -146,11 +146,28 @@ func CachePrefixGenerator(delegate caching.PrefixGenerator) caching.PrefixGenera
 			return "", err
 		}
 
-		labelPolicyHash, _ := ctx.Value(contextKeyLabelPolicyHash).(string)
+		labelPolicyHash := getPolicyHash(ctx)
 		if len(labelPolicyHash) == 0 {
 			return inner, nil
 		}
 
 		return inner + labelPolicySeparator + labelPolicyHash, nil
 	}
+}
+
+func getPolicyHash(ctx context.Context) string {
+	// If we're running on a query-frontend, then the hash is available in the context.
+	labelPolicyHash, ok := ctx.Value(contextKeyLabelPolicyHash).(string)
+	if ok {
+		return labelPolicyHash
+	}
+
+	// If we're running on a querier, then the hash isn't available in the context, but we
+	// can compute it.
+	labelPolicies, _ := shared.ExtractLabelMatchersContext(ctx)
+	if len(labelPolicies) == 0 {
+		return ""
+	}
+
+	return labelPolicies.Hash()
 }
