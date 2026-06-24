@@ -97,6 +97,12 @@
 
 ### Query-tee
 
+## 3.1.2
+
+### Grafana Mimir
+
+* [BUGFIX] Ingest storage: Cap maximum Kafka protocol version, the client negotiates with the broker to v3.9.0. #15745
+
 ## 3.1.1
 
 ### Grafana Mimir
