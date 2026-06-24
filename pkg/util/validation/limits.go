@@ -223,23 +223,24 @@ type Limits struct {
 	EnableDelayedNameRemoval              bool           `yaml:"enable_delayed_name_removal" json:"enable_delayed_name_removal" category:"experimental"`
 
 	// Query-frontend limits.
-	MaxTotalQueryLength                    model.Duration         `yaml:"max_total_query_length" json:"max_total_query_length"`
-	ResultsCacheTTL                        model.Duration         `yaml:"results_cache_ttl" json:"results_cache_ttl"`
-	ResultsCacheTTLForOutOfOrderTimeWindow model.Duration         `yaml:"results_cache_ttl_for_out_of_order_time_window" json:"results_cache_ttl_for_out_of_order_time_window"`
-	ResultsCacheTTLForCardinalityQuery     model.Duration         `yaml:"results_cache_ttl_for_cardinality_query" json:"results_cache_ttl_for_cardinality_query"`
-	ResultsCacheTTLForLabelsQuery          model.Duration         `yaml:"results_cache_ttl_for_labels_query" json:"results_cache_ttl_for_labels_query"`
-	ResultsCacheTTLForErrors               model.Duration         `yaml:"results_cache_ttl_for_errors" json:"results_cache_ttl_for_errors"`
-	ResultsCacheForUnalignedQueryEnabled   bool                   `yaml:"cache_unaligned_requests" json:"cache_unaligned_requests" category:"advanced"`
-	MaxQueryExpressionSizeBytes            int                    `yaml:"max_query_expression_size_bytes" json:"max_query_expression_size_bytes"`
-	BlockedQueries                         BlockedQueriesConfig   `yaml:"blocked_queries,omitempty" json:"blocked_queries,omitempty" doc:"nocli|description=List of queries to block."`
-	LimitedQueries                         LimitedQueriesConfig   `yaml:"limited_queries,omitempty" json:"limited_queries,omitempty" doc:"nocli|description=List of queries to limit and duration to limit them for." category:"experimental"`
-	BlockedRequests                        BlockedRequestsConfig  `yaml:"blocked_requests,omitempty" json:"blocked_requests,omitempty" doc:"nocli|description=List of HTTP requests to block." category:"experimental"`
-	AlignQueriesWithStep                   bool                   `yaml:"align_queries_with_step" json:"align_queries_with_step"`
-	EnabledPromQLExperimentalFunctions     flagext.StringSliceCSV `yaml:"enabled_promql_experimental_functions" json:"enabled_promql_experimental_functions"`
-	EnabledPromQLExtendedRangeSelectors    flagext.StringSliceCSV `yaml:"enabled_promql_extended_range_selectors" json:"enabled_promql_extended_range_selectors"`
-	Prom2RangeCompat                       bool                   `yaml:"prom2_range_compat" json:"prom2_range_compat" category:"experimental"`
-	SubquerySpinOffEnabled                 bool                   `yaml:"subquery_spin_off_enabled" json:"subquery_spin_off_enabled" category:"experimental"`
-	LabelsQueryOptimizerEnabled            bool                   `yaml:"labels_query_optimizer_enabled" json:"labels_query_optimizer_enabled" category:"advanced"`
+	MaxTotalQueryLength                    model.Duration                       `yaml:"max_total_query_length" json:"max_total_query_length"`
+	ResultsCacheTTL                        model.Duration                       `yaml:"results_cache_ttl" json:"results_cache_ttl"`
+	ResultsCacheTTLForOutOfOrderTimeWindow model.Duration                       `yaml:"results_cache_ttl_for_out_of_order_time_window" json:"results_cache_ttl_for_out_of_order_time_window"`
+	ResultsCacheTTLForCardinalityQuery     model.Duration                       `yaml:"results_cache_ttl_for_cardinality_query" json:"results_cache_ttl_for_cardinality_query"`
+	ResultsCacheTTLForLabelsQuery          model.Duration                       `yaml:"results_cache_ttl_for_labels_query" json:"results_cache_ttl_for_labels_query"`
+	ResultsCacheTTLForErrors               model.Duration                       `yaml:"results_cache_ttl_for_errors" json:"results_cache_ttl_for_errors"`
+	ResultsCacheForUnalignedQueryEnabled   bool                                 `yaml:"cache_unaligned_requests" json:"cache_unaligned_requests" category:"advanced"`
+	MaxQueryExpressionSizeBytes            int                                  `yaml:"max_query_expression_size_bytes" json:"max_query_expression_size_bytes"`
+	BlockedQueries                         BlockedQueriesConfig                 `yaml:"blocked_queries,omitempty" json:"blocked_queries,omitempty" doc:"nocli|description=List of queries to block."`
+	LimitedQueries                         LimitedQueriesConfig                 `yaml:"limited_queries,omitempty" json:"limited_queries,omitempty" doc:"nocli|description=List of queries to limit and duration to limit them for." category:"experimental"`
+	BlockedRequests                        BlockedRequestsConfig                `yaml:"blocked_requests,omitempty" json:"blocked_requests,omitempty" doc:"nocli|description=List of HTTP requests to block." category:"experimental"`
+	AlignQueriesWithStep                   bool                                 `yaml:"align_queries_with_step" json:"align_queries_with_step"`
+	EnabledPromQLExperimentalFunctions     flagext.StringSliceCSV               `yaml:"enabled_promql_experimental_functions" json:"enabled_promql_experimental_functions"`
+	EnabledPromQLExtendedRangeSelectors    flagext.StringSliceCSV               `yaml:"enabled_promql_extended_range_selectors" json:"enabled_promql_extended_range_selectors"`
+	Prom2RangeCompat                       bool                                 `yaml:"prom2_range_compat" json:"prom2_range_compat" category:"experimental"`
+	SubquerySpinOffEnabled                 bool                                 `yaml:"subquery_spin_off_enabled" json:"subquery_spin_off_enabled" category:"experimental"`
+	SubquerySpinOffDisabledQueries         SubquerySpinOffDisabledQueriesConfig `yaml:"subquery_spin_off_disabled_queries,omitempty" json:"subquery_spin_off_disabled_queries,omitempty" doc:"nocli|description=List of queries for which to disable subquery spin-off." category:"experimental"`
+	LabelsQueryOptimizerEnabled            bool                                 `yaml:"labels_query_optimizer_enabled" json:"labels_query_optimizer_enabled" category:"advanced"`
 
 	// Cardinality
 	CardinalityAnalysisEnabled                    bool `yaml:"cardinality_analysis_enabled" json:"cardinality_analysis_enabled"`
@@ -773,8 +774,12 @@ func (l *Limits) computeCostAttributionConfigHash() uint64 {
 const LabelValueHashLen = len("(hash:)") + blake2b.Size256*2
 
 func (l *Limits) canonicalizeQueries() {
-	parser := promqlext.NewPromQLParser()
+	l.canonicalizeBlockedQueries()
+	l.canonicalizeDisabledSpinOffQueries()
+}
 
+func (l *Limits) canonicalizeBlockedQueries() {
+	parser := promqlext.NewPromQLParser()
 	for i, q := range l.BlockedQueries {
 		if q.Regex {
 			continue
@@ -788,6 +793,24 @@ func (l *Limits) canonicalizeQueries() {
 			continue
 		}
 		l.BlockedQueries[i].Pattern = newPattern
+	}
+}
+
+func (l *Limits) canonicalizeDisabledSpinOffQueries() {
+	parser := promqlext.NewPromQLParser()
+	for i, q := range l.SubquerySpinOffDisabledQueries {
+		if q.Regex {
+			continue
+		}
+		expr, err := parser.ParseExpr(q.Pattern)
+		if err != nil {
+			continue
+		}
+		newPattern := expr.String()
+		if newPattern == q.Pattern {
+			continue
+		}
+		l.SubquerySpinOffDisabledQueries[i].Pattern = newPattern
 	}
 }
 
@@ -1756,6 +1779,11 @@ func (o *Overrides) EffectiveIngestionPartitionsTenantWriteShardSize(userID stri
 
 func (o *Overrides) SubquerySpinOffEnabled(userID string) bool {
 	return o.getOverridesForUser(userID).SubquerySpinOffEnabled
+}
+
+// SubquerySpinOffDisabledQueries returns the query patterns for which subquery spin-off should be disabled.
+func (o *Overrides) SubquerySpinOffDisabledQueries(userID string) []SubquerySpinOffDisabledQuery {
+	return o.getOverridesForUser(userID).SubquerySpinOffDisabledQueries
 }
 
 // LabelsQueryOptimizerEnabled returns whether labels query optimizations are enabled.

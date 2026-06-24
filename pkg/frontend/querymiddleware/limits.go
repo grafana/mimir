@@ -133,6 +133,9 @@ type Limits interface {
 	// SubquerySpinOffEnabled returns if the feature of spinning off subqueries from instant queries as range queries is enabled.
 	SubquerySpinOffEnabled(userID string) bool
 
+	// SubquerySpinOffDisabledQueries returns the query patterns for which subquery spin-off should be disabled.
+	SubquerySpinOffDisabledQueries(userID string) []validation.SubquerySpinOffDisabledQuery
+
 	// LabelsQueryOptimizerEnabled returns whether labels query optimizations are enabled.
 	LabelsQueryOptimizerEnabled(userID string) bool
 }
