@@ -6,8 +6,8 @@ std.manifestYamlDoc({
     self.query_frontend +
     self.query_schedulers +
     self.querier +
-    self.store_gateways(1) +
-    self.compactor +
+    self.store_gateways +
+    self.compactors +
     self.block_builder +
     self.block_builder_scheduler +
     self.rulers(1) +
@@ -109,32 +109,40 @@ std.manifestYamlDoc({
     }),
   },
 
-  compactor:: {
-    compactor: mimirService({
-      name: 'compactor',
+  // Each read compartment runs its own compactor. A compactor registers into its read compartment's
+  // ring (-compactor.read-compartment-id) and compacts only that compartment's dedicated bucket
+  // (mimir-blocks-rc-<id>), so the per-compartment compactors never contend over the same blocks.
+  compactors:: {
+    ['compactor-rc-%d' % compartment]: mimirService({
+      name: 'compactor-rc-%d' % compartment,
       target: 'compactor',
-      publishedHttpPort: 8006,
-    }),
+      publishedHttpPort: 8060 + compartment,
+      jaegerApp: 'compactor-rc-%d' % compartment,
+      extraArguments: [
+        '-compactor.read-compartment-id=%d' % compartment,
+        '-blocks-storage.s3.bucket-name=mimir-blocks-rc-%d' % compartment,
+      ],
+    })
+    for compartment in std.range(0, numCompartments - 1)
   },
 
-  store_gateways(count):: {
-    ['store-gateway-zone-a-%d' % id]: mimirService({
-      name: 'store-gateway-zone-a-' + id,
+  // Each read compartment runs its own store-gateways (one per zone). A store-gateway registers into
+  // its read compartment's ring (-store-gateway.read-compartment-id) and serves blocks from that
+  // compartment's dedicated bucket (mimir-blocks-rc-<id>).
+  store_gateways:: {
+    ['store-gateway-%s-rc-%d' % [zones[zoneIdx], compartment]]: mimirService({
+      name: 'store-gateway-%s-rc-%d' % [zones[zoneIdx], compartment],
       target: 'store-gateway',
-      publishedHttpPort: 8020 + id,
-      jaegerApp: 'store-gateway-zone-a-%d' % id,
-      extraArguments: ['-store-gateway.sharding-ring.instance-availability-zone=zone-a'],
+      publishedHttpPort: 8020 + (compartment * std.length(zones)) + zoneIdx,
+      jaegerApp: 'store-gateway-%s-rc-%d' % [zones[zoneIdx], compartment],
+      extraArguments: [
+        '-store-gateway.sharding-ring.instance-availability-zone=%s' % zones[zoneIdx],
+        '-store-gateway.read-compartment-id=%d' % compartment,
+        '-blocks-storage.s3.bucket-name=mimir-blocks-rc-%d' % compartment,
+      ],
     })
-    for id in std.range(1, count)
-  } + {
-    ['store-gateway-zone-b-%d' % id]: mimirService({
-      name: 'store-gateway-zone-b-' + id,
-      target: 'store-gateway',
-      publishedHttpPort: 8050 + id,
-      jaegerApp: 'store-gateway-zone-b-%d' % id,
-      extraArguments: ['-store-gateway.sharding-ring.instance-availability-zone=zone-b'],
-    })
-    for id in std.range(1, count)
+    for compartment in std.range(0, numCompartments - 1)
+    for zoneIdx in std.range(0, std.length(zones) - 1)
   },
 
   rulers(count):: if count <= 0 then {} else {
@@ -158,11 +166,16 @@ std.manifestYamlDoc({
     for id in std.range(1, count)
   },
 
+  // The block-builder isn't compartment-aware yet: it consumes read compartment 0's topic and uploads
+  // to that compartment's dedicated bucket, so read compartment 0 is a full end-to-end slice whose
+  // blocks are compacted and served by its own compactor and store-gateways. The other compartments'
+  // compactors and store-gateways run against (empty) buckets until the block-builder is compartmentalised.
   block_builder:: {
     'block-builder-0': mimirService({
       name: 'block-builder-0',
       target: 'block-builder',
       publishedHttpPort: 8009,
+      extraArguments: ['-blocks-storage.s3.bucket-name=mimir-blocks-rc-0'],
     }),
   },
 
@@ -221,7 +234,7 @@ std.manifestYamlDoc({
         'alertmanager-1',
         'ruler-1',
         'query-frontend',
-        'compactor',
+        'compactor-rc-0',
         'grafana',
       ],
       environment: [
@@ -232,7 +245,7 @@ std.manifestYamlDoc({
         'ALERT_MANAGER_HOST=alertmanager-1:8080',
         'RULER_HOST=ruler-1:8080',
         'QUERY_FRONTEND_HOST=query-frontend:8080',
-        'COMPACTOR_HOST=compactor:8080',
+        'COMPACTOR_HOST=compactor-rc-0:8080',
       ],
       ports: ['8080:8080'],
       volumes: ['../common/config:/etc/nginx/templates'],
@@ -240,11 +253,17 @@ std.manifestYamlDoc({
   },
 
   minio:: {
+    // One blocks bucket per read compartment (mimir-blocks-rc-<id>), plus the legacy mimir-blocks
+    // bucket still referenced by the default config (e.g. the querier, whose block querying isn't
+    // compartment-aware yet), and the ruler, alertmanager and usage-tracker buckets.
+    local buckets = ['mimir-blocks'] +
+                    ['mimir-blocks-rc-%d' % compartment for compartment in std.range(0, numCompartments - 1)] +
+                    ['mimir-ruler', 'mimir-alertmanager', 'usage-tracker-snapshots'],
     minio: {
       image: 'minio/minio:RELEASE.2025-05-24T17-08-30Z',
       // MinIO treats top-level directories under /data as buckets. Create the buckets the dev cluster
       // needs before starting the server, since this env doesn't ship a pre-seeded data directory.
-      entrypoint: ['sh', '-c', 'mkdir -p /data/mimir-blocks /data/mimir-ruler /data/mimir-alertmanager /data/usage-tracker-snapshots && exec minio server --console-address :9001 /data'],
+      entrypoint: ['sh', '-c', 'mkdir -p %s && exec minio server --console-address :9001 /data' % std.join(' ', ['/data/%s' % bucket for bucket in buckets])],
       environment: ['MINIO_ROOT_USER=mimir', 'MINIO_ROOT_PASSWORD=supersecret'],
       ports: [
         '9000:9000',
