@@ -5,14 +5,12 @@ package querymiddleware
 import (
 	"context"
 	"errors"
-	"strings"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/tenant"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
@@ -139,7 +137,8 @@ func (s *spinOffSubqueriesMiddleware) Do(ctx context.Context, req MetricsQueryRe
 		return s.next.Do(ctx, req)
 	}
 
-	if pattern, disabled := s.matchesDisabledQuery(tenantIDs, req.GetQuery()); disabled {
+	// The disabler middleware records whether the query matched a configured disabled-query pattern.
+	if pattern := spinOffDisabledPatternFromContext(ctx); pattern != "" {
 		spanLog.DebugLog("msg", "subquery spin-off disabled: query matches a configured pattern", "pattern", pattern)
 		s.metrics.spinOffDisabled.Inc()
 		return s.next.Do(ctx, req)
@@ -261,34 +260,4 @@ func (s *spinOffSubqueriesMiddleware) Do(ctx context.Context, req MetricsQueryRe
 
 	shouldCloseQuery = false
 	return resp, nil
-}
-
-// matchesDisabledQuery reports whether the query matches a disabled-query pattern configured for any
-// of the given tenants. It returns the matched pattern for logging. Matching mirrors the query blocker:
-// a literal comparison is always performed, and, when the rule is a regex, a regex match too.
-func (s *spinOffSubqueriesMiddleware) matchesDisabledQuery(tenantIDs []string, query string) (string, bool) {
-	trimmedQuery := strings.TrimSpace(query)
-	for _, tenantID := range tenantIDs {
-		for _, disabled := range s.limits.SubquerySpinOffDisabledQueries(tenantID) {
-			pattern := strings.TrimSpace(disabled.Pattern)
-			if pattern == "" {
-				continue // pattern is required and enforced during configuration load.
-			}
-
-			if pattern == trimmedQuery {
-				return disabled.Pattern, true
-			}
-
-			if disabled.Regex {
-				r, err := labels.NewFastRegexMatcher(disabled.Pattern)
-				if err != nil {
-					continue // regex patterns are validated during configuration load.
-				}
-				if r.MatchString(query) {
-					return disabled.Pattern, true
-				}
-			}
-		}
-	}
-	return "", false
 }

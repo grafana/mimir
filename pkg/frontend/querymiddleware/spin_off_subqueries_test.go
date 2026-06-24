@@ -349,20 +349,24 @@ func runSubquerySpinOffTests(t *testing.T, tests map[string]subquerySpinOffTest,
 				})
 
 				reg := prometheus.NewPedanticRegistry()
+				limits := mockLimits{
+					subquerySpinOffEnabled:         true,
+					subquerySpinOffDisabledQueries: testData.disabledQueries,
+				}
 				spinoffMiddleware := newSpinOffSubqueriesMiddleware(
-					mockLimits{
-						subquerySpinOffEnabled:         true,
-						subquerySpinOffDisabledQueries: testData.disabledQueries,
-					},
+					limits,
 					log.NewNopLogger(),
 					eng,
 					reg,
 					fakeMiddleware,
 					defaultStepFunc,
 				)
+				// The disabler middleware runs before spin-off in the real chain and records the
+				// disabled-query decision in the request context.
+				disablerMiddleware := newSpinOffSubqueriesDisablerMiddleware(limits)
 
 				ctx := user.InjectOrgID(context.Background(), "test")
-				spinoffRes, err := spinoffMiddleware.Wrap(downstream).Do(ctx, req)
+				spinoffRes, err := disablerMiddleware.Wrap(spinoffMiddleware.Wrap(downstream)).Do(ctx, req)
 				require.Nil(t, err)
 
 				if testData.expectedSpunOffSubqueries > 0 {
