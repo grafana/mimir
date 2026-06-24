@@ -989,7 +989,7 @@ type testCacheEntry struct {
 	ttl   time.Duration
 }
 
-func (t *testCache) GetMulti(ctx context.Context, keys []string, opts ...cache.Option) map[string][]byte {
+func (t *testCache) GetMulti(ctx context.Context, keys []string, opts ...cache.Option) (map[string][]byte, error) {
 	results := make(map[string][]byte, len(keys))
 
 	for _, key := range keys {
@@ -1000,12 +1000,14 @@ func (t *testCache) GetMulti(ctx context.Context, keys []string, opts ...cache.O
 		}
 	}
 
-	return results
+	return results, nil
 }
 
-func (t *testCache) SetAsync(key string, value []byte, ttl time.Duration) {
+func (t *testCache) SetAsync(ctx context.Context, key string, value []byte, ttl time.Duration) error {
 	t.setCount++
 	t.entries[key] = testCacheEntry{value: value, ttl: ttl}
+
+	return nil
 }
 
 type mockLimitsProvider struct {

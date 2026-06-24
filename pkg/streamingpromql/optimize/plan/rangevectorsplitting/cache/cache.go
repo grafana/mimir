@@ -66,7 +66,7 @@ func NewCacheFactory(cfg Config, ttlProvider TTLProvider, logger log.Logger, reg
 	)
 	backend = cache.NewCompression(cfg.Compression, backend, logger)
 
-	return NewCacheFactoryWithBackend(backend, ttlProvider, reg, logger), nil
+	return NewCacheFactoryWithBackend(caching.NewAdaptor(backend), ttlProvider, reg, logger), nil
 }
 
 func NewCacheFactoryWithBackend(backend caching.Backend, ttlProvider TTLProvider, reg prometheus.Registerer, logger log.Logger) *CacheFactory {
@@ -131,7 +131,11 @@ func (c *Cache[T]) Get(
 	cacheKey := generateCacheKey(tenant, function, innerKey, start, end)
 	hashedKey := caching.HashCacheKey(cacheKey)
 
-	foundData := c.backend.GetMulti(ctx, []string{hashedKey})
+	foundData, err := c.backend.GetMulti(ctx, []string{hashedKey})
+	if err != nil {
+		return nil, querierpb.Annotations{}, nil, types.EncodedOperatorEvaluationStats{}, false, fmt.Errorf("getting cached results: %w", err)
+	}
+
 	data, ok := foundData[hashedKey]
 	if !ok || len(data) == 0 {
 		return nil, querierpb.Annotations{}, nil, types.EncodedOperatorEvaluationStats{}, false, nil
@@ -206,7 +210,9 @@ func (c *Cache[T]) Set(
 	}
 
 	hashedKey := caching.HashCacheKey(cacheKey)
-	c.backend.SetAsync(hashedKey, data, ttl)
+	if err := c.backend.SetAsync(ctx, hashedKey, data, ttl); err != nil {
+		return fmt.Errorf("storing cached results: %w", err)
+	}
 
 	seriesCount := len(seriesMetadata)
 	level.Debug(c.logger).Log("msg", "cache entry written", "hashed_cache_key", hashedKey, "series_count", seriesCount, "entry_size", len(data))

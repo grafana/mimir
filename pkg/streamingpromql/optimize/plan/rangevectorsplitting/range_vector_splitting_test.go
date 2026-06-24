@@ -1571,7 +1571,7 @@ func newTestCacheBackend() *testCacheBackend {
 	}
 }
 
-func (c *testCacheBackend) GetMulti(_ context.Context, keys []string, _ ...dskitcache.Option) map[string][]byte {
+func (c *testCacheBackend) GetMulti(_ context.Context, keys []string, _ ...dskitcache.Option) (map[string][]byte, error) {
 	c.gets++
 
 	result := make(map[string][]byte)
@@ -1583,12 +1583,14 @@ func (c *testCacheBackend) GetMulti(_ context.Context, keys []string, _ ...dskit
 		}
 	}
 
-	return result
+	return result, nil
 }
 
-func (c *testCacheBackend) SetAsync(key string, value []byte, _ time.Duration) {
+func (c *testCacheBackend) SetAsync(_ context.Context, key string, value []byte, _ time.Duration) error {
 	c.sets++
 	c.items[key] = value
+
+	return nil
 }
 
 func (c *testCacheBackend) Reset() {
