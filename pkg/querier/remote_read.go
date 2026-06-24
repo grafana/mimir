@@ -366,7 +366,7 @@ func streamChunkedReadResponses(stream io.Writer, ss storage.ChunkSeriesSet, que
 			chk := iter.At()
 
 			if chk.Chunk == nil {
-				return 0, 0, errors.Errorf("found not populated chunk returned by SeriesSet at ref: %v", chk.Ref)
+				return physicalSampleCount, equivalentSampleCount, errors.Errorf("found not populated chunk returned by SeriesSet at ref: %v", chk.Ref)
 			}
 
 			// Count only samples within the queried range, excluding stale markers, to match the
@@ -376,7 +376,7 @@ func streamChunkedReadResponses(stream io.Writer, ss storage.ChunkSeriesSet, que
 			// reflects the logical query range, not the bytes delivered.
 			physicalCount, eqCount, err := sampleCountsForChunk(chk.Chunk, minTMs, maxTMs)
 			if err != nil {
-				return 0, 0, errors.Wrap(err, "compute sample counts")
+				return physicalSampleCount, equivalentSampleCount, errors.Wrap(err, "compute sample counts")
 			}
 			physicalSampleCount += physicalCount
 			equivalentSampleCount += eqCount
@@ -406,17 +406,17 @@ func streamChunkedReadResponses(stream io.Writer, ss storage.ChunkSeriesSet, que
 				QueryIndex: int64(queryIndex),
 			})
 			if err != nil {
-				return 0, 0, errors.Wrap(err, "marshal client.StreamReadResponse")
+				return physicalSampleCount, equivalentSampleCount, errors.Wrap(err, "marshal client.StreamReadResponse")
 			}
 
 			if _, err := stream.Write(b); err != nil {
-				return 0, 0, errors.Wrap(err, "write to stream")
+				return physicalSampleCount, equivalentSampleCount, errors.Wrap(err, "write to stream")
 			}
 			chks = chks[:0]
 			frameBytesRemaining = initializedFrameBytesRemaining(maxBytesInFrame, lbls)
 		}
 		if err := iter.Err(); err != nil {
-			return 0, 0, err
+			return physicalSampleCount, equivalentSampleCount, err
 		}
 	}
 	return physicalSampleCount, equivalentSampleCount, ss.Err()
