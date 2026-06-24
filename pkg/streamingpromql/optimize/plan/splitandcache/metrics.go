@@ -20,7 +20,7 @@ const (
 func NewQueryResultCacheSkippedCounter(reg prometheus.Registerer) *prometheus.CounterVec {
 	counter := promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 		Name: "cortex_frontend_query_result_cache_skipped_total",
-		Help: "Total number of times a query was not cacheable because of a reason. This metric is tracked for each request when splitting is running inside MQE, and for each partial query otherwise.",
+		Help: "Total number of times a query was not cacheable. This metric is tracked for each request when time-splitting is running inside MQE, and for each partial query otherwise.",
 	}, []string{"reason"})
 
 	// Initialize known label values.

@@ -488,7 +488,7 @@ func TestOptimizationPass(t *testing.T) {
 			require.Equal(t, testutils.TrimIndent(testCase.expectedPlan), actual)
 
 			expectedMetrics := fmt.Sprintf(`
-				# HELP cortex_frontend_query_result_cache_skipped_total Total number of times a query was not cacheable because of a reason. This metric is tracked for each request when splitting is running inside MQE, and for each partial query otherwise.
+				# HELP cortex_frontend_query_result_cache_skipped_total Total number of times a query was not cacheable. This metric is tracked for each request when time-splitting is running inside MQE, and for each partial query otherwise.
 				# TYPE cortex_frontend_query_result_cache_skipped_total counter
 				cortex_frontend_query_result_cache_skipped_total{reason="unaligned-time-range"} %d
 				cortex_frontend_query_result_cache_skipped_total{reason="too-new"} %d
