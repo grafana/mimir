@@ -1566,76 +1566,26 @@ func TestSampleCountsForChunk(t *testing.T) {
 }
 
 func BenchmarkSampleCountsForChunk(b *testing.B) {
-	floatChunk120 := makeChunk(b, chunkenc.EncXOR, 120)
-	histChunk120 := makeChunk(b, chunkenc.EncHistogram, 120)
-	histChunk500 := makeChunk(b, chunkenc.EncHistogram, 500)
-
-	// Verify chunks were built correctly.
-	require.Equal(b, 120, floatChunk120.NumSamples())
-	require.Equal(b, 120, histChunk120.NumSamples())
-	require.Equal(b, 500, histChunk500.NumSamples())
-
 	const allTimes, allTimesEnd = int64(math.MinInt64), int64(math.MaxInt64)
 
-	// --- Float 120 ---
-
-	b.Run("float_120/NumSamples", func(b *testing.B) {
-		for b.Loop() {
-			_ = floatChunk120.NumSamples()
-		}
-	})
-
-	b.Run("float_120/SampleCounts", func(b *testing.B) {
-		for b.Loop() {
-			_, _, _ = sampleCountsForChunk(floatChunk120, allTimes, allTimesEnd)
-		}
-	})
-
-	b.Run("float_120/DecodeAll", func(b *testing.B) {
-		for b.Loop() {
-			_ = equivalentSampleCountDecodeAll(floatChunk120)
-		}
-	})
-
-	// --- Histogram 120 ---
-
-	b.Run("hist_120/NumSamples", func(b *testing.B) {
-		for b.Loop() {
-			_ = histChunk120.NumSamples()
-		}
-	})
-
-	b.Run("hist_120/SampleCounts", func(b *testing.B) {
-		for b.Loop() {
-			_, _, _ = sampleCountsForChunk(histChunk120, allTimes, allTimesEnd)
-		}
-	})
-
-	b.Run("hist_120/DecodeAll", func(b *testing.B) {
-		for b.Loop() {
-			_ = equivalentSampleCountDecodeAll(histChunk120)
-		}
-	})
-
-	// --- Histogram 500 ---
-
-	b.Run("hist_500/NumSamples", func(b *testing.B) {
-		for b.Loop() {
-			_ = histChunk500.NumSamples()
-		}
-	})
-
-	b.Run("hist_500/SampleCounts", func(b *testing.B) {
-		for b.Loop() {
-			_, _, _ = sampleCountsForChunk(histChunk500, allTimes, allTimesEnd)
-		}
-	})
-
-	b.Run("hist_500/DecodeAll", func(b *testing.B) {
-		for b.Loop() {
-			_ = equivalentSampleCountDecodeAll(histChunk500)
-		}
-	})
+	for _, tc := range []struct {
+		name     string
+		encoding chunkenc.Encoding
+		n        int
+	}{
+		{"float_120", chunkenc.EncXOR, 120},
+		{"hist_120", chunkenc.EncHistogram, 120},
+		{"hist_500", chunkenc.EncHistogram, 500},
+		{"float_hist_120", chunkenc.EncFloatHistogram, 120},
+	} {
+		chk := makeChunk(b, tc.encoding, tc.n)
+		require.Equal(b, tc.n, chk.NumSamples())
+		b.Run(tc.name, func(b *testing.B) {
+			for b.Loop() {
+				_, _, _ = sampleCountsForChunk(chk, allTimes, allTimesEnd)
+			}
+		})
+	}
 }
 
 func TestRemoteReadErrorParsing(t *testing.T) {
