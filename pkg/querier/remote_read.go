@@ -422,7 +422,8 @@ func streamChunkedReadResponses(stream io.Writer, ss storage.ChunkSeriesSet, que
 	return physicalSampleCount, equivalentSampleCount, ss.Err()
 }
 
-// sampleCountsForChunk returns the physical and equivalent float sample counts for the samples in
+// sampleCountsForChunk returns the physical and equivalent float sample counts (both histogram-weighted,
+// matching MQE behaviour) for the samples in
 // chk that fall within [minTMs, maxTMs], excluding stale markers. It mirrors the per-sample counting
 // on the samples response path so that the same data is metered  identically regardless of the negotiated response type.
 //
@@ -458,7 +459,7 @@ func sampleCountsForChunk(chk chunkenc.Chunk, minTMs, maxTMs int64) (physical, e
 				histogramWeight = uint64(types.EquivalentFloatSampleCount(h))
 				haveHistogramWeight = true
 			}
-			physical++
+			physical += histogramWeight
 			equivalent += histogramWeight
 		default:
 			return 0, 0, fmt.Errorf("unsupported value type: %v", valType)

@@ -604,7 +604,11 @@ func TestRemoteReadStreamedXORChunks_SampleCountStats(t *testing.T) {
 					),
 				}
 			},
-			expectedPhysicalSampleCount: 2,
+			expectedPhysicalSampleCount: func() uint64 {
+				h := test.GenerateTestHistogram(1)
+				perSample := types.EquivalentFloatSampleCount(h.ToFloat(nil))
+				return uint64(perSample) * 2
+			}(),
 			// Both histograms land in one chunk so the equivalent cost is first sample's weight * NumSamples().
 			expectedEquivalentSampleCount: func() uint64 {
 				h := test.GenerateTestHistogram(1)
@@ -1517,7 +1521,7 @@ func TestSampleCountsForChunk(t *testing.T) {
 		// Only timestamps 2,3,4 are within [2,10].
 		physical, equivalent, err := sampleCountsForChunk(chk, 2, 10)
 		require.NoError(t, err)
-		require.Equal(t, uint64(3), physical)
+		require.Equal(t, perSample*3, physical)
 		require.Equal(t, perSample*3, equivalent)
 	})
 
