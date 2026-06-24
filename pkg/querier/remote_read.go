@@ -307,12 +307,12 @@ func seriesSetToQueryResult(s storage.SeriesSet, filterStartMs, filterEndMs int6
 					equivalentSampleCount += eqCount
 				}
 			default:
-				return nil, 0, 0, fmt.Errorf("unsupported value type: %v", valType)
+				return nil, physicalSampleCount, equivalentSampleCount, fmt.Errorf("unsupported value type: %v", valType)
 			}
 		}
 
 		if err := it.Err(); err != nil {
-			return nil, 0, 0, err
+			return nil, physicalSampleCount, equivalentSampleCount, err
 		}
 
 		ts := &prompb.TimeSeries{
@@ -425,7 +425,7 @@ func streamChunkedReadResponses(stream io.Writer, ss storage.ChunkSeriesSet, que
 // sampleCountsForChunk returns the physical and equivalent float sample counts (both histogram-weighted,
 // matching MQE behaviour) for the samples in
 // chk that fall within [minTMs, maxTMs], excluding stale markers. It mirrors the per-sample counting
-// on the samples response path so that the same data is metered  identically regardless of the negotiated response type.
+// on the samples response path so that the same data is metered identically regardless of the negotiated response type.
 //
 // All samples in a histogram chunk share a single bucket layout, so their equivalent weight is
 // identical; we compute it once from the first non-stale histogram sample and reuse it.
