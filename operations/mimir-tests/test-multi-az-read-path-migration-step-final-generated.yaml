@@ -415,6 +415,13 @@ spec:
         properties:
           spec:
             properties:
+              crossZoneEvictionDelay:
+                description: An optional duration that defines the minimum time that
+                  must elapse after a pod returns to a ready state before another
+                  pod for the same partition can be evicted. The value must be a valid
+                  Go duration string (e.g. "20m", "1h"). This field is only applicable
+                  when podNamePartitionRegex is set.
+                type: string
               maxUnavailable:
                 description: The number of pods that can be unavailable within a zone
                   or partition.
@@ -507,6 +514,7 @@ rules:
   - get
   - watch
   - delete
+  - patch
 - apiGroups:
   - apps
   resources:
@@ -2142,7 +2150,7 @@ spec:
         - -query-frontend.query-sharding-target-series-per-shard=2500
         - -query-frontend.results-cache.backend=memcached
         - -query-frontend.results-cache.memcached.addresses=dnssrvnoa+memcached-frontend-zone-a.default.svc.cluster.local.:11211
-        - -query-frontend.results-cache.memcached.max-item-size=5242880
+        - -query-frontend.results-cache.memcached.max-item-size=26214400
         - -query-frontend.results-cache.memcached.timeout=500ms
         - -query-scheduler.ring.prefix=query-scheduler-zone-a/
         - -query-scheduler.ring.store=memberlist
@@ -2173,10 +2181,10 @@ spec:
           timeoutSeconds: 1
         resources:
           limits:
-            memory: 1200Mi
+            memory: 4Gi
           requests:
             cpu: "2"
-            memory: 600Mi
+            memory: 2Gi
         volumeMounts:
         - mountPath: /etc/mimir
           name: overrides
@@ -2247,7 +2255,7 @@ spec:
         - -query-frontend.query-sharding-target-series-per-shard=2500
         - -query-frontend.results-cache.backend=memcached
         - -query-frontend.results-cache.memcached.addresses=dnssrvnoa+memcached-frontend-zone-b.default.svc.cluster.local.:11211
-        - -query-frontend.results-cache.memcached.max-item-size=5242880
+        - -query-frontend.results-cache.memcached.max-item-size=26214400
         - -query-frontend.results-cache.memcached.timeout=500ms
         - -query-scheduler.ring.prefix=query-scheduler-zone-b/
         - -query-scheduler.ring.store=memberlist
@@ -2278,10 +2286,10 @@ spec:
           timeoutSeconds: 1
         resources:
           limits:
-            memory: 1200Mi
+            memory: 4Gi
           requests:
             cpu: "2"
-            memory: 600Mi
+            memory: 2Gi
         volumeMounts:
         - mountPath: /etc/mimir
           name: overrides
@@ -2518,7 +2526,8 @@ spec:
         - -server-tls.enabled=true
         - -use-zone-tracker=true
         - -zone-tracker.config-map-name=rollout-operator-zone-tracker
-        image: grafana/rollout-operator:v0.36.1
+        - -zpdb.pod-ready-annotation-patch-timeout=5s
+        image: grafana/rollout-operator:v0.38.0
         imagePullPolicy: IfNotPresent
         name: rollout-operator
         ports:
@@ -2835,7 +2844,7 @@ spec:
         - -query-frontend.query-sharding-target-series-per-shard=2500
         - -query-frontend.results-cache.backend=memcached
         - -query-frontend.results-cache.memcached.addresses=dnssrvnoa+memcached-frontend-zone-a.default.svc.cluster.local.:11211
-        - -query-frontend.results-cache.memcached.max-item-size=5242880
+        - -query-frontend.results-cache.memcached.max-item-size=26214400
         - -query-frontend.results-cache.memcached.timeout=500ms
         - -query-scheduler.ring.prefix=ruler-query-scheduler-zone-a/
         - -query-scheduler.ring.store=memberlist
@@ -2871,10 +2880,10 @@ spec:
           timeoutSeconds: 1
         resources:
           limits:
-            memory: 1200Mi
+            memory: 4Gi
           requests:
             cpu: "2"
-            memory: 600Mi
+            memory: 2Gi
         volumeMounts:
         - mountPath: /etc/mimir
           name: overrides
@@ -2945,7 +2954,7 @@ spec:
         - -query-frontend.query-sharding-target-series-per-shard=2500
         - -query-frontend.results-cache.backend=memcached
         - -query-frontend.results-cache.memcached.addresses=dnssrvnoa+memcached-frontend-zone-b.default.svc.cluster.local.:11211
-        - -query-frontend.results-cache.memcached.max-item-size=5242880
+        - -query-frontend.results-cache.memcached.max-item-size=26214400
         - -query-frontend.results-cache.memcached.timeout=500ms
         - -query-scheduler.ring.prefix=ruler-query-scheduler-zone-b/
         - -query-scheduler.ring.store=memberlist
@@ -2981,10 +2990,10 @@ spec:
           timeoutSeconds: 1
         resources:
           limits:
-            memory: 1200Mi
+            memory: 4Gi
           requests:
             cpu: "2"
-            memory: 600Mi
+            memory: 2Gi
         volumeMounts:
         - mountPath: /etc/mimir
           name: overrides
@@ -4111,7 +4120,7 @@ spec:
       containers:
       - args:
         - -m 1024
-        - -I 5m
+        - -I 25m
         - -c 16384
         - -v
         image: memcached:1.6.34-alpine
@@ -4184,7 +4193,7 @@ spec:
       containers:
       - args:
         - -m 1024
-        - -I 5m
+        - -I 25m
         - -c 16384
         - -v
         image: memcached:1.6.34-alpine
@@ -5375,7 +5384,8 @@ spec:
   - metadata:
       ignoreNullValues: "false"
       metricName: cortex_querier_zone_a_hpa_default
-      query: sum(max_over_time(cortex_query_scheduler_inflight_requests{container="query-scheduler",namespace="default",quantile="0.5",pod=~"(querier|query-scheduler)-zone-a.*"}[1m]))
+      query: (sum(max_over_time(cortex_query_scheduler_inflight_requests{container="query-scheduler",namespace="default",quantile="0.5",pod=~"(querier|query-scheduler)-zone-a.*"}[1m])
+        >= 0) or vector(0))
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "6"
     name: cortex_querier_zone_a_hpa_default
@@ -5383,7 +5393,20 @@ spec:
   - metadata:
       ignoreNullValues: "false"
       metricName: cortex_querier_zone_a_hpa_default_requests_duration
-      query: sum(rate(cortex_querier_request_duration_seconds_sum{container="querier",namespace="default",pod=~"(querier|query-scheduler)-zone-a.*"}[1m]))
+      query: |
+        max without(source) (
+          # classic histograms; label_replace gives each a distinct label so or acts as union
+          label_replace(
+            sum(rate(cortex_querier_request_duration_seconds_sum{container="querier",namespace="default",pod=~"(querier|query-scheduler)-zone-a.*"}[1m])) or vector(0),
+            "source", "classic", "", ""
+          )
+          or
+          # native histograms
+          label_replace(
+            sum(histogram_sum(rate(cortex_querier_request_duration_seconds{container="querier",namespace="default",pod=~"(querier|query-scheduler)-zone-a.*"}[1m]))) or vector(0),
+            "source", "native", "", ""
+          )
+        )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "6"
     name: cortex_querier_zone_a_hpa_default_requests_duration
@@ -5422,7 +5445,8 @@ spec:
   - metadata:
       ignoreNullValues: "false"
       metricName: cortex_querier_zone_b_hpa_default
-      query: sum(max_over_time(cortex_query_scheduler_inflight_requests{container="query-scheduler",namespace="default",quantile="0.5",pod=~"(querier|query-scheduler)-zone-b.*"}[1m]))
+      query: (sum(max_over_time(cortex_query_scheduler_inflight_requests{container="query-scheduler",namespace="default",quantile="0.5",pod=~"(querier|query-scheduler)-zone-b.*"}[1m])
+        >= 0) or vector(0))
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "6"
     name: cortex_querier_zone_b_hpa_default
@@ -5430,7 +5454,20 @@ spec:
   - metadata:
       ignoreNullValues: "false"
       metricName: cortex_querier_zone_b_hpa_default_requests_duration
-      query: sum(rate(cortex_querier_request_duration_seconds_sum{container="querier",namespace="default",pod=~"(querier|query-scheduler)-zone-b.*"}[1m]))
+      query: |
+        max without(source) (
+          # classic histograms; label_replace gives each a distinct label so or acts as union
+          label_replace(
+            sum(rate(cortex_querier_request_duration_seconds_sum{container="querier",namespace="default",pod=~"(querier|query-scheduler)-zone-b.*"}[1m])) or vector(0),
+            "source", "classic", "", ""
+          )
+          or
+          # native histograms
+          label_replace(
+            sum(histogram_sum(rate(cortex_querier_request_duration_seconds{container="querier",namespace="default",pod=~"(querier|query-scheduler)-zone-b.*"}[1m]))) or vector(0),
+            "source", "native", "", ""
+          )
+        )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "6"
     name: cortex_querier_zone_b_hpa_default_requests_duration
@@ -5494,7 +5531,7 @@ spec:
           or vector(0)
         )
       serverAddress: http://prometheus.default:9090/prometheus
-      threshold: "629145600"
+      threshold: "2147483648"
     name: query_frontend_zone_a_memory_hpa_default
     type: prometheus
 ---
@@ -5556,7 +5593,7 @@ spec:
           or vector(0)
         )
       serverAddress: http://prometheus.default:9090/prometheus
-      threshold: "629145600"
+      threshold: "2147483648"
     name: query_frontend_zone_b_memory_hpa_default
     type: prometheus
 ---
@@ -5758,7 +5795,7 @@ spec:
           or vector(0)
         )
       serverAddress: http://prometheus.default:9090/prometheus
-      threshold: "629145600"
+      threshold: "2147483648"
     name: ruler_query_frontend_zone_a_memory_hpa_default
     type: prometheus
 ---
@@ -5820,7 +5857,7 @@ spec:
           or vector(0)
         )
       serverAddress: http://prometheus.default:9090/prometheus
-      threshold: "629145600"
+      threshold: "2147483648"
     name: ruler_query_frontend_zone_b_memory_hpa_default
     type: prometheus
 ---
