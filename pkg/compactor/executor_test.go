@@ -352,7 +352,7 @@ func TestSchedulerExecutor_BackoffBehavior(t *testing.T) {
 
 			reg := prometheus.NewPedanticRegistry()
 			var err error
-			c.ring, c.ringLifecycler, err = newRingAndLifecycler(cfg.ShardingRing, log.NewNopLogger(), reg)
+			c.ring, c.ringLifecycler, err = newRingAndLifecycler(cfg.ShardingRing, ringName, ringKey, log.NewNopLogger(), reg)
 			require.NoError(t, err)
 
 			schedulerExec := newTestSchedulerExecutor(t, cfg, mockSchedulerClient)
