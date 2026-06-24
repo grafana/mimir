@@ -2258,10 +2258,10 @@ results_cache:
 # CLI flag: -query-frontend.cache-results
 [cache_results: <boolean> | default = false]
 
-# (experimental) Set to true to enable performing query splitting and caching
-# inside the Mimir query engine (MQE). This setting only has an effect if
-# time-splitting or caching are enabled (with
-# -query-frontend.split-queries-by-interval=true and
+# (experimental) Set to true to enable performing splitting range queries by
+# interval and caching inside the Mimir query engine (MQE). This setting only
+# has an effect if splitting range queries by interval or caching are enabled
+# (with -query-frontend.split-queries-by-interval=true and
 # -query-frontend.cache-results=true, respectively). Requires MQE, remote
 # execution and sharding inside MQE to be enabled.
 # CLI flag: -query-frontend.use-mimir-query-engine-for-splitting-and-caching-results
