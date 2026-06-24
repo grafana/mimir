@@ -151,7 +151,7 @@ func CachePrefixGenerator(delegate caching.PrefixGenerator) caching.PrefixGenera
 			return inner, nil
 		}
 
-		return inner + labelPolicySeparator + labelPolicyHash, nil
+		return labelPolicyHash + labelPolicySeparator + inner, nil
 	}
 }
 
