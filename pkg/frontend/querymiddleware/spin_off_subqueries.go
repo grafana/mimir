@@ -5,12 +5,14 @@ package querymiddleware
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/tenant"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
@@ -44,6 +46,7 @@ type spinOffSubqueriesMetrics struct {
 	spinOffAttempts           prometheus.Counter
 	spinOffSuccesses          prometheus.Counter
 	spinOffSkipped            *prometheus.CounterVec
+	spinOffDisabled           prometheus.Counter
 	spunOffSubqueries         prometheus.Counter
 	spunOffSubqueriesPerQuery prometheus.Histogram
 }
@@ -62,6 +65,10 @@ func newSpinOffSubqueriesMetrics(registerer prometheus.Registerer) spinOffSubque
 			Name: "cortex_frontend_subquery_spinoff_skipped_total",
 			Help: "Total number of queries the query-frontend skipped or failed to spin-off subqueries from.",
 		}, []string{"reason"}),
+		spinOffDisabled: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_frontend_subquery_spinoff_disabled_total",
+			Help: "Total number of queries for which subquery spin-off was disabled by a matching pattern.",
+		}),
 		spunOffSubqueries: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_frontend_spun_off_subqueries_total",
 			Help: "Total number of subqueries that were spun off.",
@@ -129,6 +136,12 @@ func (s *spinOffSubqueriesMiddleware) Do(ctx context.Context, req MetricsQueryRe
 
 	if !validation.AllTrueBooleansPerTenant(tenantIDs, s.limits.SubquerySpinOffEnabled) {
 		spanLog.DebugLog("msg", "subquery spin-off is disabled for a tenant", "tenant_ids", tenantIDs)
+		return s.next.Do(ctx, req)
+	}
+
+	if pattern, disabled := s.matchesDisabledQuery(tenantIDs, req.GetQuery()); disabled {
+		spanLog.DebugLog("msg", "subquery spin-off disabled: query matches a configured pattern", "pattern", pattern)
+		s.metrics.spinOffDisabled.Inc()
 		return s.next.Do(ctx, req)
 	}
 
@@ -248,4 +261,34 @@ func (s *spinOffSubqueriesMiddleware) Do(ctx context.Context, req MetricsQueryRe
 
 	shouldCloseQuery = false
 	return resp, nil
+}
+
+// matchesDisabledQuery reports whether the query matches a disabled-query pattern configured for any
+// of the given tenants. It returns the matched pattern for logging. Matching mirrors the query blocker:
+// a literal comparison is always performed, and, when the rule is a regex, a regex match too.
+func (s *spinOffSubqueriesMiddleware) matchesDisabledQuery(tenantIDs []string, query string) (string, bool) {
+	trimmedQuery := strings.TrimSpace(query)
+	for _, tenantID := range tenantIDs {
+		for _, disabled := range s.limits.SubquerySpinOffDisabledQueries(tenantID) {
+			pattern := strings.TrimSpace(disabled.Pattern)
+			if pattern == "" {
+				continue // pattern is required and enforced during configuration load.
+			}
+
+			if pattern == trimmedQuery {
+				return disabled.Pattern, true
+			}
+
+			if disabled.Regex {
+				r, err := labels.NewFastRegexMatcher(disabled.Pattern)
+				if err != nil {
+					continue // regex patterns are validated during configuration load.
+				}
+				if r.MatchString(query) {
+					return disabled.Pattern, true
+				}
+			}
+		}
+	}
+	return "", false
 }

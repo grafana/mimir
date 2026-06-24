@@ -22,6 +22,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/testdatagen"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 func TestSubquerySpinOff_Correctness(t *testing.T) {
@@ -200,6 +201,47 @@ func TestSubquerySpinOff_ShouldReturnErrorOnDownstreamHandlerFailure(t *testing.
 	})
 }
 
+func TestSubquerySpinOff_DisabledByPattern(t *testing.T) {
+	// A query that would normally spin off a subquery.
+	const query = `max_over_time(rate(metric_counter[1m])[2h:1m])`
+	canonicalQuery := parseQuery(t, query).String()
+
+	tests := map[string]subquerySpinOffTest{
+		"no disabled patterns configured: spins off normally": {
+			query:                     query,
+			expectedSpunOffSubqueries: 1,
+		},
+		"literal pattern matches: disabled": {
+			query:                   query,
+			disabledQueries:         []validation.SubquerySpinOffDisabledQuery{{Pattern: canonicalQuery}},
+			expectDisabledByPattern: true,
+		},
+		"literal pattern does not match: spins off normally": {
+			query:                     query,
+			disabledQueries:           []validation.SubquerySpinOffDisabledQuery{{Pattern: `not_matched`}},
+			expectedSpunOffSubqueries: 1,
+		},
+		"regex pattern matches: disabled": {
+			query:                   query,
+			disabledQueries:         []validation.SubquerySpinOffDisabledQuery{{Pattern: `.*metric_counter.*`, Regex: true}},
+			expectDisabledByPattern: true,
+		},
+		"regex pattern does not match: spins off normally": {
+			query:                     query,
+			disabledQueries:           []validation.SubquerySpinOffDisabledQuery{{Pattern: `.*other_metric.*`, Regex: true}},
+			expectedSpunOffSubqueries: 1,
+		},
+		"non-regex pattern is not interpreted as regex: spins off normally": {
+			query:                     query,
+			disabledQueries:           []validation.SubquerySpinOffDisabledQuery{{Pattern: `.*metric_counter.*`}},
+			expectedSpunOffSubqueries: 1,
+		},
+	}
+
+	queryable := setupSubquerySpinOffTestSeries(t, 2*time.Hour)
+	runSubquerySpinOffTests(t, tests, queryable)
+}
+
 var defaultStepFunc = func(int64) int64 {
 	return (1 * time.Minute).Milliseconds()
 }
@@ -211,6 +253,8 @@ type subquerySpinOffTest struct {
 	expectSpecificOrder       bool
 	expectEmptyResult         bool
 	offsetQueryTime           time.Duration
+	disabledQueries           []validation.SubquerySpinOffDisabledQuery
+	expectDisabledByPattern   bool
 }
 
 func setupSubquerySpinOffTestSeries(t *testing.T, timeRange time.Duration) storage.Queryable {
@@ -307,7 +351,8 @@ func runSubquerySpinOffTests(t *testing.T, tests map[string]subquerySpinOffTest,
 				reg := prometheus.NewPedanticRegistry()
 				spinoffMiddleware := newSpinOffSubqueriesMiddleware(
 					mockLimits{
-						subquerySpinOffEnabled: true,
+						subquerySpinOffEnabled:         true,
+						subquerySpinOffDisabledQueries: testData.disabledQueries,
 					},
 					log.NewNopLogger(),
 					eng,
@@ -339,13 +384,23 @@ func runSubquerySpinOffTests(t *testing.T, tests map[string]subquerySpinOffTest,
 					noSubqueries = 1
 				}
 
+				// A query disabled by pattern returns before an attempt is counted, and is tracked by the
+				// dedicated disabled counter instead.
+				attempts, disabled := 1, 0
+				if testData.expectDisabledByPattern {
+					attempts, disabled = 0, 1
+				}
+
 				assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
 # HELP cortex_frontend_spun_off_subqueries_total Total number of subqueries that were spun off.
 # TYPE cortex_frontend_spun_off_subqueries_total counter
 cortex_frontend_spun_off_subqueries_total %d
 # HELP cortex_frontend_subquery_spinoff_attempts_total Total number of queries the query-frontend attempted to spin-off subqueries from.
 # TYPE cortex_frontend_subquery_spinoff_attempts_total counter
-cortex_frontend_subquery_spinoff_attempts_total 1
+cortex_frontend_subquery_spinoff_attempts_total %d
+# HELP cortex_frontend_subquery_spinoff_disabled_total Total number of queries for which subquery spin-off was disabled by a matching pattern.
+# TYPE cortex_frontend_subquery_spinoff_disabled_total counter
+cortex_frontend_subquery_spinoff_disabled_total %d
 # HELP cortex_frontend_subquery_spinoff_skipped_total Total number of queries the query-frontend skipped or failed to spin-off subqueries from.
 # TYPE cortex_frontend_subquery_spinoff_skipped_total counter
 cortex_frontend_subquery_spinoff_skipped_total{reason="mapping-failed"} 0
@@ -355,8 +410,9 @@ cortex_frontend_subquery_spinoff_skipped_total{reason="too-many-downstream-queri
 # HELP cortex_frontend_subquery_spinoff_successes_total Total number of queries the query-frontend successfully spun off subqueries from.
 # TYPE cortex_frontend_subquery_spinoff_successes_total counter
 cortex_frontend_subquery_spinoff_successes_total %d
-				`, testData.expectedSpunOffSubqueries, noSubqueries, testData.expectedSpunOffSubqueries)),
+				`, testData.expectedSpunOffSubqueries, attempts, disabled, noSubqueries, testData.expectedSpunOffSubqueries)),
 					"cortex_frontend_subquery_spinoff_attempts_total",
+					"cortex_frontend_subquery_spinoff_disabled_total",
 					"cortex_frontend_subquery_spinoff_successes_total",
 					"cortex_frontend_subquery_spinoff_skipped_total",
 					"cortex_frontend_spun_off_subqueries_total"))
