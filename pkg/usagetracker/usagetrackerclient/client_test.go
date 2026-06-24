@@ -20,6 +20,7 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -1435,6 +1436,10 @@ func TestUsageTrackerClient_TrackSeriesSyncBatched(t *testing.T) {
 		require.ElementsMatch(t, []uint64{series2Partition1}, rejected)
 
 		instances["usage-tracker-zone-b-1"].AssertNumberOfCalls(t, "TrackSeriesBatch", 1)
+
+		// The flush was triggered by the linger window, not the size threshold.
+		require.Equal(t, 1.0, testutil.ToFloat64(c.syncBatcher.trackerClient.syncBatchFlushes.WithLabelValues(syncFlushReasonLinger)))
+		require.Equal(t, 0.0, testutil.ToFloat64(c.syncBatcher.trackerClient.syncBatchFlushes.WithLabelValues(syncFlushReasonSize)))
 	})
 
 	t.Run("should flush early when the size threshold is exceeded", func(t *testing.T) {
@@ -1476,6 +1481,10 @@ func TestUsageTrackerClient_TrackSeriesSyncBatched(t *testing.T) {
 		require.Empty(t, rejected)
 
 		instances["usage-tracker-zone-b-1"].AssertNumberOfCalls(t, "TrackSeriesBatch", 1)
+
+		// The flush was triggered by the size threshold, not the linger window.
+		require.Equal(t, 1.0, testutil.ToFloat64(c.syncBatcher.trackerClient.syncBatchFlushes.WithLabelValues(syncFlushReasonSize)))
+		require.Equal(t, 0.0, testutil.ToFloat64(c.syncBatcher.trackerClient.syncBatchFlushes.WithLabelValues(syncFlushReasonLinger)))
 	})
 
 	t.Run("should honor IgnoreErrors when the batch RPC fails", func(t *testing.T) {

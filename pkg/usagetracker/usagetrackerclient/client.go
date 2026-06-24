@@ -151,7 +151,8 @@ type UsageTrackerClient struct {
 	usersCloseToLimitUpdateFailures     prometheus.Counter
 	batchTrackingFlushedOnSizeThreshold prometheus.Counter
 
-	syncBatchTrackingFlushedOnSizeThreshold prometheus.Counter
+	syncBatchFlushes        *prometheus.CounterVec
+	syncBatchSeriesPerFlush prometheus.Histogram
 }
 
 func NewUsageTrackerClient(clientName string, clientCfg Config, partitionRing *ring.MultiPartitionInstanceRing, instanceRing ring.ReadRing, limits limitsProvider, logger log.Logger, registerer prometheus.Registerer, rejectionObserver UsageTrackerRejectionObserver) *UsageTrackerClient {
@@ -190,11 +191,22 @@ func NewUsageTrackerClient(clientName string, clientCfg Config, partitionRing *r
 			Name: "cortex_usage_tracker_client_batch_tracking_flushed_on_size_threshold_total",
 			Help: "Total number of times the batch tracking client flushed a batch due to exceeding the size threshold.",
 		}),
-		syncBatchTrackingFlushedOnSizeThreshold: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
-			Name: "cortex_usage_tracker_client_sync_batch_tracking_flushed_on_size_threshold_total",
-			Help: "Total number of times the synchronous batch tracking client flushed a batch due to exceeding the size threshold.",
+		syncBatchFlushes: promauto.With(registerer).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_usage_tracker_client_sync_batch_flushes_total",
+			Help: "Total number of synchronous tracking batch flushes, by the trigger that caused the flush.",
+		}, []string{"reason"}),
+		syncBatchSeriesPerFlush: promauto.With(registerer).NewHistogram(prometheus.HistogramOpts{
+			Name:                            "cortex_usage_tracker_client_sync_batch_series_per_flush",
+			Help:                            "Number of series sent in a single synchronous tracking batch flush.",
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMaxBucketNumber:  100,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
 		}),
 	}
+
+	// Pre-initialize both label values so the series exist before the first flush.
+	c.syncBatchFlushes.WithLabelValues(syncFlushReasonSize)
+	c.syncBatchFlushes.WithLabelValues(syncFlushReasonLinger)
 
 	c.batcher = newBatcher(clientCfg.MaxBatchSeries, clientCfg.BatchDelay, logger, c)
 	c.syncBatcher = newSyncBatcher(clientCfg.MaxBatchSeries, clientCfg.SyncBatchDelay, logger, c)
@@ -1009,6 +1021,13 @@ func (b *partitionBatcher) flush(users []*usagetrackerpb.TrackSeriesBatchUser) {
 	}
 }
 
+// Reasons a synchronous batch flush was triggered, used as the "reason" label of the
+// cortex_usage_tracker_client_sync_batch_flushes_total metric.
+const (
+	syncFlushReasonSize   = "size"
+	syncFlushReasonLinger = "linger"
+)
+
 // syncTrackRequest is a single caller's request accumulated in a synchronous batch. The flush
 // delivers its result on the result channel exactly once.
 type syncTrackRequest struct {
@@ -1152,10 +1171,11 @@ func (c *syncBatcher) pendingCount(partition int32) int {
 type syncPartitionBatcher struct {
 	partition int32
 
-	requestsMtx sync.Mutex
-	requests    []*syncTrackRequest
-	seriesCount int
-	stopped     bool
+	requestsMtx          sync.Mutex
+	requests             []*syncTrackRequest
+	seriesCount          int
+	stopped              bool
+	sizeThresholdPending bool
 
 	flushChan    chan struct{}
 	stoppingChan <-chan struct{}
@@ -1215,12 +1235,16 @@ func (b *syncPartitionBatcher) trackSeries(userID string, series []uint64) chan 
 	b.requests = append(b.requests, req)
 	b.seriesCount += len(series)
 	needsFlush := b.maxSeriesPerBatch > 0 && b.seriesCount >= b.maxSeriesPerBatch
+	if needsFlush {
+		// Record the trigger under the lock so the flush is attributed to the size threshold even if
+		// it coalesces with a linger signal. The actual flush counter is incremented at flush time.
+		b.sizeThresholdPending = true
+	}
 	b.requestsMtx.Unlock()
 
 	switch {
 	case needsFlush:
 		b.signalFlush()
-		b.trackerClient.syncBatchTrackingFlushedOnSizeThreshold.Inc()
 	case wasEmpty:
 		// Arm the linger window: flush this partition once batchDelay elapses.
 		time.AfterFunc(b.batchDelay, b.signalFlush)
@@ -1259,48 +1283,65 @@ func (b *syncPartitionBatcher) stop() {
 	b.drain()
 }
 
-// drain marks the batcher as stopped (no further requests will be accepted) and flushes whatever is
-// pending. Holding the lock while setting stopped, together with the stopped check in trackSeries,
-// guarantees every accepted request is either in this snapshot or rejected up front.
-func (b *syncPartitionBatcher) drain() {
+// takeBatch snapshots and resets the pending batch under the lock, returning the accumulated
+// requests and the reason the flush was triggered (size threshold vs linger window). When
+// markStopped is set, it also marks the batcher stopped so no further requests are accepted; this,
+// together with the stopped check in trackSeries, guarantees every accepted request is either in
+// this snapshot or rejected up front.
+func (b *syncPartitionBatcher) takeBatch(markStopped bool) ([]*syncTrackRequest, string) {
 	b.requestsMtx.Lock()
-	b.stopped = true
+	defer b.requestsMtx.Unlock()
+
+	if markStopped {
+		b.stopped = true
+	}
 	requests := b.requests
+	reason := syncFlushReasonLinger
+	if b.sizeThresholdPending {
+		reason = syncFlushReasonSize
+	}
 	b.requests = nil
 	b.seriesCount = 0
-	b.requestsMtx.Unlock()
+	b.sizeThresholdPending = false
+	return requests, reason
+}
 
+// drain marks the batcher as stopped and flushes whatever is pending.
+func (b *syncPartitionBatcher) drain() {
+	requests, reason := b.takeBatch(true)
 	if len(requests) > 0 {
+		b.trackerClient.syncBatchFlushes.WithLabelValues(reason).Inc()
 		b.flush(requests)
 	}
 }
 
 func (b *syncPartitionBatcher) flushBatch(synchronous bool) {
-	b.requestsMtx.Lock()
-	requests := b.requests
-	b.requests = nil
-	b.seriesCount = 0
-	b.requestsMtx.Unlock()
+	requests, reason := b.takeBatch(false)
+	if len(requests) == 0 {
+		return
+	}
 
-	if len(requests) > 0 {
-		if synchronous {
+	b.trackerClient.syncBatchFlushes.WithLabelValues(reason).Inc()
+	if synchronous {
+		b.flush(requests)
+	} else {
+		b.workersPool.Go(func() {
 			b.flush(requests)
-		} else {
-			b.workersPool.Go(func() {
-				b.flush(requests)
-			})
-		}
+		})
 	}
 }
 
 func (b *syncPartitionBatcher) flush(requests []*syncTrackRequest) {
 	users := make([]*usagetrackerpb.TrackSeriesBatchUser, len(requests))
+	seriesCount := 0
 	for i, req := range requests {
+		seriesCount += len(req.series)
 		users[i] = &usagetrackerpb.TrackSeriesBatchUser{
 			UserID:       req.userID,
 			SeriesHashes: req.series,
 		}
 	}
+	b.trackerClient.syncBatchSeriesPerFlush.Observe(float64(seriesCount))
 
 	// Use a background context so that one caller cancelling doesn't kill the shared batch for the
 	// others. The RPC is bounded by Config.TrackSeriesBatchTimeout inside trackSeriesPerPartitionBatch.
