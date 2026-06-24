@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -538,7 +537,7 @@ func TestCacheOperator(t *testing.T) {
 
 			ctx := user.InjectOrgID(context.Background(), "some-user")
 			memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
-			cache := newTestCache()
+			cache := caching.NewInMemoryCache()
 			materializer := &testMaterializer{
 				t:                        t,
 				ctx:                      ctx,
@@ -561,8 +560,8 @@ func TestCacheOperator(t *testing.T) {
 
 				b, err := testCase.existingCacheEntry.Marshal()
 				require.NoError(t, err)
-				cache.entries = map[string]testCacheEntry{
-					hashedCacheKey: {value: b},
+				cache.Entries = map[string]caching.InMemoryCacheEntry{
+					hashedCacheKey: {Value: b},
 				}
 			}
 
@@ -628,14 +627,14 @@ func TestCacheOperator(t *testing.T) {
 			require.Zerof(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes(), "expected all instances to be returned to pool, current memory consumption is:\n%v", memoryConsumptionTracker.DescribeCurrentMemoryConsumption())
 
 			if testCase.expectedWrittenCacheEntry == nil {
-				require.Equal(t, 0, cache.setCount, "expected no cache entry to be written, but at least one was")
+				require.Equal(t, 0, cache.SetCount, "expected no cache entry to be written, but at least one was")
 			} else {
-				require.Equal(t, 1, cache.setCount, "expected cache entry to be written, but it was not")
-				require.Equal(t, []string{hashedCacheKey}, slices.Collect(maps.Keys(cache.entries)), "expected cache entry to be written with expected key")
-				require.Equal(t, testCase.expectedTTL, cache.entries[hashedCacheKey].ttl, "expected cache entry to have expected TTL")
+				require.Equal(t, 1, cache.SetCount, "expected cache entry to be written, but it was not")
+				require.Equal(t, []string{hashedCacheKey}, slices.Collect(maps.Keys(cache.Entries)), "expected cache entry to be written with expected key")
+				require.Equal(t, testCase.expectedTTL, cache.Entries[hashedCacheKey].TTL, "expected cache entry to have expected TTL")
 
 				testCase.expectedWrittenCacheEntry.CacheKey = cacheKey
-				actualBytes := cache.entries[hashedCacheKey].value
+				actualBytes := cache.Entries[hashedCacheKey].Value
 				actualEntry := &CacheEntry{}
 				require.NoError(t, actualEntry.Unmarshal(actualBytes))
 
@@ -652,7 +651,7 @@ func TestCacheOperator(t *testing.T) {
 func TestCacheOperator_DoesNotSaveCacheEntryIfSeriesMetadataNotCalled(t *testing.T) {
 	ctx := user.InjectOrgID(context.Background(), "some-user")
 	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
-	cache := newTestCache()
+	cache := caching.NewInMemoryCache()
 	materializer := &testMaterializer{
 		t:                        t,
 		ctx:                      ctx,
@@ -672,13 +671,13 @@ func TestCacheOperator_DoesNotSaveCacheEntryIfSeriesMetadataNotCalled(t *testing
 	_, _, err := o.Finalize(ctx)
 	require.NoError(t, err)
 
-	require.Zerof(t, cache.setCount, "expected no cache entry to be written, but at least one was: %v", cache.entries)
+	require.Zerof(t, cache.SetCount, "expected no cache entry to be written, but at least one was: %v", cache.Entries)
 }
 
 func TestCacheOperator_DoesNotSaveCacheEntryIfNotAllSeriesRead(t *testing.T) {
 	ctx := user.InjectOrgID(context.Background(), "some-user")
 	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
-	cache := newTestCache()
+	cache := caching.NewInMemoryCache()
 	materializer := &testMaterializer{
 		t:                        t,
 		ctx:                      ctx,
@@ -706,13 +705,13 @@ func TestCacheOperator_DoesNotSaveCacheEntryIfNotAllSeriesRead(t *testing.T) {
 	_, _, err = o.Finalize(ctx)
 	require.NoError(t, err)
 
-	require.Zerof(t, cache.setCount, "expected no cache entry to be written, but at least one was: %v", cache.entries)
+	require.Zerof(t, cache.SetCount, "expected no cache entry to be written, but at least one was: %v", cache.Entries)
 }
 
 func TestCacheOperator_DoesNotSaveCacheEntryIfFinishedReadingNotCalled(t *testing.T) {
 	ctx := user.InjectOrgID(context.Background(), "some-user")
 	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
-	cache := newTestCache()
+	cache := caching.NewInMemoryCache()
 	materializer := &testMaterializer{
 		t:                        t,
 		ctx:                      ctx,
@@ -741,7 +740,7 @@ func TestCacheOperator_DoesNotSaveCacheEntryIfFinishedReadingNotCalled(t *testin
 	_, _, err = o.Finalize(ctx)
 	require.EqualError(t, err, "CacheOperator.writeCacheEntry() called (via Finalize()) before FinishedReading(), this should never happen")
 
-	require.Zerof(t, cache.setCount, "expected no cache entry to be written, but at least one was: %v", cache.entries)
+	require.Zerof(t, cache.SetCount, "expected no cache entry to be written, but at least one was: %v", cache.Entries)
 }
 
 func TestCacheOperator_DoesNotStoreEmptySeries(t *testing.T) {
@@ -970,44 +969,6 @@ func mangleSeriesData(data types.InstantVectorSeriesData) {
 		p.H.Count = rand.NormFloat64()
 		p.H.Sum = rand.NormFloat64()
 	}
-}
-
-type testCache struct {
-	entries map[string]testCacheEntry
-
-	setCount int
-}
-
-func newTestCache() *testCache {
-	return &testCache{
-		entries: make(map[string]testCacheEntry),
-	}
-}
-
-type testCacheEntry struct {
-	value []byte
-	ttl   time.Duration
-}
-
-func (t *testCache) GetMulti(ctx context.Context, keys []string, opts ...cache.Option) (map[string][]byte, error) {
-	results := make(map[string][]byte, len(keys))
-
-	for _, key := range keys {
-		entry, ok := t.entries[key]
-
-		if ok {
-			results[key] = entry.value
-		}
-	}
-
-	return results, nil
-}
-
-func (t *testCache) SetAsync(ctx context.Context, key string, value []byte, ttl time.Duration) error {
-	t.setCount++
-	t.entries[key] = testCacheEntry{value: value, ttl: ttl}
-
-	return nil
 }
 
 type mockLimitsProvider struct {
