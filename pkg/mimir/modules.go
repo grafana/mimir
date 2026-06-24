@@ -65,6 +65,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/storegateway"
 	"github.com/grafana/mimir/pkg/streamingpromql"
+	"github.com/grafana/mimir/pkg/streamingpromql/caching"
 	streamingpromqlcompat "github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/ast/sharding"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/remoteexec"
@@ -92,6 +93,7 @@ const (
 	AlertManager                     string = "alertmanager"
 	BlockBuilder                     string = "block-builder"
 	BlockBuilderScheduler            string = "block-builder-scheduler"
+	CacheKeyGenerator                string = "cache-key-generator"
 	Compactor                        string = "compactor"
 	CompactorScheduler               string = "compactor-scheduler"
 	ContinuousTest                   string = "continuous-test"
@@ -895,6 +897,23 @@ func (t *Mimir) initQueryFrontendTopicOffsetsReaders() (services.Service, error)
 	return ingestTopicOffsetsReader, nil
 }
 
+func (t *Mimir) initCacheKeyGenerator() (services.Service, error) {
+	if t.Cfg.Frontend.QueryMiddleware.CacheKeyGenerator != nil {
+		// Already set in a downstream project, so don't override it.
+		return nil, nil
+	}
+
+	t.Cfg.Frontend.QueryMiddleware.CacheKeyGenerator = querymiddleware.NewDefaultCacheKeyGenerator(t.QueryFrontendCodec, t.Cfg.Frontend.QueryMiddleware.SplitQueriesByInterval)
+	t.Cfg.Querier.EngineConfig.MimirQueryEngine.CachePrefixGenerator = caching.TenantPrefixGenerator
+
+	if t.Cfg.LabelAccessControlEnabled {
+		t.Cfg.Frontend.QueryMiddleware.CacheKeyGenerator = frontend_labelaccess.NewCacheSplitter(t.Cfg.Frontend.QueryMiddleware.CacheKeyGenerator)
+		t.Cfg.Querier.EngineConfig.MimirQueryEngine.CachePrefixGenerator = frontend_labelaccess.CachePrefixGenerator(t.Cfg.Querier.EngineConfig.MimirQueryEngine.CachePrefixGenerator)
+	}
+
+	return nil, nil
+}
+
 // initQueryFrontendTripperware instantiates the tripperware used by the query frontend
 // to optimize Prometheus query requests.
 func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error) {
@@ -935,14 +954,6 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 		}
 	default:
 		panic(fmt.Sprintf("invalid config not caught by validation: unknown PromQL engine '%s'", t.Cfg.Frontend.QueryEngine))
-	}
-
-	if t.Cfg.LabelAccessControlEnabled {
-		cacheKeyGenerator := t.Cfg.Frontend.QueryMiddleware.CacheKeyGenerator
-		if cacheKeyGenerator == nil {
-			cacheKeyGenerator = querymiddleware.NewDefaultCacheKeyGenerator(t.QueryFrontendCodec, t.Cfg.Frontend.QueryMiddleware.SplitQueriesByInterval)
-		}
-		t.Cfg.Frontend.QueryMiddleware.CacheKeyGenerator = frontend_labelaccess.NewCacheSplitter(cacheKeyGenerator)
 	}
 
 	tripperware, err := querymiddleware.NewTripperware(
@@ -1546,6 +1557,7 @@ func (t *Mimir) setupModuleManager() error {
 	mm.RegisterModule(AlertManager, t.initAlertManager)
 	mm.RegisterModule(BlockBuilder, t.initBlockBuilder)
 	mm.RegisterModule(BlockBuilderScheduler, t.initBlockBuilderScheduler)
+	mm.RegisterModule(CacheKeyGenerator, t.initCacheKeyGenerator, modules.UserInvisibleModule)
 	mm.RegisterModule(Compactor, t.initCompactor)
 	mm.RegisterModule(CompactorScheduler, t.initCompactorScheduler)
 	mm.RegisterModule(ContinuousTest, t.initContinuousTest)
@@ -1593,6 +1605,7 @@ func (t *Mimir) setupModuleManager() error {
 		AlertManager:                     {API, MemberlistKV, Overrides, Vault},
 		BlockBuilder:                     {API, Overrides},
 		BlockBuilderScheduler:            {API},
+		CacheKeyGenerator:                {QueryFrontendCodec},
 		Compactor:                        {API, MemberlistKV, Overrides, Vault},
 		CompactorScheduler:               {API},
 		ContinuousTest:                   {API},
@@ -1608,12 +1621,12 @@ func (t *Mimir) setupModuleManager() error {
 		OverridesExporter:                {Overrides, MemberlistKV, Vault},
 		Querier:                          {TenantFederation, Vault, QuerierLifecycler},
 		QuerierLifecycler:                {API, RuntimeConfig, MemberlistKV, Vault},
-		QuerierQueryPlanner:              {API, Overrides},
+		QuerierQueryPlanner:              {API, Overrides, CacheKeyGenerator},
 		QuerierRing:                      {API, RuntimeConfig, MemberlistKV, Vault},
 		QueryFrontend:                    {QueryFrontendTripperware, MemberlistKV, Vault},
-		QueryFrontendQueryPlanner:        {API, Overrides, QuerierRing},
+		QueryFrontendQueryPlanner:        {API, Overrides, QuerierRing, CacheKeyGenerator},
 		QueryFrontendTopicOffsetsReaders: {IngesterPartitionRing},
-		QueryFrontendTripperware:         {API, Overrides, QueryFrontendCodec, QueryFrontendTopicOffsetsReaders, QueryFrontendQueryPlanner},
+		QueryFrontendTripperware:         {API, Overrides, QueryFrontendCodec, QueryFrontendTopicOffsetsReaders, QueryFrontendQueryPlanner, CacheKeyGenerator},
 		QueryScheduler:                   {API, Overrides, MemberlistKV, Vault},
 		Queryable:                        {Overrides, DistributorService, IngesterRing, IngesterPartitionRing, API, StoreQueryable, MemberlistKV, QuerierQueryPlanner},
 		Ruler:                            {DistributorService, StoreQueryable, RulerStorage, Vault, QuerierQueryPlanner},

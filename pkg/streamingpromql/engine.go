@@ -49,7 +49,7 @@ func NewEngine(opts EngineOpts, metrics *stats.QueryMetrics, planner *QueryPlann
 	var cacheFactory *cache.CacheFactory
 	if opts.RangeVectorSplitting.Enabled {
 		var err error
-		cacheFactory, err = cache.NewCacheFactory(opts.RangeVectorSplitting.IntermediateResultsCache, opts.Limits, opts.Logger, opts.CommonOpts.Reg)
+		cacheFactory, err = cache.NewCacheFactory(opts.RangeVectorSplitting.IntermediateResultsCache, opts.Limits, opts.CachePrefixGenerator, opts.Logger, opts.CommonOpts.Reg)
 		if err != nil {
 			return nil, fmt.Errorf("failed to init range vector splitting cache, err: %w", err)
 		}
