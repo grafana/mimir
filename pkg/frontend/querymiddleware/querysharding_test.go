@@ -608,45 +608,13 @@ func TestQuerySharding_ShouldSupportMaxShardedQueries(t *testing.T) {
 			compactorShards:               0,
 			expectedShardsPerPartialQuery: 16, // max sharded queries caps it to 10, rounded up to the next power of two.
 		},
-		"multiple splitted queries, query has 2 shardable legs, 3 compactor shards": {
+		"multiple splitted queries, query has 2 shardable legs, compactor shards do not affect the result": {
 			query:                         "sum(metric) / count(metric)",
 			hints:                         &Hints{TotalQueries: 3},
 			totalShards:                   16,
 			maxShardedQueries:             64,
-			compactorShards:               3,
-			expectedShardsPerPartialQuery: 16, // compactor adjustment yields 9, rounded up to the next power of two.
-		},
-		"multiple splitted queries, query has 2 shardable legs, 4 compactor shards": {
-			query:                         "sum(metric) / count(metric)",
-			hints:                         &Hints{TotalQueries: 3},
-			totalShards:                   16,
-			maxShardedQueries:             64,
-			compactorShards:               4,
-			expectedShardsPerPartialQuery: 8, // compactor adjustment yields 8, already a power of two.
-		},
-		"multiple splitted queries, query has 2 shardable legs, 10 compactor shards": {
-			query:                         "sum(metric) / count(metric)",
-			hints:                         &Hints{TotalQueries: 3},
-			totalShards:                   16,
-			maxShardedQueries:             64,
-			compactorShards:               10,
-			expectedShardsPerPartialQuery: 16, // compactor adjustment keeps 10, rounded up to the next power of two.
-		},
-		"multiple splitted queries, query has 2 shardable legs, 11 compactor shards": {
-			query:                         "sum(metric) / count(metric)",
-			hints:                         &Hints{TotalQueries: 3},
-			totalShards:                   16,
-			maxShardedQueries:             64,
-			compactorShards:               11,
-			expectedShardsPerPartialQuery: 16, // 11 has no usable divisor, keeps 10, rounded up to the next power of two.
-		},
-		"multiple splitted queries, query has 2 shardable legs, 14 compactor shards": {
-			query:                         "sum(metric) / count(metric)",
-			hints:                         &Hints{TotalQueries: 3},
-			totalShards:                   16,
-			maxShardedQueries:             64,
-			compactorShards:               14,
-			expectedShardsPerPartialQuery: 8, // 7 divides 14, rounded up to the next power of two.
+			compactorShards:               10, // The compactor shard count no longer adjusts the query shard count.
+			expectedShardsPerPartialQuery: 16, // max sharded queries caps it to 10, rounded up to the next power of two.
 		},
 		"query sharding is disabled": {
 			query:                         "sum(metric)",
@@ -662,7 +630,7 @@ func TestQuerySharding_ShouldSupportMaxShardedQueries(t *testing.T) {
 			maxShardedQueries:             64,
 			nativeHistograms:              true,
 			compactorShards:               10,
-			expectedShardsPerPartialQuery: 16, // compactor adjustment keeps 10, rounded up to the next power of two.
+			expectedShardsPerPartialQuery: 16, // max sharded queries caps it to 10, rounded up to the next power of two.
 		},
 		"hints are missing, query has 1 shardable leg": {
 			query:                         "count(metric)",
