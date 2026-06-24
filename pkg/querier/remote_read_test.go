@@ -407,7 +407,7 @@ func TestRemoteReadSamples_SampleCountStats(t *testing.T) {
 					}),
 				}
 			},
-			expectedPhysicalSampleCount:   2,
+			expectedPhysicalSampleCount:   equivalentCountForHistogram(1) + equivalentCountForHistogram(2),
 			expectedEquivalentSampleCount: equivalentCountForHistogram(1) + equivalentCountForHistogram(2),
 		},
 		"single query with mixed float and histogram samples": {
@@ -427,7 +427,7 @@ func TestRemoteReadSamples_SampleCountStats(t *testing.T) {
 					}),
 				}
 			},
-			expectedPhysicalSampleCount:   3,
+			expectedPhysicalSampleCount:   2 + equivalentCountForHistogram(3),
 			expectedEquivalentSampleCount: 2 + equivalentCountForHistogram(3),
 		},
 		"multiple queries": {

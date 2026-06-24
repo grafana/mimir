@@ -262,7 +262,7 @@ func remoteReadErrorStatusCode(err error) int {
 }
 
 // seriesSetToQueryResult converts a SeriesSet to a QueryResult, filtering samples to [filterStartMs, filterEndMs].
-// Returns physical sample count (1 per sample) and equivalent float sample count (histogram-weighted).
+// Returns physical and equivalent float sample counts (both histogram-weighted, matching MQE behaviour).
 func seriesSetToQueryResult(s storage.SeriesSet, filterStartMs, filterEndMs int64) (*prompb.QueryResult, uint64, uint64, error) {
 	result := &prompb.QueryResult{}
 	var physicalSampleCount, equivalentSampleCount uint64
@@ -294,15 +294,17 @@ func seriesSetToQueryResult(s storage.SeriesSet, filterStartMs, filterEndMs int6
 				t, h := it.AtHistogram(nil) // Nil argument as we pass the data to the protobuf as-is without copy.
 				histograms = append(histograms, prompb.FromIntHistogram(t, h))
 				if !value.IsStaleNaN(h.Sum) {
-					physicalSampleCount++
-					equivalentSampleCount += uint64(types.EquivalentFloatSampleCount(h.ToFloat(nil)))
+					eqCount := uint64(types.EquivalentFloatSampleCount(h.ToFloat(nil)))
+					physicalSampleCount += eqCount
+					equivalentSampleCount += eqCount
 				}
 			case chunkenc.ValFloatHistogram:
 				t, h := it.AtFloatHistogram(nil) // Nil argument as we pass the data to the protobuf as-is without copy.
 				histograms = append(histograms, prompb.FromFloatHistogram(t, h))
 				if !value.IsStaleNaN(h.Sum) {
-					physicalSampleCount++
-					equivalentSampleCount += uint64(types.EquivalentFloatSampleCount(h))
+					eqCount := uint64(types.EquivalentFloatSampleCount(h))
+					physicalSampleCount += eqCount
+					equivalentSampleCount += eqCount
 				}
 			default:
 				return nil, 0, 0, fmt.Errorf("unsupported value type: %v", valType)
