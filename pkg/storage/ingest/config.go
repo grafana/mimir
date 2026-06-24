@@ -284,7 +284,8 @@ func (cfg *KafkaConfig) Validate() error {
 	}
 	if cfg.ConsumeFromPositionAtStartup == consumeFromTimestamp {
 		// We only do a simple soundness check for the value be a millisecond precision timestamp.
-		if cfg.ConsumeFromTimestampAtStartup < 1e12 {
+		// This allows any timestamps after 2000-01-01, which is the initial time in a goroutine bubble (ref https://pkg.go.dev/testing/synctest#hdr-Time).
+		if cfg.ConsumeFromTimestampAtStartup < 9e11 {
 			return fmt.Errorf("%w: configured timestamp must be a millisecond timestamp", ErrInvalidConsumePosition)
 		}
 	} else {
