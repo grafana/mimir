@@ -46,9 +46,19 @@ func TestOptimizationPass(t *testing.T) {
 		expectedPlan              string
 		expectedNotCachableReason string
 	}{
-		"instant query": {
+		"instant query with instant vector result": {
 			expr:            "foo{}",
 			timeRange:       types.NewInstantQueryTimeRange(time.Now()),
+			expectUnchanged: true,
+		},
+		"instant query with range vector result": {
+			expr:            "foo[5m]",
+			timeRange:       types.NewInstantQueryTimeRange(time.Now()),
+			expectUnchanged: true,
+		},
+		"scalar range query": {
+			expr:            "scalar(foo)",
+			timeRange:       rangeQueryTimeRange,
 			expectUnchanged: true,
 		},
 

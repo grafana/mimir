@@ -44,11 +44,6 @@ func TestOptimizationPass(t *testing.T) {
 			expectedPlan: `
 				- NumberLiteral: 123
 			`,
-			expectedPlanWithSplittingAndCachingInsideMQE: `
-				- TimeRangeSplit: interval 24h0m0s
-					- Cache: split interval 24h0m0s
-						- NumberLiteral: 123
-			`,
 		},
 		"scalar expression with selector": {
 			expr: `scalar(my_metric)`,
@@ -57,14 +52,6 @@ func TestOptimizationPass(t *testing.T) {
 					- RemoteExecutionGroup
 						- node 0: FunctionCall: scalar(...)
 							- VectorSelector: {__name__="my_metric"}
-			`,
-			expectedPlanWithSplittingAndCachingInsideMQE: `
-				- TimeRangeSplit: interval 24h0m0s
-					- Cache: split interval 24h0m0s
-						- RemoteExecutionConsumer: node 0
-							- RemoteExecutionGroup
-								- node 0: FunctionCall: scalar(...)
-									- VectorSelector: {__name__="my_metric"}
 			`,
 		},
 		"range vector expression": {

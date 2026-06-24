@@ -8,6 +8,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/timestamp"
+	"github.com/prometheus/prometheus/promql/parser"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/commonsubexpressionelimination"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
@@ -53,6 +54,12 @@ func (o *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, 
 
 	if plan.Parameters.TimeRange.IsInstant {
 		// Nothing to do.
+		return plan, nil
+	}
+
+	if resultType, err := plan.Root.ResultType(); err != nil {
+		return nil, err
+	} else if resultType != parser.ValueTypeVector {
 		return plan, nil
 	}
 
