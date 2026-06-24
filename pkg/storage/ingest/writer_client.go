@@ -40,10 +40,8 @@ func newKafkaProducerForBackend(cfg KafkaConfig, maxInflight int, logger log.Log
 		if err != nil {
 			return nil, err
 		}
-		// warpstream-go owns the kprom transport metrics and the producer-state
-		// metrics (registered under franz-go-compatible names). We only inject our
-		// bespoke extended latency metrics, which hook the same broker E2E/throttle
-		// events as on the kafka backend, so the kafka_* metrics match across backends.
+		// warpstream-go emits the client metrics itself; we only add our bespoke
+		// kafka_* extended latency metrics, to match the kafka backend.
 		warpstreamOpts = append(warpstreamOpts, wgo.WithHooks(NewKafkaClientExtendedMetrics(reg)))
 
 		warpstreamClient, err := wgo.NewWarpstreamClient(logger, reg, warpstreamOpts...)
