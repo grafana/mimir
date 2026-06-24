@@ -1222,13 +1222,10 @@ func (b *syncPartitionBatcher) trackSeries(userID string, series []uint64) chan 
 
 	b.requestsMtx.Lock()
 	if b.stopped {
-		// We're stopping: deliver immediately so the caller never blocks.
+		// We're stopping: deliver immediately so the caller never blocks. The caller
+		// (trackSeriesSyncBatched) swallows this error when IgnoreErrors is set.
 		b.requestsMtx.Unlock()
-		if b.trackerClient.cfg.IgnoreErrors {
-			req.result <- syncTrackResult{}
-		} else {
-			req.result <- syncTrackResult{err: errors.New("usage-tracker client is stopping")}
-		}
+		req.result <- syncTrackResult{err: errors.New("usage-tracker client is stopping")}
 		return req.result
 	}
 	wasEmpty := len(b.requests) == 0
