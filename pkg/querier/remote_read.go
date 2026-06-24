@@ -462,11 +462,11 @@ func sampleCountsForChunk(chk chunkenc.Chunk, minTMs, maxTMs int64) (physical, e
 			physical += histogramWeight
 			equivalent += histogramWeight
 		default:
-			return 0, 0, fmt.Errorf("unsupported value type: %v", valType)
+			return physical, equivalent, fmt.Errorf("unsupported value type: %v", valType)
 		}
 	}
 	if err := it.Err(); err != nil {
-		return 0, 0, err
+		return physical, equivalent, err
 	}
 	return physical, equivalent, nil
 }
