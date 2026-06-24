@@ -51,6 +51,9 @@ const (
 	queryTypeActiveSeries                 = "active_series"
 	queryTypeActiveNativeHistogramMetrics = "active_native_histogram_metrics"
 	queryTypeOther                        = "other"
+
+	EnableRemoteExecutionFlag = "query-frontend.enable-remote-execution"
+	UseMQEForShardingFlag     = "query-frontend.use-mimir-query-engine-for-sharding"
 )
 
 var (
@@ -108,9 +111,9 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.UseMQEForSplittingAndCachingResults, "query-frontend.use-mimir-query-engine-for-splitting-and-caching-results", false, fmt.Sprintf("Set to true to enable performing splitting range queries by interval and caching inside the Mimir query engine (MQE). This setting only has an effect if splitting range queries by interval or caching are enabled (with -%v=true and -%v=true, respectively). Requires MQE, remote execution and sharding inside MQE to be enabled.", splitQueriesByIntervalFlag, cacheResultsFlag))
 	f.BoolVar(&cfg.CacheErrors, "query-frontend.cache-errors", false, "Cache non-transient errors from queries.")
 	f.BoolVar(&cfg.ShardedQueries, "query-frontend.parallelize-shardable-queries", false, "True to enable query sharding.")
-	f.BoolVar(&cfg.EnableRemoteExecution, "query-frontend.enable-remote-execution", false, "If set to true and the Mimir query engine is in use, use remote execution to evaluate queries in queriers.")
+	f.BoolVar(&cfg.EnableRemoteExecution, EnableRemoteExecutionFlag, false, "If set to true and the Mimir query engine is in use, use remote execution to evaluate queries in queriers.")
 	f.BoolVar(&cfg.EnableMultipleNodeRemoteExecutionRequests, "query-frontend.enable-multiple-node-remote-execution-requests", false, "Set to true to allow evaluating multiple query plan nodes within a single remote execution request to queriers.")
-	f.BoolVar(&cfg.UseMQEForSharding, "query-frontend.use-mimir-query-engine-for-sharding", false, "Set to true to enable performing query sharding inside the Mimir query engine (MQE). This setting has no effect if sharding is disabled. Requires remote execution and MQE to be enabled.")
+	f.BoolVar(&cfg.UseMQEForSharding, UseMQEForShardingFlag, false, "Set to true to enable performing query sharding inside the Mimir query engine (MQE). This setting has no effect if sharding is disabled. Requires remote execution and MQE to be enabled.")
 	f.BoolVar(&cfg.RewriteQueriesHistogram, "query-frontend.rewrite-histogram-queries", false, "Set to true to enable rewriting histogram queries for a more efficient order of execution.")
 	f.BoolVar(&cfg.RewriteQueriesPropagateMatchers, "query-frontend.rewrite-propagate-matchers", false, "Set to true to enable rewriting queries to propagate label matchers across binary expressions.")
 	f.Uint64Var(&cfg.TargetSeriesPerShard, "query-frontend.query-sharding-target-series-per-shard", 0, "How many series a single sharded partial query should load at most. This is not a strict requirement guaranteed to be honoured by query sharding, but a hint given to the query sharding when the query execution is initially planned. 0 to disable cardinality-based hints.")
