@@ -53,6 +53,11 @@ type CacheOperator struct {
 	logger             log.Logger
 	cacheEntryInterval time.Duration
 
+	// minCacheExtent is the minimum size of a cached extent for it to be read back from the cache,
+	// rather than being discarded and re-evaluated, when the desired time range is larger than minCacheExtent.
+	// A value of zero disables small extent avoidance.
+	minCacheExtent time.Duration
+
 	evaluationTime     time.Time
 	ttlForNonOOOExtent time.Duration
 	ttlForOOOExtent    time.Duration
@@ -90,6 +95,7 @@ func newCacheOperator(
 	limitsProvider LimitsProvider,
 	logger log.Logger,
 	cacheEntryInterval time.Duration,
+	minCacheExtent time.Duration,
 ) *CacheOperator {
 	return &CacheOperator{
 		Backend:                  backend,
@@ -102,6 +108,7 @@ func newCacheOperator(
 		limitsProvider:           limitsProvider,
 		logger:                   logger,
 		cacheEntryInterval:       cacheEntryInterval,
+		minCacheExtent:           minCacheExtent,
 		timeNow:                  time.Now,
 		getCurrentTraceID:        tracing.ExtractTraceID,
 	}
@@ -282,6 +289,8 @@ func (c *CacheOperator) calculateExtents(ctx context.Context, existingExtents []
 	// For example, if the desired time range is T=5m to T=8m30s with a step of 1m, then the last step is T=8m.
 	stepAlignedEndT := calculateLastStepAlignedPoint(c.DesiredTimeRange.StartT, c.DesiredTimeRange.EndT, c.DesiredTimeRange.IntervalMilliseconds)
 
+	existingExtents = c.discardSmallExtents(existingExtents, stepAlignedEndT)
+
 	maxFreshness, err := c.limitsProvider.GetMaxCacheFreshness(ctx)
 	if err != nil {
 		return extents{}, err
@@ -410,6 +419,46 @@ func (c *CacheOperator) logUsedExtent(spanLogger *spanlogger.SpanLogger, extent 
 		"extent_newest_evaluation_trace_id", extent.NewestEvaluationTraceID,
 		"extent_series_count", len(extent.SeriesMetadata),
 	)
+}
+
+// discardSmallExtents removes cached extents that overlap the desired time range but are smaller than minCacheExtent,
+// returning the remaining extents (still in time order). Re-evaluating these small extents as part of a larger query is
+// more efficient than reading many small extents, and means future queries can reuse a single larger cached extent.
+// Extents that fall entirely outside the desired time range are always retained, as they aren't re-evaluated by this
+// query and so discarding them would simply throw away valid cached data.
+//
+// This mirrors the behaviour of the split-and-cache query middleware (see partitionCacheExtents in
+// pkg/frontend/querymiddleware/results_cache.go).
+func (c *CacheOperator) discardSmallExtents(existingExtents []CachedExtent, stepAlignedEndT int64) []CachedExtent {
+	// Only discard small extents if the desired time range is itself large: if the query is small, re-evaluating is no
+	// cheaper than reading the cached extent. Instant queries (start == end) are never affected.
+	minCacheExtentMilliseconds := c.minCacheExtent.Milliseconds()
+	desiredTimeRangeIsLarge := c.DesiredTimeRange.StartT != c.DesiredTimeRange.EndT &&
+		c.DesiredTimeRange.EndT-c.DesiredTimeRange.StartT > minCacheExtentMilliseconds
+
+	if c.minCacheExtent <= 0 || !desiredTimeRangeIsLarge {
+		return existingExtents
+	}
+
+	kept := existingExtents[:0]
+
+	for _, extent := range existingExtents {
+		extentIsSmall := extent.EndT-extent.StartT < minCacheExtentMilliseconds
+		overlapsDesiredTimeRange := extent.EndT >= c.DesiredTimeRange.StartT && extent.StartT <= stepAlignedEndT
+
+		if extentIsSmall && overlapsDesiredTimeRange {
+			// We won't read this extent, so release the memory we reserved for it in fetchExistingExtents.
+			extent.close(c.MemoryConsumptionTracker)
+			continue
+		}
+
+		kept = append(kept, extent)
+	}
+
+	// Clear any extents still retained in the slice, so they can be garbage collected.
+	clear(existingExtents[len(kept):])
+
+	return kept
 }
 
 func (c *CacheOperator) populateTTLs(ctx context.Context) error {
