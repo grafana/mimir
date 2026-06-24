@@ -13,7 +13,6 @@ import (
 	"hash/fnv"
 	"math/rand"
 	"os"
-	"path"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -858,7 +857,7 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 	reg := prometheus.NewRegistry()
 	defer c.syncerMetrics.gatherThanosSyncerMetrics(reg, userLogger)
 
-	compactor, err := c.newBucketCompactor(ctx, userID, userLogger, userBucket, reg)
+	compactor, err := c.newBucketCompactor(ctx, userID, userLogger, userBucket, c.baseCompactDir(), reg)
 	if err != nil {
 		return fmt.Errorf("failed to create bucket compactor: %w", err)
 	}
@@ -875,13 +874,13 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 	return nil
 }
 
-func (c *MultitenantCompactor) newBucketCompactor(ctx context.Context, userID string, userLogger log.Logger, userBucket objstore.Bucket, reg *prometheus.Registry) (*BucketCompactor, error) {
+func (c *MultitenantCompactor) newBucketCompactor(ctx context.Context, userID string, userLogger log.Logger, userBucket objstore.Bucket, compactDir string, reg *prometheus.Registry) (*BucketCompactor, error) {
 	return NewBucketCompactor(
 		userLogger,
 		c.blocksGrouperFactory(ctx, c.compactorCfg, c.cfgProvider, userID, userLogger, reg),
 		c.blocksPlanner,
 		c.blocksCompactor,
-		path.Join(c.compactorCfg.DataDir, "compact"),
+		compactDir,
 		userBucket,
 		c.compactorCfg.CompactionConcurrency,
 		true, // Skip unhealthy blocks, and mark them for no-compaction.
@@ -1035,6 +1034,11 @@ const compactorMetaPrefix = "compactor-meta-"
 // the directory used by the Thanos Syncer, whatever is the user ID.
 func (c *MultitenantCompactor) metaSyncDirForUser(userID string) string {
 	return filepath.Join(c.compactorCfg.DataDir, compactorMetaPrefix+userID)
+}
+
+// baseCompactDir is the base directory that contains subdirectories for compaction jobs
+func (c *MultitenantCompactor) baseCompactDir() string {
+	return filepath.Join(c.compactorCfg.DataDir, "compact")
 }
 
 // This function returns tenants with meta sync directories found on local disk. On error, it returns nil map.
