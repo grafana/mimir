@@ -8753,14 +8753,14 @@ func TestSeriesAreShardedToCorrectIngesters(t *testing.T) {
 		totalMetadata += len(ing.metadata)
 
 		for _, ts := range ing.timeseries {
-			token := tokenForLabels(userName, ts.Labels)
+			token := mimirpb.ShardByAllLabelAdapters(userName, ts.Labels)
 			ingIx := getIngesterIndexForToken(token, ingesters)
 			assert.Equal(t, ix, ingIx)
 		}
 
 		for _, metadataMap := range ing.metadata {
 			for m := range metadataMap {
-				token := tokenForMetadata(userName, m.MetricFamilyName)
+				token := mimirpb.ShardByMetricName(userName, m.MetricFamilyName)
 				ingIx := getIngesterIndexForToken(token, ingesters)
 				assert.Equal(t, ix, ingIx)
 			}
@@ -8769,7 +8769,7 @@ func TestSeriesAreShardedToCorrectIngesters(t *testing.T) {
 
 	// Verify that all timeseries were forwarded to ingesters.
 	for _, ts := range req.Timeseries {
-		token := tokenForLabels(userName, ts.Labels)
+		token := mimirpb.ShardByAllLabelAdapters(userName, ts.Labels)
 		ingIx := getIngesterIndexForToken(token, ingesters)
 
 		assert.Equal(t, ts.Labels, ingesters[ingIx].timeseries[token].Labels)

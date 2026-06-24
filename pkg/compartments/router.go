@@ -40,7 +40,14 @@ func NewRouter(numReadCompartments int, kafkaTopicTemplate string) *Router {
 // CompartmentForMetric returns the read compartment ID for the given tenant's metric name. The
 // metricName is only hashed and never retained, so it is safe to pass an unsafe (pooled) string.
 func (r *Router) CompartmentForMetric(userID, metricName string) int {
-	hash := mimirpb.ShardByMetricName(userID, metricName)
+	return r.CompartmentForMetricWithSeed(mimirpb.ShardByUser(userID), metricName)
+}
+
+// CompartmentForMetricWithSeed is like CompartmentForMetric, but takes a precomputed user seed
+// (from mimirpb.ShardByUser) instead of the userID. Callers that route many metrics of the same
+// user should compute the seed once and reuse it to avoid re-hashing the userID for every metric.
+func (r *Router) CompartmentForMetricWithSeed(seed uint32, metricName string) int {
+	hash := mimirpb.ShardByMetricNameWithSeed(seed, metricName)
 	return int(hash % uint32(len(r.topics)))
 }
 

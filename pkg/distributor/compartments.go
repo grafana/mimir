@@ -43,20 +43,24 @@ func getCompartmentTokensForWriteRequest(router *compartments.Router, userID str
 		byCompartment[c].topic = router.TopicForCompartment(c)
 	}
 
+	// The userID is constant for the whole request, so hash it once into a seed and reuse it for
+	// every series and metadata entry instead of re-hashing it for each compartment lookup and token.
+	seed := mimirpb.ShardByUser(userID)
+
 	for i, ts := range req.Timeseries {
 		// UnsafeMetricNameFromLabelAdapters returns a reference into the pooled request buffer. It is
-		// safe here because CompartmentForMetric only hashes the string and never retains it. A missing
-		// __name__ yields an empty metric name, which deterministically maps to a compartment.
+		// safe here because CompartmentForMetricWithSeed only hashes the string and never retains it. A
+		// missing __name__ yields an empty metric name, which deterministically maps to a compartment.
 		metricName, _ := extract.UnsafeMetricNameFromLabelAdapters(ts.Labels)
-		ct := &byCompartment[router.CompartmentForMetric(userID, metricName)]
+		ct := &byCompartment[router.CompartmentForMetricWithSeed(seed, metricName)]
 		ct.indexes = append(ct.indexes, i)
-		ct.tokens = append(ct.tokens, tokenForLabels(userID, ts.Labels))
+		ct.tokens = append(ct.tokens, mimirpb.ShardByAllLabelAdaptersWithSeed(seed, ts.Labels))
 	}
 
 	for i, m := range req.Metadata {
-		ct := &byCompartment[router.CompartmentForMetric(userID, m.MetricFamilyName)]
+		ct := &byCompartment[router.CompartmentForMetricWithSeed(seed, m.MetricFamilyName)]
 		ct.indexes = append(ct.indexes, initialMetadataIndex+i)
-		ct.tokens = append(ct.tokens, tokenForMetadata(userID, m.MetricFamilyName))
+		ct.tokens = append(ct.tokens, mimirpb.ShardByMetricNameWithSeed(seed, m.MetricFamilyName))
 	}
 
 	// Drop empty compartments, keeping the original compartment IDs on the remaining entries.
