@@ -990,8 +990,8 @@ github.com/open-telemetry/opentelemetry-collector-contrib/processor/deltatocumul
 github.com/open-telemetry/opentelemetry-collector-contrib/processor/deltatocumulativeprocessor/internal/metrics
 github.com/open-telemetry/opentelemetry-collector-contrib/processor/deltatocumulativeprocessor/internal/putil/pslice
 github.com/open-telemetry/opentelemetry-collector-contrib/processor/deltatocumulativeprocessor/internal/telemetry
-# github.com/opentracing-contrib/go-grpc v0.1.3 => github.com/charleskorn/go-grpc v0.0.0-20231024023642-e9298576254f
-## explicit; go 1.11
+# github.com/opentracing-contrib/go-grpc v0.1.4
+## explicit; go 1.25.0
 github.com/opentracing-contrib/go-grpc
 # github.com/opentracing-contrib/go-stdlib v1.1.2-0.20260528155411-f102363ff79b
 ## explicit; go 1.14
@@ -2195,5 +2195,4 @@ sigs.k8s.io/yaml
 # go.yaml.in/yaml/v3 => github.com/grafana/go-yaml/v3 v3.0.0-20260130164322-e3c24e8f4c87
 # github.com/grafana/regexp => github.com/grafana/regexp v0.0.0-20250905101755-5eb4f3acbf71
 # github.com/munnerz/goautoneg => github.com/grafana/goautoneg v0.0.0-20240607115440-f335c04c58ce
-# github.com/opentracing-contrib/go-grpc => github.com/charleskorn/go-grpc v0.0.0-20231024023642-e9298576254f
 # github.com/prometheus/otlptranslator => github.com/grafana/mimir-otlptranslator v0.0.0-20251017074411-ea1e8f863e1d
