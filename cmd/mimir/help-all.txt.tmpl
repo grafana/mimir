@@ -1156,7 +1156,7 @@ Usage of ./cmd/mimir/mimir:
   -compactor.meta-sync-concurrency int
     	Number of goroutines to use when syncing block meta files from the long term storage. (default 20)
   -compactor.ooo-split-and-merge-shards int
-    	The number of shards to use when splitting out-of-order blocks. 0 to use the value of -compactor.split-and-merge-shards. Only applies to blocks with the out-of-order external label, see -ingester.out-of-order-blocks-external-label-enabled.
+    	The number of shards to use when splitting out-of-order blocks. 0 to use the value of -compactor.split-and-merge-shards. Values greater than 1 are rounded up to the next power of two. Only applies to blocks with the out-of-order external label, see -ingester.out-of-order-blocks-external-label-enabled.
   -compactor.partial-block-deletion-delay duration
     	If a partial block (unfinished block without meta.json file) hasn't been modified for this time, it will be marked for deletion. The minimum accepted value is 4h0m0s: a lower value will be ignored and the feature disabled. 0 to disable. (default 1d)
   -compactor.ring.auto-forget-unhealthy-periods int
@@ -1234,7 +1234,7 @@ Usage of ./cmd/mimir/mimir:
   -compactor.ring.wait-stability-min-duration duration
     	Minimum time to wait for ring stability at startup. 0 to disable.
   -compactor.split-and-merge-shards int
-    	The number of shards to use when splitting blocks. 0 to disable splitting.
+    	The number of shards to use when splitting blocks. 0 to disable splitting. Values greater than 1 are rounded up to the next power of two.
   -compactor.split-groups int
     	Number of groups that blocks for splitting should be grouped into. Each group of blocks is then split separately. Number of output split shards is controlled by -compactor.split-and-merge-shards. (default 1)
   -compactor.symbols-flushers-concurrency int
@@ -2688,7 +2688,7 @@ Usage of ./cmd/mimir/mimir:
   -query-frontend.query-sharding-target-series-per-shard uint
     	How many series a single sharded partial query should load at most. This is not a strict requirement guaranteed to be honoured by query sharding, but a hint given to the query sharding when the query execution is initially planned. 0 to disable cardinality-based hints.
   -query-frontend.query-sharding-total-shards int
-    	The amount of shards to use when doing parallelisation via query sharding by tenant. 0 to disable query sharding for tenant. Query sharding implementation will adjust the number of query shards based on compactor shards. This allows querier to not search the blocks which cannot possibly have the series for given query shard. (default 16)
+    	The amount of shards to use when doing parallelisation via query sharding by tenant. 0 to disable query sharding for tenant. Values greater than 1 are rounded up to the next power of two. Query sharding implementation will adjust the number of query shards based on compactor shards. This allows querier to not search the blocks which cannot possibly have the series for given query shard. (default 16)
   -query-frontend.query-stats-enabled
     	False to disable query statistics tracking. When enabled, a message with some statistics is logged for every query. (default true)
   -query-frontend.remote-execution-batch-size uint

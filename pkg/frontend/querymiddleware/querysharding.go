@@ -29,6 +29,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/lazyquery"
 	"github.com/grafana/mimir/pkg/util"
+	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -465,6 +466,20 @@ func (s *QuerySharder) getShardsForQuery(ctx context.Context, tenantIDs []string
 				"previous total shards", prevTotalShards,
 				"updated total shards", totalShards,
 				"compactor shards", compactorShardCount)
+		}
+	}
+
+	// Round the final shard count up to the next power of two so it always meshes with
+	// (is a divisor or multiple of) a power-of-two compactor shard count. This is applied
+	// last so that whatever value the adjustments above produced ends up being a power of two.
+	if totalShards > 1 {
+		prevTotalShards := totalShards
+		totalShards = util_math.NextPowerTwo(totalShards)
+
+		if prevTotalShards != totalShards {
+			spanLog.DebugLog("msg", "number of shards has been rounded up to the next power of two",
+				"previous total shards", prevTotalShards,
+				"updated total shards", totalShards)
 		}
 	}
 
