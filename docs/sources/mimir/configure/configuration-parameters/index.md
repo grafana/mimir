@@ -4730,6 +4730,26 @@ blocked_requests:
 # CLI flag: -query-frontend.subquery-spin-off-enabled
 [subquery_spin_off_enabled: <boolean> | default = false]
 
+# (experimental) List of queries for which to disable subquery spin-off.
+# Example:
+#   Patterns are matched literally, or as regular expressions when regex: true.
+#   Rules are validated at configuration load; an error is returned if a pattern
+#   is missing or, with regex: true, is not a valid regular expression.
+#   subquery_spin_off_disabled_queries:
+#       - pattern: max_over_time((sum(rate(metric_counter[5m])))[1h:1m])
+#         regex: false
+#       - pattern: .*expensive_metric.*
+#         regex: true
+subquery_spin_off_disabled_queries:
+  - # PromQL expression pattern to match. Rules without a pattern are a
+    # configuration error.
+    [pattern: <string> | default = ""]
+
+    # If true, the pattern is treated as a regular expression; an invalid
+    # regular expression is a configuration error. If false, the pattern is
+    # treated as a literal match.
+    [regex: <boolean> | default = ]
+
 # (advanced) Enable labels query optimizations. When enabled, the query-frontend
 # may rewrite labels queries to improve their performance.
 # CLI flag: -query-frontend.labels-query-optimizer-enabled
