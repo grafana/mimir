@@ -233,7 +233,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 	// Run compaction before using this TSDB. If there is data in head that needs to be put into blocks,
 	// this will actually create the blocks. If there is no data (empty TSDB), this is a no-op, although
 	// local blocks compaction may still take place if configured.
-	level.Info(userLogger).Log("msg", "Running compaction after WAL replay")
+	level.Info(userLogger).Log("msg", "Running compaction after WAL replay", "ingester_series_count", i.seriesCount.Load(), "head_num_series", db.Head().NumSeries())
 	// Note that we want to let TSDB creation finish without being interrupted by eventual context cancellation,
 	// so passing an independent context here
 	err = db.Compact(context.Background())
@@ -296,7 +296,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 	// Must be the last statement: once flipped, blocksToDelete can run against userDB from
 	// the goroutine tsdb.Open started, so every field it reads must already be initialised.
 	userDBReady.Store(true)
-
+	level.Info(userLogger).Log("msg", "TSDB opened", "ingester_series_count", i.seriesCount.Load(), "head_num_series", userDB.Head().NumSeries())
 	return userDB, nil
 }
 
