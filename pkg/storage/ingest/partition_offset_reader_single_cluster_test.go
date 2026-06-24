@@ -4,7 +4,6 @@ package ingest
 
 import (
 	"context"
-	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -19,15 +18,15 @@ import (
 	"github.com/grafana/mimir/pkg/util/testkafka"
 )
 
-func TestPartitionOffsetReader(t *testing.T) {
+func TestSingleClusterTopicOffsetsReader(t *testing.T) {
 	const (
 		numPartitions = 1
 		topicName     = "test"
-		partitionID   = int32(0)
 	)
 
 	var (
-		ctx = context.Background()
+		ctx             = context.Background()
+		allPartitionIDs = func(_ context.Context) ([]int32, error) { return []int32{0}, nil }
 	)
 
 	t.Run("should notify waiting goroutines when stopped", func(t *testing.T) {
@@ -37,7 +36,7 @@ func TestPartitionOffsetReader(t *testing.T) {
 		)
 
 		// Run with a very high polling interval, so that it will never run in this test.
-		reader := newSingleClusterPartitionOffsetReader(createTestKafkaClient(t, kafkaCfg), topicName, partitionID, time.Hour, nil, log.NewNopLogger())
+		reader := NewSingleClusterTopicOffsetsReader(createTestKafkaClient(t, kafkaCfg), topicName, allPartitionIDs, time.Hour, nil, log.NewNopLogger())
 		require.NoError(t, services.StartAndAwaitRunning(ctx, reader))
 
 		// Run few goroutines waiting for the last produced offset.
@@ -62,17 +61,17 @@ func TestPartitionOffsetReader(t *testing.T) {
 	})
 }
 
-func TestPartitionOffsetReader_WaitNextFetchLastProducedOffset(t *testing.T) {
+func TestSingleClusterTopicOffsetsReader_WaitNextFetchLastProducedOffset(t *testing.T) {
 	const (
 		numPartitions = 1
 		topicName     = "test"
-		partitionID   = int32(0)
 		pollInterval  = time.Second
 	)
 
 	var (
-		ctx    = context.Background()
-		logger = log.NewNopLogger()
+		ctx             = context.Background()
+		logger          = log.NewNopLogger()
+		allPartitionIDs = func(_ context.Context) ([]int32, error) { return []int32{0}, nil }
 	)
 
 	t.Run("should wait the result of the next request issued", func(t *testing.T) {
@@ -80,7 +79,7 @@ func TestPartitionOffsetReader_WaitNextFetchLastProducedOffset(t *testing.T) {
 			cluster, clusterAddr = testkafka.CreateCluster(t, numPartitions, topicName)
 			kafkaCfg             = createTestKafkaConfig(clusterAddr, topicName)
 			client               = createTestKafkaClient(t, kafkaCfg)
-			reader               = newSingleClusterPartitionOffsetReader(client, topicName, partitionID, pollInterval, nil, logger)
+			reader               = NewSingleClusterTopicOffsetsReader(client, topicName, allPartitionIDs, pollInterval, nil, logger)
 
 			lastOffset            = atomic.NewInt64(1)
 			firstRequestReceived  = make(chan struct{})
@@ -93,7 +92,7 @@ func TestPartitionOffsetReader_WaitNextFetchLastProducedOffset(t *testing.T) {
 			switch lastOffset.Load() {
 			case 1:
 				close(firstRequestReceived)
-			case 2:
+			case 3:
 				close(secondRequestReceived)
 			}
 
@@ -103,7 +102,11 @@ func TestPartitionOffsetReader_WaitNextFetchLastProducedOffset(t *testing.T) {
 			res.Topics = []kmsg.ListOffsetsResponseTopic{{
 				Topic: topicName,
 				Partitions: []kmsg.ListOffsetsResponseTopicPartition{{
-					Partition: partitionID,
+					Partition: 0,
+					ErrorCode: 0,
+					Offset:    lastOffset.Inc(),
+				}, {
+					Partition: 1,
 					ErrorCode: 0,
 					Offset:    lastOffset.Inc(),
 				}},
@@ -121,7 +124,7 @@ func TestPartitionOffsetReader_WaitNextFetchLastProducedOffset(t *testing.T) {
 		runAsyncAfter(&wg, firstRequestReceived, func() {
 			actual, err := reader.WaitNextFetchLastProducedOffset(ctx)
 			require.NoError(t, err)
-			assert.Equal(t, int64(2), actual)
+			assert.Equal(t, map[int32]int64{0: int64(3), 1: int64(4)}, actual)
 		})
 
 		// The 2nd WaitNextFetchLastProducedOffset() is called while the 1st is running, so it's expected
@@ -129,7 +132,7 @@ func TestPartitionOffsetReader_WaitNextFetchLastProducedOffset(t *testing.T) {
 		runAsyncAfter(&wg, secondRequestReceived, func() {
 			actual, err := reader.WaitNextFetchLastProducedOffset(ctx)
 			require.NoError(t, err)
-			assert.Equal(t, int64(3), actual)
+			assert.Equal(t, map[int32]int64{0: int64(5), 1: int64(6)}, actual)
 		})
 
 		// Now we can start the service.
@@ -149,124 +152,12 @@ func TestPartitionOffsetReader_WaitNextFetchLastProducedOffset(t *testing.T) {
 		)
 
 		// Create the reader but do NOT start it, so that the "last produced offset" will be never fetched.
-		reader := newSingleClusterPartitionOffsetReader(client, topicName, partitionID, pollInterval, nil, logger)
+		reader := NewSingleClusterTopicOffsetsReader(client, topicName, allPartitionIDs, pollInterval, nil, logger)
 
 		canceledCtx, cancel := context.WithCancel(ctx)
 		cancel()
 
 		_, err := reader.WaitNextFetchLastProducedOffset(canceledCtx)
 		assert.ErrorIs(t, err, context.Canceled)
-	})
-}
-
-func TestGenericPartitionReader_Caching(t *testing.T) {
-	logger := log.NewNopLogger()
-
-	t.Run("should initialize with fetched offset", func(t *testing.T) {
-		ctx := context.Background()
-		mockFetch := func(context.Context) (int64, error) {
-			return 42, nil
-		}
-
-		reader := NewGenericOffsetReader[int64](mockFetch, time.Second, logger)
-		require.NoError(t, services.StartAndAwaitRunning(ctx, reader))
-		t.Cleanup(func() {
-			require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
-		})
-
-		offset, err := reader.CachedOffset()
-		assert.NoError(t, err)
-		assert.Equal(t, int64(42), offset)
-	})
-
-	t.Run("should cache error from initial fetch", func(t *testing.T) {
-		ctx := context.Background()
-		expectedErr := fmt.Errorf("fetch error")
-		mockFetch := func(context.Context) (int64, error) {
-			return 0, expectedErr
-		}
-
-		reader := NewGenericOffsetReader[int64](mockFetch, time.Second, logger)
-		require.NoError(t, services.StartAndAwaitRunning(ctx, reader))
-		t.Cleanup(func() {
-			require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
-		})
-
-		offset, err := reader.CachedOffset()
-		assert.ErrorIs(t, err, expectedErr)
-		assert.Equal(t, int64(0), offset)
-	})
-
-	t.Run("should update cache on poll interval", func(t *testing.T) {
-		ctx := context.Background()
-		fetchCount := 0
-		fetchChan := make(chan struct{}, 3) // Buffer size of 3 to allow multiple fetches
-		mockFetch := func(ctx context.Context) (int64, error) {
-			fetchCount++
-			select {
-			case <-ctx.Done():
-			case fetchChan <- struct{}{}:
-			}
-			return int64(fetchCount), nil
-		}
-
-		reader := NewGenericOffsetReader[int64](mockFetch, 10*time.Millisecond, logger)
-		require.NoError(t, services.StartAndAwaitRunning(ctx, reader))
-		t.Cleanup(func() {
-			require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
-		})
-
-		// Wait for at least two fetches to complete and have their results cached.
-		<-fetchChan
-		<-fetchChan
-		<-fetchChan
-
-		offset, err := reader.CachedOffset()
-		assert.NoError(t, err)
-		assert.GreaterOrEqual(t, offset, int64(2), "Offset should have been updated at least once")
-	})
-
-	t.Run("should handle context cancellation", func(t *testing.T) {
-		ctx, cancel := context.WithCancel(context.Background())
-		mockFetch := func(context.Context) (int64, error) {
-			return 42, nil
-		}
-
-		reader := NewGenericOffsetReader[int64](mockFetch, time.Second, logger)
-		require.NoError(t, services.StartAndAwaitRunning(ctx, reader))
-		t.Cleanup(func() {
-			cancel()
-			require.NoError(t, services.StopAndAwaitTerminated(context.Background(), reader))
-		})
-
-		// The cached offset should be available
-		offset, err := reader.CachedOffset()
-		assert.NoError(t, err)
-		assert.Equal(t, int64(42), offset)
-	})
-
-	t.Run("should handle concurrent access", func(t *testing.T) {
-		ctx := context.Background()
-		mockFetch := func(context.Context) (int64, error) {
-			return 42, nil
-		}
-
-		reader := NewGenericOffsetReader[int64](mockFetch, time.Second, logger)
-		require.NoError(t, services.StartAndAwaitRunning(ctx, reader))
-		t.Cleanup(func() {
-			require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
-		})
-
-		var wg sync.WaitGroup
-		for i := 0; i < 100; i++ {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				offset, err := reader.CachedOffset()
-				assert.NoError(t, err)
-				assert.Equal(t, int64(42), offset)
-			}()
-		}
-		wg.Wait()
 	})
 }

@@ -93,6 +93,12 @@
   local perCompartmentIngesterArgs(compartmentIdx) =
     $.mimirCompartmentsCommonArgs {
       'ingester.read-compartment-id': compartmentIdx,
+
+      // The ingester consumes its own read compartment's topic, so its topic resolves the
+      // '<read-compartment-id>' placeholder to the compartment id. The address keeps the write-compartment
+      // placeholder because the ingester consumes from every write compartment's Kafka cluster.
+      'ingest-storage.kafka.address': $.compartments_ingest_storage_kafka_address,
+      'ingest-storage.kafka.topic': std.strReplace($._config.compartments_ingest_storage_kafka_topic, '<read-compartment-id>', std.toString(compartmentIdx)),
     },
 
   ingester_zone_a_compartments_args:: $.mimirCompartmentsCreateIf(isEnabled && isZoneAEnabled, numCompartments, function(compartment) $.ingester_zone_a_args + perCompartmentIngesterArgs(compartment)),
@@ -165,11 +171,18 @@
   ingester_zone_b_services: $.mimirCompartmentsCreateIf(isEnabled && isZoneBEnabled, numCompartments, function(compartment) $.newIngesterZoneService($.ingester_zone_b_statefulsets['compartment_%d' % compartment])),
   ingester_zone_c_services: $.mimirCompartmentsCreateIf(isEnabled && isZoneCEnabled, numCompartments, function(compartment) $.newIngesterZoneService($.ingester_zone_c_statefulsets['compartment_%d' % compartment])),
 
-  // Ensure all configured addresses on per-compartment ingester StatefulSets are zonal ones.
+  // Config validation.
   local ingesterCompartmentMultiZoneError = $.validateMimirMultiZoneConfig([
     'ingester_zone_a_statefulsets',
     'ingester_zone_b_statefulsets',
     'ingester_zone_c_statefulsets',
   ]),
   assert ingesterCompartmentMultiZoneError == null : ingesterCompartmentMultiZoneError,
+
+  local ingesterCompartmentConfigError = $.validateMimirCompartmentsConfig([
+    'ingester_zone_a_statefulsets',
+    'ingester_zone_b_statefulsets',
+    'ingester_zone_c_statefulsets',
+  ]),
+  assert ingesterCompartmentConfigError == null : ingesterCompartmentConfigError,
 }

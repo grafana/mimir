@@ -88,12 +88,15 @@
     newZoneService('c', $.distributor_zone_c_deployments.compartment_0)
   else super.distributor_zone_c_service,
 
-  // Args. Per write compartment the distributor inherits the single -ingest-storage.kafka.address and
-  // is tagged with its write-compartment id. Operators running each write compartment on a distinct
-  // Kafka cluster are responsible for overriding -ingest-storage.kafka.address per compartment.
+  // Args.
   local perCompartmentDistributorArgs(compartmentIdx) =
     $.mimirCompartmentsCommonArgs {
       'distributor.write-compartment-id': compartmentIdx,
+
+      // The distributor targets its own write compartment's Kafka cluster, so its address resolves the
+      // '<write-compartment-id>' placeholder to the compartment id. The topic keeps the read-compartment
+      // placeholder because the distributor produces to every read compartment's topic.
+      'ingest-storage.kafka.address': std.strReplace($.compartments_ingest_storage_kafka_address, '<write-compartment-id>', std.toString(compartmentIdx)),
     },
 
   distributor_zone_a_compartments_args:: $.mimirCompartmentsCreateIf(isEnabled && isZoneAEnabled, numCompartments, function(compartment) $.distributor_zone_a_args + perCompartmentDistributorArgs(compartment)),
@@ -120,11 +123,18 @@
   distributor_zone_b_scaled_objects: $.mimirCompartmentsCreateIf(isEnabled && isZoneBEnabled && isAutoscalingEnabled, numCompartments, function(compartment) $.newDistributorCompartmentScaledObject('distributor-zone-b-wc-%d' % compartment, 'b', numCompartments)),
   distributor_zone_c_scaled_objects: $.mimirCompartmentsCreateIf(isEnabled && isZoneCEnabled && isAutoscalingEnabled, numCompartments, function(compartment) $.newDistributorCompartmentScaledObject('distributor-zone-c-wc-%d' % compartment, 'c', numCompartments)),
 
-  // Ensure all configured addresses on per-compartment distributor Deployments are zonal ones.
+  // Config validation.
   local distributorCompartmentMultiZoneError = $.validateMimirMultiZoneConfig([
     'distributor_zone_a_deployments',
     'distributor_zone_b_deployments',
     'distributor_zone_c_deployments',
   ]),
   assert distributorCompartmentMultiZoneError == null : distributorCompartmentMultiZoneError,
+
+  local distributorCompartmentConfigError = $.validateMimirCompartmentsConfig([
+    'distributor_zone_a_deployments',
+    'distributor_zone_b_deployments',
+    'distributor_zone_c_deployments',
+  ]),
+  assert distributorCompartmentConfigError == null : distributorCompartmentConfigError,
 }

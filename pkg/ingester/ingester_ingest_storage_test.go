@@ -463,7 +463,7 @@ func TestIngester_QueryStream_IngestStorageReadConsistency(t *testing.T) {
 
 				// Inject the requested offsets (if any).
 				if len(testData.readConsistencyOffsets) > 0 {
-					queryCtx = api.ContextWithReadConsistencyEncodedOffsets(queryCtx, api.EncodeOffsets(testData.readConsistencyOffsets))
+					queryCtx = api.ContextWithReadConsistencyEncodedOffsets(queryCtx, api.EncodeOffsetsV1(testData.readConsistencyOffsets))
 				}
 
 				close(queryIssued)

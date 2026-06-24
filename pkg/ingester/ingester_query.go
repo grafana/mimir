@@ -929,10 +929,10 @@ func (i *Ingester) enforceReadConsistency(ctx context.Context, tenantID string) 
 		if !i.cfg.Compartments.Enabled {
 			// Check if request already contains the minimum offset we have to guarantee being queried
 			// for our partition.
-			if offsets, ok := api.ReadConsistencyEncodedOffsetsFromContext(ctx); ok {
-				if offset, ok := offsets.Lookup(i.ingestPartitionID); ok {
-					spanLog.DebugLog("msg", "enforcing strong read consistency", "offset", offset)
-					return errors.Wrap(i.ingestReader.WaitReadConsistencyUntilOffsets(ctx, ingest.NewSingleClusterPartitionOffsets(offset)), "wait for read consistency")
+			if encoded, ok := api.ReadConsistencyEncodedOffsetsFromContext(ctx); ok {
+				if offsets, ok := encoded.Lookup(0, i.ingestPartitionID); ok {
+					spanLog.DebugLog("msg", "enforcing strong read consistency", "offsets", offsets)
+					return errors.Wrap(i.ingestReader.WaitReadConsistencyUntilOffsets(ctx, ingest.NewMultiClusterPartitionOffsets(offsets)), "wait for read consistency")
 				}
 			}
 		}

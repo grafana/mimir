@@ -110,7 +110,7 @@ type SingleClusterPartitionReader struct {
 	// consumedOffsetWatcher is used to wait until a given offset has been consumed.
 	// This gets initialised with -1 which means nothing has been consumed from the partition yet.
 	consumedOffsetWatcher *PartitionOffsetWatcher
-	offsetReader          *partitionOffsetReader
+	offsetReader          *singleClusterPartitionOffsetReader
 	offsetFile            *offsetFile
 
 	// The highest record timestamp consumed so far, or zero if no record was consumed yet or we've
@@ -262,7 +262,7 @@ func (r *SingleClusterPartitionReader) start(ctx context.Context) (returnErr err
 	}
 	startOffsetReader := NewGenericOffsetReader(getPartitionStart, startOffsetReaderRefreshDuration, r.logger)
 
-	r.offsetReader = newPartitionOffsetReaderWithOffsetClient(offsetsClient, r.kafkaCfg.Topic, r.partitionID, r.kafkaCfg.LastProducedOffsetPollInterval, r.logger)
+	r.offsetReader = newSingleClusterPartitionOffsetReaderWithOffsetClient(offsetsClient, r.kafkaCfg.Topic, r.partitionID, r.kafkaCfg.LastProducedOffsetPollInterval, r.logger)
 
 	r.dependencies, err = services.NewManager(r.committer, r.offsetReader, r.consumedOffsetWatcher, startOffsetReader, r.metrics)
 	if err != nil {

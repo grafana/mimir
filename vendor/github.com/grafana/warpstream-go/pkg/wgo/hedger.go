@@ -82,7 +82,7 @@ type Hedger struct {
 }
 
 // NewHedger wraps inner with the orchestration described on Hedger.
-func NewHedger(inner DirectProducer, tracker AgentStatsReader, strategy PartitionAssignmentStrategy, health HealthCheckConfig, cfg HedgerConfig, linger time.Duration, maxBatchBytes int32, m *metrics) *Hedger {
+func NewHedger(inner DirectProducer, tracker AgentStatsReader, strategy PartitionAssignmentStrategy, health HealthCheckConfig, cfg HedgerConfig, linger time.Duration, batchMaxBytes int32, m *metrics) *Hedger {
 	h := &Hedger{
 		inner:    inner,
 		tracker:  tracker,
@@ -91,7 +91,7 @@ func NewHedger(inner DirectProducer, tracker AgentStatsReader, strategy Partitio
 		cfg:      cfg,
 		metrics:  m,
 	}
-	h.hedgeBuffer = NewClusterRecordBuffer(linger, maxBatchBytes, func(ctx context.Context, nodeID int32, parts []routedTopicPartitionRecords) ProduceResult {
+	h.hedgeBuffer = NewClusterRecordBuffer(linger, batchMaxBytes, func(ctx context.Context, nodeID int32, parts []routedTopicPartitionRecords) ProduceResult {
 		// Every hedge-buffer flush is one hedge wire request (possibly
 		// covering multiple partitions). The companion primary counter is
 		// incremented in ProduceSync.

@@ -205,13 +205,13 @@ func (cfg *KafkaConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) 
 	f.StringVar(&cfg.Backend, prefix+"backend", KafkaBackendKafka, fmt.Sprintf("The Kafka backend implementation. Supported values: %s.", util.JoinStrings(kafkaBackendOptions, ", ")))
 	f.Var(&cfg.Address, prefix+"address", "The Kafka seed broker address, or a comma-separated list of seed broker addresses.")
 
-	f.Float64Var(&cfg.WarpstreamHealthCheckSlowMultiplier, prefix+"warpstream-health-check-slow-multiplier", 2.0, "Mark an agent as slow when its window-average latency exceeds this multiple of the cluster baseline. Only applies when -"+prefix+"backend=warpstream.")
-	f.Float64Var(&cfg.WarpstreamHealthCheckMaxSlowFraction, prefix+"warpstream-health-check-max-slow-fraction", 0.3, "Suppress slow-based hedging when more than this fraction of agents are slow (cluster-wide issue). Only applies when -"+prefix+"backend=warpstream.")
-	f.Float64Var(&cfg.WarpstreamHealthCheckFaultyThreshold, prefix+"warpstream-health-check-faulty-threshold", 0.2, "Mark an agent as faulty when its observed error rate exceeds this fraction. Only applies when -"+prefix+"backend=warpstream.")
-	f.Float64Var(&cfg.WarpstreamHealthCheckMaxFaultyFraction, prefix+"warpstream-health-check-max-faulty-fraction", 0.3, "Suppress faulty-based hedging and demotion when more than this fraction of agents are faulty (cluster-wide issue). Only applies when -"+prefix+"backend=warpstream.")
-	f.DurationVar(&cfg.WarpstreamHedgeMinDelay, prefix+"warpstream-hedge-min-delay", 500*time.Millisecond, "Floor on the dynamically-computed hedge delay. Only applies when -"+prefix+"backend=warpstream.")
-	f.IntVar(&cfg.WarpstreamHedgeMaxAgents, prefix+"warpstream-hedge-max-agents", 3, "Cap on how many per-partition candidates the hedge fanout considers when picking a fallback (excluding the primary and any agent already tried). Only applies when -"+prefix+"backend=warpstream.")
-	f.DurationVar(&cfg.WarpstreamDemoterProbeInterval, prefix+"warpstream-demoter-probe-interval", time.Second, "Minimum wall-clock gap between probes to a demoted agent. Only applies when -"+prefix+"backend=warpstream.")
+	f.Float64Var(&cfg.WarpstreamHealthCheckSlowMultiplier, prefix+"warpstream-health-check-slow-multiplier", wgo.DefaultHealthCheckSlowMultiplier, "Mark an agent as slow when its window-average latency exceeds this multiple of the cluster baseline. Only applies when -"+prefix+"backend=warpstream.")
+	f.Float64Var(&cfg.WarpstreamHealthCheckMaxSlowFraction, prefix+"warpstream-health-check-max-slow-fraction", wgo.DefaultHealthCheckMaxSlowFraction, "Suppress slow-based hedging when more than this fraction of agents are slow (cluster-wide issue). Only applies when -"+prefix+"backend=warpstream.")
+	f.Float64Var(&cfg.WarpstreamHealthCheckFaultyThreshold, prefix+"warpstream-health-check-faulty-threshold", wgo.DefaultHealthCheckFaultyThreshold, "Mark an agent as faulty when its observed error rate exceeds this fraction. Only applies when -"+prefix+"backend=warpstream.")
+	f.Float64Var(&cfg.WarpstreamHealthCheckMaxFaultyFraction, prefix+"warpstream-health-check-max-faulty-fraction", wgo.DefaultHealthCheckMaxFaultyFraction, "Suppress faulty-based hedging and demotion when more than this fraction of agents are faulty (cluster-wide issue). Only applies when -"+prefix+"backend=warpstream.")
+	f.DurationVar(&cfg.WarpstreamHedgeMinDelay, prefix+"warpstream-hedge-min-delay", wgo.DefaultHedgerMinHedgeDelay, "Floor on the dynamically-computed hedge delay. Only applies when -"+prefix+"backend=warpstream.")
+	f.IntVar(&cfg.WarpstreamHedgeMaxAgents, prefix+"warpstream-hedge-max-agents", wgo.DefaultHedgerMaxHedgeAgents, "Cap on how many per-partition candidates the hedge fanout considers when picking a fallback (excluding the primary and any agent already tried). Only applies when -"+prefix+"backend=warpstream.")
+	f.DurationVar(&cfg.WarpstreamDemoterProbeInterval, prefix+"warpstream-demoter-probe-interval", wgo.DefaultDemoterProbeInterval, "Minimum wall-clock gap between probes to a demoted agent. Only applies when -"+prefix+"backend=warpstream.")
 
 	f.StringVar(&cfg.Topic, prefix+"topic", "", "The Kafka topic name.")
 	f.StringVar(&cfg.ClientID, prefix+"client-id", "", "The Kafka client ID.")
@@ -347,52 +347,45 @@ func (cfg *KafkaConfig) Validate() error {
 	return nil
 }
 
-// ToWarpstreamClientConfig maps the Warpstream-relevant subset of
-// KafkaConfig to a wgo.Config.
-func (cfg *KafkaConfig) ToWarpstreamClientConfig() (wgo.Config, error) {
-	wsCfg := wgo.Config{
-		Address:       cfg.Address,
-		Topic:         cfg.Topic,
-		ClientID:      cfg.ClientID,
-		DialTimeout:   cfg.DialTimeout,
-		WriteTimeout:  cfg.WriteTimeout,
-		TLSEnabled:    cfg.TLSEnabled,
-		SASLOptions:   kafkaAuthOptions(cfg.SASL),
-		Linger:        defaultProducerLinger,
-		MaxBatchBytes: producerBatchMaxBytes,
-		HealthCheck: wgo.HealthCheckConfig{
-			SlowMultiplier:    cfg.WarpstreamHealthCheckSlowMultiplier,
-			MaxSlowFraction:   cfg.WarpstreamHealthCheckMaxSlowFraction,
-			FaultyThreshold:   cfg.WarpstreamHealthCheckFaultyThreshold,
-			MaxFaultyFraction: cfg.WarpstreamHealthCheckMaxFaultyFraction,
-		},
-		Hedger: wgo.HedgerConfig{
-			MinHedgeDelay:  cfg.WarpstreamHedgeMinDelay,
-			MaxHedgeAgents: cfg.WarpstreamHedgeMaxAgents,
-		},
-		Demoter: wgo.DemoterConfig{
-			ProbeInterval: cfg.WarpstreamDemoterProbeInterval,
-		},
-		ClusterStatsTTL:         time.Second,
-		MetadataRefreshInterval: defaultMetadataRefreshInterval,
-		DirectProducer: wgo.KafkaDirectProducerConfig{
-			// WriteTimeout bounds the whole hedge cascade, so the per-attempt
-			// produce timeout plus its overhead must fit within it (wgo rejects a
-			// config where they don't). Validate guarantees WriteTimeout exceeds
-			// twice the overhead, so the per-attempt timeout stays larger than the
-			// overhead.
-			ProduceRequestTimeout:         cfg.WriteTimeout - writerRequestTimeoutOverhead,
-			ProduceRequestTimeoutOverhead: writerRequestTimeoutOverhead,
-		},
+// ToWarpstreamClientOptions maps the Warpstream-relevant subset of KafkaConfig
+// to wgo client options. The returned options start from wgo.DefaultConfig and
+// override only the fields Mimir controls.
+func (cfg *KafkaConfig) ToWarpstreamClientOptions() ([]wgo.Opt, error) {
+	opts := []wgo.Opt{
+		wgo.WithAddress(cfg.Address...),
+		wgo.WithTopic(cfg.Topic),
+		wgo.WithClientID(cfg.ClientID),
+		wgo.WithDialTimeout(cfg.DialTimeout),
+		wgo.WithWriteTimeout(cfg.WriteTimeout),
+		wgo.WithSASL(kafkaAuthOptions(cfg.SASL)...),
+		wgo.WithLinger(defaultProducerLinger),
+		wgo.WithBatchMaxBytes(producerBatchMaxBytes),
+		wgo.WithHealthCheckSlowMultiplier(cfg.WarpstreamHealthCheckSlowMultiplier),
+		wgo.WithHealthCheckMaxSlowFraction(cfg.WarpstreamHealthCheckMaxSlowFraction),
+		wgo.WithHealthCheckFaultyThreshold(cfg.WarpstreamHealthCheckFaultyThreshold),
+		wgo.WithHealthCheckMaxFaultyFraction(cfg.WarpstreamHealthCheckMaxFaultyFraction),
+		wgo.WithHedgerMinHedgeDelay(cfg.WarpstreamHedgeMinDelay),
+		wgo.WithHedgerMaxHedgeAgents(cfg.WarpstreamHedgeMaxAgents),
+		wgo.WithDemoterProbeInterval(cfg.WarpstreamDemoterProbeInterval),
+		wgo.WithClusterStatsTTL(time.Second),
+		wgo.WithMetadataRefreshInterval(defaultMetadataRefreshInterval),
+		// WriteTimeout bounds the whole hedge cascade, so the per-attempt produce
+		// timeout plus its overhead must fit within it (wgo rejects a config where
+		// they don't). Validate guarantees WriteTimeout exceeds twice the overhead,
+		// so the per-attempt timeout stays larger than the overhead.
+		wgo.WithProduceRequestTimeout(cfg.WriteTimeout - writerRequestTimeoutOverhead),
+		wgo.WithProduceRequestTimeoutOverhead(writerRequestTimeoutOverhead),
 	}
+
 	if cfg.TLSEnabled {
 		tlsConfig, err := cfg.TLS.GetTLSConfig()
 		if err != nil {
-			return wgo.Config{}, fmt.Errorf("invalid Kafka TLS config: %w", err)
+			return nil, fmt.Errorf("invalid Kafka TLS config: %w", err)
 		}
-		wsCfg.TLSConfig = tlsConfig
+		opts = append(opts, wgo.WithTLSConfig(tlsConfig))
 	}
-	return wsCfg, nil
+
+	return opts, nil
 }
 
 // GetConsumerGroup returns the consumer group to use for the given instanceID and partitionID.

@@ -89,10 +89,12 @@ type WarpstreamClient struct {
 	refreshWG     sync.WaitGroup
 }
 
-// NewWarpstreamClient wires every component of the produce path. The initial
-// AgentPool refresh is synchronous: if Metadata cannot be reached on startup
-// we fail fast rather than serving traffic against an empty pool.
-func NewWarpstreamClient(cfg Config, logger log.Logger, reg prometheus.Registerer) (*WarpstreamClient, error) {
+// NewWarpstreamClient wires every component of the produce path. Config starts
+// from DefaultConfig and is overridden by opts. The initial AgentPool refresh
+// is synchronous: if Metadata cannot be reached on startup we fail fast rather
+// than serving traffic against an empty pool.
+func NewWarpstreamClient(logger log.Logger, reg prometheus.Registerer, opts ...Opt) (*WarpstreamClient, error) {
+	cfg := NewConfig(opts...)
 	if err := cfg.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid warpstream client config: %w", err)
 	}
@@ -136,12 +138,12 @@ func NewWarpstreamClient(cfg Config, logger log.Logger, reg prometheus.Registere
 	// per-agent probe-timing state persists across refreshes.
 	lazy := NewLazyPartitionAssignmentStrategy(pool.Strategy)
 	c.demoter = NewDemoter(lazy, tracker, cfg.HealthCheck, cfg.Demoter, logger, reg)
-	c.hedger = NewHedger(trackingProducer, tracker, c.demoter, cfg.HealthCheck, cfg.Hedger, cfg.Linger, cfg.MaxBatchBytes, m)
+	c.hedger = NewHedger(trackingProducer, tracker, c.demoter, cfg.HealthCheck, cfg.Hedger, cfg.Linger, cfg.BatchMaxBytes, m)
 	// The cluster buffer's AgentFlushFunc is the Hedger, wrapped only to
 	// bound each flush by WriteTimeout. The Hedger is otherwise shaped
 	// like a DirectProducer (same signature as KafkaDirectProducer) so it
 	// composes directly with the buffer.
-	c.buffer = NewClusterRecordBuffer(cfg.Linger, cfg.MaxBatchBytes, c.flushBatch, m)
+	c.buffer = NewClusterRecordBuffer(cfg.Linger, cfg.BatchMaxBytes, c.flushBatch, m)
 	c.startBackgroundRefresh()
 	return c, nil
 }
@@ -150,7 +152,7 @@ func NewWarpstreamClient(cfg Config, logger log.Logger, reg prometheus.Registere
 // acknowledged or failed. Cancelling ctx detaches the caller; the record
 // is still produced in the background.
 func (c *WarpstreamClient) Produce(ctx context.Context, record *kgo.Record, promise func(*kgo.Record, error)) {
-	if singleRecordBatchEstimateBytes(record) > int64(c.cfg.MaxBatchBytes) {
+	if singleRecordBatchEstimateBytes(record) > int64(c.cfg.BatchMaxBytes) {
 		promise(record, errRecordTooLarge(record))
 		return
 	}
@@ -177,7 +179,7 @@ func (c *WarpstreamClient) ProduceSync(ctx context.Context, records []*kgo.Recor
 		wg        sync.WaitGroup
 	)
 	for i, r := range records {
-		if singleRecordBatchEstimateBytes(r) > int64(c.cfg.MaxBatchBytes) {
+		if singleRecordBatchEstimateBytes(r) > int64(c.cfg.BatchMaxBytes) {
 			results[i] = kgo.ProduceResult{Record: r, Err: errRecordTooLarge(r)}
 			continue
 		}
@@ -416,7 +418,7 @@ func newKgoClient(cfg Config) (*kgo.Client, error) {
 		// batching configuration. The wrapping ProduceSync path does not use
 		// kgo's producer, so these are no-ops in normal operation.
 		kgo.ProducerLinger(cfg.Linger),
-		kgo.ProducerBatchMaxBytes(cfg.MaxBatchBytes),
+		kgo.ProducerBatchMaxBytes(cfg.BatchMaxBytes),
 
 		// Pin Produce to produceAPIVersion: our wire builders set
 		// req.Version explicitly, but kgo.Broker.Request overrides it
@@ -445,7 +447,7 @@ func produceMaxVersions() *kversion.Versions {
 
 // errRecordTooLarge wraps kerr.MessageTooLarge so errors.Is matches. The
 // reported byte count is the wire-encoded estimate — what we actually
-// compared against MaxBatchBytes — to make the value directly comparable
+// compared against BatchMaxBytes — to make the value directly comparable
 // to the configured cap.
 func errRecordTooLarge(r *kgo.Record) error {
 	return fmt.Errorf("%w (uncompressed_bytes=%d)", kerr.MessageTooLarge, singleRecordBatchEstimateBytes(r))

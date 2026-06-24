@@ -19,14 +19,14 @@ import (
 type readConsistencyRoundTripper struct {
 	next http.RoundTripper
 
-	offsetsReader *ingest.TopicOffsetsReader
+	offsetsReader *ingest.SingleClusterTopicOffsetsReader
 
 	limits  Limits
 	logger  log.Logger
 	metrics *ingest.StrongReadConsistencyMetrics
 }
 
-func newReadConsistencyRoundTripper(next http.RoundTripper, offsetsReader *ingest.TopicOffsetsReader, limits Limits, logger log.Logger, metrics *ingest.StrongReadConsistencyMetrics) http.RoundTripper {
+func newReadConsistencyRoundTripper(next http.RoundTripper, offsetsReader *ingest.SingleClusterTopicOffsetsReader, limits Limits, logger log.Logger, metrics *ingest.StrongReadConsistencyMetrics) http.RoundTripper {
 	return &readConsistencyRoundTripper{
 		next:          next,
 		offsetsReader: offsetsReader,
@@ -66,7 +66,7 @@ func (r *readConsistencyRoundTripper) RoundTrip(req *http.Request) (_ *http.Resp
 		return nil, errors.Wrapf(err, "wait for last produced offsets of topic '%s'", r.offsetsReader.Topic())
 	}
 
-	headerValue := string(querierapi.EncodeOffsets(offsets))
+	headerValue := string(querierapi.EncodeOffsetsV1(offsets))
 	req.Header.Add(querierapi.ReadConsistencyOffsetsHeader, headerValue)
 
 	spanLog.DebugLog("msg", "got offsets for strong read consistency", "header", querierapi.ReadConsistencyOffsetsHeader, "value", headerValue)
@@ -87,7 +87,7 @@ func getDefaultReadConsistency(tenantIDs []string, limits Limits) string {
 	return querierapi.ReadConsistencyEventual
 }
 
-func newReadConsistencyMetrics(reg prometheus.Registerer, offsetsReader *ingest.TopicOffsetsReader) *ingest.StrongReadConsistencyMetrics {
+func newReadConsistencyMetrics(reg prometheus.Registerer, offsetsReader *ingest.SingleClusterTopicOffsetsReader) *ingest.StrongReadConsistencyMetrics {
 	const component = "query-frontend"
 
 	topics := []string{offsetsReader.Topic()}

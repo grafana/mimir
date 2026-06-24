@@ -35,6 +35,7 @@ import (
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/api"
+	"github.com/grafana/mimir/pkg/storage/ingest/kmeta"
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
@@ -958,7 +959,7 @@ func TestCodec_EncodeMetricsQueryRequest_ShouldPropagateHeadersInAllowList(t *te
 			// Allowed.
 			{Name: compat.ForceFallbackHeaderName, Values: []string{"true"}},
 			{Name: chunkinfologger.ChunkInfoLoggingHeader, Values: []string{"label"}},
-			{Name: api.ReadConsistencyOffsetsHeader, Values: []string{string(api.EncodeOffsets(expectedOffsets))}},
+			{Name: api.ReadConsistencyOffsetsHeader, Values: []string{string(api.EncodeOffsetsV1(expectedOffsets))}},
 
 			// Not allowed.
 			{Name: notAllowedHeader, Values: []string{"some-value"}},
@@ -974,9 +975,9 @@ func TestCodec_EncodeMetricsQueryRequest_ShouldPropagateHeadersInAllowList(t *te
 	require.Len(t, req.Header.Values(api.ReadConsistencyOffsetsHeader), 1)
 	actualOffsets := api.EncodedOffsets(req.Header.Values(api.ReadConsistencyOffsetsHeader)[0])
 	for partitionID, expectedOffset := range expectedOffsets {
-		actualOffset, ok := actualOffsets.Lookup(partitionID)
+		actualOffset, ok := actualOffsets.Lookup(0, partitionID)
 		require.True(t, ok)
-		require.Equal(t, expectedOffset, actualOffset)
+		require.Equal(t, kmeta.NewSingleClusterPartitionOffsets(expectedOffset), actualOffset)
 	}
 }
 
