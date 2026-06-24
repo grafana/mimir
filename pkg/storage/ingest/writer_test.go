@@ -1722,6 +1722,80 @@ func assertHistogramSampleCount(t *testing.T, reg prometheus.Gatherer, metricNam
 	assert.Equal(t, expected, hist.GetSampleCount())
 }
 
+// sumCounterFamily returns the sum across all series of the named counter or
+// gauge metric family, failing if the family is absent.
+func sumCounterFamily(t *testing.T, g prometheus.Gatherer, name string) float64 {
+	t.Helper()
+
+	mfs, err := g.Gather()
+	require.NoError(t, err)
+
+	var (
+		sum   float64
+		found bool
+	)
+	for _, mf := range mfs {
+		if mf.GetName() != name {
+			continue
+		}
+		found = true
+		for _, m := range mf.GetMetric() {
+			if c := m.GetCounter(); c != nil {
+				sum += c.GetValue()
+			}
+			if gauge := m.GetGauge(); gauge != nil {
+				sum += gauge.GetValue()
+			}
+		}
+	}
+	require.True(t, found, "metric family %q not found", name)
+	return sum
+}
+
+// TestWriter_KafkaClientMetricsParity asserts that the franz-go-compatible
+// writer metrics (transport, producer-state, and the extended latency
+// histograms) are present and populated on both backends, so a dashboard or
+// alert written against one backend keeps working on the other.
+func TestWriter_KafkaClientMetricsParity(t *testing.T) {
+	runForEachKafkaBackend(t, testWriter_KafkaClientMetricsParity)
+}
+
+func testWriter_KafkaClientMetricsParity(t *testing.T, backend string) {
+	const (
+		topicName     = "test"
+		numPartitions = 1
+		partitionID   = 0
+		tenantID      = "user-1"
+	)
+	ctx := context.Background()
+
+	_, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
+	cfg := createTestKafkaConfigForBackend(backend, clusterAddr, topicName)
+	writer, reg := createTestWriter(t, cfg)
+
+	req := &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_1")}, Source: mimirpb.API}
+	require.NoError(t, writer.WriteSync(ctx, topicName, partitionID, tenantID, req))
+
+	// Producer-state and transport counters must be populated on both backends.
+	for _, name := range []string{
+		"cortex_ingest_storage_writer_produce_records_total",
+		"cortex_ingest_storage_writer_produce_batches_total",
+		"cortex_ingest_storage_writer_produce_bytes_total",
+		"cortex_ingest_storage_writer_connects_total",
+		"cortex_ingest_storage_writer_write_bytes_total",
+	} {
+		assert.Positive(t, sumCounterFamily(t, reg, name), "metric %q must be populated on backend %q", name, backend)
+	}
+
+	// The extended latency histograms (Mimir's kafka_* native histograms) must
+	// be observed on both backends.
+	mfm, err := dskit_metrics.NewMetricFamilyMapFromGatherer(reg)
+	require.NoError(t, err)
+	hist, err := dskit_metrics.FindHistogramWithNameAndLabels(mfm, "cortex_ingest_storage_writer_kafka_request_duration_e2e_seconds")
+	require.NoError(t, err)
+	assert.Positive(t, hist.GetSampleCount(), "kafka_request_duration_e2e_seconds must be observed on backend %q", backend)
+}
+
 func TestWriter_AutoCreateTopics(t *testing.T) {
 	const baseTopic = "test"
 

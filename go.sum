@@ -590,6 +590,8 @@ github.com/grafana/regexp v0.0.0-20250905101755-5eb4f3acbf71 h1:A4D22zZV7+EeQk9T
 github.com/grafana/regexp v0.0.0-20250905101755-5eb4f3acbf71/go.mod h1:+JKpmjMGhpgPL+rXZ5nsZieVzvarn86asRlBg4uNGnk=
 github.com/grafana/warpstream-go v0.0.0-20260623082500-8f2f72d7ebfd h1:0/liF0cK/jxoiHbbx7HSbh6vvFRf6CvSJ28gjerVMek=
 github.com/grafana/warpstream-go v0.0.0-20260623082500-8f2f72d7ebfd/go.mod h1:S2Q6EVHUSkS6gJOzsskK4VhCXax8BmhTK+O+sI6YXvs=
+github.com/grafana/warpstream-go v0.0.0-20260624113718-031c593a2417 h1:Eb6DhaehA0F9/zbJfQLWSyAN5ciZvcBvT0h8twaoxhE=
+github.com/grafana/warpstream-go v0.0.0-20260624113718-031c593a2417/go.mod h1:aS9HyKSOyX2tAs7lzPm8v5a3Mp1VDO8TlCEXD/X3SSY=
 github.com/grpc-ecosystem/go-grpc-prometheus v1.2.0/go.mod h1:8NvIoxWQoOIhqOTXgfV/d3M/q6VIi02HzZEHgUlZvzk=
 github.com/grpc-ecosystem/grpc-gateway v1.16.0/go.mod h1:BDjrQk3hbvj6Nolgz8mAMFbcEtjT1g+wF4CSlocrBnw=
 github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0 h1:5VipnvEpbqr2gA2VbM+nYVbkIF28c5ZQfqCBQ5g2xfk=

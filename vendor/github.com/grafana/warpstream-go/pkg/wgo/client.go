@@ -99,7 +99,7 @@ func NewWarpstreamClient(logger log.Logger, reg prometheus.Registerer, opts ...O
 		return nil, fmt.Errorf("invalid warpstream client config: %w", err)
 	}
 
-	kgoClient, err := newKgoClient(cfg)
+	kgoClient, err := newKgoClient(cfg, reg)
 	if err != nil {
 		return nil, fmt.Errorf("creating kgo client: %w", err)
 	}
@@ -143,7 +143,7 @@ func NewWarpstreamClient(logger log.Logger, reg prometheus.Registerer, opts ...O
 	// bound each flush by WriteTimeout. The Hedger is otherwise shaped
 	// like a DirectProducer (same signature as KafkaDirectProducer) so it
 	// composes directly with the buffer.
-	c.buffer = NewClusterRecordBuffer(cfg.Linger, cfg.BatchMaxBytes, c.flushBatch, m)
+	c.buffer = NewClusterRecordBuffer(cfg.Linger, cfg.BatchMaxBytes, c.flushBatch, m, reg)
 	c.startBackgroundRefresh()
 	return c, nil
 }
@@ -152,12 +152,24 @@ func NewWarpstreamClient(logger log.Logger, reg prometheus.Registerer, opts ...O
 // acknowledged or failed. Cancelling ctx detaches the caller; the record
 // is still produced in the background.
 func (c *WarpstreamClient) Produce(ctx context.Context, record *kgo.Record, promise func(*kgo.Record, error)) {
+	c.metrics.produceRecordsTotal.Inc()
+
 	if singleRecordBatchEstimateBytes(record) > int64(c.cfg.BatchMaxBytes) {
+		c.metrics.produceRecordsRejectedTotal.WithLabelValues(produceRejectedRecordTooLarge).Inc()
 		promise(record, errRecordTooLarge(record))
 		return
 	}
-	routed, err := c.routeRecord(record, perRecordDone(record, promise))
+
+	routed, err := c.routeRecord(record, perRecordDone(record, func(r *kgo.Record, err error) {
+		// The buffered path counts a post-dispatch failure on any non-nil error;
+		// the pre-dispatch rejections are counted by produceRecordsRejectedTotal.
+		if err != nil {
+			c.metrics.produceRecordsFailedTotal.Inc()
+		}
+		promise(r, err)
+	}))
 	if err != nil {
+		c.metrics.produceRecordsRejectedTotal.WithLabelValues(produceRejectedNoAgentAssigned).Inc()
 		promise(record, err)
 		return
 	}
@@ -171,6 +183,7 @@ func (c *WarpstreamClient) ProduceSync(ctx context.Context, records []*kgo.Recor
 	if len(records) == 0 {
 		return nil
 	}
+	c.metrics.produceRecordsTotal.Add(float64(len(records)))
 
 	results := make(kgo.ProduceResults, len(records))
 	var (
@@ -180,6 +193,7 @@ func (c *WarpstreamClient) ProduceSync(ctx context.Context, records []*kgo.Recor
 	)
 	for i, r := range records {
 		if singleRecordBatchEstimateBytes(r) > int64(c.cfg.BatchMaxBytes) {
+			c.metrics.produceRecordsRejectedTotal.WithLabelValues(produceRejectedRecordTooLarge).Inc()
 			results[i] = kgo.ProduceResult{Record: r, Err: errRecordTooLarge(r)}
 			continue
 		}
@@ -198,6 +212,11 @@ func (c *WarpstreamClient) ProduceSync(ctx context.Context, records []*kgo.Recor
 
 	routed, err := c.routeRecords(okRecords, func(groupRecords []*kgo.Record) func(ProduceResult) {
 		return perPartitionDone(groupRecords[0].Topic, groupRecords[0].Partition, func(err error) {
+			if err != nil {
+				// Post-dispatch failure, resolved uniformly for the whole
+				// partition group; pre-dispatch rejections never reach here.
+				c.metrics.produceRecordsFailedTotal.Add(float64(len(groupRecords)))
+			}
 			for _, r := range groupRecords {
 				results[indexOf[r]] = kgo.ProduceResult{Record: r, Err: err}
 				wg.Done()
@@ -207,6 +226,7 @@ func (c *WarpstreamClient) ProduceSync(ctx context.Context, records []*kgo.Recor
 	if err != nil {
 		// One record had no known candidate. Fail the whole batch
 		// uniformly: every ok record gets the same error.
+		c.metrics.produceRecordsRejectedTotal.WithLabelValues(produceRejectedNoAgentAssigned).Add(float64(len(okIndices)))
 		for _, i := range okIndices {
 			results[i] = kgo.ProduceResult{Record: records[i], Err: err}
 		}
@@ -393,8 +413,9 @@ func perRecordDone(record *kgo.Record, promise func(*kgo.Record, error)) func(Pr
 }
 
 // newKgoClient constructs the kgo.Client used by the WarpstreamClient for
-// connection management and metadata.
-func newKgoClient(cfg Config) (*kgo.Client, error) {
+// connection management and metadata. It wires the kprom transport-metrics
+// hook (registered on reg) alongside any caller hooks from cfg.
+func newKgoClient(cfg Config, reg prometheus.Registerer) (*kgo.Client, error) {
 	opts := []kgo.Opt{
 		kgo.SeedBrokers(cfg.Address...),
 		kgo.ClientID(cfg.ClientID),
@@ -428,10 +449,20 @@ func newKgoClient(cfg Config) (*kgo.Client, error) {
 		// can't decode.
 		kgo.MaxVersions(produceMaxVersions()),
 	}
+	if cfg.Dialer != nil {
+		opts = append(opts, kgo.Dialer(cfg.Dialer))
+	}
 	if cfg.TLSEnabled {
 		opts = append(opts, kgo.DialTLSConfig(cfg.TLSConfig))
 	}
 	opts = append(opts, cfg.SASLOptions...)
+
+	// kprom tracks the transport-level metrics. The filtering registerer drops
+	// the producer-state metrics this client tracks itself. Caller hooks are appended on top.
+	kpromMetrics := newKpromMetrics(newFilteringRegisterer(reg, kpromProducerStateMetricNames...))
+	hooks := append([]kgo.Hook{kpromMetrics}, cfg.Hooks...)
+	opts = append(opts, kgo.WithHooks(hooks...))
+
 	return kgo.NewClient(opts...)
 }
 

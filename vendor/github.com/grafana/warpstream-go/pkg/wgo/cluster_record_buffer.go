@@ -5,6 +5,9 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
 // ClusterRecordBuffer is the cluster-wide entry point for buffering produce
@@ -64,15 +67,27 @@ type ClusterRecordBuffer struct {
 }
 
 // NewClusterRecordBuffer returns a buffer that lazily spawns one
-// AgentRecordBuffer per NodeID seen via Add, all sharing flush.
-func NewClusterRecordBuffer(linger time.Duration, batchMaxBytes int32, flush AgentFlushFunc, m *metrics) *ClusterRecordBuffer {
-	return &ClusterRecordBuffer{
+// AgentRecordBuffer per NodeID seen via Add, all sharing flush. It registers
+// the buffered-producer gauges on reg.
+func NewClusterRecordBuffer(linger time.Duration, batchMaxBytes int32, flush AgentFlushFunc, m *metrics, reg prometheus.Registerer) *ClusterRecordBuffer {
+	c := &ClusterRecordBuffer{
 		linger:        linger,
 		batchMaxBytes: batchMaxBytes,
 		flush:         flush,
 		metrics:       m,
 		agentBuffers:  make(map[int32]*AgentRecordBuffer),
 	}
+
+	promauto.With(reg).NewGaugeFunc(prometheus.GaugeOpts{
+		Name: "buffered_produce_records_total",
+		Help: "Number of records currently buffered awaiting acknowledgement.",
+	}, func() float64 { return float64(c.BufferedRecords()) })
+	promauto.With(reg).NewGaugeFunc(prometheus.GaugeOpts{
+		Name: "buffered_produce_bytes",
+		Help: "Bytes of records currently buffered awaiting acknowledgement.",
+	}, func() float64 { return float64(c.BufferedBytes()) })
+
+	return c
 }
 
 // Add buffers partition-grouped work for produce. Each entry's done fires
