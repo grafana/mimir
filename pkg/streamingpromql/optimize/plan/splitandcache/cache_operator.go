@@ -773,11 +773,13 @@ func (c *CacheOperator) writeCacheEntry(ctx context.Context, stats *types.Operat
 
 	traceID, _ := c.getCurrentTraceID(ctx)
 
+	seriesMetadata, data := c.encodeSeriesForCacheEntry()
+
 	desiredTimeRangeExtent := CachedExtent{
 		StartT:                  c.extents.cacheableRangeStartT,
 		EndT:                    c.extents.cacheableRangeEndT,
-		SeriesMetadata:          querierpb.EncodeSeriesMetadataSlice(c.seriesMetadata),
-		Data:                    c.encodeDataForCacheEntry(),
+		SeriesMetadata:          seriesMetadata,
+		Data:                    data,
 		Annotations:             querierpb.EncodeAnnotations(annos, c.queryParameters.OriginalExpression),
 		Stats:                   stats.Encode(),
 		NewestEvaluationTraceID: traceID,
@@ -837,14 +839,27 @@ func (c *CacheOperator) determineNewExtentEvaluationTimestamp() int64 {
 	}).GetEvaluationTimestamp()
 }
 
-func (c *CacheOperator) encodeDataForCacheEntry() []querierpb.InstantVectorSeriesData {
-	encoded := make([]querierpb.InstantVectorSeriesData, 0, len(c.data))
-	for _, d := range c.data {
+// encodeSeriesForCacheEntry encodes the series metadata and data to be written to the cache.
+// Series with no samples in the cacheable time range are not stored: they would only consume cache space,
+// and an absent series is equivalent to an empty one when the extent is read back and merged with others.
+func (c *CacheOperator) encodeSeriesForCacheEntry() ([]querierpb.SeriesMetadata, []querierpb.InstantVectorSeriesData) {
+	seriesMetadata := make([]querierpb.SeriesMetadata, 0, len(c.data))
+	data := make([]querierpb.InstantVectorSeriesData, 0, len(c.data))
+
+	for i, d := range c.data {
+		if len(d.Floats) == 0 && len(d.Histograms) == 0 {
+			// Don't store empty series in the cache.
+			continue
+		}
+
+		seriesMetadata = append(seriesMetadata, querierpb.EncodeSeriesMetadata(c.seriesMetadata[i]))
+
 		// EncodeInstantVectorSeriesData does unsafe casts and does not copy the data from the slices, but this is OK as we're immediately
 		// serializing the message and writing it to the cache before these slices are returned to their respective pools.
-		encoded = append(encoded, querierpb.EncodeInstantVectorSeriesData(d))
+		data = append(data, querierpb.EncodeInstantVectorSeriesData(d))
 	}
-	return encoded
+
+	return seriesMetadata, data
 }
 
 func (c *CacheOperator) ExpressionPosition() posrange.PositionRange {

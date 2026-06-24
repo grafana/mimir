@@ -744,6 +744,74 @@ func TestCacheOperator_DoesNotSaveCacheEntryIfFinishedReadingNotCalled(t *testin
 	require.Zerof(t, cache.setCount, "expected no cache entry to be written, but at least one was: %v", cache.entries)
 }
 
+func TestCacheOperator_DoesNotStoreEmptySeries(t *testing.T) {
+	floatSeries := types.SeriesMetadata{Labels: labels.FromStrings(model.MetricNameLabel, "with_floats")}
+	histogramSeries := types.SeriesMetadata{Labels: labels.FromStrings(model.MetricNameLabel, "with_histograms")}
+	emptySeries := types.SeriesMetadata{Labels: labels.FromStrings(model.MetricNameLabel, "empty")}
+
+	floatData := types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 1000, F: 1}}}
+	histogramData := types.InstantVectorSeriesData{Histograms: []promql.HPoint{{T: 2000, H: &histogram.FloatHistogram{Count: 3}}}}
+	emptyData := types.InstantVectorSeriesData{}
+
+	testCases := map[string]struct {
+		seriesMetadata   []types.SeriesMetadata
+		data             []types.InstantVectorSeriesData
+		expectedMetadata []querierpb.SeriesMetadata
+		expectedData     []querierpb.InstantVectorSeriesData
+	}{
+		"no series": {
+			seriesMetadata:   []types.SeriesMetadata{},
+			data:             []types.InstantVectorSeriesData{},
+			expectedMetadata: []querierpb.SeriesMetadata{},
+			expectedData:     []querierpb.InstantVectorSeriesData{},
+		},
+		"no empty series": {
+			seriesMetadata: []types.SeriesMetadata{floatSeries, histogramSeries},
+			data:           []types.InstantVectorSeriesData{floatData, histogramData},
+			expectedMetadata: []querierpb.SeriesMetadata{
+				querierpb.EncodeSeriesMetadata(floatSeries),
+				querierpb.EncodeSeriesMetadata(histogramSeries),
+			},
+			expectedData: []querierpb.InstantVectorSeriesData{
+				querierpb.EncodeInstantVectorSeriesData(floatData),
+				querierpb.EncodeInstantVectorSeriesData(histogramData),
+			},
+		},
+		"empty series interspersed with non-empty series": {
+			seriesMetadata: []types.SeriesMetadata{emptySeries, floatSeries, emptySeries, histogramSeries, emptySeries},
+			data:           []types.InstantVectorSeriesData{emptyData, floatData, emptyData, histogramData, emptyData},
+			expectedMetadata: []querierpb.SeriesMetadata{
+				querierpb.EncodeSeriesMetadata(floatSeries),
+				querierpb.EncodeSeriesMetadata(histogramSeries),
+			},
+			expectedData: []querierpb.InstantVectorSeriesData{
+				querierpb.EncodeInstantVectorSeriesData(floatData),
+				querierpb.EncodeInstantVectorSeriesData(histogramData),
+			},
+		},
+		"all series empty": {
+			seriesMetadata:   []types.SeriesMetadata{emptySeries, emptySeries},
+			data:             []types.InstantVectorSeriesData{emptyData, emptyData},
+			expectedMetadata: []querierpb.SeriesMetadata{},
+			expectedData:     []querierpb.InstantVectorSeriesData{},
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			o := &CacheOperator{
+				seriesMetadata: testCase.seriesMetadata,
+				data:           testCase.data,
+			}
+
+			seriesMetadata, data := o.encodeSeriesForCacheEntry()
+			require.Equal(t, testCase.expectedMetadata, seriesMetadata, "expected empty series to be excluded from the cached series metadata")
+			require.Equal(t, testCase.expectedData, data, "expected empty series to be excluded from the cached data")
+			require.Len(t, data, len(seriesMetadata), "expected metadata and data to remain aligned")
+		})
+	}
+}
+
 func sortAnnotations(cacheEntry *CacheEntry) {
 	for _, e := range cacheEntry.Extents {
 		slices.Sort(e.Annotations.Infos)
