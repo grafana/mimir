@@ -493,6 +493,31 @@ func TestRemoteReadSamples_SampleCountStats(t *testing.T) {
 			expectedPhysicalSampleCount:   3,
 			expectedEquivalentSampleCount: 3,
 		},
+		"stale histogram samples not counted": {
+			queries: []*prompb.Query{
+				{StartTimestampMs: 0, EndTimestampMs: 10},
+			},
+			seriesSets: func() []storage.SeriesSet {
+				staleSum := math.Float64frombits(value.StaleNaN)
+				staleHist := test.GenerateTestHistogram(2)
+				staleHist.Sum = staleSum
+				return []storage.SeriesSet{
+					series.NewConcreteSeriesSetFromUnsortedSeries([]storage.Series{
+						series.NewConcreteSeries(
+							labels.FromStrings("foo", "bar"),
+							nil,
+							[]mimirpb.Histogram{
+								mimirpb.FromHistogramToHistogramProto(1, test.GenerateTestHistogram(1)),
+								mimirpb.FromHistogramToHistogramProto(2, staleHist),
+								mimirpb.FromHistogramToHistogramProto(3, test.GenerateTestHistogram(3)),
+							},
+						),
+					}),
+				}
+			},
+			expectedPhysicalSampleCount:   equivalentCountForHistogram(1) + equivalentCountForHistogram(3),
+			expectedEquivalentSampleCount: equivalentCountForHistogram(1) + equivalentCountForHistogram(3),
+		},
 		"stats reported after partial read error": {
 			queries: []*prompb.Query{
 				{StartTimestampMs: 0, EndTimestampMs: 10},
