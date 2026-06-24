@@ -9,6 +9,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	shared "github.com/grafana/mimir/pkg/labelaccess"
+	"github.com/grafana/mimir/pkg/streamingpromql/caching"
 	"github.com/grafana/mimir/pkg/util/propagation"
 )
 
@@ -136,4 +137,20 @@ func (c CacheKeyGenerator) LabelValuesCardinality(r *http.Request) (*querymiddle
 		return nil, fmt.Errorf("label values cardinality caching is not supported with LBAC: %w", querymiddleware.ErrUnsupportedRequest)
 	}
 	return c.delegate.LabelValuesCardinality(r)
+}
+
+func CachePrefixGenerator(delegate caching.PrefixGenerator) caching.PrefixGenerator {
+	return func(ctx context.Context) (string, error) {
+		inner, err := delegate(ctx)
+		if err != nil {
+			return "", err
+		}
+
+		labelPolicyHash, _ := ctx.Value(contextKeyLabelPolicyHash).(string)
+		if len(labelPolicyHash) == 0 {
+			return inner, nil
+		}
+
+		return inner + labelPolicySeparator + labelPolicyHash, nil
+	}
 }

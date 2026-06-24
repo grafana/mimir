@@ -4,14 +4,18 @@ package caching
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/grafana/dskit/cache"
+	"github.com/grafana/dskit/tenant"
 )
+
+type PrefixGenerator func(ctx context.Context) (string, error)
 
 type PrefixingCache struct {
 	inner           Backend
-	prefixGenerator func(ctx context.Context) (string, error)
+	prefixGenerator PrefixGenerator
 }
 
 func NewPrefixingCache(inner Backend, prefixGenerator func(ctx context.Context) (string, error)) *PrefixingCache {
@@ -50,5 +54,13 @@ func (p *PrefixingCache) GetMulti(ctx context.Context, keys []string, opts ...ca
 	}
 
 	return results, nil
+}
 
+func TenantPrefixGenerator(ctx context.Context) (string, error) {
+	tenantIDs, err := tenant.TenantIDs(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	return fmt.Sprintf("%s:", tenant.JoinTenantIDs(tenantIDs)), nil
 }
