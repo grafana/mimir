@@ -18,9 +18,37 @@ import (
 )
 
 func TestQuerySplittingWithRangeVectorFunction(t *testing.T) {
+	querier, queryClient, now := setupRangeVectorSplittingTest(t, nil)
+
+	result, err := queryClient.Query("sum_over_time(test_metric[15m])", now)
+	require.NoError(t, err)
+	require.Equal(t, model.ValVector, result.Type())
+
+	vec := result.(model.Vector)
+	require.Len(t, vec, 1)
+
+	// 15m range at `now` covers samples in (now-15m, now], which is 15 samples with values 7 through 21.
+	expectedSum := model.SampleValue(210)
+	assert.Equal(t, expectedSum, vec[0].Value)
+
+	require.NoError(t, querier.WaitSumMetrics(e2e.Equals(1), "cortex_mimir_query_engine_range_vector_splitting_nodes_introduced_total"))
+
+	// Run the same query again to verify cached intermediate results are read back correctly.
+	result2, err := queryClient.Query("sum_over_time(test_metric[15m])", now)
+	require.NoError(t, err)
+	require.Equal(t, model.ValVector, result2.Type())
+
+	vec2 := result2.(model.Vector)
+	require.Len(t, vec2, 1)
+	assert.Equal(t, expectedSum, vec2[0].Value)
+
+	require.NoError(t, querier.WaitSumMetrics(e2e.Greater(0), "mimir_query_engine_intermediate_result_cache_hits_total"))
+}
+
+func setupRangeVectorSplittingTest(t *testing.T, extraFlags map[string]string) (*e2emimir.MimirService, *e2emimir.Client, time.Time) {
 	s, err := e2e.NewScenario(networkName)
 	require.NoError(t, err)
-	defer s.Close()
+	t.Cleanup(s.Close)
 
 	memcached := e2ecache.NewMemcached()
 	require.NoError(t, s.StartAndWaitReady(memcached))
@@ -32,7 +60,7 @@ func TestQuerySplittingWithRangeVectorFunction(t *testing.T) {
 		"-querier.mimir-query-engine.range-vector-splitting.backend":                                   "memcached",
 		"-querier.mimir-query-engine.range-vector-splitting.memcached.addresses":                       "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort),
 		"-querier.mimir-query-engine.enable-range-query-range-vector-common-subexpression-elimination": "true",
-	})
+	}, extraFlags)
 
 	consul := e2edb.NewConsul()
 	minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
@@ -78,27 +106,5 @@ func TestQuerySplittingWithRangeVectorFunction(t *testing.T) {
 	queryClient, err := e2emimir.NewClient("", querier.HTTPEndpoint(), "", "", "user-1")
 	require.NoError(t, err)
 
-	result, err := queryClient.Query("sum_over_time(test_metric[15m])", now)
-	require.NoError(t, err)
-	require.Equal(t, model.ValVector, result.Type())
-
-	vec := result.(model.Vector)
-	require.Len(t, vec, 1)
-
-	// 15m range at `now` covers samples in (now-15m, now], which is 15 samples with values 7 through 21.
-	expectedSum := model.SampleValue(210)
-	assert.Equal(t, expectedSum, vec[0].Value)
-
-	require.NoError(t, querier.WaitSumMetrics(e2e.Equals(1), "cortex_mimir_query_engine_range_vector_splitting_nodes_introduced_total"))
-
-	// Run the same query again to verify cached intermediate results are read back correctly.
-	result2, err := queryClient.Query("sum_over_time(test_metric[15m])", now)
-	require.NoError(t, err)
-	require.Equal(t, model.ValVector, result2.Type())
-
-	vec2 := result2.(model.Vector)
-	require.Len(t, vec2, 1)
-	assert.Equal(t, expectedSum, vec2[0].Value)
-
-	require.NoError(t, querier.WaitSumMetrics(e2e.Greater(0), "mimir_query_engine_intermediate_result_cache_hits_total"))
+	return querier, queryClient, now
 }
