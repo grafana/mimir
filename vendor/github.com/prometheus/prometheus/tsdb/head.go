@@ -2398,6 +2398,7 @@ func (h *Head) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shouldEvict 
 func (h *Head) deleteSeriesByID(refs []chunks.HeadSeriesRef) {
 	var (
 		deleted            = map[storage.SeriesRef]struct{}{}
+		deletedForCallback = map[chunks.HeadSeriesRef]labels.Labels{}
 		affected           = map[labels.Label]struct{}{}
 		staleSeriesDeleted = 0
 		chunksRemoved      = 0
@@ -2442,6 +2443,7 @@ func (h *Head) deleteSeriesByID(refs []chunks.HeadSeriesRef) {
 		series.mmappedChunks = nil
 
 		deleted[storage.SeriesRef(series.ref)] = struct{}{}
+		deletedForCallback[series.ref] = series.lset
 		series.lset.Range(func(l labels.Label) { affected[l] = struct{}{} })
 	}
 
@@ -2456,6 +2458,10 @@ func (h *Head) deleteSeriesByID(refs []chunks.HeadSeriesRef) {
 
 	// Remove tombstones referring to the deleted series.
 	h.tombstones.DeleteTombstones(deleted)
+
+	if len(deletedForCallback) > 0 {
+		h.series.seriesLifecycleCallback.PostDeletion(deletedForCallback)
+	}
 }
 
 // gcSeries walks all series and removes those whose ref is in seriesRefs, whose maxTime is
