@@ -9,8 +9,10 @@ package distributor
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"slices"
 	"strings"
 	"time"
@@ -48,6 +50,10 @@ var (
 
 	errStreamClosed = cancellation.NewErrorf("stream closed")
 )
+
+func agentDebugLogDistributorQuery(hypothesisID, message string, data map[string]any) {
+	_ = json.NewEncoder(os.Stderr).Encode(map[string]any{"level": "warn", "sessionId": "cb075f", "runId": "pre-fix", "hypothesisId": hypothesisID, "location": "pkg/distributor/query.go", "message": message, "data": data, "timestamp": time.Now().UnixMilli()})
+}
 
 // QueryExemplars returns exemplars with timestamp between from and to, for the series matching the input series
 // label matchers. The exemplars in the response are sorted by series labels.
@@ -825,12 +831,28 @@ func mergeSeriesChunkStreams(results []ingesterQueryResult, estimatedIngestersPe
 	}
 
 	var allSeries []ingester_client.StreamingSeries
+	seenOutputLabels := map[string]int{}
+	loggedDuplicateOutput := false
 
 	for tree.Next() {
 		nextIngester, nextSeriesFromIngester, nextSeriesIndex := tree.Winner()
 		lastSeriesIndex := len(allSeries) - 1
 
 		if len(allSeries) == 0 || labels.Compare(allSeries[lastSeriesIndex].Labels, nextSeriesFromIngester) != 0 {
+			labelKey := nextSeriesFromIngester.String()
+			if firstIndex, ok := seenOutputLabels[labelKey]; !loggedDuplicateOutput && ok {
+				// #region agent log
+				agentDebugLogDistributorQuery("H2", "distributor merge emitted duplicate output labels", map[string]any{
+					"firstIndex":  firstIndex,
+					"secondIndex": len(allSeries),
+					"labels":      labelKey,
+				})
+				// #endregion
+				loggedDuplicateOutput = true
+			} else if !ok {
+				seenOutputLabels[labelKey] = len(allSeries)
+			}
+
 			// First time we've seen this series.
 			series := ingester_client.StreamingSeries{
 				Labels:  nextSeriesFromIngester,

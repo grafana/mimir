@@ -277,6 +277,90 @@ func TestReadcache_QueryStream_QueryLoadAttribution(t *testing.T) {
 	assert.InDelta(t, wantUnnamed, resp.UnnamedQuerySamplesEwma, 1e-9, "HashRangeStats unnamed load")
 }
 
+func TestReadcache_QueryStream_GlobalSortsAndDeduplicatesLabelsAcrossPartitions(t *testing.T) {
+	const (
+		tenantID = "user-1"
+		topic    = "test-topic"
+	)
+
+	_, addr := testkafka.CreateCluster(t, 4, topic)
+
+	cfg := newTestConfigNoKafka(t)
+	cfg.KafkaTopic = topic
+	cfg.OwnedPartitions = "0,1"
+
+	var kafkaCfg ingest.KafkaConfig
+	kafkaCfg.RegisterFlags(flag.NewFlagSet("", flag.PanicOnError))
+	kafkaCfg.Address = flagext.StringSliceCSV{addr}
+	kafkaCfg.Topic = topic
+	cfg.Kafka = kafkaCfg
+
+	limits := validation.NewOverrides(validation.Limits{}, nil)
+	reg := prometheus.NewPedanticRegistry()
+
+	rc, err := New(cfg, limits, nil, log.NewNopLogger(), reg)
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	require.NoError(t, services.StartAndAwaitRunning(ctx, rc))
+	defer func() { _ = services.StopAndAwaitTerminated(ctx, rc) }()
+
+	writer := makeKafkaWriter(t, kafkaCfg, reg)
+	defer func() { _ = services.StopAndAwaitTerminated(ctx, writer) }()
+
+	wreqCtx := user.InjectOrgID(ctx, tenantID)
+	produce := func(partition int32, series string, ts int64) {
+		t.Helper()
+		require.NoError(t, writer.WriteSync(wreqCtx, topic, partition, tenantID, &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{
+			{TimeSeries: &mimirpb.TimeSeries{
+				Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, series, "src", "test")),
+				Samples: []mimirpb.Sample{
+					{TimestampMs: ts, Value: float64(ts)},
+				},
+			}},
+		}}))
+	}
+
+	// Without global sorting and deduplication, full-fanout across
+	// partition-local sorted TSDBs emits labels as: series_z,
+	// series_a, series_z. The duplicate series_z is non-adjacent, so
+	// the distributor merge cannot coalesce it and the querier label
+	// memory tracker underflows when the final SeriesSet is consumed.
+	produce(0, "series_z", 1)
+	produce(1, "series_a", 2)
+	produce(1, "series_z", 3)
+
+	require.Eventually(t, func() bool {
+		return testutil.ToFloat64(rc.samplesIngestedTotal.WithLabelValues("0")) >= 1 &&
+			testutil.ToFloat64(rc.samplesIngestedTotal.WithLabelValues("1")) >= 2
+	}, 10*time.Second, 100*time.Millisecond, "samples should be ingested before querying")
+
+	req, err := ingester_client.ToQueryRequest(
+		0, model.Time(time.Now().UnixMilli()),
+		[]*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, model.MetricNameLabel, "series_.+")},
+	)
+	require.NoError(t, err)
+
+	stream := &mockQueryStreamServer{ctx: wreqCtx}
+	require.NoError(t, rc.queryStream(req, stream))
+
+	var gotLabels []string
+	var gotChunkCounts []int64
+	for _, resp := range stream.responses {
+		for _, series := range resp.StreamingSeries {
+			lbls := mimirpb.FromLabelAdaptersToLabels(series.Labels)
+			gotLabels = append(gotLabels, lbls.Get(model.MetricNameLabel))
+			gotChunkCounts = append(gotChunkCounts, series.ChunkCount)
+		}
+	}
+
+	require.Equal(t, []string{"series_a", "series_z"}, gotLabels)
+	require.Len(t, gotChunkCounts, 2)
+	assert.GreaterOrEqual(t, gotChunkCounts[1], int64(2), "duplicate labelset should carry chunks from both partitions")
+}
+
 // loadstatsTickSeconds mirrors loadstats.TickInterval in seconds, used
 // to compute the expected EWMA after a single tick.
 const loadstatsTickSeconds = 15.0
