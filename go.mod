@@ -18,7 +18,7 @@ require (
 	github.com/google/gopacket v1.1.19
 	github.com/gorilla/mux v1.8.1
 	github.com/grafana/dskit v0.0.0-20260623061522-5cb97901f08d
-	github.com/grafana/e2e v0.1.2-0.20260309174126-b5393d4e610f
+	github.com/grafana/e2e v0.1.2-0.20260625124721-70f74c4b3a54
 	github.com/hashicorp/golang-lru v1.0.2 // indirect
 	github.com/influxdata/influxdb/v2 v2.9.1
 	github.com/json-iterator/go v1.1.12
