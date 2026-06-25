@@ -6,6 +6,7 @@
 package types
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/prometheus/prometheus/model/histogram"
@@ -291,6 +292,14 @@ func (q *QueryTimeRange) LastPointIndexAtOrBefore(t int64) int {
 		return q.StepCount - 1
 	}
 	return idx
+}
+
+func (q *QueryTimeRange) String() string {
+	if q.IsInstant {
+		return fmt.Sprintf("instant query at %v (%s)", q.StartT, timestamp.Time(q.StartT).Format(time.RFC3339Nano))
+	} else {
+		return fmt.Sprintf("range query from %v (%s) to %v (%s), %s step (%d steps)", q.StartT, timestamp.Time(q.StartT).Format(time.RFC3339Nano), q.EndT, timestamp.Time(q.EndT).Format(time.RFC3339Nano), time.Duration(q.IntervalMilliseconds)*time.Millisecond, q.StepCount)
+	}
 }
 
 func (q *QueryTimeRange) Encode() EncodedQueryTimeRange {
