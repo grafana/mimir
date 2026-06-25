@@ -3,6 +3,7 @@
 package splitandcache
 
 import (
+	"context"
 	"fmt"
 	"testing"
 	"time"
@@ -204,7 +205,8 @@ func TestMaterializeSplit(t *testing.T) {
 				planning.NODE_TYPE_TIME_RANGE_SPLIT: planning.NodeMaterializerFunc[*TimeRangeSplit](MaterializeSplit),
 			})
 
-			resultFactory, err := MaterializeSplit(splitNode, materializer, testCase.timeRange, params)
+			ctx := context.Background()
+			resultFactory, err := MaterializeSplit(ctx, splitNode, materializer, testCase.timeRange, params)
 			require.NoError(t, err)
 
 			result, err := resultFactory.Produce()

@@ -3,6 +3,7 @@
 package splitandcache
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -73,7 +74,7 @@ func (s *TimeRangeSplit) MinimumRequiredPlanVersion(timeRange types.QueryTimeRan
 }
 
 // The logic below is based on the equivalent middleware logic in splitQueryByInterval.
-func MaterializeSplit(node *TimeRangeSplit, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
+func MaterializeSplit(ctx context.Context, node *TimeRangeSplit, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
 	ranges := make([]*splitRange, 0, (timeRange.EndT-timeRange.StartT)/timeRange.IntervalMilliseconds+1) // Over-allocate in case the time range straddles an interval boundary.
 
 	for start := timeRange.StartT; start <= timeRange.EndT; {
@@ -86,7 +87,7 @@ func MaterializeSplit(node *TimeRangeSplit, materializer *planning.Materializer,
 		}
 
 		innerTimeRange := types.NewRangeQueryTimeRange(timestamp.Time(start), timestamp.Time(end), time.Duration(timeRange.IntervalMilliseconds)*time.Millisecond)
-		inner, err := materializer.ConvertNodeToInstantVectorOperator(node.Inner, innerTimeRange)
+		inner, err := materializer.ConvertNodeToInstantVectorOperator(ctx, node.Inner, innerTimeRange)
 		if err != nil {
 			return nil, err
 		}
