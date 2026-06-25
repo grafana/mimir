@@ -8,6 +8,7 @@ import (
 
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/cancellation"
+	"github.com/grafana/dskit/tracing"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/util/annotations"
 
@@ -136,12 +137,8 @@ func (e *Evaluator) Evaluate(ctx context.Context, observer EvaluationObserver) (
 		defer e.closeOperators()
 	}
 
-	prepareParams := &types.PrepareParams{}
-
-	for _, req := range e.nodeRequests {
-		if err := req.operator.Prepare(ctx, prepareParams); err != nil {
-			return fmt.Errorf("failed to prepare query: %w", err)
-		}
+	if err := e.prepare(ctx); err != nil {
+		return err
 	}
 
 	for _, req := range e.nodeRequests {
@@ -195,11 +192,37 @@ func (e *Evaluator) Evaluate(ctx context.Context, observer EvaluationObserver) (
 		}
 	}
 
+	nodeInfo, err := e.finalize(ctx)
+	if err != nil {
+		return err
+	}
+
+	return observer.EvaluationCompleted(ctx, e, nodeInfo)
+}
+
+func (e *Evaluator) prepare(ctx context.Context) error {
+	span, ctx := tracing.StartSpanFromContext(ctx, "Evaluator.prepare")
+	defer span.Finish()
+
+	prepareParams := &types.PrepareParams{}
+
+	for _, req := range e.nodeRequests {
+		if err := req.operator.Prepare(ctx, prepareParams); err != nil {
+			return fmt.Errorf("failed to prepare query: %w", err)
+		}
+	}
+	return nil
+}
+
+func (e *Evaluator) finalize(ctx context.Context) (map[planning.Node]NodeCompletionInfo, error) {
+	span, ctx := tracing.StartSpanFromContext(ctx, "Evaluator.finalize")
+	defer span.Finish()
+
 	nodeInfo := make(map[planning.Node]NodeCompletionInfo, len(e.nodeRequests))
 	for _, req := range e.nodeRequests {
 		s, a, err := req.operator.Finalize(ctx)
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		nodeInfo[req.Node] = NodeCompletionInfo{
@@ -208,7 +231,7 @@ func (e *Evaluator) Evaluate(ctx context.Context, observer EvaluationObserver) (
 		}
 	}
 
-	return observer.EvaluationCompleted(ctx, e, nodeInfo)
+	return nodeInfo, nil
 }
 
 func (e *Evaluator) closeOperators() {
