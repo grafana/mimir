@@ -588,6 +588,22 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr, timeRange types.QueryTimeR
 		return binExpr, nil
 
 	case *parser.Call:
+		if expr.Func.Name == core.EvaluationRootFunctionName {
+			if len(expr.Args) != 1 {
+				return nil, fmt.Errorf("%s expects exactly one argument, but got %d", core.EvaluationRootFunctionName, len(expr.Args))
+			}
+
+			inner, err := p.nodeFromExpr(expr.Args[0], timeRange)
+			if err != nil {
+				return nil, err
+			}
+
+			return &core.EvaluationRoot{
+				EvaluationRootDetails: &core.EvaluationRootDetails{},
+				Inner:                 inner,
+			}, nil
+		}
+
 		fnc, ok := findFunction(expr.Func.Name)
 		if !ok {
 			return nil, compat.NewNotSupportedError(fmt.Sprintf("'%s' function", expr.Func.Name))

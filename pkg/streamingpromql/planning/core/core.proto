@@ -225,6 +225,8 @@ message DeduplicateAndMergeDetails {
 
 message DropNameDetails {}
 
+message EvaluationRootDetails {}
+
 message NoOpDetails {
   bool matrixSelector = 1;
 }
