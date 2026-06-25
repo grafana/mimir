@@ -273,6 +273,14 @@ func TestEncodedOffsets_LookupV1_SpecialCases(t *testing.T) {
 		expectedPartitions   map[int32]int64
 		unexpectedPartitions []int32
 	}{
+		"empty": {
+			encoded:              "",
+			unexpectedPartitions: []int32{0},
+		},
+		"missing version": {
+			encoded:              "0:1",
+			unexpectedPartitions: []int32{0},
+		},
 		"corruption when reading the partition ID": {
 			encoded:              "v1=x",
 			unexpectedPartitions: []int32{0},
@@ -397,6 +405,228 @@ func BenchmarkEncodedOffsets_LookupV1(b *testing.B) {
 	}
 }
 
+func BenchmarkEncodeOffsetsV2(b *testing.B) {
+	const (
+		numReadCompartments = 4
+		numKafkaClusters    = 3
+	)
+
+	for _, numPartitions := range []int{1, 10, 100, 1000} {
+		b.Run(fmt.Sprintf("num partitions: %d", numPartitions), func(b *testing.B) {
+			offsets := generateTestOffsetsV2(numReadCompartments, numPartitions, numKafkaClusters)
+
+			b.ResetTimer()
+			for n := 0; n < b.N; n++ {
+				EncodeOffsetsV2(offsets)
+			}
+		})
+	}
+}
+
+func BenchmarkEncodedOffsets_LookupV2(b *testing.B) {
+	const (
+		numReadCompartments = 4
+		numKafkaClusters    = 3
+	)
+
+	for _, numPartitions := range []int{1, 10, 100, 1000} {
+		b.Run(fmt.Sprintf("num partitions: %d", numPartitions), func(b *testing.B) {
+			encoded := EncodeOffsetsV2(generateTestOffsetsV2(numReadCompartments, numPartitions, numKafkaClusters))
+
+			b.ResetTimer()
+			for n := 0; n < b.N; n++ {
+				readCompartment := n % numReadCompartments
+				partitionID := int32(n % numPartitions)
+				_, ok := encoded.lookupV2(readCompartment, partitionID)
+				if !ok {
+					b.Fatalf("not found offsets for read compartment %d partition %d", readCompartment, partitionID)
+				}
+			}
+		})
+	}
+}
+
+func TestEncodeOffsetsV2(t *testing.T) {
+	t.Run("empty offsets", func(t *testing.T) {
+		assert.Equal(t, EncodedOffsets(""), EncodeOffsetsV2(nil))
+		assert.Equal(t, EncodedOffsets(""), EncodeOffsetsV2(map[int]map[int32]kmeta.PartitionOffsets{}))
+		assert.Equal(t, EncodedOffsets(""), EncodeOffsetsV2(map[int]map[int32]kmeta.PartitionOffsets{0: {}}))
+	})
+
+	t.Run("single read compartment, single partition, single Kafka cluster", func(t *testing.T) {
+		assert.Equal(t, EncodedOffsets("v2=0/0:1000"), EncodeOffsetsV2(map[int]map[int32]kmeta.PartitionOffsets{0: {0: kmeta.NewMultiClusterPartitionOffsets([]int64{1000})}}))
+	})
+
+	t.Run("single entry with multiple Kafka clusters, should not skip empty partitions", func(t *testing.T) {
+		assert.Equal(t, EncodedOffsets("v2=3/7:100;200;-1"), EncodeOffsetsV2(map[int]map[int32]kmeta.PartitionOffsets{3: {7: kmeta.NewMultiClusterPartitionOffsets([]int64{100, 200, -1})}}))
+	})
+
+	t.Run("multiple entries", func(t *testing.T) {
+		encoded := EncodeOffsetsV2(map[int]map[int32]kmeta.PartitionOffsets{
+			0: {1: kmeta.NewMultiClusterPartitionOffsets([]int64{10, 11}), 2: kmeta.NewMultiClusterPartitionOffsets([]int64{20, 21})},
+			1: {1: kmeta.NewMultiClusterPartitionOffsets([]int64{30, 31})},
+		})
+		require.True(t, strings.HasPrefix(string(encoded), "v2="))
+		assert.ElementsMatch(t, []string{"0/1:10;11", "0/2:20;21", "1/1:30;31"}, strings.Split(string(encoded[3:]), ","))
+	})
+
+	t.Run("should allocate only once", func(t *testing.T) {
+		offsets := map[int]map[int32]kmeta.PartitionOffsets{
+			0: {0: kmeta.NewMultiClusterPartitionOffsets([]int64{1, 2}), 1: kmeta.NewMultiClusterPartitionOffsets([]int64{3, 4}), 2: kmeta.NewMultiClusterPartitionOffsets([]int64{5, 6})},
+			1: {0: kmeta.NewMultiClusterPartitionOffsets([]int64{7, 8}), 1: kmeta.NewMultiClusterPartitionOffsets([]int64{9, 10})},
+		}
+		assert.Equal(t, 1.0, testing.AllocsPerRun(100, func() {
+			EncodeOffsetsV2(offsets)
+		}))
+	})
+}
+
+func TestEncodedOffsets_LookupV2_SpecialCases(t *testing.T) {
+	type key struct {
+		readCompartment int
+		partition       int32
+	}
+
+	tests := map[string]struct {
+		encoded    EncodedOffsets
+		expected   map[key]kmeta.PartitionOffsets
+		unexpected []key
+	}{
+		"empty": {
+			encoded:    "",
+			unexpected: []key{{0, 0}},
+		},
+		"missing version": {
+			encoded:    "0/0:1",
+			unexpected: []key{{0, 0}},
+		},
+		"corruption when reading the key": {
+			encoded:    "v2=x",
+			unexpected: []key{{0, 0}},
+		},
+		"corruption when reading the offset": {
+			encoded:    "v2=0/0:x",
+			unexpected: []key{{0, 0}},
+		},
+		"single entry, single Kafka cluster": {
+			encoded:    EncodeOffsetsV2(map[int]map[int32]kmeta.PartitionOffsets{0: {0: kmeta.NewMultiClusterPartitionOffsets([]int64{123})}}),
+			expected:   map[key]kmeta.PartitionOffsets{{0, 0}: kmeta.NewMultiClusterPartitionOffsets([]int64{123})},
+			unexpected: []key{{0, 1}, {1, 0}},
+		},
+		"single entry with negative offset": {
+			encoded:    EncodeOffsetsV2(map[int]map[int32]kmeta.PartitionOffsets{2: {5: kmeta.NewMultiClusterPartitionOffsets([]int64{-123, -1})}}),
+			expected:   map[key]kmeta.PartitionOffsets{{2, 5}: kmeta.NewMultiClusterPartitionOffsets([]int64{-123, -1})},
+			unexpected: []key{{5, 2}},
+		},
+		"multiple entries": {
+			encoded: EncodeOffsetsV2(map[int]map[int32]kmeta.PartitionOffsets{
+				0: {1: kmeta.NewMultiClusterPartitionOffsets([]int64{1, 2}), 2: kmeta.NewMultiClusterPartitionOffsets([]int64{3, math.MaxInt64})},
+				1: {1: kmeta.NewMultiClusterPartitionOffsets([]int64{5, 6})},
+			}),
+			expected: map[key]kmeta.PartitionOffsets{
+				{0, 1}: kmeta.NewMultiClusterPartitionOffsets([]int64{1, 2}),
+				{0, 2}: kmeta.NewMultiClusterPartitionOffsets([]int64{3, math.MaxInt64}),
+				{1, 1}: kmeta.NewMultiClusterPartitionOffsets([]int64{5, 6}),
+			},
+			unexpected: []key{{0, 0}, {1, 2}, {2, 1}},
+		},
+		"entries in reverse order": {
+			encoded: "v2=1/10:100;101,1/1:10;11",
+			expected: map[key]kmeta.PartitionOffsets{
+				{1, 1}:  kmeta.NewMultiClusterPartitionOffsets([]int64{10, 11}),
+				{1, 10}: kmeta.NewMultiClusterPartitionOffsets([]int64{100, 101}),
+			},
+			unexpected: []key{{1, 0}, {1, 100}},
+		},
+		"adjacent keys must not be confused": {
+			encoded: "v2=1/2:5;6,11/2:7;8,1/22:9;10",
+			expected: map[key]kmeta.PartitionOffsets{
+				{1, 2}:  kmeta.NewMultiClusterPartitionOffsets([]int64{5, 6}),
+				{11, 2}: kmeta.NewMultiClusterPartitionOffsets([]int64{7, 8}),
+				{1, 22}: kmeta.NewMultiClusterPartitionOffsets([]int64{9, 10}),
+			},
+			unexpected: []key{{1, 1}},
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			for k, expected := range testData.expected {
+				actual, ok := testData.encoded.lookupV2(k.readCompartment, k.partition)
+				require.Truef(t, ok, "read compartment: %d partition: %d", k.readCompartment, k.partition)
+				assert.Equalf(t, expected, actual, "read compartment: %d partition: %d", k.readCompartment, k.partition)
+			}
+
+			for _, k := range testData.unexpected {
+				_, ok := testData.encoded.lookupV2(k.readCompartment, k.partition)
+				assert.Falsef(t, ok, "read compartment: %d partition: %d", k.readCompartment, k.partition)
+			}
+		})
+	}
+}
+
+func TestEncodedOffsets_LookupV2_First1000Partitions(t *testing.T) {
+	// 4 read compartments × 250 partitions = 1000 entries, each with 3 Kafka clusters.
+	const (
+		numReadCompartments = 4
+		numPartitions       = 250
+		numKafkaClusters    = 3
+	)
+
+	offsets := generateTestOffsetsV2(numReadCompartments, numPartitions, numKafkaClusters)
+	encoded := EncodeOffsetsV2(offsets)
+
+	for readCompartment, partitions := range offsets {
+		for partitionID, expected := range partitions {
+			actual, ok := encoded.lookupV2(readCompartment, partitionID)
+			assert.True(t, ok)
+			assert.Equal(t, expected, actual)
+		}
+	}
+}
+
+func TestEncodedOffsets_LookupV2_Fuzzy(t *testing.T) {
+	const (
+		numRuns             = 100
+		numReadCompartments = 8
+		numPartitions       = 128
+		maxKafkaClusters    = 4
+	)
+
+	// Randomise the seed but log it in case we need to reproduce the test on failure.
+	seed := time.Now().UnixNano()
+	rnd := rand.New(rand.NewSource(seed))
+	t.Log("random generator seed:", seed)
+
+	for r := 0; r < numRuns; r++ {
+		// Every read compartment shares the same number of Kafka clusters, as in the real encoding.
+		numKafkaClusters := 1 + rnd.Intn(maxKafkaClusters)
+
+		offsets := make(map[int]map[int32]kmeta.PartitionOffsets, numReadCompartments)
+		for readCompartment := 0; readCompartment < numReadCompartments; readCompartment++ {
+			partitions := make(map[int32]kmeta.PartitionOffsets, numPartitions)
+			for i := 0; i < numPartitions; i++ {
+				clusterOffsets := make([]int64, numKafkaClusters)
+				for c := range clusterOffsets {
+					clusterOffsets[c] = rnd.Int63n(math.MaxInt64)
+				}
+				partitions[rnd.Int31n(math.MaxInt32)] = kmeta.NewMultiClusterPartitionOffsets(clusterOffsets)
+			}
+			offsets[readCompartment] = partitions
+		}
+
+		encoded := EncodeOffsetsV2(offsets)
+
+		for readCompartment, partitions := range offsets {
+			for partitionID, expected := range partitions {
+				actual, ok := encoded.lookupV2(readCompartment, partitionID)
+				assert.True(t, ok)
+				assert.Equal(t, expected, actual)
+			}
+		}
+	}
+}
+
 func TestEncodedOffsets_Lookup(t *testing.T) {
 	type lookup struct {
 		readCompartment int
@@ -435,6 +665,34 @@ func TestEncodedOffsets_Lookup(t *testing.T) {
 			encoded: "v1=0:x",
 			lookups: []lookup{{0, 0, kmeta.PartitionOffsets{}, false}},
 		},
+		"v2 single entry, single Kafka cluster": {
+			encoded: EncodeOffsetsV2(map[int]map[int32]kmeta.PartitionOffsets{0: {0: kmeta.NewMultiClusterPartitionOffsets([]int64{123})}}),
+			lookups: []lookup{
+				{0, 0, kmeta.NewMultiClusterPartitionOffsets([]int64{123}), true},
+				{0, 1, kmeta.PartitionOffsets{}, false},
+				{1, 0, kmeta.PartitionOffsets{}, false},
+			},
+		},
+		"v2 single entry, multiple Kafka clusters with negative and max offsets": {
+			encoded: EncodeOffsetsV2(map[int]map[int32]kmeta.PartitionOffsets{2: {5: kmeta.NewMultiClusterPartitionOffsets([]int64{100, -1, math.MaxInt64})}}),
+			lookups: []lookup{
+				{2, 5, kmeta.NewMultiClusterPartitionOffsets([]int64{100, -1, math.MaxInt64}), true},
+				{5, 2, kmeta.PartitionOffsets{}, false},
+			},
+		},
+		"v2 adjacent keys must not be confused": {
+			encoded: "v2=1/2:5;6,11/2:7;8,1/22:9;10",
+			lookups: []lookup{
+				{1, 2, kmeta.NewMultiClusterPartitionOffsets([]int64{5, 6}), true},
+				{11, 2, kmeta.NewMultiClusterPartitionOffsets([]int64{7, 8}), true},
+				{1, 22, kmeta.NewMultiClusterPartitionOffsets([]int64{9, 10}), true},
+				{1, 1, kmeta.PartitionOffsets{}, false},
+			},
+		},
+		"v2 corruption when reading the offset": {
+			encoded: "v2=0/0:x",
+			lookups: []lookup{{0, 0, kmeta.PartitionOffsets{}, false}},
+		},
 	}
 
 	for testName, testData := range tests {
@@ -455,6 +713,23 @@ func generateTestOffsets(numPartitions int) map[int32]int64 {
 	for i := 0; i < numPartitions; i++ {
 		// Create offsets, using the worst case scenario for the value.
 		offsets[int32(i)] = math.MaxInt64 - int64(i)
+	}
+	return offsets
+}
+
+func generateTestOffsetsV2(numReadCompartments, numPartitions, numKafkaClusters int) map[int]map[int32]kmeta.PartitionOffsets {
+	offsets := make(map[int]map[int32]kmeta.PartitionOffsets, numReadCompartments)
+	for readCompartment := 0; readCompartment < numReadCompartments; readCompartment++ {
+		partitions := make(map[int32]kmeta.PartitionOffsets, numPartitions)
+		for p := 0; p < numPartitions; p++ {
+			clusterOffsets := make([]int64, numKafkaClusters)
+			for c := range clusterOffsets {
+				// Create offsets, using the worst case scenario for the value.
+				clusterOffsets[c] = math.MaxInt64 - int64(readCompartment) - int64(p) - int64(c)
+			}
+			partitions[int32(p)] = kmeta.NewMultiClusterPartitionOffsets(clusterOffsets)
+		}
+		offsets[readCompartment] = partitions
 	}
 	return offsets
 }

@@ -1679,11 +1679,14 @@ spec:
     spec:
       containers:
       - args:
+        - -compartments.enabled=true
+        - -compartments.read.num-compartments=2
+        - -compartments.write.num-compartments=2
         - -ingest-storage.enabled=true
-        - -ingest-storage.kafka.address=kafka.default.svc.cluster.local.:9092
+        - -ingest-storage.kafka.address=kafka-wc-<write-compartment-id>.default.svc.cluster.local.:9092
         - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
         - -ingest-storage.kafka.last-produced-offset-poll-interval=500ms
-        - -ingest-storage.kafka.topic=ingest
+        - -ingest-storage.kafka.topic=ingest-rc-<read-compartment-id>
         - -ingester.partition-ring.prefix=
         - -query-frontend.cache-results=true
         - -query-frontend.max-cache-freshness=10m
@@ -2105,11 +2108,14 @@ spec:
     spec:
       containers:
       - args:
+        - -compartments.enabled=true
+        - -compartments.read.num-compartments=2
+        - -compartments.write.num-compartments=2
         - -ingest-storage.enabled=true
-        - -ingest-storage.kafka.address=kafka.default.svc.cluster.local.:9092
+        - -ingest-storage.kafka.address=kafka-wc-<write-compartment-id>.default.svc.cluster.local.:9092
         - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
         - -ingest-storage.kafka.last-produced-offset-poll-interval=500ms
-        - -ingest-storage.kafka.topic=ingest
+        - -ingest-storage.kafka.topic=ingest-rc-<read-compartment-id>
         - -ingester.partition-ring.prefix=
         - -querier.ring.prefix=ruler-querier/
         - -query-frontend.cache-results=false

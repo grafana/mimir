@@ -25,7 +25,6 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"go.opentelemetry.io/otel"
 
-	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/limiter"
@@ -237,13 +236,13 @@ func NewTripperware(
 	cacheExtractor Extractor,
 	engine promql.QueryEngine,
 	engineOpts promql.EngineOpts,
-	ingestStorageTopicOffsetsReader *ingest.SingleClusterTopicOffsetsReader,
+	ingestStorageOffsetsReader ReadConsistencyOffsetsReader,
 	useRemoteExecution bool,
 	streamingEngine *streamingpromql.Engine,
 	registerer prometheus.Registerer,
 	memoryConsumptionTrackerFactory *limiter.InflightMemoryConsumptionTracker,
 ) (Tripperware, error) {
-	queryRangeTripperware, err := newQueryTripperware(cfg, log, limits, queryLimits, codec, cacheClient, cacheExtractor, engine, engineOpts, ingestStorageTopicOffsetsReader, useRemoteExecution, streamingEngine, registerer, memoryConsumptionTrackerFactory)
+	queryRangeTripperware, err := newQueryTripperware(cfg, log, limits, queryLimits, codec, cacheClient, cacheExtractor, engine, engineOpts, ingestStorageOffsetsReader, useRemoteExecution, streamingEngine, registerer, memoryConsumptionTrackerFactory)
 	if err != nil {
 		return nil, err
 	}
@@ -263,7 +262,7 @@ func newQueryTripperware(
 	cacheExtractor Extractor,
 	engine promql.QueryEngine,
 	engineOpts promql.EngineOpts,
-	ingestStorageTopicOffsetsReader *ingest.SingleClusterTopicOffsetsReader,
+	ingestStorageOffsetsReader ReadConsistencyOffsetsReader,
 	useRemoteExecution bool,
 	streamingEngine *streamingpromql.Engine,
 	registerer prometheus.Registerer,
@@ -335,18 +334,18 @@ func newQueryTripperware(
 		activeNativeHistogramMetrics = newShardActiveNativeHistogramMetricsMiddleware(activeNativeHistogramMetrics, limits, log)
 
 		// Enforce read consistency after caching.
-		if ingestStorageTopicOffsetsReader != nil {
-			metrics := newReadConsistencyMetrics(registerer, ingestStorageTopicOffsetsReader)
+		if ingestStorageOffsetsReader != nil {
+			metrics := newReadConsistencyMetrics(registerer, ingestStorageOffsetsReader)
 
-			queryrange = newReadConsistencyRoundTripper(queryrange, ingestStorageTopicOffsetsReader, limits, log, metrics)
-			instant = newReadConsistencyRoundTripper(instant, ingestStorageTopicOffsetsReader, limits, log, metrics)
-			cardinality = newReadConsistencyRoundTripper(cardinality, ingestStorageTopicOffsetsReader, limits, log, metrics)
-			activeSeries = newReadConsistencyRoundTripper(activeSeries, ingestStorageTopicOffsetsReader, limits, log, metrics)
-			activeNativeHistogramMetrics = newReadConsistencyRoundTripper(activeNativeHistogramMetrics, ingestStorageTopicOffsetsReader, limits, log, metrics)
-			labels = newReadConsistencyRoundTripper(labels, ingestStorageTopicOffsetsReader, limits, log, metrics)
-			series = newReadConsistencyRoundTripper(series, ingestStorageTopicOffsetsReader, limits, log, metrics)
-			remoteRead = newReadConsistencyRoundTripper(remoteRead, ingestStorageTopicOffsetsReader, limits, log, metrics)
-			next = newReadConsistencyRoundTripper(next, ingestStorageTopicOffsetsReader, limits, log, metrics)
+			queryrange = newReadConsistencyRoundTripper(queryrange, ingestStorageOffsetsReader, limits, log, metrics)
+			instant = newReadConsistencyRoundTripper(instant, ingestStorageOffsetsReader, limits, log, metrics)
+			cardinality = newReadConsistencyRoundTripper(cardinality, ingestStorageOffsetsReader, limits, log, metrics)
+			activeSeries = newReadConsistencyRoundTripper(activeSeries, ingestStorageOffsetsReader, limits, log, metrics)
+			activeNativeHistogramMetrics = newReadConsistencyRoundTripper(activeNativeHistogramMetrics, ingestStorageOffsetsReader, limits, log, metrics)
+			labels = newReadConsistencyRoundTripper(labels, ingestStorageOffsetsReader, limits, log, metrics)
+			series = newReadConsistencyRoundTripper(series, ingestStorageOffsetsReader, limits, log, metrics)
+			remoteRead = newReadConsistencyRoundTripper(remoteRead, ingestStorageOffsetsReader, limits, log, metrics)
+			next = newReadConsistencyRoundTripper(next, ingestStorageOffsetsReader, limits, log, metrics)
 		}
 
 		// Look up cache as first thing after validation.
