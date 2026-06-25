@@ -583,7 +583,7 @@ func TestObservations(t *testing.T) {
 func (s *BlockBuilderScheduler) requireOffset(t *testing.T, topic string, partition int32, expected int64, msgAndArgs ...any) {
 	t.Helper()
 	ps := s.getPartitionState(topic, partition)
-	require.Equal(t, expected, ps.committed.offset(), msgAndArgs...)
+	require.Equal(t, expected, ps.offsets.committed.offset(), msgAndArgs...)
 }
 
 func TestOffsetMovement(t *testing.T) {
@@ -613,7 +613,7 @@ func TestOffsetMovement(t *testing.T) {
 	sched.requireOffset(t, "ingest", 1, 6000, "re-completing the same job shouldn't change the commit")
 
 	p1 := sched.getPartitionState("ingest", 1)
-	p1.committed.advance("ancient_job", schedulerpb.JobSpec{
+	p1.offsets.committed.advance("ancient_job", schedulerpb.JobSpec{
 		Topic:       "ingest",
 		Partition:   1,
 		StartOffset: 1000,
@@ -622,7 +622,7 @@ func TestOffsetMovement(t *testing.T) {
 	sched.requireOffset(t, "ingest", 1, 6000, "committed offsets cannot rewind")
 
 	p2 := sched.getPartitionState("ingest", 2)
-	p2.committed.advance("ancient_job2", schedulerpb.JobSpec{
+	p2.offsets.committed.advance("ancient_job2", schedulerpb.JobSpec{
 		Topic:       "ingest",
 		Partition:   2,
 		StartOffset: 6000,
@@ -1257,11 +1257,11 @@ func TestBlockBuilderScheduler_EnqueuePendingJobs_GapDetection(t *testing.T) {
 
 	assert.Equal(t, 3, pt.pendingJobs.Len())
 	assert.Equal(t, 0, sched.jobs.count())
-	assert.True(t, pt.planned.empty())
+	assert.True(t, pt.offsets.planned.empty())
 	sched.enqueuePendingJobs()
 	assert.Equal(t, 0, pt.pendingJobs.Len())
 	assert.Equal(t, 3, sched.jobs.count())
-	assert.Equal(t, int64(50), pt.planned.offset())
+	assert.Equal(t, int64(50), pt.offsets.planned.offset())
 
 	requireGaps(t, reg, 0, 0)
 
@@ -1270,11 +1270,11 @@ func TestBlockBuilderScheduler_EnqueuePendingJobs_GapDetection(t *testing.T) {
 
 	assert.Equal(t, 1, pt.pendingJobs.Len())
 	assert.Equal(t, 3, sched.jobs.count())
-	assert.Equal(t, int64(50), pt.planned.offset())
+	assert.Equal(t, int64(50), pt.offsets.planned.offset())
 	sched.enqueuePendingJobs()
 	assert.Equal(t, 0, pt.pendingJobs.Len())
 	assert.Equal(t, 4, sched.jobs.count(), "a gap should not interfere with job queueing")
-	assert.Equal(t, int64(70), pt.planned.offset())
+	assert.Equal(t, int64(70), pt.offsets.planned.offset())
 
 	requireGaps(t, reg, 1, 0)
 
@@ -1286,11 +1286,11 @@ func TestBlockBuilderScheduler_EnqueuePendingJobs_GapDetection(t *testing.T) {
 
 	assert.Equal(t, 3, pt.pendingJobs.Len())
 	assert.Equal(t, 4, sched.jobs.count())
-	assert.Equal(t, int64(70), pt.planned.offset())
+	assert.Equal(t, int64(70), pt.offsets.planned.offset())
 	sched.enqueuePendingJobs()
 	assert.Equal(t, 0, pt.pendingJobs.Len())
 	assert.Equal(t, 7, sched.jobs.count(), "a gap should not interfere with job queueing")
-	assert.Equal(t, int64(120), pt.planned.offset())
+	assert.Equal(t, int64(120), pt.offsets.planned.offset())
 
 	requireGaps(t, reg, 2, 0)
 
@@ -1323,8 +1323,8 @@ func TestBlockBuilderScheduler_NoCommit_NoGap(t *testing.T) {
 	requireGaps(t, reg, 0, 0)
 
 	pp := sched.getPartitionState("ingest", part)
-	require.True(t, pp.planned.empty())
-	require.True(t, pp.committed.empty())
+	require.True(t, pp.offsets.planned.empty())
+	require.True(t, pp.offsets.committed.empty())
 
 	k := jobKey{"myjob5", 5}
 	spec := schedulerpb.JobSpec{
@@ -1334,10 +1334,10 @@ func TestBlockBuilderScheduler_NoCommit_NoGap(t *testing.T) {
 		EndOffset:   20,
 	}
 
-	pp.planned.advance(k.id, spec)
+	pp.offsets.planned.advance(k.id, spec)
 	requireGaps(t, reg, 0, 0, "advancing an empty planned offset should not register a gap")
 
-	pp.committed.advance(k.id, spec)
+	pp.offsets.committed.advance(k.id, spec)
 	requireGaps(t, reg, 0, 0, "advancing an empty committed offset should not register a gap")
 
 	// Now create a gap:
@@ -1349,10 +1349,10 @@ func TestBlockBuilderScheduler_NoCommit_NoGap(t *testing.T) {
 		EndOffset:   50,
 	}
 
-	pp.planned.advance(k2.id, spec2)
+	pp.offsets.planned.advance(k2.id, spec2)
 	requireGaps(t, reg, 1, 0, "a gap after a non-empty planned offset should register a gap")
 
-	pp.committed.advance(k2.id, spec2)
+	pp.offsets.committed.advance(k2.id, spec2)
 	requireGaps(t, reg, 1, 1, "a gap after a non-empty committed offset should register a gap")
 }
 
@@ -1477,11 +1477,12 @@ func TestStartupToRegularModeJobProduction(t *testing.T) {
 
 			collectedJobs := []*schedulerpb.JobSpec{}
 
-			// Apply future end offset observations and collect jobs returned from updateEndOffset
+			// Apply future end offset observations and collect jobs returned from updateTime
 			ps := sched.getPartitionState("topic", 0)
 
 			for _, obs := range tt.futureObservations {
-				job, err := ps.updateEndOffset(obs.offset, obs.timestamp, sched.cfg.JobSize)
+				ps.updateEndOffset(obs.offset)
+				job, err := ps.updateTime(obs.timestamp, sched.cfg.JobSize)
 				require.NoError(t, err)
 				if job != nil {
 					collectedJobs = append(collectedJobs, job)

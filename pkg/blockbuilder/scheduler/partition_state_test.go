@@ -28,10 +28,12 @@ func TestPartitionState(t *testing.T) {
 	var job *schedulerpb.JobSpec
 	var err error
 
-	job, err = pt.updateEndOffset(100, time.Date(2025, 3, 1, 10, 1, 10, 0, time.UTC), sz)
+	pt.updateEndOffset(100)
+	job, err = pt.updateTime(time.Date(2025, 3, 1, 10, 1, 10, 0, time.UTC), sz)
 	require.Nil(t, job)
 	require.Nil(t, err)
-	job, err = pt.updateEndOffset(200, time.Date(2025, 3, 1, 11, 1, 10, 0, time.UTC), sz)
+	pt.updateEndOffset(200)
+	job, err = pt.updateTime(time.Date(2025, 3, 1, 11, 1, 10, 0, time.UTC), sz)
 	require.Equal(t, &schedulerpb.JobSpec{
 		Topic:       "topic",
 		Partition:   0,
@@ -40,17 +42,21 @@ func TestPartitionState(t *testing.T) {
 	}, job)
 	require.Nil(t, err)
 
-	job, err = pt.updateEndOffset(201, time.Date(2025, 3, 1, 11, 1, 10, 0, time.UTC), sz)
+	pt.updateEndOffset(201)
+	job, err = pt.updateTime(time.Date(2025, 3, 1, 11, 1, 10, 0, time.UTC), sz)
 	require.Nil(t, job)
 	require.NoError(t, err)
-	job, err = pt.updateEndOffset(202, time.Date(2025, 3, 1, 11, 2, 10, 0, time.UTC), sz)
+	pt.updateEndOffset(202)
+	job, err = pt.updateTime(time.Date(2025, 3, 1, 11, 2, 10, 0, time.UTC), sz)
 	require.NoError(t, err)
 	require.Nil(t, job)
-	job, err = pt.updateEndOffset(203, time.Date(2025, 3, 1, 11, 3, 10, 0, time.UTC), sz)
+	pt.updateEndOffset(203)
+	job, err = pt.updateTime(time.Date(2025, 3, 1, 11, 3, 10, 0, time.UTC), sz)
 	require.Nil(t, job)
 	require.Nil(t, err)
 
-	job, err = pt.updateEndOffset(300, z.Add(2*time.Hour), sz)
+	pt.updateEndOffset(300)
+	job, err = pt.updateTime(z.Add(2*time.Hour), sz)
 	require.Equal(t, &schedulerpb.JobSpec{
 		Topic:       "topic",
 		Partition:   0,
@@ -60,7 +66,8 @@ func TestPartitionState(t *testing.T) {
 	require.NoError(t, err)
 
 	// And, if the time goes backwards, we return an error.
-	job, err = pt.updateEndOffset(300, z.Add(-2*time.Hour), sz)
+	pt.updateEndOffset(300)
+	job, err = pt.updateTime(z.Add(-2*time.Hour), sz)
 	require.Nil(t, job)
 	require.ErrorContains(t, err, "time went backwards")
 }
@@ -72,7 +79,8 @@ func TestPartitionState_TerminallyDormantPartition(t *testing.T) {
 
 	for i := 0; i < 1000; i++ {
 		z = z.Add(7 * time.Minute)
-		j, err := pt.updateEndOffset(0, z, sz)
+		pt.updateEndOffset(0)
+		j, err := pt.updateTime(z, sz)
 		assert.Nil(t, j)
 		assert.NoError(t, err)
 	}
@@ -85,22 +93,27 @@ func TestPartitionState_PartitionBecomesInactive(t *testing.T) {
 	// A bunch of data observed:
 	var j *schedulerpb.JobSpec
 	var err error
-	j, err = pt.updateEndOffset(10, time.Date(2025, 3, 1, 10, 1, 10, 0, time.UTC), sz)
+	pt.updateEndOffset(10)
+	j, err = pt.updateTime(time.Date(2025, 3, 1, 10, 1, 10, 0, time.UTC), sz)
 	assert.Nil(t, j)
 	assert.NoError(t, err)
-	j, err = pt.updateEndOffset(11, time.Date(2025, 3, 1, 10, 1, 11, 0, time.UTC), sz)
+	pt.updateEndOffset(11)
+	j, err = pt.updateTime(time.Date(2025, 3, 1, 10, 1, 11, 0, time.UTC), sz)
 	assert.Nil(t, j)
 	assert.NoError(t, err)
-	j, err = pt.updateEndOffset(12, time.Date(2025, 3, 1, 10, 1, 12, 0, time.UTC), sz)
+	pt.updateEndOffset(12)
+	j, err = pt.updateTime(time.Date(2025, 3, 1, 10, 1, 12, 0, time.UTC), sz)
 	assert.Nil(t, j)
 	assert.NoError(t, err)
 	// data ceases. continue to get observations in the same bucket.
-	j, err = pt.updateEndOffset(12, time.Date(2025, 3, 1, 10, 1, 13, 0, time.UTC), sz)
+	pt.updateEndOffset(12)
+	j, err = pt.updateTime(time.Date(2025, 3, 1, 10, 1, 13, 0, time.UTC), sz)
 	assert.Nil(t, j)
 	assert.NoError(t, err)
 
 	// as we cross into the next bucket, there's still no new data.
-	j, err = pt.updateEndOffset(12, time.Date(2025, 3, 1, 11, 1, 0, 0, time.UTC), sz)
+	pt.updateEndOffset(12)
+	j, err = pt.updateTime(time.Date(2025, 3, 1, 11, 1, 0, 0, time.UTC), sz)
 	assert.Equal(t, &schedulerpb.JobSpec{
 		Topic:       "topic",
 		Partition:   0,
@@ -109,17 +122,62 @@ func TestPartitionState_PartitionBecomesInactive(t *testing.T) {
 	}, j)
 	assert.NoError(t, err)
 	// and we keep getting the same offset.
-	j, err = pt.updateEndOffset(12, time.Date(2025, 3, 1, 11, 2, 0, 0, time.UTC), sz)
+	pt.updateEndOffset(12)
+	j, err = pt.updateTime(time.Date(2025, 3, 1, 11, 2, 0, 0, time.UTC), sz)
 	assert.Nil(t, j)
 	assert.NoError(t, err)
-	j, err = pt.updateEndOffset(12, time.Date(2025, 3, 1, 11, 3, 0, 0, time.UTC), sz)
+	pt.updateEndOffset(12)
+	j, err = pt.updateTime(time.Date(2025, 3, 1, 11, 3, 0, 0, time.UTC), sz)
 	assert.Nil(t, j)
 	assert.NoError(t, err)
 
 	// And in the next job bucket, still no new data.
-	j, err = pt.updateEndOffset(12, time.Date(2025, 3, 1, 12, 1, 0, 0, time.UTC), sz)
+	pt.updateEndOffset(12)
+	j, err = pt.updateTime(time.Date(2025, 3, 1, 12, 1, 0, 0, time.UTC), sz)
 	assert.Nil(t, j)
 	assert.NoError(t, err)
+}
+
+func TestPartitionState_MultipleOffsetsBeforeTimeUpdate(t *testing.T) {
+	pt := newTestPartitionState(t, "topic", 0)
+	sz := time.Hour
+	z := time.Date(2025, 3, 1, 10, 0, 0, 0, time.UTC)
+
+	// Seed the start offset and the current bucket.
+	pt.updateEndOffset(100)
+	job, err := pt.updateTime(z, sz)
+	require.NoError(t, err)
+	require.Nil(t, job)
+
+	// Several observations within the same bucket, with no time update between them.
+	pt.updateEndOffset(150)
+	pt.updateEndOffset(175)
+	pt.updateEndOffset(200)
+
+	// Crossing into the next bucket emits a single job spanning the seeded start
+	// offset to the latest observed offset.
+	job, err = pt.updateTime(z.Add(sz), sz)
+	require.NoError(t, err)
+	require.Equal(t, &schedulerpb.JobSpec{
+		Topic:       "topic",
+		Partition:   0,
+		StartOffset: 100,
+		EndOffset:   200,
+	}, job)
+}
+
+func TestPartitionState_TimeAdvancesBeforeAnyOffset(t *testing.T) {
+	pt := newTestPartitionState(t, "topic", 0)
+	sz := time.Hour
+	z := time.Date(2025, 3, 1, 10, 0, 0, 0, time.UTC)
+
+	// Advance time across several buckets without ever observing an end offset.
+	// No jobs should be emitted.
+	for i := 0; i < 5; i++ {
+		job, err := pt.updateTime(z.Add(time.Duration(i)*sz), sz)
+		require.NoError(t, err)
+		require.Nil(t, job)
+	}
 }
 
 func TestPartitionState_ParallelJobs(t *testing.T) {
@@ -167,7 +225,7 @@ func TestPartitionState_ParallelJobs(t *testing.T) {
 		ps.addPlannedJob("job1", jobSpec)
 		require.Equal(t, 1, ps.plannedJobs.Len())
 		require.Len(t, ps.plannedJobsMap, 1)
-		require.Equal(t, int64(100), ps.committed.offset())
+		require.Equal(t, int64(100), ps.offsets.committed.offset())
 
 		err := ps.completeJob("job1")
 		require.NoError(t, err)
@@ -175,7 +233,7 @@ func TestPartitionState_ParallelJobs(t *testing.T) {
 		// Verify job was completed and garbage collected
 		require.Equal(t, 0, ps.plannedJobs.Len())
 		require.Len(t, ps.plannedJobsMap, 0)
-		require.Equal(t, int64(200), ps.committed.offset())
+		require.Equal(t, int64(200), ps.offsets.committed.offset())
 	})
 
 	t.Run("complete_nonexistent_job", func(t *testing.T) {
@@ -217,28 +275,28 @@ func TestPartitionState_ParallelJobs(t *testing.T) {
 		// Verify initial state
 		require.Equal(t, 3, ps.plannedJobs.Len())
 		require.Len(t, ps.plannedJobsMap, 3)
-		require.Equal(t, int64(100), ps.committed.offset())
+		require.Equal(t, int64(100), ps.offsets.committed.offset())
 
 		// Complete first job - should be garbage collected
 		err := ps.completeJob("job1")
 		require.NoError(t, err)
 		require.Equal(t, 2, ps.plannedJobs.Len())
 		require.Len(t, ps.plannedJobsMap, 2)
-		require.Equal(t, int64(200), ps.committed.offset())
+		require.Equal(t, int64(200), ps.offsets.committed.offset())
 
 		// Complete second job - should be garbage collected
 		err = ps.completeJob("job2")
 		require.NoError(t, err)
 		require.Equal(t, 1, ps.plannedJobs.Len())
 		require.Len(t, ps.plannedJobsMap, 1)
-		require.Equal(t, int64(300), ps.committed.offset())
+		require.Equal(t, int64(300), ps.offsets.committed.offset())
 
 		// Complete third job - should be garbage collected
 		err = ps.completeJob("job3")
 		require.NoError(t, err)
 		require.Equal(t, 0, ps.plannedJobs.Len())
 		require.Len(t, ps.plannedJobsMap, 0)
-		require.Equal(t, int64(400), ps.committed.offset())
+		require.Equal(t, int64(400), ps.offsets.committed.offset())
 	})
 
 	// Test 4: Complete jobs out of order (only front jobs get garbage collected)
@@ -274,14 +332,14 @@ func TestPartitionState_ParallelJobs(t *testing.T) {
 		// Job2 should be marked complete but not garbage collected yet
 		require.Equal(t, 3, ps.plannedJobs.Len(), "expecting no garbage collection yet")
 		require.Len(t, ps.plannedJobsMap, 3, "expecting no garbage collection yet")
-		require.Equal(t, int64(100), ps.committed.offset(), "should be no advancement yet")
+		require.Equal(t, int64(100), ps.offsets.committed.offset(), "should be no advancement yet")
 
 		// Complete job1 - should garbage collect both job1 and job2
 		err = ps.completeJob("job1")
 		require.NoError(t, err)
 		require.Equal(t, 1, ps.plannedJobs.Len(), "expecting garbage collection of job1 and job2")
 		require.Len(t, ps.plannedJobsMap, 1, "expecting garbage collection of job1 and job2")
-		require.Equal(t, int64(300), ps.committed.offset(), "should be advanced commit to the end of job3")
+		require.Equal(t, int64(300), ps.offsets.committed.offset(), "should be advanced commit to the end of job3")
 		require.Equal(t, "job3", ps.plannedJobs.Front().Value.(*jobState).jobID, "expecting job3 to be the remaining planned job")
 	})
 
@@ -299,6 +357,25 @@ func TestPartitionState_ParallelJobs(t *testing.T) {
 		// Verify state remains unchanged
 		require.Equal(t, 0, ps.plannedJobs.Len())
 		require.Len(t, ps.plannedJobsMap, 0)
-		require.Equal(t, int64(100), ps.committed.offset())
+		require.Equal(t, int64(100), ps.offsets.committed.offset())
 	})
+}
+
+func TestNewSingleClusterOffsets(t *testing.T) {
+	m := newSchedulerMetrics(prometheus.NewPedanticRegistry())
+	o := newSingleClusterOffsets(&m, test.NewTestingLogger(t))
+
+	// Before observing any end offset, both offsets are empty.
+	require.Equal(t, offsetEmpty, o.startOffset)
+	require.Equal(t, offsetEmpty, o.latestOffset)
+
+	// The first observed end offset seeds the start offset, so they're equal.
+	o.updateEndOffset(100)
+	require.Equal(t, int64(100), o.startOffset)
+	require.Equal(t, int64(100), o.latestOffset)
+
+	// Subsequent observations only advance the latest offset, so they diverge.
+	o.updateEndOffset(200)
+	require.Equal(t, int64(100), o.startOffset)
+	require.Equal(t, int64(200), o.latestOffset)
 }
