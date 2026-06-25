@@ -20,6 +20,7 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 	"go.opentelemetry.io/otel"
 
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware/querydetails"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/querierpb"
 	"github.com/grafana/mimir/pkg/streamingpromql/caching"
@@ -786,6 +787,17 @@ func (c *CacheOperator) Finalize(ctx context.Context) (*types.OperatorEvaluation
 		}
 	}
 
+	queryDetails := querydetails.QueryDetailsFromContext(ctx)
+	if queryDetails != nil {
+		for _, e := range c.extents.inDesiredTimeRange {
+			if size, cacheHit := e.GetEstimatedSize(); cacheHit {
+				queryDetails.ResultsCacheHitBytes += int(size)
+			} else {
+				queryDetails.ResultsCacheMissBytes += int(size)
+			}
+		}
+	}
+
 	return desiredTimeRangeStats, annos, nil
 }
 
@@ -1018,16 +1030,22 @@ type extent interface {
 
 	GetEvaluationTimestamp() int64
 
+	// GetEstimatedSize() returns an estimate of the size of the extent, in bytes, and true if
+	// this extent was a cache hit.
+	GetEstimatedSize() (uint64, bool)
+
 	Close()
 }
 
 type cachedExtentReader struct {
 	extent CachedExtent
 	parent *CacheOperator
+
+	sizeEstimator *extentSizeEstimator
 }
 
 func newCachedExtentReader(extent CachedExtent, parent *CacheOperator) *cachedExtentReader {
-	return &cachedExtentReader{extent: extent, parent: parent}
+	return &cachedExtentReader{extent: extent, parent: parent, sizeEstimator: &extentSizeEstimator{}}
 }
 
 func (c *cachedExtentReader) GetStartT() int64 {
@@ -1064,6 +1082,7 @@ func (c *cachedExtentReader) SeriesMetadata(_ context.Context, _ types.Matchers)
 	}
 
 	c.extent.closeSeriesMetadata(c.parent.MemoryConsumptionTracker)
+	c.sizeEstimator.AccumulateSeriesMetadata(seriesMetadata)
 
 	return seriesMetadata, nil
 }
@@ -1083,6 +1102,8 @@ func (c *cachedExtentReader) GetSeries(_ context.Context, seriesIdx int) (types.
 	// Clear the cached data so we don't try to remove it from the memory consumption estimate later.
 	// We don't need to retain this data here if this extent will be merged into others: that is the responsibility of CacheOperator.
 	c.extent.Data[seriesIdx] = querierpb.InstantVectorSeriesData{}
+
+	c.sizeEstimator.AccumulateSeriesData(mqeData)
 
 	var err error
 
@@ -1116,6 +1137,10 @@ func (c *cachedExtentReader) GetEvaluationTimestamp() int64 {
 	return c.extent.OldestEvaluationTime
 }
 
+func (c *cachedExtentReader) GetEstimatedSize() (uint64, bool) {
+	return c.sizeEstimator.estimatedSizeBytes, true
+}
+
 func (c *cachedExtentReader) Close() {
 	c.extent.close(c.parent.MemoryConsumptionTracker)
 }
@@ -1126,14 +1151,17 @@ type evaluatedExtent struct {
 	buffer *operators.InstantVectorOperatorBuffer
 	startT int64
 	endT   int64
+
+	sizeEstimator *extentSizeEstimator
 }
 
 func newEvaluatedExtent(inner types.InstantVectorOperator, parent *CacheOperator, startT int64, endT int64) *evaluatedExtent {
 	return &evaluatedExtent{
-		inner:  inner,
-		parent: parent,
-		startT: startT,
-		endT:   endT,
+		inner:         inner,
+		parent:        parent,
+		startT:        startT,
+		endT:          endT,
+		sizeEstimator: &extentSizeEstimator{},
 	}
 }
 
@@ -1159,6 +1187,7 @@ func (e *evaluatedExtent) SeriesMetadata(ctx context.Context, matchers types.Mat
 		return nil, err
 	}
 
+	e.sizeEstimator.AccumulateSeriesMetadata(metadata)
 	e.buffer = operators.NewInstantVectorOperatorBuffer(e.inner, nil, len(metadata)-1, e.parent.MemoryConsumptionTracker)
 
 	return metadata, nil
@@ -1170,7 +1199,10 @@ func (e *evaluatedExtent) GetSeries(ctx context.Context, seriesIdx int) (types.I
 		return types.InstantVectorSeriesData{}, err
 	}
 
-	return series[0], nil
+	data := series[0]
+	e.sizeEstimator.AccumulateSeriesData(data)
+
+	return data, nil
 }
 
 func (e *evaluatedExtent) FinishedReading(ctx context.Context) error {
@@ -1185,6 +1217,10 @@ func (e *evaluatedExtent) Finalize(ctx context.Context) (*types.OperatorEvaluati
 
 func (e *evaluatedExtent) GetEvaluationTimestamp() int64 {
 	return timestamp.FromTime(e.parent.evaluationTime)
+}
+
+func (e *evaluatedExtent) GetEstimatedSize() (uint64, bool) {
+	return e.sizeEstimator.estimatedSizeBytes, false
 }
 
 func (e *evaluatedExtent) Close() {
@@ -1274,4 +1310,20 @@ func estimateLabelsSize(labels []mimirpb.LabelAdapter) uint64 {
 		size += uint64(len(l.Name)) + uint64(len(l.Value))
 	}
 	return size
+}
+
+type extentSizeEstimator struct {
+	estimatedSizeBytes uint64
+}
+
+func (e *extentSizeEstimator) AccumulateSeriesMetadata(series []types.SeriesMetadata) {
+	e.estimatedSizeBytes += uint64(len(series)) * types.SeriesMetadataSize
+	for _, s := range series {
+		e.estimatedSizeBytes += s.Labels.ByteSize()
+	}
+}
+
+func (e *extentSizeEstimator) AccumulateSeriesData(data types.InstantVectorSeriesData) {
+	e.estimatedSizeBytes += uint64(len(data.Floats)) * types.FPointSize
+	e.estimatedSizeBytes += uint64(len(data.Histograms)) * types.HPointSize
 }
