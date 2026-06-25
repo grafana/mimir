@@ -793,6 +793,10 @@ func (m multiTenantMockLimits) SubquerySpinOffEnabled(userID string) bool {
 	return m.byTenant[userID].subquerySpinOffEnabled
 }
 
+func (m multiTenantMockLimits) SubquerySpinOffDisabledQueries(userID string) []validation.SubquerySpinOffDisabledQuery {
+	return m.byTenant[userID].subquerySpinOffDisabledQueries
+}
+
 func (m multiTenantMockLimits) LabelsQueryOptimizerEnabled(userID string) bool {
 	return m.byTenant[userID].labelsQueryOptimizerEnabled
 }
@@ -829,6 +833,7 @@ type mockLimits struct {
 	queryIngestersWithin                  time.Duration
 	ingestStorageReadConsistency          string
 	subquerySpinOffEnabled                bool
+	subquerySpinOffDisabledQueries        []validation.SubquerySpinOffDisabledQuery
 	labelsQueryOptimizerEnabled           bool
 }
 
@@ -956,6 +961,10 @@ func (m mockLimits) BlockedRequests(string) []validation.BlockedRequest {
 
 func (m mockLimits) SubquerySpinOffEnabled(string) bool {
 	return m.subquerySpinOffEnabled
+}
+
+func (m mockLimits) SubquerySpinOffDisabledQueries(string) []validation.SubquerySpinOffDisabledQuery {
+	return m.subquerySpinOffDisabledQueries
 }
 
 func (m mockLimits) LabelsQueryOptimizerEnabled(string) bool {

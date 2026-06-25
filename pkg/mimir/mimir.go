@@ -427,6 +427,9 @@ func (c *Config) ValidateLimits(limits *validation.Limits) error {
 	if err := limits.BlockedQueries.Validate(); err != nil {
 		return err
 	}
+	if err := limits.SubquerySpinOffDisabledQueries.Validate(); err != nil {
+		return err
+	}
 	if err := c.Querier.ValidateLimits(*limits); err != nil {
 		return errors.Wrap(err, "invalid limits config for querier")
 	}

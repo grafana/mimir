@@ -447,6 +447,7 @@ func newQueryMiddlewares(
 		queryStatsMiddleware,
 		newLimitsMiddleware(limits, log),
 		queryBlockerMiddleware,
+		newSpinOffSubqueriesDisablerMiddleware(limits),
 		queryLimiterMiddleware,
 		blockInternalFunctionsMiddleware,
 		newInstrumentMiddleware("prom2_compat", metrics),

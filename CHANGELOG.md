@@ -48,6 +48,7 @@
 * [ENHANCEMENET] Runtimeconfig: The HTTP client used to fetch runtime configurations from HTTP endpoints now has keep-alives disabled by default. New CLI flag `-runtime-config.http-client-disable-keep-alives` is enabled by default, an can be set to `false` in-order to re-enable keep-alives. #15695
 * [ENHANCEMENT] MQE: Support for native histograms in `smoothed` and `anchored` extended range selector modifiers. #15398
 * [ENHANCEMENT] Mimir: Expose `ingest_storage` feature flag in the `/api/v1/status/buildinfo` endpoint, reflecting whether Mimir runs with ingest storage architecture. #15743
+* [ENHANCEMENT] Query-frontend: Add experimental `subquery_spin_off_disabled_queries` per-tenant limit to disable subquery spin-off for queries matching the configured PromQL patterns. The new `cortex_frontend_subquery_spinoff_disabled_total` counter tracks matches. #15811
 * [BUGFIX] Query-frontend: Fix `cardinality_analysis_max_results` being ignored when set higher than the default of 500. #15581
 * [BUGFIX] Ingest storage: Fix `KafkaProducer.ProduceSync()` returning a single result with a nil record when the context is canceled, instead of one result per input record (with the record set) as the underlying franz-go client does. #15199
 * [BUGFIX] Ingest storage: Fix `cortex_ingest_storage_reader_receive_delay_seconds` inflation by no longer setting the Kafka record `Timestamp` on the distributor side; the Kafka client now sets it at produce time. #15572

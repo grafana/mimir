@@ -6396,6 +6396,43 @@
         },
         {
           "kind": "field",
+          "name": "subquery_spin_off_disabled_queries",
+          "required": false,
+          "desc": "List of queries for which to disable subquery spin-off.",
+          "fieldValue": null,
+          "fieldDefaultValue": null,
+          "fieldType": "slice",
+          "fieldElement": {
+            "kind": "block",
+            "name": "subquery_spin_off_disabled_queries",
+            "required": false,
+            "desc": "",
+            "blockEntries": [
+              {
+                "kind": "field",
+                "name": "pattern",
+                "required": false,
+                "desc": "PromQL expression pattern to match. Rules without a pattern are a configuration error.",
+                "fieldValue": null,
+                "fieldDefaultValue": "",
+                "fieldType": "string"
+              },
+              {
+                "kind": "field",
+                "name": "regex",
+                "required": false,
+                "desc": "If true, the pattern is treated as a regular expression; an invalid regular expression is a configuration error. If false, the pattern is treated as a literal match.",
+                "fieldValue": null,
+                "fieldDefaultValue": false,
+                "fieldType": "boolean"
+              }
+            ],
+            "fieldValue": null,
+            "fieldDefaultValue": null
+          }
+        },
+        {
+          "kind": "field",
           "name": "labels_query_optimizer_enabled",
           "required": false,
           "desc": "Enable labels query optimizations. When enabled, the query-frontend may rewrite labels queries to improve their performance.",
