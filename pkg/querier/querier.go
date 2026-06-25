@@ -208,23 +208,23 @@ func New(
 	distributorQueryable := NewDistributorQueryable(distributor, limits, queryMetrics, logger)
 	queryable := newMultiQueryable(cfg, distributorQueryable, storeQueryable, limits, queryMetrics, logger)
 
-	opts, mqeOpts := engine.NewPromQLEngineOptions(cfg.EngineConfig, tracker, logger, reg, limitsProvider)
+	opts := engine.NewPromQLEngineOptions(cfg.EngineConfig, tracker, logger, reg, limitsProvider)
 
 	var eng promql.QueryEngine
 	var streamingEngine *streamingpromql.Engine
 
 	switch cfg.QueryEngine {
 	case PrometheusEngine:
-		eng = limiter.NewUnlimitedMemoryTrackerPromQLEngine(promql.NewEngine(opts))
+		eng = limiter.NewUnlimitedMemoryTrackerPromQLEngine(promql.NewEngine(opts.CommonOpts))
 	case MimirEngine:
 		var err error
-		streamingEngine, err = streamingpromql.NewEngine(mqeOpts, queryMetrics, planner)
+		streamingEngine, err = streamingpromql.NewEngine(opts, queryMetrics, planner)
 		if err != nil {
 			return nil, nil, nil, nil, err
 		}
 
 		if cfg.EnableQueryEngineFallback {
-			prometheusEngine := limiter.NewUnlimitedMemoryTrackerPromQLEngine(promql.NewEngine(opts))
+			prometheusEngine := limiter.NewUnlimitedMemoryTrackerPromQLEngine(promql.NewEngine(opts.CommonOpts))
 			eng = compat.NewEngineWithFallback(streamingEngine, prometheusEngine, reg, logger)
 		} else {
 			eng = streamingEngine
@@ -922,6 +922,15 @@ func (p *TenantQueryLimitsProvider) GetMaxCacheFreshness(ctx context.Context) (t
 	}
 
 	return validation.MaxDurationPerTenant(tenantIDs, p.limits.MaxCacheFreshness), nil
+}
+
+func (p *TenantQueryLimitsProvider) AllowCachingUnalignedQueries(ctx context.Context) (bool, error) {
+	tenantIDs, err := tenant.TenantIDs(ctx)
+	if err != nil {
+		return false, err
+	}
+
+	return validation.AllTrueBooleansPerTenant(tenantIDs, p.limits.ResultsCacheForUnalignedQueryEnabled), nil
 }
 
 type RequestMetrics struct {

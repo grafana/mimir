@@ -826,7 +826,7 @@ type testMaterializer struct {
 	materializedOperators    []*operators.TestOperator
 }
 
-func (m *testMaterializer) ConvertNodeToInstantVectorOperator(node planning.Node, timeRange types.QueryTimeRange) (types.InstantVectorOperator, error) {
+func (m *testMaterializer) ConvertNodeToInstantVectorOperator(ctx context.Context, node planning.Node, timeRange types.QueryTimeRange) (types.InstantVectorOperator, error) {
 	m.materializedTimeRanges = append(m.materializedTimeRanges, timeRange)
 
 	data := testDataForTimeRange(timeRange)
@@ -992,6 +992,10 @@ func (m *mockLimitsProvider) GetMaxOutOfOrderTimeWindow(ctx context.Context) (ti
 
 func (m *mockLimitsProvider) GetMaxCacheFreshness(ctx context.Context) (time.Duration, error) {
 	return m.maxFreshness, nil
+}
+
+func (m *mockLimitsProvider) AllowCachingUnalignedQueries(ctx context.Context) (bool, error) {
+	return false, nil
 }
 
 func TestCacheOperator_CacheKey(t *testing.T) {

@@ -15,6 +15,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/dns"
 	httpgrpc_server "github.com/grafana/dskit/httpgrpc/server"
 	"github.com/grafana/dskit/kv"
@@ -112,6 +113,7 @@ const (
 	QuerierQueryPlanner              string = "querier-query-planner"
 	QuerierRing                      string = "querier-ring"
 	QueryFrontend                    string = "query-frontend"
+	QueryFrontendCacheClient         string = "query-frontend-cache-client"
 	QueryFrontendCodec               string = "query-frontend-codec"
 	QueryFrontendQueryPlanner        string = "query-frontend-query-planner"
 	QueryFrontendTopicOffsetsReaders string = "query-frontend-topic-offsets-reader"
@@ -917,15 +919,11 @@ func (t *Mimir) initCacheKeyGenerator() (services.Service, error) {
 // initQueryFrontendTripperware instantiates the tripperware used by the query frontend
 // to optimize Prometheus query requests.
 func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error) {
-	promqlEngineRegisterer := prometheus.WrapRegistererWith(prometheus.Labels{"engine": "query-frontend"}, t.Registerer)
-	promOpts, mqeOpts := engine.NewPromQLEngineOptions(t.Cfg.Querier.EngineConfig, t.ActivityTracker, util_log.Logger, promqlEngineRegisterer, t.QueryLimitsProvider)
-	// Disable concurrency limits for sharded queries spawned by the query-frontend.
-	promOpts.ActiveQueryTracker = nil
-	// Always eagerly load selectors so that they are loaded in parallel in the background.
-	mqeOpts.EagerLoadSelectors = true
+	middlewareCfg := t.Cfg.Frontend.QueryMiddleware
 
-	t.Cfg.Frontend.QueryMiddleware.InternalFunctionNames.Add(sharding.ConcatFunction.Name)
-	t.Cfg.Frontend.QueryMiddleware.InternalFunctionNames.Add(sharding.AvgFunction.Name)
+	opts := t.createQueryFrontendPromQLEngineOptions()
+	middlewareCfg.InternalFunctionNames.Add(sharding.ConcatFunction.Name)
+	middlewareCfg.InternalFunctionNames.Add(sharding.AvgFunction.Name)
 
 	var memoryConsumptionTrackerFactory *limiter.InflightMemoryConsumptionTracker
 
@@ -934,21 +932,21 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 	var eng promql.QueryEngine
 	switch t.Cfg.Frontend.QueryEngine {
 	case querier.PrometheusEngine:
-		eng = limiter.NewUnlimitedMemoryTrackerPromQLEngine(promql.NewEngine(promOpts))
-		memoryConsumptionTrackerFactory = limiter.NewUnlimintedInflightMemoryConsumptionTracker(promqlEngineRegisterer)
+		eng = limiter.NewUnlimitedMemoryTrackerPromQLEngine(promql.NewEngine(opts.CommonOpts))
+		memoryConsumptionTrackerFactory = limiter.NewUnlimintedInflightMemoryConsumptionTracker(opts.CommonOpts.Reg)
 	case querier.MimirEngine:
 		var err error
 		// The streaming engine will use this same MemoryConsumptionTrackerFactory
-		queryMetrics := stats.NewQueryMetrics(mqeOpts.CommonOpts.Reg)
-		memoryConsumptionTrackerFactory = limiter.NewInflightMemoryConsumptionTracker(mqeOpts.CommonOpts.Reg, queryMetrics.QueriesRejectedTotal.WithLabelValues(stats.RejectReasonMaxEstimatedQueryMemoryConsumption))
-		mqeOpts.MemoryConsumptionTrackerFactory = memoryConsumptionTrackerFactory
-		t.QueryFrontendStreamingEngine, err = streamingpromql.NewEngine(mqeOpts, queryMetrics, t.QueryFrontendQueryPlanner)
+		queryMetrics := stats.NewQueryMetrics(opts.CommonOpts.Reg)
+		memoryConsumptionTrackerFactory = limiter.NewInflightMemoryConsumptionTracker(opts.CommonOpts.Reg, queryMetrics.QueriesRejectedTotal.WithLabelValues(stats.RejectReasonMaxEstimatedQueryMemoryConsumption))
+		opts.MemoryConsumptionTrackerFactory = memoryConsumptionTrackerFactory
+		t.QueryFrontendStreamingEngine, err = streamingpromql.NewEngine(opts, queryMetrics, t.QueryFrontendQueryPlanner)
 		if err != nil {
 			return nil, fmt.Errorf("unable to create Mimir Query Engine: %w", err)
 		}
 
 		if t.Cfg.Frontend.EnableQueryEngineFallback {
-			eng = streamingpromqlcompat.NewEngineWithFallback(t.QueryFrontendStreamingEngine, limiter.NewUnlimitedMemoryTrackerPromQLEngine(promql.NewEngine(promOpts)), mqeOpts.CommonOpts.Reg, util_log.Logger)
+			eng = streamingpromqlcompat.NewEngineWithFallback(t.QueryFrontendStreamingEngine, limiter.NewUnlimitedMemoryTrackerPromQLEngine(promql.NewEngine(opts.CommonOpts)), opts.CommonOpts.Reg, util_log.Logger)
 		} else {
 			eng = t.QueryFrontendStreamingEngine
 		}
@@ -957,16 +955,17 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 	}
 
 	tripperware, err := querymiddleware.NewTripperware(
-		t.Cfg.Frontend.QueryMiddleware,
+		middlewareCfg,
 		util_log.Logger,
 		t.Overrides,
 		t.QueryLimitsProvider,
 		t.QueryFrontendCodec,
+		t.QueryFrontendCacheClient,
 		querymiddleware.PrometheusResponseExtractor{},
 		eng,
-		promOpts,
+		opts.CommonOpts,
 		t.QueryFrontendTopicOffsetsReader,
-		t.Cfg.Frontend.QueryMiddleware.EnableRemoteExecution,
+		middlewareCfg.EnableRemoteExecution,
 		t.QueryFrontendStreamingEngine,
 		t.Registerer,
 
@@ -1059,15 +1058,15 @@ func (t *Mimir) initQueryFrontend() (serv services.Service, err error) {
 }
 
 func (t *Mimir) initQuerierQueryPlanner() (services.Service, error) {
-	reg := prometheus.WrapRegistererWith(prometheus.Labels{"component": "querier"}, t.Registerer)
-	_, mqeOpts := engine.NewPromQLEngineOptions(t.Cfg.Querier.EngineConfig, t.ActivityTracker, util_log.Logger, reg, t.QueryLimitsProvider)
+	reg := prometheus.WrapRegistererWith(prometheus.Labels{"engine": "querier"}, t.Registerer)
+	opts := engine.NewPromQLEngineOptions(t.Cfg.Querier.EngineConfig, t.ActivityTracker, util_log.Logger, reg, t.QueryLimitsProvider)
 
 	// The query plan generated by this querier will only be used in this process, so we can
 	// allow anything this version of Mimir supports.
 	versionProvider := streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider()
 
 	var err error
-	t.QuerierQueryPlanner, err = streamingpromql.NewQueryPlanner(mqeOpts, versionProvider)
+	t.QuerierQueryPlanner, err = streamingpromql.NewQueryPlanner(opts, versionProvider)
 	if err != nil {
 		return nil, err
 	}
@@ -1075,17 +1074,33 @@ func (t *Mimir) initQuerierQueryPlanner() (services.Service, error) {
 	// Only expose the querier's planner through the analysis endpoint if the query-frontend isn't running in this process.
 	// If the query-frontend is running in this process, it will expose its planner through the analysis endpoint.
 	if !t.Cfg.isQueryFrontendEnabled() {
-		analysisHandler := analysis.NewHandler(t.QuerierQueryPlanner, t.QueryLimitsProvider, mqeOpts)
+		analysisHandler := analysis.NewHandler(t.QuerierQueryPlanner, t.QueryLimitsProvider, opts)
 		t.API.RegisterQueryAnalysisAPI(analysisHandler)
 	}
 
 	return nil, nil
 }
 
-func (t *Mimir) initQueryFrontendQueryPlanner() (services.Service, error) {
-	reg := prometheus.WrapRegistererWith(prometheus.Labels{"component": "query-frontend"}, t.Registerer)
-	_, mqeOpts := engine.NewPromQLEngineOptions(t.Cfg.Querier.EngineConfig, t.ActivityTracker, util_log.Logger, reg, t.QueryLimitsProvider)
+func (t *Mimir) initQueryFrontendCacheClient() (services.Service, error) {
+	cfg := t.Cfg.Frontend.QueryMiddleware
 
+	if !cfg.CacheResults && !cfg.CardinalityBasedShardingEnabled() {
+		return nil, nil
+	}
+
+	var err error
+
+	t.QueryFrontendCacheClient, err = querymiddleware.NewResultsCache(cfg.ResultsCache, util_log.Logger, t.Registerer)
+	if err != nil {
+		return nil, err
+	}
+	t.QueryFrontendCacheClient = cache.NewCompression(cfg.ResultsCache.Compression, t.QueryFrontendCacheClient, util_log.Logger)
+
+	return nil, nil
+}
+
+func (t *Mimir) initQueryFrontendQueryPlanner() (services.Service, error) {
+	opts := t.createQueryFrontendPromQLEngineOptions()
 	var versionProvider streamingpromql.QueryPlanVersionProvider
 
 	if t.Cfg.Frontend.QueryMiddleware.EnableRemoteExecution {
@@ -1098,7 +1113,7 @@ func (t *Mimir) initQueryFrontendQueryPlanner() (services.Service, error) {
 	}
 
 	var err error
-	t.QueryFrontendQueryPlanner, err = streamingpromql.NewQueryPlanner(mqeOpts, versionProvider)
+	t.QueryFrontendQueryPlanner, err = streamingpromql.NewQueryPlanner(opts, versionProvider)
 	if err != nil {
 		return nil, err
 	}
@@ -1108,16 +1123,38 @@ func (t *Mimir) initQueryFrontendQueryPlanner() (services.Service, error) {
 	}
 
 	if t.Cfg.Frontend.QueryMiddleware.UseMQEForSharding {
-		t.QueryFrontendQueryPlanner.RegisterASTOptimizationPass(sharding.NewOptimizationPass(t.Overrides, t.Cfg.Frontend.QueryMiddleware.TargetSeriesPerShard, reg, util_log.Logger))
+		t.QueryFrontendQueryPlanner.RegisterASTOptimizationPass(sharding.NewOptimizationPass(t.Overrides, t.Cfg.Frontend.QueryMiddleware.TargetSeriesPerShard, opts.CommonOpts.Reg, util_log.Logger))
 	}
 
 	// FIXME: results returned by the analysis endpoint won't include any changes made by query middlewares
 	// like sharding, splitting etc.
 	// Once these are running as MQE optimisation passes, they'll automatically be included in the analysis result.
-	analysisHandler := analysis.NewHandler(t.QueryFrontendQueryPlanner, t.QueryLimitsProvider, mqeOpts)
+	analysisHandler := analysis.NewHandler(t.QueryFrontendQueryPlanner, t.QueryLimitsProvider, opts)
 	t.API.RegisterQueryAnalysisAPI(analysisHandler)
 
 	return nil, nil
+}
+
+func (t *Mimir) createQueryFrontendPromQLEngineOptions() streamingpromql.EngineOpts {
+	reg := prometheus.WrapRegistererWith(prometheus.Labels{"engine": "query-frontend"}, t.Registerer)
+	opts := engine.NewPromQLEngineOptions(t.Cfg.Querier.EngineConfig, t.ActivityTracker, util_log.Logger, reg, t.QueryLimitsProvider)
+
+	// Disable concurrency limits for sharded queries spawned by the query-frontend.
+	opts.CommonOpts.ActiveQueryTracker = nil
+
+	// Always eagerly load selectors so that they are loaded in parallel in the background.
+	// This only applies locally, not to selectors evaluated by queriers (even with remote execution enabled).
+	opts.EagerLoadSelectors = true
+
+	// Propagate the splitting and caching options to MQE, if it's enabled.
+	// FIXME: once we no longer support using middleware-based splitting and caching, we can define these CLI flags directly in the engine options.
+	middlewareCfg := t.Cfg.Frontend.QueryMiddleware
+	opts.RangeQuerySplittingAndCaching.SplitEnabled = middlewareCfg.UseMQEForSplittingAndCachingResults && middlewareCfg.SplitQueriesByInterval > 0
+	opts.RangeQuerySplittingAndCaching.SplitInterval = middlewareCfg.SplitQueriesByInterval
+	opts.RangeQuerySplittingAndCaching.CacheEnabled = middlewareCfg.UseMQEForSplittingAndCachingResults && middlewareCfg.CacheResults
+	opts.RangeQuerySplittingAndCaching.CacheClient = t.QueryFrontendCacheClient
+
+	return opts
 }
 
 func (t *Mimir) initRulerStorage() (serv services.Service, err error) {
@@ -1578,6 +1615,7 @@ func (t *Mimir) setupModuleManager() error {
 	mm.RegisterModule(QuerierQueryPlanner, t.initQuerierQueryPlanner, modules.UserInvisibleModule)
 	mm.RegisterModule(QuerierRing, t.initQuerierRing, modules.UserInvisibleModule)
 	mm.RegisterModule(QueryFrontend, t.initQueryFrontend)
+	mm.RegisterModule(QueryFrontendCacheClient, t.initQueryFrontendCacheClient, modules.UserInvisibleModule)
 	mm.RegisterModule(QueryFrontendCodec, t.initQueryFrontendCodec, modules.UserInvisibleModule)
 	mm.RegisterModule(QueryFrontendQueryPlanner, t.initQueryFrontendQueryPlanner, modules.UserInvisibleModule)
 	mm.RegisterModule(QueryFrontendTopicOffsetsReaders, t.initQueryFrontendTopicOffsetsReaders, modules.UserInvisibleModule)
@@ -1626,9 +1664,9 @@ func (t *Mimir) setupModuleManager() error {
 		QuerierQueryPlanner:              {API, Overrides, CacheKeyGenerator},
 		QuerierRing:                      {API, RuntimeConfig, MemberlistKV, Vault},
 		QueryFrontend:                    {QueryFrontendTripperware, MemberlistKV, Vault},
-		QueryFrontendQueryPlanner:        {API, Overrides, QuerierRing, CacheKeyGenerator},
+		QueryFrontendQueryPlanner:        {API, Overrides, QuerierRing, QueryFrontendCacheClient, CacheKeyGenerator},
 		QueryFrontendTopicOffsetsReaders: {IngesterPartitionRing},
-		QueryFrontendTripperware:         {API, Overrides, QueryFrontendCodec, QueryFrontendTopicOffsetsReaders, QueryFrontendQueryPlanner, CacheKeyGenerator},
+		QueryFrontendTripperware:         {API, Overrides, QueryFrontendCodec, QueryFrontendTopicOffsetsReaders, QueryFrontendQueryPlanner, QueryFrontendCacheClient, CacheKeyGenerator},
 		QueryScheduler:                   {API, Overrides, MemberlistKV, Vault},
 		Queryable:                        {Overrides, DistributorService, IngesterRing, IngesterPartitionRing, API, StoreQueryable, MemberlistKV, QuerierQueryPlanner},
 		Ruler:                            {DistributorService, StoreQueryable, RulerStorage, Vault, QuerierQueryPlanner},

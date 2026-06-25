@@ -995,6 +995,10 @@ func (m mockQueryLimitsProvider) GetMaxCacheFreshness(_ context.Context) (time.D
 	return m.m.maxCacheFreshness, nil
 }
 
+func (m mockQueryLimitsProvider) AllowCachingUnalignedQueries(ctx context.Context) (bool, error) {
+	return m.m.resultsCacheForUnalignedQueryEnabled, nil
+}
+
 type mockHandler struct {
 	mock.Mock
 }

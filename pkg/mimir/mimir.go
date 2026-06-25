@@ -21,6 +21,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/gorilla/mux"
+	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/clusterutil"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/grpcutil"
@@ -934,6 +935,7 @@ type Mimir struct {
 	QueryFrontendTripperware        querymiddleware.Tripperware
 	QueryFrontendTopicOffsetsReader *ingest.SingleClusterTopicOffsetsReader
 	QueryFrontendCodec              querymiddleware.Codec
+	QueryFrontendCacheClient        cache.Cache
 	Ruler                           *ruler.Ruler
 	RulerStorage                    rulestore.RuleStore
 	Alertmanager                    *alertmanager.MultitenantAlertmanager

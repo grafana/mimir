@@ -18,6 +18,7 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/util/annotations"
+	"go.opentelemetry.io/otel"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/querierpb"
@@ -29,6 +30,13 @@ import (
 	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
+
+// cacheVersion is the version of cache entries read and written by this operator.
+// If a backwards-incompatible change is made to the cache entry format, or a bug is discovered that means all existing
+// cache entries should be invalidated, this version number should be incremented.
+const cacheVersion = 1
+
+var tracer = otel.Tracer("pkg/streamingpromql/optimize/plan/splitandcache")
 
 // CacheOperator is an operator that uses a cache to avoid recomputing previously computed results.
 // It works with a single cache entry made up of multiple extents.
@@ -198,6 +206,11 @@ func (c *CacheOperator) fetchExistingExtents(ctx context.Context) ([]CachedExten
 	cacheHit := cacheHits[c.hashedKey]
 
 	if cacheHit == nil {
+		spanLogger.DebugLog(
+			"msg", "no cache entry found",
+			"hashed_key", c.hashedKey,
+			"desired_time_range", c.DesiredTimeRange,
+		)
 		return nil, nil
 	}
 
@@ -209,7 +222,11 @@ func (c *CacheOperator) fetchExistingExtents(ctx context.Context) ([]CachedExten
 
 	if !bytes.Equal(cacheEntry.CacheKey, c.key) {
 		// The cache key in the entry does not match the expected key: we've encountered a hash collision, so don't use the cached results.
-		spanLogger.DebugLog("msg", "ignoring cache entry as the cache key in the entry does not match the expected key, presumably due to a hash collision", "hashed_key", c.hashedKey)
+		spanLogger.DebugLog(
+			"msg", "ignoring cache entry as the cache key in the entry does not match the expected key, presumably due to a hash collision",
+			"hashed_key", c.hashedKey,
+			"desired_time_range", c.DesiredTimeRange,
+		)
 		return nil, nil
 	}
 
@@ -227,6 +244,7 @@ func (c *CacheOperator) fetchExistingExtents(ctx context.Context) ([]CachedExten
 				"ttl", ttl,
 				"expiration_time", expirationTime,
 				"evaluation_time", c.evaluationTime,
+				"desired_time_range", c.DesiredTimeRange,
 			)
 		}
 
@@ -240,10 +258,23 @@ func (c *CacheOperator) fetchExistingExtents(ctx context.Context) ([]CachedExten
 		}
 	}
 
+	spanLogger.DebugLog(
+		"msg", "cache hit",
+		"hashed_key", c.hashedKey,
+		"desired_time_range", c.DesiredTimeRange,
+		"non_expired_extent_count", len(cacheEntry.Extents),
+	)
+
 	return cacheEntry.Extents, nil
 }
 
 func (c *CacheOperator) calculateExtents(ctx context.Context, existingExtents []CachedExtent) (extents, error) {
+	spanLogger, ctx := spanlogger.New(ctx, c.logger, tracer, "CacheOperator.calculateExtents")
+	spanLogger.SetTag("hashed_key", c.hashedKey)
+	spanLogger.SetTag("desired_time_range", c.DesiredTimeRange)
+
+	defer spanLogger.Finish()
+
 	nextStartT := c.DesiredTimeRange.StartT
 	nextExistingExtentIdx := 0
 
@@ -261,6 +292,13 @@ func (c *CacheOperator) calculateExtents(ctx context.Context, existingExtents []
 		cacheableRangeEndT: calculateLastStepAlignedPoint(c.DesiredTimeRange.StartT, min(maxFreshnessThreshold, stepAlignedEndT), c.DesiredTimeRange.IntervalMilliseconds),
 	}
 
+	spanLogger.DebugLog(
+		"msg", "calculated freshness threshold",
+		"max_freshness_threshold", maxFreshnessThreshold,
+		"step_aligned_end_ts", stepAlignedEndT,
+		"cacheable_range_end_ts", result.cacheableRangeEndT,
+	)
+
 	for nextStartT <= stepAlignedEndT {
 		if nextExistingExtentIdx < len(existingExtents) && existingExtents[nextExistingExtentIdx].StartT <= nextStartT {
 			extent := existingExtents[nextExistingExtentIdx]
@@ -274,8 +312,11 @@ func (c *CacheOperator) calculateExtents(ctx context.Context, existingExtents []
 
 				// Note that we don't have to align the extent's end time to the step, as it would have been aligned when the extent was written.
 				nextStartT = extent.EndT + c.DesiredTimeRange.IntervalMilliseconds
+
+				c.logUsedExtent(spanLogger, extent)
 			} else {
 				result.cacheableExtentsBeforeDesiredTimeRange = append(result.cacheableExtentsBeforeDesiredTimeRange, extent)
+				c.logUnusedExtent(spanLogger, extent, "before")
 			}
 
 			nextExistingExtentIdx++
@@ -297,7 +338,7 @@ func (c *CacheOperator) calculateExtents(ctx context.Context, existingExtents []
 		}
 
 		timeRange := types.NewRangeQueryTimeRange(timestamp.Time(extentStartT), timestamp.Time(extentEndT), time.Duration(c.DesiredTimeRange.IntervalMilliseconds)*time.Millisecond)
-		operator, err := c.Materializer.ConvertNodeToInstantVectorOperator(c.Inner, timeRange)
+		operator, err := c.Materializer.ConvertNodeToInstantVectorOperator(ctx, c.Inner, timeRange)
 		if err != nil {
 			return extents{}, err
 		}
@@ -311,6 +352,12 @@ func (c *CacheOperator) calculateExtents(ctx context.Context, existingExtents []
 		}
 
 		nextStartT = extentEndT + c.DesiredTimeRange.IntervalMilliseconds
+
+		spanLogger.DebugLog(
+			"msg", "will freshly evaluate at least part of the desired time range",
+			"extent_start_ts", extentStartT,
+			"extent_end_ts", extentEndT,
+		)
 	}
 
 	// If there is an extent just after the desired time range, include that in extentsForDesiredTimeRange
@@ -326,8 +373,43 @@ func (c *CacheOperator) calculateExtents(ctx context.Context, existingExtents []
 	}
 
 	result.cacheableExtentsAfterDesiredTimeRange = existingExtents[nextExistingExtentIdx:]
+	for _, e := range result.cacheableExtentsAfterDesiredTimeRange {
+		c.logUnusedExtent(spanLogger, e, "after")
+	}
+
+	spanLogger.DebugLog(
+		"msg", "finished",
+		"existing_extents_before_desired_time_range", len(result.cacheableExtentsBeforeDesiredTimeRange),
+		"new_or_existing_extents_in_desired_time_range", len(result.inDesiredTimeRange),
+		"existing_extents_after_desired_time_range", len(result.cacheableExtentsAfterDesiredTimeRange),
+		"should_write_cache_entry", result.shouldWriteCacheEntry,
+		"cacheable_range_start_ts", result.cacheableRangeStartT,
+		"cacheable_range_end_ts", result.cacheableRangeEndT,
+	)
 
 	return result, nil
+}
+
+func (c *CacheOperator) logUnusedExtent(spanLogger *spanlogger.SpanLogger, extent CachedExtent, timeRelationship string) {
+	spanLogger.DebugLog(
+		"msg", "ignoring cached extent "+timeRelationship+" desired time range",
+		"extent_oldest_evaluation_time", extent.OldestEvaluationTime,
+		"extent_start_ts", extent.StartT,
+		"extent_end_ts", extent.EndT,
+		"extent_newest_evaluation_trace_id", extent.NewestEvaluationTraceID,
+		"extent_series_count", len(extent.SeriesMetadata),
+	)
+}
+
+func (c *CacheOperator) logUsedExtent(spanLogger *spanlogger.SpanLogger, extent CachedExtent) {
+	spanLogger.DebugLog(
+		"msg", "will use cached extent for at least part of the desired time range",
+		"extent_oldest_evaluation_time", extent.OldestEvaluationTime,
+		"extent_start_ts", extent.StartT,
+		"extent_end_ts", extent.EndT,
+		"extent_newest_evaluation_trace_id", extent.NewestEvaluationTraceID,
+		"extent_series_count", len(extent.SeriesMetadata),
+	)
 }
 
 func (c *CacheOperator) populateTTLs(ctx context.Context) error {
@@ -1102,7 +1184,7 @@ func (e *evaluatedExtent) Close() {
 }
 
 type InstantVectorMaterializer interface {
-	ConvertNodeToInstantVectorOperator(node planning.Node, timeRange types.QueryTimeRange) (types.InstantVectorOperator, error)
+	ConvertNodeToInstantVectorOperator(ctx context.Context, node planning.Node, timeRange types.QueryTimeRange) (types.InstantVectorOperator, error)
 }
 
 type LimitsProvider interface {
@@ -1110,6 +1192,7 @@ type LimitsProvider interface {
 	GetMinOutOfOrderResultsCacheTTL(ctx context.Context) (time.Duration, error)
 	GetMaxCacheFreshness(ctx context.Context) (time.Duration, error)
 	GetMaxOutOfOrderTimeWindow(ctx context.Context) (time.Duration, error)
+	AllowCachingUnalignedQueries(ctx context.Context) (bool, error)
 }
 
 // addToMemoryConsumptionEstimate estimates the memory consumption of this extent and adds it to the given memory consumption tracker.

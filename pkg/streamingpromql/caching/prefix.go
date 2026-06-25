@@ -64,3 +64,14 @@ func TenantPrefixGenerator(ctx context.Context) (string, error) {
 
 	return fmt.Sprintf("%s:", tenant.JoinTenantIDs(tenantIDs)), nil
 }
+
+func VersioningAndItemTypePrefixGenerator(base PrefixGenerator, version uint, itemType string) PrefixGenerator {
+	return func(ctx context.Context) (string, error) {
+		prefix, err := base(ctx)
+		if err != nil {
+			return "", err
+		}
+
+		return fmt.Sprintf("%s@v%d:%s:", itemType, version, prefix), nil
+	}
+}
