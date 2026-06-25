@@ -272,7 +272,7 @@ func TestSubquerySpinOffMapper(t *testing.T) {
 
 		t.Run(tt.name, func(t *testing.T) {
 			stats := NewSubquerySpinOffMapperStats()
-			mapper := NewSubquerySpinOffMapper(defaultStepFunc, log.NewNopLogger(), stats)
+			mapper := NewSubquerySpinOffMapper(NewSelectorSubquerySpinOffWrapper(), defaultStepFunc, log.NewNopLogger(), stats)
 			ctx := context.Background()
 			parser := promqlext.NewPromQLParser()
 			expr, err := parser.ParseExpr(tt.in)
