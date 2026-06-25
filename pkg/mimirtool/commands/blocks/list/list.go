@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package main
+package list
 
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
-	"log"
 	"math"
 	"os"
 	"os/signal"
@@ -16,7 +16,8 @@ import (
 	"text/tabwriter"
 	"time"
 
-	gokitlog "github.com/go-kit/log"
+	"github.com/alecthomas/kingpin/v2"
+	"github.com/go-kit/log"
 	"github.com/grafana/dskit/flagext"
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/prometheus/model/labels"
@@ -29,7 +30,7 @@ import (
 	"github.com/grafana/mimir/pkg/util/listblocks"
 )
 
-type config struct {
+type Command struct {
 	bucket              bucket.Config
 	userID              string
 	format              string
@@ -49,78 +50,90 @@ type config struct {
 	useUlidTimeForMinTimeCheck bool
 }
 
-func main() {
-	// Clean up all flags registered via init() methods of 3rd-party libraries.
-	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
+func (c *Command) RegisterFlags(f *flag.FlagSet) {
+	c.bucket.RegisterFlags(f)
+	f.StringVar(&c.userID, "user", "", "The user (tenant) that owns the blocks to be listed")
+	f.StringVar(&c.format, "format", "tabbed", "The format of the output. Must be one of \"tabbed\", \"json\", or \"yaml\"")
+	f.BoolVar(&c.showDeleted, "show-deleted", false, "Show blocks marked for deletion")
+	f.BoolVar(&c.showLabels, "show-labels", false, "Show block labels")
+	f.BoolVar(&c.showUlidTime, "show-ulid-time", false, "Show time from ULID")
+	f.BoolVar(&c.showSources, "show-sources", false, "Show compaction sources")
+	f.BoolVar(&c.showParents, "show-parents", false, "Show parent blocks")
+	f.BoolVar(&c.showHints, "show-hints", false, "Show compaction hints")
+	f.BoolVar(&c.showCompactionLevel, "show-compaction-level", false, "Show compaction level")
+	f.BoolVar(&c.showBlockSize, "show-block-size", false, "Show size of block based on details in meta.json, if available")
+	f.BoolVar(&c.showStats, "show-stats", false, "Show block stats (number of series, chunks, samples)")
+	f.IntVar(&c.splitCount, "split-count", 0, "It not 0, shows split number that would be used for grouping blocks during split compaction")
+	f.Var(&c.minTime, "min-time", "If set, only blocks with MinTime >= this value are printed")
+	f.Var(&c.maxTime, "max-time", "If set, only blocks with MaxTime <= this value are printed")
+	f.BoolVar(&c.useUlidTimeForMinTimeCheck, "use-ulid-time-for-min-time-check", false, "If true, meta.json files for blocks with ULID time before min-time are not loaded. This may incorrectly skip blocks that have data from the future (minT/maxT higher than ULID).")
+}
 
-	logger := gokitlog.NewNopLogger()
-	cfg := config{}
-	cfg.bucket.RegisterFlags(flag.CommandLine)
-	flag.StringVar(&cfg.userID, "user", "", "The user (tenant) that owns the blocks to be listed")
-	flag.StringVar(&cfg.format, "format", "tabbed", "The format of the output. Must be one of \"tabbed\", \"json\", or \"yaml\"")
-	flag.BoolVar(&cfg.showDeleted, "show-deleted", false, "Show blocks marked for deletion")
-	flag.BoolVar(&cfg.showLabels, "show-labels", false, "Show block labels")
-	flag.BoolVar(&cfg.showUlidTime, "show-ulid-time", false, "Show time from ULID")
-	flag.BoolVar(&cfg.showSources, "show-sources", false, "Show compaction sources")
-	flag.BoolVar(&cfg.showParents, "show-parents", false, "Show parent blocks")
-	flag.BoolVar(&cfg.showHints, "show-hints", false, "Show compaction hints")
-	flag.BoolVar(&cfg.showCompactionLevel, "show-compaction-level", false, "Show compaction level")
-	flag.BoolVar(&cfg.showBlockSize, "show-block-size", false, "Show size of block based on details in meta.json, if available")
-	flag.BoolVar(&cfg.showStats, "show-stats", false, "Show block stats (number of series, chunks, samples)")
-	flag.IntVar(&cfg.splitCount, "split-count", 0, "It not 0, shows split number that would be used for grouping blocks during split compaction")
-	flag.Var(&cfg.minTime, "min-time", "If set, only blocks with MinTime >= this value are printed")
-	flag.Var(&cfg.maxTime, "max-time", "If set, only blocks with MaxTime <= this value are printed")
-	flag.BoolVar(&cfg.useUlidTimeForMinTimeCheck, "use-ulid-time-for-min-time-check", false, "If true, meta.json files for blocks with ULID time before min-time are not loaded. This may incorrectly skip blocks that have data from the future (minT/maxT higher than ULID).")
+func (c *Command) Register(parent *kingpin.CmdClause, getLogger func() log.Logger) {
+	cmd := parent.Command("list", "List blocks and show block details of a tenant.").
+		Action(func(_ *kingpin.ParseContext) error {
+			return c.Run(getLogger())
+		})
 
-	// Parse CLI flags.
-	if err := flagext.ParseFlagsWithoutArguments(flag.CommandLine); err != nil {
-		log.Fatalln(err.Error())
+	fs := flag.NewFlagSet("list", flag.PanicOnError)
+	c.RegisterFlags(fs)
+	fs.VisitAll(func(f *flag.Flag) {
+		cmd.Flag(f.Name, f.Usage).SetValue(f.Value)
+	})
+}
+
+func (c *Command) Validate() error {
+	if c.userID == "" {
+		return errors.New("no user specified")
 	}
-
-	if cfg.userID == "" {
-		log.Fatalln("no user specified")
+	if !slices.Contains([]string{"tabbed", "json", "yaml"}, c.format) {
+		return fmt.Errorf("an invalid format was specified: %s", c.format)
 	}
+	return nil
+}
 
-	if !slices.Contains([]string{"tabbed", "json", "yaml"}, cfg.format) {
-		log.Fatalln("an invalid format was specified:", cfg.format)
+func (c *Command) Run(logger log.Logger) error {
+	if err := c.Validate(); err != nil {
+		return err
 	}
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT)
 	defer cancel()
 
-	bkt, err := bucket.NewClient(ctx, cfg.bucket, "bucket", logger, nil)
+	bkt, err := bucket.NewClient(ctx, c.bucket, "bucket", logger, nil)
 	if err != nil {
-		log.Fatalln("failed to create bucket:", err)
+		return fmt.Errorf("failed to create bucket: %w", err)
 	}
 
 	loadMetasMinTime := time.Time{}
-	if cfg.useUlidTimeForMinTimeCheck {
-		loadMetasMinTime = time.Time(cfg.minTime)
+	if c.useUlidTimeForMinTimeCheck {
+		loadMetasMinTime = time.Time(c.minTime)
 	}
 
-	metas, deleteMarkerDetails, noCompactMarkerDetails, err := listblocks.LoadMetaFilesAndMarkers(ctx, bkt, cfg.userID, cfg.showDeleted, loadMetasMinTime)
+	metas, deleteMarkerDetails, noCompactMarkerDetails, err := listblocks.LoadMetaFilesAndMarkers(ctx, bkt, c.userID, c.showDeleted, loadMetasMinTime)
 	if err != nil {
-		log.Fatalln("failed to read block metadata:", err)
+		return fmt.Errorf("failed to read block metadata: %w", err)
 	}
 
-	blocks := buildBlocksList(metas, deleteMarkerDetails, noCompactMarkerDetails, cfg)
-	if cfg.format == "tabbed" {
-		printTabbedOutput(blocks, cfg)
-		return
+	blocks := buildBlocksList(metas, deleteMarkerDetails, noCompactMarkerDetails, c)
+	if c.format == "tabbed" {
+		printTabbedOutput(blocks, c)
+		return nil
 	}
 
 	var b []byte
-	if cfg.format == "yaml" {
+	if c.format == "yaml" {
 		b, err = yaml.Marshal(blocks)
 	} else {
 		b, err = json.Marshal(blocks)
 	}
 
 	if err != nil {
-		log.Fatalln("failed to marshal blocks list", err)
+		return fmt.Errorf("failed to marshal blocks list: %w", err)
 	}
 
 	fmt.Println(string(b))
+	return nil
 }
 
 type noCompactSummary struct {
@@ -130,7 +143,7 @@ type noCompactSummary struct {
 
 // buildBlocksList constructs a map of fields for each block that will be later marshalled by printTabbedOutput or into JSON/YAML
 // printTabbedOutput uses key names created in this function directly so synchronize changes there (some keys aren't used by it)
-func buildBlocksList(metas map[ulid.ULID]*block.Meta, deleteMarkerDetails map[ulid.ULID]block.DeletionMark, noCompactMarkerDetails map[ulid.ULID]block.NoCompactMark, cfg config) []map[string]any {
+func buildBlocksList(metas map[ulid.ULID]*block.Meta, deleteMarkerDetails map[ulid.ULID]block.DeletionMark, noCompactMarkerDetails map[ulid.ULID]block.NoCompactMark, cfg *Command) []map[string]any {
 	blocks := make([]map[string]any, 0, len(metas))
 	for _, b := range listblocks.SortBlocks(metas) {
 		if !cfg.showDeleted && deleteMarkerDetails[b.ULID].DeletionTime != 0 {
@@ -214,7 +227,7 @@ func buildBlocksList(metas map[ulid.ULID]*block.Meta, deleteMarkerDetails map[ul
 // nolint:errcheck
 //
 //goland:noinspection GoUnhandledErrorResult
-func printTabbedOutput(blocks []map[string]any, cfg config) {
+func printTabbedOutput(blocks []map[string]any, cfg *Command) {
 
 	tabber := tabwriter.NewWriter(os.Stdout, 1, 4, 3, ' ', 0)
 	defer tabber.Flush()

@@ -3,7 +3,7 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: Grafana Labs.
 
-package main
+package copy
 
 import (
 	"bytes"
@@ -21,6 +21,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/alecthomas/kingpin/v2"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/concurrency"
@@ -196,43 +197,47 @@ func newMetrics(reg prometheus.Registerer) *metrics {
 	}
 }
 
-func main() {
-	// Clean up all flags registered via init() methods of 3rd-party libraries.
-	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
+type Command struct {
+	cfg config
+}
 
-	cfg := config{}
-	cfg.registerFlags(flag.CommandLine)
+func (c *Command) RegisterFlags(f *flag.FlagSet) {
+	c.cfg.registerFlags(f)
+}
 
-	// Parse CLI arguments.
-	if err := flagext.ParseFlagsWithoutArguments(flag.CommandLine); err != nil {
-		fmt.Fprintln(os.Stderr, err.Error())
-		os.Exit(1)
-	}
+func (c *Command) Register(parent *kingpin.CmdClause, getLogger func() log.Logger) {
+	cmd := parent.Command("copy", "Copy blocks between two object storage buckets or to a backfill destination.").
+		Action(func(_ *kingpin.ParseContext) error {
+			return c.Run(getLogger())
+		})
 
+	fs := flag.NewFlagSet("copy", flag.PanicOnError)
+	c.RegisterFlags(fs)
+	fs.VisitAll(func(f *flag.Flag) {
+		cmd.Flag(f.Name, f.Usage).SetValue(f.Value)
+	})
+}
+
+func (c *Command) Run(logger log.Logger) error {
+	cfg := c.cfg
 	if err := cfg.validate(); err != nil {
-		fmt.Fprintln(os.Stderr, err.Error())
-		os.Exit(1)
+		return err
 	}
 
 	userMapping, err := cfg.parseUserMapping()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err.Error())
-		os.Exit(1)
+		return err
 	}
-
-	logger := log.NewLogfmtLogger(os.Stdout)
-	logger = log.With(logger, "ts", log.DefaultTimestampUTC)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
 	if cfg.clearCopyMarkers {
 		if err := clearCopyMarkers(ctx, cfg, logger); err != nil {
-			level.Error(logger).Log("msg", "failed to clear copy markers", "err", err)
-			os.Exit(1)
+			return fmt.Errorf("failed to clear copy markers: %w", err)
 		}
 		level.Info(logger).Log("msg", "finished clearing copy markers")
-		os.Exit(0)
+		return nil
 	}
 
 	m := newMetrics(prometheus.DefaultRegisterer)
@@ -246,7 +251,7 @@ func main() {
 			WriteTimeout: 10 * time.Second,
 		}
 		if err := server.ListenAndServe(); err != nil {
-			level.Error(logger).Log("msg", "failed to start HTTP server")
+			level.Error(logger).Log("msg", "failed to start HTTP server", "err", err)
 			os.Exit(1)
 		}
 	}()
@@ -254,9 +259,9 @@ func main() {
 	success := runCopy(ctx, cfg, userMapping, logger, m)
 	if cfg.copyPeriod <= 0 {
 		if success {
-			os.Exit(0)
+			return nil
 		}
-		os.Exit(1)
+		return errors.New("failed to copy blocks")
 	}
 
 	t := time.NewTicker(cfg.copyPeriod)
@@ -269,6 +274,7 @@ func main() {
 		case <-ctx.Done():
 		}
 	}
+	return nil
 }
 
 func runCopy(ctx context.Context, cfg config, userMapping map[string]string, logger log.Logger, m *metrics) bool {

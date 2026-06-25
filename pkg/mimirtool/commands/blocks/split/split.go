@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package main
+package split
 
 import (
 	"context"
@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/alecthomas/kingpin/v2"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/concurrency"
@@ -69,40 +70,42 @@ func (c *config) validate() error {
 	return nil
 }
 
-func main() {
-	// Clean up all flags registered via init() methods of 3rd-party libraries.
-	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
+type Command struct {
+	cfg config
+}
 
-	cfg := config{}
-	cfg.registerFlags(flag.CommandLine)
+func (c *Command) RegisterFlags(f *flag.FlagSet) {
+	c.cfg.registerFlags(f)
+}
 
-	// Parse CLI arguments.
-	if err := flagext.ParseFlagsWithoutArguments(flag.CommandLine); err != nil {
-		fmt.Fprintln(os.Stderr, err.Error())
-		os.Exit(1)
-	}
+func (c *Command) Register(parent *kingpin.CmdClause, getLogger func() log.Logger) {
+	cmd := parent.Command("split", "Split blocks larger than a duration into multiple blocks.").
+		Action(func(_ *kingpin.ParseContext) error {
+			return c.Run(getLogger())
+		})
 
+	fs := flag.NewFlagSet("split", flag.PanicOnError)
+	c.RegisterFlags(fs)
+	fs.VisitAll(func(f *flag.Flag) {
+		cmd.Flag(f.Name, f.Usage).SetValue(f.Value)
+	})
+}
+
+func (c *Command) Run(logger log.Logger) error {
+	cfg := c.cfg
 	if err := cfg.validate(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+		return err
 	}
-
-	logger := log.NewLogfmtLogger(os.Stdout)
-	logger = log.With(logger, "ts", log.DefaultTimestampUTC)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
 	bkt, err := bucket.NewClient(ctx, cfg.bucket, "bucket", logger, nil)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, errors.Wrap(err, "failed to create bucket"))
-		os.Exit(1)
+		return errors.Wrap(err, "failed to create bucket")
 	}
 
-	if err := splitBlocks(ctx, cfg, bkt, logger); err != nil {
-		fmt.Fprintln(os.Stderr, err.Error())
-		os.Exit(1)
-	}
+	return splitBlocks(ctx, cfg, bkt, logger)
 }
 
 func splitBlocks(ctx context.Context, cfg config, bkt objstore.Bucket, logger log.Logger) error {

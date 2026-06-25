@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package main
+package mark
 
 import (
 	"bufio"
@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/alecthomas/kingpin/v2"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/concurrency"
@@ -29,7 +30,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 )
 
-type config struct {
+type Command struct {
 	bucket             bucket.Config
 	tenantID           string
 	markType           string
@@ -43,36 +44,49 @@ type config struct {
 	concurrency        int
 }
 
-func (cfg *config) registerFlags(f *flag.FlagSet) {
-	cfg.bucket.RegisterFlags(f)
-	f.StringVar(&cfg.markType, "mark-type", "", "Mark type to create or remove, valid options: deletion, no-compact. Required.")
-	f.StringVar(&cfg.tenantID, "tenant", "", "Tenant ID of the owner of the block(s). If empty then each block is assumed to be of the form tenantID/blockID, blockID otherwise.")
-	f.StringVar(&cfg.details, "details", "", "Details to include in an added mark.")
-	f.Var(&cfg.blocks, "blocks", "Comma separated list of blocks. If non-empty, blocks-file is ignored.")
-	f.StringVar(&cfg.blocksFile, "blocks-file", "-", "File containing a block per-line. Defaults to standard input. Ignored if blocks is non-empty")
-	f.IntVar(&cfg.resumeIndex, "resume-index", 0, "The index of the block to resume from")
-	f.BoolVar(&cfg.remove, "remove", false, "If marks should be removed rather than uploaded.")
-	f.StringVar(&cfg.metaPresencePolicy, "meta-presence-policy", "skip-block", "Policy on presence of block meta.json files: \"none\", \"skip-block\", or \"require\".")
-	f.BoolVar(&cfg.dryRun, "dry-run", false, "Log changes that would be made instead of actually making them.")
-	f.IntVar(&cfg.concurrency, "concurrency", 16, "How many markers to upload or remove concurrently.")
+func (c *Command) RegisterFlags(f *flag.FlagSet) {
+	c.bucket.RegisterFlags(f)
+	f.StringVar(&c.markType, "mark-type", "", "Mark type to create or remove, valid options: deletion, no-compact. Required.")
+	f.StringVar(&c.tenantID, "tenant", "", "Tenant ID of the owner of the block(s). If empty then each block is assumed to be of the form tenantID/blockID, blockID otherwise.")
+	f.StringVar(&c.details, "details", "", "Details to include in an added mark.")
+	f.Var(&c.blocks, "blocks", "Comma separated list of blocks. If non-empty, blocks-file is ignored.")
+	f.StringVar(&c.blocksFile, "blocks-file", "-", "File containing a block per-line. Defaults to standard input. Ignored if blocks is non-empty")
+	f.IntVar(&c.resumeIndex, "resume-index", 0, "The index of the block to resume from")
+	f.BoolVar(&c.remove, "remove", false, "If marks should be removed rather than uploaded.")
+	f.StringVar(&c.metaPresencePolicy, "meta-presence-policy", "skip-block", "Policy on presence of block meta.json files: \"none\", \"skip-block\", or \"require\".")
+	f.BoolVar(&c.dryRun, "dry-run", false, "Log changes that would be made instead of actually making them.")
+	f.IntVar(&c.concurrency, "concurrency", 16, "How many markers to upload or remove concurrently.")
 }
 
-func (cfg *config) validate() error {
-	if cfg.markType == "" {
+func (c *Command) Register(parent *kingpin.CmdClause, getLogger func() log.Logger) {
+	cmd := parent.Command("mark", "Create or remove block markers (deletion, no-compact) in object storage.").
+		Action(func(_ *kingpin.ParseContext) error {
+			return c.Run(getLogger())
+		})
+
+	fs := flag.NewFlagSet("mark", flag.PanicOnError)
+	c.RegisterFlags(fs)
+	fs.VisitAll(func(f *flag.Flag) {
+		cmd.Flag(f.Name, f.Usage).SetValue(f.Value)
+	})
+}
+
+func (c *Command) Validate() error {
+	if c.markType == "" {
 		return errors.New("-mark-type is required")
 	}
-	if cfg.tenantID != "" {
-		if err := tenant.ValidTenantID(cfg.tenantID); err != nil {
+	if c.tenantID != "" {
+		if err := tenant.ValidTenantID(c.tenantID); err != nil {
 			return fmt.Errorf("-tenant is invalid: %w", err)
 		}
 	}
-	if cfg.blocksFile == "" && len(cfg.blocks) == 0 {
+	if c.blocksFile == "" && len(c.blocks) == 0 {
 		return errors.New("one of -blocks or -blocks-file must be specified")
 	}
-	if cfg.concurrency < 1 {
+	if c.concurrency < 1 {
 		return errors.New("-concurrency must be positive")
 	}
-	if cfg.resumeIndex < 0 {
+	if c.resumeIndex < 0 {
 		return errors.New("-resume-index must be non-negative")
 	}
 	return nil
@@ -83,77 +97,59 @@ type inputBlock struct {
 	blockID  ulid.ULID
 }
 
-func main() {
-	var cfg config
-	cfg.registerFlags(flag.CommandLine)
-
-	logger := log.NewLogfmtLogger(os.Stdout)
-	logger = log.With(logger, "time", log.DefaultTimestampUTC)
-
-	// Parse CLI arguments.
-	if err := flagext.ParseFlagsWithoutArguments(flag.CommandLine); err != nil {
-		level.Error(logger).Log("msg", "failed to parse flags", "err", err)
-		os.Exit(1)
+func (c *Command) Run(logger log.Logger) error {
+	if err := c.Validate(); err != nil {
+		return fmt.Errorf("flags did not pass validation: %w", err)
 	}
 
-	if err := cfg.validate(); err != nil {
-		level.Error(logger).Log("msg", "flags did not pass validation", "err", err)
-		os.Exit(1)
-	}
-
-	blocks, err := getBlocks(cfg.blocks, cfg.blocksFile, cfg.tenantID)
+	blocks, err := getBlocks(c.blocks, c.blocksFile, c.tenantID)
 	if err != nil {
-		level.Error(logger).Log("msg", "failed to read blocks to mark", "err", err)
-		os.Exit(1)
+		return fmt.Errorf("failed to read blocks to mark: %w", err)
 	}
 
 	ctx := context.Background()
-	bkt, err := bucket.NewClient(ctx, cfg.bucket, "bucket", logger, nil)
+	bkt, err := bucket.NewClient(ctx, c.bucket, "bucket", logger, nil)
 	if err != nil {
-		level.Error(logger).Log("msg", "failed to create bucket", "err", err)
-		os.Exit(1)
+		return fmt.Errorf("failed to create bucket: %w", err)
 	}
 
-	if cfg.resumeIndex >= len(blocks) {
-		level.Error(logger).Log("msg", "invalid resume index", "resumeIndex", cfg.resumeIndex, "numBlocks", len(blocks))
-		os.Exit(1)
-	} else if cfg.resumeIndex > 0 {
-		level.Info(logger).Log("msg", "skipping blocks due to resume", "resumeIndex", cfg.resumeIndex, "numBlocks", len(blocks))
+	if c.resumeIndex >= len(blocks) {
+		return fmt.Errorf("invalid resume index %d for %d blocks", c.resumeIndex, len(blocks))
+	} else if c.resumeIndex > 0 {
+		level.Info(logger).Log("msg", "skipping blocks due to resume", "resumeIndex", c.resumeIndex, "numBlocks", len(blocks))
 	}
 
-	blocks = blocks[cfg.resumeIndex:]
+	blocks = blocks[c.resumeIndex:]
 	if len(blocks) == 0 {
 		level.Warn(logger).Log("msg", "no blocks, nothing marked")
-		os.Exit(0)
+		return nil
 	}
 
-	mpf, err := metaPresenceFunc(bkt, cfg.metaPresencePolicy)
+	mpf, err := metaPresenceFunc(bkt, c.metaPresencePolicy)
 	if err != nil {
-		level.Error(logger).Log("msg", "failed to handle meta validation policy", "err", err)
-		os.Exit(1)
+		return fmt.Errorf("failed to handle meta validation policy: %w", err)
 	}
 
-	mbf, suffix, err := markerBytesFunc(cfg.markType, cfg.details)
+	mbf, suffix, err := markerBytesFunc(c.markType, c.details)
 	if err != nil {
-		level.Error(logger).Log("msg", "failed to handle marker type", "err", err)
-		os.Exit(1)
+		return fmt.Errorf("failed to handle marker type: %w", err)
 	}
 
 	var f func(context.Context, int) error
-	if cfg.remove {
-		f = removeMarksFunc(bkt, blocks, mpf, suffix, logger, cfg.dryRun)
+	if c.remove {
+		f = removeMarksFunc(bkt, blocks, mpf, suffix, logger, c.dryRun)
 	} else {
-		f = addMarksFunc(bkt, blocks, mpf, mbf, suffix, logger, cfg.dryRun)
+		f = addMarksFunc(bkt, blocks, mpf, mbf, suffix, logger, c.dryRun)
 	}
 
-	if successUntil, err := forEachJobSuccessUntil(ctx, len(blocks), cfg.concurrency, f); err != nil {
+	if successUntil, err := forEachJobSuccessUntil(ctx, len(blocks), c.concurrency, f); err != nil {
 		// since indices were possibly based on a subslice, account for that as a starting point
 		// successUntil is known to be the first index that did not succeed
-		resumeIndex := cfg.resumeIndex + successUntil
-
-		level.Error(logger).Log("msg", "encountered a failure", "err", err, "resumeIndex", resumeIndex)
-		os.Exit(1)
+		resumeIndex := c.resumeIndex + successUntil
+		return fmt.Errorf("encountered a failure (resume with -resume-index=%d): %w", resumeIndex, err)
 	}
+
+	return nil
 }
 
 // forEachJobSuccessUntil executes a function concurrently until an error is encountered or all jobs have completed

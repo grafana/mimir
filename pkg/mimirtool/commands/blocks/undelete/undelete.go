@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package main
+package undelete
 
 import (
 	"bufio"
@@ -16,6 +16,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/alecthomas/kingpin/v2"
+	"github.com/go-kit/log"
 	"github.com/grafana/dskit/flagext"
 	"github.com/oklog/ulid/v2"
 	"github.com/pkg/errors"
@@ -45,19 +47,31 @@ func (c *config) registerFlags(f *flag.FlagSet) {
 	f.BoolVar(&c.dryRun, "dry-run", false, "When set the changes that would be made to object storage are only logged rather than performed.")
 }
 
-func main() {
-	cfg := config{}
-	cfg.registerFlags(flag.CommandLine)
+type Command struct {
+	cfg config
+}
 
-	// Parse CLI arguments.
-	if err := flagext.ParseFlagsWithoutArguments(flag.CommandLine); err != nil {
-		fmt.Fprintln(os.Stderr, err.Error())
-		os.Exit(1)
-	}
+func (c *Command) RegisterFlags(f *flag.FlagSet) {
+	c.cfg.registerFlags(f)
+}
 
+func (c *Command) Register(parent *kingpin.CmdClause, _ func() log.Logger) {
+	cmd := parent.Command("undelete", "Restore deleted blocks in versioned object storage.").
+		Action(func(_ *kingpin.ParseContext) error {
+			return c.Run()
+		})
+
+	fs := flag.NewFlagSet("undelete", flag.PanicOnError)
+	c.RegisterFlags(fs)
+	fs.VisitAll(func(f *flag.Flag) {
+		cmd.Flag(f.Name, f.Usage).SetValue(f.Value)
+	})
+}
+
+func (c *Command) Run() error {
+	cfg := c.cfg
 	if err := cfg.bucketConfig.Validate(); err != nil {
-		fmt.Fprintln(os.Stderr, err.Error())
-		os.Exit(1)
+		return err
 	}
 
 	// Version deletion is used for removing delete marker versions which only applies to S3
@@ -66,11 +80,7 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	err := run(ctx, cfg)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err.Error())
-		os.Exit(1)
-	}
+	return run(ctx, cfg)
 }
 
 func run(ctx context.Context, cfg config) error {
