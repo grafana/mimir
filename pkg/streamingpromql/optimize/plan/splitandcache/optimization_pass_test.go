@@ -45,21 +45,25 @@ func TestOptimizationPass(t *testing.T) {
 		expectUnchanged           bool
 		expectedPlan              string
 		expectedNotCachableReason string
+		expectCachingNotAttempted bool
 	}{
 		"instant query with instant vector result": {
-			expr:            "foo{}",
-			timeRange:       types.NewInstantQueryTimeRange(time.Now()),
-			expectUnchanged: true,
+			expr:                      "foo{}",
+			timeRange:                 types.NewInstantQueryTimeRange(time.Now()),
+			expectUnchanged:           true,
+			expectCachingNotAttempted: true,
 		},
 		"instant query with range vector result": {
-			expr:            "foo[5m]",
-			timeRange:       types.NewInstantQueryTimeRange(time.Now()),
-			expectUnchanged: true,
+			expr:                      "foo[5m]",
+			timeRange:                 types.NewInstantQueryTimeRange(time.Now()),
+			expectUnchanged:           true,
+			expectCachingNotAttempted: true,
 		},
 		"scalar range query": {
-			expr:            "scalar(foo)",
-			timeRange:       rangeQueryTimeRange,
-			expectUnchanged: true,
+			expr:                      "scalar(foo)",
+			timeRange:                 rangeQueryTimeRange,
+			expectUnchanged:           true,
+			expectCachingNotAttempted: true,
 		},
 
 		"simple range query": {
@@ -497,25 +501,37 @@ func TestOptimizationPass(t *testing.T) {
 			actual := runOptimizationPass(t, ctx, testCase.expr, testCase.timeRange, true, !testCase.disableSplitting, !testCase.disableCaching, limits, reg, timeNow)
 			require.Equal(t, testutils.TrimIndent(testCase.expectedPlan), actual)
 
+			cachingAttempted := !testCase.disableCaching && !testCase.cachingDisabledByRequestOption && !testCase.expectCachingNotAttempted
 			expectedMetrics := fmt.Sprintf(`
 				# HELP cortex_frontend_query_result_cache_skipped_total Total number of times a query was not cacheable. This metric is tracked for each request when time-splitting is running inside MQE, and for each partial query otherwise.
 				# TYPE cortex_frontend_query_result_cache_skipped_total counter
 				cortex_frontend_query_result_cache_skipped_total{reason="unaligned-time-range"} %d
 				cortex_frontend_query_result_cache_skipped_total{reason="too-new"} %d
 				cortex_frontend_query_result_cache_skipped_total{reason="has-modifiers"} %d
+				# HELP cortex_frontend_query_result_cache_attempted_total Total number of queries that were attempted to be fetched from cache.
+				# TYPE cortex_frontend_query_result_cache_attempted_total counter
+				cortex_frontend_query_result_cache_attempted_total %d
 			`,
 				countForSkipReason(splitandcache.NotCachableReasonUnalignedTimeRange, testCase.expectedNotCachableReason),
 				countForSkipReason(splitandcache.NotCachableReasonTooNew, testCase.expectedNotCachableReason),
 				countForSkipReason(splitandcache.NotCachableReasonModifiersNotCachable, testCase.expectedNotCachableReason),
+				countForBool(cachingAttempted),
 			)
 
-			require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), "cortex_frontend_query_result_cache_skipped_total"))
+			require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), "cortex_frontend_query_result_cache_skipped_total", "cortex_frontend_query_result_cache_attempted_total"))
 		})
 	}
 }
 
 func countForSkipReason(desiredSkipReason string, expectedSkipReason string) int {
 	if desiredSkipReason == expectedSkipReason {
+		return 1
+	}
+	return 0
+}
+
+func countForBool(b bool) int {
+	if b {
 		return 1
 	}
 	return 0

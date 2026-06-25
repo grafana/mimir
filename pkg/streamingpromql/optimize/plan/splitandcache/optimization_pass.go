@@ -25,6 +25,7 @@ type OptimizationPass struct {
 	cacheEnabled  bool
 
 	limits              LimitsProvider
+	cacheAttemptCounter prometheus.Counter
 	cacheSkippedCounter *prometheus.CounterVec
 	timeNow             func() time.Time
 	logger              log.Logger
@@ -36,6 +37,7 @@ func NewOptimizationPass(splitEnabled bool, splitInterval time.Duration, cacheEn
 		splitInterval:       splitInterval,
 		cacheEnabled:        cacheEnabled,
 		limits:              limits,
+		cacheAttemptCounter: NewQueryResultCacheAttemptedCounter(reg),
 		cacheSkippedCounter: NewQueryResultCacheSkippedCounter(reg),
 		timeNow:             time.Now,
 		logger:              logger,
@@ -101,6 +103,8 @@ func (o *OptimizationPass) applyCaching(ctx context.Context, node planning.Node,
 		spanLogger.DebugLog("msg", "range query caching disabled by request options")
 		return node, nil
 	}
+
+	o.cacheAttemptCounter.Inc()
 
 	if timeRange.StartT > timestamp.FromTime(freshnessThreshold) {
 		// The query starts after the freshness threshold, so the entire query is not cacheable.
