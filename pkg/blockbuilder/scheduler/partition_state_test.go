@@ -6,17 +6,21 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/blockbuilder/schedulerpb"
+	"github.com/grafana/mimir/pkg/util/test"
 )
 
+func newTestPartitionState(t *testing.T, topic string, partition int32) *partitionState {
+	m := newSchedulerMetrics(prometheus.NewPedanticRegistry())
+	return newPartitionState(topic, partition, &m, test.NewTestingLogger(t))
+}
+
 func TestPartitionState(t *testing.T) {
-	pt := &partitionState{
-		topic:     "topic",
-		partition: 0,
-	}
+	pt := newTestPartitionState(t, "topic", 0)
 	sz := 1 * time.Hour
 
 	z := time.Date(2025, 3, 1, 10, 1, 10, 0, time.UTC)
@@ -62,10 +66,7 @@ func TestPartitionState(t *testing.T) {
 }
 
 func TestPartitionState_TerminallyDormantPartition(t *testing.T) {
-	pt := &partitionState{
-		topic:     "topic",
-		partition: 0,
-	}
+	pt := newTestPartitionState(t, "topic", 0)
 	sz := 1 * time.Hour
 	z := time.Date(2025, 3, 1, 10, 1, 10, 0, time.UTC)
 
@@ -78,10 +79,7 @@ func TestPartitionState_TerminallyDormantPartition(t *testing.T) {
 }
 
 func TestPartitionState_PartitionBecomesInactive(t *testing.T) {
-	pt := &partitionState{
-		topic:     "topic",
-		partition: 0,
-	}
+	pt := newTestPartitionState(t, "topic", 0)
 	sz := 1 * time.Hour
 
 	// A bunch of data observed:
