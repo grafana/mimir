@@ -68,10 +68,10 @@ func (m *subquerySpinOffMapper) MapExpr(ctx context.Context, expr parser.Expr) (
 
 	downstreamQuery := func(expr parser.Expr) (mapped parser.Expr, finished bool, err error) {
 		if countSelectors(expr) == 0 {
-			return expr, false, nil
+			return expr, true, nil
 		}
 		m.stats.AddDownstreamQuery()
-		return m.wrapper.WrapDownstreamQuery(expr), false, nil
+		return m.wrapper.WrapDownstreamQuery(expr), true, nil
 	}
 
 	switch e := expr.(type) {
@@ -85,7 +85,7 @@ func (m *subquerySpinOffMapper) MapExpr(ctx context.Context, expr parser.Expr) (
 		if sq, ok := e.Args[lastArgIdx].(*parser.SubqueryExpr); ok {
 			canBeSpunOff, isConstant := subqueryCanBeSpunOff(*sq)
 			if isConstant {
-				return expr, false, nil
+				return expr, true, nil
 			}
 			if !canBeSpunOff {
 				return downstreamQuery(expr)
