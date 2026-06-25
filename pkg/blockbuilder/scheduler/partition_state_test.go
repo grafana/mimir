@@ -139,24 +139,24 @@ func TestPartitionState_PartitionBecomesInactive(t *testing.T) {
 }
 
 func TestPartitionState_MultipleOffsetsBeforeTimeUpdate(t *testing.T) {
-	pt := newTestPartitionState(t, "topic", 0)
-	sz := time.Hour
-	z := time.Date(2025, 3, 1, 10, 0, 0, 0, time.UTC)
+	ps := newTestPartitionState(t, "topic", 0)
+	jobSize := time.Hour
+	ts := time.Date(2025, 3, 1, 10, 0, 0, 0, time.UTC)
 
 	// Seed the start offset and the current bucket.
-	pt.updateEndOffset(100)
-	job, err := pt.updateTime(z, sz)
+	ps.updateEndOffset(100)
+	job, err := ps.updateTime(ts, jobSize)
 	require.NoError(t, err)
 	require.Nil(t, job)
 
 	// Several observations within the same bucket, with no time update between them.
-	pt.updateEndOffset(150)
-	pt.updateEndOffset(175)
-	pt.updateEndOffset(200)
+	ps.updateEndOffset(150)
+	ps.updateEndOffset(175)
+	ps.updateEndOffset(200)
 
 	// Crossing into the next bucket emits a single job spanning the seeded start
 	// offset to the latest observed offset.
-	job, err = pt.updateTime(z.Add(sz), sz)
+	job, err = ps.updateTime(ts.Add(jobSize), jobSize)
 	require.NoError(t, err)
 	require.Equal(t, &schedulerpb.JobSpec{
 		Topic:       "topic",
