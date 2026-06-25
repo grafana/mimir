@@ -514,6 +514,73 @@ func TestOptimizationPass(t *testing.T) {
 	}
 }
 
+// TestOptimizationPass_EvaluationRoots confirms that, when a query has been rewritten to spin off
+// subqueries, splitting and caching nodes are injected beneath each EvaluationRoot that evaluates a
+// range query, and that EvaluationRoots evaluating instant queries (as well as the overall instant
+// query) are left unchanged.
+func TestOptimizationPass_EvaluationRoots(t *testing.T) {
+	limits := streamingpromql.NewStaticQueryLimitsProvider()
+	limits.MaxCacheFreshness = time.Hour
+
+	timeZero := timestamp.Time(0)
+	timeNow := time.Date(2024, 1, 2, 3, 0, 0, 0, time.UTC)
+
+	// An instant query far enough in the past that the spun-off subqueries are cacheable.
+	instantQueryTimeRange := types.NewInstantQueryTimeRange(timeZero.Add(30 * time.Hour))
+
+	testCases := map[string]struct {
+		expr         string
+		expectedPlan string
+	}{
+		"spun-off subquery is a range query, so splitting and caching are injected beneath the EvaluationRoot": {
+			expr: `max_over_time((__evaluation_root__(sum(foo)))[2h:1m])`,
+			expectedPlan: `
+				- DeduplicateAndMerge
+					- FunctionCall: max_over_time(...)
+						- Subquery: [2h0m0s:1m0s]
+							- EvaluationRoot
+								- TimeRangeSplit: interval 24h0m0s
+									- Cache: split interval 24h0m0s
+										- AggregateExpression: sum
+											- VectorSelector: {__name__="foo"}
+			`,
+		},
+		"downstream EvaluationRoot is an instant query, so it is left unchanged while the spun-off subquery is split and cached": {
+			expr: `max_over_time((__evaluation_root__(sum(foo)))[2h:1m]) + __evaluation_root__(bar)`,
+			expectedPlan: `
+				- BinaryExpression: LHS + RHS
+					- LHS: DeduplicateAndMerge
+						- FunctionCall: max_over_time(...)
+							- Subquery: [2h0m0s:1m0s]
+								- EvaluationRoot
+									- TimeRangeSplit: interval 24h0m0s
+										- Cache: split interval 24h0m0s
+											- AggregateExpression: sum
+												- VectorSelector: {__name__="foo"}
+					- RHS: EvaluationRoot
+						- VectorSelector: {__name__="bar"}
+			`,
+		},
+		"EvaluationRoot at the root of an instant query is left unchanged": {
+			expr: `__evaluation_root__(sum(foo))`,
+			expectedPlan: `
+				- EvaluationRoot
+					- AggregateExpression: sum
+						- VectorSelector: {__name__="foo"}
+			`,
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			ctx := requestoptions.ContextWithOptions(context.Background(), requestoptions.Options{})
+			reg := prometheus.NewPedanticRegistry()
+			actual := runOptimizationPass(t, ctx, testCase.expr, instantQueryTimeRange, true, true, true, limits, reg, timeNow)
+			require.Equal(t, testutils.TrimIndent(testCase.expectedPlan), actual)
+		})
+	}
+}
+
 func countForSkipReason(desiredSkipReason string, expectedSkipReason string) int {
 	if desiredSkipReason == expectedSkipReason {
 		return 1

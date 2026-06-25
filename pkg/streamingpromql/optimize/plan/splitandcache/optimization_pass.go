@@ -52,17 +52,6 @@ func (o *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, 
 	// We do not need to check the maximum supported query plan version here: the nodes injected by this optimization pass
 	// only run in query-frontends (and therefore would only run inside this process).
 
-	if plan.Parameters.TimeRange.IsInstant {
-		// Nothing to do.
-		return plan, nil
-	}
-
-	if resultType, err := plan.Root.ResultType(); err != nil {
-		return nil, err
-	} else if resultType != parser.ValueTypeVector {
-		return plan, nil
-	}
-
 	now := o.timeNow()
 	maxFreshness, err := o.limits.GetMaxCacheFreshness(ctx)
 	if err != nil {
@@ -70,19 +59,88 @@ func (o *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, 
 	}
 	freshnessThreshold := now.Add(-maxFreshness)
 
-	root := plan.Root
-	root, err = o.applyCaching(ctx, root, plan.Parameters.TimeRange, freshnessThreshold)
+	// When a query has been rewritten to spin off subqueries, each __evaluation_root__ subtree is a
+	// separate query, and the spun-off subqueries are range queries. Inject splitting and caching nodes
+	// beneath each EvaluationRoot that evaluates a range query, rather than at the root of the plan
+	// (which is the overall instant query, and so is left unchanged just like an instant query without
+	// any spun-off subqueries).
+	if containsEvaluationRoot(plan.Root) {
+		if err := o.applyToEvaluationRoots(ctx, plan.Root, plan.Parameters.TimeRange, freshnessThreshold); err != nil {
+			return nil, err
+		}
+
+		return plan, nil
+	}
+
+	plan.Root, err = o.applySplittingAndCaching(ctx, plan.Root, plan.Parameters.TimeRange, freshnessThreshold)
 	if err != nil {
 		return nil, err
 	}
 
-	root, err = o.applySplitting(root)
-	if err != nil {
-		return nil, err
-	}
-
-	plan.Root = root
 	return plan, nil
+}
+
+func containsEvaluationRoot(node planning.Node) bool {
+	if _, ok := node.(*core.EvaluationRoot); ok {
+		return true
+	}
+
+	for child := range planning.ChildrenIter(node) {
+		if containsEvaluationRoot(child) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// applyToEvaluationRoots descends the plan, tracking the time range at which each node is evaluated,
+// and injects splitting and caching nodes beneath each EvaluationRoot that evaluates a range query
+// producing an instant vector.
+func (o *OptimizationPass) applyToEvaluationRoots(ctx context.Context, node planning.Node, timeRange types.QueryTimeRange, freshnessThreshold time.Time) error {
+	if evaluationRoot, ok := node.(*core.EvaluationRoot); ok {
+		var err error
+		evaluationRoot.Inner, err = o.applySplittingAndCaching(ctx, evaluationRoot.Inner, timeRange, freshnessThreshold)
+		if err != nil {
+			return err
+		}
+
+		// EvaluationRoots are never nested, so there's no need to descend further.
+		return nil
+	}
+
+	childrenTimeRange := node.ChildrenTimeRange(timeRange)
+	for child := range planning.ChildrenIter(node) {
+		if err := o.applyToEvaluationRoots(ctx, child, childrenTimeRange, freshnessThreshold); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (o *OptimizationPass) applySplittingAndCaching(ctx context.Context, node planning.Node, timeRange types.QueryTimeRange, freshnessThreshold time.Time) (planning.Node, error) {
+	if timeRange.IsInstant {
+		return node, nil
+	}
+
+	if resultType, err := node.ResultType(); err != nil {
+		return nil, err
+	} else if resultType != parser.ValueTypeVector {
+		return node, nil
+	}
+
+	node, err := o.applyCaching(ctx, node, timeRange, freshnessThreshold)
+	if err != nil {
+		return nil, err
+	}
+
+	node, err = o.applySplitting(node)
+	if err != nil {
+		return nil, err
+	}
+
+	return node, nil
 }
 
 func (o *OptimizationPass) applyCaching(ctx context.Context, node planning.Node, timeRange types.QueryTimeRange, freshnessThreshold time.Time) (planning.Node, error) {
