@@ -3,6 +3,7 @@
 package splitandcache
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 
+	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
@@ -73,7 +75,7 @@ func (s *TimeRangeSplit) MinimumRequiredPlanVersion(timeRange types.QueryTimeRan
 }
 
 // The logic below is based on the equivalent middleware logic in splitQueryByInterval.
-func MaterializeSplit(node *TimeRangeSplit, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
+func MaterializeSplit(ctx context.Context, node *TimeRangeSplit, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
 	ranges := make([]*splitRange, 0, (timeRange.EndT-timeRange.StartT)/timeRange.IntervalMilliseconds+1) // Over-allocate in case the time range straddles an interval boundary.
 
 	for start := timeRange.StartT; start <= timeRange.EndT; {
@@ -86,7 +88,7 @@ func MaterializeSplit(node *TimeRangeSplit, materializer *planning.Materializer,
 		}
 
 		innerTimeRange := types.NewRangeQueryTimeRange(timestamp.Time(start), timestamp.Time(end), time.Duration(timeRange.IntervalMilliseconds)*time.Millisecond)
-		inner, err := materializer.ConvertNodeToInstantVectorOperator(node.Inner, innerTimeRange)
+		inner, err := materializer.ConvertNodeToInstantVectorOperator(ctx, node.Inner, innerTimeRange)
 		if err != nil {
 			return nil, err
 		}
@@ -94,6 +96,9 @@ func MaterializeSplit(node *TimeRangeSplit, materializer *planning.Materializer,
 		ranges = append(ranges, newSplitRange(inner, params.MemoryConsumptionTracker))
 		start = end + timeRange.IntervalMilliseconds
 	}
+
+	queryStats := stats.FromContext(ctx)
+	queryStats.AddSplitQueries(uint32(len(ranges)))
 
 	if len(ranges) == 1 {
 		// If we have just one range, return the inner operator without wrapping it.

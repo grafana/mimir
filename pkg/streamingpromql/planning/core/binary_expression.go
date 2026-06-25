@@ -3,6 +3,7 @@
 package core
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"slices"
@@ -172,18 +173,18 @@ func (b *BinaryExpression) MergeHints(other planning.Node) error {
 	return errCannotMergeBinaryExpressionHints
 }
 
-func MaterializeBinaryExpression(b *BinaryExpression, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
+func MaterializeBinaryExpression(ctx context.Context, b *BinaryExpression, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
 	op, ok := b.Op.ToItemType()
 	if !ok {
 		return nil, compat.NewNotSupportedError(fmt.Sprintf("'%v' binary expression", b.Op.String()))
 	}
 
-	lhsVector, lhsScalar, err := b.getChildOperator(b.LHS, timeRange, materializer, "left")
+	lhsVector, lhsScalar, err := b.getChildOperator(ctx, b.LHS, timeRange, materializer, "left")
 	if err != nil {
 		return nil, err
 	}
 
-	rhsVector, rhsScalar, err := b.getChildOperator(b.RHS, timeRange, materializer, "right")
+	rhsVector, rhsScalar, err := b.getChildOperator(ctx, b.RHS, timeRange, materializer, "right")
 	if err != nil {
 		return nil, err
 	}
@@ -227,8 +228,8 @@ func MaterializeBinaryExpression(b *BinaryExpression, materializer *planning.Mat
 	return planning.NewSingleUseOperatorFactory(o), nil
 }
 
-func (b *BinaryExpression) getChildOperator(node planning.Node, timeRange types.QueryTimeRange, materializer *planning.Materializer, side string) (types.InstantVectorOperator, types.ScalarOperator, error) {
-	o, err := materializer.ConvertNodeToOperator(node, timeRange)
+func (b *BinaryExpression) getChildOperator(ctx context.Context, node planning.Node, timeRange types.QueryTimeRange, materializer *planning.Materializer, side string) (types.InstantVectorOperator, types.ScalarOperator, error) {
+	o, err := materializer.ConvertNodeToOperator(ctx, node, timeRange)
 	if err != nil {
 		return nil, nil, err
 	}

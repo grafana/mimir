@@ -3,6 +3,7 @@
 package core
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -69,7 +70,7 @@ func (s *StepInvariantExpression) ExpressionPosition() (posrange.PositionRange, 
 	return s.Inner.ExpressionPosition()
 }
 
-func MaterializeStepInvariantExpression(s *StepInvariantExpression, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
+func MaterializeStepInvariantExpression(ctx context.Context, s *StepInvariantExpression, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
 	resultType, err := s.Inner.ResultType()
 	if err != nil {
 		return nil, err
@@ -80,7 +81,7 @@ func MaterializeStepInvariantExpression(s *StepInvariantExpression, materializer
 		// This has since been fixed, but new queriers might still get incorrect plans from old query-frontends.
 		// If this happens, materialize the inner node as if the step-invariant node does not exist: both the range
 		// vector selector operator and subquery operator behave correctly in this case.
-		op, err := materializer.ConvertNodeToRangeVectorOperator(s.Inner, timeRange)
+		op, err := materializer.ConvertNodeToRangeVectorOperator(ctx, s.Inner, timeRange)
 		if err != nil {
 			return nil, err
 		}
@@ -90,7 +91,7 @@ func MaterializeStepInvariantExpression(s *StepInvariantExpression, materializer
 
 	adjustedTimeRange := s.ChildrenTimeRange(timeRange)
 
-	op, err := materializer.ConvertNodeToOperator(s.Inner, adjustedTimeRange)
+	op, err := materializer.ConvertNodeToOperator(ctx, s.Inner, adjustedTimeRange)
 	if err != nil {
 		return nil, err
 	}

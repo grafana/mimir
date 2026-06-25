@@ -185,7 +185,7 @@ func (m *FunctionOverRangeVectorSplit[T]) createSplits(ctx context.Context) erro
 			return nil
 		}
 
-		split, err := NewUncachedSplit(currentUncachedRanges, currentRangeLength, m)
+		split, err := NewUncachedSplit(ctx, currentUncachedRanges, currentRangeLength, m)
 		if err != nil {
 			return err
 		}
@@ -235,7 +235,7 @@ func (m *FunctionOverRangeVectorSplit[T]) createSplits(ctx context.Context) erro
 	return flushCurrentUncachedRanges()
 }
 
-func (m *FunctionOverRangeVectorSplit[T]) materializeOperatorForTimeRange(start int64, end int64, step int64) (types.RangeVectorOperator, error) {
+func (m *FunctionOverRangeVectorSplit[T]) materializeOperatorForTimeRange(ctx context.Context, start int64, end int64, step int64) (types.RangeVectorOperator, error) {
 	subRange := time.Duration(step) * time.Millisecond
 
 	overrideTimeParams := planning.RangeParams{
@@ -257,7 +257,7 @@ func (m *FunctionOverRangeVectorSplit[T]) materializeOperatorForTimeRange(start 
 		splitTimeRange = types.NewRangeQueryTimeRange(promts.Time(start).Add(subRange), promts.Time(end), subRange)
 	}
 
-	op, err := m.materializer.ConvertNodeToOperatorWithSubRange(m.innerNode, splitTimeRange, overrideTimeParams)
+	op, err := m.materializer.ConvertNodeToOperatorWithSubRange(ctx, m.innerNode, splitTimeRange, overrideTimeParams)
 	if err != nil {
 		return nil, err
 	}
@@ -733,11 +733,12 @@ func (p *UncachedSplit[T]) RangeCount() int {
 }
 
 func NewUncachedSplit[T any](
+	ctx context.Context,
 	ranges []Range,
 	rangeLength int64,
 	parent *FunctionOverRangeVectorSplit[T],
 ) (*UncachedSplit[T], error) {
-	operator, err := parent.materializeOperatorForTimeRange(ranges[0].Start, ranges[len(ranges)-1].End, rangeLength)
+	operator, err := parent.materializeOperatorForTimeRange(ctx, ranges[0].Start, ranges[len(ranges)-1].End, rangeLength)
 	if err != nil {
 		return nil, err
 	}
