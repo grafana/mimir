@@ -22,12 +22,6 @@ import (
 
 // TestIngesterQuerying_ShouldSupportCompartments runs the compartments architecture end to end with
 // two read and two write compartments, and verifies queries served from ingesters work across it.
-//
-// Series shard by metric name across read compartments; each write compartment is an independent Kafka
-// cluster. For each read compartment, two series are produced through different write compartments, so
-// the compartment's single ingester returns both only if it consumed its topic from both clusters. The
-// queries run through the query-frontend with strong read consistency and no sleep, so they pass only
-// if the query-frontend propagated the per-cluster produced offsets and the ingester waited for them.
 func TestIngesterQuerying_ShouldSupportCompartments(t *testing.T) {
 	const (
 		numWriteCompartments = 2
