@@ -1585,6 +1585,91 @@ func TestUsageTrackerClient_TrackSeriesSyncBatched(t *testing.T) {
 			t.Fatal("timed out waiting for TrackSeries to return after context cancellation")
 		}
 	})
+
+	t.Run("default mode: the global flusher flushes all partitions", func(t *testing.T) {
+		t.Parallel()
+
+		partitionRing, instanceRing, registerer := prepareTest()
+
+		partitions := partitionRing.PartitionRing().Partitions()
+		require.Len(t, partitions, 2)
+		slices.SortFunc(partitions, func(a, b ring.PartitionDesc) int { return int(a.Id - b.Id) })
+
+		series1Partition1 := uint64(partitions[0].Tokens[0] - 1)
+		series2Partition1 := uint64(partitions[0].Tokens[1] - 1)
+		series3Partition2 := uint64(partitions[1].Tokens[0] - 1)
+		series4Partition2 := uint64(partitions[1].Tokens[1] - 1)
+
+		instances := map[string]*usageTrackerMock{
+			"usage-tracker-zone-a-1": newUsageTrackerMockWithBatchResponse(&usagetrackerpb.TrackSeriesBatchResponse{}, nil),
+			"usage-tracker-zone-a-2": newUsageTrackerMockWithBatchResponse(&usagetrackerpb.TrackSeriesBatchResponse{}, nil),
+			"usage-tracker-zone-b-1": newUsageTrackerMockWithBatchResponse(&usagetrackerpb.TrackSeriesBatchResponse{}, nil),
+			"usage-tracker-zone-b-2": newUsageTrackerMockWithBatchResponse(&usagetrackerpb.TrackSeriesBatchResponse{}, nil),
+		}
+
+		clientCfg := createTestClientConfig()
+		clientCfg.PreferAvailabilityZone = "zone-b"
+		clientCfg.UseSyncBatchedTracking = true
+		// Default mode: no per-partition timers; only the global flusher (started in running()) flushes.
+		clientCfg.SyncBatchDelay = 50 * time.Millisecond
+		clientCfg.ClientFactory = newClientFactory(instances)
+
+		c := NewUsageTrackerClient("test", clientCfg, partitionRing, instanceRing, newMockLimitsProvider(), logger, registerer, noOpObserver)
+		require.NoError(t, services.StartAndAwaitRunning(ctx, c))
+		t.Cleanup(func() {
+			require.NoError(t, services.StopAndAwaitTerminated(ctx, c))
+		})
+
+		// A single call spanning both partitions returns only once the global flusher has flushed both.
+		rejected, err := c.TrackSeries(user.InjectOrgID(ctx, "user-1"), "user-1", []uint64{series1Partition1, series2Partition1, series3Partition2, series4Partition2})
+		require.NoError(t, err)
+		require.Empty(t, rejected)
+
+		instances["usage-tracker-zone-b-1"].AssertNumberOfCalls(t, "TrackSeriesBatch", 1)
+		instances["usage-tracker-zone-b-2"].AssertNumberOfCalls(t, "TrackSeriesBatch", 1)
+	})
+
+	t.Run("independent partition timeouts: flushes without a global flusher", func(t *testing.T) {
+		t.Parallel()
+
+		partitionRing, instanceRing, registerer := prepareTest()
+
+		partitions := partitionRing.PartitionRing().Partitions()
+		require.Len(t, partitions, 2)
+		slices.SortFunc(partitions, func(a, b ring.PartitionDesc) int { return int(a.Id - b.Id) })
+
+		series1Partition1 := uint64(partitions[0].Tokens[0] - 1)
+		series2Partition1 := uint64(partitions[0].Tokens[1] - 1)
+
+		instances := map[string]*usageTrackerMock{
+			"usage-tracker-zone-a-1": newUsageTrackerMockWithBatchResponse(&usagetrackerpb.TrackSeriesBatchResponse{}, nil),
+			"usage-tracker-zone-a-2": newUsageTrackerMockWithBatchResponse(&usagetrackerpb.TrackSeriesBatchResponse{}, nil),
+			"usage-tracker-zone-b-1": newUsageTrackerMockWithBatchResponse(&usagetrackerpb.TrackSeriesBatchResponse{}, nil),
+			"usage-tracker-zone-b-2": newUsageTrackerMockWithBatchResponse(&usagetrackerpb.TrackSeriesBatchResponse{}, nil),
+		}
+
+		clientCfg := createTestClientConfig()
+		clientCfg.PreferAvailabilityZone = "zone-b"
+		clientCfg.UseSyncBatchedTracking = true
+		clientCfg.SyncBatchIndependentPartitionTimeouts = true // No global flusher; per-partition AfterFunc drives the flush.
+		clientCfg.SyncBatchDelay = 50 * time.Millisecond
+		clientCfg.ClientFactory = newClientFactory(instances)
+
+		c := NewUsageTrackerClient("test", clientCfg, partitionRing, instanceRing, newMockLimitsProvider(), logger, registerer, noOpObserver)
+		require.NoError(t, services.StartAndAwaitRunning(ctx, c))
+		t.Cleanup(func() {
+			require.NoError(t, services.StopAndAwaitTerminated(ctx, c))
+		})
+
+		rejected, err := c.TrackSeries(user.InjectOrgID(ctx, "user-1"), "user-1", []uint64{series1Partition1, series2Partition1})
+		require.NoError(t, err)
+		require.Empty(t, rejected)
+
+		instances["usage-tracker-zone-b-1"].AssertNumberOfCalls(t, "TrackSeriesBatch", 1)
+
+		// The flush was triggered by the per-partition linger timer, not the size threshold.
+		require.Equal(t, 1.0, testutil.ToFloat64(c.syncBatcher.trackerClient.syncBatchFlushes.WithLabelValues(syncFlushReasonLinger)))
+	})
 }
 
 func TestUsageTrackerBatcherPartitionsGrowth(t *testing.T) {

@@ -74,6 +74,12 @@ type Config struct {
 	UseSyncBatchedTracking bool          `yaml:"use_sync_batched_tracking" category:"experimental"`
 	SyncBatchDelay         time.Duration `yaml:"sync_batch_delay" category:"advanced"`
 
+	// SyncBatchIndependentPartitionTimeouts makes each partition's synchronous batch linger on its own
+	// timer instead of flushing all partitions together on a shared timer. Flushing together coalesces
+	// network packets and reduces usage-tracker CPU; independent timeouts avoid aligning the whole write
+	// pipeline.
+	SyncBatchIndependentPartitionTimeouts bool `yaml:"sync_batch_independent_partition_timeouts" category:"experimental"`
+
 	// Allow to inject custom client factory in tests.
 	ClientFactory client.PoolFactory `yaml:"-"`
 }
@@ -112,6 +118,7 @@ func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 
 	f.BoolVar(&cfg.UseSyncBatchedTracking, prefix+"use-sync-batched-tracking", false, "Use synchronous batched tracking for series. If enabled, synchronous TrackSeries calls linger for up to -sync-batch-delay per partition and are sent together in a single batch request to reduce RPC traffic, while still returning the rejected series to each caller.")
 	f.DurationVar(&cfg.SyncBatchDelay, prefix+"sync-batch-delay", 50*time.Millisecond, "How long to accumulate a synchronous batch per partition before sending the request, when -use-sync-batched-tracking is enabled.")
+	f.BoolVar(&cfg.SyncBatchIndependentPartitionTimeouts, prefix+"sync-batch-independent-partition-timeouts", false, "When enabled, each partition lingers independently for -sync-batch-delay from its first pending request instead of all partitions flushing together on a shared timer. Flushing together coalesces network packets and reduces usage-tracker CPU; independent timeouts avoid aligning the whole write pipeline.")
 
 	cfg.GRPCClientConfig.RegisterFlagsWithPrefix(prefix+"grpc-client-config", f)
 }
@@ -209,7 +216,7 @@ func NewUsageTrackerClient(clientName string, clientCfg Config, partitionRing *r
 	c.syncBatchFlushes.WithLabelValues(syncFlushReasonLinger)
 
 	c.batcher = newBatcher(clientCfg.MaxBatchSeries, clientCfg.BatchDelay, logger, c)
-	c.syncBatcher = newSyncBatcher(clientCfg.MaxBatchSeries, clientCfg.SyncBatchDelay, logger, c)
+	c.syncBatcher = newSyncBatcher(clientCfg.MaxBatchSeries, clientCfg.SyncBatchDelay, clientCfg.SyncBatchIndependentPartitionTimeouts, logger, c)
 	c.Service = services.NewBasicService(c.starting, c.running, c.stopping)
 	return c
 }
@@ -250,6 +257,13 @@ func (c *UsageTrackerClient) starting(ctx context.Context) error {
 func (c *UsageTrackerClient) running(ctx context.Context) error {
 	if c.cfg.UseBatchedTracking {
 		go c.batcher.flusher()
+	}
+
+	// In the default (synchronized) mode, a single flusher signals all partitions together so the
+	// netpoller coalesces their packets. In independent mode, each partition arms its own linger timer
+	// in trackSeries instead, so no global flusher runs.
+	if c.cfg.UseSyncBatchedTracking && !c.cfg.SyncBatchIndependentPartitionTimeouts {
+		go c.syncBatcher.flusher()
 	}
 
 	ticker := time.NewTicker(c.cfg.UsersCloseToLimitPollInterval)
@@ -1046,8 +1060,9 @@ type syncTrackResult struct {
 // rejected for that caller. There's no global flusher: each partition lingers for batchDelay after
 // it receives its first pending request (see syncPartitionBatcher.trackSeries).
 type syncBatcher struct {
-	maxSeriesPerBatch int
-	batchDelay        time.Duration
+	maxSeriesPerBatch            int
+	batchDelay                   time.Duration
+	independentPartitionTimeouts bool
 
 	batchersMtx sync.RWMutex
 	batchers    []*syncPartitionBatcher
@@ -1057,18 +1072,46 @@ type syncBatcher struct {
 	logger        log.Logger
 }
 
-func newSyncBatcher(maxSeriesPerBatch int, batchDelay time.Duration, logger log.Logger, trackerClient *UsageTrackerClient) *syncBatcher {
+func newSyncBatcher(maxSeriesPerBatch int, batchDelay time.Duration, independentPartitionTimeouts bool, logger log.Logger, trackerClient *UsageTrackerClient) *syncBatcher {
 	const defaultPartitions = 64
 
 	return &syncBatcher{
-		maxSeriesPerBatch: maxSeriesPerBatch,
-		batchDelay:        batchDelay,
+		maxSeriesPerBatch:            maxSeriesPerBatch,
+		batchDelay:                   batchDelay,
+		independentPartitionTimeouts: independentPartitionTimeouts,
 
 		batchers: make([]*syncPartitionBatcher, defaultPartitions),
 
 		trackerClient: trackerClient,
 		stoppingChan:  make(chan struct{}),
 		logger:        logger,
+	}
+}
+
+// flusher signals all partition batchers to flush on a shared timer, so the usage-tracker server
+// receives their requests close together and the netpoller can coalesce the packets. It's used in
+// the default (synchronized) mode; independent mode arms per-partition timers instead.
+func (c *syncBatcher) flusher() {
+	t := time.NewTimer(util.DurationWithJitter(c.batchDelay, 0.1))
+	for {
+		select {
+		case <-t.C:
+			c.signalAll()
+			t.Reset(util.DurationWithJitter(c.batchDelay, 0.1))
+		case <-c.stoppingChan:
+			return
+		}
+	}
+}
+
+// signalAll signals all partition-batchers to perform a flush.
+func (c *syncBatcher) signalAll() {
+	c.batchersMtx.RLock()
+	defer c.batchersMtx.RUnlock()
+	for _, b := range c.batchers {
+		if b != nil {
+			b.signalFlush()
+		}
 	}
 }
 
@@ -1091,7 +1134,7 @@ func (c *syncBatcher) trackSeries(partition int32, userID string, series []uint6
 			if grow {
 				c.growBatchers(partition)
 			}
-			b = newSyncPartitionBatcher(partition, c.maxSeriesPerBatch, c.batchDelay, c.logger, c.trackerClient, c.stoppingChan)
+			b = newSyncPartitionBatcher(partition, c.maxSeriesPerBatch, c.batchDelay, c.independentPartitionTimeouts, c.logger, c.trackerClient, c.stoppingChan)
 			c.batchers[partition] = b
 			go b.flushWorker()
 		}
@@ -1183,30 +1226,31 @@ type syncPartitionBatcher struct {
 	trackerClient *UsageTrackerClient
 	workersPool   *concurrency.ReusableGoroutinesPool
 
-	maxSeriesPerBatch int
-	batchDelay        time.Duration
-	logger            log.Logger
+	maxSeriesPerBatch            int
+	batchDelay                   time.Duration
+	independentPartitionTimeouts bool
+	logger                       log.Logger
 }
 
-func newSyncPartitionBatcher(partition int32, maxSeriesPerBatch int, batchDelay time.Duration, logger log.Logger, trackerClient *UsageTrackerClient, stopping <-chan struct{}) *syncPartitionBatcher {
+func newSyncPartitionBatcher(partition int32, maxSeriesPerBatch int, batchDelay time.Duration, independentPartitionTimeouts bool, logger log.Logger, trackerClient *UsageTrackerClient, stopping <-chan struct{}) *syncPartitionBatcher {
 	return &syncPartitionBatcher{
 		partition: partition,
 
 		requests:    nil,
 		seriesCount: 0,
 
-		// Buffered so a flush signal is never lost: the synchronous batcher has no periodic flusher
-		// to retry a dropped signal (unlike the asynchronous batcher), and a lost signal would leave
-		// callers blocked forever. A buffered slot guarantees at least one pending flush is queued.
+		// Buffered so a flush signal is never lost: a lost signal would leave callers blocked forever.
+		// A buffered slot guarantees at least one pending flush is queued.
 		flushChan:    make(chan struct{}, 1),
 		stoppingChan: stopping,
 
 		trackerClient: trackerClient,
 		workersPool:   concurrency.NewReusableGoroutinesPool(2),
 
-		maxSeriesPerBatch: maxSeriesPerBatch,
-		batchDelay:        batchDelay,
-		logger:            log.With(logger, "partition", partition),
+		maxSeriesPerBatch:            maxSeriesPerBatch,
+		batchDelay:                   batchDelay,
+		independentPartitionTimeouts: independentPartitionTimeouts,
+		logger:                       log.With(logger, "partition", partition),
 	}
 }
 
@@ -1242,8 +1286,9 @@ func (b *syncPartitionBatcher) trackSeries(userID string, series []uint64) chan 
 	switch {
 	case needsFlush:
 		b.signalFlush()
-	case wasEmpty:
-		// Arm the linger window: flush this partition once batchDelay elapses.
+	case wasEmpty && b.independentPartitionTimeouts:
+		// Independent mode: arm this partition's own linger window. In the default (synchronized)
+		// mode the syncBatcher's global flusher drives time-based flushes instead.
 		time.AfterFunc(b.batchDelay, b.signalFlush)
 	}
 
