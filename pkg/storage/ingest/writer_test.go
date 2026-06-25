@@ -1749,22 +1749,50 @@ func testWriter_KafkaClientMetricsParity(t *testing.T, backend string) {
 	mfm, err := dskit_metrics.NewMetricFamilyMapFromGatherer(reg)
 	require.NoError(t, err)
 
-	// Producer-state and transport counters must be populated on both backends.
+	// Counters a single successful produce must increment on both backends.
 	for _, name := range []string{
+		"cortex_ingest_storage_writer_connects_total",
+		"cortex_ingest_storage_writer_read_bytes_total",
+		"cortex_ingest_storage_writer_write_bytes_total",
 		"cortex_ingest_storage_writer_produce_records_total",
 		"cortex_ingest_storage_writer_produce_batches_total",
 		"cortex_ingest_storage_writer_produce_bytes_total",
-		"cortex_ingest_storage_writer_connects_total",
-		"cortex_ingest_storage_writer_write_bytes_total",
+		"cortex_ingest_storage_writer_produce_compressed_bytes_total",
 	} {
-		assert.Positive(t, mfm.SumCounters(name), "metric %q must be populated on backend %q", name, backend)
+		assert.Positive(t, mfm.SumCounters(name), "counter %q must be populated on backend %q", name, backend)
 	}
 
-	// The extended latency histograms (Mimir's kafka_* native histograms) must
-	// be observed on both backends.
-	hist, err := dskit_metrics.FindHistogramWithNameAndLabels(mfm, "cortex_ingest_storage_writer_kafka_request_duration_e2e_seconds")
-	require.NoError(t, err)
-	assert.Positive(t, hist.GetSampleCount(), "kafka_request_duration_e2e_seconds must be observed on backend %q", backend)
+	// Extended latency histograms (Mimir's kafka_* native histograms) a
+	// successful produce must observe on both backends.
+	for _, name := range []string{
+		"cortex_ingest_storage_writer_kafka_read_time_seconds",
+		"cortex_ingest_storage_writer_kafka_read_wait_seconds",
+		"cortex_ingest_storage_writer_kafka_write_time_seconds",
+		"cortex_ingest_storage_writer_kafka_write_wait_seconds",
+		"cortex_ingest_storage_writer_kafka_request_duration_e2e_seconds",
+	} {
+		hist, err := dskit_metrics.FindHistogramWithNameAndLabels(mfm, name)
+		require.NoError(t, err, "histogram %q must exist on backend %q", name, backend)
+		assert.Positive(t, hist.GetSampleCount(), "histogram %q must be observed on backend %q", name, backend)
+	}
+
+	// Metrics registered on both backends that legitimately read zero after a
+	// successful produce: the produce buffer has drained, the writer never
+	// fetches, and the mock broker never throttles. Assert they're exposed.
+	for _, name := range []string{
+		"cortex_ingest_storage_writer_buffered_produce_records_total",
+		"cortex_ingest_storage_writer_buffered_produce_bytes",
+		"cortex_ingest_storage_writer_buffered_fetch_records_total",
+		"cortex_ingest_storage_writer_buffered_fetch_bytes",
+		"cortex_ingest_storage_writer_kafka_request_throttled_seconds",
+	} {
+		assert.Contains(t, mfm, name, "metric %q must be registered on backend %q", name, backend)
+	}
+
+	// cortex_ingest_storage_writer_{connect_errors,write_errors,read_errors}_total
+	// and _disconnects_total are wired on both backends too, but they are
+	// CounterVecs that emit no series until an error or disconnect occurs, so a
+	// successful produce can't observe them here.
 }
 
 func TestWriter_AutoCreateTopics(t *testing.T) {
