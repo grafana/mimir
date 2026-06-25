@@ -98,6 +98,67 @@ func TestOptimizationPass(t *testing.T) {
 	}
 }
 
+// TestOptimizationPass_EvaluationRoots confirms that, when a query has been rewritten to spin off
+// subqueries, each __evaluation_root__ subtree is sharded independently and everything outside the
+// markers is left unchanged.
+func TestOptimizationPass_EvaluationRoots(t *testing.T) {
+	const seriesPerShard = 1000
+
+	testCases := map[string]struct {
+		input          string
+		options        requestoptions.Options
+		expectedOutput string
+	}{
+		"single shardable evaluation root": {
+			input:          `__evaluation_root__(sum(foo))`,
+			expectedOutput: `__evaluation_root__(sum(__sharded_concat__(sum(foo{__query_shard__="1_of_4"}), sum(foo{__query_shard__="2_of_4"}), sum(foo{__query_shard__="3_of_4"}), sum(foo{__query_shard__="4_of_4"}))))`,
+		},
+		"single unshardable evaluation root": {
+			input:          `__evaluation_root__(foo)`,
+			expectedOutput: `__evaluation_root__(foo)`,
+		},
+		"multiple evaluation roots, some shardable and some not": {
+			// Emulates the shape produced when spinning off a subquery alongside a downstream query:
+			// the shardable subtree is sharded, the unshardable one is left as-is.
+			input:          `__evaluation_root__(sum(foo)) + __evaluation_root__(bar)`,
+			expectedOutput: `__evaluation_root__(sum(__sharded_concat__(sum(foo{__query_shard__="1_of_4"}), sum(foo{__query_shard__="2_of_4"}), sum(foo{__query_shard__="3_of_4"}), sum(foo{__query_shard__="4_of_4"})))) + __evaluation_root__(bar)`,
+		},
+		"evaluation root inside a spun-off subquery": {
+			// Only the marker's subtree is sharded; the surrounding subquery and outer function are left
+			// to run on the query-frontend.
+			input:          `max_over_time((__evaluation_root__(sum(foo)))[2h:1m])`,
+			expectedOutput: `max_over_time((__evaluation_root__(sum(__sharded_concat__(sum(foo{__query_shard__="1_of_4"}), sum(foo{__query_shard__="2_of_4"}), sum(foo{__query_shard__="3_of_4"}), sum(foo{__query_shard__="4_of_4"})))))[2h:1m])`,
+		},
+		"sharding disabled": {
+			input:          `__evaluation_root__(sum(foo))`,
+			options:        requestoptions.Options{ShardingDisabled: true},
+			expectedOutput: `__evaluation_root__(sum(foo))`,
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			reg := prometheus.NewPedanticRegistry()
+			logger := log.NewNopLogger()
+			limits := &mockLimits{
+				totalShards:         4,
+				maxShardedQueries:   6,
+				splitAndMergeShards: 1,
+			}
+			pass := NewOptimizationPass(limits, seriesPerShard, reg, logger)
+
+			input, err := promqlext.NewPromQLParser().ParseExpr(testCase.input)
+			require.NoError(t, err)
+
+			ctx := user.InjectOrgID(context.Background(), "tenant-1")
+			ctx = requestoptions.ContextWithOptions(ctx, testCase.options)
+			output, err := pass.Apply(ctx, input, types.QueryTimeRange{})
+			require.NoError(t, err)
+			require.Equal(t, testCase.expectedOutput, output.String())
+		})
+	}
+}
+
 type mockLimits struct {
 	totalShards         int
 	regexpSizeBytes     int
