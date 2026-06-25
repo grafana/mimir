@@ -205,7 +205,7 @@ func (r *bucketIndexReader) expandedPostings(ctx context.Context, ms []*labels.M
 	postingGroups, omittedPostingGroups := r.postingsStrategy.selectPostings(postingGroups)
 	logSelectedPostingGroups(ctx, r.block.logger, r.block.meta.ULID, postingGroups, omittedPostingGroups)
 
-	fetchedPostings, err := r.fetchPostings(ctx, extractLabels(postingGroups), stats)
+	fetchedPostings, err := r.fetchPostings(ctx, extractLabels(postingGroups), extractOffsets(postingGroups), stats)
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "get postings")
 	}
@@ -289,6 +289,19 @@ func extractLabelMatchers(groups []postingGroup) []*labels.Matcher {
 		m[i] = groups[i].matcher
 	}
 	return m
+}
+
+// extractOffsets returns the offsets of the posting groups in the order that they are found in each posting group.
+func extractOffsets(groups []postingGroup) []index.Range {
+	numOffsets := 0
+	for _, pg := range groups {
+		numOffsets += len(pg.offsets)
+	}
+	offsets := make([]index.Range, 0, numOffsets)
+	for _, pg := range groups {
+		offsets = append(offsets, pg.offsets...)
+	}
+	return offsets
 }
 
 // extractLabels returns the keys of the posting groups in the order that they are found in each posting group.
@@ -382,7 +395,21 @@ func toPostingGroups(ctx context.Context, ms []*labels.Matcher, indexhdr indexhe
 	// We only need special All postings if there are no other adds. If there are, we can skip fetching
 	// special All postings completely.
 	if allRequested && !hasAdds {
-		postingGroups = append(postingGroups, postingGroup{isSubtract: false, keys: []labels.Label{allPostingsKey}})
+		// Resolve the offset of the all postings list now, so it can be carried in the posting group
+		// alongside the offsets of the other groups and reused later in fetchPostings without an
+		// additional PostingsOffset lookup.
+		allPostingsOffset, err := indexhdr.PostingsOffset(ctx, allPostingsKey.Name, allPostingsKey.Value)
+		if errors.Is(err, indexheader.NotFoundRangeErr) {
+			// There is no all postings list, so there are no series to subtract from. Shortcut to an empty set.
+			return nil, nil
+		} else if err != nil {
+			return nil, errors.Wrap(err, "get all postings offset")
+		}
+		postingGroups = append(postingGroups, postingGroup{
+			isSubtract: false,
+			keys:       []labels.Label{allPostingsKey},
+			offsets:    []index.Range{allPostingsOffset},
+		})
 	}
 
 	// If hasAdds is false, then there were no posting lists for any labels that we will intersect.
@@ -396,15 +423,28 @@ func toPostingGroups(ctx context.Context, ms []*labels.Matcher, indexhdr indexhe
 	return postingGroups, nil
 }
 
+// fetchPostingsWithKnownOffsets is like FetchPostings, but uses the caller-provided
+// byte offsets (e.g. from IndexHeaderReader.LabelValuesOffsets) instead of
+// resolving each key's offset with a separate PostingsOffset call.
+// offsets, if non-nil, must be aligned 1:1 with keys and hold the non-empty byte range of each key's
+// posting list, so they can be reused instead of resolving them again via PostingsOffset;
+// a length mismatch between keys and offsets will result in an error.
+func (r *bucketIndexReader) fetchPostingsWithKnownOffsets(ctx context.Context, keys []labels.Label, offsets []index.Range, stats *safeQueryStats) ([]index.Postings, error) {
+	return r.fetchAndPadPostings(ctx, keys, offsets, stats)
+}
+
 // FetchPostings fills postings requested by posting groups.
 // It returns one postings for each key, in the same order.
 // If postings for given key is not fetched, entry at given index will be an ErrPostings
 func (r *bucketIndexReader) FetchPostings(ctx context.Context, keys []labels.Label, stats *safeQueryStats) (returnPostings []index.Postings, returnErr error) {
-	ps, err := r.fetchPostings(ctx, keys, stats)
+	return r.fetchAndPadPostings(ctx, keys, nil, stats)
+}
+
+func (r *bucketIndexReader) fetchAndPadPostings(ctx context.Context, keys []labels.Label, knownOffsets []index.Range, stats *safeQueryStats) ([]index.Postings, error) {
+	ps, err := r.fetchPostings(ctx, keys, knownOffsets, stats)
 	if err != nil {
 		return nil, err
 	}
-
 	// As of version two all series entries are 16 byte padded. All references
 	// we get have to account for that to get the correct offset.
 	version, err := r.block.indexHeaderReader.IndexVersion(ctx)
@@ -423,7 +463,7 @@ func (r *bucketIndexReader) FetchPostings(ctx context.Context, keys []labels.Lab
 // fetchPostings is the version-unaware private implementation of FetchPostings.
 // callers of this method may need to add padding to the results.
 // If postings for given key is not fetched, entry at given index will be nil.
-func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Label, stats *safeQueryStats) (output []index.Postings, returnErr error) {
+func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Label, knownOffsets []index.Range, stats *safeQueryStats) (output []index.Postings, returnErr error) {
 	ctx, span := tracer.Start(ctx, "fetchPostings()")
 	defer func() {
 		span.SetAttributes(
@@ -435,6 +475,10 @@ func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Lab
 		}
 		span.End()
 	}()
+	// If knownOffsets length does not match the number of keys, we shouldn't trust it.
+	if knownOffsets != nil && len(knownOffsets) != len(keys) {
+		return nil, fmt.Errorf("knownOffsets length %d must match keys length %d", len(knownOffsets), len(keys))
+	}
 	timer := prometheus.NewTimer(r.block.metrics.postingsFetchDuration)
 	defer timer.ObserveDuration()
 
@@ -478,15 +522,20 @@ func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Lab
 		}
 
 		// Cache miss; save pointer for actual posting in index stored in object store.
-		ptr, err := r.block.indexHeaderReader.PostingsOffset(ctx, key.Name, key.Value)
-		if errors.Is(err, indexheader.NotFoundRangeErr) {
-			// This block does not have any posting for given key.
-			output[ix] = index.EmptyPostings()
-			continue
-		}
-
-		if err != nil {
-			return nil, errors.Wrap(err, "index header PostingsOffset")
+		var ptr index.Range
+		if knownOffsets != nil {
+			ptr = knownOffsets[ix]
+		} else {
+			var err error
+			ptr, err = r.block.indexHeaderReader.PostingsOffset(ctx, key.Name, key.Value)
+			if errors.Is(err, indexheader.NotFoundRangeErr) {
+				// This block does not have any posting for given key.
+				output[ix] = index.EmptyPostings()
+				continue
+			}
+			if err != nil {
+				return nil, errors.Wrap(err, "index header PostingsOffset")
+			}
 		}
 
 		stats.update(func(stats *queryStats) {
