@@ -25,8 +25,8 @@ local filename = 'mimir-writes.json';
     $.stack +
     { fieldConfig+: { defaults+: { unit: 'reqps' } } } +
     $.aliasColors({
-      'Sync (single)': '#2A66CF',
-      'Async (batch)': '#FFA500',
+      'Sync (single)': '#73BF69',
+      'Async (batch)': '#37872D',
     }),
 
   // Builds a latency panel for the usage-tracker rows showing p99, p50 and average per request type.
