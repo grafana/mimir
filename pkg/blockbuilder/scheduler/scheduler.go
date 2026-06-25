@@ -4,7 +4,6 @@ package scheduler
 
 import (
 	"cmp"
-	"container/list"
 	"context"
 	"errors"
 	"fmt"
@@ -274,9 +273,9 @@ func (s *BlockBuilderScheduler) enqueuePendingJobs() {
 			// The job discovery process happens concurrently with ongoing job
 			// completions. Now that we have the lock, ignore this job if it's
 			// older than our committed offset.
-			if ps.committed.beyondSpec(*spec) {
+			if ps.committedBeyondSpec(*spec) {
 				level.Info(s.logger).Log("msg", "ignoring pending job as it's behind the committed offset (expected at startup)",
-					"partition", partition, "start", spec.StartOffset, "end", spec.EndOffset, "committed", ps.committed.off)
+					"partition", partition, "start", spec.StartOffset, "end", spec.EndOffset, "committed", ps.committedOffset())
 				ps.pendingJobs.Remove(e)
 				continue
 			}
@@ -341,25 +340,7 @@ func (s *BlockBuilderScheduler) getPartitionState(topic string, partition int32)
 		return ps
 	}
 
-	ps := &partitionState{
-		topic:          topic,
-		partition:      partition,
-		pendingJobs:    list.New(),
-		plannedJobs:    list.New(),
-		plannedJobsMap: make(map[string]*jobState),
-		planned: &advancingOffset{
-			name:    offsetNamePlanned,
-			off:     offsetEmpty,
-			metrics: &s.metrics,
-			logger:  s.logger,
-		},
-		committed: &advancingOffset{
-			name:    offsetNameCommitted,
-			off:     offsetEmpty,
-			metrics: &s.metrics,
-			logger:  s.logger,
-		},
-	}
+	ps := newPartitionState(topic, partition, &s.metrics, s.logger)
 	s.partState[partition] = ps
 	return ps
 }
@@ -475,8 +456,8 @@ func (s *BlockBuilderScheduler) consumptionOffsets(ctx context.Context, topic st
 
 			var resumeOffset int64
 
-			if !ps.planned.empty() {
-				planned := ps.planned.offset()
+			if !ps.plannedEmpty() {
+				planned := ps.plannedOffset()
 				s.metrics.partitionPlannedOffset.WithLabelValues(partStr).Set(float64(planned))
 				resumeOffset = planned
 			} else {
@@ -618,11 +599,11 @@ func (s *BlockBuilderScheduler) snapOffsets() (kadm.Offsets, kadm.Offsets) {
 	defer s.mu.Unlock()
 
 	for _, ps := range s.partState {
-		if !ps.committed.empty() {
-			cp.AddOffset(ps.topic, ps.partition, ps.committed.offset(), 0)
+		if !ps.committedEmpty() {
+			cp.AddOffset(ps.topic, ps.partition, ps.committedOffset(), 0)
 		}
-		if !ps.planned.empty() {
-			pp.AddOffset(ps.topic, ps.partition, ps.planned.offset(), 0)
+		if !ps.plannedEmpty() {
+			pp.AddOffset(ps.topic, ps.partition, ps.plannedOffset(), 0)
 		}
 	}
 
@@ -702,12 +683,12 @@ func (s *BlockBuilderScheduler) assignJob(workerID string) (jobKey, schedulerpb.
 			return k, spec, err
 		}
 
-		if ps := s.getPartitionState(spec.Topic, spec.Partition); ps.committed.beyondSpec(spec) {
+		if ps := s.getPartitionState(spec.Topic, spec.Partition); ps.committedBeyondSpec(spec) {
 			// Job is before the committed offset. Remove it.
 			level.Info(s.logger).Log("msg", "removing job as it's behind the committed offset (expected at startup)",
 				"job_id", k.id, "epoch", k.epoch, "partition", spec.Partition,
 				"start_offset", spec.StartOffset, "end_offset", spec.EndOffset,
-				"committed", ps.committed.offset())
+				"committed", ps.committedOffset())
 			s.jobs.removeJob(k)
 			continue
 		}
@@ -763,7 +744,7 @@ func (s *BlockBuilderScheduler) updateJob(key jobKey, workerID string, complete 
 	} else {
 		// It's an in-progress job whose lease we need to renew.
 
-		if ps.committed.beyondSpec(j) {
+		if ps.committedBeyondSpec(j) {
 			// Update of a completed/committed job. Ignore.
 			level.Debug(logger).Log("msg", "ignored historical job")
 			return nil
@@ -845,7 +826,7 @@ func (s *BlockBuilderScheduler) finalizeObservations() {
 				continue
 			}
 
-			if ps.planned.beyondSpec(obs.spec) {
+			if ps.plannedBeyondSpec(obs.spec) {
 				// This job is wholly before the latest planned offset. Skip.
 				level.Warn(s.logger).Log("msg", "startup: skipping job before commit",
 					"partition", partition, "job_id", obs.key.id, "epoch", obs.key.epoch,
@@ -853,12 +834,12 @@ func (s *BlockBuilderScheduler) finalizeObservations() {
 				continue
 			}
 
-			if !ps.planned.validNextSpec(obs.spec) {
+			if !ps.plannedValidNextSpec(obs.spec) {
 				// Found a gap, can't continue the contiguous range
 				contiguous = false
 				level.Warn(s.logger).Log("msg", "startup: skipping job due to detected offset gap",
 					"partition", partition, "job_id", obs.key.id, "start_offset", obs.spec.StartOffset,
-					"end_offset", obs.spec.EndOffset, "latest_planned_offset", ps.planned.offset())
+					"end_offset", obs.spec.EndOffset, "latest_planned_offset", ps.plannedOffset())
 				continue
 			}
 
@@ -917,66 +898,3 @@ func (p limitPerPartitionJobCreationPolicy) canCreateJob(_ jobKey, spec *schedul
 }
 
 var _ jobCreationPolicy[schedulerpb.JobSpec] = (*limitPerPartitionJobCreationPolicy)(nil)
-
-// advancingOffset keeps track of an offset that is expected to advance
-// monotonically based on job progression.
-type advancingOffset struct {
-	off     int64
-	name    string
-	metrics *schedulerMetrics
-	logger  log.Logger
-}
-
-const offsetEmpty int64 = -1
-
-const (
-	offsetNamePlanned   = "planned"
-	offsetNameCommitted = "committed"
-)
-
-// advance moves the offset forward by the given job spec. Advancements are
-// expected to be monotonically increasing and contiguous. Advance will not
-// allow backwards movement. If a gap is detected, a warning is logged and a
-// metric is incremented.
-func (o *advancingOffset) advance(jobID string, spec schedulerpb.JobSpec) {
-	if o.beyondSpec(spec) {
-		// Frequent, and expected.
-		level.Debug(o.logger).Log("msg", "ignoring historical job", "offset_name", o.name, "job_id", jobID,
-			"partition", spec.Partition, "start_offset", spec.StartOffset, "end_offset", spec.EndOffset, "committed", o.off)
-		return
-	}
-
-	if !o.validNextSpec(spec) {
-		// Gap detected.
-		level.Warn(o.logger).Log("msg", "gap detected in offset advancement", "offset_name", o.name, "job_id", jobID,
-			"partition", spec.Partition, "start_offset", spec.StartOffset, "end_offset", spec.EndOffset, "committed", o.off)
-		o.metrics.jobGapDetected.WithLabelValues(o.name).Inc()
-	}
-
-	o.off = spec.EndOffset
-}
-
-func (o *advancingOffset) offset() int64 {
-	return o.off
-}
-
-func (o *advancingOffset) set(offset int64) {
-	o.off = offset
-}
-
-// empty returns true if the offset is empty and uninitialized.
-func (o *advancingOffset) empty() bool {
-	return o.off == offsetEmpty
-}
-
-// validNextSpec returns true if the given job spec is valid to be added to the
-// offset. It is valid if the start offset is the same as the current offset.
-// We also allow transitioning out of an empty offset without calling it a gap.
-func (o *advancingOffset) validNextSpec(spec schedulerpb.JobSpec) bool {
-	return o.off == spec.StartOffset || o.empty()
-}
-
-// beyondSpec returns true if the offset is beyond the given job spec.
-func (o *advancingOffset) beyondSpec(spec schedulerpb.JobSpec) bool {
-	return !o.empty() && spec.EndOffset <= o.off
-}
