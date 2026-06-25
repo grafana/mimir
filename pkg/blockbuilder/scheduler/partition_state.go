@@ -59,10 +59,9 @@ func (s *partitionState) updateEndOffset(end int64) {
 }
 
 // updateTime advances the partition's time bucket to the bucket containing ts
-// and returns a consumption job spec if one is ready. When a new bucket begins,
-// it emits a job covering the offsets accumulated during the previous bucket, if
-// any. It is expected to be called frequently with monotonically increasing
-// timestamps, even in the absence of new data.
+// and returns a consumption job spec if one is ready. It is expected to be
+// called frequently with monotonically increasing timestamps, even in the
+// absence of new data.
 func (s *partitionState) updateTime(ts time.Time, jobSize time.Duration) (*schedulerpb.JobSpec, error) {
 	newJobBucket := ts.Truncate(jobSize)
 
