@@ -71,7 +71,7 @@ func TestCacheOperator(t *testing.T) {
 		expectedWrittenCacheEntry        *CacheEntry   // nil if no cache entry should be written. If non-nil, CacheKey will be set to the expected value in the test.
 		expectedTTL                      time.Duration // If not set, uses limits.ttl.
 		expectedAnyCachedExtentsRetained bool
-		expectedAnyCachedExtentsUsed     bool
+		expectedCachedExtentsUsed        int
 	}{
 		"cache miss": {
 			existingCacheEntry: nil,
@@ -111,7 +111,7 @@ func TestCacheOperator(t *testing.T) {
 			expectedFreshlyEvaluatedRanges:   nil,
 			expectedWrittenCacheEntry:        nil,
 			expectedAnyCachedExtentsRetained: true,
-			expectedAnyCachedExtentsUsed:     true,
+			expectedCachedExtentsUsed:        1,
 		},
 
 		"cache hit with single extent that starts before desired time range and finishes at end of desired time range": {
@@ -125,7 +125,7 @@ func TestCacheOperator(t *testing.T) {
 			expectedWrittenCacheEntry:        nil,
 			expectedAnnotationTimeRange:      types.NewRangeQueryTimeRange(desiredStart.Add(-5*time.Minute), desiredEnd, step),
 			expectedAnyCachedExtentsRetained: true,
-			expectedAnyCachedExtentsUsed:     true,
+			expectedCachedExtentsUsed:        1,
 		},
 
 		"cache hit with single extent that starts before desired time range and finishes one step before end of desired time range": {
@@ -143,7 +143,7 @@ func TestCacheOperator(t *testing.T) {
 			},
 			expectedAnnotationTimeRange:      types.NewRangeQueryTimeRange(desiredStart.Add(-5*time.Minute), desiredEnd, step),
 			expectedAnyCachedExtentsRetained: true,
-			expectedAnyCachedExtentsUsed:     true,
+			expectedCachedExtentsUsed:        1,
 		},
 
 		"cache hit with single extent that starts at beginning of desired time range and finishes after end of desired time range": {
@@ -157,7 +157,7 @@ func TestCacheOperator(t *testing.T) {
 			expectedWrittenCacheEntry:        nil,
 			expectedAnnotationTimeRange:      types.NewRangeQueryTimeRange(desiredStart, desiredEnd.Add(5*time.Minute), step),
 			expectedAnyCachedExtentsRetained: true,
-			expectedAnyCachedExtentsUsed:     true,
+			expectedCachedExtentsUsed:        1,
 		},
 
 		"cache hit with single extent that starts before desired time range and finishes before end of desired time range": {
@@ -175,7 +175,7 @@ func TestCacheOperator(t *testing.T) {
 			},
 			expectedAnnotationTimeRange:      types.NewRangeQueryTimeRange(desiredStart.Add(-5*time.Minute), desiredEnd, step),
 			expectedAnyCachedExtentsRetained: true,
-			expectedAnyCachedExtentsUsed:     true,
+			expectedCachedExtentsUsed:        1,
 		},
 
 		"cache hit with single extent that starts before desired time range and finishes before end of desired time range, and desired end timestamp is not (start + N×step), ie. not aligned to step": {
@@ -195,7 +195,7 @@ func TestCacheOperator(t *testing.T) {
 			},
 			expectedAnnotationTimeRange:      types.NewRangeQueryTimeRange(desiredStart.Add(-5*time.Minute), desiredEnd, step),
 			expectedAnyCachedExtentsRetained: true,
-			expectedAnyCachedExtentsUsed:     true,
+			expectedCachedExtentsUsed:        1,
 		},
 
 		"cache hit with single extent that starts before desired time range and finishes before end of desired time range, and desired end timestamp is not (start + N×step), ie. not aligned to step, and desired time range is before Unix epoch": {
@@ -215,7 +215,7 @@ func TestCacheOperator(t *testing.T) {
 			},
 			expectedAnnotationTimeRange:      types.NewRangeQueryTimeRange(timeZero.Add(-25*time.Minute), timeZero.Add(-10*time.Minute), step),
 			expectedAnyCachedExtentsRetained: true,
-			expectedAnyCachedExtentsUsed:     true,
+			expectedCachedExtentsUsed:        1,
 		},
 
 		"cache hit with single extent that starts part-way through desired time range and finishes at end of desired time range": {
@@ -232,7 +232,7 @@ func TestCacheOperator(t *testing.T) {
 				},
 			},
 			expectedAnyCachedExtentsRetained: true,
-			expectedAnyCachedExtentsUsed:     true,
+			expectedCachedExtentsUsed:        1,
 		},
 
 		"cache hit with single extent that starts part-way through desired time range and finishes after end of desired time range": {
@@ -250,7 +250,7 @@ func TestCacheOperator(t *testing.T) {
 			},
 			expectedAnnotationTimeRange:      types.NewRangeQueryTimeRange(desiredStart, desiredEnd.Add(3*time.Minute), step),
 			expectedAnyCachedExtentsRetained: true,
-			expectedAnyCachedExtentsUsed:     true,
+			expectedCachedExtentsUsed:        1,
 		},
 
 		"cache hit with single extent that starts part-way through desired time range and finishes before end of desired time range": {
@@ -270,7 +270,7 @@ func TestCacheOperator(t *testing.T) {
 				},
 			},
 			expectedAnyCachedExtentsRetained: true,
-			expectedAnyCachedExtentsUsed:     true,
+			expectedCachedExtentsUsed:        1,
 		},
 
 		"cache hit with extents before and after desired time range but none in desired time range": {
@@ -308,7 +308,7 @@ func TestCacheOperator(t *testing.T) {
 				},
 			},
 			expectedAnyCachedExtentsRetained: true,
-			expectedAnyCachedExtentsUsed:     true,
+			expectedCachedExtentsUsed:        1,
 			expectedAnnotationTimeRange:      types.NewRangeQueryTimeRange(desiredStart, desiredEnd.Add(3*time.Minute), step),
 		},
 
@@ -328,7 +328,7 @@ func TestCacheOperator(t *testing.T) {
 			},
 			expectedAnnotationTimeRange:      types.NewRangeQueryTimeRange(desiredStart.Add(-5*time.Minute), desiredEnd.Add(4*time.Minute), step),
 			expectedAnyCachedExtentsRetained: true,
-			expectedAnyCachedExtentsUsed:     true,
+			expectedCachedExtentsUsed:        2,
 		},
 
 		"cache hit with multiple extents in desired time range": {
@@ -350,7 +350,7 @@ func TestCacheOperator(t *testing.T) {
 				},
 			},
 			expectedAnyCachedExtentsRetained: true,
-			expectedAnyCachedExtentsUsed:     true,
+			expectedCachedExtentsUsed:        2,
 		},
 
 		"cache hit, but extents are just before and just after the desired time range": {
@@ -371,7 +371,7 @@ func TestCacheOperator(t *testing.T) {
 			},
 			expectedAnnotationTimeRange:      types.NewRangeQueryTimeRange(desiredStart.Add(-5*step), desiredEnd.Add(5*step), step),
 			expectedAnyCachedExtentsRetained: true,
-			expectedAnyCachedExtentsUsed:     true,
+			expectedCachedExtentsUsed:        2,
 		},
 
 		"cache miss, evaluated range overlaps max freshness window": {
@@ -431,7 +431,7 @@ func TestCacheOperator(t *testing.T) {
 				},
 			},
 			expectedAnyCachedExtentsRetained: true,
-			expectedAnyCachedExtentsUsed:     true,
+			expectedCachedExtentsUsed:        1,
 		},
 
 		"cache miss, evaluated range within OOO window": {
@@ -514,7 +514,7 @@ func TestCacheOperator(t *testing.T) {
 				},
 			},
 			expectedAnyCachedExtentsRetained: true,
-			expectedAnyCachedExtentsUsed:     true,
+			expectedCachedExtentsUsed:        1,
 		},
 
 		"cache hit, existing extent covers entire period up to max freshness window": {
@@ -530,7 +530,7 @@ func TestCacheOperator(t *testing.T) {
 			},
 			expectedWrittenCacheEntry:        nil,
 			expectedAnyCachedExtentsRetained: true,
-			expectedAnyCachedExtentsUsed:     true,
+			expectedCachedExtentsUsed:        1,
 		},
 	}
 
@@ -668,7 +668,7 @@ func TestCacheOperator(t *testing.T) {
 				require.Equal(t, testCase.expectedWrittenCacheEntry, actualEntry, "expected cache entry to be written with expected value")
 			}
 
-			if testCase.expectedAnyCachedExtentsUsed {
+			if testCase.expectedCachedExtentsUsed > 0 {
 				require.NotZero(t, queryDetails.ResultsCacheHitBytes, "expected at least one cached extent to be used")
 			} else {
 				require.Zero(t, queryDetails.ResultsCacheHitBytes, "expected no cached extents to be used")
@@ -679,6 +679,9 @@ func TestCacheOperator(t *testing.T) {
 			} else {
 				require.Zero(t, queryDetails.ResultsCacheMissBytes, "expected no freshly evaluated ranges")
 			}
+
+			require.Equal(t, float64(testCase.expectedCachedExtentsUsed), testutil.ToFloat64(metrics.UsedExtents))
+			require.Equal(t, float64(len(testCase.expectedFreshlyEvaluatedRanges)), testutil.ToFloat64(metrics.EvaluatedExtents))
 
 			require.Equal(t, float64(1), testutil.ToFloat64(metrics.CacheRequests))
 			if testCase.existingCacheEntry == nil {

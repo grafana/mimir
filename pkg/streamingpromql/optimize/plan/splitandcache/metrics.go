@@ -65,8 +65,10 @@ func NewSplitAndCacheMetrics(reg prometheus.Registerer) *SplitAndCacheMetrics {
 }
 
 type ResultsCacheMetrics struct {
-	CacheRequests prometheus.Counter
-	CacheHits     prometheus.Counter
+	CacheRequests    prometheus.Counter
+	CacheHits        prometheus.Counter
+	UsedExtents      prometheus.Counter
+	EvaluatedExtents prometheus.Counter
 }
 
 func NewResultsCacheMetrics(requestType string, reg prometheus.Registerer) *ResultsCacheMetrics {
@@ -79,6 +81,16 @@ func NewResultsCacheMetrics(requestType string, reg prometheus.Registerer) *Resu
 		CacheHits: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name:        "cortex_frontend_query_result_cache_hits_total",
 			Help:        "Total number of requests (or partial requests) fetched from the results cache.",
+			ConstLabels: map[string]string{"request_type": requestType},
+		}),
+		UsedExtents: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name:        "cortex_frontend_query_result_cache_used_extents_total",
+			Help:        "Total number of extents used from the results cache. Only emitted if running caching inside MQE is enabled.",
+			ConstLabels: map[string]string{"request_type": requestType},
+		}),
+		EvaluatedExtents: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name:        "cortex_frontend_query_result_cache_evaluated_extents_total",
+			Help:        "Total number of freshly evaluated extents. Only emitted if running caching inside MQE is enabled.",
 			ConstLabels: map[string]string{"request_type": requestType},
 		}),
 	}
