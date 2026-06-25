@@ -24,6 +24,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware/querydetails"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/splitandcache"
@@ -250,7 +251,7 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req MetricsQueryReques
 			return nil, err
 		}
 
-		if details := QueryDetailsFromContext(ctx); details != nil {
+		if details := querydetails.QueryDetailsFromContext(ctx); details != nil {
 			details.ResultsCacheMissBytes = splitReqs.countDownstreamResponseBytes()
 		}
 	}
@@ -445,7 +446,7 @@ func (s *splitAndCacheMiddleware) fetchCacheExtents(ctx context.Context, now tim
 		"extents filtered out due to ttl", extentsOutOfTTL,
 	)
 
-	if details := QueryDetailsFromContext(ctx); details != nil {
+	if details := querydetails.QueryDetailsFromContext(ctx); details != nil {
 		details.ResultsCacheHitBytes = usedBytes
 	}
 

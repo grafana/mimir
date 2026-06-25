@@ -33,6 +33,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/atomic"
 
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware/querydetails"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/testdatagen"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier"
@@ -333,7 +334,7 @@ func TestSplitAndCacheMiddleware_ResultsCache(t *testing.T) {
 		queryExpr: parseQuery(t, `{__name__=~".+"}`),
 	})
 
-	queryDetails, ctx := ContextWithEmptyDetails(context.Background())
+	queryDetails, ctx := querydetails.ContextWithEmptyDetails(context.Background())
 	ctx = user.InjectOrgID(ctx, "1")
 	resp, err := rc.Do(ctx, req)
 	require.NoError(t, err)
@@ -609,7 +610,7 @@ func TestSplitAndCacheMiddleware_ResultsCacheNoStore(t *testing.T) {
 		options:   requestoptions.Options{CacheDisabled: true},
 	})
 
-	queryDetails, ctx := ContextWithEmptyDetails(context.Background())
+	queryDetails, ctx := querydetails.ContextWithEmptyDetails(context.Background())
 	ctx = user.InjectOrgID(ctx, "1")
 	resp, err := rc.Do(ctx, req)
 	require.NoError(t, err)

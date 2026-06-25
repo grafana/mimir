@@ -25,6 +25,7 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"go.opentelemetry.io/otel"
 
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware/querydetails"
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/limiter"
@@ -593,7 +594,7 @@ func newQueryMiddlewares(
 func NewQueryDetailsStartEndRoundTripper(next http.RoundTripper) http.RoundTripper {
 	return RoundTripFunc(func(req *http.Request) (*http.Response, error) {
 		params, _ := util.ParseRequestFormWithoutConsumingBody(req)
-		if details := QueryDetailsFromContext(req.Context()); details != nil {
+		if details := querydetails.QueryDetailsFromContext(req.Context()); details != nil {
 			if startMs, _ := util.ParseTime(params.Get("start")); startMs != 0 {
 				details.Start = time.UnixMilli(startMs)
 				details.MinT = details.Start

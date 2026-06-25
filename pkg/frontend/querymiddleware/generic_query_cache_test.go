@@ -21,6 +21,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware/querydetails"
 	mimirtest "github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -216,7 +217,7 @@ func testGenericQueryCacheRoundTrip(t *testing.T, newRoundTripper newGenericQuer
 						}
 
 						// Inject the tenant ID in the request.
-						queryDetails, ctx := ContextWithEmptyDetails(context.Background())
+						queryDetails, ctx := querydetails.ContextWithEmptyDetails(context.Background())
 						req = req.WithContext(user.InjectOrgID(ctx, userID))
 
 						// Init the cache.
