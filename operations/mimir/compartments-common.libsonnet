@@ -60,6 +60,8 @@ local jsonpath = import 'github.com/jsonnet-libs/xtd/jsonpath.libsonnet';
     local root = $;
     local addressFlag = '-ingest-storage.kafka.address';
     local topicFlag = '-ingest-storage.kafka.topic';
+    local writeIdSuffix = '.write-compartment-id';
+    local readIdSuffix = '.read-compartment-id';
     local writePlaceholder = '<write-compartment-id>';
     local readPlaceholder = '<read-compartment-id>';
 
@@ -98,6 +100,25 @@ local jsonpath = import 'github.com/jsonnet-libs/xtd/jsonpath.libsonnet';
       else
         null;
 
+    // First "-flag=value" CLI arg whose flag name ends with suffix, as {flag, value}, or null if absent.
+    local flagBySuffix(container, suffix) =
+      if !std.objectHas(container, 'args') then
+        null
+      else
+        local matching = std.filter(
+          function(arg)
+            std.isString(arg) && std.startsWith(arg, '-') &&
+            (local eq = std.findSubstr('=', arg);
+             std.length(eq) > 0 && std.endsWith(std.substr(arg, 0, eq[0]), suffix)),
+          container.args
+        );
+        if std.length(matching) == 0 then
+          null
+        else
+          local arg = matching[0];
+          local eq = std.findSubstr('=', arg)[0];
+          { flag: std.substr(arg, 0, eq), value: std.substr(arg, eq + 1, std.length(arg) - eq - 1) };
+
     local validateAddress(name, compartment, container) =
       local value = flagValue(container, addressFlag);
       if value == null then
@@ -130,10 +151,26 @@ local jsonpath = import 'github.com/jsonnet-libs/xtd/jsonpath.libsonnet';
       else
         null;
 
+    // The compartment id a component is configured for must match the id encoded in its name.
+    local validateCompartmentId(name, compartment, container, suffix) =
+      local found = flagBySuffix(container, suffix);
+      if found == null then
+        null
+      else if found.value != std.toString(compartment.id) then
+        'The Deployment or StatefulSet "%s" sets "%s=%s", but it belongs to %s compartment %d (the id must match the compartment).' % [name, found.flag, found.value, compartment.kind, compartment.id]
+      else
+        null;
+
+    local validateWriteCompartmentId(name, compartment, container) =
+      validateCompartmentId(name, compartment, container, writeIdSuffix);
+
+    local validateReadCompartmentId(name, compartment, container) =
+      validateCompartmentId(name, compartment, container, readIdSuffix);
+
     local validateContainer(name, compartment, container) =
       std.foldl(
         function(firstError, validator) if firstError != null then firstError else validator(name, compartment, container),
-        [validateAddress, validateTopic],
+        [validateAddress, validateTopic, validateWriteCompartmentId, validateReadCompartmentId],
         null
       );
 
