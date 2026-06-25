@@ -7,7 +7,7 @@ keywords:
   - Grafana Mimir
   - Grafana metrics
 cascade:
-  MIMIR_VERSION: "v3.0.x"
+  MIMIR_VERSION: "v3.1.x"
   ALLOY_VERSION: "latest"
 ---
 
