@@ -5,8 +5,8 @@
 // metadata.name) and run the validator on a synthetic root. Each test asserts a non-null error
 // matching an expected substring; any mismatch fails this jsonnet build.
 
-local env = import 'test-compartments.jsonnet';
 local compartmentsCommon = import 'mimir/compartments-common.libsonnet';
+local env = import 'test-compartments.jsonnet';
 
 // Returns the flag name from an arg string like "-foo=bar" -> "-foo".
 local flagName(arg) =
