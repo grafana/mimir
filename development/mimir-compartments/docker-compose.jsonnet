@@ -173,11 +173,8 @@ std.manifestYamlDoc({
       target: 'ruler',
       publishedHttpPort: 8030 + id,
       jaegerApp: 'ruler-%d' % id,
-      // The ruler embeds a distributor to write rule results, so it needs the same compartment-aware Kafka
-      // config as the distributors (otherwise it falls back to the concrete base topic and auto-creates
-      // duplicate topics). A single ruler can't shard across write compartments, so pin it to write
-      // compartment 0; ingesters consume every write compartment, so its writes are still read back.
-      extraArguments: writeCompartmentArgs(0),
+      // The ruler writes rule results through distributors, which own write-compartment routing.
+      extraArguments: ['-ruler.distributor.address=dns:///distributor:9095'],
     })
     for id in std.range(1, count)
   },

@@ -2873,6 +2873,25 @@ func TestConfig_Validate(t *testing.T) {
 		require.Error(t, err)
 	})
 
+	t.Run("invalid distributor config when rule evaluation writes enabled", func(t *testing.T) {
+		cfg := defaultRulerConfig(t)
+		cfg.RuleEvaluationWriteEnabled = true
+		cfg.Distributor.Address = "http://distributor:9095"
+		limits := validation.MockDefaultLimits()
+
+		err := cfg.Validate(*limits)
+		require.EqualError(t, err, `invalid ruler distributor config: address must be a gRPC address, got HTTP(S) address: "http://distributor:9095"`)
+	})
+
+	t.Run("invalid distributor config ignored when rule evaluation writes disabled", func(t *testing.T) {
+		cfg := defaultRulerConfig(t)
+		cfg.RuleEvaluationWriteEnabled = false
+		cfg.Distributor.Address = "http://distributor:9095"
+		limits := validation.MockDefaultLimits()
+
+		require.NoError(t, cfg.Validate(*limits))
+	})
+
 	t.Run("invalid concurrency evaluation percentage", func(t *testing.T) {
 		cfg := defaultRulerConfig(t)
 		cfg.IndependentRuleEvaluationConcurrencyMinDurationPercentage = -1.0

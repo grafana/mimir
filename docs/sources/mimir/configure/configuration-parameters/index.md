@@ -2904,6 +2904,21 @@ query_frontend:
   # CLI flag: -ruler.query-frontend.max-retries-rate
   [max_retries_rate: <float> | default = 170]
 
+distributor:
+  # (experimental) gRPC listen address of the distributor(s) to push rule-result
+  # series to. If empty, the ruler writes using the internal distributor. Use a
+  # DNS address (prefixed with dns:///) to enable gRPC client-side load
+  # balancing; in Kubernetes, use the distributor headless service on the gRPC
+  # port.
+  # CLI flag: -ruler.distributor.address
+  [address: <string> | default = ""]
+
+  # Advanced standard gRPC client configuration used by rulers to communicate
+  # with distributors.
+  # The CLI flags prefix for this block configuration is:
+  # ruler.distributor.grpc-client-config
+  [grpc_client_config: <grpc_client>]
+
 tenant_federation:
   # Enable rule groups to query against multiple tenants. The tenant IDs
   # involved need to be in the rule group's 'source_tenants' field. If this flag
@@ -3402,6 +3417,7 @@ The `grpc_client` block configures the gRPC client used to communicate between t
 - `querier.scheduler-client`
 - `query-frontend.grpc-client-config`
 - `query-scheduler.grpc-client-config`
+- `ruler.distributor.grpc-client-config`
 - `ruler.query-frontend.grpc-client-config`
 
 &nbsp;

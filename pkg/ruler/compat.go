@@ -45,7 +45,8 @@ const (
 	failureReasonClientError = "client_error"
 )
 
-// Pusher is an ingester server that accepts pushes.
+// Pusher accepts write requests and owns the request after Push is called. Implementations
+// must release any pooled request resources once they are done with the request.
 type Pusher interface {
 	Push(context.Context, *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error)
 }
@@ -106,8 +107,7 @@ func (a *PusherAppender) AppendHistogramSTZeroSample(storage.SeriesRef, labels.L
 func (a *PusherAppender) Commit() error {
 	a.totalWrites.WithLabelValues(a.userID).Inc()
 
-	// Since a.pusher is distributor, client.ReuseSlice will be called in a.pusher.Push.
-	// We shouldn't call client.ReuseSlice here.
+	// The configured pusher owns the request after Push and releases pooled resources.
 	req := mimirpb.ToWriteRequest(a.labels, a.samples, nil, nil, mimirpb.RULE)
 	req.AddHistogramSeries(a.histogramLabels, a.histograms, nil)
 	_, err := a.pusher.Push(user.InjectOrgID(a.ctx, a.userID), req)

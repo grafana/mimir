@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/gorilla/mux"
@@ -337,6 +338,7 @@ func TestInitVault(t *testing.T) {
 	require.NotNil(t, mimir.Cfg.Frontend.FrontendV2.GRPCClientConfig.TLS.Reader)
 	require.NotNil(t, mimir.Cfg.Ruler.ClientTLSConfig.TLS.Reader)
 	require.NotNil(t, mimir.Cfg.Ruler.DeprecatedNotifier.TLS.Reader)
+	require.NotNil(t, mimir.Cfg.Ruler.Distributor.GRPCClientConfig.TLS.Reader)
 	require.NotNil(t, mimir.Cfg.Ruler.QueryFrontend.GRPCClientConfig.TLS.Reader)
 	require.NotNil(t, mimir.Cfg.Alertmanager.AlertmanagerClient.GRPCClientConfig.TLS.Reader)
 	require.NotNil(t, mimir.Cfg.QueryScheduler.GRPCClientConfig.TLS.Reader)
@@ -357,4 +359,64 @@ func TestInitVault(t *testing.T) {
 	require.Equal(t, "foo1", mimir.Cfg.Server.GRPCTLSConfig.TLSCert)
 	require.Equal(t, config.Secret("foo2"), mimir.Cfg.Server.GRPCTLSConfig.TLSKey)
 	require.Equal(t, "foo3", mimir.Cfg.Server.GRPCTLSConfig.ClientCAsText)
+}
+
+func TestRulerModuleDependencies(t *testing.T) {
+	for _, tc := range []struct {
+		name            string
+		setup           func(*Config)
+		expectedDeps    []string
+		notExpectedDeps []string
+	}{
+		{
+			name: "remote query and enabled remote distributor writes avoid local query and distributor dependencies",
+			setup: func(cfg *Config) {
+				cfg.Ruler.QueryFrontend.Address = "dns:///query-frontend:9095"
+				cfg.Ruler.Distributor.Address = "dns:///distributor:9095"
+			},
+			expectedDeps:    []string{API, MemberlistKV, RulerStorage, Vault},
+			notExpectedDeps: []string{DistributorService, StoreQueryable, QuerierQueryPlanner},
+		},
+		{
+			name: "local query and enabled remote distributor writes keep local query dependencies",
+			setup: func(cfg *Config) {
+				cfg.Ruler.Distributor.Address = "dns:///distributor:9095"
+			},
+			expectedDeps: []string{API, MemberlistKV, RulerStorage, Vault, DistributorService, StoreQueryable, QuerierQueryPlanner},
+		},
+		{
+			name: "disabled rule evaluation writes do not start remote distributor client",
+			setup: func(cfg *Config) {
+				cfg.Ruler.QueryFrontend.Address = "dns:///query-frontend:9095"
+				cfg.Ruler.Distributor.Address = "dns:///distributor:9095"
+				cfg.Ruler.RuleEvaluationWriteEnabled = false
+			},
+			expectedDeps:    []string{API, MemberlistKV, RulerStorage, Vault},
+			notExpectedDeps: []string{DistributorService, StoreQueryable, QuerierQueryPlanner},
+		},
+		{
+			name: "no remote distributor preserves local write fallback",
+			setup: func(cfg *Config) {
+				cfg.Ruler.QueryFrontend.Address = "dns:///query-frontend:9095"
+			},
+			expectedDeps:    []string{API, MemberlistKV, RulerStorage, Vault, DistributorService},
+			notExpectedDeps: []string{StoreQueryable, QuerierQueryPlanner},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := newDefaultConfig()
+			tc.setup(cfg)
+
+			mimir := &Mimir{Cfg: *cfg}
+			require.NoError(t, mimir.setupModuleManager())
+
+			deps := mimir.ModuleManager.DependenciesForModule(Ruler)
+			for _, expected := range tc.expectedDeps {
+				require.Truef(t, slices.Contains(deps, expected), "expected %s in dependencies %v", expected, deps)
+			}
+			for _, unexpected := range tc.notExpectedDeps {
+				require.Falsef(t, slices.Contains(deps, unexpected), "did not expect %s in dependencies %v", unexpected, deps)
+			}
+		})
+	}
 }

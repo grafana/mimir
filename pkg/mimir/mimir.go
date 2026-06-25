@@ -249,6 +249,7 @@ func (c *Config) CommonConfigInheritance() CommonConfigInheritance {
 			"query_frontend_client":            &c.Frontend.ClusterValidationConfig,
 			"scheduler_query_frontend_client":  &c.QueryScheduler.GRPCClientConfig.ClusterValidation,
 			"ruler_client":                     &c.Ruler.ClientTLSConfig.ClusterValidation,
+			"ruler_distributor_client":         &c.Ruler.Distributor.GRPCClientConfig.ClusterValidation,
 			"ruler_query_frontend_client":      &c.Ruler.QueryFrontend.GRPCClientConfig.ClusterValidation,
 			"alert_manager_client":             &c.Alertmanager.AlertmanagerClient.GRPCClientConfig.ClusterValidation,
 			"usage_tracker_client":             &c.Distributor.UsageTrackerClient.GRPCClientConfig.ClusterValidation,
@@ -471,6 +472,14 @@ func (c *Config) isAlertManagerEnabled() bool {
 
 func (c *Config) isRulerEnabled() bool {
 	return c.isAnyModuleExplicitlyTargeted(All, Ruler)
+}
+
+func (c *Config) rulerRemoteWritesEnabled() bool {
+	return c.Ruler.RuleEvaluationWriteEnabled && c.Ruler.Distributor.Address != ""
+}
+
+func (c *Config) rulerLocalWritesEnabled() bool {
+	return c.Ruler.RuleEvaluationWriteEnabled && c.Ruler.Distributor.Address == ""
 }
 
 func (c *Config) isStoreGatewayEnabled() bool {

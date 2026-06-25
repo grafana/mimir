@@ -256,6 +256,7 @@ func (t *Mimir) initVault() (services.Service, error) {
 	t.Cfg.QueryScheduler.GRPCClientConfig.TLS.Reader = t.Vault
 	t.Cfg.Ruler.ClientTLSConfig.TLS.Reader = t.Vault
 	t.Cfg.Ruler.DeprecatedNotifier.TLS.Reader = t.Vault
+	t.Cfg.Ruler.Distributor.GRPCClientConfig.TLS.Reader = t.Vault
 	t.Cfg.Ruler.QueryFrontend.GRPCClientConfig.TLS.Reader = t.Vault
 	t.Cfg.Worker.QueryFrontendGRPCClientConfig.TLS.Reader = t.Vault
 	t.Cfg.Worker.QuerySchedulerGRPCClientConfig.TLS.Reader = t.Vault
@@ -525,11 +526,11 @@ func (t *Mimir) initDistributorService() (serv services.Service, err error) {
 	// ruler's dependency)
 	canJoinDistributorsRing := t.Cfg.isDistributorEnabled()
 
-	// Only run the ingest-storage writer in processes that actually push (the distributor and the ruler,
-	// which writes rule results). When the distributor is used purely as a query dependency (querier), the
-	// writer is unnecessary and, under compartments, would fail to start trying to auto-create topics it
-	// has no write-compartment context for.
-	writerEnabled := t.Cfg.isDistributorEnabled() || t.Cfg.isRulerEnabled()
+	// Only run the ingest-storage writer in processes that actually push (the distributor and rulers using
+	// local writes for rule results). When the distributor is used purely as a query dependency or the ruler
+	// pushes via remote distributors, the writer is unnecessary and, under compartments, would fail to start
+	// trying to auto-create topics it has no write-compartment context for.
+	writerEnabled := t.Cfg.isDistributorEnabled() || (t.Cfg.isRulerEnabled() && t.Cfg.rulerLocalWritesEnabled())
 
 	t.Cfg.Distributor.StreamingChunksPerIngesterSeriesBufferSize = t.Cfg.Querier.StreamingChunksPerIngesterSeriesBufferSize
 	t.Cfg.Distributor.MinimizeIngesterRequests = t.Cfg.Querier.MinimizeIngesterRequests
@@ -1326,9 +1327,18 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 		)
 	}
 	rulesFS := afero.NewMemMapFs()
+	var pusher ruler.Pusher = t.Distributor
+	var remoteDistributorClient *ruler.DistributorGRPCClient
+	if t.Cfg.rulerRemoteWritesEnabled() {
+		remoteDistributorClient, err = ruler.NewDistributorGRPCClient(t.Cfg.Ruler.Distributor, t.Registerer, util_log.Logger)
+		if err != nil {
+			return nil, err
+		}
+		pusher = remoteDistributorClient
+	}
 	managerFactory := ruler.DefaultTenantManagerFactory(
 		t.Cfg.Ruler,
-		t.Distributor,
+		pusher,
 		embeddedQueryable,
 		queryFunc,
 		rulesFS,
@@ -1350,7 +1360,7 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 	dnsResolver := dns.NewProvider(dns.GolangResolverType, 0, util_log.Logger, dnsProviderReg)
 	manager, err := ruler.NewDefaultMultiTenantManager(t.Cfg.Ruler, managerFactory, t.Registerer, util_log.Logger, dnsResolver, t.Overrides, rulesFS)
 	if err != nil {
-		return nil, err
+		return nil, closeWithError(err, remoteDistributorClient)
 	}
 
 	t.Ruler, err = ruler.NewRuler(
@@ -1362,7 +1372,7 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 		t.Overrides,
 	)
 	if err != nil {
-		return
+		return nil, closeWithError(err, remoteDistributorClient)
 	}
 
 	// Expose HTTP/GRPC admin endpoints for the Ruler service
@@ -1371,6 +1381,9 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 	// Expose HTTP configuration and prometheus-compatible Ruler APIs
 	t.API.RegisterRulerAPI(ruler.NewAPI(t.Ruler, t.RulerStorage, util_log.Logger), t.Cfg.Ruler.EnableAPI, t.BuildInfoHandler)
 
+	if remoteDistributorClient != nil {
+		return wrapRulerServiceWithCleanup(t.Ruler, remoteDistributorClient), nil
+	}
 	return t.Ruler, nil
 }
 
@@ -1689,6 +1702,21 @@ func (t *Mimir) setupModuleManager() error {
 
 	mm.RegisterModule(All, nil)
 
+	rulerDeps := []string{API, MemberlistKV, RulerStorage, Vault}
+	addRulerDep := func(dep string) {
+		if !slices.Contains(rulerDeps, dep) {
+			rulerDeps = append(rulerDeps, dep)
+		}
+	}
+	if t.Cfg.Ruler.QueryFrontend.Address == "" {
+		addRulerDep(DistributorService)
+		addRulerDep(StoreQueryable)
+		addRulerDep(QuerierQueryPlanner)
+	}
+	if t.Cfg.rulerLocalWritesEnabled() {
+		addRulerDep(DistributorService)
+	}
+
 	// Add dependencies
 	deps := map[string][]string{
 		//lint:sorted
@@ -1719,7 +1747,7 @@ func (t *Mimir) setupModuleManager() error {
 		QueryFrontendTripperware:         {API, Overrides, QueryFrontendCodec, QueryFrontendTopicOffsetsReaders, QuerierRing, QueryFrontendCacheClient, CacheKeyGenerator},
 		QueryScheduler:                   {API, Overrides, MemberlistKV, Vault},
 		Queryable:                        {Overrides, DistributorService, IngesterRing, IngesterPartitionRing, API, StoreQueryable, MemberlistKV, QuerierQueryPlanner},
-		Ruler:                            {DistributorService, StoreQueryable, RulerStorage, Vault, QuerierQueryPlanner},
+		Ruler:                            rulerDeps,
 		RulerStorage:                     {Overrides},
 		RuntimeConfig:                    {API},
 		Server:                           {ActivityTracker, SanityCheck, UsageStats},
