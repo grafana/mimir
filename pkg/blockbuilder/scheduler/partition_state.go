@@ -50,18 +50,8 @@ func newPartitionState(topic string, partition int32, metrics *schedulerMetrics,
 		pendingJobs:    list.New(),
 		plannedJobs:    list.New(),
 		plannedJobsMap: make(map[string]*jobState),
-		planned: &advancingOffset{
-			name:    offsetNamePlanned,
-			off:     offsetEmpty,
-			metrics: metrics,
-			logger:  logger,
-		},
-		committed: &advancingOffset{
-			name:    offsetNameCommitted,
-			off:     offsetEmpty,
-			metrics: metrics,
-			logger:  logger,
-		},
+		planned:        newAdvancingOffset(offsetNamePlanned, metrics, logger),
+		committed:      newAdvancingOffset(offsetNameCommitted, metrics, logger),
 	}
 }
 
@@ -188,6 +178,15 @@ type advancingOffset struct {
 	name    string
 	metrics *schedulerMetrics
 	logger  log.Logger
+}
+
+func newAdvancingOffset(name string, metrics *schedulerMetrics, logger log.Logger) *advancingOffset {
+	return &advancingOffset{
+		name:    name,
+		off:     offsetEmpty,
+		metrics: metrics,
+		logger:  logger,
+	}
 }
 
 const offsetEmpty int64 = -1
