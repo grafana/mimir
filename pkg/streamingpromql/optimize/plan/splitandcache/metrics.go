@@ -31,6 +31,20 @@ func NewQueryResultCacheSkippedCounter(reg prometheus.Registerer) *prometheus.Co
 	return counter
 }
 
+func NewSplitQueriesCounter(reg prometheus.Registerer) prometheus.Counter {
+	return promauto.With(reg).NewCounter(prometheus.CounterOpts{
+		Name: "cortex_frontend_split_queries_total",
+		Help: "Total number of underlying query requests after the split by interval is applied.",
+	})
+}
+
+func NewQueryResultCacheAttemptedCounter(reg prometheus.Registerer) prometheus.Counter {
+	return promauto.With(reg).NewCounter(prometheus.CounterOpts{
+		Name: "cortex_frontend_query_result_cache_attempted_total",
+		Help: "Total number of queries that were attempted to be fetched from cache.",
+	})
+}
+
 type SplitAndCacheMetrics struct {
 	*ResultsCacheMetrics
 
@@ -41,16 +55,10 @@ type SplitAndCacheMetrics struct {
 
 func NewSplitAndCacheMetrics(reg prometheus.Registerer) *SplitAndCacheMetrics {
 	m := &SplitAndCacheMetrics{
-		ResultsCacheMetrics: NewResultsCacheMetrics("query_range", reg),
-		SplitQueriesCount: promauto.With(reg).NewCounter(prometheus.CounterOpts{
-			Name: "cortex_frontend_split_queries_total",
-			Help: "Total number of underlying query requests after the split by interval is applied.",
-		}),
-		QueryResultCacheAttemptedCount: promauto.With(reg).NewCounter(prometheus.CounterOpts{
-			Name: "cortex_frontend_query_result_cache_attempted_total",
-			Help: "Total number of queries that were attempted to be fetched from cache.",
-		}),
-		QueryResultCacheSkippedCount: NewQueryResultCacheSkippedCounter(reg),
+		ResultsCacheMetrics:            NewResultsCacheMetrics("query_range", reg),
+		SplitQueriesCount:              NewSplitQueriesCounter(reg),
+		QueryResultCacheAttemptedCount: NewQueryResultCacheAttemptedCounter(reg),
+		QueryResultCacheSkippedCount:   NewQueryResultCacheSkippedCounter(reg),
 	}
 
 	return m

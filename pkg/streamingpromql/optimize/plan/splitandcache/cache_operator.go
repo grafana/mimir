@@ -53,6 +53,7 @@ type CacheOperator struct {
 	limitsProvider     LimitsProvider
 	logger             log.Logger
 	cacheEntryInterval time.Duration
+	metrics            *ResultsCacheMetrics
 
 	evaluationTime     time.Time
 	ttlForNonOOOExtent time.Duration
@@ -91,6 +92,7 @@ func newCacheOperator(
 	limitsProvider LimitsProvider,
 	logger log.Logger,
 	cacheEntryInterval time.Duration,
+	metrics *ResultsCacheMetrics,
 ) *CacheOperator {
 	return &CacheOperator{
 		Backend:                  backend,
@@ -105,6 +107,7 @@ func newCacheOperator(
 		cacheEntryInterval:       cacheEntryInterval,
 		timeNow:                  time.Now,
 		getCurrentTraceID:        tracing.ExtractTraceID,
+		metrics:                  metrics,
 	}
 }
 
@@ -199,11 +202,13 @@ func (c *CacheOperator) fetchExistingExtents(ctx context.Context) ([]CachedExten
 	c.hashedKey = caching.HashCacheKey(c.key)
 	keys := []string{c.hashedKey}
 
+	c.metrics.CacheRequests.Add(float64(len(keys)))
 	cacheHits, err := c.Backend.GetMulti(ctx, keys)
 	if err != nil {
 		return nil, fmt.Errorf("fetching cached results with key %q: %w", c.hashedKey, err)
 	}
 
+	c.metrics.CacheHits.Add(float64(len(cacheHits)))
 	cacheHit := cacheHits[c.hashedKey]
 
 	if cacheHit == nil {

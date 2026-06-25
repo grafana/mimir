@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/proto"
 	"github.com/grafana/dskit/cache"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
@@ -176,22 +176,24 @@ func (c *Cache) MinimumRequiredPlanVersion(_ types.QueryTimeRange) (planning.Que
 type CacheMaterializer struct {
 	cache          caching.Backend
 	limitsProvider LimitsProvider
+	metrics        *ResultsCacheMetrics
 }
 
-func NewCacheMaterializer(baseCache cache.Cache, cachePrefixGenerator caching.PrefixGenerator, limitsProvider LimitsProvider, logger log.Logger) *CacheMaterializer {
-	var backend caching.Backend
+func NewCacheMaterializer(baseCache cache.Cache, cachePrefixGenerator caching.PrefixGenerator, limitsProvider LimitsProvider, reg prometheus.Registerer) *CacheMaterializer {
+	m := &CacheMaterializer{
+		limitsProvider: limitsProvider,
+	}
 
 	if baseCache != nil {
-		backend = caching.NewPrefixingCache(
+		m.cache = caching.NewPrefixingCache(
 			caching.NewAdaptor(baseCache),
 			caching.VersioningAndItemTypePrefixGenerator(cachePrefixGenerator, cacheVersion, "MQEQR"),
 		)
+
+		m.metrics = NewResultsCacheMetrics("query_range", reg)
 	}
 
-	return &CacheMaterializer{
-		cache:          backend,
-		limitsProvider: limitsProvider,
-	}
+	return m
 }
 
 func (m *CacheMaterializer) Materialize(ctx context.Context, n planning.Node, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters, overrideRangeParams planning.RangeParams) (planning.OperatorFactory, error) {
@@ -224,6 +226,7 @@ func (m *CacheMaterializer) Materialize(ctx context.Context, n planning.Node, ma
 		m.limitsProvider,
 		params.Logger,
 		node.SplitInterval,
+		m.metrics,
 	)
 
 	return planning.NewSingleUseOperatorFactory(operator), nil
