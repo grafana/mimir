@@ -4,6 +4,56 @@ local filename = 'mimir-writes.json';
 (import 'dashboard-utils.libsonnet') +
 (import 'dashboard-queries.libsonnet') {
 
+  // Builds a "requests / sec" panel for the usage-tracker rows, split by request type:
+  // sync single requests (TrackSeries) and async batch requests (TrackSeriesBatch).
+  // typeLabel is the label holding the gRPC route ("route" for the service, "operation" for the client).
+  usageTrackerRequestsPerTypePanel(title, metric, typeLabel, jobSelector)::
+    local syncSelector = utils.toPrometheusSelectorNaked(jobSelector + [utils.selector.re(typeLabel, $.queries.usage_tracker_track_series_sync_route_regex)]);
+    local batchSelector = utils.toPrometheusSelectorNaked(jobSelector + [utils.selector.re(typeLabel, $.queries.usage_tracker_track_series_batch_route_regex)]);
+    local syncQuery = utils.ncHistogramSumBy(utils.ncHistogramCountRate(metric, syncSelector));
+    local batchQuery = utils.ncHistogramSumBy(utils.ncHistogramCountRate(metric, batchSelector));
+    $.timeseriesPanel(title) +
+    $.queryPanel(
+      [
+        utils.showClassicHistogramQuery(syncQuery),
+        utils.showNativeHistogramQuery(syncQuery),
+        utils.showClassicHistogramQuery(batchQuery),
+        utils.showNativeHistogramQuery(batchQuery),
+      ],
+      ['Sync (single)', 'Sync (single)', 'Async (batch)', 'Async (batch)'],
+    ) +
+    $.stack +
+    { fieldConfig+: { defaults+: { unit: 'reqps' } } } +
+    $.aliasColors({
+      'Sync (single)': '#2A66CF',
+      'Async (batch)': '#FFA500',
+    }),
+
+  // Builds a latency panel for the usage-tracker rows showing p99, p50 and average per request type.
+  // This results in up to 6 lines: {Sync (single), Async (batch)} x {p99, p50, average}.
+  usageTrackerLatencyPerTypePanel(title, metric, typeLabel, jobSelector)::
+    local syncSelector = utils.toPrometheusSelectorNaked(jobSelector + [utils.selector.re(typeLabel, $.queries.usage_tracker_track_series_sync_route_regex)]);
+    local batchSelector = utils.toPrometheusSelectorNaked(jobSelector + [utils.selector.re(typeLabel, $.queries.usage_tracker_track_series_batch_route_regex)]);
+    local syncLatency = $.ncLatencyPanel(metric, syncSelector);
+    local batchLatency = $.ncLatencyPanel(metric, batchSelector);
+    $.timeseriesPanel(title) +
+    syncLatency +
+    {
+      targets: [
+        t { legendFormat: 'Sync (single) ' + t.legendFormat }
+        for t in syncLatency.targets
+      ] + [
+        t { legendFormat: 'Async (batch) ' + t.legendFormat, refId: t.refId + '_batch' }
+        for t in batchLatency.targets
+      ],
+    },
+
+  // Builds a per-instance p99 latency panel for the usage-tracker rows, covering both request
+  // types (TrackSeries and TrackSeriesBatch) without distinguishing between them.
+  usageTrackerPerInstanceLatencyPanel(title, metric, typeLabel, jobSelector)::
+    $.timeseriesPanel(title) +
+    $.perInstanceLatencyPanelNativeHistogram('0.99', metric, jobSelector + [utils.selector.re(typeLabel, $.queries.usage_tracker.trackSeriesRequestsPerSecondRouteRegex)]),
+
   [filename]:
     assert std.md5(filename) == '8280707b8f16e7b87b840fc1cc92d4c5' : 'UID of the dashboard has changed, please update references to dashboard.';
     ($.dashboard('Writes') + { uid: std.md5(filename) })
@@ -264,68 +314,43 @@ local filename = 'mimir-writes.json';
       $.row('Usage Tracker (client)')
       .addPanel(
         local title = 'Client req / sec';
-        local asyncJobMatcher = $.jobMatcher(std.set($._config.job_names.distributor + $._config.job_names.ruler));
-        $.timeseriesPanel(title) +
-        $.qpsPanelNativeHistogram($.queries.usage_tracker.clientRequestsPerSecondMetric, $.namespaceMatcher()) +
-        {
-          // Prefix sync target legends with "Sync " and append async targets.
-          targets: [
-            t { legendFormat: 'Sync ' + t.legendFormat }
-            for t in super.targets
-          ] + [
-            {
-              expr: |||
-                sum(rate(cortex_distributor_async_usage_tracker_calls_total{%s}[$__rate_interval]))
-                -
-                (
-                  sum(rate(cortex_distributor_async_usage_tracker_calls_with_rejected_series_total{%s}[$__rate_interval]))
-                  or vector(0)
-                )
-              ||| % [asyncJobMatcher, asyncJobMatcher],
-              format: 'time_series',
-              legendFormat: 'Async',
-              refId: 'async',
-            },
-            {
-              expr: |||
-                sum(rate(cortex_distributor_async_usage_tracker_calls_with_rejected_series_total{%s}[$__rate_interval]))
-              ||| % [asyncJobMatcher],
-              format: 'time_series',
-              legendFormat: 'Async (rejected but ingested)',
-              refId: 'async_rejected',
-            },
-          ],
-        } +
-        $.aliasColors({
-          ['Sync ' + name]: $.qpsPanelColors[name]
-          for name in std.objectFields($.qpsPanelColors)
-        } + {
-          Async: '#2A66CF',
-          'Async (rejected but ingested)': '#9E44C1',
-        }) +
+        $.usageTrackerRequestsPerTypePanel(
+          title,
+          $.queries.usage_tracker.clientRequestDurationMetric,
+          'operation',
+          $.jobSelector(std.set($._config.job_names.distributor + $._config.job_names.ruler)),
+        ) +
         $.panelDescription(
           title,
           |||
-            The number of tracking requests sent through the Usage Tracker client, which are later multiplexed into individual requests to the Usage Tracker service instances.
-            Async requests proceed with the write request without waiting for tracking to complete.
-            Some async requests may have rejected the series that were actually ingested.
-          |||
-        ),
-      )
-      .addPanel(
-        local title = 'Client sync requests latency';
-        $.timeseriesPanel(title) +
-        $.latencyRecordingRulePanelNativeHistogram($.queries.usage_tracker.clientRequestsPerSecondMetric, $.jobSelector(std.set($._config.job_names.distributor + $._config.job_names.ruler))) +
-        $.panelDescription(
-          title,
-          |||
-            Time taken to track all series in remote write request, eventually sharding the tracking among multiple usage-tracker instances.
+            The rate of gRPC requests sent from the Usage Tracker client to the usage-tracker service instances, broken down by request type.
+            Sync (single) requests (TrackSeries) are sent synchronously, one per partition, blocking the write request until tracking completes.
+            Async (batch) requests (TrackSeriesBatch) accumulate series into batches and are sent without blocking the write request.
           |||
         )
       )
       .addPanel(
-        $.timeseriesPanel('Client per %s p99 sync requests latency' % $._config.per_instance_label) +
-        $.perInstanceLatencyPanelNativeHistogram('0.99', $.queries.usage_tracker.clientRequestsPerSecondMetric, $.jobSelector(std.set($._config.job_names.distributor + $._config.job_names.ruler)))
+        local title = 'Client latency';
+        $.usageTrackerLatencyPerTypePanel(
+          title,
+          $.queries.usage_tracker.clientRequestDurationMetric,
+          'operation',
+          $.jobSelector(std.set($._config.job_names.distributor + $._config.job_names.ruler)),
+        ) +
+        $.panelDescription(
+          title,
+          |||
+            Latency of the individual gRPC requests sent from the Usage Tracker client to each usage-tracker instance, split into p99, p50 and average per request type.
+          |||
+        )
+      )
+      .addPanel(
+        $.usageTrackerPerInstanceLatencyPanel(
+          'Client per %s p99 latency' % $._config.per_instance_label,
+          $.queries.usage_tracker.clientRequestDurationMetric,
+          'operation',
+          $.jobSelector(std.set($._config.job_names.distributor + $._config.job_names.ruler)),
+        )
       )
     )
     .addRowIf(
@@ -333,42 +358,42 @@ local filename = 'mimir-writes.json';
       $.row('Usage Tracker')
       .addPanel(
         local title = 'Requests / sec';
-        local syncPanel = $.qpsPanelNativeHistogram($.queries.usage_tracker.requestsPerSecondMetric, $.queries.usage_tracker.trackSeriesSyncRequestsPerSecondSelector);
-        local batchPanel = $.qpsPanelNativeHistogram($.queries.usage_tracker.requestsPerSecondMetric, $.queries.usage_tracker.trackSeriesBatchRequestsPerSecondSelector);
-        $.timeseriesPanel(title) +
-        syncPanel +
-        {
-          // Prefix the non-batch (Sync) target legends and append the batch (Async) targets.
-          targets: [
-            t { legendFormat: 'Sync ' + t.legendFormat }
-            for t in syncPanel.targets
-          ] + [
-            t { legendFormat: 'Async ' + t.legendFormat, refId: t.refId + '_batch' }
-            for t in batchPanel.targets
-          ],
-        } +
-        $.aliasColors({
-          ['Sync ' + name]: $.qpsPanelColors[name]
-          for name in std.objectFields($.qpsPanelColors)
-        } + {
-          ['Async ' + name]: $.qpsPanelColors[name]
-          for name in std.objectFields($.qpsPanelColors)
-        }) +
+        $.usageTrackerRequestsPerTypePanel(
+          title,
+          $.queries.usage_tracker.requestsPerSecondMetric,
+          'route',
+          $.jobSelector($._config.job_names.usage_tracker),
+        ) +
         $.panelDescription(
           title,
           |||
-            The number of TrackSeries requests received by the Usage Tracker service, broken down into the non-batch (Sync) and batch (Async) routes.
-            Non-batch requests are significantly more CPU intensive than batch ones.
+            The rate of requests received by the Usage Tracker service, broken down by request type.
+            Sync (single) requests (TrackSeries) are significantly more CPU intensive than Async (batch) requests (TrackSeriesBatch).
           |||
         )
       )
       .addPanel(
-        $.timeseriesPanel('Latency') +
-        $.latencyRecordingRulePanelNativeHistogram($.queries.usage_tracker.requestsPerSecondMetric, $.jobSelector($._config.job_names.usage_tracker) + [utils.selector.re('route', $.queries.usage_tracker.trackSeriesRequestsPerSecondRouteRegex)])
+        local title = 'Latency';
+        $.usageTrackerLatencyPerTypePanel(
+          title,
+          $.queries.usage_tracker.requestsPerSecondMetric,
+          'route',
+          $.jobSelector($._config.job_names.usage_tracker),
+        ) +
+        $.panelDescription(
+          title,
+          |||
+            Latency of the requests received by the Usage Tracker service, split into p99, p50 and average per request type.
+          |||
+        )
       )
       .addPanel(
-        $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
-        $.perInstanceLatencyPanelNativeHistogram('0.99', $.queries.usage_tracker.requestsPerSecondMetric, $.jobSelector($._config.job_names.usage_tracker) + [utils.selector.re('route', $.queries.usage_tracker.trackSeriesRequestsPerSecondRouteRegex)])
+        $.usageTrackerPerInstanceLatencyPanel(
+          'Per %s p99 latency' % $._config.per_instance_label,
+          $.queries.usage_tracker.requestsPerSecondMetric,
+          'route',
+          $.jobSelector($._config.job_names.usage_tracker),
+        )
       )
     )
     .addRowIf(

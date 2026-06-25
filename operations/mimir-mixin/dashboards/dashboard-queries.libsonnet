@@ -123,8 +123,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
       readGRPCStoreGatewayRoute: $.queries.read_grpc_store_gateway_route,
       rulerQueryFrontendRoutesRegex: $.queries.ruler_query_frontend_routes_regex,
       usageTrackerTrackSeriesRoutesRegex: $.queries.usage_tracker_track_series_routes_regex,
-      usageTrackerTrackSeriesSyncRouteRegex: $.queries.usage_tracker_track_series_sync_route_regex,
-      usageTrackerTrackSeriesBatchRouteRegex: $.queries.usage_tracker_track_series_batch_route_regex,
       usageTrackerGetUsersCloseToLimitRoutesRegex: $.queries.usage_tracker_get_users_close_to_limit_routes_regex,
       perClusterLabel: $._config.per_cluster_label,
       recordingRulePrefix: $.recordingRulePrefix($.jobSelector('any')),  // The job name does not matter here.
@@ -184,11 +182,9 @@ local utils = import 'mixin-utils/utils.libsonnet';
 
     usage_tracker: {
       local p = self,
-      clientRequestsPerSecondMetric: 'cortex_usage_tracker_client_track_series_duration_seconds',
+      clientRequestDurationMetric: 'cortex_usage_tracker_client_request_duration_seconds',
       requestsPerSecondMetric: $.queries.requests_per_second_metric,
       trackSeriesRequestsPerSecondRouteRegex: '%(usageTrackerTrackSeriesRoutesRegex)s' % variables,
-      trackSeriesSyncRequestsPerSecondSelector: '%(usageTrackerMatcher)s, route=~"%(usageTrackerTrackSeriesSyncRouteRegex)s"' % variables,
-      trackSeriesBatchRequestsPerSecondSelector: '%(usageTrackerMatcher)s, route=~"%(usageTrackerTrackSeriesBatchRouteRegex)s"' % variables,
       getUsersCloseToLimitRequestsPerSecondRouteRegex: '%(usageTrackerGetUsersCloseToLimitRoutesRegex)s' % variables,
       getUsersCloseToLimitRequestsPerSecondSelector: '%(usageTrackerMatcher)s, route=~"%(usageTrackerGetUsersCloseToLimitRoutesRegex)s"' % variables,
 
