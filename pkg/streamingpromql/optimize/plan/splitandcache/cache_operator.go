@@ -891,6 +891,14 @@ func (c *CacheOperator) writeCacheEntry(ctx context.Context, stats *types.Operat
 		return err
 	}
 
+	spanLogger := spanlogger.FromContext(ctx, c.logger)
+	spanLogger.DebugLog(
+		"msg", "storing new entry in cache",
+		"key", c.hashedKey,
+		"extent_count", len(extents),
+		"entry_size_bytes", len(value),
+	)
+
 	if err := c.Backend.SetAsync(ctx, c.hashedKey, value, ttl); err != nil {
 		return fmt.Errorf("storing cached results with key %q: %w", c.hashedKey, err)
 	}
