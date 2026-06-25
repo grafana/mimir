@@ -12,6 +12,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 
+	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
@@ -95,6 +96,9 @@ func MaterializeSplit(ctx context.Context, node *TimeRangeSplit, materializer *p
 		ranges = append(ranges, newSplitRange(inner, params.MemoryConsumptionTracker))
 		start = end + timeRange.IntervalMilliseconds
 	}
+
+	queryStats := stats.FromContext(ctx)
+	queryStats.AddSplitQueries(uint32(len(ranges)))
 
 	if len(ranges) == 1 {
 		// If we have just one range, return the inner operator without wrapping it.
