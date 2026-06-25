@@ -11,6 +11,8 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
+
+	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
 const (
@@ -23,7 +25,7 @@ func (h *InsertOmittedTargetInfoSelector) Name() string {
 	return "Insert omitted target info selector"
 }
 
-func (h *InsertOmittedTargetInfoSelector) Apply(_ context.Context, root parser.Expr) (parser.Expr, error) {
+func (h *InsertOmittedTargetInfoSelector) Apply(_ context.Context, root parser.Expr, _ types.QueryTimeRange) (parser.Expr, error) {
 	if err := parser.Walk(h, root, nil); err != nil {
 		return nil, err
 	}
