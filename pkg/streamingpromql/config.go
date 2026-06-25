@@ -81,6 +81,12 @@ type RangeQuerySplittingAndCachingConfig struct {
 	SplitInterval time.Duration
 	CacheEnabled  bool
 
+	// MinCacheExtent is the minimum size of a cached extent for it to be read back from the cache,
+	// rather than being discarded and re-evaluated.
+	// This only applies when the desired time range is larger than MinCacheExtent.
+	// A value of zero disables small extent avoidance.
+	MinCacheExtent time.Duration
+
 	// FIXME: Once we no longer support running splitting and caching in the frontend middleware, move the cache client options here.
 	CacheClient cache.Cache
 }

@@ -1152,6 +1152,7 @@ func (t *Mimir) createQueryFrontendPromQLEngineOptions() streamingpromql.EngineO
 	opts.RangeQuerySplittingAndCaching.SplitEnabled = middlewareCfg.UseMQEForSplittingAndCachingResults && middlewareCfg.SplitQueriesByInterval > 0
 	opts.RangeQuerySplittingAndCaching.SplitInterval = middlewareCfg.SplitQueriesByInterval
 	opts.RangeQuerySplittingAndCaching.CacheEnabled = middlewareCfg.UseMQEForSplittingAndCachingResults && middlewareCfg.CacheResults
+	opts.RangeQuerySplittingAndCaching.MinCacheExtent = querymiddleware.DefaultMinCacheExtent
 	opts.RangeQuerySplittingAndCaching.CacheClient = t.QueryFrontendCacheClient
 
 	return opts
