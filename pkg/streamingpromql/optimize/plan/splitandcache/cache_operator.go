@@ -198,7 +198,11 @@ func (c *CacheOperator) fetchExistingExtents(ctx context.Context) ([]CachedExten
 	c.hashedKey = caching.HashCacheKey(c.key)
 	keys := []string{c.hashedKey}
 
-	cacheHits := c.Backend.GetMulti(ctx, keys)
+	cacheHits, err := c.Backend.GetMulti(ctx, keys)
+	if err != nil {
+		return nil, fmt.Errorf("fetching cached results with key %q: %w", c.hashedKey, err)
+	}
+
 	cacheHit := cacheHits[c.hashedKey]
 
 	if cacheHit == nil {
@@ -729,6 +733,11 @@ func (c *CacheOperator) accumulateDesiredHistograms(data types.InstantVectorSeri
 			return err
 		}
 
+		// AppendToSlice copied the desired points into desiredTimeRangeData, but those copies share their FloatHistogram
+		// instances with data.Histograms. Clear the copied range before returning data.Histograms to the pool so the
+		// pooled slice doesn't retain references to instances now owned by desiredTimeRangeData: otherwise a later reuse
+		// of the pooled slice could alias those instances and corrupt the result.
+		clear(data.Histograms[firstDesiredIndex : lastDesiredIndex+1])
 		types.HPointSlicePool.Put(&data.Histograms, c.MemoryConsumptionTracker)
 	}
 
@@ -850,11 +859,13 @@ func (c *CacheOperator) writeCacheEntry(ctx context.Context, stats *types.Operat
 
 	traceID, _ := c.getCurrentTraceID(ctx)
 
+	seriesMetadata, data := c.encodeSeriesForCacheEntry()
+
 	desiredTimeRangeExtent := CachedExtent{
 		StartT:                  c.extents.cacheableRangeStartT,
 		EndT:                    c.extents.cacheableRangeEndT,
-		SeriesMetadata:          querierpb.EncodeSeriesMetadataSlice(c.seriesMetadata),
-		Data:                    c.encodeDataForCacheEntry(),
+		SeriesMetadata:          seriesMetadata,
+		Data:                    data,
 		Annotations:             querierpb.EncodeAnnotations(annos, c.queryParameters.OriginalExpression),
 		Stats:                   stats.Encode(),
 		NewestEvaluationTraceID: traceID,
@@ -880,7 +891,10 @@ func (c *CacheOperator) writeCacheEntry(ctx context.Context, stats *types.Operat
 		return err
 	}
 
-	c.Backend.SetAsync(c.hashedKey, value, ttl)
+	if err := c.Backend.SetAsync(ctx, c.hashedKey, value, ttl); err != nil {
+		return fmt.Errorf("storing cached results with key %q: %w", c.hashedKey, err)
+	}
+
 	return nil
 }
 
@@ -914,14 +928,27 @@ func (c *CacheOperator) determineNewExtentEvaluationTimestamp() int64 {
 	}).GetEvaluationTimestamp()
 }
 
-func (c *CacheOperator) encodeDataForCacheEntry() []querierpb.InstantVectorSeriesData {
-	encoded := make([]querierpb.InstantVectorSeriesData, 0, len(c.data))
-	for _, d := range c.data {
+// encodeSeriesForCacheEntry encodes the series metadata and data to be written to the cache.
+// Series with no samples in the cacheable time range are not stored: they would only consume cache space,
+// and an absent series is equivalent to an empty one when the extent is read back and merged with others.
+func (c *CacheOperator) encodeSeriesForCacheEntry() ([]querierpb.SeriesMetadata, []querierpb.InstantVectorSeriesData) {
+	seriesMetadata := make([]querierpb.SeriesMetadata, 0, len(c.data))
+	data := make([]querierpb.InstantVectorSeriesData, 0, len(c.data))
+
+	for i, d := range c.data {
+		if len(d.Floats) == 0 && len(d.Histograms) == 0 {
+			// Don't store empty series in the cache.
+			continue
+		}
+
+		seriesMetadata = append(seriesMetadata, querierpb.EncodeSeriesMetadata(c.seriesMetadata[i]))
+
 		// EncodeInstantVectorSeriesData does unsafe casts and does not copy the data from the slices, but this is OK as we're immediately
 		// serializing the message and writing it to the cache before these slices are returned to their respective pools.
-		encoded = append(encoded, querierpb.EncodeInstantVectorSeriesData(d))
+		data = append(data, querierpb.EncodeInstantVectorSeriesData(d))
 	}
-	return encoded
+
+	return seriesMetadata, data
 }
 
 func (c *CacheOperator) ExpressionPosition() posrange.PositionRange {

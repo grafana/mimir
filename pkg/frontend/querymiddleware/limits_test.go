@@ -1289,7 +1289,7 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 		return expr
 	}
 
-	encodedOffsets := string(api.EncodeOffsets(map[int32]int64{0: 1, 1: 2}))
+	encodedOffsets := string(api.EncodeOffsetsV1(map[int32]int64{0: 1, 1: 2}))
 
 	requestHeaders := []*PrometheusHeader{
 		{Name: compat.ForceFallbackHeaderName, Values: []string{"true"}},

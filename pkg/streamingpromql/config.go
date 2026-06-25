@@ -14,6 +14,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/promql"
 
+	"github.com/grafana/mimir/pkg/streamingpromql/caching"
 	rangevectorsplittingcache "github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/rangevectorsplitting/cache"
 	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/promqlext"
@@ -54,6 +55,10 @@ type EngineOpts struct {
 	// These values are populated from the query-frontend config, so are not exposed as config flags or in the config file.
 	// FIXME: Once we no longer support running splitting and caching in the frontend middleware, we can move the options here.
 	RangeQuerySplittingAndCaching RangeQuerySplittingAndCachingConfig `yaml:"-"`
+
+	// CachePrefixGenerator should return a prefix for all cache keys for a given context.
+	// It should contain the tenant ID and any other relevant information that should be used to partition cache entries.
+	CachePrefixGenerator caching.PrefixGenerator `yaml:"-"`
 }
 
 // RangeVectorSplittingConfig configures the splitting of functions over range vectors queries.
@@ -145,5 +150,7 @@ func NewTestEngineOpts() EngineOpts {
 		EnableMultiAggregation:                                    true,
 		EnableRemoveStaticallyEmptyExpressions:                    true,
 		EnableRangeQueryRangeVectorCommonSubexpressionElimination: true,
+
+		CachePrefixGenerator: caching.TenantPrefixGenerator,
 	}
 }

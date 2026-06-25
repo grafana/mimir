@@ -49,7 +49,7 @@ func NewEngine(opts EngineOpts, metrics *stats.QueryMetrics, planner *QueryPlann
 	var cacheFactory *cache.CacheFactory
 	if opts.RangeVectorSplitting.Enabled {
 		var err error
-		cacheFactory, err = cache.NewCacheFactory(opts.RangeVectorSplitting.IntermediateResultsCache, opts.Limits, opts.Logger, opts.CommonOpts.Reg)
+		cacheFactory, err = cache.NewCacheFactory(opts.RangeVectorSplitting.IntermediateResultsCache, opts.Limits, opts.CachePrefixGenerator, opts.Logger, opts.CommonOpts.Reg)
 		if err != nil {
 			return nil, fmt.Errorf("failed to init range vector splitting cache, err: %w", err)
 		}
@@ -107,7 +107,7 @@ func NewEngineWithCache(opts EngineOpts, metrics *stats.QueryMetrics, planner *Q
 
 		planning.NODE_TYPE_SPLIT_FUNCTION_OVER_RANGE_VECTOR: rangevectorsplitting.NewMaterializer(opts.RangeVectorSplitting.Enabled, intermediateCache, opts.Logger),
 		planning.NODE_TYPE_TIME_RANGE_SPLIT:                 planning.NodeMaterializerFunc[*splitandcache.TimeRangeSplit](splitandcache.MaterializeSplit),
-		planning.NODE_TYPE_CACHE:                            splitandcache.NewCacheMaterializer(opts.RangeQuerySplittingAndCaching.CacheClient, opts.Limits, opts.Logger),
+		planning.NODE_TYPE_CACHE:                            splitandcache.NewCacheMaterializer(opts.RangeQuerySplittingAndCaching.CacheClient, opts.CachePrefixGenerator, opts.Limits, opts.Logger),
 	}
 
 	memoryConsumptionTrackerFactory := opts.MemoryConsumptionTrackerFactory

@@ -17,6 +17,9 @@ the other files is implemented today; this page tracks the gap.
   can hold the selected metric names (a single compartment for an equality matcher, the union for an
   enumerable metric-name set) and fans out to all compartments otherwise (see
   [Read compartments](./read-compartments.md)).
+- **Per-compartment store-gateway and compactor rings**: a store-gateway or compactor configured for a
+  read compartment registers into that compartment's own dedicated ring, separate from the
+  non-compartment ring and from the other compartments' rings.
 - A local development environment (`development/mimir-compartments`).
 
 ## Strong read consistency is not compartment-aware yet
@@ -24,6 +27,17 @@ the other files is implemented today; this page tracks the gap.
 - Strong read consistency does not propagate per-compartment offsets from the query-frontend and querier
   to the ingester, so an ingester enforcing read consistency waits for the last produced offset of every
   Kafka cluster rather than for the specific requested offsets.
+
+## Blocks-storage querying is not compartment-aware yet
+
+- The query path still uses the single, non-compartment store-gateway ring, so it does not yet route
+  block queries to the store-gateways of the compartment that holds the blocks. Compartment-aware
+  querying of store-gateways (mirroring the compartment-aware querying of ingesters) is not wired yet.
+- Running store-gateways and compactors as separate per-compartment deployments, each with a dedicated
+  object-storage bucket, is wired in the local development environment but not yet in the production
+  deployment tooling.
+- The block-builder is not compartment-aware yet, so blocks for every read compartment are not produced
+  independently.
 
 ## Not yet addressed
 

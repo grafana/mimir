@@ -4,7 +4,6 @@ package ingest
 
 import (
 	"context"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"math/rand/v2"
@@ -1592,31 +1591,15 @@ func getProduceRequestHighestTimestamp(req *kmsg.ProduceRequest) (time.Time, err
 				return time.Time{}, err
 			}
 
-			// Decompress the batch of records.
-			records, err := kgo.DefaultDecompressor().Decompress(
-				batch.Records,
-				kgo.CompressionCodecType(batch.Attributes&0x0007),
-			)
-			if err != nil {
-				return time.Time{}, err
-			}
-
-			for range batch.NumRecords {
-				// Parse the record.
-				rec := kmsg.NewRecord()
-				err := rec.ReadFrom(records)
-				if err != nil {
-					return time.Time{}, err
-				}
-
-				recordTimestamp := time.UnixMilli(batch.FirstTimestamp + rec.TimestampDelta64)
-				if highestTimestamp.IsZero() || recordTimestamp.After(highestTimestamp) {
-					highestTimestamp = recordTimestamp
-				}
-
-				// Next record.
-				length, amt := binary.Varint(records)
-				records = records[length+int64(amt):]
+			// Read the highest timestamp from the record batch header (MaxTimestamp), which the Kafka
+			// client sets to the highest record timestamp in the batch. We intentionally avoid
+			// decompressing and parsing every record: doing so on the fake Kafka's single-threaded
+			// control loop is expensive (especially under the race detector with incompressible
+			// payloads) and makes the fake fall behind the produce rate, which distorts the latency
+			// this test measures.
+			batchHighestTimestamp := time.UnixMilli(batch.MaxTimestamp)
+			if highestTimestamp.IsZero() || batchHighestTimestamp.After(highestTimestamp) {
+				highestTimestamp = batchHighestTimestamp
 			}
 		}
 	}

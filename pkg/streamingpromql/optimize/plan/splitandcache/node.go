@@ -173,9 +173,14 @@ type CacheMaterializer struct {
 	limitsProvider LimitsProvider
 }
 
-func NewCacheMaterializer(backend cache.Cache, limitsProvider LimitsProvider, logger log.Logger) *CacheMaterializer {
-	if backend != nil {
-		backend = cache.NewVersioned(backend, cacheVersion, logger)
+func NewCacheMaterializer(baseCache cache.Cache, cachePrefixGenerator caching.PrefixGenerator, limitsProvider LimitsProvider, logger log.Logger) *CacheMaterializer {
+	var backend caching.Backend
+
+	if baseCache != nil {
+		backend = caching.NewPrefixingCache(
+			caching.NewAdaptor(baseCache),
+			caching.VersioningAndItemTypePrefixGenerator(cachePrefixGenerator, cacheVersion, "MQEQR"),
+		)
 	}
 
 	return &CacheMaterializer{

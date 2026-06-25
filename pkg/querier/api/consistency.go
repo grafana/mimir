@@ -13,6 +13,8 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 
+	//lint:ignore faillint Allow importing the kmeta package, since it's an isolated package (doesn't come with many other dependencies).
+	"github.com/grafana/mimir/pkg/storage/ingest/kmeta"
 	//lint:ignore faillint Allow to import the math util package, since it's an isolated package (doesn't come with many other deps).
 	"github.com/grafana/mimir/pkg/util/math"
 	//lint:ignore faillint Allow importing the propagation package, since it's an isolated package (doesn't come with many other dependencies).
@@ -231,19 +233,31 @@ func (ss ctxStream) Context() context.Context {
 // EncodedOffsets holds the encoded partition offsets.
 type EncodedOffsets string
 
-// Lookup the offset for the input partitionID.
-func (p EncodedOffsets) Lookup(partitionID int32) (int64, bool) {
+// Lookup returns the offsets for the input read compartment and partition.
+func (p EncodedOffsets) Lookup(readCompartment int, partitionID int32) (kmeta.PartitionOffsets, bool) {
 	const versionLen = 3
-
 	if len(p) < versionLen {
-		return 0, false
+		return kmeta.PartitionOffsets{}, false
 	}
 
-	// Check the version.
-	if p[:3] != "v1=" {
-		return 0, false
+	switch p[:versionLen] {
+	case "v1=":
+		if readCompartment != 0 {
+			return kmeta.PartitionOffsets{}, false
+		}
+		offset, ok := p.lookupV1(partitionID)
+		if !ok {
+			return kmeta.PartitionOffsets{}, false
+		}
+		return kmeta.NewSingleClusterPartitionOffsets(offset), true
+	default:
+		return kmeta.PartitionOffsets{}, false
 	}
+}
 
+// lookupV1 returns the offset for the input partitionID from the v1 encoding produced by EncodeOffsetsV1.
+// It assumes the caller has already verified the "v1=" version prefix and so doesn't re-check it.
+func (p EncodedOffsets) lookupV1(partitionID int32) (int64, bool) {
 	// Find the position of the partition. The partition can either be:
 	// - At the beginning, right after the version (so after "=")
 	// - In the middle or end, right after another partition (so after ",")
@@ -275,9 +289,9 @@ func (p EncodedOffsets) Lookup(partitionID int32) (int64, bool) {
 	return offset, true
 }
 
-// EncodeOffsets serialise the input offsets into a string which is safe to be used as HTTP header value.
+// EncodeOffsetsV1 serialise the input offsets into a string which is safe to be used as HTTP header value.
 // Empty partitions (offset is -1) are NOT skipped.
-func EncodeOffsets(offsets map[int32]int64) EncodedOffsets {
+func EncodeOffsetsV1(offsets map[int32]int64) EncodedOffsets {
 	const versionLen = 3
 
 	if len(offsets) == 0 {
