@@ -16,7 +16,6 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
-	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/index"
 
 	"github.com/grafana/mimir/pkg/ingester/client"
@@ -47,7 +46,16 @@ import (
 const queryStreamBatchSize = 128
 
 func agentDebugLogReadcache(hypothesisID, message string, data map[string]any) {
-	_ = json.NewEncoder(os.Stderr).Encode(map[string]any{"level": "warn", "sessionId": "cb075f", "runId": "pre-fix", "hypothesisId": hypothesisID, "location": "pkg/readcache/handlers.go", "message": message, "data": data, "timestamp": time.Now().UnixMilli()})
+	payload := map[string]any{"level": "warn", "sessionId": "cfc356", "runId": "pre-fix", "hypothesisId": hypothesisID, "location": "pkg/readcache/handlers.go", "message": message, "data": data, "timestamp": time.Now().UnixMilli()}
+	// Emit to stderr so the line surfaces in pod logs (remote debugging),
+	// and best-effort append to the local debug logfile for local runs.
+	_ = json.NewEncoder(os.Stderr).Encode(payload)
+	if b, err := json.Marshal(payload); err == nil {
+		if f, ferr := os.OpenFile("/Users/davidgrant/dev/mimir/.cursor/debug-cfc356.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644); ferr == nil {
+			_, _ = f.Write(append(b, '\n'))
+			_ = f.Close()
+		}
+	}
 }
 
 // queryStream streams series + chunks for the given matchers across
@@ -77,15 +85,24 @@ func (r *Readcache) queryStream(req *client.QueryRequest, stream client.Ingester
 		return client.SendQueryStream(stream, &client.QueryStreamResponse{IsEndOfSeriesStream: true})
 	}
 
+	type countedChunk struct {
+		chunk   client.Chunk
+		samples int
+	}
+	appendUniqueChunk := func(chunks []countedChunk, chunk client.Chunk, samples int) ([]countedChunk, bool) {
+		for _, existing := range chunks {
+			if existing.chunk.Equal(chunk) {
+				return chunks, false
+			}
+		}
+		return append(chunks, countedChunk{chunk: chunk, samples: samples}), true
+	}
+
 	type seriesItem struct {
-		labels    labels.Labels
-		factories []storage.ChunkIterable
-		chunkCnt  int
+		labels labels.Labels
+		chunks []countedChunk
 	}
 	var items []seriesItem
-	// We must close all chunk queriers only after we're done iterating
-	// the per-series iterator factories, since the factories are
-	// owned by the querier.
 	var closers []storage.ChunkQuerier
 	defer func() {
 		for _, q := range closers {
@@ -94,8 +111,11 @@ func (r *Readcache) queryStream(req *client.QueryRequest, stream client.Ingester
 	}()
 
 	// Phase 1: across all owned partitions, gather every (labels,
-	// chunkCount, iteratorFactory), then stream globally sorted and
-	// deduplicated labels.
+	// chunks) pair, then stream globally sorted and deduplicated
+	// labels. We materialize chunks before emitting labels because the
+	// stream protocol requires the labels phase to finish before the
+	// chunks phase starts, and every advertised series must later have
+	// at least one chunk.
 	// The wire protocol requires every StreamingSeries message to land
 	// before the IsEndOfSeriesStream marker; interleaving series and
 	// chunk messages breaks the receiver's series-count accounting.
@@ -103,6 +123,7 @@ func (r *Readcache) queryStream(req *client.QueryRequest, stream client.Ingester
 	seenLabels := map[string]int{}
 	loggedOutOfOrder := false
 	loggedDuplicate := false
+	loggedNoChunks := false
 	for _, db := range dbs {
 		q, err := db.ChunkQuerier(int64(from), int64(through))
 		if err != nil {
@@ -118,25 +139,10 @@ func (r *Readcache) queryStream(req *client.QueryRequest, stream client.Ingester
 
 		for ss.Next() {
 			cs := ss.At()
-			chunkCount, err := cs.ChunkCount()
-			if err != nil {
-				return err
-			}
-
-			// Never advertise a series with no in-range chunks: the
-			// querier's batch merge iterator assumes every streamed
-			// series carries at least one chunk and panics otherwise.
-			// Multi-epoch TSDBs make this case real: a frozen epoch
-			// can index a labelset while owning no chunk inside
-			// [from, through].
-			if chunkCount == 0 {
-				continue
-			}
-
 			lbls := cs.Labels()
 			if !loggedOutOfOrder && !previousLabels.IsEmpty() && labels.Compare(previousLabels, lbls) > 0 {
 				// #region agent log
-				agentDebugLogReadcache("H1", "readcache emitted out-of-order labels", map[string]any{
+				agentDebugLogReadcache("stale-order", "readcache emitted out-of-order labels", map[string]any{
 					"tenant":       userID,
 					"dbs":          len(dbs),
 					"emittedSoFar": len(items),
@@ -150,7 +156,7 @@ func (r *Readcache) queryStream(req *client.QueryRequest, stream client.Ingester
 			labelKey := lbls.String()
 			if firstIndex, ok := seenLabels[labelKey]; !loggedDuplicate && ok {
 				// #region agent log
-				agentDebugLogReadcache("H2", "readcache emitted duplicate labels", map[string]any{
+				agentDebugLogReadcache("stale-dup", "readcache emitted duplicate labels", map[string]any{
 					"tenant":      userID,
 					"dbs":         len(dbs),
 					"firstIndex":  firstIndex,
@@ -165,10 +171,60 @@ func (r *Readcache) queryStream(req *client.QueryRequest, stream client.Ingester
 			}
 			previousLabels = lbls
 
+			var itemChunks []countedChunk
+			it := cs.IteratorFactory().Iterator(nil)
+			for it.Next() {
+				meta := it.At()
+				if meta.Chunk == nil {
+					return errors.Errorf("unfilled chunk returned from TSDB chunk querier")
+				}
+				ch, err := client.ChunkFromMeta(meta)
+				if err != nil {
+					return err
+				}
+				itemChunks, _ = appendUniqueChunk(itemChunks, ch, meta.Chunk.NumSamples())
+			}
+			if err := it.Err(); err != nil {
+				return err
+			}
+
+			// #region agent log
+			// H1: the deployed/committed code advertises a series when
+			// cs.ChunkCount() > 0, then errors in phase 2 if it yields
+			// zero chunks. Detect that exact discrepancy here: ChunkCount
+			// counts chunk metas overlapping [from,through], but trimming
+			// can drop every in-range sample, leaving zero iterated chunks.
+			if !loggedNoChunks {
+				if cc, ccErr := cs.ChunkCount(); ccErr == nil && cc > 0 && len(itemChunks) == 0 {
+					agentDebugLogReadcache("H1", "series ChunkCount>0 but iterated zero chunks after trim", map[string]any{
+						"tenant":     userID,
+						"labels":     lbls.String(),
+						"chunkCount": cc,
+						"iterated":   len(itemChunks),
+						"dbs":        len(dbs),
+						"hasHint":    req.QueryAttributionHint != nil,
+						"fromMs":     int64(from),
+						"throughMs":  int64(through),
+						"widthMs":    int64(through) - int64(from),
+					})
+					loggedNoChunks = true
+				}
+			}
+			// #endregion
+
+			// Never advertise a series with no in-range chunks: the
+			// querier's batch merge iterator assumes every streamed
+			// series carries at least one chunk and panics otherwise.
+			// Multi-epoch TSDBs make this case real: a frozen epoch
+			// can index a labelset while owning no chunk inside
+			// [from, through].
+			if len(itemChunks) == 0 {
+				continue
+			}
+
 			items = append(items, seriesItem{
-				labels:    lbls,
-				factories: []storage.ChunkIterable{cs.IteratorFactory()},
-				chunkCnt:  chunkCount,
+				labels: lbls,
+				chunks: itemChunks,
 			})
 		}
 		if err := ss.Err(); err != nil {
@@ -182,8 +238,9 @@ func (r *Readcache) queryStream(req *client.QueryRequest, stream client.Ingester
 	coalesced := items[:0]
 	for _, item := range items {
 		if len(coalesced) > 0 && labels.Equal(coalesced[len(coalesced)-1].labels, item.labels) {
-			coalesced[len(coalesced)-1].factories = append(coalesced[len(coalesced)-1].factories, item.factories...)
-			coalesced[len(coalesced)-1].chunkCnt += item.chunkCnt
+			for _, chunk := range item.chunks {
+				coalesced[len(coalesced)-1].chunks, _ = appendUniqueChunk(coalesced[len(coalesced)-1].chunks, chunk.chunk, chunk.samples)
+			}
 			continue
 		}
 		coalesced = append(coalesced, item)
@@ -194,7 +251,7 @@ func (r *Readcache) queryStream(req *client.QueryRequest, stream client.Ingester
 	for _, item := range items {
 		seriesBatch = append(seriesBatch, client.QueryStreamSeries{
 			Labels:     mimirpb.FromLabelsToLabelAdapters(item.labels),
-			ChunkCount: int64(item.chunkCnt),
+			ChunkCount: int64(len(item.chunks)),
 		})
 
 		if len(seriesBatch) >= queryStreamBatchSize {
@@ -223,42 +280,18 @@ func (r *Readcache) queryStream(req *client.QueryRequest, stream client.Ingester
 	// labels were emitted.
 	chunksBatch := make([]client.QueryStreamSeriesChunks, 0, queryStreamBatchSize)
 	var samples int
-	var it chunks.Iterator
 	for idx, item := range items {
-		var uniqueChunks []client.Chunk
 		seriesChunks := client.QueryStreamSeriesChunks{SeriesIndex: uint64(idx)}
-		for _, factory := range item.factories {
-			var factoryChunks []client.Chunk
-			it = factory.Iterator(it)
-			for it.Next() {
-				meta := it.At()
-				if meta.Chunk == nil {
-					return errors.Errorf("unfilled chunk returned from TSDB chunk querier")
-				}
-				ch, err := client.ChunkFromMeta(meta)
-				if err != nil {
-					return err
-				}
-				factoryChunks = append(factoryChunks, ch)
-				samples += meta.Chunk.NumSamples()
-			}
-			if err := it.Err(); err != nil {
-				return err
-			}
-			uniqueChunks = client.AccumulateChunks(uniqueChunks, factoryChunks)
-		}
 
-		sort.Slice(uniqueChunks, func(i, j int) bool {
-			if uniqueChunks[i].StartTimestampMs == uniqueChunks[j].StartTimestampMs {
-				return uniqueChunks[i].EndTimestampMs < uniqueChunks[j].EndTimestampMs
+		sort.Slice(item.chunks, func(i, j int) bool {
+			if item.chunks[i].chunk.StartTimestampMs == item.chunks[j].chunk.StartTimestampMs {
+				return item.chunks[i].chunk.EndTimestampMs < item.chunks[j].chunk.EndTimestampMs
 			}
-			return uniqueChunks[i].StartTimestampMs < uniqueChunks[j].StartTimestampMs
+			return item.chunks[i].chunk.StartTimestampMs < item.chunks[j].chunk.StartTimestampMs
 		})
-		for _, ch := range uniqueChunks {
-			seriesChunks.Chunks = append(seriesChunks.Chunks, ch)
-		}
-		if len(seriesChunks.Chunks) == 0 {
-			return errors.Errorf("no chunks collected for streamed series")
+		for _, ch := range item.chunks {
+			seriesChunks.Chunks = append(seriesChunks.Chunks, ch.chunk)
+			samples += ch.samples
 		}
 		chunksBatch = append(chunksBatch, seriesChunks)
 		if len(chunksBatch) >= queryStreamBatchSize {

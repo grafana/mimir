@@ -361,6 +361,84 @@ func TestReadcache_QueryStream_GlobalSortsAndDeduplicatesLabelsAcrossPartitions(
 	assert.GreaterOrEqual(t, gotChunkCounts[1], int64(2), "duplicate labelset should carry chunks from both partitions")
 }
 
+// TestReadcache_QueryStream_NoInRangeSamples reproduces the
+// "no chunks collected for streamed series" error seen in deployed
+// readcache pods. A series carries two samples that land in a single
+// head chunk but straddle a narrow query window. The chunk's meta
+// interval [MinTime, MaxTime] overlaps [from, through] (so the old
+// code's cs.ChunkCount() counts it and advertises the series), yet no
+// sample survives trimming to [from, through] (so phase-2 iteration
+// yields zero chunks). The current code instead materializes chunks
+// in phase 1 and skips such a series entirely, so the call must
+// succeed and emit no series.
+func TestReadcache_QueryStream_NoInRangeSamples(t *testing.T) {
+	const (
+		tenantID = "user-1"
+		topic    = "test-topic"
+	)
+
+	_, addr := testkafka.CreateCluster(t, 4, topic)
+
+	cfg := newTestConfigNoKafka(t)
+	cfg.KafkaTopic = topic
+	cfg.OwnedPartitions = "0"
+
+	var kafkaCfg ingest.KafkaConfig
+	kafkaCfg.RegisterFlags(flag.NewFlagSet("", flag.PanicOnError))
+	kafkaCfg.Address = flagext.StringSliceCSV{addr}
+	kafkaCfg.Topic = topic
+	cfg.Kafka = kafkaCfg
+
+	limits := validation.NewOverrides(validation.Limits{}, nil)
+	reg := prometheus.NewPedanticRegistry()
+
+	rc, err := New(cfg, limits, nil, log.NewNopLogger(), reg)
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	require.NoError(t, services.StartAndAwaitRunning(ctx, rc))
+	defer func() { _ = services.StopAndAwaitTerminated(ctx, rc) }()
+
+	writer := makeKafkaWriter(t, kafkaCfg, reg)
+	defer func() { _ = services.StopAndAwaitTerminated(ctx, writer) }()
+
+	wreqCtx := user.InjectOrgID(ctx, tenantID)
+
+	// Two samples, ~1.4h apart, both in a single 2h head chunk:
+	// chunk meta is [100, 5_000_000], no sample in [1_000_000, 2_000_000].
+	require.NoError(t, writer.WriteSync(wreqCtx, topic, 0, tenantID, &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{
+		{TimeSeries: &mimirpb.TimeSeries{
+			Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "sparse_series", "src", "test")),
+			Samples: []mimirpb.Sample{
+				{TimestampMs: 100, Value: 1},
+				{TimestampMs: 5_000_000, Value: 2},
+			},
+		}},
+	}}))
+
+	require.Eventually(t, func() bool {
+		return testutil.ToFloat64(rc.samplesIngestedTotal.WithLabelValues("0")) >= 2
+	}, 10*time.Second, 100*time.Millisecond, "samples should be ingested before querying")
+
+	// Query a window that the chunk's meta overlaps but no sample falls in.
+	req, err := ingester_client.ToQueryRequest(
+		model.Time(1_000_000), model.Time(2_000_000),
+		[]*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "sparse_series")},
+	)
+	require.NoError(t, err)
+
+	stream := &mockQueryStreamServer{ctx: wreqCtx}
+	require.NoError(t, rc.queryStream(req, stream), "queryStream must not error on a series whose chunks trim to zero in-range samples")
+
+	var advertised int
+	for _, resp := range stream.responses {
+		advertised += len(resp.StreamingSeries)
+	}
+	assert.Zero(t, advertised, "a series with no in-range samples must not be advertised")
+}
+
 // loadstatsTickSeconds mirrors loadstats.TickInterval in seconds, used
 // to compute the expected EWMA after a single tick.
 const loadstatsTickSeconds = 15.0
