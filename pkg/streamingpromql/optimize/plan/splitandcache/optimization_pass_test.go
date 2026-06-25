@@ -537,10 +537,11 @@ func runOptimizationPass(
 	planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
 
-	planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(false, false, reg, log.NewNopLogger()))
+	logger := log.NewNopLogger()
+	planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(false, false, reg, logger))
 
 	if enableOptimizationPass {
-		optimizationPass := splitandcache.NewOptimizationPass(enableSplitting, 24*time.Hour, enableCaching, limits, reg)
+		optimizationPass := splitandcache.NewOptimizationPass(enableSplitting, 24*time.Hour, enableCaching, limits, reg, logger)
 		optimizationPass.OverrideTimeNow(func() time.Time {
 			return timeNow
 		})

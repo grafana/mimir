@@ -802,7 +802,7 @@ func TestOptimizationPass(t *testing.T) {
 		planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, true, opts.CommonOpts.Reg, opts.Logger))
 
 		if enableSplittingAndCachingInsideMQE {
-			planner.RegisterQueryPlanOptimizationPass(splitandcache.NewOptimizationPass(true, 24*time.Hour, true, opts.Limits, opts.CommonOpts.Reg))
+			planner.RegisterQueryPlanOptimizationPass(splitandcache.NewOptimizationPass(true, 24*time.Hour, true, opts.Limits, opts.CommonOpts.Reg, opts.Logger))
 		}
 
 		planner.RegisterQueryPlanOptimizationPass(remoteexec.NewOptimizationPass(enableMultiNodeRemoteExec))

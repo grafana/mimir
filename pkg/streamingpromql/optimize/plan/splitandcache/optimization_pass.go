@@ -6,6 +6,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -15,6 +16,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 type OptimizationPass struct {
@@ -25,9 +27,10 @@ type OptimizationPass struct {
 	limits              LimitsProvider
 	cacheSkippedCounter *prometheus.CounterVec
 	timeNow             func() time.Time
+	logger              log.Logger
 }
 
-func NewOptimizationPass(splitEnabled bool, splitInterval time.Duration, cacheEnabled bool, limits LimitsProvider, reg prometheus.Registerer) *OptimizationPass {
+func NewOptimizationPass(splitEnabled bool, splitInterval time.Duration, cacheEnabled bool, limits LimitsProvider, reg prometheus.Registerer, logger log.Logger) *OptimizationPass {
 	return &OptimizationPass{
 		splitEnabled:        splitEnabled,
 		splitInterval:       splitInterval,
@@ -35,6 +38,7 @@ func NewOptimizationPass(splitEnabled bool, splitInterval time.Duration, cacheEn
 		limits:              limits,
 		cacheSkippedCounter: NewQueryResultCacheSkippedCounter(reg),
 		timeNow:             time.Now,
+		logger:              logger,
 	}
 }
 
@@ -63,6 +67,8 @@ func (o *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, 
 		return plan, nil
 	}
 
+	spanLogger := spanlogger.FromContext(ctx, o.logger)
+
 	now := o.timeNow()
 	maxFreshness, err := o.limits.GetMaxCacheFreshness(ctx)
 	if err != nil {
@@ -71,12 +77,12 @@ func (o *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, 
 	freshnessThreshold := now.Add(-maxFreshness)
 
 	root := plan.Root
-	root, err = o.applyCaching(ctx, root, plan.Parameters.TimeRange, freshnessThreshold)
+	root, err = o.applyCaching(ctx, root, plan.Parameters.TimeRange, freshnessThreshold, spanLogger)
 	if err != nil {
 		return nil, err
 	}
 
-	root, err = o.applySplitting(root)
+	root, err = o.applySplitting(root, spanLogger)
 	if err != nil {
 		return nil, err
 	}
@@ -85,8 +91,14 @@ func (o *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, 
 	return plan, nil
 }
 
-func (o *OptimizationPass) applyCaching(ctx context.Context, node planning.Node, timeRange types.QueryTimeRange, freshnessThreshold time.Time) (planning.Node, error) {
-	if !o.cacheEnabled || requestoptions.OptionsFromContext(ctx).CacheDisabled {
+func (o *OptimizationPass) applyCaching(ctx context.Context, node planning.Node, timeRange types.QueryTimeRange, freshnessThreshold time.Time, spanLogger *spanlogger.SpanLogger) (planning.Node, error) {
+	if !o.cacheEnabled {
+		spanLogger.DebugLog("msg", "range query caching disabled by config")
+		return node, nil
+	}
+
+	if requestoptions.OptionsFromContext(ctx).CacheDisabled {
+		spanLogger.DebugLog("msg", "range query caching disabled by request options")
 		return node, nil
 	}
 
@@ -94,20 +106,24 @@ func (o *OptimizationPass) applyCaching(ctx context.Context, node planning.Node,
 		// The query starts after the freshness threshold, so the entire query is not cacheable.
 		// If the query straddles the freshness threshold, the cache operator will only cache the
 		// portion of the query that is before the freshness threshold.
+		spanLogger.DebugLog("msg", "range query not cacheable: it is entirely within the freshness window")
 		o.cacheSkippedCounter.WithLabelValues(NotCachableReasonTooNew).Inc()
 		return node, nil
 	}
 
 	if !isStepAligned(timeRange) {
 		if allowed, err := o.limits.AllowCachingUnalignedQueries(ctx); err != nil {
+			spanLogger.DebugLog("msg", "retrieving 'allow caching unaligned queries' tenant limit failed", "err", err)
 			return nil, err
 		} else if !allowed {
+			spanLogger.DebugLog("msg", "range query not cacheable: it is not step-aligned and caching unaligned queries is disabled")
 			o.cacheSkippedCounter.WithLabelValues(NotCachableReasonUnalignedTimeRange).Inc()
 			return node, nil
 		}
 	}
 
 	if !o.modifiersAllowCaching(node, timeRange, freshnessThreshold) {
+		spanLogger.DebugLog("msg", "range query not cacheable: it contains modifers that prevent caching")
 		o.cacheSkippedCounter.WithLabelValues(NotCachableReasonModifiersNotCachable).Inc()
 		return node, nil
 	}
@@ -154,8 +170,9 @@ func isStepAligned(timeRange types.QueryTimeRange) bool {
 	return timeRange.StartT%timeRange.IntervalMilliseconds == 0
 }
 
-func (o *OptimizationPass) applySplitting(node planning.Node) (planning.Node, error) {
+func (o *OptimizationPass) applySplitting(node planning.Node, spanLogger *spanlogger.SpanLogger) (planning.Node, error) {
 	if !o.splitEnabled {
+		spanLogger.DebugLog("msg", "range query splitting disabled by config")
 		return node, nil
 	}
 
