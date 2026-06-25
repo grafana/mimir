@@ -448,6 +448,48 @@ func testBucketStore_e2e(t *testing.T, ctx context.Context, s *storeSuite, addit
 				{{Name: "a", Value: "1"}, {Name: "c", Value: "2"}},
 			},
 		},
+		// Test limit: it truncates the matched series after merging and deduplicating across
+		// blocks (the same series exists in multiple blocks here), keeping the first ones in
+		// label order. This runs across streamingBatchSize 1/5/256, exercising truncation
+		// before, on, and after a batch boundary.
+		{
+			req: &storepb.SeriesRequest{
+				Matchers: []storepb.LabelMatcher{
+					{Type: storepb.LabelMatcher_RE, Name: "a", Value: "1|2"},
+				},
+				MinTime: mint,
+				MaxTime: maxt,
+				Limit:   3,
+			},
+			expectedChunkLen: 3,
+			expected: [][]mimirpb.LabelAdapter{
+				{{Name: "a", Value: "1"}, {Name: "b", Value: "1"}},
+				{{Name: "a", Value: "1"}, {Name: "b", Value: "2"}},
+				{{Name: "a", Value: "1"}, {Name: "c", Value: "1"}},
+			},
+		},
+		// Test limit larger than the number of matched series: everything is returned.
+		{
+			req: &storepb.SeriesRequest{
+				Matchers: []storepb.LabelMatcher{
+					{Type: storepb.LabelMatcher_RE, Name: "a", Value: "1|2"},
+				},
+				MinTime: mint,
+				MaxTime: maxt,
+				Limit:   100,
+			},
+			expectedChunkLen: 3,
+			expected: [][]mimirpb.LabelAdapter{
+				{{Name: "a", Value: "1"}, {Name: "b", Value: "1"}},
+				{{Name: "a", Value: "1"}, {Name: "b", Value: "2"}},
+				{{Name: "a", Value: "1"}, {Name: "c", Value: "1"}},
+				{{Name: "a", Value: "1"}, {Name: "c", Value: "2"}},
+				{{Name: "a", Value: "2"}, {Name: "b", Value: "1"}},
+				{{Name: "a", Value: "2"}, {Name: "b", Value: "2"}},
+				{{Name: "a", Value: "2"}, {Name: "c", Value: "1"}},
+				{{Name: "a", Value: "2"}, {Name: "c", Value: "2"}},
+			},
+		},
 	}
 	for i, tcase := range append(testCases, additionalCases...) {
 		for _, streamingBatchSize := range []int{1, 5, 256} {

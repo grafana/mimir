@@ -673,6 +673,58 @@ func (l *limitingSeriesChunkRefsSetIterator) Err() error {
 	return l.err
 }
 
+// truncatingSeriesChunkRefsSetIterator stops returning series once limit series have been
+// returned by the underlying iterator. It implements the functional limit requested by the
+// client (e.g. the "limit" parameter of the Prometheus series API), as opposed to the
+// protective per-query limit enforced by limitingSeriesChunkRefsSetIterator: reaching the
+// limit here is expected and is not an error, the iterator simply stops.
+//
+// It must be applied after series have been merged and deduplicated across blocks, so that a
+// series found in multiple blocks is only counted once towards the limit.
+type truncatingSeriesChunkRefsSetIterator struct {
+	limit int
+	from  iterator[seriesChunkRefsSet]
+
+	seriesReturned int
+	currentBatch   seriesChunkRefsSet
+}
+
+func newTruncatingSeriesChunkRefsSetIterator(limit int, from iterator[seriesChunkRefsSet]) *truncatingSeriesChunkRefsSetIterator {
+	return &truncatingSeriesChunkRefsSetIterator{
+		limit: limit,
+		from:  from,
+	}
+}
+
+func (l *truncatingSeriesChunkRefsSetIterator) Next() bool {
+	if l.seriesReturned >= l.limit {
+		return false
+	}
+
+	if !l.from.Next() {
+		return false
+	}
+
+	l.currentBatch = l.from.At()
+
+	// If returning the whole batch would exceed the limit, truncate it to the remaining series.
+	// Shortening the slice is safe: the batch can still be released to the pool afterwards.
+	if remaining := l.limit - l.seriesReturned; l.currentBatch.len() > remaining {
+		l.currentBatch.series = l.currentBatch.series[:remaining]
+	}
+
+	l.seriesReturned += l.currentBatch.len()
+	return true
+}
+
+func (l *truncatingSeriesChunkRefsSetIterator) At() seriesChunkRefsSet {
+	return l.currentBatch
+}
+
+func (l *truncatingSeriesChunkRefsSetIterator) Err() error {
+	return l.from.Err()
+}
+
 type loadingSeriesChunkRefsSetIterator struct {
 	ctx                 context.Context
 	postingsSetIterator *postingsSetsIterator

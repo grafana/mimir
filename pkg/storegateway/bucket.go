@@ -683,7 +683,7 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storegatewaypb.Stor
 	readers := newChunkReaders(chunkReaders)
 	chunksLoadStart := time.Now()
 
-	seriesChunkIt := s.createIteratorForChunksStreamingChunksPhase(ctx, readers, stats, chunksLimiter, seriesLimiter, streamingIterators)
+	seriesChunkIt := s.createIteratorForChunksStreamingChunksPhase(ctx, readers, stats, chunksLimiter, seriesLimiter, req.Limit, streamingIterators)
 	err = s.sendStreamingChunks(req, srv, seriesChunkIt, stats, streamingSeriesCount)
 	if err != nil {
 		return err
@@ -1016,10 +1016,11 @@ func (s *BucketStore) createIteratorForChunksStreamingChunksPhase(
 	stats *safeQueryStats,
 	chunksLimiter ChunksLimiter,
 	seriesLimiter SeriesLimiter,
+	limit int64,
 	iterators *streamingSeriesIterators,
 ) iterator[seriesChunksSet] {
 	preparedIterators := iterators.prepareForChunksStreamingPhase()
-	it := s.getSeriesIteratorFromPerBlockIterators(preparedIterators, chunksLimiter, seriesLimiter)
+	it := s.getSeriesIteratorFromPerBlockIterators(preparedIterators, chunksLimiter, seriesLimiter, limit)
 	scsi := newChunksPreloadingIterator(ctx, s.logger, s.userID, *chunkReaders, it, s.maxSeriesPerBatch, stats)
 
 	return scsi
@@ -1099,15 +1100,21 @@ func (s *BucketStore) getSeriesIteratorFromBlocks(
 		stats.streamingSeriesExpandPostingsDuration += time.Since(begin)
 	})
 
-	return s.getSeriesIteratorFromPerBlockIterators(batches, chunksLimiter, seriesLimiter), nil
+	return s.getSeriesIteratorFromPerBlockIterators(batches, chunksLimiter, seriesLimiter, req.Limit), nil
 }
 
-func (s *BucketStore) getSeriesIteratorFromPerBlockIterators(perBlockIterators []iterator[seriesChunkRefsSet], chunksLimiter ChunksLimiter, seriesLimiter SeriesLimiter) iterator[seriesChunkRefsSet] {
+func (s *BucketStore) getSeriesIteratorFromPerBlockIterators(perBlockIterators []iterator[seriesChunkRefsSet], chunksLimiter ChunksLimiter, seriesLimiter SeriesLimiter, limit int64) iterator[seriesChunkRefsSet] {
 	mergedIterator := mergedSeriesChunkRefsSetIterators(s.maxSeriesPerBatch, perBlockIterators...)
 
 	// Apply limits after the merging, so that if the same series is part of multiple blocks it just gets
 	// counted once towards the limit.
 	mergedIterator = newLimitingSeriesChunkRefsSetIterator(mergedIterator, chunksLimiter, seriesLimiter)
+
+	// Apply the request limit last so we stop loading series (and, in the chunks streaming phase, chunks)
+	// as soon as we have enough. limit <= 0 means no limit was requested.
+	if limit > 0 {
+		mergedIterator = newTruncatingSeriesChunkRefsSetIterator(int(limit), mergedIterator)
+	}
 
 	return mergedIterator
 }
