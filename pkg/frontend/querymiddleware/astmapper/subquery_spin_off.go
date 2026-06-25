@@ -8,8 +8,6 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/pkg/errors"
-	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 )
 
@@ -25,6 +23,7 @@ const (
 )
 
 type subquerySpinOffMapper struct {
+	wrapper         SubquerySpinOffWrapper
 	defaultStepFunc func(rangeMillis int64) int64
 
 	logger log.Logger
@@ -32,9 +31,13 @@ type subquerySpinOffMapper struct {
 }
 
 // NewSubquerySpinOffMapper creates a new instant query mapper.
-func NewSubquerySpinOffMapper(defaultStepFunc func(rangeMillis int64) int64, logger log.Logger, stats *SubquerySpinOffMapperStats) ASTMapper {
+//
+// wrapper controls how the spun-off subqueries and downstream queries are represented in the mapped
+// query.
+func NewSubquerySpinOffMapper(wrapper SubquerySpinOffWrapper, defaultStepFunc func(rangeMillis int64) int64, logger log.Logger, stats *SubquerySpinOffMapperStats) ASTMapper {
 	queryMapper := NewASTExprMapper(
 		&subquerySpinOffMapper{
+			wrapper:         wrapper,
 			defaultStepFunc: defaultStepFunc,
 			logger:          logger,
 			stats:           stats,
@@ -48,11 +51,12 @@ func NewSubquerySpinOffMapper(defaultStepFunc func(rangeMillis int64) int64, log
 
 // MapExpr implements the ASTMapper interface.
 // The strategy here is to look for aggregated subqueries (all subqueries should be aggregated) and spin them off into separate queries.
-// The frontend does not have internal control of the engine,
-// so MapExpr has to remap subqueries into "fake metrics" that can be queried by a Queryable that we can inject into the engine.
-// This "fake metric selector" is the "__subquery_spinoff__" metric.
-// For everything else, we have to pass it through to the downstream execution path (other instant middlewares),
-// so we remap them into a "__downstream_query__" selector.
+// Subqueries that are worth spinning off are handed to the wrapper's WrapSubquery; everything else is passed through to
+// the downstream execution path via the wrapper's WrapDownstreamQuery.
+// How those spun-off subqueries and downstream queries are represented in the mapped query is up to the wrapper.
+// For example, the query-frontend middleware uses the selectorSubquerySpinOffWrapper, which remaps them into the
+// "fake metric" selectors "__subquery_spinoff__" and "__downstream_query__" that are resolved by a Queryable injected
+// into the engine, because the frontend does not have internal control of the engine.
 //
 // See sharding.go and embedded.go for another example of mapping into a fake metric selector.
 func (m *subquerySpinOffMapper) MapExpr(ctx context.Context, expr parser.Expr) (mapped parser.Expr, finished bool, err error) {
@@ -66,15 +70,8 @@ func (m *subquerySpinOffMapper) MapExpr(ctx context.Context, expr parser.Expr) (
 		if countSelectors(expr) == 0 {
 			return expr, false, nil
 		}
-		selector := &parser.VectorSelector{
-			Name: DownstreamQueryMetricName,
-			LabelMatchers: []*labels.Matcher{
-				labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, DownstreamQueryMetricName),
-				labels.MustNewMatcher(labels.MatchEqual, DownstreamQueryLabelName, expr.String()),
-			},
-		}
 		m.stats.AddDownstreamQuery()
-		return selector, false, nil
+		return m.wrapper.WrapDownstreamQuery(expr), false, nil
 	}
 
 	switch e := expr.(type) {
@@ -108,25 +105,7 @@ func (m *subquerySpinOffMapper) MapExpr(ctx context.Context, expr parser.Expr) (
 				return downstreamQuery(expr)
 			}
 
-			selector := &parser.VectorSelector{
-				Name: SubqueryMetricName,
-				LabelMatchers: []*labels.Matcher{
-					labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, SubqueryMetricName),
-					labels.MustNewMatcher(labels.MatchEqual, SubqueryQueryLabelName, sq.Expr.String()),
-					labels.MustNewMatcher(labels.MatchEqual, SubqueryRangeLabelName, sq.Range.String()),
-					labels.MustNewMatcher(labels.MatchEqual, SubqueryStepLabelName, step.String()),
-				},
-			}
-
-			if sq.OriginalOffset != 0 {
-				selector.LabelMatchers = append(selector.LabelMatchers, labels.MustNewMatcher(labels.MatchEqual, SubqueryOffsetLabelName, sq.OriginalOffset.String()))
-				selector.OriginalOffset = sq.OriginalOffset
-			}
-
-			e.Args[lastArgIdx] = &parser.MatrixSelector{
-				VectorSelector: selector,
-				Range:          sq.Range,
-			}
+			e.Args[lastArgIdx] = m.wrapper.WrapSubquery(sq, step)
 			m.stats.AddSpunOffSubquery()
 			return e, true, nil
 		}
