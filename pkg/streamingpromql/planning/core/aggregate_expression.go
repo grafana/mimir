@@ -3,6 +3,7 @@
 package core
 
 import (
+	"context"
 	"fmt"
 	"slices"
 	"strings"
@@ -92,8 +93,8 @@ func (a *AggregateExpressionDetails) MergeHints(other *AggregateExpressionDetail
 	return nil
 }
 
-func MaterializeAggregateExpression(a *AggregateExpression, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
-	inner, err := materializer.ConvertNodeToInstantVectorOperator(a.Inner, timeRange)
+func MaterializeAggregateExpression(ctx context.Context, a *AggregateExpression, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
+	inner, err := materializer.ConvertNodeToInstantVectorOperator(ctx, a.Inner, timeRange)
 	if err != nil {
 		return nil, fmt.Errorf("could not create inner operator for AggregateExpression: %w", err)
 	}
@@ -102,7 +103,7 @@ func MaterializeAggregateExpression(a *AggregateExpression, materializer *planni
 
 	switch a.Op {
 	case AGGREGATION_TOPK, AGGREGATION_BOTTOMK:
-		param, err := materializer.ConvertNodeToScalarOperator(a.Param, timeRange)
+		param, err := materializer.ConvertNodeToScalarOperator(ctx, a.Param, timeRange)
 		if err != nil {
 			return nil, fmt.Errorf("could not create parameter operator for AggregateExpression %s: %w", a.Op.String(), err)
 		}
@@ -110,7 +111,7 @@ func MaterializeAggregateExpression(a *AggregateExpression, materializer *planni
 		o = topkbottomk.New(inner, param, timeRange, a.Grouping, a.Without, a.Op == AGGREGATION_TOPK, params.MemoryConsumptionTracker, a.GetExpressionPosition().ToPrometheusType())
 
 	case AGGREGATION_LIMITK:
-		param, err := materializer.ConvertNodeToScalarOperator(a.Param, timeRange)
+		param, err := materializer.ConvertNodeToScalarOperator(ctx, a.Param, timeRange)
 		if err != nil {
 			return nil, fmt.Errorf("could not create parameter operator for AggregateExpression %s: %w", a.Op.String(), err)
 		}
@@ -118,7 +119,7 @@ func MaterializeAggregateExpression(a *AggregateExpression, materializer *planni
 		o = limitklimitratio.NewLimitK(inner, param, timeRange, a.Grouping, a.Without, params.MemoryConsumptionTracker, a.GetExpressionPosition().ToPrometheusType())
 
 	case AGGREGATION_LIMIT_RATIO:
-		param, err := materializer.ConvertNodeToScalarOperator(a.Param, timeRange)
+		param, err := materializer.ConvertNodeToScalarOperator(ctx, a.Param, timeRange)
 		if err != nil {
 			return nil, fmt.Errorf("could not create parameter operator for AggregateExpression %s: %w", a.Op.String(), err)
 		}
@@ -126,7 +127,7 @@ func MaterializeAggregateExpression(a *AggregateExpression, materializer *planni
 		o = limitklimitratio.NewLimitRatio(inner, param, timeRange, a.Grouping, a.Without, params.MemoryConsumptionTracker, a.GetExpressionPosition().ToPrometheusType())
 
 	case AGGREGATION_QUANTILE:
-		param, err := materializer.ConvertNodeToScalarOperator(a.Param, timeRange)
+		param, err := materializer.ConvertNodeToScalarOperator(ctx, a.Param, timeRange)
 		if err != nil {
 			return nil, fmt.Errorf("could not create parameter operator for AggregateExpression %s: %w", a.Op.String(), err)
 		}
@@ -137,7 +138,7 @@ func MaterializeAggregateExpression(a *AggregateExpression, materializer *planni
 		}
 
 	case AGGREGATION_COUNT_VALUES:
-		param, err := materializer.ConvertNodeToStringOperator(a.Param, timeRange)
+		param, err := materializer.ConvertNodeToStringOperator(ctx, a.Param, timeRange)
 		if err != nil {
 			return nil, fmt.Errorf("could not create parameter operator for AggregateExpression %s: %w", a.Op.String(), err)
 		}

@@ -3,6 +3,7 @@
 package commonsubexpressionelimination
 
 import (
+	"context"
 	"fmt"
 	"slices"
 	"strconv"
@@ -105,8 +106,8 @@ func (d *Duplicate) GetRangeParams() planning.RangeParams {
 
 var _ planning.SplitNode = &Duplicate{}
 
-func MaterializeDuplicate(d *Duplicate, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters, overrideTimeParams planning.RangeParams) (planning.OperatorFactory, error) {
-	inner, err := materializer.ConvertNodeToOperatorWithSubRange(d.Inner, timeRange, overrideTimeParams)
+func MaterializeDuplicate(ctx context.Context, d *Duplicate, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters, overrideTimeParams planning.RangeParams) (planning.OperatorFactory, error) {
+	inner, err := materializer.ConvertNodeToOperatorWithSubRange(ctx, d.Inner, timeRange, overrideTimeParams)
 	if err != nil {
 		return nil, err
 	}
@@ -208,8 +209,8 @@ func (f *DuplicateFilter) GetRangeParams() planning.RangeParams {
 
 var _ planning.SplitNode = &DuplicateFilter{}
 
-func MaterializeDuplicateFilter(f *DuplicateFilter, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters, overrideTimeParams planning.RangeParams) (planning.OperatorFactory, error) {
-	operator, err := materializer.ConvertNodeToOperatorWithSubRange(f.Inner, timeRange, overrideTimeParams)
+func MaterializeDuplicateFilter(ctx context.Context, f *DuplicateFilter, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters, overrideTimeParams planning.RangeParams) (planning.OperatorFactory, error) {
+	operator, err := materializer.ConvertNodeToOperatorWithSubRange(ctx, f.Inner, timeRange, overrideTimeParams)
 	if err != nil {
 		return nil, err
 	}

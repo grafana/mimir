@@ -315,7 +315,7 @@ func (e *Engine) materializeAndCreateEvaluator(ctx context.Context, queryable st
 
 	materializer := planning.NewMaterializer(operatorParams, e.nodeMaterializers)
 	for idx, req := range nodeRequests {
-		op, err := materializer.ConvertNodeToOperator(req.Node, req.TimeRange)
+		op, err := materializer.ConvertNodeToOperator(ctx, req.Node, req.TimeRange)
 		if err != nil {
 			e.memoryConsumptionTrackerFactory.Deregister(operatorParams.MemoryConsumptionTracker)
 			return nil, err

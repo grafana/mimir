@@ -338,7 +338,7 @@ func (c *CacheOperator) calculateExtents(ctx context.Context, existingExtents []
 		}
 
 		timeRange := types.NewRangeQueryTimeRange(timestamp.Time(extentStartT), timestamp.Time(extentEndT), time.Duration(c.DesiredTimeRange.IntervalMilliseconds)*time.Millisecond)
-		operator, err := c.Materializer.ConvertNodeToInstantVectorOperator(c.Inner, timeRange)
+		operator, err := c.Materializer.ConvertNodeToInstantVectorOperator(ctx, c.Inner, timeRange)
 		if err != nil {
 			return extents{}, err
 		}
@@ -1184,7 +1184,7 @@ func (e *evaluatedExtent) Close() {
 }
 
 type InstantVectorMaterializer interface {
-	ConvertNodeToInstantVectorOperator(node planning.Node, timeRange types.QueryTimeRange) (types.InstantVectorOperator, error)
+	ConvertNodeToInstantVectorOperator(ctx context.Context, node planning.Node, timeRange types.QueryTimeRange) (types.InstantVectorOperator, error)
 }
 
 type LimitsProvider interface {

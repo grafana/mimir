@@ -3,6 +3,7 @@
 package core
 
 import (
+	"context"
 	"slices"
 	"time"
 
@@ -67,7 +68,7 @@ func (t *DataLabelSelector) MinimumRequiredPlanVersion(types.QueryTimeRange) (pl
 	return planning.QueryPlanV12, nil
 }
 
-func MaterializeDataLabelSelector(t *DataLabelSelector, _ *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
+func MaterializeDataLabelSelector(_ context.Context, t *DataLabelSelector, _ *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
 	selector := &selectors.Selector{
 		Queryable:                params.Queryable,
 		TimeRange:                timeRange,

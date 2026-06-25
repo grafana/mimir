@@ -3,6 +3,7 @@
 package core
 
 import (
+	"context"
 	"fmt"
 	"slices"
 	"time"
@@ -81,7 +82,7 @@ func (m *MatrixSelector) MergeHints(other planning.Node) error {
 	return nil
 }
 
-func MaterializeMatrixSelector(m *MatrixSelector, _ *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters, overrideTimeParams planning.RangeParams) (planning.OperatorFactory, error) {
+func MaterializeMatrixSelector(_ context.Context, m *MatrixSelector, _ *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters, overrideTimeParams planning.RangeParams) (planning.OperatorFactory, error) {
 	selectorRange := m.Range
 	selectorTs := m.Timestamp
 	selectorOffset := m.Offset.Milliseconds()

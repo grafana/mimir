@@ -826,7 +826,7 @@ type testMaterializer struct {
 	materializedOperators    []*operators.TestOperator
 }
 
-func (m *testMaterializer) ConvertNodeToInstantVectorOperator(node planning.Node, timeRange types.QueryTimeRange) (types.InstantVectorOperator, error) {
+func (m *testMaterializer) ConvertNodeToInstantVectorOperator(ctx context.Context, node planning.Node, timeRange types.QueryTimeRange) (types.InstantVectorOperator, error) {
 	m.materializedTimeRanges = append(m.materializedTimeRanges, timeRange)
 
 	data := testDataForTimeRange(timeRange)
