@@ -144,9 +144,7 @@ func TestIngesterQuerying_ShouldSupportCompartments(t *testing.T) {
 		}
 	}
 
-	// Query every series back through the query-frontend with strong read consistency (the default set
-	// by IngestStorageFlags). There is no sleep: strong consistency makes the just-written samples
-	// visible only if the per-cluster produced offsets were propagated to and awaited by the ingester.
+	// Query every series back through the query-frontend with strong read consistency.
 	queryClient, err := e2emimir.NewClient("", queryFrontend.HTTPEndpoint(), "", "", userID)
 	require.NoError(t, err)
 
