@@ -13,6 +13,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/promql"
 
+	"github.com/grafana/mimir/pkg/streamingpromql/caching"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/rangevectorsplitting/cache"
 	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/promqlext"
@@ -49,6 +50,10 @@ type EngineOpts struct {
 	EnableRemoveStaticallyEmptyExpressions                    bool `yaml:"enable_remove_statically_empty_expressions" category:"experimental"`
 
 	RangeVectorSplitting RangeVectorSplittingConfig `yaml:"range_vector_splitting" category:"experimental"`
+
+	// CachePrefixGenerator should return a prefix for all cache keys for a given context.
+	// It should contain the tenant ID and any other relevant information that should be used to partition cache entries.
+	CachePrefixGenerator caching.PrefixGenerator `yaml:"-"`
 }
 
 // RangeVectorSplittingConfig configures the splitting of functions over range vectors queries.
@@ -131,5 +136,7 @@ func NewTestEngineOpts() EngineOpts {
 		EnableMultiAggregation:                                    true,
 		EnableRemoveStaticallyEmptyExpressions:                    true,
 		EnableRangeQueryRangeVectorCommonSubexpressionElimination: true,
+
+		CachePrefixGenerator: caching.TenantPrefixGenerator,
 	}
 }

@@ -9,6 +9,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	shared "github.com/grafana/mimir/pkg/labelaccess"
+	"github.com/grafana/mimir/pkg/streamingpromql/caching"
 	"github.com/grafana/mimir/pkg/util/propagation"
 )
 
@@ -136,4 +137,37 @@ func (c CacheKeyGenerator) LabelValuesCardinality(r *http.Request) (*querymiddle
 		return nil, fmt.Errorf("label values cardinality caching is not supported with LBAC: %w", querymiddleware.ErrUnsupportedRequest)
 	}
 	return c.delegate.LabelValuesCardinality(r)
+}
+
+func CachePrefixGenerator(delegate caching.PrefixGenerator) caching.PrefixGenerator {
+	return func(ctx context.Context) (string, error) {
+		inner, err := delegate(ctx)
+		if err != nil {
+			return "", err
+		}
+
+		labelPolicyHash := getPolicyHash(ctx)
+		if len(labelPolicyHash) == 0 {
+			return inner, nil
+		}
+
+		return labelPolicyHash + labelPolicySeparator + inner, nil
+	}
+}
+
+func getPolicyHash(ctx context.Context) string {
+	// If we're running on a query-frontend, then the hash is available in the context.
+	labelPolicyHash, ok := ctx.Value(contextKeyLabelPolicyHash).(string)
+	if ok {
+		return labelPolicyHash
+	}
+
+	// If we're running on a querier, then the hash isn't available in the context, but we
+	// can compute it.
+	labelPolicies, _ := shared.ExtractLabelMatchersContext(ctx)
+	if len(labelPolicies) == 0 {
+		return ""
+	}
+
+	return labelPolicies.Hash()
 }

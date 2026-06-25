@@ -190,7 +190,11 @@ func (c *CacheOperator) fetchExistingExtents(ctx context.Context) ([]CachedExten
 	c.hashedKey = caching.HashCacheKey(c.key)
 	keys := []string{c.hashedKey}
 
-	cacheHits := c.Backend.GetMulti(ctx, keys)
+	cacheHits, err := c.Backend.GetMulti(ctx, keys)
+	if err != nil {
+		return nil, fmt.Errorf("fetching cached results with key %q: %w", c.hashedKey, err)
+	}
+
 	cacheHit := cacheHits[c.hashedKey]
 
 	if cacheHit == nil {
@@ -805,7 +809,10 @@ func (c *CacheOperator) writeCacheEntry(ctx context.Context, stats *types.Operat
 		return err
 	}
 
-	c.Backend.SetAsync(c.hashedKey, value, ttl)
+	if err := c.Backend.SetAsync(ctx, c.hashedKey, value, ttl); err != nil {
+		return fmt.Errorf("storing cached results with key %q: %w", c.hashedKey, err)
+	}
+
 	return nil
 }
 
