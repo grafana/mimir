@@ -467,6 +467,21 @@ func (r *Rebalancer) hashLeaseLookahead() time.Duration {
 	return r.cfg.LeaseLookahead + r.cfg.MinRebalanceInterval
 }
 
+// readcacheLeaseLookahead is the tier-2 analogue of hashLeaseLookahead.
+// The (partition -> readcache) leases are extended by the tier-2 slicer
+// round and, on rounds where tier-2 is gated/disabled, by
+// refreshReadcacheLeases — both fire at most once per rebalance tick
+// (MinRebalanceInterval). A successor lease is only pre-issued once the
+// current lease is within `lookahead` of expiry, so if `lookahead` is
+// smaller than the wakeup cadence the pre-issue window can fall entirely
+// between two ticks; the lease then lapses and (because refresh rebuilds
+// its set from ActiveAt(now)) is dropped permanently. Padding the raw
+// LeaseLookahead by one full tick guarantees at least one wakeup lands in
+// the pre-issue window before expiry, exactly as tier-1 does.
+func (r *Rebalancer) readcacheLeaseLookahead() time.Duration {
+	return r.cfg.LeaseLookahead + r.cfg.MinRebalanceInterval
+}
+
 // WatchAssignments implements NautilusRebalancerServer. It sends
 // a full snapshot of the retention-bounded assignment log (expired
 // entries, active leases, and pre-issued successors; reset=true)
@@ -688,7 +703,7 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 		// spread, which is exactly what we want at cold start.
 		if r.cfg.ReadcacheSlicer.Enabled {
 			if instances := r.activeReadcacheInstances(); len(instances) > 0 {
-				if r.runReadcacheSlicer(now, activePartitions, nil, nil, instances) {
+				if r.runReadcacheSlicer(now, activePartitions, nil, nil, instances, nil) {
 					level.Info(r.logger).Log("msg", "cold start readcache assignment log seeded")
 				}
 				// Initialize tier-2 gating state so RoundInterval
@@ -767,7 +782,7 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 		)
 	}
 
-	rates, _, partitionTotals, partitionQuerySamples, unnamedPerInstance, err := r.collectRoundStats(ctx, current)
+	rates, _, partitionTotals, partitionQuerySamples, unnamedPerInstance, failedReadcaches, err := r.collectRoundStats(ctx, current)
 	if err != nil {
 		level.Warn(r.logger).Log("msg", "failed to collect rates", "err", err)
 		return nil
@@ -930,7 +945,7 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 		if len(instances) > 0 {
 			decision := shouldFireTier2(r.cfg.ReadcacheSlicer.RoundInterval, now, r.lastTier2RoundAt, instances, r.lastTier2Instances)
 			if decision.fire {
-				readcacheLogChanged = r.runReadcacheSlicer(now, activePartitions, partitionRateByPID, partitionQuerySamples, instances)
+				readcacheLogChanged = r.runReadcacheSlicer(now, activePartitions, partitionRateByPID, partitionQuerySamples, instances, failedReadcaches)
 				// Update the gating state regardless of whether the
 				// slicer produced changes: even a no-op tier-2 round
 				// observed the current instance set and load, so the

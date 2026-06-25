@@ -25,7 +25,7 @@ func (r *Rebalancer) reconstructRound(ctx context.Context, activePartitions []in
 
 // collectRoundStats queries all healthy readcache pods for per-range
 // stats and per-partition totals.
-func (r *Rebalancer) collectRoundStats(ctx context.Context, _ *assignment.Assignment) ([]rangeRate, map[string]int64, map[int32]int64, map[int32]float64, map[string]float64, error) {
+func (r *Rebalancer) collectRoundStats(ctx context.Context, _ *assignment.Assignment) ([]rangeRate, map[string]int64, map[int32]int64, map[int32]float64, map[string]float64, map[string]struct{}, error) {
 	return r.collectRatesFromReadcaches(ctx)
 }
 
@@ -225,14 +225,20 @@ func (r *Rebalancer) reconstructAssignmentFromReadcache(ctx context.Context, act
 //     across pods that report the partition.
 //   - unnamedPerInstance: per-readcache unnamed query EWMA, surfaced
 //     for observability but not fed into the slicer.
+//   - failedInstances: the set of instance IDs whose client lookup or
+//     HashRangeStats RPC failed this round. Their partitions aggregate
+//     as zero load (we have no stats for them), which is NOT the same
+//     as genuinely idle. The tier-2 slicer uses this set to avoid
+//     piling partitions onto an instance that just proved it can't
+//     answer a stats call (see readcachePlanInput.excludedTargets).
 //
 // On any per-pod failure the round continues with whatever the
 // other pods returned; a single misbehaving readcache cannot block
 // the rebalance round behind TCP timeouts (see Config.IngesterRPCTimeout).
-func (r *Rebalancer) collectRatesFromReadcaches(ctx context.Context) ([]rangeRate, map[string]int64, map[int32]int64, map[int32]float64, map[string]float64, error) {
+func (r *Rebalancer) collectRatesFromReadcaches(ctx context.Context) ([]rangeRate, map[string]int64, map[int32]int64, map[int32]float64, map[string]float64, map[string]struct{}, error) {
 	instances, err := r.fleet.healthyInstances()
 	if err != nil {
-		return nil, nil, nil, nil, nil, err
+		return nil, nil, nil, nil, nil, nil, err
 	}
 
 	type result struct {
@@ -245,6 +251,10 @@ func (r *Rebalancer) collectRatesFromReadcaches(ctx context.Context) ([]rangeRat
 	}
 
 	results := make([]result, len(instances))
+	// failedIDs[idx] holds the instance ID when that instance's client
+	// lookup or HashRangeStats RPC failed; "" means it responded. We
+	// record per-index (no contention) and fold into a set afterwards.
+	failedIDs := make([]string, len(instances))
 	var ok, failed atomic.Int32
 
 	_ = concurrency.ForEachJob(ctx, len(instances), r.cfg.IngesterRPCConcurrency, func(jobCtx context.Context, idx int) error {
@@ -253,6 +263,7 @@ func (r *Rebalancer) collectRatesFromReadcaches(ctx context.Context) ([]rangeRat
 		c, err := r.fleet.clientFor(jobCtx, inst)
 		if err != nil {
 			failed.Add(1)
+			failedIDs[idx] = inst.Id
 			level.Warn(r.logger).Log("msg", "failed to get client for readcache", "readcache", inst.Addr, "err", err)
 			return nil
 		}
@@ -263,6 +274,7 @@ func (r *Rebalancer) collectRatesFromReadcaches(ctx context.Context) ([]rangeRat
 		resp, err := c.HashRangeStats(callCtx, &ingester_client.HashRangeStatsRequest{})
 		if err != nil {
 			failed.Add(1)
+			failedIDs[idx] = inst.Id
 			level.Warn(r.logger).Log("msg", "HashRangeStats RPC failed", "readcache", inst.Addr, "err", err)
 			return nil
 		}
@@ -312,8 +324,19 @@ func (r *Rebalancer) collectRatesFromReadcaches(ctx context.Context) ([]rangeRat
 		}
 	}
 
+	var failedInstances map[string]struct{}
+	for _, id := range failedIDs {
+		if id == "" {
+			continue
+		}
+		if failedInstances == nil {
+			failedInstances = make(map[string]struct{})
+		}
+		failedInstances[id] = struct{}{}
+	}
+
 	level.Info(r.logger).Log("msg", "collected readcache stats", "healthy", len(instances), "ok", ok.Load(), "failed", failed.Load(), "rate_entries", len(all), "partitions_reported", len(partitionTotals))
-	return all, instanceTotals, partitionTotals, partitionQuerySamples, unnamedPerInstance, nil
+	return all, instanceTotals, partitionTotals, partitionQuerySamples, unnamedPerInstance, failedInstances, nil
 }
 
 // pushRangesToReadcache calls SetHashRanges on each readcache that

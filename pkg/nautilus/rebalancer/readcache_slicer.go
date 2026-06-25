@@ -108,6 +108,19 @@ type readcachePlanInput struct {
 	// recentlyMoved is the set of partitions whose move-cooldown has
 	// not yet expired. Excluded from this round's movable set.
 	recentlyMoved map[int32]struct{}
+
+	// excludedTargets is the set of instance IDs that must NOT be
+	// chosen as a destination this round. The canonical case is an
+	// instance whose HashRangeStats RPC failed during stats
+	// collection: it aggregates as zero load (collectRatesFromReadcaches
+	// skips it), which would otherwise make it the apparent
+	// lightestInstance and turn a flaky/unreachable pod into the
+	// round's pile target. Excluded instances keep the partitions
+	// they already own (pass 1) but cannot receive new ones (pass 2
+	// cold placement and pass 3 rebalance). If every eligible instance
+	// is excluded the exclusion is ignored, since partitions must land
+	// somewhere.
+	excludedTargets map[string]struct{}
 }
 
 // readcachePlan represents the slicer's output.
@@ -188,7 +201,7 @@ func planReadcacheAssignment(cfg ReadcacheSlicerConfig, in readcachePlanInput) r
 
 	// Pass 2: assign unassigned partitions to the lightest instance.
 	for _, pid := range unassigned {
-		target := lightestInstance(loadByInstance, in.instances)
+		target := lightestInstance(loadByInstance, in.instances, in.excludedTargets)
 		proposed[pid] = target
 		loadByInstance[target] += in.loadByPartition[pid]
 	}
@@ -208,7 +221,7 @@ func planReadcacheAssignment(cfg ReadcacheSlicerConfig, in readcachePlanInput) r
 
 	for movedLoad < moveBudgetAbs {
 		src := heaviestInstance(loadByInstance, in.instances)
-		dst := lightestInstance(loadByInstance, in.instances)
+		dst := lightestInstance(loadByInstance, in.instances, in.excludedTargets)
 		if src == dst {
 			break
 		}
@@ -266,7 +279,13 @@ func planReadcacheAssignment(cfg ReadcacheSlicerConfig, in readcachePlanInput) r
 	return readcachePlan{Assignment: out, Moves: moves, LoadByInstance: loadByInstance}
 }
 
-func lightestInstance(loadByInstance map[string]float64, instances []string) string {
+// lightestInstance returns the eligible instance with the lowest
+// load, breaking ties on instance ID for determinism. Instances in
+// `excluded` are skipped as destinations (e.g. an instance whose
+// stats RPC failed this round). If every instance is excluded the
+// exclusion is ignored — partitions must be placed somewhere, so we
+// fall back to choosing among all instances.
+func lightestInstance(loadByInstance map[string]float64, instances []string, excluded map[string]struct{}) string {
 	var best string
 	var bestLoad float64
 	first := true
@@ -274,12 +293,20 @@ func lightestInstance(loadByInstance map[string]float64, instances []string) str
 	sorted := append([]string(nil), instances...)
 	sort.Strings(sorted)
 	for _, inst := range sorted {
+		if _, skip := excluded[inst]; skip {
+			continue
+		}
 		l := loadByInstance[inst]
 		if first || l < bestLoad {
 			best = inst
 			bestLoad = l
 			first = false
 		}
+	}
+	// Every instance was excluded: fall back to the unfiltered pick so
+	// we never return "" and drop partitions on the floor.
+	if first {
+		return lightestInstance(loadByInstance, instances, nil)
 	}
 	return best
 }

@@ -157,7 +157,7 @@ func TestRunReadcacheSlicer_AlphaWeightsSampleRate(t *testing.T) {
 	}
 	instances := []string{"rc-a", "rc-b"}
 
-	r.runReadcacheSlicer(time.Unix(1_000_000, 0), partitions, partitionRate, nil /*query*/, instances)
+	r.runReadcacheSlicer(time.Unix(1_000_000, 0), partitions, partitionRate, nil /*query*/, instances, nil /*failed*/)
 
 	// After the round, the readcache store must hold the planned
 	// assignment. Whichever instance owns partition 0 should be the

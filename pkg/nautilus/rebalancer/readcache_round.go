@@ -3,6 +3,8 @@
 package rebalancer
 
 import (
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/go-kit/log/level"
@@ -45,6 +47,7 @@ func (r *Rebalancer) runReadcacheSlicer(
 	partitionRateByPID map[int32]float64,
 	partitionQuerySamples map[int32]float64,
 	activeInstances []string,
+	failedInstances map[string]struct{},
 ) bool {
 	cfg := r.cfg.ReadcacheSlicer
 
@@ -72,11 +75,25 @@ func (r *Rebalancer) runReadcacheSlicer(
 		instances:       activeInstances,
 		currentOwner:    currentOwner,
 		recentlyMoved:   r.readcacheCooldowns.stillCooling(now),
+		excludedTargets: failedInstances,
 	})
+	if len(failedInstances) > 0 {
+		ids := make([]string, 0, len(failedInstances))
+		for id := range failedInstances {
+			ids = append(ids, id)
+		}
+		sort.Strings(ids)
+		level.Info(r.logger).Log(
+			"msg", "excluded readcache instances from tier-2 placement targets",
+			"count", len(failedInstances),
+			"reason", "HashRangeStats RPC failed this round; stats unknown, not zero-load",
+			"instances", strings.Join(ids, ","),
+		)
+	}
 
 	r.readcacheCooldowns.extendForMoves(now, cfg.MoveCooldown, plan.Moves)
 
-	changed := r.readcacheStore.apply(now, plan.Assignment, r.cfg.LeaseDuration, r.cfg.LeaseLookahead, r.cfg.EntryRetention, r.cfg.ReadcacheMoveSafetyWindow)
+	changed := r.readcacheStore.apply(now, plan.Assignment, r.cfg.LeaseDuration, r.readcacheLeaseLookahead(), r.cfg.EntryRetention, r.cfg.ReadcacheMoveSafetyWindow)
 	if changed {
 		level.Info(r.logger).Log(
 			"msg", "readcache slicer round produced changes",

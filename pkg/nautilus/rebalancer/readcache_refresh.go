@@ -3,6 +3,7 @@
 package rebalancer
 
 import (
+	"sort"
 	"time"
 
 	"github.com/go-kit/log/level"
@@ -66,10 +67,12 @@ func (r *Rebalancer) refreshReadcacheLeases(now time.Time) bool {
 	}
 	seen := make(map[ownerKey]struct{}, len(snapshot))
 	entries := make([]readcacheassignment.AssignmentEntry, 0, len(snapshot))
+	coveredPartitions := make(map[int32]struct{}, len(snapshot))
 	for _, e := range snapshot {
 		if !e.ActiveAt(now) {
 			continue
 		}
+		coveredPartitions[e.PartitionID] = struct{}{}
 		k := ownerKey{pid: e.PartitionID, instance: e.InstanceID}
 		if _, ok := seen[k]; ok {
 			continue
@@ -79,6 +82,64 @@ func (r *Rebalancer) refreshReadcacheLeases(now time.Time) bool {
 			PartitionID: e.PartitionID,
 			InstanceID:  e.InstanceID,
 		})
+	}
+
+	// Revive partitions whose lease has already lapsed while the rest
+	// of the fleet is still covered. The ActiveAt(now) filter above
+	// intentionally preserves currently-live ownership, but if a lease
+	// lapses (e.g. a tick landed just outside the pre-issue window) an
+	// ActiveAt-only rebuild would drop that partition from `entries`
+	// forever: it never reappears in any future refresh, so its
+	// readcache silently stops being fed ranges and the partition's
+	// nautilus data becomes unqueryable. Re-seed each uncovered
+	// partition's last-known owner (the retained lease with the latest
+	// To). Log.Apply's !isActive path then seeds a fresh lease at `now`,
+	// healing the gap. Entries are retention-bounded (snapshot() never
+	// returns pruned leases), so this only revives recent ownership.
+	//
+	// Gated on at least one partition still being active: that is the
+	// partial-decay case this heals. When NOTHING is active we fall
+	// through to the warn-and-bail path below — that is the distinct
+	// "stuck cold-start" state (rebalancer restarted onto a stale
+	// persisted log), where blindly resurrecting whole-fleet ownership
+	// that may name long-gone instances is the wrong move; the operator
+	// must enable the slicer or trigger an admin reset instead.
+	var revivedPartitions []int32
+	if len(coveredPartitions) > 0 {
+		type latest struct {
+			instance string
+			to       time.Time
+		}
+		lastOwner := make(map[int32]latest)
+		for _, e := range snapshot {
+			if _, covered := coveredPartitions[e.PartitionID]; covered {
+				continue
+			}
+			if cur, ok := lastOwner[e.PartitionID]; !ok || e.To.After(cur.to) {
+				lastOwner[e.PartitionID] = latest{instance: e.InstanceID, to: e.To}
+			}
+		}
+		for pid, lo := range lastOwner {
+			k := ownerKey{pid: pid, instance: lo.instance}
+			if _, ok := seen[k]; ok {
+				continue
+			}
+			seen[k] = struct{}{}
+			entries = append(entries, readcacheassignment.AssignmentEntry{
+				PartitionID: pid,
+				InstanceID:  lo.instance,
+			})
+			revivedPartitions = append(revivedPartitions, pid)
+		}
+	}
+	if len(revivedPartitions) > 0 {
+		sort.Slice(revivedPartitions, func(i, j int) bool { return revivedPartitions[i] < revivedPartitions[j] })
+		level.Warn(r.logger).Log(
+			"msg", "reviving lapsed readcache leases during refresh",
+			"count", len(revivedPartitions),
+			"partitions", formatInt32IDs(revivedPartitions, 20),
+			"hint", "a tier-2 lease expired before its successor was pre-issued; healing by re-seeding the last-known owner",
+		)
 	}
 
 	if len(entries) == 0 {
@@ -97,7 +158,7 @@ func (r *Rebalancer) refreshReadcacheLeases(now time.Time) bool {
 	}
 
 	next := &readcacheassignment.Assignment{Entries: entries}
-	changed := r.readcacheStore.apply(now, next, r.cfg.LeaseDuration, r.cfg.LeaseLookahead, r.cfg.EntryRetention, r.cfg.ReadcacheMoveSafetyWindow)
+	changed := r.readcacheStore.apply(now, next, r.cfg.LeaseDuration, r.readcacheLeaseLookahead(), r.cfg.EntryRetention, r.cfg.ReadcacheMoveSafetyWindow)
 	if changed {
 		level.Info(r.logger).Log(
 			"msg", "readcache leases refreshed",
