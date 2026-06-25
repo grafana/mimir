@@ -77,8 +77,27 @@ func (s *TimeRangeSplit) MinimumRequiredPlanVersion(timeRange types.QueryTimeRan
 	return planning.QueryPlanV14, nil
 }
 
+type TimeRangeSplitMaterializer struct {
+	splitQueriesCounter prometheus.Counter
+}
+
+func NewTimeRangeSplitMaterializer(reg prometheus.Registerer) *TimeRangeSplitMaterializer {
+	return &TimeRangeSplitMaterializer{
+		splitQueriesCounter: NewSplitQueriesCounter(reg),
+	}
+}
+
 // The logic below is based on the equivalent middleware logic in splitQueryByInterval.
-func MaterializeSplit(ctx context.Context, node *TimeRangeSplit, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
+func (m *TimeRangeSplitMaterializer) Materialize(ctx context.Context, n planning.Node, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters, overrideRangeParams planning.RangeParams) (planning.OperatorFactory, error) {
+	if overrideRangeParams.IsSet {
+		return nil, fmt.Errorf("overrideRangeParams is not supported for TimeRangeSplitMaterializer")
+	}
+
+	node, ok := n.(*TimeRangeSplit)
+	if !ok {
+		return nil, fmt.Errorf("unexpected type passed to TimeRangeSplitMaterializer: got %T", n)
+	}
+
 	ranges := make([]*splitRange, 0, (timeRange.EndT-timeRange.StartT)/timeRange.IntervalMilliseconds+1) // Over-allocate in case the time range straddles an interval boundary.
 
 	for start := timeRange.StartT; start <= timeRange.EndT; {
@@ -102,6 +121,7 @@ func MaterializeSplit(ctx context.Context, node *TimeRangeSplit, materializer *p
 
 	queryStats := stats.FromContext(ctx)
 	queryStats.AddSplitQueries(uint32(len(ranges)))
+	m.splitQueriesCounter.Add(float64(len(ranges)))
 
 	if len(ranges) == 1 {
 		// If we have just one range, return the inner operator without wrapping it.
@@ -207,7 +227,7 @@ func (m *CacheMaterializer) Materialize(ctx context.Context, n planning.Node, ma
 
 	node, ok := n.(*Cache)
 	if !ok {
-		return nil, fmt.Errorf("unexpected type passed to node CacheMaterializer: got %T", n)
+		return nil, fmt.Errorf("unexpected type passed to CacheMaterializer: got %T", n)
 	}
 
 	expressionPosition, err := node.ExpressionPosition()
