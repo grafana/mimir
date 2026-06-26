@@ -48,6 +48,8 @@ import (
 const resultsCacheTTL = 24 * time.Hour
 const resultsCacheLowerTTL = 10 * time.Minute
 
+var splitAndCacheMetricNames = []string{"cortex_frontend_query_result_cache_attempted_total", "cortex_frontend_query_result_cache_skipped_total", "cortex_frontend_split_queries_total", "cortex_frontend_query_result_cache_requests_total", "cortex_frontend_query_result_cache_hits_total", "cortex_querier_inflight_query_current_estimated_memory_consumption_bytes", "cortex_querier_inflight_query_max_age_seconds", "cortex_querier_inflight_query_max_estimated_memory_consumption_limit_bytes", "cortex_querier_inflight_query_peak_estimated_memory_consumption_bytes", "cortex_querier_inflight_query_sampled_count"}
+
 func TestSplitAndCacheMiddleware_SplitByInterval(t *testing.T) {
 	var (
 		dayOneStartTime   = parseTimeRFC3339(t, "2021-10-14T00:00:00Z")
@@ -251,7 +253,7 @@ func TestSplitAndCacheMiddleware_SplitByInterval(t *testing.T) {
 		# HELP cortex_querier_inflight_query_sampled_count Number of in-flight memory consumption trackers accumulated during the last metrics collection.
 		# TYPE cortex_querier_inflight_query_sampled_count gauge
 		cortex_querier_inflight_query_sampled_count 0
-	`)))
+	`), splitAndCacheMetricNames...))
 
 	// Assert query stats from context
 	queryStats := stats.FromContext(ctx)
@@ -413,7 +415,7 @@ func TestSplitAndCacheMiddleware_ResultsCache(t *testing.T) {
 		# HELP cortex_querier_inflight_query_sampled_count Number of in-flight memory consumption trackers accumulated during the last metrics collection.
 		# TYPE cortex_querier_inflight_query_sampled_count gauge
 		cortex_querier_inflight_query_sampled_count 0
-	`)))
+	`), splitAndCacheMetricNames...))
 }
 
 // TestSplitAndCacheMiddleware_ResultsCache_NativeHistogramPartialCacheHit exercises a bug where
@@ -663,7 +665,7 @@ func TestSplitAndCacheMiddleware_ResultsCacheNoStore(t *testing.T) {
 		# HELP cortex_frontend_query_result_cache_hits_total Total number of requests (or partial requests) fetched from the results cache.
 		# TYPE cortex_frontend_query_result_cache_hits_total counter
 		cortex_frontend_query_result_cache_hits_total{request_type="query_range"} 0
-	`)))
+	`), splitAndCacheMetricNames...))
 }
 
 func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotLookupCacheIfStepIsNotAligned(t *testing.T) {
@@ -778,7 +780,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotLookupCacheIfStepIsNotAli
 		# HELP cortex_frontend_query_result_cache_requests_total Total number of requests (or partial requests) looked up in the results cache.
 		# TYPE cortex_frontend_query_result_cache_requests_total counter
 		cortex_frontend_query_result_cache_requests_total{request_type="query_range"} 0
-	`)))
+	`), splitAndCacheMetricNames...))
 }
 
 func TestSplitAndCacheMiddleware_ResultsCache_EnabledCachingOfStepUnalignedRequest(t *testing.T) {
@@ -1041,7 +1043,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotCacheRequestEarlierThanMa
 			}
 
 			if testData.expectedMetrics != "" {
-				assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(testData.expectedMetrics)))
+				assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(testData.expectedMetrics), splitAndCacheMetricNames...))
 			}
 		})
 	}
