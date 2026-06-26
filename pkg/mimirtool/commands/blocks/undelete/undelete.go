@@ -298,18 +298,14 @@ func listGlobalMarkers(ctx context.Context, bucket objtools.Bucket, tenantID str
 	}
 	for _, marker := range markers {
 		if ulid, ok := block.IsDeletionMarkFilename(marker); ok {
-			state, ok := m[ulid]
+			state := m[ulid]
 			state.deleteMarkerExists = true
-			if !ok {
-				m[ulid] = state
-			}
+			m[ulid] = state
 		}
 		if ulid, ok := block.IsNoCompactMarkFilename(marker); ok {
-			state, ok := m[ulid]
+			state := m[ulid]
 			state.noCompactMarkerExists = true
-			if !ok {
-				m[ulid] = state
-			}
+			m[ulid] = state
 		}
 	}
 
