@@ -46,15 +46,6 @@ func isMetricNameLabel(name string) bool {
 // args format to the same label at the same step.
 var errDuplicateLabelSet = errors.New("vector cannot contain metrics with the same labelset")
 
-// formatQuantileLabel formats a quantile value as it appears in the configured quantile label,
-// matching Prometheus. NaN is rendered as "NaN" so it can be used as a label value and compared.
-func formatQuantileLabel(q float64) string {
-	if math.IsNaN(q) {
-		return "NaN"
-	}
-	return labels.FormatOpenMetricsFloat(q)
-}
-
 // histogramGrouper holds the state and logic shared by HistogramFunction and
 // HistogramQuantilesFunction for collating an instant vector's classic and native histogram series
 // into bucketGroups and accumulating their points.
@@ -931,7 +922,7 @@ func (h *HistogramQuantilesFunction) SeriesMetadata(ctx context.Context, matcher
 				h.annotations.Add(annotations.NewInvalidQuantileWarning(ph, arg.ExpressionPosition()))
 			}
 
-			label := formatQuantileLabel(ph)
+			label := labels.FormatOpenMetricsFloat(ph)
 			h.quantileStrings[i][step] = label
 			if _, ok := seenLabels[label]; !ok {
 				seenLabels[label] = struct{}{}
