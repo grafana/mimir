@@ -158,21 +158,24 @@ local jsonpath = import 'github.com/jsonnet-libs/xtd/jsonpath.libsonnet';
       else
         null;
 
-    // The compartment id a component is configured for must match the id encoded in its name.
-    local validateCompartmentId(name, compartment, container, suffix) =
+    // A "<kind>-compartment-id" flag must appear only on a matching compartment, and its value must
+    // equal the id encoded in the resource name.
+    local validateCompartmentId(name, compartment, container, suffix, kind) =
       local found = flagBySuffix(container, suffix);
       if found == null then
         null
+      else if compartment.kind != kind then
+        'The Deployment or StatefulSet "%s" sets "%s=%s", but it does not belong to a %s compartment.' % [name, found.flag, found.value, kind]
       else if found.value != std.toString(compartment.id) then
         'The Deployment or StatefulSet "%s" sets "%s=%s", but it belongs to %s compartment %d (the id must match the compartment).' % [name, found.flag, found.value, compartment.kind, compartment.id]
       else
         null;
 
     local validateWriteCompartmentId(name, compartment, container) =
-      validateCompartmentId(name, compartment, container, writeIdSuffix);
+      validateCompartmentId(name, compartment, container, writeIdSuffix, 'write');
 
     local validateReadCompartmentId(name, compartment, container) =
-      validateCompartmentId(name, compartment, container, readIdSuffix);
+      validateCompartmentId(name, compartment, container, readIdSuffix, 'read');
 
     local validateContainer(name, compartment, container) =
       std.foldl(

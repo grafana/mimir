@@ -117,4 +117,26 @@ local err8 = validate(
 assert isError(err8, '-ingest-storage.kafka.address') && isError(err8, 'a global deployment reads from every write compartment') :
        'case 8: expected global-deployment placeholder error, got: %s' % err8;
 
+// 9. A write-compartment-id flag on a read compartment must be rejected even when its value numerically
+// matches the read compartment id, because the flag belongs only on a write compartment.
+local err9 = validate(
+  { ing: overrideContainerArgs(ingester, ['-distributor.write-compartment-id=1']) },
+  ['ing'],
+);
+assert isError(err9, '-distributor.write-compartment-id=1') && isError(err9, 'does not belong to a write compartment') :
+       'case 9: expected misplaced write-compartment-id error, got: %s' % err9;
+
+// 10. A compartment-id flag on a global resource must produce a clean error rather than aborting the
+// jsonnet evaluation (the global compartment carries no id to compare against). The Kafka address is
+// reset to the placeholder so the address validator passes and the compartment-id validator is reached.
+local err10 = validate(
+  { gf: overrideContainerArgs(
+    distributor { metadata+: { name: 'distributor' } },
+    ['-ingest-storage.kafka.address=' + env.compartments_ingest_storage_kafka_address],
+  ) },
+  ['gf'],
+);
+assert isError(err10, '-distributor.write-compartment-id=0') && isError(err10, 'does not belong to a write compartment') :
+       'case 10: expected global-resource compartment-id error, got: %s' % err10;
+
 {}
