@@ -14,7 +14,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
-// EvaluationRootFunctionName is the name of the internal marker function used to denote the root of a
+// VectorEvaluationRootFunctionName is the name of the internal marker function used to denote the root of a
 // query that should be evaluated independently. It is injected when spinning off subqueries from
 // instant queries: the outer downstream query parts and each spun-off subquery are each wrapped in a
 // call to this function so that sharding, splitting, caching and remote execution can treat each one as
@@ -22,21 +22,36 @@ import (
 //
 // It is not a real function: it is intercepted while converting the AST to a query plan and replaced
 // with an EvaluationRoot node, and it is blocked from appearing in user queries.
-const EvaluationRootFunctionName = "__evaluation_root__"
+const VectorEvaluationRootFunctionName = "__vector_evaluation_root__"
 
-// EvaluationRootFunction is the PromQL function definition for EvaluationRootFunctionName.
-var EvaluationRootFunction = &parser.Function{
-	Name:       EvaluationRootFunctionName,
+// ScalarEvaluationRootFunctionName is like VectorEvaluationRootFunctionName, but for scalar values.
+const ScalarEvaluationRootFunctionName = "__scalar_evaluation_root__"
+
+// VectorEvaluationRootFunction is the PromQL function definition for VectorEvaluationRootFunctionName.
+var VectorEvaluationRootFunction = &parser.Function{
+	Name:       VectorEvaluationRootFunctionName,
 	ArgTypes:   []parser.ValueType{parser.ValueTypeVector},
 	ReturnType: parser.ValueTypeVector,
 }
 
+// ScalarEvaluationRootFunction is the PromQL function definition for ScalarEvaluationRootFunctionName.
+var ScalarEvaluationRootFunction = &parser.Function{
+	Name:       ScalarEvaluationRootFunctionName,
+	ArgTypes:   []parser.ValueType{parser.ValueTypeScalar},
+	ReturnType: parser.ValueTypeScalar,
+}
+
 func init() {
-	parser.Functions[EvaluationRootFunction.Name] = EvaluationRootFunction
+	parser.Functions[VectorEvaluationRootFunction.Name] = VectorEvaluationRootFunction
+	parser.Functions[ScalarEvaluationRootFunction.Name] = ScalarEvaluationRootFunction
 
 	planning.RegisterNodeFactory(func() planning.Node {
 		return &EvaluationRoot{EvaluationRootDetails: &EvaluationRootDetails{}}
 	})
+}
+
+func IsEvaluationRootFunctionCall(call *parser.Call) bool {
+	return call.Func.Name == VectorEvaluationRootFunctionName || call.Func.Name == ScalarEvaluationRootFunctionName
 }
 
 // EvaluationRoot marks the root of a query that should be evaluated independently of the rest of the

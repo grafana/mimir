@@ -953,7 +953,8 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 	opts := t.createQueryFrontendPromQLEngineOptions()
 	middlewareCfg.InternalFunctionNames.Add(sharding.ConcatFunction.Name)
 	middlewareCfg.InternalFunctionNames.Add(sharding.AvgFunction.Name)
-	middlewareCfg.InternalFunctionNames.Add(core.EvaluationRootFunction.Name)
+	middlewareCfg.InternalFunctionNames.Add(core.VectorEvaluationRootFunction.Name)
+	middlewareCfg.InternalFunctionNames.Add(core.ScalarEvaluationRootFunction.Name)
 
 	var memoryConsumptionTrackerFactory *limiter.InflightMemoryConsumptionTracker
 

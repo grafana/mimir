@@ -3,6 +3,7 @@
 package subqueryspinoff
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/prometheus/prometheus/promql/parser"
@@ -24,11 +25,18 @@ func NewEvaluationRootWrapper() astmapper.SubquerySpinOffWrapper {
 	return evaluationRootWrapper{}
 }
 
-func (evaluationRootWrapper) WrapDownstreamQuery(expr parser.Expr) parser.Expr {
-	return wrapInEvaluationRoot(expr)
+func (evaluationRootWrapper) WrapDownstreamQuery(expr parser.Expr) (parser.Expr, error) {
+	switch expr.Type() {
+	case parser.ValueTypeVector:
+		return wrapInVectorEvaluationRoot(expr), nil
+	case parser.ValueTypeScalar:
+		return wrapInScalarEvaluationRoot(expr), nil
+	default:
+		return nil, fmt.Errorf("evaluationRootWrapper: unsupported expression type %s", expr.Type())
+	}
 }
 
-func (evaluationRootWrapper) WrapSubquery(subquery *parser.SubqueryExpr, step time.Duration) parser.Expr {
+func (evaluationRootWrapper) WrapSubquery(subquery *parser.SubqueryExpr, step time.Duration) (parser.Expr, error) {
 	// Keep the subquery so that the engine evaluates the marked inner expression as a range query over
 	// the subquery's range at its step, exactly as a subquery is evaluated today. The __evaluation_root__
 	// marker around the inner expression is what causes that range query to be sharded, split, cached and
@@ -36,14 +44,21 @@ func (evaluationRootWrapper) WrapSubquery(subquery *parser.SubqueryExpr, step ti
 	//
 	// The subquery is guaranteed not to have an @ modifier (see subqueryCanBeSpunOff), so there's no
 	// timestamp to preserve.
-	subquery.Expr = wrapInEvaluationRoot(subquery.Expr)
+	subquery.Expr = wrapInVectorEvaluationRoot(subquery.Expr)
 	subquery.Step = step
-	return subquery
+	return subquery, nil
 }
 
-func wrapInEvaluationRoot(expr parser.Expr) parser.Expr {
+func wrapInVectorEvaluationRoot(expr parser.Expr) parser.Expr {
 	return &parser.Call{
-		Func: core.EvaluationRootFunction,
+		Func: core.VectorEvaluationRootFunction,
+		Args: []parser.Expr{expr},
+	}
+}
+
+func wrapInScalarEvaluationRoot(expr parser.Expr) parser.Expr {
+	return &parser.Call{
+		Func: core.ScalarEvaluationRootFunction,
 		Args: []parser.Expr{expr},
 	}
 }

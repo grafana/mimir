@@ -588,9 +588,9 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr, timeRange types.QueryTimeR
 		return binExpr, nil
 
 	case *parser.Call:
-		if expr.Func.Name == core.EvaluationRootFunctionName {
+		if core.IsEvaluationRootFunctionCall(expr) {
 			if len(expr.Args) != 1 {
-				return nil, fmt.Errorf("%s expects exactly one argument, but got %d", core.EvaluationRootFunctionName, len(expr.Args))
+				return nil, fmt.Errorf("%s expects exactly one argument, but got %d", expr.Func.Name, len(expr.Args))
 			}
 
 			inner, err := p.nodeFromExpr(expr.Args[0], timeRange)

@@ -96,6 +96,50 @@ func TestSubquerySpinOff_Correctness(t *testing.T) {
 	}
 }
 
+// TestSubquerySpinOff_ScalarDownstreamPreservesType is a regression test for a correctness bug:
+// we must differentiate between evaluation roots containing instant vectors and scalars.
+// This ensures that when the spin-off mapper wraps a scalar downstream
+// expression - e.g. the "scalar(...)" operand of a vector/scalar binary operation - the
+// resulting __evaluation_root__(scalar(...)) reports a scalar type at the AST level.
+func TestSubquerySpinOff_ScalarDownstreamPreservesType(t *testing.T) {
+	// metric_a and metric_b are identical except for __name__.
+	data := `
+		load 1m
+			metric_a{instance="x"} 0+5x300
+			metric_b{instance="x"} 0+7x300
+			metric_c               0+1x300
+	`
+
+	storage := promqltest.LoadedStorage(t, data)
+	t.Cleanup(func() { require.NoError(t, storage.Close()) })
+
+	evalTime := time.Unix(0, 0).Add(250 * time.Minute)
+
+	// A spinnable subquery (range >= 1h, >= 10 steps, >1 selector) so spin-off fires, whose
+	// result holds two series differing only by __name__ (the empty `unless metric_missing`
+	// keeps both), combined with a scalar downstream query via a __name__-dropping operator.
+	expr := `last_over_time(({__name__=~"metric_a|metric_b", instance="x"} unless metric_missing)[2h:1m]) + scalar(metric_c)`
+
+	ctx := user.InjectOrgID(context.Background(), "tenant-1")
+
+	baselineEngine, _ := newSubquerySpinOffTestEngine(t, false)
+	spinOffEngine, _ := newSubquerySpinOffTestEngine(t, true)
+
+	baselineQuery, err := baselineEngine.NewInstantQuery(ctx, storage, nil, expr, evalTime)
+	require.NoError(t, err)
+	t.Cleanup(baselineQuery.Close)
+	baselineRes := baselineQuery.Exec(ctx)
+
+	spinOffQuery, err := spinOffEngine.NewInstantQuery(ctx, storage, nil, expr, evalTime)
+	require.NoError(t, err)
+	t.Cleanup(spinOffQuery.Close)
+	spinOffRes := spinOffQuery.Exec(ctx)
+
+	require.EqualError(t, baselineRes.Err, "vector cannot contain metrics with the same labelset")
+	require.EqualErrorf(t, spinOffRes.Err, baselineRes.Err.Error(),
+		"spin-off changed the query outcome: baseline errored with %s but spin-off returned %s", baselineRes.Err.Error(), spinOffRes.String())
+}
+
 func newSubquerySpinOffTestEngine(t *testing.T, enableSpinOff bool) (*streamingpromql.Engine, *prometheus.Registry) {
 	reg := prometheus.NewPedanticRegistry()
 	opts := streamingpromql.NewTestEngineOpts()

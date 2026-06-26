@@ -106,7 +106,7 @@ func collectEvaluationRoots(expr parser.Expr) []*parser.Call {
 
 	var visit func(node parser.Node)
 	visit = func(node parser.Node) {
-		if call, ok := node.(*parser.Call); ok && call.Func.Name == core.EvaluationRootFunctionName {
+		if call, ok := node.(*parser.Call); ok && core.IsEvaluationRootFunctionCall(call) {
 			roots = append(roots, call)
 			return
 		}

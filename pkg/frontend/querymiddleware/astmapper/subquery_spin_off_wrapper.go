@@ -20,12 +20,12 @@ import (
 type SubquerySpinOffWrapper interface {
 	// WrapDownstreamQuery returns the expression to use in place of expr to execute it through the
 	// downstream execution path rather than spinning it off.
-	WrapDownstreamQuery(expr parser.Expr) parser.Expr
+	WrapDownstreamQuery(expr parser.Expr) (parser.Expr, error)
 
 	// WrapSubquery returns the expression to use in place of the given subquery to spin it off into a
 	// separate query. step is the resolved step of the subquery (the subquery's own step, or the default
 	// step if it does not specify one).
-	WrapSubquery(subquery *parser.SubqueryExpr, step time.Duration) parser.Expr
+	WrapSubquery(subquery *parser.SubqueryExpr, step time.Duration) (parser.Expr, error)
 }
 
 // selectorSubquerySpinOffWrapper is the SubquerySpinOffWrapper used by the query-frontend middleware.
@@ -39,17 +39,17 @@ func NewSelectorSubquerySpinOffWrapper() SubquerySpinOffWrapper {
 	return selectorSubquerySpinOffWrapper{}
 }
 
-func (selectorSubquerySpinOffWrapper) WrapDownstreamQuery(expr parser.Expr) parser.Expr {
+func (selectorSubquerySpinOffWrapper) WrapDownstreamQuery(expr parser.Expr) (parser.Expr, error) {
 	return &parser.VectorSelector{
 		Name: DownstreamQueryMetricName,
 		LabelMatchers: []*labels.Matcher{
 			labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, DownstreamQueryMetricName),
 			labels.MustNewMatcher(labels.MatchEqual, DownstreamQueryLabelName, expr.String()),
 		},
-	}
+	}, nil
 }
 
-func (selectorSubquerySpinOffWrapper) WrapSubquery(subquery *parser.SubqueryExpr, step time.Duration) parser.Expr {
+func (selectorSubquerySpinOffWrapper) WrapSubquery(subquery *parser.SubqueryExpr, step time.Duration) (parser.Expr, error) {
 	selector := &parser.VectorSelector{
 		Name: SubqueryMetricName,
 		LabelMatchers: []*labels.Matcher{
@@ -68,5 +68,5 @@ func (selectorSubquerySpinOffWrapper) WrapSubquery(subquery *parser.SubqueryExpr
 	return &parser.MatrixSelector{
 		VectorSelector: selector,
 		Range:          subquery.Range,
-	}
+	}, nil
 }
