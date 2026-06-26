@@ -31,17 +31,17 @@ func NewQueryResultCacheSkippedCounter(reg prometheus.Registerer) *prometheus.Co
 	return counter
 }
 
+func NewQueryResultCacheAttemptedCounter(reg prometheus.Registerer) prometheus.Counter {
+	return promauto.With(reg).NewCounter(prometheus.CounterOpts{
+		Name: "cortex_frontend_query_result_cache_attempted_total",
+		Help: "Total number of queries that were attempted to be fetched from cache. This metric is tracked for each request when time-splitting is running inside MQE, and for each partial query otherwise.",
+	})
+}
+
 func NewSplitQueriesCounter(reg prometheus.Registerer) prometheus.Counter {
 	return promauto.With(reg).NewCounter(prometheus.CounterOpts{
 		Name: "cortex_frontend_split_queries_total",
 		Help: "Total number of underlying query requests after the split by interval is applied.",
-	})
-}
-
-func NewQueryResultCacheAttemptedCounter(reg prometheus.Registerer) prometheus.Counter {
-	return promauto.With(reg).NewCounter(prometheus.CounterOpts{
-		Name: "cortex_frontend_query_result_cache_attempted_total",
-		Help: "Total number of queries that were attempted to be fetched from cache.",
 	})
 }
 
