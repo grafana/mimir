@@ -240,13 +240,16 @@ func (c *Command) Run(logger log.Logger) error {
 		return nil
 	}
 
-	m := newMetrics(prometheus.DefaultRegisterer)
+	reg := prometheus.NewRegistry()
+	m := newMetrics(reg)
 
 	go func() {
 		level.Info(logger).Log("msg", "HTTP server listening on "+cfg.httpListen)
-		http.Handle("/metrics", promhttp.Handler())
+		mux := http.NewServeMux()
+		mux.Handle("/metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{}))
 		server := &http.Server{
 			Addr:         cfg.httpListen,
+			Handler:      mux,
 			ReadTimeout:  10 * time.Second,
 			WriteTimeout: 10 * time.Second,
 		}
