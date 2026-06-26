@@ -239,6 +239,8 @@ func (t *trackerStore) cleanup(now time.Time) {
 			removed, rehashed := shard.Cleanup(watermark, tenant.currentLimit)
 			shard.Unlock()
 			level.Info(t.logger).Log("msg", "shard cleanup timing", "shard", s, "elapsed", time.Since(t0), "rehashed", rehashed, "removed", removed, "series", tenant.series.Load(), "limit", tenant.currentLimit.Load())
+			// TODO: mesh different tenants instead of doing one tenant at a time
+			time.Sleep(25 * time.Millisecond)
 
 			if removed > 0 {
 				tenant.series.Add(-uint64(removed))
