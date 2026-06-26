@@ -744,7 +744,7 @@ mimirtool analyze grafana --address=<url>
 | Environment variable | Flag             | Description                                                                                                                                                           |
 | -------------------- | ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `GRAFANA_ADDRESS`    | `--address`      | Sets the address of the Grafana instance.                                                                                                                             |
-| `GRAFANA_API_KEY`    | `--key`          | Sets the API Key for the Grafana instance. To create a key, refer to [Authentication API](/docs/grafana/latest/developers/http_api/auth/).                                       |
+| `GRAFANA_API_KEY`    | `--key`          | Sets the API key for the Grafana instance. To create a key, refer to [Service accounts](/docs/grafana/latest/administration/service-accounts/).                       |
 | -                    | `--output`       | Sets the output file path, which by default is `metrics-in-grafana.json`.                                                                                             |
 | -                    | `--folder-title` | Sets the folder filter to limit dashboards analysis for unused metrics based on their exact folder title. When repeated any of the matching folders will be analyzed. |
 
