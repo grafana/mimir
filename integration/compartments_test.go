@@ -114,7 +114,7 @@ func TestIngesterQuerying_ShouldSupportCompartments(t *testing.T) {
 
 	// Pick, per read compartment, one distinct metric name to produce through each write compartment.
 	// All names of a compartment route to that compartment regardless of which distributor produces them.
-	router := compartments.NewRouter(numReadCompartments, "mimir-ingest-rc-<read-compartment-id>")
+	router := compartments.NewRouter(numReadCompartments)
 	namesByCompartment := metricNamesPerCompartment(router, numReadCompartments, numWriteCompartments)
 
 	pushClients := make([]*e2emimir.Client, numWriteCompartments)

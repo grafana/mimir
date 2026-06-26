@@ -233,7 +233,7 @@ type Distributor struct {
 	partitionInstanceRings *ingest.PartitionInstanceRings
 
 	// compartmentRouter shards series to read compartments. Nil when compartments are disabled.
-	compartmentRouter *compartments.Router
+	compartmentRouter *compartments.TopicRouter
 
 	// usageTrackerClient is the client that should be used to track per-tenant series and
 	// enforce max series limit in the distributor. This field is nil if usage-tracker
@@ -831,7 +831,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 			// Resolve the writer's Kafka address and credentials for this distributor's write compartment.
 			writerKafkaCfg = writerKafkaCfg.WriteCompartmentConfig(cfg.WriteCompartmentID)
 
-			d.compartmentRouter = compartments.NewRouter(cfg.Compartments.Read.NumCompartments, cfg.IngestStorageConfig.KafkaConfig.Topic)
+			d.compartmentRouter = compartments.NewTopicRouter(cfg.Compartments.Read.NumCompartments, cfg.IngestStorageConfig.KafkaConfig.Topic)
 
 			d.queryIngesterCompartmentsHit = promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
 				Name: "cortex_querier_compartments_hit_per_query",
