@@ -4549,10 +4549,10 @@ The `limits` block configures default and per-tenant limits imposed by component
 [max_queriers_per_tenant: <int> | default = 0]
 
 # The amount of shards to use when doing parallelisation via query sharding by
-# tenant. 0 to disable query sharding for tenant. Query sharding implementation
-# will adjust the number of query shards based on compactor shards. This allows
-# querier to not search the blocks which cannot possibly have the series for
-# given query shard.
+# tenant. 0 to disable query sharding for tenant. Values greater than 1 are
+# rounded up to the next power of two, so the query shard count always meshes
+# with the compactor's power-of-two shard count. This allows querier to not
+# search the blocks which cannot possibly have the series for given query shard.
 # CLI flag: -query-frontend.query-sharding-total-shards
 [query_sharding_total_shards: <int> | default = 16]
 
@@ -5046,13 +5046,14 @@ ruler_alertmanager_client_config:
 [compactor_blocks_retention_period: <duration> | default = 0s]
 
 # The number of shards to use when splitting blocks. 0 to disable splitting.
+# Values greater than 1 are rounded up to the next power of two.
 # CLI flag: -compactor.split-and-merge-shards
 [compactor_split_and_merge_shards: <int> | default = 0]
 
 # The number of shards to use when splitting out-of-order blocks. 0 to use the
-# value of -compactor.split-and-merge-shards. Only applies to blocks with the
-# out-of-order external label, see
-# -ingester.out-of-order-blocks-external-label-enabled.
+# value of -compactor.split-and-merge-shards. Values greater than 1 are rounded
+# up to the next power of two. Only applies to blocks with the out-of-order
+# external label, see -ingester.out-of-order-blocks-external-label-enabled.
 # CLI flag: -compactor.ooo-split-and-merge-shards
 [compactor_ooo_split_and_merge_shards: <int> | default = 0]
 
