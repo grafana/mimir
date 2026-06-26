@@ -214,13 +214,7 @@ func (s *BlockBuilderScheduler) updateSchedule(ctx context.Context) {
 		defer s.mu.Unlock()
 
 		ps := s.getPartitionState(o.Topic, o.Partition)
-		if err := ps.updateEndOffset(o.Offset); err != nil {
-			if !errors.Is(err, errEndOffsetWentBackwards) {
-				level.Error(s.logger).Log("msg", "failed to update end offset", "partition", ps.partition, "err", err)
-				return
-			}
-			level.Warn(s.logger).Log("msg", "ignoring end offset that went backwards", "partition", ps.partition, "err", err)
-		}
+		ps.updateEndOffset(o.Offset)
 		job, err := ps.updateTime(now, s.cfg.JobSize)
 
 		if err != nil {
@@ -333,13 +327,7 @@ func (s *BlockBuilderScheduler) populateInitialJobs(ctx context.Context, consume
 		ps := s.getPartitionState(off.topic, off.partition)
 
 		for _, io := range o {
-			if err := ps.updateEndOffset(io.offset); err != nil {
-				if !errors.Is(err, errEndOffsetWentBackwards) {
-					level.Error(s.logger).Log("msg", "failed to update end offset", "partition", ps.partition, "err", err)
-					continue
-				}
-				level.Warn(s.logger).Log("msg", "ignoring end offset that went backwards", "partition", ps.partition, "err", err)
-			}
+			ps.updateEndOffset(io.offset)
 			if job, err := ps.updateTime(io.time, s.cfg.JobSize); err != nil {
 				level.Warn(s.logger).Log("msg", "failed to update partition time", "partition", ps.partition, "err", err)
 			} else if job != nil {

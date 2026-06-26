@@ -28,11 +28,11 @@ func TestPartitionState(t *testing.T) {
 	var job *schedulerpb.JobSpec
 	var err error
 
-	require.NoError(t, pt.updateEndOffset(100))
+	pt.updateEndOffset(100)
 	job, err = pt.updateTime(time.Date(2025, 3, 1, 10, 1, 10, 0, time.UTC), sz)
 	require.Nil(t, job)
 	require.Nil(t, err)
-	require.NoError(t, pt.updateEndOffset(200))
+	pt.updateEndOffset(200)
 	job, err = pt.updateTime(time.Date(2025, 3, 1, 11, 1, 10, 0, time.UTC), sz)
 	require.Equal(t, &schedulerpb.JobSpec{
 		Topic:       "topic",
@@ -42,20 +42,20 @@ func TestPartitionState(t *testing.T) {
 	}, job)
 	require.Nil(t, err)
 
-	require.NoError(t, pt.updateEndOffset(201))
+	pt.updateEndOffset(201)
 	job, err = pt.updateTime(time.Date(2025, 3, 1, 11, 1, 10, 0, time.UTC), sz)
 	require.Nil(t, job)
 	require.NoError(t, err)
-	require.NoError(t, pt.updateEndOffset(202))
+	pt.updateEndOffset(202)
 	job, err = pt.updateTime(time.Date(2025, 3, 1, 11, 2, 10, 0, time.UTC), sz)
 	require.NoError(t, err)
 	require.Nil(t, job)
-	require.NoError(t, pt.updateEndOffset(203))
+	pt.updateEndOffset(203)
 	job, err = pt.updateTime(time.Date(2025, 3, 1, 11, 3, 10, 0, time.UTC), sz)
 	require.Nil(t, job)
 	require.Nil(t, err)
 
-	require.NoError(t, pt.updateEndOffset(300))
+	pt.updateEndOffset(300)
 	job, err = pt.updateTime(z.Add(2*time.Hour), sz)
 	require.Equal(t, &schedulerpb.JobSpec{
 		Topic:       "topic",
@@ -66,7 +66,7 @@ func TestPartitionState(t *testing.T) {
 	require.NoError(t, err)
 
 	// And, if the time goes backwards, we return an error.
-	require.NoError(t, pt.updateEndOffset(300))
+	pt.updateEndOffset(300)
 	job, err = pt.updateTime(z.Add(-2*time.Hour), sz)
 	require.Nil(t, job)
 	require.ErrorContains(t, err, "time went backwards")
@@ -79,7 +79,7 @@ func TestPartitionState_TerminallyDormantPartition(t *testing.T) {
 
 	for i := 0; i < 1000; i++ {
 		z = z.Add(7 * time.Minute)
-		require.NoError(t, pt.updateEndOffset(0))
+		pt.updateEndOffset(0)
 		j, err := pt.updateTime(z, sz)
 		assert.Nil(t, j)
 		assert.NoError(t, err)
@@ -93,26 +93,26 @@ func TestPartitionState_PartitionBecomesInactive(t *testing.T) {
 	// A bunch of data observed:
 	var j *schedulerpb.JobSpec
 	var err error
-	require.NoError(t, pt.updateEndOffset(10))
+	pt.updateEndOffset(10)
 	j, err = pt.updateTime(time.Date(2025, 3, 1, 10, 1, 10, 0, time.UTC), sz)
 	assert.Nil(t, j)
 	assert.NoError(t, err)
-	require.NoError(t, pt.updateEndOffset(11))
+	pt.updateEndOffset(11)
 	j, err = pt.updateTime(time.Date(2025, 3, 1, 10, 1, 11, 0, time.UTC), sz)
 	assert.Nil(t, j)
 	assert.NoError(t, err)
-	require.NoError(t, pt.updateEndOffset(12))
+	pt.updateEndOffset(12)
 	j, err = pt.updateTime(time.Date(2025, 3, 1, 10, 1, 12, 0, time.UTC), sz)
 	assert.Nil(t, j)
 	assert.NoError(t, err)
 	// data ceases. continue to get observations in the same bucket.
-	require.NoError(t, pt.updateEndOffset(12))
+	pt.updateEndOffset(12)
 	j, err = pt.updateTime(time.Date(2025, 3, 1, 10, 1, 13, 0, time.UTC), sz)
 	assert.Nil(t, j)
 	assert.NoError(t, err)
 
 	// as we cross into the next bucket, there's still no new data.
-	require.NoError(t, pt.updateEndOffset(12))
+	pt.updateEndOffset(12)
 	j, err = pt.updateTime(time.Date(2025, 3, 1, 11, 1, 0, 0, time.UTC), sz)
 	assert.Equal(t, &schedulerpb.JobSpec{
 		Topic:       "topic",
@@ -122,17 +122,17 @@ func TestPartitionState_PartitionBecomesInactive(t *testing.T) {
 	}, j)
 	assert.NoError(t, err)
 	// and we keep getting the same offset.
-	require.NoError(t, pt.updateEndOffset(12))
+	pt.updateEndOffset(12)
 	j, err = pt.updateTime(time.Date(2025, 3, 1, 11, 2, 0, 0, time.UTC), sz)
 	assert.Nil(t, j)
 	assert.NoError(t, err)
-	require.NoError(t, pt.updateEndOffset(12))
+	pt.updateEndOffset(12)
 	j, err = pt.updateTime(time.Date(2025, 3, 1, 11, 3, 0, 0, time.UTC), sz)
 	assert.Nil(t, j)
 	assert.NoError(t, err)
 
 	// And in the next job bucket, still no new data.
-	require.NoError(t, pt.updateEndOffset(12))
+	pt.updateEndOffset(12)
 	j, err = pt.updateTime(time.Date(2025, 3, 1, 12, 1, 0, 0, time.UTC), sz)
 	assert.Nil(t, j)
 	assert.NoError(t, err)
@@ -144,15 +144,15 @@ func TestPartitionState_MultipleOffsetsBeforeTimeUpdate(t *testing.T) {
 	ts := time.Date(2025, 3, 1, 10, 0, 0, 0, time.UTC)
 
 	// Seed the start offset and the current bucket.
-	require.NoError(t, ps.updateEndOffset(100))
+	ps.updateEndOffset(100)
 	job, err := ps.updateTime(ts, jobSize)
 	require.NoError(t, err)
 	require.Nil(t, job)
 
 	// Several observations within the same bucket, with no time update between them.
-	require.NoError(t, ps.updateEndOffset(150))
-	require.NoError(t, ps.updateEndOffset(175))
-	require.NoError(t, ps.updateEndOffset(200))
+	ps.updateEndOffset(150)
+	ps.updateEndOffset(175)
+	ps.updateEndOffset(200)
 
 	// Crossing into the next bucket emits a single job spanning the seeded start
 	// offset to the latest observed offset.
@@ -370,22 +370,20 @@ func TestNewSingleClusterOffsets(t *testing.T) {
 	require.Equal(t, offsetEmpty, o.endOffset)
 
 	// The first observed end offset seeds the start offset, so they're equal.
-	require.NoError(t, o.updateEndOffset(100))
+	o.updateEndOffset(100)
 	require.Equal(t, int64(100), o.startOffset)
 	require.Equal(t, int64(100), o.endOffset)
 
 	// Subsequent observations only advance the latest offset, so they diverge.
-	require.NoError(t, o.updateEndOffset(200))
+	o.updateEndOffset(200)
 	require.Equal(t, int64(100), o.startOffset)
 	require.Equal(t, int64(200), o.endOffset)
 
 	// Observing the same offset again is allowed and changes nothing.
-	require.NoError(t, o.updateEndOffset(200))
+	o.updateEndOffset(200)
 	require.Equal(t, int64(100), o.startOffset)
 	require.Equal(t, int64(200), o.endOffset)
 
-	// An end offset that moves backwards is reported and leaves the offsets unchanged.
-	require.ErrorIs(t, o.updateEndOffset(150), errEndOffsetWentBackwards)
-	require.Equal(t, int64(100), o.startOffset)
-	require.Equal(t, int64(200), o.endOffset)
+	// An end offset that moves backwards is a logical error and panics.
+	require.Panics(t, func() { o.updateEndOffset(150) })
 }

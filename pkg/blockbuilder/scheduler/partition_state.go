@@ -54,8 +54,8 @@ func newPartitionState(topic string, partition int32, metrics *schedulerMetrics,
 
 // updateEndOffset records the latest observed end offset for the partition. It
 // is expected to be called with monotonically increasing end offsets.
-func (s *partitionState) updateEndOffset(end int64) error {
-	return s.offsets.updateEndOffset(end)
+func (s *partitionState) updateEndOffset(end int64) {
+	s.offsets.updateEndOffset(end)
 }
 
 // updateTime advances the partition's time bucket to the bucket containing ts
@@ -198,15 +198,14 @@ func newSingleClusterOffsets(metrics *schedulerMetrics, logger log.Logger) singl
 // updateEndOffset records the latest observed end offset for the cluster. The
 // first observed offset also seeds the start offset of the first job. It is
 // expected to be called with monotonically increasing end offsets.
-func (o *singleClusterOffsets) updateEndOffset(end int64) error {
+func (o *singleClusterOffsets) updateEndOffset(end int64) {
 	if o.endOffset != offsetEmpty && end < o.endOffset {
-		return fmt.Errorf("%w: %d < %d", errEndOffsetWentBackwards, end, o.endOffset)
+		panic(fmt.Sprintf("end offset went backwards: %d < %d", end, o.endOffset))
 	}
 	if o.startOffset == offsetEmpty {
 		o.startOffset = end
 	}
 	o.endOffset = end
-	return nil
 }
 
 // advancingOffset keeps track of an offset that is expected to advance
