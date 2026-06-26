@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/proto"
 	"github.com/grafana/dskit/cache"
 	"github.com/prometheus/prometheus/model/timestamp"
@@ -176,9 +175,10 @@ func (c *Cache) MinimumRequiredPlanVersion(_ types.QueryTimeRange) (planning.Que
 type CacheMaterializer struct {
 	cache          caching.Backend
 	limitsProvider LimitsProvider
+	minCacheExtent time.Duration
 }
 
-func NewCacheMaterializer(baseCache cache.Cache, cachePrefixGenerator caching.PrefixGenerator, limitsProvider LimitsProvider, logger log.Logger) *CacheMaterializer {
+func NewCacheMaterializer(baseCache cache.Cache, cachePrefixGenerator caching.PrefixGenerator, limitsProvider LimitsProvider, minCacheExtent time.Duration) *CacheMaterializer {
 	var backend caching.Backend
 
 	if baseCache != nil {
@@ -191,6 +191,7 @@ func NewCacheMaterializer(baseCache cache.Cache, cachePrefixGenerator caching.Pr
 	return &CacheMaterializer{
 		cache:          backend,
 		limitsProvider: limitsProvider,
+		minCacheExtent: minCacheExtent,
 	}
 }
 
@@ -224,6 +225,7 @@ func (m *CacheMaterializer) Materialize(ctx context.Context, n planning.Node, ma
 		m.limitsProvider,
 		params.Logger,
 		node.SplitInterval,
+		m.minCacheExtent,
 	)
 
 	return planning.NewSingleUseOperatorFactory(operator), nil
