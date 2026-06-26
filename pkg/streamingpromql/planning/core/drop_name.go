@@ -29,12 +29,6 @@ func (n *DropName) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_DROP_NAME
 }
 
-func (n *DropName) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
-	_, ok := other.(*DropName)
-
-	return ok
-}
-
 func (n *DropName) MergeHints(_ planning.Node) error {
 	// Nothing to do.
 	return nil

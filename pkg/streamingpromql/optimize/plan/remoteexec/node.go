@@ -30,8 +30,8 @@ func init() {
 
 //node:generate
 type RemoteExecutionGroup struct {
-	*RemoteExecutionGroupDetails
-	Nodes []planning.Node `node:"children,min=1,labelfmt=node %d,nocollapse"`
+	*RemoteExecutionGroupDetails `node:"hints=EagerLoad"`
+	Nodes                        []planning.Node `node:"children,min=1,labelfmt=node %d,nocollapse"`
 }
 
 func (r *RemoteExecutionGroup) Details() proto.Message {
@@ -40,12 +40,6 @@ func (r *RemoteExecutionGroup) Details() proto.Message {
 
 func (r *RemoteExecutionGroup) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_REMOTE_EXEC_GROUP
-}
-
-func (r *RemoteExecutionGroup) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
-	_, ok := other.(*RemoteExecutionGroup)
-
-	return ok
 }
 
 func (r *RemoteExecutionGroup) MergeHints(other planning.Node) error {
@@ -105,12 +99,6 @@ func (c *RemoteExecutionConsumer) Details() proto.Message {
 
 func (c *RemoteExecutionConsumer) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_REMOTE_EXEC_CONSUMER
-}
-
-func (c *RemoteExecutionConsumer) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
-	otherConsumer, ok := other.(*RemoteExecutionConsumer)
-
-	return ok && c.NodeIndex == otherConsumer.NodeIndex
 }
 
 func (c *RemoteExecutionConsumer) MergeHints(other planning.Node) error {

@@ -31,11 +31,6 @@ func (n *NoOp) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_NO_OP
 }
 
-func (n *NoOp) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
-	o, ok := other.(*NoOp)
-	return ok && n.MatrixSelector == o.MatrixSelector
-}
-
 func (n *NoOp) MergeHints(_ planning.Node) error {
 	// Nothing to do.
 	return nil

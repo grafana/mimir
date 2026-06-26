@@ -105,16 +105,6 @@ func (s *Subquery) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_SUBQUERY
 }
 
-func (s *Subquery) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
-	otherSubquery, ok := other.(*Subquery)
-
-	return ok &&
-		((s.Timestamp == nil && otherSubquery.Timestamp == nil) || (s.Timestamp != nil && otherSubquery.Timestamp != nil && s.Timestamp.Equal(*otherSubquery.Timestamp))) &&
-		s.Offset == otherSubquery.Offset &&
-		s.Range == otherSubquery.Range &&
-		s.Step == otherSubquery.Step
-}
-
 func (s *Subquery) MergeHints(_ planning.Node) error {
 	// Nothing to do.
 	return nil

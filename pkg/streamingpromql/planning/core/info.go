@@ -3,7 +3,6 @@
 package core
 
 import (
-	"slices"
 	"time"
 
 	"github.com/gogo/protobuf/proto"
@@ -28,11 +27,6 @@ func (t *DataLabelSelector) Details() proto.Message {
 
 func (t *DataLabelSelector) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_DATA_LABEL_SELECTOR
-}
-
-func (t *DataLabelSelector) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
-	otherTargetInfo, ok := other.(*DataLabelSelector)
-	return ok && slices.EqualFunc(t.Matchers, otherTargetInfo.Matchers, matchersEqual)
 }
 
 func (t *DataLabelSelector) MergeHints(other planning.Node) error {

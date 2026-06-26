@@ -28,12 +28,6 @@ func (d *DeduplicateAndMerge) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_DEDUPLICATE_AND_MERGE
 }
 
-func (d *DeduplicateAndMerge) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
-	_, ok := other.(*DeduplicateAndMerge)
-
-	return ok
-}
-
 func (d *DeduplicateAndMerge) MergeHints(_ planning.Node) error {
 	// Nothing to do.
 	return nil

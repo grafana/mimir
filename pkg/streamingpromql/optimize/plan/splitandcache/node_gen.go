@@ -39,3 +39,9 @@ func (t *TimeRangeSplit) ReplaceChild(idx int, node planning.Node) error {
 func (t *TimeRangeSplit) ChildrenLabels() []string {
 	return []string{""}
 }
+
+func (t *TimeRangeSplit) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
+	oi, ok := other.(*TimeRangeSplit)
+	return ok &&
+		t.SplitInterval == oi.SplitInterval
+}

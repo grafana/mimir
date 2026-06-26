@@ -35,12 +35,6 @@ func (s *TimeRangeSplit) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_TIME_RANGE_SPLIT
 }
 
-func (s *TimeRangeSplit) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
-	otherConsumer, ok := other.(*TimeRangeSplit)
-
-	return ok && s.SplitInterval == otherConsumer.SplitInterval
-}
-
 func (s *TimeRangeSplit) MergeHints(other planning.Node) error {
 	return nil
 }

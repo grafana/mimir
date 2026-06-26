@@ -36,12 +36,6 @@ func (n *NumberLiteral) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_NUMBER_LITERAL
 }
 
-func (n *NumberLiteral) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
-	otherLiteral, ok := other.(*NumberLiteral)
-
-	return ok && n.Value == otherLiteral.Value
-}
-
 func (n *NumberLiteral) MergeHints(_ planning.Node) error {
 	// Nothing to do.
 	return nil

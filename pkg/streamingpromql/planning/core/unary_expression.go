@@ -39,13 +39,6 @@ func (u *UnaryExpression) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_UNARY_EXPRESSION
 }
 
-func (u *UnaryExpression) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
-	otherUnaryExpression, ok := other.(*UnaryExpression)
-
-	return ok &&
-		u.Op == otherUnaryExpression.Op
-}
-
 func (u *UnaryExpression) MergeHints(_ planning.Node) error {
 	// Nothing to do.
 	return nil

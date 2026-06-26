@@ -4,7 +4,6 @@ package core
 
 import (
 	"fmt"
-	"slices"
 	"strings"
 	"time"
 
@@ -64,18 +63,6 @@ func (a *AggregateExpression) Details() proto.Message {
 
 func (a *AggregateExpression) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_AGGREGATE_EXPRESSION
-}
-
-func (a *AggregateExpression) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
-	otherAggregateExpression, ok := other.(*AggregateExpression)
-
-	return ok && a.EquivalentTo(otherAggregateExpression.AggregateExpressionDetails)
-}
-
-func (a *AggregateExpressionDetails) EquivalentTo(other *AggregateExpressionDetails) bool {
-	return a.Op == other.Op &&
-		slices.Equal(a.Grouping, other.Grouping) &&
-		a.Without == other.Without
 }
 
 func (a *AggregateExpression) MergeHints(other planning.Node) error {
