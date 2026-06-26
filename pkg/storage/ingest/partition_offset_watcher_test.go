@@ -9,6 +9,7 @@ import (
 	"math/rand"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/grafana/dskit/services"
@@ -18,116 +19,114 @@ import (
 )
 
 func TestPartitionOffsetWatcher(t *testing.T) {
-	const shortSleep = 100 * time.Millisecond
-
 	t.Run("should support a single goroutine waiting for an offset", func(t *testing.T) {
-		t.Parallel()
+		synctest.Test(t, func(t *testing.T) {
+			var (
+				ctx       = t.Context()
+				w         = NewPartitionOffsetWatcher()
+				firstDone = atomic.NewBool(false)
+			)
 
-		var (
-			ctx       = context.Background()
-			w         = NewPartitionOffsetWatcher()
-			firstDone = atomic.NewBool(false)
-		)
+			go func() {
+				assert.NoError(t, w.Wait(ctx, 2))
+				firstDone.Store(true)
+			}()
 
-		go func() {
-			assert.NoError(t, w.Wait(ctx, 2))
-			firstDone.Store(true)
-		}()
+			// Once the waiter is durably blocked, make sure wait() hasn't returned yet.
+			synctest.Wait()
+			assert.False(t, firstDone.Load())
 
-		// Wait a short time and then make sure the wait() hasn't returned yet.
-		time.Sleep(shortSleep)
-		assert.False(t, firstDone.Load())
+			// Notify an offset lower than the expected one. At this point the wait() shouldn't return yet.
+			w.Notify(1)
+			synctest.Wait()
+			assert.False(t, firstDone.Load())
 
-		// Notify an offset lower than the expected one. At this point the wait() shouldn't return yet.
-		w.Notify(1)
+			// Notify the expected offset. At this point wait() should return.
+			w.Notify(2)
+			synctest.Wait()
+			assert.True(t, firstDone.Load())
 
-		time.Sleep(shortSleep)
-		assert.False(t, firstDone.Load())
-
-		// Notify the expected offset. At this point wait() should return.
-		w.Notify(2)
-		assert.Eventually(t, firstDone.Load, shortSleep, shortSleep/10)
-
-		assert.Equal(t, 0, w.watchGroupsCount())
+			assert.Equal(t, 0, w.watchGroupsCount())
+		})
 	})
 
 	t.Run("should support two goroutines waiting for the same offset", func(t *testing.T) {
-		t.Parallel()
+		synctest.Test(t, func(t *testing.T) {
+			var (
+				ctx        = t.Context()
+				w          = NewPartitionOffsetWatcher()
+				firstDone  = atomic.NewBool(false)
+				secondDone = atomic.NewBool(false)
+			)
 
-		var (
-			ctx        = context.Background()
-			w          = NewPartitionOffsetWatcher()
-			firstDone  = atomic.NewBool(false)
-			secondDone = atomic.NewBool(false)
-		)
+			go func() {
+				assert.NoError(t, w.Wait(ctx, 2))
+				firstDone.Store(true)
+			}()
 
-		go func() {
-			assert.NoError(t, w.Wait(ctx, 2))
-			firstDone.Store(true)
-		}()
+			go func() {
+				assert.NoError(t, w.Wait(ctx, 2))
+				secondDone.Store(true)
+			}()
 
-		go func() {
-			assert.NoError(t, w.Wait(ctx, 2))
-			secondDone.Store(true)
-		}()
+			// Once the waiters are durably blocked, make sure wait() hasn't returned yet.
+			synctest.Wait()
+			assert.False(t, firstDone.Load())
+			assert.False(t, secondDone.Load())
 
-		// Wait a short time and then make sure the wait() hasn't returned yet.
-		time.Sleep(shortSleep)
-		assert.False(t, firstDone.Load())
-		assert.False(t, secondDone.Load())
+			// Notify an offset lower than the expected one. At this point the wait() shouldn't return yet.
+			w.Notify(1)
+			synctest.Wait()
+			assert.False(t, firstDone.Load())
+			assert.False(t, secondDone.Load())
 
-		// Notify an offset lower than the expected one. At this point the wait() shouldn't return yet.
-		w.Notify(1)
+			// Notify the expected offset. At this point wait() should return.
+			w.Notify(2)
+			synctest.Wait()
+			assert.True(t, firstDone.Load())
+			assert.True(t, secondDone.Load())
 
-		time.Sleep(shortSleep)
-		assert.False(t, firstDone.Load())
-		assert.False(t, secondDone.Load())
-
-		// Notify the expected offset. At this point wait() should return.
-		w.Notify(2)
-		assert.Eventually(t, firstDone.Load, shortSleep, shortSleep/10)
-		assert.Eventually(t, secondDone.Load, shortSleep, shortSleep/10)
-
-		assert.Equal(t, 0, w.watchGroupsCount())
+			assert.Equal(t, 0, w.watchGroupsCount())
+		})
 	})
 
 	t.Run("should support two goroutines waiting for a different offset", func(t *testing.T) {
-		t.Parallel()
+		synctest.Test(t, func(t *testing.T) {
+			var (
+				ctx        = t.Context()
+				w          = NewPartitionOffsetWatcher()
+				firstDone  = atomic.NewBool(false)
+				secondDone = atomic.NewBool(false)
+			)
 
-		var (
-			ctx        = context.Background()
-			w          = NewPartitionOffsetWatcher()
-			firstDone  = atomic.NewBool(false)
-			secondDone = atomic.NewBool(false)
-		)
+			go func() {
+				assert.NoError(t, w.Wait(ctx, 1))
+				firstDone.Store(true)
+			}()
 
-		go func() {
-			assert.NoError(t, w.Wait(ctx, 1))
-			firstDone.Store(true)
-		}()
+			go func() {
+				assert.NoError(t, w.Wait(ctx, 2))
+				secondDone.Store(true)
+			}()
 
-		go func() {
-			assert.NoError(t, w.Wait(ctx, 2))
-			secondDone.Store(true)
-		}()
+			// Once the waiters are durably blocked, make sure wait() hasn't returned yet.
+			synctest.Wait()
+			assert.False(t, firstDone.Load())
+			assert.False(t, secondDone.Load())
 
-		// Wait a short time and then make sure the wait() hasn't returned yet.
-		time.Sleep(shortSleep)
-		assert.False(t, firstDone.Load())
-		assert.False(t, secondDone.Load())
+			// Notify the offset expected by the 1st goroutine.
+			w.Notify(1)
+			synctest.Wait()
+			assert.True(t, firstDone.Load())
+			assert.False(t, secondDone.Load())
 
-		// Notify the offset expected by the 1st goroutine.
-		w.Notify(1)
-		assert.Eventually(t, firstDone.Load, shortSleep, shortSleep/10)
+			// Notify the offset expected by the 2nd goroutine.
+			w.Notify(2)
+			synctest.Wait()
+			assert.True(t, secondDone.Load())
 
-		time.Sleep(shortSleep)
-		assert.False(t, secondDone.Load())
-
-		// Notify the offset expected by the 2nd goroutine.
-		w.Notify(2)
-		assert.Eventually(t, secondDone.Load, shortSleep, shortSleep/10)
-
-		assert.Equal(t, 0, w.watchGroupsCount())
+			assert.Equal(t, 0, w.watchGroupsCount())
+		})
 	})
 
 	t.Run("Wait() should immediately return if the input offset has already been consumed", func(t *testing.T) {
