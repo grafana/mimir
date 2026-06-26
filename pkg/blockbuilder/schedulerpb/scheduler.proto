@@ -27,19 +27,17 @@ message JobSpec {
   int64 start_offset = 3;
   int64 end_offset = 4;
 
-  // Compartment mode: one [start_offset, end_offset) range per write
-  // compartment. When compartments are enabled, these are consumed instead of
+  // Compartment mode: one [start_offset, end_offset) range per cluster, keyed by
+  // cluster ID. When compartments are enabled, these are consumed instead of
   // start_offset/end_offset.
-  repeated WCOffsetRange offset_ranges = 5 [(gogoproto.nullable) = false];
+  map<int32, OffsetRange> offset_ranges = 5 [(gogoproto.nullable) = false];
 }
 
-// WCOffsetRange is the [start_offset, end_offset) to consume for one write
-// compartment (WC) of a job, on that WC's own cluster. The topic and partition
-// are shared by the whole JobSpec.
-message WCOffsetRange {
+// OffsetRange is the [start_offset, end_offset) to consume from a single
+// cluster's partition. The topic and partition are shared by the whole JobSpec.
+message OffsetRange {
   int64 start_offset = 1;
   int64 end_offset = 2;
-  int32 wc_id = 3;
 }
 
 service BlockBuilderScheduler {

@@ -129,7 +129,7 @@ func TestBlockBuilder(t *testing.T) {
 								Id:    "test-job-4898",
 								Epoch: 90000,
 							},
-							schedulerpb.NewSingleWCJobSpec(testTopic, 1, c.startOffset, c.endOffset),
+							schedulerpb.NewNonCompartmentJobSpec(testTopic, 1, c.startOffset, c.endOffset),
 						)
 
 						bb, err := newWithSchedulerClient(cfg, test.NewTestingLogger(t), prometheus.NewPedanticRegistry(), overrides, scheduler)
@@ -170,11 +170,11 @@ func TestBlockBuilder(t *testing.T) {
 }
 
 // TestConsumeJobMultiWC asserts that a job spanning multiple write WCs consumes
-// each WC's range from that WC's own cluster into a single block. The two WCs
+// each WC's range from that WC's own clusterID into a single block. The two WCs
 // point at two distinct Kafka clusters holding disjoint, distinguishable samples;
 // the uploaded block must contain the samples from both, which only holds if each
 // WC is read through its own client (a bug reading every WC from one client would
-// miss the other cluster's data).
+// miss the other clusterID's data).
 func TestConsumeJobMultiWC(t *testing.T) {
 	ctx := context.Background()
 
@@ -200,7 +200,7 @@ func TestConsumeJobMultiWC(t *testing.T) {
 		return out
 	}
 
-	// Cluster A's samples all precede cluster B's, so every timestamp is distinct
+	// Cluster A's samples all precede clusterID B's, so every timestamp is distinct
 	// and the per-tenant union is naturally ordered; both stay within the OOO window.
 	now := time.Now()
 	producedA := produceToCluster(producerA, now.Add(-100*time.Minute))
@@ -217,7 +217,7 @@ func TestConsumeJobMultiWC(t *testing.T) {
 	bb, err := newWithSchedulerClient(cfg, test.NewTestingLogger(t), prometheus.NewPedanticRegistry(), overrides, &mockSchedulerClient{})
 	require.NoError(t, err)
 
-	// Wire one reader client per WC, each pointing at a different cluster, then drive
+	// Wire one reader client per WC, each pointing at a different clusterID, then drive
 	// consumeJob directly. The full service path can't set this up because two random
 	// broker addresses can't come from one templated address.
 	readerFor := func(wc int, addr string) *kgo.Client {
@@ -233,9 +233,9 @@ func TestConsumeJobMultiWC(t *testing.T) {
 	spec := schedulerpb.JobSpec{
 		Topic:     testTopic,
 		Partition: 1,
-		OffsetRanges: []schedulerpb.WCOffsetRange{
-			{WcId: 0, StartOffset: 0, EndOffset: recordsPerCluster},
-			{WcId: 1, StartOffset: 0, EndOffset: recordsPerCluster},
+		OffsetRanges: map[int32]schedulerpb.OffsetRange{
+			0: {StartOffset: 0, EndOffset: recordsPerCluster},
+			1: {StartOffset: 0, EndOffset: recordsPerCluster},
 		},
 	}
 	require.NoError(t, bb.consumeJob(ctx, schedulerpb.JobKey{Id: "test-job-multi-wc", Epoch: 1}, spec))
@@ -255,7 +255,7 @@ func TestConsumeJobMultiWC(t *testing.T) {
 // that the spec encoding must match the block-builder's compartment configuration:
 // a compartment-mode spec (carrying OffsetRanges) reaching a block-builder with
 // compartments disabled is a misconfiguration that must fail loudly rather than be
-// silently consumed from the wrong cluster.
+// silently consumed from the wrong clusterID.
 func TestConsumeJob_RejectsCompartmentSpecWhenCompartmentsDisabled(t *testing.T) {
 	ctx := context.Background()
 
@@ -269,7 +269,7 @@ func TestConsumeJob_RejectsCompartmentSpecWhenCompartmentsDisabled(t *testing.T)
 	spec := schedulerpb.JobSpec{
 		Topic:        testTopic,
 		Partition:    0,
-		OffsetRanges: []schedulerpb.WCOffsetRange{{WcId: 0, StartOffset: 0, EndOffset: 1}},
+		OffsetRanges: map[int32]schedulerpb.OffsetRange{0: {StartOffset: 0, EndOffset: 1}},
 	}
 	err = bb.consumeJob(ctx, schedulerpb.JobKey{Id: "mismatch", Epoch: 1}, spec)
 	require.ErrorContains(t, err, "compartment-mode")

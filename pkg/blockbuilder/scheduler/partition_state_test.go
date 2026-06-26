@@ -122,14 +122,14 @@ func TestPartitionState_ParallelJobs(t *testing.T) {
 	t.Run("planned job order required", func(t *testing.T) {
 		sched, _ := mustScheduler(t, 4)
 		ps := sched.getPartitionState("ingest", 1)
-		ps.initCommitWC(0, 100)
+		ps.initCommit(0, 100)
 
 		// It is a logical error to add a job to the planned list out of order. The safe completion logic requires it.
 
-		ps.addPlannedJob("job1", schedulerpb.NewSingleWCJobSpec("ingest", 1, 100, 200))
-		ps.addPlannedJob("job3", schedulerpb.NewSingleWCJobSpec("ingest", 1, 300, 400))
+		ps.addPlannedJob("job1", schedulerpb.NewNonCompartmentJobSpec("ingest", 1, 100, 200))
+		ps.addPlannedJob("job3", schedulerpb.NewNonCompartmentJobSpec("ingest", 1, 300, 400))
 		require.Panics(t, func() {
-			ps.addPlannedJob("job2", schedulerpb.NewSingleWCJobSpec("ingest", 1, 200, 300))
+			ps.addPlannedJob("job2", schedulerpb.NewNonCompartmentJobSpec("ingest", 1, 200, 300))
 		})
 	})
 
@@ -137,9 +137,9 @@ func TestPartitionState_ParallelJobs(t *testing.T) {
 	t.Run("complete_single_job_at_front", func(t *testing.T) {
 		sched, _ := mustScheduler(t, 4)
 		ps := sched.getPartitionState("ingest", 1)
-		ps.initCommitWC(0, 100)
+		ps.initCommit(0, 100)
 
-		jobSpec := schedulerpb.NewSingleWCJobSpec("ingest", 1, 100, 200)
+		jobSpec := schedulerpb.NewNonCompartmentJobSpec("ingest", 1, 100, 200)
 		ps.addPlannedJob("job1", jobSpec)
 		require.Equal(t, 1, ps.plannedJobs.Len())
 		require.Len(t, ps.plannedJobsMap, 1)
@@ -157,7 +157,7 @@ func TestPartitionState_ParallelJobs(t *testing.T) {
 	t.Run("complete_nonexistent_job", func(t *testing.T) {
 		sched, _ := mustScheduler(t, 4)
 		ps := sched.getPartitionState("ingest", 1)
-		ps.initCommitWC(0, 100)
+		ps.initCommit(0, 100)
 		// Try to complete a job that doesn't exist
 		err := ps.completeJob("nonexistent_job")
 		require.Error(t, err)
@@ -168,12 +168,12 @@ func TestPartitionState_ParallelJobs(t *testing.T) {
 	t.Run("complete_multiple_jobs_in_order", func(t *testing.T) {
 		sched, _ := mustScheduler(t, 4)
 		ps := sched.getPartitionState("ingest", 1)
-		ps.initCommitWC(0, 100)
+		ps.initCommit(0, 100)
 
 		// Add multiple planned jobs
-		ps.addPlannedJob("job1", schedulerpb.NewSingleWCJobSpec("ingest", 1, 100, 200))
-		ps.addPlannedJob("job2", schedulerpb.NewSingleWCJobSpec("ingest", 1, 200, 300))
-		ps.addPlannedJob("job3", schedulerpb.NewSingleWCJobSpec("ingest", 1, 300, 400))
+		ps.addPlannedJob("job1", schedulerpb.NewNonCompartmentJobSpec("ingest", 1, 100, 200))
+		ps.addPlannedJob("job2", schedulerpb.NewNonCompartmentJobSpec("ingest", 1, 200, 300))
+		ps.addPlannedJob("job3", schedulerpb.NewNonCompartmentJobSpec("ingest", 1, 300, 400))
 
 		// Verify initial state
 		require.Equal(t, 3, ps.plannedJobs.Len())
@@ -206,12 +206,12 @@ func TestPartitionState_ParallelJobs(t *testing.T) {
 	t.Run("complete_jobs_out_of_order", func(t *testing.T) {
 		sched, _ := mustScheduler(t, 4)
 		ps := sched.getPartitionState("ingest", 1)
-		ps.initCommitWC(0, 100)
+		ps.initCommit(0, 100)
 
 		// Add multiple planned jobs
-		ps.addPlannedJob("job1", schedulerpb.NewSingleWCJobSpec("ingest", 1, 100, 200))
-		ps.addPlannedJob("job2", schedulerpb.NewSingleWCJobSpec("ingest", 1, 200, 300))
-		ps.addPlannedJob("job3", schedulerpb.NewSingleWCJobSpec("ingest", 1, 300, 400))
+		ps.addPlannedJob("job1", schedulerpb.NewNonCompartmentJobSpec("ingest", 1, 100, 200))
+		ps.addPlannedJob("job2", schedulerpb.NewNonCompartmentJobSpec("ingest", 1, 200, 300))
+		ps.addPlannedJob("job3", schedulerpb.NewNonCompartmentJobSpec("ingest", 1, 300, 400))
 
 		// Complete job2 first (out of order)
 		err := ps.completeJob("job2")
@@ -235,7 +235,7 @@ func TestPartitionState_ParallelJobs(t *testing.T) {
 	t.Run("complete_job_empty_partition", func(t *testing.T) {
 		sched, _ := mustScheduler(t, 4)
 		ps := sched.getPartitionState("ingest", 1)
-		ps.initCommitWC(0, 100)
+		ps.initCommit(0, 100)
 
 		// Try to complete a job when no jobs exist
 		err := ps.completeJob("any_job")

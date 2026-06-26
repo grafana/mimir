@@ -82,7 +82,7 @@ func newWithSchedulerClient(
 	schedulerClient schedulerpb.SchedulerClient,
 ) (*BlockBuilder, error) {
 	// One Kafka client metrics set per write WC. With compartments enabled each
-	// WC's registerer is labeled by write_compartment so the per-cluster client and
+	// WC's registerer is labeled by write_compartment so the per-clusterID client and
 	// reader metrics don't collide; with compartments disabled there is a single
 	// unlabeled set, identical to before compartments existed.
 	numWCs := len(wcClientConfigs(cfg.Kafka, cfg.Compartments))
@@ -284,19 +284,12 @@ func (b *BlockBuilder) consumeJob(ctx context.Context, key schedulerpb.JobKey, s
 
 	logger := log.With(sp, "partition", spec.Partition, "job_id", key.Id, "job_epoch", key.Epoch)
 
-	if len(spec.Ranges()) == 0 {
-		// A valid job always carries at least one WC range. An empty spec is a
-		// bug: completing it as a no-op would advance offsets past unconsumed
-		// data, so fail loudly instead.
-		return fmt.Errorf("job spec for partition %d has no WC entries", spec.Partition)
+	if err := spec.Validate(len(b.kafkaClients)); err != nil {
+		return fmt.Errorf("invalid job spec for partition %d: %w", spec.Partition, err)
 	}
 
-	// The spec encoding (compartment vs non-compartment) must match this
-	// block-builder's configuration; otherwise Ranges() would map ranges onto the
-	// wrong Kafka clusters. Both derive from the same config, so a mismatch is a
-	// misconfiguration.
-	if specIsCompartment := len(spec.OffsetRanges) > 0; specIsCompartment != b.cfg.Compartments.Enabled {
-		return fmt.Errorf("job spec for partition %d has compartment-mode=%t but block-builder has compartments enabled=%t", spec.Partition, specIsCompartment, b.cfg.Compartments.Enabled)
+	if spec.IsCompartmentEncoding() != b.cfg.Compartments.Enabled {
+		return fmt.Errorf("job spec for partition %d has compartment-mode=%t but block-builder has compartments enabled=%t", spec.Partition, spec.IsCompartmentEncoding(), b.cfg.Compartments.Enabled)
 	}
 
 	builder := NewTSDBBuilder(spec.Partition, b.cfg, b.limits, logger, b.tsdbBuilderMetrics, b.tsdbMetrics)
@@ -307,7 +300,7 @@ func (b *BlockBuilder) consumeJob(ctx context.Context, key schedulerpb.JobKey, s
 
 	if b.cfg.Compartments.Enabled {
 		// Compartment mode: one offset range per write compartment, each on its own
-		// cluster. Consume them concurrently and k-way merge in record-timestamp
+		// clusterID. Consume them concurrently and k-way merge in record-timestamp
 		// order so cross-WC appends stay roughly ordered rather than leaning on the
 		// TSDB out-of-order window.
 		if err := b.consumePartitionMerged(ctx, logger, consumer, builder, spec); err != nil {

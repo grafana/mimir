@@ -43,29 +43,29 @@ const (
 	bucketAfter  = 1
 )
 
-func newPartitionState(topic string, partition int32, numWCs int, compartmentsEnabled bool, metrics *schedulerMetrics, logger log.Logger) *partitionState {
-	if numWCs < 1 {
-		panic(fmt.Sprintf("partition state for %s/%d needs at least one write WC, got %d", topic, partition, numWCs))
+func newPartitionState(topic string, partition int32, numClusters int, compartmentsEnabled bool, metrics *schedulerMetrics, logger log.Logger) *partitionState {
+	if numClusters < 1 {
+		panic(fmt.Sprintf("partition state for %s/%d needs at least one cluster, got %d", topic, partition, numClusters))
 	}
 	ps := &partitionState{
 		topic:               topic,
 		partition:           partition,
 		compartmentsEnabled: compartmentsEnabled,
-		offsets:             make([]singleClusterOffsets, numWCs),
+		offsets:             make([]singleClusterOffsets, numClusters),
 		pendingJobs:         list.New(),
 		plannedJobs:         list.New(),
 		plannedJobsMap:      make(map[string]*jobState),
 	}
-	for wc := range ps.offsets {
-		ps.offsets[wc] = newSingleClusterOffsets(metrics, logger)
+	for cluster := range ps.offsets {
+		ps.offsets[cluster] = newSingleClusterOffsets(metrics, logger)
 	}
 	return ps
 }
 
-// updateEndOffset records the latest observed end offset for the partition/wc. It
+// updateEndOffset records the latest observed end offset for the partition/cluster. It
 // is expected to be called with monotonically increasing end offsets
-func (s *partitionState) updateEndOffset(wc int, end int64) {
-	s.offsets[wc].updateEndOffset(end)
+func (s *partitionState) updateEndOffset(clusterID int, end int64) {
+	s.offsets[clusterID].updateEndOffset(end)
 }
 
 // updateTime advances the partition's time bucket to the bucket containing ts
@@ -93,42 +93,42 @@ func (s *partitionState) updateTime(ts time.Time, jobSize time.Duration) (*sched
 	case bucketAfter:
 		// We've entered a new job bucket. Emit one job bundling every WC that has new
 		// data in [startOffset, endOffset), then start the next bucket.
-		wcs := make([]schedulerpb.WCOffsetRange, 0, len(s.offsets))
-		for wc := range s.offsets {
-			o := &s.offsets[wc]
+		ranges := make(map[int32]schedulerpb.OffsetRange, len(s.offsets))
+		for cluster := range s.offsets {
+			o := &s.offsets[cluster]
 			// Skip a WC we've never sampled: we don't know its start offset yet, and we
 			// don't want to emit a job from offset 0.
 			if o.startOffset == offsetEmpty {
 				continue
 			}
 			if o.endOffset > o.startOffset {
-				wcs = append(wcs, schedulerpb.WCOffsetRange{
-					WcId:        int32(wc),
+				ranges[int32(cluster)] = schedulerpb.OffsetRange{
 					StartOffset: o.startOffset,
 					EndOffset:   o.endOffset,
-				})
+				}
 			}
 			o.startOffset = o.endOffset
 		}
 		s.jobBucket = newJobBucket
-		if len(wcs) == 0 {
+		if len(ranges) == 0 {
 			return nil, nil
 		}
 		if !s.compartmentsEnabled {
-			return &schedulerpb.JobSpec{Topic: s.topic, Partition: s.partition, StartOffset: wcs[0].StartOffset, EndOffset: wcs[0].EndOffset}, nil
+			r := ranges[0]
+			return &schedulerpb.JobSpec{Topic: s.topic, Partition: s.partition, StartOffset: r.StartOffset, EndOffset: r.EndOffset}, nil
 		}
-		return &schedulerpb.JobSpec{Topic: s.topic, Partition: s.partition, OffsetRanges: wcs}, nil
+		return &schedulerpb.JobSpec{Topic: s.topic, Partition: s.partition, OffsetRanges: ranges}, nil
 	}
 
 	return nil, nil
 }
 
-// initCommitWC seeds a single WC's committed (and initial planned) offset from
+// initCommit seeds a single cluster's committed (and initial planned) offset from
 // the offset recovered from that WC's cluster at startup.
-func (s *partitionState) initCommitWC(wc int, commit int64) {
-	s.offsets[wc].committed.set(commit)
+func (s *partitionState) initCommit(cluster int, commit int64) {
+	s.offsets[cluster].committed.set(commit)
 	// Initially, the planned offset is the committed offset.
-	s.offsets[wc].planned.set(commit)
+	s.offsets[cluster].planned.set(commit)
 }
 
 func (s *partitionState) addPendingJob(job *schedulerpb.JobSpec) {
@@ -145,47 +145,41 @@ func (s *partitionState) addPlannedJob(id string, spec schedulerpb.JobSpec) {
 	js := &jobState{jobID: id, spec: spec, complete: false}
 	s.plannedJobs.PushBack(js)
 	s.plannedJobsMap[js.jobID] = js
-	for _, rng := range spec.Ranges() {
-		s.offsets[rng.WcId].planned.advance(id, rng)
+	for wc, rng := range spec.Ranges() {
+		s.offsets[wc].planned.advance(id, rng)
 	}
 }
 
-func (s *partitionState) committedOffset(wc int) int64 {
-	return s.offsets[wc].committed.offset()
+func (s *partitionState) committedOffset(cluster int) int64 {
+	return s.offsets[cluster].committed.offset()
 }
 
-func (s *partitionState) committedEmpty(wc int) bool {
-	return s.offsets[wc].committed.empty()
+func (s *partitionState) committedEmpty(cluster int) bool {
+	return s.offsets[cluster].committed.empty()
 }
 
 // committedBeyondSpec reports whether every WC range in spec is already at or
 // under that WC's committed offset (i.e. the whole job is already consumed).
 func (s *partitionState) committedBeyondSpec(spec schedulerpb.JobSpec) bool {
-	if len(spec.Ranges()) == 0 {
-		return false
-	}
-	for _, rng := range spec.Ranges() {
-		if !s.offsets[rng.WcId].committed.beyondSpec(rng) {
+	for cluster, offsetRange := range spec.Ranges() {
+		if !s.offsets[cluster].committed.beyondSpec(offsetRange) {
 			return false
 		}
 	}
 	return true
 }
 
-func (s *partitionState) plannedOffset(wc int) int64 {
-	return s.offsets[wc].planned.offset()
+func (s *partitionState) plannedOffset(cluster int) int64 {
+	return s.offsets[cluster].planned.offset()
 }
 
-func (s *partitionState) plannedEmpty(wc int) bool {
-	return s.offsets[wc].planned.empty()
+func (s *partitionState) plannedEmpty(cluster int) bool {
+	return s.offsets[cluster].planned.empty()
 }
 
 func (s *partitionState) plannedBeyondSpec(spec schedulerpb.JobSpec) bool {
-	if len(spec.Ranges()) == 0 {
-		return false
-	}
-	for _, rng := range spec.Ranges() {
-		if !s.offsets[rng.WcId].planned.beyondSpec(rng) {
+	for cluster, offsetRange := range spec.Ranges() {
+		if !s.offsets[cluster].planned.beyondSpec(offsetRange) {
 			return false
 		}
 	}
@@ -196,11 +190,8 @@ func (s *partitionState) plannedBeyondSpec(spec schedulerpb.JobSpec) bool {
 // every WC, i.e. each WC entry's start offset equals that WC's planned offset
 // (or that WC's planned offset is still empty). A gap in any WC makes it false.
 func (s *partitionState) plannedValidNextSpec(spec schedulerpb.JobSpec) bool {
-	if len(spec.Ranges()) == 0 {
-		return false
-	}
-	for _, rng := range spec.Ranges() {
-		if !s.offsets[rng.WcId].planned.validNextSpec(rng) {
+	for cluster, offsetRange := range spec.Ranges() {
+		if !s.offsets[cluster].planned.validNextSpec(offsetRange) {
 			return false
 		}
 	}
@@ -226,8 +217,8 @@ func (s *partitionState) completeJob(jobID string) error {
 		}
 		s.plannedJobs.Remove(elem)
 		delete(s.plannedJobsMap, js.jobID)
-		for _, rng := range js.spec.Ranges() {
-			s.offsets[rng.WcId].committed.advance(js.jobID, rng)
+		for wc, rng := range js.spec.Ranges() {
+			s.offsets[wc].committed.advance(js.jobID, rng)
 		}
 	}
 	return nil
@@ -292,11 +283,11 @@ const (
 	offsetNameCommitted = "committed"
 )
 
-// advance moves the offset forward by a single WC's range. Advancements are
+// advance moves the offset forward by a single cluster's range. Advancements are
 // expected to be monotonically increasing and contiguous. Advance will not
 // allow backwards movement. If a gap is detected, a warning is logged and a
 // metric is incremented.
-func (o *advancingOffset) advance(jobID string, rng schedulerpb.WCOffsetRange) {
+func (o *advancingOffset) advance(jobID string, rng schedulerpb.OffsetRange) {
 	if o.beyondSpec(rng) {
 		// Frequent, and expected.
 		level.Debug(o.logger).Log("msg", "ignoring historical job", "offset_name", o.name, "job_id", jobID,
@@ -327,14 +318,14 @@ func (o *advancingOffset) empty() bool {
 	return o.off == offsetEmpty
 }
 
-// validNextSpec returns true if a single WC's range is valid to be added to the
-// offset. It is valid if the start offset is the same as the current offset. We
-// also allow transitioning out of an empty offset without calling it a gap.
-func (o *advancingOffset) validNextSpec(rng schedulerpb.WCOffsetRange) bool {
+// validNextSpec returns true if a single cluster's range is valid to be added to
+// the offset. It is valid if the start offset is the same as the current offset.
+// We also allow transitioning out of an empty offset without calling it a gap.
+func (o *advancingOffset) validNextSpec(rng schedulerpb.OffsetRange) bool {
 	return o.off == rng.StartOffset || o.empty()
 }
 
-// beyondSpec returns true if the offset is beyond a single WC's range.
-func (o *advancingOffset) beyondSpec(rng schedulerpb.WCOffsetRange) bool {
+// beyondSpec returns true if the offset is beyond a single cluster's range.
+func (o *advancingOffset) beyondSpec(rng schedulerpb.OffsetRange) bool {
 	return !o.empty() && rng.EndOffset <= o.off
 }

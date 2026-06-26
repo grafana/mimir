@@ -69,6 +69,26 @@ func New(
 }
 
 func (s *BlockBuilderScheduler) starting(_ context.Context) error {
+	if !s.cfg.Compartments.Enabled {
+		kc, err := ingest.NewKafkaReaderClient(
+			s.cfg.Kafka,
+			ingest.NewKafkaReaderClientMetrics(ingest.ReaderMetricsPrefix, "block-builder-scheduler", s.register),
+			s.logger,
+		)
+		if err != nil {
+			return fmt.Errorf("creating kafka reader: %w", err)
+		}
+		s.adminClients = []*kadm.Client{kadm.NewClient(kc)}
+		return nil
+	}
+
+	out := make([]ingest.KafkaConfig, s.cfg.Compartments.Write.NumCompartments)
+	for wc := range out {
+		k := s.cfg.Kafka.WriteCompartmentConfig(wc)
+		k.Topic = s.cfg.Kafka.Topic
+		out[wc] = k
+	}
+
 	configs := s.wcKafkaConfigs()
 	clients := make([]*kadm.Client, 0, len(configs))
 	for wc, kcfg := range configs {
@@ -79,7 +99,7 @@ func (s *BlockBuilderScheduler) starting(_ context.Context) error {
 			s.logger,
 		)
 		if err != nil {
-			return fmt.Errorf("creating kafka reader for wc %d: %w", wc, err)
+			return fmt.Errorf("creating kafka reader for clusterID %d: %w", wc, err)
 		}
 		clients = append(clients, kadm.NewClient(kc))
 	}
@@ -107,10 +127,10 @@ func (s *BlockBuilderScheduler) running(ctx context.Context) error {
 
 	observeComplete := time.After(s.cfg.StartupObserveTime)
 
-	// Recover each write WC's committed offsets from its own cluster and seed
-	// that WC's offset tracker, so consumption resumes where it left off.
-	for wc := range s.adminClients {
-		c, err := s.fetchCommittedOffsets(ctx, wc)
+	// Recover each cluster's committed offsets from its own cluster and seed
+	// that cluster's offset tracker, so consumption resumes where it left off.
+	for cluster := range s.adminClients {
+		c, err := s.fetchCommittedOffsets(ctx, cluster)
 		if err != nil {
 			if errors.Is(err, context.Canceled) {
 				return nil
@@ -123,7 +143,7 @@ func (s *BlockBuilderScheduler) running(ctx context.Context) error {
 		s.mu.Lock()
 		c.Each(func(o kadm.Offset) {
 			ps := s.getPartitionState(o.Topic, o.Partition)
-			ps.initCommitWC(wc, o.At)
+			ps.initCommit(cluster, o.At)
 		})
 		s.mu.Unlock()
 	}
@@ -193,8 +213,8 @@ func (s *BlockBuilderScheduler) completeObservationMode(ctx context.Context) {
 	// one job.
 	offsByPartition := make(map[int32][]partitionOffsets)
 	fallbackTime := time.Now().Add(-s.cfg.LookbackOnNoCommit)
-	for wc := range s.adminClients {
-		wcOffs, err := s.consumptionOffsets(ctx, s.cfg.Kafka.Topic, fallbackTime, wc)
+	for cluster := range s.adminClients {
+		wcOffs, err := s.consumptionOffsets(ctx, s.cfg.Kafka.Topic, fallbackTime, cluster)
 		if err != nil {
 			level.Warn(s.logger).Log("msg", "failed to get consumption offsets", "err", err)
 			return
@@ -224,11 +244,10 @@ func (s *BlockBuilderScheduler) updateSchedule(ctx context.Context) {
 
 	now := time.Now()
 
-	// Gather the end offset of each partition across every write WC cluster.
-	// Each partition maps its reporting WCs (WC ID -> end offset); a WC that
-	// doesn't report a partition is simply absent from that partition's map.
+	// Gather the end offset of each partition across every cluster in a clusterID -> endOffset map.
+	// If a cluster doesn't report a partition it's skipped from the map.
 	offsetsByPartition := make(map[int32]map[int]int64)
-	for wc, ac := range s.adminClients {
+	for clusterID, ac := range s.adminClients {
 		endOffsets, err := ac.ListEndOffsets(ctx, s.cfg.Kafka.Topic)
 		if err != nil {
 			level.Warn(s.logger).Log("msg", "failed to list end offsets", "err", err)
@@ -242,16 +261,16 @@ func (s *BlockBuilderScheduler) updateSchedule(ctx context.Context) {
 			if offsetsByPartition[o.Partition] == nil {
 				offsetsByPartition[o.Partition] = make(map[int]int64)
 			}
-			offsetsByPartition[o.Partition][wc] = o.Offset
+			offsetsByPartition[o.Partition][clusterID] = o.Offset
 			s.metrics.partitionEndOffset.WithLabelValues(fmt.Sprint(o.Partition)).Set(float64(o.Offset))
 		})
 	}
 
-	for partition, endByWC := range offsetsByPartition {
+	for partition, endByCluster := range offsetsByPartition {
 		s.mu.Lock()
 		ps := s.getPartitionState(s.cfg.Kafka.Topic, partition)
-		for wc, end := range endByWC {
-			ps.updateEndOffset(wc, end)
+		for clusterID, end := range endByCluster {
+			ps.updateEndOffset(clusterID, end)
 		}
 		job, err := ps.updateTime(now, s.cfg.JobSize)
 		if err != nil {
@@ -265,8 +284,6 @@ func (s *BlockBuilderScheduler) updateSchedule(ctx context.Context) {
 	s.metrics.outstandingJobs.Set(float64(s.jobs.count()))
 	s.metrics.assignedJobs.Set(float64(s.jobs.assigned()))
 }
-
-func (s *BlockBuilderScheduler) numWCs() int { return len(s.adminClients) }
 
 // wcKafkaConfigs returns the per-WC Kafka configs the scheduler must monitor.
 // In non-compartment mode it returns a single entry for the base topic; with
@@ -377,8 +394,8 @@ func (s *BlockBuilderScheduler) populateInitialJobs(ctx context.Context, offsByP
 		ps := s.getPartitionState(s.cfg.Kafka.Topic, partition)
 
 		for _, obs := range observations {
-			for wc, end := range obs.offsets {
-				ps.updateEndOffset(wc, end)
+			for clusterID, end := range obs.offsets {
+				ps.updateEndOffset(clusterID, end)
 			}
 			if job, err := ps.updateTime(obs.time, s.cfg.JobSize); err != nil {
 				level.Warn(s.logger).Log("msg", "failed to update partition time", "partition", partition, "err", err)
@@ -389,10 +406,10 @@ func (s *BlockBuilderScheduler) populateInitialJobs(ctx context.Context, offsByP
 	}
 }
 
-// wcObservation is a bundled view of the write WCs whose end offset changed at a
+// probeObservations is a bundled view of the clusters whose end offset changed at a
 // single probe time, bucketed at the earliest boundary-record time across them when
 // replayed through updateEndOffset.
-type wcObservation struct {
+type probeObservations struct {
 	time    time.Time     // earliest boundary-record time across the WCs.
 	offsets map[int]int64 // WC ID -> end offset as of time.
 }
@@ -402,7 +419,11 @@ func (s *BlockBuilderScheduler) getPartitionState(topic string, partition int32)
 		return ps
 	}
 
-	ps := newPartitionState(topic, partition, s.numWCs(), s.cfg.Compartments.Enabled, &s.metrics, s.logger)
+	numClusters := 1
+	if s.cfg.Compartments.Enabled {
+		numClusters = s.cfg.Compartments.Write.NumCompartments
+	}
+	ps := newPartitionState(topic, partition, numClusters, s.cfg.Compartments.Enabled, &s.metrics, s.logger)
 	s.partState[partition] = ps
 	return ps
 }
@@ -412,24 +433,24 @@ type offsetTime struct {
 	time   time.Time
 }
 
-// probeInitialOffsets reconstructs, for one partition, the cross-WC end-offset
+// probeInitialOffsets reconstructs, for one partition, the cross-cluster end-offset
 // observations to replay through updateEndOffset, recovering the jobs between each
 // WC's resume offset and the partition's current end offset.
 func probeInitialOffsets(ctx context.Context, offs []partitionOffsets, offStores []offsetStore, topic string, partition int32,
-	endTime time.Time, jobSize time.Duration, minScanTime time.Time, logger log.Logger) ([]wcObservation, error) {
+	endTime time.Time, jobSize time.Duration, minScanTime time.Time, logger log.Logger) ([]probeObservations, error) {
 
 	// Probe at a higher resolution than the job size so we don't skip buckets.
 	scanStep := jobSize / 4
 
-	// Once a WC has scanned back to its resume offset there's no older data to find
-	// for it, so we stop the walk once every WC has.
+	// Once a cluster has scanned back to its resume offset there's no older data to find
+	// for it, so we stop the walk once every cluster has.
 	reached := make(map[int]bool, len(offs))
-	// The last offset we recorded per WC, so we only emit a WC when its offset steps down.
+	// The last offset we recorded per cluster, so we only emit a cluster when its offset steps down.
 	lastOffset := make(map[int]int64, len(offs))
 
-	// We walk a shared grid backwards from endTime, probing every WC at the same
+	// We walk a shared grid backwards from endTime, probing every cluster at the same
 	// times so their observations bucket together when replayed.
-	var observations []wcObservation
+	var observations []probeObservations
 	for pb := endTime; minScanTime.Before(pb); pb = pb.Add(-scanStep) {
 		if len(reached) == len(offs) {
 			break
@@ -437,10 +458,10 @@ func probeInitialOffsets(ctx context.Context, offs []partitionOffsets, offStores
 		offsets := make(map[int]int64, len(offs))
 		var minRecord time.Time
 		for _, off := range offs {
-			if reached[off.wc] {
+			if reached[off.clusterID] {
 				continue
 			}
-			o, rec, err := offStores[off.wc].offsetAfterTime(ctx, topic, off.partition, pb)
+			o, rec, err := offStores[off.clusterID].offsetAfterTime(ctx, topic, off.partition, pb)
 			if err != nil {
 				return nil, err
 			}
@@ -450,19 +471,19 @@ func probeInitialOffsets(ctx context.Context, offs []partitionOffsets, offStores
 			// Never go below resume: we've already consumed up to there.
 			if o <= off.resume {
 				o = off.resume
-				reached[off.wc] = true
+				reached[off.clusterID] = true
 			}
 
 			// Record a WC only when its offset changes from the previous probe. Walking
 			// backwards, the first probe that resolves to a given offset is the one closest
 			// to that record's real time (e.g. if probes at T20 and T10 both return offset
 			// 300, it belongs at T20), so we keep that sighting and skip later repeats.
-			if last, ok := lastOffset[off.wc]; ok && o == last {
+			if last, ok := lastOffset[off.clusterID]; ok && o == last {
 				continue
 			}
 
-			lastOffset[off.wc] = o
-			offsets[off.wc] = o
+			lastOffset[off.clusterID] = o
+			offsets[off.clusterID] = o
 
 			// Track the earliest real boundary-record time across the WCs that changed; this
 			// is the time the observation is replayed at through updateEndOffset.
@@ -487,7 +508,7 @@ func probeInitialOffsets(ctx context.Context, offs []partitionOffsets, offStores
 			continue
 		}
 
-		observations = append(observations, wcObservation{time: minRecord, offsets: offsets})
+		observations = append(observations, probeObservations{time: minRecord, offsets: offsets})
 	}
 
 	if len(reached) < len(offs) {
@@ -497,26 +518,26 @@ func probeInitialOffsets(ctx context.Context, offs []partitionOffsets, offStores
 
 	// updateTime replays these in order, buckets on observation time, and errors if a
 	// bucket goes backwards, so sort by the time that will be passed into updateTime.
-	slices.SortStableFunc(observations, func(a, b wcObservation) int {
+	slices.SortStableFunc(observations, func(a, b probeObservations) int {
 		return a.time.Compare(b.time)
 	})
 
 	// Offsets and record times are not necessarily co-monotonic, so sorting by time can
-	// leave a WC's offsets out of order. updateEndOffset requires monotonically increasing
-	// end offsets per WC (it panics otherwise), so drop any sighting that would move a WC's
+	// leave a cluster's offsets out of order. updateEndOffset requires monotonically increasing
+	// end offsets per cluster (it panics otherwise), so drop any sighting that would move a cluster's
 	// offset backwards from one already kept earlier in time.
-	maxByWC := make(map[int]int64, len(offs))
+	maxByCluster := make(map[int]int64, len(offs))
 	for i := range observations {
-		for wc, o := range observations[i].offsets {
-			if last, ok := maxByWC[wc]; ok && o < last {
-				delete(observations[i].offsets, wc)
+		for clusterID, o := range observations[i].offsets {
+			if last, ok := maxByCluster[clusterID]; ok && o < last {
+				delete(observations[i].offsets, clusterID)
 				continue
 			}
-			maxByWC[wc] = o
+			maxByCluster[clusterID] = o
 		}
 	}
 
-	// A WC with no observation is either caught up (no records between its resume offset
+	// A cluster with no observation is either caught up (no records between its resume offset
 	// and endTime) or has a backlog entirely older than maxScanAge. Either way, seed it at
 	// its end offset (the high watermark, from ListEndOffsets) so updateEndOffset resumes
 	// it there rather than re-consuming from 0.
@@ -528,15 +549,15 @@ func probeInitialOffsets(ctx context.Context, offs []partitionOffsets, offStores
 	}
 	var seed map[int]int64
 	for _, off := range offs {
-		if !observed[off.wc] {
+		if !observed[off.clusterID] {
 			if seed == nil {
 				seed = make(map[int]int64)
 			}
-			seed[off.wc] = off.end
+			seed[off.clusterID] = off.end
 		}
 	}
 	if len(seed) > 0 {
-		// Replay the seeds at endTime so each seeded WC's start offset is set there. endTime
+		// Replay the seeds at endTime so each seeded cluster's start offset is set there. endTime
 		// is later than every real observation, so this only advances the shared job bucket to
 		// "now": for an active partition it's a no-op (endTime shares the last record's bucket),
 		// and for a quiet partition it just cuts the last (already-complete) backlog bucket now
@@ -544,7 +565,7 @@ func probeInitialOffsets(ctx context.Context, offs []partitionOffsets, offStores
 		// TODO: updateEndOffset now records an offset separately from updateTime advancing the
 		// time bucket, so the seeded WCs' offsets could be set directly via updateEndOffset
 		// instead of this synthetic observation.
-		observations = append(observations, wcObservation{time: endTime, offsets: seed})
+		observations = append(observations, probeObservations{time: endTime, offsets: seed})
 	}
 
 	return observations, nil
@@ -553,15 +574,15 @@ func probeInitialOffsets(ctx context.Context, offs []partitionOffsets, offStores
 type partitionOffsets struct {
 	topic              string
 	partition          int32
-	wc                 int
+	clusterID          int
 	start, resume, end int64
 }
 
 // consumptionOffsets returns the resumption and end offsets for each partition
-// of the given read compartment topic on the given write WC's cluster, falling
+// of the given read compartment topic on the given cluster, falling
 // back to the fallbackTime if there is no planned offset for a partition.
-func (s *BlockBuilderScheduler) consumptionOffsets(ctx context.Context, topic string, fallbackTime time.Time, wc int) ([]partitionOffsets, error) {
-	ac := s.adminClients[wc]
+func (s *BlockBuilderScheduler) consumptionOffsets(ctx context.Context, topic string, fallbackTime time.Time, clusterID int) ([]partitionOffsets, error) {
+	ac := s.adminClients[clusterID]
 	startOffsets, err := ac.ListStartOffsets(ctx, topic)
 	if err != nil {
 		return nil, fmt.Errorf("list start offsets: %w", err)
@@ -599,8 +620,8 @@ func (s *BlockBuilderScheduler) consumptionOffsets(ctx context.Context, topic st
 
 			var resumeOffset int64
 
-			if !ps.plannedEmpty(wc) {
-				planned := ps.plannedOffset(wc)
+			if !ps.plannedEmpty(clusterID) {
+				planned := ps.plannedOffset(clusterID)
 				s.metrics.partitionPlannedOffset.WithLabelValues(partStr).Set(float64(planned))
 				resumeOffset = planned
 			} else {
@@ -630,7 +651,7 @@ func (s *BlockBuilderScheduler) consumptionOffsets(ctx context.Context, topic st
 			offs = append(offs, partitionOffsets{
 				topic:     t,
 				partition: partition,
-				wc:        wc,
+				clusterID: clusterID,
 				start:     startOffset.At,
 				resume:    resumeOffset,
 				end:       end.Offset,
@@ -707,14 +728,14 @@ func (s *BlockBuilderScheduler) fetchCommittedOffsets(ctx context.Context, wc in
 		offs, err := s.adminClients[wc].FetchOffsets(ctx, s.cfg.ConsumerGroup)
 		if err != nil {
 			if !errors.Is(err, kerr.GroupIDNotFound) {
-				lastErr = fmt.Errorf("fetch offsets for wc %d: %w", wc, err)
+				lastErr = fmt.Errorf("fetch offsets for clusterID %d: %w", wc, err)
 				boff.Wait()
 				continue
 			}
 		}
 
 		if err := offs.Error(); err != nil {
-			lastErr = fmt.Errorf("fetch offsets for wc %d got error in response: %w", wc, err)
+			lastErr = fmt.Errorf("fetch offsets for clusterID %d got error in response: %w", wc, err)
 			boff.Wait()
 			continue
 		}
@@ -762,8 +783,8 @@ func (s *BlockBuilderScheduler) snapOffsets(wc int) (committed, planned kadm.Off
 	return committed, planned
 }
 
-// flushOffsetsToKafka flushes each write WC's committed offsets to that WC's
-// cluster and updates relevant metrics.
+// flushOffsetsToKafka flushes each cluster's committed offsets to that WC's
+// updates relevant metrics.
 func (s *BlockBuilderScheduler) flushOffsetsToKafka(ctx context.Context) error {
 	// TODO: only flush if dirty.
 	for wc := range s.adminClients {
@@ -782,7 +803,7 @@ func (s *BlockBuilderScheduler) flushOffsetsToKafka(ctx context.Context) error {
 		})
 
 		if err := s.adminClients[wc].CommitAllOffsets(ctx, s.cfg.ConsumerGroup, committed); err != nil {
-			return fmt.Errorf("commit offsets for wc %d: %w", wc, err)
+			return fmt.Errorf("commit offsets for clusterID %d: %w", wc, err)
 		}
 
 		level.Debug(s.logger).Log("msg", "flushed offsets to Kafka", "offsets", offsetsStr(committed))
@@ -1039,53 +1060,53 @@ func (s *BlockBuilderScheduler) finalizeObservations() {
 }
 
 // orderObservationsForImport returns observations ordered so that, within each
-// write compartment, jobs appear in ascending start-offset order, and a job that
-// spans multiple WCs appears only after every job that precedes it in any of its
-// WCs. Specs are sparse (a job lists only the WCs that had new data) and
-// consecutive jobs can cover disjoint WC sets, so there's no single offset to
-// sort by; this merges the per-WC entries instead.
+// cluster, jobs appear in ascending start-offset order, and a job that
+// spans multiple clusters appears only after every job that precedes it in any of its
+// clusters. Specs are sparse (a job lists only the clusters that had new data) and
+// consecutive jobs can cover disjoint cluster sets, so there's no single offset to
+// sort by; this merges the per-cluster entries instead.
 //
 // A cycle should be impossible: a job's ranges all come from one wall-clock
 // bucket, so an earlier bucket's job has a start offset <= a later one's in every
-// WC they share. That invariant lives in job creation though, so we detect a
+// cluster they share. That invariant lives in job creation though, so we detect a
 // cycle defensively and return errObservationOffsetCycle rather than trusting it
 // blindly; the caller then skips the partition. On success the returned slice is
 // a permutation of observations; gap detection is left to the caller's
 // contiguity scan.
-func orderObservationsForImport(observations []*observation, numWCs int) (orderedObservations []*observation, err error) {
-	if numWCs <= 1 {
-		// Single WC (compartments disabled, or one write compartment): every spec
-		// has just WC 0, so a plain sort by start offset is the whole ordering.
+func orderObservationsForImport(observations []*observation, numClusters int) (orderedObservations []*observation, err error) {
+	if numClusters <= 1 {
+		// Single cluster (compartments disabled, or one write compartment): every spec
+		// has just cluster 0, so a plain sort by start offset is the whole ordering.
 		slices.SortFunc(observations, func(a, b *observation) int {
 			return cmp.Compare(a.spec.Ranges()[0].StartOffset, b.spec.Ranges()[0].StartOffset)
 		})
 		return observations, nil
 	}
 
-	entriesByWC := groupByWC(observations, numWCs)
-	// Merge cursor: nextUnemittedByWC[wc] is the index of the next not-yet-emitted
-	// entry in entriesByWC[wc]. A job is emitted once it's at the cursor of every
+	entriesByCluster := groupByClusterID(observations, numClusters)
+	// Merge cursor: nextUnemittedByCluster[clusterID] is the index of the next not-yet-emitted
+	// entry in entriesByCluster[clusterID]. A job is emitted once it's at the cursor of every
 	// WC it belongs to; emitting it advances each of those cursors past it.
-	nextUnemittedByWC := make([]int, numWCs)
+	nextUnemittedByCluster := make([]int, numClusters)
 
 	orderedObservations = make([]*observation, 0, len(observations))
 	for len(orderedObservations) < len(observations) {
 		emittedThisPass := false
-		for wc := 0; wc < numWCs; wc++ {
-			entries := entriesByWC[wc]
-			if nextUnemittedByWC[wc] >= len(entries) {
+		for clusterID := 0; clusterID < numClusters; clusterID++ {
+			entries := entriesByCluster[clusterID]
+			if nextUnemittedByCluster[clusterID] >= len(entries) {
 				continue // This WC's list is fully emitted.
 			}
-			candidate := entries[nextUnemittedByWC[wc]].obs
-			if !isNextInAllWCs(candidate, entriesByWC, nextUnemittedByWC) {
+			candidate := entries[nextUnemittedByCluster[clusterID]].obs
+			if !isNextInAllCluster(candidate, entriesByCluster, nextUnemittedByCluster) {
 				continue
 			}
 			orderedObservations = append(orderedObservations, candidate)
 			// Emitting the candidate advances the next pointer of every WC it belongs
 			// to; since it was next in each of those, no WC is left pointing at an
 			// already-emitted job.
-			for _, wcRange := range candidate.spec.Ranges() {
-				nextUnemittedByWC[wcRange.WcId]++
+			for wc := range candidate.spec.Ranges() {
+				nextUnemittedByCluster[wc]++
 			}
 			emittedThisPass = true
 		}
@@ -1100,39 +1121,39 @@ func orderObservationsForImport(observations []*observation, numWCs int) (ordere
 	return orderedObservations, nil
 }
 
-var errObservationOffsetCycle = errors.New("observation offsets form a cycle across write compartments")
+var errObservationOffsetCycle = errors.New("observation offsets form a cycle across clusters")
 
-// wcEntry is one job's appearance in a write compartment's offset-ordered list,
-type wcEntry struct {
+// clusterEntry is one job's appearance in a cluster's offset-ordered list,
+type clusterEntry struct {
 	obs         *observation
 	startOffset int64
 }
 
-// groupByWC groups observations into one list per write compartment (indexed
-// by WC ID), each sorted ascending by that WC's start offset.
-func groupByWC(observations []*observation, numWCs int) [][]wcEntry {
-	entriesByWC := make([][]wcEntry, numWCs)
+// groupByClusterID groups observations into one list per cluster (indexed
+// by ID), each sorted ascending by that cluster's start offset.
+func groupByClusterID(observations []*observation, numWCs int) [][]clusterEntry {
+	entriesByWC := make([][]clusterEntry, numWCs)
 	for _, obs := range observations {
-		for _, wcRange := range obs.spec.Ranges() {
-			entriesByWC[wcRange.WcId] = append(entriesByWC[wcRange.WcId],
-				wcEntry{obs: obs, startOffset: wcRange.StartOffset})
+		for wc, wcRange := range obs.spec.Ranges() {
+			entriesByWC[wc] = append(entriesByWC[wc],
+				clusterEntry{obs: obs, startOffset: wcRange.StartOffset})
 		}
 	}
 	for wc := range entriesByWC {
-		slices.SortFunc(entriesByWC[wc], func(a, b wcEntry) int {
+		slices.SortFunc(entriesByWC[wc], func(a, b clusterEntry) int {
 			return cmp.Compare(a.startOffset, b.startOffset)
 		})
 	}
 	return entriesByWC
 }
 
-// isNextInAllWCs reports whether candidate is the next unemitted entry in every
+// isNextInAllCluster reports whether candidate is the next unemitted entry in every
 // write compartment it belongs to, i.e. all of its per-WC predecessors have
 // already been emitted.
-func isNextInAllWCs(candidate *observation, entriesByWC [][]wcEntry, nextUnemittedByWC []int) bool {
-	for _, wcRange := range candidate.spec.Ranges() {
-		entries := entriesByWC[wcRange.WcId]
-		next := nextUnemittedByWC[wcRange.WcId]
+func isNextInAllCluster(candidate *observation, entriesByCluster [][]clusterEntry, nextUnemittedByCluster []int) bool {
+	for clusterID := range candidate.spec.Ranges() {
+		entries := entriesByCluster[clusterID]
+		next := nextUnemittedByCluster[clusterID]
 		if next >= len(entries) || entries[next].obs != candidate {
 			return false
 		}

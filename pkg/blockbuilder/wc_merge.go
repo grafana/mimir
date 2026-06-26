@@ -28,6 +28,11 @@ const (
 	mergeMaxBatchRecords = 1000
 )
 
+type clusterOffsetRange struct {
+	schedulerpb.OffsetRange
+	clusterID int
+}
+
 // consumePartitionMerged consumes a compartment job's per-WC offset ranges and
 // merges them, in record-timestamp order, into consumer. Each active range is
 // consumed by its own producer (one per WC, on its own Kafka client) feeding a
@@ -45,33 +50,24 @@ func (b *BlockBuilder) consumePartitionMerged(
 	builder *TSDBBuilder,
 	spec schedulerpb.JobSpec,
 ) error {
-	activeRanges := make([]schedulerpb.WCOffsetRange, 0, len(spec.OffsetRanges))
-	seenWC := make(map[int32]struct{}, len(spec.OffsetRanges))
-	for _, wcRange := range spec.OffsetRanges {
-		if wcRange.StartOffset >= wcRange.EndOffset {
+	// activeRanges pairs each non-empty range with its WC ID (the OffsetRanges map
+	// key). The map can't carry duplicate WC IDs, so no de-duplication is needed.
+	activeRanges := make([]clusterOffsetRange, 0, len(spec.OffsetRanges))
+	for key, rng := range spec.OffsetRanges {
+		clusterID := int(key)
+		if rng.StartOffset >= rng.EndOffset {
 			continue // Empty range for this WC.
 		}
-		if int(wcRange.WcId) >= len(b.kafkaClients) {
-			return fmt.Errorf("job spec references wc %d but only %d write WCs are configured", wcRange.WcId, len(b.kafkaClients))
-		}
-		// Each WC must appear at most once: two ranges on the same WC would run two
-		// producers against one shared Kafka client, racing AddConsumePartitions and
-		// RemoveConsumePartitions for the same partition.
-		// This is not expected to happen, the scheduler should only add each wc up to once in the job.
-		if _, dup := seenWC[wcRange.WcId]; dup {
-			return fmt.Errorf("job spec for partition %d has multiple offset ranges for wc %d", spec.Partition, wcRange.WcId)
-		}
-		seenWC[wcRange.WcId] = struct{}{}
-		activeRanges = append(activeRanges, wcRange)
+		activeRanges = append(activeRanges, clusterOffsetRange{clusterID: clusterID, OffsetRange: rng})
 	}
 
 	switch len(activeRanges) {
 	case 0:
 		return nil
 	case 1:
-		wcRange := activeRanges[0]
-		if err := b.consumePartitionSection(ctx, logger, int(wcRange.WcId), consumer, builder, spec.Topic, spec.Partition, wcRange.StartOffset, wcRange.EndOffset); err != nil {
-			return fmt.Errorf("consuming wc %d: %w", wcRange.WcId, err)
+		singleRange := activeRanges[0]
+		if err := b.consumePartitionSection(ctx, logger, singleRange.clusterID, consumer, builder, spec.Topic, spec.Partition, singleRange.StartOffset, singleRange.EndOffset); err != nil {
+			return fmt.Errorf("consuming cluster %d: %w", singleRange.clusterID, err)
 		}
 		return nil
 	}
@@ -89,12 +85,12 @@ func (b *BlockBuilder) consumePartitionMerged(
 	// The Kafka limits would need threading (divided) through consumePartitionSection.
 	sources := make([]*writeCompartmentSource, len(activeRanges))
 	for i, wcRange := range activeRanges {
-		source := &writeCompartmentSource{wcID: int(wcRange.WcId), records: make(chan *kgo.Record, mergeSourceBufferSize)}
+		source := &writeCompartmentSource{wcID: wcRange.clusterID, records: make(chan *kgo.Record, mergeSourceBufferSize)}
 		sources[i] = source
 		producerGroup.Go(func() error {
 			// nil builder: producers must not touch the builder concurrently; the
 			// merge goroutine below owns it.
-			err := b.consumePartitionSection(groupCtx, logger, int(wcRange.WcId), recordChannelConsumer{records: source.records}, nil, spec.Topic, spec.Partition, wcRange.StartOffset, wcRange.EndOffset)
+			err := b.consumePartitionSection(groupCtx, logger, wcRange.clusterID, recordChannelConsumer{records: source.records}, nil, spec.Topic, spec.Partition, wcRange.StartOffset, wcRange.EndOffset)
 			source.finalErr = err
 			close(source.records)
 			return err
@@ -215,7 +211,7 @@ func (s *writeCompartmentSource) next(ctx context.Context) (record *kgo.Record, 
 }
 
 // mergeSourcesByTimestamp pulls from every source and calls emitRecord for each
-// record in (timestamp, wcID, offset) order, until all sources are drained. It
+// record in (timestamp, clusterID, offset) order, until all sources are drained. It
 // always holds one head per live source, blocking on a lagging source until it
 // produces its next record, so a faster source's later records never overtake a
 // slower source's earlier ones. It returns the first error from emitRecord or

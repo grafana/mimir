@@ -18,7 +18,7 @@ import (
 func TestGetJob(t *testing.T) {
 	sched := &mockSchedulerClient{}
 	sched.jobs = []mockJob{
-		{key: JobKey{Id: "foo/983/585", Epoch: 4523}, spec: NewSingleWCJobSpec("foo", 983, 585, 0)},
+		{key: JobKey{Id: "foo/983/585", Epoch: 4523}, spec: NewNonCompartmentJobSpec("foo", 983, 585, 0)},
 	}
 
 	cli, cliErr := NewSchedulerClient("worker1", sched, test.NewTestingLogger(t), 5*time.Minute, 20*time.Minute)
@@ -35,8 +35,8 @@ func TestGetJob(t *testing.T) {
 func TestSendUpdates(t *testing.T) {
 	sched := &mockSchedulerClient{}
 	sched.jobs = []mockJob{
-		{key: JobKey{Id: "foo/983/585", Epoch: 4523}, spec: NewSingleWCJobSpec("foo", 983, 585, 0)},
-		{key: JobKey{Id: "foo/4/92842", Epoch: 4524}, spec: NewSingleWCJobSpec("foo", 4, 92842, 0)},
+		{key: JobKey{Id: "foo/983/585", Epoch: 4523}, spec: NewNonCompartmentJobSpec("foo", 983, 585, 0)},
+		{key: JobKey{Id: "foo/4/92842", Epoch: 4524}, spec: NewNonCompartmentJobSpec("foo", 4, 92842, 0)},
 	}
 
 	clii, cliErr := NewSchedulerClient("worker1", sched, test.NewTestingLogger(t), 5*time.Minute, 100*time.Hour)
@@ -94,7 +94,7 @@ func (s *schedulerClient) completeJobWithForgetTime(k JobKey, forgetTime time.Ti
 func TestFailJob(t *testing.T) {
 	sched := &mockSchedulerClient{}
 	sched.jobs = []mockJob{
-		{key: JobKey{Id: "foo/983/585", Epoch: 4523}, spec: NewSingleWCJobSpec("foo", 983, 585, 0)},
+		{key: JobKey{Id: "foo/983/585", Epoch: 4523}, spec: NewNonCompartmentJobSpec("foo", 983, 585, 0)},
 	}
 
 	clii, cliErr := NewSchedulerClient("worker1", sched, test.NewTestingLogger(t), 5*time.Minute, 100*time.Hour)
@@ -115,8 +115,8 @@ func TestFailJob(t *testing.T) {
 func TestForget(t *testing.T) {
 	sched := &mockSchedulerClient{}
 	sched.jobs = []mockJob{
-		{key: JobKey{Id: "foo/983/585", Epoch: 4523}, spec: NewSingleWCJobSpec("foo", 983, 585, 0)},
-		{key: JobKey{Id: "foo/4/92842", Epoch: 4524}, spec: NewSingleWCJobSpec("foo", 4, 92842, 0)},
+		{key: JobKey{Id: "foo/983/585", Epoch: 4523}, spec: NewNonCompartmentJobSpec("foo", 983, 585, 0)},
+		{key: JobKey{Id: "foo/4/92842", Epoch: 4524}, spec: NewNonCompartmentJobSpec("foo", 4, 92842, 0)},
 	}
 
 	clii, cliErr := NewSchedulerClient("worker1", sched, test.NewTestingLogger(t), 5*time.Minute, 20*time.Minute)

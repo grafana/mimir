@@ -9,11 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kgo"
-
-	"github.com/grafana/mimir/pkg/blockbuilder/schedulerpb"
 )
 
 // captureConsumer records each Consume call's records as a separate batch.
@@ -112,7 +109,7 @@ func tagged(offset int64, ms int64, val string) *kgo.Record {
 }
 
 func TestMergeSourcesByTimestamp_EqualTimestampsTieBreakByWCThenOffset(t *testing.T) {
-	// All share a timestamp; order must be wcID asc, then offset asc, regardless
+	// All share a timestamp; order must be clusterID asc, then offset asc, regardless
 	// of the source slice order (s1 is passed before s0).
 	s0 := closedSource(0, tagged(0, 50, "a"), tagged(1, 50, "b"))
 	s1 := closedSource(1, tagged(0, 50, "c"))
@@ -144,21 +141,6 @@ func TestMergeSourcesByTimestamp_PropagatesSourceError(t *testing.T) {
 		return nil
 	})
 	require.ErrorIs(t, err, context.DeadlineExceeded)
-}
-
-func TestConsumePartitionMerged_RejectsDuplicateWriteCompartment(t *testing.T) {
-	b := &BlockBuilder{kafkaClients: make([]*kgo.Client, 2)}
-	spec := schedulerpb.JobSpec{
-		Topic:     "topic",
-		Partition: 0,
-		OffsetRanges: []schedulerpb.WCOffsetRange{
-			{WcId: 0, StartOffset: 0, EndOffset: 10},
-			{WcId: 0, StartOffset: 10, EndOffset: 20},
-		},
-	}
-
-	err := b.consumePartitionMerged(context.Background(), log.NewNopLogger(), nil, nil, spec)
-	require.ErrorContains(t, err, "wc 0")
 }
 
 func TestRecordBatcher_FlushesAtMaxThenRemainder(t *testing.T) {

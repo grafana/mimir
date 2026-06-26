@@ -17,7 +17,7 @@ type sourceHead struct {
 }
 
 // sourceHeadHeap is a min-heap of per-source heads ordered by
-// (record.Timestamp, wcID, offset). wcID and offset are deterministic
+// (record.Timestamp, clusterID, offset). clusterID and offset are deterministic
 // tie-breakers so the emit order is stable when records share a producer
 // timestamp, as happens within a single distributor write batch.
 //
@@ -28,7 +28,7 @@ type sourceHeadHeap []sourceHead
 
 func (h sourceHeadHeap) Len() int { return len(h) }
 
-// Less orders by Timestamp ascending, then wcID ascending, then offset ascending.
+// Less orders by Timestamp ascending, then clusterID ascending, then offset ascending.
 func (h sourceHeadHeap) Less(i, j int) bool {
 	a, b := h[i].rec, h[j].rec
 	if !a.Timestamp.Equal(b.Timestamp) {
