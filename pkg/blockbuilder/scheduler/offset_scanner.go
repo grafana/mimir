@@ -11,6 +11,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/twmb/franz-go/pkg/kadm"
 )
 
@@ -19,54 +20,79 @@ type offsetTime struct {
 	time   time.Time
 }
 
-// probeInitialOffsets computes an initial set of <offset, time> pairs that
-// exist between this partition's commit and end offsets. These pairs can be
-// used to seed a bunch of end offset observations to start the scheduler.
-func probeInitialOffsets(ctx context.Context, offs offsetStore, topic string, partition int32, start, commit, end int64,
-	endTime time.Time, jobSize time.Duration, minScanTime time.Time, logger log.Logger) ([]*offsetTime, error) {
+// offsetScanner computes an initial set of <offset, time> pairs for each
+// partition, used to seed the scheduler at startup.
+type offsetScanner struct {
+	offs            offsetStore
+	endTime         time.Time
+	probeTimes      []time.Time
+	recordTimeDelta prometheus.Observer
+}
 
-	if commit >= end || start >= end {
+func newOffsetScanner(offs offsetStore, endTime time.Time, jobSize, maxScanAge time.Duration, recordTimeDelta prometheus.Observer) *offsetScanner {
+	minScanTime := endTime.Add(-maxScanAge)
+	return &offsetScanner{
+		offs:            offs,
+		endTime:         endTime,
+		probeTimes:      scanProbeTimes(endTime, jobSize, minScanTime),
+		recordTimeDelta: recordTimeDelta,
+	}
+}
+
+// probeInitialOffsets computes an initial set of <offset, time> pairs that exist between this
+// partition's resume and end offsets. These pairs can be used to seed a bunch of
+// end offset observations to start the scheduler.
+func (s *offsetScanner) probeInitialOffsets(ctx context.Context, off partitionOffsets, logger log.Logger) ([]*offsetTime, error) {
+	if off.resume >= off.end || off.start >= off.end {
 		// No new data to consume. Return the single end offset so it is initially registered.
-		return []*offsetTime{{offset: end, time: endTime}}, nil
+		return []*offsetTime{{offset: off.end, time: s.endTime}}, nil
 	}
 
-	// Pick a more high-resolution interval to scan for the sentinel offsets.
-	scanStep := jobSize / 4
-	reachedCommit := false
+	if len(s.probeTimes) == 0 {
+		// No scan window, so there's nothing to probe.
+		return []*offsetTime{}, nil
+	}
+
+	reachedResume := false
 	sentinels := []*offsetTime{}
 
-	// The general idea is that we know the commit offset, but we don't know
+	// The general idea is that we know the resume offset, but we don't know
 	// that offset's timestamp. We have an API (offsetAfterTime) to get offsets
-	// given a timestamp, so we iteratively call that API until we reach either
-	// the commit offset or the min scan time.
-	for pb := endTime; minScanTime.Before(pb); pb = pb.Add(-scanStep) {
-		off, t, err := offs.offsetAfterTime(ctx, topic, partition, pb)
+	// given a timestamp, so we iteratively call that API for each probe time
+	// until we reach the resume offset.
+	for _, pb := range s.probeTimes {
+		offset, t, err := s.offs.offsetAfterTime(ctx, off.topic, off.partition, pb)
 		if err != nil {
 			return nil, err
 		}
 		level.Debug(logger).Log("msg", "found next boundary offset", "ts", pb,
-			"topic", topic, "partition", partition, "offset", off)
+			"topic", off.topic, "partition", off.partition, "offset", offset)
 
-		// Don't want to probe for offsets before the commit.
-		off = max(off, commit)
+		// Don't want to probe for offsets before the resume offset.
+		offset = max(offset, off.resume)
 
-		if len(sentinels) == 0 || off != sentinels[len(sentinels)-1].offset {
-			sentinels = append(sentinels, &offsetTime{offset: off, time: t})
+		// Only append sentinel if it's the first time we've seen it.
+		if len(sentinels) == 0 || offset != sentinels[len(sentinels)-1].offset {
+			sentinels = append(sentinels, &offsetTime{offset: offset, time: t})
+
+			// The high watermark is returned with ts == 0, that's not a real timestamp to observe.
+			if !t.IsZero() {
+				s.recordTimeDelta.Observe(t.Sub(pb).Seconds())
+			}
 		}
 
-		if off == commit {
-			// We've reached the commit offset, so we're done.
-			reachedCommit = true
+		if offset == off.resume {
+			// We've reached the resume offset, so we're done.
+			reachedResume = true
 			break
 		}
 	}
 
-	if !reachedCommit {
-		lastOffset := int64(-1)
-		if len(sentinels) > 0 {
-			lastOffset = sentinels[len(sentinels)-1].offset
-		}
-		level.Warn(logger).Log("msg", "probe offsets: probe did not reach commit offset due to limited scan age", "partition", partition, "lastOffset", lastOffset, "commitOffset", commit)
+	// We have at least one sentinel if we reach this point.
+	if !reachedResume {
+		lowestOffset := sentinels[len(sentinels)-1].offset
+		level.Warn(logger).Log("msg", "probe offsets: probe did not reach resume offset due to limited scan age",
+			"partition", off.partition, "lowestOffset", lowestOffset, "resumeOffset", off.resume)
 	}
 
 	// Return them in increasing order of offset.
@@ -77,6 +103,19 @@ func probeInitialOffsets(ctx context.Context, offs offsetStore, topic string, pa
 	return sentinels, nil
 }
 
+// scanProbeTimes returns the times at which the scanner probes for offsets, in
+// decreasing order.
+// TODO: anchor the probe times to job boundaries instead, so offsets returned are more aligned with the boundaries.
+// TODO: append a final probe at minScanTime, so the bottom of the scan window is covered.
+func scanProbeTimes(endTime time.Time, jobSize time.Duration, minScanTime time.Time) []time.Time {
+	scanStep := jobSize / 4
+	var probeTimes []time.Time
+	for pb := endTime; minScanTime.Before(pb); pb = pb.Add(-scanStep) {
+		probeTimes = append(probeTimes, pb)
+	}
+	return probeTimes
+}
+
 type offsetStore interface {
 	offsetAfterTime(context.Context, string, int32, time.Time) (int64, time.Time, error)
 }
@@ -84,14 +123,12 @@ type offsetStore interface {
 type offsetFinder struct {
 	offsets     map[time.Time]kadm.ListedOffsets
 	adminClient *kadm.Client
-	logger      log.Logger
 }
 
-func newOffsetFinder(adminClient *kadm.Client, logger log.Logger) *offsetFinder {
+func newOffsetFinder(adminClient *kadm.Client) *offsetFinder {
 	return &offsetFinder{
 		offsets:     make(map[time.Time]kadm.ListedOffsets),
 		adminClient: adminClient,
-		logger:      logger,
 	}
 }
 

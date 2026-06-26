@@ -182,7 +182,8 @@ func (s *BlockBuilderScheduler) completeObservationMode(ctx context.Context) {
 		return
 	}
 
-	s.populateInitialJobs(ctx, consumeOffs, newOffsetFinder(s.adminClient, s.logger), time.Now())
+	scanner := newOffsetScanner(newOffsetFinder(s.adminClient), time.Now(), s.cfg.JobSize, s.cfg.MaxScanAge, s.metrics.probeRecordTimeDelta)
+	s.populateInitialJobs(ctx, consumeOffs, scanner)
 	s.observations = nil
 	s.observationComplete = true
 }
@@ -299,7 +300,7 @@ func (s *BlockBuilderScheduler) enqueuePendingJobs() {
 	}
 }
 
-func (s *BlockBuilderScheduler) populateInitialJobs(ctx context.Context, consumeOffs []partitionOffsets, offStore offsetStore, endTime time.Time) {
+func (s *BlockBuilderScheduler) populateInitialJobs(ctx context.Context, consumeOffs []partitionOffsets, scanner *offsetScanner) {
 	// (Note that the lock is already held because we're in startup mode.)
 
 	// While during normal operation we are periodically asking about every
@@ -310,11 +311,8 @@ func (s *BlockBuilderScheduler) populateInitialJobs(ctx context.Context, consume
 	// those two offsets and seeding the schedule by calling updateEndOffset and
 	// updateTime for each of them- just like we do during normal operation.
 
-	minScanTime := endTime.Add(-s.cfg.MaxScanAge)
-
 	for _, off := range consumeOffs {
-		o, err := probeInitialOffsets(ctx, offStore, off.topic, off.partition,
-			off.start, off.resume, off.end, endTime, s.cfg.JobSize, minScanTime, s.logger)
+		o, err := scanner.probeInitialOffsets(ctx, off, s.logger)
 		if err != nil {
 			level.Warn(s.logger).Log("msg", "failed to probe initial offsets", "partition", off.partition, "err", err)
 			continue
@@ -328,6 +326,14 @@ func (s *BlockBuilderScheduler) populateInitialJobs(ctx context.Context, consume
 
 		for _, io := range o {
 			ps.updateEndOffset(io.offset)
+
+			if io.time.IsZero() {
+				// A sentinel without a timestamp marks the partition's high
+				// watermark (end offset). Record the offset, but don't advance the
+				// time bucket since there's no actual time supplied.
+				continue
+			}
+
 			if job, err := ps.updateTime(io.time, s.cfg.JobSize); err != nil {
 				level.Warn(s.logger).Log("msg", "failed to update partition time", "partition", ps.partition, "err", err)
 			} else if job != nil {

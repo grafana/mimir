@@ -761,8 +761,10 @@ func TestPopulateInitialJobs_ProbeTimesReused(t *testing.T) {
 		{topic: "topic", partition: 3, start: 100, resume: 100, end: 1000},
 	}
 
-	sched.populateInitialJobs(context.Background(), consumeOffs, finder, time.Date(2025, 3, 1, 11, 0, 0, 0, time.UTC))
-	require.Len(t, finder.distinctTimes, 4, "four partitions will each be probed four times, but the probe times should be the same across each partition")
+	endTime := time.Date(2025, 3, 1, 11, 0, 0, 0, time.UTC)
+	scanner := newOffsetScanner(finder, endTime, sched.cfg.JobSize, sched.cfg.MaxScanAge, sched.metrics.probeRecordTimeDelta)
+	sched.populateInitialJobs(context.Background(), consumeOffs, scanner)
+	require.Len(t, finder.distinctTimes, 4, "four partitions will each be probed at the same times, so the probe times should be shared across partitions")
 }
 
 func TestLimitNPolicy(t *testing.T) {
@@ -1220,7 +1222,8 @@ func TestStartupToRegularModeJobProduction(t *testing.T) {
 			}
 
 			// Call populateInitialJobs to set up initial state
-			sched.populateInitialJobs(context.Background(), consumeOffs, finder, tt.initialTime)
+			scanner := newOffsetScanner(finder, tt.initialTime, sched.cfg.JobSize, sched.cfg.MaxScanAge, sched.metrics.probeRecordTimeDelta)
+			sched.populateInitialJobs(context.Background(), consumeOffs, scanner)
 
 			collectedJobs := []*schedulerpb.JobSpec{}
 

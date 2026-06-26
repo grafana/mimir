@@ -9,6 +9,7 @@ import (
 
 type schedulerMetrics struct {
 	updateScheduleDuration   prometheus.Histogram
+	probeRecordTimeDelta     prometheus.Histogram
 	partitionStartOffset     *prometheus.GaugeVec
 	partitionCommittedOffset *prometheus.GaugeVec
 	partitionPlannedOffset   *prometheus.GaugeVec
@@ -27,6 +28,12 @@ func newSchedulerMetrics(reg prometheus.Registerer) schedulerMetrics {
 		updateScheduleDuration: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
 			Name: "cortex_blockbuilder_scheduler_schedule_update_seconds",
 			Help: "Time spent updating the schedule.",
+
+			NativeHistogramBucketFactor: 1.1,
+		}),
+		probeRecordTimeDelta: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
+			Name: "cortex_blockbuilder_scheduler_probe_record_time_delta_seconds",
+			Help: "Delta between a probe's requested time and the timestamp of the record at the returned offset, during initial offset probing. Smaller values mean probes land closer to actual data.",
 
 			NativeHistogramBucketFactor: 1.1,
 		}),

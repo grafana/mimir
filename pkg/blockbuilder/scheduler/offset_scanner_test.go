@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/grafana/mimir/pkg/util/test"
@@ -225,11 +226,30 @@ func TestInitialOffsetProbing(t *testing.T) {
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
 			f := &mockOffsetFinder{offsets: tt.offsets, end: tt.end, distinctTimes: make(map[time.Time]struct{})}
-			j, err := probeInitialOffsets(ctx, f, "topic", 0, tt.start, tt.resume, tt.end, tt.endTime, tt.jobSize, tt.minScanTime, test.NewTestingLogger(t))
+			scanner := newOffsetScanner(f, tt.endTime, tt.jobSize, tt.endTime.Sub(tt.minScanTime), prometheus.NewHistogram(prometheus.HistogramOpts{}))
+			j, err := scanner.probeInitialOffsets(ctx, partitionOffsets{topic: "topic", partition: 0, start: tt.start, resume: tt.resume, end: tt.end}, test.NewTestingLogger(t))
 			assert.NoError(t, err)
 			assert.EqualValues(t, tt.expectedRanges, j, tt.msg)
 		})
 	}
+}
+
+func TestScanProbeTimes(t *testing.T) {
+	jobSize := 1 * time.Minute
+	endTime := time.Date(2025, 3, 1, 10, 2, 50, 0, time.UTC)
+	minScanTime := time.Date(2025, 3, 1, 10, 1, 50, 0, time.UTC)
+
+	// Steps back from endTime by jobSize/4 (15s), stopping once the next step
+	// would be at or before minScanTime.
+	assert.Equal(t, []time.Time{
+		time.Date(2025, 3, 1, 10, 2, 50, 0, time.UTC),
+		time.Date(2025, 3, 1, 10, 2, 35, 0, time.UTC),
+		time.Date(2025, 3, 1, 10, 2, 20, 0, time.UTC),
+		time.Date(2025, 3, 1, 10, 2, 5, 0, time.UTC),
+	}, scanProbeTimes(endTime, jobSize, minScanTime))
+
+	// An empty scan window (minScanTime at or after endTime) yields no probes.
+	assert.Empty(t, scanProbeTimes(endTime, jobSize, endTime))
 }
 
 // Create an offset finder that we can prepopulate with offset scenarios.
