@@ -15,12 +15,13 @@ import (
 )
 
 var (
-	errNoJobAvailable        = errors.New("no job available")
-	errJobNotFound           = errors.New("job not found")
-	errJobNotAssigned        = errors.New("job not assigned to given worker")
-	errBadEpoch              = errors.New("bad epoch")
-	errJobAlreadyExists      = errors.New("job already exists")
-	errJobCreationDisallowed = errors.New("job creation policy disallowed job")
+	errNoJobAvailable         = errors.New("no job available")
+	errJobNotFound            = errors.New("job not found")
+	errJobNotAssigned         = errors.New("job not assigned to given worker")
+	errBadEpoch               = errors.New("bad epoch")
+	errJobAlreadyExists       = errors.New("job already exists")
+	errJobCreationDisallowed  = errors.New("job creation policy disallowed job")
+	errEndOffsetWentBackwards = errors.New("end offset went backwards")
 )
 
 type jobQueue[T any] struct {

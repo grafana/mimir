@@ -1481,7 +1481,7 @@ func TestStartupToRegularModeJobProduction(t *testing.T) {
 			ps := sched.getPartitionState("topic", 0)
 
 			for _, obs := range tt.futureObservations {
-				ps.updateEndOffset(obs.offset)
+				require.NoError(t, ps.updateEndOffset(obs.offset))
 				job, err := ps.updateTime(obs.timestamp, sched.cfg.JobSize)
 				require.NoError(t, err)
 				if job != nil {
