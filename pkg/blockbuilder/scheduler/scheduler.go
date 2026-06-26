@@ -214,10 +214,11 @@ func (s *BlockBuilderScheduler) updateSchedule(ctx context.Context) {
 		defer s.mu.Unlock()
 
 		ps := s.getPartitionState(o.Topic, o.Partition)
-		job, err := ps.updateEndOffset(o.Offset, now, s.cfg.JobSize)
+		ps.updateEndOffset(o.Offset)
+		job, err := ps.updateTime(now, s.cfg.JobSize)
 
 		if err != nil {
-			level.Warn(s.logger).Log("msg", "failed to observe end offset", "err", err)
+			level.Warn(s.logger).Log("msg", "failed to update partition time", "err", err)
 			return
 		}
 		if job != nil {
@@ -306,8 +307,8 @@ func (s *BlockBuilderScheduler) populateInitialJobs(ctx context.Context, consume
 	// ~correctly-sized jobs that may exist between the partition's commit and
 	// end offsets.
 	// We do that by performing a one-time probe of <offset, time> pairs between
-	// those two offsets and seeding the schedule by calling updateEndOffset for
-	// each of them- just like we do during normal operation.
+	// those two offsets and seeding the schedule by calling updateEndOffset and
+	// updateTime for each of them- just like we do during normal operation.
 
 	minScanTime := endTime.Add(-s.cfg.MaxScanAge)
 
@@ -326,8 +327,9 @@ func (s *BlockBuilderScheduler) populateInitialJobs(ctx context.Context, consume
 		ps := s.getPartitionState(off.topic, off.partition)
 
 		for _, io := range o {
-			if job, err := ps.updateEndOffset(io.offset, io.time, s.cfg.JobSize); err != nil {
-				level.Warn(s.logger).Log("msg", "failed to observe end offset", "partition", ps.partition, "err", err)
+			ps.updateEndOffset(io.offset)
+			if job, err := ps.updateTime(io.time, s.cfg.JobSize); err != nil {
+				level.Warn(s.logger).Log("msg", "failed to update partition time", "partition", ps.partition, "err", err)
 			} else if job != nil {
 				ps.addPendingJob(job)
 			}

@@ -17,11 +17,9 @@ type partitionState struct {
 	topic     string
 	partition int32
 
-	offset    int64
 	jobBucket time.Time
 
-	committed *advancingOffset
-	planned   *advancingOffset
+	offsets singleClusterOffsets
 
 	// pendingJobs are jobs that are waiting to be enqueued. The job creation policy is what allows them to advance to the plannedJobs list.
 	pendingJobs *list.List
@@ -47,22 +45,27 @@ func newPartitionState(topic string, partition int32, metrics *schedulerMetrics,
 	return &partitionState{
 		topic:          topic,
 		partition:      partition,
+		offsets:        newSingleClusterOffsets(metrics, logger),
 		pendingJobs:    list.New(),
 		plannedJobs:    list.New(),
 		plannedJobsMap: make(map[string]*jobState),
-		planned:        newAdvancingOffset(offsetNamePlanned, metrics, logger),
-		committed:      newAdvancingOffset(offsetNameCommitted, metrics, logger),
 	}
 }
 
-// updateEndOffset processes an end offset and returns a consumption job spec if
-// one is ready. This is expected to be called with monotonically increasing
-// end offsets, and called frequently, even in the absence of new data.
-func (s *partitionState) updateEndOffset(end int64, ts time.Time, jobSize time.Duration) (*schedulerpb.JobSpec, error) {
+// updateEndOffset records the latest observed end offset for the partition. It
+// is expected to be called with monotonically increasing end offsets.
+func (s *partitionState) updateEndOffset(end int64) {
+	s.offsets.updateEndOffset(end)
+}
+
+// updateTime advances the partition's time bucket to the bucket containing ts
+// and returns a consumption job spec if one is ready. It is expected to be
+// called frequently with monotonically increasing timestamps, even in the
+// absence of new data.
+func (s *partitionState) updateTime(ts time.Time, jobSize time.Duration) (*schedulerpb.JobSpec, error) {
 	newJobBucket := ts.Truncate(jobSize)
 
 	if s.jobBucket.IsZero() {
-		s.offset = end
 		s.jobBucket = newJobBucket
 		return nil, nil
 	}
@@ -71,7 +74,7 @@ func (s *partitionState) updateEndOffset(end int64, ts time.Time, jobSize time.D
 	case bucketBefore:
 		// New bucket is before our current one. This should only happen if our
 		// Kafka's end offsets aren't monotonically increasing.
-		return nil, fmt.Errorf("time went backwards: %s < %s (%d, %d)", newJobBucket, s.jobBucket, s.offset, end)
+		return nil, fmt.Errorf("time went backwards: %s < %s (%d, %d)", newJobBucket, s.jobBucket, s.offsets.startOffset, s.offsets.endOffset)
 	case bucketSame:
 		// Observation is in the currently tracked bucket. No action needed.
 	case bucketAfter:
@@ -79,15 +82,15 @@ func (s *partitionState) updateEndOffset(end int64, ts time.Time, jobSize time.D
 		// bucket if it has data and start a new one.
 
 		var job *schedulerpb.JobSpec
-		if s.offset < end {
+		if s.offsets.startOffset != offsetEmpty && s.offsets.startOffset < s.offsets.endOffset {
 			job = &schedulerpb.JobSpec{
 				Topic:       s.topic,
 				Partition:   s.partition,
-				StartOffset: s.offset,
-				EndOffset:   end,
+				StartOffset: s.offsets.startOffset,
+				EndOffset:   s.offsets.endOffset,
 			}
 		}
-		s.offset = end
+		s.offsets.startOffset = s.offsets.endOffset
 		s.jobBucket = newJobBucket
 		return job, nil
 	}
@@ -96,9 +99,9 @@ func (s *partitionState) updateEndOffset(end int64, ts time.Time, jobSize time.D
 }
 
 func (s *partitionState) initCommit(commit int64) {
-	s.committed.set(commit)
+	s.offsets.committed.set(commit)
 	// Initially, the planned offset is the committed offset.
-	s.planned.set(commit)
+	s.offsets.planned.set(commit)
 }
 
 func (s *partitionState) addPendingJob(job *schedulerpb.JobSpec) {
@@ -106,17 +109,17 @@ func (s *partitionState) addPendingJob(job *schedulerpb.JobSpec) {
 }
 
 func (s *partitionState) addPlannedJob(id string, spec schedulerpb.JobSpec) {
-	if s.planned.beyondSpec(spec) {
+	if s.offsets.planned.beyondSpec(spec) {
 		// This shouldn't happen. All callers of addPlannedJob must do so in
 		// increasing offset order.
 		panic(fmt.Sprintf("given spec %d [%d, %d) is behind the current planned offset %d",
-			spec.Partition, spec.StartOffset, spec.EndOffset, s.planned.offset()))
+			spec.Partition, spec.StartOffset, spec.EndOffset, s.offsets.planned.offset()))
 	}
 
 	js := &jobState{jobID: id, spec: spec, complete: false}
 	s.plannedJobs.PushBack(js)
 	s.plannedJobsMap[js.jobID] = js
-	s.planned.advance(id, spec)
+	s.offsets.planned.advance(id, spec)
 }
 
 func (s *partitionState) completeJob(jobID string) error {
@@ -138,37 +141,71 @@ func (s *partitionState) completeJob(jobID string) error {
 		}
 		s.plannedJobs.Remove(elem)
 		delete(s.plannedJobsMap, js.jobID)
-		s.committed.advance(js.jobID, js.spec)
+		s.offsets.committed.advance(js.jobID, js.spec)
 	}
 	return nil
 }
 
 func (s *partitionState) committedOffset() int64 {
-	return s.committed.offset()
+	return s.offsets.committed.offset()
 }
 
 func (s *partitionState) committedEmpty() bool {
-	return s.committed.empty()
+	return s.offsets.committed.empty()
 }
 
 func (s *partitionState) committedBeyondSpec(spec schedulerpb.JobSpec) bool {
-	return s.committed.beyondSpec(spec)
+	return s.offsets.committed.beyondSpec(spec)
 }
 
 func (s *partitionState) plannedOffset() int64 {
-	return s.planned.offset()
+	return s.offsets.planned.offset()
 }
 
 func (s *partitionState) plannedEmpty() bool {
-	return s.planned.empty()
+	return s.offsets.planned.empty()
 }
 
 func (s *partitionState) plannedBeyondSpec(spec schedulerpb.JobSpec) bool {
-	return s.planned.beyondSpec(spec)
+	return s.offsets.planned.beyondSpec(spec)
 }
 
 func (s *partitionState) plannedValidNextSpec(spec schedulerpb.JobSpec) bool {
-	return s.planned.validNextSpec(spec)
+	return s.offsets.planned.validNextSpec(spec)
+}
+
+// singleClusterOffsets tracks the offsets for a single Kafka cluster.
+type singleClusterOffsets struct {
+	// startOffset is the start offset of the next job to emit.
+	// It is offsetEmpty until the first end offset is observed.
+	startOffset int64
+	// endOffset is the most recently observed end offset.
+	endOffset int64
+
+	committed *advancingOffset
+	planned   *advancingOffset
+}
+
+func newSingleClusterOffsets(metrics *schedulerMetrics, logger log.Logger) singleClusterOffsets {
+	return singleClusterOffsets{
+		startOffset: offsetEmpty,
+		endOffset:   offsetEmpty,
+		committed:   newAdvancingOffset(offsetNameCommitted, metrics, logger),
+		planned:     newAdvancingOffset(offsetNamePlanned, metrics, logger),
+	}
+}
+
+// updateEndOffset records the latest observed end offset for the cluster. The
+// first observed offset also seeds the start offset of the first job. It is
+// expected to be called with monotonically increasing end offsets.
+func (o *singleClusterOffsets) updateEndOffset(end int64) {
+	if o.endOffset != offsetEmpty && end < o.endOffset {
+		panic(fmt.Sprintf("end offset went backwards: %d < %d", end, o.endOffset))
+	}
+	if o.startOffset == offsetEmpty {
+		o.startOffset = end
+	}
+	o.endOffset = end
 }
 
 // advancingOffset keeps track of an offset that is expected to advance
