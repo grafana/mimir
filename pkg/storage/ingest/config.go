@@ -391,6 +391,11 @@ func (cfg *KafkaConfig) ToWarpstreamClientOptions() ([]wgo.Opt, error) {
 		wgo.WithProduceRequestTimeoutOverhead(writerRequestTimeoutOverhead),
 	}
 
+	// The dialer is only expected to be used in tests (e.g. kfake's virtual network).
+	if cfg.Dialer != nil {
+		opts = append(opts, wgo.WithDialer(cfg.Dialer))
+	}
+
 	if cfg.TLSEnabled {
 		tlsConfig, err := cfg.TLS.GetTLSConfig()
 		if err != nil {

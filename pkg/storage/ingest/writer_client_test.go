@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/go-kit/log"
@@ -18,6 +19,7 @@ import (
 	dto "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/twmb/franz-go/pkg/kfake"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
 	"go.uber.org/atomic"
@@ -163,64 +165,67 @@ func TestKafkaProducer_ProduceSync_ShouldTrackBufferedProduceBytes(t *testing.T)
 }
 
 func testKafkaProducer_ProduceSync_ShouldTrackBufferedProduceBytes(t *testing.T, backend string) {
-	const (
-		numPartitions = 1
-		topicName     = "test"
-	)
+	synctest.Test(t, func(t *testing.T) {
+		const (
+			numPartitions = 1
+			topicName     = "test"
+		)
 
-	cluster, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
+		var vnet kfake.VirtualNetwork
+		cluster, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName, testkafka.WithVirtualNetwork(&vnet))
 
-	// Configure Kafka to block on Produce requests until the test unblocks it.
-	unblockProduceRequests := make(chan struct{})
-	cluster.ControlKey(int16(kmsg.Produce), func(_ kmsg.Request) (kmsg.Response, error, bool) {
-		<-unblockProduceRequests
-		return nil, nil, false
+		// Configure Kafka to block on Produce requests until the test unblocks it.
+		unblockProduceRequests := make(chan struct{})
+		cluster.ControlKey(int16(kmsg.Produce), func(_ kmsg.Request) (kmsg.Response, error, bool) {
+			<-unblockProduceRequests
+			return nil, nil, false
+		})
+
+		ctx := t.Context()
+		reg := prometheus.NewPedanticRegistry()
+		producer := createTestKafkaProducerForBackend(t, backend, clusterAddr, topicName, reg, withWriteVirtualNetwork(&vnet))
+		client := producer.client
+
+		wg := sync.WaitGroup{}
+
+		// At the beginning, the buffered produced bytes metric should be 0.
+		require.EventuallyWithT(t, func(collect *assert.CollectT) {
+			assert.InDelta(collect, 0, getSummaryQuantileValue(collect, reg, "cortex_ingest_storage_writer_buffered_produce_bytes_distribution", 1), 0.0001)
+		}, time.Second, 100*time.Millisecond)
+
+		// Produce a 1st record.
+		wg.Add(1)
+		client.Produce(ctx, &kgo.Record{Topic: topicName, Key: []byte("test"), Value: []byte("message 1")}, func(_ *kgo.Record, err error) {
+			defer wg.Done()
+			require.NoError(t, err)
+		})
+
+		// Get the expected record size directly from Kafka client.
+		expectedRecordSize := client.BufferedProduceBytes()
+		require.Greater(t, expectedRecordSize, int64(0))
+		t.Logf("expected record size bytes: %d", expectedRecordSize)
+
+		// At this point, the buffered produced bytes metric should have tracked 1 record.
+		require.EventuallyWithT(t, func(collect *assert.CollectT) {
+			assert.InDelta(collect, expectedRecordSize, getSummaryQuantileValue(collect, reg, "cortex_ingest_storage_writer_buffered_produce_bytes_distribution", 1), 0.0001)
+		}, time.Second, 100*time.Millisecond)
+
+		// Produce a 2nd record, while the 1st is still in-flight (because in this test Produce requests are blocked on Kafka side).
+		wg.Add(1)
+		client.Produce(ctx, &kgo.Record{Topic: topicName, Key: []byte("test"), Value: []byte("message 1")}, func(_ *kgo.Record, err error) {
+			defer wg.Done()
+			require.NoError(t, err)
+		})
+
+		// At this point, the buffered produced bytes metric should have tracked 2 records.
+		require.EventuallyWithT(t, func(collect *assert.CollectT) {
+			assert.InDelta(collect, 2*expectedRecordSize, getSummaryQuantileValue(collect, reg, "cortex_ingest_storage_writer_buffered_produce_bytes_distribution", 1), 0.0001)
+		}, time.Second, 100*time.Millisecond)
+
+		// Release Produce requests and wait until done.
+		close(unblockProduceRequests)
+		wg.Wait()
 	})
-
-	ctx := context.Background()
-	reg := prometheus.NewPedanticRegistry()
-	producer := createTestKafkaProducerForBackend(t, backend, clusterAddr, topicName, reg, nil)
-	client := producer.client
-
-	wg := sync.WaitGroup{}
-
-	// At the beginning, the buffered produced bytes metric should be 0.
-	require.EventuallyWithT(t, func(collect *assert.CollectT) {
-		assert.InDelta(collect, 0, getSummaryQuantileValue(collect, reg, "cortex_ingest_storage_writer_buffered_produce_bytes_distribution", 1), 0.0001)
-	}, time.Second, 100*time.Millisecond)
-
-	// Produce a 1st record.
-	wg.Add(1)
-	client.Produce(ctx, &kgo.Record{Topic: topicName, Key: []byte("test"), Value: []byte("message 1")}, func(_ *kgo.Record, err error) {
-		defer wg.Done()
-		require.NoError(t, err)
-	})
-
-	// Get the expected record size directly from Kafka client.
-	expectedRecordSize := client.BufferedProduceBytes()
-	require.Greater(t, expectedRecordSize, int64(0))
-	t.Logf("expected record size bytes: %d", expectedRecordSize)
-
-	// At this point, the buffered produced bytes metric should have tracked 1 record.
-	require.EventuallyWithT(t, func(collect *assert.CollectT) {
-		assert.InDelta(collect, expectedRecordSize, getSummaryQuantileValue(collect, reg, "cortex_ingest_storage_writer_buffered_produce_bytes_distribution", 1), 0.0001)
-	}, time.Second, 100*time.Millisecond)
-
-	// Produce a 2nd record, while the 1st is still in-flight (because in this test Produce requests are blocked on Kafka side).
-	wg.Add(1)
-	client.Produce(ctx, &kgo.Record{Topic: topicName, Key: []byte("test"), Value: []byte("message 1")}, func(_ *kgo.Record, err error) {
-		defer wg.Done()
-		require.NoError(t, err)
-	})
-
-	// At this point, the buffered produced bytes metric should have tracked 2 records.
-	require.EventuallyWithT(t, func(collect *assert.CollectT) {
-		assert.InDelta(collect, 2*expectedRecordSize, getSummaryQuantileValue(collect, reg, "cortex_ingest_storage_writer_buffered_produce_bytes_distribution", 1), 0.0001)
-	}, time.Second, 100*time.Millisecond)
-
-	// Release Produce requests and wait until done.
-	close(unblockProduceRequests)
-	wg.Wait()
 }
 
 func TestKafkaProducer_ProduceSync_ShouldCircuitBreakIfContextIsDone(t *testing.T) {
@@ -381,125 +386,135 @@ func testKafkaProducer_ProduceSync_ShouldReturnOneResultPerRecordOnContextCancel
 	)
 
 	t.Run("context is already done before producing", func(t *testing.T) {
-		_, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
+		synctest.Test(t, func(t *testing.T) {
+			var vnet kfake.VirtualNetwork
+			_, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName, testkafka.WithVirtualNetwork(&vnet))
 
-		reg := prometheus.NewPedanticRegistry()
-		producer := createTestKafkaProducerForBackend(t, backend, clusterAddr, topicName, reg, nil)
+			reg := prometheus.NewPedanticRegistry()
+			producer := createTestKafkaProducerForBackend(t, backend, clusterAddr, topicName, reg, withWriteVirtualNetwork(&vnet))
 
-		// Cancel the context before producing.
-		cancelCtx, cancel := context.WithCancel(context.Background())
-		cancel()
+			// Cancel the context before producing.
+			cancelCtx, cancel := context.WithCancel(t.Context())
+			cancel()
 
-		records := []*kgo.Record{
-			{Topic: topicName, Key: []byte("key-1"), Value: []byte("message 1")},
-			{Topic: topicName, Key: []byte("key-2"), Value: []byte("message 2")},
-		}
-		res := producer.ProduceSync(cancelCtx, records)
+			records := []*kgo.Record{
+				{Topic: topicName, Key: []byte("key-1"), Value: []byte("message 1")},
+				{Topic: topicName, Key: []byte("key-2"), Value: []byte("message 2")},
+			}
+			res := producer.ProduceSync(cancelCtx, records)
 
-		// We expect one result per input record, each with its Record set and the cancellation error.
-		require.Len(t, res, len(records))
-		for i, r := range res {
-			assert.Same(t, records[i], r.Record)
-			assert.ErrorIs(t, r.Err, context.Canceled)
-		}
+			// We expect one result per input record, each with its Record set and the cancellation error.
+			require.Len(t, res, len(records))
+			for i, r := range res {
+				assert.Same(t, records[i], r.Record)
+				assert.ErrorIs(t, r.Err, context.Canceled)
+			}
+		})
 	})
 
 	t.Run("context is already done before producing with a non-Canceled cause", func(t *testing.T) {
-		_, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
+		synctest.Test(t, func(t *testing.T) {
+			var vnet kfake.VirtualNetwork
+			_, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName, testkafka.WithVirtualNetwork(&vnet))
 
-		reg := prometheus.NewPedanticRegistry()
-		producer := createTestKafkaProducerForBackend(t, backend, clusterAddr, topicName, reg, nil)
+			reg := prometheus.NewPedanticRegistry()
+			producer := createTestKafkaProducerForBackend(t, backend, clusterAddr, topicName, reg, withWriteVirtualNetwork(&vnet))
 
-		// Cancel the context before producing, with a custom cause that wraps something other than context.Canceled.
-		customCause := errors.New("custom cancellation cause")
-		cancelCtx, cancel := context.WithCancelCause(context.Background())
-		cancel(customCause)
+			// Cancel the context before producing, with a custom cause that wraps something other than context.Canceled.
+			customCause := errors.New("custom cancellation cause")
+			cancelCtx, cancel := context.WithCancelCause(t.Context())
+			cancel(customCause)
 
-		records := []*kgo.Record{
-			{Topic: topicName, Key: []byte("key-1"), Value: []byte("message 1")},
-			{Topic: topicName, Key: []byte("key-2"), Value: []byte("message 2")},
-		}
-		res := producer.ProduceSync(cancelCtx, records)
+			records := []*kgo.Record{
+				{Topic: topicName, Key: []byte("key-1"), Value: []byte("message 1")},
+				{Topic: topicName, Key: []byte("key-2"), Value: []byte("message 2")},
+			}
+			res := producer.ProduceSync(cancelCtx, records)
 
-		// We expect one result per input record, each with its Record set and the custom cause as the underlying error.
-		require.Len(t, res, len(records))
-		for i, r := range res {
-			assert.Same(t, records[i], r.Record)
-			assert.ErrorIs(t, r.Err, customCause)
-		}
+			// We expect one result per input record, each with its Record set and the custom cause as the underlying error.
+			require.Len(t, res, len(records))
+			for i, r := range res {
+				assert.Same(t, records[i], r.Record)
+				assert.ErrorIs(t, r.Err, customCause)
+			}
+		})
 	})
 
 	t.Run("context is canceled while waiting for produce results", func(t *testing.T) {
-		cluster, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
+		synctest.Test(t, func(t *testing.T) {
+			var vnet kfake.VirtualNetwork
+			cluster, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName, testkafka.WithVirtualNetwork(&vnet))
 
-		// Block Produce requests until the test unblocks them, so we have time to cancel the context
-		// after records have been buffered.
-		unblockProduceRequests := make(chan struct{})
-		t.Cleanup(func() {
-			// Make sure goroutines blocked on the Kafka cluster are released even if the test fails early.
-			select {
-			case <-unblockProduceRequests:
-			default:
-				close(unblockProduceRequests)
+			// Block Produce requests until the test unblocks them, so we have time to cancel the context
+			// after records have been buffered.
+			unblockProduceRequests := make(chan struct{})
+			t.Cleanup(func() {
+				// Make sure goroutines blocked on the Kafka cluster are released even if the test fails early.
+				select {
+				case <-unblockProduceRequests:
+				default:
+					close(unblockProduceRequests)
+				}
+			})
+			cluster.ControlKey(int16(kmsg.Produce), func(_ kmsg.Request) (kmsg.Response, error, bool) {
+				<-unblockProduceRequests
+				return nil, nil, false
+			})
+
+			reg := prometheus.NewPedanticRegistry()
+			producer := createTestKafkaProducerForBackend(t, backend, clusterAddr, topicName, reg, withWriteVirtualNetwork(&vnet))
+
+			ctx, cancel := context.WithCancel(t.Context())
+			t.Cleanup(cancel)
+
+			records := []*kgo.Record{
+				{Topic: topicName, Key: []byte("key-1"), Value: []byte("message 1")},
+				{Topic: topicName, Key: []byte("key-2"), Value: []byte("message 2")},
 			}
+
+			// Snapshot the input partitions so the assertions below don't read the live records,
+			// which the Kafka client may concurrently mutate after Produce() has been called.
+			expectedPartitions := make([]int32, len(records))
+			for i, r := range records {
+				expectedPartitions[i] = r.Partition
+			}
+
+			// Run ProduceSync in a goroutine and cancel the context once records are buffered in the Kafka client.
+			resCh := make(chan kgo.ProduceResults, 1)
+			go func() {
+				resCh <- producer.ProduceSync(ctx, records)
+			}()
+
+			// Once the producer goroutine is durably blocked (records buffered, waiting on the blocked
+			// Produce request), all records are buffered in the Kafka client.
+			synctest.Wait()
+			require.Equal(t, int64(len(records)), producer.BufferedProduceRecords())
+
+			cancel()
+
+			var res kgo.ProduceResults
+			select {
+			case res = <-resCh:
+			case <-time.After(5 * time.Second):
+				t.Fatal("ProduceSync did not return after context cancellation")
+			}
+
+			// We expect one result per input record, each with a non-nil Record carrying the input
+			// partition and the cancellation error. We don't assert pointer equality here: once
+			// records have been handed to the Kafka client, it may concurrently mutate them, so
+			// ProduceSync exposes synthetic records to avoid racing with the client.
+			require.Len(t, res, len(records))
+			for i, r := range res {
+				require.NotNil(t, r.Record)
+				assert.Equal(t, expectedPartitions[i], r.Record.Partition)
+				assert.ErrorIs(t, r.Err, context.Canceled)
+			}
+
+			// Unblock the in-flight produce so cleanup is fast: the Warpstream client's
+			// Close() waits for in-flight flushes, which would otherwise block until the
+			// per-flush WriteTimeout elapses.
+			close(unblockProduceRequests)
 		})
-		cluster.ControlKey(int16(kmsg.Produce), func(_ kmsg.Request) (kmsg.Response, error, bool) {
-			<-unblockProduceRequests
-			return nil, nil, false
-		})
-
-		reg := prometheus.NewPedanticRegistry()
-		producer := createTestKafkaProducerForBackend(t, backend, clusterAddr, topicName, reg, nil)
-
-		ctx, cancel := context.WithCancel(context.Background())
-		t.Cleanup(cancel)
-
-		records := []*kgo.Record{
-			{Topic: topicName, Key: []byte("key-1"), Value: []byte("message 1")},
-			{Topic: topicName, Key: []byte("key-2"), Value: []byte("message 2")},
-		}
-
-		// Snapshot the input partitions so the assertions below don't read the live records,
-		// which the Kafka client may concurrently mutate after Produce() has been called.
-		expectedPartitions := make([]int32, len(records))
-		for i, r := range records {
-			expectedPartitions[i] = r.Partition
-		}
-
-		// Run ProduceSync in a goroutine and cancel the context once records are buffered in the Kafka client.
-		resCh := make(chan kgo.ProduceResults, 1)
-		go func() {
-			resCh <- producer.ProduceSync(ctx, records)
-		}()
-
-		require.Eventually(t, func() bool {
-			return producer.BufferedProduceRecords() == int64(len(records))
-		}, 5*time.Second, 10*time.Millisecond)
-
-		cancel()
-
-		var res kgo.ProduceResults
-		select {
-		case res = <-resCh:
-		case <-time.After(5 * time.Second):
-			t.Fatal("ProduceSync did not return after context cancellation")
-		}
-
-		// We expect one result per input record, each with a non-nil Record carrying the input
-		// partition and the cancellation error. We don't assert pointer equality here: once
-		// records have been handed to the Kafka client, it may concurrently mutate them, so
-		// ProduceSync exposes synthetic records to avoid racing with the client.
-		require.Len(t, res, len(records))
-		for i, r := range res {
-			require.NotNil(t, r.Record)
-			assert.Equal(t, expectedPartitions[i], r.Record.Partition)
-			assert.ErrorIs(t, r.Err, context.Canceled)
-		}
-
-		// Unblock the in-flight produce so cleanup is fast: the Warpstream client's
-		// Close() waits for in-flight flushes, which would otherwise block until the
-		// per-flush WriteTimeout elapses.
-		close(unblockProduceRequests)
 	})
 }
 
@@ -536,96 +551,97 @@ func testKafkaProducer_ProduceSync_LatencyShouldBeDrivenByKafkaProduceLatency(t 
 		produceLatency = 1 * time.Second
 	)
 
-	// Set a max execution time for this test.
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	t.Cleanup(cancel)
+	synctest.Test(t, func(t *testing.T) {
+		ctx := t.Context()
 
-	cluster, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
+		var vnet kfake.VirtualNetwork
+		cluster, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName, testkafka.WithVirtualNetwork(&vnet))
 
-	// Simulate high latency on Produce requests.
-	cluster.ControlKey(int16(kmsg.Produce), func(kreq kmsg.Request) (kmsg.Response, error, bool) {
-		req := kreq.(*kmsg.ProduceRequest)
+		// Simulate high latency on Produce requests.
+		cluster.ControlKey(int16(kmsg.Produce), func(kreq kmsg.Request) (kmsg.Response, error, bool) {
+			req := kreq.(*kmsg.ProduceRequest)
 
-		numRecords, err := getProduceRequestRecordsCount(req)
-		require.NoError(t, err)
-		highestTimestamp, err := getProduceRequestHighestTimestamp(req)
-		require.NoError(t, err)
+			numRecords, err := getProduceRequestRecordsCount(req)
+			require.NoError(t, err)
+			highestTimestamp, err := getProduceRequestHighestTimestamp(req)
+			require.NoError(t, err)
 
-		// The fake Kafka server we use in unit tests have a single thread control loop. This means that when we
-		// add latency to a request, other requests pipelined on the same connections are not evaluated until
-		// the previous requests are processed.
-		//
-		// In this test we want to simulate the case each Produce takes X time to execute since when it was written
-		// on the wire. We don't have the timestamp when it was sent on the network, so we use the highest record timestamp
-		// as an approximation.
-		simulatedLatency := max(0, produceLatency-time.Since(highestTimestamp))
-		t.Log(time.Now().String(), "Produce - num records:", numRecords, "highestTimestamp:", highestTimestamp.String(), "simulatedLatency:", simulatedLatency)
+			// The fake Kafka server we use in unit tests have a single thread control loop. This means that when we
+			// add latency to a request, other requests pipelined on the same connections are not evaluated until
+			// the previous requests are processed.
+			//
+			// In this test we want to simulate the case each Produce takes X time to execute since when it was written
+			// on the wire. We don't have the timestamp when it was sent on the network, so we use the highest record timestamp
+			// as an approximation.
+			simulatedLatency := max(0, produceLatency-time.Since(highestTimestamp))
+			t.Log(time.Now().String(), "Produce - num records:", numRecords, "highestTimestamp:", highestTimestamp.String(), "simulatedLatency:", simulatedLatency)
 
-		cluster.KeepControl()
-		cluster.SleepControl(func() {
-			select {
-			case <-ctx.Done():
-			case <-time.After(simulatedLatency):
-			}
-		})
-
-		return nil, nil, false
-	})
-
-	reg := prometheus.NewPedanticRegistry()
-	producer := createTestKafkaProducerForBackend(t, backend, clusterAddr, topicName, reg, nil)
-
-	// Generate a random payload to reduce its compression ratio.
-	recordPayload, err := generateRandomBytes(produceRecordSizeBytes)
-	require.NoError(t, err)
-
-	// Produce records at fixed interval.
-	produceLatencySecondsSum := atomic.NewFloat64(0)
-	producerWg := sync.WaitGroup{}
-	producerWg.Add(1)
-
-	go func() {
-		recordsAcked := atomic.NewInt32(0)
-
-		for recordID := 0; recordID < int(produceRecordsTotal); recordID++ {
-			producer.client.Produce(ctx, &kgo.Record{
-				Topic:     topicName,
-				Key:       []byte(tenantID),
-				Value:     recordPayload,
-				Partition: int32(recordID % numPartitions), // Round robin across partitions.
-				Timestamp: time.Now(),
-			}, func(record *kgo.Record, err error) {
-				// Keep track of the latency.
-				produceLatencySecondsSum.Add(time.Since(record.Timestamp).Seconds())
-
-				// We're done once we've got the ACK for all records we produced.
-				if recordsAcked.Inc() >= int32(produceRecordsTotal) {
-					producerWg.Done()
+			cluster.KeepControl()
+			cluster.SleepControl(func() {
+				select {
+				case <-ctx.Done():
+				case <-time.After(simulatedLatency):
 				}
 			})
 
-			// Throttle.
-			select {
-			case <-ctx.Done():
-				// The test timed out. Let's unblock the main test goroutine.
-				producerWg.Done()
-				return
+			return nil, nil, false
+		})
 
-			case <-time.After(produceRecordsInterval):
+		reg := prometheus.NewPedanticRegistry()
+		producer := createTestKafkaProducerForBackend(t, backend, clusterAddr, topicName, reg, withWriteVirtualNetwork(&vnet))
+
+		// Generate a random payload to reduce its compression ratio.
+		recordPayload, err := generateRandomBytes(produceRecordSizeBytes)
+		require.NoError(t, err)
+
+		// Produce records at fixed interval.
+		produceLatencySecondsSum := atomic.NewFloat64(0)
+		producerWg := sync.WaitGroup{}
+		producerWg.Add(1)
+
+		go func() {
+			recordsAcked := atomic.NewInt32(0)
+
+			for recordID := 0; recordID < int(produceRecordsTotal); recordID++ {
+				producer.client.Produce(ctx, &kgo.Record{
+					Topic:     topicName,
+					Key:       []byte(tenantID),
+					Value:     recordPayload,
+					Partition: int32(recordID % numPartitions), // Round robin across partitions.
+					Timestamp: time.Now(),
+				}, func(record *kgo.Record, err error) {
+					// Keep track of the latency.
+					produceLatencySecondsSum.Add(time.Since(record.Timestamp).Seconds())
+
+					// We're done once we've got the ACK for all records we produced.
+					if recordsAcked.Inc() >= int32(produceRecordsTotal) {
+						producerWg.Done()
+					}
+				})
+
+				// Throttle.
+				select {
+				case <-ctx.Done():
+					// The test timed out. Let's unblock the main test goroutine.
+					producerWg.Done()
+					return
+
+				case <-time.After(produceRecordsInterval):
+				}
 			}
-		}
-	}()
+		}()
 
-	// Wait until all records have been produced.
-	producerWg.Wait()
+		// Wait until all records have been produced.
+		producerWg.Wait()
 
-	// Ensure the test didn't timed out.
-	require.NoError(t, ctx.Err())
+		// Ensure the test didn't timed out.
+		require.NoError(t, ctx.Err())
 
-	// We expect the average produce latency to be close to the simulated Kafka produce latency.
-	averageProduceLatencySeconds := produceLatencySecondsSum.Load() / float64(produceRecordsTotal)
-	t.Logf("average produce latency seconds: %.2f", averageProduceLatencySeconds)
-	require.InDelta(t, produceLatency.Seconds(), averageProduceLatencySeconds, 0.5)
+		// We expect the average produce latency to be close to the simulated Kafka produce latency.
+		averageProduceLatencySeconds := produceLatencySecondsSum.Load() / float64(produceRecordsTotal)
+		t.Logf("average produce latency seconds: %.2f", averageProduceLatencySeconds)
+		require.InDelta(t, produceLatency.Seconds(), averageProduceLatencySeconds, 0.5)
+	})
 }
 
 // createTestKafkaProducerForBackend builds a *KafkaProducer for the given backend
