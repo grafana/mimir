@@ -260,8 +260,9 @@ func (c *UsageTrackerClient) running(ctx context.Context) error {
 	}
 
 	// In the default (synchronized) mode, a single flusher signals all partitions together so the
-	// netpoller coalesces their packets. In independent mode, each partition arms its own linger timer
-	// in trackSeries instead, so no global flusher runs.
+	// usage-tracker server's netpoller can use fewer CPU resources by coalescing multiple socket reads.
+	// In independent mode, each partition arms its own linger timer in trackSeries instead, so no
+	// global flusher runs.
 	if c.cfg.UseSyncBatchedTracking && !c.cfg.SyncBatchIndependentPartitionTimeouts {
 		go c.syncBatcher.flusher()
 	}
