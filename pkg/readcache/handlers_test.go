@@ -363,16 +363,16 @@ func TestReadcache_QueryStream_GlobalSortsAndDeduplicatesLabelsAcrossPartitions(
 	assert.GreaterOrEqual(t, gotChunkCounts[1], int64(2), "duplicate labelset should carry chunks from both partitions")
 }
 
-// TestReadcache_QueryStream_NoInRangeSamples reproduces the
-// "no chunks collected for streamed series" error seen in deployed
-// readcache pods. A series carries two samples that land in a single
-// head chunk but straddle a narrow query window. The chunk's meta
-// interval [MinTime, MaxTime] overlaps [from, through] (so the old
-// code's cs.ChunkCount() counts it and advertises the series), yet no
-// sample survives trimming to [from, through] (so phase-2 iteration
-// yields zero chunks). The current code instead materializes chunks
-// in phase 1 and skips such a series entirely, so the call must
-// succeed and emit no series.
+// TestReadcache_QueryStream_NoInRangeSamples covers a series whose
+// single head chunk's meta interval [MinTime, MaxTime] overlaps the
+// query window but whose samples all fall outside it. Because the
+// readcache disables chunk trimming (matching the ingester), the whole
+// chunk is returned untrimmed: the series is advertised carrying that
+// chunk, and the PromQL engine drops the out-of-range samples at eval
+// time. The invariant we protect here is that every advertised series
+// still carries at least one chunk (the querier's batch-merge iterator
+// panics otherwise), which holds because the untrimmed chunk is
+// non-empty.
 func TestReadcache_QueryStream_NoInRangeSamples(t *testing.T) {
 	const (
 		tenantID = "user-1"
@@ -432,13 +432,21 @@ func TestReadcache_QueryStream_NoInRangeSamples(t *testing.T) {
 	require.NoError(t, err)
 
 	stream := &mockQueryStreamServer{ctx: wreqCtx}
-	require.NoError(t, rc.queryStream(req, stream), "queryStream must not error on a series whose chunks trim to zero in-range samples")
+	require.NoError(t, rc.queryStream(req, stream), "queryStream must not error on a series whose chunk has no in-range samples")
 
 	var advertised int
+	var chunkCount int64
 	for _, resp := range stream.responses {
-		advertised += len(resp.StreamingSeries)
+		for _, s := range resp.StreamingSeries {
+			advertised++
+			chunkCount += s.ChunkCount
+		}
 	}
-	assert.Zero(t, advertised, "a series with no in-range samples must not be advertised")
+	// With trimming disabled the overlapping chunk is returned whole, so
+	// the series is advertised and carries its chunk; PromQL trims the
+	// out-of-range samples downstream.
+	assert.Equal(t, 1, advertised, "series whose chunk overlaps the window must be advertised")
+	assert.GreaterOrEqual(t, chunkCount, int64(1), "advertised series must carry at least one chunk")
 }
 
 // TestReadcache_QueryStream_AppliesQueryShard proves whether the

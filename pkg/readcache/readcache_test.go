@@ -149,7 +149,11 @@ func TestReadcache_Lifecycle(t *testing.T) {
 	r, err := New(cfg, limits, nil, log.NewNopLogger(), prometheus.NewRegistry())
 	require.NoError(t, err)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	// Use the same 30s budget as the other Kafka-backed tests in this
+	// package. Start/stop of the readcache itself is sub-second; the
+	// previous 5s budget was shared with a 64-partition fake-Kafka
+	// cluster and flaked under load.
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
 	require.NoError(t, services.StartAndAwaitRunning(ctx, r))

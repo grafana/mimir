@@ -129,6 +129,12 @@ func (r *Readcache) queryStream(req *client.QueryRequest, stream client.Ingester
 			hints.ShardIndex = shard.ShardIndex
 			hints.ShardCount = shard.ShardCount
 		}
+		// Disable chunk trimming, matching the ingester
+		// (pkg/ingester/ingester_query.go). Trimming forces TSDB to
+		// re-encode any chunk whose samples straddle [from, through];
+		// the PromQL engine trims out-of-range samples itself, so we
+		// ship whole chunks and skip the rewrite cost.
+		hints.DisableTrimming = true
 		ss := q.Select(ctx, true, hints, matchers...)
 		if ss.Err() != nil {
 			return errors.Wrap(ss.Err(), "selecting series from partition TSDB")
