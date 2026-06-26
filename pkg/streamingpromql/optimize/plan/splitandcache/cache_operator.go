@@ -1052,7 +1052,8 @@ func (c *cachedExtentReader) GetSeries(_ context.Context, seriesIdx int) (types.
 
 	// DecodeInstantVectorSeriesData returns shallow copies of the FPoint / HPoint slices.
 	// This is OK as CacheOperator.NextSeries will copy any data it needs to retain for the merged extent before returning it to the caller.
-	// We don't need to add this to the memory consumption estimate as this was already accounted for in CacheOperator.fetchExistingExtents.
+	// We don't need to add this to the memory consumption estimate as this was already accounted for in CachedExtent.addToMemoryConsumptionEstimate,
+	// called from decodeAndFilterCacheEntry.
 	mqeData := querierpb.DecodeInstantVectorSeriesData(cachedData)
 
 	// Clear the cached data so we don't try to remove it from the memory consumption estimate later.
