@@ -214,11 +214,12 @@ type CacheMaterializer struct {
 	minCacheExtent time.Duration
 }
 
-func NewCacheMaterializer(enabled bool, baseCache cache.Cache, cachePrefixGenerator caching.PrefixGenerator, limitsProvider LimitsProvider, minCacheExtent time.Duration, reg prometheus.Registerer) *CacheMaterializer {
+func NewCacheMaterializer(enabled bool, baseCache cache.Cache, cachePrefixGenerator caching.PrefixGenerator, limitsProvider LimitsProvider, minCacheExtent time.Duration, metrics *ResultsCacheMetrics) *CacheMaterializer {
 	m := &CacheMaterializer{
 		enabled:        enabled,
 		limitsProvider: limitsProvider,
 		minCacheExtent: minCacheExtent,
+		metrics:        metrics,
 	}
 
 	if enabled {
@@ -226,9 +227,6 @@ func NewCacheMaterializer(enabled bool, baseCache cache.Cache, cachePrefixGenera
 			caching.NewAdaptor(baseCache),
 			caching.VersioningAndItemTypePrefixGenerator(cachePrefixGenerator, cacheVersion, "MQEQR"),
 		)
-
-		// Only register the metrics if caching is enabled, to avoid conflicting with the query-frontend middleware doing the same thing.
-		m.metrics = NewResultsCacheMetrics("query_range", reg)
 	}
 
 	return m

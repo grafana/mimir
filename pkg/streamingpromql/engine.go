@@ -108,7 +108,7 @@ func NewEngineWithCache(opts EngineOpts, metrics *stats.QueryMetrics, planner *Q
 
 		planning.NODE_TYPE_SPLIT_FUNCTION_OVER_RANGE_VECTOR: rangevectorsplitting.NewMaterializer(opts.RangeVectorSplitting.Enabled, intermediateCache, opts.Logger),
 		planning.NODE_TYPE_TIME_RANGE_SPLIT:                 splitandcache.NewTimeRangeSplitMaterializer(opts.RangeQuerySplittingAndCaching.SplitEnabled, opts.CommonOpts.Reg),
-		planning.NODE_TYPE_CACHE:                            splitandcache.NewCacheMaterializer(opts.RangeQuerySplittingAndCaching.CacheEnabled, opts.RangeQuerySplittingAndCaching.CacheClient, opts.CachePrefixGenerator, opts.Limits, opts.RangeQuerySplittingAndCaching.MinCacheExtent, opts.CommonOpts.Reg),
+		planning.NODE_TYPE_CACHE:                            splitandcache.NewCacheMaterializer(opts.RangeQuerySplittingAndCaching.CacheEnabled, opts.RangeQuerySplittingAndCaching.CacheClient, opts.CachePrefixGenerator, opts.Limits, opts.RangeQuerySplittingAndCaching.MinCacheExtent, opts.RangeQuerySplittingAndCaching.CacheMetrics),
 	}
 
 	memoryConsumptionTrackerFactory := opts.MemoryConsumptionTrackerFactory
