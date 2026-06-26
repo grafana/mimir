@@ -24,6 +24,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
+	"github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/usagetracker"
 	"github.com/grafana/mimir/pkg/usagetracker/usagetrackerclient"
 	"github.com/grafana/mimir/pkg/util"
@@ -82,6 +83,7 @@ func main() {
 	// Init memberlist.
 	cfg.MemberlistKV.Codecs = append(cfg.MemberlistKV.Codecs, ring.GetCodec())
 	cfg.MemberlistKV.Codecs = append(cfg.MemberlistKV.Codecs, ring.GetPartitionRingCodec())
+	cfg.MemberlistKV.Codecs = append(cfg.MemberlistKV.Codecs, distributor.GetReplicaDescCodec())
 
 	dnsProvider := dns.NewProvider(dns.GolangResolverType, 0, logger, prometheus.DefaultRegisterer)
 	memberlistKV := memberlist.NewKVInitService(&cfg.MemberlistKV, logger, dnsProvider, prometheus.DefaultRegisterer)
