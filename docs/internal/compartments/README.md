@@ -54,32 +54,58 @@ There are two independent sets of compartments, and their counts do not need to 
 A **global query layer** — query-frontend, query-scheduler, querier and ruler — spans all compartments
 and is not part of either set.
 
+Compartments and their per-compartment resources follow a `wc-<id>` / `rc-<id>` naming convention; see
+[Naming conventions](./naming.md).
+
 ## Overall architecture
 
 ```mermaid
 flowchart LR
     GW["Ingress auth gateway<br/>or load balancer"]
 
-    subgraph WC["Write compartments"]
+    subgraph WC0["Write compartment wc-0"]
         direction TB
-        WC0["distributors + dedicated Kafka cluster #0"]
-        WC1["distributors + dedicated Kafka cluster #1"]
+        D0["distributor-wc-0"]
+        subgraph K0["kafka-wc-0"]
+            direction TB
+            K0T0["&quot;ingest-rc-0&quot; topic"]
+            K0T1["&quot;ingest-rc-1&quot; topic"]
+        end
+        D0 --> K0T0
+        D0 --> K0T1
     end
 
-    subgraph RC["Read compartments"]
+    subgraph WC1["Write compartment wc-1"]
         direction TB
-        RC0["read compartment #0<br/>(ingesters, store-gateways,<br/>block-builders, compactors)<br/>topic: read-comp-0"]
-        RC1["read compartment #1<br/>(ingesters, store-gateways,<br/>block-builders, compactors)<br/>topic: read-comp-1"]
+        D1["distributor-wc-1"]
+        subgraph K1["kafka-wc-1"]
+            direction TB
+            K1T0["&quot;ingest-rc-0&quot; topic"]
+            K1T1["&quot;ingest-rc-1&quot; topic"]
+        end
+        D1 --> K1T0
+        D1 --> K1T1
+    end
+
+    subgraph RC0["Read compartment rc-0"]
+        RC0C["ingesters, store-gateways,<br/>block-builders, compactors"]
+    end
+    subgraph RC1["Read compartment rc-1"]
+        RC1C["ingesters, store-gateways,<br/>block-builders, compactors"]
     end
 
     QL["Global query layer<br/>(query-frontend, query-scheduler,<br/>querier, ruler)"]
 
-    GW -->|random write compartment| WC0
-    GW -->|random write compartment| WC1
-    WC --> RC0
-    WC --> RC1
-    QL -.queries.-> RC0
-    QL -.queries.-> RC1
+    GW -->|random write compartment| D0
+    GW -->|random write compartment| D1
+
+    K0T0 --> RC0C
+    K1T0 --> RC0C
+    K0T1 --> RC1C
+    K1T1 --> RC1C
+
+    RC0C -.->|queried by| QL
+    RC1C -.->|queried by| QL
 ```
 
 At a high level:
@@ -92,9 +118,12 @@ At a high level:
   series label-hash sharding. See [Sharding](./sharding.md).
 - **Read path.** Each read compartment runs its storage components against a dedicated topic.
 
-> **Note:** compartments are still under development and not everything described in this
-> documentation is implemented yet. See [Status and limitations](./status-and-limitations.md) for the
-> current state.
+Each write compartment has its own Kafka cluster (`kafka-wc-<id>`), and every cluster contains one
+topic per read compartment (`ingest-rc-<id>`); a read compartment's ingesters consume their topic from
+every write compartment's cluster.
+
+An `ingest-rc-<id>` topic exists once in **every** write compartment's Kafka cluster, because every
+write compartment writes to every read compartment (see [Write compartments](./write-compartments.md)).
 
 ## Multi-zone
 
@@ -107,6 +136,8 @@ components (both write and read compartments) across availability zones.
   metric name is used as the segmentation label.
 - [Write compartments](./write-compartments.md) — the write-compartment design.
 - [Read compartments](./read-compartments.md) — the read-compartment design.
+- [Naming conventions](./naming.md) — the names used for compartments and their per-compartment
+  resources.
 - [Configuration](./configuration.md) — the rationale behind where compartments configuration lives.
 - [Status and limitations](./status-and-limitations.md) — what is implemented today and what is not.
 - [Authoring guide for the compartments documentation](./AGENTS.md) — rules for keeping this
