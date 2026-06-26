@@ -230,12 +230,15 @@ func (t *trackerStore) cleanup(now time.Time) {
 	tenantsClone := maps.Clone(t.tenants)
 	t.mtx.RUnlock()
 
+	totalT0 := time.Now()
 	var deletionCandidates []string
 	for tenantID, tenant := range tenantsClone {
-		for _, shard := range tenant.shards {
+		for s, shard := range tenant.shards {
+			t0 := time.Now()
 			shard.Lock()
-			removed := shard.Cleanup(watermark, tenant.currentLimit)
+			removed, rehashed := shard.Cleanup(watermark, tenant.currentLimit)
 			shard.Unlock()
+			level.Info(t.logger).Log("shard cleanup timing", "shard", s, "elapsed", time.Since(t0), "rehashed", rehashed, "removed", removed, "series", tenant.series.Load(), "limit", tenant.currentLimit.Load())
 
 			if removed > 0 {
 				tenant.series.Add(-uint64(removed))
@@ -249,6 +252,7 @@ func (t *trackerStore) cleanup(now time.Time) {
 			deletionCandidates = append(deletionCandidates, tenantID)
 		}
 	}
+	level.Info(t.logger).Log("partition cleanup timing", "elapsed", time.Since(totalT0), "tenants", len(tenantsClone))
 
 	if len(deletionCandidates) == 0 {
 		return

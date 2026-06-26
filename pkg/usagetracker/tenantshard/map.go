@@ -196,7 +196,7 @@ func (m *Map) Count() int {
 	return int(m.resident - m.dead)
 }
 
-func (m *Map) Cleanup(watermark clock.Minutes, limit *atomic.Uint64) int {
+func (m *Map) Cleanup(watermark clock.Minutes, limit *atomic.Uint64) (int, bool) {
 	removed := 0
 groups:
 	for i := range m.data {
@@ -249,14 +249,16 @@ groups:
 			j++
 		}
 	}
+	var rehashed bool
 	if m.dead > m.limit/2 {
 		var lim uint64
 		if limit != nil {
 			lim = limit.Load()
 		}
 		m.rehash(m.nextSize(lim))
+		rehashed = true
 	}
-	return removed
+	return removed, rehashed
 }
 
 // EnsureCapacity ensure that the map has enough capacity to store |n| elements.

@@ -57,7 +57,7 @@ func TestMap(t *testing.T) {
 
 	{
 		// Cleanup first wave of series
-		removed := m.Cleanup(clock.Minutes(1), nil)
+		removed, _ := m.Cleanup(clock.Minutes(1), nil)
 		series.Add(-uint64(removed))
 		expectedSeries := (events - 1) * seriesPerEvent
 
@@ -186,7 +186,7 @@ func TestMapCleanup(t *testing.T) {
 
 	t.Run("empty map", func(t *testing.T) {
 		m := New(8)
-		removed := m.Cleanup(100, nil)
+		removed, _ := m.Cleanup(100, nil)
 		require.Equal(t, 0, removed)
 		require.Equal(t, 0, m.Count())
 		require.Zero(t, m.dead)
@@ -199,7 +199,7 @@ func TestMapCleanup(t *testing.T) {
 		m.Load(2, 60)
 		m.Load(3, 70)
 
-		removed := m.Cleanup(10, nil) // watermark=10 is before all entries
+		removed, _ := m.Cleanup(10, nil) // watermark=10 is before all entries
 		require.Equal(t, 0, removed)
 		require.Equal(t, 3, m.Count())
 		require.Zero(t, m.dead)
@@ -212,7 +212,7 @@ func TestMapCleanup(t *testing.T) {
 		m.Load(2, 20)
 		m.Load(3, 30)
 
-		removed := m.Cleanup(30, nil) // watermark=30 expires all
+		removed, _ := m.Cleanup(30, nil) // watermark=30 expires all
 		require.Equal(t, 3, removed)
 		require.Equal(t, 0, m.Count())
 	})
@@ -226,7 +226,7 @@ func TestMapCleanup(t *testing.T) {
 		m.Load(400, 40)
 		m.Load(500, 50)
 
-		removed := m.Cleanup(30, nil) // expire entries with value <= 30
+		removed, _ := m.Cleanup(30, nil) // expire entries with value <= 30
 		require.Equal(t, 3, removed)
 		require.Equal(t, 2, m.Count())
 
@@ -245,7 +245,7 @@ func TestMapCleanup(t *testing.T) {
 		m.Load(300, 50) // will survive
 		m.Load(400, 10) // will expire
 
-		removed := m.Cleanup(20, nil)
+		removed, _ := m.Cleanup(20, nil)
 		require.Equal(t, 2, removed)
 		require.Equal(t, 2, m.Count())
 
@@ -265,7 +265,7 @@ func TestMapCleanup(t *testing.T) {
 		m.Load(1, 10)
 		m.Load(2, 50)
 
-		removed := m.Cleanup(10, nil) // expire key=1
+		removed, _ := m.Cleanup(10, nil) // expire key=1
 		require.Equal(t, 1, removed)
 		require.Equal(t, 1, m.Count())
 		require.Zero(t, m.dead, "should not create tombstones when group has empty slots")
@@ -287,7 +287,7 @@ func TestMapCleanup(t *testing.T) {
 			m.resident++
 		}
 
-		removed := m.Cleanup(10, nil) // expire entry at slot 0
+		removed, _ := m.Cleanup(10, nil) // expire entry at slot 0
 		require.Equal(t, 1, removed)
 		require.Equal(t, uint32(1), m.dead, "should create tombstone when group is full")
 	})
@@ -304,7 +304,7 @@ func TestMapCleanup(t *testing.T) {
 		m.data[0][1] = xor(10) // will expire
 		m.resident = 2
 
-		removed := m.Cleanup(10, nil)
+		removed, _ := m.Cleanup(10, nil)
 		require.Equal(t, 1, removed)
 		require.Equal(t, uint32(1), m.resident)
 		require.Zero(t, m.dead)
@@ -333,7 +333,7 @@ func TestMapCleanup(t *testing.T) {
 		m.data[0][2] = xor(50) // won't expire
 		m.resident = 3
 
-		removed := m.Cleanup(10, nil)
+		removed, _ := m.Cleanup(10, nil)
 		require.Equal(t, 1, removed)
 		require.Equal(t, uint32(2), m.resident)
 		require.Zero(t, m.dead)
@@ -374,7 +374,7 @@ func TestMapCleanup(t *testing.T) {
 		m.data[0][3] = xor(50) // survive
 		m.resident = 4
 
-		removed := m.Cleanup(10, nil)
+		removed, _ := m.Cleanup(10, nil)
 		require.Equal(t, 2, removed)
 		require.Equal(t, uint32(2), m.resident)
 		require.Zero(t, m.dead)
@@ -396,7 +396,7 @@ func TestMapCleanup(t *testing.T) {
 		m.data[0][2] = xor(10)
 		m.resident = 3
 
-		removed := m.Cleanup(10, nil)
+		removed, _ := m.Cleanup(10, nil)
 		require.Equal(t, 3, removed)
 		require.Zero(t, m.resident)
 		require.Zero(t, m.dead)
@@ -418,7 +418,7 @@ func TestMapCleanup(t *testing.T) {
 		m.keys[0][1] = 200
 		m.data[0][1] = xor(50)
 
-		removed := m.Cleanup(10, nil) // watermark=10, entry at slot[1] has value 50 (won't expire)
+		removed, _ := m.Cleanup(10, nil) // watermark=10, entry at slot[1] has value 50 (won't expire)
 		require.Equal(t, 0, removed)
 		require.Equal(t, uint32(1), m.dead, "pre-existing tombstone should remain")
 		require.Equal(t, uint32(200), uint32(m.keys[0][1]), "live entry should be untouched")
@@ -469,7 +469,7 @@ func TestMapCleanup(t *testing.T) {
 			m.Load(i, val)
 		}
 
-		removed := m.Cleanup(20, nil) // expire val<=20
+		removed, _ := m.Cleanup(20, nil) // expire val<=20
 		require.Equal(t, 10, removed)
 		require.Equal(t, len(expected), m.Count())
 
@@ -484,7 +484,7 @@ func TestMapCleanup(t *testing.T) {
 		for i := uint64(0); i < 10; i++ {
 			m.Load(i, 10)
 		}
-		removed := m.Cleanup(10, nil) // expire all
+		removed, _ := m.Cleanup(10, nil) // expire all
 		require.Equal(t, 10, removed)
 		require.Equal(t, 0, m.Count())
 
@@ -498,7 +498,7 @@ func TestMapCleanup(t *testing.T) {
 		for i := uint64(110); i < 120; i++ {
 			m.Load(i, 30)
 		}
-		removed = m.Cleanup(20, nil) // expire value<=20
+		removed, _ = m.Cleanup(20, nil) // expire value<=20
 		require.Equal(t, 10, removed)
 		require.Equal(t, 10, m.Count())
 
@@ -546,7 +546,7 @@ func TestMapCleanup(t *testing.T) {
 			}
 		}
 
-		removed := m.Cleanup(50, nil) // expire val <= 50
+		removed, _ := m.Cleanup(50, nil) // expire val <= 50
 		require.Equal(t, n-len(expected), removed)
 		require.Equal(t, len(expected), m.Count())
 
