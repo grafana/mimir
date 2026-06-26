@@ -1,6 +1,34 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
+  name: test-copy-blocks
+  namespace: default
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      containers:
+      - args:
+        - blocks
+        - copy
+        - --destination.backend=gcs
+        - --gcs.destination.bucket-name=destination-bucket
+        - --s3.source.bucket-name=source-bucket
+        - --source.backend=s3
+        image: grafana/mimirtool
+        imagePullPolicy: IfNotPresent
+        name: test-copy-blocks
+        resources:
+          limits:
+            memory: 1Gi
+          requests:
+            cpu: "1"
+            memory: 512Mi
+      restartPolicy: Never
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
   name: test-list-blocks
   namespace: default
 spec:
@@ -51,6 +79,35 @@ spec:
         image: grafana/mimirtool
         imagePullPolicy: IfNotPresent
         name: test-mark-blocks
+        resources:
+          limits:
+            memory: 1Gi
+          requests:
+            cpu: "1"
+            memory: 512Mi
+      restartPolicy: Never
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: test-undelete-blocks
+  namespace: default
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      containers:
+      - args:
+        - blocks
+        - undelete
+        - --backend=s3
+        - --blocks-from=listing
+        - --include-tenants=10428
+        - --s3.bucket-name=blocks-bucket
+        - --s3.endpoint=s3.dualstack.eu-west-1.amazonaws.com
+        image: grafana/mimirtool
+        imagePullPolicy: IfNotPresent
+        name: test-undelete-blocks
         resources:
           limits:
             memory: 1Gi

@@ -808,7 +808,7 @@ How to **investigate**:
         - Find source blocks for the compaction job: search for `msg="compact blocks"` and a mention of the result block ID.
         - Mark the source blocks for no compaction. If you deploy Mimir with Jsonnet, create a Job:
           ```jsonnet
-          $.newMimirtoolBlocksJob('mark-blocks', 'mark', {
+          $.newMimirtoolMarkBlocksJob('mark-blocks', {
             tenant: '<tenant-id>',
             'mark-type': 'no-compact',
             details: 'Leading to out-of-order chunks when compacting with other blocks',
@@ -819,7 +819,7 @@ How to **investigate**:
           ```
           mimirtool blocks mark --backend gcs --gcs.bucket-name <bucket> --mark-type no-compact --tenant <tenant-id> --details "Leading to out-of-order chunks when compacting with other blocks" --blocks "<block-1>,<block-2>..."
           ```
-          For examples using AWS S3 or Azure, see [How to use the mark-blocks tool](#how-to-use-the-mark-blocks-tool).
+          For examples using AWS S3 or Azure, see [How to mark blocks with mimirtool](#how-to-mark-blocks-with-mimirtool).
   - Result block exceeds symbol table maximum size:
     - **How to detect**: Search compactor logs for `symbol table size exceeds`.
     - **What it means**: The compactor successfully validated the source blocks. But the resulting block is impossible to write due to the error above.
@@ -833,7 +833,7 @@ How to **investigate**:
         Where the filenames are the block IDs: `01GZS91PMTAWAWAKRYQVNV1FPP` and `01GZSC5803FN1V1ZFY6Q8PWV1E`
       - Mark the source blocks for no compaction. If you deploy Mimir with Jsonnet, create a Job:
         ```jsonnet
-        $.newMimirtoolBlocksJob('mark-blocks', 'mark', {
+        $.newMimirtoolMarkBlocksJob('mark-blocks', {
           tenant: '<tenant-id>',
           'mark-type': 'no-compact',
           details: 'Result block exceeds symbol table maximum size',
@@ -844,7 +844,7 @@ How to **investigate**:
         ```
         mimirtool blocks mark --backend gcs --gcs.bucket-name <bucket> --mark-type no-compact --tenant <tenant-id> --details "Result block exceeds symbol table maximum size" --blocks "<block-1>,<block-2>..."
         ```
-        For examples using AWS S3 or Azure, see [How to use the mark-blocks tool](#how-to-use-the-mark-blocks-tool).
+        For examples using AWS S3 or Azure, see [How to mark blocks with mimirtool](#how-to-mark-blocks-with-mimirtool).
     - Further reading: [Compaction algorithm](../../references/architecture/components/compactor/#compaction-algorithm).
 
   - Ring failures:
@@ -887,9 +887,9 @@ How to **investigate**:
 How to **fix** it:
 
 - The only long-term solution is to give the compactor more disk space, as it requires more space to fit the largest single job into its disk.
-- If the number of blocks that the compactor is failing to compact is not very significant and you want to skip compacting them and focus on more recent blocks instead, consider marking the affected blocks for no compaction. If you deploy Mimir with Jsonnet, create a Job:
+- If the number of blocks that the compactor is failing to compact is not very significant and you want to skip compacting them and focus on more recent blocks instead, consider marking the affected blocks for no compaction. If you deploy Mimir with Jsonnet, create a Job :
   ```jsonnet
-  $.newMimirtoolBlocksJob('mark-blocks', 'mark', {
+  $.newMimirtoolMarkBlocksJob('mark-blocks', {
     tenant: '<tenant-id>',
     'mark-type': 'no-compact',
     details: 'focus on newer blocks',
@@ -900,7 +900,7 @@ How to **fix** it:
   ```
   mimirtool blocks mark --backend gcs --gcs.bucket-name <bucket> --mark-type no-compact --tenant <tenant-id> --details "focus on newer blocks" --blocks "<block 1>,<block 2>..."
   ```
-  For examples using AWS S3 or Azure, see [How to use the mark-blocks tool](#how-to-use-the-mark-blocks-tool).
+  For examples using AWS S3 or Azure, see [How to mark blocks with mimirtool](#how-to-mark-blocks-with-mimirtool).
 
 ### MimirCompactorSkippedBlocks
 
@@ -3426,7 +3426,7 @@ However the **queries will return partial data**, due to all the ingested sample
 
 ## Manual procedures
 
-### How to use the mark-blocks tool
+### How to mark blocks with mimirtool
 
 The `mimirtool blocks mark` command creates or removes markers for TSDB blocks in object storage. This is commonly needed for:
 
@@ -3435,14 +3435,14 @@ The `mimirtool blocks mark` command creates or removes markers for TSDB blocks i
 
 #### Jsonnet
 
-If you deploy Mimir with the [Jsonnet library](../tools/mimirtool/), you can run `mimirtool blocks mark` as a Kubernetes Job with `newMimirtoolBlocksJob`. The object storage (bucket) configuration is picked up automatically from your cluster's storage configuration, so you only need to provide the marking arguments:
+If you deploy Mimir with the [Jsonnet library](../../tools/mimirtool/), you can run `mimirtool blocks mark` as a Kubernetes Job with `newMimirtoolMarkBlocksJob`. The object storage (bucket) configuration is picked up automatically from your cluster's storage configuration, so you only need to provide the marking arguments:
 
 ```jsonnet
 local mimir = import 'mimir/mimir.libsonnet';
 
 mimir {
   mark_blocks_job:
-    $.newMimirtoolBlocksJob('mark-blocks', 'mark', {
+    $.newMimirtoolMarkBlocksJob('mark-blocks', {
       tenant: '<tenant-id>',
       'mark-type': '<deletion|no-compact>',
       details: '<reason for marking>',
@@ -3454,7 +3454,7 @@ mimir {
 
 #### Command line
 
-The `mimirtool blocks mark` command is part of [mimirtool](../tools/mimirtool/). Build it with `go build ./cmd/mimirtool` in the Mimir repository, or use the pre-built binary from Mimir releases.
+The `mimirtool blocks mark` command is part of [mimirtool](../../tools/mimirtool/). Build it with `go build ./cmd/mimirtool` in the Mimir repository, or use the pre-built binary from Mimir releases.
 
 #### Google Cloud Storage (GCS)
 

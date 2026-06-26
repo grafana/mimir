@@ -14,18 +14,30 @@ blockTools {
     mimirtool: 'grafana/mimirtool',
   },
 
-  // Mark a couple of blocks for no-compaction. The bucket configuration is picked up automatically.
   mark_blocks_test_job:
-    $.newMimirtoolBlocksJob('test-mark-blocks', 'mark', {
+    $.newMimirtoolMarkBlocksJob('test-mark-blocks', {
       tenant: '10428',
       'mark-type': 'no-compact',
       details: 'Corrupted blocks',
       blocks: '01FSCTA0A4M1YQHZQ4B2VTGS2R,01FSCTA0A4M1YQHZQ4B2VTGS7Z',
     }),
 
-  // List the blocks of a tenant. The bucket configuration is picked up automatically.
   list_blocks_test_job:
-    $.newMimirtoolBlocksJob('test-list-blocks', 'list', {
+    $.newMimirtoolListBlocksJob('test-list-blocks', {
       user: '10428',
+    }),
+
+  undelete_blocks_test_job:
+    $.newMimirtoolUndeleteBlocksJob('test-undelete-blocks', {
+      'blocks-from': 'listing',
+      'include-tenants': '10428',
+    }),
+
+  copy_blocks_test_job:
+    $.newMimirtoolBlocksJob('test-copy-blocks', 'copy', {
+      'source.backend': 's3',
+      's3.source.bucket-name': 'source-bucket',
+      'destination.backend': 'gcs',
+      'gcs.destination.bucket-name': 'destination-bucket',
     }),
 }
