@@ -833,15 +833,18 @@ func (c *CacheOperator) Finalize(ctx context.Context) (*types.OperatorEvaluation
 	}
 
 	queryDetails := querydetails.QueryDetailsFromContext(ctx)
-	if queryDetails != nil {
-		for _, e := range c.extents.inDesiredTimeRange {
-			if size, cacheHit := e.GetEstimatedSize(); cacheHit {
+
+	for _, e := range c.extents.inDesiredTimeRange {
+		if size, cacheHit := e.GetEstimatedSize(); cacheHit {
+			if queryDetails != nil {
 				queryDetails.ResultsCacheHitBytes += int(size)
-				c.metrics.UsedExtents.Inc()
-			} else {
-				queryDetails.ResultsCacheMissBytes += int(size)
-				c.metrics.EvaluatedExtents.Inc()
 			}
+			c.metrics.UsedExtents.Inc()
+		} else {
+			if queryDetails != nil {
+				queryDetails.ResultsCacheMissBytes += int(size)
+			}
+			c.metrics.EvaluatedExtents.Inc()
 		}
 	}
 
