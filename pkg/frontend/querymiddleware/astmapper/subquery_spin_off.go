@@ -71,7 +71,12 @@ func (m *subquerySpinOffMapper) MapExpr(ctx context.Context, expr parser.Expr) (
 			return expr, true, nil
 		}
 		m.stats.AddDownstreamQuery()
-		return m.wrapper.WrapDownstreamQuery(expr), true, nil
+		wrapped, err := m.wrapper.WrapDownstreamQuery(expr)
+		if err != nil {
+			return nil, false, err
+		}
+
+		return wrapped, true, nil
 	}
 
 	switch e := expr.(type) {
@@ -105,7 +110,11 @@ func (m *subquerySpinOffMapper) MapExpr(ctx context.Context, expr parser.Expr) (
 				return downstreamQuery(expr)
 			}
 
-			e.Args[lastArgIdx] = m.wrapper.WrapSubquery(sq, step)
+			e.Args[lastArgIdx], err = m.wrapper.WrapSubquery(sq, step)
+			if err != nil {
+				return nil, false, err
+			}
+
 			m.stats.AddSpunOffSubquery()
 			return e, true, nil
 		}
