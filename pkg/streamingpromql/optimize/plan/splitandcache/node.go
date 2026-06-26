@@ -223,6 +223,7 @@ func NewCacheMaterializer(baseCache cache.Cache, cachePrefixGenerator caching.Pr
 			caching.VersioningAndItemTypePrefixGenerator(cachePrefixGenerator, cacheVersion, "MQEQR"),
 		)
 
+		// Only register the metrics if caching is enabled, to avoid conflicting with the query-frontend middleware doing the same thing.
 		m.metrics = NewResultsCacheMetrics("query_range", reg)
 	}
 
