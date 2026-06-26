@@ -1664,13 +1664,6 @@ func TestSingleClusterPartitionReader_ConsumeAtStartup(t *testing.T) {
 		for concurrencyName, concurrencyVariant := range concurrencyVariants {
 			t.Run(concurrencyName, func(t *testing.T) {
 				synctest.Test(t, func(t *testing.T) {
-					// Today this flakes: on some interleavings, when the reader shuts down it closes the franz-go
-					// client, and the client's Close->stopSession blocks forever because franz-go busy-re-queues the
-					// unresolved offset loads instead of draining them. So the service never reaches Failed and
-					// synctest's clock freezes. In franz-go the Client should not re-queue offset loads once the
-					// session context is done.
-					t.Skip("franz-go: the test requires a fix in the library")
-
 					ctx := t.Context()
 
 					var vnet kfake.VirtualNetwork
