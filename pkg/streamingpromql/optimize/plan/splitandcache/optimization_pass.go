@@ -127,7 +127,7 @@ func (o *OptimizationPass) applyCaching(ctx context.Context, node planning.Node,
 	}
 
 	if !o.modifiersAllowCaching(node, timeRange, freshnessThreshold) {
-		spanLogger.DebugLog("msg", "range query not cacheable: it contains modifers that prevent caching")
+		spanLogger.DebugLog("msg", "range query not cacheable: it contains modifiers that prevent caching")
 		o.cacheSkippedCounter.WithLabelValues(NotCachableReasonModifiersNotCachable).Inc()
 		return node, nil
 	}
