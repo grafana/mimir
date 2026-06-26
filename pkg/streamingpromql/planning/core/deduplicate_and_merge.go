@@ -3,6 +3,7 @@
 package core
 
 import (
+	"context"
 	"time"
 
 	"github.com/gogo/protobuf/proto"
@@ -57,8 +58,8 @@ func (d *DeduplicateAndMerge) MinimumRequiredPlanVersion(types.QueryTimeRange) (
 	return planning.QueryPlanVersionZero, nil
 }
 
-func MaterializeDeduplicateAndMerge(d *DeduplicateAndMerge, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
-	inner, err := materializer.ConvertNodeToInstantVectorOperator(d.Inner, timeRange)
+func MaterializeDeduplicateAndMerge(ctx context.Context, d *DeduplicateAndMerge, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
+	inner, err := materializer.ConvertNodeToInstantVectorOperator(ctx, d.Inner, timeRange)
 	if err != nil {
 		return nil, err
 	}

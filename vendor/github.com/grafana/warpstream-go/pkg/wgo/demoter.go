@@ -125,7 +125,7 @@ func NewDemoter(inner PartitionAssignmentStrategy, tracker AgentStatsReader, hea
 	}
 
 	promauto.With(reg).NewGaugeFunc(prometheus.GaugeOpts{
-		Name: "demoter_demoted_agents",
+		Name: "warpstream_demoter_demoted_agents",
 		Help: "Number of Warpstream agents currently demoted by the Demoter.",
 	}, d.demotedAgentsCount)
 	newDemotionSuppressedMetric(d, reg)
@@ -332,6 +332,14 @@ func (d *Demoter) Refresh(currentAgents []int32) {
 }
 
 func (d *Demoter) demotedAgentsCount() float64 {
+	// While demotion is suppressed isDemoted treats every agent as non-demoted,
+	// so no agent is actually being routed around: report 0 rather than the
+	// stale lastDemotedProbe entries left from before suppression tripped, which
+	// would otherwise contradict demoter_demotion_suppressed.
+	clusterStats, hasClusterStats := d.tracker.ClusterStats(d.now(), d.healthCfg.SlowMultiplier, d.healthCfg.FaultyThreshold)
+	if suppressed, _ := d.isDemotionSuppressed(clusterStats, hasClusterStats); suppressed {
+		return 0
+	}
 	d.lastDemotedProbeMu.Lock()
 	defer d.lastDemotedProbeMu.Unlock()
 	return float64(len(d.lastDemotedProbe))
@@ -365,7 +373,7 @@ func newDemotionSuppressedMetric(d *Demoter, reg prometheus.Registerer) *demotio
 	m := &demotionSuppressedMetric{
 		d: d,
 		desc: prometheus.NewDesc(
-			"demoter_demotion_suppressed",
+			"warpstream_demoter_demotion_suppressed",
 			"Whether the Demoter is currently suppressing all demotions (1) and why, broken down by reason; 0 for inactive reasons.",
 			[]string{"reason"}, nil,
 		),

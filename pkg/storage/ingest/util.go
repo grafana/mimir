@@ -200,6 +200,10 @@ func commonKafkaClientOptions(cfg KafkaConfig, metrics *kprom.Metrics, logger lo
 		opts = append(opts, kgo.DialTLSConfig(tlsConfig))
 	}
 
+	if cfg.Dialer != nil {
+		opts = append(opts, kgo.Dialer(cfg.Dialer))
+	}
+
 	opts = append(opts, kgo.WithHooks(newSampledOnlyTracer()))
 
 	if metrics != nil {

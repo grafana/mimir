@@ -1069,7 +1069,7 @@ spec:
         - -distributor.write-compartment-id=0
         - -ingest-storage.enabled=true
         - -ingest-storage.ingestion-partition-tenant-shard-size=1
-        - -ingest-storage.kafka.address=kafka.default.svc.cluster.local.:9092
+        - -ingest-storage.kafka.address=kafka-wc-0.default.svc.cluster.local.:9092
         - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
         - -ingest-storage.kafka.producer-record-version=2
         - -ingest-storage.kafka.topic=ingest-rc-<read-compartment-id>
@@ -1096,7 +1096,7 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "8"
-        image: grafana/mimir:3.1.1
+        image: grafana/mimir:3.1.2
         imagePullPolicy: IfNotPresent
         name: distributor
         ports:
@@ -1205,7 +1205,7 @@ spec:
         - -distributor.write-compartment-id=1
         - -ingest-storage.enabled=true
         - -ingest-storage.ingestion-partition-tenant-shard-size=1
-        - -ingest-storage.kafka.address=kafka.default.svc.cluster.local.:9092
+        - -ingest-storage.kafka.address=kafka-wc-1.default.svc.cluster.local.:9092
         - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
         - -ingest-storage.kafka.producer-record-version=2
         - -ingest-storage.kafka.topic=ingest-rc-<read-compartment-id>
@@ -1232,7 +1232,7 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "8"
-        image: grafana/mimir:3.1.1
+        image: grafana/mimir:3.1.2
         imagePullPolicy: IfNotPresent
         name: distributor
         ports:
@@ -1341,7 +1341,7 @@ spec:
         - -distributor.write-compartment-id=0
         - -ingest-storage.enabled=true
         - -ingest-storage.ingestion-partition-tenant-shard-size=1
-        - -ingest-storage.kafka.address=kafka.default.svc.cluster.local.:9092
+        - -ingest-storage.kafka.address=kafka-wc-0.default.svc.cluster.local.:9092
         - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
         - -ingest-storage.kafka.producer-record-version=2
         - -ingest-storage.kafka.topic=ingest-rc-<read-compartment-id>
@@ -1368,7 +1368,7 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "8"
-        image: grafana/mimir:3.1.1
+        image: grafana/mimir:3.1.2
         imagePullPolicy: IfNotPresent
         name: distributor
         ports:
@@ -1477,7 +1477,7 @@ spec:
         - -distributor.write-compartment-id=1
         - -ingest-storage.enabled=true
         - -ingest-storage.ingestion-partition-tenant-shard-size=1
-        - -ingest-storage.kafka.address=kafka.default.svc.cluster.local.:9092
+        - -ingest-storage.kafka.address=kafka-wc-1.default.svc.cluster.local.:9092
         - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
         - -ingest-storage.kafka.producer-record-version=2
         - -ingest-storage.kafka.topic=ingest-rc-<read-compartment-id>
@@ -1504,7 +1504,7 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "8"
-        image: grafana/mimir:3.1.1
+        image: grafana/mimir:3.1.2
         imagePullPolicy: IfNotPresent
         name: distributor
         ports:
@@ -1618,7 +1618,7 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "5"
-        image: grafana/mimir:3.1.1
+        image: grafana/mimir:3.1.2
         imagePullPolicy: IfNotPresent
         name: querier
         ports:
@@ -1679,11 +1679,14 @@ spec:
     spec:
       containers:
       - args:
+        - -compartments.enabled=true
+        - -compartments.read.num-compartments=2
+        - -compartments.write.num-compartments=2
         - -ingest-storage.enabled=true
-        - -ingest-storage.kafka.address=kafka.default.svc.cluster.local.:9092
+        - -ingest-storage.kafka.address=kafka-wc-<write-compartment-id>.default.svc.cluster.local.:9092
         - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
         - -ingest-storage.kafka.last-produced-offset-poll-interval=500ms
-        - -ingest-storage.kafka.topic=ingest
+        - -ingest-storage.kafka.topic=ingest-rc-<read-compartment-id>
         - -ingester.partition-ring.prefix=
         - -query-frontend.cache-results=true
         - -query-frontend.max-cache-freshness=10m
@@ -1703,7 +1706,7 @@ spec:
         - -shutdown-delay=90s
         - -target=query-frontend
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.1.1
+        image: grafana/mimir:3.1.2
         imagePullPolicy: IfNotPresent
         name: query-frontend
         ports:
@@ -1780,7 +1783,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=query-scheduler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.1.1
+        image: grafana/mimir:3.1.2
         imagePullPolicy: IfNotPresent
         name: query-scheduler
         ports:
@@ -1937,7 +1940,7 @@ spec:
         - -store-gateway.tenant-shard-size=3
         - -target=ruler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.1.1
+        image: grafana/mimir:3.1.2
         imagePullPolicy: IfNotPresent
         name: ruler
         ports:
@@ -2044,7 +2047,7 @@ spec:
         - -target=querier
         - -usage-stats.installation-mode=jsonnet
         env: []
-        image: grafana/mimir:3.1.1
+        image: grafana/mimir:3.1.2
         imagePullPolicy: IfNotPresent
         name: ruler-querier
         ports:
@@ -2105,11 +2108,14 @@ spec:
     spec:
       containers:
       - args:
+        - -compartments.enabled=true
+        - -compartments.read.num-compartments=2
+        - -compartments.write.num-compartments=2
         - -ingest-storage.enabled=true
-        - -ingest-storage.kafka.address=kafka.default.svc.cluster.local.:9092
+        - -ingest-storage.kafka.address=kafka-wc-<write-compartment-id>.default.svc.cluster.local.:9092
         - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
         - -ingest-storage.kafka.last-produced-offset-poll-interval=500ms
-        - -ingest-storage.kafka.topic=ingest
+        - -ingest-storage.kafka.topic=ingest-rc-<read-compartment-id>
         - -ingester.partition-ring.prefix=
         - -querier.ring.prefix=ruler-querier/
         - -query-frontend.cache-results=false
@@ -2135,7 +2141,7 @@ spec:
         - -shutdown-delay=90s
         - -target=query-frontend
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.1.1
+        image: grafana/mimir:3.1.2
         imagePullPolicy: IfNotPresent
         name: ruler-query-frontend
         ports:
@@ -2212,7 +2218,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=query-scheduler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.1.1
+        image: grafana/mimir:3.1.2
         imagePullPolicy: IfNotPresent
         name: ruler-query-scheduler
         ports:
@@ -2286,7 +2292,7 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: status.podIP
-        image: grafana/mimir:3.1.1
+        image: grafana/mimir:3.1.2
         imagePullPolicy: IfNotPresent
         name: alertmanager
         ports:
@@ -2389,7 +2395,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=compactor
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.1.1
+        image: grafana/mimir:3.1.2
         imagePullPolicy: IfNotPresent
         name: compactor
         ports:
@@ -2520,13 +2526,13 @@ spec:
         - -distributor.ingestion-tenant-shard-size=3
         - -ingest-storage.enabled=true
         - -ingest-storage.ingestion-partition-tenant-shard-size=1
-        - -ingest-storage.kafka.address=kafka.default.svc.cluster.local.:9092
+        - -ingest-storage.kafka.address=kafka-wc-<write-compartment-id>.default.svc.cluster.local.:9092
         - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
         - -ingest-storage.kafka.client-rack=zone-a
         - -ingest-storage.kafka.consumer-group-offset-commit-interval=5s
         - -ingest-storage.kafka.ingestion-concurrency-estimated-bytes-per-sample=200
         - -ingest-storage.kafka.last-produced-offset-poll-interval=500ms
-        - -ingest-storage.kafka.topic=ingest-rc-<read-compartment-id>
+        - -ingest-storage.kafka.topic=ingest-rc-0
         - -ingester.max-global-metadata-per-metric=10
         - -ingester.max-global-metadata-per-user=30000
         - -ingester.max-global-series-per-user=150000
@@ -2564,7 +2570,7 @@ spec:
           value: 1Gi
         - name: Z
           value: "123"
-        image: grafana/mimir:3.1.1
+        image: grafana/mimir:3.1.2
         imagePullPolicy: IfNotPresent
         name: ingester
         ports:
@@ -2700,13 +2706,13 @@ spec:
         - -distributor.ingestion-tenant-shard-size=3
         - -ingest-storage.enabled=true
         - -ingest-storage.ingestion-partition-tenant-shard-size=1
-        - -ingest-storage.kafka.address=kafka.default.svc.cluster.local.:9092
+        - -ingest-storage.kafka.address=kafka-wc-<write-compartment-id>.default.svc.cluster.local.:9092
         - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
         - -ingest-storage.kafka.client-rack=zone-a
         - -ingest-storage.kafka.consumer-group-offset-commit-interval=5s
         - -ingest-storage.kafka.ingestion-concurrency-estimated-bytes-per-sample=200
         - -ingest-storage.kafka.last-produced-offset-poll-interval=500ms
-        - -ingest-storage.kafka.topic=ingest-rc-<read-compartment-id>
+        - -ingest-storage.kafka.topic=ingest-rc-1
         - -ingester.max-global-metadata-per-metric=10
         - -ingester.max-global-metadata-per-user=30000
         - -ingester.max-global-series-per-user=150000
@@ -2744,7 +2750,7 @@ spec:
           value: 1Gi
         - name: Z
           value: "123"
-        image: grafana/mimir:3.1.1
+        image: grafana/mimir:3.1.2
         imagePullPolicy: IfNotPresent
         name: ingester
         ports:
@@ -2876,13 +2882,13 @@ spec:
         - -distributor.ingestion-tenant-shard-size=3
         - -ingest-storage.enabled=true
         - -ingest-storage.ingestion-partition-tenant-shard-size=1
-        - -ingest-storage.kafka.address=kafka.default.svc.cluster.local.:9092
+        - -ingest-storage.kafka.address=kafka-wc-<write-compartment-id>.default.svc.cluster.local.:9092
         - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
         - -ingest-storage.kafka.client-rack=zone-b
         - -ingest-storage.kafka.consumer-group-offset-commit-interval=5s
         - -ingest-storage.kafka.ingestion-concurrency-estimated-bytes-per-sample=200
         - -ingest-storage.kafka.last-produced-offset-poll-interval=500ms
-        - -ingest-storage.kafka.topic=ingest-rc-<read-compartment-id>
+        - -ingest-storage.kafka.topic=ingest-rc-0
         - -ingester.max-global-metadata-per-metric=10
         - -ingester.max-global-metadata-per-user=30000
         - -ingester.max-global-series-per-user=150000
@@ -2914,7 +2920,7 @@ spec:
           value: all-ingesters
         - name: GOMAXPROCS
           value: "9"
-        image: grafana/mimir:3.1.1
+        image: grafana/mimir:3.1.2
         imagePullPolicy: IfNotPresent
         name: ingester
         ports:
@@ -3046,13 +3052,13 @@ spec:
         - -distributor.ingestion-tenant-shard-size=3
         - -ingest-storage.enabled=true
         - -ingest-storage.ingestion-partition-tenant-shard-size=1
-        - -ingest-storage.kafka.address=kafka.default.svc.cluster.local.:9092
+        - -ingest-storage.kafka.address=kafka-wc-<write-compartment-id>.default.svc.cluster.local.:9092
         - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
         - -ingest-storage.kafka.client-rack=zone-b
         - -ingest-storage.kafka.consumer-group-offset-commit-interval=5s
         - -ingest-storage.kafka.ingestion-concurrency-estimated-bytes-per-sample=200
         - -ingest-storage.kafka.last-produced-offset-poll-interval=500ms
-        - -ingest-storage.kafka.topic=ingest-rc-<read-compartment-id>
+        - -ingest-storage.kafka.topic=ingest-rc-1
         - -ingester.max-global-metadata-per-metric=10
         - -ingester.max-global-metadata-per-user=30000
         - -ingester.max-global-series-per-user=150000
@@ -3084,7 +3090,7 @@ spec:
           value: all-ingesters
         - name: GOMAXPROCS
           value: "9"
-        image: grafana/mimir:3.1.1
+        image: grafana/mimir:3.1.2
         imagePullPolicy: IfNotPresent
         name: ingester
         ports:
@@ -3473,7 +3479,7 @@ spec:
           value: "5"
         - name: GOMEMLIMIT
           value: "12884901888"
-        image: grafana/mimir:3.1.1
+        image: grafana/mimir:3.1.2
         imagePullPolicy: IfNotPresent
         name: store-gateway
         ports:
@@ -3619,7 +3625,7 @@ spec:
           value: "5"
         - name: GOMEMLIMIT
           value: "12884901888"
-        image: grafana/mimir:3.1.1
+        image: grafana/mimir:3.1.2
         imagePullPolicy: IfNotPresent
         name: store-gateway
         ports:
@@ -3763,7 +3769,7 @@ spec:
           value: "5"
         - name: GOMEMLIMIT
           value: "12884901888"
-        image: grafana/mimir:3.1.1
+        image: grafana/mimir:3.1.2
         imagePullPolicy: IfNotPresent
         name: store-gateway
         ports:

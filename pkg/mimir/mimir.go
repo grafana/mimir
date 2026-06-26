@@ -21,6 +21,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/gorilla/mux"
+	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/clusterutil"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/grpcutil"
@@ -299,23 +300,28 @@ func (c *Config) Validate(log log.Logger) error {
 		if c.IngestStorage.Migration.DistributorSendToIngestersEnabled {
 			return errors.New("compartments cannot be enabled together with ingest storage migration's distributor-send-to-ingesters")
 		}
-		// Only distributors and ingesters currently support a topic parameterised by read compartment
-		// when compartments are enabled.
-		if c.isDistributorEnabled() || c.isIngesterEnabled() {
+		// The distributor produces to every read compartment's topic, and the query-frontend monitors every
+		// read compartment's topic to enforce strong read consistency, so both need the topic parameterised
+		// by read compartment. An ingester consumes a single read compartment's topic, so it may use either
+		// the placeholder (resolved at runtime from -ingester.read-compartment-id) or an already-resolved
+		// explicit topic.
+		if c.isDistributorEnabled() || c.isQueryFrontendEnabled() {
 			if !strings.Contains(c.IngestStorage.KafkaConfig.Topic, compartments.ReadCompartmentIDPlaceholder) {
-				return fmt.Errorf("when compartments are enabled, -ingest-storage.kafka.topic must contain the %q placeholder for the distributor and ingester", compartments.ReadCompartmentIDPlaceholder)
+				return fmt.Errorf("when compartments are enabled, -ingest-storage.kafka.topic must contain the %q placeholder for the distributor and query-frontend", compartments.ReadCompartmentIDPlaceholder)
 			}
 		}
-		// The ingester consumes its partition from every write compartment's Kafka cluster, resolving each
-		// configured address per write compartment. With more than one write compartment and an address
-		// without the placeholder, every compartment resolves to the same cluster, so the ingester would
-		// consume each partition once per write compartment and duplicate samples. A single write
+		// The ingester consumes its partition from every write compartment's Kafka cluster, and the
+		// query-frontend monitors the last produced offsets of every write compartment's Kafka cluster,
+		// both resolving each configured address per write compartment. With more than one write
+		// compartment and an address without the placeholder, every compartment resolves to the same
+		// cluster: the ingester would consume each partition once per write compartment and duplicate
+		// samples, and the query-frontend would monitor the same cluster repeatedly. A single write
 		// compartment (or other components, like the distributor, that target just one cluster) doesn't
 		// need the placeholder.
-		if c.isIngesterEnabled() && c.Compartments.Write.NumCompartments > 1 {
+		if (c.isIngesterEnabled() || c.isQueryFrontendEnabled()) && c.Compartments.Write.NumCompartments > 1 {
 			for _, addr := range c.IngestStorage.KafkaConfig.Address {
 				if !strings.Contains(addr, compartments.WriteCompartmentIDPlaceholder) {
-					return fmt.Errorf("when compartments are enabled with more than one write compartment, every -ingest-storage.kafka.address must contain the %q placeholder for the ingester", compartments.WriteCompartmentIDPlaceholder)
+					return fmt.Errorf("when compartments are enabled with more than one write compartment, every -ingest-storage.kafka.address must contain the %q placeholder for the ingester and query-frontend", compartments.WriteCompartmentIDPlaceholder)
 				}
 			}
 		}
@@ -366,10 +372,10 @@ func (c *Config) Validate(log log.Logger) error {
 	if err := c.Frontend.Validate(); err != nil {
 		return errors.Wrap(err, "invalid query-frontend config")
 	}
-	if err := c.StoreGateway.Validate(c.LimitsConfig); err != nil {
+	if err := c.StoreGateway.Validate(c.LimitsConfig, c.Compartments); err != nil {
 		return errors.Wrap(err, "invalid store-gateway config")
 	}
-	if err := c.Compactor.Validate(log); err != nil {
+	if err := c.Compactor.Validate(c.Compartments, log); err != nil {
 		return errors.Wrap(err, "invalid compactor config")
 	}
 	if err := c.CompactorScheduler.Validate(); err != nil {
@@ -907,49 +913,50 @@ type Mimir struct {
 	ServiceMap    map[string]services.Service
 	ModuleManager *modules.Manager
 
-	API                              *api.API
-	Server                           *server.Server
-	ServerMetrics                    *server.Metrics
-	IngesterRing                     *ring.Ring
-	IngesterPartitionRingWatchers    *ingest.PartitionRingWatchers
-	IngesterPartitionInstanceRings   *ingest.PartitionInstanceRings
-	TenantLimits                     validation.TenantLimits
-	Overrides                        *validation.Overrides
-	QueryLimitsProvider              streamingpromql.QueryLimitsProvider
-	ActiveGroupsCleanup              *util.ActiveGroupsCleanupService
-	Distributor                      *distributor.Distributor
-	Ingester                         *ingester.Ingester
-	RuntimeConfig                    *runtimeconfig.Manager
-	QuerierQueryable                 prom_storage.SampleAndChunkQueryable
-	ExemplarQueryable                prom_storage.ExemplarQueryable
-	StoreQueryable                   prom_storage.Queryable
-	MetadataSupplier                 querier.MetadataSupplier
-	QuerierEngine                    promql.QueryEngine
-	QuerierLifecycler                *ring.BasicLifecycler
-	QuerierRing                      *ring.Ring
-	QuerierStreamingEngine           *streamingpromql.Engine // The MQE instance in QuerierEngine (without fallback wrapper), or nil if MQE is disabled.
-	QueryFrontendStreamingEngine     *streamingpromql.Engine // The MQE instance used by the query-frontend (without fallback wrapper), or nil if MQE is disabled.
-	QueryFrontendTripperware         querymiddleware.Tripperware
-	QueryFrontendTopicOffsetsReaders map[string]*ingest.TopicOffsetsReader
-	QueryFrontendCodec               querymiddleware.Codec
-	Ruler                            *ruler.Ruler
-	RulerStorage                     rulestore.RuleStore
-	Alertmanager                     *alertmanager.MultitenantAlertmanager
-	Compactor                        *compactor.MultitenantCompactor
-	CompactorScheduler               *compactorscheduler.Scheduler
-	StoreGateway                     *storegateway.StoreGateway
-	MemberlistKV                     *memberlist.KVInitService
-	ActivityTracker                  *activitytracker.ActivityTracker
-	Vault                            *vault.Vault
-	UsageStatsReporter               *usagestats.Reporter
-	UsageTracker                     *usagetracker.UsageTracker
-	UsageTrackerPartitionRing        *ring.MultiPartitionInstanceRing
-	UsageTrackerInstanceRing         *ring.Ring
-	BlockBuilder                     *blockbuilder.BlockBuilder
-	BlockBuilderScheduler            *blockbuilderscheduler.BlockBuilderScheduler
-	ContinuousTestManager            *continuoustest.Manager
-	BuildInfoHandler                 http.Handler
-	CostAttributionManager           *costattribution.Manager
+	API                            *api.API
+	Server                         *server.Server
+	ServerMetrics                  *server.Metrics
+	IngesterRing                   *ring.Ring
+	IngesterPartitionRingWatchers  *ingest.PartitionRingWatchers
+	IngesterPartitionInstanceRings *ingest.PartitionInstanceRings
+	TenantLimits                   validation.TenantLimits
+	Overrides                      *validation.Overrides
+	QueryLimitsProvider            streamingpromql.QueryLimitsProvider
+	ActiveGroupsCleanup            *util.ActiveGroupsCleanupService
+	Distributor                    *distributor.Distributor
+	Ingester                       *ingester.Ingester
+	RuntimeConfig                  *runtimeconfig.Manager
+	QuerierQueryable               prom_storage.SampleAndChunkQueryable
+	ExemplarQueryable              prom_storage.ExemplarQueryable
+	StoreQueryable                 prom_storage.Queryable
+	MetadataSupplier               querier.MetadataSupplier
+	QuerierEngine                  promql.QueryEngine
+	QuerierLifecycler              *ring.BasicLifecycler
+	QuerierRing                    *ring.Ring
+	QuerierStreamingEngine         *streamingpromql.Engine // The MQE instance in QuerierEngine (without fallback wrapper), or nil if MQE is disabled.
+	QueryFrontendStreamingEngine   *streamingpromql.Engine // The MQE instance used by the query-frontend (without fallback wrapper), or nil if MQE is disabled.
+	QueryFrontendTripperware       querymiddleware.Tripperware
+	QueryFrontendOffsetsReader     querymiddleware.ReadConsistencyOffsetsReader
+	QueryFrontendCodec             querymiddleware.Codec
+	QueryFrontendCacheClient       cache.Cache
+	Ruler                          *ruler.Ruler
+	RulerStorage                   rulestore.RuleStore
+	Alertmanager                   *alertmanager.MultitenantAlertmanager
+	Compactor                      *compactor.MultitenantCompactor
+	CompactorScheduler             *compactorscheduler.Scheduler
+	StoreGateway                   *storegateway.StoreGateway
+	MemberlistKV                   *memberlist.KVInitService
+	ActivityTracker                *activitytracker.ActivityTracker
+	Vault                          *vault.Vault
+	UsageStatsReporter             *usagestats.Reporter
+	UsageTracker                   *usagetracker.UsageTracker
+	UsageTrackerPartitionRing      *ring.MultiPartitionInstanceRing
+	UsageTrackerInstanceRing       *ring.Ring
+	BlockBuilder                   *blockbuilder.BlockBuilder
+	BlockBuilderScheduler          *blockbuilderscheduler.BlockBuilderScheduler
+	ContinuousTestManager          *continuoustest.Manager
+	BuildInfoHandler               http.Handler
+	CostAttributionManager         *costattribution.Manager
 
 	// Extractors are used by queriers to extract HTTP headers / metadata from incoming requests.
 	// We use an abstraction here to support both httpgrpc requests and Protobuf requests.

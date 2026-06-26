@@ -3,6 +3,7 @@
 package remoteexec
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"time"
@@ -176,7 +177,7 @@ func NewRemoteExecutionGroupMaterializer(groupEvaluatorFactory GroupEvaluatorFac
 	return &RemoteExecutionGroupMaterializer{groupEvaluatorFactory: groupEvaluatorFactory}
 }
 
-func (m *RemoteExecutionGroupMaterializer) Materialize(n planning.Node, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters, _ planning.RangeParams) (planning.OperatorFactory, error) {
+func (m *RemoteExecutionGroupMaterializer) Materialize(ctx context.Context, n planning.Node, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters, overrideRangeParams planning.RangeParams) (planning.OperatorFactory, error) {
 	g, ok := n.(*RemoteExecutionGroup)
 	if !ok {
 		return nil, fmt.Errorf("expected node of type RemoteExecutionGroup, got %T", n)
@@ -247,7 +248,7 @@ func NewRemoteExecutionConsumerMaterializer() planning.NodeMaterializer {
 	return &RemoteExecutionConsumerMaterializer{}
 }
 
-func (m *RemoteExecutionConsumerMaterializer) Materialize(n planning.Node, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters, overrideRangeParams planning.RangeParams) (planning.OperatorFactory, error) {
+func (m *RemoteExecutionConsumerMaterializer) Materialize(ctx context.Context, n planning.Node, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters, overrideRangeParams planning.RangeParams) (planning.OperatorFactory, error) {
 	if overrideRangeParams.IsSet {
 		return nil, fmt.Errorf("overrideRangeParams is not supported for RemoteExecutionConsumerMaterializer")
 	}
@@ -257,7 +258,7 @@ func (m *RemoteExecutionConsumerMaterializer) Materialize(n planning.Node, mater
 		return nil, fmt.Errorf("expected node of type RemoteExecutionConsumer, got %T", n)
 	}
 
-	f, err := materializer.FactoryForNode(c.Group, timeRange)
+	f, err := materializer.FactoryForNode(ctx, c.Group, timeRange)
 	if err != nil {
 		return nil, err
 	}

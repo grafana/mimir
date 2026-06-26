@@ -9,6 +9,37 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 )
 
+func (c *Cache) Child(idx int) planning.Node {
+	if idx != 0 {
+		panic(fmt.Sprintf("node of type Cache supports 1 child, but attempted to get child at index %d", idx))
+	}
+	return c.Inner
+}
+
+func (c *Cache) ChildCount() int {
+	return 1
+}
+
+func (c *Cache) SetChildren(children []planning.Node) error {
+	if len(children) != 1 {
+		return fmt.Errorf("node of type Cache expects one child, but got %d", len(children))
+	}
+	c.Inner = children[0]
+	return nil
+}
+
+func (c *Cache) ReplaceChild(idx int, node planning.Node) error {
+	if idx != 0 {
+		return fmt.Errorf("node of type Cache supports 1 child, but attempted to replace child at index %d", idx)
+	}
+	c.Inner = node
+	return nil
+}
+
+func (c *Cache) ChildrenLabels() []string {
+	return []string{""}
+}
+
 func (t *TimeRangeSplit) Child(idx int) planning.Node {
 	if idx != 0 {
 		panic(fmt.Sprintf("node of type TimeRangeSplit supports 1 child, but attempted to get child at index %d", idx))

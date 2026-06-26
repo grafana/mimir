@@ -4,7 +4,6 @@ package ingest
 
 import (
 	"context"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"math/rand/v2"
@@ -1592,31 +1591,15 @@ func getProduceRequestHighestTimestamp(req *kmsg.ProduceRequest) (time.Time, err
 				return time.Time{}, err
 			}
 
-			// Decompress the batch of records.
-			records, err := kgo.DefaultDecompressor().Decompress(
-				batch.Records,
-				kgo.CompressionCodecType(batch.Attributes&0x0007),
-			)
-			if err != nil {
-				return time.Time{}, err
-			}
-
-			for range batch.NumRecords {
-				// Parse the record.
-				rec := kmsg.NewRecord()
-				err := rec.ReadFrom(records)
-				if err != nil {
-					return time.Time{}, err
-				}
-
-				recordTimestamp := time.UnixMilli(batch.FirstTimestamp + rec.TimestampDelta64)
-				if highestTimestamp.IsZero() || recordTimestamp.After(highestTimestamp) {
-					highestTimestamp = recordTimestamp
-				}
-
-				// Next record.
-				length, amt := binary.Varint(records)
-				records = records[length+int64(amt):]
+			// Read the highest timestamp from the record batch header (MaxTimestamp), which the Kafka
+			// client sets to the highest record timestamp in the batch. We intentionally avoid
+			// decompressing and parsing every record: doing so on the fake Kafka's single-threaded
+			// control loop is expensive (especially under the race detector with incompressible
+			// payloads) and makes the fake fall behind the produce rate, which distorts the latency
+			// this test measures.
+			batchHighestTimestamp := time.UnixMilli(batch.MaxTimestamp)
+			if highestTimestamp.IsZero() || batchHighestTimestamp.After(highestTimestamp) {
+				highestTimestamp = batchHighestTimestamp
 			}
 		}
 	}
@@ -1737,6 +1720,79 @@ func assertHistogramSampleCount(t *testing.T, reg prometheus.Gatherer, metricNam
 	hist, err := dskit_metrics.FindHistogramWithNameAndLabels(mfm, metricName)
 	require.NoError(t, err)
 	assert.Equal(t, expected, hist.GetSampleCount())
+}
+
+// TestWriter_KafkaClientMetricsParity asserts that the franz-go-compatible
+// writer metrics (transport, producer-state, and the extended latency
+// histograms) are present and populated on both backends, so a dashboard or
+// alert written against one backend keeps working on the other.
+func TestWriter_KafkaClientMetricsParity(t *testing.T) {
+	runForEachKafkaBackend(t, testWriter_KafkaClientMetricsParity)
+}
+
+func testWriter_KafkaClientMetricsParity(t *testing.T, backend string) {
+	const (
+		topicName     = "test"
+		numPartitions = 1
+		partitionID   = 0
+		tenantID      = "user-1"
+	)
+	ctx := context.Background()
+
+	_, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
+	cfg := createTestKafkaConfigForBackend(backend, clusterAddr, topicName)
+	writer, reg := createTestWriter(t, cfg)
+
+	req := &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_1")}, Source: mimirpb.API}
+	require.NoError(t, writer.WriteSync(ctx, topicName, partitionID, tenantID, req))
+
+	mfm, err := dskit_metrics.NewMetricFamilyMapFromGatherer(reg)
+	require.NoError(t, err)
+
+	// Counters a single successful produce must increment on both backends.
+	for _, name := range []string{
+		"cortex_ingest_storage_writer_connects_total",
+		"cortex_ingest_storage_writer_read_bytes_total",
+		"cortex_ingest_storage_writer_write_bytes_total",
+		"cortex_ingest_storage_writer_produce_records_total",
+		"cortex_ingest_storage_writer_produce_batches_total",
+		"cortex_ingest_storage_writer_produce_bytes_total",
+		"cortex_ingest_storage_writer_produce_compressed_bytes_total",
+	} {
+		assert.Positive(t, mfm.SumCounters(name), "counter %q must be populated on backend %q", name, backend)
+	}
+
+	// Extended latency histograms (Mimir's kafka_* native histograms) a
+	// successful produce must observe on both backends.
+	for _, name := range []string{
+		"cortex_ingest_storage_writer_kafka_read_time_seconds",
+		"cortex_ingest_storage_writer_kafka_read_wait_seconds",
+		"cortex_ingest_storage_writer_kafka_write_time_seconds",
+		"cortex_ingest_storage_writer_kafka_write_wait_seconds",
+		"cortex_ingest_storage_writer_kafka_request_duration_e2e_seconds",
+	} {
+		hist, err := dskit_metrics.FindHistogramWithNameAndLabels(mfm, name)
+		require.NoError(t, err, "histogram %q must exist on backend %q", name, backend)
+		assert.Positive(t, hist.GetSampleCount(), "histogram %q must be observed on backend %q", name, backend)
+	}
+
+	// Metrics registered on both backends that legitimately read zero after a
+	// successful produce: the produce buffer has drained, the writer never
+	// fetches, and the mock broker never throttles. Assert they're exposed.
+	for _, name := range []string{
+		"cortex_ingest_storage_writer_buffered_produce_records_total",
+		"cortex_ingest_storage_writer_buffered_produce_bytes",
+		"cortex_ingest_storage_writer_buffered_fetch_records_total",
+		"cortex_ingest_storage_writer_buffered_fetch_bytes",
+		"cortex_ingest_storage_writer_kafka_request_throttled_seconds",
+	} {
+		assert.Contains(t, mfm, name, "metric %q must be registered on backend %q", name, backend)
+	}
+
+	// cortex_ingest_storage_writer_{connect_errors,write_errors,read_errors}_total
+	// and _disconnects_total are wired on both backends too, but they are
+	// CounterVecs that emit no series until an error or disconnect occurs, so a
+	// successful produce can't observe them here.
 }
 
 func TestWriter_AutoCreateTopics(t *testing.T) {

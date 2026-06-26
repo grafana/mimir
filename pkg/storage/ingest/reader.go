@@ -26,6 +26,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/atomic"
 
+	"github.com/grafana/mimir/pkg/storage/ingest/kmeta"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
@@ -72,14 +73,14 @@ type PartitionReader interface {
 	services.Service
 
 	// LastSeenOffsets returns the highest record offset seen by the reader for each Kafka cluster.
-	LastSeenOffsets() PartitionOffsets
+	LastSeenOffsets() kmeta.PartitionOffsets
 
 	// EnforceReadMaxDelay returns an error if the reader is lagging behind more than maxDelay.
 	EnforceReadMaxDelay(maxDelay time.Duration) error
 
 	// WaitReadConsistencyUntilOffsets waits until the per-Kafka-cluster offsets have been consumed. Each
 	// Kafka cluster's offset is honored independently against that cluster.
-	WaitReadConsistencyUntilOffsets(ctx context.Context, offsets PartitionOffsets) error
+	WaitReadConsistencyUntilOffsets(ctx context.Context, offsets kmeta.PartitionOffsets) error
 
 	// WaitReadConsistencyUntilLastProducedOffset waits until the reader has caught up with the
 	// last-produced offset of every Kafka cluster.
@@ -110,7 +111,7 @@ type SingleClusterPartitionReader struct {
 	// consumedOffsetWatcher is used to wait until a given offset has been consumed.
 	// This gets initialised with -1 which means nothing has been consumed from the partition yet.
 	consumedOffsetWatcher *PartitionOffsetWatcher
-	offsetReader          *partitionOffsetReader
+	offsetReader          *singleClusterPartitionOffsetReader
 	offsetFile            *offsetFile
 
 	// The highest record timestamp consumed so far, or zero if no record was consumed yet or we've
@@ -207,8 +208,8 @@ func (r *SingleClusterPartitionReader) EstimatedBytesPerRecord() int64 {
 	return 0
 }
 
-func (r *SingleClusterPartitionReader) LastSeenOffsets() PartitionOffsets {
-	return NewSingleClusterPartitionOffsets(r.lastSeenOffset.Load())
+func (r *SingleClusterPartitionReader) LastSeenOffsets() kmeta.PartitionOffsets {
+	return kmeta.NewSingleClusterPartitionOffsets(r.lastSeenOffset.Load())
 }
 
 func (r *SingleClusterPartitionReader) LastCommittedOffset() int64 {
@@ -250,7 +251,7 @@ func (r *SingleClusterPartitionReader) start(ctx context.Context) (returnErr err
 
 	r.committer = newPartitionCommitter(r.kafkaCfg, kadm.NewClient(r.client.Load()), r.partitionID, r.consumerGroup, r.notifier, r.offsetFile, r.logger, r.reg)
 
-	offsetsClient := newPartitionOffsetClient(r.client.Load(), r.kafkaCfg.Topic, r.reg, r.logger)
+	offsetsClient := newPartitionOffsetClient(r.client.Load(), r.reg, r.logger)
 
 	// It's ok to have the start offset slightly outdated.
 	// We only need this offset accurate if we fall behind or if we start and the log gets truncated from beneath us.
@@ -258,11 +259,11 @@ func (r *SingleClusterPartitionReader) start(ctx context.Context) (returnErr err
 	// In the more common case where this offset is used when we're fetching from after the end, there we don't need an accurate value.
 	const startOffsetReaderRefreshDuration = 10 * time.Second
 	getPartitionStart := func(ctx context.Context) (int64, error) {
-		return offsetsClient.FetchPartitionStartOffset(ctx, r.partitionID)
+		return offsetsClient.FetchPartitionStartOffset(ctx, r.kafkaCfg.Topic, r.partitionID)
 	}
 	startOffsetReader := NewGenericOffsetReader(getPartitionStart, startOffsetReaderRefreshDuration, r.logger)
 
-	r.offsetReader = newPartitionOffsetReaderWithOffsetClient(offsetsClient, r.partitionID, r.kafkaCfg.LastProducedOffsetPollInterval, r.logger)
+	r.offsetReader = newSingleClusterPartitionOffsetReaderWithOffsetClient(offsetsClient, r.kafkaCfg.Topic, r.partitionID, r.kafkaCfg.LastProducedOffsetPollInterval, r.logger)
 
 	r.dependencies, err = services.NewManager(r.committer, r.offsetReader, r.consumedOffsetWatcher, startOffsetReader, r.metrics)
 	if err != nil {
@@ -931,7 +932,7 @@ func (r *SingleClusterPartitionReader) WaitReadConsistencyUntilLastProducedOffse
 // WaitReadConsistencyUntilOffsets waits until all data up until the offset of Kafka cluster 0 has been
 // consumed by the reader. A single-cluster reader only ever deals with Kafka cluster 0; the multi-cluster
 // reader remaps each per-cluster offset onto the corresponding cluster's reader.
-func (r *SingleClusterPartitionReader) WaitReadConsistencyUntilOffsets(ctx context.Context, offsets PartitionOffsets) (returnErr error) {
+func (r *SingleClusterPartitionReader) WaitReadConsistencyUntilOffsets(ctx context.Context, offsets kmeta.PartitionOffsets) (returnErr error) {
 	// A single-cluster reader consumes from exactly one Kafka cluster, so being given offsets for any
 	// other number of clusters is an invariant violation by the caller.
 	if offsets.NumKafkaClusters() != 1 {

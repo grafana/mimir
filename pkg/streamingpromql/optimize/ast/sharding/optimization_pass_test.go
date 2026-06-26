@@ -15,6 +15,7 @@ import (
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
 	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
+	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
@@ -48,7 +49,8 @@ func TestOptimizationPass(t *testing.T) {
 			options: requestoptions.Options{
 				TotalShards: 3,
 			},
-			expectedOutput: `sum(__sharded_concat__(sum(foo{__query_shard__="1_of_3"}), sum(foo{__query_shard__="2_of_3"}), sum(foo{__query_shard__="3_of_3"})))`,
+			// The requested shard count is rounded up to the next power of two.
+			expectedOutput: `sum(__sharded_concat__(sum(foo{__query_shard__="1_of_4"}), sum(foo{__query_shard__="2_of_4"}), sum(foo{__query_shard__="3_of_4"}), sum(foo{__query_shard__="4_of_4"})))`,
 		},
 		"shardable expression with estimated series count available": {
 			input: `sum(foo)`,
@@ -90,7 +92,72 @@ func TestOptimizationPass(t *testing.T) {
 
 			ctx = querymiddleware.ContextWithRequestHints(ctx, testCase.hints)
 			ctx = requestoptions.ContextWithOptions(ctx, testCase.options)
-			output, err := pass.Apply(ctx, afterRewrite)
+			output, err := pass.Apply(ctx, afterRewrite, types.QueryTimeRange{})
+			require.NoError(t, err)
+			require.Equal(t, testCase.expectedOutput, output.String())
+		})
+	}
+}
+
+// TestOptimizationPass_EvaluationRoots confirms that, when a query has been rewritten to spin off
+// subqueries, each __vector_evaluation_root__/__scalar_evaluation_root__ subtree is sharded independently and everything outside the
+// markers is left unchanged.
+func TestOptimizationPass_EvaluationRoots(t *testing.T) {
+	const seriesPerShard = 1000
+
+	testCases := map[string]struct {
+		input          string
+		options        requestoptions.Options
+		expectedOutput string
+	}{
+		"single shardable vector evaluation root": {
+			input:          `__vector_evaluation_root__(sum(foo))`,
+			expectedOutput: `__vector_evaluation_root__(sum(__sharded_concat__(sum(foo{__query_shard__="1_of_4"}), sum(foo{__query_shard__="2_of_4"}), sum(foo{__query_shard__="3_of_4"}), sum(foo{__query_shard__="4_of_4"}))))`,
+		},
+		"single shardable scalar evaluation root": {
+			input:          `__scalar_evaluation_root__(scalar(sum(foo)))`,
+			expectedOutput: `__scalar_evaluation_root__(scalar(sum(__sharded_concat__(sum(foo{__query_shard__="1_of_4"}), sum(foo{__query_shard__="2_of_4"}), sum(foo{__query_shard__="3_of_4"}), sum(foo{__query_shard__="4_of_4"})))))`,
+		},
+		"single unshardable evaluation root": {
+			input:          `__vector_evaluation_root__(foo)`,
+			expectedOutput: `__vector_evaluation_root__(foo)`,
+		},
+		"multiple evaluation roots, some shardable and some not": {
+			// Emulates the shape produced when spinning off a subquery alongside a downstream query:
+			// the shardable subtree is sharded, the unshardable one is left as-is.
+			input:          `__vector_evaluation_root__(sum(foo)) + __vector_evaluation_root__(bar)`,
+			expectedOutput: `__vector_evaluation_root__(sum(__sharded_concat__(sum(foo{__query_shard__="1_of_4"}), sum(foo{__query_shard__="2_of_4"}), sum(foo{__query_shard__="3_of_4"}), sum(foo{__query_shard__="4_of_4"})))) + __vector_evaluation_root__(bar)`,
+		},
+		"evaluation root inside a spun-off subquery": {
+			// Only the marker's subtree is sharded; the surrounding subquery and outer function are left
+			// to run on the query-frontend.
+			input:          `max_over_time((__vector_evaluation_root__(sum(foo)))[2h:1m])`,
+			expectedOutput: `max_over_time((__vector_evaluation_root__(sum(__sharded_concat__(sum(foo{__query_shard__="1_of_4"}), sum(foo{__query_shard__="2_of_4"}), sum(foo{__query_shard__="3_of_4"}), sum(foo{__query_shard__="4_of_4"})))))[2h:1m])`,
+		},
+		"sharding disabled": {
+			input:          `__vector_evaluation_root__(sum(foo))`,
+			options:        requestoptions.Options{ShardingDisabled: true},
+			expectedOutput: `__vector_evaluation_root__(sum(foo))`,
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			reg := prometheus.NewPedanticRegistry()
+			logger := log.NewNopLogger()
+			limits := &mockLimits{
+				totalShards:         4,
+				maxShardedQueries:   6,
+				splitAndMergeShards: 1,
+			}
+			pass := NewOptimizationPass(limits, seriesPerShard, reg, logger)
+
+			input, err := promqlext.NewPromQLParser().ParseExpr(testCase.input)
+			require.NoError(t, err)
+
+			ctx := user.InjectOrgID(context.Background(), "tenant-1")
+			ctx = requestoptions.ContextWithOptions(ctx, testCase.options)
+			output, err := pass.Apply(ctx, input, types.QueryTimeRange{})
 			require.NoError(t, err)
 			require.Equal(t, testCase.expectedOutput, output.String())
 		})
@@ -123,7 +190,7 @@ func (m *mockLimits) CompactorSplitAndMergeShards(userID string) int {
 func rewriteForSubquerySpinoff(ctx context.Context, expr string) (parser.Expr, error) {
 	stats := astmapper.NewSubquerySpinOffMapperStats()
 	defaultStepFunc := func(rangeMillis int64) int64 { return 1000 }
-	mapper := astmapper.NewSubquerySpinOffMapper(defaultStepFunc, log.NewNopLogger(), stats)
+	mapper := astmapper.NewSubquerySpinOffMapper(astmapper.NewSelectorSubquerySpinOffWrapper(), defaultStepFunc, log.NewNopLogger(), stats)
 	ast, err := promqlext.NewPromQLParser().ParseExpr(expr)
 	if err != nil {
 		return nil, err

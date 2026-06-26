@@ -21,15 +21,37 @@ store-gateways, block-builders and compactors, and is responsible for the series
 flowchart LR
     subgraph WCk["Write compartments (Kafka clusters)"]
         direction TB
-        K0["Kafka cluster #0<br/>topic read-comp-1, partition 0"]
-        K1["Kafka cluster #1<br/>topic read-comp-1, partition 0"]
+        K0["kafka-wc-0<br/>&quot;ingest-rc-1&quot; topic, partition 0"]
+        K1["kafka-wc-1<br/>&quot;ingest-rc-1&quot; topic, partition 0"]
     end
 
-    ING["ingester-0 of read compartment #1<br/>owns partition 0"]
+    ING["ingester-0 of rc-1<br/>owns partition 0"]
 
     K0 --> ING
     K1 --> ING
 ```
+
+## Blocks storage
+
+Each read compartment owns its blocks storage end to end:
+
+- A read compartment has a **dedicated object-storage bucket**. Its ingesters and block-builders
+  upload blocks there, its compactors compact the blocks within it, and its store-gateways serve
+  queries from it. A compartment's blocks never mix with another compartment's.
+- Store-gateways and compactors **run per read compartment**, alongside that compartment's ingesters.
+- Each read compartment has its **own store-gateway ring** and its **own compactor ring**. Block
+  sharding and replication across store-gateways, and compaction-job sharding across compactors, are
+  therefore scoped within a compartment: a store-gateway or compactor only owns work for its own
+  compartment's blocks.
+
+This is the storage-side expression of the blast-radius and scaling goals (see
+[Mimir compartments](./README.md)): a bucket-level problem — for example object-storage rate limiting
+or a corrupt block — is contained to one compartment, and each compartment's storage components and
+bucket scale independently of the others.
+
+The global query layer queries each read compartment's store-gateways the same way it queries that
+compartment's ingesters: it narrows a query to the compartments that can hold the selected metric
+names and fans out otherwise (see [Querying read compartments](#querying-read-compartments)).
 
 ## Querying read compartments
 
@@ -62,9 +84,9 @@ A dedicated topic per read compartment simplifies partition management: each com
 are an independent topic, so there is a clear, per-compartment mapping between a partition and the
 ingester that owns it.
 
-For example, with two read compartments there are two topics, `read-comp-0` and `read-comp-1`. The
-ingester that owns partition 0 of read compartment 0 consumes `read-comp-0` partition 0, while the
-ingester that owns partition 0 of read compartment 1 consumes `read-comp-1` partition 0 — two distinct
+For example, with two read compartments there are two topics, `ingest-rc-0` and `ingest-rc-1`. The
+ingester that owns partition 0 of rc-0 consumes `ingest-rc-0` partition 0, while the
+ingester that owns partition 0 of rc-1 consumes `ingest-rc-1` partition 0 — two distinct
 topic-partitions owned by two distinct ingesters, even though both are "partition 0".
 
 ## Warpstream specifics

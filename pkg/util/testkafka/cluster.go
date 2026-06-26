@@ -63,6 +63,13 @@ func WithListener(ln net.Listener) Opt {
 	}
 }
 
+// WithVirtualNetwork configures the cluster to use the given kfake.VirtualNetwork for in-memory networking.
+func WithVirtualNetwork(vnet *kfake.VirtualNetwork) Opt {
+	return func() []kfake.Opt {
+		return []kfake.Opt{kfake.ListenFn(vnet.Listen)}
+	}
+}
+
 // CreateCluster returns a fake Kafka cluster for unit testing.
 func CreateCluster(t testing.TB, numPartitions int32, topicName string, opts ...Opt) (*kfake.Cluster, string) {
 	cluster, addr := CreateClusterWithoutCustomConsumerGroupsSupport(t, numPartitions, topicName, opts...)

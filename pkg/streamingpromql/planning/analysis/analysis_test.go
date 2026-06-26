@@ -445,8 +445,8 @@ func TestHandler_Sharding(t *testing.T) {
 			  "astStages": [
 				{"name": "Parsing", "duration": 1234000000, "outputExpression": "sum(up)"},
 				{"name": "Pre-processing", "duration": 1234000000, "outputExpression": "sum(up)"},
-				{"name": "Sharding", "duration": 1234000000, "outputExpression": "sum(\n  __sharded_concat__(\n    sum(up{__query_shard__=\"1_of_3\"}),\n    sum(up{__query_shard__=\"2_of_3\"}),\n    sum(up{__query_shard__=\"3_of_3\"})\n  )\n)"},
-				{"name": "Final expression", "duration": null, "outputExpression": "sum(\n  __sharded_concat__(\n    sum(up{__query_shard__=\"1_of_3\"}),\n    sum(up{__query_shard__=\"2_of_3\"}),\n    sum(up{__query_shard__=\"3_of_3\"})\n  )\n)"}
+				{"name": "Sharding", "duration": 1234000000, "outputExpression": "sum(\n  __sharded_concat__(\n    sum(up{__query_shard__=\"1_of_4\"}),\n    sum(up{__query_shard__=\"2_of_4\"}),\n    sum(up{__query_shard__=\"3_of_4\"}),\n    sum(up{__query_shard__=\"4_of_4\"})\n  )\n)"},
+				{"name": "Final expression", "duration": null, "outputExpression": "sum(\n  __sharded_concat__(\n    sum(up{__query_shard__=\"1_of_4\"}),\n    sum(up{__query_shard__=\"2_of_4\"}),\n    sum(up{__query_shard__=\"3_of_4\"}),\n    sum(up{__query_shard__=\"4_of_4\"})\n  )\n)"}
 			  ],
 			  "planningStages": [
 				{
@@ -456,17 +456,19 @@ func TestHandler_Sharding(t *testing.T) {
 					"timeRange": {"startT": 1640995200000, "endT": 1640995200000, "intervalMilliseconds": 1, "isInstant": true},
 					"lookbackDelta": 300000000000,
 					"nodes": [
-					  {"type": "VectorSelector", "description": "{__query_shard__=\"1_of_3\", __name__=\"up\"}"},
+					  {"type": "VectorSelector", "description": "{__query_shard__=\"1_of_4\", __name__=\"up\"}"},
 					  {"type": "AggregateExpression", "children": [0], "description": "sum", "childrenLabels": [""]},
-					  {"type": "VectorSelector", "description": "{__query_shard__=\"2_of_3\", __name__=\"up\"}"},
+					  {"type": "VectorSelector", "description": "{__query_shard__=\"2_of_4\", __name__=\"up\"}"},
 					  {"type": "AggregateExpression", "children": [2], "description": "sum", "childrenLabels": [""]},
-					  {"type": "VectorSelector", "description": "{__query_shard__=\"3_of_3\", __name__=\"up\"}"},
+					  {"type": "VectorSelector", "description": "{__query_shard__=\"3_of_4\", __name__=\"up\"}"},
 					  {"type": "AggregateExpression", "children": [4], "description": "sum", "childrenLabels": [""]},
-					  {"type": "FunctionCall", "children": [1, 3, 5], "description": "__sharded_concat__(...)", "childrenLabels": ["param 0", "param 1", "param 2"]},
-					  {"type": "AggregateExpression", "children": [6], "description": "sum", "childrenLabels": [""]}
+					  {"type": "VectorSelector", "description": "{__query_shard__=\"4_of_4\", __name__=\"up\"}"},
+					  {"type": "AggregateExpression", "children": [6], "description": "sum", "childrenLabels": [""]},
+					  {"type": "FunctionCall", "children": [1, 3, 5, 7], "description": "__sharded_concat__(...)", "childrenLabels": ["param 0", "param 1", "param 2", "param 3"]},
+					  {"type": "AggregateExpression", "children": [8], "description": "sum", "childrenLabels": [""]}
 					],
 					"originalExpression": "sum(up)",
-					"rootNode": 7,
+					"rootNode": 9,
 					"version": 0
 				  }
 				},
@@ -477,17 +479,19 @@ func TestHandler_Sharding(t *testing.T) {
 					"timeRange": {"startT": 1640995200000, "endT": 1640995200000, "intervalMilliseconds": 1, "isInstant": true},
 					"lookbackDelta": 300000000000,
 					"nodes": [
-					  {"type": "VectorSelector", "description": "{__query_shard__=\"1_of_3\", __name__=\"up\"}"},
+					  {"type": "VectorSelector", "description": "{__query_shard__=\"1_of_4\", __name__=\"up\"}"},
 					  {"type": "AggregateExpression", "children": [0], "description": "sum", "childrenLabels": [""]},
-					  {"type": "VectorSelector", "description": "{__query_shard__=\"2_of_3\", __name__=\"up\"}"},
+					  {"type": "VectorSelector", "description": "{__query_shard__=\"2_of_4\", __name__=\"up\"}"},
 					  {"type": "AggregateExpression", "children": [2], "description": "sum", "childrenLabels": [""]},
-					  {"type": "VectorSelector", "description": "{__query_shard__=\"3_of_3\", __name__=\"up\"}"},
+					  {"type": "VectorSelector", "description": "{__query_shard__=\"3_of_4\", __name__=\"up\"}"},
 					  {"type": "AggregateExpression", "children": [4], "description": "sum", "childrenLabels": [""]},
-					  {"type": "FunctionCall", "children": [1, 3, 5], "description": "__sharded_concat__(...)", "childrenLabels": ["param 0", "param 1", "param 2"]},
-					  {"type": "AggregateExpression", "children": [6], "description": "sum", "childrenLabels": [""]}
+					  {"type": "VectorSelector", "description": "{__query_shard__=\"4_of_4\", __name__=\"up\"}"},
+					  {"type": "AggregateExpression", "children": [6], "description": "sum", "childrenLabels": [""]},
+					  {"type": "FunctionCall", "children": [1, 3, 5, 7], "description": "__sharded_concat__(...)", "childrenLabels": ["param 0", "param 1", "param 2", "param 3"]},
+					  {"type": "AggregateExpression", "children": [8], "description": "sum", "childrenLabels": [""]}
 					],
 					"originalExpression": "sum(up)",
-					"rootNode": 7,
+					"rootNode": 9,
 					"version": 0
 				  }
 				}

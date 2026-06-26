@@ -597,6 +597,16 @@ func TestConfigValidation(t *testing.T) {
 			expectAnyError: true,
 		},
 		{
+			name: "should pass if only the ingester is enabled and the Kafka topic uses an explicit read compartment instead of the placeholder",
+			getTestConfig: func() *Config {
+				cfg := validCompartmentsConfig()
+				cfg.Target = flagext.StringSliceCSV{Ingester}
+				cfg.IngestStorage.KafkaConfig.Topic = "mimir-ingest-rc-0"
+				return cfg
+			},
+			expectAnyError: false,
+		},
+		{
 			name: "should fail if the ingester is enabled with more than one write compartment but the Kafka address is not parameterised by write compartment",
 			getTestConfig: func() *Config {
 				cfg := validCompartmentsConfig()
@@ -634,6 +644,26 @@ func TestConfigValidation(t *testing.T) {
 				return cfg
 			},
 			expectAnyError: false,
+		},
+		{
+			name: "should fail if the query-frontend is enabled but the Kafka topic is not parameterised by read compartment",
+			getTestConfig: func() *Config {
+				cfg := validCompartmentsConfig()
+				cfg.Target = flagext.StringSliceCSV{QueryFrontend}
+				cfg.IngestStorage.KafkaConfig.Topic = "mimir-ingest"
+				return cfg
+			},
+			expectAnyError: true,
+		},
+		{
+			name: "should fail if the query-frontend is enabled with more than one write compartment but the Kafka address is not parameterised by write compartment",
+			getTestConfig: func() *Config {
+				cfg := validCompartmentsConfig()
+				cfg.Target = flagext.StringSliceCSV{QueryFrontend}
+				cfg.IngestStorage.KafkaConfig.Address = flagext.StringSliceCSV{"localhost:9092"}
+				return cfg
+			},
+			expectAnyError: true,
 		},
 		{
 			name: "should pass if compartments and the distributor are enabled with Kafka topic auto-creation on",

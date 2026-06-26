@@ -3,6 +3,7 @@
 package core
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -51,7 +52,7 @@ func (f *FunctionCall) MergeHints(_ planning.Node) error {
 	return nil
 }
 
-func MaterializeFunctionCall(f *FunctionCall, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
+func MaterializeFunctionCall(ctx context.Context, f *FunctionCall, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
 	fnc, ok := functions.RegisteredFunctions[f.Function]
 	if !ok {
 		return nil, compat.NewNotSupportedError(fmt.Sprintf("'%v' function", f.Function.PromQLName()))
@@ -59,7 +60,7 @@ func MaterializeFunctionCall(f *FunctionCall, materializer *planning.Materialize
 
 	children := make([]types.Operator, 0, len(f.Args))
 	for _, arg := range f.Args {
-		o, err := materializer.ConvertNodeToOperator(arg, timeRange)
+		o, err := materializer.ConvertNodeToOperator(ctx, arg, timeRange)
 		if err != nil {
 			return nil, err
 		}

@@ -76,8 +76,8 @@ const (
 	GroupPointerSlices
 	AggregationGroup
 	BufferedQuerierResponses
-	SplitMiddlewareCachedResponses
-	memoryConsumptionSourceCount = SplitMiddlewareCachedResponses + 1
+	CachedResponses
+	memoryConsumptionSourceCount = CachedResponses + 1
 )
 
 const (
@@ -134,8 +134,8 @@ func (s MemoryConsumptionSource) String() string {
 		return "aggregation.AggregationGroup"
 	case BufferedQuerierResponses:
 		return "buffered querier responses"
-	case SplitMiddlewareCachedResponses:
-		return "split middleware cached responses"
+	case CachedResponses:
+		return "cached responses"
 	default:
 		return unknownMemorySource
 	}

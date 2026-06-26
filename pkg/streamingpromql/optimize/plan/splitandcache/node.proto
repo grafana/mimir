@@ -18,3 +18,12 @@ message TimeRangeSplitDetails {
     (gogoproto.nullable) = false
   ];
 }
+
+message CacheDetails {
+  // This should match the parent TimeRangeSplit's splitInterval.
+  // It is used to calculate the cache key for each cache entry.
+  google.protobuf.Duration splitInterval = 1 [
+    (gogoproto.stdduration) = true,
+    (gogoproto.nullable) = false
+  ];
+}

@@ -3,6 +3,7 @@
 package multiaggregation
 
 import (
+	"context"
 	"fmt"
 	"strconv"
 	"strings"
@@ -154,8 +155,8 @@ func (a *MultiAggregationInstance) MinimumRequiredPlanVersion(types.QueryTimeRan
 	return planning.QueryPlanV5, nil
 }
 
-func MaterializeMultiAggregationGroup(node *MultiAggregationGroup, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
-	inner, err := materializer.ConvertNodeToInstantVectorOperator(node.Inner, timeRange)
+func MaterializeMultiAggregationGroup(ctx context.Context, node *MultiAggregationGroup, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
+	inner, err := materializer.ConvertNodeToInstantVectorOperator(ctx, node.Inner, timeRange)
 	if err != nil {
 		return nil, err
 	}
@@ -173,8 +174,8 @@ func (m *MultiAggregationInstanceFactory) Produce() (types.Operator, error) {
 	return m.group.AddInstance(), nil
 }
 
-func MaterializeMultiAggregationInstance(node *MultiAggregationInstance, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
-	operator, err := materializer.ConvertNodeToInstantVectorOperator(node.Group, timeRange)
+func MaterializeMultiAggregationInstance(ctx context.Context, node *MultiAggregationInstance, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
+	operator, err := materializer.ConvertNodeToInstantVectorOperator(ctx, node.Group, timeRange)
 	if err != nil {
 		return nil, err
 	}
@@ -196,7 +197,7 @@ func MaterializeMultiAggregationInstance(node *MultiAggregationInstance, materia
 
 	var param types.ScalarOperator
 	if node.Param != nil {
-		param, err = materializer.ConvertNodeToScalarOperator(node.Param, timeRange)
+		param, err = materializer.ConvertNodeToScalarOperator(ctx, node.Param, timeRange)
 		if err != nil {
 			return nil, fmt.Errorf("could not create parameter operator for MultiAggregationInstance %s: %w", node.Aggregation.Op.String(), err)
 		}

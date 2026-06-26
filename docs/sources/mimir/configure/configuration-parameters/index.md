@@ -2258,6 +2258,17 @@ results_cache:
 # CLI flag: -query-frontend.cache-results
 [cache_results: <boolean> | default = false]
 
+# (experimental) Set to true to enable performing splitting range queries by
+# interval and caching inside the Mimir query engine (MQE), and spinning off
+# subqueries from instant queries inside MQE. This only has an effect if the
+# corresponding feature is enabled (with
+# -query-frontend.split-queries-by-interval=true,
+# -query-frontend.cache-results=true or
+# -query-frontend.subquery-spin-off-enabled=true, respectively). Requires MQE,
+# remote execution and sharding inside MQE to be enabled.
+# CLI flag: -query-frontend.use-mimir-query-engine-for-splitting-and-caching-results
+[use_mimir_query_engine_for_splitting_and_caching_results: <boolean> | default = false]
+
 # Cache non-transient errors from queries.
 # CLI flag: -query-frontend.cache-errors
 [cache_errors: <boolean> | default = false]
@@ -4538,10 +4549,10 @@ The `limits` block configures default and per-tenant limits imposed by component
 [max_queriers_per_tenant: <int> | default = 0]
 
 # The amount of shards to use when doing parallelisation via query sharding by
-# tenant. 0 to disable query sharding for tenant. Query sharding implementation
-# will adjust the number of query shards based on compactor shards. This allows
-# querier to not search the blocks which cannot possibly have the series for
-# given query shard.
+# tenant. 0 to disable query sharding for tenant. Values greater than 1 are
+# rounded up to the next power of two, so the query shard count always meshes
+# with the compactor's power-of-two shard count. This allows querier to not
+# search the blocks which cannot possibly have the series for given query shard.
 # CLI flag: -query-frontend.query-sharding-total-shards
 [query_sharding_total_shards: <int> | default = 16]
 
@@ -5035,13 +5046,14 @@ ruler_alertmanager_client_config:
 [compactor_blocks_retention_period: <duration> | default = 0s]
 
 # The number of shards to use when splitting blocks. 0 to disable splitting.
+# Values greater than 1 are rounded up to the next power of two.
 # CLI flag: -compactor.split-and-merge-shards
 [compactor_split_and_merge_shards: <int> | default = 0]
 
 # The number of shards to use when splitting out-of-order blocks. 0 to use the
-# value of -compactor.split-and-merge-shards. Only applies to blocks with the
-# out-of-order external label, see
-# -ingester.out-of-order-blocks-external-label-enabled.
+# value of -compactor.split-and-merge-shards. Values greater than 1 are rounded
+# up to the next power of two. Only applies to blocks with the out-of-order
+# external label, see -ingester.out-of-order-blocks-external-label-enabled.
 # CLI flag: -compactor.ooo-split-and-merge-shards
 [compactor_ooo_split_and_merge_shards: <int> | default = 0]
 

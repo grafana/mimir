@@ -1156,7 +1156,7 @@ Usage of ./cmd/mimir/mimir:
   -compactor.meta-sync-concurrency int
     	Number of goroutines to use when syncing block meta files from the long term storage. (default 20)
   -compactor.ooo-split-and-merge-shards int
-    	The number of shards to use when splitting out-of-order blocks. 0 to use the value of -compactor.split-and-merge-shards. Only applies to blocks with the out-of-order external label, see -ingester.out-of-order-blocks-external-label-enabled.
+    	The number of shards to use when splitting out-of-order blocks. 0 to use the value of -compactor.split-and-merge-shards. Values greater than 1 are rounded up to the next power of two. Only applies to blocks with the out-of-order external label, see -ingester.out-of-order-blocks-external-label-enabled.
   -compactor.partial-block-deletion-delay duration
     	If a partial block (unfinished block without meta.json file) hasn't been modified for this time, it will be marked for deletion. The minimum accepted value is 4h0m0s: a lower value will be ignored and the feature disabled. 0 to disable. (default 1d)
   -compactor.ring.auto-forget-unhealthy-periods int
@@ -1234,7 +1234,7 @@ Usage of ./cmd/mimir/mimir:
   -compactor.ring.wait-stability-min-duration duration
     	Minimum time to wait for ring stability at startup. 0 to disable.
   -compactor.split-and-merge-shards int
-    	The number of shards to use when splitting blocks. 0 to disable splitting.
+    	The number of shards to use when splitting blocks. 0 to disable splitting. Values greater than 1 are rounded up to the next power of two.
   -compactor.split-groups int
     	Number of groups that blocks for splitting should be grouped into. Each group of blocks is then split separately. Number of output split shards is controlled by -compactor.split-and-merge-shards. (default 1)
   -compactor.symbols-flushers-concurrency int
@@ -2688,7 +2688,7 @@ Usage of ./cmd/mimir/mimir:
   -query-frontend.query-sharding-target-series-per-shard uint
     	How many series a single sharded partial query should load at most. This is not a strict requirement guaranteed to be honoured by query sharding, but a hint given to the query sharding when the query execution is initially planned. 0 to disable cardinality-based hints.
   -query-frontend.query-sharding-total-shards int
-    	The amount of shards to use when doing parallelisation via query sharding by tenant. 0 to disable query sharding for tenant. Query sharding implementation will adjust the number of query shards based on compactor shards. This allows querier to not search the blocks which cannot possibly have the series for given query shard. (default 16)
+    	The amount of shards to use when doing parallelisation via query sharding by tenant. 0 to disable query sharding for tenant. Values greater than 1 are rounded up to the next power of two, so the query shard count always meshes with the compactor's power-of-two shard count. This allows querier to not search the blocks which cannot possibly have the series for given query shard. (default 16)
   -query-frontend.query-stats-enabled
     	False to disable query statistics tracking. When enabled, a message with some statistics is logged for every query. (default true)
   -query-frontend.remote-execution-batch-size uint
@@ -2765,6 +2765,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Enable spinning off subqueries from instant queries as range queries to optimize their performance.
   -query-frontend.use-mimir-query-engine-for-sharding
     	[experimental] Set to true to enable performing query sharding inside the Mimir query engine (MQE). This setting has no effect if sharding is disabled. Requires remote execution and MQE to be enabled.
+  -query-frontend.use-mimir-query-engine-for-splitting-and-caching-results
+    	[experimental] Set to true to enable performing splitting range queries by interval and caching inside the Mimir query engine (MQE), and spinning off subqueries from instant queries inside MQE. This only has an effect if the corresponding feature is enabled (with -query-frontend.split-queries-by-interval=true, -query-frontend.cache-results=true or -query-frontend.subquery-spin-off-enabled=true, respectively). Requires MQE, remote execution and sharding inside MQE to be enabled.
   -query-scheduler.grpc-client-config.backoff-max-period duration
     	Maximum delay when backing off. (default 10s)
   -query-scheduler.grpc-client-config.backoff-min-period duration
@@ -3685,6 +3687,8 @@ Usage of ./cmd/mimir/mimir:
     	How back in the past metrics can be queried at most. (default 168h0m0s)
   -tests.write-read-ooo-test.num-series int
     	Number of series used for the test. (default 5000)
+  -tests.write-read-series-test.fan-out-query-enabled
+    	Set to true to additionally run each test query with a regex metric-name matcher. This prevents the query from being pinned to a single ingest-storage compartment, forcing the read path to fan out across all compartments and validating cross-compartment query result merging. Roughly doubles the number of queries issued per run.
   -tests.write-read-series-test.float-samples-enabled
     	Set to true to use float samples (default true)
   -tests.write-read-series-test.histogram-samples-enabled

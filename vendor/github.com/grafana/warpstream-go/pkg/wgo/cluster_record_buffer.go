@@ -5,6 +5,9 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
 // ClusterRecordBuffer is the cluster-wide entry point for buffering produce
@@ -44,7 +47,7 @@ import (
 // the buffer to reject work.
 type ClusterRecordBuffer struct {
 	linger        time.Duration
-	maxBatchBytes int32
+	batchMaxBytes int32
 	flush         AgentFlushFunc
 	metrics       *metrics
 
@@ -64,15 +67,27 @@ type ClusterRecordBuffer struct {
 }
 
 // NewClusterRecordBuffer returns a buffer that lazily spawns one
-// AgentRecordBuffer per NodeID seen via Add, all sharing flush.
-func NewClusterRecordBuffer(linger time.Duration, maxBatchBytes int32, flush AgentFlushFunc, m *metrics) *ClusterRecordBuffer {
-	return &ClusterRecordBuffer{
+// AgentRecordBuffer per NodeID seen via Add, all sharing flush. It registers
+// the buffered-producer gauges on reg.
+func NewClusterRecordBuffer(linger time.Duration, batchMaxBytes int32, flush AgentFlushFunc, m *metrics, reg prometheus.Registerer) *ClusterRecordBuffer {
+	c := &ClusterRecordBuffer{
 		linger:        linger,
-		maxBatchBytes: maxBatchBytes,
+		batchMaxBytes: batchMaxBytes,
 		flush:         flush,
 		metrics:       m,
 		agentBuffers:  make(map[int32]*AgentRecordBuffer),
 	}
+
+	promauto.With(reg).NewGaugeFunc(prometheus.GaugeOpts{
+		Name: "buffered_produce_records_total",
+		Help: "Number of records currently buffered awaiting acknowledgement.",
+	}, func() float64 { return float64(c.BufferedRecords()) })
+	promauto.With(reg).NewGaugeFunc(prometheus.GaugeOpts{
+		Name: "buffered_produce_bytes",
+		Help: "Bytes of records currently buffered awaiting acknowledgement.",
+	}, func() float64 { return float64(c.BufferedBytes()) })
+
+	return c
 }
 
 // Add buffers partition-grouped work for produce. Each entry's done fires
@@ -238,7 +253,7 @@ func (c *ClusterRecordBuffer) agentRecordBufferFor(nodeID int32) (*AgentRecordBu
 	if a, ok := c.agentBuffers[nodeID]; ok {
 		return a, nil
 	}
-	a = NewAgentRecordBuffer(nodeID, c.linger, c.maxBatchBytes, c.flush, c.metrics)
+	a = NewAgentRecordBuffer(nodeID, c.linger, c.batchMaxBytes, c.flush, c.metrics)
 	c.agentBuffers[nodeID] = a
 	return a, nil
 }

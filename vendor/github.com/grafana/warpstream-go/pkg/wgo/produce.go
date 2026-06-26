@@ -49,10 +49,10 @@ const crcOffset = 17
 // batchFixedFieldsAfterLength.
 const recordBatchHeaderBytes = 4 + 8 + 4 + batchFixedFieldsAfterLength
 
-// maxBatchBytesCeiling is a sanity cap on Config.MaxBatchBytes. A value above
+// batchMaxBytesCeiling is a sanity cap on Config.BatchMaxBytes. A value above
 // this is almost certainly misconfiguration — the broker would reject such a
 // request anyway — so we fail validation early rather than buffer toward it.
-const maxBatchBytesCeiling int32 = 1 << 30 // 1 GiB
+const batchMaxBytesCeiling int32 = 1 << 30 // 1 GiB
 
 // ensureRecordTimestamp defaults an unset record timestamp to now (truncated to
 // the millisecond resolution Kafka stores), mirroring franz-go's bufferRecord.
@@ -85,7 +85,7 @@ func recordEstimateBytes(r *kgo.Record, offsetDelta int32, tsDelta int64) int64 
 
 // singleRecordBatchEstimateBytes returns the wire-byte size of a fresh single-
 // record batch carrying r. Used as the per-record rejection gate: a record
-// whose batch alone exceeds MaxBatchBytes can never be produced, so we fail
+// whose batch alone exceeds BatchMaxBytes can never be produced, so we fail
 // it synchronously instead of letting the broker reject the eventual
 // request. The estimate is on the uncompressed payload — Snappy can only
 // shrink it, so the gate stays sound under compression.
@@ -109,32 +109,48 @@ func multiRecordBatchEstimateBytes(records []*kgo.Record) int64 {
 	return bytes
 }
 
+// produceRequestStats holds the aggregate producer-state counts for one
+// ProduceRequest.
+type produceRequestStats struct {
+	records           int64
+	batches           int64
+	uncompressedBytes int64
+	compressedBytes   int64
+}
+
 // buildMultiTopicProduceRequest builds a ProduceRequest covering records that
 // may span multiple topics. topicID maps a topic name to its UUID, returning
 // ok=false when the topic is unknown to the caller; an unknown topic fails
 // the build with an error. Both topic name and UUID are populated per topic
-// so the request is valid across the v0-v12 / v13+ API divide.
-func buildMultiTopicProduceRequest(version int16, topicID func(string) ([16]byte, bool), records []*kgo.Record) (*kmsg.ProduceRequest, error) {
+// so the request is valid across the v0-v12 / v13+ API divide. The returned
+// stats feed the producer-state metrics.
+func buildMultiTopicProduceRequest(version int16, topicID func(string) ([16]byte, bool), records []*kgo.Record) (*kmsg.ProduceRequest, produceRequestStats, error) {
 	byTopic := make(map[string][]*kgo.Record)
 	for _, r := range records {
 		byTopic[r.Topic] = append(byTopic[r.Topic], r)
 	}
 
+	var stats produceRequestStats
 	req := kmsg.NewProduceRequest()
 	req.Version = version
 	req.Acks = -1 // all ISR
 	for topic, topicRecords := range byTopic {
 		id, ok := topicID(topic)
 		if !ok {
-			return nil, fmt.Errorf("topic %q not known", topic)
+			return nil, produceRequestStats{}, fmt.Errorf("topic %q not known", topic)
 		}
 		byPartition := groupByPartition(topicRecords)
 		partitions := make([]kmsg.ProduceRequestTopicPartition, 0, len(byPartition))
 		for partition, recs := range byPartition {
+			batch, uncompressed, compressed := encodeBatch(recs)
 			partitions = append(partitions, kmsg.ProduceRequestTopicPartition{
 				Partition: partition,
-				Records:   encodeBatch(recs),
+				Records:   batch,
 			})
+			stats.records += int64(len(recs))
+			stats.batches++
+			stats.uncompressedBytes += int64(uncompressed)
+			stats.compressedBytes += int64(compressed)
 		}
 		req.Topics = append(req.Topics, kmsg.ProduceRequestTopic{
 			Topic:      topic,
@@ -142,7 +158,7 @@ func buildMultiTopicProduceRequest(version int16, topicID func(string) ([16]byte
 			Partitions: partitions,
 		})
 	}
-	return &req, nil
+	return &req, stats, nil
 }
 
 // groupByPartition groups records by their partition field.
@@ -209,8 +225,11 @@ func partitionErrorFromResp(resp *kmsg.ProduceResponse, topic string, partition 
 	return nil
 }
 
-// encodeBatch serialises records into a Kafka RecordBatch (magic=2) with Snappy compression.
-func encodeBatch(records []*kgo.Record) []byte {
+// encodeBatch serialises records into a Kafka RecordBatch (magic=2) with Snappy
+// compression. It also returns the uncompressed and compressed record-payload
+// sizes (excluding the batch wrapper); the two are equal when compression does
+// not shrink the payload.
+func encodeBatch(records []*kgo.Record) (buf []byte, uncompressedBytes, compressedBytes int) {
 	firstTS := records[0].Timestamp.UnixMilli()
 	maxTS := firstTS
 	for _, r := range records[1:] {
@@ -239,6 +258,9 @@ func encodeBatch(records []*kgo.Record) []byte {
 		payload = raw
 	}
 
+	uncompressedBytes = len(raw)
+	compressedBytes = len(payload)
+
 	batch := kmsg.RecordBatch{
 		PartitionLeaderEpoch: -1,
 		Magic:                2,
@@ -254,7 +276,7 @@ func encodeBatch(records []*kgo.Record) []byte {
 	}
 	batch.Length = batchFixedFieldsAfterLength + int32(len(payload))
 
-	buf := make([]byte, 0, 8+4+int(batch.Length))
+	buf = make([]byte, 0, 8+4+int(batch.Length))
 	buf = batch.AppendTo(buf)
 
 	// The CRC range is defined by the Kafka protocol; it covers all bytes after the CRC field.
@@ -265,7 +287,7 @@ func encodeBatch(records []*kgo.Record) []byte {
 	putBuf(rawPtr, raw)
 	putBuf(compPtr, comp)
 
-	return buf
+	return buf, uncompressedBytes, compressedBytes
 }
 
 // putBuf returns a buffer to the pool, dropping it if it grew too large.

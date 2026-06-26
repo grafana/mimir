@@ -58,7 +58,7 @@ type AgentFlushFunc func(ctx context.Context, nodeID int32, partitions []routedT
 type AgentRecordBuffer struct {
 	nodeID        int32
 	linger        time.Duration
-	maxBatchBytes int32
+	batchMaxBytes int32
 	flush         AgentFlushFunc
 	metrics       *metrics
 
@@ -77,12 +77,12 @@ type AgentRecordBuffer struct {
 
 // NewAgentRecordBuffer returns a buffer for records destined to nodeID.
 // flush runs in a background goroutine when a batch is ready.
-func NewAgentRecordBuffer(nodeID int32, linger time.Duration, maxBatchBytes int32, flush AgentFlushFunc, m *metrics) *AgentRecordBuffer {
+func NewAgentRecordBuffer(nodeID int32, linger time.Duration, batchMaxBytes int32, flush AgentFlushFunc, m *metrics) *AgentRecordBuffer {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &AgentRecordBuffer{
 		nodeID:         nodeID,
 		linger:         linger,
-		maxBatchBytes:  maxBatchBytes,
+		batchMaxBytes:  batchMaxBytes,
 		flush:          flush,
 		metrics:        m,
 		flushCtx:       ctx,
@@ -101,14 +101,14 @@ func (a *AgentRecordBuffer) Add(partitions []promisedRoutedTopicPartitionRecords
 		return
 	}
 
-	// Split any group whose own RecordBatch would exceed maxBatchBytes into
+	// Split any group whose own RecordBatch would exceed batchMaxBytes into
 	// chunks that each fit, so no single flushed per-partition batch can be
 	// rejected MessageTooLarge. Chunks are then added one at a time below, and
-	// because each is <= maxBatchBytes the overflow check keeps nextProduceWireBytes
+	// because each is <= batchMaxBytes the overflow check keeps nextProduceWireBytes
 	// (and therefore every per-partition batch) within the cap.
 	chunks := make([]promisedRoutedTopicPartitionRecords, 0, len(partitions))
 	for _, p := range partitions {
-		chunks = append(chunks, splitPromisedRoutedTopicPartitionRecordsByMaxBatchBytes(p, a.maxBatchBytes)...)
+		chunks = append(chunks, splitPromisedRoutedTopicPartitionRecordsByBatchMaxBytes(p, a.batchMaxBytes)...)
 	}
 
 	a.mu.Lock()
@@ -131,14 +131,14 @@ func (a *AgentRecordBuffer) Add(partitions []promisedRoutedTopicPartitionRecords
 	a.mu.Unlock()
 }
 
-// addToNextProduceLocked appends one group (already <= maxBatchBytes) to the
+// addToNextProduceLocked appends one group (already <= batchMaxBytes) to the
 // pending produce, flushing first when it wouldn't fit. Groups are never merged
 // here: same-partition entries are coalesced into one wire batch at flush time
 // (startFlushLocked), which keeps each group's done untouched. Caller must hold
 // a.mu.
 func (a *AgentRecordBuffer) addToNextProduceLocked(p promisedRoutedTopicPartitionRecords) {
 	addBytes, firstTS := a.computeAddCostLocked(p.records)
-	if a.nextProduceRecords > 0 && a.nextProduceWireBytes+addBytes > int64(a.maxBatchBytes) {
+	if a.nextProduceRecords > 0 && a.nextProduceWireBytes+addBytes > int64(a.batchMaxBytes) {
 		// Re-cost after the forced flush: the batch overhead and offsetDelta
 		// values reset, so the original addBytes no longer applies.
 		a.startFlushLocked()

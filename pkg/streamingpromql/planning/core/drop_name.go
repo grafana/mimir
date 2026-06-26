@@ -3,6 +3,7 @@
 package core
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -58,8 +59,8 @@ func (n *DropName) MinimumRequiredPlanVersion(types.QueryTimeRange) (planning.Qu
 	return planning.QueryPlanV1, nil
 }
 
-func MaterializeDropName(n *DropName, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
-	inner, err := materializer.ConvertNodeToOperator(n.Inner, timeRange)
+func MaterializeDropName(ctx context.Context, n *DropName, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
+	inner, err := materializer.ConvertNodeToOperator(ctx, n.Inner, timeRange)
 	if err != nil {
 		return nil, err
 	}
