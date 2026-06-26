@@ -74,7 +74,7 @@ func (s *partitionState) updateTime(ts time.Time, jobSize time.Duration) (*sched
 	case bucketBefore:
 		// New bucket is before our current one. This should only happen if our
 		// Kafka's end offsets aren't monotonically increasing.
-		return nil, fmt.Errorf("time went backwards: %s < %s (%d, %d)", newJobBucket, s.jobBucket, s.offsets.startOffset, s.offsets.latestOffset)
+		return nil, fmt.Errorf("time went backwards: %s < %s (%d, %d)", newJobBucket, s.jobBucket, s.offsets.startOffset, s.offsets.endOffset)
 	case bucketSame:
 		// Observation is in the currently tracked bucket. No action needed.
 	case bucketAfter:
@@ -82,15 +82,15 @@ func (s *partitionState) updateTime(ts time.Time, jobSize time.Duration) (*sched
 		// bucket if it has data and start a new one.
 
 		var job *schedulerpb.JobSpec
-		if s.offsets.startOffset != offsetEmpty && s.offsets.startOffset < s.offsets.latestOffset {
+		if s.offsets.startOffset != offsetEmpty && s.offsets.startOffset < s.offsets.endOffset {
 			job = &schedulerpb.JobSpec{
 				Topic:       s.topic,
 				Partition:   s.partition,
 				StartOffset: s.offsets.startOffset,
-				EndOffset:   s.offsets.latestOffset,
+				EndOffset:   s.offsets.endOffset,
 			}
 		}
-		s.offsets.startOffset = s.offsets.latestOffset
+		s.offsets.startOffset = s.offsets.endOffset
 		s.jobBucket = newJobBucket
 		return job, nil
 	}
@@ -179,8 +179,8 @@ type singleClusterOffsets struct {
 	// startOffset is the start offset of the next job to emit.
 	// It is offsetEmpty until the first end offset is observed.
 	startOffset int64
-	// latestOffset is the most recently observed end offset.
-	latestOffset int64
+	// endOffset is the most recently observed end offset.
+	endOffset int64
 
 	committed *advancingOffset
 	planned   *advancingOffset
@@ -188,10 +188,10 @@ type singleClusterOffsets struct {
 
 func newSingleClusterOffsets(metrics *schedulerMetrics, logger log.Logger) singleClusterOffsets {
 	return singleClusterOffsets{
-		startOffset:  offsetEmpty,
-		latestOffset: offsetEmpty,
-		committed:    newAdvancingOffset(offsetNameCommitted, metrics, logger),
-		planned:      newAdvancingOffset(offsetNamePlanned, metrics, logger),
+		startOffset: offsetEmpty,
+		endOffset:   offsetEmpty,
+		committed:   newAdvancingOffset(offsetNameCommitted, metrics, logger),
+		planned:     newAdvancingOffset(offsetNamePlanned, metrics, logger),
 	}
 }
 
@@ -199,13 +199,13 @@ func newSingleClusterOffsets(metrics *schedulerMetrics, logger log.Logger) singl
 // first observed offset also seeds the start offset of the first job. It is
 // expected to be called with monotonically increasing end offsets.
 func (o *singleClusterOffsets) updateEndOffset(end int64) error {
-	if o.latestOffset != offsetEmpty && end < o.latestOffset {
-		return fmt.Errorf("%w: %d < %d", errEndOffsetWentBackwards, end, o.latestOffset)
+	if o.endOffset != offsetEmpty && end < o.endOffset {
+		return fmt.Errorf("%w: %d < %d", errEndOffsetWentBackwards, end, o.endOffset)
 	}
 	if o.startOffset == offsetEmpty {
 		o.startOffset = end
 	}
-	o.latestOffset = end
+	o.endOffset = end
 	return nil
 }
 

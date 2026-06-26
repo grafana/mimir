@@ -367,25 +367,25 @@ func TestNewSingleClusterOffsets(t *testing.T) {
 
 	// Before observing any end offset, both offsets are empty.
 	require.Equal(t, offsetEmpty, o.startOffset)
-	require.Equal(t, offsetEmpty, o.latestOffset)
+	require.Equal(t, offsetEmpty, o.endOffset)
 
 	// The first observed end offset seeds the start offset, so they're equal.
 	require.NoError(t, o.updateEndOffset(100))
 	require.Equal(t, int64(100), o.startOffset)
-	require.Equal(t, int64(100), o.latestOffset)
+	require.Equal(t, int64(100), o.endOffset)
 
 	// Subsequent observations only advance the latest offset, so they diverge.
 	require.NoError(t, o.updateEndOffset(200))
 	require.Equal(t, int64(100), o.startOffset)
-	require.Equal(t, int64(200), o.latestOffset)
+	require.Equal(t, int64(200), o.endOffset)
 
 	// Observing the same offset again is allowed and changes nothing.
 	require.NoError(t, o.updateEndOffset(200))
 	require.Equal(t, int64(100), o.startOffset)
-	require.Equal(t, int64(200), o.latestOffset)
+	require.Equal(t, int64(200), o.endOffset)
 
 	// An end offset that moves backwards is reported and leaves the offsets unchanged.
 	require.ErrorIs(t, o.updateEndOffset(150), errEndOffsetWentBackwards)
 	require.Equal(t, int64(100), o.startOffset)
-	require.Equal(t, int64(200), o.latestOffset)
+	require.Equal(t, int64(200), o.endOffset)
 }
