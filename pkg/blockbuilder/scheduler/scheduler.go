@@ -327,10 +327,7 @@ func (s *BlockBuilderScheduler) populateInitialJobs(ctx context.Context, consume
 		for _, io := range o {
 			ps.updateEndOffset(io.offset)
 
-			if io.time.IsZero() {
-				// A sentinel without a timestamp marks the partition's high
-				// watermark (end offset). Record the offset, but don't advance the
-				// time bucket since there's no actual time supplied.
+			if io.skipTimeUpdate {
 				continue
 			}
 

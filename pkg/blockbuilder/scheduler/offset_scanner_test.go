@@ -8,9 +8,15 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"github.com/twmb/franz-go/pkg/kadm"
+	"github.com/twmb/franz-go/pkg/kfake"
+	"github.com/twmb/franz-go/pkg/kgo"
 
 	"github.com/grafana/mimir/pkg/util/test"
+	"github.com/grafana/mimir/pkg/util/testkafka"
 )
 
 func TestInitialOffsetProbing(t *testing.T) {
@@ -53,7 +59,7 @@ func TestInitialOffsetProbing(t *testing.T) {
 			minScanTime: time.Date(2025, 2, 20, 10, 0, 0, 600*1000000, time.UTC),
 			expectedRanges: []*offsetTime{
 				{offset: 2000, time: time.Date(2025, 3, 1, 10, 0, 0, 200*1000000, time.UTC)},
-				{offset: 2001, time: time.Time{}},
+				{offset: 2001, skipTimeUpdate: true},
 			},
 		},
 		"one record: no new data": {
@@ -110,7 +116,7 @@ func TestInitialOffsetProbing(t *testing.T) {
 				{offset: 1013, time: time.Date(2025, 3, 1, 10, 0, 0, 500*1000000, time.UTC)},
 				{offset: 1014, time: time.Date(2025, 3, 1, 10, 0, 0, 501*1000000, time.UTC)},
 				{offset: 1017, time: time.Date(2025, 3, 1, 10, 0, 0, 600*1000000, time.UTC)},
-				{offset: 1020, time: time.Time{}},
+				{offset: 1020, skipTimeUpdate: true},
 			},
 		},
 		"records with duplicate timestamps": {
@@ -133,7 +139,7 @@ func TestInitialOffsetProbing(t *testing.T) {
 			expectedRanges: []*offsetTime{
 				{offset: 1000, time: time.Date(2025, 3, 1, 10, 0, 0, 100*1000000, time.UTC)},
 				{offset: 1001, time: time.Date(2025, 3, 1, 10, 0, 0, 101*1000000, time.UTC)},
-				{offset: 1009, time: time.Time{}},
+				{offset: 1009, skipTimeUpdate: true},
 			},
 		},
 		"resumption offset is before min scan time": {
@@ -151,7 +157,7 @@ func TestInitialOffsetProbing(t *testing.T) {
 			expectedRanges: []*offsetTime{
 				{offset: 1002, time: time.Date(2025, 3, 1, 10, 0, 0, 200*1000000, time.UTC)},
 				{offset: 1003, time: time.Date(2025, 3, 1, 10, 0, 0, 300*1000000, time.UTC)},
-				{offset: 1004, time: time.Time{}},
+				{offset: 1004, skipTimeUpdate: true},
 			},
 		},
 		"min scan time later than any data": {
@@ -190,7 +196,7 @@ func TestInitialOffsetProbing(t *testing.T) {
 			minScanTime: time.Date(2025, 3, 1, 10, 0, 0, 0, time.UTC),
 			expectedRanges: []*offsetTime{
 				{offset: 1003, time: time.Date(2025, 3, 1, 10, 3, 0, 0, time.UTC)},
-				{offset: 1004, time: time.Time{}},
+				{offset: 1004, skipTimeUpdate: true},
 			},
 		},
 		"resume == start == end": {
@@ -217,7 +223,7 @@ func TestInitialOffsetProbing(t *testing.T) {
 			expectedRanges: []*offsetTime{
 				{offset: 2000, time: time.Date(2025, 3, 1, 11, 0, 0, 0, time.UTC)},
 				{offset: 3000, time: time.Date(2025, 3, 1, 12, 0, 0, 0, time.UTC)},
-				{offset: 10001, time: time.Time{}},
+				{offset: 10001, skipTimeUpdate: true},
 			},
 			msg: "if resumption offset has fallen off the retention window, we should produce jobs beginning at start",
 		},
@@ -226,7 +232,7 @@ func TestInitialOffsetProbing(t *testing.T) {
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
 			f := &mockOffsetFinder{offsets: tt.offsets, end: tt.end, distinctTimes: make(map[time.Time]struct{})}
-			scanner := newOffsetScanner(f, tt.endTime, tt.jobSize, tt.endTime.Sub(tt.minScanTime), prometheus.NewHistogram(prometheus.HistogramOpts{}))
+			scanner := newOffsetScanner(f, tt.endTime, tt.jobSize, tt.endTime.Sub(tt.minScanTime), promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}))
 			j, err := scanner.probeInitialOffsets(ctx, partitionOffsets{topic: "topic", partition: 0, start: tt.start, resume: tt.resume, end: tt.end}, test.NewTestingLogger(t))
 			assert.NoError(t, err)
 			assert.EqualValues(t, tt.expectedRanges, j, tt.msg)
@@ -235,21 +241,123 @@ func TestInitialOffsetProbing(t *testing.T) {
 }
 
 func TestScanProbeTimes(t *testing.T) {
+	// jobSize of 1m means scanStep is jobSize/4 = 15s. Probes step back from
+	// endTime by scanStep, stopping once the next step would be at or before
+	// minScanTime.
 	jobSize := 1 * time.Minute
-	endTime := time.Date(2025, 3, 1, 10, 2, 50, 0, time.UTC)
-	minScanTime := time.Date(2025, 3, 1, 10, 1, 50, 0, time.UTC)
 
-	// Steps back from endTime by jobSize/4 (15s), stopping once the next step
-	// would be at or before minScanTime.
-	assert.Equal(t, []time.Time{
-		time.Date(2025, 3, 1, 10, 2, 50, 0, time.UTC),
-		time.Date(2025, 3, 1, 10, 2, 35, 0, time.UTC),
-		time.Date(2025, 3, 1, 10, 2, 20, 0, time.UTC),
-		time.Date(2025, 3, 1, 10, 2, 5, 0, time.UTC),
-	}, scanProbeTimes(endTime, jobSize, minScanTime))
+	tests := map[string]struct {
+		endTime     time.Time
+		minScanTime time.Time
+		expected    []time.Time
+	}{
+		"aligned to minScan time": {
+			// Window is exactly 60s (4 * scanStep), so the descending grid
+			// lands exactly on minScanTime, which is excluded.
+			endTime:     time.Date(2025, 3, 1, 10, 2, 50, 0, time.UTC),
+			minScanTime: time.Date(2025, 3, 1, 10, 1, 50, 0, time.UTC),
+			expected: []time.Time{
+				time.Date(2025, 3, 1, 10, 2, 50, 0, time.UTC),
+				time.Date(2025, 3, 1, 10, 2, 35, 0, time.UTC),
+				time.Date(2025, 3, 1, 10, 2, 20, 0, time.UTC),
+				time.Date(2025, 3, 1, 10, 2, 5, 0, time.UTC),
+			},
+		},
+		"unaligned to both": {
+			// Window is 65s (not a multiple of scanStep), so the lowest probe
+			// sits 5s above minScanTime.
+			endTime:     time.Date(2025, 3, 1, 10, 2, 50, 0, time.UTC),
+			minScanTime: time.Date(2025, 3, 1, 10, 1, 45, 0, time.UTC),
+			expected: []time.Time{
+				time.Date(2025, 3, 1, 10, 2, 50, 0, time.UTC),
+				time.Date(2025, 3, 1, 10, 2, 35, 0, time.UTC),
+				time.Date(2025, 3, 1, 10, 2, 20, 0, time.UTC),
+				time.Date(2025, 3, 1, 10, 2, 5, 0, time.UTC),
+				time.Date(2025, 3, 1, 10, 1, 50, 0, time.UTC),
+			},
+		},
+		"single step": {
+			// Window is 10s, shorter than one scanStep, so only endTime is probed.
+			endTime:     time.Date(2025, 3, 1, 10, 2, 50, 0, time.UTC),
+			minScanTime: time.Date(2025, 3, 1, 10, 2, 40, 0, time.UTC),
+			expected: []time.Time{
+				time.Date(2025, 3, 1, 10, 2, 50, 0, time.UTC),
+			},
+		},
+		"empty scan window": {
+			// minScanTime at endTime yields no probes.
+			endTime:     time.Date(2025, 3, 1, 10, 2, 50, 0, time.UTC),
+			minScanTime: time.Date(2025, 3, 1, 10, 2, 50, 0, time.UTC),
+			expected:    nil,
+		},
+	}
 
-	// An empty scan window (minScanTime at or after endTime) yields no probes.
-	assert.Empty(t, scanProbeTimes(endTime, jobSize, endTime))
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			assert.Equal(t, tt.expected, scanProbeTimes(tt.endTime, jobSize, tt.minScanTime))
+		})
+	}
+}
+
+// TestOffsetFinder_offsetAfterTime runs against a kfake cluster, so it
+// exercises the method end-to-end including kadm's ListOffsetsAfterMilli.
+func TestOffsetFinder_offsetAfterTime(t *testing.T) {
+	ctx := context.Background()
+
+	var vnet kfake.VirtualNetwork
+	_, kafkaAddr := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, 1, "ingest", testkafka.WithVirtualNetwork(&vnet))
+	cli, err := kgo.NewClient(
+		kgo.SeedBrokers(kafkaAddr),
+		kgo.Dialer(vnet.DialContext),
+		kgo.RecordPartitioner(kgo.ManualPartitioner()),
+	)
+	require.NoError(t, err)
+	t.Cleanup(cli.Close)
+
+	require.NoError(t, cli.ProduceSync(ctx, &kgo.Record{Value: []byte("v"), Topic: "ingest", Partition: 0}).FirstErr())
+
+	finder := newOffsetFinder(kadm.NewClient(cli))
+
+	// A time before the record returns a real record offset and timestamp.
+	off, _, isEndOffset, err := finder.offsetAfterTime(ctx, "ingest", 0, time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC))
+	require.NoError(t, err)
+	assert.Equal(t, int64(0), off)
+	assert.False(t, isEndOffset, "a real record at or after the time is not the end offset")
+
+	// A time after every record has no record after it, so ListOffsetsAfterMilli
+	// falls back to the end offset with Kafka's -1 timestamp sentinel, which
+	// offsetAfterTime reports as the end offset.
+	off, _, isEndOffset, err = finder.offsetAfterTime(ctx, "ingest", 0, time.Date(2100, 1, 1, 0, 0, 0, 0, time.UTC))
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), off, "should fall back to the end offset")
+	assert.True(t, isEndOffset, "no record after the time must be reported as the end offset")
+}
+
+func TestOffsetFinder_offsetAfterTime_negativeTimestamp(t *testing.T) {
+	ctx := context.Background()
+	probeTime := time.Date(2025, 3, 1, 10, 0, 0, 0, time.UTC)
+
+	// A -1 timestamp (no record at or after the time) is reported as the end
+	// offset, never an error, so the partition is still seeded and its backlog
+	// isn't dropped.
+	finder := newOffsetFinder(nil)
+	finder.offsets[probeTime] = kadm.ListedOffsets{
+		"ingest": {0: {Topic: "ingest", Partition: 0, Offset: 42, Timestamp: -1}},
+	}
+	off, _, isEndOffset, err := finder.offsetAfterTime(ctx, "ingest", 0, probeTime)
+	require.NoError(t, err)
+	assert.Equal(t, int64(42), off)
+	assert.True(t, isEndOffset, "a -1 timestamp must be reported as the end offset")
+
+	// A timestamp below -1 should never be returned; it indicates a malformed
+	// response, so we fail loudly.
+	badFinder := newOffsetFinder(nil)
+	badFinder.offsets[probeTime] = kadm.ListedOffsets{
+		"ingest": {0: {Topic: "ingest", Partition: 0, Offset: 42, Timestamp: -2}},
+	}
+	assert.Panics(t, func() {
+		_, _, _, _ = badFinder.offsetAfterTime(ctx, "ingest", 0, probeTime)
+	})
 }
 
 // Create an offset finder that we can prepopulate with offset scenarios.
@@ -259,7 +367,7 @@ type mockOffsetFinder struct {
 	distinctTimes map[time.Time]struct{}
 }
 
-func (o *mockOffsetFinder) offsetAfterTime(_ context.Context, _ string, _ int32, t time.Time) (int64, time.Time, error) {
+func (o *mockOffsetFinder) offsetAfterTime(_ context.Context, _ string, _ int32, t time.Time) (int64, time.Time, bool, error) {
 	o.distinctTimes[t] = struct{}{}
 	// scan the offsets slice and return the lowest offset whose time is after t.
 	mint := time.Time{}
@@ -278,9 +386,9 @@ func (o *mockOffsetFinder) offsetAfterTime(_ context.Context, _ string, _ int32,
 	}
 	if off == -1 {
 		// Like ListOffsetsAfterMilli, we return the end offset if we don't find any new data.
-		return o.end, time.Time{}, nil
+		return o.end, time.Time{}, true, nil
 	}
-	return off, mint, nil
+	return off, mint, false, nil
 }
 
 var _ offsetStore = (*mockOffsetFinder)(nil)

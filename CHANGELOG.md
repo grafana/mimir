@@ -74,6 +74,7 @@
 * [BUGFIX] MQE: Report a query that panics during evaluation as failed in the `evaluation stats` log, instead of logging it as successful. The querier still re-panics afterwards, crash behaviour is unchanged. #15753
 * [BUGFIX] Memcached: Fix issue where cache-related trace spans included events emitted with an empty `name` label. #15794
 * [BUGFIX] MQE: Fix issue where LBAC is not respected by range vector splitting cache. #15802
+* [BUGFIX] Block-builder-scheduler: Fix a spurious "time went backwards" warning logged at startup when a partition has no records after the scan time. #15855
 
 ### Mixin
 

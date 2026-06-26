@@ -33,7 +33,7 @@ func newSchedulerMetrics(reg prometheus.Registerer) schedulerMetrics {
 		}),
 		probeRecordTimeDelta: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
 			Name: "cortex_blockbuilder_scheduler_probe_record_time_delta_seconds",
-			Help: "Delta between a probe's requested time and the timestamp of the record at the returned offset, during initial offset probing. Smaller values mean probes land closer to actual data.",
+			Help: "Delta between a probe's requested time and the timestamp of the record at the returned offset, during initial offset probing.",
 
 			NativeHistogramBucketFactor: 1.1,
 		}),

@@ -18,6 +18,8 @@ import (
 type offsetTime struct {
 	offset int64
 	time   time.Time
+	// skipTimeUpdate means the end offset should be registered without advancing the time bucket.
+	skipTimeUpdate bool
 }
 
 // offsetScanner computes an initial set of <offset, time> pairs for each
@@ -48,11 +50,6 @@ func (s *offsetScanner) probeInitialOffsets(ctx context.Context, off partitionOf
 		return []*offsetTime{{offset: off.end, time: s.endTime}}, nil
 	}
 
-	if len(s.probeTimes) == 0 {
-		// No scan window, so there's nothing to probe.
-		return []*offsetTime{}, nil
-	}
-
 	reachedResume := false
 	sentinels := []*offsetTime{}
 
@@ -61,22 +58,23 @@ func (s *offsetScanner) probeInitialOffsets(ctx context.Context, off partitionOf
 	// given a timestamp, so we iteratively call that API for each probe time
 	// until we reach the resume offset.
 	for _, pb := range s.probeTimes {
-		offset, t, err := s.offs.offsetAfterTime(ctx, off.topic, off.partition, pb)
+		offset, t, isEndOffset, err := s.offs.offsetAfterTime(ctx, off.topic, off.partition, pb)
 		if err != nil {
 			return nil, err
 		}
 		level.Debug(logger).Log("msg", "found next boundary offset", "ts", pb,
-			"topic", off.topic, "partition", off.partition, "offset", offset)
+			"topic", off.topic, "partition", off.partition, "offset", offset, "isEndOffset", isEndOffset)
 
 		// Don't want to probe for offsets before the resume offset.
 		offset = max(offset, off.resume)
 
-		// Only append sentinel if it's the first time we've seen it.
 		if len(sentinels) == 0 || offset != sentinels[len(sentinels)-1].offset {
-			sentinels = append(sentinels, &offsetTime{offset: offset, time: t})
+			// The end offset has no real record timestamp, so register its
+			// offset but skip the time update rather than bucket from a
+			// non-existent record.
+			sentinels = append(sentinels, &offsetTime{offset: offset, time: t, skipTimeUpdate: isEndOffset})
 
-			// The high watermark is returned with ts == 0, that's not a real timestamp to observe.
-			if !t.IsZero() {
+			if !isEndOffset {
 				s.recordTimeDelta.Observe(t.Sub(pb).Seconds())
 			}
 		}
@@ -88,11 +86,12 @@ func (s *offsetScanner) probeInitialOffsets(ctx context.Context, off partitionOf
 		}
 	}
 
-	// We have at least one sentinel if we reach this point.
 	if !reachedResume {
-		lowestOffset := sentinels[len(sentinels)-1].offset
-		level.Warn(logger).Log("msg", "probe offsets: probe did not reach resume offset due to limited scan age",
-			"partition", off.partition, "lowestOffset", lowestOffset, "resumeOffset", off.resume)
+		lastOffset := int64(-1)
+		if len(sentinels) > 0 {
+			lastOffset = sentinels[len(sentinels)-1].offset
+		}
+		level.Warn(logger).Log("msg", "probe offsets: probe did not reach commit offset due to limited scan age", "partition", off.partition, "lastOffset", lastOffset, "resumeOffset", off.resume)
 	}
 
 	// Return them in increasing order of offset.
@@ -117,7 +116,7 @@ func scanProbeTimes(endTime time.Time, jobSize time.Duration, minScanTime time.T
 }
 
 type offsetStore interface {
-	offsetAfterTime(context.Context, string, int32, time.Time) (int64, time.Time, error)
+	offsetAfterTime(context.Context, string, int32, time.Time) (int64, time.Time, bool, error)
 }
 
 type offsetFinder struct {
@@ -134,16 +133,18 @@ func newOffsetFinder(adminClient *kadm.Client) *offsetFinder {
 
 // offsetAfterTime is a cached version of adminClient.ListOffsetsAfterMilli that
 // makes use of the fact that we want to ask about the same times for all partitions.
-func (o *offsetFinder) offsetAfterTime(ctx context.Context, topic string, partition int32, t time.Time) (int64, time.Time, error) {
+// The returned bool reports whether the offset is the partition's end offset
+// (no record at or after t); when true, the returned time is not meaningful.
+func (o *offsetFinder) offsetAfterTime(ctx context.Context, topic string, partition int32, t time.Time) (int64, time.Time, bool, error) {
 	offs, ok := o.offsets[t]
 	if !ok {
 		var err error
 		offs, err = o.adminClient.ListOffsetsAfterMilli(ctx, t.UnixMilli(), topic)
 		if err != nil {
-			return 0, time.Time{}, err
+			return 0, time.Time{}, false, err
 		}
 		if offs.Error() != nil {
-			return 0, time.Time{}, offs.Error()
+			return 0, time.Time{}, false, offs.Error()
 		}
 
 		o.offsets[t] = offs
@@ -151,13 +152,25 @@ func (o *offsetFinder) offsetAfterTime(ctx context.Context, topic string, partit
 
 	po, ok := offs.Lookup(topic, partition)
 	if !ok {
-		return 0, time.Time{}, fmt.Errorf("failed to get offset for partition %d at time %s: not present", partition, t)
+		return 0, time.Time{}, false, fmt.Errorf("failed to get offset for partition %d at time %s: not present", partition, t)
 	}
 	if po.Err != nil {
-		return 0, time.Time{}, fmt.Errorf("failed to get offset for partition %d at time %s: %w", partition, t, po.Err)
+		return 0, time.Time{}, false, fmt.Errorf("failed to get offset for partition %d at time %s: %w", partition, t, po.Err)
 	}
 
-	return po.Offset, time.UnixMilli(po.Timestamp), nil
+	if po.Timestamp == -1 {
+		// When there's no record at or after the requested time, kadm returns the
+		// end offset with a -1 timestamp. The timestamp is meaningless here, so
+		// report it as the end offset.
+		return po.Offset, time.Time{}, true, nil
+	}
+	if po.Timestamp < -1 {
+		// ListOffsetsAfterMilli should only ever return a real record timestamp or
+		// the -1 sentinel, so anything below -1 means a malformed response.
+		panic(fmt.Sprintf("unexpected timestamp %d for partition %d at time %s: timestamps below -1 should never be returned", po.Timestamp, partition, t))
+	}
+
+	return po.Offset, time.UnixMilli(po.Timestamp), false, nil
 }
 
 var _ offsetStore = (*offsetFinder)(nil)
