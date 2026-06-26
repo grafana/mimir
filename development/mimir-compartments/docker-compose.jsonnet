@@ -195,6 +195,9 @@ std.manifestYamlDoc({
         // Single-quoted so "<...>" isn't read as a shell redirection by "sh -c"; the placeholder is
         // expanded to each write compartment's cluster at runtime.
         "-ingest-storage.kafka.address='kafka-wc-<write-compartment-id>:9092'",
+        // Upload the blocks built for this read compartment into its dedicated bucket, matching the
+        // compactor and store-gateway for the same compartment (mimir-blocks-rc-<id>).
+        '-blocks-storage.s3.bucket-name=mimir-blocks-rc-%d' % rc,
       ],
     })
     for rc in std.range(0, numCompartments - 1)
@@ -341,12 +344,9 @@ std.manifestYamlDoc({
       ],
       healthcheck: {
         test: 'kafka-broker-api-versions --bootstrap-server localhost:9092 || exit 1',
-        // The JVM-based kafka-broker-api-versions tool takes a few seconds to start, so the timeout
-        // must be generous; a 1s timeout marks a healthy broker unhealthy and blocks every dependent
-        // service (depends_on: service_healthy) from ever starting.
-        start_period: '20s',
-        interval: '5s',
-        timeout: '10s',
+        start_period: '1s',
+        interval: '1s',
+        timeout: '2s',
         retries: '30',
       },
     }

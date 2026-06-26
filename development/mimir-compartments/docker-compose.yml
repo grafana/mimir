@@ -31,7 +31,7 @@
     "command":
       - "sh"
       - "-c"
-      - "exec ./mimir -config.file=./config/mimir.yaml -target=block-builder -activity-tracker.filepath=/activity/block-builder-rc-0 -block-builder.scheduler.address=block-builder-scheduler-rc-0:9095 -ingest-storage.kafka.address='kafka-wc-<write-compartment-id>:9092'"
+      - "exec ./mimir -config.file=./config/mimir.yaml -target=block-builder -activity-tracker.filepath=/activity/block-builder-rc-0 -block-builder.scheduler.address=block-builder-scheduler-rc-0:9095 -ingest-storage.kafka.address='kafka-wc-<write-compartment-id>:9092' -blocks-storage.s3.bucket-name=mimir-blocks-rc-0"
     "depends_on":
       "kafka-wc-0":
         "condition": "service_healthy"
@@ -56,7 +56,7 @@
     "command":
       - "sh"
       - "-c"
-      - "exec ./mimir -config.file=./config/mimir.yaml -target=block-builder -activity-tracker.filepath=/activity/block-builder-rc-1 -block-builder.scheduler.address=block-builder-scheduler-rc-1:9095 -ingest-storage.kafka.address='kafka-wc-<write-compartment-id>:9092'"
+      - "exec ./mimir -config.file=./config/mimir.yaml -target=block-builder -activity-tracker.filepath=/activity/block-builder-rc-1 -block-builder.scheduler.address=block-builder-scheduler-rc-1:9095 -ingest-storage.kafka.address='kafka-wc-<write-compartment-id>:9092' -blocks-storage.s3.bucket-name=mimir-blocks-rc-1"
     "depends_on":
       "kafka-wc-0":
         "condition": "service_healthy"
@@ -482,11 +482,11 @@
       - "KAFKA_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093,PLAINTEXT_HOST://:29092"
       - "KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka-wc-0:9092,PLAINTEXT_HOST://localhost:29092"
     "healthcheck":
-      "interval": "5s"
+      "interval": "1s"
       "retries": "30"
-      "start_period": "20s"
+      "start_period": "1s"
       "test": "kafka-broker-api-versions --bootstrap-server localhost:9092 || exit 1"
-      "timeout": "10s"
+      "timeout": "2s"
     "hostname": "kafka-wc-0"
     "image": "confluentinc/cp-kafka:latest"
     "ports":
@@ -509,11 +509,11 @@
       - "KAFKA_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093,PLAINTEXT_HOST://:29093"
       - "KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka-wc-1:9092,PLAINTEXT_HOST://localhost:29093"
     "healthcheck":
-      "interval": "5s"
+      "interval": "1s"
       "retries": "30"
-      "start_period": "20s"
+      "start_period": "1s"
       "test": "kafka-broker-api-versions --bootstrap-server localhost:9092 || exit 1"
-      "timeout": "10s"
+      "timeout": "2s"
     "hostname": "kafka-wc-1"
     "image": "confluentinc/cp-kafka:latest"
     "ports":
