@@ -238,7 +238,7 @@ func (t *trackerStore) cleanup(now time.Time) {
 			shard.Lock()
 			removed, rehashed := shard.Cleanup(watermark, tenant.currentLimit)
 			shard.Unlock()
-			level.Info(t.logger).Log("shard cleanup timing", "shard", s, "elapsed", time.Since(t0), "rehashed", rehashed, "removed", removed, "series", tenant.series.Load(), "limit", tenant.currentLimit.Load())
+			level.Info(t.logger).Log("msg", "shard cleanup timing", "shard", s, "elapsed", time.Since(t0), "rehashed", rehashed, "removed", removed, "series", tenant.series.Load(), "limit", tenant.currentLimit.Load())
 
 			if removed > 0 {
 				tenant.series.Add(-uint64(removed))
@@ -252,7 +252,7 @@ func (t *trackerStore) cleanup(now time.Time) {
 			deletionCandidates = append(deletionCandidates, tenantID)
 		}
 	}
-	level.Info(t.logger).Log("partition cleanup timing", "elapsed", time.Since(totalT0), "tenants", len(tenantsClone))
+	level.Info(t.logger).Log("msg", "partition cleanup timing", "elapsed", time.Since(totalT0), "tenants", len(tenantsClone))
 
 	if len(deletionCandidates) == 0 {
 		return
