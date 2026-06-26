@@ -207,19 +207,21 @@ func (c *Cache) MinimumRequiredPlanVersion(_ types.QueryTimeRange) (planning.Que
 }
 
 type CacheMaterializer struct {
+	enabled        bool
 	cache          caching.Backend
 	limitsProvider LimitsProvider
 	metrics        *ResultsCacheMetrics
 	minCacheExtent time.Duration
 }
 
-func NewCacheMaterializer(baseCache cache.Cache, cachePrefixGenerator caching.PrefixGenerator, limitsProvider LimitsProvider, minCacheExtent time.Duration, reg prometheus.Registerer) *CacheMaterializer {
+func NewCacheMaterializer(enabled bool, baseCache cache.Cache, cachePrefixGenerator caching.PrefixGenerator, limitsProvider LimitsProvider, minCacheExtent time.Duration, reg prometheus.Registerer) *CacheMaterializer {
 	m := &CacheMaterializer{
+		enabled:        enabled,
 		limitsProvider: limitsProvider,
 		minCacheExtent: minCacheExtent,
 	}
 
-	if baseCache != nil {
+	if enabled {
 		m.cache = caching.NewPrefixingCache(
 			caching.NewAdaptor(baseCache),
 			caching.VersioningAndItemTypePrefixGenerator(cachePrefixGenerator, cacheVersion, "MQEQR"),
@@ -237,8 +239,8 @@ func (m *CacheMaterializer) Materialize(ctx context.Context, n planning.Node, ma
 		return nil, fmt.Errorf("overrideRangeParams is not supported for CacheMaterializer")
 	}
 
-	if m.cache == nil {
-		return nil, fmt.Errorf("attempted to materialize a node of type %T, but no cache is configured", n)
+	if !m.enabled {
+		return nil, fmt.Errorf("attempted to materialize a node of type %T, but caching is disabled", n)
 	}
 
 	node, ok := n.(*Cache)
