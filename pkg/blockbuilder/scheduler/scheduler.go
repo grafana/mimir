@@ -541,10 +541,13 @@ func probeInitialOffsets(ctx context.Context, offs []partitionOffsets, offStores
 	// and endTime) or has a backlog entirely older than maxScanAge. Either way, seed it at
 	// its end offset (the high watermark, from ListEndOffsets) so updateEndOffset resumes
 	// it there rather than re-consuming from 0.
+	// FIXME: this could drop the lowest offset for a cluster
+	// We should instead sort by offsets and skip the timestamps which go down
+	// https://github.com/grafana/mimir/pull/15855 will bring in a refactoring that will help (skip time update but still update offset)
 	observed := make(map[int]bool, len(offs))
 	for _, obs := range observations {
-		for wc := range obs.offsets {
-			observed[wc] = true
+		for clusterID := range obs.offsets {
+			observed[clusterID] = true
 		}
 	}
 	var seed map[int]int64
