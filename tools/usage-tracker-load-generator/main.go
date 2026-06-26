@@ -119,6 +119,7 @@ func main() {
 	// Create the usage-tracker client.
 	stubLimits := validation.NewOverrides(validation.Limits{}, validation.NewMockTenantLimits(nil))
 	client := usagetrackerclient.NewUsageTrackerClient("load-generator", cfg.Client, partitionRing, instanceRing, stubLimits, logger, prometheus.DefaultRegisterer, &noOpUsageTrackerRejectionObserver{})
+	assertNoError(services.StartAndAwaitRunning(ctx, client))
 
 	// Compute the number of workers assuming each TrackSeries() request 100ms on average (we consider this a worst case scenario).
 	numRequestsPerScrapeInterval := cfg.SimulatedTotalSeries / cfg.SimulatedSeriesPerWriteRequest
