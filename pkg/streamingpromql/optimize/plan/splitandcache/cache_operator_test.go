@@ -673,9 +673,11 @@ func TestCacheOperator(t *testing.T) {
 			o.timeNow = func() time.Time { return timeNow }
 			o.getCurrentTraceID = func(context.Context) (string, bool) { return newTraceID, true }
 
-			cacheKey, err := o.computeCacheKey(ctx)
-			require.NoError(t, err)
-			hashedCacheKey := caching.HashCacheKey(cacheKey)
+			// Populate the full cache key (including the tenant prefix) so the seeded entry is stored under
+			// the same hashed key the operator will look up during Prepare.
+			require.NoError(t, o.populateCacheKey(ctx))
+			cacheKey := o.key
+			hashedCacheKey := o.hashedKey
 
 			if testCase.existingCacheEntry != nil {
 				if testCase.existingCacheEntry.CacheKey == nil {
@@ -1157,12 +1159,14 @@ func (m *mockLimitsProvider) AllowCachingUnalignedQueries(ctx context.Context) (
 
 func TestCacheOperator_CacheKey(t *testing.T) {
 	generateCacheKey := func(tenantID string, desiredTimeRange types.QueryTimeRange, node planning.Node, params *planning.QueryParameters) []byte {
+		// Pass a nil prefix generator so newCacheOperator falls back to the tenant prefix generator.
+		// As the org ID is no longer part of computeCacheKey, the prefix is what provides tenant
+		// isolation, so we exercise the full key (computed by populateCacheKey) rather than computeCacheKey alone.
 		o := newCacheOperator(nil, nil, nil, node, desiredTimeRange, nil, posrange.PositionRange{}, params, nil, log.NewNopLogger(), cacheEntryInterval, 0, nil)
 		ctx := user.InjectOrgID(context.Background(), tenantID)
 
-		key, err := o.computeCacheKey(ctx)
-		require.NoError(t, err)
-		return key
+		require.NoError(t, o.populateCacheKey(ctx))
+		return o.key
 	}
 
 	originalTenantID := "user-1234"

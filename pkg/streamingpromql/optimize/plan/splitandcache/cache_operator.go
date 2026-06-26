@@ -13,7 +13,6 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/tracing"
-	"github.com/grafana/dskit/user"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
@@ -104,6 +103,14 @@ func newCacheOperator(
 	minCacheExtent time.Duration,
 	metrics *ResultsCacheMetrics,
 ) *CacheOperator {
+	// The orgId has been removed from computeCacheKey() since we rely on the
+	// given prefix generator to provide this. This check ensures that
+	// if no prefix generator is presented we still include the orgId/tenants
+	// in the generated key.
+	if prefixGenerator == nil {
+		prefixGenerator = caching.TenantPrefixGenerator
+	}
+
 	return &CacheOperator{
 		Backend:                  backend,
 		PrefixGenerator:          prefixGenerator,
@@ -124,11 +131,6 @@ func newCacheOperator(
 }
 
 func (c *CacheOperator) computeCacheKey(ctx context.Context) ([]byte, error) {
-	orgID, err := user.ExtractOrgID(ctx)
-	if err != nil {
-		return nil, err
-	}
-
 	startTime := timestamp.Time(c.DesiredTimeRange.StartT)
 	cacheEntryStartT := timestamp.FromTime(startTime.Truncate(c.cacheEntryInterval))
 
@@ -145,7 +147,6 @@ func (c *CacheOperator) computeCacheKey(ctx context.Context) ([]byte, error) {
 
 	key := bytes.Join(
 		[][]byte{
-			[]byte(orgID),
 			[]byte(strconv.FormatInt(cacheEntryStartT, 10)),
 			[]byte(strconv.FormatInt(c.DesiredTimeRange.IntervalMilliseconds, 10)),
 			[]byte(strconv.FormatInt(offsetFromStepGrid, 10)),
@@ -184,13 +185,12 @@ func (c *CacheOperator) populateCacheKey(ctx context.Context) error {
 		return err
 	}
 
-	if c.PrefixGenerator != nil {
-		prefix, err := c.PrefixGenerator(ctx)
-		if err != nil {
-			return fmt.Errorf("generating cache key prefix: %w", err)
-		}
-		key = append([]byte(prefix), key...)
+	// In the newCacheOperator() we ensure there is always a PrefixGenerator set.
+	prefix, err := c.PrefixGenerator(ctx)
+	if err != nil {
+		return fmt.Errorf("generating cache key prefix: %w", err)
 	}
+	key = append([]byte(prefix), key...)
 
 	// key is the full key which includes the prefix from the PrefixGenerator - this is kept for collision detection.
 	c.key = key
