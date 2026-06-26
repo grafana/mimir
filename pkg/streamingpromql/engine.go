@@ -49,7 +49,7 @@ func NewEngine(opts EngineOpts, metrics *stats.QueryMetrics, planner *QueryPlann
 	var cacheFactory *cache.CacheFactory
 	if opts.RangeVectorSplitting.Enabled {
 		var err error
-		cacheFactory, err = cache.NewCacheFactory(opts.RangeVectorSplitting.IntermediateResultsCache, opts.Limits, opts.Logger, opts.CommonOpts.Reg)
+		cacheFactory, err = cache.NewCacheFactory(opts.RangeVectorSplitting.IntermediateResultsCache, opts.Limits, opts.CachePrefixGenerator, opts.Logger, opts.CommonOpts.Reg)
 		if err != nil {
 			return nil, fmt.Errorf("failed to init range vector splitting cache, err: %w", err)
 		}
@@ -107,6 +107,7 @@ func NewEngineWithCache(opts EngineOpts, metrics *stats.QueryMetrics, planner *Q
 
 		planning.NODE_TYPE_SPLIT_FUNCTION_OVER_RANGE_VECTOR: rangevectorsplitting.NewMaterializer(opts.RangeVectorSplitting.Enabled, intermediateCache, opts.Logger),
 		planning.NODE_TYPE_TIME_RANGE_SPLIT:                 planning.NodeMaterializerFunc[*splitandcache.TimeRangeSplit](splitandcache.MaterializeSplit),
+		planning.NODE_TYPE_CACHE:                            splitandcache.NewCacheMaterializer(opts.RangeQuerySplittingAndCaching.CacheClient, opts.CachePrefixGenerator, opts.Limits, opts.RangeQuerySplittingAndCaching.MinCacheExtent),
 	}
 
 	memoryConsumptionTrackerFactory := opts.MemoryConsumptionTrackerFactory
@@ -314,7 +315,7 @@ func (e *Engine) materializeAndCreateEvaluator(ctx context.Context, queryable st
 
 	materializer := planning.NewMaterializer(operatorParams, e.nodeMaterializers)
 	for idx, req := range nodeRequests {
-		op, err := materializer.ConvertNodeToOperator(req.Node, req.TimeRange)
+		op, err := materializer.ConvertNodeToOperator(ctx, req.Node, req.TimeRange)
 		if err != nil {
 			e.memoryConsumptionTrackerFactory.Deregister(operatorParams.MemoryConsumptionTracker)
 			return nil, err
@@ -344,6 +345,8 @@ type QueryLimitsProvider interface {
 	GetMinOutOfOrderResultsCacheTTL(ctx context.Context) (time.Duration, error)
 	// GetMaxCacheFreshness returns the period after which results are cacheable for the tenant(s) in the context.
 	GetMaxCacheFreshness(ctx context.Context) (time.Duration, error)
+	// AllowCachingUnalignedQueries returns true if unaligned queries should be cached for the tenant(s) in the context.
+	AllowCachingUnalignedQueries(ctx context.Context) (bool, error)
 }
 
 // NewStaticQueryLimitsProvider returns a QueryLimitsProvider that always returns the provided limits.
@@ -362,6 +365,7 @@ type StaticQueryLimitsProvider struct {
 	MinResultsCacheTTL                    time.Duration
 	MinOutOfOrderResultsCacheTTL          time.Duration
 	MaxCacheFreshness                     time.Duration
+	CacheUnalignedQueries                 bool
 }
 
 func (p StaticQueryLimitsProvider) GetMaxEstimatedMemoryConsumptionPerQuery(_ context.Context) (uint64, error) {
@@ -386,6 +390,10 @@ func (p StaticQueryLimitsProvider) GetMinOutOfOrderResultsCacheTTL(ctx context.C
 
 func (p StaticQueryLimitsProvider) GetMaxCacheFreshness(_ context.Context) (time.Duration, error) {
 	return p.MaxCacheFreshness, nil
+}
+
+func (p StaticQueryLimitsProvider) AllowCachingUnalignedQueries(ctx context.Context) (bool, error) {
+	return p.CacheUnalignedQueries, nil
 }
 
 type NoopQueryTracker struct{}

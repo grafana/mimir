@@ -3,6 +3,7 @@
 package core
 
 import (
+	"context"
 	"strconv"
 	"time"
 
@@ -47,7 +48,7 @@ func (s *StringLiteral) MergeHints(_ planning.Node) error {
 	return nil
 }
 
-func MaterializeStringLiteral(s *StringLiteral, _ *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
+func MaterializeStringLiteral(_ context.Context, s *StringLiteral, _ *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
 	o := operators.NewStringLiteral(s.Value, timeRange, params.MemoryConsumptionTracker, s.GetExpressionPosition().ToPrometheusType())
 
 	return planning.NewSingleUseOperatorFactory(o), nil

@@ -115,8 +115,8 @@ func (r *GenericOffsetReader[O]) CachedOffset() (O, error) {
 	return c.resultValue, c.resultErr
 }
 
-// partitionOffsetReader is responsible to read the offsets of a single partition.
-type partitionOffsetReader struct {
+// singleClusterPartitionOffsetReader is responsible to read the offsets of a single partition.
+type singleClusterPartitionOffsetReader struct {
 	*GenericOffsetReader[int64]
 
 	client      *partitionOffsetClient
@@ -125,13 +125,13 @@ type partitionOffsetReader struct {
 	partitionID int32
 }
 
-func newPartitionOffsetReader(client *kgo.Client, topic string, partitionID int32, pollInterval time.Duration, reg prometheus.Registerer, logger log.Logger) *partitionOffsetReader {
+func newSingleClusterPartitionOffsetReader(client *kgo.Client, topic string, partitionID int32, pollInterval time.Duration, reg prometheus.Registerer, logger log.Logger) *singleClusterPartitionOffsetReader {
 	offsetClient := newPartitionOffsetClient(client, reg, logger)
-	return newPartitionOffsetReaderWithOffsetClient(offsetClient, topic, partitionID, pollInterval, logger)
+	return newSingleClusterPartitionOffsetReaderWithOffsetClient(offsetClient, topic, partitionID, pollInterval, logger)
 }
 
-func newPartitionOffsetReaderWithOffsetClient(offsetClient *partitionOffsetClient, topic string, partitionID int32, pollInterval time.Duration, logger log.Logger) *partitionOffsetReader {
-	r := &partitionOffsetReader{
+func newSingleClusterPartitionOffsetReaderWithOffsetClient(offsetClient *partitionOffsetClient, topic string, partitionID int32, pollInterval time.Duration, logger log.Logger) *singleClusterPartitionOffsetReader {
+	r := &singleClusterPartitionOffsetReader{
 		client:      offsetClient,
 		topic:       topic,
 		partitionID: partitionID,
@@ -146,58 +146,22 @@ func newPartitionOffsetReaderWithOffsetClient(offsetClient *partitionOffsetClien
 // FetchLastProducedOffset fetches and returns the last produced offset for a partition, or -1 if no record has
 // been ever produced in the partition. This function issues a single request, but the Kafka client used under the
 // hood may retry a failed request until the retry timeout is hit.
-func (p *partitionOffsetReader) FetchLastProducedOffset(ctx context.Context) (_ int64, returnErr error) {
+func (p *singleClusterPartitionOffsetReader) FetchLastProducedOffset(ctx context.Context) (_ int64, returnErr error) {
 	return p.client.FetchPartitionLastProducedOffset(ctx, p.topic, p.partitionID)
 }
 
 // FetchPartitionStartOffset fetches and returns the start offset for a partition. This function returns 0 if no record has
 // been ever produced in the partition. This function issues a single request, but the Kafka client used under the
 // hood may retry a failed request until the retry timeout is hit.
-func (p *partitionOffsetReader) FetchPartitionStartOffset(ctx context.Context) (_ int64, returnErr error) {
+func (p *singleClusterPartitionOffsetReader) FetchPartitionStartOffset(ctx context.Context) (_ int64, returnErr error) {
 	return p.client.FetchPartitionStartOffset(ctx, p.topic, p.partitionID)
 }
 
 type GetPartitionIDsFunc func(ctx context.Context) ([]int32, error)
 
-// TopicOffsetsReader is responsible to read the offsets of partitions in a topic.
-type TopicOffsetsReader struct {
-	*GenericOffsetReader[map[int32]int64]
-
-	client          *partitionOffsetClient
-	topic           string
-	getPartitionIDs GetPartitionIDsFunc
-	logger          log.Logger
-}
-
-func NewTopicOffsetsReader(client *kgo.Client, topic string, getPartitionIDs GetPartitionIDsFunc, pollInterval time.Duration, reg prometheus.Registerer, logger log.Logger) *TopicOffsetsReader {
-	r := &TopicOffsetsReader{
-		client:          newPartitionOffsetClient(client, reg, logger),
-		topic:           topic,
-		getPartitionIDs: getPartitionIDs,
-		logger:          logger,
-	}
-
-	r.GenericOffsetReader = NewGenericOffsetReader[map[int32]int64](r.FetchLastProducedOffset, pollInterval, logger)
-
-	return r
-}
-
-// FetchLastProducedOffset fetches and returns the last produced offset for each requested partition in the topic.
-// The offset is -1 if a partition has been created but no record has been produced yet.
-func (p *TopicOffsetsReader) FetchLastProducedOffset(ctx context.Context) (map[int32]int64, error) {
-	partitionIDs, err := p.getPartitionIDs(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	offsetsByTopic, err := p.client.FetchPartitionsLastProducedOffsets(ctx, map[string][]int32{p.topic: partitionIDs})
-	if err != nil {
-		return nil, err
-	}
-
-	return offsetsByTopic[p.topic], nil
-}
-
-func (p *TopicOffsetsReader) Topic() string {
-	return p.topic
+// newTopicOffsetsReaderKafkaClient creates a Kafka reader client for offset monitoring, registering its client
+// metrics under component. It is shared by the single- and multi-cluster topic offset readers.
+func newTopicOffsetsReaderKafkaClient(component string, cfg KafkaConfig, reg prometheus.Registerer, logger log.Logger) (*kgo.Client, error) {
+	metrics := NewKafkaReaderClientMetrics(ReaderMetricsPrefix, component, reg)
+	return NewKafkaReaderClient(cfg, metrics, logger)
 }

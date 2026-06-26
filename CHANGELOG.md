@@ -12,6 +12,7 @@
 * [CHANGE] Querier: Remove experimental MQE Projection Pushdown optimization pass and associated CLI flag `querier.mimir-query-engine.enable-projection-pushdown`. #15618
 * [CHANGE] Continuous-test: Change default values for `tests.write-read-series-test.num-series` and `tests.write-read-series-test.max-query-age` to match the values being set in jsonnet. #15705
 * [CHANGE] Update Docker image bases from Debian 12 to Debian 13 (`gcr.io/distroless/static-debian13`; race images use `base-nossl-debian13`). #15629
+* [CHANGE] Querier: Query planning metrics previously emitted with a `component="querier"` label are now emitted with a `engine="querier"` label instead, mirroring the similar metrics emitted by the query-frontend and other querier metrics. #15787
 * [FEATURE] Querier: Add experimental label-based access control (LBAC) for metric read queries. When enabled via `-auth.label-access-control-enabled`, Mimir enforces label selectors from the `X-Prom-Label-Policy` HTTP header at query time, filtering series and exemplars per tenant policy. Cache key isolation is applied automatically in the query-frontend. #15554
 * [FEATURE] API: Add alertmanager limits (alertmanager_notification_rate_limit, alertmanager_max_dispatcher_aggregation_groups, alertmanager_max_templates_count) to the user limits API response. #15308
 * [FEATURE] Mimirtool: Add AWS Signature Version 4 (SigV4) support for shared Mimir API client commands including `mimirtool rules`, `mimirtool alertmanager`, `mimirtool alerts`, `mimirtool backfill`, and `mimirtool analyze ruler`. #14959
@@ -20,12 +21,12 @@
 * [FEATURE] MQE: Add experimental support for splitting and caching `present_over_time` over range vectors in instant queries. #15386
 * [FEATURE] Query-scheduler: Add experimental `cortex_query_scheduler_inflight_max_age_seconds` metric reporting how long the oldest inflight request has been waiting since it was enqueued. Reports 0 when no requests are inflight. Enabled by default; can be disabled with `-query-scheduler.inflight-max-age-metric-enabled=false`. #15419
 * [FEATURE] MQE: Add support for experimental PromQL functions `min_of` and `max_of`. #15597
-* [FEATURE] MQE: Add support for the native histogram trim operators `</` (trim upper) and `>/` (trim lower). #15708
+* [FEATURE] MQE: Add support for the native histogram trim operators `</` (trim upper) and `>/` (trim lower), including query sharding support. #15708 #15711
 * [FEATURE] Ingester: Add experimental early compaction of non-owned series. After a ring change, the ingester tracks series whose ownership shifted to another replica and flushes them into a block, evicting them from the TSDB head ahead of the regular head-compaction cycle. Eviction triggers when both (a) the in-memory series count exceeds the local threshold derived from `-ingester.early-head-compaction-owned-series-threshold` and the `-ingester.early-compaction-non-owned-series-min-grace-period` has elapsed, or (b) the `-ingester.early-compaction-non-owned-series-max-grace-period` has elapsed, regardless of the threshold. Disabled by default; enable with `-ingester.early-compaction-non-owned-series-enabled`. Requires `-ingester.track-ingester-owned-series` or `-ingester.use-ingester-owned-series-for-limits` to be enabled. Adds the `cortex_ingester_tsdb_early_compaction_non_owned_series_triggered_total` counter. #15314 #15653 #15657 #15661
 * [FEATURE] Ingester: Add experimental `cortex_ingester_tsdb_head_chunks_max_mmapped` gauge reporting the maximum, across all per-tenant TSDBs, of the maximum number of head chunks memory-mapped for any individual series during the last memory-mapping pass. Temporary measurement metric; will be removed once we have collected enough data. #15616
 * [FEATURE] kafkatool: Add `dump find-duplicates` command to scan an exported dump and report float samples re-sent with the same timestamp and value as the previous sample for a series. These exact duplicates are silently dropped by the ingester but still count toward received-samples metrics. An optional `--tenant` flag restricts the scan to a single tenant. #15506
 * [FEATURE] Ingest storage: Add an experimental WarpStream-aware Kafka producer backend, enabled with `-ingest-storage.kafka.backend=warpstream`. It hedges and reroutes produce requests across WarpStream agents to reduce write tail latency, and is tuned via the experimental `-ingest-storage.kafka.warpstream-*` flags. #15236
-* [ENHANCEMENT] Usage-tracker, distributor: Add experimental synchronous batched tracking. When `-distributor.usage-tracker-client.use-sync-batched-tracking` is enabled, synchronous series-tracking calls linger for up to `-distributor.usage-tracker-client.sync-batch-delay` and are sent together in a single batch RPC, reducing the number of network calls while still returning rejected series to each caller. By default all partitions flush together on a shared timer so the usage-tracker can coalesce the packets; set `-distributor.usage-tracker-client.sync-batch-independent-partition-timeouts` to make each partition linger independently instead. #15805
+* [FEATURE] MQE: Add experimental support for running splitting and caching inside MQE, enabled with `-query-frontend.use-mimir-query-engine-for-splitting-and-caching-results=true`. #15348 #15393 #15397 #15650 #15720 #15750 #15769 #15783 #15787 #15795 #15804 #15822 #15823
 * [ENHANCEMENT] Store-gateway, Ingester: Add read support for XOR2 chunk encoding. XOR2 is a new Prometheus TSDB encoding that provides better compression than XOR, particularly for stale markers. #15371
 * [ENHANCEMENT] MQE: Improve experimental support for reporting the number of samples read per query. #14838 #15179 #15191 #15220 #15223 #15232 #15237 #15255 #15276 #15282 #15285
 * [ENHANCEMENT] Distributor: Relabel middleware returns early if neither label dropping nor relabeling is configured. #15246
@@ -36,6 +37,7 @@
 * [ENHANCEMENT] Store-gateway: Remove outdated limit on caching LabelValues responses that contain more than 655360 values. The gob library panic which required workaround was fixed. #5021 #15271
 * [ENHANCEMENT] MQE: Reduce memory consumption of range vector splitting when many consecutive intervals are not cached. #15173
 * [ENHANCEMENT] Ingester: Make max concurrency for label values count endpoint configurable with `-ingester.label-values-count-max-concurrency`. #15299
+* [ENHANCEMENT] Querier: track physical and equivalent samples read for remote read requests in query statistics, mirroring the statistics emitted for instant and range queries. #15694
 * [ENHANCEMENT] Ingest storage: Add `cortex_ingest_storage_writer_serialize_duration_seconds` native histogram metric tracking the time spent serializing an incoming request to Kafka records. #15527
 * [ENHANCEMENT] Memberlist: Add `-memberlist.compression-algorithm` flag to select the algorithm used to compress outgoing messages. Supported values: `lzw` (default) and `snappy`. The flag is ignored when `-memberlist.compression-enabled` is false. Before reconfiguring any node to emit a new algorithm, upgrade every cluster member to a build that can decode it, otherwise messages are dropped. #15357
 * [ENHANCEMENT] Memberlist: TCP push-pull and other TCP stream messages now skip compression when the compressed output is no smaller than the input, falling back to a plaintext frame. Mirrors existing UDP behaviour; receivers continue to decode both compressed and plaintext frames so the change is wire-compatible. #15357
@@ -47,6 +49,7 @@
 * [ENHANCEMENT] Distributor: Add a tracing span around the OTLP to Prometheus conversion so its latency is independently visible in traces. #15682
 * [ENHANCEMENET] Runtimeconfig: The HTTP client used to fetch runtime configurations from HTTP endpoints now has keep-alives disabled by default. New CLI flag `-runtime-config.http-client-disable-keep-alives` is enabled by default, an can be set to `false` in-order to re-enable keep-alives. #15695
 * [ENHANCEMENT] MQE: Support for native histograms in `smoothed` and `anchored` extended range selector modifiers. #15398
+* [ENHANCEMENT] Usage-tracker, distributor: Add experimental synchronous batched tracking. When `-distributor.usage-tracker-client.use-sync-batched-tracking` is enabled, synchronous series-tracking calls linger for up to `-distributor.usage-tracker-client.sync-batch-delay` and are sent together in a single batch RPC, reducing the number of network calls while still returning rejected series to each caller. By default all partitions flush together on a shared timer so the usage-tracker can coalesce the packets; set `-distributor.usage-tracker-client.sync-batch-independent-partition-timeouts` to make each partition linger independently instead. #15805
 * [ENHANCEMENT] Mimir: Expose `ingest_storage` feature flag in the `/api/v1/status/buildinfo` endpoint, reflecting whether Mimir runs with ingest storage architecture. #15743
 * [BUGFIX] Query-frontend: Fix `cardinality_analysis_max_results` being ignored when set higher than the default of 500. #15581
 * [BUGFIX] Ingest storage: Fix `KafkaProducer.ProduceSync()` returning a single result with a nil record when the context is canceled, instead of one result per input record (with the record set) as the underlying franz-go client does. #15199
@@ -65,6 +68,8 @@
 * [BUGFIX] Block-builder-scheduler: Exit cleanly when shut down during startup observation. #15730
 * [BUGFIX] Ingest storage: Cap maximum Kafka protocol version, the client negotiates with the broker to v3.9.0. #15745
 * [BUGFIX] MQE: Report a query that panics during evaluation as failed in the `evaluation stats` log, instead of logging it as successful. The querier still re-panics afterwards, crash behaviour is unchanged. #15753
+* [BUGFIX] Memcached: Fix issue where cache-related trace spans included events emitted with an empty `name` label. #15794
+* [BUGFIX] MQE: Fix issue where LBAC is not respected by range vector splitting cache. #15802
 
 ### Mixin
 
@@ -97,6 +102,12 @@
 * [ENHANCEMENT] Makefile: `build-mixin` and `mixin-screenshots` can now be configured to use native histograms for latency panels in dashboards. #15269
 
 ### Query-tee
+
+## 3.1.2
+
+### Grafana Mimir
+
+* [BUGFIX] Ingest storage: Cap maximum Kafka protocol version, the client negotiates with the broker to v3.9.0. #15745
 
 ## 3.1.1
 

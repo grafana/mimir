@@ -25,7 +25,6 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"go.opentelemetry.io/otel"
 
-	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/limiter"
@@ -51,6 +50,9 @@ const (
 	queryTypeActiveSeries                 = "active_series"
 	queryTypeActiveNativeHistogramMetrics = "active_native_histogram_metrics"
 	queryTypeOther                        = "other"
+
+	EnableRemoteExecutionFlag = "query-frontend.enable-remote-execution"
+	UseMQEForShardingFlag     = "query-frontend.use-mimir-query-engine-for-sharding"
 )
 
 var (
@@ -63,6 +65,7 @@ type Config struct {
 	SplitQueriesByInterval                    time.Duration      `yaml:"split_queries_by_interval" category:"advanced"`
 	ResultsCache                              ResultsCacheConfig `yaml:"results_cache"`
 	CacheResults                              bool               `yaml:"cache_results"`
+	UseMQEForSplittingAndCachingResults       bool               `yaml:"use_mimir_query_engine_for_splitting_and_caching_results" category:"experimental"`
 	CacheErrors                               bool               `yaml:"cache_errors"`
 	MaxRetries                                int                `yaml:"max_retries" category:"advanced"`
 	NotRunningTimeout                         time.Duration      `yaml:"not_running_timeout" category:"advanced"`
@@ -98,15 +101,18 @@ type Config struct {
 
 // RegisterFlags adds the flags required to config this to the given FlagSet.
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
+	const splitQueriesByIntervalFlag = "query-frontend.split-queries-by-interval"
+	const cacheResultsFlag = "query-frontend.cache-results"
 	f.IntVar(&cfg.MaxRetries, "query-frontend.max-retries-per-request", 5, "Maximum number of retries for a single request; beyond this, the downstream error is returned.")
 	f.DurationVar(&cfg.NotRunningTimeout, "query-frontend.not-running-timeout", 2*time.Second, "Maximum time to wait for the query-frontend to become ready before rejecting requests received before the frontend was ready. 0 to disable (i.e. fail immediately if a request is received while the frontend is still starting up)")
-	f.DurationVar(&cfg.SplitQueriesByInterval, "query-frontend.split-queries-by-interval", 24*time.Hour, "Split range queries by an interval and execute in parallel. You should use a multiple of 24 hours to optimize querying blocks. 0 to disable it.")
-	f.BoolVar(&cfg.CacheResults, "query-frontend.cache-results", false, "Cache query results.")
+	f.DurationVar(&cfg.SplitQueriesByInterval, splitQueriesByIntervalFlag, 24*time.Hour, "Split range queries by an interval and execute in parallel. You should use a multiple of 24 hours to optimize querying blocks. 0 to disable it.")
+	f.BoolVar(&cfg.CacheResults, cacheResultsFlag, false, "Cache query results.")
+	f.BoolVar(&cfg.UseMQEForSplittingAndCachingResults, "query-frontend.use-mimir-query-engine-for-splitting-and-caching-results", false, fmt.Sprintf("Set to true to enable performing splitting range queries by interval and caching inside the Mimir query engine (MQE). This setting only has an effect if splitting range queries by interval or caching are enabled (with -%v=true and -%v=true, respectively). Requires MQE, remote execution and sharding inside MQE to be enabled.", splitQueriesByIntervalFlag, cacheResultsFlag))
 	f.BoolVar(&cfg.CacheErrors, "query-frontend.cache-errors", false, "Cache non-transient errors from queries.")
 	f.BoolVar(&cfg.ShardedQueries, "query-frontend.parallelize-shardable-queries", false, "True to enable query sharding.")
-	f.BoolVar(&cfg.EnableRemoteExecution, "query-frontend.enable-remote-execution", false, "If set to true and the Mimir query engine is in use, use remote execution to evaluate queries in queriers.")
+	f.BoolVar(&cfg.EnableRemoteExecution, EnableRemoteExecutionFlag, false, "If set to true and the Mimir query engine is in use, use remote execution to evaluate queries in queriers.")
 	f.BoolVar(&cfg.EnableMultipleNodeRemoteExecutionRequests, "query-frontend.enable-multiple-node-remote-execution-requests", false, "Set to true to allow evaluating multiple query plan nodes within a single remote execution request to queriers.")
-	f.BoolVar(&cfg.UseMQEForSharding, "query-frontend.use-mimir-query-engine-for-sharding", false, "Set to true to enable performing query sharding inside the Mimir query engine (MQE). This setting has no effect if sharding is disabled. Requires remote execution and MQE to be enabled.")
+	f.BoolVar(&cfg.UseMQEForSharding, UseMQEForShardingFlag, false, "Set to true to enable performing query sharding inside the Mimir query engine (MQE). This setting has no effect if sharding is disabled. Requires remote execution and MQE to be enabled.")
 	f.BoolVar(&cfg.RewriteQueriesHistogram, "query-frontend.rewrite-histogram-queries", false, "Set to true to enable rewriting histogram queries for a more efficient order of execution.")
 	f.BoolVar(&cfg.RewriteQueriesPropagateMatchers, "query-frontend.rewrite-propagate-matchers", false, "Set to true to enable rewriting queries to propagate label matchers across binary expressions.")
 	f.Uint64Var(&cfg.TargetSeriesPerShard, "query-frontend.query-sharding-target-series-per-shard", 0, "How many series a single sharded partial query should load at most. This is not a strict requirement guaranteed to be honoured by query sharding, but a hint given to the query sharding when the query execution is initially planned. 0 to disable cardinality-based hints.")
@@ -127,7 +133,7 @@ func (cfg *Config) Validate() error {
 		}
 	}
 
-	if cfg.CacheResults || cfg.CacheErrors || cfg.cardinalityBasedShardingEnabled() {
+	if cfg.CacheResults || cfg.CacheErrors || cfg.CardinalityBasedShardingEnabled() {
 		if err := cfg.ResultsCache.Validate(); err != nil {
 			return errors.Wrap(err, "invalid query-frontend results cache config")
 		}
@@ -139,7 +145,7 @@ func (cfg *Config) Validate() error {
 	return nil
 }
 
-func (cfg *Config) cardinalityBasedShardingEnabled() bool {
+func (cfg *Config) CardinalityBasedShardingEnabled() bool {
 	return cfg.TargetSeriesPerShard > 0
 }
 
@@ -226,16 +232,17 @@ func NewTripperware(
 	limits Limits,
 	queryLimits streamingpromql.QueryLimitsProvider,
 	codec Codec,
+	cacheClient cache.Cache,
 	cacheExtractor Extractor,
 	engine promql.QueryEngine,
 	engineOpts promql.EngineOpts,
-	ingestStorageTopicOffsetsReader *ingest.TopicOffsetsReader,
+	ingestStorageOffsetsReader ReadConsistencyOffsetsReader,
 	useRemoteExecution bool,
 	streamingEngine *streamingpromql.Engine,
 	registerer prometheus.Registerer,
 	memoryConsumptionTrackerFactory *limiter.InflightMemoryConsumptionTracker,
 ) (Tripperware, error) {
-	queryRangeTripperware, err := newQueryTripperware(cfg, log, limits, queryLimits, codec, cacheExtractor, engine, engineOpts, ingestStorageTopicOffsetsReader, useRemoteExecution, streamingEngine, registerer, memoryConsumptionTrackerFactory)
+	queryRangeTripperware, err := newQueryTripperware(cfg, log, limits, queryLimits, codec, cacheClient, cacheExtractor, engine, engineOpts, ingestStorageOffsetsReader, useRemoteExecution, streamingEngine, registerer, memoryConsumptionTrackerFactory)
 	if err != nil {
 		return nil, err
 	}
@@ -251,29 +258,23 @@ func newQueryTripperware(
 	limits Limits,
 	queryLimits streamingpromql.QueryLimitsProvider,
 	codec Codec,
+	cacheClient cache.Cache,
 	cacheExtractor Extractor,
 	engine promql.QueryEngine,
 	engineOpts promql.EngineOpts,
-	ingestStorageTopicOffsetsReader *ingest.TopicOffsetsReader,
+	ingestStorageOffsetsReader ReadConsistencyOffsetsReader,
 	useRemoteExecution bool,
 	streamingEngine *streamingpromql.Engine,
 	registerer prometheus.Registerer,
 	memoryConsumptionTrackerFactory *limiter.InflightMemoryConsumptionTracker,
 ) (Tripperware, error) {
-	var c cache.Cache
-	if cfg.CacheResults || cfg.cardinalityBasedShardingEnabled() {
-		var err error
-
-		c, err = newResultsCache(cfg.ResultsCache, log, registerer)
-		if err != nil {
-			return nil, err
-		}
-		c = cache.NewCompression(cfg.ResultsCache.Compression, c, log)
-	}
-
 	cacheKeyGenerator := cfg.CacheKeyGenerator
 	if cacheKeyGenerator == nil {
 		cacheKeyGenerator = NewDefaultCacheKeyGenerator(codec, cfg.SplitQueriesByInterval)
+	}
+
+	if cacheClient != nil {
+		cacheClient = cache.NewVersioned(cacheClient, resultsCacheVersion, log)
 	}
 
 	retryMetrics := newRetryMetrics(registerer)
@@ -284,7 +285,7 @@ func newQueryTripperware(
 		limits,
 		queryLimits,
 		codec,
-		c,
+		cacheClient,
 		cacheKeyGenerator,
 		cacheExtractor,
 		engine,
@@ -333,24 +334,24 @@ func newQueryTripperware(
 		activeNativeHistogramMetrics = newShardActiveNativeHistogramMetricsMiddleware(activeNativeHistogramMetrics, limits, log)
 
 		// Enforce read consistency after caching.
-		if ingestStorageTopicOffsetsReader != nil {
-			metrics := newReadConsistencyMetrics(registerer, ingestStorageTopicOffsetsReader)
+		if ingestStorageOffsetsReader != nil {
+			metrics := newReadConsistencyMetrics(registerer, ingestStorageOffsetsReader)
 
-			queryrange = newReadConsistencyRoundTripper(queryrange, ingestStorageTopicOffsetsReader, limits, log, metrics)
-			instant = newReadConsistencyRoundTripper(instant, ingestStorageTopicOffsetsReader, limits, log, metrics)
-			cardinality = newReadConsistencyRoundTripper(cardinality, ingestStorageTopicOffsetsReader, limits, log, metrics)
-			activeSeries = newReadConsistencyRoundTripper(activeSeries, ingestStorageTopicOffsetsReader, limits, log, metrics)
-			activeNativeHistogramMetrics = newReadConsistencyRoundTripper(activeNativeHistogramMetrics, ingestStorageTopicOffsetsReader, limits, log, metrics)
-			labels = newReadConsistencyRoundTripper(labels, ingestStorageTopicOffsetsReader, limits, log, metrics)
-			series = newReadConsistencyRoundTripper(series, ingestStorageTopicOffsetsReader, limits, log, metrics)
-			remoteRead = newReadConsistencyRoundTripper(remoteRead, ingestStorageTopicOffsetsReader, limits, log, metrics)
-			next = newReadConsistencyRoundTripper(next, ingestStorageTopicOffsetsReader, limits, log, metrics)
+			queryrange = newReadConsistencyRoundTripper(queryrange, ingestStorageOffsetsReader, limits, log, metrics)
+			instant = newReadConsistencyRoundTripper(instant, ingestStorageOffsetsReader, limits, log, metrics)
+			cardinality = newReadConsistencyRoundTripper(cardinality, ingestStorageOffsetsReader, limits, log, metrics)
+			activeSeries = newReadConsistencyRoundTripper(activeSeries, ingestStorageOffsetsReader, limits, log, metrics)
+			activeNativeHistogramMetrics = newReadConsistencyRoundTripper(activeNativeHistogramMetrics, ingestStorageOffsetsReader, limits, log, metrics)
+			labels = newReadConsistencyRoundTripper(labels, ingestStorageOffsetsReader, limits, log, metrics)
+			series = newReadConsistencyRoundTripper(series, ingestStorageOffsetsReader, limits, log, metrics)
+			remoteRead = newReadConsistencyRoundTripper(remoteRead, ingestStorageOffsetsReader, limits, log, metrics)
+			next = newReadConsistencyRoundTripper(next, ingestStorageOffsetsReader, limits, log, metrics)
 		}
 
 		// Look up cache as first thing after validation.
 		if cfg.CacheResults {
-			cardinality = newCardinalityQueryCacheRoundTripper(c, cacheKeyGenerator, limits, cardinality, log, registerer)
-			labels = newLabelsQueryCacheRoundTripper(c, cacheKeyGenerator, limits, labels, log, registerer)
+			cardinality = newCardinalityQueryCacheRoundTripper(cacheClient, cacheKeyGenerator, limits, cardinality, log, registerer)
+			labels = newLabelsQueryCacheRoundTripper(cacheClient, cacheKeyGenerator, limits, labels, log, registerer)
 		}
 
 		// Optimize labels queries after validation.
@@ -513,7 +514,7 @@ func newQueryMiddlewares(
 
 	// Create split and cache middleware if either splitting or caching is enabled
 	var splitAndCacheMiddleware MetricsQueryMiddleware
-	if cfg.SplitQueriesByInterval > 0 || cfg.CacheResults {
+	if (cfg.SplitQueriesByInterval > 0 || cfg.CacheResults) && !cfg.UseMQEForSplittingAndCachingResults {
 		splitAndCacheMiddleware = newSplitAndCacheMiddleware(
 			cfg.SplitQueriesByInterval > 0,
 			cfg.CacheResults,
@@ -543,7 +544,7 @@ func newQueryMiddlewares(
 		// Inject the cardinality estimation middleware after time-based splitting and
 		// before query-sharding so that it can operate on the partial queries that are
 		// considered for sharding.
-		if cfg.cardinalityBasedShardingEnabled() {
+		if cfg.CardinalityBasedShardingEnabled() {
 			cardinalityEstimationMiddleware := newCardinalityEstimationMiddleware(cacheClient, log, registerer)
 			queryRangeMiddleware = append(
 				queryRangeMiddleware,

@@ -44,7 +44,7 @@ import (
 // the buffer to reject work.
 type ClusterRecordBuffer struct {
 	linger        time.Duration
-	maxBatchBytes int32
+	batchMaxBytes int32
 	flush         AgentFlushFunc
 	metrics       *metrics
 
@@ -65,10 +65,10 @@ type ClusterRecordBuffer struct {
 
 // NewClusterRecordBuffer returns a buffer that lazily spawns one
 // AgentRecordBuffer per NodeID seen via Add, all sharing flush.
-func NewClusterRecordBuffer(linger time.Duration, maxBatchBytes int32, flush AgentFlushFunc, m *metrics) *ClusterRecordBuffer {
+func NewClusterRecordBuffer(linger time.Duration, batchMaxBytes int32, flush AgentFlushFunc, m *metrics) *ClusterRecordBuffer {
 	return &ClusterRecordBuffer{
 		linger:        linger,
-		maxBatchBytes: maxBatchBytes,
+		batchMaxBytes: batchMaxBytes,
 		flush:         flush,
 		metrics:       m,
 		agentBuffers:  make(map[int32]*AgentRecordBuffer),
@@ -238,7 +238,7 @@ func (c *ClusterRecordBuffer) agentRecordBufferFor(nodeID int32) (*AgentRecordBu
 	if a, ok := c.agentBuffers[nodeID]; ok {
 		return a, nil
 	}
-	a = NewAgentRecordBuffer(nodeID, c.linger, c.maxBatchBytes, c.flush, c.metrics)
+	a = NewAgentRecordBuffer(nodeID, c.linger, c.batchMaxBytes, c.flush, c.metrics)
 	c.agentBuffers[nodeID] = a
 	return a, nil
 }

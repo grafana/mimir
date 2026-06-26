@@ -15,6 +15,7 @@ import (
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
 	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
+	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
@@ -90,7 +91,7 @@ func TestOptimizationPass(t *testing.T) {
 
 			ctx = querymiddleware.ContextWithRequestHints(ctx, testCase.hints)
 			ctx = requestoptions.ContextWithOptions(ctx, testCase.options)
-			output, err := pass.Apply(ctx, afterRewrite)
+			output, err := pass.Apply(ctx, afterRewrite, types.QueryTimeRange{})
 			require.NoError(t, err)
 			require.Equal(t, testCase.expectedOutput, output.String())
 		})
@@ -123,7 +124,7 @@ func (m *mockLimits) CompactorSplitAndMergeShards(userID string) int {
 func rewriteForSubquerySpinoff(ctx context.Context, expr string) (parser.Expr, error) {
 	stats := astmapper.NewSubquerySpinOffMapperStats()
 	defaultStepFunc := func(rangeMillis int64) int64 { return 1000 }
-	mapper := astmapper.NewSubquerySpinOffMapper(defaultStepFunc, log.NewNopLogger(), stats)
+	mapper := astmapper.NewSubquerySpinOffMapper(astmapper.NewSelectorSubquerySpinOffWrapper(), defaultStepFunc, log.NewNopLogger(), stats)
 	ast, err := promqlext.NewPromQLParser().ParseExpr(expr)
 	if err != nil {
 		return nil, err

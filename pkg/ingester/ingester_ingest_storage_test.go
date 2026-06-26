@@ -41,6 +41,7 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/storage/ingest"
+	"github.com/grafana/mimir/pkg/storage/ingest/kmeta"
 	"github.com/grafana/mimir/pkg/util/shutdownmarker"
 	util_test "github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/testkafka"
@@ -362,6 +363,7 @@ func TestIngester_QueryStream_IngestStorageReadConsistency(t *testing.T) {
 	tests := map[string]struct {
 		readConsistencyLevel   string
 		readConsistencyOffsets map[int32]int64
+		offsetsEncoding        string
 		expectedQueriedSeries  int
 	}{
 		"eventual read consistency": {
@@ -376,12 +378,23 @@ func TestIngester_QueryStream_IngestStorageReadConsistency(t *testing.T) {
 			// We expect query did wait for the read consistency to be guaranteed.
 			expectedQueriedSeries: 1,
 		},
-		"strong read consistency with offsets": {
+		// The "with offsets" scenario is run with both the v1 and v2 offsets encoding: with compartments
+		// disabled (a single Kafka cluster, a single topic) both encodings must drive identical behaviour.
+		"strong read consistency with offsets (v1 encoding)": {
 			readConsistencyLevel: api.ReadConsistencyStrong,
 
 			// To keep the test simple, use a trick passing a negative offset so the query will return immediately.
 			// In this test we just want to check that the passed offset is honored.
 			readConsistencyOffsets: map[int32]int64{0: -2},
+			offsetsEncoding:        "v1",
+			expectedQueriedSeries:  0,
+		},
+		"strong read consistency with offsets (v2 encoding)": {
+			readConsistencyLevel: api.ReadConsistencyStrong,
+
+			// Same offset as the v1 case: the v2 encoding of a single-cluster offset must be honored identically.
+			readConsistencyOffsets: map[int32]int64{0: -2},
+			offsetsEncoding:        "v2",
 			expectedQueriedSeries:  0,
 		},
 	}
@@ -461,9 +474,9 @@ func TestIngester_QueryStream_IngestStorageReadConsistency(t *testing.T) {
 				queryCtx, cancel := context.WithTimeout(user.InjectOrgID(ctx, userID), 5*time.Second)
 				defer cancel()
 
-				// Inject the requested offsets (if any).
+				// Inject the requested offsets (if any), encoded with the case's format.
 				if len(testData.readConsistencyOffsets) > 0 {
-					queryCtx = api.ContextWithReadConsistencyEncodedOffsets(queryCtx, api.EncodeOffsets(testData.readConsistencyOffsets))
+					queryCtx = api.ContextWithReadConsistencyEncodedOffsets(queryCtx, encodeSingleClusterReadConsistencyOffsets(testData.offsetsEncoding, testData.readConsistencyOffsets))
 				}
 
 				close(queryIssued)
@@ -480,6 +493,23 @@ func TestIngester_QueryStream_IngestStorageReadConsistency(t *testing.T) {
 
 			assert.Len(t, queryRes, testData.expectedQueriedSeries)
 		})
+	}
+}
+
+// encodeSingleClusterReadConsistencyOffsets encodes single-cluster read consistency offsets (one offset
+// per partition in read compartment 0) with either the v1 or v2 format.
+func encodeSingleClusterReadConsistencyOffsets(version string, offsets map[int32]int64) api.EncodedOffsets {
+	switch version {
+	case "v1":
+		return api.EncodeOffsetsV1(offsets)
+	case "v2":
+		perPartition := make(map[int32]kmeta.PartitionOffsets, len(offsets))
+		for partitionID, offset := range offsets {
+			perPartition[partitionID] = kmeta.NewMultiClusterPartitionOffsets([]int64{offset})
+		}
+		return api.EncodeOffsetsV2(map[int]map[int32]kmeta.PartitionOffsets{0: perPartition})
+	default:
+		panic("unsupported read consistency offsets encoding: " + version)
 	}
 }
 
@@ -1243,7 +1273,7 @@ func BenchmarkIngester_ReplayFromKafka(b *testing.B) {
 			b.ResetTimer()
 
 			require.NoError(b, services.StartAndAwaitRunning(ctx, ingester))
-			require.NoError(b, ingester.ingestReader.WaitReadConsistencyUntilOffsets(ctx, ingest.NewSingleClusterPartitionOffsets(targetOffset)))
+			require.NoError(b, ingester.ingestReader.WaitReadConsistencyUntilOffsets(ctx, kmeta.NewSingleClusterPartitionOffsets(targetOffset)))
 
 			// Stop the timer so cleanup functions don't affect the measurement.
 			b.StopTimer()
@@ -1367,7 +1397,7 @@ func BenchmarkIngester_ReplayFromKafka_Dump(b *testing.B) {
 
 			b.StartTimer()
 			require.NoError(b, services.StartAndAwaitRunning(ctx, ingester))
-			require.NoError(b, ingester.ingestReader.WaitReadConsistencyUntilOffsets(ctx, ingest.NewSingleClusterPartitionOffsets(targetOffset)))
+			require.NoError(b, ingester.ingestReader.WaitReadConsistencyUntilOffsets(ctx, kmeta.NewSingleClusterPartitionOffsets(targetOffset)))
 			b.StopTimer()
 
 			b.ReportMetric(float64(numRecords)/b.Elapsed().Seconds(), "records/sec")

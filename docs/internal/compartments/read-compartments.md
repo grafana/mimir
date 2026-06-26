@@ -31,6 +31,28 @@ flowchart LR
     K1 --> ING
 ```
 
+## Blocks storage
+
+Each read compartment owns its blocks storage end to end:
+
+- A read compartment has a **dedicated object-storage bucket**. Its ingesters and block-builders
+  upload blocks there, its compactors compact the blocks within it, and its store-gateways serve
+  queries from it. A compartment's blocks never mix with another compartment's.
+- Store-gateways and compactors **run per read compartment**, alongside that compartment's ingesters.
+- Each read compartment has its **own store-gateway ring** and its **own compactor ring**. Block
+  sharding and replication across store-gateways, and compaction-job sharding across compactors, are
+  therefore scoped within a compartment: a store-gateway or compactor only owns work for its own
+  compartment's blocks.
+
+This is the storage-side expression of the blast-radius and scaling goals (see
+[Mimir compartments](./README.md)): a bucket-level problem — for example object-storage rate limiting
+or a corrupt block — is contained to one compartment, and each compartment's storage components and
+bucket scale independently of the others.
+
+The global query layer queries each read compartment's store-gateways the same way it queries that
+compartment's ingesters: it narrows a query to the compartments that can hold the selected metric
+names and fans out otherwise (see [Querying read compartments](#querying-read-compartments)).
+
 ## Querying read compartments
 
 The global query layer queries the ingesters of read compartments through the same path used without

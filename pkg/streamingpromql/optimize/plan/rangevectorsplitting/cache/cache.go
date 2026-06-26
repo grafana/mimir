@@ -51,7 +51,7 @@ func newCacheMetrics(reg prometheus.Registerer) *cacheMetrics {
 	}
 }
 
-func NewCacheFactory(cfg Config, ttlProvider TTLProvider, logger log.Logger, reg prometheus.Registerer) (*CacheFactory, error) {
+func NewCacheFactory(cfg Config, ttlProvider TTLProvider, prefixGenerator caching.PrefixGenerator, logger log.Logger, reg prometheus.Registerer) (*CacheFactory, error) {
 	client, err := cache.CreateClient("intermediate-result-cache", cfg.BackendConfig, logger, prometheus.WrapRegistererWithPrefix("mimir_", reg))
 	if err != nil {
 		return nil, err
@@ -66,7 +66,12 @@ func NewCacheFactory(cfg Config, ttlProvider TTLProvider, logger log.Logger, reg
 	)
 	backend = cache.NewCompression(cfg.Compression, backend, logger)
 
-	return NewCacheFactoryWithBackend(backend, ttlProvider, reg, logger), nil
+	prefixedCache := caching.NewPrefixingCache(
+		caching.NewAdaptor(backend),
+		prefixGenerator,
+	)
+
+	return NewCacheFactoryWithBackend(prefixedCache, ttlProvider, reg, logger), nil
 }
 
 func NewCacheFactoryWithBackend(backend caching.Backend, ttlProvider TTLProvider, reg prometheus.Registerer, logger log.Logger) *CacheFactory {
@@ -78,14 +83,15 @@ func NewCacheFactoryWithBackend(backend caching.Backend, ttlProvider TTLProvider
 	}
 }
 
-func generateCacheKey(tenant string, function functions.Function, selector []byte, start, end int64) []byte {
-	return fmt.Appendf(nil, "%s:%d:%s:%d:%d", tenant, function, selector, start, end)
+func generateCacheKey(function functions.Function, selector []byte, start, end int64) []byte {
+	// We don't include the tenant ID here as that is expected to be done by the prefix generator configured on the cache above.
+	return fmt.Appendf(nil, "%d:%s:%d:%d", function, selector, start, end)
 }
 
 // TestGenerateHashedCacheKey generates a hashed cache key using the same logic as the cache internals.
 // This should only be used in tests.
-func TestGenerateHashedCacheKey(tenant string, function functions.Function, selector []byte, start, end int64) string {
-	return caching.HashCacheKey(generateCacheKey(tenant, function, selector, start, end))
+func TestGenerateHashedCacheKey(function functions.Function, selector []byte, start, end int64) string {
+	return caching.HashCacheKey(generateCacheKey(function, selector, start, end))
 }
 
 // SplitCodec handles serialization of intermediate results for query splitting.
@@ -128,10 +134,14 @@ func (c *Cache[T]) Get(
 	}
 
 	c.metrics.cacheRequests.Inc()
-	cacheKey := generateCacheKey(tenant, function, innerKey, start, end)
+	cacheKey := generateCacheKey(function, innerKey, start, end)
 	hashedKey := caching.HashCacheKey(cacheKey)
 
-	foundData := c.backend.GetMulti(ctx, []string{hashedKey})
+	foundData, err := c.backend.GetMulti(ctx, []string{hashedKey})
+	if err != nil {
+		return nil, querierpb.Annotations{}, nil, types.EncodedOperatorEvaluationStats{}, false, fmt.Errorf("getting cached results: %w", err)
+	}
+
 	data, ok := foundData[hashedKey]
 	if !ok || len(data) == 0 {
 		return nil, querierpb.Annotations{}, nil, types.EncodedOperatorEvaluationStats{}, false, nil
@@ -173,17 +183,12 @@ func (c *Cache[T]) Set(
 	totalSeriesCount int,
 	stats *CacheStats,
 ) error {
-	tenant, err := user.ExtractOrgID(ctx)
-	if err != nil {
-		return err
-	}
-
 	ttl, err := c.ttlProvider.GetMinResultsCacheTTL(ctx)
 	if err != nil {
 		return fmt.Errorf("getting results cache TTL: %w", err)
 	}
 
-	cacheKey := generateCacheKey(tenant, function, innerKey, start, end)
+	cacheKey := generateCacheKey(function, innerKey, start, end)
 
 	resultBytes, err := c.codec.Marshal(results)
 	if err != nil {
@@ -206,7 +211,9 @@ func (c *Cache[T]) Set(
 	}
 
 	hashedKey := caching.HashCacheKey(cacheKey)
-	c.backend.SetAsync(hashedKey, data, ttl)
+	if err := c.backend.SetAsync(ctx, hashedKey, data, ttl); err != nil {
+		return fmt.Errorf("storing cached results: %w", err)
+	}
 
 	seriesCount := len(seriesMetadata)
 	level.Debug(c.logger).Log("msg", "cache entry written", "hashed_cache_key", hashedKey, "series_count", seriesCount, "entry_size", len(data))

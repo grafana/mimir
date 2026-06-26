@@ -5,12 +5,12 @@ package splitandcache
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/util/annotations"
 
-	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
@@ -66,15 +66,40 @@ func newSplitRange(operator types.InstantVectorOperator, memoryConsumptionTracke
 }
 
 func (s *TimeRangeSplitOperator) Prepare(ctx context.Context, params *types.PrepareParams) error {
-	queryStats := stats.FromContext(ctx)
-	queryStats.AddSplitQueries(uint32(len(s.ranges)))
+	if ok, cacheOperators := s.allChildrenAreCacheOperators(); ok {
+		return PrepareCacheOperators(ctx, params, cacheOperators, time.Now())
+	}
 
+	// Children aren't cache operators, so prepare them individually.
 	for _, r := range s.ranges {
 		if err := r.operator.Prepare(ctx, params); err != nil {
 			return err
 		}
 	}
+
 	return nil
+}
+
+func (s *TimeRangeSplitOperator) allChildrenAreCacheOperators() (bool, []*CacheOperator) {
+	if len(s.ranges) == 0 {
+		return false, nil
+	}
+
+	var operators []*CacheOperator
+
+	for _, r := range s.ranges {
+		if c, ok := r.operator.(*CacheOperator); !ok {
+			return false, nil
+		} else {
+			if operators == nil {
+				operators = make([]*CacheOperator, 0, len(s.ranges))
+			}
+
+			operators = append(operators, c)
+		}
+	}
+
+	return true, operators
 }
 
 func (s *TimeRangeSplitOperator) AfterPrepare(ctx context.Context) error {

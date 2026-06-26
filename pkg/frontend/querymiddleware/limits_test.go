@@ -995,6 +995,10 @@ func (m mockQueryLimitsProvider) GetMaxCacheFreshness(_ context.Context) (time.D
 	return m.m.maxCacheFreshness, nil
 }
 
+func (m mockQueryLimitsProvider) AllowCachingUnalignedQueries(ctx context.Context) (bool, error) {
+	return m.m.resultsCacheForUnalignedQueryEnabled, nil
+}
+
 type mockHandler struct {
 	mock.Mock
 }
@@ -1285,7 +1289,7 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 		return expr
 	}
 
-	encodedOffsets := string(api.EncodeOffsets(map[int32]int64{0: 1, 1: 2}))
+	encodedOffsets := string(api.EncodeOffsetsV1(map[int32]int64{0: 1, 1: 2}))
 
 	requestHeaders := []*PrometheusHeader{
 		{Name: compat.ForceFallbackHeaderName, Values: []string{"true"}},

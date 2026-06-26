@@ -27,7 +27,6 @@ import (
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/api"
-	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
@@ -923,18 +922,21 @@ func (i *Ingester) enforceReadConsistency(ctx context.Context, tenantID string) 
 	}
 
 	if level == api.ReadConsistencyStrong {
-		// When compartments are enabled, per-compartment offsets are not yet propagated by the
-		// query-frontend and querier, so we ignore the encoded offset and fall back to waiting until the
-		// last produced offset.
-		if !i.cfg.Compartments.Enabled {
-			// Check if request already contains the minimum offset we have to guarantee being queried
-			// for our partition.
-			if offsets, ok := api.ReadConsistencyEncodedOffsetsFromContext(ctx); ok {
-				if offset, ok := offsets.Lookup(i.ingestPartitionID); ok {
-					spanLog.DebugLog("msg", "enforcing strong read consistency", "offset", offset)
-					return errors.Wrap(i.ingestReader.WaitReadConsistencyUntilOffsets(ctx, ingest.NewSingleClusterPartitionOffsets(offset)), "wait for read consistency")
-				}
+		// Check if request already contains the minimum offset we have to guarantee being queried
+		// for our partition.
+		//
+		// WaitReadConsistencyUntilOffsets validates that the offsets cover exactly the Kafka clusters the
+		// reader consumes from, returning an error on mismatch: that is an invariant violation (e.g. a
+		// query-frontend and ingester disagreeing on the number of write compartments) we want surfaced.
+		if encoded, ok := api.ReadConsistencyEncodedOffsetsFromContext(ctx); ok {
+			if offsets, ok := encoded.Lookup(i.cfg.ReadCompartmentID, i.ingestPartitionID); ok {
+				spanLog.DebugLog("msg", "enforcing strong read consistency", "offsets", offsets)
+				return errors.Wrap(i.ingestReader.WaitReadConsistencyUntilOffsets(ctx, offsets), "wait for read consistency")
 			}
+
+			// Header present but no offset for our read compartment and partition: unexpected (the
+			// query-frontend encodes one per ring partition), so log it before the safe fallback below.
+			spanLog.DebugLog("msg", "read consistency offsets header present but missing this read compartment and partition, falling back to last produced offset", "read_compartment", i.cfg.ReadCompartmentID, "partition", i.ingestPartitionID)
 		}
 
 		spanLog.DebugLog("msg", "enforcing strong read consistency", "offset", "last produced")

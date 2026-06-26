@@ -160,6 +160,10 @@ usage_tracker:
 limits:
   native_histograms_ingestion_enabled: true
   ingestion_rate: 100000
+  # Enforce strong read consistency on every query so the compartments strong-consistency path (the
+  # query-frontend monitoring per-write-compartment offsets and propagating them to ingesters) is
+  # exercised locally.
+  ingest_storage_read_consistency: strong
 
 runtime_config:
   file: ./config/runtime.yaml

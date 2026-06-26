@@ -6,8 +6,8 @@ std.manifestYamlDoc({
     self.query_frontend +
     self.query_schedulers +
     self.querier +
-    self.store_gateways(1) +
-    self.compactor +
+    self.store_gateways +
+    self.compactors +
     self.block_builder +
     self.block_builder_scheduler +
     self.rulers(1) +
@@ -23,6 +23,17 @@ std.manifestYamlDoc({
     self.tempo +
     {},
 
+  // Compartment-aware Kafka args for the components that run the ingest-storage writer (distributor, ruler).
+  // Each writer targets its own write compartment's Kafka cluster, so the address is resolved to that
+  // compartment (matching the production jsonnet), not left as the "<write-compartment-id>" placeholder. The
+  // read-compartment-templated topic makes the writer auto-create one topic per read compartment; its
+  // "<read-compartment-id>" placeholder is single-quoted so "sh -c" doesn't treat it as a shell redirection.
+  local writeCompartmentArgs(writeCompartmentID) = [
+    '-distributor.write-compartment-id=%d' % writeCompartmentID,
+    '-ingest-storage.kafka.address=kafka-wc-%d:9092' % writeCompartmentID,
+    "-ingest-storage.kafka.topic='mimir-ingest-rc-<read-compartment-id>'",
+  ],
+
   // Two distributors, each representing a (0-based) write compartment. They shard every write across all
   // read compartments by metric name, and each produces to its own write compartment's Kafka cluster;
   // nginx load-balances across them so writes spread randomly across write compartments.
@@ -32,16 +43,7 @@ std.manifestYamlDoc({
       name: 'distributor-wc-%d' % id,
       target: 'distributor',
       publishedHttpPort: 8000 + id,
-      extraArguments: [
-        // Each write compartment's distributor writes to its own Kafka cluster, sharding series across
-        // read compartment topics (parameterised by read compartment ID). The <write-compartment-id>
-        // placeholder in the address is resolved from -distributor.write-compartment-id. Values with
-        // "<...>" placeholders are single-quoted so they aren't interpreted as shell redirections by the
-        // "sh -c" command.
-        '-distributor.write-compartment-id=%d' % id,
-        "-ingest-storage.kafka.address='kafka-wc-<write-compartment-id>:9092'",
-        "-ingest-storage.kafka.topic='mimir-ingest-rc-<read-compartment-id>'",
-      ],
+      extraArguments: writeCompartmentArgs(id),
     }) + {
       // Share a "distributor" network alias so nginx (DISTRIBUTOR_HOST=distributor) balances across both.
       networks: { default: { aliases: ['distributor'] } },
@@ -51,8 +53,8 @@ std.manifestYamlDoc({
 
   // Each read compartment runs its own ingesters (one per zone). An ingester registers its partition
   // into the partition ring of its read compartment, and consumes that read compartment's topic from
-  // every write compartment's Kafka cluster (one cluster per write compartment). The query path is not
-  // compartment-aware yet, so only read compartment 0's data is queryable.
+  // every write compartment's Kafka cluster (one cluster per write compartment). Queries fan out across
+  // the read compartments that can hold the selected metric names.
   local numCompartments = 2,
   local partitionsPerCompartment = 2,
   local zones = ['zone-a', 'zone-b'],
@@ -98,6 +100,14 @@ std.manifestYamlDoc({
       target: 'query-frontend',
       publishedHttpPort: 8007,
       jaegerApp: 'query-frontend',
+      extraArguments: [
+        // To enforce strong read consistency the query-frontend monitors the last produced offsets of
+        // every read compartment's topic in every write compartment's Kafka cluster, so it needs the same
+        // templated topic and address as ingesters. The values are single-quoted so the "<...>"
+        // placeholders aren't interpreted as shell redirections by the "sh -c" command.
+        "-ingest-storage.kafka.address='kafka-wc-<write-compartment-id>:9092'",
+        "-ingest-storage.kafka.topic='mimir-ingest-rc-<read-compartment-id>'",
+      ],
     }),
   },
 
@@ -109,32 +119,40 @@ std.manifestYamlDoc({
     }),
   },
 
-  compactor:: {
-    compactor: mimirService({
-      name: 'compactor',
+  // Each read compartment runs its own compactor. A compactor registers into its read compartment's
+  // ring (-compactor.read-compartment-id) and compacts only that compartment's dedicated bucket
+  // (mimir-blocks-rc-<id>), so the per-compartment compactors never contend over the same blocks.
+  compactors:: {
+    ['compactor-rc-%d' % compartment]: mimirService({
+      name: 'compactor-rc-%d' % compartment,
       target: 'compactor',
-      publishedHttpPort: 8006,
-    }),
+      publishedHttpPort: 8060 + compartment,
+      jaegerApp: 'compactor-rc-%d' % compartment,
+      extraArguments: [
+        '-compactor.read-compartment-id=%d' % compartment,
+        '-blocks-storage.s3.bucket-name=mimir-blocks-rc-%d' % compartment,
+      ],
+    })
+    for compartment in std.range(0, numCompartments - 1)
   },
 
-  store_gateways(count):: {
-    ['store-gateway-zone-a-%d' % id]: mimirService({
-      name: 'store-gateway-zone-a-' + id,
+  // Each read compartment runs its own store-gateways (one per zone). A store-gateway registers into
+  // its read compartment's ring (-store-gateway.read-compartment-id) and serves blocks from that
+  // compartment's dedicated bucket (mimir-blocks-rc-<id>).
+  store_gateways:: {
+    ['store-gateway-%s-rc-%d' % [zones[zoneIdx], compartment]]: mimirService({
+      name: 'store-gateway-%s-rc-%d' % [zones[zoneIdx], compartment],
       target: 'store-gateway',
-      publishedHttpPort: 8020 + id,
-      jaegerApp: 'store-gateway-zone-a-%d' % id,
-      extraArguments: ['-store-gateway.sharding-ring.instance-availability-zone=zone-a'],
+      publishedHttpPort: 8020 + (compartment * std.length(zones)) + zoneIdx,
+      jaegerApp: 'store-gateway-%s-rc-%d' % [zones[zoneIdx], compartment],
+      extraArguments: [
+        '-store-gateway.sharding-ring.instance-availability-zone=%s' % zones[zoneIdx],
+        '-store-gateway.read-compartment-id=%d' % compartment,
+        '-blocks-storage.s3.bucket-name=mimir-blocks-rc-%d' % compartment,
+      ],
     })
-    for id in std.range(1, count)
-  } + {
-    ['store-gateway-zone-b-%d' % id]: mimirService({
-      name: 'store-gateway-zone-b-' + id,
-      target: 'store-gateway',
-      publishedHttpPort: 8050 + id,
-      jaegerApp: 'store-gateway-zone-b-%d' % id,
-      extraArguments: ['-store-gateway.sharding-ring.instance-availability-zone=zone-b'],
-    })
-    for id in std.range(1, count)
+    for compartment in std.range(0, numCompartments - 1)
+    for zoneIdx in std.range(0, std.length(zones) - 1)
   },
 
   rulers(count):: if count <= 0 then {} else {
@@ -143,6 +161,11 @@ std.manifestYamlDoc({
       target: 'ruler',
       publishedHttpPort: 8030 + id,
       jaegerApp: 'ruler-%d' % id,
+      // The ruler embeds a distributor to write rule results, so it needs the same compartment-aware Kafka
+      // config as the distributors (otherwise it falls back to the concrete base topic and auto-creates
+      // duplicate topics). A single ruler can't shard across write compartments, so pin it to write
+      // compartment 0; ingesters consume every write compartment, so its writes are still read back.
+      extraArguments: writeCompartmentArgs(0),
     })
     for id in std.range(1, count)
   },
@@ -158,11 +181,16 @@ std.manifestYamlDoc({
     for id in std.range(1, count)
   },
 
+  // The block-builder isn't compartment-aware yet: it consumes read compartment 0's topic and uploads
+  // to that compartment's dedicated bucket, so read compartment 0 is a full end-to-end slice whose
+  // blocks are compacted and served by its own compactor and store-gateways. The other compartments'
+  // compactors and store-gateways run against (empty) buckets until the block-builder is compartmentalised.
   block_builder:: {
     'block-builder-0': mimirService({
       name: 'block-builder-0',
       target: 'block-builder',
       publishedHttpPort: 8009,
+      extraArguments: ['-blocks-storage.s3.bucket-name=mimir-blocks-rc-0'],
     }),
   },
 
@@ -221,7 +249,7 @@ std.manifestYamlDoc({
         'alertmanager-1',
         'ruler-1',
         'query-frontend',
-        'compactor',
+        'compactor-rc-0',
         'grafana',
       ],
       environment: [
@@ -232,7 +260,7 @@ std.manifestYamlDoc({
         'ALERT_MANAGER_HOST=alertmanager-1:8080',
         'RULER_HOST=ruler-1:8080',
         'QUERY_FRONTEND_HOST=query-frontend:8080',
-        'COMPACTOR_HOST=compactor:8080',
+        'COMPACTOR_HOST=compactor-rc-0:8080',
       ],
       ports: ['8080:8080'],
       volumes: ['../common/config:/etc/nginx/templates'],
@@ -240,11 +268,17 @@ std.manifestYamlDoc({
   },
 
   minio:: {
+    // One blocks bucket per read compartment (mimir-blocks-rc-<id>), plus the legacy mimir-blocks
+    // bucket still referenced by the default config (e.g. the querier, whose block querying isn't
+    // compartment-aware yet), and the ruler, alertmanager and usage-tracker buckets.
+    local buckets = ['mimir-blocks'] +
+                    ['mimir-blocks-rc-%d' % compartment for compartment in std.range(0, numCompartments - 1)] +
+                    ['mimir-ruler', 'mimir-alertmanager', 'usage-tracker-snapshots'],
     minio: {
       image: 'minio/minio:RELEASE.2025-05-24T17-08-30Z',
       // MinIO treats top-level directories under /data as buckets. Create the buckets the dev cluster
       // needs before starting the server, since this env doesn't ship a pre-seeded data directory.
-      entrypoint: ['sh', '-c', 'mkdir -p /data/mimir-blocks /data/mimir-ruler /data/mimir-alertmanager /data/usage-tracker-snapshots && exec minio server --console-address :9001 /data'],
+      entrypoint: ['sh', '-c', 'mkdir -p %s && exec minio server --console-address :9001 /data' % std.join(' ', ['/data/%s' % bucket for bucket in buckets])],
       environment: ['MINIO_ROOT_USER=mimir', 'MINIO_ROOT_PASSWORD=supersecret'],
       ports: [
         '9000:9000',

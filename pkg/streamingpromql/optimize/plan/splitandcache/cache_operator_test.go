@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -64,6 +63,7 @@ func TestCacheOperator(t *testing.T) {
 		expectedAnnotationTimeRange types.QueryTimeRange // If not set, uses timeRange. This is necessary because we don't have a way to determine what timestamp an annotation applies to, so we have to return all annotations associated with an extent if any samples from that extent are used.
 		existingCacheEntry          *CacheEntry          // nil if no cache entry should be populated before running the test. If non-nil, and CacheKey is nil, CacheKey will be set to the expected value in the test.
 		enableOOO                   bool
+		minCacheExtent              time.Duration // Small extent avoidance threshold. If zero (the default for most cases), small extent avoidance is disabled so these cases exercise extent partitioning and merging in isolation.
 
 		expectedFreshlyEvaluatedRanges   []types.QueryTimeRange
 		expectedWrittenCacheEntry        *CacheEntry   // nil if no cache entry should be written. If non-nil, CacheKey will be set to the expected value in the test.
@@ -512,6 +512,104 @@ func TestCacheOperator(t *testing.T) {
 			expectedWrittenCacheEntry:        nil,
 			expectedAnyCachedExtentsRetained: true,
 		},
+
+		"small extent avoidance: single small extent overlapping large desired time range is discarded and re-evaluated": {
+			minCacheExtent: 5 * time.Minute,
+			existingCacheEntry: &CacheEntry{
+				Extents: []CachedExtent{
+					// 2-minute extent, smaller than the 5-minute threshold, inside the 10-minute desired time range.
+					extentFor(types.NewRangeQueryTimeRange(desiredStart.Add(2*time.Minute), desiredStart.Add(4*time.Minute), step), withinTTL, existingTraceID),
+				},
+			},
+
+			// The small extent is discarded, so the whole desired time range is freshly evaluated as one query.
+			expectedFreshlyEvaluatedRanges: []types.QueryTimeRange{defaultTimeRange},
+			expectedWrittenCacheEntry: &CacheEntry{
+				Extents: []CachedExtent{
+					extentFor(defaultTimeRange, timeNow, newTraceID),
+				},
+			},
+			expectedAnyCachedExtentsRetained: false,
+		},
+
+		"small extent avoidance: multiple small extents are discarded and the range is re-evaluated as a single query": {
+			minCacheExtent: 5 * time.Minute,
+			existingCacheEntry: &CacheEntry{
+				Extents: []CachedExtent{
+					extentFor(types.NewRangeQueryTimeRange(desiredStart.Add(2*time.Minute), desiredStart.Add(4*time.Minute), step), withinTTL, existingTraceID),
+					extentFor(types.NewRangeQueryTimeRange(desiredStart.Add(6*time.Minute), desiredStart.Add(8*time.Minute), step), withinTTL, existingTraceID),
+				},
+			},
+
+			// Both small extents are discarded, so the whole desired time range is freshly evaluated as one query
+			// rather than fragmenting it into several small queries around the discarded extents.
+			expectedFreshlyEvaluatedRanges: []types.QueryTimeRange{defaultTimeRange},
+			expectedWrittenCacheEntry: &CacheEntry{
+				Extents: []CachedExtent{
+					extentFor(defaultTimeRange, timeNow, newTraceID),
+				},
+			},
+			expectedAnyCachedExtentsRetained: false,
+		},
+
+		"small extent avoidance: extent at least as large as threshold is still read from the cache": {
+			minCacheExtent: 5 * time.Minute,
+			existingCacheEntry: &CacheEntry{
+				Extents: []CachedExtent{
+					// 6-minute extent, larger than the 5-minute threshold: it should still be used.
+					extentFor(types.NewRangeQueryTimeRange(desiredStart.Add(2*time.Minute), desiredStart.Add(8*time.Minute), step), withinTTL, existingTraceID),
+				},
+			},
+
+			expectedFreshlyEvaluatedRanges: []types.QueryTimeRange{
+				types.NewRangeQueryTimeRange(desiredStart, desiredStart.Add(time.Minute), step),
+				types.NewRangeQueryTimeRange(desiredStart.Add(9*time.Minute), desiredEnd, step),
+			},
+			expectedWrittenCacheEntry: &CacheEntry{
+				Extents: []CachedExtent{
+					extentFor(defaultTimeRange, withinTTL, newTraceID),
+				},
+			},
+			expectedAnyCachedExtentsRetained: true,
+		},
+
+		"small extent avoidance: small extents entirely outside the desired time range are retained": {
+			minCacheExtent: 5 * time.Minute,
+			existingCacheEntry: &CacheEntry{
+				Extents: []CachedExtent{
+					// Small extents that don't overlap the desired time range aren't re-evaluated by this query, so
+					// they must be retained rather than discarded.
+					extentFor(types.NewRangeQueryTimeRange(desiredStart.Add(-5*time.Minute), desiredStart.Add(-2*time.Minute), step), withinTTL, existingTraceID),
+					extentFor(types.NewRangeQueryTimeRange(desiredEnd.Add(2*time.Minute), desiredEnd.Add(4*time.Minute), step), withinTTL, existingTraceID),
+				},
+			},
+
+			expectedFreshlyEvaluatedRanges: []types.QueryTimeRange{defaultTimeRange},
+			expectedWrittenCacheEntry: &CacheEntry{
+				Extents: []CachedExtent{
+					extentFor(types.NewRangeQueryTimeRange(desiredStart.Add(-5*time.Minute), desiredStart.Add(-2*time.Minute), step), withinTTL, existingTraceID),
+					extentFor(types.NewRangeQueryTimeRange(desiredStart, desiredEnd, step), timeNow, newTraceID),
+					extentFor(types.NewRangeQueryTimeRange(desiredEnd.Add(2*time.Minute), desiredEnd.Add(4*time.Minute), step), withinTTL, existingTraceID),
+				},
+			},
+			expectedAnyCachedExtentsRetained: true,
+		},
+
+		"small extent avoidance: small extent is read from the cache when the desired time range is also small": {
+			timeRange:      types.NewRangeQueryTimeRange(desiredStart, desiredStart.Add(3*time.Minute), step),
+			minCacheExtent: 5 * time.Minute,
+			existingCacheEntry: &CacheEntry{
+				Extents: []CachedExtent{
+					// The extent is smaller than the threshold, but so is the desired time range, so it should be used:
+					// re-evaluating wouldn't be any cheaper.
+					extentFor(types.NewRangeQueryTimeRange(desiredStart, desiredStart.Add(3*time.Minute), step), withinTTL, existingTraceID),
+				},
+			},
+
+			expectedFreshlyEvaluatedRanges:   nil,
+			expectedWrittenCacheEntry:        nil,
+			expectedAnyCachedExtentsRetained: true,
+		},
 	}
 
 	for name, testCase := range testCases {
@@ -538,7 +636,7 @@ func TestCacheOperator(t *testing.T) {
 
 			ctx := user.InjectOrgID(context.Background(), "some-user")
 			memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
-			cache := newTestCache()
+			cache := caching.NewInMemoryCache()
 			materializer := &testMaterializer{
 				t:                        t,
 				ctx:                      ctx,
@@ -546,7 +644,7 @@ func TestCacheOperator(t *testing.T) {
 			}
 			params := &planning.QueryParameters{OriginalExpression: "the_original_expression{}"}
 
-			o := newCacheOperator(cache, materializer, createTestNode(), testCase.timeRange, memoryConsumptionTracker, posrange.PositionRange{}, params, limits, log.NewNopLogger(), cacheEntryInterval)
+			o := newCacheOperator(cache, materializer, createTestNode(), testCase.timeRange, memoryConsumptionTracker, posrange.PositionRange{}, params, limits, log.NewNopLogger(), cacheEntryInterval, testCase.minCacheExtent)
 			o.timeNow = func() time.Time { return timeNow }
 			o.getCurrentTraceID = func(context.Context) (string, bool) { return newTraceID, true }
 
@@ -561,8 +659,8 @@ func TestCacheOperator(t *testing.T) {
 
 				b, err := testCase.existingCacheEntry.Marshal()
 				require.NoError(t, err)
-				cache.entries = map[string]testCacheEntry{
-					hashedCacheKey: {value: b},
+				cache.Entries = map[string]caching.InMemoryCacheEntry{
+					hashedCacheKey: {Value: b},
 				}
 			}
 
@@ -628,14 +726,14 @@ func TestCacheOperator(t *testing.T) {
 			require.Zerof(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes(), "expected all instances to be returned to pool, current memory consumption is:\n%v", memoryConsumptionTracker.DescribeCurrentMemoryConsumption())
 
 			if testCase.expectedWrittenCacheEntry == nil {
-				require.Equal(t, 0, cache.setCount, "expected no cache entry to be written, but at least one was")
+				require.Equal(t, 0, cache.SetCount, "expected no cache entry to be written, but at least one was")
 			} else {
-				require.Equal(t, 1, cache.setCount, "expected cache entry to be written, but it was not")
-				require.Equal(t, []string{hashedCacheKey}, slices.Collect(maps.Keys(cache.entries)), "expected cache entry to be written with expected key")
-				require.Equal(t, testCase.expectedTTL, cache.entries[hashedCacheKey].ttl, "expected cache entry to have expected TTL")
+				require.Equal(t, 1, cache.SetCount, "expected cache entry to be written, but it was not")
+				require.Equal(t, []string{hashedCacheKey}, slices.Collect(maps.Keys(cache.Entries)), "expected cache entry to be written with expected key")
+				require.Equal(t, testCase.expectedTTL, cache.Entries[hashedCacheKey].TTL, "expected cache entry to have expected TTL")
 
 				testCase.expectedWrittenCacheEntry.CacheKey = cacheKey
-				actualBytes := cache.entries[hashedCacheKey].value
+				actualBytes := cache.Entries[hashedCacheKey].Value
 				actualEntry := &CacheEntry{}
 				require.NoError(t, actualEntry.Unmarshal(actualBytes))
 
@@ -652,7 +750,7 @@ func TestCacheOperator(t *testing.T) {
 func TestCacheOperator_DoesNotSaveCacheEntryIfSeriesMetadataNotCalled(t *testing.T) {
 	ctx := user.InjectOrgID(context.Background(), "some-user")
 	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
-	cache := newTestCache()
+	cache := caching.NewInMemoryCache()
 	materializer := &testMaterializer{
 		t:                        t,
 		ctx:                      ctx,
@@ -661,7 +759,7 @@ func TestCacheOperator_DoesNotSaveCacheEntryIfSeriesMetadataNotCalled(t *testing
 	limits := &mockLimitsProvider{}
 
 	timeRange := types.NewRangeQueryTimeRange(timestamp.Time(0), timestamp.Time(0).Add(2*time.Minute), time.Minute)
-	o := newCacheOperator(cache, materializer, createTestNode(), timeRange, memoryConsumptionTracker, posrange.PositionRange{}, &planning.QueryParameters{OriginalExpression: "the_original_expression{}"}, limits, log.NewNopLogger(), cacheEntryInterval)
+	o := newCacheOperator(cache, materializer, createTestNode(), timeRange, memoryConsumptionTracker, posrange.PositionRange{}, &planning.QueryParameters{OriginalExpression: "the_original_expression{}"}, limits, log.NewNopLogger(), cacheEntryInterval, 0)
 
 	require.NoError(t, o.Prepare(ctx, &types.PrepareParams{}))
 	require.NoError(t, o.AfterPrepare(ctx))
@@ -672,13 +770,13 @@ func TestCacheOperator_DoesNotSaveCacheEntryIfSeriesMetadataNotCalled(t *testing
 	_, _, err := o.Finalize(ctx)
 	require.NoError(t, err)
 
-	require.Zerof(t, cache.setCount, "expected no cache entry to be written, but at least one was: %v", cache.entries)
+	require.Zerof(t, cache.SetCount, "expected no cache entry to be written, but at least one was: %v", cache.Entries)
 }
 
 func TestCacheOperator_DoesNotSaveCacheEntryIfNotAllSeriesRead(t *testing.T) {
 	ctx := user.InjectOrgID(context.Background(), "some-user")
 	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
-	cache := newTestCache()
+	cache := caching.NewInMemoryCache()
 	materializer := &testMaterializer{
 		t:                        t,
 		ctx:                      ctx,
@@ -687,7 +785,7 @@ func TestCacheOperator_DoesNotSaveCacheEntryIfNotAllSeriesRead(t *testing.T) {
 	limits := &mockLimitsProvider{}
 
 	timeRange := types.NewRangeQueryTimeRange(timestamp.Time(0), timestamp.Time(0).Add(2*time.Minute), time.Minute)
-	o := newCacheOperator(cache, materializer, createTestNode(), timeRange, memoryConsumptionTracker, posrange.PositionRange{}, &planning.QueryParameters{OriginalExpression: "the_original_expression{}"}, limits, log.NewNopLogger(), cacheEntryInterval)
+	o := newCacheOperator(cache, materializer, createTestNode(), timeRange, memoryConsumptionTracker, posrange.PositionRange{}, &planning.QueryParameters{OriginalExpression: "the_original_expression{}"}, limits, log.NewNopLogger(), cacheEntryInterval, 0)
 
 	require.NoError(t, o.Prepare(ctx, &types.PrepareParams{}))
 	require.NoError(t, o.AfterPrepare(ctx))
@@ -706,13 +804,13 @@ func TestCacheOperator_DoesNotSaveCacheEntryIfNotAllSeriesRead(t *testing.T) {
 	_, _, err = o.Finalize(ctx)
 	require.NoError(t, err)
 
-	require.Zerof(t, cache.setCount, "expected no cache entry to be written, but at least one was: %v", cache.entries)
+	require.Zerof(t, cache.SetCount, "expected no cache entry to be written, but at least one was: %v", cache.Entries)
 }
 
 func TestCacheOperator_DoesNotSaveCacheEntryIfFinishedReadingNotCalled(t *testing.T) {
 	ctx := user.InjectOrgID(context.Background(), "some-user")
 	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
-	cache := newTestCache()
+	cache := caching.NewInMemoryCache()
 	materializer := &testMaterializer{
 		t:                        t,
 		ctx:                      ctx,
@@ -721,7 +819,7 @@ func TestCacheOperator_DoesNotSaveCacheEntryIfFinishedReadingNotCalled(t *testin
 	limits := &mockLimitsProvider{}
 
 	timeRange := types.NewRangeQueryTimeRange(timestamp.Time(0), timestamp.Time(0).Add(2*time.Minute), time.Minute)
-	o := newCacheOperator(cache, materializer, createTestNode(), timeRange, memoryConsumptionTracker, posrange.PositionRange{}, &planning.QueryParameters{OriginalExpression: "the_original_expression{}"}, limits, log.NewNopLogger(), cacheEntryInterval)
+	o := newCacheOperator(cache, materializer, createTestNode(), timeRange, memoryConsumptionTracker, posrange.PositionRange{}, &planning.QueryParameters{OriginalExpression: "the_original_expression{}"}, limits, log.NewNopLogger(), cacheEntryInterval, 0)
 
 	require.NoError(t, o.Prepare(ctx, &types.PrepareParams{}))
 	require.NoError(t, o.AfterPrepare(ctx))
@@ -741,7 +839,75 @@ func TestCacheOperator_DoesNotSaveCacheEntryIfFinishedReadingNotCalled(t *testin
 	_, _, err = o.Finalize(ctx)
 	require.EqualError(t, err, "CacheOperator.writeCacheEntry() called (via Finalize()) before FinishedReading(), this should never happen")
 
-	require.Zerof(t, cache.setCount, "expected no cache entry to be written, but at least one was: %v", cache.entries)
+	require.Zerof(t, cache.SetCount, "expected no cache entry to be written, but at least one was: %v", cache.Entries)
+}
+
+func TestCacheOperator_DoesNotStoreEmptySeries(t *testing.T) {
+	floatSeries := types.SeriesMetadata{Labels: labels.FromStrings(model.MetricNameLabel, "with_floats")}
+	histogramSeries := types.SeriesMetadata{Labels: labels.FromStrings(model.MetricNameLabel, "with_histograms")}
+	emptySeries := types.SeriesMetadata{Labels: labels.FromStrings(model.MetricNameLabel, "empty")}
+
+	floatData := types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 1000, F: 1}}}
+	histogramData := types.InstantVectorSeriesData{Histograms: []promql.HPoint{{T: 2000, H: &histogram.FloatHistogram{Count: 3}}}}
+	emptyData := types.InstantVectorSeriesData{}
+
+	testCases := map[string]struct {
+		seriesMetadata   []types.SeriesMetadata
+		data             []types.InstantVectorSeriesData
+		expectedMetadata []querierpb.SeriesMetadata
+		expectedData     []querierpb.InstantVectorSeriesData
+	}{
+		"no series": {
+			seriesMetadata:   []types.SeriesMetadata{},
+			data:             []types.InstantVectorSeriesData{},
+			expectedMetadata: []querierpb.SeriesMetadata{},
+			expectedData:     []querierpb.InstantVectorSeriesData{},
+		},
+		"no empty series": {
+			seriesMetadata: []types.SeriesMetadata{floatSeries, histogramSeries},
+			data:           []types.InstantVectorSeriesData{floatData, histogramData},
+			expectedMetadata: []querierpb.SeriesMetadata{
+				querierpb.EncodeSeriesMetadata(floatSeries),
+				querierpb.EncodeSeriesMetadata(histogramSeries),
+			},
+			expectedData: []querierpb.InstantVectorSeriesData{
+				querierpb.EncodeInstantVectorSeriesData(floatData),
+				querierpb.EncodeInstantVectorSeriesData(histogramData),
+			},
+		},
+		"empty series interspersed with non-empty series": {
+			seriesMetadata: []types.SeriesMetadata{emptySeries, floatSeries, emptySeries, histogramSeries, emptySeries},
+			data:           []types.InstantVectorSeriesData{emptyData, floatData, emptyData, histogramData, emptyData},
+			expectedMetadata: []querierpb.SeriesMetadata{
+				querierpb.EncodeSeriesMetadata(floatSeries),
+				querierpb.EncodeSeriesMetadata(histogramSeries),
+			},
+			expectedData: []querierpb.InstantVectorSeriesData{
+				querierpb.EncodeInstantVectorSeriesData(floatData),
+				querierpb.EncodeInstantVectorSeriesData(histogramData),
+			},
+		},
+		"all series empty": {
+			seriesMetadata:   []types.SeriesMetadata{emptySeries, emptySeries},
+			data:             []types.InstantVectorSeriesData{emptyData, emptyData},
+			expectedMetadata: []querierpb.SeriesMetadata{},
+			expectedData:     []querierpb.InstantVectorSeriesData{},
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			o := &CacheOperator{
+				seriesMetadata: testCase.seriesMetadata,
+				data:           testCase.data,
+			}
+
+			seriesMetadata, data := o.encodeSeriesForCacheEntry()
+			require.Equal(t, testCase.expectedMetadata, seriesMetadata, "expected empty series to be excluded from the cached series metadata")
+			require.Equal(t, testCase.expectedData, data, "expected empty series to be excluded from the cached data")
+			require.Len(t, data, len(seriesMetadata), "expected metadata and data to remain aligned")
+		})
+	}
 }
 
 func sortAnnotations(cacheEntry *CacheEntry) {
@@ -759,7 +925,7 @@ type testMaterializer struct {
 	materializedOperators    []*operators.TestOperator
 }
 
-func (m *testMaterializer) ConvertNodeToInstantVectorOperator(node planning.Node, timeRange types.QueryTimeRange) (types.InstantVectorOperator, error) {
+func (m *testMaterializer) ConvertNodeToInstantVectorOperator(ctx context.Context, node planning.Node, timeRange types.QueryTimeRange) (types.InstantVectorOperator, error) {
 	m.materializedTimeRanges = append(m.materializedTimeRanges, timeRange)
 
 	data := testDataForTimeRange(timeRange)
@@ -904,42 +1070,6 @@ func mangleSeriesData(data types.InstantVectorSeriesData) {
 	}
 }
 
-type testCache struct {
-	entries map[string]testCacheEntry
-
-	setCount int
-}
-
-func newTestCache() *testCache {
-	return &testCache{
-		entries: make(map[string]testCacheEntry),
-	}
-}
-
-type testCacheEntry struct {
-	value []byte
-	ttl   time.Duration
-}
-
-func (t *testCache) GetMulti(ctx context.Context, keys []string, opts ...cache.Option) map[string][]byte {
-	results := make(map[string][]byte, len(keys))
-
-	for _, key := range keys {
-		entry, ok := t.entries[key]
-
-		if ok {
-			results[key] = entry.value
-		}
-	}
-
-	return results
-}
-
-func (t *testCache) SetAsync(key string, value []byte, ttl time.Duration) {
-	t.setCount++
-	t.entries[key] = testCacheEntry{value: value, ttl: ttl}
-}
-
 type mockLimitsProvider struct {
 	ttl          time.Duration
 	oooTTL       time.Duration
@@ -963,9 +1093,13 @@ func (m *mockLimitsProvider) GetMaxCacheFreshness(ctx context.Context) (time.Dur
 	return m.maxFreshness, nil
 }
 
+func (m *mockLimitsProvider) AllowCachingUnalignedQueries(ctx context.Context) (bool, error) {
+	return false, nil
+}
+
 func TestCacheOperator_CacheKey(t *testing.T) {
 	generateCacheKey := func(tenantID string, desiredTimeRange types.QueryTimeRange, node planning.Node, params *planning.QueryParameters) []byte {
-		o := newCacheOperator(nil, nil, node, desiredTimeRange, nil, posrange.PositionRange{}, params, nil, log.NewNopLogger(), cacheEntryInterval)
+		o := newCacheOperator(nil, nil, node, desiredTimeRange, nil, posrange.PositionRange{}, params, nil, log.NewNopLogger(), cacheEntryInterval, 0)
 		ctx := user.InjectOrgID(context.Background(), tenantID)
 
 		key, err := o.computeCacheKey(ctx)

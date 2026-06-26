@@ -17,6 +17,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/mimir/pkg/compartments"
+	"github.com/grafana/mimir/pkg/storage/ingest/kmeta"
 )
 
 // MultiClusterPartitionReader consumes the same partition from multiple Kafka clusters, pushing every
@@ -136,13 +137,13 @@ func (r *MultiClusterPartitionReader) stopping(_ error) error {
 
 // LastSeenOffsets returns the highest record offset seen by each Kafka cluster's reader, indexed by
 // Kafka cluster ID.
-func (r *MultiClusterPartitionReader) LastSeenOffsets() PartitionOffsets {
+func (r *MultiClusterPartitionReader) LastSeenOffsets() kmeta.PartitionOffsets {
 	offsets := make([]int64, len(r.readers))
 	for kafkaClusterID, reader := range r.readers {
 		offsets[kafkaClusterID] = reader.LastSeenOffsets().ForKafkaCluster(0)
 	}
 
-	return NewMultiClusterPartitionOffsets(offsets)
+	return kmeta.NewMultiClusterPartitionOffsets(offsets)
 }
 
 // EnforceReadMaxDelay returns an error if any Kafka cluster's reader is lagging behind more than
@@ -162,7 +163,7 @@ func (r *MultiClusterPartitionReader) EnforceReadMaxDelay(maxDelay time.Duration
 // mismatch is an invariant violation by the caller. Each per-cluster offset is forwarded to that cluster's
 // reader as-is, so a negative offset is handled identically to the single-cluster reader (an empty
 // partition returns immediately).
-func (r *MultiClusterPartitionReader) WaitReadConsistencyUntilOffsets(ctx context.Context, offsets PartitionOffsets) error {
+func (r *MultiClusterPartitionReader) WaitReadConsistencyUntilOffsets(ctx context.Context, offsets kmeta.PartitionOffsets) error {
 	if offsets.NumKafkaClusters() != len(r.readers) {
 		return fmt.Errorf("the multi-cluster partition reader consumes from %d Kafka clusters but was given read consistency offsets for %d", len(r.readers), offsets.NumKafkaClusters())
 	}
@@ -174,7 +175,7 @@ func (r *MultiClusterPartitionReader) WaitReadConsistencyUntilOffsets(ctx contex
 	for kafkaClusterID, reader := range r.readers {
 		g.Go(func() error {
 			offset := offsets.ForKafkaCluster(kafkaClusterID)
-			err := reader.WaitReadConsistencyUntilOffsets(gctx, NewSingleClusterPartitionOffsets(offset))
+			err := reader.WaitReadConsistencyUntilOffsets(gctx, kmeta.NewSingleClusterPartitionOffsets(offset))
 			return errors.Wrapf(err, "write compartment %d", kafkaClusterID)
 		})
 	}

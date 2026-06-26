@@ -13,7 +13,6 @@ import (
 	"hash/fnv"
 	"math/rand"
 	"os"
-	"path"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -32,6 +31,7 @@ import (
 	"github.com/thanos-io/objstore"
 	"go.uber.org/atomic"
 
+	"github.com/grafana/mimir/pkg/compartments"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/indexheader"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
@@ -43,6 +43,9 @@ import (
 const (
 	// ringKey is the key under which we store the compactors ring in the KVStore.
 	ringKey = "compactor"
+
+	// ringName is the name of the compactors ring.
+	ringName = "compactor"
 )
 
 const (
@@ -141,6 +144,12 @@ type Config struct {
 
 	// Configuration for interacting with a compaction job scheduler
 	SchedulerClientConfig SchedulerClientConfig `yaml:"scheduler_client" category:"experimental" doc:"hidden"`
+
+	// ReadCompartmentID is the read compartment this compactor serves.
+	ReadCompartmentID int `yaml:"read_compartment_id" category:"experimental" doc:"hidden"`
+
+	// Compartments is dynamically injected because defined outside the compactor config.
+	Compartments compartments.Config `yaml:"-"`
 }
 
 // RegisterFlags registers the MultitenantCompactor flags.
@@ -180,9 +189,10 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 
 	f.Var(&cfg.EnabledTenants, "compactor.enabled-tenants", "Comma separated list of tenants that can be compacted. If specified, only these tenants will be compacted by the compactor, otherwise all tenants can be compacted. Subject to sharding.")
 	f.Var(&cfg.DisabledTenants, "compactor.disabled-tenants", "Comma separated list of tenants that cannot be compacted by the compactor. If specified, and the compactor would normally pick a given tenant for compaction (via -compactor.enabled-tenants or sharding), it will be ignored instead.")
+	f.IntVar(&cfg.ReadCompartmentID, "compactor.read-compartment-id", 0, "The read compartment this compactor serves. Only used when compartments are enabled.")
 }
 
-func (cfg *Config) Validate(logger log.Logger) error {
+func (cfg *Config) Validate(compartmentsCfg compartments.Config, logger log.Logger) error {
 	// Mimir assumes that smaller blocks are eventually compacted to 24h blocks in
 	// various places on the read path (cache TTLs, query splitting). Warn when this
 	// isn't the case since it may affect performance.
@@ -216,6 +226,14 @@ func (cfg *Config) Validate(logger log.Logger) error {
 	}
 	if err := cfg.SchedulerClientConfig.Validate(); err != nil {
 		return err
+	}
+
+	if compartmentsCfg.Enabled {
+		if cfg.ReadCompartmentID < 0 || cfg.ReadCompartmentID >= compartmentsCfg.Read.NumCompartments {
+			return fmt.Errorf("compactor read compartment ID %d is out of range [0, %d)", cfg.ReadCompartmentID, compartmentsCfg.Read.NumCompartments)
+		}
+	} else if cfg.ReadCompartmentID != 0 {
+		return errors.New("compactor read compartment ID must be 0 when compartments are disabled")
 	}
 
 	return nil
@@ -543,8 +561,14 @@ func (c *MultitenantCompactor) starting(ctx context.Context) error {
 	// Wrap the bucket client to write block deletion marks in the global location too.
 	c.bucketClient = block.BucketWithGlobalMarkers(c.bucketClient)
 
-	// Initialize the compactors ring if sharding is enabled.
-	c.ring, c.ringLifecycler, err = newRingAndLifecycler(c.compactorCfg.ShardingRing, c.logger, c.registerer)
+	// Initialize the compactors ring if sharding is enabled. With compartments enabled the compactor
+	// registers into its read compartment's own ring.
+	name, key := ringName, ringKey
+	if c.compactorCfg.Compartments.Enabled {
+		name = compartments.ReadCompartmentRingName(c.compactorCfg.ReadCompartmentID, ringName)
+		key = compartments.ReadCompartmentRingKey(c.compactorCfg.ReadCompartmentID, ringKey)
+	}
+	c.ring, c.ringLifecycler, err = newRingAndLifecycler(c.compactorCfg.ShardingRing, name, key, c.logger, c.registerer)
 	if err != nil {
 		return err
 	}
@@ -631,7 +655,7 @@ func (c *MultitenantCompactor) starting(ctx context.Context) error {
 	return nil
 }
 
-func newRingAndLifecycler(cfg RingConfig, logger log.Logger, reg prometheus.Registerer) (*ring.Ring, *ring.BasicLifecycler, error) {
+func newRingAndLifecycler(cfg RingConfig, ringName, ringKey string, logger log.Logger, reg prometheus.Registerer) (*ring.Ring, *ring.BasicLifecycler, error) {
 	reg = prometheus.WrapRegistererWithPrefix("cortex_", reg)
 	kvStore, err := kv.NewClient(cfg.Common.KVStore, ring.GetCodec(), kv.RegistererWithKVName(reg, "compactor-lifecycler"), logger)
 	if err != nil {
@@ -650,12 +674,12 @@ func newRingAndLifecycler(cfg RingConfig, logger log.Logger, reg prometheus.Regi
 		delegate = ring.NewAutoForgetDelegate(time.Duration(cfg.AutoForgetUnhealthyPeriods)*lifecyclerCfg.HeartbeatTimeout, delegate, logger)
 	}
 
-	compactorsLifecycler, err := ring.NewBasicLifecycler(lifecyclerCfg, "compactor", ringKey, kvStore, delegate, logger, reg)
+	compactorsLifecycler, err := ring.NewBasicLifecycler(lifecyclerCfg, ringName, ringKey, kvStore, delegate, logger, reg)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to initialize compactors' lifecycler: %w", err)
 	}
 
-	compactorsRing, err := ring.New(cfg.toRingConfig(), "compactor", ringKey, logger, reg)
+	compactorsRing, err := ring.New(cfg.toRingConfig(), ringName, ringKey, logger, reg)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to initialize compactors' ring client: %w", err)
 	}
@@ -858,7 +882,7 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 	reg := prometheus.NewRegistry()
 	defer c.syncerMetrics.gatherThanosSyncerMetrics(reg, userLogger)
 
-	compactor, err := c.newBucketCompactor(ctx, userID, userLogger, userBucket, reg)
+	compactor, err := c.newBucketCompactor(ctx, userID, userLogger, userBucket, c.baseCompactDir(), reg)
 	if err != nil {
 		return fmt.Errorf("failed to create bucket compactor: %w", err)
 	}
@@ -875,13 +899,13 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 	return nil
 }
 
-func (c *MultitenantCompactor) newBucketCompactor(ctx context.Context, userID string, userLogger log.Logger, userBucket objstore.Bucket, reg *prometheus.Registry) (*BucketCompactor, error) {
+func (c *MultitenantCompactor) newBucketCompactor(ctx context.Context, userID string, userLogger log.Logger, userBucket objstore.Bucket, compactDir string, reg *prometheus.Registry) (*BucketCompactor, error) {
 	return NewBucketCompactor(
 		userLogger,
 		c.blocksGrouperFactory(ctx, c.compactorCfg, c.cfgProvider, userID, userLogger, reg),
 		c.blocksPlanner,
 		c.blocksCompactor,
-		path.Join(c.compactorCfg.DataDir, "compact"),
+		compactDir,
 		userBucket,
 		c.compactorCfg.CompactionConcurrency,
 		true, // Skip unhealthy blocks, and mark them for no-compaction.
@@ -1035,6 +1059,11 @@ const compactorMetaPrefix = "compactor-meta-"
 // the directory used by the Thanos Syncer, whatever is the user ID.
 func (c *MultitenantCompactor) metaSyncDirForUser(userID string) string {
 	return filepath.Join(c.compactorCfg.DataDir, compactorMetaPrefix+userID)
+}
+
+// baseCompactDir is the base directory that contains subdirectories for compaction jobs
+func (c *MultitenantCompactor) baseCompactDir() string {
+	return filepath.Join(c.compactorCfg.DataDir, "compact")
 }
 
 // This function returns tenants with meta sync directories found on local disk. On error, it returns nil map.

@@ -40,8 +40,13 @@ service CompactorScheduler {
   rpc UpdateCompactionJob(UpdateCompactionJobRequest) returns (UpdateJobResponse);
 }
 
+message LaneRequest {
+  JobType job_type = 1;
+}
+
 message LeaseJobRequest {
   string worker_id = 1;
+  repeated LaneRequest lane_requests = 2;
 }
 
 message LeaseJobResponse {

@@ -3,6 +3,7 @@
 package splitandcache
 
 import (
+	"context"
 	"fmt"
 	"testing"
 	"time"
@@ -12,6 +13,7 @@ import (
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/selectors"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
@@ -204,11 +206,14 @@ func TestMaterializeSplit(t *testing.T) {
 				planning.NODE_TYPE_TIME_RANGE_SPLIT: planning.NodeMaterializerFunc[*TimeRangeSplit](MaterializeSplit),
 			})
 
-			resultFactory, err := MaterializeSplit(splitNode, materializer, testCase.timeRange, params)
+			queryStats, ctx := stats.ContextWithEmptyStats(context.Background())
+			resultFactory, err := MaterializeSplit(ctx, splitNode, materializer, testCase.timeRange, params)
 			require.NoError(t, err)
 
 			result, err := resultFactory.Produce()
 			require.NoError(t, err)
+
+			require.Equal(t, len(testCase.expectedTimeRanges), int(queryStats.LoadSplitQueries()))
 
 			if len(testCase.expectedTimeRanges) == 1 {
 				require.IsType(t, &selectors.InstantVectorSelector{}, result, "should return inner operator directly if only one range")

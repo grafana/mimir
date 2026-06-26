@@ -8,6 +8,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/splitandcache"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 )
@@ -45,17 +46,40 @@ func (o *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, 
 		return plan, nil
 	}
 
-	var err error
-	plan.Root, err = o.wrapInRemoteExecutionNode(
-		plan.Root,
-		false,
-		nil, // No need to pass groups here as we'll wrap the whole request in a single group.
-	)
-	if err != nil {
+	if err := o.wrapRootInRemoteExecutionNode(plan); err != nil {
 		return nil, err
 	}
 
 	return plan, nil
+}
+
+func (o *OptimizationPass) wrapRootInRemoteExecutionNode(plan *planning.QueryPlan) error {
+	child := plan.Root
+	var parent planning.Node
+
+	// We want the splitting and caching nodes to run on the query-frontend, so the remote execution
+	// node should be a child of any splitting and caching nodes.
+	for isSplittingOrCachingNode(child) {
+		parent = child
+		child = child.Child(0)
+	}
+
+	wrappedChild, err := o.wrapInRemoteExecutionNode(
+		child,
+		false,
+		nil, // No need to pass groups here as we'll wrap the whole request in a single group.
+	)
+
+	if err != nil {
+		return err
+	}
+
+	if parent == nil {
+		plan.Root = wrappedChild
+		return nil
+	}
+
+	return parent.ReplaceChild(0, wrappedChild)
 }
 
 func (o *OptimizationPass) wrapInRemoteExecutionNode(child planning.Node, eagerLoad bool, groups remoteExecutionGroupSet) (planning.Node, error) {
@@ -186,4 +210,10 @@ func (s remoteExecutionGroupSet) createGroup(eagerLoad bool) *RemoteExecutionGro
 	return &RemoteExecutionGroup{
 		RemoteExecutionGroupDetails: &RemoteExecutionGroupDetails{EagerLoad: eagerLoad},
 	}
+}
+
+func isSplittingOrCachingNode(n planning.Node) bool {
+	_, isTimeRangeSplit := n.(*splitandcache.TimeRangeSplit)
+	_, isCache := n.(*splitandcache.Cache)
+	return isTimeRangeSplit || isCache
 }

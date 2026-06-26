@@ -9,12 +9,14 @@ import (
 	"path"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/require"
+	"github.com/twmb/franz-go/pkg/kfake"
 	"github.com/twmb/franz-go/pkg/kgo"
 
 	"github.com/grafana/mimir/pkg/blockbuilder/schedulerpb"
@@ -24,9 +26,6 @@ import (
 )
 
 func TestBlockBuilder(t *testing.T) {
-	ctx, cancel := context.WithCancelCause(context.Background())
-	t.Cleanup(func() { cancel(errors.New("test done")) })
-
 	tenants := []string{"1", "2", "3"}
 	samplesPerTenant := 10
 
@@ -80,75 +79,92 @@ func TestBlockBuilder(t *testing.T) {
 		t.Run(fm.name, func(t *testing.T) {
 			for _, c := range cases {
 				t.Run(c.name, func(t *testing.T) {
-					_, kafkaAddr := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, numPartitions, testTopic)
-					kafkaClient := mustKafkaClient(t, kafkaAddr)
-					kafkaClient.AddConsumeTopics(testTopic)
+					t.Parallel()
 
-					cfg, overrides := blockBuilderConfig(t, kafkaAddr, nil)
-					cfg.GenerateSparseIndexHeaders = true
-					cfg.Kafka.FetchConcurrencyMax = fm.fetchConcurrencyMax
-					// Lower FetchMaxWait so concurrent fetchers don't block on speculative reads
-					// past the job's end offset in tests where no further records arrive.
-					cfg.Kafka.FetchMaxWait = 500 * time.Millisecond
+					synctest.Test(t, func(t *testing.T) {
+						ctx := t.Context()
 
-					producedSamples := make(map[string][]mimirpb.Sample, 0)
-					recsPerTenant := 0
-					kafkaRecTime := time.Now().Add(-time.Hour)
-					for range samplesPerTenant {
-						for _, tenant := range tenants {
-							samples := produceSamples(ctx, t, kafkaClient, 1, kafkaRecTime, tenant, kafkaRecTime.Add(-time.Minute))
-							producedSamples[tenant] = append(producedSamples[tenant], samples...)
-						}
-						recsPerTenant++
+						var vnet kfake.VirtualNetwork
 
-						kafkaRecTime = kafkaRecTime.Add(10 * time.Minute)
-					}
-					require.NotEmpty(t, producedSamples)
+						_, kafkaAddr := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, numPartitions, testTopic, testkafka.WithVirtualNetwork(&vnet))
 
-					scheduler := &mockSchedulerClient{}
-					scheduler.addJob(
-						schedulerpb.JobKey{
-							Id:    "test-job-4898",
-							Epoch: 90000,
-						},
-						schedulerpb.JobSpec{
-							Topic:       testTopic,
-							Partition:   1,
-							StartOffset: c.startOffset,
-							EndOffset:   c.endOffset,
-						},
-					)
-
-					bb, err := newWithSchedulerClient(cfg, test.NewTestingLogger(t), prometheus.NewPedanticRegistry(), overrides, scheduler)
-					require.NoError(t, err)
-
-					require.NoError(t, services.StartAndAwaitRunning(ctx, bb))
-					t.Cleanup(func() {
-						require.NoError(t, services.StopAndAwaitTerminated(ctx, bb))
-					})
-
-					require.Eventually(t, func() bool {
-						return scheduler.completeJobCallCount() > 0
-					}, 5*time.Second, 100*time.Millisecond, "expected job completion")
-
-					require.EqualValues(t,
-						[]schedulerpb.JobKey{{Id: "test-job-4898", Epoch: 90000}},
-						scheduler.completeJobCalls,
-					)
-
-					for _, tenant := range tenants {
-						tenantBucketDir := path.Join(cfg.BlocksStorage.Bucket.Filesystem.Directory, tenant)
-						if bb.cfg.GenerateSparseIndexHeaders {
-							validateSparseIndexHeadersInDir(t, ctx, tenantBucketDir, cfg)
-						}
-
-						expSamples := producedSamples[tenant][c.expSampleRangeStart:c.expSampleRangeEnd]
-						compareQueryWithDir(t,
-							tenantBucketDir,
-							expSamples, nil,
-							labels.MustNewMatcher(labels.MatchRegexp, "foo", ".*"),
+						kafkaClient, err := kgo.NewClient(
+							kgo.SeedBrokers(kafkaAddr),
+							kgo.Dialer(vnet.DialContext),
+							kgo.RecordPartitioner(kgo.ManualPartitioner()), // we will choose the partition of each record
 						)
-					}
+						require.NoError(t, err)
+						t.Cleanup(kafkaClient.Close)
+
+						kafkaClient.AddConsumeTopics(testTopic)
+
+						cfg, overrides := blockBuilderConfig(t, kafkaAddr, nil)
+						cfg.GenerateSparseIndexHeaders = true
+						cfg.Kafka.Dialer = vnet.DialContext
+						cfg.Kafka.FetchConcurrencyMax = fm.fetchConcurrencyMax
+						// Lower FetchMaxWait so concurrent fetchers don't block on speculative reads
+						// past the job's end offset in tests where no further records arrive.
+						cfg.Kafka.FetchMaxWait = 500 * time.Millisecond
+
+						producedSamples := make(map[string][]mimirpb.Sample, 0)
+						recsPerTenant := 0
+						kafkaRecTime := time.Now().Add(-time.Hour)
+						for range samplesPerTenant {
+							for _, tenant := range tenants {
+								samples := produceSamples(ctx, t, kafkaClient, 1, kafkaRecTime, tenant, kafkaRecTime.Add(-time.Minute))
+								producedSamples[tenant] = append(producedSamples[tenant], samples...)
+							}
+							recsPerTenant++
+
+							kafkaRecTime = kafkaRecTime.Add(10 * time.Minute)
+						}
+						require.NotEmpty(t, producedSamples)
+
+						scheduler := &mockSchedulerClient{}
+						scheduler.addJob(
+							schedulerpb.JobKey{
+								Id:    "test-job-4898",
+								Epoch: 90000,
+							},
+							schedulerpb.JobSpec{
+								Topic:       testTopic,
+								Partition:   1,
+								StartOffset: c.startOffset,
+								EndOffset:   c.endOffset,
+							},
+						)
+
+						bb, err := newWithSchedulerClient(cfg, test.NewTestingLogger(t), prometheus.NewPedanticRegistry(), overrides, scheduler)
+						require.NoError(t, err)
+
+						require.NoError(t, services.StartAndAwaitRunning(ctx, bb))
+						t.Cleanup(func() {
+							require.NoError(t, services.StopAndAwaitTerminated(context.Background(), bb))
+						})
+
+						require.Eventually(t, func() bool {
+							return scheduler.completeJobCallCount() > 0
+						}, 5*time.Second, 100*time.Millisecond, "expected job completion")
+
+						require.EqualValues(t,
+							[]schedulerpb.JobKey{{Id: "test-job-4898", Epoch: 90000}},
+							scheduler.completeJobCalls,
+						)
+
+						for _, tenant := range tenants {
+							tenantBucketDir := path.Join(cfg.BlocksStorage.Bucket.Filesystem.Directory, tenant)
+							if bb.cfg.GenerateSparseIndexHeaders {
+								validateSparseIndexHeadersInDir(t, ctx, tenantBucketDir, cfg)
+							}
+
+							expSamples := producedSamples[tenant][c.expSampleRangeStart:c.expSampleRangeEnd]
+							compareQueryWithDir(t,
+								tenantBucketDir,
+								expSamples, nil,
+								labels.MustNewMatcher(labels.MatchRegexp, "foo", ".*"),
+							)
+						}
+					})
 				})
 			}
 		})
@@ -194,17 +210,6 @@ func produceSamples(ctx context.Context, t *testing.T, kafkaClient *kgo.Client, 
 
 	produceRecords(ctx, t, kafkaClient, ts, tenantID, testTopic, partition, val)
 	return samples
-}
-
-func mustKafkaClient(t *testing.T, addrs ...string) *kgo.Client {
-	writeClient, err := kgo.NewClient(
-		kgo.SeedBrokers(addrs...),
-		// We will choose the partition of each record.
-		kgo.RecordPartitioner(kgo.ManualPartitioner()),
-	)
-	require.NoError(t, err)
-	t.Cleanup(writeClient.Close)
-	return writeClient
 }
 
 func produceRecords(

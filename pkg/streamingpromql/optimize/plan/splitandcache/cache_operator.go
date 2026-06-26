@@ -18,6 +18,7 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/util/annotations"
+	"go.opentelemetry.io/otel"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/querierpb"
@@ -29,6 +30,13 @@ import (
 	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
+
+// cacheVersion is the version of cache entries read and written by this operator.
+// If a backwards-incompatible change is made to the cache entry format, or a bug is discovered that means all existing
+// cache entries should be invalidated, this version number should be incremented.
+const cacheVersion = 1
+
+var tracer = otel.Tracer("pkg/streamingpromql/optimize/plan/splitandcache")
 
 // CacheOperator is an operator that uses a cache to avoid recomputing previously computed results.
 // It works with a single cache entry made up of multiple extents.
@@ -45,6 +53,12 @@ type CacheOperator struct {
 	logger             log.Logger
 	cacheEntryInterval time.Duration
 
+	// minCacheExtent is the minimum length of a cached extent for it to be used.
+	// Extents smaller than this are ignored and re-evaluated, to avoid freshly evaluating many small extents.
+	// If the desired time range is smaller than minCacheExtent, then minCacheExtent is ignored and all cache extents are used.
+	// A value of zero disables small extent avoidance.
+	minCacheExtent time.Duration
+
 	evaluationTime     time.Time
 	ttlForNonOOOExtent time.Duration
 	ttlForOOOExtent    time.Duration
@@ -53,6 +67,7 @@ type CacheOperator struct {
 	key       []byte
 	hashedKey string
 	extents   extents
+	prepared  bool
 
 	// outputSeries contains one entry per output series, with each entry containing the source series index into each source extent.
 	// outputSeries is nil if there is only one extent in the desired time range.
@@ -82,6 +97,7 @@ func newCacheOperator(
 	limitsProvider LimitsProvider,
 	logger log.Logger,
 	cacheEntryInterval time.Duration,
+	minCacheExtent time.Duration,
 ) *CacheOperator {
 	return &CacheOperator{
 		Backend:                  backend,
@@ -94,6 +110,7 @@ func newCacheOperator(
 		limitsProvider:           limitsProvider,
 		logger:                   logger,
 		cacheEntryInterval:       cacheEntryInterval,
+		minCacheExtent:           minCacheExtent,
 		timeNow:                  time.Now,
 		getCurrentTraceID:        tracing.ExtractTraceID,
 	}
@@ -154,18 +171,42 @@ func (c *CacheOperator) encodeNodeForCacheKey() ([]byte, error) {
 	return b, nil
 }
 
-func (c *CacheOperator) Prepare(ctx context.Context, params *types.PrepareParams) error {
-	c.evaluationTime = c.timeNow()
-	if err := c.populateTTLs(ctx); err != nil {
-		return err
-	}
-
-	existingExtents, err := c.fetchExistingExtents(ctx)
+func (c *CacheOperator) populateCacheKey(ctx context.Context) error {
+	var err error
+	c.key, err = c.computeCacheKey(ctx)
 	if err != nil {
 		return err
 	}
 
-	c.extents, err = c.calculateExtents(ctx, existingExtents)
+	c.hashedKey = caching.HashCacheKey(c.key)
+	return nil
+}
+
+func (c *CacheOperator) Prepare(ctx context.Context, params *types.PrepareParams) error {
+	if c.prepared {
+		// If this CacheOperator is nested directly beneath a SplitOperator, it will
+		// prepare all CacheOperators in a single PrepareCacheOperators call, so that
+		// all cache fetches happen in one call.
+		return errors.New("cache operator already prepared")
+	}
+
+	return PrepareCacheOperators(ctx, params, []*CacheOperator{c}, c.timeNow())
+}
+
+func (c *CacheOperator) prepareFrom(ctx context.Context, cacheHit []byte, params *types.PrepareParams) error {
+	spanLogger, ctx := spanlogger.New(ctx, c.logger, tracer, "CacheOperator.prepare")
+	defer spanLogger.Finish()
+
+	spanLogger.SetTag("hashed_key", c.hashedKey)
+	spanLogger.SetTag("desired_time_range", c.DesiredTimeRange)
+	c.prepared = true
+
+	existingExtents, err := c.decodeAndFilterCacheEntry(cacheHit, spanLogger)
+	if err != nil {
+		return err
+	}
+
+	c.extents, err = c.calculateExtents(ctx, existingExtents, spanLogger)
 	if err != nil {
 		return err
 	}
@@ -179,21 +220,14 @@ func (c *CacheOperator) Prepare(ctx context.Context, params *types.PrepareParams
 	return nil
 }
 
-func (c *CacheOperator) fetchExistingExtents(ctx context.Context) ([]CachedExtent, error) {
-	spanLogger := spanlogger.FromContext(ctx, c.logger)
-
-	var err error
-	c.key, err = c.computeCacheKey(ctx)
-	if err != nil {
-		return nil, err
-	}
-	c.hashedKey = caching.HashCacheKey(c.key)
-	keys := []string{c.hashedKey}
-
-	cacheHits := c.Backend.GetMulti(ctx, keys)
-	cacheHit := cacheHits[c.hashedKey]
-
+func (c *CacheOperator) decodeAndFilterCacheEntry(cacheHit []byte, spanLogger *spanlogger.SpanLogger) ([]CachedExtent, error) {
 	if cacheHit == nil {
+		spanLogger.DebugLog(
+			"msg", "no cache entry found",
+			"hashed_key", c.hashedKey,
+			"desired_time_range", c.DesiredTimeRange,
+		)
+
 		return nil, nil
 	}
 
@@ -205,7 +239,11 @@ func (c *CacheOperator) fetchExistingExtents(ctx context.Context) ([]CachedExten
 
 	if !bytes.Equal(cacheEntry.CacheKey, c.key) {
 		// The cache key in the entry does not match the expected key: we've encountered a hash collision, so don't use the cached results.
-		spanLogger.DebugLog("msg", "ignoring cache entry as the cache key in the entry does not match the expected key, presumably due to a hash collision", "hashed_key", c.hashedKey)
+		spanLogger.DebugLog(
+			"msg", "ignoring cache entry as the cache key in the entry does not match the expected key, presumably due to a hash collision",
+			"hashed_key", c.hashedKey,
+			"desired_time_range", c.DesiredTimeRange,
+		)
 		return nil, nil
 	}
 
@@ -223,6 +261,7 @@ func (c *CacheOperator) fetchExistingExtents(ctx context.Context) ([]CachedExten
 				"ttl", ttl,
 				"expiration_time", expirationTime,
 				"evaluation_time", c.evaluationTime,
+				"desired_time_range", c.DesiredTimeRange,
 			)
 		}
 
@@ -236,16 +275,25 @@ func (c *CacheOperator) fetchExistingExtents(ctx context.Context) ([]CachedExten
 		}
 	}
 
+	spanLogger.DebugLog(
+		"msg", "cache hit",
+		"hashed_key", c.hashedKey,
+		"desired_time_range", c.DesiredTimeRange,
+		"non_expired_extent_count", len(cacheEntry.Extents),
+	)
+
 	return cacheEntry.Extents, nil
 }
 
-func (c *CacheOperator) calculateExtents(ctx context.Context, existingExtents []CachedExtent) (extents, error) {
+func (c *CacheOperator) calculateExtents(ctx context.Context, existingExtents []CachedExtent, spanLogger *spanlogger.SpanLogger) (extents, error) {
 	nextStartT := c.DesiredTimeRange.StartT
 	nextExistingExtentIdx := 0
 
 	// Calculate the last step within the desired time range.
 	// For example, if the desired time range is T=5m to T=8m30s with a step of 1m, then the last step is T=8m.
 	stepAlignedEndT := calculateLastStepAlignedPoint(c.DesiredTimeRange.StartT, c.DesiredTimeRange.EndT, c.DesiredTimeRange.IntervalMilliseconds)
+
+	existingExtents = c.discardSmallExtents(existingExtents, stepAlignedEndT)
 
 	maxFreshness, err := c.limitsProvider.GetMaxCacheFreshness(ctx)
 	if err != nil {
@@ -256,6 +304,13 @@ func (c *CacheOperator) calculateExtents(ctx context.Context, existingExtents []
 	result := extents{
 		cacheableRangeEndT: calculateLastStepAlignedPoint(c.DesiredTimeRange.StartT, min(maxFreshnessThreshold, stepAlignedEndT), c.DesiredTimeRange.IntervalMilliseconds),
 	}
+
+	spanLogger.DebugLog(
+		"msg", "calculated freshness threshold",
+		"max_freshness_threshold", maxFreshnessThreshold,
+		"step_aligned_end_ts", stepAlignedEndT,
+		"cacheable_range_end_ts", result.cacheableRangeEndT,
+	)
 
 	for nextStartT <= stepAlignedEndT {
 		if nextExistingExtentIdx < len(existingExtents) && existingExtents[nextExistingExtentIdx].StartT <= nextStartT {
@@ -270,8 +325,11 @@ func (c *CacheOperator) calculateExtents(ctx context.Context, existingExtents []
 
 				// Note that we don't have to align the extent's end time to the step, as it would have been aligned when the extent was written.
 				nextStartT = extent.EndT + c.DesiredTimeRange.IntervalMilliseconds
+
+				c.logUsedExtent(spanLogger, extent)
 			} else {
 				result.cacheableExtentsBeforeDesiredTimeRange = append(result.cacheableExtentsBeforeDesiredTimeRange, extent)
+				c.logUnusedExtent(spanLogger, extent, "before")
 			}
 
 			nextExistingExtentIdx++
@@ -293,7 +351,7 @@ func (c *CacheOperator) calculateExtents(ctx context.Context, existingExtents []
 		}
 
 		timeRange := types.NewRangeQueryTimeRange(timestamp.Time(extentStartT), timestamp.Time(extentEndT), time.Duration(c.DesiredTimeRange.IntervalMilliseconds)*time.Millisecond)
-		operator, err := c.Materializer.ConvertNodeToInstantVectorOperator(c.Inner, timeRange)
+		operator, err := c.Materializer.ConvertNodeToInstantVectorOperator(ctx, c.Inner, timeRange)
 		if err != nil {
 			return extents{}, err
 		}
@@ -307,6 +365,12 @@ func (c *CacheOperator) calculateExtents(ctx context.Context, existingExtents []
 		}
 
 		nextStartT = extentEndT + c.DesiredTimeRange.IntervalMilliseconds
+
+		spanLogger.DebugLog(
+			"msg", "will freshly evaluate at least part of the desired time range",
+			"extent_start_ts", extentStartT,
+			"extent_end_ts", extentEndT,
+		)
 	}
 
 	// If there is an extent just after the desired time range, include that in extentsForDesiredTimeRange
@@ -322,28 +386,83 @@ func (c *CacheOperator) calculateExtents(ctx context.Context, existingExtents []
 	}
 
 	result.cacheableExtentsAfterDesiredTimeRange = existingExtents[nextExistingExtentIdx:]
+	for _, e := range result.cacheableExtentsAfterDesiredTimeRange {
+		c.logUnusedExtent(spanLogger, e, "after")
+	}
+
+	spanLogger.DebugLog(
+		"msg", "finished",
+		"existing_extents_before_desired_time_range", len(result.cacheableExtentsBeforeDesiredTimeRange),
+		"new_or_existing_extents_in_desired_time_range", len(result.inDesiredTimeRange),
+		"existing_extents_after_desired_time_range", len(result.cacheableExtentsAfterDesiredTimeRange),
+		"should_write_cache_entry", result.shouldWriteCacheEntry,
+		"cacheable_range_start_ts", result.cacheableRangeStartT,
+		"cacheable_range_end_ts", result.cacheableRangeEndT,
+	)
 
 	return result, nil
 }
 
-func (c *CacheOperator) populateTTLs(ctx context.Context) error {
-	var err error
-	c.ttlForNonOOOExtent, err = c.limitsProvider.GetMinResultsCacheTTL(ctx)
-	if err != nil {
-		return err
+func (c *CacheOperator) logUnusedExtent(spanLogger *spanlogger.SpanLogger, extent CachedExtent, timeRelationship string) {
+	spanLogger.DebugLog(
+		"msg", "ignoring cached extent "+timeRelationship+" desired time range",
+		"extent_oldest_evaluation_time", extent.OldestEvaluationTime,
+		"extent_start_ts", extent.StartT,
+		"extent_end_ts", extent.EndT,
+		"extent_newest_evaluation_trace_id", extent.NewestEvaluationTraceID,
+		"extent_series_count", len(extent.SeriesMetadata),
+	)
+}
+
+func (c *CacheOperator) logUsedExtent(spanLogger *spanlogger.SpanLogger, extent CachedExtent) {
+	spanLogger.DebugLog(
+		"msg", "will use cached extent for at least part of the desired time range",
+		"extent_oldest_evaluation_time", extent.OldestEvaluationTime,
+		"extent_start_ts", extent.StartT,
+		"extent_end_ts", extent.EndT,
+		"extent_newest_evaluation_trace_id", extent.NewestEvaluationTraceID,
+		"extent_series_count", len(extent.SeriesMetadata),
+	)
+}
+
+// discardSmallExtents removes cached extents that overlap the desired time range but are smaller than minCacheExtent,
+// returning the remaining extents (still in time order). Re-evaluating these small extents as part of a larger query is
+// more efficient than reading many small extents, and means future queries can reuse a single larger cached extent.
+// Extents that fall entirely outside the desired time range are always retained, as they aren't re-evaluated by this
+// query and so discarding them would simply throw away valid cached data.
+//
+// This mirrors the behaviour of the split-and-cache query middleware (see partitionCacheExtents in
+// pkg/frontend/querymiddleware/results_cache.go).
+func (c *CacheOperator) discardSmallExtents(existingExtents []CachedExtent, stepAlignedEndT int64) []CachedExtent {
+	// Only discard small extents if the desired time range is itself large: if the query is small, re-evaluating is no
+	// cheaper than reading the cached extent. Instant queries (start == end) are never affected.
+	minCacheExtentMilliseconds := c.minCacheExtent.Milliseconds()
+	desiredTimeRangeIsLarge := c.DesiredTimeRange.StartT != c.DesiredTimeRange.EndT &&
+		c.DesiredTimeRange.EndT-c.DesiredTimeRange.StartT > minCacheExtentMilliseconds
+
+	if c.minCacheExtent <= 0 || !desiredTimeRangeIsLarge {
+		return existingExtents
 	}
 
-	c.ttlForOOOExtent, err = c.limitsProvider.GetMinOutOfOrderResultsCacheTTL(ctx)
-	if err != nil {
-		return err
+	kept := existingExtents[:0]
+
+	for _, extent := range existingExtents {
+		extentIsSmall := extent.EndT-extent.StartT < minCacheExtentMilliseconds
+		overlapsDesiredTimeRange := extent.EndT >= c.DesiredTimeRange.StartT && extent.StartT <= stepAlignedEndT
+
+		if extentIsSmall && overlapsDesiredTimeRange {
+			// We won't read this extent, so release the memory we reserved for it in fetchExistingExtents.
+			extent.close(c.MemoryConsumptionTracker)
+			continue
+		}
+
+		kept = append(kept, extent)
 	}
 
-	c.oooWindow, err = c.limitsProvider.GetMaxOutOfOrderTimeWindow(ctx)
-	if err != nil {
-		return err
-	}
+	// Clear any extents still retained in the slice, so they can be garbage collected.
+	clear(existingExtents[len(kept):])
 
-	return nil
+	return kept
 }
 
 // calculateLastStepAlignedPoint returns the last step-aligned point within the given time range.
@@ -773,11 +892,13 @@ func (c *CacheOperator) writeCacheEntry(ctx context.Context, stats *types.Operat
 
 	traceID, _ := c.getCurrentTraceID(ctx)
 
+	seriesMetadata, data := c.encodeSeriesForCacheEntry()
+
 	desiredTimeRangeExtent := CachedExtent{
 		StartT:                  c.extents.cacheableRangeStartT,
 		EndT:                    c.extents.cacheableRangeEndT,
-		SeriesMetadata:          querierpb.EncodeSeriesMetadataSlice(c.seriesMetadata),
-		Data:                    c.encodeDataForCacheEntry(),
+		SeriesMetadata:          seriesMetadata,
+		Data:                    data,
 		Annotations:             querierpb.EncodeAnnotations(annos, c.queryParameters.OriginalExpression),
 		Stats:                   stats.Encode(),
 		NewestEvaluationTraceID: traceID,
@@ -803,7 +924,10 @@ func (c *CacheOperator) writeCacheEntry(ctx context.Context, stats *types.Operat
 		return err
 	}
 
-	c.Backend.SetAsync(c.hashedKey, value, ttl)
+	if err := c.Backend.SetAsync(ctx, c.hashedKey, value, ttl); err != nil {
+		return fmt.Errorf("storing cached results with key %q: %w", c.hashedKey, err)
+	}
+
 	return nil
 }
 
@@ -837,14 +961,27 @@ func (c *CacheOperator) determineNewExtentEvaluationTimestamp() int64 {
 	}).GetEvaluationTimestamp()
 }
 
-func (c *CacheOperator) encodeDataForCacheEntry() []querierpb.InstantVectorSeriesData {
-	encoded := make([]querierpb.InstantVectorSeriesData, 0, len(c.data))
-	for _, d := range c.data {
+// encodeSeriesForCacheEntry encodes the series metadata and data to be written to the cache.
+// Series with no samples in the cacheable time range are not stored: they would only consume cache space,
+// and an absent series is equivalent to an empty one when the extent is read back and merged with others.
+func (c *CacheOperator) encodeSeriesForCacheEntry() ([]querierpb.SeriesMetadata, []querierpb.InstantVectorSeriesData) {
+	seriesMetadata := make([]querierpb.SeriesMetadata, 0, len(c.data))
+	data := make([]querierpb.InstantVectorSeriesData, 0, len(c.data))
+
+	for i, d := range c.data {
+		if len(d.Floats) == 0 && len(d.Histograms) == 0 {
+			// Don't store empty series in the cache.
+			continue
+		}
+
+		seriesMetadata = append(seriesMetadata, querierpb.EncodeSeriesMetadata(c.seriesMetadata[i]))
+
 		// EncodeInstantVectorSeriesData does unsafe casts and does not copy the data from the slices, but this is OK as we're immediately
 		// serializing the message and writing it to the cache before these slices are returned to their respective pools.
-		encoded = append(encoded, querierpb.EncodeInstantVectorSeriesData(d))
+		data = append(data, querierpb.EncodeInstantVectorSeriesData(d))
 	}
-	return encoded
+
+	return seriesMetadata, data
 }
 
 func (c *CacheOperator) ExpressionPosition() posrange.PositionRange {
@@ -965,7 +1102,8 @@ func (c *cachedExtentReader) GetSeries(_ context.Context, seriesIdx int) (types.
 
 	// DecodeInstantVectorSeriesData returns shallow copies of the FPoint / HPoint slices.
 	// This is OK as CacheOperator.NextSeries will copy any data it needs to retain for the merged extent before returning it to the caller.
-	// We don't need to add this to the memory consumption estimate as this was already accounted for in CacheOperator.fetchExistingExtents.
+	// We don't need to add this to the memory consumption estimate as this was already accounted for in CachedExtent.addToMemoryConsumptionEstimate,
+	// called from decodeAndFilterCacheEntry.
 	mqeData := querierpb.DecodeInstantVectorSeriesData(cachedData)
 
 	// Clear the cached data so we don't try to remove it from the memory consumption estimate later.
@@ -1080,7 +1218,7 @@ func (e *evaluatedExtent) Close() {
 }
 
 type InstantVectorMaterializer interface {
-	ConvertNodeToInstantVectorOperator(node planning.Node, timeRange types.QueryTimeRange) (types.InstantVectorOperator, error)
+	ConvertNodeToInstantVectorOperator(ctx context.Context, node planning.Node, timeRange types.QueryTimeRange) (types.InstantVectorOperator, error)
 }
 
 type LimitsProvider interface {
@@ -1088,6 +1226,7 @@ type LimitsProvider interface {
 	GetMinOutOfOrderResultsCacheTTL(ctx context.Context) (time.Duration, error)
 	GetMaxCacheFreshness(ctx context.Context) (time.Duration, error)
 	GetMaxOutOfOrderTimeWindow(ctx context.Context) (time.Duration, error)
+	AllowCachingUnalignedQueries(ctx context.Context) (bool, error)
 }
 
 // addToMemoryConsumptionEstimate estimates the memory consumption of this extent and adds it to the given memory consumption tracker.
@@ -1161,4 +1300,87 @@ func estimateLabelsSize(labels []mimirpb.LabelAdapter) uint64 {
 		size += uint64(len(l.Name)) + uint64(len(l.Value))
 	}
 	return size
+}
+
+func PrepareCacheOperators(ctx context.Context, params *types.PrepareParams, operators []*CacheOperator, now time.Time) error {
+	if len(operators) == 0 {
+		return nil
+	}
+
+	logger := operators[0].logger // We don't bother checking that each operator has the same logger like we do for the limits provider or cache backend below, as this won't affect query correctness, just debug logging.
+	spanLogger, ctx := spanlogger.New(ctx, logger, tracer, "PrepareCacheOperators")
+	defer spanLogger.Finish()
+	spanLogger.SetTag("operator_count", len(operators))
+
+	limitsProvider := operators[0].limitsProvider
+	cacheBackend := operators[0].Backend
+	operatorMap := make(map[string]*CacheOperator, len(operators))
+	keys := make([]string, 0, len(operators))
+
+	for _, o := range operators {
+		if o.prepared {
+			return errors.New("one or more cache operators already prepared")
+		}
+
+		if o.limitsProvider != limitsProvider || o.Backend != cacheBackend {
+			return errors.New("cache operators prepared together must use the same limits provider and cache backend")
+		}
+
+		if err := o.populateCacheKey(ctx); err != nil {
+			return err
+		}
+
+		if _, ok := operatorMap[o.hashedKey]; ok {
+			return fmt.Errorf("cache operators prepared together must have unique cache keys, but have at least two with key %q", o.hashedKey)
+		}
+
+		operatorMap[o.hashedKey] = o
+		keys = append(keys, o.hashedKey)
+	}
+
+	if err := populateTTLs(ctx, operators, limitsProvider, now); err != nil {
+		return err
+	}
+
+	spanLogger.DebugLog("msg", "fetching cached results", "keys", keys)
+	cacheHits, err := cacheBackend.GetMulti(ctx, keys)
+	if err != nil {
+		return fmt.Errorf("fetching cached results: %w", err)
+	}
+
+	for key, o := range operatorMap {
+		cacheHit := cacheHits[key]
+
+		if err := o.prepareFrom(ctx, cacheHit, params); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func populateTTLs(ctx context.Context, operators []*CacheOperator, limitsProvider LimitsProvider, now time.Time) error {
+	ttlForNonOOOExtent, err := limitsProvider.GetMinResultsCacheTTL(ctx)
+	if err != nil {
+		return err
+	}
+
+	ttlForOOOExtent, err := limitsProvider.GetMinOutOfOrderResultsCacheTTL(ctx)
+	if err != nil {
+		return err
+	}
+
+	oooWindow, err := limitsProvider.GetMaxOutOfOrderTimeWindow(ctx)
+	if err != nil {
+		return err
+	}
+
+	for _, o := range operators {
+		o.ttlForNonOOOExtent = ttlForNonOOOExtent
+		o.ttlForOOOExtent = ttlForOOOExtent
+		o.oooWindow = oooWindow
+		o.evaluationTime = now
+	}
+
+	return nil
 }
