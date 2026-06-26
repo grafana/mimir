@@ -63,6 +63,7 @@ type CacheOperator struct {
 	key       []byte
 	hashedKey string
 	extents   extents
+	prepared  bool
 
 	// outputSeries contains one entry per output series, with each entry containing the source series index into each source extent.
 	// outputSeries is nil if there is only one extent in the desired time range.
@@ -166,18 +167,42 @@ func (c *CacheOperator) encodeNodeForCacheKey() ([]byte, error) {
 	return b, nil
 }
 
-func (c *CacheOperator) Prepare(ctx context.Context, params *types.PrepareParams) error {
-	c.evaluationTime = c.timeNow()
-	if err := c.populateTTLs(ctx); err != nil {
-		return err
-	}
-
-	existingExtents, err := c.fetchExistingExtents(ctx)
+func (c *CacheOperator) populateCacheKey(ctx context.Context) error {
+	var err error
+	c.key, err = c.computeCacheKey(ctx)
 	if err != nil {
 		return err
 	}
 
-	c.extents, err = c.calculateExtents(ctx, existingExtents)
+	c.hashedKey = caching.HashCacheKey(c.key)
+	return nil
+}
+
+func (c *CacheOperator) Prepare(ctx context.Context, params *types.PrepareParams) error {
+	if c.prepared {
+		// If this CacheOperator is nested directly beneath a SplitOperator, it will
+		// prepare all CacheOperators in a single PrepareCacheOperators call, so that
+		// all cache fetches happen in one call.
+		return errors.New("cache operator already prepared")
+	}
+
+	return PrepareCacheOperators(ctx, params, []*CacheOperator{c}, c.timeNow())
+}
+
+func (c *CacheOperator) prepareFrom(ctx context.Context, cacheHit []byte, params *types.PrepareParams) error {
+	spanLogger, ctx := spanlogger.New(ctx, c.logger, tracer, "CacheOperator.prepare")
+	defer spanLogger.Finish()
+
+	spanLogger.SetTag("hashed_key", c.hashedKey)
+	spanLogger.SetTag("desired_time_range", c.DesiredTimeRange)
+	c.prepared = true
+
+	existingExtents, err := c.decodeAndFilterCacheEntry(cacheHit, spanLogger)
+	if err != nil {
+		return err
+	}
+
+	c.extents, err = c.calculateExtents(ctx, existingExtents, spanLogger)
 	if err != nil {
 		return err
 	}
@@ -191,32 +216,14 @@ func (c *CacheOperator) Prepare(ctx context.Context, params *types.PrepareParams
 	return nil
 }
 
-func (c *CacheOperator) fetchExistingExtents(ctx context.Context) ([]CachedExtent, error) {
-	spanLogger := spanlogger.FromContext(ctx, c.logger)
-
-	var err error
-	c.key, err = c.computeCacheKey(ctx)
-	if err != nil {
-		return nil, err
-	}
-	c.hashedKey = caching.HashCacheKey(c.key)
-	keys := []string{c.hashedKey}
-
-	c.metrics.CacheRequests.Add(float64(len(keys)))
-	cacheHits, err := c.Backend.GetMulti(ctx, keys)
-	if err != nil {
-		return nil, fmt.Errorf("fetching cached results with key %q: %w", c.hashedKey, err)
-	}
-
-	c.metrics.CacheHits.Add(float64(len(cacheHits)))
-	cacheHit := cacheHits[c.hashedKey]
-
+func (c *CacheOperator) decodeAndFilterCacheEntry(cacheHit []byte, spanLogger *spanlogger.SpanLogger) ([]CachedExtent, error) {
 	if cacheHit == nil {
 		spanLogger.DebugLog(
 			"msg", "no cache entry found",
 			"hashed_key", c.hashedKey,
 			"desired_time_range", c.DesiredTimeRange,
 		)
+
 		return nil, nil
 	}
 
@@ -274,13 +281,7 @@ func (c *CacheOperator) fetchExistingExtents(ctx context.Context) ([]CachedExten
 	return cacheEntry.Extents, nil
 }
 
-func (c *CacheOperator) calculateExtents(ctx context.Context, existingExtents []CachedExtent) (extents, error) {
-	spanLogger, ctx := spanlogger.New(ctx, c.logger, tracer, "CacheOperator.calculateExtents")
-	spanLogger.SetTag("hashed_key", c.hashedKey)
-	spanLogger.SetTag("desired_time_range", c.DesiredTimeRange)
-
-	defer spanLogger.Finish()
-
+func (c *CacheOperator) calculateExtents(ctx context.Context, existingExtents []CachedExtent, spanLogger *spanlogger.SpanLogger) (extents, error) {
 	nextStartT := c.DesiredTimeRange.StartT
 	nextExistingExtentIdx := 0
 
@@ -416,26 +417,6 @@ func (c *CacheOperator) logUsedExtent(spanLogger *spanlogger.SpanLogger, extent 
 		"extent_newest_evaluation_trace_id", extent.NewestEvaluationTraceID,
 		"extent_series_count", len(extent.SeriesMetadata),
 	)
-}
-
-func (c *CacheOperator) populateTTLs(ctx context.Context) error {
-	var err error
-	c.ttlForNonOOOExtent, err = c.limitsProvider.GetMinResultsCacheTTL(ctx)
-	if err != nil {
-		return err
-	}
-
-	c.ttlForOOOExtent, err = c.limitsProvider.GetMinOutOfOrderResultsCacheTTL(ctx)
-	if err != nil {
-		return err
-	}
-
-	c.oooWindow, err = c.limitsProvider.GetMaxOutOfOrderTimeWindow(ctx)
-	if err != nil {
-		return err
-	}
-
-	return nil
 }
 
 // calculateLastStepAlignedPoint returns the last step-aligned point within the given time range.
@@ -1103,7 +1084,8 @@ func (c *cachedExtentReader) GetSeries(_ context.Context, seriesIdx int) (types.
 
 	// DecodeInstantVectorSeriesData returns shallow copies of the FPoint / HPoint slices.
 	// This is OK as CacheOperator.NextSeries will copy any data it needs to retain for the merged extent before returning it to the caller.
-	// We don't need to add this to the memory consumption estimate as this was already accounted for in CacheOperator.fetchExistingExtents.
+	// We don't need to add this to the memory consumption estimate as this was already accounted for in CachedExtent.addToMemoryConsumptionEstimate,
+	// called from decodeAndFilterCacheEntry.
 	mqeData := querierpb.DecodeInstantVectorSeriesData(cachedData)
 
 	// Clear the cached data so we don't try to remove it from the memory consumption estimate later.
@@ -1333,4 +1315,91 @@ func (e *extentSizeEstimator) AccumulateSeriesMetadata(series []types.SeriesMeta
 func (e *extentSizeEstimator) AccumulateSeriesData(data types.InstantVectorSeriesData) {
 	e.estimatedSizeBytes += uint64(len(data.Floats)) * types.FPointSize
 	e.estimatedSizeBytes += uint64(len(data.Histograms)) * types.HPointSize
+}
+
+func PrepareCacheOperators(ctx context.Context, params *types.PrepareParams, operators []*CacheOperator, now time.Time) error {
+	if len(operators) == 0 {
+		return nil
+	}
+
+	logger := operators[0].logger // We don't bother checking that each operator has the same logger and metrics like we do for the limits provider or cache backend below, as this won't affect query correctness, just debug logging and metrics.
+	metrics := operators[0].metrics
+	spanLogger, ctx := spanlogger.New(ctx, logger, tracer, "PrepareCacheOperators")
+	defer spanLogger.Finish()
+	spanLogger.SetTag("operator_count", len(operators))
+
+	limitsProvider := operators[0].limitsProvider
+	cacheBackend := operators[0].Backend
+	operatorMap := make(map[string]*CacheOperator, len(operators))
+	keys := make([]string, 0, len(operators))
+
+	for _, o := range operators {
+		if o.prepared {
+			return errors.New("one or more cache operators already prepared")
+		}
+
+		if o.limitsProvider != limitsProvider || o.Backend != cacheBackend {
+			return errors.New("cache operators prepared together must use the same limits provider and cache backend")
+		}
+
+		if err := o.populateCacheKey(ctx); err != nil {
+			return err
+		}
+
+		if _, ok := operatorMap[o.hashedKey]; ok {
+			return fmt.Errorf("cache operators prepared together must have unique cache keys, but have at least two with key %q", o.hashedKey)
+		}
+
+		operatorMap[o.hashedKey] = o
+		keys = append(keys, o.hashedKey)
+	}
+
+	if err := populateTTLs(ctx, operators, limitsProvider, now); err != nil {
+		return err
+	}
+
+	spanLogger.DebugLog("msg", "fetching cached results", "keys", keys)
+	metrics.CacheRequests.Add(float64(len(keys)))
+	cacheHits, err := cacheBackend.GetMulti(ctx, keys)
+	if err != nil {
+		return fmt.Errorf("fetching cached results: %w", err)
+	}
+
+	metrics.CacheHits.Add(float64(len(cacheHits)))
+
+	for key, o := range operatorMap {
+		cacheHit := cacheHits[key]
+
+		if err := o.prepareFrom(ctx, cacheHit, params); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func populateTTLs(ctx context.Context, operators []*CacheOperator, limitsProvider LimitsProvider, now time.Time) error {
+	ttlForNonOOOExtent, err := limitsProvider.GetMinResultsCacheTTL(ctx)
+	if err != nil {
+		return err
+	}
+
+	ttlForOOOExtent, err := limitsProvider.GetMinOutOfOrderResultsCacheTTL(ctx)
+	if err != nil {
+		return err
+	}
+
+	oooWindow, err := limitsProvider.GetMaxOutOfOrderTimeWindow(ctx)
+	if err != nil {
+		return err
+	}
+
+	for _, o := range operators {
+		o.ttlForNonOOOExtent = ttlForNonOOOExtent
+		o.ttlForOOOExtent = ttlForOOOExtent
+		o.oooWindow = oooWindow
+		o.evaluationTime = now
+	}
+
+	return nil
 }

@@ -113,7 +113,7 @@ func TestEndToEnd(t *testing.T) {
 			opts.RangeQuerySplittingAndCaching.SplitEnabled = true
 			opts.RangeQuerySplittingAndCaching.SplitInterval = 24 * time.Hour
 			opts.RangeQuerySplittingAndCaching.CacheEnabled = true
-			cache := cache.NewMockCache()
+			cache := newRequestCountingCache()
 			opts.RangeQuerySplittingAndCaching.CacheClient = cache
 
 			planner, err := streamingpromql.NewQueryPlanner(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
@@ -139,9 +139,35 @@ func TestEndToEnd(t *testing.T) {
 			runQuery("not from cache")
 			require.NotEmpty(t, cache.GetItems(), "expected cache to be populated")
 			require.Lenf(t, cache.GetItems(), testCase.expectedCacheEntries, "expected %d cache entries, but got %d", testCase.expectedCacheEntries, len(cache.GetItems()))
+			require.Equal(t, 1, cache.getCount, "expected cache to be queried exactly once overall, not once per cache entry")
+			cache.ResetCounter()
 
 			// Run it again with a populated cache, confirm we still get the expected result.
 			runQuery("from cache")
+			require.Equal(t, 1, cache.getCount, "expected cache to be queried exactly once overall, not once per cache entry")
 		})
 	}
+}
+
+type requestCountingCache struct {
+	*cache.MockCache
+	getCount int
+}
+
+func newRequestCountingCache() *requestCountingCache {
+	return &requestCountingCache{MockCache: cache.NewMockCache()}
+}
+
+func (r *requestCountingCache) GetMulti(ctx context.Context, keys []string, opts ...cache.Option) map[string][]byte {
+	r.getCount++
+	return r.MockCache.GetMulti(ctx, keys, opts...)
+}
+
+func (r *requestCountingCache) GetMultiWithError(ctx context.Context, keys []string, opts ...cache.Option) (map[string][]byte, error) {
+	r.getCount++
+	return r.MockCache.GetMultiWithError(ctx, keys, opts...)
+}
+
+func (r *requestCountingCache) ResetCounter() {
+	r.getCount = 0
 }

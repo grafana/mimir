@@ -48,7 +48,7 @@ require (
 	connectrpc.com/connect v1.20.0 // indirect
 	connectrpc.com/otelconnect v0.9.0 // indirect
 	cuelang.org/go v0.16.1 // indirect
-	dario.cat/mergo v1.0.1 // indirect
+	dario.cat/mergo v1.0.2 // indirect
 	dmitri.shuralyov.com/go/generated v0.0.0-20170818220700-b1254a446363 // indirect
 	github.com/BurntSushi/toml v1.6.0 // indirect
 	github.com/CycloneDX/cyclonedx-go v0.10.0 // indirect
