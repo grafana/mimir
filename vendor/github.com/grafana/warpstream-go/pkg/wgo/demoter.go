@@ -125,7 +125,7 @@ func NewDemoter(inner PartitionAssignmentStrategy, tracker AgentStatsReader, hea
 	}
 
 	promauto.With(reg).NewGaugeFunc(prometheus.GaugeOpts{
-		Name: "demoter_demoted_agents",
+		Name: "warpstream_demoter_demoted_agents",
 		Help: "Number of Warpstream agents currently demoted by the Demoter.",
 	}, d.demotedAgentsCount)
 	newDemotionSuppressedMetric(d, reg)
@@ -373,7 +373,7 @@ func newDemotionSuppressedMetric(d *Demoter, reg prometheus.Registerer) *demotio
 	m := &demotionSuppressedMetric{
 		d: d,
 		desc: prometheus.NewDesc(
-			"demoter_demotion_suppressed",
+			"warpstream_demoter_demotion_suppressed",
 			"Whether the Demoter is currently suppressing all demotions (1) and why, broken down by reason; 0 for inactive reasons.",
 			[]string{"reason"}, nil,
 		),

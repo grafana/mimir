@@ -40,6 +40,10 @@ func newKafkaProducerForBackend(cfg KafkaConfig, maxInflight int, logger log.Log
 		if err != nil {
 			return nil, err
 		}
+		// warpstream-go emits the client metrics itself; we only add our bespoke
+		// kafka_* extended latency metrics, to match the kafka backend.
+		warpstreamOpts = append(warpstreamOpts, wgo.WithHooks(NewKafkaClientExtendedMetrics(reg)))
+
 		warpstreamClient, err := wgo.NewWarpstreamClient(logger, reg, warpstreamOpts...)
 		if err != nil {
 			return nil, err

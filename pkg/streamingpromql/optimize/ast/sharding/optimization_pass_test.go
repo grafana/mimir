@@ -49,7 +49,8 @@ func TestOptimizationPass(t *testing.T) {
 			options: requestoptions.Options{
 				TotalShards: 3,
 			},
-			expectedOutput: `sum(__sharded_concat__(sum(foo{__query_shard__="1_of_3"}), sum(foo{__query_shard__="2_of_3"}), sum(foo{__query_shard__="3_of_3"})))`,
+			// The requested shard count is rounded up to the next power of two.
+			expectedOutput: `sum(__sharded_concat__(sum(foo{__query_shard__="1_of_4"}), sum(foo{__query_shard__="2_of_4"}), sum(foo{__query_shard__="3_of_4"}), sum(foo{__query_shard__="4_of_4"})))`,
 		},
 		"shardable expression with estimated series count available": {
 			input: `sum(foo)`,

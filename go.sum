@@ -568,8 +568,8 @@ github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674 h1:JeSE6pjso5T
 github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674/go.mod h1:r4w70xmWCQKmi1ONH4KIaBptdivuRPyosB9RmPlGEwA=
 github.com/grafana/dskit v0.0.0-20260623061522-5cb97901f08d h1:i8M92vWcZmvMEsXnBsTPHwoW6SexkDIzwKGui4QojOs=
 github.com/grafana/dskit v0.0.0-20260623061522-5cb97901f08d/go.mod h1:T0r0vLv/JwmOoSc/EOZw/5ni7r/djCoCdJ3/JnHDAjQ=
-github.com/grafana/e2e v0.1.2-0.20260309174126-b5393d4e610f h1:gxaqz5StufMU078tWFuf8CUi4PZtITBxjM2TZV7NOFw=
-github.com/grafana/e2e v0.1.2-0.20260309174126-b5393d4e610f/go.mod h1:KFvJP5m5GQ837CN7rUbWIiPdw1JZgeRJTEyp2O5U0is=
+github.com/grafana/e2e v0.1.2-0.20260625155804-481ec71161b5 h1:0S5T70bIDAh5ttBp/JIzFZiVvQqfuL3xkFXYlIx1Zuo=
+github.com/grafana/e2e v0.1.2-0.20260625155804-481ec71161b5/go.mod h1:o6aUPNFrl7H0XjIdBpXSU2Gou6vVwctVBuSvWPN7Ogg=
 github.com/grafana/go-yaml/v3 v3.0.0-20260130164322-e3c24e8f4c87 h1:Op5/Kd8Ae90IC7Ow+CNwGo/oq87cJX2iE+U8Dw4a8Bc=
 github.com/grafana/go-yaml/v3 v3.0.0-20260130164322-e3c24e8f4c87/go.mod h1:FWqXKmpTKh7spGdV89XqWZN+kdZL8NZJJWyZQtuTXiI=
 github.com/grafana/goautoneg v0.0.0-20240607115440-f335c04c58ce h1:WI1olbgS+sEl77qxEYbmt9TgRUz7iLqmjh8lYPpGlKQ=
@@ -588,8 +588,8 @@ github.com/grafana/pyroscope-go/godeltaprof v0.1.9 h1:c1Us8i6eSmkW+Ez05d3co8kasn
 github.com/grafana/pyroscope-go/godeltaprof v0.1.9/go.mod h1:2+l7K7twW49Ct4wFluZD3tZ6e0SjanjcUUBPVD/UuGU=
 github.com/grafana/regexp v0.0.0-20250905101755-5eb4f3acbf71 h1:A4D22zZV7+EeQk9TeATDDY/PG2wnzdqKcj4IZq+PcwA=
 github.com/grafana/regexp v0.0.0-20250905101755-5eb4f3acbf71/go.mod h1:+JKpmjMGhpgPL+rXZ5nsZieVzvarn86asRlBg4uNGnk=
-github.com/grafana/warpstream-go v0.0.0-20260623082500-8f2f72d7ebfd h1:0/liF0cK/jxoiHbbx7HSbh6vvFRf6CvSJ28gjerVMek=
-github.com/grafana/warpstream-go v0.0.0-20260623082500-8f2f72d7ebfd/go.mod h1:S2Q6EVHUSkS6gJOzsskK4VhCXax8BmhTK+O+sI6YXvs=
+github.com/grafana/warpstream-go v0.0.0-20260625083726-8ebc81451c89 h1:KVQJldbpxTf5rNhp30+WqPOu4FBOt8nZq+tPaa2uKeE=
+github.com/grafana/warpstream-go v0.0.0-20260625083726-8ebc81451c89/go.mod h1:iSsYPL1NaE7fLP9GRHhN62jaUgnPf5h8agzwOWpc9FE=
 github.com/grpc-ecosystem/go-grpc-prometheus v1.2.0/go.mod h1:8NvIoxWQoOIhqOTXgfV/d3M/q6VIi02HzZEHgUlZvzk=
 github.com/grpc-ecosystem/grpc-gateway v1.16.0/go.mod h1:BDjrQk3hbvj6Nolgz8mAMFbcEtjT1g+wF4CSlocrBnw=
 github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0 h1:5VipnvEpbqr2gA2VbM+nYVbkIF28c5ZQfqCBQ5g2xfk=

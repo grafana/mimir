@@ -21,11 +21,11 @@ store-gateways, block-builders and compactors, and is responsible for the series
 flowchart LR
     subgraph WCk["Write compartments (Kafka clusters)"]
         direction TB
-        K0["Kafka cluster #0<br/>topic read-comp-1, partition 0"]
-        K1["Kafka cluster #1<br/>topic read-comp-1, partition 0"]
+        K0["kafka-wc-0<br/>&quot;ingest-rc-1&quot; topic, partition 0"]
+        K1["kafka-wc-1<br/>&quot;ingest-rc-1&quot; topic, partition 0"]
     end
 
-    ING["ingester-0 of read compartment #1<br/>owns partition 0"]
+    ING["ingester-0 of rc-1<br/>owns partition 0"]
 
     K0 --> ING
     K1 --> ING
@@ -84,9 +84,9 @@ A dedicated topic per read compartment simplifies partition management: each com
 are an independent topic, so there is a clear, per-compartment mapping between a partition and the
 ingester that owns it.
 
-For example, with two read compartments there are two topics, `read-comp-0` and `read-comp-1`. The
-ingester that owns partition 0 of read compartment 0 consumes `read-comp-0` partition 0, while the
-ingester that owns partition 0 of read compartment 1 consumes `read-comp-1` partition 0 — two distinct
+For example, with two read compartments there are two topics, `ingest-rc-0` and `ingest-rc-1`. The
+ingester that owns partition 0 of rc-0 consumes `ingest-rc-0` partition 0, while the
+ingester that owns partition 0 of rc-1 consumes `ingest-rc-1` partition 0 — two distinct
 topic-partitions owned by two distinct ingesters, even though both are "partition 0".
 
 ## Warpstream specifics
