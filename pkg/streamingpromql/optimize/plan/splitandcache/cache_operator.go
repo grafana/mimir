@@ -53,8 +53,9 @@ type CacheOperator struct {
 	logger             log.Logger
 	cacheEntryInterval time.Duration
 
-	// minCacheExtent is the minimum size of a cached extent for it to be read back from the cache,
-	// rather than being discarded and re-evaluated, when the desired time range is larger than minCacheExtent.
+	// minCacheExtent is the minimum length of a cached extent for it to be used.
+	// Extents smaller than this are ignored and re-evaluated, to avoid freshly evaluating many small extents.
+	// If the desired time range is smaller than minCacheExtent, then minCacheExtent is ignored and all cache extents are used.
 	// A value of zero disables small extent avoidance.
 	minCacheExtent time.Duration
 
