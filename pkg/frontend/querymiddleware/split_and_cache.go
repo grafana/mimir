@@ -39,9 +39,9 @@ const (
 )
 
 var (
-	// defaultMinCacheExtent is the minimum time range of a query response to
+	// DefaultMinCacheExtent is the minimum time range of a query response to
 	// be eligible for caching.
-	defaultMinCacheExtent = (5 * time.Minute).Milliseconds()
+	DefaultMinCacheExtent = 5 * time.Minute
 )
 
 // splitAndCacheMiddleware is a MetricsQueryMiddleware that can (optionally) split the query by interval
@@ -173,7 +173,7 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req MetricsQueryReques
 
 			// We have some extents. This means some parts of the response has been cached and we need
 			// to generate the queries for the missing parts.
-			requests, responses, err := partitionCacheExtents(lookupReqs[lookupIdx].orig, extents, defaultMinCacheExtent, s.extractor)
+			requests, responses, err := partitionCacheExtents(lookupReqs[lookupIdx].orig, extents, DefaultMinCacheExtent.Milliseconds(), s.extractor)
 			if err != nil {
 				return nil, err
 			}

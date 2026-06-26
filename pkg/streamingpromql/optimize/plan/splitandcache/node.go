@@ -210,11 +210,13 @@ type CacheMaterializer struct {
 	cache          caching.Backend
 	limitsProvider LimitsProvider
 	metrics        *ResultsCacheMetrics
+	minCacheExtent time.Duration
 }
 
-func NewCacheMaterializer(baseCache cache.Cache, cachePrefixGenerator caching.PrefixGenerator, limitsProvider LimitsProvider, reg prometheus.Registerer) *CacheMaterializer {
+func NewCacheMaterializer(baseCache cache.Cache, cachePrefixGenerator caching.PrefixGenerator, limitsProvider LimitsProvider, minCacheExtent time.Duration, reg prometheus.Registerer) *CacheMaterializer {
 	m := &CacheMaterializer{
 		limitsProvider: limitsProvider,
+		minCacheExtent: minCacheExtent,
 	}
 
 	if baseCache != nil {
@@ -260,6 +262,7 @@ func (m *CacheMaterializer) Materialize(ctx context.Context, n planning.Node, ma
 		m.limitsProvider,
 		params.Logger,
 		node.SplitInterval,
+		m.minCacheExtent,
 		m.metrics,
 	)
 

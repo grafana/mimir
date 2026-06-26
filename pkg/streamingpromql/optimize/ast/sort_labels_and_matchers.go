@@ -11,6 +11,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
+	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
 // SortLabelsAndMatchers is an optimization pass that ensures that all label names and matchers are sorted.
@@ -22,7 +23,7 @@ func (s *SortLabelsAndMatchers) Name() string {
 	return "Sort labels and matchers"
 }
 
-func (s *SortLabelsAndMatchers) Apply(_ context.Context, expr parser.Expr) (parser.Expr, error) {
+func (s *SortLabelsAndMatchers) Apply(_ context.Context, expr parser.Expr, _ types.QueryTimeRange) (parser.Expr, error) {
 	parser.Inspect(expr, func(node parser.Node, _ []parser.Node) error {
 		switch expr := node.(type) {
 		case *parser.VectorSelector:

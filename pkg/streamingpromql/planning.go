@@ -262,7 +262,7 @@ func (p *QueryPlanner) ParseAndApplyASTOptimizationPasses(ctx context.Context, q
 	}
 
 	for _, o := range p.astOptimizationPasses {
-		expr, err = p.runASTStage(o.Name(), observer, func() (parser.Expr, error) { return o.Apply(ctx, expr) })
+		expr, err = p.runASTStage(o.Name(), observer, func() (parser.Expr, error) { return o.Apply(ctx, expr, timeRange) })
 
 		if err != nil {
 			return nil, err
