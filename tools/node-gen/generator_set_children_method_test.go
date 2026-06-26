@@ -223,7 +223,7 @@ func TestSetChildrenMethod(t *testing.T) {
 			s := resolveAnnotatedStruct(t, pkg)
 			imports := newImportsCollector()
 
-			actual, err := SetChildrenMethod.Generate(s, imports)
+			actual, err := SetChildrenMethod.Generate(s, imports, pkg.Registry)
 			require.NoError(t, err)
 
 			expected := gofmt(t, tc.expected)
@@ -244,7 +244,7 @@ func TestSetChildrenMethod_RegistersChildTypeImport(t *testing.T) {
 	s := resolveAnnotatedStruct(t, pkg)
 	imports := newImportsCollector()
 
-	_, err := SetChildrenMethod.Generate(s, imports)
+	_, err := SetChildrenMethod.Generate(s, imports, pkg.Registry)
 
 	require.NoError(t, err)
 	require.Contains(t, imports.Paths(), "github.com/grafana/mimir/pkg/streamingpromql/planning/core")
