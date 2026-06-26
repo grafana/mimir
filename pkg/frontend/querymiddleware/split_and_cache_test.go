@@ -221,7 +221,7 @@ func TestSplitAndCacheMiddleware_SplitByInterval(t *testing.T) {
 
 	// Assert metrics
 	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
-		# HELP cortex_frontend_query_result_cache_attempted_total Total number of queries that were attempted to be fetched from cache.
+		# HELP cortex_frontend_query_result_cache_attempted_total Total number of queries that were attempted to be fetched from cache. This metric is tracked for each request when time-splitting is running inside MQE, and for each partial query otherwise.
 		# TYPE cortex_frontend_query_result_cache_attempted_total counter
 		cortex_frontend_query_result_cache_attempted_total 0
 		# HELP cortex_frontend_query_result_cache_skipped_total Total number of times a query was not cacheable. This metric is tracked for each request when time-splitting is running inside MQE, and for each partial query otherwise.
@@ -379,7 +379,7 @@ func TestSplitAndCacheMiddleware_ResultsCache(t *testing.T) {
 
 	// Assert metrics
 	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
-		# HELP cortex_frontend_query_result_cache_attempted_total Total number of queries that were attempted to be fetched from cache.
+		# HELP cortex_frontend_query_result_cache_attempted_total Total number of queries that were attempted to be fetched from cache. This metric is tracked for each request when time-splitting is running inside MQE, and for each partial query otherwise.
 		# TYPE cortex_frontend_query_result_cache_attempted_total counter
 		cortex_frontend_query_result_cache_attempted_total 3
 
@@ -644,7 +644,7 @@ func TestSplitAndCacheMiddleware_ResultsCacheNoStore(t *testing.T) {
 
 	// Assert metrics
 	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
-		# HELP cortex_frontend_query_result_cache_attempted_total Total number of queries that were attempted to be fetched from cache.
+		# HELP cortex_frontend_query_result_cache_attempted_total Total number of queries that were attempted to be fetched from cache. This metric is tracked for each request when time-splitting is running inside MQE, and for each partial query otherwise.
 		# TYPE cortex_frontend_query_result_cache_attempted_total counter
 		cortex_frontend_query_result_cache_attempted_total 0
 
@@ -763,7 +763,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotLookupCacheIfStepIsNotAli
 
 	// Assert metrics
 	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
-		# HELP cortex_frontend_query_result_cache_attempted_total Total number of queries that were attempted to be fetched from cache.
+		# HELP cortex_frontend_query_result_cache_attempted_total Total number of queries that were attempted to be fetched from cache. This metric is tracked for each request when time-splitting is running inside MQE, and for each partial query otherwise.
 		# TYPE cortex_frontend_query_result_cache_attempted_total counter
 		cortex_frontend_query_result_cache_attempted_total 1
 		# HELP cortex_frontend_query_result_cache_skipped_total Total number of times a query was not cacheable. This metric is tracked for each request when time-splitting is running inside MQE, and for each partial query otherwise.
@@ -921,7 +921,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotCacheRequestEarlierThanMa
 			expectedDownstreamEndTime:   now,
 			expectedCachedResponses:     nil,
 			expectedMetrics: `
-				# HELP cortex_frontend_query_result_cache_attempted_total Total number of queries that were attempted to be fetched from cache.
+				# HELP cortex_frontend_query_result_cache_attempted_total Total number of queries that were attempted to be fetched from cache. This metric is tracked for each request when time-splitting is running inside MQE, and for each partial query otherwise.
 				# TYPE cortex_frontend_query_result_cache_attempted_total counter
 				cortex_frontend_query_result_cache_attempted_total 2
 				# HELP cortex_frontend_query_result_cache_skipped_total Total number of times a query was not cacheable. This metric is tracked for each request when time-splitting is running inside MQE, and for each partial query otherwise.

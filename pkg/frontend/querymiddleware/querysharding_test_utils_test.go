@@ -29,6 +29,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/series"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/streamingpromql"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/splitandcache"
 	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/test"
 )
@@ -335,6 +336,7 @@ func withSplittingAndCachingRunningInsideMQE(splittingEnabled bool, splitInterva
 		o.RangeQuerySplittingAndCaching.SplitInterval = splitInterval
 		o.RangeQuerySplittingAndCaching.CacheEnabled = cachingEnabled
 		o.RangeQuerySplittingAndCaching.CacheClient = cache.NewMockCache()
+		o.RangeQuerySplittingAndCaching.CacheMetrics = splitandcache.NewResultsCacheMetrics("query_range", o.CommonOpts.Reg)
 	}
 }
 

@@ -508,7 +508,7 @@ func TestOptimizationPass(t *testing.T) {
 				cortex_frontend_query_result_cache_skipped_total{reason="unaligned-time-range"} %d
 				cortex_frontend_query_result_cache_skipped_total{reason="too-new"} %d
 				cortex_frontend_query_result_cache_skipped_total{reason="has-modifiers"} %d
-				# HELP cortex_frontend_query_result_cache_attempted_total Total number of queries that were attempted to be fetched from cache.
+				# HELP cortex_frontend_query_result_cache_attempted_total Total number of queries that were attempted to be fetched from cache. This metric is tracked for each request when time-splitting is running inside MQE, and for each partial query otherwise.
 				# TYPE cortex_frontend_query_result_cache_attempted_total counter
 				cortex_frontend_query_result_cache_attempted_total %d
 			`,
