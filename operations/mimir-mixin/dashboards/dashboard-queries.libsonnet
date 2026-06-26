@@ -123,6 +123,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       readGRPCStoreGatewayRoute: $.queries.read_grpc_store_gateway_route,
       rulerQueryFrontendRoutesRegex: $.queries.ruler_query_frontend_routes_regex,
       usageTrackerTrackSeriesRoutesRegex: $.queries.usage_tracker_track_series_routes_regex,
+      usageTrackerTrackSeriesBatchRoutesRegex: $.queries.usage_tracker_track_series_batch_routes_regex,
       usageTrackerGetUsersCloseToLimitRoutesRegex: $.queries.usage_tracker_get_users_close_to_limit_routes_regex,
       perClusterLabel: $._config.per_cluster_label,
       recordingRulePrefix: $.recordingRulePrefix($.jobSelector('any')),  // The job name does not matter here.
@@ -148,6 +149,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     // Both support gRPC and HTTP requests. HTTP request is used when rule evaluation query requests go through the query-tee.
     ruler_query_frontend_routes_regex: '/httpgrpc.HTTP/Handle|.*api_v1_query',
     usage_tracker_track_series_routes_regex: '/usagetrackerpb.UsageTracker/TrackSeries',
+    usage_tracker_track_series_batch_routes_regex: '/usagetrackerpb.UsageTracker/TrackSeriesBatch',
     usage_tracker_get_users_close_to_limit_routes_regex: '/usagetrackerpb.UsageTracker/GetUsersCloseToLimit',
 
     gateway: {
@@ -184,6 +186,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
       requestsPerSecondMetric: $.queries.requests_per_second_metric,
       trackSeriesRequestsPerSecondRouteRegex: '%(usageTrackerTrackSeriesRoutesRegex)s' % variables,
       trackSeriesRequestsPerSecondSelector: '%(usageTrackerMatcher)s, route=~"%(usageTrackerTrackSeriesRoutesRegex)s"' % variables,
+      trackSeriesBatchRequestsPerSecondRouteRegex: '%(usageTrackerTrackSeriesBatchRoutesRegex)s' % variables,
+      trackSeriesBatchRequestsPerSecondSelector: '%(usageTrackerMatcher)s, route=~"%(usageTrackerTrackSeriesBatchRoutesRegex)s"' % variables,
       getUsersCloseToLimitRequestsPerSecondRouteRegex: '%(usageTrackerGetUsersCloseToLimitRoutesRegex)s' % variables,
       getUsersCloseToLimitRequestsPerSecondSelector: '%(usageTrackerMatcher)s, route=~"%(usageTrackerGetUsersCloseToLimitRoutesRegex)s"' % variables,
 

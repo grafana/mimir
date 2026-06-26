@@ -51,6 +51,7 @@
 * [ENHANCEMENT] Distributor: Add a tracing span around the OTLP to Prometheus conversion so its latency is independently visible in traces. #15682
 * [ENHANCEMENET] Runtimeconfig: The HTTP client used to fetch runtime configurations from HTTP endpoints now has keep-alives disabled by default. New CLI flag `-runtime-config.http-client-disable-keep-alives` is enabled by default, an can be set to `false` in-order to re-enable keep-alives. #15695
 * [ENHANCEMENT] MQE: Support for native histograms in `smoothed` and `anchored` extended range selector modifiers. #15398
+* [ENHANCEMENT] Usage-tracker, distributor: Add experimental synchronous batched tracking. When `-distributor.usage-tracker-client.use-sync-batched-tracking` is enabled, synchronous series-tracking calls linger for up to `-distributor.usage-tracker-client.sync-batch-delay` and are sent together in a single batch RPC, reducing the number of network calls while still returning rejected series to each caller. By default all partitions flush together on a shared timer so the usage-tracker can coalesce the packets; set `-distributor.usage-tracker-client.sync-batch-independent-partition-timeouts` to make each partition linger independently instead. #15805
 * [ENHANCEMENT] Mimir: Expose `ingest_storage` feature flag in the `/api/v1/status/buildinfo` endpoint, reflecting whether Mimir runs with ingest storage architecture. #15743
 * [BUGFIX] Query-frontend: Fix `cardinality_analysis_max_results` being ignored when set higher than the default of 500. #15581
 * [BUGFIX] Ingest storage: Fix `KafkaProducer.ProduceSync()` returning a single result with a nil record when the context is canceled, instead of one result per input record (with the record set) as the underlying franz-go client does. #15199
@@ -82,6 +83,7 @@
 * [ENHANCEMENT] Dashboards: Add 100th percentile to query expression percentiles graph. #15421
 * [ENHANCEMENT] Dashboards: Add the experimental streaming search API endpoints to the "Overview" per-endpoint query breakdown, and include the ingester `SearchLabelNames`/`SearchLabelValues` gRPC routes in the ingester panels of the "Reads", "Queries", and "Remote ruler reads" dashboards. #15571
 * [ENHANCEMENT] Dashboards: Add "p90 compaction delay by level" and "Store-gateway blocks queried by level" panels to the "Compaction" row of the "Compactor" dashboard. #15619
+* [ENHANCEMENT] Dashboards: Split the server-side "Usage Tracker" row of the "Writes" dashboard into separate "TrackSeries" (non-batched) and "TrackSeriesBatch" (batched) rows, so batched tracking RPCs are visible now that synchronous batched tracking can drive `TrackSeriesBatch`. #15805
 * [BUGFIX] Dashboards: Fix the classic/ingest-storage split in the "Tenants", "Top tenants" and "Writes" dashboards so that selecting multiple clusters with a mix of architectures no longer drops the classic clusters' data. The `unless on (job)` filter against `cortex_partition_ring_partitions` now also matches on the cluster aggregation labels. #15400
 
 ### Jsonnet
