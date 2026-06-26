@@ -24,7 +24,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	"github.com/grafana/mimir/pkg/util/objtools"
+	"github.com/grafana/mimir/pkg/util/objtools" //lint:ignore faillint Tools may use objtools.
 )
 
 type config struct {

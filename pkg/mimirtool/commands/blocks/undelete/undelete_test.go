@@ -17,7 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	"github.com/grafana/mimir/pkg/util/objtools"
+	"github.com/grafana/mimir/pkg/util/objtools" //lint:ignore faillint Tools may use objtools.
 )
 
 func TestBlocksFromJSON(t *testing.T) {
