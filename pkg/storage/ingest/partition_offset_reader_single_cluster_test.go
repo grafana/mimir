@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/services"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kmsg"
@@ -36,7 +37,9 @@ func TestSingleClusterTopicOffsetsReader(t *testing.T) {
 		)
 
 		// Run with a very high polling interval, so that it will never run in this test.
-		reader := NewSingleClusterTopicOffsetsReader(createTestKafkaClient(t, kafkaCfg), topicName, allPartitionIDs, time.Hour, nil, log.NewNopLogger())
+		kafkaCfg.LastProducedOffsetPollInterval = time.Hour
+		reader, err := NewSingleClusterTopicOffsetsReader(kafkaCfg, topicName, allPartitionIDs, "query-frontend", prometheus.NewPedanticRegistry(), log.NewNopLogger())
+		require.NoError(t, err)
 		require.NoError(t, services.StartAndAwaitRunning(ctx, reader))
 
 		// Run few goroutines waiting for the last produced offset.
@@ -56,7 +59,7 @@ func TestSingleClusterTopicOffsetsReader(t *testing.T) {
 		wg.Wait()
 
 		// The next call to WaitNextFetchLastProducedOffset() should return immediately.
-		_, err := reader.WaitNextFetchLastProducedOffset(ctx)
+		_, err = reader.WaitNextFetchLastProducedOffset(ctx)
 		assert.Equal(t, errPartitionOffsetReaderStopped, err)
 	})
 }
@@ -75,12 +78,13 @@ func TestSingleClusterTopicOffsetsReader_WaitNextFetchLastProducedOffset(t *test
 	)
 
 	t.Run("should wait the result of the next request issued", func(t *testing.T) {
-		var (
-			cluster, clusterAddr = testkafka.CreateCluster(t, numPartitions, topicName)
-			kafkaCfg             = createTestKafkaConfig(clusterAddr, topicName)
-			client               = createTestKafkaClient(t, kafkaCfg)
-			reader               = NewSingleClusterTopicOffsetsReader(client, topicName, allPartitionIDs, pollInterval, nil, logger)
+		cluster, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
+		kafkaCfg := createTestKafkaConfig(clusterAddr, topicName)
+		kafkaCfg.LastProducedOffsetPollInterval = pollInterval
+		reader, err := NewSingleClusterTopicOffsetsReader(kafkaCfg, topicName, allPartitionIDs, "query-frontend", prometheus.NewPedanticRegistry(), logger)
+		require.NoError(t, err)
 
+		var (
 			lastOffset            = atomic.NewInt64(1)
 			firstRequestReceived  = make(chan struct{})
 			secondRequestReceived = make(chan struct{})
@@ -145,19 +149,22 @@ func TestSingleClusterTopicOffsetsReader_WaitNextFetchLastProducedOffset(t *test
 	})
 
 	t.Run("should immediately return if the context gets canceled", func(t *testing.T) {
-		var (
-			_, clusterAddr = testkafka.CreateCluster(t, numPartitions, topicName)
-			kafkaCfg       = createTestKafkaConfig(clusterAddr, topicName)
-			client         = createTestKafkaClient(t, kafkaCfg)
-		)
-
-		// Create the reader but do NOT start it, so that the "last produced offset" will be never fetched.
-		reader := NewSingleClusterTopicOffsetsReader(client, topicName, allPartitionIDs, pollInterval, nil, logger)
+		_, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
+		kafkaCfg := createTestKafkaConfig(clusterAddr, topicName)
+		// Use a very high poll interval: the reader fetches once at startup, then never again, so the "next"
+		// offset never arrives and WaitNextFetchLastProducedOffset can only return via the context.
+		kafkaCfg.LastProducedOffsetPollInterval = time.Hour
+		reader, err := NewSingleClusterTopicOffsetsReader(kafkaCfg, topicName, allPartitionIDs, "query-frontend", prometheus.NewPedanticRegistry(), logger)
+		require.NoError(t, err)
+		require.NoError(t, services.StartAndAwaitRunning(ctx, reader))
+		t.Cleanup(func() {
+			require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
+		})
 
 		canceledCtx, cancel := context.WithCancel(ctx)
 		cancel()
 
-		_, err := reader.WaitNextFetchLastProducedOffset(canceledCtx)
+		_, err = reader.WaitNextFetchLastProducedOffset(canceledCtx)
 		assert.ErrorIs(t, err, context.Canceled)
 	})
 }

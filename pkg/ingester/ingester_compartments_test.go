@@ -35,6 +35,7 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/storage/ingest"
+	"github.com/grafana/mimir/pkg/storage/ingest/kmeta"
 	util_test "github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/testkafka"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -302,9 +303,12 @@ func TestIngester_Compartments_ShouldConsumeReadCompartmentTopicAtStartup(t *tes
 func TestIngester_Compartments_QueryStream_ReadConsistency(t *testing.T) {
 	const numWriteCompartments = 2
 
+	// The ingester serves read compartment 1, partition 0 (see the test config below), and consumes from
+	// numWriteCompartments Kafka clusters, so the v2 offsets are keyed by read compartment 1, partition 0,
+	// with one offset per write compartment.
 	tests := map[string]struct {
 		readConsistencyLevel   string
-		readConsistencyOffsets map[int32]int64
+		readConsistencyOffsets map[int]map[int32]kmeta.PartitionOffsets
 		expectedQueriedSeries  int
 	}{
 		"eventual read consistency": {
@@ -322,10 +326,19 @@ func TestIngester_Compartments_QueryStream_ReadConsistency(t *testing.T) {
 		"strong read consistency with offsets": {
 			readConsistencyLevel: api.ReadConsistencyStrong,
 
-			// With compartments enabled the encoded offsets are ignored (per-compartment offsets are not
-			// propagated by the query path yet), so the negative-offset trick does not short-circuit the
-			// wait: the query waits until the last produced offset of every cluster and returns all series.
-			readConsistencyOffsets: map[int32]int64{0: -2},
+			// To keep the test simple, use a trick passing a negative offset for every write compartment so
+			// the query will return immediately. In this test we just want to check that the passed
+			// per-compartment offsets are honored.
+			readConsistencyOffsets: map[int]map[int32]kmeta.PartitionOffsets{1: {0: kmeta.NewMultiClusterPartitionOffsets([]int64{-2, -2})}},
+			expectedQueriedSeries:  0,
+		},
+		"strong read consistency with offsets for a different read compartment falls back to last produced": {
+			readConsistencyLevel: api.ReadConsistencyStrong,
+
+			// The ingester serves read compartment 1, so an offsets header keyed at read compartment 0 has no
+			// entry for (1, 0): the ingester must fall back to waiting for the last produced offset (like
+			// "strong read consistency without offsets"), not short-circuit on the negative offsets below.
+			readConsistencyOffsets: map[int]map[int32]kmeta.PartitionOffsets{0: {0: kmeta.NewMultiClusterPartitionOffsets([]int64{-2, -2})}},
 			expectedQueriedSeries:  numWriteCompartments,
 		},
 	}
@@ -410,7 +423,7 @@ func TestIngester_Compartments_QueryStream_ReadConsistency(t *testing.T) {
 
 				// Inject the requested offsets (if any).
 				if len(testData.readConsistencyOffsets) > 0 {
-					queryCtx = api.ContextWithReadConsistencyEncodedOffsets(queryCtx, api.EncodeOffsetsV1(testData.readConsistencyOffsets))
+					queryCtx = api.ContextWithReadConsistencyEncodedOffsets(queryCtx, api.EncodeOffsetsV2(testData.readConsistencyOffsets))
 				}
 
 				close(queryIssued)

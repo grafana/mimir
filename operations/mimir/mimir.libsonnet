@@ -67,6 +67,7 @@
 (import 'compartments-distributor.libsonnet') +
 (import 'compartments-ingester.libsonnet') +
 (import 'compartments-querier.libsonnet') +
+(import 'compartments-query-frontend.libsonnet') +
 
 // Add memberlist support. Keep it at the end because it overrides all Mimir components.
 (import 'memberlist.libsonnet') +
