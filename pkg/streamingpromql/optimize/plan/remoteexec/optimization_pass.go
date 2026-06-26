@@ -34,27 +34,76 @@ func (o *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, 
 		return plan, nil
 	}
 
-	var groups remoteExecutionGroupSet
+	multiNodeGroupsEnabled := o.enableMultipleNodeRequests && maximumSupportedQueryPlanVersion >= planning.QueryPlanV3
 
-	if o.enableMultipleNodeRequests && maximumSupportedQueryPlanVersion >= planning.QueryPlanV3 {
-		groups = remoteExecutionGroupSet{}
-	}
+	// When a query has been rewritten to spin off subqueries, each evaluation root is a separate
+	// query and must have remote execution applied to it independently: if its subtree is sharded, each
+	// sharded leg is executed remotely; otherwise the entire subtree is. The rest of the plan (the outer
+	// instant query) runs on the query-frontend.
+	if evaluationRoots := collectEvaluationRoots(plan.Root); len(evaluationRoots) > 0 {
+		for _, evaluationRoot := range evaluationRoots {
+			if err := o.wrapEvaluationRoot(evaluationRoot, multiNodeGroupsEnabled); err != nil {
+				return nil, err
+			}
+		}
 
-	if wrappedAnyChild, err := o.wrapShardedExpressions(plan.Root, groups); err != nil {
-		return nil, err
-	} else if wrappedAnyChild {
 		return plan, nil
 	}
 
-	if err := o.wrapRootInRemoteExecutionNode(plan); err != nil {
+	if err := o.wrapPlanRoot(plan, multiNodeGroupsEnabled); err != nil {
 		return nil, err
 	}
 
 	return plan, nil
 }
 
-func (o *OptimizationPass) wrapRootInRemoteExecutionNode(plan *planning.QueryPlan) error {
-	child := plan.Root
+func (o *OptimizationPass) wrapPlanRoot(plan *planning.QueryPlan, multiNodeGroupsEnabled bool) error {
+	newRoot, err := o.applyToRootNode(plan.Root, multiNodeGroupsEnabled)
+	if err != nil {
+		return err
+	}
+
+	plan.Root = newRoot
+	return nil
+}
+
+// wrapEvaluationRoot applies remote execution to a single EvaluationRoot's subtree, mirroring the
+// behaviour applied to the whole plan when there are no EvaluationRoot markers.
+//
+// Each EvaluationRoot is a separate query, so a fresh remote execution group set is used per
+// EvaluationRoot when grouping nodes that share a selector into the same request.
+// FIXME: in the future we could share groups between roots and avoid evaluating duplicate expressions shared across
+// roots.
+func (o *OptimizationPass) wrapEvaluationRoot(evaluationRoot *core.EvaluationRoot, multiNodeGroupsEnabled bool) error {
+	newRoot, err := o.applyToRootNode(evaluationRoot.Inner, multiNodeGroupsEnabled)
+	if err != nil {
+		return err
+	}
+
+	evaluationRoot.Inner = newRoot
+	return nil
+}
+
+// applyToRootNode applies remote execution nodes to the provided root node.
+//
+// If the expression beneath the provided node is sharded, each sharded leg is wrapped in a RemoteExecutionGroup node.
+// Otherwise the entire child is wrapped (beneath any splitting and caching nodes, which run on the query-frontend).
+//
+// The new root node is returned, which may or may not be the same as the provided root node.
+func (o *OptimizationPass) applyToRootNode(root planning.Node, multiNodeGroupsEnabled bool) (planning.Node, error) {
+	var groups remoteExecutionGroupSet
+
+	if multiNodeGroupsEnabled {
+		groups = remoteExecutionGroupSet{}
+	}
+
+	if wrappedAnyChild, err := o.wrapShardedExpressions(root, groups); err != nil {
+		return nil, err
+	} else if wrappedAnyChild {
+		return root, nil
+	}
+
+	child := root
 	var parent planning.Node
 
 	// We want the splitting and caching nodes to run on the query-frontend, so the remote execution
@@ -67,19 +116,44 @@ func (o *OptimizationPass) wrapRootInRemoteExecutionNode(plan *planning.QueryPla
 	wrappedChild, err := o.wrapInRemoteExecutionNode(
 		child,
 		false,
-		nil, // No need to pass groups here as we'll wrap the whole request in a single group.
+		nil, // No need to pass groups here as we'll wrap the whole child in a single group.
 	)
-
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	if parent == nil {
-		plan.Root = wrappedChild
-		return nil
+		// We want to replace the root with the wrapped child.
+		return wrappedChild, nil
 	}
 
-	return parent.ReplaceChild(0, wrappedChild)
+	if err := parent.ReplaceChild(0, wrappedChild); err != nil {
+		return nil, err
+	}
+
+	return root, nil
+}
+
+// collectEvaluationRoots returns the EvaluationRoot nodes in the plan.
+func collectEvaluationRoots(node planning.Node) []*core.EvaluationRoot {
+	var roots []*core.EvaluationRoot
+	var visit func(planning.Node)
+	visit = func(n planning.Node) {
+		if evaluationRoot, ok := n.(*core.EvaluationRoot); ok {
+			roots = append(roots, evaluationRoot)
+
+			// EvaluationRoot markers are never nested inside one another, so no need to visit children.
+			return
+		}
+
+		for child := range planning.ChildrenIter(n) {
+			visit(child)
+		}
+	}
+
+	visit(node)
+
+	return roots
 }
 
 func (o *OptimizationPass) wrapInRemoteExecutionNode(child planning.Node, eagerLoad bool, groups remoteExecutionGroupSet) (planning.Node, error) {

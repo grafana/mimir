@@ -70,8 +70,10 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/caching"
 	streamingpromqlcompat "github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/ast/sharding"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/ast/subqueryspinoff"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/remoteexec"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/analysis"
+	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"github.com/grafana/mimir/pkg/usagestats"
 	"github.com/grafana/mimir/pkg/usagetracker"
 	"github.com/grafana/mimir/pkg/util"
@@ -951,6 +953,8 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 	opts := t.createQueryFrontendPromQLEngineOptions()
 	middlewareCfg.InternalFunctionNames.Add(sharding.ConcatFunction.Name)
 	middlewareCfg.InternalFunctionNames.Add(sharding.AvgFunction.Name)
+	middlewareCfg.InternalFunctionNames.Add(core.VectorEvaluationRootFunction.Name)
+	middlewareCfg.InternalFunctionNames.Add(core.ScalarEvaluationRootFunction.Name)
 
 	var memoryConsumptionTrackerFactory *limiter.InflightMemoryConsumptionTracker
 
@@ -1147,6 +1151,12 @@ func (t *Mimir) initQueryFrontendQueryPlanner() (services.Service, error) {
 
 	if t.Cfg.Frontend.QueryMiddleware.EnableRemoteExecution {
 		t.QueryFrontendQueryPlanner.RegisterQueryPlanOptimizationPass(remoteexec.NewOptimizationPass(t.Cfg.Frontend.QueryMiddleware.EnableMultipleNodeRemoteExecutionRequests))
+	}
+
+	// Subquery spin-off must run before sharding so that each spun-off subquery and downstream query can
+	// be sharded independently.
+	if t.Cfg.Frontend.QueryMiddleware.UseMQEForSplittingAndCachingResults {
+		t.QueryFrontendQueryPlanner.RegisterASTOptimizationPass(subqueryspinoff.NewOptimizationPass(t.Overrides, opts.CommonOpts.NoStepSubqueryIntervalFn, opts.CommonOpts.Reg, util_log.Logger))
 	}
 
 	if t.Cfg.Frontend.QueryMiddleware.UseMQEForSharding {
