@@ -5,6 +5,7 @@ package readcache
 import (
 	"context"
 	"flag"
+	"fmt"
 	"testing"
 	"time"
 
@@ -24,6 +25,7 @@ import (
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/ingest"
+	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/util/testkafka"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -437,6 +439,137 @@ func TestReadcache_QueryStream_NoInRangeSamples(t *testing.T) {
 		advertised += len(resp.StreamingSeries)
 	}
 	assert.Zero(t, advertised, "a series with no in-range samples must not be advertised")
+}
+
+// TestReadcache_QueryStream_AppliesQueryShard proves whether the
+// readcache honours the query-sharding label. When the query-frontend
+// shards a query it appends a __query_shard__="i_of_N" matcher to each
+// sub-query; the ingester pulls that matcher out and sets
+// SelectHints.ShardIndex/ShardCount so TSDB ShardedPostings returns
+// only the series belonging to that shard (partitioned by series hash).
+//
+// The correctness contract the rest of Mimir relies on: across the N
+// shards every series is returned exactly once (the shards are a
+// partition of the series set). This test ingests several series of a
+// single metric into one partition, then queries each of two shards
+// and asserts:
+//
+//   - each shard returns a strict subset (neither shard returns all),
+//   - the union of the two shards equals the full unsharded result,
+//   - no series is returned by both shards.
+//
+// If the readcache ignores the shard matcher entirely (passes
+// __query_shard__ to TSDB as a literal label matcher, which matches no
+// real series), both shards come back empty and the union is empty —
+// the assertions below fail, demonstrating that sharded reads silently
+// drop all series.
+func TestReadcache_QueryStream_AppliesQueryShard(t *testing.T) {
+	const (
+		tenantID = "user-1"
+		topic    = "test-topic"
+		metric   = "test_metric"
+		nSeries  = 12
+	)
+
+	_, addr := testkafka.CreateCluster(t, 4, topic)
+
+	cfg := newTestConfigNoKafka(t)
+	cfg.KafkaTopic = topic
+	cfg.OwnedPartitions = "0"
+
+	var kafkaCfg ingest.KafkaConfig
+	kafkaCfg.RegisterFlags(flag.NewFlagSet("", flag.PanicOnError))
+	kafkaCfg.Address = flagext.StringSliceCSV{addr}
+	kafkaCfg.Topic = topic
+	cfg.Kafka = kafkaCfg
+
+	limits := validation.NewOverrides(validation.Limits{}, nil)
+	reg := prometheus.NewPedanticRegistry()
+
+	rc, err := New(cfg, limits, nil, log.NewNopLogger(), reg)
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	require.NoError(t, services.StartAndAwaitRunning(ctx, rc))
+	defer func() { _ = services.StopAndAwaitTerminated(ctx, rc) }()
+
+	writer := makeKafkaWriter(t, kafkaCfg, reg)
+	defer func() { _ = services.StopAndAwaitTerminated(ctx, writer) }()
+
+	wreqCtx := user.InjectOrgID(ctx, tenantID)
+
+	// Ingest nSeries distinct series of the same metric into partition 0.
+	// Distinct "instance" label values spread the series across shard
+	// hashes so a correct sharded read splits them between the two shards.
+	for i := 0; i < nSeries; i++ {
+		require.NoError(t, writer.WriteSync(wreqCtx, topic, 0, tenantID, &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{
+			{TimeSeries: &mimirpb.TimeSeries{
+				Labels: mimirpb.FromLabelsToLabelAdapters(
+					labels.FromStrings(model.MetricNameLabel, metric, "instance", fmt.Sprintf("i-%d", i))),
+				Samples: []mimirpb.Sample{{TimestampMs: 1, Value: float64(i)}},
+			}},
+		}}))
+	}
+
+	require.Eventually(t, func() bool {
+		return testutil.ToFloat64(rc.samplesIngestedTotal.WithLabelValues("0")) >= nSeries
+	}, 10*time.Second, 100*time.Millisecond, "samples should be ingested before querying")
+
+	// queryShard runs queryStream with the metric matcher plus the given
+	// extra matchers and returns the set of series (by instance label)
+	// streamed back.
+	queryShard := func(extra ...*labels.Matcher) map[string]struct{} {
+		t.Helper()
+		matchers := append([]*labels.Matcher{
+			labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, metric),
+		}, extra...)
+		req, err := ingester_client.ToQueryRequest(0, model.Time(time.Now().UnixMilli()), matchers)
+		require.NoError(t, err)
+
+		stream := &mockQueryStreamServer{ctx: wreqCtx}
+		require.NoError(t, rc.queryStream(req, stream))
+
+		got := map[string]struct{}{}
+		for _, resp := range stream.responses {
+			for _, s := range resp.StreamingSeries {
+				lbls := mimirpb.FromLabelAdaptersToLabels(s.Labels)
+				got[lbls.Get("instance")] = struct{}{}
+			}
+		}
+		return got
+	}
+
+	// Sanity: unsharded query returns every series.
+	all := queryShard()
+	require.Len(t, all, nSeries, "unsharded query must return all ingested series")
+
+	shard0 := queryShard(sharding.ShardSelector{ShardIndex: 0, ShardCount: 2}.Matcher())
+	shard1 := queryShard(sharding.ShardSelector{ShardIndex: 1, ShardCount: 2}.Matcher())
+
+	// Each shard must be a strict, non-empty subset.
+	assert.NotEmpty(t, shard0, "shard 1_of_2 must return its share of series, not zero")
+	assert.NotEmpty(t, shard1, "shard 2_of_2 must return its share of series, not zero")
+	assert.Less(t, len(shard0), nSeries, "shard 1_of_2 must not return every series")
+	assert.Less(t, len(shard1), nSeries, "shard 2_of_2 must not return every series")
+
+	// No overlap between shards.
+	for s := range shard0 {
+		_, dup := shard1[s]
+		assert.False(t, dup, "series %q returned by both shards", s)
+	}
+
+	// Union of the two shards equals the full result: every series is
+	// covered exactly once.
+	union := map[string]struct{}{}
+	for s := range shard0 {
+		union[s] = struct{}{}
+	}
+	for s := range shard1 {
+		union[s] = struct{}{}
+	}
+	assert.Len(t, union, nSeries, "the two shards together must cover every series exactly once")
 }
 
 // loadstatsTickSeconds mirrors loadstats.TickInterval in seconds, used

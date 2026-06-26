@@ -18,6 +18,7 @@ import (
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/nautilus/assignment"
+	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
@@ -56,6 +57,19 @@ func (r *Readcache) queryStream(req *client.QueryRequest, stream client.Ingester
 	}
 
 	from, through, matchers, err := client.FromQueryRequest(req)
+	if err != nil {
+		return err
+	}
+
+	// Query sharding: the query-frontend appends a __query_shard__
+	// matcher to each sharded sub-query. It is NOT a real series label,
+	// so it must be removed from the matcher set and translated into
+	// SelectHints.ShardIndex/ShardCount, which TSDB's ShardedPostings
+	// applies (the readcache heads are opened with EnableSharding). The
+	// ingester does the same in pkg/ingester/ingester_query.go. Without
+	// this, the literal __query_shard__ matcher reaches TSDB, matches no
+	// series, and every sharded read silently returns nothing.
+	shard, matchers, err := sharding.RemoveShardFromMatchers(matchers)
 	if err != nil {
 		return err
 	}
@@ -111,6 +125,10 @@ func (r *Readcache) queryStream(req *client.QueryRequest, stream client.Ingester
 		closers = append(closers, q)
 
 		hints := &storage.SelectHints{Start: int64(from), End: int64(through)}
+		if shard != nil {
+			hints.ShardIndex = shard.ShardIndex
+			hints.ShardCount = shard.ShardCount
+		}
 		ss := q.Select(ctx, true, hints, matchers...)
 		if ss.Err() != nil {
 			return errors.Wrap(ss.Err(), "selecting series from partition TSDB")
