@@ -930,6 +930,7 @@ func functionNeedsDeduplication(fnc functions.Function) bool {
 		functions.FUNCTION_HISTOGRAM_COUNT,
 		functions.FUNCTION_HISTOGRAM_FRACTION,
 		functions.FUNCTION_HISTOGRAM_QUANTILE,
+		functions.FUNCTION_HISTOGRAM_QUANTILES,
 		functions.FUNCTION_HISTOGRAM_STDDEV,
 		functions.FUNCTION_HISTOGRAM_STDVAR,
 		functions.FUNCTION_HISTOGRAM_SUM,
