@@ -84,21 +84,28 @@ func ReplaceWriteCompartment(s string, writeCompartmentID int) string {
 	return strings.ReplaceAll(s, WriteCompartmentIDPlaceholder, strconv.Itoa(writeCompartmentID))
 }
 
-// readCompartmentRingSuffix builds the "-rc-<id>" suffix appended to a ring key or name to
-// scope it to a single read compartment. A suffix is used for consistency with how the read
-// compartment ID is appended elsewhere (e.g. Kubernetes resource names, offset filenames).
-func readCompartmentRingSuffix(compartmentID int) string {
+// readCompartmentSuffix builds the "-rc-<id>" suffix appended to a ring key, ring name, or
+// consumer group to scope it to a single read compartment. A suffix is used for consistency with
+// how the read compartment ID is appended elsewhere (e.g. Kubernetes resource names, offset filenames).
+func readCompartmentSuffix(compartmentID int) string {
 	return "-rc-" + strconv.Itoa(compartmentID)
 }
 
 // ReadCompartmentRingKey returns the KVStore key for the partition ring of the given read
 // compartment, derived from the non-compartment ring key.
 func ReadCompartmentRingKey(compartmentID int, ringKey string) string {
-	return ringKey + readCompartmentRingSuffix(compartmentID)
+	return ringKey + readCompartmentSuffix(compartmentID)
 }
 
 // ReadCompartmentRingName returns the ring name for the given read compartment, derived from the
 // non-compartment ring name.
 func ReadCompartmentRingName(compartmentID int, ringName string) string {
-	return ringName + readCompartmentRingSuffix(compartmentID)
+	return ringName + readCompartmentSuffix(compartmentID)
+}
+
+// ReadCompartmentConsumerGroup returns the Kafka consumer group for the given read compartment,
+// derived from the non-compartment consumer group, so each read compartment commits its offsets
+// under its own group rather than sharing one group across compartments on a cluster.
+func ReadCompartmentConsumerGroup(compartmentID int, group string) string {
+	return group + readCompartmentSuffix(compartmentID)
 }

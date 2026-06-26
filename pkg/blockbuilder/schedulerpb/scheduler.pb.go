@@ -6,16 +6,17 @@ package schedulerpb
 import (
 	context "context"
 	fmt "fmt"
-	_ "github.com/gogo/protobuf/gogoproto"
-	proto "github.com/gogo/protobuf/proto"
-	grpc "google.golang.org/grpc"
-	codes "google.golang.org/grpc/codes"
-	status "google.golang.org/grpc/status"
 	io "io"
 	math "math"
 	math_bits "math/bits"
 	reflect "reflect"
 	strings "strings"
+
+	_ "github.com/gogo/protobuf/gogoproto"
+	proto "github.com/gogo/protobuf/proto"
+	grpc "google.golang.org/grpc"
+	codes "google.golang.org/grpc/codes"
+	status "google.golang.org/grpc/status"
 )
 
 // Reference imports to suppress errors if they are not otherwise used.
@@ -80,11 +81,21 @@ func (m *JobKey) GetEpoch() int64 {
 	return 0
 }
 
+// JobSpec is a unit of consumption work for one read-compartment partition. The
+// topic and partition are invariant across the job. When compartments are
+// disabled, the single [start_offset, end_offset) range is consumed; when
+// enabled, offset_ranges carries one range per write compartment instead.
 type JobSpec struct {
-	Topic       string `protobuf:"bytes,1,opt,name=topic,proto3" json:"topic,omitempty"`
-	Partition   int32  `protobuf:"varint,2,opt,name=partition,proto3" json:"partition,omitempty"`
-	StartOffset int64  `protobuf:"varint,3,opt,name=start_offset,json=startOffset,proto3" json:"start_offset,omitempty"`
-	EndOffset   int64  `protobuf:"varint,4,opt,name=end_offset,json=endOffset,proto3" json:"end_offset,omitempty"`
+	Topic     string `protobuf:"bytes,1,opt,name=topic,proto3" json:"topic,omitempty"`
+	Partition int32  `protobuf:"varint,2,opt,name=partition,proto3" json:"partition,omitempty"`
+	// Non-compartment mode: the single [start_offset, end_offset) range to
+	// consume. Used when compartments are disabled.
+	StartOffset int64 `protobuf:"varint,3,opt,name=start_offset,json=startOffset,proto3" json:"start_offset,omitempty"`
+	EndOffset   int64 `protobuf:"varint,4,opt,name=end_offset,json=endOffset,proto3" json:"end_offset,omitempty"`
+	// Compartment mode: one [start_offset, end_offset) range per write
+	// compartment. When compartments are enabled, these are consumed instead of
+	// start_offset/end_offset.
+	OffsetRanges []WCOffsetRange `protobuf:"bytes,5,rep,name=offset_ranges,json=offsetRanges,proto3" json:"offset_ranges"`
 }
 
 func (m *JobSpec) Reset()      { *m = JobSpec{} }
@@ -147,6 +158,75 @@ func (m *JobSpec) GetEndOffset() int64 {
 	return 0
 }
 
+func (m *JobSpec) GetOffsetRanges() []WCOffsetRange {
+	if m != nil {
+		return m.OffsetRanges
+	}
+	return nil
+}
+
+// WCOffsetRange is the [start_offset, end_offset) to consume for one write
+// compartment (WC) of a job, on that WC's own cluster. The topic and partition
+// are shared by the whole JobSpec.
+type WCOffsetRange struct {
+	StartOffset int64 `protobuf:"varint,1,opt,name=start_offset,json=startOffset,proto3" json:"start_offset,omitempty"`
+	EndOffset   int64 `protobuf:"varint,2,opt,name=end_offset,json=endOffset,proto3" json:"end_offset,omitempty"`
+	WcId        int32 `protobuf:"varint,3,opt,name=wc_id,json=wcId,proto3" json:"wc_id,omitempty"`
+}
+
+func (m *WCOffsetRange) Reset()      { *m = WCOffsetRange{} }
+func (*WCOffsetRange) ProtoMessage() {}
+func (*WCOffsetRange) Descriptor() ([]byte, []int) {
+	return fileDescriptor_2b3fc28395a6d9c5, []int{2}
+}
+func (m *WCOffsetRange) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *WCOffsetRange) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_WCOffsetRange.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *WCOffsetRange) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_WCOffsetRange.Merge(m, src)
+}
+func (m *WCOffsetRange) XXX_Size() int {
+	return m.Size()
+}
+func (m *WCOffsetRange) XXX_DiscardUnknown() {
+	xxx_messageInfo_WCOffsetRange.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_WCOffsetRange proto.InternalMessageInfo
+
+func (m *WCOffsetRange) GetStartOffset() int64 {
+	if m != nil {
+		return m.StartOffset
+	}
+	return 0
+}
+
+func (m *WCOffsetRange) GetEndOffset() int64 {
+	if m != nil {
+		return m.EndOffset
+	}
+	return 0
+}
+
+func (m *WCOffsetRange) GetWcId() int32 {
+	if m != nil {
+		return m.WcId
+	}
+	return 0
+}
+
 type AssignJobRequest struct {
 	WorkerId string `protobuf:"bytes,1,opt,name=worker_id,json=workerId,proto3" json:"worker_id,omitempty"`
 }
@@ -154,7 +234,7 @@ type AssignJobRequest struct {
 func (m *AssignJobRequest) Reset()      { *m = AssignJobRequest{} }
 func (*AssignJobRequest) ProtoMessage() {}
 func (*AssignJobRequest) Descriptor() ([]byte, []int) {
-	return fileDescriptor_2b3fc28395a6d9c5, []int{2}
+	return fileDescriptor_2b3fc28395a6d9c5, []int{3}
 }
 func (m *AssignJobRequest) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -198,7 +278,7 @@ type AssignJobResponse struct {
 func (m *AssignJobResponse) Reset()      { *m = AssignJobResponse{} }
 func (*AssignJobResponse) ProtoMessage() {}
 func (*AssignJobResponse) Descriptor() ([]byte, []int) {
-	return fileDescriptor_2b3fc28395a6d9c5, []int{3}
+	return fileDescriptor_2b3fc28395a6d9c5, []int{4}
 }
 func (m *AssignJobResponse) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -251,7 +331,7 @@ type UpdateJobRequest struct {
 func (m *UpdateJobRequest) Reset()      { *m = UpdateJobRequest{} }
 func (*UpdateJobRequest) ProtoMessage() {}
 func (*UpdateJobRequest) Descriptor() ([]byte, []int) {
-	return fileDescriptor_2b3fc28395a6d9c5, []int{4}
+	return fileDescriptor_2b3fc28395a6d9c5, []int{5}
 }
 func (m *UpdateJobRequest) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -314,7 +394,7 @@ type UpdateJobResponse struct {
 func (m *UpdateJobResponse) Reset()      { *m = UpdateJobResponse{} }
 func (*UpdateJobResponse) ProtoMessage() {}
 func (*UpdateJobResponse) Descriptor() ([]byte, []int) {
-	return fileDescriptor_2b3fc28395a6d9c5, []int{5}
+	return fileDescriptor_2b3fc28395a6d9c5, []int{6}
 }
 func (m *UpdateJobResponse) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -346,6 +426,7 @@ var xxx_messageInfo_UpdateJobResponse proto.InternalMessageInfo
 func init() {
 	proto.RegisterType((*JobKey)(nil), "schedulerpb.JobKey")
 	proto.RegisterType((*JobSpec)(nil), "schedulerpb.JobSpec")
+	proto.RegisterType((*WCOffsetRange)(nil), "schedulerpb.WCOffsetRange")
 	proto.RegisterType((*AssignJobRequest)(nil), "schedulerpb.AssignJobRequest")
 	proto.RegisterType((*AssignJobResponse)(nil), "schedulerpb.AssignJobResponse")
 	proto.RegisterType((*UpdateJobRequest)(nil), "schedulerpb.UpdateJobRequest")
@@ -355,35 +436,39 @@ func init() {
 func init() { proto.RegisterFile("scheduler.proto", fileDescriptor_2b3fc28395a6d9c5) }
 
 var fileDescriptor_2b3fc28395a6d9c5 = []byte{
-	// 433 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x8c, 0x92, 0xc1, 0x6e, 0xd3, 0x40,
-	0x10, 0x86, 0xbd, 0x76, 0x5b, 0xe2, 0x31, 0x82, 0x76, 0x1b, 0xa4, 0x28, 0xd0, 0x55, 0xb1, 0x84,
-	0x94, 0x93, 0x2b, 0x05, 0x5e, 0x80, 0xdc, 0x30, 0x07, 0x24, 0x57, 0x9c, 0xab, 0xd8, 0x3b, 0x4d,
-	0xad, 0x18, 0xef, 0xe2, 0xdd, 0x08, 0xf5, 0x04, 0x8f, 0xc0, 0x03, 0xf0, 0x00, 0xdc, 0x78, 0x0d,
-	0x8e, 0x39, 0xf6, 0x48, 0x9c, 0x0b, 0xc7, 0x3c, 0x02, 0xf2, 0x3a, 0x31, 0x8e, 0x11, 0x82, 0x9b,
-	0xe7, 0x9f, 0x7f, 0x66, 0xfe, 0xfd, 0x64, 0x78, 0xa8, 0x92, 0x1b, 0xe4, 0x8b, 0x0c, 0x8b, 0x40,
-	0x16, 0x42, 0x0b, 0xea, 0x35, 0x82, 0x8c, 0x87, 0xfd, 0x99, 0x98, 0x09, 0xa3, 0x5f, 0x54, 0x5f,
-	0xb5, 0xc5, 0x0f, 0xe0, 0x28, 0x14, 0xf1, 0x6b, 0xbc, 0xa5, 0x0f, 0xc0, 0x4e, 0xf9, 0x80, 0x9c,
-	0x93, 0x91, 0x1b, 0xd9, 0x29, 0xa7, 0x7d, 0x38, 0x44, 0x29, 0x92, 0x9b, 0x81, 0x7d, 0x4e, 0x46,
-	0x4e, 0x54, 0x17, 0xfe, 0x47, 0xb8, 0x17, 0x8a, 0xf8, 0x52, 0x62, 0x52, 0x19, 0xb4, 0x90, 0x69,
-	0xb2, 0x9d, 0xa9, 0x0b, 0xfa, 0x04, 0x5c, 0x39, 0x2d, 0x74, 0xaa, 0x53, 0x91, 0x9b, 0xd1, 0xc3,
-	0xe8, 0xb7, 0x40, 0x9f, 0xc2, 0x7d, 0xa5, 0xa7, 0x85, 0xbe, 0x12, 0xd7, 0xd7, 0x0a, 0xf5, 0xc0,
-	0x31, 0xbb, 0x3d, 0xa3, 0xbd, 0x31, 0x12, 0x3d, 0x03, 0xc0, 0x9c, 0xef, 0x0c, 0x07, 0xc6, 0xe0,
-	0x62, 0xce, 0xeb, 0xb6, 0x7f, 0x01, 0xc7, 0x2f, 0x95, 0x4a, 0x67, 0x79, 0x28, 0xe2, 0x08, 0xdf,
-	0x2f, 0x50, 0x69, 0xfa, 0x18, 0xdc, 0x0f, 0xa2, 0x98, 0x63, 0x71, 0xd5, 0xbc, 0xa0, 0x57, 0x0b,
-	0xaf, 0xb8, 0xcf, 0xe1, 0xa4, 0x35, 0xa0, 0xa4, 0xc8, 0x15, 0xd2, 0x67, 0xe0, 0xcc, 0xf1, 0xd6,
-	0x78, 0xbd, 0xf1, 0x69, 0xd0, 0xe2, 0x14, 0xd4, 0x38, 0xa2, 0xaa, 0x4f, 0x47, 0x70, 0xa0, 0x24,
-	0x26, 0xe6, 0x1d, 0xde, 0xb8, 0xdf, 0xf5, 0x55, 0x18, 0x22, 0xe3, 0xf0, 0xbf, 0x10, 0x38, 0x7e,
-	0x2b, 0xf9, 0x54, 0x63, 0x2b, 0xd7, 0x7f, 0x5e, 0xd9, 0x8b, 0x6f, 0xef, 0xc7, 0x6f, 0x22, 0x38,
-	0xff, 0x8a, 0x40, 0x87, 0xd0, 0x4b, 0xc4, 0x3b, 0x99, 0xa1, 0x46, 0x83, 0xad, 0x17, 0x35, 0xb5,
-	0x7f, 0x0a, 0x27, 0xad, 0x74, 0x35, 0x84, 0xf1, 0x37, 0x02, 0x8f, 0x26, 0x99, 0x48, 0xe6, 0x93,
-	0x45, 0x9a, 0x71, 0x2c, 0x2e, 0x77, 0xab, 0x69, 0x08, 0x6e, 0xc3, 0x8c, 0x9e, 0xed, 0xdd, 0xec,
-	0xc2, 0x1f, 0xb2, 0xbf, 0xb5, 0xb7, 0xa8, 0x43, 0x70, 0x9b, 0xd3, 0x9d, 0x5d, 0x5d, 0x60, 0x9d,
-	0x5d, 0x7f, 0x24, 0x9e, 0xbc, 0x58, 0xae, 0x98, 0x75, 0xb7, 0x62, 0xd6, 0x66, 0xc5, 0xc8, 0xa7,
-	0x92, 0x91, 0xaf, 0x25, 0x23, 0xdf, 0x4b, 0x46, 0x96, 0x25, 0x23, 0x3f, 0x4a, 0x46, 0x7e, 0x96,
-	0xcc, 0xda, 0x94, 0x8c, 0x7c, 0x5e, 0x33, 0x6b, 0xb9, 0x66, 0xd6, 0xdd, 0x9a, 0x59, 0xf1, 0x91,
-	0xf9, 0xd5, 0x9f, 0xff, 0x0a, 0x00, 0x00, 0xff, 0xff, 0x3d, 0xa0, 0x63, 0x35, 0x20, 0x03, 0x00,
-	0x00,
+	// 502 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x8c, 0x93, 0x4f, 0x6e, 0xd3, 0x40,
+	0x14, 0xc6, 0x3d, 0xf9, 0x53, 0xe2, 0xe7, 0x16, 0xda, 0x49, 0x90, 0xa2, 0x40, 0x87, 0x60, 0x09,
+	0x29, 0xab, 0x54, 0x0a, 0x5c, 0x80, 0x20, 0x16, 0x35, 0x0b, 0xa4, 0xa9, 0x10, 0xcb, 0x28, 0xf6,
+	0x4c, 0x52, 0x2b, 0xc1, 0x33, 0x78, 0x26, 0x8a, 0xba, 0xe3, 0x08, 0x1c, 0x80, 0x03, 0xb0, 0xe3,
+	0x16, 0xa8, 0xcb, 0x2c, 0xbb, 0x42, 0xc4, 0xd9, 0xb0, 0xec, 0x11, 0x90, 0xc7, 0xa9, 0x1b, 0xbb,
+	0x42, 0x65, 0xe7, 0xf9, 0xde, 0x37, 0x6f, 0x7e, 0xef, 0x7b, 0x32, 0x3c, 0x52, 0xc1, 0x39, 0x67,
+	0x8b, 0x39, 0x8f, 0xfb, 0x32, 0x16, 0x5a, 0x60, 0x27, 0x17, 0xa4, 0xdf, 0x69, 0x4d, 0xc5, 0x54,
+	0x18, 0xfd, 0x24, 0xfd, 0xca, 0x2c, 0x6e, 0x1f, 0xf6, 0x3c, 0xe1, 0xbf, 0xe3, 0x17, 0xf8, 0x21,
+	0x54, 0x42, 0xd6, 0x46, 0x5d, 0xd4, 0xb3, 0x69, 0x25, 0x64, 0xb8, 0x05, 0x75, 0x2e, 0x45, 0x70,
+	0xde, 0xae, 0x74, 0x51, 0xaf, 0x4a, 0xb3, 0x83, 0xfb, 0x13, 0xc1, 0x03, 0x4f, 0xf8, 0x67, 0x92,
+	0x07, 0xa9, 0x43, 0x0b, 0x19, 0x06, 0xdb, 0x4b, 0xd9, 0x01, 0x3f, 0x05, 0x5b, 0x8e, 0x63, 0x1d,
+	0xea, 0x50, 0x44, 0xe6, 0x6e, 0x9d, 0xde, 0x0a, 0xf8, 0x39, 0xec, 0x2b, 0x3d, 0x8e, 0xf5, 0x48,
+	0x4c, 0x26, 0x8a, 0xeb, 0x76, 0xd5, 0x34, 0x77, 0x8c, 0xf6, 0xde, 0x48, 0xf8, 0x18, 0x80, 0x47,
+	0xec, 0xc6, 0x50, 0x33, 0x06, 0x9b, 0x47, 0x6c, 0x5b, 0x7e, 0x0b, 0x07, 0x59, 0x69, 0x14, 0x8f,
+	0xa3, 0x29, 0x57, 0xed, 0x7a, 0xb7, 0xda, 0x73, 0x06, 0x9d, 0xfe, 0xce, 0xb0, 0xfd, 0x8f, 0x6f,
+	0x32, 0x37, 0x4d, 0x2d, 0xc3, 0xda, 0xe5, 0xaf, 0x67, 0x16, 0xdd, 0x17, 0xb7, 0x92, 0x72, 0x27,
+	0x70, 0x50, 0x30, 0xdd, 0x21, 0x43, 0xf7, 0x91, 0x55, 0xca, 0x64, 0x4d, 0xa8, 0x2f, 0x83, 0x51,
+	0xc8, 0xcc, 0x50, 0x75, 0x5a, 0x5b, 0x06, 0xa7, 0xcc, 0x3d, 0x81, 0xc3, 0xd7, 0x4a, 0x85, 0xd3,
+	0xc8, 0x13, 0x3e, 0xe5, 0x9f, 0x17, 0x5c, 0x69, 0xfc, 0x04, 0xec, 0xa5, 0x88, 0x67, 0x3c, 0x1e,
+	0xe5, 0x89, 0x37, 0x32, 0xe1, 0x94, 0xb9, 0x0c, 0x8e, 0x76, 0x2e, 0x28, 0x29, 0x22, 0xc5, 0xf1,
+	0x0b, 0xa8, 0xce, 0xf8, 0x85, 0xf1, 0x3a, 0x83, 0x66, 0x61, 0xd4, 0x6c, 0x7d, 0x34, 0xad, 0xe3,
+	0x1e, 0xd4, 0x94, 0xe4, 0x81, 0x41, 0x73, 0x06, 0xad, 0xb2, 0x2f, 0xdd, 0x1a, 0x35, 0x0e, 0xf7,
+	0x1b, 0x82, 0xc3, 0x0f, 0x92, 0x8d, 0x35, 0xdf, 0xe1, 0xfa, 0xcf, 0x57, 0x0a, 0xf8, 0x95, 0x22,
+	0x7e, 0x8e, 0x50, 0xbd, 0x0f, 0x01, 0x77, 0xa0, 0x11, 0x88, 0x4f, 0x72, 0xce, 0x35, 0x37, 0x5b,
+	0x6e, 0xd0, 0xfc, 0xec, 0x36, 0xe1, 0x68, 0x87, 0x2e, 0x0b, 0x61, 0xf0, 0x03, 0xc1, 0xe3, 0xe1,
+	0x5c, 0x04, 0xb3, 0xe1, 0x22, 0x9c, 0x33, 0x1e, 0x9f, 0xdd, 0xb4, 0xc6, 0x1e, 0xd8, 0x79, 0x66,
+	0xf8, 0xb8, 0xf0, 0x66, 0x39, 0xfc, 0x0e, 0xf9, 0x57, 0x79, 0x1b, 0xb5, 0x07, 0x76, 0xfe, 0x74,
+	0xa9, 0x57, 0x39, 0xb0, 0x52, 0xaf, 0x3b, 0xc4, 0xc3, 0x57, 0xab, 0x35, 0xb1, 0xae, 0xd6, 0xc4,
+	0xba, 0x5e, 0x13, 0xf4, 0x25, 0x21, 0xe8, 0x7b, 0x42, 0xd0, 0x65, 0x42, 0xd0, 0x2a, 0x21, 0xe8,
+	0x77, 0x42, 0xd0, 0x9f, 0x84, 0x58, 0xd7, 0x09, 0x41, 0x5f, 0x37, 0xc4, 0x5a, 0x6d, 0x88, 0x75,
+	0xb5, 0x21, 0x96, 0xbf, 0x67, 0x7e, 0xcd, 0x97, 0x7f, 0x03, 0x00, 0x00, 0xff, 0xff, 0x6e, 0x89,
+	0xfc, 0xad, 0xd0, 0x03, 0x00, 0x00,
 }
 
 func (this *JobKey) Equal(that interface{}) bool {
@@ -442,6 +527,44 @@ func (this *JobSpec) Equal(that interface{}) bool {
 		return false
 	}
 	if this.EndOffset != that1.EndOffset {
+		return false
+	}
+	if len(this.OffsetRanges) != len(that1.OffsetRanges) {
+		return false
+	}
+	for i := range this.OffsetRanges {
+		if !this.OffsetRanges[i].Equal(&that1.OffsetRanges[i]) {
+			return false
+		}
+	}
+	return true
+}
+func (this *WCOffsetRange) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*WCOffsetRange)
+	if !ok {
+		that2, ok := that.(WCOffsetRange)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if this.StartOffset != that1.StartOffset {
+		return false
+	}
+	if this.EndOffset != that1.EndOffset {
+		return false
+	}
+	if this.WcId != that1.WcId {
 		return false
 	}
 	return true
@@ -566,12 +689,31 @@ func (this *JobSpec) GoString() string {
 	if this == nil {
 		return "nil"
 	}
-	s := make([]string, 0, 8)
+	s := make([]string, 0, 9)
 	s = append(s, "&schedulerpb.JobSpec{")
 	s = append(s, "Topic: "+fmt.Sprintf("%#v", this.Topic)+",\n")
 	s = append(s, "Partition: "+fmt.Sprintf("%#v", this.Partition)+",\n")
 	s = append(s, "StartOffset: "+fmt.Sprintf("%#v", this.StartOffset)+",\n")
 	s = append(s, "EndOffset: "+fmt.Sprintf("%#v", this.EndOffset)+",\n")
+	if this.OffsetRanges != nil {
+		vs := make([]WCOffsetRange, len(this.OffsetRanges))
+		for i := range vs {
+			vs[i] = this.OffsetRanges[i]
+		}
+		s = append(s, "OffsetRanges: "+fmt.Sprintf("%#v", vs)+",\n")
+	}
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *WCOffsetRange) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 7)
+	s = append(s, "&schedulerpb.WCOffsetRange{")
+	s = append(s, "StartOffset: "+fmt.Sprintf("%#v", this.StartOffset)+",\n")
+	s = append(s, "EndOffset: "+fmt.Sprintf("%#v", this.EndOffset)+",\n")
+	s = append(s, "WcId: "+fmt.Sprintf("%#v", this.WcId)+",\n")
 	s = append(s, "}")
 	return strings.Join(s, "")
 }
@@ -806,6 +948,20 @@ func (m *JobSpec) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	_ = i
 	var l int
 	_ = l
+	if len(m.OffsetRanges) > 0 {
+		for iNdEx := len(m.OffsetRanges) - 1; iNdEx >= 0; iNdEx-- {
+			{
+				size, err := m.OffsetRanges[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				if err != nil {
+					return 0, err
+				}
+				i -= size
+				i = encodeVarintScheduler(dAtA, i, uint64(size))
+			}
+			i--
+			dAtA[i] = 0x2a
+		}
+	}
 	if m.EndOffset != 0 {
 		i = encodeVarintScheduler(dAtA, i, uint64(m.EndOffset))
 		i--
@@ -827,6 +983,44 @@ func (m *JobSpec) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 		i = encodeVarintScheduler(dAtA, i, uint64(len(m.Topic)))
 		i--
 		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *WCOffsetRange) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *WCOffsetRange) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *WCOffsetRange) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.WcId != 0 {
+		i = encodeVarintScheduler(dAtA, i, uint64(m.WcId))
+		i--
+		dAtA[i] = 0x18
+	}
+	if m.EndOffset != 0 {
+		i = encodeVarintScheduler(dAtA, i, uint64(m.EndOffset))
+		i--
+		dAtA[i] = 0x10
+	}
+	if m.StartOffset != 0 {
+		i = encodeVarintScheduler(dAtA, i, uint64(m.StartOffset))
+		i--
+		dAtA[i] = 0x8
 	}
 	return len(dAtA) - i, nil
 }
@@ -1041,6 +1235,30 @@ func (m *JobSpec) Size() (n int) {
 	if m.EndOffset != 0 {
 		n += 1 + sovScheduler(uint64(m.EndOffset))
 	}
+	if len(m.OffsetRanges) > 0 {
+		for _, e := range m.OffsetRanges {
+			l = e.Size()
+			n += 1 + l + sovScheduler(uint64(l))
+		}
+	}
+	return n
+}
+
+func (m *WCOffsetRange) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.StartOffset != 0 {
+		n += 1 + sovScheduler(uint64(m.StartOffset))
+	}
+	if m.EndOffset != 0 {
+		n += 1 + sovScheduler(uint64(m.EndOffset))
+	}
+	if m.WcId != 0 {
+		n += 1 + sovScheduler(uint64(m.WcId))
+	}
 	return n
 }
 
@@ -1128,11 +1346,29 @@ func (this *JobSpec) String() string {
 	if this == nil {
 		return "nil"
 	}
+	repeatedStringForOffsetRanges := "[]WCOffsetRange{"
+	for _, f := range this.OffsetRanges {
+		repeatedStringForOffsetRanges += strings.Replace(strings.Replace(f.String(), "WCOffsetRange", "WCOffsetRange", 1), `&`, ``, 1) + ","
+	}
+	repeatedStringForOffsetRanges += "}"
 	s := strings.Join([]string{`&JobSpec{`,
 		`Topic:` + fmt.Sprintf("%v", this.Topic) + `,`,
 		`Partition:` + fmt.Sprintf("%v", this.Partition) + `,`,
 		`StartOffset:` + fmt.Sprintf("%v", this.StartOffset) + `,`,
 		`EndOffset:` + fmt.Sprintf("%v", this.EndOffset) + `,`,
+		`OffsetRanges:` + repeatedStringForOffsetRanges + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *WCOffsetRange) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&WCOffsetRange{`,
+		`StartOffset:` + fmt.Sprintf("%v", this.StartOffset) + `,`,
+		`EndOffset:` + fmt.Sprintf("%v", this.EndOffset) + `,`,
+		`WcId:` + fmt.Sprintf("%v", this.WcId) + `,`,
 		`}`,
 	}, "")
 	return s
@@ -1403,6 +1639,147 @@ func (m *JobSpec) Unmarshal(dAtA []byte) error {
 				b := dAtA[iNdEx]
 				iNdEx++
 				m.EndOffset |= int64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 5:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field OffsetRanges", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowScheduler
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthScheduler
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthScheduler
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.OffsetRanges = append(m.OffsetRanges, WCOffsetRange{})
+			if err := m.OffsetRanges[len(m.OffsetRanges)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipScheduler(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthScheduler
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *WCOffsetRange) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowScheduler
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: WCOffsetRange: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: WCOffsetRange: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field StartOffset", wireType)
+			}
+			m.StartOffset = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowScheduler
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.StartOffset |= int64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 2:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field EndOffset", wireType)
+			}
+			m.EndOffset = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowScheduler
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.EndOffset |= int64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 3:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field WcId", wireType)
+			}
+			m.WcId = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowScheduler
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.WcId |= int32(b&0x7F) << shift
 				if b < 0x80 {
 					break
 				}

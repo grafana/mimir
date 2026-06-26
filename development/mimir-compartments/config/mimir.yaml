@@ -46,7 +46,8 @@ ingester:
 
 block_builder:
   scheduler_config:
-    address: block-builder-scheduler-0:9095
+    # Each block-builder connects to its own read compartment's scheduler; the concrete address is
+    # set explicitly per block-builder via -block-builder.scheduler.address.
     update_interval: 5s
     max_update_age: 30m
 

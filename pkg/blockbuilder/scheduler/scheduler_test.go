@@ -15,6 +15,7 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/go-kit/log"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
@@ -26,6 +27,7 @@ import (
 	"github.com/twmb/franz-go/pkg/kgo"
 
 	"github.com/grafana/mimir/pkg/blockbuilder/schedulerpb"
+	"github.com/grafana/mimir/pkg/compartments"
 	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/testkafka"
@@ -57,7 +59,7 @@ func mustSchedulerWithKafkaAddrAndDialer(t *testing.T, addr string, dialer diale
 
 	reg := prometheus.NewPedanticRegistry()
 	sched, err := New(cfg, test.NewTestingLogger(t), reg)
-	sched.adminClient = kadm.NewClient(cli)
+	sched.adminClients = []*kadm.Client{kadm.NewClient(cli)}
 	require.NoError(t, err)
 	return sched, cli
 }
@@ -66,6 +68,132 @@ func mustScheduler(t *testing.T, partitions int32) (*BlockBuilderScheduler, *kgo
 	var vnet kfake.VirtualNetwork
 	_, kafkaAddr := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, partitions, "ingest", testkafka.WithVirtualNetwork(&vnet))
 	return mustSchedulerWithKafkaAddrAndDialer(t, kafkaAddr, vnet.DialContext)
+}
+
+func mustKafkaClient(t *testing.T, addrs ...string) *kgo.Client {
+	writeClient, err := kgo.NewClient(
+		kgo.SeedBrokers(addrs...),
+		// We will choose the partition of each record.
+		kgo.RecordPartitioner(kgo.ManualPartitioner()),
+	)
+	require.NoError(t, err)
+	t.Cleanup(writeClient.Close)
+	return writeClient
+}
+
+func testMetrics(t testing.TB) *schedulerMetrics {
+	t.Helper()
+	m := newSchedulerMetrics(prometheus.NewPedanticRegistry())
+	return &m
+}
+
+// groupByPartition groups a flat list of per-(partition, WC) offsets by
+// partition, matching what completeObservationMode passes to populateInitialJobs.
+func groupByPartition(offs ...partitionOffsets) map[int32][]partitionOffsets {
+	m := make(map[int32][]partitionOffsets)
+	for _, off := range offs {
+		m[off.partition] = append(m[off.partition], off)
+	}
+	return m
+}
+
+func TestPartitionStateBundlesWCsOnRollover(t *testing.T) {
+	ps := newPartitionState("mimir-read-comp-1", 0, 2, true, testMetrics(t), log.NewNopLogger())
+	jobSize := time.Hour
+	t0 := time.Date(2026, 6, 16, 10, 0, 0, 0, time.UTC)
+
+	// First observation in bucket t0 seeds the per-WC start offsets.
+	ps.updateEndOffset(0, 100)
+	ps.updateEndOffset(1, 200)
+	job, err := ps.updateTime(t0, jobSize)
+	require.NoError(t, err)
+	require.Nil(t, job, "expected no job on first update")
+	// More data arrives in the same bucket.
+	ps.updateEndOffset(0, 150)
+	ps.updateEndOffset(1, 260)
+	_, err = ps.updateTime(t0.Add(10*time.Minute), jobSize)
+	require.NoError(t, err)
+	// Next bucket triggers a job covering both WCs.
+	ps.updateEndOffset(0, 150)
+	ps.updateEndOffset(1, 280)
+	job, err = ps.updateTime(t0.Add(time.Hour), jobSize)
+	require.NoError(t, err)
+	require.NotNil(t, job, "expected a job on bucket rollover")
+	if job.Topic != "mimir-read-comp-1" || job.Partition != 0 {
+		t.Fatalf("unexpected job identity: topic=%q partition=%d", job.Topic, job.Partition)
+	}
+	if len(job.Ranges()) != 2 {
+		t.Fatalf("unexpected job: %+v", job)
+	}
+	wantWC0 := schedulerpb.WCOffsetRange{WcId: 0, StartOffset: 100, EndOffset: 150}
+	wantWC1 := schedulerpb.WCOffsetRange{WcId: 1, StartOffset: 200, EndOffset: 280}
+	if job.Ranges()[0] != wantWC0 || job.Ranges()[1] != wantWC1 {
+		t.Fatalf("wc ranges = %+v", job.Ranges())
+	}
+}
+
+// TestPartitionState_AbsentWCKeepsPriorOffset asserts that when a WC is absent
+// from an observation (it didn't report the partition that cycle), it keeps its
+// previously observed end offset rather than being reset: it's omitted from the
+// job while it has no new data, and once it does, its range resumes from the
+// retained offset.
+func TestPartitionState_AbsentWCKeepsPriorOffset(t *testing.T) {
+	ps := newPartitionState("topic", 0, 2, true, testMetrics(t), log.NewNopLogger())
+	jobSize := time.Hour
+	t0 := time.Date(2026, 6, 16, 10, 0, 0, 0, time.UTC)
+
+	// Seed both WCs in the first bucket.
+	ps.updateEndOffset(0, 100)
+	ps.updateEndOffset(1, 200)
+	_, err := ps.updateTime(t0, jobSize)
+	require.NoError(t, err)
+
+	// Bucket 2: only WC 0 reports. WC 1 is absent, so it's omitted from the job
+	// (no new data) and keeps its prior offset.
+	ps.updateEndOffset(0, 150)
+	job, err := ps.updateTime(t0.Add(time.Hour), jobSize)
+	require.NoError(t, err)
+	require.NotNil(t, job)
+	require.Len(t, job.Ranges(), 1)
+	require.Equal(t, schedulerpb.WCOffsetRange{WcId: 0, StartOffset: 100, EndOffset: 150}, job.Ranges()[0])
+
+	// Bucket 3: WC 1 finally reports. Its range must resume from the retained
+	// offset (200), not reset to 0.
+	ps.updateEndOffset(1, 260)
+	job, err = ps.updateTime(t0.Add(2*time.Hour), jobSize)
+	require.NoError(t, err)
+	require.NotNil(t, job)
+	require.Len(t, job.Ranges(), 1)
+	require.Equal(t, schedulerpb.WCOffsetRange{WcId: 1, StartOffset: 200, EndOffset: 260}, job.Ranges()[0])
+}
+
+func TestWCKafkaConfigs(t *testing.T) {
+	cfg := Config{
+		Kafka: ingest.KafkaConfig{
+			Topic:   "mimir-read-comp-1",
+			Address: flagext.StringSliceCSV{"kafka-write-<write-compartment-id>:9092"},
+		},
+	}
+	cfg.Compartments = compartments.Config{
+		Enabled: true,
+		Read:    compartments.ReadConfig{NumCompartments: 3},
+		Write:   compartments.WriteConfig{NumCompartments: 3},
+	}
+	sched, err := New(cfg, test.NewTestingLogger(t), prometheus.NewPedanticRegistry())
+	require.NoError(t, err)
+	got := sched.wcKafkaConfigs()
+	if len(got) != 3 {
+		t.Fatalf("len = %d, want 3", len(got))
+	}
+	for wc := 0; wc < 3; wc++ {
+		if got[wc].Topic != "mimir-read-comp-1" {
+			t.Fatalf("wc %d topic = %q", wc, got[wc].Topic)
+		}
+		want := fmt.Sprintf("kafka-write-%d:9092", wc)
+		if got[wc].Address.String() != want {
+			t.Fatalf("wc %d address = %q, want %q", wc, got[wc].Address.String(), want)
+		}
+	}
 }
 
 // observationCompleteLocked: a getter for tests.
@@ -106,7 +234,7 @@ func TestService(t *testing.T) {
 		reg := prometheus.NewPedanticRegistry()
 		sched, err := New(cfg, test.NewTestingLogger(t), reg)
 		require.NoError(t, err)
-		sched.adminClient = kadm.NewClient(cli)
+		sched.adminClients = []*kadm.Client{kadm.NewClient(cli)}
 
 		// Signal our channel any time the schedule is updated.
 		scheduleUpdated := make(chan struct{})
@@ -171,11 +299,11 @@ func TestService(t *testing.T) {
 		require.NoError(t, sched.flushOffsetsToKafka(ctx))
 
 		// And our offsets should have advanced.
-		offs, err := sched.fetchCommittedOffsets(ctx)
+		offs, err := sched.fetchCommittedOffsets(ctx, 0)
 		require.NoError(t, err)
 		o, ok := offs.Lookup(spec.Topic, spec.Partition)
 		require.True(t, ok)
-		require.Equal(t, spec.EndOffset, o.At)
+		require.Equal(t, spec.Ranges()[0].EndOffset, o.At)
 	})
 }
 
@@ -194,9 +322,9 @@ func TestServiceStopsCleanlyDuringStartupObservation(t *testing.T) {
 func TestStartup(t *testing.T) {
 	sched, _ := mustScheduler(t, 4)
 	// (a new scheduler starts in observation mode.)
-	sched.getPartitionState("ingest", 64).initCommit(1000)
-	sched.getPartitionState("ingest", 65).initCommit(256)
-	sched.getPartitionState("ingest", 66).initCommit(57)
+	sched.getPartitionState("ingest", 64).initCommitWC(0, 1000)
+	sched.getPartitionState("ingest", 65).initCommitWC(0, 256)
+	sched.getPartitionState("ingest", 66).initCommitWC(0, 57)
 
 	{
 		_, _, err := sched.assignJob("w0")
@@ -209,36 +337,21 @@ func TestStartup(t *testing.T) {
 			id:    "ingest/64/1000",
 			epoch: 10,
 		},
-		spec: schedulerpb.JobSpec{
-			Topic:       "ingest",
-			Partition:   64,
-			StartOffset: 1000,
-			EndOffset:   1100,
-		},
+		spec: schedulerpb.NewSingleWCJobSpec("ingest", 64, 1000, 1100),
 	}
 	j2 := job[schedulerpb.JobSpec]{
 		key: jobKey{
 			id:    "ingest/65/256",
 			epoch: 11,
 		},
-		spec: schedulerpb.JobSpec{
-			Topic:       "ingest",
-			Partition:   65,
-			StartOffset: 256,
-			EndOffset:   300,
-		},
+		spec: schedulerpb.NewSingleWCJobSpec("ingest", 65, 256, 300),
 	}
 	j3 := job[schedulerpb.JobSpec]{
 		key: jobKey{
 			id:    "ingest/66/57",
 			epoch: 12,
 		},
-		spec: schedulerpb.JobSpec{
-			Topic:       "ingest",
-			Partition:   66,
-			StartOffset: 57,
-			EndOffset:   100,
-		},
+		spec: schedulerpb.NewSingleWCJobSpec("ingest", 66, 57, 100),
 	}
 
 	// Clients will be pinging with their updates for some time.
@@ -278,12 +391,7 @@ func TestStartup(t *testing.T) {
 	}
 
 	// And we can resume normal operation:
-	e := sched.jobs.add("ingest/65/300", schedulerpb.JobSpec{
-		Topic:       "ingest",
-		Partition:   65,
-		StartOffset: 300,
-		EndOffset:   400,
-	})
+	e := sched.jobs.add("ingest/65/300", schedulerpb.NewSingleWCJobSpec("ingest", 65, 300, 400))
 	require.NoError(t, e)
 	a1key, a1spec, err := sched.assignJob("w0")
 	require.NoError(t, err)
@@ -291,6 +399,11 @@ func TestStartup(t *testing.T) {
 	require.Equal(t, "ingest/65/300", a1key.id)
 
 	requireGaps(t, sched.register.(*prometheus.Registry), 0, 0)
+}
+
+func ptrSpec(topic string, partition int32, startOffset, endOffset int64) *schedulerpb.JobSpec {
+	s := schedulerpb.NewSingleWCJobSpec(topic, partition, startOffset, endOffset)
+	return &s
 }
 
 func requireGaps(t *testing.T, reg *prometheus.Registry, planned, committed int, msgAndArgs ...any) {
@@ -321,24 +434,9 @@ func TestAssignJobSkipsObsoleteOffsets(t *testing.T) {
 	sched.cfg.MaxJobsPerPartition = 0
 	sched.completeObservationMode(context.Background())
 	// Add some jobs, then move the committed offsets past some of them.
-	s1 := schedulerpb.JobSpec{
-		Topic:       "ingest",
-		Partition:   1,
-		StartOffset: 256,
-		EndOffset:   9111,
-	}
-	s2 := schedulerpb.JobSpec{
-		Topic:       "ingest",
-		Partition:   2,
-		StartOffset: 50,
-		EndOffset:   128,
-	}
-	s3 := schedulerpb.JobSpec{
-		Topic:       "ingest",
-		Partition:   2,
-		StartOffset: 700,
-		EndOffset:   900,
-	}
+	s1 := schedulerpb.NewSingleWCJobSpec("ingest", 1, 256, 9111)
+	s2 := schedulerpb.NewSingleWCJobSpec("ingest", 2, 50, 128)
+	s3 := schedulerpb.NewSingleWCJobSpec("ingest", 2, 700, 900)
 
 	require.NoError(t, sched.jobs.add("ingest/1/256", s1))
 	require.NoError(t, sched.jobs.add("ingest/2/50", s2))
@@ -347,9 +445,9 @@ func TestAssignJobSkipsObsoleteOffsets(t *testing.T) {
 	require.Equal(t, 3, sched.jobs.count())
 
 	p1 := sched.getPartitionState("ingest", 1)
-	p1.initCommit(256)
+	p1.initCommitWC(0, 256)
 	p2 := sched.getPartitionState("ingest", 2)
-	p2.initCommit(500)
+	p2.initCommitWC(0, 500)
 
 	// Advancing offsets doesn't actually remove any jobs.
 	require.Equal(t, 3, sched.jobs.count())
@@ -376,19 +474,14 @@ func TestAssignJobSkipsObsoleteOffsets_PriorScheduler(t *testing.T) {
 	sched.cfg.MaxJobsPerPartition = 0
 	sched.completeObservationMode(context.Background())
 	// Add some jobs, then move the committed offsets past some of them.
-	s1 := schedulerpb.JobSpec{
-		Topic:       "ingest",
-		Partition:   1,
-		StartOffset: 256,
-		EndOffset:   9111,
-	}
+	s1 := schedulerpb.NewSingleWCJobSpec("ingest", 1, 256, 9111)
 
 	require.NoError(t, sched.jobs.add("ingest/1/256", s1))
 	require.Equal(t, 1, sched.jobs.count())
 
 	// Simulate a completion of a job that was created by a prior scheduler.
 	p1 := sched.getPartitionState("ingest", 1)
-	p1.initCommit(5000)
+	p1.initCommitWC(0, 5000)
 	// Advancing offsets doesn't actually remove any jobs.
 	require.Equal(t, 1, sched.jobs.count())
 
@@ -413,15 +506,15 @@ func TestObservations(t *testing.T) {
 	sched, _ := mustScheduler(t, 10)
 	// Initially we're in observation mode. We have Kafka's commit offsets, but no client jobs.
 
-	sched.getPartitionState("ingest", 1).initCommit(5000)
-	sched.getPartitionState("ingest", 2).initCommit(800)
-	sched.getPartitionState("ingest", 3).initCommit(974)
-	sched.getPartitionState("ingest", 4).initCommit(500)
-	sched.getPartitionState("ingest", 5).initCommit(12000)
+	sched.getPartitionState("ingest", 1).initCommitWC(0, 5000)
+	sched.getPartitionState("ingest", 2).initCommitWC(0, 800)
+	sched.getPartitionState("ingest", 3).initCommitWC(0, 974)
+	sched.getPartitionState("ingest", 4).initCommitWC(0, 500)
+	sched.getPartitionState("ingest", 5).initCommitWC(0, 12000)
 	sched.getPartitionState("ingest", 6) // no commit for 6
 	sched.getPartitionState("ingest", 7) // no commit for 7
-	sched.getPartitionState("ingest", 8).initCommit(1000)
-	sched.getPartitionState("ingest", 9).initCommit(1000)
+	sched.getPartitionState("ingest", 8).initCommitWC(0, 1000)
+	sched.getPartitionState("ingest", 9).initCommitWC(0, 1000)
 
 	{
 		nq := newJobQueue(988*time.Hour, noOpJobCreationPolicy[schedulerpb.JobSpec]{}, 2, sched.metrics, test.NewTestingLogger(t))
@@ -446,13 +539,8 @@ func TestObservations(t *testing.T) {
 	maybeBadEpoch := errors.New("maybe bad epoch")
 	mkJob := func(isComplete bool, worker string, partition int32, id string, epoch int64, startOffset, endOffset int64, expectStartupErr, expectNormalErr error) {
 		clientData = append(clientData, observation{
-			key: jobKey{id: id, epoch: epoch},
-			spec: schedulerpb.JobSpec{
-				Topic:       "ingest",
-				Partition:   partition,
-				StartOffset: startOffset,
-				EndOffset:   endOffset,
-			},
+			key:              jobKey{id: id, epoch: epoch},
+			spec:             schedulerpb.NewSingleWCJobSpec("ingest", partition, startOffset, endOffset),
 			workerID:         worker,
 			complete:         isComplete,
 			expectStartupErr: expectStartupErr,
@@ -556,7 +644,7 @@ func TestObservations(t *testing.T) {
 	verifyCommits()
 
 	// Make sure the resumption offsets account for the gaps.
-	offs, err := sched.consumptionOffsets(context.Background(), "ingest", time.Now())
+	offs, err := sched.consumptionOffsets(context.Background(), "ingest", time.Now(), 0)
 	require.NoError(t, err)
 	require.ElementsMatch(t, []partitionOffsets{
 		{topic: "ingest", partition: 0, resume: 0},
@@ -583,21 +671,16 @@ func TestObservations(t *testing.T) {
 func (s *BlockBuilderScheduler) requireOffset(t *testing.T, topic string, partition int32, expected int64, msgAndArgs ...any) {
 	t.Helper()
 	ps := s.getPartitionState(topic, partition)
-	require.Equal(t, expected, ps.offsets.committed.offset(), msgAndArgs...)
+	require.Equal(t, expected, ps.committedOffset(0), msgAndArgs...)
 }
 
 func TestOffsetMovement(t *testing.T) {
 	sched, _ := mustScheduler(t, 4)
 	ps := sched.getPartitionState("ingest", 1)
-	ps.initCommit(5000)
+	ps.initCommitWC(0, 5000)
 	sched.completeObservationMode(context.Background())
 
-	spec := schedulerpb.JobSpec{
-		Topic:       "ingest",
-		Partition:   1,
-		StartOffset: 5000,
-		EndOffset:   6000,
-	}
+	spec := schedulerpb.NewSingleWCJobSpec("ingest", 1, 5000, 6000)
 
 	e := sched.jobs.add("ingest/1/5524", spec)
 	require.NoError(t, e)
@@ -613,21 +696,11 @@ func TestOffsetMovement(t *testing.T) {
 	sched.requireOffset(t, "ingest", 1, 6000, "re-completing the same job shouldn't change the commit")
 
 	p1 := sched.getPartitionState("ingest", 1)
-	p1.offsets.committed.advance("ancient_job", schedulerpb.JobSpec{
-		Topic:       "ingest",
-		Partition:   1,
-		StartOffset: 1000,
-		EndOffset:   2000,
-	})
+	p1.offsets[0].committed.advance("ancient_job", schedulerpb.NewSingleWCJobSpec("ingest", 1, 1000, 2000).Ranges()[0])
 	sched.requireOffset(t, "ingest", 1, 6000, "committed offsets cannot rewind")
 
 	p2 := sched.getPartitionState("ingest", 2)
-	p2.offsets.committed.advance("ancient_job2", schedulerpb.JobSpec{
-		Topic:       "ingest",
-		Partition:   2,
-		StartOffset: 6000,
-		EndOffset:   6222,
-	})
+	p2.offsets[0].committed.advance("ancient_job2", schedulerpb.NewSingleWCJobSpec("ingest", 2, 6000, 6222).Ranges()[0])
 	sched.requireOffset(t, "ingest", 2, 6222, "should create knowledge of partition 2")
 }
 
@@ -639,7 +712,7 @@ func TestKafkaFlush(t *testing.T) {
 	flushAndRequireOffsets := func(topic string, offsets map[int32]int64, args ...any) {
 		require.NoError(t, sched.flushOffsetsToKafka(ctx))
 
-		offs, err := sched.fetchCommittedOffsets(ctx)
+		offs, err := sched.fetchCommittedOffsets(ctx, 0)
 		require.NoError(t, err)
 		offcount := 0
 		offs.Each(func(o kadm.Offset) {
@@ -660,19 +733,19 @@ func TestKafkaFlush(t *testing.T) {
 	// (No commit yet for p0.)
 
 	p1 := sched.getPartitionState("ingest", 1)
-	p1.initCommit(2000)
+	p1.initCommitWC(0, 2000)
 	flushAndRequireOffsets("ingest", map[int32]int64{
 		1: 2000,
 	})
 
 	p4 := sched.getPartitionState("ingest", 4)
-	p4.initCommit(65535)
+	p4.initCommitWC(0, 65535)
 	flushAndRequireOffsets("ingest", map[int32]int64{
 		1: 2000,
 		4: 65535,
 	})
 
-	p1.initCommit(4000)
+	p1.initCommitWC(0, 4000)
 	flushAndRequireOffsets("ingest", map[int32]int64{
 		1: 4000,
 		4: 65535,
@@ -738,235 +811,623 @@ func TestUpdateSchedule(t *testing.T) {
 	`), "cortex_blockbuilder_scheduler_partition_end_offset"))
 }
 
+func TestUpdateScheduleMultiWC(t *testing.T) {
+	ctx := context.Background()
+	const topic = "comp-0"
+
+	// Two write WC clusters, each holding partition 0 of the read topic.
+	_, addr0 := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, 1, topic)
+	_, addr1 := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, 1, topic)
+	cli0 := mustKafkaClient(t, addr0)
+	cli1 := mustKafkaClient(t, addr1)
+
+	cfg := Config{
+		Kafka: ingest.KafkaConfig{
+			Address:      flagext.StringSliceCSV{addr0},
+			Topic:        topic,
+			FetchMaxWait: 10 * time.Millisecond,
+		},
+		Compartments: compartments.Config{
+			Enabled: true,
+			Read:    compartments.ReadConfig{NumCompartments: 1},
+			Write:   compartments.WriteConfig{NumCompartments: 2},
+		},
+		ConsumerGroup:       "test-builder",
+		SchedulingInterval:  1000000 * time.Hour,
+		JobSize:             time.Hour,
+		MaxJobsPerPartition: 1,
+	}
+	reg := prometheus.NewPedanticRegistry()
+	sched, err := New(cfg, test.NewTestingLogger(t), reg)
+	require.NoError(t, err)
+	sched.adminClients = []*kadm.Client{kadm.NewClient(cli0), kadm.NewClient(cli1)}
+	sched.completeObservationMode(ctx)
+
+	// WC 0 holds 3 records, WC 1 holds 5, on partition 0.
+	produce := func(cli *kgo.Client, n int) {
+		for i := 0; i < n; i++ {
+			r := cli.ProduceSync(ctx, &kgo.Record{Timestamp: time.Now(), Value: []byte("v"), Topic: topic, Partition: 0})
+			require.NoError(t, r.FirstErr())
+		}
+	}
+	produce(cli0, 3)
+	produce(cli1, 5)
+
+	// Force a bucket rollover on the next updateSchedule.
+	ps := sched.getPartitionState(sched.cfg.Kafka.Topic, 0)
+	ps.jobBucket = time.Now().Add(-2 * time.Hour).Truncate(time.Hour)
+
+	sched.updateSchedule(ctx)
+
+	require.Equal(t, 1, ps.pendingJobs.Len())
+	front := ps.pendingJobs.Front().Value.(*schedulerpb.JobSpec)
+	require.Len(t, front.Ranges(), 2)
+	require.Equal(t, int64(3), front.Ranges()[0].EndOffset)
+	require.Equal(t, int64(5), front.Ranges()[1].EndOffset)
+}
+
+func TestCommitPerWC(t *testing.T) {
+	ctx := context.Background()
+	const topic = "comp-0"
+
+	_, addr0 := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, 1, topic)
+	_, addr1 := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, 1, topic)
+	cli0 := mustKafkaClient(t, addr0)
+	cli1 := mustKafkaClient(t, addr1)
+
+	cfg := Config{
+		Kafka: ingest.KafkaConfig{
+			Address:      flagext.StringSliceCSV{addr0},
+			Topic:        topic,
+			FetchMaxWait: 10 * time.Millisecond,
+		},
+		Compartments: compartments.Config{
+			Enabled: true,
+			Read:    compartments.ReadConfig{NumCompartments: 1},
+			Write:   compartments.WriteConfig{NumCompartments: 2},
+		},
+		ConsumerGroup:       "test-builder",
+		SchedulingInterval:  1000000 * time.Hour,
+		JobSize:             time.Hour,
+		MaxJobsPerPartition: 0,
+	}
+	sched, err := New(cfg, test.NewTestingLogger(t), prometheus.NewPedanticRegistry())
+	require.NoError(t, err)
+	sched.adminClients = []*kadm.Client{kadm.NewClient(cli0), kadm.NewClient(cli1)}
+	sched.completeObservationMode(ctx)
+
+	ps := sched.getPartitionState(sched.cfg.Kafka.Topic, 0)
+	spec := schedulerpb.JobSpec{
+		Topic:     topic,
+		Partition: 0,
+		OffsetRanges: []schedulerpb.WCOffsetRange{
+			{WcId: 0, StartOffset: 0, EndOffset: 100},
+			{WcId: 1, StartOffset: 0, EndOffset: 200},
+		},
+	}
+	ps.addPlannedJob("comp-0/0/0", spec)
+	require.NoError(t, ps.completeJob("comp-0/0/0"))
+
+	// Completing the job advances each WC's committed offset independently.
+	require.Equal(t, int64(100), ps.committedOffset(0))
+	require.Equal(t, int64(200), ps.committedOffset(1))
+
+	committed0, _ := sched.snapOffsets(0)
+	committed1, _ := sched.snapOffsets(1)
+	require.NotEmpty(t, committed0)
+	require.NotEmpty(t, committed1)
+
+	require.NoError(t, sched.flushOffsetsToKafka(ctx))
+
+	// Each WC's range was committed to its own cluster's consumer group.
+	offs0, err := sched.adminClients[0].FetchOffsets(ctx, sched.cfg.ConsumerGroup)
+	require.NoError(t, err)
+	o0, ok := offs0.Lookup(topic, 0)
+	require.True(t, ok)
+	require.Equal(t, int64(100), o0.At)
+
+	offs1, err := sched.adminClients[1].FetchOffsets(ctx, sched.cfg.ConsumerGroup)
+	require.NoError(t, err)
+	o1, ok := offs1.Lookup(topic, 0)
+	require.True(t, ok)
+	require.Equal(t, int64(200), o1.At)
+}
+
+// mustMultiWCScheduler builds a compartments-enabled scheduler backed by one
+// real Kafka cluster per write WC, all serving the same read topic.
+func mustMultiWCScheduler(t *testing.T, partitions int32, topic string, numWriteWCs int) (*BlockBuilderScheduler, []*kgo.Client) {
+	clients := make([]*kgo.Client, numWriteWCs)
+	admins := make([]*kadm.Client, numWriteWCs)
+	var addr0 string
+	for wc := 0; wc < numWriteWCs; wc++ {
+		_, addr := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, partitions, topic)
+		if wc == 0 {
+			addr0 = addr
+		}
+		clients[wc] = mustKafkaClient(t, addr)
+		admins[wc] = kadm.NewClient(clients[wc])
+	}
+
+	cfg := Config{
+		Kafka: ingest.KafkaConfig{
+			Address:      flagext.StringSliceCSV{addr0},
+			Topic:        topic,
+			FetchMaxWait: 10 * time.Millisecond,
+		},
+		Compartments: compartments.Config{
+			Enabled: true,
+			Read:    compartments.ReadConfig{NumCompartments: 1},
+			Write:   compartments.WriteConfig{NumCompartments: numWriteWCs},
+		},
+		ConsumerGroup:       "test-builder",
+		SchedulingInterval:  1000000 * time.Hour,
+		JobSize:             time.Hour,
+		MaxScanAge:          10 * time.Hour,
+		MaxJobsPerPartition: 0,
+	}
+	sched, err := New(cfg, test.NewTestingLogger(t), prometheus.NewPedanticRegistry())
+	require.NoError(t, err)
+	sched.adminClients = admins
+	return sched, clients
+}
+
+// mustMultiWCSchedulerNoKafka builds a compartments-enabled scheduler with the
+// right number of write WCs but no real Kafka clients, for tests that drive the
+// partition state directly (e.g. through mock offset finders or observations).
+func mustMultiWCSchedulerNoKafka(t *testing.T, topic string, numWriteWCs int) *BlockBuilderScheduler {
+	cfg := Config{
+		Kafka: ingest.KafkaConfig{Topic: topic},
+		Compartments: compartments.Config{
+			Enabled: true,
+			Read:    compartments.ReadConfig{NumCompartments: 1},
+			Write:   compartments.WriteConfig{NumCompartments: numWriteWCs},
+		},
+		ConsumerGroup:       "test-builder",
+		JobSize:             time.Hour,
+		MaxScanAge:          10 * time.Hour,
+		MaxJobsPerPartition: 0,
+	}
+	sched, err := New(cfg, test.NewTestingLogger(t), prometheus.NewPedanticRegistry())
+	require.NoError(t, err)
+	sched.adminClients = make([]*kadm.Client, numWriteWCs)
+	return sched
+}
+
+// TestStartupInitCommitPerWC asserts that committed offsets are recovered from
+// every write WC's own cluster and applied to that WC's offset tracker.
+func TestStartupInitCommitPerWC(t *testing.T) {
+	ctx := context.Background()
+	const topic = "comp-0"
+	sched, _ := mustMultiWCScheduler(t, 1, topic, 2)
+
+	commit := func(wc int, at int64) {
+		offs := kadm.Offsets{}
+		offs.AddOffset(topic, 0, at, 0)
+		require.NoError(t, sched.adminClients[wc].CommitAllOffsets(ctx, sched.cfg.ConsumerGroup, offs))
+	}
+	commit(0, 100)
+	commit(1, 250)
+
+	for wc := range sched.adminClients {
+		c, err := sched.fetchCommittedOffsets(ctx, wc)
+		require.NoError(t, err)
+		c.Each(func(o kadm.Offset) {
+			sched.getPartitionState(o.Topic, o.Partition).initCommitWC(wc, o.At)
+		})
+	}
+
+	ps := sched.getPartitionState(sched.cfg.Kafka.Topic, 0)
+	require.Equal(t, int64(100), ps.committedOffset(0))
+	require.Equal(t, int64(250), ps.committedOffset(1))
+	require.Equal(t, int64(100), ps.plannedOffset(0), "planned initially tracks committed")
+	require.Equal(t, int64(250), ps.plannedOffset(1))
+}
+
+// TestFetchCommittedOffsetsSkipsForeignTopics asserts that fetchCommittedOffsets
+// ignores committed offsets for any topic other than this scheduler's read
+// topic, so a consumer group shared on a cluster can't bleed another read
+// compartment's offsets into this scheduler's (partition-keyed) state.
+func TestFetchCommittedOffsetsSkipsForeignTopics(t *testing.T) {
+	ctx := context.Background()
+	const topic = "comp-0"
+	sched, _ := mustMultiWCScheduler(t, 1, topic, 1)
+
+	offs := kadm.Offsets{}
+	offs.AddOffset(topic, 0, 100, 0)
+	require.NoError(t, sched.adminClients[0].CommitAllOffsets(ctx, sched.cfg.ConsumerGroup, offs))
+
+	// The scheduler's own read topic is recovered.
+	c, err := sched.fetchCommittedOffsets(ctx, 0)
+	require.NoError(t, err)
+	require.Len(t, c, 1)
+	require.Equal(t, int64(100), c[topic][0].At)
+
+	// The same committed offset is ignored once it's no longer this scheduler's
+	// read topic, i.e. it belongs to another read compartment sharing the group.
+	sched.cfg.Kafka.Topic = "comp-1"
+	c, err = sched.fetchCommittedOffsets(ctx, 0)
+	require.NoError(t, err)
+	require.Empty(t, c)
+}
+
+// TestStartupSeedsBundledBacklogJobs asserts that the startup backlog probe
+// produces bundled cross-WC jobs whose per-WC ranges line up with each WC's
+// probed offsets across job-size buckets.
+func TestStartupSeedsBundledBacklogJobs(t *testing.T) {
+	const topic = "comp-0"
+	sched := mustMultiWCSchedulerNoKafka(t, topic, 2)
+	sched.cfg.JobSize = time.Hour
+	sched.cfg.MaxScanAge = 10 * time.Hour
+
+	mkFinder := func(o0, o1, o2 int64, end int64) *mockOffsetFinder {
+		return &mockOffsetFinder{
+			offsets: []*offsetTime{
+				{offset: o0, time: time.Date(2025, 3, 1, 10, 0, 0, 0, time.UTC)},
+				{offset: o1, time: time.Date(2025, 3, 1, 11, 0, 0, 0, time.UTC)},
+				{offset: o2, time: time.Date(2025, 3, 1, 12, 0, 0, 0, time.UTC)},
+			},
+			end: end,
+		}
+	}
+	finder0 := mkFinder(100, 200, 300, 400)
+	finder1 := mkFinder(1000, 1100, 1200, 1300)
+
+	consumeOffs := []partitionOffsets{
+		{topic: topic, partition: 0, wc: 0, start: 0, resume: 100, end: 400},
+		{topic: topic, partition: 0, wc: 1, start: 0, resume: 1000, end: 1300},
+	}
+
+	endTime := time.Date(2025, 3, 1, 13, 0, 0, 0, time.UTC)
+	sched.populateInitialJobs(context.Background(), groupByPartition(consumeOffs...), []offsetStore{finder0, finder1}, endTime)
+
+	ps := sched.getPartitionState(topic, 0)
+	// The bucket ending at each WC's high watermark (offsets 300->400 / 1200->1300)
+	// has no boundary record, so - like the non-compartment path - it is left to
+	// normal operation rather than seeded at startup. Only the two buckets below the
+	// high watermark are seeded.
+	require.Equal(t, 2, ps.pendingJobs.Len(), "buckets below the high watermark each yield one bundled job")
+
+	first := ps.pendingJobs.Front().Value.(*schedulerpb.JobSpec)
+	require.Equal(t, topic, first.Topic)
+	require.Equal(t, int32(0), first.Partition)
+	require.Equal(t, []schedulerpb.WCOffsetRange{
+		{WcId: 0, StartOffset: 100, EndOffset: 200},
+		{WcId: 1, StartOffset: 1000, EndOffset: 1100},
+	}, first.Ranges())
+
+	second := ps.pendingJobs.Front().Next().Value.(*schedulerpb.JobSpec)
+	require.Equal(t, []schedulerpb.WCOffsetRange{
+		{WcId: 0, StartOffset: 200, EndOffset: 300},
+		{WcId: 1, StartOffset: 1100, EndOffset: 1200},
+	}, second.Ranges())
+}
+
+// TestStartupBundlesMisalignedWCs asserts that two write WCs whose records carry
+// skewed timestamps — wc1's third batch lands one wall-clock bucket later than
+// wc0's — produce correctly bundled per-bucket jobs for the buckets below their
+// high watermark. The skewed final batch sits in the bucket ending at each WC's
+// high watermark, which has no boundary record, so (like the non-compartment
+// path) it is deferred to normal operation rather than seeded at startup.
+func TestStartupBundlesMisalignedWCs(t *testing.T) {
+	const topic = "comp-0"
+	sched := mustMultiWCSchedulerNoKafka(t, topic, 2)
+	sched.cfg.JobSize = time.Hour
+	sched.cfg.MaxScanAge = 10 * time.Hour
+
+	// Record times sit between the 15m probe grid points (jobSize/4), so the
+	// strict-after lookup in mockOffsetFinder is unambiguous.
+	finder0 := &mockOffsetFinder{
+		offsets: []*offsetTime{
+			{offset: 100, time: time.Date(2025, 3, 1, 9, 7, 0, 0, time.UTC)},
+			{offset: 200, time: time.Date(2025, 3, 1, 10, 7, 0, 0, time.UTC)},
+			{offset: 300, time: time.Date(2025, 3, 1, 11, 7, 0, 0, time.UTC)},
+		},
+		end: 300,
+	}
+	finder1 := &mockOffsetFinder{
+		offsets: []*offsetTime{
+			{offset: 1000, time: time.Date(2025, 3, 1, 9, 7, 0, 0, time.UTC)},
+			{offset: 1100, time: time.Date(2025, 3, 1, 10, 7, 0, 0, time.UTC)},
+			// wc1's third batch is one wall-clock bucket later than wc0's.
+			{offset: 1200, time: time.Date(2025, 3, 1, 12, 7, 0, 0, time.UTC)},
+		},
+		end: 1200,
+	}
+
+	consumeOffs := []partitionOffsets{
+		{topic: topic, partition: 0, wc: 0, start: 0, resume: 100, end: 300},
+		{topic: topic, partition: 0, wc: 1, start: 0, resume: 1000, end: 1200},
+	}
+
+	endTime := time.Date(2025, 3, 1, 13, 0, 0, 0, time.UTC)
+	sched.populateInitialJobs(context.Background(), groupByPartition(consumeOffs...), []offsetStore{finder0, finder1}, endTime)
+
+	ps := sched.getPartitionState(topic, 0)
+	// The complete bucket below the high watermark is seeded and bundles both WCs;
+	// the skewed final batch (offsets 200->300 / 1100->1200, at each WC's high
+	// watermark) is deferred to normal operation.
+	require.Equal(t, 1, ps.pendingJobs.Len(), "only the complete sub-watermark bucket is seeded at startup")
+
+	first := ps.pendingJobs.Front().Value.(*schedulerpb.JobSpec)
+	require.Equal(t, []schedulerpb.WCOffsetRange{
+		{WcId: 0, StartOffset: 100, EndOffset: 200},
+		{WcId: 1, StartOffset: 1000, EndOffset: 1100},
+	}, first.Ranges())
+}
+
+// TestFinalizeObservationsMultiWC asserts that observation recovery imports the
+// contiguous prefix of bundled jobs and stops at the first per-WC offset gap.
+func TestFinalizeObservationsMultiWC(t *testing.T) {
+	const topic = "comp-0"
+	sched := mustMultiWCSchedulerNoKafka(t, topic, 2)
+	sched.jobs = newJobQueue(time.Hour, noOpJobCreationPolicy[schedulerpb.JobSpec]{}, 2, sched.metrics, test.NewTestingLogger(t))
+
+	spec := func(wc0s, wc0e, wc1s, wc1e int64) schedulerpb.JobSpec {
+		return schedulerpb.JobSpec{Topic: topic, Partition: 0, OffsetRanges: []schedulerpb.WCOffsetRange{
+			{WcId: 0, StartOffset: wc0s, EndOffset: wc0e},
+			{WcId: 1, StartOffset: wc1s, EndOffset: wc1e},
+		}}
+	}
+	mkObs := func(id string, epoch int64, complete bool, s schedulerpb.JobSpec) {
+		sched.observations[id] = &observation{key: jobKey{id: id, epoch: epoch}, spec: s, workerID: "w0", complete: complete}
+	}
+
+	// A and B are contiguous on both WCs. C has a gap on WC 1 (starts at 500 but
+	// WC 1's planned offset is only 400), so it and anything after must be skipped.
+	mkObs("A", 1, true, spec(0, 100, 0, 200))
+	mkObs("B", 2, true, spec(100, 200, 200, 400))
+	mkObs("C", 3, true, spec(200, 300, 500, 700))
+
+	sched.finalizeObservations()
+
+	ps := sched.getPartitionState(sched.cfg.Kafka.Topic, 0)
+	require.Equal(t, int64(200), ps.plannedOffset(0), "WC 0 planned advances through A and B")
+	require.Equal(t, int64(400), ps.plannedOffset(1), "WC 1 planned stops before the gap at C")
+	require.Equal(t, int64(200), ps.committedOffset(0))
+	require.Equal(t, int64(400), ps.committedOffset(1))
+	require.NotContains(t, ps.plannedJobsMap, "C", "the gapped job must not be imported")
+}
+
+// TestFinalizeObservationsSparseWC covers sparse specs, where a job lists only the
+// WCs that had new data. A sort keyed on a single representative range mis-orders
+// these and falsely detects a gap; the per-WC topological ordering must import
+// them in contiguous order regardless of insertion order.
+func TestFinalizeObservationsSparseWC(t *testing.T) {
+	const topic = "comp-0"
+	sched := mustMultiWCSchedulerNoKafka(t, topic, 2)
+	sched.jobs = newJobQueue(time.Hour, noOpJobCreationPolicy[schedulerpb.JobSpec]{}, 2, sched.metrics, test.NewTestingLogger(t))
+
+	// Seed committed offsets so planned is non-empty: WC 0 resumes at 1000, WC 1 at 0.
+	ps := sched.getPartitionState(sched.cfg.Kafka.Topic, 0)
+	ps.initCommitWC(0, 1000)
+	ps.initCommitWC(1, 0)
+
+	r := func(wc int32, s, e int64) schedulerpb.WCOffsetRange {
+		return schedulerpb.WCOffsetRange{WcId: wc, StartOffset: s, EndOffset: e}
+	}
+	mkObs := func(id string, epoch int64, ranges ...schedulerpb.WCOffsetRange) {
+		sched.observations[id] = &observation{
+			key:      jobKey{id: id, epoch: epoch},
+			spec:     schedulerpb.JobSpec{Topic: topic, Partition: 0, OffsetRanges: ranges},
+			workerID: "w0",
+			complete: true,
+		}
+	}
+
+	// J1 spans both WCs; its WC 0 start (1000) is far above J2's WC 1 start (50), so
+	// ordering on a single range would place J2 before J1 and flag a false gap on
+	// WC 1. J2 continues only WC 1 and must be imported after J1.
+	mkObs("J1", 1, r(0, 1000, 1100), r(1, 0, 50))
+	mkObs("J2", 2, r(1, 50, 120))
+
+	sched.finalizeObservations()
+
+	require.Equal(t, int64(1100), ps.plannedOffset(0), "WC 0 advances through J1")
+	require.Equal(t, int64(120), ps.plannedOffset(1), "WC 1 advances through J1 then J2")
+	require.Equal(t, int64(1100), ps.committedOffset(0))
+	require.Equal(t, int64(120), ps.committedOffset(1))
+}
+
+// TestFinalizeObservationsOffsetCycle checks that an impossible cyclic ordering
+// (WC 0 orders J1 before J2 while WC 1 orders J2 before J1) is detected and the
+// whole partition's recovery is skipped rather than imported in a wrong order.
+func TestFinalizeObservationsOffsetCycle(t *testing.T) {
+	const topic = "comp-0"
+	sched := mustMultiWCSchedulerNoKafka(t, topic, 2)
+	sched.jobs = newJobQueue(time.Hour, noOpJobCreationPolicy[schedulerpb.JobSpec]{}, 2, sched.metrics, test.NewTestingLogger(t))
+
+	r := func(wc int32, s, e int64) schedulerpb.WCOffsetRange {
+		return schedulerpb.WCOffsetRange{WcId: wc, StartOffset: s, EndOffset: e}
+	}
+	mkObs := func(id string, epoch int64, ranges ...schedulerpb.WCOffsetRange) {
+		sched.observations[id] = &observation{
+			key:      jobKey{id: id, epoch: epoch},
+			spec:     schedulerpb.JobSpec{Topic: topic, Partition: 0, OffsetRanges: ranges},
+			workerID: "w0",
+			complete: true,
+		}
+	}
+
+	mkObs("J1", 1, r(0, 0, 10), r(1, 20, 30))
+	mkObs("J2", 2, r(0, 20, 30), r(1, 0, 10))
+
+	sched.finalizeObservations()
+
+	ps := sched.getPartitionState(sched.cfg.Kafka.Topic, 0)
+	require.True(t, ps.plannedEmpty(0), "no job imported for WC 0")
+	require.True(t, ps.plannedEmpty(1), "no job imported for WC 1")
+	require.Empty(t, ps.plannedJobsMap)
+}
+
+func TestOrderObservationsForImport(t *testing.T) {
+	rng := func(wc int32, start, end int64) schedulerpb.WCOffsetRange {
+		return schedulerpb.WCOffsetRange{WcId: wc, StartOffset: start, EndOffset: end}
+	}
+	obs := func(id string, ranges ...schedulerpb.WCOffsetRange) *observation {
+		return &observation{key: jobKey{id: id}, spec: schedulerpb.JobSpec{Topic: "t", Partition: 0, OffsetRanges: ranges}}
+	}
+	ids := func(observations []*observation) []string {
+		out := make([]string, len(observations))
+		for i, o := range observations {
+			out[i] = o.key.id
+		}
+		return out
+	}
+
+	t.Run("single WC sorts by start offset", func(t *testing.T) {
+		got, err := orderObservationsForImport([]*observation{
+			obs("c", rng(0, 20, 30)),
+			obs("a", rng(0, 0, 10)),
+			obs("b", rng(0, 10, 20)),
+		}, 1)
+		require.NoError(t, err)
+		require.Equal(t, []string{"a", "b", "c"}, ids(got))
+	})
+
+	t.Run("multi-WC sparse, predecessor before successor", func(t *testing.T) {
+		// J2 only continues WC 1; J1 spans both with a high WC 0 start, so a single
+		// representative offset would mis-order them. J1 must come first.
+		got, err := orderObservationsForImport([]*observation{
+			obs("J2", rng(1, 50, 120)),
+			obs("J1", rng(0, 1000, 1100), rng(1, 0, 50)),
+		}, 2)
+		require.NoError(t, err)
+		require.Equal(t, []string{"J1", "J2"}, ids(got))
+	})
+
+	t.Run("disjoint WC sets all emitted", func(t *testing.T) {
+		got, err := orderObservationsForImport([]*observation{
+			obs("b", rng(1, 0, 5)),
+			obs("a", rng(0, 0, 10)),
+		}, 2)
+		require.NoError(t, err)
+		require.ElementsMatch(t, []string{"a", "b"}, ids(got))
+	})
+
+	t.Run("offset cycle returns error", func(t *testing.T) {
+		// WC 0 orders J1 before J2; WC 1 orders J2 before J1.
+		_, err := orderObservationsForImport([]*observation{
+			obs("J1", rng(0, 0, 10), rng(1, 20, 30)),
+			obs("J2", rng(0, 20, 30), rng(1, 0, 10)),
+		}, 2)
+		require.ErrorIs(t, err, errObservationOffsetCycle)
+	})
+}
+
 func TestInitialOffsetProbing(t *testing.T) {
 	ctx := context.Background()
 
+	// probeInitialOffsets walks the shared grid (stepping back by jobSize/4 from
+	// endTime) over every WC, emitting an observation whenever a WC's end offset steps
+	// down, keyed by the earliest boundary-record time among the changed WCs. The
+	// high-watermark bucket has no boundary record, so it's deferred. A WC with no
+	// observation is seeded at its end offset via a synthetic observation at endTime.
+	// Marker times sit between the 15m grid points so the strict-after lookup is
+	// unambiguous.
+	at := func(h, m int) time.Time { return time.Date(2025, 3, 1, h, m, 0, 0, time.UTC) }
+
+	type wcData struct {
+		markers []*offsetTime
+		resume  int64
+		end     int64
+	}
+
 	tests := map[string]struct {
-		offsets        []*offsetTime
-		start          int64
-		resume         int64
-		end            int64
-		jobSize        time.Duration
-		endTime        time.Time
-		expectedRanges []*offsetTime
-		minScanTime    time.Time
-		msg            string
+		wcs         []wcData
+		jobSize     time.Duration
+		endTime     time.Time
+		minScanTime time.Time
+		expected    []wcObservation
 	}{
-		"no new data": {
-			// End offset is the one that was consumed last time.
-			offsets: []*offsetTime{
-				{offset: 1000, time: time.Date(2025, 3, 1, 10, 0, 0, 100*1000000, time.UTC)},
-				{offset: 1001, time: time.Date(2025, 3, 1, 10, 0, 0, 101*1000000, time.UTC)},
-				{offset: 1999, time: time.Date(2025, 3, 1, 10, 0, 0, 199*1000000, time.UTC)},
-			},
-			resume:         2000,
-			end:            2000,
-			jobSize:        200 * time.Millisecond,
-			endTime:        time.Date(2025, 3, 1, 10, 0, 0, 600*1000000, time.UTC),
-			minScanTime:    time.Date(2025, 2, 20, 10, 0, 0, 600*1000000, time.UTC),
-			expectedRanges: []*offsetTime{{offset: 2000, time: time.Date(2025, 3, 1, 10, 0, 0, 600*1000000, time.UTC)}},
-		},
-		"old data with single unconsumed record": {
-			offsets: []*offsetTime{
-				{offset: 1999, time: time.Date(2025, 3, 1, 10, 0, 0, 100*1000000, time.UTC)},
-				{offset: 2000, time: time.Date(2025, 3, 1, 10, 0, 0, 200*1000000, time.UTC)},
-			},
-			resume:      2000,
-			end:         2001,
-			jobSize:     200 * time.Millisecond,
-			endTime:     time.Date(2025, 3, 1, 10, 0, 0, 600*1000000, time.UTC),
-			minScanTime: time.Date(2025, 2, 20, 10, 0, 0, 600*1000000, time.UTC),
-			expectedRanges: []*offsetTime{
-				{offset: 2000, time: time.Date(2025, 3, 1, 10, 0, 0, 200*1000000, time.UTC)},
-				{offset: 2001, time: time.Time{}},
+		"single WC, complete buckets below the high watermark": {
+			wcs: []wcData{{
+				markers: []*offsetTime{{offset: 100, time: at(10, 7)}, {offset: 200, time: at(11, 7)}, {offset: 300, time: at(12, 7)}},
+				resume:  100,
+				end:     300,
+			}},
+			jobSize:     time.Hour,
+			endTime:     at(13, 0),
+			minScanTime: at(0, 0),
+			expected: []wcObservation{
+				{time: at(10, 7), offsets: map[int]int64{0: 100}},
+				{time: at(11, 7), offsets: map[int]int64{0: 200}},
 			},
 		},
-		"one record: no new data": {
-			offsets: []*offsetTime{
-				{offset: 1999, time: time.Date(2025, 3, 1, 10, 0, 0, 100*1000000, time.UTC)},
+		"two aligned WCs bundle per bucket": {
+			wcs: []wcData{
+				{markers: []*offsetTime{{offset: 100, time: at(10, 7)}, {offset: 200, time: at(11, 7)}, {offset: 300, time: at(12, 7)}}, resume: 100, end: 300},
+				{markers: []*offsetTime{{offset: 1000, time: at(10, 7)}, {offset: 1100, time: at(11, 7)}, {offset: 1200, time: at(12, 7)}}, resume: 1000, end: 1200},
 			},
-			resume:         2000,
-			end:            2000,
-			jobSize:        200 * time.Millisecond,
-			endTime:        time.Date(2025, 3, 1, 10, 0, 0, 600*1000000, time.UTC),
-			minScanTime:    time.Date(2025, 2, 20, 10, 0, 0, 600*1000000, time.UTC),
-			expectedRanges: []*offsetTime{{offset: 2000, time: time.Date(2025, 3, 1, 10, 0, 0, 600*1000000, time.UTC)}},
-		},
-		"empty partition: no data": {
-			offsets:        []*offsetTime{},
-			resume:         0,
-			end:            0,
-			jobSize:        200 * time.Millisecond,
-			endTime:        time.Date(2025, 3, 1, 10, 0, 0, 600*1000000, time.UTC),
-			minScanTime:    time.Date(2025, 2, 20, 10, 0, 0, 600*1000000, time.UTC),
-			expectedRanges: []*offsetTime{{offset: 0, time: time.Date(2025, 3, 1, 10, 0, 0, 600*1000000, time.UTC)}},
-		},
-		"data gaps wider than job size": {
-			offsets: []*offsetTime{
-				{offset: 999, time: time.Date(2025, 3, 1, 10, 0, 0, 99*1000000, time.UTC)},
-				{offset: 1000, time: time.Date(2025, 3, 1, 10, 0, 0, 100*1000000, time.UTC)},
-				{offset: 1001, time: time.Date(2025, 3, 1, 10, 0, 0, 101*1000000, time.UTC)},
-				{offset: 1002, time: time.Date(2025, 3, 1, 10, 0, 0, 102*1000000, time.UTC)},
-				{offset: 1003, time: time.Date(2025, 3, 1, 10, 0, 0, 103*1000000, time.UTC)},
-				{offset: 1004, time: time.Date(2025, 3, 1, 10, 0, 0, 104*1000000, time.UTC)},
-				{offset: 1005, time: time.Date(2025, 3, 1, 10, 0, 0, 105*1000000, time.UTC)},
-				{offset: 1006, time: time.Date(2025, 3, 1, 10, 0, 0, 106*1000000, time.UTC)},
-				{offset: 1007, time: time.Date(2025, 3, 1, 10, 0, 0, 107*1000000, time.UTC)},
-				{offset: 1008, time: time.Date(2025, 3, 1, 10, 0, 0, 108*1000000, time.UTC)},
-				{offset: 1009, time: time.Date(2025, 3, 1, 10, 0, 0, 109*1000000, time.UTC)},
-				{offset: 1010, time: time.Date(2025, 3, 1, 10, 0, 0, 110*1000000, time.UTC)},
-				{offset: 1011, time: time.Date(2025, 3, 1, 10, 0, 0, 111*1000000, time.UTC)},
-				{offset: 1012, time: time.Date(2025, 3, 1, 10, 0, 0, 112*1000000, time.UTC)},
-				// (large gap that would produce duplicates in a naive implementation)
-				{offset: 1013, time: time.Date(2025, 3, 1, 10, 0, 0, 500*1000000, time.UTC)},
-				{offset: 1014, time: time.Date(2025, 3, 1, 10, 0, 0, 501*1000000, time.UTC)},
-				{offset: 1015, time: time.Date(2025, 3, 1, 10, 0, 0, 502*1000000, time.UTC)},
-				{offset: 1016, time: time.Date(2025, 3, 1, 10, 0, 0, 503*1000000, time.UTC)},
-				{offset: 1017, time: time.Date(2025, 3, 1, 10, 0, 0, 600*1000000, time.UTC)},
-			},
-			resume:      1000,
-			end:         1020,
-			jobSize:     100 * time.Millisecond,
-			endTime:     time.Date(2025, 3, 1, 10, 0, 0, 600*1000000, time.UTC),
-			minScanTime: time.Date(2025, 2, 20, 10, 0, 0, 600*1000000, time.UTC),
-			expectedRanges: []*offsetTime{
-				{offset: 1000, time: time.Date(2025, 3, 1, 10, 0, 0, 99*1000000, time.UTC)},
-				{offset: 1001, time: time.Date(2025, 3, 1, 10, 0, 0, 101*1000000, time.UTC)},
-				{offset: 1013, time: time.Date(2025, 3, 1, 10, 0, 0, 500*1000000, time.UTC)},
-				{offset: 1014, time: time.Date(2025, 3, 1, 10, 0, 0, 501*1000000, time.UTC)},
-				{offset: 1017, time: time.Date(2025, 3, 1, 10, 0, 0, 600*1000000, time.UTC)},
-				{offset: 1020, time: time.Time{}},
+			jobSize:     time.Hour,
+			endTime:     at(13, 0),
+			minScanTime: at(0, 0),
+			expected: []wcObservation{
+				{time: at(10, 7), offsets: map[int]int64{0: 100, 1: 1000}},
+				{time: at(11, 7), offsets: map[int]int64{0: 200, 1: 1100}},
 			},
 		},
-		"records with duplicate timestamps": {
-			offsets: []*offsetTime{
-				{offset: 1000, time: time.Date(2025, 3, 1, 10, 0, 0, 100*1000000, time.UTC)},
-				{offset: 1001, time: time.Date(2025, 3, 1, 10, 0, 0, 101*1000000, time.UTC)},
-				{offset: 1002, time: time.Date(2025, 3, 1, 10, 0, 0, 102*1000000, time.UTC)},
-				{offset: 1003, time: time.Date(2025, 3, 1, 10, 0, 0, 102*1000000, time.UTC)},
-				{offset: 1004, time: time.Date(2025, 3, 1, 10, 0, 0, 102*1000000, time.UTC)},
-				{offset: 1005, time: time.Date(2025, 3, 1, 10, 0, 0, 102*1000000, time.UTC)},
-				{offset: 1006, time: time.Date(2025, 3, 1, 10, 0, 0, 102*1000000, time.UTC)},
-				{offset: 1007, time: time.Date(2025, 3, 1, 10, 0, 0, 102*1000000, time.UTC)},
-				{offset: 1008, time: time.Date(2025, 3, 1, 10, 0, 0, 102*1000000, time.UTC)},
-			},
-			resume:      1000,
-			end:         1009,
-			jobSize:     100 * time.Millisecond,
-			endTime:     time.Date(2025, 3, 1, 10, 0, 0, 600*1000000, time.UTC),
-			minScanTime: time.Date(2025, 2, 20, 10, 0, 0, 600*1000000, time.UTC),
-			expectedRanges: []*offsetTime{
-				{offset: 1000, time: time.Date(2025, 3, 1, 10, 0, 0, 100*1000000, time.UTC)},
-				{offset: 1001, time: time.Date(2025, 3, 1, 10, 0, 0, 101*1000000, time.UTC)},
-				{offset: 1009, time: time.Time{}},
+		"caught-up WC seeds at its end offset via a synthetic endTime observation": {
+			wcs:         []wcData{{markers: nil, resume: 2000, end: 2000}},
+			jobSize:     time.Hour,
+			endTime:     at(13, 0),
+			minScanTime: at(0, 0),
+			expected: []wcObservation{
+				{time: at(13, 0), offsets: map[int]int64{0: 2000}},
 			},
 		},
-		"resumption offset is before min scan time": {
-			offsets: []*offsetTime{
-				{offset: 1001, time: time.Date(2025, 3, 1, 10, 0, 0, 100*1000000, time.UTC)},
-				{offset: 1002, time: time.Date(2025, 3, 1, 10, 0, 0, 200*1000000, time.UTC)},
-				{offset: 1003, time: time.Date(2025, 3, 1, 10, 0, 0, 300*1000000, time.UTC)},
-				{offset: 1004, time: time.Date(2025, 3, 1, 10, 0, 0, 400*1000000, time.UTC)},
+		"caught-up WC alongside a backlog WC seeds via a synthetic endTime observation": {
+			wcs: []wcData{
+				{markers: []*offsetTime{{offset: 100, time: at(10, 7)}, {offset: 200, time: at(11, 7)}, {offset: 300, time: at(12, 7)}}, resume: 100, end: 300},
+				{markers: nil, resume: 2000, end: 2000},
 			},
-			resume:      1001,
-			end:         1004,
-			jobSize:     100 * time.Millisecond,
-			endTime:     time.Date(2025, 3, 1, 10, 0, 0, 600*1000000, time.UTC),
-			minScanTime: time.Date(2025, 3, 1, 10, 0, 0, 150*1000000, time.UTC),
-			expectedRanges: []*offsetTime{
-				{offset: 1002, time: time.Date(2025, 3, 1, 10, 0, 0, 200*1000000, time.UTC)},
-				{offset: 1003, time: time.Date(2025, 3, 1, 10, 0, 0, 300*1000000, time.UTC)},
-				{offset: 1004, time: time.Time{}},
+			jobSize:     time.Hour,
+			endTime:     at(13, 0),
+			minScanTime: at(0, 0),
+			expected: []wcObservation{
+				{time: at(10, 7), offsets: map[int]int64{0: 100}},
+				{time: at(11, 7), offsets: map[int]int64{0: 200}},
+				{time: at(13, 0), offsets: map[int]int64{1: 2000}},
 			},
 		},
-		"min scan time later than any data": {
-			offsets: []*offsetTime{
-				{offset: 1001, time: time.Date(2025, 3, 1, 10, 0, 0, 100*1000000, time.UTC)},
-				{offset: 1002, time: time.Date(2025, 3, 1, 10, 0, 0, 200*1000000, time.UTC)},
-				{offset: 1003, time: time.Date(2025, 3, 1, 10, 0, 0, 300*1000000, time.UTC)},
-				{offset: 1004, time: time.Date(2025, 3, 1, 10, 0, 0, 400*1000000, time.UTC)},
+		"limited scan age starts above resume": {
+			// minScanTime stops the walk before it reaches resume, so the prefix down
+			// to resume (offset 100) is skipped: the earliest observed offset is 200.
+			wcs: []wcData{{
+				markers: []*offsetTime{{offset: 100, time: at(10, 7)}, {offset: 200, time: at(11, 7)}, {offset: 300, time: at(12, 7)}},
+				resume:  100,
+				end:     300,
+			}},
+			jobSize:     time.Hour,
+			endTime:     at(13, 0),
+			minScanTime: at(10, 30),
+			expected: []wcObservation{
+				{time: at(11, 7), offsets: map[int]int64{0: 200}},
 			},
-			resume:         1001,
-			end:            1004,
-			jobSize:        100 * time.Millisecond,
-			endTime:        time.Date(2025, 3, 1, 10, 0, 0, 600*1000000, time.UTC),
-			minScanTime:    time.Date(2025, 3, 1, 10, 0, 0, 900*1000000, time.UTC),
-			expectedRanges: []*offsetTime{},
-		},
-		"resume < start and start == end": {
-			offsets:        []*offsetTime{},
-			start:          1004,
-			resume:         1000,
-			end:            1004,
-			jobSize:        1 * time.Minute,
-			endTime:        time.Date(2025, 3, 1, 10, 3, 40, 0, time.UTC),
-			minScanTime:    time.Date(2025, 3, 1, 10, 0, 0, 0, time.UTC),
-			expectedRanges: []*offsetTime{{offset: 1004, time: time.Date(2025, 3, 1, 10, 3, 40, 0, time.UTC)}},
-		},
-		"resume < start < end": {
-			offsets: []*offsetTime{
-				{offset: 1003, time: time.Date(2025, 3, 1, 10, 3, 0, 0, time.UTC)},
-			},
-			start:       1003,
-			resume:      1000,
-			end:         1004,
-			jobSize:     1 * time.Minute,
-			endTime:     time.Date(2025, 3, 1, 10, 3, 40, 0, time.UTC),
-			minScanTime: time.Date(2025, 3, 1, 10, 0, 0, 0, time.UTC),
-			expectedRanges: []*offsetTime{
-				{offset: 1003, time: time.Date(2025, 3, 1, 10, 3, 0, 0, time.UTC)},
-				{offset: 1004, time: time.Time{}},
-			},
-		},
-		"resume == start == end": {
-			offsets:        []*offsetTime{},
-			start:          1003,
-			resume:         1003,
-			end:            1003,
-			jobSize:        1 * time.Minute,
-			endTime:        time.Date(2025, 3, 1, 10, 3, 40, 0, time.UTC),
-			minScanTime:    time.Date(2025, 3, 1, 10, 0, 0, 0, time.UTC),
-			expectedRanges: []*offsetTime{{offset: 1003, time: time.Date(2025, 3, 1, 10, 3, 40, 0, time.UTC)}},
-		},
-		"hour-based ranges when resume < start": {
-			offsets: []*offsetTime{
-				{offset: 2000, time: time.Date(2025, 3, 1, 11, 0, 0, 0, time.UTC)},
-				{offset: 3000, time: time.Date(2025, 3, 1, 12, 0, 0, 0, time.UTC)},
-			},
-			start:       2000,
-			resume:      100,
-			end:         10001,
-			jobSize:     1 * time.Hour,
-			endTime:     time.Date(2025, 3, 1, 15, 0, 0, 0, time.UTC),
-			minScanTime: time.Date(2025, 1, 20, 10, 0, 0, 0, time.UTC),
-			expectedRanges: []*offsetTime{
-				{offset: 2000, time: time.Date(2025, 3, 1, 11, 0, 0, 0, time.UTC)},
-				{offset: 3000, time: time.Date(2025, 3, 1, 12, 0, 0, 0, time.UTC)},
-				{offset: 10001, time: time.Time{}},
-			},
-			msg: "if resumption offset has fallen off the retention window, we should produce jobs beginning at start",
 		},
 	}
 
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			f := &mockOffsetFinder{offsets: tt.offsets, end: tt.end, distinctTimes: make(map[time.Time]struct{})}
-			j, err := probeInitialOffsets(ctx, f, "topic", 0, tt.start, tt.resume, tt.end, tt.endTime, tt.jobSize, tt.minScanTime, test.NewTestingLogger(t))
-			assert.NoError(t, err)
-			assert.EqualValues(t, tt.expectedRanges, j, tt.msg)
+			offs := make([]partitionOffsets, len(tt.wcs))
+			stores := make([]offsetStore, len(tt.wcs))
+			for wc, d := range tt.wcs {
+				offs[wc] = partitionOffsets{topic: "topic", partition: 0, wc: wc, resume: d.resume, end: d.end}
+				stores[wc] = &mockOffsetFinder{offsets: d.markers, end: d.end}
+			}
+			got, err := probeInitialOffsets(ctx, offs, stores, "topic", 0, tt.endTime, tt.jobSize, tt.minScanTime, test.NewTestingLogger(t))
+			require.NoError(t, err)
+			assert.Equal(t, tt.expected, got)
 		})
 	}
 }
 
 // Create an offset finder that we can prepopulate with offset scenarios.
 type mockOffsetFinder struct {
-	offsets       []*offsetTime
-	end           int64
-	distinctTimes map[time.Time]struct{}
+	offsets []*offsetTime
+	end     int64
 }
 
 func (o *mockOffsetFinder) offsetAfterTime(_ context.Context, _ string, _ int32, t time.Time) (int64, time.Time, error) {
-	o.distinctTimes[t] = struct{}{}
 	// scan the offsets slice and return the lowest offset whose time is after t.
 	mint := time.Time{}
 	maxt := time.Time{}
@@ -983,40 +1444,16 @@ func (o *mockOffsetFinder) offsetAfterTime(_ context.Context, _ string, _ int32,
 		}
 	}
 	if off == -1 {
-		// Like ListOffsetsAfterMilli, we return the end offset if we don't find any new data.
-		return o.end, time.Time{}, nil
+		// Like ListOffsetsAfterMilli, when there is no record after t we return the
+		// end offset paired with a non-record timestamp. The real client reports
+		// time.UnixMilli(-1) here (it falls back to listing the end offset, whose
+		// timestamp is -1), so mirror that rather than a zero time.
+		return o.end, time.UnixMilli(-1), nil
 	}
 	return off, mint, nil
 }
 
 var _ offsetStore = (*mockOffsetFinder)(nil)
-
-func TestPopulateInitialJobs_ProbeTimesReused(t *testing.T) {
-	// Ensure that the probe times are reused across partitions, which is a
-	// necessary condition for cached offset reuse in the offsetFinder.
-	sched, _ := mustScheduler(t, 4)
-	sched.cfg.MaxScanAge = 1 * time.Hour
-
-	finder := &mockOffsetFinder{
-		offsets: []*offsetTime{
-			{offset: 100, time: time.Date(2025, 3, 1, 10, 0, 0, 0, time.UTC)},
-			{offset: 200, time: time.Date(2025, 3, 1, 10, 0, 0, 0, time.UTC)},
-			{offset: 300, time: time.Date(2025, 3, 1, 10, 0, 0, 0, time.UTC)},
-		},
-		end:           1000,
-		distinctTimes: make(map[time.Time]struct{}),
-	}
-
-	consumeOffs := []partitionOffsets{
-		{topic: "topic", partition: 0, start: 100, resume: 100, end: 1000},
-		{topic: "topic", partition: 1, start: 100, resume: 100, end: 1000},
-		{topic: "topic", partition: 2, start: 100, resume: 100, end: 1000},
-		{topic: "topic", partition: 3, start: 100, resume: 100, end: 1000},
-	}
-
-	sched.populateInitialJobs(context.Background(), consumeOffs, finder, time.Date(2025, 3, 1, 11, 0, 0, 0, time.UTC))
-	require.Len(t, finder.distinctTimes, 4, "four partitions will each be probed four times, but the probe times should be the same across each partition")
-}
 
 func TestLimitNPolicy(t *testing.T) {
 	existing := func(specs ...*schedulerpb.JobSpec) iter.Seq[*schedulerpb.JobSpec] {
@@ -1026,49 +1463,49 @@ func TestLimitNPolicy(t *testing.T) {
 	allow1 := limitPerPartitionJobCreationPolicy{partitionLimit: 1}
 
 	require.NoError(t, allow1.canCreateJob(jobKey{id: "job1"},
-		&schedulerpb.JobSpec{Topic: "topic", Partition: 0}, existing()))
+		ptrSpec("topic", 0, 0, 0), existing()))
 
 	require.NoError(t, allow1.canCreateJob(jobKey{id: "job4"},
-		&schedulerpb.JobSpec{Topic: "topic", Partition: 0},
-		existing(&schedulerpb.JobSpec{Topic: "topic", Partition: 1})))
+		ptrSpec("topic", 0, 0, 0),
+		existing(ptrSpec("topic", 1, 0, 0))))
 
 	require.Error(t, allow1.canCreateJob(jobKey{id: "job5"},
-		&schedulerpb.JobSpec{Topic: "topic", Partition: 1},
-		existing(&schedulerpb.JobSpec{Topic: "topic", Partition: 1})))
+		ptrSpec("topic", 1, 0, 0),
+		existing(ptrSpec("topic", 1, 0, 0))))
 
 	require.NoError(t, allow1.canCreateJob(jobKey{id: "job5"},
-		&schedulerpb.JobSpec{Topic: "topic", Partition: 1},
+		ptrSpec("topic", 1, 0, 0),
 		existing(
-			&schedulerpb.JobSpec{Topic: "topic", Partition: 2},
-			&schedulerpb.JobSpec{Topic: "topic", Partition: 3},
-			&schedulerpb.JobSpec{Topic: "topic", Partition: 3},
+			ptrSpec("topic", 2, 0, 0),
+			ptrSpec("topic", 3, 0, 0),
+			ptrSpec("topic", 3, 0, 0),
 		)))
 
 	allow2 := limitPerPartitionJobCreationPolicy{partitionLimit: 2}
 	require.NoError(t, allow2.canCreateJob(jobKey{id: "job6"},
-		&schedulerpb.JobSpec{Topic: "topic", Partition: 1},
+		ptrSpec("topic", 1, 0, 0),
 		existing(
-			&schedulerpb.JobSpec{Topic: "topic", Partition: 2},
-			&schedulerpb.JobSpec{Topic: "topic", Partition: 3},
+			ptrSpec("topic", 2, 0, 0),
+			ptrSpec("topic", 3, 0, 0),
 		)))
 	require.NoError(t, allow2.canCreateJob(jobKey{id: "job6"},
-		&schedulerpb.JobSpec{Topic: "topic", Partition: 1},
+		ptrSpec("topic", 1, 0, 0),
 		existing(
-			&schedulerpb.JobSpec{Topic: "topic", Partition: 1},
-			&schedulerpb.JobSpec{Topic: "topic", Partition: 2},
+			ptrSpec("topic", 1, 0, 0),
+			ptrSpec("topic", 2, 0, 0),
 		)))
 	require.Error(t, allow2.canCreateJob(jobKey{id: "job6"},
-		&schedulerpb.JobSpec{Topic: "topic", Partition: 1},
+		ptrSpec("topic", 1, 0, 0),
 		existing(
-			&schedulerpb.JobSpec{Topic: "topic", Partition: 1},
-			&schedulerpb.JobSpec{Topic: "topic", Partition: 1},
+			ptrSpec("topic", 1, 0, 0),
+			ptrSpec("topic", 1, 0, 0),
 		)))
 	require.Error(t, allow2.canCreateJob(jobKey{id: "job6"},
-		&schedulerpb.JobSpec{Topic: "topic", Partition: 1},
+		ptrSpec("topic", 1, 0, 0),
 		existing(
-			&schedulerpb.JobSpec{Topic: "topic", Partition: 1},
-			&schedulerpb.JobSpec{Topic: "topic", Partition: 1},
-			&schedulerpb.JobSpec{Topic: "topic", Partition: 1},
+			ptrSpec("topic", 1, 0, 0),
+			ptrSpec("topic", 1, 0, 0),
+			ptrSpec("topic", 1, 0, 0),
 		)))
 }
 
@@ -1078,13 +1515,13 @@ func TestLimitNPolicyShortCircuits(t *testing.T) {
 	// second matching existing job is what trips rejection. The iterator must
 	// not be advanced beyond that point.
 	policy := limitPerPartitionJobCreationPolicy{partitionLimit: 2}
-	spec := &schedulerpb.JobSpec{Topic: "topic", Partition: 0}
+	spec := ptrSpec("topic", 0, 0, 0)
 
 	visited := 0
 	existing := func(yield func(*schedulerpb.JobSpec) bool) {
 		matching := []*schedulerpb.JobSpec{
-			{Topic: "topic", Partition: 0},
-			{Topic: "topic", Partition: 0},
+			ptrSpec("topic", 0, 0, 0),
+			ptrSpec("topic", 0, 0, 0),
 		}
 		for _, s := range matching {
 			visited++
@@ -1094,7 +1531,7 @@ func TestLimitNPolicyShortCircuits(t *testing.T) {
 		}
 		for i := 0; i < 1000; i++ {
 			visited++
-			if !yield(&schedulerpb.JobSpec{Topic: "topic", Partition: 99}) {
+			if !yield(ptrSpec("topic", 99, 0, 0)) {
 				return
 			}
 		}
@@ -1115,24 +1552,9 @@ func TestBlockBuilderScheduler_EnqueuePendingJobs(t *testing.T) {
 	part := int32(1)
 	pt := sched.getPartitionState("ingest", part)
 
-	pt.addPendingJob(&schedulerpb.JobSpec{
-		Topic:       "ingest",
-		Partition:   part,
-		StartOffset: 10,
-		EndOffset:   20,
-	})
-	pt.addPendingJob(&schedulerpb.JobSpec{
-		Topic:       "ingest",
-		Partition:   part,
-		StartOffset: 20,
-		EndOffset:   30,
-	})
-	pt.addPendingJob(&schedulerpb.JobSpec{
-		Topic:       "ingest",
-		Partition:   part,
-		StartOffset: 30,
-		EndOffset:   40,
-	})
+	pt.addPendingJob(ptrSpec("ingest", part, 10, 20))
+	pt.addPendingJob(ptrSpec("ingest", part, 20, 30))
+	pt.addPendingJob(ptrSpec("ingest", part, 30, 40))
 
 	assert.Equal(t, 3, pt.pendingJobs.Len())
 
@@ -1145,12 +1567,7 @@ func TestBlockBuilderScheduler_EnqueuePendingJobs(t *testing.T) {
 
 	assert.NoError(t, err)
 	assert.Equal(t, "ingest/1/10", j.id)
-	assert.Equal(t, schedulerpb.JobSpec{
-		Topic:       "ingest",
-		Partition:   part,
-		StartOffset: 10,
-		EndOffset:   20,
-	}, spec)
+	assert.Equal(t, schedulerpb.NewSingleWCJobSpec("ingest", part, 10, 20), spec)
 
 	sched.enqueuePendingJobs()
 	assert.Equal(t, 2, pt.pendingJobs.Len(), "enqueue should be a no-op until the assigned job is completed")
@@ -1170,24 +1587,9 @@ func TestBlockBuilderScheduler_EnqueuePendingJobs_Unlimited(t *testing.T) {
 	part := int32(1)
 	pt := sched.getPartitionState("ingest", part)
 
-	pt.addPendingJob(&schedulerpb.JobSpec{
-		Topic:       "ingest",
-		Partition:   part,
-		StartOffset: 10,
-		EndOffset:   20,
-	})
-	pt.addPendingJob(&schedulerpb.JobSpec{
-		Topic:       "ingest",
-		Partition:   part,
-		StartOffset: 20,
-		EndOffset:   30,
-	})
-	pt.addPendingJob(&schedulerpb.JobSpec{
-		Topic:       "ingest",
-		Partition:   part,
-		StartOffset: 30,
-		EndOffset:   40,
-	})
+	pt.addPendingJob(ptrSpec("ingest", part, 10, 20))
+	pt.addPendingJob(ptrSpec("ingest", part, 20, 30))
+	pt.addPendingJob(ptrSpec("ingest", part, 30, 40))
 
 	assert.Equal(t, 3, pt.pendingJobs.Len())
 	sched.enqueuePendingJobs()
@@ -1201,13 +1603,8 @@ func TestBlockBuilderScheduler_EnqueuePendingJobs_CommitRace(t *testing.T) {
 
 	part := int32(1)
 	pt := sched.getPartitionState("ingest", part)
-	pt.initCommit(20)
-	pt.addPendingJob(&schedulerpb.JobSpec{
-		Topic:       "ingest",
-		Partition:   part,
-		StartOffset: 10,
-		EndOffset:   20,
-	})
+	pt.initCommitWC(0, 20)
+	pt.addPendingJob(ptrSpec("ingest", part, 10, 20))
 
 	assert.Equal(t, 1, pt.pendingJobs.Len())
 	assert.Equal(t, 0, sched.jobs.count())
@@ -1224,15 +1621,10 @@ func TestBlockBuilderScheduler_EnqueuePendingJobs_StartupRace(t *testing.T) {
 	part := int32(1)
 	pt := sched.getPartitionState("ingest", part)
 	// Assume at startup we compute this job offset range:
-	pt.addPendingJob(&schedulerpb.JobSpec{
-		Topic:       "ingest",
-		Partition:   part,
-		StartOffset: 10,
-		EndOffset:   30,
-	})
+	pt.addPendingJob(ptrSpec("ingest", part, 10, 30))
 
 	// But the job we imported from the existing workers now being completed may be (10, 20):
-	pt.initCommit(20)
+	pt.initCommitWC(0, 20)
 
 	assert.Equal(t, 1, pt.pendingJobs.Len())
 	assert.Equal(t, 0, sched.jobs.count())
@@ -1251,46 +1643,46 @@ func TestBlockBuilderScheduler_EnqueuePendingJobs_GapDetection(t *testing.T) {
 	part := int32(1)
 	pt := sched.getPartitionState("ingest", part)
 	// Assume at startup we compute this set of job specs:
-	pt.addPendingJob(&schedulerpb.JobSpec{Topic: "ingest", Partition: part, StartOffset: 0, EndOffset: 30})
-	pt.addPendingJob(&schedulerpb.JobSpec{Topic: "ingest", Partition: part, StartOffset: 30, EndOffset: 40})
-	pt.addPendingJob(&schedulerpb.JobSpec{Topic: "ingest", Partition: part, StartOffset: 40, EndOffset: 50})
+	pt.addPendingJob(ptrSpec("ingest", part, 0, 30))
+	pt.addPendingJob(ptrSpec("ingest", part, 30, 40))
+	pt.addPendingJob(ptrSpec("ingest", part, 40, 50))
 
 	assert.Equal(t, 3, pt.pendingJobs.Len())
 	assert.Equal(t, 0, sched.jobs.count())
-	assert.True(t, pt.offsets.planned.empty())
+	assert.True(t, pt.plannedEmpty(0))
 	sched.enqueuePendingJobs()
 	assert.Equal(t, 0, pt.pendingJobs.Len())
 	assert.Equal(t, 3, sched.jobs.count())
-	assert.Equal(t, int64(50), pt.offsets.planned.offset())
+	assert.Equal(t, int64(50), pt.plannedOffset(0))
 
 	requireGaps(t, reg, 0, 0)
 
 	// this one introduces a gap:
-	pt.addPendingJob(&schedulerpb.JobSpec{Topic: "ingest", Partition: part, StartOffset: 60, EndOffset: 70})
+	pt.addPendingJob(ptrSpec("ingest", part, 60, 70))
 
 	assert.Equal(t, 1, pt.pendingJobs.Len())
 	assert.Equal(t, 3, sched.jobs.count())
-	assert.Equal(t, int64(50), pt.offsets.planned.offset())
+	assert.Equal(t, int64(50), pt.plannedOffset(0))
 	sched.enqueuePendingJobs()
 	assert.Equal(t, 0, pt.pendingJobs.Len())
 	assert.Equal(t, 4, sched.jobs.count(), "a gap should not interfere with job queueing")
-	assert.Equal(t, int64(70), pt.offsets.planned.offset())
+	assert.Equal(t, int64(70), pt.plannedOffset(0))
 
 	requireGaps(t, reg, 1, 0)
 
 	// the gap may not be the first job:
-	pt.addPendingJob(&schedulerpb.JobSpec{Topic: "ingest", Partition: part, StartOffset: 70, EndOffset: 80})
+	pt.addPendingJob(ptrSpec("ingest", part, 70, 80))
 	// (gap)
-	pt.addPendingJob(&schedulerpb.JobSpec{Topic: "ingest", Partition: part, StartOffset: 100, EndOffset: 110})
-	pt.addPendingJob(&schedulerpb.JobSpec{Topic: "ingest", Partition: part, StartOffset: 110, EndOffset: 120})
+	pt.addPendingJob(ptrSpec("ingest", part, 100, 110))
+	pt.addPendingJob(ptrSpec("ingest", part, 110, 120))
 
 	assert.Equal(t, 3, pt.pendingJobs.Len())
 	assert.Equal(t, 4, sched.jobs.count())
-	assert.Equal(t, int64(70), pt.offsets.planned.offset())
+	assert.Equal(t, int64(70), pt.plannedOffset(0))
 	sched.enqueuePendingJobs()
 	assert.Equal(t, 0, pt.pendingJobs.Len())
 	assert.Equal(t, 7, sched.jobs.count(), "a gap should not interfere with job queueing")
-	assert.Equal(t, int64(120), pt.offsets.planned.offset())
+	assert.Equal(t, int64(120), pt.plannedOffset(0))
 
 	requireGaps(t, reg, 2, 0)
 
@@ -1306,11 +1698,11 @@ func TestBlockBuilderScheduler_EnqueuePendingJobs_GapDetection(t *testing.T) {
 		require.NoError(t, err)
 		require.NoError(t, sched.updateJob(k, "w0", true, spec))
 
-		if spec.StartOffset != expectedStart {
+		if spec.Ranges()[0].StartOffset != expectedStart {
 			commitGaps++
 		}
 
-		expectedStart = spec.EndOffset
+		expectedStart = spec.Ranges()[0].EndOffset
 		requireGaps(t, reg, 2, commitGaps, "expected %d commit gaps at job %d", commitGaps, j)
 	}
 }
@@ -1323,36 +1715,26 @@ func TestBlockBuilderScheduler_NoCommit_NoGap(t *testing.T) {
 	requireGaps(t, reg, 0, 0)
 
 	pp := sched.getPartitionState("ingest", part)
-	require.True(t, pp.offsets.planned.empty())
-	require.True(t, pp.offsets.committed.empty())
+	require.True(t, pp.plannedEmpty(0))
+	require.True(t, pp.committedEmpty(0))
 
 	k := jobKey{"myjob5", 5}
-	spec := schedulerpb.JobSpec{
-		Topic:       "ingest",
-		Partition:   part,
-		StartOffset: 10,
-		EndOffset:   20,
-	}
+	spec := schedulerpb.NewSingleWCJobSpec("ingest", part, 10, 20)
 
-	pp.offsets.planned.advance(k.id, spec)
+	pp.offsets[0].planned.advance(k.id, spec.Ranges()[0])
 	requireGaps(t, reg, 0, 0, "advancing an empty planned offset should not register a gap")
 
-	pp.offsets.committed.advance(k.id, spec)
+	pp.offsets[0].committed.advance(k.id, spec.Ranges()[0])
 	requireGaps(t, reg, 0, 0, "advancing an empty committed offset should not register a gap")
 
 	// Now create a gap:
 	k2 := jobKey{"myjob7", 23}
-	spec2 := schedulerpb.JobSpec{
-		Topic:       "ingest",
-		Partition:   part,
-		StartOffset: 40,
-		EndOffset:   50,
-	}
+	spec2 := schedulerpb.NewSingleWCJobSpec("ingest", part, 40, 50)
 
-	pp.offsets.planned.advance(k2.id, spec2)
+	pp.offsets[0].planned.advance(k2.id, spec2.Ranges()[0])
 	requireGaps(t, reg, 1, 0, "a gap after a non-empty planned offset should register a gap")
 
-	pp.offsets.committed.advance(k2.id, spec2)
+	pp.offsets[0].committed.advance(k2.id, spec2.Ranges()[0])
 	requireGaps(t, reg, 1, 1, "a gap after a non-empty committed offset should register a gap")
 }
 
@@ -1457,9 +1839,8 @@ func TestStartupToRegularModeJobProduction(t *testing.T) {
 
 			// Create a mock offset finder that returns the initial end offset
 			finder := &mockOffsetFinder{
-				offsets:       tt.offsets,
-				end:           tt.initialEnd,
-				distinctTimes: make(map[time.Time]struct{}),
+				offsets: tt.offsets,
+				end:     tt.initialEnd,
 			}
 
 			consumeOffs := []partitionOffsets{
@@ -1473,7 +1854,7 @@ func TestStartupToRegularModeJobProduction(t *testing.T) {
 			}
 
 			// Call populateInitialJobs to set up initial state
-			sched.populateInitialJobs(context.Background(), consumeOffs, finder, tt.initialTime)
+			sched.populateInitialJobs(context.Background(), groupByPartition(consumeOffs...), []offsetStore{finder}, tt.initialTime)
 
 			collectedJobs := []*schedulerpb.JobSpec{}
 
@@ -1481,7 +1862,7 @@ func TestStartupToRegularModeJobProduction(t *testing.T) {
 			ps := sched.getPartitionState("topic", 0)
 
 			for _, obs := range tt.futureObservations {
-				ps.updateEndOffset(obs.offset)
+				ps.updateEndOffset(0, obs.offset)
 				job, err := ps.updateTime(obs.timestamp, sched.cfg.JobSize)
 				require.NoError(t, err)
 				if job != nil {
@@ -1498,11 +1879,11 @@ func TestStartupToRegularModeJobProduction(t *testing.T) {
 			}
 
 			// Verify first job starts at or after resume offset
-			require.Equal(t, tt.initialResume, collectedJobs[0].StartOffset,
+			require.Equal(t, tt.initialResume, collectedJobs[0].Ranges()[0].StartOffset,
 				"first job should start at resume offset")
 
 			// Verify last job ends at expected final end
-			require.Equal(t, tt.expectedFinalEnd, collectedJobs[len(collectedJobs)-1].EndOffset,
+			require.Equal(t, tt.expectedFinalEnd, collectedJobs[len(collectedJobs)-1].Ranges()[0].EndOffset,
 				"last job should end at expected final end offset")
 
 			// Verify no gaps and no overlaps between consecutive jobs
@@ -1510,9 +1891,9 @@ func TestStartupToRegularModeJobProduction(t *testing.T) {
 				current := collectedJobs[i]
 				next := collectedJobs[i+1]
 
-				require.Equal(t, current.EndOffset, next.StartOffset,
+				require.Equal(t, current.Ranges()[0].EndOffset, next.Ranges()[0].StartOffset,
 					"jobs should have no gaps: job %d ends at %d but next job starts at %d",
-					i, current.EndOffset, next.StartOffset)
+					i, current.Ranges()[0].EndOffset, next.Ranges()[0].StartOffset)
 			}
 		})
 	}

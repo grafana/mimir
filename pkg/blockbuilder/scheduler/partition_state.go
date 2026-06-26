@@ -17,9 +17,11 @@ type partitionState struct {
 	topic     string
 	partition int32
 
-	jobBucket time.Time
+	compartmentsEnabled bool // non-compartment mode emits a top-level range; compartment mode emits OffsetRanges.
 
-	offsets singleClusterOffsets
+	jobBucket time.Time // shared wall-clock bucket across WCs.
+
+	offsets []singleClusterOffsets // indexed by WC ID; always has at least one entry.
 
 	// pendingJobs are jobs that are waiting to be enqueued. The job creation policy is what allows them to advance to the plannedJobs list.
 	pendingJobs *list.List
@@ -41,21 +43,29 @@ const (
 	bucketAfter  = 1
 )
 
-func newPartitionState(topic string, partition int32, metrics *schedulerMetrics, logger log.Logger) *partitionState {
-	return &partitionState{
-		topic:          topic,
-		partition:      partition,
-		offsets:        newSingleClusterOffsets(metrics, logger),
-		pendingJobs:    list.New(),
-		plannedJobs:    list.New(),
-		plannedJobsMap: make(map[string]*jobState),
+func newPartitionState(topic string, partition int32, numWCs int, compartmentsEnabled bool, metrics *schedulerMetrics, logger log.Logger) *partitionState {
+	if numWCs < 1 {
+		panic(fmt.Sprintf("partition state for %s/%d needs at least one write WC, got %d", topic, partition, numWCs))
 	}
+	ps := &partitionState{
+		topic:               topic,
+		partition:           partition,
+		compartmentsEnabled: compartmentsEnabled,
+		offsets:             make([]singleClusterOffsets, numWCs),
+		pendingJobs:         list.New(),
+		plannedJobs:         list.New(),
+		plannedJobsMap:      make(map[string]*jobState),
+	}
+	for wc := range ps.offsets {
+		ps.offsets[wc] = newSingleClusterOffsets(metrics, logger)
+	}
+	return ps
 }
 
-// updateEndOffset records the latest observed end offset for the partition. It
-// is expected to be called with monotonically increasing end offsets.
-func (s *partitionState) updateEndOffset(end int64) {
-	s.offsets.updateEndOffset(end)
+// updateEndOffset records the latest observed end offset for the partition/wc. It
+// is expected to be called with monotonically increasing end offsets
+func (s *partitionState) updateEndOffset(wc int, end int64) {
+	s.offsets[wc].updateEndOffset(end)
 }
 
 // updateTime advances the partition's time bucket to the bucket containing ts
@@ -74,34 +84,51 @@ func (s *partitionState) updateTime(ts time.Time, jobSize time.Duration) (*sched
 	case bucketBefore:
 		// New bucket is before our current one. This should only happen if our
 		// Kafka's end offsets aren't monotonically increasing.
-		return nil, fmt.Errorf("time went backwards: %s < %s (%d, %d)", newJobBucket, s.jobBucket, s.offsets.startOffset, s.offsets.endOffset)
+		return nil, fmt.Errorf("time went backwards: %s < %s", newJobBucket, s.jobBucket)
+
 	case bucketSame:
 		// Observation is in the currently tracked bucket. No action needed.
-	case bucketAfter:
-		// We've entered a new job bucket. Emit a job for the current
-		// bucket if it has data and start a new one.
+		return nil, nil
 
-		var job *schedulerpb.JobSpec
-		if s.offsets.startOffset != offsetEmpty && s.offsets.startOffset < s.offsets.endOffset {
-			job = &schedulerpb.JobSpec{
-				Topic:       s.topic,
-				Partition:   s.partition,
-				StartOffset: s.offsets.startOffset,
-				EndOffset:   s.offsets.endOffset,
+	case bucketAfter:
+		// We've entered a new job bucket. Emit one job bundling every WC that has new
+		// data in [startOffset, endOffset), then start the next bucket.
+		wcs := make([]schedulerpb.WCOffsetRange, 0, len(s.offsets))
+		for wc := range s.offsets {
+			o := &s.offsets[wc]
+			// Skip a WC we've never sampled: we don't know its start offset yet, and we
+			// don't want to emit a job from offset 0.
+			if o.startOffset == offsetEmpty {
+				continue
 			}
+			if o.endOffset > o.startOffset {
+				wcs = append(wcs, schedulerpb.WCOffsetRange{
+					WcId:        int32(wc),
+					StartOffset: o.startOffset,
+					EndOffset:   o.endOffset,
+				})
+			}
+			o.startOffset = o.endOffset
 		}
-		s.offsets.startOffset = s.offsets.endOffset
 		s.jobBucket = newJobBucket
-		return job, nil
+		if len(wcs) == 0 {
+			return nil, nil
+		}
+		if !s.compartmentsEnabled {
+			return &schedulerpb.JobSpec{Topic: s.topic, Partition: s.partition, StartOffset: wcs[0].StartOffset, EndOffset: wcs[0].EndOffset}, nil
+		}
+		return &schedulerpb.JobSpec{Topic: s.topic, Partition: s.partition, OffsetRanges: wcs}, nil
 	}
 
 	return nil, nil
 }
 
-func (s *partitionState) initCommit(commit int64) {
-	s.offsets.committed.set(commit)
+// initCommitWC seeds a single WC's committed (and initial planned) offset from
+// the offset recovered from that WC's cluster at startup.
+func (s *partitionState) initCommitWC(wc int, commit int64) {
+	s.offsets[wc].committed.set(commit)
 	// Initially, the planned offset is the committed offset.
-	s.offsets.planned.set(commit)
+	s.offsets[wc].planned.set(commit)
 }
 
 func (s *partitionState) addPendingJob(job *schedulerpb.JobSpec) {
@@ -109,17 +136,75 @@ func (s *partitionState) addPendingJob(job *schedulerpb.JobSpec) {
 }
 
 func (s *partitionState) addPlannedJob(id string, spec schedulerpb.JobSpec) {
-	if s.offsets.planned.beyondSpec(spec) {
+	if s.plannedBeyondSpec(spec) {
 		// This shouldn't happen. All callers of addPlannedJob must do so in
-		// increasing offset order.
-		panic(fmt.Sprintf("given spec %d [%d, %d) is behind the current planned offset %d",
-			spec.Partition, spec.StartOffset, spec.EndOffset, s.offsets.planned.offset()))
+		// increasing offset order. The job ID encodes each WC's start offset.
+		panic(fmt.Sprintf("planned job %q for partition %d is behind the current planned offset", id, s.partition))
 	}
 
 	js := &jobState{jobID: id, spec: spec, complete: false}
 	s.plannedJobs.PushBack(js)
 	s.plannedJobsMap[js.jobID] = js
-	s.offsets.planned.advance(id, spec)
+	for _, rng := range spec.Ranges() {
+		s.offsets[rng.WcId].planned.advance(id, rng)
+	}
+}
+
+func (s *partitionState) committedOffset(wc int) int64 {
+	return s.offsets[wc].committed.offset()
+}
+
+func (s *partitionState) committedEmpty(wc int) bool {
+	return s.offsets[wc].committed.empty()
+}
+
+// committedBeyondSpec reports whether every WC range in spec is already at or
+// under that WC's committed offset (i.e. the whole job is already consumed).
+func (s *partitionState) committedBeyondSpec(spec schedulerpb.JobSpec) bool {
+	if len(spec.Ranges()) == 0 {
+		return false
+	}
+	for _, rng := range spec.Ranges() {
+		if !s.offsets[rng.WcId].committed.beyondSpec(rng) {
+			return false
+		}
+	}
+	return true
+}
+
+func (s *partitionState) plannedOffset(wc int) int64 {
+	return s.offsets[wc].planned.offset()
+}
+
+func (s *partitionState) plannedEmpty(wc int) bool {
+	return s.offsets[wc].planned.empty()
+}
+
+func (s *partitionState) plannedBeyondSpec(spec schedulerpb.JobSpec) bool {
+	if len(spec.Ranges()) == 0 {
+		return false
+	}
+	for _, rng := range spec.Ranges() {
+		if !s.offsets[rng.WcId].planned.beyondSpec(rng) {
+			return false
+		}
+	}
+	return true
+}
+
+// plannedValidNextSpec reports whether spec is the contiguous next job for
+// every WC, i.e. each WC entry's start offset equals that WC's planned offset
+// (or that WC's planned offset is still empty). A gap in any WC makes it false.
+func (s *partitionState) plannedValidNextSpec(spec schedulerpb.JobSpec) bool {
+	if len(spec.Ranges()) == 0 {
+		return false
+	}
+	for _, rng := range spec.Ranges() {
+		if !s.offsets[rng.WcId].planned.validNextSpec(rng) {
+			return false
+		}
+	}
+	return true
 }
 
 func (s *partitionState) completeJob(jobID string) error {
@@ -141,37 +226,11 @@ func (s *partitionState) completeJob(jobID string) error {
 		}
 		s.plannedJobs.Remove(elem)
 		delete(s.plannedJobsMap, js.jobID)
-		s.offsets.committed.advance(js.jobID, js.spec)
+		for _, rng := range js.spec.Ranges() {
+			s.offsets[rng.WcId].committed.advance(js.jobID, rng)
+		}
 	}
 	return nil
-}
-
-func (s *partitionState) committedOffset() int64 {
-	return s.offsets.committed.offset()
-}
-
-func (s *partitionState) committedEmpty() bool {
-	return s.offsets.committed.empty()
-}
-
-func (s *partitionState) committedBeyondSpec(spec schedulerpb.JobSpec) bool {
-	return s.offsets.committed.beyondSpec(spec)
-}
-
-func (s *partitionState) plannedOffset() int64 {
-	return s.offsets.planned.offset()
-}
-
-func (s *partitionState) plannedEmpty() bool {
-	return s.offsets.planned.empty()
-}
-
-func (s *partitionState) plannedBeyondSpec(spec schedulerpb.JobSpec) bool {
-	return s.offsets.planned.beyondSpec(spec)
-}
-
-func (s *partitionState) plannedValidNextSpec(spec schedulerpb.JobSpec) bool {
-	return s.offsets.planned.validNextSpec(spec)
 }
 
 // singleClusterOffsets tracks the offsets for a single Kafka cluster.
@@ -233,26 +292,26 @@ const (
 	offsetNameCommitted = "committed"
 )
 
-// advance moves the offset forward by the given job spec. Advancements are
+// advance moves the offset forward by a single WC's range. Advancements are
 // expected to be monotonically increasing and contiguous. Advance will not
 // allow backwards movement. If a gap is detected, a warning is logged and a
 // metric is incremented.
-func (o *advancingOffset) advance(jobID string, spec schedulerpb.JobSpec) {
-	if o.beyondSpec(spec) {
+func (o *advancingOffset) advance(jobID string, rng schedulerpb.WCOffsetRange) {
+	if o.beyondSpec(rng) {
 		// Frequent, and expected.
 		level.Debug(o.logger).Log("msg", "ignoring historical job", "offset_name", o.name, "job_id", jobID,
-			"partition", spec.Partition, "start_offset", spec.StartOffset, "end_offset", spec.EndOffset, "committed", o.off)
+			"start_offset", rng.StartOffset, "end_offset", rng.EndOffset, "committed", o.off)
 		return
 	}
 
-	if !o.validNextSpec(spec) {
+	if !o.validNextSpec(rng) {
 		// Gap detected.
 		level.Warn(o.logger).Log("msg", "gap detected in offset advancement", "offset_name", o.name, "job_id", jobID,
-			"partition", spec.Partition, "start_offset", spec.StartOffset, "end_offset", spec.EndOffset, "committed", o.off)
+			"start_offset", rng.StartOffset, "end_offset", rng.EndOffset, "committed", o.off)
 		o.metrics.jobGapDetected.WithLabelValues(o.name).Inc()
 	}
 
-	o.off = spec.EndOffset
+	o.off = rng.EndOffset
 }
 
 func (o *advancingOffset) offset() int64 {
@@ -268,14 +327,14 @@ func (o *advancingOffset) empty() bool {
 	return o.off == offsetEmpty
 }
 
-// validNextSpec returns true if the given job spec is valid to be added to the
-// offset. It is valid if the start offset is the same as the current offset.
-// We also allow transitioning out of an empty offset without calling it a gap.
-func (o *advancingOffset) validNextSpec(spec schedulerpb.JobSpec) bool {
-	return o.off == spec.StartOffset || o.empty()
+// validNextSpec returns true if a single WC's range is valid to be added to the
+// offset. It is valid if the start offset is the same as the current offset. We
+// also allow transitioning out of an empty offset without calling it a gap.
+func (o *advancingOffset) validNextSpec(rng schedulerpb.WCOffsetRange) bool {
+	return o.off == rng.StartOffset || o.empty()
 }
 
-// beyondSpec returns true if the offset is beyond the given job spec.
-func (o *advancingOffset) beyondSpec(spec schedulerpb.JobSpec) bool {
-	return !o.empty() && spec.EndOffset <= o.off
+// beyondSpec returns true if the offset is beyond a single WC's range.
+func (o *advancingOffset) beyondSpec(rng schedulerpb.WCOffsetRange) bool {
+	return !o.empty() && rng.EndOffset <= o.off
 }

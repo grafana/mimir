@@ -24,14 +24,14 @@
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
-  "block-builder-0":
+  "block-builder-rc-0":
     "build":
       "context": "."
       "dockerfile": "dev.dockerfile"
     "command":
       - "sh"
       - "-c"
-      - "exec ./mimir -config.file=./config/mimir.yaml -target=block-builder -activity-tracker.filepath=/activity/block-builder-0 -blocks-storage.s3.bucket-name=mimir-blocks-rc-0"
+      - "exec ./mimir -config.file=./config/mimir.yaml -target=block-builder -activity-tracker.filepath=/activity/block-builder-rc-0 -block-builder.scheduler.address=block-builder-scheduler-rc-0:9095 -ingest-storage.kafka.address='kafka-wc-<write-compartment-id>:9092'"
     "depends_on":
       "kafka-wc-0":
         "condition": "service_healthy"
@@ -41,22 +41,22 @@
         "condition": "service_started"
     "environment":
       - "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://tempo:4318/v1/traces"
-    "hostname": "block-builder-0"
+    "hostname": "block-builder-rc-0"
     "image": "mimir"
     "ports":
-      - "8009:8080"
-      - "11009:11009"
+      - "8070:8080"
+      - "11070:11070"
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
-  "block-builder-scheduler-0":
+  "block-builder-rc-1":
     "build":
       "context": "."
       "dockerfile": "dev.dockerfile"
     "command":
       - "sh"
       - "-c"
-      - "exec ./mimir -config.file=./config/mimir.yaml -target=block-builder-scheduler -activity-tracker.filepath=/activity/block-builder-scheduler-0"
+      - "exec ./mimir -config.file=./config/mimir.yaml -target=block-builder -activity-tracker.filepath=/activity/block-builder-rc-1 -block-builder.scheduler.address=block-builder-scheduler-rc-1:9095 -ingest-storage.kafka.address='kafka-wc-<write-compartment-id>:9092'"
     "depends_on":
       "kafka-wc-0":
         "condition": "service_healthy"
@@ -66,11 +66,61 @@
         "condition": "service_started"
     "environment":
       - "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://tempo:4318/v1/traces"
-    "hostname": "block-builder-scheduler-0"
+    "hostname": "block-builder-rc-1"
     "image": "mimir"
     "ports":
-      - "8010:8080"
-      - "11010:11010"
+      - "8071:8080"
+      - "11071:11071"
+    "volumes":
+      - "./config:/mimir/config"
+      - "./activity:/activity"
+  "block-builder-scheduler-rc-0":
+    "build":
+      "context": "."
+      "dockerfile": "dev.dockerfile"
+    "command":
+      - "sh"
+      - "-c"
+      - "exec ./mimir -config.file=./config/mimir.yaml -target=block-builder-scheduler -activity-tracker.filepath=/activity/block-builder-scheduler-rc-0 -ingest-storage.kafka.address='kafka-wc-<write-compartment-id>:9092' -ingest-storage.kafka.topic=mimir-ingest-rc-0 -block-builder-scheduler.consumer-group=block-builder-rc-0"
+    "depends_on":
+      "kafka-wc-0":
+        "condition": "service_healthy"
+      "kafka-wc-1":
+        "condition": "service_healthy"
+      "minio":
+        "condition": "service_started"
+    "environment":
+      - "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://tempo:4318/v1/traces"
+    "hostname": "block-builder-scheduler-rc-0"
+    "image": "mimir"
+    "ports":
+      - "8065:8080"
+      - "11065:11065"
+    "volumes":
+      - "./config:/mimir/config"
+      - "./activity:/activity"
+  "block-builder-scheduler-rc-1":
+    "build":
+      "context": "."
+      "dockerfile": "dev.dockerfile"
+    "command":
+      - "sh"
+      - "-c"
+      - "exec ./mimir -config.file=./config/mimir.yaml -target=block-builder-scheduler -activity-tracker.filepath=/activity/block-builder-scheduler-rc-1 -ingest-storage.kafka.address='kafka-wc-<write-compartment-id>:9092' -ingest-storage.kafka.topic=mimir-ingest-rc-1 -block-builder-scheduler.consumer-group=block-builder-rc-1"
+    "depends_on":
+      "kafka-wc-0":
+        "condition": "service_healthy"
+      "kafka-wc-1":
+        "condition": "service_healthy"
+      "minio":
+        "condition": "service_started"
+    "environment":
+      - "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://tempo:4318/v1/traces"
+    "hostname": "block-builder-scheduler-rc-1"
+    "image": "mimir"
+    "ports":
+      - "8066:8080"
+      - "11066:11066"
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
@@ -432,11 +482,11 @@
       - "KAFKA_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093,PLAINTEXT_HOST://:29092"
       - "KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka-wc-0:9092,PLAINTEXT_HOST://localhost:29092"
     "healthcheck":
-      "interval": "1s"
+      "interval": "5s"
       "retries": "30"
-      "start_period": "1s"
+      "start_period": "20s"
       "test": "kafka-broker-api-versions --bootstrap-server localhost:9092 || exit 1"
-      "timeout": "1s"
+      "timeout": "10s"
     "hostname": "kafka-wc-0"
     "image": "confluentinc/cp-kafka:latest"
     "ports":
@@ -459,11 +509,11 @@
       - "KAFKA_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093,PLAINTEXT_HOST://:29093"
       - "KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka-wc-1:9092,PLAINTEXT_HOST://localhost:29093"
     "healthcheck":
-      "interval": "1s"
+      "interval": "5s"
       "retries": "30"
-      "start_period": "1s"
+      "start_period": "20s"
       "test": "kafka-broker-api-versions --bootstrap-server localhost:9092 || exit 1"
-      "timeout": "1s"
+      "timeout": "10s"
     "hostname": "kafka-wc-1"
     "image": "confluentinc/cp-kafka:latest"
     "ports":

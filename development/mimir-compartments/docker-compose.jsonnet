@@ -181,25 +181,41 @@ std.manifestYamlDoc({
     for id in std.range(1, count)
   },
 
-  // The block-builder isn't compartment-aware yet: it consumes read compartment 0's topic and uploads
-  // to that compartment's dedicated bucket, so read compartment 0 is a full end-to-end slice whose
-  // blocks are compacted and served by its own compactor and store-gateways. The other compartments'
-  // compactors and store-gateways run against (empty) buckets until the block-builder is compartmentalised.
+  // One block-builder per read compartment, like the ingesters. Each serves a single read
+  // compartment: it pulls jobs from that compartment's scheduler and consumes each job's topic
+  // from every write compartment's Kafka cluster (<write-compartment-id> expanded per cluster).
   block_builder:: {
-    'block-builder-0': mimirService({
-      name: 'block-builder-0',
+    ['block-builder-rc-%d' % rc]: mimirService({
+      name: 'block-builder-rc-%d' % rc,
       target: 'block-builder',
-      publishedHttpPort: 8009,
-      extraArguments: ['-blocks-storage.s3.bucket-name=mimir-blocks-rc-0'],
-    }),
+      publishedHttpPort: 8070 + rc,
+      extraArguments: [
+        // Connect this block-builder to its own read compartment's scheduler explicitly.
+        '-block-builder.scheduler.address=block-builder-scheduler-rc-%d:9095' % rc,
+        // Single-quoted so "<...>" isn't read as a shell redirection by "sh -c"; the placeholder is
+        // expanded to each write compartment's cluster at runtime.
+        "-ingest-storage.kafka.address='kafka-wc-<write-compartment-id>:9092'",
+      ],
+    })
+    for rc in std.range(0, numCompartments - 1)
   },
 
+  // One scheduler per read compartment, each monitoring its read compartment's topic across every
+  // write compartment's cluster and committing offsets under its own per-compartment consumer group.
   block_builder_scheduler:: {
-    'block-builder-scheduler-0': mimirService({
-      name: 'block-builder-scheduler-0',
+    ['block-builder-scheduler-rc-%d' % rc]: mimirService({
+      name: 'block-builder-scheduler-rc-%d' % rc,
       target: 'block-builder-scheduler',
-      publishedHttpPort: 8010,
-    }),
+      publishedHttpPort: 8065 + rc,
+      extraArguments: [
+        "-ingest-storage.kafka.address='kafka-wc-<write-compartment-id>:9092'",
+        // This read compartment's topic, consumed from every write compartment's cluster, plus a
+        // per-compartment consumer group so each scheduler commits its offsets independently.
+        '-ingest-storage.kafka.topic=mimir-ingest-rc-%d' % rc,
+        '-block-builder-scheduler.consumer-group=block-builder-rc-%d' % rc,
+      ],
+    })
+    for rc in std.range(0, numCompartments - 1)
   },
 
   usage_trackers:: {
@@ -325,9 +341,12 @@ std.manifestYamlDoc({
       ],
       healthcheck: {
         test: 'kafka-broker-api-versions --bootstrap-server localhost:9092 || exit 1',
-        start_period: '1s',
-        interval: '1s',
-        timeout: '1s',
+        // The JVM-based kafka-broker-api-versions tool takes a few seconds to start, so the timeout
+        // must be generous; a 1s timeout marks a healthy broker unhealthy and blocks every dependent
+        // service (depends_on: service_healthy) from ever starting.
+        start_period: '20s',
+        interval: '5s',
+        timeout: '10s',
         retries: '30',
       },
     }

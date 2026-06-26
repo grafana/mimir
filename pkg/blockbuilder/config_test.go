@@ -33,6 +33,13 @@ func TestConfig_Validate(t *testing.T) {
 		cfg.DataDir = ""
 		require.Error(t, cfg.Validate())
 	})
+
+	t.Run("compartments disabled is valid", func(t *testing.T) {
+		cfg, _ := blockBuilderConfig(t, "kafka:9092", nil)
+
+		require.False(t, cfg.Compartments.Enabled)
+		require.NoError(t, cfg.Validate())
+	})
 }
 
 const (

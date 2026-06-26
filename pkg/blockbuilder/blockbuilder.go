@@ -9,6 +9,7 @@ import (
 	"iter"
 	"os"
 	"path"
+	"strconv"
 	"sync"
 	"time"
 
@@ -45,17 +46,21 @@ type BlockBuilder struct {
 	logger          log.Logger
 	register        prometheus.Registerer
 	limits          *validation.Overrides
-	kafkaClient     *kgo.Client
+	kafkaClients    []*kgo.Client // one per write WC; index is the WC ID.
 	bucketClient    objstore.Bucket
 	schedulerClient schedulerpb.SchedulerClient
 	schedulerConn   *grpc.ClientConn
 
-	blockBuilderMetrics   blockBuilderMetrics
-	tsdbBuilderMetrics    tsdbBuilderMetrics
-	tsdbMetrics           *mimir_tsdb.TSDBMetrics
-	readerMetrics         *ingest.ReaderMetrics
-	readerMetricsSource   *swappableReaderMetricsSource
-	kpromMetrics          *kprom.Metrics
+	blockBuilderMetrics blockBuilderMetrics
+	tsdbBuilderMetrics  tsdbBuilderMetrics
+	tsdbMetrics         *mimir_tsdb.TSDBMetrics
+	// The Kafka client metrics are tracked per write WC, index is the WC ID. When
+	// compartments are enabled each WC's metrics are labeled by write_compartment;
+	// otherwise there is a single unlabeled entry. readerMetrics entries are nil
+	// unless concurrent fetching is enabled.
+	readerMetrics         []*ingest.ReaderMetrics
+	readerMetricsSources  []*swappableReaderMetricsSource
+	kproms                []*kprom.Metrics
 	pusherConsumerMetrics *ingest.PusherConsumerMetrics
 }
 
@@ -76,13 +81,25 @@ func newWithSchedulerClient(
 	limits *validation.Overrides,
 	schedulerClient schedulerpb.SchedulerClient,
 ) (*BlockBuilder, error) {
-	kpm := ingest.NewKafkaReaderClientMetrics(ingest.ReaderMetricsPrefix, "block-builder", reg)
-	readerMetricsSource := &swappableReaderMetricsSource{}
-
-	var readerMetrics *ingest.ReaderMetrics
-	if cfg.Kafka.FetchConcurrencyMax > 0 {
-		m := ingest.NewReaderMetrics(reg, readerMetricsSource, cfg.Kafka.Topic, kpm)
-		readerMetrics = &m
+	// One Kafka client metrics set per write WC. With compartments enabled each
+	// WC's registerer is labeled by write_compartment so the per-cluster client and
+	// reader metrics don't collide; with compartments disabled there is a single
+	// unlabeled set, identical to before compartments existed.
+	numWCs := len(wcClientConfigs(cfg.Kafka, cfg.Compartments))
+	kproms := make([]*kprom.Metrics, numWCs)
+	readerMetricsSources := make([]*swappableReaderMetricsSource, numWCs)
+	readerMetrics := make([]*ingest.ReaderMetrics, numWCs)
+	for wc := range numWCs {
+		wcReg := reg
+		if cfg.Compartments.Enabled {
+			wcReg = prometheus.WrapRegistererWith(prometheus.Labels{"write_compartment": strconv.Itoa(wc)}, reg)
+		}
+		kproms[wc] = ingest.NewKafkaReaderClientMetrics(ingest.ReaderMetricsPrefix, "block-builder", wcReg)
+		readerMetricsSources[wc] = &swappableReaderMetricsSource{}
+		if cfg.Kafka.FetchConcurrencyMax > 0 {
+			m := ingest.NewReaderMetrics(wcReg, readerMetricsSources[wc], cfg.Kafka.Topic, kproms[wc])
+			readerMetrics[wc] = &m
+		}
 	}
 
 	b := &BlockBuilder{
@@ -94,8 +111,8 @@ func newWithSchedulerClient(
 		tsdbBuilderMetrics:    newTSDBBuilderMetrics(reg),
 		tsdbMetrics:           mimir_tsdb.NewTSDBMetrics(prometheus.WrapRegistererWithPrefix("cortex_blockbuilder_", reg), logger),
 		readerMetrics:         readerMetrics,
-		readerMetricsSource:   readerMetricsSource,
-		kpromMetrics:          kpm,
+		readerMetricsSources:  readerMetricsSources,
+		kproms:                kproms,
 		pusherConsumerMetrics: ingest.NewPusherConsumerMetrics(reg),
 	}
 
@@ -158,33 +175,38 @@ func (b *BlockBuilder) starting(ctx context.Context) (err error) {
 		return fmt.Errorf("creating data dir: %w", err)
 	}
 
-	if b.readerMetrics != nil {
-		// ingest.ReaderMetrics is a service that pulls metrics from the provided readerMetricsSource.
-		if err := services.StartAndAwaitRunning(ctx, b.readerMetrics); err != nil {
-			return fmt.Errorf("starting kafka reader metrics: %w", err)
+	// One reader client per write WC, each wired to that WC's metrics. The
+	// ingest.ReaderMetrics (concurrent-fetcher path only) are services that pull
+	// from the matching readerMetricsSource.
+	for wc, kcfg := range wcClientConfigs(b.cfg.Kafka, b.cfg.Compartments) {
+		if b.readerMetrics[wc] != nil {
+			if err := services.StartAndAwaitRunning(ctx, b.readerMetrics[wc]); err != nil {
+				return fmt.Errorf("starting kafka reader metrics for wc %d: %w", wc, err)
+			}
 		}
-	}
-
-	b.kafkaClient, err = ingest.NewKafkaReaderClient(
-		b.cfg.Kafka,
-		b.kpromMetrics,
-		b.logger,
-	)
-	if err != nil {
-		return fmt.Errorf("creating kafka reader: %w", err)
+		c, err := ingest.NewKafkaReaderClient(kcfg, b.kproms[wc], b.logger)
+		if err != nil {
+			return fmt.Errorf("creating kafka reader for wc %d: %w", wc, err)
+		}
+		b.kafkaClients = append(b.kafkaClients, c)
 	}
 
 	return nil
 }
 
 func (b *BlockBuilder) stopping(_ error) error {
-	b.kafkaClient.Close()
+	for _, c := range b.kafkaClients {
+		c.Close()
+	}
 	b.schedulerClient.Close()
 
-	if b.readerMetrics != nil {
-		if err := services.StopAndAwaitTerminated(context.Background(), b.readerMetrics); err != nil {
+	for wc, rm := range b.readerMetrics {
+		if rm == nil {
+			continue
+		}
+		if err := services.StopAndAwaitTerminated(context.Background(), rm); err != nil {
 			// This service can't fail.
-			level.Warn(b.logger).Log("msg", "error encountered while stopping kafka reader metrics service", "err", err)
+			level.Warn(b.logger).Log("msg", "error encountered while stopping kafka reader metrics service", "write_compartment", wc, "err", err)
 		}
 	}
 
@@ -262,13 +284,48 @@ func (b *BlockBuilder) consumeJob(ctx context.Context, key schedulerpb.JobKey, s
 
 	logger := log.With(sp, "partition", spec.Partition, "job_id", key.Id, "job_epoch", key.Epoch)
 
+	if len(spec.Ranges()) == 0 {
+		// A valid job always carries at least one WC range. An empty spec is a
+		// bug: completing it as a no-op would advance offsets past unconsumed
+		// data, so fail loudly instead.
+		return fmt.Errorf("job spec for partition %d has no WC entries", spec.Partition)
+	}
+
+	// The spec encoding (compartment vs non-compartment) must match this
+	// block-builder's configuration; otherwise Ranges() would map ranges onto the
+	// wrong Kafka clusters. Both derive from the same config, so a mismatch is a
+	// misconfiguration.
+	if specIsCompartment := len(spec.OffsetRanges) > 0; specIsCompartment != b.cfg.Compartments.Enabled {
+		return fmt.Errorf("job spec for partition %d has compartment-mode=%t but block-builder has compartments enabled=%t", spec.Partition, specIsCompartment, b.cfg.Compartments.Enabled)
+	}
+
 	builder := NewTSDBBuilder(spec.Partition, b.cfg, b.limits, logger, b.tsdbBuilderMetrics, b.tsdbMetrics)
 	defer runutil.CloseWithErrCapture(&err, builder, "closing tsdb builder")
 
 	// TODO: the block-builder can skip unmarshaling of exemplars because TSDB doesn't persist them into blocks; find a way to let PusherConsumer know about it
 	consumer := ingest.NewPusherConsumer(builder, b.cfg.Kafka, b.pusherConsumerMetrics, logger)
 
-	return b.consumePartitionSection(ctx, logger, consumer, builder, spec.Partition, spec.StartOffset, spec.EndOffset)
+	if b.cfg.Compartments.Enabled {
+		// Compartment mode: one offset range per write compartment, each on its own
+		// cluster. Consume them concurrently and k-way merge in record-timestamp
+		// order so cross-WC appends stay roughly ordered rather than leaning on the
+		// TSDB out-of-order window.
+		if err := b.consumePartitionMerged(ctx, logger, consumer, builder, spec); err != nil {
+			return err
+		}
+	} else {
+		// Non-compartment mode: a single offset range consumed directly
+		if err := b.consumePartitionSection(ctx, logger, 0, consumer, builder, spec.Topic, spec.Partition, spec.StartOffset, spec.EndOffset); err != nil {
+			return err
+		}
+	}
+
+	metas, err := builder.CompactAndUpload(ctx, b.uploadBlocks)
+	if err != nil {
+		return err
+	}
+	level.Info(logger).Log("msg", "done consuming job", "num_blocks", len(metas))
+	return nil
 }
 
 type fetchPoller interface {
@@ -330,8 +387,8 @@ var _ ingest.ReaderMetricsSource = (*swappableReaderMetricsSource)(nil)
 
 // newFetchers creates a new concurrent fetcher, retrying until it succeeds or the context is cancelled.
 // The returned error is the last error encountered.
-func (b *BlockBuilder) newFetchers(ctx context.Context, logger log.Logger, partition int32, startOffset int64) (*ingest.ConcurrentFetchers, error) {
-	if b.readerMetrics == nil {
+func (b *BlockBuilder) newFetchers(ctx context.Context, logger log.Logger, client *kgo.Client, readerMetrics *ingest.ReaderMetrics, topic string, partition int32, startOffset int64) (*ingest.ConcurrentFetchers, error) {
+	if readerMetrics == nil {
 		panic("readerMetrics should be non-nil when concurrent fetchers are used")
 	}
 
@@ -346,9 +403,9 @@ func (b *BlockBuilder) newFetchers(ctx context.Context, logger log.Logger, parti
 	for boff.Ongoing() {
 		f, ferr := ingest.NewConcurrentFetchers(
 			ctx,
-			b.kafkaClient,
+			client,
 			logger,
-			b.cfg.Kafka.Topic,
+			topic,
 			partition,
 			startOffset,
 			b.cfg.Kafka.FetchConcurrencyMax,
@@ -362,7 +419,7 @@ func (b *BlockBuilder) newFetchers(ctx context.Context, logger log.Logger, parti
 				MinBackoff: 100 * time.Millisecond,
 				MaxBackoff: 1 * time.Second,
 			},
-			b.readerMetrics)
+			readerMetrics)
 		if ferr == nil {
 			return f, nil
 		}
@@ -374,25 +431,32 @@ func (b *BlockBuilder) newFetchers(ctx context.Context, logger log.Logger, parti
 	return nil, lastError
 }
 
-// consumePartitionSection is for the use of scheduler-based architecture.
-// startOffset is inclusive, endOffset is exclusive, and must be valid offsets and not something in the future (endOffset can be technically 1 offset in the future).
-// All the records and samples between these offsets will be consumed and put into a block.
-// The returned lastConsumedOffset is the offset of the last record consumed.
+// consumePartitionSection consumes one [startOffset, endOffset) range of a
+// partition from write compartment wc's Kafka client (b.kafkaClients[wc]),
+// forwarding records to consumer. startOffset is inclusive, endOffset is
+// exclusive, and must be valid offsets and not something in the future
+// (endOffset can be technically 1 offset in the future). If builder is non-nil
+// it also runs early head compaction between fetches. It does not compact or
+// upload.
 func (b *BlockBuilder) consumePartitionSection(
 	ctx context.Context,
 	logger log.Logger,
+	wc int,
 	consumer ingest.RecordConsumer,
 	builder *TSDBBuilder,
+	topic string,
 	partition int32,
 	startOffset, endOffset int64,
 ) (retErr error) {
+	logger = log.With(logger, "write_compartment", wc)
+	client := b.kafkaClients[wc]
+
 	lastConsumedOffset := startOffset
 	if startOffset >= endOffset {
 		level.Info(logger).Log("msg", "nothing to consume")
 		return
 	}
 
-	var blockMetas []tsdb.BlockMeta
 	defer func(t time.Time) {
 		// No need to log or track time of the unfinished section. Just bail out.
 		if errors.Is(retErr, context.Canceled) {
@@ -408,25 +472,25 @@ func (b *BlockBuilder) consumePartitionSection(
 
 		level.Info(logger).Log("msg", "done consuming", "duration", dur, "partition", partition,
 			"start_offset", startOffset, "end_offset", endOffset,
-			"last_consumed_offset", lastConsumedOffset, "num_blocks", len(blockMetas))
+			"last_consumed_offset", lastConsumedOffset)
 	}(time.Now())
 
-	b.kafkaClient.AddConsumePartitions(map[string]map[int32]kgo.Offset{
-		b.cfg.Kafka.Topic: {
+	client.AddConsumePartitions(map[string]map[int32]kgo.Offset{
+		topic: {
 			partition: kgo.NewOffset().At(startOffset),
 		},
 	})
-	defer b.kafkaClient.RemoveConsumePartitions(map[string][]int32{b.cfg.Kafka.Topic: {partition}})
+	defer client.RemoveConsumePartitions(map[string][]int32{topic: {partition}})
 
-	var fetchPoller fetchPoller = b.kafkaClient
+	var fetchPoller fetchPoller = client
 
 	if b.cfg.Kafka.FetchConcurrencyMax > 0 {
-		f, ferr := b.newFetchers(ctx, logger, partition, startOffset)
+		f, ferr := b.newFetchers(ctx, logger, client, b.readerMetrics[wc], topic, partition, startOffset)
 		if ferr != nil {
 			return fmt.Errorf("creating concurrent fetcher: %w", ferr)
 		}
 
-		b.readerMetricsSource.set(f)
+		b.readerMetricsSources[wc].set(f)
 
 		f.Start(ctx)
 		defer f.Stop()
@@ -463,10 +527,12 @@ func (b *BlockBuilder) consumePartitionSection(
 		}
 
 		// Early head compaction is a safety net to try reducing number of in-memory series across all tenants.
-		// For the majority of cases it's a noop.
-		err := builder.CompactToReduceInMemorySeries(ctx)
-		if err != nil {
-			level.Error(logger).Log("msg", "failed to run early head compaction", "err", err)
+		// For the majority of cases it's a noop. builder is nil on the merge path, where the single merge
+		// goroutine owns the builder and runs this instead.
+		if builder != nil {
+			if err := builder.CompactToReduceInMemorySeries(ctx); err != nil {
+				level.Error(logger).Log("msg", "failed to run early head compaction", "err", err)
+			}
 		}
 
 		// PollFetches can return a non-failed fetch with zero records. In such a case, with only the fetches at hands,
@@ -522,14 +588,8 @@ func (b *BlockBuilder) consumePartitionSection(
 		level.Info(logger).Log("msg", "no records were consumed")
 		return
 	}
-	var err error
-	blockMetas, err = builder.CompactAndUpload(ctx, b.uploadBlocks)
-	if err != nil {
-		return err
-	}
 
-	// TODO: figure out a way to track the blockCounts metrics.
-
+	// Compaction and upload happen once in consumeJob after every WC is consumed.
 	return nil
 }
 
