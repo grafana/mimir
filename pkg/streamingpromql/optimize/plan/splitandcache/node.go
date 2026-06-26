@@ -4,6 +4,7 @@ package splitandcache
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -78,19 +79,31 @@ func (s *TimeRangeSplit) MinimumRequiredPlanVersion(timeRange types.QueryTimeRan
 }
 
 type TimeRangeSplitMaterializer struct {
+	splittingEnabled    bool
 	splitQueriesCounter prometheus.Counter
 }
 
-func NewTimeRangeSplitMaterializer(reg prometheus.Registerer) *TimeRangeSplitMaterializer {
-	return &TimeRangeSplitMaterializer{
-		splitQueriesCounter: NewSplitQueriesCounter(reg),
+func NewTimeRangeSplitMaterializer(splittingEnabled bool, reg prometheus.Registerer) *TimeRangeSplitMaterializer {
+	m := &TimeRangeSplitMaterializer{
+		splittingEnabled: splittingEnabled,
 	}
+
+	if splittingEnabled {
+		// Only register the metric if splitting is enabled, to avoid conflicting with the query-frontend middleware doing the same thing.
+		m.splitQueriesCounter = NewSplitQueriesCounter(reg)
+	}
+
+	return m
 }
 
 // The logic below is based on the equivalent middleware logic in splitQueryByInterval.
 func (m *TimeRangeSplitMaterializer) Materialize(ctx context.Context, n planning.Node, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters, overrideRangeParams planning.RangeParams) (planning.OperatorFactory, error) {
 	if overrideRangeParams.IsSet {
 		return nil, fmt.Errorf("overrideRangeParams is not supported for TimeRangeSplitMaterializer")
+	}
+
+	if !m.splittingEnabled {
+		return nil, errors.New("attempted to materialize a TimeRangeSplit node, but splitting is disabled")
 	}
 
 	node, ok := n.(*TimeRangeSplit)

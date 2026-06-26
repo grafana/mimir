@@ -204,7 +204,7 @@ func TestMaterializeSplit(t *testing.T) {
 			}
 
 			reg := prometheus.NewPedanticRegistry()
-			splitMaterializer := NewTimeRangeSplitMaterializer(reg)
+			splitMaterializer := NewTimeRangeSplitMaterializer(true, reg)
 			materializer := planning.NewMaterializer(params, map[planning.NodeType]planning.NodeMaterializer{
 				planning.NODE_TYPE_VECTOR_SELECTOR:  planning.NodeMaterializerFunc[*core.VectorSelector](core.MaterializeVectorSelector),
 				planning.NODE_TYPE_TIME_RANGE_SPLIT: splitMaterializer,
