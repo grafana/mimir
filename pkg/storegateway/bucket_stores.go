@@ -580,7 +580,12 @@ func (u *BucketStores) getOrCreateStore(ctx context.Context, userID string) (*Bu
 
 	level.Info(userLogger).Log("msg", "creating user bucket store")
 
-	userBkt := objstoretracing.WrapWithTraces(bucket.NewUserBucketClient(userID, u.bucket, u.limits), tracer)
+	var userBkt objstore.InstrumentedBucketReader
+	if u.cfg.BucketStore.IndexHeader.BucketReader.Enabled {
+		userBkt = objstoretracing.WrapWithTraces(bucket.NewUserBucketClient(userID, u.bucket, u.limits), tracer)
+	} else {
+		userBkt = bucket.NewUserBucketClient(userID, u.bucket, u.limits)
+	}
 
 	fetcherReg := prometheus.NewRegistry()
 	fetcherMetrics := NewBucketIndexBlockMetadataFetcherMetrics(fetcherReg, u.bucketStoreMetrics)

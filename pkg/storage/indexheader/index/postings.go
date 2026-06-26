@@ -37,6 +37,11 @@ type PostingListOffset struct {
 }
 
 type PostingsOffsetsTable interface {
+	// IsRemote flags if the Postings Offset table is accessed via a bucket reader
+	// or other remote storage which may introduce extra read latency;
+	// may be used to conditionally enable optimizations or set spans.
+	IsRemote() bool
+
 	// PostingsOffset returns the byte range of the postings section for the label with the given name and value.
 	// The Start is inclusive and is the byte offset of the number_of_entries field of a posting list.
 	// The End is exclusive and is typically the byte offset of the CRC32 field.
@@ -86,11 +91,13 @@ type PostingsOffsetsTableV2 struct {
 
 	SparseSampleFactor int
 
-	// isRemote marks Postings Offset table is accessed by a bucket reader;
-	// may be used to conditionally enable optimizations or set spans.
 	isRemote      bool
 	decbufFactory streamencoding.DecbufFactory
 	tableOffset   int
+}
+
+func (t *PostingsOffsetsTableV2) IsRemote() bool {
+	return t.isRemote
 }
 
 func (t *PostingsOffsetsTableV2) PostingsOffset(ctx context.Context, name string, value string) (rng index.Range, found bool, err error) {
@@ -117,9 +124,8 @@ func (t *PostingsOffsetsTableV2) PostingsOffset(ctx context.Context, name string
 	}
 
 	var d streamencoding.Decbuf
-	if t.isRemote {
+	if t.IsRemote() {
 		var sectionEndOffset int
-
 		// In order to correctly set Range.End, we need to read the next entry beyond the one we are looking for.
 		// In the worst case where the value is found right before the next (i+1'th) sparse table offset,
 		// we need to read the entry that starts at the i+1'th offset. To account for this, we create the reader up to the i+2'th sparse table offset.
@@ -212,9 +218,8 @@ func (t *PostingsOffsetsTableV2) LabelValuesOffsets(ctx context.Context, name, p
 	offsets := make([]PostingListOffset, 0, (offsetsEnd-offsetsStart)*t.SparseSampleFactor)
 
 	var d streamencoding.Decbuf
-	if t.isRemote {
+	if t.IsRemote() {
 		var sectionEndOffset int
-
 		if offsetsEnd+1 < len(e.SparseTableOffsets) {
 			// We buffer the end with the distance to one more sparse offset in case the last matching entry is right at the end of the section.
 			sectionEndOffset = e.SparseTableOffsets[offsetsEnd+1].Offset

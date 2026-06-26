@@ -21,6 +21,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/thanos-io/objstore"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 
 	streamencoding "github.com/grafana/mimir/pkg/storage/indexheader/encoding"
 	streamindex "github.com/grafana/mimir/pkg/storage/indexheader/index"
@@ -280,23 +281,23 @@ func (r *StreamBinaryReader) IndexHeaderVersion() int {
 	return BinaryFormatV1
 }
 
-func (r *StreamBinaryReader) IsRemotePostingsOffsets(context.Context) (bool, error) {
-	_, ok := r.postingsOffsetsDecbufFactory.(*streamencoding.BucketDecbufFactory)
-	return ok, nil
-}
-
 func (r *StreamBinaryReader) PostingsOffset(ctx context.Context, name string, value string) (rng index.Range, returnErr error) {
-	ctx, span := tracer.Start(ctx, "PostingsOffset()")
-	defer func() {
-		span.SetAttributes(
-			attribute.String("name", name),
-			attribute.String("value", value),
-		)
-		if returnErr != nil {
-			span.RecordError(returnErr)
-		}
-		span.End()
-	}()
+	if r.postingsOffsetTable.IsRemote() {
+		// Only create span if we need to track latency to remote storage.
+		var span trace.Span
+		ctx, span = tracer.Start(ctx, "PostingsOffset()")
+		defer func() {
+			span.SetAttributes(
+				attribute.String("name", name),
+				attribute.String("value", value),
+			)
+			if returnErr != nil {
+				span.RecordError(returnErr)
+			}
+			span.End()
+		}()
+	}
+
 	rng, found, err := r.postingsOffsetTable.PostingsOffset(ctx, name, value)
 	if err != nil {
 		return index.Range{}, err
@@ -358,17 +359,21 @@ func (r *StreamBinaryReader) SymbolsReader(context.Context) (streamindex.Symbols
 }
 
 func (r *StreamBinaryReader) LabelValuesOffsets(ctx context.Context, name string, prefix string, filter func(string) bool) (offsets []streamindex.PostingListOffset, returnErr error) {
-	ctx, span := tracer.Start(ctx, "LabelValuesOffsets()")
-	defer func() {
-		span.SetAttributes(
-			attribute.String("name", name),
-			attribute.String("prefix", prefix),
-		)
-		if returnErr != nil {
-			span.RecordError(returnErr)
-		}
-		span.End()
-	}()
+	if r.postingsOffsetTable.IsRemote() {
+		// Only create span if we need to track latency to remote storage.
+		var span trace.Span
+		ctx, span = tracer.Start(ctx, "LabelValuesOffsets()")
+		defer func() {
+			span.SetAttributes(
+				attribute.String("name", name),
+				attribute.String("prefix", prefix),
+			)
+			if returnErr != nil {
+				span.RecordError(returnErr)
+			}
+			span.End()
+		}()
+	}
 	return r.postingsOffsetTable.LabelValuesOffsets(ctx, name, prefix, filter)
 }
 

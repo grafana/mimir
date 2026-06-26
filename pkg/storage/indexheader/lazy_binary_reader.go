@@ -244,16 +244,6 @@ func (r *LazyBinaryReader) IndexVersion(ctx context.Context) (int, error) {
 	return loaded.reader.IndexVersion(ctx)
 }
 
-func (r *LazyBinaryReader) IsRemotePostingsOffsets(ctx context.Context) (bool, error) {
-	loaded := r.getOrLoadReader(ctx)
-	if loaded.err != nil {
-		return false, loaded.err
-	}
-	defer loaded.inUse.Done()
-
-	return loaded.reader.IsRemotePostingsOffsets(ctx)
-}
-
 // PostingsOffset implements Reader.
 func (r *LazyBinaryReader) PostingsOffset(ctx context.Context, name string, value string) (index.Range, error) {
 	loaded := r.getOrLoadReader(ctx)
