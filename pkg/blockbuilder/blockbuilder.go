@@ -107,7 +107,7 @@ func newWithSchedulerClient(
 
 	if schedulerClient != nil {
 		b.schedulerClient = schedulerClient
-	} else {
+	} else if cfg.LocalFile == "" {
 		var err error
 		if b.schedulerClient, b.schedulerConn, err = b.makeSchedulerClient(); err != nil {
 			return nil, fmt.Errorf("make scheduler client: %w", err)
@@ -158,6 +158,11 @@ func (b *BlockBuilder) starting(ctx context.Context) (err error) {
 		return fmt.Errorf("creating data dir: %w", err)
 	}
 
+	if b.cfg.LocalFile != "" {
+		// In local-file mode we don't connect to Kafka at all.
+		return nil
+	}
+
 	if b.readerMetrics != nil {
 		// ingest.ReaderMetrics is a service that pulls metrics from the provided readerMetricsSource.
 		if err := services.StartAndAwaitRunning(ctx, b.readerMetrics); err != nil {
@@ -178,10 +183,14 @@ func (b *BlockBuilder) starting(ctx context.Context) (err error) {
 }
 
 func (b *BlockBuilder) stopping(_ error) error {
-	b.kafkaClient.Close()
-	b.schedulerClient.Close()
+	if b.kafkaClient != nil {
+		b.kafkaClient.Close()
+	}
+	if b.schedulerClient != nil {
+		b.schedulerClient.Close()
+	}
 
-	if b.readerMetrics != nil {
+	if b.readerMetrics != nil && b.cfg.LocalFile == "" {
 		if err := services.StopAndAwaitTerminated(context.Background(), b.readerMetrics); err != nil {
 			// This service can't fail.
 			level.Warn(b.logger).Log("msg", "error encountered while stopping kafka reader metrics service", "err", err)
@@ -199,6 +208,10 @@ func (b *BlockBuilder) stopping(_ error) error {
 
 // running learns about the jobs from a block-builder-scheduler, and consumes one job at a time.
 func (b *BlockBuilder) running(ctx context.Context) error {
+	if b.cfg.LocalFile != "" {
+		return b.consumeLocalFile(ctx, b.cfg.LocalFile)
+	}
+
 	// Block-builder attempts to complete the current job when a shutdown
 	// request is received.
 	// To enable this, we create a child context whose cancellation signal is
