@@ -1,0 +1,60 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: test-list-blocks
+  namespace: default
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      containers:
+      - args:
+        - blocks
+        - list
+        - --backend=s3
+        - --s3.bucket-name=blocks-bucket
+        - --s3.endpoint=s3.dualstack.eu-west-1.amazonaws.com
+        - --s3.native-aws-auth-enabled=true
+        - --user=10428
+        image: grafana/mimirtool
+        imagePullPolicy: IfNotPresent
+        name: test-list-blocks
+        resources:
+          limits:
+            memory: 1Gi
+          requests:
+            cpu: "1"
+            memory: 512Mi
+      restartPolicy: Never
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: test-mark-blocks
+  namespace: default
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      containers:
+      - args:
+        - blocks
+        - mark
+        - --backend=s3
+        - --blocks=01FSCTA0A4M1YQHZQ4B2VTGS2R,01FSCTA0A4M1YQHZQ4B2VTGS7Z
+        - --details=Corrupted blocks
+        - --mark-type=no-compact
+        - --s3.bucket-name=blocks-bucket
+        - --s3.endpoint=s3.dualstack.eu-west-1.amazonaws.com
+        - --s3.native-aws-auth-enabled=true
+        - --tenant=10428
+        image: grafana/mimirtool
+        imagePullPolicy: IfNotPresent
+        name: test-mark-blocks
+        resources:
+          limits:
+            memory: 1Gi
+          requests:
+            cpu: "1"
+            memory: 512Mi
+      restartPolicy: Never
