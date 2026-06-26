@@ -198,6 +198,17 @@ type partitionState struct {
 	// this into the reader's first-fetch-completed signal.
 	warm atomic.Bool
 
+	// startOffset is the Kafka offset this pod began consuming the
+	// partition from, captured once the reader is running. Readcache
+	// always joins at the live edge (ConsumeFromPositionAtStartup =
+	// "end"), so this is the partition's high-water offset at
+	// acquisition time. -1 until the reader has started. Stored
+	// atomically because the admin page reads it concurrently with
+	// startKafkaReader. The current end offset is read live from the
+	// reader (LastSeenOffsets); the two together give the offset span
+	// this partition's TSDBs cover.
+	startOffset atomic.Int64
+
 	tenantsMu sync.RWMutex
 	tenants   map[string]*partitionTSDB
 
@@ -211,11 +222,14 @@ type partitionState struct {
 }
 
 func newPartitionState(partitionID int32) *partitionState {
-	return &partitionState{
+	p := &partitionState{
 		partitionID: partitionID,
 		tenants:     make(map[string]*partitionTSDB),
 		ranges:      newPartitionRanges(),
 	}
+	// -1 means "not started yet": distinct from a real offset 0.
+	p.startOffset.Store(-1)
+	return p
 }
 
 // New constructs a Readcache. Wiring (Kafka readers, ring registration,

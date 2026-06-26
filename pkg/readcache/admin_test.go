@@ -13,6 +13,8 @@ import (
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -126,6 +128,103 @@ func TestReadcache_AdminPage_RendersOwnedPartitionsAndRanges(t *testing.T) {
 	// two partitions.
 	assert.NotContains(t, body, "owns no partitions",
 		"the empty-state message must not render when we own partitions")
+}
+
+// TestReadcache_AdminPage_ListsManagedTSDBs verifies the "Managed
+// TSDBs" listing surfaces both the live TSDB this pod is ingesting
+// into and the read-only frozen epoch retained for a partition that
+// moved away, with their partition/epoch, offset span, active flag
+// and (for the frozen epoch) the computed reap-time expiry.
+func TestReadcache_AdminPage_ListsManagedTSDBs(t *testing.T) {
+	const (
+		activeTenant = "tenant-active"
+		frozenTenant = "tenant-frozen"
+		activePID    = int32(7)
+		frozenPID    = int32(9)
+	)
+
+	cfg := newTestConfig(t, false, 0)
+	cfg.LocalBlockRetention = time.Hour
+	limits := validation.NewOverrides(validation.Limits{}, nil)
+
+	r := &Readcache{
+		logger:     log.NewNopLogger(),
+		cfg:        cfg,
+		limits:     limits,
+		partitions: map[int32]*partitionState{},
+		frozen:     map[int32][]*frozenEpoch{},
+		epochSeq:   map[int32]int{},
+	}
+
+	appendSample := func(db *partitionTSDB, metric string, ts int64) {
+		app := db.Appender(context.Background())
+		_, err := app.Append(0, labels.FromStrings(model.MetricNameLabel, metric), ts, 1)
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+	}
+
+	// Live partition: a TSDB this pod is actively ingesting into.
+	activeDB, err := openPartitionTSDB(activeTenant, activePID, 0, cfg.DataDir, cfg.BlocksStorage.TSDB,
+		cfg.LocalBlockRetention, limits, 0, nil, nil, nil, prometheus.NewRegistry(), log.NewNopLogger())
+	require.NoError(t, err)
+	appendSample(activeDB, "active_metric", time.Now().Add(-1*time.Minute).UnixMilli())
+
+	activeP := newPartitionState(activePID)
+	activeP.tenants[activeTenant] = activeDB
+	activeP.startOffset.Store(1000)
+	activeP.warm.Store(true)
+	r.partitions[activePID] = activeP
+
+	// A second partition that we freeze, leaving a read-only epoch.
+	frozenDB, err := openPartitionTSDB(frozenTenant, frozenPID, 0, cfg.DataDir, cfg.BlocksStorage.TSDB,
+		cfg.LocalBlockRetention, limits, 0, nil, nil, nil, prometheus.NewRegistry(), log.NewNopLogger())
+	require.NoError(t, err)
+	frozenSampleTS := time.Now().Add(-2 * time.Minute).UnixMilli()
+	appendSample(frozenDB, "frozen_metric", frozenSampleTS)
+
+	frozenP := newPartitionState(frozenPID)
+	frozenP.tenants[frozenTenant] = frozenDB
+	frozenP.startOffset.Store(500)
+	require.NoError(t, r.freezePartition(frozenPID, frozenP))
+
+	data := r.buildAdminPageData()
+	require.Equal(t, 1, data.NumActiveTSDBs)
+	require.Equal(t, 1, data.NumFrozenTSDBs)
+	require.Len(t, data.TSDBs, 2)
+
+	// Active TSDB sorts first.
+	active := data.TSDBs[0]
+	assert.Equal(t, activeTenant, active.Tenant)
+	assert.Equal(t, activePID, active.PartitionID)
+	assert.True(t, active.Active)
+	assert.True(t, active.Warm)
+	assert.Equal(t, int64(1000), active.StartOffset)
+	assert.NotEmpty(t, active.MaxT, "active TSDB with a sample should report a data max")
+	assert.Empty(t, active.Expires, "an active TSDB has no fixed expiry")
+
+	frozen := data.TSDBs[1]
+	assert.Equal(t, frozenTenant, frozen.Tenant)
+	assert.Equal(t, frozenPID, frozen.PartitionID)
+	assert.False(t, frozen.Active)
+	assert.Equal(t, int64(500), frozen.StartOffset)
+	wantExpiry := time.UnixMilli(frozenSampleTS).Add(cfg.LocalBlockRetention + frozenEpochReapGrace).UTC().Format(time.RFC3339)
+	assert.Equal(t, wantExpiry, frozen.Expires, "frozen epoch expiry should be maxT + retention + grace")
+	assert.False(t, frozen.Expired, "a freshly-frozen epoch within retention is not yet reapable")
+
+	// Render and sanity-check the visible section.
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, AdminPathPrefix, nil)
+	r.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+	body := rec.Body.String()
+	assert.Contains(t, body, "Managed TSDBs")
+	assert.Contains(t, body, activeTenant)
+	assert.Contains(t, body, frozenTenant)
+	assert.Contains(t, body, ">active<")
+	assert.Contains(t, body, ">frozen<")
+	assert.Contains(t, body, "1000", "active start offset should render")
+	assert.Contains(t, body, "500", "frozen start offset should render")
+	assert.NotContains(t, body, "holding no TSDBs open")
 }
 
 // TestReadcache_AdminPage_EmptyState exercises the path where no

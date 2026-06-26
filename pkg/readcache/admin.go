@@ -58,6 +58,14 @@ type adminPageData struct {
 	HashSpaceResidue       float64 // 0..100
 
 	Partitions []adminPartitionView
+
+	// TSDBs lists every per-(tenant, partition, epoch) TSDB this pod
+	// is holding open: the live ones it is actively ingesting into,
+	// plus the read-only frozen epochs retained for previously-owned
+	// partitions until the reaper drops them.
+	TSDBs          []adminTSDBView
+	NumActiveTSDBs int
+	NumFrozenTSDBs int
 }
 
 // adminPartitionView is the per-partition row of the admin page.
@@ -101,6 +109,43 @@ type adminRangeView struct {
 	// landed. Helps operators sanity-check that distributor
 	// routing matches what the rebalancer assigned.
 	Example string
+}
+
+// adminTSDBView is one managed TSDB row on the admin page. A "TSDB"
+// here is a single per-(tenant, partition, epoch) Prometheus DB, of
+// which there is one live instance per partition this pod owns plus
+// zero or more frozen (read-only) epochs retained after the partition
+// moved elsewhere.
+type adminTSDBView struct {
+	Tenant      string
+	PartitionID int32
+	Epoch       int
+	// Active is true for the live TSDB the Kafka reader is currently
+	// appending to, false for a frozen (read-only) epoch.
+	Active bool
+	// Warm mirrors partitionState.warm; only meaningful when Active.
+	Warm       bool
+	HeadSeries int64
+	NumBlocks  int
+	// MinT/MaxT are the inclusive sample-time bounds across the head
+	// and persisted blocks, pre-formatted as UTC RFC3339. Empty when
+	// the TSDB holds no data yet.
+	MinT string
+	MaxT string
+	// StartOffset/EndOffset are the Kafka offset span this TSDB's
+	// partition consumed: where the reader joined and the latest
+	// offset it saw. -1 (rendered as "—") when unknown.
+	StartOffset int64
+	EndOffset   int64
+	// Expires is when the reaper will drop this TSDB, pre-formatted as
+	// UTC RFC3339. Only set for frozen epochs (the live TSDB has no
+	// fixed expiry while the pod keeps ingesting). Empty otherwise, or
+	// when the frozen epoch holds no data (it is reaped on the next
+	// sweep).
+	Expires string
+	// Expired is true when a frozen epoch is already past its reap
+	// time and is awaiting the next reaper sweep.
+	Expired bool
 }
 
 func (r *Readcache) buildAdminPageData() adminPageData {
@@ -193,7 +238,123 @@ func (r *Readcache) buildAdminPageData() adminPageData {
 	}
 	data.NumTenants = len(tenantSet)
 	data.Partitions = views
+	data.TSDBs = r.collectTSDBViews(parts)
+	for _, t := range data.TSDBs {
+		if t.Active {
+			data.NumActiveTSDBs++
+		} else {
+			data.NumFrozenTSDBs++
+		}
+	}
 	return data
+}
+
+// collectTSDBViews builds the flat "Managed TSDBs" listing: one row per
+// per-(tenant, partition, epoch) TSDB, covering both the live TSDBs
+// (from the supplied owned partitions) and the read-only frozen epochs
+// retained for partitions that have since moved off this pod.
+func (r *Readcache) collectTSDBViews(parts []*partitionState) []adminTSDBView {
+	var rows []adminTSDBView
+
+	for _, p := range parts {
+		startOffset := p.startOffset.Load()
+		endOffset := int64(-1)
+		if p.reader != nil {
+			endOffset = p.reader.LastSeenOffsets().ForKafkaCluster(0)
+		}
+		warm := p.warm.Load()
+
+		p.tenantsMu.RLock()
+		for tenantID, db := range p.tenants {
+			minT, maxT := db.sampleBounds()
+			rows = append(rows, adminTSDBView{
+				Tenant:      tenantID,
+				PartitionID: p.partitionID,
+				Epoch:       p.epoch,
+				Active:      true,
+				Warm:        warm,
+				HeadSeries:  int64(db.db.Head().NumSeries()),
+				NumBlocks:   len(db.db.Blocks()),
+				MinT:        fmtTSDBTime(minT, maxT),
+				MaxT:        fmtTSDBTimeMax(minT, maxT),
+				StartOffset: startOffset,
+				EndOffset:   endOffset,
+			})
+		}
+		p.tenantsMu.RUnlock()
+	}
+
+	expiryGrace := r.cfg.LocalBlockRetention + frozenEpochReapGrace
+	now := time.Now()
+	r.frozenMu.RLock()
+	for _, eps := range r.frozen {
+		for _, ep := range eps {
+			for tenantID, db := range ep.tenants {
+				minT, maxT := db.sampleBounds()
+				row := adminTSDBView{
+					Tenant:      tenantID,
+					PartitionID: ep.partitionID,
+					Epoch:       ep.epoch,
+					Active:      false,
+					HeadSeries:  int64(db.db.Head().NumSeries()),
+					NumBlocks:   len(db.db.Blocks()),
+					MinT:        fmtTSDBTime(minT, maxT),
+					MaxT:        fmtTSDBTimeMax(minT, maxT),
+					StartOffset: ep.startOffset,
+					EndOffset:   ep.endOffset,
+				}
+				// Reaping is keyed on the epoch's captured maxT (see
+				// reapFrozenEpochs), which is the freeze-time bound. The
+				// per-tenant sampleBounds above can drift after
+				// compaction, so use the epoch's maxT for the expiry.
+				if ep.maxT >= 0 && ep.maxT != math.MinInt64 {
+					expires := time.UnixMilli(ep.maxT).Add(expiryGrace)
+					row.Expires = expires.UTC().Format(time.RFC3339)
+					row.Expired = expires.Before(now)
+				}
+				rows = append(rows, row)
+			}
+		}
+	}
+	r.frozenMu.RUnlock()
+
+	// Order: live TSDBs first (descending head series), then frozen
+	// epochs; partition and tenant break ties so refreshes are stable.
+	sort.Slice(rows, func(i, j int) bool {
+		a, b := rows[i], rows[j]
+		if a.Active != b.Active {
+			return a.Active
+		}
+		if a.Active && a.HeadSeries != b.HeadSeries {
+			return a.HeadSeries > b.HeadSeries
+		}
+		if a.PartitionID != b.PartitionID {
+			return a.PartitionID < b.PartitionID
+		}
+		if a.Epoch != b.Epoch {
+			return a.Epoch < b.Epoch
+		}
+		return a.Tenant < b.Tenant
+	})
+	return rows
+}
+
+// fmtTSDBTime renders the lower sample-time bound as UTC RFC3339, or ""
+// when the TSDB holds no data (sampleBounds returns maxT < minT).
+func fmtTSDBTime(minT, maxT int64) string {
+	if maxT < minT {
+		return ""
+	}
+	return time.UnixMilli(minT).UTC().Format(time.RFC3339)
+}
+
+// fmtTSDBTimeMax renders the upper sample-time bound as UTC RFC3339, or
+// "" when the TSDB holds no data.
+func fmtTSDBTimeMax(minT, maxT int64) string {
+	if maxT < minT {
+		return ""
+	}
+	return time.UnixMilli(maxT).UTC().Format(time.RFC3339)
 }
 
 func makeRangeView(hr assignment.HashRange, series int64, sampleRate float64, example string, hashSpaceTotal float64) adminRangeView {

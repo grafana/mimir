@@ -24,6 +24,24 @@ var adminTemplate = template.Must(template.New("readcache-admin").Funcs(template
 	"fmtPct": func(f float64) string {
 		return fmt.Sprintf("%.2f%%", f)
 	},
+	// fmtOffset renders a Kafka offset, showing the unknown sentinel
+	// (-1, set before the reader has started or when it has been torn
+	// down) as an em dash rather than a misleading "-1".
+	"fmtOffset": func(o int64) string {
+		if o < 0 {
+			return "\u2014"
+		}
+		return fmt.Sprintf("%d", o)
+	},
+	// offsetSpan renders the number of offsets between start and end,
+	// i.e. roughly how many records this TSDB's partition consumed
+	// while owned. Empty when either bound is unknown.
+	"offsetSpan": func(start, end int64) string {
+		if start < 0 || end < 0 || end < start {
+			return ""
+		}
+		return fmt.Sprintf("%d", end-start)
+	},
 	"fmtPct4": func(f float64) string {
 		return fmt.Sprintf("%.4f%%", f)
 	},

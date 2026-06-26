@@ -231,6 +231,73 @@ all partitions have been moved off to other instances.</p>
 
 {{end}}
 
+<h2>Managed TSDBs</h2>
+
+<p class="muted">
+	Every per-(tenant, partition, epoch) TSDB this pod currently holds open:
+	the <b>active</b> ones the Kafka reader is ingesting into, plus read-only
+	<b>frozen</b> epochs retained for partitions that have moved off this pod.
+	A frozen epoch keeps the slice ingested during a past ownership stint
+	queryable until its newest sample ages past the serving horizon
+	(<code>local-block-retention + grace</code>), at which point the reaper
+	drops it. Offsets are the Kafka offset span the partition consumed; the
+	end offset of an active TSDB is read live and advances every refresh.
+</p>
+
+{{if not .TSDBs}}
+<p class="empty">This readcache is holding no TSDBs open.</p>
+{{else}}
+<table>
+	<tr>
+		<th>Tenant</th>
+		<th>Partition</th>
+		<th>Epoch</th>
+		<th>State</th>
+		<th>Head series</th>
+		<th>Blocks</th>
+		<th>Start offset</th>
+		<th>End offset</th>
+		<th>Offsets</th>
+		<th>Data min (UTC)</th>
+		<th>Data max (UTC)</th>
+		<th>Expires (UTC)</th>
+	</tr>
+	{{range .TSDBs}}
+	<tr>
+		<td><code>{{.Tenant}}</code></td>
+		<td class="num">P{{.PartitionID}}</td>
+		<td class="num">{{.Epoch}}</td>
+		<td>
+			{{if .Active}}
+				<span class="ok">active</span>{{if not .Warm}} <span class="warn">(cold)</span>{{end}}
+			{{else}}
+				<span class="muted">frozen</span>
+			{{end}}
+		</td>
+		<td class="num">{{fmtSeries .HeadSeries}}</td>
+		<td class="num">{{.NumBlocks}}</td>
+		<td class="num">{{fmtOffset .StartOffset}}</td>
+		<td class="num">{{fmtOffset .EndOffset}}</td>
+		<td class="num">{{offsetSpan .StartOffset .EndOffset}}</td>
+		<td>{{if .MinT}}{{.MinT}}{{else}}<span class="muted">(no data)</span>{{end}}</td>
+		<td>{{if .MaxT}}{{.MaxT}}{{else}}<span class="muted">(no data)</span>{{end}}</td>
+		<td>
+			{{if .Active}}
+				<span class="muted">&mdash;</span>
+			{{else if .Expires}}
+				{{.Expires}}{{if .Expired}} <span class="warn">(reapable)</span>{{end}}
+			{{else}}
+				<span class="warn">(reapable)</span>
+			{{end}}
+		</td>
+	</tr>
+	{{end}}
+</table>
+<p class="muted">
+	{{.NumActiveTSDBs}} active, {{.NumFrozenTSDBs}} frozen.
+</p>
+{{end}}
+
 <div class="footer">
 	Page is server-rendered and does not auto-refresh; reload manually for fresh stats.
 	Per-range series counts come from the latest walker tick; head series counts (L_pid) are computed live on this request.

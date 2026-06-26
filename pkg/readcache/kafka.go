@@ -282,6 +282,12 @@ func (r *Readcache) startKafkaReader(ctx context.Context, p *partitionState) err
 
 	p.reader = reader
 	p.readerMetrics = partitionCollector
+	// Capture the offset we joined at. The reader started at the live
+	// edge (ConsumeFromPositionAtStartup = "end") and has finished
+	// starting, so LastSeenOffsets is the partition's high-water
+	// offset at acquisition. Kept for the admin page's TSDB listing;
+	// the current end offset is read live from the reader.
+	p.startOffset.Store(reader.LastSeenOffsets().ForKafkaCluster(0))
 	return nil
 }
 

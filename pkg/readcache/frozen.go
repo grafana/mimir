@@ -44,6 +44,15 @@ type frozenEpoch struct {
 	tenants     map[string]*partitionTSDB
 	minT        int64
 	maxT        int64
+
+	// startOffset/endOffset are the Kafka offset span this epoch
+	// consumed before it was frozen: startOffset is where the reader
+	// joined the partition, endOffset is the last offset it saw. Both
+	// are captured at freeze time (the reader is gone afterwards) and
+	// surfaced on the admin page. -1 when unknown (e.g. the reader
+	// never started).
+	startOffset int64
+	endOffset   int64
 }
 
 // freezePartition stops the partition's Kafka reader and moves its
@@ -58,6 +67,15 @@ type frozenEpoch struct {
 func (r *Readcache) freezePartition(partitionID int32, p *partitionState) error {
 	if hook := r.stopPartitionHook; hook != nil {
 		hook(partitionID)
+	}
+
+	// Capture the Kafka offset span before tearing down the reader:
+	// stopKafkaReaderLocked nils out p.reader, after which the
+	// last-seen offset is no longer reachable.
+	startOffset := p.startOffset.Load()
+	endOffset := int64(-1)
+	if p.reader != nil {
+		endOffset = p.reader.LastSeenOffsets().ForKafkaCluster(0)
 	}
 
 	var firstErr error
@@ -85,6 +103,8 @@ func (r *Readcache) freezePartition(partitionID int32, p *partitionState) error 
 		tenants:     tenants,
 		minT:        math.MaxInt64,
 		maxT:        math.MinInt64,
+		startOffset: startOffset,
+		endOffset:   endOffset,
 	}
 	for tenant, db := range tenants {
 		mn, mx := db.sampleBounds()
