@@ -578,10 +578,10 @@ func (s *BlockBuilderScheduler) consumptionOffsets(ctx context.Context, topic st
 	}
 	fallbackOffsets, err := ac.ListOffsetsAfterMilli(ctx, fallbackTime.UnixMilli(), topic)
 	if err != nil {
-		return nil, fmt.Errorf("list fallback offsets for: %w", err)
+		return nil, fmt.Errorf("list fallback offsets: %w", err)
 	}
 	if fallbackOffsets.Error() != nil {
-		return nil, fmt.Errorf("list fallback offsets %w", fallbackOffsets.Error())
+		return nil, fmt.Errorf("list fallback offsets: %w", fallbackOffsets.Error())
 	}
 
 	var offs []partitionOffsets
