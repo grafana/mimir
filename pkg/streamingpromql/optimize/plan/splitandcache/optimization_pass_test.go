@@ -533,7 +533,7 @@ func TestOptimizationPass_EvaluationRoots(t *testing.T) {
 		expectedPlan string
 	}{
 		"spun-off subquery is a range query, so splitting and caching are injected beneath the EvaluationRoot": {
-			expr: `max_over_time((__evaluation_root__(sum(foo)))[2h:1m])`,
+			expr: `max_over_time((__vector_evaluation_root__(sum(foo)))[2h:1m])`,
 			expectedPlan: `
 				- DeduplicateAndMerge
 					- FunctionCall: max_over_time(...)
@@ -546,7 +546,7 @@ func TestOptimizationPass_EvaluationRoots(t *testing.T) {
 			`,
 		},
 		"downstream EvaluationRoot is an instant query, so it is left unchanged while the spun-off subquery is split and cached": {
-			expr: `max_over_time((__evaluation_root__(sum(foo)))[2h:1m]) + __evaluation_root__(bar)`,
+			expr: `max_over_time((__vector_evaluation_root__(sum(foo)))[2h:1m]) + __vector_evaluation_root__(bar)`,
 			expectedPlan: `
 				- BinaryExpression: LHS + RHS
 					- LHS: DeduplicateAndMerge
@@ -562,7 +562,7 @@ func TestOptimizationPass_EvaluationRoots(t *testing.T) {
 			`,
 		},
 		"EvaluationRoot at the root of an instant query is left unchanged": {
-			expr: `__evaluation_root__(sum(foo))`,
+			expr: `__vector_evaluation_root__(sum(foo))`,
 			expectedPlan: `
 				- EvaluationRoot
 					- AggregateExpression: sum

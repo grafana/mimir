@@ -51,7 +51,7 @@ func (o *OptimizationPass) Apply(ctx context.Context, expr parser.Expr, _ types.
 		return nil, apierror.New(apierror.TypeBadData, err.Error())
 	}
 
-	// When the query has been rewritten to spin off subqueries, each __evaluation_root__ marks a
+	// When the query has been rewritten to spin off subqueries, each __vector_evaluation_root__ or __scalar_evaluation_root__ marks a
 	// separate query that must be sharded independently. Some of these subtrees may be shardable and
 	// others not; that's fine, just like for top-level range queries today, where the shardable parts
 	// are sharded and the rest is left unchanged.
@@ -97,7 +97,7 @@ func (o *OptimizationPass) shard(ctx context.Context, tenantIDs []string, expr p
 	return shardedExpr, nil
 }
 
-// collectEvaluationRoots returns the __evaluation_root__ marker function calls in expr.
+// collectEvaluationRoots returns the __vector_evaluation_root__ and __scalar_evaluation_root__ marker function calls in expr.
 //
 // Markers are never nested inside one another (the subquery spin-off mapper does not recurse into a
 // query once it has spun it off), so this does not descend into a marker once found.

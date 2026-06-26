@@ -860,7 +860,7 @@ func TestOptimizationPass(t *testing.T) {
 }
 
 // TestOptimizationPass_EvaluationRoots confirms that, when a query has been rewritten to spin off
-// subqueries, remote execution is applied to each __evaluation_root__ subtree independently: sharded
+// subqueries, remote execution is applied to each __vector_evaluation_root__ subtree independently: sharded
 // subtrees have each leg wrapped, unsharded subtrees are wrapped whole (beneath any splitting and
 // caching nodes), and the outer instant query is left to run on the query-frontend.
 func TestOptimizationPass_EvaluationRoots(t *testing.T) {
@@ -874,7 +874,7 @@ func TestOptimizationPass_EvaluationRoots(t *testing.T) {
 		expectedPlan string
 	}{
 		"spun-off subquery with shardable subtree": {
-			expr: `max_over_time((__evaluation_root__(sum(foo)))[2h:1m])`,
+			expr: `max_over_time((__vector_evaluation_root__(sum(foo)))[2h:1m])`,
 			expectedPlan: `
 				- DeduplicateAndMerge
 					- FunctionCall: max_over_time(...)
@@ -895,7 +895,7 @@ func TestOptimizationPass_EvaluationRoots(t *testing.T) {
 			`,
 		},
 		"spun-off subquery with unshardable subtree, plus a downstream query": {
-			expr: `max_over_time((__evaluation_root__(foo))[2h:1m]) + __evaluation_root__(bar)`,
+			expr: `max_over_time((__vector_evaluation_root__(foo))[2h:1m]) + __vector_evaluation_root__(bar)`,
 			expectedPlan: `
 				- BinaryExpression: LHS + RHS
 					- LHS: DeduplicateAndMerge
@@ -914,7 +914,7 @@ func TestOptimizationPass_EvaluationRoots(t *testing.T) {
 			`,
 		},
 		"instant query EvaluationRoot with shardable subtree": {
-			expr: `__evaluation_root__(sum(foo))`,
+			expr: `__vector_evaluation_root__(sum(foo))`,
 			expectedPlan: `
 				- EvaluationRoot
 					- AggregateExpression: sum

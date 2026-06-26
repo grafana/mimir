@@ -100,7 +100,7 @@ func TestSubquerySpinOff_Correctness(t *testing.T) {
 // we must differentiate between evaluation roots containing instant vectors and scalars.
 // This ensures that when the spin-off mapper wraps a scalar downstream
 // expression - e.g. the "scalar(...)" operand of a vector/scalar binary operation - the
-// resulting __evaluation_root__(scalar(...)) reports a scalar type at the AST level.
+// resulting __scalar_evaluation_root__(scalar(...)) reports a scalar type at the AST level.
 func TestSubquerySpinOff_ScalarDownstreamPreservesType(t *testing.T) {
 	// metric_a and metric_b are identical except for __name__.
 	data := `

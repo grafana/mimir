@@ -37,19 +37,19 @@ func TestOptimizationPass(t *testing.T) {
 	}{
 		"spin off a single subquery": {
 			input:             `max_over_time(rate(metric_counter[1m])[2h:1m])`,
-			expectedOutput:    `max_over_time(__evaluation_root__(rate(metric_counter[1m]))[2h:1m])`,
+			expectedOutput:    `max_over_time(__vector_evaluation_root__(rate(metric_counter[1m]))[2h:1m])`,
 			expectedAttempts:  1,
 			expectedSuccesses: 1,
 		},
 		"spin off multiple subqueries": {
 			input:             `avg_over_time((foo * bar)[3d:1m]) * max_over_time((foo * bar)[2d:2m])`,
-			expectedOutput:    `avg_over_time(__evaluation_root__((foo * bar))[3d:1m]) * max_over_time(__evaluation_root__((foo * bar))[2d:2m])`,
+			expectedOutput:    `avg_over_time(__vector_evaluation_root__((foo * bar))[3d:1m]) * max_over_time(__vector_evaluation_root__((foo * bar))[2d:2m])`,
 			expectedAttempts:  1,
 			expectedSuccesses: 1,
 		},
 		"spin off a subquery alongside a downstream query": {
 			input:             `avg_over_time((foo * bar)[3d:1m]) * avg_over_time(foo[3d])`,
-			expectedOutput:    `avg_over_time(__evaluation_root__((foo * bar))[3d:1m]) * __evaluation_root__(avg_over_time(foo[3d]))`,
+			expectedOutput:    `avg_over_time(__vector_evaluation_root__((foo * bar))[3d:1m]) * __vector_evaluation_root__(avg_over_time(foo[3d]))`,
 			expectedAttempts:  1,
 			expectedSuccesses: 1,
 		},

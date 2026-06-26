@@ -59,7 +59,7 @@ func (o *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, 
 	}
 	freshnessThreshold := now.Add(-maxFreshness)
 
-	// When a query has been rewritten to spin off subqueries, each __evaluation_root__ subtree is a
+	// When a query has been rewritten to spin off subqueries, each __vector_evaluation_root__ and __scalar_evaluation_root__ subtree is a
 	// separate query, and the spun-off subqueries are range queries. Inject splitting and caching nodes
 	// beneath each EvaluationRoot that evaluates a range query, rather than at the root of the plan
 	// (which is the overall instant query, and so is left unchanged just like an instant query without
