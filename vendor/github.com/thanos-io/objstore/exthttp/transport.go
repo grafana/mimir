@@ -75,5 +75,9 @@ func DefaultTransport(config HTTPConfig) (*http.Transport, error) {
 		//
 		// Refer: https://golang.org/src/net/http/transport.go?h=roundTrip#L1843.
 		TLSClientConfig: tlsConfig,
+		// ForceAttemptHTTP2 re-enables HTTP/2 negotiation when TLSClientConfig is set.
+		// Go's transport disables HTTP/2 by default whenever TLSClientConfig is non-nil,
+		// even if the TLS config is otherwise compatible with HTTP/2.
+		ForceAttemptHTTP2: true,
 	}, nil
 }
