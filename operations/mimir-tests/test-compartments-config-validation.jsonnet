@@ -107,12 +107,14 @@ local err7 = validate(
 assert isError(err7, '-ingest-storage.kafka.topic') && isError(err7, 'consumes a single topic') :
        'case 7: expected Kafka topic error, got: %s' % err7;
 
-// 8. Resource name without a compartment marker.
+// 8. Resource name without a compartment marker is treated as a global component (e.g. query-frontend),
+// which must read from every write compartment and so must use the Kafka address placeholder rather than
+// a concrete per-compartment address.
 local err8 = validate(
   { dist: distributor { metadata+: { name: 'distributor' } } },
   ['dist'],
 );
-assert isError(err8, 'Unable to extract the compartment id') :
-       'case 8: expected compartment-id extraction error, got: %s' % err8;
+assert isError(err8, '-ingest-storage.kafka.address') && isError(err8, 'a global deployment reads from every write compartment') :
+       'case 8: expected global-deployment placeholder error, got: %s' % err8;
 
 {}
