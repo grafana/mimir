@@ -47,6 +47,11 @@ func newTestPlanJob() TrackedJob {
 	return job
 }
 
+func newTestCleanupJob() TrackedJob {
+	job := NewTrackedCleanupJob(time.Now())
+	return job
+}
+
 func TestBboltJobPersistenceManager_InitializeTenant(t *testing.T) {
 	mgr, db := setupBboltManager(t)
 	t.Cleanup(func() {
@@ -90,6 +95,8 @@ func TestBboltJobPersistenceManager_RecoverAll(t *testing.T) {
 	require.NoError(t, err)
 	err = tenantPersister.WriteJob(newTestPlanJob())
 	require.NoError(t, err)
+	err = tenantPersister.WriteJob(newTestCleanupJob())
+	require.NoError(t, err)
 
 	ctm, err = mgr.RecoverAll(allowedTenants, jobTrackerFactory)
 	require.NoError(t, err)
@@ -97,9 +104,10 @@ func TestBboltJobPersistenceManager_RecoverAll(t *testing.T) {
 	require.Contains(t, ctm, "foo")
 
 	jobTracker := ctm["foo"]
-	require.Len(t, jobTracker.incompleteJobs, 2)
+	require.Len(t, jobTracker.incompleteJobs, 3)
 	require.Contains(t, jobTracker.incompleteJobs, "id")
 	require.Contains(t, jobTracker.incompleteJobs, planJobId)
+	require.Contains(t, jobTracker.incompleteJobs, cleanupJobId)
 }
 
 func TestBboltJobPersistenceManager_RecoverAll_Cleanup(t *testing.T) {
@@ -375,6 +383,21 @@ func TestBboltJobPersister_WriteReadDelete(t *testing.T) {
 				// No fields to validate
 			},
 		},
+		"cleanup job": {
+			job: &TrackedCleanupJob{
+				baseTrackedJob: baseTrackedJob{
+					id:           cleanupJobId,
+					creationTime: now,
+					status:       compactorschedulerpb.STORED_JOB_STATUS_COMPLETE,
+					statusTime:   now.Add(10 * time.Second),
+					numLeases:    1,
+					epoch:        234,
+				},
+			},
+			verifySpecificFields: func(t *testing.T, written, read TrackedJob) {
+				// No fields to validate
+			},
+		},
 	}
 
 	for name, tc := range tests {
@@ -391,26 +414,28 @@ func TestBboltJobPersister_WriteReadDelete(t *testing.T) {
 			require.NoError(t, err)
 
 			// Helper function since the test reads twice
-			readJobs := func() (compactionJobs []*TrackedCompactionJob, planJob *TrackedPlanJob, cleanup *keyCleanup, err error) {
+			readJobs := func() (compactionJobs []*TrackedCompactionJob, planJob *TrackedPlanJob, cleanupJob *TrackedCleanupJob, keyCleanup *keyCleanup, err error) {
 				err = db.View(func(tx *bbolt.Tx) error {
 					b := tx.Bucket([]byte("tenant"))
 					if b == nil {
 						return errors.New("bucket should not be missing")
 					}
-					compactionJobs, planJob, cleanup = jobsFromTenantBucket(b)
+					compactionJobs, planJob, cleanupJob, keyCleanup = jobsFromTenantBucket(b)
 					return nil
 				})
 				return
 			}
 
-			compactionJobs, planJob, cleanup, err := readJobs()
+			compactionJobs, planJob, cleanupJob, keyCleanup, err := readJobs()
 			require.NoError(t, err)
-			require.Nil(t, cleanup)
+			require.Nil(t, keyCleanup)
 			var readJob TrackedJob
 			if len(compactionJobs) == 1 {
 				readJob = compactionJobs[0]
-			} else {
+			} else if planJob != nil {
 				readJob = planJob
+			} else {
+				readJob = cleanupJob
 			}
 			require.Equal(t, tc.job.ID(), readJob.ID())
 			require.Equal(t, tc.job.CreationTime().Unix(), readJob.CreationTime().Unix())
@@ -423,11 +448,12 @@ func TestBboltJobPersister_WriteReadDelete(t *testing.T) {
 
 			err = persister.DeleteJob(tc.job)
 			require.NoError(t, err)
-			compactionJobs, planJob, cleanup, err = readJobs()
+			compactionJobs, planJob, cleanupJob, keyCleanup, err = readJobs()
 			require.NoError(t, err)
-			require.Nil(t, cleanup)
+			require.Nil(t, keyCleanup)
 			require.Empty(t, compactionJobs)
 			require.Nil(t, planJob)
+			require.Nil(t, cleanupJob)
 		})
 	}
 }

@@ -42,5 +42,11 @@ func (c *MultitenantCompactor) RingHandler(w http.ResponseWriter, req *http.Requ
 		return
 	}
 
+	if c.ring == nil {
+		// when using the compactor scheduler it is possible to run compactors with no ring
+		writeMessage(w, "Compactor is not using a ring.", c.logger)
+		return
+	}
+
 	c.ring.ServeHTTP(w, req)
 }

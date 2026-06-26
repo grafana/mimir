@@ -73,7 +73,7 @@ func TestRotator_RecoverFrom_ColdStartDelay(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			reg := prometheus.NewPedanticRegistry()
 			metrics := newSchedulerMetrics(reg)
-			r := NewRotator(0, 0, 0, maintenanceInterval, 0, intervalsBeforeColdStartPlanning, newSimpleLanePolicy(), metrics.pendingJobsLastEmpty, log.NewNopLogger())
+			r := NewRotator(0, 0, 0, 0, maintenanceInterval, 0, intervalsBeforeColdStartPlanning, newSimpleLanePolicy(), metrics.pendingJobsLastEmpty, log.NewNopLogger())
 			r.clock = clock
 
 			r.RecoverFrom(tc.jobTrackers, tc.creationTime)
@@ -85,7 +85,7 @@ func TestRotator_RecoverFrom_ColdStartDelay(t *testing.T) {
 func newRotatorForTest() *Rotator {
 	reg := prometheus.NewPedanticRegistry()
 	metrics := newSchedulerMetrics(reg)
-	return NewRotator(0, 0, 0, time.Minute, 0, 0, newSimpleLanePolicy(), metrics.pendingJobsLastEmpty, log.NewNopLogger())
+	return NewRotator(0, 0, 0, 0, time.Minute, 0, 0, newSimpleLanePolicy(), metrics.pendingJobsLastEmpty, log.NewNopLogger())
 }
 
 // newTrackerWithPendingJobs builds a JobTracker for the named tenant holding numJobs pending
@@ -229,7 +229,7 @@ func TestRotator_LeaseJob_LanePriority(t *testing.T) {
 	clk := clock.New()
 	lanePolicy := newSimpleLanePolicy()
 	metrics := newSchedulerMetrics(prometheus.NewPedanticRegistry())
-	r := NewRotator(0, 0, 0, time.Minute, 0, 0, lanePolicy, metrics.pendingJobsLastEmpty, log.NewNopLogger())
+	r := NewRotator(0, 0, 0, 0, time.Minute, 0, 0, lanePolicy, metrics.pendingJobsLastEmpty, log.NewNopLogger())
 
 	// Add a tenant with a plan job and a compaction job
 	jt := NewJobTracker(&NopJobPersister{}, "t1", clk, lanePolicy, infiniteLeases, infiniteLeases, metrics.newTrackerMetricsForTenant("t1"), log.NewNopLogger())
@@ -318,7 +318,7 @@ func TestRotator_PendingJobsLastEmpty(t *testing.T) {
 			clk.Set(now)
 			reg := prometheus.NewPedanticRegistry()
 			metrics := newSchedulerMetrics(reg)
-			r := NewRotator(0, 0, 0, 0, 0, 0, newSimpleLanePolicy(), metrics.pendingJobsLastEmpty, log.NewNopLogger())
+			r := NewRotator(0, 0, 0, 0, 0, 0, 0, newSimpleLanePolicy(), metrics.pendingJobsLastEmpty, log.NewNopLogger())
 			r.clock = clk
 
 			tc.action(r, clk)

@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -35,6 +36,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/compactor/scheduler/compactorschedulerpb"
 	"github.com/grafana/mimir/pkg/storage/bucket"
+	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/util"
 	util_log "github.com/grafana/mimir/pkg/util/log"
@@ -42,6 +44,7 @@ import (
 
 var (
 	errCompactionJobHasNoBlocks      = errors.New("compaction job has no blocks")
+	errCleanupJobHasNoTenant         = errors.New("cleanup job has no tenant")
 	errNoBlockMetadataProvided       = errors.New("no block metadata provided")
 	errJobCanceledByScheduler        = errors.New("job canceled by scheduler")
 	errFinalStatusGracePeriodTimeout = errors.New("final status grace period timed out")
@@ -95,6 +98,7 @@ var (
 
 type SchedulerClientConfig struct {
 	Enabled                       bool                   `yaml:"enabled" category:"experimental"`
+	CleanupEnabled                bool                   `yaml:"cleanup_enabled" category:"experimental"`
 	SchedulerEndpoint             string                 `yaml:"scheduler_endpoint" category:"experimental"`
 	GRPCClientConfig              grpcclient.Config      `yaml:"grpc_client_config" category:"experimental"`
 	LeasingMinBackoff             time.Duration          `yaml:"leasing_min_backoff" category:"experimental"`
@@ -112,6 +116,7 @@ type SchedulerClientConfig struct {
 func (cfg *SchedulerClientConfig) RegisterFlags(f *flag.FlagSet) {
 	flagPrefix := "compactor.scheduler-client."
 	f.BoolVar(&cfg.Enabled, flagPrefix+"enabled", false, "Controls whether compactors should contact a scheduler to request work.")
+	f.BoolVar(&cfg.CleanupEnabled, flagPrefix+"cleanup-enabled", false, "Controls whether the compactor handles block cleanup as scheduler jobs instead of running the background blocks cleaner. Only applies when scheduler mode is enabled. When enabled, the compactor ring is not used.")
 	f.StringVar(&cfg.SchedulerEndpoint, flagPrefix+"scheduler-endpoint", "", "Compactor scheduler endpoint.")
 	f.DurationVar(&cfg.UpdateInterval, flagPrefix+"update-interval", 15*time.Second, "Interval between scheduler job lease updates.")
 	f.DurationVar(&cfg.LeasingMinBackoff, flagPrefix+"leasing-min-backoff", 100*time.Millisecond, "Minimum backoff time between scheduler job lease requests.")
@@ -122,7 +127,7 @@ func (cfg *SchedulerClientConfig) RegisterFlags(f *flag.FlagSet) {
 	f.DurationVar(&cfg.TerminatingFinalStatusTimeout, flagPrefix+"terminating-final-status-timeout", 30*time.Second, "Timeout for sending a final job status update to the scheduler when the parent context is canceled (e.g. during shutdown).")
 	f.BoolVar(&cfg.EnableInterruptedReassign, flagPrefix+"enable-interrupted-reassign", true, "Report a distinct job update status to the scheduler when a job is interrupted (e.g., clean shutdown).")
 	cfg.Lanes = flagext.StringSliceCSV{"compact+plan", "plan"}
-	f.Var(&cfg.Lanes, flagPrefix+"lanes", "Lanes to request for each worker goroutine. Each entry is a '+'-separated list of job types in priority order.")
+	f.Var(&cfg.Lanes, flagPrefix+"lanes", "Comma-separated entries, where each entry becomes one worker goroutine requesting a '+'-separated list of lanes in priority order. Append ':N' to a single entry to create N goroutines for it, e.g. 'plan,cleanup:4' creates one plan goroutine plus four cleanup goroutines.")
 	cfg.GRPCClientConfig.RegisterFlagsWithPrefix(flagPrefix+"grpc-client-config", f)
 	cfg.MetadataCacheConfig.RegisterFlagsWithPrefix(f, flagPrefix+"metadata-cache.")
 }
@@ -181,6 +186,7 @@ func (cfg *MetadataCacheConfig) Validate() error {
 const (
 	jobTypePlan         = "plan"
 	jobTypeCompaction   = "compaction"
+	jobTypeCleanup      = "cleanup"
 	compactionTypeSplit = "split"
 	compactionTypeMerge = "merge"
 )
@@ -250,6 +256,7 @@ func newSchedulerExecutor(cfg SchedulerClientConfig, logger log.Logger, invalidC
 // parseLaneRequests parses the requested lanes for each goroutine.
 // An example value is compact+plan,plan
 // '+' separates multiple job types per goroutine, and ',' separates goroutines.
+// A ':N' suffix repeats an entry across N goroutines, e.g. cleanup:4.
 func parseLaneRequests(configuredLanes flagext.StringSliceCSV) ([][]*compactorschedulerpb.LaneRequest, error) {
 	if len(configuredLanes) == 0 {
 		return nil, fmt.Errorf("invalid empty lane configuration")
@@ -260,7 +267,19 @@ func parseLaneRequests(configuredLanes flagext.StringSliceCSV) ([][]*compactorsc
 		if workerLane == "" {
 			return nil, fmt.Errorf("invalid lane configuration: %q", workerLane)
 		}
-		split := strings.Split(workerLane, "+")
+
+		count := 1
+		laneSpec := workerLane
+		if spec, countStr, found := strings.Cut(workerLane, ":"); found {
+			n, err := strconv.Atoi(countStr)
+			if err != nil || n < 1 {
+				return nil, fmt.Errorf("invalid lane count %q in lane configuration: %q", countStr, workerLane)
+			}
+			laneSpec = spec
+			count = n
+		}
+
+		split := strings.Split(laneSpec, "+")
 		requests := make([]*compactorschedulerpb.LaneRequest, 0, len(split))
 		seen := make(map[string]struct{}, len(split))
 		for _, lane := range split {
@@ -273,17 +292,29 @@ func parseLaneRequests(configuredLanes flagext.StringSliceCSV) ([][]*compactorsc
 				requests = append(requests, &compactorschedulerpb.LaneRequest{JobType: compactorschedulerpb.JOB_TYPE_PLANNING})
 			case "compact":
 				requests = append(requests, &compactorschedulerpb.LaneRequest{JobType: compactorschedulerpb.JOB_TYPE_COMPACTION})
+			case "cleanup":
+				requests = append(requests, &compactorschedulerpb.LaneRequest{JobType: compactorschedulerpb.JOB_TYPE_CLEANUP})
 			default:
 				return nil, fmt.Errorf("unknown job type in lane configuration: %q", lane)
 			}
 		}
-		combined = append(combined, requests)
+		for range count {
+			combined = append(combined, requests)
+		}
 	}
 	return combined, nil
 }
 
 func (e *schedulerExecutor) run(ctx context.Context, c *MultitenantCompactor) error {
-	baseWorkerID := c.ringLifecycler.GetInstanceID()
+	// The ring is not created when cleanup jobs are enabled, so fall back to the hostname.
+	var baseWorkerID string
+	if c.ringLifecycler != nil {
+		baseWorkerID = c.ringLifecycler.GetInstanceID()
+	} else if hostname, err := os.Hostname(); err == nil {
+		baseWorkerID = hostname
+	} else {
+		level.Warn(e.logger).Log("msg", "failed to determine hostname for worker ID", "err", err)
+	}
 	level.Info(e.logger).Log("msg", "compactor running in scheduler mode", "scheduler_endpoint", e.cfg.SchedulerEndpoint, "worker_id", baseWorkerID)
 
 	// Scheduler mode compactors work on jobs for arbitrary tenants, so unlike standalone mode they
@@ -303,14 +334,16 @@ func (e *schedulerExecutor) run(ctx context.Context, c *MultitenantCompactor) er
 
 	var subserviceErr error
 	var wg sync.WaitGroup
-	wg.Go(func() {
-		select {
-		case <-ctx.Done():
-		case err := <-c.ringSubservicesWatcher.Chan():
-			subserviceErr = fmt.Errorf("compactor subservice failed: %w", err)
-			cancel(subserviceErr)
-		}
-	})
+	if c.ringSubservicesWatcher != nil {
+		wg.Go(func() {
+			select {
+			case <-ctx.Done():
+			case err := <-c.ringSubservicesWatcher.Chan():
+				subserviceErr = fmt.Errorf("compactor subservice failed: %w", err)
+				cancel(subserviceErr)
+			}
+		})
+	}
 
 	for i, lanes := range e.laneRequests {
 		workerID := baseWorkerID
@@ -463,6 +496,12 @@ func (e *schedulerExecutor) sendFinalJobStatus(ctx context.Context, key *compact
 			_, err := e.schedulerClient.UpdateCompactionJob(graceCtx, req)
 			return err
 		})
+	case compactorschedulerpb.JOB_TYPE_CLEANUP:
+		req := &compactorschedulerpb.UpdateCleanupJobRequest{Key: key, Tenant: spec.Tenant, Update: status}
+		err = e.retryable.WithContext(graceCtx).Run(func() error {
+			_, err := e.schedulerClient.UpdateCleanupJob(graceCtx, req)
+			return err
+		})
 	case compactorschedulerpb.JOB_TYPE_PLANNING:
 		req := &compactorschedulerpb.UpdatePlanJobRequest{Key: key, Tenant: spec.Tenant, Update: status}
 		err = e.retryable.WithContext(graceCtx).Run(func() error {
@@ -470,7 +509,7 @@ func (e *schedulerExecutor) sendFinalJobStatus(ctx context.Context, key *compact
 			return err
 		})
 	default:
-		err = fmt.Errorf("unsupported job type %q, only COMPACTION and PLANNING are supported", spec.JobType.String())
+		err = fmt.Errorf("unsupported job type %q, only COMPACTION, PLANNING, and CLEANUP are supported", spec.JobType.String())
 	}
 
 	if err != nil {
@@ -514,7 +553,7 @@ func (e *schedulerExecutor) leaseAndExecuteJob(ctx context.Context, c *Multitena
 	jobType := resp.Spec.JobType
 
 	if !jobTypeValid(jobType) {
-		return false, fmt.Errorf("unsupported job type %q, only COMPACTION and PLANNING are supported", jobType.String())
+		return false, fmt.Errorf("unsupported job type %q, only COMPACTION, PLANNING, and CLEANUP are supported", jobType.String())
 	}
 
 	// Create a cancellable context for this job that can be canceled if the scheduler cancels the job
@@ -560,15 +599,30 @@ func (e *schedulerExecutor) leaseAndExecuteJob(ctx context.Context, c *Multitena
 		}
 		c.jobDuration.WithLabelValues(jobTypePlan, "").Observe(time.Since(planStartTime).Seconds())
 		return true, nil
+	case compactorschedulerpb.JOB_TYPE_CLEANUP:
+		cleanupStartTime := time.Now()
+		status, err := e.executeCleanupJob(jobCtx, c, resp.Spec)
+		cancelJob(err)
+		wg.Wait()
+		if err != nil {
+			level.Warn(e.logger).Log("msg", "failed to execute cleanup job", "job_id", jobID, "tenant", jobTenant, "job_type", jobType, "err", err)
+			if !errors.Is(context.Cause(jobCtx), errJobCanceledByScheduler) {
+				e.sendFinalJobStatus(ctx, resp.Key, resp.Spec, status)
+			}
+			return true, err
+		}
+		c.jobDuration.WithLabelValues(jobTypeCleanup, "").Observe(time.Since(cleanupStartTime).Seconds())
+		e.sendFinalJobStatus(ctx, resp.Key, resp.Spec, status)
+		return true, nil
 	default:
 		// Should not happen because this case is caught above.
-		return false, fmt.Errorf("unsupported job type %q, only COMPACTION and PLANNING are supported", jobType.String())
+		return false, fmt.Errorf("unsupported job type %q, only COMPACTION, PLANNING, and CLEANUP are supported", jobType.String())
 	}
 }
 
 func jobTypeValid(jobType compactorschedulerpb.JobType) bool {
 	switch jobType {
-	case compactorschedulerpb.JOB_TYPE_COMPACTION, compactorschedulerpb.JOB_TYPE_PLANNING:
+	case compactorschedulerpb.JOB_TYPE_COMPACTION, compactorschedulerpb.JOB_TYPE_PLANNING, compactorschedulerpb.JOB_TYPE_CLEANUP:
 		return true
 	default:
 		return false
@@ -581,12 +635,16 @@ func (e *schedulerExecutor) updateJobStatus(ctx context.Context, key *compactors
 		req := &compactorschedulerpb.UpdateCompactionJobRequest{Key: key, Tenant: spec.Tenant, Update: updType}
 		_, err := e.schedulerClient.UpdateCompactionJob(ctx, req)
 		return err
+	case compactorschedulerpb.JOB_TYPE_CLEANUP:
+		req := &compactorschedulerpb.UpdateCleanupJobRequest{Key: key, Tenant: spec.Tenant, Update: updType}
+		_, err := e.schedulerClient.UpdateCleanupJob(ctx, req)
+		return err
 	case compactorschedulerpb.JOB_TYPE_PLANNING:
 		req := &compactorschedulerpb.UpdatePlanJobRequest{Key: key, Tenant: spec.Tenant, Update: updType}
 		_, err := e.schedulerClient.UpdatePlanJob(ctx, req)
 		return err
 	default:
-		return fmt.Errorf("unsupported job type %q, only COMPACTION and PLANNING are supported", spec.JobType.String())
+		return fmt.Errorf("unsupported job type %q, only COMPACTION, PLANNING, and CLEANUP are supported", spec.JobType.String())
 	}
 }
 
@@ -685,6 +743,34 @@ func (e *schedulerExecutor) executeCompactionJob(ctx context.Context, c *Multite
 	// All other errors should be reassigned
 	level.Warn(userLogger).Log("msg", "compaction job failed with unhandled error, reassigning", "err", err)
 	return compactorschedulerpb.UPDATE_TYPE_REASSIGN, err
+}
+
+func (e *schedulerExecutor) executeCleanupJob(ctx context.Context, c *MultitenantCompactor, spec *compactorschedulerpb.JobSpec) (compactorschedulerpb.UpdateType, error) {
+	userID := spec.Tenant
+	if userID == "" {
+		return compactorschedulerpb.UPDATE_TYPE_ABANDON, errCleanupJobHasNoTenant
+	}
+
+	userLogger := util_log.WithUserID(userID, e.logger)
+
+	mark, err := mimir_tsdb.ReadTenantDeletionMark(ctx, c.bucketClient, userID, userLogger)
+	if err != nil {
+		return compactorschedulerpb.UPDATE_TYPE_REASSIGN, fmt.Errorf("failed to read tenant deletion mark: %w", err)
+	}
+
+	level.Info(userLogger).Log("msg", "executing cleanup job from scheduler", "tenant", userID, "marked_for_deletion", mark != nil)
+
+	if mark != nil {
+		err = c.blocksCleaner.deleteUserMarkedForDeletion(ctx, userID, mark, userLogger)
+	} else {
+		err = c.blocksCleaner.cleanUser(ctx, userID, userLogger)
+	}
+	if err != nil {
+		return compactorschedulerpb.UPDATE_TYPE_REASSIGN, err
+	}
+
+	level.Info(userLogger).Log("msg", "cleanup job completed", "tenant", userID)
+	return compactorschedulerpb.UPDATE_TYPE_COMPLETE, nil
 }
 
 func (e *schedulerExecutor) executePlanningJob(ctx context.Context, c *MultitenantCompactor, compactDir string, tenant string) ([]*compactorschedulerpb.PlannedCompactionJob, error) {

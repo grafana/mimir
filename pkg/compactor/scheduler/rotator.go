@@ -39,6 +39,7 @@ type Rotator struct {
 
 	leaseDuration                    time.Duration
 	planningInterval                 time.Duration
+	cleanupInterval                  time.Duration
 	compactionWaitPeriod             time.Duration
 	maintenanceInterval              time.Duration
 	intervalsBeforeLeaseExpiration   int
@@ -63,7 +64,7 @@ type tenantRotationState struct {
 	elements map[lane]*list.Element // tenant's slot in each lane's rotation (if they are present in that lane)
 }
 
-func NewRotator(leaseDuration, planningInterval, compactionWaitPeriod, maintenanceInterval time.Duration, intervalsBeforeLeaseExpiration, intervalsBeforeColdStartPlanning int, lanePolicy lanePolicy, pendingJobsLastEmpty prometheus.Gauge, logger log.Logger) *Rotator {
+func NewRotator(leaseDuration, planningInterval, cleanupInterval, compactionWaitPeriod, maintenanceInterval time.Duration, intervalsBeforeLeaseExpiration, intervalsBeforeColdStartPlanning int, lanePolicy lanePolicy, pendingJobsLastEmpty prometheus.Gauge, logger log.Logger) *Rotator {
 	laneRotations := make(map[lane]*laneRotation)
 	for _, lane := range lanePolicy.AllLanes() {
 		laneRotations[lane] = &laneRotation{rotation: list.New()}
@@ -72,6 +73,7 @@ func NewRotator(leaseDuration, planningInterval, compactionWaitPeriod, maintenan
 	r := &Rotator{
 		leaseDuration:                    leaseDuration,
 		planningInterval:                 planningInterval,
+		cleanupInterval:                  cleanupInterval,
 		compactionWaitPeriod:             compactionWaitPeriod,
 		maintenanceInterval:              maintenanceInterval,
 		intervalsBeforeLeaseExpiration:   intervalsBeforeLeaseExpiration,
@@ -109,9 +111,9 @@ func (r *Rotator) iter(ctx context.Context) error {
 		plan = false
 	}
 
-	if plan || expireLeases {
-		r.Maintenance(ctx, expireLeases, plan)
-	}
+	// Always run maintenance: cleanup jobs are evaluated every interval, independent of the
+	// planning and lease-expiration cold-start gates.
+	r.Maintenance(ctx, expireLeases, plan)
 
 	return nil
 }
@@ -338,6 +340,18 @@ func (r *Rotator) RemoveJob(tenant string, key string, epoch int64, complete boo
 	return removed, nil
 }
 
+func (r *Rotator) CompleteCleanupJob(tenant string, key string, epoch int64) (bool, error) {
+	r.mtx.RLock()
+	defer r.mtx.RUnlock()
+
+	tenantState, ok := r.tenantStateMap[tenant]
+	if !ok {
+		return false, nil
+	}
+
+	return tenantState.tracker.CompleteCleanup(key, epoch)
+}
+
 // AddTenant adds the tenant to the rotator if the tenant did not already exist
 func (r *Rotator) AddTenant(tenant string, jobTracker *JobTracker) {
 	r.mtx.Lock()
@@ -390,7 +404,7 @@ func (r *Rotator) Maintenance(ctx context.Context, enforceLeaseExpiration, plan 
 			r.mtx.RUnlock()
 			return
 		}
-		becameNonEmpty, err := tenantState.tracker.Maintenance(r.leaseDuration, enforceLeaseExpiration, plan, r.planningInterval, r.compactionWaitPeriod)
+		becameNonEmpty, err := tenantState.tracker.Maintenance(r.leaseDuration, enforceLeaseExpiration, plan, r.planningInterval, r.cleanupInterval, r.compactionWaitPeriod)
 		if err != nil {
 			level.Warn(r.logger).Log("msg", "background maintenance failed for job tracker", "user", tenant, "err", err)
 			continue
