@@ -278,6 +278,11 @@ func (e *EvaluationRoot) ChildrenLabels() []string {
 	return []string{""}
 }
 
+func (e *EvaluationRoot) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
+	_, ok := other.(*EvaluationRoot)
+	return ok
+}
+
 func (f *FunctionCall) Child(idx int) planning.Node {
 	if idx >= len(f.Args) {
 		panic(fmt.Sprintf("this FunctionCall node has %d children, but attempted to get child at index %d", len(f.Args), idx))

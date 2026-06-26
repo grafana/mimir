@@ -131,12 +131,6 @@ func (c *Cache) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_CACHE
 }
 
-func (c *Cache) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
-	otherCache, ok := other.(*Cache)
-
-	return ok && c.SplitInterval == otherCache.SplitInterval
-}
-
 func (c *Cache) MergeHints(other planning.Node) error {
 	return nil
 }
