@@ -98,6 +98,7 @@ func NewEngineWithCache(opts EngineOpts, metrics *stats.QueryMetrics, planner *Q
 		planning.NODE_TYPE_DROP_NAME:             planning.NodeMaterializerFunc[*core.DropName](core.MaterializeDropName),
 		planning.NODE_TYPE_NO_OP:                 planning.NodeMaterializerFunc[*core.NoOp](core.MaterializeNoOp),
 		planning.NODE_TYPE_DATA_LABEL_SELECTOR:   planning.NodeMaterializerFunc[*core.DataLabelSelector](core.MaterializeDataLabelSelector),
+		planning.NODE_TYPE_EVALUATION_ROOT:       planning.NodeMaterializerFunc[*core.EvaluationRoot](core.MaterializeEvaluationRoot),
 
 		planning.NODE_TYPE_DUPLICATE:                  planning.RangeAwareNodeMaterializerFunc[*commonsubexpressionelimination.Duplicate](commonsubexpressionelimination.MaterializeDuplicate),
 		planning.NODE_TYPE_DUPLICATE_FILTER:           planning.RangeAwareNodeMaterializerFunc[*commonsubexpressionelimination.DuplicateFilter](commonsubexpressionelimination.MaterializeDuplicateFilter),

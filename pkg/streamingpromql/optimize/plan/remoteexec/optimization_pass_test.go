@@ -859,6 +859,96 @@ func TestOptimizationPass(t *testing.T) {
 	}
 }
 
+// TestOptimizationPass_EvaluationRoots confirms that, when a query has been rewritten to spin off
+// subqueries, remote execution is applied to each __vector_evaluation_root__ subtree independently: sharded
+// subtrees have each leg wrapped, unsharded subtrees are wrapped whole (beneath any splitting and
+// caching nodes), and the outer instant query is left to run on the query-frontend.
+func TestOptimizationPass_EvaluationRoots(t *testing.T) {
+	ctx := user.InjectOrgID(context.Background(), "tenant-1")
+
+	// An instant query far enough in the past that the spun-off subqueries are cacheable.
+	instantQueryTimeRange := types.NewInstantQueryTimeRange(time.Unix(0, 0).Add(30 * time.Hour))
+
+	testCases := map[string]struct {
+		expr         string
+		expectedPlan string
+	}{
+		"spun-off subquery with shardable subtree": {
+			expr: `max_over_time((__vector_evaluation_root__(sum(foo)))[2h:1m])`,
+			expectedPlan: `
+				- DeduplicateAndMerge
+					- FunctionCall: max_over_time(...)
+						- Subquery: [2h0m0s:1m0s]
+							- EvaluationRoot
+								- TimeRangeSplit: interval 24h0m0s
+									- Cache: split interval 24h0m0s
+										- AggregateExpression: sum
+											- FunctionCall: __sharded_concat__(...)
+												- param 0: RemoteExecutionConsumer: node 0
+													- RemoteExecutionGroup: eager load
+														- node 0: AggregateExpression: sum
+															- VectorSelector: {__query_shard__="1_of_2", __name__="foo"}
+												- param 1: RemoteExecutionConsumer: node 0
+													- RemoteExecutionGroup: eager load
+														- node 0: AggregateExpression: sum
+															- VectorSelector: {__query_shard__="2_of_2", __name__="foo"}
+			`,
+		},
+		"spun-off subquery with unshardable subtree, plus a downstream query": {
+			expr: `max_over_time((__vector_evaluation_root__(foo))[2h:1m]) + __vector_evaluation_root__(bar)`,
+			expectedPlan: `
+				- BinaryExpression: LHS + RHS
+					- LHS: DeduplicateAndMerge
+						- FunctionCall: max_over_time(...)
+							- Subquery: [2h0m0s:1m0s]
+								- EvaluationRoot
+									- TimeRangeSplit: interval 24h0m0s
+										- Cache: split interval 24h0m0s
+											- RemoteExecutionConsumer: node 0
+												- RemoteExecutionGroup
+													- node 0: VectorSelector: {__name__="foo"}
+					- RHS: EvaluationRoot
+						- RemoteExecutionConsumer: node 0
+							- RemoteExecutionGroup
+								- node 0: VectorSelector: {__name__="bar"}
+			`,
+		},
+		"instant query EvaluationRoot with shardable subtree": {
+			expr: `__vector_evaluation_root__(sum(foo))`,
+			expectedPlan: `
+				- EvaluationRoot
+					- AggregateExpression: sum
+						- FunctionCall: __sharded_concat__(...)
+							- param 0: RemoteExecutionConsumer: node 0
+								- RemoteExecutionGroup: eager load
+									- node 0: AggregateExpression: sum
+										- VectorSelector: {__query_shard__="1_of_2", __name__="foo"}
+							- param 1: RemoteExecutionConsumer: node 0
+								- RemoteExecutionGroup: eager load
+									- node 0: AggregateExpression: sum
+										- VectorSelector: {__query_shard__="2_of_2", __name__="foo"}
+			`,
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			opts := streamingpromql.NewTestEngineOpts()
+			planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts, streamingpromql.NewStaticQueryPlanVersionProvider(planning.MaximumSupportedQueryPlanVersion))
+			require.NoError(t, err)
+
+			planner.RegisterASTOptimizationPass(sharding.NewOptimizationPass(&mockLimits{}, 0, nil, opts.Logger))
+			planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, true, opts.CommonOpts.Reg, opts.Logger))
+			planner.RegisterQueryPlanOptimizationPass(splitandcache.NewOptimizationPass(true, 24*time.Hour, true, opts.Limits, opts.CommonOpts.Reg, opts.Logger))
+			planner.RegisterQueryPlanOptimizationPass(remoteexec.NewOptimizationPass(false))
+
+			p, err := planner.NewQueryPlan(ctx, testCase.expr, instantQueryTimeRange, streamingpromql.DefaultLookbackDelta, false, streamingpromql.NoopPlanningObserver{})
+			require.NoError(t, err)
+			require.Equal(t, testutils.TrimIndent(testCase.expectedPlan), p.String())
+		})
+	}
+}
+
 func rewriteForQuerySharding(ctx context.Context, expr string) (string, error) {
 	const maxShards = 2
 	stats := astmapper.NewMapperStats()

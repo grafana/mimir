@@ -334,7 +334,7 @@ github.com/dennwc/varint
 github.com/dgraph-io/ristretto
 github.com/dgraph-io/ristretto/z
 github.com/dgraph-io/ristretto/z/simd
-# github.com/dlclark/regexp2/v2 v2.2.1
+# github.com/dlclark/regexp2/v2 v2.2.2
 ## explicit; go 1.25
 github.com/dlclark/regexp2/v2
 github.com/dlclark/regexp2/v2/helpers

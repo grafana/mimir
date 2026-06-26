@@ -190,6 +190,37 @@ func (d *DropName) ChildrenLabels() []string {
 	return []string{""}
 }
 
+func (e *EvaluationRoot) Child(idx int) planning.Node {
+	if idx != 0 {
+		panic(fmt.Sprintf("node of type EvaluationRoot supports 1 child, but attempted to get child at index %d", idx))
+	}
+	return e.Inner
+}
+
+func (e *EvaluationRoot) ChildCount() int {
+	return 1
+}
+
+func (e *EvaluationRoot) SetChildren(children []planning.Node) error {
+	if len(children) != 1 {
+		return fmt.Errorf("node of type EvaluationRoot expects one child, but got %d", len(children))
+	}
+	e.Inner = children[0]
+	return nil
+}
+
+func (e *EvaluationRoot) ReplaceChild(idx int, node planning.Node) error {
+	if idx != 0 {
+		return fmt.Errorf("node of type EvaluationRoot supports 1 child, but attempted to replace child at index %d", idx)
+	}
+	e.Inner = node
+	return nil
+}
+
+func (e *EvaluationRoot) ChildrenLabels() []string {
+	return []string{""}
+}
+
 func (f *FunctionCall) Child(idx int) planning.Node {
 	if idx >= len(f.Args) {
 		panic(fmt.Sprintf("this FunctionCall node has %d children, but attempted to get child at index %d", len(f.Args), idx))
