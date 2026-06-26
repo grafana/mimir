@@ -18,12 +18,12 @@ The currently supported object storage services are Amazon Simple Storage Servic
 
 ## Running
 
-Run `go build` in this directory to build the program. Then, use an example below as a guide.
+`copy` is part of [mimirtool](../../../cmd/mimirtool). Build it with `go build ./cmd/mimirtool` in the Mimir repository, or use the pre-built binary from Mimir releases. Then, use an example below as a guide.
 
 ### Example for Google Cloud Storage
 
 ```bash
-./copyblocks \
+mimirtool blocks copy \
   --source.backend gcs \
   --destination.backend gcs \
   --gcs.source.bucket-name <source bucket name> \
@@ -36,7 +36,7 @@ Run `go build` in this directory to build the program. Then, use an example belo
 ### Example for Azure Blob Storage
 
 ```bash
-./copyblocks \
+mimirtool blocks copy \
   --source.backend azure \
   --destination.backend azure \
   --azure.source.container-name <source container name> \
@@ -56,7 +56,7 @@ The destination bucket is called to initiate the server-side copy which may requ
 Consider passing `--client-side-copy` to avoid having to deal with that.
 
 ```bash
-./copyblocks \
+mimirtool blocks copy \
   --source.backend s3 \
   --destination.backend s3 \
   --s3.source.bucket-name <source bucket name> \
@@ -80,7 +80,7 @@ Combine the relevant source and destination configuration options using the abov
 For instance, to copy from S3 to ABS:
 
 ```bash
-./copyblocks \
+mimirtool blocks copy \
   --source.backend s3 \
   --destination.backend azure \
   --s3.source.bucket-name <source bucket name> \
@@ -100,7 +100,7 @@ For instance, to copy from S3 to ABS:
 Copies blocks from object storage to a Mimir instance using the block upload API.
 
 ```bash
-./copyblocks \
+mimirtool blocks copy \
   --source.backend s3 \
   --destination.backend backfill \
   --s3.source.bucket-name <source bucket name> \

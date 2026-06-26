@@ -69,12 +69,12 @@ Files not listed within the `meta.json` of a block are not restored if they were
 
 ## Running
 
-Run `go build` in this directory to build the program. Then, use an example below as a guide.
+`undelete` is part of [mimirtool](../../../cmd/mimirtool). Build it with `go build ./cmd/mimirtool` in the Mimir repository, or use the pre-built binary from Mimir releases. Then, use an example below as a guide.
 
 ### Example for Google Cloud Storage
 
 ```bash
-./undelete-blocks \
+mimirtool blocks undelete \
   --backend gcs \
   --gcs.bucket-name <bucket name> \
   --blocks-from listing \
@@ -85,7 +85,7 @@ Run `go build` in this directory to build the program. Then, use an example belo
 ### Example for Azure Blob Storage
 
 ```bash
-./undelete-blocks \
+mimirtool blocks undelete \
   --backend azure \
   --azure.container-name <container name> \
   --azure.account-name <account name> \
@@ -99,7 +99,7 @@ Run `go build` in this directory to build the program. Then, use an example belo
 ### Example for Amazon Simple Storage Service
 
 ```bash
-./undelete-blocks\
+mimirtool blocks undelete\
   --backend s3 \
   --s3.bucket-name <bucket name> \
   --s3.access-key-id <access key id> \

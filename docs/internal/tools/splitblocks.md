@@ -19,12 +19,12 @@ Source blocks can be read from either object storage or a local filesystem. Bloc
 
 ## Running
 
-Running `go build .` in this directory builds the program. Then use an example below as a guide.
+`split` is part of [mimirtool](../../../cmd/mimirtool). Build it with `go build ./cmd/mimirtool` in the Mimir repository, or use the pre-built binary from Mimir releases. Then, use an example below as a guide.
 
 ### Splitting blocks from a local filesystem
 
 ```bash
-./splitblocks \
+mimirtool blocks split \
   --backend filesystem \
   --filesystem.dir <directory> \
   --output.dir <directory> \
@@ -34,7 +34,7 @@ Running `go build .` in this directory builds the program. Then use an example b
 ### Splitting blocks from Google Cloud Storage
 
 ```bash
-./splitblocks \
+mimirtool blocks split \
   --backend gcs \
   --gcs.bucket-name <bucket name> \
   --output.dir <directory> \
@@ -44,7 +44,7 @@ Running `go build .` in this directory builds the program. Then use an example b
 ### Splitting blocks from Azure Blob Storage
 
 ```bash
-./splitblocks \
+mimirtool blocks split \
   --backend azure \
   --azure.container-name <container name> \
   --azure.account-name <account name> \
@@ -56,7 +56,7 @@ Running `go build .` in this directory builds the program. Then use an example b
 ### Splitting blocks from Amazon Simple Storage Service
 
 ```bash
-./splitblocks \
+mimirtool blocks split \
   --backend s3 \
   --s3.bucket-name <bucket name> \
   --s3.access-key-id <access key id> \

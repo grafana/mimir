@@ -86,12 +86,12 @@ Block ID                     Min Time               Max Time               Durat
 
 ## Running
 
-Run `go build` in this directory to build the program. Then, use an example below as a guide.
+`list` is part of [mimirtool](../../../cmd/mimirtool). Build it with `go build ./cmd/mimirtool` in the Mimir repository, or use the pre-built binary from Mimir releases. Then, use an example below as a guide.
 
 ### Example for Google Cloud Storage
 
 ```bash
-./listblocks \
+mimirtool blocks list \
   --user <user> \
   --backend gcs \
   --gcs.bucket-name <bucket name> \
@@ -100,7 +100,7 @@ Run `go build` in this directory to build the program. Then, use an example belo
 ### Example for Azure Blob Storage
 
 ```bash
-./listblocks \
+mimirtool blocks list \
   --user <user> \
   --backend azure \
   --azure.container-name <container name> \
@@ -111,7 +111,7 @@ Run `go build` in this directory to build the program. Then, use an example belo
 ### Example for Amazon Simple Storage Service
 
 ```bash
-./listblocks \
+mimirtool blocks list \
   --user <user> \
   --backend s3 \
   --s3.bucket-name <bucket name> \
