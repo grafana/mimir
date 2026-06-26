@@ -33,6 +33,7 @@ import (
 	"github.com/twmb/franz-go/pkg/kmsg"
 	"go.uber.org/atomic"
 
+	"github.com/grafana/mimir/pkg/storage/ingest/kmeta"
 	mimirtest "github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/testkafka"
 )
@@ -337,7 +338,7 @@ func TestSingleClusterPartitionReader_WaitReadConsistencyUntilLastProducedOffset
 				t.Log("started waiting for read consistency")
 
 				if withOffset {
-					require.NoError(t, reader.WaitReadConsistencyUntilOffsets(ctx, NewSingleClusterPartitionOffsets(lastRecordOffset)))
+					require.NoError(t, reader.WaitReadConsistencyUntilOffsets(ctx, kmeta.NewSingleClusterPartitionOffsets(lastRecordOffset)))
 				} else {
 					require.NoError(t, reader.WaitReadConsistencyUntilLastProducedOffset(ctx))
 				}
@@ -382,7 +383,7 @@ func TestSingleClusterPartitionReader_WaitReadConsistencyUntilLastProducedOffset
 				var err error
 
 				if withOffset {
-					err = reader.WaitReadConsistencyUntilOffsets(waitCtx, NewSingleClusterPartitionOffsets(lastRecordOffset))
+					err = reader.WaitReadConsistencyUntilOffsets(waitCtx, kmeta.NewSingleClusterPartitionOffsets(lastRecordOffset))
 				} else {
 					err = reader.WaitReadConsistencyUntilLastProducedOffset(waitCtx)
 				}
@@ -435,7 +436,7 @@ func TestSingleClusterPartitionReader_WaitReadConsistencyUntilLastProducedOffset
 				var err error
 
 				if withOffset {
-					err = reader.WaitReadConsistencyUntilOffsets(ctx, NewSingleClusterPartitionOffsets(lastRecordOffset))
+					err = reader.WaitReadConsistencyUntilOffsets(ctx, kmeta.NewSingleClusterPartitionOffsets(lastRecordOffset))
 				} else {
 					err = reader.WaitReadConsistencyUntilLastProducedOffset(ctx)
 				}
@@ -480,7 +481,7 @@ func TestSingleClusterPartitionReader_WaitReadConsistencyUntilLastProducedOffset
 				createTestContextWithTimeout(t, time.Second)
 
 				if withOffset {
-					require.NoError(t, reader.WaitReadConsistencyUntilOffsets(waitCtx, NewSingleClusterPartitionOffsets(-1)))
+					require.NoError(t, reader.WaitReadConsistencyUntilOffsets(waitCtx, kmeta.NewSingleClusterPartitionOffsets(-1)))
 				} else {
 					require.NoError(t, reader.WaitReadConsistencyUntilLastProducedOffset(waitCtx))
 				}
@@ -515,7 +516,7 @@ func TestSingleClusterPartitionReader_WaitReadConsistencyUntilLastProducedOffset
 				var err error
 
 				if withOffset {
-					err = reader.WaitReadConsistencyUntilOffsets(waitCtx, NewSingleClusterPartitionOffsets(-1))
+					err = reader.WaitReadConsistencyUntilOffsets(waitCtx, kmeta.NewSingleClusterPartitionOffsets(-1))
 				} else {
 					err = reader.WaitReadConsistencyUntilLastProducedOffset(waitCtx)
 				}
@@ -544,7 +545,7 @@ func TestSingleClusterPartitionReader_WaitReadConsistencyUntilLastProducedOffset
 		reader, _, _ := setup(t, newTestConsumer(0))
 
 		// A single-cluster reader given offsets for more than one Kafka cluster is an invariant violation.
-		err := reader.WaitReadConsistencyUntilOffsets(ctx, NewMultiClusterPartitionOffsets([]int64{1, 2}))
+		err := reader.WaitReadConsistencyUntilOffsets(ctx, kmeta.NewMultiClusterPartitionOffsets([]int64{1, 2}))
 		require.ErrorContains(t, err, "single-cluster partition reader was given read consistency offsets for 2 Kafka clusters")
 	})
 }

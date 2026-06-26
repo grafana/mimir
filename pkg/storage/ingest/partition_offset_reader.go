@@ -158,3 +158,10 @@ func (p *singleClusterPartitionOffsetReader) FetchPartitionStartOffset(ctx conte
 }
 
 type GetPartitionIDsFunc func(ctx context.Context) ([]int32, error)
+
+// newTopicOffsetsReaderKafkaClient creates a Kafka reader client for offset monitoring, registering its client
+// metrics under component. It is shared by the single- and multi-cluster topic offset readers.
+func newTopicOffsetsReaderKafkaClient(component string, cfg KafkaConfig, reg prometheus.Registerer, logger log.Logger) (*kgo.Client, error) {
+	metrics := NewKafkaReaderClientMetrics(ReaderMetricsPrefix, component, reg)
+	return NewKafkaReaderClient(cfg, metrics, logger)
+}
