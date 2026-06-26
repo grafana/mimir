@@ -23,6 +23,17 @@ std.manifestYamlDoc({
     self.tempo +
     {},
 
+  // Compartment-aware Kafka args for the components that run the ingest-storage writer (distributor, ruler).
+  // Each writer targets its own write compartment's Kafka cluster, so the address is resolved to that
+  // compartment (matching the production jsonnet), not left as the "<write-compartment-id>" placeholder. The
+  // read-compartment-templated topic makes the writer auto-create one topic per read compartment; its
+  // "<read-compartment-id>" placeholder is single-quoted so "sh -c" doesn't treat it as a shell redirection.
+  local writeCompartmentArgs(writeCompartmentID) = [
+    '-distributor.write-compartment-id=%d' % writeCompartmentID,
+    '-ingest-storage.kafka.address=kafka-wc-%d:9092' % writeCompartmentID,
+    "-ingest-storage.kafka.topic='mimir-ingest-rc-<read-compartment-id>'",
+  ],
+
   // Two distributors, each representing a (0-based) write compartment. They shard every write across all
   // read compartments by metric name, and each produces to its own write compartment's Kafka cluster;
   // nginx load-balances across them so writes spread randomly across write compartments.
@@ -32,16 +43,7 @@ std.manifestYamlDoc({
       name: 'distributor-wc-%d' % id,
       target: 'distributor',
       publishedHttpPort: 8000 + id,
-      extraArguments: [
-        // Each write compartment's distributor writes to its own Kafka cluster, sharding series across
-        // read compartment topics (parameterised by read compartment ID). The <write-compartment-id>
-        // placeholder in the address is resolved from -distributor.write-compartment-id. Values with
-        // "<...>" placeholders are single-quoted so they aren't interpreted as shell redirections by the
-        // "sh -c" command.
-        '-distributor.write-compartment-id=%d' % id,
-        "-ingest-storage.kafka.address='kafka-wc-<write-compartment-id>:9092'",
-        "-ingest-storage.kafka.topic='mimir-ingest-rc-<read-compartment-id>'",
-      ],
+      extraArguments: writeCompartmentArgs(id),
     }) + {
       // Share a "distributor" network alias so nginx (DISTRIBUTOR_HOST=distributor) balances across both.
       networks: { default: { aliases: ['distributor'] } },
@@ -51,8 +53,8 @@ std.manifestYamlDoc({
 
   // Each read compartment runs its own ingesters (one per zone). An ingester registers its partition
   // into the partition ring of its read compartment, and consumes that read compartment's topic from
-  // every write compartment's Kafka cluster (one cluster per write compartment). The query path is not
-  // compartment-aware yet, so only read compartment 0's data is queryable.
+  // every write compartment's Kafka cluster (one cluster per write compartment). Queries fan out across
+  // the read compartments that can hold the selected metric names.
   local numCompartments = 2,
   local partitionsPerCompartment = 2,
   local zones = ['zone-a', 'zone-b'],
@@ -98,6 +100,14 @@ std.manifestYamlDoc({
       target: 'query-frontend',
       publishedHttpPort: 8007,
       jaegerApp: 'query-frontend',
+      extraArguments: [
+        // To enforce strong read consistency the query-frontend monitors the last produced offsets of
+        // every read compartment's topic in every write compartment's Kafka cluster, so it needs the same
+        // templated topic and address as ingesters. The values are single-quoted so the "<...>"
+        // placeholders aren't interpreted as shell redirections by the "sh -c" command.
+        "-ingest-storage.kafka.address='kafka-wc-<write-compartment-id>:9092'",
+        "-ingest-storage.kafka.topic='mimir-ingest-rc-<read-compartment-id>'",
+      ],
     }),
   },
 
@@ -151,6 +161,11 @@ std.manifestYamlDoc({
       target: 'ruler',
       publishedHttpPort: 8030 + id,
       jaegerApp: 'ruler-%d' % id,
+      // The ruler embeds a distributor to write rule results, so it needs the same compartment-aware Kafka
+      // config as the distributors (otherwise it falls back to the concrete base topic and auto-creates
+      // duplicate topics). A single ruler can't shard across write compartments, so pin it to write
+      // compartment 0; ingesters consume every write compartment, so its writes are still read back.
+      extraArguments: writeCompartmentArgs(0),
     })
     for id in std.range(1, count)
   },

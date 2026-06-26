@@ -44,6 +44,7 @@ import (
 	blockbuilderscheduler "github.com/grafana/mimir/pkg/blockbuilder/scheduler"
 	"github.com/grafana/mimir/pkg/compactor"
 	compactorscheduler "github.com/grafana/mimir/pkg/compactor/scheduler"
+	"github.com/grafana/mimir/pkg/compartments"
 	"github.com/grafana/mimir/pkg/continuoustest"
 	"github.com/grafana/mimir/pkg/costattribution"
 	"github.com/grafana/mimir/pkg/distributor"
@@ -867,36 +868,62 @@ func (t *Mimir) initQueryFrontendCodec() (services.Service, error) {
 	return nil, nil
 }
 
-// initQueryFrontendTopicOffsetsReaders instantiates the topic offsets reader used by the query-frontend
-// when the ingest storage is enabled.
+// initQueryFrontendTopicOffsetsReaders instantiates the offsets reader used by the query-frontend
+// to enforce strong read consistency when the ingest storage is enabled.
 func (t *Mimir) initQueryFrontendTopicOffsetsReaders() (services.Service, error) {
 	if !t.Cfg.IngestStorage.Enabled {
 		return nil, nil
 	}
 
-	var err error
-
-	kafkaMetrics := ingest.NewKafkaReaderClientMetrics(ingest.ReaderMetricsPrefix, "query-frontend", t.Registerer)
-	kafkaClient, err := ingest.NewKafkaReaderClient(t.Cfg.IngestStorage.KafkaConfig, kafkaMetrics, util_log.Logger)
-	if err != nil {
-		return nil, err
+	// getPartitionIDs returns the partitions to query for a given read compartment. The Kafka partitions
+	// may have been pre-provisioned, so there may be many more existing partitions in Kafka than the
+	// actual number we use; to improve performance we only look up the partitions currently used in Mimir.
+	// We include all partition states because ACTIVE and INACTIVE partitions must be queried, and PENDING
+	// partitions may switch to ACTIVE between when the query-frontend fetches the offsets and the querier
+	// builds the replica set of partitions to query.
+	getPartitionIDs := func(readCompartmentID int) ingest.GetPartitionIDsFunc {
+		return func(_ context.Context) ([]int32, error) {
+			return t.IngesterPartitionRingWatchers.Watcher(readCompartmentID).PartitionRing().PartitionIDs(), nil
+		}
 	}
 
-	// The Kafka partitions may have been pre-provisioned. There are may be much more existing partitions in Kafka
-	// than the actual number we use. To improve performance, we only look up the actual partitions
-	// we're currently using in Mimir. We include all partition states because ACTIVE and INACTIVE partitions
-	// must be queried, and PENDING partitions may switch to ACTIVE between when the query-frontend fetch the offsets
-	// and the querier builds the replicaset of partitions to query.
-	getPartitionIDs := func(_ context.Context) ([]int32, error) {
-		// Read path: uses the first read compartment's ring (not yet compartment-aware when enabled).
-		return t.IngesterPartitionRingWatchers.Watcher(0).PartitionRing().PartitionIDs(), nil
+	var reader querymiddleware.ReadConsistencyOffsetsReader
+
+	if t.Cfg.Compartments.Enabled {
+		// One Kafka cluster per write compartment, each holding every read compartment's topic.
+		clusterConfigs := make([]ingest.KafkaConfig, t.Cfg.Compartments.Write.NumCompartments)
+		for writeCompartmentID := range clusterConfigs {
+			clusterConfigs[writeCompartmentID] = t.Cfg.IngestStorage.KafkaConfig.WriteCompartmentConfig(writeCompartmentID)
+		}
+
+		topics := make([]string, t.Cfg.Compartments.Read.NumCompartments)
+		getPartitionIDsByCompartment := make([]ingest.GetPartitionIDsFunc, t.Cfg.Compartments.Read.NumCompartments)
+		for readCompartmentID := range topics {
+			topics[readCompartmentID] = compartments.ReplaceReadCompartment(t.Cfg.IngestStorage.KafkaConfig.Topic, readCompartmentID)
+			getPartitionIDsByCompartment[readCompartmentID] = getPartitionIDs(readCompartmentID)
+		}
+
+		multiClusterReader, err := ingest.NewMultiClusterOffsetsReader(clusterConfigs, topics, getPartitionIDsByCompartment, "query-frontend", t.Registerer, util_log.Logger)
+		if err != nil {
+			return nil, err
+		}
+		reader = querymiddleware.NewMultiClusterReadConsistencyOffsetsReader(multiClusterReader)
+	} else {
+		topicOffsetsReader, err := ingest.NewSingleClusterTopicOffsetsReader(
+			t.Cfg.IngestStorage.KafkaConfig,
+			t.Cfg.IngestStorage.KafkaConfig.Topic,
+			getPartitionIDs(0),
+			"query-frontend",
+			t.Registerer, util_log.Logger)
+		if err != nil {
+			return nil, err
+		}
+		reader = querymiddleware.NewSingleClusterReadConsistencyOffsetsReader(topicOffsetsReader)
 	}
 
-	ingestTopicOffsetsReader := ingest.NewSingleClusterTopicOffsetsReader(kafkaClient, t.Cfg.IngestStorage.KafkaConfig.Topic, getPartitionIDs, t.Cfg.IngestStorage.KafkaConfig.LastProducedOffsetPollInterval, t.Registerer, util_log.Logger)
+	t.QueryFrontendOffsetsReader = reader
 
-	t.QueryFrontendTopicOffsetsReader = ingestTopicOffsetsReader
-
-	return ingestTopicOffsetsReader, nil
+	return reader, nil
 }
 
 func (t *Mimir) initCacheKeyGenerator() (services.Service, error) {
@@ -964,7 +991,7 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 		querymiddleware.PrometheusResponseExtractor{},
 		eng,
 		opts.CommonOpts,
-		t.QueryFrontendTopicOffsetsReader,
+		t.QueryFrontendOffsetsReader,
 		middlewareCfg.EnableRemoteExecution,
 		t.QueryFrontendStreamingEngine,
 		t.Registerer,
@@ -1152,6 +1179,7 @@ func (t *Mimir) createQueryFrontendPromQLEngineOptions() streamingpromql.EngineO
 	opts.RangeQuerySplittingAndCaching.SplitEnabled = middlewareCfg.UseMQEForSplittingAndCachingResults && middlewareCfg.SplitQueriesByInterval > 0
 	opts.RangeQuerySplittingAndCaching.SplitInterval = middlewareCfg.SplitQueriesByInterval
 	opts.RangeQuerySplittingAndCaching.CacheEnabled = middlewareCfg.UseMQEForSplittingAndCachingResults && middlewareCfg.CacheResults
+	opts.RangeQuerySplittingAndCaching.MinCacheExtent = querymiddleware.DefaultMinCacheExtent
 	opts.RangeQuerySplittingAndCaching.CacheClient = t.QueryFrontendCacheClient
 
 	return opts

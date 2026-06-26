@@ -20,6 +20,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/compartments"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/storage/ingest/kmeta"
 	"github.com/grafana/mimir/pkg/util/testkafka"
 )
 
@@ -176,10 +177,60 @@ func TestMultiClusterPartitionReader_WaitReadConsistencyUntilOffsets_RejectsKafk
 	require.NoError(t, err)
 
 	// Fewer offsets than Kafka clusters is an invariant violation.
-	err = reader.WaitReadConsistencyUntilOffsets(context.Background(), NewSingleClusterPartitionOffsets(10))
+	err = reader.WaitReadConsistencyUntilOffsets(context.Background(), kmeta.NewSingleClusterPartitionOffsets(10))
 	require.ErrorContains(t, err, "consumes from 2 Kafka clusters but was given read consistency offsets for 1")
 
 	// More offsets than Kafka clusters is an invariant violation too.
-	err = reader.WaitReadConsistencyUntilOffsets(context.Background(), NewMultiClusterPartitionOffsets([]int64{1, 2, 3}))
+	err = reader.WaitReadConsistencyUntilOffsets(context.Background(), kmeta.NewMultiClusterPartitionOffsets([]int64{1, 2, 3}))
 	require.ErrorContains(t, err, "consumes from 2 Kafka clusters but was given read consistency offsets for 3")
+}
+
+func TestMultiClusterPartitionReader_WaitReadConsistencyUntilOffsets_RoutesOffsetsPerCluster(t *testing.T) {
+	const (
+		readTopic   = "ingest-rc-0"
+		partitionID = int32(0)
+		tenantID    = "user-1"
+	)
+
+	ctx := context.Background()
+
+	// Two clusters with a different number of records on the same partition, so each ends up with a distinct
+	// last-seen offset (cluster 0 -> 2, cluster 1 -> 0). This lets us prove each per-cluster offset is routed
+	// to the matching cluster's reader.
+	_, addr0 := testkafka.CreateCluster(t, partitionID+1, readTopic)
+	_, addr1 := testkafka.CreateCluster(t, partitionID+1, readTopic)
+	cfg0 := createTestKafkaConfig(addr0, readTopic)
+	cfg1 := createTestKafkaConfig(addr1, readTopic)
+
+	writer0, _ := createTestWriter(t, cfg0)
+	writer1, _ := createTestWriter(t, cfg1)
+	writeReq := func(name string) *mimirpb.WriteRequest {
+		return &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries(name)}, Source: mimirpb.API}
+	}
+	for i := 0; i < 3; i++ {
+		require.NoError(t, writer0.WriteSync(ctx, readTopic, partitionID, tenantID, writeReq(fmt.Sprintf("c0_%d", i))))
+	}
+	require.NoError(t, writer1.WriteSync(ctx, readTopic, partitionID, tenantID, writeReq("c1_0")))
+
+	pusher := pusherFunc(func(context.Context, *mimirpb.WriteRequest) error { return nil })
+	reader, err := NewMultiClusterPartitionReader([]KafkaConfig{cfg0, cfg1}, partitionID, "ingester-0", multiClusterTestOffsetFilePath(t), pusher, log.NewNopLogger(), prometheus.NewPedanticRegistry())
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(ctx, reader))
+	t.Cleanup(func() { require.NoError(t, services.StopAndAwaitTerminated(ctx, reader)) })
+
+	// Ensure everything produced has been consumed, then read each cluster's last-seen offset.
+	require.NoError(t, reader.WaitReadConsistencyUntilLastProducedOffset(ctx))
+	require.Equal(t, kmeta.NewMultiClusterPartitionOffsets([]int64{2, 0}), reader.LastSeenOffsets())
+
+	// Each cluster's own last-seen offset is already satisfied, so this returns promptly.
+	require.NoError(t, reader.WaitReadConsistencyUntilOffsets(ctx, kmeta.NewMultiClusterPartitionOffsets([]int64{2, 0})))
+
+	// Swap the offsets: cluster 0 is asked for 0 (already satisfied) while cluster 1 is asked for 2 (never
+	// produced on cluster 1). With correct routing this blocks on cluster 1 until the context is canceled; if
+	// the offsets were misrouted, both would be satisfied and it would return nil.
+	swapCtx, cancel := context.WithTimeout(ctx, time.Second)
+	defer cancel()
+	err = reader.WaitReadConsistencyUntilOffsets(swapCtx, kmeta.NewMultiClusterPartitionOffsets([]int64{0, 2}))
+	require.Error(t, err)
+	require.ErrorContains(t, err, "write compartment 1")
 }

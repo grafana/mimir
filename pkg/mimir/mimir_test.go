@@ -646,6 +646,26 @@ func TestConfigValidation(t *testing.T) {
 			expectAnyError: false,
 		},
 		{
+			name: "should fail if the query-frontend is enabled but the Kafka topic is not parameterised by read compartment",
+			getTestConfig: func() *Config {
+				cfg := validCompartmentsConfig()
+				cfg.Target = flagext.StringSliceCSV{QueryFrontend}
+				cfg.IngestStorage.KafkaConfig.Topic = "mimir-ingest"
+				return cfg
+			},
+			expectAnyError: true,
+		},
+		{
+			name: "should fail if the query-frontend is enabled with more than one write compartment but the Kafka address is not parameterised by write compartment",
+			getTestConfig: func() *Config {
+				cfg := validCompartmentsConfig()
+				cfg.Target = flagext.StringSliceCSV{QueryFrontend}
+				cfg.IngestStorage.KafkaConfig.Address = flagext.StringSliceCSV{"localhost:9092"}
+				return cfg
+			},
+			expectAnyError: true,
+		},
+		{
 			name: "should pass if compartments and the distributor are enabled with Kafka topic auto-creation on",
 			getTestConfig: func() *Config {
 				cfg := validCompartmentsConfig()

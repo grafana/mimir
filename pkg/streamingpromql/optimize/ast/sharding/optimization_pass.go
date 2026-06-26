@@ -18,6 +18,7 @@ import (
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize"
 	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
+	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
 type OptimizationPass struct {
@@ -34,7 +35,7 @@ func (o *OptimizationPass) Name() string {
 	return "Sharding"
 }
 
-func (o *OptimizationPass) Apply(ctx context.Context, expr parser.Expr) (parser.Expr, error) {
+func (o *OptimizationPass) Apply(ctx context.Context, expr parser.Expr, _ types.QueryTimeRange) (parser.Expr, error) {
 	if containsSpunOffSubquery(expr) {
 		return expr, nil
 	}

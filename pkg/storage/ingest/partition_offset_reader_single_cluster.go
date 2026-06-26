@@ -4,52 +4,93 @@ package ingest
 
 import (
 	"context"
-	"time"
+	"fmt"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/services"
+	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/twmb/franz-go/pkg/kgo"
 )
 
-// SingleClusterTopicOffsetsReader is responsible to read the offsets of partitions in a topic.
+// SingleClusterTopicOffsetsReader reads the last produced offsets of the partitions of a single topic in a
+// single Kafka cluster.
 type SingleClusterTopicOffsetsReader struct {
-	*GenericOffsetReader[map[int32]int64]
+	services.Service
 
-	client          *partitionOffsetClient
-	topic           string
-	getPartitionIDs GetPartitionIDsFunc
-	logger          log.Logger
+	kafkaClient        *kgo.Client
+	offsetClient       *partitionOffsetClient
+	offsetsReader      *GenericOffsetReader[map[int32]int64]
+	subservicesWatcher *services.FailureWatcher
+	topic              string
+	getPartitionIDs    GetPartitionIDsFunc
 }
 
-func NewSingleClusterTopicOffsetsReader(client *kgo.Client, topic string, getPartitionIDs GetPartitionIDsFunc, pollInterval time.Duration, reg prometheus.Registerer, logger log.Logger) *SingleClusterTopicOffsetsReader {
+// NewSingleClusterTopicOffsetsReader creates a SingleClusterTopicOffsetsReader monitoring topic in the Kafka
+// cluster addressed by cfg, polling at cfg.LastProducedOffsetPollInterval. getPartitionIDs returns the
+// partitions of topic to read. component labels the Kafka client metrics.
+func NewSingleClusterTopicOffsetsReader(cfg KafkaConfig, topic string, getPartitionIDs GetPartitionIDsFunc, component string, reg prometheus.Registerer, logger log.Logger) (*SingleClusterTopicOffsetsReader, error) {
+	client, err := newTopicOffsetsReaderKafkaClient(component, cfg, reg, logger)
+	if err != nil {
+		return nil, errors.Wrap(err, "creating Kafka client")
+	}
+
 	r := &SingleClusterTopicOffsetsReader{
-		client:          newPartitionOffsetClient(client, reg, logger),
-		topic:           topic,
-		getPartitionIDs: getPartitionIDs,
-		logger:          logger,
+		kafkaClient:        client,
+		offsetClient:       newPartitionOffsetClient(client, reg, logger),
+		subservicesWatcher: services.NewFailureWatcher(),
+		topic:              topic,
+		getPartitionIDs:    getPartitionIDs,
 	}
-
-	r.GenericOffsetReader = NewGenericOffsetReader[map[int32]int64](r.FetchLastProducedOffset, pollInterval, logger)
-
-	return r
+	r.offsetsReader = NewGenericOffsetReader[map[int32]int64](r.FetchLastProducedOffsets, cfg.LastProducedOffsetPollInterval, logger)
+	r.Service = services.NewBasicService(r.starting, r.running, r.stopping).WithName("single-cluster-topic-offsets-reader")
+	return r, nil
 }
 
-// FetchLastProducedOffset fetches and returns the last produced offset for each requested partition in the topic.
-// The offset is -1 if a partition has been created but no record has been produced yet.
-func (p *SingleClusterTopicOffsetsReader) FetchLastProducedOffset(ctx context.Context) (map[int32]int64, error) {
-	partitionIDs, err := p.getPartitionIDs(ctx)
+func (r *SingleClusterTopicOffsetsReader) starting(ctx context.Context) error {
+	r.subservicesWatcher.WatchService(r.offsetsReader)
+	return errors.Wrap(services.StartAndAwaitRunning(ctx, r.offsetsReader), "starting offsets reader")
+}
+
+func (r *SingleClusterTopicOffsetsReader) running(ctx context.Context) error {
+	select {
+	case <-ctx.Done():
+		return nil
+	case err := <-r.subservicesWatcher.Chan():
+		return errors.Wrap(err, "single-cluster topic offsets reader subservice failed")
+	}
+}
+
+func (r *SingleClusterTopicOffsetsReader) stopping(_ error) error {
+	err := services.StopAndAwaitTerminated(context.Background(), r.offsetsReader)
+	r.kafkaClient.Close()
+	return err
+}
+
+// FetchLastProducedOffsets fetches the last produced offset for each requested partition of the topic, in a
+// single request, returning them indexed by partition. The offset is -1 if a partition has been created but
+// no record has been produced yet.
+func (r *SingleClusterTopicOffsetsReader) FetchLastProducedOffsets(ctx context.Context) (map[int32]int64, error) {
+	partitionIDs, err := r.getPartitionIDs(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("listing partitions of topic %q: %w", r.topic, err)
+	}
+
+	offsetsByTopic, err := r.offsetClient.FetchPartitionsLastProducedOffsets(ctx, map[string][]int32{r.topic: partitionIDs})
 	if err != nil {
 		return nil, err
 	}
-
-	offsetsByTopic, err := p.client.FetchPartitionsLastProducedOffsets(ctx, map[string][]int32{p.topic: partitionIDs})
-	if err != nil {
-		return nil, err
-	}
-
-	return offsetsByTopic[p.topic], nil
+	return offsetsByTopic[r.topic], nil
 }
 
-func (p *SingleClusterTopicOffsetsReader) Topic() string {
-	return p.topic
+// WaitNextFetchLastProducedOffset returns the result of the next "last produced offset" fetch, indexed by
+// partition. Concurrent callers share the same in-flight fetch and the same returned value (single-flight),
+// so the result must be treated as read-only.
+func (r *SingleClusterTopicOffsetsReader) WaitNextFetchLastProducedOffset(ctx context.Context) (map[int32]int64, error) {
+	return r.offsetsReader.WaitNextFetchLastProducedOffset(ctx)
+}
+
+// Topic returns the monitored topic.
+func (r *SingleClusterTopicOffsetsReader) Topic() string {
+	return r.topic
 }

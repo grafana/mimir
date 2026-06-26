@@ -80,14 +80,15 @@ local jsonpath = import 'github.com/jsonnet-libs/xtd/jsonpath.libsonnet';
       local start = indices[std.length(indices) - 1] + std.length(marker);
       std.parseInt(std.substr(name, start, std.length(name) - start));
 
-    // {kind: 'write'|'read', id: int} extracted from a resource name, or null.
+    // {kind: 'write'|'read', id: int} extracted from a resource name, or {kind: 'global'} when the resource
+    // belongs to no compartment (e.g. the query-frontend or querier, which span the whole topology).
     local extractCompartment(name) =
       if std.length(std.findSubstr('-wc-', name)) > 0 then
         { kind: 'write', id: idAfterMarker(name, '-wc-') }
       else if std.length(std.findSubstr('-rc-', name)) > 0 then
         { kind: 'read', id: idAfterMarker(name, '-rc-') }
       else
-        null;
+        { kind: 'global' };
 
     // Value of a "-flag=value" CLI arg in a container, or null if absent.
     local flagValue(container, flag) =
@@ -110,7 +111,10 @@ local jsonpath = import 'github.com/jsonnet-libs/xtd/jsonpath.libsonnet';
         else
           null
       else if std.length(std.findSubstr(writePlaceholder, value)) == 0 then
-        'The Deployment or StatefulSet "%s" sets "%s=%s", but a read compartment consumes from every write compartment\'s Kafka cluster, so the address must contain the "%s" placeholder.' % [name, addressFlag, value, writePlaceholder]
+        if compartment.kind == 'read' then
+          'The Deployment or StatefulSet "%s" sets "%s=%s", but a read compartment consumes from every write compartment\'s Kafka cluster, so the address must contain the "%s" placeholder.' % [name, addressFlag, value, writePlaceholder]
+        else
+          'The Deployment or StatefulSet "%s" sets "%s=%s", but a global deployment reads from every write compartment\'s Kafka cluster, so the address must contain the "%s" placeholder.' % [name, addressFlag, value, writePlaceholder]
       else
         null;
 
@@ -126,7 +130,10 @@ local jsonpath = import 'github.com/jsonnet-libs/xtd/jsonpath.libsonnet';
         else
           null
       else if std.length(std.findSubstr(readPlaceholder, value)) == 0 then
-        'The Deployment or StatefulSet "%s" sets "%s=%s", but a write compartment produces to every read compartment\'s topic, so the topic must contain the "%s" placeholder.' % [name, topicFlag, value, readPlaceholder]
+        if compartment.kind == 'write' then
+          'The Deployment or StatefulSet "%s" sets "%s=%s", but a write compartment produces to every read compartment\'s topic, so the topic must contain the "%s" placeholder.' % [name, topicFlag, value, readPlaceholder]
+        else
+          'The Deployment or StatefulSet "%s" sets "%s=%s", but a global deployment queries every read compartment\'s topic, so the topic must contain the "%s" placeholder.' % [name, topicFlag, value, readPlaceholder]
       else
         null;
 
@@ -143,15 +150,12 @@ local jsonpath = import 'github.com/jsonnet-libs/xtd/jsonpath.libsonnet';
       else
         local name = resource.metadata.name;
         local compartment = extractCompartment(name);
-        if compartment == null then
-          'Unable to extract the compartment id from the Deployment or StatefulSet name "%s": expected the name to contain "-wc-<id>" or "-rc-<id>".' % name
-        else
-          local containers = jsonpath.getJSONPath(resource, 'spec.template.spec.containers', []);
-          std.foldl(
-            function(firstError, container) if firstError != null then firstError else validateContainer(name, compartment, container),
-            containers,
-            null
-          );
+        local containers = jsonpath.getJSONPath(resource, 'spec.template.spec.containers', []);
+        std.foldl(
+          function(firstError, container) if firstError != null then firstError else validateContainer(name, compartment, container),
+          containers,
+          null
+        );
 
     local getResourceName(value) =
       if std.isObject(value) && std.objectHas(value, 'metadata') && std.objectHas(value.metadata, 'name') then value.metadata.name else null;

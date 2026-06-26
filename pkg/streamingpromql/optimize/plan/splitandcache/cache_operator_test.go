@@ -63,6 +63,7 @@ func TestCacheOperator(t *testing.T) {
 		expectedAnnotationTimeRange types.QueryTimeRange // If not set, uses timeRange. This is necessary because we don't have a way to determine what timestamp an annotation applies to, so we have to return all annotations associated with an extent if any samples from that extent are used.
 		existingCacheEntry          *CacheEntry          // nil if no cache entry should be populated before running the test. If non-nil, and CacheKey is nil, CacheKey will be set to the expected value in the test.
 		enableOOO                   bool
+		minCacheExtent              time.Duration // Small extent avoidance threshold. If zero (the default for most cases), small extent avoidance is disabled so these cases exercise extent partitioning and merging in isolation.
 
 		expectedFreshlyEvaluatedRanges   []types.QueryTimeRange
 		expectedWrittenCacheEntry        *CacheEntry   // nil if no cache entry should be written. If non-nil, CacheKey will be set to the expected value in the test.
@@ -511,6 +512,104 @@ func TestCacheOperator(t *testing.T) {
 			expectedWrittenCacheEntry:        nil,
 			expectedAnyCachedExtentsRetained: true,
 		},
+
+		"small extent avoidance: single small extent overlapping large desired time range is discarded and re-evaluated": {
+			minCacheExtent: 5 * time.Minute,
+			existingCacheEntry: &CacheEntry{
+				Extents: []CachedExtent{
+					// 2-minute extent, smaller than the 5-minute threshold, inside the 10-minute desired time range.
+					extentFor(types.NewRangeQueryTimeRange(desiredStart.Add(2*time.Minute), desiredStart.Add(4*time.Minute), step), withinTTL, existingTraceID),
+				},
+			},
+
+			// The small extent is discarded, so the whole desired time range is freshly evaluated as one query.
+			expectedFreshlyEvaluatedRanges: []types.QueryTimeRange{defaultTimeRange},
+			expectedWrittenCacheEntry: &CacheEntry{
+				Extents: []CachedExtent{
+					extentFor(defaultTimeRange, timeNow, newTraceID),
+				},
+			},
+			expectedAnyCachedExtentsRetained: false,
+		},
+
+		"small extent avoidance: multiple small extents are discarded and the range is re-evaluated as a single query": {
+			minCacheExtent: 5 * time.Minute,
+			existingCacheEntry: &CacheEntry{
+				Extents: []CachedExtent{
+					extentFor(types.NewRangeQueryTimeRange(desiredStart.Add(2*time.Minute), desiredStart.Add(4*time.Minute), step), withinTTL, existingTraceID),
+					extentFor(types.NewRangeQueryTimeRange(desiredStart.Add(6*time.Minute), desiredStart.Add(8*time.Minute), step), withinTTL, existingTraceID),
+				},
+			},
+
+			// Both small extents are discarded, so the whole desired time range is freshly evaluated as one query
+			// rather than fragmenting it into several small queries around the discarded extents.
+			expectedFreshlyEvaluatedRanges: []types.QueryTimeRange{defaultTimeRange},
+			expectedWrittenCacheEntry: &CacheEntry{
+				Extents: []CachedExtent{
+					extentFor(defaultTimeRange, timeNow, newTraceID),
+				},
+			},
+			expectedAnyCachedExtentsRetained: false,
+		},
+
+		"small extent avoidance: extent at least as large as threshold is still read from the cache": {
+			minCacheExtent: 5 * time.Minute,
+			existingCacheEntry: &CacheEntry{
+				Extents: []CachedExtent{
+					// 6-minute extent, larger than the 5-minute threshold: it should still be used.
+					extentFor(types.NewRangeQueryTimeRange(desiredStart.Add(2*time.Minute), desiredStart.Add(8*time.Minute), step), withinTTL, existingTraceID),
+				},
+			},
+
+			expectedFreshlyEvaluatedRanges: []types.QueryTimeRange{
+				types.NewRangeQueryTimeRange(desiredStart, desiredStart.Add(time.Minute), step),
+				types.NewRangeQueryTimeRange(desiredStart.Add(9*time.Minute), desiredEnd, step),
+			},
+			expectedWrittenCacheEntry: &CacheEntry{
+				Extents: []CachedExtent{
+					extentFor(defaultTimeRange, withinTTL, newTraceID),
+				},
+			},
+			expectedAnyCachedExtentsRetained: true,
+		},
+
+		"small extent avoidance: small extents entirely outside the desired time range are retained": {
+			minCacheExtent: 5 * time.Minute,
+			existingCacheEntry: &CacheEntry{
+				Extents: []CachedExtent{
+					// Small extents that don't overlap the desired time range aren't re-evaluated by this query, so
+					// they must be retained rather than discarded.
+					extentFor(types.NewRangeQueryTimeRange(desiredStart.Add(-5*time.Minute), desiredStart.Add(-2*time.Minute), step), withinTTL, existingTraceID),
+					extentFor(types.NewRangeQueryTimeRange(desiredEnd.Add(2*time.Minute), desiredEnd.Add(4*time.Minute), step), withinTTL, existingTraceID),
+				},
+			},
+
+			expectedFreshlyEvaluatedRanges: []types.QueryTimeRange{defaultTimeRange},
+			expectedWrittenCacheEntry: &CacheEntry{
+				Extents: []CachedExtent{
+					extentFor(types.NewRangeQueryTimeRange(desiredStart.Add(-5*time.Minute), desiredStart.Add(-2*time.Minute), step), withinTTL, existingTraceID),
+					extentFor(types.NewRangeQueryTimeRange(desiredStart, desiredEnd, step), timeNow, newTraceID),
+					extentFor(types.NewRangeQueryTimeRange(desiredEnd.Add(2*time.Minute), desiredEnd.Add(4*time.Minute), step), withinTTL, existingTraceID),
+				},
+			},
+			expectedAnyCachedExtentsRetained: true,
+		},
+
+		"small extent avoidance: small extent is read from the cache when the desired time range is also small": {
+			timeRange:      types.NewRangeQueryTimeRange(desiredStart, desiredStart.Add(3*time.Minute), step),
+			minCacheExtent: 5 * time.Minute,
+			existingCacheEntry: &CacheEntry{
+				Extents: []CachedExtent{
+					// The extent is smaller than the threshold, but so is the desired time range, so it should be used:
+					// re-evaluating wouldn't be any cheaper.
+					extentFor(types.NewRangeQueryTimeRange(desiredStart, desiredStart.Add(3*time.Minute), step), withinTTL, existingTraceID),
+				},
+			},
+
+			expectedFreshlyEvaluatedRanges:   nil,
+			expectedWrittenCacheEntry:        nil,
+			expectedAnyCachedExtentsRetained: true,
+		},
 	}
 
 	for name, testCase := range testCases {
@@ -545,7 +644,7 @@ func TestCacheOperator(t *testing.T) {
 			}
 			params := &planning.QueryParameters{OriginalExpression: "the_original_expression{}"}
 
-			o := newCacheOperator(cache, materializer, createTestNode(), testCase.timeRange, memoryConsumptionTracker, posrange.PositionRange{}, params, limits, log.NewNopLogger(), cacheEntryInterval)
+			o := newCacheOperator(cache, materializer, createTestNode(), testCase.timeRange, memoryConsumptionTracker, posrange.PositionRange{}, params, limits, log.NewNopLogger(), cacheEntryInterval, testCase.minCacheExtent)
 			o.timeNow = func() time.Time { return timeNow }
 			o.getCurrentTraceID = func(context.Context) (string, bool) { return newTraceID, true }
 
@@ -660,7 +759,7 @@ func TestCacheOperator_DoesNotSaveCacheEntryIfSeriesMetadataNotCalled(t *testing
 	limits := &mockLimitsProvider{}
 
 	timeRange := types.NewRangeQueryTimeRange(timestamp.Time(0), timestamp.Time(0).Add(2*time.Minute), time.Minute)
-	o := newCacheOperator(cache, materializer, createTestNode(), timeRange, memoryConsumptionTracker, posrange.PositionRange{}, &planning.QueryParameters{OriginalExpression: "the_original_expression{}"}, limits, log.NewNopLogger(), cacheEntryInterval)
+	o := newCacheOperator(cache, materializer, createTestNode(), timeRange, memoryConsumptionTracker, posrange.PositionRange{}, &planning.QueryParameters{OriginalExpression: "the_original_expression{}"}, limits, log.NewNopLogger(), cacheEntryInterval, 0)
 
 	require.NoError(t, o.Prepare(ctx, &types.PrepareParams{}))
 	require.NoError(t, o.AfterPrepare(ctx))
@@ -686,7 +785,7 @@ func TestCacheOperator_DoesNotSaveCacheEntryIfNotAllSeriesRead(t *testing.T) {
 	limits := &mockLimitsProvider{}
 
 	timeRange := types.NewRangeQueryTimeRange(timestamp.Time(0), timestamp.Time(0).Add(2*time.Minute), time.Minute)
-	o := newCacheOperator(cache, materializer, createTestNode(), timeRange, memoryConsumptionTracker, posrange.PositionRange{}, &planning.QueryParameters{OriginalExpression: "the_original_expression{}"}, limits, log.NewNopLogger(), cacheEntryInterval)
+	o := newCacheOperator(cache, materializer, createTestNode(), timeRange, memoryConsumptionTracker, posrange.PositionRange{}, &planning.QueryParameters{OriginalExpression: "the_original_expression{}"}, limits, log.NewNopLogger(), cacheEntryInterval, 0)
 
 	require.NoError(t, o.Prepare(ctx, &types.PrepareParams{}))
 	require.NoError(t, o.AfterPrepare(ctx))
@@ -720,7 +819,7 @@ func TestCacheOperator_DoesNotSaveCacheEntryIfFinishedReadingNotCalled(t *testin
 	limits := &mockLimitsProvider{}
 
 	timeRange := types.NewRangeQueryTimeRange(timestamp.Time(0), timestamp.Time(0).Add(2*time.Minute), time.Minute)
-	o := newCacheOperator(cache, materializer, createTestNode(), timeRange, memoryConsumptionTracker, posrange.PositionRange{}, &planning.QueryParameters{OriginalExpression: "the_original_expression{}"}, limits, log.NewNopLogger(), cacheEntryInterval)
+	o := newCacheOperator(cache, materializer, createTestNode(), timeRange, memoryConsumptionTracker, posrange.PositionRange{}, &planning.QueryParameters{OriginalExpression: "the_original_expression{}"}, limits, log.NewNopLogger(), cacheEntryInterval, 0)
 
 	require.NoError(t, o.Prepare(ctx, &types.PrepareParams{}))
 	require.NoError(t, o.AfterPrepare(ctx))
@@ -1000,7 +1099,7 @@ func (m *mockLimitsProvider) AllowCachingUnalignedQueries(ctx context.Context) (
 
 func TestCacheOperator_CacheKey(t *testing.T) {
 	generateCacheKey := func(tenantID string, desiredTimeRange types.QueryTimeRange, node planning.Node, params *planning.QueryParameters) []byte {
-		o := newCacheOperator(nil, nil, node, desiredTimeRange, nil, posrange.PositionRange{}, params, nil, log.NewNopLogger(), cacheEntryInterval)
+		o := newCacheOperator(nil, nil, node, desiredTimeRange, nil, posrange.PositionRange{}, params, nil, log.NewNopLogger(), cacheEntryInterval, 0)
 		ctx := user.InjectOrgID(context.Background(), tenantID)
 
 		key, err := o.computeCacheKey(ctx)
