@@ -205,13 +205,15 @@ func (r *bucketIndexReader) expandedPostings(ctx context.Context, ms []*labels.M
 	postingGroups, omittedPostingGroups := r.postingsStrategy.selectPostings(postingGroups)
 	logSelectedPostingGroups(ctx, r.block.logger, r.block.meta.ULID, postingGroups, omittedPostingGroups)
 
-	fetchedPostings, err := r.fetchPostings(ctx, extractLabels(postingGroups), extractOffsets(postingGroups), stats)
+	keysOffsets := extractKeysOffsets(postingGroups)
+
+	fetchedPostings, err := r.fetchPostings(ctx, keysOffsets, stats)
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "get postings")
 	}
 
 	// The order of the fetched postings is the same as the order of the requested keys.
-	// This is guaranteed by extractLabels.
+	// This is guaranteed by extractKeysOffsets.
 	postingIndex := 0
 
 	var groupAdds, groupRemovals []index.Postings
@@ -291,30 +293,19 @@ func extractLabelMatchers(groups []postingGroup) []*labels.Matcher {
 	return m
 }
 
-// extractOffsets returns the offsets of the posting groups in the order that they are found in each posting group.
-func extractOffsets(groups []postingGroup) []index.Range {
-	numOffsets := 0
-	for _, pg := range groups {
-		numOffsets += len(pg.offsets)
-	}
-	offsets := make([]index.Range, 0, numOffsets)
-	for _, pg := range groups {
-		offsets = append(offsets, pg.offsets...)
-	}
-	return offsets
-}
-
-// extractLabels returns the keys of the posting groups in the order that they are found in each posting group.
-func extractLabels(groups []postingGroup) []labels.Label {
+// extractKeysOffsets returns the keys and offsets of the posting groups in the order that they are found in each posting group.
+func extractKeysOffsets(groups []postingGroup) []labelPostingOffset {
 	numKeys := 0
 	for _, pg := range groups {
 		numKeys += len(pg.keys)
 	}
-	keys := make([]labels.Label, 0, numKeys)
+	keysOffsets := make([]labelPostingOffset, 0, numKeys)
 	for _, pg := range groups {
-		keys = append(keys, pg.keys...)
+		for ix, k := range pg.keys {
+			keysOffsets = append(keysOffsets, labelPostingOffset{k, pg.offsets[ix]})
+		}
 	}
-	return keys
+	return keysOffsets
 }
 
 func extractLabelValues(offsets []streamindex.PostingListOffset) []string {
@@ -423,28 +414,25 @@ func toPostingGroups(ctx context.Context, ms []*labels.Matcher, indexhdr indexhe
 	return postingGroups, nil
 }
 
-// fetchPostingsWithKnownOffsets is like FetchPostings, but uses the caller-provided
-// byte offsets (e.g. from IndexHeaderReader.LabelValuesOffsets) instead of
-// resolving each key's offset with a separate PostingsOffset call.
-// offsets, if non-nil, must be aligned 1:1 with keys and hold the non-empty byte range of each key's
-// posting list, so they can be reused instead of resolving them again via PostingsOffset;
-// a length mismatch between keys and offsets will result in an error.
-func (r *bucketIndexReader) fetchPostingsWithKnownOffsets(ctx context.Context, keys []labels.Label, offsets []index.Range, stats *safeQueryStats) ([]index.Postings, error) {
-	return r.fetchAndPadPostings(ctx, keys, offsets, stats)
+type labelPostingOffset struct {
+	labels.Label
+	off index.Range
 }
 
-// FetchPostings fills postings requested by posting groups.
-// It returns one postings for each key, in the same order.
-// If postings for given key is not fetched, entry at given index will be an ErrPostings
-func (r *bucketIndexReader) FetchPostings(ctx context.Context, keys []labels.Label, stats *safeQueryStats) (returnPostings []index.Postings, returnErr error) {
-	return r.fetchAndPadPostings(ctx, keys, nil, stats)
-}
-
-func (r *bucketIndexReader) fetchAndPadPostings(ctx context.Context, keys []labels.Label, knownOffsets []index.Range, stats *safeQueryStats) ([]index.Postings, error) {
-	ps, err := r.fetchPostings(ctx, keys, knownOffsets, stats)
+// fetchPostingsWithKnownOffsets fills postings using the caller-provided offset for each key.
+// It returns one postings list per key, in the same order as keysOffsets.
+// If a key's offset is the zero-value index.Range, the index header is consulted to resolve it.
+// If the block has no posting list for a key, its entry is an empty postings list (index.EmptyPostings).
+// If a key's postings were never fetched, its entry is an ErrPostings.
+func (r *bucketIndexReader) fetchPostingsWithKnownOffsets(ctx context.Context, keysOffsets []labelPostingOffset, stats *safeQueryStats) ([]index.Postings, error) {
+	ps, err := r.fetchPostings(ctx, keysOffsets, stats)
 	if err != nil {
 		return nil, err
 	}
+	return r.padPostings(ctx, keysOffsets, ps)
+}
+
+func (r *bucketIndexReader) padPostings(ctx context.Context, keysOffsets []labelPostingOffset, ps []index.Postings) ([]index.Postings, error) {
 	// As of version two all series entries are 16 byte padded. All references
 	// we get have to account for that to get the correct offset.
 	version, err := r.block.indexHeaderReader.IndexVersion(ctx)
@@ -452,7 +440,7 @@ func (r *bucketIndexReader) fetchAndPadPostings(ctx context.Context, keys []labe
 		return nil, errors.Wrap(err, "get index version")
 	}
 	for i := range ps {
-		ps[i] = checkNilPosting(keys[i], ps[i])
+		ps[i] = checkNilPosting(keysOffsets[i].Label, ps[i])
 		if version >= 2 {
 			ps[i] = paddedPostings{ps[i]}
 		}
@@ -460,10 +448,10 @@ func (r *bucketIndexReader) fetchAndPadPostings(ctx context.Context, keys []labe
 	return ps, nil
 }
 
-// fetchPostings is the version-unaware private implementation of FetchPostings.
+// fetchPostings is the version-unaware private implementation of fetchPostingsWithKnownOffsets.
 // callers of this method may need to add padding to the results.
 // If postings for given key is not fetched, entry at given index will be nil.
-func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Label, knownOffsets []index.Range, stats *safeQueryStats) (output []index.Postings, returnErr error) {
+func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Label, keysOffsets []labelPostingOffset, stats *safeQueryStats) (output []index.Postings, returnErr error) {
 	ctx, span := tracer.Start(ctx, "fetchPostings()")
 	defer func() {
 		span.SetAttributes(
@@ -475,24 +463,24 @@ func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Lab
 		}
 		span.End()
 	}()
-	// If knownOffsets length does not match the number of keys, we shouldn't trust it.
-	if knownOffsets != nil && len(knownOffsets) != len(keys) {
-		return nil, fmt.Errorf("knownOffsets length %d must match keys length %d", len(knownOffsets), len(keys))
-	}
 	timer := prometheus.NewTimer(r.block.metrics.postingsFetchDuration)
 	defer timer.ObserveDuration()
 
 	var ptrs []postingPtr
 
-	output = make([]index.Postings, len(keys))
+	output = make([]index.Postings, len(keysOffsets))
 
+	keys := make([]labels.Label, len(keysOffsets))
+	for i := range keysOffsets {
+		keys[i] = keysOffsets[i].Label
+	}
 	// Fetch postings from the cache with a single call.
 	fromCache := r.block.indexCache.FetchMultiPostings(ctx, r.block.userID, r.block.meta.ULID, keys)
 
 	// Iterate over all groups and fetch posting from cache.
 	// If we have a miss, mark key to be fetched in `ptrs` slice.
 	// Overlaps are well handled by partitioner, so we don't need to deduplicate keys.
-	for ix, key := range keys {
+	for ix, ko := range keysOffsets {
 		// Get postings for the given key from cache first.
 		if b, _ := fromCache.Next(); b != nil {
 			stats.update(func(stats *queryStats) {
@@ -503,9 +491,9 @@ func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Lab
 			l, cachedLabelsKey, pendingMatchers, err := r.decodePostings(b, stats)
 			if len(pendingMatchers) > 0 {
 				return nil, fmt.Errorf("not expecting matchers on non-expanded postings for %s=%s in block %s, but got %s",
-					key.Name, key.Value, r.block.meta.ULID, util.MatchersStringer(pendingMatchers))
+					ko.Name, ko.Value, r.block.meta.ULID, util.MatchersStringer(pendingMatchers))
 			}
-			if err == nil && cachedLabelsKey == encodeLabelForPostingsCache(key) {
+			if err == nil && cachedLabelsKey == encodeLabelForPostingsCache(ko.Label) {
 				output[ix] = l
 				continue
 			}
@@ -513,7 +501,7 @@ func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Lab
 			level.Warn(r.block.logger).Log(
 				"msg", "can't decode cached postings",
 				"err", err,
-				"key", fmt.Sprintf("%+v", key),
+				"key", fmt.Sprintf("%+v", ko.Label),
 				"labels_key", cachedLabelsKey,
 				"block", r.block.meta.ULID,
 				"bytes_len", len(b),
@@ -523,11 +511,12 @@ func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Lab
 
 		// Cache miss; save pointer for actual posting in index stored in object store.
 		var ptr index.Range
-		if knownOffsets != nil {
-			ptr = knownOffsets[ix]
+		// A zero-value offset is invalid; if for some reason we receive one, fall back to fetching
+		if (ko.off != index.Range{}) {
+			ptr = keysOffsets[ix].off
 		} else {
 			var err error
-			ptr, err = r.block.indexHeaderReader.PostingsOffset(ctx, key.Name, key.Value)
+			ptr, err = r.block.indexHeaderReader.PostingsOffset(ctx, ko.Name, ko.Value)
 			if errors.Is(err, indexheader.NotFoundRangeErr) {
 				// This block does not have any posting for given key.
 				output[ix] = index.EmptyPostings()

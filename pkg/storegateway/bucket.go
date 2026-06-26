@@ -1703,15 +1703,16 @@ func labelValuesFromSeries(ctx context.Context, labelName string, seriesPerBatch
 	return vals, nil
 }
 
-func labelValuesFromPostings(ctx context.Context, labelName string, indexr *bucketIndexReader, allValues []streamindex.PostingListOffset, p []storage.SeriesRef, stats *safeQueryStats) ([]string, error) {
-	keys := make([]labels.Label, len(allValues))
-	offsets := make([]index.Range, len(allValues))
+func labelValuesFromPostings(
+	ctx context.Context, labelName string, indexr *bucketIndexReader,
+	allValues []streamindex.PostingListOffset, p []storage.SeriesRef, stats *safeQueryStats,
+) ([]string, error) {
+	keysOffsets := make([]labelPostingOffset, len(allValues))
 	for i, value := range allValues {
-		keys[i] = labels.Label{Name: labelName, Value: value.LabelValue}
-		offsets[i] = value.Off
+		keysOffsets[i] = labelPostingOffset{labels.Label{Name: labelName, Value: value.LabelValue}, value.Off}
 	}
 
-	fetchedPostings, err := indexr.fetchPostingsWithKnownOffsets(ctx, keys, offsets, stats)
+	fetchedPostings, err := indexr.fetchPostingsWithKnownOffsets(ctx, keysOffsets, stats)
 	if err != nil {
 		return nil, errors.Wrap(err, "get postings")
 	}

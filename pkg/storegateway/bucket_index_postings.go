@@ -211,7 +211,8 @@ type postingGroup struct {
 	isSubtract bool
 	matcher    *labels.Matcher
 	keys       []labels.Label
-	offsets    []index.Range
+	// offsets must match 1:1 with keys
+	offsets []index.Range
 
 	// totalSize is the size in bytes of all the posting lists for keys.
 	totalSize int64
