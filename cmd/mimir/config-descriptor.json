@@ -9324,6 +9324,16 @@
             },
             {
               "kind": "field",
+              "name": "sasl_msk_iam_region",
+              "required": false,
+              "desc": "The AWS region of the MSK cluster. Used when authenticating via the AWS SDK default credential chain (no static credentials, file, or HTTP socket configured), e.g. for IRSA on EKS. If empty, the SDK falls back to AWS_REGION / AWS_DEFAULT_REGION environment variables.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ingest-storage.kafka.sasl-msk-iam-region",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
               "name": "tls_enabled",
               "required": false,
               "desc": "Enable TLS for the Kafka client connection.",
@@ -17387,12 +17397,12 @@
             "User": null,
             "Host": "localhost:8080",
             "Path": "/alertmanager",
-            "Fragment": "",
-            "RawQuery": "",
             "RawPath": "",
-            "RawFragment": "",
+            "OmitHost": false,
             "ForceQuery": false,
-            "OmitHost": false
+            "RawQuery": "",
+            "Fragment": "",
+            "RawFragment": ""
           },
           "fieldFlag": "alertmanager.web.external-url",
           "fieldType": "url"

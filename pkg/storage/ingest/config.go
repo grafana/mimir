@@ -624,6 +624,7 @@ type KafkaAuthMSKIAMConfig struct {
 	FilePath          string                  `yaml:"sasl_msk_iam_file_path"`
 	HTTPSocketPath    string                  `yaml:"sasl_msk_iam_http_socket_path"`
 	HTTPSocketTimeout time.Duration           `yaml:"sasl_msk_iam_http_socket_timeout"`
+	Region            string                  `yaml:"sasl_msk_iam_region"`
 }
 
 func (cfg *KafkaAuthMSKIAMConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
@@ -631,10 +632,34 @@ func (cfg *KafkaAuthMSKIAMConfig) RegisterFlagsWithPrefix(prefix string, f *flag
 	f.StringVar(&cfg.FilePath, prefix+"file-path", "", `Path to a file containing AWS credentials to authenticate to Kafka using SASL AWS_MSK_IAM. Mutually exclusive with `+prefix+`http-socket-path. The file is read anew on every reauthentication, so it can be updated with fresh credentials. The file must be in JSON format, adhering to this JSON schema: {"type": "object", "required": ["AccessKey", "SecretKey"], "properties": {"AccessKey": {"type": "string"}, "SecretKey": {"type": "string"}, "SessionToken": {"type": "string"}, "UserAgent": {"type": "string"}}}`)
 	f.StringVar(&cfg.HTTPSocketPath, prefix+"http-socket-path", "", `Path to a Unix domain socket to fetch AWS credentials from via HTTP. Mutually exclusive with `+prefix+`file-path. On every authentication or reauthentication, an HTTP GET / request is made to the socket and the response body is read as JSON. The JSON schema is the same as for `+prefix+`file-path.`)
 	f.DurationVar(&cfg.HTTPSocketTimeout, prefix+"http-socket-timeout", 10*time.Second, "Timeout for requesting AWS credentials from the HTTP socket. Effective when "+prefix+"http-socket-path is set.")
+	f.StringVar(&cfg.Region, prefix+"region", "", "The AWS region of the MSK cluster. Used when authenticating via the AWS SDK default credential chain (no static credentials, file, or HTTP socket configured), e.g. for IRSA on EKS. If empty, the SDK falls back to AWS_REGION / AWS_DEFAULT_REGION environment variables.")
 }
 
 func (cfg KafkaAuthMSKIAMConfig) Validate() error {
-	return (kafkaSASLConfig[KafkaMSKIAMStaticConfig])(cfg).Validate(ErrSASLMSKIAMBadConfig)
+	if cfg.isEmpty() {
+		return nil
+	}
+	return cfg.toSubConfig().Validate(ErrSASLMSKIAMBadConfig)
+}
+
+// isEmpty reports whether no explicit credential source has been configured.
+func (cfg KafkaAuthMSKIAMConfig) isEmpty() bool {
+	return cfg.Secret.AccessKey.String() == "" &&
+		cfg.Secret.SecretKey.String() == "" &&
+		cfg.FilePath == "" &&
+		cfg.HTTPSocketPath == ""
+}
+
+// toSubConfig projects to the generic kafkaSASLConfig used for source validation
+// and dispatch. Region is intentionally excluded. It is only consumed by the
+// IRSA fallback path in mechanism().
+func (cfg KafkaAuthMSKIAMConfig) toSubConfig() kafkaSASLConfig[KafkaMSKIAMStaticConfig] {
+	return kafkaSASLConfig[KafkaMSKIAMStaticConfig]{
+		Secret:            cfg.Secret,
+		FilePath:          cfg.FilePath,
+		HTTPSocketPath:    cfg.HTTPSocketPath,
+		HTTPSocketTimeout: cfg.HTTPSocketTimeout,
+	}
 }
 
 // KafkaMSKIAMStaticConfig holds static AWS_MSK_IAM credentials.
