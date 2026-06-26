@@ -99,7 +99,7 @@ func NewHedger(inner DirectProducer, tracker AgentStatsReader, strategy Partitio
 
 		// DirectProducer takes unrouted partitions (the nodeID is specified separately), so we strip the routing.
 		return inner.ProduceSync(ctx, nodeID, unrouteTopicPartitionRecords(parts))
-	}, m)
+	}, m, nil) // nil reg: the client's main buffer owns the buffered-producer gauges.
 	return h
 }
 

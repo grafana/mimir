@@ -81,7 +81,7 @@ func (s *KafkaDirectProducer) ProduceSync(ctx context.Context, nodeID int32, par
 	for _, p := range partitions {
 		records = append(records, p.records...)
 	}
-	req, err := buildMultiTopicProduceRequest(s.version, s.topicID, records)
+	req, reqStats, err := buildMultiTopicProduceRequest(s.version, s.topicID, records)
 	if err != nil {
 		return ProduceResult{err: err}
 	}
@@ -101,6 +101,16 @@ func (s *KafkaDirectProducer) ProduceSync(ctx context.Context, nodeID int32, par
 		latencySeconds := time.Since(reqStart).Seconds()
 		if retResult.succeeded() {
 			s.metrics.produceDirectRequestLatencySuccess.Observe(latencySeconds)
+
+			// Producer-state counters: count the request's batches once, only
+			// when the whole request is acked. The request is all-or-nothing
+			// (see produceResultAccumulator), so a failed attempt counts
+			// nothing and is retried; this mirrors franz-go, which counts each
+			// batch once on success.
+			s.metrics.produceWireRecordsTotal.Add(float64(reqStats.records))
+			s.metrics.produceWireBatchesTotal.Add(float64(reqStats.batches))
+			s.metrics.produceWireBytesTotal.Add(float64(reqStats.uncompressedBytes))
+			s.metrics.produceWireCompressedBytesTotal.Add(float64(reqStats.compressedBytes))
 		} else {
 			reason := getProduceResultErr(retResult.error()).reason
 			s.metrics.produceDirectRequestLatencyFailure.WithLabelValues(reason).Observe(latencySeconds)

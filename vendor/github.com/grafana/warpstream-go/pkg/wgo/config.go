@@ -1,9 +1,11 @@
 package wgo
 
 import (
+	"context"
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"net"
 	"time"
 
 	"github.com/twmb/franz-go/pkg/kgo"
@@ -19,9 +21,14 @@ type Config struct {
 	TLSConfig    *tls.Config
 	ClientID     string
 	Topic        string
+	Dialer       func(ctx context.Context, network, host string) (net.Conn, error)
 
 	// SASLOptions are pre-built kgo options for SASL authentication.
 	SASLOptions []kgo.Opt
+
+	// Hooks are franz-go hooks appended to the internal kgo.Client, letting
+	// callers observe the wire layer (e.g. their own metrics or tracing hooks).
+	Hooks []kgo.Hook
 
 	// Producer settings.
 
@@ -228,6 +235,14 @@ func WithSASL(opts ...kgo.Opt) Opt {
 	return opt{func(c *Config) { c.SASLOptions = opts }}
 }
 
+// WithHooks appends franz-go hooks to the internal kgo.Client. Hooks observe
+// the wire layer (broker connect/read/write, throttling, request E2E), so a
+// caller can attach its own metrics or tracing. The client also installs its
+// own kprom hook internally; these are added on top.
+func WithHooks(hooks ...kgo.Hook) Opt {
+	return opt{func(c *Config) { c.Hooks = append(c.Hooks, hooks...) }}
+}
+
 // WithLinger sets how long the buffer waits to coalesce more records into a
 // produce before flushing; zero flushes as soon as possible.
 func WithLinger(d time.Duration) Opt {
@@ -303,4 +318,9 @@ func WithClusterStatsTTL(d time.Duration) Opt {
 // background.
 func WithMetadataRefreshInterval(d time.Duration) Opt {
 	return opt{func(c *Config) { c.MetadataRefreshInterval = d }}
+}
+
+// WithDialer sets a custom dialer used to establish broker connections.
+func WithDialer(fn func(ctx context.Context, network, host string) (net.Conn, error)) Opt {
+	return opt{func(c *Config) { c.Dialer = fn }}
 }
