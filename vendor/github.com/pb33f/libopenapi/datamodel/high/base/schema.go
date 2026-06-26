@@ -367,50 +367,21 @@ func NewSchema(schema *base.Schema) *Schema {
 	}
 	s.Enum = enum
 
-	// async work.
-	// any polymorphic properties need to be handled in their own threads
-	// any properties each need to be processed in their own thread.
-	// we go as fast as we can.
-	polyCompletedChan := make(chan struct{})
-	errChan := make(chan error)
-
-	type buildResult struct {
-		idx int
-		s   *SchemaProxy
-	}
-
-	// for every item, build schema async
-	buildSchema := func(sch lowmodel.ValueReference[*base.SchemaProxy], idx int, bChan chan buildResult) {
-		n := &lowmodel.NodeReference[*base.SchemaProxy]{
-			ValueNode: sch.ValueNode,
-			Value:     sch.Value,
-		}
-		n.SetReference(sch.GetReference(), sch.GetReferenceNode())
-
-		p := NewSchemaProxy(n)
-
-		bChan <- buildResult{idx: idx, s: p}
-	}
-
-	// schema async
-	buildOutSchemas := func(schemas []lowmodel.ValueReference[*base.SchemaProxy], items *[]*SchemaProxy,
-		doneChan chan struct{}, e chan error,
-	) {
-		bChan := make(chan buildResult)
-		totalSchemas := len(schemas)
+	// each item is a single SchemaProxy struct construction: spinning up goroutines
+	// and channels per item costs far more than the work itself, so build inline.
+	buildOutSchemas := func(schemas []lowmodel.ValueReference[*base.SchemaProxy]) []*SchemaProxy {
+		items := make([]*SchemaProxy, len(schemas))
 		for i := range schemas {
-			go buildSchema(schemas[i], i, bChan)
+			n := &lowmodel.NodeReference[*base.SchemaProxy]{
+				ValueNode: schemas[i].ValueNode,
+				Value:     schemas[i].Value,
+			}
+			n.SetReference(schemas[i].GetReference(), schemas[i].GetReferenceNode())
+			items[i] = NewSchemaProxy(n)
 		}
-		j := 0
-		for j < totalSchemas {
-			r := <-bChan
-			j++
-			(*items)[r.idx] = r.s
-		}
-		doneChan <- struct{}{}
+		return items
 	}
 
-	// props async
 	buildProps := func(k lowmodel.KeyReference[string], v lowmodel.ValueReference[*base.SchemaProxy],
 		props *orderedmap.Map[string, *SchemaProxy], sw int,
 	) {
@@ -470,21 +441,14 @@ func NewSchema(schema *base.Schema) *Schema {
 	var items *DynamicValue[*SchemaProxy, bool]
 	var prefixItems []*SchemaProxy
 
-	children := 0
 	if !schema.AllOf.IsEmpty() {
-		children++
-		allOf = make([]*SchemaProxy, len(schema.AllOf.Value))
-		go buildOutSchemas(schema.AllOf.Value, &allOf, polyCompletedChan, errChan)
+		allOf = buildOutSchemas(schema.AllOf.Value)
 	}
 	if !schema.AnyOf.IsEmpty() {
-		children++
-		anyOf = make([]*SchemaProxy, len(schema.AnyOf.Value))
-		go buildOutSchemas(schema.AnyOf.Value, &anyOf, polyCompletedChan, errChan)
+		anyOf = buildOutSchemas(schema.AnyOf.Value)
 	}
 	if !schema.OneOf.IsEmpty() {
-		children++
-		oneOf = make([]*SchemaProxy, len(schema.OneOf.Value))
-		go buildOutSchemas(schema.OneOf.Value, &oneOf, polyCompletedChan, errChan)
+		oneOf = buildOutSchemas(schema.OneOf.Value)
 	}
 	if !schema.Not.IsEmpty() {
 		not = NewSchemaProxy(&schema.Not)
@@ -504,21 +468,7 @@ func NewSchema(schema *base.Schema) *Schema {
 		}
 	}
 	if !schema.PrefixItems.IsEmpty() {
-		children++
-		prefixItems = make([]*SchemaProxy, len(schema.PrefixItems.Value))
-		go buildOutSchemas(schema.PrefixItems.Value, &prefixItems, polyCompletedChan, errChan)
-	}
-
-	completeChildren := 0
-	if children > 0 {
-	allDone:
-		for {
-			<-polyCompletedChan
-			completeChildren++
-			if children == completeChildren {
-				break allDone
-			}
-		}
+		prefixItems = buildOutSchemas(schema.PrefixItems.Value)
 	}
 	s.OneOf = oneOf
 	s.AnyOf = anyOf

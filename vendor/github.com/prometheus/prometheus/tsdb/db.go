@@ -1969,18 +1969,24 @@ type headSeriesEvictor func(maxt int64, appendIDWatermark uint64) error
 // The caller must hold db.cmtx.
 func (db *DB) compactHeadViewLocked(viewFactory headViewFactory, evict headSeriesEvictor, configure func(*BlockMeta)) error {
 	mint, maxt := db.head.opts.ChunkRange*(db.head.MinTime()/db.head.opts.ChunkRange), db.head.MaxTime()
-	// Capture the head's current append-ID as an eviction watermark before
-	// writing any blocks.
+	// Capture the highest guaranteed-committed appendID as an eviction watermark
+	// before writing any blocks.
 	//
-	// The generated blocks are guaranteed to contain all samples with
-	// appendID <= watermark. Samples appended later (appendID > watermark)
-	// may or may not be present, depending on when each block writer takes
-	// its isolation snapshot.
+	// Samples with appendID <= watermark are guaranteed to be present in some
+	// generated block. Samples with higher IDs may or may not be present,
+	// depending on block-writer snapshot timing.
 	//
-	// Eviction uses the watermark as a safety guard: a series is removed
-	// only if it has not received any samples with appendID > watermark
-	// since compaction began.
-	appendIDWatermark := db.head.iso.lastAppendID()
+	// The watermark is used during eviction: a series is removed only if it has
+	// not received any samples with appendID > watermark since compaction began.
+	//
+	// We use committedAppendID instead of lastAppendID because open appenders are
+	// excluded from all block snapshots via incompleteAppends. If one of those
+	// appenders commits between the write and evict phases, using lastAppendID
+	// could evict a series whose newest sample is present in neither the block nor
+	// the head, causing that sample to be lost on WAL replay.
+	appendIDWatermark := db.head.iso.committedAppendID()
+	// The bound is inclusive so that a sample sitting exactly on a chunk-range boundary
+	// (mint == maxt) still gets a block written before its series is evicted.
 	for ; mint <= maxt; mint += db.head.chunkRange.Load() {
 		view := viewFactory(db.head, mint, mint+db.head.chunkRange.Load()-1)
 
@@ -1993,7 +1999,14 @@ func (db *DB) compactHeadViewLocked(viewFactory headViewFactory, evict headSerie
 			return fmt.Errorf("persist head portion: %w", err)
 		}
 
-		db.logger.Info("Head portion block created", "ulids", fmt.Sprintf("%v", uids), "min_time", mint, "max_time", maxt)
+		// compactor.Write returns no UIDs when the view contained no chunks, which happens
+		// on a chunk-range slice that holds no data for the selected series. There is nothing
+		// to reload or log in that case.
+		if len(uids) == 0 {
+			continue
+		}
+
+		db.logger.Info("Head portion block created", "ulids", fmt.Sprintf("%v", uids), "min_time", mint, "max_time", mint+db.head.chunkRange.Load()-1)
 
 		if err := db.reloadBlocks(); err != nil {
 			errs := []error{fmt.Errorf("reloadBlocks blocks: %w", err)}
@@ -2084,16 +2097,26 @@ func (db *DB) CompactSelectedSeries(seriesRefs []storage.SeriesRef) (err error) 
 	db.metrics.selectedSeriesCompactionsTriggered.Inc()
 	start := time.Now()
 
-	totalSeries := len(seriesRefs)
+	// index.NewListPostings expects sorted, duplicate-free refs. Normalize
+	// the caller's slice in place by sorting and removing duplicates before
+	// constructing the postings. This avoids "out-of-order series added"
+	// errors during compaction.
+	refs := slices.Clone(seriesRefs)
+	if !slices.IsSorted(refs) {
+		slices.Sort(refs)
+	}
+	refs = slices.Compact(refs)
+	postings := index.NewListPostings(refs)
+	totalSeries := len(refs)
 	// Skip series with out-of-order data: the ref-list pipeline writes only in-order chunks,
 	// so a series whose OOO state is non-empty would have its OOO chunks orphaned upon
 	// eviction. Such series stay in the head and are picked up on a later cycle.
-	selectedSeriesRefs, err := db.head.filterSeriesAndSortPostings(index.NewListPostings(seriesRefs), isSeriesWithoutOOO)
+	selectedSeriesRefs, err := db.head.filterSeriesAndSortPostings(postings, isSeriesWithoutOOO)
 	if err != nil {
 		return err
 	}
 	skippedSeries := totalSeries - len(selectedSeriesRefs.sortedByRef)
-	db.logger.Info("Starting selected series compaction", "num_series", len(selectedSeriesRefs.sortedByRef), "num_skipped_ooo", skippedSeries)
+	db.logger.Info("Starting selected series compaction", "num_series", len(selectedSeriesRefs.sortedByRef), "num_skipped_ooo", skippedSeries, "isolation_disabled", db.head.opts.IsolationDisabled)
 
 	if len(selectedSeriesRefs.sortedByRef) == 0 {
 		elapsed := time.Since(start)
@@ -2107,7 +2130,7 @@ func (db *DB) CompactSelectedSeries(seriesRefs []storage.SeriesRef) (err error) 
 			return NewSelectedSeriesHead(h, mint, maxt, selectedSeriesRefs)
 		},
 		func(maxt int64, appendIDWatermark uint64) error {
-			return db.head.truncateSelectedSeries(seriesRefs, maxt, appendIDWatermark)
+			return db.head.truncateSelectedSeries(selectedSeriesRefs.sortedByRef, maxt, appendIDWatermark)
 		},
 		func(meta *BlockMeta) { meta.Compaction.SetSelectedSeries() },
 	); err != nil {
