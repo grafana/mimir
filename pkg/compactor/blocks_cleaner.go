@@ -52,6 +52,7 @@ type BlocksCleanerConfig struct {
 	UpdateBlocksConcurrency       int
 	CompactionBlockRanges         mimir_tsdb.DurationList // Used for estimating compaction jobs.
 	EstimateCompactionJobs        bool
+	SkipRunMetrics                bool // Set when the cleaner is used per-job rather than as the periodic service.
 }
 
 type BlocksCleaner struct {
@@ -88,6 +89,12 @@ type BlocksCleaner struct {
 }
 
 func NewBlocksCleaner(cfg BlocksCleanerConfig, bucketClient objstore.Bucket, ownUser func(userID string) (bool, error), cfgProvider ConfigProvider, logger log.Logger, reg prometheus.Registerer) *BlocksCleaner {
+	// Metrics for the periodic cleanup service are only registered when the cleaner runs it.
+	runMetricsReg := reg
+	if cfg.SkipRunMetrics {
+		runMetricsReg = nil
+	}
+
 	c := &BlocksCleaner{
 		cfg:                   cfg,
 		bucketClient:          bucketClient,
@@ -96,19 +103,19 @@ func NewBlocksCleaner(cfg BlocksCleanerConfig, bucketClient objstore.Bucket, own
 		singleFlight:          concurrency.NewLimitedConcurrencySingleFlight(cfg.CleanupConcurrency),
 		logger:                log.With(logger, "component", "cleaner"),
 		supportsUpdatedAtIter: slices.Contains(bucketClient.SupportedIterOptions(), objstore.UpdatedAt),
-		runsStarted: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+		runsStarted: promauto.With(runMetricsReg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_compactor_block_cleanup_started_total",
 			Help: "Total number of blocks cleanup runs started.",
 		}),
-		runsCompleted: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+		runsCompleted: promauto.With(runMetricsReg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_compactor_block_cleanup_completed_total",
 			Help: "Total number of blocks cleanup runs successfully completed.",
 		}),
-		runsFailed: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+		runsFailed: promauto.With(runMetricsReg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_compactor_block_cleanup_failed_total",
 			Help: "Total number of blocks cleanup runs failed.",
 		}),
-		runsLastSuccess: promauto.With(reg).NewGauge(prometheus.GaugeOpts{
+		runsLastSuccess: promauto.With(runMetricsReg).NewGauge(prometheus.GaugeOpts{
 			Name: "cortex_compactor_block_cleanup_last_successful_run_timestamp_seconds",
 			Help: "Unix timestamp of the last successful blocks cleanup run.",
 		}),
@@ -299,7 +306,14 @@ func (c *BlocksCleaner) cleanUsers(ctx context.Context, users *ownedUsers, logge
 	return c.singleFlight.ForEachNotInFlight(ctx, users.all, func(ctx context.Context, userID string) error {
 		userLogger := util_log.WithUserID(userID, logger)
 		if users.deleted[userID] {
-			if err := c.deleteUserMarkedForDeletion(ctx, userID, userLogger); err != nil {
+			mark, err := mimir_tsdb.ReadTenantDeletionMark(ctx, c.bucketClient, userID, c.logger)
+			if err != nil {
+				return fmt.Errorf("failed to read tenant deletion mark for user %s: %w", userID, err)
+			}
+			if mark == nil {
+				return fmt.Errorf("tenant %s marked for deletion but deletion mark not found", userID)
+			}
+			if err := c.deleteUserMarkedForDeletion(ctx, userID, mark, userLogger); err != nil {
 				return fmt.Errorf("failed to delete user %s marked for deletion: %w", userID, err)
 			}
 
@@ -341,7 +355,7 @@ func (c *BlocksCleaner) deleteRemainingData(ctx context.Context, userBucket objs
 }
 
 // deleteUserMarkedForDeletion removes blocks and remaining data for tenant marked for deletion.
-func (c *BlocksCleaner) deleteUserMarkedForDeletion(ctx context.Context, userID string, userLogger log.Logger) error {
+func (c *BlocksCleaner) deleteUserMarkedForDeletion(ctx context.Context, userID string, mark *mimir_tsdb.TenantDeletionMark, userLogger log.Logger) error {
 	userBucket := bucket.NewUserBucketClient(userID, c.bucketClient, c.cfgProvider)
 
 	level.Info(userLogger).Log("msg", "deleting blocks for tenant marked for deletion")
@@ -403,14 +417,6 @@ func (c *BlocksCleaner) deleteUserMarkedForDeletion(ctx context.Context, userID 
 
 	if deletedBlocks > 0 {
 		level.Info(userLogger).Log("msg", "deleted blocks for tenant marked for deletion", "deletedBlocks", deletedBlocks)
-	}
-
-	mark, err := mimir_tsdb.ReadTenantDeletionMark(ctx, c.bucketClient, userID, c.logger)
-	if err != nil {
-		return fmt.Errorf("failed to read tenant deletion mark: %w", err)
-	}
-	if mark == nil {
-		return fmt.Errorf("cannot find tenant deletion mark anymore")
 	}
 
 	// If we have just deleted some blocks, update "finished" time. Also update "finished" time if it wasn't set yet, but there are no blocks.

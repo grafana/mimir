@@ -48,6 +48,7 @@ type JobTracker struct {
 	isPlanJobLeased        bool                     // used to decide whether to retain completed compaction jobs
 	incompleteJobs         map[string]*list.Element // all incomplete jobs; element is in active or in exactly one lane's pending list
 	completePlanTime       time.Time                // time of the last completed plan job. Zero time if planning has never completed or a plan job is currently incomplete (pending or active).
+	completeCleanupTime    time.Time                // time of the last completed cleanup job. Zero time if cleanup has never completed or a cleanup job is currently incomplete (pending or active).
 	completeCompactionJobs []*TrackedCompactionJob  // tracked in order to reject jobs that may be from a stale planning view.
 }
 
@@ -92,7 +93,7 @@ func (jt *JobTracker) toPendingFront(j TrackedJob) (lane, bool) {
 	return l, wasEmpty
 }
 
-func (jt *JobTracker) recoverFrom(compactionJobs []*TrackedCompactionJob, planJob *TrackedPlanJob) {
+func (jt *JobTracker) recoverFrom(compactionJobs []*TrackedCompactionJob, planJob *TrackedPlanJob, cleanupJob *TrackedCleanupJob) {
 	jt.mtx.Lock()
 	defer jt.mtx.Unlock()
 
@@ -107,6 +108,16 @@ func (jt *JobTracker) recoverFrom(compactionJobs []*TrackedCompactionJob, planJo
 			jt.completePlanTime = planJob.StatusTime()
 		} else {
 			pending = append(pending, planJob)
+		}
+	}
+
+	if cleanupJob != nil {
+		if cleanupJob.IsLeased() {
+			leased = append(leased, cleanupJob)
+		} else if cleanupJob.IsComplete() {
+			jt.completeCleanupTime = cleanupJob.StatusTime()
+		} else {
+			pending = append(pending, cleanupJob)
 		}
 	}
 
@@ -251,8 +262,12 @@ func (jt *JobTracker) Remove(id string, epoch int64, complete bool) (removed boo
 // A new plan job is added to pending when the current planning window (determined by planningInterval
 // and compactionWaitPeriod) has not yet been planned.
 //
+// A new cleanup job is added to pending when the current cleanup window (determined by cleanupInterval)
+// has not yet been cleaned up. Cleanup is evaluated every maintenance interval, independent of the
+// planning cold-start gate.
+//
 // Maintenance returns the lanes whose pending queues transitioned from empty to non-empty.
-func (jt *JobTracker) Maintenance(leaseDuration time.Duration, enforceLeaseExpiration, plan bool, planningInterval, compactionWaitPeriod time.Duration) ([]lane, error) {
+func (jt *JobTracker) Maintenance(leaseDuration time.Duration, enforceLeaseExpiration, plan bool, planningInterval, cleanupInterval, compactionWaitPeriod time.Duration) ([]lane, error) {
 	jt.mtx.Lock()
 	defer jt.mtx.Unlock()
 
@@ -264,19 +279,23 @@ func (jt *JobTracker) Maintenance(leaseDuration time.Duration, enforceLeaseExpir
 	}
 
 	// Note: a plan job will never be created if there is already an active plan job (even if we're about to expire a lease).
-	// Therefore lease expiration and planning are mutually exclusive.
+	// Therefore lease expiration and planning are mutually exclusive. The same holds for cleanup jobs.
 	var planJob *TrackedPlanJob
 	if plan {
 		planJob = jt.computePlan(planningInterval, compactionWaitPeriod, now)
 	}
+	cleanupJob := jt.computeCleanup(cleanupInterval, now)
 
-	if len(reviveJobs) == 0 && len(deleteJobs) == 0 && planJob == nil {
+	if len(reviveJobs) == 0 && len(deleteJobs) == 0 && planJob == nil && cleanupJob == nil {
 		return nil, nil
 	}
 
 	writeJobs := reviveJobs
 	if planJob != nil {
 		writeJobs = append(writeJobs, planJob)
+	}
+	if cleanupJob != nil {
+		writeJobs = append(writeJobs, cleanupJob)
 	}
 	if err := jt.persister.WriteAndDeleteJobs(writeJobs, deleteJobs); err != nil {
 		return nil, fmt.Errorf("failed persisting during job tracker maintenance: %w", err)
@@ -316,6 +335,15 @@ func (jt *JobTracker) Maintenance(leaseDuration time.Duration, enforceLeaseExpir
 		jt.metrics.queue.Pending(planJob)
 		// Drop the previous completion time since there is now a pending job that overwrote it
 		jt.completePlanTime = time.Time{}
+	}
+
+	if cleanupJob != nil {
+		if l, wasEmpty := jt.toPendingFront(cleanupJob); wasEmpty {
+			becameNonEmpty = append(becameNonEmpty, l)
+		}
+		jt.metrics.queue.Pending(cleanupJob)
+		// Drop the previous completion time since there is now a pending job that overwrote it
+		jt.completeCleanupTime = time.Time{}
 	}
 
 	return becameNonEmpty, nil
@@ -378,6 +406,30 @@ func (jt *JobTracker) computePlan(planningInterval, compactionWaitPeriod time.Du
 	}
 
 	return NewTrackedPlanJob(now)
+}
+
+// computeCleanup determines if a new cleanup job should be created for the time window determined by cleanupInterval.
+// This function only computes what needs to change without persisting or modifying in-memory state.
+// A write lock must be held in order to call this function.
+func (jt *JobTracker) computeCleanup(cleanupInterval time.Duration, now time.Time) *TrackedCleanupJob {
+	if cleanupInterval <= 0 {
+		// Cleanup submission is disabled
+		return nil
+	}
+
+	if _, ok := jt.incompleteJobs[cleanupJobId]; ok {
+		// There is already a cleanup job
+		return nil
+	}
+
+	nextCleanupWindow := jt.completeCleanupTime.UTC().Truncate(cleanupInterval).Add(cleanupInterval)
+
+	if now.Before(nextCleanupWindow) {
+		// This window has already been cleaned up
+		return nil
+	}
+
+	return NewTrackedCleanupJob(now)
 }
 
 // RenewLease renews a lease to prevent it from being expired. This is intentionally not persisted. A buffer time is used across restarts instead.
@@ -664,6 +716,39 @@ func (jt *JobTracker) CleanupMetrics() {
 	jt.mtx.Lock()
 	defer jt.mtx.Unlock()
 	jt.metrics.Clear()
+}
+
+// CompleteCleanup marks the cleanup job as complete, persists the completion time, and removes it from incomplete tracking.
+func (jt *JobTracker) CompleteCleanup(id string, epoch int64) (bool, error) {
+	jt.mtx.Lock()
+	defer jt.mtx.Unlock()
+
+	if id != cleanupJobId {
+		// Only cleanup jobs may be completed through this path
+		return false, nil
+	}
+
+	e, ok := jt.incompleteJobs[id]
+	if !ok {
+		return false, nil
+	}
+
+	j := e.Value.(TrackedJob)
+	if !j.IsLeased() || j.Epoch() != epoch {
+		return false, nil
+	}
+
+	jj := j.CopyBase()
+	jj.MarkComplete(jt.clock.Now())
+	if err := jt.persister.WriteJob(jj); err != nil {
+		return false, fmt.Errorf("failed writing complete cleanup job: %w", err)
+	}
+
+	jt.completeCleanupTime = jj.StatusTime()
+	jt.active.Remove(e)
+	delete(jt.incompleteJobs, id)
+	jt.metrics.queue.Complete(j)
+	return true, nil
 }
 
 // completedJobsWith transforms []*TrackedCompactionJob to []TrackedJob while appending any additional provided values

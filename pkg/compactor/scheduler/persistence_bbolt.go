@@ -184,6 +184,7 @@ func (m *BboltJobPersistenceManager) RecoverAll(allowedTenants *util.AllowList, 
 	var (
 		numCompactionJobsRecovered int
 		numPlanJobsRecovered       int
+		numCleanupJobsRecovered    int
 		numBucketCleanups          int
 		numKeyCleanups             int
 	)
@@ -198,6 +199,7 @@ func (m *BboltJobPersistenceManager) RecoverAll(allowedTenants *util.AllowList, 
 		}
 		numCompactionJobsRecovered += stats.numCompactionJobs
 		numPlanJobsRecovered += stats.numPlanJobs
+		numCleanupJobsRecovered += stats.numCleanupJobs
 		numBucketCleanups += stats.numBucketCleanups
 		numKeyCleanups += stats.numKeyCleanups
 	}
@@ -207,6 +209,7 @@ func (m *BboltJobPersistenceManager) RecoverAll(allowedTenants *util.AllowList, 
 		"num_tenants_recovered", len(jobTrackers),
 		"num_compaction_jobs_recovered", numCompactionJobsRecovered,
 		"num_plan_jobs_recovered", numPlanJobsRecovered,
+		"num_cleanup_jobs_recovered", numCleanupJobsRecovered,
 		"num_bucket_cleanups", numBucketCleanups,
 		"num_key_cleanups", numKeyCleanups,
 	)
@@ -217,6 +220,7 @@ func (m *BboltJobPersistenceManager) RecoverAll(allowedTenants *util.AllowList, 
 type recoveryStats struct {
 	numCompactionJobs int
 	numPlanJobs       int
+	numCleanupJobs    int
 	numBucketCleanups int
 	numKeyCleanups    int
 }
@@ -249,10 +253,13 @@ func recoverDB(db *bbolt.DB, logger log.Logger, allowedTenants *util.AllowList, 
 				return nil
 			}
 
-			compactionJobs, planJob, keyCleanup := jobsFromTenantBucket(b)
+			compactionJobs, planJob, cleanupJob, keyCleanup := jobsFromTenantBucket(b)
 			stats.numCompactionJobs += len(compactionJobs)
 			if planJob != nil {
 				stats.numPlanJobs++
+			}
+			if cleanupJob != nil {
+				stats.numCleanupJobs++
 			}
 			if keyCleanup != nil {
 				cleanup[tenant] = keyCleanup
@@ -260,7 +267,7 @@ func recoverDB(db *bbolt.DB, logger log.Logger, allowedTenants *util.AllowList, 
 
 			jp := newBboltJobPersister(db, []byte(tenant), logger)
 			jt := jobTrackerFactory(tenant, jp)
-			jt.recoverFrom(compactionJobs, planJob)
+			jt.recoverFrom(compactionJobs, planJob, cleanupJob)
 			jobTrackers[tenant] = jt
 			return nil
 		}); err != nil {
@@ -315,9 +322,10 @@ func cleanupBuckets(tx *bbolt.Tx, cleanup map[string]*keyCleanup, logger log.Log
 	return
 }
 
-func jobsFromTenantBucket(bucket *bbolt.Bucket) ([]*TrackedCompactionJob, *TrackedPlanJob, *keyCleanup) {
+func jobsFromTenantBucket(bucket *bbolt.Bucket) ([]*TrackedCompactionJob, *TrackedPlanJob, *TrackedCleanupJob, *keyCleanup) {
 	compactionJobs := make([]*TrackedCompactionJob, 0, 10)
-	var planJob *TrackedPlanJob // may be nil
+	var planJob *TrackedPlanJob       // may be nil
+	var cleanupJob *TrackedCleanupJob // may be nil
 	var keyErrs []keyError
 
 	c := bucket.Cursor()
@@ -332,6 +340,13 @@ func jobsFromTenantBucket(bucket *bbolt.Bucket) ([]*TrackedCompactionJob, *Track
 					continue
 				}
 				planJob = job
+			case cleanupJobId:
+				job, err := deserializeCleanupJob(v)
+				if err != nil {
+					keyErrs = append(keyErrs, keyError{k, err})
+					continue
+				}
+				cleanupJob = job
 			default:
 				keyErrs = append(keyErrs, keyError{k, errors.New("unknown key")})
 			}
@@ -350,7 +365,7 @@ func jobsFromTenantBucket(bucket *bbolt.Bucket) ([]*TrackedCompactionJob, *Track
 		kc = &keyCleanup{bucket, keyErrs}
 	}
 
-	return compactionJobs, planJob, kc
+	return compactionJobs, planJob, cleanupJob, kc
 }
 
 func (m *BboltJobPersistenceManager) Close() error {

@@ -13779,6 +13779,17 @@
             },
             {
               "kind": "field",
+              "name": "cleanup_enabled",
+              "required": false,
+              "desc": "Controls whether the compactor handles block cleanup as scheduler jobs instead of running the background blocks cleaner. Only applies when scheduler mode is enabled. When enabled, the compactor ring is not used.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "compactor.scheduler-client.cleanup-enabled",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
               "name": "scheduler_endpoint",
               "required": false,
               "desc": "Compactor scheduler endpoint.",
@@ -14410,7 +14421,7 @@
               "kind": "field",
               "name": "lanes",
               "required": false,
-              "desc": "Lanes to request for each worker goroutine. Each entry is a '+'-separated list of job types in priority order.",
+              "desc": "Comma-separated lanes, where each entry becomes one worker goroutine requesting a '+'-separated list of lanes in priority order. Append ':N' to a single entry to create N goroutines for it, e.g. 'compact+plan,cleanup:4' creates one compaction and planning goroutine plus four cleanup goroutines.",
               "fieldValue": null,
               "fieldDefaultValue": "compact+plan,plan",
               "fieldFlag": "compactor.scheduler-client.lanes",
@@ -14472,6 +14483,17 @@
           "fieldValue": null,
           "fieldDefaultValue": 1800000000000,
           "fieldFlag": "compactor-scheduler.planning-interval",
+          "fieldType": "duration",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "cleanup_interval",
+          "required": false,
+          "desc": "The duration of time between when cleanup jobs are submitted aligned by UTC. Set to 0 to disable cleanup job submission.",
+          "fieldValue": null,
+          "fieldDefaultValue": 1200000000000,
+          "fieldFlag": "compactor-scheduler.cleanup-interval",
           "fieldType": "duration",
           "fieldCategory": "experimental"
         },

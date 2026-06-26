@@ -35,6 +35,7 @@ func TestScheduler_JobLifecycleMetrics(t *testing.T) {
 		require.NoError(t, prom_testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
 			# HELP cortex_compactor_scheduler_jobs_completed_total Total number of jobs successfully completed by workers.
 			# TYPE cortex_compactor_scheduler_jobs_completed_total counter
+			cortex_compactor_scheduler_jobs_completed_total{job_type="cleanup"} 0
 			cortex_compactor_scheduler_jobs_completed_total{job_type="compaction"} %d
 			cortex_compactor_scheduler_jobs_completed_total{job_type="plan"} %d
 		`, compactionCount, planCount)), "cortex_compactor_scheduler_jobs_completed_total"), msg)
@@ -108,6 +109,64 @@ func TestScheduler_JobLifecycleMetrics(t *testing.T) {
 	assertIncompleteBytes("all compaction jobs complete", 0, 0)
 }
 
+func TestScheduler_CleanupJobLifecycle(t *testing.T) {
+	bkt := objstore.NewInMemBucket()
+	require.NoError(t, bkt.Upload(context.Background(), "tenant1/placeholder", strings.NewReader("")))
+
+	cfg := newTestSchedulerConfig()
+	cfg.CleanupInterval = time.Hour // enable cleanup submission
+	scheduler, reg := newTestScheduler(t, bkt, cfg)
+	ctx := context.Background()
+
+	assertCleanupCompleted := func(msg string, cleanupCount int) {
+		t.Helper()
+		require.NoError(t, prom_testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
+			# HELP cortex_compactor_scheduler_jobs_completed_total Total number of jobs successfully completed by workers.
+			# TYPE cortex_compactor_scheduler_jobs_completed_total counter
+			cortex_compactor_scheduler_jobs_completed_total{job_type="cleanup"} %d
+			cortex_compactor_scheduler_jobs_completed_total{job_type="compaction"} 0
+			cortex_compactor_scheduler_jobs_completed_total{job_type="plan"} 0
+		`, cleanupCount)), "cortex_compactor_scheduler_jobs_completed_total"), msg)
+	}
+
+	// Request the cleanup lane specifically so the higher-priority plan job is not leased instead.
+	leaseCleanup := func() *compactorschedulerpb.LeaseJobResponse {
+		t.Helper()
+		resp, err := scheduler.LeaseJob(ctx, &compactorschedulerpb.LeaseJobRequest{
+			WorkerId:     "worker1",
+			LaneRequests: []*compactorschedulerpb.LaneRequest{{JobType: compactorschedulerpb.JOB_TYPE_CLEANUP}},
+		})
+		require.NoError(t, err)
+		require.NotNil(t, resp.Key)
+		require.Equal(t, compactorschedulerpb.JOB_TYPE_CLEANUP, resp.Spec.JobType)
+		return resp
+	}
+
+	// Trigger maintenance so the tenant's cleanup job is enqueued.
+	scheduler.rotator.Maintenance(ctx, false, true)
+
+	leaseResp := leaseCleanup()
+	_, err := scheduler.UpdateCleanupJob(ctx, &compactorschedulerpb.UpdateCleanupJobRequest{
+		Tenant: leaseResp.Spec.Tenant,
+		Key:    leaseResp.Key,
+		Update: compactorschedulerpb.UPDATE_TYPE_ABANDON,
+	})
+	require.NoError(t, err)
+	assertCleanupCompleted("cleanup job abandoned", 0)
+
+	// Re-trigger maintenance to re-enqueue the cleanup job after abandonment.
+	scheduler.rotator.Maintenance(ctx, false, true)
+
+	leaseResp = leaseCleanup()
+	_, err = scheduler.UpdateCleanupJob(ctx, &compactorschedulerpb.UpdateCleanupJobRequest{
+		Tenant: leaseResp.Spec.Tenant,
+		Key:    leaseResp.Key,
+		Update: compactorschedulerpb.UPDATE_TYPE_COMPLETE,
+	})
+	require.NoError(t, err)
+	assertCleanupCompleted("cleanup job completed", 1)
+}
+
 func TestScheduler_RepeatedJobFailures(t *testing.T) {
 	bkt := objstore.NewInMemBucket()
 	require.NoError(t, bkt.Upload(context.Background(), "tenant1/placeholder", strings.NewReader("")))
@@ -179,6 +238,7 @@ func newTestSchedulerConfig() Config {
 	var cfg Config
 	cfg.RegisterFlags(flag.NewFlagSet("test", flag.ContinueOnError))
 	cfg.TenantDiscoveryInterval = time.Hour // avoid repeated discovery ticks
+	cfg.CleanupInterval = 0                 // disable cleanup submission unless a test opts in
 	return cfg
 }
 

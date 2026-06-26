@@ -18,6 +18,7 @@ const (
 
 	planLane lane = iota
 	compactionLane
+	cleanupLane
 )
 
 type laneTransition struct {
@@ -56,15 +57,19 @@ type simpleLanePolicy struct {
 
 func newSimpleLanePolicy() lanePolicy {
 	return &simpleLanePolicy{
-		allLanes: []lane{planLane, compactionLane},
+		allLanes: []lane{planLane, compactionLane, cleanupLane},
 	}
 }
 
 func (slp *simpleLanePolicy) LaneForJob(j TrackedJob) lane {
-	if j.ID() == planJobId {
+	switch j.ID() {
+	case planJobId:
 		return planLane
+	case cleanupJobId:
+		return cleanupLane
+	default:
+		return compactionLane
 	}
-	return compactionLane
 }
 
 func (slp *simpleLanePolicy) AllLanes() []lane {
@@ -90,6 +95,8 @@ func (slp *simpleLanePolicy) LanesForRequest(req *compactorschedulerpb.LeaseJobR
 			l = planLane
 		case compactorschedulerpb.JOB_TYPE_COMPACTION:
 			l = compactionLane
+		case compactorschedulerpb.JOB_TYPE_CLEANUP:
+			l = cleanupLane
 		default:
 			return nil, fmt.Errorf("unknown job type in lane request: %q", ln.JobType.String())
 		}

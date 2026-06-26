@@ -1103,6 +1103,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] The directory where bbolt shard database files are stored for the compactor scheduler. (default "./data-compactor-scheduler")
   -compactor-scheduler.bbolt.shard-count int
     	[experimental] The target number of bbolt database shards for the compactor scheduler. (default 16)
+  -compactor-scheduler.cleanup-interval duration
+    	[experimental] The duration of time between when cleanup jobs are submitted aligned by UTC. Set to 0 to disable cleanup job submission. (default 20m0s)
   -compactor-scheduler.lane-policy.policy string
     	[experimental] The lane policy the compactor scheduler should use. Valid values: simple (default "simple")
   -compactor-scheduler.lease-duration duration
@@ -1263,6 +1265,8 @@ Usage of ./cmd/mimir/mimir:
     	Maximum time to wait for ring stability at startup. If the compactor ring keeps changing after this period of time, the compactor will start anyway. (default 5m0s)
   -compactor.ring.wait-stability-min-duration duration
     	Minimum time to wait for ring stability at startup. 0 to disable.
+  -compactor.scheduler-client.cleanup-enabled
+    	[experimental] Controls whether the compactor handles block cleanup as scheduler jobs instead of running the background blocks cleaner. Only applies when scheduler mode is enabled. When enabled, the compactor ring is not used.
   -compactor.scheduler-client.compaction-dir-cleanup-interval duration
     	[experimental] Defines how frequently to clean up the compaction working directory. The directory is cleaned on startup and then only when this interval has elapsed since the last cleanup. Set to 0 to disable periodic cleanup. (default 30m0s)
   -compactor.scheduler-client.enable-interrupted-reassign
@@ -1316,7 +1320,7 @@ Usage of ./cmd/mimir/mimir:
   -compactor.scheduler-client.grpc-client-config.tls-server-name string
     	Override the expected name on the server certificate.
   -compactor.scheduler-client.lanes comma-separated-list-of-strings
-    	[experimental] Lanes to request for each worker goroutine. Each entry is a '+'-separated list of job types in priority order. (default compact+plan,plan)
+    	[experimental] Comma-separated lanes, where each entry becomes one worker goroutine requesting a '+'-separated list of lanes in priority order. Append ':N' to a single entry to create N goroutines for it, e.g. 'compact+plan,cleanup:4' creates one compaction and planning goroutine plus four cleanup goroutines. (default compact+plan,plan)
   -compactor.scheduler-client.leasing-max-backoff duration
     	[experimental] Maximum backoff time between scheduler job lease requests. (default 2m0s)
   -compactor.scheduler-client.leasing-min-backoff duration

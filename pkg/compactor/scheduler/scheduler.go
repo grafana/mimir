@@ -43,6 +43,7 @@ type Config struct {
 	MaxLeases                                   int              `yaml:"max_leases" category:"experimental"`
 	LeaseDuration                               time.Duration    `yaml:"lease_duration" category:"experimental"`
 	PlanningInterval                            time.Duration    `yaml:"planning_interval" category:"experimental"`
+	CleanupInterval                             time.Duration    `yaml:"cleanup_interval" category:"experimental"`
 	MaintenanceInterval                         time.Duration    `yaml:"maintenance_interval" category:"experimental"`
 	MaintenanceIntervalsBeforeLeaseExpiration   int              `yaml:"maintenance_intervals_before_lease_expiration" category:"experimental"`
 	MaintenanceIntervalsBeforeColdStartPlanning int              `yaml:"maintenance_intervals_before_cold_start_planning" category:"experimental"`
@@ -58,6 +59,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&cfg.MaxLeases, "compactor-scheduler.max-leases", 3, "The maximum number of times a compaction job can be retried before it is removed. Leases that are reassigned due to an interrupted worker do not count against this limit. 0 for no limit.")
 	f.DurationVar(&cfg.LeaseDuration, "compactor-scheduler.lease-duration", 10*time.Minute, "The duration of time without contact until the scheduler is able to lease a work item to another worker.")
 	f.DurationVar(&cfg.PlanningInterval, "compactor-scheduler.planning-interval", 30*time.Minute, "The duration of time between when plan jobs are submitted aligned by UTC. Note that -compactor.first-level-compaction-wait-period is accounted for during alignment of this interval.")
+	f.DurationVar(&cfg.CleanupInterval, "compactor-scheduler.cleanup-interval", 20*time.Minute, "The duration of time between when cleanup jobs are submitted aligned by UTC. Set to 0 to disable cleanup job submission.")
 	f.DurationVar(&cfg.MaintenanceInterval, "compactor-scheduler.maintenance-interval", 2*time.Minute, "The duration of time between when maintenance tasks are performed on job trackers. This includes lease expiration and plan job submission checks.")
 	f.IntVar(&cfg.MaintenanceIntervalsBeforeLeaseExpiration, "compactor-scheduler.maintenance-intervals-before-lease-expiration", 3, "The number of maintenance intervals before lease expiration is enforced. Nonpositive values are all treated as zero.")
 	f.IntVar(&cfg.MaintenanceIntervalsBeforeColdStartPlanning, "compactor-scheduler.maintenance-intervals-before-cold-start-planning", 5, "The number of maintenance intervals before planning occurs when starting from no recovered state. Nonpositive values are all treated as zero.")
@@ -78,6 +80,9 @@ func (cfg *Config) Validate() error {
 	}
 	if cfg.PlanningInterval <= 0 {
 		return errors.New("compactor-scheduler.planning-interval must be positive")
+	}
+	if cfg.CleanupInterval < 0 {
+		return errors.New("compactor-scheduler.cleanup-interval must not be negative")
 	}
 	if cfg.MaintenanceInterval <= 0 {
 		return errors.New("compactor-scheduler.maintenance-interval must be positive")
@@ -152,6 +157,7 @@ func newCompactorScheduler(
 	rotator := NewRotator(
 		cfg.LeaseDuration,
 		cfg.PlanningInterval,
+		cfg.CleanupInterval,
 		compactorCfg.CompactionWaitPeriod,
 		cfg.MaintenanceInterval,
 		cfg.MaintenanceIntervalsBeforeLeaseExpiration,
@@ -436,6 +442,70 @@ func (s *Scheduler) UpdateCompactionJob(ctx context.Context, req *compactorsched
 	}
 
 	level.Info(logger).Log("msg", "could not find lease during update for compaction job", "update_type", req.Update.String())
+	return nil, errLeaseNotFound
+}
+
+func (s *Scheduler) UpdateCleanupJob(ctx context.Context, req *compactorschedulerpb.UpdateCleanupJobRequest) (*compactorschedulerpb.UpdateJobResponse, error) {
+	if req.Key == nil {
+		return nil, errMissingKey
+	}
+	if !s.isRunning() {
+		// This check is required to prevent requests from seeing empty state before startup, but then running when checking to transform not found errors.
+		return nil, errNotRunning
+	}
+
+	// Not logging the key ID because cleanup jobs all have an identical ID
+	logger := log.With(s.logger, "user", req.Tenant, "epoch", req.Key.Epoch)
+
+	switch req.Update {
+	case compactorschedulerpb.UPDATE_TYPE_IN_PROGRESS:
+		if s.rotator.RenewJobLease(req.Tenant, req.Key.Id, req.Key.Epoch) {
+			// Lease renewals are only debug logged to prevent noise
+			level.Debug(logger).Log("msg", "cleanup job lease renewed")
+			return &compactorschedulerpb.UpdateJobResponse{}, nil
+		}
+	case compactorschedulerpb.UPDATE_TYPE_COMPLETE:
+		completed, err := s.rotator.CompleteCleanupJob(req.Tenant, req.Key.Id, req.Key.Epoch)
+		if err != nil {
+			level.Error(logger).Log("msg", "failed cleanup job completion", "err", err)
+			return nil, errFailedCompletingJob
+		}
+		if completed {
+			s.metrics.jobsCompleted.WithLabelValues(jobTypeCleanup).Inc()
+			level.Info(logger).Log("msg", "cleanup job completed")
+			return &compactorschedulerpb.UpdateJobResponse{}, nil
+		}
+	case compactorschedulerpb.UPDATE_TYPE_ABANDON:
+		removed, err := s.rotator.RemoveJob(req.Tenant, req.Key.Id, req.Key.Epoch, false)
+		if err != nil {
+			level.Error(logger).Log("msg", "failed cleanup job abandon", "err", err)
+			return nil, errFailedAbandoningJob
+		}
+		if removed {
+			level.Info(logger).Log("msg", "cleanup job abandoned")
+			return &compactorschedulerpb.UpdateJobResponse{}, nil
+		}
+	case compactorschedulerpb.UPDATE_TYPE_REASSIGN, compactorschedulerpb.UPDATE_TYPE_INTERRUPTED_REASSIGN:
+		interrupted := req.Update == compactorschedulerpb.UPDATE_TYPE_INTERRUPTED_REASSIGN
+		canceled, err := s.rotator.CancelJobLease(req.Tenant, req.Key.Id, req.Key.Epoch, interrupted)
+		if err != nil {
+			level.Error(logger).Log("msg", "failed cleanup job cancel", "err", err)
+			return nil, errFailedCancelLease
+		}
+		if canceled {
+			level.Info(logger).Log("msg", "cleanup job lease canceled", "worker_interrupted", interrupted)
+			return &compactorschedulerpb.UpdateJobResponse{}, nil
+		}
+	default:
+		return nil, invalidUpdateTypeError(req.Update)
+	}
+
+	if !s.isRunning() {
+		// This request may have erroneously seen empty state. Transform it to an unavailable error to preserve state in the worker.
+		return nil, errNotRunning
+	}
+
+	level.Info(logger).Log("msg", "could not find lease during update for cleanup job", "update_type", req.Update.String())
 	return nil, errLeaseNotFound
 }
 
