@@ -2260,7 +2260,7 @@ results_cache:
 
 # (experimental) Set to true to enable performing splitting range queries by
 # interval and caching inside the Mimir query engine (MQE), and spinning off
-# subqueries from instant queries inside MQE. This only an effect if the
+# subqueries from instant queries inside MQE. This only has an effect if the
 # corresponding feature is enabled (with
 # -query-frontend.split-queries-by-interval=true,
 # -query-frontend.cache-results=true or
