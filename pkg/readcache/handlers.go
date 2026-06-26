@@ -4,11 +4,8 @@ package readcache
 
 import (
 	"context"
-	"encoding/json"
-	"os"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/tenant"
@@ -44,19 +41,6 @@ import (
 // interchangeably with an ingester pod once Phase 2C routes traffic.
 
 const queryStreamBatchSize = 128
-
-func agentDebugLogReadcache(hypothesisID, message string, data map[string]any) {
-	payload := map[string]any{"level": "warn", "sessionId": "cfc356", "runId": "pre-fix", "hypothesisId": hypothesisID, "location": "pkg/readcache/handlers.go", "message": message, "data": data, "timestamp": time.Now().UnixMilli()}
-	// Emit to stderr so the line surfaces in pod logs (remote debugging),
-	// and best-effort append to the local debug logfile for local runs.
-	_ = json.NewEncoder(os.Stderr).Encode(payload)
-	if b, err := json.Marshal(payload); err == nil {
-		if f, ferr := os.OpenFile("/Users/davidgrant/dev/mimir/.cursor/debug-cfc356.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644); ferr == nil {
-			_, _ = f.Write(append(b, '\n'))
-			_ = f.Close()
-		}
-	}
-}
 
 // queryStream streams series + chunks for the given matchers across
 // the partitions this readcache instance owns for the requested
@@ -119,11 +103,6 @@ func (r *Readcache) queryStream(req *client.QueryRequest, stream client.Ingester
 	// The wire protocol requires every StreamingSeries message to land
 	// before the IsEndOfSeriesStream marker; interleaving series and
 	// chunk messages breaks the receiver's series-count accounting.
-	var previousLabels labels.Labels
-	seenLabels := map[string]int{}
-	loggedOutOfOrder := false
-	loggedDuplicate := false
-	loggedNoChunks := false
 	for _, db := range dbs {
 		q, err := db.ChunkQuerier(int64(from), int64(through))
 		if err != nil {
@@ -140,36 +119,6 @@ func (r *Readcache) queryStream(req *client.QueryRequest, stream client.Ingester
 		for ss.Next() {
 			cs := ss.At()
 			lbls := cs.Labels()
-			if !loggedOutOfOrder && !previousLabels.IsEmpty() && labels.Compare(previousLabels, lbls) > 0 {
-				// #region agent log
-				agentDebugLogReadcache("stale-order", "readcache emitted out-of-order labels", map[string]any{
-					"tenant":       userID,
-					"dbs":          len(dbs),
-					"emittedSoFar": len(items),
-					"previous":     previousLabels.String(),
-					"current":      lbls.String(),
-					"hasHint":      req.QueryAttributionHint != nil,
-				})
-				// #endregion
-				loggedOutOfOrder = true
-			}
-			labelKey := lbls.String()
-			if firstIndex, ok := seenLabels[labelKey]; !loggedDuplicate && ok {
-				// #region agent log
-				agentDebugLogReadcache("stale-dup", "readcache emitted duplicate labels", map[string]any{
-					"tenant":      userID,
-					"dbs":         len(dbs),
-					"firstIndex":  firstIndex,
-					"secondIndex": len(items),
-					"labels":      labelKey,
-					"hasHint":     req.QueryAttributionHint != nil,
-				})
-				// #endregion
-				loggedDuplicate = true
-			} else if !ok {
-				seenLabels[labelKey] = len(items)
-			}
-			previousLabels = lbls
 
 			var itemChunks []countedChunk
 			it := cs.IteratorFactory().Iterator(nil)
@@ -187,30 +136,6 @@ func (r *Readcache) queryStream(req *client.QueryRequest, stream client.Ingester
 			if err := it.Err(); err != nil {
 				return err
 			}
-
-			// #region agent log
-			// H1: the deployed/committed code advertises a series when
-			// cs.ChunkCount() > 0, then errors in phase 2 if it yields
-			// zero chunks. Detect that exact discrepancy here: ChunkCount
-			// counts chunk metas overlapping [from,through], but trimming
-			// can drop every in-range sample, leaving zero iterated chunks.
-			if !loggedNoChunks {
-				if cc, ccErr := cs.ChunkCount(); ccErr == nil && cc > 0 && len(itemChunks) == 0 {
-					agentDebugLogReadcache("H1", "series ChunkCount>0 but iterated zero chunks after trim", map[string]any{
-						"tenant":     userID,
-						"labels":     lbls.String(),
-						"chunkCount": cc,
-						"iterated":   len(itemChunks),
-						"dbs":        len(dbs),
-						"hasHint":    req.QueryAttributionHint != nil,
-						"fromMs":     int64(from),
-						"throughMs":  int64(through),
-						"widthMs":    int64(through) - int64(from),
-					})
-					loggedNoChunks = true
-				}
-			}
-			// #endregion
 
 			// Never advertise a series with no in-range chunks: the
 			// querier's batch merge iterator assumes every streamed
