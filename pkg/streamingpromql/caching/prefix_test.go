@@ -5,41 +5,34 @@ package caching
 import (
 	"context"
 	"testing"
-	"time"
 
+	"github.com/grafana/dskit/user"
 	"github.com/stretchr/testify/require"
 )
 
-func TestPrefixingCache(t *testing.T) {
-	prefix := "initial-prefix-"
-
-	backend := NewInMemoryCache()
-	prefixingCache := NewPrefixingCache(backend, func(ctx context.Context) (string, error) {
-		return prefix, nil
-	})
-
-	ctx := context.Background()
-	ttl := time.Hour
-	require.NoError(t, prefixingCache.SetAsync(ctx, "key", []byte("value-1"), ttl))
-
-	require.Equal(t, map[string]InMemoryCacheEntry{
-		"initial-prefix-key": {Value: []byte("value-1"), TTL: ttl},
-	}, backend.Entries)
-
-	prefix = "new-prefix-"
-	require.NoError(t, prefixingCache.SetAsync(ctx, "key", []byte("value-2"), ttl))
-	require.NoError(t, prefixingCache.SetAsync(ctx, "other-key", []byte("value-3"), ttl))
-
-	require.Equal(t, map[string]InMemoryCacheEntry{
-		"initial-prefix-key":   {Value: []byte("value-1"), TTL: ttl},
-		"new-prefix-key":       {Value: []byte("value-2"), TTL: ttl},
-		"new-prefix-other-key": {Value: []byte("value-3"), TTL: ttl},
-	}, backend.Entries)
-
-	results, err := prefixingCache.GetMulti(ctx, []string{"key", "other-key"})
+func TestTenantPrefixGenerator(t *testing.T) {
+	ctx := user.InjectOrgID(context.Background(), "tenant-1")
+	prefix, err := TenantPrefixGenerator(ctx)
 	require.NoError(t, err)
-	require.Equal(t, map[string][]byte{
-		"key":       []byte("value-2"),
-		"other-key": []byte("value-3"),
-	}, results)
+	require.Equal(t, "tenant-1:", prefix)
+
+	// Federated queries join multiple tenant IDs.
+	ctx = user.InjectOrgID(context.Background(), "tenant-1|tenant-2")
+	prefix, err = TenantPrefixGenerator(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "tenant-1|tenant-2:", prefix)
+
+	// No tenant in the context is an error.
+	_, err = TenantPrefixGenerator(context.Background())
+	require.Error(t, err)
+}
+
+func TestVersioningAndItemTypePrefixGenerator(t *testing.T) {
+	base := func(context.Context) (string, error) {
+		return "tenant-1:", nil
+	}
+
+	prefix, err := VersioningAndItemTypePrefixGenerator(base, 2, "MQEQR")(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, "MQEQR@v2:tenant-1::", prefix)
 }

@@ -669,7 +669,7 @@ func TestCacheOperator(t *testing.T) {
 			params := &planning.QueryParameters{OriginalExpression: "the_original_expression{}"}
 			metrics := NewResultsCacheMetrics("query_range", prometheus.NewPedanticRegistry())
 
-			o := newCacheOperator(cache, materializer, createTestNode(), testCase.timeRange, memoryConsumptionTracker, posrange.PositionRange{}, params, limits, log.NewNopLogger(), cacheEntryInterval, testCase.minCacheExtent, metrics)
+			o := newCacheOperator(cache, nil, materializer, createTestNode(), testCase.timeRange, memoryConsumptionTracker, posrange.PositionRange{}, params, limits, log.NewNopLogger(), cacheEntryInterval, testCase.minCacheExtent, metrics)
 			o.timeNow = func() time.Time { return timeNow }
 			o.getCurrentTraceID = func(context.Context) (string, bool) { return newTraceID, true }
 
@@ -809,7 +809,7 @@ func TestCacheOperator_DoesNotSaveCacheEntryIfSeriesMetadataNotCalled(t *testing
 
 			timeRange := types.NewRangeQueryTimeRange(timestamp.Time(0), timestamp.Time(0).Add(2*time.Minute), time.Minute)
 			metrics := NewResultsCacheMetrics("query_range", prometheus.NewPedanticRegistry())
-			o := newCacheOperator(cache, materializer, createTestNode(), timeRange, memoryConsumptionTracker, posrange.PositionRange{}, &planning.QueryParameters{OriginalExpression: "the_original_expression{}"}, limits, log.NewNopLogger(), cacheEntryInterval, 0, metrics)
+			o := newCacheOperator(cache, nil, materializer, createTestNode(), timeRange, memoryConsumptionTracker, posrange.PositionRange{}, &planning.QueryParameters{OriginalExpression: "the_original_expression{}"}, limits, log.NewNopLogger(), cacheEntryInterval, 0, metrics)
 
 			require.NoError(t, o.Prepare(ctx, &types.PrepareParams{}))
 			require.NoError(t, o.AfterPrepare(ctx))
@@ -842,7 +842,7 @@ func TestCacheOperator_DoesNotSaveCacheEntryIfNotAllSeriesRead(t *testing.T) {
 
 	timeRange := types.NewRangeQueryTimeRange(timestamp.Time(0), timestamp.Time(0).Add(2*time.Minute), time.Minute)
 	metrics := NewResultsCacheMetrics("query_range", prometheus.NewPedanticRegistry())
-	o := newCacheOperator(cache, materializer, createTestNode(), timeRange, memoryConsumptionTracker, posrange.PositionRange{}, &planning.QueryParameters{OriginalExpression: "the_original_expression{}"}, limits, log.NewNopLogger(), cacheEntryInterval, 0, metrics)
+	o := newCacheOperator(cache, nil, materializer, createTestNode(), timeRange, memoryConsumptionTracker, posrange.PositionRange{}, &planning.QueryParameters{OriginalExpression: "the_original_expression{}"}, limits, log.NewNopLogger(), cacheEntryInterval, 0, metrics)
 
 	require.NoError(t, o.Prepare(ctx, &types.PrepareParams{}))
 	require.NoError(t, o.AfterPrepare(ctx))
@@ -877,7 +877,7 @@ func TestCacheOperator_DoesNotSaveCacheEntryIfFinishedReadingNotCalled(t *testin
 
 	timeRange := types.NewRangeQueryTimeRange(timestamp.Time(0), timestamp.Time(0).Add(2*time.Minute), time.Minute)
 	metrics := NewResultsCacheMetrics("query_range", prometheus.NewPedanticRegistry())
-	o := newCacheOperator(cache, materializer, createTestNode(), timeRange, memoryConsumptionTracker, posrange.PositionRange{}, &planning.QueryParameters{OriginalExpression: "the_original_expression{}"}, limits, log.NewNopLogger(), cacheEntryInterval, 0, metrics)
+	o := newCacheOperator(cache, nil, materializer, createTestNode(), timeRange, memoryConsumptionTracker, posrange.PositionRange{}, &planning.QueryParameters{OriginalExpression: "the_original_expression{}"}, limits, log.NewNopLogger(), cacheEntryInterval, 0, metrics)
 
 	require.NoError(t, o.Prepare(ctx, &types.PrepareParams{}))
 	require.NoError(t, o.AfterPrepare(ctx))
@@ -1157,7 +1157,7 @@ func (m *mockLimitsProvider) AllowCachingUnalignedQueries(ctx context.Context) (
 
 func TestCacheOperator_CacheKey(t *testing.T) {
 	generateCacheKey := func(tenantID string, desiredTimeRange types.QueryTimeRange, node planning.Node, params *planning.QueryParameters) []byte {
-		o := newCacheOperator(nil, nil, node, desiredTimeRange, nil, posrange.PositionRange{}, params, nil, log.NewNopLogger(), cacheEntryInterval, 0, nil)
+		o := newCacheOperator(nil, nil, nil, node, desiredTimeRange, nil, posrange.PositionRange{}, params, nil, log.NewNopLogger(), cacheEntryInterval, 0, nil)
 		ctx := user.InjectOrgID(context.Background(), tenantID)
 
 		key, err := o.computeCacheKey(ctx)

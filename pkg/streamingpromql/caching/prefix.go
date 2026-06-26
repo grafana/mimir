@@ -5,57 +5,19 @@ package caching
 import (
 	"context"
 	"fmt"
-	"time"
 
-	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/tenant"
 )
 
+// PrefixGenerator returns the cache key prefix to use for the given context. The prefix
+// identifies the namespace a cache entry belongs to, for example the tenant IDs.
+// Callers must fold the prefix into both the hashed backend key
+// and the value stored for collision verification, so that entries cannot be shared across
+// tenants or label policies.
 type PrefixGenerator func(ctx context.Context) (string, error)
 
-type PrefixingCache struct {
-	inner           Backend
-	prefixGenerator PrefixGenerator
-}
-
-func NewPrefixingCache(inner Backend, prefixGenerator func(ctx context.Context) (string, error)) *PrefixingCache {
-	return &PrefixingCache{inner: inner, prefixGenerator: prefixGenerator}
-}
-
-func (p *PrefixingCache) SetAsync(ctx context.Context, key string, value []byte, ttl time.Duration) error {
-	prefix, err := p.prefixGenerator(ctx)
-	if err != nil {
-		return err
-	}
-
-	return p.inner.SetAsync(ctx, prefix+key, value, ttl)
-}
-
-func (p *PrefixingCache) GetMulti(ctx context.Context, keys []string, opts ...cache.Option) (map[string][]byte, error) {
-	prefix, err := p.prefixGenerator(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	prefixedKeys := make([]string, len(keys))
-
-	for i, key := range keys {
-		prefixedKeys[i] = prefix + key
-	}
-
-	prefixedResults, err := p.inner.GetMulti(ctx, prefixedKeys, opts...)
-	if err != nil {
-		return nil, err
-	}
-
-	results := make(map[string][]byte, len(prefixedResults))
-	for key, value := range prefixedResults {
-		results[key[len(prefix):]] = value
-	}
-
-	return results, nil
-}
-
+// TenantPrefixGenerator returns a string of delimited tenantIDs.
+// Note that the returned string includes a trailing : suffix.
 func TenantPrefixGenerator(ctx context.Context) (string, error) {
 	tenantIDs, err := tenant.TenantIDs(ctx)
 	if err != nil {
@@ -65,6 +27,8 @@ func TenantPrefixGenerator(ctx context.Context) (string, error) {
 	return fmt.Sprintf("%s:", tenant.JoinTenantIDs(tenantIDs)), nil
 }
 
+// VersioningAndItemTypePrefixGenerator returns a PrefixGenerator which will generate
+// prefixes which include the given itemType, version and generated prefix from the given base PrefixGenerator.
 func VersioningAndItemTypePrefixGenerator(base PrefixGenerator, version uint, itemType string) PrefixGenerator {
 	return func(ctx context.Context) (string, error) {
 		prefix, err := base(ctx)

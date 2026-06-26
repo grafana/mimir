@@ -27,10 +27,11 @@ type TTLProvider interface {
 }
 
 type CacheFactory struct {
-	backend     caching.Backend
-	ttlProvider TTLProvider
-	metrics     *cacheMetrics
-	logger      log.Logger
+	backend         caching.Backend
+	ttlProvider     TTLProvider
+	prefixGenerator caching.PrefixGenerator
+	metrics         *cacheMetrics
+	logger          log.Logger
 }
 
 type cacheMetrics struct {
@@ -66,30 +67,26 @@ func NewCacheFactory(cfg Config, ttlProvider TTLProvider, prefixGenerator cachin
 	)
 	backend = cache.NewCompression(cfg.Compression, backend, logger)
 
-	prefixedCache := caching.NewPrefixingCache(
-		caching.NewAdaptor(backend),
-		prefixGenerator,
-	)
-
-	return NewCacheFactoryWithBackend(prefixedCache, ttlProvider, reg, logger), nil
+	return NewCacheFactoryWithBackend(caching.NewAdaptor(backend), ttlProvider, prefixGenerator, reg, logger), nil
 }
 
-func NewCacheFactoryWithBackend(backend caching.Backend, ttlProvider TTLProvider, reg prometheus.Registerer, logger log.Logger) *CacheFactory {
+func NewCacheFactoryWithBackend(backend caching.Backend, ttlProvider TTLProvider, prefixGenerator caching.PrefixGenerator, reg prometheus.Registerer, logger log.Logger) *CacheFactory {
 	return &CacheFactory{
-		backend:     backend,
-		ttlProvider: ttlProvider,
-		metrics:     newCacheMetrics(reg),
-		logger:      logger,
+		backend:         backend,
+		ttlProvider:     ttlProvider,
+		prefixGenerator: prefixGenerator,
+		metrics:         newCacheMetrics(reg),
+		logger:          logger,
 	}
 }
 
 func generateCacheKey(function functions.Function, selector []byte, start, end int64) []byte {
-	// We don't include the tenant ID here as that is expected to be done by the prefix generator configured on the cache above.
+	// We don't include the tenant ID here: the cache prefix (which carries the tenant IDs) is prepended in cacheKeys before hashing.
 	return fmt.Appendf(nil, "%d:%s:%d:%d", function, selector, start, end)
 }
 
-// TestGenerateHashedCacheKey generates a hashed cache key using the same logic as the cache internals.
-// This should only be used in tests.
+// TestGenerateHashedCacheKey generates a hashed cache key using the same logic as the cache internals
+// for a cache configured with no prefix generator. This should only be used in tests.
 func TestGenerateHashedCacheKey(function functions.Function, selector []byte, start, end int64) string {
 	return caching.HashCacheKey(generateCacheKey(function, selector, start, end))
 }
@@ -104,21 +101,44 @@ type SplitCodec[T any] interface {
 }
 
 type Cache[T any] struct {
-	backend     caching.Backend
-	ttlProvider TTLProvider
-	metrics     *cacheMetrics
-	logger      log.Logger
-	codec       SplitCodec[T]
+	backend         caching.Backend
+	ttlProvider     TTLProvider
+	prefixGenerator caching.PrefixGenerator
+	metrics         *cacheMetrics
+	logger          log.Logger
+	codec           SplitCodec[T]
 }
 
 func NewCache[T any](factory *CacheFactory, codec SplitCodec[T]) *Cache[T] {
 	return &Cache[T]{
-		backend:     factory.backend,
-		ttlProvider: factory.ttlProvider,
-		metrics:     factory.metrics,
-		logger:      factory.logger,
-		codec:       codec,
+		backend:         factory.backend,
+		ttlProvider:     factory.ttlProvider,
+		prefixGenerator: factory.prefixGenerator,
+		metrics:         factory.metrics,
+		logger:          factory.logger,
+		codec:           codec,
 	}
+}
+
+// cacheKeys generates the cache keys for the given inputs.
+// When a prefixGenerator is configured, the full key includes its prefix (the tenant IDs).
+// Both the full key and the hashed (backend) key are returned:
+//   - the full key should be kept and stored in the cache entry for collision verification;
+//   - the hashed key should be used for backend interactions, as caching.HashCacheKey() ensures
+//     it stays within the cache's key-size limit.
+func (c *Cache[T]) cacheKeys(ctx context.Context, function functions.Function, innerKey []byte, start, end int64) (fullKey []byte, hashedKey string, err error) {
+	fullKey = generateCacheKey(function, innerKey, start, end)
+
+	if c.prefixGenerator != nil {
+		prefix, err := c.prefixGenerator(ctx)
+		if err != nil {
+			return nil, "", fmt.Errorf("generating cache key prefix: %w", err)
+		}
+
+		fullKey = append([]byte(prefix), fullKey...)
+	}
+
+	return fullKey, caching.HashCacheKey(fullKey), nil
 }
 
 func (c *Cache[T]) Get(
@@ -134,8 +154,10 @@ func (c *Cache[T]) Get(
 	}
 
 	c.metrics.cacheRequests.Inc()
-	cacheKey := generateCacheKey(function, innerKey, start, end)
-	hashedKey := caching.HashCacheKey(cacheKey)
+	cacheKey, hashedKey, err := c.cacheKeys(ctx, function, innerKey, start, end)
+	if err != nil {
+		return nil, querierpb.Annotations{}, nil, types.EncodedOperatorEvaluationStats{}, false, err
+	}
 
 	foundData, err := c.backend.GetMulti(ctx, []string{hashedKey})
 	if err != nil {
@@ -188,7 +210,10 @@ func (c *Cache[T]) Set(
 		return fmt.Errorf("getting results cache TTL: %w", err)
 	}
 
-	cacheKey := generateCacheKey(function, innerKey, start, end)
+	cacheKey, hashedKey, err := c.cacheKeys(ctx, function, innerKey, start, end)
+	if err != nil {
+		return err
+	}
 
 	resultBytes, err := c.codec.Marshal(results)
 	if err != nil {
@@ -210,7 +235,6 @@ func (c *Cache[T]) Set(
 		return fmt.Errorf("marshalling cached series: %w", err)
 	}
 
-	hashedKey := caching.HashCacheKey(cacheKey)
 	if err := c.backend.SetAsync(ctx, hashedKey, data, ttl); err != nil {
 		return fmt.Errorf("storing cached results: %w", err)
 	}

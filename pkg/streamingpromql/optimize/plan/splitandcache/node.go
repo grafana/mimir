@@ -207,11 +207,12 @@ func (c *Cache) MinimumRequiredPlanVersion(_ types.QueryTimeRange) (planning.Que
 }
 
 type CacheMaterializer struct {
-	enabled        bool
-	cache          caching.Backend
-	limitsProvider LimitsProvider
-	metrics        *ResultsCacheMetrics
-	minCacheExtent time.Duration
+	enabled         bool
+	cache           caching.Backend
+	prefixGenerator caching.PrefixGenerator
+	limitsProvider  LimitsProvider
+	metrics         *ResultsCacheMetrics
+	minCacheExtent  time.Duration
 }
 
 func NewCacheMaterializer(enabled bool, baseCache cache.Cache, cachePrefixGenerator caching.PrefixGenerator, limitsProvider LimitsProvider, minCacheExtent time.Duration, metrics *ResultsCacheMetrics) *CacheMaterializer {
@@ -223,10 +224,8 @@ func NewCacheMaterializer(enabled bool, baseCache cache.Cache, cachePrefixGenera
 	}
 
 	if enabled {
-		m.cache = caching.NewPrefixingCache(
-			caching.NewAdaptor(baseCache),
-			caching.VersioningAndItemTypePrefixGenerator(cachePrefixGenerator, cacheVersion, "MQEQR"),
-		)
+		m.cache = caching.NewAdaptor(baseCache)
+		m.prefixGenerator = caching.VersioningAndItemTypePrefixGenerator(cachePrefixGenerator, cacheVersion, "MQEQR")
 	}
 
 	return m
@@ -253,6 +252,7 @@ func (m *CacheMaterializer) Materialize(ctx context.Context, n planning.Node, ma
 
 	operator := newCacheOperator(
 		m.cache,
+		m.prefixGenerator,
 		materializer,
 		node.Inner,
 		timeRange,

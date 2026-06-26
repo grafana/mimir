@@ -43,6 +43,7 @@ var tracer = otel.Tracer("pkg/streamingpromql/optimize/plan/splitandcache")
 // It works with a single cache entry made up of multiple extents.
 type CacheOperator struct {
 	Backend                  caching.Backend
+	PrefixGenerator          caching.PrefixGenerator
 	Materializer             InstantVectorMaterializer
 	Inner                    planning.Node
 	DesiredTimeRange         types.QueryTimeRange
@@ -90,6 +91,7 @@ var _ types.InstantVectorOperator = &CacheOperator{}
 
 func newCacheOperator(
 	backend caching.Backend,
+	prefixGenerator caching.PrefixGenerator,
 	materializer InstantVectorMaterializer,
 	inner planning.Node,
 	desiredTimeRange types.QueryTimeRange,
@@ -104,6 +106,7 @@ func newCacheOperator(
 ) *CacheOperator {
 	return &CacheOperator{
 		Backend:                  backend,
+		PrefixGenerator:          prefixGenerator,
 		Materializer:             materializer,
 		Inner:                    inner,
 		DesiredTimeRange:         desiredTimeRange,
@@ -176,12 +179,22 @@ func (c *CacheOperator) encodeNodeForCacheKey() ([]byte, error) {
 }
 
 func (c *CacheOperator) populateCacheKey(ctx context.Context) error {
-	var err error
-	c.key, err = c.computeCacheKey(ctx)
+	key, err := c.computeCacheKey(ctx)
 	if err != nil {
 		return err
 	}
 
+	if c.PrefixGenerator != nil {
+		prefix, err := c.PrefixGenerator(ctx)
+		if err != nil {
+			return fmt.Errorf("generating cache key prefix: %w", err)
+		}
+		key = append([]byte(prefix), key...)
+	}
+
+	// key is the full key which includes the prefix from the PrefixGenerator - this is kept for collision detection.
+	c.key = key
+	// hashedKey is the hashed version of the full key and should be used for interacting with the cache backend
 	c.hashedKey = caching.HashCacheKey(c.key)
 	return nil
 }
