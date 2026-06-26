@@ -568,10 +568,6 @@ github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674 h1:JeSE6pjso5T
 github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674/go.mod h1:r4w70xmWCQKmi1ONH4KIaBptdivuRPyosB9RmPlGEwA=
 github.com/grafana/dskit v0.0.0-20260623061522-5cb97901f08d h1:i8M92vWcZmvMEsXnBsTPHwoW6SexkDIzwKGui4QojOs=
 github.com/grafana/dskit v0.0.0-20260623061522-5cb97901f08d/go.mod h1:T0r0vLv/JwmOoSc/EOZw/5ni7r/djCoCdJ3/JnHDAjQ=
-github.com/grafana/e2e v0.1.2-0.20260309174126-b5393d4e610f h1:gxaqz5StufMU078tWFuf8CUi4PZtITBxjM2TZV7NOFw=
-github.com/grafana/e2e v0.1.2-0.20260309174126-b5393d4e610f/go.mod h1:KFvJP5m5GQ837CN7rUbWIiPdw1JZgeRJTEyp2O5U0is=
-github.com/grafana/e2e v0.1.2-0.20260625124721-70f74c4b3a54 h1:Fm4m5pDJOw69fAl3ud1hzVou2aZap4wg069TCUrBB2M=
-github.com/grafana/e2e v0.1.2-0.20260625124721-70f74c4b3a54/go.mod h1:o6aUPNFrl7H0XjIdBpXSU2Gou6vVwctVBuSvWPN7Ogg=
 github.com/grafana/e2e v0.1.2-0.20260625155804-481ec71161b5 h1:0S5T70bIDAh5ttBp/JIzFZiVvQqfuL3xkFXYlIx1Zuo=
 github.com/grafana/e2e v0.1.2-0.20260625155804-481ec71161b5/go.mod h1:o6aUPNFrl7H0XjIdBpXSU2Gou6vVwctVBuSvWPN7Ogg=
 github.com/grafana/go-yaml/v3 v3.0.0-20260130164322-e3c24e8f4c87 h1:Op5/Kd8Ae90IC7Ow+CNwGo/oq87cJX2iE+U8Dw4a8Bc=
