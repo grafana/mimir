@@ -11,42 +11,28 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
-// Router assigns a tenant's metric to a read compartment, and the corresponding Kafka topic, based
-// on a hash of the user ID and metric name.
+// Router assigns a tenant's metric to a read compartment, based on a hash of the user ID and metric name.
 type Router struct {
-	topics []string
+	numCompartments int
 
 	// allReadCompartmentIDs holds every read compartment ID.
 	allReadCompartmentIDs []int
 }
 
-// NewRouter creates a Router. kafkaTopicTemplate is the Kafka topic name containing the
-// ReadCompartmentIDPlaceholder, which is replaced with each read compartment ID to derive
-// that compartment's topic.
-func NewRouter(numReadCompartments int, kafkaTopicTemplate string) *Router {
-	var (
-		topics                = make([]string, numReadCompartments)
-		allReadCompartmentIDs = make([]int, numReadCompartments)
-	)
-
-	for id := range topics {
-		topics[id] = ReplaceReadCompartment(kafkaTopicTemplate, id)
+// NewRouter creates a Router for the given number of read compartments.
+func NewRouter(numReadCompartments int) *Router {
+	allReadCompartmentIDs := make([]int, numReadCompartments)
+	for id := range allReadCompartmentIDs {
 		allReadCompartmentIDs[id] = id
 	}
-
-	return &Router{topics: topics, allReadCompartmentIDs: allReadCompartmentIDs}
+	return &Router{numCompartments: numReadCompartments, allReadCompartmentIDs: allReadCompartmentIDs}
 }
 
 // CompartmentForMetric returns the read compartment ID for the given tenant's metric name. The
 // metricName is only hashed and never retained, so it is safe to pass an unsafe (pooled) string.
 func (r *Router) CompartmentForMetric(userID, metricName string) int {
 	hash := mimirpb.ShardByMetricName(userID, metricName)
-	return int(hash % uint32(len(r.topics)))
-}
-
-// TopicForMetric returns the Kafka topic for the given tenant's metric name.
-func (r *Router) TopicForMetric(userID, metricName string) string {
-	return r.topics[r.CompartmentForMetric(userID, metricName)]
+	return int(hash % uint32(r.numCompartments))
 }
 
 // CompartmentsForMatchers returns the read compartments that may hold series matching the given matchers
@@ -105,16 +91,40 @@ func (r *Router) CompartmentsForMatchers(userID string, matchers []*labels.Match
 
 // NumCompartments returns the number of read compartments.
 func (r *Router) NumCompartments() int {
-	return len(r.topics)
+	return r.numCompartments
+}
+
+// TopicRouter extends Router with the Kafka topic of each read compartment, for callers on the
+// ingestion path that need to produce to a compartment's topic.
+type TopicRouter struct {
+	*Router
+
+	topics []string
+}
+
+// NewTopicRouter creates a TopicRouter. kafkaTopicTemplate is the Kafka topic name containing the
+// ReadCompartmentIDPlaceholder, which is replaced with each read compartment ID to derive that
+// compartment's topic.
+func NewTopicRouter(numReadCompartments int, kafkaTopicTemplate string) *TopicRouter {
+	topics := make([]string, numReadCompartments)
+	for id := range topics {
+		topics[id] = ReplaceReadCompartment(kafkaTopicTemplate, id)
+	}
+	return &TopicRouter{Router: NewRouter(numReadCompartments), topics: topics}
+}
+
+// TopicForMetric returns the Kafka topic for the given tenant's metric name.
+func (r *TopicRouter) TopicForMetric(userID, metricName string) string {
+	return r.topics[r.CompartmentForMetric(userID, metricName)]
 }
 
 // TopicForCompartment returns the Kafka topic for the given read compartment ID.
-func (r *Router) TopicForCompartment(compartmentID int) string {
+func (r *TopicRouter) TopicForCompartment(compartmentID int) string {
 	return r.topics[compartmentID]
 }
 
 // Topics returns the Kafka topic of every read compartment.
-func (r *Router) Topics() []string {
+func (r *TopicRouter) Topics() []string {
 	return slices.Clone(r.topics)
 }
 
