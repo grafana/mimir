@@ -33,7 +33,6 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
-	"github.com/thanos-io/objstore"
 	"golang.org/x/sync/errgroup"
 	grpc_metadata "google.golang.org/grpc/metadata"
 
@@ -201,39 +200,12 @@ func NewBlocksStoreQueryable(
 }
 
 func NewBlocksStoreQueryableFromConfig(querierCfg Config, gatewayCfg storegateway.Config, storageCfg mimir_tsdb.BlocksStorageConfig, limits BlocksStoreLimits, logger log.Logger, reg prometheus.Registerer) (*BlocksStoreQueryable, error) {
-	var (
-		stores       BlocksStoreSet
-		bucketClient objstore.Bucket
-	)
+	var stores BlocksStoreSet
 
-	bucketClient, err := bucket.NewClient(context.Background(), storageCfg.Bucket, "querier", logger, reg)
+	finder, err := newBlocksStoreQueryableFinder(storageCfg.Bucket, storageCfg, limits, logger, reg)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to create bucket client")
+		return nil, err
 	}
-
-	querierReg := prometheus.WrapRegistererWith(prometheus.Labels{"component": "querier"}, reg)
-	cachingBucket, err := mimir_tsdb.NewMetadataCachingBucket(
-		storageCfg.BucketStore.MetadataCache,
-		bucketClient,
-		logger,
-		querierReg,
-	)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to create caching bucket")
-	}
-	bucketClient = cachingBucket
-
-	// Create the blocks finder.
-	finder := NewBucketIndexBlocksFinder(BucketIndexBlocksFinderConfig{
-		IndexLoader: bucketindex.LoaderConfig{
-			CheckInterval:         time.Minute,
-			UpdateOnStaleInterval: storageCfg.BucketStore.SyncInterval,
-			UpdateOnErrorInterval: storageCfg.BucketStore.BucketIndex.UpdateOnErrorInterval,
-			IdleTimeout:           storageCfg.BucketStore.BucketIndex.IdleTimeout,
-		},
-		MaxStalePeriod:           storageCfg.BucketStore.BucketIndex.MaxStalePeriod,
-		IgnoreDeletionMarksDelay: storageCfg.BucketStore.IgnoreDeletionMarksWhileQueryingDelay,
-	}, bucketClient, limits, logger, reg)
 
 	storesRingCfg := gatewayCfg.ShardingRing.ToRingConfig()
 	storesRingBackend, err := kv.NewClient(
@@ -276,6 +248,35 @@ func NewBlocksStoreQueryableFromConfig(querierCfg Config, gatewayCfg storegatewa
 	streamingBufferSize := querierCfg.StreamingChunksPerStoreGatewaySeriesBufferSize
 
 	return NewBlocksStoreQueryable(stores, dynamicReplication, finder, consistency, limits, querierCfg.QueryStoreAfter, streamingBufferSize, logger, reg)
+}
+
+// newBlocksStoreQueryableFinder creates a BucketIndexBlocksFinder over the given bucket config.
+func newBlocksStoreQueryableFinder(bucketCfg bucket.Config, storageCfg mimir_tsdb.BlocksStorageConfig, limits BlocksStoreLimits, logger log.Logger, reg prometheus.Registerer) (BlocksFinder, error) {
+	bucketClient, err := bucket.NewClient(context.Background(), bucketCfg, "querier", logger, reg)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to create bucket client")
+	}
+
+	cachingBucket, err := mimir_tsdb.NewMetadataCachingBucket(
+		storageCfg.BucketStore.MetadataCache,
+		bucketClient,
+		logger,
+		prometheus.WrapRegistererWith(prometheus.Labels{"component": "querier"}, reg),
+	)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to create caching bucket")
+	}
+
+	return NewBucketIndexBlocksFinder(BucketIndexBlocksFinderConfig{
+		IndexLoader: bucketindex.LoaderConfig{
+			CheckInterval:         time.Minute,
+			UpdateOnStaleInterval: storageCfg.BucketStore.SyncInterval,
+			UpdateOnErrorInterval: storageCfg.BucketStore.BucketIndex.UpdateOnErrorInterval,
+			IdleTimeout:           storageCfg.BucketStore.BucketIndex.IdleTimeout,
+		},
+		MaxStalePeriod:           storageCfg.BucketStore.BucketIndex.MaxStalePeriod,
+		IgnoreDeletionMarksDelay: storageCfg.BucketStore.IgnoreDeletionMarksWhileQueryingDelay,
+	}, cachingBucket, limits, logger, reg), nil
 }
 
 func (q *BlocksStoreQueryable) starting(ctx context.Context) error {
