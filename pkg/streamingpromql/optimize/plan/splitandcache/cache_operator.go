@@ -20,6 +20,7 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 	"go.opentelemetry.io/otel"
 
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware/querydetails"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/querierpb"
 	"github.com/grafana/mimir/pkg/streamingpromql/caching"
@@ -52,6 +53,7 @@ type CacheOperator struct {
 	limitsProvider     LimitsProvider
 	logger             log.Logger
 	cacheEntryInterval time.Duration
+	metrics            *ResultsCacheMetrics
 
 	// minCacheExtent is the minimum length of a cached extent for it to be used.
 	// Extents smaller than this are ignored and re-evaluated, to avoid freshly evaluating many small extents.
@@ -98,6 +100,7 @@ func newCacheOperator(
 	logger log.Logger,
 	cacheEntryInterval time.Duration,
 	minCacheExtent time.Duration,
+	metrics *ResultsCacheMetrics,
 ) *CacheOperator {
 	return &CacheOperator{
 		Backend:                  backend,
@@ -113,6 +116,7 @@ func newCacheOperator(
 		minCacheExtent:           minCacheExtent,
 		timeNow:                  time.Now,
 		getCurrentTraceID:        tracing.ExtractTraceID,
+		metrics:                  metrics,
 	}
 }
 
@@ -293,7 +297,7 @@ func (c *CacheOperator) calculateExtents(ctx context.Context, existingExtents []
 	// For example, if the desired time range is T=5m to T=8m30s with a step of 1m, then the last step is T=8m.
 	stepAlignedEndT := calculateLastStepAlignedPoint(c.DesiredTimeRange.StartT, c.DesiredTimeRange.EndT, c.DesiredTimeRange.IntervalMilliseconds)
 
-	existingExtents = c.discardSmallExtents(existingExtents, stepAlignedEndT)
+	existingExtents = c.discardSmallExtents(existingExtents, stepAlignedEndT, spanLogger)
 
 	maxFreshness, err := c.limitsProvider.GetMaxCacheFreshness(ctx)
 	if err != nil {
@@ -433,7 +437,7 @@ func (c *CacheOperator) logUsedExtent(spanLogger *spanlogger.SpanLogger, extent 
 //
 // This mirrors the behaviour of the split-and-cache query middleware (see partitionCacheExtents in
 // pkg/frontend/querymiddleware/results_cache.go).
-func (c *CacheOperator) discardSmallExtents(existingExtents []CachedExtent, stepAlignedEndT int64) []CachedExtent {
+func (c *CacheOperator) discardSmallExtents(existingExtents []CachedExtent, stepAlignedEndT int64, logger *spanlogger.SpanLogger) []CachedExtent {
 	// Only discard small extents if the desired time range is itself large: if the query is small, re-evaluating is no
 	// cheaper than reading the cached extent. Instant queries (start == end) are never affected.
 	minCacheExtentMilliseconds := c.minCacheExtent.Milliseconds()
@@ -452,6 +456,15 @@ func (c *CacheOperator) discardSmallExtents(existingExtents []CachedExtent, step
 
 		if extentIsSmall && overlapsDesiredTimeRange {
 			// We won't read this extent, so release the memory we reserved for it in fetchExistingExtents.
+			logger.DebugLog(
+				"msg", "ignoring small extent in desired time range",
+				"extent_oldest_evaluation_time", extent.OldestEvaluationTime,
+				"extent_start_ts", extent.StartT,
+				"extent_end_ts", extent.EndT,
+				"extent_newest_evaluation_trace_id", extent.NewestEvaluationTraceID,
+				"extent_series_count", len(extent.SeriesMetadata),
+			)
+
 			extent.close(c.MemoryConsumptionTracker)
 			continue
 		}
@@ -819,6 +832,22 @@ func (c *CacheOperator) Finalize(ctx context.Context) (*types.OperatorEvaluation
 		}
 	}
 
+	queryDetails := querydetails.QueryDetailsFromContext(ctx)
+
+	for _, e := range c.extents.inDesiredTimeRange {
+		if size, cacheHit := e.GetEstimatedSize(); cacheHit {
+			if queryDetails != nil {
+				queryDetails.ResultsCacheHitBytes += int(size)
+			}
+			c.metrics.UsedExtents.Inc()
+		} else {
+			if queryDetails != nil {
+				queryDetails.ResultsCacheMissBytes += int(size)
+			}
+			c.metrics.EvaluatedExtents.Inc()
+		}
+	}
+
 	return desiredTimeRangeStats, annos, nil
 }
 
@@ -923,6 +952,14 @@ func (c *CacheOperator) writeCacheEntry(ctx context.Context, stats *types.Operat
 	if err != nil {
 		return err
 	}
+
+	spanLogger := spanlogger.FromContext(ctx, c.logger)
+	spanLogger.DebugLog(
+		"msg", "storing new entry in cache",
+		"key", c.hashedKey,
+		"extent_count", len(extents),
+		"entry_size_bytes", len(value),
+	)
 
 	if err := c.Backend.SetAsync(ctx, c.hashedKey, value, ttl); err != nil {
 		return fmt.Errorf("storing cached results with key %q: %w", c.hashedKey, err)
@@ -1043,16 +1080,22 @@ type extent interface {
 
 	GetEvaluationTimestamp() int64
 
+	// GetEstimatedSize() returns an estimate of the size of the extent, in bytes, and true if
+	// this extent was a cache hit.
+	GetEstimatedSize() (uint64, bool)
+
 	Close()
 }
 
 type cachedExtentReader struct {
 	extent CachedExtent
 	parent *CacheOperator
+
+	sizeEstimator *extentSizeEstimator
 }
 
 func newCachedExtentReader(extent CachedExtent, parent *CacheOperator) *cachedExtentReader {
-	return &cachedExtentReader{extent: extent, parent: parent}
+	return &cachedExtentReader{extent: extent, parent: parent, sizeEstimator: &extentSizeEstimator{}}
 }
 
 func (c *cachedExtentReader) GetStartT() int64 {
@@ -1089,6 +1132,7 @@ func (c *cachedExtentReader) SeriesMetadata(_ context.Context, _ types.Matchers)
 	}
 
 	c.extent.closeSeriesMetadata(c.parent.MemoryConsumptionTracker)
+	c.sizeEstimator.AccumulateSeriesMetadata(seriesMetadata)
 
 	return seriesMetadata, nil
 }
@@ -1109,6 +1153,8 @@ func (c *cachedExtentReader) GetSeries(_ context.Context, seriesIdx int) (types.
 	// Clear the cached data so we don't try to remove it from the memory consumption estimate later.
 	// We don't need to retain this data here if this extent will be merged into others: that is the responsibility of CacheOperator.
 	c.extent.Data[seriesIdx] = querierpb.InstantVectorSeriesData{}
+
+	c.sizeEstimator.AccumulateSeriesData(mqeData)
 
 	var err error
 
@@ -1142,6 +1188,10 @@ func (c *cachedExtentReader) GetEvaluationTimestamp() int64 {
 	return c.extent.OldestEvaluationTime
 }
 
+func (c *cachedExtentReader) GetEstimatedSize() (uint64, bool) {
+	return c.sizeEstimator.estimatedSizeBytes, true
+}
+
 func (c *cachedExtentReader) Close() {
 	c.extent.close(c.parent.MemoryConsumptionTracker)
 }
@@ -1152,14 +1202,17 @@ type evaluatedExtent struct {
 	buffer *operators.InstantVectorOperatorBuffer
 	startT int64
 	endT   int64
+
+	sizeEstimator *extentSizeEstimator
 }
 
 func newEvaluatedExtent(inner types.InstantVectorOperator, parent *CacheOperator, startT int64, endT int64) *evaluatedExtent {
 	return &evaluatedExtent{
-		inner:  inner,
-		parent: parent,
-		startT: startT,
-		endT:   endT,
+		inner:         inner,
+		parent:        parent,
+		startT:        startT,
+		endT:          endT,
+		sizeEstimator: &extentSizeEstimator{},
 	}
 }
 
@@ -1185,6 +1238,7 @@ func (e *evaluatedExtent) SeriesMetadata(ctx context.Context, matchers types.Mat
 		return nil, err
 	}
 
+	e.sizeEstimator.AccumulateSeriesMetadata(metadata)
 	e.buffer = operators.NewInstantVectorOperatorBuffer(e.inner, nil, len(metadata)-1, e.parent.MemoryConsumptionTracker)
 
 	return metadata, nil
@@ -1196,7 +1250,10 @@ func (e *evaluatedExtent) GetSeries(ctx context.Context, seriesIdx int) (types.I
 		return types.InstantVectorSeriesData{}, err
 	}
 
-	return series[0], nil
+	data := series[0]
+	e.sizeEstimator.AccumulateSeriesData(data)
+
+	return data, nil
 }
 
 func (e *evaluatedExtent) FinishedReading(ctx context.Context) error {
@@ -1211,6 +1268,10 @@ func (e *evaluatedExtent) Finalize(ctx context.Context) (*types.OperatorEvaluati
 
 func (e *evaluatedExtent) GetEvaluationTimestamp() int64 {
 	return timestamp.FromTime(e.parent.evaluationTime)
+}
+
+func (e *evaluatedExtent) GetEstimatedSize() (uint64, bool) {
+	return e.sizeEstimator.estimatedSizeBytes, false
 }
 
 func (e *evaluatedExtent) Close() {
@@ -1302,12 +1363,29 @@ func estimateLabelsSize(labels []mimirpb.LabelAdapter) uint64 {
 	return size
 }
 
+type extentSizeEstimator struct {
+	estimatedSizeBytes uint64
+}
+
+func (e *extentSizeEstimator) AccumulateSeriesMetadata(series []types.SeriesMetadata) {
+	e.estimatedSizeBytes += uint64(len(series)) * types.SeriesMetadataSize
+	for _, s := range series {
+		e.estimatedSizeBytes += s.Labels.ByteSize()
+	}
+}
+
+func (e *extentSizeEstimator) AccumulateSeriesData(data types.InstantVectorSeriesData) {
+	e.estimatedSizeBytes += uint64(len(data.Floats)) * types.FPointSize
+	e.estimatedSizeBytes += uint64(len(data.Histograms)) * types.HPointSize
+}
+
 func PrepareCacheOperators(ctx context.Context, params *types.PrepareParams, operators []*CacheOperator, now time.Time) error {
 	if len(operators) == 0 {
 		return nil
 	}
 
-	logger := operators[0].logger // We don't bother checking that each operator has the same logger like we do for the limits provider or cache backend below, as this won't affect query correctness, just debug logging.
+	logger := operators[0].logger // We don't bother checking that each operator has the same logger and metrics like we do for the limits provider or cache backend below, as this won't affect query correctness, just debug logging and metrics.
+	metrics := operators[0].metrics
 	spanLogger, ctx := spanlogger.New(ctx, logger, tracer, "PrepareCacheOperators")
 	defer spanLogger.Finish()
 	spanLogger.SetTag("operator_count", len(operators))
@@ -1343,10 +1421,13 @@ func PrepareCacheOperators(ctx context.Context, params *types.PrepareParams, ope
 	}
 
 	spanLogger.DebugLog("msg", "fetching cached results", "keys", keys)
+	metrics.CacheRequests.Add(float64(len(keys)))
 	cacheHits, err := cacheBackend.GetMulti(ctx, keys)
 	if err != nil {
 		return fmt.Errorf("fetching cached results: %w", err)
 	}
+
+	metrics.CacheHits.Add(float64(len(cacheHits)))
 
 	for key, o := range operatorMap {
 		cacheHit := cacheHits[key]

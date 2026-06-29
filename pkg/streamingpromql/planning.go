@@ -164,6 +164,7 @@ func NewQueryPlannerWithTime(opts EngineOpts, versionProvider QueryPlanVersionPr
 			opts.RangeQuerySplittingAndCaching.CacheEnabled,
 			opts.Limits,
 			opts.CommonOpts.Reg,
+			opts.Logger,
 		))
 	}
 
