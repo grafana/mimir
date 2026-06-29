@@ -66,7 +66,9 @@ type CacheOperator struct {
 	ttlForOOOExtent    time.Duration
 	oooWindow          time.Duration
 
-	key       []byte
+	// key is the full key which includes the prefix from the PrefixGenerator. This plain []byte is kept for collision detection.
+	key []byte
+	// hashedKey is the hashed version of the above key and should be used for interacting with the cache backend.
 	hashedKey string
 	extents   extents
 	prepared  bool
@@ -183,9 +185,7 @@ func (c *CacheOperator) populateCacheKey(ctx context.Context) error {
 		return err
 	}
 
-	// key is the full key which includes the prefix from the PrefixGenerator - this is kept for collision detection.
 	c.key = key
-	// hashedKey is the hashed version of the full key and should be used for interacting with the cache backend
 	c.hashedKey = caching.HashCacheKey(c.key)
 	return nil
 }
