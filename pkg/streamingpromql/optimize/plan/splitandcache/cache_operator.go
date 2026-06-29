@@ -147,6 +147,12 @@ func (c *CacheOperator) computeCacheKey(ctx context.Context) ([]byte, error) {
 		[]byte(":"),
 	)
 
+	prefix, err := c.PrefixGenerator(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("generating cache key prefix: %w", err)
+	}
+	key = append([]byte(prefix), key...)
+
 	return key, nil
 }
 
@@ -176,13 +182,6 @@ func (c *CacheOperator) populateCacheKey(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-
-	// In the newCacheOperator() we ensure there is always a PrefixGenerator set.
-	prefix, err := c.PrefixGenerator(ctx)
-	if err != nil {
-		return fmt.Errorf("generating cache key prefix: %w", err)
-	}
-	key = append([]byte(prefix), key...)
 
 	// key is the full key which includes the prefix from the PrefixGenerator - this is kept for collision detection.
 	c.key = key
