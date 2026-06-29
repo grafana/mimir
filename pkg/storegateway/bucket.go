@@ -1106,15 +1106,15 @@ func (s *BucketStore) getSeriesIteratorFromBlocks(
 func (s *BucketStore) getSeriesIteratorFromPerBlockIterators(perBlockIterators []iterator[seriesChunkRefsSet], chunksLimiter ChunksLimiter, seriesLimiter SeriesLimiter, limit int64) iterator[seriesChunkRefsSet] {
 	mergedIterator := mergedSeriesChunkRefsSetIterators(s.maxSeriesPerBatch, perBlockIterators...)
 
-	// Apply limits after the merging, so that if the same series is part of multiple blocks it just gets
-	// counted once towards the limit.
-	mergedIterator = newLimitingSeriesChunkRefsSetIterator(mergedIterator, chunksLimiter, seriesLimiter)
-
-	// Apply the request limit last so we stop loading series (and, in the chunks streaming phase, chunks)
-	// as soon as we have enough. limit <= 0 means no limit was requested.
+	// Apply the functional request limit before per-query limits so protective limits are only charged
+	// for series that are actually returned. limit <= 0 means no limit was requested.
 	if limit > 0 {
 		mergedIterator = newTruncatingSeriesChunkRefsSetIterator(int(limit), mergedIterator)
 	}
+
+	// Apply per-query limits after merging (and functional truncation), so that if the same series is
+	// part of multiple blocks it just gets counted once towards the limit.
+	mergedIterator = newLimitingSeriesChunkRefsSetIterator(mergedIterator, chunksLimiter, seriesLimiter)
 
 	return mergedIterator
 }

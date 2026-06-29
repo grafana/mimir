@@ -745,6 +745,44 @@ func TestBucketStore_Series_ChunksLimiter_e2e(t *testing.T) {
 	}
 }
 
+func TestBucketStore_Series_LimitDoesNotTripSeriesLimiter_e2e(t *testing.T) {
+	// A request limit smaller than the number of matched series must not trip the protective
+	// per-query series limit. The request limit is applied before the series limiter accounts
+	// for the series, so a cheap limited request does not fail just because the matchers select
+	// more series than the per-query limit.
+	bkt := objstore.NewInMemBucket()
+	sharedCfg := defaultPrepareStoreConfig(t)
+	prepareTestBlocks(t, time.Now(), sharedCfg.numBlocks/2, sharedCfg.tempDir, bkt,
+		sharedCfg.series, labels.FromStrings("ext1", "value1"), sharedCfg.nonOverlappingBlocks)
+
+	// The matcher a="1" selects 4 distinct series, more than the protective per-query series
+	// limit below, but the request only asks for 2.
+	prepConfig := defaultPrepareStoreConfig(t)
+	prepConfig.numBlocks = 0 // blocks already in the shared bucket
+	prepConfig.seriesLimiterFactory = newStaticSeriesLimiterFactory(2)
+
+	s := prepareStoreWithTestBlocks(t, bkt, prepConfig)
+	srv := newStoreGatewayTestServer(t, s.store)
+
+	for _, streamingBatchSize := range []int{0, 1, 5} {
+		t.Run(fmt.Sprintf("streamingBatchSize=%d", streamingBatchSize), func(t *testing.T) {
+			req := &storepb.SeriesRequest{
+				Matchers: []storepb.LabelMatcher{
+					{Type: storepb.LabelMatcher_EQ, Name: "a", Value: "1"},
+				},
+				MinTime:                  timestamp.FromTime(minTime),
+				MaxTime:                  timestamp.FromTime(maxTime),
+				Limit:                    2,
+				StreamingChunksBatchSize: uint64(streamingBatchSize),
+			}
+
+			seriesSet, _, _, _, err := srv.Series(context.Background(), req)
+			require.NoError(t, err)
+			assert.Len(t, seriesSet, 2)
+		})
+	}
+}
+
 func TestBucketStore_LazyLoadingAlwaysEagerLoading(t *testing.T) {
 	testCases := map[string]struct {
 		lazyLoadingEnabled           bool

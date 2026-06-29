@@ -2458,6 +2458,29 @@ func createSeriesChunkRefsSet(minSeriesID, maxSeriesID int, releasable bool) ser
 	return set
 }
 
+func TestGetSeriesIteratorFromPerBlockIteratorsAppliesFunctionalLimitBeforePerQueryLimits(t *testing.T) {
+	blockID := ulid.MustNew(1, nil)
+
+	// One merged batch larger than both the functional limit and the per-query limits.
+	batch := createSeriesChunkRefsSet(1, 100, false)
+	for i := range batch.series {
+		batch.series[i].refs = generateSeriesChunksRanges(blockID, 1)
+	}
+
+	store := &BucketStore{maxSeriesPerBatch: len(batch.series)}
+	it := store.getSeriesIteratorFromPerBlockIterators(
+		[]iterator[seriesChunkRefsSet]{newSliceSeriesChunkRefsSetIterator(nil, batch)},
+		&staticLimiter{limit: 50, msg: "exceeded chunks limit"},
+		&staticLimiter{limit: 50, msg: "exceeded series limit"},
+		10,
+	)
+
+	sets := readAllSeriesChunkRefsSet(it)
+	require.NoError(t, it.Err())
+	require.Len(t, sets, 1)
+	require.Len(t, sets[0].series, 10)
+}
+
 func TestTruncatingSeriesChunkRefsSetIterator(t *testing.T) {
 	// metricName returns the metric name createSeriesChunkRefsSet assigns to the given series ID.
 	metricName := func(seriesID int) string { return fmt.Sprintf("metric_%06d", seriesID) }

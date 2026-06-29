@@ -680,7 +680,9 @@ func (l *limitingSeriesChunkRefsSetIterator) Err() error {
 // limit here is expected and is not an error, the iterator simply stops.
 //
 // It must be applied after series have been merged and deduplicated across blocks, so that a
-// series found in multiple blocks is only counted once towards the limit.
+// series found in multiple blocks is only counted once towards the limit, and before
+// limitingSeriesChunkRefsSetIterator so per-query limits are only charged for series that are
+// actually returned.
 type truncatingSeriesChunkRefsSetIterator struct {
 	limit int
 	from  iterator[seriesChunkRefsSet]
