@@ -32,11 +32,11 @@ function main() {
   echo "Block ULID is $BLOCK_ULID."
   echo "Uploading no-compact marker..."
   mark_blocks \
-    --tenant="$TENANT" \
-    --mark-type=no-compact \
-    --details="block uploaded for debugging purposes" \
-    --meta-presence-policy=none \
-    --blocks "$BLOCK_ULID"
+    -tenant="$TENANT" \
+    -mark-type=no-compact \
+    -details="block uploaded for debugging purposes" \
+    -meta-presence-policy=none \
+    -blocks "$BLOCK_ULID"
 
   echo "Uploading block contents..."
   aws_with_creds s3 cp --recursive "$BLOCK_DIR" "s3://$S3_BUCKET_NAME/$TENANT/$BLOCK_ULID"
@@ -45,13 +45,13 @@ function main() {
 }
 
 function mark_blocks() {
-  go run -C "$SCRIPT_DIR/../../.." ./cmd/mimirtool blocks mark \
-    --backend="s3" \
-    --s3.access-key-id="$AWS_ACCESS_KEY_ID" \
-    --s3.secret-access-key="$AWS_SECRET_ACCESS_KEY" \
-    --s3.endpoint="$S3_ENDPOINT" \
-    --s3.insecure=true \
-    --s3.bucket-name="$S3_BUCKET_NAME" \
+  go run -C "$SCRIPT_DIR/../../../tools/mark-blocks" . \
+    -backend="s3" \
+    -s3.access-key-id="$AWS_ACCESS_KEY_ID" \
+    -s3.secret-access-key="$AWS_SECRET_ACCESS_KEY" \
+    -s3.endpoint="$S3_ENDPOINT" \
+    -s3.insecure=true \
+    -s3.bucket-name="$S3_BUCKET_NAME" \
     "$@"
 }
 
