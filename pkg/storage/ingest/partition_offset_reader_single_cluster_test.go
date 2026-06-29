@@ -49,7 +49,7 @@ func TestSingleClusterTopicOffsetsReader(t *testing.T) {
 			// Run few goroutines waiting for the last produced offset.
 			wg := sync.WaitGroup{}
 
-			for i := 0; i < 2; i++ {
+			for range 2 {
 				runAsync(&wg, func() {
 					_, err := reader.WaitNextFetchLastProducedOffset(ctx)
 					assert.Equal(t, errPartitionOffsetReaderStopped, err)

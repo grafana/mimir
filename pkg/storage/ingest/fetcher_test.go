@@ -367,7 +367,7 @@ func TestConcurrentFetchers(t *testing.T) {
 		t.Parallel()
 
 		synctest.Test(t, func(t *testing.T) {
-			ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+			ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
 			defer cancel()
 
 			var vnet kfake.VirtualNetwork
@@ -396,7 +396,7 @@ func TestConcurrentFetchers(t *testing.T) {
 			client := newKafkaProduceClient(t, clusterAddr, withWriteVirtualNetwork(&vnet))
 
 			// Produce some records before starting the fetchers
-			for i := 0; i < 5; i++ {
+			for i := range 5 {
 				produceRecord(ctx, t, client, topicName, partitionID, []byte(fmt.Sprintf("record-%d", i)))
 			}
 
@@ -423,7 +423,7 @@ func TestConcurrentFetchers(t *testing.T) {
 			fetchers, _ := createConcurrentFetchers(ctx, t, client, topicName, partitionID, 0, concurrency, 0, true, OnRangeErrorResumeFromStart)
 
 			// Produce some records after starting the fetchers
-			for i := 0; i < 3; i++ {
+			for i := range 3 {
 				produceRecord(ctx, t, client, topicName, partitionID, []byte(fmt.Sprintf("record-%d", i)))
 			}
 
@@ -448,7 +448,7 @@ func TestConcurrentFetchers(t *testing.T) {
 			fetchers, _ := createConcurrentFetchers(ctx, t, client, topicName, partitionID, 0, concurrency, 0, true, OnRangeErrorResumeFromStart)
 
 			// Produce some records
-			for i := 0; i < 5; i++ {
+			for i := range 5 {
 				produceRecord(ctx, t, client, topicName, partitionID, []byte(fmt.Sprintf("record-%d", i)))
 			}
 
@@ -501,7 +501,7 @@ func TestConcurrentFetchers(t *testing.T) {
 			fetchers, _ := createConcurrentFetchers(ctx, t, client, topicName, partitionID, 0, concurrency, 0, true, OnRangeErrorResumeFromStart)
 
 			// Produce some records
-			for i := 0; i < 10; i++ {
+			for i := range 10 {
 				produceRecord(ctx, t, client, topicName, partitionID, []byte(fmt.Sprintf("record-%d", i)))
 			}
 
@@ -532,12 +532,14 @@ func TestConcurrentFetchers(t *testing.T) {
 					fetchers, _ := createConcurrentFetchers(ctx, t, client, topicName, partitionID, 0, concurrency, 0, true, OnRangeErrorResumeFromStart)
 
 					// Produce some records
-					for i := 0; i < 20; i++ {
+					for i := range 20 {
 						produceRecord(ctx, t, client, topicName, partitionID, []byte(fmt.Sprintf("record-%d", i)))
 					}
 
 					fetches := longPollFetches(fetchers, 20, 2*time.Second)
 					totalRecords := fetches.NumRecords()
+
+					synctest.Wait()
 
 					assert.Equal(t, 20, totalRecords)
 
@@ -559,7 +561,7 @@ func TestConcurrentFetchers(t *testing.T) {
 			client := newKafkaProduceClient(t, clusterAddr, withWriteVirtualNetwork(&vnet))
 
 			// Produce some initial records
-			for i := 0; i < 5; i++ {
+			for i := range 5 {
 				produceRecord(ctx, t, client, topicName, partitionID, []byte(fmt.Sprintf("record-%d", i)))
 			}
 
@@ -570,7 +572,7 @@ func TestConcurrentFetchers(t *testing.T) {
 			fetchers, _ := createConcurrentFetchers(ctx, t, client, topicName, partitionID, lastOffset-1, concurrency, 0, true, OnRangeErrorResumeFromStart)
 
 			// Produce some more records
-			for i := 0; i < 3; i++ {
+			for i := range 3 {
 				produceRecord(ctx, t, client, topicName, partitionID, []byte(fmt.Sprintf("new-record-%d", i)))
 			}
 
@@ -611,7 +613,7 @@ func TestConcurrentFetchers(t *testing.T) {
 				const recordsPerRound = 4
 				// Produce a few records
 				expectedRecords := make([]string, 0, recordsPerRound)
-				for i := 0; i < recordsPerRound; i++ {
+				for i := range recordsPerRound {
 					rec := []byte(fmt.Sprintf("round-%d-record-%d", round, i))
 					expectedRecords = append(expectedRecords, string(rec))
 					producedOffset := produceRecord(ctx, t, client, topicName, partitionID, rec)
@@ -656,7 +658,7 @@ func TestConcurrentFetchers(t *testing.T) {
 			// Produce enough records to saturate each fetcher.
 			const initiallyProducedRecords = concurrency * 10
 			var producedRecordsBytes [][]byte
-			for i := 0; i < initiallyProducedRecords; i++ {
+			for i := range initiallyProducedRecords {
 				record := []byte(fmt.Sprintf("record-%d", i+1))
 				produceRecord(ctx, t, client, topicName, partitionID, record)
 				producedRecordsBytes = append(producedRecordsBytes, record)
@@ -672,7 +674,7 @@ func TestConcurrentFetchers(t *testing.T) {
 
 			// Produce a few more records
 			const additionalRecords = 3
-			for i := 0; i < additionalRecords; i++ {
+			for i := range additionalRecords {
 				record := []byte(fmt.Sprintf("additional-record-%d", i+1))
 				produceRecord(ctx, t, client, topicName, partitionID, record)
 				producedRecordsBytes = append(producedRecordsBytes, record)
@@ -719,7 +721,7 @@ func TestConcurrentFetchers(t *testing.T) {
 
 			// Produce initial records
 			var producedRecordsBytes [][]byte
-			for i := 0; i < initialRecords; i++ {
+			for i := range initialRecords {
 				record := []byte(fmt.Sprintf("record-%d", i+1))
 				producedRecordsBytes = append(producedRecordsBytes, record)
 				offset := produceRecord(ctx, t, client, topicName, partitionID, record)
@@ -846,7 +848,7 @@ func TestConcurrentFetchers(t *testing.T) {
 			fetchers, _ := createConcurrentFetchers(ctx, t, client, topicName, partitionID, 0, concurrency, 0, true, OnRangeErrorResumeFromStart)
 
 			// Produce some records.
-			for i := 0; i < 10; i++ {
+			for i := range 10 {
 				produceRecord(ctx, t, client, topicName, partitionID, []byte(fmt.Sprintf("record-%d", i)))
 			}
 
@@ -992,7 +994,7 @@ func TestConcurrentFetchers(t *testing.T) {
 
 			// Produce small records
 			smallValue := bytes.Repeat([]byte{'b'}, smallRecordSize)
-			for i := 0; i < smallRecordsCount; i++ {
+			for range smallRecordsCount {
 				produceRecord(ctx, t, client, topicName, partitionID, smallValue)
 			}
 
