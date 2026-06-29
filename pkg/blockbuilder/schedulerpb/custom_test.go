@@ -83,6 +83,11 @@ func TestJobSpec_Validate(t *testing.T) {
 			compartmentsEnabled: true,
 			expectedErr:         "invalid compartment id",
 		},
+		"enabled: rejects empty range": {
+			spec:                JobSpec{OffsetRanges: map[int32]OffsetRange{}},
+			compartmentsEnabled: true,
+			expectedErr:         "offset_ranges should not be empty when compartments is enabled",
+		},
 	}
 
 	for name, tc := range tests {

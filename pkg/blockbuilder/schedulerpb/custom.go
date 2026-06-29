@@ -22,6 +22,10 @@ func (m JobSpec) Validate(compartmentsEnabled bool, numCompartments int) error {
 			return errors.New("start/end_offsets should not be set when compartments is enabled")
 		}
 
+		if len(m.OffsetRanges) < 1 {
+			return errors.New("offset_ranges should not be empty when compartments is enabled")
+		}
+
 		for id := range m.OffsetRanges {
 			if int(id) >= numCompartments || id < 0 {
 				return fmt.Errorf("invalid compartment id, expecting id between [0,%d) got: %d", numCompartments, id)
