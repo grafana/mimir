@@ -97,7 +97,7 @@
       // The ingester consumes its own read compartment's topic, so its topic resolves the
       // '<read-compartment-id>' placeholder to the compartment id. The address keeps the write-compartment
       // placeholder because the ingester consumes from every write compartment's Kafka cluster.
-      'ingest-storage.kafka.address': $.compartments_ingest_storage_kafka_address,
+      'ingest-storage.kafka.address': $._config.compartments_ingest_storage_kafka_address,
       'ingest-storage.kafka.topic': std.strReplace($._config.compartments_ingest_storage_kafka_topic, '<read-compartment-id>', std.toString(compartmentIdx)),
     },
 
