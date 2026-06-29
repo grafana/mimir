@@ -74,7 +74,7 @@ func TestOptimizationPass(t *testing.T) {
 				- TimeRangeSplit: interval 24h0m0s
 					- Cache: split interval 24h0m0s
 						- RemoteExecutionConsumer: node 0
-							- RemoteExecutionGroup
+							- RemoteExecutionGroup: eager load
 								- node 0: VectorSelector: {__name__="my_metric"}
 			`,
 		},
@@ -102,7 +102,7 @@ func TestOptimizationPass(t *testing.T) {
 				- TimeRangeSplit: interval 24h0m0s
 					- Cache: split interval 24h0m0s
 						- RemoteExecutionConsumer: node 0
-							- RemoteExecutionGroup
+							- RemoteExecutionGroup: eager load
 								- node 0: DeduplicateAndMerge
 									- FunctionCall: clamp(...)
 										- param 0: VectorSelector: {__name__="my_metric"}
@@ -123,7 +123,7 @@ func TestOptimizationPass(t *testing.T) {
 				- TimeRangeSplit: interval 24h0m0s
 					- Cache: split interval 24h0m0s
 						- RemoteExecutionConsumer: node 0
-							- RemoteExecutionGroup
+							- RemoteExecutionGroup: eager load
 								- node 0: AggregateExpression: topk
 									- expression: VectorSelector: {__name__="my_metric"}
 									- parameter: NumberLiteral: 5
@@ -304,7 +304,7 @@ func TestOptimizationPass(t *testing.T) {
 				- TimeRangeSplit: interval 24h0m0s
 					- Cache: split interval 24h0m0s
 						- RemoteExecutionConsumer: node 0
-							- RemoteExecutionGroup
+							- RemoteExecutionGroup: eager load
 								- node 0: BinaryExpression: LHS + RHS
 									- LHS: ref#1 Duplicate
 										- VectorSelector: {__name__="foo"}
@@ -771,7 +771,7 @@ func TestOptimizationPass(t *testing.T) {
 			expectedPlanWithSplittingAndCachingInsideMQE: `
 				- TimeRangeSplit: interval 24h0m0s
 					- RemoteExecutionConsumer: node 0
-						- RemoteExecutionGroup
+						- RemoteExecutionGroup: eager load
 							- node 0: VectorSelector: {__name__="my_metric"} offset -5m0s
 			`,
 		},
@@ -802,7 +802,7 @@ func TestOptimizationPass(t *testing.T) {
 		planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, true, opts.CommonOpts.Reg, opts.Logger))
 
 		if enableSplittingAndCachingInsideMQE {
-			planner.RegisterQueryPlanOptimizationPass(splitandcache.NewOptimizationPass(true, 24*time.Hour, true, opts.Limits, opts.CommonOpts.Reg))
+			planner.RegisterQueryPlanOptimizationPass(splitandcache.NewOptimizationPass(true, 24*time.Hour, true, opts.Limits, opts.CommonOpts.Reg, opts.Logger))
 		}
 
 		planner.RegisterQueryPlanOptimizationPass(remoteexec.NewOptimizationPass(enableMultiNodeRemoteExec))
@@ -905,11 +905,11 @@ func TestOptimizationPass_EvaluationRoots(t *testing.T) {
 									- TimeRangeSplit: interval 24h0m0s
 										- Cache: split interval 24h0m0s
 											- RemoteExecutionConsumer: node 0
-												- RemoteExecutionGroup
+												- RemoteExecutionGroup: eager load
 													- node 0: VectorSelector: {__name__="foo"}
 					- RHS: EvaluationRoot
 						- RemoteExecutionConsumer: node 0
-							- RemoteExecutionGroup
+							- RemoteExecutionGroup: eager load
 								- node 0: VectorSelector: {__name__="bar"}
 			`,
 		},
@@ -939,7 +939,7 @@ func TestOptimizationPass_EvaluationRoots(t *testing.T) {
 
 			planner.RegisterASTOptimizationPass(sharding.NewOptimizationPass(&mockLimits{}, 0, nil, opts.Logger))
 			planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, true, opts.CommonOpts.Reg, opts.Logger))
-			planner.RegisterQueryPlanOptimizationPass(splitandcache.NewOptimizationPass(true, 24*time.Hour, true, opts.Limits, opts.CommonOpts.Reg))
+			planner.RegisterQueryPlanOptimizationPass(splitandcache.NewOptimizationPass(true, 24*time.Hour, true, opts.Limits, opts.CommonOpts.Reg, opts.Logger))
 			planner.RegisterQueryPlanOptimizationPass(remoteexec.NewOptimizationPass(false))
 
 			p, err := planner.NewQueryPlan(ctx, testCase.expr, instantQueryTimeRange, streamingpromql.DefaultLookbackDelta, false, streamingpromql.NoopPlanningObserver{})

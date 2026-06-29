@@ -16,6 +16,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/streamingpromql/caching"
 	rangevectorsplittingcache "github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/rangevectorsplitting/cache"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/splitandcache"
 	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/promqlext"
 )
@@ -89,6 +90,10 @@ type RangeQuerySplittingAndCachingConfig struct {
 
 	// FIXME: Once we no longer support running splitting and caching in the frontend middleware, move the cache client options here.
 	CacheClient cache.Cache
+
+	// See the comment where this field is set in createQueryFrontendPromQLEngineOptions for an explanation of why
+	// we don't just register these metrics in the engine like all other metrics.
+	CacheMetrics *splitandcache.ResultsCacheMetrics
 }
 
 func (o *EngineOpts) RegisterFlags(f *flag.FlagSet) {

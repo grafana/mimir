@@ -33,6 +33,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/atomic"
 
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware/querydetails"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/testdatagen"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier"
@@ -46,6 +47,8 @@ import (
 
 const resultsCacheTTL = 24 * time.Hour
 const resultsCacheLowerTTL = 10 * time.Minute
+
+var splitAndCacheMetricNames = []string{"cortex_frontend_query_result_cache_attempted_total", "cortex_frontend_query_result_cache_skipped_total", "cortex_frontend_split_queries_total", "cortex_frontend_query_result_cache_requests_total", "cortex_frontend_query_result_cache_hits_total", "cortex_querier_inflight_query_current_estimated_memory_consumption_bytes", "cortex_querier_inflight_query_max_age_seconds", "cortex_querier_inflight_query_max_estimated_memory_consumption_limit_bytes", "cortex_querier_inflight_query_peak_estimated_memory_consumption_bytes", "cortex_querier_inflight_query_sampled_count"}
 
 func TestSplitAndCacheMiddleware_SplitByInterval(t *testing.T) {
 	var (
@@ -218,7 +221,7 @@ func TestSplitAndCacheMiddleware_SplitByInterval(t *testing.T) {
 
 	// Assert metrics
 	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
-		# HELP cortex_frontend_query_result_cache_attempted_total Total number of queries that were attempted to be fetched from cache.
+		# HELP cortex_frontend_query_result_cache_attempted_total Total number of queries that were attempted to be fetched from cache. This metric is tracked for each request when time-splitting is running inside MQE, and for each partial query otherwise.
 		# TYPE cortex_frontend_query_result_cache_attempted_total counter
 		cortex_frontend_query_result_cache_attempted_total 0
 		# HELP cortex_frontend_query_result_cache_skipped_total Total number of times a query was not cacheable. This metric is tracked for each request when time-splitting is running inside MQE, and for each partial query otherwise.
@@ -250,7 +253,7 @@ func TestSplitAndCacheMiddleware_SplitByInterval(t *testing.T) {
 		# HELP cortex_querier_inflight_query_sampled_count Number of in-flight memory consumption trackers accumulated during the last metrics collection.
 		# TYPE cortex_querier_inflight_query_sampled_count gauge
 		cortex_querier_inflight_query_sampled_count 0
-	`)))
+	`), splitAndCacheMetricNames...))
 
 	// Assert query stats from context
 	queryStats := stats.FromContext(ctx)
@@ -333,7 +336,7 @@ func TestSplitAndCacheMiddleware_ResultsCache(t *testing.T) {
 		queryExpr: parseQuery(t, `{__name__=~".+"}`),
 	})
 
-	queryDetails, ctx := ContextWithEmptyDetails(context.Background())
+	queryDetails, ctx := querydetails.ContextWithEmptyDetails(context.Background())
 	ctx = user.InjectOrgID(ctx, "1")
 	resp, err := rc.Do(ctx, req)
 	require.NoError(t, err)
@@ -376,7 +379,7 @@ func TestSplitAndCacheMiddleware_ResultsCache(t *testing.T) {
 
 	// Assert metrics
 	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
-		# HELP cortex_frontend_query_result_cache_attempted_total Total number of queries that were attempted to be fetched from cache.
+		# HELP cortex_frontend_query_result_cache_attempted_total Total number of queries that were attempted to be fetched from cache. This metric is tracked for each request when time-splitting is running inside MQE, and for each partial query otherwise.
 		# TYPE cortex_frontend_query_result_cache_attempted_total counter
 		cortex_frontend_query_result_cache_attempted_total 3
 
@@ -412,7 +415,7 @@ func TestSplitAndCacheMiddleware_ResultsCache(t *testing.T) {
 		# HELP cortex_querier_inflight_query_sampled_count Number of in-flight memory consumption trackers accumulated during the last metrics collection.
 		# TYPE cortex_querier_inflight_query_sampled_count gauge
 		cortex_querier_inflight_query_sampled_count 0
-	`)))
+	`), splitAndCacheMetricNames...))
 }
 
 // TestSplitAndCacheMiddleware_ResultsCache_NativeHistogramPartialCacheHit exercises a bug where
@@ -609,7 +612,7 @@ func TestSplitAndCacheMiddleware_ResultsCacheNoStore(t *testing.T) {
 		options:   requestoptions.Options{CacheDisabled: true},
 	})
 
-	queryDetails, ctx := ContextWithEmptyDetails(context.Background())
+	queryDetails, ctx := querydetails.ContextWithEmptyDetails(context.Background())
 	ctx = user.InjectOrgID(ctx, "1")
 	resp, err := rc.Do(ctx, req)
 	require.NoError(t, err)
@@ -641,7 +644,7 @@ func TestSplitAndCacheMiddleware_ResultsCacheNoStore(t *testing.T) {
 
 	// Assert metrics
 	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
-		# HELP cortex_frontend_query_result_cache_attempted_total Total number of queries that were attempted to be fetched from cache.
+		# HELP cortex_frontend_query_result_cache_attempted_total Total number of queries that were attempted to be fetched from cache. This metric is tracked for each request when time-splitting is running inside MQE, and for each partial query otherwise.
 		# TYPE cortex_frontend_query_result_cache_attempted_total counter
 		cortex_frontend_query_result_cache_attempted_total 0
 
@@ -662,7 +665,7 @@ func TestSplitAndCacheMiddleware_ResultsCacheNoStore(t *testing.T) {
 		# HELP cortex_frontend_query_result_cache_hits_total Total number of requests (or partial requests) fetched from the results cache.
 		# TYPE cortex_frontend_query_result_cache_hits_total counter
 		cortex_frontend_query_result_cache_hits_total{request_type="query_range"} 0
-	`)))
+	`), splitAndCacheMetricNames...))
 }
 
 func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotLookupCacheIfStepIsNotAligned(t *testing.T) {
@@ -760,7 +763,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotLookupCacheIfStepIsNotAli
 
 	// Assert metrics
 	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
-		# HELP cortex_frontend_query_result_cache_attempted_total Total number of queries that were attempted to be fetched from cache.
+		# HELP cortex_frontend_query_result_cache_attempted_total Total number of queries that were attempted to be fetched from cache. This metric is tracked for each request when time-splitting is running inside MQE, and for each partial query otherwise.
 		# TYPE cortex_frontend_query_result_cache_attempted_total counter
 		cortex_frontend_query_result_cache_attempted_total 1
 		# HELP cortex_frontend_query_result_cache_skipped_total Total number of times a query was not cacheable. This metric is tracked for each request when time-splitting is running inside MQE, and for each partial query otherwise.
@@ -777,7 +780,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotLookupCacheIfStepIsNotAli
 		# HELP cortex_frontend_query_result_cache_requests_total Total number of requests (or partial requests) looked up in the results cache.
 		# TYPE cortex_frontend_query_result_cache_requests_total counter
 		cortex_frontend_query_result_cache_requests_total{request_type="query_range"} 0
-	`)))
+	`), splitAndCacheMetricNames...))
 }
 
 func TestSplitAndCacheMiddleware_ResultsCache_EnabledCachingOfStepUnalignedRequest(t *testing.T) {
@@ -918,7 +921,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotCacheRequestEarlierThanMa
 			expectedDownstreamEndTime:   now,
 			expectedCachedResponses:     nil,
 			expectedMetrics: `
-				# HELP cortex_frontend_query_result_cache_attempted_total Total number of queries that were attempted to be fetched from cache.
+				# HELP cortex_frontend_query_result_cache_attempted_total Total number of queries that were attempted to be fetched from cache. This metric is tracked for each request when time-splitting is running inside MQE, and for each partial query otherwise.
 				# TYPE cortex_frontend_query_result_cache_attempted_total counter
 				cortex_frontend_query_result_cache_attempted_total 2
 				# HELP cortex_frontend_query_result_cache_skipped_total Total number of times a query was not cacheable. This metric is tracked for each request when time-splitting is running inside MQE, and for each partial query otherwise.
@@ -1040,7 +1043,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotCacheRequestEarlierThanMa
 			}
 
 			if testData.expectedMetrics != "" {
-				assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(testData.expectedMetrics)))
+				assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(testData.expectedMetrics), splitAndCacheMetricNames...))
 			}
 		})
 	}

@@ -18,6 +18,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/splitandcache"
 )
 
 func TestEndToEnd(t *testing.T) {
@@ -113,6 +114,7 @@ func TestEndToEnd(t *testing.T) {
 			opts.RangeQuerySplittingAndCaching.SplitEnabled = true
 			opts.RangeQuerySplittingAndCaching.SplitInterval = 24 * time.Hour
 			opts.RangeQuerySplittingAndCaching.CacheEnabled = true
+			opts.RangeQuerySplittingAndCaching.CacheMetrics = splitandcache.NewResultsCacheMetrics("query_range", opts.CommonOpts.Reg)
 			cache := newRequestCountingCache()
 			opts.RangeQuerySplittingAndCaching.CacheClient = cache
 

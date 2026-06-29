@@ -2300,8 +2300,7 @@ results_cache:
 [enable_multiple_node_remote_execution_requests: <boolean> | default = false]
 
 # (experimental) Set to true to enable performing query sharding inside the
-# Mimir query engine (MQE). This setting has no effect if sharding is disabled.
-# Requires remote execution and MQE to be enabled.
+# Mimir query engine (MQE). Requires remote execution and MQE to be enabled.
 # CLI flag: -query-frontend.use-mimir-query-engine-for-sharding
 [use_mimir_query_engine_for_sharding: <boolean> | default = false]
 
