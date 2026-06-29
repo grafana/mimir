@@ -132,7 +132,7 @@ assert isError(err9, '-distributor.write-compartment-id=1') && isError(err9, 'do
 local err10 = validate(
   { gf: overrideContainerArgs(
     distributor { metadata+: { name: 'distributor' } },
-    ['-ingest-storage.kafka.address=' + env.compartments_ingest_storage_kafka_address],
+    ['-ingest-storage.kafka.address=' + env._config.compartments_ingest_storage_kafka_address],
   ) },
   ['gf'],
 );

@@ -96,7 +96,7 @@
       // The distributor targets its own write compartment's Kafka cluster, so its address resolves the
       // '<write-compartment-id>' placeholder to the compartment id. The topic keeps the read-compartment
       // placeholder because the distributor produces to every read compartment's topic.
-      'ingest-storage.kafka.address': std.strReplace($.compartments_ingest_storage_kafka_address, '<write-compartment-id>', std.toString(compartmentIdx)),
+      'ingest-storage.kafka.address': std.strReplace($._config.compartments_ingest_storage_kafka_address, '<write-compartment-id>', std.toString(compartmentIdx)),
     },
 
   distributor_zone_a_compartments_args:: $.mimirCompartmentsCreateIf(isEnabled && isZoneAEnabled, numCompartments, function(compartment) $.distributor_zone_a_args + perCompartmentDistributorArgs(compartment)),

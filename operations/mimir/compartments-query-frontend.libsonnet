@@ -4,7 +4,7 @@
     // The query-frontend monitors the last produced offset of every read-compartment topic in every write
     // compartment's Kafka cluster (to enforce strong read consistency), so its address must target every
     // cluster via the '<write-compartment-id>' placeholder.
-    'ingest-storage.kafka.address': $.compartments_ingest_storage_kafka_address,
+    'ingest-storage.kafka.address': $._config.compartments_ingest_storage_kafka_address,
   },
 
   query_frontend_args+:: perCompartmentQueryFrontendArgs,

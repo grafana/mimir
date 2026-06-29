@@ -12,6 +12,17 @@ local jsonpath = import 'github.com/jsonnet-libs/xtd/jsonpath.libsonnet';
     // Kafka topic produced/consumed per read compartment. Must contain the '<read-compartment-id>'
     // placeholder, which Mimir replaces with the read compartment index at runtime.
     compartments_ingest_storage_kafka_topic: 'ingest-rc-<read-compartment-id>',
+
+    // Kafka cluster address template for compartment components. Carries the '<write-compartment-id>'
+    // placeholder, which Mimir replaces with the write compartment index at runtime (distributors target
+    // their own cluster; ingesters consume from every write compartment's cluster). Mimir's jsonnet does
+    // not deploy Kafka, so this is a fictitious address mirroring the non-compartment default.
+    compartments_ingest_storage_kafka_address: 'kafka-wc-<write-compartment-id>.%(namespace)s.svc.%(cluster_domain)s:9092' % $._config,
+
+    // Blocks-storage bucket per read compartment. Must contain the '<read-compartment-id>' placeholder,
+    // which the querier replaces with each read compartment index to read that compartment's bucket (each
+    // read compartment's store-gateways and compactors own a dedicated bucket).
+    compartments_blocks_storage_bucket_name: '%s-rc-<read-compartment-id>' % $._config.blocks_storage_bucket_name,
   },
 
   assert $._config.compartments_read_count >= 1 : 'compartments_read_count must be >= 1',
@@ -20,11 +31,19 @@ local jsonpath = import 'github.com/jsonnet-libs/xtd/jsonpath.libsonnet';
   assert !$._config.compartments_enabled || $._config.ruler_remote_evaluation_enabled
          : 'compartments require ruler remote rule evaluation (ruler_remote_evaluation_enabled)',
 
-  // Kafka cluster address template for compartment components. Carries the '<write-compartment-id>'
-  // placeholder, which Mimir replaces with the write compartment index at runtime (distributors target
-  // their own cluster; ingesters consume from every write compartment's cluster). Mimir's jsonnet does
-  // not deploy Kafka, so this is a fictitious address mirroring the non-compartment default.
-  compartments_ingest_storage_kafka_address:: 'kafka-wc-<write-compartment-id>.%(namespace)s.svc.%(cluster_domain)s:9092' % $._config,
+  assert !$._config.compartments_enabled || std.length(std.findSubstr('<read-compartment-id>', $._config.compartments_blocks_storage_bucket_name)) > 0
+         : 'compartments_blocks_storage_bucket_name must contain the "<read-compartment-id>" placeholder',
+
+  // Concrete blocks-storage bucket name for the given read compartment, resolving the
+  // '<read-compartment-id>' placeholder in compartments_blocks_storage_bucket_name.
+  mimirBlocksStorageCompartmentBucketName(compartmentID):: std.strReplace($._config.compartments_blocks_storage_bucket_name, '<read-compartment-id>', std.toString(compartmentID)),
+
+  // The blocks-storage bucket-name CLI flag for the configured storage backend.
+  mimirBlocksStorageBucketNameFlag::
+    if $._config.storage_backend == 'gcs' then 'blocks-storage.gcs.bucket-name'
+    else if $._config.storage_backend == 's3' then 'blocks-storage.s3.bucket-name'
+    else if $._config.storage_backend == 'azure' then 'blocks-storage.azure.container-name'
+    else error 'compartments do not support the "%s" storage backend' % $._config.storage_backend,
 
   // Common CLI args shared by every compartment-aware Mimir component.
   mimirCompartmentsCommonArgs:: {
