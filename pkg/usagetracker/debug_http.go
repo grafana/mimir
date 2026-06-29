@@ -35,6 +35,7 @@ type partitionPageContents struct {
 	Now        time.Time    `json:"now"`
 	StaticRoot string       `json:"-"`
 	Partition  int32        `json:"partition"`
+	Tenant     string       `json:"tenant,omitempty"`
 	Shards     []ShardStats `json:"shards"`
 }
 
@@ -82,10 +83,25 @@ func (t *UsageTracker) PartitionHandler(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	shards := ph.store.shardStats()
+
+	// An optional ?tenant= query parameter narrows the view to a single tenant.
+	tenant := r.URL.Query().Get("tenant")
+	if tenant != "" {
+		filtered := make([]ShardStats, 0, len(shards))
+		for _, s := range shards {
+			if s.Tenant == tenant {
+				filtered = append(filtered, s)
+			}
+		}
+		shards = filtered
+	}
+
 	util.RenderHTTPResponse(w, partitionPageContents{
 		Now:        time.Now(),
 		StaticRoot: "../../static/",
 		Partition:  int32(id),
-		Shards:     ph.store.shardStats(),
+		Tenant:     tenant,
+		Shards:     shards,
 	}, partitionPageTemplate, r)
 }

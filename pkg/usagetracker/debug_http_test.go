@@ -76,4 +76,27 @@ func TestUsageTrackerPartitionTemplates(t *testing.T) {
 	require.Contains(t, out, "user-a")
 	require.Contains(t, out, "Rehashes")
 	require.Contains(t, out, "../../static/bootstrap-5.1.3.min.css")
+	// Sortable column headers.
+	require.Contains(t, out, `class="sortable"`)
+	require.Contains(t, out, `data-col="6"`)
+	// Magnifier icon linking to the per-tenant view.
+	require.Contains(t, out, `href="?tenant=user-a"`)
+	// Unfiltered view shows the filter box, not the single-tenant banner.
+	require.Contains(t, out, `id="filter"`)
+	require.NotContains(t, out, "Show all tenants")
+
+	// When filtered to a single tenant, the banner and "show all" link are rendered instead.
+	buf.Reset()
+	require.NoError(t, partitionPageTemplate.Execute(&buf, partitionPageContents{
+		Now:        time.Now(),
+		StaticRoot: "../../static/",
+		Partition:  7,
+		Tenant:     "user-a",
+		Shards: []ShardStats{
+			{Tenant: "user-a", Shard: 0, Stats: tenantshard.Stats{Resident: 12, Dead: 1, Limit: 32, Length: 8, Rehashes: 2}},
+		},
+	}))
+	out = buf.String()
+	require.Contains(t, out, "Show all tenants")
+	require.NotContains(t, out, `id="filter"`)
 }
