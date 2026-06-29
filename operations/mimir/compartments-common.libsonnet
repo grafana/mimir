@@ -21,8 +21,7 @@ local jsonpath = import 'github.com/jsonnet-libs/xtd/jsonpath.libsonnet';
 
     // Blocks-storage bucket per read compartment. Must contain the '<read-compartment-id>' placeholder,
     // which the querier replaces with each read compartment index to read that compartment's bucket (each
-    // read compartment's store-gateways and compactors own a dedicated bucket). Defaults to the
-    // non-compartment bucket name with a per-compartment suffix.
+    // read compartment's store-gateways and compactors own a dedicated bucket).
     compartments_blocks_storage_bucket_name: '%s-rc-<read-compartment-id>' % $._config.blocks_storage_bucket_name,
   },
 
