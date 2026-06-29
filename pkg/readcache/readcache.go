@@ -209,6 +209,13 @@ type partitionState struct {
 	// this partition's TSDBs cover.
 	startOffset atomic.Int64
 
+	// startedConsumingAt is the wallclock time (UnixMilli) at which
+	// this pod's Kafka reader began consuming the partition, captured
+	// once the reader is running. 0 until the reader has started.
+	// Stored atomically because the admin page reads it concurrently
+	// with startKafkaReader.
+	startedConsumingAt atomic.Int64
+
 	tenantsMu sync.RWMutex
 	tenants   map[string]*partitionTSDB
 

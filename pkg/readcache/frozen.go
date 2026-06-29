@@ -53,6 +53,14 @@ type frozenEpoch struct {
 	// never started).
 	startOffset int64
 	endOffset   int64
+
+	// startedConsumingAt/stoppedConsumingAt bracket the wallclock
+	// window during which this pod consumed the partition for this
+	// epoch (both UnixMilli): startedConsumingAt is carried over from
+	// the live partitionState, stoppedConsumingAt is the freeze time.
+	// startedConsumingAt is 0 when the reader never started.
+	startedConsumingAt int64
+	stoppedConsumingAt int64
 }
 
 // freezePartition stops the partition's Kafka reader and moves its
@@ -77,6 +85,8 @@ func (r *Readcache) freezePartition(partitionID int32, p *partitionState) error 
 	if p.reader != nil {
 		endOffset = p.reader.LastSeenOffsets().ForKafkaCluster(0)
 	}
+	startedConsumingAt := p.startedConsumingAt.Load()
+	stoppedConsumingAt := time.Now().UnixMilli()
 
 	var firstErr error
 	if err := r.stopKafkaReaderLocked(p); err != nil {
@@ -98,13 +108,15 @@ func (r *Readcache) freezePartition(partitionID int32, p *partitionState) error 
 	}
 
 	ep := &frozenEpoch{
-		partitionID: partitionID,
-		epoch:       p.epoch,
-		tenants:     tenants,
-		minT:        math.MaxInt64,
-		maxT:        math.MinInt64,
-		startOffset: startOffset,
-		endOffset:   endOffset,
+		partitionID:        partitionID,
+		epoch:              p.epoch,
+		tenants:            tenants,
+		minT:               math.MaxInt64,
+		maxT:               math.MinInt64,
+		startOffset:        startOffset,
+		endOffset:          endOffset,
+		startedConsumingAt: startedConsumingAt,
+		stoppedConsumingAt: stoppedConsumingAt,
 	}
 	for tenant, db := range tenants {
 		mn, mx := db.sampleBounds()

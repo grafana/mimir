@@ -169,9 +169,11 @@ func TestReadcache_AdminPage_ListsManagedTSDBs(t *testing.T) {
 	require.NoError(t, err)
 	appendSample(activeDB, "active_metric", time.Now().Add(-1*time.Minute).UnixMilli())
 
+	activeStartedAt := time.Now().Add(-30 * time.Minute)
 	activeP := newPartitionState(activePID)
 	activeP.tenants[activeTenant] = activeDB
 	activeP.startOffset.Store(1000)
+	activeP.startedConsumingAt.Store(activeStartedAt.UnixMilli())
 	activeP.warm.Store(true)
 	r.partitions[activePID] = activeP
 
@@ -182,9 +184,12 @@ func TestReadcache_AdminPage_ListsManagedTSDBs(t *testing.T) {
 	frozenSampleTS := time.Now().Add(-2 * time.Minute).UnixMilli()
 	appendSample(frozenDB, "frozen_metric", frozenSampleTS)
 
+	frozenStartedAt := time.Now().Add(-45 * time.Minute)
 	frozenP := newPartitionState(frozenPID)
 	frozenP.tenants[frozenTenant] = frozenDB
 	frozenP.startOffset.Store(500)
+	frozenP.startedConsumingAt.Store(frozenStartedAt.UnixMilli())
+	freezeAt := time.Now()
 	require.NoError(t, r.freezePartition(frozenPID, frozenP))
 
 	data := r.buildAdminPageData()
@@ -201,6 +206,8 @@ func TestReadcache_AdminPage_ListsManagedTSDBs(t *testing.T) {
 	assert.Equal(t, int64(1000), active.StartOffset)
 	assert.NotEmpty(t, active.MaxT, "active TSDB with a sample should report a data max")
 	assert.Empty(t, active.Expires, "an active TSDB has no fixed expiry")
+	assert.Equal(t, activeStartedAt.UTC().Format(time.RFC3339), active.StartedConsuming)
+	assert.Empty(t, active.StoppedConsuming, "an active TSDB is still being consumed")
 
 	frozen := data.TSDBs[1]
 	assert.Equal(t, frozenTenant, frozen.Tenant)
@@ -210,6 +217,11 @@ func TestReadcache_AdminPage_ListsManagedTSDBs(t *testing.T) {
 	wantExpiry := time.UnixMilli(frozenSampleTS).Add(cfg.LocalBlockRetention + frozenEpochReapGrace).UTC().Format(time.RFC3339)
 	assert.Equal(t, wantExpiry, frozen.Expires, "frozen epoch expiry should be maxT + retention + grace")
 	assert.False(t, frozen.Expired, "a freshly-frozen epoch within retention is not yet reapable")
+	assert.Equal(t, frozenStartedAt.UTC().Format(time.RFC3339), frozen.StartedConsuming)
+	assert.NotEmpty(t, frozen.StoppedConsuming, "a frozen epoch records when consumption stopped")
+	stoppedAt, perr := time.Parse(time.RFC3339, frozen.StoppedConsuming)
+	require.NoError(t, perr)
+	assert.WithinDuration(t, freezeAt, stoppedAt, time.Minute, "stop time should be the freeze time")
 
 	// Render and sanity-check the visible section.
 	rec := httptest.NewRecorder()

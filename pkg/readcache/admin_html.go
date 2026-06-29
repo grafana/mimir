@@ -242,6 +242,9 @@ all partitions have been moved off to other instances.</p>
 	(<code>local-block-retention + grace</code>), at which point the reaper
 	drops it. Offsets are the Kafka offset span the partition consumed; the
 	end offset of an active TSDB is read live and advances every refresh.
+	<b>Consume start/stop</b> bracket the wallclock window this pod consumed
+	the partition: the stop time is set when the partition was frozen and is
+	blank while a TSDB is still being consumed.
 </p>
 
 {{if not .TSDBs}}
@@ -258,6 +261,8 @@ all partitions have been moved off to other instances.</p>
 		<th>Start offset</th>
 		<th>End offset</th>
 		<th>Offsets</th>
+		<th>Consume start (UTC)</th>
+		<th>Consume stop (UTC)</th>
 		<th>Data min (UTC)</th>
 		<th>Data max (UTC)</th>
 		<th>Expires (UTC)</th>
@@ -279,6 +284,16 @@ all partitions have been moved off to other instances.</p>
 		<td class="num">{{fmtOffset .StartOffset}}</td>
 		<td class="num">{{fmtOffset .EndOffset}}</td>
 		<td class="num">{{offsetSpan .StartOffset .EndOffset}}</td>
+		<td>{{if .StartedConsuming}}{{.StartedConsuming}}{{else}}<span class="muted">&mdash;</span>{{end}}</td>
+		<td>
+			{{if .StoppedConsuming}}
+				{{.StoppedConsuming}}
+			{{else if .Active}}
+				<span class="ok">(consuming)</span>
+			{{else}}
+				<span class="muted">&mdash;</span>
+			{{end}}
+		</td>
 		<td>{{if .MinT}}{{.MinT}}{{else}}<span class="muted">(no data)</span>{{end}}</td>
 		<td>{{if .MaxT}}{{.MaxT}}{{else}}<span class="muted">(no data)</span>{{end}}</td>
 		<td>

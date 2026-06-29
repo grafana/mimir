@@ -137,6 +137,13 @@ type adminTSDBView struct {
 	// offset it saw. -1 (rendered as "—") when unknown.
 	StartOffset int64
 	EndOffset   int64
+	// StartedConsuming is when this pod began consuming the partition,
+	// pre-formatted as UTC RFC3339. Empty if the reader never started.
+	StartedConsuming string
+	// StoppedConsuming is when consumption stopped (the partition was
+	// frozen), pre-formatted as UTC RFC3339. Empty for an active TSDB
+	// that is still being consumed.
+	StoppedConsuming string
 	// Expires is when the reaper will drop this TSDB, pre-formatted as
 	// UTC RFC3339. Only set for frozen epochs (the live TSDB has no
 	// fixed expiry while the pod keeps ingesting). Empty otherwise, or
@@ -262,23 +269,26 @@ func (r *Readcache) collectTSDBViews(parts []*partitionState) []adminTSDBView {
 		if p.reader != nil {
 			endOffset = p.reader.LastSeenOffsets().ForKafkaCluster(0)
 		}
+		startedConsumingAt := p.startedConsumingAt.Load()
 		warm := p.warm.Load()
 
 		p.tenantsMu.RLock()
 		for tenantID, db := range p.tenants {
 			minT, maxT := db.sampleBounds()
 			rows = append(rows, adminTSDBView{
-				Tenant:      tenantID,
-				PartitionID: p.partitionID,
-				Epoch:       p.epoch,
-				Active:      true,
-				Warm:        warm,
-				HeadSeries:  int64(db.db.Head().NumSeries()),
-				NumBlocks:   len(db.db.Blocks()),
-				MinT:        fmtTSDBTime(minT, maxT),
-				MaxT:        fmtTSDBTimeMax(minT, maxT),
-				StartOffset: startOffset,
-				EndOffset:   endOffset,
+				Tenant:           tenantID,
+				PartitionID:      p.partitionID,
+				Epoch:            p.epoch,
+				Active:           true,
+				Warm:             warm,
+				HeadSeries:       int64(db.db.Head().NumSeries()),
+				NumBlocks:        len(db.db.Blocks()),
+				MinT:             fmtTSDBTime(minT, maxT),
+				MaxT:             fmtTSDBTimeMax(minT, maxT),
+				StartOffset:      startOffset,
+				EndOffset:        endOffset,
+				StartedConsuming: fmtUnixMilli(startedConsumingAt),
+				// Active TSDBs are still being consumed: no stop time.
 			})
 		}
 		p.tenantsMu.RUnlock()
@@ -292,16 +302,18 @@ func (r *Readcache) collectTSDBViews(parts []*partitionState) []adminTSDBView {
 			for tenantID, db := range ep.tenants {
 				minT, maxT := db.sampleBounds()
 				row := adminTSDBView{
-					Tenant:      tenantID,
-					PartitionID: ep.partitionID,
-					Epoch:       ep.epoch,
-					Active:      false,
-					HeadSeries:  int64(db.db.Head().NumSeries()),
-					NumBlocks:   len(db.db.Blocks()),
-					MinT:        fmtTSDBTime(minT, maxT),
-					MaxT:        fmtTSDBTimeMax(minT, maxT),
-					StartOffset: ep.startOffset,
-					EndOffset:   ep.endOffset,
+					Tenant:           tenantID,
+					PartitionID:      ep.partitionID,
+					Epoch:            ep.epoch,
+					Active:           false,
+					HeadSeries:       int64(db.db.Head().NumSeries()),
+					NumBlocks:        len(db.db.Blocks()),
+					MinT:             fmtTSDBTime(minT, maxT),
+					MaxT:             fmtTSDBTimeMax(minT, maxT),
+					StartOffset:      ep.startOffset,
+					EndOffset:        ep.endOffset,
+					StartedConsuming: fmtUnixMilli(ep.startedConsumingAt),
+					StoppedConsuming: fmtUnixMilli(ep.stoppedConsumingAt),
 				}
 				// Reaping is keyed on the epoch's captured maxT (see
 				// reapFrozenEpochs), which is the freeze-time bound. The
@@ -355,6 +367,15 @@ func fmtTSDBTimeMax(minT, maxT int64) string {
 		return ""
 	}
 	return time.UnixMilli(maxT).UTC().Format(time.RFC3339)
+}
+
+// fmtUnixMilli renders a UnixMilli wallclock timestamp as UTC RFC3339,
+// or "" for the zero sentinel (event never happened).
+func fmtUnixMilli(ms int64) string {
+	if ms <= 0 {
+		return ""
+	}
+	return time.UnixMilli(ms).UTC().Format(time.RFC3339)
 }
 
 func makeRangeView(hr assignment.HashRange, series int64, sampleRate float64, example string, hashSpaceTotal float64) adminRangeView {
