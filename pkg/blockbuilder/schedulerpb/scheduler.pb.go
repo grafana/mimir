@@ -93,7 +93,6 @@ type JobSpec struct {
 	// start_offset/end_offset. Only clusters with new data to consume are
 	// included; clusters with nothing to consume are omitted.
 	// There should be at least one offset range set if compartments are enabled.
-	// Compartments support is experimental, so this field may change without warning.
 	OffsetRanges map[int32]OffsetRange `protobuf:"bytes,5,rep,name=offset_ranges,json=offsetRanges,proto3" json:"offset_ranges" protobuf_key:"varint,1,opt,name=key,proto3" protobuf_val:"bytes,2,opt,name=value,proto3"`
 }
 
