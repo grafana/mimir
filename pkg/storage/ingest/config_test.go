@@ -546,6 +546,93 @@ func TestKafkaConfig_WriteCompartmentConfig(t *testing.T) {
 	}
 }
 
+func TestWriteCompartmentConfigs(t *testing.T) {
+	newBase := func() KafkaConfig {
+		base := KafkaConfig{}
+		flagext.DefaultValues(&base)
+		base.Address = flagext.StringSliceCSV{"kafka-wc-<write-compartment-id>:9092"}
+		base.Topic = "ingest-rc-<read-compartment-id>"
+		base.SASL.Username = "user-wc-<write-compartment-id>"
+		base.SASL.Password = flagext.SecretWithValue("pass-wc-<write-compartment-id>")
+		base.FetchConcurrencyMax = 12
+		base.MaxBufferedBytes = 1_000_000_000
+		base.IngestionConcurrencyMax = 8
+		return base
+	}
+
+	t.Run("resolves each cluster, applies the topic, and divides per-client budgets", func(t *testing.T) {
+		const numCompartments = 4
+		cfgs := WriteCompartmentConfigs(newBase(), numCompartments, "ingest-rc-2")
+		require.Len(t, cfgs, numCompartments)
+
+		for wc, cfg := range cfgs {
+			assert.Equal(t, flagext.StringSliceCSV{fmt.Sprintf("kafka-wc-%d:9092", wc)}, cfg.Address)
+			assert.Equal(t, fmt.Sprintf("user-wc-%d", wc), cfg.SASL.Username)
+			assert.Equal(t, fmt.Sprintf("pass-wc-%d", wc), cfg.SASL.Password.String())
+			// The topic is resolved for the given read compartment.
+			assert.Equal(t, "ingest-rc-2", cfg.Topic)
+			// The per-client budgets are the global value split across compartments, so peak
+			// resource usage stays independent of the compartment count.
+			assert.Equal(t, 12/numCompartments, cfg.FetchConcurrencyMax)
+			assert.Equal(t, 1_000_000_000/numCompartments, cfg.MaxBufferedBytes)
+			assert.Equal(t, 8/numCompartments, cfg.IngestionConcurrencyMax)
+		}
+	})
+
+	t.Run("a single compartment keeps the full budget", func(t *testing.T) {
+		cfgs := WriteCompartmentConfigs(newBase(), 1, "ingest-rc-0")
+		require.Len(t, cfgs, 1)
+		assert.Equal(t, 12, cfgs[0].FetchConcurrencyMax)
+		assert.Equal(t, 1_000_000_000, cfgs[0].MaxBufferedBytes)
+		assert.Equal(t, 8, cfgs[0].IngestionConcurrencyMax)
+	})
+
+	t.Run("a positive budget never collapses to zero", func(t *testing.T) {
+		base := newBase()
+		base.FetchConcurrencyMax = 3
+		cfgs := WriteCompartmentConfigs(base, 8, "ingest-rc-0")
+		require.Len(t, cfgs, 8)
+		for _, cfg := range cfgs {
+			assert.Equal(t, 1, cfg.FetchConcurrencyMax)
+		}
+	})
+
+	t.Run("a disabled budget stays disabled", func(t *testing.T) {
+		base := newBase()
+		base.FetchConcurrencyMax = 0
+		base.MaxBufferedBytes = 0
+		base.IngestionConcurrencyMax = 0
+		cfgs := WriteCompartmentConfigs(base, 4, "ingest-rc-0")
+		require.Len(t, cfgs, 4)
+		for _, cfg := range cfgs {
+			assert.Zero(t, cfg.FetchConcurrencyMax)
+			assert.Zero(t, cfg.MaxBufferedBytes)
+			assert.Zero(t, cfg.IngestionConcurrencyMax)
+		}
+	})
+}
+
+func TestDivideBudget(t *testing.T) {
+	tests := map[string]struct {
+		budget          int
+		numCompartments int
+		expected        int
+	}{
+		"divides evenly":                          {budget: 12, numCompartments: 4, expected: 3},
+		"floors to integer division":              {budget: 10, numCompartments: 3, expected: 3},
+		"single compartment keeps full budget":    {budget: 12, numCompartments: 1, expected: 12},
+		"zero compartments keep full budget":      {budget: 12, numCompartments: 0, expected: 12},
+		"positive budget never collapses to zero": {budget: 3, numCompartments: 8, expected: 1},
+		"disabled budget stays disabled":          {budget: 0, numCompartments: 4, expected: 0},
+		"negative budget left untouched":          {budget: -1, numCompartments: 4, expected: -1},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			assert.Equal(t, tc.expected, divideBudget(tc.budget, tc.numCompartments))
+		})
+	}
+}
+
 func TestKafkaConfig_ToWarpstreamClientOptions(t *testing.T) {
 	baseConfig := func() KafkaConfig {
 		return KafkaConfig{

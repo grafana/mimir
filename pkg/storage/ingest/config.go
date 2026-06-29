@@ -429,6 +429,36 @@ func (cfg *KafkaConfig) WriteCompartmentConfig(writeCompartmentID int) KafkaConf
 	return c
 }
 
+// WriteCompartmentConfigs returns one KafkaConfig per write compartment, each targeting
+// that compartment's Kafka cluster and the given read compartment's topic. Because a
+// separate Kafka client is created per compartment, the per-client resource budgets are divided across the compartments so
+// that fanning out keeps peak resource usage independent of the compartment count.
+func WriteCompartmentConfigs(base KafkaConfig, numCompartments int, topic string) []KafkaConfig {
+	fetchConcurrencyMax := divideBudget(base.FetchConcurrencyMax, numCompartments)
+	maxBufferedBytes := divideBudget(base.MaxBufferedBytes, numCompartments)
+	ingestionConcurrencyMax := divideBudget(base.IngestionConcurrencyMax, numCompartments)
+	out := make([]KafkaConfig, numCompartments)
+	for i := range out {
+		c := base.WriteCompartmentConfig(i)
+		c.Topic = topic
+		c.FetchConcurrencyMax = fetchConcurrencyMax
+		c.MaxBufferedBytes = maxBufferedBytes
+		c.IngestionConcurrencyMax = ingestionConcurrencyMax
+		out[i] = c
+	}
+	return out
+}
+
+// divideBudget splits a per-client resource budget across numCompartments clients.
+// A non-positive budget (commonly 0, meaning disabled or unlimited) is left untouched. A
+// positive budget is floored at 1 so it never collapses to 0.
+func divideBudget(budget, numCompartments int) int {
+	if budget <= 0 || numCompartments <= 1 {
+		return budget
+	}
+	return max(1, budget/numCompartments)
+}
+
 // MigrationConfig holds the configuration used to migrate Mimir to ingest storage. This config shouldn't be
 // set for any other reason.
 type MigrationConfig struct {
