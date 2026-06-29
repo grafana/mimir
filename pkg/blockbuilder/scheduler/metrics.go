@@ -8,18 +8,21 @@ import (
 )
 
 type schedulerMetrics struct {
-	updateScheduleDuration   prometheus.Histogram
+	updateScheduleDuration prometheus.Histogram
+
+	// FIXME: these should be per-compartment
 	partitionStartOffset     *prometheus.GaugeVec
 	partitionCommittedOffset *prometheus.GaugeVec
 	partitionPlannedOffset   *prometheus.GaugeVec
 	partitionEndOffset       *prometheus.GaugeVec
-	flushFailed              prometheus.Counter
-	fetchOffsetsFailed       prometheus.Counter
-	outstandingJobs          prometheus.Gauge
-	assignedJobs             prometheus.Gauge
-	pendingJobs              *prometheus.GaugeVec
-	persistentJobFailures    prometheus.Counter
-	jobGapDetected           *prometheus.CounterVec
+
+	flushFailed           prometheus.Counter
+	fetchOffsetsFailed    prometheus.Counter
+	outstandingJobs       prometheus.Gauge
+	assignedJobs          prometheus.Gauge
+	pendingJobs           *prometheus.GaugeVec
+	persistentJobFailures prometheus.Counter
+	jobGapDetected        *prometheus.CounterVec
 }
 
 func newSchedulerMetrics(reg prometheus.Registerer) schedulerMetrics {

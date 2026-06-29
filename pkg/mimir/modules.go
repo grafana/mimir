@@ -1598,6 +1598,7 @@ func (t *Mimir) initUsageTracker() (services.Service, error) {
 
 func (t *Mimir) initBlockBuilder() (_ services.Service, err error) {
 	t.Cfg.BlockBuilder.Kafka = t.Cfg.IngestStorage.KafkaConfig
+	t.Cfg.BlockBuilder.Compartments = t.Cfg.Compartments
 	t.Cfg.BlockBuilder.BlocksStorage = t.Cfg.BlocksStorage
 	t.BlockBuilder, err = blockbuilder.New(t.Cfg.BlockBuilder, util_log.Logger, t.Registerer, t.Overrides)
 	if err != nil {
@@ -1608,6 +1609,7 @@ func (t *Mimir) initBlockBuilder() (_ services.Service, err error) {
 
 func (t *Mimir) initBlockBuilderScheduler() (services.Service, error) {
 	t.Cfg.BlockBuilderScheduler.Kafka = t.Cfg.IngestStorage.KafkaConfig
+	t.Cfg.BlockBuilderScheduler.Compartments = t.Cfg.Compartments
 
 	s, err := blockbuilderscheduler.New(t.Cfg.BlockBuilderScheduler, util_log.Logger, t.Registerer)
 	if err != nil {

@@ -14,11 +14,30 @@ message JobKey {
   int64 epoch = 2;
 }
 
+// JobSpec is a unit of consumption work for one read-compartment partition. The
+// topic and partition are invariant across the job. When compartments are
+// disabled, the single [start_offset, end_offset) range is consumed; when
+// enabled, offset_ranges carries one range per write compartment instead.
 message JobSpec {
   string topic = 1;
   int32 partition = 2;
+
+  // Non-compartment mode: the single [start_offset, end_offset) range to
+  // consume. Used when compartments are disabled.
   int64 start_offset = 3;
   int64 end_offset = 4;
+
+  // Compartment mode: one [start_offset, end_offset) range per cluster, keyed by
+  // cluster ID. When compartments are enabled, these are consumed instead of
+  // start_offset/end_offset.
+  map<int32, OffsetRange> offset_ranges = 5 [(gogoproto.nullable) = false];
+}
+
+// OffsetRange is the [start_offset, end_offset) to consume from a single
+// cluster's partition. The topic and partition are shared by the whole JobSpec.
+message OffsetRange {
+  int64 start_offset = 1;
+  int64 end_offset = 2;
 }
 
 service BlockBuilderScheduler {

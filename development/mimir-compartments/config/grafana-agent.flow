@@ -176,14 +176,26 @@ prometheus.scrape "metrics_local_mimir_compartments" {
                         namespace   = "mimir-compartments",
                 }],
                 [{
-                        __address__ = "block-builder-0:8080",
+                        __address__ = "block-builder-rc-0:8080",
+                        cluster     = "docker-compose",
+                        container   = "block-builder",
+                        job         = "mimir-compartments/block-builder",
+                        namespace   = "mimir-compartments",
+                }, {
+                        __address__ = "block-builder-rc-1:8080",
                         cluster     = "docker-compose",
                         container   = "block-builder",
                         job         = "mimir-compartments/block-builder",
                         namespace   = "mimir-compartments",
                 }],
                 [{
-                        __address__ = "block-builder-scheduler-0:8080",
+                        __address__ = "block-builder-scheduler-rc-0:8080",
+                        cluster     = "docker-compose",
+                        container   = "block-builder-scheduler",
+                        job         = "mimir-compartments/block-builder-scheduler",
+                        namespace   = "mimir-compartments",
+                }, {
+                        __address__ = "block-builder-scheduler-rc-1:8080",
                         cluster     = "docker-compose",
                         container   = "block-builder-scheduler",
                         job         = "mimir-compartments/block-builder-scheduler",

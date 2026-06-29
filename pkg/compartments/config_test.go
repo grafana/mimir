@@ -70,3 +70,8 @@ func TestReadCompartmentRingKeyAndName(t *testing.T) {
 	assert.Equal(t, "partition-ring-rc-0", ReadCompartmentRingName(0, "partition-ring"))
 	assert.Equal(t, "partition-ring-rc-2", ReadCompartmentRingName(2, "partition-ring"))
 }
+
+func TestReadCompartmentConsumerGroup(t *testing.T) {
+	assert.Equal(t, "block-builder-rc-0", ReadCompartmentConsumerGroup(0, "block-builder"))
+	assert.Equal(t, "block-builder-rc-3", ReadCompartmentConsumerGroup(3, "block-builder"))
+}

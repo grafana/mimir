@@ -12,6 +12,7 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
@@ -20,7 +21,9 @@ import (
 	"github.com/twmb/franz-go/pkg/kgo"
 
 	"github.com/grafana/mimir/pkg/blockbuilder/schedulerpb"
+	"github.com/grafana/mimir/pkg/compartments"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/testkafka"
 )
@@ -126,12 +129,7 @@ func TestBlockBuilder(t *testing.T) {
 								Id:    "test-job-4898",
 								Epoch: 90000,
 							},
-							schedulerpb.JobSpec{
-								Topic:       testTopic,
-								Partition:   1,
-								StartOffset: c.startOffset,
-								EndOffset:   c.endOffset,
-							},
+							schedulerpb.NewNonCompartmentJobSpec(testTopic, 1, c.startOffset, c.endOffset),
 						)
 
 						bb, err := newWithSchedulerClient(cfg, test.NewTestingLogger(t), prometheus.NewPedanticRegistry(), overrides, scheduler)
@@ -171,6 +169,112 @@ func TestBlockBuilder(t *testing.T) {
 	}
 }
 
+// TestConsumeJobMultiWC asserts that a job spanning multiple write WCs consumes
+// each WC's range from that WC's own clusterID into a single block. The two WCs
+// point at two distinct Kafka clusters holding disjoint, distinguishable samples;
+// the uploaded block must contain the samples from both, which only holds if each
+// WC is read through its own client (a bug reading every WC from one client would
+// miss the other clusterID's data).
+func TestConsumeJobMultiWC(t *testing.T) {
+	ctx := context.Background()
+
+	_, kafkaAddrA := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, numPartitions, testTopic)
+	_, kafkaAddrB := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, numPartitions, testTopic)
+	producerA := mustKafkaClient(t, kafkaAddrA)
+	producerB := mustKafkaClient(t, kafkaAddrB)
+
+	tenants := []string{"1", "2", "3"}
+	const roundsPerCluster = 5
+	const recordsPerCluster = roundsPerCluster * 3 // one record per tenant per round.
+
+	produceToCluster := func(producer *kgo.Client, start time.Time) map[string][]mimirpb.Sample {
+		out := make(map[string][]mimirpb.Sample)
+		recTime := start
+		for range roundsPerCluster {
+			for _, tenant := range tenants {
+				samples := produceSamples(ctx, t, producer, 1, recTime, tenant, recTime.Add(-time.Minute))
+				out[tenant] = append(out[tenant], samples...)
+			}
+			recTime = recTime.Add(10 * time.Minute)
+		}
+		return out
+	}
+
+	// Cluster A's samples all precede clusterID B's, so every timestamp is distinct
+	// and the per-tenant union is naturally ordered; both stay within the OOO window.
+	now := time.Now()
+	producedA := produceToCluster(producerA, now.Add(-100*time.Minute))
+	producedB := produceToCluster(producerB, now.Add(-50*time.Minute))
+
+	cfg, overrides := blockBuilderConfig(t, kafkaAddrA, nil)
+	cfg.Kafka.FetchConcurrencyMax = 0
+	cfg.Compartments = compartments.Config{
+		Enabled: true,
+		Read:    compartments.ReadConfig{NumCompartments: 1},
+		Write:   compartments.WriteConfig{NumCompartments: 2},
+	}
+
+	bb, err := newWithSchedulerClient(cfg, test.NewTestingLogger(t), prometheus.NewPedanticRegistry(), overrides, &mockSchedulerClient{})
+	require.NoError(t, err)
+
+	// Wire one reader client per WC, each pointing at a different clusterID, then drive
+	// consumeJob directly. The full service path can't set this up because two random
+	// broker addresses can't come from one templated address.
+	readerFor := func(wc int, addr string) *kgo.Client {
+		kcfg := cfg.Kafka
+		kcfg.Address = flagext.StringSliceCSV{addr}
+		c, err := ingest.NewKafkaReaderClient(kcfg, bb.kproms[wc], test.NewTestingLogger(t))
+		require.NoError(t, err)
+		t.Cleanup(c.Close)
+		return c
+	}
+	bb.kafkaClients = []*kgo.Client{readerFor(0, kafkaAddrA), readerFor(1, kafkaAddrB)}
+
+	spec := schedulerpb.JobSpec{
+		Topic:     testTopic,
+		Partition: 1,
+		OffsetRanges: map[int32]schedulerpb.OffsetRange{
+			0: {StartOffset: 0, EndOffset: recordsPerCluster},
+			1: {StartOffset: 0, EndOffset: recordsPerCluster},
+		},
+	}
+	require.NoError(t, bb.consumeJob(ctx, schedulerpb.JobKey{Id: "test-job-multi-wc", Epoch: 1}, spec))
+
+	for _, tenant := range tenants {
+		tenantBucketDir := path.Join(cfg.BlocksStorage.Bucket.Filesystem.Directory, tenant)
+		expSamples := append(append([]mimirpb.Sample{}, producedA[tenant]...), producedB[tenant]...)
+		compareQueryWithDir(t,
+			tenantBucketDir,
+			expSamples, nil,
+			labels.MustNewMatcher(labels.MatchRegexp, "foo", ".*"),
+		)
+	}
+}
+
+// TestConsumeJob_RejectsCompartmentSpecWhenCompartmentsDisabled checks the guard
+// that the spec encoding must match the block-builder's compartment configuration:
+// a compartment-mode spec (carrying OffsetRanges) reaching a block-builder with
+// compartments disabled is a misconfiguration that must fail loudly rather than be
+// silently consumed from the wrong clusterID.
+func TestConsumeJob_RejectsCompartmentSpecWhenCompartmentsDisabled(t *testing.T) {
+	ctx := context.Background()
+
+	_, kafkaAddr := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, numPartitions, testTopic)
+	cfg, overrides := blockBuilderConfig(t, kafkaAddr, nil)
+	require.False(t, cfg.Compartments.Enabled)
+
+	bb, err := New(cfg, test.NewTestingLogger(t), prometheus.NewPedanticRegistry(), overrides)
+	require.NoError(t, err)
+
+	spec := schedulerpb.JobSpec{
+		Topic:        testTopic,
+		Partition:    0,
+		OffsetRanges: map[int32]schedulerpb.OffsetRange{0: {StartOffset: 0, EndOffset: 1}},
+	}
+	err = bb.consumeJob(ctx, schedulerpb.JobKey{Id: "mismatch", Epoch: 1}, spec)
+	require.ErrorContains(t, err, "compartment-mode")
+}
+
 func TestBlockBuilder_WipeOutDataDirOnStart(t *testing.T) {
 	t.Parallel()
 
@@ -196,6 +300,17 @@ func TestBlockBuilder_WipeOutDataDirOnStart(t *testing.T) {
 	list, err := os.ReadDir(cfg.DataDir)
 	require.NoError(t, err, "expected data_dir to exist")
 	require.Empty(t, list, "expected data_dir to be empty")
+}
+
+func mustKafkaClient(t *testing.T, addrs ...string) *kgo.Client {
+	writeClient, err := kgo.NewClient(
+		kgo.SeedBrokers(addrs...),
+		// We will choose the partition of each record.
+		kgo.RecordPartitioner(kgo.ManualPartitioner()),
+	)
+	require.NoError(t, err)
+	t.Cleanup(writeClient.Close)
+	return writeClient
 }
 
 func produceSamples(ctx context.Context, t *testing.T, kafkaClient *kgo.Client, partition int32, ts time.Time, tenantID string, sampleTs ...time.Time) []mimirpb.Sample {

@@ -12,6 +12,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/grpcclient"
 
+	"github.com/grafana/mimir/pkg/compartments"
 	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 )
@@ -28,6 +29,7 @@ type Config struct {
 
 	// Config parameters defined outside the block-builder config and are injected dynamically.
 	Kafka         ingest.KafkaConfig       `yaml:"-"`
+	Compartments  compartments.Config      `yaml:"-"`
 	BlocksStorage tsdb.BlocksStorageConfig `yaml:"-"`
 }
 
