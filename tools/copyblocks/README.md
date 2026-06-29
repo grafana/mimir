@@ -97,7 +97,7 @@ For instance, to copy from S3 to ABS:
 
 ### Example for backfilling to Mimir
 
-Copies blocks from object storage to a Mimir instance using the block upload API.
+Copies blocks from object storage to a Mimir instance using the block upload API.  This API is not enabled by default - requests can be made through Grafana Support to enable Backfill.
 
 ```bash
 ./copyblocks \
