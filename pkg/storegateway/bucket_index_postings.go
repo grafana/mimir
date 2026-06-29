@@ -149,12 +149,12 @@ func toRawPostingGroup(m *labels.Matcher) rawPostingGroup {
 			keys = append(keys, labels.Label{Name: m.Name, Value: val})
 		}
 		if m.Type == labels.MatchNotRegexp {
-			return newRawSubtractingPostingGroup(m, keys)
-		}
-		// For MatchRegexp that matches "", we need the subtraction approach
-		// to include series without the label. Fall through to the
-		// m.Matches("") check below.
-		if !m.Matches("") {
+			if m.Matches("") { // e.g. !~"foo|bar"
+				return newRawSubtractingPostingGroup(m, keys)
+			}
+			// e.g. !~"|foo": matcher excludes absent-label series, which a
+			// subtracting group can't express — fall through to the lazy path.
+		} else if !m.Matches("") { // MatchRegexp not matching ""
 			return newRawIntersectingPostingGroup(m, keys)
 		}
 	}

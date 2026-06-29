@@ -257,8 +257,13 @@ func TestToRawPostingGroup_RegexpWithEmptyAlternative(t *testing.T) {
 			expectIsSubtract: true,
 			expectIsLazy:     true,
 		},
-		"MatchNotRegexp with SetMatches uses subtraction (existing fast path)": {
+		"MatchNotRegexp with empty alternative should use lazy intersection": {
 			matcher:          labels.MustNewMatcher(labels.MatchNotRegexp, "service", "|checkout"),
+			expectIsSubtract: false,
+			expectIsLazy:     true,
+		},
+		"MatchNotRegexp without empty alternative should use fast subtraction": {
+			matcher:          labels.MustNewMatcher(labels.MatchNotRegexp, "service", "checkout|payments"),
 			expectIsSubtract: true,
 			expectIsLazy:     false,
 		},
