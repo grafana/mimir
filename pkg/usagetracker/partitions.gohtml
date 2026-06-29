@@ -27,7 +27,7 @@
         <div class="row my-3">
             <div class="col-12">
                 {{ if .Partitions }}
-                    <p>This instance owns <strong>{{ len .Partitions }}</strong> partition(s).</p>
+                    <p>Instance <span class="font-monospace">{{ .InstanceID }}</span> owns <strong>{{ len .Partitions }}</strong> partition(s).</p>
                     <div class="table-responsive">
                         <table class="table table-bordered table-hover table-striped">
                             <thead>
@@ -52,7 +52,7 @@
                     </div>
                 {{ else }}
                     <div class="alert alert-info" role="alert">
-                        This usage-tracker instance does not currently own any partition.
+                        Instance <span class="font-monospace">{{ .InstanceID }}</span> does not currently own any partition.
                     </div>
                 {{ end }}
             </div>
@@ -61,7 +61,7 @@
 </main>
 <footer class="footer mt-auto py-3 bg-light">
     <div class="container">
-        <small class="text-muted">Instance <span class="font-monospace">{{ .InstanceID }}</span> &middot; Status @ {{ .Now.Format "2006-01-02 15:04:05.000" }}</small>
+        <small class="text-muted">Status @ {{ .Now.Format "2006-01-02 15:04:05.000" }}</small>
     </div>
 </footer>
 </body>
