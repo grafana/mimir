@@ -103,14 +103,6 @@ func newCacheOperator(
 	minCacheExtent time.Duration,
 	metrics *ResultsCacheMetrics,
 ) *CacheOperator {
-	// The orgId has been removed from computeCacheKey() since we rely on the
-	// given prefix generator to provide this. This check ensures that
-	// if no prefix generator is presented we still include the orgId/tenants
-	// in the generated key.
-	if prefixGenerator == nil {
-		prefixGenerator = caching.TenantPrefixGenerator
-	}
-
 	return &CacheOperator{
 		Backend:                  backend,
 		PrefixGenerator:          prefixGenerator,

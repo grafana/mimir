@@ -41,8 +41,8 @@ func TestCacheKeys(t *testing.T) {
 	var start, end int64 = 0, 100
 	rawKey := generateCacheKey(function, inner, start, end)
 
-	// With no prefix generator the full key is just the raw key.
-	noPrefix := &Cache[int]{}
+	// With an empty prefix generator the full key is just the raw key.
+	noPrefix := &Cache[int]{prefixGenerator: func(context.Context) (string, error) { return "", nil }}
 	fullKey, hashedKey, err := noPrefix.cacheKeys(context.Background(), function, inner, start, end)
 	require.NoError(t, err)
 	require.Equal(t, rawKey, fullKey)

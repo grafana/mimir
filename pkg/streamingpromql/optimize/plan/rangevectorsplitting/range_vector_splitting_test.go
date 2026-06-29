@@ -882,7 +882,7 @@ func TestQuerySplitting_With3hRangeAndOffset_NoCacheableRanges(t *testing.T) {
 
 func TestQuerySplitting_WithOOOWindow(t *testing.T) {
 	backend := caching.NewInMemoryCache()
-	irCache := cache.NewCacheFactoryWithBackend(backend, streamingpromql.NewStaticQueryLimitsProvider(), nil, prometheus.NewRegistry(), log.NewNopLogger())
+	irCache := cache.NewCacheFactoryWithBackend(backend, streamingpromql.NewStaticQueryLimitsProvider(), emptyPrefixGenerator, prometheus.NewRegistry(), log.NewNopLogger())
 
 	opts := defaultSplittingOpts()
 	limits := streamingpromql.NewStaticQueryLimitsProvider()
@@ -1116,7 +1116,7 @@ func TestQuerySplitting_MiddleCacheEntryEvicted(t *testing.T) {
 
 func TestQuerySplitting_DelayedNameRemoval(t *testing.T) {
 	sharedCache := caching.NewInMemoryCache()
-	cacheFactory := cache.NewCacheFactoryWithBackend(sharedCache, streamingpromql.NewStaticQueryLimitsProvider(), nil, prometheus.NewPedanticRegistry(), log.NewNopLogger())
+	cacheFactory := cache.NewCacheFactoryWithBackend(sharedCache, streamingpromql.NewStaticQueryLimitsProvider(), emptyPrefixGenerator, prometheus.NewPedanticRegistry(), log.NewNopLogger())
 
 	engineDisabled := createSplittingEngine(t, prometheus.NewPedanticRegistry(), 2*time.Hour, false, true, cacheFactory)
 	engineEnabled := createSplittingEngine(t, prometheus.NewPedanticRegistry(), 2*time.Hour, true, true, cacheFactory)
@@ -1440,7 +1440,7 @@ func createSplittingEngineWithCache(t *testing.T, registry *prometheus.Registry,
 	t.Helper()
 
 	cacheBackend := caching.NewInMemoryCache()
-	cacheFactory := cache.NewCacheFactoryWithBackend(cacheBackend, streamingpromql.NewStaticQueryLimitsProvider(), nil, registry, log.NewNopLogger())
+	cacheFactory := cache.NewCacheFactoryWithBackend(cacheBackend, streamingpromql.NewStaticQueryLimitsProvider(), emptyPrefixGenerator, registry, log.NewNopLogger())
 
 	engine := createSplittingEngine(t, registry, splitInterval, enableDelayedNameRemoval, enableEliminateDeduplicateAndMerge, cacheFactory)
 	return engine, cacheBackend
@@ -1476,7 +1476,7 @@ func setupEngineAndCache(t *testing.T) (*caching.InMemoryCache, promql.QueryEngi
 
 func setupEngineAndCacheWithOpts(t *testing.T, opts streamingpromql.EngineOpts) (*caching.InMemoryCache, promql.QueryEngine) {
 	backend := caching.NewInMemoryCache()
-	irCache := cache.NewCacheFactoryWithBackend(backend, streamingpromql.NewStaticQueryLimitsProvider(), nil, prometheus.NewRegistry(), log.NewNopLogger())
+	irCache := cache.NewCacheFactoryWithBackend(backend, streamingpromql.NewStaticQueryLimitsProvider(), emptyPrefixGenerator, prometheus.NewRegistry(), log.NewNopLogger())
 
 	queryPlanner, err := streamingpromql.NewQueryPlanner(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
@@ -1580,3 +1580,8 @@ func splittingCacheKey(t *testing.T, node planning.Node, params *planning.QueryP
 	require.NoError(t, err)
 	return key
 }
+
+// emptyPrefixGenerator returns no prefix, so cache keys are not partitioned by tenant. This keeps
+// the keys these tests assert against (computed via cache.TestGenerateHashedCacheKey) prefix-free,
+// while still satisfying the cache's requirement that a prefix generator is always configured.
+func emptyPrefixGenerator(context.Context) (string, error) { return "", nil }

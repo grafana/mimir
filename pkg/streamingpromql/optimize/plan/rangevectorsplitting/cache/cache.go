@@ -86,7 +86,7 @@ func generateCacheKey(function functions.Function, selector []byte, start, end i
 }
 
 // TestGenerateHashedCacheKey generates a hashed cache key using the same logic as the cache internals
-// for a cache configured with no prefix generator. This should only be used in tests.
+// for a cache configured with an empty prefix generator (one that returns no prefix). This should only be used in tests.
 func TestGenerateHashedCacheKey(function functions.Function, selector []byte, start, end int64) string {
 	return caching.HashCacheKey(generateCacheKey(function, selector, start, end))
 }
@@ -121,7 +121,7 @@ func NewCache[T any](factory *CacheFactory, codec SplitCodec[T]) *Cache[T] {
 }
 
 // cacheKeys generates the cache keys for the given inputs.
-// When a prefixGenerator is configured, the full key includes its prefix (the tenant IDs).
+// The full key includes the prefixGenerator prefix (the tenant IDs).
 // Both the full key and the hashed (backend) key are returned:
 //   - the full key should be kept and stored in the cache entry for collision verification;
 //   - the hashed key should be used for backend interactions, as caching.HashCacheKey() ensures
@@ -129,14 +129,12 @@ func NewCache[T any](factory *CacheFactory, codec SplitCodec[T]) *Cache[T] {
 func (c *Cache[T]) cacheKeys(ctx context.Context, function functions.Function, innerKey []byte, start, end int64) (fullKey []byte, hashedKey string, err error) {
 	fullKey = generateCacheKey(function, innerKey, start, end)
 
-	if c.prefixGenerator != nil {
-		prefix, err := c.prefixGenerator(ctx)
-		if err != nil {
-			return nil, "", fmt.Errorf("generating cache key prefix: %w", err)
-		}
-
-		fullKey = append([]byte(prefix), fullKey...)
+	prefix, err := c.prefixGenerator(ctx)
+	if err != nil {
+		return nil, "", fmt.Errorf("generating cache key prefix: %w", err)
 	}
+
+	fullKey = append([]byte(prefix), fullKey...)
 
 	return fullKey, caching.HashCacheKey(fullKey), nil
 }
