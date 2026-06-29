@@ -48,6 +48,10 @@ Mimirtool is a command-line tool that operators and tenants can use to execute a
 
   For more information about the `backfill` command, refer to [Backfill](#backfill)
 
+- The `blocks` commands manage TSDB blocks in object storage, including marking, listing, copying, splitting, and undeleting blocks.
+
+  For more information about the `blocks` commands, refer to [Blocks](#blocks).
+
 - The `partition-ring` commands allow for forcefully modifying the ingest storage partition ring via memberlist.
 
   For more information about the `partition-ring` command, refer to [Partition ring](#partition-ring)
@@ -740,7 +744,7 @@ mimirtool analyze grafana --address=<url>
 | Environment variable | Flag             | Description                                                                                                                                                           |
 | -------------------- | ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `GRAFANA_ADDRESS`    | `--address`      | Sets the address of the Grafana instance.                                                                                                                             |
-| `GRAFANA_API_KEY`    | `--key`          | Sets the API Key for the Grafana instance. To create a key, refer to [Authentication API](/docs/grafana/latest/http_api/auth/).                                       |
+| `GRAFANA_API_KEY`    | `--key`          | Sets the API key for the Grafana instance. To create a key, refer to [Service accounts](/docs/grafana/latest/administration/service-accounts/).                       |
 | -                    | `--output`       | Sets the output file path, which by default is `metrics-in-grafana.json`.                                                                                             |
 | -                    | `--folder-title` | Sets the folder filter to limit dashboards analysis for unused metrics based on their exact folder title. When repeated any of the matching folders will be analyzed. |
 
@@ -1214,6 +1218,95 @@ INFO[0001] finished uploading blocks                already_exists=1 failed=0 su
 {{< admonition type="note" >}}
 Backfilled data visibility depends on the sample timestamps in the uploaded blocks. Sometimes data can appear more than 12 hours after upload.
 {{< /admonition >}}
+
+### Blocks
+
+The `blocks` command provides subcommands to manage TSDB blocks in object storage:
+
+- `blocks mark` creates or removes block markers (deletion, no-compact).
+- `blocks list` lists blocks and shows the block details of a tenant.
+- `blocks copy` copies blocks between two object storage buckets or to a backfill destination.
+- `blocks split` splits blocks larger than a duration into multiple blocks.
+- `blocks undelete` restores deleted blocks in versioned object storage.
+
+Each subcommand accepts the object storage bucket configuration flags (for example `--backend`, `--s3.bucket-name`, and `--s3.endpoint`). Run `mimirtool blocks <subcommand> --help` to see all available options.
+
+{{< admonition type="note" >}}
+Use caution when using the `blocks` subcommands, as they affect data management within your Mimir storage.
+{{< /admonition >}}
+
+#### Mark blocks
+
+You can use the `blocks mark` command to manage the state of time series data blocks in object storage.
+
+Use `blocks mark` for the following purposes:
+
+- Mark blocks for non-compaction. This is useful for corrupted blocks, preventing them from being processed by the compactor and potentially causing issues. Newer Mimir versions might automatically mark corrupted blocks.
+- Mark blocks for deletion. Use the command to explicitly mark specific blocks for deletion from the object storage.
+
+To use `blocks mark`, you need to specify the tenant ID, bucket configuration, and block IDs you'd like to mark. For example:
+
+```bash
+# Mark a block for non-compaction (example for a corrupted block)
+mimirtool blocks mark --tenant=<your-tenant-id> --backend=s3 --s3.bucket-name=<your-bucket> --s3.endpoint=<your-s3-endpoint> --mark-type=no-compact --blocks=<block-id>
+
+# Mark a block for deletion
+mimirtool blocks mark --tenant=<your-tenant-id> --backend=s3 --s3.bucket-name=<your-bucket> --s3.endpoint=<your-s3-endpoint> --mark-type=deletion --blocks=<block-id>
+```
+
+#### List blocks
+
+The `blocks list` command lists blocks and shows the block details of a tenant.
+
+To use `blocks list`, you need to provide access to the object storage bucket and specify the tenant ID. For example:
+
+```bash
+mimirtool blocks list --user=<your-tenant-id> --backend=s3 --s3.bucket-name=<your-bucket> --s3.endpoint=<your-s3-endpoint>
+```
+
+`blocks list` doesn't use the bucket index; instead, it downloads the `meta.json` file of every block in the tenant.
+This means that `blocks list` has an up-to-date view of the blocks in the bucket.
+
+```
+$ mimirtool blocks list --backend=gcs --gcs.bucket-name=bucket-with-blocks --user=10428
+Block ID                     Min Time               Max Time               Duration
+01E0HMK47RGAAKZJBMG8B8QXGP   2020-02-07T07:49:46Z   2020-02-08T00:00:00Z   16h10m13.89s
+01E0M0VK2KEDZC5AK1PX8K00EX   2020-02-08T00:00:00Z   2020-02-09T00:00:00Z   24h0m0s
+01E0PK9B84XJ9KQ0DHZDQECNH6   2020-02-09T00:00:00Z   2020-02-10T00:00:00Z   24h0m0s
+...
+```
+
+Run `mimirtool blocks list --help` to see all available options.
+
+#### Copy blocks
+
+The `blocks copy` command copies Mimir blocks between two object storage buckets, or from a bucket to a backfill destination using the block upload API. It tracks what has been copied by uploading copy markers to the source bucket, preventing blocks from being copied multiple times to the same destination.
+
+```bash
+mimirtool blocks copy --source.backend=gcs --destination.backend=gcs --gcs.source.bucket-name=<source-bucket> --gcs.destination.bucket-name=<destination-bucket> --dry-run
+```
+
+Run `mimirtool blocks copy --help` to see all available options.
+
+#### Split blocks
+
+The `blocks split` command splits source blocks into new blocks where each spans at most a duration of time. For instance, it can create three 24-hour blocks from a single 72-hour block. Source blocks can be read from either object storage or a local filesystem, and the resulting blocks are written to a local filesystem.
+
+```bash
+mimirtool blocks split --backend=gcs --gcs.bucket-name=<bucket> --output.dir=<directory> --dry-run
+```
+
+Run `mimirtool blocks split --help` to see all available options.
+
+#### Undelete blocks
+
+The `blocks undelete` command is a disaster recovery tool that restores deleted Mimir blocks in versioned object storage. The bucket must have versioning enabled, and a deleted object can only be recovered if a noncurrent version of the object still exists.
+
+```bash
+mimirtool blocks undelete --backend=gcs --gcs.bucket-name=<bucket> --blocks-from=listing --include-tenants=<tenant> --dry-run
+```
+
+Run `mimirtool blocks undelete --help` to see all available options.
 
 ### Partition ring
 
