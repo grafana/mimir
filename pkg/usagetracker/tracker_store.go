@@ -3,6 +3,7 @@
 package usagetracker
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"maps"
@@ -366,24 +367,26 @@ type ShardStats struct {
 // It snapshots the tenants under the store's lock and then reads each shard under its own lock,
 // so it never holds the store lock while locking shards.
 func (t *trackerStore) shardStats() []ShardStats {
+	// Work on a copy of tenants, like cleanup() does.
 	t.mtx.RLock()
-	tenantIDs := slices.Clone(t.sortedTenants)
-	tenants := make([]*trackedTenant, len(tenantIDs))
-	for i, id := range tenantIDs {
-		tenants[i] = t.tenants[id]
-	}
+	tenantsClone := maps.Clone(t.tenants)
 	t.mtx.RUnlock()
 
-	rows := make([]ShardStats, 0, len(tenantIDs)*shards)
-	for i, id := range tenantIDs {
+	rows := make([]ShardStats, 0, len(tenantsClone)*shards)
+	for tenantID, tenant := range tenantsClone {
 		for s := range shards {
 			rows = append(rows, ShardStats{
-				Tenant: id,
+				Tenant: tenantID,
 				Shard:  s,
-				Stats:  tenants[i].shards[s].Stats(),
+				Stats:  tenant.shards[s].Stats(),
 			})
 		}
 	}
+
+	// maps.Clone iteration order is random, so sort for stable output.
+	slices.SortFunc(rows, func(a, b ShardStats) int {
+		return cmp.Or(cmp.Compare(a.Tenant, b.Tenant), cmp.Compare(a.Shard, b.Shard))
+	})
 	return rows
 }
 
