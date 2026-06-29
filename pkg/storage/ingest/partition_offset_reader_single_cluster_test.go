@@ -30,6 +30,8 @@ func TestSingleClusterTopicOffsetsReader(t *testing.T) {
 	allPartitionIDs := func(_ context.Context) ([]int32, error) { return []int32{0}, nil }
 
 	t.Run("should notify waiting goroutines when stopped", func(t *testing.T) {
+		t.Parallel()
+
 		synctest.Test(t, func(t *testing.T) {
 			ctx := t.Context()
 
@@ -83,6 +85,8 @@ func TestSingleClusterTopicOffsetsReader_WaitNextFetchLastProducedOffset(t *test
 	)
 
 	t.Run("should wait the result of the next request issued", func(t *testing.T) {
+		t.Parallel()
+
 		synctest.Test(t, func(t *testing.T) {
 			ctx := t.Context()
 
@@ -160,6 +164,8 @@ func TestSingleClusterTopicOffsetsReader_WaitNextFetchLastProducedOffset(t *test
 	})
 
 	t.Run("should immediately return if the context gets canceled", func(t *testing.T) {
+		t.Parallel()
+
 		synctest.Test(t, func(t *testing.T) {
 			ctx := t.Context()
 

@@ -72,6 +72,8 @@ func testWriter_WriteSync(t *testing.T, backend string) {
 	}
 
 	t.Run("should block until data has been committed to storage (WriteRequest stored in a single record)", func(t *testing.T) {
+		t.Parallel()
+
 		synctest.Test(t, func(t *testing.T) {
 			ctx := t.Context()
 
@@ -156,6 +158,8 @@ func testWriter_WriteSync(t *testing.T, backend string) {
 	})
 
 	t.Run("should block until data has been committed to storage (WriteRequest stored in multiple records)", func(t *testing.T) {
+		t.Parallel()
+
 		synctest.Test(t, func(t *testing.T) {
 			ctx := t.Context()
 
@@ -252,6 +256,8 @@ func testWriter_WriteSync(t *testing.T, backend string) {
 	})
 
 	t.Run("should write to the requested partition", func(t *testing.T) {
+		t.Parallel()
+
 		synctest.Test(t, func(t *testing.T) {
 			ctx := t.Context()
 
@@ -303,6 +309,8 @@ func testWriter_WriteSync(t *testing.T, backend string) {
 	})
 
 	t.Run("should interrupt the WriteSync() on context cancelled but other concurrent requests should not fail", func(t *testing.T) {
+		t.Parallel()
+
 		synctest.Test(t, func(t *testing.T) {
 			ctx := t.Context()
 
@@ -388,6 +396,8 @@ func testWriter_WriteSync(t *testing.T, backend string) {
 			t.Skipf("Warpstream client doesn't support a max in-flight Produce requests limit by design")
 		}
 
+		t.Parallel()
+
 		synctest.Test(t, func(t *testing.T) {
 			ctx := t.Context()
 
@@ -455,6 +465,8 @@ func testWriter_WriteSync(t *testing.T, backend string) {
 	})
 
 	t.Run("should return error on non existing partition", func(t *testing.T) {
+		t.Parallel()
+
 		synctest.Test(t, func(t *testing.T) {
 			ctx := t.Context()
 
@@ -484,6 +496,8 @@ func testWriter_WriteSync(t *testing.T, backend string) {
 	})
 
 	t.Run("should return an error and stop retrying sending a record once the write timeout expires", func(t *testing.T) {
+		t.Parallel()
+
 		synctest.Test(t, func(t *testing.T) {
 			ctx := t.Context()
 
@@ -535,6 +549,8 @@ func testWriter_WriteSync(t *testing.T, backend string) {
 		if backend != KafkaBackendKafka {
 			t.Skipf("franz-go client specific behaviour")
 		}
+
+		t.Parallel()
 
 		synctest.Test(t, func(t *testing.T) {
 			ctx := t.Context()
@@ -605,6 +621,8 @@ func testWriter_WriteSync(t *testing.T, backend string) {
 	})
 
 	t.Run("should return error if the WriteRequest contains a timeseries which is larger than the maximum allowed record data size", func(t *testing.T) {
+		t.Parallel()
+
 		synctest.Test(t, func(t *testing.T) {
 			ctx := t.Context()
 
@@ -699,6 +717,8 @@ func testWriter_WriteSync(t *testing.T, backend string) {
 	})
 
 	t.Run("should not block the WriteSync() because Kafka buffer is full", func(t *testing.T) {
+		t.Parallel()
+
 		synctest.Test(t, func(t *testing.T) {
 			ctx := t.Context()
 
@@ -851,6 +871,8 @@ func testWriter_WriteSync(t *testing.T, backend string) {
 	})
 
 	t.Run("should not panic if WriteSync() is called after the writer has been stopped", func(t *testing.T) {
+		t.Parallel()
+
 		synctest.Test(t, func(t *testing.T) {
 			ctx := t.Context()
 
@@ -889,6 +911,8 @@ func testWriter_MultiWriteSync(t *testing.T, backend string) {
 	)
 
 	t.Run("should write records to multiple partitions", func(t *testing.T) {
+		t.Parallel()
+
 		synctest.Test(t, func(t *testing.T) {
 			ctx := t.Context()
 
@@ -982,6 +1006,8 @@ func testWriter_MultiWriteSync(t *testing.T, backend string) {
 	})
 
 	t.Run("should skip empty requests", func(t *testing.T) {
+		t.Parallel()
+
 		synctest.Test(t, func(t *testing.T) {
 			ctx := t.Context()
 
@@ -1059,6 +1085,8 @@ func testWriter_MultiWriteSync(t *testing.T, backend string) {
 	})
 
 	t.Run("should return nil when all partition requests are empty", func(t *testing.T) {
+		t.Parallel()
+
 		synctest.Test(t, func(t *testing.T) {
 			ctx := t.Context()
 

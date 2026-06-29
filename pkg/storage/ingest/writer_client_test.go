@@ -165,6 +165,8 @@ func TestKafkaProducer_ProduceSync_ShouldTrackBufferedProduceBytes(t *testing.T)
 }
 
 func testKafkaProducer_ProduceSync_ShouldTrackBufferedProduceBytes(t *testing.T, backend string) {
+	t.Parallel()
+
 	synctest.Test(t, func(t *testing.T) {
 		const (
 			numPartitions = 1
@@ -386,6 +388,8 @@ func testKafkaProducer_ProduceSync_ShouldReturnOneResultPerRecordOnContextCancel
 	)
 
 	t.Run("context is already done before producing", func(t *testing.T) {
+		t.Parallel()
+
 		synctest.Test(t, func(t *testing.T) {
 			var vnet kfake.VirtualNetwork
 			_, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName, testkafka.WithVirtualNetwork(&vnet))
@@ -413,6 +417,8 @@ func testKafkaProducer_ProduceSync_ShouldReturnOneResultPerRecordOnContextCancel
 	})
 
 	t.Run("context is already done before producing with a non-Canceled cause", func(t *testing.T) {
+		t.Parallel()
+
 		synctest.Test(t, func(t *testing.T) {
 			var vnet kfake.VirtualNetwork
 			_, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName, testkafka.WithVirtualNetwork(&vnet))
@@ -441,6 +447,8 @@ func testKafkaProducer_ProduceSync_ShouldReturnOneResultPerRecordOnContextCancel
 	})
 
 	t.Run("context is canceled while waiting for produce results", func(t *testing.T) {
+		t.Parallel()
+
 		synctest.Test(t, func(t *testing.T) {
 			var vnet kfake.VirtualNetwork
 			cluster, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName, testkafka.WithVirtualNetwork(&vnet))
@@ -519,8 +527,8 @@ func testKafkaProducer_ProduceSync_ShouldReturnOneResultPerRecordOnContextCancel
 }
 
 func TestKafkaProducer_ProduceSync_LatencyShouldBeDrivenByKafkaProduceLatency(t *testing.T) {
-	// Not parallel: this test measures wall-clock produce latency, so contention
-	// with other tests would make it flaky.
+	// Under testing/synctest the latency is measured on the bubble's virtual clock, so it's isolated
+	// from other tests and safe to run in parallel (testKafkaProducer_... calls t.Parallel()).
 	runForEachKafkaBackend(t, testKafkaProducer_ProduceSync_LatencyShouldBeDrivenByKafkaProduceLatency)
 }
 
@@ -550,6 +558,8 @@ func testKafkaProducer_ProduceSync_LatencyShouldBeDrivenByKafkaProduceLatency(t 
 		// in-flight slot, which adds latency on top of the backend latency.
 		produceLatency = 1 * time.Second
 	)
+
+	t.Parallel()
 
 	synctest.Test(t, func(t *testing.T) {
 		ctx := t.Context()

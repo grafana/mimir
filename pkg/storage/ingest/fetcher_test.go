@@ -364,6 +364,8 @@ func TestConcurrentFetchers(t *testing.T) {
 	)
 
 	t.Run("respect context cancellation", func(t *testing.T) {
+		t.Parallel()
+
 		synctest.Test(t, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 			defer cancel()
@@ -384,6 +386,8 @@ func TestConcurrentFetchers(t *testing.T) {
 	})
 
 	t.Run("cold replay", func(t *testing.T) {
+		t.Parallel()
+
 		synctest.Test(t, func(t *testing.T) {
 			ctx := t.Context()
 
@@ -407,6 +411,8 @@ func TestConcurrentFetchers(t *testing.T) {
 	})
 
 	t.Run("fetch records produced after startup", func(t *testing.T) {
+		t.Parallel()
+
 		synctest.Test(t, func(t *testing.T) {
 			ctx := t.Context()
 
@@ -430,6 +436,8 @@ func TestConcurrentFetchers(t *testing.T) {
 	})
 
 	t.Run("slow processing of fetches", func(t *testing.T) {
+		t.Parallel()
+
 		synctest.Test(t, func(t *testing.T) {
 			ctx := t.Context()
 
@@ -481,6 +489,8 @@ func TestConcurrentFetchers(t *testing.T) {
 	})
 
 	t.Run("fast processing of fetches", func(t *testing.T) {
+		t.Parallel()
+
 		synctest.Test(t, func(t *testing.T) {
 			ctx := t.Context()
 
@@ -506,8 +516,12 @@ func TestConcurrentFetchers(t *testing.T) {
 	})
 
 	t.Run("fetch with different concurrency levels", func(t *testing.T) {
+		t.Parallel()
+
 		for _, concurrency := range []int{1, 2, 4} {
 			t.Run(fmt.Sprintf("concurrency-%d", concurrency), func(t *testing.T) {
+				t.Parallel()
+
 				synctest.Test(t, func(t *testing.T) {
 					ctx := t.Context()
 
@@ -535,6 +549,8 @@ func TestConcurrentFetchers(t *testing.T) {
 	})
 
 	t.Run("start from mid-stream offset", func(t *testing.T) {
+		t.Parallel()
+
 		synctest.Test(t, func(t *testing.T) {
 			ctx := t.Context()
 
@@ -579,6 +595,8 @@ func TestConcurrentFetchers(t *testing.T) {
 	})
 
 	t.Run("synchronous produce and fetch", func(t *testing.T) {
+		t.Parallel()
+
 		synctest.Test(t, func(t *testing.T) {
 			ctx := t.Context()
 
@@ -618,6 +636,8 @@ func TestConcurrentFetchers(t *testing.T) {
 	})
 
 	t.Run("staggered production", func(t *testing.T) {
+		t.Parallel()
+
 		synctest.Test(t, func(t *testing.T) {
 			ctx := t.Context()
 
@@ -675,6 +695,9 @@ func TestConcurrentFetchers(t *testing.T) {
 	t.Run("fetchers do not request offset beyond high watermark", func(t *testing.T) {
 		// In Warpstream fetching past the end induced more delays than MinBytesWaitTime.
 		// So we avoid dispatching a fetch for past the high watermark.
+
+		t.Parallel()
+
 		synctest.Test(t, func(t *testing.T) {
 			ctx := t.Context()
 
@@ -748,6 +771,8 @@ func TestConcurrentFetchers(t *testing.T) {
 	})
 
 	t.Run("starting to run against a broken broker fails creating the fetchers", func(t *testing.T) {
+		t.Parallel()
+
 		synctest.Test(t, func(t *testing.T) {
 			ctx := t.Context()
 
@@ -809,6 +834,8 @@ func TestConcurrentFetchers(t *testing.T) {
 	})
 
 	t.Run("should reset the buffered records count when stopping", func(t *testing.T) {
+		t.Parallel()
+
 		synctest.Test(t, func(t *testing.T) {
 			ctx := t.Context()
 
@@ -840,6 +867,8 @@ func TestConcurrentFetchers(t *testing.T) {
 	})
 
 	t.Run("respect maximum buffered bytes limit", func(t *testing.T) {
+		t.Parallel()
+
 		synctest.Test(t, func(t *testing.T) {
 			const (
 				topicName        = "test-topic"
@@ -914,6 +943,9 @@ func TestConcurrentFetchers(t *testing.T) {
 
 	t.Run("respect maximum buffered bytes limit with varying record sizes", func(t *testing.T) {
 		// This test makes sure that the buffer doesn't become inefficient when the size estimations change (from large records we switch to small records).
+
+		t.Parallel()
+
 		synctest.Test(t, func(t *testing.T) {
 			const (
 				topicName          = "test-topic"
@@ -995,6 +1027,8 @@ func TestConcurrentFetchers(t *testing.T) {
 	})
 
 	t.Run("out of range error aborts under abort policy", func(t *testing.T) {
+		t.Parallel()
+
 		synctest.Test(t, func(t *testing.T) {
 			ctx := t.Context()
 

@@ -20,6 +20,8 @@ import (
 
 func TestPartitionOffsetWatcher(t *testing.T) {
 	t.Run("should support a single goroutine waiting for an offset", func(t *testing.T) {
+		t.Parallel()
+
 		synctest.Test(t, func(t *testing.T) {
 			var (
 				ctx       = t.Context()
@@ -51,6 +53,8 @@ func TestPartitionOffsetWatcher(t *testing.T) {
 	})
 
 	t.Run("should support two goroutines waiting for the same offset", func(t *testing.T) {
+		t.Parallel()
+
 		synctest.Test(t, func(t *testing.T) {
 			var (
 				ctx        = t.Context()
@@ -91,6 +95,8 @@ func TestPartitionOffsetWatcher(t *testing.T) {
 	})
 
 	t.Run("should support two goroutines waiting for a different offset", func(t *testing.T) {
+		t.Parallel()
+
 		synctest.Test(t, func(t *testing.T) {
 			var (
 				ctx        = t.Context()
