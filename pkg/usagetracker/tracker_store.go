@@ -46,6 +46,7 @@ type trackerStore struct {
 	idleTimeout                         time.Duration
 	userCloseToLimitPercentageThreshold int
 	enableVerboseSeriesMetrics          bool
+	minTimeBetweenShardsCleanup         time.Duration
 
 	// misc
 	logger log.Logger
@@ -62,7 +63,7 @@ type events interface {
 	publishCreatedSeries(ctx context.Context, tenantID string, series []uint64, timestamp time.Time) error
 }
 
-func newTrackerStore(idleTimeout time.Duration, userCloseToLimitPercentageThreshold int, logger log.Logger, l limiter, ev events, enableVerboseSeriesMetrics bool) *trackerStore {
+func newTrackerStore(idleTimeout time.Duration, userCloseToLimitPercentageThreshold int, logger log.Logger, l limiter, ev events, enableVerboseSeriesMetrics bool, minTimeBetweenShardsCleanup time.Duration) *trackerStore {
 	t := &trackerStore{
 		tenants:                             make(map[string]*trackedTenant),
 		limiter:                             l,
@@ -71,6 +72,7 @@ func newTrackerStore(idleTimeout time.Duration, userCloseToLimitPercentageThresh
 		idleTimeout:                         idleTimeout,
 		userCloseToLimitPercentageThreshold: userCloseToLimitPercentageThreshold,
 		enableVerboseSeriesMetrics:          enableVerboseSeriesMetrics,
+		minTimeBetweenShardsCleanup:         minTimeBetweenShardsCleanup,
 		sortedUsersCloseToLimit:             nil, // will be populated by updateLimits
 	}
 	return t
@@ -223,28 +225,64 @@ func (t *trackerStore) getOrCreateTenant(tenantID string) *trackedTenant {
 }
 
 func (t *trackerStore) cleanup(now time.Time) {
+	var totalTenants, tenantsDeleted, totalSeries, seriesRemoved int
+	var deletionCandidates []string
+	var totalIntroducedDelay time.Duration
+	t0 := time.Now()
+	defer func() {
+		level.Info(t.logger).Log("msg", "cleanup finished", "duration", time.Since(t0), "total_tenants", totalTenants, "tenants_deleted", tenantsDeleted, "total_series", totalSeries, "series_removed", seriesRemoved, "total_introduced_delay", totalIntroducedDelay)
+	}()
 	watermark := clock.ToMinutes(now.Add(-t.idleTimeout))
 
 	// We will work on a copy of tenants.
 	t.mtx.RLock()
 	tenantsClone := maps.Clone(t.tenants)
 	t.mtx.RUnlock()
+	totalTenants = len(tenantsClone)
+	if totalTenants == 0 {
+		return
+	}
 
-	var deletionCandidates []string
-	for tenantID, tenant := range tenantsClone {
-		for _, shard := range tenant.shards {
+	// Cleanup by shards instead of by tenants, to avoid holding the mutex for a single tenant for too long.
+	// See comment below.
+	for s := 0; s < shards; s++ {
+		var timeAfterFirstTenantCleanup time.Time
+		for _, tenant := range tenantsClone {
+			shard := tenant.shards[s]
+
 			shard.Lock()
+			totalSeries += shard.Count()
 			removed := shard.Cleanup(watermark, tenant.currentLimit)
 			shard.Unlock()
-
 			if removed > 0 {
 				tenant.series.Add(-uint64(removed))
+				seriesRemoved += removed
 				if t.enableVerboseSeriesMetrics {
 					tenant.seriesRemoved.Add(uint64(removed))
 				}
 			}
+
+			if timeAfterFirstTenantCleanup.IsZero() {
+				timeAfterFirstTenantCleanup = time.Now()
+			}
 		}
 
+		// We're introducing an artificial delay between shards to avoid mutex contention on the tracking path.
+		// If we cleanup all shards of same tenant in a row, we may be holding the mutexes for too long,
+		// blocking the latency-sensitive trackSeries calls.
+		//
+		// This is usually not needed in multi-tenant instances, where separate tenants are going to introduce delays
+		// between trackSeries calls of different tenants, but in large single-tenant instances we might just block for a while,
+		// so we make sure that there's enough delay between different shards.
+		if shouldWait := t.minTimeBetweenShardsCleanup - time.Since(timeAfterFirstTenantCleanup); shouldWait > 0 {
+			totalIntroducedDelay += shouldWait
+			time.Sleep(shouldWait)
+		}
+	}
+
+	// Check all tenants and see if any of them are now empty.
+	// We don't need to take the mutex for this check, and in most situations we won't find any candidates.
+	for tenantID, tenant := range tenantsClone {
 		if tenant.series.Load() == 0 {
 			deletionCandidates = append(deletionCandidates, tenantID)
 		}
@@ -270,6 +308,7 @@ func (t *trackerStore) cleanup(now time.Time) {
 				panic(fmt.Errorf("tenant %s not found in the sorted list: %v", tenantID, t.sortedTenants))
 			}
 			t.sortedTenants = slices.Delete(t.sortedTenants, index, index+1)
+			tenantsDeleted++
 		}
 		tenant.Unlock()
 	}
