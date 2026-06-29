@@ -28,12 +28,14 @@ var partitionPageTemplate = template.Must(template.New("partition").Parse(partit
 type partitionsPageContents struct {
 	Now        time.Time `json:"now"`
 	StaticRoot string    `json:"-"`
+	InstanceID string    `json:"instance_id"`
 	Partitions []int32   `json:"partitions"`
 }
 
 type partitionPageContents struct {
 	Now        time.Time    `json:"now"`
 	StaticRoot string       `json:"-"`
+	InstanceID string       `json:"instance_id"`
 	Partition  int32        `json:"partition"`
 	Tenant     string       `json:"tenant,omitempty"`
 	Shards     []ShardStats `json:"shards"`
@@ -57,6 +59,7 @@ func (t *UsageTracker) PartitionsHandler(w http.ResponseWriter, r *http.Request)
 	util.RenderHTTPResponse(w, partitionsPageContents{
 		Now:        time.Now(),
 		StaticRoot: "../static/",
+		InstanceID: t.cfg.InstanceRing.InstanceID,
 		Partitions: partitions,
 	}, partitionsPageTemplate, r)
 }
@@ -100,6 +103,7 @@ func (t *UsageTracker) PartitionHandler(w http.ResponseWriter, r *http.Request) 
 	util.RenderHTTPResponse(w, partitionPageContents{
 		Now:        time.Now(),
 		StaticRoot: "../../static/",
+		InstanceID: t.cfg.InstanceRing.InstanceID,
 		Partition:  int32(id),
 		Tenant:     tenant,
 		Shards:     shards,

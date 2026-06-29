@@ -56,16 +56,19 @@ func TestUsageTrackerPartitionTemplates(t *testing.T) {
 	require.NoError(t, partitionsPageTemplate.Execute(&buf, partitionsPageContents{
 		Now:        time.Now(),
 		StaticRoot: "../static/",
+		InstanceID: "usage-tracker-zone-a-0",
 		Partitions: []int32{0, 3, 7},
 	}))
 	require.Contains(t, buf.String(), `href="partitions/3"`)
 	require.Contains(t, buf.String(), "../static/bootstrap-5.1.3.min.css")
+	require.Contains(t, buf.String(), "usage-tracker-zone-a-0")
 
 	// partition.gohtml renders the per-(tenant, shard) table.
 	buf.Reset()
 	require.NoError(t, partitionPageTemplate.Execute(&buf, partitionPageContents{
 		Now:        time.Now(),
 		StaticRoot: "../../static/",
+		InstanceID: "usage-tracker-zone-a-0",
 		Partition:  7,
 		Shards: []ShardStats{
 			{Tenant: "user-a", Shard: 0, Stats: tenantshard.Stats{Resident: 12, Dead: 1, Limit: 32, Length: 8, Rehashes: 2}},
@@ -73,6 +76,7 @@ func TestUsageTrackerPartitionTemplates(t *testing.T) {
 	}))
 	out := buf.String()
 	require.Contains(t, out, "Partition 7")
+	require.Contains(t, out, "usage-tracker-zone-a-0")
 	require.Contains(t, out, "user-a")
 	require.Contains(t, out, "Rehashes")
 	require.Contains(t, out, "../../static/bootstrap-5.1.3.min.css")
