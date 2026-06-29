@@ -7,11 +7,14 @@ import (
 	"errors"
 	"fmt"
 	"iter"
+	"slices"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/mimir/pkg/blockbuilder/schedulerpb"
 )
 
 var (
@@ -338,3 +341,29 @@ func (p noOpJobCreationPolicy[T]) canCreateJob(_ jobKey, _ *T, _ iter.Seq[*T]) e
 }
 
 var _ jobCreationPolicy[any] = (*noOpJobCreationPolicy[any])(nil)
+
+// jobIDForSpec builds a stable ID for a job based on its start offsets.
+// In compartments mode, each cluster's start offset is included in the returned ID.
+func jobIDForSpec(compartmentsEnabled bool, spec *schedulerpb.JobSpec) string {
+	if !compartmentsEnabled {
+		// Non-compartment case (cluster ID not included).
+		return fmt.Sprintf("%s/%d/%d", spec.Topic, spec.Partition, spec.StartOffset)
+	}
+
+	// In compartments mode, sort by cluster ID so the ID is deterministic.
+	clusters := make([]int32, 0, len(spec.OffsetRanges))
+	for clusterID := range spec.OffsetRanges {
+		clusters = append(clusters, clusterID)
+	}
+	slices.Sort(clusters)
+
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "%s/%d/", spec.Topic, spec.Partition)
+	for i, cluster := range clusters {
+		if i > 0 {
+			sb.WriteByte('-')
+		}
+		fmt.Fprintf(&sb, "%d:%d", cluster, spec.OffsetRanges[cluster].StartOffset)
+	}
+	return sb.String()
+}
