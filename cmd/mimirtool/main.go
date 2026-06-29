@@ -22,7 +22,6 @@ var (
 	alertCommand          commands.AlertCommand
 	alertmanagerCommand   commands.AlertmanagerCommand
 	analyzeCommand        commands.AnalyzeCommand
-	blocksCommand         commands.BlocksCommand
 	bucketValidateCommand commands.BucketValidationCommand
 	configCommand         commands.ConfigCommand
 	loadgenCommand        commands.LoadgenCommand
@@ -50,7 +49,6 @@ func main() {
 	alertmanagerCommand.Register(app, envVars, &logConfig)
 	analyzeCommand.Register(app, envVars, &logConfig)
 	backfillCommand.Register(app, envVars, &logConfig)
-	blocksCommand.Register(app, envVars, &logConfig)
 	bucketValidateCommand.Register(app, envVars, &logConfig)
 	configCommand.Register(app, envVars)
 	loadgenCommand.Register(app, envVars, &logConfig, prometheus.DefaultRegisterer)

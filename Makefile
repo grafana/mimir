@@ -643,6 +643,9 @@ dist: ## Generates binaries for a Mimir release.
 			echo "Building metaconvert for $$os/$$arch"; \
 			GOOS=$$os GOARCH=$$arch CGO_ENABLED=0 go build $(GO_FLAGS) -o ./dist/metaconvert-$$os-$$arch$$suffix ./cmd/metaconvert; \
 			sha256sum ./dist/metaconvert-$$os-$$arch$$suffix | cut -d ' ' -f 1 > ./dist/metaconvert-$$os-$$arch$$suffix-sha-256; \
+			echo "Building mark-blocks for $$os/$$arch"; \
+			GOOS=$$os GOARCH=$$arch CGO_ENABLED=0 go build $(GO_FLAGS) -o ./dist/mark-blocks-$$os-$$arch$$suffix ./tools/mark-blocks; \
+			sha256sum ./dist/mark-blocks-$$os-$$arch$$suffix | cut -d ' ' -f 1 > ./dist/mark-blocks-$$os-$$arch$$suffix-sha-256; \
 			done; \
 		done; \
 		touch $@

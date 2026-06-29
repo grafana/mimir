@@ -95,14 +95,12 @@
 * [CHANGE] Continuous-test: Don't explicitly set `tests.write-read-series-test.num-series` and `tests.write-read-series-test.max-query-age` to their default values. #15705
 * [ENHANCEMENT] Updated rollout-operator jsonnet library to v0.38.0. #15328, #15626
 * [ENHANCEMENT] Make range vector splitting configurable per query path. #15706
-* [ENHANCEMENT] Add `newMimirtoolBlocksJob` and subcommand-specific helpers to run `mimirtool blocks` as Kubernetes Jobs. #15757
 
 
 ### Documentation
 
 ### Tools
 
-* [CHANGE] The `mark-blocks`, `listblocks`, `copyblocks`, `splitblocks`, and `undelete-blocks` tools are now subcommands of `mimirtool blocks`: `mark`, `list`, `copy`, `split`, `undelete`. #15757
 * [FEATURE] Copyblocks: add support for the block upload API as a copy destination. #15330
 * [ENHANCEMENT] Mimirtool: `partition-ring` subcommands now accept an optional `--partition-ring.key` flag to select the KV store key of the partition ring to operate on. It defaults to `ingester-partitions`. #15719
 * [ENHANCEMENT] Makefile: `build-mixin` and `mixin-screenshots` can now be configured to use native histograms for latency panels in dashboards. #15269
