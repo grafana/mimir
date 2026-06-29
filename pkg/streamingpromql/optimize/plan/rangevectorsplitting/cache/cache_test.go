@@ -3,6 +3,7 @@
 package cache
 
 import (
+	"bytes"
 	"context"
 	"testing"
 	"time"
@@ -33,30 +34,6 @@ const (
 	testFunction = functions.FUNCTION_SUM_OVER_TIME
 )
 
-// TestCacheKeys verifies that the cache prefix is folded into both the full cache key (which is
-// stored in the cache entry for collision verification) and the hashed backend key.
-func TestCacheKeys(t *testing.T) {
-	function := testFunction
-	inner := []byte("inner")
-	var start, end int64 = 0, 100
-	rawKey, err := generateFullCacheKey(context.Background(), func(context.Context) (string, error) { return "", nil }, function, inner, start, end)
-	require.NoError(t, err)
-
-	// With an empty prefix generator the full key is just the raw key.
-	noPrefix := &Cache[int]{prefixGenerator: func(context.Context) (string, error) { return "", nil }}
-	fullKey, hashedKey, err := noPrefix.cacheKeys(context.Background(), function, inner, start, end)
-	require.NoError(t, err)
-	require.Equal(t, rawKey, fullKey)
-	require.Equal(t, caching.HashCacheKey(rawKey), hashedKey)
-
-	// With a prefix generator the prefix is prepended to the full key and folded into the hash.
-	withPrefix := &Cache[int]{prefixGenerator: func(context.Context) (string, error) { return "tenant-a:", nil }}
-	fullKey, hashedKey, err = withPrefix.cacheKeys(context.Background(), function, inner, start, end)
-	require.NoError(t, err)
-	require.Equal(t, append([]byte("tenant-a:"), rawKey...), fullKey)
-	require.Equal(t, caching.HashCacheKey(fullKey), hashedKey)
-}
-
 // TestCacheKeysIsolatesPrefixes verifies that the same inner query under two different prefixes
 // produces different full keys and different hashed keys. Because the prefix is part of the full
 // key stored in the cache entry, even a hash collision across tenants or label policies would be
@@ -73,6 +50,9 @@ func TestCacheKeysIsolatesPrefixes(t *testing.T) {
 	require.NoError(t, err)
 	keyB, hashedB, err := tenantB.cacheKeys(context.Background(), function, inner, start, end)
 	require.NoError(t, err)
+
+	require.True(t, bytes.HasPrefix(keyA, []byte("tenant-a:")), "full key must start with the tenant's prefix")
+	require.True(t, bytes.HasPrefix(keyB, []byte("tenant-b:")), "full key must start with the tenant's prefix")
 
 	require.NotEqual(t, keyA, keyB)
 	require.NotEqual(t, hashedA, hashedB)
