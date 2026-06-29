@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package main
+package undelete
 
 import (
 	"context"
@@ -17,7 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	"github.com/grafana/mimir/pkg/util/objtools"
+	"github.com/grafana/mimir/pkg/util/objtools" //lint:ignore faillint Tools may use objtools.
 )
 
 func TestBlocksFromJSON(t *testing.T) {
@@ -519,4 +519,43 @@ func TestRestoreDryRun(t *testing.T) {
 func nopSlog() *slog.Logger {
 	// slog.DiscardHandler can be used in go 1.24: https://github.com/golang/go/issues/62005
 	return slog.New(slog.NewJSONHandler(io.Discard, nil))
+}
+
+type listOnlyBucket struct {
+	objtools.Bucket
+	objects []objtools.ObjectAttributes
+}
+
+func (b *listOnlyBucket) List(_ context.Context, _ objtools.ListOptions) (*objtools.ListResult, error) {
+	return &objtools.ListResult{Objects: b.objects}, nil
+}
+
+func TestListGlobalMarkers(t *testing.T) {
+	tenantID := "tenant"
+
+	deletionOnly, _ := ulid.New(1, nil)
+	noCompactOnly, _ := ulid.New(3, nil)
+	both, _ := ulid.New(3, nil)
+
+	marker := func(markerPath string) objtools.ObjectAttributes {
+		return objtools.ObjectAttributes{Name: tenantID + objtools.Delim + markerPath}
+	}
+
+	bkt := &listOnlyBucket{
+		objects: []objtools.ObjectAttributes{
+			marker(block.DeletionMarkFilepath(deletionOnly)),
+			marker(block.NoCompactMarkFilepath(noCompactOnly)),
+			marker(block.NoCompactMarkFilepath(both)),
+			marker(block.DeletionMarkFilepath(both)),
+		},
+	}
+
+	m, err := listGlobalMarkers(context.Background(), bkt, tenantID)
+	require.NoError(t, err)
+
+	require.Equal(t, map[ulid.ULID]globalMarkerState{
+		deletionOnly:  {deleteMarkerExists: true},
+		noCompactOnly: {noCompactMarkerExists: true},
+		both:          {deleteMarkerExists: true, noCompactMarkerExists: true},
+	}, m)
 }

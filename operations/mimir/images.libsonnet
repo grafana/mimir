@@ -20,5 +20,6 @@
 
     query_tee: 'grafana/query-tee:3.1.2',
     continuous_test: self.mimir,
+    mimirtool: 'grafana/mimirtool:3.1.1',
   },
 }

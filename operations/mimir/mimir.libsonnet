@@ -8,6 +8,9 @@
 (import 'rollout-operator/rollout-operator.libsonnet') +
 (import 'rollout-operator.libsonnet') +
 
+// Tools to operate on blocks in object storage (run as one-off Jobs).
+(import 'block-tools.libsonnet') +
+
 // Mimir services
 (import 'distributor.libsonnet') +
 (import 'ingester.libsonnet') +
