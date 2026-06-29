@@ -59,7 +59,7 @@ func TestMultitenantCompactor_Compartments_RegistersInReadCompartmentRing(t *tes
 
 	// The instance is registered under the read compartment's ring key.
 	test.Poll(t, 5*time.Second, 1, func() interface{} {
-		return countInstances(compartments.ReadCompartmentRingKey(readCompartmentID, ringKey))
+		return countInstances(compartments.WithReadCompartmentSuffix(ringKey, readCompartmentID))
 	})
 
 	// Nothing is registered under the non-compartment key.

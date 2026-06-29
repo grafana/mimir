@@ -565,8 +565,8 @@ func (c *MultitenantCompactor) starting(ctx context.Context) error {
 	// registers into its read compartment's own ring.
 	name, key := ringName, ringKey
 	if c.compactorCfg.Compartments.Enabled {
-		name = compartments.ReadCompartmentRingName(c.compactorCfg.ReadCompartmentID, ringName)
-		key = compartments.ReadCompartmentRingKey(c.compactorCfg.ReadCompartmentID, ringKey)
+		name = compartments.WithReadCompartmentSuffix(ringName, c.compactorCfg.ReadCompartmentID)
+		key = compartments.WithReadCompartmentSuffix(ringKey, c.compactorCfg.ReadCompartmentID)
 	}
 	c.ring, c.ringLifecycler, err = newRingAndLifecycler(c.compactorCfg.ShardingRing, name, key, c.logger, c.registerer)
 	if err != nil {

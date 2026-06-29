@@ -45,9 +45,9 @@ func TestPartitionRingWatchers_Enabled(t *testing.T) {
 	t.Cleanup(func() { _ = closer.Close() })
 
 	// Each read compartment has its own key with a distinct number of partitions.
-	writePartitions(t, kvClient, compartments.ReadCompartmentRingKey(0, testRingKey), 0)
-	writePartitions(t, kvClient, compartments.ReadCompartmentRingKey(1, testRingKey), 0, 1)
-	writePartitions(t, kvClient, compartments.ReadCompartmentRingKey(2, testRingKey), 0, 1, 2)
+	writePartitions(t, kvClient, compartments.WithReadCompartmentSuffix(testRingKey, 0), 0)
+	writePartitions(t, kvClient, compartments.WithReadCompartmentSuffix(testRingKey, 1), 0, 1)
+	writePartitions(t, kvClient, compartments.WithReadCompartmentSuffix(testRingKey, 2), 0, 1, 2)
 
 	w, err := NewPartitionRingWatchers(true, 3, testRingName, testRingKey, kvClient, log.NewNopLogger(), nil)
 	require.NoError(t, err)

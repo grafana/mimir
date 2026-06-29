@@ -52,7 +52,7 @@ func TestStoreGateway_Compartments_RegistersInReadCompartmentRing(t *testing.T) 
 	}
 
 	// The instance is registered under the read compartment's ring key.
-	assert.Equal(t, 1, countInstances(compartments.ReadCompartmentRingKey(readCompartmentID, RingKey)))
+	assert.Equal(t, 1, countInstances(compartments.WithReadCompartmentSuffix(RingKey, readCompartmentID)))
 
 	// Nothing is registered under the non-compartment key.
 	assert.Zero(t, countInstances(RingKey))
