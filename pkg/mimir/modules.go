@@ -72,6 +72,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/ast/sharding"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/ast/subqueryspinoff"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/remoteexec"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/splitandcache"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/analysis"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"github.com/grafana/mimir/pkg/usagestats"
@@ -118,7 +119,6 @@ const (
 	QueryFrontend                    string = "query-frontend"
 	QueryFrontendCacheClient         string = "query-frontend-cache-client"
 	QueryFrontendCodec               string = "query-frontend-codec"
-	QueryFrontendQueryPlanner        string = "query-frontend-query-planner"
 	QueryFrontendTopicOffsetsReaders string = "query-frontend-topic-offsets-reader"
 	QueryFrontendTripperware         string = "query-frontend-tripperware"
 	QueryScheduler                   string = "query-scheduler"
@@ -949,12 +949,17 @@ func (t *Mimir) initCacheKeyGenerator() (services.Service, error) {
 // to optimize Prometheus query requests.
 func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error) {
 	middlewareCfg := t.Cfg.Frontend.QueryMiddleware
-
-	opts := t.createQueryFrontendPromQLEngineOptions()
 	middlewareCfg.InternalFunctionNames.Add(sharding.ConcatFunction.Name)
 	middlewareCfg.InternalFunctionNames.Add(sharding.AvgFunction.Name)
 	middlewareCfg.InternalFunctionNames.Add(core.VectorEvaluationRootFunction.Name)
 	middlewareCfg.InternalFunctionNames.Add(core.ScalarEvaluationRootFunction.Name)
+
+	opts := t.createQueryFrontendPromQLEngineOptions()
+
+	if err := t.createQueryFrontendQueryPlanner(opts); err != nil {
+		return nil, err
+	}
+	t.registerQueryFrontendAnalysisEndpoint(opts)
 
 	var memoryConsumptionTrackerFactory *limiter.InflightMemoryConsumptionTracker
 
@@ -1130,8 +1135,7 @@ func (t *Mimir) initQueryFrontendCacheClient() (services.Service, error) {
 	return nil, nil
 }
 
-func (t *Mimir) initQueryFrontendQueryPlanner() (services.Service, error) {
-	opts := t.createQueryFrontendPromQLEngineOptions()
+func (t *Mimir) createQueryFrontendQueryPlanner(opts streamingpromql.EngineOpts) error {
 	var versionProvider streamingpromql.QueryPlanVersionProvider
 
 	if t.Cfg.Frontend.QueryMiddleware.EnableRemoteExecution {
@@ -1146,7 +1150,7 @@ func (t *Mimir) initQueryFrontendQueryPlanner() (services.Service, error) {
 	var err error
 	t.QueryFrontendQueryPlanner, err = streamingpromql.NewQueryPlanner(opts, versionProvider)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	if t.Cfg.Frontend.QueryMiddleware.EnableRemoteExecution {
@@ -1163,13 +1167,15 @@ func (t *Mimir) initQueryFrontendQueryPlanner() (services.Service, error) {
 		t.QueryFrontendQueryPlanner.RegisterASTOptimizationPass(sharding.NewOptimizationPass(t.Overrides, t.Cfg.Frontend.QueryMiddleware.TargetSeriesPerShard, opts.CommonOpts.Reg, util_log.Logger))
 	}
 
+	return nil
+}
+
+func (t *Mimir) registerQueryFrontendAnalysisEndpoint(opts streamingpromql.EngineOpts) {
 	// FIXME: results returned by the analysis endpoint won't include any changes made by query middlewares
 	// like sharding, splitting etc.
 	// Once these are running as MQE optimisation passes, they'll automatically be included in the analysis result.
 	analysisHandler := analysis.NewHandler(t.QueryFrontendQueryPlanner, t.QueryLimitsProvider, opts)
 	t.API.RegisterQueryAnalysisAPI(analysisHandler)
-
-	return nil, nil
 }
 
 func (t *Mimir) createQueryFrontendPromQLEngineOptions() streamingpromql.EngineOpts {
@@ -1191,6 +1197,14 @@ func (t *Mimir) createQueryFrontendPromQLEngineOptions() streamingpromql.EngineO
 	opts.RangeQuerySplittingAndCaching.CacheEnabled = middlewareCfg.UseMQEForSplittingAndCachingResults && middlewareCfg.CacheResults
 	opts.RangeQuerySplittingAndCaching.MinCacheExtent = querymiddleware.DefaultMinCacheExtent
 	opts.RangeQuerySplittingAndCaching.CacheClient = t.QueryFrontendCacheClient
+
+	// We can't use the engine to register these metrics, as the same metrics are used by other kinds of caches (eg. the labels query cache)
+	// and the Prometheus client library requires that they each instance of the metric has exactly the same set of label names within this process.
+	// If engine registers these metrics, then the metrics will be registered with the engine="query-frontend" label applied above,
+	// which causes a panic as the other instances of the metric don't have an "engine" label.
+	if opts.RangeQuerySplittingAndCaching.CacheEnabled {
+		opts.RangeQuerySplittingAndCaching.CacheMetrics = splitandcache.NewResultsCacheMetrics("query_range", t.Registerer)
+	}
 
 	return opts
 }
@@ -1655,7 +1669,6 @@ func (t *Mimir) setupModuleManager() error {
 	mm.RegisterModule(QueryFrontend, t.initQueryFrontend)
 	mm.RegisterModule(QueryFrontendCacheClient, t.initQueryFrontendCacheClient, modules.UserInvisibleModule)
 	mm.RegisterModule(QueryFrontendCodec, t.initQueryFrontendCodec, modules.UserInvisibleModule)
-	mm.RegisterModule(QueryFrontendQueryPlanner, t.initQueryFrontendQueryPlanner, modules.UserInvisibleModule)
 	mm.RegisterModule(QueryFrontendTopicOffsetsReaders, t.initQueryFrontendTopicOffsetsReaders, modules.UserInvisibleModule)
 	mm.RegisterModule(QueryFrontendTripperware, t.initQueryFrontendTripperware, modules.UserInvisibleModule)
 	mm.RegisterModule(QueryScheduler, t.initQueryScheduler)
@@ -1702,9 +1715,8 @@ func (t *Mimir) setupModuleManager() error {
 		QuerierQueryPlanner:              {API, Overrides, CacheKeyGenerator},
 		QuerierRing:                      {API, RuntimeConfig, MemberlistKV, Vault},
 		QueryFrontend:                    {QueryFrontendTripperware, MemberlistKV, Vault},
-		QueryFrontendQueryPlanner:        {API, Overrides, QuerierRing, QueryFrontendCacheClient, CacheKeyGenerator},
 		QueryFrontendTopicOffsetsReaders: {IngesterPartitionRing},
-		QueryFrontendTripperware:         {API, Overrides, QueryFrontendCodec, QueryFrontendTopicOffsetsReaders, QueryFrontendQueryPlanner, QueryFrontendCacheClient, CacheKeyGenerator},
+		QueryFrontendTripperware:         {API, Overrides, QueryFrontendCodec, QueryFrontendTopicOffsetsReaders, QuerierRing, QueryFrontendCacheClient, CacheKeyGenerator},
 		QueryScheduler:                   {API, Overrides, MemberlistKV, Vault},
 		Queryable:                        {Overrides, DistributorService, IngesterRing, IngesterPartitionRing, API, StoreQueryable, MemberlistKV, QuerierQueryPlanner},
 		Ruler:                            {DistributorService, StoreQueryable, RulerStorage, Vault, QuerierQueryPlanner},

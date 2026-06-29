@@ -2764,7 +2764,7 @@ Usage of ./cmd/mimir/mimir:
   -query-frontend.subquery-spin-off-enabled
     	[experimental] Enable spinning off subqueries from instant queries as range queries to optimize their performance.
   -query-frontend.use-mimir-query-engine-for-sharding
-    	[experimental] Set to true to enable performing query sharding inside the Mimir query engine (MQE). This setting has no effect if sharding is disabled. Requires remote execution and MQE to be enabled.
+    	[experimental] Set to true to enable performing query sharding inside the Mimir query engine (MQE). Requires remote execution and MQE to be enabled.
   -query-frontend.use-mimir-query-engine-for-splitting-and-caching-results
     	[experimental] Set to true to enable performing splitting range queries by interval and caching inside the Mimir query engine (MQE), and spinning off subqueries from instant queries inside MQE. This only has an effect if the corresponding feature is enabled (with -query-frontend.split-queries-by-interval=true, -query-frontend.cache-results=true or -query-frontend.subquery-spin-off-enabled=true, respectively). Requires MQE, remote execution and sharding inside MQE to be enabled.
   -query-scheduler.grpc-client-config.backoff-max-period duration

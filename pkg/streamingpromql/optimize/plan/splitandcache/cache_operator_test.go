@@ -14,6 +14,8 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/user"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -23,6 +25,7 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware/querydetails"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/querierpb"
 	"github.com/grafana/mimir/pkg/streamingpromql/caching"
@@ -69,6 +72,7 @@ func TestCacheOperator(t *testing.T) {
 		expectedWrittenCacheEntry        *CacheEntry   // nil if no cache entry should be written. If non-nil, CacheKey will be set to the expected value in the test.
 		expectedTTL                      time.Duration // If not set, uses limits.ttl.
 		expectedAnyCachedExtentsRetained bool
+		expectedCachedExtentsUsed        int
 	}{
 		"cache miss": {
 			existingCacheEntry: nil,
@@ -108,6 +112,7 @@ func TestCacheOperator(t *testing.T) {
 			expectedFreshlyEvaluatedRanges:   nil,
 			expectedWrittenCacheEntry:        nil,
 			expectedAnyCachedExtentsRetained: true,
+			expectedCachedExtentsUsed:        1,
 		},
 
 		"cache hit with single extent that starts before desired time range and finishes at end of desired time range": {
@@ -121,6 +126,7 @@ func TestCacheOperator(t *testing.T) {
 			expectedWrittenCacheEntry:        nil,
 			expectedAnnotationTimeRange:      types.NewRangeQueryTimeRange(desiredStart.Add(-5*time.Minute), desiredEnd, step),
 			expectedAnyCachedExtentsRetained: true,
+			expectedCachedExtentsUsed:        1,
 		},
 
 		"cache hit with single extent that starts before desired time range and finishes one step before end of desired time range": {
@@ -138,6 +144,7 @@ func TestCacheOperator(t *testing.T) {
 			},
 			expectedAnnotationTimeRange:      types.NewRangeQueryTimeRange(desiredStart.Add(-5*time.Minute), desiredEnd, step),
 			expectedAnyCachedExtentsRetained: true,
+			expectedCachedExtentsUsed:        1,
 		},
 
 		"cache hit with single extent that starts at beginning of desired time range and finishes after end of desired time range": {
@@ -151,6 +158,7 @@ func TestCacheOperator(t *testing.T) {
 			expectedWrittenCacheEntry:        nil,
 			expectedAnnotationTimeRange:      types.NewRangeQueryTimeRange(desiredStart, desiredEnd.Add(5*time.Minute), step),
 			expectedAnyCachedExtentsRetained: true,
+			expectedCachedExtentsUsed:        1,
 		},
 
 		"cache hit with single extent that starts before desired time range and finishes before end of desired time range": {
@@ -168,6 +176,7 @@ func TestCacheOperator(t *testing.T) {
 			},
 			expectedAnnotationTimeRange:      types.NewRangeQueryTimeRange(desiredStart.Add(-5*time.Minute), desiredEnd, step),
 			expectedAnyCachedExtentsRetained: true,
+			expectedCachedExtentsUsed:        1,
 		},
 
 		"cache hit with single extent that starts before desired time range and finishes before end of desired time range, and desired end timestamp is not (start + N×step), ie. not aligned to step": {
@@ -187,6 +196,7 @@ func TestCacheOperator(t *testing.T) {
 			},
 			expectedAnnotationTimeRange:      types.NewRangeQueryTimeRange(desiredStart.Add(-5*time.Minute), desiredEnd, step),
 			expectedAnyCachedExtentsRetained: true,
+			expectedCachedExtentsUsed:        1,
 		},
 
 		"cache hit with single extent that starts before desired time range and finishes before end of desired time range, and desired end timestamp is not (start + N×step), ie. not aligned to step, and desired time range is before Unix epoch": {
@@ -206,6 +216,7 @@ func TestCacheOperator(t *testing.T) {
 			},
 			expectedAnnotationTimeRange:      types.NewRangeQueryTimeRange(timeZero.Add(-25*time.Minute), timeZero.Add(-10*time.Minute), step),
 			expectedAnyCachedExtentsRetained: true,
+			expectedCachedExtentsUsed:        1,
 		},
 
 		"cache hit with single extent that starts part-way through desired time range and finishes at end of desired time range": {
@@ -222,6 +233,7 @@ func TestCacheOperator(t *testing.T) {
 				},
 			},
 			expectedAnyCachedExtentsRetained: true,
+			expectedCachedExtentsUsed:        1,
 		},
 
 		"cache hit with single extent that starts part-way through desired time range and finishes after end of desired time range": {
@@ -239,6 +251,7 @@ func TestCacheOperator(t *testing.T) {
 			},
 			expectedAnnotationTimeRange:      types.NewRangeQueryTimeRange(desiredStart, desiredEnd.Add(3*time.Minute), step),
 			expectedAnyCachedExtentsRetained: true,
+			expectedCachedExtentsUsed:        1,
 		},
 
 		"cache hit with single extent that starts part-way through desired time range and finishes before end of desired time range": {
@@ -258,6 +271,7 @@ func TestCacheOperator(t *testing.T) {
 				},
 			},
 			expectedAnyCachedExtentsRetained: true,
+			expectedCachedExtentsUsed:        1,
 		},
 
 		"cache hit with extents before and after desired time range but none in desired time range": {
@@ -295,6 +309,7 @@ func TestCacheOperator(t *testing.T) {
 				},
 			},
 			expectedAnyCachedExtentsRetained: true,
+			expectedCachedExtentsUsed:        1,
 			expectedAnnotationTimeRange:      types.NewRangeQueryTimeRange(desiredStart, desiredEnd.Add(3*time.Minute), step),
 		},
 
@@ -314,6 +329,7 @@ func TestCacheOperator(t *testing.T) {
 			},
 			expectedAnnotationTimeRange:      types.NewRangeQueryTimeRange(desiredStart.Add(-5*time.Minute), desiredEnd.Add(4*time.Minute), step),
 			expectedAnyCachedExtentsRetained: true,
+			expectedCachedExtentsUsed:        2,
 		},
 
 		"cache hit with multiple extents in desired time range": {
@@ -335,6 +351,7 @@ func TestCacheOperator(t *testing.T) {
 				},
 			},
 			expectedAnyCachedExtentsRetained: true,
+			expectedCachedExtentsUsed:        2,
 		},
 
 		"cache hit, but extents are just before and just after the desired time range": {
@@ -355,6 +372,7 @@ func TestCacheOperator(t *testing.T) {
 			},
 			expectedAnnotationTimeRange:      types.NewRangeQueryTimeRange(desiredStart.Add(-5*step), desiredEnd.Add(5*step), step),
 			expectedAnyCachedExtentsRetained: true,
+			expectedCachedExtentsUsed:        2,
 		},
 
 		"cache miss, evaluated range overlaps max freshness window": {
@@ -414,6 +432,7 @@ func TestCacheOperator(t *testing.T) {
 				},
 			},
 			expectedAnyCachedExtentsRetained: true,
+			expectedCachedExtentsUsed:        1,
 		},
 
 		"cache miss, evaluated range within OOO window": {
@@ -496,6 +515,7 @@ func TestCacheOperator(t *testing.T) {
 				},
 			},
 			expectedAnyCachedExtentsRetained: true,
+			expectedCachedExtentsUsed:        1,
 		},
 
 		"cache hit, existing extent covers entire period up to max freshness window": {
@@ -511,6 +531,7 @@ func TestCacheOperator(t *testing.T) {
 			},
 			expectedWrittenCacheEntry:        nil,
 			expectedAnyCachedExtentsRetained: true,
+			expectedCachedExtentsUsed:        1,
 		},
 
 		"small extent avoidance: single small extent overlapping large desired time range is discarded and re-evaluated": {
@@ -571,6 +592,7 @@ func TestCacheOperator(t *testing.T) {
 				},
 			},
 			expectedAnyCachedExtentsRetained: true,
+			expectedCachedExtentsUsed:        1,
 		},
 
 		"small extent avoidance: small extents entirely outside the desired time range are retained": {
@@ -609,6 +631,7 @@ func TestCacheOperator(t *testing.T) {
 			expectedFreshlyEvaluatedRanges:   nil,
 			expectedWrittenCacheEntry:        nil,
 			expectedAnyCachedExtentsRetained: true,
+			expectedCachedExtentsUsed:        1,
 		},
 	}
 
@@ -635,6 +658,7 @@ func TestCacheOperator(t *testing.T) {
 			}
 
 			ctx := user.InjectOrgID(context.Background(), "some-user")
+			queryDetails, ctx := querydetails.ContextWithEmptyDetails(ctx)
 			memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 			cache := caching.NewInMemoryCache()
 			materializer := &testMaterializer{
@@ -643,8 +667,9 @@ func TestCacheOperator(t *testing.T) {
 				memoryConsumptionTracker: memoryConsumptionTracker,
 			}
 			params := &planning.QueryParameters{OriginalExpression: "the_original_expression{}"}
+			metrics := NewResultsCacheMetrics("query_range", prometheus.NewPedanticRegistry())
 
-			o := newCacheOperator(cache, materializer, createTestNode(), testCase.timeRange, memoryConsumptionTracker, posrange.PositionRange{}, params, limits, log.NewNopLogger(), cacheEntryInterval, testCase.minCacheExtent)
+			o := newCacheOperator(cache, materializer, createTestNode(), testCase.timeRange, memoryConsumptionTracker, posrange.PositionRange{}, params, limits, log.NewNopLogger(), cacheEntryInterval, testCase.minCacheExtent, metrics)
 			o.timeNow = func() time.Time { return timeNow }
 			o.getCurrentTraceID = func(context.Context) (string, bool) { return newTraceID, true }
 
@@ -743,6 +768,28 @@ func TestCacheOperator(t *testing.T) {
 
 				require.Equal(t, testCase.expectedWrittenCacheEntry, actualEntry, "expected cache entry to be written with expected value")
 			}
+
+			if testCase.expectedCachedExtentsUsed > 0 {
+				require.NotZero(t, queryDetails.ResultsCacheHitBytes, "expected at least one cached extent to be used")
+			} else {
+				require.Zero(t, queryDetails.ResultsCacheHitBytes, "expected no cached extents to be used")
+			}
+
+			if len(testCase.expectedFreshlyEvaluatedRanges) > 0 {
+				require.NotZero(t, queryDetails.ResultsCacheMissBytes, "expected at least one freshly evaluated range")
+			} else {
+				require.Zero(t, queryDetails.ResultsCacheMissBytes, "expected no freshly evaluated ranges")
+			}
+
+			require.Equal(t, float64(testCase.expectedCachedExtentsUsed), testutil.ToFloat64(metrics.UsedExtents))
+			require.Equal(t, float64(len(testCase.expectedFreshlyEvaluatedRanges)), testutil.ToFloat64(metrics.EvaluatedExtents))
+
+			require.Equal(t, float64(1), testutil.ToFloat64(metrics.CacheRequests))
+			if testCase.existingCacheEntry == nil {
+				require.Zero(t, testutil.ToFloat64(metrics.CacheHits))
+			} else {
+				require.Equal(t, float64(1), testutil.ToFloat64(metrics.CacheHits))
+			}
 		})
 	}
 }
@@ -759,7 +806,8 @@ func TestCacheOperator_DoesNotSaveCacheEntryIfSeriesMetadataNotCalled(t *testing
 	limits := &mockLimitsProvider{}
 
 	timeRange := types.NewRangeQueryTimeRange(timestamp.Time(0), timestamp.Time(0).Add(2*time.Minute), time.Minute)
-	o := newCacheOperator(cache, materializer, createTestNode(), timeRange, memoryConsumptionTracker, posrange.PositionRange{}, &planning.QueryParameters{OriginalExpression: "the_original_expression{}"}, limits, log.NewNopLogger(), cacheEntryInterval, 0)
+	metrics := NewResultsCacheMetrics("query_range", prometheus.NewPedanticRegistry())
+	o := newCacheOperator(cache, materializer, createTestNode(), timeRange, memoryConsumptionTracker, posrange.PositionRange{}, &planning.QueryParameters{OriginalExpression: "the_original_expression{}"}, limits, log.NewNopLogger(), cacheEntryInterval, 0, metrics)
 
 	require.NoError(t, o.Prepare(ctx, &types.PrepareParams{}))
 	require.NoError(t, o.AfterPrepare(ctx))
@@ -785,7 +833,8 @@ func TestCacheOperator_DoesNotSaveCacheEntryIfNotAllSeriesRead(t *testing.T) {
 	limits := &mockLimitsProvider{}
 
 	timeRange := types.NewRangeQueryTimeRange(timestamp.Time(0), timestamp.Time(0).Add(2*time.Minute), time.Minute)
-	o := newCacheOperator(cache, materializer, createTestNode(), timeRange, memoryConsumptionTracker, posrange.PositionRange{}, &planning.QueryParameters{OriginalExpression: "the_original_expression{}"}, limits, log.NewNopLogger(), cacheEntryInterval, 0)
+	metrics := NewResultsCacheMetrics("query_range", prometheus.NewPedanticRegistry())
+	o := newCacheOperator(cache, materializer, createTestNode(), timeRange, memoryConsumptionTracker, posrange.PositionRange{}, &planning.QueryParameters{OriginalExpression: "the_original_expression{}"}, limits, log.NewNopLogger(), cacheEntryInterval, 0, metrics)
 
 	require.NoError(t, o.Prepare(ctx, &types.PrepareParams{}))
 	require.NoError(t, o.AfterPrepare(ctx))
@@ -819,7 +868,8 @@ func TestCacheOperator_DoesNotSaveCacheEntryIfFinishedReadingNotCalled(t *testin
 	limits := &mockLimitsProvider{}
 
 	timeRange := types.NewRangeQueryTimeRange(timestamp.Time(0), timestamp.Time(0).Add(2*time.Minute), time.Minute)
-	o := newCacheOperator(cache, materializer, createTestNode(), timeRange, memoryConsumptionTracker, posrange.PositionRange{}, &planning.QueryParameters{OriginalExpression: "the_original_expression{}"}, limits, log.NewNopLogger(), cacheEntryInterval, 0)
+	metrics := NewResultsCacheMetrics("query_range", prometheus.NewPedanticRegistry())
+	o := newCacheOperator(cache, materializer, createTestNode(), timeRange, memoryConsumptionTracker, posrange.PositionRange{}, &planning.QueryParameters{OriginalExpression: "the_original_expression{}"}, limits, log.NewNopLogger(), cacheEntryInterval, 0, metrics)
 
 	require.NoError(t, o.Prepare(ctx, &types.PrepareParams{}))
 	require.NoError(t, o.AfterPrepare(ctx))
@@ -1099,7 +1149,7 @@ func (m *mockLimitsProvider) AllowCachingUnalignedQueries(ctx context.Context) (
 
 func TestCacheOperator_CacheKey(t *testing.T) {
 	generateCacheKey := func(tenantID string, desiredTimeRange types.QueryTimeRange, node planning.Node, params *planning.QueryParameters) []byte {
-		o := newCacheOperator(nil, nil, node, desiredTimeRange, nil, posrange.PositionRange{}, params, nil, log.NewNopLogger(), cacheEntryInterval, 0)
+		o := newCacheOperator(nil, nil, node, desiredTimeRange, nil, posrange.PositionRange{}, params, nil, log.NewNopLogger(), cacheEntryInterval, 0, nil)
 		ctx := user.InjectOrgID(context.Background(), tenantID)
 
 		key, err := o.computeCacheKey(ctx)

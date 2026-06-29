@@ -21,6 +21,7 @@ import (
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/splitandcache"
 )
 
 // TestSubquerySpinOff_Correctness confirms that spinning off subqueries from instant queries inside the
@@ -149,6 +150,7 @@ func newSubquerySpinOffTestEngine(t *testing.T, enableSpinOff bool) (*streamingp
 	opts.RangeQuerySplittingAndCaching.CacheEnabled = true
 	opts.RangeQuerySplittingAndCaching.MinCacheExtent = querymiddleware.DefaultMinCacheExtent
 	opts.RangeQuerySplittingAndCaching.CacheClient = cache.NewMockCache()
+	opts.RangeQuerySplittingAndCaching.CacheMetrics = splitandcache.NewResultsCacheMetrics("query_range", opts.CommonOpts.Reg)
 
 	planner, err := streamingpromql.NewQueryPlanner(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)

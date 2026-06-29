@@ -42,6 +42,11 @@ type queryFrontendTestConfig struct {
 	setup                       func(t *testing.T, s *e2e.Scenario) (configFile string, flags map[string]string)
 	withHistograms              bool
 	remoteExecutionEnabled      bool
+
+	// useMQEForSplittingAndCaching runs time-splitting, results caching and subquery spin-off inside the
+	// Mimir query engine (MQE) instead of in the query-frontend middleware. It requires remote execution
+	// and sharding inside MQE, both of which are enabled automatically when this is set.
+	useMQEForSplittingAndCaching bool
 }
 
 func TestQueryFrontendWithBlocksStorageViaCommonFlags(t *testing.T) {
@@ -241,6 +246,26 @@ func TestQueryFrontendWithMultiNodeRemoteExecution(t *testing.T) {
 	})
 }
 
+func TestQueryFrontendWithMQEForSplittingAndCaching(t *testing.T) {
+	runQueryFrontendTest(t, queryFrontendTestConfig{
+		setup: func(t *testing.T, s *e2e.Scenario) (configFile string, flags map[string]string) {
+			flags = mergeFlags(
+				CommonStorageBackendFlags(),
+				BlocksStorageFlags(),
+			)
+
+			minio := e2edb.NewMinio(9000, mimirBucketName)
+			require.NoError(t, s.StartAndWaitReady(minio))
+
+			return "", flags
+		},
+		withHistograms:               true,
+		remoteExecutionEnabled:       true,
+		useMQEForSplittingAndCaching: true,
+		queryStatsEnabled:            true,
+	})
+}
+
 func TestQueryFrontendWithIngestStorageViaFlagsAndQueryStatsEnabled(t *testing.T) {
 	runScenario := func(t *testing.T, enableRemoteExecution bool) {
 		runQueryFrontendTest(t, queryFrontendTestConfig{
@@ -296,6 +321,12 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 		"-query-frontend.subquery-spin-off-enabled":         "true",
 		"-query-frontend.enable-remote-execution":           strconv.FormatBool(cfg.remoteExecutionEnabled),
 	})
+
+	if cfg.useMQEForSplittingAndCaching {
+		flags = mergeFlags(flags, map[string]string{
+			"-query-frontend.use-mimir-query-engine-for-splitting-and-caching-results": "true",
+		})
+	}
 
 	// Start the query-scheduler.
 	var queryScheduler *e2emimir.MimirService
@@ -506,7 +537,7 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 
 	expectedMaximumQuerierQueryCount := expectedMinimumQuerierQueryCount + 2 // Depending on what time of day it is, the long-range query and spun-off subquery can both be split into another interval.
 
-	require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Equals(expectedQueryFrontendQueryCount), "cortex_query_frontend_queries_total"))
+	require.NoErrorf(t, queryFrontend.WaitSumMetrics(e2e.Equals(expectedQueryFrontendQueryCount), "cortex_query_frontend_queries_total"), "expected %v queries to query-frontend", expectedQueryFrontendQueryCount)
 
 	routeNames := []string{"prometheus_api_v1_series", "prometheus_api_v1_query", "prometheus_api_v1_query_range", "querierpb.EvaluateQueryRequest"}
 	withQueryRoutes := e2e.WithLabelMatchers(labels.MustNewMatcher(labels.MatchRegexp, "route", strings.Join(routeNames, "|")))
