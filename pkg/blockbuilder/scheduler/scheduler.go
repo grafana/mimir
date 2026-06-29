@@ -280,7 +280,6 @@ func (s *BlockBuilderScheduler) enqueuePendingJobs() {
 				continue
 			}
 
-			// TODO: pass in compartments enabled flag once compartments support is added.
 			jobID := jobIDForSpec(false, spec)
 			if err := s.jobs.add(jobID, *spec); err != nil {
 				if errors.Is(err, errJobCreationDisallowed) || errors.Is(err, errJobAlreadyExists) {
