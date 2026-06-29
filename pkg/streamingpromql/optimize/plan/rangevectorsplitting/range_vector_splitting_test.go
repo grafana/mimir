@@ -564,14 +564,16 @@ func TestQuerySplitting_WithSSE(t *testing.T) {
 	expectedIntermediate := rangevectorsplitting.FirstLastOverTimeIntermediate{H: &expectedH}
 
 	// Both keys must contain the full histogram (skip=false fetches buckets).
-	countKey := cache.TestGenerateHashedCacheKey(functions.FUNCTION_LAST_OVER_TIME, splittingCacheKey(t, countSplit, params), 2*hourInMs-1, 4*hourInMs-1)
+	countKey, err := cache.TestGenerateHashedCacheKey(t.Context(), emptyPrefixGenerator, functions.FUNCTION_LAST_OVER_TIME, splittingCacheKey(t, countSplit, params), 2*hourInMs-1, 4*hourInMs-1)
+	require.NoError(t, err)
 	var countEntry cache.CachedSeries
 	require.NoError(t, countEntry.Unmarshal(backend.Entries[countKey].Value))
 	var countList rangevectorsplitting.FirstLastOverTimeIntermediateList
 	require.NoError(t, countList.Unmarshal(countEntry.Results))
 	require.Equal(t, []rangevectorsplitting.FirstLastOverTimeIntermediate{expectedIntermediate}, countList.Results)
 
-	fractionKey := cache.TestGenerateHashedCacheKey(functions.FUNCTION_LAST_OVER_TIME, splittingCacheKey(t, fractionSplit, params), 2*hourInMs-1, 4*hourInMs-1)
+	fractionKey, err := cache.TestGenerateHashedCacheKey(t.Context(), emptyPrefixGenerator, functions.FUNCTION_LAST_OVER_TIME, splittingCacheKey(t, fractionSplit, params), 2*hourInMs-1, 4*hourInMs-1)
+	require.NoError(t, err)
 	var fractionEntry cache.CachedSeries
 	require.NoError(t, fractionEntry.Unmarshal(backend.Entries[fractionKey].Value))
 	var fractionList rangevectorsplitting.FirstLastOverTimeIntermediateList
@@ -644,8 +646,10 @@ func TestQuerySplitting_CacheKeyReflectsPostOptimizationState(t *testing.T) {
 		Range:              5 * time.Hour,
 		ExpressionPosition: core.PositionRange{Start: 72, End: 99},
 	}}
-	narrowKeyNoSSE := cache.TestGenerateHashedCacheKey(functions.FUNCTION_SUM_OVER_TIME, splittingCacheKey(t, narrowNoSSE, params), blockStart, blockEnd)
-	broadKeyNoSSE := cache.TestGenerateHashedCacheKey(functions.FUNCTION_SUM_OVER_TIME, splittingCacheKey(t, broadNoSSE, params), blockStart, blockEnd)
+	narrowKeyNoSSE, err := cache.TestGenerateHashedCacheKey(t.Context(), emptyPrefixGenerator, functions.FUNCTION_SUM_OVER_TIME, splittingCacheKey(t, narrowNoSSE, params), blockStart, blockEnd)
+	require.NoError(t, err)
+	broadKeyNoSSE, err := cache.TestGenerateHashedCacheKey(t.Context(), emptyPrefixGenerator, functions.FUNCTION_SUM_OVER_TIME, splittingCacheKey(t, broadNoSSE, params), blockStart, blockEnd)
+	require.NoError(t, err)
 	require.Contains(t, backendNoSSE.Entries, narrowKeyNoSSE, "expected bare-matchers cache key for narrow selector when SSE is off")
 	require.Contains(t, backendNoSSE.Entries, broadKeyNoSSE, "expected bare-matchers cache key for broad selector when SSE is off")
 
@@ -683,8 +687,10 @@ func TestQuerySplitting_CacheKeyReflectsPostOptimizationState(t *testing.T) {
 		DuplicateDetails: &commonsubexpressionelimination.DuplicateDetails{},
 		Inner:            broadSSE,
 	}
-	narrowKeySSE := cache.TestGenerateHashedCacheKey(functions.FUNCTION_SUM_OVER_TIME, splittingCacheKey(t, narrowSSE, params), blockStart, blockEnd)
-	broadKeySSE := cache.TestGenerateHashedCacheKey(functions.FUNCTION_SUM_OVER_TIME, splittingCacheKey(t, broadSplitSSE, params), blockStart, blockEnd)
+	narrowKeySSE, err := cache.TestGenerateHashedCacheKey(t.Context(), emptyPrefixGenerator, functions.FUNCTION_SUM_OVER_TIME, splittingCacheKey(t, narrowSSE, params), blockStart, blockEnd)
+	require.NoError(t, err)
+	broadKeySSE, err := cache.TestGenerateHashedCacheKey(t.Context(), emptyPrefixGenerator, functions.FUNCTION_SUM_OVER_TIME, splittingCacheKey(t, broadSplitSSE, params), blockStart, blockEnd)
+	require.NoError(t, err)
 	require.Contains(t, backendSSE.Entries, narrowKeySSE, "expected duplicate_filter cache key for narrow selector when SSE is on")
 	require.Contains(t, backendSSE.Entries, broadKeySSE, "expected subset-aware cache key for broad selector when SSE is on")
 	require.NotContains(t, backendNoSSE.Entries, narrowKeySSE, "narrow SSE cache key must not exist in no-SSE backend (key reflects post-optimization plan)")
@@ -1096,7 +1102,8 @@ func TestQuerySplitting_MiddleCacheEntryEvicted(t *testing.T) {
 		ExpressionPosition: core.PositionRange{Start: 14, End: 29},
 	}}
 	params := &planning.QueryParameters{LookbackDelta: streamingpromql.DefaultLookbackDelta}
-	block2Key := cache.TestGenerateHashedCacheKey(functions.FUNCTION_SUM_OVER_TIME, splittingCacheKey(t, inner, params), 4*hourInMs-1, 6*hourInMs-1)
+	block2Key, err := cache.TestGenerateHashedCacheKey(t.Context(), emptyPrefixGenerator, functions.FUNCTION_SUM_OVER_TIME, splittingCacheKey(t, inner, params), 4*hourInMs-1, 6*hourInMs-1)
+	require.NoError(t, err)
 	_, exists := testCache.Entries[block2Key]
 	require.True(t, exists, "Block2 cache key should exist before eviction")
 	delete(testCache.Entries, block2Key)

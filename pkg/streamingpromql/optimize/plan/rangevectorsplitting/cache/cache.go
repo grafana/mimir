@@ -80,15 +80,28 @@ func NewCacheFactoryWithBackend(backend caching.Backend, ttlProvider TTLProvider
 	}
 }
 
-func generateCacheKey(function functions.Function, selector []byte, start, end int64) []byte {
+// generateFullCacheKey will return the full cache key.
+// This includes both the generated prefix and the actual key derived from the given function, selector and time range.
+func generateFullCacheKey(ctx context.Context, prefixGenerator caching.PrefixGenerator, function functions.Function, selector []byte, start, end int64) ([]byte, error) {
 	// We don't include the tenant ID here: the cache prefix (which carries the tenant IDs) is prepended in cacheKeys before hashing.
-	return fmt.Appendf(nil, "%d:%s:%d:%d", function, selector, start, end)
+	key := fmt.Appendf(nil, "%d:%s:%d:%d", function, selector, start, end)
+
+	prefix, err := prefixGenerator(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("generating cache key prefix: %w", err)
+	}
+
+	return append([]byte(prefix), key...), nil
 }
 
-// TestGenerateHashedCacheKey generates a hashed cache key using the same logic as the cache internals
-// for a cache configured with an empty prefix generator (one that returns no prefix). This should only be used in tests.
-func TestGenerateHashedCacheKey(function functions.Function, selector []byte, start, end int64) string {
-	return caching.HashCacheKey(generateCacheKey(function, selector, start, end))
+// TestGenerateHashedCacheKey generates a hashed cache key using the same logic as the cache internals.
+// This should only be used in tests.
+func TestGenerateHashedCacheKey(ctx context.Context, prefixGenerator caching.PrefixGenerator, function functions.Function, selector []byte, start, end int64) (string, error) {
+	key, err := generateFullCacheKey(ctx, prefixGenerator, function, selector, start, end)
+	if err != nil {
+		return "", err
+	}
+	return caching.HashCacheKey(key), nil
 }
 
 // SplitCodec handles serialization of intermediate results for query splitting.
@@ -127,14 +140,11 @@ func NewCache[T any](factory *CacheFactory, codec SplitCodec[T]) *Cache[T] {
 //   - the hashed key should be used for backend interactions, as caching.HashCacheKey() ensures
 //     it stays within the cache's key-size limit.
 func (c *Cache[T]) cacheKeys(ctx context.Context, function functions.Function, innerKey []byte, start, end int64) (fullKey []byte, hashedKey string, err error) {
-	fullKey = generateCacheKey(function, innerKey, start, end)
+	fullKey, err = generateFullCacheKey(ctx, c.prefixGenerator, function, innerKey, start, end)
 
-	prefix, err := c.prefixGenerator(ctx)
 	if err != nil {
-		return nil, "", fmt.Errorf("generating cache key prefix: %w", err)
+		return nil, "", err
 	}
-
-	fullKey = append([]byte(prefix), fullKey...)
 
 	return fullKey, caching.HashCacheKey(fullKey), nil
 }
