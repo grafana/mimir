@@ -200,12 +200,22 @@ func NewBlocksStoreQueryable(
 }
 
 func NewBlocksStoreQueryableFromConfig(querierCfg Config, gatewayCfg storegateway.Config, storageCfg mimir_tsdb.BlocksStorageConfig, limits BlocksStoreLimits, logger log.Logger, reg prometheus.Registerer) (*BlocksStoreQueryable, error) {
-	var stores BlocksStoreSet
-
-	finder, err := newBlocksStoreQueryableFinder(storageCfg.Bucket, storageCfg, limits, logger, reg)
-	if err != nil {
-		return nil, err
+	var dynamicReplication storegateway.DynamicReplication = storegateway.NewNopDynamicReplication(gatewayCfg.ShardingRing.ReplicationFactor)
+	if gatewayCfg.DynamicReplication.Enabled {
+		dynamicReplication = storegateway.NewMaxTimeDynamicReplication(
+			gatewayCfg,
+			// Keep syncing blocks to store-gateways for a grace period (3 times the sync interval) to
+			// ensure they are not unloaded while they are still being queried.
+			mimir_tsdb.NewBlockDiscoveryDelayMultiplier*storageCfg.BucketStore.SyncInterval,
+		)
 	}
+
+	consistency := NewBlocksConsistency(
+		// Exclude blocks which have been recently uploaded, in order to give enough time to store-gateways
+		// to discover and load them (3 times the sync interval).
+		mimir_tsdb.NewBlockDiscoveryDelayMultiplier*storageCfg.BucketStore.SyncInterval,
+		reg,
+	)
 
 	storesRingCfg := gatewayCfg.ShardingRing.ToRingConfig()
 	storesRingBackend, err := kv.NewClient(
@@ -218,46 +228,47 @@ func NewBlocksStoreQueryableFromConfig(querierCfg Config, gatewayCfg storegatewa
 		return nil, errors.Wrap(err, "failed to create store-gateway ring backend")
 	}
 
-	storesRing, err := ring.NewWithStoreClientAndStrategy(storesRingCfg, storegateway.RingNameForClient, storegateway.RingKey, storesRingBackend, ring.NewIgnoreUnhealthyInstancesReplicationStrategy(), prometheus.WrapRegistererWithPrefix("cortex_", reg), logger)
+	var (
+		storeReg  = reg
+		bucketCfg = storageCfg.Bucket
+		ringName  = storegateway.RingNameForClient
+		ringKey   = storegateway.RingKey
+	)
+
+	// The cache bucket ID should be "blocks" but we pass an empty string to not cause a massive cache
+	// invalidation when rolling out the Mimir version introducing the bucket ID; this is fine as far as
+	// every other caching bucket uses its own unique ID.
+	cacheBucketID := ""
+
+	finder, err := newBlocksStoreQueryableFinder(cacheBucketID, bucketCfg, storageCfg, limits, logger, storeReg)
+	if err != nil {
+		return nil, err
+	}
+
+	storesRing, err := ring.NewWithStoreClientAndStrategy(storesRingCfg, ringName, ringKey, storesRingBackend, ring.NewIgnoreUnhealthyInstancesReplicationStrategy(), prometheus.WrapRegistererWithPrefix("cortex_", storeReg), logger)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create store-gateway ring client")
 	}
 
-	var dynamicReplication storegateway.DynamicReplication = storegateway.NewNopDynamicReplication(gatewayCfg.ShardingRing.ReplicationFactor)
-	if gatewayCfg.DynamicReplication.Enabled {
-		dynamicReplication = storegateway.NewMaxTimeDynamicReplication(
-			gatewayCfg,
-			// Keep syncing blocks to store-gateways for a grace period (3 times the sync interval) to
-			// ensure they are not unloaded while they are still being queried.
-			mimir_tsdb.NewBlockDiscoveryDelayMultiplier*storageCfg.BucketStore.SyncInterval,
-		)
-	}
-
-	stores, err = newBlocksStoreReplicationSet(storesRing, randomLoadBalancing, dynamicReplication, querierCfg.PreferAvailabilityZones, limits, querierCfg.StoreGatewayClient, logger, reg)
+	storeSet, err := newBlocksStoreReplicationSet(storesRing, randomLoadBalancing, dynamicReplication, querierCfg.PreferAvailabilityZones, limits, querierCfg.StoreGatewayClient, logger, storeReg)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create store set")
 	}
 
-	consistency := NewBlocksConsistency(
-		// Exclude blocks which have been recently uploaded, in order to give enough time to store-gateways
-		// to discover and load them (3 times the sync interval).
-		mimir_tsdb.NewBlockDiscoveryDelayMultiplier*storageCfg.BucketStore.SyncInterval,
-		reg,
-	)
-
 	streamingBufferSize := querierCfg.StreamingChunksPerStoreGatewaySeriesBufferSize
 
-	return NewBlocksStoreQueryable(stores, dynamicReplication, finder, consistency, limits, querierCfg.QueryStoreAfter, streamingBufferSize, logger, reg)
+	return NewBlocksStoreQueryable(storeSet, dynamicReplication, finder, consistency, limits, querierCfg.QueryStoreAfter, streamingBufferSize, logger, reg)
 }
 
 // newBlocksStoreQueryableFinder creates a BucketIndexBlocksFinder over the given bucket config.
-func newBlocksStoreQueryableFinder(bucketCfg bucket.Config, storageCfg mimir_tsdb.BlocksStorageConfig, limits BlocksStoreLimits, logger log.Logger, reg prometheus.Registerer) (BlocksFinder, error) {
+func newBlocksStoreQueryableFinder(cacheBucketID string, bucketCfg bucket.Config, storageCfg mimir_tsdb.BlocksStorageConfig, limits BlocksStoreLimits, logger log.Logger, reg prometheus.Registerer) (BlocksFinder, error) {
 	bucketClient, err := bucket.NewClient(context.Background(), bucketCfg, "querier", logger, reg)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create bucket client")
 	}
 
 	cachingBucket, err := mimir_tsdb.NewMetadataCachingBucket(
+		cacheBucketID,
 		storageCfg.BucketStore.MetadataCache,
 		bucketClient,
 		logger,
