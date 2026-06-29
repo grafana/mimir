@@ -355,6 +355,38 @@ func (t *trackerStore) getSortedUsersCloseToLimit() []string {
 	return t.sortedUsersCloseToLimit
 }
 
+// ShardStats holds the debug stats of a single shard of a single tenant.
+type ShardStats struct {
+	Tenant string `json:"tenant"`
+	Shard  int    `json:"shard"`
+	tenantshard.Stats
+}
+
+// shardStats returns the debug stats of every shard of every tenant, sorted by tenant and then by shard.
+// It snapshots the tenants under the store's lock and then reads each shard under its own lock,
+// so it never holds the store lock while locking shards.
+func (t *trackerStore) shardStats() []ShardStats {
+	t.mtx.RLock()
+	tenantIDs := slices.Clone(t.sortedTenants)
+	tenants := make([]*trackedTenant, len(tenantIDs))
+	for i, id := range tenantIDs {
+		tenants[i] = t.tenants[id]
+	}
+	t.mtx.RUnlock()
+
+	rows := make([]ShardStats, 0, len(tenantIDs)*shards)
+	for i, id := range tenantIDs {
+		for s := range shards {
+			rows = append(rows, ShardStats{
+				Tenant: id,
+				Shard:  s,
+				Stats:  tenants[i].shards[s].Stats(),
+			})
+		}
+	}
+	return rows
+}
+
 // seriesCountsForTests should only be used in tests because it holds the mutex while loading all atomic values.
 func (t *trackerStore) seriesCountsForTests() map[string]uint64 {
 	t.mtx.RLock()

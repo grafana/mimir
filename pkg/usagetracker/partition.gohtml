@@ -1,0 +1,126 @@
+{{- /*gotype: github.com/grafana/mimir/pkg/usagetracker.partitionPageContents*/ -}}
+<!DOCTYPE html>
+<html class="h-100">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <title>Usage-tracker: Partition {{ .Partition }}</title>
+
+    <link rel="stylesheet" href="{{ .StaticRoot }}bootstrap-5.1.3.min.css">
+    <link rel="stylesheet" href="{{ .StaticRoot }}bootstrap-icons-1.8.1.css">
+    <link rel="stylesheet" href="{{ .StaticRoot }}mimir-styles.css">
+    <script src="{{ .StaticRoot }}bootstrap-5.1.3.bundle.min.js"></script>
+</head>
+<body class="d-flex flex-column h-100">
+<main class="flex-shrink-0">
+    <div class="container">
+        <div class="header row border-bottom py-3 flex-column-reverse flex-sm-row">
+            <div class="col-12 col-sm-9 text-center text-sm-start">
+                <h1>Usage-tracker: Partition {{ .Partition }}</h1>
+            </div>
+            <div class="col-12 col-sm-3 text-center text-sm-end mb-3 mb-sm-0">
+                <img alt="Mimir logo" class="mimir-brand" src="{{ .StaticRoot }}mimir-icon.png">
+            </div>
+        </div>
+        <div class="row my-3">
+            <div class="col-12">
+                <p><a href="../partitions" class="text-decoration-none">&larr; All partitions</a></p>
+
+                {{ if .Shards }}
+                    <div class="row mb-3 align-items-center">
+                        <div class="col-12 col-sm-6">
+                            <input type="text" id="filter" class="form-control" placeholder="Filter by tenant…" autocomplete="off">
+                        </div>
+                        <div class="col-12 col-sm-6 text-sm-end">
+                            <small class="text-muted"><span id="visible-rows">{{ len .Shards }}</span> / {{ len .Shards }} rows</small>
+                        </div>
+                    </div>
+
+                    <div class="table-responsive">
+                        <table class="table table-bordered table-hover table-striped" id="shards-table">
+                            <thead>
+                            <tr>
+                                <th>Tenant</th>
+                                <th class="fit-width">Shard</th>
+                                <th class="fit-width">Resident</th>
+                                <th class="fit-width">
+                                    <span class="text-nowrap">Dead
+                                        <i class="bi bi-info-circle" data-bs-toggle="tooltip" data-bs-placement="top"
+                                           title="Number of dead elements (tombstones)."></i>
+                                    </span>
+                                </th>
+                                <th class="fit-width">
+                                    <span class="text-nowrap">Limit
+                                        <i class="bi bi-info-circle" data-bs-toggle="tooltip" data-bs-placement="top"
+                                           title="Resident count that triggers a rehash when reached."></i>
+                                    </span>
+                                </th>
+                                <th class="fit-width">
+                                    <span class="text-nowrap">Length
+                                        <i class="bi bi-info-circle" data-bs-toggle="tooltip" data-bs-placement="top"
+                                           title="Number of groups; the identical length of the index, keys and data arrays."></i>
+                                    </span>
+                                </th>
+                                <th class="fit-width">
+                                    <span class="text-nowrap">Rehashes
+                                        <i class="bi bi-info-circle" data-bs-toggle="tooltip" data-bs-placement="top"
+                                           title="Number of rehashes since this shard was created."></i>
+                                    </span>
+                                </th>
+                            </tr>
+                            </thead>
+                            <tbody>
+                            {{ range .Shards }}
+                                <tr data-tenant-row="{{ .Tenant }}">
+                                    <td class="align-middle font-monospace small">{{ .Tenant }}</td>
+                                    <td class="align-middle font-monospace small fit-width">{{ .Shard }}</td>
+                                    <td class="align-middle font-monospace small fit-width">{{ .Resident }}</td>
+                                    <td class="align-middle font-monospace small fit-width">{{ .Dead }}</td>
+                                    <td class="align-middle font-monospace small fit-width">{{ .Limit }}</td>
+                                    <td class="align-middle font-monospace small fit-width">{{ .Length }}</td>
+                                    <td class="align-middle font-monospace small fit-width">{{ .Rehashes }}</td>
+                                </tr>
+                            {{ end }}
+                            </tbody>
+                        </table>
+                    </div>
+                {{ else }}
+                    <div class="alert alert-info" role="alert">
+                        This partition's tracker store has no tenants.
+                    </div>
+                {{ end }}
+            </div>
+        </div>
+    </div>
+</main>
+<footer class="footer mt-auto py-3 bg-light">
+    <div class="container">
+        <small class="text-muted">Status @ {{ .Now.Format "2006-01-02 15:04:05.000" }}</small>
+    </div>
+</footer>
+<script type="text/javascript">
+    var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+    tooltipTriggerList.forEach(function (el) { new bootstrap.Tooltip(el); });
+
+    var filterInput = document.getElementById('filter');
+    if (filterInput) {
+        var shardRows = [].slice.call(document.querySelectorAll('#shards-table tbody tr'));
+        var rowCounter = document.getElementById('visible-rows');
+        var applyFilter = function () {
+            var q = filterInput.value.trim().toLowerCase();
+            var visible = 0;
+            shardRows.forEach(function (row) {
+                var tenant = row.getAttribute('data-tenant-row').toLowerCase();
+                var show = q === '' || tenant.indexOf(q) !== -1;
+                row.style.display = show ? '' : 'none';
+                if (show) { visible++; }
+            });
+            rowCounter.textContent = visible;
+        };
+        filterInput.addEventListener('input', applyFilter);
+    }
+</script>
+</body>
+</html>

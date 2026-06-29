@@ -1,0 +1,68 @@
+{{- /*gotype: github.com/grafana/mimir/pkg/usagetracker.partitionsPageContents*/ -}}
+<!DOCTYPE html>
+<html class="h-100">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <title>Usage-tracker: Partitions</title>
+
+    <link rel="stylesheet" href="{{ .StaticRoot }}bootstrap-5.1.3.min.css">
+    <link rel="stylesheet" href="{{ .StaticRoot }}bootstrap-icons-1.8.1.css">
+    <link rel="stylesheet" href="{{ .StaticRoot }}mimir-styles.css">
+    <script src="{{ .StaticRoot }}bootstrap-5.1.3.bundle.min.js"></script>
+</head>
+<body class="d-flex flex-column h-100">
+<main class="flex-shrink-0">
+    <div class="container">
+        <div class="header row border-bottom py-3 flex-column-reverse flex-sm-row">
+            <div class="col-12 col-sm-9 text-center text-sm-start">
+                <h1>Usage-tracker: Partitions</h1>
+            </div>
+            <div class="col-12 col-sm-3 text-center text-sm-end mb-3 mb-sm-0">
+                <img alt="Mimir logo" class="mimir-brand" src="{{ .StaticRoot }}mimir-icon.png">
+            </div>
+        </div>
+        <div class="row my-3">
+            <div class="col-12">
+                {{ if .Partitions }}
+                    <p>This instance owns <strong>{{ len .Partitions }}</strong> partition(s).</p>
+                    <div class="table-responsive">
+                        <table class="table table-bordered table-hover table-striped">
+                            <thead>
+                            <tr>
+                                <th>Partition</th>
+                                <th class="fit-width">Actions</th>
+                            </tr>
+                            </thead>
+                            <tbody>
+                            {{ range .Partitions }}
+                                <tr>
+                                    <td class="align-middle font-monospace small">{{ . }}</td>
+                                    <td class="fit-width">
+                                        <a href="partitions/{{ . }}" class="text-decoration-none text-nowrap">
+                                            <i class="bi bi-table"></i> Tracker store
+                                        </a>
+                                    </td>
+                                </tr>
+                            {{ end }}
+                            </tbody>
+                        </table>
+                    </div>
+                {{ else }}
+                    <div class="alert alert-info" role="alert">
+                        This usage-tracker instance does not currently own any partition.
+                    </div>
+                {{ end }}
+            </div>
+        </div>
+    </div>
+</main>
+<footer class="footer mt-auto py-3 bg-light">
+    <div class="container">
+        <small class="text-muted">Status @ {{ .Now.Format "2006-01-02 15:04:05.000" }}</small>
+    </div>
+</footer>
+</body>
+</html>
