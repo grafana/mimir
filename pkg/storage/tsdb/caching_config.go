@@ -157,8 +157,10 @@ func configureMetadataCaching(
 	return cachingBucketCfg
 }
 
-// NewMetadataCachingBucket creates a caching bucket for metadata and indexes of the bucket store and its tenant TSDBs.
+// NewMetadataCachingBucket creates a caching bucket for metadata and indexes of the bucket store and
+// its tenant TSDBs. The bucketID prefixes every cache key.
 func NewMetadataCachingBucket(
+	bucketID string,
 	metadataCfg MetadataCacheConfig,
 	bkt objstore.Bucket,
 	logger log.Logger,
@@ -176,11 +178,7 @@ func NewMetadataCachingBucket(
 	cachingBucketCfg := bucketcache.NewCachingBucketConfig()
 	cachingBucketCfg = configureMetadataCaching(metadataCache, metadataCfg, cachingBucketCfg)
 
-	// NOTE: the bucket ID should be "blocks" but we're passing an empty string to not cause
-	// a massive cache invalidation when rolling out a new Mimir version introducing the bucket
-	// ID. This is still fine, as far as all other caching bucket implementations specify their
-	// own unique ID.
-	return bucketcache.NewCachingBucket("", bkt, cachingBucketCfg, logger, reg)
+	return bucketcache.NewCachingBucket(bucketID, bkt, cachingBucketCfg, logger, reg)
 }
 
 func NewChunksCacheClient(
