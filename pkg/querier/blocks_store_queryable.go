@@ -235,7 +235,12 @@ func NewBlocksStoreQueryableFromConfig(querierCfg Config, gatewayCfg storegatewa
 		ringKey   = storegateway.RingKey
 	)
 
-	finder, err := newBlocksStoreQueryableFinder(bucketCfg, storageCfg, limits, logger, storeReg)
+	// The cache bucket ID should be "blocks" but we pass an empty string to not cause a massive cache
+	// invalidation when rolling out the Mimir version introducing the bucket ID; this is fine as far as
+	// every other caching bucket uses its own unique ID.
+	cacheBucketID := ""
+
+	finder, err := newBlocksStoreQueryableFinder(cacheBucketID, bucketCfg, storageCfg, limits, logger, storeReg)
 	if err != nil {
 		return nil, err
 	}
@@ -256,16 +261,11 @@ func NewBlocksStoreQueryableFromConfig(querierCfg Config, gatewayCfg storegatewa
 }
 
 // newBlocksStoreQueryableFinder creates a BucketIndexBlocksFinder over the given bucket config.
-func newBlocksStoreQueryableFinder(bucketCfg bucket.Config, storageCfg mimir_tsdb.BlocksStorageConfig, limits BlocksStoreLimits, logger log.Logger, reg prometheus.Registerer) (BlocksFinder, error) {
+func newBlocksStoreQueryableFinder(cacheBucketID string, bucketCfg bucket.Config, storageCfg mimir_tsdb.BlocksStorageConfig, limits BlocksStoreLimits, logger log.Logger, reg prometheus.Registerer) (BlocksFinder, error) {
 	bucketClient, err := bucket.NewClient(context.Background(), bucketCfg, "querier", logger, reg)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create bucket client")
 	}
-
-	// The cache bucket ID should be "blocks" but we pass an empty string to not cause a massive cache
-	// invalidation when rolling out the Mimir version introducing the bucket ID; this is fine as far as
-	// every other caching bucket uses its own unique ID.
-	cacheBucketID := ""
 
 	cachingBucket, err := mimir_tsdb.NewMetadataCachingBucket(
 		cacheBucketID,
