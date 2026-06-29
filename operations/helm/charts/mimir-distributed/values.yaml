@@ -3598,6 +3598,8 @@ metaMonitoring:
     scheme: http
     # -- ServiceMonitor will use these tlsConfig settings to make the health check requests
     tlsConfig: null
+    # -- Enforce default job label modification (set to false if scraping via OpenTelemetry Collector to avoid double namespaces)
+    relabelJobLabel: true
 
   # Rules for the Prometheus Operator
   prometheusRule:
