@@ -153,8 +153,8 @@ func labelValuesCardinality(
 	// Cancel on return so any in-flight chunk tasks still running on the shared
 	// worker pool bail out at their next ctx.Err() check instead of computing
 	// counts no one will read and holding pool workers from other tenants.
-	ctx, cancel := context.WithCancel(srv.Context())
-	defer cancel()
+	ctx, cancel := context.WithCancelCause(srv.Context())
+	defer cancel(nil)
 
 	resp := client.LabelValuesCardinalityResponse{}
 	respSize := 0
