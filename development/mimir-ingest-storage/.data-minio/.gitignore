@@ -2,4 +2,5 @@
 !mimir-ruler
 !mimir-blocks
 !mimir-alertmanager
+!usage-tracker-snapshots
 !.gitignore
