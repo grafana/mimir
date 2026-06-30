@@ -428,6 +428,10 @@ func (m mockReader) IndexVersion(ctx context.Context) (int, error) {
 	return m.IndexVersionFunc(ctx)
 }
 
+func (m mockReader) IsRemotePostingsOffsets(context.Context) (bool, error) {
+	panic("not implemented")
+}
+
 func (m mockReader) PostingsOffset(context.Context, string, string) (index.Range, error) {
 	panic("not implemented")
 }

@@ -42,6 +42,8 @@ type Reader interface {
 	// IndexVersion returns version of index.
 	IndexVersion(context.Context) (int, error)
 
+	IsRemotePostingsOffsets(context.Context) (bool, error)
+
 	// PostingsOffset returns start and end offsets of postings for given name and value.
 	// The Start is inclusive and is the byte offset of the number_of_entries field of a posting list.
 	// The End is exclusive and is typically the byte offset of the CRC32 field.

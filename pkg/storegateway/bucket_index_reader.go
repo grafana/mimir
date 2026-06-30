@@ -205,7 +205,9 @@ func (r *bucketIndexReader) expandedPostings(ctx context.Context, ms []*labels.M
 	postingGroups, omittedPostingGroups := r.postingsStrategy.selectPostings(postingGroups)
 	logSelectedPostingGroups(ctx, r.block.logger, r.block.meta.ULID, postingGroups, omittedPostingGroups)
 
-	fetchedPostings, err := r.fetchPostings(ctx, extractLabels(postingGroups), stats)
+	// Reuse the byte ranges resolved while building the posting groups instead of
+	// re-resolving each key with a separate PostingsOffset read against the bucket.
+	fetchedPostings, err := r.fetchPostings(ctx, extractLabels(postingGroups), extractOffsets(postingGroups), stats)
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "get postings")
 	}
@@ -304,6 +306,29 @@ func extractLabels(groups []postingGroup) []labels.Label {
 	return keys
 }
 
+// extractOffsets returns the known posting-list byte ranges aligned with the
+// keys returned by extractLabels (same group order, same per-group order). A
+// zero-value index.Range marks a key whose offset isn't known ahead of time
+// (e.g. the synthetic all-postings group); fetchPostings resolves those with a
+// PostingsOffset call.
+func extractOffsets(groups []postingGroup) []index.Range {
+	numKeys := 0
+	for _, pg := range groups {
+		numKeys += len(pg.keys)
+	}
+	offsets := make([]index.Range, 0, numKeys)
+	for _, pg := range groups {
+		if len(pg.offsets) == len(pg.keys) {
+			offsets = append(offsets, pg.offsets...)
+		} else {
+			// Offsets unknown for this group: emit zero ranges to stay aligned
+			// with extractLabels so fetchPostings falls back to PostingsOffset.
+			offsets = append(offsets, make([]index.Range, len(pg.keys))...)
+		}
+	}
+	return offsets
+}
+
 func extractLabelValues(offsets []streamindex.PostingListOffset) []string {
 	vals := make([]string, len(offsets))
 	for i := range offsets {
@@ -356,16 +381,27 @@ func toPostingGroups(ctx context.Context, ms []*labels.Matcher, indexhdr indexhe
 		return strings.Compare(a.labelName, b.labelName)
 	})
 
-	postingGroups := make([]postingGroup, 0, len(rawPostingGroups)+1) // +1 for the AllPostings group we might add
+	postingGroups := make([]postingGroup, len(rawPostingGroups), len(rawPostingGroups)+1) // +1 for the AllPostings group we might add
 	// Next we check whether the posting groups won't select an empty set of postings.
 	// Based on the previous sorting, we start with the ones that have a known set of values because it's less expensive to check them in
 	// the index header.
-	for _, rawGroup := range rawPostingGroups {
-		pg, err := rawGroup.toPostingGroup(ctx, indexhdr)
-		if err != nil {
-			return nil, errors.Wrap(err, "filtering posting group")
-		}
+	errGroup, ctx := errgroup.WithContext(ctx)
+	for i, rawGroup := range rawPostingGroups {
+		errGroup.Go(func() error {
+			pg, err := rawGroup.toPostingGroup(ctx, indexhdr)
+			if err != nil {
+				return errors.Wrap(err, "filtering posting group")
+			}
+			postingGroups[i] = pg
+			return nil
+		})
+	}
+	err := errGroup.Wait()
+	if err != nil {
+		return nil, err
+	}
 
+	for _, pg := range postingGroups {
 		// If this group has no keys to work though and is not a subtract group, then it's an empty group.
 		// We can shortcut this, since intersection with empty postings would return no postings.
 		// E.g. `label="non-existent-value"` returns empty group.
@@ -373,7 +409,6 @@ func toPostingGroups(ctx context.Context, ms []*labels.Matcher, indexhdr indexhe
 			return nil, nil
 		}
 
-		postingGroups = append(postingGroups, pg)
 		// If the group is a subtraction group, we must fetch all postings and remove the ones that this matcher selects.
 		allRequested = allRequested || pg.isSubtract
 		hasAdds = hasAdds || !pg.isSubtract
@@ -400,7 +435,24 @@ func toPostingGroups(ctx context.Context, ms []*labels.Matcher, indexhdr indexhe
 // It returns one postings for each key, in the same order.
 // If postings for given key is not fetched, entry at given index will be an ErrPostings
 func (r *bucketIndexReader) FetchPostings(ctx context.Context, keys []labels.Label, stats *safeQueryStats) ([]index.Postings, error) {
-	ps, err := r.fetchPostings(ctx, keys, stats)
+	return r.fetchAndPadPostings(ctx, keys, nil, stats)
+}
+
+// FetchPostingsWithOffsets is like FetchPostings, but uses the caller-provided
+// byte offsets (e.g. from IndexHeaderReader.LabelValuesOffsets) instead of
+// resolving each key's offset with a separate PostingsOffset call. Since
+// PostingsOffset now reads from object storage, reusing offsets the caller
+// already has avoids one bucket round trip per cache-missed key.
+//
+// offsets must be parallel to keys: offsets[i] is the posting-list byte range
+// for keys[i]. Every key must have a valid offset (callers that derived keys
+// from LabelValuesOffsets satisfy this, since those values exist in the block).
+func (r *bucketIndexReader) FetchPostingsWithOffsets(ctx context.Context, keys []labels.Label, offsets []index.Range, stats *safeQueryStats) ([]index.Postings, error) {
+	return r.fetchAndPadPostings(ctx, keys, offsets, stats)
+}
+
+func (r *bucketIndexReader) fetchAndPadPostings(ctx context.Context, keys []labels.Label, knownOffsets []index.Range, stats *safeQueryStats) ([]index.Postings, error) {
+	ps, err := r.fetchPostings(ctx, keys, knownOffsets, stats)
 	if err != nil {
 		return nil, err
 	}
@@ -423,13 +475,28 @@ func (r *bucketIndexReader) FetchPostings(ctx context.Context, keys []labels.Lab
 // fetchPostings is the version-unaware private implementation of FetchPostings.
 // callers of this method may need to add padding to the results.
 // If postings for given key is not fetched, entry at given index will be nil.
-func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Label, stats *safeQueryStats) ([]index.Postings, error) {
+//
+// If knownOffsets is non-nil it must be parallel to keys, and the byte range for
+// a cache-missed key is taken from knownOffsets instead of being resolved with a
+// PostingsOffset call against the index header.
+func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Label, knownOffsets []index.Range, stats *safeQueryStats) (output []index.Postings, returnErr error) {
+	ctx, span := tracer.Start(ctx, "fetchPostings()")
+	defer func() {
+		span.SetAttributes(
+			attribute.Int("keys", len(keys)),
+			attribute.Stringer("block_id", r.block.meta.ULID),
+		)
+		if returnErr != nil {
+			span.RecordError(returnErr)
+		}
+		span.End()
+	}()
 	timer := prometheus.NewTimer(r.block.metrics.postingsFetchDuration)
 	defer timer.ObserveDuration()
 
 	var ptrs []postingPtr
 
-	output := make([]index.Postings, len(keys))
+	output = make([]index.Postings, len(keys))
 
 	// Fetch postings from the cache with a single call.
 	fromCache := r.block.indexCache.FetchMultiPostings(ctx, r.block.userID, r.block.meta.ULID, keys)
@@ -467,15 +534,24 @@ func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Lab
 		}
 
 		// Cache miss; save pointer for actual posting in index stored in object store.
-		ptr, err := r.block.indexHeaderReader.PostingsOffset(ctx, key.Name, key.Value)
-		if errors.Is(err, indexheader.NotFoundRangeErr) {
-			// This block does not have any posting for given key.
-			output[ix] = index.EmptyPostings()
-			continue
-		}
-
-		if err != nil {
-			return nil, errors.Wrap(err, "index header PostingsOffset")
+		var ptr index.Range
+		if knownOffsets != nil && knownOffsets[ix] != (index.Range{}) {
+			// The caller already resolved this key's byte range (e.g. from
+			// LabelValuesOffsets), so reuse it instead of issuing another
+			// PostingsOffset read against object storage. A zero-value range means
+			// the offset is unknown for this key, so fall back to resolving it.
+			ptr = knownOffsets[ix]
+		} else {
+			var err error
+			ptr, err = r.block.indexHeaderReader.PostingsOffset(ctx, key.Name, key.Value)
+			if errors.Is(err, indexheader.NotFoundRangeErr) {
+				// This block does not have any posting for given key.
+				output[ix] = index.EmptyPostings()
+				continue
+			}
+			if err != nil {
+				return nil, errors.Wrap(err, "index header PostingsOffset")
+			}
 		}
 
 		stats.update(func(stats *queryStats) {
