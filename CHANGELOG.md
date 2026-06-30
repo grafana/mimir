@@ -69,6 +69,7 @@
 * [BUGFIX] Ingest storage: Fix `cortex_ingest_storage_writer_produce_records_enqueued_total` not being incremented when `KafkaProducer.ProduceSync()` rejects a batch because a record has its `Timestamp` set by the caller. #15610
 * [BUGFIX] Compactor: Remove temporary block upload validation directories left behind in the data directory when the compactor crashes mid-validation. This prevents leaking disk space. #15647
 * [BUGFIX] Continuous-test: Fix a crash when histogram tests were enabled in combination with the OTLP-HTTP write protocol. #15641
+* [BUGFIX] Store-gateway: Fix a regex label matcher that also matches the empty string (e.g. `label=~"|foo|bar"`) incorrectly excluding series that don't have the label, potentially resulting in incomplete query results. #15767
 * [BUGFIX] Block-builder-scheduler: Exit cleanly when shut down during startup observation. #15730
 * [BUGFIX] Ingest storage: Cap maximum Kafka protocol version, the client negotiates with the broker to v3.9.0. #15745
 * [BUGFIX] MQE: Report a query that panics during evaluation as failed in the `evaluation stats` log, instead of logging it as successful. The querier still re-panics afterwards, crash behaviour is unchanged. #15753
