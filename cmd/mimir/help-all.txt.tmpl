@@ -1581,6 +1581,8 @@ Usage of ./cmd/mimir/mimir:
     	Path to a Unix domain socket to fetch AWS credentials from via HTTP. Mutually exclusive with ingest-storage.kafka.sasl-msk-iam-file-path. On every authentication or reauthentication, an HTTP GET / request is made to the socket and the response body is read as JSON. The JSON schema is the same as for ingest-storage.kafka.sasl-msk-iam-file-path.
   -ingest-storage.kafka.sasl-msk-iam-http-socket-timeout duration
     	Timeout for requesting AWS credentials from the HTTP socket. Effective when ingest-storage.kafka.sasl-msk-iam-http-socket-path is set. (default 10s)
+  -ingest-storage.kafka.sasl-msk-iam-region string
+    	The AWS region of the MSK cluster. Used when authenticating via the AWS SDK default credential chain (no static credentials, file, or HTTP socket configured), e.g. for IRSA on EKS. If empty, the SDK falls back to AWS_REGION / AWS_DEFAULT_REGION environment variables.
   -ingest-storage.kafka.sasl-msk-iam-secret-key string
     	The AWS secret access key to authenticate to Kafka using SASL AWS_MSK_IAM. Consider ingest-storage.kafka.sasl-msk-iam-file-path instead.
   -ingest-storage.kafka.sasl-msk-iam-session-token string

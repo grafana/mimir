@@ -5462,6 +5462,13 @@ kafka:
   # CLI flag: -ingest-storage.kafka.sasl-msk-iam-http-socket-timeout
   [sasl_msk_iam_http_socket_timeout: <duration> | default = 10s]
 
+  # The AWS region of the MSK cluster. Used when authenticating via the AWS SDK
+  # default credential chain (no static credentials, file, or HTTP socket
+  # configured), e.g. for IRSA on EKS. If empty, the SDK falls back to
+  # AWS_REGION / AWS_DEFAULT_REGION environment variables.
+  # CLI flag: -ingest-storage.kafka.sasl-msk-iam-region
+  [sasl_msk_iam_region: <string> | default = ""]
+
   # Enable TLS for the Kafka client connection.
   # CLI flag: -ingest-storage.kafka.tls-enabled
   [tls_enabled: <boolean> | default = false]
