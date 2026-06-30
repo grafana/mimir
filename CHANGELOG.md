@@ -4,6 +4,8 @@
 
 ### Grafana Mimir
 
+* [BUGFIX] Update OpenTelemetry libraries to address [CVE-2026-39882](https://nvd.nist.gov/vuln/detail/CVE-2026-39882). #15558 #15559
+
 ## 3.0.7
 
 ### Grafana Mimir
