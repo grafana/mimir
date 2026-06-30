@@ -3,14 +3,20 @@
 package splitandcache
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/gogo/protobuf/proto"
+	"github.com/grafana/dskit/cache"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 
+	"github.com/grafana/mimir/pkg/querier/stats"
+	"github.com/grafana/mimir/pkg/streamingpromql/caching"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
@@ -19,11 +25,15 @@ func init() {
 	planning.RegisterNodeFactory(func() planning.Node {
 		return &TimeRangeSplit{TimeRangeSplitDetails: &TimeRangeSplitDetails{}}
 	})
+	planning.RegisterNodeFactory(func() planning.Node {
+		return &Cache{CacheDetails: &CacheDetails{}}
+	})
 }
 
+//node:generate
 type TimeRangeSplit struct {
 	*TimeRangeSplitDetails
-	Inner planning.Node
+	Inner planning.Node `node:"child"`
 }
 
 func (s *TimeRangeSplit) Details() proto.Message {
@@ -32,36 +42,6 @@ func (s *TimeRangeSplit) Details() proto.Message {
 
 func (s *TimeRangeSplit) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_TIME_RANGE_SPLIT
-}
-
-func (s *TimeRangeSplit) Child(idx int) planning.Node {
-	if idx != 0 {
-		panic(fmt.Sprintf("node of type Split supports 1 child, but attempted to get child at index %d", idx))
-	}
-
-	return s.Inner
-}
-
-func (s *TimeRangeSplit) ChildCount() int {
-	return 1
-}
-
-func (s *TimeRangeSplit) SetChildren(children []planning.Node) error {
-	if len(children) != 1 {
-		return fmt.Errorf("node of type Split requires 1 child, but got %d", len(children))
-	}
-
-	s.Inner = children[0]
-	return nil
-}
-
-func (s *TimeRangeSplit) ReplaceChild(idx int, child planning.Node) error {
-	if idx != 0 {
-		return fmt.Errorf("node of type Split supports 1 child, but attempted to replace child at index %d", idx)
-	}
-
-	s.Inner = child
-	return nil
 }
 
 func (s *TimeRangeSplit) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
@@ -76,10 +56,6 @@ func (s *TimeRangeSplit) MergeHints(other planning.Node) error {
 
 func (s *TimeRangeSplit) Describe() string {
 	return fmt.Sprintf("interval %s", s.SplitInterval.String())
-}
-
-func (s *TimeRangeSplit) ChildrenLabels() []string {
-	return []string{""}
 }
 
 func (s *TimeRangeSplit) ChildrenTimeRange(timeRange types.QueryTimeRange) types.QueryTimeRange {
@@ -102,8 +78,39 @@ func (s *TimeRangeSplit) MinimumRequiredPlanVersion(timeRange types.QueryTimeRan
 	return planning.QueryPlanV14, nil
 }
 
+type TimeRangeSplitMaterializer struct {
+	splittingEnabled    bool
+	splitQueriesCounter prometheus.Counter
+}
+
+func NewTimeRangeSplitMaterializer(splittingEnabled bool, reg prometheus.Registerer) *TimeRangeSplitMaterializer {
+	m := &TimeRangeSplitMaterializer{
+		splittingEnabled: splittingEnabled,
+	}
+
+	if splittingEnabled {
+		// Only register the metric if splitting is enabled, to avoid conflicting with the query-frontend middleware doing the same thing.
+		m.splitQueriesCounter = NewSplitQueriesCounter(reg)
+	}
+
+	return m
+}
+
 // The logic below is based on the equivalent middleware logic in splitQueryByInterval.
-func MaterializeSplit(node *TimeRangeSplit, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
+func (m *TimeRangeSplitMaterializer) Materialize(ctx context.Context, n planning.Node, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters, overrideRangeParams planning.RangeParams) (planning.OperatorFactory, error) {
+	if overrideRangeParams.IsSet {
+		return nil, fmt.Errorf("overrideRangeParams is not supported for TimeRangeSplitMaterializer")
+	}
+
+	if !m.splittingEnabled {
+		return nil, errors.New("attempted to materialize a TimeRangeSplit node, but splitting is disabled")
+	}
+
+	node, ok := n.(*TimeRangeSplit)
+	if !ok {
+		return nil, fmt.Errorf("unexpected type passed to TimeRangeSplitMaterializer: got %T", n)
+	}
+
 	ranges := make([]*splitRange, 0, (timeRange.EndT-timeRange.StartT)/timeRange.IntervalMilliseconds+1) // Over-allocate in case the time range straddles an interval boundary.
 
 	for start := timeRange.StartT; start <= timeRange.EndT; {
@@ -116,14 +123,18 @@ func MaterializeSplit(node *TimeRangeSplit, materializer *planning.Materializer,
 		}
 
 		innerTimeRange := types.NewRangeQueryTimeRange(timestamp.Time(start), timestamp.Time(end), time.Duration(timeRange.IntervalMilliseconds)*time.Millisecond)
-		inner, err := materializer.ConvertNodeToInstantVectorOperator(node.Inner, innerTimeRange)
+		inner, err := materializer.ConvertNodeToInstantVectorOperator(ctx, node.Inner, innerTimeRange)
 		if err != nil {
 			return nil, err
 		}
 
-		ranges = append(ranges, newSplitRange(inner))
+		ranges = append(ranges, newSplitRange(inner, params.MemoryConsumptionTracker))
 		start = end + timeRange.IntervalMilliseconds
 	}
+
+	queryStats := stats.FromContext(ctx)
+	queryStats.AddSplitQueries(uint32(len(ranges)))
+	m.splitQueriesCounter.Add(float64(len(ranges)))
 
 	if len(ranges) == 1 {
 		// If we have just one range, return the inner operator without wrapping it.
@@ -144,4 +155,116 @@ func nextIntervalBoundary(t, step int64, interval time.Duration) int64 {
 		target -= step
 	}
 	return target
+}
+
+//node:generate
+type Cache struct {
+	*CacheDetails
+	Inner planning.Node `node:"child"`
+}
+
+func (c *Cache) Details() proto.Message {
+	return c.CacheDetails
+}
+
+func (c *Cache) NodeType() planning.NodeType {
+	return planning.NODE_TYPE_CACHE
+}
+
+func (c *Cache) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
+	otherCache, ok := other.(*Cache)
+
+	return ok && c.SplitInterval == otherCache.SplitInterval
+}
+
+func (c *Cache) MergeHints(other planning.Node) error {
+	return nil
+}
+
+func (c *Cache) Describe() string {
+	return fmt.Sprintf("split interval %s", c.SplitInterval.String())
+
+}
+
+func (c *Cache) ChildrenTimeRange(timeRange types.QueryTimeRange) types.QueryTimeRange {
+	return timeRange
+}
+
+func (c *Cache) ResultType() (parser.ValueType, error) {
+	return c.Inner.ResultType()
+}
+
+func (c *Cache) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) (planning.QueriedTimeRange, error) {
+	return c.Inner.QueriedTimeRange(queryTimeRange, lookbackDelta)
+}
+
+func (c *Cache) ExpressionPosition() (posrange.PositionRange, error) {
+	return c.Inner.ExpressionPosition()
+}
+
+func (c *Cache) MinimumRequiredPlanVersion(_ types.QueryTimeRange) (planning.QueryPlanVersion, error) {
+	return planning.QueryPlanV16, nil
+}
+
+type CacheMaterializer struct {
+	enabled        bool
+	cache          caching.Backend
+	limitsProvider LimitsProvider
+	metrics        *ResultsCacheMetrics
+	minCacheExtent time.Duration
+}
+
+func NewCacheMaterializer(enabled bool, baseCache cache.Cache, cachePrefixGenerator caching.PrefixGenerator, limitsProvider LimitsProvider, minCacheExtent time.Duration, metrics *ResultsCacheMetrics) *CacheMaterializer {
+	m := &CacheMaterializer{
+		enabled:        enabled,
+		limitsProvider: limitsProvider,
+		minCacheExtent: minCacheExtent,
+		metrics:        metrics,
+	}
+
+	if enabled {
+		m.cache = caching.NewPrefixingCache(
+			caching.NewAdaptor(baseCache),
+			caching.VersioningAndItemTypePrefixGenerator(cachePrefixGenerator, cacheVersion, "MQEQR"),
+		)
+	}
+
+	return m
+}
+
+func (m *CacheMaterializer) Materialize(ctx context.Context, n planning.Node, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters, overrideRangeParams planning.RangeParams) (planning.OperatorFactory, error) {
+	if overrideRangeParams.IsSet {
+		return nil, fmt.Errorf("overrideRangeParams is not supported for CacheMaterializer")
+	}
+
+	if !m.enabled {
+		return nil, fmt.Errorf("attempted to materialize a node of type %T, but caching is disabled", n)
+	}
+
+	node, ok := n.(*Cache)
+	if !ok {
+		return nil, fmt.Errorf("unexpected type passed to CacheMaterializer: got %T", n)
+	}
+
+	expressionPosition, err := node.ExpressionPosition()
+	if err != nil {
+		return nil, err
+	}
+
+	operator := newCacheOperator(
+		m.cache,
+		materializer,
+		node.Inner,
+		timeRange,
+		params.MemoryConsumptionTracker,
+		expressionPosition,
+		params.QueryParameters,
+		m.limitsProvider,
+		params.Logger,
+		node.SplitInterval,
+		m.minCacheExtent,
+		m.metrics,
+	)
+
+	return planning.NewSingleUseOperatorFactory(operator), nil
 }

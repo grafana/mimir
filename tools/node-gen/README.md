@@ -8,11 +8,13 @@ top of `planning.Node`.
 
 # Supported generators
 
-| Method                                        | Description                                                      |
-| --------------------------------------------- | ---------------------------------------------------------------- |
-| `Child(idx int) planning.Node`                | Returns the child at the given index.                            |
-| `ChildCount() int`                            | Returns the number of children.                                  |
-| `SetChildren(children []planning.Node) error` | Sets all children at once, validating the count and child types. |
+| Method                                             | Description                                                           |
+| -------------------------------------------------- | --------------------------------------------------------------------- |
+| `Child(idx int) planning.Node`                     | Returns the child at the given index.                                 |
+| `ChildCount() int`                                 | Returns the number of children.                                       |
+| `SetChildren(children []planning.Node) error`      | Sets all children at once, validating the count and child types.      |
+| `ReplaceChild(idx int, child planning.Node) error` | Replaces the child at the given index, validating the index and type. |
+| `ChildrenLabels() []string`                        | Returns a human-readable label for each child, shown in plan output.  |
 
 # How to opt a struct in
 
@@ -24,6 +26,17 @@ top of `planning.Node`.
    - `node:"children"` — slice of children (`[]planning.Node`).
    - `node:"children,min=N"` — as `children`, but a node
      requires at least `N` children.
+3. For `ChildrenLabels`, give the children labels (a single child is
+   unlabeled `""` by default):
+   - `node:"child,label=X"` — label this child `X` (used when the node
+     has more than one child; e.g. `BinaryExpression` LHS/RHS).
+   - `node:"children,labelfmt=X"` — label each child with
+     `fmt.Sprintf(X, i)`, e.g. `labelfmt=node %d` yields `node 0`,
+     `node 1`, ...
+   - `node:"children,labelfmt=X,nocollapse"` — by default, when a node
+     has exactly one child its label is collapsed to `""`.
+     `nocollapse` disables that, so even a lone child is labeled via
+     `labelfmt` (e.g. `RemoteExecutionGroup` always shows `node 0`).
 
 # How to run
 

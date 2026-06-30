@@ -93,6 +93,7 @@ func DefaultOptions() *Options {
 		EnableOverlappingCompaction:              true,
 		EnableSharding:                           false,
 		EnableDelayedCompaction:                  false,
+		FloatChunkEncoding:                       chunkenc.EncXOR,
 		CompactionDelayMaxPercent:                DefaultCompactionDelayMaxPercent,
 		CompactionDelay:                          time.Duration(0),
 		PostingsDecoderFactory:                   DefaultPostingsDecoderFactory,
@@ -346,11 +347,6 @@ type Options struct {
 	// is implemented.
 	EnableSTAsZeroSample bool
 
-	// EnableXOR2Encoding enables the XOR2 chunk encoding for float samples.
-	// XOR2 provides better compression than XOR, especially for stale markers.
-	// Automatically set to true when EnableSTStorage is true.
-	EnableXOR2Encoding bool
-
 	// EnableSTStorage determines whether TSDB should write a Start Timestamp (ST)
 	// per sample to WAL.
 	// TODO(bwplotka): Implement this option as per PROM-60, currently it's noop.
@@ -367,6 +363,14 @@ type Options struct {
 
 	// BlockReloadInterval is the interval at which blocks are reloaded.
 	BlockReloadInterval time.Duration
+
+	// FloatChunkEncoding is the encoding used for new float chunks when
+	// chunk_encoding.floats is absent from the configuration file.
+	// Defaults to EncXOR. Set to EncXOR2 to enable XOR2 encoding.
+	// Always use DefaultOptions() rather than a bare Options literal; the zero value
+	// of this field is EncNone, not EncXOR. This field is independent of EnableSTStorage:
+	// st-storage does not automatically select EncXOR2.
+	FloatChunkEncoding chunkenc.Encoding
 
 	// FeatureRegistry is used to register TSDB features.
 	FeatureRegistry features.Collector
@@ -1002,7 +1006,10 @@ func (db *DBReadOnly) Close() error {
 // Open returns a new DB in the given directory. If options are empty, DefaultOptions will be used.
 func Open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, stats *DBStats) (db *DB, err error) {
 	var rngs []int64
-	opts, rngs = validateOpts(opts, nil)
+	opts, rngs, err = validateOpts(opts, nil)
+	if err != nil {
+		return nil, err
+	}
 
 	// Register TSDB features if a registry is provided.
 	if opts.FeatureRegistry != nil {
@@ -1012,15 +1019,24 @@ func Open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, st
 		opts.FeatureRegistry.Set(features.TSDB, "use_uncached_io", opts.UseUncachedIO)
 		opts.FeatureRegistry.Enable(features.TSDB, "native_histograms")
 		opts.FeatureRegistry.Set(features.TSDB, "st_storage", opts.EnableSTStorage)
-		opts.FeatureRegistry.Set(features.TSDB, "xor2_encoding", opts.EnableXOR2Encoding)
+		opts.FeatureRegistry.Set(features.TSDB, "xor2_encoding", opts.FloatChunkEncoding == chunkenc.EncXOR2)
 	}
 
 	return open(dir, l, r, opts, rngs, stats)
 }
 
-func validateOpts(opts *Options, rngs []int64) (*Options, []int64) {
+func validateOpts(opts *Options, rngs []int64) (*Options, []int64, error) {
 	if opts == nil {
 		opts = DefaultOptions()
+	}
+	if opts.FloatChunkEncoding == chunkenc.EncNone {
+		opts.FloatChunkEncoding = chunkenc.EncXOR
+	}
+	if opts.FloatChunkEncoding != chunkenc.EncXOR && opts.FloatChunkEncoding != chunkenc.EncXOR2 {
+		return nil, nil, fmt.Errorf("unsupported float chunk encoding %q; valid values are %q and %q", strings.ToLower(opts.FloatChunkEncoding.String()), config.FloatChunkEncodingXOR, config.FloatChunkEncodingXOR2)
+	}
+	if opts.EnableSTStorage && opts.FloatChunkEncoding == chunkenc.EncXOR {
+		return nil, nil, fmt.Errorf("float chunk encoding %q is incompatible with start-timestamp storage; XOR chunks do not store start timestamps, use %q", config.FloatChunkEncodingXOR, config.FloatChunkEncodingXOR2)
 	}
 	if opts.StripeSize <= 0 {
 		opts.StripeSize = DefaultStripeSize
@@ -1072,7 +1088,7 @@ func validateOpts(opts *Options, rngs []int64) (*Options, []int64) {
 	}
 
 	opts.staleSeriesCompactionThreshold.Store(opts.StaleSeriesCompactionThreshold)
-	return opts, rngs
+	return opts, rngs, nil
 }
 
 // open returns a new DB in the given directory.
@@ -1273,7 +1289,7 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 	}
 	headOpts.EnableSTAsZeroSample = opts.EnableSTAsZeroSample
 	headOpts.EnableSTStorage.Store(opts.EnableSTStorage)
-	headOpts.EnableXOR2Encoding.Store(opts.EnableXOR2Encoding)
+	headOpts.FloatChunkEncoding.Store(uint32(opts.FloatChunkEncoding))
 	headOpts.EnableMetadataWALRecords = opts.EnableMetadataWALRecords
 	headOpts.EnableFastStartup = opts.EnableFastStartup
 	if opts.WALReplayConcurrency > 0 {
@@ -1474,6 +1490,15 @@ func (db *DB) AppenderV2(ctx context.Context) storage.AppenderV2 {
 func (db *DB) ApplyConfig(conf *config.Config) error {
 	oooTimeWindow := int64(0)
 	if conf.StorageConfig.TSDBConfig != nil {
+		// Validate encoding config before updating the head encoding so that
+		// an invalid encoding in the config does not change the active encoding.
+		if conf.StorageConfig.TSDBConfig.ChunkEncoding.Floats == config.FloatChunkEncodingXOR2 && db.opts.FloatChunkEncoding != chunkenc.EncXOR2 {
+			return errors.New("'storage.tsdb.chunk_encoding.floats: xor2' requires the xor2-encoding feature flag to be enabled at startup")
+		}
+		// db.opts.EnableSTStorage is set once at startup and never mutated.
+		if conf.StorageConfig.TSDBConfig.ChunkEncoding.Floats == config.FloatChunkEncodingXOR && db.opts.EnableSTStorage {
+			return errors.New("'storage.tsdb.chunk_encoding.floats: xor' is incompatible with st-storage; XOR chunks do not store start timestamps")
+		}
 		oooTimeWindow = conf.StorageConfig.TSDBConfig.OutOfOrderTimeWindow
 		db.opts.staleSeriesCompactionThreshold.Store(conf.StorageConfig.TSDBConfig.StaleSeriesCompactionThreshold)
 		// Update retention configuration if provided.
@@ -1487,8 +1512,18 @@ func (db *DB) ApplyConfig(conf *config.Config) error {
 			db.metrics.maxPercentage.Set(db.opts.MaxPercentage)
 			db.retentionMtx.Unlock()
 		}
+		// Default to the startup encoding; overridden by an explicit value below.
+		effectiveEncoding := db.opts.FloatChunkEncoding
+		switch conf.StorageConfig.TSDBConfig.ChunkEncoding.Floats {
+		case config.FloatChunkEncodingXOR:
+			effectiveEncoding = chunkenc.EncXOR
+		case config.FloatChunkEncodingXOR2:
+			effectiveEncoding = chunkenc.EncXOR2
+		}
+		db.head.opts.FloatChunkEncoding.Store(uint32(effectiveEncoding))
 	} else {
 		db.opts.staleSeriesCompactionThreshold.Store(0)
+		db.head.opts.FloatChunkEncoding.Store(uint32(db.opts.FloatChunkEncoding))
 	}
 	if oooTimeWindow < 0 {
 		oooTimeWindow = 0
@@ -1934,18 +1969,24 @@ type headSeriesEvictor func(maxt int64, appendIDWatermark uint64) error
 // The caller must hold db.cmtx.
 func (db *DB) compactHeadViewLocked(viewFactory headViewFactory, evict headSeriesEvictor, configure func(*BlockMeta)) error {
 	mint, maxt := db.head.opts.ChunkRange*(db.head.MinTime()/db.head.opts.ChunkRange), db.head.MaxTime()
-	// Capture the head's current append-ID as an eviction watermark before
-	// writing any blocks.
+	// Capture the highest guaranteed-committed appendID as an eviction watermark
+	// before writing any blocks.
 	//
-	// The generated blocks are guaranteed to contain all samples with
-	// appendID <= watermark. Samples appended later (appendID > watermark)
-	// may or may not be present, depending on when each block writer takes
-	// its isolation snapshot.
+	// Samples with appendID <= watermark are guaranteed to be present in some
+	// generated block. Samples with higher IDs may or may not be present,
+	// depending on block-writer snapshot timing.
 	//
-	// Eviction uses the watermark as a safety guard: a series is removed
-	// only if it has not received any samples with appendID > watermark
-	// since compaction began.
-	appendIDWatermark := db.head.iso.lastAppendID()
+	// The watermark is used during eviction: a series is removed only if it has
+	// not received any samples with appendID > watermark since compaction began.
+	//
+	// We use committedAppendID instead of lastAppendID because open appenders are
+	// excluded from all block snapshots via incompleteAppends. If one of those
+	// appenders commits between the write and evict phases, using lastAppendID
+	// could evict a series whose newest sample is present in neither the block nor
+	// the head, causing that sample to be lost on WAL replay.
+	appendIDWatermark := db.head.iso.committedAppendID()
+	// The bound is inclusive so that a sample sitting exactly on a chunk-range boundary
+	// (mint == maxt) still gets a block written before its series is evicted.
 	for ; mint <= maxt; mint += db.head.chunkRange.Load() {
 		view := viewFactory(db.head, mint, mint+db.head.chunkRange.Load()-1)
 
@@ -1958,7 +1999,14 @@ func (db *DB) compactHeadViewLocked(viewFactory headViewFactory, evict headSerie
 			return fmt.Errorf("persist head portion: %w", err)
 		}
 
-		db.logger.Info("Head portion block created", "ulids", fmt.Sprintf("%v", uids), "min_time", mint, "max_time", maxt)
+		// compactor.Write returns no UIDs when the view contained no chunks, which happens
+		// on a chunk-range slice that holds no data for the selected series. There is nothing
+		// to reload or log in that case.
+		if len(uids) == 0 {
+			continue
+		}
+
+		db.logger.Info("Head portion block created", "ulids", fmt.Sprintf("%v", uids), "min_time", mint, "max_time", mint+db.head.chunkRange.Load()-1)
 
 		if err := db.reloadBlocks(); err != nil {
 			errs := []error{fmt.Errorf("reloadBlocks blocks: %w", err)}
@@ -2049,16 +2097,26 @@ func (db *DB) CompactSelectedSeries(seriesRefs []storage.SeriesRef) (err error) 
 	db.metrics.selectedSeriesCompactionsTriggered.Inc()
 	start := time.Now()
 
-	totalSeries := len(seriesRefs)
+	// index.NewListPostings expects sorted, duplicate-free refs. Normalize
+	// the caller's slice in place by sorting and removing duplicates before
+	// constructing the postings. This avoids "out-of-order series added"
+	// errors during compaction.
+	refs := slices.Clone(seriesRefs)
+	if !slices.IsSorted(refs) {
+		slices.Sort(refs)
+	}
+	refs = slices.Compact(refs)
+	postings := index.NewListPostings(refs)
+	totalSeries := len(refs)
 	// Skip series with out-of-order data: the ref-list pipeline writes only in-order chunks,
 	// so a series whose OOO state is non-empty would have its OOO chunks orphaned upon
 	// eviction. Such series stay in the head and are picked up on a later cycle.
-	selectedSeriesRefs, err := db.head.filterSeriesAndSortPostings(index.NewListPostings(seriesRefs), isSeriesWithoutOOO)
+	selectedSeriesRefs, err := db.head.filterSeriesAndSortPostings(postings, isSeriesWithoutOOO)
 	if err != nil {
 		return err
 	}
 	skippedSeries := totalSeries - len(selectedSeriesRefs.sortedByRef)
-	db.logger.Info("Starting selected series compaction", "num_series", len(selectedSeriesRefs.sortedByRef), "num_skipped_ooo", skippedSeries)
+	db.logger.Info("Starting selected series compaction", "num_series", len(selectedSeriesRefs.sortedByRef), "num_skipped_ooo", skippedSeries, "isolation_disabled", db.head.opts.IsolationDisabled)
 
 	if len(selectedSeriesRefs.sortedByRef) == 0 {
 		elapsed := time.Since(start)
@@ -2072,7 +2130,7 @@ func (db *DB) CompactSelectedSeries(seriesRefs []storage.SeriesRef) (err error) 
 			return NewSelectedSeriesHead(h, mint, maxt, selectedSeriesRefs)
 		},
 		func(maxt int64, appendIDWatermark uint64) error {
-			return db.head.truncateSelectedSeries(seriesRefs, maxt, appendIDWatermark)
+			return db.head.truncateSelectedSeries(selectedSeriesRefs.sortedByRef, maxt, appendIDWatermark)
 		},
 		func(meta *BlockMeta) { meta.Compaction.SetSelectedSeries() },
 	); err != nil {

@@ -24,6 +24,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
+	"github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/usagetracker"
 	"github.com/grafana/mimir/pkg/usagetracker/usagetrackerclient"
 	"github.com/grafana/mimir/pkg/util"
@@ -82,6 +83,7 @@ func main() {
 	// Init memberlist.
 	cfg.MemberlistKV.Codecs = append(cfg.MemberlistKV.Codecs, ring.GetCodec())
 	cfg.MemberlistKV.Codecs = append(cfg.MemberlistKV.Codecs, ring.GetPartitionRingCodec())
+	cfg.MemberlistKV.Codecs = append(cfg.MemberlistKV.Codecs, distributor.GetReplicaDescCodec())
 
 	dnsProvider := dns.NewProvider(dns.GolangResolverType, 0, logger, prometheus.DefaultRegisterer)
 	memberlistKV := memberlist.NewKVInitService(&cfg.MemberlistKV, logger, dnsProvider, prometheus.DefaultRegisterer)
@@ -119,6 +121,7 @@ func main() {
 	// Create the usage-tracker client.
 	stubLimits := validation.NewOverrides(validation.Limits{}, validation.NewMockTenantLimits(nil))
 	client := usagetrackerclient.NewUsageTrackerClient("load-generator", cfg.Client, partitionRing, instanceRing, stubLimits, logger, prometheus.DefaultRegisterer, &noOpUsageTrackerRejectionObserver{})
+	assertNoError(services.StartAndAwaitRunning(ctx, client))
 
 	// Compute the number of workers assuming each TrackSeries() request 100ms on average (we consider this a worst case scenario).
 	numRequestsPerScrapeInterval := cfg.SimulatedTotalSeries / cfg.SimulatedSeriesPerWriteRequest

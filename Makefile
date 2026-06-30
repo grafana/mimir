@@ -241,7 +241,7 @@ mimir-build-image/$(UPTODATE): mimir-build-image/*
 # All the boiler plate for building golang follows:
 SUDO := $(shell docker info >/dev/null 2>&1 || echo "sudo -E")
 BUILD_IN_CONTAINER ?= true
-LATEST_BUILD_IMAGE_TAG ?= pr15609-0c98de1384@sha256:2245b8220074abb1b61e78eb6a3664dd2bd42b1783dd5c898e32e42cddc5bae0
+LATEST_BUILD_IMAGE_TAG ?= pr15864-f393a6c8cc@sha256:4e53e5c802f4162bb736abbb3ae3824aeb3ef96205bbf334861c77b8c9bf73a3
 
 # TTY is parameterized to allow CI and scripts to run builds,
 # as it currently disallows TTY devices.
@@ -448,6 +448,7 @@ lint: check-makefiles check-merge-conflicts
 		./pkg/alertmanager/alertspb/... \
 		./pkg/ruler/rulespb/... \
 		./pkg/storage/sharding/... \
+		./pkg/storage/ingest/kmeta/... \
 		./pkg/querier/engine/... \
 		./pkg/querier/api/... \
 		./pkg/util/math/...
@@ -642,9 +643,6 @@ dist: ## Generates binaries for a Mimir release.
 			echo "Building metaconvert for $$os/$$arch"; \
 			GOOS=$$os GOARCH=$$arch CGO_ENABLED=0 go build $(GO_FLAGS) -o ./dist/metaconvert-$$os-$$arch$$suffix ./cmd/metaconvert; \
 			sha256sum ./dist/metaconvert-$$os-$$arch$$suffix | cut -d ' ' -f 1 > ./dist/metaconvert-$$os-$$arch$$suffix-sha-256; \
-			echo "Building mark-blocks for $$os/$$arch"; \
-			GOOS=$$os GOARCH=$$arch CGO_ENABLED=0 go build $(GO_FLAGS) -o ./dist/mark-blocks-$$os-$$arch$$suffix ./tools/mark-blocks; \
-			sha256sum ./dist/mark-blocks-$$os-$$arch$$suffix | cut -d ' ' -f 1 > ./dist/mark-blocks-$$os-$$arch$$suffix-sha-256; \
 			done; \
 		done; \
 		touch $@

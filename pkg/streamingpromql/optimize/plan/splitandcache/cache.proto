@@ -1,0 +1,56 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
+syntax = "proto3";
+
+package splitandcache;
+
+import "github.com/grafana/mimir/pkg/querier/querierpb/querier.proto";
+import "github.com/grafana/mimir/pkg/streamingpromql/types/types.proto";
+import "gogoproto/gogo.proto";
+
+option (gogoproto.equal_all) = false;
+option (gogoproto.goproto_sizecache_all) = false;
+option (gogoproto.goproto_unkeyed_all) = false;
+option (gogoproto.goproto_unrecognized_all) = false;
+option (gogoproto.marshaler_all) = true;
+option (gogoproto.messagename_all) = true;
+option (gogoproto.sizer_all) = true;
+option (gogoproto.unmarshaler_all) = true;
+
+message CacheEntry {
+  // cacheKey is the original (unhashed) cache key, used to detect hash collisions.
+  bytes cacheKey = 1;
+
+  // extents contain all extents in this entry.
+  //
+  // The list must be sorted by timestamp (ascending).
+  // Entries must not overlap.
+  //
+  // Adjacent entries must be separated by at least one step.
+  // For example, with a step of 1m, an extent that ends at 08:04:00 may be followed by an extent that starts at 08:06:00,
+  // but not one that starts at 08:05:00.
+  repeated CachedExtent extents = 2 [(gogoproto.nullable) = false];
+}
+
+message CachedExtent {
+  int64 startT = 1; // Start timestamp, in milliseconds since Unix epoch.
+  int64 endT = 2; // End timestamp, in milliseconds since Unix epoch.
+
+  // Series metadata for each series stored in this extent.
+  repeated querierpb.SeriesMetadata seriesMetadata = 3 [(gogoproto.nullable) = false];
+
+  // Series data for each series stored in this extent, one per series in seriesMetadata.
+  // The entries must be in the same order as seriesMetadata.
+  repeated querierpb.InstantVectorSeriesData data = 4 [(gogoproto.nullable) = false];
+
+  querierpb.Annotations annotations = 5 [(gogoproto.nullable) = false];
+  types.EncodedOperatorEvaluationStats stats = 6 [(gogoproto.nullable) = false];
+
+  // ID of the trace that wrote this extent.
+  // If this extent is the combination of multiple separate evaluations, this is the ID of the most recent evaluation.
+  string newestEvaluationTraceID = 7;
+
+  // Timestamp of when this extent was evaluated, in milliseconds since Unix epoch.
+  // If this extent is the combination of multiple separate evaluations, this is the timestamp of the first evaluation.
+  int64 oldestEvaluationTime = 8;
+}

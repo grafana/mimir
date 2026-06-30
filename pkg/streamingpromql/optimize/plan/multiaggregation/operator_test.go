@@ -33,9 +33,9 @@ func TestOperator_FinishedReadingAndCloseBehaviour(t *testing.T) {
 	group := NewMultiAggregatorGroupEvaluator(inner, memoryConsumptionTracker, timeRange, log.NewNopLogger())
 
 	instance1 := group.AddInstance()
-	require.NoError(t, instance1.Configure(parser.SUM, nil, false, nil, -1, memoryConsumptionTracker, timeRange, posrange.PositionRange{}))
+	require.NoError(t, instance1.Configure(parser.SUM, nil, false, nil, -1, memoryConsumptionTracker, timeRange, posrange.PositionRange{}, nil))
 	instance2 := group.AddInstance()
-	require.NoError(t, instance2.Configure(parser.COUNT, nil, false, nil, -1, memoryConsumptionTracker, timeRange, posrange.PositionRange{}))
+	require.NoError(t, instance2.Configure(parser.COUNT, nil, false, nil, -1, memoryConsumptionTracker, timeRange, posrange.PositionRange{}, nil))
 
 	require.NoError(t, instance1.FinishedReading(ctx))
 	require.False(t, inner.FinishedReadingCalled, "should only call FinishedReading on inner operator after all instances have had FinishedReading called")
@@ -86,9 +86,9 @@ func TestOperator_Finalize(t *testing.T) {
 	group := NewMultiAggregatorGroupEvaluator(selector, memoryConsumptionTracker, timeRange, log.NewNopLogger())
 
 	instance1 := group.AddInstance()
-	require.NoError(t, instance1.Configure(parser.SUM, nil, false, nil, -1, memoryConsumptionTracker, timeRange, posrange.PositionRange{}))
+	require.NoError(t, instance1.Configure(parser.SUM, nil, false, nil, -1, memoryConsumptionTracker, timeRange, posrange.PositionRange{}, nil))
 	instance2 := group.AddInstance()
-	require.NoError(t, instance2.Configure(parser.SUM, nil, false, subset, 0, memoryConsumptionTracker, timeRange, posrange.PositionRange{}))
+	require.NoError(t, instance2.Configure(parser.SUM, nil, false, subset, 0, memoryConsumptionTracker, timeRange, posrange.PositionRange{}, nil))
 
 	require.NoError(t, instance1.Prepare(ctx, nil))
 	require.NoError(t, instance2.Prepare(ctx, nil))

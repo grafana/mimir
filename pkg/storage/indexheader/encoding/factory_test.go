@@ -39,7 +39,7 @@ func BenchmarkDecbufFactory_NewDecbufAtUnchecked(b *testing.B) {
 	for factoryName, factory := range factories {
 		b.Run(fmt.Sprintf("DecbufFactory=%s", factoryName), func(b *testing.B) {
 			for i := 0; i < b.N; i++ {
-				d := factory.NewDecbufAtUnchecked(0)
+				d := factory.NewDecbufAtUnchecked(context.Background(), 0)
 
 				if err := d.Err(); err != nil {
 					require.NoError(b, err)
@@ -58,7 +58,7 @@ func TestDecbufFactory_NewDecbufAtChecked_InvalidCRC(t *testing.T) {
 	enc.PutBytes([]byte{0, 0, 0, 0})
 
 	testDecbufFactory(t, testContentSize, enc, true, true, func(t *testing.T, factory DecbufFactory) {
-		d := factory.NewDecbufAtChecked(0, table)
+		d := factory.NewDecbufAtChecked(context.Background(), 0, table)
 		t.Cleanup(func() {
 			require.NoError(t, d.Close())
 		})
@@ -72,7 +72,7 @@ func TestDecbufFactory_NewDecbufAtChecked_InvalidLength(t *testing.T) {
 	enc.PutHash(crc32.New(table))
 
 	testDecbufFactory(t, testContentSize+1000, enc, true, true, func(t *testing.T, factory DecbufFactory) {
-		d := factory.NewDecbufAtChecked(0, table)
+		d := factory.NewDecbufAtChecked(context.Background(), 0, table)
 		t.Cleanup(func() {
 			require.NoError(t, d.Close())
 		})
@@ -86,7 +86,7 @@ func TestDecbufFactory_NewDecbufAtChecked_HappyPath(t *testing.T) {
 	enc.PutHash(crc32.New(table))
 
 	testDecbufFactory(t, testContentSize, enc, true, true, func(t *testing.T, factory DecbufFactory) {
-		d := factory.NewDecbufAtChecked(0, table)
+		d := factory.NewDecbufAtChecked(context.Background(), 0, table)
 		t.Cleanup(func() {
 			require.NoError(t, d.Close())
 		})
@@ -108,14 +108,14 @@ func TestDecbufFactory_NewDecbufAtChecked_MultipleInstances(t *testing.T) {
 		_ = factory.Close()
 	})
 
-	d1 := factory.NewDecbufAtChecked(0, table)
+	d1 := factory.NewDecbufAtChecked(context.Background(), 0, table)
 	require.NoError(t, d1.Err())
 	fr1, ok := d1.r.(*FileReader)
 	require.True(t, ok, "expected FileReader")
 	fd1 := fr1.file.Fd()
 	require.NoError(t, d1.Close())
 
-	d2 := factory.NewDecbufAtChecked(0, table)
+	d2 := factory.NewDecbufAtChecked(context.Background(), 0, table)
 	require.NoError(t, d2.Err())
 	fr2, ok := d2.r.(*FileReader)
 	require.True(t, ok, "expected FileReader")
@@ -135,12 +135,12 @@ func TestDecbufFactory_NewDecbufAtChecked_Concurrent(t *testing.T) {
 	)
 
 	testDecbufFactory(t, testContentSize, enc, true, true, func(t *testing.T, factory DecbufFactory) {
-		g, _ := errgroup.WithContext(context.Background())
+		g, ctx := errgroup.WithContext(context.Background())
 
 		for i := 0; i < concurrency; i++ {
 			g.Go(func() error {
 				for run := 0; run < runs; run++ {
-					d := factory.NewDecbufAtChecked(0, table)
+					d := factory.NewDecbufAtChecked(ctx, 0, table)
 
 					if err := d.Err(); err != nil {
 						_ = d.Close()
@@ -165,7 +165,7 @@ func TestDecbufFactory_NewDecbufAtUnchecked_HappyPath(t *testing.T) {
 	enc.PutHash(crc32.New(table))
 
 	testDecbufFactory(t, testContentSize, enc, true, true, func(t *testing.T, factory DecbufFactory) {
-		d := factory.NewDecbufAtUnchecked(0)
+		d := factory.NewDecbufAtUnchecked(context.Background(), 0)
 		t.Cleanup(func() {
 			require.NoError(t, d.Close())
 		})
@@ -180,7 +180,7 @@ func TestDecbufFactory_NewDecbufRaw_HappyPath(t *testing.T) {
 	enc.PutHash(crc32.New(table))
 
 	testDecbufFactory(t, testContentSize, enc, true, true, func(t *testing.T, factory DecbufFactory) {
-		d := factory.NewRawDecbuf()
+		d := factory.NewRawDecbuf(context.Background())
 		t.Cleanup(func() {
 			require.NoError(t, d.Close())
 		})
@@ -201,7 +201,7 @@ func TestDecbufFactory_NewDecbufInSection_HappyPath(t *testing.T) {
 
 	testDisk := false // NewDecbufInSection is currently only implemented for BucketDecbufFactory
 	testDecbufFactory(t, testContentSize, enc, testDisk, true, func(t *testing.T, factory DecbufFactory) {
-		d := factory.NewDecbufInSection(0, startOffset, endOffset)
+		d := factory.NewDecbufInSection(context.Background(), 0, startOffset, endOffset)
 		t.Cleanup(func() {
 			require.NoError(t, d.Close())
 		})
@@ -221,7 +221,7 @@ func TestDecbufFactory_NewDecbufInSection_SectionEndOffsetBeyondTableLength(t *t
 
 	testDisk := false // NewDecbufInSection is currently only implemented for BucketDecbufFactory
 	testDecbufFactory(t, testContentSize, enc, testDisk, true, func(t *testing.T, factory DecbufFactory) {
-		d := factory.NewDecbufInSection(0, 10, testContentSize+1000)
+		d := factory.NewDecbufInSection(context.Background(), 0, 10, testContentSize+1000)
 		t.Cleanup(func() {
 			require.NoError(t, d.Close())
 		})
@@ -239,7 +239,7 @@ func TestDecbufFactory_NewDecbufInSection_SectionEndOffsetBeforeStartOffset(t *t
 
 	testDisk := false // NewDecbufInSection is currently only implemented for BucketDecbufFactory
 	testDecbufFactory(t, testContentSize, enc, testDisk, true, func(t *testing.T, factory DecbufFactory) {
-		d := factory.NewDecbufInSection(0, 2500, 30)
+		d := factory.NewDecbufInSection(context.Background(), 0, 2500, 30)
 		t.Cleanup(func() {
 			require.NoError(t, d.Close())
 		})
@@ -255,7 +255,7 @@ func TestDecbufFactory_Stop(t *testing.T) {
 	testDecbufFactory(t, testContentSize, enc, true, testBucket, func(t *testing.T, factory DecbufFactory) {
 		require.NoError(t, factory.Close())
 
-		d := factory.NewRawDecbuf()
+		d := factory.NewRawDecbuf(context.Background())
 		t.Cleanup(func() {
 			require.NoError(t, d.Close())
 		})
@@ -340,7 +340,7 @@ func createDecbufFactoriesWithBytes(t testing.TB, filePoolSize uint, len int, en
 	t.Cleanup(func() {
 		require.NoError(t, bkt.Close())
 	})
-	bucketFactory := NewBucketDecbufFactory(context.Background(), instBkt, fileName)
+	bucketFactory := NewBucketDecbufFactory(instBkt, fileName)
 
 	return diskFactory, bucketFactory
 }

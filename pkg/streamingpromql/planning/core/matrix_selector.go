@@ -3,6 +3,7 @@
 package core
 
 import (
+	"context"
 	"fmt"
 	"slices"
 	"time"
@@ -45,10 +46,6 @@ func (m *MatrixSelector) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_MATRIX_SELECTOR
 }
 
-func (m *MatrixSelector) ReplaceChild(idx int, node planning.Node) error {
-	return fmt.Errorf("node of type MatrixSelector supports no children, but attempted to replace child at index %d", idx)
-}
-
 func (m *MatrixSelector) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
 	otherMatrixSelector, ok := other.(*MatrixSelector)
 
@@ -67,7 +64,8 @@ func (m *MatrixSelector) EquivalentToIgnoringMatchersAndHints(other planning.Nod
 		m.Range == otherMatrixSelector.Range &&
 		m.Anchored == otherMatrixSelector.Anchored &&
 		m.Smoothed == otherMatrixSelector.Smoothed &&
-		m.CounterAware == otherMatrixSelector.CounterAware
+		m.CounterAware == otherMatrixSelector.CounterAware &&
+		m.AnchoredResetsChanges == otherMatrixSelector.AnchoredResetsChanges
 }
 
 func (m *MatrixSelector) GetMatchers() []*LabelMatcher {
@@ -84,11 +82,7 @@ func (m *MatrixSelector) MergeHints(other planning.Node) error {
 	return nil
 }
 
-func (m *MatrixSelector) ChildrenLabels() []string {
-	return nil
-}
-
-func MaterializeMatrixSelector(m *MatrixSelector, _ *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters, overrideTimeParams planning.RangeParams) (planning.OperatorFactory, error) {
+func MaterializeMatrixSelector(_ context.Context, m *MatrixSelector, _ *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters, overrideTimeParams planning.RangeParams) (planning.OperatorFactory, error) {
 	selectorRange := m.Range
 	selectorTs := m.Timestamp
 	selectorOffset := m.Offset.Milliseconds()
@@ -121,6 +115,7 @@ func MaterializeMatrixSelector(m *MatrixSelector, _ *planning.Materializer, time
 		Anchored:                 m.Anchored,
 		Smoothed:                 m.Smoothed,
 		CounterAware:             m.CounterAware,
+		AnchoredResetsChanges:    m.AnchoredResetsChanges,
 		Subsets:                  subsets,
 	}
 

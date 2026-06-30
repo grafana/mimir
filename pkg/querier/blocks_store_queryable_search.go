@@ -93,7 +93,7 @@ func (q *blocksStoreQuerier) SearchLabelNames(
 		return queriedBlocks, nil
 	}
 
-	if err := q.queryWithConsistencyCheck(ctx, spanLog, minT, maxT, tenantID, nil, queryF); err != nil {
+	if err := q.queryWithConsistencyCheckAndObserve(ctx, spanLog, minT, maxT, tenantID, nil, queryF); err != nil {
 		closeSearchResultSets(resSources)
 		return storage.ErrSearchResultSet(err)
 	}
@@ -145,7 +145,7 @@ func (q *blocksStoreQuerier) SearchLabelValues(
 		return queriedBlocks, nil
 	}
 
-	if err := q.queryWithConsistencyCheck(ctx, spanLog, minT, maxT, tenantID, nil, queryF); err != nil {
+	if err := q.queryWithConsistencyCheckAndObserve(ctx, spanLog, minT, maxT, tenantID, nil, queryF); err != nil {
 		closeSearchResultSets(resSources)
 		return storage.ErrSearchResultSet(err)
 	}

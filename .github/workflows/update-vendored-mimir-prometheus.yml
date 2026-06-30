@@ -66,7 +66,7 @@ jobs:
           echo "mimir_prometheus_branch=${DISPATCH_MIMIR_PROMETHEUS_BRANCH:-$MANUAL_MIMIR_PROMETHEUS_BRANCH}" >> "$GITHUB_OUTPUT"
 
       - name: Check out repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           ref: ${{ steps.branch-names.outputs.mimir_branch }}
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -180,7 +180,7 @@ jobs:
 
       - name: Send Slack notification on failure
         if: failure()
-        uses: grafana/shared-workflows/actions/send-slack-message@952ec381447a2002ff76103395d37bf8b4c7c3f5 # send-slack-message/v3.0.1
+        uses: grafana/shared-workflows/actions/send-slack-message@551bc8d50017d3e95d5da3f8a4826e733a208dc0 # send-slack-message/v3.0.2
         with:
           method: chat.postMessage
           payload: |

@@ -20,10 +20,15 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kfake"
+	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
 	"github.com/twmb/franz-go/pkg/sasl"
 	awssasl "github.com/twmb/franz-go/pkg/sasl/aws"
 	"github.com/twmb/franz-go/pkg/sasl/oauth"
+	"go.opentelemetry.io/otel"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+	"go.opentelemetry.io/otel/trace"
 )
 
 func TestMSKIAMCredentials(t *testing.T) {
@@ -254,7 +259,7 @@ func TestResultPromise(t *testing.T) {
 	})
 }
 
-func TestCreateTopic(t *testing.T) {
+func TestCreateTopics(t *testing.T) {
 	createKafkaCluster := func(t *testing.T) (string, *kfake.Cluster) {
 		cluster, err := kfake.NewCluster(kfake.NumBrokers(1))
 		require.NoError(t, err)
@@ -301,7 +306,91 @@ func TestCreateTopic(t *testing.T) {
 
 		logger := log.NewNopLogger()
 
-		require.NoError(t, CreateTopic(cfg, logger))
+		require.NoError(t, CreateTopics(cfg, logger, cfg.Topic))
+	})
+
+	t.Run("should create all the requested topics", func(t *testing.T) {
+		var (
+			addr, cluster = createKafkaCluster(t)
+			cfg           = KafkaConfig{
+				AutoCreateTopicDefaultPartitions: 100,
+			}
+			topics = []string{"topic-a", "topic-b"}
+		)
+		require.NoError(t, cfg.Address.Set(addr))
+
+		cluster.ControlKey(kmsg.CreateTopics.Int16(), func(request kmsg.Request) (kmsg.Response, error, bool) {
+			r := request.(*kmsg.CreateTopicsRequest)
+
+			require.Len(t, r.Topics, 2)
+			respTopics := make([]kmsg.CreateTopicsResponseTopic, 0, len(r.Topics))
+			for _, res := range r.Topics {
+				assert.Equal(t, int32(100), res.NumPartitions)
+				assert.Equal(t, int16(-1), res.ReplicationFactor)
+				respTopics = append(respTopics, kmsg.CreateTopicsResponseTopic{
+					Topic:             res.Topic,
+					NumPartitions:     res.NumPartitions,
+					ReplicationFactor: 3,
+				})
+			}
+
+			return &kmsg.CreateTopicsResponse{Version: r.Version, Topics: respTopics}, nil, true
+		})
+
+		require.NoError(t, CreateTopics(cfg, log.NewNopLogger(), topics...))
+	})
+
+	t.Run("should return an error if one of multiple topics fails to be created", func(t *testing.T) {
+		var (
+			addr, cluster = createKafkaCluster(t)
+			cfg           = KafkaConfig{
+				AutoCreateTopicDefaultPartitions: 100,
+			}
+			topics = []string{"topic-a", "topic-b"}
+		)
+		require.NoError(t, cfg.Address.Set(addr))
+
+		// topic-a already exists (tolerated), topic-b genuinely fails: the call must surface topic-b's error.
+		cluster.ControlKey(kmsg.CreateTopics.Int16(), func(request kmsg.Request) (kmsg.Response, error, bool) {
+			r := request.(*kmsg.CreateTopicsRequest)
+			return &kmsg.CreateTopicsResponse{
+				Version: r.Version,
+				Topics: []kmsg.CreateTopicsResponseTopic{
+					{Topic: "topic-a", ErrorCode: kerr.TopicAlreadyExists.Code},
+					{Topic: "topic-b", ErrorCode: kerr.NotLeaderForPartition.Code},
+				},
+			}, nil, true
+		})
+
+		err := CreateTopics(cfg, log.NewNopLogger(), topics...)
+		require.Error(t, err)
+		assert.ErrorContains(t, err, "topic-b")
+	})
+
+	t.Run("should return an error if a requested topic is missing from the response", func(t *testing.T) {
+		var (
+			addr, cluster = createKafkaCluster(t)
+			cfg           = KafkaConfig{
+				AutoCreateTopicDefaultPartitions: 100,
+			}
+			topics = []string{"topic-a", "topic-b"}
+		)
+		require.NoError(t, cfg.Address.Set(addr))
+
+		// The broker omits topic-b from the response: we can't confirm its creation, so it must error.
+		cluster.ControlKey(kmsg.CreateTopics.Int16(), func(request kmsg.Request) (kmsg.Response, error, bool) {
+			r := request.(*kmsg.CreateTopicsRequest)
+			return &kmsg.CreateTopicsResponse{
+				Version: r.Version,
+				Topics: []kmsg.CreateTopicsResponseTopic{
+					{Topic: "topic-a", NumPartitions: 100, ReplicationFactor: 3},
+				},
+			}, nil, true
+		})
+
+		err := CreateTopics(cfg, log.NewNopLogger(), topics...)
+		require.Error(t, err)
+		assert.ErrorContains(t, err, "topic-b")
 	})
 
 	t.Run("should return an error if the request fails", func(t *testing.T) {
@@ -313,8 +402,10 @@ func TestCreateTopic(t *testing.T) {
 		)
 		require.NoError(t, cfg.Address.Set(addr))
 
-		cluster.ControlKey(kmsg.CreateTopics.Int16(), func(_ kmsg.Request) (kmsg.Response, error, bool) {
+		cluster.ControlKey(kmsg.CreateTopics.Int16(), func(request kmsg.Request) (kmsg.Response, error, bool) {
+			r := request.(*kmsg.CreateTopicsRequest)
 			return &kmsg.CreateTopicsResponse{
+				Version: r.Version,
 				Topics: []kmsg.CreateTopicsResponseTopic{
 					{
 						Topic:     cfg.Topic,
@@ -326,7 +417,7 @@ func TestCreateTopic(t *testing.T) {
 
 		logger := log.NewNopLogger()
 
-		require.Error(t, CreateTopic(cfg, logger))
+		require.Error(t, CreateTopics(cfg, logger, cfg.Topic))
 	})
 
 	t.Run("should return an error if the request succeed but the response contains an error", func(t *testing.T) {
@@ -363,7 +454,7 @@ func TestCreateTopic(t *testing.T) {
 
 		logger := log.NewNopLogger()
 
-		require.NoError(t, CreateTopic(cfg, logger))
+		require.NoError(t, CreateTopics(cfg, logger, cfg.Topic))
 	})
 
 	t.Run("should not return error when topic already exists", func(t *testing.T) {
@@ -378,10 +469,10 @@ func TestCreateTopic(t *testing.T) {
 		require.NoError(t, cfg.Address.Set(addr))
 
 		// First call should create the topic
-		assert.NoError(t, CreateTopic(cfg, logger))
+		assert.NoError(t, CreateTopics(cfg, logger, cfg.Topic))
 
 		// Second call should succeed because topic already exists
-		assert.NoError(t, CreateTopic(cfg, logger))
+		assert.NoError(t, CreateTopics(cfg, logger, cfg.Topic))
 	})
 }
 
@@ -421,4 +512,156 @@ func serveSecretFromSocket(t *testing.T, secret any) string {
 	t.Cleanup(func() { _ = server.Close() })
 
 	return socketPath
+}
+
+// setupTestTracerProvider installs a global TracerProvider with a parent-based
+// sampler and a span recorder, restoring the previous provider on cleanup.
+// Tests using it must not run in parallel because the provider is global.
+func setupTestTracerProvider(t testing.TB) *tracetest.SpanRecorder {
+	recorder := tracetest.NewSpanRecorder()
+	tp := sdktrace.NewTracerProvider(
+		sdktrace.WithSpanProcessor(recorder),
+		sdktrace.WithSampler(sdktrace.ParentBased(sdktrace.AlwaysSample())),
+	)
+	prev := otel.GetTracerProvider()
+	otel.SetTracerProvider(tp)
+	t.Cleanup(func() {
+		otel.SetTracerProvider(prev)
+		_ = tp.Shutdown(t.Context())
+	})
+	return recorder
+}
+
+// fetchRecordWithTraceparent returns a fetched record carrying a traceparent
+// header with the given trace ID and sampled flag, as injected by a producer.
+func fetchRecordWithTraceparent(traceID string, sampled bool) *kgo.Record {
+	flags := "00"
+	if sampled {
+		flags = "01"
+	}
+	return &kgo.Record{
+		Topic: "test-topic",
+		Headers: []kgo.RecordHeader{
+			{Key: "traceparent", Value: []byte("00-" + traceID + "-00f067aa0ba902b7-" + flags)},
+		},
+	}
+}
+
+func TestSampledOnlyTracer_FetchHooks(t *testing.T) {
+	const traceID = "4bf92f3577b34da6a3ce929d0e0e4736"
+
+	t.Run("unsampled record: context carries the remote span context, no span is created", func(t *testing.T) {
+		recorder := setupTestTracerProvider(t)
+		tracer := newSampledOnlyTracer()
+
+		rec := fetchRecordWithTraceparent(traceID, false)
+		tracer.OnFetchRecordBuffered(rec)
+
+		require.NotNil(t, rec.Context)
+		sc := trace.SpanContextFromContext(rec.Context)
+		assert.Equal(t, traceID, sc.TraceID().String())
+		assert.False(t, sc.IsSampled())
+		assert.True(t, sc.IsRemote())
+		assert.Empty(t, recorder.Started())
+
+		tracer.OnFetchRecordUnbuffered(rec, true)
+		assert.Empty(t, recorder.Ended())
+	})
+
+	t.Run("sampled record: a receive span is created and ended", func(t *testing.T) {
+		recorder := setupTestTracerProvider(t)
+		tracer := newSampledOnlyTracer()
+
+		rec := fetchRecordWithTraceparent(traceID, true)
+		tracer.OnFetchRecordBuffered(rec)
+
+		require.Len(t, recorder.Started(), 1)
+		span := recorder.Started()[0]
+		assert.Equal(t, "test-topic receive", span.Name())
+		assert.Equal(t, traceID, span.Parent().TraceID().String())
+		assert.True(t, trace.SpanContextFromContext(rec.Context).IsSampled())
+
+		tracer.OnFetchRecordUnbuffered(rec, true)
+		require.Len(t, recorder.Ended(), 1)
+	})
+
+	t.Run("record without trace headers: context is set, no span is created", func(t *testing.T) {
+		recorder := setupTestTracerProvider(t)
+		tracer := newSampledOnlyTracer()
+
+		rec := &kgo.Record{Topic: "test-topic"}
+		tracer.OnFetchRecordBuffered(rec)
+
+		require.NotNil(t, rec.Context)
+		assert.False(t, trace.SpanContextFromContext(rec.Context).IsValid())
+		assert.Empty(t, recorder.Started())
+
+		tracer.OnFetchRecordUnbuffered(rec, true)
+		assert.Empty(t, recorder.Ended())
+	})
+}
+
+func TestSampledOnlyTracer_ProduceHooks(t *testing.T) {
+	t.Run("unsampled context: no span is created", func(t *testing.T) {
+		recorder := setupTestTracerProvider(t)
+		tracer := newSampledOnlyTracer()
+
+		rec := &kgo.Record{Topic: "test-topic", Context: trace.ContextWithSpanContext(t.Context(), trace.NewSpanContext(trace.SpanContextConfig{
+			TraceID:    trace.TraceID{1},
+			SpanID:     trace.SpanID{1},
+			TraceFlags: 0,
+			Remote:     true,
+		}))}
+		tracer.OnProduceRecordBuffered(rec)
+		assert.Empty(t, recorder.Started())
+
+		tracer.OnProduceRecordUnbuffered(rec, nil)
+		assert.Empty(t, recorder.Ended())
+	})
+
+	t.Run("sampled context: a publish span is created and ended", func(t *testing.T) {
+		recorder := setupTestTracerProvider(t)
+		tracer := newSampledOnlyTracer()
+
+		ctx, parent := otel.Tracer("test").Start(t.Context(), "request")
+		defer parent.End()
+
+		rec := &kgo.Record{Topic: "test-topic", Context: ctx}
+		tracer.OnProduceRecordBuffered(rec)
+		require.Len(t, recorder.Started(), 2) // "request" + the publish span.
+		assert.Equal(t, "test-topic publish", recorder.Started()[1].Name())
+
+		tracer.OnProduceRecordUnbuffered(rec, nil)
+		require.Len(t, recorder.Ended(), 1)
+	})
+}
+
+// BenchmarkFetchRecordTracing compares the per-record fetch-hook cost for
+// unsampled traces (the overwhelmingly common case in production) between the
+// gated sampledOnlyTracer and the raw kotel tracer it wraps.
+func BenchmarkFetchRecordTracing(b *testing.B) {
+	const traceID = "4bf92f3577b34da6a3ce929d0e0e4736"
+	setupTestTracerProvider(b)
+
+	b.Run("sampledOnlyTracer unsampled", func(b *testing.B) {
+		tracer := newSampledOnlyTracer()
+		rec := fetchRecordWithTraceparent(traceID, false)
+		b.ReportAllocs()
+		for b.Loop() {
+			rec.Context = b.Context()
+			tracer.OnFetchRecordBuffered(rec)
+			tracer.OnFetchRecordUnbuffered(rec, true)
+		}
+	})
+
+	b.Run("kotel unsampled", func(b *testing.B) {
+		tracer := recordsTracer()
+		rec := fetchRecordWithTraceparent(traceID, false)
+		b.ReportAllocs()
+		for b.Loop() {
+			rec.Context = b.Context()
+			tracer.OnFetchRecordBuffered(rec)
+			tracer.OnFetchRecordUnbuffered(rec, true)
+		}
+	})
 }

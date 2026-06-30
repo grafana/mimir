@@ -11,6 +11,8 @@ name: Build and Push mimir-build-image
 on:
   pull_request:
 
+permissions: {}
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
   cancel-in-progress: true
@@ -53,7 +55,7 @@ jobs:
 
       - name: Checkout repository
         if: steps.check_if_files_modified.outputs.modified == 'true'
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           persist-credentials: false
           ref: ${{ github.event.pull_request.head.ref }} # Check out the PR branch itself, not the temporary merge commit
@@ -122,6 +124,9 @@ jobs:
     needs:
       - prepare
     if: needs.prepare.outputs.need_to_build == 'true'
+    permissions:
+      contents: read
+      id-token: write
     uses: grafana/shared-workflows/.github/workflows/docker-build-push-multiarch.yml@638f24848a49edb0bd14f771b6dd37b4455f1591 # main
     with:
       context: mimir-build-image
@@ -160,7 +165,7 @@ jobs:
 
       - name: Checkout repository
         if: needs.prepare.outputs.need_to_build == 'true'
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           persist-credentials: false
           ref: ${{ github.event.pull_request.head.ref }} # Check out the PR branch itself, not the temporary merge commit
@@ -203,7 +208,7 @@ jobs:
       # Refer to https://docs.github.com/en/actions/security-for-github-actions/security-guides/automatic-token-authentication#using-the-github_token-in-a-workflow
       - name: Commit Makefile update to PR branch
         if: steps.update_makefile.outputs.changed == 'true'
-        uses: planetscale/ghcommit-action@57a6c787385af407a557374c794a09273aaebfd7 # v0.2.21
+        uses: planetscale/ghcommit-action@a6b150b81dca5dd027baa898604418eec9e11465 # v0.2.22
         with:
           commit_message: "Update build image version to ${{ needs.prepare.outputs.new_image_tag }}"
           repo: ${{ github.event.pull_request.head.repo.full_name }}

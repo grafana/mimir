@@ -59,6 +59,15 @@ func (s *StepInvariantInstantVectorOperator) NextSeries(ctx context.Context) (ty
 	}
 
 	if s.originalTimeRange.IsInstant || s.originalTimeRange.StepCount <= 1 {
+		// The inner operator will be evaluated at T=0, so we still need to set the correct timestamp for any output samples.
+		for i := range data.Floats {
+			data.Floats[i].T = s.originalTimeRange.StartT
+		}
+
+		for i := range data.Histograms {
+			data.Histograms[i].T = s.originalTimeRange.StartT
+		}
+
 		return data, nil
 	}
 
@@ -94,7 +103,7 @@ func (s *StepInvariantInstantVectorOperator) NextSeries(ctx context.Context) (ty
 			return types.InstantVectorSeriesData{}, err
 		}
 
-		histograms = append(histograms, promql.HPoint{T: data.Histograms[0].T, H: data.Histograms[0].H})
+		histograms = append(histograms, promql.HPoint{T: s.originalTimeRange.StartT, H: data.Histograms[0].H})
 		// Note that we create a copy of the histogram for each step as we can not re-use the same *FloatHistogram in the slice from the pool.
 		for ts := s.originalTimeRange.StartT + s.originalTimeRange.IntervalMilliseconds; ts <= s.originalTimeRange.EndT; ts += s.originalTimeRange.IntervalMilliseconds {
 			histograms = append(histograms, promql.HPoint{

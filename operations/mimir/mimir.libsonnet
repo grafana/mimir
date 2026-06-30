@@ -8,6 +8,9 @@
 (import 'rollout-operator/rollout-operator.libsonnet') +
 (import 'rollout-operator.libsonnet') +
 
+// Tools to operate on blocks in object storage (run as one-off Jobs).
+(import 'block-tools.libsonnet') +
+
 // Mimir services
 (import 'distributor.libsonnet') +
 (import 'ingester.libsonnet') +
@@ -17,6 +20,7 @@
 (import 'alertmanager.libsonnet') +
 (import 'query-scheduler.libsonnet') +
 (import 'compactor.libsonnet') +
+(import 'compactor-scheduler.libsonnet') +
 (import 'store-gateway.libsonnet') +
 (import 'overrides-exporter.libsonnet') +
 
@@ -60,6 +64,14 @@
 (import 'ingest-storage.libsonnet') +
 (import 'ingest-storage-ingester-autoscaling.libsonnet') +
 (import 'ingest-storage-migration.libsonnet') +
+
+// Experimental compartments support. Must come after autoscaling, multi-zone and ingest-storage
+// because it overrides their components and builds on their helpers.
+(import 'compartments-common.libsonnet') +
+(import 'compartments-distributor.libsonnet') +
+(import 'compartments-ingester.libsonnet') +
+(import 'compartments-querier.libsonnet') +
+(import 'compartments-query-frontend.libsonnet') +
 
 // Add memberlist support. Keep it at the end because it overrides all Mimir components.
 (import 'memberlist.libsonnet') +

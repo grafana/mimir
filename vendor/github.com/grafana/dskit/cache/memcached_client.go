@@ -272,6 +272,7 @@ func newMemcachedClient(
 		selector:        selector,
 		addressProvider: addressProvider,
 		stop:            make(chan struct{}, 1),
+		name:            name,
 		getMultiGate: gate.New(
 			prometheus.WrapRegistererWithPrefix(getMultiMetricNamePrefix, reg),
 			config.MaxGetMultiConcurrency,

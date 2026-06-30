@@ -4,30 +4,62 @@
 
 load 1s
   mixed 0 {{schema:0 sum:5 count:4 buckets:[1 2 1]}} 2 {{schema:0 sum:5 count:4 buckets:[1 2 1]}} 4 {{schema:0 sum:5 count:4 buckets:[1 2 1]}} 6 {{schema:0 sum:5 count:4 buckets:[1 2 1]}}
-  missing 0 _ 2 _ _ 5 _ _ _ _ _
-  nans 0 NaN 2 NaN NaN 5 NaN NaN NaN NaN NaN
-  infs 0 Inf 2 Inf Inf 5 Inf Inf Inf Inf Inf
 
+# This test is here until https://github.com/prometheus/prometheus/pull/18943 is merged/vendored.
 eval instant at 1s mixed smoothed
-  expect fail msg: smoothed and anchored modifiers do not work with native histograms
+  mixed {{schema:0 sum:5 count:4 buckets:[1 2 1]}}
 
 eval instant at 8s mixed smoothed
-  expect fail msg: smoothed and anchored modifiers do not work with native histograms
+  mixed {{schema:0 sum:5 count:4 buckets:[1 2 1]}}
 
+# MQE-only (Prometheus panics on the empty result, see above): when the smoothed instant selector
+# must interpolate between a look-back and look-ahead neighbour of different types it cannot, so it
+# emits MixedFloatsHistogramsWarning and produces no point. This covers the histogram-then-float
+# ordering: at 45s the look-back neighbour is the histogram at 30s and the look-ahead neighbour is
+# the float at 60s.
 clear
-load 1s
-  metric{instance="1"} 1+1x10 _ _ 10-1x10
-  metric{instance="2"} 1 5 6 3 1 8 7 3 0 19 NaN NaN 10-1x10
-  metric{instance="3"} 0x10 {{schema:0 sum:5 count:4 buckets:[1 2 1]}} {{schema:0 sum:5 count:4 buckets:[1 2 1]}} 10-1x10
+load 30s
+  hist_then_float {{schema:0 sum:3 count:3 buckets:[3]}} {{schema:0 sum:4 count:4 buckets:[4]}} 1 2
 
-# MQE and Prometheus have different behaviour here.
-# MQE will fail a query where histograms are found within the query range, or in the points immediately either side of the range.
-# Prometheus will fail a query where histograms are found anywhere within the extended range window.
-eval instant at 11s increase(metric[1m] smoothed)
-  expect fail msg: smoothed and anchored modifiers do not work with native histograms
+eval instant at 45s hist_then_float smoothed
+  expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "hist_then_float"
 
-eval instant at 11s rate(metric[1m] smoothed)
-  expect fail msg: smoothed and anchored modifiers do not work with native histograms
+# MQE-only: with multiple series in one selector, only the series whose neighbours mix floats and
+# histograms is dropped (with the warning naming that series); a pure-float series is still
+# interpolated. This exercises the per-series metric-name lookup used for the annotation.
+clear
+load 30s
+  mm_mixed 1 2 {{schema:0 sum:3 count:3 buckets:[3]}} {{schema:0 sum:4 count:4 buckets:[4]}}
+  mm_pure 10 20 30 40
 
-eval instant at 11s delta(metric[1m] smoothed)
-  expect fail msg: smoothed and anchored modifiers do not work with native histograms
+eval instant at 45s {__name__=~"mm_mixed|mm_pure"} smoothed
+  expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "mm_mixed"
+  mm_pure 25
+
+# MQE-only (Prometheus panics on the empty result): when the smoothed instant selector interpolates
+# between an exponential and a custom-bucket histogram it cannot, so it emits
+# MixedExponentialCustomHistogramsWarning and produces no point. The upstream test covers the
+# custom-then-exponential ordering; this covers the reverse (exponential at 30s, custom at 60s),
+# confirming the schema check is order-independent and is not masked by the counter-reset path.
+clear
+load 30s
+  exp_then_custom {{schema:0 sum:1 count:1 buckets:[1]}} {{schema:0 sum:1 count:1 buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}}
+
+eval instant at 45s histogram_count(exp_then_custom smoothed)
+  expect warn msg: PromQL warning: vector contains a mix of histograms with exponential and custom buckets schemas for metric name "exp_then_custom"
+
+# MQE-only, and a documented divergence from Prometheus's intent: the smoothed instant selector
+# only inspects the two immediate neighbours of the eval time when deciding whether the window
+# mixes floats and histograms. Here the nearest look-back (float @ 90s) and look-ahead (float @
+# 110s) are both floats, so MQE interpolates and returns 100, even though a histogram sits at 50s
+# within the look-back window. Prometheus's smoothSeries scans the full window and would emit
+# MixedFloatsHistogramsWarning + drop the point - but its engine panics on the resulting empty
+# instant result, so this can only be exercised against MQE. See the "Known limitation" note in
+# instant_vector_selector.go.
+clear
+load 10s
+  probe2b _ _ _ _ _ {{schema:0 sum:3 count:3 buckets:[3]}} _ _ _ 90 _ 110
+
+eval instant at 100s probe2b smoothed
+  expect no_warn
+  probe2b 100

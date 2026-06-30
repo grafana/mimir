@@ -76,7 +76,7 @@ func TestBboltJobPersistenceManager_RecoverAll(t *testing.T) {
 	allowedTenants := util.NewAllowList(nil, nil)
 	metrics := newSchedulerMetrics(prometheus.NewPedanticRegistry())
 	jobTrackerFactory := func(tenant string, persister JobPersister) *JobTracker {
-		return NewJobTracker(persister, tenant, clock.New(), infiniteLeases, infiniteLeases, metrics.newTrackerMetricsForTenant(tenant), log.NewNopLogger())
+		return NewJobTracker(persister, tenant, clock.New(), newSimpleLanePolicy(), infiniteLeases, infiniteLeases, metrics.newTrackerMetricsForTenant(tenant), log.NewNopLogger())
 	}
 
 	// Empty recovery should succeed
@@ -110,7 +110,7 @@ func TestBboltJobPersistenceManager_RecoverAll_Cleanup(t *testing.T) {
 
 	metrics := newSchedulerMetrics(prometheus.NewPedanticRegistry())
 	jobTrackerFactory := func(tenant string, persister JobPersister) *JobTracker {
-		return NewJobTracker(persister, tenant, clock.New(), infiniteLeases, infiniteLeases, metrics.newTrackerMetricsForTenant(tenant), log.NewNopLogger())
+		return NewJobTracker(persister, tenant, clock.New(), newSimpleLanePolicy(), infiniteLeases, infiniteLeases, metrics.newTrackerMetricsForTenant(tenant), log.NewNopLogger())
 	}
 
 	// Create a bucket with an invalid tenant name
@@ -258,7 +258,7 @@ func TestRunMigration_ScaleUp(t *testing.T) {
 	allowedTenants := util.NewAllowList(nil, nil)
 	metrics := newSchedulerMetrics(prometheus.NewPedanticRegistry())
 	trackers, err := mgr.RecoverAll(allowedTenants, func(tenant string, persister JobPersister) *JobTracker {
-		return NewJobTracker(persister, tenant, clock.New(), infiniteLeases, infiniteLeases, metrics.newTrackerMetricsForTenant(tenant), log.NewNopLogger())
+		return NewJobTracker(persister, tenant, clock.New(), newSimpleLanePolicy(), infiniteLeases, infiniteLeases, metrics.newTrackerMetricsForTenant(tenant), log.NewNopLogger())
 	})
 	require.NoError(t, err)
 	require.Len(t, trackers, len(tenants))
@@ -320,7 +320,7 @@ func TestRunMigration_ScaleDown(t *testing.T) {
 	allowedTenants := util.NewAllowList(nil, nil)
 	metrics := newSchedulerMetrics(prometheus.NewPedanticRegistry())
 	trackers, err := mgr.RecoverAll(allowedTenants, func(tenant string, persister JobPersister) *JobTracker {
-		return NewJobTracker(persister, tenant, clock.New(), infiniteLeases, infiniteLeases, metrics.newTrackerMetricsForTenant(tenant), log.NewNopLogger())
+		return NewJobTracker(persister, tenant, clock.New(), newSimpleLanePolicy(), infiniteLeases, infiniteLeases, metrics.newTrackerMetricsForTenant(tenant), log.NewNopLogger())
 	})
 	require.NoError(t, err)
 	require.Len(t, trackers, 2)

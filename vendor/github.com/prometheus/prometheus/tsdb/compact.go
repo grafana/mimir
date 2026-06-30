@@ -781,7 +781,15 @@ func (c *LeveledCompactor) Write(dest string, b BlockReader, mint, maxt int64, b
 		meta.Compaction.Parents = []BlockDesc{
 			{ULID: base.ULID, MinTime: base.MinTime, MaxTime: base.MaxTime},
 		}
-		meta.Compaction.Hints = slices.Clone(base.Compaction.Hints)
+		if base.Compaction.FromOutOfOrder() {
+			meta.Compaction.SetOutOfOrder()
+		}
+		if base.Compaction.FromStaleSeries() {
+			meta.Compaction.SetStaleSeries()
+		}
+		if base.Compaction.FromSelectedSeries() {
+			meta.Compaction.SetSelectedSeries()
+		}
 	}
 
 	err := c.write(dest, []shardedBlock{{meta: meta}}, DefaultBlockPopulator{}, b)

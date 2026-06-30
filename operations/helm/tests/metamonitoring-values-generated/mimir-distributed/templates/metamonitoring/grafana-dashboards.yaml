@@ -42006,7 +42006,7 @@ data:
                             "sort": "none"
                          }
                       },
-                      "span": 4,
+                      "span": 3,
                       "targets": [
                          {
                             "expr": "sum(rate(cortex_query_frontend_queries_total{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir))\", user=\"$user\"}[$__rate_interval]))",
@@ -42055,7 +42055,7 @@ data:
                             "sort": "none"
                          }
                       },
-                      "span": 4,
+                      "span": 3,
                       "targets": [
                          {
                             "expr": "sum(cortex_query_scheduler_queue_length{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*))\", user=\"$user\"})",
@@ -42103,7 +42103,7 @@ data:
                             "sort": "none"
                          }
                       },
-                      "span": 4,
+                      "span": 3,
                       "targets": [
                          {
                             "expr": "histogram_quantile(0.99, sum(rate(cortex_query_frontend_queries_expression_bytes{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir))\", user=\"$user\"}[$__rate_interval])))",
@@ -42125,6 +42125,55 @@ data:
                          }
                       ],
                       "title": "Query Expression Length - query-frontend",
+                      "type": "timeseries"
+                   },
+                   {
+                      "datasource": "$datasource",
+                      "description": "### Rejected queries rate - query-frontend\nRate of queries rejected by the query-frontend for this tenant, by reason.\n\"blocked\" means the query matched a blocked_queries rule.\n\"limited\" means the query exceeded a configured query rate limit.\n\n",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 1,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "short"
+                         },
+                         "overrides": [ ]
+                      },
+                      "id": 39,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 3,
+                      "targets": [
+                         {
+                            "expr": "sum by (reason) (rate(cortex_query_frontend_rejected_queries_total{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir))\", user=\"$user\"}[$__rate_interval]))",
+                            "format": "time_series",
+                            "legendFormat": "{{ reason }}",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Rejected queries rate - query-frontend",
                       "type": "timeseries"
                    }
                 ],
@@ -42164,7 +42213,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 39,
+                      "id": 40,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -42213,7 +42262,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 40,
+                      "id": 41,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -42261,7 +42310,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 41,
+                      "id": 42,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -42334,7 +42383,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 42,
+                      "id": 43,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -42383,7 +42432,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 43,
+                      "id": 44,
                       "links": [ ],
                       "options": {
                          "legend": {

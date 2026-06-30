@@ -3,7 +3,7 @@
 package core
 
 import (
-	"fmt"
+	"context"
 	"strconv"
 	"time"
 
@@ -37,10 +37,6 @@ func (s *StringLiteral) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_STRING_LITERAL
 }
 
-func (s *StringLiteral) ReplaceChild(idx int, node planning.Node) error {
-	return fmt.Errorf("node of type StringLiteral supports no children, but attempted to replace child at index %d", idx)
-}
-
 func (s *StringLiteral) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
 	otherLiteral, ok := other.(*StringLiteral)
 
@@ -52,11 +48,7 @@ func (s *StringLiteral) MergeHints(_ planning.Node) error {
 	return nil
 }
 
-func (s *StringLiteral) ChildrenLabels() []string {
-	return nil
-}
-
-func MaterializeStringLiteral(s *StringLiteral, _ *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
+func MaterializeStringLiteral(_ context.Context, s *StringLiteral, _ *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
 	o := operators.NewStringLiteral(s.Value, timeRange, params.MemoryConsumptionTracker, s.GetExpressionPosition().ToPrometheusType())
 
 	return planning.NewSingleUseOperatorFactory(o), nil

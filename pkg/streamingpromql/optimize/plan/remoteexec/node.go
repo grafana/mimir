@@ -3,6 +3,7 @@
 package remoteexec
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"time"
@@ -31,7 +32,7 @@ func init() {
 //node:generate
 type RemoteExecutionGroup struct {
 	*RemoteExecutionGroupDetails
-	Nodes []planning.Node `node:"children,min=1"`
+	Nodes []planning.Node `node:"children,min=1,labelfmt=node %d,nocollapse"`
 }
 
 func (r *RemoteExecutionGroup) Details() proto.Message {
@@ -40,15 +41,6 @@ func (r *RemoteExecutionGroup) Details() proto.Message {
 
 func (r *RemoteExecutionGroup) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_REMOTE_EXEC_GROUP
-}
-
-func (r *RemoteExecutionGroup) ReplaceChild(idx int, node planning.Node) error {
-	if idx >= len(r.Nodes) {
-		panic(fmt.Sprintf("this RemoteExecutionGroup node has %d children, but attempted to replace child at index %d", len(r.Nodes), idx))
-	}
-
-	r.Nodes[idx] = node
-	return nil
 }
 
 func (r *RemoteExecutionGroup) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
@@ -76,16 +68,6 @@ func (r *RemoteExecutionGroup) Describe() string {
 	}
 
 	return ""
-}
-
-func (r *RemoteExecutionGroup) ChildrenLabels() []string {
-	lbls := make([]string, 0, len(r.Nodes))
-
-	for idx := range r.Nodes {
-		lbls = append(lbls, fmt.Sprintf("node %d", idx))
-	}
-
-	return lbls
 }
 
 func (r *RemoteExecutionGroup) ChildrenTimeRange(parentTimeRange types.QueryTimeRange) types.QueryTimeRange {
@@ -126,20 +108,6 @@ func (c *RemoteExecutionConsumer) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_REMOTE_EXEC_CONSUMER
 }
 
-func (c *RemoteExecutionConsumer) ReplaceChild(idx int, child planning.Node) error {
-	if idx != 0 {
-		return fmt.Errorf("node of type RemoteExecutionConsumer supports 1 child, but attempted to replace child at index %d", idx)
-	}
-
-	group, ok := child.(*RemoteExecutionGroup)
-	if !ok {
-		return fmt.Errorf("node of type RemoteExecutionConsumer requires child of type RemoteExecutionGroup, but got %T", child)
-	}
-
-	c.Group = group
-	return nil
-}
-
 func (c *RemoteExecutionConsumer) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
 	otherConsumer, ok := other.(*RemoteExecutionConsumer)
 
@@ -161,10 +129,6 @@ func (c *RemoteExecutionConsumer) MergeHints(other planning.Node) error {
 
 func (c *RemoteExecutionConsumer) Describe() string {
 	return fmt.Sprintf("node %d", c.NodeIndex)
-}
-
-func (c *RemoteExecutionConsumer) ChildrenLabels() []string {
-	return []string{""}
 }
 
 func (c *RemoteExecutionConsumer) ChildrenTimeRange(parentTimeRange types.QueryTimeRange) types.QueryTimeRange {
@@ -225,7 +189,7 @@ func NewRemoteExecutionGroupMaterializer(groupEvaluatorFactory GroupEvaluatorFac
 	return &RemoteExecutionGroupMaterializer{groupEvaluatorFactory: groupEvaluatorFactory}
 }
 
-func (m *RemoteExecutionGroupMaterializer) Materialize(n planning.Node, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters, _ planning.RangeParams) (planning.OperatorFactory, error) {
+func (m *RemoteExecutionGroupMaterializer) Materialize(ctx context.Context, n planning.Node, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters, overrideRangeParams planning.RangeParams) (planning.OperatorFactory, error) {
 	g, ok := n.(*RemoteExecutionGroup)
 	if !ok {
 		return nil, fmt.Errorf("expected node of type RemoteExecutionGroup, got %T", n)
@@ -296,7 +260,7 @@ func NewRemoteExecutionConsumerMaterializer() planning.NodeMaterializer {
 	return &RemoteExecutionConsumerMaterializer{}
 }
 
-func (m *RemoteExecutionConsumerMaterializer) Materialize(n planning.Node, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters, overrideRangeParams planning.RangeParams) (planning.OperatorFactory, error) {
+func (m *RemoteExecutionConsumerMaterializer) Materialize(ctx context.Context, n planning.Node, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters, overrideRangeParams planning.RangeParams) (planning.OperatorFactory, error) {
 	if overrideRangeParams.IsSet {
 		return nil, fmt.Errorf("overrideRangeParams is not supported for RemoteExecutionConsumerMaterializer")
 	}
@@ -306,7 +270,7 @@ func (m *RemoteExecutionConsumerMaterializer) Materialize(n planning.Node, mater
 		return nil, fmt.Errorf("expected node of type RemoteExecutionConsumer, got %T", n)
 	}
 
-	f, err := materializer.FactoryForNode(c.Group, timeRange)
+	f, err := materializer.FactoryForNode(ctx, c.Group, timeRange)
 	if err != nil {
 		return nil, err
 	}

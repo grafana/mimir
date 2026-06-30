@@ -45,6 +45,9 @@ type Selector struct {
 	// This flag has no effect unless Smoothed is set to true.
 	CounterAware bool
 
+	// When the Anchored range modifier wraps resets() or changes() this flag is set.
+	AnchoredResetsChanges bool
+
 	// Subsets to report in operator stats.
 	Subsets []Subset
 

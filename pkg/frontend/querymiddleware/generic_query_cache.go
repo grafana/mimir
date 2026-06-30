@@ -15,6 +15,8 @@ import (
 	"github.com/grafana/dskit/tenant"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware/querydetails"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/splitandcache"
 	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -41,12 +43,12 @@ type genericQueryCache struct {
 	cache     cache.Cache
 	tenantTTL tenantCacheTTL
 	cacheKey  keyingFunc
-	metrics   *ResultsCacheMetrics
+	metrics   *splitandcache.ResultsCacheMetrics
 	next      http.RoundTripper
 	logger    log.Logger
 }
 
-func newGenericQueryCacheRoundTripper(cache cache.Cache, cacheKey keyingFunc, tenantTTL tenantCacheTTL, next http.RoundTripper, logger log.Logger, metrics *ResultsCacheMetrics) http.RoundTripper {
+func newGenericQueryCacheRoundTripper(cache cache.Cache, cacheKey keyingFunc, tenantTTL tenantCacheTTL, next http.RoundTripper, logger log.Logger, metrics *splitandcache.ResultsCacheMetrics) http.RoundTripper {
 	return &genericQueryCache{
 		cache:     cache,
 		tenantTTL: tenantTTL,
@@ -161,7 +163,7 @@ func (c *genericQueryCache) storeCachedResponse(ctx context.Context, cachedRes *
 }
 
 func (c *genericQueryCache) recordCacheHitQueryDetails(ctx context.Context, hits map[string][]byte) {
-	details := QueryDetailsFromContext(ctx)
+	details := querydetails.QueryDetailsFromContext(ctx)
 	if details == nil {
 		return
 	}
@@ -171,7 +173,7 @@ func (c *genericQueryCache) recordCacheHitQueryDetails(ctx context.Context, hits
 }
 
 func (c *genericQueryCache) recordCacheStoreQueryDetails(ctx context.Context, value []byte) {
-	details := QueryDetailsFromContext(ctx)
+	details := querydetails.QueryDetailsFromContext(ctx)
 	if details == nil {
 		return
 	}

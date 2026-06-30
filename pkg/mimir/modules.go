@@ -15,6 +15,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/dns"
 	httpgrpc_server "github.com/grafana/dskit/httpgrpc/server"
 	"github.com/grafana/dskit/kv"
@@ -43,10 +44,12 @@ import (
 	blockbuilderscheduler "github.com/grafana/mimir/pkg/blockbuilder/scheduler"
 	"github.com/grafana/mimir/pkg/compactor"
 	compactorscheduler "github.com/grafana/mimir/pkg/compactor/scheduler"
+	"github.com/grafana/mimir/pkg/compartments"
 	"github.com/grafana/mimir/pkg/continuoustest"
 	"github.com/grafana/mimir/pkg/costattribution"
 	"github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/frontend"
+	frontend_labelaccess "github.com/grafana/mimir/pkg/frontend/labelaccess"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	"github.com/grafana/mimir/pkg/frontend/transport"
 	v2 "github.com/grafana/mimir/pkg/frontend/v2"
@@ -54,6 +57,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier"
 	querierapi "github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/querier/engine"
+	querier_labelaccess "github.com/grafana/mimir/pkg/querier/labelaccess"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/querier/tenantfederation"
 	querier_worker "github.com/grafana/mimir/pkg/querier/worker"
@@ -63,10 +67,14 @@ import (
 	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/storegateway"
 	"github.com/grafana/mimir/pkg/streamingpromql"
+	"github.com/grafana/mimir/pkg/streamingpromql/caching"
 	streamingpromqlcompat "github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/ast/sharding"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/ast/subqueryspinoff"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/remoteexec"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/splitandcache"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/analysis"
+	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"github.com/grafana/mimir/pkg/usagestats"
 	"github.com/grafana/mimir/pkg/usagetracker"
 	"github.com/grafana/mimir/pkg/util"
@@ -90,6 +98,7 @@ const (
 	AlertManager                     string = "alertmanager"
 	BlockBuilder                     string = "block-builder"
 	BlockBuilderScheduler            string = "block-builder-scheduler"
+	CacheKeyGenerator                string = "cache-key-generator"
 	Compactor                        string = "compactor"
 	CompactorScheduler               string = "compactor-scheduler"
 	ContinuousTest                   string = "continuous-test"
@@ -108,8 +117,8 @@ const (
 	QuerierQueryPlanner              string = "querier-query-planner"
 	QuerierRing                      string = "querier-ring"
 	QueryFrontend                    string = "query-frontend"
+	QueryFrontendCacheClient         string = "query-frontend-cache-client"
 	QueryFrontendCodec               string = "query-frontend-codec"
-	QueryFrontendQueryPlanner        string = "query-frontend-query-planner"
 	QueryFrontendTopicOffsetsReaders string = "query-frontend-topic-offsets-reader"
 	QueryFrontendTripperware         string = "query-frontend-tripperware"
 	QueryScheduler                   string = "query-scheduler"
@@ -160,6 +169,7 @@ func (t *Mimir) initAPI() (services.Service, error) {
 			QuerySharding:         strconv.FormatBool(t.Cfg.Frontend.QueryMiddleware.ShardedQueries),
 			RulerConfigAPI:        strconv.FormatBool(t.Cfg.Ruler.EnableAPI),
 			FederatedRules:        strconv.FormatBool(t.Cfg.Ruler.TenantFederation.Enabled),
+			IngestStorage:         strconv.FormatBool(t.Cfg.IngestStorage.Enabled),
 		})
 
 	t.API = a
@@ -394,16 +404,23 @@ func (t *Mimir) initIngesterPartitionRing() (services.Service, error) {
 		return nil, errors.Wrap(err, "creating KV store for ingester partitions ring watcher")
 	}
 
-	t.IngesterPartitionRingWatcher = ring.NewPartitionRingWatcher(ingester.PartitionRingName, ingester.PartitionRingKey, kvClient, util_log.Logger, prometheus.WrapRegistererWithPrefix("cortex_", t.Registerer))
-	t.IngesterPartitionInstanceRing = ring.NewPartitionInstanceRing(t.IngesterPartitionRingWatcher, t.IngesterRing, t.Cfg.Ingester.IngesterRing.HeartbeatTimeout)
+	t.IngesterPartitionRingWatchers, err = ingest.NewPartitionRingWatchers(t.Cfg.Compartments.Enabled, t.Cfg.Compartments.Read.NumCompartments, ingester.PartitionRingName, ingester.PartitionRingKey, kvClient, util_log.Logger, prometheus.WrapRegistererWithPrefix("cortex_", t.Registerer))
+	if err != nil {
+		return nil, errors.Wrap(err, "creating ingester partition rings watcher")
+	}
 
-	// Expose a web page to view the partitions ring state.
-	t.API.RegisterIngesterPartitionRing(ring.NewPartitionRingPageHandler(t.IngesterPartitionRingWatcher, ring.NewPartitionRingEditor(ingester.PartitionRingKey, kvClient)))
+	// One partition-instance ring per read compartment, pairing each compartment's partition ring with
+	// the shared ingester instance ring.
+	t.IngesterPartitionInstanceRings = ingest.NewPartitionInstanceRings(t.IngesterPartitionRingWatchers, t.IngesterRing, t.Cfg.Ingester.IngesterRing.HeartbeatTimeout)
+
+	// Expose a web page to view the partition ring state. With compartments enabled there's one page
+	// per read compartment, linked from an index page.
+	t.API.RegisterIngesterPartitionRings(t.Cfg.Compartments.Enabled, t.IngesterPartitionRingWatchers, ingester.PartitionRingKey, kvClient)
 
 	// Track anonymous usage statistics.
 	usagestats.SetMode(usagestats.ModeIngestStorage)
 
-	return t.IngesterPartitionRingWatcher, nil
+	return t.IngesterPartitionRingWatchers, nil
 }
 
 func (t *Mimir) initRuntimeConfig() (services.Service, error) {
@@ -508,16 +525,23 @@ func (t *Mimir) initDistributorService() (serv services.Service, err error) {
 	// ruler's dependency)
 	canJoinDistributorsRing := t.Cfg.isDistributorEnabled()
 
+	// Only run the ingest-storage writer in processes that actually push (the distributor and the ruler,
+	// which writes rule results). When the distributor is used purely as a query dependency (querier), the
+	// writer is unnecessary and, under compartments, would fail to start trying to auto-create topics it
+	// has no write-compartment context for.
+	writerEnabled := t.Cfg.isDistributorEnabled() || t.Cfg.isRulerEnabled()
+
 	t.Cfg.Distributor.StreamingChunksPerIngesterSeriesBufferSize = t.Cfg.Querier.StreamingChunksPerIngesterSeriesBufferSize
 	t.Cfg.Distributor.MinimizeIngesterRequests = t.Cfg.Querier.MinimizeIngesterRequests
 	t.Cfg.Distributor.MinimiseIngesterRequestsHedgingDelay = t.Cfg.Querier.MinimiseIngesterRequestsHedgingDelay
 	t.Cfg.Distributor.PreferAvailabilityZones = t.Cfg.Querier.PreferAvailabilityZones
 	t.Cfg.Distributor.IngestStorageConfig = t.Cfg.IngestStorage
+	t.Cfg.Distributor.Compartments = t.Cfg.Compartments
 	t.Cfg.Distributor.UsageTrackerEnabled = t.Cfg.UsageTracker.Enabled
 
 	t.Distributor, err = distributor.New(t.Cfg.Distributor, t.Cfg.IngesterClient, t.Overrides,
-		t.ActiveGroupsCleanup, t.CostAttributionManager, t.IngesterRing, t.IngesterPartitionInstanceRing,
-		canJoinDistributorsRing, t.UsageTrackerPartitionRing, t.UsageTrackerInstanceRing, t.Registerer, util_log.Logger)
+		t.ActiveGroupsCleanup, t.CostAttributionManager, t.IngesterRing, t.IngesterPartitionInstanceRings, t.IngesterPartitionRingWatchers,
+		canJoinDistributorsRing, writerEnabled, t.UsageTrackerPartitionRing, t.UsageTrackerInstanceRing, t.Registerer, util_log.Logger)
 	if err != nil {
 		return
 	}
@@ -662,6 +686,11 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 	t.Cfg.Worker.MaxConcurrentRequests = t.Cfg.Querier.EngineConfig.MaxConcurrent
 	t.Cfg.Worker.QuerySchedulerDiscovery = t.Cfg.QueryScheduler.ServiceDiscovery
 
+	if t.Cfg.LabelAccessControlEnabled {
+		t.QuerierQueryable = querier_labelaccess.WrapQueryable(t.QuerierQueryable, util_log.Logger)
+		t.ExemplarQueryable = querier_labelaccess.WrapExemplarQueryable(t.ExemplarQueryable, util_log.Logger)
+	}
+
 	// Add the default propagators.
 	t.Extractors = append(
 		t.Extractors,
@@ -671,6 +700,10 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 		// Since we don't use the regular RegisterQueryAPI, we need to register the consistency extractor here too.
 		&querierapi.ConsistencyExtractor{},
 	)
+
+	if t.Cfg.LabelAccessControlEnabled {
+		t.Extractors = append(t.Extractors, querier_labelaccess.NewExtractor())
+	}
 
 	extractor := &propagation.MultiExtractor{Extractors: t.Extractors}
 	metrics := querier.NewRequestMetrics(t.Registerer)
@@ -696,6 +729,10 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 		t.Overrides,
 		extractor,
 	)
+
+	if t.Cfg.LabelAccessControlEnabled {
+		internalQuerierRouter = querier_labelaccess.NewLabelAccessMiddleware(util_log.Logger).Wrap(internalQuerierRouter)
+	}
 
 	// If the querier is running standalone without the query-frontend or query-scheduler, we must register it's internal
 	// HTTP handler externally and provide the external Mimir Server HTTP handler to the frontend worker
@@ -771,15 +808,24 @@ func (t *Mimir) initIngesterService() (serv services.Service, err error) {
 	t.Cfg.Ingester.IngesterRing.HideTokensInStatusPage = t.Cfg.IngestStorage.Enabled
 	t.Cfg.Ingester.InstanceLimitsFn = ingesterInstanceLimits(t.RuntimeConfig)
 	t.Cfg.Ingester.IngestStorageConfig = t.Cfg.IngestStorage
+	t.Cfg.Ingester.Compartments = t.Cfg.Compartments
 	t.tsdbIngesterConfig()
 
-	t.Ingester, err = ingester.New(t.Cfg.Ingester, t.Overrides, t.IngesterRing, t.IngesterPartitionRingWatcher, t.ActiveGroupsCleanup, t.CostAttributionManager, t.Registerer, util_log.Logger)
+	// The partition rings watcher is only built when ingest storage is enabled (otherwise
+	// initIngesterPartitionRing returns nil), so it's nil for classic ingesters. When present, the
+	// ingester owns only the partition ring of its own read compartment.
+	var partitionRingWatcher *ring.PartitionRingWatcher
+	if t.IngesterPartitionRingWatchers != nil {
+		partitionRingWatcher = t.IngesterPartitionRingWatchers.Watcher(t.Cfg.Ingester.ReadCompartmentID)
+	}
+
+	t.Ingester, err = ingester.New(t.Cfg.Ingester, t.Overrides, t.IngesterRing, partitionRingWatcher, t.ActiveGroupsCleanup, t.CostAttributionManager, t.Registerer, util_log.Logger)
 	if err != nil {
 		return
 	}
 
-	if t.IngesterPartitionRingWatcher != nil {
-		t.IngesterPartitionRingWatcher = t.IngesterPartitionRingWatcher.WithDelegate(t.Ingester)
+	if partitionRingWatcher != nil {
+		partitionRingWatcher.WithDelegate(t.Ingester)
 	}
 	if t.ActiveGroupsCleanup != nil {
 		t.ActiveGroupsCleanup.Register(t.Ingester)
@@ -808,6 +854,10 @@ func (t *Mimir) initQueryFrontendCodec() (services.Service, error) {
 	// Add our default injectors.
 	t.Injectors = append(t.Injectors, &querierapi.ConsistencyInjector{})
 
+	if t.Cfg.LabelAccessControlEnabled {
+		t.Injectors = append(t.Injectors, frontend_labelaccess.NewInjector())
+	}
+
 	t.QueryFrontendCodec = querymiddleware.NewCodec(
 		t.Registerer,
 		t.Cfg.Querier.EngineConfig.LookbackDelta,
@@ -820,52 +870,96 @@ func (t *Mimir) initQueryFrontendCodec() (services.Service, error) {
 	return nil, nil
 }
 
-// initQueryFrontendTopicOffsetsReaders instantiates the topic offsets reader used by the query-frontend
-// when the ingest storage is enabled.
+// initQueryFrontendTopicOffsetsReaders instantiates the offsets reader used by the query-frontend
+// to enforce strong read consistency when the ingest storage is enabled.
 func (t *Mimir) initQueryFrontendTopicOffsetsReaders() (services.Service, error) {
 	if !t.Cfg.IngestStorage.Enabled {
 		return nil, nil
 	}
 
-	var err error
-
-	kafkaMetrics := ingest.NewKafkaReaderClientMetrics(ingest.ReaderMetricsPrefix, "query-frontend", t.Registerer)
-	kafkaClient, err := ingest.NewKafkaReaderClient(t.Cfg.IngestStorage.KafkaConfig, kafkaMetrics, util_log.Logger)
-	if err != nil {
-		return nil, err
+	// getPartitionIDs returns the partitions to query for a given read compartment. The Kafka partitions
+	// may have been pre-provisioned, so there may be many more existing partitions in Kafka than the
+	// actual number we use; to improve performance we only look up the partitions currently used in Mimir.
+	// We include all partition states because ACTIVE and INACTIVE partitions must be queried, and PENDING
+	// partitions may switch to ACTIVE between when the query-frontend fetches the offsets and the querier
+	// builds the replica set of partitions to query.
+	getPartitionIDs := func(readCompartmentID int) ingest.GetPartitionIDsFunc {
+		return func(_ context.Context) ([]int32, error) {
+			return t.IngesterPartitionRingWatchers.Watcher(readCompartmentID).PartitionRing().PartitionIDs(), nil
+		}
 	}
 
-	// The Kafka partitions may have been pre-provisioned. There are may be much more existing partitions in Kafka
-	// than the actual number we use. To improve performance, we only look up the actual partitions
-	// we're currently using in Mimir. We include all partition states because ACTIVE and INACTIVE partitions
-	// must be queried, and PENDING partitions may switch to ACTIVE between when the query-frontend fetch the offsets
-	// and the querier builds the replicaset of partitions to query.
-	getPartitionIDs := func(_ context.Context) ([]int32, error) {
-		return t.IngesterPartitionRingWatcher.PartitionRing().PartitionIDs(), nil
+	var reader querymiddleware.ReadConsistencyOffsetsReader
+
+	if t.Cfg.Compartments.Enabled {
+		// One Kafka cluster per write compartment, each holding every read compartment's topic.
+		clusterConfigs := make([]ingest.KafkaConfig, t.Cfg.Compartments.Write.NumCompartments)
+		for writeCompartmentID := range clusterConfigs {
+			clusterConfigs[writeCompartmentID] = t.Cfg.IngestStorage.KafkaConfig.WriteCompartmentConfig(writeCompartmentID)
+		}
+
+		topics := make([]string, t.Cfg.Compartments.Read.NumCompartments)
+		getPartitionIDsByCompartment := make([]ingest.GetPartitionIDsFunc, t.Cfg.Compartments.Read.NumCompartments)
+		for readCompartmentID := range topics {
+			topics[readCompartmentID] = compartments.ReplaceReadCompartment(t.Cfg.IngestStorage.KafkaConfig.Topic, readCompartmentID)
+			getPartitionIDsByCompartment[readCompartmentID] = getPartitionIDs(readCompartmentID)
+		}
+
+		multiClusterReader, err := ingest.NewMultiClusterOffsetsReader(clusterConfigs, topics, getPartitionIDsByCompartment, "query-frontend", t.Registerer, util_log.Logger)
+		if err != nil {
+			return nil, err
+		}
+		reader = querymiddleware.NewMultiClusterReadConsistencyOffsetsReader(multiClusterReader)
+	} else {
+		topicOffsetsReader, err := ingest.NewSingleClusterTopicOffsetsReader(
+			t.Cfg.IngestStorage.KafkaConfig,
+			t.Cfg.IngestStorage.KafkaConfig.Topic,
+			getPartitionIDs(0),
+			"query-frontend",
+			t.Registerer, util_log.Logger)
+		if err != nil {
+			return nil, err
+		}
+		reader = querymiddleware.NewSingleClusterReadConsistencyOffsetsReader(topicOffsetsReader)
 	}
 
-	ingestTopicOffsetsReader := ingest.NewTopicOffsetsReader(kafkaClient, t.Cfg.IngestStorage.KafkaConfig.Topic, getPartitionIDs, t.Cfg.IngestStorage.KafkaConfig.LastProducedOffsetPollInterval, t.Registerer, util_log.Logger)
+	t.QueryFrontendOffsetsReader = reader
 
-	if t.QueryFrontendTopicOffsetsReaders == nil {
-		t.QueryFrontendTopicOffsetsReaders = make(map[string]*ingest.TopicOffsetsReader)
+	return reader, nil
+}
+
+func (t *Mimir) initCacheKeyGenerator() (services.Service, error) {
+	if t.Cfg.Frontend.QueryMiddleware.CacheKeyGenerator != nil {
+		// Already set in a downstream project, so don't override it.
+		return nil, nil
 	}
-	t.QueryFrontendTopicOffsetsReaders[querierapi.ReadConsistencyOffsetsHeader] = ingestTopicOffsetsReader
 
-	return ingestTopicOffsetsReader, nil
+	t.Cfg.Frontend.QueryMiddleware.CacheKeyGenerator = querymiddleware.NewDefaultCacheKeyGenerator(t.QueryFrontendCodec, t.Cfg.Frontend.QueryMiddleware.SplitQueriesByInterval)
+	t.Cfg.Querier.EngineConfig.MimirQueryEngine.CachePrefixGenerator = caching.TenantPrefixGenerator
+
+	if t.Cfg.LabelAccessControlEnabled {
+		t.Cfg.Frontend.QueryMiddleware.CacheKeyGenerator = frontend_labelaccess.NewCacheSplitter(t.Cfg.Frontend.QueryMiddleware.CacheKeyGenerator)
+		t.Cfg.Querier.EngineConfig.MimirQueryEngine.CachePrefixGenerator = frontend_labelaccess.CachePrefixGenerator(t.Cfg.Querier.EngineConfig.MimirQueryEngine.CachePrefixGenerator)
+	}
+
+	return nil, nil
 }
 
 // initQueryFrontendTripperware instantiates the tripperware used by the query frontend
 // to optimize Prometheus query requests.
 func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error) {
-	promqlEngineRegisterer := prometheus.WrapRegistererWith(prometheus.Labels{"engine": "query-frontend"}, t.Registerer)
-	promOpts, mqeOpts := engine.NewPromQLEngineOptions(t.Cfg.Querier.EngineConfig, t.ActivityTracker, util_log.Logger, promqlEngineRegisterer, t.QueryLimitsProvider)
-	// Disable concurrency limits for sharded queries spawned by the query-frontend.
-	promOpts.ActiveQueryTracker = nil
-	// Always eagerly load selectors so that they are loaded in parallel in the background.
-	mqeOpts.EagerLoadSelectors = true
+	middlewareCfg := t.Cfg.Frontend.QueryMiddleware
+	middlewareCfg.InternalFunctionNames.Add(sharding.ConcatFunction.Name)
+	middlewareCfg.InternalFunctionNames.Add(sharding.AvgFunction.Name)
+	middlewareCfg.InternalFunctionNames.Add(core.VectorEvaluationRootFunction.Name)
+	middlewareCfg.InternalFunctionNames.Add(core.ScalarEvaluationRootFunction.Name)
 
-	t.Cfg.Frontend.QueryMiddleware.InternalFunctionNames.Add(sharding.ConcatFunction.Name)
-	t.Cfg.Frontend.QueryMiddleware.InternalFunctionNames.Add(sharding.AvgFunction.Name)
+	opts := t.createQueryFrontendPromQLEngineOptions()
+
+	if err := t.createQueryFrontendQueryPlanner(opts); err != nil {
+		return nil, err
+	}
+	t.registerQueryFrontendAnalysisEndpoint(opts)
 
 	var memoryConsumptionTrackerFactory *limiter.InflightMemoryConsumptionTracker
 
@@ -874,21 +968,21 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 	var eng promql.QueryEngine
 	switch t.Cfg.Frontend.QueryEngine {
 	case querier.PrometheusEngine:
-		eng = limiter.NewUnlimitedMemoryTrackerPromQLEngine(promql.NewEngine(promOpts))
-		memoryConsumptionTrackerFactory = limiter.NewUnlimintedInflightMemoryConsumptionTracker(promqlEngineRegisterer)
+		eng = limiter.NewUnlimitedMemoryTrackerPromQLEngine(promql.NewEngine(opts.CommonOpts))
+		memoryConsumptionTrackerFactory = limiter.NewUnlimintedInflightMemoryConsumptionTracker(opts.CommonOpts.Reg)
 	case querier.MimirEngine:
 		var err error
 		// The streaming engine will use this same MemoryConsumptionTrackerFactory
-		queryMetrics := stats.NewQueryMetrics(mqeOpts.CommonOpts.Reg)
-		memoryConsumptionTrackerFactory = limiter.NewInflightMemoryConsumptionTracker(mqeOpts.CommonOpts.Reg, queryMetrics.QueriesRejectedTotal.WithLabelValues(stats.RejectReasonMaxEstimatedQueryMemoryConsumption))
-		mqeOpts.MemoryConsumptionTrackerFactory = memoryConsumptionTrackerFactory
-		t.QueryFrontendStreamingEngine, err = streamingpromql.NewEngine(mqeOpts, queryMetrics, t.QueryFrontendQueryPlanner)
+		queryMetrics := stats.NewQueryMetrics(opts.CommonOpts.Reg)
+		memoryConsumptionTrackerFactory = limiter.NewInflightMemoryConsumptionTracker(opts.CommonOpts.Reg, queryMetrics.QueriesRejectedTotal.WithLabelValues(stats.RejectReasonMaxEstimatedQueryMemoryConsumption))
+		opts.MemoryConsumptionTrackerFactory = memoryConsumptionTrackerFactory
+		t.QueryFrontendStreamingEngine, err = streamingpromql.NewEngine(opts, queryMetrics, t.QueryFrontendQueryPlanner)
 		if err != nil {
 			return nil, fmt.Errorf("unable to create Mimir Query Engine: %w", err)
 		}
 
 		if t.Cfg.Frontend.EnableQueryEngineFallback {
-			eng = streamingpromqlcompat.NewEngineWithFallback(t.QueryFrontendStreamingEngine, limiter.NewUnlimitedMemoryTrackerPromQLEngine(promql.NewEngine(promOpts)), mqeOpts.CommonOpts.Reg, util_log.Logger)
+			eng = streamingpromqlcompat.NewEngineWithFallback(t.QueryFrontendStreamingEngine, limiter.NewUnlimitedMemoryTrackerPromQLEngine(promql.NewEngine(opts.CommonOpts)), opts.CommonOpts.Reg, util_log.Logger)
 		} else {
 			eng = t.QueryFrontendStreamingEngine
 		}
@@ -897,16 +991,17 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 	}
 
 	tripperware, err := querymiddleware.NewTripperware(
-		t.Cfg.Frontend.QueryMiddleware,
+		middlewareCfg,
 		util_log.Logger,
 		t.Overrides,
 		t.QueryLimitsProvider,
 		t.QueryFrontendCodec,
+		t.QueryFrontendCacheClient,
 		querymiddleware.PrometheusResponseExtractor{},
 		eng,
-		promOpts,
-		t.QueryFrontendTopicOffsetsReaders,
-		t.Cfg.Frontend.QueryMiddleware.EnableRemoteExecution,
+		opts.CommonOpts,
+		t.QueryFrontendOffsetsReader,
+		middlewareCfg.EnableRemoteExecution,
 		t.QueryFrontendStreamingEngine,
 		t.Registerer,
 
@@ -918,6 +1013,10 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 	)
 	if err != nil {
 		return nil, err
+	}
+
+	if t.Cfg.LabelAccessControlEnabled {
+		tripperware = frontend_labelaccess.WrapTripperware(tripperware)
 	}
 
 	t.QueryFrontendTripperware = tripperware
@@ -966,7 +1065,14 @@ func (t *Mimir) initQueryFrontend() (serv services.Service, err error) {
 	handler := transport.NewHandler(t.Cfg.Frontend.Handler, roundTripper, util_log.Logger, t.Registerer)
 	// Allow the Prometheus engine to be explicitly selected if MQE is in use and a fallback is configured.
 	fallbackInjector := propagation.Middleware(&streamingpromqlcompat.EngineFallbackExtractor{})
-	t.API.RegisterQueryFrontendHandler(fallbackInjector.Wrap(handler), t.BuildInfoHandler, t.Cfg.Frontend.Handler.MaxBodySize)
+	wrappedHandler := fallbackInjector.Wrap(handler)
+	if t.Cfg.LabelAccessControlEnabled {
+		// Wrap the handler so LBAC policies from the X-Prom-Label-Policy header are
+		// extracted into the request context before the round tripper runs. This is
+		// required for WrapTripperware to see the policy set when computing the cache key.
+		wrappedHandler = querier_labelaccess.NewLabelAccessMiddleware(util_log.Logger).Wrap(wrappedHandler)
+	}
+	t.API.RegisterQueryFrontendHandler(wrappedHandler, t.BuildInfoHandler, t.Cfg.Frontend.Handler.MaxBodySize)
 
 	w := services.NewFailureWatcher()
 	return services.NewBasicService(func(_ context.Context) error {
@@ -988,15 +1094,15 @@ func (t *Mimir) initQueryFrontend() (serv services.Service, err error) {
 }
 
 func (t *Mimir) initQuerierQueryPlanner() (services.Service, error) {
-	reg := prometheus.WrapRegistererWith(prometheus.Labels{"component": "querier"}, t.Registerer)
-	_, mqeOpts := engine.NewPromQLEngineOptions(t.Cfg.Querier.EngineConfig, t.ActivityTracker, util_log.Logger, reg, t.QueryLimitsProvider)
+	reg := prometheus.WrapRegistererWith(prometheus.Labels{"engine": "querier"}, t.Registerer)
+	opts := engine.NewPromQLEngineOptions(t.Cfg.Querier.EngineConfig, t.ActivityTracker, util_log.Logger, reg, t.QueryLimitsProvider)
 
 	// The query plan generated by this querier will only be used in this process, so we can
 	// allow anything this version of Mimir supports.
 	versionProvider := streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider()
 
 	var err error
-	t.QuerierQueryPlanner, err = streamingpromql.NewQueryPlanner(mqeOpts, versionProvider)
+	t.QuerierQueryPlanner, err = streamingpromql.NewQueryPlanner(opts, versionProvider)
 	if err != nil {
 		return nil, err
 	}
@@ -1004,17 +1110,32 @@ func (t *Mimir) initQuerierQueryPlanner() (services.Service, error) {
 	// Only expose the querier's planner through the analysis endpoint if the query-frontend isn't running in this process.
 	// If the query-frontend is running in this process, it will expose its planner through the analysis endpoint.
 	if !t.Cfg.isQueryFrontendEnabled() {
-		analysisHandler := analysis.NewHandler(t.QuerierQueryPlanner, t.QueryLimitsProvider, mqeOpts)
+		analysisHandler := analysis.NewHandler(t.QuerierQueryPlanner, t.QueryLimitsProvider, opts)
 		t.API.RegisterQueryAnalysisAPI(analysisHandler)
 	}
 
 	return nil, nil
 }
 
-func (t *Mimir) initQueryFrontendQueryPlanner() (services.Service, error) {
-	reg := prometheus.WrapRegistererWith(prometheus.Labels{"component": "query-frontend"}, t.Registerer)
-	_, mqeOpts := engine.NewPromQLEngineOptions(t.Cfg.Querier.EngineConfig, t.ActivityTracker, util_log.Logger, reg, t.QueryLimitsProvider)
+func (t *Mimir) initQueryFrontendCacheClient() (services.Service, error) {
+	cfg := t.Cfg.Frontend.QueryMiddleware
 
+	if !cfg.CacheResults && !cfg.CardinalityBasedShardingEnabled() {
+		return nil, nil
+	}
+
+	var err error
+
+	t.QueryFrontendCacheClient, err = querymiddleware.NewResultsCache(cfg.ResultsCache, util_log.Logger, t.Registerer)
+	if err != nil {
+		return nil, err
+	}
+	t.QueryFrontendCacheClient = cache.NewCompression(cfg.ResultsCache.Compression, t.QueryFrontendCacheClient, util_log.Logger)
+
+	return nil, nil
+}
+
+func (t *Mimir) createQueryFrontendQueryPlanner(opts streamingpromql.EngineOpts) error {
 	var versionProvider streamingpromql.QueryPlanVersionProvider
 
 	if t.Cfg.Frontend.QueryMiddleware.EnableRemoteExecution {
@@ -1027,26 +1148,65 @@ func (t *Mimir) initQueryFrontendQueryPlanner() (services.Service, error) {
 	}
 
 	var err error
-	t.QueryFrontendQueryPlanner, err = streamingpromql.NewQueryPlanner(mqeOpts, versionProvider)
+	t.QueryFrontendQueryPlanner, err = streamingpromql.NewQueryPlanner(opts, versionProvider)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	if t.Cfg.Frontend.QueryMiddleware.EnableRemoteExecution {
 		t.QueryFrontendQueryPlanner.RegisterQueryPlanOptimizationPass(remoteexec.NewOptimizationPass(t.Cfg.Frontend.QueryMiddleware.EnableMultipleNodeRemoteExecutionRequests))
 	}
 
-	if t.Cfg.Frontend.QueryMiddleware.UseMQEForSharding {
-		t.QueryFrontendQueryPlanner.RegisterASTOptimizationPass(sharding.NewOptimizationPass(t.Overrides, t.Cfg.Frontend.QueryMiddleware.TargetSeriesPerShard, reg, util_log.Logger))
+	// Subquery spin-off must run before sharding so that each spun-off subquery and downstream query can
+	// be sharded independently.
+	if t.Cfg.Frontend.QueryMiddleware.UseMQEForSplittingAndCachingResults {
+		t.QueryFrontendQueryPlanner.RegisterASTOptimizationPass(subqueryspinoff.NewOptimizationPass(t.Overrides, opts.CommonOpts.NoStepSubqueryIntervalFn, opts.CommonOpts.Reg, util_log.Logger))
 	}
 
+	if t.Cfg.Frontend.QueryMiddleware.UseMQEForSharding {
+		t.QueryFrontendQueryPlanner.RegisterASTOptimizationPass(sharding.NewOptimizationPass(t.Overrides, t.Cfg.Frontend.QueryMiddleware.TargetSeriesPerShard, opts.CommonOpts.Reg, util_log.Logger))
+	}
+
+	return nil
+}
+
+func (t *Mimir) registerQueryFrontendAnalysisEndpoint(opts streamingpromql.EngineOpts) {
 	// FIXME: results returned by the analysis endpoint won't include any changes made by query middlewares
 	// like sharding, splitting etc.
 	// Once these are running as MQE optimisation passes, they'll automatically be included in the analysis result.
-	analysisHandler := analysis.NewHandler(t.QueryFrontendQueryPlanner, t.QueryLimitsProvider, mqeOpts)
+	analysisHandler := analysis.NewHandler(t.QueryFrontendQueryPlanner, t.QueryLimitsProvider, opts)
 	t.API.RegisterQueryAnalysisAPI(analysisHandler)
+}
 
-	return nil, nil
+func (t *Mimir) createQueryFrontendPromQLEngineOptions() streamingpromql.EngineOpts {
+	reg := prometheus.WrapRegistererWith(prometheus.Labels{"engine": "query-frontend"}, t.Registerer)
+	opts := engine.NewPromQLEngineOptions(t.Cfg.Querier.EngineConfig, t.ActivityTracker, util_log.Logger, reg, t.QueryLimitsProvider)
+
+	// Disable concurrency limits for sharded queries spawned by the query-frontend.
+	opts.CommonOpts.ActiveQueryTracker = nil
+
+	// Always eagerly load selectors so that they are loaded in parallel in the background.
+	// This only applies locally, not to selectors evaluated by queriers (even with remote execution enabled).
+	opts.EagerLoadSelectors = true
+
+	// Propagate the splitting and caching options to MQE, if it's enabled.
+	// FIXME: once we no longer support using middleware-based splitting and caching, we can define these CLI flags directly in the engine options.
+	middlewareCfg := t.Cfg.Frontend.QueryMiddleware
+	opts.RangeQuerySplittingAndCaching.SplitEnabled = middlewareCfg.UseMQEForSplittingAndCachingResults && middlewareCfg.SplitQueriesByInterval > 0
+	opts.RangeQuerySplittingAndCaching.SplitInterval = middlewareCfg.SplitQueriesByInterval
+	opts.RangeQuerySplittingAndCaching.CacheEnabled = middlewareCfg.UseMQEForSplittingAndCachingResults && middlewareCfg.CacheResults
+	opts.RangeQuerySplittingAndCaching.MinCacheExtent = querymiddleware.DefaultMinCacheExtent
+	opts.RangeQuerySplittingAndCaching.CacheClient = t.QueryFrontendCacheClient
+
+	// We can't use the engine to register these metrics, as the same metrics are used by other kinds of caches (eg. the labels query cache)
+	// and the Prometheus client library requires that they each instance of the metric has exactly the same set of label names within this process.
+	// If engine registers these metrics, then the metrics will be registered with the engine="query-frontend" label applied above,
+	// which causes a panic as the other instances of the metric don't have an "engine" label.
+	if opts.RangeQuerySplittingAndCaching.CacheEnabled {
+		opts.RangeQuerySplittingAndCaching.CacheMetrics = splitandcache.NewResultsCacheMetrics("query_range", t.Registerer)
+	}
+
+	return opts
 }
 
 func (t *Mimir) initRulerStorage() (serv services.Service, err error) {
@@ -1252,6 +1412,7 @@ func (t *Mimir) initCompactor() (serv services.Service, err error) {
 	t.Cfg.Compactor.ShardingRing.Common.ListenPort = t.Cfg.Server.GRPCListenPort
 	t.Cfg.Compactor.SparseIndexHeadersConfig = t.Cfg.BlocksStorage.BucketStore.IndexHeader
 	t.Cfg.Compactor.SparseIndexHeadersSamplingRate = t.Cfg.BlocksStorage.BucketStore.PostingOffsetsInMemSampling
+	t.Cfg.Compactor.Compartments = t.Cfg.Compartments
 
 	t.Compactor, err = compactor.NewMultitenantCompactor(t.Cfg.Compactor, t.Cfg.BlocksStorage, t.Overrides, util_log.Logger, t.Registerer)
 	if err != nil {
@@ -1277,6 +1438,7 @@ func (t *Mimir) initCompactorScheduler() (serv services.Service, err error) {
 
 func (t *Mimir) initStoreGateway() (serv services.Service, err error) {
 	t.Cfg.StoreGateway.ShardingRing.ListenPort = t.Cfg.Server.GRPCListenPort
+	t.Cfg.StoreGateway.Compartments = t.Cfg.Compartments
 	t.StoreGateway, err = storegateway.NewStoreGateway(t.Cfg.StoreGateway, t.Cfg.BlocksStorage, t.Overrides, util_log.Logger, t.Registerer, t.ActivityTracker)
 	if err != nil {
 		return nil, err
@@ -1465,7 +1627,7 @@ func (t *Mimir) initContinuousTest() (services.Service, error) {
 	}
 
 	t.ContinuousTestManager = continuoustest.NewManager(t.Cfg.ContinuousTest.Manager, util_log.Logger)
-	t.ContinuousTestManager.AddTest(continuoustest.NewWriteReadSeriesTest(t.Cfg.ContinuousTest.WriteReadSeriesTest, client, util_log.Logger, t.Registerer))
+	t.ContinuousTestManager.AddTest(continuoustest.NewWriteReadSeriesTest(t.Cfg.ContinuousTest.WriteReadSeriesTest, client, t.Cfg.ContinuousTest.Client.WriteProtocol, util_log.Logger, t.Registerer))
 	t.ContinuousTestManager.AddTest(continuoustest.NewIngestStorageRecordTest(t.Cfg.ContinuousTest.IngestStorageRecordTest, util_log.Logger, t.Registerer))
 	t.ContinuousTestManager.AddTest(continuoustest.NewWriteReadOOOTest(t.Cfg.ContinuousTest.WriteReadOOOTest, client, util_log.Logger, t.Registerer))
 
@@ -1486,6 +1648,7 @@ func (t *Mimir) setupModuleManager() error {
 	mm.RegisterModule(AlertManager, t.initAlertManager)
 	mm.RegisterModule(BlockBuilder, t.initBlockBuilder)
 	mm.RegisterModule(BlockBuilderScheduler, t.initBlockBuilderScheduler)
+	mm.RegisterModule(CacheKeyGenerator, t.initCacheKeyGenerator, modules.UserInvisibleModule)
 	mm.RegisterModule(Compactor, t.initCompactor)
 	mm.RegisterModule(CompactorScheduler, t.initCompactorScheduler)
 	mm.RegisterModule(ContinuousTest, t.initContinuousTest)
@@ -1504,8 +1667,8 @@ func (t *Mimir) setupModuleManager() error {
 	mm.RegisterModule(QuerierQueryPlanner, t.initQuerierQueryPlanner, modules.UserInvisibleModule)
 	mm.RegisterModule(QuerierRing, t.initQuerierRing, modules.UserInvisibleModule)
 	mm.RegisterModule(QueryFrontend, t.initQueryFrontend)
+	mm.RegisterModule(QueryFrontendCacheClient, t.initQueryFrontendCacheClient, modules.UserInvisibleModule)
 	mm.RegisterModule(QueryFrontendCodec, t.initQueryFrontendCodec, modules.UserInvisibleModule)
-	mm.RegisterModule(QueryFrontendQueryPlanner, t.initQueryFrontendQueryPlanner, modules.UserInvisibleModule)
 	mm.RegisterModule(QueryFrontendTopicOffsetsReaders, t.initQueryFrontendTopicOffsetsReaders, modules.UserInvisibleModule)
 	mm.RegisterModule(QueryFrontendTripperware, t.initQueryFrontendTripperware, modules.UserInvisibleModule)
 	mm.RegisterModule(QueryScheduler, t.initQueryScheduler)
@@ -1533,6 +1696,7 @@ func (t *Mimir) setupModuleManager() error {
 		AlertManager:                     {API, MemberlistKV, Overrides, Vault},
 		BlockBuilder:                     {API, Overrides},
 		BlockBuilderScheduler:            {API},
+		CacheKeyGenerator:                {QueryFrontendCodec},
 		Compactor:                        {API, MemberlistKV, Overrides, Vault},
 		CompactorScheduler:               {API},
 		ContinuousTest:                   {API},
@@ -1548,12 +1712,11 @@ func (t *Mimir) setupModuleManager() error {
 		OverridesExporter:                {Overrides, MemberlistKV, Vault},
 		Querier:                          {TenantFederation, Vault, QuerierLifecycler},
 		QuerierLifecycler:                {API, RuntimeConfig, MemberlistKV, Vault},
-		QuerierQueryPlanner:              {API, Overrides},
+		QuerierQueryPlanner:              {API, Overrides, CacheKeyGenerator},
 		QuerierRing:                      {API, RuntimeConfig, MemberlistKV, Vault},
 		QueryFrontend:                    {QueryFrontendTripperware, MemberlistKV, Vault},
-		QueryFrontendQueryPlanner:        {API, Overrides, QuerierRing},
 		QueryFrontendTopicOffsetsReaders: {IngesterPartitionRing},
-		QueryFrontendTripperware:         {API, Overrides, QueryFrontendCodec, QueryFrontendTopicOffsetsReaders, QueryFrontendQueryPlanner},
+		QueryFrontendTripperware:         {API, Overrides, QueryFrontendCodec, QueryFrontendTopicOffsetsReaders, QuerierRing, QueryFrontendCacheClient, CacheKeyGenerator},
 		QueryScheduler:                   {API, Overrides, MemberlistKV, Vault},
 		Queryable:                        {Overrides, DistributorService, IngesterRing, IngesterPartitionRing, API, StoreQueryable, MemberlistKV, QuerierQueryPlanner},
 		Ruler:                            {DistributorService, StoreQueryable, RulerStorage, Vault, QuerierQueryPlanner},

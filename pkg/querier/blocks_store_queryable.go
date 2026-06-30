@@ -33,7 +33,6 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
-	"github.com/thanos-io/objstore"
 	"golang.org/x/sync/errgroup"
 	grpc_metadata "google.golang.org/grpc/metadata"
 
@@ -201,39 +200,22 @@ func NewBlocksStoreQueryable(
 }
 
 func NewBlocksStoreQueryableFromConfig(querierCfg Config, gatewayCfg storegateway.Config, storageCfg mimir_tsdb.BlocksStorageConfig, limits BlocksStoreLimits, logger log.Logger, reg prometheus.Registerer) (*BlocksStoreQueryable, error) {
-	var (
-		stores       BlocksStoreSet
-		bucketClient objstore.Bucket
-	)
-
-	bucketClient, err := bucket.NewClient(context.Background(), storageCfg.Bucket, "querier", logger, reg)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to create bucket client")
+	var dynamicReplication storegateway.DynamicReplication = storegateway.NewNopDynamicReplication(gatewayCfg.ShardingRing.ReplicationFactor)
+	if gatewayCfg.DynamicReplication.Enabled {
+		dynamicReplication = storegateway.NewMaxTimeDynamicReplication(
+			gatewayCfg,
+			// Keep syncing blocks to store-gateways for a grace period (3 times the sync interval) to
+			// ensure they are not unloaded while they are still being queried.
+			mimir_tsdb.NewBlockDiscoveryDelayMultiplier*storageCfg.BucketStore.SyncInterval,
+		)
 	}
 
-	querierReg := prometheus.WrapRegistererWith(prometheus.Labels{"component": "querier"}, reg)
-	cachingBucket, err := mimir_tsdb.NewMetadataCachingBucket(
-		storageCfg.BucketStore.MetadataCache,
-		bucketClient,
-		logger,
-		querierReg,
+	consistency := NewBlocksConsistency(
+		// Exclude blocks which have been recently uploaded, in order to give enough time to store-gateways
+		// to discover and load them (3 times the sync interval).
+		mimir_tsdb.NewBlockDiscoveryDelayMultiplier*storageCfg.BucketStore.SyncInterval,
+		reg,
 	)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to create caching bucket")
-	}
-	bucketClient = cachingBucket
-
-	// Create the blocks finder.
-	finder := NewBucketIndexBlocksFinder(BucketIndexBlocksFinderConfig{
-		IndexLoader: bucketindex.LoaderConfig{
-			CheckInterval:         time.Minute,
-			UpdateOnStaleInterval: storageCfg.BucketStore.SyncInterval,
-			UpdateOnErrorInterval: storageCfg.BucketStore.BucketIndex.UpdateOnErrorInterval,
-			IdleTimeout:           storageCfg.BucketStore.BucketIndex.IdleTimeout,
-		},
-		MaxStalePeriod:           storageCfg.BucketStore.BucketIndex.MaxStalePeriod,
-		IgnoreDeletionMarksDelay: storageCfg.BucketStore.IgnoreDeletionMarksWhileQueryingDelay,
-	}, bucketClient, limits, logger, reg)
 
 	storesRingCfg := gatewayCfg.ShardingRing.ToRingConfig()
 	storesRingBackend, err := kv.NewClient(
@@ -246,36 +228,66 @@ func NewBlocksStoreQueryableFromConfig(querierCfg Config, gatewayCfg storegatewa
 		return nil, errors.Wrap(err, "failed to create store-gateway ring backend")
 	}
 
-	storesRing, err := ring.NewWithStoreClientAndStrategy(storesRingCfg, storegateway.RingNameForClient, storegateway.RingKey, storesRingBackend, ring.NewIgnoreUnhealthyInstancesReplicationStrategy(), prometheus.WrapRegistererWithPrefix("cortex_", reg), logger)
+	var (
+		storeReg  = reg
+		bucketCfg = storageCfg.Bucket
+		ringName  = storegateway.RingNameForClient
+		ringKey   = storegateway.RingKey
+	)
+
+	// The cache bucket ID should be "blocks" but we pass an empty string to not cause a massive cache
+	// invalidation when rolling out the Mimir version introducing the bucket ID; this is fine as far as
+	// every other caching bucket uses its own unique ID.
+	cacheBucketID := ""
+
+	finder, err := newBlocksStoreQueryableFinder(cacheBucketID, bucketCfg, storageCfg, limits, logger, storeReg)
+	if err != nil {
+		return nil, err
+	}
+
+	storesRing, err := ring.NewWithStoreClientAndStrategy(storesRingCfg, ringName, ringKey, storesRingBackend, ring.NewIgnoreUnhealthyInstancesReplicationStrategy(), prometheus.WrapRegistererWithPrefix("cortex_", storeReg), logger)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create store-gateway ring client")
 	}
 
-	var dynamicReplication storegateway.DynamicReplication = storegateway.NewNopDynamicReplication(gatewayCfg.ShardingRing.ReplicationFactor)
-	if gatewayCfg.DynamicReplication.Enabled {
-		dynamicReplication = storegateway.NewMaxTimeDynamicReplication(
-			gatewayCfg,
-			// Keep syncing blocks to store-gateways for a grace period (3 times the sync interval) to
-			// ensure they are not unloaded while they are still being queried.
-			mimir_tsdb.NewBlockDiscoveryDelayMultiplier*storageCfg.BucketStore.SyncInterval,
-		)
-	}
-
-	stores, err = newBlocksStoreReplicationSet(storesRing, randomLoadBalancing, dynamicReplication, querierCfg.PreferAvailabilityZones, limits, querierCfg.StoreGatewayClient, logger, reg)
+	storeSet, err := newBlocksStoreReplicationSet(storesRing, randomLoadBalancing, dynamicReplication, querierCfg.PreferAvailabilityZones, limits, querierCfg.StoreGatewayClient, logger, storeReg)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create store set")
 	}
 
-	consistency := NewBlocksConsistency(
-		// Exclude blocks which have been recently uploaded, in order to give enough time to store-gateways
-		// to discover and load them (3 times the sync interval).
-		mimir_tsdb.NewBlockDiscoveryDelayMultiplier*storageCfg.BucketStore.SyncInterval,
-		reg,
-	)
-
 	streamingBufferSize := querierCfg.StreamingChunksPerStoreGatewaySeriesBufferSize
 
-	return NewBlocksStoreQueryable(stores, dynamicReplication, finder, consistency, limits, querierCfg.QueryStoreAfter, streamingBufferSize, logger, reg)
+	return NewBlocksStoreQueryable(storeSet, dynamicReplication, finder, consistency, limits, querierCfg.QueryStoreAfter, streamingBufferSize, logger, reg)
+}
+
+// newBlocksStoreQueryableFinder creates a BucketIndexBlocksFinder over the given bucket config.
+func newBlocksStoreQueryableFinder(cacheBucketID string, bucketCfg bucket.Config, storageCfg mimir_tsdb.BlocksStorageConfig, limits BlocksStoreLimits, logger log.Logger, reg prometheus.Registerer) (BlocksFinder, error) {
+	bucketClient, err := bucket.NewClient(context.Background(), bucketCfg, "querier", logger, reg)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to create bucket client")
+	}
+
+	cachingBucket, err := mimir_tsdb.NewMetadataCachingBucket(
+		cacheBucketID,
+		storageCfg.BucketStore.MetadataCache,
+		bucketClient,
+		logger,
+		prometheus.WrapRegistererWith(prometheus.Labels{"component": "querier"}, reg),
+	)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to create caching bucket")
+	}
+
+	return NewBucketIndexBlocksFinder(BucketIndexBlocksFinderConfig{
+		IndexLoader: bucketindex.LoaderConfig{
+			CheckInterval:         time.Minute,
+			UpdateOnStaleInterval: storageCfg.BucketStore.SyncInterval,
+			UpdateOnErrorInterval: storageCfg.BucketStore.BucketIndex.UpdateOnErrorInterval,
+			IdleTimeout:           storageCfg.BucketStore.BucketIndex.IdleTimeout,
+		},
+		MaxStalePeriod:           storageCfg.BucketStore.BucketIndex.MaxStalePeriod,
+		IgnoreDeletionMarksDelay: storageCfg.BucketStore.IgnoreDeletionMarksWhileQueryingDelay,
+	}, cachingBucket, limits, logger, reg), nil
 }
 
 func (q *BlocksStoreQueryable) starting(ctx context.Context) error {
@@ -393,7 +405,7 @@ func (q *blocksStoreQuerier) LabelNames(ctx context.Context, hints *storage.Labe
 		return queriedBlocks, nil
 	}
 
-	if err := q.queryWithConsistencyCheck(ctx, spanLog, minT, maxT, tenantID, nil, queryF); err != nil {
+	if err := q.queryWithConsistencyCheckAndObserve(ctx, spanLog, minT, maxT, tenantID, nil, queryF); err != nil {
 		return nil, nil, err
 	}
 
@@ -437,7 +449,7 @@ func (q *blocksStoreQuerier) LabelValues(ctx context.Context, name string, hints
 		return queriedBlocks, nil
 	}
 
-	if err := q.queryWithConsistencyCheck(ctx, spanLog, minT, maxT, tenantID, nil, queryF); err != nil {
+	if err := q.queryWithConsistencyCheckAndObserve(ctx, spanLog, minT, maxT, tenantID, nil, queryF); err != nil {
 		return nil, nil, err
 	}
 
@@ -496,7 +508,7 @@ func (q *blocksStoreQuerier) selectSorted(ctx context.Context, sp *storage.Selec
 		return queriedBlocks, nil
 	}
 
-	err = q.queryWithConsistencyCheck(ctx, spanLog, minT, maxT, tenantID, shard, queryF)
+	err = q.queryWithConsistencyCheckAndObserve(ctx, spanLog, minT, maxT, tenantID, shard, queryF)
 	if err != nil {
 		return storage.ErrSeriesSet(err)
 	}
@@ -553,15 +565,22 @@ func (q *blocksStoreQuerier) startBuffering(streamReaders []*storeGatewayStreamR
 
 type queryFunc func(clients map[BlocksStoreClient][]ulid.ULID, minT, maxT int64, indexMeta *bucketindex.Metadata) ([]ulid.ULID, error)
 
+// storeGatewayQueryStats holds the per-query store-gateway histogram values. queryWithConsistencyCheck
+// returns it (rather than observing the histograms itself) so the caller observes them once per query.
+type storeGatewayQueryStats struct {
+	storesHit int  // number of distinct store-gateway instances queried
+	refetches int  // number of retries due to missing blocks
+	queried   bool // whether the block store was actually queried (true only on the success path)
+}
+
 func (q *blocksStoreQuerier) queryWithConsistencyCheck(
 	ctx context.Context, spanLog *spanlogger.SpanLogger, minT, maxT int64, tenantID string, shard *sharding.ShardSelector, queryF queryFunc,
-) (returnErr error) {
+) (stats storeGatewayQueryStats, returnErr error) {
 	now := time.Now()
 
 	if !ShouldQueryBlockStore(q.queryStoreAfter, now, minT) {
-		q.metrics.storesHit.Observe(0)
 		spanLog.DebugLog("msg", "not querying block store; query time range begins after the query-store-after limit")
-		return nil
+		return storeGatewayQueryStats{}, nil
 	}
 
 	maxT = clampMaxTime(spanLog, maxT, now.UnixMilli(), -q.queryStoreAfter, "query store after")
@@ -569,13 +588,12 @@ func (q *blocksStoreQuerier) queryWithConsistencyCheck(
 	// Find the list of blocks we need to query given the time range.
 	knownBlocks, indexMeta, err := q.finder.GetBlocks(ctx, tenantID, minT, maxT)
 	if err != nil {
-		return err
+		return storeGatewayQueryStats{}, err
 	}
 
 	if len(knownBlocks) == 0 {
-		q.metrics.storesHit.Observe(0)
 		spanLog.DebugLog("msg", "no blocks found")
-		return nil
+		return storeGatewayQueryStats{}, nil
 	}
 
 	q.metrics.blocksFound.Add(float64(len(knownBlocks)))
@@ -626,7 +644,7 @@ func (q *blocksStoreQuerier) queryWithConsistencyCheck(
 				break
 			}
 
-			return err
+			return storeGatewayQueryStats{}, err
 		}
 		spanLog.DebugLog("msg", "found store-gateway instances to query", "num instances", len(clients), "attempt", attempt)
 
@@ -634,7 +652,7 @@ func (q *blocksStoreQuerier) queryWithConsistencyCheck(
 		// are only meant to cover missing blocks.
 		queriedBlocks, err := queryF(clients, minT, maxT, indexMeta)
 		if err != nil {
-			return err
+			return storeGatewayQueryStats{}, err
 		}
 		spanLog.DebugLog("msg", "received series from all store-gateways", "queried blocks", strings.Join(convertULIDsToString(queriedBlocks), " "))
 
@@ -651,10 +669,7 @@ func (q *blocksStoreQuerier) queryWithConsistencyCheck(
 		// The next attempt should just query the missing blocks.
 		remainingBlocks = consistencyTracker.Check(queriedBlocks)
 		if len(remainingBlocks) == 0 {
-			q.metrics.storesHit.Observe(float64(len(touchedStores)))
-			q.metrics.refetches.Observe(float64(attempt - 1))
-
-			return nil
+			return storeGatewayQueryStats{storesHit: len(touchedStores), refetches: attempt - 1, queried: true}, nil
 		}
 
 		spanLog.DebugLog("msg", "couldn't query all blocks", "attempt", attempt, "missing blocks", strings.Join(convertULIDsToString(remainingBlocks.GetULIDs()), " "))
@@ -663,7 +678,23 @@ func (q *blocksStoreQuerier) queryWithConsistencyCheck(
 	// We've not been able to query all expected blocks after all retries.
 	err = newStoreConsistencyCheckFailedError(remainingBlocks.GetULIDs())
 	level.Warn(util_log.WithContext(ctx, spanLog)).Log("msg", "failed consistency check after all attempts", "err", err)
-	return err
+	return storeGatewayQueryStats{}, err
+}
+
+// queryWithConsistencyCheckAndObserve runs queryWithConsistencyCheck and, on success, observes the
+// per-query store-gateway histograms from the returned stats.
+func (q *blocksStoreQuerier) queryWithConsistencyCheckAndObserve(ctx context.Context, spanLog *spanlogger.SpanLogger, minT, maxT int64, tenantID string, shard *sharding.ShardSelector, queryF queryFunc) error {
+	stats, err := q.queryWithConsistencyCheck(ctx, spanLog, minT, maxT, tenantID, shard, queryF)
+	if err != nil {
+		return err
+	}
+
+	q.metrics.storesHit.Observe(float64(stats.storesHit))
+	if stats.queried {
+		// refetches is only meaningful (and was historically only observed) when the block store was queried.
+		q.metrics.refetches.Observe(float64(stats.refetches))
+	}
+	return nil
 }
 
 type storeConsistencyCheckFailedErr struct {

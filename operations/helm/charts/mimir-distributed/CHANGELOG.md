@@ -30,12 +30,16 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
+## 6.1.0
+
+* [CHANGE] Upgrade Mimir to [3.1.2](https://github.com/grafana/mimir/blob/release-3.1/CHANGELOG.md). #15839
 * [CHANGE] Kafka: Removed `kafka.extraEnv`. Use `kafka.env` instead. #14892
 * [ENHANCEMENT] Kafka: Add `kafka.env` to let users selectively override default Kafka environment variables by name, following the same merge pattern used by other chart components (`ingester.env`, etc.). Individual defaults can be replaced in-place without discarding the rest of the list. #14892
 * [CHANGE] Update minimum supported Kubernetes version to 1.32. This reflects the fact that Grafana does not test with older versions of Kubernetes. #14335
 * [CHANGE] Set default memory ballast for ruler to 1GiB to reduce GC pressure during startup. #13376
 * [CHANGE] Set docker.io as the default registry for mimir image. #13267
 * [CHANGE] Query-frontend: Increase default query-frontend cache size limit to 25MB. #14857
+* [CHANGE] Query-frontend: Increase default query-frontend memory limit to 4GiB. #15688
 * [ENHANCEMENT] Add Support to customize gossip ring k8s service annotations. #12718
 * [ENHANCEMENT] Ruler querier and query-frontend: Add support for newly-introduced querier ring, which is used when performing query planning in query-frontends and distributing portions of the plan to queriers for execution. #13017
 * [ENHANCEMENT] Upgrade rollout-operator chart to [0.38.0](https://github.com/grafana/helm-charts/blob/main/charts/rollout-operator/README.md#upgrade-of-grafana-rollout-operator--v0380). Note required actions for upgrading the rollout-operator chart. #13245, #15626

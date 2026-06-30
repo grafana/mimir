@@ -1177,8 +1177,12 @@ func TestGroupedVectorVectorBinaryOperation_ManySideMatchersWhenHintsProduceNoMa
 
 		// group_left(region): right is "one" side, left is "many" side.
 		// "region" is an include label that comes from the many (left) side.
+		// The right (one) side must carry the "cluster" label so that the
+		// parent matcher cluster=us-east does not filter it out (absent
+		// labels are treated as "" by TestOperator.matches, matching real
+		// TSDB behavior).
 		rightSeries := []labels.Labels{
-			labels.FromStrings("env", "prod"),
+			labels.FromStrings("cluster", "us-east", "env", "prod"),
 		}
 		leftSeries := []labels.Labels{
 			labels.FromStrings("env", "prod", "region", "us-east"),
@@ -1188,7 +1192,9 @@ func TestGroupedVectorVectorBinaryOperation_ManySideMatchersWhenHintsProduceNoMa
 		right := &operators.TestOperator{Series: rightSeries, Data: make([]types.InstantVectorSeriesData, len(rightSeries)), MemoryConsumptionTracker: memoryConsumptionTracker}
 
 		// Exclude hints that exclude all one-side labels: BuildMatchers will return nil.
-		hints := &Hints{Exclude: []string{"env"}}
+		// Both "env" and "cluster" must be excluded so that BuildMatchers produces no
+		// matchers from the one-side metadata (the right side carries both labels).
+		hints := &Hints{Exclude: []string{"cluster", "env"}}
 		vectorMatching := parser.VectorMatching{Card: parser.CardManyToOne, On: false, MatchingLabels: []string{"env"}, Include: []string{"region"}}
 
 		o, err := NewGroupedVectorVectorBinaryOperation(

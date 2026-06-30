@@ -357,6 +357,14 @@ runtime_config:
     # CLI flag: -runtime-config.http-client-cluster-validation.label
     [label: <string> | default = ""]
 
+  # (advanced) Disable HTTP keep-alives for the runtime config HTTP client. When
+  # enabled, each reload opens a new connection, which prevents long-lived
+  # connections from being pinned to a single backend when the runtime config
+  # URL is served by multiple replicas behind a connection-level (L4) load
+  # balancer, such as a Kubernetes Service.
+  # CLI flag: -runtime-config.http-client-disable-keep-alives
+  [http_client_disable_keep_alives: <boolean> | default = true]
+
 # The memberlist block configures the Gossip memberlist.
 [memberlist: <memberlist>]
 
@@ -514,6 +522,11 @@ instrument_ref_leaks:
   # regardless of the configured percentage. Zero means no limit.
   # CLI flag: -instrument-reference-leaks.max-inflight-instrumented-bytes
   [max_inflight_instrumented_bytes: <int> | default = 0]
+
+# (experimental) If enabled, Mimir enforces label-based access control on metric
+# read queries using the X-Prom-Label-Policy HTTP header.
+# CLI flag: -auth.label-access-control-enabled
+[label_access_control_enabled: <boolean> | default = false]
 ```
 
 ### common
@@ -2253,6 +2266,17 @@ results_cache:
 # CLI flag: -query-frontend.cache-results
 [cache_results: <boolean> | default = false]
 
+# (experimental) Set to true to enable performing splitting range queries by
+# interval and caching inside the Mimir query engine (MQE), and spinning off
+# subqueries from instant queries inside MQE. This only has an effect if the
+# corresponding feature is enabled (with
+# -query-frontend.split-queries-by-interval=true,
+# -query-frontend.cache-results=true or
+# -query-frontend.subquery-spin-off-enabled=true, respectively). Requires MQE,
+# remote execution and sharding inside MQE to be enabled.
+# CLI flag: -query-frontend.use-mimir-query-engine-for-splitting-and-caching-results
+[use_mimir_query_engine_for_splitting_and_caching_results: <boolean> | default = false]
+
 # Cache non-transient errors from queries.
 # CLI flag: -query-frontend.cache-errors
 [cache_errors: <boolean> | default = false]
@@ -2284,8 +2308,7 @@ results_cache:
 [enable_multiple_node_remote_execution_requests: <boolean> | default = false]
 
 # (experimental) Set to true to enable performing query sharding inside the
-# Mimir query engine (MQE). This setting has no effect if sharding is disabled.
-# Requires remote execution and MQE to be enabled.
+# Mimir query engine (MQE). Requires remote execution and MQE to be enabled.
 # CLI flag: -query-frontend.use-mimir-query-engine-for-sharding
 [use_mimir_query_engine_for_sharding: <boolean> | default = false]
 
@@ -4533,10 +4556,10 @@ The `limits` block configures default and per-tenant limits imposed by component
 [max_queriers_per_tenant: <int> | default = 0]
 
 # The amount of shards to use when doing parallelisation via query sharding by
-# tenant. 0 to disable query sharding for tenant. Query sharding implementation
-# will adjust the number of query shards based on compactor shards. This allows
-# querier to not search the blocks which cannot possibly have the series for
-# given query shard.
+# tenant. 0 to disable query sharding for tenant. Values greater than 1 are
+# rounded up to the next power of two, so the query shard count always meshes
+# with the compactor's power-of-two shard count. This allows querier to not
+# search the blocks which cannot possibly have the series for given query shard.
 # CLI flag: -query-frontend.query-sharding-total-shards
 [query_sharding_total_shards: <int> | default = 16]
 
@@ -5030,13 +5053,14 @@ ruler_alertmanager_client_config:
 [compactor_blocks_retention_period: <duration> | default = 0s]
 
 # The number of shards to use when splitting blocks. 0 to disable splitting.
+# Values greater than 1 are rounded up to the next power of two.
 # CLI flag: -compactor.split-and-merge-shards
 [compactor_split_and_merge_shards: <int> | default = 0]
 
 # The number of shards to use when splitting out-of-order blocks. 0 to use the
-# value of -compactor.split-and-merge-shards. Only applies to blocks with the
-# out-of-order external label, see
-# -ingester.out-of-order-blocks-external-label-enabled.
+# value of -compactor.split-and-merge-shards. Values greater than 1 are rounded
+# up to the next power of two. Only applies to blocks with the out-of-order
+# external label, see -ingester.out-of-order-blocks-external-label-enabled.
 # CLI flag: -compactor.ooo-split-and-merge-shards
 [compactor_ooo_split_and_merge_shards: <int> | default = 0]
 
@@ -5268,6 +5292,11 @@ The `ingest_storage` block configures the Kafka-based ingest storage.
 [enabled: <boolean> | default = false]
 
 kafka:
+  # (experimental) The Kafka backend implementation. Supported values: kafka,
+  # warpstream.
+  # CLI flag: -ingest-storage.kafka.backend
+  [backend: <string> | default = "kafka"]
+
   # The Kafka seed broker address, or a comma-separated list of seed broker
   # addresses.
   # CLI flag: -ingest-storage.kafka.address
@@ -5282,11 +5311,13 @@ kafka:
   [client_id: <string> | default = ""]
 
   # The rack identifier for this Kafka client. Corresponds to the Kafka
-  # client.rack setting.
+  # client.rack setting. Only supported when ingest-storage.kafka.backend=kafka.
   # CLI flag: -ingest-storage.kafka.client-rack
   [client_rack: <string> | default = ""]
 
-  # The maximum time allowed to open a connection to a Kafka broker.
+  # The maximum time allowed to establish the TCP connection to a Kafka broker,
+  # including the TLS handshake when TLS is enabled. It does not include the
+  # subsequent SASL authentication handshake.
   # CLI flag: -ingest-storage.kafka.dial-timeout
   [dial_timeout: <duration> | default = 2s]
 
@@ -5302,6 +5333,45 @@ kafka:
   # Deprecated: has no effect (Mimir always uses a single Kafka write client).
   # CLI flag: -ingest-storage.kafka.write-clients
   [write_clients: <int> | default = 1]
+
+  # (experimental) Mark an agent as slow when its window-average latency exceeds
+  # this multiple of the cluster baseline. Only applies when
+  # -ingest-storage.kafka.backend=warpstream.
+  # CLI flag: -ingest-storage.kafka.warpstream-health-check-slow-multiplier
+  [warpstream_health_check_slow_multiplier: <float> | default = 2]
+
+  # (experimental) Suppress slow-based hedging when more than this fraction of
+  # agents are slow (cluster-wide issue). Only applies when
+  # -ingest-storage.kafka.backend=warpstream.
+  # CLI flag: -ingest-storage.kafka.warpstream-health-check-max-slow-fraction
+  [warpstream_health_check_max_slow_fraction: <float> | default = 0.3]
+
+  # (experimental) Mark an agent as faulty when its observed error rate exceeds
+  # this fraction. Only applies when -ingest-storage.kafka.backend=warpstream.
+  # CLI flag: -ingest-storage.kafka.warpstream-health-check-faulty-threshold
+  [warpstream_health_check_faulty_threshold: <float> | default = 0.2]
+
+  # (experimental) Suppress faulty-based hedging and demotion when more than
+  # this fraction of agents are faulty (cluster-wide issue). Only applies when
+  # -ingest-storage.kafka.backend=warpstream.
+  # CLI flag: -ingest-storage.kafka.warpstream-health-check-max-faulty-fraction
+  [warpstream_health_check_max_faulty_fraction: <float> | default = 0.3]
+
+  # (experimental) Floor on the dynamically-computed hedge delay. Only applies
+  # when -ingest-storage.kafka.backend=warpstream.
+  # CLI flag: -ingest-storage.kafka.warpstream-hedge-min-delay
+  [warpstream_hedge_min_delay: <duration> | default = 500ms]
+
+  # (experimental) Cap on how many per-partition candidates the hedge fanout
+  # considers when picking a fallback (excluding the primary and any agent
+  # already tried). Only applies when -ingest-storage.kafka.backend=warpstream.
+  # CLI flag: -ingest-storage.kafka.warpstream-hedge-max-agents
+  [warpstream_hedge_max_agents: <int> | default = 3]
+
+  # (experimental) Minimum wall-clock gap between probes to a demoted agent.
+  # Only applies when -ingest-storage.kafka.backend=warpstream.
+  # CLI flag: -ingest-storage.kafka.warpstream-demoter-probe-interval
+  [warpstream_demoter_probe_interval: <duration> | default = 1s]
 
   # The SASL mechanism used to authenticate to Kafka. Supported values: PLAIN,
   # SCRAM-SHA-256, SCRAM-SHA-512, OAUTHBEARER, AWS_MSK_IAM. For

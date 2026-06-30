@@ -34,6 +34,7 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.uber.org/atomic"
 
+	"github.com/grafana/mimir/pkg/compartments"
 	"github.com/grafana/mimir/pkg/costattribution"
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
 	"github.com/grafana/mimir/pkg/ingester/lookupplan"
@@ -200,8 +201,14 @@ type Config struct {
 
 	PushGrpcMethodEnabled bool `yaml:"push_grpc_method_enabled" category:"experimental" doc:"hidden"`
 
-	// This config is dynamically injected because defined outside the ingester config.
-	IngestStorageConfig ingest.Config `yaml:"-"`
+	// ReadCompartmentID is the read compartment this ingester serves. It selects which partition ring
+	// the ingester registers its partition into. When compartments are disabled it must be 0, because it
+	// is used to index the (single) non-compartment partition ring, which lives at index 0.
+	ReadCompartmentID int `yaml:"read_compartment_id" category:"experimental" doc:"hidden"`
+
+	// These configs are dynamically injected because defined outside the ingester config.
+	IngestStorageConfig ingest.Config       `yaml:"-"`
+	Compartments        compartments.Config `yaml:"-"`
 
 	// This config can be overridden in tests.
 	limitMetricsUpdatePeriod time.Duration `yaml:"-"`
@@ -235,14 +242,25 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.IntVar(&cfg.ComputeWorkers, "ingester.compute-workers", 0, "Number of worker goroutines in the ingester's shared tenant-fair compute worker pool, used to parallelize CPU-bound work (currently label-values-cardinality) fairly across tenants. 0 uses GOMAXPROCS.")
 	cfg.LabelValuesCount.RegisterFlags(f)
 	f.BoolVar(&cfg.PushGrpcMethodEnabled, "ingester.push-grpc-method-enabled", true, "Enables Push gRPC method on ingester. Can be only disabled when using ingest-storage to make sure ingesters only receive data from Kafka.")
+	f.IntVar(&cfg.ReadCompartmentID, "ingester.read-compartment-id", 0, "The read compartment this ingester serves. Only used when compartments are enabled.")
 
 	// Hardcoded config (can only be overridden in tests).
 	cfg.limitMetricsUpdatePeriod = time.Second * 15
 }
 
-func (cfg *Config) Validate() error {
+func (cfg *Config) Validate(compartmentsCfg compartments.Config) error {
 	if cfg.ErrorSampleRate < 0 {
 		return fmt.Errorf("error sample rate cannot be a negative number")
+	}
+
+	if compartmentsCfg.Enabled {
+		if cfg.ReadCompartmentID < 0 || cfg.ReadCompartmentID >= compartmentsCfg.Read.NumCompartments {
+			return fmt.Errorf("ingester read compartment ID %d is out of range [0, %d)", cfg.ReadCompartmentID, compartmentsCfg.Read.NumCompartments)
+		}
+	} else if cfg.ReadCompartmentID != 0 {
+		// When compartments are disabled the read compartment ID must be 0, because it is used to index the
+		// single non-compartment partition ring (at index 0).
+		return errors.New("ingester read compartment ID must be 0 when compartments are disabled")
 	}
 
 	// Tokenless mode requires gRPC push to be disabled.
@@ -380,7 +398,7 @@ type Ingester struct {
 	errorSamplers ingesterErrSamplers
 
 	// The following is used by ingest storage (when enabled).
-	ingestReader              *ingest.PartitionReader
+	ingestReader              ingest.PartitionReader
 	ingestPartitionID         int32
 	ingestPartitionLifecycler *ring.PartitionInstanceLifecycler
 
@@ -567,12 +585,26 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 		// Here we use it so that pushes from kafka also get a tenant assigned since the PartitionReader invokes the ingester.
 		profilingIngester := NewIngesterProfilingWrapper(i)
 
-		// The offset file is always stored in the TSDB directory alongside the ingester's data.
-		offsetFilePath := filepath.Join(cfg.BlocksStorageConfig.TSDB.Dir, "kafka-offset.json")
+		if cfg.Compartments.Enabled {
+			// With compartments enabled the ingester consumes its read compartment's topic from every
+			// write compartment's Kafka cluster. The per-cluster offset files live in the TSDB directory
+			// alongside the ingester's data, one per write compartment.
+			readCompartmentTopic := compartments.ReplaceReadCompartment(kafkaCfg.Topic, cfg.ReadCompartmentID)
+			kafkaCfgs := ingest.WriteCompartmentConfigs(kafkaCfg, cfg.Compartments.Write.NumCompartments, readCompartmentTopic)
+			offsetFilePath := filepath.Join(cfg.BlocksStorageConfig.TSDB.Dir, "kafka-offset-wc-"+compartments.WriteCompartmentIDPlaceholder+".json")
 
-		i.ingestReader, err = ingest.NewPartitionReaderForPusher(kafkaCfg, i.ingestPartitionID, cfg.IngesterRing.InstanceID, offsetFilePath, profilingIngester, log.With(logger, "component", "ingest_reader"), registerer)
-		if err != nil {
-			return nil, errors.Wrap(err, "creating ingest storage reader")
+			i.ingestReader, err = ingest.NewMultiClusterPartitionReader(kafkaCfgs, i.ingestPartitionID, cfg.IngesterRing.InstanceID, offsetFilePath, profilingIngester, log.With(logger, "component", "ingest_reader"), registerer)
+			if err != nil {
+				return nil, errors.Wrap(err, "creating ingest storage reader")
+			}
+		} else {
+			// The offset file is always stored in the TSDB directory alongside the ingester's data.
+			offsetFilePath := filepath.Join(cfg.BlocksStorageConfig.TSDB.Dir, "kafka-offset.json")
+
+			i.ingestReader, err = ingest.NewSingleClusterPartitionReader(kafkaCfg, i.ingestPartitionID, cfg.IngesterRing.InstanceID, offsetFilePath, profilingIngester, log.With(logger, "component", "ingest_reader"), registerer)
+			if err != nil {
+				return nil, errors.Wrap(err, "creating ingest storage reader")
+			}
 		}
 
 		partitionRingKV := cfg.IngesterPartitionRing.KVStore.Mock
@@ -583,10 +615,19 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 			}
 		}
 
+		// With compartments enabled the ingester registers its partition into the partition ring of
+		// its own read compartment, so the write path routes to it. The read compartment ID is
+		// validated by Config.Validate.
+		partitionRingName, partitionRingKey := PartitionRingName, PartitionRingKey
+		if cfg.Compartments.Enabled {
+			partitionRingName = compartments.WithReadCompartmentSuffix(PartitionRingName, cfg.ReadCompartmentID)
+			partitionRingKey = compartments.WithReadCompartmentSuffix(PartitionRingKey, cfg.ReadCompartmentID)
+		}
+
 		i.ingestPartitionLifecycler = ring.NewPartitionInstanceLifecycler(
 			i.cfg.IngesterPartitionRing.ToLifecyclerConfig(i.ingestPartitionID, cfg.IngesterRing.InstanceID),
-			PartitionRingName,
-			PartitionRingKey,
+			partitionRingName,
+			partitionRingKey,
 			partitionRingKV,
 			logger,
 			prometheus.WrapRegistererWithPrefix("cortex_", registerer))

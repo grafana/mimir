@@ -34,22 +34,24 @@ var (
 	errFailedCompletingJob = status.Error(codes.Internal, "failed to complete job")
 	errFailedLeasingJob    = status.Error(codes.Internal, "failed to lease job")
 	errLeaseNotFound       = status.Error(codes.NotFound, "lease was not found")
+	errInvalidLanes        = status.Error(codes.InvalidArgument, "the requested lanes were invalid")
 	errMissingKey          = status.Error(codes.InvalidArgument, "missing required job key")
 	errNotRunning          = status.Error(codes.Unavailable, "the compactor scheduler is not currently running (starting or shutting down)")
 )
 
 type Config struct {
-	MaxLeases                                   int            `yaml:"max_leases" category:"experimental"`
-	LeaseDuration                               time.Duration  `yaml:"lease_duration" category:"experimental"`
-	PlanningInterval                            time.Duration  `yaml:"planning_interval" category:"experimental"`
-	MaintenanceInterval                         time.Duration  `yaml:"maintenance_interval" category:"experimental"`
-	MaintenanceIntervalsBeforeLeaseExpiration   int            `yaml:"maintenance_intervals_before_lease_expiration" category:"experimental"`
-	MaintenanceIntervalsBeforeColdStartPlanning int            `yaml:"maintenance_intervals_before_cold_start_planning" category:"experimental"`
-	TenantDiscoveryInterval                     time.Duration  `yaml:"tenant_discovery_interval" category:"experimental"`
-	TenantDiscoveryBackoff                      backoff.Config `yaml:"tenant_discovery_backoff" category:"experimental"`
-	PersistenceType                             string         `yaml:"persistence_type" category:"experimental"`
-	RepeatedFailureReportThreshold              int            `yaml:"repeated_failure_report_threshold" category:"experimental"`
-	Bbolt                                       BboltConfig    `yaml:"bbolt" category:"experimental"`
+	MaxLeases                                   int              `yaml:"max_leases" category:"experimental"`
+	LeaseDuration                               time.Duration    `yaml:"lease_duration" category:"experimental"`
+	PlanningInterval                            time.Duration    `yaml:"planning_interval" category:"experimental"`
+	MaintenanceInterval                         time.Duration    `yaml:"maintenance_interval" category:"experimental"`
+	MaintenanceIntervalsBeforeLeaseExpiration   int              `yaml:"maintenance_intervals_before_lease_expiration" category:"experimental"`
+	MaintenanceIntervalsBeforeColdStartPlanning int              `yaml:"maintenance_intervals_before_cold_start_planning" category:"experimental"`
+	TenantDiscoveryInterval                     time.Duration    `yaml:"tenant_discovery_interval" category:"experimental"`
+	TenantDiscoveryBackoff                      backoff.Config   `yaml:"tenant_discovery_backoff" category:"experimental"`
+	PersistenceType                             string           `yaml:"persistence_type" category:"experimental"`
+	RepeatedFailureReportThreshold              int              `yaml:"repeated_failure_report_threshold" category:"experimental"`
+	Bbolt                                       BboltConfig      `yaml:"bbolt" category:"experimental"`
+	LanePolicy                                  LanePolicyConfig `yaml:"lane_policy" category:"experimental"`
 }
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
@@ -64,6 +66,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&cfg.PersistenceType, "compactor-scheduler.persistence-type", "bbolt", "The type of persistence the compactor scheduler should use. Valid values: none, bbolt")
 	f.IntVar(&cfg.RepeatedFailureReportThreshold, "compactor-scheduler.repeated-failure-report-threshold", 2, "The number of times a job can fail before a repeated failure is recorded. 0 for no limit.")
 	cfg.Bbolt.RegisterFlagsWithPrefix("compactor-scheduler.bbolt", f)
+	cfg.LanePolicy.RegisterFlagsWithPrefix("compactor-scheduler.lane-policy", f)
 }
 
 func (cfg *Config) Validate() error {
@@ -98,6 +101,7 @@ type Scheduler struct {
 
 	running            *atomic.Bool
 	cfg                Config
+	lanePolicy         lanePolicy
 	allowList          *util.AllowList
 	jpm                JobPersistenceManager
 	rotator            *Rotator
@@ -140,6 +144,11 @@ func newCompactorScheduler(
 	metrics *schedulerMetrics,
 	logger log.Logger) (*Scheduler, error) {
 
+	lanePolicy, err := newLanePolicy(cfg.LanePolicy)
+	if err != nil {
+		return nil, err
+	}
+
 	rotator := NewRotator(
 		cfg.LeaseDuration,
 		cfg.PlanningInterval,
@@ -147,6 +156,7 @@ func newCompactorScheduler(
 		cfg.MaintenanceInterval,
 		cfg.MaintenanceIntervalsBeforeLeaseExpiration,
 		cfg.MaintenanceIntervalsBeforeColdStartPlanning,
+		lanePolicy,
 		metrics.pendingJobsLastEmpty,
 		logger,
 	)
@@ -154,10 +164,11 @@ func newCompactorScheduler(
 	scheduler := &Scheduler{
 		running:          atomic.NewBool(false),
 		cfg:              cfg,
+		lanePolicy:       lanePolicy,
 		allowList:        allowList,
 		jpm:              jpm,
 		rotator:          rotator,
-		tenantDiscoverer: NewTenantDiscoverer(cfg, allowList, rotator, bkt, jpm, metrics, logger),
+		tenantDiscoverer: NewTenantDiscoverer(cfg, lanePolicy, allowList, rotator, bkt, jpm, metrics, logger),
 		metrics:          metrics,
 		logger:           logger,
 		clock:            clock.New(),
@@ -176,7 +187,7 @@ func newCompactorScheduler(
 }
 
 func (s *Scheduler) createJobTracker(tenant string, jp JobPersister) *JobTracker {
-	return NewJobTracker(jp, tenant, s.clock, s.cfg.MaxLeases, s.cfg.RepeatedFailureReportThreshold, s.metrics.newTrackerMetricsForTenant(tenant), s.logger)
+	return NewJobTracker(jp, tenant, s.clock, s.lanePolicy, s.cfg.MaxLeases, s.cfg.RepeatedFailureReportThreshold, s.metrics.newTrackerMetricsForTenant(tenant), s.logger)
 }
 
 func (s *Scheduler) start(ctx context.Context) error {
@@ -229,7 +240,12 @@ func (s *Scheduler) isRunning() bool {
 }
 
 func (s *Scheduler) LeaseJob(ctx context.Context, req *compactorschedulerpb.LeaseJobRequest) (*compactorschedulerpb.LeaseJobResponse, error) {
-	response, ok, err := s.rotator.LeaseJob(ctx)
+	lanes, err := s.lanePolicy.LanesForRequest(req)
+	if err != nil {
+		level.Error(s.logger).Log("msg", "invalid lanes in request", "err", err)
+		return nil, errInvalidLanes
+	}
+	response, ok, err := s.rotator.LeaseJob(ctx, lanes)
 	if err != nil {
 		level.Error(s.logger).Log("msg", "failed leasing job", "err", err)
 		return nil, errFailedLeasingJob
