@@ -366,11 +366,21 @@ type Options struct {
 
 	// FloatChunkEncoding is the encoding used for new float chunks when
 	// chunk_encoding.floats is absent from the configuration file.
-	// Defaults to EncXOR. Set to EncXOR2 to enable XOR2 encoding.
+	// Defaults to EncXOR. Set to EncXOR2 to default new float chunks to XOR2.
 	// Always use DefaultOptions() rather than a bare Options literal; the zero value
 	// of this field is EncNone, not EncXOR. This field is independent of EnableSTStorage:
 	// st-storage does not automatically select EncXOR2.
+	// Selecting EncXOR2 here requires XOR2EncodingAllowed to be true.
 	FloatChunkEncoding chunkenc.Encoding
+
+	// XOR2EncodingAllowed gates whether the XOR2 float chunk encoding may be used
+	// at all, either as the FloatChunkEncoding default or via chunk_encoding.floats
+	// in the configuration file. It is the enable/disable switch for the feature,
+	// kept separate from FloatChunkEncoding which selects the active default.
+	// Callers that want XOR2 available without making it the default (e.g.
+	// multi-tenant setups that opt tenants in individually) can set this to true
+	// while leaving FloatChunkEncoding at EncXOR.
+	XOR2EncodingAllowed bool
 
 	// FeatureRegistry is used to register TSDB features.
 	FeatureRegistry features.Collector
@@ -1019,7 +1029,7 @@ func Open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, st
 		opts.FeatureRegistry.Set(features.TSDB, "use_uncached_io", opts.UseUncachedIO)
 		opts.FeatureRegistry.Enable(features.TSDB, "native_histograms")
 		opts.FeatureRegistry.Set(features.TSDB, "st_storage", opts.EnableSTStorage)
-		opts.FeatureRegistry.Set(features.TSDB, "xor2_encoding", opts.FloatChunkEncoding == chunkenc.EncXOR2)
+		opts.FeatureRegistry.Set(features.TSDB, "xor2_encoding", opts.XOR2EncodingAllowed)
 	}
 
 	return open(dir, l, r, opts, rngs, stats)
@@ -1034,6 +1044,9 @@ func validateOpts(opts *Options, rngs []int64) (*Options, []int64, error) {
 	}
 	if opts.FloatChunkEncoding != chunkenc.EncXOR && opts.FloatChunkEncoding != chunkenc.EncXOR2 {
 		return nil, nil, fmt.Errorf("unsupported float chunk encoding %q; valid values are %q and %q", strings.ToLower(opts.FloatChunkEncoding.String()), config.FloatChunkEncodingXOR, config.FloatChunkEncodingXOR2)
+	}
+	if opts.FloatChunkEncoding == chunkenc.EncXOR2 && !opts.XOR2EncodingAllowed {
+		return nil, nil, fmt.Errorf("float chunk %q is not enabled", config.FloatChunkEncodingXOR2)
 	}
 	if opts.EnableSTStorage && opts.FloatChunkEncoding == chunkenc.EncXOR {
 		return nil, nil, fmt.Errorf("float chunk encoding %q is incompatible with start-timestamp storage; XOR chunks do not store start timestamps, use %q", config.FloatChunkEncodingXOR, config.FloatChunkEncodingXOR2)
@@ -1492,7 +1505,7 @@ func (db *DB) ApplyConfig(conf *config.Config) error {
 	if conf.StorageConfig.TSDBConfig != nil {
 		// Validate encoding config before updating the head encoding so that
 		// an invalid encoding in the config does not change the active encoding.
-		if conf.StorageConfig.TSDBConfig.ChunkEncoding.Floats == config.FloatChunkEncodingXOR2 && db.opts.FloatChunkEncoding != chunkenc.EncXOR2 {
+		if conf.StorageConfig.TSDBConfig.ChunkEncoding.Floats == config.FloatChunkEncodingXOR2 && !db.opts.XOR2EncodingAllowed {
 			return errors.New("'storage.tsdb.chunk_encoding.floats: xor2' requires the xor2-encoding feature flag to be enabled at startup")
 		}
 		// db.opts.EnableSTStorage is set once at startup and never mutated.
@@ -2073,6 +2086,16 @@ func (db *DB) CompactStaleHead() (err error) {
 // CompactSelectedSeries writes the provided series into one or more blocks (one per chunk range)
 // and evicts them from the head without advancing HeadMinTime. The caller is responsible for
 // ensuring that the provided refs identify series eligible for removal.
+//
+// This method lets callers persist and evict a chosen subset of head series ahead of the normal,
+// time-window-based head compaction. It is useful when an external process can identify series
+// that are no longer expected to receive samples and wants to reclaim head memory eagerly rather
+// than waiting for the next regular compaction cycle. For example, a Mimir ingester that detects,
+// after a resharding event, that some series it used to own no longer belong to it can collect
+// their refs and pass them here to flush just those series to disk and evict them, while leaving
+// the rest of the head untouched.
+//
+// This method is not used by Prometheus itself; its primary consumer is Mimir.
 //
 // Series that received new samples after the ref list was collected are skipped during eviction
 // and remain in the head. They may be reconsidered during a subsequent compaction cycle.
@@ -2777,6 +2800,7 @@ func (db *DB) Querier(mint, maxt int64) (_ storage.Querier, err error) {
 		// won't run into a race later since any truncation that comes after will wait on this querier if it overlaps.
 		shouldClose, getNew, newMint := db.head.IsQuerierCollidingWithTruncation(mint, maxt)
 		if shouldClose {
+			inoMint = newMint
 			if err := headQuerier.Close(); err != nil {
 				return nil, fmt.Errorf("closing head block querier %s: %w", rh, err)
 			}
@@ -2788,7 +2812,6 @@ func (db *DB) Querier(mint, maxt int64) (_ storage.Querier, err error) {
 			if err != nil {
 				return nil, fmt.Errorf("open block querier for head while getting new querier %s: %w", rh, err)
 			}
-			inoMint = newMint
 		}
 	}
 
@@ -2854,6 +2877,7 @@ func (db *DB) blockChunkQuerierForRange(mint, maxt int64) (_ []storage.ChunkQuer
 		// won't run into a race later since any truncation that comes after will wait on this querier if it overlaps.
 		shouldClose, getNew, newMint := db.head.IsQuerierCollidingWithTruncation(mint, maxt)
 		if shouldClose {
+			inoMint = newMint
 			if err := headQuerier.Close(); err != nil {
 				return nil, fmt.Errorf("closing head querier %s: %w", rh, err)
 			}
@@ -2865,7 +2889,6 @@ func (db *DB) blockChunkQuerierForRange(mint, maxt int64) (_ []storage.ChunkQuer
 			if err != nil {
 				return nil, fmt.Errorf("open querier for head while getting new querier %s: %w", rh, err)
 			}
-			inoMint = newMint
 		}
 	}
 
