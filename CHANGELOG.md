@@ -94,7 +94,7 @@
 * [CHANGE] Query-frontend: Increase memory requested and limit to 2GiB and 4GiB respectively. #15688
 * [CHANGE] Continuous-test: Don't explicitly set `tests.write-read-series-test.num-series` and `tests.write-read-series-test.max-query-age` to their default values. #15705
 * [FEATURE] Compactor: add support for deploying the experimental compactor-scheduler. Enable with `compactor_scheduler_enabled: true`. #15850
-* [FEATURE] Compactor: add compactor autoscaling, enabled with `autoscaling_compactor_enabled: true`. When the compactor-scheduler is enabled, compactors are autoscaled based on the estimated time to drain the scheduler queue instead of CPU utilization. #15850
+* [FEATURE] Compactor: add experimental compactor autoscaling, enabled with `autoscaling_compactor_enabled: true`. When the compactor-scheduler is enabled, compactors are autoscaled based on the estimated time to drain the scheduler queue instead of CPU utilization. #15850
 * [ENHANCEMENT] Updated rollout-operator jsonnet library to v0.38.0. #15328, #15626
 * [ENHANCEMENT] Make range vector splitting configurable per query path. #15706
 * [ENHANCEMENT] Add `newMimirtoolBlocksJob` and subcommand-specific helpers to run `mimirtool blocks` as Kubernetes Jobs. #15757
