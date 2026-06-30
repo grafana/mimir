@@ -33,6 +33,29 @@ var adminTemplate = template.Must(template.New("readcache-admin").Funcs(template
 		}
 		return fmt.Sprintf("%d", o)
 	},
+	// fmtBytes renders a byte count in human-friendly binary units.
+	"fmtBytes": func(n int64) string {
+		const unit = 1024
+		if n < unit {
+			return fmt.Sprintf("%dB", n)
+		}
+		div, exp := int64(unit), 0
+		for x := n / unit; x >= unit; x /= unit {
+			div *= unit
+			exp++
+		}
+		return fmt.Sprintf("%.1f%ciB", float64(n)/float64(div), "KMGTPE"[exp])
+	},
+	"fmtUint": func(n uint64) string {
+		f := float64(n)
+		if f >= 1e6 {
+			return fmt.Sprintf("%.2fM", f/1e6)
+		}
+		if f >= 1e3 {
+			return fmt.Sprintf("%.2fK", f/1e3)
+		}
+		return fmt.Sprintf("%d", n)
+	},
 	// offsetSpan renders the number of offsets between start and end,
 	// i.e. roughly how many records this TSDB's partition consumed
 	// while owned. Empty when either bound is unknown.

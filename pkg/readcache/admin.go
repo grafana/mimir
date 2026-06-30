@@ -9,6 +9,8 @@ import (
 	"sort"
 	"time"
 
+	"github.com/prometheus/prometheus/tsdb"
+
 	"github.com/grafana/mimir/pkg/nautilus/assignment"
 )
 
@@ -153,6 +155,29 @@ type adminTSDBView struct {
 	// Expired is true when a frozen epoch is already past its reap
 	// time and is awaiting the next reaper sweep.
 	Expired bool
+
+	// ID is a stable, URL-fragment-safe anchor for this TSDB's detail
+	// panel, so the Blocks count in the summary table can link to it.
+	ID string
+	// Blocks is the per-persisted-block breakdown for this TSDB (head
+	// data is not included; it has no block yet). Empty when the TSDB
+	// has only an in-memory head.
+	Blocks []adminBlockView
+}
+
+// adminBlockView is one persisted block within a TSDB, rendered on the
+// admin page's per-TSDB detail panel.
+type adminBlockView struct {
+	ULID       string
+	MinT       string // UTC RFC3339
+	MaxT       string // UTC RFC3339
+	Duration   string // MaxTime-MinTime, humanised (e.g. "2h0m")
+	NumSeries  uint64
+	NumSamples uint64
+	NumChunks  uint64
+	Level      int  // compaction level
+	OutOfOrder bool // block built directly from out-of-order samples
+	SizeBytes  int64
 }
 
 func (r *Readcache) buildAdminPageData() adminPageData {
@@ -275,6 +300,7 @@ func (r *Readcache) collectTSDBViews(parts []*partitionState) []adminTSDBView {
 		p.tenantsMu.RLock()
 		for tenantID, db := range p.tenants {
 			minT, maxT := db.sampleBounds()
+			blocks := db.db.Blocks()
 			rows = append(rows, adminTSDBView{
 				Tenant:           tenantID,
 				PartitionID:      p.partitionID,
@@ -282,12 +308,13 @@ func (r *Readcache) collectTSDBViews(parts []*partitionState) []adminTSDBView {
 				Active:           true,
 				Warm:             warm,
 				HeadSeries:       int64(db.db.Head().NumSeries()),
-				NumBlocks:        len(db.db.Blocks()),
+				NumBlocks:        len(blocks),
 				MinT:             fmtTSDBTime(minT, maxT),
 				MaxT:             fmtTSDBTimeMax(minT, maxT),
 				StartOffset:      startOffset,
 				EndOffset:        endOffset,
 				StartedConsuming: fmtUnixMilli(startedConsumingAt),
+				Blocks:           collectBlockViews(blocks),
 				// Active TSDBs are still being consumed: no stop time.
 			})
 		}
@@ -301,19 +328,21 @@ func (r *Readcache) collectTSDBViews(parts []*partitionState) []adminTSDBView {
 		for _, ep := range eps {
 			for tenantID, db := range ep.tenants {
 				minT, maxT := db.sampleBounds()
+				blocks := db.db.Blocks()
 				row := adminTSDBView{
 					Tenant:           tenantID,
 					PartitionID:      ep.partitionID,
 					Epoch:            ep.epoch,
 					Active:           false,
 					HeadSeries:       int64(db.db.Head().NumSeries()),
-					NumBlocks:        len(db.db.Blocks()),
+					NumBlocks:        len(blocks),
 					MinT:             fmtTSDBTime(minT, maxT),
 					MaxT:             fmtTSDBTimeMax(minT, maxT),
 					StartOffset:      ep.startOffset,
 					EndOffset:        ep.endOffset,
 					StartedConsuming: fmtUnixMilli(ep.startedConsumingAt),
 					StoppedConsuming: fmtUnixMilli(ep.stoppedConsumingAt),
+					Blocks:           collectBlockViews(blocks),
 				}
 				// Reaping is keyed on the epoch's captured maxT (see
 				// reapFrozenEpochs), which is the freeze-time bound. The
@@ -348,7 +377,63 @@ func (r *Readcache) collectTSDBViews(parts []*partitionState) []adminTSDBView {
 		}
 		return a.Tenant < b.Tenant
 	})
+
+	// Assign anchors after the final order is fixed so the summary
+	// table's Blocks links resolve to the matching detail panel.
+	for i := range rows {
+		rows[i].ID = fmt.Sprintf("tsdb-%d", i)
+	}
 	return rows
+}
+
+// collectBlockViews builds the per-block breakdown for one TSDB,
+// ordered oldest-first by block min time.
+func collectBlockViews(blocks []*tsdb.Block) []adminBlockView {
+	if len(blocks) == 0 {
+		return nil
+	}
+	out := make([]adminBlockView, 0, len(blocks))
+	for _, b := range blocks {
+		m := b.Meta()
+		out = append(out, adminBlockView{
+			ULID:       m.ULID.String(),
+			MinT:       time.UnixMilli(m.MinTime).UTC().Format(time.RFC3339),
+			MaxT:       time.UnixMilli(m.MaxTime).UTC().Format(time.RFC3339),
+			Duration:   fmtBlockDuration(m.MaxTime - m.MinTime),
+			NumSeries:  m.Stats.NumSeries,
+			NumSamples: m.Stats.NumSamples,
+			NumChunks:  m.Stats.NumChunks,
+			Level:      m.Compaction.Level,
+			OutOfOrder: m.OutOfOrder,
+			SizeBytes:  b.Size(),
+		})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].MinT != out[j].MinT {
+			return out[i].MinT < out[j].MinT
+		}
+		return out[i].ULID < out[j].ULID
+	})
+	return out
+}
+
+// fmtBlockDuration renders a block's MaxTime-MinTime span (in ms) as a
+// compact duration like "2h0m" or "1d2h".
+func fmtBlockDuration(ms int64) string {
+	if ms < 0 {
+		return ""
+	}
+	d := time.Duration(ms) * time.Millisecond
+	d = d.Round(time.Minute)
+	days := int64(d / (24 * time.Hour))
+	d -= time.Duration(days) * 24 * time.Hour
+	hours := int64(d / time.Hour)
+	d -= time.Duration(hours) * time.Hour
+	mins := int64(d / time.Minute)
+	if days > 0 {
+		return fmt.Sprintf("%dd%dh", days, hours)
+	}
+	return fmt.Sprintf("%dh%dm", hours, mins)
 }
 
 // fmtTSDBTime renders the lower sample-time bound as UTC RFC3339, or ""

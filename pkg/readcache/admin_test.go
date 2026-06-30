@@ -20,6 +20,7 @@ import (
 
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/nautilus/assignment"
+	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -232,11 +233,81 @@ func TestReadcache_AdminPage_ListsManagedTSDBs(t *testing.T) {
 	assert.Contains(t, body, "Managed TSDBs")
 	assert.Contains(t, body, activeTenant)
 	assert.Contains(t, body, frozenTenant)
-	assert.Contains(t, body, ">active<")
-	assert.Contains(t, body, ">frozen<")
+	assert.Contains(t, body, "[active")
+	assert.Contains(t, body, "[frozen]")
 	assert.Contains(t, body, "1000", "active start offset should render")
 	assert.Contains(t, body, "500", "frozen start offset should render")
 	assert.NotContains(t, body, "holding no TSDBs open")
+}
+
+// TestReadcache_AdminPage_ShowsBlockDetails verifies the per-TSDB
+// detail panel surfaces the persisted-block breakdown (ULID, time
+// bounds, series/sample counts, size) once the head has been compacted
+// into a block.
+func TestReadcache_AdminPage_ShowsBlockDetails(t *testing.T) {
+	const (
+		tenantID  = "tenant-1"
+		pid       = int32(2)
+		blockSpan = 100 * time.Millisecond
+	)
+
+	cfg := newTestConfig(t, false, 0)
+	// Keep blocks (no time-retention) and shrink the block range so a
+	// couple of samples compact into a real block without spanning 2h.
+	cfg.LocalBlockRetention = 0
+	cfg.BlocksStorage.TSDB.BlockRanges = mimir_tsdb.DurationList{blockSpan}
+	limits := validation.NewOverrides(validation.Limits{}, nil)
+
+	r := &Readcache{
+		logger:     log.NewNopLogger(),
+		cfg:        cfg,
+		limits:     limits,
+		partitions: map[int32]*partitionState{},
+		frozen:     map[int32][]*frozenEpoch{},
+		epochSeq:   map[int32]int{},
+	}
+
+	db, err := openPartitionTSDB(tenantID, pid, 0, cfg.DataDir, cfg.BlocksStorage.TSDB,
+		cfg.LocalBlockRetention, limits, 0, nil, nil, nil, prometheus.NewRegistry(), log.NewNopLogger())
+	require.NoError(t, err)
+
+	app := db.Appender(context.Background())
+	for i := 0; i < 3; i++ {
+		_, err := app.Append(0, labels.FromStrings(model.MetricNameLabel, "m", "series", string(rune('a'+i))), int64(i), float64(i))
+		require.NoError(t, err)
+	}
+	require.NoError(t, app.Commit())
+	require.NoError(t, db.CompactHead())
+	require.Len(t, db.Blocks(), 1, "head should have compacted into exactly one block")
+	wantULID := db.Blocks()[0].Meta().ULID.String()
+
+	p := newPartitionState(pid)
+	p.tenants[tenantID] = db
+	p.warm.Store(true)
+	r.partitions[pid] = p
+
+	data := r.buildAdminPageData()
+	require.Len(t, data.TSDBs, 1)
+	tsdbView := data.TSDBs[0]
+	require.Equal(t, 1, tsdbView.NumBlocks)
+	require.Len(t, tsdbView.Blocks, 1)
+
+	block := tsdbView.Blocks[0]
+	assert.Equal(t, wantULID, block.ULID)
+	assert.Equal(t, uint64(3), block.NumSeries)
+	assert.Equal(t, uint64(3), block.NumSamples)
+	assert.Positive(t, block.SizeBytes, "block size should be reported")
+	assert.NotEmpty(t, block.MinT)
+	assert.NotEmpty(t, block.MaxT)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, AdminPathPrefix, nil)
+	r.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+	body := rec.Body.String()
+	assert.Contains(t, body, "Blocks (1)")
+	assert.Contains(t, body, wantULID, "block ULID should render in the detail panel")
+	assert.NotContains(t, body, "all data is still in the in-memory head")
 }
 
 // TestReadcache_AdminPage_EmptyState exercises the path where no

@@ -250,67 +250,64 @@ all partitions have been moved off to other instances.</p>
 {{if not .TSDBs}}
 <p class="empty">This readcache is holding no TSDBs open.</p>
 {{else}}
-<table>
-	<tr>
-		<th>Tenant</th>
-		<th>Partition</th>
-		<th>Epoch</th>
-		<th>State</th>
-		<th>Head series</th>
-		<th>Blocks</th>
-		<th>Start offset</th>
-		<th>End offset</th>
-		<th>Offsets</th>
-		<th>Consume start (UTC)</th>
-		<th>Consume stop (UTC)</th>
-		<th>Data min (UTC)</th>
-		<th>Data max (UTC)</th>
-		<th>Expires (UTC)</th>
-	</tr>
-	{{range .TSDBs}}
-	<tr>
-		<td><code>{{.Tenant}}</code></td>
-		<td class="num">P{{.PartitionID}}</td>
-		<td class="num">{{.Epoch}}</td>
-		<td>
-			{{if .Active}}
-				<span class="ok">active</span>{{if not .Warm}} <span class="warn">(cold)</span>{{end}}
-			{{else}}
-				<span class="muted">frozen</span>
-			{{end}}
-		</td>
-		<td class="num">{{fmtSeries .HeadSeries}}</td>
-		<td class="num">{{.NumBlocks}}</td>
-		<td class="num">{{fmtOffset .StartOffset}}</td>
-		<td class="num">{{fmtOffset .EndOffset}}</td>
-		<td class="num">{{offsetSpan .StartOffset .EndOffset}}</td>
-		<td>{{if .StartedConsuming}}{{.StartedConsuming}}{{else}}<span class="muted">&mdash;</span>{{end}}</td>
-		<td>
-			{{if .StoppedConsuming}}
-				{{.StoppedConsuming}}
-			{{else if .Active}}
-				<span class="ok">(consuming)</span>
-			{{else}}
-				<span class="muted">&mdash;</span>
-			{{end}}
-		</td>
-		<td>{{if .MinT}}{{.MinT}}{{else}}<span class="muted">(no data)</span>{{end}}</td>
-		<td>{{if .MaxT}}{{.MaxT}}{{else}}<span class="muted">(no data)</span>{{end}}</td>
-		<td>
-			{{if .Active}}
-				<span class="muted">&mdash;</span>
-			{{else if .Expires}}
-				{{.Expires}}{{if .Expired}} <span class="warn">(reapable)</span>{{end}}
-			{{else}}
-				<span class="warn">(reapable)</span>
-			{{end}}
-		</td>
-	</tr>
-	{{end}}
-</table>
 <p class="muted">
-	{{.NumActiveTSDBs}} active, {{.NumFrozenTSDBs}} frozen.
+	{{.NumActiveTSDBs}} active, {{.NumFrozenTSDBs}} frozen. Each TSDB lists its
+	persisted blocks inline below its summary.
 </p>
+
+{{range .TSDBs}}
+<div class="partition-block{{if not .Active}} cold{{end}}" id="{{.ID}}">
+	<h3>
+		<code>{{.Tenant}}</code> &middot; P{{.PartitionID}} &middot; epoch {{.Epoch}}
+		{{if .Active}}<span class="ok">[active{{if not .Warm}}, cold{{end}}]</span>{{else}}<span class="muted">[frozen]</span>{{end}}
+	</h3>
+	<dl class="facts">
+		<dt>Head series:</dt><dd>{{fmtSeries .HeadSeries}}</dd>
+		<dt>Start offset:</dt><dd>{{fmtOffset .StartOffset}}</dd>
+		<dt>End offset:</dt><dd>{{fmtOffset .EndOffset}}</dd>
+		<dt>Offsets:</dt><dd>{{with offsetSpan .StartOffset .EndOffset}}{{.}}{{else}}<span class="muted">&mdash;</span>{{end}}</dd>
+		<dt>Consume start:</dt><dd>{{if .StartedConsuming}}{{.StartedConsuming}}{{else}}<span class="muted">&mdash;</span>{{end}}</dd>
+		<dt>Consume stop:</dt><dd>{{if .StoppedConsuming}}{{.StoppedConsuming}}{{else if .Active}}<span class="ok">(consuming)</span>{{else}}<span class="muted">&mdash;</span>{{end}}</dd>
+		<dt>Data min:</dt><dd>{{if .MinT}}{{.MinT}}{{else}}<span class="muted">(no data)</span>{{end}}</dd>
+		<dt>Data max:</dt><dd>{{if .MaxT}}{{.MaxT}}{{else}}<span class="muted">(no data)</span>{{end}}</dd>
+		{{if not .Active}}<dt>Expires:</dt><dd>{{if .Expires}}{{.Expires}}{{if .Expired}} <span class="warn">(reapable)</span>{{end}}{{else}}<span class="warn">(reapable)</span>{{end}}</dd>{{end}}
+	</dl>
+
+	{{if .Blocks}}
+	<b>Blocks ({{.NumBlocks}})</b>
+	<table>
+		<tr>
+			<th>ULID</th>
+			<th>Lvl</th>
+			<th>Min (UTC)</th>
+			<th>Max (UTC)</th>
+			<th>Duration</th>
+			<th>Series</th>
+			<th>Samples</th>
+			<th>Chunks</th>
+			<th>Size</th>
+			<th>OOO</th>
+		</tr>
+		{{range .Blocks}}
+		<tr>
+			<td><code>{{.ULID}}</code></td>
+			<td class="num">{{.Level}}</td>
+			<td>{{.MinT}}</td>
+			<td>{{.MaxT}}</td>
+			<td class="num">{{.Duration}}</td>
+			<td class="num">{{fmtUint .NumSeries}}</td>
+			<td class="num">{{fmtUint .NumSamples}}</td>
+			<td class="num">{{fmtUint .NumChunks}}</td>
+			<td class="num">{{fmtBytes .SizeBytes}}</td>
+			<td>{{if .OutOfOrder}}<span class="warn">yes</span>{{else}}<span class="muted">no</span>{{end}}</td>
+		</tr>
+		{{end}}
+	</table>
+	{{else}}
+	<div class="empty">(no persisted blocks &mdash; all data is still in the in-memory head)</div>
+	{{end}}
+</div>
+{{end}}
 {{end}}
 
 <div class="footer">
