@@ -187,8 +187,8 @@ func newStoreGateway(gatewayCfg Config, storageCfg mimir_tsdb.BlocksStorageConfi
 	// With compartments enabled the store-gateway registers into its read compartment's own ring.
 	ringName, ringKey := RingNameForServer, RingKey
 	if gatewayCfg.Compartments.Enabled {
-		ringName = compartments.ReadCompartmentRingName(gatewayCfg.ReadCompartmentID, RingNameForServer)
-		ringKey = compartments.ReadCompartmentRingKey(gatewayCfg.ReadCompartmentID, RingKey)
+		ringName = compartments.WithReadCompartmentSuffix(RingNameForServer, gatewayCfg.ReadCompartmentID)
+		ringKey = compartments.WithReadCompartmentSuffix(RingKey, gatewayCfg.ReadCompartmentID)
 	}
 
 	// Define lifecycler delegates in reverse order (last to be called defined first because they're

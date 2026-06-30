@@ -23,8 +23,8 @@ func TestPartitionInstanceRings(t *testing.T) {
 	t.Cleanup(func() { _ = closer.Close() })
 
 	// Each read compartment has a single partition owned by a distinct ingester.
-	writePartitionAndOwner(t, kvClient, compartments.ReadCompartmentRingKey(0, testRingKey), 0, "ingester-c0")
-	writePartitionAndOwner(t, kvClient, compartments.ReadCompartmentRingKey(1, testRingKey), 0, "ingester-c1")
+	writePartitionAndOwner(t, kvClient, compartments.WithReadCompartmentSuffix(testRingKey, 0), 0, "ingester-c0")
+	writePartitionAndOwner(t, kvClient, compartments.WithReadCompartmentSuffix(testRingKey, 1), 0, "ingester-c1")
 
 	watcher, err := NewPartitionRingWatchers(true, 2, testRingName, testRingKey, kvClient, log.NewNopLogger(), nil)
 	require.NoError(t, err)

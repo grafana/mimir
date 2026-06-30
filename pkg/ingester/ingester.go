@@ -607,8 +607,8 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 		// validated by Config.Validate.
 		partitionRingName, partitionRingKey := PartitionRingName, PartitionRingKey
 		if cfg.Compartments.Enabled {
-			partitionRingName = compartments.ReadCompartmentRingName(cfg.ReadCompartmentID, PartitionRingName)
-			partitionRingKey = compartments.ReadCompartmentRingKey(cfg.ReadCompartmentID, PartitionRingKey)
+			partitionRingName = compartments.WithReadCompartmentSuffix(PartitionRingName, cfg.ReadCompartmentID)
+			partitionRingKey = compartments.WithReadCompartmentSuffix(PartitionRingKey, cfg.ReadCompartmentID)
 		}
 
 		i.ingestPartitionLifecycler = ring.NewPartitionInstanceLifecycler(

@@ -6526,7 +6526,7 @@ func prepare(t testing.TB, cfg prepConfig) ([]*Distributor, []*mockIngester, []*
 		if compartmentsEnabled {
 			// Seed each read compartment's own partition ring.
 			for c := 0; c < cfg.numCompartments; c++ {
-				key := compartments.ReadCompartmentRingKey(c, ingester.PartitionRingKey)
+				key := compartments.WithReadCompartmentSuffix(ingester.PartitionRingKey, c)
 				activePartitions := cfg.compartmentActivePartitions[c]
 				require.NoError(t, partitionsStore.CAS(ctx, key, func(_ interface{}) (interface{}, bool, error) {
 					return prepareCompartmentPartitionRing(activePartitions, ingesters), true, nil

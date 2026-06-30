@@ -17,7 +17,7 @@ import (
 
 // PartitionRingWatchers watches the ingester partition ring(s) and exposes them through a single
 // reference. When compartments are disabled it holds one watcher for the legacy partition ring; when
-// enabled it holds one watcher per read compartment, each keyed via compartments.ReadCompartmentRingKey.
+// enabled it holds one watcher per read compartment, each keyed via compartments.WithReadCompartmentSuffix.
 //
 // The distributor holds the whole component because it writes across all read compartments. An
 // ingester does not: it only needs the watcher for its own read compartment, obtained via Watcher.
@@ -47,8 +47,8 @@ func NewPartitionRingWatchers(compartmentsEnabled bool, numCompartments int, rin
 		}
 		watchers = make([]*ring.PartitionRingWatcher, numCompartments)
 		for c := range watchers {
-			name := compartments.ReadCompartmentRingName(c, ringName)
-			key := compartments.ReadCompartmentRingKey(c, ringKey)
+			name := compartments.WithReadCompartmentSuffix(ringName, c)
+			key := compartments.WithReadCompartmentSuffix(ringKey, c)
 
 			watchers[c] = ring.NewPartitionRingWatcher(name, key, kvClient, logger, reg)
 		}
