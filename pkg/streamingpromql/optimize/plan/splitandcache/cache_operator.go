@@ -42,7 +42,7 @@ var tracer = otel.Tracer("pkg/streamingpromql/optimize/plan/splitandcache")
 // It works with a single cache entry made up of multiple extents.
 type CacheOperator struct {
 	Backend                  caching.Backend
-	PrefixGenerator          caching.PrefixGenerator
+	CacheKeyGenerator        *caching.CacheKeyGenerator
 	Materializer             InstantVectorMaterializer
 	Inner                    planning.Node
 	DesiredTimeRange         types.QueryTimeRange
@@ -92,7 +92,7 @@ var _ types.InstantVectorOperator = &CacheOperator{}
 
 func newCacheOperator(
 	backend caching.Backend,
-	prefixGenerator caching.PrefixGenerator,
+	cacheKeyGenerator *caching.CacheKeyGenerator,
 	materializer InstantVectorMaterializer,
 	inner planning.Node,
 	desiredTimeRange types.QueryTimeRange,
@@ -107,7 +107,7 @@ func newCacheOperator(
 ) *CacheOperator {
 	return &CacheOperator{
 		Backend:                  backend,
-		PrefixGenerator:          prefixGenerator,
+		CacheKeyGenerator:        cacheKeyGenerator,
 		Materializer:             materializer,
 		Inner:                    inner,
 		DesiredTimeRange:         desiredTimeRange,
@@ -124,7 +124,7 @@ func newCacheOperator(
 	}
 }
 
-func (c *CacheOperator) computeCacheKey(ctx context.Context) ([]byte, error) {
+func (c *CacheOperator) computeCacheKey(ctx context.Context) ([]byte, string, error) {
 	startTime := timestamp.Time(c.DesiredTimeRange.StartT)
 	cacheEntryStartT := timestamp.FromTime(startTime.Truncate(c.cacheEntryInterval))
 
@@ -136,7 +136,7 @@ func (c *CacheOperator) computeCacheKey(ctx context.Context) ([]byte, error) {
 
 	encodedQueryPlanBytes, err := c.encodeNodeForCacheKey() // This includes the query, time range and all other parameters that affect query results.
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
 	key := bytes.Join(
@@ -149,13 +149,12 @@ func (c *CacheOperator) computeCacheKey(ctx context.Context) ([]byte, error) {
 		[]byte(":"),
 	)
 
-	prefix, err := c.PrefixGenerator(ctx)
+	key, hashed, err := c.CacheKeyGenerator.ComputeCacheKey(ctx, key)
 	if err != nil {
-		return nil, fmt.Errorf("generating cache key prefix: %w", err)
+		return nil, "", fmt.Errorf("generating cache key prefix: %w", err)
 	}
-	key = append([]byte(prefix), key...)
 
-	return key, nil
+	return key, hashed, nil
 }
 
 func (c *CacheOperator) encodeNodeForCacheKey() ([]byte, error) {
@@ -180,13 +179,13 @@ func (c *CacheOperator) encodeNodeForCacheKey() ([]byte, error) {
 }
 
 func (c *CacheOperator) populateCacheKey(ctx context.Context) error {
-	key, err := c.computeCacheKey(ctx)
+	key, hashed, err := c.computeCacheKey(ctx)
 	if err != nil {
 		return err
 	}
 
 	c.key = key
-	c.hashedKey = caching.HashCacheKey(c.key)
+	c.hashedKey = hashed
 	return nil
 }
 

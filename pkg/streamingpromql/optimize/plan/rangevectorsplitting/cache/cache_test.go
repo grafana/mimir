@@ -43,8 +43,8 @@ func TestCacheKeysIsolatesPrefixes(t *testing.T) {
 	inner := []byte("inner")
 	var start, end int64 = 0, 100
 
-	tenantA := &Cache[int]{prefixGenerator: func(context.Context) (string, error) { return "tenant-a:", nil }}
-	tenantB := &Cache[int]{prefixGenerator: func(context.Context) (string, error) { return "tenant-b:", nil }}
+	tenantA := &Cache[int]{keyGenerator: caching.NewCacheKeyGenerator(nil, caching.StaticPrefixGenerator("tenant-a:"))}
+	tenantB := &Cache[int]{keyGenerator: caching.NewCacheKeyGenerator(nil, caching.StaticPrefixGenerator("tenant-b:"))}
 
 	keyA, hashedA, err := tenantA.cacheKeys(context.Background(), function, inner, start, end)
 	require.NoError(t, err)
@@ -64,7 +64,8 @@ func TestCacheIsolatesTenants(t *testing.T) {
 	backend := caching.NewInMemoryCache()
 
 	prefix := "tenant-a:"
-	factory := NewCacheFactoryWithBackend(backend, testTTLProvider{}, func(context.Context) (string, error) { return prefix, nil }, prometheus.NewRegistry(), log.NewNopLogger())
+	prefixGeneratorFunc := func(ctx context.Context) (string, error) { return prefix, nil }
+	factory := NewCacheFactoryWithBackend(backend, testTTLProvider{}, caching.NewCacheKeyGenerator(nil, prefixGeneratorFunc), prometheus.NewRegistry(), log.NewNopLogger())
 	c := NewCache[int](factory, testCodec{})
 
 	// Get extracts the org ID for logging, so an org ID must be present in the context.

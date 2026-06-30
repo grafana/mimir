@@ -10,6 +10,24 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestCacheKeyGenerator_NoNonHashablePrefix(t *testing.T) {
+	ctx := user.InjectOrgID(context.Background(), "tenant-1")
+	prefix := NewCacheKeyGenerator(nil, TenantPrefixGenerator)
+	key, hashed, err := prefix.ComputeCacheKey(ctx, []byte("my-key"))
+	require.NoError(t, err)
+	require.Equal(t, []byte("tenant-1:my-key"), key)
+	require.Equal(t, HashCacheKey(key), hashed)
+}
+
+func TestCacheKeyGenerator_WithNonHashablePrefix(t *testing.T) {
+	ctx := user.InjectOrgID(context.Background(), "tenant-1")
+	prefix := NewCacheKeyGenerator(VersioningAndItemTypePrefixGenerator("MQEQR", 1), TenantPrefixGenerator)
+	key, hashed, err := prefix.ComputeCacheKey(ctx, []byte("my-key"))
+	require.NoError(t, err)
+	require.Equal(t, []byte("MQEQR@v1:tenant-1:my-key"), key)
+	require.Equal(t, "MQEQR@v1:"+HashCacheKey([]byte("tenant-1:my-key")), hashed)
+}
+
 func TestTenantPrefixGenerator(t *testing.T) {
 	ctx := user.InjectOrgID(context.Background(), "tenant-1")
 	prefix, err := TenantPrefixGenerator(ctx)
@@ -25,14 +43,4 @@ func TestTenantPrefixGenerator(t *testing.T) {
 	// No tenant in the context is an error.
 	_, err = TenantPrefixGenerator(context.Background())
 	require.Error(t, err)
-}
-
-func TestVersioningAndItemTypePrefixGenerator(t *testing.T) {
-	base := func(context.Context) (string, error) {
-		return "tenant-1:", nil
-	}
-
-	prefix, err := VersioningAndItemTypePrefixGenerator(base, 2, "MQEQR")(context.Background())
-	require.NoError(t, err)
-	require.Equal(t, "MQEQR@v2:tenant-1::", prefix)
 }

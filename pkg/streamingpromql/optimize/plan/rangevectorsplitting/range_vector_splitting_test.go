@@ -563,8 +563,9 @@ func TestQuerySplitting_WithSSE(t *testing.T) {
 	expectedH := mimirpb.FromFloatHistogramToHistogramProto(0, h)
 	expectedIntermediate := rangevectorsplitting.FirstLastOverTimeIntermediate{H: &expectedH}
 
+	cacheKeyGenerator := createEmptyPrefixCacheKeyGenerator()
 	// Both keys must contain the full histogram (skip=false fetches buckets).
-	countKey, err := cache.TestGenerateHashedCacheKey(t.Context(), emptyPrefixGenerator, functions.FUNCTION_LAST_OVER_TIME, splittingCacheKey(t, countSplit, params), 2*hourInMs-1, 4*hourInMs-1)
+	countKey, err := cache.TestGenerateHashedCacheKey(t.Context(), cacheKeyGenerator, functions.FUNCTION_LAST_OVER_TIME, splittingCacheKey(t, countSplit, params), 2*hourInMs-1, 4*hourInMs-1)
 	require.NoError(t, err)
 	var countEntry cache.CachedSeries
 	require.NoError(t, countEntry.Unmarshal(backend.Entries[countKey].Value))
@@ -572,7 +573,7 @@ func TestQuerySplitting_WithSSE(t *testing.T) {
 	require.NoError(t, countList.Unmarshal(countEntry.Results))
 	require.Equal(t, []rangevectorsplitting.FirstLastOverTimeIntermediate{expectedIntermediate}, countList.Results)
 
-	fractionKey, err := cache.TestGenerateHashedCacheKey(t.Context(), emptyPrefixGenerator, functions.FUNCTION_LAST_OVER_TIME, splittingCacheKey(t, fractionSplit, params), 2*hourInMs-1, 4*hourInMs-1)
+	fractionKey, err := cache.TestGenerateHashedCacheKey(t.Context(), cacheKeyGenerator, functions.FUNCTION_LAST_OVER_TIME, splittingCacheKey(t, fractionSplit, params), 2*hourInMs-1, 4*hourInMs-1)
 	require.NoError(t, err)
 	var fractionEntry cache.CachedSeries
 	require.NoError(t, fractionEntry.Unmarshal(backend.Entries[fractionKey].Value))
@@ -646,9 +647,11 @@ func TestQuerySplitting_CacheKeyReflectsPostOptimizationState(t *testing.T) {
 		Range:              5 * time.Hour,
 		ExpressionPosition: core.PositionRange{Start: 72, End: 99},
 	}}
-	narrowKeyNoSSE, err := cache.TestGenerateHashedCacheKey(t.Context(), emptyPrefixGenerator, functions.FUNCTION_SUM_OVER_TIME, splittingCacheKey(t, narrowNoSSE, params), blockStart, blockEnd)
+
+	cacheKeyGenerator := createEmptyPrefixCacheKeyGenerator()
+	narrowKeyNoSSE, err := cache.TestGenerateHashedCacheKey(t.Context(), cacheKeyGenerator, functions.FUNCTION_SUM_OVER_TIME, splittingCacheKey(t, narrowNoSSE, params), blockStart, blockEnd)
 	require.NoError(t, err)
-	broadKeyNoSSE, err := cache.TestGenerateHashedCacheKey(t.Context(), emptyPrefixGenerator, functions.FUNCTION_SUM_OVER_TIME, splittingCacheKey(t, broadNoSSE, params), blockStart, blockEnd)
+	broadKeyNoSSE, err := cache.TestGenerateHashedCacheKey(t.Context(), cacheKeyGenerator, functions.FUNCTION_SUM_OVER_TIME, splittingCacheKey(t, broadNoSSE, params), blockStart, blockEnd)
 	require.NoError(t, err)
 	require.Contains(t, backendNoSSE.Entries, narrowKeyNoSSE, "expected bare-matchers cache key for narrow selector when SSE is off")
 	require.Contains(t, backendNoSSE.Entries, broadKeyNoSSE, "expected bare-matchers cache key for broad selector when SSE is off")
@@ -687,9 +690,11 @@ func TestQuerySplitting_CacheKeyReflectsPostOptimizationState(t *testing.T) {
 		DuplicateDetails: &commonsubexpressionelimination.DuplicateDetails{},
 		Inner:            broadSSE,
 	}
-	narrowKeySSE, err := cache.TestGenerateHashedCacheKey(t.Context(), emptyPrefixGenerator, functions.FUNCTION_SUM_OVER_TIME, splittingCacheKey(t, narrowSSE, params), blockStart, blockEnd)
+
+	cacheKeyGenerator = createEmptyPrefixCacheKeyGenerator()
+	narrowKeySSE, err := cache.TestGenerateHashedCacheKey(t.Context(), cacheKeyGenerator, functions.FUNCTION_SUM_OVER_TIME, splittingCacheKey(t, narrowSSE, params), blockStart, blockEnd)
 	require.NoError(t, err)
-	broadKeySSE, err := cache.TestGenerateHashedCacheKey(t.Context(), emptyPrefixGenerator, functions.FUNCTION_SUM_OVER_TIME, splittingCacheKey(t, broadSplitSSE, params), blockStart, blockEnd)
+	broadKeySSE, err := cache.TestGenerateHashedCacheKey(t.Context(), cacheKeyGenerator, functions.FUNCTION_SUM_OVER_TIME, splittingCacheKey(t, broadSplitSSE, params), blockStart, blockEnd)
 	require.NoError(t, err)
 	require.Contains(t, backendSSE.Entries, narrowKeySSE, "expected duplicate_filter cache key for narrow selector when SSE is on")
 	require.Contains(t, backendSSE.Entries, broadKeySSE, "expected subset-aware cache key for broad selector when SSE is on")
@@ -888,7 +893,8 @@ func TestQuerySplitting_With3hRangeAndOffset_NoCacheableRanges(t *testing.T) {
 
 func TestQuerySplitting_WithOOOWindow(t *testing.T) {
 	backend := caching.NewInMemoryCache()
-	irCache := cache.NewCacheFactoryWithBackend(backend, streamingpromql.NewStaticQueryLimitsProvider(), emptyPrefixGenerator, prometheus.NewRegistry(), log.NewNopLogger())
+	cacheKeyGenerator := createEmptyPrefixCacheKeyGenerator()
+	irCache := cache.NewCacheFactoryWithBackend(backend, streamingpromql.NewStaticQueryLimitsProvider(), cacheKeyGenerator, prometheus.NewRegistry(), log.NewNopLogger())
 
 	opts := defaultSplittingOpts()
 	limits := streamingpromql.NewStaticQueryLimitsProvider()
@@ -1102,7 +1108,7 @@ func TestQuerySplitting_MiddleCacheEntryEvicted(t *testing.T) {
 		ExpressionPosition: core.PositionRange{Start: 14, End: 29},
 	}}
 	params := &planning.QueryParameters{LookbackDelta: streamingpromql.DefaultLookbackDelta}
-	block2Key, err := cache.TestGenerateHashedCacheKey(t.Context(), emptyPrefixGenerator, functions.FUNCTION_SUM_OVER_TIME, splittingCacheKey(t, inner, params), 4*hourInMs-1, 6*hourInMs-1)
+	block2Key, err := cache.TestGenerateHashedCacheKey(t.Context(), createEmptyPrefixCacheKeyGenerator(), functions.FUNCTION_SUM_OVER_TIME, splittingCacheKey(t, inner, params), 4*hourInMs-1, 6*hourInMs-1)
 	require.NoError(t, err)
 	_, exists := testCache.Entries[block2Key]
 	require.True(t, exists, "Block2 cache key should exist before eviction")
@@ -1123,7 +1129,8 @@ func TestQuerySplitting_MiddleCacheEntryEvicted(t *testing.T) {
 
 func TestQuerySplitting_DelayedNameRemoval(t *testing.T) {
 	sharedCache := caching.NewInMemoryCache()
-	cacheFactory := cache.NewCacheFactoryWithBackend(sharedCache, streamingpromql.NewStaticQueryLimitsProvider(), emptyPrefixGenerator, prometheus.NewPedanticRegistry(), log.NewNopLogger())
+	cacheKeyGenerator := createEmptyPrefixCacheKeyGenerator()
+	cacheFactory := cache.NewCacheFactoryWithBackend(sharedCache, streamingpromql.NewStaticQueryLimitsProvider(), cacheKeyGenerator, prometheus.NewPedanticRegistry(), log.NewNopLogger())
 
 	engineDisabled := createSplittingEngine(t, prometheus.NewPedanticRegistry(), 2*time.Hour, false, true, cacheFactory)
 	engineEnabled := createSplittingEngine(t, prometheus.NewPedanticRegistry(), 2*time.Hour, true, true, cacheFactory)
@@ -1443,11 +1450,15 @@ func TestQuerySplitting_PerRangeSeriesMetadata(t *testing.T) {
 	}
 }
 
+func createEmptyPrefixCacheKeyGenerator() *caching.CacheKeyGenerator {
+	return caching.NewCacheKeyGenerator(nil, func(ctx context.Context) (string, error) { return "", nil })
+}
+
 func createSplittingEngineWithCache(t *testing.T, registry *prometheus.Registry, splitInterval time.Duration, enableDelayedNameRemoval bool, enableEliminateDeduplicateAndMerge bool) (promql.QueryEngine, *caching.InMemoryCache) {
 	t.Helper()
 
 	cacheBackend := caching.NewInMemoryCache()
-	cacheFactory := cache.NewCacheFactoryWithBackend(cacheBackend, streamingpromql.NewStaticQueryLimitsProvider(), emptyPrefixGenerator, registry, log.NewNopLogger())
+	cacheFactory := cache.NewCacheFactoryWithBackend(cacheBackend, streamingpromql.NewStaticQueryLimitsProvider(), createEmptyPrefixCacheKeyGenerator(), registry, log.NewNopLogger())
 
 	engine := createSplittingEngine(t, registry, splitInterval, enableDelayedNameRemoval, enableEliminateDeduplicateAndMerge, cacheFactory)
 	return engine, cacheBackend
@@ -1483,7 +1494,8 @@ func setupEngineAndCache(t *testing.T) (*caching.InMemoryCache, promql.QueryEngi
 
 func setupEngineAndCacheWithOpts(t *testing.T, opts streamingpromql.EngineOpts) (*caching.InMemoryCache, promql.QueryEngine) {
 	backend := caching.NewInMemoryCache()
-	irCache := cache.NewCacheFactoryWithBackend(backend, streamingpromql.NewStaticQueryLimitsProvider(), emptyPrefixGenerator, prometheus.NewRegistry(), log.NewNopLogger())
+	cacheKeyGenerator := createEmptyPrefixCacheKeyGenerator()
+	irCache := cache.NewCacheFactoryWithBackend(backend, streamingpromql.NewStaticQueryLimitsProvider(), cacheKeyGenerator, prometheus.NewRegistry(), log.NewNopLogger())
 
 	queryPlanner, err := streamingpromql.NewQueryPlanner(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
@@ -1587,8 +1599,3 @@ func splittingCacheKey(t *testing.T, node planning.Node, params *planning.QueryP
 	require.NoError(t, err)
 	return key
 }
-
-// emptyPrefixGenerator returns no prefix, so cache keys are not partitioned by tenant. This keeps
-// the keys these tests assert against (computed via cache.TestGenerateHashedCacheKey) prefix-free,
-// while still satisfying the cache's requirement that a prefix generator is always configured.
-func emptyPrefixGenerator(context.Context) (string, error) { return "", nil }
