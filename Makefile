@@ -901,7 +901,8 @@ warmup-build-cache-image-and-lint: ## Warm the Go build cache for image builds a
 # Those vars are needed for packages target
 export VERSION
 
-packages: dist
+.PHONY: packages
+packages:
 	@packaging/nfpm/nfpm.sh
 
 # Build both arm64 and amd64 images, so that we can test deb/rpm packages for both architectures.
