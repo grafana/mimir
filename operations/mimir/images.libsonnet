@@ -13,6 +13,7 @@
     querier: self.mimir,
     query_frontend: self.mimir,
     compactor: self.mimir,
+    compactor_scheduler: self.mimir,
     ruler: self.mimir,
     store_gateway: self.mimir,
     query_scheduler: self.mimir,

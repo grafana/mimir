@@ -20,6 +20,7 @@
 (import 'alertmanager.libsonnet') +
 (import 'query-scheduler.libsonnet') +
 (import 'compactor.libsonnet') +
+(import 'compactor-scheduler.libsonnet') +
 (import 'store-gateway.libsonnet') +
 (import 'overrides-exporter.libsonnet') +
 
