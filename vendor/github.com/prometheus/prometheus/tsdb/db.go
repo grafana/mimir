@@ -2074,6 +2074,16 @@ func (db *DB) CompactStaleHead() (err error) {
 // and evicts them from the head without advancing HeadMinTime. The caller is responsible for
 // ensuring that the provided refs identify series eligible for removal.
 //
+// This method lets callers persist and evict a chosen subset of head series ahead of the normal,
+// time-window-based head compaction. It is useful when an external process can identify series
+// that are no longer expected to receive samples and wants to reclaim head memory eagerly rather
+// than waiting for the next regular compaction cycle. For example, a Mimir ingester that detects,
+// after a resharding event, that some series it used to own no longer belong to it can collect
+// their refs and pass them here to flush just those series to disk and evict them, while leaving
+// the rest of the head untouched.
+//
+// This method is not used by Prometheus itself; its primary consumer is Mimir.
+//
 // Series that received new samples after the ref list was collected are skipped during eviction
 // and remain in the head. They may be reconsidered during a subsequent compaction cycle.
 //
@@ -2777,6 +2787,7 @@ func (db *DB) Querier(mint, maxt int64) (_ storage.Querier, err error) {
 		// won't run into a race later since any truncation that comes after will wait on this querier if it overlaps.
 		shouldClose, getNew, newMint := db.head.IsQuerierCollidingWithTruncation(mint, maxt)
 		if shouldClose {
+			inoMint = newMint
 			if err := headQuerier.Close(); err != nil {
 				return nil, fmt.Errorf("closing head block querier %s: %w", rh, err)
 			}
@@ -2788,7 +2799,6 @@ func (db *DB) Querier(mint, maxt int64) (_ storage.Querier, err error) {
 			if err != nil {
 				return nil, fmt.Errorf("open block querier for head while getting new querier %s: %w", rh, err)
 			}
-			inoMint = newMint
 		}
 	}
 
@@ -2854,6 +2864,7 @@ func (db *DB) blockChunkQuerierForRange(mint, maxt int64) (_ []storage.ChunkQuer
 		// won't run into a race later since any truncation that comes after will wait on this querier if it overlaps.
 		shouldClose, getNew, newMint := db.head.IsQuerierCollidingWithTruncation(mint, maxt)
 		if shouldClose {
+			inoMint = newMint
 			if err := headQuerier.Close(); err != nil {
 				return nil, fmt.Errorf("closing head querier %s: %w", rh, err)
 			}
@@ -2865,7 +2876,6 @@ func (db *DB) blockChunkQuerierForRange(mint, maxt int64) (_ []storage.ChunkQuer
 			if err != nil {
 				return nil, fmt.Errorf("open querier for head while getting new querier %s: %w", rh, err)
 			}
-			inoMint = newMint
 		}
 	}
 
