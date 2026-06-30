@@ -93,8 +93,8 @@ type BucketStores struct {
 	blocksLoadedSizeBytes *prometheus.Desc
 }
 
-// NewBucketStores makes a new BucketStores. After starting the returned BucketStores
-func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStrategy, bucketClient objstore.Bucket, allowedTenants *util.AllowList, limits *validation.Overrides, logger log.Logger, reg prometheus.Registerer) (*BucketStores, error) {
+// NewBucketStores makes a new BucketStores.
+func NewBucketStores(cfg tsdb.BlocksStorageConfig, cacheBucketID string, shardingStrategy ShardingStrategy, bucketClient objstore.Bucket, allowedTenants *util.AllowList, limits *validation.Overrides, logger log.Logger, reg prometheus.Registerer) (*BucketStores, error) {
 	var err error
 
 	// Init index cache.
@@ -120,7 +120,7 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStra
 
 	// Configure caching bucket to cover configured metadata, index-header, and chunks caching.
 	// Bucket caches for index-header and chunks share the metadata cache for object attributes.
-	cachingBucket, err := tsdb.NewStoreCachingBucket(cfg, metadataCache, indexHeaderCacheClient, chunksCacheClient, bucketClient, logger, reg)
+	cachingBucket, err := tsdb.NewStoreCachingBucket(cacheBucketID, cfg, metadataCache, indexHeaderCacheClient, chunksCacheClient, bucketClient, logger, reg)
 	if err != nil {
 		return nil, errors.Wrapf(err, "create caching bucket")
 	}

@@ -125,7 +125,7 @@ func Test_NewStoreCachingBucket(t *testing.T) {
 		bucketCacheCfg := bucketcache.NewCachingBucketConfig()
 
 		cacheBkt, err := newStoreCachingBucket(
-			bucketCacheCfg, BlocksStorageConfig{}, nil, nil, nil, bkt, ll, reg,
+			bucketCacheCfg, "", BlocksStorageConfig{}, nil, nil, nil, bkt, ll, reg,
 		)
 		require.NoError(t, err)
 		require.IsNotType(t, &bucketcache.CachingBucket{}, cacheBkt)
@@ -139,7 +139,7 @@ func Test_NewStoreCachingBucket(t *testing.T) {
 		metadata, indexHeader, chunks := cache.NewMockCache(), cache.NewMockCache(), cache.NewMockCache()
 
 		cacheBkt, err := newStoreCachingBucket(
-			bucketCacheCfg, BlocksStorageConfig{}, metadata, indexHeader, chunks, bkt, ll, reg,
+			bucketCacheCfg, "", BlocksStorageConfig{}, metadata, indexHeader, chunks, bkt, ll, reg,
 		)
 		require.NoError(t, err)
 		require.IsType(t, &bucketcache.CachingBucket{}, cacheBkt)
@@ -160,7 +160,7 @@ func Test_NewStoreCachingBucket(t *testing.T) {
 		indexHeader, chunks := cache.NewMockCache(), cache.NewMockCache()
 
 		cacheBkt, err := newStoreCachingBucket(
-			bucketCacheCfg, BlocksStorageConfig{}, metadata, indexHeader, chunks, bkt, ll, reg,
+			bucketCacheCfg, "", BlocksStorageConfig{}, metadata, indexHeader, chunks, bkt, ll, reg,
 		)
 		require.NoError(t, err)
 		require.IsType(t, &bucketcache.CachingBucket{}, cacheBkt)
@@ -181,7 +181,7 @@ func Test_NewStoreCachingBucket(t *testing.T) {
 		metadata, chunks := cache.NewMockCache(), cache.NewMockCache()
 
 		cacheBkt, err := newStoreCachingBucket(
-			bucketCacheCfg, BlocksStorageConfig{}, metadata, indexHeader, chunks, bkt, ll, reg,
+			bucketCacheCfg, "", BlocksStorageConfig{}, metadata, indexHeader, chunks, bkt, ll, reg,
 		)
 		require.NoError(t, err)
 		require.IsType(t, &bucketcache.CachingBucket{}, cacheBkt)
@@ -202,7 +202,7 @@ func Test_NewStoreCachingBucket(t *testing.T) {
 		metadata, indexHeader := cache.NewMockCache(), cache.NewMockCache()
 
 		cacheBkt, err := newStoreCachingBucket(
-			bucketCacheCfg, BlocksStorageConfig{}, metadata, indexHeader, chunks, bkt, ll, reg,
+			bucketCacheCfg, "", BlocksStorageConfig{}, metadata, indexHeader, chunks, bkt, ll, reg,
 		)
 		require.NoError(t, err)
 		require.IsType(t, &bucketcache.CachingBucket{}, cacheBkt)
