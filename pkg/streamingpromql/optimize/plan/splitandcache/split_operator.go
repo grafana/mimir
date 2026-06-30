@@ -187,7 +187,9 @@ func (s *TimeRangeSplitOperator) FinishedReading(ctx context.Context) error {
 			return err
 		}
 
-		r.buffer.FinishedReading()
+		if r.buffer != nil {
+			r.buffer.FinishedReading()
+		}
 	}
 
 	return nil
