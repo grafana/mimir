@@ -795,30 +795,38 @@ func TestCacheOperator(t *testing.T) {
 }
 
 func TestCacheOperator_DoesNotSaveCacheEntryIfSeriesMetadataNotCalled(t *testing.T) {
-	ctx := user.InjectOrgID(context.Background(), "some-user")
-	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
-	cache := caching.NewInMemoryCache()
-	materializer := &testMaterializer{
-		t:                        t,
-		ctx:                      ctx,
-		memoryConsumptionTracker: memoryConsumptionTracker,
+	for _, shouldCallFinishedReading := range []bool{true, false} {
+		t.Run("call finished reading = "+strconv.FormatBool(shouldCallFinishedReading), func(t *testing.T) {
+			ctx := user.InjectOrgID(context.Background(), "some-user")
+			memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+			cache := caching.NewInMemoryCache()
+			materializer := &testMaterializer{
+				t:                        t,
+				ctx:                      ctx,
+				memoryConsumptionTracker: memoryConsumptionTracker,
+			}
+			limits := &mockLimitsProvider{}
+
+			timeRange := types.NewRangeQueryTimeRange(timestamp.Time(0), timestamp.Time(0).Add(2*time.Minute), time.Minute)
+			metrics := NewResultsCacheMetrics("query_range", prometheus.NewPedanticRegistry())
+			o := newCacheOperator(cache, materializer, createTestNode(), timeRange, memoryConsumptionTracker, posrange.PositionRange{}, &planning.QueryParameters{OriginalExpression: "the_original_expression{}"}, limits, log.NewNopLogger(), cacheEntryInterval, 0, metrics)
+
+			require.NoError(t, o.Prepare(ctx, &types.PrepareParams{}))
+			require.NoError(t, o.AfterPrepare(ctx))
+
+			require.True(t, o.extents.shouldWriteCacheEntry, "invalid test case: no cache entry to write")
+
+			if shouldCallFinishedReading {
+				require.NoError(t, o.FinishedReading(ctx))
+			}
+
+			// Finalize the operator without calling SeriesMetadata().
+			_, _, err := o.Finalize(ctx)
+			require.NoError(t, err)
+
+			require.Zerof(t, cache.SetCount, "expected no cache entry to be written, but at least one was: %v", cache.Entries)
+		})
 	}
-	limits := &mockLimitsProvider{}
-
-	timeRange := types.NewRangeQueryTimeRange(timestamp.Time(0), timestamp.Time(0).Add(2*time.Minute), time.Minute)
-	metrics := NewResultsCacheMetrics("query_range", prometheus.NewPedanticRegistry())
-	o := newCacheOperator(cache, materializer, createTestNode(), timeRange, memoryConsumptionTracker, posrange.PositionRange{}, &planning.QueryParameters{OriginalExpression: "the_original_expression{}"}, limits, log.NewNopLogger(), cacheEntryInterval, 0, metrics)
-
-	require.NoError(t, o.Prepare(ctx, &types.PrepareParams{}))
-	require.NoError(t, o.AfterPrepare(ctx))
-
-	require.True(t, o.extents.shouldWriteCacheEntry, "invalid test case: no cache entry to write")
-
-	// Finalize the operator without calling SeriesMetadata().
-	_, _, err := o.Finalize(ctx)
-	require.NoError(t, err)
-
-	require.Zerof(t, cache.SetCount, "expected no cache entry to be written, but at least one was: %v", cache.Entries)
 }
 
 func TestCacheOperator_DoesNotSaveCacheEntryIfNotAllSeriesRead(t *testing.T) {
