@@ -208,13 +208,15 @@ func NewIndexHeaderCacheClient(
 }
 
 // NewStoreCachingBucket creates a single caching bucket that handles metadata, index-header, and chunks caching.
-// Cache clients may be passed as nil to disable the corresponding bucket cache.
+// Cache clients may be passed as nil to disable the corresponding bucket cache. cacheBucketID prefixes
+// every cache key.
 //
 //   - Index-header config matches isBlockIndexFile to cache GetRange calls.
 //   - Chunks config matches isTSDBChunkFile to cache GetRange calls.
 //   - Metadata caching is shared with across index-header and chunks caching buckets if enabled,
 //     otherwise each cache handles its own metadata storage.
 func NewStoreCachingBucket(
+	cacheBucketID string,
 	cfg BlocksStorageConfig,
 	metadataCache cache.Cache,
 	indexHeaderCache cache.Cache,
@@ -225,12 +227,13 @@ func NewStoreCachingBucket(
 ) (objstore.Bucket, error) {
 	cachingBucketCfg := bucketcache.NewCachingBucketConfig()
 	return newStoreCachingBucket(
-		cachingBucketCfg, cfg, metadataCache, indexHeaderCache, chunksCache, bkt, logger, reg,
+		cachingBucketCfg, cacheBucketID, cfg, metadataCache, indexHeaderCache, chunksCache, bkt, logger, reg,
 	)
 }
 
 func newStoreCachingBucket(
 	cachingBucketCfg *bucketcache.CachingBucketConfig,
+	cacheBucketID string,
 	cfg BlocksStorageConfig,
 	metadataCache cache.Cache,
 	indexHeaderCache cache.Cache,
@@ -336,11 +339,7 @@ func newStoreCachingBucket(
 		return bkt, nil
 	}
 
-	// NOTE: the bucket ID should be "blocks" but we're passing an empty string to not cause
-	// a massive cache invalidation when rolling out a new Mimir version introducing the bucket
-	// ID. This is still fine, as far as all other caching bucket implementations specify their
-	// own unique ID.
-	return bucketcache.NewCachingBucket("", bkt, cachingBucketCfg, logger, reg)
+	return bucketcache.NewCachingBucket(cacheBucketID, bkt, cachingBucketCfg, logger, reg)
 }
 
 var chunksMatcher = regexp.MustCompile(`^.*/chunks/\d+$`)

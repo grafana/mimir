@@ -542,6 +542,15 @@ func newMultitenantCompactor(
 	return c, nil
 }
 
+// cacheBucketID returns the metadata-cache bucket ID used to scope the cache keys.
+func (c *MultitenantCompactor) cacheBucketID() string {
+	// The logic must match the store-gateway's one.
+	if !c.compactorCfg.Compartments.Enabled {
+		return ""
+	}
+	return compartments.WithReadCompartmentSuffix("blocks", c.compactorCfg.ReadCompartmentID)
+}
+
 // Start the compactor.
 func (c *MultitenantCompactor) starting(ctx context.Context) error {
 	var err error
