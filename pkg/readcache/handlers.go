@@ -74,10 +74,31 @@ func (r *Readcache) queryStream(req *client.QueryRequest, stream client.Ingester
 		return err
 	}
 
+	// Annotate the span with the query shape so a trace shows why a
+	// given QueryStream fanned out the way it did: which partition it
+	// was scoped to (the distributor stamps the hint), the sample-time
+	// window, the matchers, and the query-shard slice (if any).
+	if hint := req.QueryAttributionHint; hint != nil {
+		spanlog.SetTag("partition", hint.PartitionId)
+	}
+	spanlog.SetTag("query_from_ms", int64(from))
+	spanlog.SetTag("query_through_ms", int64(through))
+	spanlog.SetTag("matchers", util.LabelMatchersToString(matchers))
+	if shard != nil {
+		spanlog.SetTag("shard_index", shard.ShardIndex)
+		spanlog.SetTag("shard_count", shard.ShardCount)
+	}
+
 	dbs, err := r.listTSDBsForTenant(userID, req.QueryAttributionHint)
 	if err != nil {
 		return err
 	}
+	// num_tsdbs is the per-call fan-out within this pod: the live TSDB
+	// for the hinted partition plus any frozen epochs of it still being
+	// served. A single QueryStream is scoped to one partition, so this
+	// is bounded and small; cross-partition fan-out is a separate
+	// dimension counted at the distributor (readcache_query_stream_calls).
+	spanlog.SetTag("num_tsdbs", len(dbs))
 	if len(dbs) == 0 {
 		// No owned partition for this tenant: send EOS and return.
 		return client.SendQueryStream(stream, &client.QueryStreamResponse{IsEndOfSeriesStream: true})
@@ -117,68 +138,97 @@ func (r *Readcache) queryStream(req *client.QueryRequest, stream client.Ingester
 	// The wire protocol requires every StreamingSeries message to land
 	// before the IsEndOfSeriesStream marker; interleaving series and
 	// chunk messages breaks the receiver's series-count accounting.
-	for _, db := range dbs {
-		q, err := db.ChunkQuerier(int64(from), int64(through))
-		if err != nil {
-			return err
-		}
-		closers = append(closers, q)
+	gatherErr := func() error {
+		gatherLog, gctx := spanlogger.New(ctx, r.logger, tracer, "Readcache.QueryStream.gather")
+		defer gatherLog.Finish()
 
-		hints := &storage.SelectHints{Start: int64(from), End: int64(through)}
-		if shard != nil {
-			hints.ShardIndex = shard.ShardIndex
-			hints.ShardCount = shard.ShardCount
-		}
-		// Disable chunk trimming, matching the ingester
-		// (pkg/ingester/ingester_query.go). Trimming forces TSDB to
-		// re-encode any chunk whose samples straddle [from, through];
-		// the PromQL engine trims out-of-range samples itself, so we
-		// ship whole chunks and skip the rewrite cost.
-		hints.DisableTrimming = true
-		ss := q.Select(ctx, true, hints, matchers...)
-		if ss.Err() != nil {
-			return errors.Wrap(ss.Err(), "selecting series from partition TSDB")
-		}
+		for _, db := range dbs {
+			// Per-TSDB child span: makes the live-head vs frozen-epoch
+			// split visible and pins the select+materialize cost to the
+			// specific on-disk TSDB. Wrapped in a closure so the span
+			// finishes on every return path without deferring inside the
+			// loop.
+			dbErr := func() error {
+				dbLog, dctx := spanlogger.New(gctx, r.logger, tracer, "Readcache.QueryStream.selectTSDB")
+				defer dbLog.Finish()
+				dbLog.SetTag("tsdb", db.dir)
+				dbLog.SetTag("partition", db.partitionID)
 
-		for ss.Next() {
-			cs := ss.At()
-			lbls := cs.Labels()
-
-			var itemChunks []countedChunk
-			it := cs.IteratorFactory().Iterator(nil)
-			for it.Next() {
-				meta := it.At()
-				if meta.Chunk == nil {
-					return errors.Errorf("unfilled chunk returned from TSDB chunk querier")
-				}
-				ch, err := client.ChunkFromMeta(meta)
+				q, err := db.ChunkQuerier(int64(from), int64(through))
 				if err != nil {
 					return err
 				}
-				itemChunks, _ = appendUniqueChunk(itemChunks, ch, meta.Chunk.NumSamples())
-			}
-			if err := it.Err(); err != nil {
-				return err
-			}
+				closers = append(closers, q)
 
-			// Never advertise a series with no in-range chunks: the
-			// querier's batch merge iterator assumes every streamed
-			// series carries at least one chunk and panics otherwise.
-			// Multi-epoch TSDBs make this case real: a frozen epoch
-			// can index a labelset while owning no chunk inside
-			// [from, through].
-			if len(itemChunks) == 0 {
-				continue
-			}
+				hints := &storage.SelectHints{Start: int64(from), End: int64(through)}
+				if shard != nil {
+					hints.ShardIndex = shard.ShardIndex
+					hints.ShardCount = shard.ShardCount
+				}
+				// Disable chunk trimming, matching the ingester
+				// (pkg/ingester/ingester_query.go). Trimming forces TSDB to
+				// re-encode any chunk whose samples straddle [from, through];
+				// the PromQL engine trims out-of-range samples itself, so we
+				// ship whole chunks and skip the rewrite cost.
+				hints.DisableTrimming = true
+				ss := q.Select(dctx, true, hints, matchers...)
+				if ss.Err() != nil {
+					return errors.Wrap(ss.Err(), "selecting series from partition TSDB")
+				}
 
-			items = append(items, seriesItem{
-				labels: lbls,
-				chunks: itemChunks,
-			})
+				seriesFound := 0
+				for ss.Next() {
+					cs := ss.At()
+					lbls := cs.Labels()
+
+					var itemChunks []countedChunk
+					it := cs.IteratorFactory().Iterator(nil)
+					for it.Next() {
+						meta := it.At()
+						if meta.Chunk == nil {
+							return errors.Errorf("unfilled chunk returned from TSDB chunk querier")
+						}
+						ch, err := client.ChunkFromMeta(meta)
+						if err != nil {
+							return err
+						}
+						itemChunks, _ = appendUniqueChunk(itemChunks, ch, meta.Chunk.NumSamples())
+					}
+					if err := it.Err(); err != nil {
+						return err
+					}
+
+					// Never advertise a series with no in-range chunks: the
+					// querier's batch merge iterator assumes every streamed
+					// series carries at least one chunk and panics otherwise.
+					// Multi-epoch TSDBs make this case real: a frozen epoch
+					// can index a labelset while owning no chunk inside
+					// [from, through].
+					if len(itemChunks) == 0 {
+						continue
+					}
+
+					seriesFound++
+					items = append(items, seriesItem{
+						labels: lbls,
+						chunks: itemChunks,
+					})
+				}
+				if err := ss.Err(); err != nil {
+					return errors.Wrap(err, "iterating chunk series set")
+				}
+				dbLog.SetTag("series", seriesFound)
+				return nil
+			}()
+			if dbErr != nil {
+				return dbErr
+			}
 		}
-		if err := ss.Err(); err != nil {
-			return errors.Wrap(err, "iterating chunk series set")
-		}
+		gatherLog.SetTag("series_pre_dedup", len(items))
+		return nil
+	}()
+	if gatherErr != nil {
+		return gatherErr
 	}
 
 	sort.Slice(items, func(i, j int) bool {
@@ -196,68 +246,83 @@ func (r *Readcache) queryStream(req *client.QueryRequest, stream client.Ingester
 	}
 	items = coalesced
 
-	seriesBatch := make([]client.QueryStreamSeries, 0, queryStreamBatchSize)
-	for _, item := range items {
-		seriesBatch = append(seriesBatch, client.QueryStreamSeries{
-			Labels:     mimirpb.FromLabelsToLabelAdapters(item.labels),
-			ChunkCount: int64(len(item.chunks)),
-		})
+	// Phase 2: stream the deduplicated labels, then the chunks for each
+	// series in the same order. Wrapped in a child span so the wire /
+	// send cost is separable from the select+materialize cost above.
+	var samples, numChunks int
+	streamErr := func() error {
+		streamLog, _ := spanlogger.New(ctx, r.logger, tracer, "Readcache.QueryStream.stream")
+		defer streamLog.Finish()
 
-		if len(seriesBatch) >= queryStreamBatchSize {
+		seriesBatch := make([]client.QueryStreamSeries, 0, queryStreamBatchSize)
+		for _, item := range items {
+			seriesBatch = append(seriesBatch, client.QueryStreamSeries{
+				Labels:     mimirpb.FromLabelsToLabelAdapters(item.labels),
+				ChunkCount: int64(len(item.chunks)),
+			})
+
+			if len(seriesBatch) >= queryStreamBatchSize {
+				if err := client.SendQueryStream(stream, &client.QueryStreamResponse{
+					StreamingSeries: seriesBatch,
+				}); err != nil {
+					return err
+				}
+				seriesBatch = seriesBatch[:0]
+			}
+		}
+		if len(seriesBatch) > 0 {
 			if err := client.SendQueryStream(stream, &client.QueryStreamResponse{
 				StreamingSeries: seriesBatch,
 			}); err != nil {
 				return err
 			}
-			seriesBatch = seriesBatch[:0]
 		}
-	}
-	if len(seriesBatch) > 0 {
-		if err := client.SendQueryStream(stream, &client.QueryStreamResponse{
-			StreamingSeries: seriesBatch,
-		}); err != nil {
+
+		// EOS marker separates the labels phase from the chunks phase.
+		if err := client.SendQueryStream(stream, &client.QueryStreamResponse{IsEndOfSeriesStream: true}); err != nil {
 			return err
 		}
-	}
 
-	// EOS marker separates the labels phase from the chunks phase.
-	if err := client.SendQueryStream(stream, &client.QueryStreamResponse{IsEndOfSeriesStream: true}); err != nil {
-		return err
-	}
+		chunksBatch := make([]client.QueryStreamSeriesChunks, 0, queryStreamBatchSize)
+		for idx, item := range items {
+			seriesChunks := client.QueryStreamSeriesChunks{SeriesIndex: uint64(idx)}
 
-	// Phase 2: stream chunks for each series in the same order the
-	// labels were emitted.
-	chunksBatch := make([]client.QueryStreamSeriesChunks, 0, queryStreamBatchSize)
-	var samples int
-	for idx, item := range items {
-		seriesChunks := client.QueryStreamSeriesChunks{SeriesIndex: uint64(idx)}
-
-		sort.Slice(item.chunks, func(i, j int) bool {
-			if item.chunks[i].chunk.StartTimestampMs == item.chunks[j].chunk.StartTimestampMs {
-				return item.chunks[i].chunk.EndTimestampMs < item.chunks[j].chunk.EndTimestampMs
+			sort.Slice(item.chunks, func(i, j int) bool {
+				if item.chunks[i].chunk.StartTimestampMs == item.chunks[j].chunk.StartTimestampMs {
+					return item.chunks[i].chunk.EndTimestampMs < item.chunks[j].chunk.EndTimestampMs
+				}
+				return item.chunks[i].chunk.StartTimestampMs < item.chunks[j].chunk.StartTimestampMs
+			})
+			for _, ch := range item.chunks {
+				seriesChunks.Chunks = append(seriesChunks.Chunks, ch.chunk)
+				samples += ch.samples
 			}
-			return item.chunks[i].chunk.StartTimestampMs < item.chunks[j].chunk.StartTimestampMs
-		})
-		for _, ch := range item.chunks {
-			seriesChunks.Chunks = append(seriesChunks.Chunks, ch.chunk)
-			samples += ch.samples
+			numChunks += len(seriesChunks.Chunks)
+			chunksBatch = append(chunksBatch, seriesChunks)
+			if len(chunksBatch) >= queryStreamBatchSize {
+				if err := client.SendQueryStream(stream, &client.QueryStreamResponse{
+					StreamingSeriesChunks: chunksBatch,
+				}); err != nil {
+					return err
+				}
+				chunksBatch = chunksBatch[:0]
+			}
 		}
-		chunksBatch = append(chunksBatch, seriesChunks)
-		if len(chunksBatch) >= queryStreamBatchSize {
+		if len(chunksBatch) > 0 {
 			if err := client.SendQueryStream(stream, &client.QueryStreamResponse{
 				StreamingSeriesChunks: chunksBatch,
 			}); err != nil {
 				return err
 			}
-			chunksBatch = chunksBatch[:0]
 		}
-	}
-	if len(chunksBatch) > 0 {
-		if err := client.SendQueryStream(stream, &client.QueryStreamResponse{
-			StreamingSeriesChunks: chunksBatch,
-		}); err != nil {
-			return err
-		}
+
+		streamLog.SetTag("series", len(items))
+		streamLog.SetTag("chunks", numChunks)
+		streamLog.SetTag("samples", samples)
+		return nil
+	}()
+	if streamErr != nil {
+		return streamErr
 	}
 
 	r.queryLoad.Attribute(req.QueryAttributionHint, int64(samples))
@@ -267,7 +332,10 @@ func (r *Readcache) queryStream(req *client.QueryRequest, stream client.Ingester
 	if r.queriedSamples != nil {
 		r.queriedSamples.Observe(float64(samples))
 	}
-	spanlog.DebugLog("series", len(items), "samples", samples)
+	spanlog.SetTag("series", len(items))
+	spanlog.SetTag("samples", samples)
+	spanlog.SetTag("chunks", numChunks)
+	spanlog.DebugLog("series", len(items), "samples", samples, "chunks", numChunks)
 	return nil
 }
 
