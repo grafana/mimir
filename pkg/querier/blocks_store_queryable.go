@@ -308,17 +308,20 @@ func NewBlocksStoreQueryableFromConfig(querierCfg Config, gatewayCfg storegatewa
 		// cacheBucketID prefixes every metadata cache key. It should be "blocks", but without compartments
 		// we keep it empty to not cause a massive cache invalidation when rolling out the Mimir version
 		// introducing the bucket ID; this is fine as far as every other caching bucket uses its own unique
-		// ID. With compartments each compartment reads a different bucket through a shared cache, so its
-		// keys must be scoped by a compartment-specific ID or compartments collide on identical paths.
+		// ID.
+		//
+		// With compartments each compartment reads a different bucket but the cache could be shared, so its
+		// keys must be scoped by a compartment-specific ID to avoid collisions and subtle bugs.
 		cacheBucketID := ""
 
 		if compartmentsCfg.Enabled {
 			// Each read compartment has its own bucket, store-gateway ring and metadata cache within this
-			// single process. Identify them by a "-rc-<id>" suffix on each subsystem's own identity — the
-			// metrics component name, the ring name/key and the cache bucket ID — rather than an extra const
-			// label, which would change a metric's label set and panic on collision with the same metric
-			// registered by another component (e.g. the usage-stats reporter's bucket client, or the
-			// ingester ring).
+			// single process.
+			//
+			// In the metrics, we identify them by a "-rc-<id>" suffix on each subsystem's own identity — the
+			// metrics "component" label and the ring name/key — rather than an extra label which would change
+			// a metric's label set and panic on collision with the same metric registered by another component
+			//(e.g. the usage-stats reporter's bucket client, or the ingester ring).
 			component = compartments.WithReadCompartmentSuffix(component, idx)
 			bucketCfg = storageCfg.Bucket.ReadCompartmentConfig(idx)
 			cacheBucketID = compartments.WithReadCompartmentSuffix("blocks", idx)
@@ -690,9 +693,8 @@ func (q *blocksStoreQuerier) startBuffering(streamReaders []*storeGatewayStreamR
 
 type queryFunc func(ctx context.Context, clients map[BlocksStoreClient][]ulid.ULID, minT, maxT int64, indexMeta *bucketindex.Metadata) ([]ulid.ULID, error)
 
-// storeGatewayQueryStats is the per-compartment contribution to the per-query store-gateway histograms.
-// queryWithConsistencyCheck returns it (rather than observing the histograms itself) so the caller can
-// observe the totals once per query when the query fans out across compartments.
+// storeGatewayQueryStats holds the per-query store-gateway histogram values. queryWithConsistencyCheck
+// returns it (rather than observing the histograms itself) so the caller observes them once per query.
 type storeGatewayQueryStats struct {
 	storesHit int  // number of distinct store-gateway instances queried
 	refetches int  // number of retries due to missing blocks
