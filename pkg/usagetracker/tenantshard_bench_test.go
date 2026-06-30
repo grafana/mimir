@@ -21,7 +21,7 @@ func BenchmarkTenantShard(b *testing.B) {
 				series[i] = rand.Uint64() << 7
 			}
 
-			m := tenantshard.New(uint32(len(series)))
+			m := tenantshard.New(uint32(len(series)), tenantshard.DefaultNumShards)
 			benchmarkWithSeries(b, m, series)
 		})
 	}

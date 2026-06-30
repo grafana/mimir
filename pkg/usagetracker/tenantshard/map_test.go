@@ -19,7 +19,7 @@ func TestMapStats(t *testing.T) {
 	limit := atomic.NewUint64(1000)
 
 	// Start small so that inserts force a rehash.
-	m := New(8)
+	m := New(8, DefaultNumShards)
 
 	s := m.Stats()
 	require.Equal(t, uint32(0), s.Resident)
@@ -52,7 +52,7 @@ func TestMap(t *testing.T) {
 	limit := atomic.NewUint64(uint64(events * seriesPerEvent))
 
 	// Start small, let rehashing happen.
-	m := New(seriesPerEvent)
+	m := New(seriesPerEvent, DefaultNumShards)
 
 	storedValues := map[uint64]clock.Minutes{}
 	for i := 1; i <= events; i++ {
@@ -100,7 +100,7 @@ func TestMap(t *testing.T) {
 func TestMapValues(t *testing.T) {
 	const count = 10e3
 	stored := map[uint64]clock.Minutes{}
-	m := New(100)
+	m := New(100, DefaultNumShards)
 	total := atomic.NewUint64(0)
 	for i := 0; i < count; i++ {
 		key := rand.Uint64()
@@ -125,7 +125,7 @@ func TestMapValues(t *testing.T) {
 
 func TestNextSize(t *testing.T) {
 	t.Run("no limit grows by 1.25x resident", func(t *testing.T) {
-		m := New(100)
+		m := New(100, DefaultNumShards)
 		for i := uint64(0); i < 100; i++ {
 			m.Load(i, 1)
 		}
@@ -139,19 +139,19 @@ func TestNextSize(t *testing.T) {
 	})
 
 	t.Run("limit larger than 1.25x resident uses per-shard limit", func(t *testing.T) {
-		m := New(100)
+		m := New(100, DefaultNumShards)
 		for i := uint64(0); i < 100; i++ {
 			m.Load(i, 1)
 		}
-		// Total limit across all shards, nextSize divides by NumShards.
-		const totalLimit = NumShards * 1000
+		// Total limit across all shards, nextSize divides by DefaultNumShards.
+		const totalLimit = DefaultNumShards * 1000
 		got := m.nextSize(totalLimit)
 		expected := numGroups(1000)
 		require.Equal(t, expected, got)
 	})
 
 	t.Run("limit smaller than 1.25x resident uses 1.25x", func(t *testing.T) {
-		m := New(100)
+		m := New(100, DefaultNumShards)
 		for i := uint64(0); i < 100; i++ {
 			m.Load(i, 1)
 		}
@@ -161,7 +161,7 @@ func TestNextSize(t *testing.T) {
 	})
 
 	t.Run("compaction with many dead entries does not grow", func(t *testing.T) {
-		m := New(200)
+		m := New(200, DefaultNumShards)
 		for i := uint64(0); i < 200; i++ {
 			m.Load(i, 1)
 		}
@@ -175,7 +175,7 @@ func TestNextSize(t *testing.T) {
 
 func TestLimitAwareGrowth(t *testing.T) {
 	const perShard uint64 = 1000
-	m := New(uint32(perShard))
+	m := New(uint32(perShard), DefaultNumShards)
 	total := atomic.NewUint64(0)
 
 	for i := uint64(0); i < perShard; i++ {
@@ -193,13 +193,13 @@ func TestLimitAwareGrowth(t *testing.T) {
 		"expected limit-aware growth to be less than 2x: before=%d after=%d", groupsBefore, groupsAfter)
 
 	// When per-shard limit > 1.25x resident, the limit is used.
-	m2 := New(uint32(perShard))
+	m2 := New(uint32(perShard), DefaultNumShards)
 	for i := uint64(0); i < perShard; i++ {
 		m2.Load(i, 1)
 	}
-	bigLimit := uint64(m2.resident) * 2 * NumShards
+	bigLimit := uint64(m2.resident) * 2 * DefaultNumShards
 	got := m2.nextSize(bigLimit)
-	expected := numGroups(uint32(bigLimit / NumShards))
+	expected := numGroups(uint32(bigLimit / DefaultNumShards))
 	require.Equal(t, expected, got)
 }
 
@@ -216,7 +216,7 @@ func TestMapCleanup(t *testing.T) {
 	}
 
 	t.Run("empty map", func(t *testing.T) {
-		m := New(8)
+		m := New(8, DefaultNumShards)
 		removed := m.Cleanup(100, nil)
 		require.Equal(t, 0, removed)
 		require.Equal(t, 0, m.Count())
@@ -225,7 +225,7 @@ func TestMapCleanup(t *testing.T) {
 	})
 
 	t.Run("no entries expired", func(t *testing.T) {
-		m := New(8)
+		m := New(8, DefaultNumShards)
 		m.Load(1, 50)
 		m.Load(2, 60)
 		m.Load(3, 70)
@@ -238,7 +238,7 @@ func TestMapCleanup(t *testing.T) {
 	})
 
 	t.Run("all entries expired", func(t *testing.T) {
-		m := New(8)
+		m := New(8, DefaultNumShards)
 		m.Load(1, 10)
 		m.Load(2, 20)
 		m.Load(3, 30)
@@ -249,7 +249,7 @@ func TestMapCleanup(t *testing.T) {
 	})
 
 	t.Run("some entries expired some not", func(t *testing.T) {
-		m := New(16)
+		m := New(16, DefaultNumShards)
 		// Insert entries with different timestamps.
 		m.Load(100, 10)
 		m.Load(200, 20)
@@ -270,7 +270,7 @@ func TestMapCleanup(t *testing.T) {
 	})
 
 	t.Run("survivors findable via put update path", func(t *testing.T) {
-		m := New(16)
+		m := New(16, DefaultNumShards)
 		m.Load(100, 10) // will expire
 		m.Load(200, 50) // will survive
 		m.Load(300, 50) // will survive
@@ -292,7 +292,7 @@ func TestMapCleanup(t *testing.T) {
 	t.Run("tombstone avoidance with empty slots in group", func(t *testing.T) {
 		// With maxAvgGroupLoad=4 and groupSize=8, a small map will have groups
 		// that are partially full, so cleanup should avoid tombstones.
-		m := New(4) // 1 group, limit=4
+		m := New(4, DefaultNumShards) // 1 group, limit=4
 		m.Load(1, 10)
 		m.Load(2, 50)
 
@@ -305,7 +305,7 @@ func TestMapCleanup(t *testing.T) {
 
 	t.Run("tombstone created when group is full", func(t *testing.T) {
 		// Force a full group by directly populating all 8 slots.
-		m := New(1) // 1 group
+		m := New(1, DefaultNumShards) // 1 group
 		// Fill all groupSize slots directly.
 		for j := uint32(0); j < groupSize; j++ {
 			m.index[0][j] = prefix(j + prefixOffset)
@@ -326,7 +326,7 @@ func TestMapCleanup(t *testing.T) {
 	t.Run("expire last element clears to empty", func(t *testing.T) {
 		// Set up a group with 2 elements: slots [0] and [1] occupied, rest empty.
 		// Expire element at slot [1] (the last). This should hit the e == j+1 path.
-		m := New(1)
+		m := New(1, DefaultNumShards)
 		m.index[0][0] = prefix(prefixOffset + 10)
 		m.keys[0][0] = 100
 		m.data[0][0] = xor(50) // won't expire
@@ -350,7 +350,7 @@ func TestMapCleanup(t *testing.T) {
 	t.Run("expire non-last element swaps with last", func(t *testing.T) {
 		// Set up a group with 3 elements: slots [0], [1], [2] occupied.
 		// Expire element at slot [0]. The last element ([2]) should be swapped into [0].
-		m := New(1)
+		m := New(1, DefaultNumShards)
 		m.index[0][0] = prefix(prefixOffset + 10)
 		m.keys[0][0] = 100
 		m.data[0][0] = xor(10) // will expire
@@ -387,7 +387,7 @@ func TestMapCleanup(t *testing.T) {
 		// Then [1] is checked (survive), then [2] is checked (expire):
 		//   [2] is last element, so e==j+1 path clears it.
 		// Result: 2 elements at [0] and [1].
-		m := New(1)
+		m := New(1, DefaultNumShards)
 		m.index[0][0] = prefix(prefixOffset + 10)
 		m.keys[0][0] = 100
 		m.data[0][0] = xor(10) // expire
@@ -413,7 +413,7 @@ func TestMapCleanup(t *testing.T) {
 	})
 
 	t.Run("expire all elements in partially full group", func(t *testing.T) {
-		m := New(1)
+		m := New(1, DefaultNumShards)
 		m.index[0][0] = prefix(prefixOffset + 10)
 		m.keys[0][0] = 100
 		m.data[0][0] = xor(10)
@@ -436,7 +436,7 @@ func TestMapCleanup(t *testing.T) {
 
 	t.Run("cleanup skips existing tombstones", func(t *testing.T) {
 		// Set up a group with a tombstone followed by a live entry.
-		m := New(1)
+		m := New(1, DefaultNumShards)
 		// Slot [0]: tombstone (pre-existing)
 		m.index[0][0] = tombstone
 		m.keys[0][0] = 0
@@ -457,7 +457,7 @@ func TestMapCleanup(t *testing.T) {
 
 	t.Run("rehash triggered when too many tombstones", func(t *testing.T) {
 		// Create a map with many full groups, then expire entries to create tombstones.
-		m := New(groupSize * 4) // 4 groups minimum
+		m := New(groupSize*4, DefaultNumShards) // 4 groups minimum
 		// Fill all slots in multiple groups to force tombstone creation.
 		for g := 0; g < len(m.index); g++ {
 			for j := uint32(0); j < groupSize; j++ {
@@ -478,7 +478,7 @@ func TestMapCleanup(t *testing.T) {
 		// When groups are not full, cleanup avoids tombstones and thus avoids rehashing.
 		// Use randomized keys and a very large capacity to ensure no group is full.
 		r := rand.New(rand.NewSource(42))
-		m := New(1000)
+		m := New(1000, DefaultNumShards)
 		for range 20 {
 			m.Load(r.Uint64(), 10) // all will expire
 		}
@@ -489,7 +489,7 @@ func TestMapCleanup(t *testing.T) {
 	})
 
 	t.Run("count and items consistent after cleanup", func(t *testing.T) {
-		m := New(32)
+		m := New(32, DefaultNumShards)
 		expected := map[uint64]clock.Minutes{}
 		for i := uint64(0); i < 20; i++ {
 			val := clock.Minutes(10)
@@ -509,7 +509,7 @@ func TestMapCleanup(t *testing.T) {
 	})
 
 	t.Run("sequential cleanups with interleaved puts", func(t *testing.T) {
-		m := New(32)
+		m := New(32, DefaultNumShards)
 
 		// Round 1: insert keys with value 10.
 		for i := uint64(0); i < 10; i++ {
@@ -543,7 +543,7 @@ func TestMapCleanup(t *testing.T) {
 
 	t.Run("cleanup with limit triggers limit-aware rehash", func(t *testing.T) {
 		// Fill groups completely, expire everything, pass a limit.
-		m := New(groupSize * 2)
+		m := New(groupSize*2, DefaultNumShards)
 		for g := 0; g < len(m.index); g++ {
 			for j := uint32(0); j < groupSize; j++ {
 				m.index[g][j] = prefix(j + prefixOffset)
@@ -564,7 +564,7 @@ func TestMapCleanup(t *testing.T) {
 	t.Run("large scale correctness", func(t *testing.T) {
 		// Insert many elements with mixed timestamps, cleanup, verify survivors.
 		const n = 10000
-		m := New(uint32(n))
+		m := New(uint32(n), DefaultNumShards)
 		expected := map[uint64]clock.Minutes{}
 		for i := uint64(0); i < n; i++ {
 			val := clock.Minutes(i % 100)
@@ -588,7 +588,7 @@ func TestMapCleanup(t *testing.T) {
 	t.Run("put after cleanup finds correct entries", func(t *testing.T) {
 		// Regression test: after cleanup with shifts, Put must still find
 		// existing keys and not create duplicates.
-		m := New(32)
+		m := New(32, DefaultNumShards)
 		series := atomic.NewUint64(0)
 		for i := uint64(0); i < 20; i++ {
 			m.Put(i, clock.Minutes(i%50+1), series, nil, false)
@@ -612,7 +612,7 @@ func TestMapCleanup(t *testing.T) {
 func BenchmarkMapRehash(b *testing.B) {
 	for _, size := range []uint32{1e6, 10e6} {
 		b.Run(fmt.Sprintf("size=%d", size), func(b *testing.B) {
-			m := New(size)
+			m := New(size, DefaultNumShards)
 			r := rand.New(rand.NewSource(1))
 			for i := 0; i < int(size); i++ {
 				m.Put(r.Uint64(), clock.Minutes(i%128), nil, nil, false)
@@ -633,7 +633,7 @@ func BenchmarkMapCleanup(b *testing.B) {
 
 	maps := make([]*Map, b.N)
 	for i := range maps {
-		maps[i] = New(size)
+		maps[i] = New(size, DefaultNumShards)
 	}
 	r := rand.New(rand.NewSource(1))
 	for _, m := range maps {
@@ -657,7 +657,7 @@ func BenchmarkMapTrackCleanupGarbage(b *testing.B) {
 		hashes[i] = r.Uint64()
 	}
 
-	m := New(series)
+	m := New(series, DefaultNumShards)
 	now := time.Now()
 	for i := 0; i < 3; i++ {
 		t := clock.ToMinutes(now)

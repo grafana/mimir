@@ -136,7 +136,7 @@ func newPartitionHandler(
 
 		snapshotsKafkaWriter: snapshotsKafkaWriter,
 		snapshotsBucket:      snapshotsBucket,
-		snapshotsFromEvents:  make(chan *usagetrackerpb.SnapshotEvent, shards),
+		snapshotsFromEvents:  make(chan *usagetrackerpb.SnapshotEvent, cfg.NumShards),
 
 		pendingCreatedSeriesMarshaledEvents: make(chan []byte, cfg.CreatedSeriesEventsMaxPending),
 
@@ -201,7 +201,7 @@ func newPartitionHandler(
 	}
 
 	eventsPublisher := chanEventsPublisher{events: p.pendingCreatedSeriesMarshaledEvents, logger: logger}
-	p.store = newTrackerStore(cfg.IdleTimeout, cfg.UserCloseToLimitPercentageThreshold, logger, lim, eventsPublisher, cfg.EnableVerboseSeriesCreationDeletionPrometheusMetrics, cfg.MinTimeBetweenShardsCleanup)
+	p.store = newTrackerStore(cfg.IdleTimeout, cfg.UserCloseToLimitPercentageThreshold, logger, lim, eventsPublisher, cfg.EnableVerboseSeriesCreationDeletionPrometheusMetrics, cfg.MinTimeBetweenShardsCleanup, cfg.NumShards)
 	p.Service = services.NewBasicService(p.start, p.run, p.stop)
 	return p, nil
 }
@@ -849,7 +849,7 @@ func (p *partitionHandler) publishSnapshot(ctx context.Context) error {
 		return nil
 	}
 
-	for s := range shards {
+	for s := 0; s < p.store.numShards; s++ {
 		var buf []byte
 		if len(bufs) > 0 {
 			buf, bufs = bufs[len(bufs)-1], bufs[:len(bufs)-1]

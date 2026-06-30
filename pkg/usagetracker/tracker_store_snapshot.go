@@ -8,13 +8,17 @@ import (
 	"runtime"
 	"time"
 
+	"github.com/go-kit/log/level"
 	"github.com/prometheus/prometheus/tsdb/encoding"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/mimir/pkg/usagetracker/clock"
 )
 
-const snapshotEncodingVersion = 1
+// snapshotEncodingVersion is the version of the per-shard snapshot binary format.
+// Version 2 added the total shard count to the header (right after the version byte) so
+// that snapshots written with a different shard count can be detected and discarded on load.
+const snapshotEncodingVersion = 2
 
 func (t *trackerStore) snapshot(shard uint8, now time.Time, buf []byte) []byte {
 	t.mtx.RLock()
@@ -24,6 +28,10 @@ func (t *trackerStore) snapshot(shard uint8, now time.Time, buf []byte) []byte {
 
 	snapshot := encoding.Encbuf{B: buf[:0]}
 	snapshot.PutByte(snapshotEncodingVersion)
+	// Encode the total shard count so that on load we can discard snapshots written with a
+	// different shard count. Encoded as a uvarint because the count can be up to 256, which
+	// does not fit in a single byte (unlike the shard index below, which is in [0, 256)).
+	snapshot.PutUvarint64(uint64(t.numShards))
 	snapshot.PutByte(shard)
 	snapshot.PutBE64(uint64(now.Unix()))
 	snapshot.PutUvarint64(uint64(len(clonedTenants)))
@@ -49,22 +57,22 @@ func (t *trackerStore) snapshot(shard uint8, now time.Time, buf []byte) []byte {
 // loadSnapshots loads the snapshots from the given shards concurrently with GOMAXPROCS workers.
 // This speeds up the snapshot loading process as each shard can be loaded independently.
 // This reduces the amount of time track requests spend waiting on shard locks.
-func (t *trackerStore) loadSnapshots(shards [][]byte, now time.Time) error {
-	if len(shards) == 0 {
+func (t *trackerStore) loadSnapshots(shardSnapshots [][]byte, now time.Time) error {
+	if len(shardSnapshots) == 0 {
 		return nil
 	}
 
-	if len(shards) == 1 {
-		return t.loadSnapshot(shards[0], now)
+	if len(shardSnapshots) == 1 {
+		return t.loadSnapshot(shardSnapshots[0], now)
 	}
 
-	jobs := make(chan []byte, len(shards))
-	for _, shard := range shards {
+	jobs := make(chan []byte, len(shardSnapshots))
+	for _, shard := range shardSnapshots {
 		jobs <- shard
 	}
 	close(jobs)
 
-	workers := min(len(shards), runtime.GOMAXPROCS(0))
+	workers := min(len(shardSnapshots), runtime.GOMAXPROCS(0))
 	g := errgroup.Group{}
 	for i := 0; i < workers; i++ {
 		g.Go(func() error {
@@ -91,14 +99,34 @@ func (t *trackerStore) loadSnapshot(data []byte, now time.Time) error {
 		return fmt.Errorf("invalid snapshot format, expected version: %w", err)
 	}
 	if version != snapshotEncodingVersion {
-		return fmt.Errorf("unexpected snapshot version %d", version)
+		// This is likely a snapshot written by a different binary version (e.g. the pre-v2
+		// format that didn't encode the shard count). We can't safely interpret it, so we
+		// discard it rather than failing startup; the state will be rebuilt from events.
+		level.Warn(t.logger).Log("msg", "discarding snapshot with unsupported encoding version", "version", version, "expected_version", snapshotEncodingVersion)
+		return nil
 	}
+
+	snapshotNumShards := snapshot.Uvarint64()
+	if err := snapshot.Err(); err != nil {
+		return fmt.Errorf("invalid snapshot format, shard count expected: %w", err)
+	}
+	if snapshotNumShards != uint64(t.numShards) {
+		// The snapshot was written with a different shard count. Series were placed by
+		// hash % snapshotNumShards, so loading them under hash % t.numShards would route
+		// them to the wrong shards. Discard rather than corrupt; events will rebuild state.
+		level.Warn(t.logger).Log("msg", "discarding snapshot written with a different shard count", "snapshot_shards", snapshotNumShards, "configured_shards", t.numShards)
+		return nil
+	}
+
 	shard := snapshot.Byte()
 	if err := snapshot.Err(); err != nil {
 		return fmt.Errorf("invalid snapshot format, shard expected: %w", err)
 	}
-	if shard >= shards {
-		return fmt.Errorf("invalid snapshot format, shard %d out of bounds", shard)
+	if int(shard) >= t.numShards {
+		// Defensive: the shard count matched but the index is out of range, which means the
+		// snapshot is inconsistent. Discard it rather than indexing out of bounds.
+		level.Warn(t.logger).Log("msg", "discarding snapshot with out-of-bounds shard index", "shard", shard, "configured_shards", t.numShards)
+		return nil
 	}
 
 	snapshotTime := time.Unix(int64(snapshot.Be64()), 0)

@@ -21,7 +21,7 @@ func TestTrackerStore_ShardStats(t *testing.T) {
 	limits := limiterMock{"user-a": 100, "user-b": 100}
 	now := time.Date(2020, 1, 1, 1, 2, 3, 0, time.UTC)
 
-	store := newTrackerStore(idleTimeout, 85, log.NewNopLogger(), limits, noopEvents{}, false, 0)
+	store := newTrackerStore(idleTimeout, 85, log.NewNopLogger(), limits, noopEvents{}, false, 0, shards)
 
 	_, err := store.trackSeries(context.Background(), "user-b", []uint64{1, 2, 3, 4, 5}, now)
 	require.NoError(t, err)

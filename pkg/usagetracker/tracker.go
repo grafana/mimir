@@ -32,6 +32,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/ingest"
+	"github.com/grafana/mimir/pkg/usagetracker/tenantshard"
 	"github.com/grafana/mimir/pkg/usagetracker/trackerop"
 	"github.com/grafana/mimir/pkg/usagetracker/usagetrackerpb"
 	"github.com/grafana/mimir/pkg/util"
@@ -92,6 +93,8 @@ type Config struct {
 	EnableVerboseSeriesCreationDeletionPrometheusMetrics bool `yaml:"enable_verbose_series_creation_deletion_prometheus_metrics" category:"experimental"`
 
 	MinTimeBetweenShardsCleanup time.Duration `yaml:"min_time_between_shards_cleanup" category:"experimental"`
+
+	NumShards int `yaml:"num_shards" category:"experimental"`
 }
 
 func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
@@ -136,6 +139,8 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.BoolVar(&c.EnableVerboseSeriesCreationDeletionPrometheusMetrics, "usage-tracker.enable-verbose-series-creation-deletion-prometheus-metrics", false, "Enable verbose series creation and deletion Prometheus metrics. When enabled, two additional counters per user and partition are exposed (series created and series removed), increasing the cardinality of exposed metrics and impacting the time and resources needed for scraping in deployments with multiple partitions per pod.")
 
 	f.DurationVar(&c.MinTimeBetweenShardsCleanup, "usage-tracker.min-time-between-shards-cleanup", 25*time.Millisecond, "Minimum time between cleaning up consecutive shards during the periodic idle-series cleanup. An artificial delay is inserted between shards so the cleanup does not hold shard mutexes back-to-back and block latency-sensitive series-tracking calls, which matters most for large single-tenant instances. Set to 0 to disable.")
+
+	f.IntVar(&c.NumShards, "usage-tracker.num-shards", tenantshard.DefaultNumShards, fmt.Sprintf("Number of shards each tenant is split into within a partition. Must be between 1 and %d. All usage-tracker instances must use the same value; changing it discards existing snapshots (state is rebuilt from events), so expect a transient loss of accuracy after a change.", tenantshard.MaxNumShards))
 }
 
 func (c *Config) ValidateForClient() error {
@@ -150,6 +155,10 @@ func (c *Config) ValidateForClient() error {
 func (c *Config) validateCommon() error {
 	if !isPowerOfTwo(c.Partitions) {
 		return fmt.Errorf("invalid number of partitions %d, must be a power of 2", c.Partitions)
+	}
+
+	if c.NumShards < 1 || c.NumShards > tenantshard.MaxNumShards {
+		return fmt.Errorf("invalid number of shards %d, must be between 1 and %d", c.NumShards, tenantshard.MaxNumShards)
 	}
 
 	return nil
