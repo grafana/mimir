@@ -18,8 +18,13 @@ import (
 const (
 	indexEntryBits = 7
 
-	// NumShards is the number of shards used by the tracker store per tenant.
-	NumShards = 16
+	// DefaultNumShards is the default number of shards used by the tracker store per tenant.
+	DefaultNumShards = 16
+
+	// MaxNumShards is the maximum number of shards allowed per tenant.
+	// The shard index is stored as a single byte (uint8) in snapshots and used to index
+	// per-tenant shard slices, so it must fit in [0, 256).
+	MaxNumShards = 256
 )
 
 // Map is an open-addressing hash map based on Abseil's flat_hash_map.
@@ -42,6 +47,10 @@ type Map struct {
 	resident uint32
 	dead     uint32
 	limit    uint32
+
+	// numShards is the total number of shards the owning tenant is split into.
+	// It is used to derive the per-shard target size from the total tenant limit.
+	numShards uint32
 
 	// rehashes is only counted for testing purposes.
 	rehashes uint32
@@ -78,14 +87,17 @@ type prefix uint8
 type suffix uint64
 
 // New constructs a Map.
-func New(sz uint32) (m *Map) {
+// numShards is the total number of shards the owning tenant is split into; it is used to
+// derive the per-shard target size from the total tenant limit during rehashes.
+func New(sz uint32, numShards uint32) (m *Map) {
 	groups := numGroups(sz)
 	return &Map{
 		index: make([]index, groups),
 		keys:  make([]keys, groups),
 		data:  make([]data, groups),
 
-		limit: groups * maxAvgGroupLoad,
+		limit:     groups * maxAvgGroupLoad,
+		numShards: numShards,
 	}
 }
 
@@ -296,10 +308,10 @@ func (m *Map) EnsureCapacity(n uint32) {
 }
 
 // nextSize computes the number of groups for the next rehash.
-// limit is the total tenant series limit across all shards; it is divided by NumShards internally.
+// limit is the total tenant series limit across all shards; it is divided by m.numShards internally.
 // limit=0 means no limit (used by Load): grows by resident*1.25.
 func (m *Map) nextSize(limit uint64) uint32 {
-	perShard := limit / NumShards
+	perShard := limit / uint64(m.numShards)
 	alive := uint64(m.resident - m.dead)
 	target := alive * 5 / 4
 	// Only let the limit influence growth when it represents a real constraint.
