@@ -6,9 +6,13 @@
 package tsdb
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"io"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/cache"
@@ -47,6 +51,57 @@ func TestIsBlockIndexFile(t *testing.T) {
 	assert.False(t, isBlockIndexFile("/test/index"))
 	assert.True(t, isBlockIndexFile(fmt.Sprintf("%s/index", blockID.String())))
 	assert.True(t, isBlockIndexFile(fmt.Sprintf("/%s/index", blockID.String())))
+}
+
+func TestMetadataCachingBucket_CacheKeysAreIsolatedByBucketID(t *testing.T) {
+	ctx := context.Background()
+	const path = "user-1/bucket-index.json.gz"
+
+	metadataCfg := MetadataCacheConfig{BucketIndexContentTTL: time.Hour, BucketIndexMaxSize: 1024 * 1024}
+
+	newCachingBucket := func(t *testing.T, bucketID, content string, sharedCache cache.Cache) objstore.Bucket {
+		bkt := objstore.NewInMemBucket()
+		require.NoError(t, bkt.Upload(ctx, path, strings.NewReader(content)))
+
+		cfg := configureMetadataCaching(sharedCache, metadataCfg, bucketcache.NewCachingBucketConfig())
+		cachingBkt, err := bucketcache.NewCachingBucket(bucketID, bkt, cfg, log.NewNopLogger(), prometheus.NewPedanticRegistry())
+		require.NoError(t, err)
+		return cachingBkt
+	}
+
+	get := func(t *testing.T, bkt objstore.Bucket) string {
+		r, err := bkt.Get(ctx, path)
+		require.NoError(t, err)
+		defer r.Close()
+		body, err := io.ReadAll(r)
+		require.NoError(t, err)
+		return string(body)
+	}
+
+	t.Run("distinct bucket IDs keep cached content separate for the same object path", func(t *testing.T) {
+		sharedCache := cache.NewMockCache()
+		bkt0 := newCachingBucket(t, "blocks-rc-0", "compartment-0", sharedCache)
+		bkt1 := newCachingBucket(t, "blocks-rc-1", "compartment-1", sharedCache)
+
+		require.Equal(t, "compartment-0", get(t, bkt0)) // miss: fetched and cached under the bucket-ID-prefixed key
+		require.Equal(t, "compartment-0", get(t, bkt0)) // hit
+		require.Equal(t, "compartment-1", get(t, bkt1)) // reads its own content, not compartment 0's cached entry
+
+		items := sharedCache.GetItems()
+		_, ok0 := items[bucketcache.ContentKey("blocks-rc-0", path)]
+		_, ok1 := items[bucketcache.ContentKey("blocks-rc-1", path)]
+		require.True(t, ok0, "compartment 0 content must be cached under its own key")
+		require.True(t, ok1, "compartment 1 content must be cached under its own key")
+	})
+
+	t.Run("empty bucket ID collides across buckets for the same object path", func(t *testing.T) {
+		sharedCache := cache.NewMockCache()
+		bkt0 := newCachingBucket(t, "", "compartment-0", sharedCache)
+		bkt1 := newCachingBucket(t, "", "compartment-1", sharedCache)
+
+		require.Equal(t, "compartment-0", get(t, bkt0))
+		require.Equal(t, "compartment-0", get(t, bkt1)) // collision: identical key serves compartment 0's cached content
+	})
 }
 
 func Test_NewStoreCachingBucket(t *testing.T) {

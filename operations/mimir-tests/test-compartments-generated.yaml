@@ -1577,7 +1577,7 @@ spec:
         - -blocks-storage.bucket-store.metadata-cache.memcached.max-item-size=1048576
         - -blocks-storage.bucket-store.sync-dir=/data/tsdb
         - -blocks-storage.bucket-store.sync-interval=15m
-        - -blocks-storage.gcs.bucket-name=blocks-bucket
+        - -blocks-storage.gcs.bucket-name=blocks-bucket-rc-<read-compartment-id>
         - -common.storage.backend=gcs
         - -compartments.enabled=true
         - -compartments.read.num-compartments=2
@@ -2007,7 +2007,7 @@ spec:
         - -blocks-storage.bucket-store.metadata-cache.memcached.max-item-size=1048576
         - -blocks-storage.bucket-store.sync-dir=/data/tsdb
         - -blocks-storage.bucket-store.sync-interval=15m
-        - -blocks-storage.gcs.bucket-name=blocks-bucket
+        - -blocks-storage.gcs.bucket-name=blocks-bucket-rc-<read-compartment-id>
         - -common.storage.backend=gcs
         - -compartments.enabled=true
         - -compartments.read.num-compartments=2

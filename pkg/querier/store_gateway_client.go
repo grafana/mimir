@@ -92,6 +92,27 @@ func (c *storeGatewayClient) RemoteZone() string {
 	return c.instance.Zone
 }
 
+// newRingsServiceDiscovery returns a PoolServiceDiscovery listing the addresses across all the given
+// rings, so a single client pool can serve the store-gateways of every read compartment's ring.
+func newRingsServiceDiscovery(rings []*ring.Ring) client.PoolServiceDiscovery {
+	discoveries := make([]client.PoolServiceDiscovery, len(rings))
+	for i, r := range rings {
+		discoveries[i] = client.NewRingServiceDiscovery(r)
+	}
+
+	return func() ([]string, error) {
+		var addrs []string
+		for _, discovery := range discoveries {
+			ringAddrs, err := discovery()
+			if err != nil {
+				return nil, err
+			}
+			addrs = append(addrs, ringAddrs...)
+		}
+		return addrs, nil
+	}
+}
+
 func newStoreGatewayClientPool(discovery client.PoolServiceDiscovery, clientConfig StoreGatewayClientConfig, logger log.Logger, reg prometheus.Registerer) *client.Pool {
 	poolCfg := client.PoolConfig{
 		CheckInterval:          10 * time.Second,

@@ -331,6 +331,16 @@ func (c *Config) Validate(log log.Logger) error {
 		if c.Compartments.Write.NumCompartments > 1 && c.BlocksStorage.TSDB.OffsetCatalogue.Enabled {
 			return errors.New("the offset catalogue (-blocks-storage.tsdb.offset-catalogue.enabled) cannot be enabled together with more than one write compartment")
 		}
+		// The querier resolves the read-compartment placeholder in the blocks bucket name to query each
+		// read compartment's bucket, so the bucket name must carry it. Components that serve a single
+		// compartment (store-gateway, compactor, block-builder, ingester) use an explicit bucket name and
+		// don't need it. The ruler queries blocks only through remote rule evaluation (required with
+		// compartments), so it doesn't build a local compartment-aware queryable.
+		if c.isQuerierEnabled() {
+			if !strings.Contains(c.BlocksStorage.Bucket.BucketName(), compartments.ReadCompartmentIDPlaceholder) {
+				return fmt.Errorf("when compartments are enabled, the blocks storage bucket name must contain the %q placeholder for the querier", compartments.ReadCompartmentIDPlaceholder)
+			}
+		}
 	}
 	if c.isIngesterEnabled() {
 		if !c.IngestStorage.Enabled && !c.Ingester.PushGrpcMethodEnabled {

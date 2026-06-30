@@ -60,11 +60,20 @@ blocks_storage:
     bucket_name:       mimir-blocks
   tsdb:
     dir: /data
-    ship_interval: 0s # disable ingester block shipping; block-builder does that job.
+    # The block-builder isn't compartment-aware yet and is disabled, so ingesters ship their own blocks to
+    # their read compartment's bucket (each ingester overrides -blocks-storage.s3.bucket-name). Cut and
+    # ship blocks frequently for a fast feedback loop in development.
+    block_ranges_period: ["2m"]
+    retention_period: 20m
+    ship_interval: 10s
     head_postings_for_matchers_cache_force: true
     block_postings_for_matchers_cache_force: true
 
   bucket_store:
+    # Sync blocks frequently.
+    sync_interval: 1m
+    ignore_blocks_within: 2m
+
     index_cache:
       backend: memcached
       memcached:
@@ -79,6 +88,20 @@ blocks_storage:
       backend: memcached
       memcached:
         addresses: dns+memcached:11211
+
+# Compact frequently so the small, frequently-cut blocks are merged quickly in development. Each
+# compactor still operates only on its own read compartment's bucket.
+compactor:
+  block_ranges: [2m, 4m, 8m, 16m]
+  compaction_interval: 1m
+  compaction_concurrency: 2
+  cleanup_interval: 1m
+  tenant_cleanup_delay: 1m
+
+querier:
+  # Query store-gateways for recent data too, so the compartment-aware blocks-storage path is exercised in
+  # development.
+  query_store_after: 5m
 
 
 memberlist:
