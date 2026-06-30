@@ -595,7 +595,7 @@ func NewHeadAndOOOQuerier(inoMint, mint, maxt int64, head *Head, oooIsoState *oo
 		head:     head,
 		mint:     mint,
 		maxt:     maxt,
-		isoState: head.iso.State(mint, maxt),
+		isoState: head.iso.State(inoMint, maxt),
 	}
 	return &HeadAndOOOQuerier{
 		mint:    mint,
@@ -669,7 +669,7 @@ func NewHeadAndOOOChunkQuerier(inoMint, mint, maxt int64, head *Head, oooIsoStat
 		head:     head,
 		mint:     mint,
 		maxt:     maxt,
-		isoState: head.iso.State(mint, maxt),
+		isoState: head.iso.State(inoMint, maxt),
 	}
 	return &HeadAndOOOChunkQuerier{
 		mint:    mint,
