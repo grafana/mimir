@@ -1257,7 +1257,9 @@ func (e *evaluatedExtent) GetSeries(ctx context.Context, seriesIdx int) (types.I
 }
 
 func (e *evaluatedExtent) FinishedReading(ctx context.Context) error {
-	e.buffer.FinishedReading()
+	if e.buffer != nil {
+		e.buffer.FinishedReading()
+	}
 
 	return e.inner.FinishedReading(ctx)
 }
