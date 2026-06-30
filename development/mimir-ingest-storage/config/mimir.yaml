@@ -110,8 +110,15 @@ overrides_exporter:
     enabled: true
     wait_stability_min_duration: 30s
 
+distributor:
+  usage_tracker_client:
+    use_sync_batched_tracking: true
+    sync_batch_delay: 50ms
+    use_batched_tracking: true
+    requests_hedging_delay: 500ms
+
 usage_tracker:
-  enabled: false
+  enabled: true
   idle_timeout: 20m
   partitions: 16
   max_partitions_to_create_per_reconcile: 16

@@ -3,6 +3,7 @@
 package usagetracker
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"maps"
@@ -353,6 +354,40 @@ func (t *trackerStore) getSortedUsersCloseToLimit() []string {
 	t.mtx.RLock()
 	defer t.mtx.RUnlock()
 	return t.sortedUsersCloseToLimit
+}
+
+// ShardStats holds the debug stats of a single shard of a single tenant.
+type ShardStats struct {
+	Tenant string `json:"tenant"`
+	Shard  int    `json:"shard"`
+	tenantshard.Stats
+}
+
+// shardStats returns the debug stats of every shard of every tenant, sorted by tenant and then by shard.
+// It snapshots the tenants under the store's lock and then reads each shard under its own lock,
+// so it never holds the store lock while locking shards.
+func (t *trackerStore) shardStats() []ShardStats {
+	// Work on a copy of tenants, like cleanup() does.
+	t.mtx.RLock()
+	tenantsClone := maps.Clone(t.tenants)
+	t.mtx.RUnlock()
+
+	rows := make([]ShardStats, 0, len(tenantsClone)*shards)
+	for tenantID, tenant := range tenantsClone {
+		for s := range shards {
+			rows = append(rows, ShardStats{
+				Tenant: tenantID,
+				Shard:  s,
+				Stats:  tenant.shards[s].Stats(),
+			})
+		}
+	}
+
+	// maps.Clone iteration order is random, so sort for stable output.
+	slices.SortFunc(rows, func(a, b ShardStats) int {
+		return cmp.Or(cmp.Compare(a.Tenant, b.Tenant), cmp.Compare(a.Shard, b.Shard))
+	})
+	return rows
 }
 
 // seriesCountsForTests should only be used in tests because it holds the mutex while loading all atomic values.

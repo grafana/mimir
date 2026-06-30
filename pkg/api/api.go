@@ -567,6 +567,12 @@ func (a *API) RegisterOverridesExporter(oe *exporter.OverridesExporter) {
 func (a *API) RegisterUsageTracker(t *usagetracker.UsageTracker) {
 	usagetrackerpb.RegisterUsageTrackerServer(a.server.GRPC, t)
 	a.RegisterRoute("/usage-tracker/prepare-instance-ring-downscale", http.HandlerFunc(t.PrepareInstanceRingDownscaleHandler), false, true, "GET", "POST", "DELETE")
+
+	a.indexPage.AddLinks(defaultWeight, "Usage-tracker", []IndexPageLink{
+		{Desc: "Partitions", Path: "usage-tracker/partitions"},
+	})
+	a.RegisterRoute("/usage-tracker/partitions", http.HandlerFunc(t.PartitionsHandler), false, true, "GET")
+	a.RegisterRoute("/usage-tracker/partitions/{partition}", http.HandlerFunc(t.PartitionHandler), false, true, "GET")
 }
 
 func (a *API) RegisterUsageTrackerInstanceRing(instanceRingHandler http.Handler) {
