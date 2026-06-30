@@ -59,7 +59,7 @@ func TestInitialOffsetProbing(t *testing.T) {
 			minScanTime: time.Date(2025, 2, 20, 10, 0, 0, 600*1000000, time.UTC),
 			expectedRanges: []*offsetTime{
 				{offset: 2000, time: time.Date(2025, 3, 1, 10, 0, 0, 200*1000000, time.UTC)},
-				{offset: 2001, skipTimeUpdate: true},
+				{offset: 2001, time: time.Date(2025, 3, 1, 10, 0, 0, 600*1000000, time.UTC)},
 			},
 		},
 		"one record: no new data": {
@@ -116,7 +116,7 @@ func TestInitialOffsetProbing(t *testing.T) {
 				{offset: 1013, time: time.Date(2025, 3, 1, 10, 0, 0, 500*1000000, time.UTC)},
 				{offset: 1014, time: time.Date(2025, 3, 1, 10, 0, 0, 501*1000000, time.UTC)},
 				{offset: 1017, time: time.Date(2025, 3, 1, 10, 0, 0, 600*1000000, time.UTC)},
-				{offset: 1020, skipTimeUpdate: true},
+				{offset: 1020, time: time.Date(2025, 3, 1, 10, 0, 0, 600*1000000, time.UTC)},
 			},
 		},
 		"records with duplicate timestamps": {
@@ -139,7 +139,7 @@ func TestInitialOffsetProbing(t *testing.T) {
 			expectedRanges: []*offsetTime{
 				{offset: 1000, time: time.Date(2025, 3, 1, 10, 0, 0, 100*1000000, time.UTC)},
 				{offset: 1001, time: time.Date(2025, 3, 1, 10, 0, 0, 101*1000000, time.UTC)},
-				{offset: 1009, skipTimeUpdate: true},
+				{offset: 1009, time: time.Date(2025, 3, 1, 10, 0, 0, 600*1000000, time.UTC)},
 			},
 		},
 		"resumption offset is before min scan time": {
@@ -157,7 +157,7 @@ func TestInitialOffsetProbing(t *testing.T) {
 			expectedRanges: []*offsetTime{
 				{offset: 1002, time: time.Date(2025, 3, 1, 10, 0, 0, 200*1000000, time.UTC)},
 				{offset: 1003, time: time.Date(2025, 3, 1, 10, 0, 0, 300*1000000, time.UTC)},
-				{offset: 1004, skipTimeUpdate: true},
+				{offset: 1004, time: time.Date(2025, 3, 1, 10, 0, 0, 600*1000000, time.UTC)},
 			},
 		},
 		"min scan time later than any data": {
@@ -196,7 +196,7 @@ func TestInitialOffsetProbing(t *testing.T) {
 			minScanTime: time.Date(2025, 3, 1, 10, 0, 0, 0, time.UTC),
 			expectedRanges: []*offsetTime{
 				{offset: 1003, time: time.Date(2025, 3, 1, 10, 3, 0, 0, time.UTC)},
-				{offset: 1004, skipTimeUpdate: true},
+				{offset: 1004, time: time.Date(2025, 3, 1, 10, 3, 40, 0, time.UTC)},
 			},
 		},
 		"resume == start == end": {
@@ -223,7 +223,7 @@ func TestInitialOffsetProbing(t *testing.T) {
 			expectedRanges: []*offsetTime{
 				{offset: 2000, time: time.Date(2025, 3, 1, 11, 0, 0, 0, time.UTC)},
 				{offset: 3000, time: time.Date(2025, 3, 1, 12, 0, 0, 0, time.UTC)},
-				{offset: 10001, skipTimeUpdate: true},
+				{offset: 10001, time: time.Date(2025, 3, 1, 15, 0, 0, 0, time.UTC)},
 			},
 			msg: "if resumption offset has fallen off the retention window, we should produce jobs beginning at start",
 		},

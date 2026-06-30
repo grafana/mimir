@@ -326,11 +326,6 @@ func (s *BlockBuilderScheduler) populateInitialJobs(ctx context.Context, consume
 
 		for _, io := range o {
 			ps.updateEndOffset(io.offset)
-
-			if io.skipTimeUpdate {
-				continue
-			}
-
 			if job, err := ps.updateTime(io.time, s.cfg.JobSize); err != nil {
 				level.Warn(s.logger).Log("msg", "failed to update partition time", "partition", ps.partition, "err", err)
 			} else if job != nil {

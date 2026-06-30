@@ -18,8 +18,6 @@ import (
 type offsetTime struct {
 	offset int64
 	time   time.Time
-	// skipTimeUpdate means the end offset should be registered without advancing the time bucket.
-	skipTimeUpdate bool
 }
 
 // offsetScanner computes an initial set of <offset, time> pairs for each
@@ -70,13 +68,13 @@ func (s *offsetScanner) probeInitialOffsets(ctx context.Context, off partitionOf
 
 		if len(sentinels) == 0 || offset != sentinels[len(sentinels)-1].offset {
 			// The end offset has no real record timestamp, so register its
-			// offset but skip the time update rather than bucket from a
-			// non-existent record.
-			sentinels = append(sentinels, &offsetTime{offset: offset, time: t, skipTimeUpdate: isEndOffset})
-
-			if !isEndOffset {
+			// offset at the current time.
+			if isEndOffset {
+				t = s.endTime
+			} else {
 				s.recordTimeDelta.Observe(t.Sub(pb).Seconds())
 			}
+			sentinels = append(sentinels, &offsetTime{offset: offset, time: t})
 		}
 
 		if offset == off.resume {
