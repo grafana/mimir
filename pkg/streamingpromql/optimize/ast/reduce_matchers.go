@@ -254,36 +254,51 @@ func filterRegexMatchers(mf map[labels.MatchType][]*labels.Matcher, regexType la
 }
 
 // filterNotEqualsMatchers returns a subset of not-equals matchers which should actually reduce the result set size.
-// This subset is determined by comparing each not-equals matchers against equals and not-regex matchers.
+// This subset is determined by comparing each not-equals matchers against equals, regex, and not-regex matchers.
 // A not-equals matcher is dropped on any of these conditions:
 //   - there are any not-regex matchers which would also remove the not-equals matcher value from the result set
+//   - there are any regex matchers which would also remove the not-equals matcher value from the result set
 //   - any equals matcher for a value that is matched by the not-equals matcher
 //
 // Examples:
 //   - for the matcher set {foo!="bar", foo="b"}, foo!="bar" does match the value "b", so foo!="bar" is dropped.
 //   - for the matcher set {foo!="bar", foo="bar"}, foo!="bar" does not match the value "bar", so foo!="bar" is not dropped.
 //   - for the matcher set {foo!="bar", foo!~".*bar.*"}, foo!~".*bar.*" will exclude more values from the result set than foo!="bar", so foo!="bar" is dropped.
+//   - for the matcher set {foo!="bar", foo=~".*baz.*"}, foo=~".*baz.*" will already exclude the "bar" value.
 func filterNotEqualsMatchers(mf map[labels.MatchType][]*labels.Matcher) []*labels.Matcher {
 	outMatchers := make([]*labels.Matcher, 0, len(mf[labels.MatchNotEqual]))
-	// If the value of a not-equals matcher is matched by the inverse of any not-regex matcher,
-	// that not-equals matcher can be dropped, because it will select a subset of the regex.
-	// Using the example of x!="a" and x!~"a.*",
-	// x!~"a.*" will exclude more values than x!="a".
+
 	for _, m := range mf[labels.MatchNotEqual] {
-		noRegexMatchesValue := true
+		// If the value of a not-equals matcher is matched by the inverse of any not-regex matcher,
+		// that not-equals matcher can be dropped, because it will select a subset of the regex.
+		// Using the example of x!="a" and x!~"a.*",
+		// x!~"a.*" will exclude more values than x!="a".
+		notRegexExcludesValue := false
 		for _, nr := range mf[labels.MatchNotRegexp] {
 			if inv, err := nr.Inverse(); err == nil {
 				if inv.Matches(m.Value) {
-					noRegexMatchesValue = false
+					notRegexExcludesValue = true
 					break
 				}
 			}
 		}
+
+		// If the value of a not-equals matcher is not matched by a positive regex matcher,
+		// that not-equals matcher can be dropped because it will already be excluded by the
+		// regex.
+		positiveRegexExcludesValue := false
+		for _, r := range mf[labels.MatchRegexp] {
+			if !r.Matches(m.Value) {
+				positiveRegexExcludesValue = true
+				break
+			}
+		}
+
 		// If the value of any equals matcher is matched by the not-equals matcher, only keep the equals matcher,
 		// because the not-equals will not "subtract" anything from the final set.
 		matchesNoEquals := !matcherMatchesAnyValues(m, mf[labels.MatchEqual])
 
-		if noRegexMatchesValue && matchesNoEquals {
+		if !notRegexExcludesValue && !positiveRegexExcludesValue && matchesNoEquals {
 			outMatchers = append(outMatchers, m)
 		}
 	}
