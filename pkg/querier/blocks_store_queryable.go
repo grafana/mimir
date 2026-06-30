@@ -346,7 +346,11 @@ func NewBlocksStoreQueryableFromConfig(querierCfg Config, gatewayCfg storegatewa
 	// per-compartment label that would otherwise collide with the same gRPC-client metrics registered by
 	// other components running in the same process. Its discovery is the union of all compartment rings,
 	// so its stale-client cleanup keeps clients for every compartment's store-gateways.
-	clientsPool := newStoreGatewayClientPool(newRingsServiceDiscovery(storesRings), querierCfg.StoreGatewayClient, logger, reg)
+	readRings := make([]ring.ReadRing, len(storesRings))
+	for i, r := range storesRings {
+		readRings[i] = r
+	}
+	clientsPool := newStoreGatewayClientPool(client.NewRingsServiceDiscovery(readRings), querierCfg.StoreGatewayClient, logger, reg)
 
 	stores := make([]blocksStoreCompartment, numCompartments)
 	for idx := range stores {
