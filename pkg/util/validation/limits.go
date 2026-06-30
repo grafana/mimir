@@ -490,7 +490,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&l.CompactorBlockUploadValidationEnabled, "compactor.block-upload-validation-enabled", true, "Enable block upload validation for the tenant.")
 	f.BoolVar(&l.CompactorBlockUploadVerifyChunks, "compactor.block-upload-verify-chunks", true, "Verify chunks when uploading blocks via the upload API for the tenant.")
 	f.Int64Var(&l.CompactorBlockUploadMaxBlockSizeBytes, "compactor.block-upload-max-block-size-bytes", 0, "Maximum size in bytes of a block that is allowed to be uploaded or validated. 0 = no limit.")
-	f.Var(&l.CompactorMaxLookback, "compactor.max-lookback", "Blocks uploaded before the lookback aren't considered in compactor cycles. If set, this value should be larger than all values in `-blocks-storage.tsdb.block-ranges-period`. A value of 0s means that all blocks are considered regardless of their upload time.")
+	f.Var(&l.CompactorMaxLookback, "compactor.max-lookback", "Blocks uploaded before the lookback aren't considered in compactor cycles. If set, this value should be larger than the TSDB block range period (default: 2h). A value of 0s means that all blocks are considered regardless of their upload time.")
 	f.IntVar(&l.CompactorMaxPerBlockUploadConcurrency, "compactor.max-per-block-upload-concurrency", 8, "Maximum number of TSDB segment files that the compactor can upload concurrently per block.")
 
 	// Query-frontend.

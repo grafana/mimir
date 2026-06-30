@@ -5092,9 +5092,9 @@ ruler_alertmanager_client_config:
 [compactor_block_upload_max_block_size_bytes: <int> | default = 0]
 
 # (experimental) Blocks uploaded before the lookback aren't considered in
-# compactor cycles. If set, this value should be larger than all values in
-# `-blocks-storage.tsdb.block-ranges-period`. A value of 0s means that all
-# blocks are considered regardless of their upload time.
+# compactor cycles. If set, this value should be larger than the TSDB block
+# range period (default: 2h). A value of 0s means that all blocks are considered
+# regardless of their upload time.
 # CLI flag: -compactor.max-lookback
 [compactor_max_lookback: <duration> | default = 0s]
 
@@ -6069,10 +6069,9 @@ tsdb:
   # TSDB blocks retention in the ingester before a block is removed. If shipping
   # is enabled, the retention will be relative to the time when the block was
   # uploaded to storage. If shipping is disabled then its relative to the
-  # creation time of the block. This should be larger than the
-  # -blocks-storage.tsdb.block-ranges-period, -querier.query-store-after and
-  # large enough to give store-gateways and queriers enough time to discover
-  # newly uploaded blocks.
+  # creation time of the block. This should be larger than the TSDB block range
+  # period (default: 2h), -querier.query-store-after and large enough to give
+  # store-gateways and queriers enough time to discover newly uploaded blocks.
   # CLI flag: -blocks-storage.tsdb.retention-period
   [retention_period: <duration> | default = 13h]
 
