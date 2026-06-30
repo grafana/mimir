@@ -18,5 +18,13 @@
     compartments_enabled: true,
     compartments_read_count: 2,
     compartments_write_count: 2,
+
+    compactor_scheduler_enabled: true,
+    autoscaling_compactor_enabled: true,
+    autoscaling_compactor_min_replicas: 2,
+    autoscaling_compactor_max_replicas: 30,
+    cortex_compactor_concurrent_rollout_enabled: true,
+    enable_pvc_auto_deletion_for_compactors: true,
+    enable_pvc_auto_deletion_for_ingesters: true,
   },
 }

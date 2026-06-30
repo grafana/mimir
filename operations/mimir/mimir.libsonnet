@@ -54,9 +54,6 @@
 (import 'ingester-automated-downscale-v2.libsonnet') +
 (import 'store-gateway-autoscaling.libsonnet') +
 
-// Automatic cleanup of unused PVCs after scaling down
-(import 'pvc-auto-deletion.libsonnet') +
-
 // Deletion protection for specific Mimir components.
 (import 'deletion-protection.libsonnet') +
 
@@ -72,6 +69,12 @@
 (import 'compartments-ingester.libsonnet') +
 (import 'compartments-querier.libsonnet') +
 (import 'compartments-query-frontend.libsonnet') +
+(import 'compartments-compactor.libsonnet') +
+(import 'compartments-compactor-scheduler.libsonnet') +
+
+// Automatic cleanup of unused PVCs after scaling down. Keep it after compartments so it can patch the
+// per-compartment StatefulSet maps.
+(import 'pvc-auto-deletion.libsonnet') +
 
 // Add memberlist support. Keep it at the end because it overrides all Mimir components.
 (import 'memberlist.libsonnet') +

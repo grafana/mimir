@@ -38,6 +38,10 @@ local jsonpath = import 'github.com/jsonnet-libs/xtd/jsonpath.libsonnet';
   // '<read-compartment-id>' placeholder in compartments_blocks_storage_bucket_name.
   mimirBlocksStorageCompartmentBucketName(compartmentID):: std.strReplace($._config.compartments_blocks_storage_bucket_name, '<read-compartment-id>', std.toString(compartmentID)),
 
+  // Concrete Kafka topic for the given read compartment, resolving the '<read-compartment-id>' placeholder
+  // in compartments_ingest_storage_kafka_topic.
+  mimirIngestStorageCompartmentKafkaTopic(compartmentID):: std.strReplace($._config.compartments_ingest_storage_kafka_topic, '<read-compartment-id>', std.toString(compartmentID)),
+
   // The blocks-storage bucket-name CLI flag for the configured storage backend.
   mimirBlocksStorageBucketNameFlag::
     if $._config.storage_backend == 'gcs' then 'blocks-storage.gcs.bucket-name'

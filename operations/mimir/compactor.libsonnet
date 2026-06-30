@@ -102,19 +102,21 @@
     $.util.readinessProbe +
     $.tracing_env_mixin,
 
+  // Switches a compactor StatefulSet to rollout-operator-coordinated concurrent rollouts: OnDelete updates
+  // plus a rollout-group keyed on the StatefulSet name.
+  newCompactorConcurrentRolloutMixin(name, max_unavailable)::
+    statefulSet.mixin.spec.selector.withMatchLabels({ name: name, 'rollout-group': name }) +
+    statefulSet.mixin.spec.updateStrategy.withType('OnDelete') +
+    statefulSet.mixin.metadata.withLabelsMixin({ 'rollout-group': name }) +
+    statefulSet.mixin.metadata.withAnnotationsMixin({ 'rollout-max-unavailable': std.toString(max_unavailable) }) +
+    statefulSet.mixin.spec.template.metadata.withLabelsMixin({ 'rollout-group': name }),
+
   newCompactorStatefulSet(name, container, nodeAffinityMatchers=[], concurrent_rollout_enabled=false, max_unavailable=1)::
     $.newMimirStatefulSet(name, 1, container, compactor_data_pvc) +
     $.newMimirNodeAffinityMatchers(nodeAffinityMatchers) +
     statefulSet.mixin.spec.template.spec.withTerminationGracePeriodSeconds(900) +
     $.mimirVolumeMounts +
-    (
-      if !concurrent_rollout_enabled then {} else
-        statefulSet.mixin.spec.selector.withMatchLabels({ name: 'compactor', 'rollout-group': 'compactor' }) +
-        statefulSet.mixin.spec.updateStrategy.withType('OnDelete') +
-        statefulSet.mixin.metadata.withLabelsMixin({ 'rollout-group': 'compactor' }) +
-        statefulSet.mixin.metadata.withAnnotationsMixin({ 'rollout-max-unavailable': std.toString(max_unavailable) }) +
-        statefulSet.mixin.spec.template.metadata.withLabelsMixin({ 'rollout-group': 'compactor' })
-    ),
+    (if !concurrent_rollout_enabled then {} else $.newCompactorConcurrentRolloutMixin(name, max_unavailable)),
 
   compactor_statefulset:
     $.newCompactorStatefulSet(
