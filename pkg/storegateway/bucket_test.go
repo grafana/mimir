@@ -601,6 +601,17 @@ func TestBlockLabelValues(t *testing.T) {
 		require.Empty(t, values)
 	})
 
+	t.Run("happy case with case-insensitive matchers", func(t *testing.T) {
+		b := newTestBucketBlock()
+
+		matchers := []*labels.Matcher{
+			labels.MustNewMatcher(labels.MatchRegexp, "j", "(?i)f.*"),
+		}
+		values, err := blockLabelValues(context.Background(), b, worstCaseFetchedDataStrategy{1.0}, 5000, "j", matchers, log.NewNopLogger(), newSafeQueryStats())
+		require.NoError(t, err)
+		require.Equal(t, []string{"foo"}, values)
+	})
+
 	t.Run("happy case cached with exact matchers", func(t *testing.T) {
 		b := newTestBucketBlock()
 		b.indexCache = newInMemoryIndexCache(t)
