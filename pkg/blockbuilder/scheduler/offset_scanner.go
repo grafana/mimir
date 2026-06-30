@@ -23,8 +23,10 @@ type offsetTime struct {
 // offsetScanner computes an initial set of <offset, time> pairs for each
 // partition, used to seed the scheduler at startup.
 type offsetScanner struct {
-	offs            offsetStore
-	endTime         time.Time
+	store   offsetStore
+	endTime time.Time
+	// probeTimes are the timestamps to query Kafka offsets at, in descending
+	// order so the scan stops once it reaches the partition's resume offset.
 	probeTimes      []time.Time
 	recordTimeDelta prometheus.Observer
 }
@@ -32,7 +34,7 @@ type offsetScanner struct {
 func newOffsetScanner(offs offsetStore, endTime time.Time, jobSize, maxScanAge time.Duration, recordTimeDelta prometheus.Observer) *offsetScanner {
 	minScanTime := endTime.Add(-maxScanAge)
 	return &offsetScanner{
-		offs:            offs,
+		store:           offs,
 		endTime:         endTime,
 		probeTimes:      scanProbeTimes(endTime, jobSize, minScanTime),
 		recordTimeDelta: recordTimeDelta,
@@ -42,10 +44,10 @@ func newOffsetScanner(offs offsetStore, endTime time.Time, jobSize, maxScanAge t
 // probeInitialOffsets computes an initial set of <offset, time> pairs that exist between this
 // partition's resume and end offsets. These pairs can be used to seed a bunch of
 // end offset observations to start the scheduler.
-func (s *offsetScanner) probeInitialOffsets(ctx context.Context, off partitionOffsets, logger log.Logger) ([]*offsetTime, error) {
-	if off.resume >= off.end || off.start >= off.end {
+func (s *offsetScanner) probeInitialOffsets(ctx context.Context, po partitionOffsets, logger log.Logger) ([]*offsetTime, error) {
+	if po.resume >= po.end || po.start >= po.end {
 		// No new data to consume. Return the single end offset so it is initially registered.
-		return []*offsetTime{{offset: off.end, time: s.endTime}}, nil
+		return []*offsetTime{{offset: po.end, time: s.endTime}}, nil
 	}
 
 	reachedResume := false
@@ -56,15 +58,15 @@ func (s *offsetScanner) probeInitialOffsets(ctx context.Context, off partitionOf
 	// given a timestamp, so we iteratively call that API for each probe time
 	// until we reach the resume offset.
 	for _, pb := range s.probeTimes {
-		offset, t, isEndOffset, err := s.offs.offsetAfterTime(ctx, off.topic, off.partition, pb)
+		offset, t, isEndOffset, err := s.store.offsetAfterTime(ctx, po.topic, po.partition, pb)
 		if err != nil {
 			return nil, err
 		}
 		level.Debug(logger).Log("msg", "found next boundary offset", "ts", pb,
-			"topic", off.topic, "partition", off.partition, "offset", offset, "isEndOffset", isEndOffset)
+			"topic", po.topic, "partition", po.partition, "offset", offset, "isEndOffset", isEndOffset)
 
 		// Don't want to probe for offsets before the resume offset.
-		offset = max(offset, off.resume)
+		offset = max(offset, po.resume)
 
 		if len(sentinels) == 0 || offset != sentinels[len(sentinels)-1].offset {
 			// The end offset has no real record timestamp, so register its
@@ -77,7 +79,7 @@ func (s *offsetScanner) probeInitialOffsets(ctx context.Context, off partitionOf
 			sentinels = append(sentinels, &offsetTime{offset: offset, time: t})
 		}
 
-		if offset == off.resume {
+		if offset == po.resume {
 			// We've reached the resume offset, so we're done.
 			reachedResume = true
 			break
@@ -89,7 +91,7 @@ func (s *offsetScanner) probeInitialOffsets(ctx context.Context, off partitionOf
 		if len(sentinels) > 0 {
 			lastOffset = sentinels[len(sentinels)-1].offset
 		}
-		level.Warn(logger).Log("msg", "probe offsets: probe did not reach commit offset due to limited scan age", "partition", off.partition, "lastOffset", lastOffset, "resumeOffset", off.resume)
+		level.Warn(logger).Log("msg", "probe offsets: probe did not reach commit offset due to limited scan age", "partition", po.partition, "lastOffset", lastOffset, "resumeOffset", po.resume)
 	}
 
 	// Return them in increasing order of offset.
