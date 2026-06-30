@@ -262,7 +262,7 @@ func parseLaneRequests(configuredLanes flagext.StringSliceCSV) ([][]*compactorsc
 }
 
 func (e *schedulerExecutor) run(ctx context.Context, c *MultitenantCompactor) error {
-	baseWorkerID := fmt.Sprintf("compactor-%s", c.ringLifecycler.GetInstanceID())
+	baseWorkerID := c.ringLifecycler.GetInstanceID()
 	level.Info(e.logger).Log("msg", "compactor running in scheduler mode", "scheduler_endpoint", e.cfg.SchedulerEndpoint, "worker_id", baseWorkerID)
 
 	// Scheduler mode compactors work on jobs for arbitrary tenants, so unlike standalone mode they
