@@ -41,7 +41,10 @@ func TestIngesterQuerying_ShouldSupportCompartments(t *testing.T) {
 
 	// Start dependencies: Consul, MinIO, and one Kafka cluster per write compartment.
 	consul := e2edb.NewConsul()
-	minio := e2edb.NewMinio(9000, baseFlags["-blocks-storage.s3.bucket-name"])
+
+	// Each read compartment owns a dedicated blocks-storage bucket; create one per read compartment.
+	blocksBucketNameTemplate, compartmentBuckets := compartmentBlocksBucketNames(baseFlags["-blocks-storage.s3.bucket-name"], numReadCompartments)
+	minio := e2edb.NewMinio(9000, compartmentBuckets...)
 	require.NoError(t, s.StartAndWaitReady(consul, minio))
 
 	kafkas := make([]e2e.Service, numWriteCompartments)
@@ -71,12 +74,15 @@ func TestIngesterQuerying_ShouldSupportCompartments(t *testing.T) {
 	ingesters := make([]*e2emimir.MimirService, numReadCompartments)
 	for rc := range ingesters {
 		ingesters[rc] = e2emimir.NewIngester(fmt.Sprintf("ingester-rc-%d-0", rc), consul.NetworkHTTPEndpoint(), mergeFlags(baseFlags, map[string]string{
-			"-ingester.read-compartment-id": strconv.Itoa(rc),
+			"-ingester.read-compartment-id":  strconv.Itoa(rc),
+			"-blocks-storage.s3.bucket-name": compartmentBuckets[rc],
 		}))
 	}
 
 	queryFrontend := e2emimir.NewQueryFrontend("query-frontend", consul.NetworkHTTPEndpoint(), baseFlags)
-	querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), baseFlags)
+	querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), mergeFlags(baseFlags, map[string]string{
+		"-blocks-storage.s3.bucket-name": blocksBucketNameTemplate,
+	}))
 
 	mimirServices := []e2e.Service{queryFrontend, querier}
 	for _, d := range distributors {
@@ -161,6 +167,18 @@ func TestIngesterQuerying_ShouldSupportCompartments(t *testing.T) {
 		require.NoErrorf(t, ingesters[rc].WaitSumMetrics(e2e.Equals(numWriteCompartments), "cortex_ingester_memory_series"),
 			"read compartment: %d", rc)
 	}
+}
+
+// compartmentBlocksBucketNames derives, from the base blocks-storage bucket name, the placeholder template
+// the querier resolves to read every read compartment's bucket, and the resolved bucket name of each read
+// compartment (the compartment's ingester ships to it and the querier reads it).
+func compartmentBlocksBucketNames(baseBucketName string, numReadCompartments int) (template string, buckets []string) {
+	template = fmt.Sprintf("%s-rc-%s", baseBucketName, compartments.ReadCompartmentIDPlaceholder)
+	buckets = make([]string, numReadCompartments)
+	for rc := range buckets {
+		buckets[rc] = compartments.ReplaceReadCompartment(template, rc)
+	}
+	return template, buckets
 }
 
 // metricNamesPerCompartment returns perCompartment distinct metric names for each read compartment,
