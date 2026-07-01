@@ -100,6 +100,7 @@
 * [CHANGE] Query-frontend: Increase default query-frontend cache size limit to 25MB. #14857
 * [CHANGE] Query-frontend: Increase memory requested and limit to 2GiB and 4GiB respectively. #15688
 * [CHANGE] Continuous-test: Don't explicitly set `tests.write-read-series-test.num-series` and `tests.write-read-series-test.max-query-age` to their default values. #15705
+* [CHANGE] Request 50Mi of ephemeral storage for the distributor, ingester, querier, query-frontend, query-scheduler, ruler-querier, ruler-query-frontend, ruler-query-scheduler, store-gateway, compactor, compactor-scheduler and continuous-test containers. Configure with the new `ephemeral_storage_request_size` option (set it to `null` to disable). #15916
 * [FEATURE] Compactor: add support for deploying the experimental compactor-scheduler. Enable with `compactor_scheduler_enabled: true`. #15850
 * [FEATURE] Compactor: add experimental compactor autoscaling, enabled with `autoscaling_compactor_enabled: true`. When the compactor-scheduler is enabled, compactors are autoscaled based on the estimated time to drain the scheduler queue instead of CPU utilization. #15850
 * [ENHANCEMENT] Updated rollout-operator jsonnet library to v0.38.0. #15328, #15626
