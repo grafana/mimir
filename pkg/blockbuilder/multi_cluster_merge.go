@@ -130,9 +130,7 @@ func (b *BlockBuilder) consumeMultiCluster(
 	}
 }
 
-// recordChannelConsumer is an ingest.RecordConsumer that forwards each record to a
-// kafkaClusterSource's channel. Passing it to the unchanged consumePartitionSection lets
-// that fetch loop feed the merge without any modification.
+// recordChannelConsumer is an ingest.RecordConsumer that forwards each record to a channel.
 type recordChannelConsumer struct {
 	records chan<- *kgo.Record
 }
