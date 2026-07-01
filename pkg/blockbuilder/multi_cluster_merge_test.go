@@ -252,7 +252,7 @@ func rec(offset int64, ms int64) *kgo.Record {
 }
 
 // taggedRec is rec with a Value, so tie-broken ordering can be asserted by payload.
-func taggedRec(offset int64, ms int64, val string) *kgo.Record {
+func valuedRec(offset int64, ms int64, val string) *kgo.Record {
 	r := rec(offset, ms)
 	r.Value = []byte(val)
 	return r
