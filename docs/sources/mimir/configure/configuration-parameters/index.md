@@ -2377,6 +2377,12 @@ The `query_scheduler` block configures the query-scheduler.
 # CLI flag: -query-scheduler.inflight-max-age-metric-enabled
 [inflight_max_age_metric_enabled: <boolean> | default = true]
 
+# (experimental) Enable the cortex_query_scheduler_queue_length_peak metric,
+# which reports the per-tenant peak queue length observed since the last scrape.
+# Disabling it skips per-tenant peak tracking on enqueue and dequeue.
+# CLI flag: -query-scheduler.max-queue-length-metric-enabled
+[max_queue_length_metric_enabled: <boolean> | default = false]
+
 # This configures the gRPC client used to report errors back to the
 # query-frontend.
 # The CLI flags prefix for this block configuration is:
