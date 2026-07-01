@@ -20,6 +20,8 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -28,11 +30,22 @@ import (
 )
 
 func TestBuildNotifierConfig(t *testing.T) {
+	// Shared between the input and expected config so the comparison does not depend on
+	// two independently-compiled regexps being reflect-equal.
+	dropInfoRelabelConfigs := []*relabel.Config{{
+		SourceLabels: model.LabelNames{"severity"},
+		Regex:        relabel.MustNewRegexp("info"),
+		Action:       relabel.Drop,
+	}}
+
 	tests := []struct {
 		name string
 
 		alertmanagerURL             string
 		notifier                    notifier.Config
+		externalLabels              labels.Labels
+		alertRelabelConfigs         []*relabel.Config
+		nameValidationScheme        model.ValidationScheme
 		alertmanagerRefreshInterval time.Duration
 		notificationTimeout         time.Duration
 
@@ -500,11 +513,47 @@ func TestBuildNotifierConfig(t *testing.T) {
 			},
 			err: errRulerSimultaneousBasicAuthAndOAuth,
 		},
+		{
+			name:            "external labels without an alertmanager URL returns an empty config",
+			alertmanagerURL: "",
+			externalLabels:  labels.FromStrings("cluster", "eu-west"),
+			ncfg:            &config.Config{},
+		},
+		{
+			name:                 "with external labels and alert relabel configs",
+			alertmanagerURL:      "http://alertmanager.default.svc.cluster.local/alertmanager",
+			externalLabels:       labels.FromStrings("cluster", "eu-west"),
+			alertRelabelConfigs:  dropInfoRelabelConfigs,
+			nameValidationScheme: model.UTF8Validation,
+			ncfg: &config.Config{
+				GlobalConfig: config.GlobalConfig{
+					ExternalLabels:             labels.FromStrings("cluster", "eu-west"),
+					MetricNameValidationScheme: model.UTF8Validation,
+				},
+				AlertingConfig: config.AlertingConfig{
+					AlertmanagerConfigs: []*config.AlertmanagerConfig{
+						{
+							APIVersion: "v2",
+							Scheme:     "http",
+							PathPrefix: "/alertmanager",
+							ServiceDiscoveryConfigs: discovery.Configs{
+								discovery.StaticConfig{
+									{
+										Targets: []model.LabelSet{{"__address__": "alertmanager.default.svc.cluster.local"}},
+									},
+								},
+							},
+						},
+					},
+					AlertRelabelConfigs: dropInfoRelabelConfigs,
+				},
+			},
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ncfg, err := buildNotifierConfig(tt.alertmanagerURL, tt.notifier, nil, tt.notificationTimeout, tt.alertmanagerRefreshInterval, nil)
+			ncfg, err := buildNotifierConfig(tt.alertmanagerURL, tt.notifier, tt.externalLabels, tt.alertRelabelConfigs, tt.nameValidationScheme, nil, tt.notificationTimeout, tt.alertmanagerRefreshInterval, nil)
 			if tt.err == nil {
 				require.NoError(t, err)
 				require.Equal(t, tt.ncfg, ncfg)
