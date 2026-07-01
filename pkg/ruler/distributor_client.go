@@ -77,7 +77,7 @@ func (c *DistributorConfig) Validate() error {
 	// Make sure the DNS prefix is correct (three slashes) if it is being used.
 	// This is a gRPC specific requirement/format when using service discovery.
 	if strings.HasPrefix(c.Address, "dns://") && !strings.HasPrefix(c.Address, "dns:///") {
-		return fmt.Errorf(`address must have "dns:///" prefix when using gRPC service discovery, got: %q`, c.Address)
+		return fmt.Errorf(`ruler's distributor client address must have "dns:///" prefix when using gRPC service discovery, got: %q`, c.Address)
 	}
 
 	return nil
