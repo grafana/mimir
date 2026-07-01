@@ -752,6 +752,7 @@ func TestCacheOperator(t *testing.T) {
 
 			if testCase.expectedWrittenCacheEntry == nil {
 				require.Equal(t, 0, cache.SetCount, "expected no cache entry to be written, but at least one was")
+				require.Zero(t, queryDetails.ResultsCacheSetCount)
 			} else {
 				require.Equal(t, 1, cache.SetCount, "expected cache entry to be written, but it was not")
 				require.Equal(t, []string{hashedCacheKey}, slices.Collect(maps.Keys(cache.Entries)), "expected cache entry to be written with expected key")
@@ -767,6 +768,8 @@ func TestCacheOperator(t *testing.T) {
 				sortAnnotations(testCase.expectedWrittenCacheEntry)
 
 				require.Equal(t, testCase.expectedWrittenCacheEntry, actualEntry, "expected cache entry to be written with expected value")
+
+				require.Equal(t, 1, queryDetails.ResultsCacheSetCount)
 			}
 
 			if testCase.expectedCachedExtentsUsed > 0 {
@@ -783,12 +786,16 @@ func TestCacheOperator(t *testing.T) {
 
 			require.Equal(t, float64(testCase.expectedCachedExtentsUsed), testutil.ToFloat64(metrics.UsedExtents))
 			require.Equal(t, float64(len(testCase.expectedFreshlyEvaluatedRanges)), testutil.ToFloat64(metrics.EvaluatedExtents))
-
 			require.Equal(t, float64(1), testutil.ToFloat64(metrics.CacheRequests))
+
 			if testCase.existingCacheEntry == nil {
 				require.Zero(t, testutil.ToFloat64(metrics.CacheHits))
+				require.Zero(t, queryDetails.ResultsCacheHitCount)
+				require.Equal(t, 1, queryDetails.ResultsCacheMissCount)
 			} else {
 				require.Equal(t, float64(1), testutil.ToFloat64(metrics.CacheHits))
+				require.Equal(t, 1, queryDetails.ResultsCacheHitCount)
+				require.Zero(t, queryDetails.ResultsCacheMissCount)
 			}
 		})
 	}

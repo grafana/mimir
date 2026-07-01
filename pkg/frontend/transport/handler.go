@@ -437,6 +437,9 @@ func (f *Handler) reportQueryStats(
 		logMessage = append(logMessage,
 			resultsCacheHitBytes, details.ResultsCacheHitBytes,
 			resultsCacheMissBytes, details.ResultsCacheMissBytes,
+			"results_cache_hit_count", details.ResultsCacheHitCount,
+			"results_cache_miss_count", details.ResultsCacheMissCount,
+			"results_cache_set_count", details.ResultsCacheSetCount,
 			"response_series_count", details.ResponseSeriesCount,
 			"response_samples_count", details.ResponseSamplesCount,
 		)
