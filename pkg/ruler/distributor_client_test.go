@@ -16,13 +16,14 @@ import (
 	"github.com/go-kit/log"
 	"github.com/gogo/status"
 	"github.com/grafana/dskit/flagext"
+	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/mem"
 
 	"github.com/grafana/mimir/pkg/distributor/distributorpb"
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -120,8 +121,9 @@ func setupDistributorGRPCClient(t *testing.T, srv *mockDistributorServer, logger
 
 	client, err := NewDistributorGRPCClient(cfg, nil, logger)
 	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(t.Context(), client))
 	t.Cleanup(func() {
-		_ = client.Close()
+		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), client))
 	})
 
 	return client
@@ -140,6 +142,19 @@ func newTestWriteRequest() *mimirpb.WriteRequest {
 }
 
 func TestDistributorGRPCClient(t *testing.T) {
+	t.Run("push before service start", func(t *testing.T) {
+		var cfg DistributorConfig
+		flagext.DefaultValues(&cfg)
+		client, err := NewDistributorGRPCClient(cfg, nil, log.NewNopLogger())
+		require.NoError(t, err)
+
+		req := newTestWriteRequest()
+		req.SetBuffer(mem.SliceBuffer([]byte("request buffer")))
+		_, err = client.Push(user.InjectOrgID(t.Context(), "test-user"), req)
+		require.ErrorIs(t, err, errDistributorClientNotRunning)
+		require.Nil(t, req.Buffer())
+	})
+
 	t.Run("push sends request", func(t *testing.T) {
 		srv := &mockDistributorServer{}
 		client := setupDistributorGRPCClient(t, srv, log.NewNopLogger(), nil)
@@ -296,26 +311,43 @@ func TestDistributorGRPCClient(t *testing.T) {
 		require.Less(t, time.Since(start), time.Second)
 	})
 
-	t.Run("close closes connection", func(t *testing.T) {
+	t.Run("stop closes connection", func(t *testing.T) {
 		srv := &mockDistributorServer{}
 		client := setupDistributorGRPCClient(t, srv, log.NewNopLogger(), nil)
 
-		require.NoError(t, client.Close())
-		require.NoError(t, client.Close())
+		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), client))
 
 		_, err := client.Push(user.InjectOrgID(t.Context(), "test-user"), newTestWriteRequest())
-		require.Equal(t, codes.Canceled, status.Code(err))
-		require.Contains(t, err.Error(), "grpc: the client connection is closing")
+		require.ErrorIs(t, err, errDistributorClientNotRunning)
 	})
 
-	t.Run("close returns first close error", func(t *testing.T) {
-		conn, err := grpc.NewClient("127.0.0.1:0", grpc.WithTransportCredentials(insecure.NewCredentials()))
+	t.Run("close is idempotent", func(t *testing.T) {
+		var cfg DistributorConfig
+		flagext.DefaultValues(&cfg)
+		client, err := NewDistributorGRPCClient(cfg, nil, log.NewNopLogger())
 		require.NoError(t, err)
-		require.NoError(t, conn.Close())
 
-		client := &DistributorGRPCClient{conn: conn}
-		require.EqualError(t, client.Close(), "rpc error: code = Canceled desc = grpc: the client connection is closing")
-		require.EqualError(t, client.Close(), "rpc error: code = Canceled desc = grpc: the client connection is closing")
+		require.NoError(t, client.Close())
+		require.NoError(t, client.Close())
+	})
+
+	t.Run("start failure does not publish connection", func(t *testing.T) {
+		var cfg DistributorConfig
+		flagext.DefaultValues(&cfg)
+		cfg.Address = "127.0.0.1:0"
+		cfg.RemoteTimeout = time.Second
+		cfg.GRPCClientConfig.GRPCCompression = "unsupported"
+
+		client, err := NewDistributorGRPCClient(cfg, nil, log.NewNopLogger())
+		require.NoError(t, err)
+
+		err = services.StartAndAwaitRunning(t.Context(), client)
+		require.EqualError(t, err, `ruler's distributor client gRPC settings: unsupported compression type: "unsupported"`)
+
+		client.mu.RLock()
+		require.Nil(t, client.conn)
+		require.Nil(t, client.client)
+		client.mu.RUnlock()
 	})
 }
 

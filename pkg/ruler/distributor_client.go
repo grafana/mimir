@@ -4,6 +4,7 @@ package ruler
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"strings"
@@ -16,6 +17,7 @@ import (
 	"github.com/grafana/dskit/grpcclient"
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/middleware"
+	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"google.golang.org/grpc"
@@ -83,45 +85,66 @@ func (c *DistributorConfig) Validate() error {
 	return nil
 }
 
+var errDistributorClientNotRunning = errors.New("ruler distributor client is not running")
+
 // DistributorGRPCClient is a gRPC client used by rulers to push rule evaluation
 // results to distributors.
 type DistributorGRPCClient struct {
-	distributorpb.DistributorClient
+	services.Service
 
-	conn     *grpc.ClientConn
-	logger   log.Logger
-	cfg      DistributorConfig
-	close    sync.Once
-	closeErr error
+	logger                   log.Logger
+	cfg                      DistributorConfig
+	invalidClusterValidation *prometheus.CounterVec
+
+	mu     sync.RWMutex
+	conn   *grpc.ClientConn
+	client distributorpb.DistributorClient
 }
 
 func NewDistributorGRPCClient(cfg DistributorConfig, reg prometheus.Registerer, logger log.Logger) (*DistributorGRPCClient, error) {
-	invalidClusterValidation := util.NewRequestInvalidClusterValidationLabelsTotalCounter(reg, "ruler-distributor", util.GRPCProtocol)
-	opts, err := cfg.GRPCClientConfig.DialOption(
+	c := &DistributorGRPCClient{
+		logger:                   logger,
+		cfg:                      cfg,
+		invalidClusterValidation: util.NewRequestInvalidClusterValidationLabelsTotalCounter(reg, "ruler-distributor", util.GRPCProtocol),
+	}
+	c.Service = services.NewIdleService(c.start, c.stop).WithName("ruler distributor client")
+	return c, nil
+}
+
+func (c *DistributorGRPCClient) start(context.Context) error {
+	if err := c.cfg.Validate(); err != nil {
+		return err
+	}
+
+	opts, err := c.cfg.GRPCClientConfig.DialOption(
 		[]grpc.UnaryClientInterceptor{
 			middleware.ClientUserHeaderInterceptor,
 		},
 		nil,
-		util.NewInvalidClusterValidationReporter(cfg.GRPCClientConfig.ClusterValidation.Label, invalidClusterValidation, logger),
+		util.NewInvalidClusterValidationReporter(c.cfg.GRPCClientConfig.ClusterValidation.Label, c.invalidClusterValidation, c.logger),
 	)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	opts = append(opts, grpc.WithDefaultServiceConfig(serviceConfig))
 	opts = append(opts, grpc.WithStatsHandler(otelgrpc.NewClientHandler()))
 
 	// nolint:staticcheck // grpc.Dial() has been deprecated; we'll address it before upgrading to gRPC 2.
-	conn, err := grpc.Dial(cfg.Address, opts...)
+	conn, err := grpc.Dial(c.cfg.Address, opts...)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	return &DistributorGRPCClient{
-		conn:              conn,
-		DistributorClient: distributorpb.NewDistributorClient(conn),
-		logger:            logger,
-		cfg:               cfg,
-	}, nil
+	c.mu.Lock()
+	c.conn = conn
+	c.client = distributorpb.NewDistributorClient(conn)
+	c.mu.Unlock()
+
+	return nil
+}
+
+func (c *DistributorGRPCClient) stop(error) error {
+	return c.Close()
 }
 
 // Push consumes req and releases its pooled resources when done, matching the
@@ -133,10 +156,21 @@ func (c *DistributorGRPCClient) Push(ctx context.Context, req *mimirpb.WriteRequ
 		mimirpb.ReuseSlice(req.Timeseries)
 	}()
 
+	if c == nil {
+		return nil, errDistributorClientNotRunning
+	}
+
+	c.mu.RLock()
+	client := c.client
+	c.mu.RUnlock()
+	if client == nil {
+		return nil, errDistributorClientNotRunning
+	}
+
 	pushAttempt := func() (*mimirpb.WriteResponse, error) {
 		attemptCtx, cancel := context.WithTimeout(ctx, c.cfg.RemoteTimeout)
 		defer cancel()
-		return c.DistributorClient.Push(attemptCtx, req)
+		return client.Push(attemptCtx, req)
 	}
 
 	maxRetries := c.cfg.GRPCClientConfig.BackoffConfig.MaxRetries
@@ -189,11 +223,18 @@ func isRetryableDistributorPushError(err error) bool {
 }
 
 func (c *DistributorGRPCClient) Close() error {
-	if c == nil || c.conn == nil {
+	if c == nil {
 		return nil
 	}
-	c.close.Do(func() {
-		c.closeErr = c.conn.Close()
-	})
-	return c.closeErr
+
+	c.mu.Lock()
+	conn := c.conn
+	c.conn = nil
+	c.client = nil
+	c.mu.Unlock()
+
+	if conn == nil {
+		return nil
+	}
+	return conn.Close()
 }

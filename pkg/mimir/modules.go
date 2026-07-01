@@ -7,7 +7,6 @@ package mimir
 
 import (
 	"context"
-	stderrors "errors"
 	"flag"
 	"fmt"
 	"slices"
@@ -125,6 +124,7 @@ const (
 	QueryScheduler                   string = "query-scheduler"
 	Queryable                        string = "queryable"
 	Ruler                            string = "ruler"
+	RulerDistributorClient           string = "ruler-distributor-client"
 	RulerStorage                     string = "ruler-storage"
 	RuntimeConfig                    string = "runtime-config"
 	SanityCheck                      string = "sanity-check"
@@ -1213,7 +1213,7 @@ func (t *Mimir) createQueryFrontendPromQLEngineOptions() streamingpromql.EngineO
 
 func (t *Mimir) initRulerStorage() (serv services.Service, err error) {
 	// If the ruler is not configured and Mimir is running in monolithic mode, then we just skip starting the ruler.
-	if t.Cfg.isAnyModuleExplicitlyTargeted(All) && t.Cfg.RulerStorage.IsDefaults() {
+	if !t.Cfg.shouldInitRulerStorage() {
 		level.Info(util_log.Logger).Log("msg", "The ruler is not being started because you need to configure the ruler storage.")
 		return
 	}
@@ -1224,6 +1224,15 @@ func (t *Mimir) initRulerStorage() (serv services.Service, err error) {
 	cacheTTL := t.Cfg.Ruler.PollInterval
 	t.RulerStorage, err = ruler.NewRuleStore(context.Background(), t.Cfg.RulerStorage, t.Overrides, cacheTTL, util_log.Logger, t.Registerer)
 	return
+}
+
+func (t *Mimir) initRulerDistributorClient() (services.Service, error) {
+	client, err := ruler.NewDistributorGRPCClient(t.Cfg.Ruler.Distributor, t.Registerer, util_log.Logger)
+	if err != nil {
+		return nil, err
+	}
+	t.RulerDistributorClient = client
+	return client, nil
 }
 
 func (t *Mimir) initRuler() (serv services.Service, err error) {
@@ -1329,20 +1338,8 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 	}
 	rulesFS := afero.NewMemMapFs()
 	var pusher ruler.Pusher = t.Distributor
-	var remoteDistributorClient *ruler.DistributorGRPCClient
 	if t.Cfg.rulerRemoteWritesEnabled() {
-		remoteDistributorClient, err = ruler.NewDistributorGRPCClient(t.Cfg.Ruler.Distributor, t.Registerer, util_log.Logger)
-		if err != nil {
-			return nil, err
-		}
-		defer func() {
-			if err != nil {
-				if closeErr := remoteDistributorClient.Close(); closeErr != nil {
-					err = stderrors.Join(err, closeErr)
-				}
-			}
-		}()
-		pusher = remoteDistributorClient
+		pusher = t.RulerDistributorClient
 	}
 	managerFactory := ruler.DefaultTenantManagerFactory(
 		t.Cfg.Ruler,
@@ -1389,9 +1386,6 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 	// Expose HTTP configuration and prometheus-compatible Ruler APIs
 	t.API.RegisterRulerAPI(ruler.NewAPI(t.Ruler, t.RulerStorage, util_log.Logger), t.Cfg.Ruler.EnableAPI, t.BuildInfoHandler)
 
-	if remoteDistributorClient != nil {
-		return wrapRulerServiceWithCleanup(t.Ruler, remoteDistributorClient), nil
-	}
 	return t.Ruler, nil
 }
 
@@ -1695,6 +1689,7 @@ func (t *Mimir) setupModuleManager() error {
 	mm.RegisterModule(QueryScheduler, t.initQueryScheduler)
 	mm.RegisterModule(Queryable, t.initQueryable, modules.UserInvisibleModule)
 	mm.RegisterModule(Ruler, t.initRuler)
+	mm.RegisterModule(RulerDistributorClient, t.initRulerDistributorClient, modules.UserInvisibleModule)
 	mm.RegisterModule(RulerStorage, t.initRulerStorage, modules.UserInvisibleModule)
 	mm.RegisterModule(RuntimeConfig, t.initRuntimeConfig, modules.UserInvisibleModule)
 	mm.RegisterModule(SanityCheck, t.initSanityCheck, modules.UserInvisibleModule)
@@ -1723,6 +1718,9 @@ func (t *Mimir) setupModuleManager() error {
 	}
 	if t.Cfg.rulerLocalWritesEnabled() {
 		addRulerDep(DistributorService)
+	}
+	if t.Cfg.rulerRemoteWritesEnabled() && t.Cfg.shouldInitRulerStorage() {
+		addRulerDep(RulerDistributorClient)
 	}
 
 	// Add dependencies
@@ -1756,6 +1754,7 @@ func (t *Mimir) setupModuleManager() error {
 		QueryScheduler:                   {API, Overrides, MemberlistKV, Vault},
 		Queryable:                        {Overrides, DistributorService, IngesterRing, IngesterPartitionRing, API, StoreQueryable, MemberlistKV, QuerierQueryPlanner},
 		Ruler:                            rulerDeps,
+		RulerDistributorClient:           {Vault},
 		RulerStorage:                     {Overrides},
 		RuntimeConfig:                    {API},
 		Server:                           {ActivityTracker, SanityCheck, UsageStats},

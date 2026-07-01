@@ -474,6 +474,10 @@ func (c *Config) isRulerEnabled() bool {
 	return c.isAnyModuleExplicitlyTargeted(All, Ruler)
 }
 
+func (c *Config) shouldInitRulerStorage() bool {
+	return !c.isAnyModuleExplicitlyTargeted(All) || !c.RulerStorage.IsDefaults()
+}
+
 func (c *Config) rulerRemoteWritesEnabled() bool {
 	return c.Ruler.RuleEvaluationWriteEnabled && c.Ruler.Distributor.Address != ""
 }
@@ -959,6 +963,7 @@ type Mimir struct {
 	QueryFrontendCodec             querymiddleware.Codec
 	QueryFrontendCacheClient       cache.Cache
 	Ruler                          *ruler.Ruler
+	RulerDistributorClient         *ruler.DistributorGRPCClient
 	RulerStorage                   rulestore.RuleStore
 	Alertmanager                   *alertmanager.MultitenantAlertmanager
 	Compactor                      *compactor.MultitenantCompactor

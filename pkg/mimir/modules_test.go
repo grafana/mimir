@@ -362,50 +362,66 @@ func TestInitVault(t *testing.T) {
 }
 
 func TestRulerModuleDependencies(t *testing.T) {
+	configureRulerStorage := func(t *testing.T, cfg *Config) {
+		cfg.RulerStorage.Backend = "local"
+		cfg.RulerStorage.Local.Directory = t.TempDir()
+	}
+
 	for _, tc := range []struct {
 		name            string
-		setup           func(*Config)
+		setup           func(*testing.T, *Config)
 		expectedDeps    []string
 		notExpectedDeps []string
 	}{
 		{
-			name: "remote query and enabled remote distributor writes avoid local query and distributor dependencies",
-			setup: func(cfg *Config) {
+			name: "remote query and enabled remote distributor writes with configured ruler storage avoid local query and distributor dependencies",
+			setup: func(t *testing.T, cfg *Config) {
+				configureRulerStorage(t, cfg)
+				cfg.Ruler.QueryFrontend.Address = "dns:///query-frontend:9095"
+				cfg.Ruler.Distributor.Address = "dns:///distributor:9095"
+			},
+			expectedDeps:    []string{API, MemberlistKV, Overrides, RulerDistributorClient, RulerStorage, RuntimeConfig, Vault},
+			notExpectedDeps: []string{DistributorService, StoreQueryable, QuerierQueryPlanner},
+		},
+		{
+			name: "local query and enabled remote distributor writes with configured ruler storage keep local query dependencies",
+			setup: func(t *testing.T, cfg *Config) {
+				configureRulerStorage(t, cfg)
+				cfg.Ruler.Distributor.Address = "dns:///distributor:9095"
+			},
+			expectedDeps: []string{API, MemberlistKV, Overrides, RulerDistributorClient, RulerStorage, RuntimeConfig, Vault, DistributorService, StoreQueryable, QuerierQueryPlanner},
+		},
+		{
+			name: "remote query and enabled remote distributor writes with skipped ruler storage avoid remote distributor client",
+			setup: func(_ *testing.T, cfg *Config) {
 				cfg.Ruler.QueryFrontend.Address = "dns:///query-frontend:9095"
 				cfg.Ruler.Distributor.Address = "dns:///distributor:9095"
 			},
 			expectedDeps:    []string{API, MemberlistKV, Overrides, RulerStorage, RuntimeConfig, Vault},
-			notExpectedDeps: []string{DistributorService, StoreQueryable, QuerierQueryPlanner},
-		},
-		{
-			name: "local query and enabled remote distributor writes keep local query dependencies",
-			setup: func(cfg *Config) {
-				cfg.Ruler.Distributor.Address = "dns:///distributor:9095"
-			},
-			expectedDeps: []string{API, MemberlistKV, Overrides, RulerStorage, RuntimeConfig, Vault, DistributorService, StoreQueryable, QuerierQueryPlanner},
+			notExpectedDeps: []string{DistributorService, RulerDistributorClient, StoreQueryable, QuerierQueryPlanner},
 		},
 		{
 			name: "disabled rule evaluation writes do not start remote distributor client",
-			setup: func(cfg *Config) {
+			setup: func(_ *testing.T, cfg *Config) {
 				cfg.Ruler.QueryFrontend.Address = "dns:///query-frontend:9095"
 				cfg.Ruler.Distributor.Address = "dns:///distributor:9095"
 				cfg.Ruler.RuleEvaluationWriteEnabled = false
 			},
 			expectedDeps:    []string{API, MemberlistKV, Overrides, RulerStorage, RuntimeConfig, Vault},
-			notExpectedDeps: []string{DistributorService, StoreQueryable, QuerierQueryPlanner},
+			notExpectedDeps: []string{DistributorService, RulerDistributorClient, StoreQueryable, QuerierQueryPlanner},
 		},
 		{
 			name: "no remote distributor preserves local write fallback",
-			setup: func(cfg *Config) {
+			setup: func(_ *testing.T, cfg *Config) {
 				cfg.Ruler.QueryFrontend.Address = "dns:///query-frontend:9095"
 			},
 			expectedDeps:    []string{API, MemberlistKV, Overrides, RulerStorage, RuntimeConfig, Vault, DistributorService},
-			notExpectedDeps: []string{StoreQueryable, QuerierQueryPlanner},
+			notExpectedDeps: []string{RulerDistributorClient, StoreQueryable, QuerierQueryPlanner},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			cfg := newDefaultConfig()
-			tc.setup(cfg)
+			tc.setup(t, cfg)
 
 			mimir := &Mimir{Cfg: *cfg}
 			require.NoError(t, mimir.setupModuleManager())
@@ -419,4 +435,13 @@ func TestRulerModuleDependencies(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestRulerDistributorClientModuleDependencies(t *testing.T) {
+	cfg := newDefaultConfig()
+	mimir := &Mimir{Cfg: *cfg}
+	require.NoError(t, mimir.setupModuleManager())
+
+	deps := mimir.ModuleManager.DependenciesForModule(RulerDistributorClient)
+	require.Contains(t, deps, Vault)
 }
