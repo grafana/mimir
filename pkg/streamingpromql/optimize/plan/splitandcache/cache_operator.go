@@ -905,13 +905,22 @@ func (c *CacheOperator) finalizeExtents(ctx context.Context) (desiredTimeRangeSt
 }
 
 func (c *CacheOperator) writeCacheEntry(ctx context.Context, stats *types.OperatorEvaluationStats, annos annotations.Annotations) error {
+	spanLogger := spanlogger.FromContext(ctx, c.logger)
 	if c.seriesMetadata == nil {
-		// SeriesMetadata() never called, don't write cache entry.
+		spanLogger.DebugLog(
+			"msg", "skipping storing entry in cache because SeriesMetadata() never called",
+			"key", c.hashedKey,
+		)
 		return nil
 	}
 
 	if c.nextOutputSeriesIdx < len(c.seriesMetadata) {
-		// Not all series were read, don't write cache entry.
+		spanLogger.DebugLog(
+			"msg", "skipping storing entry in cache because not all series were read",
+			"key", c.hashedKey,
+			"read_count", c.nextOutputSeriesIdx,
+			"total_count", len(c.seriesMetadata),
+		)
 		return nil
 	}
 
@@ -956,7 +965,6 @@ func (c *CacheOperator) writeCacheEntry(ctx context.Context, stats *types.Operat
 		return err
 	}
 
-	spanLogger := spanlogger.FromContext(ctx, c.logger)
 	spanLogger.DebugLog(
 		"msg", "storing new entry in cache",
 		"key", c.hashedKey,
