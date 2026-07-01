@@ -97,10 +97,20 @@
     'compactor.scheduler-client.scheduler-endpoint': 'dns:///compactor-scheduler.%(namespace)s.svc.%(cluster_domain)s:9095' % $._config,
   } + (
     if !$._config.compactor_scheduler_metadata_caching_enabled then {} else
+      local metadataCachePrefix = 'blocks-storage.bucket-store.metadata-cache.';
+      // The metadata cache configuration used by workers only requires a subset of the flags exposed by
+      // blocks-storage.bucket-store.metadata-cache.
+      // Note that metafile_max_size_bytes is intentionally excluded since the memcached client configuration
+      // includes a max size already.
+      local isSupportedFlag(k) =
+        k == metadataCachePrefix + 'backend' ||
+        k == metadataCachePrefix + 'metafile-content-ttl' ||
+        std.startsWith(k, metadataCachePrefix + 'memcached.');
       local merged = $.blocks_metadata_caching_config + $.blocks_metadata_zone_a_caching_config;
       {
         [std.strReplace(k, 'blocks-storage.bucket-store', 'compactor.scheduler-client')]: merged[k]
         for k in std.objectFields(merged)
+        if isSupportedFlag(k)
       }
   ),
 
