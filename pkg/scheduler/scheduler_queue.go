@@ -37,10 +37,10 @@ func newSchedulerQueue(
 	limits Limits,
 	logger log.Logger,
 	queueLength *prometheus.GaugeVec,
+	maxQueueLength *queue.MaxQueueLengthGauge,
 	discardedRequests *prometheus.CounterVec,
 	enqueueDuration prometheus.Histogram,
 	querierInflightRequestsMetric *prometheus.SummaryVec,
-	maxQueueLength *queue.MaxQueueLengthGauge,
 ) (*schedulerQueue, error) {
 	q, err := queue.New(
 		logger,

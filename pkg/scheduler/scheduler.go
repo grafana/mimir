@@ -192,10 +192,10 @@ func NewScheduler(cfg Config, limits Limits, log log.Logger, registerer promethe
 		limits,
 		s.log,
 		s.queueLength,
+		s.maxQueueLength,
 		s.discardedRequests,
 		enqueueDuration,
 		querierInflightRequestsMetric,
-		s.maxQueueLength,
 	)
 	if err != nil {
 		return nil, err
