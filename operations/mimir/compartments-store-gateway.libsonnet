@@ -67,6 +67,9 @@
     // gossip-ring membership label is added by memberlist.libsonnet.
     statefulSet.mixin.spec.template.metadata.withLabelsMixin({ name: name, 'mimir-rc': compartmentIdxStr, 'rollout-group': rolloutGroup }) +
     statefulSet.mixin.spec.selector.withMatchLabels({ name: name, 'rollout-group': rolloutGroup }) +
+    // Backup zones default to 0 replicas; when autoscaled the rollout-operator scales them to follow their
+    // leader (they run on spot nodes). Mirrors the non-compartment backup store-gateways.
+    (if zone == 'a-backup' || zone == 'b-backup' then statefulSet.mixin.spec.withReplicas(0) else {}) +
     (if multiAZ then statefulSet.spec.template.spec.withTolerationsMixin($.newMimirMultiZoneToleration()) else {}) +
     // Replace the base cross-zone anti-affinity (baked with the non-compartment name): keep different zones of
     // the same compartment off the same node, while allowing same-zone replicas to share one.
