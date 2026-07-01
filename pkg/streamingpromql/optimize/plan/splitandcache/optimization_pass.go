@@ -163,15 +163,6 @@ func (o *OptimizationPass) applyCaching(ctx context.Context, node planning.Node,
 
 	o.cacheAttemptCounter.Inc()
 
-	if timeRange.StartT > timestamp.FromTime(freshnessThreshold) {
-		// The query starts after the freshness threshold, so the entire query is not cacheable.
-		// If the query straddles the freshness threshold, the cache operator will only cache the
-		// portion of the query that is before the freshness threshold.
-		spanLogger.DebugLog("msg", "range query not cacheable: it is entirely within the freshness window")
-		o.cacheSkippedCounter.WithLabelValues(NotCachableReasonTooNew).Inc()
-		return node, nil
-	}
-
 	if !isStepAligned(timeRange) {
 		if allowed, err := o.limits.AllowCachingUnalignedQueries(ctx); err != nil {
 			spanLogger.DebugLog("msg", "retrieving 'allow caching unaligned queries' tenant limit failed", "err", err)
@@ -181,6 +172,15 @@ func (o *OptimizationPass) applyCaching(ctx context.Context, node planning.Node,
 			o.cacheSkippedCounter.WithLabelValues(NotCachableReasonUnalignedTimeRange).Inc()
 			return node, nil
 		}
+	}
+
+	if timeRange.StartT > timestamp.FromTime(freshnessThreshold) {
+		// The query starts after the freshness threshold, so the entire query is not cacheable.
+		// If the query straddles the freshness threshold, the cache operator will only cache the
+		// portion of the query that is before the freshness threshold.
+		spanLogger.DebugLog("msg", "range query not cacheable: it is entirely within the freshness window")
+		o.cacheSkippedCounter.WithLabelValues(NotCachableReasonTooNew).Inc()
+		return node, nil
 	}
 
 	if !o.modifiersAllowCaching(node, timeRange, freshnessThreshold) {

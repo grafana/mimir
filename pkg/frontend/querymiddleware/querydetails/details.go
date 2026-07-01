@@ -21,8 +21,20 @@ type QueryDetails struct {
 	Step          time.Duration
 	LookbackDelta time.Duration
 
+	// ResultsCacheMissBytes is an estimate of the size of the results that were not found in the cache and were freshly evaluated.
 	ResultsCacheMissBytes int
-	ResultsCacheHitBytes  int
+
+	// ResultsCacheMissCount is the number of cache entries requested from the cache that were not found.
+	ResultsCacheMissCount int
+
+	// ResultsCacheHitBytes is an estimate of the size of the results that were used from the cache.
+	ResultsCacheHitBytes int
+
+	// ResultsCacheHitCount is the number of cache entries requested from the cache that were found.
+	ResultsCacheHitCount int
+
+	// ResultsCacheSetCount is the number of cache entries that were attempted to be written during this request.
+	ResultsCacheSetCount int
 
 	// ResponseSeriesCount is the number of series in the query response.
 	ResponseSeriesCount int
