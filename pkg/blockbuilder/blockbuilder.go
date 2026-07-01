@@ -60,9 +60,9 @@ type BlockBuilder struct {
 	pusherConsumerMetrics *ingest.PusherConsumerMetrics
 }
 
-// clusterResources bundles one Kafka cluster's resources: its client, config, and reader metrics.
-// cfg and the metrics are populated when the BlockBuilder is created; the client is created later,
-// when the service starts.
+// clusterResources bundles one Kafka cluster's resources. There is one per cluster (indexed by
+// cluster ID, equivalently the write compartment ID); when compartments are disabled there is a
+// single entry built from the base Kafka config.
 type clusterResources struct {
 	clusterID int
 	cfg       ingest.KafkaConfig
