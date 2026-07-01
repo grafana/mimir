@@ -972,6 +972,11 @@ func (c *CacheOperator) writeCacheEntry(ctx context.Context, stats *types.Operat
 		"entry_size_bytes", len(value),
 	)
 
+	queryDetails := querydetails.QueryDetailsFromContext(ctx)
+	if queryDetails != nil {
+		queryDetails.ResultsCacheSetCount++
+	}
+
 	if err := c.Backend.SetAsync(ctx, c.hashedKey, value, ttl); err != nil {
 		return fmt.Errorf("storing cached results with key %q: %w", c.hashedKey, err)
 	}
@@ -1441,6 +1446,12 @@ func PrepareCacheOperators(ctx context.Context, params *types.PrepareParams, ope
 	}
 
 	metrics.CacheHits.Add(float64(len(cacheHits)))
+
+	queryDetails := querydetails.QueryDetailsFromContext(ctx)
+	if queryDetails != nil {
+		queryDetails.ResultsCacheMissCount += len(keys) - len(cacheHits)
+		queryDetails.ResultsCacheHitCount += len(cacheHits)
+	}
 
 	for key, o := range operatorMap {
 		cacheHit := cacheHits[key]

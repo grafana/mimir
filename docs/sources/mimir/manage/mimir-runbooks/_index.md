@@ -3939,7 +3939,10 @@ When looking at `msg="query stats"` consider the following attributes;
 - equivalent_samples_read — equivalent number of samples that would have been read from storage to execute a query, if no caching or other optimizations were applied to the query. Remote read requests contribute to this counter and to `physical_samples_read`. For streamed-chunks remote read responses, the count reflects samples within the requested query range.
 - physical_samples_read — the number of samples read from storage. Excludes any samples not read due to caching or other optimizations.
 - results_cache_hit_bytes — the number of bytes returned from the query results cache
+- results_cache_hit_count — the number of requests to the query results cache that were a hit (note that that a hit does not mean the entire request time range was served from the cache)
 - results_cache_miss_bytes — the number of bytes fetched from storage and written to the query results cache
+- results_cache_miss_count — the number of requests to the query results cache that were a miss
+- results_cache_set_count — the number of new or updated cache entries that were written to the query results cache
 - read_consistency — the read consistency level requested, if any
 - read_consistency_max_delay — the maximum delay / staleness allowed for an eventually consistent request, if any
 
