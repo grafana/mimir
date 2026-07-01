@@ -87,6 +87,7 @@ The following features are currently experimental:
   - Configure metric and label name validation scheme
     - `-validation.name-validation-scheme`
   - Health check grace period for connections to other replicas (`-ruler.client.health-check-grace-period`)
+  - Per-tenant external labels and alert relabeling applied to alerts sent to Alertmanager, set via the `ruler_alertmanager_client_config.external_labels` and `ruler_alertmanager_client_config.alert_relabel_configs` runtime configuration options.
 - Distributor
   - Influx ingestion
     - `/api/v1/push/influx/write` endpoint
