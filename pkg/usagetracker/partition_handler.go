@@ -278,7 +278,7 @@ func (p *partitionHandler) tryLoadSnapshotAndEventsInReasonableAmountOfTime(ctx 
 // doesn't carry the cause, so callers relying on errors.Is against the cause sentinel need this
 // to make the timeout detectable. The original err is preserved in the chain for logging.
 func causeIfTimedOut(ctx context.Context, err error) error {
-	if cause := context.Cause(ctx); cause == snapshotLoadingTookLongerThanDataRangeItCovers {
+	if cause := context.Cause(ctx); errors.Is(cause, snapshotLoadingTookLongerThanDataRangeItCovers) {
 		return fmt.Errorf("%w: %w", cause, err)
 	}
 	return err
