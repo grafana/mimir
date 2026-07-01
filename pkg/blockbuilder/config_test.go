@@ -36,8 +36,6 @@ func TestConfig_Validate(t *testing.T) {
 	})
 }
 
-// Asserts that a single base config is returned when compartments are disabled, and one per-cluster
-// config (with the write compartment ID templated into the address) when enabled.
 func TestConfig_kafkaClientConfigs(t *testing.T) {
 	t.Run("compartments disabled returns the single base config", func(t *testing.T) {
 		cfg, _ := blockBuilderConfig(t, "kafka:9092", nil)
