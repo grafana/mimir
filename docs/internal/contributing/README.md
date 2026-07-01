@@ -21,6 +21,13 @@ Before a piece of work is finished:
 - If you have made any changes to flags or config, run `make reference-help doc` and commit the changed files to update the config file documentation.
 - Follow the [pull request template](.github/PULL_REQUEST_TEMPLATE.md) when creating PRs.
 
+### Use signed commits 
+
+Effective June 22, 2026, all Grafana Labs repositories, including Mimir, [require signed commits](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches#require-signed-commits).
+To learn how to enable commit verification, refer to [about commit signature verification](https://docs.github.com/en/authentication/managing-commit-signature-verification/about-commit-signature-verification) and this page to learn about [checking your commit signature verification status](https://docs.github.com/en/authentication/troubleshooting-commit-signature-verification/checking-your-commit-and-tag-signature-verification-status).
+
+**NOTE** Pull Requests containing unsigned commits will be rejected and closed. This includes pull requests that have been authored in whole or part by AI coding tools.
+
 ## Experimental features
 
 By default, new experimental features should be disabled and gated behind a per-tenant limit or configuration flag, so that they can be tested and introduced gradually. Document the feature in [`docs/sources/mimir/configure/about-versioning.md`](../../sources/mimir/configure/about-versioning.md#experimental-features).
