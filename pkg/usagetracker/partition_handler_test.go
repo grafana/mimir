@@ -495,6 +495,65 @@ func TestPartitionHandler(t *testing.T) {
 
 		require.NoError(t, services.StopAndAwaitTerminated(ctx, ph))
 	})
+
+	t.Run("snapshot loading timeout at startup is tolerated and flagged", func(t *testing.T) {
+		t.Parallel()
+
+		ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+		defer cancel()
+
+		h := newPartitionHandlerTestHelper(t)
+		h.limiter[tenantID] = 3
+
+		// First partitionHandler tracks some series, creates a snapshot, and shuts down.
+		startPartitionHandlerTrackTwoSeriesAndShutDown(t, h)
+
+		// New partitionHandler with a short idle timeout, so snapshotInterval() (IdleTimeout/2) becomes
+		// the deadline for loading the snapshot and events at startup.
+		ph := h.newHandler(t, func(cfg *Config) { cfg.IdleTimeout = 4 * time.Second })
+		// Bucket reads block until the context is cancelled, so the snapshot load hits the startup deadline.
+		ph.snapshotsBucket = &slowBucket{ph.snapshotsBucket, make(chan struct{})}
+
+		// Startup is tolerated (doesn't fail) even though the snapshot couldn't be loaded in time...
+		require.NoError(t, services.StartAndAwaitRunning(ctx, ph))
+		// ...and the failure is flagged so we can alert on it.
+		require.Equal(t, float64(1), testutil.ToFloat64(ph.snapshotLoadFailedAtStartup))
+
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, ph))
+	})
+
+	t.Run("non-timeout snapshot load error fails startup", func(t *testing.T) {
+		t.Parallel()
+
+		ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+		defer cancel()
+
+		h := newPartitionHandlerTestHelper(t)
+		h.limiter[tenantID] = 3
+
+		// First partitionHandler tracks some series, creates a snapshot, and shuts down.
+		startPartitionHandlerTrackTwoSeriesAndShutDown(t, h)
+
+		// Fail fast on snapshot download with a non-context error. The default (long) idle timeout keeps
+		// the startup deadline from firing, so this is treated as a genuine failure and not tolerated.
+		ph := h.newHandler(t, func(cfg *Config) {
+			cfg.SnapshotsLoadBackoff.MinBackoff = time.Millisecond
+			cfg.SnapshotsLoadBackoff.MaxBackoff = time.Millisecond
+			cfg.SnapshotsLoadBackoff.MaxRetries = 2
+		})
+		ph.snapshotsBucket = &erroringBucket{ph.snapshotsBucket, io.ErrClosedPipe}
+		// Failed startup doesn't run the stopping function, so close the readers to avoid leaking goroutines.
+		t.Cleanup(func() {
+			ph.eventsKafkaReader.Close()
+			ph.snapshotsKafkaReader.Close()
+		})
+
+		err := services.StartAndAwaitRunning(ctx, ph)
+		require.Error(t, err)
+		require.NotErrorIs(t, err, snapshotLoadingTookLongerThanDataRangeItCovers)
+		// The failure is still flagged for alerting.
+		require.Equal(t, float64(1), testutil.ToFloat64(ph.snapshotLoadFailedAtStartup))
+	})
 }
 
 func requireTrackSeries(t *testing.T, p *partitionHandler, id string, series, rejected []uint64) {
@@ -693,4 +752,13 @@ type getCounterBucketReader struct {
 func (s *getCounterBucketReader) Get(ctx context.Context, name string) (io.ReadCloser, error) {
 	s.getCalls.Inc()
 	return s.Bucket.Get(ctx, name)
+}
+
+type erroringBucket struct {
+	objstore.Bucket
+	err error
+}
+
+func (b *erroringBucket) Get(context.Context, string) (io.ReadCloser, error) {
+	return nil, b.err
 }

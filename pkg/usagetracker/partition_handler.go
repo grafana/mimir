@@ -42,6 +42,8 @@ const (
 var (
 	eventTypeSeriesCreatedBytes = []byte(eventTypeSeriesCreated)
 	eventTypeSnapshotBytes      = []byte(eventTypeSnapshot)
+
+	snapshotLoadingTookLongerThanDataRangeItCovers = errors.New("snapshot loading took longer than data range it covers")
 )
 
 type partitionHandler struct {
@@ -87,7 +89,8 @@ type partitionHandler struct {
 
 	pendingCreatedSeriesMarshaledEvents chan []byte
 
-	eventFetchFailures prometheus.Counter
+	snapshotLoadFailedAtStartup prometheus.Gauge
+	eventFetchFailures          prometheus.Counter
 
 	seriesCreatedEventsReceived        prometheus.Counter
 	seriesCreatedEventsTotalErrors     *prometheus.CounterVec
@@ -140,6 +143,10 @@ func newPartitionHandler(
 
 		pendingCreatedSeriesMarshaledEvents: make(chan []byte, cfg.CreatedSeriesEventsMaxPending),
 
+		snapshotLoadFailedAtStartup: promauto.With(reg).NewGauge(prometheus.GaugeOpts{
+			Name: "cortex_usage_tracker_snapshot_load_failed_at_startup",
+			Help: "Set to 1 when the partition handler failed to load the snapshot and events within the snapshot interval at startup; reset to 0 after 10 minutes.",
+		}),
 		eventFetchFailures: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_usage_tracker_event_fetch_failures_total",
 			Help: "Total number of failures while fetching events from Kafka.",
@@ -216,13 +223,19 @@ func (p *partitionHandler) start(ctx context.Context) error {
 		return errors.Wrap(err, "unable to register partition handler collector as Prometheus collector")
 	}
 
-	eventsOffset, err := p.loadLastSnapshotRecordAndGetEventsOffset(ctx)
-	if err != nil {
-		return errors.Wrap(err, "unable to load snapshot")
+	if err := p.tryLoadSnapshotAndEventsInReasonableAmountOfTime(ctx); err != nil {
+		// Set a metric on which we'll alert and ping the oncall engineer.
+		// This sometimes will cause a restart, or an empty start, both should be investigated.
+		p.snapshotLoadFailedAtStartup.Set(1)
+		time.AfterFunc(10*time.Minute, func() { p.snapshotLoadFailedAtStartup.Set(0) })
+		if !errors.Is(err, snapshotLoadingTookLongerThanDataRangeItCovers) {
+			// Something else happened, fail.
+			return errors.Wrap(err, "unable to load events in reasonable amount of time, if this prevents startup multiple times, consider setting -usage-tracker.skip-snapshot-loading-at-startup=true temporarily")
+		}
+		// We timed out loading the snapshot and events: tolerate it and start empty/partial, but make it visible.
+		level.Error(p.logger).Log("msg", "snapshot and events loading timed out at startup, starting with partial state", "err", err)
 	}
-	if err := p.loadEvents(ctx, eventsOffset); err != nil {
-		return errors.Wrap(err, "unable to load events")
-	}
+
 	// Initial limits are lower than real limits, and we've just loaded the snapshots and processed events,
 	// so update the limits to let users track more series.
 	p.store.updateLimits()
@@ -240,6 +253,35 @@ func (p *partitionHandler) start(ctx context.Context) error {
 	p.subservicesWatcher = services.NewFailureWatcher()
 	p.subservicesWatcher.WatchService(p.partitionLifecycler)
 	return nil
+}
+
+func (p *partitionHandler) tryLoadSnapshotAndEventsInReasonableAmountOfTime(ctx context.Context) error {
+	// The snapshot holds data for a range of p.cfg.IdleTimeout, and it's being taken every p.snapshotInterval(), which is half of that.
+	// It doesn't make sense to keep waiting longer than that to load the data: it's going to be stale and removed on first cleanup anyway.
+	// If this happens frequently, it should be investigated.
+	ctx, cancel := context.WithTimeoutCause(ctx, p.snapshotInterval(), snapshotLoadingTookLongerThanDataRangeItCovers)
+	defer cancel()
+
+	eventsOffset, err := p.loadLastSnapshotRecordAndGetEventsOffset(ctx)
+	if err != nil {
+		return causeIfTimedOut(ctx, errors.Wrap(err, "unable to load snapshot"))
+	}
+	if err := p.loadEvents(ctx, eventsOffset); err != nil {
+		return causeIfTimedOut(ctx, errors.Wrap(err, "unable to load events"))
+	}
+
+	return nil
+}
+
+// causeIfTimedOut wraps err with the context cancellation cause when the context was canceled
+// due to our own timeout. Downstream code returns ctx.Err() (context.DeadlineExceeded), which
+// doesn't carry the cause, so callers relying on errors.Is against the cause sentinel need this
+// to make the timeout detectable. The original err is preserved in the chain for logging.
+func causeIfTimedOut(ctx context.Context, err error) error {
+	if cause := context.Cause(ctx); errors.Is(cause, snapshotLoadingTookLongerThanDataRangeItCovers) {
+		return fmt.Errorf("%w: %w", cause, err)
+	}
+	return err
 }
 
 func (p *partitionHandler) loadLastSnapshotRecordAndGetEventsOffset(ctx context.Context) (int64, error) {
@@ -306,7 +348,10 @@ func (p *partitionHandler) loadAllSnapshotShards(ctx context.Context, files []st
 
 	// One is being downloaded, one is buffered, one is being processed.
 	downloaded := make(chan downloadedSnapshot, 1)
-	errs := make(chan error, 1)
+	// Buffered for 2: both the downloader and the processor goroutines can send here (e.g. the
+	// downloader sends an error and then, via the deferred close(downloaded), the processor sends nil).
+	// We only read one value below, so without room for both the second sender would leak.
+	errs := make(chan error, 2)
 	go func() {
 		for snapshot := range downloaded {
 			snapshotT0 := time.Now()
@@ -752,8 +797,12 @@ func (p *partitionHandler) newEventKafkaRecord(eventTypeBytes []byte, data []byt
 	}
 }
 
+func (p *partitionHandler) snapshotInterval() time.Duration {
+	return p.cfg.IdleTimeout / 2
+}
+
 func (p *partitionHandler) publishSnapshots(ctx context.Context) {
-	delay := util.DurationWithJitter(p.cfg.IdleTimeout/2, p.cfg.SnapshotIntervalJitter)
+	delay := util.DurationWithJitter(p.snapshotInterval(), p.cfg.SnapshotIntervalJitter)
 	var firstSnapshot <-chan time.Time
 	if !p.loadedLastSnapshotTimestamp.IsZero() {
 		nextExpectedSnapshot := p.loadedLastSnapshotTimestamp.Add(delay)

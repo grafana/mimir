@@ -2819,6 +2819,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Enable the cortex_query_scheduler_inflight_max_age_seconds metric, which reports the age of the oldest inflight request. Disabling it skips the per-tick scan over inflight requests. (default true)
   -query-scheduler.max-outstanding-requests-per-tenant int
     	Maximum number of outstanding requests per tenant per query-scheduler. In-flight requests above this limit will fail with HTTP response status code 429. (default 100)
+  -query-scheduler.max-queue-length-metric-enabled
+    	[experimental] Enable the cortex_query_scheduler_max_queue_length metric, which reports the per-tenant peak queue length observed since the last scrape. Disabling it skips per-tenant peak tracking on enqueue and dequeue.
   -query-scheduler.max-used-instances int
     	The maximum number of query-scheduler instances to use, regardless how many replicas are running. This option can be set only when -query-scheduler.service-discovery-mode is set to 'ring'. 0 to use all available query-scheduler instances.
   -query-scheduler.querier-forget-delay duration

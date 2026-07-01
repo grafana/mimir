@@ -20144,6 +20144,17 @@
           "fieldCategory": "experimental"
         },
         {
+          "kind": "field",
+          "name": "max_queue_length_metric_enabled",
+          "required": false,
+          "desc": "Enable the cortex_query_scheduler_max_queue_length metric, which reports the per-tenant peak queue length observed since the last scrape. Disabling it skips per-tenant peak tracking on enqueue and dequeue.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "query-scheduler.max-queue-length-metric-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
           "kind": "block",
           "name": "grpc_client_config",
           "required": false,

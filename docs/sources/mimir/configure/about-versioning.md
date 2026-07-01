@@ -245,6 +245,7 @@ The following features are currently experimental:
 - Query-scheduler
   - `-query-scheduler.querier-forget-delay`
   - `-query-scheduler.inflight-max-age-metric-enabled`
+  - `-query-scheduler.max-queue-length-metric-enabled`
 - Store-gateway
   - Eagerly loading some blocks on startup even when lazy loading is enabled `-blocks-storage.bucket-store.index-header.eager-loading-startup-enabled`
   - Allow more than the default of 3 store-gateways to own recent blocks `-store-gateway.dynamic-replication`

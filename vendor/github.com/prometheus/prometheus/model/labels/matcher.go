@@ -155,7 +155,7 @@ func (m *Matcher) SetMatches() []string {
 // Prefix returns the required prefix of the value to match, if possible.
 // It will be empty if it's an equality matcher or if the prefix can't be determined.
 func (m *Matcher) Prefix() string {
-	if m.re == nil {
+	if m.re == nil || m.re.caseInsensitivePrefix {
 		return ""
 	}
 	return m.re.prefix

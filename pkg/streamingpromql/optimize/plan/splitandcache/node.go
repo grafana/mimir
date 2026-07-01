@@ -207,11 +207,12 @@ func (c *Cache) MinimumRequiredPlanVersion(_ types.QueryTimeRange) (planning.Que
 }
 
 type CacheMaterializer struct {
-	enabled        bool
-	cache          caching.Backend
-	limitsProvider LimitsProvider
-	metrics        *ResultsCacheMetrics
-	minCacheExtent time.Duration
+	enabled           bool
+	cache             caching.Backend
+	cacheKeyGenerator *caching.CacheKeyGenerator
+	limitsProvider    LimitsProvider
+	metrics           *ResultsCacheMetrics
+	minCacheExtent    time.Duration
 }
 
 func NewCacheMaterializer(enabled bool, baseCache cache.Cache, cachePrefixGenerator caching.PrefixGenerator, limitsProvider LimitsProvider, minCacheExtent time.Duration, metrics *ResultsCacheMetrics) *CacheMaterializer {
@@ -223,10 +224,10 @@ func NewCacheMaterializer(enabled bool, baseCache cache.Cache, cachePrefixGenera
 	}
 
 	if enabled {
-		m.cache = caching.NewPrefixingCache(
-			caching.NewAdaptor(baseCache),
-			caching.VersioningAndItemTypePrefixGenerator(cachePrefixGenerator, cacheVersion, "MQEQR"),
-		)
+		m.cache = caching.NewAdaptor(baseCache)
+		// The CacheKeyGenerator takes a non-hashable and hashable prefix.
+		// The type/version prefix is not included in the hashed key, but the generated cache prefix (tenant ids) will be folded into the hashed key.
+		m.cacheKeyGenerator = caching.NewCacheKeyGenerator(caching.VersioningAndItemTypePrefixGenerator("MQEQR", cacheVersion), cachePrefixGenerator)
 	}
 
 	return m
@@ -253,6 +254,7 @@ func (m *CacheMaterializer) Materialize(ctx context.Context, n planning.Node, ma
 
 	operator := newCacheOperator(
 		m.cache,
+		m.cacheKeyGenerator,
 		materializer,
 		node.Inner,
 		timeRange,

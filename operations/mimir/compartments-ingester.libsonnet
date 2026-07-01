@@ -98,7 +98,10 @@
       // '<read-compartment-id>' placeholder to the compartment id. The address keeps the write-compartment
       // placeholder because the ingester consumes from every write compartment's Kafka cluster.
       'ingest-storage.kafka.address': $._config.compartments_ingest_storage_kafka_address,
-      'ingest-storage.kafka.topic': std.strReplace($._config.compartments_ingest_storage_kafka_topic, '<read-compartment-id>', std.toString(compartmentIdx)),
+      'ingest-storage.kafka.topic': $.mimirIngestStorageCompartmentKafkaTopic(compartmentIdx),
+
+      // Each read compartment's ingesters upload blocks to that compartment's bucket.
+      [$.mimirBlocksStorageBucketNameFlag]: $.mimirBlocksStorageCompartmentBucketName(compartmentIdx),
     },
 
   ingester_zone_a_compartments_args:: $.mimirCompartmentsCreateIf(isEnabled && isZoneAEnabled, numCompartments, function(compartment) $.ingester_zone_a_args + perCompartmentIngesterArgs(compartment)),

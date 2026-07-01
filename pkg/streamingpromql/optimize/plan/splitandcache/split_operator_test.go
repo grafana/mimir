@@ -699,6 +699,37 @@ func TestSplitOperator_ConflictingDropNameValuesForSameSeries(t *testing.T) {
 	require.EqualError(t, err, `series with labels {idx="0"} has conflicting drop name values in different ranges / extents`)
 }
 
+func TestSplitOperator_FinishedReadingCalledWithoutCallingSeriesMetadata(t *testing.T) {
+	ctx := context.Background()
+	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+
+	range1 := &operators.TestOperator{
+		Series:                   []labels.Labels{labels.FromStrings("idx", "0")},
+		DropName:                 []bool{true},
+		MemoryConsumptionTracker: memoryConsumptionTracker,
+	}
+
+	range2 := &operators.TestOperator{
+		Series:                   []labels.Labels{labels.FromStrings("idx", "0")},
+		DropName:                 []bool{false},
+		MemoryConsumptionTracker: memoryConsumptionTracker,
+	}
+
+	o := newTimeRangeSplitOperator(
+		[]*splitRange{
+			newSplitRange(range1, memoryConsumptionTracker),
+			newSplitRange(range2, memoryConsumptionTracker),
+		},
+		memoryConsumptionTracker,
+		types.NewInstantQueryTimeRange(time.Now()),
+	)
+
+	require.NoError(t, o.Prepare(ctx, &types.PrepareParams{}))
+	require.NoError(t, o.AfterPrepare(ctx))
+
+	require.NoError(t, o.FinishedReading(ctx))
+}
+
 type testRange struct {
 	data        testSeriesSet
 	stats       types.EncodedOperatorEvaluationStats
