@@ -273,7 +273,7 @@ groups:
             severity: warning
         - alert: MimirStoreGatewayTooManyFailedOperations
           annotations:
-            message: GEM store-gateway in {{ $labels.cluster }}/{{ $labels.namespace }} is experiencing {{ $value | humanizePercentage }} errors while doing {{ $labels.operation }} on the object storage.
+            message: GEM store-gateway in {{ $labels.cluster }}/{{ $labels.namespace }} is experiencing {{ $value }} errors while doing {{ $labels.operation }} on the object storage.
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirstoregatewaytoomanyfailedoperations
           expr: |
             (
