@@ -39,7 +39,10 @@ top of `planning.Node`.
      `nocollapse` disables that, so even a lone child is labeled via
      `labelfmt` (e.g. `RemoteExecutionGroup` always shows `node 0`).
 4. `EquivalentToIgnoringHintsAndChildren` is generated for every annotated
-   struct, comparing all of its fields. To exclude a field, list it in a
+   struct, comparing all of its fields. A struct-typed field of type `T` is
+   compared using a helper named `genEqualsT` (e.g. `genEqualsVectorMatching`).
+   This helper is generated once per struct type and shared by every node in
+   the package that has a field of that type. To exclude a field, list it in a
    `node:"hints=A;B"` tag on the embedded `*Details` field — these are hints that
    should not affect equality (e.g. `BinaryExpression` excludes `Hints`,
    `MatrixSelector`/`VectorSelector` exclude `SkipHistogramBuckets`).
