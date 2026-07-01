@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"net"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -14,7 +15,6 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/gogo/status"
-	"github.com/grafana/dskit/backoff"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/common/model"
@@ -88,7 +88,7 @@ func (m *mockDistributorServer) lastUserID() string {
 	return m.userIDs[len(m.userIDs)-1]
 }
 
-func setupDistributorGRPCClient(t *testing.T, srv *mockDistributorServer, logger log.Logger, pushCfg distributorPushConfig) *DistributorGRPCClient {
+func setupDistributorGRPCClient(t *testing.T, srv *mockDistributorServer, logger log.Logger, configure func(*DistributorConfig)) *DistributorGRPCClient {
 	t.Helper()
 
 	grpcServer := grpc.NewServer()
@@ -110,25 +110,21 @@ func setupDistributorGRPCClient(t *testing.T, srv *mockDistributorServer, logger
 	var cfg DistributorConfig
 	flagext.DefaultValues(&cfg)
 	cfg.Address = listener.Addr().String()
+	cfg.GRPCClientConfig.BackoffConfig.MinBackoff = 0
+	cfg.GRPCClientConfig.BackoffConfig.MaxBackoff = 0
+	cfg.GRPCClientConfig.BackoffConfig.MaxRetries = 2
+	cfg.RemoteTimeout = time.Second
+	if configure != nil {
+		configure(&cfg)
+	}
 
-	client, err := newDistributorGRPCClient(cfg, nil, logger, pushCfg)
+	client, err := NewDistributorGRPCClient(cfg, nil, logger)
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		_ = client.Close()
 	})
 
 	return client
-}
-
-func testDistributorPushConfig() distributorPushConfig {
-	return distributorPushConfig{
-		backoff: backoff.Config{
-			MinBackoff: 0,
-			MaxBackoff: 0,
-			MaxRetries: 1,
-		},
-		timeout: time.Second,
-	}
 }
 
 func newTestWriteRequest() *mimirpb.WriteRequest {
@@ -146,7 +142,7 @@ func newTestWriteRequest() *mimirpb.WriteRequest {
 func TestDistributorGRPCClient(t *testing.T) {
 	t.Run("push sends request", func(t *testing.T) {
 		srv := &mockDistributorServer{}
-		client := setupDistributorGRPCClient(t, srv, log.NewNopLogger(), testDistributorPushConfig())
+		client := setupDistributorGRPCClient(t, srv, log.NewNopLogger(), nil)
 
 		req := newTestWriteRequest()
 
@@ -192,7 +188,7 @@ func TestDistributorGRPCClient(t *testing.T) {
 		} {
 			t.Run(tc.name, func(t *testing.T) {
 				srv := &mockDistributorServer{errs: []error{tc.err}}
-				client := setupDistributorGRPCClient(t, srv, log.NewNopLogger(), testDistributorPushConfig())
+				client := setupDistributorGRPCClient(t, srv, log.NewNopLogger(), nil)
 
 				_, err := client.Push(user.InjectOrgID(t.Context(), "test-user"), newTestWriteRequest())
 				if tc.expectedCall == 1 {
@@ -206,35 +202,63 @@ func TestDistributorGRPCClient(t *testing.T) {
 	})
 
 	t.Run("push uses configured max retries and logs", func(t *testing.T) {
-		const maxRetries = 3
-		srv := &mockDistributorServer{
-			errs: []error{
-				status.Error(codes.Unavailable, "try again"),
-				status.Error(codes.Unavailable, "try again"),
-				status.Error(codes.Unavailable, "try again"),
-				status.Error(codes.Unavailable, "try again"),
+		for _, tc := range []struct {
+			name              string
+			maxRetries        int
+			expectedCalls     int
+			expectedRetryLogs int
+		}{
+			{
+				name:              "three total attempts",
+				maxRetries:        3,
+				expectedCalls:     3,
+				expectedRetryLogs: 2,
 			},
+			{
+				name:              "one total attempt",
+				maxRetries:        1,
+				expectedCalls:     1,
+				expectedRetryLogs: 0,
+			},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				srv := &mockDistributorServer{
+					errs: []error{
+						status.Error(codes.Unavailable, "try again"),
+						status.Error(codes.Unavailable, "try again"),
+						status.Error(codes.Unavailable, "try again"),
+					},
+				}
+				var logs bytes.Buffer
+				client := setupDistributorGRPCClient(t, srv, log.NewLogfmtLogger(&logs), func(cfg *DistributorConfig) {
+					cfg.GRPCClientConfig.BackoffConfig.MaxRetries = tc.maxRetries
+				})
+
+				_, err := client.Push(user.InjectOrgID(t.Context(), "test-user"), newTestWriteRequest())
+				require.Equal(t, codes.Unavailable, status.Code(err))
+				require.Contains(t, err.Error(), "try again")
+				require.Equal(t, tc.expectedCalls, srv.calls())
+
+				logOutput := logs.String()
+				require.Equal(t, tc.expectedRetryLogs, strings.Count(logOutput, "failed to remotely push rule evaluation results"))
+				if tc.expectedRetryLogs > 0 {
+					require.Contains(t, logOutput, "attempt=1")
+					require.Contains(t, logOutput, "max_retries="+strconv.Itoa(tc.maxRetries))
+				}
+			})
 		}
-		var logs bytes.Buffer
-		client := setupDistributorGRPCClient(t, srv, log.NewLogfmtLogger(&logs), distributorPushConfig{
-			backoff: backoff.Config{
-				MinBackoff: 0,
-				MaxBackoff: 0,
-				MaxRetries: maxRetries,
-			},
-			timeout: time.Second,
-		})
+	})
 
-		_, err := client.Push(user.InjectOrgID(t.Context(), "test-user"), newTestWriteRequest())
-		require.Equal(t, codes.Unavailable, status.Code(err))
-		require.Contains(t, err.Error(), "try again")
-		require.Equal(t, maxRetries+1, srv.calls())
+	t.Run("push returns context error when context is canceled before first attempt", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(user.InjectOrgID(t.Context(), "test-user"))
+		cancel()
 
-		logOutput := logs.String()
-		require.Equal(t, maxRetries, strings.Count(logOutput, "failed to remotely push rule evaluation results"))
-		require.Contains(t, logOutput, "attempt=1")
-		require.Contains(t, logOutput, "max_retries=3")
-		require.Contains(t, logOutput, "retry_delay=0s")
+		srv := &mockDistributorServer{}
+		client := setupDistributorGRPCClient(t, srv, log.NewNopLogger(), nil)
+
+		_, err := client.Push(ctx, newTestWriteRequest())
+		require.ErrorIs(t, err, context.Canceled)
+		require.Equal(t, 0, srv.calls())
 	})
 
 	t.Run("push retries until context cancellation", func(t *testing.T) {
@@ -251,13 +275,8 @@ func TestDistributorGRPCClient(t *testing.T) {
 				}
 			},
 		}
-		client := setupDistributorGRPCClient(t, srv, log.NewNopLogger(), distributorPushConfig{
-			backoff: backoff.Config{
-				MinBackoff: 0,
-				MaxBackoff: 0,
-				MaxRetries: 0,
-			},
-			timeout: time.Second,
+		client := setupDistributorGRPCClient(t, srv, log.NewNopLogger(), func(cfg *DistributorConfig) {
+			cfg.GRPCClientConfig.BackoffConfig.MaxRetries = 0
 		})
 
 		_, err := client.Push(user.InjectOrgID(ctx, "test-user"), newTestWriteRequest())
@@ -267,13 +286,8 @@ func TestDistributorGRPCClient(t *testing.T) {
 
 	t.Run("push timeout", func(t *testing.T) {
 		srv := &mockDistributorServer{blockUntilContextDone: true}
-		client := setupDistributorGRPCClient(t, srv, log.NewNopLogger(), distributorPushConfig{
-			backoff: backoff.Config{
-				MinBackoff: 0,
-				MaxBackoff: 0,
-				MaxRetries: 1,
-			},
-			timeout: 10 * time.Millisecond,
+		client := setupDistributorGRPCClient(t, srv, log.NewNopLogger(), func(cfg *DistributorConfig) {
+			cfg.RemoteTimeout = 10 * time.Millisecond
 		})
 
 		start := time.Now()
@@ -284,7 +298,7 @@ func TestDistributorGRPCClient(t *testing.T) {
 
 	t.Run("close closes connection", func(t *testing.T) {
 		srv := &mockDistributorServer{}
-		client := setupDistributorGRPCClient(t, srv, log.NewNopLogger(), testDistributorPushConfig())
+		client := setupDistributorGRPCClient(t, srv, log.NewNopLogger(), nil)
 
 		require.NoError(t, client.Close())
 		require.NoError(t, client.Close())
@@ -315,9 +329,9 @@ func TestDistributorConfig_Validate(t *testing.T) {
 			{name: "empty address"},
 			{name: "plain grpc address", address: "localhost:9095"},
 			{name: "dns address", address: "dns:///distributor:9095"},
-			{name: "http address", address: "http://localhost:9095", expectedErr: `address must be a gRPC address, got HTTP(S) address: "http://localhost:9095"`},
-			{name: "https address", address: "https://localhost:9095", expectedErr: `address must be a gRPC address, got HTTP(S) address: "https://localhost:9095"`},
-			{name: "malformed dns address", address: "dns://distributor:9095", expectedErr: `address must have "dns:///" prefix when using gRPC service discovery, got: "dns://distributor:9095"`},
+			{name: "http address", address: "http://localhost:9095", expectedErr: `ruler's distributor client address must be a gRPC address, got HTTP(S) address: "http://localhost:9095"`},
+			{name: "https address", address: "https://localhost:9095", expectedErr: `ruler's distributor client address must be a gRPC address, got HTTP(S) address: "https://localhost:9095"`},
+			{name: "malformed dns address", address: "dns://distributor:9095", expectedErr: `ruler's distributor client address must have "dns:///" prefix when using gRPC service discovery, got: "dns://distributor:9095"`},
 		} {
 			t.Run(tc.name, func(t *testing.T) {
 				var cfg DistributorConfig
@@ -340,5 +354,49 @@ func TestDistributorConfig_Validate(t *testing.T) {
 		cfg.GRPCClientConfig.GRPCCompression = s2.Name
 
 		require.NoError(t, cfg.Validate())
+	})
+
+	t.Run("remote timeout validation", func(t *testing.T) {
+		for _, tc := range []struct {
+			name        string
+			address     string
+			timeout     time.Duration
+			expectedErr string
+		}{
+			{name: "empty address accepts zero timeout"},
+			{name: "remote address accepts positive timeout", address: "localhost:9095", timeout: time.Second},
+			{name: "remote address rejects zero timeout", address: "localhost:9095", expectedErr: "remote timeout must be greater than 0"},
+			{name: "remote address rejects negative timeout", address: "localhost:9095", timeout: -time.Second, expectedErr: "remote timeout must be greater than 0"},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				var cfg DistributorConfig
+				flagext.DefaultValues(&cfg)
+				cfg.Address = tc.address
+				cfg.RemoteTimeout = tc.timeout
+
+				err := cfg.Validate()
+				if tc.expectedErr != "" {
+					require.EqualError(t, err, tc.expectedErr)
+				} else {
+					require.NoError(t, err)
+				}
+			})
+		}
+	})
+
+	t.Run("wraps grpc client config validation errors", func(t *testing.T) {
+		var cfg DistributorConfig
+		flagext.DefaultValues(&cfg)
+		cfg.GRPCClientConfig.GRPCCompression = "unsupported"
+
+		require.EqualError(t, cfg.Validate(), `ruler's distributor client gRPC settings: unsupported compression type: "unsupported"`)
+	})
+
+	t.Run("validate does not mutate custom compressors", func(t *testing.T) {
+		var cfg DistributorConfig
+		cfg.GRPCClientConfig.GRPCCompression = s2.Name
+
+		require.EqualError(t, cfg.Validate(), `ruler's distributor client gRPC settings: unsupported compression type: "s2"`)
+		require.Empty(t, cfg.GRPCClientConfig.CustomCompressors)
 	})
 }

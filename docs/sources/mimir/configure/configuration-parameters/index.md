@@ -2913,6 +2913,10 @@ distributor:
   # CLI flag: -ruler.distributor.address
   [address: <string> | default = ""]
 
+  # (experimental) Timeout for requests to remote distributors.
+  # CLI flag: -ruler.distributor.remote-timeout
+  [remote_timeout: <duration> | default = 10s]
+
   # Advanced standard gRPC client configuration used by rulers to communicate
   # with distributors.
   # The CLI flags prefix for this block configuration is:

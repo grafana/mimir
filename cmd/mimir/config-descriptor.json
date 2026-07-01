@@ -15947,6 +15947,17 @@
               "fieldCategory": "experimental"
             },
             {
+              "kind": "field",
+              "name": "remote_timeout",
+              "required": false,
+              "desc": "Timeout for requests to remote distributors.",
+              "fieldValue": null,
+              "fieldDefaultValue": 10000000000,
+              "fieldFlag": "ruler.distributor.remote-timeout",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
+            },
+            {
               "kind": "block",
               "name": "grpc_client_config",
               "required": false,

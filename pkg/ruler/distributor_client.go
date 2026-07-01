@@ -27,14 +27,13 @@ import (
 	"github.com/grafana/mimir/pkg/util/grpcencoding/s2"
 )
 
-const (
-	remoteDistributorPushTimeout = 10 * time.Second
-)
-
 // DistributorConfig defines distributor transport configuration for ruler writes.
 type DistributorConfig struct {
 	// Address is the gRPC address of the distributor(s) to push rule-result series to.
 	Address string `yaml:"address" category:"experimental"`
+
+	// RemoteTimeout is the timeout for a push request to remote distributors.
+	RemoteTimeout time.Duration `yaml:"remote_timeout" category:"experimental"`
 
 	// GRPCClientConfig contains gRPC specific config options.
 	GRPCClientConfig grpcclient.Config `yaml:"grpc_client_config" doc:"description=Advanced standard gRPC client configuration used by rulers to communicate with distributors."`
@@ -48,18 +47,27 @@ func (c *DistributorConfig) RegisterFlags(f *flag.FlagSet) {
 		"gRPC listen address of the distributor(s) to push rule-result series to. If empty, the ruler writes using the internal distributor. "+
 			"Use a DNS address (prefixed with dns:///) to enable gRPC client-side load balancing; in Kubernetes, use the distributor headless service on the gRPC port.",
 	)
+	f.DurationVar(
+		&c.RemoteTimeout,
+		"ruler.distributor.remote-timeout",
+		10*time.Second,
+		"Timeout for requests to remote distributors.",
+	)
 	c.GRPCClientConfig.CustomCompressors = []string{s2.Name}
 	c.GRPCClientConfig.RegisterFlagsWithPrefix("ruler.distributor.grpc-client-config", f)
 }
 
 func (c *DistributorConfig) Validate() error {
-	c.GRPCClientConfig.CustomCompressors = []string{s2.Name}
 	if err := c.GRPCClientConfig.Validate(); err != nil {
-		return err
+		return fmt.Errorf("ruler's distributor client gRPC settings: %w", err)
 	}
 
 	if c.Address == "" {
 		return nil
+	}
+
+	if c.RemoteTimeout <= 0 {
+		return fmt.Errorf("remote timeout must be greater than 0")
 	}
 
 	if strings.HasPrefix(c.Address, "http://") || strings.HasPrefix(c.Address, "https://") {
@@ -75,11 +83,6 @@ func (c *DistributorConfig) Validate() error {
 	return nil
 }
 
-type distributorPushConfig struct {
-	backoff backoff.Config
-	timeout time.Duration
-}
-
 // DistributorGRPCClient is a gRPC client used by rulers to push rule evaluation
 // results to distributors.
 type DistributorGRPCClient struct {
@@ -87,19 +90,12 @@ type DistributorGRPCClient struct {
 
 	conn     *grpc.ClientConn
 	logger   log.Logger
-	pushCfg  distributorPushConfig
+	cfg      DistributorConfig
 	close    sync.Once
 	closeErr error
 }
 
 func NewDistributorGRPCClient(cfg DistributorConfig, reg prometheus.Registerer, logger log.Logger) (*DistributorGRPCClient, error) {
-	return newDistributorGRPCClient(cfg, reg, logger, distributorPushConfig{
-		backoff: cfg.GRPCClientConfig.BackoffConfig,
-		timeout: remoteDistributorPushTimeout,
-	})
-}
-
-func newDistributorGRPCClient(cfg DistributorConfig, reg prometheus.Registerer, logger log.Logger, pushCfg distributorPushConfig) (*DistributorGRPCClient, error) {
 	invalidClusterValidation := util.NewRequestInvalidClusterValidationLabelsTotalCounter(reg, "ruler-distributor", util.GRPCProtocol)
 	opts, err := cfg.GRPCClientConfig.DialOption(
 		[]grpc.UnaryClientInterceptor{
@@ -124,7 +120,7 @@ func newDistributorGRPCClient(cfg DistributorConfig, reg prometheus.Registerer, 
 		conn:              conn,
 		DistributorClient: distributorpb.NewDistributorClient(conn),
 		logger:            logger,
-		pushCfg:           pushCfg,
+		cfg:               cfg,
 	}, nil
 }
 
@@ -138,50 +134,39 @@ func (c *DistributorGRPCClient) Push(ctx context.Context, req *mimirpb.WriteRequ
 	}()
 
 	pushAttempt := func() (*mimirpb.WriteResponse, error) {
-		attemptCtx, cancel := context.WithTimeout(ctx, c.pushCfg.timeout)
+		attemptCtx, cancel := context.WithTimeout(ctx, c.cfg.RemoteTimeout)
 		defer cancel()
 		return c.DistributorClient.Push(attemptCtx, req)
 	}
 
-	attempt := 1
-	resp, err := pushAttempt()
-	if err == nil {
-		return resp, nil
-	}
-	if !isRetryableDistributorPushError(err) {
-		return nil, err
-	}
-
-	retry := backoff.New(ctx, c.pushCfg.backoff)
+	maxRetries := c.cfg.GRPCClientConfig.BackoffConfig.MaxRetries
+	retry := backoff.New(ctx, c.cfg.GRPCClientConfig.BackoffConfig)
+	attempt := 0
+	var err error
 	for retry.Ongoing() {
-		delay := retry.NextDelay()
-		level.Warn(c.logger).Log("msg", "failed to remotely push rule evaluation results, will retry", "err", err, "attempt", attempt, "max_retries", c.pushCfg.backoff.MaxRetries, "retry_delay", delay)
-
-		timer := time.NewTimer(delay)
-		select {
-		case <-timer.C:
-		case <-ctx.Done():
-			timer.Stop()
-			return nil, ctx.Err()
-		}
-
 		attempt++
-		resp, err = pushAttempt()
+		resp, err := pushAttempt()
 		if err == nil {
 			return resp, nil
 		}
 		if !isRetryableDistributorPushError(err) {
 			return nil, err
 		}
-	}
+		if maxRetries > 0 && attempt >= maxRetries {
+			return nil, err
+		}
 
-	if retryErr := retry.Err(); retryErr != nil {
+		level.Warn(c.logger).Log("msg", "failed to remotely push rule evaluation results, will retry", "err", err, "attempt", attempt, "max_retries", maxRetries)
+
+		retry.Wait()
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		level.Debug(c.logger).Log("msg", "stopped retrying remote distributor push", "err", retryErr)
 	}
 
+	if retryErr := retry.Err(); retryErr != nil {
+		return nil, retryErr
+	}
 	return nil, err
 }
 

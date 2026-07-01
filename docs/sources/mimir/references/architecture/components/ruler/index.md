@@ -54,12 +54,13 @@ It doesn't control where the resulting samples are written.
 
 By default, the ruler writes rule-result series through an internal distributor.
 To push rule-result series to remote distributors over native gRPC instead, set the `-ruler.distributor.address` CLI flag or its respective YAML configuration parameter.
-Most deployments only need to set this address; `ruler.distributor.grpc_client_config` provides advanced standard gRPC client tuning such as TLS, message sizes, compression, retries, and cluster validation.
+Most deployments only need to set this address.
+`ruler.distributor.remote_timeout` configures the per-request timeout, and `ruler.distributor.grpc_client_config` provides advanced standard gRPC client tuning such as TLS, message sizes, compression, retries, and cluster validation.
 
 In Kubernetes deployments, point `ruler.distributor.address` at the distributor headless service on the gRPC port when you want gRPC client-side load balancing.
 A normal ClusterIP service can work for connectivity, but it doesn't provide the intended per-RPC client-side balancing across distributor endpoints.
 
-Global ruler deployments, including deployments using compartments, should configure both remote rule evaluation and remote distributor writes.
+Global ruler deployments should configure both remote rule evaluation and remote distributor writes.
 The query target can be the normal query-frontend or a dedicated ruler-query-frontend, depending on the deployment.
 
 ```yaml
@@ -68,6 +69,7 @@ ruler:
     address: dns:///<query-frontend-or-ruler-query-frontend-headless>.<namespace>.svc.cluster.local:9095
   distributor:
     address: dns:///<distributor-headless>.<namespace>.svc.cluster.local:9095
+    remote_timeout: 10s
 ```
 
 ## Recording rules

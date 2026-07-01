@@ -7,6 +7,7 @@ package mimir
 
 import (
 	"context"
+	stderrors "errors"
 	"flag"
 	"fmt"
 	"slices"
@@ -1334,6 +1335,13 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 		if err != nil {
 			return nil, err
 		}
+		defer func() {
+			if err != nil {
+				if closeErr := remoteDistributorClient.Close(); closeErr != nil {
+					err = stderrors.Join(err, closeErr)
+				}
+			}
+		}()
 		pusher = remoteDistributorClient
 	}
 	managerFactory := ruler.DefaultTenantManagerFactory(
@@ -1360,7 +1368,7 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 	dnsResolver := dns.NewProvider(dns.GolangResolverType, 0, util_log.Logger, dnsProviderReg)
 	manager, err := ruler.NewDefaultMultiTenantManager(t.Cfg.Ruler, managerFactory, t.Registerer, util_log.Logger, dnsResolver, t.Overrides, rulesFS)
 	if err != nil {
-		return nil, closeWithError(err, remoteDistributorClient)
+		return nil, err
 	}
 
 	t.Ruler, err = ruler.NewRuler(
@@ -1372,7 +1380,7 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 		t.Overrides,
 	)
 	if err != nil {
-		return nil, closeWithError(err, remoteDistributorClient)
+		return nil, err
 	}
 
 	// Expose HTTP/GRPC admin endpoints for the Ruler service
@@ -1702,7 +1710,7 @@ func (t *Mimir) setupModuleManager() error {
 
 	mm.RegisterModule(All, nil)
 
-	rulerDeps := []string{API, MemberlistKV, RulerStorage, Vault}
+	rulerDeps := []string{API, MemberlistKV, Overrides, RulerStorage, RuntimeConfig, Vault}
 	addRulerDep := func(dep string) {
 		if !slices.Contains(rulerDeps, dep) {
 			rulerDeps = append(rulerDeps, dep)

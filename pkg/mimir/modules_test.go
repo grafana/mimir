@@ -374,7 +374,7 @@ func TestRulerModuleDependencies(t *testing.T) {
 				cfg.Ruler.QueryFrontend.Address = "dns:///query-frontend:9095"
 				cfg.Ruler.Distributor.Address = "dns:///distributor:9095"
 			},
-			expectedDeps:    []string{API, MemberlistKV, RulerStorage, Vault},
+			expectedDeps:    []string{API, MemberlistKV, Overrides, RulerStorage, RuntimeConfig, Vault},
 			notExpectedDeps: []string{DistributorService, StoreQueryable, QuerierQueryPlanner},
 		},
 		{
@@ -382,7 +382,7 @@ func TestRulerModuleDependencies(t *testing.T) {
 			setup: func(cfg *Config) {
 				cfg.Ruler.Distributor.Address = "dns:///distributor:9095"
 			},
-			expectedDeps: []string{API, MemberlistKV, RulerStorage, Vault, DistributorService, StoreQueryable, QuerierQueryPlanner},
+			expectedDeps: []string{API, MemberlistKV, Overrides, RulerStorage, RuntimeConfig, Vault, DistributorService, StoreQueryable, QuerierQueryPlanner},
 		},
 		{
 			name: "disabled rule evaluation writes do not start remote distributor client",
@@ -391,7 +391,7 @@ func TestRulerModuleDependencies(t *testing.T) {
 				cfg.Ruler.Distributor.Address = "dns:///distributor:9095"
 				cfg.Ruler.RuleEvaluationWriteEnabled = false
 			},
-			expectedDeps:    []string{API, MemberlistKV, RulerStorage, Vault},
+			expectedDeps:    []string{API, MemberlistKV, Overrides, RulerStorage, RuntimeConfig, Vault},
 			notExpectedDeps: []string{DistributorService, StoreQueryable, QuerierQueryPlanner},
 		},
 		{
@@ -399,7 +399,7 @@ func TestRulerModuleDependencies(t *testing.T) {
 			setup: func(cfg *Config) {
 				cfg.Ruler.QueryFrontend.Address = "dns:///query-frontend:9095"
 			},
-			expectedDeps:    []string{API, MemberlistKV, RulerStorage, Vault, DistributorService},
+			expectedDeps:    []string{API, MemberlistKV, Overrides, RulerStorage, RuntimeConfig, Vault, DistributorService},
 			notExpectedDeps: []string{StoreQueryable, QuerierQueryPlanner},
 		},
 	} {

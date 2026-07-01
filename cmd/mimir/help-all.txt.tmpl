@@ -3255,6 +3255,8 @@ Usage of ./cmd/mimir/mimir:
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -ruler.distributor.grpc-client-config.tls-server-name string
     	Override the expected name on the server certificate.
+  -ruler.distributor.remote-timeout duration
+    	[experimental] Timeout for requests to remote distributors. (default 10s)
   -ruler.enable-api
     	Enable the ruler config API. (default true)
   -ruler.enabled-tenants comma-separated-list-of-strings

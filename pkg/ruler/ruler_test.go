@@ -2880,7 +2880,7 @@ func TestConfig_Validate(t *testing.T) {
 		limits := validation.MockDefaultLimits()
 
 		err := cfg.Validate(*limits)
-		require.EqualError(t, err, `invalid ruler distributor config: address must be a gRPC address, got HTTP(S) address: "http://distributor:9095"`)
+		require.EqualError(t, err, `invalid ruler distributor config: ruler's distributor client address must be a gRPC address, got HTTP(S) address: "http://distributor:9095"`)
 	})
 
 	t.Run("invalid distributor config ignored when rule evaluation writes disabled", func(t *testing.T) {

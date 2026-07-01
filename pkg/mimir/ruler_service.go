@@ -10,14 +10,6 @@ import (
 	"github.com/grafana/dskit/services"
 )
 
-func closeWithError(err error, cleanup io.Closer) error {
-	if cleanup == nil {
-		return err
-	}
-
-	return errors.Join(err, cleanup.Close())
-}
-
 func wrapRulerServiceWithCleanup(rulerService services.Service, cleanup io.Closer) services.Service {
 	rulerFailureCh := make(chan error, 1)
 	var unregisterListener func()

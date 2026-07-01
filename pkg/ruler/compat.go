@@ -45,9 +45,10 @@ const (
 	failureReasonClientError = "client_error"
 )
 
-// Pusher accepts write requests and owns the request after Push is called. Implementations
-// must release any pooled request resources once they are done with the request.
+// Pusher accepts write requests.
 type Pusher interface {
+	// Push owns the request after it is called. Implementations must release any pooled
+	// request resources once they are done with the request.
 	Push(context.Context, *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error)
 }
 

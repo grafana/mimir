@@ -1106,6 +1106,7 @@
   "ruler.query-frontend.query-result-response-format": "protobuf",
   "ruler.query-frontend.max-retries-rate": 170,
   "ruler.distributor.address": "",
+  "ruler.distributor.remote-timeout": 10000000000,
   "ruler.distributor.grpc-client-config.grpc-max-recv-msg-size": 104857600,
   "ruler.distributor.grpc-client-config.grpc-max-send-msg-size": 104857600,
   "ruler.distributor.grpc-client-config.grpc-compression": "",
