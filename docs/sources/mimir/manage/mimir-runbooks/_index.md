@@ -2397,6 +2397,24 @@ How to **investigate**:
 - Check whether the expected snapshot files exist in the bucket — they may have been deleted or never uploaded.
 - Check for network issues between the usage-tracker and the object storage backend.
 
+### MimirUsageTrackerSnapshotLoadFailedAtStartup
+
+This alert fires when the usage-tracker failed to load the snapshot and events within the snapshot interval during startup, and therefore started with partial state.
+
+How it **works**:
+
+- At startup, the usage-tracker loads the last snapshot and replays events to reconstruct the tracked usage data.
+- This must complete within the snapshot interval (half of `-usage-tracker.idle-timeout`), because any data older than the idle timeout is considered stale and removed on the first cleanup anyway.
+- If loading doesn't complete in time, the usage-tracker starts with partial state instead of blocking startup, sets the metric `cortex_usage_tracker_snapshot_load_failed_at_startup` to 1, and resets it to 0 after 10 minutes.
+- Starting with partial state means some series may be temporarily undercounted until the state is rebuilt from the events stream. This should be investigated.
+
+How to **investigate**:
+
+- Check the usage-tracker logs for the `"snapshot and events loading timed out at startup, starting with partial state"` warning message.
+- Check whether snapshot download from object storage was slow: look for `"downloaded snapshot file"` log messages and their `file_download_time`, and check for network or object storage latency issues.
+- Check whether event replay was slow: look for `"finished loading events"` log messages and the number of events replayed.
+- If the partition repeatedly fails to start in time, you can temporarily set `-usage-tracker.skip-snapshot-loading-at-startup=true` to skip snapshot loading and rebuild state from the events stream only.
+
 ## Errors catalog
 
 Mimir has some codified error IDs that you might see in HTTP responses or logs.
