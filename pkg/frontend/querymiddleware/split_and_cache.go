@@ -252,7 +252,7 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req MetricsQueryReques
 		}
 
 		if details := querydetails.QueryDetailsFromContext(ctx); details != nil {
-			details.ResultsCacheMissBytes = splitReqs.countDownstreamResponseBytes()
+			details.ResultsCacheMissBytes += splitReqs.countDownstreamResponseBytes()
 		}
 	}
 
@@ -447,10 +447,10 @@ func (s *splitAndCacheMiddleware) fetchCacheExtents(ctx context.Context, now tim
 	)
 
 	if details := querydetails.QueryDetailsFromContext(ctx); details != nil {
-		details.ResultsCacheHitBytes = usedBytes
+		details.ResultsCacheHitBytes += usedBytes
 
-		details.ResultsCacheHitCount = len(founds)
-		details.ResultsCacheMissCount = len(keys) - len(founds)
+		details.ResultsCacheHitCount += len(founds)
+		details.ResultsCacheMissCount += len(keys) - len(founds)
 	}
 
 	return extents
