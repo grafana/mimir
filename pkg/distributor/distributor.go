@@ -2727,63 +2727,83 @@ func (d *Distributor) sendWriteRequestToIngesters(ctx context.Context, tenantRin
 func (d *Distributor) sendWriteRequestToPartitions(ctx context.Context, tenantID string, tenantRing *ring.ActivePartitionBatchRing, req *mimirpb.WriteRequest, keys []uint32, initialMetadataIndex int, remoteRequestContext func() context.Context, cleanup func()) error {
 	defer cleanup()
 
-	var partitionKeys []ring.PartitionKeys
-	var err error
+	// Each destination topic must be partitioned with the scheme its
+	// consumer uses to claim partitions: the production ingest topic by
+	// the partition ring (ingesters own ring partitions), and the
+	// Nautilus topic by the rebalancer's assignment table (readcache
+	// owns assignment-log partitions). A single scheme must not be
+	// reused across both topics, otherwise a tee'd write produces the
+	// ingest topic using Nautilus-assigned partitions (or the Nautilus
+	// topic using ring partitions on fallback), so each consumer reads a
+	// partitioning it doesn't agree with. Compute each scheme
+	// independently and lazily, so we only pay for the schemes the
+	// destination topics actually require.
 
-	// Capture `now` once so all keys in this write request consult
-	// the same point-in-time view of the assignment log.
+	// Capture `now` once so all keys in this write request consult the
+	// same point-in-time view of the assignment log.
 	now := d.now()
-	usedNautilusRouting := false
-	if table := d.nautilusActiveTableFor(now); table != nil {
-		partitionKeys, err = d.getKeysByAssignment(ctx, tenantID, table, tenantRing, keys)
-		usedNautilusRouting = err == nil
-	} else if d.cfg.NautilusRequired {
+	table := d.nautilusActiveTableFor(now)
+
+	// Authoritative-nautilus mode: if the assignment table is
+	// unavailable we must not silently route through the partition
+	// ring's hash-mod sharding, since that would defeat query locality.
+	// Reject the whole write so the writer retries (503); a sustained
+	// rebalancer outage is best surfaced via the writer's own
+	// retry/backoff, not silent fallthrough.
+	if table == nil && d.cfg.NautilusRequired {
 		level.Warn(d.log).Log(
 			"msg", "nautilus routing rejected: assignment table unavailable",
 			"tenant", tenantID,
 			"keys", len(keys),
 			"nautilus_required", true,
 		)
-		// Authoritative-nautilus mode: refuse to silently route via
-		// the partition ring's hash-mod sharding, since that would
-		// defeat query locality. The writer will see a 503 and
-		// retry; if the rebalancer outage is sustained the writer's
-		// own retry/backoff is the right place for that to surface,
-		// not silent fallthrough.
 		d.nautilusRoutingRejected.WithLabelValues("table_unavailable").Inc()
 		return errors.Wrap(newNautilusRoutingUnavailableError("no live assignment log snapshot is available"), "send data to partitions")
-	} else {
+	}
+
+	productionTopic := d.cfg.IngestStorageConfig.KafkaConfig.Topic
+
+	// Lazily-computed, memoized partition assignments per scheme.
+	var (
+		ringKeys     []ring.PartitionKeys
+		ringErr      error
+		ringComputed bool
+
+		nautilusKeys     []ring.PartitionKeys
+		nautilusErr      error
+		nautilusComputed bool
+		usedNautilus     bool
+	)
+	ringScheme := func() ([]ring.PartitionKeys, error) {
+		if !ringComputed {
+			ringKeys, ringErr = tenantRing.GetKeysByPartition(ctx, keys)
+			ringComputed = true
+		}
+		return ringKeys, ringErr
+	}
+	nautilusScheme := func() ([]ring.PartitionKeys, error) {
+		if nautilusComputed {
+			return nautilusKeys, nautilusErr
+		}
+		nautilusComputed = true
+		if table != nil {
+			nautilusKeys, nautilusErr = d.getKeysByAssignment(ctx, tenantID, table, tenantRing, keys)
+			usedNautilus = nautilusErr == nil
+			return nautilusKeys, nautilusErr
+		}
+		// Non-required mode with no table: fall back to the partition
+		// ring so the Nautilus topic still receives the write.
 		level.Warn(d.log).Log(
 			"msg", "nautilus assignment table unavailable; using partition ring",
 			"tenant", tenantID,
 			"keys", len(keys),
 			"nautilus_required", false,
 		)
-		partitionKeys, err = tenantRing.GetKeysByPartition(ctx, keys)
-	}
-	if err != nil {
-		return errors.Wrap(err, "send data to partitions")
-	}
-
-	// Build per-partition write requests.
-	partitionRequests := make([]ingest.PartitionWriteRequest, 0, len(partitionKeys))
-	for _, pk := range partitionKeys {
-		partitionRequests = append(partitionRequests, ingest.PartitionWriteRequest{
-			PartitionID:  pk.PartitionID,
-			WriteRequest: req.ForIndexes(pk.Indexes, initialMetadataIndex),
-		})
+		nautilusKeys, nautilusErr = tenantRing.GetKeysByPartition(ctx, keys)
+		return nautilusKeys, nautilusErr
 	}
 
 	topics := d.ingestStorageTopicsForTenant(tenantID)
-
-	level.Debug(d.log).Log(
-		"msg", "routed write request to partitions",
-		"tenant", tenantID,
-		"keys", len(keys),
-		"partitions", len(partitionKeys),
-		"partition_summary", formatPartitionKeySummary(partitionKeys),
-		"topics", strings.Join(topics, ","),
-	)
 
 	// Write all partitions in one ProduceSync call per destination
 	// topic. Nautilus-enrolled tenants can be configured to write the
@@ -2792,8 +2812,39 @@ func (d *Distributor) sendWriteRequestToPartitions(ctx context.Context, tenantID
 	// a partial tee is worse than a duplicate on retry.
 	writeCtx := remoteRequestContext()
 	for _, topic := range topics {
-		err = d.ingestStorageWriter.MultiWriteSync(writeCtx, topic, tenantID, partitionRequests)
+		var (
+			partitionKeys []ring.PartitionKeys
+			err           error
+		)
+		// The Nautilus topic is partitioned by the assignment table; any
+		// other destination (the production ingest topic) by the ring.
+		if topic == d.cfg.NautilusIngestTopic && topic != productionTopic {
+			partitionKeys, err = nautilusScheme()
+		} else {
+			partitionKeys, err = ringScheme()
+		}
 		if err != nil {
+			return errors.Wrapf(err, "send data to partitions topic %q", topic)
+		}
+
+		partitionRequests := make([]ingest.PartitionWriteRequest, 0, len(partitionKeys))
+		for _, pk := range partitionKeys {
+			partitionRequests = append(partitionRequests, ingest.PartitionWriteRequest{
+				PartitionID:  pk.PartitionID,
+				WriteRequest: req.ForIndexes(pk.Indexes, initialMetadataIndex),
+			})
+		}
+
+		level.Debug(d.log).Log(
+			"msg", "routed write request to partitions",
+			"tenant", tenantID,
+			"topic", topic,
+			"keys", len(keys),
+			"partitions", len(partitionKeys),
+			"partition_summary", formatPartitionKeySummary(partitionKeys),
+		)
+
+		if err := d.ingestStorageWriter.MultiWriteSync(writeCtx, topic, tenantID, partitionRequests); err != nil {
 			err = wrapPartitionsPushError(err)
 			err = wrapDeadlineExceededPushError(err)
 			return errors.Wrapf(err, "send data to partitions topic %q", topic)
@@ -2807,10 +2858,11 @@ func (d *Distributor) sendWriteRequestToPartitions(ctx context.Context, tenantID
 	// (key -> partition) mapping doesn't reflect what the rebalancer
 	// thinks, so counting hash hits against spotlights would attribute
 	// samples to whichever partition the ring's hash-mod happened to
-	// land on. Count once per logical write request, even when the
-	// request was teed to both topics.
-	if usedNautilusRouting && d.spotlights != nil {
-		d.spotlights.observeWrite(keys, partitionKeys, req, initialMetadataIndex)
+	// land on. Count once per logical write request using the Nautilus
+	// assignment, even when the request was also teed to the ingest
+	// topic.
+	if usedNautilus && nautilusKeys != nil && d.spotlights != nil {
+		d.spotlights.observeWrite(keys, nautilusKeys, req, initialMetadataIndex)
 	}
 
 	return nil
