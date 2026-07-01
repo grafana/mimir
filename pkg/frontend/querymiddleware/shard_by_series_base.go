@@ -49,7 +49,11 @@ func (s *shardBySeriesBase) shardBySeriesSelector(ctx context.Context, spanLog *
 		return s.upstream.RoundTrip(r)
 	}
 
-	if maxShards := s.limits.QueryShardingMaxShardedQueries(tenantID); shardCount > maxShards {
+	maxShards := s.limits.QueryShardingMaxShardedQueries(tenantID)
+	if cardinalityMaxShards := s.limits.CardinalityShardingMaxShardedQueries(tenantID); cardinalityMaxShards > 0 {
+		maxShards = cardinalityMaxShards
+	}
+	if maxShards > 0 && shardCount > maxShards {
 		return nil, apierror.New(
 			apierror.TypeBadData,
 			fmt.Sprintf("shard count %d exceeds allowed maximum (%d)", shardCount, maxShards),
