@@ -30,6 +30,8 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
+* [BUGFIX] Alertmanager: Create a plain `<release>-alertmanager` ClusterIP service when `alertmanager.zoneAwareReplication.enabled=true` so that the Ingress and other consumers that reference the stable service name keep working. Previously only per-zone services were created, which broke the Ingress with `services <release>-alertmanager not found`. #15740
+
 ## 6.1.0
 
 * [CHANGE] Upgrade Mimir to [3.1.2](https://github.com/grafana/mimir/blob/release-3.1/CHANGELOG.md). #15839
