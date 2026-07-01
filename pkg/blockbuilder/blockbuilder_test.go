@@ -278,8 +278,8 @@ func (c failingConsumer) Consume(context.Context, iter.Seq[*kgo.Record]) error {
 
 // Asserts the all-or-nothing contract of the multi-cluster merge: if forwarding the merged records
 // downstream fails, consumeMultiCluster returns the error (so consumeJob won't commit the job)
-// instead of swallowing it. This covers the merge-side failure arm; the producer-side arm (a source
-// erroring mid-consume) is covered by TestMergeSourcesByTimestamp's "propagates a source error" case.
+// instead of swallowing it. This exercises the merge-side failure arm; the producer-side arm (a
+// source erroring mid-consume) is exercised by the merge unit tests.
 func TestConsumeMultiCluster_FailsJobWhenConsumerFails(t *testing.T) {
 	ctx := context.Background()
 

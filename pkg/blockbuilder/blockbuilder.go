@@ -104,12 +104,12 @@ func newWithSchedulerClient(
 		}
 		r := &clusterResources{
 			clusterID:     clusterID,
-			cfg:           kcfg,
+			cfg:           kafkaCfg,
 			kprom:         ingest.NewKafkaReaderClientMetrics(ingest.ReaderMetricsPrefix, "block-builder", clusterReg),
 			metricsSource: &swappableReaderMetricsSource{},
 		}
-		if kcfg.FetchConcurrencyMax > 0 {
-			m := ingest.NewReaderMetrics(clusterReg, r.metricsSource, kcfg.Topic, r.kprom)
+		if kafkaCfg.FetchConcurrencyMax > 0 {
+			m := ingest.NewReaderMetrics(clusterReg, r.metricsSource, kafkaCfg.Topic, r.kprom)
 			r.metrics = &m
 		}
 		clusters[clusterID] = r
