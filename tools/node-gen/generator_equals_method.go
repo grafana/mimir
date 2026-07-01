@@ -39,7 +39,7 @@ type comparison struct {
 	A, B     string      // operand expressions
 	Func     string      // kindFunc, kindSliceFunc: the equality function name (e.g. genEqualsLabelMatcher)
 	Method   string      // kindMethod: the equality method name (e.g. Equal)
-	ElemType string      // kindSliceClosure: the element type, rendered as source
+	ElemType string      // kindSliceClosure: the slice element type (e.g. "*core.LabelMatcher"), used as the closure's parameter type
 	Elem     *comparison // kindPointer, kindSliceClosure: the comparison of the elements
 }
 
