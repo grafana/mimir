@@ -781,19 +781,19 @@ func TestSchedulerMaxQueueLengthMetric(t *testing.T) {
 	})
 
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
-		# HELP cortex_query_scheduler_queue_length_peak Maximum number of queries observed in a tenant's queue since the last metric collection (reset on each scrape). Captures the true peak queue depth between scrapes.
-		# TYPE cortex_query_scheduler_queue_length_peak gauge
-		cortex_query_scheduler_queue_length_peak{user="another"} 1
-		cortex_query_scheduler_queue_length_peak{user="test"} 1
-	`), "cortex_query_scheduler_queue_length_peak"))
+		# HELP cortex_query_scheduler_max_queue_length Maximum number of queries observed in a tenant's queue since the last metric collection (reset on each scrape). Captures the true peak queue depth between scrapes.
+		# TYPE cortex_query_scheduler_max_queue_length gauge
+		cortex_query_scheduler_max_queue_length{user="another"} 1
+		cortex_query_scheduler_max_queue_length{user="test"} 1
+	`), "cortex_query_scheduler_max_queue_length"))
 
 	scheduler.cleanupMetricsForInactiveUser("test")
 
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
-		# HELP cortex_query_scheduler_queue_length_peak Maximum number of queries observed in a tenant's queue since the last metric collection (reset on each scrape). Captures the true peak queue depth between scrapes.
-		# TYPE cortex_query_scheduler_queue_length_peak gauge
-		cortex_query_scheduler_queue_length_peak{user="another"} 1
-	`), "cortex_query_scheduler_queue_length_peak"))
+		# HELP cortex_query_scheduler_max_queue_length Maximum number of queries observed in a tenant's queue since the last metric collection (reset on each scrape). Captures the true peak queue depth between scrapes.
+		# TYPE cortex_query_scheduler_max_queue_length gauge
+		cortex_query_scheduler_max_queue_length{user="another"} 1
+	`), "cortex_query_scheduler_max_queue_length"))
 }
 
 func TestSchedulerMaxQueueLengthMetricDisabled(t *testing.T) {
@@ -812,7 +812,7 @@ func TestSchedulerMaxQueueLengthMetricDisabled(t *testing.T) {
 	})
 
 	require.Nil(t, s.maxQueueLength, "tracker must not be constructed when the metric is disabled")
-	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(""), "cortex_query_scheduler_queue_length_peak"))
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(""), "cortex_query_scheduler_max_queue_length"))
 }
 
 func TestSchedulerQuerierMetrics(t *testing.T) {

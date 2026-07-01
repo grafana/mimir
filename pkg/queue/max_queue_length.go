@@ -33,7 +33,7 @@ type tenantQueueDepth struct {
 func NewMaxQueueLengthGauge() *MaxQueueLengthGauge {
 	return &MaxQueueLengthGauge{
 		desc: prometheus.NewDesc(
-			"cortex_query_scheduler_queue_length_peak",
+			"cortex_query_scheduler_max_queue_length",
 			"Maximum number of queries observed in a tenant's queue since the last metric collection (reset on each scrape). Captures the true peak queue depth between scrapes.",
 			[]string{"user"},
 			nil,

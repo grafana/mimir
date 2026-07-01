@@ -118,7 +118,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.IntVar(&cfg.MaxOutstandingPerTenant, "query-scheduler.max-outstanding-requests-per-tenant", 100, "Maximum number of outstanding requests per tenant per query-scheduler. In-flight requests above this limit will fail with HTTP response status code 429.")
 	f.DurationVar(&cfg.QuerierForgetDelay, "query-scheduler.querier-forget-delay", 0, "If a querier disconnects without sending notification about graceful shutdown, the query-scheduler will keep the querier in the tenant's shard until the forget delay has passed. This feature is useful to reduce the blast radius when shuffle-sharding is enabled.")
 	f.BoolVar(&cfg.InflightMaxAgeMetricEnabled, "query-scheduler.inflight-max-age-metric-enabled", true, "Enable the cortex_query_scheduler_inflight_max_age_seconds metric, which reports the age of the oldest inflight request. Disabling it skips the per-tick scan over inflight requests.")
-	f.BoolVar(&cfg.MaxQueueLengthMetricEnabled, "query-scheduler.max-queue-length-metric-enabled", false, "Enable the cortex_query_scheduler_queue_length_peak metric, which reports the per-tenant peak queue length observed since the last scrape. Disabling it skips per-tenant peak tracking on enqueue and dequeue.")
+	f.BoolVar(&cfg.MaxQueueLengthMetricEnabled, "query-scheduler.max-queue-length-metric-enabled", false, "Enable the cortex_query_scheduler_max_queue_length metric, which reports the per-tenant peak queue length observed since the last scrape. Disabling it skips per-tenant peak tracking on enqueue and dequeue.")
 
 	cfg.GRPCClientConfig.CustomCompressors = []string{s2.Name}
 	cfg.GRPCClientConfig.RegisterFlagsWithPrefix("query-scheduler.grpc-client-config", f)
