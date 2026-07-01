@@ -82,8 +82,8 @@ func (b *BlockBuilder) consumeCompartments(
 		return b.consumePartitionSection(ctx, logger, b.clusters[rng.wc], consumer, builder, spec.Topic, spec.Partition, rng.StartOffset, rng.EndOffset)
 	}
 
-	producerCtx, cancelProducers := context.WithCancel(ctx)
-	defer cancelProducers()
+	producerCtx, cancelProducers := context.WithCancelCause(ctx)
+	defer cancelProducers(context.Canceled)
 	producerGroup, groupCtx := errgroup.WithContext(producerCtx)
 
 	sources := make([]*writeCompartmentSource, len(activeRanges))
@@ -122,7 +122,7 @@ func (b *BlockBuilder) consumeCompartments(
 	if mergeErr == nil {
 		mergeErr = batcher.flush(groupCtx)
 	}
-	cancelProducers() // Unblock any producer still trying to send before waiting.
+	cancelProducers(context.Canceled) // Unblock any producer still trying to send before waiting.
 	producerErr := producerGroup.Wait()
 
 	// A concrete error wins over a sibling's context.Canceled.
