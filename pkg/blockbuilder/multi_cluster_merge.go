@@ -20,58 +20,50 @@ import (
 )
 
 const (
-	// mergeSourceBufferSize bounds each per-compartment prefetch channel, providing
-	// backpressure so a fast compartment can't run unboundedly ahead of a slow one.
+	// mergeSourceBufferSize bounds each per-kafka cluster prefetch channel, providing
+	// backpressure so a fast cluster can't run unboundedly ahead of a slow one.
 	mergeSourceBufferSize = 1000
 	// mergeMaxBatchRecords is how many merged records accumulate before a flush to the
 	// builder.
 	mergeMaxBatchRecords = 1000
 )
 
-// compartmentOffsetRange is one write compartment's offset range to consume.
-type compartmentOffsetRange struct {
+// kafkaClusterOffsetRange is a Kafka cluster's offset range to consume.
+type kafkaClusterOffsetRange struct {
 	schedulerpb.OffsetRange
-	wc int
+	clusterID int
 }
 
-// consumeCompartments consumes a compartment-mode job's per-compartment offset ranges into builder
-// via consumer; it's used only when compartments are enabled (the non-compartment path consumes its
-// single range directly in consumeJob). A single non-empty range is consumed directly; several are
-// consumed concurrently, one producer per compartment on its own Kafka client, then k-way merged in
-// record-timestamp order so cross-compartment appends stay roughly ordered rather than leaning on
-// the TSDB out-of-order window.
+// consumeMultiCluster consumes a job's per-cluster offset ranges into builder via consumer. A
+// single non-empty range is consumed directly; several are consumed concurrently, one producer per
+// cluster on its own Kafka client, then k-way merged in record-timestamp order so cross-cluster
+// appends stay roughly ordered rather than leaning on the TSDB out-of-order window.
 //
-// The merge holds one record per live compartment, so it blocks on the slowest before emitting.
+// The merge holds one record per live cluster, so it blocks on the slowest before emitting.
 // That's fine here because jobs are bounded and offline: every range must be fully read before the
 // job completes anyway, so blocking on a laggard adds essentially no cost.
 //
 // It is all-or-nothing: the producers and the merge share a context, so the first failure cancels
 // the rest and the function returns an error, leaving consumeJob to not commit the job — a partial
 // consume must never advance offsets past data we failed to read.
-func (b *BlockBuilder) consumeCompartments(
+func (b *BlockBuilder) consumeMultiCluster(
 	ctx context.Context,
 	logger log.Logger,
 	consumer ingest.RecordConsumer,
 	builder *TSDBBuilder,
 	spec schedulerpb.JobSpec,
 ) error {
-	// activeRanges pairs each non-empty range with its write compartment ID (the OffsetRanges
+	// activeRanges pairs each non-empty range with its cluster ID (the OffsetRanges
 	// map key). The map can't carry duplicate keys, so no de-duplication is needed.
-	//
-	// Every write compartment ID indexes b.clusters, so guard it against that slice's length
-	// here. consumeJob's spec.Validate already rejects out-of-range IDs, but that bound is
-	// Compartments.Write.NumCompartments, which is only equal to the number of clusters by
-	// construction; checking the actual length keeps the indexing below safe even if the two
-	// ever diverge, turning a would-be panic into a job failure.
-	activeRanges := make([]compartmentOffsetRange, 0, len(spec.OffsetRanges))
-	for wc, rng := range spec.OffsetRanges {
-		if int(wc) < 0 || int(wc) >= len(b.clusters) {
-			return fmt.Errorf("job spec references write compartment %d, but only %d write compartments are configured", wc, len(b.clusters))
+	activeRanges := make([]kafkaClusterOffsetRange, 0, len(spec.OffsetRanges))
+	for clusterID, rng := range spec.OffsetRanges {
+		if int(clusterID) < 0 || int(clusterID) >= len(b.clusters) {
+			return fmt.Errorf("job spec references kafka cluster %d, but only %d clusters are configured", clusterID, len(b.clusters))
 		}
 		if rng.StartOffset >= rng.EndOffset {
-			continue // Empty range for this write compartment.
+			continue // Empty range for this cluster
 		}
-		activeRanges = append(activeRanges, compartmentOffsetRange{wc: int(wc), OffsetRange: rng})
+		activeRanges = append(activeRanges, kafkaClusterOffsetRange{clusterID: int(clusterID), OffsetRange: rng})
 	}
 
 	switch len(activeRanges) {
@@ -79,23 +71,23 @@ func (b *BlockBuilder) consumeCompartments(
 		return nil
 	case 1:
 		rng := activeRanges[0]
-		return b.consumePartitionSection(ctx, logger, b.clusters[rng.wc], consumer, builder, spec.Topic, spec.Partition, rng.StartOffset, rng.EndOffset)
+		return b.consumePartitionSection(ctx, logger, b.clusters[rng.clusterID], consumer, builder, spec.Topic, spec.Partition, rng.StartOffset, rng.EndOffset)
 	}
 
 	producerCtx, cancelProducers := context.WithCancelCause(ctx)
 	defer cancelProducers(context.Canceled)
 	producerGroup, groupCtx := errgroup.WithContext(producerCtx)
 
-	sources := make([]*writeCompartmentSource, len(activeRanges))
+	sources := make([]*kafkaClusterSource, len(activeRanges))
 	for i, rng := range activeRanges {
-		source := &writeCompartmentSource{wc: rng.wc, records: make(chan *kgo.Record, mergeSourceBufferSize)}
+		source := &kafkaClusterSource{clusterID: rng.clusterID, records: make(chan *kgo.Record, mergeSourceBufferSize)}
 		sources[i] = source
 		producerGroup.Go(func() error {
 			// nil builder: producers must not touch the builder concurrently; the merge
 			// goroutine below owns it.
-			err := b.consumePartitionSection(groupCtx, logger, b.clusters[rng.wc], recordChannelConsumer{records: source.records}, nil, spec.Topic, spec.Partition, rng.StartOffset, rng.EndOffset)
+			err := b.consumePartitionSection(groupCtx, logger, b.clusters[rng.clusterID], recordChannelConsumer{records: source.records}, nil, spec.Topic, spec.Partition, rng.StartOffset, rng.EndOffset)
 			if err != nil {
-				err = fmt.Errorf("consuming write compartment %d: %w", rng.wc, err)
+				err = fmt.Errorf("consuming kafka cluster %d: %w", rng.clusterID, err)
 			}
 			source.finalErr = err
 			close(source.records)
@@ -139,7 +131,7 @@ func (b *BlockBuilder) consumeCompartments(
 }
 
 // recordChannelConsumer is an ingest.RecordConsumer that forwards each record to a
-// writeCompartmentSource's channel. Passing it to the unchanged consumePartitionSection lets
+// kafkaClusterSource's channel. Passing it to the unchanged consumePartitionSection lets
 // that fetch loop feed the merge without any modification.
 type recordChannelConsumer struct {
 	records chan<- *kgo.Record
@@ -194,17 +186,17 @@ func (b *recordBatcher) flush(ctx context.Context) error {
 	return nil
 }
 
-// writeCompartmentSource streams one write compartment's records in offset order over records.
+// kafkaClusterSource streams one Kafka cluster's records in offset order over records.
 // The channel is closed at EOF or on error; after the close, finalErr holds any terminal error.
-type writeCompartmentSource struct {
-	wc       int
-	records  chan *kgo.Record
-	finalErr error
+type kafkaClusterSource struct {
+	clusterID int
+	records   chan *kgo.Record
+	finalErr  error
 }
 
 // next returns the next record from the source, or a nil record once the source is drained,
 // in which case err carries any terminal error recorded by the producer.
-func (s *writeCompartmentSource) next(ctx context.Context) (*kgo.Record, error) {
+func (s *kafkaClusterSource) next(ctx context.Context) (*kgo.Record, error) {
 	select {
 	case record, open := <-s.records:
 		if !open {
@@ -217,11 +209,11 @@ func (s *writeCompartmentSource) next(ctx context.Context) (*kgo.Record, error) 
 }
 
 // mergeSourcesByTimestamp pulls from every source and calls emitRecord for each record in
-// (timestamp, write compartment ID, offset) order, until all sources are drained. It always
+// (timestamp, cluster ID, offset) order, until all sources are drained. It always
 // holds one head per live source, blocking on a lagging source until it produces its next
 // record, so a faster source's later records never overtake a slower source's earlier ones.
 // It returns the first error from emitRecord or from a source.
-func mergeSourcesByTimestamp(ctx context.Context, sources []*writeCompartmentSource, emitRecord func(*kgo.Record) error) error {
+func mergeSourcesByTimestamp(ctx context.Context, sources []*kafkaClusterSource, emitRecord func(*kgo.Record) error) error {
 	heads := make(sourceHeadHeap, 0, len(sources))
 	for sourceIndex, source := range sources {
 		record, err := source.next(ctx)
@@ -229,7 +221,7 @@ func mergeSourcesByTimestamp(ctx context.Context, sources []*writeCompartmentSou
 			return err
 		}
 		if record != nil {
-			heads = append(heads, sourceHead{rec: record, wc: source.wc, sourceIndex: sourceIndex})
+			heads = append(heads, sourceHead{rec: record, clusterID: source.clusterID, sourceIndex: sourceIndex})
 		}
 	}
 	heap.Init(&heads)
@@ -244,7 +236,7 @@ func mergeSourcesByTimestamp(ctx context.Context, sources []*writeCompartmentSou
 			return err
 		}
 		if record != nil {
-			heap.Push(&heads, sourceHead{rec: record, wc: head.wc, sourceIndex: head.sourceIndex})
+			heap.Push(&heads, sourceHead{rec: record, clusterID: head.clusterID, sourceIndex: head.sourceIndex})
 		}
 	}
 	return nil

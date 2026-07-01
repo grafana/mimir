@@ -31,12 +31,12 @@ func TestMergeSourcesByTimestamp(t *testing.T) {
 		// (t=40) is available the whole time, so if the merge failed to wait for slow it would
 		// emit 40 ahead of slow's 20 and 30.
 		fast := closedSource(0, rec(0, 10), rec(1, 40))
-		slow := &writeCompartmentSource{wc: 1, records: make(chan *kgo.Record)}
+		slow := &kafkaClusterSource{clusterID: 1, records: make(chan *kgo.Record)}
 
 		var got []int64
 		done := make(chan error, 1)
 		go func() {
-			done <- mergeSourcesByTimestamp(context.Background(), []*writeCompartmentSource{fast, slow}, func(r *kgo.Record) error {
+			done <- mergeSourcesByTimestamp(context.Background(), []*kafkaClusterSource{fast, slow}, func(r *kgo.Record) error {
 				got = append(got, r.Timestamp.UnixMilli())
 				return nil
 			})
@@ -65,16 +65,16 @@ func TestMergeSourcesByTimestamp(t *testing.T) {
 		require.Equal(t, []int64{20, 50, 30, 40}, collectMerge(t, s0, s1))
 	})
 
-	// Asserts that records sharing a timestamp are emitted by write compartment ID, then offset —
+	// Asserts that records sharing a timestamp are emitted by cluster ID, then offset —
 	// deterministically, regardless of source order.
-	t.Run("tie-breaks equal timestamps by compartment then offset", func(t *testing.T) {
-		// All records share a timestamp; emit order must be write compartment ID ascending then
+	t.Run("tie-breaks equal timestamps by cluster then offset", func(t *testing.T) {
+		// All records share a timestamp; emit order must be cluster ID ascending then
 		// offset ascending, regardless of the order the sources are passed in (s1 before s0).
 		s0 := closedSource(0, taggedRec(0, 50, "a"), taggedRec(1, 50, "b"))
 		s1 := closedSource(1, taggedRec(0, 50, "c"))
 
 		var got []string
-		err := mergeSourcesByTimestamp(context.Background(), []*writeCompartmentSource{s1, s0}, func(r *kgo.Record) error {
+		err := mergeSourcesByTimestamp(context.Background(), []*kafkaClusterSource{s1, s0}, func(r *kgo.Record) error {
 			got = append(got, string(r.Value))
 			return nil
 		})
@@ -95,7 +95,7 @@ func TestMergeSourcesByTimestamp(t *testing.T) {
 		bad.finalErr = wantErr
 
 		// The good source's record is emitted, then draining the bad source surfaces its error.
-		err := mergeSourcesByTimestamp(context.Background(), []*writeCompartmentSource{closedSource(0, rec(0, 10)), bad}, func(*kgo.Record) error {
+		err := mergeSourcesByTimestamp(context.Background(), []*kafkaClusterSource{closedSource(0, rec(0, 10)), bad}, func(*kgo.Record) error {
 			return nil
 		})
 		require.ErrorIs(t, err, wantErr)
@@ -104,7 +104,7 @@ func TestMergeSourcesByTimestamp(t *testing.T) {
 	// Asserts that an error returned by the emit callback aborts the merge and is returned to the caller.
 	t.Run("propagates an emit error", func(t *testing.T) {
 		wantErr := errors.New("emit failed")
-		err := mergeSourcesByTimestamp(context.Background(), []*writeCompartmentSource{closedSource(0, rec(0, 10))}, func(*kgo.Record) error {
+		err := mergeSourcesByTimestamp(context.Background(), []*kafkaClusterSource{closedSource(0, rec(0, 10))}, func(*kgo.Record) error {
 			return wantErr
 		})
 		require.ErrorIs(t, err, wantErr)
@@ -117,8 +117,8 @@ func TestMergeSourcesByTimestamp(t *testing.T) {
 		cancel()
 
 		// A source that never produces; without cancellation the merge would block forever.
-		blocked := &writeCompartmentSource{wc: 0, records: make(chan *kgo.Record)}
-		err := mergeSourcesByTimestamp(ctx, []*writeCompartmentSource{blocked}, func(*kgo.Record) error {
+		blocked := &kafkaClusterSource{clusterID: 0, records: make(chan *kgo.Record)}
+		err := mergeSourcesByTimestamp(ctx, []*kafkaClusterSource{blocked}, func(*kgo.Record) error {
 			return nil
 		})
 		require.ErrorIs(t, err, context.Canceled)
@@ -127,7 +127,7 @@ func TestMergeSourcesByTimestamp(t *testing.T) {
 
 // Asserts that next returns buffered records, then a nil record at EOF (carrying any terminal error
 // the producer recorded), and the context error when cancelled.
-func TestWriteCompartmentSource_Next(t *testing.T) {
+func TestKafkaClusterSource_Next(t *testing.T) {
 	t.Run("returns records then nil at clean EOF", func(t *testing.T) {
 		s := closedSource(0, rec(0, 10))
 
@@ -153,7 +153,7 @@ func TestWriteCompartmentSource_Next(t *testing.T) {
 	t.Run("returns context error when cancelled", func(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
-		s := &writeCompartmentSource{wc: 0, records: make(chan *kgo.Record)}
+		s := &kafkaClusterSource{clusterID: 0, records: make(chan *kgo.Record)}
 
 		r, err := s.next(ctx)
 		require.Nil(t, r)
@@ -258,20 +258,20 @@ func taggedRec(offset int64, ms int64, val string) *kgo.Record {
 	return r
 }
 
-// closedSource returns a writeCompartmentSource pre-loaded with recs (in offset order) and
+// closedSource returns a kafkaClusterSource pre-loaded with recs (in offset order) and
 // already closed, so the merge can drain it without a producer goroutine.
-func closedSource(wc int, recs ...*kgo.Record) *writeCompartmentSource {
+func closedSource(clusterID int, recs ...*kgo.Record) *kafkaClusterSource {
 	records := make(chan *kgo.Record, len(recs))
 	for _, r := range recs {
 		records <- r
 	}
 	close(records)
-	return &writeCompartmentSource{wc: wc, records: records}
+	return &kafkaClusterSource{clusterID: clusterID, records: records}
 }
 
 // collectMerge drains the merge of sources and returns the emitted record timestamps in
 // milliseconds.
-func collectMerge(t *testing.T, sources ...*writeCompartmentSource) []int64 {
+func collectMerge(t *testing.T, sources ...*kafkaClusterSource) []int64 {
 	t.Helper()
 	var got []int64
 	err := mergeSourcesByTimestamp(context.Background(), sources, func(r *kgo.Record) error {

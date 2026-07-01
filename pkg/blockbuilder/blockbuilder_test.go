@@ -256,7 +256,7 @@ func TestConsumeJob_MultipleWriteCompartments(t *testing.T) {
 					1: {StartOffset: 0, EndOffset: recordsPerCluster},
 				},
 			}
-			require.NoError(t, bb.consumeJob(ctx, schedulerpb.JobKey{Id: "test-job-multi-wc", Epoch: 1}, spec))
+			require.NoError(t, bb.consumeJob(ctx, schedulerpb.JobKey{Id: "test-job-multi-cluster", Epoch: 1}, spec))
 
 			for _, tenant := range tenants {
 				tenantBucketDir := path.Join(cfg.BlocksStorage.Bucket.Filesystem.Directory, tenant)
@@ -276,11 +276,11 @@ type failingConsumer struct{ err error }
 
 func (c failingConsumer) Consume(context.Context, iter.Seq[*kgo.Record]) error { return c.err }
 
-// Asserts the all-or-nothing contract of the multi-compartment merge: if forwarding the merged
-// records downstream fails, consumeCompartments returns the error (so consumeJob won't commit the
-// job) instead of swallowing it. This covers the merge-side failure arm; the producer-side arm (a
-// source erroring mid-consume) is covered by TestMergeSourcesByTimestamp_PropagatesSourceError.
-func TestConsumeCompartments_FailsJobWhenConsumerFails(t *testing.T) {
+// Asserts the all-or-nothing contract of the multi-cluster merge: if forwarding the merged records
+// downstream fails, consumeMultiCluster returns the error (so consumeJob won't commit the job)
+// instead of swallowing it. This covers the merge-side failure arm; the producer-side arm (a source
+// erroring mid-consume) is covered by TestMergeSourcesByTimestamp's "propagates a source error" case.
+func TestConsumeMultiCluster_FailsJobWhenConsumerFails(t *testing.T) {
 	ctx := context.Background()
 
 	_, kafkaAddrA := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, numPartitions, testTopic)
@@ -309,13 +309,13 @@ func TestConsumeCompartments_FailsJobWhenConsumerFails(t *testing.T) {
 			1: {StartOffset: 0, EndOffset: 2},
 		},
 	}
-	err := bb.consumeCompartments(ctx, test.NewTestingLogger(t), failingConsumer{err: wantErr}, builder, spec)
+	err := bb.consumeMultiCluster(ctx, test.NewTestingLogger(t), failingConsumer{err: wantErr}, builder, spec)
 	require.ErrorIs(t, err, wantErr)
 }
 
 // newMultiClusterBlockBuilder builds a compartments-enabled block-builder wired to consume one
-// write compartment per addr, each from its own Kafka cluster, ready for consumeJob/consumeCompartments
-// to be driven directly. The full service path can't set this up because several distinct broker
+// cluster per addr, each from its own Kafka cluster, ready for consumeJob/consumeMultiCluster to be
+// driven directly. The full service path can't set this up because several distinct broker
 // addresses can't be produced from one templated address.
 func newMultiClusterBlockBuilder(t *testing.T, fetchConcurrencyMax int, addrs ...string) (*BlockBuilder, Config, *validation.Overrides) {
 	t.Helper()
@@ -334,17 +334,17 @@ func newMultiClusterBlockBuilder(t *testing.T, fetchConcurrencyMax int, addrs ..
 	bb, err := newWithSchedulerClient(cfg, test.NewTestingLogger(t), prometheus.NewPedanticRegistry(), overrides, &mockSchedulerClient{})
 	require.NoError(t, err)
 
-	for wc, addr := range addrs {
+	for clusterID, addr := range addrs {
 		kcfg := cfg.Kafka
 		kcfg.Address = flagext.StringSliceCSV{addr}
-		c, err := ingest.NewKafkaReaderClient(kcfg, bb.clusters[wc].kprom, test.NewTestingLogger(t))
+		c, err := ingest.NewKafkaReaderClient(kcfg, bb.clusters[clusterID].kprom, test.NewTestingLogger(t))
 		require.NoError(t, err)
 		t.Cleanup(c.Close)
-		bb.clusters[wc].client = c
+		bb.clusters[clusterID].client = c
 
 		// With concurrent fetching enabled, start the per-cluster reader-metrics service so the
 		// fetcher path is exercised as it is in production (starting() does this on the full path).
-		if metrics := bb.clusters[wc].metrics; metrics != nil {
+		if metrics := bb.clusters[clusterID].metrics; metrics != nil {
 			require.NoError(t, services.StartAndAwaitRunning(context.Background(), metrics))
 			t.Cleanup(func() {
 				require.NoError(t, services.StopAndAwaitTerminated(context.Background(), metrics))

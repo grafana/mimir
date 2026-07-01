@@ -50,9 +50,8 @@ type BlockBuilder struct {
 	schedulerClient schedulerpb.SchedulerClient
 	schedulerConn   *grpc.ClientConn
 
-	// clusters holds the Kafka resources for each cluster, indexed by cluster ID (equivalently, the
-	// write compartment ID). When compartments are disabled there is a single entry built from the
-	// base Kafka config.
+	// clusters holds the Kafka resources for each cluster the block-builder reads from, indexed by
+	// cluster ID.
 	clusters []*clusterResources
 
 	blockBuilderMetrics   blockBuilderMetrics
@@ -61,18 +60,15 @@ type BlockBuilder struct {
 	pusherConsumerMetrics *ingest.PusherConsumerMetrics
 }
 
-// clusterResources bundles one Kafka cluster's resources. There is one per cluster (indexed by
-// cluster ID, equivalently the write compartment ID); when compartments are disabled there is a
-// single entry built from the base Kafka config. cfg and the metrics are populated when the
-// BlockBuilder is created; client is created later, when the service starts.
+// clusterResources bundles one Kafka cluster's resources: its client, config, and reader metrics.
+// cfg and the metrics are populated when the BlockBuilder is created; the client is created later,
+// when the service starts.
 type clusterResources struct {
 	clusterID int
 	cfg       ingest.KafkaConfig
 	client    *kgo.Client
 
-	// kprom, metrics and metricsSource are labeled by write_compartment when compartments are
-	// enabled, so the per-cluster metrics don't collide; otherwise they are unlabeled, identical
-	// to before compartments existed. metrics is nil unless concurrent fetching is enabled.
+	// metrics is nil unless concurrent fetching is enabled.
 	kprom         *kprom.Metrics
 	metrics       *ingest.ReaderMetrics
 	metricsSource *swappableReaderMetricsSource
@@ -314,7 +310,7 @@ func (b *BlockBuilder) consumeJob(ctx context.Context, key schedulerpb.JobKey, s
 	if b.cfg.Compartments.Enabled {
 		// Compartment mode: one offset range per write compartment, consumed and merged across
 		// each compartment's own Kafka client.
-		err = b.consumeCompartments(ctx, logger, consumer, builder, spec)
+		err = b.consumeMultiCluster(ctx, logger, consumer, builder, spec)
 	} else {
 		// Non-compartment mode: a single [start, end) range consumed directly from the single cluster.
 		err = b.consumePartitionSection(ctx, logger, b.clusters[0], consumer, builder, spec.Topic, spec.Partition, spec.StartOffset, spec.EndOffset)

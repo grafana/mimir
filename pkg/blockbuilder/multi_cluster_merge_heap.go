@@ -6,31 +6,31 @@ import (
 	"github.com/twmb/franz-go/pkg/kgo"
 )
 
-// sourceHead is the current front record of one write compartment's source, awaiting
-// emission by the cross-compartment merge. sourceIndex points back into the merge's sources
+// sourceHead is the current front record of one Kafka cluster's source, awaiting
+// emission by the cross-cluster merge. sourceIndex points back into the merge's sources
 // slice so the next record can be pulled from the same source once this head is emitted.
 type sourceHead struct {
 	rec         *kgo.Record
-	wc          int
+	clusterID   int
 	sourceIndex int
 }
 
-// sourceHeadHeap is a min-heap of per-source heads ordered by (record.Timestamp, write
-// compartment ID, offset). The write compartment ID and offset are deterministic tie-breakers
+// sourceHeadHeap is a min-heap of per-source heads ordered by (record.Timestamp, Kafka cluster
+// ID, offset). The cluster ID and offset are deterministic tie-breakers
 // so the emit order is stable when records share a producer timestamp, as happens within a
 // single distributor write batch.
 type sourceHeadHeap []sourceHead
 
 func (h sourceHeadHeap) Len() int { return len(h) }
 
-// Less orders by timestamp ascending, then write compartment ID ascending, then offset ascending.
+// Less orders by timestamp ascending, then Kafka cluster ID ascending, then offset ascending.
 func (h sourceHeadHeap) Less(i, j int) bool {
 	a, b := h[i].rec, h[j].rec
 	if !a.Timestamp.Equal(b.Timestamp) {
 		return a.Timestamp.Before(b.Timestamp)
 	}
-	if h[i].wc != h[j].wc {
-		return h[i].wc < h[j].wc
+	if h[i].clusterID != h[j].clusterID {
+		return h[i].clusterID < h[j].clusterID
 	}
 	return a.Offset < b.Offset
 }
