@@ -33,19 +33,19 @@ type lanePolicy interface {
 }
 
 type LanePolicyConfig struct {
-	policy string
+	Policy string `yaml:"policy" category:"experimental"`
 }
 
 func (cfg *LanePolicyConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
-	f.StringVar(&cfg.policy, prefix+".policy", "simple", "The lane policy the compactor scheduler should use. Valid values: "+fmt.Sprintf("(%s)", lanePolicySimple))
+	f.StringVar(&cfg.Policy, prefix+".policy", "simple", "The lane policy the compactor scheduler should use. Valid values: "+fmt.Sprintf("(%s)", lanePolicySimple))
 }
 
 func newLanePolicy(cfg LanePolicyConfig) (lanePolicy, error) {
-	switch cfg.policy {
+	switch cfg.Policy {
 	case "simple":
 		return newSimpleLanePolicy(), nil
 	default:
-		return nil, fmt.Errorf("unrecognized lane policy: %s", cfg.policy)
+		return nil, fmt.Errorf("unrecognized lane policy: %s", cfg.Policy)
 	}
 }
 

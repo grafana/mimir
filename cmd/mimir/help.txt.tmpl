@@ -343,6 +343,14 @@ Usage of ./cmd/mimir/mimir:
     	List of network interface names to look up when finding the instance IP address. (default [<private network interfaces>])
   -compactor.ring.store string
     	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
+  -compactor.scheduler-client.metadata-cache.backend string
+    	Backend for metadata cache, if not empty. Supported values: memcached.
+  -compactor.scheduler-client.metadata-cache.memcached.addresses comma-separated-list-of-strings
+    	Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.
+  -compactor.scheduler-client.metadata-cache.memcached.connect-timeout duration
+    	The connection timeout. (default 200ms)
+  -compactor.scheduler-client.metadata-cache.memcached.timeout duration
+    	The socket read/write timeout. (default 200ms)
   -compactor.split-and-merge-shards int
     	The number of shards to use when splitting blocks. 0 to disable splitting. Values greater than 1 are rounded up to the next power of two.
   -compactor.split-groups int

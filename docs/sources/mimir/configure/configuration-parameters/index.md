@@ -209,6 +209,85 @@ api:
 # The compactor block configures the compactor component.
 [compactor: <compactor>]
 
+compactor_scheduler:
+  # (experimental) The maximum number of times a job can be retried before it is
+  # removed. 0 for no limit.
+  # CLI flag: -compactor-scheduler.max-leases
+  [max_leases: <int> | default = 3]
+
+  # (experimental) The duration of time without contact until the scheduler is
+  # able to lease a work item to another worker.
+  # CLI flag: -compactor-scheduler.lease-duration
+  [lease_duration: <duration> | default = 10m]
+
+  # (experimental) The duration of time between when plan jobs are submitted
+  # aligned by UTC. Note that -compactor.first-level-compaction-wait-period is
+  # accounted for during alignment of this interval.
+  # CLI flag: -compactor-scheduler.planning-interval
+  [planning_interval: <duration> | default = 30m]
+
+  # (experimental) The duration of time between when maintenance tasks are
+  # performed on job trackers. This includes lease expiration and plan job
+  # submission checks.
+  # CLI flag: -compactor-scheduler.maintenance-interval
+  [maintenance_interval: <duration> | default = 2m]
+
+  # (experimental) The number of maintenance intervals before lease expiration
+  # is enforced. Nonpositive values are all treated as zero.
+  # CLI flag: -compactor-scheduler.maintenance-intervals-before-lease-expiration
+  [maintenance_intervals_before_lease_expiration: <int> | default = 3]
+
+  # (experimental) The number of maintenance intervals before planning occurs
+  # when starting from no recovered state. Nonpositive values are all treated as
+  # zero.
+  # CLI flag: -compactor-scheduler.maintenance-intervals-before-cold-start-planning
+  [maintenance_intervals_before_cold_start_planning: <int> | default = 5]
+
+  # (experimental) The duration of time between bucket listings to discover new
+  # tenants.
+  # CLI flag: -compactor-scheduler.tenant-discovery-interval
+  [tenant_discovery_interval: <duration> | default = 10m]
+
+  tenant_discovery_backoff:
+    # (advanced) Minimum delay when backing off.
+    # CLI flag: -compactor-scheduler.tenant-discovery-backoff.backoff-min-period
+    [min_period: <duration> | default = 100ms]
+
+    # (advanced) Maximum delay when backing off.
+    # CLI flag: -compactor-scheduler.tenant-discovery-backoff.backoff-max-period
+    [max_period: <duration> | default = 10s]
+
+    # (advanced) Number of times to backoff and retry before failing.
+    # CLI flag: -compactor-scheduler.tenant-discovery-backoff.backoff-retries
+    [max_retries: <int> | default = 10]
+
+  # (experimental) The type of persistence the compactor scheduler should use.
+  # Valid values: none, bbolt
+  # CLI flag: -compactor-scheduler.persistence-type
+  [persistence_type: <string> | default = "bbolt"]
+
+  # (experimental) The number of times a job can fail before a repeated failure
+  # is recorded. 0 for no limit.
+  # CLI flag: -compactor-scheduler.repeated-failure-report-threshold
+  [repeated_failure_report_threshold: <int> | default = 2]
+
+  bbolt:
+    # (experimental) The directory where bbolt shard database files are stored
+    # for the compactor scheduler.
+    # CLI flag: -compactor-scheduler.bbolt.dir
+    [dir: <string> | default = "./data-compactor-scheduler"]
+
+    # (experimental) The target number of bbolt database shards for the
+    # compactor scheduler.
+    # CLI flag: -compactor-scheduler.bbolt.shard-count
+    [shard_count: <int> | default = 16]
+
+  lane_policy:
+    # (experimental) The lane policy the compactor scheduler should use. Valid
+    # values: (simple)
+    # CLI flag: -compactor-scheduler.lane-policy.policy
+    [policy: <string> | default = "simple"]
+
 # The store_gateway block configures the store-gateway component.
 [store_gateway: <store_gateway>]
 
@@ -3398,6 +3477,7 @@ The `ingester_client` block configures how the distributors connect to the inges
 
 The `grpc_client` block configures the gRPC client used to communicate between two Mimir components. The supported CLI flags `<prefix>` used to reference this configuration block are:
 
+- `compactor.scheduler-client.grpc-client-config`
 - `ingester.client`
 - `querier.scheduler-client`
 - `query-frontend.grpc-client-config`
@@ -6554,6 +6634,126 @@ sharding_ring:
 # smallest-range-oldest-blocks-first, newest-blocks-first.
 # CLI flag: -compactor.compaction-jobs-order
 [compaction_jobs_order: <string> | default = "smallest-range-oldest-blocks-first"]
+
+scheduler_client:
+  # (experimental) Controls whether compactors should contact a scheduler to
+  # request work.
+  # CLI flag: -compactor.scheduler-client.enabled
+  [enabled: <boolean> | default = false]
+
+  # (experimental) Compactor scheduler endpoint.
+  # CLI flag: -compactor.scheduler-client.scheduler-endpoint
+  [scheduler_endpoint: <string> | default = ""]
+
+  # The grpc_client block configures the gRPC client used to communicate between
+  # two Mimir components.
+  # The CLI flags prefix for this block configuration is:
+  # compactor.scheduler-client.grpc-client-config
+  [grpc_client_config: <grpc_client>]
+
+  # (experimental) Minimum backoff time between scheduler job lease requests.
+  # CLI flag: -compactor.scheduler-client.leasing-min-backoff
+  [leasing_min_backoff: <duration> | default = 100ms]
+
+  # (experimental) Maximum backoff time between scheduler job lease requests.
+  # CLI flag: -compactor.scheduler-client.leasing-max-backoff
+  [leasing_max_backoff: <duration> | default = 2m]
+
+  # (experimental) Interval between scheduler job lease updates.
+  # CLI flag: -compactor.scheduler-client.update-interval
+  [update_interval: <duration> | default = 15s]
+
+  # (experimental) Minimum backoff time for compaction executor retries when
+  # sending scheduler status updates.
+  # CLI flag: -compactor.scheduler-client.update-min-backoff
+  [update_min_backoff: <duration> | default = 1s]
+
+  # (experimental) Maximum backoff time for compaction executor retries when
+  # sending scheduler status updates.
+  # CLI flag: -compactor.scheduler-client.update-max-backoff
+  [update_max_backoff: <duration> | default = 32s]
+
+  # (experimental) Defines how frequently to clean up the compaction working
+  # directory. The directory is cleaned on startup and then only when this
+  # interval has elapsed since the last cleanup. Set to 0 to disable periodic
+  # cleanup.
+  # CLI flag: -compactor.scheduler-client.compaction-dir-cleanup-interval
+  [compaction_dir_cleanup_interval: <duration> | default = 30m]
+
+  metadata_cache:
+    # Backend for metadata cache, if not empty. Supported values: memcached.
+    # CLI flag: -compactor.scheduler-client.metadata-cache.backend
+    [backend: <string> | default = ""]
+
+    # The memcached block configures the Memcached-based caching backend.
+    # The CLI flags prefix for this block configuration is:
+    # compactor.scheduler-client.metadata-cache
+    [memcached: <memcached>]
+
+    # (advanced) How long to cache list of tenants in the bucket.
+    # CLI flag: -compactor.scheduler-client.metadata-cache.tenants-list-ttl
+    [tenants_list_ttl: <duration> | default = 15m]
+
+    # (advanced) How long to cache list of blocks for each tenant.
+    # CLI flag: -compactor.scheduler-client.metadata-cache.tenant-blocks-list-ttl
+    [tenant_blocks_list_ttl: <duration> | default = 5m]
+
+    # (advanced) How long to cache list of chunks for a block.
+    # CLI flag: -compactor.scheduler-client.metadata-cache.chunks-list-ttl
+    [chunks_list_ttl: <duration> | default = 24h]
+
+    # (advanced) How long to cache information that block metafile exists. Also
+    # used for tenant deletion mark file.
+    # CLI flag: -compactor.scheduler-client.metadata-cache.metafile-exists-ttl
+    [metafile_exists_ttl: <duration> | default = 2h]
+
+    # (advanced) How long to cache information that block metafile doesn't
+    # exist. Also used for tenant deletion mark file.
+    # CLI flag: -compactor.scheduler-client.metadata-cache.metafile-doesnt-exist-ttl
+    [metafile_doesnt_exist_ttl: <duration> | default = 5m]
+
+    # (advanced) How long to cache content of the metafile.
+    # CLI flag: -compactor.scheduler-client.metadata-cache.metafile-content-ttl
+    [metafile_content_ttl: <duration> | default = 24h]
+
+    # (advanced) Maximum size of metafile content to cache in bytes. Caching
+    # will be skipped if the content exceeds this size. This is useful to avoid
+    # network round trip for large content if the configured caching backend has
+    # an hard limit on cached items size (in this case, you should set this
+    # limit to the same limit in the caching backend).
+    # CLI flag: -compactor.scheduler-client.metadata-cache.metafile-max-size-bytes
+    [metafile_max_size_bytes: <int> | default = 1048576]
+
+    # (advanced) How long to cache attributes of the block metafile.
+    # CLI flag: -compactor.scheduler-client.metadata-cache.metafile-attributes-ttl
+    [metafile_attributes_ttl: <duration> | default = 168h]
+
+    # (advanced) How long to cache attributes of the block index.
+    # CLI flag: -compactor.scheduler-client.metadata-cache.block-index-attributes-ttl
+    [block_index_attributes_ttl: <duration> | default = 168h]
+
+    # (advanced) How long to cache content of the bucket index.
+    # CLI flag: -compactor.scheduler-client.metadata-cache.bucket-index-content-ttl
+    [bucket_index_content_ttl: <duration> | default = 5m]
+
+    # (advanced) Maximum size of bucket index content to cache in bytes. Caching
+    # will be skipped if the content exceeds this size. This is useful to avoid
+    # network round trip for large content if the configured caching backend has
+    # an hard limit on cached items size (in this case, you should set this
+    # limit to the same limit in the caching backend).
+    # CLI flag: -compactor.scheduler-client.metadata-cache.bucket-index-max-size-bytes
+    [bucket_index_max_size_bytes: <int> | default = 1048576]
+
+  # (experimental) Timeout for sending a final job status update to the
+  # scheduler when the parent context is canceled (e.g. during shutdown).
+  # CLI flag: -compactor.scheduler-client.terminating-final-status-timeout
+  [terminating_final_status_timeout: <duration> | default = 30s]
+
+  # (experimental) Lanes to request for each worker goroutine. Each entry is a
+  # '+'-separated list of job types in priority order. Defaults to
+  # compact+plan,plan
+  # CLI flag: -compactor.scheduler-client.lanes
+  [lanes: <string> | default = "compact+plan,plan"]
 ```
 
 ### store_gateway
@@ -6740,6 +6940,7 @@ The `memcached` block configures the Memcached-based caching backend. The suppor
 - `blocks-storage.bucket-store.index-cache`
 - `blocks-storage.bucket-store.index-header-cache`
 - `blocks-storage.bucket-store.metadata-cache`
+- `compactor.scheduler-client.metadata-cache`
 - `querier.mimir-query-engine.range-vector-splitting`
 - `query-frontend.results-cache`
 - `ruler-storage.cache`
