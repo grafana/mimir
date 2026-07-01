@@ -12867,6 +12867,28 @@
                   "fieldFlag": "blocks-storage.tsdb.offset-catalogue.sync-concurrency",
                   "fieldType": "int",
                   "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
+                  "name": "consumer_group",
+                  "required": false,
+                  "desc": "The Kafka consumer group whose committed offset is compared against block watermarks to determine when ingester blocks can be deleted.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "blocks-storage.tsdb.offset-catalogue.consumer-group",
+                  "fieldType": "string",
+                  "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
+                  "name": "consumer_group_poll_interval",
+                  "required": false,
+                  "desc": "How frequently the ingester polls Kafka for the committed offset of the configured consumer group.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 300000000000,
+                  "fieldFlag": "blocks-storage.tsdb.offset-catalogue.consumer-group-poll-interval",
+                  "fieldType": "duration",
+                  "fieldCategory": "experimental"
                 }
               ],
               "fieldValue": null,
