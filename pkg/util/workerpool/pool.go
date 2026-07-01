@@ -56,9 +56,10 @@ type Pool struct {
 	name    string
 	logger  log.Logger
 
-	queueLength  *prometheus.GaugeVec
-	discarded    *prometheus.CounterVec
-	taskDuration *prometheus.HistogramVec
+	queueLength    *prometheus.GaugeVec
+	maxQueueLength *queue.MaxQueueLengthGauge
+	discarded      *prometheus.CounterVec
+	taskDuration   *prometheus.HistogramVec
 
 	workersWg sync.WaitGroup
 }
@@ -93,6 +94,17 @@ func New(cfg Config, name string, reg prometheus.Registerer, logger log.Logger) 
 		Help:        "Number of work items queued in the worker pool, per tenant.",
 		ConstLabels: constLabels,
 	}, []string{"user"})
+	// queueLength only reflects the depth at scrape time; maxQueueLength captures the
+	// peak depth observed between scrapes so short bursts aren't invisible.
+	maxQueueLength := queue.NewMaxQueueLengthGauge(
+		"mimir_workerpool_max_queue_length",
+		"Maximum number of work items observed in a tenant's queue since the last metric collection (reset on each scrape). Captures the true peak queue depth between scrapes.",
+		constLabels,
+	)
+	// reg is nil in some tests; mirror promauto.With(nil) by skipping registration.
+	if reg != nil {
+		reg.MustRegister(maxQueueLength)
+	}
 	discarded := promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 		Name:        "mimir_workerpool_discarded_requests_total",
 		Help:        "Total number of work items discarded by the worker pool because the tenant's queue was full.",
@@ -122,6 +134,7 @@ func New(cfg Config, name string, reg prometheus.Registerer, logger log.Logger) 
 		math.MaxInt32,
 		queueForgetDelay,
 		queueLength,
+		maxQueueLength,
 		discarded,
 		enqueueDuration,
 	)
@@ -130,13 +143,14 @@ func New(cfg Config, name string, reg prometheus.Registerer, logger log.Logger) 
 	}
 
 	p := &Pool{
-		queue:        rq,
-		workers:      size,
-		name:         name,
-		logger:       logger,
-		queueLength:  queueLength,
-		discarded:    discarded,
-		taskDuration: taskDuration,
+		queue:          rq,
+		workers:        size,
+		name:           name,
+		logger:         logger,
+		queueLength:    queueLength,
+		maxQueueLength: maxQueueLength,
+		discarded:      discarded,
+		taskDuration:   taskDuration,
 	}
 	p.Service = services.NewBasicService(p.starting, p.running, p.stopping)
 	return p, nil
@@ -276,5 +290,6 @@ func (p *Pool) Submit(dimension string, tenantID string, fn func()) error {
 // recreated and cleaned up on the next removal.
 func (p *Pool) RemoveTenant(tenantID string) {
 	p.queueLength.DeleteLabelValues(tenantID)
+	p.maxQueueLength.DeleteTenant(tenantID)
 	p.discarded.DeleteLabelValues(tenantID)
 }
