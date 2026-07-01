@@ -3435,7 +3435,7 @@ The `mimirtool blocks mark` command creates or removes markers for TSDB blocks i
 
 #### Jsonnet
 
-If you deploy Mimir with the [Jsonnet library](../../tools/mimirtool/), you can run `mimirtool blocks mark` as a Kubernetes Job with `newMimirtoolMarkBlocksJob`. The object storage (bucket) configuration is picked up automatically from your cluster's storage configuration, so you only need to provide the marking arguments:
+If you deploy Mimir with the Jsonnet library, you can run `mimirtool blocks mark` as a Kubernetes Job with `newMimirtoolMarkBlocksJob`. The object storage (bucket) configuration is picked up automatically from your cluster's storage configuration, so you only need to provide the marking arguments:
 
 ```jsonnet
 local mimir = import 'mimir/mimir.libsonnet';
@@ -3454,7 +3454,7 @@ mimir {
 
 #### Command line
 
-The `mimirtool blocks mark` command is part of [mimirtool](../../tools/mimirtool/). Build it with `go build ./cmd/mimirtool` in the Mimir repository, or use the pre-built binary from Mimir releases.
+The `mimirtool blocks mark` command is part of [mimirtool](../tools/mimirtool/). Build it with `go build ./cmd/mimirtool` in the Mimir repository, or use the pre-built binary from Mimir releases.
 
 #### Google Cloud Storage (GCS)
 
