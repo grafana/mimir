@@ -15,7 +15,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/costattribution/costattributionmodel"
-	"github.com/grafana/mimir/pkg/costattribution/testutils"
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
@@ -74,7 +73,7 @@ func TestSampleTracker_IncrementReceviedSamples(t *testing.T) {
 	manager, _, costAttributionReg := newTestManager()
 	st := manager.SampleTracker("user4")
 	t.Run("One Single Series in Request", func(t *testing.T) {
-		st.IncrementReceivedSamples(testutils.CreateRequest([]testutils.Series{{LabelValues: []string{"platform", "foo", "service", "dodo"}, SamplesCount: 3}}), time.Unix(10, 0))
+		st.IncrementReceivedSamples(createRequest([]series{{LabelValues: []string{"platform", "foo", "service", "dodo"}, SamplesCount: 3}}), time.Unix(10, 0))
 
 		expectedMetrics := `
 	# HELP cortex_distributor_received_attributed_samples_total The total number of samples that were received per attribution.
@@ -84,7 +83,7 @@ func TestSampleTracker_IncrementReceviedSamples(t *testing.T) {
 		assert.NoError(t, testutil.GatherAndCompare(costAttributionReg, strings.NewReader(expectedMetrics), "cortex_distributor_received_attributed_samples_total"))
 	})
 	t.Run("Multiple Different Series in Request", func(t *testing.T) {
-		st.IncrementReceivedSamples(testutils.CreateRequest([]testutils.Series{
+		st.IncrementReceivedSamples(createRequest([]series{
 			{LabelValues: []string{"platform", "foo", "service", "dodo"}, SamplesCount: 3},
 			{LabelValues: []string{"platform", "bar", "service", "yoyo"}, SamplesCount: 5},
 		}), time.Unix(20, 0))
@@ -99,7 +98,7 @@ func TestSampleTracker_IncrementReceviedSamples(t *testing.T) {
 	})
 
 	t.Run("Multiple Series in Request with Same Labels", func(t *testing.T) {
-		st.IncrementReceivedSamples(testutils.CreateRequest([]testutils.Series{
+		st.IncrementReceivedSamples(createRequest([]series{
 			{LabelValues: []string{"platform", "foo", "service", "dodo"}, SamplesCount: 3},
 			{LabelValues: []string{"platform", "foo", "service", "yoyo"}, SamplesCount: 5},
 		}), time.Unix(30, 0))
@@ -217,7 +216,7 @@ func TestSampleTracker_Concurrency(t *testing.T) {
 		wg.Add(1)
 		go func(i int64) {
 			defer wg.Done()
-			cst.IncrementReceivedSamples(testutils.CreateRequest([]testutils.Series{{LabelValues: []string{"team", string(rune('A' + (i % 26)))}, SamplesCount: 1}}), time.Unix(i, 0))
+			cst.IncrementReceivedSamples(createRequest([]series{{LabelValues: []string{"team", string(rune('A' + (i % 26)))}, SamplesCount: 1}}), time.Unix(i, 0))
 			cst.IncrementDiscardedSamples([]mimirpb.LabelAdapter{{Name: "team", Value: string(rune('A' + (i % 26)))}}, 1, "sample-out-of-order", time.Unix(i, 0))
 		}(i)
 	}
@@ -237,4 +236,36 @@ func TestSampleTracker_Concurrency(t *testing.T) {
 
 `
 	assert.NoError(t, testutil.GatherAndCompare(costAttributionReg, strings.NewReader(expectedMetrics), "cortex_distributor_received_attributed_samples_total", "cortex_discarded_attributed_samples_total"))
+}
+
+func BenchmarkSampleTracker_IncrementReceivedSamples(b *testing.B) {
+	const seriesPerRequest = 1000
+
+	// groups controls how many distinct cost-attribution keys the request maps to.
+	// In production a single WriteRequest usually maps to one or few groups, but we
+	// also measure the worst case where every series is its own group.
+	for _, groups := range []int{1, 10, 100, 1000} {
+		b.Run(fmt.Sprintf("groups=%d", groups), func(b *testing.B) {
+			st, err := newSampleTracker("tenant-1", costattributionmodel.DefaultTrackerName,
+				costattributionmodel.Labels{{Input: "platform", Output: "platform"}},
+				false, seriesPerRequest, time.Minute, log.NewNopLogger())
+			require.NoError(b, err)
+
+			data := make([]series, seriesPerRequest)
+			for i := range data {
+				data[i] = series{
+					LabelValues:  []string{"platform", fmt.Sprintf("platform-%d", i%groups), "pod", fmt.Sprintf("pod-%d", i)},
+					SamplesCount: 1,
+				}
+			}
+			req := createRequest(data)
+			now := time.Unix(0, 0)
+
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				st.IncrementReceivedSamples(req, now)
+			}
+		})
+	}
 }

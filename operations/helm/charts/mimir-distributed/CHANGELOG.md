@@ -30,6 +30,9 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
+## 6.1.0
+
+* [CHANGE] Upgrade Mimir to [3.1.2](https://github.com/grafana/mimir/blob/release-3.1/CHANGELOG.md). #15839
 * [CHANGE] Kafka: Removed `kafka.extraEnv`. Use `kafka.env` instead. #14892
 * [ENHANCEMENT] Kafka: Add `kafka.env` to let users selectively override default Kafka environment variables by name, following the same merge pattern used by other chart components (`ingester.env`, etc.). Individual defaults can be replaced in-place without discarding the rest of the list. #14892
 * [CHANGE] Update minimum supported Kubernetes version to 1.32. This reflects the fact that Grafana does not test with older versions of Kubernetes. #14335

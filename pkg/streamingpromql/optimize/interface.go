@@ -8,11 +8,12 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
+	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
 type ASTOptimizationPass interface {
 	Name() string
-	Apply(ctx context.Context, expr parser.Expr) (parser.Expr, error)
+	Apply(ctx context.Context, expr parser.Expr, timeRange types.QueryTimeRange) (parser.Expr, error)
 }
 
 type QueryPlanOptimizationPass interface {

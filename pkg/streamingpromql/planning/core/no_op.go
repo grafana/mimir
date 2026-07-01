@@ -3,6 +3,7 @@
 package core
 
 import (
+	"context"
 	"time"
 
 	"github.com/gogo/protobuf/proto"
@@ -48,10 +49,6 @@ func (n *NoOp) Describe() string {
 	return ""
 }
 
-func (n *NoOp) ChildrenLabels() []string {
-	return nil
-}
-
 func (n *NoOp) ChildrenTimeRange(timeRange types.QueryTimeRange) types.QueryTimeRange {
 	return timeRange
 }
@@ -75,7 +72,7 @@ func (n *NoOp) MinimumRequiredPlanVersion(types.QueryTimeRange) (planning.QueryP
 	return planning.QueryPlanV10, nil
 }
 
-func MaterializeNoOp(n *NoOp, _ *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
+func MaterializeNoOp(_ context.Context, n *NoOp, _ *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
 	var o types.Operator
 
 	if n.MatrixSelector {

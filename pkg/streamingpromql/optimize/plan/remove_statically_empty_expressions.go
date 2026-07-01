@@ -276,6 +276,14 @@ func IsAlwaysEmptyFunctionCall(node *core.FunctionCall, params *planning.QueryPa
 		}
 
 		return isAlwaysEmpty(node.Args[2], params)
+	case functions.FUNCTION_HISTOGRAM_QUANTILES:
+		// histogram_quantiles takes the instant vector as its first argument, followed by the
+		// quantile label name and one or more quantiles.
+		if len(node.Args) < 3 {
+			return false, fmt.Errorf("%w: expected at least three arguments in call to %s, got %d (this is a bug)", ErrInvalidFunctionArgs, node.Function, len(node.Args))
+		}
+
+		return isAlwaysEmpty(node.Args[0], params)
 	case functions.FUNCTION_SHARDING_CONCAT:
 		for i := range node.ChildCount() {
 			empty, err := isAlwaysEmpty(node.Child(i), params)

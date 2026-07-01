@@ -3,6 +3,7 @@
 package core
 
 import (
+	"context"
 	"slices"
 	"time"
 
@@ -43,10 +44,6 @@ func (t *DataLabelSelector) Describe() string {
 	return describeSelector(t.Matchers, nil, 0, nil, false, false, false, false, nil)
 }
 
-func (t *DataLabelSelector) ChildrenLabels() []string {
-	return nil
-}
-
 func (t *DataLabelSelector) ChildrenTimeRange(timeRange types.QueryTimeRange) types.QueryTimeRange {
 	return timeRange
 }
@@ -71,7 +68,7 @@ func (t *DataLabelSelector) MinimumRequiredPlanVersion(types.QueryTimeRange) (pl
 	return planning.QueryPlanV12, nil
 }
 
-func MaterializeDataLabelSelector(t *DataLabelSelector, _ *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
+func MaterializeDataLabelSelector(_ context.Context, t *DataLabelSelector, _ *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
 	selector := &selectors.Selector{
 		Queryable:                params.Queryable,
 		TimeRange:                timeRange,

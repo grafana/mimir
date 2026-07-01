@@ -80,7 +80,18 @@ const QueryPlanV13 = QueryPlanVersion(13)
 // QueryPlanV14 introduces support for splitting a range query into smaller sub ranges.
 const QueryPlanV14 = QueryPlanVersion(14)
 
-var MaximumSupportedQueryPlanVersion = QueryPlanV14
+// QueryPlanV15 introduces support for quantile aggregation in multi-aggregation nodes.
+const QueryPlanV15 = QueryPlanVersion(15)
+
+// QueryPlanV16 introduces support for caching the result of an instant vector operator.
+const QueryPlanV16 = QueryPlanVersion(16)
+
+// QueryPlanV17 introduces the EvaluationRoot node used when spinning off subqueries from instant
+// queries. EvaluationRoot nodes only ever run in query-frontends, so queriers do not need to support
+// this version.
+const QueryPlanV17 = QueryPlanVersion(17)
+
+var MaximumSupportedQueryPlanVersion = QueryPlanV17
 
 type QueryPlan struct {
 	Root       Node

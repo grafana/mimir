@@ -431,11 +431,11 @@ func (a *API) RegisterIngesterPartitionRings(compartmentsEnabled bool, partition
 		return
 	}
 
-	index := compartments.NewIndexPageHandler("Partitions Ring Status", "partition-ring/compartment-"+compartments.CompartmentIDPlaceholder, partitionRings.Count())
+	index := compartments.NewIndexPageHandler("Partitions Ring Status", "partition-ring/compartment-"+compartments.ReadCompartmentIDPlaceholder, partitionRings.Count())
 	a.RegisterRoute("/ingester/partition-ring", index, false, true, "GET")
 
 	for compartmentID, partitionRing := range partitionRings.All() {
-		key := compartments.ReadCompartmentRingKey(compartmentID, ringKey)
+		key := compartments.WithReadCompartmentSuffix(ringKey, compartmentID)
 		handler := ring.NewPartitionRingPageHandler(partitionRing, ring.NewPartitionRingEditor(key, kvClient))
 		a.RegisterRoute(fmt.Sprintf("/ingester/partition-ring/compartment-%d", compartmentID), handler, false, true, "GET", "POST")
 	}
@@ -567,6 +567,12 @@ func (a *API) RegisterOverridesExporter(oe *exporter.OverridesExporter) {
 func (a *API) RegisterUsageTracker(t *usagetracker.UsageTracker) {
 	usagetrackerpb.RegisterUsageTrackerServer(a.server.GRPC, t)
 	a.RegisterRoute("/usage-tracker/prepare-instance-ring-downscale", http.HandlerFunc(t.PrepareInstanceRingDownscaleHandler), false, true, "GET", "POST", "DELETE")
+
+	a.indexPage.AddLinks(defaultWeight, "Usage-tracker", []IndexPageLink{
+		{Desc: "Partitions", Path: "usage-tracker/partitions"},
+	})
+	a.RegisterRoute("/usage-tracker/partitions", http.HandlerFunc(t.PartitionsHandler), false, true, "GET")
+	a.RegisterRoute("/usage-tracker/partitions/{partition}", http.HandlerFunc(t.PartitionHandler), false, true, "GET")
 }
 
 func (a *API) RegisterUsageTrackerInstanceRing(instanceRingHandler http.Handler) {

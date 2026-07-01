@@ -6,8 +6,8 @@ std.manifestYamlDoc({
     self.query_frontend +
     self.query_schedulers +
     self.querier +
-    self.store_gateways(1) +
-    self.compactor +
+    self.store_gateways +
+    self.compactors +
     self.block_builder +
     self.block_builder_scheduler +
     self.rulers(1) +
@@ -18,21 +18,32 @@ std.manifestYamlDoc({
     self.grafana +
     self.grafana_agent +
     self.memcached +
-    self.kafka_1 +
-    self.kafka_2 +
-    self.kafka_3 +
+    self.kafka_clusters +
     self.redpanda_console +
     self.tempo +
     {},
 
-  // Two distributors, each representing a (0-based) write compartment. They are functionally identical
-  // (both shard every write across all read compartments by metric name); nginx load-balances across them.
+  // Compartment-aware Kafka args for the components that run the ingest-storage writer (distributor, ruler).
+  // Each writer targets its own write compartment's Kafka cluster, so the address is resolved to that
+  // compartment (matching the production jsonnet), not left as the "<write-compartment-id>" placeholder. The
+  // read-compartment-templated topic makes the writer auto-create one topic per read compartment; its
+  // "<read-compartment-id>" placeholder is single-quoted so "sh -c" doesn't treat it as a shell redirection.
+  local writeCompartmentArgs(writeCompartmentID) = [
+    '-distributor.write-compartment-id=%d' % writeCompartmentID,
+    '-ingest-storage.kafka.address=kafka-wc-%d:9092' % writeCompartmentID,
+    "-ingest-storage.kafka.topic='mimir-ingest-rc-<read-compartment-id>'",
+  ],
+
+  // Two distributors, each representing a (0-based) write compartment. They shard every write across all
+  // read compartments by metric name, and each produces to its own write compartment's Kafka cluster;
+  // nginx load-balances across them so writes spread randomly across write compartments.
   local numWriteCompartments = 2,
   distributors:: {
     ['distributor-wc-%d' % id]: mimirService({
       name: 'distributor-wc-%d' % id,
       target: 'distributor',
       publishedHttpPort: 8000 + id,
+      extraArguments: writeCompartmentArgs(id),
     }) + {
       // Share a "distributor" network alias so nginx (DISTRIBUTOR_HOST=distributor) balances across both.
       networks: { default: { aliases: ['distributor'] } },
@@ -41,9 +52,9 @@ std.manifestYamlDoc({
   },
 
   // Each read compartment runs its own ingesters (one per zone). An ingester registers its partition
-  // into the partition ring of its read compartment. In this write-path-only environment the ingesters
-  // still run the normal reader against the default topic (which stays empty), so consumed data is not
-  // queryable yet: the read path is not compartment-aware.
+  // into the partition ring of its read compartment, and consumes that read compartment's topic from
+  // every write compartment's Kafka cluster (one cluster per write compartment). Queries fan out across
+  // the read compartments that can hold the selected metric names.
   local numCompartments = 2,
   local partitionsPerCompartment = 2,
   local zones = ['zone-a', 'zone-b'],
@@ -60,8 +71,13 @@ std.manifestYamlDoc({
       extraArguments: [
         '-ingester.ring.instance-availability-zone=%s' % zones[zoneIdx],
         '-ingester.read-compartment-id=%d' % compartment,
-        // Each compartment's ingesters consume their own read compartment's Kafka topic.
-        '-ingest-storage.kafka.topic=mimir-ingest-rc-%d' % compartment,
+        // Consume the read compartment's topic from every write compartment's Kafka cluster. The
+        // <write-compartment-id> placeholder is expanded per write compartment by the reader, and the
+        // <read-compartment-id> placeholder in the topic is expanded to this ingester's read compartment.
+        // The values are single-quoted so the "<...>" placeholders aren't interpreted as shell
+        // redirections by the "sh -c" command.
+        "-ingest-storage.kafka.address='kafka-wc-<write-compartment-id>:9092'",
+        "-ingest-storage.kafka.topic='mimir-ingest-rc-<read-compartment-id>'",
       ],
       extraVolumes: ['.data-ingester-%s-rc-%d-%d:/data:delegated' % [zones[zoneIdx], compartment, partition]],
     })
@@ -84,6 +100,14 @@ std.manifestYamlDoc({
       target: 'query-frontend',
       publishedHttpPort: 8007,
       jaegerApp: 'query-frontend',
+      extraArguments: [
+        // To enforce strong read consistency the query-frontend monitors the last produced offsets of
+        // every read compartment's topic in every write compartment's Kafka cluster, so it needs the same
+        // templated topic and address as ingesters. The values are single-quoted so the "<...>"
+        // placeholders aren't interpreted as shell redirections by the "sh -c" command.
+        "-ingest-storage.kafka.address='kafka-wc-<write-compartment-id>:9092'",
+        "-ingest-storage.kafka.topic='mimir-ingest-rc-<read-compartment-id>'",
+      ],
     }),
   },
 
@@ -95,32 +119,40 @@ std.manifestYamlDoc({
     }),
   },
 
-  compactor:: {
-    compactor: mimirService({
-      name: 'compactor',
+  // Each read compartment runs its own compactor. A compactor registers into its read compartment's
+  // ring (-compactor.read-compartment-id) and compacts only that compartment's dedicated bucket
+  // (mimir-blocks-rc-<id>), so the per-compartment compactors never contend over the same blocks.
+  compactors:: {
+    ['compactor-rc-%d' % compartment]: mimirService({
+      name: 'compactor-rc-%d' % compartment,
       target: 'compactor',
-      publishedHttpPort: 8006,
-    }),
+      publishedHttpPort: 8060 + compartment,
+      jaegerApp: 'compactor-rc-%d' % compartment,
+      extraArguments: [
+        '-compactor.read-compartment-id=%d' % compartment,
+        '-blocks-storage.s3.bucket-name=mimir-blocks-rc-%d' % compartment,
+      ],
+    })
+    for compartment in std.range(0, numCompartments - 1)
   },
 
-  store_gateways(count):: {
-    ['store-gateway-zone-a-%d' % id]: mimirService({
-      name: 'store-gateway-zone-a-' + id,
+  // Each read compartment runs its own store-gateways (one per zone). A store-gateway registers into
+  // its read compartment's ring (-store-gateway.read-compartment-id) and serves blocks from that
+  // compartment's dedicated bucket (mimir-blocks-rc-<id>).
+  store_gateways:: {
+    ['store-gateway-%s-rc-%d' % [zones[zoneIdx], compartment]]: mimirService({
+      name: 'store-gateway-%s-rc-%d' % [zones[zoneIdx], compartment],
       target: 'store-gateway',
-      publishedHttpPort: 8020 + id,
-      jaegerApp: 'store-gateway-zone-a-%d' % id,
-      extraArguments: ['-store-gateway.sharding-ring.instance-availability-zone=zone-a'],
+      publishedHttpPort: 8020 + (compartment * std.length(zones)) + zoneIdx,
+      jaegerApp: 'store-gateway-%s-rc-%d' % [zones[zoneIdx], compartment],
+      extraArguments: [
+        '-store-gateway.sharding-ring.instance-availability-zone=%s' % zones[zoneIdx],
+        '-store-gateway.read-compartment-id=%d' % compartment,
+        '-blocks-storage.s3.bucket-name=mimir-blocks-rc-%d' % compartment,
+      ],
     })
-    for id in std.range(1, count)
-  } + {
-    ['store-gateway-zone-b-%d' % id]: mimirService({
-      name: 'store-gateway-zone-b-' + id,
-      target: 'store-gateway',
-      publishedHttpPort: 8050 + id,
-      jaegerApp: 'store-gateway-zone-b-%d' % id,
-      extraArguments: ['-store-gateway.sharding-ring.instance-availability-zone=zone-b'],
-    })
-    for id in std.range(1, count)
+    for compartment in std.range(0, numCompartments - 1)
+    for zoneIdx in std.range(0, std.length(zones) - 1)
   },
 
   rulers(count):: if count <= 0 then {} else {
@@ -129,6 +161,11 @@ std.manifestYamlDoc({
       target: 'ruler',
       publishedHttpPort: 8030 + id,
       jaegerApp: 'ruler-%d' % id,
+      // The ruler embeds a distributor to write rule results, so it needs the same compartment-aware Kafka
+      // config as the distributors (otherwise it falls back to the concrete base topic and auto-creates
+      // duplicate topics). A single ruler can't shard across write compartments, so pin it to write
+      // compartment 0; ingesters consume every write compartment, so its writes are still read back.
+      extraArguments: writeCompartmentArgs(0),
     })
     for id in std.range(1, count)
   },
@@ -144,11 +181,16 @@ std.manifestYamlDoc({
     for id in std.range(1, count)
   },
 
+  // The block-builder isn't compartment-aware yet: it consumes read compartment 0's topic and uploads
+  // to that compartment's dedicated bucket, so read compartment 0 is a full end-to-end slice whose
+  // blocks are compacted and served by its own compactor and store-gateways. The other compartments'
+  // compactors and store-gateways run against (empty) buckets until the block-builder is compartmentalised.
   block_builder:: {
     'block-builder-0': mimirService({
       name: 'block-builder-0',
       target: 'block-builder',
       publishedHttpPort: 8009,
+      extraArguments: ['-blocks-storage.s3.bucket-name=mimir-blocks-rc-0'],
     }),
   },
 
@@ -207,7 +249,7 @@ std.manifestYamlDoc({
         'alertmanager-1',
         'ruler-1',
         'query-frontend',
-        'compactor',
+        'compactor-rc-0',
         'grafana',
       ],
       environment: [
@@ -218,7 +260,7 @@ std.manifestYamlDoc({
         'ALERT_MANAGER_HOST=alertmanager-1:8080',
         'RULER_HOST=ruler-1:8080',
         'QUERY_FRONTEND_HOST=query-frontend:8080',
-        'COMPACTOR_HOST=compactor:8080',
+        'COMPACTOR_HOST=compactor-rc-0:8080',
       ],
       ports: ['8080:8080'],
       volumes: ['../common/config:/etc/nginx/templates'],
@@ -226,11 +268,17 @@ std.manifestYamlDoc({
   },
 
   minio:: {
+    // One blocks bucket per read compartment (mimir-blocks-rc-<id>), plus the legacy mimir-blocks
+    // bucket still referenced by the default config (e.g. the querier, whose block querying isn't
+    // compartment-aware yet), and the ruler, alertmanager and usage-tracker buckets.
+    local buckets = ['mimir-blocks'] +
+                    ['mimir-blocks-rc-%d' % compartment for compartment in std.range(0, numCompartments - 1)] +
+                    ['mimir-ruler', 'mimir-alertmanager', 'usage-tracker-snapshots'],
     minio: {
       image: 'minio/minio:RELEASE.2025-05-24T17-08-30Z',
       // MinIO treats top-level directories under /data as buckets. Create the buckets the dev cluster
       // needs before starting the server, since this env doesn't ship a pre-seeded data directory.
-      entrypoint: ['sh', '-c', 'mkdir -p /data/mimir-blocks /data/mimir-ruler /data/mimir-alertmanager /data/usage-tracker-snapshots && exec minio server --console-address :9001 /data'],
+      entrypoint: ['sh', '-c', 'mkdir -p %s && exec minio server --console-address :9001 /data' % std.join(' ', ['/data/%s' % bucket for bucket in buckets])],
       environment: ['MINIO_ROOT_USER=mimir', 'MINIO_ROOT_PASSWORD=supersecret'],
       ports: [
         '9000:9000',
@@ -240,34 +288,40 @@ std.manifestYamlDoc({
     },
   },
 
-  local commonKafkaEnvVars = [
-    'CLUSTER_ID=zH1GDqcNTzGMDCXm5VZQdg',  // Cluster ID is required in KRaft mode; the value is random UUID.
-    'KAFKA_NUM_PARTITIONS=100',  // Default number of partitions for auto-created topics.
-    'KAFKA_PROCESS_ROLES=broker,controller',
-    'KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT',
-    'KAFKA_INTER_BROKER_LISTENER_NAME=PLAINTEXT',
-    'KAFKA_CONTROLLER_LISTENER_NAMES=CONTROLLER',
-    'KAFKA_CONTROLLER_QUORUM_VOTERS=1@kafka_1:9093,2@kafka_2:9093,3@kafka_3:9093',
-    'KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=2',
-    'KAFKA_DEFAULT_REPLICATION_FACTOR=2',
-    'KAFKA_LOG_RETENTION_CHECK_INTERVAL_MS=10000',
-
-    // Decomment the following config to keep a short retention of records in Kafka.
-    // This is useful to test the behaviour when Kafka records are deleted.
-    // 'KAFKA_LOG_RETENTION_MINUTES=1',
-    // 'KAFKA_LOG_SEGMENT_BYTES=1000000',
-  ],
-
-  kafka_1:: {
-    kafka_1: {
+  // One single-broker KRaft Kafka cluster per write compartment. Each cluster is fully independent (its
+  // own controller quorum and offset space), so an ingester consuming the same partition from every
+  // cluster reads each cluster's records independently. Single-broker clusters use a replication factor
+  // of 1. The host port is 29092 + write compartment ID.
+  kafka_clusters:: {
+    ['kafka-wc-%d' % wc]: {
       image: 'confluentinc/cp-kafka:latest',
-      environment: commonKafkaEnvVars + [
+      hostname: 'kafka-wc-%d' % wc,
+      environment: [
+        'CLUSTER_ID=zH1GDqcNTzGMDCXm5VZQdg',  // Cluster ID is required in KRaft mode; the value is a random UUID.
+        'KAFKA_NUM_PARTITIONS=100',  // Default number of partitions for auto-created topics.
+        'KAFKA_PROCESS_ROLES=broker,controller',
         'KAFKA_BROKER_ID=1',
-        'KAFKA_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093,PLAINTEXT_HOST://:29092',
-        'KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka_1:9092,PLAINTEXT_HOST://localhost:29092',
+        'KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT',
+        'KAFKA_INTER_BROKER_LISTENER_NAME=PLAINTEXT',
+        'KAFKA_CONTROLLER_LISTENER_NAMES=CONTROLLER',
+        'KAFKA_CONTROLLER_QUORUM_VOTERS=1@kafka-wc-%d:9093' % wc,
+        // Single-broker clusters: every replication factor must be 1, otherwise creating the internal
+        // topics (e.g. __consumer_offsets) fails because there aren't enough brokers.
+        'KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1',
+        'KAFKA_DEFAULT_REPLICATION_FACTOR=1',
+        'KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR=1',
+        'KAFKA_TRANSACTION_STATE_LOG_MIN_ISR=1',
+        'KAFKA_LOG_RETENTION_CHECK_INTERVAL_MS=10000',
+        'KAFKA_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093,PLAINTEXT_HOST://:%d' % (29092 + wc),
+        'KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka-wc-%d:9092,PLAINTEXT_HOST://localhost:%d' % [wc, 29092 + wc],
+
+        // Decomment the following config to keep a short retention of records in Kafka.
+        // This is useful to test the behaviour when Kafka records are deleted.
+        // 'KAFKA_LOG_RETENTION_MINUTES=1',
+        // 'KAFKA_LOG_SEGMENT_BYTES=1000000',
       ],
       ports: [
-        '29092:29092',
+        '%d:%d' % [29092 + wc, 29092 + wc],
       ],
       healthcheck: {
         test: 'kafka-broker-api-versions --bootstrap-server localhost:9092 || exit 1',
@@ -276,58 +330,23 @@ std.manifestYamlDoc({
         timeout: '1s',
         retries: '30',
       },
-    },
+    }
+    for wc in std.range(0, numWriteCompartments - 1)
   },
-  kafka_2:: {
-    kafka_2: {
-      image: 'confluentinc/cp-kafka:latest',
-      environment: commonKafkaEnvVars + [
-        'KAFKA_BROKER_ID=2',
-        'KAFKA_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093,PLAINTEXT_HOST://:29093',
-        'KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka_2:9092,PLAINTEXT_HOST://localhost:29093',
-      ],
-      ports: [
-        '29093:29093',
-      ],
-      healthcheck: {
-        test: 'kafka-broker-api-versions --bootstrap-server localhost:9092 || exit 1',
-        start_period: '1s',
-        interval: '1s',
-        timeout: '1s',
-        retries: '30',
-      },
-    },
-  },
-  kafka_3:: {
-    kafka_3: {
-      image: 'confluentinc/cp-kafka:latest',
-      environment: commonKafkaEnvVars + [
-        'KAFKA_BROKER_ID=3',
-        'KAFKA_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093,PLAINTEXT_HOST://:29094',
-        'KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka_3:9092,PLAINTEXT_HOST://localhost:29094',
-      ],
-      ports: [
-        '29094:29094',
-      ],
-      healthcheck: {
-        test: 'kafka-broker-api-versions --bootstrap-server localhost:9092 || exit 1',
-        start_period: '1s',
-        interval: '1s',
-        timeout: '1s',
-        retries: '30',
-      },
-    },
-  },
+  // One Redpanda console per write compartment, each connected to that write compartment's Kafka cluster
+  // (every cluster is independent, so a single console would only show one cluster). The host port is
+  // 8090 + write compartment ID.
   redpanda_console:: {
-    redpanda_console: {
+    ['redpanda-console-wc-%d' % wc]: {
       image: 'docker.redpanda.com/redpandadata/console:latest',
       environment: [
-        'KAFKA_BROKERS=kafka_1:9092,kafka_2:9092,kafka_3:9092',
+        'KAFKA_BROKERS=kafka-wc-%d:9092' % wc,
       ],
       ports: [
-        '8090:8080',
+        '%d:8080' % (8090 + wc),
       ],
-    },
+    }
+    for wc in std.range(0, numWriteCompartments - 1)
   },
 
   memcached:: {
@@ -395,8 +414,9 @@ std.manifestYamlDoc({
       publishedHttpPort: error 'missing publishedHttpPort',
       dependsOn: {
         minio: { condition: 'service_started' },
-        kafka_1: { condition: 'service_healthy' },
-        kafka_2: { condition: 'service_healthy' },
+      } + {
+        ['kafka-wc-%d' % wc]: { condition: 'service_healthy' }
+        for wc in std.range(0, numWriteCompartments - 1)
       },
       env: otelTracingEnv(self.target),
       extraArguments: [],

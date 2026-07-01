@@ -35,7 +35,7 @@ func TestConfig_Validate(t *testing.T) {
 		"remote execution enabled, MQE disabled": {
 			enableRemoteExecution: true,
 			queryEngine:           querier.PrometheusEngine,
-			expectedError:         "remote execution is only supported when the Mimir query engine is in use",
+			expectedError:         "remote execution is only supported when the Mimir query engine is in use (-query-frontend.query-engine=mimir)",
 		},
 	}
 

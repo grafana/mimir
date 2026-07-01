@@ -33,7 +33,7 @@ func (ct *compartmentTokens) writeRequestIndexes(tokenIndexes []int) []int {
 //
 // It returns the grouped tokens and the index at which metadata starts in the combined series+metadata
 // index space (i.e. len(req.Timeseries)).
-func getCompartmentTokensForWriteRequest(router *compartments.Router, userID string, req *mimirpb.WriteRequest) ([]compartmentTokens, int) {
+func getCompartmentTokensForWriteRequest(router *compartments.TopicRouter, userID string, req *mimirpb.WriteRequest) ([]compartmentTokens, int) {
 	initialMetadataIndex := len(req.Timeseries)
 
 	numCompartments := router.NumCompartments()

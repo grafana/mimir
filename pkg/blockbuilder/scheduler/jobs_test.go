@@ -13,6 +13,7 @@ import (
 	promtest "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/blockbuilder/schedulerpb"
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -224,6 +225,39 @@ func TestJobCreationPolicies(t *testing.T) {
 		_, ok2 := s.jobs["job2"]
 		require.False(t, ok2, "job2 should not be created")
 	})
+}
+
+func TestJobIDForSpec(t *testing.T) {
+	tests := map[string]struct {
+		compartmentsEnabled bool
+		spec                *schedulerpb.JobSpec
+		expected            string
+	}{
+		"non-compartment mode uses the single start offset": {
+			compartmentsEnabled: false,
+			spec:                &schedulerpb.JobSpec{Topic: "ingest", Partition: 3, StartOffset: 42},
+			expected:            "ingest/3/42",
+		},
+		"compartment mode includes each cluster's start offset sorted by cluster ID": {
+			compartmentsEnabled: true,
+			spec: &schedulerpb.JobSpec{
+				Topic:     "ingest",
+				Partition: 3,
+				OffsetRanges: map[int32]schedulerpb.OffsetRange{
+					2: {StartOffset: 20, EndOffset: 30},
+					0: {StartOffset: 5, EndOffset: 9},
+					1: {StartOffset: 10, EndOffset: 15},
+				},
+			},
+			expected: "ingest/3/0:5-1:10-2:20",
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			require.Equal(t, tc.expected, jobIDForSpec(tc.compartmentsEnabled, tc.spec))
+		})
+	}
 }
 
 // allowNoneJobCreationPolicy is a job creation policy that never allows job creation.

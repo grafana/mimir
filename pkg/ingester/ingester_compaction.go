@@ -227,7 +227,11 @@ func (i *Ingester) offsetCataloguesSync(ctx context.Context) {
 	// all series in the block are guaranteed to come from below this lastSeenOffset.
 	// Note: for normal compaction cycle, that cuts head at "chunkRange * 3/2",
 	// this offset overshoots by ~1h. This is technically correct, but very conservative.
-	offsetHW := i.ingestReader.LastSeenOffset()
+	//
+	// The offset catalogue currently only tracks Kafka cluster 0; it is mutually exclusive with more
+	// than one write compartment (enforced by config validation), so cluster 0 is the only cluster, and
+	// in the non-compartments case it is the single Kafka cluster.
+	offsetHW := i.ingestReader.LastSeenOffsets().ForKafkaCluster(0)
 
 	level.Info(i.logger).Log("msg", "syncing offset catalogues for tenants", "last_seen_offset", offsetHW)
 

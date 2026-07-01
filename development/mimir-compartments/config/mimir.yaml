@@ -12,10 +12,14 @@ common:
 ingest_storage:
   enabled:       true
   kafka:
-    address: kafka_1:9092
-    # NOTE: each compartment's ingesters override this with their own read compartment topic
-    #       via CLI flag (-ingest-storage.kafka.topic).
-    topic:   mimir-ingest
+    # Default Kafka cluster, used by components that don't override the address (e.g. block-builder).
+    # Distributors override this with their own write compartment's cluster, and ingesters override it
+    # with a template addressing every write compartment's cluster.
+    address: kafka-wc-0:9092
+    # Default to read compartment 0's topic. Components that aren't compartment-aware yet (e.g.
+    # block-builder) use this concrete topic. Distributors and ingesters override it via CLI flag with
+    # the read-compartment-templated topic (mimir-ingest-rc-<read-compartment-id>).
+    topic:   mimir-ingest-rc-0
     last_produced_offset_poll_interval: 500ms
     fetch_concurrency_max: 15
 
@@ -23,7 +27,8 @@ compartments:
   enabled: true
   read:
     num_compartments: 2
-    kafka_topic_format: mimir-ingest-rc-<compartment-id>
+  write:
+    num_compartments: 2
 
 ingester:
   push_grpc_method_enabled: false
@@ -128,20 +133,20 @@ usage_tracker:
     s3:
       bucket_name: usage-tracker-snapshots
   events_storage_writer:
-    address: kafka_1:9092
+    address: kafka-wc-0:9092
     topic: usage-tracker-events
     auto_create_topic_enabled: true
     auto_create_topic_default_partitions: 16
   events_storage_reader:
-    address: kafka_1:9092
+    address: kafka-wc-0:9092
     topic: usage-tracker-events
   snapshots_metadata_writer:
-    address: kafka_1:9092
+    address: kafka-wc-0:9092
     topic: usage-tracker-snapshots-metadata
     auto_create_topic_enabled: true
     auto_create_topic_default_partitions: 16
   snapshots_metadata_reader:
-    address: kafka_1:9092
+    address: kafka-wc-0:9092
     topic: usage-tracker-snapshots-metadata
   instance_ring:
     kvstore:
@@ -155,6 +160,10 @@ usage_tracker:
 limits:
   native_histograms_ingestion_enabled: true
   ingestion_rate: 100000
+  # Enforce strong read consistency on every query so the compartments strong-consistency path (the
+  # query-frontend monitoring per-write-compartment offsets and propagating them to ingesters) is
+  # exercised locally.
+  ingest_storage_read_consistency: strong
 
 runtime_config:
   file: ./config/runtime.yaml

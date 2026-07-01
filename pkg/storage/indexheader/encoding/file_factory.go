@@ -3,6 +3,7 @@
 package encoding
 
 import (
+	"context"
 	"encoding/binary"
 	"fmt"
 	"hash/crc32"
@@ -32,7 +33,7 @@ func NewFilePoolDecbufFactory(
 	}
 }
 
-func (df *FilePoolDecbufFactory) NewDecbufAtChecked(offset int, table *crc32.Table) Decbuf {
+func (df *FilePoolDecbufFactory) NewDecbufAtChecked(_ context.Context, offset int, table *crc32.Table) Decbuf {
 	f, err := df.files.Get()
 	if err != nil {
 		return Decbuf{E: errors.Wrap(err, "open file for decbuf")}
@@ -85,15 +86,15 @@ func (df *FilePoolDecbufFactory) NewDecbufAtChecked(offset int, table *crc32.Tab
 	return d
 }
 
-func (df *FilePoolDecbufFactory) NewDecbufAtUnchecked(offset int) Decbuf {
-	return df.NewDecbufAtChecked(offset, nil)
+func (df *FilePoolDecbufFactory) NewDecbufAtUnchecked(ctx context.Context, offset int) Decbuf {
+	return df.NewDecbufAtChecked(ctx, offset, nil)
 }
 
-func (df *FilePoolDecbufFactory) NewDecbufInSection(_, _, _ int) Decbuf {
+func (df *FilePoolDecbufFactory) NewDecbufInSection(_ context.Context, _, _, _ int) Decbuf {
 	return Decbuf{E: fmt.Errorf("NewDecbufInSection not implemented for FilePoolDecbufFactory")}
 }
 
-func (df *FilePoolDecbufFactory) NewRawDecbuf() Decbuf {
+func (df *FilePoolDecbufFactory) NewRawDecbuf(_ context.Context) Decbuf {
 	f, err := df.files.Get()
 	if err != nil {
 		return Decbuf{E: errors.Wrap(err, "open file for decbuf")}

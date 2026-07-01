@@ -41,6 +41,7 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/storage/ingest"
+	"github.com/grafana/mimir/pkg/storage/ingest/kmeta"
 	"github.com/grafana/mimir/pkg/util/shutdownmarker"
 	util_test "github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/testkafka"
@@ -157,154 +158,154 @@ func TestIngester_Startup_PartitionRingActiveBlocksOnInstanceRingActive(t *testi
 	require.Equal(t, ring.PartitionUnknown, partitionState)
 }
 
-func TestIngester_Start(t *testing.T) {
+// TestIngester_ShouldReplayPartitionAtStartupAndThenJoinTheRings verifies that an ingester replays its
+// partition at startup (after a restart) and then joins the ingesters and partitions ring.
+func TestIngester_ShouldReplayPartitionAtStartupAndThenJoinTheRings(t *testing.T) {
+	var (
+		ctx                = context.Background()
+		cfg                = defaultIngesterTestConfig(t)
+		reg                = prometheus.NewRegistry()
+		fetchRequestsCount = atomic.NewInt64(0)
+		series1            = mimirpb.PreallocTimeseries{TimeSeries: &mimirpb.TimeSeries{
+			Labels:  mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "series_1")),
+			Samples: []mimirpb.Sample{{TimestampMs: 1000, Value: 10}},
+		}}
+		series2 = mimirpb.PreallocTimeseries{TimeSeries: &mimirpb.TimeSeries{
+			Labels:  mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "series_2")),
+			Samples: []mimirpb.Sample{{TimestampMs: 1000, Value: 10}},
+		}}
+	)
 
-	t.Run("should replay the partition at startup (after a restart) and then join the ingesters and partitions ring", func(t *testing.T) {
-		var (
-			ctx                = context.Background()
-			cfg                = defaultIngesterTestConfig(t)
-			reg                = prometheus.NewRegistry()
-			fetchRequestsCount = atomic.NewInt64(0)
-			series1            = mimirpb.PreallocTimeseries{TimeSeries: &mimirpb.TimeSeries{
-				Labels:  mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "series_1")),
-				Samples: []mimirpb.Sample{{TimestampMs: 1000, Value: 10}},
-			}}
-			series2 = mimirpb.PreallocTimeseries{TimeSeries: &mimirpb.TimeSeries{
-				Labels:  mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "series_2")),
-				Samples: []mimirpb.Sample{{TimestampMs: 1000, Value: 10}},
-			}}
-		)
+	const expectedSeriesToReplay = 2
 
-		const expectedSeriesToReplay = 2
+	// Configure the ingester to frequently run its internal services.
+	cfg.UpdateIngesterOwnedSeries = true
+	cfg.OwnedSeriesUpdateInterval = 100 * time.Millisecond
+	cfg.ActiveSeriesMetrics.UpdatePeriod = 100 * time.Millisecond
+	cfg.limitMetricsUpdatePeriod = 100 * time.Millisecond
 
-		// Configure the ingester to frequently run its internal services.
-		cfg.UpdateIngesterOwnedSeries = true
-		cfg.OwnedSeriesUpdateInterval = 100 * time.Millisecond
-		cfg.ActiveSeriesMetrics.UpdatePeriod = 100 * time.Millisecond
-		cfg.limitMetricsUpdatePeriod = 100 * time.Millisecond
+	// Configure the TSDB Head compaction interval to be greater than the high frequency
+	// expected while starting up.
+	const headCompactionIntervalWhileStarting = 100 * time.Millisecond
+	const headCompactionIntervalWhileRunning = time.Minute
+	cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = headCompactionIntervalWhileRunning
+	cfg.BlocksStorageConfig.TSDB.HeadCompactionIntervalWhileStarting = headCompactionIntervalWhileStarting
+	cfg.BlocksStorageConfig.TSDB.HeadCompactionIntervalJitterEnabled = false
 
-		// Configure the TSDB Head compaction interval to be greater than the high frequency
-		// expected while starting up.
-		const headCompactionIntervalWhileStarting = 100 * time.Millisecond
-		const headCompactionIntervalWhileRunning = time.Minute
-		cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = headCompactionIntervalWhileRunning
-		cfg.BlocksStorageConfig.TSDB.HeadCompactionIntervalWhileStarting = headCompactionIntervalWhileStarting
-		cfg.BlocksStorageConfig.TSDB.HeadCompactionIntervalJitterEnabled = false
+	// Create the ingester.
+	overrides := validation.NewOverrides(defaultLimitsTestConfig(), nil)
+	ingester, kafkaCluster, watcher := createTestIngesterWithIngestStorage(t, &cfg, overrides, nil, reg, util_test.NewTestingLogger(t))
 
-		// Create the ingester.
-		overrides := validation.NewOverrides(defaultLimitsTestConfig(), nil)
-		ingester, kafkaCluster, watcher := createTestIngesterWithIngestStorage(t, &cfg, overrides, nil, reg, util_test.NewTestingLogger(t))
+	// Mock the Kafka cluster to:
+	// - Count the Fetch requests.
+	// - Mock the ListOffsets response, returning the offset expected once the ingester can be
+	//   considered having successfully caught up.
+	kafkaCluster.ControlKey(int16(kmsg.Fetch), func(kmsg.Request) (kmsg.Response, error, bool) {
+		kafkaCluster.KeepControl()
+		fetchRequestsCount.Inc()
 
-		// Mock the Kafka cluster to:
-		// - Count the Fetch requests.
-		// - Mock the ListOffsets response, returning the offset expected once the ingester can be
-		//   considered having successfully caught up.
-		kafkaCluster.ControlKey(int16(kmsg.Fetch), func(kmsg.Request) (kmsg.Response, error, bool) {
-			kafkaCluster.KeepControl()
-			fetchRequestsCount.Inc()
+		return nil, nil, false
+	})
 
-			return nil, nil, false
-		})
+	kafkaCluster.ControlKey(int16(kmsg.ListOffsets), func(kreq kmsg.Request) (kmsg.Response, error, bool) {
+		kafkaCluster.KeepControl()
 
-		kafkaCluster.ControlKey(int16(kmsg.ListOffsets), func(kreq kmsg.Request) (kmsg.Response, error, bool) {
-			kafkaCluster.KeepControl()
-
-			// Mock only requests for the partition "end" offset (identified by special timestamp -1).
-			req := kreq.(*kmsg.ListOffsetsRequest)
-			for _, topic := range req.Topics {
-				for _, partition := range topic.Partitions {
-					if partition.Timestamp != -1 {
-						return nil, nil, false
-					}
+		// Mock only requests for the partition "end" offset (identified by special timestamp -1).
+		req := kreq.(*kmsg.ListOffsetsRequest)
+		for _, topic := range req.Topics {
+			for _, partition := range topic.Partitions {
+				if partition.Timestamp != -1 {
+					return nil, nil, false
 				}
 			}
+		}
 
-			res := req.ResponseKind().(*kmsg.ListOffsetsResponse)
-			res.Topics = []kmsg.ListOffsetsResponseTopic{{
-				Topic: cfg.IngestStorageConfig.KafkaConfig.Topic,
-				Partitions: []kmsg.ListOffsetsResponseTopicPartition{{
-					Partition: ingester.ingestPartitionID,
-					ErrorCode: 0,
-					Offset:    expectedSeriesToReplay,
-				}},
-			}}
+		res := req.ResponseKind().(*kmsg.ListOffsetsResponse)
+		res.Topics = []kmsg.ListOffsetsResponseTopic{{
+			Topic: cfg.IngestStorageConfig.KafkaConfig.Topic,
+			Partitions: []kmsg.ListOffsetsResponseTopicPartition{{
+				Partition: ingester.ingestPartitionID,
+				ErrorCode: 0,
+				Offset:    expectedSeriesToReplay,
+			}},
+		}}
 
-			return res, nil, true
-		})
+		return res, nil, true
+	})
 
-		// Create a Kafka writer and then write a series.
-		writer := ingest.NewWriter(cfg.IngestStorageConfig.KafkaConfig, log.NewNopLogger(), nil)
-		require.NoError(t, services.StartAndAwaitRunning(ctx, writer))
-		t.Cleanup(func() {
-			require.NoError(t, services.StopAndAwaitTerminated(ctx, writer))
-		})
+	// Create a Kafka writer and then write a series.
+	writer := ingest.NewWriter(cfg.IngestStorageConfig.KafkaConfig, log.NewNopLogger(), nil)
+	require.NoError(t, services.StartAndAwaitRunning(ctx, writer))
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, writer))
+	})
 
+	partitionID, err := ingest.IngesterPartitionID(cfg.IngesterRing.InstanceID)
+	require.NoError(t, err)
+	require.NoError(t, writer.WriteSync(ctx, cfg.IngestStorageConfig.KafkaConfig.Topic, partitionID, userID, &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series1}, Source: mimirpb.API}))
+
+	// Add the ingester in LEAVING state in the ring, in order to simulate an ingester restart.
+	// This will make the owned series tracker to correctly work at ingester startup.
+	require.NoError(t, cfg.IngesterRing.KVStore.Mock.CAS(context.Background(), IngesterRingKey, func(in interface{}) (out interface{}, retry bool, err error) {
+		desc := ring.GetOrCreateRingDesc(in)
+		desc.AddIngester(
+			cfg.IngesterRing.InstanceID,
+			cfg.IngesterRing.InstanceAddr,
+			cfg.IngesterRing.InstanceZone,
+			cfg.IngesterRing.customTokenGenerator().GenerateTokens(512, nil),
+			ring.LEAVING,
+			time.Now(),
+			false,
+			time.Time{},
+			nil)
+
+		return desc, true, nil
+	}))
+
+	// Add the partition and owner in the ring, in order to simulate an ingester restart.
+	require.NoError(t, cfg.IngesterPartitionRing.KVStore.Mock.CAS(context.Background(), PartitionRingKey, func(in interface{}) (out interface{}, retry bool, err error) {
 		partitionID, err := ingest.IngesterPartitionID(cfg.IngesterRing.InstanceID)
-		require.NoError(t, err)
-		require.NoError(t, writer.WriteSync(ctx, cfg.IngestStorageConfig.KafkaConfig.Topic, partitionID, userID, &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series1}, Source: mimirpb.API}))
+		if err != nil {
+			return nil, false, err
+		}
 
-		// Add the ingester in LEAVING state in the ring, in order to simulate an ingester restart.
-		// This will make the owned series tracker to correctly work at ingester startup.
-		require.NoError(t, cfg.IngesterRing.KVStore.Mock.CAS(context.Background(), IngesterRingKey, func(in interface{}) (out interface{}, retry bool, err error) {
-			desc := ring.GetOrCreateRingDesc(in)
-			desc.AddIngester(
-				cfg.IngesterRing.InstanceID,
-				cfg.IngesterRing.InstanceAddr,
-				cfg.IngesterRing.InstanceZone,
-				cfg.IngesterRing.customTokenGenerator().GenerateTokens(512, nil),
-				ring.LEAVING,
-				time.Now(),
-				false,
-				time.Time{},
-				nil)
+		desc := ring.GetOrCreatePartitionRingDesc(in)
+		desc.AddPartition(partitionID, ring.PartitionActive, time.Now())
+		desc.AddOrUpdateOwner(cfg.IngesterRing.InstanceID, ring.OwnerDeleted, partitionID, time.Now())
 
-			return desc, true, nil
-		}))
+		return desc, true, nil
+	}))
 
-		// Add the partition and owner in the ring, in order to simulate an ingester restart.
-		require.NoError(t, cfg.IngesterPartitionRing.KVStore.Mock.CAS(context.Background(), PartitionRingKey, func(in interface{}) (out interface{}, retry bool, err error) {
-			partitionID, err := ingest.IngesterPartitionID(cfg.IngesterRing.InstanceID)
-			if err != nil {
-				return nil, false, err
-			}
+	// Start the ingester.
+	require.NoError(t, ingester.StartAsync(ctx))
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, ingester))
+	})
 
-			desc := ring.GetOrCreatePartitionRingDesc(in)
-			desc.AddPartition(partitionID, ring.PartitionActive, time.Now())
-			desc.AddOrUpdateOwner(cfg.IngesterRing.InstanceID, ring.OwnerDeleted, partitionID, time.Now())
+	// Wait until the Kafka cluster received the 1st Fetch request.
+	test.Poll(t, 5*time.Second, true, func() interface{} {
+		return fetchRequestsCount.Load() > 0
+	})
 
-			return desc, true, nil
-		}))
+	// At this point we expect the ingester is stuck in starting state while catching up
+	// replaying the partition. The catchup will not succeed until we'll write the next
+	// series to Kafka because we've mocked the Kafka to return a "last produced offset"
+	// in the future.
 
-		// Start the ingester.
-		require.NoError(t, ingester.StartAsync(ctx))
-		t.Cleanup(func() {
-			require.NoError(t, services.StopAndAwaitTerminated(ctx, ingester))
-		})
+	// We expect the following internal services to be already running at this point.
+	assert.Equal(t, services.Running, ingester.compactionService.State())
+	assert.Equal(t, services.Running, ingester.ownedSeriesService.State())
+	assert.Equal(t, services.Running, ingester.metricsUpdaterService.State())
+	assert.Equal(t, services.Running, ingester.metadataPurgerService.State())
 
-		// Wait until the Kafka cluster received the 1st Fetch request.
-		test.Poll(t, 5*time.Second, true, func() interface{} {
-			return fetchRequestsCount.Load() > 0
-		})
+	// We expect the TSDB Head compaction to run while replaying from Kafka.
+	assert.Eventually(t, func() bool {
+		return testutil.ToFloat64(ingester.metrics.compactionsTriggered) > 0
+	}, time.Second, 10*time.Millisecond)
 
-		// At this point we expect the ingester is stuck in starting state while catching up
-		// replaying the partition. The catchup will not succeed until we'll write the next
-		// series to Kafka because we've mocked the Kafka to return a "last produced offset"
-		// in the future.
-
-		// We expect the following internal services to be already running at this point.
-		assert.Equal(t, services.Running, ingester.compactionService.State())
-		assert.Equal(t, services.Running, ingester.ownedSeriesService.State())
-		assert.Equal(t, services.Running, ingester.metricsUpdaterService.State())
-		assert.Equal(t, services.Running, ingester.metadataPurgerService.State())
-
-		// We expect the TSDB Head compaction to run while replaying from Kafka.
-		assert.Eventually(t, func() bool {
-			return testutil.ToFloat64(ingester.metrics.compactionsTriggered) > 0
-		}, time.Second, 10*time.Millisecond)
-
-		// We expect metrics to be updated.
-		test.Poll(t, time.Second, nil, func() interface{} {
-			return testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
+	// We expect metrics to be updated.
+	test.Poll(t, time.Second, nil, func() interface{} {
+		return testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
 				# HELP cortex_ingester_active_series Number of currently active series per user.
 				# TYPE cortex_ingester_active_series gauge
 				cortex_ingester_active_series{user="%s"} 1
@@ -313,46 +314,45 @@ func TestIngester_Start(t *testing.T) {
 				# TYPE cortex_ingester_owned_series gauge
 				cortex_ingester_owned_series{user="%s"} 1
 			`, userID, userID)), "cortex_ingester_active_series", "cortex_ingester_owned_series")
-		})
-
-		// We expect the ingester run TSDB Head compaction at higher frequency while catching up.
-		firstInterval, standardInterval := ingester.compactionServiceInterval(time.Now(), ingester.instanceRing.Zones())
-		assert.Equal(t, headCompactionIntervalWhileStarting, firstInterval)
-		assert.Equal(t, headCompactionIntervalWhileStarting, standardInterval)
-
-		assert.Eventually(t, func() bool {
-			return testutil.ToFloat64(ingester.metrics.compactionsTriggered) > 0
-		}, 5*time.Second, 10*time.Millisecond)
-
-		// Since the ingester it still replaying the partition we expect it to be in starting state.
-		assert.Equal(t, services.Starting, ingester.State())
-		assert.Equal(t, services.New, ingester.lifecycler.State())
-
-		// Write one more request to Kafka. This will cause the ingester to consume up until the
-		// "last produced offset" returned by the mocked Kafka, and so consider the catch up complete.
-		require.NoError(t, writer.WriteSync(ctx, cfg.IngestStorageConfig.KafkaConfig.Topic, partitionID, userID, &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series2}, Source: mimirpb.API}))
-
-		// We expect the ingester to catch up, and then switch to Running state.
-		test.Poll(t, 5*time.Second, services.Running, func() interface{} {
-			return ingester.State()
-		})
-		assert.Equal(t, services.Running, ingester.lifecycler.State())
-
-		assert.Eventually(t, func() bool {
-			// Use the ring to check the instance state instead of the lifecycler interface.
-			rs, err := ingester.instanceRing.GetAllHealthy(ring.Write)
-			if err != nil || len(rs.Instances) == 0 {
-				return false
-			}
-			return rs.Instances[0].State == ring.ACTIVE
-		}, time.Second, 10*time.Millisecond)
-
-		assert.Eventually(t, func() bool {
-			return slices.Equal(
-				watcher.PartitionRing().PartitionOwnerIDs(partitionID),
-				[]string{ingester.cfg.IngesterRing.InstanceID})
-		}, time.Second, 10*time.Millisecond)
 	})
+
+	// We expect the ingester run TSDB Head compaction at higher frequency while catching up.
+	firstInterval, standardInterval := ingester.compactionServiceInterval(time.Now(), ingester.instanceRing.Zones())
+	assert.Equal(t, headCompactionIntervalWhileStarting, firstInterval)
+	assert.Equal(t, headCompactionIntervalWhileStarting, standardInterval)
+
+	assert.Eventually(t, func() bool {
+		return testutil.ToFloat64(ingester.metrics.compactionsTriggered) > 0
+	}, 5*time.Second, 10*time.Millisecond)
+
+	// Since the ingester it still replaying the partition we expect it to be in starting state.
+	assert.Equal(t, services.Starting, ingester.State())
+	assert.Equal(t, services.New, ingester.lifecycler.State())
+
+	// Write one more request to Kafka. This will cause the ingester to consume up until the
+	// "last produced offset" returned by the mocked Kafka, and so consider the catch up complete.
+	require.NoError(t, writer.WriteSync(ctx, cfg.IngestStorageConfig.KafkaConfig.Topic, partitionID, userID, &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series2}, Source: mimirpb.API}))
+
+	// We expect the ingester to catch up, and then switch to Running state.
+	test.Poll(t, 5*time.Second, services.Running, func() interface{} {
+		return ingester.State()
+	})
+	assert.Equal(t, services.Running, ingester.lifecycler.State())
+
+	assert.Eventually(t, func() bool {
+		// Use the ring to check the instance state instead of the lifecycler interface.
+		rs, err := ingester.instanceRing.GetAllHealthy(ring.Write)
+		if err != nil || len(rs.Instances) == 0 {
+			return false
+		}
+		return rs.Instances[0].State == ring.ACTIVE
+	}, time.Second, 10*time.Millisecond)
+
+	assert.Eventually(t, func() bool {
+		return slices.Equal(
+			watcher.PartitionRing().PartitionOwnerIDs(partitionID),
+			[]string{ingester.cfg.IngesterRing.InstanceID})
+	}, time.Second, 10*time.Millisecond)
 }
 
 func TestIngester_QueryStream_IngestStorageReadConsistency(t *testing.T) {
@@ -363,6 +363,7 @@ func TestIngester_QueryStream_IngestStorageReadConsistency(t *testing.T) {
 	tests := map[string]struct {
 		readConsistencyLevel   string
 		readConsistencyOffsets map[int32]int64
+		offsetsEncoding        string
 		expectedQueriedSeries  int
 	}{
 		"eventual read consistency": {
@@ -377,12 +378,23 @@ func TestIngester_QueryStream_IngestStorageReadConsistency(t *testing.T) {
 			// We expect query did wait for the read consistency to be guaranteed.
 			expectedQueriedSeries: 1,
 		},
-		"strong read consistency with offsets": {
+		// The "with offsets" scenario is run with both the v1 and v2 offsets encoding: with compartments
+		// disabled (a single Kafka cluster, a single topic) both encodings must drive identical behaviour.
+		"strong read consistency with offsets (v1 encoding)": {
 			readConsistencyLevel: api.ReadConsistencyStrong,
 
 			// To keep the test simple, use a trick passing a negative offset so the query will return immediately.
 			// In this test we just want to check that the passed offset is honored.
 			readConsistencyOffsets: map[int32]int64{0: -2},
+			offsetsEncoding:        "v1",
+			expectedQueriedSeries:  0,
+		},
+		"strong read consistency with offsets (v2 encoding)": {
+			readConsistencyLevel: api.ReadConsistencyStrong,
+
+			// Same offset as the v1 case: the v2 encoding of a single-cluster offset must be honored identically.
+			readConsistencyOffsets: map[int32]int64{0: -2},
+			offsetsEncoding:        "v2",
 			expectedQueriedSeries:  0,
 		},
 	}
@@ -462,9 +474,9 @@ func TestIngester_QueryStream_IngestStorageReadConsistency(t *testing.T) {
 				queryCtx, cancel := context.WithTimeout(user.InjectOrgID(ctx, userID), 5*time.Second)
 				defer cancel()
 
-				// Inject the requested offsets (if any).
+				// Inject the requested offsets (if any), encoded with the case's format.
 				if len(testData.readConsistencyOffsets) > 0 {
-					queryCtx = api.ContextWithReadConsistencyEncodedOffsets(queryCtx, api.EncodeOffsets(testData.readConsistencyOffsets))
+					queryCtx = api.ContextWithReadConsistencyEncodedOffsets(queryCtx, encodeSingleClusterReadConsistencyOffsets(testData.offsetsEncoding, testData.readConsistencyOffsets))
 				}
 
 				close(queryIssued)
@@ -481,6 +493,23 @@ func TestIngester_QueryStream_IngestStorageReadConsistency(t *testing.T) {
 
 			assert.Len(t, queryRes, testData.expectedQueriedSeries)
 		})
+	}
+}
+
+// encodeSingleClusterReadConsistencyOffsets encodes single-cluster read consistency offsets (one offset
+// per partition in read compartment 0) with either the v1 or v2 format.
+func encodeSingleClusterReadConsistencyOffsets(version string, offsets map[int32]int64) api.EncodedOffsets {
+	switch version {
+	case "v1":
+		return api.EncodeOffsetsV1(offsets)
+	case "v2":
+		perPartition := make(map[int32]kmeta.PartitionOffsets, len(offsets))
+		for partitionID, offset := range offsets {
+			perPartition[partitionID] = kmeta.NewMultiClusterPartitionOffsets([]int64{offset})
+		}
+		return api.EncodeOffsetsV2(map[int]map[int32]kmeta.PartitionOffsets{0: perPartition})
+	default:
+		panic("unsupported read consistency offsets encoding: " + version)
 	}
 }
 
@@ -1244,7 +1273,7 @@ func BenchmarkIngester_ReplayFromKafka(b *testing.B) {
 			b.ResetTimer()
 
 			require.NoError(b, services.StartAndAwaitRunning(ctx, ingester))
-			require.NoError(b, ingester.ingestReader.WaitReadConsistencyUntilOffset(ctx, targetOffset))
+			require.NoError(b, ingester.ingestReader.WaitReadConsistencyUntilOffsets(ctx, kmeta.NewSingleClusterPartitionOffsets(targetOffset)))
 
 			// Stop the timer so cleanup functions don't affect the measurement.
 			b.StopTimer()
@@ -1368,7 +1397,7 @@ func BenchmarkIngester_ReplayFromKafka_Dump(b *testing.B) {
 
 			b.StartTimer()
 			require.NoError(b, services.StartAndAwaitRunning(ctx, ingester))
-			require.NoError(b, ingester.ingestReader.WaitReadConsistencyUntilOffset(ctx, targetOffset))
+			require.NoError(b, ingester.ingestReader.WaitReadConsistencyUntilOffsets(ctx, kmeta.NewSingleClusterPartitionOffsets(targetOffset)))
 			b.StopTimer()
 
 			b.ReportMetric(float64(numRecords)/b.Elapsed().Seconds(), "records/sec")

@@ -582,6 +582,54 @@ var Resets = FunctionOverRangeVectorDefinition{
 	StepFunc:               resetsChanges(true),
 }
 
+// pickAnchorStartIndices selects the float and histogram cursor start indices for an anchored
+// resets()/changes() evaluation. The anchor is the most recent sample at or before rangeStart, chosen
+// across both floats and histograms. This mirrors Prometheus's pickFirstSampleIndices (promql/functions.go).
+func pickAnchorStartIndices(
+	loadFloat func(int) (float64, int64, bool, int),
+	loadHist func(int) (*histogram.FloatHistogram, int64, bool, int),
+	nFloats, nHists int,
+	rangeStart int64,
+) (fIdx, hIdx int, hasInRange bool) {
+	// Index of the last float / histogram with timestamp <= rangeStart, or -1 if none.
+	lastFloatLE, lastHistLE := -1, -1
+	for i := 0; i < nFloats; i++ {
+		if _, t, _, _ := loadFloat(i); t <= rangeStart {
+			lastFloatLE = i
+		} else {
+			break
+		}
+	}
+	for i := 0; i < nHists; i++ {
+		if _, t, _, _ := loadHist(i); t <= rangeStart {
+			lastHistLE = i
+		} else {
+			break
+		}
+	}
+
+	if lastFloatLE+1 >= nFloats && lastHistLE+1 >= nHists {
+		return 0, 0, false
+	}
+
+	if lastFloatLE < 0 && lastHistLE < 0 {
+		// Every sample is after rangeStart; there is no anchor, so include all samples.
+		return 0, 0, true
+	}
+
+	// The anchor is the later (by timestamp) of the two candidates.
+	floatIsAnchor := lastHistLE < 0
+	if !floatIsAnchor && lastFloatLE >= 0 {
+		_, fT, _, _ := loadFloat(lastFloatLE)
+		_, hT, _, _ := loadHist(lastHistLE)
+		floatIsAnchor = fT >= hT
+	}
+	if floatIsAnchor {
+		return lastFloatLE, lastHistLE + 1, true
+	}
+	return lastFloatLE + 1, lastHistLE, true
+}
+
 func resetsChanges(isReset bool) RangeVectorStepFunction {
 	return func(step *types.RangeVectorStepData, _ []types.ScalarData, _ types.QueryTimeRange, _ types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
 		fHead, fTail := step.Floats.UnsafePoints()
@@ -624,6 +672,20 @@ func resetsChanges(isReset bool) RangeVectorStepFunction {
 		var hValue *histogram.FloatHistogram
 		var fTime, hTime int64
 		var fOk, hOk bool
+
+		if step.Anchored {
+			// Anchored resets()/changes(): the anchor is the most recent sample at or before rangeStart,
+			// chosen across both floats and histograms. Skip every sample before the anchor, then count
+			// transitions from the anchor through the samples in (rangeStart, rangeEnd]. This mirrors
+			// Prometheus's pickFirstSampleIndices (promql/functions.go).
+			var hasInRange bool
+			fIdx, hIdx, hasInRange = pickAnchorStartIndices(loadFloat, loadHist, len(fHead)+len(fTail), len(hHead)+len(hTail), step.RangeStart)
+			if !hasInRange {
+				// No sample lies strictly after rangeStart: the (rangeStart, rangeEnd] window is empty,
+				// so there is nothing to measure.
+				return 0, false, nil, nil
+			}
+		}
 
 		fValue, fTime, fOk, fIdx = loadFloat(fIdx)
 		hValue, hTime, hOk, hIdx = loadHist(hIdx)

@@ -7,7 +7,10 @@ package alertmanager
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"strings"
 	"sync"
@@ -592,4 +595,83 @@ func TestSilenceLimits(t *testing.T) {
 	sils, _, err = am.silences.Query(ctx, silence.QState(silence.SilenceStateExpired))
 	require.NoError(t, err)
 	require.Len(t, sils, 0)
+}
+
+// TestAlertmanagerAPIReportsSilencedAlerts is a regression test for the API alert-status
+// callback wiring. From the alertmanager v0.33 bump the API computes silenced/inhibited status
+// on demand via the setAlertStatus callback registered through api.Update; if that callback does
+// not run the silencer/inhibitor, the /alerts endpoint reports every alert as active and ignores
+// the silenced/inhibited query filters.
+func TestAlertmanagerAPIReportsSilencedAlerts(t *testing.T) {
+	am, err := New(&Config{
+		UserID:            "test",
+		Logger:            log.NewNopLogger(),
+		Limits:            &mockAlertManagerLimits{},
+		Features:          featurecontrol.NoopFlags{},
+		TenantDataDir:     t.TempDir(),
+		ExternalURL:       &url.URL{Path: "/am"},
+		ShardingEnabled:   true,
+		Store:             prepareInMemoryAlertStore(),
+		Replicator:        &stubReplicator{},
+		ReplicationFactor: 1,
+		PersisterConfig:   PersisterConfig{Interval: time.Hour},
+	}, prometheus.NewPedanticRegistry())
+	require.NoError(t, err)
+	defer am.StopAndWait()
+
+	cfgRaw := `receivers:
+- name: 'prod'
+
+route:
+  receiver: 'prod'`
+	cfg, err := config.Load(cfgRaw)
+	require.NoError(t, err)
+	require.NoError(t, am.ApplyConfig(cfg, nil, cfgRaw))
+
+	now := time.Now()
+	require.NoError(t, am.alerts.Put(context.Background(), &alert.Alert{
+		Alert: model.Alert{
+			Labels:   model.LabelSet{"alertname": "SilencedAlert"},
+			StartsAt: now.Add(-time.Minute),
+			EndsAt:   now.Add(time.Hour),
+		},
+		UpdatedAt: now,
+	}))
+
+	sil := &silencepb.Silence{
+		Matchers: []*silencepb.Matcher{{Name: "alertname", Pattern: "SilencedAlert"}},
+		StartsAt: timestamppb.New(now.Add(-time.Minute)),
+		EndsAt:   timestamppb.New(now.Add(time.Hour)),
+	}
+	require.NoError(t, am.silences.Set(context.Background(), sil))
+
+	// The alert should be reported as suppressed (silenced) by the silence we created.
+	alerts := getAPIAlerts(t, am, "/am/api/v2/alerts")
+	require.Len(t, alerts, 1)
+	require.Equal(t, string(alert.AlertStateSuppressed), alerts[0].Status.State)
+	require.Equal(t, []string{sil.Id}, alerts[0].Status.SilencedBy)
+
+	// The silenced=false filter should now exclude it.
+	alerts = getAPIAlerts(t, am, "/am/api/v2/alerts?silenced=false")
+	require.Empty(t, alerts)
+}
+
+type apiAlertResponse struct {
+	Status struct {
+		State      string   `json:"state"`
+		SilencedBy []string `json:"silencedBy"`
+	} `json:"status"`
+}
+
+func getAPIAlerts(t *testing.T, am *Alertmanager, path string) []apiAlertResponse {
+	t.Helper()
+
+	req := httptest.NewRequest(http.MethodGet, "http://alertmanager"+path, nil)
+	rec := httptest.NewRecorder()
+	am.mux.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var alerts []apiAlertResponse
+	require.NoError(t, json.NewDecoder(rec.Body).Decode(&alerts))
+	return alerts
 }

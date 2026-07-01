@@ -1556,6 +1556,21 @@ metric_relabel_configs:
 	}
 }
 
+// TestUnmarshalYAML_ShouldRoundShardCounts ensures that shard counts set through YAML (as used by
+// per-tenant runtime overrides) are rounded up to the next power of two, just like the base config.
+func TestUnmarshalYAML_ShouldRoundShardCounts(t *testing.T) {
+	limits := getDefaultLimits()
+	cfg := `
+query_sharding_total_shards: 10
+compactor_split_and_merge_shards: 10
+compactor_ooo_split_and_merge_shards: 5
+`
+	require.NoError(t, yaml.Unmarshal([]byte(cfg), &limits))
+	assert.Equal(t, 16, limits.QueryShardingTotalShards)
+	assert.Equal(t, 16, limits.CompactorSplitAndMergeShards)
+	assert.Equal(t, 8, limits.CompactorOOOSplitAndMergeShards)
+}
+
 func TestUnmarshalJSON_ShouldValidateConfig(t *testing.T) {
 	tests := map[string]struct {
 		cfg         string
@@ -1908,6 +1923,36 @@ func TestLimits_Validate(t *testing.T) {
 				return cfg
 			}(),
 			expectedErr: errors.New("cost_attribution_labels_structured and cost_attribution_trackers are mutually exclusive; use cost_attribution_trackers only"),
+		},
+		"should round shard counts up to the next power of two": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.QueryShardingTotalShards = 10
+				cfg.CompactorSplitAndMergeShards = 10
+				cfg.CompactorOOOSplitAndMergeShards = 5
+				return cfg
+			}(),
+			verify: func(t *testing.T, cfg Limits) {
+				assert.Equal(t, 16, cfg.QueryShardingTotalShards)
+				assert.Equal(t, 16, cfg.CompactorSplitAndMergeShards)
+				assert.Equal(t, 8, cfg.CompactorOOOSplitAndMergeShards)
+			},
+		},
+		"should leave power-of-two and disabled shard counts untouched": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.QueryShardingTotalShards = 16
+				cfg.CompactorSplitAndMergeShards = 0 // Disabled.
+				cfg.CompactorOOOSplitAndMergeShards = 1
+				return cfg
+			}(),
+			verify: func(t *testing.T, cfg Limits) {
+				assert.Equal(t, 16, cfg.QueryShardingTotalShards)
+				assert.Equal(t, 0, cfg.CompactorSplitAndMergeShards)
+				assert.Equal(t, 1, cfg.CompactorOOOSplitAndMergeShards)
+			},
 		},
 	}
 

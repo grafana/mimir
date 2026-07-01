@@ -8,9 +8,9 @@
       - "-c"
       - "exec ./mimir -config.file=./config/mimir.yaml -target=alertmanager -activity-tracker.filepath=/activity/alertmanager-1 -alertmanager.web.external-url=http://localhost:8041/alertmanager"
     "depends_on":
-      "kafka_1":
+      "kafka-wc-0":
         "condition": "service_healthy"
-      "kafka_2":
+      "kafka-wc-1":
         "condition": "service_healthy"
       "minio":
         "condition": "service_started"
@@ -31,11 +31,11 @@
     "command":
       - "sh"
       - "-c"
-      - "exec ./mimir -config.file=./config/mimir.yaml -target=block-builder -activity-tracker.filepath=/activity/block-builder-0"
+      - "exec ./mimir -config.file=./config/mimir.yaml -target=block-builder -activity-tracker.filepath=/activity/block-builder-0 -blocks-storage.s3.bucket-name=mimir-blocks-rc-0"
     "depends_on":
-      "kafka_1":
+      "kafka-wc-0":
         "condition": "service_healthy"
-      "kafka_2":
+      "kafka-wc-1":
         "condition": "service_healthy"
       "minio":
         "condition": "service_started"
@@ -58,9 +58,9 @@
       - "-c"
       - "exec ./mimir -config.file=./config/mimir.yaml -target=block-builder-scheduler -activity-tracker.filepath=/activity/block-builder-scheduler-0"
     "depends_on":
-      "kafka_1":
+      "kafka-wc-0":
         "condition": "service_healthy"
-      "kafka_2":
+      "kafka-wc-1":
         "condition": "service_healthy"
       "minio":
         "condition": "service_started"
@@ -74,28 +74,53 @@
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
-  "compactor":
+  "compactor-rc-0":
     "build":
       "context": "."
       "dockerfile": "dev.dockerfile"
     "command":
       - "sh"
       - "-c"
-      - "exec ./mimir -config.file=./config/mimir.yaml -target=compactor -activity-tracker.filepath=/activity/compactor"
+      - "exec ./mimir -config.file=./config/mimir.yaml -target=compactor -activity-tracker.filepath=/activity/compactor-rc-0 -compactor.read-compartment-id=0 -blocks-storage.s3.bucket-name=mimir-blocks-rc-0"
     "depends_on":
-      "kafka_1":
+      "kafka-wc-0":
         "condition": "service_healthy"
-      "kafka_2":
+      "kafka-wc-1":
         "condition": "service_healthy"
       "minio":
         "condition": "service_started"
     "environment":
       - "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://tempo:4318/v1/traces"
-    "hostname": "compactor"
+    "hostname": "compactor-rc-0"
     "image": "mimir"
     "ports":
-      - "8006:8080"
-      - "11006:11006"
+      - "8060:8080"
+      - "11060:11060"
+    "volumes":
+      - "./config:/mimir/config"
+      - "./activity:/activity"
+  "compactor-rc-1":
+    "build":
+      "context": "."
+      "dockerfile": "dev.dockerfile"
+    "command":
+      - "sh"
+      - "-c"
+      - "exec ./mimir -config.file=./config/mimir.yaml -target=compactor -activity-tracker.filepath=/activity/compactor-rc-1 -compactor.read-compartment-id=1 -blocks-storage.s3.bucket-name=mimir-blocks-rc-1"
+    "depends_on":
+      "kafka-wc-0":
+        "condition": "service_healthy"
+      "kafka-wc-1":
+        "condition": "service_healthy"
+      "minio":
+        "condition": "service_started"
+    "environment":
+      - "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://tempo:4318/v1/traces"
+    "hostname": "compactor-rc-1"
+    "image": "mimir"
+    "ports":
+      - "8061:8080"
+      - "11061:11061"
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
@@ -106,11 +131,11 @@
     "command":
       - "sh"
       - "-c"
-      - "exec ./mimir -config.file=./config/mimir.yaml -target=distributor -activity-tracker.filepath=/activity/distributor-wc-0"
+      - "exec ./mimir -config.file=./config/mimir.yaml -target=distributor -activity-tracker.filepath=/activity/distributor-wc-0 -distributor.write-compartment-id=0 -ingest-storage.kafka.address=kafka-wc-0:9092 -ingest-storage.kafka.topic='mimir-ingest-rc-<read-compartment-id>'"
     "depends_on":
-      "kafka_1":
+      "kafka-wc-0":
         "condition": "service_healthy"
-      "kafka_2":
+      "kafka-wc-1":
         "condition": "service_healthy"
       "minio":
         "condition": "service_started"
@@ -135,11 +160,11 @@
     "command":
       - "sh"
       - "-c"
-      - "exec ./mimir -config.file=./config/mimir.yaml -target=distributor -activity-tracker.filepath=/activity/distributor-wc-1"
+      - "exec ./mimir -config.file=./config/mimir.yaml -target=distributor -activity-tracker.filepath=/activity/distributor-wc-1 -distributor.write-compartment-id=1 -ingest-storage.kafka.address=kafka-wc-1:9092 -ingest-storage.kafka.topic='mimir-ingest-rc-<read-compartment-id>'"
     "depends_on":
-      "kafka_1":
+      "kafka-wc-0":
         "condition": "service_healthy"
-      "kafka_2":
+      "kafka-wc-1":
         "condition": "service_healthy"
       "minio":
         "condition": "service_started"
@@ -188,11 +213,11 @@
     "command":
       - "sh"
       - "-c"
-      - "exec ./mimir -config.file=./config/mimir.yaml -target=ingester -activity-tracker.filepath=/activity/ingester-zone-a-rc-0-0 -ingester.ring.instance-availability-zone=zone-a -ingester.read-compartment-id=0 -ingest-storage.kafka.topic=mimir-ingest-rc-0"
+      - "exec ./mimir -config.file=./config/mimir.yaml -target=ingester -activity-tracker.filepath=/activity/ingester-zone-a-rc-0-0 -ingester.ring.instance-availability-zone=zone-a -ingester.read-compartment-id=0 -ingest-storage.kafka.address='kafka-wc-<write-compartment-id>:9092' -ingest-storage.kafka.topic='mimir-ingest-rc-<read-compartment-id>'"
     "depends_on":
-      "kafka_1":
+      "kafka-wc-0":
         "condition": "service_healthy"
-      "kafka_2":
+      "kafka-wc-1":
         "condition": "service_healthy"
       "minio":
         "condition": "service_started"
@@ -214,11 +239,11 @@
     "command":
       - "sh"
       - "-c"
-      - "exec ./mimir -config.file=./config/mimir.yaml -target=ingester -activity-tracker.filepath=/activity/ingester-zone-a-rc-0-1 -ingester.ring.instance-availability-zone=zone-a -ingester.read-compartment-id=0 -ingest-storage.kafka.topic=mimir-ingest-rc-0"
+      - "exec ./mimir -config.file=./config/mimir.yaml -target=ingester -activity-tracker.filepath=/activity/ingester-zone-a-rc-0-1 -ingester.ring.instance-availability-zone=zone-a -ingester.read-compartment-id=0 -ingest-storage.kafka.address='kafka-wc-<write-compartment-id>:9092' -ingest-storage.kafka.topic='mimir-ingest-rc-<read-compartment-id>'"
     "depends_on":
-      "kafka_1":
+      "kafka-wc-0":
         "condition": "service_healthy"
-      "kafka_2":
+      "kafka-wc-1":
         "condition": "service_healthy"
       "minio":
         "condition": "service_started"
@@ -240,11 +265,11 @@
     "command":
       - "sh"
       - "-c"
-      - "exec ./mimir -config.file=./config/mimir.yaml -target=ingester -activity-tracker.filepath=/activity/ingester-zone-a-rc-1-0 -ingester.ring.instance-availability-zone=zone-a -ingester.read-compartment-id=1 -ingest-storage.kafka.topic=mimir-ingest-rc-1"
+      - "exec ./mimir -config.file=./config/mimir.yaml -target=ingester -activity-tracker.filepath=/activity/ingester-zone-a-rc-1-0 -ingester.ring.instance-availability-zone=zone-a -ingester.read-compartment-id=1 -ingest-storage.kafka.address='kafka-wc-<write-compartment-id>:9092' -ingest-storage.kafka.topic='mimir-ingest-rc-<read-compartment-id>'"
     "depends_on":
-      "kafka_1":
+      "kafka-wc-0":
         "condition": "service_healthy"
-      "kafka_2":
+      "kafka-wc-1":
         "condition": "service_healthy"
       "minio":
         "condition": "service_started"
@@ -266,11 +291,11 @@
     "command":
       - "sh"
       - "-c"
-      - "exec ./mimir -config.file=./config/mimir.yaml -target=ingester -activity-tracker.filepath=/activity/ingester-zone-a-rc-1-1 -ingester.ring.instance-availability-zone=zone-a -ingester.read-compartment-id=1 -ingest-storage.kafka.topic=mimir-ingest-rc-1"
+      - "exec ./mimir -config.file=./config/mimir.yaml -target=ingester -activity-tracker.filepath=/activity/ingester-zone-a-rc-1-1 -ingester.ring.instance-availability-zone=zone-a -ingester.read-compartment-id=1 -ingest-storage.kafka.address='kafka-wc-<write-compartment-id>:9092' -ingest-storage.kafka.topic='mimir-ingest-rc-<read-compartment-id>'"
     "depends_on":
-      "kafka_1":
+      "kafka-wc-0":
         "condition": "service_healthy"
-      "kafka_2":
+      "kafka-wc-1":
         "condition": "service_healthy"
       "minio":
         "condition": "service_started"
@@ -292,11 +317,11 @@
     "command":
       - "sh"
       - "-c"
-      - "exec ./mimir -config.file=./config/mimir.yaml -target=ingester -activity-tracker.filepath=/activity/ingester-zone-b-rc-0-0 -ingester.ring.instance-availability-zone=zone-b -ingester.read-compartment-id=0 -ingest-storage.kafka.topic=mimir-ingest-rc-0"
+      - "exec ./mimir -config.file=./config/mimir.yaml -target=ingester -activity-tracker.filepath=/activity/ingester-zone-b-rc-0-0 -ingester.ring.instance-availability-zone=zone-b -ingester.read-compartment-id=0 -ingest-storage.kafka.address='kafka-wc-<write-compartment-id>:9092' -ingest-storage.kafka.topic='mimir-ingest-rc-<read-compartment-id>'"
     "depends_on":
-      "kafka_1":
+      "kafka-wc-0":
         "condition": "service_healthy"
-      "kafka_2":
+      "kafka-wc-1":
         "condition": "service_healthy"
       "minio":
         "condition": "service_started"
@@ -318,11 +343,11 @@
     "command":
       - "sh"
       - "-c"
-      - "exec ./mimir -config.file=./config/mimir.yaml -target=ingester -activity-tracker.filepath=/activity/ingester-zone-b-rc-0-1 -ingester.ring.instance-availability-zone=zone-b -ingester.read-compartment-id=0 -ingest-storage.kafka.topic=mimir-ingest-rc-0"
+      - "exec ./mimir -config.file=./config/mimir.yaml -target=ingester -activity-tracker.filepath=/activity/ingester-zone-b-rc-0-1 -ingester.ring.instance-availability-zone=zone-b -ingester.read-compartment-id=0 -ingest-storage.kafka.address='kafka-wc-<write-compartment-id>:9092' -ingest-storage.kafka.topic='mimir-ingest-rc-<read-compartment-id>'"
     "depends_on":
-      "kafka_1":
+      "kafka-wc-0":
         "condition": "service_healthy"
-      "kafka_2":
+      "kafka-wc-1":
         "condition": "service_healthy"
       "minio":
         "condition": "service_started"
@@ -344,11 +369,11 @@
     "command":
       - "sh"
       - "-c"
-      - "exec ./mimir -config.file=./config/mimir.yaml -target=ingester -activity-tracker.filepath=/activity/ingester-zone-b-rc-1-0 -ingester.ring.instance-availability-zone=zone-b -ingester.read-compartment-id=1 -ingest-storage.kafka.topic=mimir-ingest-rc-1"
+      - "exec ./mimir -config.file=./config/mimir.yaml -target=ingester -activity-tracker.filepath=/activity/ingester-zone-b-rc-1-0 -ingester.ring.instance-availability-zone=zone-b -ingester.read-compartment-id=1 -ingest-storage.kafka.address='kafka-wc-<write-compartment-id>:9092' -ingest-storage.kafka.topic='mimir-ingest-rc-<read-compartment-id>'"
     "depends_on":
-      "kafka_1":
+      "kafka-wc-0":
         "condition": "service_healthy"
-      "kafka_2":
+      "kafka-wc-1":
         "condition": "service_healthy"
       "minio":
         "condition": "service_started"
@@ -370,11 +395,11 @@
     "command":
       - "sh"
       - "-c"
-      - "exec ./mimir -config.file=./config/mimir.yaml -target=ingester -activity-tracker.filepath=/activity/ingester-zone-b-rc-1-1 -ingester.ring.instance-availability-zone=zone-b -ingester.read-compartment-id=1 -ingest-storage.kafka.topic=mimir-ingest-rc-1"
+      - "exec ./mimir -config.file=./config/mimir.yaml -target=ingester -activity-tracker.filepath=/activity/ingester-zone-b-rc-1-1 -ingester.ring.instance-availability-zone=zone-b -ingester.read-compartment-id=1 -ingest-storage.kafka.address='kafka-wc-<write-compartment-id>:9092' -ingest-storage.kafka.topic='mimir-ingest-rc-<read-compartment-id>'"
     "depends_on":
-      "kafka_1":
+      "kafka-wc-0":
         "condition": "service_healthy"
-      "kafka_2":
+      "kafka-wc-1":
         "condition": "service_healthy"
       "minio":
         "condition": "service_started"
@@ -389,85 +414,67 @@
       - "./config:/mimir/config"
       - "./activity:/activity"
       - ".data-ingester-zone-b-rc-1-1:/data:delegated"
-  "kafka_1":
+  "kafka-wc-0":
     "environment":
       - "CLUSTER_ID=zH1GDqcNTzGMDCXm5VZQdg"
       - "KAFKA_NUM_PARTITIONS=100"
       - "KAFKA_PROCESS_ROLES=broker,controller"
+      - "KAFKA_BROKER_ID=1"
       - "KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT"
       - "KAFKA_INTER_BROKER_LISTENER_NAME=PLAINTEXT"
       - "KAFKA_CONTROLLER_LISTENER_NAMES=CONTROLLER"
-      - "KAFKA_CONTROLLER_QUORUM_VOTERS=1@kafka_1:9093,2@kafka_2:9093,3@kafka_3:9093"
-      - "KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=2"
-      - "KAFKA_DEFAULT_REPLICATION_FACTOR=2"
+      - "KAFKA_CONTROLLER_QUORUM_VOTERS=1@kafka-wc-0:9093"
+      - "KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1"
+      - "KAFKA_DEFAULT_REPLICATION_FACTOR=1"
+      - "KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR=1"
+      - "KAFKA_TRANSACTION_STATE_LOG_MIN_ISR=1"
       - "KAFKA_LOG_RETENTION_CHECK_INTERVAL_MS=10000"
-      - "KAFKA_BROKER_ID=1"
       - "KAFKA_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093,PLAINTEXT_HOST://:29092"
-      - "KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka_1:9092,PLAINTEXT_HOST://localhost:29092"
+      - "KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka-wc-0:9092,PLAINTEXT_HOST://localhost:29092"
     "healthcheck":
       "interval": "1s"
       "retries": "30"
       "start_period": "1s"
       "test": "kafka-broker-api-versions --bootstrap-server localhost:9092 || exit 1"
       "timeout": "1s"
+    "hostname": "kafka-wc-0"
     "image": "confluentinc/cp-kafka:latest"
     "ports":
       - "29092:29092"
-  "kafka_2":
+  "kafka-wc-1":
     "environment":
       - "CLUSTER_ID=zH1GDqcNTzGMDCXm5VZQdg"
       - "KAFKA_NUM_PARTITIONS=100"
       - "KAFKA_PROCESS_ROLES=broker,controller"
+      - "KAFKA_BROKER_ID=1"
       - "KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT"
       - "KAFKA_INTER_BROKER_LISTENER_NAME=PLAINTEXT"
       - "KAFKA_CONTROLLER_LISTENER_NAMES=CONTROLLER"
-      - "KAFKA_CONTROLLER_QUORUM_VOTERS=1@kafka_1:9093,2@kafka_2:9093,3@kafka_3:9093"
-      - "KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=2"
-      - "KAFKA_DEFAULT_REPLICATION_FACTOR=2"
+      - "KAFKA_CONTROLLER_QUORUM_VOTERS=1@kafka-wc-1:9093"
+      - "KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1"
+      - "KAFKA_DEFAULT_REPLICATION_FACTOR=1"
+      - "KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR=1"
+      - "KAFKA_TRANSACTION_STATE_LOG_MIN_ISR=1"
       - "KAFKA_LOG_RETENTION_CHECK_INTERVAL_MS=10000"
-      - "KAFKA_BROKER_ID=2"
       - "KAFKA_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093,PLAINTEXT_HOST://:29093"
-      - "KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka_2:9092,PLAINTEXT_HOST://localhost:29093"
+      - "KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka-wc-1:9092,PLAINTEXT_HOST://localhost:29093"
     "healthcheck":
       "interval": "1s"
       "retries": "30"
       "start_period": "1s"
       "test": "kafka-broker-api-versions --bootstrap-server localhost:9092 || exit 1"
       "timeout": "1s"
+    "hostname": "kafka-wc-1"
     "image": "confluentinc/cp-kafka:latest"
     "ports":
       - "29093:29093"
-  "kafka_3":
-    "environment":
-      - "CLUSTER_ID=zH1GDqcNTzGMDCXm5VZQdg"
-      - "KAFKA_NUM_PARTITIONS=100"
-      - "KAFKA_PROCESS_ROLES=broker,controller"
-      - "KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT"
-      - "KAFKA_INTER_BROKER_LISTENER_NAME=PLAINTEXT"
-      - "KAFKA_CONTROLLER_LISTENER_NAMES=CONTROLLER"
-      - "KAFKA_CONTROLLER_QUORUM_VOTERS=1@kafka_1:9093,2@kafka_2:9093,3@kafka_3:9093"
-      - "KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=2"
-      - "KAFKA_DEFAULT_REPLICATION_FACTOR=2"
-      - "KAFKA_LOG_RETENTION_CHECK_INTERVAL_MS=10000"
-      - "KAFKA_BROKER_ID=3"
-      - "KAFKA_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093,PLAINTEXT_HOST://:29094"
-      - "KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka_3:9092,PLAINTEXT_HOST://localhost:29094"
-    "healthcheck":
-      "interval": "1s"
-      "retries": "30"
-      "start_period": "1s"
-      "test": "kafka-broker-api-versions --bootstrap-server localhost:9092 || exit 1"
-      "timeout": "1s"
-    "image": "confluentinc/cp-kafka:latest"
-    "ports":
-      - "29094:29094"
   "memcached":
     "image": "memcached:1.6.19-alpine"
   "minio":
     "entrypoint":
       - "sh"
       - "-c"
-      - "mkdir -p /data/mimir-blocks /data/mimir-ruler /data/mimir-alertmanager /data/usage-tracker-snapshots && exec minio server --console-address :9001 /data"
+      - "mkdir -p /data/mimir-blocks /data/mimir-blocks-rc-0 /data/mimir-blocks-rc-1 /data/mimir-ruler /data/mimir-alertmanager /data/usage-tracker-snapshots && exec minio server --console-address :9001 /data"
     "environment":
       - "MINIO_ROOT_USER=mimir"
       - "MINIO_ROOT_PASSWORD=supersecret"
@@ -484,7 +491,7 @@
       - "alertmanager-1"
       - "ruler-1"
       - "query-frontend"
-      - "compactor"
+      - "compactor-rc-0"
       - "grafana"
     "environment":
       - "NGINX_ENVSUBST_OUTPUT_DIR=/etc/nginx"
@@ -492,7 +499,7 @@
       - "ALERT_MANAGER_HOST=alertmanager-1:8080"
       - "RULER_HOST=ruler-1:8080"
       - "QUERY_FRONTEND_HOST=query-frontend:8080"
-      - "COMPACTOR_HOST=compactor:8080"
+      - "COMPACTOR_HOST=compactor-rc-0:8080"
     "hostname": "nginx"
     "image": "nginxinc/nginx-unprivileged:1.22-alpine"
     "ports":
@@ -508,9 +515,9 @@
       - "-c"
       - "exec ./mimir -config.file=./config/mimir.yaml -target=querier -activity-tracker.filepath=/activity/querier"
     "depends_on":
-      "kafka_1":
+      "kafka-wc-0":
         "condition": "service_healthy"
-      "kafka_2":
+      "kafka-wc-1":
         "condition": "service_healthy"
       "minio":
         "condition": "service_started"
@@ -531,11 +538,11 @@
     "command":
       - "sh"
       - "-c"
-      - "exec ./mimir -config.file=./config/mimir.yaml -target=query-frontend -activity-tracker.filepath=/activity/query-frontend"
+      - "exec ./mimir -config.file=./config/mimir.yaml -target=query-frontend -activity-tracker.filepath=/activity/query-frontend -ingest-storage.kafka.address='kafka-wc-<write-compartment-id>:9092' -ingest-storage.kafka.topic='mimir-ingest-rc-<read-compartment-id>'"
     "depends_on":
-      "kafka_1":
+      "kafka-wc-0":
         "condition": "service_healthy"
-      "kafka_2":
+      "kafka-wc-1":
         "condition": "service_healthy"
       "minio":
         "condition": "service_started"
@@ -558,9 +565,9 @@
       - "-c"
       - "exec ./mimir -config.file=./config/mimir.yaml -target=query-scheduler -activity-tracker.filepath=/activity/query-scheduler"
     "depends_on":
-      "kafka_1":
+      "kafka-wc-0":
         "condition": "service_healthy"
-      "kafka_2":
+      "kafka-wc-1":
         "condition": "service_healthy"
       "minio":
         "condition": "service_started"
@@ -574,12 +581,18 @@
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
-  "redpanda_console":
+  "redpanda-console-wc-0":
     "environment":
-      - "KAFKA_BROKERS=kafka_1:9092,kafka_2:9092,kafka_3:9092"
+      - "KAFKA_BROKERS=kafka-wc-0:9092"
     "image": "docker.redpanda.com/redpandadata/console:latest"
     "ports":
       - "8090:8080"
+  "redpanda-console-wc-1":
+    "environment":
+      - "KAFKA_BROKERS=kafka-wc-1:9092"
+    "image": "docker.redpanda.com/redpandadata/console:latest"
+    "ports":
+      - "8091:8080"
   "ruler-1":
     "build":
       "context": "."
@@ -587,11 +600,11 @@
     "command":
       - "sh"
       - "-c"
-      - "exec ./mimir -config.file=./config/mimir.yaml -target=ruler -activity-tracker.filepath=/activity/ruler-1"
+      - "exec ./mimir -config.file=./config/mimir.yaml -target=ruler -activity-tracker.filepath=/activity/ruler-1 -distributor.write-compartment-id=0 -ingest-storage.kafka.address=kafka-wc-0:9092 -ingest-storage.kafka.topic='mimir-ingest-rc-<read-compartment-id>'"
     "depends_on":
-      "kafka_1":
+      "kafka-wc-0":
         "condition": "service_healthy"
-      "kafka_2":
+      "kafka-wc-1":
         "condition": "service_healthy"
       "minio":
         "condition": "service_started"
@@ -605,24 +618,74 @@
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
-  "store-gateway-zone-a-1":
+  "store-gateway-zone-a-rc-0":
     "build":
       "context": "."
       "dockerfile": "dev.dockerfile"
     "command":
       - "sh"
       - "-c"
-      - "exec ./mimir -config.file=./config/mimir.yaml -target=store-gateway -activity-tracker.filepath=/activity/store-gateway-zone-a-1 -store-gateway.sharding-ring.instance-availability-zone=zone-a"
+      - "exec ./mimir -config.file=./config/mimir.yaml -target=store-gateway -activity-tracker.filepath=/activity/store-gateway-zone-a-rc-0 -store-gateway.sharding-ring.instance-availability-zone=zone-a -store-gateway.read-compartment-id=0 -blocks-storage.s3.bucket-name=mimir-blocks-rc-0"
     "depends_on":
-      "kafka_1":
+      "kafka-wc-0":
         "condition": "service_healthy"
-      "kafka_2":
+      "kafka-wc-1":
         "condition": "service_healthy"
       "minio":
         "condition": "service_started"
     "environment":
       - "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://tempo:4318/v1/traces"
-    "hostname": "store-gateway-zone-a-1"
+    "hostname": "store-gateway-zone-a-rc-0"
+    "image": "mimir"
+    "ports":
+      - "8020:8080"
+      - "11020:11020"
+    "volumes":
+      - "./config:/mimir/config"
+      - "./activity:/activity"
+  "store-gateway-zone-a-rc-1":
+    "build":
+      "context": "."
+      "dockerfile": "dev.dockerfile"
+    "command":
+      - "sh"
+      - "-c"
+      - "exec ./mimir -config.file=./config/mimir.yaml -target=store-gateway -activity-tracker.filepath=/activity/store-gateway-zone-a-rc-1 -store-gateway.sharding-ring.instance-availability-zone=zone-a -store-gateway.read-compartment-id=1 -blocks-storage.s3.bucket-name=mimir-blocks-rc-1"
+    "depends_on":
+      "kafka-wc-0":
+        "condition": "service_healthy"
+      "kafka-wc-1":
+        "condition": "service_healthy"
+      "minio":
+        "condition": "service_started"
+    "environment":
+      - "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://tempo:4318/v1/traces"
+    "hostname": "store-gateway-zone-a-rc-1"
+    "image": "mimir"
+    "ports":
+      - "8022:8080"
+      - "11022:11022"
+    "volumes":
+      - "./config:/mimir/config"
+      - "./activity:/activity"
+  "store-gateway-zone-b-rc-0":
+    "build":
+      "context": "."
+      "dockerfile": "dev.dockerfile"
+    "command":
+      - "sh"
+      - "-c"
+      - "exec ./mimir -config.file=./config/mimir.yaml -target=store-gateway -activity-tracker.filepath=/activity/store-gateway-zone-b-rc-0 -store-gateway.sharding-ring.instance-availability-zone=zone-b -store-gateway.read-compartment-id=0 -blocks-storage.s3.bucket-name=mimir-blocks-rc-0"
+    "depends_on":
+      "kafka-wc-0":
+        "condition": "service_healthy"
+      "kafka-wc-1":
+        "condition": "service_healthy"
+      "minio":
+        "condition": "service_started"
+    "environment":
+      - "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://tempo:4318/v1/traces"
+    "hostname": "store-gateway-zone-b-rc-0"
     "image": "mimir"
     "ports":
       - "8021:8080"
@@ -630,28 +693,28 @@
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
-  "store-gateway-zone-b-1":
+  "store-gateway-zone-b-rc-1":
     "build":
       "context": "."
       "dockerfile": "dev.dockerfile"
     "command":
       - "sh"
       - "-c"
-      - "exec ./mimir -config.file=./config/mimir.yaml -target=store-gateway -activity-tracker.filepath=/activity/store-gateway-zone-b-1 -store-gateway.sharding-ring.instance-availability-zone=zone-b"
+      - "exec ./mimir -config.file=./config/mimir.yaml -target=store-gateway -activity-tracker.filepath=/activity/store-gateway-zone-b-rc-1 -store-gateway.sharding-ring.instance-availability-zone=zone-b -store-gateway.read-compartment-id=1 -blocks-storage.s3.bucket-name=mimir-blocks-rc-1"
     "depends_on":
-      "kafka_1":
+      "kafka-wc-0":
         "condition": "service_healthy"
-      "kafka_2":
+      "kafka-wc-1":
         "condition": "service_healthy"
       "minio":
         "condition": "service_started"
     "environment":
       - "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://tempo:4318/v1/traces"
-    "hostname": "store-gateway-zone-b-1"
+    "hostname": "store-gateway-zone-b-rc-1"
     "image": "mimir"
     "ports":
-      - "8051:8080"
-      - "11051:11051"
+      - "8023:8080"
+      - "11023:11023"
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
@@ -675,9 +738,9 @@
       - "-c"
       - "exec ./mimir -config.file=./config/mimir.yaml -target=usage-tracker -activity-tracker.filepath=/activity/usage-tracker-zone-a-0 -usage-tracker.instance-ring.instance-availability-zone=zone-a -usage-tracker.partitions=16 -usage-tracker.partition-reconcile-interval=10s -usage-tracker.lost-partitions-shutdown-grace-period=30s"
     "depends_on":
-      "kafka_1":
+      "kafka-wc-0":
         "condition": "service_healthy"
-      "kafka_2":
+      "kafka-wc-1":
         "condition": "service_healthy"
       "minio":
         "condition": "service_started"
@@ -700,9 +763,9 @@
       - "-c"
       - "exec ./mimir -config.file=./config/mimir.yaml -target=usage-tracker -activity-tracker.filepath=/activity/usage-tracker-zone-a-1 -usage-tracker.instance-ring.instance-availability-zone=zone-a -usage-tracker.partitions=16 -usage-tracker.partition-reconcile-interval=10s -usage-tracker.lost-partitions-shutdown-grace-period=30s"
     "depends_on":
-      "kafka_1":
+      "kafka-wc-0":
         "condition": "service_healthy"
-      "kafka_2":
+      "kafka-wc-1":
         "condition": "service_healthy"
       "minio":
         "condition": "service_started"
@@ -725,9 +788,9 @@
       - "-c"
       - "exec ./mimir -config.file=./config/mimir.yaml -target=usage-tracker -activity-tracker.filepath=/activity/usage-tracker-zone-b-0 -usage-tracker.instance-ring.instance-availability-zone=zone-b -usage-tracker.partitions=16 -usage-tracker.partition-reconcile-interval=10s -usage-tracker.lost-partitions-shutdown-grace-period=30s"
     "depends_on":
-      "kafka_1":
+      "kafka-wc-0":
         "condition": "service_healthy"
-      "kafka_2":
+      "kafka-wc-1":
         "condition": "service_healthy"
       "minio":
         "condition": "service_started"

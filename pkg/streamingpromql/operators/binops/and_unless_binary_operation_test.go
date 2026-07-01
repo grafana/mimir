@@ -254,6 +254,33 @@ func TestAndUnlessBinaryOperation_PassesExcludeHintMatchersToRHS(t *testing.T) {
 				labels.FromStrings("env", "prod", "foo", "a", "bar", "b", "region", "us-east"),
 			},
 		},
+		"and op with exclude hints and heterogeneous labels across series: RHS receives matchers with empty alternatives": {
+			isUnless:       false,
+			vectorMatching: parser.VectorMatching{On: false, MatchingLabels: []string{}},
+			hints:          &Hints{Exclude: []string{}},
+			leftSeries: []labels.Labels{
+				labels.FromStrings("entity_type", "Service", "env", "prod", "service", "checkout"),
+				labels.FromStrings("entity_type", "Service", "env", "prod", "service", "payments"),
+				labels.FromStrings("entity_type", "Node", "env", "prod", "node", "host-1"),
+			},
+			rightSeries: []labels.Labels{
+				// All three should survive matcher filtering: each has labels matching an LHS series.
+				labels.FromStrings("entity_type", "Service", "env", "prod", "service", "checkout"),
+				labels.FromStrings("entity_type", "Node", "env", "prod", "node", "host-1"),
+				// This one should be filtered: env="staging" not on LHS.
+				labels.FromStrings("entity_type", "Service", "env", "staging", "service", "checkout"),
+			},
+			expectedRHSMatchers: types.Matchers{
+				{Type: labels.MatchRegexp, Name: "entity_type", Value: "Node|Service"},
+				{Type: labels.MatchRegexp, Name: "env", Value: "prod"},
+				{Type: labels.MatchRegexp, Name: "node", Value: "|host-1"},
+				{Type: labels.MatchRegexp, Name: "service", Value: "|checkout|payments"},
+			},
+			expectedOutputSeries: []labels.Labels{
+				labels.FromStrings("entity_type", "Service", "env", "prod", "service", "checkout"),
+				labels.FromStrings("entity_type", "Node", "env", "prod", "node", "host-1"),
+			},
+		},
 	}
 
 	for name, testCase := range testCases {

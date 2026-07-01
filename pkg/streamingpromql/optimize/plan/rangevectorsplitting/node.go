@@ -3,6 +3,7 @@
 package rangevectorsplitting
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"slices"
@@ -84,10 +85,6 @@ func (s *SplitFunctionCall) Describe() string {
 	return b.String()
 }
 
-func (s *SplitFunctionCall) ChildrenLabels() []string {
-	return []string{""}
-}
-
 func (s *SplitFunctionCall) ChildrenTimeRange(parentTimeRange types.QueryTimeRange) types.QueryTimeRange {
 	return parentTimeRange
 }
@@ -124,7 +121,7 @@ func NewMaterializer(enabled bool, cache *cache.CacheFactory, logger log.Logger)
 	}
 }
 
-func (m Materializer) Materialize(n planning.Node, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters, overrideRangeParams planning.RangeParams) (planning.OperatorFactory, error) {
+func (m Materializer) Materialize(ctx context.Context, n planning.Node, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters, overrideRangeParams planning.RangeParams) (planning.OperatorFactory, error) {
 	if overrideRangeParams.IsSet {
 		return nil, errors.New("overrideRangeParams not supported for rangevectorsplitting.Materialize")
 	}
@@ -135,7 +132,7 @@ func (m Materializer) Materialize(n planning.Node, materializer *planning.Materi
 
 	if !m.enabled {
 		level.Warn(m.logger).Log("msg", "split function node is present but range vector splitting is disabled, falling back to unsplit execution; this can happen if splitting is enabled on the query-frontend but not yet on the querier")
-		return materializer.FactoryForNode(s.Inner, timeRange)
+		return materializer.FactoryForNode(ctx, s.Inner, timeRange)
 	}
 
 	splitFactory, exists := SplitFunctionRegistry[s.Inner.Function]

@@ -102,13 +102,14 @@ func TOCFromBucketTSDBIndex(
 // and it has a different layout for the header/metadata and TOC.
 // This results in different offsets for the relevant sections than a full Prometheus block index in the bucket.
 func TOCFromIndexHeader(
+	ctx context.Context,
 	castagnoliTable *crc32.Table,
 	decbufFactory streamencoding.DecbufFactory,
 	l log.Logger,
 ) (toc *TOCCompat, indexHeaderVersion int, err error) {
 	// Create a new raw decoding buffer with access to the entire index-header file to
 	// read initial version information and the table of contents.
-	decbuf := decbufFactory.NewRawDecbuf()
+	decbuf := decbufFactory.NewRawDecbuf(ctx)
 	defer runutil.CloseWithErrCapture(&err, &decbuf, "index TOC from index header")
 	if err = decbuf.Err(); err != nil {
 		return nil, 0, fmt.Errorf("cannot create decoding buffer: %w", err)

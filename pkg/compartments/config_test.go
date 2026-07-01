@@ -15,26 +15,26 @@ func TestConfig_Validate(t *testing.T) {
 		expectedErr error
 	}{
 		"disabled passes regardless of other values": {
-			cfg: Config{Enabled: false, Read: ReadConfig{NumCompartments: 0, KafkaTopicFormat: ""}},
+			cfg: Config{Enabled: false, Read: ReadConfig{NumCompartments: 0}, Write: WriteConfig{NumCompartments: 0}},
 		},
 		"enabled with valid config passes": {
-			cfg: Config{Enabled: true, Read: ReadConfig{NumCompartments: 2, KafkaTopicFormat: "mimir-rc-<compartment-id>"}},
+			cfg: Config{Enabled: true, Read: ReadConfig{NumCompartments: 2}, Write: WriteConfig{NumCompartments: 3}},
 		},
-		"enabled with zero compartments is rejected": {
-			cfg:         Config{Enabled: true, Read: ReadConfig{NumCompartments: 0, KafkaTopicFormat: "mimir-rc-<compartment-id>"}},
-			expectedErr: ErrInvalidNumCompartments,
+		"enabled with zero read compartments is rejected": {
+			cfg:         Config{Enabled: true, Read: ReadConfig{NumCompartments: 0}, Write: WriteConfig{NumCompartments: 3}},
+			expectedErr: ErrInvalidNumReadCompartments,
 		},
-		"enabled with negative compartments is rejected": {
-			cfg:         Config{Enabled: true, Read: ReadConfig{NumCompartments: -1, KafkaTopicFormat: "mimir-rc-<compartment-id>"}},
-			expectedErr: ErrInvalidNumCompartments,
+		"enabled with negative read compartments is rejected": {
+			cfg:         Config{Enabled: true, Read: ReadConfig{NumCompartments: -1}, Write: WriteConfig{NumCompartments: 3}},
+			expectedErr: ErrInvalidNumReadCompartments,
 		},
-		"enabled with empty topic format is rejected": {
-			cfg:         Config{Enabled: true, Read: ReadConfig{NumCompartments: 2, KafkaTopicFormat: ""}},
-			expectedErr: ErrEmptyKafkaTopicFormat,
+		"enabled with zero write compartments is rejected": {
+			cfg:         Config{Enabled: true, Read: ReadConfig{NumCompartments: 2}, Write: WriteConfig{NumCompartments: 0}},
+			expectedErr: ErrInvalidNumWriteCompartments,
 		},
-		"enabled with topic format missing the placeholder is rejected": {
-			cfg:         Config{Enabled: true, Read: ReadConfig{NumCompartments: 2, KafkaTopicFormat: "mimir-rc"}},
-			expectedErr: ErrKafkaTopicFormatPlaceholder,
+		"enabled with negative write compartments is rejected": {
+			cfg:         Config{Enabled: true, Read: ReadConfig{NumCompartments: 2}, Write: WriteConfig{NumCompartments: -1}},
+			expectedErr: ErrInvalidNumWriteCompartments,
 		},
 	}
 
@@ -48,4 +48,24 @@ func TestConfig_Validate(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestReplaceReadCompartment(t *testing.T) {
+	assert.Equal(t, "ingest-rc-0", ReplaceReadCompartment("ingest-rc-<read-compartment-id>", 0))
+	assert.Equal(t, "ingest-rc-3", ReplaceReadCompartment("ingest-rc-<read-compartment-id>", 3))
+	// A template without the placeholder is returned unchanged.
+	assert.Equal(t, "ingest", ReplaceReadCompartment("ingest", 2))
+}
+
+func TestReplaceWriteCompartment(t *testing.T) {
+	assert.Equal(t, "kafka-wc-0:9092", ReplaceWriteCompartment("kafka-wc-<write-compartment-id>:9092", 0))
+	assert.Equal(t, "kafka-wc-5:9092", ReplaceWriteCompartment("kafka-wc-<write-compartment-id>:9092", 5))
+	// A value without the placeholder is returned unchanged.
+	assert.Equal(t, "kafka:9092", ReplaceWriteCompartment("kafka:9092", 1))
+}
+
+func TestWithReadCompartmentSuffix(t *testing.T) {
+	assert.Equal(t, "ingester-partitions-rc-0", WithReadCompartmentSuffix("ingester-partitions", 0))
+	assert.Equal(t, "ingester-partitions-rc-3", WithReadCompartmentSuffix("ingester-partitions", 3))
+	assert.Equal(t, "blocks-rc-2", WithReadCompartmentSuffix("blocks", 2))
 }
