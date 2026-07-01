@@ -3,11 +3,13 @@
 package blockbuilder
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"iter"
 	"os"
 	"path"
+	"slices"
 	"sync"
 	"testing"
 	"testing/synctest"
@@ -205,10 +207,11 @@ func TestBlockBuilder_WipeOutDataDirOnStart(t *testing.T) {
 
 // Asserts that a job spanning multiple write compartments consumes each compartment's range from
 // that compartment's own Kafka client and merges the results into a single block. The two
-// compartments point at two distinct Kafka clusters holding disjoint, distinguishable samples, so
-// the uploaded block contains the union only if each compartment is read through its own client: a
-// bug reading every compartment from one client would miss the other cluster's data. It runs with
-// and without concurrent fetchers, since those take different per-cluster read paths.
+// compartments point at two distinct Kafka clusters whose samples interleave in time, so the
+// uploaded block contains the timestamp-ordered union only if each compartment is read through its
+// own client and the two are merged: a bug reading every compartment from one client would miss the
+// other cluster's data. It runs with and without concurrent fetchers, since those take different
+// per-cluster read paths.
 func TestConsumeJob_MultipleWriteCompartments(t *testing.T) {
 	for _, fetchConcurrencyMax := range []int{0, 8} {
 		name := "without concurrent fetchers"
@@ -235,16 +238,16 @@ func TestConsumeJob_MultipleWriteCompartments(t *testing.T) {
 						samples := produceSamples(ctx, t, producer, 1, recTime, tenant, recTime.Add(-time.Minute))
 						out[tenant] = append(out[tenant], samples...)
 					}
-					recTime = recTime.Add(10 * time.Minute)
+					recTime = recTime.Add(20 * time.Minute)
 				}
 				return out
 			}
 
-			// Cluster A's samples all precede cluster B's, so every timestamp is distinct and the
-			// per-tenant union is naturally ordered; both stay within the out-of-order window.
+			// Cluster A and B samples interleave in time (B offset 10 minutes from A), so the merge must
+			// interleave the two sources in timestamp order rather than drain one then the other.
 			now := time.Now()
 			producedA := produceToCluster(producerA, now.Add(-100*time.Minute))
-			producedB := produceToCluster(producerB, now.Add(-50*time.Minute))
+			producedB := produceToCluster(producerB, now.Add(-90*time.Minute))
 
 			bb, cfg, _ := newMultiClusterBlockBuilder(t, fetchConcurrencyMax, kafkaAddrA, kafkaAddrB)
 
@@ -260,7 +263,9 @@ func TestConsumeJob_MultipleWriteCompartments(t *testing.T) {
 
 			for _, tenant := range tenants {
 				tenantBucketDir := path.Join(cfg.BlocksStorage.Bucket.Filesystem.Directory, tenant)
+				// The block holds the union of both clusters' samples, queryable in timestamp order.
 				expSamples := append(append([]mimirpb.Sample{}, producedA[tenant]...), producedB[tenant]...)
+				slices.SortFunc(expSamples, func(a, b mimirpb.Sample) int { return cmp.Compare(a.TimestampMs, b.TimestampMs) })
 				compareQueryWithDir(t,
 					tenantBucketDir,
 					expSamples, nil,
