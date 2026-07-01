@@ -99,6 +99,7 @@
     // Do not limit compactor CPU and request enough cores to honor configured max concurrency.
     $.util.resourcesRequests($._config.compactor_max_concurrency, '6Gi') +
     $.util.resourcesLimits(null, '6Gi') +
+    $.mimirEphemeralStorageRequest +
     $.util.readinessProbe +
     $.tracing_env_mixin,
 
