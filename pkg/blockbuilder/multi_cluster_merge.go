@@ -159,7 +159,7 @@ func newRecordBatcher(consumer ingest.RecordConsumer, maxBatch int) *recordBatch
 }
 
 // add appends record to the batch, flushing it to the consumer once it reaches maxBatch. It
-// reports whether the batch was flushed so the caller can run periodic work at the flush cadence.
+// reports whether the batch was flushed.
 func (b *recordBatcher) add(ctx context.Context, record *kgo.Record) (flushed bool, err error) {
 	b.batch = append(b.batch, record)
 	if len(b.batch) < b.maxBatch {
