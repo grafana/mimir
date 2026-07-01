@@ -65,13 +65,13 @@ func TestMergeSourcesByTimestamp(t *testing.T) {
 		require.Equal(t, []int64{20, 50, 30, 40}, collectMerge(t, s0, s1))
 	})
 
-	// Asserts that records sharing a timestamp are emitted by cluster ID, then offset —
-	// deterministically, regardless of source order.
-	t.Run("tie-breaks equal timestamps by cluster then offset", func(t *testing.T) {
-		// All records share a timestamp; emit order must be cluster ID ascending then
-		// offset ascending, regardless of the order the sources are passed in (s1 before s0).
-		s0 := closedSource(0, taggedRec(0, 50, "a"), taggedRec(1, 50, "b"))
-		s1 := closedSource(1, taggedRec(0, 50, "c"))
+	// Asserts that records sharing a timestamp are emitted in cluster ID order, regardless of the
+	// order the sources are passed in. (Ordering among records from a single source is covered by
+	// the "preserves offset order within a source" case.)
+	t.Run("tie-breaks equal timestamps by cluster ID", func(t *testing.T) {
+		// Both records share a timestamp and s1 is passed before s0, but cluster 0 must emit first.
+		s0 := closedSource(0, taggedRec(0, 50, "a"))
+		s1 := closedSource(1, taggedRec(0, 50, "b"))
 
 		var got []string
 		err := mergeSourcesByTimestamp(context.Background(), []*kafkaClusterSource{s1, s0}, func(r *kgo.Record) error {
@@ -79,7 +79,7 @@ func TestMergeSourcesByTimestamp(t *testing.T) {
 			return nil
 		})
 		require.NoError(t, err)
-		require.Equal(t, []string{"a", "b", "c"}, got)
+		require.Equal(t, []string{"a", "b"}, got)
 	})
 
 	// Asserts that a source yielding no records doesn't stall the merge or corrupt the output.

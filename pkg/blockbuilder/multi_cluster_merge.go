@@ -205,7 +205,7 @@ func (s *kafkaClusterSource) next(ctx context.Context) (*kgo.Record, error) {
 }
 
 // mergeSourcesByTimestamp pulls from every source and calls emitRecord for each record in
-// (timestamp, cluster ID, offset) order, until all sources are drained. It always
+// (timestamp, cluster ID) order, until all sources are drained. It always
 // holds one head per live source, blocking on a lagging source until it produces its next
 // record, so a faster source's later records never overtake a slower source's earlier ones.
 // It returns the first error from emitRecord or from a source.

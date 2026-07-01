@@ -15,24 +15,23 @@ type sourceHead struct {
 	sourceIndex int
 }
 
-// sourceHeadHeap is a min-heap of per-source heads ordered by (record.Timestamp, Kafka cluster
-// ID, offset). The cluster ID and offset are deterministic tie-breakers
-// so the emit order is stable when records share a producer timestamp, as happens within a
-// single distributor write batch.
+// sourceHeadHeap is a min-heap of per-source heads ordered by (record.Timestamp, cluster ID). The
+// cluster ID makes the order deterministic when records share a producer timestamp (as happens
+// within a single distributor write batch). Offset is not a tie-breaker: mergeSourcesByTimestamp
+// holds at most one head per source and each source is a distinct cluster, so any two heads always
+// differ by cluster ID and the comparison never reaches offset. Ordering among records from the
+// same source instead comes from that source's own offset-ordered delivery.
 type sourceHeadHeap []sourceHead
 
 func (h sourceHeadHeap) Len() int { return len(h) }
 
-// Less orders by timestamp ascending, then Kafka cluster ID ascending, then offset ascending.
+// Less orders by timestamp ascending, then cluster ID ascending.
 func (h sourceHeadHeap) Less(i, j int) bool {
 	a, b := h[i].rec, h[j].rec
 	if !a.Timestamp.Equal(b.Timestamp) {
 		return a.Timestamp.Before(b.Timestamp)
 	}
-	if h[i].clusterID != h[j].clusterID {
-		return h[i].clusterID < h[j].clusterID
-	}
-	return a.Offset < b.Offset
+	return h[i].clusterID < h[j].clusterID
 }
 
 func (h sourceHeadHeap) Swap(i, j int) { h[i], h[j] = h[j], h[i] }
