@@ -1159,7 +1159,7 @@ func (m *mockLimitsProvider) AllowCachingUnalignedQueries(ctx context.Context) (
 
 func TestCacheOperator_CacheKey(t *testing.T) {
 	generateCacheKey := func(tenantID string, desiredTimeRange types.QueryTimeRange, node planning.Node, params *planning.QueryParameters) []byte {
-		// Use the tenant prefix generator: as the org ID is no longer part of computeCacheKey, the
+		// Use the tenant prefix generator: as the org ID is not part of computeCacheKey, the
 		// prefix is what provides tenant isolation, so we exercise the full key (computed by
 		// populateCacheKey) rather than computeCacheKey alone.
 		o := newCacheOperator(nil, caching.NewCacheKeyGenerator(nil, caching.TenantPrefixGenerator), nil, node, desiredTimeRange, nil, posrange.PositionRange{}, params, nil, log.NewNopLogger(), cacheEntryInterval, 0, nil)
