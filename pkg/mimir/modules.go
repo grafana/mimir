@@ -719,6 +719,16 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 		extractor,
 	)
 
+	// Register the readcache-lookup explain debug page. It previews the
+	// readcache QueryStream fan-out a query would produce, using the same
+	// distributor routing the querier uses at query time.
+	if t.Distributor != nil {
+		t.API.RegisterQuerierReadcacheExplain(
+			querier.ReadcacheExplainPathPrefix,
+			querier.NewReadcacheExplainHandler(t.Distributor, t.Cfg.Querier.EngineConfig.LookbackDelta, util_log.Logger),
+		)
+	}
+
 	// If the querier is running standalone without the query-frontend or query-scheduler, we must register it's internal
 	// HTTP handler externally and provide the external Mimir Server HTTP handler to the frontend worker
 	// to ensure requests it processes use the default middleware instrumentation.

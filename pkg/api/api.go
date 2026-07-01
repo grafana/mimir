@@ -521,6 +521,16 @@ func (a *API) RegisterQuerierRing(handler http.Handler) {
 	a.RegisterRoute("/querier/ring", handler, false, true, "GET", "POST")
 }
 
+// RegisterQuerierReadcacheExplain registers the querier's readcache-lookup
+// explain debug page. It previews, without executing anything, the
+// readcache QueryStream fan-out a pasted query would produce.
+func (a *API) RegisterQuerierReadcacheExplain(prefix string, handler http.Handler) {
+	a.indexPage.AddLinks(defaultWeight, "Querier", []IndexPageLink{
+		{Desc: "Readcache lookups (query explain)", Path: prefix},
+	})
+	a.RegisterRoute(prefix, handler, false, true, "GET")
+}
+
 // RegisterQueryable registers the default routes associated with the querier
 // module.
 func (a *API) RegisterQueryable(distributor Distributor) {

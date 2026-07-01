@@ -361,8 +361,6 @@ func (d *Distributor) getReplicationSetsForMetricName(r *ring.PartitionInstanceR
 // window) returns errReadcacheRoutingUnavailable. There is no ingester
 // fallback for nautilus-only tenants.
 func (d *Distributor) getReadcacheReplicationSetsForQuery(userID string, from, to model.Time, matchers []*labels.Matcher) ([]ring.ReplicationSet, map[string]int32, error) {
-	now := d.now()
-
 	log := d.GetNautilusLog()
 	if log == nil {
 		return nil, nil, newReadcacheRoutingUnavailableError("no live assignment log snapshot is available")
@@ -372,37 +370,7 @@ func (d *Distributor) getReadcacheReplicationSetsForQuery(userID string, from, t
 		return nil, nil, newReadcacheRoutingUnavailableError("no live readcache assignment log snapshot is available")
 	}
 
-	// Pad the sample-time range into the wall-clock window during
-	// which those samples could have been written. A sample stamped s
-	// is accepted at wallclock w in [s-creationGrace, s+oooWindow], so
-	// over s in [from,to] the union is [from-creationGrace,
-	// to+oooWindow]. Clamp the lower bound to now-queryIngestersWithin:
-	// readcache holds nothing older, and the querier already clamps the
-	// request range to the same horizon.
-	// The log lookups use half-open intersection (lease matches iff
-	// From < w1), while w1 is meant to be the last wallclock instant a
-	// relevant write could land, inclusive. Add one millisecond (model.
-	// Time resolution) so a lease starting exactly at that instant is
-	// matched.
-	w0 := from.Time().Add(-d.limits.CreationGracePeriod(userID))
-	w1 := to.Time().Add(d.limits.OutOfOrderTimeWindow(userID)).Add(time.Millisecond)
-	if qiw := d.limits.QueryIngestersWithin(userID); qiw > 0 {
-		if floor := now.Add(-qiw); w0.Before(floor) {
-			w0 = floor
-		}
-	}
-	// Clamp the upper bound to the present: samples written after this
-	// instant cannot be visible to this query, so ownership beyond the
-	// present is irrelevant to routing. Without the clamp, a large OOO
-	// window pushes w1 far into the future and picks up the successor
-	// leases the rebalancer pre-issues LeaseLookahead before each
-	// rotation; when such a lease moves a range to a partition whose
-	// readcache assignment isn't live yet, OwnersDuring comes up empty
-	// and the query hard-fails for the length of the lookahead, every
-	// round.
-	if ceil := now.Add(time.Millisecond); w1.After(ceil) {
-		w1 = ceil
-	}
+	w0, w1 := d.readcacheQueryWindow(userID, from, to)
 
 	var partitionIDs []int32
 	metricName, named := extractExactMetricName(matchers)
@@ -447,6 +415,40 @@ func (d *Distributor) getReadcacheReplicationSetsForQuery(userID string, from, t
 	}
 
 	return sets, partitionByInstance, nil
+}
+
+// readcacheQueryWindow pads a query's sample-time range [from,to] into
+// the wall-clock window [w0,w1] during which those samples could have
+// been written and could therefore still be resident in a readcache.
+// It is shared by getReadcacheReplicationSetsForQuery (production
+// routing) and ExplainReadcacheQuery (the read-path debug plan) so both
+// resolve an identical window.
+//
+// A sample stamped s is accepted at wallclock w in
+// [s-creationGrace, s+oooWindow], so over s in [from,to] the union is
+// [from-creationGrace, to+oooWindow]. The lower bound is clamped to
+// now-queryIngestersWithin (readcache holds nothing older, and the
+// querier already clamps the request range to the same horizon). The
+// half-open log lookups match a lease iff From < w1, so one millisecond
+// (model.Time resolution) is added to w1 so a lease starting exactly at
+// the last relevant instant is still matched. Finally w1 is clamped to
+// the present: samples written after now can't be visible, and without
+// the clamp a large OOO window would pick up the successor leases the
+// rebalancer pre-issues before each rotation and spuriously fail
+// routing.
+func (d *Distributor) readcacheQueryWindow(userID string, from, to model.Time) (w0, w1 time.Time) {
+	now := d.now()
+	w0 = from.Time().Add(-d.limits.CreationGracePeriod(userID))
+	w1 = to.Time().Add(d.limits.OutOfOrderTimeWindow(userID)).Add(time.Millisecond)
+	if qiw := d.limits.QueryIngestersWithin(userID); qiw > 0 {
+		if floor := now.Add(-qiw); w0.Before(floor) {
+			w0 = floor
+		}
+	}
+	if ceil := now.Add(time.Millisecond); w1.After(ceil) {
+		w1 = ceil
+	}
+	return w0, w1
 }
 
 // readcacheRouteLogEvery is the sampling rate of the readcache
