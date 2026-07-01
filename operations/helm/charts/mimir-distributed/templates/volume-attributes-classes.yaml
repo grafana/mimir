@@ -1,0 +1,62 @@
+{{- if semverCompare ">= 1.31-0" (include "mimir.kubeVersion" .) }}
+{{- $ctx := . }}
+{{- $seenNames := dict }}
+{{- range $key, $spec := .Values.volumeAttributesClasses }}
+{{- $name := include "mimir.volumeAttributesClassResourceName" (dict "ctx" $ctx "key" $key "spec" $spec) }}
+{{- if hasKey $seenNames $name }}
+{{- fail (printf "VolumeAttributesClass name collision: %q is defined more than once" $name) }}
+{{- end }}
+{{- $_ := set $seenNames $name true }}
+---
+apiVersion: {{ include "mimir.volumeAttributesClass.apiVersion" $ctx }}
+kind: VolumeAttributesClass
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "mimir.labels" (dict "ctx" $ctx "component" "volume-attributes-class") | nindent 4 }}
+  {{- with $spec.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+driverName: {{ required (printf "volumeAttributesClasses.%s.driverName is required" $key) $spec.driverName }}
+{{- with $spec.parameters }}
+parameters:
+  {{- toYaml . | nindent 2 }}
+{{- end }}
+{{- end }}
+{{- $inlineComponents := list
+  (dict "component" "alertmanager" "enabled" (and .Values.alertmanager.enabled .Values.alertmanager.statefulSet.enabled .Values.alertmanager.persistentVolume.enabled) "pv" .Values.alertmanager.persistentVolume)
+  (dict "component" "ingester" "enabled" (and .Values.ingester.enabled .Values.ingester.statefulSet.enabled .Values.ingester.persistentVolume.enabled) "pv" .Values.ingester.persistentVolume)
+  (dict "component" "store-gateway" "enabled" (and .Values.store_gateway.enabled .Values.store_gateway.persistentVolume.enabled) "pv" .Values.store_gateway.persistentVolume)
+  (dict "component" "compactor" "enabled" (and .Values.compactor.enabled .Values.compactor.persistentVolume.enabled) "pv" .Values.compactor.persistentVolume)
+  (dict "component" "kafka" "enabled" (and .Values.kafka.enabled .Values.kafka.persistence.enabled) "pv" .Values.kafka.persistence)
+}}
+{{- range $inline := $inlineComponents }}
+{{- if $inline.enabled }}
+{{- $vac := $inline.pv.volumeAttributesClass | default dict }}
+{{- if $vac.create }}
+{{- $name := include "mimir.volumeAttributesClassResourceName" (dict "ctx" $ctx "component" $inline.component "spec" $vac) }}
+{{- if hasKey $seenNames $name }}
+{{- fail (printf "VolumeAttributesClass name collision: %q is defined more than once" $name) }}
+{{- end }}
+{{- $_ := set $seenNames $name true }}
+---
+apiVersion: {{ include "mimir.volumeAttributesClass.apiVersion" $ctx }}
+kind: VolumeAttributesClass
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "mimir.labels" (dict "ctx" $ctx "component" $inline.component) | nindent 4 }}
+  {{- with $vac.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+driverName: {{ required (printf "%s volumeAttributesClass.driverName is required when create is true" $inline.component) $vac.driverName }}
+{{- with $vac.parameters }}
+parameters:
+  {{- toYaml . | nindent 2 }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- end }}
