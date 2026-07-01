@@ -323,7 +323,7 @@ func (r *DefaultMultiTenantManager) getOrCreateNotifier(userID string) (*notifie
 	n.run()
 
 	userSpecificCfg := r.limits.RulerAlertmanagerClientConfig(userID)
-	notifierCfg, err := buildNotifierConfig(userSpecificCfg.AlertmanagerURL, userSpecificCfg.NotifierConfig, r.dnsResolver, r.cfg.NotificationTimeout, r.cfg.AlertmanagerRefreshInterval, r.refreshMetrics)
+	notifierCfg, err := buildNotifierConfig(userSpecificCfg.AlertmanagerURL, userSpecificCfg.NotifierConfig, r.limits.RulerExternalLabels(userID), r.limits.RulerAlertRelabelConfigs(userID), r.limits.NameValidationScheme(userID), r.dnsResolver, r.cfg.NotificationTimeout, r.cfg.AlertmanagerRefreshInterval, r.refreshMetrics)
 	if err != nil {
 		return nil, err
 	}

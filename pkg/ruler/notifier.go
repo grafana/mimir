@@ -20,6 +20,8 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/notifier"
 
 	mimirnotifier "github.com/grafana/mimir/pkg/ruler/notifier"
@@ -101,9 +103,16 @@ func (rn *rulerNotifier) stop() {
 
 // Builds a Prometheus config.Config from a ruler.Config with just the required
 // options to configure notifications to Alertmanager.
-func buildNotifierConfig(amURL string, notifierCfg mimirnotifier.Config, resolver AddressProvider, notificationTimeout, refreshInterval time.Duration, rmi discovery.RefreshMetricsManager) (*config.Config, error) {
+//
+// externalLabels are attached to every alert sent to Alertmanager (matching Prometheus,
+// they are only added when the alert does not already define a label with the same name),
+// and alertRelabelConfigs are applied to alerts before they are sent. nameValidationScheme
+// is used to validate relabeled label names, consistent with the tenant's configuration.
+func buildNotifierConfig(amURL string, notifierCfg mimirnotifier.Config, externalLabels labels.Labels, alertRelabelConfigs []*relabel.Config, nameValidationScheme model.ValidationScheme, resolver AddressProvider, notificationTimeout, refreshInterval time.Duration, rmi discovery.RefreshMetricsManager) (*config.Config, error) {
 	if amURL == "" {
-		// no AM URLs were provided, so we can just return a default config without errors
+		// no AM URLs were provided, so we can just return a default config without errors.
+		// External labels and alert relabel configs only affect alerts sent to Alertmanager,
+		// so there is nothing to configure when there is no Alertmanager to notify.
 		return &config.Config{}, nil
 	}
 
@@ -131,8 +140,13 @@ func buildNotifierConfig(amURL string, notifierCfg mimirnotifier.Config, resolve
 	}
 
 	promConfig := &config.Config{
+		GlobalConfig: config.GlobalConfig{
+			ExternalLabels:             externalLabels,
+			MetricNameValidationScheme: nameValidationScheme,
+		},
 		AlertingConfig: config.AlertingConfig{
 			AlertmanagerConfigs: amConfigs,
+			AlertRelabelConfigs: alertRelabelConfigs,
 		},
 	}
 
