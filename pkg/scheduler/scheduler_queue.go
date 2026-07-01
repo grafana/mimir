@@ -37,6 +37,7 @@ func newSchedulerQueue(
 	limits Limits,
 	logger log.Logger,
 	queueLength *prometheus.GaugeVec,
+	maxQueueLength *queue.MaxQueueLengthGauge,
 	discardedRequests *prometheus.CounterVec,
 	enqueueDuration prometheus.Histogram,
 	querierInflightRequestsMetric *prometheus.SummaryVec,
@@ -46,6 +47,7 @@ func newSchedulerQueue(
 		cfg.MaxOutstandingPerTenant,
 		cfg.QuerierForgetDelay,
 		queueLength,
+		maxQueueLength,
 		discardedRequests,
 		enqueueDuration,
 	)
