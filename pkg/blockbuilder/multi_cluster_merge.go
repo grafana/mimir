@@ -146,10 +146,8 @@ func (c recordChannelConsumer) Consume(ctx context.Context, records iter.Seq[*kg
 	return nil
 }
 
-// recordBatcher accumulates the merged record stream and forwards it to the builder via
-// consumer in batches of up to maxBatch. Each ingest.RecordConsumer Consume call spins up an
-// unmarshal goroutine and buffered pipeline, so batching both avoids that per-record cost and
-// matches the per-fetch Consume cadence of the non-merge path.
+// recordBatcher accumulates the merged record stream and forwards it to a
+// consumer in batches of up to maxBatch.
 type recordBatcher struct {
 	consumer ingest.RecordConsumer
 	maxBatch int
