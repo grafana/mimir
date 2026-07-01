@@ -419,9 +419,9 @@ func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 					maxOutStandingPerTenant,
 					consumerForgetDelay,
 					promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
+					nil,
 					promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 					promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
-					nil,
 				)
 				require.NoError(t, err)
 

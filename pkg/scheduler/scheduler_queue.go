@@ -47,9 +47,9 @@ func newSchedulerQueue(
 		cfg.MaxOutstandingPerTenant,
 		cfg.QuerierForgetDelay,
 		queueLength,
+		maxQueueLength,
 		discardedRequests,
 		enqueueDuration,
-		maxQueueLength,
 	)
 	if err != nil {
 		return nil, err

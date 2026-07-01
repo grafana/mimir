@@ -162,9 +162,9 @@ func New(
 	maxOutstandingPerTenant int,
 	forgetDelay time.Duration,
 	queueLength *prometheus.GaugeVec,
+	maxQueueLength *MaxQueueLengthGauge,
 	discardedRequests *prometheus.CounterVec,
 	enqueueDuration prometheus.Histogram,
-	maxQueueLength *MaxQueueLengthGauge,
 ) (*Queue, error) {
 	q := &Queue{
 		// settings
