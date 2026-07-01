@@ -511,6 +511,12 @@ func initMemberlistKV(ctx context.Context, joinAddrs []string, clusterLabel stri
 		return nil, nil, errors.Wrap(err, "failed to create memberlist client")
 	}
 
+	// Wrap the KV client with the "collectors/" prefix to match the key used by ingesters.
+	// Ingesters register the partition ring with KV store using RegisterFlagsWithPrefix
+	// which adds "collectors/" to all keys. Without this prefix, mimirtool operations
+	// target the wrong key (e.g. "ingester-partitions" instead of "collectors/ingester-partitions").
+	kvClient = kv.PrefixClient(kvClient, "collectors/")
+
 	return kvClient, cleanup, nil
 }
 
