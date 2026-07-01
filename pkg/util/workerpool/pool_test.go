@@ -11,6 +11,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
@@ -212,6 +213,29 @@ func taskDurationSampleCount(t *testing.T, g prometheus.Gatherer, dimension stri
 		}
 	}
 	return 0
+}
+
+func TestPool_RemoveTenant(t *testing.T) {
+	reg := prometheus.NewPedanticRegistry()
+	p, err := New(Config{Size: 1}, "test", reg, log.NewNopLogger())
+	require.NoError(t, err)
+
+	// Populate the per-tenant series for two tenants directly, so the assertion
+	// is deterministic (going through Submit would race the workers draining the
+	// queue and decrementing queue_length).
+	p.queueLength.WithLabelValues("tenant-a").Set(2)
+	p.discarded.WithLabelValues("tenant-a").Inc()
+	p.queueLength.WithLabelValues("tenant-b").Set(1)
+	p.discarded.WithLabelValues("tenant-b").Inc()
+
+	require.Equal(t, 2, testutil.CollectAndCount(p.queueLength))
+	require.Equal(t, 2, testutil.CollectAndCount(p.discarded))
+
+	p.RemoveTenant("tenant-a")
+
+	// Only tenant-b's series remain.
+	require.Equal(t, 1, testutil.CollectAndCount(p.queueLength))
+	require.Equal(t, 1, testutil.CollectAndCount(p.discarded))
 }
 
 func TestConfig_Validate(t *testing.T) {

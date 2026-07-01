@@ -666,6 +666,7 @@ func (i *Ingester) closeAndDeleteUserTSDBIfIdle(userID string) tsdbCloseCheckRes
 	i.deleteUserMetadata(userID)
 	i.metrics.deletePerUserMetrics(userID)
 	i.metrics.deletePerUserCustomTrackerMetrics(userID, userDB.activeSeries.CurrentMatcherNames())
+	i.computeWorkerPool.RemoveTenant(userID)
 
 	// And delete local data.
 	if err := os.RemoveAll(dir); err != nil {

@@ -56,6 +56,8 @@ type Pool struct {
 	name    string
 	logger  log.Logger
 
+	queueLength  *prometheus.GaugeVec
+	discarded    *prometheus.CounterVec
 	taskDuration *prometheus.HistogramVec
 
 	workersWg sync.WaitGroup
@@ -132,6 +134,8 @@ func New(cfg Config, name string, reg prometheus.Registerer, logger log.Logger) 
 		workers:      size,
 		name:         name,
 		logger:       logger,
+		queueLength:  queueLength,
+		discarded:    discarded,
 		taskDuration: taskDuration,
 	}
 	p.Service = services.NewBasicService(p.starting, p.running, p.stopping)
@@ -261,4 +265,16 @@ func (p *Pool) Submit(dimension string, tenantID string, fn func()) error {
 		return err
 	}
 	return nil
+}
+
+// RemoveTenant deletes the per-tenant metric series for tenantID.
+// Call it when a tenant is removed from the caller (e.g. an idle tenant closed in the ingester)
+// so the pool's user-labeled series do not accumulate.
+//
+// user is the only variable label on these metrics (pool is a const label), so DeleteLabelValues
+// with just tenantID is sufficient. If a removed tenant submits work again, the series is simply
+// recreated and cleaned up on the next removal.
+func (p *Pool) RemoveTenant(tenantID string) {
+	p.queueLength.DeleteLabelValues(tenantID)
+	p.discarded.DeleteLabelValues(tenantID)
 }
