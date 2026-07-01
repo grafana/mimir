@@ -257,23 +257,24 @@ func parseStruct(name string, st *ast.StructType, imports map[string]string) (*S
 // multi-name declarations (e.g. "a, b int") yield one Field per name
 func parseField(field *ast.Field, imports map[string]string) ([]Field, error) {
 	var tag *NodeTag
+	embedded := len(field.Names) == 0
 	if field.Tag != nil {
 		raw, err := strconv.Unquote(field.Tag.Value)
 		if err != nil {
 			return nil, fmt.Errorf("unquoting tag %q: %w", field.Tag.Value, err)
 		}
-		tag, err = parseNodeTag(reflect.StructTag(raw))
+		tag, err = parseNodeTag(reflect.StructTag(raw), embedded)
 		if err != nil {
-			if len(field.Names) > 0 {
-				return nil, fmt.Errorf("field %q tag: %w", field.Names[0].Name, err)
+			if embedded {
+				return nil, fmt.Errorf("embedded field tag: %w", err)
 			}
-			return nil, fmt.Errorf("embedded field tag: %w", err)
+			return nil, fmt.Errorf("field %q tag: %w", field.Names[0].Name, err)
 		}
 	}
 
 	fieldType := resolveFieldType(field.Type, imports)
 
-	if len(field.Names) == 0 {
+	if embedded {
 		return []Field{{Tag: tag, Embedded: true, Type: fieldType}}, nil
 	}
 	result := make([]Field, len(field.Names))
@@ -334,7 +335,7 @@ func resolveFieldType(expr ast.Expr, imports map[string]string) *FieldType {
 }
 
 // parseNodeTag parses the node:"..." struct tag value.
-func parseNodeTag(tag reflect.StructTag) (*NodeTag, error) {
+func parseNodeTag(tag reflect.StructTag, embedded bool) (*NodeTag, error) {
 	val, ok := tag.Lookup("node")
 	if !ok {
 		return nil, nil
@@ -346,6 +347,9 @@ func parseNodeTag(tag reflect.StructTag) (*NodeTag, error) {
 	case parts[0] == "children":
 		return parseChildrenTag(parts[1:])
 	case strings.HasPrefix(parts[0], "hints="):
+		if !embedded {
+			return nil, fmt.Errorf("hints tag is only supported on embedded fields")
+		}
 		return parseHintsTag(parts[0], parts[1:])
 	default:
 		return nil, fmt.Errorf("unknown node tag kind %q", parts[0])
