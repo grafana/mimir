@@ -52,7 +52,6 @@
 // Automated downscale of ingesters and store-gateways
 (import 'ingester-automated-downscale.libsonnet') +
 (import 'ingester-automated-downscale-v2.libsonnet') +
-(import 'store-gateway-autoscaling.libsonnet') +
 
 // Deletion protection for specific Mimir components.
 (import 'deletion-protection.libsonnet') +
@@ -71,6 +70,11 @@
 (import 'compartments-query-frontend.libsonnet') +
 (import 'compartments-compactor.libsonnet') +
 (import 'compartments-compactor-scheduler.libsonnet') +
+(import 'compartments-store-gateway.libsonnet') +
+
+// Store-gateway autoscaling. Keep it after multi-zone-store-gateway (it patches those StatefulSets) and after
+// compartments-store-gateway so it can layer the same autoscaling onto the per-compartment StatefulSet maps.
+(import 'store-gateway-autoscaling.libsonnet') +
 
 // Automatic cleanup of unused PVCs after scaling down. Keep it after compartments so it can patch the
 // per-compartment StatefulSet maps.
