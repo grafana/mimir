@@ -4591,6 +4591,12 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -query-frontend.query-sharding-max-regexp-size-bytes
 [query_sharding_max_regexp_size_bytes: <int> | default = 4096]
 
+# (experimental) The max number of sharded queries that can be run for a
+# cardinality (active series and active native histogram metrics) request. 0 to
+# fall back to -query-frontend.query-sharding-max-sharded-queries.
+# CLI flag: -query-frontend.cardinality-sharding-max-sharded-queries
+[cardinality_sharding_max_sharded_queries: <int> | default = 0]
+
 # (advanced) Maximum lookback beyond which queries are not sent to ingester. 0
 # means all queries are sent to ingester.
 # CLI flag: -querier.query-ingesters-within
