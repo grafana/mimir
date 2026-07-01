@@ -22,7 +22,7 @@
 * [FEATURE] MQE: Add `cortex_querier_inflight_query_max_age_seconds` metric reporting the age of the oldest in-flight query memory consumption tracker. #15300
 * [FEATURE] MQE: Add experimental support for splitting and caching `present_over_time` over range vectors in instant queries. #15386
 * [FEATURE] Query-scheduler: Add experimental `cortex_query_scheduler_inflight_max_age_seconds` metric reporting how long the oldest inflight request has been waiting since it was enqueued. Reports 0 when no requests are inflight. Enabled by default; can be disabled with `-query-scheduler.inflight-max-age-metric-enabled=false`. #15419
-* [FEATURE] Query-scheduler: Add experimental `cortex_query_scheduler_queue_length_peak` metric reporting the per-tenant peak queue length observed since the last scrape. Enable with `-query-scheduler.max-queue-length-metric-enabled=true`. #TODO
+* [FEATURE] Query-scheduler: Add experimental `cortex_query_scheduler_queue_length_peak` metric reporting the per-tenant peak queue length observed since the last scrape. Enable with `-query-scheduler.max-queue-length-metric-enabled=true`. #15906
 * [FEATURE] MQE: Add support for experimental PromQL functions `min_of` and `max_of`. #15597
 * [FEATURE] MQE: Add support for the experimental PromQL function `histogram_quantiles`, which computes multiple quantiles from classic or native histograms in a single call. #15710
 * [FEATURE] MQE: Add support for the native histogram trim operators `</` (trim upper) and `>/` (trim lower), including query sharding support. #15708 #15711
