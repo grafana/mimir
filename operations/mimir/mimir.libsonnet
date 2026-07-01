@@ -71,6 +71,7 @@
 (import 'compartments-query-frontend.libsonnet') +
 (import 'compartments-compactor.libsonnet') +
 (import 'compartments-compactor-scheduler.libsonnet') +
+(import 'compartments-store-gateway.libsonnet') +
 
 // Automatic cleanup of unused PVCs after scaling down. Keep it after compartments so it can patch the
 // per-compartment StatefulSet maps.

@@ -155,6 +155,11 @@
   store_gateway_zone_a_statefulset: overrideSuperIfExists('store_gateway_zone_a_statefulset', if !$._config.memberlist_ring_enabled then {} else gossipLabel),
   store_gateway_zone_b_statefulset: overrideSuperIfExists('store_gateway_zone_b_statefulset', if !$._config.memberlist_ring_enabled then {} else gossipLabel),
   store_gateway_zone_c_statefulset: overrideSuperIfExists('store_gateway_zone_c_statefulset', if !$._config.memberlist_ring_enabled then {} else gossipLabel),
+  store_gateway_zone_a_statefulsets+: overrideSuperCompartmentsIfExists('store_gateway_zone_a_statefulsets', if !$._config.memberlist_ring_enabled then {} else gossipLabel),
+  store_gateway_zone_b_statefulsets+: overrideSuperCompartmentsIfExists('store_gateway_zone_b_statefulsets', if !$._config.memberlist_ring_enabled then {} else gossipLabel),
+  store_gateway_zone_c_statefulsets+: overrideSuperCompartmentsIfExists('store_gateway_zone_c_statefulsets', if !$._config.memberlist_ring_enabled then {} else gossipLabel),
+  store_gateway_zone_a_backup_statefulsets+: overrideSuperCompartmentsIfExists('store_gateway_zone_a_backup_statefulsets', if !$._config.memberlist_ring_enabled then {} else gossipLabel),
+  store_gateway_zone_b_backup_statefulsets+: overrideSuperCompartmentsIfExists('store_gateway_zone_b_backup_statefulsets', if !$._config.memberlist_ring_enabled then {} else gossipLabel),
 
   // Headless service (= no assigned IP, DNS returns all targets instead) pointing to gossip network members.
   gossip_ring_service:

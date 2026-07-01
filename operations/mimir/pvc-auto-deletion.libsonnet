@@ -29,6 +29,11 @@ local statefulset = k.apps.v1.statefulSet;
   store_gateway_zone_c_statefulset: overrideSuperIfExists('store_gateway_zone_c_statefulset', store_gateway_pvc_auto_deletion),
   store_gateway_zone_a_backup_statefulset: overrideSuperIfExists('store_gateway_zone_a_backup_statefulset', store_gateway_pvc_auto_deletion),
   store_gateway_zone_b_backup_statefulset: overrideSuperIfExists('store_gateway_zone_b_backup_statefulset', store_gateway_pvc_auto_deletion),
+  store_gateway_zone_a_statefulsets+: overrideSuperCompartmentsIfExists('store_gateway_zone_a_statefulsets', store_gateway_pvc_auto_deletion),
+  store_gateway_zone_b_statefulsets+: overrideSuperCompartmentsIfExists('store_gateway_zone_b_statefulsets', store_gateway_pvc_auto_deletion),
+  store_gateway_zone_c_statefulsets+: overrideSuperCompartmentsIfExists('store_gateway_zone_c_statefulsets', store_gateway_pvc_auto_deletion),
+  store_gateway_zone_a_backup_statefulsets+: overrideSuperCompartmentsIfExists('store_gateway_zone_a_backup_statefulsets', store_gateway_pvc_auto_deletion),
+  store_gateway_zone_b_backup_statefulsets+: overrideSuperCompartmentsIfExists('store_gateway_zone_b_backup_statefulsets', store_gateway_pvc_auto_deletion),
 
   compactor_statefulset: overrideSuperIfExists('compactor_statefulset', compactor_pvc_auto_deletion),
   compactor_statefulsets+: overrideSuperCompartmentsIfExists('compactor_statefulsets', compactor_pvc_auto_deletion),
