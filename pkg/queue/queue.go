@@ -175,9 +175,9 @@ func New(
 		// metrics for reporting
 		connectedConsumerWorkers: atomic.NewInt64(0),
 		queueLength:              queueLength,
+		maxQueueLength:           maxQueueLength,
 		discardedRequests:        discardedRequests,
 		enqueueDuration:          enqueueDuration,
-		maxQueueLength:           maxQueueLength,
 
 		// channels must not be buffered so that we can detect when dispatcherLoop() has finished.
 		stopRequested: make(chan struct{}),
