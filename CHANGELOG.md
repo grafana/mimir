@@ -2,6 +2,8 @@
 
 ## main / unreleased
 
+* [FEATURE] HTTPRoute: Add support k8s Gateway API HTTPRoute #14439
+
 ### Grafana Mimir
 
 * [CHANGE] Query-frontend: `-query-frontend.log-query-request-headers` now rejects headers that carry credentials or session material (e.g. `Authorization`, `Cookie`, `X-Api-Key`) at startup, and any such headers that reach the slow-query/query-stats log paths are redacted as defense in depth. Operators that previously allow-listed such headers must remove them from the flag. #15487
