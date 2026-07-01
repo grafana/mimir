@@ -404,6 +404,7 @@
   "ingester.early-head-compaction-owned-series-threshold": 0,
   "ingester.early-head-compaction-min-estimated-series-reduction-percentage": 15,
   "ingester.native-histograms-ingestion-enabled": true,
+  "ingester.float-chunk-encoding": "xor",
   "ingester.active-series-custom-trackers": {},
   "validation.max-active-series-additional-custom-trackers": 0,
   "ingester.out-of-order-time-window": 0,
