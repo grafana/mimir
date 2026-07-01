@@ -178,6 +178,7 @@ func (b *recordBatcher) flush(ctx context.Context) error {
 	if err := b.consumer.Consume(ctx, slices.Values(b.batch)); err != nil {
 		return err
 	}
+	clear(b.batch)
 	b.batch = b.batch[:0]
 	return nil
 }
