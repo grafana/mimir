@@ -19,7 +19,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/discovery"
-	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/notifier"
 	promRules "github.com/prometheus/prometheus/rules"
@@ -215,7 +214,9 @@ func (r *DefaultMultiTenantManager) syncRulesToManager(user string, groups rules
 	level.Debug(r.logger).Log("msg", "updating rules", "user", user)
 	r.configUpdatesTotal.WithLabelValues(user).Inc()
 
-	err = manager.Update(r.cfg.EvaluationInterval, files, labels.EmptyLabels(), r.cfg.ExternalURL.String(), nil)
+	// External labels are made available to alerting rule templates (for example {{ $externalLabels.cluster }}).
+	// They are attached to alerts sent to Alertmanager separately, via the notifier config (see getOrCreateNotifier).
+	err = manager.Update(r.cfg.EvaluationInterval, files, r.limits.RulerExternalLabels(user), r.cfg.ExternalURL.String(), nil)
 	if err != nil {
 		r.lastReloadSuccessful.WithLabelValues(user).Set(0)
 		level.Error(r.logger).Log("msg", "unable to update rule manager", "user", user, "err", err)

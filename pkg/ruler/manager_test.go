@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -383,6 +384,44 @@ func TestDefaultMultiTenantManager_NotifierConfiguration(t *testing.T) {
 	})
 }
 
+func TestDefaultMultiTenantManager_PerTenantExternalLabelsPassedToRuleManager(t *testing.T) {
+	ctx := context.Background()
+	logger := testutil.NewTestingLogger(t)
+
+	const user1 = "user-1"
+	const user2 = "user-2"
+	user1Group := createRuleGroup("group-1", user1, createRecordingRule("count:metric_1", "count(metric_1)"))
+	user2Group := createRuleGroup("group-1", user2, createRecordingRule("count:metric_1", "count(metric_1)"))
+
+	// Only user-1 has external labels configured.
+	overrides := validation.MockOverrides(func(defaults *validation.Limits, tenantLimits map[string]*validation.Limits) {
+		*defaults = *validation.MockDefaultLimits()
+		tenantLimits[user1] = validation.MockDefaultLimits()
+		tenantLimits[user1].RulerAlertmanagerClientConfig = rulernotifier.AlertmanagerClientConfig{
+			ExternalLabels: map[string]string{"cluster": "eu-west"},
+		}
+		tenantLimits[user2] = validation.MockDefaultLimits()
+	})
+
+	m, err := NewDefaultMultiTenantManager(Config{RulePath: t.TempDir()}, managerMockFactory, nil, logger, nil, overrides, afero.NewMemMapFs())
+	require.NoError(t, err)
+	defer m.Stop()
+	m.SyncFullRuleGroups(ctx, map[string]rulespb.RuleGroupList{
+		user1: {user1Group},
+		user2: {user2Group},
+	})
+	m.Start()
+
+	// The rule manager receives the tenant's external labels, which makes them available to
+	// alerting rule templates.
+	user1Mock := assertManagerMockRunningForUser(t, m, user1)
+	require.Equal(t, labels.FromStrings("cluster", "eu-west"), user1Mock.getUpdateExternalLabels())
+
+	// A tenant without external labels configured gets an empty set.
+	user2Mock := assertManagerMockRunningForUser(t, m, user2)
+	require.Equal(t, labels.EmptyLabels(), user2Mock.getUpdateExternalLabels())
+}
+
 func TestDefaultMultiTenantManager_WaitsToDrainPendingNotificationsOnShutdown(t *testing.T) {
 	releaseReceiver := make(chan struct{})
 	receiverReceivedRequest := make(chan struct{}, 2)
@@ -590,6 +629,9 @@ type managerMock struct {
 	done     chan struct{}
 	notifier *notifier.Manager
 	onStop   func()
+
+	mtx                  sync.Mutex
+	updateExternalLabels labels.Labels
 }
 
 func (m *managerMock) Run() {
@@ -606,8 +648,17 @@ func (m *managerMock) Stop() {
 	close(m.done)
 }
 
-func (m *managerMock) Update(time.Duration, []string, labels.Labels, string, promRules.GroupEvalIterationFunc) error {
+func (m *managerMock) Update(_ time.Duration, _ []string, externalLabels labels.Labels, _ string, _ promRules.GroupEvalIterationFunc) error {
+	m.mtx.Lock()
+	defer m.mtx.Unlock()
+	m.updateExternalLabels = externalLabels
 	return nil
+}
+
+func (m *managerMock) getUpdateExternalLabels() labels.Labels {
+	m.mtx.Lock()
+	defer m.mtx.Unlock()
+	return m.updateExternalLabels
 }
 
 func (m *managerMock) RuleGroups() []*promRules.Group {
