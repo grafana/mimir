@@ -181,6 +181,21 @@ func TestEquivalentMethod_Unsupported(t *testing.T) {
 				}`,
 			expectedErr: "hints tag contains an empty field name",
 		},
+		{
+			name: "nested embedded field",
+			source: `package core
+				type Inner struct {
+					Foo int
+				}
+				type Details struct {
+					Inner
+				}
+				//node:generate
+				type Node struct {
+					*Details
+				}`,
+			expectedErr: "nested embedded field",
+		},
 	}
 
 	for _, tc := range cases {

@@ -191,6 +191,9 @@ func (g *equalsGenerator) collectEmbedFields(s *Struct, f Field, reg *TypeRegist
 
 	fields := make([]Field, 0, len(embedStruct.Fields))
 	for _, ef := range embedStruct.Fields {
+		if ef.Embedded {
+			return nil, fmt.Errorf("%s: embedded type %q has a nested embedded field, which is not supported", s.Name, embedStruct.Name)
+		}
 		if ef.Type == nil {
 			return nil, fmt.Errorf("%s.%s: unsupported field type", s.Name, ef.Name)
 		}
