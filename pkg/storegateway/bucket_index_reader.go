@@ -419,12 +419,12 @@ type labelPostingOffset struct {
 	off index.Range
 }
 
-// fetchPostingsWithKnownOffsets fills postings using the caller-provided offset for each key.
+// FetchPostingsIndexV2 fills postings using the caller-provided offset for each key.
 // It returns one postings list per key, in the same order as keysOffsets.
 // If a key's offset is the zero-value index.Range, the index header is consulted to resolve it.
 // If the block has no posting list for a key, its entry is an empty postings list (index.EmptyPostings).
 // If a key's postings were never fetched, its entry is an ErrPostings.
-func (r *bucketIndexReader) fetchPostingsWithKnownOffsets(ctx context.Context, keysOffsets []labelPostingOffset, stats *safeQueryStats) ([]index.Postings, error) {
+func (r *bucketIndexReader) FetchPostingsIndexV2(ctx context.Context, keysOffsets []labelPostingOffset, stats *safeQueryStats) ([]index.Postings, error) {
 	ps, err := r.fetchPostings(ctx, keysOffsets, stats)
 	if err != nil {
 		return nil, err
@@ -448,14 +448,14 @@ func (r *bucketIndexReader) padPostings(ctx context.Context, keysOffsets []label
 	return ps, nil
 }
 
-// fetchPostings is the version-unaware private implementation of fetchPostingsWithKnownOffsets.
+// fetchPostings is the version-unaware private implementation of FetchPostingsIndexV2.
 // callers of this method may need to add padding to the results.
 // If postings for given key is not fetched, entry at given index will be nil.
-func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Label, keysOffsets []labelPostingOffset, stats *safeQueryStats) (output []index.Postings, returnErr error) {
+func (r *bucketIndexReader) fetchPostings(ctx context.Context, keysOffsets []labelPostingOffset, stats *safeQueryStats) (output []index.Postings, returnErr error) {
 	ctx, span := tracer.Start(ctx, "fetchPostings()")
 	defer func() {
 		span.SetAttributes(
-			attribute.Int("keys", len(keys)),
+			attribute.Int("keys", len(keysOffsets)),
 			attribute.Stringer("block_id", r.block.meta.ULID),
 		)
 		if returnErr != nil {

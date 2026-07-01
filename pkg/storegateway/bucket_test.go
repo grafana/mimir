@@ -1103,7 +1103,7 @@ func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 	})
 }
 
-func TestBucketIndexReader_fetchPostingsWithKnownOffsets(t *testing.T) {
+func TestBucketIndexReader_FetchPostingsIndexV2(t *testing.T) {
 	const (
 		series    = 50000
 		labelName = "n"
@@ -1149,7 +1149,7 @@ func TestBucketIndexReader_fetchPostingsWithKnownOffsets(t *testing.T) {
 		kos := keysOffsets(labelName, offsets)
 
 		// With known offsets supplied,
-		// fetchPostingsWithKnownOffsets must use the supplied offsets and never resolve an offset with PostingsOffset.
+		// FetchPostingsIndexV2 must use the supplied offsets and never resolve an offset with PostingsOffset.
 		iir := &interceptedIndexReader{
 			Reader: b.indexHeaderReader,
 			onPostingsOffsetCalled: func(name, value string) error {
@@ -1157,7 +1157,7 @@ func TestBucketIndexReader_fetchPostingsWithKnownOffsets(t *testing.T) {
 			},
 		}
 		b.indexHeaderReader = iir
-		ps, err := b.indexReader(selectAllStrategy{}).fetchPostingsWithKnownOffsets(ctx, kos, newSafeQueryStats())
+		ps, err := b.indexReader(selectAllStrategy{}).FetchPostingsIndexV2(ctx, kos, newSafeQueryStats())
 		require.NoError(t, err)
 		require.Len(t, ps, len(kos))
 
@@ -1175,7 +1175,7 @@ func TestBucketIndexReader_fetchPostingsWithKnownOffsets(t *testing.T) {
 		offsets := offsetsForLabel(b, labelName, prefix)
 		kos := keysOffsets(labelName, offsets)
 
-		ps, err := b.indexReader(selectAllStrategy{}).fetchPostingsWithKnownOffsets(ctx, kos, newSafeQueryStats())
+		ps, err := b.indexReader(selectAllStrategy{}).FetchPostingsIndexV2(ctx, kos, newSafeQueryStats())
 		require.NoError(t, err)
 		require.Len(t, ps, len(kos))
 		for i, ko := range kos {
@@ -1186,7 +1186,7 @@ func TestBucketIndexReader_fetchPostingsWithKnownOffsets(t *testing.T) {
 
 	t.Run("no keys returns no postings", func(t *testing.T) {
 		b := newTestBucketBlock()
-		ps, err := b.indexReader(selectAllStrategy{}).fetchPostingsWithKnownOffsets(ctx, nil, newSafeQueryStats())
+		ps, err := b.indexReader(selectAllStrategy{}).FetchPostingsIndexV2(ctx, nil, newSafeQueryStats())
 		require.NoError(t, err)
 		require.Empty(t, ps)
 	})
@@ -1198,7 +1198,7 @@ func TestBucketIndexReader_fetchPostingsWithKnownOffsets(t *testing.T) {
 		kos := keysOffsets(labelName, offsets)
 
 		// First call misses cache, does the fetch
-		first, err := b.indexReader(selectAllStrategy{}).fetchPostingsWithKnownOffsets(ctx, kos, newSafeQueryStats())
+		first, err := b.indexReader(selectAllStrategy{}).FetchPostingsIndexV2(ctx, kos, newSafeQueryStats())
 		require.NoError(t, err)
 		require.Len(t, first, len(kos))
 
@@ -1216,7 +1216,7 @@ func TestBucketIndexReader_fetchPostingsWithKnownOffsets(t *testing.T) {
 		// The second call passes empty known offsets,
 		// but should still hit the cache (and therefore not execute any PostingOffset calls) when resolving postings offsets to postings
 		secondCallStats := newSafeQueryStats()
-		second, err := b.indexReader(selectAllStrategy{}).fetchPostingsWithKnownOffsets(ctx, kos, secondCallStats)
+		second, err := b.indexReader(selectAllStrategy{}).FetchPostingsIndexV2(ctx, kos, secondCallStats)
 		require.NoError(t, err)
 		require.Len(t, second, len(kos))
 

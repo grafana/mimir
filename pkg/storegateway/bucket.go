@@ -1712,7 +1712,7 @@ func labelValuesFromPostings(
 		keysOffsets[i] = labelPostingOffset{labels.Label{Name: labelName, Value: value.LabelValue}, value.Off}
 	}
 
-	fetchedPostings, err := indexr.fetchPostingsWithKnownOffsets(ctx, keysOffsets, stats)
+	fetchedPostings, err := indexr.FetchPostingsIndexV2(ctx, keysOffsets, stats)
 	if err != nil {
 		return nil, errors.Wrap(err, "get postings")
 	}
