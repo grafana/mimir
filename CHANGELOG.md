@@ -60,6 +60,7 @@
 * [ENHANCEMENT] Block-builder: Respect `-blocks-storage.tsdb.bigger-out-of-order-blocks-for-old-samples` to produce 24h blocks for out-of-order data belonging to previous days. #15892
 * [ENHANCEMENT] MQE: Ensure that intermediate results cache keys can not exceed the cache backend's key-size limit when a query federates over many tenants. #15847
 * [BUGFIX] Query-frontend: Fix `cardinality_analysis_max_results` being ignored when set higher than the default of 500. #15581
+* [BUGFIX] Mimirtool: Resolve Grafana library panel references when running `mimirtool analyze grafana`, so metrics used only by library panels are included in the generated metrics report. #15763
 * [BUGFIX] Ingest storage: Fix `KafkaProducer.ProduceSync()` returning a single result with a nil record when the context is canceled, instead of one result per input record (with the record set) as the underlying franz-go client does. #15199
 * [BUGFIX] Ingest storage: Fix `cortex_ingest_storage_reader_receive_delay_seconds` inflation by no longer setting the Kafka record `Timestamp` on the distributor side; the Kafka client now sets it at produce time. #15572
 * [BUGFIX] Distributor: Return HTTP 200 with OTLP partial-success when only some samples in an OTLP request are rejected by distributor-level validation (e.g. `too_far_in_past`). #15253
