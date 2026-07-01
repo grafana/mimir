@@ -5,6 +5,7 @@ package blockbuilder
 import (
 	"context"
 	"errors"
+	"iter"
 	"os"
 	"path"
 	"sync"
@@ -12,6 +13,7 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
@@ -20,9 +22,12 @@ import (
 	"github.com/twmb/franz-go/pkg/kgo"
 
 	"github.com/grafana/mimir/pkg/blockbuilder/schedulerpb"
+	"github.com/grafana/mimir/pkg/compartments"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/testkafka"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 func TestBlockBuilder(t *testing.T) {
@@ -196,6 +201,187 @@ func TestBlockBuilder_WipeOutDataDirOnStart(t *testing.T) {
 	list, err := os.ReadDir(cfg.DataDir)
 	require.NoError(t, err, "expected data_dir to exist")
 	require.Empty(t, list, "expected data_dir to be empty")
+}
+
+// Asserts that a job spanning multiple write compartments consumes each compartment's range from
+// that compartment's own Kafka client and merges the results into a single block. The two
+// compartments point at two distinct Kafka clusters holding disjoint, distinguishable samples, so
+// the uploaded block contains the union only if each compartment is read through its own client: a
+// bug reading every compartment from one client would miss the other cluster's data. It runs with
+// and without concurrent fetchers, since those take different per-cluster read paths.
+func TestConsumeJob_MultipleWriteCompartments(t *testing.T) {
+	for _, fetchConcurrencyMax := range []int{0, 8} {
+		name := "without concurrent fetchers"
+		if fetchConcurrencyMax > 0 {
+			name = "with concurrent fetchers"
+		}
+		t.Run(name, func(t *testing.T) {
+			ctx := context.Background()
+
+			_, kafkaAddrA := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, numPartitions, testTopic)
+			_, kafkaAddrB := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, numPartitions, testTopic)
+			producerA := mustKafkaClient(t, kafkaAddrA)
+			producerB := mustKafkaClient(t, kafkaAddrB)
+
+			tenants := []string{"1", "2", "3"}
+			const roundsPerCluster = 5
+			const recordsPerCluster = roundsPerCluster * 3 // One record per tenant per round.
+
+			produceToCluster := func(producer *kgo.Client, start time.Time) map[string][]mimirpb.Sample {
+				out := make(map[string][]mimirpb.Sample)
+				recTime := start
+				for range roundsPerCluster {
+					for _, tenant := range tenants {
+						samples := produceSamples(ctx, t, producer, 1, recTime, tenant, recTime.Add(-time.Minute))
+						out[tenant] = append(out[tenant], samples...)
+					}
+					recTime = recTime.Add(10 * time.Minute)
+				}
+				return out
+			}
+
+			// Cluster A's samples all precede cluster B's, so every timestamp is distinct and the
+			// per-tenant union is naturally ordered; both stay within the out-of-order window.
+			now := time.Now()
+			producedA := produceToCluster(producerA, now.Add(-100*time.Minute))
+			producedB := produceToCluster(producerB, now.Add(-50*time.Minute))
+
+			bb, cfg, _ := newMultiClusterBlockBuilder(t, fetchConcurrencyMax, kafkaAddrA, kafkaAddrB)
+
+			spec := schedulerpb.JobSpec{
+				Topic:     testTopic,
+				Partition: 1,
+				OffsetRanges: map[int32]schedulerpb.OffsetRange{
+					0: {StartOffset: 0, EndOffset: recordsPerCluster},
+					1: {StartOffset: 0, EndOffset: recordsPerCluster},
+				},
+			}
+			require.NoError(t, bb.consumeJob(ctx, schedulerpb.JobKey{Id: "test-job-multi-wc", Epoch: 1}, spec))
+
+			for _, tenant := range tenants {
+				tenantBucketDir := path.Join(cfg.BlocksStorage.Bucket.Filesystem.Directory, tenant)
+				expSamples := append(append([]mimirpb.Sample{}, producedA[tenant]...), producedB[tenant]...)
+				compareQueryWithDir(t,
+					tenantBucketDir,
+					expSamples, nil,
+					labels.MustNewMatcher(labels.MatchRegexp, "foo", ".*"),
+				)
+			}
+		})
+	}
+}
+
+// failingConsumer is a RecordConsumer whose Consume always fails.
+type failingConsumer struct{ err error }
+
+func (c failingConsumer) Consume(context.Context, iter.Seq[*kgo.Record]) error { return c.err }
+
+// Asserts the all-or-nothing contract of the multi-compartment merge: if forwarding the merged
+// records downstream fails, consumeCompartments returns the error (so consumeJob won't commit the
+// job) instead of swallowing it. This covers the merge-side failure arm; the producer-side arm (a
+// source erroring mid-consume) is covered by TestMergeSourcesByTimestamp_PropagatesSourceError.
+func TestConsumeCompartments_FailsJobWhenConsumerFails(t *testing.T) {
+	ctx := context.Background()
+
+	_, kafkaAddrA := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, numPartitions, testTopic)
+	_, kafkaAddrB := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, numPartitions, testTopic)
+	producerA := mustKafkaClient(t, kafkaAddrA)
+	producerB := mustKafkaClient(t, kafkaAddrB)
+
+	// Both clusters must have data so the job takes the merge path (two active ranges) rather than
+	// the single-range shortcut.
+	now := time.Now()
+	for _, tenant := range []string{"1", "2"} {
+		produceSamples(ctx, t, producerA, 1, now, tenant, now.Add(-time.Minute))
+		produceSamples(ctx, t, producerB, 1, now, tenant, now.Add(-time.Minute))
+	}
+
+	bb, cfg, overrides := newMultiClusterBlockBuilder(t, 0, kafkaAddrA, kafkaAddrB)
+	builder := NewTSDBBuilder(1, cfg, overrides, test.NewTestingLogger(t), bb.tsdbBuilderMetrics, bb.tsdbMetrics)
+	t.Cleanup(func() { _ = builder.Close() })
+
+	wantErr := errors.New("downstream boom")
+	spec := schedulerpb.JobSpec{
+		Topic:     testTopic,
+		Partition: 1,
+		OffsetRanges: map[int32]schedulerpb.OffsetRange{
+			0: {StartOffset: 0, EndOffset: 2},
+			1: {StartOffset: 0, EndOffset: 2},
+		},
+	}
+	err := bb.consumeCompartments(ctx, test.NewTestingLogger(t), failingConsumer{err: wantErr}, builder, spec)
+	require.ErrorIs(t, err, wantErr)
+}
+
+// newMultiClusterBlockBuilder builds a compartments-enabled block-builder wired to consume one
+// write compartment per addr, each from its own Kafka cluster, ready for consumeJob/consumeCompartments
+// to be driven directly. The full service path can't set this up because several distinct broker
+// addresses can't be produced from one templated address.
+func newMultiClusterBlockBuilder(t *testing.T, fetchConcurrencyMax int, addrs ...string) (*BlockBuilder, Config, *validation.Overrides) {
+	t.Helper()
+
+	cfg, overrides := blockBuilderConfig(t, addrs[0], nil)
+	cfg.Kafka.FetchConcurrencyMax = fetchConcurrencyMax
+	// Lower FetchMaxWait so concurrent fetchers don't block on speculative reads past the job's
+	// end offset once all records have been consumed.
+	cfg.Kafka.FetchMaxWait = 500 * time.Millisecond
+	cfg.Compartments = compartments.Config{
+		Enabled: true,
+		Read:    compartments.ReadConfig{NumCompartments: 1},
+		Write:   compartments.WriteConfig{NumCompartments: len(addrs)},
+	}
+
+	bb, err := newWithSchedulerClient(cfg, test.NewTestingLogger(t), prometheus.NewPedanticRegistry(), overrides, &mockSchedulerClient{})
+	require.NoError(t, err)
+
+	for wc, addr := range addrs {
+		kcfg := cfg.Kafka
+		kcfg.Address = flagext.StringSliceCSV{addr}
+		c, err := ingest.NewKafkaReaderClient(kcfg, bb.clusters[wc].kprom, test.NewTestingLogger(t))
+		require.NoError(t, err)
+		t.Cleanup(c.Close)
+		bb.clusters[wc].client = c
+
+		// With concurrent fetching enabled, start the per-cluster reader-metrics service so the
+		// fetcher path is exercised as it is in production (starting() does this on the full path).
+		if metrics := bb.clusters[wc].metrics; metrics != nil {
+			require.NoError(t, services.StartAndAwaitRunning(context.Background(), metrics))
+			t.Cleanup(func() {
+				require.NoError(t, services.StopAndAwaitTerminated(context.Background(), metrics))
+			})
+		}
+	}
+	return bb, cfg, overrides
+}
+
+// Asserts that a compartment-mode spec (carrying OffsetRanges) reaching a block-builder with
+// compartments disabled fails loudly rather than being silently consumed from the wrong cluster.
+func TestConsumeJob_RejectsCompartmentSpecWhenCompartmentsDisabled(t *testing.T) {
+	_, kafkaAddr := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, numPartitions, testTopic)
+	cfg, overrides := blockBuilderConfig(t, kafkaAddr, nil)
+	require.False(t, cfg.Compartments.Enabled)
+
+	bb, err := newWithSchedulerClient(cfg, test.NewTestingLogger(t), prometheus.NewPedanticRegistry(), overrides, &mockSchedulerClient{})
+	require.NoError(t, err)
+
+	spec := schedulerpb.JobSpec{
+		Topic:        testTopic,
+		Partition:    0,
+		OffsetRanges: map[int32]schedulerpb.OffsetRange{0: {StartOffset: 0, EndOffset: 1}},
+	}
+	err = bb.consumeJob(context.Background(), schedulerpb.JobKey{Id: "mismatch", Epoch: 1}, spec)
+	require.ErrorContains(t, err, "offset_ranges should not be set")
+}
+
+func mustKafkaClient(t *testing.T, addrs ...string) *kgo.Client {
+	writeClient, err := kgo.NewClient(
+		kgo.SeedBrokers(addrs...),
+		// We will choose the partition of each record.
+		kgo.RecordPartitioner(kgo.ManualPartitioner()),
+	)
+	require.NoError(t, err)
+	t.Cleanup(writeClient.Close)
+	return writeClient
 }
 
 func produceSamples(ctx context.Context, t *testing.T, kafkaClient *kgo.Client, partition int32, ts time.Time, tenantID string, sampleTs ...time.Time) []mimirpb.Sample {
