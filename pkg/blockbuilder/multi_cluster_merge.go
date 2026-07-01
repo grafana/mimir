@@ -89,8 +89,7 @@ func (b *BlockBuilder) consumeMultiCluster(
 			if err != nil {
 				err = fmt.Errorf("consuming kafka cluster %d: %w", rng.clusterID, err)
 			}
-			source.finalErr = err
-			close(source.records)
+			source.close(err)
 			return err
 		})
 	}
@@ -183,16 +182,23 @@ func (b *recordBatcher) flush(ctx context.Context) error {
 	return nil
 }
 
-// kafkaClusterSource streams one Kafka cluster's records in offset order over records.
-// The channel is closed at EOF or on error; after the close, finalErr holds any terminal error.
+// kafkaClusterSource streams one Kafka cluster's records in offset order over records. The producer
+// calls close when the source is drained, recording any terminal error in finalErr.
 type kafkaClusterSource struct {
 	clusterID int
 	records   chan *kgo.Record
 	finalErr  error
 }
 
+// close records the terminal error (nil on a clean EOF) and closes the records channel to signal
+// that the source is drained. It must be called exactly once, after the last record has been sent.
+func (s *kafkaClusterSource) close(err error) {
+	s.finalErr = err
+	close(s.records)
+}
+
 // next returns the next record from the source, or a nil record once the source is drained,
-// in which case err carries any terminal error recorded by the producer.
+// in which case err carries any terminal error passed to close.
 func (s *kafkaClusterSource) next(ctx context.Context) (*kgo.Record, error) {
 	select {
 	case record, open := <-s.records:
