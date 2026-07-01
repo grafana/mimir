@@ -94,6 +94,16 @@ type Config struct {
 
 	MinTimeBetweenShardsCleanup time.Duration `yaml:"min_time_between_shards_cleanup" category:"experimental"`
 
+	// NumShards is how many shards each tenant's series are split into within a partition.
+	// Sharding reduces lock contention on the hot tracking path and shortens the per-shard
+	// mutex hold during idle-series cleanup, which improves tail latency on partitions with
+	// very large tenants (>~100M series). The cost is fixed per-tenant overhead: every tenant
+	// allocates a map per shard and is iterated per shard during cleanup, snapshotting and
+	// stats, so a high count is wasteful when there are many small tenants.
+	//
+	// The value is encoded into snapshots, so changing it is not graceful: snapshots written
+	// with a different count (or an older encoding version) are discarded on load and the
+	// state is rebuilt from events. All instances must use the same value.
 	NumShards int `yaml:"num_shards" category:"experimental"`
 }
 
@@ -140,7 +150,7 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 
 	f.DurationVar(&c.MinTimeBetweenShardsCleanup, "usage-tracker.min-time-between-shards-cleanup", 25*time.Millisecond, "Minimum time between cleaning up consecutive shards during the periodic idle-series cleanup. An artificial delay is inserted between shards so the cleanup does not hold shard mutexes back-to-back and block latency-sensitive series-tracking calls, which matters most for large single-tenant instances. Set to 0 to disable.")
 
-	f.IntVar(&c.NumShards, "usage-tracker.num-shards", tenantshard.DefaultNumShards, fmt.Sprintf("Number of shards each tenant is split into within a partition. Must be between 1 and %d. All usage-tracker instances must use the same value; changing it discards existing snapshots (state is rebuilt from events), so expect a transient loss of accuracy after a change.", tenantshard.MaxNumShards))
+	f.IntVar(&c.NumShards, "usage-tracker.num-shards", tenantshard.DefaultNumShards, fmt.Sprintf("Number of shards each tenant's series are split into within a partition. Must be between 1 and %d. A higher value reduces lock contention on the tracking path and shortens the per-shard mutex hold during idle-series cleanup, improving tail latency on partitions with very large tenants (roughly more than 100M series per partition); it also adds fixed per-tenant overhead, because every tenant allocates a map per shard and is iterated per shard during cleanup, snapshotting and stats, which is wasteful when there are many small tenants. The default suits most deployments. All usage-tracker instances must use the same value. Changing it is not graceful: existing snapshots are discarded (a usage-tracker warns and drops any snapshot written with a different shard count or an older encoding version) and per-partition state is rebuilt from the event stream, causing a transient loss of accuracy.", tenantshard.MaxNumShards))
 }
 
 func (c *Config) ValidateForClient() error {

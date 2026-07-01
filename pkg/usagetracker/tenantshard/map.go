@@ -19,6 +19,10 @@ const (
 	indexEntryBits = 7
 
 	// DefaultNumShards is the default number of shards used by the tracker store per tenant.
+	// It is a balanced default: more shards lower lock contention and cleanup-induced tail
+	// latency for very large tenants, but add fixed per-tenant overhead that is wasteful for
+	// small tenants. It is configurable via -usage-tracker.num-shards; see that flag and the
+	// usagetracker.Config.NumShards field for the full tradeoff.
 	DefaultNumShards = 16
 
 	// MaxNumShards is the maximum number of shards allowed per tenant.
