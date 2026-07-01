@@ -6,7 +6,6 @@ import (
 	"cmp"
 	"context"
 	"errors"
-	"iter"
 	"os"
 	"path"
 	"slices"
@@ -276,16 +275,11 @@ func TestConsumeJob_MultipleWriteCompartments(t *testing.T) {
 	}
 }
 
-// failingConsumer is a RecordConsumer whose Consume always fails.
-type failingConsumer struct{ err error }
-
-func (c failingConsumer) Consume(context.Context, iter.Seq[*kgo.Record]) error { return c.err }
-
-// Asserts the all-or-nothing contract of the multi-cluster merge: if forwarding the merged records
-// downstream fails, consumeMultiCluster returns the error (so consumeJob won't commit the job)
-// instead of swallowing it. This exercises the merge-side failure arm; the producer-side arm (a
-// source erroring mid-consume) is exercised by the merge unit tests.
-func TestConsumeMultiCluster_FailsJobWhenConsumerFails(t *testing.T) {
+// Asserts the all-or-nothing contract end to end: when one cluster's fetch fails, consumeJob returns
+// an error (so the job is not committed) instead of silently building a partial block from only the
+// clusters that succeeded. It drives the real consume path and fails cluster B by requesting an
+// offset range past its log, which the concurrent fetcher surfaces as OffsetOutOfRange.
+func TestConsumeJob_FailsWhenAClusterFetchFails(t *testing.T) {
 	ctx := context.Background()
 
 	_, kafkaAddrA := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, numPartitions, testTopic)
@@ -293,29 +287,28 @@ func TestConsumeMultiCluster_FailsJobWhenConsumerFails(t *testing.T) {
 	producerA := mustKafkaClient(t, kafkaAddrA)
 	producerB := mustKafkaClient(t, kafkaAddrB)
 
-	// Both clusters must have data so the job takes the merge path (two active ranges) rather than
-	// the single-range shortcut.
+	// Both clusters hold a couple of records so the job takes the merge path (two active ranges).
 	now := time.Now()
 	for _, tenant := range []string{"1", "2"} {
 		produceSamples(ctx, t, producerA, 1, now, tenant, now.Add(-time.Minute))
 		produceSamples(ctx, t, producerB, 1, now, tenant, now.Add(-time.Minute))
 	}
 
-	bb, cfg, overrides := newMultiClusterBlockBuilder(t, 0, kafkaAddrA, kafkaAddrB)
-	builder := NewTSDBBuilder(1, cfg, overrides, test.NewTestingLogger(t), bb.tsdbBuilderMetrics, bb.tsdbMetrics)
-	t.Cleanup(func() { _ = builder.Close() })
+	// Concurrent fetchers are enabled so a range error aborts the fetch rather than retrying forever.
+	bb, _, _ := newMultiClusterBlockBuilder(t, 8, kafkaAddrA, kafkaAddrB)
 
-	wantErr := errors.New("downstream boom")
+	// Cluster A's range is valid; cluster B's starts past its high watermark, so B's fetch fails with
+	// OffsetOutOfRange. That one failure must fail the whole job, not yield a block holding only A.
 	spec := schedulerpb.JobSpec{
 		Topic:     testTopic,
 		Partition: 1,
 		OffsetRanges: map[int32]schedulerpb.OffsetRange{
 			0: {StartOffset: 0, EndOffset: 2},
-			1: {StartOffset: 0, EndOffset: 2},
+			1: {StartOffset: 100, EndOffset: 102},
 		},
 	}
-	err := bb.consumeMultiCluster(ctx, test.NewTestingLogger(t), failingConsumer{err: wantErr}, builder, spec)
-	require.ErrorIs(t, err, wantErr)
+	err := bb.consumeJob(ctx, schedulerpb.JobKey{Id: "fetch-fail", Epoch: 1}, spec)
+	require.ErrorContains(t, err, "kafka cluster 1")
 }
 
 // newMultiClusterBlockBuilder builds a compartments-enabled block-builder wired to consume one
