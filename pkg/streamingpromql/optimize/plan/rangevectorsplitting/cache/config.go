@@ -17,7 +17,7 @@ const (
 	resultsCacheVersion = 3
 
 	// cacheItemTypePrefix identifies range vector splitting intermediate-result entries.
-	cacheItemTypePrefix = "MQERVSIR:"
+	cacheItemTypePrefix = "MQERVSIR"
 )
 
 var (

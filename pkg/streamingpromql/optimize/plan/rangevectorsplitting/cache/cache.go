@@ -60,13 +60,9 @@ func NewCacheFactory(cfg Config, ttlProvider TTLProvider, prefixGenerator cachin
 		return nil, errUnsupportedResultsCacheBackend(cfg.Backend)
 	}
 
-	var backend cache.Cache = cache.NewVersioned(
-		cache.NewSpanlessTracingCache(client, logger, tenant.NewMultiResolver()),
-		resultsCacheVersion,
-		logger,
-	)
+	var backend cache.Cache = cache.NewSpanlessTracingCache(client, logger, tenant.NewMultiResolver())
 	backend = cache.NewCompression(cfg.Compression, backend, logger)
-	keyGenerator := caching.NewCacheKeyGenerator(caching.StaticPrefixGenerator(cacheItemTypePrefix), prefixGenerator)
+	keyGenerator := caching.NewCacheKeyGenerator(caching.VersioningAndItemTypePrefixGenerator(cacheItemTypePrefix, resultsCacheVersion), prefixGenerator)
 	return NewCacheFactoryWithBackend(caching.NewAdaptor(backend), ttlProvider, keyGenerator, reg, logger), nil
 }
 
