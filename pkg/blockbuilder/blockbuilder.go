@@ -97,7 +97,7 @@ func newWithSchedulerClient(
 	// compartments existed. The Kafka client itself is created later, in starting().
 	kafkaCfgs := cfg.kafkaClientConfigs()
 	clusters := make([]*clusterResources, len(kafkaCfgs))
-	for clusterID, kcfg := range kafkaCfgs {
+	for clusterID, kafkaCfg := range kafkaCfgs {
 		clusterReg := reg
 		if cfg.Compartments.Enabled {
 			clusterReg = prometheus.WrapRegistererWith(prometheus.Labels{"write_compartment": strconv.Itoa(clusterID)}, reg)
