@@ -71,7 +71,7 @@ func (c *DistributorConfig) Validate() error {
 	}
 
 	if strings.HasPrefix(c.Address, "http://") || strings.HasPrefix(c.Address, "https://") {
-		return fmt.Errorf("address must be a gRPC address, got HTTP(S) address: %q", c.Address)
+		return fmt.Errorf("ruler's distributor client address must be a gRPC address, got HTTP(S) address: %q", c.Address)
 	}
 
 	// Make sure the DNS prefix is correct (three slashes) if it is being used.
