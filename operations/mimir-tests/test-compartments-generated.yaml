@@ -3949,6 +3949,7 @@ spec:
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
         - -store-gateway.read-compartment-id=0
+        - -store-gateway.sharding-ring.auto-forget-enabled=false
         - -store-gateway.sharding-ring.heartbeat-period=1m
         - -store-gateway.sharding-ring.heartbeat-timeout=10m
         - -store-gateway.sharding-ring.instance-availability-zone=zone-a
@@ -4105,6 +4106,7 @@ spec:
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
         - -store-gateway.read-compartment-id=1
+        - -store-gateway.sharding-ring.auto-forget-enabled=false
         - -store-gateway.sharding-ring.heartbeat-period=1m
         - -store-gateway.sharding-ring.heartbeat-timeout=10m
         - -store-gateway.sharding-ring.instance-availability-zone=zone-a
@@ -4263,6 +4265,7 @@ spec:
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
         - -store-gateway.read-compartment-id=0
+        - -store-gateway.sharding-ring.auto-forget-enabled=false
         - -store-gateway.sharding-ring.heartbeat-period=1m
         - -store-gateway.sharding-ring.heartbeat-timeout=10m
         - -store-gateway.sharding-ring.instance-availability-zone=zone-b
@@ -4423,6 +4426,7 @@ spec:
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
         - -store-gateway.read-compartment-id=1
+        - -store-gateway.sharding-ring.auto-forget-enabled=false
         - -store-gateway.sharding-ring.heartbeat-period=1m
         - -store-gateway.sharding-ring.heartbeat-timeout=10m
         - -store-gateway.sharding-ring.instance-availability-zone=zone-b
@@ -4583,6 +4587,7 @@ spec:
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
         - -store-gateway.read-compartment-id=0
+        - -store-gateway.sharding-ring.auto-forget-enabled=false
         - -store-gateway.sharding-ring.heartbeat-period=1m
         - -store-gateway.sharding-ring.heartbeat-timeout=10m
         - -store-gateway.sharding-ring.instance-availability-zone=zone-c
@@ -4741,6 +4746,7 @@ spec:
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
         - -store-gateway.read-compartment-id=1
+        - -store-gateway.sharding-ring.auto-forget-enabled=false
         - -store-gateway.sharding-ring.heartbeat-period=1m
         - -store-gateway.sharding-ring.heartbeat-timeout=10m
         - -store-gateway.sharding-ring.instance-availability-zone=zone-c
