@@ -13,7 +13,6 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/tracing"
-	"github.com/grafana/dskit/user"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
@@ -43,6 +42,7 @@ var tracer = otel.Tracer("pkg/streamingpromql/optimize/plan/splitandcache")
 // It works with a single cache entry made up of multiple extents.
 type CacheOperator struct {
 	Backend                  caching.Backend
+	CacheKeyGenerator        *caching.CacheKeyGenerator
 	Materializer             InstantVectorMaterializer
 	Inner                    planning.Node
 	DesiredTimeRange         types.QueryTimeRange
@@ -66,7 +66,9 @@ type CacheOperator struct {
 	ttlForOOOExtent    time.Duration
 	oooWindow          time.Duration
 
-	key       []byte
+	// key is the full key which includes the prefix from the PrefixGenerator. This plain []byte is kept for collision detection.
+	key []byte
+	// hashedKey is the hashed version of the above key and should be used for interacting with the cache backend.
 	hashedKey string
 	extents   extents
 	prepared  bool
@@ -90,6 +92,7 @@ var _ types.InstantVectorOperator = &CacheOperator{}
 
 func newCacheOperator(
 	backend caching.Backend,
+	cacheKeyGenerator *caching.CacheKeyGenerator,
 	materializer InstantVectorMaterializer,
 	inner planning.Node,
 	desiredTimeRange types.QueryTimeRange,
@@ -104,6 +107,7 @@ func newCacheOperator(
 ) *CacheOperator {
 	return &CacheOperator{
 		Backend:                  backend,
+		CacheKeyGenerator:        cacheKeyGenerator,
 		Materializer:             materializer,
 		Inner:                    inner,
 		DesiredTimeRange:         desiredTimeRange,
@@ -120,12 +124,7 @@ func newCacheOperator(
 	}
 }
 
-func (c *CacheOperator) computeCacheKey(ctx context.Context) ([]byte, error) {
-	orgID, err := user.ExtractOrgID(ctx)
-	if err != nil {
-		return nil, err
-	}
-
+func (c *CacheOperator) computeCacheKey(ctx context.Context) ([]byte, string, error) {
 	startTime := timestamp.Time(c.DesiredTimeRange.StartT)
 	cacheEntryStartT := timestamp.FromTime(startTime.Truncate(c.cacheEntryInterval))
 
@@ -137,12 +136,11 @@ func (c *CacheOperator) computeCacheKey(ctx context.Context) ([]byte, error) {
 
 	encodedQueryPlanBytes, err := c.encodeNodeForCacheKey() // This includes the query, time range and all other parameters that affect query results.
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
 	key := bytes.Join(
 		[][]byte{
-			[]byte(orgID),
 			[]byte(strconv.FormatInt(cacheEntryStartT, 10)),
 			[]byte(strconv.FormatInt(c.DesiredTimeRange.IntervalMilliseconds, 10)),
 			[]byte(strconv.FormatInt(offsetFromStepGrid, 10)),
@@ -151,7 +149,12 @@ func (c *CacheOperator) computeCacheKey(ctx context.Context) ([]byte, error) {
 		[]byte(":"),
 	)
 
-	return key, nil
+	key, hashed, err := c.CacheKeyGenerator.ComputeCacheKey(ctx, key)
+	if err != nil {
+		return nil, "", fmt.Errorf("generating cache key prefix: %w", err)
+	}
+
+	return key, hashed, nil
 }
 
 func (c *CacheOperator) encodeNodeForCacheKey() ([]byte, error) {
@@ -176,13 +179,13 @@ func (c *CacheOperator) encodeNodeForCacheKey() ([]byte, error) {
 }
 
 func (c *CacheOperator) populateCacheKey(ctx context.Context) error {
-	var err error
-	c.key, err = c.computeCacheKey(ctx)
+	key, hashed, err := c.computeCacheKey(ctx)
 	if err != nil {
 		return err
 	}
 
-	c.hashedKey = caching.HashCacheKey(c.key)
+	c.key = key
+	c.hashedKey = hashed
 	return nil
 }
 
