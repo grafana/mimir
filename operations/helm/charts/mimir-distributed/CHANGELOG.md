@@ -30,6 +30,8 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
+* [CHANGE] Allow the Mimir Alertmanager to use a fallback configuration from an existing Kubernetes secret. #15723
+
 ## 6.1.0
 
 * [CHANGE] Upgrade Mimir to [3.1.2](https://github.com/grafana/mimir/blob/release-3.1/CHANGELOG.md). #15839
