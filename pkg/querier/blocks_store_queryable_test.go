@@ -3797,3 +3797,31 @@ func TestShouldRetry(t *testing.T) {
 		})
 	}
 }
+
+func TestCreateSeriesRequest_Limit(t *testing.T) {
+	tests := map[string]struct {
+		hints         *storage.SelectHints
+		expectedLimit int64
+	}{
+		"nil hints results in no limit": {
+			hints:         nil,
+			expectedLimit: 0,
+		},
+		"hints with a zero limit results in no limit": {
+			hints:         &storage.SelectHints{Limit: 0},
+			expectedLimit: 0,
+		},
+		"hints with a positive limit are propagated to the request": {
+			hints:         &storage.SelectHints{Limit: 100},
+			expectedLimit: 100,
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			req, err := createSeriesRequest(0, 1000, nil, true, testData.hints, nil, 256)
+			require.NoError(t, err)
+			assert.Equal(t, testData.expectedLimit, req.Limit)
+		})
+	}
+}

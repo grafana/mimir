@@ -1041,7 +1041,7 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(
 				skipChunks = sp.Func == "series"
 			}
 
-			req, err := createSeriesRequest(minT, maxT, matchers, skipChunks, blockIDs, q.streamingChunksBatchSize)
+			req, err := createSeriesRequest(minT, maxT, matchers, skipChunks, sp, blockIDs, q.streamingChunksBatchSize)
 			if err != nil {
 				return errors.Wrapf(err, "failed to create series request")
 			}
@@ -1490,7 +1490,12 @@ func grpcContextWithBucketStoreRequestMeta(ctx context.Context, tenantID string,
 	)
 }
 
-func createSeriesRequest(minT, maxT int64, matchers []storepb.LabelMatcher, skipChunks bool, blockIDs []ulid.ULID, streamingBatchSize uint64) (*storepb.SeriesRequest, error) {
+func createSeriesRequest(minT, maxT int64, matchers []storepb.LabelMatcher, skipChunks bool, hints *storage.SelectHints, blockIDs []ulid.ULID, streamingBatchSize uint64) (*storepb.SeriesRequest, error) {
+	var limit int64
+	if hints != nil && hints.Limit > 0 {
+		limit = int64(hints.Limit)
+	}
+
 	// Selectively query only specific blocks.
 	requestHints := &storepb.SeriesRequestHints{
 		BlockMatchers: []storepb.LabelMatcher{
@@ -1537,6 +1542,7 @@ func createSeriesRequest(minT, maxT int64, matchers []storepb.LabelMatcher, skip
 		RequestHints:             requestHints,
 		SkipChunks:               skipChunks,
 		StreamingChunksBatchSize: streamingBatchSize,
+		Limit:                    limit,
 	}, nil
 }
 
