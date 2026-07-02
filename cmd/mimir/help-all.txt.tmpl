@@ -1709,6 +1709,8 @@ Usage of ./cmd/mimir/mimir:
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -ingester.client.tls-server-name string
     	Override the expected name on the server certificate.
+  -ingester.compute-workers int
+    	[experimental] Number of worker goroutines in the ingester's shared tenant-fair compute worker pool, used to parallelize CPU-bound work (currently label-values-cardinality) fairly across tenants. 0 uses GOMAXPROCS.
   -ingester.early-compaction-non-owned-series-enabled
     	[experimental] When enabled, the ingester triggers an early TSDB head compaction for series that are no longer owned by the ingester after a ring change. Requires -ingester.track-ingester-owned-series or -ingester.use-ingester-owned-series-for-limits to be enabled.
   -ingester.early-compaction-non-owned-series-max-grace-period duration
@@ -1735,8 +1737,8 @@ Usage of ./cmd/mimir/mimir:
     	Max series that this ingester can hold (across all tenants). Requests to create additional series will be rejected. 0 = unlimited.
   -ingester.instance-limits.max-tenants int
     	Max tenants that this ingester can hold. Requests from additional tenants will be rejected. 0 = unlimited.
-  -ingester.label-values-count-max-concurrency int
-    	[experimental] Maximum concurrency used to compute a single label values count request. (default 16)
+  -ingester.label-values-count-chunk-size int
+    	[experimental] Number of label values processed per work unit submitted to the ingester compute worker pool. Smaller values improve cross-tenant fairness at the cost of more scheduling overhead. (default 32)
   -ingester.max-global-exemplars-per-user int
     	[experimental] The maximum number of exemplars in memory, across the cluster. 0 to disable exemplars ingestion.
   -ingester.max-global-metadata-per-metric int

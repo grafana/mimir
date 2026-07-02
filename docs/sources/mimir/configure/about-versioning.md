@@ -207,6 +207,9 @@ The following features are currently experimental:
   - Per-tenant max number of active series additional custom trackers is configurable via `-validation.max-active-series-additional-custom-trackers`.
   - File based Kafka consumer group offset tracking enforcement
     - `-ingest-storage.kafka.consumer-group-offset-commit-file-enforced`
+  - Shared tenant-fair compute worker pool (first used by the label-values-cardinality endpoint)
+    - `-ingester.compute-workers`
+    - `-ingester.label-values-count-chunk-size`
   - WarpStream-aware Kafka producer backend
     - `-ingest-storage.kafka.backend`
     - all flags beginning with `-ingest-storage.kafka.warpstream-`

@@ -129,6 +129,7 @@ func TestIngester_PrepareInstanceRingDownscaleHandler(t *testing.T) {
 		ingester.compactionService.StopAsync()
 		ingester.metricsUpdaterService.StopAsync()
 		ingester.metadataPurgerService.StopAsync()
+		ingester.computeWorkerPool.StopAsync()
 	})
 
 	t.Run("should return MethodNotAllowed when ingest storage is enabled", func(t *testing.T) {
