@@ -191,7 +191,9 @@ func (m *HeapMerger) run(ctx context.Context) error {
 			records[i] = batch[i].record
 		}
 
-		err := m.consumerFactory.consumer().Consume(ctx, slices.Values(records))
+		// A non-cancellable context lets a shutdown mid-flush complete the batch rather than abort it,
+		// matching SingleClusterPartitionReader's downstream path.
+		err := m.consumerFactory.consumer().Consume(context.WithoutCancel(ctx), slices.Values(records))
 		if err != nil {
 			level.Warn(m.logger).Log("msg", "downstream consumer returned error from merged batch", "records", len(batch), "err", err)
 		} else if m.metrics != nil {
