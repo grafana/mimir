@@ -49,7 +49,8 @@ if [ "${RELEASE_PATCH}" = "0" ]; then
   FIRST_HEADING_LINE=$(grep -n -m1 '^# ' "${RELEASE_NOTES_DOC}" | cut -d: -f1)
   tail -n +"${FIRST_HEADING_LINE}" "${RELEASE_NOTES_DOC}" | # Remove everything before the first heading (the YAML front matter)
     $SED -E '/^<!--.*-->$/d' | # Remove HTML comments (e.g. vale directives)
-    $SED -E '/^\{\{[<%].*[%>]\}\}$/d' # Remove Hugo shortcodes, keeping inner content
+    $SED -E '/^\{\{[<%].*[%>]\}\}$/d' | # Remove Hugo shortcodes, keeping inner content
+    $SED "s|<MIMIR_VERSION>|v${RELEASE_MINOR}.x|g" # Replace the docs version placeholder that the website resolves at publish time
   printf "\n"
 fi
 
