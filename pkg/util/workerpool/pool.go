@@ -32,7 +32,7 @@ var ErrPoolStopped = errors.New("worker pool is stopped")
 type Config struct {
 	// Size is the number of worker goroutines.
 	// 0 selects runtime.GOMAXPROCS(0).
-	Size int `yaml:"size" category:"experimental"`
+	Size int
 }
 
 // Validate returns an error if the config is invalid.

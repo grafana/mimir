@@ -252,11 +252,10 @@ func computeLabelValuesSeriesCount(
 				return
 			}
 			end := min(start+chunkSize, len(lblValues))
-			s, e := start, end
 			wg.Add(1)
 			err := pool.Submit(dimensionLabelValuesSeriesCount, tenantID, func() {
 				defer wg.Done()
-				processChunk(s, e)
+				processChunk(start, end)
 			})
 			if err != nil {
 				wg.Done()
