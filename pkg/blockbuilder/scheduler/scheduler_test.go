@@ -194,9 +194,9 @@ func TestServiceStopsCleanlyDuringStartupObservation(t *testing.T) {
 func TestStartup(t *testing.T) {
 	sched, _ := mustScheduler(t, 4)
 	// (a new scheduler starts in observation mode.)
-	sched.getPartitionState("ingest", 64).initCommit(1000)
-	sched.getPartitionState("ingest", 65).initCommit(256)
-	sched.getPartitionState("ingest", 66).initCommit(57)
+	sched.getPartitionState("ingest", 64).initCommit(0, 1000)
+	sched.getPartitionState("ingest", 65).initCommit(0, 256)
+	sched.getPartitionState("ingest", 66).initCommit(0, 57)
 
 	{
 		_, _, err := sched.assignJob("w0")
@@ -347,9 +347,9 @@ func TestAssignJobSkipsObsoleteOffsets(t *testing.T) {
 	require.Equal(t, 3, sched.jobs.count())
 
 	p1 := sched.getPartitionState("ingest", 1)
-	p1.initCommit(256)
+	p1.initCommit(0, 256)
 	p2 := sched.getPartitionState("ingest", 2)
-	p2.initCommit(500)
+	p2.initCommit(0, 500)
 
 	// Advancing offsets doesn't actually remove any jobs.
 	require.Equal(t, 3, sched.jobs.count())
@@ -388,7 +388,7 @@ func TestAssignJobSkipsObsoleteOffsets_PriorScheduler(t *testing.T) {
 
 	// Simulate a completion of a job that was created by a prior scheduler.
 	p1 := sched.getPartitionState("ingest", 1)
-	p1.initCommit(5000)
+	p1.initCommit(0, 5000)
 	// Advancing offsets doesn't actually remove any jobs.
 	require.Equal(t, 1, sched.jobs.count())
 
@@ -413,15 +413,15 @@ func TestObservations(t *testing.T) {
 	sched, _ := mustScheduler(t, 10)
 	// Initially we're in observation mode. We have Kafka's commit offsets, but no client jobs.
 
-	sched.getPartitionState("ingest", 1).initCommit(5000)
-	sched.getPartitionState("ingest", 2).initCommit(800)
-	sched.getPartitionState("ingest", 3).initCommit(974)
-	sched.getPartitionState("ingest", 4).initCommit(500)
-	sched.getPartitionState("ingest", 5).initCommit(12000)
+	sched.getPartitionState("ingest", 1).initCommit(0, 5000)
+	sched.getPartitionState("ingest", 2).initCommit(0, 800)
+	sched.getPartitionState("ingest", 3).initCommit(0, 974)
+	sched.getPartitionState("ingest", 4).initCommit(0, 500)
+	sched.getPartitionState("ingest", 5).initCommit(0, 12000)
 	sched.getPartitionState("ingest", 6) // no commit for 6
 	sched.getPartitionState("ingest", 7) // no commit for 7
-	sched.getPartitionState("ingest", 8).initCommit(1000)
-	sched.getPartitionState("ingest", 9).initCommit(1000)
+	sched.getPartitionState("ingest", 8).initCommit(0, 1000)
+	sched.getPartitionState("ingest", 9).initCommit(0, 1000)
 
 	{
 		nq := newJobQueue(988*time.Hour, noOpJobCreationPolicy[schedulerpb.JobSpec]{}, 2, sched.metrics, test.NewTestingLogger(t))
@@ -583,13 +583,13 @@ func TestObservations(t *testing.T) {
 func (s *BlockBuilderScheduler) requireOffset(t *testing.T, topic string, partition int32, expected int64, msgAndArgs ...any) {
 	t.Helper()
 	ps := s.getPartitionState(topic, partition)
-	require.Equal(t, expected, ps.offsets.committed.offset(), msgAndArgs...)
+	require.Equal(t, expected, ps.offsets[0].committed.offset(), msgAndArgs...)
 }
 
 func TestOffsetMovement(t *testing.T) {
 	sched, _ := mustScheduler(t, 4)
 	ps := sched.getPartitionState("ingest", 1)
-	ps.initCommit(5000)
+	ps.initCommit(0, 5000)
 	sched.completeObservationMode(context.Background())
 
 	spec := schedulerpb.JobSpec{
@@ -613,18 +613,14 @@ func TestOffsetMovement(t *testing.T) {
 	sched.requireOffset(t, "ingest", 1, 6000, "re-completing the same job shouldn't change the commit")
 
 	p1 := sched.getPartitionState("ingest", 1)
-	p1.offsets.committed.advance("ancient_job", schedulerpb.JobSpec{
-		Topic:       "ingest",
-		Partition:   1,
+	p1.offsets[0].committed.advance("ancient_job", schedulerpb.OffsetRange{
 		StartOffset: 1000,
 		EndOffset:   2000,
 	})
 	sched.requireOffset(t, "ingest", 1, 6000, "committed offsets cannot rewind")
 
 	p2 := sched.getPartitionState("ingest", 2)
-	p2.offsets.committed.advance("ancient_job2", schedulerpb.JobSpec{
-		Topic:       "ingest",
-		Partition:   2,
+	p2.offsets[0].committed.advance("ancient_job2", schedulerpb.OffsetRange{
 		StartOffset: 6000,
 		EndOffset:   6222,
 	})
@@ -660,19 +656,19 @@ func TestKafkaFlush(t *testing.T) {
 	// (No commit yet for p0.)
 
 	p1 := sched.getPartitionState("ingest", 1)
-	p1.initCommit(2000)
+	p1.initCommit(0, 2000)
 	flushAndRequireOffsets("ingest", map[int32]int64{
 		1: 2000,
 	})
 
 	p4 := sched.getPartitionState("ingest", 4)
-	p4.initCommit(65535)
+	p4.initCommit(0, 65535)
 	flushAndRequireOffsets("ingest", map[int32]int64{
 		1: 2000,
 		4: 65535,
 	})
 
-	p1.initCommit(4000)
+	p1.initCommit(0, 4000)
 	flushAndRequireOffsets("ingest", map[int32]int64{
 		1: 4000,
 		4: 65535,
@@ -950,7 +946,7 @@ func TestBlockBuilderScheduler_EnqueuePendingJobs_CommitRace(t *testing.T) {
 
 	part := int32(1)
 	pt := sched.getPartitionState("ingest", part)
-	pt.initCommit(20)
+	pt.initCommit(0, 20)
 	pt.addPendingJob(&schedulerpb.JobSpec{
 		Topic:       "ingest",
 		Partition:   part,
@@ -981,7 +977,7 @@ func TestBlockBuilderScheduler_EnqueuePendingJobs_StartupRace(t *testing.T) {
 	})
 
 	// But the job we imported from the existing workers now being completed may be (10, 20):
-	pt.initCommit(20)
+	pt.initCommit(0, 20)
 
 	assert.Equal(t, 1, pt.pendingJobs.Len())
 	assert.Equal(t, 0, sched.jobs.count())
@@ -1006,11 +1002,11 @@ func TestBlockBuilderScheduler_EnqueuePendingJobs_GapDetection(t *testing.T) {
 
 	assert.Equal(t, 3, pt.pendingJobs.Len())
 	assert.Equal(t, 0, sched.jobs.count())
-	assert.True(t, pt.offsets.planned.empty())
+	assert.True(t, pt.offsets[0].planned.empty())
 	sched.enqueuePendingJobs()
 	assert.Equal(t, 0, pt.pendingJobs.Len())
 	assert.Equal(t, 3, sched.jobs.count())
-	assert.Equal(t, int64(50), pt.offsets.planned.offset())
+	assert.Equal(t, int64(50), pt.offsets[0].planned.offset())
 
 	requireGaps(t, reg, 0, 0)
 
@@ -1019,11 +1015,11 @@ func TestBlockBuilderScheduler_EnqueuePendingJobs_GapDetection(t *testing.T) {
 
 	assert.Equal(t, 1, pt.pendingJobs.Len())
 	assert.Equal(t, 3, sched.jobs.count())
-	assert.Equal(t, int64(50), pt.offsets.planned.offset())
+	assert.Equal(t, int64(50), pt.offsets[0].planned.offset())
 	sched.enqueuePendingJobs()
 	assert.Equal(t, 0, pt.pendingJobs.Len())
 	assert.Equal(t, 4, sched.jobs.count(), "a gap should not interfere with job queueing")
-	assert.Equal(t, int64(70), pt.offsets.planned.offset())
+	assert.Equal(t, int64(70), pt.offsets[0].planned.offset())
 
 	requireGaps(t, reg, 1, 0)
 
@@ -1035,11 +1031,11 @@ func TestBlockBuilderScheduler_EnqueuePendingJobs_GapDetection(t *testing.T) {
 
 	assert.Equal(t, 3, pt.pendingJobs.Len())
 	assert.Equal(t, 4, sched.jobs.count())
-	assert.Equal(t, int64(70), pt.offsets.planned.offset())
+	assert.Equal(t, int64(70), pt.offsets[0].planned.offset())
 	sched.enqueuePendingJobs()
 	assert.Equal(t, 0, pt.pendingJobs.Len())
 	assert.Equal(t, 7, sched.jobs.count(), "a gap should not interfere with job queueing")
-	assert.Equal(t, int64(120), pt.offsets.planned.offset())
+	assert.Equal(t, int64(120), pt.offsets[0].planned.offset())
 
 	requireGaps(t, reg, 2, 0)
 
@@ -1072,36 +1068,32 @@ func TestBlockBuilderScheduler_NoCommit_NoGap(t *testing.T) {
 	requireGaps(t, reg, 0, 0)
 
 	pp := sched.getPartitionState("ingest", part)
-	require.True(t, pp.offsets.planned.empty())
-	require.True(t, pp.offsets.committed.empty())
+	require.True(t, pp.offsets[0].planned.empty())
+	require.True(t, pp.offsets[0].committed.empty())
 
 	k := jobKey{"myjob5", 5}
-	spec := schedulerpb.JobSpec{
-		Topic:       "ingest",
-		Partition:   part,
+	spec := schedulerpb.OffsetRange{
 		StartOffset: 10,
 		EndOffset:   20,
 	}
 
-	pp.offsets.planned.advance(k.id, spec)
+	pp.offsets[0].planned.advance(k.id, spec)
 	requireGaps(t, reg, 0, 0, "advancing an empty planned offset should not register a gap")
 
-	pp.offsets.committed.advance(k.id, spec)
+	pp.offsets[0].committed.advance(k.id, spec)
 	requireGaps(t, reg, 0, 0, "advancing an empty committed offset should not register a gap")
 
 	// Now create a gap:
 	k2 := jobKey{"myjob7", 23}
-	spec2 := schedulerpb.JobSpec{
-		Topic:       "ingest",
-		Partition:   part,
+	spec2 := schedulerpb.OffsetRange{
 		StartOffset: 40,
 		EndOffset:   50,
 	}
 
-	pp.offsets.planned.advance(k2.id, spec2)
+	pp.offsets[0].planned.advance(k2.id, spec2)
 	requireGaps(t, reg, 1, 0, "a gap after a non-empty planned offset should register a gap")
 
-	pp.offsets.committed.advance(k2.id, spec2)
+	pp.offsets[0].committed.advance(k2.id, spec2)
 	requireGaps(t, reg, 1, 1, "a gap after a non-empty committed offset should register a gap")
 }
 
@@ -1231,7 +1223,7 @@ func TestStartupToRegularModeJobProduction(t *testing.T) {
 			ps := sched.getPartitionState("topic", 0)
 
 			for _, obs := range tt.futureObservations {
-				ps.updateEndOffset(obs.offset)
+				ps.updateEndOffset(0, obs.offset)
 				job, err := ps.updateTime(obs.timestamp, sched.cfg.JobSize)
 				require.NoError(t, err)
 				if job != nil {
