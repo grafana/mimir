@@ -131,6 +131,11 @@ func (o *OptimizationPass) applySplittingAndCaching(ctx context.Context, node pl
 		return node, nil
 	}
 
+	if isSplittingOrCachingNode(node) {
+		// This node has already had splitting or caching applied to it (eg. a duplicate subexpression).
+		return node, nil
+	}
+
 	if resultType, err := node.ResultType(); err != nil {
 		return nil, err
 	} else if resultType != parser.ValueTypeVector {
@@ -148,6 +153,15 @@ func (o *OptimizationPass) applySplittingAndCaching(ctx context.Context, node pl
 	}
 
 	return node, nil
+}
+
+func isSplittingOrCachingNode(node planning.Node) bool {
+	switch node.(type) {
+	case *Cache, *TimeRangeSplit:
+		return true
+	default:
+		return false
+	}
 }
 
 func (o *OptimizationPass) applyCaching(ctx context.Context, node planning.Node, timeRange types.QueryTimeRange, freshnessThreshold time.Time, spanLogger *spanlogger.SpanLogger) (planning.Node, error) {
