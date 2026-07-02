@@ -5,6 +5,7 @@ package scheduler
 import (
 	"cmp"
 	"errors"
+	"fmt"
 	"slices"
 )
 
@@ -111,6 +112,12 @@ func emitCandidate(candidate *observation, observationsByCluster [][]clusterObse
 		// The same *observation pointer is shared across all cluster lists.
 		for i := next; ; i++ {
 			if entries[i].obs == candidate {
+				if entries[next].startOffset != entries[i].startOffset {
+					// This should not happen as canEmit() guarantees entries[next] and the
+					// candidate share the same start offset, but a bug here could be subtle.
+					panic(fmt.Sprintf("observation ordering invariant violated: expected job %q and job %q to share a start offset, got %d and %d",
+						entries[next].obs.key.id, candidate.key.id, entries[next].startOffset, entries[i].startOffset))
+				}
 				entries[next], entries[i] = entries[i], entries[next]
 				break
 			}
