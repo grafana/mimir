@@ -41,6 +41,10 @@ type EngineOpts struct {
 
 	Limits QueryLimitsProvider `yaml:"-"`
 
+	// TimeNow returns the current time. It is used when materializing range vector splitting operators to compute
+	// out-of-order thresholds. Defaults to time.Now if nil. Useful for tests that need a fixed "now".
+	TimeNow func() time.Time `yaml:"-"`
+
 	EnablePruneToggles                                        bool `yaml:"enable_prune_toggles" category:"experimental"`
 	EnableCommonSubexpressionElimination                      bool `yaml:"enable_common_subexpression_elimination" category:"experimental"`
 	EnableSubsetSelectorElimination                           bool `yaml:"enable_subset_selector_elimination" category:"experimental"`
