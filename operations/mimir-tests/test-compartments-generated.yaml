@@ -4167,6 +4167,7 @@ spec:
             memory: 18Gi
           requests:
             cpu: "1"
+            ephemeral-storage: 50Mi
             memory: 12Gi
         volumeMounts:
         - mountPath: /data
@@ -4490,6 +4491,7 @@ spec:
             memory: 18Gi
           requests:
             cpu: "1"
+            ephemeral-storage: 50Mi
             memory: 12Gi
         volumeMounts:
         - mountPath: /data
@@ -4649,6 +4651,7 @@ spec:
             memory: 18Gi
           requests:
             cpu: "1"
+            ephemeral-storage: 50Mi
             memory: 12Gi
         volumeMounts:
         - mountPath: /data
