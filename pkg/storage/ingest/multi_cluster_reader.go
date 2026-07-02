@@ -136,11 +136,8 @@ func NewMultiClusterPartitionReader(
 }
 
 func (r *MultiClusterPartitionReader) starting(ctx context.Context) error {
-	// The merger is started before the readers and, crucially, stopped after them (see stopping()). A
-	// reader finishes its in-flight consume on a non-cancellable context even while stopping, and that
-	// consume may still submit records to the merger and block waiting for their acks. If the merger
-	// stopped first, those submissions would never be flushed or acked and the reader would hang forever.
-	// So the merger is managed separately from the readers to control the start/stop order.
+	// The merger is started before the readers and stopped after them (see stopping()), so it stays
+	// available to flush and ack a reader's in-flight consume, which continues on a non-cancellable context.
 	if r.merger != nil {
 		if err := services.StartAndAwaitRunning(ctx, r.merger); err != nil {
 			return errors.Wrap(err, "starting heap merger")
@@ -194,10 +191,8 @@ func (r *MultiClusterPartitionReader) stopping(_ error) error {
 	// watcher are always set here.
 	r.watcher.Close()
 
-	// Stop the readers first and wait for them to fully terminate. A reader finishes its in-flight consume
-	// on a non-cancellable context, which may still submit records to the merger and wait for their acks,
-	// so the merger must stay running until every reader has stopped submitting. Only then is it safe to
-	// stop the merger.
+	// Stop and fully drain the readers before the merger, so the merger can still flush and ack their
+	// in-flight consumes (which run on a non-cancellable context) until every reader has stopped.
 	r.readersManager.StopAsync()
 	err := r.readersManager.AwaitStopped(context.Background())
 
@@ -205,7 +200,6 @@ func (r *MultiClusterPartitionReader) stopping(_ error) error {
 	return err
 }
 
-// stopMerger stops the heap merger and waits for it to terminate. It is a no-op when merging is disabled.
 func (r *MultiClusterPartitionReader) stopMerger() {
 	if r.merger == nil {
 		return
