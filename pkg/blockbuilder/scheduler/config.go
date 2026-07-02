@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/grafana/mimir/pkg/compartments"
 	"github.com/grafana/mimir/pkg/storage/ingest"
 )
 
@@ -23,7 +24,8 @@ type Config struct {
 	JobFailuresAllowed  int           `yaml:"job_failures_allowed" category:"advanced"`
 
 	// Config parameters defined outside the block-builder-scheduler config and are injected dynamically.
-	Kafka ingest.KafkaConfig `yaml:"-"`
+	Kafka        ingest.KafkaConfig  `yaml:"-"`
+	Compartments compartments.Config `yaml:"-"`
 }
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {

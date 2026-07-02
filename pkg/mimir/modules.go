@@ -1623,6 +1623,7 @@ func (t *Mimir) initBlockBuilder() (_ services.Service, err error) {
 
 func (t *Mimir) initBlockBuilderScheduler() (services.Service, error) {
 	t.Cfg.BlockBuilderScheduler.Kafka = t.Cfg.IngestStorage.KafkaConfig
+	t.Cfg.BlockBuilderScheduler.Compartments = t.Cfg.Compartments
 
 	s, err := blockbuilderscheduler.New(t.Cfg.BlockBuilderScheduler, util_log.Logger, t.Registerer)
 	if err != nil {

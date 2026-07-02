@@ -31,6 +31,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/blockbuilder/schedulerpb"
+	"github.com/grafana/mimir/pkg/compartments"
 	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/testkafka"
@@ -62,7 +63,7 @@ func mustSchedulerWithKafkaAddrAndDialer(t *testing.T, addr string, dialer diale
 
 	reg := prometheus.NewPedanticRegistry()
 	sched, err := New(cfg, test.NewTestingLogger(t), reg)
-	sched.adminClient = kadm.NewClient(cli)
+	sched.adminClients = []*kadm.Client{kadm.NewClient(cli)}
 	require.NoError(t, err)
 	return sched, cli
 }
@@ -71,6 +72,47 @@ func mustScheduler(t *testing.T, partitions int32) (*BlockBuilderScheduler, *kgo
 	var vnet kfake.VirtualNetwork
 	_, kafkaAddr := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, partitions, "ingest", testkafka.WithVirtualNetwork(&vnet))
 	return mustSchedulerWithKafkaAddrAndDialer(t, kafkaAddr, vnet.DialContext)
+}
+
+// mustMultiClusterScheduler returns a compartments-enabled scheduler backed by numClusters
+// independent Kafka clusters, one per write compartment, along with a producer client for each.
+func mustMultiClusterScheduler(t *testing.T, partitions int32, numClusters int) (*BlockBuilderScheduler, []*kgo.Client) {
+	cfg := Config{
+		Kafka: ingest.KafkaConfig{
+			Topic:        "ingest",
+			FetchMaxWait: 10 * time.Millisecond,
+		},
+		ConsumerGroup:       "test-builder",
+		SchedulingInterval:  1000000 * time.Hour,
+		JobSize:             1 * time.Hour,
+		MaxJobsPerPartition: 1,
+		Compartments: compartments.Config{
+			Enabled: true,
+			Write:   compartments.WriteConfig{NumCompartments: numClusters},
+		},
+	}
+
+	reg := prometheus.NewPedanticRegistry()
+	sched, err := New(cfg, test.NewTestingLogger(t), reg)
+	require.NoError(t, err)
+
+	clients := make([]*kgo.Client, numClusters)
+	admins := make([]*kadm.Client, numClusters)
+	for c := range numClusters {
+		var vnet kfake.VirtualNetwork
+		_, kafkaAddr := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, partitions, "ingest", testkafka.WithVirtualNetwork(&vnet))
+		cli, err := kgo.NewClient(
+			kgo.SeedBrokers(kafkaAddr),
+			kgo.Dialer(vnet.DialContext),
+			kgo.RecordPartitioner(kgo.ManualPartitioner()),
+		)
+		require.NoError(t, err)
+		t.Cleanup(cli.Close)
+		clients[c] = cli
+		admins[c] = kadm.NewClient(cli)
+	}
+	sched.adminClients = admins
+	return sched, clients
 }
 
 // observationCompleteLocked: a getter for tests.
@@ -111,7 +153,7 @@ func TestService(t *testing.T) {
 		reg := prometheus.NewPedanticRegistry()
 		sched, err := New(cfg, test.NewTestingLogger(t), reg)
 		require.NoError(t, err)
-		sched.adminClient = kadm.NewClient(cli)
+		sched.adminClients = []*kadm.Client{kadm.NewClient(cli)}
 
 		// Signal our channel any time the schedule is updated.
 		scheduleUpdated := make(chan struct{})
@@ -176,7 +218,7 @@ func TestService(t *testing.T) {
 		require.NoError(t, sched.flushOffsetsToKafka(ctx))
 
 		// And our offsets should have advanced.
-		offs, err := fetchCommittedOffsets(ctx, sched.adminClient, sched.cfg.ConsumerGroup, sched.cfg.Kafka.Topic)
+		offs, err := fetchCommittedOffsets(ctx, sched.adminClients[0], sched.cfg.ConsumerGroup, sched.cfg.Kafka.Topic)
 		require.NoError(t, err)
 		o, ok := offs.Lookup(spec.Topic, spec.Partition)
 		require.True(t, ok)
@@ -561,7 +603,7 @@ func TestObservations(t *testing.T) {
 	verifyCommits()
 
 	// Make sure the resumption offsets account for the gaps.
-	offs, err := sched.initSingleClusterConsumptionOffsets(context.Background(), "ingest", time.Now())
+	offs, err := sched.initSingleClusterConsumptionOffsets(context.Background(), "ingest", time.Now(), 0)
 	require.NoError(t, err)
 	require.ElementsMatch(t, []partitionOffsets{
 		{partition: 0, resume: 0},
@@ -640,7 +682,7 @@ func TestKafkaFlush(t *testing.T) {
 	flushAndRequireOffsets := func(topic string, offsets map[int32]int64, args ...any) {
 		require.NoError(t, sched.flushOffsetsToKafka(ctx))
 
-		offs, err := fetchCommittedOffsets(ctx, sched.adminClient, sched.cfg.ConsumerGroup, sched.cfg.Kafka.Topic)
+		offs, err := fetchCommittedOffsets(ctx, sched.adminClients[0], sched.cfg.ConsumerGroup, sched.cfg.Kafka.Topic)
 		require.NoError(t, err)
 		offcount := 0
 		offs.Each(func(o kadm.Offset) {
@@ -765,12 +807,95 @@ func TestUpdateSchedule_ProbeFailure(t *testing.T) {
 	require.Equal(t, int64(3), ps.offsets[0].endOffset, "the next successful probe should record the produced records")
 }
 
+// TestUpdateSchedule_MultiCluster verifies that with compartments enabled the scheduler probes
+// every write cluster's end offsets, not just the first, so a partition's per-cluster offset
+// tracking reflects all clusters.
+func TestUpdateSchedule_MultiCluster(t *testing.T) {
+	ctx, cancel := context.WithCancelCause(context.Background())
+	t.Cleanup(func() { cancel(errors.New("test done")) })
+
+	sched, clients := mustMultiClusterScheduler(t, 1, 2)
+	sched.completeObservationMode(ctx)
+
+	produceRecords(ctx, t, clients[0], 0, 3)
+	produceRecords(ctx, t, clients[1], 0, 5)
+
+	sched.updateSchedule(ctx)
+
+	ps := sched.getPartitionState("ingest", 0)
+	require.Equal(t, int64(3), ps.offsets[0].endOffset, "cluster 0 end offset should be probed")
+	require.Equal(t, int64(5), ps.offsets[1].endOffset, "cluster 1 end offset should be probed")
+}
+
+// TestPopulateInitialJobs_MultiCluster verifies that at startup a partition's clusters are
+// probed and replayed together, producing a single job whose offset ranges bundle every cluster
+// that had new data.
+func TestPopulateInitialJobs_MultiCluster(t *testing.T) {
+	sched, _ := mustMultiClusterScheduler(t, 1, 2)
+	sched.cfg.MaxScanAge = 1 * time.Hour
+	sched.cfg.JobSize = 1 * time.Hour
+
+	recordTime := time.Date(2025, 3, 1, 10, 30, 0, 0, time.UTC)
+	finder0 := &mockOffsetFinder{offsets: []*offsetTime{{offset: 100, time: recordTime}}, end: 200, distinctTimes: make(map[time.Time]struct{})}
+	finder1 := &mockOffsetFinder{offsets: []*offsetTime{{offset: 500, time: recordTime}}, end: 700, distinctTimes: make(map[time.Time]struct{})}
+
+	offsetsByPartition := map[int32][]*partitionOffsets{
+		0: {
+			{partition: 0, start: 100, resume: 100, end: 200},
+			{partition: 0, start: 500, resume: 500, end: 700},
+		},
+	}
+
+	endTime := time.Date(2025, 3, 1, 11, 0, 0, 0, time.UTC)
+	scanner := newOffsetScanner([]offsetStore{finder0, finder1}, "ingest", endTime, sched.cfg.JobSize, sched.cfg.MaxScanAge, sched.metrics.probeRecordTimeDelta)
+	sched.populateInitialJobs(context.Background(), offsetsByPartition, scanner)
+
+	ps := sched.getPartitionState("ingest", 0)
+	require.Equal(t, 1, ps.pendingJobs.Len(), "one job bundling both clusters should be created")
+	spec := ps.pendingJobs.Front().Value.(*schedulerpb.JobSpec)
+	require.Equal(t, map[int32]schedulerpb.OffsetRange{
+		0: {StartOffset: 100, EndOffset: 200},
+		1: {StartOffset: 500, EndOffset: 700},
+	}, spec.OffsetRanges)
+}
+
+// TestPopulateInitialJobs_PartitionOnSubsetOfClusters verifies that when a partition has new data
+// on only some clusters, the resulting job's offset ranges bundle only the clusters that had data,
+// leaving the absent clusters out of the spec.
+func TestPopulateInitialJobs_PartitionOnSubsetOfClusters(t *testing.T) {
+	sched, _ := mustMultiClusterScheduler(t, 1, 2)
+	sched.cfg.MaxScanAge = 1 * time.Hour
+	sched.cfg.JobSize = 1 * time.Hour
+
+	recordTime := time.Date(2025, 3, 1, 10, 30, 0, 0, time.UTC)
+	finder0 := &mockOffsetFinder{offsets: []*offsetTime{{offset: 100, time: recordTime}}, end: 200, distinctTimes: make(map[time.Time]struct{})}
+	finder1 := &mockOffsetFinder{distinctTimes: make(map[time.Time]struct{})}
+
+	offsetsByPartition := map[int32][]*partitionOffsets{
+		0: {
+			{partition: 0, start: 100, resume: 100, end: 200},
+			nil,
+		},
+	}
+
+	endTime := time.Date(2025, 3, 1, 11, 0, 0, 0, time.UTC)
+	scanner := newOffsetScanner([]offsetStore{finder0, finder1}, "ingest", endTime, sched.cfg.JobSize, sched.cfg.MaxScanAge, sched.metrics.probeRecordTimeDelta)
+	sched.populateInitialJobs(context.Background(), offsetsByPartition, scanner)
+
+	ps := sched.getPartitionState("ingest", 0)
+	require.Equal(t, 1, ps.pendingJobs.Len(), "one job for the single cluster with data should be created")
+	spec := ps.pendingJobs.Front().Value.(*schedulerpb.JobSpec)
+	require.Equal(t, map[int32]schedulerpb.OffsetRange{
+		0: {StartOffset: 100, EndOffset: 200},
+	}, spec.OffsetRanges)
+}
+
 // TestLoadInitialCommittedOffsets verifies that the consumer group's committed offsets seed
 // each partition's state, and that commits for other topics in the group don't pollute it.
 func TestLoadInitialCommittedOffsets(t *testing.T) {
 	sched, _ := mustScheduler(t, 2)
 	ctx := t.Context()
-	admin := sched.adminClient
+	admin := sched.adminClients[0]
 
 	_, err := admin.CreateTopic(ctx, 1, 1, nil, "other-topic")
 	require.NoError(t, err)
@@ -793,7 +918,7 @@ func TestLoadInitialCommittedOffsets(t *testing.T) {
 func TestFetchCommittedOffsets_IgnoresForeignTopics(t *testing.T) {
 	sched, _ := mustScheduler(t, 1)
 	ctx := t.Context()
-	admin := sched.adminClient
+	admin := sched.adminClients[0]
 
 	_, err := admin.CreateTopic(ctx, 1, 1, nil, "other-topic")
 	require.NoError(t, err)
@@ -817,6 +942,7 @@ func TestFetchCommittedOffsets_IgnoresForeignTopics(t *testing.T) {
 // rejected instead of panicking the scheduler.
 func TestUpdateJob_ValidatesSpec(t *testing.T) {
 	tests := map[string]struct {
+		numClusters  int // 0 means compartments disabled.
 		spec         *schedulerpb.JobSpec
 		expectedCode codes.Code
 	}{
@@ -829,11 +955,33 @@ func TestUpdateJob_ValidatesSpec(t *testing.T) {
 				OffsetRanges: map[int32]schedulerpb.OffsetRange{1: {StartOffset: 5, EndOffset: 10}}},
 			expectedCode: codes.InvalidArgument,
 		},
+		"enabled accepts valid offset ranges": {
+			numClusters: 2,
+			spec: &schedulerpb.JobSpec{Topic: "ingest", Partition: 0,
+				OffsetRanges: map[int32]schedulerpb.OffsetRange{0: {StartOffset: 5, EndOffset: 10}, 1: {StartOffset: 7, EndOffset: 12}}},
+			expectedCode: codes.OK,
+		},
+		"enabled rejects an out-of-range cluster ID": {
+			numClusters: 2,
+			spec: &schedulerpb.JobSpec{Topic: "ingest", Partition: 0,
+				OffsetRanges: map[int32]schedulerpb.OffsetRange{5: {StartOffset: 5, EndOffset: 10}}},
+			expectedCode: codes.InvalidArgument,
+		},
+		"enabled rejects start/end offsets": {
+			numClusters:  2,
+			spec:         &schedulerpb.JobSpec{Topic: "ingest", Partition: 0, StartOffset: 5, EndOffset: 10},
+			expectedCode: codes.InvalidArgument,
+		},
 	}
 
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
-			sched, _ := mustScheduler(t, 1)
+			var sched *BlockBuilderScheduler
+			if tc.numClusters == 0 {
+				sched, _ = mustScheduler(t, 1)
+			} else {
+				sched, _ = mustMultiClusterScheduler(t, 1, tc.numClusters)
+			}
 
 			_, err := sched.UpdateJob(t.Context(), &schedulerpb.UpdateJobRequest{
 				Key:      &schedulerpb.JobKey{Id: "job/0/1", Epoch: 1},
@@ -908,6 +1056,24 @@ func TestPopulateInitialJobs_ProbeErrorIsolation(t *testing.T) {
 
 	ps1 := sched.getPartitionState("ingest", 1)
 	require.Equal(t, int64(700), ps1.offsets[0].endOffset, "the other partition should still be replayed")
+}
+
+// TestCompartmentError verifies the write compartment is only attached to errors when
+// compartments are enabled, so single-cluster errors aren't misleadingly attributed to one.
+func TestCompartmentError(t *testing.T) {
+	baseErr := errors.New("boom")
+
+	t.Run("disabled leaves the error unannotated", func(t *testing.T) {
+		sched, _ := mustScheduler(t, 1)
+		require.Equal(t, baseErr, sched.compartmentError(0, baseErr))
+	})
+
+	t.Run("enabled annotates with the write compartment", func(t *testing.T) {
+		sched, _ := mustMultiClusterScheduler(t, 1, 2)
+		err := sched.compartmentError(1, baseErr)
+		require.ErrorIs(t, err, baseErr)
+		require.Contains(t, err.Error(), "write compartment 1")
+	})
 }
 
 func TestPopulateInitialJobs_ProbeTimesReused(t *testing.T) {
