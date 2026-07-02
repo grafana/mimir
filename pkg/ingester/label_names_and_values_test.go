@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -377,6 +378,146 @@ func TestComputeLabelValuesSeriesCount_AbortsOnCancelledContext(t *testing.T) {
 	}
 	require.Len(t, got, 1, "producer should abort after the first ctx check, not iterate all chunks")
 	require.ErrorIs(t, got[0].err, context.Canceled)
+}
+
+// TestComputeLabelValuesSeriesCount_PoolStopped exercises the Submit-error
+// branch: when the pool rejects work (here: it is already stopped), the
+// producer must emit exactly one error result and close the channel.
+// The wg.Done()/close(countCh) pairing on that branch is what keeps
+// labelValuesCardinality from hanging on the gRPC stream.
+func TestComputeLabelValuesSeriesCount_PoolStopped(t *testing.T) {
+	pool, err := workerpool.New(workerpool.Config{Size: 1}, "test", nil, log.NewNopLogger())
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), pool))
+	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), pool))
+
+	resCh := computeLabelValuesSeriesCount(
+		context.Background(),
+		pool,
+		"tenant-1",
+		2,
+		"lblName",
+		[]string{"a", "b", "c"},
+		nil,
+		nil,
+		func(context.Context, tsdb.IndexPostingsReader, ...*labels.Matcher) (index.Postings, error) {
+			return infinitePostings{}, nil
+		},
+	)
+
+	got := make([]labelValueCountResult, 0, 1)
+	for r := range resCh {
+		got = append(got, r)
+	}
+	require.Len(t, got, 1)
+	require.ErrorIs(t, got[0].err, workerpool.ErrPoolStopped)
+}
+
+// TestComputeLabelValuesSeriesCount_MidStreamCancellationFreesPoolWorkers
+// cancels the context while a chunk is executing on a pool worker and,
+// like labelValuesCardinality on its first error result, stops reading
+// resultCh without draining it. Workers must never block sending to the
+// abandoned channel (its buffer covers every possible send), otherwise a
+// worker of the shared pool would be lost to all tenants.
+func TestComputeLabelValuesSeriesCount_MidStreamCancellationFreesPoolWorkers(t *testing.T) {
+	pool, err := workerpool.New(workerpool.Config{Size: 1}, "test", nil, log.NewNopLogger())
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), pool))
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), pool))
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	lblValues := make([]string, 100)
+	for i := range lblValues {
+		lblValues[i] = strconv.Itoa(i)
+	}
+
+	var once sync.Once
+	firstChunkStarted := make(chan struct{})
+	release := make(chan struct{})
+	resCh := computeLabelValuesSeriesCount(
+		ctx,
+		pool,
+		"tenant-1",
+		1,
+		"lblName",
+		lblValues,
+		nil,
+		nil,
+		func(ctx context.Context, _ tsdb.IndexPostingsReader, _ ...*labels.Matcher) (index.Postings, error) {
+			once.Do(func() { close(firstChunkStarted) })
+			<-release
+			return nil, ctx.Err()
+		},
+	)
+
+	// Cancel while the first chunk is executing on the worker, then let every
+	// queued chunk run to its error result.
+	<-firstChunkStarted
+	cancel()
+	close(release)
+
+	// Read the first (error) result and abandon the channel without draining it.
+	res := <-resCh
+	require.Error(t, res.err)
+
+	// The pool's only worker must not be stuck sending on the abandoned
+	// channel: another tenant's task must still get picked up.
+	done := make(chan struct{})
+	require.NoError(t, pool.Submit("test", "tenant-2", func() { close(done) }))
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("pool worker did not pick up another tenant's task; it is likely blocked sending on the abandoned result channel")
+	}
+}
+
+// TestComputeLabelValuesSeriesCount_ChunkBoundaries asserts every label value
+// is processed exactly once regardless of how the values split into chunks,
+// including a final partial chunk.
+func TestComputeLabelValuesSeriesCount_ChunkBoundaries(t *testing.T) {
+	pool, err := workerpool.New(workerpool.Config{Size: 2}, "test", nil, log.NewNopLogger())
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), pool))
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), pool))
+	})
+
+	const chunkSize = 4
+	for _, numValues := range []int{1, chunkSize - 1, chunkSize, chunkSize + 1, 2*chunkSize - 1, 2 * chunkSize} {
+		t.Run(strconv.Itoa(numValues), func(t *testing.T) {
+			lblValues := make([]string, numValues)
+			for i := range lblValues {
+				lblValues[i] = strconv.Itoa(i)
+			}
+
+			resCh := computeLabelValuesSeriesCount(
+				context.Background(),
+				pool,
+				"tenant-1",
+				chunkSize,
+				"lblName",
+				lblValues,
+				nil,
+				nil,
+				func(context.Context, tsdb.IndexPostingsReader, ...*labels.Matcher) (index.Postings, error) {
+					return index.EmptyPostings(), nil
+				},
+			)
+
+			seen := map[string]int{}
+			for r := range resCh {
+				require.NoError(t, r.err)
+				seen[r.val]++
+			}
+			require.Len(t, seen, numValues)
+			for _, v := range lblValues {
+				require.Equal(t, 1, seen[v], "label value %q processed wrong number of times", v)
+			}
+		})
+	}
 }
 
 func BenchmarkIngester_LabelValuesCardinality(b *testing.B) {

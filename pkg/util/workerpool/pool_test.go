@@ -141,6 +141,15 @@ func TestPool_StopDrainsInflightWork(t *testing.T) {
 	assert.Equal(t, int64(4), ran.Load())
 }
 
+func TestPool_SubmitAfterStopReturnsErrPoolStopped(t *testing.T) {
+	p, err := New(Config{Size: 1}, "test", nil, log.NewNopLogger())
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), p))
+	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), p))
+
+	require.ErrorIs(t, p.Submit("test", "tenant", func() {}), ErrPoolStopped)
+}
+
 func TestPool_FailedStartCleansUp(t *testing.T) {
 	// dskit's BasicService does not call stopping() when starting() returns an
 	// error, so starting() must tear down the queue and any workers itself.
