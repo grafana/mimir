@@ -3945,6 +3945,7 @@ When looking at `msg="query stats"` consider the following attributes;
 - query_wall_time_seconds — time spent actually executing the query
 - encode_time_seconds — time spent serialising the result to JSON
 - remote_execution_request_count — number of requests sent to queriers for execution
+- retries — number of times the query-frontend retried downstream requests while processing the query (0 if all requests succeeded on their first attempt)
 - split_queries — the query was split into n sub-queries by the time-splitting middleware
 - sharded_queries — the number of sharded queries
 - spun_off_subqueries — the number of subqueries spun off
