@@ -91,7 +91,12 @@ const QueryPlanV16 = QueryPlanVersion(16)
 // this version.
 const QueryPlanV17 = QueryPlanVersion(17)
 
-var MaximumSupportedQueryPlanVersion = QueryPlanV17
+// QueryPlanV18 computes the SplitFunctionCall split ranges at materialize time rather than storing
+// them in the proto. The split ranges depend on the out-of-order window and current time, which are
+// evaluated on the querier when the operator is materialized.
+const QueryPlanV18 = QueryPlanVersion(18)
+
+var MaximumSupportedQueryPlanVersion = QueryPlanV18
 
 type QueryPlan struct {
 	Root       Node

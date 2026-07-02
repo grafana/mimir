@@ -432,11 +432,11 @@ func TestQuerySplitting_WithCSE(t *testing.T) {
 
 	expectedPlan := `
 		- BinaryExpression: LHS / RHS, hints exclude ()
-			- LHS: SplitFunctionCall: splits=4 [(3600000,7199999], (7199999,14399999]*, (14399999,21599999]*, (21599999,21600000]]
+			- LHS: SplitFunctionCall
 				- FunctionCall: sum_over_time(...)
 					- ref#1 Duplicate
 						- MatrixSelector: {__name__="test_metric"}[5h0m0s]
-			- RHS: SplitFunctionCall: splits=4 [(3600000,7199999], (7199999,14399999]*, (14399999,21599999]*, (21599999,21600000]]
+			- RHS: SplitFunctionCall
 				- FunctionCall: count_over_time(...)
 					- ref#1 Duplicate ...
 	`
@@ -594,7 +594,7 @@ func TestQuerySplitting_SkipHistogramBucketsNotApplied(t *testing.T) {
 
 	require.Equal(t, testutils.TrimIndent(`
 		- FunctionCall: histogram_count(...)
-			- SplitFunctionCall: splits=4 [(3600000,7199999], (7199999,14399999]*, (14399999,21599999]*, (21599999,21600000]]
+			- SplitFunctionCall
 				- FunctionCall: rate(...)
 					- MatrixSelector: {__name__="some_metric"}[5h0m0s]
 	`), p.String())
@@ -715,7 +715,7 @@ func TestQuerySplitting_ProjectionNotApplied(t *testing.T) {
 	// Checking there's no include annotation on MatrixSelector
 	require.Equal(t, testutils.TrimIndent(`
 		- AggregateExpression: sum by (job)
-			- SplitFunctionCall: splits=4 [(3600000,7199999], (7199999,14399999]*, (14399999,21599999]*, (21599999,21600000]]
+			- SplitFunctionCall
 				- FunctionCall: rate(...)
 					- MatrixSelector: {__name__="some_metric"}[5h0m0s]
 	`), p.String())
@@ -842,8 +842,9 @@ func TestQuerySplitting_With3hRange_NoCacheableRanges(t *testing.T) {
 
 	// Query at 5h + 1ms with 3h range: (2h+1ms, 5h+1ms]
 	// First aligned boundary after 2h+1ms: 4h
-	// Check complete block: 4h + 2h = 6h > 5h+1ms, so NO complete block
-	// Query splitting should NOT be applied
+	// Check complete block: 4h + 2h = 6h > 5h+1ms, so NO complete block.
+	// A split node is introduced at planning time, but the materializer falls back to unsplit execution because there
+	// is no complete cacheable block.
 	// Data: first sample @ 2h10m = 13, last sample @ 5h = 30, samples = 18
 	// Sum: (13+30)*(18/2) = 387
 	expr := "sum_over_time(test_metric[3h])"
@@ -852,12 +853,12 @@ func TestQuerySplitting_With3hRange_NoCacheableRanges(t *testing.T) {
 	require.Equal(t, expectedScalarResult(ts, 387, "env", "prod"), result)
 	verifyEvaluationStats(t, stats, 18, 18)
 
-	// Since query splitting is not applied, should be a single storage query
+	// Since the query falls back to unsplit execution, there should be a single storage query.
 	require.Equal(t, []storageQueryRange{
 		{mint: 2*hourInMs + 2, maxt: 5*hourInMs + 1},
 	}, ranges)
 
-	// No cache operations should occur since splitting wasn't applied
+	// No cache operations should occur since the query falls back to unsplit execution.
 	verifyCacheStats(t, testCache, 0, 0, 0)
 }
 
@@ -874,7 +875,9 @@ func TestQuerySplitting_With3hRangeAndOffset_NoCacheableRanges(t *testing.T) {
 	// Query at 4h30m with 3h range and 31m offset
 	// Storage time: (4h30m - 3h - 31m, 4h30m - 31m] = (59m, 3h59m]
 	// First aligned boundary after 59m: 2h
-	// 2h + 2h = 4h > 3h59m (end time of query), so NO complete block
+	// 2h + 2h = 4h > 3h59m (end time of query), so NO complete block.
+	// A split node is introduced at planning time, but the materializer falls back to unsplit execution because there
+	// is no complete cacheable block.
 	expr := "sum_over_time(test_metric[3h] offset 31m)"
 	ts := baseT.Add(4*time.Hour + 30*time.Minute)
 
@@ -882,12 +885,12 @@ func TestQuerySplitting_With3hRangeAndOffset_NoCacheableRanges(t *testing.T) {
 	require.Equal(t, expectedScalarResult(ts, 261, "env", "prod"), result)
 	verifyEvaluationStats(t, stats, 18, 18)
 
-	// Since query splitting is not applied, should be a single storage query
+	// Since the query falls back to unsplit execution, there should be a single storage query.
 	require.Equal(t, []storageQueryRange{
 		{mint: 59*minuteInMs + 1, maxt: 3*hourInMs + 59*minuteInMs},
 	}, ranges)
 
-	// No cache operations should occur since splitting wasn't applied
+	// No cache operations should occur since the query falls back to unsplit execution.
 	verifyCacheStats(t, testCache, 0, 0, 0)
 }
 
@@ -903,8 +906,10 @@ func TestQuerySplitting_WithOOOWindow(t *testing.T) {
 
 	baseT := timestamp.Time(0)
 	fixedNow := baseT.Add(12 * time.Hour)
+	// The out-of-order threshold is computed at materialize time using the engine's TimeNow, so set a fixed "now".
+	opts.TimeNow = func() time.Time { return fixedNow }
 
-	queryPlanner, err := streamingpromql.NewQueryPlannerWithTime(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider(), func() time.Time { return fixedNow })
+	queryPlanner, err := streamingpromql.NewQueryPlanner(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
 
 	mimirEngine, err := streamingpromql.NewEngineWithCache(opts, stats.NewQueryMetrics(nil), queryPlanner, irCache)
