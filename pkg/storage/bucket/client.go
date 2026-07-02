@@ -21,6 +21,7 @@ import (
 	objstoretracing "github.com/thanos-io/objstore/tracing/opentelemetry"
 	"go.opentelemetry.io/otel"
 
+	"github.com/grafana/mimir/pkg/compartments"
 	"github.com/grafana/mimir/pkg/storage/bucket/azure"
 	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
 	"github.com/grafana/mimir/pkg/storage/bucket/gcs"
@@ -157,6 +158,43 @@ func (cfg *Config) Validate() error {
 	}
 
 	return cfg.StorageBackendConfig.Validate()
+}
+
+// BucketName returns the configured bucket (S3/GCS), container (Azure/Swift) or directory (filesystem)
+// name for the active backend, or an empty string for an unknown backend.
+func (cfg *Config) BucketName() string {
+	switch cfg.Backend {
+	case S3:
+		return cfg.S3.BucketName
+	case GCS:
+		return cfg.GCS.BucketName
+	case Azure:
+		return cfg.Azure.ContainerName
+	case Swift:
+		return cfg.Swift.ContainerName
+	case Filesystem:
+		return cfg.Filesystem.Directory
+	}
+	return ""
+}
+
+// ReadCompartmentConfig returns a copy of cfg with the read-compartment-id placeholder resolved to the
+// given read compartment ID in the active backend's bucket name. It is a no-op when the placeholder is
+// absent. It must enumerate the same backends as BucketName so the two stay consistent.
+func (cfg Config) ReadCompartmentConfig(readCompartmentID int) Config {
+	switch cfg.Backend {
+	case S3:
+		cfg.S3.BucketName = compartments.ReplaceReadCompartment(cfg.S3.BucketName, readCompartmentID)
+	case GCS:
+		cfg.GCS.BucketName = compartments.ReplaceReadCompartment(cfg.GCS.BucketName, readCompartmentID)
+	case Azure:
+		cfg.Azure.ContainerName = compartments.ReplaceReadCompartment(cfg.Azure.ContainerName, readCompartmentID)
+	case Swift:
+		cfg.Swift.ContainerName = compartments.ReplaceReadCompartment(cfg.Swift.ContainerName, readCompartmentID)
+	case Filesystem:
+		cfg.Filesystem.Directory = compartments.ReplaceReadCompartment(cfg.Filesystem.Directory, readCompartmentID)
+	}
+	return cfg
 }
 
 // NewClient creates a new bucket client based on the configured backend
