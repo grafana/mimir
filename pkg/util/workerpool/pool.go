@@ -288,6 +288,13 @@ func (p *Pool) Submit(dimension string, tenantID string, fn func()) error {
 // user is the only variable label on these metrics (pool is a const label), so DeleteLabelValues
 // with just tenantID is sufficient. If a removed tenant submits work again, the series is simply
 // recreated and cleaned up on the next removal.
+//
+// RemoveTenant does not synchronize with the queue's enqueue/dequeue accounting.
+// If the tenant still has queued tasks when it is called, a later dequeue recreates
+// the queue-length series and decrements it below zero, where it stays until the
+// next removal. Closing that race would mean serializing removal through the
+// queue's dispatcher; we accept the cosmetic gauge instead, since callers remove
+// tenants they consider idle, making queued work at removal time rare.
 func (p *Pool) RemoveTenant(tenantID string) {
 	p.queueLength.DeleteLabelValues(tenantID)
 	p.maxQueueLength.DeleteTenant(tenantID)
