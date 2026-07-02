@@ -321,6 +321,88 @@ type testHistogram struct {
 	shouldDiscard bool
 }
 
+func TestTSDBBuilder_BiggerOOOBlocksForOldSamples(t *testing.T) {
+	const (
+		partitionID = int32(0)
+		userID      = "user1"
+	)
+
+	day := 24 * time.Hour.Milliseconds()
+	blockRange := 2 * time.Hour.Milliseconds()
+
+	// "now" is day 10 at 03:00.
+	now := 10*day + 3*time.Hour.Milliseconds()
+
+	for _, tc := range []struct {
+		name           string
+		enableFlag     bool
+		expBlockRanges []int64 // expected (maxT - minT) for each block, sorted by minT
+	}{
+		{
+			name:       "disabled produces 2h blocks",
+			enableFlag: false,
+			// All 4 samples each land in their own 2h block.
+			expBlockRanges: []int64{blockRange, blockRange, blockRange, blockRange},
+		},
+		{
+			name:       "enabled produces 24h blocks for previous days",
+			enableFlag: true,
+			// Day 7 and day 8 OOO samples each get a 24h block;
+			// day 10 OOO sample (current day) and in-order sample each get a 2h block.
+			expBlockRanges: []int64{day, day, blockRange, blockRange},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			limits := map[string]*validation.Limits{
+				userID: {
+					OutOfOrderTimeWindow: model.Duration(30 * 24 * time.Hour),
+				},
+			}
+			config, overrides := blockBuilderConfig(t, "kafka:9092", validation.NewMockTenantLimits(limits))
+			config.BlocksStorage.TSDB.BiggerOutOfOrderBlocksForOldSamples = tc.enableFlag
+
+			builder := NewTSDBBuilder(
+				partitionID, config, overrides, log.NewNopLogger(),
+				newTSDBBuilderMetrics(prometheus.NewPedanticRegistry()),
+				mimir_tsdb.NewTSDBMetrics(prometheus.NewPedanticRegistry(), log.NewNopLogger()),
+			)
+
+			ctx := user.InjectOrgID(t.Context(), userID)
+
+			// Push an in-order sample at "now" first, then OOO samples on previous days.
+			for _, ts := range []int64{
+				now,                                 // in-order, day 10 03:00
+				7*day + 5*time.Hour.Milliseconds(),  // OOO, day 7
+				8*day + 11*time.Hour.Milliseconds(), // OOO, day 8
+				10*day + 1*time.Hour.Milliseconds(), // OOO, day 10 (current day)
+			} {
+				req := createWriteRequest(userID, floatSample(ts, float64(ts)), nil)
+				require.NoError(t, builder.PushToStorageAndReleaseRequest(ctx, &req))
+			}
+
+			shipperDir := t.TempDir()
+			_, err := builder.CompactAndUpload(ctx, mockUploaderFunc(t, shipperDir))
+			require.NoError(t, err)
+
+			newDB, err := tsdb.Open(shipperDir, promslog.NewNopLogger(), nil, nil, nil)
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, newDB.Close()) })
+
+			blocks := newDB.Blocks()
+			slices.SortFunc(blocks, func(a, b *tsdb.Block) int {
+				return cmp.Compare(a.Meta().MinTime, b.Meta().MinTime)
+			})
+
+			require.Len(t, blocks, len(tc.expBlockRanges), "unexpected number of blocks")
+			for i, b := range blocks {
+				got := b.Meta().MaxTime - b.Meta().MinTime
+				require.Equal(t, got, tc.expBlockRanges[i],
+					"block %d: minT=%d maxT=%d range=%d", i, b.Meta().MinTime, b.Meta().MaxTime, got)
+			}
+		})
+	}
+}
+
 func TestTSDBBuilder_CompactToReduceInMemorySeries(t *testing.T) {
 	const (
 		user1       = "user1"
