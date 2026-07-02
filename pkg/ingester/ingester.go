@@ -203,8 +203,9 @@ type Config struct {
 	IngestStorageConfig ingest.Config       `yaml:"-"`
 	Compartments        compartments.Config `yaml:"-"`
 
-	// This config can be overridden in tests.
+	// These configs can be overridden in tests.
 	limitMetricsUpdatePeriod time.Duration `yaml:"-"`
+	minCompactionLoopDelay   time.Duration `yaml:"-"`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
@@ -238,6 +239,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 
 	// Hardcoded config (can only be overridden in tests).
 	cfg.limitMetricsUpdatePeriod = time.Second * 15
+	cfg.minCompactionLoopDelay = defaultMinCompactionLoopDelay
 }
 
 func (cfg *Config) Validate(compartmentsCfg compartments.Config) error {

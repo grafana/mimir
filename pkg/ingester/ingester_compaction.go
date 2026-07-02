@@ -23,11 +23,12 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 )
 
-// minCompactionLoopDelay is the minimum delay enforced between TSDB head
-// compaction iterations, so the loop cannot run continuously and starve
-// other ingester work when a single iteration approaches or exceeds the
-// configured compaction interval.
-const minCompactionLoopDelay = 10 * time.Second
+// defaultMinCompactionLoopDelay is the default minimum delay enforced between
+// TSDB head compaction iterations, so the loop cannot run continuously and
+// starve other ingester work when a single iteration approaches or exceeds the
+// configured compaction interval. It can be overridden in tests via
+// Config.minCompactionLoopDelay.
+const defaultMinCompactionLoopDelay = 10 * time.Second
 
 func (i *Ingester) shipBlocksLoop(ctx context.Context) error {
 	// We add a slight jitter to make sure that if the head compaction interval and ship interval are set to the same
@@ -173,7 +174,7 @@ func (i *Ingester) compactionServiceRunning(ctx context.Context) error {
 			// so the compaction loop can't run continuously when iterations are slow and
 			// starve other ingester work (e.g. ingestion offset commits).
 			iterationDuration := time.Since(iterationStart)
-			if extraDelay := compactionLoopExtraDelay(iterationDuration, standardInterval, minCompactionLoopDelay); extraDelay > 0 {
+			if extraDelay := compactionLoopExtraDelay(iterationDuration, standardInterval, i.cfg.minCompactionLoopDelay); extraDelay > 0 {
 				level.Warn(i.logger).Log(
 					"msg", "enforcing minimum delay between TSDB head compaction iterations because the previous iteration approached or exceeded the configured interval",
 					"iteration_duration", iterationDuration,
