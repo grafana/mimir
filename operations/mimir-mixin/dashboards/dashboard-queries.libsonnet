@@ -365,7 +365,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
             max by (ingester_id, %(groupByCluster)s, %(groupByLabels)s) (
               label_replace(
                 %(perIngesterQuery)s,
-                "ingester_id", "$1", "%(instance)s", ".*-([0-9]+)$"
+                "ingester_id", "$1", "%(instance)s", ".*?-(rc-[0-9]+-[0-9]+|[0-9]+)$"
               )
             )
           )
