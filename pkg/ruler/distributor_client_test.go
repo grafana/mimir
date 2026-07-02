@@ -218,22 +218,22 @@ func TestDistributorGRPCClient(t *testing.T) {
 
 	t.Run("push uses configured max retries and logs", func(t *testing.T) {
 		for _, tc := range []struct {
-			name              string
-			maxRetries        int
-			expectedCalls     int
-			expectedRetryLogs int
+			name                string
+			maxRetries          int
+			expectedCalls       int
+			expectedFailureLogs int
 		}{
 			{
-				name:              "three total attempts",
-				maxRetries:        3,
-				expectedCalls:     3,
-				expectedRetryLogs: 2,
+				name:                "three total attempts",
+				maxRetries:          3,
+				expectedCalls:       3,
+				expectedFailureLogs: 3,
 			},
 			{
-				name:              "one total attempt",
-				maxRetries:        1,
-				expectedCalls:     1,
-				expectedRetryLogs: 0,
+				name:                "one total attempt",
+				maxRetries:          1,
+				expectedCalls:       1,
+				expectedFailureLogs: 1,
 			},
 		} {
 			t.Run(tc.name, func(t *testing.T) {
@@ -255,13 +255,35 @@ func TestDistributorGRPCClient(t *testing.T) {
 				require.Equal(t, tc.expectedCalls, srv.calls())
 
 				logOutput := logs.String()
-				require.Equal(t, tc.expectedRetryLogs, strings.Count(logOutput, "failed to remotely push rule evaluation results"))
-				if tc.expectedRetryLogs > 0 {
-					require.Contains(t, logOutput, "attempt=1")
-					require.Contains(t, logOutput, "max_retries="+strconv.Itoa(tc.maxRetries))
+				require.Equal(t, tc.expectedFailureLogs, strings.Count(logOutput, "failed to write to remote distributor"))
+				require.Equal(t, tc.expectedFailureLogs, strings.Count(logOutput, "retryable=true"))
+				require.Equal(t, tc.expectedFailureLogs, strings.Count(logOutput, "max_attempts="+strconv.Itoa(tc.maxRetries)))
+				for attempt := 1; attempt <= tc.expectedFailureLogs; attempt++ {
+					require.Contains(t, logOutput, "attempt="+strconv.Itoa(attempt))
 				}
 			})
 		}
+	})
+
+	t.Run("push logs non-retryable failure", func(t *testing.T) {
+		srv := &mockDistributorServer{
+			errs: []error{
+				status.Error(codes.ResourceExhausted, "limited"),
+			},
+		}
+		var logs bytes.Buffer
+		client := setupDistributorGRPCClient(t, srv, log.NewLogfmtLogger(&logs), nil)
+
+		_, err := client.Push(user.InjectOrgID(t.Context(), "test-user"), newTestWriteRequest())
+		require.Equal(t, codes.ResourceExhausted, status.Code(err))
+		require.Contains(t, err.Error(), "limited")
+		require.Equal(t, 1, srv.calls())
+
+		logOutput := logs.String()
+		require.Equal(t, 1, strings.Count(logOutput, "failed to write to remote distributor"))
+		require.Contains(t, logOutput, "retryable=false")
+		require.Contains(t, logOutput, "attempt=1")
+		require.Contains(t, logOutput, "max_attempts=2")
 	})
 
 	t.Run("push returns context error when context is canceled before first attempt", func(t *testing.T) {

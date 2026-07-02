@@ -173,35 +173,30 @@ func (c *DistributorGRPCClient) Push(ctx context.Context, req *mimirpb.WriteRequ
 		return client.Push(attemptCtx, req)
 	}
 
-	maxRetries := c.cfg.GRPCClientConfig.BackoffConfig.MaxRetries
+	maxAttempts := c.cfg.GRPCClientConfig.BackoffConfig.MaxRetries
 	retry := backoff.New(ctx, c.cfg.GRPCClientConfig.BackoffConfig)
-	attempt := 0
 	var err error
 	for retry.Ongoing() {
-		attempt++
-		resp, err := pushAttempt()
+		var resp *mimirpb.WriteResponse
+		resp, err = pushAttempt()
 		if err == nil {
 			return resp, nil
 		}
-		if !isRetryableDistributorPushError(err) {
-			return nil, err
-		}
-		if maxRetries > 0 && attempt >= maxRetries {
-			return nil, err
-		}
 
-		level.Warn(c.logger).Log("msg", "failed to remotely push rule evaluation results, will retry", "err", err, "attempt", attempt, "max_retries", maxRetries)
+		retryable := isRetryableDistributorPushError(err)
+		level.Warn(c.logger).Log("msg", "failed to write to remote distributor", "err", err, "retryable", retryable, "attempt", retry.NumRetries()+1, "max_attempts", maxAttempts)
+		if !retryable {
+			return nil, err
+		}
 
 		retry.Wait()
-		if ctx.Err() != nil {
-			return nil, ctx.Err()
-		}
 	}
-
-	if retryErr := retry.Err(); retryErr != nil {
-		return nil, retryErr
+	if err != nil {
+		// A retryable push error occurred, but either we reached max attempts or the context was canceled.
+		return nil, err
 	}
-	return nil, err
+	// No push attempt was made because backoff was canceled before the first try.
+	return nil, retry.Err()
 }
 
 func isRetryableDistributorPushError(err error) bool {
