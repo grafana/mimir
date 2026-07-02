@@ -71,9 +71,10 @@ var (
 )
 
 type Config struct {
-	Enabled     bool            `yaml:"enabled"`
-	KafkaConfig KafkaConfig     `yaml:"kafka"`
-	Migration   MigrationConfig `yaml:"migration"`
+	Enabled     bool             `yaml:"enabled"`
+	KafkaConfig KafkaConfig      `yaml:"kafka"`
+	Migration   MigrationConfig  `yaml:"migration"`
+	HeapMerger  HeapMergerConfig `yaml:"heap_merger"`
 
 	WriteLogsFsyncBeforeKafkaCommitConcurrency int `yaml:"write_logs_fsync_before_kafka_commit_concurrency" category:"advanced"`
 }
@@ -84,6 +85,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 
 	cfg.KafkaConfig.RegisterFlagsWithPrefix("ingest-storage.kafka.", f)
 	cfg.Migration.RegisterFlagsWithPrefix("ingest-storage.migration.", f)
+	cfg.HeapMerger.RegisterFlagsWithPrefix("ingest-storage.heap-merger.", f)
 }
 
 // Validate the config.
