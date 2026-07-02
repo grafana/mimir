@@ -25,9 +25,14 @@ import (
 // per write compartment.
 //
 // Each per-cluster reader has its own Kafka connection, consumer group, and offset file; offsets are not
-// shared across clusters because each cluster has an independent offset space. Records from the
-// different clusters are pushed independently: there is no cross-cluster ordering, which relies on the
-// TSDB out-of-order window.
+// shared across clusters because each cluster has an independent offset space.
+//
+// Cross-cluster ordering depends on whether heap merging is enabled:
+//   - When disabled, each cluster's records are pushed independently and cross-cluster ordering relies
+//     entirely on the TSDB out-of-order window.
+//   - When enabled, every cluster's records are funneled through a shared HeapMerger that orders them by
+//     Kafka record timestamp (best effort) before forwarding to the Pusher. A per-cluster reader only
+//     commits its offset once the merger has pushed its records, preserving at-least-once delivery.
 //
 // MultiClusterPartitionReader presents itself as a single services.Service so it can be managed like a
 // SingleClusterPartitionReader.
@@ -36,6 +41,7 @@ type MultiClusterPartitionReader struct {
 
 	logger  log.Logger
 	readers []*SingleClusterPartitionReader
+	merger  *HeapMerger // nil when heap merging is disabled
 	manager *services.Manager
 	watcher *services.FailureWatcher
 }
@@ -48,8 +54,13 @@ type MultiClusterPartitionReader struct {
 // compartments.WriteCompartmentIDPlaceholder, which is replaced with the Kafka cluster ID so each cluster
 // tracks offsets in its own file. instanceID is the base for each reader's consumer group, suffixed per
 // Kafka cluster so each cluster tracks offsets independently.
+//
+// When mergerCfg.Enabled is set, records from every cluster are merged by Kafka record timestamp (best
+// effort) before being pushed; otherwise each cluster pushes independently and cross-cluster ordering
+// relies on the TSDB out-of-order window.
 func NewMultiClusterPartitionReader(
 	clusterConfigs []KafkaConfig,
+	mergerCfg HeapMergerConfig,
 	partitionID int32,
 	instanceID string,
 	offsetFilePath string,
@@ -64,6 +75,28 @@ func NewMultiClusterPartitionReader(
 		return nil, fmt.Errorf("the offset file path %q must contain the %q placeholder", offsetFilePath, compartments.WriteCompartmentIDPlaceholder)
 	}
 
+	// When heap merging is enabled, all clusters feed a shared HeapMerger whose downstream consumer is a
+	// PusherConsumer that turns the merged record stream into per-tenant WriteRequests. When disabled,
+	// each per-cluster reader gets its own PusherConsumer and pushes independently (cross-cluster
+	// ordering then relies on the TSDB out-of-order window).
+	//
+	// Merging is skipped when there's a single Kafka cluster: the heap only ever holds that one cluster's
+	// records so it can't reorder anything, and routing them through the merger would add its batching
+	// latency and single-goroutine serialization for no ordering benefit.
+	var merger *HeapMerger
+	if mergerCfg.Enabled && len(clusterConfigs) > 1 {
+		mergerLogger := log.With(logger, "component", "heap_merger")
+		// The downstream push path is shared across all clusters, so its PusherConsumer metrics are
+		// registered once on the base registerer rather than per cluster.
+		pusherMetrics := NewPusherConsumerMetrics(reg)
+		pusherFactory := consumerFactoryFunc(func() RecordConsumer {
+			// clusterConfigs[0] only carries the Kafka client tunables consulted by PusherConsumer
+			// (e.g. FallbackClientErrorSampleRate); those are identical across clusters.
+			return NewPusherConsumer(pusher, clusterConfigs[0], pusherMetrics, mergerLogger)
+		})
+		merger = NewHeapMerger(mergerCfg, pusherFactory, NewHeapMergerMetrics(reg), mergerLogger)
+	}
+
 	readers := make([]*SingleClusterPartitionReader, len(clusterConfigs))
 	// There is one Kafka cluster per write compartment, so the Kafka cluster ID is also the write
 	// compartment ID. The offset file name, consumer group suffix, and metric label keep the
@@ -74,7 +107,19 @@ func NewMultiClusterPartitionReader(
 		clusterReg := prometheus.WrapRegistererWith(prometheus.Labels{"write_compartment": strconv.Itoa(kafkaClusterID)}, reg)
 		clusterLogger := log.With(logger, "write_compartment", kafkaClusterID)
 
-		reader, err := NewSingleClusterPartitionReader(clusterCfg, partitionID, readerInstanceID, clusterOffsetFilePath, pusher, clusterLogger, clusterReg)
+		var reader *SingleClusterPartitionReader
+		var err error
+		if merger != nil {
+			// The reader streams its records into the shared merger, which pushes them (in merged order)
+			// via the shared PusherConsumer. The Pusher is still passed as the PreCommitNotifier so
+			// offset commits notify it directly.
+			consumerFactory := consumerFactoryFunc(func() RecordConsumer {
+				return merger.NewSubmittingConsumer(kafkaClusterID)
+			})
+			reader, err = newSingleClusterPartitionReader(clusterCfg, partitionID, readerInstanceID, clusterOffsetFilePath, consumerFactory, pusher, clusterLogger, clusterReg)
+		} else {
+			reader, err = NewSingleClusterPartitionReader(clusterCfg, partitionID, readerInstanceID, clusterOffsetFilePath, pusher, clusterLogger, clusterReg)
+		}
 		if err != nil {
 			return nil, errors.Wrapf(err, "creating partition reader for write compartment %d", kafkaClusterID)
 		}
@@ -84,15 +129,21 @@ func NewMultiClusterPartitionReader(
 	r := &MultiClusterPartitionReader{
 		logger:  logger,
 		readers: readers,
+		merger:  merger,
 	}
 	r.Service = services.NewBasicService(r.starting, r.running, r.stopping).WithName("multi-cluster-partition-reader")
 	return r, nil
 }
 
 func (r *MultiClusterPartitionReader) starting(ctx context.Context) error {
-	svcs := make([]services.Service, len(r.readers))
-	for i, reader := range r.readers {
-		svcs[i] = reader
+	svcs := make([]services.Service, 0, len(r.readers)+1)
+	// The merger is managed alongside the readers. The input channel is buffered, so records a reader
+	// submits before the merger's run loop starts draining are simply queued rather than lost.
+	if r.merger != nil {
+		svcs = append(svcs, r.merger)
+	}
+	for _, reader := range r.readers {
+		svcs = append(svcs, reader)
 	}
 
 	var err error

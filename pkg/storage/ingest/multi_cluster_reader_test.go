@@ -65,7 +65,7 @@ func TestMultiClusterPartitionReader_ConsumesFromAllWriteCompartments(t *testing
 	})
 
 	reg := prometheus.NewPedanticRegistry()
-	reader, err := NewMultiClusterPartitionReader(clusterConfigs, partitionID, "ingester-0", multiClusterTestOffsetFilePath(t), pusher, log.NewNopLogger(), reg)
+	reader, err := NewMultiClusterPartitionReader(clusterConfigs, HeapMergerConfig{}, partitionID, "ingester-0", multiClusterTestOffsetFilePath(t), pusher, log.NewNopLogger(), reg)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(ctx, reader))
 	t.Cleanup(func() { require.NoError(t, services.StopAndAwaitTerminated(ctx, reader)) })
@@ -105,6 +105,85 @@ func TestMultiClusterPartitionReader_ConsumesFromAllWriteCompartments(t *testing
 		"cortex_ingest_storage_reader_missed_records_total"))
 }
 
+func TestMultiClusterPartitionReader_MergesRecordsFromAllWriteCompartments(t *testing.T) {
+	const (
+		readTopic            = "ingest-rc-0"
+		partitionID          = int32(0)
+		tenantID             = "user-1"
+		numWriteCompartments = 3
+	)
+
+	ctx := context.Background()
+
+	// Run one Kafka cluster per write compartment, and produce a distinct series to each so we can
+	// assert the reader unions records from every cluster when heap merging is enabled.
+	clusterConfigs := make([]KafkaConfig, numWriteCompartments)
+	expectedMetricNames := make(map[string]struct{}, numWriteCompartments)
+	for writeCompartmentID := 0; writeCompartmentID < numWriteCompartments; writeCompartmentID++ {
+		_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, readTopic)
+		clusterConfigs[writeCompartmentID] = createTestKafkaConfig(clusterAddr, readTopic)
+
+		writer, _ := createTestWriter(t, clusterConfigs[writeCompartmentID])
+		metricName := fmt.Sprintf("series_wc_%d", writeCompartmentID)
+		expectedMetricNames[metricName] = struct{}{}
+		req := &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries(metricName)}, Source: mimirpb.API}
+		require.NoError(t, writer.WriteSync(ctx, readTopic, partitionID, tenantID, req))
+	}
+
+	var mtx sync.Mutex
+	receivedMetricNames := map[string]struct{}{}
+	pusher := pusherFunc(func(_ context.Context, req *mimirpb.WriteRequest) error {
+		mtx.Lock()
+		defer mtx.Unlock()
+		for _, ts := range req.Timeseries {
+			for _, lbl := range ts.Labels {
+				if lbl.Name == "__name__" {
+					receivedMetricNames[lbl.Value] = struct{}{}
+				}
+			}
+		}
+		return nil
+	})
+
+	mergerCfg := HeapMergerConfig{Enabled: true, MaxBatchRecords: 1024, MaxBatchWait: 10 * time.Millisecond}
+	reg := prometheus.NewPedanticRegistry()
+	reader, err := NewMultiClusterPartitionReader(clusterConfigs, mergerCfg, partitionID, "ingester-0", multiClusterTestOffsetFilePath(t), pusher, log.NewNopLogger(), reg)
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(ctx, reader))
+	t.Cleanup(func() { require.NoError(t, services.StopAndAwaitTerminated(ctx, reader)) })
+
+	// Every cluster's record is eventually pushed through the merger.
+	require.Eventually(t, func() bool {
+		mtx.Lock()
+		defer mtx.Unlock()
+		return len(receivedMetricNames) == numWriteCompartments
+	}, 10*time.Second, 100*time.Millisecond)
+
+	mtx.Lock()
+	assert.Equal(t, expectedMetricNames, receivedMetricNames)
+	mtx.Unlock()
+
+	// Now that everything produced so far has been consumed, waiting for read consistency returns
+	// promptly across all clusters.
+	require.NoError(t, reader.WaitReadConsistencyUntilLastProducedOffset(ctx))
+}
+
+// Asserts that heap merging is skipped with a single Kafka cluster even when enabled, because the heap
+// can't reorder a single source. The multi-cluster merging path is covered by
+// TestMultiClusterPartitionReader_MergesRecordsFromAllWriteCompartments.
+func TestMultiClusterPartitionReader_SingleClusterSkipsMerging(t *testing.T) {
+	const readTopic = "ingest-rc-0"
+	_, clusterAddr := testkafka.CreateCluster(t, 1, readTopic)
+
+	mergerCfg := HeapMergerConfig{Enabled: true, MaxBatchRecords: 1024, MaxBatchWait: 10 * time.Millisecond}
+	clusterConfigs := []KafkaConfig{createTestKafkaConfig(clusterAddr, readTopic)}
+	noopPusher := pusherFunc(func(context.Context, *mimirpb.WriteRequest) error { return nil })
+
+	reader, err := NewMultiClusterPartitionReader(clusterConfigs, mergerCfg, 0, "ingester-0", multiClusterTestOffsetFilePath(t), noopPusher, log.NewNopLogger(), prometheus.NewPedanticRegistry())
+	require.NoError(t, err)
+	assert.Nil(t, reader.merger)
+}
+
 func TestMultiClusterPartitionReader_FailsToStartIfAnyClusterReaderFailsToStart(t *testing.T) {
 	const (
 		readTopic   = "ingest-rc-0"
@@ -125,7 +204,7 @@ func TestMultiClusterPartitionReader_FailsToStartIfAnyClusterReaderFailsToStart(
 	brokenCfg.MaxReplayPeriod = 0
 	brokenCfg.ConsumeFromPositionAtStartup = consumeFromLastOffset
 
-	reader, err := NewMultiClusterPartitionReader([]KafkaConfig{healthyCfg, brokenCfg}, partitionID, "ingester-0", multiClusterTestOffsetFilePath(t), pusherFunc(func(context.Context, *mimirpb.WriteRequest) error { return nil }), log.NewNopLogger(), prometheus.NewPedanticRegistry())
+	reader, err := NewMultiClusterPartitionReader([]KafkaConfig{healthyCfg, brokenCfg}, HeapMergerConfig{}, partitionID, "ingester-0", multiClusterTestOffsetFilePath(t), pusherFunc(func(context.Context, *mimirpb.WriteRequest) error { return nil }), log.NewNopLogger(), prometheus.NewPedanticRegistry())
 	require.NoError(t, err)
 
 	// Starting must fail: an ingester must not start if it cannot consume from every write compartment.
@@ -140,7 +219,7 @@ func TestNewMultiClusterPartitionReader(t *testing.T) {
 	noopPusher := pusherFunc(func(context.Context, *mimirpb.WriteRequest) error { return nil })
 
 	t.Run("rejects empty cluster configs", func(t *testing.T) {
-		_, err := NewMultiClusterPartitionReader(nil, 0, "ingester-0", multiClusterTestOffsetFilePath(t), noopPusher, log.NewNopLogger(), prometheus.NewPedanticRegistry())
+		_, err := NewMultiClusterPartitionReader(nil, HeapMergerConfig{}, 0, "ingester-0", multiClusterTestOffsetFilePath(t), noopPusher, log.NewNopLogger(), prometheus.NewPedanticRegistry())
 		require.Error(t, err)
 	})
 
@@ -151,7 +230,7 @@ func TestNewMultiClusterPartitionReader(t *testing.T) {
 		// The offset file path is missing the write compartment placeholder, so the per-cluster offset
 		// files would collide.
 		offsetFilePath := filepath.Join(t.TempDir(), "kafka-offset.json")
-		_, err := NewMultiClusterPartitionReader(clusterConfigs, 0, "ingester-0", offsetFilePath, noopPusher, log.NewNopLogger(), prometheus.NewPedanticRegistry())
+		_, err := NewMultiClusterPartitionReader(clusterConfigs, HeapMergerConfig{}, 0, "ingester-0", offsetFilePath, noopPusher, log.NewNopLogger(), prometheus.NewPedanticRegistry())
 		require.ErrorContains(t, err, "must contain")
 	})
 }
@@ -173,7 +252,7 @@ func TestMultiClusterPartitionReader_WaitReadConsistencyUntilOffsets_RejectsKafk
 	_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, readTopic)
 	clusterConfigs := []KafkaConfig{createTestKafkaConfig(clusterAddr, readTopic), createTestKafkaConfig(clusterAddr, readTopic)}
 
-	reader, err := NewMultiClusterPartitionReader(clusterConfigs, partitionID, "ingester-0", multiClusterTestOffsetFilePath(t), pusherFunc(func(context.Context, *mimirpb.WriteRequest) error { return nil }), log.NewNopLogger(), prometheus.NewPedanticRegistry())
+	reader, err := NewMultiClusterPartitionReader(clusterConfigs, HeapMergerConfig{}, partitionID, "ingester-0", multiClusterTestOffsetFilePath(t), pusherFunc(func(context.Context, *mimirpb.WriteRequest) error { return nil }), log.NewNopLogger(), prometheus.NewPedanticRegistry())
 	require.NoError(t, err)
 
 	// Fewer offsets than Kafka clusters is an invariant violation.
@@ -213,7 +292,7 @@ func TestMultiClusterPartitionReader_WaitReadConsistencyUntilOffsets_RoutesOffse
 	require.NoError(t, writer1.WriteSync(ctx, readTopic, partitionID, tenantID, writeReq("c1_0")))
 
 	pusher := pusherFunc(func(context.Context, *mimirpb.WriteRequest) error { return nil })
-	reader, err := NewMultiClusterPartitionReader([]KafkaConfig{cfg0, cfg1}, partitionID, "ingester-0", multiClusterTestOffsetFilePath(t), pusher, log.NewNopLogger(), prometheus.NewPedanticRegistry())
+	reader, err := NewMultiClusterPartitionReader([]KafkaConfig{cfg0, cfg1}, HeapMergerConfig{}, partitionID, "ingester-0", multiClusterTestOffsetFilePath(t), pusher, log.NewNopLogger(), prometheus.NewPedanticRegistry())
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(ctx, reader))
 	t.Cleanup(func() { require.NoError(t, services.StopAndAwaitTerminated(ctx, reader)) })

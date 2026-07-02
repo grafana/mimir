@@ -1515,6 +1515,14 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Include tenant ID in pprof labels for profiling. Currently only supported by the ingester. This can help debug performance issues for specific tenants. (default true)
   -ingest-storage.enabled
     	True to enable the ingestion via object storage.
+  -ingest-storage.heap-merger.enabled
+    	[experimental] Whether records from all write compartments' Kafka clusters are merged by Kafka record timestamp before being pushed. When disabled, each Kafka cluster is pushed independently and cross-cluster ordering relies on the TSDB out-of-order window. Only takes effect when compartments are enabled with more than one write compartment.
+  -ingest-storage.heap-merger.input-buffer-size int
+    	[experimental] Buffer size of the channel into which the per-cluster submitting consumers push records. When 0, defaults to 2x max-batch-records.
+  -ingest-storage.heap-merger.max-batch-records int
+    	[experimental] Soft upper bound on records buffered in the heap merger before forcing a flush. Larger values give the merger more cross-cluster mixing at the cost of memory and per-flush latency. (default 1024)
+  -ingest-storage.heap-merger.max-batch-wait duration
+    	[experimental] Maximum time records sit in the heap merger before being flushed even if max-batch-records has not been reached. (default 50ms)
   -ingest-storage.ingestion-partition-tenant-shard-size int
     	[experimental] The number of partitions a tenant's data should be sharded to when using the ingest storage. Tenants are sharded across partitions using shuffle-sharding. 0 disables shuffle sharding and tenant is sharded across all partitions.
   -ingest-storage.ingestion-partition-tenant-write-shard-size int

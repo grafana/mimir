@@ -9695,6 +9695,60 @@
           "fieldDefaultValue": null
         },
         {
+          "kind": "block",
+          "name": "heap_merger",
+          "required": false,
+          "desc": "",
+          "blockEntries": [
+            {
+              "kind": "field",
+              "name": "enabled",
+              "required": false,
+              "desc": "Whether records from all write compartments' Kafka clusters are merged by Kafka record timestamp before being pushed. When disabled, each Kafka cluster is pushed independently and cross-cluster ordering relies on the TSDB out-of-order window. Only takes effect when compartments are enabled with more than one write compartment.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "ingest-storage.heap-merger.enabled",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "max_batch_records",
+              "required": false,
+              "desc": "Soft upper bound on records buffered in the heap merger before forcing a flush. Larger values give the merger more cross-cluster mixing at the cost of memory and per-flush latency.",
+              "fieldValue": null,
+              "fieldDefaultValue": 1024,
+              "fieldFlag": "ingest-storage.heap-merger.max-batch-records",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "max_batch_wait",
+              "required": false,
+              "desc": "Maximum time records sit in the heap merger before being flushed even if max-batch-records has not been reached.",
+              "fieldValue": null,
+              "fieldDefaultValue": 50000000,
+              "fieldFlag": "ingest-storage.heap-merger.max-batch-wait",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "input_buffer_size",
+              "required": false,
+              "desc": "Buffer size of the channel into which the per-cluster submitting consumers push records. When 0, defaults to 2x max-batch-records.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "ingest-storage.heap-merger.input-buffer-size",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            }
+          ],
+          "fieldValue": null,
+          "fieldDefaultValue": null
+        },
+        {
           "kind": "field",
           "name": "write_logs_fsync_before_kafka_commit_concurrency",
           "required": false,
