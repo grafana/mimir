@@ -70,8 +70,8 @@ func TestMergeSourcesByTimestamp(t *testing.T) {
 	// the "preserves offset order within a source" case.)
 	t.Run("tie-breaks equal timestamps by cluster ID", func(t *testing.T) {
 		// Both records share a timestamp and s1 is passed before s0, but cluster 0 must emit first.
-		s0 := closedSource(0, taggedRec(0, 50, "a"))
-		s1 := closedSource(1, taggedRec(0, 50, "b"))
+		s0 := closedSource(0, valuedRec(0, 50, "a"))
+		s1 := closedSource(1, valuedRec(0, 50, "b"))
 
 		var got []string
 		err := mergeSourcesByTimestamp(context.Background(), []*kafkaClusterSource{s1, s0}, func(r *kgo.Record) error {
@@ -251,7 +251,7 @@ func rec(offset int64, ms int64) *kgo.Record {
 	return &kgo.Record{Offset: offset, Timestamp: time.UnixMilli(ms)}
 }
 
-// taggedRec is rec with a Value, so tie-broken ordering can be asserted by payload.
+// valuedRec is rec with a Value, so tie-broken ordering can be asserted by payload.
 func valuedRec(offset int64, ms int64, val string) *kgo.Record {
 	r := rec(offset, ms)
 	r.Value = []byte(val)
