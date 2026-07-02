@@ -71,7 +71,7 @@ require (
 	github.com/prometheus/sigv4 v0.4.1
 	github.com/shirou/gopsutil/v4 v4.26.5
 	github.com/spf13/pflag v1.0.10
-	github.com/thanos-io/objstore v0.0.0-20250813080715-4e5fd4289b50
+	github.com/thanos-io/objstore v0.0.0-20260615134008-fb6fd3a5170a
 	github.com/tjhop/slog-gokit v0.2.0
 	github.com/twmb/franz-go v1.21.4
 	github.com/twmb/franz-go/pkg/kadm v1.18.1-0.20260529212035-11b03a277c72
@@ -175,6 +175,7 @@ require (
 	github.com/pb33f/ordered-map/v2 v2.3.1 // indirect
 	github.com/philhofer/fwd v1.2.0 // indirect
 	github.com/pires/go-proxyproto v0.11.0 // indirect
+	github.com/pkg/xattr v0.4.10 // indirect
 	github.com/planetscale/vtprotobuf v0.6.1-0.20240319094008-0393e58bdf10 // indirect
 	github.com/power-devops/perfstat v0.0.0-20240221224432-82ca36839d55 // indirect
 	github.com/prometheus/client_golang/exp v0.0.0-20260621222812-74560058a7af // indirect
