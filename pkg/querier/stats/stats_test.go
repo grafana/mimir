@@ -201,6 +201,23 @@ func TestStats_PhysicalSamplesRead(t *testing.T) {
 	})
 }
 
+func TestStats_AddRetries(t *testing.T) {
+	t.Run("add and load retries", func(t *testing.T) {
+		stats, _ := ContextWithEmptyStats(context.Background())
+		stats.AddRetries(2)
+		stats.AddRetries(3)
+
+		assert.Equal(t, uint32(5), stats.LoadRetries())
+	})
+
+	t.Run("add and load retries nil receiver", func(t *testing.T) {
+		var stats *SafeStats
+		stats.AddRetries(2)
+
+		assert.Equal(t, uint32(0), stats.LoadRetries())
+	})
+}
+
 func TestStats_Merge(t *testing.T) {
 	t.Run("merge two stats objects", func(t *testing.T) {
 		stats1 := &SafeStats{}
@@ -215,6 +232,7 @@ func TestStats_Merge(t *testing.T) {
 		stats1.AddRemoteExecutionRequests(12)
 		stats1.AddEquivalentSamplesRead(13)
 		stats1.AddPhysicalSamplesRead(14)
+		stats1.AddRetries(2)
 
 		stats2 := &SafeStats{}
 		stats2.AddWallTime(time.Second)
@@ -228,6 +246,7 @@ func TestStats_Merge(t *testing.T) {
 		stats2.AddRemoteExecutionRequests(14)
 		stats2.AddEquivalentSamplesRead(15)
 		stats2.AddPhysicalSamplesRead(16)
+		stats2.AddRetries(3)
 
 		stats1.Merge(stats2)
 
@@ -242,6 +261,7 @@ func TestStats_Merge(t *testing.T) {
 		assert.Equal(t, uint32(26), stats1.LoadRemoteExecutionRequestCount())
 		assert.Equal(t, uint64(28), stats1.LoadEquivalentSamplesRead())
 		assert.Equal(t, uint64(30), stats1.LoadPhysicalSamplesRead())
+		assert.Equal(t, uint32(5), stats1.LoadRetries())
 	})
 
 	t.Run("merge two nil stats objects", func(t *testing.T) {
@@ -261,6 +281,7 @@ func TestStats_Merge(t *testing.T) {
 		assert.Equal(t, uint32(0), stats1.LoadRemoteExecutionRequestCount())
 		assert.Equal(t, uint64(0), stats1.LoadEquivalentSamplesRead())
 		assert.Equal(t, uint64(0), stats1.LoadPhysicalSamplesRead())
+		assert.Equal(t, uint32(0), stats1.LoadRetries())
 	})
 }
 
@@ -284,6 +305,7 @@ func TestStats_Copy(t *testing.T) {
 			SplitRangeVectors:           14,
 			EquivalentSamplesRead:       15,
 			PhysicalSamplesRead:         16,
+			Retries:                     17,
 		},
 	}
 	s2 := s1.Copy()
@@ -320,6 +342,7 @@ func TestStats_ConcurrentMerge(t *testing.T) {
 		child.AddRemoteExecutionRequests(12)
 		child.AddEquivalentSamplesRead(13)
 		child.AddPhysicalSamplesRead(14)
+		child.AddRetries(2)
 
 		childStats[i] = child
 	}
@@ -360,6 +383,7 @@ func TestStats_ConcurrentMerge(t *testing.T) {
 	expectedRemoteExecutionRequestCount := uint32(numChildren * 12)
 	expectedEquivalentSamplesRead := uint64(numChildren * 13)
 	expectedPhysicalSamplesRead := uint64(numChildren * 14)
+	expectedRetries := uint32(numChildren * 2)
 
 	// Verify all values match expected totals
 	assert.Equal(t, expectedWallTime, parentStats.LoadWallTime(), "WallTime should be sum of all children")
@@ -373,4 +397,5 @@ func TestStats_ConcurrentMerge(t *testing.T) {
 	assert.Equal(t, expectedRemoteExecutionRequestCount, parentStats.LoadRemoteExecutionRequestCount(), "RemoteExecutionRequestCount should be sum of all children")
 	assert.Equal(t, expectedEquivalentSamplesRead, parentStats.LoadEquivalentSamplesRead(), "EquivalentSamplesRead should be sum of all children")
 	assert.Equal(t, expectedPhysicalSamplesRead, parentStats.LoadPhysicalSamplesRead(), "PhysicalSamplesRead should be sum of all children")
+	assert.Equal(t, expectedRetries, parentStats.LoadRetries(), "Retries should be sum of all children")
 }
