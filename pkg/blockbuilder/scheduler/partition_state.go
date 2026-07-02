@@ -46,6 +46,9 @@ const (
 )
 
 func newPartitionState(topic string, partition int32, numClusters int, compartmentsEnabled bool, metrics *schedulerMetrics, logger log.Logger) *partitionState {
+	if !compartmentsEnabled && numClusters != 1 {
+		panic(fmt.Sprintf("compartments disabled but numClusters=%d (expected 1)", numClusters))
+	}
 	ps := &partitionState{
 		topic:               topic,
 		partition:           partition,
@@ -102,7 +105,7 @@ func (s *partitionState) updateTime(ts time.Time, jobSize time.Duration) (*sched
 			if s.offsets[clusterID].startOffset == offsetEmpty {
 				continue
 			}
-			if s.offsets[clusterID].endOffset > s.offsets[clusterID].startOffset {
+			if s.offsets[clusterID].startOffset < s.offsets[clusterID].endOffset {
 				ranges[int32(clusterID)] = schedulerpb.OffsetRange{
 					StartOffset: s.offsets[clusterID].startOffset,
 					EndOffset:   s.offsets[clusterID].endOffset,
