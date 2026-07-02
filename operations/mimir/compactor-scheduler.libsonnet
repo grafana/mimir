@@ -59,6 +59,7 @@
     container.withVolumeMountsMixin([volumeMount.new('compactor-scheduler-data', '/data')]) +
     $.util.resourcesRequests('100m', '512Mi') +
     $.util.resourcesLimits('500m', '1Gi') +
+    $.mimirEphemeralStorageRequest +
     $.util.readinessProbe +
     $.tracing_env_mixin +
     (if std.length(envmap) > 0 then container.withEnvMap(std.prune(envmap)) else {}),

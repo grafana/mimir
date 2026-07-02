@@ -68,7 +68,8 @@
     $.tracing_env_mixin +
     $.util.readinessProbe +
     $.util.resourcesRequests('2', '2Gi') +
-    $.util.resourcesLimits(null, '4Gi'),
+    $.util.resourcesLimits(null, '4Gi') +
+    $.mimirEphemeralStorageRequest,
 
   query_frontend_env_map:: {},
 

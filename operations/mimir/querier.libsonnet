@@ -69,7 +69,8 @@
     $.util.readinessProbe +
     (if std.length(envmap) > 0 then container.withEnvMap(std.prune(envmap)) else {}) +
     $.util.resourcesRequests('1', '12Gi') +
-    $.util.resourcesLimits(null, '24Gi'),
+    $.util.resourcesLimits(null, '24Gi') +
+    $.mimirEphemeralStorageRequest,
 
   querier_env_map:: {
     // Dynamically set GOMAXPROCS based on CPU request.
