@@ -3349,6 +3349,12 @@ func (m *storeGatewaySeriesClientMock) Recv() (*storepb.SeriesResponse, error) {
 	// Ensure some concurrency occurs.
 	time.Sleep(10 * time.Millisecond)
 
+	// Mirror a real gRPC stream, which fails once its context is cancelled. The querier reads a stream's
+	// chunks lazily, after the query returns, so cancelling the stream's context early will surface bugs.
+	if err := m.Context().Err(); err != nil {
+		return nil, err
+	}
+
 	if len(m.mockedResponses) == 0 {
 		return nil, io.EOF
 	}
