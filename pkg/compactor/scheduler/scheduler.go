@@ -17,6 +17,7 @@ import (
 	"github.com/grafana/dskit/multierror"
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/thanos-io/objstore"
 	"go.uber.org/atomic"
 	"google.golang.org/grpc/codes"
@@ -108,6 +109,8 @@ type Scheduler struct {
 	tenantDiscoverer   *TenantDiscoverer
 	subservicesManager *services.Manager
 	metrics            *schedulerMetrics
+	predictor          *perJobTypePredictor
+	persistPredictor   *atomic.Bool
 	logger             log.Logger
 	clock              clock.Clock
 }
@@ -132,7 +135,7 @@ func NewCompactorScheduler(
 		return nil, err
 	}
 
-	return newCompactorScheduler(compactorCfg, cfg, allowList, bkt, jpm, metrics, logger)
+	return newCompactorScheduler(compactorCfg, cfg, allowList, bkt, jpm, metrics, registerer, logger)
 }
 
 func newCompactorScheduler(
@@ -142,12 +145,36 @@ func newCompactorScheduler(
 	bkt objstore.Bucket,
 	jpm JobPersistenceManager,
 	metrics *schedulerMetrics,
+	registerer prometheus.Registerer,
 	logger log.Logger) (*Scheduler, error) {
 
 	lanePolicy, err := newLanePolicy(cfg.LanePolicy)
 	if err != nil {
 		return nil, err
 	}
+
+	// One clock is shared by the scheduler, its job trackers, and the predictor, so that a job's lease
+	// start time and the predictor's completion time are read from the same source.
+	clk := clock.New()
+
+	predictor := newPerJobTypePredictor(clk)
+	// The predictor is a cell-wide singleton shared by every tenant's queueMetrics; hang it on the
+	// metrics so tracker construction doesn't have to thread it through.
+	metrics.model = predictor
+
+	// Set to false if loading persisted predictor state fails at startup, so we don't overwrite the
+	// (unreadable but possibly good) persisted state with a defaults-seeded snapshot.
+	persistPredictor := atomic.NewBool(true)
+
+	// The drain estimate is cheap to compute, so we expose it as a collected metric evaluated at
+	// scrape time (which also lazily re-solves the model) rather than refreshing it from a loop.
+	promauto.With(registerer).NewGaugeFunc(prometheus.GaugeOpts{
+		Name: "cortex_compactor_scheduler_estimated_queue_drain_seconds",
+		Help: "Estimated time to drain all incomplete jobs, from the learned per-job duration model. Planning jobs are counted as 1 second each.",
+	}, func() float64 {
+		predictor.Resolve()
+		return predictor.Estimate()
+	})
 
 	rotator := NewRotator(
 		cfg.LeaseDuration,
@@ -161,6 +188,18 @@ func newCompactorScheduler(
 		logger,
 	)
 
+	// Persist newly learned predictor state on the existing maintenance cadence (off the scrape path).
+	rotator.onMaintenance = func() {
+		if !persistPredictor.Load() {
+			return
+		}
+		if state := predictor.MarshalStateIfChanged(); state != nil {
+			if err := jpm.SaveDurationPredictor(state); err != nil {
+				level.Warn(logger).Log("msg", "failed persisting duration predictor state", "err", err)
+			}
+		}
+	}
+
 	scheduler := &Scheduler{
 		running:          atomic.NewBool(false),
 		cfg:              cfg,
@@ -170,8 +209,10 @@ func newCompactorScheduler(
 		rotator:          rotator,
 		tenantDiscoverer: NewTenantDiscoverer(cfg, lanePolicy, allowList, rotator, bkt, jpm, metrics, logger),
 		metrics:          metrics,
+		predictor:        predictor,
+		persistPredictor: persistPredictor,
 		logger:           logger,
-		clock:            clock.New(),
+		clock:            clk,
 	}
 
 	subservicesManager, err := services.NewManager(scheduler.rotator, scheduler.tenantDiscoverer)
@@ -191,6 +232,19 @@ func (s *Scheduler) createJobTracker(tenant string, jp JobPersister) *JobTracker
 }
 
 func (s *Scheduler) start(ctx context.Context) error {
+	if state, err := s.jpm.LoadDurationPredictor(); err != nil {
+		// We couldn't read the persisted state, so we don't know it; suppress persistence for this
+		// run to avoid overwriting possibly-good state with a defaults-seeded snapshot.
+		s.persistPredictor.Store(false)
+		level.Warn(s.logger).Log("msg", "failed loading duration predictor state, warm-starting from defaults and suppressing persistence", "err", err)
+	} else if state != nil {
+		if s.predictor.LoadState(state) {
+			level.Info(s.logger).Log("msg", "restored duration predictor state")
+		} else {
+			level.Info(s.logger).Log("msg", "discarding incompatible duration predictor state, warm-starting from defaults")
+		}
+	}
+
 	jobTrackers, err := s.jpm.RecoverAll(s.allowList, s.createJobTracker)
 	if err != nil {
 		return fmt.Errorf("failed recovering state: %w", err)
@@ -220,6 +274,16 @@ func (s *Scheduler) stop(_ error) error {
 
 	// We want the other services to stop first since they may also use the database
 	errs.Add(services.StopManagerAndAwaitStopped(context.Background(), s.subservicesManager))
+
+	// Persist the latest learned predictor state before closing the database, unless persistence was
+	// suppressed (state failed to load) or nothing new was learned since the last periodic save.
+	if s.persistPredictor.Load() {
+		if state := s.predictor.MarshalStateIfChanged(); state != nil {
+			if err := s.jpm.SaveDurationPredictor(state); err != nil {
+				level.Warn(s.logger).Log("msg", "failed persisting duration predictor state on shutdown", "err", err)
+			}
+		}
+	}
 
 	// Prepare for shutdown by making sure no more persist operations are possible.
 	// We know after the rotator is cleared all subsequent calls will see an empty state.
@@ -299,6 +363,7 @@ func (s *Scheduler) PlannedJobs(ctx context.Context, req *compactorschedulerpb.P
 			// The +1 is a minor detail that ensures plan jobs (order of 0) can deterministically sort first in ordering upon recovery if they exist.
 			uint32(i+1),
 			job.Job.TotalBlocksBytes,
+			job.Job.TotalSeries,
 			now,
 		))
 	}

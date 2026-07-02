@@ -37,6 +37,7 @@ func newTestCompactionJob(id string) TrackedJob {
 		&CompactionJob{blocks: nil, isSplit: false},
 		1,
 		0,
+		0,
 		time.Now(),
 	)
 	return job

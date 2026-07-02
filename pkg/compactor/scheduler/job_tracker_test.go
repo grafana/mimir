@@ -72,7 +72,7 @@ func TestJobTracker_Maintenance_Planning(t *testing.T) {
 		},
 		"plan lane transitions even when compaction lane already pending": {
 			setup: func(jt *JobTracker) {
-				jt.toPendingBack(NewTrackedCompactionJob("compactionId", &CompactionJob{}, 1, 0, time.Now()))
+				jt.toPendingBack(NewTrackedCompactionJob("compactionId", &CompactionJob{}, 1, 0, 0, time.Now()))
 			},
 			now:                at(3, 0),
 			expectedPlan:       true,
@@ -141,17 +141,17 @@ func TestJobTracker_Maintenance_Planning(t *testing.T) {
 
 func TestJobTracker_recoverFrom(t *testing.T) {
 	newAvailableCompaction := func(id string, order uint32) *TrackedCompactionJob {
-		return NewTrackedCompactionJob(id, &CompactionJob{}, order, 0, at(1, 0))
+		return NewTrackedCompactionJob(id, &CompactionJob{}, order, 0, 0, at(1, 0))
 	}
 
 	newLeasedCompaction := func(id string, order uint32, statusTime time.Time) *TrackedCompactionJob {
-		j := NewTrackedCompactionJob(id, &CompactionJob{}, order, 0, at(1, 0))
+		j := NewTrackedCompactionJob(id, &CompactionJob{}, order, 0, 0, at(1, 0))
 		j.MarkLeased(statusTime)
 		return j
 	}
 
 	newCompleteCompaction := func(id string) *TrackedCompactionJob {
-		j := NewTrackedCompactionJob(id, &CompactionJob{}, 0, 0, at(1, 0))
+		j := NewTrackedCompactionJob(id, &CompactionJob{}, 0, 0, 0, at(1, 0))
 		j.MarkComplete(at(2, 0))
 		return j
 	}
@@ -262,8 +262,8 @@ func TestJobTracker_ByteTracking(t *testing.T) {
 	clk := clock.NewMock()
 	jt, reg := newTestJobTracker(clk)
 
-	splitJob := NewTrackedCompactionJob("split-job", &CompactionJob{isSplit: true}, 1, 100, clk.Now())
-	mergeJob := NewTrackedCompactionJob("merge-job", &CompactionJob{isSplit: false}, 2, 200, clk.Now())
+	splitJob := NewTrackedCompactionJob("split-job", &CompactionJob{isSplit: true}, 1, 100, 0, clk.Now())
+	mergeJob := NewTrackedCompactionJob("merge-job", &CompactionJob{isSplit: false}, 2, 200, 0, clk.Now())
 
 	jt.recoverFrom([]*TrackedCompactionJob{splitJob, mergeJob}, nil)
 	assertTrackerBytes(t, reg, "both jobs pending after recovery", 100, 200)
@@ -336,16 +336,18 @@ func TestJobTracker_Cleanup(t *testing.T) {
 	clk := clock.NewMock()
 	reg := prometheus.NewPedanticRegistry()
 	sm := newSchedulerMetrics(reg)
+	predictor := newPerJobTypePredictor(clk)
+	sm.model = predictor
 
 	// Two tenants share the same aggregate gauges (incompleteJobsBytes, pendingJobs, activeJobs).
 	jt1 := NewJobTracker(&NopJobPersister{}, "tenant1", clk, newSimpleLanePolicy(), infiniteLeases, infiniteLeases, sm.newTrackerMetricsForTenant("tenant1"), log.NewNopLogger())
 	jt2 := NewJobTracker(&NopJobPersister{}, "tenant2", clk, newSimpleLanePolicy(), infiniteLeases, infiniteLeases, sm.newTrackerMetricsForTenant("tenant2"), log.NewNopLogger())
 
 	jt1.recoverFrom([]*TrackedCompactionJob{
-		NewTrackedCompactionJob("split-job", &CompactionJob{isSplit: true}, 1, 100, clk.Now()),
+		NewTrackedCompactionJob("split-job", &CompactionJob{isSplit: true}, 1, 100, 0, clk.Now()),
 	}, nil)
 	jt2.recoverFrom([]*TrackedCompactionJob{
-		NewTrackedCompactionJob("merge-job", &CompactionJob{isSplit: false}, 1, 200, clk.Now()),
+		NewTrackedCompactionJob("merge-job", &CompactionJob{isSplit: false}, 1, 200, 0, clk.Now()),
 	}, nil)
 	assertTrackerBytes(t, reg, "both tenants contributing before cleanup", 100, 200)
 
@@ -373,6 +375,9 @@ func TestJobTracker_Cleanup(t *testing.T) {
 		cortex_compactor_scheduler_active_jobs{job_type="plan"} 1
 	`), "cortex_compactor_scheduler_pending_jobs", "cortex_compactor_scheduler_active_jobs"), "tenant1 active, tenant2 pending")
 
+	// With incomplete jobs on both tenants, the shared duration model estimates a non-zero drain time.
+	require.Greater(t, predictor.Estimate(), 0.0)
+
 	// Cleaning up tenant1 should only subtract its contribution, not zero the shared gauges.
 	jt1.CleanupMetrics()
 	assertTrackerBytes(t, reg, "only tenant1 bytes removed", 0, 200)
@@ -391,6 +396,11 @@ func TestJobTracker_Cleanup(t *testing.T) {
 		cortex_compactor_scheduler_active_jobs{job_type="compaction"} 0
 		cortex_compactor_scheduler_active_jobs{job_type="plan"} 0
 	`), "cortex_compactor_scheduler_pending_jobs", "cortex_compactor_scheduler_active_jobs"), "tenant1's active contribution removed, tenant2's pending preserved")
+
+	// Cleaning up the remaining tenant must drop its still-incomplete jobs from the duration model too,
+	// so nothing lingers to permanently inflate the drain estimate.
+	jt2.CleanupMetrics()
+	require.Equal(t, 0.0, predictor.Estimate())
 }
 
 func TestJobTracker_CancelLease_PlanJobAlwaysRevives(t *testing.T) {

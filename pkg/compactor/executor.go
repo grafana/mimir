@@ -736,6 +736,7 @@ func (e *schedulerExecutor) executePlanningJob(ctx context.Context, c *Multitena
 				Split:            job.useSplitting,
 				BlockIds:         serializeBlockIds(toCompact),
 				TotalBlocksBytes: sumBlockBytes(toCompact),
+				TotalSeries:      sumBlockSeries(toCompact),
 			},
 		}
 		plannedJobs = append(plannedJobs, plannedJob)
@@ -757,6 +758,14 @@ func sumBlockBytes(metas []*block.Meta) uint64 {
 	var total uint64
 	for _, meta := range metas {
 		total += uint64(meta.BlockBytes())
+	}
+	return total
+}
+
+func sumBlockSeries(metas []*block.Meta) uint64 {
+	var total uint64
+	for _, meta := range metas {
+		total += meta.Stats.NumSeries
 	}
 	return total
 }

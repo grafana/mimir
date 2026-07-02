@@ -28,6 +28,9 @@ const (
 	metadataBucketName = "."
 	// metadataKey is the key within the metadata bucket that holds the PersistenceMetadata protobuf.
 	metadataKey = "metadata"
+	// durationPredictorKey is the key within the metadata bucket (on shard 0) that holds the
+	// StoredDurationPredictor protobuf.
+	durationPredictorKey = "duration_predictor"
 )
 
 type BboltConfig struct {
@@ -163,6 +166,29 @@ func (m *BboltJobPersistenceManager) CreationTime() time.Time {
 
 func (m *BboltJobPersistenceManager) InitializeTenant(tenant string) (JobPersister, error) {
 	return m.initializeTenantOnDB(m.shardDB(tenant), tenant)
+}
+
+// LoadDurationPredictor reads the persisted duration-predictor state from shard 0's metadata bucket,
+// returning nil if none is stored.
+func (m *BboltJobPersistenceManager) LoadDurationPredictor() (*compactorschedulerpb.StoredDurationPredictor, error) {
+	v, err := readMetadataKey(m.dbs[0], durationPredictorKey)
+	if err != nil || v == nil {
+		return nil, err
+	}
+	state := &compactorschedulerpb.StoredDurationPredictor{}
+	if err := state.Unmarshal(v); err != nil {
+		return nil, err
+	}
+	return state, nil
+}
+
+// SaveDurationPredictor writes the duration-predictor state to shard 0's metadata bucket.
+func (m *BboltJobPersistenceManager) SaveDurationPredictor(state *compactorschedulerpb.StoredDurationPredictor) error {
+	data, err := state.Marshal()
+	if err != nil {
+		return err
+	}
+	return writeMetadataKey(m.dbs[0], durationPredictorKey, data)
 }
 
 func (m *BboltJobPersistenceManager) initializeTenantOnDB(db *bbolt.DB, tenant string) (JobPersister, error) {
@@ -698,22 +724,46 @@ func scanShardsForTenants(dbs []*bbolt.DB, targetCount int) (copyTargets [][]str
 	return copyTargets, source, toDelete, nil
 }
 
-// readPersistenceMetadata reads PersistenceMetadata from the given database's metadata bucket.
-// Returns a zero-value metadata if the bucket or key does not exist.
-func readPersistenceMetadata(db *bbolt.DB) (*compactorschedulerpb.PersistenceMetadata, error) {
-	meta := &compactorschedulerpb.PersistenceMetadata{}
+// readMetadataKey returns a copy of the value stored under key in db's metadata bucket, or nil if the
+// bucket or key does not exist.
+func readMetadataKey(db *bbolt.DB, key string) ([]byte, error) {
+	var out []byte
 	err := db.View(func(tx *bbolt.Tx) error {
 		b := tx.Bucket([]byte(metadataBucketName))
 		if b == nil {
 			return nil
 		}
-		v := b.Get([]byte(metadataKey))
-		if v == nil {
-			return nil
+		if v := b.Get([]byte(key)); v != nil {
+			out = append(out, v...) // copy: bbolt values are only valid within the transaction.
 		}
-		return meta.Unmarshal(v)
+		return nil
 	})
+	return out, err
+}
+
+// writeMetadataKey stores data under key in db's metadata bucket, creating the bucket if needed.
+func writeMetadataKey(db *bbolt.DB, key string, data []byte) error {
+	return db.Update(func(tx *bbolt.Tx) error {
+		b, err := tx.CreateBucketIfNotExists([]byte(metadataBucketName))
+		if err != nil {
+			return err
+		}
+		return b.Put([]byte(key), data)
+	})
+}
+
+// readPersistenceMetadata reads PersistenceMetadata from the given database's metadata bucket.
+// Returns a zero-value metadata if the bucket or key does not exist.
+func readPersistenceMetadata(db *bbolt.DB) (*compactorschedulerpb.PersistenceMetadata, error) {
+	v, err := readMetadataKey(db, metadataKey)
 	if err != nil {
+		return nil, fmt.Errorf("failed to read shard metadata: %w", err)
+	}
+	meta := &compactorschedulerpb.PersistenceMetadata{}
+	if v == nil {
+		return meta, nil
+	}
+	if err := meta.Unmarshal(v); err != nil {
 		return nil, fmt.Errorf("failed to read shard metadata: %w", err)
 	}
 	return meta, nil
@@ -725,13 +775,7 @@ func writeShardMetadata(db *bbolt.DB, meta *compactorschedulerpb.PersistenceMeta
 	if err != nil {
 		return fmt.Errorf("failed to marshal shard metadata: %w", err)
 	}
-	return db.Update(func(tx *bbolt.Tx) error {
-		b, err := tx.CreateBucketIfNotExists([]byte(metadataBucketName))
-		if err != nil {
-			return err
-		}
-		return b.Put([]byte(metadataKey), data)
-	})
+	return writeMetadataKey(db, metadataKey, data)
 }
 
 type kvPair struct {

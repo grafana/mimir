@@ -8,6 +8,7 @@ import (
 
 	"github.com/go-kit/log"
 
+	"github.com/grafana/mimir/pkg/compactor/scheduler/compactorschedulerpb"
 	"github.com/grafana/mimir/pkg/util"
 )
 
@@ -26,6 +27,10 @@ type JobPersistenceManager interface {
 	CreationTime() time.Time
 	InitializeTenant(tenant string) (JobPersister, error)
 	RecoverAll(allowedTenants *util.AllowList, jobTrackerFactory func(tenant string, persister JobPersister) *JobTracker) (map[string]*JobTracker, error)
+	// LoadDurationPredictor returns the persisted duration-predictor state, or nil if none is stored.
+	LoadDurationPredictor() (*compactorschedulerpb.StoredDurationPredictor, error)
+	// SaveDurationPredictor persists the duration-predictor state.
+	SaveDurationPredictor(state *compactorschedulerpb.StoredDurationPredictor) error
 	Close() error
 }
 
@@ -48,6 +53,14 @@ func (n *NopJobPersistenceManager) InitializeTenant(tenant string) (JobPersister
 
 func (n *NopJobPersistenceManager) RecoverAll(allowedTenants *util.AllowList, jobTrackerFactory func(string, JobPersister) *JobTracker) (map[string]*JobTracker, error) {
 	return make(map[string]*JobTracker), nil
+}
+
+func (n *NopJobPersistenceManager) LoadDurationPredictor() (*compactorschedulerpb.StoredDurationPredictor, error) {
+	return nil, nil
+}
+
+func (n *NopJobPersistenceManager) SaveDurationPredictor(*compactorschedulerpb.StoredDurationPredictor) error {
+	return nil
 }
 
 func (n *NopJobPersistenceManager) Close() error {

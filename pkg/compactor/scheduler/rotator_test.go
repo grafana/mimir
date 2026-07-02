@@ -95,7 +95,7 @@ func newTrackerWithPendingJobs(clk clock.Clock, name string, numJobs int) *JobTr
 	jt := NewJobTracker(&NopJobPersister{}, name, clk, newSimpleLanePolicy(), infiniteLeases, infiniteLeases, metrics.newTrackerMetricsForTenant(name), log.NewNopLogger())
 	for j := range numJobs {
 		id := fmt.Sprintf("%s-%d", name, j)
-		jt.toPendingBack(NewTrackedCompactionJob(id, &CompactionJob{}, uint32(j), 0, clk.Now()))
+		jt.toPendingBack(NewTrackedCompactionJob(id, &CompactionJob{}, uint32(j), 0, 0, clk.Now()))
 	}
 	return jt
 }
@@ -235,13 +235,13 @@ func TestRotator_LeaseJob_LanePriority(t *testing.T) {
 	jt := NewJobTracker(&NopJobPersister{}, "t1", clk, lanePolicy, infiniteLeases, infiniteLeases, metrics.newTrackerMetricsForTenant("t1"), log.NewNopLogger())
 	jt.toPendingBack(NewTrackedPlanJob(clk.Now()))
 	firstCompactionJobId := "first"
-	jt.toPendingBack(NewTrackedCompactionJob(firstCompactionJobId, &CompactionJob{}, 1, 2, clk.Now()))
+	jt.toPendingBack(NewTrackedCompactionJob(firstCompactionJobId, &CompactionJob{}, 1, 2, 0, clk.Now()))
 	r.AddTenant("t1", jt)
 
 	// Add a tenant with a only a compaction job
 	jt2 := NewJobTracker(&NopJobPersister{}, "t2", clk, lanePolicy, infiniteLeases, infiniteLeases, metrics.newTrackerMetricsForTenant("t2"), log.NewNopLogger())
 	secondCompactionJobId := "second"
-	jt2.toPendingBack(NewTrackedCompactionJob(secondCompactionJobId, &CompactionJob{}, 1, 2, clk.Now()))
+	jt2.toPendingBack(NewTrackedCompactionJob(secondCompactionJobId, &CompactionJob{}, 1, 2, 0, clk.Now()))
 	r.AddTenant("t2", jt2)
 
 	// compaction lane is checked first and first compaction job is returned

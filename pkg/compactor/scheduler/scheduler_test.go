@@ -4,9 +4,11 @@ package scheduler
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -175,6 +177,45 @@ func TestScheduler_RepeatedJobFailures(t *testing.T) {
 	})
 }
 
+// predictorPersistenceSpy fails to load predictor state and counts save attempts.
+type predictorPersistenceSpy struct {
+	NopJobPersistenceManager
+	loadErr   error
+	saveCalls atomic.Int64
+}
+
+func (m *predictorPersistenceSpy) LoadDurationPredictor() (*compactorschedulerpb.StoredDurationPredictor, error) {
+	return nil, m.loadErr
+}
+
+func (m *predictorPersistenceSpy) SaveDurationPredictor(*compactorschedulerpb.StoredDurationPredictor) error {
+	m.saveCalls.Add(1)
+	return nil
+}
+
+// TestScheduler_SuppressesPredictorPersistenceAfterLoadFailure verifies that if the predictor state
+// can't be read at startup, the scheduler doesn't later overwrite the (unreadable but possibly good)
+// persisted state with a defaults-seeded snapshot.
+func TestScheduler_SuppressesPredictorPersistenceAfterLoadFailure(t *testing.T) {
+	bkt := objstore.NewInMemBucket()
+	require.NoError(t, bkt.Upload(context.Background(), "tenant1/placeholder", strings.NewReader("")))
+
+	reg := prometheus.NewPedanticRegistry()
+	metrics := newSchedulerMetrics(reg)
+	jpm := &predictorPersistenceSpy{loadErr: errors.New("cannot read state")}
+	compactorCfg := compactor.Config{CompactionWaitPeriod: 15 * time.Minute}
+
+	scheduler, err := newCompactorScheduler(compactorCfg, newTestSchedulerConfig(), util.NewAllowList(nil, nil), bkt, jpm, metrics, reg, log.NewNopLogger())
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	require.NoError(t, services.StartAndAwaitRunning(ctx, scheduler))
+	require.False(t, scheduler.persistPredictor.Load())
+	require.NoError(t, services.StopAndAwaitTerminated(ctx, scheduler))
+
+	require.Zero(t, jpm.saveCalls.Load(), "predictor state must not be persisted after a load failure")
+}
+
 func newTestSchedulerConfig() Config {
 	var cfg Config
 	cfg.RegisterFlags(flag.NewFlagSet("test", flag.ContinueOnError))
@@ -190,7 +231,7 @@ func newTestScheduler(t *testing.T, bkt objstore.Bucket, cfg Config) (*Scheduler
 	metrics := newSchedulerMetrics(reg)
 	compactorCfg := compactor.Config{CompactionWaitPeriod: 15 * time.Minute}
 
-	scheduler, err := newCompactorScheduler(compactorCfg, cfg, util.NewAllowList(nil, nil), bkt, &NopJobPersistenceManager{}, metrics, log.NewNopLogger())
+	scheduler, err := newCompactorScheduler(compactorCfg, cfg, util.NewAllowList(nil, nil), bkt, &NopJobPersistenceManager{}, metrics, reg, log.NewNopLogger())
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithCancel(context.Background())

@@ -47,6 +47,11 @@ type Rotator struct {
 	pendingJobsLastEmpty             prometheus.Gauge
 	logger                           log.Logger
 
+	// onMaintenance, if set, is called at the end of every maintenance iteration. It lets the owner
+	// piggyback periodic work (e.g. persisting predictor state) on the existing cadence without the
+	// rotator knowing what that work is.
+	onMaintenance func()
+
 	mtx            sync.RWMutex
 	tenantStateMap map[string]*tenantRotationState
 	laneRotations  map[lane]*laneRotation
@@ -111,6 +116,10 @@ func (r *Rotator) iter(ctx context.Context) error {
 
 	if plan || expireLeases {
 		r.Maintenance(ctx, expireLeases, plan)
+	}
+
+	if r.onMaintenance != nil {
+		r.onMaintenance()
 	}
 
 	return nil

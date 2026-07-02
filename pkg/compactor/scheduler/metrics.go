@@ -7,6 +7,18 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
+// durationModel is the duration predictor as seen by the per-tenant queue metrics: it is told when a
+// job enters or leaves the incomplete set. The model owns all timing/feature/estimate details
+// (deriving the run duration from the job's lease start and its own clock); queueMetrics only
+// forwards jobs.
+type durationModel interface {
+	RecordPending(j TrackedJob)
+	// RecordUnpending accounts for a job leaving the incomplete set. success reports whether the job
+	// completed successfully (as opposed to being dropped, or a failed or abandoned lease), which
+	// determines whether it is used as a training sample.
+	RecordUnpending(j TrackedJob, success bool)
+}
+
 const (
 	jobTypePlan       = "plan"
 	jobTypeCompaction = "compaction"
@@ -24,6 +36,10 @@ type schedulerMetrics struct {
 	activeJobsByUser     *prometheus.GaugeVec
 	jobsCompleted        *prometheus.CounterVec
 	repeatedJobFailures  prometheus.Counter
+
+	// model is the cell-wide duration predictor, shared by every tenant's queueMetrics. It is set
+	// once after construction (the predictor is built later) and forwarded to each queueMetrics.
+	model durationModel
 }
 
 func newSchedulerMetrics(reg prometheus.Registerer) *schedulerMetrics {
@@ -76,6 +92,7 @@ func newSchedulerMetrics(reg prometheus.Registerer) *schedulerMetrics {
 func (s *schedulerMetrics) newTrackerMetricsForTenant(tenant string) *trackerMetrics {
 	return &trackerMetrics{
 		queue: &queueMetrics{
+			model:                 s.model,
 			pendingJobsByUser:     s.pendingJobsByUser.WithLabelValues(tenant),
 			activeJobsByUser:      s.activeJobsByUser.WithLabelValues(tenant),
 			pendingPlanJobs:       s.pendingJobs.WithLabelValues(jobTypePlan),
@@ -122,6 +139,10 @@ func (m *trackerMetrics) Clear() {
 // Callers are responsible for making valid transitions. Invalid calls (e.g. DropPending on an
 // empty queue) will produce incorrect gauge values. Methods are not thread-safe.
 type queueMetrics struct {
+	// model receives job movements so it can maintain the drain-time estimate and learn from
+	// completed jobs. It owns all timing/feature/estimate details; we only forward opaque jobs.
+	model durationModel
+
 	pendingJobsByUser prometheus.Gauge
 	activeJobsByUser  prometheus.Gauge
 
@@ -149,6 +170,9 @@ func (q *queueMetrics) Pending(j TrackedJob) {
 	if cj, ok := j.(*TrackedCompactionJob); ok {
 		q.addBytes(cj)
 	}
+	if q.model != nil {
+		q.model.RecordPending(j)
+	}
 }
 
 func (q *queueMetrics) Leased(j TrackedJob) {
@@ -167,6 +191,9 @@ func (q *queueMetrics) Recover(pending, leased []TrackedJob) {
 		if cj, ok := j.(*TrackedCompactionJob); ok {
 			q.addBytes(cj)
 		}
+		if q.model != nil {
+			q.model.RecordPending(j)
+		}
 	}
 }
 
@@ -177,19 +204,37 @@ func (q *queueMetrics) Revive(j TrackedJob) {
 	q.incPending(isPlan)
 }
 
-// Complete records a job leaving the system from the active queue (success or failure).
-func (q *queueMetrics) Complete(j TrackedJob) {
+// Complete records a job leaving the system from the active queue. success reports whether the job
+// completed successfully (as opposed to a failed or abandoned lease), so the model only learns from
+// genuine completions.
+func (q *queueMetrics) Complete(j TrackedJob, success bool) {
 	q.decActive(j.ID() == planJobId)
 	if cj, ok := j.(*TrackedCompactionJob); ok {
 		q.subBytes(cj)
 	}
+	if q.model != nil {
+		q.model.RecordUnpending(j, success)
+	}
 }
 
-// DropPending records a job leaving the system from the pending queue.
+// DropPending records a job leaving the system from the pending queue. A pending job never ran, so it
+// is never a completion.
 func (q *queueMetrics) DropPending(j TrackedJob) {
 	q.decPending(j.ID() == planJobId)
 	if cj, ok := j.(*TrackedCompactionJob); ok {
 		q.subBytes(cj)
+	}
+	if q.model != nil {
+		q.model.RecordUnpending(j, false)
+	}
+}
+
+// Forget removes a job from the model's incomplete-set accounting without touching the gauges (which
+// Clear subtracts in bulk) and without learning from it. It is used when a tenant is removed while it
+// still has incomplete jobs, so their features do not linger in the model forever.
+func (q *queueMetrics) Forget(j TrackedJob) {
+	if q.model != nil {
+		q.model.RecordUnpending(j, false)
 	}
 }
 

@@ -20,7 +20,8 @@ type TrackedJob interface {
 	ID() string
 	CreationTime() time.Time
 	Status() compactorschedulerpb.StoredJobStatus
-	StatusTime() time.Time // time of last renewal or time of completion
+	StatusTime() time.Time     // time of last renewal or time of completion
+	LeaseStartTime() time.Time // time the current lease was first granted; zero if not leased
 	IsLeased() bool
 	IsComplete() bool
 	MarkLeased(time.Time)
@@ -42,6 +43,11 @@ type baseTrackedJob struct {
 	statusTime   time.Time
 	numLeases    int
 	epoch        int64 // used to avoid conflict since a job can be reassigned/replaced
+
+	// leaseStartTime is when the current lease was first granted. Unlike statusTime it is not
+	// advanced by lease renewals, so it can be used to measure how long a job actually ran.
+	// In-memory only (not persisted); a job recovered mid-lease has a zero value.
+	leaseStartTime time.Time
 }
 
 func newBaseTrackedJob(id string, creationTime time.Time) baseTrackedJob {
@@ -80,8 +86,13 @@ func (j *baseTrackedJob) IsComplete() bool {
 func (j *baseTrackedJob) MarkLeased(now time.Time) {
 	j.status = compactorschedulerpb.STORED_JOB_STATUS_LEASED
 	j.statusTime = now
+	j.leaseStartTime = now
 	j.numLeases += 1
 	j.epoch += 1
+}
+
+func (j *baseTrackedJob) LeaseStartTime() time.Time {
+	return j.leaseStartTime
 }
 
 func (j *baseTrackedJob) MarkComplete(now time.Time) {
@@ -96,6 +107,7 @@ func (j *baseTrackedJob) RenewLease(now time.Time) {
 func (j *baseTrackedJob) ClearLease() {
 	j.status = compactorschedulerpb.STORED_JOB_STATUS_AVAILABLE
 	j.statusTime = time.Time{}
+	j.leaseStartTime = time.Time{}
 }
 
 func (j *baseTrackedJob) NumLeases() int {
@@ -116,14 +128,16 @@ type TrackedCompactionJob struct {
 	value           *CompactionJob
 	order           uint32
 	totalBlockBytes uint64
+	totalSeries     uint64
 }
 
-func NewTrackedCompactionJob(id string, value *CompactionJob, order uint32, totalBlockBytes uint64, creationTime time.Time) *TrackedCompactionJob {
+func NewTrackedCompactionJob(id string, value *CompactionJob, order uint32, totalBlockBytes, totalSeries uint64, creationTime time.Time) *TrackedCompactionJob {
 	return &TrackedCompactionJob{
 		baseTrackedJob:  newBaseTrackedJob(id, creationTime),
 		value:           value,
 		order:           order,
 		totalBlockBytes: totalBlockBytes,
+		totalSeries:     totalSeries,
 	}
 }
 
@@ -133,6 +147,7 @@ func (j *TrackedCompactionJob) CopyBase() TrackedJob {
 		value:           j.value,
 		order:           j.order,
 		totalBlockBytes: j.totalBlockBytes,
+		totalSeries:     j.totalSeries,
 	}
 }
 
@@ -149,6 +164,7 @@ func (j *TrackedCompactionJob) Serialize() ([]byte, error) {
 			BlockIds:         j.value.blocks,
 			Split:            j.value.isSplit,
 			TotalBlocksBytes: j.totalBlockBytes,
+			TotalSeries:      j.totalSeries,
 		},
 		Order: j.order,
 	}
@@ -168,6 +184,7 @@ func (j *TrackedCompactionJob) ToLeaseResponse(tenant string) *compactorschedule
 				BlockIds:         j.value.blocks,
 				Split:            j.value.isSplit,
 				TotalBlocksBytes: j.totalBlockBytes,
+				TotalSeries:      j.totalSeries,
 			},
 		},
 	}
@@ -262,5 +279,6 @@ func deserializeCompactionJob(k []byte, v []byte) (*TrackedCompactionJob, error)
 		},
 		order:           stored.Order,
 		totalBlockBytes: stored.Job.TotalBlocksBytes,
+		totalSeries:     stored.Job.TotalSeries,
 	}, nil
 }

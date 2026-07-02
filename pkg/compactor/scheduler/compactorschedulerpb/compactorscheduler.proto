@@ -31,6 +31,7 @@ message CompactionJob {
   repeated bytes block_ids = 1;
   bool split = 2;
   uint64 total_blocks_bytes = 3;
+  uint64 total_series = 4;
 }
 
 service CompactorScheduler {
@@ -113,4 +114,17 @@ message StoredCompactionJob {
 message PersistenceMetadata {
   uint32 shard_count = 1;
   int64 creation_time = 2;
+}
+
+// StoredDurationPredictor persists the learned duration-predictor state. The version and k fields
+// guard against loading state produced by an incompatible model: on mismatch the reader discards it
+// and warm-starts from defaults. The a/b fields are the raw (row-major) sufficient statistics of the
+// per-job-type least-squares fit.
+message StoredDurationPredictor {
+  uint32 version = 1;
+  uint32 k = 2;
+  repeated double merge_a = 3;
+  repeated double merge_b = 4;
+  repeated double split_a = 5;
+  repeated double split_b = 6;
 }

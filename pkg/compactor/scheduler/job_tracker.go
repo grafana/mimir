@@ -229,7 +229,7 @@ func (jt *JobTracker) Remove(id string, epoch int64, complete bool) (removed boo
 	delete(jt.incompleteJobs, id)
 	if j.IsLeased() {
 		jt.active.Remove(e)
-		jt.metrics.queue.Complete(j)
+		jt.metrics.queue.Complete(j, complete)
 		return true, nil, nil
 	}
 
@@ -302,7 +302,7 @@ func (jt *JobTracker) Maintenance(leaseDuration time.Duration, enforceLeaseExpir
 	for _, j := range deleteJobs {
 		if j.IsLeased() {
 			jt.trackFailure(j)
-			jt.metrics.queue.Complete(j)
+			jt.metrics.queue.Complete(j, false)
 			jt.active.Remove(jt.incompleteJobs[j.ID()])
 			delete(jt.incompleteJobs, j.ID())
 		}
@@ -441,7 +441,7 @@ func (jt *JobTracker) CancelLease(id string, epoch int64) (canceled bool, became
 		if err != nil {
 			return false, nil, err
 		}
-		jt.metrics.queue.Complete(j)
+		jt.metrics.queue.Complete(j, false)
 		jt.active.Remove(e)
 		delete(jt.incompleteJobs, id)
 	}
@@ -579,7 +579,7 @@ func (jt *JobTracker) OfferCompactionJobs(jobs []*TrackedCompactionJob, planJobE
 	// Remove the plan job
 	jt.active.Remove(jt.incompleteJobs[planJobId])
 	delete(jt.incompleteJobs, planJobId)
-	jt.metrics.queue.Complete(planJob)
+	jt.metrics.queue.Complete(planJob, true)
 	accepted = len(acceptedJobs)
 
 	transitions = laneTransitionsBetween(prevNonEmpty, jt.nonEmptyLaneSet())
@@ -657,6 +657,11 @@ func (jt *JobTracker) stopTrackingCompleteCompactionJobs() {
 func (jt *JobTracker) CleanupMetrics() {
 	jt.mtx.Lock()
 	defer jt.mtx.Unlock()
+	// Drop any still-incomplete jobs from the shared duration model; otherwise their features would
+	// linger in its pending accounting forever and permanently inflate the drain estimate.
+	for _, e := range jt.incompleteJobs {
+		jt.metrics.queue.Forget(e.Value.(TrackedJob))
+	}
 	jt.metrics.Clear()
 }
 
