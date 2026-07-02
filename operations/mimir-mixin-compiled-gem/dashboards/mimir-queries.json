@@ -657,13 +657,13 @@
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "(sum(rate(cortex_frontend_split_queries_total{$read_path_matcher}[$__rate_interval])) / sum (rate(cortex_frontend_query_range_duration_seconds_count{$read_path_matcher, method=\"split_by_interval_and_results_cache\"}[$__rate_interval]))) and on() (vector($latency_metrics) == 1)",
+                        "expr": "(sum(rate(cortex_frontend_split_queries_total{$read_path_matcher}[$__rate_interval]))\n/\n(\n  (sum (rate(cortex_frontend_query_range_duration_seconds_count{$read_path_matcher, method=\"split_by_interval_and_results_cache\"}[$__rate_interval])) or vector(0)) # Emitted when running splitting and caching in query-frontend middleware.\n  +\n  (sum(rate(cortex_frontend_split_requests_total{$read_path_matcher}[$__rate_interval])) or vector(0)) # Emitted when running splitting and caching inside MQE.\n)\n) and on() (vector($latency_metrics) == 1)",
                         "format": "time_series",
                         "legendFormat": "splitting rate",
                         "legendLink": null
                      },
                      {
-                        "expr": "(sum(rate(cortex_frontend_split_queries_total{$read_path_matcher}[$__rate_interval])) / sum (histogram_count(rate(cortex_frontend_query_range_duration_seconds{$read_path_matcher, method=\"split_by_interval_and_results_cache\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
+                        "expr": "(sum(rate(cortex_frontend_split_queries_total{$read_path_matcher}[$__rate_interval]))\n/\n(\n  (sum (histogram_count(rate(cortex_frontend_query_range_duration_seconds{$read_path_matcher, method=\"split_by_interval_and_results_cache\"}[$__rate_interval]))) or vector(0)) # Emitted when running splitting and caching in query-frontend middleware.\n  +\n  (sum(rate(cortex_frontend_split_requests_total{$read_path_matcher}[$__rate_interval])) or vector(0)) # Emitted when running splitting and caching inside MQE.\n)\n) and on() (vector($latency_metrics) == -1)",
                         "format": "time_series",
                         "legendFormat": "splitting rate",
                         "legendLink": null
@@ -1939,25 +1939,25 @@
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "(\n  sum(rate(cortex_ingest_storage_strong_consistency_requests_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval]))\n  -\n  sum(rate(cortex_ingest_storage_strong_consistency_failures_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval]))\n)\n / (sum (rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\",route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries)\"}[$__rate_interval]))) and on() (vector($latency_metrics) == 1)",
+                        "expr": "(\n  sum(rate(cortex_ingest_storage_strong_consistency_requests_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval]))\n  -\n  sum(rate(cortex_ingest_storage_strong_consistency_failures_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval]))\n)\n / (sum (rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\",route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues)\"}[$__rate_interval]))) and on() (vector($latency_metrics) == 1)",
                         "format": "time_series",
                         "legendFormat": "successful",
                         "legendLink": null
                      },
                      {
-                        "expr": "(\n  sum(rate(cortex_ingest_storage_strong_consistency_requests_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval]))\n  -\n  sum(rate(cortex_ingest_storage_strong_consistency_failures_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval]))\n)\n / (sum (histogram_count(rate(cortex_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\",route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries)\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
+                        "expr": "(\n  sum(rate(cortex_ingest_storage_strong_consistency_requests_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval]))\n  -\n  sum(rate(cortex_ingest_storage_strong_consistency_failures_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval]))\n)\n / (sum (histogram_count(rate(cortex_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\",route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues)\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
                         "format": "time_series",
                         "legendFormat": "successful",
                         "legendLink": null
                      },
                      {
-                        "expr": "sum(rate(cortex_ingest_storage_strong_consistency_failures_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval]))\n / (sum (rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\",route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries)\"}[$__rate_interval]))) and on() (vector($latency_metrics) == 1)",
+                        "expr": "sum(rate(cortex_ingest_storage_strong_consistency_failures_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval]))\n / (sum (rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\",route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues)\"}[$__rate_interval]))) and on() (vector($latency_metrics) == 1)",
                         "format": "time_series",
                         "legendFormat": "failed",
                         "legendLink": null
                      },
                      {
-                        "expr": "sum(rate(cortex_ingest_storage_strong_consistency_failures_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval]))\n / (sum (histogram_count(rate(cortex_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\",route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries)\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
+                        "expr": "sum(rate(cortex_ingest_storage_strong_consistency_failures_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval]))\n / (sum (histogram_count(rate(cortex_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\",route=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries|SearchLabelNames|SearchLabelValues)\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
                         "format": "time_series",
                         "legendFormat": "failed",
                         "legendLink": null

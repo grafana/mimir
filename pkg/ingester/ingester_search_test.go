@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"strconv"
 	"testing"
 	"time"
 
@@ -569,6 +570,282 @@ func TestBuildSearchHintsLimitGuard(t *testing.T) {
 			require.NoError(t, err)
 			require.NotNil(t, hints)
 			assert.Equal(t, tc.want, hints.Limit)
+		})
+	}
+}
+
+// Benchmark fixture shape mirrors BenchmarkIngester_LabelValuesCardinality
+// (pkg/ingester/label_names_and_values_test.go) so cardinality buckets line
+// up across the legacy and search benchmarks. Prime moduli ensure each
+// labelset is a distinct series and produce 10 / 77 / 4199 unique values
+// for the mod_10 / mod_77 / mod_4199 labels respectively.
+const (
+	searchBenchUserID      = "test"
+	searchBenchNumSeries   = 10e6
+	searchBenchMetricName  = "metric_name"
+	searchBenchEndTimeMs   = 200_000
+	searchBenchLimitLarge  = 10_000
+	searchBenchLimitSmall  = 100
+	searchBenchFuzzPercent = 70
+)
+
+// prepareSearchBenchmarkIngester builds a healthy ingester and pushes
+// searchBenchNumSeries series. The 10M-series push dominates fixture cost
+// (~tens of seconds); it runs once per Benchmark* invocation and feeds all
+// sub-benchmarks of that invocation.
+func prepareSearchBenchmarkIngester(b *testing.B) (*Ingester, context.Context) {
+	in := prepareHealthyIngester(b, nil)
+	ctx := user.InjectOrgID(context.Background(), searchBenchUserID)
+
+	samples := []mimirpb.Sample{{TimestampMs: 1_000, Value: 1}}
+	writeReq := &mimirpb.WriteRequest{Source: mimirpb.API}
+	for s := 0; s < searchBenchNumSeries; s++ {
+		writeReq.Timeseries = append(writeReq.Timeseries, mimirpb.PreallocTimeseries{
+			TimeSeries: &mimirpb.TimeSeries{
+				Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(
+					model.MetricNameLabel, searchBenchMetricName,
+					"mod_10", strconv.Itoa(s%(2*5)),
+					"mod_77", strconv.Itoa(s%(7*11)),
+					"mod_4199", strconv.Itoa(s%(13*17*19)))),
+				Samples: samples,
+			},
+		})
+	}
+	_, err := in.Push(ctx, writeReq)
+	require.NoError(b, err)
+	return in, ctx
+}
+
+// BenchmarkIngester_SearchLabelValues exercises the new streaming
+// SearchLabelValues RPC across representative axes: label cardinality,
+// filter (none / substring / fuzzy Jaro-Winkler), ordering (alpha asc /
+// alpha desc / score desc), and limit. The matrix is intentionally pruned
+// to representative combinations rather than a full cross-product to keep
+// benchmark wall time bounded; the helper is reused by the parity
+// benchmark below.
+func BenchmarkIngester_SearchLabelValues(b *testing.B) {
+	in, ctx := prepareSearchBenchmarkIngester(b)
+
+	runOnce := func(b *testing.B, req *client.SearchLabelValuesRequest) {
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			s := &mockSearchLabelValuesStream{ctx: ctx}
+			if err := in.SearchLabelValues(req, s); err != nil {
+				b.Fatal(err)
+			}
+		}
+	}
+
+	// Baseline (no filter): pure scan cost per cardinality bucket.
+	for _, c := range []struct {
+		name  string
+		label string
+	}{
+		{"mod_10__10_values", "mod_10"},
+		{"mod_77__77_values", "mod_77"},
+		{"mod_4199__4199_values", "mod_4199"},
+		{"__name__1_value", model.MetricNameLabel},
+	} {
+		b.Run(fmt.Sprintf("card=%s/filter=none/order=alpha_asc/limit=%d", c.name, searchBenchLimitLarge), func(b *testing.B) {
+			runOnce(b, &client.SearchLabelValuesRequest{
+				StartTimestampMs: 0,
+				EndTimestampMs:   searchBenchEndTimeMs,
+				Name:             c.label,
+				Ordering:         client.ORDER_BY_VALUE_ASC,
+				Limit:            searchBenchLimitLarge,
+			})
+		})
+	}
+
+	// Filter / ordering / limit variation on the highest-cardinality label.
+	// The "1" term matches a large fraction of mod_4199 values so the filter
+	// path is exercised non-trivially without becoming pathological.
+	const fuzzyTerm, substringTerm = "11", "1"
+	const heavyCardLabel = "mod_4199"
+
+	b.Run(fmt.Sprintf("card=mod_4199__4199_values/filter=substring/order=alpha_asc/limit=%d", searchBenchLimitLarge), func(b *testing.B) {
+		runOnce(b, &client.SearchLabelValuesRequest{
+			StartTimestampMs: 0,
+			EndTimestampMs:   searchBenchEndTimeMs,
+			Name:             heavyCardLabel,
+			Filter:           &client.SearchFilter{Terms: []string{substringTerm}},
+			Ordering:         client.ORDER_BY_VALUE_ASC,
+			Limit:            searchBenchLimitLarge,
+		})
+	})
+	b.Run(fmt.Sprintf("card=mod_4199__4199_values/filter=substring/order=alpha_desc/limit=%d", searchBenchLimitLarge), func(b *testing.B) {
+		runOnce(b, &client.SearchLabelValuesRequest{
+			StartTimestampMs: 0,
+			EndTimestampMs:   searchBenchEndTimeMs,
+			Name:             heavyCardLabel,
+			Filter:           &client.SearchFilter{Terms: []string{substringTerm}},
+			Ordering:         client.ORDER_BY_VALUE_DESC,
+			Limit:            searchBenchLimitLarge,
+		})
+	})
+	b.Run(fmt.Sprintf("card=mod_4199__4199_values/filter=substring/order=score_desc/limit=%d", searchBenchLimitLarge), func(b *testing.B) {
+		runOnce(b, &client.SearchLabelValuesRequest{
+			StartTimestampMs: 0,
+			EndTimestampMs:   searchBenchEndTimeMs,
+			Name:             heavyCardLabel,
+			Filter:           &client.SearchFilter{Terms: []string{substringTerm}},
+			Ordering:         client.ORDER_BY_SCORE_DESC,
+			Limit:            searchBenchLimitLarge,
+		})
+	})
+	b.Run(fmt.Sprintf("card=mod_4199__4199_values/filter=substring/order=alpha_asc/limit=%d", searchBenchLimitSmall), func(b *testing.B) {
+		runOnce(b, &client.SearchLabelValuesRequest{
+			StartTimestampMs: 0,
+			EndTimestampMs:   searchBenchEndTimeMs,
+			Name:             heavyCardLabel,
+			Filter:           &client.SearchFilter{Terms: []string{substringTerm}},
+			Ordering:         client.ORDER_BY_VALUE_ASC,
+			Limit:            searchBenchLimitSmall,
+		})
+	})
+	b.Run(fmt.Sprintf("card=mod_4199__4199_values/filter=fuzzy_jw%d/order=score_desc/limit=%d", searchBenchFuzzPercent, searchBenchLimitLarge), func(b *testing.B) {
+		runOnce(b, &client.SearchLabelValuesRequest{
+			StartTimestampMs: 0,
+			EndTimestampMs:   searchBenchEndTimeMs,
+			Name:             heavyCardLabel,
+			Filter: &client.SearchFilter{
+				Terms:         []string{fuzzyTerm},
+				FuzzAlg:       client.FUZZ_ALG_JARO_WINKLER,
+				FuzzThreshold: searchBenchFuzzPercent,
+			},
+			Ordering: client.ORDER_BY_SCORE_DESC,
+			Limit:    searchBenchLimitLarge,
+		})
+	})
+
+	// Metadata enrichment is only invoked when include_metadata=true AND
+	// the label is __name__. The single-value __name__ bucket also has the
+	// shortest per-call body, so the metadata path's overhead shows up
+	// most clearly here. The tenant has not pushed metric metadata, so the
+	// decorator pays its lookup cost but enriches nothing — that is the
+	// expected production cost when a tenant lacks metadata.
+	for _, includeMD := range []bool{false, true} {
+		b.Run(fmt.Sprintf("card=__name__1_value/include_metadata=%t/order=alpha_asc/limit=%d", includeMD, searchBenchLimitLarge), func(b *testing.B) {
+			runOnce(b, &client.SearchLabelValuesRequest{
+				StartTimestampMs: 0,
+				EndTimestampMs:   searchBenchEndTimeMs,
+				Name:             model.MetricNameLabel,
+				IncludeMetadata:  includeMD,
+				Ordering:         client.ORDER_BY_VALUE_ASC,
+				Limit:            searchBenchLimitLarge,
+			})
+		})
+	}
+}
+
+// BenchmarkIngester_SearchLabelNames exercises the SearchLabelNames RPC.
+// Label-name cardinality on this fixture is fixed at four (__name__,
+// mod_10, mod_77, mod_4199), so the per-call cost is dominated by the
+// scan + filter setup rather than result-set size.
+func BenchmarkIngester_SearchLabelNames(b *testing.B) {
+	in, ctx := prepareSearchBenchmarkIngester(b)
+
+	run := func(b *testing.B, req *client.SearchLabelNamesRequest) {
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			s := &mockSearchLabelNamesStream{ctx: ctx}
+			if err := in.SearchLabelNames(req, s); err != nil {
+				b.Fatal(err)
+			}
+		}
+	}
+
+	b.Run("filter=none", func(b *testing.B) {
+		run(b, &client.SearchLabelNamesRequest{
+			StartTimestampMs: 0,
+			EndTimestampMs:   searchBenchEndTimeMs,
+			Ordering:         client.ORDER_BY_VALUE_ASC,
+			Limit:            searchBenchLimitLarge,
+		})
+	})
+	b.Run("filter=substring_mod", func(b *testing.B) {
+		run(b, &client.SearchLabelNamesRequest{
+			StartTimestampMs: 0,
+			EndTimestampMs:   searchBenchEndTimeMs,
+			Filter:           &client.SearchFilter{Terms: []string{"mod"}},
+			Ordering:         client.ORDER_BY_VALUE_ASC,
+			Limit:            searchBenchLimitLarge,
+		})
+	})
+	b.Run("matcher=__name__=metric_name", func(b *testing.B) {
+		run(b, &client.SearchLabelNamesRequest{
+			StartTimestampMs: 0,
+			EndTimestampMs:   searchBenchEndTimeMs,
+			Matchers: []*client.LabelMatcher{
+				{Type: client.EQUAL, Name: model.MetricNameLabel, Value: searchBenchMetricName},
+			},
+			Ordering: client.ORDER_BY_VALUE_ASC,
+			Limit:    searchBenchLimitLarge,
+		})
+	})
+}
+
+// BenchmarkIngester_LegacyVsSearchLabelValues is the load-bearing parity
+// comparison for the new RPC. Sub-case names are keyed on /impl=legacy and
+// /impl=new so benchstat can render the comparison directly:
+//
+//	go test ./pkg/ingester -run='^$' -bench='BenchmarkIngester_LegacyVsSearchLabelValues' \
+//	    -count=10 -benchmem > parity.txt
+//	benchstat -col '/impl' parity.txt
+//
+// Both sub-cases run on the same head, with no filter, alpha-asc ordering,
+// and a limit large enough not to clamp the result set. This isolates the
+// streaming-RPC overhead vs the unary RPC at functional parity.
+func BenchmarkIngester_LegacyVsSearchLabelValues(b *testing.B) {
+	in, ctx := prepareSearchBenchmarkIngester(b)
+
+	cards := []struct {
+		name  string
+		label string
+	}{
+		{"mod_10__10_values", "mod_10"},
+		{"mod_4199__4199_values", "mod_4199"},
+	}
+
+	for _, c := range cards {
+		// Build the legacy LabelValuesRequest once per cardinality bucket.
+		legacyReq, err := client.ToLabelValuesRequest(
+			model.LabelName(c.label),
+			0,
+			model.Time(searchBenchEndTimeMs),
+			&storage.LabelHints{Limit: searchBenchLimitLarge},
+			nil,
+		)
+		require.NoError(b, err)
+
+		b.Run(fmt.Sprintf("card=%s/impl=legacy", c.name), func(b *testing.B) {
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				if _, err := in.LabelValues(ctx, legacyReq); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+
+		newReq := &client.SearchLabelValuesRequest{
+			StartTimestampMs: 0,
+			EndTimestampMs:   searchBenchEndTimeMs,
+			Name:             c.label,
+			Ordering:         client.ORDER_BY_VALUE_ASC,
+			Limit:            searchBenchLimitLarge,
+		}
+		b.Run(fmt.Sprintf("card=%s/impl=new", c.name), func(b *testing.B) {
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				s := &mockSearchLabelValuesStream{ctx: ctx}
+				if err := in.SearchLabelValues(newReq, s); err != nil {
+					b.Fatal(err)
+				}
+			}
 		})
 	}
 }

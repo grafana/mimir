@@ -9,11 +9,14 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/cache"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/promql"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/rangevectorsplitting/cache"
+	"github.com/grafana/mimir/pkg/streamingpromql/caching"
+	rangevectorsplittingcache "github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/rangevectorsplitting/cache"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/splitandcache"
 	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/promqlext"
 )
@@ -45,11 +48,18 @@ type EngineOpts struct {
 	EnableNarrowBinarySelectors                               bool `yaml:"enable_narrow_binary_selectors" category:"experimental"`
 	EnableEliminateDeduplicateAndMerge                        bool `yaml:"enable_eliminate_deduplicate_and_merge" category:"experimental"`
 	EnableReduceMatchers                                      bool `yaml:"enable_reduce_matchers" category:"experimental"`
-	EnableProjectionPushdown                                  bool `yaml:"enable_projection_pushdown" category:"experimental"`
 	EnableMultiAggregation                                    bool `yaml:"enable_multi_aggregation" category:"experimental"`
 	EnableRemoveStaticallyEmptyExpressions                    bool `yaml:"enable_remove_statically_empty_expressions" category:"experimental"`
 
 	RangeVectorSplitting RangeVectorSplittingConfig `yaml:"range_vector_splitting" category:"experimental"`
+
+	// These values are populated from the query-frontend config, so are not exposed as config flags or in the config file.
+	// FIXME: Once we no longer support running splitting and caching in the frontend middleware, we can move the options here.
+	RangeQuerySplittingAndCaching RangeQuerySplittingAndCachingConfig `yaml:"-"`
+
+	// CachePrefixGenerator should return a prefix for all cache keys for a given context.
+	// It should contain the tenant ID and any other relevant information that should be used to partition cache entries.
+	CachePrefixGenerator caching.PrefixGenerator `yaml:"-"`
 }
 
 // RangeVectorSplittingConfig configures the splitting of functions over range vectors queries.
@@ -64,7 +74,26 @@ type RangeVectorSplittingConfig struct {
 	// TODO: consider making the cache an optional part of query splitting. We might want to just do query splitting
 	//  without caching (e.g. possibly if splitting is extended to range queries in the future, or if we add
 	//  parallelisation and just want to use query splitting for that and not cache).
-	IntermediateResultsCache cache.Config `yaml:"intermediate_results_cache" category:"experimental"`
+	IntermediateResultsCache rangevectorsplittingcache.Config `yaml:"intermediate_results_cache" category:"experimental"`
+}
+
+type RangeQuerySplittingAndCachingConfig struct {
+	SplitEnabled  bool
+	SplitInterval time.Duration
+	CacheEnabled  bool
+
+	// MinCacheExtent is the minimum length of a cached extent for it to be used.
+	// Extents smaller than this are ignored and re-evaluated, to avoid freshly evaluating many small extents.
+	// If the desired time range is smaller than MinCacheExtent, then MinCacheExtent is ignored and all cache extents are used.
+	// A value of zero disables small extent avoidance.
+	MinCacheExtent time.Duration
+
+	// FIXME: Once we no longer support running splitting and caching in the frontend middleware, move the cache client options here.
+	CacheClient cache.Cache
+
+	// See the comment where this field is set in createQueryFrontendPromQLEngineOptions for an explanation of why
+	// we don't just register these metrics in the engine like all other metrics.
+	CacheMetrics *splitandcache.ResultsCacheMetrics
 }
 
 func (o *EngineOpts) RegisterFlags(f *flag.FlagSet) {
@@ -75,7 +104,6 @@ func (o *EngineOpts) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&o.EnableNarrowBinarySelectors, "querier.mimir-query-engine.enable-narrow-binary-selectors", false, "Enable generating selectors for one side of a binary expression based on results from the other side.")
 	f.BoolVar(&o.EnableEliminateDeduplicateAndMerge, "querier.mimir-query-engine.enable-eliminate-deduplicate-and-merge", true, "Enable eliminating redundant DeduplicateAndMerge nodes from the query plan when it can be proven that each input series produces a unique output series.")
 	f.BoolVar(&o.EnableReduceMatchers, "querier.mimir-query-engine.enable-reduce-matchers", true, "Enable eliminating duplicate or redundant matchers that are part of selector expressions.")
-	f.BoolVar(&o.EnableProjectionPushdown, "querier.mimir-query-engine.enable-projection-pushdown", false, "Enable projection pushdown to only fetch labels required for the query from storage.")
 	f.BoolVar(&o.EnableMultiAggregation, "querier.mimir-query-engine.enable-multi-aggregation", true, "Enable computing multiple aggregations over the same data without buffering. Requires common subexpression elimination to be enabled.")
 	f.BoolVar(&o.EnableRemoveStaticallyEmptyExpressions, "querier.mimir-query-engine.enable-remove-statically-empty-expressions", true, "Enable removing expressions that are guaranteed to produce no results.")
 
@@ -130,9 +158,10 @@ func NewTestEngineOpts() EngineOpts {
 		EnableNarrowBinarySelectors:                               true,
 		EnableEliminateDeduplicateAndMerge:                        true,
 		EnableReduceMatchers:                                      true,
-		EnableProjectionPushdown:                                  true,
 		EnableMultiAggregation:                                    true,
 		EnableRemoveStaticallyEmptyExpressions:                    true,
 		EnableRangeQueryRangeVectorCommonSubexpressionElimination: true,
+
+		CachePrefixGenerator: caching.TenantPrefixGenerator,
 	}
 }

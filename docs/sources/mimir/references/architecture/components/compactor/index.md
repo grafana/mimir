@@ -61,7 +61,13 @@ The compactor merges the split blocks for each shard. This compacts all _N_ spli
 
 The merge then runs on other configured compaction time ranges, for example 12h and 24h. It compacts blocks belonging to the same shard.
 
-This strategy is suitable for clusters with large tenants. The number of shards _M_ is configurable on a per-tenant basis using `-compactor.split-and-merge-shards`, and it can be adjusted based on the number of series of each tenant. The more a tenant grows in terms of series, the more you can grow the configured number of shards. Doing so improves compaction parallelization and keeps each per-shard compacted block size under control. We recommend 1 shard per every 8 million active series in a tenant. For example, for a tenant with 100 million active series, use approximately 12 shards. Use an even number for the count.
+This strategy is suitable for clusters with large tenants. The number of shards _M_ is configurable on a per-tenant basis using `-compactor.split-and-merge-shards`, and it can be adjusted based on the number of series of each tenant. The more a tenant grows in terms of series, the more you can grow the configured number of shards. Doing so improves compaction parallelization and keeps each per-shard compacted block size under control. We recommend 1 shard per every 8 million active series in a tenant. For example, for a tenant with 100 million active series, use approximately 16 shards. Use values that are a power of two for shard count.
+
+For extremely large tenants approaching 1 billion active series, the shard count does not scale linearly. Increasing _M_ beyond roughly 96 shards introduces additional trade-offs:
+
+- The total number of blocks for a tenant is _M_ per compacted time range. Under typical retention, a high shard count produces thousands of blocks per tenant. Each block requires its own [index-header](../store-gateway/#blocks-index-header) on every store-gateway that serves it, increasing disk usage and memory consumption on store-gateways.
+- Each time range requires one merge job per shard. More shards mean more jobs to schedule and more compactor disk space.
+- Without query sharding, every query must touch _M_ blocks per time range instead of one. With query sharding enabled, the querier can skip incompatible compactor shards, but only when the query shard count evenly divides (or is evenly divisible by) _M_. Note that shard sizes that are a power of two always satisfies such relationship.
 
 The number of split groups, _N_, can also be adjusted per tenant using the `-compactor.split-groups` option. Increasing this value produces more compaction jobs with fewer blocks during the split stage. This allows multiple compactors to work on these jobs, and finish the splitting stage faster. However, increasing this value also generates more intermediate blocks during the split stage, which will only be reduced later in the merge stage.
 

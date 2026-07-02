@@ -63,6 +63,10 @@ type Writer struct {
 	logger     log.Logger
 	registerer prometheus.Registerer
 
+	// autoCreateTopics is the set of topics to auto-create on startup. It defaults to the configured
+	// kafkaCfg.Topic and can be overridden via WithAutoCreateTopics.
+	autoCreateTopics []string
+
 	client     atomic.Pointer[KafkaProducer]
 	serializer recordSerializer
 
@@ -72,9 +76,19 @@ type Writer struct {
 	writeBytesTotal     prometheus.Counter
 	inputBytesTotal     prometheus.Counter
 	recordsPerRequest   prometheus.Histogram
+	serializeDuration   prometheus.Histogram
 }
 
-func NewWriter(kafkaCfg KafkaConfig, logger log.Logger, reg prometheus.Registerer) *Writer {
+// WriterOption customizes a Writer built by NewWriter.
+type WriterOption func(*Writer)
+
+// WithAutoCreateTopics sets the explicit set of topics the writer auto-creates on startup, instead of
+// the single configured KafkaConfig.Topic.
+func WithAutoCreateTopics(topics []string) WriterOption {
+	return func(w *Writer) { w.autoCreateTopics = topics }
+}
+
+func NewWriter(kafkaCfg KafkaConfig, logger log.Logger, reg prometheus.Registerer, opts ...WriterOption) *Writer {
 	writeLatency := promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
 		Name:                            "cortex_ingest_storage_writer_latency_seconds",
 		Help:                            "Latency to write an incoming request to Kafka partitions.",
@@ -85,10 +99,11 @@ func NewWriter(kafkaCfg KafkaConfig, logger log.Logger, reg prometheus.Registere
 	}, []string{"outcome"})
 
 	w := &Writer{
-		kafkaCfg:   kafkaCfg,
-		logger:     logger,
-		registerer: reg,
-		serializer: recordSerializerFromCfg(kafkaCfg),
+		kafkaCfg:         kafkaCfg,
+		logger:           logger,
+		registerer:       reg,
+		serializer:       recordSerializerFromCfg(kafkaCfg),
+		autoCreateTopics: []string{kafkaCfg.Topic},
 
 		// Metrics.
 		writeSuccessLatency: writeLatency.WithLabelValues("success"),
@@ -106,6 +121,18 @@ func NewWriter(kafkaCfg KafkaConfig, logger log.Logger, reg prometheus.Registere
 			Help:    "The number of records a single per-partition write request has been split into.",
 			Buckets: prometheus.ExponentialBuckets(1, 2, 8),
 		}),
+		serializeDuration: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
+			Name:                            "cortex_ingest_storage_writer_serialize_duration_seconds",
+			Help:                            "Time spent serializing an incoming request to Kafka records.",
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
+			NativeHistogramMaxBucketNumber:  100,
+			Buckets:                         prometheus.DefBuckets,
+		}),
+	}
+
+	for _, opt := range opts {
+		opt(w)
 	}
 
 	w.Service = services.NewIdleService(w.starting, w.stopping)
@@ -115,7 +142,7 @@ func NewWriter(kafkaCfg KafkaConfig, logger log.Logger, reg prometheus.Registere
 
 func (w *Writer) starting(_ context.Context) error {
 	if w.kafkaCfg.AutoCreateTopicEnabled {
-		if err := CreateTopic(w.kafkaCfg, w.logger); err != nil {
+		if err := CreateTopics(w.kafkaCfg, w.logger, w.autoCreateTopics...); err != nil {
 			return err
 		}
 	}
@@ -127,14 +154,15 @@ func (w *Writer) starting(_ context.Context) error {
 		maxInflightProduceRequests = defaultMaxInflightProduceRequests
 	}
 
-	// The Writer does not use a default topic because the topic is set on each record individually,
-	// allowing writes to different topics (compartments).
-	client, err := NewKafkaWriterClient(w.kafkaCfg, maxInflightProduceRequests, w.logger, clientReg, WithDisableDefaultTopic())
+	// The producer implementation is selected by KafkaConfig.Backend. Topic
+	// is set on each record individually so the producer does not need a
+	// default topic configured up-front.
+	producer, err := newKafkaProducerForBackend(w.kafkaCfg, maxInflightProduceRequests, w.logger, clientReg)
 	if err != nil {
 		return err
 	}
 
-	w.client.Store(NewKafkaProducer(client, w.kafkaCfg.ProducerMaxBufferedBytes, clientReg))
+	w.client.Store(producer)
 	return nil
 }
 
@@ -192,19 +220,11 @@ func (w *Writer) MultiWriteSync(ctx context.Context, topic string, userID string
 		allRecords = append(allRecords, records...)
 		requestSizeBytes += reqSizeBytes
 	}
+	w.serializeDuration.Observe(time.Since(startTime).Seconds())
 
 	// Nothing to do if all requests were empty.
 	if len(allRecords) == 0 {
 		return nil
-	}
-
-	// If the caller provided an explicit record timestamp (e.g. the distributor's validation
-	// reference time), set it on every record so that consumers see the same timestamp that
-	// was used for grace-period checks.
-	if ts, ok := RecordTimestampFromContext(ctx); ok {
-		for _, r := range allRecords {
-			r.Timestamp = ts
-		}
 	}
 
 	// Write to backend. The topic and partition fields are already set on each record by ToRecords,

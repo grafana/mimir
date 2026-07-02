@@ -14,7 +14,6 @@
     $._config.queryBlocksStorageConfig +
     $._config.querySchedulerRingClientConfig +
     $.blocks_metadata_caching_config +
-    $.range_vector_splitting_caching_config +
     $.bucket_index_config +
     $.querierUseQuerySchedulerArgs('query-scheduler') +
     {
@@ -34,7 +33,7 @@
 
   // CLI flags that are applied only to queriers, and not ruler-queriers.
   // Values take precedence over querier_args.
-  querier_only_args:: {},
+  querier_only_args:: $.regular_range_vector_splitting_caching_config,
 
   // Timeout validation for querier
   local validateQuerierTimeouts() =
@@ -70,7 +69,8 @@
     $.util.readinessProbe +
     (if std.length(envmap) > 0 then container.withEnvMap(std.prune(envmap)) else {}) +
     $.util.resourcesRequests('1', '12Gi') +
-    $.util.resourcesLimits(null, '24Gi'),
+    $.util.resourcesLimits(null, '24Gi') +
+    $.mimirEphemeralStorageRequest,
 
   querier_env_map:: {
     // Dynamically set GOMAXPROCS based on CPU request.

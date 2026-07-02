@@ -84,7 +84,7 @@ func (o *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, 
 			if !isAggregate {
 				ineligibleDuplicateNodes[duplicate] = struct{}{}
 				delete(candidateDuplicateNodes, duplicate)
-			} else if supported, err := IsSupportedAggregationOperation(aggregate.Op); err != nil || !supported {
+			} else if supported, err := IsSupportedAggregationOperation(aggregate.Op, maximumSupportedQueryPlanVersion); err != nil || !supported {
 				ineligibleDuplicateNodes[duplicate] = struct{}{}
 				delete(candidateDuplicateNodes, duplicate)
 			}
@@ -97,7 +97,7 @@ func (o *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, 
 			aggregate, isAggregate := child.(*core.AggregateExpression)
 			if !isAggregate {
 				continue
-			} else if supported, err := IsSupportedAggregationOperation(aggregate.Op); err != nil || !supported {
+			} else if supported, err := IsSupportedAggregationOperation(aggregate.Op, maximumSupportedQueryPlanVersion); err != nil || !supported {
 				continue
 			}
 
@@ -176,6 +176,7 @@ func (o *OptimizationPass) replaceWithMultiAggregation(duplicate *commonsubexpre
 				SubsetIndex: aggregateOverDuplicate.subsetIndex,
 			},
 			Group: group,
+			Param: aggregateOverDuplicate.aggregate.Param,
 		}
 
 		if err := aggregateOverDuplicate.aggregateParent.ReplaceChild(aggregateOverDuplicate.indexOfAggregateInParent, consumer); err != nil {
@@ -186,7 +187,7 @@ func (o *OptimizationPass) replaceWithMultiAggregation(duplicate *commonsubexpre
 	return nil
 }
 
-func IsSupportedAggregationOperation(o core.AggregationOperation) (bool, error) {
+func IsSupportedAggregationOperation(o core.AggregationOperation, maximumSupportedQueryPlanVersion planning.QueryPlanVersion) (bool, error) {
 	switch o {
 	case core.AGGREGATION_SUM:
 		return true, nil
@@ -204,9 +205,9 @@ func IsSupportedAggregationOperation(o core.AggregationOperation) (bool, error) 
 		return true, nil
 	case core.AGGREGATION_STDDEV:
 		return true, nil
-
 	case core.AGGREGATION_QUANTILE:
-		return false, nil
+		return maximumSupportedQueryPlanVersion >= planning.QueryPlanV15, nil
+
 	case core.AGGREGATION_COUNT_VALUES:
 		return false, nil
 	case core.AGGREGATION_TOPK:

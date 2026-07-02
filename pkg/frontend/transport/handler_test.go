@@ -26,7 +26,9 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
 	"github.com/grafana/dskit/concurrency"
+	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/httpgrpc"
+	dskitlog "github.com/grafana/dskit/log"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/test"
 	"github.com/grafana/dskit/user"
@@ -40,7 +42,7 @@ import (
 
 	mimirapi "github.com/grafana/mimir/pkg/api"
 	apierror "github.com/grafana/mimir/pkg/api/error"
-	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware/querydetails"
 	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/util/activitytracker"
 )
@@ -488,10 +490,10 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				require.Equal(t, "query-frontend", msg["component"])
 				require.EqualValues(t, tt.expectedStatusCode, msg["status_code"])
 				require.Equal(t, "12345", msg["user"])
-				require.Equal(t, req.Method, msg["method"])
-				require.Equal(t, req.URL.Path, msg["path"])
+				require.Equal(t, dskitlog.DropUnsafeChars(req.Method), msg["method"])
+				require.Equal(t, dskitlog.DropUnsafeChars(req.URL.Path), msg["path"])
 				require.Equal(t, testRouteName, msg["route_name"])
-				require.Equal(t, req.UserAgent(), msg["user_agent"])
+				require.Equal(t, dskitlog.DropUnsafeChars(req.UserAgent()), msg["user_agent"])
 				require.Contains(t, msg, "response_time")
 				require.Contains(t, msg, "query_wall_time_seconds")
 				require.EqualValues(t, 0, msg["fetched_series_count"])
@@ -503,6 +505,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				require.EqualValues(t, 0, msg["estimated_series_count"])
 				require.EqualValues(t, 0, msg["queue_time_seconds"])
 				require.EqualValues(t, 0, msg["remote_execution_request_count"])
+				require.EqualValues(t, 0, msg["retries"])
 				require.EqualValues(t, 0, msg["response_series_count"])
 				require.EqualValues(t, 0, msg["response_samples_count"])
 				require.EqualValues(t, 0, msg["equivalent_samples_read"])
@@ -528,7 +531,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				}
 				require.Equal(t, len(tt.expectedParams), paramsLogged)
 				for key, value := range tt.expectedParams {
-					require.Equal(t, value[0], msg["param_"+key])
+					require.Equal(t, dskitlog.DropUnsafeChars(value[0]), msg["param_"+key])
 				}
 
 				if tt.expectedReadConsistencyLevel != "" {
@@ -743,7 +746,7 @@ func TestHandler_LogsFormattedQueryDetails(t *testing.T) {
 		requestFormFields            []string
 		requestAdditionalHeaders     map[string]string
 		logQueryRequestHeaders       []string
-		setQueryDetails              func(*querymiddleware.QueryDetails)
+		setQueryDetails              func(*querydetails.QueryDetails)
 		expectedLoggedFields         map[string]string
 		expectedMissingFields        []string
 		expectedApproximateDurations map[string]time.Duration
@@ -751,7 +754,7 @@ func TestHandler_LogsFormattedQueryDetails(t *testing.T) {
 		{
 			name:              "query_range",
 			requestFormFields: []string{"start", "end", "step"},
-			setQueryDetails: func(d *querymiddleware.QueryDetails) {
+			setQueryDetails: func(d *querydetails.QueryDetails) {
 				d.Start, d.MinT = t1, t1.Add(-time.Minute)
 				d.End, d.MaxT = t2, t2
 				d.Step = time.Minute
@@ -767,7 +770,7 @@ func TestHandler_LogsFormattedQueryDetails(t *testing.T) {
 		{
 			name:              "instant",
 			requestFormFields: []string{"time"},
-			setQueryDetails: func(d *querymiddleware.QueryDetails) {
+			setQueryDetails: func(d *querydetails.QueryDetails) {
 				d.Start = t1
 				d.End = t1
 			},
@@ -780,7 +783,7 @@ func TestHandler_LogsFormattedQueryDetails(t *testing.T) {
 			// the details are used to figure out the length regardless of the user setting explicit or implicit time
 			name:              "instant, missing time from request",
 			requestFormFields: []string{},
-			setQueryDetails: func(d *querymiddleware.QueryDetails) {
+			setQueryDetails: func(d *querydetails.QueryDetails) {
 				d.Start = t1
 				d.End = t1
 			},
@@ -792,7 +795,7 @@ func TestHandler_LogsFormattedQueryDetails(t *testing.T) {
 			// the details aren't set by the query stats middleware if the request isn't a query
 			name:                         "not a query request",
 			requestFormFields:            []string{},
-			setQueryDetails:              func(*querymiddleware.QueryDetails) {},
+			setQueryDetails:              func(*querydetails.QueryDetails) {},
 			expectedLoggedFields:         map[string]string{},
 			expectedApproximateDurations: map[string]time.Duration{},
 			expectedMissingFields:        []string{"length", "param_time", "time_since_param_start", "time_since_param_end"},
@@ -800,20 +803,26 @@ func TestHandler_LogsFormattedQueryDetails(t *testing.T) {
 		{
 			name:              "results cache statistics",
 			requestFormFields: []string{},
-			setQueryDetails: func(d *querymiddleware.QueryDetails) {
+			setQueryDetails: func(d *querydetails.QueryDetails) {
 				d.ResultsCacheMissBytes = 10
+				d.ResultsCacheMissCount = 1
 				d.ResultsCacheHitBytes = 200
+				d.ResultsCacheHitCount = 2
+				d.ResultsCacheSetCount = 3
 			},
 			expectedLoggedFields: map[string]string{
 				"results_cache_miss_bytes": "10",
 				"results_cache_hit_bytes":  "200",
+				"results_cache_miss_count": "1",
+				"results_cache_hit_count":  "2",
+				"results_cache_set_count":  "3",
 				"header_cache_control":     "",
 			},
 		},
 		{
 			name:              "response series and samples count",
 			requestFormFields: []string{},
-			setQueryDetails: func(d *querymiddleware.QueryDetails) {
+			setQueryDetails: func(d *querydetails.QueryDetails) {
 				d.ResponseSeriesCount = 42
 				d.ResponseSamplesCount = 1234
 			},
@@ -828,7 +837,7 @@ func TestHandler_LogsFormattedQueryDetails(t *testing.T) {
 			requestAdditionalHeaders: map[string]string{
 				"Cache-Control": "no-store",
 			},
-			setQueryDetails: func(d *querymiddleware.QueryDetails) {
+			setQueryDetails: func(d *querydetails.QueryDetails) {
 				d.ResultsCacheMissBytes = 200
 				d.ResultsCacheHitBytes = 0
 			},
@@ -846,7 +855,7 @@ func TestHandler_LogsFormattedQueryDetails(t *testing.T) {
 				"X-Form-ID":     "12345",
 			},
 			logQueryRequestHeaders: []string{"Cache-Control", "X-Form-ID"},
-			setQueryDetails: func(d *querymiddleware.QueryDetails) {
+			setQueryDetails: func(d *querydetails.QueryDetails) {
 				d.ResultsCacheMissBytes = 200
 				d.ResultsCacheHitBytes = 0
 			},
@@ -865,7 +874,7 @@ func TestHandler_LogsFormattedQueryDetails(t *testing.T) {
 				"x-form-id":     "12345",
 			},
 			logQueryRequestHeaders: []string{"cache-control", "X-Form-ID"},
-			setQueryDetails: func(d *querymiddleware.QueryDetails) {
+			setQueryDetails: func(d *querydetails.QueryDetails) {
 				d.ResultsCacheMissBytes = 200
 				d.ResultsCacheHitBytes = 0
 			},
@@ -879,7 +888,7 @@ func TestHandler_LogsFormattedQueryDetails(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			roundTripper := roundTripperFunc(func(req *http.Request) (*http.Response, error) {
-				tt.setQueryDetails(querymiddleware.QueryDetailsFromContext(req.Context()))
+				tt.setQueryDetails(querydetails.QueryDetailsFromContext(req.Context()))
 				return &http.Response{
 					StatusCode: http.StatusOK,
 					Body:       io.NopCloser(strings.NewReader("{}")),
@@ -1034,7 +1043,7 @@ func TestQueryStatsLogFieldsDocumentedInRunbook(t *testing.T) {
 
 	roundTripper := roundTripperFunc(func(req *http.Request) (*http.Response, error) {
 		// Populate all conditional QueryDetails fields so the log line includes every field.
-		details := querymiddleware.QueryDetailsFromContext(req.Context())
+		details := querydetails.QueryDetailsFromContext(req.Context())
 		now := time.Now()
 		details.MinT = now.Add(-time.Hour)
 		details.MaxT = now
@@ -1133,13 +1142,25 @@ func TestHandler_QueryStringLoggedLast(t *testing.T) {
 	require.True(t, sawQueryStats)
 }
 
-func TestFormatRequestHeaders(t *testing.T) {
+func TestHandler_FormatRequestHeaders(t *testing.T) {
 	h := http.Header{}
 	h.Add("X-Header-To-Log", "i should be logged!")
 	h.Add("X-Header-To-Not-Log", "i shouldn't be logged!")
+	h.Add("Authorization", "Bearer super-secret-token")
+	h.Add("X-Api-Key", "secret-api-key")
 
-	fields := formatRequestHeaders(&h, []string{"X-Header-To-Log", "X-Header-Not-Present"})
+	roundTripper := roundTripperFunc(func(*http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: http.StatusOK}, nil
+	})
 
+	reg := prometheus.NewPedanticRegistry()
+	cfg := HandlerConfig{LogQueryRequestHeaders: []string{"X-Header-To-Log", "X-Header-Not-Present", "Authorization", "X-Api-Key"}}
+	logger := &testLogger{}
+	handler := NewHandler(cfg, roundTripper, logger, reg)
+
+	fields := handler.formatRequestHeaders(&h)
+
+	// We don't expect to see "Authorization" nor "X-Api-Key".
 	expected := []interface{}{
 		"header_cache_control",
 		"",
@@ -1148,4 +1169,134 @@ func TestFormatRequestHeaders(t *testing.T) {
 	}
 
 	assert.Equal(t, expected, fields)
+}
+
+func TestSafeHeadersToLog(t *testing.T) {
+	t.Run("remove Cache-Control if it is present", func(t *testing.T) {
+		got := safeHeadersToLog([]string{
+			"X-Header-To-Log",
+			"Cache-Control",
+			"Authorization",
+			"X-Api-Key",
+			"X-Trace-Id",
+		})
+		assert.Equal(t, []safeHeader{"X-Header-To-Log", "X-Trace-Id"}, got)
+	})
+
+	t.Run("don't add Cache-Control if it is not present", func(t *testing.T) {
+		got := safeHeadersToLog([]string{
+			"X-Header-To-Log",
+			"Authorization",
+			"X-Api-Key",
+			"X-Trace-Id",
+		})
+		assert.Equal(t, []safeHeader{"X-Header-To-Log", "X-Trace-Id"}, got)
+	})
+}
+
+func TestNewSafeHeader(t *testing.T) {
+	t.Run("for non-sensitive headers should return a new safeHeader", func(t *testing.T) {
+		sH, ok := newSafeHeader("X-Custom-Header")
+		assert.True(t, ok)
+		assert.Equal(t, "X-Custom-Header", sH.String())
+		assert.Equal(t, "header_x_custom_header", sH.log())
+	})
+
+	t.Run("for sensitive headers should not return a new safeHeader", func(t *testing.T) {
+		for _, name := range sensitiveHeaderNames {
+			_, ok := newSafeHeader(name)
+			assert.False(t, ok)
+		}
+	})
+}
+
+func TestSanitizeHeaderValue(t *testing.T) {
+	type testCase struct {
+		headerName     string
+		value          string
+		acceptEmpty    bool
+		expectedValue  string
+		expectedStatus bool
+	}
+
+	testCases := map[string]testCase{
+		"non-sensitive header passes through": {
+			headerName:     "X-Custom-Header",
+			value:          "some-value",
+			expectedValue:  "some-value",
+			expectedStatus: true,
+		},
+		"empty value returns empty if accepted": {
+			headerName:     "X-Custom-Header",
+			value:          "",
+			acceptEmpty:    true,
+			expectedValue:  "",
+			expectedStatus: true,
+		},
+		"empty value rejected if not accepted": {
+			headerName:     "X-Custom-Header",
+			value:          "",
+			acceptEmpty:    false,
+			expectedValue:  "",
+			expectedStatus: false,
+		},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			header := &http.Header{tc.headerName: {tc.value}}
+			sH, ok := newSafeHeader(tc.headerName)
+			assert.True(t, ok)
+			val, ok := sanitizeHeaderValue(header, sH, tc.acceptEmpty)
+			assert.Equal(t, tc.expectedStatus, ok)
+			assert.Equal(t, tc.expectedValue, val)
+		})
+	}
+}
+
+func TestHandlerConfig_Validate(t *testing.T) {
+	testCases := map[string]struct {
+		headers       []string
+		expectErr     bool
+		expectErrSubs []string
+	}{
+		"empty allow-list is valid": {
+			headers:   nil,
+			expectErr: false,
+		},
+		"benign headers are valid": {
+			headers:   []string{"User-Agent", "X-Trace-Id", "X-Custom-Tenant"},
+			expectErr: false,
+		},
+		"single sensitive header is rejected": {
+			headers:       []string{"Authorization"},
+			expectErr:     true,
+			expectErrSubs: []string{"Authorization"},
+		},
+		"multiple sensitive headers are reported together": {
+			headers:       []string{"User-Agent", "Authorization", "X-Api-Key", "X-Trace-Id"},
+			expectErr:     true,
+			expectErrSubs: []string{"Authorization", "X-Api-Key"},
+		},
+		"matching is case-insensitive": {
+			headers:       []string{"AUTHORIZATION"},
+			expectErr:     true,
+			expectErrSubs: []string{"AUTHORIZATION"},
+		},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			cfg := HandlerConfig{LogQueryRequestHeaders: flagext.StringSliceCSV(tc.headers)}
+			err := cfg.Validate()
+			if !tc.expectErr {
+				require.NoError(t, err)
+				return
+			}
+			require.Error(t, err)
+			for _, sub := range tc.expectErrSubs {
+				assert.Contains(t, err.Error(), sub)
+			}
+		})
+	}
 }

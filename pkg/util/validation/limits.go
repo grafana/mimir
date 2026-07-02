@@ -11,6 +11,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"hash/fnv"
 	"math"
 	"reflect"
 	"slices"
@@ -32,6 +33,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/ruler/notifier"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
+	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
@@ -77,6 +79,7 @@ const (
 	alignQueriesWithStepFlag                    = "query-frontend.align-queries-with-step"
 	QueryIngestersWithinFlag                    = "querier.query-ingesters-within"
 	EnableDelayedNameRemovalFlag                = "querier.enable-delayed-name-removal"
+	SubquerySpinOffEnabledFlag                  = "query-frontend.subquery-spin-off-enabled"
 
 	// MinCompactorPartialBlockDeletionDelay is the minimum partial blocks deletion delay that can be configured in Mimir.
 	MinCompactorPartialBlockDeletionDelay = 4 * time.Hour
@@ -248,9 +251,15 @@ type Limits struct {
 	ActiveSeriesResultsMaxSizeBytes               int  `yaml:"active_series_results_max_size_bytes" json:"active_series_results_max_size_bytes" category:"advanced"`
 
 	// Cost attribution.
-	CostAttributionLabelsStructured costattributionmodel.Labels `yaml:"cost_attribution_labels_structured,omitempty" json:"cost_attribution_labels_structured,omitempty" category:"experimental"`
-	MaxCostAttributionCardinality   int                         `yaml:"max_cost_attribution_cardinality" json:"max_cost_attribution_cardinality" category:"experimental"`
-	CostAttributionCooldown         model.Duration              `yaml:"cost_attribution_cooldown" json:"cost_attribution_cooldown" category:"experimental"`
+	// Deprecated: use CostAttributionBaseTrackers instead. If set, it is migrated into CostAttributionBaseTrackers
+	// as a tracker named "cost-attribution" during validation. Cannot be set together with CostAttributionBaseTrackers.
+	CostAttributionLabelsStructured   costattributionmodel.Labels                          `yaml:"cost_attribution_labels_structured,omitempty" json:"cost_attribution_labels_structured,omitempty" category:"experimental"`
+	CostAttributionBaseTrackers       costattributionmodel.TrackerConfigs                  `yaml:"cost_attribution_trackers,omitempty" json:"cost_attribution_trackers,omitempty" category:"experimental"`
+	AdditionalCostAttributionTrackers costattributionmodel.TrackerConfigs                  `yaml:"additional_cost_attribution_trackers,omitempty" json:"additional_cost_attribution_trackers,omitempty" category:"experimental"`
+	costAttributionMergedTrackers     *atomic.Pointer[costattributionmodel.TrackerConfigs] `yaml:"-" json:"-"`
+	CostAttributionCooldown           model.Duration                                       `yaml:"cost_attribution_cooldown" json:"cost_attribution_cooldown" category:"experimental"`
+	MaxCostAttributionCardinality     int                                                  `yaml:"max_cost_attribution_cardinality" json:"max_cost_attribution_cardinality" category:"experimental"`
+	costAttributionConfigHash         uint64
 
 	// Ruler defaults and limits.
 	RulerEvaluationDelay                                  model.Duration                    `yaml:"ruler_evaluation_delay_duration" json:"ruler_evaluation_delay_duration"`
@@ -404,6 +413,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 
 	f.StringVar(&l.SeparateMetricsGroupLabel, "validation.separate-metrics-group-label", "", "Label used to define the group label for metrics separation. For each write request, the group is obtained from the first non-empty group label from the first timeseries in the incoming list of timeseries. Specific distributor and ingester metrics will be further separated adding a 'group' label with group label's value. Currently applies to the following metrics: cortex_discarded_samples_total")
 
+	f.Var(&l.CostAttributionBaseTrackers, "validation.cost-attribution-trackers", "Base cost attribution trackers configuration as JSON. Each tracker defines labels to track for cost attribution. Example: '{\"by-team\":{\"labels\":[{\"input\":\"team\"}]}}'.")
 	f.IntVar(&l.MaxCostAttributionCardinality, "validation.max-cost-attribution-cardinality", 2000, "Maximum cardinality of cost attribution labels allowed per user.")
 	f.Var(&l.CostAttributionCooldown, "validation.cost-attribution-cooldown", "Defines how long cost attribution stays in overflow before attempting a reset, with received/discarded samples extending the cooldown if overflow persists, while active series reset and restart tracking after the cooldown.")
 	f.IntVar(&l.MaxActiveSeriesAdditionalCustomTrackers, MaxActiveSeriesAdditionalCustomTrackersFlag, 0, "Maximum number of additional custom trackers for active series that you can configure per tenant. This limit only applies to additional custom trackers. Set to 0 to disable the limit.")
@@ -432,7 +442,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.Var(&l.MaxCacheFreshness, "query-frontend.max-cache-freshness", "Most recent allowed cacheable result per-tenant, to prevent caching very recent results that might still be in flux.")
 
 	f.IntVar(&l.MaxQueriersPerTenant, "query-frontend.max-queriers-per-tenant", 0, "Maximum number of queriers that can handle requests for a single tenant. If set to 0 or value higher than number of available queriers, *all* queriers will handle requests for the tenant. Each frontend (or query-scheduler, if used) will select the same set of queriers for the same tenant (given that all queriers are connected to all frontends / query-schedulers). This option only works with queriers connecting to the query-frontend / query-scheduler, not when using downstream URL.")
-	f.IntVar(&l.QueryShardingTotalShards, "query-frontend.query-sharding-total-shards", 16, "The amount of shards to use when doing parallelisation via query sharding by tenant. 0 to disable query sharding for tenant. Query sharding implementation will adjust the number of query shards based on compactor shards. This allows querier to not search the blocks which cannot possibly have the series for given query shard.")
+	f.IntVar(&l.QueryShardingTotalShards, "query-frontend.query-sharding-total-shards", 16, "The amount of shards to use when doing parallelisation via query sharding by tenant. 0 to disable query sharding for tenant. Values greater than 1 are rounded up to the next power of two, so the query shard count always meshes with the compactor's power-of-two shard count. This allows querier to not search the blocks which cannot possibly have the series for given query shard.")
 	f.IntVar(&l.QueryShardingMaxShardedQueries, "query-frontend.query-sharding-max-sharded-queries", 128, "The max number of sharded queries that can be run for a given received query. 0 to disable limit.")
 	f.IntVar(&l.QueryShardingMaxRegexpSizeBytes, "query-frontend.query-sharding-max-regexp-size-bytes", 4096, "Disable query sharding for any query containing a regular expression matcher longer than the configured number of bytes. 0 to disable the limit.")
 	_ = l.QueryIngestersWithin.Set("13h")
@@ -470,8 +480,8 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.RulerMaxRuleEvaluationResults, "ruler.max-rule-evaluation-results", 0, "Maximum number of alerts or series one alerting rule or one recording rule respectively can produce. 0 is no limit.")
 
 	f.Var(&l.CompactorBlocksRetentionPeriod, "compactor.blocks-retention-period", "Delete blocks containing samples older than the specified retention period. Also used by query-frontend to avoid querying beyond the retention period by instant, range or remote read queries. 0 to disable.")
-	f.IntVar(&l.CompactorSplitAndMergeShards, "compactor.split-and-merge-shards", 0, "The number of shards to use when splitting blocks. 0 to disable splitting.")
-	f.IntVar(&l.CompactorOOOSplitAndMergeShards, "compactor.ooo-split-and-merge-shards", 0, "The number of shards to use when splitting out-of-order blocks. 0 to use the value of -compactor.split-and-merge-shards. Only applies to blocks with the out-of-order external label, see -ingester.out-of-order-blocks-external-label-enabled.")
+	f.IntVar(&l.CompactorSplitAndMergeShards, "compactor.split-and-merge-shards", 0, "The number of shards to use when splitting blocks. 0 to disable splitting. Values greater than 1 are rounded up to the next power of two.")
+	f.IntVar(&l.CompactorOOOSplitAndMergeShards, "compactor.ooo-split-and-merge-shards", 0, "The number of shards to use when splitting out-of-order blocks. 0 to use the value of -compactor.split-and-merge-shards. Values greater than 1 are rounded up to the next power of two. Only applies to blocks with the out-of-order external label, see -ingester.out-of-order-blocks-external-label-enabled.")
 	f.IntVar(&l.CompactorSplitGroups, "compactor.split-groups", 1, "Number of groups that blocks for splitting should be grouped into. Each group of blocks is then split separately. Number of output split shards is controlled by -compactor.split-and-merge-shards.")
 	f.IntVar(&l.CompactorTenantShardSize, "compactor.compactor-tenant-shard-size", 0, "Max number of compactors that can compact blocks for single tenant. 0 to disable the limit and use all compactors.")
 	_ = l.CompactorPartialBlockDeletionDelay.Set("1d")
@@ -499,7 +509,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.Var(&l.EnabledPromQLExperimentalFunctions, "query-frontend.enabled-promql-experimental-functions", "Enable certain experimental PromQL functions, which are subject to being changed or removed at any time, on a per-tenant basis. Defaults to empty which means all experimental functions are disabled. Set to 'all' to enable all experimental functions.")
 	f.Var(&l.EnabledPromQLExtendedRangeSelectors, "query-frontend.enabled-promql-extended-range-selectors", "Enable certain experimental PromQL extended range selector modifiers, which are subject to being changed or removed at any time, on a per-tenant basis. Defaults to empty which means all experimental modifiers are disabled. Set to 'all' to enable all experimental modifiers.")
 	f.BoolVar(&l.Prom2RangeCompat, "query-frontend.prom2-range-compat", false, "Rewrite queries using the same range selector and resolution [X:X] which don't work in Prometheus 3.0 to a nearly identical form that works with Prometheus 3.0 semantics")
-	f.BoolVar(&l.SubquerySpinOffEnabled, "query-frontend.subquery-spin-off-enabled", false, "Enable spinning off subqueries from instant queries as range queries to optimize their performance.")
+	f.BoolVar(&l.SubquerySpinOffEnabled, SubquerySpinOffEnabledFlag, false, "Enable spinning off subqueries from instant queries as range queries to optimize their performance.")
 	f.BoolVar(&l.LabelsQueryOptimizerEnabled, "query-frontend.labels-query-optimizer-enabled", true, "Enable labels query optimizations. When enabled, the query-frontend may rewrite labels queries to improve their performance.")
 
 	// Store-gateway.
@@ -531,8 +541,9 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.IngestionPartitionsTenantShardSize, "ingest-storage.ingestion-partition-tenant-shard-size", 0, "The number of partitions a tenant's data should be sharded to when using the ingest storage. Tenants are sharded across partitions using shuffle-sharding. 0 disables shuffle sharding and tenant is sharded across all partitions.")
 	f.IntVar(&l.IngestionPartitionsTenantWriteShardSize, "ingest-storage.ingestion-partition-tenant-write-shard-size", 0, "The maximum number of partitions a tenant's data should be written to when using the ingest storage. When set to a value > 0 and less than -ingest-storage.ingestion-partition-tenant-shard-size, writes use fewer partitions while reads continue using the full shard size. This allows safely reducing the shard size without losing query coverage during the migration. 0 means the write shard size equals the read shard size.")
 
-	// Ensure the pointer holder is initialized.
+	// Ensure the pointer holders are initialized.
 	l.activeSeriesMergedCustomTrackersConfig = atomic.NewPointer[asmodel.CustomTrackersConfig](nil)
+	l.costAttributionMergedTrackers = atomic.NewPointer[costattributionmodel.TrackerConfigs](nil)
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -563,8 +574,9 @@ func (l *Limits) unmarshal(decode func(any) error) error {
 		l.RulerMaxRulesPerRuleGroupByNamespace = defaultLimits.RulerMaxRulesPerRuleGroupByNamespace.Clone()
 		l.RulerMaxRuleGroupsPerTenantByNamespace = defaultLimits.RulerMaxRuleGroupsPerTenantByNamespace.Clone()
 
-		// Reset the merged custom active series trackers config, to not interfere with the default limits.
+		// Reset the merged trackers configs, to not interfere with the default limits.
 		l.activeSeriesMergedCustomTrackersConfig = atomic.NewPointer[asmodel.CustomTrackersConfig](nil)
+		l.costAttributionMergedTrackers = atomic.NewPointer[costattributionmodel.TrackerConfigs](nil)
 
 		// Reset these params to be nil, since they are set during RegisterFlags.
 		l.OTelMetricSuffixesEnabled = nil
@@ -579,12 +591,34 @@ func (l *Limits) unmarshal(decode func(any) error) error {
 	}
 	l.extensions = getExtensions()
 
+	l.migrateCostAttributionLabelsStructured()
+
 	if err = l.Validate(); err != nil {
 		return err
 	}
 
 	l.canonicalizeQueries()
+	l.CostAttributionBaseTrackers.Canonicalize()
+	l.AdditionalCostAttributionTrackers.Canonicalize()
+	l.ComputeCostAttributionConfigHash()
 	return nil
+}
+
+// migrateCostAttributionLabelsStructured migrates the deprecated CostAttributionLabelsStructured
+// field into CostAttributionBaseTrackers.
+func (l *Limits) migrateCostAttributionLabelsStructured() {
+	if len(l.CostAttributionLabelsStructured) == 0 {
+		return
+	}
+	if len(l.CostAttributionBaseTrackers) > 0 {
+		// Base trackers are set too; leave the deprecated field in place so Validate rejects the
+		// mutually-exclusive combination instead of silently dropping the configured trackers.
+		return
+	}
+	l.CostAttributionBaseTrackers = costattributionmodel.TrackerConfigs{
+		costattributionmodel.DefaultTrackerName: costattributionmodel.TrackerConfig{Labels: l.CostAttributionLabelsStructured},
+	}
+	l.CostAttributionLabelsStructured = nil
 }
 
 // RegisterExtensionsDefaults registers the default values for extensions into l.
@@ -694,7 +728,13 @@ func (l *Limits) Validate() error {
 		}
 	}
 
-	if err := l.CostAttributionLabelsStructured.Validate(); err != nil {
+	if len(l.CostAttributionLabelsStructured) > 0 && len(l.CostAttributionBaseTrackers) > 0 {
+		return fmt.Errorf("cost_attribution_labels_structured and cost_attribution_trackers are mutually exclusive; use cost_attribution_trackers only")
+	}
+	if err := l.CostAttributionBaseTrackers.Validate(); err != nil {
+		return err
+	}
+	if err := l.AdditionalCostAttributionTrackers.Validate(); err != nil {
 		return err
 	}
 
@@ -707,7 +747,40 @@ func (l *Limits) Validate() error {
 		return fmt.Errorf("active_series_additional_custom_trackers validation failed: %w", err)
 	}
 
+	// Round the shard counts up to the next power of two. Query sharding and the compactor's
+	// split-and-merge sharding work best when one shard count is a divisor or multiple of the
+	// other, and powers of two always satisfy that relationship. A value of 0 or 1 disables
+	// sharding (or falls through to another setting), so it's left untouched.
+	if l.QueryShardingTotalShards > 1 {
+		l.QueryShardingTotalShards = util_math.NextPowerTwo(l.QueryShardingTotalShards)
+	}
+	if l.CompactorSplitAndMergeShards > 1 {
+		l.CompactorSplitAndMergeShards = util_math.NextPowerTwo(l.CompactorSplitAndMergeShards)
+	}
+	if l.CompactorOOOSplitAndMergeShards > 1 {
+		l.CompactorOOOSplitAndMergeShards = util_math.NextPowerTwo(l.CompactorOOOSplitAndMergeShards)
+	}
+
 	return nil
+}
+
+// ComputeCostAttributionConfigHash computes and caches the hash of cost attribution config fields.
+func (l *Limits) ComputeCostAttributionConfigHash() uint64 {
+	l.costAttributionConfigHash = l.computeCostAttributionConfigHash()
+	return l.costAttributionConfigHash
+}
+
+func (l *Limits) computeCostAttributionConfigHash() uint64 {
+	if len(l.CostAttributionBaseTrackers) == 0 && len(l.AdditionalCostAttributionTrackers) == 0 {
+		return 0
+	}
+	h := fnv.New64a()
+	e := json.NewEncoder(h)
+	_ = e.Encode(l.CostAttributionBaseTrackers)
+	_ = e.Encode(l.MaxCostAttributionCardinality)
+	_ = e.Encode(l.CostAttributionCooldown)
+	_ = e.Encode(l.AdditionalCostAttributionTrackers)
+	return h.Sum64()
 }
 
 // LabelValueHashLen is the length of the hash portion that replaces part of all
@@ -1152,16 +1225,57 @@ func (o *Overrides) SeparateMetricsGroupLabel(userID string) string {
 	return o.getOverridesForUser(userID).SeparateMetricsGroupLabel
 }
 
-func (o *Overrides) CostAttributionLabelsStructured(userID string) costattributionmodel.Labels {
-	return o.getOverridesForUser(userID).CostAttributionLabelsStructured
-}
-
 func (o *Overrides) CostAttributionCooldown(userID string) time.Duration {
 	return time.Duration(o.getOverridesForUser(userID).CostAttributionCooldown)
 }
 
 func (o *Overrides) MaxCostAttributionCardinality(userID string) int {
 	return o.getOverridesForUser(userID).MaxCostAttributionCardinality
+}
+
+// costAttributionTrackers returns the merged base + additional tracker configs. The result is cached.
+func (l *Limits) costAttributionTrackers() costattributionmodel.TrackerConfigs {
+	if l.costAttributionMergedTrackers == nil {
+		return costattributionmodel.MergeTrackerConfigs(
+			l.CostAttributionBaseTrackers,
+			l.AdditionalCostAttributionTrackers,
+		)
+	}
+
+	if merged := l.costAttributionMergedTrackers.Load(); merged != nil {
+		return *merged
+	}
+
+	merged := costattributionmodel.MergeTrackerConfigs(
+		l.CostAttributionBaseTrackers,
+		l.AdditionalCostAttributionTrackers,
+	)
+	l.costAttributionMergedTrackers.Store(&merged)
+	return merged
+}
+
+// CostAttributionConfig returns all cost attribution limits for a tenant in a single lookup.
+type CostAttributionConfig struct {
+	Trackers       costattributionmodel.TrackerConfigs
+	MaxCardinality int
+	Cooldown       time.Duration
+}
+
+func (o *Overrides) CostAttributionConfig(userID string) CostAttributionConfig {
+	l := o.getOverridesForUser(userID)
+	return CostAttributionConfig{
+		Trackers:       l.costAttributionTrackers(),
+		MaxCardinality: l.MaxCostAttributionCardinality,
+		Cooldown:       time.Duration(l.CostAttributionCooldown),
+	}
+}
+
+// CostAttributionConfigHash returns a precomputed hash of all cost attribution
+// config fields for a tenant. The hash is stable within a config reload cycle.
+// The second argument indicates whether the user has any cost attribution trackers configured.
+func (o *Overrides) CostAttributionConfigHash(userID string) (uint64, bool) {
+	user := o.getOverridesForUser(userID)
+	return user.costAttributionConfigHash, len(user.CostAttributionBaseTrackers)+len(user.AdditionalCostAttributionTrackers) > 0
 }
 
 // IngestionTenantShardSize returns the ingesters shard size for a given user.

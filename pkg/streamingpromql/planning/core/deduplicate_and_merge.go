@@ -3,7 +3,7 @@
 package core
 
 import (
-	"fmt"
+	"context"
 	"time"
 
 	"github.com/gogo/protobuf/proto"
@@ -15,9 +15,10 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
+//node:generate
 type DeduplicateAndMerge struct {
 	*DeduplicateAndMergeDetails
-	Inner planning.Node
+	Inner planning.Node `node:"child"`
 }
 
 func (d *DeduplicateAndMerge) Details() proto.Message {
@@ -26,37 +27,6 @@ func (d *DeduplicateAndMerge) Details() proto.Message {
 
 func (d *DeduplicateAndMerge) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_DEDUPLICATE_AND_MERGE
-}
-
-func (d *DeduplicateAndMerge) Child(idx int) planning.Node {
-	if idx != 0 {
-		panic(fmt.Sprintf("node of type DeduplicateAndMerge supports 1 child, but attempted to get child at index %d", idx))
-	}
-
-	return d.Inner
-}
-
-func (d *DeduplicateAndMerge) ChildCount() int {
-	return 1
-}
-
-func (d *DeduplicateAndMerge) SetChildren(children []planning.Node) error {
-	if len(children) != 1 {
-		return fmt.Errorf("node of type DeduplicateAndMerge supports 1 child, but got %d", len(children))
-	}
-
-	d.Inner = children[0]
-
-	return nil
-}
-
-func (d *DeduplicateAndMerge) ReplaceChild(idx int, node planning.Node) error {
-	if idx != 0 {
-		return fmt.Errorf("node of type DeduplicateAndMerge supports 1 child, but attempted to replace child at index %d", idx)
-	}
-
-	d.Inner = node
-	return nil
 }
 
 func (d *DeduplicateAndMerge) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
@@ -72,10 +42,6 @@ func (d *DeduplicateAndMerge) MergeHints(_ planning.Node) error {
 
 func (d *DeduplicateAndMerge) Describe() string {
 	return ""
-}
-
-func (d *DeduplicateAndMerge) ChildrenLabels() []string {
-	return []string{""}
 }
 
 func (d *DeduplicateAndMerge) ChildrenTimeRange(parentTimeRange types.QueryTimeRange) types.QueryTimeRange {
@@ -98,8 +64,8 @@ func (d *DeduplicateAndMerge) MinimumRequiredPlanVersion(types.QueryTimeRange) (
 	return planning.QueryPlanVersionZero, nil
 }
 
-func MaterializeDeduplicateAndMerge(d *DeduplicateAndMerge, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
-	inner, err := materializer.ConvertNodeToInstantVectorOperator(d.Inner, timeRange)
+func MaterializeDeduplicateAndMerge(ctx context.Context, d *DeduplicateAndMerge, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
+	inner, err := materializer.ConvertNodeToInstantVectorOperator(ctx, d.Inner, timeRange)
 	if err != nil {
 		return nil, err
 	}

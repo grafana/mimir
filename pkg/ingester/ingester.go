@@ -34,6 +34,7 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.uber.org/atomic"
 
+	"github.com/grafana/mimir/pkg/compartments"
 	"github.com/grafana/mimir/pkg/costattribution"
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
 	"github.com/grafana/mimir/pkg/ingester/lookupplan"
@@ -176,9 +177,12 @@ type Config struct {
 
 	// UseIngesterOwnedSeriesForLimits was added in 2.12, but we keep it experimental until we decide, what is the correct behaviour
 	// when the replication factor and the number of zones don't match. Refer to notes in https://github.com/grafana/mimir/pull/8695 and https://github.com/grafana/mimir/pull/9496
-	UseIngesterOwnedSeriesForLimits bool          `yaml:"use_ingester_owned_series_for_limits" category:"experimental"`
-	UpdateIngesterOwnedSeries       bool          `yaml:"track_ingester_owned_series" category:"experimental"`
-	OwnedSeriesUpdateInterval       time.Duration `yaml:"owned_series_update_interval" category:"experimental"`
+	UseIngesterOwnedSeriesForLimits             bool          `yaml:"use_ingester_owned_series_for_limits" category:"experimental"`
+	UpdateIngesterOwnedSeries                   bool          `yaml:"track_ingester_owned_series" category:"experimental"`
+	OwnedSeriesUpdateInterval                   time.Duration `yaml:"owned_series_update_interval" category:"experimental"`
+	EarlyCompactionNonOwnedSeriesEnabled        bool          `yaml:"early_compaction_non_owned_series_enabled" category:"experimental"`
+	EarlyCompactionNonOwnedSeriesMinGracePeriod time.Duration `yaml:"early_compaction_non_owned_series_min_grace_period" category:"experimental"`
+	EarlyCompactionNonOwnedSeriesMaxGracePeriod time.Duration `yaml:"early_compaction_non_owned_series_max_grace_period" category:"experimental"`
 
 	PushCircuitBreaker   CircuitBreakerConfig              `yaml:"push_circuit_breaker"`
 	ReadCircuitBreaker   CircuitBreakerConfig              `yaml:"read_circuit_breaker"`
@@ -190,11 +194,18 @@ type Config struct {
 
 	PushGrpcMethodEnabled bool `yaml:"push_grpc_method_enabled" category:"experimental" doc:"hidden"`
 
-	// This config is dynamically injected because defined outside the ingester config.
-	IngestStorageConfig ingest.Config `yaml:"-"`
+	// ReadCompartmentID is the read compartment this ingester serves. It selects which partition ring
+	// the ingester registers its partition into. When compartments are disabled it must be 0, because it
+	// is used to index the (single) non-compartment partition ring, which lives at index 0.
+	ReadCompartmentID int `yaml:"read_compartment_id" category:"experimental" doc:"hidden"`
 
-	// This config can be overridden in tests.
+	// These configs are dynamically injected because defined outside the ingester config.
+	IngestStorageConfig ingest.Config       `yaml:"-"`
+	Compartments        compartments.Config `yaml:"-"`
+
+	// These configs can be overridden in tests.
 	limitMetricsUpdatePeriod time.Duration `yaml:"-"`
+	minCompactionLoopDelay   time.Duration `yaml:"-"`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
@@ -219,21 +230,44 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.BoolVar(&cfg.UseIngesterOwnedSeriesForLimits, "ingester.use-ingester-owned-series-for-limits", false, "When enabled, only series currently owned by ingester according to the ring are used when checking user per-tenant series limit.")
 	f.BoolVar(&cfg.UpdateIngesterOwnedSeries, "ingester.track-ingester-owned-series", false, "This option enables tracking of ingester-owned series based on ring state, even if -ingester.use-ingester-owned-series-for-limits is disabled.")
 	f.DurationVar(&cfg.OwnedSeriesUpdateInterval, "ingester.owned-series-update-interval", 15*time.Second, "How often to check for ring changes and possibly recompute owned series as a result of detected change.")
+	f.BoolVar(&cfg.EarlyCompactionNonOwnedSeriesEnabled, "ingester.early-compaction-non-owned-series-enabled", false, "When enabled, the ingester triggers an early TSDB head compaction for series that are no longer owned by the ingester after a ring change. Requires -ingester.track-ingester-owned-series or -ingester.use-ingester-owned-series-for-limits to be enabled.")
+	f.DurationVar(&cfg.EarlyCompactionNonOwnedSeriesMinGracePeriod, "ingester.early-compaction-non-owned-series-min-grace-period", 30*time.Second, "Minimum time a series must remain non-owned before it can be evicted when the local owned-series threshold is exceeded. New non-owned series reset the timer. A value of 0 evicts immediately. A per-replica startup jitter spreads evictions across replicas.")
+	f.DurationVar(&cfg.EarlyCompactionNonOwnedSeriesMaxGracePeriod, "ingester.early-compaction-non-owned-series-max-grace-period", 5*time.Minute, "Maximum time a series may remain non-owned before it is evicted, regardless of the owned-series threshold. This ensures eventual eviction even for tenants below their threshold. A value of 0 disables the maximum grace period, so eviction depends solely on the owned-series threshold.")
 	f.IntVar(&cfg.LabelValuesCountRequestMaxConcurrency, "ingester.label-values-count-max-concurrency", 16, "Maximum concurrency used to compute a single label values count request.")
 	f.BoolVar(&cfg.PushGrpcMethodEnabled, "ingester.push-grpc-method-enabled", true, "Enables Push gRPC method on ingester. Can be only disabled when using ingest-storage to make sure ingesters only receive data from Kafka.")
+	f.IntVar(&cfg.ReadCompartmentID, "ingester.read-compartment-id", 0, "The read compartment this ingester serves. Only used when compartments are enabled.")
 
 	// Hardcoded config (can only be overridden in tests).
 	cfg.limitMetricsUpdatePeriod = time.Second * 15
+	cfg.minCompactionLoopDelay = defaultMinCompactionLoopDelay
 }
 
-func (cfg *Config) Validate(log.Logger) error {
+func (cfg *Config) Validate(compartmentsCfg compartments.Config) error {
 	if cfg.ErrorSampleRate < 0 {
 		return fmt.Errorf("error sample rate cannot be a negative number")
+	}
+
+	if compartmentsCfg.Enabled {
+		if cfg.ReadCompartmentID < 0 || cfg.ReadCompartmentID >= compartmentsCfg.Read.NumCompartments {
+			return fmt.Errorf("ingester read compartment ID %d is out of range [0, %d)", cfg.ReadCompartmentID, compartmentsCfg.Read.NumCompartments)
+		}
+	} else if cfg.ReadCompartmentID != 0 {
+		// When compartments are disabled the read compartment ID must be 0, because it is used to index the
+		// single non-compartment partition ring (at index 0).
+		return errors.New("ingester read compartment ID must be 0 when compartments are disabled")
 	}
 
 	// Tokenless mode requires gRPC push to be disabled.
 	if cfg.IngesterRing.NumTokens == 0 && cfg.PushGrpcMethodEnabled {
 		return fmt.Errorf("ring tokens can only be disabled when gRPC push is disabled")
+	}
+
+	if cfg.EarlyCompactionNonOwnedSeriesEnabled && !cfg.UseIngesterOwnedSeriesForLimits && !cfg.UpdateIngesterOwnedSeries {
+		return fmt.Errorf("early compaction of non-owned series requires -ingester.track-ingester-owned-series or -ingester.use-ingester-owned-series-for-limits to be enabled")
+	}
+
+	if cfg.EarlyCompactionNonOwnedSeriesEnabled && cfg.EarlyCompactionNonOwnedSeriesMaxGracePeriod > 0 && cfg.EarlyCompactionNonOwnedSeriesMaxGracePeriod <= cfg.EarlyCompactionNonOwnedSeriesMinGracePeriod {
+		return fmt.Errorf("-ingester.early-compaction-non-owned-series-max-grace-period must be greater than -ingester.early-compaction-non-owned-series-min-grace-period when set to a non-zero value")
 	}
 
 	if cfg.LabelValuesCountRequestMaxConcurrency < 1 {
@@ -353,7 +387,7 @@ type Ingester struct {
 	errorSamplers ingesterErrSamplers
 
 	// The following is used by ingest storage (when enabled).
-	ingestReader              *ingest.PartitionReader
+	ingestReader              ingest.PartitionReader
 	ingestPartitionID         int32
 	ingestPartitionLifecycler *ring.PartitionInstanceLifecycler
 
@@ -540,12 +574,26 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 		// Here we use it so that pushes from kafka also get a tenant assigned since the PartitionReader invokes the ingester.
 		profilingIngester := NewIngesterProfilingWrapper(i)
 
-		// The offset file is always stored in the TSDB directory alongside the ingester's data.
-		offsetFilePath := filepath.Join(cfg.BlocksStorageConfig.TSDB.Dir, "kafka-offset.json")
+		if cfg.Compartments.Enabled {
+			// With compartments enabled the ingester consumes its read compartment's topic from every
+			// write compartment's Kafka cluster. The per-cluster offset files live in the TSDB directory
+			// alongside the ingester's data, one per write compartment.
+			readCompartmentTopic := compartments.ReplaceReadCompartment(kafkaCfg.Topic, cfg.ReadCompartmentID)
+			kafkaCfgs := ingest.WriteCompartmentConfigs(kafkaCfg, cfg.Compartments.Write.NumCompartments, readCompartmentTopic)
+			offsetFilePath := filepath.Join(cfg.BlocksStorageConfig.TSDB.Dir, "kafka-offset-wc-"+compartments.WriteCompartmentIDPlaceholder+".json")
 
-		i.ingestReader, err = ingest.NewPartitionReaderForPusher(kafkaCfg, i.ingestPartitionID, cfg.IngesterRing.InstanceID, offsetFilePath, profilingIngester, log.With(logger, "component", "ingest_reader"), registerer)
-		if err != nil {
-			return nil, errors.Wrap(err, "creating ingest storage reader")
+			i.ingestReader, err = ingest.NewMultiClusterPartitionReader(kafkaCfgs, i.ingestPartitionID, cfg.IngesterRing.InstanceID, offsetFilePath, profilingIngester, log.With(logger, "component", "ingest_reader"), registerer)
+			if err != nil {
+				return nil, errors.Wrap(err, "creating ingest storage reader")
+			}
+		} else {
+			// The offset file is always stored in the TSDB directory alongside the ingester's data.
+			offsetFilePath := filepath.Join(cfg.BlocksStorageConfig.TSDB.Dir, "kafka-offset.json")
+
+			i.ingestReader, err = ingest.NewSingleClusterPartitionReader(kafkaCfg, i.ingestPartitionID, cfg.IngesterRing.InstanceID, offsetFilePath, profilingIngester, log.With(logger, "component", "ingest_reader"), registerer)
+			if err != nil {
+				return nil, errors.Wrap(err, "creating ingest storage reader")
+			}
 		}
 
 		partitionRingKV := cfg.IngesterPartitionRing.KVStore.Mock
@@ -556,10 +604,19 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 			}
 		}
 
+		// With compartments enabled the ingester registers its partition into the partition ring of
+		// its own read compartment, so the write path routes to it. The read compartment ID is
+		// validated by Config.Validate.
+		partitionRingName, partitionRingKey := PartitionRingName, PartitionRingKey
+		if cfg.Compartments.Enabled {
+			partitionRingName = compartments.WithReadCompartmentSuffix(PartitionRingName, cfg.ReadCompartmentID)
+			partitionRingKey = compartments.WithReadCompartmentSuffix(PartitionRingKey, cfg.ReadCompartmentID)
+		}
+
 		i.ingestPartitionLifecycler = ring.NewPartitionInstanceLifecycler(
 			i.cfg.IngesterPartitionRing.ToLifecyclerConfig(i.ingestPartitionID, cfg.IngesterRing.InstanceID),
-			PartitionRingName,
-			PartitionRingKey,
+			partitionRingName,
+			partitionRingKey,
 			partitionRingKV,
 			logger,
 			prometheus.WrapRegistererWithPrefix("cortex_", registerer))

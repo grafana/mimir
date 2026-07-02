@@ -363,6 +363,29 @@ func TestEliminateDeduplicateAndMergeOptimizationPassPlan(t *testing.T) {
 			nodesEliminatedWithoutDelayedNameRemoval: 0,
 			nodesEliminatedWithDelayedNameRemoval:    0,
 		},
+		"histogram_quantiles": {
+			// DeduplicateAndMerge is kept around histogram_quantiles in both plans, because it sets a
+			// configurable quantile label that may collide with an existing label (or with another
+			// quantile in the same call) and therefore can produce duplicate series.
+			expr: `histogram_quantiles(foo, "q", 0.5)`,
+			expectedPlanWithoutDelayedNameRemoval: `
+						- DeduplicateAndMerge
+							- FunctionCall: histogram_quantiles(...)
+								- param 0: VectorSelector: {__name__="foo"}
+								- param 1: StringLiteral: "q"
+								- param 2: NumberLiteral: 0.5
+					`,
+			expectedPlanWithDelayedNameRemoval: `
+						- DeduplicateAndMerge
+							- DropName
+								- FunctionCall: histogram_quantiles(...)
+									- param 0: VectorSelector: {__name__="foo"}
+									- param 1: StringLiteral: "q"
+									- param 2: NumberLiteral: 0.5
+					`,
+			nodesEliminatedWithoutDelayedNameRemoval: 0,
+			nodesEliminatedWithDelayedNameRemoval:    0,
+		},
 		"label_replace enclosing function which drops name, selector without name matcher": {
 			// keeps:
 			// - DeduplicateAndMerge around label_replace - to deduplicate after label_replace might modify labels and therefore potentially introduce duplicates.

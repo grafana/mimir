@@ -3,6 +3,7 @@
 package commonsubexpressionelimination
 
 import (
+	"context"
 	"fmt"
 	"slices"
 	"strconv"
@@ -28,9 +29,10 @@ func init() {
 	})
 }
 
+//node:generate
 type Duplicate struct {
 	*DuplicateDetails
-	Inner planning.Node
+	Inner planning.Node `node:"child"`
 }
 
 func (d *Duplicate) Details() proto.Message {
@@ -39,37 +41,6 @@ func (d *Duplicate) Details() proto.Message {
 
 func (d *Duplicate) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_DUPLICATE
-}
-
-func (d *Duplicate) Child(idx int) planning.Node {
-	if idx != 0 {
-		panic(fmt.Sprintf("node of type Duplicate supports 1 child, but attempted to get child at index %d", idx))
-	}
-
-	return d.Inner
-}
-
-func (d *Duplicate) ChildCount() int {
-	return 1
-}
-
-func (d *Duplicate) SetChildren(children []planning.Node) error {
-	if len(children) != 1 {
-		return fmt.Errorf("node of type Duplicate supports 1 child, but got %d", len(children))
-	}
-
-	d.Inner = children[0]
-
-	return nil
-}
-
-func (d *Duplicate) ReplaceChild(idx int, node planning.Node) error {
-	if idx != 0 {
-		return fmt.Errorf("node of type Duplicate supports 1 child, but attempted to replace child at index %d", idx)
-	}
-
-	d.Inner = node
-	return nil
 }
 
 func (d *Duplicate) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
@@ -85,10 +56,6 @@ func (d *Duplicate) MergeHints(_ planning.Node) error {
 
 func (d *Duplicate) Describe() string {
 	return ""
-}
-
-func (d *Duplicate) ChildrenLabels() []string {
-	return []string{""}
 }
 
 func (d *Duplicate) ChildrenTimeRange(parentTimeRange types.QueryTimeRange) types.QueryTimeRange {
@@ -139,8 +106,8 @@ func (d *Duplicate) GetRangeParams() planning.RangeParams {
 
 var _ planning.SplitNode = &Duplicate{}
 
-func MaterializeDuplicate(d *Duplicate, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters, overrideTimeParams planning.RangeParams) (planning.OperatorFactory, error) {
-	inner, err := materializer.ConvertNodeToOperatorWithSubRange(d.Inner, timeRange, overrideTimeParams)
+func MaterializeDuplicate(ctx context.Context, d *Duplicate, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters, overrideTimeParams planning.RangeParams) (planning.OperatorFactory, error) {
+	inner, err := materializer.ConvertNodeToOperatorWithSubRange(ctx, d.Inner, timeRange, overrideTimeParams)
 	if err != nil {
 		return nil, err
 	}
@@ -175,9 +142,10 @@ func (d *RangeVectorDuplicationConsumerOperatorFactory) Produce() (types.Operato
 	return d.Buffer.AddConsumer(), nil
 }
 
+//node:generate
 type DuplicateFilter struct {
 	*DuplicateFilterDetails
-	Inner *Duplicate
+	Inner *Duplicate `node:"child"`
 }
 
 func (f *DuplicateFilter) Details() proto.Message {
@@ -186,42 +154,6 @@ func (f *DuplicateFilter) Details() proto.Message {
 
 func (f *DuplicateFilter) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_DUPLICATE_FILTER
-}
-
-func (f *DuplicateFilter) Child(idx int) planning.Node {
-	if idx != 0 {
-		panic(fmt.Sprintf("node of type DuplicateFilter supports 1 child, but attempted to get child at index %d", idx))
-	}
-
-	return f.Inner
-}
-
-func (f *DuplicateFilter) ChildCount() int {
-	return 1
-}
-
-func (f *DuplicateFilter) SetChildren(children []planning.Node) error {
-	if len(children) != 1 {
-		return fmt.Errorf("node of type DuplicateFilter supports 1 child, but got %d", len(children))
-	}
-
-	return f.ReplaceChild(0, children[0])
-}
-
-func (f *DuplicateFilter) ReplaceChild(idx int, node planning.Node) error {
-	if idx != 0 {
-		return fmt.Errorf("node of type DuplicateFilter supports 1 child, but attempted to replace child at index %d", idx)
-	}
-
-	duplicate, ok := node.(*Duplicate)
-
-	if !ok {
-		return fmt.Errorf("node of type DuplicateFilter only supports Duplicate nodes as child, got %T", node)
-	}
-
-	f.Inner = duplicate
-
-	return nil
 }
 
 func (f *DuplicateFilter) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
@@ -245,10 +177,6 @@ func (f *DuplicateFilter) Describe() string {
 	builder.WriteString(strconv.FormatInt(f.SubsetIndex, 10))
 
 	return builder.String()
-}
-
-func (f *DuplicateFilter) ChildrenLabels() []string {
-	return []string{""}
 }
 
 func (f *DuplicateFilter) ChildrenTimeRange(parentTimeRange types.QueryTimeRange) types.QueryTimeRange {
@@ -281,8 +209,8 @@ func (f *DuplicateFilter) GetRangeParams() planning.RangeParams {
 
 var _ planning.SplitNode = &DuplicateFilter{}
 
-func MaterializeDuplicateFilter(f *DuplicateFilter, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters, overrideTimeParams planning.RangeParams) (planning.OperatorFactory, error) {
-	operator, err := materializer.ConvertNodeToOperatorWithSubRange(f.Inner, timeRange, overrideTimeParams)
+func MaterializeDuplicateFilter(ctx context.Context, f *DuplicateFilter, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters, overrideTimeParams planning.RangeParams) (planning.OperatorFactory, error) {
+	operator, err := materializer.ConvertNodeToOperatorWithSubRange(ctx, f.Inner, timeRange, overrideTimeParams)
 	if err != nil {
 		return nil, err
 	}

@@ -12,7 +12,6 @@
     $._config.grpcConfig +
     $._config.querySchedulerRingClientConfig +
     $.query_frontend_caching_config +
-    $.range_vector_splitting_caching_config +
     $.queryFrontendUseQuerySchedulerArgs('query-scheduler') +
     {
       target: 'query-frontend',
@@ -33,7 +32,7 @@
 
   // CLI flags that are applied only to query-frontends, and not ruler-query-frontends.
   // Values take precedence over query_frontend_args.
-  query_frontend_only_args:: {},
+  query_frontend_only_args:: $.regular_range_vector_splitting_caching_config,
 
   // Timeout validation for query-frontend
   local validateQueryFrontendTimeouts() =
@@ -68,8 +67,9 @@
     (if std.length(envmap) > 0 then container.withEnvMap(std.prune(envmap)) else {}) +
     $.tracing_env_mixin +
     $.util.readinessProbe +
-    $.util.resourcesRequests('2', '600Mi') +
-    $.util.resourcesLimits(null, '1200Mi'),
+    $.util.resourcesRequests('2', '2Gi') +
+    $.util.resourcesLimits(null, '4Gi') +
+    $.mimirEphemeralStorageRequest,
 
   query_frontend_env_map:: {},
 

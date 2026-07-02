@@ -59,6 +59,9 @@ This document groups API endpoints by service. Note that the API endpoints are e
 | [Get active series by selector](#get-active-series-by-selector) | Query-frontend | `GET, POST <prometheus-http-prefix>/api/v1/cardinality/active_series` |
 | [Get label names](#get-label-names) | Query-frontend | `GET,POST <prometheus-http-prefix>/api/v1/labels` |
 | [Get label values](#get-label-values) | Query-frontend | `GET <prometheus-http-prefix>/api/v1/label/{name}/values` |
+| [Search metric names](#search-metric-names) | Query-frontend | `GET,POST <prometheus-http-prefix>/api/v1/search/metric_names` |
+| [Search label names](#search-label-names) | Query-frontend | `GET,POST <prometheus-http-prefix>/api/v1/search/label_names` |
+| [Search label values](#search-label-values) | Query-frontend | `GET,POST <prometheus-http-prefix>/api/v1/search/label_values` |
 | [Get metric metadata](#get-metric-metadata) | Query-frontend | `GET <prometheus-http-prefix>/api/v1/metadata` |
 | [Remote read](#remote-read) | Query-frontend | `POST <prometheus-http-prefix>/api/v1/read` |
 | [Label names cardinality](#label-names-cardinality) | Query-frontend | `GET, POST <prometheus-http-prefix>/api/v1/cardinality/label_names` |
@@ -693,6 +696,117 @@ Requires [authentication](#authentication).
 #### Caching
 
 The query-frontend can return a stale response fetched from the query results cache if `-query-frontend.cache-results` is enabled and `-query-frontend.results-cache-ttl-for-labels-query` set to a value greater than `0`.
+
+### Streaming search API
+
+{{< admonition type="note" >}}
+The streaming search API is an [experimental feature](../../configure/about-versioning/#experimental-features).
+{{< /admonition >}}
+
+The streaming search API provides three endpoints that return metric names, label names, and label values matching optional fuzzy search terms and series selectors.
+Unlike the [get label names](#get-label-names) and [get label values](#get-label-values) endpoints, which buffer the full result set and respond with a single JSON document, the search endpoints stream their results as [newline-delimited JSON (NDJSON)](https://github.com/ndjson/ndjson-spec): the response is a sequence of JSON objects separated by newlines, allowing a client to begin processing results before the request completes.
+
+These endpoints mirror the experimental search API proposed in Prometheus [pull request #18573](https://github.com/prometheus/prometheus/pull/18573).
+
+These endpoints are disabled by default.
+To enable them, set the `-querier.experimental-search-api-enabled` CLI flag (or its respective YAML configuration option) to `true`.
+When the feature is disabled, the endpoints respond with HTTP `404 Not Found` and a `feature_not_enabled` error body.
+
+Each endpoint requires [authentication](#authentication).
+
+#### Search metric names
+
+```bash
+GET,POST <prometheus-http-prefix>/api/v1/search/metric_names
+```
+
+Returns metric names (the values of the `__name__` label) matching the request's [query parameters](#search-query-parameters).
+
+When `include_metadata=true`, each result can also carry the metric's `type`, `help`, and `unit` metadata, when available.
+
+Metadata is served only by ingesters, which hold it in memory keyed by metric name and sourced from the metadata records included in remote write requests. It isn't served by store-gateways, so metric names returned from long-term storage carry no metadata. As a result, metadata is returned for only a subset of the returned metric names.
+
+#### Search label names
+
+```bash
+GET,POST <prometheus-http-prefix>/api/v1/search/label_names
+```
+
+Returns label names matching the request's [query parameters](#search-query-parameters).
+
+#### Search label values
+
+```bash
+GET,POST <prometheus-http-prefix>/api/v1/search/label_values
+```
+
+Returns the values of a single label, named by the mandatory `label` parameter, matching the request's [query parameters](#search-query-parameters).
+
+#### Search query parameters
+
+All three endpoints accept the following parameters, supplied either as URL query parameters (`GET`) or as a URL-encoded form body (`POST`).
+
+- **label** - _mandatory for `search/label_values` only; not used by the other endpoints_ - the name of the label whose values are returned.
+- **search[]** - _optional_ - a fuzzy search term to match candidate names or values against. Repeat the parameter to supply multiple terms, which are combined with `OR` semantics. A maximum of 32 terms is allowed per request. When no term is supplied, all candidates that match the other parameters are returned.
+- **match[]** - _optional_ - a PromQL series selector that restricts the candidates to those present in matching series. Repeat the parameter to supply multiple selectors, which are combined with `OR` semantics.
+- **start** - _optional_ - the start of the time range to search, as a Unix timestamp (in seconds, with optional decimal places) or RFC 3339 timestamp. Defaults to one hour before the current time.
+- **end** - _optional_ - the end of the time range to search, in the same formats as `start`. Defaults to the current time. The value must not be before `start`.
+- **case_sensitive** - _optional_ - whether `search[]` term matching is case-sensitive. Defaults to `true`.
+- **fuzz_alg** - _optional_ - the fuzzy-matching algorithm used to score `search[]` terms. Either `subsequence` (the default) or `jarowinkler`.
+- **fuzz_threshold** - _optional_ - the minimum match score a candidate must reach to be returned, as an integer between `0` and `100`. Defaults to `0`. A higher score indicates a better relevance match. `100` is an exact match.
+- **sort_by** - _optional_ - the result ordering. Either `alpha` (the default), which sorts alphabetically, or `score`, which sorts by descending relevance score. Using `score` requires at least one `search[]` term.
+- **sort_dir** - _optional_ - the sort direction when `sort_by=alpha`. Either `asc` (the default) or `dsc`. Cannot be combined with `sort_by=score`.
+- **limit** - _optional_ - the maximum number of results to return. Defaults to `100`. A value of `0` means no limit. The effective limit can be further reduced by the `-querier.max-label-names-limit` and `-querier.max-label-values-limit` per-tenant limits; when this happens, a warning is included in the response trailer.
+- **batch_size** - _optional_ - the maximum number of results carried in each streamed NDJSON batch. Defaults to `100`, and must not exceed `10000`. This parameter controls only the response framing, not the total number of results.
+- **include_score** - _optional_ - whether to include the relevance `score` of each result in the response. Defaults to `false`.
+- **include_metadata** - _optional_ - whether to attach metric metadata (`type`, `help`, and `unit`) to each result. Only meaningful for the `search/metric_names` endpoint; ignored by the others. Defaults to `false`.
+
+#### Search response format
+
+A successful response has HTTP status `200` and the `Content-Type: application/x-ndjson; charset=utf-8` header.
+The body is a sequence of newline-delimited JSON objects.
+
+Result objects are streamed first, each wrapping a batch of up to `batch_size` results in a `results` array:
+
+```json
+{ "results": [{ "name": "up" }, { "name": "go_goroutines" }] }
+```
+
+For the `search/label_values` endpoint, each result uses a `value` key instead of `name`:
+
+```json
+{ "results": [{ "value": "prometheus" }, { "value": "node" }] }
+```
+
+When `include_score=true`, each result also carries a `score` field. When `include_metadata=true` on the `search/metric_names` endpoint, each result can also carry `type`, `help`, and `unit` fields.
+
+The stream always ends with a single trailer object reporting the final status:
+
+```json
+{ "status": "success", "has_more": false }
+```
+
+- **status** - `success` when iteration completed without error.
+- **has_more** - `true` when more results matched than were returned because the `limit` was reached.
+- **warnings** - _optional_ - an array of non-fatal warning messages, for example when a per-tenant limit clamped the requested `limit`.
+
+#### Search errors
+
+If the request is rejected before any results are streamed, the endpoint responds with a standard single-document JSON error and an appropriate HTTP status code, rather than an NDJSON stream:
+
+- `400 Bad Request` with error type `bad_data` for an invalid parameter.
+- `404 Not Found` with error type `feature_not_enabled` when `-querier.experimental-search-api-enabled` is not set.
+- `503 Service Unavailable`, `499`, or `500 Internal Server Error` for query timeouts, client cancellations, and internal errors respectively.
+
+If an error occurs after one or more result batches have already been streamed, the HTTP status is already `200` and the error is instead reported as the final NDJSON trailer object:
+
+```json
+{
+  "status": "error",
+  "errorType": "timeout",
+  "error": "context deadline exceeded"
+}
+```
 
 ### Get metric metadata
 

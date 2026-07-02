@@ -336,29 +336,50 @@ eval instant at 1m changes(foo[3m] anchored)
 
 clear
 
-load 1m
-  mixed 1 2 3 {{schema:0 sum:5 count:4 buckets:[1 2 1]}} 4 5 6 7+1x60
+# These tests cover the anchored modifier applied to resets() and changes() over series that contain
+# native histograms. The basic cross-type anchor cases (the float<->histogram transition at the boundary
+# counted once) are covered by upstream tests. The cases below add anchor-with-reset handling, common
+# subexpression elimination, and an eval-time sweep that are not covered upstream.
 
-eval instant at 1m resets(mixed[1m] anchored)
+load 1m
+  ftohmixed 1 2 3 {{schema:0 sum:5 count:4 buckets:[1 2 1]}} 4 5 6 7+1x60
+  histograms {{schema:0 sum:5 count:2}} {{schema:0 sum:5 count:1}} {{schema:0 sum:5 count:2}} {{schema:0 sum:5 count:1}} {{schema:0 sum:5 count:2}}
+  anchorhasreset _ {{schema:0 sum:1 count:1 buckets:[1] counter_reset_hint:reset}} {{schema:0 sum:2 count:2 buckets:[2]}}
+  resetmidanchor {{schema:0 sum:5 count:5 buckets:[5]}} {{schema:0 sum:1 count:1 buckets:[1]}} {{schema:0 sum:2 count:2 buckets:[2]}}
+
+# resets() and changes() over the same anchored selector are de-duplicated by common subexpression
+# elimination. Both take the anchor-selection path, so the shared range vector buffer must serve both.
+eval instant at 3m resets(histograms[1m] anchored) + changes(histograms[1m] anchored)
+  {} 2
+
+# The anchor itself carries counter_reset_hint:reset. The anchor seeds the comparison baseline and must
+# not be compared against itself, so its reset hint must not be counted: the only transition is the
+# in-range count increase 1 -> 2, which is not a reset.
+eval instant at 2m resets(anchorhasreset[1m] anchored)
   {} 0
 
-# These tests have been commented out since upstream Prometheus has recently
-# added support for smoothed/anchored histograms.
-# These tests have been commented out whilst a Mimir implementation is completed.
-#eval instant at 3m resets(mixed[1m] anchored)
-#  expect fail msg: smoothed and anchored modifiers do not work with native histograms
+# Same, but the anchor is a mid-series histogram that is itself a genuine counter reset (count 5 -> 1),
+# so it carries CounterResetHint=CounterReset on read-back. It is still only the baseline; the in-range
+# transition 1 -> 2 is not a reset. Expected: 0.
+eval instant at 2m resets(resetmidanchor[1m] anchored)
+  {} 0
 
-#eval instant at 4m resets(mixed[1m] anchored)
-#  expect fail msg: smoothed and anchored modifiers do not work with native histograms
+# Sweeping the evaluation time over the ftohmixed series shows that the t=3m histogram contributes a reset
+# only while it is the anchor (eval 4m) or the in-range sample (eval 3m). Once it falls before the anchor it
+# is no longer counted.
+eval instant at 1m resets(ftohmixed[1m] anchored)
+  {} 0
 
-#eval instant at 5m resets(mixed[1m] anchored)
-#  expect fail msg: smoothed and anchored modifiers do not work with native histograms
+eval instant at 4m resets(ftohmixed[1m] anchored)
+  {} 1
 
-# Whilst the histogram is within the range + look-back window the query will fail
-#eval instant at 8m resets(mixed[1m] anchored)
-#  expect fail msg: smoothed and anchored modifiers do not work with native histograms
+eval instant at 5m resets(ftohmixed[1m] anchored)
+  {} 0
 
-eval instant at 10m resets(mixed[1m] anchored)
+eval instant at 8m resets(ftohmixed[1m] anchored)
+  {} 0
+
+eval instant at 10m resets(ftohmixed[1m] anchored)
   {} 0
 
 clear
@@ -430,6 +451,10 @@ eval range from 0 to 10m step 1m increase(metric[1m] anchored)
 
 eval range from 0 to 10m step 1m increase(metric[1m2s] anchored)
   {} 0 1 2 2 2 2 2 2 2 2 2
+
+# Different function applying to the same range selector to exercise common subexpression elimination.
+eval range from 0 to 10m step 1m increase(metric[5m] anchored) + delta(metric[5m] anchored)
+  {} 0 2 4 6 8 10 10 10 10 10 10
 
 clear
 load 1m

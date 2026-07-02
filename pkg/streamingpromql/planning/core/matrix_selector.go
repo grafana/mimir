@@ -3,6 +3,7 @@
 package core
 
 import (
+	"context"
 	"fmt"
 	"slices"
 	"time"
@@ -17,6 +18,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
+//node:generate
 type MatrixSelector struct {
 	*MatrixSelectorDetails
 }
@@ -29,7 +31,7 @@ func (m *MatrixSelector) IsSplittable() bool {
 var _ planning.SplitNode = &MatrixSelector{}
 
 func (m *MatrixSelector) Describe() string {
-	return describeSelector(m.Matchers, m.Timestamp, m.Offset, &m.Range, m.SkipHistogramBuckets, m.Anchored, m.Smoothed, m.CounterAware, m.ProjectionLabels, m.ProjectionInclude, m.Subsets)
+	return describeSelector(m.Matchers, m.Timestamp, m.Offset, &m.Range, m.SkipHistogramBuckets, m.Anchored, m.Smoothed, m.CounterAware, m.Subsets)
 }
 
 func (m *MatrixSelector) ChildrenTimeRange(timeRange types.QueryTimeRange) types.QueryTimeRange {
@@ -42,26 +44,6 @@ func (m *MatrixSelector) Details() proto.Message {
 
 func (m *MatrixSelector) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_MATRIX_SELECTOR
-}
-
-func (m *MatrixSelector) Child(idx int) planning.Node {
-	panic(fmt.Sprintf("node of type MatrixSelector has no children, but attempted to get child at index %d", idx))
-}
-
-func (m *MatrixSelector) ChildCount() int {
-	return 0
-}
-
-func (m *MatrixSelector) SetChildren(children []planning.Node) error {
-	if len(children) != 0 {
-		return fmt.Errorf("node of type MatrixSelector expects 0 children, but got %d", len(children))
-	}
-
-	return nil
-}
-
-func (m *MatrixSelector) ReplaceChild(idx int, node planning.Node) error {
-	return fmt.Errorf("node of type MatrixSelector supports no children, but attempted to replace child at index %d", idx)
 }
 
 func (m *MatrixSelector) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
@@ -82,7 +64,8 @@ func (m *MatrixSelector) EquivalentToIgnoringMatchersAndHints(other planning.Nod
 		m.Range == otherMatrixSelector.Range &&
 		m.Anchored == otherMatrixSelector.Anchored &&
 		m.Smoothed == otherMatrixSelector.Smoothed &&
-		m.CounterAware == otherMatrixSelector.CounterAware
+		m.CounterAware == otherMatrixSelector.CounterAware &&
+		m.AnchoredResetsChanges == otherMatrixSelector.AnchoredResetsChanges
 }
 
 func (m *MatrixSelector) GetMatchers() []*LabelMatcher {
@@ -96,21 +79,10 @@ func (m *MatrixSelector) MergeHints(other planning.Node) error {
 	}
 
 	m.SkipHistogramBuckets = m.SkipHistogramBuckets && otherMatrixSelector.SkipHistogramBuckets
-	m.ProjectionInclude, m.ProjectionLabels = mergeProjectionLabels(
-		m.ProjectionInclude,
-		m.ProjectionLabels,
-		otherMatrixSelector.ProjectionInclude,
-		otherMatrixSelector.ProjectionLabels,
-	)
-
 	return nil
 }
 
-func (m *MatrixSelector) ChildrenLabels() []string {
-	return nil
-}
-
-func MaterializeMatrixSelector(m *MatrixSelector, _ *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters, overrideTimeParams planning.RangeParams) (planning.OperatorFactory, error) {
+func MaterializeMatrixSelector(_ context.Context, m *MatrixSelector, _ *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters, overrideTimeParams planning.RangeParams) (planning.OperatorFactory, error) {
 	selectorRange := m.Range
 	selectorTs := m.Timestamp
 	selectorOffset := m.Offset.Milliseconds()
@@ -143,8 +115,7 @@ func MaterializeMatrixSelector(m *MatrixSelector, _ *planning.Materializer, time
 		Anchored:                 m.Anchored,
 		Smoothed:                 m.Smoothed,
 		CounterAware:             m.CounterAware,
-		ProjectionInclude:        m.ProjectionInclude,
-		ProjectionLabels:         m.ProjectionLabels,
+		AnchoredResetsChanges:    m.AnchoredResetsChanges,
 		Subsets:                  subsets,
 	}
 

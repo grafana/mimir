@@ -15,6 +15,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -22,6 +23,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/gorilla/mux"
 	"github.com/grafana/dskit/cancellation"
+	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/regexp"
 	"github.com/oklog/ulid/v2"
@@ -42,11 +44,21 @@ const (
 	validationHeartbeatInterval = 1 * time.Minute       // Duration of time between heartbeats of an in-progress block upload validation
 	validationHeartbeatTimeout  = 5 * time.Minute       // Maximum duration of time to wait until a validation is able to be restarted
 	maximumMetaSizeBytes        = 1 * 1024 * 1024       // 1 MiB, maximum allowed size of an uploaded block's meta.json file
+	validationDirPrefix         = "upload"              // Prefix of the temporary directories created under the data directory to validate uploaded blocks.
 )
 
 var maxBlockUploadSizeBytesFormat = "block exceeds the maximum block size limit of %d bytes"
 var rePath = regexp.MustCompile(`^(index|chunks/\d{6})$`)
 var errValidationCompleted = cancellation.NewErrorf("validation completed")
+
+// checkReady returns false and writes a 503 if the compactor is not yet running.
+func (c *MultitenantCompactor) checkReady(w http.ResponseWriter) bool {
+	if c.Service != nil && c.State() != services.Running {
+		http.Error(w, "compactor not ready", http.StatusServiceUnavailable)
+		return false
+	}
+	return true
+}
 
 // StartBlockUpload handles request for starting block upload.
 //
@@ -54,6 +66,9 @@ var errValidationCompleted = cancellation.NewErrorf("validation completed")
 // go ahead. In practice this means to check that the (complete) block isn't already in block
 // storage, and that the meta file is valid.
 func (c *MultitenantCompactor) StartBlockUpload(w http.ResponseWriter, r *http.Request) {
+	if !c.checkReady(w) {
+		return
+	}
 	blockID, tenantID, err := c.parseBlockUploadParameters(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -113,6 +128,9 @@ func (c *MultitenantCompactor) StartBlockUpload(w http.ResponseWriter, r *http.R
 // Finishing block upload performs block validation, and if all checks pass, marks block as finished
 // by uploading meta.json file.
 func (c *MultitenantCompactor) FinishBlockUpload(w http.ResponseWriter, r *http.Request) {
+	if !c.checkReady(w) {
+		return
+	}
 	blockID, tenantID, err := c.parseBlockUploadParameters(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -269,6 +287,9 @@ func (c *MultitenantCompactor) createBlockUpload(ctx context.Context, meta *bloc
 // UploadBlockFile handles requests for uploading block files.
 // It takes the mandatory query parameter "path", specifying the file's destination path.
 func (c *MultitenantCompactor) UploadBlockFile(w http.ResponseWriter, r *http.Request) {
+	if !c.checkReady(w) {
+		return
+	}
 	blockID, tenantID, err := c.parseBlockUploadParameters(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -528,7 +549,7 @@ func (c *MultitenantCompactor) uploadMeta(ctx context.Context, logger log.Logger
 }
 
 func (c *MultitenantCompactor) createTemporaryBlockDirectory() (dir string, err error) {
-	blockDir, err := os.MkdirTemp(c.compactorCfg.DataDir, "upload")
+	blockDir, err := os.MkdirTemp(c.compactorCfg.DataDir, validationDirPrefix)
 	if err != nil {
 		level.Error(c.logger).Log("msg", "failed to create temporary block directory", "err", err)
 		return "", errors.New("failed to create temporary block directory")
@@ -542,6 +563,25 @@ func (c *MultitenantCompactor) removeTemporaryBlockDirectory(blockDir string) {
 	level.Debug(c.logger).Log("msg", "removing temporary block directory", "dir", blockDir)
 	if err := os.RemoveAll(blockDir); err != nil {
 		level.Warn(c.logger).Log("msg", "failed to remove temporary block directory", "path", blockDir, "err", err)
+	}
+}
+
+// cleanupLeftoverValidationDirectories removes temporary block validation directories left over in
+// the data directory by a previous run that crashed mid-validation.
+func (c *MultitenantCompactor) cleanupLeftoverValidationDirectories() {
+	entries, err := os.ReadDir(c.compactorCfg.DataDir)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			level.Warn(c.logger).Log("msg", "failed to read data directory while cleaning up temporary block validation directories", "dir", c.compactorCfg.DataDir, "err", err)
+		}
+		return
+	}
+
+	for _, entry := range entries {
+		if !entry.IsDir() || !strings.HasPrefix(entry.Name(), validationDirPrefix) {
+			continue
+		}
+		c.removeTemporaryBlockDirectory(filepath.Join(c.compactorCfg.DataDir, entry.Name()))
 	}
 }
 
@@ -682,6 +722,9 @@ const (
 )
 
 func (c *MultitenantCompactor) GetBlockUploadStateHandler(w http.ResponseWriter, r *http.Request) {
+	if !c.checkReady(w) {
+		return
+	}
 	blockID, tenantID, err := c.parseBlockUploadParameters(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)

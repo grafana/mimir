@@ -131,7 +131,6 @@ How to **fix** it:
 
 4. **Ensure that per-tenant maximum series limits are close to actual utilization levels**<br />
    When investigating this alert, ensure that each per-tenant maximum series limit is not significantly higher than the actual utilization level. If the per-tenant `max_global_series_per_user` limit is close to the actual utilization level and ingesters are autoscaled based on owned active series, the `max_series` per ingester instance limit should rarely be reached.
-
    1. Run the following instant query to identify tenants with a maximum series limit that is significantly above the utilization level and can put the Mimir cluster at risk:
 
       ```
@@ -432,7 +431,7 @@ _Look for: `"failed to check ring"`, `"context deadline exceeded"`, `"ring not i
 
 ### MimirRulerTooManyFailedPushes
 
-This alert fires when rulers cannot push new samples (result of rule evaluation) to ingesters.
+This alert fires when rulers cannot push new samples (result of rule evaluation) to ingesters or remote distributors.
 
 In general, pushing samples can fail due to problems with Mimir operations (eg. too many ingesters have crashed, and ruler cannot write samples to them), or due to problems with resulting data (eg. user hitting limit for number of series, out of order samples, etc.).
 This alert fires only for first kind of problems, and not for problems caused by limits or invalid rules.
@@ -440,6 +439,7 @@ This alert fires only for first kind of problems, and not for problems caused by
 How to **fix** it:
 
 - Investigate the ruler logs to find out the reason why ruler cannot write samples. Note that ruler logs all push errors, including "user errors", but those are not causing the alert to fire. Focus on problems with ingesters.
+  If remote distributor writes are enabled, also check ruler-to-distributor gRPC connectivity and the remote distributors' write path.
 - When using Memberlist as KV store for hash rings, ensure that Memberlist is working correctly. See instructions for the [`MimirGossipMembersTooHigh`](#MimirGossipMembersTooHigh) and [`MimirGossipMembersTooLow`](#MimirGossipMembersTooLow) alerts.
 
 ### MimirRulerTooManyFailedQueries
@@ -795,7 +795,6 @@ When this alert fires, the compactor may still have successfully compacted some 
 How to **investigate**:
 
 - Look for any error in the compactor logs
-
   - Corruption: [`not healthy index found`](#compactor-is-failing-because-of-not-healthy-index-found)
   - Invalid result block:
     - **How to detect**: Search compactor logs for `invalid result block`.
@@ -808,13 +807,21 @@ How to **investigate**:
       - For each failed compaction job
         - Pick one result block (doesn't matter which)
         - Find source blocks for the compaction job: search for `msg="compact blocks"` and a mention of the result block ID.
-        - Mark the source blocks for no compaction (in this example the object storage backend is GCS):
+        - Mark the source blocks for no compaction. If you deploy Mimir with Jsonnet, create a Job:
+          ```jsonnet
+          $.newMimirtoolMarkBlocksJob('mark-blocks', {
+            tenant: '<tenant-id>',
+            'mark-type': 'no-compact',
+            details: 'Leading to out-of-order chunks when compacting with other blocks',
+            blocks: '<block-1>,<block-2>...',
+          })
           ```
-          ./tools/mark-blocks/mark-blocks -backend gcs -gcs.bucket-name <bucket> -mark-type no-compact -tenant <tenant-id> -details "Leading to out-of-order chunks when compacting with other blocks" -blocks "<block-1>,<block-2>..."
+          Or, using the command line (in this example the object storage backend is GCS):
           ```
-          For examples using AWS S3 or Azure, see [How to use the mark-blocks tool](#how-to-use-the-mark-blocks-tool).
+          mimirtool blocks mark --backend gcs --gcs.bucket-name <bucket> --mark-type no-compact --tenant <tenant-id> --details "Leading to out-of-order chunks when compacting with other blocks" --blocks "<block-1>,<block-2>..."
+          ```
+          For examples using AWS S3 or Azure, see [How to mark blocks with mimirtool](#how-to-mark-blocks-with-mimirtool).
   - Result block exceeds symbol table maximum size:
-
     - **How to detect**: Search compactor logs for `symbol table size exceeds`.
     - **What it means**: The compactor successfully validated the source blocks. But the resulting block is impossible to write due to the error above.
     - This is caused by too many series being stored in the blocks, which indicates that `-compactor.split-and-merge-shards` is too low for the tenant. Could be also an indication of very high churn in labels causing label cardinality explosion.
@@ -825,15 +832,23 @@ How to **investigate**:
         [/data/compact/0@17241709254077376921-merge-3_of_4-1683244800000-1683331200000/01GZS91PMTAWAWAKRYQVNV1FPP /data/compact/0@17241709254077376921-merge-3_of_4-1683244800000-1683331200000/01GZSC5803FN1V1ZFY6Q8PWV1E]
         ```
         Where the filenames are the block IDs: `01GZS91PMTAWAWAKRYQVNV1FPP` and `01GZSC5803FN1V1ZFY6Q8PWV1E`
-      - Mark the source blocks for no compaction (in this example the object storage backend is GCS):
+      - Mark the source blocks for no compaction. If you deploy Mimir with Jsonnet, create a Job:
+        ```jsonnet
+        $.newMimirtoolMarkBlocksJob('mark-blocks', {
+          tenant: '<tenant-id>',
+          'mark-type': 'no-compact',
+          details: 'Result block exceeds symbol table maximum size',
+          blocks: '<block-1>,<block-2>...',
+        })
         ```
-        ./tools/mark-blocks/mark-blocks -backend gcs -gcs.bucket-name <bucket> -mark-type no-compact -tenant <tenant-id> -details "Result block exceeds symbol table maximum size" -blocks "<block-1>,<block-2>..."
+        Or, using the command line (in this example the object storage backend is GCS):
         ```
-        For examples using AWS S3 or Azure, see [How to use the mark-blocks tool](#how-to-use-the-mark-blocks-tool).
+        mimirtool blocks mark --backend gcs --gcs.bucket-name <bucket> --mark-type no-compact --tenant <tenant-id> --details "Result block exceeds symbol table maximum size" --blocks "<block-1>,<block-2>..."
+        ```
+        For examples using AWS S3 or Azure, see [How to mark blocks with mimirtool](#how-to-mark-blocks-with-mimirtool).
     - Further reading: [Compaction algorithm](../../references/architecture/components/compactor/#compaction-algorithm).
 
   - Ring failures:
-
     - **How to detect**:
       - Search compactor logs for `unhealthy instances`.
       - Check the [compactor ring web page](../../references/http-api/#compactor-ring-status) for unhealthy instances.
@@ -846,7 +861,6 @@ How to **investigate**:
     - **How to mitigate**: Unknown. This typically self-resolves after ten to twenty minutes.
 
 - Check the [Compactor Dashboard](../monitor-grafana-mimir/dashboards/compactor/) and set it to view the last 7 days.
-
   - Compactor has fallen behind:
     - **How to detect**:
       - Check the `Last successful run per-compactor replica` panel - are there recent runs in the last 6-12 hours?
@@ -854,7 +868,7 @@ How to **investigate**:
     - **What it means**: Compaction likely was failing for some reason in the past and now there is too much work to catch up at the current configuration and scaling level. This can also result in long-term queries failing as the store-gateways fail to handle the much larger number of smaller blocks than expected.
     - **How to mitigate**: Reconfigure and modify the compactor settings and resources for more scalability:
       - Ensure your compactors are at least sized according to the [Planning capacity](../run-production-environment/planning-capacity/#compactor) page and you have the recommended number of replicas.
-      - Set `-compactor.split-groups` and `-compactor.split-and-merge-shards` to a value that is 1 for every 8M active series you have - rounded to the closest even number. So, if you have 100M series - `100/8 = 12.5` = value of `12`. If you are using query sharding on the query frontend, it is recommended to use the next power of 2 instead to avoid extra work on the read path (a value of `16` instead of `12` in the example), [see this blog post for more info](https://grafana.com/blog/2022/04/19/how-grafana-mimirs-split-and-merge-compactor-enables-scaling-metrics-to-1-billion-active-series/).
+      - Set `-compactor.split-groups` and `-compactor.split-and-merge-shards` to a value that is 1 for every 8M active series you have - rounded up to the next power of two. So, if you have 100M series - `100/8 = 12.5`, rounded up to a value of `16`. Values greater than 1 are automatically rounded up to the next power of two, which avoids extra work on the read path when query sharding is enabled, [see this blog post for more info](https://grafana.com/blog/2022/04/19/how-grafana-mimirs-split-and-merge-compactor-enables-scaling-metrics-to-1-billion-active-series/).
       - Allow the compactor to run for some hours and see if the runs begin to succeed and the `Average blocks / tenant` starts to decrease.
       - If you encounter any Compactor resource issues, add CPU/Memory as needed temporarily, then scale back later.
       - You can also optionally scale replicas and shards further to split the work up into even smaller pieces until the situation has recovered.
@@ -874,11 +888,20 @@ How to **investigate**:
 How to **fix** it:
 
 - The only long-term solution is to give the compactor more disk space, as it requires more space to fit the largest single job into its disk.
-- If the number of blocks that the compactor is failing to compact is not very significant and you want to skip compacting them and focus on more recent blocks instead, consider marking the affected blocks for no compaction:
+- If the number of blocks that the compactor is failing to compact is not very significant and you want to skip compacting them and focus on more recent blocks instead, consider marking the affected blocks for no compaction. If you deploy Mimir with Jsonnet, create a Job :
+  ```jsonnet
+  $.newMimirtoolMarkBlocksJob('mark-blocks', {
+    tenant: '<tenant-id>',
+    'mark-type': 'no-compact',
+    details: 'focus on newer blocks',
+    blocks: '<block 1>,<block 2>...',
+  })
   ```
-  ./tools/mark-blocks/mark-blocks -backend gcs -gcs.bucket-name <bucket> -mark-type no-compact -tenant <tenant-id> -details "focus on newer blocks" -blocks "<block 1>,<block 2>..."
+  Or, using the command line (in this example the object storage backend is GCS):
   ```
-  For examples using AWS S3 or Azure, see [How to use the mark-blocks tool](#how-to-use-the-mark-blocks-tool).
+  mimirtool blocks mark --backend gcs --gcs.bucket-name <bucket> --mark-type no-compact --tenant <tenant-id> --details "focus on newer blocks" --blocks "<block 1>,<block 2>..."
+  ```
+  For examples using AWS S3 or Azure, see [How to mark blocks with mimirtool](#how-to-mark-blocks-with-mimirtool).
 
 ### MimirCompactorSkippedBlocks
 
@@ -1294,7 +1317,6 @@ How to **investigate**:
   matched by the `gossip-ring` service and then getting endpoints truncated to 1000 is not an issue per-se, but it's
   an issue if you're running a version of Kubernetes affected by the mentioned bug.
 - If you've been affected by the Kubernetes bug:
-
   1. Stop the bleed re-creating the service endpoints list
 
      ```sh
@@ -1524,9 +1546,11 @@ How to **investigate**:
   - Check if it's caused by a **single tenant**:
     - We don't have a metric tracking the active TCP connections or QPS per tenant
     - As a proxy metric, you can check if the ingestion rate has significantly increased for any tenant (it's not a very accurate proxy metric for number of TCP connections so take it with a grain of salt):
+
     ```
     topk(10, sum by(user) (rate(cortex_distributor_samples_in_total{namespace="<namespace>"}[$__rate_interval])))
     ```
+
     - In case you need to quickly reject write path traffic from a single tenant, you can override its `ingestion_rate` and `ingestion_rate_burst` setting lower values (so that some/most of their traffic will be rejected)
 
 ### MimirAutoscalerNotActive
@@ -1774,7 +1798,6 @@ How it **works**:
 How to **investigate** and **fix** it:
 
 - Check the `Mimir / Compactor` dashboard
-
   - Ensure the compactor is healthy and running successfully.
     - The "Last successful run per-compactor replica" panel should show all compactors are running Ok and none of them having Delayed, Late or Very Late status.
     - "Tenants with largest number of blocks" must not be trending upwards
@@ -1783,13 +1806,11 @@ How to **investigate** and **fix** it:
     - If the compactor is lagging behind or there are many blocks to compactor, temporarily increase increase the compactor replicas to let the compactor catching up quickly.
 
 - Check the `Mimir / Reads resources` dashboard
-
   - Check if disk utilization is nearly balanced between store-gateway replicas (e.g. a 20-30% variance between replicas is expected)
     - If disk utilization is nearly balanced you can scale out store-gateway replicas to lower disk utilization on average
     - If disk utilization is unbalanced you may consider the other options before scaling out store-gateways
 
 - Check if disk utilization unbalance is caused by shuffle sharding
-
   - Investigate which tenants use most of the store-gateway disk in the replicas with highest disk utilization. You can query the `cortex_bucket_store_blocks_loaded_size_bytes` metric to see per-tenant disk utilization across all store-gateway replicas. For example, to find the top 10 tenants by disk utilization on a specific store-gateway pod:
 
     ```
@@ -1805,7 +1826,6 @@ How to **investigate** and **fix** it:
   - Check the configured `-store-gateway.tenant-shard-size` (`store_gateway_tenant_shard_size`) of each tenant that mostly contributes to disk utilization. Consider increase the tenant's the shard size if it's smaller than the number of available store-gateway replicas (a value of `0` disables shuffle sharding for the tenant, effectively sharding their blocks across all replicas).
 
 - Check if disk utilization unbalance is caused by a tenant with uneven block sizes
-
   - Even if a tenant has no shuffle sharding and their blocks are sharded across all replicas, it may still cause unbalance in store-gateway disk utilization if the size of their blocks dramatically changed over time (e.g. because the number of series per block significantly changed over time). As a proxy metric, the number of series per block is roughly the total number of series across all blocks for the largest `-compactor.block-ranges` (default is 24h) divided by the number of `-compactor.split-and-merge-shards` (`compactor_split_and_merge_shards`).
   - If you suspect this may be an issue:
     - Check the number of series in each block in the store-gateway blocks list for the affected tenant, through the web page exposed by the store-gateway at `/store-gateway/tenant/<tenant ID>/blocks`
@@ -1813,7 +1833,6 @@ How to **investigate** and **fix** it:
     - Check the configured `compactor_split_and_merge_shards` for the tenant. A reasonable rule of thumb is 8-10 million series per compactor shard - if the number of series per shard is above this range, increase `compactor_split_and_merge_shards` for the affected tenant(s) accordingly.
 
 - Check if the persistent volume is nearing its limit and determine if it needs to be increased.
-
   - If persistent volume resizing is required for store-gateways and automatic downscaling is enabled, you must disable it before proceeding with the resizing process. This step is necessary to prevent any unexpected downscaling by the rollout operator while updating the stateful set for each zone. To disable automatic downscaling for store-gateways,
     set `$._config.store_gateway_automated_downscale_enabled = false`.
 
@@ -2123,7 +2142,6 @@ How to **fix**:
   - Add more CPU/memory/disk to ingesters, depending on the saturated resources.
   - Increase the ingester max series instance limit (see [`MimirIngesterReachingSeriesLimit`](#MimirIngesterReachingSeriesLimit) runbook).
 - **Skip replaying overloading backlog from partition** (data loss)
-
   1. Ensure ingesters have been scaled out, and the new partitions are ACTIVE in the partitions ring. If autoscaler didn't scaled out ingesters yet, manually add more ingester replicas (e.g. increasing HPA min replicas or manually setting the desired number of ingester replicas if ingester autoscaling is disabled).
   1. Find out the timestamp at which new partitions were created and became ACTIVE in the ring (e.g. looking at new ingesters logs).
   1. Temporarily restart ingesters with the following configuration:
@@ -2211,7 +2229,6 @@ If you just need to "rewind" the commit for a number of partitions so block-buil
    `kafka-consumer-groups.sh --group $BLOCK_BUILDER_GROUP --topic $TOPIC:$PARTITION --reset-offsets --to-offset $OFFSET --dry-run`
 
    where:
-
    - `BLOCK_BUILDER_GROUP` is the consumer group specified in the `block-builder-scheduler` configuration. ("block-builder" by default.)
    - `TOPIC` is the Kafka topic specified in the `block-builder-scheduler` configuration.
    - `PARTITION` and `OFFSET` are the first pair of items located in step 1
@@ -2380,6 +2397,24 @@ How to **investigate**:
 - Verify that the credentials used by the usage-tracker have read permissions to the bucket.
 - Check whether the expected snapshot files exist in the bucket — they may have been deleted or never uploaded.
 - Check for network issues between the usage-tracker and the object storage backend.
+
+### MimirUsageTrackerSnapshotLoadFailedAtStartup
+
+This alert fires when the usage-tracker failed to load the snapshot and events within the snapshot interval during startup, and therefore started with partial state.
+
+How it **works**:
+
+- At startup, the usage-tracker loads the last snapshot and replays events to reconstruct the tracked usage data.
+- This must complete within the snapshot interval (half of `-usage-tracker.idle-timeout`), because any data older than the idle timeout is considered stale and removed on the first cleanup anyway.
+- If loading doesn't complete in time, the usage-tracker starts with partial state instead of blocking startup, sets the metric `cortex_usage_tracker_snapshot_load_failed_at_startup` to 1, and resets it to 0 after 10 minutes.
+- Starting with partial state means some series may be temporarily undercounted until the state is rebuilt from the events stream. This should be investigated.
+
+How to **investigate**:
+
+- Check the usage-tracker logs for the `"snapshot and events loading timed out at startup, starting with partial state"` warning message.
+- Check whether snapshot download from object storage was slow: look for `"downloaded snapshot file"` log messages and their `file_download_time`, and check for network or object storage latency issues.
+- Check whether event replay was slow: look for `"finished loading events"` log messages and the number of events replayed.
+- If the partition repeatedly fails to start in time, you can temporarily set `-usage-tracker.skip-snapshot-loading-at-startup=true` to skip snapshot loading and rebuild state from the events stream only.
 
 ## Errors catalog
 
@@ -3410,19 +3445,40 @@ However the **queries will return partial data**, due to all the ingested sample
 
 ## Manual procedures
 
-### How to use the mark-blocks tool
+### How to mark blocks with mimirtool
 
-The `mark-blocks` tool creates or removes markers for TSDB blocks in object storage. This is commonly needed for:
+The `mimirtool blocks mark` command creates or removes markers for TSDB blocks in object storage. This is commonly needed for:
 
-- Marking blocks for deletion (using `-mark-type deletion`)
-- Marking blocks to prevent compaction (using `-mark-type no-compact`)
+- Marking blocks for deletion (using `--mark-type deletion`)
+- Marking blocks to prevent compaction (using `--mark-type no-compact`)
 
-The tool is located at `tools/mark-blocks/` in the Mimir repository. Build it with `go build` in that directory, or use the pre-built binary from Mimir releases.
+#### Jsonnet
+
+If you deploy Mimir with the Jsonnet library, you can run `mimirtool blocks mark` as a Kubernetes Job with `newMimirtoolMarkBlocksJob`. The object storage (bucket) configuration is picked up automatically from your cluster's storage configuration, so you only need to provide the marking arguments:
+
+```jsonnet
+local mimir = import 'mimir/mimir.libsonnet';
+
+mimir {
+  mark_blocks_job:
+    $.newMimirtoolMarkBlocksJob('mark-blocks', {
+      tenant: '<tenant-id>',
+      'mark-type': '<deletion|no-compact>',
+      details: '<reason for marking>',
+      blocks: '<block-1>,<block-2>...',
+      'dry-run': true,
+    }),
+}
+```
+
+#### Command line
+
+The `mimirtool blocks mark` command is part of [mimirtool](../tools/mimirtool/). Build it with `go build ./cmd/mimirtool` in the Mimir repository, or use the pre-built binary from Mimir releases.
 
 #### Google Cloud Storage (GCS)
 
 ```bash
-./mark-blocks \
+mimirtool blocks mark \
   --backend gcs \
   --gcs.bucket-name <bucket> \
   --tenant <tenant-id> \
@@ -3439,7 +3495,7 @@ GCS uses Application Default Credentials. Ensure you have authenticated using `g
 ```bash
 export AWS_PROFILE=<your-aws-profile>
 
-./mark-blocks \
+mimirtool blocks mark \
   --backend s3 \
   --s3.bucket-name <bucket> \
   --s3.region <region> \
@@ -3456,7 +3512,7 @@ This method uses the AWS SDK's default credential chain, which supports environm
 #### Amazon S3 with Access Keys
 
 ```bash
-./mark-blocks \
+mimirtool blocks mark \
   --backend s3 \
   --s3.bucket-name <bucket> \
   --s3.access-key-id <access-key-id> \
@@ -3472,7 +3528,7 @@ This method uses the AWS SDK's default credential chain, which supports environm
 #### Azure Blob Storage
 
 ```bash
-./mark-blocks \
+mimirtool blocks mark \
   --backend azure \
   --azure.container-name <container> \
   --azure.account-name <account-name> \
@@ -3889,6 +3945,7 @@ When looking at `msg="query stats"` consider the following attributes;
 - query_wall_time_seconds — time spent actually executing the query
 - encode_time_seconds — time spent serialising the result to JSON
 - remote_execution_request_count — number of requests sent to queriers for execution
+- retries — number of times the query-frontend retried downstream requests while processing the query (0 if all requests succeeded on their first attempt)
 - split_queries — the query was split into n sub-queries by the time-splitting middleware
 - sharded_queries — the number of sharded queries
 - spun_off_subqueries — the number of subqueries spun off
@@ -3899,10 +3956,13 @@ When looking at `msg="query stats"` consider the following attributes;
 - fetched_index_bytes — number of index bytes fetched. This can be 0 if the index was fully served from cache or memory
 - estimated_series_count — pre-execution estimate of series count
 - samples_processed — total individual samples evaluated
-- equivalent_samples_read — equivalent number of samples that would have been read from storage to execute a query, if no caching or other optimizations were applied to the query
+- equivalent_samples_read — equivalent number of samples that would have been read from storage to execute a query, if no caching or other optimizations were applied to the query. Remote read requests contribute to this counter and to `physical_samples_read`. For streamed-chunks remote read responses, the count reflects samples within the requested query range.
 - physical_samples_read — the number of samples read from storage. Excludes any samples not read due to caching or other optimizations.
 - results_cache_hit_bytes — the number of bytes returned from the query results cache
+- results_cache_hit_count — the number of requests to the query results cache that were a hit (note that a hit does not mean the entire request time range was served from the cache)
 - results_cache_miss_bytes — the number of bytes fetched from storage and written to the query results cache
+- results_cache_miss_count — the number of requests to the query results cache that were a miss
+- results_cache_set_count — the number of new or updated cache entries that were written to the query results cache
 - read_consistency — the read consistency level requested, if any
 - read_consistency_max_delay — the maximum delay / staleness allowed for an eventually consistent request, if any
 

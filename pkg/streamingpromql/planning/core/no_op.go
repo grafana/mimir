@@ -3,7 +3,7 @@
 package core
 
 import (
-	"fmt"
+	"context"
 	"time"
 
 	"github.com/gogo/protobuf/proto"
@@ -18,6 +18,8 @@ import (
 // NoOp is a query plan node that always returns an empty instant vector.
 // It is used by optimization passes to replace subexpressions that can be statically
 // determined to return no results.
+//
+//node:generate
 type NoOp struct {
 	*NoOpDetails
 }
@@ -28,26 +30,6 @@ func (n *NoOp) Details() proto.Message {
 
 func (n *NoOp) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_NO_OP
-}
-
-func (n *NoOp) Child(idx int) planning.Node {
-	panic(fmt.Sprintf("node of type NoOp has no children, but attempted to get child at index %d", idx))
-}
-
-func (n *NoOp) ChildCount() int {
-	return 0
-}
-
-func (n *NoOp) SetChildren(children []planning.Node) error {
-	if len(children) != 0 {
-		return fmt.Errorf("node of type NoOp expects 0 children, but got %d", len(children))
-	}
-
-	return nil
-}
-
-func (n *NoOp) ReplaceChild(idx int, _ planning.Node) error {
-	return fmt.Errorf("node of type NoOp supports no children, but attempted to replace child at index %d", idx)
 }
 
 func (n *NoOp) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
@@ -65,10 +47,6 @@ func (n *NoOp) Describe() string {
 		return "matrix"
 	}
 	return ""
-}
-
-func (n *NoOp) ChildrenLabels() []string {
-	return nil
 }
 
 func (n *NoOp) ChildrenTimeRange(timeRange types.QueryTimeRange) types.QueryTimeRange {
@@ -94,7 +72,7 @@ func (n *NoOp) MinimumRequiredPlanVersion(types.QueryTimeRange) (planning.QueryP
 	return planning.QueryPlanV10, nil
 }
 
-func MaterializeNoOp(n *NoOp, _ *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
+func MaterializeNoOp(_ context.Context, n *NoOp, _ *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
 	var o types.Operator
 
 	if n.MatrixSelector {

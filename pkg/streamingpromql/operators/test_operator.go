@@ -83,15 +83,12 @@ func (t *TestOperator) SeriesMetadata(_ context.Context, matchers types.Matchers
 }
 
 func (t *TestOperator) matches(series labels.Labels, matchers []*labels.Matcher) bool {
-	matches := true
 	for _, m := range matchers {
-		series.Range(func(l labels.Label) {
-			if l.Name == m.Name && !m.Matches(l.Value) {
-				matches = false
-			}
-		})
+		if !m.Matches(series.Get(m.Name)) {
+			return false
+		}
 	}
-	return matches
+	return true
 }
 
 func (t *TestOperator) NextSeries(_ context.Context) (types.InstantVectorSeriesData, error) {
@@ -229,7 +226,7 @@ func (t *TestRangeOperator) NextStepSamples(_ context.Context) (*types.RangeVect
 
 	t.Floats.Reset()
 	for _, p := range d.Floats {
-		if err := t.Floats.Append(p); err != nil {
+		if _, err := t.Floats.Append(p); err != nil {
 			return nil, err
 		}
 	}
@@ -242,7 +239,7 @@ func (t *TestRangeOperator) NextStepSamples(_ context.Context) (*types.RangeVect
 
 	t.Histograms.Reset()
 	for _, p := range d.Histograms {
-		if err := t.Histograms.Append(p); err != nil {
+		if _, err := t.Histograms.Append(p); err != nil {
 			return nil, err
 		}
 	}

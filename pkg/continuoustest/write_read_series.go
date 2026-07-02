@@ -36,13 +36,15 @@ type WriteReadSeriesTestConfig struct {
 	MaxQueryAge    time.Duration
 	WithFloats     bool
 	WithHistograms bool
+	FanOutQuery    bool
 }
 
 func (cfg *WriteReadSeriesTestConfig) RegisterFlags(f *flag.FlagSet) {
-	f.IntVar(&cfg.NumSeries, "tests.write-read-series-test.num-series", 10000, "Number of series used for the test.")
-	f.DurationVar(&cfg.MaxQueryAge, "tests.write-read-series-test.max-query-age", 7*24*time.Hour, "How back in the past metrics can be queried at most.")
+	f.IntVar(&cfg.NumSeries, "tests.write-read-series-test.num-series", 1000, "Number of series used for the test.")
+	f.DurationVar(&cfg.MaxQueryAge, "tests.write-read-series-test.max-query-age", 48*time.Hour, "How back in the past metrics can be queried at most.")
 	f.BoolVar(&cfg.WithFloats, "tests.write-read-series-test.float-samples-enabled", true, "Set to true to use float samples")
 	f.BoolVar(&cfg.WithHistograms, "tests.write-read-series-test.histogram-samples-enabled", false, "Set to true to use native histogram samples")
+	f.BoolVar(&cfg.FanOutQuery, "tests.write-read-series-test.fan-out-query-enabled", false, "Set to true to additionally run each test query with a regex metric-name matcher. This prevents the query from being pinned to a single ingest-storage compartment, forcing the read path to fan out across all compartments and validating cross-compartment query result merging. Roughly doubles the number of queries issued per run.")
 }
 
 type WriteReadSeriesTest struct {
@@ -52,8 +54,9 @@ type WriteReadSeriesTest struct {
 	logger  log.Logger
 	metrics *TestMetrics
 
-	floatMetric MetricHistory
-	histMetrics []MetricHistory
+	floatMetric  MetricHistory
+	histMetrics  []MetricHistory
+	histProfiles []histogramProfile
 }
 
 type MetricHistory struct {
@@ -62,16 +65,19 @@ type MetricHistory struct {
 	queryMaxTime         time.Time
 }
 
-func NewWriteReadSeriesTest(cfg WriteReadSeriesTestConfig, client MimirClient, logger log.Logger, reg prometheus.Registerer) *WriteReadSeriesTest {
+func NewWriteReadSeriesTest(cfg WriteReadSeriesTestConfig, client MimirClient, writeProtocol WriteProtocol, logger log.Logger, reg prometheus.Registerer) *WriteReadSeriesTest {
 	const name = "write-read-series"
 
+	histProfiles := histogramProfilesForWriteProtocol(writeProtocol)
+
 	return &WriteReadSeriesTest{
-		name:        name,
-		cfg:         cfg,
-		client:      client,
-		logger:      log.With(logger, "test", name),
-		metrics:     NewTestMetrics(name, reg),
-		histMetrics: make([]MetricHistory, len(histogramProfiles)),
+		name:         name,
+		cfg:          cfg,
+		client:       client,
+		logger:       log.With(logger, "test", name),
+		metrics:      NewTestMetrics(name, reg),
+		histMetrics:  make([]MetricHistory, len(histProfiles)),
+		histProfiles: histProfiles,
 	}
 }
 
@@ -95,7 +101,7 @@ func (t *WriteReadSeriesTest) Init(ctx context.Context, now time.Time) error {
 		t.metrics.InitializeCountersToZero(floatTypeLabel)
 	}
 	if t.cfg.WithHistograms {
-		for i, histProfile := range histogramProfiles {
+		for i, histProfile := range t.histProfiles {
 			err := t.recoverPast(ctx, now, histProfile.metricName, querySumHist, histProfile.generateValue, histProfile.generateSampleHistogram, &t.histMetrics[i])
 			if err != nil {
 				return err
@@ -136,19 +142,19 @@ func (t *WriteReadSeriesTest) Run(ctx context.Context, now time.Time) error {
 	errs := new(multierror.MultiError)
 
 	if t.cfg.WithFloats {
-		t.RunInner(ctx, now, writeLimiter, errs, floatMetricName, floatTypeLabel, floatMetricMetadata, querySumFloat, generateSineWaveSeries, generateSineWaveValue, nil, &t.floatMetric)
+		t.RunInner(ctx, now, writeLimiter, errs, floatMetricName, floatTypeLabel, floatMetricMetadata, querySumFloat, querySumFloatFanOut, generateSineWaveSeries, generateSineWaveValue, nil, &t.floatMetric)
 	}
 
 	if t.cfg.WithHistograms {
-		for i, histProfile := range histogramProfiles {
-			t.RunInner(ctx, now, writeLimiter, errs, histProfile.metricName, histProfile.typeLabel, histProfile.metadata, querySumHist, histProfile.generateSeries, histProfile.generateValue, histProfile.generateSampleHistogram, &t.histMetrics[i])
+		for i, histProfile := range t.histProfiles {
+			t.RunInner(ctx, now, writeLimiter, errs, histProfile.metricName, histProfile.typeLabel, histProfile.metadata, querySumHist, querySumHistFanOut, histProfile.generateSeries, histProfile.generateValue, histProfile.generateSampleHistogram, &t.histMetrics[i])
 		}
 	}
 
 	return errs.Err()
 }
 
-func (t *WriteReadSeriesTest) RunInner(ctx context.Context, now time.Time, writeLimiter *rate.Limiter, errs *multierror.MultiError, metricName, typeLabel string, metricMetadata []prompb.MetricMetadata, querySum querySumFunc, generateSeries generateSeriesFunc, generateValue generateValueFunc, generateSampleHistogram generateSampleHistogramFunc, records *MetricHistory) {
+func (t *WriteReadSeriesTest) RunInner(ctx context.Context, now time.Time, writeLimiter *rate.Limiter, errs *multierror.MultiError, metricName, typeLabel string, metricMetadata []prompb.MetricMetadata, querySum, querySumFanOut querySumFunc, generateSeries generateSeriesFunc, generateValue generateValueFunc, generateSampleHistogram generateSampleHistogramFunc, records *MetricHistory) {
 	// Write series for each expected timestamp until now.
 	for timestamp := t.nextWriteTimestamp(now, records); !timestamp.After(now); timestamp = t.nextWriteTimestamp(now, records) {
 		logger := log.With(t.logger, "timestamp", timestamp.UnixMilli(), "num_series", t.cfg.NumSeries, "metric_name", metricName)
@@ -158,7 +164,7 @@ func (t *WriteReadSeriesTest) RunInner(ctx context.Context, now time.Time, write
 			return
 		}
 
-		series := generateSeries(metricName, timestamp, t.cfg.NumSeries, prompb.Label{Name: "protocol", Value: t.client.Protocol()})
+		series := generateSeries(metricName, timestamp, t.cfg.NumSeries, prompb.Label{Name: "protocol", Value: string(t.client.Protocol())})
 		if err := writeSamples(ctx, typeLabel, timestamp, series, metricMetadata, records, t.client, t.metrics, logger); err != nil {
 			errs.Add(err)
 			break
@@ -170,18 +176,28 @@ func (t *WriteReadSeriesTest) RunInner(ctx context.Context, now time.Time, write
 		errs.Add(err)
 	}
 
-	queryMetric := querySum(metricName)
-	for _, timeRange := range queryRanges {
-		err := t.runRangeQueryAndVerifyResult(ctx, timeRange[0], timeRange[1], true, typeLabel, queryMetric, generateValue, generateSampleHistogram, records)
-		errs.Add(err)
-		err = t.runRangeQueryAndVerifyResult(ctx, timeRange[0], timeRange[1], false, typeLabel, queryMetric, generateValue, generateSampleHistogram, records)
-		errs.Add(err)
+	// The pinned query (exact metric-name matcher) is always run. When fan-out is enabled we
+	// additionally run a query that matches the same metric via a regex matcher, which forces the
+	// read path to fan out across all ingest-storage compartments rather than target a single one.
+	// Both produce identical results, so the same verification applies to each.
+	queryMetrics := []string{querySum(metricName)}
+	if t.cfg.FanOutQuery {
+		queryMetrics = append(queryMetrics, querySumFanOut(metricName))
 	}
-	for _, ts := range queryInstants {
-		err := t.runInstantQueryAndVerifyResult(ctx, ts, true, typeLabel, queryMetric, generateValue, generateSampleHistogram, records)
-		errs.Add(err)
-		err = t.runInstantQueryAndVerifyResult(ctx, ts, false, typeLabel, queryMetric, generateValue, generateSampleHistogram, records)
-		errs.Add(err)
+
+	for _, queryMetric := range queryMetrics {
+		for _, timeRange := range queryRanges {
+			err := t.runRangeQueryAndVerifyResult(ctx, timeRange[0], timeRange[1], true, typeLabel, queryMetric, generateValue, generateSampleHistogram, records)
+			errs.Add(err)
+			err = t.runRangeQueryAndVerifyResult(ctx, timeRange[0], timeRange[1], false, typeLabel, queryMetric, generateValue, generateSampleHistogram, records)
+			errs.Add(err)
+		}
+		for _, ts := range queryInstants {
+			err := t.runInstantQueryAndVerifyResult(ctx, ts, true, typeLabel, queryMetric, generateValue, generateSampleHistogram, records)
+			errs.Add(err)
+			err = t.runInstantQueryAndVerifyResult(ctx, ts, false, typeLabel, queryMetric, generateValue, generateSampleHistogram, records)
+			errs.Add(err)
+		}
 	}
 
 	err = t.runMetadataQueryAndVerifyResult(ctx, metricMetadata)

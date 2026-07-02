@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/grafana/dskit/flagext"
+	"github.com/grafana/warpstream-go/pkg/wgo"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -42,6 +43,68 @@ func TestConfig_Validate(t *testing.T) {
 				cfg.KafkaConfig.Address = flagext.StringSliceCSV{"localhost"}
 				cfg.KafkaConfig.Topic = "test"
 			},
+		},
+		"should pass if backend is explicitly set to warpstream": {
+			setup: func(cfg *Config) {
+				cfg.Enabled = true
+				cfg.KafkaConfig.Address = flagext.StringSliceCSV{"localhost"}
+				cfg.KafkaConfig.Topic = "test"
+				cfg.KafkaConfig.Backend = KafkaBackendWarpstream
+			},
+		},
+		"should fail if backend is warpstream and write timeout is not greater than twice the request overhead": {
+			setup: func(cfg *Config) {
+				cfg.Enabled = true
+				cfg.KafkaConfig.Address = flagext.StringSliceCSV{"localhost"}
+				cfg.KafkaConfig.Topic = "test"
+				cfg.KafkaConfig.Backend = KafkaBackendWarpstream
+				cfg.KafkaConfig.WriteTimeout = writerRequestTimeoutOverhead * 2
+			},
+			expectedErr: ErrInvalidWarpstreamWriteTimeout,
+		},
+		"should pass if backend is warpstream and write timeout is just above twice the request overhead": {
+			setup: func(cfg *Config) {
+				cfg.Enabled = true
+				cfg.KafkaConfig.Address = flagext.StringSliceCSV{"localhost"}
+				cfg.KafkaConfig.Topic = "test"
+				cfg.KafkaConfig.Backend = KafkaBackendWarpstream
+				cfg.KafkaConfig.WriteTimeout = writerRequestTimeoutOverhead*2 + time.Millisecond
+			},
+		},
+		"should not enforce the warpstream write timeout floor for the kafka backend": {
+			setup: func(cfg *Config) {
+				cfg.Enabled = true
+				cfg.KafkaConfig.Address = flagext.StringSliceCSV{"localhost"}
+				cfg.KafkaConfig.Topic = "test"
+				cfg.KafkaConfig.WriteTimeout = time.Second
+			},
+		},
+		"should fail if backend is empty": {
+			setup: func(cfg *Config) {
+				cfg.Enabled = true
+				cfg.KafkaConfig.Address = flagext.StringSliceCSV{"localhost"}
+				cfg.KafkaConfig.Topic = "test"
+				cfg.KafkaConfig.Backend = ""
+			},
+			expectedErr: ErrInvalidKafkaBackend,
+		},
+		"should fail if backend is unknown": {
+			setup: func(cfg *Config) {
+				cfg.Enabled = true
+				cfg.KafkaConfig.Address = flagext.StringSliceCSV{"localhost"}
+				cfg.KafkaConfig.Topic = "test"
+				cfg.KafkaConfig.Backend = "confluent"
+			},
+			expectedErr: ErrInvalidKafkaBackend,
+		},
+		"should fail if backend value is not lowercase": {
+			setup: func(cfg *Config) {
+				cfg.Enabled = true
+				cfg.KafkaConfig.Address = flagext.StringSliceCSV{"localhost"}
+				cfg.KafkaConfig.Topic = "test"
+				cfg.KafkaConfig.Backend = "Kafka"
+			},
+			expectedErr: ErrInvalidKafkaBackend,
 		},
 		"should fail if ingest storage is enabled and consume position is invalid": {
 			setup: func(cfg *Config) {
@@ -459,4 +522,194 @@ func TestExhaustiveSASLMechanismOptions(t *testing.T) {
 		require.NoError(t, new(SASLMechanism).Set(string(o)))
 		require.NotErrorIs(t, (&KafkaAuthConfig{Mechanism: o}).Validate(), ErrInvalidSASLMechanism)
 	}
+}
+
+func TestKafkaConfig_WriteCompartmentConfig(t *testing.T) {
+	base := KafkaConfig{}
+	flagext.DefaultValues(&base)
+	base.Address = flagext.StringSliceCSV{"kafka-wc-<write-compartment-id>:9092"}
+	base.Topic = "ingest-rc-<read-compartment-id>"
+	base.SASL.Username = "user-wc-<write-compartment-id>"
+	base.SASL.Password = flagext.SecretWithValue("pass-wc-<write-compartment-id>")
+
+	for writeCompartmentID := 0; writeCompartmentID < 3; writeCompartmentID++ {
+		cfg := base.WriteCompartmentConfig(writeCompartmentID)
+
+		// The connection coordinates are resolved for the write compartment.
+		assert.Equal(t, flagext.StringSliceCSV{fmt.Sprintf("kafka-wc-%d:9092", writeCompartmentID)}, cfg.Address)
+		assert.Equal(t, fmt.Sprintf("user-wc-%d", writeCompartmentID), cfg.SASL.Username)
+		assert.Equal(t, fmt.Sprintf("pass-wc-%d", writeCompartmentID), cfg.SASL.Password.String())
+		// The topic is templated by read compartment, not write compartment, so it's left unchanged.
+		assert.Equal(t, "ingest-rc-<read-compartment-id>", cfg.Topic)
+		// Inherited defaults are preserved.
+		assert.Equal(t, base.SASL.Mechanism, cfg.SASL.Mechanism)
+	}
+}
+
+func TestWriteCompartmentConfigs(t *testing.T) {
+	newBase := func() KafkaConfig {
+		base := KafkaConfig{}
+		flagext.DefaultValues(&base)
+		base.Address = flagext.StringSliceCSV{"kafka-wc-<write-compartment-id>:9092"}
+		base.Topic = "ingest-rc-<read-compartment-id>"
+		base.SASL.Username = "user-wc-<write-compartment-id>"
+		base.SASL.Password = flagext.SecretWithValue("pass-wc-<write-compartment-id>")
+		base.FetchConcurrencyMax = 12
+		base.MaxBufferedBytes = 1_000_000_000
+		base.IngestionConcurrencyMax = 8
+		return base
+	}
+
+	t.Run("resolves each cluster, applies the topic, and divides per-client budgets", func(t *testing.T) {
+		const numCompartments = 4
+		cfgs := WriteCompartmentConfigs(newBase(), numCompartments, "ingest-rc-2")
+		require.Len(t, cfgs, numCompartments)
+
+		for wc, cfg := range cfgs {
+			assert.Equal(t, flagext.StringSliceCSV{fmt.Sprintf("kafka-wc-%d:9092", wc)}, cfg.Address)
+			assert.Equal(t, fmt.Sprintf("user-wc-%d", wc), cfg.SASL.Username)
+			assert.Equal(t, fmt.Sprintf("pass-wc-%d", wc), cfg.SASL.Password.String())
+			// The topic is resolved for the given read compartment.
+			assert.Equal(t, "ingest-rc-2", cfg.Topic)
+			// The per-client budgets are the global value split across compartments, so peak
+			// resource usage stays independent of the compartment count.
+			assert.Equal(t, 12/numCompartments, cfg.FetchConcurrencyMax)
+			assert.Equal(t, 1_000_000_000/numCompartments, cfg.MaxBufferedBytes)
+			assert.Equal(t, 8/numCompartments, cfg.IngestionConcurrencyMax)
+		}
+	})
+
+	t.Run("a single compartment keeps the full budget", func(t *testing.T) {
+		cfgs := WriteCompartmentConfigs(newBase(), 1, "ingest-rc-0")
+		require.Len(t, cfgs, 1)
+		assert.Equal(t, 12, cfgs[0].FetchConcurrencyMax)
+		assert.Equal(t, 1_000_000_000, cfgs[0].MaxBufferedBytes)
+		assert.Equal(t, 8, cfgs[0].IngestionConcurrencyMax)
+	})
+
+	t.Run("a positive budget never collapses to zero", func(t *testing.T) {
+		base := newBase()
+		base.FetchConcurrencyMax = 3
+		cfgs := WriteCompartmentConfigs(base, 8, "ingest-rc-0")
+		require.Len(t, cfgs, 8)
+		for _, cfg := range cfgs {
+			assert.Equal(t, 1, cfg.FetchConcurrencyMax)
+		}
+	})
+
+	t.Run("a disabled budget stays disabled", func(t *testing.T) {
+		base := newBase()
+		base.FetchConcurrencyMax = 0
+		base.MaxBufferedBytes = 0
+		base.IngestionConcurrencyMax = 0
+		cfgs := WriteCompartmentConfigs(base, 4, "ingest-rc-0")
+		require.Len(t, cfgs, 4)
+		for _, cfg := range cfgs {
+			assert.Zero(t, cfg.FetchConcurrencyMax)
+			assert.Zero(t, cfg.MaxBufferedBytes)
+			assert.Zero(t, cfg.IngestionConcurrencyMax)
+		}
+	})
+}
+
+func TestDivideBudget(t *testing.T) {
+	tests := map[string]struct {
+		budget          int
+		numCompartments int
+		expected        int
+	}{
+		"divides evenly":                          {budget: 12, numCompartments: 4, expected: 3},
+		"floors to integer division":              {budget: 10, numCompartments: 3, expected: 3},
+		"single compartment keeps full budget":    {budget: 12, numCompartments: 1, expected: 12},
+		"zero compartments keep full budget":      {budget: 12, numCompartments: 0, expected: 12},
+		"positive budget never collapses to zero": {budget: 3, numCompartments: 8, expected: 1},
+		"disabled budget stays disabled":          {budget: 0, numCompartments: 4, expected: 0},
+		"negative budget left untouched":          {budget: -1, numCompartments: 4, expected: -1},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			assert.Equal(t, tc.expected, divideBudget(tc.budget, tc.numCompartments))
+		})
+	}
+}
+
+func TestKafkaConfig_ToWarpstreamClientOptions(t *testing.T) {
+	baseConfig := func() KafkaConfig {
+		return KafkaConfig{
+			Backend:                                KafkaBackendWarpstream,
+			Address:                                []string{"a:9092", "b:9092"},
+			Topic:                                  "ingest",
+			ClientID:                               "client-1",
+			DialTimeout:                            3 * time.Second,
+			WriteTimeout:                           7 * time.Second,
+			WarpstreamHealthCheckSlowMultiplier:    1.5,
+			WarpstreamHealthCheckMaxSlowFraction:   0.4,
+			WarpstreamHealthCheckFaultyThreshold:   0.06,
+			WarpstreamHealthCheckMaxFaultyFraction: 0.5,
+			WarpstreamHedgeMinDelay:                15 * time.Millisecond,
+			WarpstreamHedgeMaxAgents:               4,
+			WarpstreamDemoterProbeInterval:         2 * time.Second,
+		}
+	}
+
+	t.Run("maps warpstream-relevant fields onto the applied config", func(t *testing.T) {
+		cfg := baseConfig()
+
+		opts, err := cfg.ToWarpstreamClientOptions()
+		require.NoError(t, err)
+
+		// wgo.NewConfig applies the options on top of its defaults, so we can
+		// assert the resulting config field by field.
+		wsCfg := wgo.NewConfig(opts...)
+		assert.Equal(t, []string{"a:9092", "b:9092"}, wsCfg.Address)
+		assert.Equal(t, "ingest", wsCfg.Topic)
+		assert.Equal(t, "client-1", wsCfg.ClientID)
+		assert.Equal(t, 3*time.Second, wsCfg.DialTimeout)
+		assert.Equal(t, 7*time.Second, wsCfg.WriteTimeout)
+		// Linger, batch max bytes, and metadata refresh interval mirror the
+		// kafka-backend defaults; ClusterStatsTTL is hardcoded to 1s.
+		assert.Equal(t, defaultProducerLinger, wsCfg.Linger)
+		assert.Equal(t, int32(producerBatchMaxBytes), wsCfg.BatchMaxBytes)
+		assert.Equal(t, defaultMetadataRefreshInterval, wsCfg.MetadataRefreshInterval)
+		assert.Equal(t, time.Second, wsCfg.ClusterStatsTTL)
+		assert.Equal(t, 1.5, wsCfg.HealthCheck.SlowMultiplier)
+		assert.Equal(t, 0.4, wsCfg.HealthCheck.MaxSlowFraction)
+		assert.Equal(t, 0.06, wsCfg.HealthCheck.FaultyThreshold)
+		assert.Equal(t, 0.5, wsCfg.HealthCheck.MaxFaultyFraction)
+		assert.Equal(t, 15*time.Millisecond, wsCfg.Hedger.MinHedgeDelay)
+		assert.Equal(t, 4, wsCfg.Hedger.MaxHedgeAgents)
+		assert.Equal(t, 2*time.Second, wsCfg.Demoter.ProbeInterval)
+		// The per-attempt produce timeout plus its overhead must sum to
+		// WriteTimeout so the whole hedge cascade fits within it.
+		assert.Equal(t, 7*time.Second-writerRequestTimeoutOverhead, wsCfg.DirectProducer.ProduceRequestTimeout)
+		assert.Equal(t, writerRequestTimeoutOverhead, wsCfg.DirectProducer.ProduceRequestTimeoutOverhead)
+		assert.False(t, wsCfg.TLSEnabled)
+		assert.Nil(t, wsCfg.TLSConfig)
+
+		// The applied config must satisfy wgo's own validation.
+		require.NoError(t, wsCfg.Validate())
+	})
+
+	t.Run("enables TLS on the applied config when configured", func(t *testing.T) {
+		cfg := baseConfig()
+		cfg.TLSEnabled = true
+		cfg.TLS.InsecureSkipVerify = true
+
+		opts, err := cfg.ToWarpstreamClientOptions()
+		require.NoError(t, err)
+
+		wsCfg := wgo.NewConfig(opts...)
+		assert.True(t, wsCfg.TLSEnabled)
+		assert.NotNil(t, wsCfg.TLSConfig)
+	})
+
+	t.Run("fails when TLS is enabled but misconfigured", func(t *testing.T) {
+		cfg := baseConfig()
+		cfg.TLSEnabled = true
+		// A client cert without a key fails GetTLSConfig.
+		cfg.TLS.CertPath = "/does/not/exist.crt"
+
+		_, err := cfg.ToWarpstreamClientOptions()
+		require.Error(t, err)
+	})
 }

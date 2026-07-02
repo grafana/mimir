@@ -1001,7 +1001,7 @@
               "kind": "field",
               "name": "max_backoff",
               "required": false,
-              "desc": "Minimum duration of the Retry-After HTTP header in responses to 429/5xx errors. Must be greater than or equal to 1s. Backoff is calculated as MinBackoff*2^(RetryAttempt-1) seconds with random jitter of 50% in either direction. RetryAttempt is the value of the Retry-Attempt HTTP header.",
+              "desc": "Maximum duration of the Retry-After HTTP header in responses to 429/5xx errors. Must be greater than or equal to 1s. Backoff is calculated as MinBackoff*2^(RetryAttempt-1) seconds with random jitter of 50% in either direction. RetryAttempt is the value of the Retry-Attempt HTTP header.",
               "fieldValue": null,
               "fieldDefaultValue": 96000000000,
               "fieldFlag": "distributor.retry-after-header.max-backoff",
@@ -2660,17 +2660,6 @@
             },
             {
               "kind": "field",
-              "name": "enable_projection_pushdown",
-              "required": false,
-              "desc": "Enable projection pushdown to only fetch labels required for the query from storage.",
-              "fieldValue": null,
-              "fieldDefaultValue": false,
-              "fieldFlag": "querier.mimir-query-engine.enable-projection-pushdown",
-              "fieldType": "boolean",
-              "fieldCategory": "experimental"
-            },
-            {
-              "kind": "field",
               "name": "enable_multi_aggregation",
               "required": false,
               "desc": "Enable computing multiple aggregations over the same data without buffering. Requires common subexpression elimination to be enabled.",
@@ -2750,6 +2739,28 @@
                           "fieldDefaultValue": "",
                           "fieldFlag": "querier.mimir-query-engine.range-vector-splitting.memcached.addresses",
                           "fieldType": "string"
+                        },
+                        {
+                          "kind": "field",
+                          "name": "addresses_lookup_period",
+                          "required": false,
+                          "desc": "How often each address is resolved to an IP address or list of host names.",
+                          "fieldValue": null,
+                          "fieldDefaultValue": 30000000000,
+                          "fieldFlag": "querier.mimir-query-engine.range-vector-splitting.memcached.addresses-lookup-period",
+                          "fieldType": "duration",
+                          "fieldCategory": "advanced"
+                        },
+                        {
+                          "kind": "field",
+                          "name": "addresses_lookup_pool_size",
+                          "required": false,
+                          "desc": "How many idle connections to the DNS resolver are kept open. 0 disables keeping any idle connections open.",
+                          "fieldValue": null,
+                          "fieldDefaultValue": 0,
+                          "fieldFlag": "querier.mimir-query-engine.range-vector-splitting.memcached.addresses-lookup-pool-size",
+                          "fieldType": "int",
+                          "fieldCategory": "advanced"
                         },
                         {
                           "kind": "field",
@@ -4801,6 +4812,39 @@
           "fieldCategory": "experimental"
         },
         {
+          "kind": "field",
+          "name": "early_compaction_non_owned_series_enabled",
+          "required": false,
+          "desc": "When enabled, the ingester triggers an early TSDB head compaction for series that are no longer owned by the ingester after a ring change. Requires -ingester.track-ingester-owned-series or -ingester.use-ingester-owned-series-for-limits to be enabled.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "ingester.early-compaction-non-owned-series-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "early_compaction_non_owned_series_min_grace_period",
+          "required": false,
+          "desc": "Minimum time a series must remain non-owned before it can be evicted when the local owned-series threshold is exceeded. New non-owned series reset the timer. A value of 0 evicts immediately. A per-replica startup jitter spreads evictions across replicas.",
+          "fieldValue": null,
+          "fieldDefaultValue": 30000000000,
+          "fieldFlag": "ingester.early-compaction-non-owned-series-min-grace-period",
+          "fieldType": "duration",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "early_compaction_non_owned_series_max_grace_period",
+          "required": false,
+          "desc": "Maximum time a series may remain non-owned before it is evicted, regardless of the owned-series threshold. This ensures eventual eviction even for tenants below their threshold. A value of 0 disables the maximum grace period, so eviction depends solely on the owned-series threshold.",
+          "fieldValue": null,
+          "fieldDefaultValue": 300000000000,
+          "fieldFlag": "ingester.early-compaction-non-owned-series-max-grace-period",
+          "fieldType": "duration",
+          "fieldCategory": "experimental"
+        },
+        {
           "kind": "block",
           "name": "push_circuit_breaker",
           "required": false,
@@ -5985,7 +6029,7 @@
           "kind": "field",
           "name": "query_sharding_total_shards",
           "required": false,
-          "desc": "The amount of shards to use when doing parallelisation via query sharding by tenant. 0 to disable query sharding for tenant. Query sharding implementation will adjust the number of query shards based on compactor shards. This allows querier to not search the blocks which cannot possibly have the series for given query shard.",
+          "desc": "The amount of shards to use when doing parallelisation via query sharding by tenant. 0 to disable query sharding for tenant. Values greater than 1 are rounded up to the next power of two, so the query shard count always meshes with the compactor's power-of-two shard count. This allows querier to not search the blocks which cannot possibly have the series for given query shard.",
           "fieldValue": null,
           "fieldDefaultValue": 16,
           "fieldFlag": "query-frontend.query-sharding-total-shards",
@@ -6431,7 +6475,7 @@
                 "kind": "field",
                 "name": "input",
                 "required": false,
-                "desc": "",
+                "desc": "Source label name to read from the incoming series.",
                 "fieldValue": null,
                 "fieldDefaultValue": "",
                 "fieldType": "string"
@@ -6440,7 +6484,7 @@
                 "kind": "field",
                 "name": "output",
                 "required": false,
-                "desc": "",
+                "desc": "Label name to use in the cost attribution output metrics. If empty, the input label name is used.",
                 "fieldValue": null,
                 "fieldDefaultValue": "",
                 "fieldType": "string"
@@ -6451,15 +6495,136 @@
           }
         },
         {
-          "kind": "field",
-          "name": "max_cost_attribution_cardinality",
+          "kind": "map",
+          "name": "cost_attribution_trackers",
           "required": false,
-          "desc": "Maximum cardinality of cost attribution labels allowed per user.",
+          "desc": "Base cost attribution trackers configuration as JSON. Each tracker defines labels to track for cost attribution. Example: '{\"by-team\":{\"labels\":[{\"input\":\"team\"}]}}'.",
           "fieldValue": null,
-          "fieldDefaultValue": 2000,
-          "fieldFlag": "validation.max-cost-attribution-cardinality",
-          "fieldType": "int",
-          "fieldCategory": "experimental"
+          "fieldDefaultValue": null,
+          "fieldType": "string",
+          "fieldCategory": "experimental",
+          "fieldElement": {
+            "kind": "block",
+            "name": "cost_attribution_trackers",
+            "required": false,
+            "desc": "",
+            "blockEntries": [
+              {
+                "kind": "field",
+                "name": "labels",
+                "required": false,
+                "desc": "",
+                "fieldValue": null,
+                "fieldDefaultValue": null,
+                "fieldType": "slice",
+                "fieldElement": {
+                  "kind": "block",
+                  "name": "labels",
+                  "required": false,
+                  "desc": "",
+                  "blockEntries": [
+                    {
+                      "kind": "field",
+                      "name": "input",
+                      "required": false,
+                      "desc": "Source label name to read from the incoming series.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldType": "string"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "output",
+                      "required": false,
+                      "desc": "Label name to use in the cost attribution output metrics. If empty, the input label name is used.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldType": "string"
+                    }
+                  ],
+                  "fieldValue": null,
+                  "fieldDefaultValue": null
+                }
+              },
+              {
+                "kind": "field",
+                "name": "internal",
+                "required": false,
+                "desc": "Expose this tracker's metrics on the operational /metrics endpoint instead of the cost-attribution specific /usage-metrics endpoint that is used by default.",
+                "fieldValue": null,
+                "fieldDefaultValue": false,
+                "fieldType": "boolean"
+              }
+            ],
+            "fieldValue": null,
+            "fieldDefaultValue": null
+          }
+        },
+        {
+          "kind": "map",
+          "name": "additional_cost_attribution_trackers",
+          "required": false,
+          "desc": "",
+          "fieldValue": null,
+          "fieldDefaultValue": null,
+          "fieldType": "string",
+          "fieldCategory": "experimental",
+          "fieldElement": {
+            "kind": "block",
+            "name": "additional_cost_attribution_trackers",
+            "required": false,
+            "desc": "",
+            "blockEntries": [
+              {
+                "kind": "field",
+                "name": "labels",
+                "required": false,
+                "desc": "",
+                "fieldValue": null,
+                "fieldDefaultValue": null,
+                "fieldType": "slice",
+                "fieldElement": {
+                  "kind": "block",
+                  "name": "labels",
+                  "required": false,
+                  "desc": "",
+                  "blockEntries": [
+                    {
+                      "kind": "field",
+                      "name": "input",
+                      "required": false,
+                      "desc": "Source label name to read from the incoming series.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldType": "string"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "output",
+                      "required": false,
+                      "desc": "Label name to use in the cost attribution output metrics. If empty, the input label name is used.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldType": "string"
+                    }
+                  ],
+                  "fieldValue": null,
+                  "fieldDefaultValue": null
+                }
+              },
+              {
+                "kind": "field",
+                "name": "internal",
+                "required": false,
+                "desc": "Expose this tracker's metrics on the operational /metrics endpoint instead of the cost-attribution specific /usage-metrics endpoint that is used by default.",
+                "fieldValue": null,
+                "fieldDefaultValue": false,
+                "fieldType": "boolean"
+              }
+            ],
+            "fieldValue": null,
+            "fieldDefaultValue": null
+          }
         },
         {
           "kind": "field",
@@ -6470,6 +6635,17 @@
           "fieldDefaultValue": 0,
           "fieldFlag": "validation.cost-attribution-cooldown",
           "fieldType": "duration",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "max_cost_attribution_cardinality",
+          "required": false,
+          "desc": "Maximum cardinality of cost attribution labels allowed per user.",
+          "fieldValue": null,
+          "fieldDefaultValue": 2000,
+          "fieldFlag": "validation.max-cost-attribution-cardinality",
+          "fieldType": "int",
           "fieldCategory": "experimental"
         },
         {
@@ -6855,7 +7031,7 @@
           "kind": "field",
           "name": "compactor_split_and_merge_shards",
           "required": false,
-          "desc": "The number of shards to use when splitting blocks. 0 to disable splitting.",
+          "desc": "The number of shards to use when splitting blocks. 0 to disable splitting. Values greater than 1 are rounded up to the next power of two.",
           "fieldValue": null,
           "fieldDefaultValue": 0,
           "fieldFlag": "compactor.split-and-merge-shards",
@@ -6865,7 +7041,7 @@
           "kind": "field",
           "name": "compactor_ooo_split_and_merge_shards",
           "required": false,
-          "desc": "The number of shards to use when splitting out-of-order blocks. 0 to use the value of -compactor.split-and-merge-shards. Only applies to blocks with the out-of-order external label, see -ingester.out-of-order-blocks-external-label-enabled.",
+          "desc": "The number of shards to use when splitting out-of-order blocks. 0 to use the value of -compactor.split-and-merge-shards. Values greater than 1 are rounded up to the next power of two. Only applies to blocks with the out-of-order external label, see -ingester.out-of-order-blocks-external-label-enabled.",
           "fieldValue": null,
           "fieldDefaultValue": 0,
           "fieldFlag": "compactor.ooo-split-and-merge-shards",
@@ -8374,6 +8550,28 @@
                 },
                 {
                   "kind": "field",
+                  "name": "addresses_lookup_period",
+                  "required": false,
+                  "desc": "How often each address is resolved to an IP address or list of host names.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 30000000000,
+                  "fieldFlag": "query-frontend.results-cache.memcached.addresses-lookup-period",
+                  "fieldType": "duration",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "addresses_lookup_pool_size",
+                  "required": false,
+                  "desc": "How many idle connections to the DNS resolver are kept open. 0 disables keeping any idle connections open.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 0,
+                  "fieldFlag": "query-frontend.results-cache.memcached.addresses-lookup-pool-size",
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
                   "name": "timeout",
                   "required": false,
                   "desc": "The socket read/write timeout.",
@@ -8587,6 +8785,17 @@
         },
         {
           "kind": "field",
+          "name": "use_mimir_query_engine_for_splitting_and_caching_results",
+          "required": false,
+          "desc": "Set to true to enable performing splitting range queries by interval and caching inside the Mimir query engine (MQE), and spinning off subqueries from instant queries inside MQE. This only has an effect if the corresponding feature is enabled (with -query-frontend.split-queries-by-interval=true, -query-frontend.cache-results=true or -query-frontend.subquery-spin-off-enabled=true, respectively). Requires MQE, remote execution and sharding inside MQE to be enabled.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "query-frontend.use-mimir-query-engine-for-splitting-and-caching-results",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "cache_errors",
           "required": false,
           "desc": "Cache non-transient errors from queries.",
@@ -8653,7 +8862,7 @@
           "kind": "field",
           "name": "use_mimir_query_engine_for_sharding",
           "required": false,
-          "desc": "Set to true to enable performing query sharding inside the Mimir query engine (MQE). This setting has no effect if sharding is disabled. Requires remote execution and MQE to be enabled.",
+          "desc": "Set to true to enable performing query sharding inside the Mimir query engine (MQE). Requires remote execution and MQE to be enabled.",
           "fieldValue": null,
           "fieldDefaultValue": false,
           "fieldFlag": "query-frontend.use-mimir-query-engine-for-sharding",
@@ -8796,6 +9005,17 @@
           "blockEntries": [
             {
               "kind": "field",
+              "name": "backend",
+              "required": false,
+              "desc": "The Kafka backend implementation. Supported values: kafka, warpstream.",
+              "fieldValue": null,
+              "fieldDefaultValue": "kafka",
+              "fieldFlag": "ingest-storage.kafka.backend",
+              "fieldType": "string",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
               "name": "address",
               "required": false,
               "desc": "The Kafka seed broker address, or a comma-separated list of seed broker addresses.",
@@ -8828,7 +9048,7 @@
               "kind": "field",
               "name": "client_rack",
               "required": false,
-              "desc": "The rack identifier for this Kafka client. Corresponds to the Kafka client.rack setting.",
+              "desc": "The rack identifier for this Kafka client. Corresponds to the Kafka client.rack setting. Only supported when ingest-storage.kafka.backend=kafka.",
               "fieldValue": null,
               "fieldDefaultValue": "",
               "fieldFlag": "ingest-storage.kafka.client-rack",
@@ -8838,7 +9058,7 @@
               "kind": "field",
               "name": "dial_timeout",
               "required": false,
-              "desc": "The maximum time allowed to open a connection to a Kafka broker.",
+              "desc": "The maximum time allowed to establish the TCP connection to a Kafka broker, including the TLS handshake when TLS is enabled. It does not include the subsequent SASL authentication handshake.",
               "fieldValue": null,
               "fieldDefaultValue": 2000000000,
               "fieldFlag": "ingest-storage.kafka.dial-timeout",
@@ -8864,6 +9084,83 @@
               "fieldFlag": "ingest-storage.kafka.write-clients",
               "fieldType": "int",
               "fieldCategory": "deprecated"
+            },
+            {
+              "kind": "field",
+              "name": "warpstream_health_check_slow_multiplier",
+              "required": false,
+              "desc": "Mark an agent as slow when its window-average latency exceeds this multiple of the cluster baseline. Only applies when -ingest-storage.kafka.backend=warpstream.",
+              "fieldValue": null,
+              "fieldDefaultValue": 2,
+              "fieldFlag": "ingest-storage.kafka.warpstream-health-check-slow-multiplier",
+              "fieldType": "float",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "warpstream_health_check_max_slow_fraction",
+              "required": false,
+              "desc": "Suppress slow-based hedging when more than this fraction of agents are slow (cluster-wide issue). Only applies when -ingest-storage.kafka.backend=warpstream.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0.3,
+              "fieldFlag": "ingest-storage.kafka.warpstream-health-check-max-slow-fraction",
+              "fieldType": "float",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "warpstream_health_check_faulty_threshold",
+              "required": false,
+              "desc": "Mark an agent as faulty when its observed error rate exceeds this fraction. Only applies when -ingest-storage.kafka.backend=warpstream.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0.2,
+              "fieldFlag": "ingest-storage.kafka.warpstream-health-check-faulty-threshold",
+              "fieldType": "float",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "warpstream_health_check_max_faulty_fraction",
+              "required": false,
+              "desc": "Suppress faulty-based hedging and demotion when more than this fraction of agents are faulty (cluster-wide issue). Only applies when -ingest-storage.kafka.backend=warpstream.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0.3,
+              "fieldFlag": "ingest-storage.kafka.warpstream-health-check-max-faulty-fraction",
+              "fieldType": "float",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "warpstream_hedge_min_delay",
+              "required": false,
+              "desc": "Floor on the dynamically-computed hedge delay. Only applies when -ingest-storage.kafka.backend=warpstream.",
+              "fieldValue": null,
+              "fieldDefaultValue": 500000000,
+              "fieldFlag": "ingest-storage.kafka.warpstream-hedge-min-delay",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "warpstream_hedge_max_agents",
+              "required": false,
+              "desc": "Cap on how many per-partition candidates the hedge fanout considers when picking a fallback (excluding the primary and any agent already tried). Only applies when -ingest-storage.kafka.backend=warpstream.",
+              "fieldValue": null,
+              "fieldDefaultValue": 3,
+              "fieldFlag": "ingest-storage.kafka.warpstream-hedge-max-agents",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "warpstream_demoter_probe_interval",
+              "required": false,
+              "desc": "Minimum wall-clock gap between probes to a demoted agent. Only applies when -ingest-storage.kafka.backend=warpstream.",
+              "fieldValue": null,
+              "fieldDefaultValue": 1000000000,
+              "fieldFlag": "ingest-storage.kafka.warpstream-demoter-probe-interval",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
             },
             {
               "kind": "field",
@@ -10597,6 +10894,28 @@
                     },
                     {
                       "kind": "field",
+                      "name": "addresses_lookup_period",
+                      "required": false,
+                      "desc": "How often each address is resolved to an IP address or list of host names.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 30000000000,
+                      "fieldFlag": "blocks-storage.bucket-store.index-cache.memcached.addresses-lookup-period",
+                      "fieldType": "duration",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "addresses_lookup_pool_size",
+                      "required": false,
+                      "desc": "How many idle connections to the DNS resolver are kept open. 0 disables keeping any idle connections open.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 0,
+                      "fieldFlag": "blocks-storage.bucket-store.index-cache.memcached.addresses-lookup-pool-size",
+                      "fieldType": "int",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
                       "name": "timeout",
                       "required": false,
                       "desc": "The socket read/write timeout.",
@@ -10842,6 +11161,28 @@
                     },
                     {
                       "kind": "field",
+                      "name": "addresses_lookup_period",
+                      "required": false,
+                      "desc": "How often each address is resolved to an IP address or list of host names.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 30000000000,
+                      "fieldFlag": "blocks-storage.bucket-store.index-header-cache.memcached.addresses-lookup-period",
+                      "fieldType": "duration",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "addresses_lookup_pool_size",
+                      "required": false,
+                      "desc": "How many idle connections to the DNS resolver are kept open. 0 disables keeping any idle connections open.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 0,
+                      "fieldFlag": "blocks-storage.bucket-store.index-header-cache.memcached.addresses-lookup-pool-size",
+                      "fieldType": "int",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
                       "name": "timeout",
                       "required": false,
                       "desc": "The socket read/write timeout.",
@@ -11042,6 +11383,17 @@
                 },
                 {
                   "kind": "field",
+                  "name": "attributes_in_memory_max_items",
+                  "required": false,
+                  "desc": "Maximum number of individual attributes items to keep in a first level in-memory LRU cache. Attributes will be stored and fetched in-memory before hitting the cache backend. 0 to disable the in-memory cache.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 10000,
+                  "fieldFlag": "blocks-storage.bucket-store.index-header-cache.attributes-in-memory-max-items",
+                  "fieldType": "int",
+                  "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
                   "name": "subrange_ttl",
                   "required": false,
                   "desc": "TTL for caching individual index-header subranges.",
@@ -11108,6 +11460,28 @@
                       "fieldDefaultValue": "",
                       "fieldFlag": "blocks-storage.bucket-store.chunks-cache.memcached.addresses",
                       "fieldType": "string"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "addresses_lookup_period",
+                      "required": false,
+                      "desc": "How often each address is resolved to an IP address or list of host names.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 30000000000,
+                      "fieldFlag": "blocks-storage.bucket-store.chunks-cache.memcached.addresses-lookup-period",
+                      "fieldType": "duration",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "addresses_lookup_pool_size",
+                      "required": false,
+                      "desc": "How many idle connections to the DNS resolver are kept open. 0 disables keeping any idle connections open.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 0,
+                      "fieldFlag": "blocks-storage.bucket-store.chunks-cache.memcached.addresses-lookup-pool-size",
+                      "fieldType": "int",
+                      "fieldCategory": "advanced"
                     },
                     {
                       "kind": "field",
@@ -11377,6 +11751,28 @@
                       "fieldDefaultValue": "",
                       "fieldFlag": "blocks-storage.bucket-store.metadata-cache.memcached.addresses",
                       "fieldType": "string"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "addresses_lookup_period",
+                      "required": false,
+                      "desc": "How often each address is resolved to an IP address or list of host names.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 30000000000,
+                      "fieldFlag": "blocks-storage.bucket-store.metadata-cache.memcached.addresses-lookup-period",
+                      "fieldType": "duration",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "addresses_lookup_pool_size",
+                      "required": false,
+                      "desc": "How many idle connections to the DNS resolver are kept open. 0 disables keeping any idle connections open.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 0,
+                      "fieldFlag": "blocks-storage.bucket-store.metadata-cache.memcached.addresses-lookup-pool-size",
+                      "fieldType": "int",
+                      "fieldCategory": "advanced"
                     },
                     {
                       "kind": "field",
@@ -15535,6 +15931,321 @@
         },
         {
           "kind": "block",
+          "name": "distributor",
+          "required": false,
+          "desc": "",
+          "blockEntries": [
+            {
+              "kind": "field",
+              "name": "address",
+              "required": false,
+              "desc": "gRPC listen address of the distributor(s) to push rule-result series to. If empty, the ruler writes using the internal distributor. Use a DNS address (prefixed with dns:///) to enable gRPC client-side load balancing; in Kubernetes, use the distributor headless service on the gRPC port.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ruler.distributor.address",
+              "fieldType": "string",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "remote_timeout",
+              "required": false,
+              "desc": "Timeout for requests to remote distributors.",
+              "fieldValue": null,
+              "fieldDefaultValue": 10000000000,
+              "fieldFlag": "ruler.distributor.remote-timeout",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "block",
+              "name": "grpc_client_config",
+              "required": false,
+              "desc": "",
+              "blockEntries": [
+                {
+                  "kind": "field",
+                  "name": "max_recv_msg_size",
+                  "required": false,
+                  "desc": "gRPC client max receive message size (bytes).",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 104857600,
+                  "fieldFlag": "ruler.distributor.grpc-client-config.grpc-max-recv-msg-size",
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "max_send_msg_size",
+                  "required": false,
+                  "desc": "gRPC client max send message size (bytes).",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 104857600,
+                  "fieldFlag": "ruler.distributor.grpc-client-config.grpc-max-send-msg-size",
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "grpc_compression",
+                  "required": false,
+                  "desc": "Use compression when sending messages. Supported values are: 'gzip', 'snappy', 's2' and '' (disable compression)",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "ruler.distributor.grpc-client-config.grpc-compression",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "rate_limit",
+                  "required": false,
+                  "desc": "Rate limit for gRPC client; 0 means disabled.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 0,
+                  "fieldFlag": "ruler.distributor.grpc-client-config.grpc-client-rate-limit",
+                  "fieldType": "float",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "rate_limit_burst",
+                  "required": false,
+                  "desc": "Rate limit burst for gRPC client.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 0,
+                  "fieldFlag": "ruler.distributor.grpc-client-config.grpc-client-rate-limit-burst",
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "backoff_on_ratelimits",
+                  "required": false,
+                  "desc": "Enable backoff and retry when we hit rate limits.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "ruler.distributor.grpc-client-config.backoff-on-ratelimits",
+                  "fieldType": "boolean",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "block",
+                  "name": "backoff_config",
+                  "required": false,
+                  "desc": "",
+                  "blockEntries": [
+                    {
+                      "kind": "field",
+                      "name": "min_period",
+                      "required": false,
+                      "desc": "Minimum delay when backing off.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 100000000,
+                      "fieldFlag": "ruler.distributor.grpc-client-config.backoff-min-period",
+                      "fieldType": "duration",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "max_period",
+                      "required": false,
+                      "desc": "Maximum delay when backing off.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 10000000000,
+                      "fieldFlag": "ruler.distributor.grpc-client-config.backoff-max-period",
+                      "fieldType": "duration",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "max_retries",
+                      "required": false,
+                      "desc": "Number of times to backoff and retry before failing.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 10,
+                      "fieldFlag": "ruler.distributor.grpc-client-config.backoff-retries",
+                      "fieldType": "int",
+                      "fieldCategory": "advanced"
+                    }
+                  ],
+                  "fieldValue": null,
+                  "fieldDefaultValue": null
+                },
+                {
+                  "kind": "field",
+                  "name": "initial_stream_window_size",
+                  "required": false,
+                  "desc": "Initial stream window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": null,
+                  "fieldFlag": "ruler.distributor.grpc-client-config.initial-stream-window-size",
+                  "fieldType": "int",
+                  "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
+                  "name": "initial_connection_window_size",
+                  "required": false,
+                  "desc": "Initial connection window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": null,
+                  "fieldFlag": "ruler.distributor.grpc-client-config.initial-connection-window-size",
+                  "fieldType": "int",
+                  "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_enabled",
+                  "required": false,
+                  "desc": "Enable TLS in the gRPC client. This flag needs to be enabled when any other TLS flag is set. If set to false, insecure connection to gRPC server will be used.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "ruler.distributor.grpc-client-config.tls-enabled",
+                  "fieldType": "boolean",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_cert_path",
+                  "required": false,
+                  "desc": "Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "ruler.distributor.grpc-client-config.tls-cert-path",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_key_path",
+                  "required": false,
+                  "desc": "Path to the key for the client certificate. Also requires the client certificate to be configured.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "ruler.distributor.grpc-client-config.tls-key-path",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_ca_path",
+                  "required": false,
+                  "desc": "Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "ruler.distributor.grpc-client-config.tls-ca-path",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_server_name",
+                  "required": false,
+                  "desc": "Override the expected name on the server certificate.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "ruler.distributor.grpc-client-config.tls-server-name",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_insecure_skip_verify",
+                  "required": false,
+                  "desc": "Skip validating server certificate.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "ruler.distributor.grpc-client-config.tls-insecure-skip-verify",
+                  "fieldType": "boolean",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_cipher_suites",
+                  "required": false,
+                  "desc": "Override the default cipher suite list (separated by commas). Allowed values:\n\nSecure Ciphers:\n- TLS_AES_128_GCM_SHA256\n- TLS_AES_256_GCM_SHA384\n- TLS_CHACHA20_POLY1305_SHA256\n- TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA\n- TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA\n- TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256\n- TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384\n- TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256\n- TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384\n- TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256\n- TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256\n\nInsecure Ciphers:\n- TLS_RSA_WITH_RC4_128_SHA\n- TLS_RSA_WITH_3DES_EDE_CBC_SHA\n- TLS_RSA_WITH_AES_128_CBC_SHA\n- TLS_RSA_WITH_AES_256_CBC_SHA\n- TLS_RSA_WITH_AES_128_CBC_SHA256\n- TLS_RSA_WITH_AES_128_GCM_SHA256\n- TLS_RSA_WITH_AES_256_GCM_SHA384\n- TLS_ECDHE_ECDSA_WITH_RC4_128_SHA\n- TLS_ECDHE_RSA_WITH_RC4_128_SHA\n- TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256\n- TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256\n",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "ruler.distributor.grpc-client-config.tls-cipher-suites",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_min_version",
+                  "required": false,
+                  "desc": "Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "ruler.distributor.grpc-client-config.tls-min-version",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "connect_timeout",
+                  "required": false,
+                  "desc": "The maximum amount of time to establish a connection. A value of 0 means default gRPC client connect timeout and backoff.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 5000000000,
+                  "fieldFlag": "ruler.distributor.grpc-client-config.connect-timeout",
+                  "fieldType": "duration",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "connect_backoff_base_delay",
+                  "required": false,
+                  "desc": "Initial backoff delay after first connection failure. Only relevant if ConnectTimeout \u003e 0.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 1000000000,
+                  "fieldFlag": "ruler.distributor.grpc-client-config.connect-backoff-base-delay",
+                  "fieldType": "duration",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "connect_backoff_max_delay",
+                  "required": false,
+                  "desc": "Maximum backoff delay when establishing a connection. Only relevant if ConnectTimeout \u003e 0.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 5000000000,
+                  "fieldFlag": "ruler.distributor.grpc-client-config.connect-backoff-max-delay",
+                  "fieldType": "duration",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "block",
+                  "name": "cluster_validation",
+                  "required": false,
+                  "desc": "",
+                  "blockEntries": [
+                    {
+                      "kind": "field",
+                      "name": "label",
+                      "required": false,
+                      "desc": "Primary cluster validation label.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "ruler.distributor.grpc-client-config.cluster-validation.label",
+                      "fieldType": "string",
+                      "fieldCategory": "experimental"
+                    }
+                  ],
+                  "fieldValue": null,
+                  "fieldDefaultValue": null
+                }
+              ],
+              "fieldValue": null,
+              "fieldDefaultValue": null
+            }
+          ],
+          "fieldValue": null,
+          "fieldDefaultValue": null
+        },
+        {
+          "kind": "block",
           "name": "tenant_federation",
           "required": false,
           "desc": "",
@@ -16732,6 +17443,28 @@
                   "fieldDefaultValue": "",
                   "fieldFlag": "ruler-storage.cache.memcached.addresses",
                   "fieldType": "string"
+                },
+                {
+                  "kind": "field",
+                  "name": "addresses_lookup_period",
+                  "required": false,
+                  "desc": "How often each address is resolved to an IP address or list of host names.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 30000000000,
+                  "fieldFlag": "ruler-storage.cache.memcached.addresses-lookup-period",
+                  "fieldType": "duration",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "addresses_lookup_pool_size",
+                  "required": false,
+                  "desc": "How many idle connections to the DNS resolver are kept open. 0 disables keeping any idle connections open.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 0,
+                  "fieldFlag": "ruler-storage.cache.memcached.addresses-lookup-pool-size",
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
                 },
                 {
                   "kind": "field",
@@ -19032,6 +19765,17 @@
           ],
           "fieldValue": null,
           "fieldDefaultValue": null
+        },
+        {
+          "kind": "field",
+          "name": "http_client_disable_keep_alives",
+          "required": false,
+          "desc": "Disable HTTP keep-alives for the runtime config HTTP client. When enabled, each reload opens a new connection, which prevents long-lived connections from being pinned to a single backend when the runtime config URL is served by multiple replicas behind a connection-level (L4) load balancer, such as a Kubernetes Service.",
+          "fieldValue": null,
+          "fieldDefaultValue": true,
+          "fieldFlag": "runtime-config.http-client-disable-keep-alives",
+          "fieldType": "boolean",
+          "fieldCategory": "advanced"
         }
       ],
       "fieldValue": null,
@@ -19173,6 +19917,28 @@
           "fieldDefaultValue": 1024,
           "fieldFlag": "memberlist.received-messages-queue-size",
           "fieldType": "int",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "processed_messages_queue_size",
+          "required": false,
+          "desc": "Size of the per-key internal queue for processing messages received from other nodes. Increasing this value may help to avoid dropping per-key updates when the node is processing many updates for the same key.",
+          "fieldValue": null,
+          "fieldDefaultValue": 1024,
+          "fieldFlag": "memberlist.processed-messages-queue-size",
+          "fieldType": "int",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "compression_algorithm",
+          "required": false,
+          "desc": "Compression algorithm used for outgoing messages when -memberlist.compression-enabled is true. Supported values: lzw, snappy. Ignored when -memberlist.compression-enabled is false.",
+          "fieldValue": null,
+          "fieldDefaultValue": "lzw",
+          "fieldFlag": "memberlist.compression-algorithm",
+          "fieldType": "string",
           "fieldCategory": "advanced"
         },
         {
@@ -19658,6 +20424,28 @@
           "fieldDefaultValue": 0,
           "fieldFlag": "query-scheduler.querier-forget-delay",
           "fieldType": "duration",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "inflight_max_age_metric_enabled",
+          "required": false,
+          "desc": "Enable the cortex_query_scheduler_inflight_max_age_seconds metric, which reports the age of the oldest inflight request. Disabling it skips the per-tick scan over inflight requests.",
+          "fieldValue": null,
+          "fieldDefaultValue": true,
+          "fieldFlag": "query-scheduler.inflight-max-age-metric-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "max_queue_length_metric_enabled",
+          "required": false,
+          "desc": "Enable the cortex_query_scheduler_max_queue_length metric, which reports the per-tenant peak queue length observed since the last scrape. Disabling it skips per-tenant peak tracking on enqueue and dequeue.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "query-scheduler.max-queue-length-metric-enabled",
+          "fieldType": "boolean",
           "fieldCategory": "experimental"
         },
         {
@@ -22066,6 +22854,17 @@
       ],
       "fieldValue": null,
       "fieldDefaultValue": null
+    },
+    {
+      "kind": "field",
+      "name": "label_access_control_enabled",
+      "required": false,
+      "desc": "If enabled, Mimir enforces label-based access control on metric read queries using the X-Prom-Label-Policy HTTP header.",
+      "fieldValue": null,
+      "fieldDefaultValue": false,
+      "fieldFlag": "auth.label-access-control-enabled",
+      "fieldType": "boolean",
+      "fieldCategory": "experimental"
     }
   ],
   "fieldValue": null,

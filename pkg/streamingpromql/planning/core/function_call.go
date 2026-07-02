@@ -3,6 +3,7 @@
 package core
 
 import (
+	"context"
 	"fmt"
 	"slices"
 	"time"
@@ -19,9 +20,10 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
+//node:generate
 type FunctionCall struct {
 	*FunctionCallDetails
-	Args []planning.Node `json:"-"`
+	Args []planning.Node `json:"-" node:"children,labelfmt=param %d"`
 }
 
 func (f *FunctionCall) Describe() string {
@@ -46,32 +48,6 @@ func (f *FunctionCall) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_FUNCTION_CALL
 }
 
-func (f *FunctionCall) Child(idx int) planning.Node {
-	if idx >= len(f.Args) {
-		panic(fmt.Sprintf("this FunctionCall node has %d children, but attempted to get child at index %d", len(f.Args), idx))
-	}
-
-	return f.Args[idx]
-}
-
-func (f *FunctionCall) ChildCount() int {
-	return len(f.Args)
-}
-
-func (f *FunctionCall) SetChildren(children []planning.Node) error {
-	f.Args = children
-	return nil
-}
-
-func (f *FunctionCall) ReplaceChild(idx int, node planning.Node) error {
-	if idx >= len(f.Args) {
-		return fmt.Errorf("this FunctionCall node has %d children, but attempted to replace child at index %d", len(f.Args), idx)
-	}
-
-	f.Args[idx] = node
-	return nil
-}
-
 func (f *FunctionCall) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
 	otherFunctionCall, ok := other.(*FunctionCall)
 
@@ -85,25 +61,7 @@ func (f *FunctionCall) MergeHints(_ planning.Node) error {
 	return nil
 }
 
-func (f *FunctionCall) ChildrenLabels() []string {
-	if len(f.Args) == 0 {
-		return nil
-	}
-
-	if len(f.Args) == 1 {
-		return []string{""}
-	}
-
-	l := make([]string, len(f.Args))
-
-	for i := range l {
-		l[i] = fmt.Sprintf("param %v", i)
-	}
-
-	return l
-}
-
-func MaterializeFunctionCall(f *FunctionCall, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
+func MaterializeFunctionCall(ctx context.Context, f *FunctionCall, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
 	fnc, ok := functions.RegisteredFunctions[f.Function]
 	if !ok {
 		return nil, compat.NewNotSupportedError(fmt.Sprintf("'%v' function", f.Function.PromQLName()))
@@ -111,7 +69,7 @@ func MaterializeFunctionCall(f *FunctionCall, materializer *planning.Materialize
 
 	children := make([]types.Operator, 0, len(f.Args))
 	for _, arg := range f.Args {
-		o, err := materializer.ConvertNodeToOperator(arg, timeRange)
+		o, err := materializer.ConvertNodeToOperator(ctx, arg, timeRange)
 		if err != nil {
 			return nil, err
 		}

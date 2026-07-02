@@ -15,7 +15,6 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators"
 	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -601,7 +600,7 @@ func TestSplitOperator(t *testing.T) {
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			queryStats, ctx := stats.ContextWithEmptyStats(context.Background())
+			ctx := context.Background()
 			memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 
 			innerOperators := make([]*operators.TestOperator, len(testCase.ranges))
@@ -620,13 +619,12 @@ func TestSplitOperator(t *testing.T) {
 
 			ranges := make([]*splitRange, len(testCase.ranges))
 			for i, o := range innerOperators {
-				ranges[i] = newSplitRange(o)
+				ranges[i] = newSplitRange(o, memoryConsumptionTracker)
 			}
 
 			o := newTimeRangeSplitOperator(ranges, memoryConsumptionTracker, testCase.expectedStats.TimeRange.Decode())
 
 			require.NoError(t, o.Prepare(ctx, &types.PrepareParams{}))
-			require.Equal(t, len(testCase.ranges), int(queryStats.LoadSplitQueries()))
 			for i, o := range innerOperators {
 				require.Truef(t, o.Prepared, "expected inner operator %d to be prepared", i)
 			}
@@ -685,13 +683,51 @@ func TestSplitOperator_ConflictingDropNameValuesForSameSeries(t *testing.T) {
 		MemoryConsumptionTracker: memoryConsumptionTracker,
 	}
 
-	o := newTimeRangeSplitOperator([]*splitRange{newSplitRange(range1), newSplitRange(range2)}, memoryConsumptionTracker, types.NewInstantQueryTimeRange(time.Now()))
+	o := newTimeRangeSplitOperator(
+		[]*splitRange{
+			newSplitRange(range1, memoryConsumptionTracker),
+			newSplitRange(range2, memoryConsumptionTracker),
+		},
+		memoryConsumptionTracker,
+		types.NewInstantQueryTimeRange(time.Now()),
+	)
 
 	require.NoError(t, o.Prepare(ctx, &types.PrepareParams{}))
 	require.NoError(t, o.AfterPrepare(ctx))
 
 	_, err := o.SeriesMetadata(ctx, nil)
-	require.EqualError(t, err, `series with labels {idx="0"} has conflicting drop name values in different ranges`)
+	require.EqualError(t, err, `series with labels {idx="0"} has conflicting drop name values in different ranges / extents`)
+}
+
+func TestSplitOperator_FinishedReadingCalledWithoutCallingSeriesMetadata(t *testing.T) {
+	ctx := context.Background()
+	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+
+	range1 := &operators.TestOperator{
+		Series:                   []labels.Labels{labels.FromStrings("idx", "0")},
+		DropName:                 []bool{true},
+		MemoryConsumptionTracker: memoryConsumptionTracker,
+	}
+
+	range2 := &operators.TestOperator{
+		Series:                   []labels.Labels{labels.FromStrings("idx", "0")},
+		DropName:                 []bool{false},
+		MemoryConsumptionTracker: memoryConsumptionTracker,
+	}
+
+	o := newTimeRangeSplitOperator(
+		[]*splitRange{
+			newSplitRange(range1, memoryConsumptionTracker),
+			newSplitRange(range2, memoryConsumptionTracker),
+		},
+		memoryConsumptionTracker,
+		types.NewInstantQueryTimeRange(time.Now()),
+	)
+
+	require.NoError(t, o.Prepare(ctx, &types.PrepareParams{}))
+	require.NoError(t, o.AfterPrepare(ctx))
+
+	require.NoError(t, o.FinishedReading(ctx))
 }
 
 type testRange struct {

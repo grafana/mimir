@@ -49,6 +49,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/mimir/pkg/cardinality"
+	"github.com/grafana/mimir/pkg/compartments"
 	"github.com/grafana/mimir/pkg/costattribution"
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -161,6 +162,7 @@ type Distributor struct {
 
 	// Metrics
 	queryDuration                    *instrument.HistogramCollector
+	queryIngesterCompartmentsHit     prometheus.Histogram
 	receivedRequests                 *prometheus.CounterVec
 	receivedSamples                  *prometheus.CounterVec
 	receivedExemplars                *prometheus.CounterVec
@@ -221,8 +223,17 @@ type Distributor struct {
 	// ingestStorageWriter is the writer used when ingest storage is enabled.
 	ingestStorageWriter *ingest.Writer
 
-	// partitionsRing is the hash ring holding ingester partitions. It's used when ingest storage is enabled.
-	partitionsRing *ring.PartitionInstanceRing
+	// ingesterPartitionRings holds the per-read-compartment ingester partition rings (a single ring
+	// when compartments are disabled). It's used by the write path when ingest storage is enabled.
+	ingesterPartitionRings *ingest.PartitionRingWatchers
+
+	// partitionInstanceRings holds the per-read-compartment partition+instance rings used by the read
+	// (query) path when ingest storage is enabled. The read path is not yet compartment-aware, so it
+	// always uses compartment 0 (that is also the only ring when compartments are disabled).
+	partitionInstanceRings *ingest.PartitionInstanceRings
+
+	// compartmentRouter shards series to read compartments. Nil when compartments are disabled.
+	compartmentRouter *compartments.TopicRouter
 
 	// usageTrackerClient is the client that should be used to track per-tenant series and
 	// enforce max series limit in the distributor. This field is nil if usage-tracker
@@ -289,6 +300,13 @@ type Config struct {
 
 	// IngestStorageConfig is dynamically injected because defined outside of distributor config.
 	IngestStorageConfig ingest.Config `yaml:"-"`
+
+	// Compartments is dynamically injected because defined outside of distributor config.
+	Compartments compartments.Config `yaml:"-"`
+
+	// WriteCompartmentID is the write compartment this distributor belongs to. It selects which write
+	// compartment's Kafka cluster the distributor produces to. Only used when compartments are enabled.
+	WriteCompartmentID int `yaml:"write_compartment_id" category:"experimental" doc:"hidden"`
 
 	// Limits for distributor
 	DefaultLimits    InstanceLimits         `yaml:"instance_limits"`
@@ -363,14 +381,27 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.BoolVar(&cfg.EnableInfluxEndpoint, "distributor.influx-endpoint-enabled", false, "Enable Influx endpoint.")
 	f.IntVar(&cfg.ReusableIngesterPushWorkers, "distributor.reusable-ingester-push-workers", 2000, "Number of pre-allocated workers used to forward push requests to the ingesters. If 0, no workers will be used and a new goroutine will be spawned for each ingester push request. If not enough workers available, new goroutine will be spawned. (Note: this is a performance optimization, not a limiting feature.)")
 	f.BoolVar(&cfg.EnableStartTimeQuietZero, "distributor.otel-start-time-quiet-zero", false, "Change the implementation of OTel startTime from a real zero to a special NaN value.")
+	f.IntVar(&cfg.WriteCompartmentID, "distributor.write-compartment-id", 0, "The write compartment this distributor belongs to. Only used when compartments are enabled.")
 
 	cfg.DefaultLimits.RegisterFlags(f)
 }
 
 // Validate config and returns error on failure
-func (cfg *Config) Validate(limits validation.Limits) error {
+func (cfg *Config) Validate(limits validation.Limits, compartmentsCfg compartments.Config) error {
 	if limits.IngestionTenantShardSize < 0 {
 		return errInvalidTenantShardSize
+	}
+
+	// The distributor produces to its own write compartment's Kafka cluster, so its write compartment
+	// must be in range.
+	if compartmentsCfg.Enabled {
+		if cfg.WriteCompartmentID < 0 || cfg.WriteCompartmentID >= compartmentsCfg.Write.NumCompartments {
+			return fmt.Errorf("distributor write compartment ID %d is out of range [0, %d)", cfg.WriteCompartmentID, compartmentsCfg.Write.NumCompartments)
+		}
+	} else if cfg.WriteCompartmentID != 0 {
+		// When compartments are disabled the write compartment ID must be 0, as it's only meaningful with
+		// compartments enabled.
+		return errors.New("distributor write compartment ID must be 0 when compartments are disabled")
 	}
 
 	if err := cfg.ReactiveLimiter.Validate(); err != nil {
@@ -491,12 +522,27 @@ func (m *PushMetrics) deleteUserMetrics(user string) {
 }
 
 // New constructs a new Distributor
-func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Overrides, activeGroupsCleanupService *util.ActiveGroupsCleanupService, costAttributionMgr *costattribution.Manager, ingestersRing ring.ReadRing, partitionsRing *ring.PartitionInstanceRing, canJoinDistributorsRing bool, usageTrackerPartitionRing *ring.MultiPartitionInstanceRing, usageTrackerInstanceRing ring.ReadRing, reg prometheus.Registerer, log log.Logger) (*Distributor, error) {
+func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Overrides, activeGroupsCleanupService *util.ActiveGroupsCleanupService, costAttributionMgr *costattribution.Manager, ingestersRing ring.ReadRing, partitionInstanceRings *ingest.PartitionInstanceRings, partitionRings *ingest.PartitionRingWatchers, canJoinDistributorsRing bool, writerEnabled bool, usageTrackerPartitionRing *ring.MultiPartitionInstanceRing, usageTrackerInstanceRing ring.ReadRing, reg prometheus.Registerer, log log.Logger) (*Distributor, error) {
 	clientMetrics := ingester_client.NewMetrics(reg)
 	if cfg.IngesterClientFactory == nil {
 		cfg.IngesterClientFactory = ring_client.PoolInstFunc(func(inst ring.InstanceDesc) (ring_client.PoolClient, error) {
 			return ingester_client.MakeIngesterClient(inst, clientConfig, clientMetrics, log)
 		})
+	}
+
+	if cfg.IngestStorageConfig.Enabled {
+		switch {
+		case partitionRings == nil:
+			return nil, errors.New("ingester partition rings are required when ingest storage is enabled")
+		case partitionInstanceRings == nil:
+			return nil, errors.New("ingester partition instance rings are required when ingest storage is enabled")
+		case partitionInstanceRings.Count() != partitionRings.Count():
+			return nil, fmt.Errorf("the number of ingester partition instance rings (%d) does not match the number of ingester partition rings (%d)", partitionInstanceRings.Count(), partitionRings.Count())
+		case cfg.Compartments.Enabled && partitionRings.Count() != cfg.Compartments.Read.NumCompartments:
+			return nil, fmt.Errorf("the number of ingester partition rings (%d) does not match the configured number of read compartments (%d)", partitionRings.Count(), cfg.Compartments.Read.NumCompartments)
+		case !cfg.Compartments.Enabled && partitionRings.Count() != 1:
+			return nil, fmt.Errorf("expected exactly 1 ingester partition ring when compartments are disabled, but got %d", partitionRings.Count())
+		}
 	}
 
 	cfg.PoolConfig.RemoteTimeout = cfg.RemoteTimeout
@@ -508,7 +554,8 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		log:                         log,
 		ingestersRing:               ingestersRing,
 		RequestBufferPool:           requestBufferPool,
-		partitionsRing:              partitionsRing,
+		partitionInstanceRings:      partitionInstanceRings,
+		ingesterPartitionRings:      partitionRings,
 		ingesterPool:                NewPool(cfg.PoolConfig, ingestersRing, cfg.IngesterClientFactory, log),
 		healthyInstancesCount:       atomic.NewUint32(0),
 		healthyInstancesInZoneCount: atomic.NewUint32(0),
@@ -777,8 +824,40 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 	}
 
 	if cfg.IngestStorageConfig.Enabled {
-		d.ingestStorageWriter = ingest.NewWriter(d.cfg.IngestStorageConfig.KafkaConfig, log, reg)
-		subservices = append(subservices, d.ingestStorageWriter)
+		writerKafkaCfg := d.cfg.IngestStorageConfig.KafkaConfig
+		var writerOpts []ingest.WriterOption
+
+		if cfg.Compartments.Enabled {
+			// Resolve the writer's Kafka address and credentials for this distributor's write compartment.
+			writerKafkaCfg = writerKafkaCfg.WriteCompartmentConfig(cfg.WriteCompartmentID)
+
+			d.compartmentRouter = compartments.NewTopicRouter(cfg.Compartments.Read.NumCompartments, cfg.IngestStorageConfig.KafkaConfig.Topic)
+
+			d.queryIngesterCompartmentsHit = promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
+				Name: "cortex_querier_compartments_hit_per_query",
+				Help: "Number of read compartments queried for a single query.",
+				// The "storage" label denotes which query backend was queried, matching the convention of
+				// cortex_querier_queries_storage_type_total ("ingester" / "store-gateway").
+				ConstLabels: prometheus.Labels{"storage": "ingester"},
+				Buckets:     prometheus.LinearBuckets(1, 1, cfg.Compartments.Read.NumCompartments),
+			})
+
+			// The writer's configured topic is the read-compartment template, which is not a real topic
+			// name. Auto-create every resolved read-compartment topic in this distributor's write
+			// compartment's Kafka cluster instead.
+			if writerKafkaCfg.AutoCreateTopicEnabled {
+				writerOpts = append(writerOpts, ingest.WithAutoCreateTopics(d.compartmentRouter.Topics()))
+			}
+		}
+
+		// Only components that push (distributor, ruler) run the writer. A query-only distributor — e.g. the
+		// one the querier embeds to query ingesters — must not start it: it never pushes, and starting it
+		// would needlessly connect to Kafka and (under compartments) try to auto-create topics it has no
+		// write-compartment context for.
+		if writerEnabled {
+			d.ingestStorageWriter = ingest.NewWriter(writerKafkaCfg, log, reg, writerOpts...)
+			subservices = append(subservices, d.ingestStorageWriter)
+		}
 	}
 
 	// Init usage-tracker client (if enabled).
@@ -1463,7 +1542,6 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 		// totalN included samples, exemplars and metadata. Ingester follows this pattern when computing its ingestion rate.
 		d.ingestionRate.Add(int64(totalN))
 
-		ctx = ingest.ContextWithRecordTimestamp(ctx, now)
 		err = next(ctx, pushReq)
 		if err != nil {
 			// Errors resulting from the pushing to the ingesters have priority over
@@ -2096,22 +2174,23 @@ func (d *Distributor) push(ctx context.Context, pushReq *Request) error {
 		ctx = ingester_client.WithSlabPool(ctx, slabPool)
 	}
 
-	// Get both series and metadata keys in one slice.
-	keys, initialMetadataIndex := getSeriesAndMetadataTokens(userID, req)
-
 	var (
 		ingestersSubring  ring.DoBatchRing
-		partitionsSubring *ring.ActivePartitionBatchRing
+		partitionSubrings []*ring.ActivePartitionBatchRing
 	)
 
-	// Get the tenant's subring to use to either write to ingesters or partitions.
+	// Shuffle-shard each read compartment's partition ring (a single ring at index 0 when compartments
+	// are disabled).
 	if d.cfg.IngestStorageConfig.Enabled {
-		subring, err := d.partitionsRing.ShuffleShard(userID, d.limits.EffectiveIngestionPartitionsTenantWriteShardSize(userID))
-		if err != nil {
-			return err
+		shardSize := d.limits.EffectiveIngestionPartitionsTenantWriteShardSize(userID)
+		partitionSubrings = make([]*ring.ActivePartitionBatchRing, d.ingesterPartitionRings.Count())
+		for c := range partitionSubrings {
+			subring, err := d.ingesterPartitionRings.PartitionRing(c).ShuffleShard(userID, shardSize)
+			if err != nil {
+				return err
+			}
+			partitionSubrings[c] = ring.NewActivePartitionBatchRing(subring)
 		}
-
-		partitionsSubring = ring.NewActivePartitionBatchRing(subring.PartitionRing())
 	}
 
 	if !d.cfg.IngestStorageConfig.Enabled || d.cfg.IngestStorageConfig.Migration.DistributorSendToIngestersEnabled {
@@ -2123,15 +2202,15 @@ func (d *Distributor) push(ctx context.Context, pushReq *Request) error {
 	// once all backend requests have completed (see cleanup function passed to sendWriteRequestToBackends()).
 	cleanupInDefer = false
 
-	return d.sendWriteRequestToBackends(ctx, userID, req, keys, initialMetadataIndex, ingestersSubring, partitionsSubring, pushReq.CleanUp)
+	return d.sendWriteRequestToBackends(ctx, userID, req, ingestersSubring, partitionSubrings, pushReq.CleanUp)
 }
 
 // sendWriteRequestToBackends sends the input req data to backends. The backends could be:
 // - Ingesters, when ingestersSubring is not nil
-// - Ingest storage partitions, when partitionsSubring is not nil
+// - Ingest storage partitions, when partitionSubrings is not empty (one subring per read compartment)
 //
 // The input cleanup function is guaranteed to be called after all requests to all backends have completed.
-func (d *Distributor) sendWriteRequestToBackends(ctx context.Context, tenantID string, req *mimirpb.WriteRequest, keys []uint32, initialMetadataIndex int, ingestersSubring ring.DoBatchRing, partitionsSubring *ring.ActivePartitionBatchRing, cleanup func()) error {
+func (d *Distributor) sendWriteRequestToBackends(ctx context.Context, tenantID string, req *mimirpb.WriteRequest, ingestersSubring ring.DoBatchRing, partitionSubrings []*ring.ActivePartitionBatchRing, cleanup func()) error {
 	var (
 		wg            = sync.WaitGroup{}
 		partitionsErr error
@@ -2139,7 +2218,7 @@ func (d *Distributor) sendWriteRequestToBackends(ctx context.Context, tenantID s
 	)
 
 	// Ensure at least one ring has been provided.
-	if ingestersSubring == nil && partitionsSubring == nil {
+	if ingestersSubring == nil && len(partitionSubrings) == 0 {
 		// It should never happen. If it happens, it's a logic bug.
 		panic("no tenant subring has been provided to sendWriteRequestToBackends()")
 	}
@@ -2195,21 +2274,32 @@ func (d *Distributor) sendWriteRequestToBackends(ctx context.Context, tenantID s
 	}
 
 	// Keep it easy if there's only 1 backend to write to.
-	if partitionsSubring == nil {
+	if len(partitionSubrings) == 0 {
+		keys, initialMetadataIndex := getSeriesAndMetadataTokens(tenantID, req)
 		return d.sendWriteRequestToIngesters(ctx, ingestersSubring, req, keys, initialMetadataIndex, remoteRequestContext, batchOptions)
 	}
+
 	if ingestersSubring == nil {
-		return d.sendWriteRequestToPartitions(ctx, tenantID, partitionsSubring, req, keys, initialMetadataIndex, partitionsRequestContext, batchOptions.Cleanup)
+		if d.cfg.Compartments.Enabled {
+			return d.sendWriteRequestToCompartments(ctx, tenantID, partitionSubrings, req, partitionsRequestContext, batchOptions.Cleanup)
+		}
+
+		// When compartments are disabled, New() guarantees there is exactly one partition ring.
+		keys, initialMetadataIndex := getSeriesAndMetadataTokens(tenantID, req)
+		return d.sendWriteRequestToPartitions(ctx, tenantID, partitionSubrings[0], req, keys, initialMetadataIndex, partitionsRequestContext, batchOptions.Cleanup)
 	}
 
-	// Prepare a callback function that will call the input cleanup callback function only after
-	// the cleanup has been done for all backends.
+	// Dual-write to ingesters and partitions. Compartments are never enabled here: config validation
+	// forbids combining compartments with the migration's distributor-send-to-ingesters, so the single
+	// partition ring is used.
 	cleanupWaitBackends := atomic.NewInt64(2)
 	batchOptions.Cleanup = func() {
 		if cleanupWaitBackends.Dec() == 0 {
 			batchCleanup()
 		}
 	}
+
+	keys, initialMetadataIndex := getSeriesAndMetadataTokens(tenantID, req)
 
 	// Write both to ingesters and partitions.
 	wg.Add(2)
@@ -2223,7 +2313,7 @@ func (d *Distributor) sendWriteRequestToBackends(ctx context.Context, tenantID s
 	go func() {
 		defer wg.Done()
 
-		partitionsErr = d.sendWriteRequestToPartitions(ctx, tenantID, partitionsSubring, req, keys, initialMetadataIndex, partitionsRequestContext, batchOptions.Cleanup)
+		partitionsErr = d.sendWriteRequestToPartitions(ctx, tenantID, partitionSubrings[0], req, keys, initialMetadataIndex, partitionsRequestContext, batchOptions.Cleanup)
 	}()
 
 	// Wait until all backends have done.
@@ -2293,6 +2383,50 @@ func (d *Distributor) sendWriteRequestToPartitions(ctx context.Context, tenantID
 
 	// Since data may be written to different backends it may be helpful to clearly identify which backend failed.
 	return errors.Wrap(err, "send data to partitions")
+}
+
+// sendWriteRequestToCompartments shards the write request across read compartments (each with its own
+// partition ring and Kafka topic) and writes each compartment's partitions in a single ProduceSync
+// call. It is used only when compartments are enabled, where the distributor never also writes to
+// ingesters (config validation forbids combining compartments with distributor-send-to-ingesters).
+func (d *Distributor) sendWriteRequestToCompartments(ctx context.Context, tenantID string, partitionSubrings []*ring.ActivePartitionBatchRing, req *mimirpb.WriteRequest, remoteRequestContext func() context.Context, cleanup func()) error {
+	defer cleanup()
+
+	cts, initialMetadataIndex := getCompartmentTokensForWriteRequest(d.compartmentRouter, tenantID, req)
+
+	// We use an errgroup without context cancellation so that a failure writing to one compartment does
+	// not cancel the in-flight writes to the other compartments. A write can fail with a soft failure
+	// (the overall request may still succeed) or a hard failure (the whole request fails); ideally we
+	// would short-circuit the other compartments only on a hard failure, but distinguishing the two is
+	// a future improvement, so for now we never cancel.
+	var g errgroup.Group
+	for _, ct := range cts {
+		g.Go(func() error {
+			// Group this compartment's keys by partition within its own partition ring.
+			partitionKeys, err := partitionSubrings[ct.compartmentID].GetKeysByPartition(ctx, ct.tokens)
+			if err != nil {
+				return err
+			}
+
+			// Build per-partition write requests, remapping the per-compartment token indexes back to
+			// the original WriteRequest indexes.
+			partitionRequests := make([]ingest.PartitionWriteRequest, 0, len(partitionKeys))
+			for _, pk := range partitionKeys {
+				partitionRequests = append(partitionRequests, ingest.PartitionWriteRequest{
+					PartitionID:  pk.PartitionID,
+					WriteRequest: req.ForIndexes(ct.writeRequestIndexes(pk.Indexes), initialMetadataIndex),
+				})
+			}
+
+			// Write all partitions of this compartment in a single ProduceSync call to its topic.
+			writeCtx := remoteRequestContext()
+			err = d.ingestStorageWriter.MultiWriteSync(writeCtx, ct.topic, tenantID, partitionRequests)
+			err = wrapPartitionsPushError(err)
+			return wrapDeadlineExceededPushError(err)
+		})
+	}
+
+	return errors.Wrap(g.Wait(), "send data to partitions")
 }
 
 // getSeriesAndMetadataTokens returns a slice of tokens for the series and metadata from the request in this specific order.
@@ -2477,7 +2611,7 @@ func queryIngesterPartitionsRingZoneSorter(preferredZones []string) ring.ZoneSor
 // LabelValuesForLabelName returns the label values associated with the given labelName, among all series with samples
 // timestamp between from and to, and series labels matching the optional matchers.
 func (d *Distributor) LabelValuesForLabelName(ctx context.Context, from, to model.Time, labelName model.LabelName, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, error) {
-	replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx)
+	replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx, matchers)
 	if err != nil {
 		return nil, err
 	}
@@ -2522,7 +2656,7 @@ func (d *Distributor) LabelValuesForLabelName(ctx context.Context, from, to mode
 //   - inmemory: in-memory series in ingesters.
 //   - active: in-memory series in ingesters which are also tracked as active ones.
 func (d *Distributor) LabelNamesAndValues(ctx context.Context, matchers []*labels.Matcher, countMethod cardinality.CountMethod) (*ingester_client.LabelNamesAndValuesResponse, error) {
-	replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx)
+	replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx, matchers)
 	if err != nil {
 		return nil, err
 	}
@@ -2678,7 +2812,7 @@ func (d *Distributor) LabelValuesCardinality(ctx context.Context, labelNames []m
 // labelValuesCardinality queries ingesters for label values cardinality of a set of labelNames
 // Returns a LabelValuesCardinalityResponse where each item contains an exclusive label name and associated label values
 func (d *Distributor) labelValuesCardinality(ctx context.Context, labelNames []model.LabelName, matchers []*labels.Matcher, countMethod cardinality.CountMethod) (*ingester_client.LabelValuesCardinalityResponse, error) {
-	replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx)
+	replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx, matchers)
 	if err != nil {
 		return nil, err
 	}
@@ -2902,7 +3036,7 @@ func (d *Distributor) ActiveNativeHistogramMetrics(ctx context.Context, matchers
 }
 
 func (d *Distributor) deduplicateActiveSeries(ctx context.Context, matchers []*labels.Matcher, nativeHistograms bool) (*activeSeriesResponse, error) {
-	replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx)
+	replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx, matchers)
 	if err != nil {
 		return nil, err
 	}
@@ -3205,7 +3339,7 @@ func maxFromZones[T ~float64 | ~uint64](seriesCountByZone map[string]T) (val T) 
 // LabelNames returns the names of all labels from series with samples timestamp between from and to, and matching
 // the input optional series label matchers. The returned label names are sorted.
 func (d *Distributor) LabelNames(ctx context.Context, from, to model.Time, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, error) {
-	replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx)
+	replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx, matchers)
 	if err != nil {
 		return nil, err
 	}
@@ -3246,7 +3380,7 @@ func (d *Distributor) LabelNames(ctx context.Context, from, to model.Time, hints
 // MetricsForLabelMatchers returns a list of series with samples timestamps between from and through, and series labels
 // matching the optional label matchers. The returned series are not sorted.
 func (d *Distributor) MetricsForLabelMatchers(ctx context.Context, from, through model.Time, hints *storage.SelectHints, matchers ...*labels.Matcher) ([]labels.Labels, error) {
-	replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx)
+	replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx, matchers)
 	if err != nil {
 		return nil, err
 	}
@@ -3266,7 +3400,7 @@ func (d *Distributor) MetricsForLabelMatchers(ctx context.Context, from, through
 		}
 
 		// Adjust the limit passed with the downstream request to ingesters with respect to how series are sharded.
-		req.Limit = int64(d.adjustQueryRequestLimit(ctx, userID, resultLimit))
+		req.Limit = int64(d.adjustQueryRequestLimit(ctx, userID, matchers, resultLimit))
 	}
 
 	resps, err := forReplicationSets(ctx, d, replicationSets, func(ctx context.Context, client ingester_client.IngesterClient) (*ingester_client.MetricsForLabelMatchersResponse, error) {
@@ -3320,16 +3454,25 @@ respsLoop:
 
 // adjustQueryRequestLimit recalculated the query request limit.
 // The returned value is the approximation, a query to an individual shard needs to be limited with.
-func (d *Distributor) adjustQueryRequestLimit(ctx context.Context, userID string, limit int) int {
+func (d *Distributor) adjustQueryRequestLimit(ctx context.Context, userID string, matchers []*labels.Matcher, limit int) int {
 	if limit == 0 {
 		return limit
 	}
 
 	var shardSize int
-	if d.cfg.IngestStorageConfig.Enabled {
+	if d.cfg.Compartments.Enabled {
+		// Sum the active partitions only across the compartments this query actually targets (the same set
+		// getIngesterReplicationSetsForQuery queries), otherwise a query pinned to a subset of compartments
+		// would divide its limit by the whole cluster's partitions and cap results below the requested limit.
+		for _, c := range d.compartmentRouter.CompartmentsForMatchers(userID, matchers) {
+			// ShuffleShardSize handles cases when a tenant has 0 or negative number of shards, or more shards than
+			// the number of active partitions in the ring.
+			shardSize += d.partitionInstanceRings.Get(c).PartitionRing().ShuffleShardSize(d.limits.IngestionPartitionsTenantShardSize(userID))
+		}
+	} else if d.cfg.IngestStorageConfig.Enabled {
 		// Get the number of active partitions in the ring. Here the ShuffleShardSize handles cases when a tenant has 0 or negative
 		// number of shards, or more shards than the number of active partitions in the ring.
-		shardSize = d.partitionsRing.PartitionRing().ShuffleShardSize(d.limits.IngestionPartitionsTenantShardSize(userID))
+		shardSize = d.partitionInstanceRings.Get(0).PartitionRing().ShuffleShardSize(d.limits.IngestionPartitionsTenantShardSize(userID))
 	} else {
 		// The ShuffleShard filters out read-only instances, leaving us with the number of active ingesters.
 		// Note, this can be costly to compute if the ring's caching is not enabled.
@@ -3358,7 +3501,13 @@ func (d *Distributor) adjustQueryRequestLimit(ctx context.Context, userID string
 
 // MetricsMetadata returns the metrics metadata based on the provided req.
 func (d *Distributor) MetricsMetadata(ctx context.Context, req *ingester_client.MetricsMetadataRequest) ([]scrape.MetricMetadata, error) {
-	replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx)
+	// The metadata request can include an optional filter on the metric name.
+	var matchers []*labels.Matcher
+	if req.Metric != "" {
+		matchers = []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, req.Metric)}
+	}
+
+	replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx, matchers)
 	if err != nil {
 		return nil, err
 	}
@@ -3395,7 +3544,8 @@ func (d *Distributor) MetricsMetadata(ctx context.Context, req *ingester_client.
 
 // UserStats returns statistics about the current user.
 func (d *Distributor) UserStats(ctx context.Context, countMethod cardinality.CountMethod) (*UserStats, error) {
-	replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx)
+	// UserStats counts all of a tenant's series, so there are no matchers to pass.
+	replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx, nil)
 	if err != nil {
 		return nil, err
 	}

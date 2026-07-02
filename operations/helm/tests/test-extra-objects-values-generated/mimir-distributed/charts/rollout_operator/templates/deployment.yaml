@@ -6,10 +6,10 @@ metadata:
   name: test-extra-objects-values-rollout-operator
   namespace: "citestns"
   labels:
-    helm.sh/chart: rollout-operator-0.48.0
+    helm.sh/chart: rollout-operator-0.50.0
     app.kubernetes.io/name: rollout-operator
     app.kubernetes.io/instance: test-extra-objects-values
-    app.kubernetes.io/version: "v0.36.1"
+    app.kubernetes.io/version: "v0.38.0"
     app.kubernetes.io/managed-by: Helm
 spec:
   replicas: 1
@@ -46,10 +46,11 @@ spec:
               drop:
               - ALL
             readOnlyRootFilesystem: true
-          image: docker.io/grafana/rollout-operator:v0.36.1
+          image: docker.io/grafana/rollout-operator:v0.38.0
           imagePullPolicy: IfNotPresent
           args:
           - -kubernetes.namespace=citestns
+          - -zpdb.pod-ready-annotation-patch-timeout=5s
           - -server-tls.enabled=true
           - -server-tls.self-signed-cert.secret-name=certificate
           - -server-tls.self-signed-cert.dns-name=test-extra-objects-values-rollout-operator.citestns.svc
@@ -72,3 +73,4 @@ spec:
             requests:
               cpu: 100m
               memory: 100Mi
+

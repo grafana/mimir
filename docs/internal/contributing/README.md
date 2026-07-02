@@ -21,6 +21,10 @@ Before a piece of work is finished:
 - If you have made any changes to flags or config, run `make reference-help doc` and commit the changed files to update the config file documentation.
 - Follow the [pull request template](.github/PULL_REQUEST_TEMPLATE.md) when creating PRs.
 
+## Experimental features
+
+By default, new experimental features should be disabled and gated behind a per-tenant limit or configuration flag, so that they can be tested and introduced gradually. Document the feature in [`docs/sources/mimir/configure/about-versioning.md`](../../sources/mimir/configure/about-versioning.md#experimental-features).
+
 ## Grafana Mimir Helm chart
 
 Please see the dedicated "[Contributing to Grafana Mimir helm chart](contributing-to-helm-chart.md)" page.
@@ -139,6 +143,13 @@ You have to commit the changes to `go.mod` and `go.sum` before submitting the pu
 ## Design patterns and Code conventions
 
 Please see the dedicated "[Design patterns and Code conventions](design-patterns-and-conventions.md)" page.
+
+For new Go code that combines multiple errors, prefer the standard library `errors.Join` over project-specific multi-error helpers unless surrounding APIs or existing local patterns require a specific error type or formatting.
+
+In Go tests, prefer `t.Context()` over `context.Background()` for contexts tied to test-scoped work.
+Use an explicit background context only when the operation must intentionally outlive the test context or exercise non-cancelable cleanup behavior.
+
+In Go tests, assert concrete expected errors when the error is deterministic. Prefer `require.ErrorIs`, `require.EqualError`, or status-code/detail assertions over generic `require.Error` checks.
 
 ## ⚠️ Unsafe memory tricks
 

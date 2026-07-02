@@ -46,6 +46,9 @@ Experimental configuration and flags are subject to change.
 
 The following features are currently experimental:
 
+- Auth
+  - Label-Based Access Control (LBAC) for metric read queries
+    - `-auth.label-access-control-enabled`
 - Cost attribution
   - Configure labels for cost attribution
     - `-validation.cost-attribution-labels-structured`
@@ -74,6 +77,9 @@ The following features are currently experimental:
   - `-ruler.max-independent-rule-evaluation-concurrency-per-tenant`
   - `-ruler.independent-rule-evaluation-concurrency-min-duration-percentage`
   - `-ruler.rule-evaluation-write-enabled`
+  - Push rule-result series to remote distributors over native gRPC instead of using the internal distributor.
+    - `-ruler.distributor.address`
+    - `-ruler.distributor.remote-timeout`
   - Allow control over rule sync intervals.
     - `ruler.outbound-sync-queue-poll-interval`
     - `ruler.inbound-sync-queue-poll-interval`
@@ -118,6 +124,7 @@ The following features are currently experimental:
   - Evaluate HA deduplication per timeseries within a write request instead of using the first series' labels for the whole request
     - `-distributor.ha-tracker.per-sample-dedupe`
 - Ingester
+  - `cortex_ingester_tsdb_head_chunks_max_mmapped` metric. Reports the maximum, across all per-tenant TSDBs, of the maximum number of head chunks memory-mapped for any individual series during the last memory-mapping pass. Temporary measurement metric; will be removed once we have collected enough data.
   - Add variance to chunks end time to spread writing across time (`-blocks-storage.tsdb.head-chunks-end-time-variance`)
   - Snapshotting of in-memory TSDB data on disk when shutting down (`-blocks-storage.tsdb.memory-snapshot-on-shutdown`)
   - Out-of-order samples ingestion (`-ingester.out-of-order-time-window`)
@@ -128,6 +135,10 @@ The following features are currently experimental:
   - Per-tenant early TSDB Head compaction based on owned series count:
     - `-ingester.early-head-compaction-owned-series-threshold`
     - `-ingester.early-head-compaction-min-estimated-series-reduction-percentage`
+  - Early TSDB Head compaction of non-owned series after ring changes:
+    - `-ingester.early-compaction-non-owned-series-enabled`
+    - `-ingester.early-compaction-non-owned-series-min-grace-period`
+    - `-ingester.early-compaction-non-owned-series-max-grace-period`
   - Timely head compaction (`-blocks-storage.tsdb.timely-head-compaction-enabled`)
   - Count owned series and use them to enforce series limits:
     - `-ingester.track-ingester-owned-series`
@@ -199,6 +210,9 @@ The following features are currently experimental:
   - Per-tenant max number of active series additional custom trackers is configurable via `-validation.max-active-series-additional-custom-trackers`.
   - File based Kafka consumer group offset tracking enforcement
     - `-ingest-storage.kafka.consumer-group-offset-commit-file-enforced`
+  - WarpStream-aware Kafka producer backend
+    - `-ingest-storage.kafka.backend`
+    - all flags beginning with `-ingest-storage.kafka.warpstream-`
 - Querier
   - Streaming label/value search HTTP endpoints `/api/v1/search/{metric_names,label_names,label_values}` returning NDJSON, mirroring the [Prometheus search API](https://github.com/prometheus/prometheus/pull/18573) (`-querier.experimental-search-api-enabled`).
   - Max concurrency for tenant federated queries (`-tenant-federation.max-concurrent`)
@@ -224,11 +238,14 @@ The following features are currently experimental:
   - Remote execution of queries in queriers: `-query-frontend.enable-remote-execution=true` and `-query-frontend.enable-multiple-node-remote-execution-requests=true`
   - Performing query sharding within MQE: `-query-frontend.use-mimir-query-engine-for-sharding=true`
   - Computing multiple aggregations over the same data without buffering: `-querier.mimir-query-engine.enable-multi-aggregation=true`
+  - Running splitting and caching inside MQE: `-query-frontend.use-mimir-query-engine-for-splitting-and-caching-results=true`
   - Rewriting of queries to optimize processing: `-query-frontend.rewrite-histogram-queries` and `-query-frontend.rewrite-propagate-matchers`
   - Enable experimental Prometheus extended range selector modifiers `smoothed` and `anchored` (`-query-frontend.enabled-promql-extended-range-selectors=smoothed,anchored`)
-  - Experimental PromQL functions and aggregations, including `mad_over_time`, `ts_of_min_over_time`, `ts_of_max_over_time`, `ts_of_first_over_time`, `ts_of_last_over_time`, `sort_by_label`, `sort_by_label_desc`, `limitk` and `limit_ratio` (`-query-frontend.enabled-promql-experimental-functions=...`)
+  - Experimental PromQL functions and aggregations, including `mad_over_time`, `ts_of_min_over_time`, `ts_of_max_over_time`, `ts_of_first_over_time`, `ts_of_last_over_time`, `sort_by_label`, `sort_by_label_desc`, `limitk`, `limit_ratio` and `histogram_quantiles` (`-query-frontend.enabled-promql-experimental-functions=...`)
 - Query-scheduler
   - `-query-scheduler.querier-forget-delay`
+  - `-query-scheduler.inflight-max-age-metric-enabled`
+  - `-query-scheduler.max-queue-length-metric-enabled`
 - Store-gateway
   - Eagerly loading some blocks on startup even when lazy loading is enabled `-blocks-storage.bucket-store.index-header.eager-loading-startup-enabled`
   - Allow more than the default of 3 store-gateways to own recent blocks `-store-gateway.dynamic-replication`

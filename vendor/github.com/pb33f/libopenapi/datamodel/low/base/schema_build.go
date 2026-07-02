@@ -318,6 +318,9 @@ func (s *Schema) Build(ctx context.Context, root *yaml.Node, idx *index.SpecInde
 
 	_, discLabel, discNode := utils.FindKeyNodeFullTop(DiscriminatorLabel, root.Content)
 	if discNode != nil {
+		if err := ValidateDiscriminatorMappingValueNodes(discNode); err != nil {
+			return err
+		}
 		var discriminator Discriminator
 		_ = low.BuildModel(discNode, &discriminator)
 		discriminator.KeyNode = discLabel

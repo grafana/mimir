@@ -11,6 +11,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/streamingpromql/operators"
 	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
+	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
@@ -119,9 +120,11 @@ func TestHistogramFunction_ReturnsGroupsFinishedFirstEarliest(t *testing.T) {
 				f: &histogramQuantile{
 					phArg: &testScalarOperator{},
 				},
-				inner:                    &operators.TestOperator{Series: testCase.inputSeries, MemoryConsumptionTracker: memoryConsumptionTracker},
-				innerSeriesMetricNames:   &operators.MetricNames{},
-				memoryConsumptionTracker: memoryConsumptionTracker,
+				histogramGrouper: histogramGrouper{
+					inner:                    &operators.TestOperator{Series: testCase.inputSeries, MemoryConsumptionTracker: memoryConsumptionTracker},
+					innerSeriesMetricNames:   &operators.MetricNames{},
+					memoryConsumptionTracker: memoryConsumptionTracker,
+				},
 			}
 
 			outputSeries, err := hOp.SeriesMetadata(ctx, nil)
@@ -135,6 +138,33 @@ func TestHistogramFunction_ReturnsGroupsFinishedFirstEarliest(t *testing.T) {
 // TestHistogramFunction_MemoryTracking verifies that seriesGroupPairs and remainingGroups
 // are accounted for in the memory consumption tracker.
 func TestHistogramFunction_MemoryTracking(t *testing.T) {
+	requireHistogramGrouperMemoryTracked(t, func(grouper histogramGrouper, tracker *limiter.MemoryConsumptionTracker) types.InstantVectorOperator {
+		return &HistogramFunction{
+			f: &histogramQuantile{
+				phArg:                    &testScalarOperator{},
+				memoryConsumptionTracker: tracker,
+			},
+			histogramGrouper: grouper,
+		}
+	})
+}
+
+func TestHistogramQuantilesFunction_MemoryTracking(t *testing.T) {
+	// histogram_quantiles uses the same grouping (via the shared histogramGrouper), so the tracked
+	// allocations are identical regardless of the number of quantiles requested.
+	requireHistogramGrouperMemoryTracked(t, func(grouper histogramGrouper, _ *limiter.MemoryConsumptionTracker) types.InstantVectorOperator {
+		return &HistogramQuantilesFunction{
+			histogramGrouper: grouper,
+			quantileLabelOp:  &testStringOperator{value: "q"},
+			quantileArgs:     []types.ScalarOperator{&testScalarOperator{}, &testScalarOperator{}},
+		}
+	})
+}
+
+// requireHistogramGrouperMemoryTracked checks that an operator built on the shared histogramGrouper
+// tracks the pooled seriesGroupPairs and remainingGroups allocations while reading, and releases
+// them after Close. makeOp builds the operator under test from the shared grouper.
+func requireHistogramGrouperMemoryTracked(t *testing.T, makeOp func(grouper histogramGrouper, tracker *limiter.MemoryConsumptionTracker) types.InstantVectorOperator) {
 	ctx := context.Background()
 
 	// A simple classic histogram: 4 bucket series + 1 implicit classic group = 5 groups total.
@@ -146,17 +176,13 @@ func TestHistogramFunction_MemoryTracking(t *testing.T) {
 	}
 
 	tracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
-	hOp := &HistogramFunction{
-		f: &histogramQuantile{
-			phArg:                    &testScalarOperator{},
-			memoryConsumptionTracker: tracker,
-		},
+	op := makeOp(histogramGrouper{
 		inner:                    &operators.TestOperator{Series: inputSeries, MemoryConsumptionTracker: tracker},
 		innerSeriesMetricNames:   &operators.MetricNames{},
 		memoryConsumptionTracker: tracker,
-	}
+	}, tracker)
 
-	_, err := hOp.SeriesMetadata(ctx, nil)
+	_, err := op.SeriesMetadata(ctx, nil)
 	require.NoError(t, err)
 
 	// seriesGroupPairs: pool rounds 4 up to 4 (already a power of two).
@@ -170,9 +196,9 @@ func TestHistogramFunction_MemoryTracking(t *testing.T) {
 	require.Equal(t, expectedBGP, tracker.CurrentEstimatedMemoryConsumptionBytesBySource(limiter.BucketGroupPointerSlices),
 		"remainingGroups memory should be tracked")
 
-	err = hOp.FinishedReading(ctx)
+	err = op.FinishedReading(ctx)
 	require.NoError(t, err)
-	hOp.Close()
+	op.Close()
 
 	require.Equal(t, uint64(0), tracker.CurrentEstimatedMemoryConsumptionBytesBySource(limiter.SeriesGroupPairSlices),
 		"seriesGroupPairs memory should be released after Close")

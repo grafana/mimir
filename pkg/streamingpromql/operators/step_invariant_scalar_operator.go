@@ -55,6 +55,11 @@ func (s *StepInvariantScalarOperator) GetValues(ctx context.Context) (types.Scal
 	}
 
 	if s.originalTimeRange.IsInstant || s.originalTimeRange.StepCount <= 1 {
+		// The inner operator will be evaluated at T=0, so we still need to set the correct timestamp for any output samples.
+		for i := range data.Samples {
+			data.Samples[i].T = s.originalTimeRange.StartT
+		}
+
 		return data, nil
 	}
 
@@ -69,9 +74,7 @@ func (s *StepInvariantScalarOperator) GetValues(ctx context.Context) (types.Scal
 			return types.ScalarData{}, err
 		}
 
-		floats = append(floats, data.Samples[0])
-
-		for ts := s.originalTimeRange.StartT + s.originalTimeRange.IntervalMilliseconds; ts <= s.originalTimeRange.EndT; ts += s.originalTimeRange.IntervalMilliseconds {
+		for ts := s.originalTimeRange.StartT; ts <= s.originalTimeRange.EndT; ts += s.originalTimeRange.IntervalMilliseconds {
 			floats = append(floats, promql.FPoint{
 				T: ts,
 				F: data.Samples[0].F,

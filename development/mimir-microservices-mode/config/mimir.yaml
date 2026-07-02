@@ -204,6 +204,7 @@ limits:
   ha_cluster_label: ha_cluster
   ha_replica_label: ha_replica
   ha_max_clusters: 10
+  enabled_promql_experimental_functions: all
 
 runtime_config:
   file: /etc/mimir/runtime.yaml

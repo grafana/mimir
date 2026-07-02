@@ -3,6 +3,7 @@
 package core
 
 import (
+	"context"
 	"fmt"
 	"slices"
 	"strings"
@@ -19,10 +20,11 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
+//node:generate
 type AggregateExpression struct {
 	*AggregateExpressionDetails
-	Inner planning.Node
-	Param planning.Node
+	Inner planning.Node `node:"child,label=expression"`
+	Param planning.Node `node:"child,nilable,label=parameter"`
 }
 
 func (a *AggregateExpression) Describe() string {
@@ -65,54 +67,6 @@ func (a *AggregateExpression) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_AGGREGATE_EXPRESSION
 }
 
-func (a *AggregateExpression) Child(idx int) planning.Node {
-	switch idx {
-	case 0:
-		return a.Inner
-	case 1:
-		if a.Param == nil {
-			panic("cannot get AggregateExpression child at index 1 if there is no parameter")
-		}
-		return a.Param
-	default:
-		panic(fmt.Sprintf("node of type AggregateExpression supports at most 2 children, but attempted to get child at index %d", idx))
-	}
-}
-
-func (a *AggregateExpression) ChildCount() int {
-	if a.Param == nil {
-		return 1
-	}
-
-	return 2
-}
-
-func (a *AggregateExpression) SetChildren(children []planning.Node) error {
-	switch len(children) {
-	case 1:
-		a.Inner, a.Param = children[0], nil
-	case 2:
-		a.Inner, a.Param = children[0], children[1]
-	default:
-		return fmt.Errorf("node of type AggregateExpression expects 1 or 2 children, but got %d", len(children))
-	}
-
-	return nil
-}
-
-func (a *AggregateExpression) ReplaceChild(idx int, node planning.Node) error {
-	switch idx {
-	case 0:
-		a.Inner = node
-		return nil
-	case 1:
-		a.Param = node
-		return nil
-	default:
-		return fmt.Errorf("node of type AggregateExpression expects 1 or 2 children, but attempted to replace child at index %d", idx)
-	}
-}
-
 func (a *AggregateExpression) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
 	otherAggregateExpression, ok := other.(*AggregateExpression)
 
@@ -139,16 +93,8 @@ func (a *AggregateExpressionDetails) MergeHints(other *AggregateExpressionDetail
 	return nil
 }
 
-func (a *AggregateExpression) ChildrenLabels() []string {
-	if a.Param == nil {
-		return []string{""}
-	}
-
-	return []string{"expression", "parameter"}
-}
-
-func MaterializeAggregateExpression(a *AggregateExpression, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
-	inner, err := materializer.ConvertNodeToInstantVectorOperator(a.Inner, timeRange)
+func MaterializeAggregateExpression(ctx context.Context, a *AggregateExpression, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
+	inner, err := materializer.ConvertNodeToInstantVectorOperator(ctx, a.Inner, timeRange)
 	if err != nil {
 		return nil, fmt.Errorf("could not create inner operator for AggregateExpression: %w", err)
 	}
@@ -157,7 +103,7 @@ func MaterializeAggregateExpression(a *AggregateExpression, materializer *planni
 
 	switch a.Op {
 	case AGGREGATION_TOPK, AGGREGATION_BOTTOMK:
-		param, err := materializer.ConvertNodeToScalarOperator(a.Param, timeRange)
+		param, err := materializer.ConvertNodeToScalarOperator(ctx, a.Param, timeRange)
 		if err != nil {
 			return nil, fmt.Errorf("could not create parameter operator for AggregateExpression %s: %w", a.Op.String(), err)
 		}
@@ -165,7 +111,7 @@ func MaterializeAggregateExpression(a *AggregateExpression, materializer *planni
 		o = topkbottomk.New(inner, param, timeRange, a.Grouping, a.Without, a.Op == AGGREGATION_TOPK, params.MemoryConsumptionTracker, a.GetExpressionPosition().ToPrometheusType())
 
 	case AGGREGATION_LIMITK:
-		param, err := materializer.ConvertNodeToScalarOperator(a.Param, timeRange)
+		param, err := materializer.ConvertNodeToScalarOperator(ctx, a.Param, timeRange)
 		if err != nil {
 			return nil, fmt.Errorf("could not create parameter operator for AggregateExpression %s: %w", a.Op.String(), err)
 		}
@@ -173,7 +119,7 @@ func MaterializeAggregateExpression(a *AggregateExpression, materializer *planni
 		o = limitklimitratio.NewLimitK(inner, param, timeRange, a.Grouping, a.Without, params.MemoryConsumptionTracker, a.GetExpressionPosition().ToPrometheusType())
 
 	case AGGREGATION_LIMIT_RATIO:
-		param, err := materializer.ConvertNodeToScalarOperator(a.Param, timeRange)
+		param, err := materializer.ConvertNodeToScalarOperator(ctx, a.Param, timeRange)
 		if err != nil {
 			return nil, fmt.Errorf("could not create parameter operator for AggregateExpression %s: %w", a.Op.String(), err)
 		}
@@ -181,7 +127,7 @@ func MaterializeAggregateExpression(a *AggregateExpression, materializer *planni
 		o = limitklimitratio.NewLimitRatio(inner, param, timeRange, a.Grouping, a.Without, params.MemoryConsumptionTracker, a.GetExpressionPosition().ToPrometheusType())
 
 	case AGGREGATION_QUANTILE:
-		param, err := materializer.ConvertNodeToScalarOperator(a.Param, timeRange)
+		param, err := materializer.ConvertNodeToScalarOperator(ctx, a.Param, timeRange)
 		if err != nil {
 			return nil, fmt.Errorf("could not create parameter operator for AggregateExpression %s: %w", a.Op.String(), err)
 		}
@@ -192,7 +138,7 @@ func MaterializeAggregateExpression(a *AggregateExpression, materializer *planni
 		}
 
 	case AGGREGATION_COUNT_VALUES:
-		param, err := materializer.ConvertNodeToStringOperator(a.Param, timeRange)
+		param, err := materializer.ConvertNodeToStringOperator(ctx, a.Param, timeRange)
 		if err != nil {
 			return nil, fmt.Errorf("could not create parameter operator for AggregateExpression %s: %w", a.Op.String(), err)
 		}

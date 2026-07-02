@@ -90,6 +90,8 @@ type Config struct {
 	UserCloseToLimitPercentageThreshold int `yaml:"user_close_to_limit_percentage_threshold"`
 
 	EnableVerboseSeriesCreationDeletionPrometheusMetrics bool `yaml:"enable_verbose_series_creation_deletion_prometheus_metrics" category:"experimental"`
+
+	MinTimeBetweenShardsCleanup time.Duration `yaml:"min_time_between_shards_cleanup" category:"experimental"`
 }
 
 func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
@@ -132,6 +134,8 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.IntVar(&c.UserCloseToLimitPercentageThreshold, "usage-tracker.user-close-to-limit-percentage-threshold", 90, "Percentage of the local series limit after which a user is considered close to the limit. A user is close to the limit if their series count is above this percentage of their local limit.")
 
 	f.BoolVar(&c.EnableVerboseSeriesCreationDeletionPrometheusMetrics, "usage-tracker.enable-verbose-series-creation-deletion-prometheus-metrics", false, "Enable verbose series creation and deletion Prometheus metrics. When enabled, two additional counters per user and partition are exposed (series created and series removed), increasing the cardinality of exposed metrics and impacting the time and resources needed for scraping in deployments with multiple partitions per pod.")
+
+	f.DurationVar(&c.MinTimeBetweenShardsCleanup, "usage-tracker.min-time-between-shards-cleanup", 25*time.Millisecond, "Minimum time between cleaning up consecutive shards during the periodic idle-series cleanup. An artificial delay is inserted between shards so the cleanup does not hold shard mutexes back-to-back and block latency-sensitive series-tracking calls, which matters most for large single-tenant instances. Set to 0 to disable.")
 }
 
 func (c *Config) ValidateForClient() error {
@@ -283,7 +287,7 @@ func NewUsageTracker(cfg Config, instanceRing *ring.Ring, partitionRing *ring.Mu
 
 	// Create Kafka writer for events storage.
 	if t.cfg.EventsStorageWriter.AutoCreateTopicEnabled {
-		if err := ingest.CreateTopic(t.cfg.EventsStorageWriter, t.logger); err != nil {
+		if err := ingest.CreateTopics(t.cfg.EventsStorageWriter, t.logger, t.cfg.EventsStorageWriter.Topic); err != nil {
 			return nil, errors.Wrap(err, "failed to create Kafka topic for usage-tracker events")
 		}
 	}
@@ -296,7 +300,7 @@ func NewUsageTracker(cfg Config, instanceRing *ring.Ring, partitionRing *ring.Mu
 
 	// Create Kafka writer for snapshots metadata storage.
 	if t.cfg.SnapshotsMetadataWriter.AutoCreateTopicEnabled {
-		if err := ingest.CreateTopic(t.cfg.SnapshotsMetadataWriter, t.logger); err != nil {
+		if err := ingest.CreateTopics(t.cfg.SnapshotsMetadataWriter, t.logger, t.cfg.SnapshotsMetadataWriter.Topic); err != nil {
 			return nil, errors.Wrap(err, "failed to create Kafka topic for usage-tracker snapshots metadata")
 		}
 	}
@@ -989,12 +993,12 @@ func parseInstanceID(instanceID string) (int32, error) {
 	}
 
 	// Parse the instance sequence number.
-	seq, err := strconv.Atoi(match[1])
+	seq, err := strconv.ParseInt(match[1], 10, 32)
 	if err != nil {
 		return 0, fmt.Errorf("no sequence number in instance ID %s", instanceID)
 	}
 
-	return int32(seq), nil //nolint:gosec
+	return int32(seq), nil
 }
 
 func snapshotFilename(ts time.Time, instanceID string, partitionID int32) string {

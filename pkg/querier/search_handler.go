@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/grafana/dskit/tenant"
@@ -48,30 +49,99 @@ const (
 	maxSearchTermsPerRequest = 32
 )
 
+// defaultSuccessTrailer is the byte-for-byte JSON output for the common
+// "no warnings, has_more=false" trailer, written verbatim to skip the
+// json.Encoder reflection round-trip for the most frequent request shape.
+var defaultSuccessTrailer = []byte(`{"status":"success","has_more":false}` + "\n")
+
+// Per-(endpoint × score) pools for the per-request batch envelope. The
+// pool stores the envelope wrapper (not just the slice) so the
+// per-request wrapper alloc is also amortised, and so the encoded
+// `*envelope` interface boxing is reused across flushes within a
+// request. Each pool's slice is sized at construction to the default
+// batch size; requests with a non-default batchSize get a fresh
+// allocation (the pool would otherwise return undersized slices that
+// the append loop would grow, defeating the point of pooling and
+// re-poisoning the pool with ever-larger backing arrays).
+var (
+	searchLabelNamePool = sync.Pool{
+		New: func() any {
+			return &searchBatchEnvelope[searchLabelNameRecord]{Results: make([]searchLabelNameRecord, 0, searchDefaultBatchSize)}
+		},
+	}
+	searchLabelNameWithScorePool = sync.Pool{
+		New: func() any {
+			return &searchBatchEnvelope[searchLabelNameRecordWithScore]{Results: make([]searchLabelNameRecordWithScore, 0, searchDefaultBatchSize)}
+		},
+	}
+	searchLabelValuePool = sync.Pool{
+		New: func() any {
+			return &searchBatchEnvelope[searchLabelValueRecord]{Results: make([]searchLabelValueRecord, 0, searchDefaultBatchSize)}
+		},
+	}
+	searchLabelValueWithScorePool = sync.Pool{
+		New: func() any {
+			return &searchBatchEnvelope[searchLabelValueRecordWithScore]{Results: make([]searchLabelValueRecordWithScore, 0, searchDefaultBatchSize)}
+		},
+	}
+	searchMetricNamePool = sync.Pool{
+		New: func() any {
+			return &searchBatchEnvelope[searchMetricNameRecord]{Results: make([]searchMetricNameRecord, 0, searchDefaultBatchSize)}
+		},
+	}
+	searchMetricNameWithScorePool = sync.Pool{
+		New: func() any {
+			return &searchBatchEnvelope[searchMetricNameRecordWithScore]{Results: make([]searchMetricNameRecordWithScore, 0, searchDefaultBatchSize)}
+		},
+	}
+)
+
 // Per-endpoint result records. The label-values endpoint uses "value" as
 // its JSON key; label-names and metric-names use "name". Matches the
 // upstream Prometheus result shapes (searchLabelNameResult,
 // searchLabelValueResult, searchMetricNameResult).
+//
+// Each endpoint has two record variants: a no-score variant used when
+// include_score=false (Score field absent from the wire), and a
+// *WithScore variant used when include_score=true (Score is a non-pointer
+// float64, unconditionally emitted). Two struct types let the encoder
+// serialise the score inline without paying the per-record `*float64`
+// heap allocation that `omitempty` on a pointer would require.
 
 type searchLabelNameRecord struct {
-	Name  string   `json:"name"`
-	Score *float64 `json:"score,omitempty"`
+	Name string `json:"name"`
+}
+
+type searchLabelNameRecordWithScore struct {
+	Name  string  `json:"name"`
+	Score float64 `json:"score"`
 }
 
 type searchLabelValueRecord struct {
-	Value string   `json:"value"`
-	Score *float64 `json:"score,omitempty"`
+	Value string `json:"value"`
+}
+
+type searchLabelValueRecordWithScore struct {
+	Value string  `json:"value"`
+	Score float64 `json:"score"`
 }
 
 // searchMetricNameRecord carries optional Type/Help/Unit fields for the
 // metric-names endpoint. They are not yet populated by Mimir but the wire
 // shape is kept compatible with upstream.
 type searchMetricNameRecord struct {
-	Name  string   `json:"name"`
-	Score *float64 `json:"score,omitempty"`
-	Type  string   `json:"type,omitempty"`
-	Help  string   `json:"help,omitempty"`
-	Unit  string   `json:"unit,omitempty"`
+	Name string `json:"name"`
+	Type string `json:"type,omitempty"`
+	Help string `json:"help,omitempty"`
+	Unit string `json:"unit,omitempty"`
+}
+
+type searchMetricNameRecordWithScore struct {
+	Name  string  `json:"name"`
+	Score float64 `json:"score"`
+	Type  string  `json:"type,omitempty"`
+	Help  string  `json:"help,omitempty"`
+	Unit  string  `json:"unit,omitempty"`
 }
 
 // searchBatchEnvelope is the per-line JSON object for streaming result
@@ -386,13 +456,18 @@ func SearchLabelNamesHandler(queryable storage.Queryable, querierCfg Config, _ *
 			return searcher.SearchLabelNames(r.Context(), req.params, req.hints, m...)
 		})
 		defer rs.Close()
-		streamSearchNDJSON(w, rs, req, func(r storage.SearchResult) searchLabelNameRecord {
-			rec := searchLabelNameRecord{Name: r.Value}
-			if req.includeScore {
-				s := r.Score
-				rec.Score = &s
-			}
-			return rec
+		if req.includeScore {
+			env := getSearchEnvelope[searchLabelNameRecordWithScore](req, &searchLabelNameWithScorePool)
+			defer putSearchEnvelope(env, &searchLabelNameWithScorePool, req)
+			streamSearchNDJSON(w, rs, req, env, func(r storage.SearchResult) searchLabelNameRecordWithScore {
+				return searchLabelNameRecordWithScore{Name: r.Value, Score: r.Score}
+			})
+			return
+		}
+		env := getSearchEnvelope[searchLabelNameRecord](req, &searchLabelNamePool)
+		defer putSearchEnvelope(env, &searchLabelNamePool, req)
+		streamSearchNDJSON(w, rs, req, env, func(r storage.SearchResult) searchLabelNameRecord {
+			return searchLabelNameRecord{Name: r.Value}
 		})
 	})
 }
@@ -419,13 +494,18 @@ func SearchLabelValuesHandler(queryable storage.Queryable, querierCfg Config, _ 
 			return searcher.SearchLabelValues(r.Context(), req.labelName, req.params, req.hints, m...)
 		})
 		defer rs.Close()
-		streamSearchNDJSON(w, rs, req, func(r storage.SearchResult) searchLabelValueRecord {
-			rec := searchLabelValueRecord{Value: r.Value}
-			if req.includeScore {
-				s := r.Score
-				rec.Score = &s
-			}
-			return rec
+		if req.includeScore {
+			env := getSearchEnvelope[searchLabelValueRecordWithScore](req, &searchLabelValueWithScorePool)
+			defer putSearchEnvelope(env, &searchLabelValueWithScorePool, req)
+			streamSearchNDJSON(w, rs, req, env, func(r storage.SearchResult) searchLabelValueRecordWithScore {
+				return searchLabelValueRecordWithScore{Value: r.Value, Score: r.Score}
+			})
+			return
+		}
+		env := getSearchEnvelope[searchLabelValueRecord](req, &searchLabelValuePool)
+		defer putSearchEnvelope(env, &searchLabelValuePool, req)
+		streamSearchNDJSON(w, rs, req, env, func(r storage.SearchResult) searchLabelValueRecord {
+			return searchLabelValueRecord{Value: r.Value}
 		})
 	})
 }
@@ -454,12 +534,24 @@ func SearchMetricNamesHandler(queryable storage.Queryable, querierCfg Config, _ 
 			return searcher.SearchLabelValues(ctx, model.MetricNameLabel, req.params, req.hints, m...)
 		})
 		defer rs.Close()
-		streamSearchNDJSON(w, rs, req, func(r storage.SearchResult) searchMetricNameRecord {
+		if req.includeScore {
+			env := getSearchEnvelope[searchMetricNameRecordWithScore](req, &searchMetricNameWithScorePool)
+			defer putSearchEnvelope(env, &searchMetricNameWithScorePool, req)
+			streamSearchNDJSON(w, rs, req, env, func(r storage.SearchResult) searchMetricNameRecordWithScore {
+				rec := searchMetricNameRecordWithScore{Name: r.Value, Score: r.Score}
+				if md := r.Metadata; md != nil {
+					rec.Type = string(md.Type)
+					rec.Help = md.Help
+					rec.Unit = md.Unit
+				}
+				return rec
+			})
+			return
+		}
+		env := getSearchEnvelope[searchMetricNameRecord](req, &searchMetricNamePool)
+		defer putSearchEnvelope(env, &searchMetricNamePool, req)
+		streamSearchNDJSON(w, rs, req, env, func(r storage.SearchResult) searchMetricNameRecord {
 			rec := searchMetricNameRecord{Name: r.Value}
-			if req.includeScore {
-				s := r.Score
-				rec.Score = &s
-			}
 			if md := r.Metadata; md != nil {
 				rec.Type = string(md.Type)
 				rec.Help = md.Help
@@ -517,6 +609,28 @@ func writeSearcherForRequestError(w http.ResponseWriter, err error) {
 	writePreFlushSearchError(w, err)
 }
 
+// getSearchEnvelope returns the per-batch envelope for the request. Uses
+// the pool only when req.batchSize matches the pool's pre-allocated
+// capacity; otherwise allocates a fresh envelope so an outsized user
+// batchSize does not grow the pool's backing slices indefinitely.
+func getSearchEnvelope[T any](req *searchRequest, pool *sync.Pool) *searchBatchEnvelope[T] {
+	if req.batchSize == searchDefaultBatchSize {
+		return pool.Get().(*searchBatchEnvelope[T])
+	}
+	return &searchBatchEnvelope[T]{Results: make([]T, 0, req.batchSize)}
+}
+
+// putSearchEnvelope returns env to pool when req.batchSize matches the
+// default; for non-default sizes the envelope is dropped on the floor
+// (matches getSearchEnvelope's allocation rule).
+func putSearchEnvelope[T any](env *searchBatchEnvelope[T], pool *sync.Pool, req *searchRequest) {
+	if req.batchSize != searchDefaultBatchSize {
+		return
+	}
+	env.Results = env.Results[:0]
+	pool.Put(env)
+}
+
 // streamSearchNDJSON drains rs and writes NDJSON to w. One JSON object per
 // line; results batched per req.batchSize; flusher.Flush() called after each
 // batch line. NDJSON Content-Type is set lazily on the first batch flush so
@@ -531,32 +645,37 @@ func writeSearcherForRequestError(w http.ResponseWriter, err error) {
 // any per-record enrichment (e.g. metadata Type/Help/Unit for
 // metric-names) live in the per-endpoint builder so the wire-shape
 // contract is enforced at the call site.
-func streamSearchNDJSON[T any](w http.ResponseWriter, rs storage.SearchResultSet, req *searchRequest, build func(storage.SearchResult) T) {
+//
+// env is the pre-built per-batch envelope. The caller pools it (or
+// fresh-allocates it for non-default batch sizes) and is responsible for
+// returning it to the pool on exit; this function only resets
+// env.Results back to length zero between flushes.
+func streamSearchNDJSON[T any](w http.ResponseWriter, rs storage.SearchResultSet, req *searchRequest, env *searchBatchEnvelope[T], build func(storage.SearchResult) T) {
 	flusher, _ := w.(http.Flusher)
 	enc := json.NewEncoder(w)
 	// Don't HTML-escape — search values may legitimately contain <, >, & and
 	// we're not emitting into an HTML context.
 	enc.SetEscapeHTML(false)
 
+	env.Results = env.Results[:0]
+
 	flushedAny := false
 	emitted := 0
-	batch := make([]T, 0, req.batchSize)
 	flushBatch := func() error {
-		if len(batch) == 0 {
+		if len(env.Results) == 0 {
 			return nil
 		}
 		if !flushedAny {
 			w.Header().Set("Content-Type", searchAPIContentType)
 			w.Header().Set(worker.ResponseStreamingEnabledHeader, "true")
 		}
-		env := searchBatchEnvelope[T]{Results: batch}
 		if err := enc.Encode(env); err != nil {
 			return err
 		}
 		if flusher != nil {
 			flusher.Flush()
 		}
-		batch = batch[:0]
+		env.Results = env.Results[:0]
 		flushedAny = true
 		return nil
 	}
@@ -571,8 +690,8 @@ func streamSearchNDJSON[T any](w http.ResponseWriter, rs storage.SearchResultSet
 		if req.limit > 0 && emitted > req.limit {
 			break
 		}
-		batch = append(batch, build(rs.At()))
-		if len(batch) >= req.batchSize {
+		env.Results = append(env.Results, build(rs.At()))
+		if len(env.Results) >= req.batchSize {
 			if err := flushBatch(); err != nil {
 				return
 			}
@@ -643,7 +762,15 @@ func streamSearchNDJSON[T any](w http.ResponseWriter, rs storage.SearchResultSet
 	case clampEnforcedMin >= 0 && emitted >= clampEnforcedMin:
 		trailer.HasMore = true
 	}
-	_ = enc.Encode(trailer)
+	// Fast path for the common case: success trailer with no warnings and
+	// no has_more flag. Bypassing json.Encoder skips one bytes allocation
+	// per request and is the only trailer shape the encoder would have
+	// emitted byte-for-byte identical to defaultSuccessTrailer anyway.
+	if !trailer.HasMore && len(trailer.Warnings) == 0 {
+		_, _ = w.Write(defaultSuccessTrailer)
+	} else {
+		_ = enc.Encode(trailer)
+	}
 	if flusher != nil {
 		flusher.Flush()
 	}

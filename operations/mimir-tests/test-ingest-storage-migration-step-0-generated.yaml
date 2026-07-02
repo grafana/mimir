@@ -990,7 +990,7 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "8"
-        image: grafana/mimir:3.0.6
+        image: grafana/mimir:3.1.2
         imagePullPolicy: IfNotPresent
         name: distributor
         ports:
@@ -1011,6 +1011,7 @@ spec:
             memory: 4Gi
           requests:
             cpu: "2"
+            ephemeral-storage: 50Mi
             memory: 2Gi
         volumeMounts:
         - mountPath: /etc/mimir
@@ -1090,7 +1091,7 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "5"
-        image: grafana/mimir:3.0.6
+        image: grafana/mimir:3.1.2
         imagePullPolicy: IfNotPresent
         name: querier
         ports:
@@ -1111,6 +1112,7 @@ spec:
             memory: 24Gi
           requests:
             cpu: "1"
+            ephemeral-storage: 50Mi
             memory: 12Gi
         volumeMounts:
         - mountPath: /etc/mimir
@@ -1169,7 +1171,7 @@ spec:
         - -shutdown-delay=90s
         - -target=query-frontend
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.6
+        image: grafana/mimir:3.1.2
         imagePullPolicy: IfNotPresent
         name: query-frontend
         ports:
@@ -1185,10 +1187,11 @@ spec:
           timeoutSeconds: 1
         resources:
           limits:
-            memory: 1200Mi
+            memory: 4Gi
           requests:
             cpu: "2"
-            memory: 600Mi
+            ephemeral-storage: 50Mi
+            memory: 2Gi
         volumeMounts:
         - mountPath: /etc/mimir
           name: overrides
@@ -1242,7 +1245,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=query-scheduler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.6
+        image: grafana/mimir:3.1.2
         imagePullPolicy: IfNotPresent
         name: query-scheduler
         ports:
@@ -1261,6 +1264,7 @@ spec:
             memory: 2Gi
           requests:
             cpu: "2"
+            ephemeral-storage: 50Mi
             memory: 1Gi
         volumeMounts:
         - mountPath: /etc/mimir
@@ -1299,7 +1303,7 @@ spec:
         - -use-zone-tracker=true
         - -zone-tracker.config-map-name=rollout-operator-zone-tracker
         - -zpdb.pod-ready-annotation-patch-timeout=5s
-        image: grafana/rollout-operator:v0.37.0
+        image: grafana/rollout-operator:v0.38.0
         imagePullPolicy: IfNotPresent
         name: rollout-operator
         ports:
@@ -1391,7 +1395,7 @@ spec:
         - -store-gateway.tenant-shard-size=3
         - -target=ruler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.6
+        image: grafana/mimir:3.1.2
         imagePullPolicy: IfNotPresent
         name: ruler
         ports:
@@ -1489,7 +1493,7 @@ spec:
         - -target=querier
         - -usage-stats.installation-mode=jsonnet
         env: []
-        image: grafana/mimir:3.0.6
+        image: grafana/mimir:3.1.2
         imagePullPolicy: IfNotPresent
         name: ruler-querier
         ports:
@@ -1510,6 +1514,7 @@ spec:
             memory: 24Gi
           requests:
             cpu: "1"
+            ephemeral-storage: 50Mi
             memory: 12Gi
         volumeMounts:
         - mountPath: /etc/mimir
@@ -1574,7 +1579,7 @@ spec:
         - -shutdown-delay=90s
         - -target=query-frontend
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.6
+        image: grafana/mimir:3.1.2
         imagePullPolicy: IfNotPresent
         name: ruler-query-frontend
         ports:
@@ -1590,10 +1595,11 @@ spec:
           timeoutSeconds: 1
         resources:
           limits:
-            memory: 1200Mi
+            memory: 4Gi
           requests:
             cpu: "2"
-            memory: 600Mi
+            ephemeral-storage: 50Mi
+            memory: 2Gi
         volumeMounts:
         - mountPath: /etc/mimir
           name: overrides
@@ -1647,7 +1653,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=query-scheduler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.6
+        image: grafana/mimir:3.1.2
         imagePullPolicy: IfNotPresent
         name: ruler-query-scheduler
         ports:
@@ -1666,6 +1672,7 @@ spec:
             memory: 2Gi
           requests:
             cpu: "2"
+            ephemeral-storage: 50Mi
             memory: 1Gi
         volumeMounts:
         - mountPath: /etc/mimir
@@ -1717,7 +1724,7 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: status.podIP
-        image: grafana/mimir:3.0.6
+        image: grafana/mimir:3.1.2
         imagePullPolicy: IfNotPresent
         name: alertmanager
         ports:
@@ -1816,7 +1823,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=compactor
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.6
+        image: grafana/mimir:3.1.2
         imagePullPolicy: IfNotPresent
         name: compactor
         ports:
@@ -1837,6 +1844,7 @@ spec:
             memory: 6Gi
           requests:
             cpu: 1
+            ephemeral-storage: 50Mi
             memory: 6Gi
         volumeMounts:
         - mountPath: /data
@@ -1952,7 +1960,7 @@ spec:
           value: 1Gi
         - name: Z
           value: "123"
-        image: grafana/mimir:3.0.6
+        image: grafana/mimir:3.1.2
         imagePullPolicy: IfNotPresent
         name: ingester
         ports:
@@ -1973,6 +1981,7 @@ spec:
             memory: 25Gi
           requests:
             cpu: "4"
+            ephemeral-storage: 50Mi
             memory: 15Gi
         volumeMounts:
         - mountPath: /data
@@ -2082,7 +2091,7 @@ spec:
           value: all-ingesters
         - name: GOMAXPROCS
           value: "9"
-        image: grafana/mimir:3.0.6
+        image: grafana/mimir:3.1.2
         imagePullPolicy: IfNotPresent
         name: ingester
         ports:
@@ -2103,6 +2112,7 @@ spec:
             memory: 25Gi
           requests:
             cpu: "4"
+            ephemeral-storage: 50Mi
             memory: 15Gi
         volumeMounts:
         - mountPath: /data
@@ -2212,7 +2222,7 @@ spec:
           value: all-ingesters
         - name: GOMAXPROCS
           value: "9"
-        image: grafana/mimir:3.0.6
+        image: grafana/mimir:3.1.2
         imagePullPolicy: IfNotPresent
         name: ingester
         ports:
@@ -2233,6 +2243,7 @@ spec:
             memory: 25Gi
           requests:
             cpu: "4"
+            ephemeral-storage: 50Mi
             memory: 15Gi
         volumeMounts:
         - mountPath: /data
@@ -2592,7 +2603,7 @@ spec:
           value: "5"
         - name: GOMEMLIMIT
           value: "12884901888"
-        image: grafana/mimir:3.0.6
+        image: grafana/mimir:3.1.2
         imagePullPolicy: IfNotPresent
         name: store-gateway
         ports:
@@ -2613,6 +2624,7 @@ spec:
             memory: 18Gi
           requests:
             cpu: "1"
+            ephemeral-storage: 50Mi
             memory: 12Gi
         volumeMounts:
         - mountPath: /data
@@ -2734,7 +2746,7 @@ spec:
           value: "5"
         - name: GOMEMLIMIT
           value: "12884901888"
-        image: grafana/mimir:3.0.6
+        image: grafana/mimir:3.1.2
         imagePullPolicy: IfNotPresent
         name: store-gateway
         ports:
@@ -2755,6 +2767,7 @@ spec:
             memory: 18Gi
           requests:
             cpu: "1"
+            ephemeral-storage: 50Mi
             memory: 12Gi
         volumeMounts:
         - mountPath: /data
@@ -2874,7 +2887,7 @@ spec:
           value: "5"
         - name: GOMEMLIMIT
           value: "12884901888"
-        image: grafana/mimir:3.0.6
+        image: grafana/mimir:3.1.2
         imagePullPolicy: IfNotPresent
         name: store-gateway
         ports:
@@ -2895,6 +2908,7 @@ spec:
             memory: 18Gi
           requests:
             cpu: "1"
+            ephemeral-storage: 50Mi
             memory: 12Gi
         volumeMounts:
         - mountPath: /data

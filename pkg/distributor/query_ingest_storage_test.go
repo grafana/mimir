@@ -651,7 +651,7 @@ func TestDistributor_QueryStream_InactivePartitionsLookback(t *testing.T) {
 
 				// Wait for the partition ring to discover all 4 partitions.
 				test.Poll(t, 5*time.Second, 4, func() interface{} {
-					return d.partitionsRing.PartitionRing().PartitionsCount()
+					return d.partitionInstanceRings.Get(0).PartitionRing().PartitionsCount()
 				})
 
 				// Update partition states:
@@ -674,11 +674,11 @@ func TestDistributor_QueryStream_InactivePartitionsLookback(t *testing.T) {
 
 				// Wait for the partition ring watcher to see the updated states.
 				test.Poll(t, 5*time.Second, 2, func() interface{} {
-					return d.partitionsRing.PartitionRing().ActivePartitionsCount()
+					return d.partitionInstanceRings.Get(0).PartitionRing().ActivePartitionsCount()
 				})
 
 				// Verify getIngesterReplicationSetsForQuery returns the expected partitions.
-				replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx)
+				replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx, nil)
 				require.NoError(t, err)
 
 				var actualPartitionIDs []int

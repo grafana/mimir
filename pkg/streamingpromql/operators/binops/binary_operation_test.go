@@ -158,6 +158,29 @@ func TestBuildMatchers(t *testing.T) {
 		res := BuildMatchers(context.Background(), log.NewNopLogger(), series, hints)
 		require.Nil(t, res)
 	})
+
+	t.Run("without matching with heterogeneous labels across series: each series-specific label includes empty alternative", func(t *testing.T) {
+		// Some labels are present on only a subset of series: "service" appears on
+		// some series but not others, and "node" appears on a different subset.
+		// The optimizer must include "" in both matchers so the RHS can match
+		// series regardless of which labels they have.
+		series := []types.SeriesMetadata{
+			{Labels: labels.FromStrings("entity_type", "Service", "env", "prod", "service", "checkout")},
+			{Labels: labels.FromStrings("entity_type", "Service", "env", "prod", "service", "payments")},
+			{Labels: labels.FromStrings("entity_type", "Node", "env", "prod", "node", "host-1")},
+			{Labels: labels.FromStrings("entity_type", "Node", "env", "prod", "node", "host-2")},
+		}
+		hints := &Hints{} // exclude-matching, no exclusions (default matching)
+		expected := types.Matchers{
+			{Type: labels.MatchRegexp, Name: "entity_type", Value: "Node|Service"},
+			{Type: labels.MatchRegexp, Name: "env", Value: "prod"},
+			{Type: labels.MatchRegexp, Name: "node", Value: "|host-1|host-2"},
+			{Type: labels.MatchRegexp, Name: "service", Value: "|checkout|payments"},
+		}
+
+		res := BuildMatchers(context.Background(), log.NewNopLogger(), series, hints)
+		require.Equal(t, expected, res)
+	})
 }
 
 func generateSeriesMetadata(name string, num int) []types.SeriesMetadata {

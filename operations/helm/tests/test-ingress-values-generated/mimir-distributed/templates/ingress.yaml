@@ -105,3 +105,4 @@ spec:
                 name: test-ingress-values-mimir-ruler
                 port:
                   number: 8080
+

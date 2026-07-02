@@ -49,6 +49,7 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
+	"github.com/grafana/mimir/pkg/compartments"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/sharding"
@@ -1726,12 +1727,11 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 			q := &blocksStoreQuerier{
 				minT:               minT,
 				maxT:               maxT,
-				finder:             finder,
-				stores:             stores,
+				compartments:       []blocksStoreCompartment{{finder: finder, stores: stores}},
 				dynamicReplication: newDynamicReplication(),
 				consistency:        NewBlocksConsistency(0, reg),
 				logger:             log.NewNopLogger(),
-				metrics:            newBlocksStoreQueryableMetrics(reg),
+				metrics:            newBlocksStoreQueryableMetrics(compartments.Config{}, reg),
 				limits:             testData.limits,
 			}
 
@@ -1850,12 +1850,11 @@ func TestBlocksStoreQuerier_Select_ClosedBeforeSelectFinishes(t *testing.T) {
 	querier := &blocksStoreQuerier{
 		minT:               minT,
 		maxT:               maxT,
-		finder:             finder,
-		stores:             stores,
+		compartments:       []blocksStoreCompartment{{finder: finder, stores: stores}},
 		dynamicReplication: newDynamicReplication(),
 		consistency:        NewBlocksConsistency(0, reg),
 		logger:             log.NewNopLogger(),
-		metrics:            newBlocksStoreQueryableMetrics(reg),
+		metrics:            newBlocksStoreQueryableMetrics(compartments.Config{}, reg),
 		limits:             &blocksStoreLimitsMock{},
 	}
 
@@ -1933,12 +1932,11 @@ func TestBlocksStoreQuerier_ShouldReturnContextCanceledIfContextWasCanceledWhile
 		q := &blocksStoreQuerier{
 			minT:               minT,
 			maxT:               maxT,
-			finder:             finder,
-			stores:             stores,
+			compartments:       []blocksStoreCompartment{{finder: finder, stores: stores}},
 			dynamicReplication: newDynamicReplication(),
 			consistency:        NewBlocksConsistency(0, reg),
 			logger:             logger,
-			metrics:            newBlocksStoreQueryableMetrics(reg),
+			metrics:            newBlocksStoreQueryableMetrics(compartments.Config{}, reg),
 			limits:             &blocksStoreLimitsMock{},
 		}
 
@@ -2144,12 +2142,11 @@ func TestBlocksStoreQuerier_Select_cancelledContext(t *testing.T) {
 			q := &blocksStoreQuerier{
 				minT:               minT,
 				maxT:               maxT,
-				finder:             finder,
-				stores:             stores,
+				compartments:       []blocksStoreCompartment{{finder: finder, stores: stores}},
 				dynamicReplication: newDynamicReplication(),
 				consistency:        NewBlocksConsistency(0, nil),
 				logger:             log.NewNopLogger(),
-				metrics:            newBlocksStoreQueryableMetrics(reg),
+				metrics:            newBlocksStoreQueryableMetrics(compartments.Config{}, reg),
 				limits:             &blocksStoreLimitsMock{},
 			}
 
@@ -2727,12 +2724,11 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 				q := &blocksStoreQuerier{
 					minT:               minT,
 					maxT:               maxT,
-					finder:             finder,
-					stores:             stores,
+					compartments:       []blocksStoreCompartment{{finder: finder, stores: stores}},
 					dynamicReplication: newDynamicReplication(),
 					consistency:        NewBlocksConsistency(0, nil),
 					logger:             log.NewNopLogger(),
-					metrics:            newBlocksStoreQueryableMetrics(reg),
+					metrics:            newBlocksStoreQueryableMetrics(compartments.Config{}, reg),
 					limits:             &blocksStoreLimitsMock{},
 				}
 
@@ -2799,12 +2795,11 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 				q := &blocksStoreQuerier{
 					minT:               minT,
 					maxT:               maxT,
-					finder:             finder,
-					stores:             stores,
+					compartments:       []blocksStoreCompartment{{finder: finder, stores: stores}},
 					dynamicReplication: newDynamicReplication(),
 					consistency:        NewBlocksConsistency(0, nil),
 					logger:             log.NewNopLogger(),
-					metrics:            newBlocksStoreQueryableMetrics(reg),
+					metrics:            newBlocksStoreQueryableMetrics(compartments.Config{}, reg),
 					limits:             &blocksStoreLimitsMock{},
 				}
 
@@ -2877,12 +2872,11 @@ func TestBlocksStoreQuerier_SelectSortedShouldHonorQueryStoreAfter(t *testing.T)
 			q := &blocksStoreQuerier{
 				minT:               testData.queryMinT,
 				maxT:               testData.queryMaxT,
-				finder:             finder,
-				stores:             &blocksStoreSetMock{},
+				compartments:       []blocksStoreCompartment{{finder: finder, stores: &blocksStoreSetMock{}}},
 				dynamicReplication: newDynamicReplication(),
 				consistency:        NewBlocksConsistency(0, nil),
 				logger:             log.NewNopLogger(),
-				metrics:            newBlocksStoreQueryableMetrics(nil),
+				metrics:            newBlocksStoreQueryableMetrics(compartments.Config{}, nil),
 				limits:             &blocksStoreLimitsMock{},
 				queryStoreAfter:    testData.queryStoreAfter,
 			}
@@ -2981,12 +2975,11 @@ func TestBlocksStoreQuerier_MaxLabelsQueryRange(t *testing.T) {
 			q := &blocksStoreQuerier{
 				minT:               testData.queryMinT,
 				maxT:               testData.queryMaxT,
-				finder:             finder,
-				stores:             &blocksStoreSetMock{},
+				compartments:       []blocksStoreCompartment{{finder: finder, stores: &blocksStoreSetMock{}}},
 				dynamicReplication: newDynamicReplication(),
 				consistency:        NewBlocksConsistency(0, nil),
 				logger:             log.NewNopLogger(),
-				metrics:            newBlocksStoreQueryableMetrics(nil),
+				metrics:            newBlocksStoreQueryableMetrics(compartments.Config{}, nil),
 				limits: &blocksStoreLimitsMock{
 					maxLabelsQueryLength: testData.maxLabelsQueryLength,
 				},
@@ -3135,7 +3128,10 @@ func TestBlocksStoreQuerier_PromQLExecution(t *testing.T) {
 
 			// Instantiate the querier that will be executed to run the query.
 			logger := log.NewNopLogger()
-			queryable, err := NewBlocksStoreQueryable(stores, storegateway.NewNopDynamicReplication(3), finder, NewBlocksConsistency(0, nil), &blocksStoreLimitsMock{}, 0, 0, logger, nil)
+			// The store-gateway clients pool is required but unused here (the store set is mocked), so give
+			// it an empty discovery.
+			clientsPool := newStoreGatewayClientPool(func() ([]string, error) { return nil, nil }, StoreGatewayClientConfig{}, logger, nil)
+			queryable, err := NewBlocksStoreQueryable([]blocksStoreCompartment{{finder: finder, stores: stores}}, clientsPool, compartments.Config{}, storegateway.NewNopDynamicReplication(3), NewBlocksConsistency(0, nil), &blocksStoreLimitsMock{}, 0, 0, logger, nil)
 			require.NoError(t, err)
 			require.NoError(t, services.StartAndAwaitRunning(context.Background(), queryable))
 			defer services.StopAndAwaitTerminated(context.Background(), queryable) // nolint:errcheck
@@ -3798,6 +3794,34 @@ func TestShouldRetry(t *testing.T) {
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			assert.Equal(t, testData.expected, shouldRetry(testData.err))
+		})
+	}
+}
+
+func TestCreateSeriesRequest_Limit(t *testing.T) {
+	tests := map[string]struct {
+		hints         *storage.SelectHints
+		expectedLimit int64
+	}{
+		"nil hints results in no limit": {
+			hints:         nil,
+			expectedLimit: 0,
+		},
+		"hints with a zero limit results in no limit": {
+			hints:         &storage.SelectHints{Limit: 0},
+			expectedLimit: 0,
+		},
+		"hints with a positive limit are propagated to the request": {
+			hints:         &storage.SelectHints{Limit: 100},
+			expectedLimit: 100,
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			req, err := createSeriesRequest(0, 1000, nil, true, testData.hints, nil, 256)
+			require.NoError(t, err)
+			assert.Equal(t, testData.expectedLimit, req.Limit)
 		})
 	}
 }

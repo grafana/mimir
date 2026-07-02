@@ -151,6 +151,128 @@ func TestRangeVectorOperator_Buffering_NoFiltering(t *testing.T) {
 	requireNoMemoryConsumption(t, memoryConsumptionTracker)
 }
 
+func TestRangeVectorOperator_Buffering_NoFiltering_OverlappingRanges(t *testing.T) {
+	// Test a range query where each step has a range selector that overlaps data
+	// from several previous steps.
+	const (
+		queryLength        = 45 * time.Minute
+		queryRangeSelector = 5 * time.Minute
+		queryStep          = time.Minute
+
+		expectedSeries         = 5
+		expectedStepsPerSeries = int(queryLength/queryStep) + 1
+	)
+
+	storage := promqltest.LoadedStorage(t, `
+		load 1m
+		  float_metric{idx="1"} 1+1x60
+		  float_metric{idx="2"} 2+2x60
+		  float_metric{idx="3"} 3+3x60
+		  float_metric{idx="4"} 4+4x60
+		  float_metric{idx="5"} 5+5x60
+		  histogram_metric{idx="1"} {{count:1}}+{{count:1}}x60
+		  histogram_metric{idx="2"} {{count:2}}+{{count:2}}x60
+		  histogram_metric{idx="3"} {{count:3}}+{{count:3}}x60
+		  histogram_metric{idx="4"} {{count:4}}+{{count:4}}x60
+		  histogram_metric{idx="5"} {{count:5}}+{{count:5}}x60
+	`)
+
+	t.Cleanup(func() { require.NoError(t, storage.Close()) })
+
+	for _, metricName := range []string{"float_metric", "histogram_metric"} {
+		t.Run(metricName, func(t *testing.T) {
+			ctx := context.Background()
+			memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+			now := time.Unix(0, 0).UTC().Add(queryLength).Add(5 * time.Minute)
+
+			inner := selectors.NewRangeVectorSelector(
+				&selectors.Selector{
+					EagerLoad: true,
+					Queryable: storage,
+					TimeRange: types.NewRangeQueryTimeRange(now.Add(-queryLength), now, queryStep),
+					Range:     queryRangeSelector,
+					Matchers: []types.Matcher{{
+						Type:  labels.MatchEqual,
+						Name:  model.MetricNameLabel,
+						Value: metricName,
+					}},
+					MemoryConsumptionTracker: memoryConsumptionTracker,
+				},
+				memoryConsumptionTracker,
+			)
+
+			buffer := NewRangeVectorDuplicationBuffer(inner, memoryConsumptionTracker, inner.Selector.TimeRange, log.NewNopLogger())
+			consumer1 := buffer.AddConsumer()
+			consumer2 := buffer.AddConsumer()
+
+			require.NoError(t, consumer1.Prepare(ctx, nil))
+			require.NoError(t, consumer2.Prepare(ctx, nil))
+			require.NoError(t, consumer1.AfterPrepare(ctx))
+			require.NoError(t, consumer2.AfterPrepare(ctx))
+
+			metadata1, err := consumer1.SeriesMetadata(ctx, nil)
+			require.NoError(t, err)
+			metadata2, err := consumer2.SeriesMetadata(ctx, nil)
+			require.NoError(t, err)
+
+			require.Len(t, metadata1, expectedSeries)
+			require.Len(t, metadata2, expectedSeries)
+			require.Equal(t, metadata1, metadata2)
+
+			types.SeriesMetadataSlicePool.Put(&metadata1, memoryConsumptionTracker)
+			types.SeriesMetadataSlicePool.Put(&metadata2, memoryConsumptionTracker)
+
+			consumer1Data := testReadConsumerToEnd(t, expectedSeries, consumer1)
+			consumer2Data := testReadConsumerToEnd(t, expectedSeries, consumer2)
+
+			require.Len(t, consumer1Data, expectedStepsPerSeries*expectedSeries)
+			require.Len(t, consumer2Data, expectedStepsPerSeries*expectedSeries)
+			require.Equal(t, consumer1Data, consumer2Data)
+
+			require.NoError(t, consumer1.FinishedReading(ctx))
+			require.NoError(t, consumer2.FinishedReading(ctx))
+
+			stats1, _, err := consumer1.Finalize(ctx)
+			require.NoError(t, err)
+			stats1.Close()
+
+			stats2, _, err := consumer2.Finalize(ctx)
+			require.NoError(t, err)
+			stats2.Close()
+
+			consumer1.Close()
+			consumer2.Close()
+
+			requireNoMemoryConsumption(t, memoryConsumptionTracker)
+		})
+	}
+}
+
+func testReadConsumerToEnd(t *testing.T, numSeries int, consumer *RangeVectorDuplicationConsumer) []*types.RangeVectorStepData {
+	t.Helper()
+
+	var out []*types.RangeVectorStepData
+	for range numSeries {
+		err := consumer.NextSeries(context.Background())
+		if errors.Is(err, types.EOS) {
+			break
+		}
+
+		require.NoError(t, err)
+
+		for {
+			d, err := consumer.NextStepSamples(context.Background())
+			if errors.Is(err, types.EOS) {
+				break
+			}
+
+			require.NoError(t, err)
+			out = append(out, d)
+		}
+	}
+	return out
+}
+
 func TestRangeVectorOperator_Buffering_Filtering_AllConsumersOpen(t *testing.T) {
 	ctx := context.Background()
 	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
@@ -177,7 +299,7 @@ func TestRangeVectorOperator_Buffering_Filtering_AllConsumersOpen(t *testing.T) 
 	require.NoError(t, err)
 	requireEqualDataAndReturnToPool(t, expectedData[0], d, memoryConsumptionTracker)
 	require.Equal(t, 0, buffer.buffer.Size())
-	require.Equal(t, 0, cap(buffer.buffer.buffer.elements), "should not temporarily buffer data that won't be read by another consumer")
+	require.Equal(t, 0, cap(buffer.buffer.seriesStepData.elements), "should not temporarily buffer data that won't be read by another consumer")
 
 	err = consumer1.NextSeries(ctx)
 	require.NoError(t, err)
@@ -265,7 +387,7 @@ func TestRangeVectorOperator_Buffering_Filtering_IteratingBeforeCallingSeriesMet
 	require.NoError(t, err)
 	requireEqualDataAndReturnToPool(t, expectedData[0], d, memoryConsumptionTracker)
 	require.Equal(t, 0, buffer.buffer.Size())
-	require.Equal(t, 0, cap(buffer.buffer.buffer.elements), "should not temporarily buffer data that won't be read by another consumer")
+	require.Equal(t, 0, cap(buffer.buffer.seriesStepData.elements), "should not temporarily buffer data that won't be read by another consumer")
 
 	err = consumer1.NextSeries(ctx)
 	require.NoError(t, err)
@@ -708,7 +830,7 @@ func TestRangeVectorOperator_FinishedReadingCalledWithBufferedData_Filtering(t *
 // This test uses reflection to populate values into all fields, clones the record and asserts that the values match.
 // The test will fail if the cloned record does not match, or there are fields found which this test does not consider.
 // Should this test fail, add the necessary field handling to this test and update range_vector_operator.go cloneStepData().
-func TestRangeVectorOperator_StepDataStructure(t *testing.T) {
+func TestRangeVectorOperator_CloneStepDataStructure(t *testing.T) {
 	ctx := context.Background()
 	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 
@@ -747,7 +869,6 @@ func TestRangeVectorOperator_StepDataStructure(t *testing.T) {
 	}
 
 	clonedStepData, err := cloneStepData(data)
-
 	require.NoError(t, err)
 	require.Equal(t, data, clonedStepData.stepData)
 }
@@ -777,12 +898,12 @@ func TestRangeVectorOperator_Cloning_SmoothedAnchored(t *testing.T) {
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
 			ctx := context.Background()
+
 			memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 			tc.stepData.Floats = types.NewFPointRingBuffer(memoryConsumptionTracker).ViewAll(nil)
 			tc.stepData.Histograms = types.NewHPointRingBuffer(memoryConsumptionTracker).ViewUntilSearchingBackwards(0, nil)
 			clonedStepData, err := cloneStepData(&tc.stepData)
 			require.NoError(t, err)
-
 			require.Equal(t, tc.stepData.Smoothed, clonedStepData.stepData.Smoothed)
 			require.Equal(t, tc.stepData.Anchored, clonedStepData.stepData.Anchored)
 		})
@@ -941,15 +1062,15 @@ func TestRangeVectorOperator_ClosingAfterSubsequentReadFails(t *testing.T) {
 	require.NoError(t, err)
 	data, err := consumer1.NextStepSamples(ctx)
 	require.NoError(t, err)
-	require.Equal(t, data.Floats.First(), promql.FPoint{T: 0, F: 1234})
-	require.Equal(t, data.Histograms.First(), promql.HPoint{T: 500, H: &histogram.FloatHistogram{Count: 100, Sum: 2}})
+	require.Equal(t, data.Floats.First(), promql.FPoint{T: 1000, F: 1234})
+	require.Equal(t, data.Histograms.First(), promql.HPoint{T: 1000, H: &histogram.FloatHistogram{Count: 100, Sum: 2}})
 
 	err = consumer2.NextSeries(ctx)
 	require.NoError(t, err)
 	data, err = consumer2.NextStepSamples(ctx)
 	require.NoError(t, err)
-	require.Equal(t, data.Floats.First(), promql.FPoint{T: 0, F: 1234})
-	require.Equal(t, data.Histograms.First(), promql.HPoint{T: 500, H: &histogram.FloatHistogram{Count: 100, Sum: 2}})
+	require.Equal(t, data.Floats.First(), promql.FPoint{T: 1000, F: 1234})
+	require.Equal(t, data.Histograms.First(), promql.HPoint{T: 1000, H: &histogram.FloatHistogram{Count: 100, Sum: 2}})
 
 	// Try reading the next series, which should fail.
 	err = consumer1.NextSeries(ctx)
@@ -1005,19 +1126,23 @@ func (o *failingRangeVectorOperator) NextStepSamples(_ context.Context) (*types.
 
 	if o.floats == nil {
 		o.floats = types.NewFPointRingBuffer(o.memoryConsumptionTracker)
-		if err := o.floats.Append(promql.FPoint{T: 0, F: 1234}); err != nil {
+
+		if _, err := o.floats.Append(promql.FPoint{T: 1000, F: 1234}); err != nil {
 			return nil, err
 		}
 
+		o.floats.DiscardPointsAtOrBefore(0)
 		o.floatsView = o.floats.ViewUntilSearchingBackwards(1000, o.floatsView)
 	}
 
 	if o.histograms == nil {
 		o.histograms = types.NewHPointRingBuffer(o.memoryConsumptionTracker)
-		if err := o.histograms.Append(promql.HPoint{T: 500, H: &histogram.FloatHistogram{Count: 100, Sum: 2}}); err != nil {
+
+		if _, err := o.histograms.Append(promql.HPoint{T: 1000, H: &histogram.FloatHistogram{Count: 100, Sum: 2}}); err != nil {
 			return nil, err
 		}
 
+		o.histograms.DiscardPointsAtOrBefore(0)
 		o.histogramsView = o.histograms.ViewUntilSearchingBackwards(1000, o.histogramsView)
 	}
 

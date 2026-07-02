@@ -29,14 +29,28 @@ local statefulset = k.apps.v1.statefulSet;
   store_gateway_zone_c_statefulset: overrideSuperIfExists('store_gateway_zone_c_statefulset', store_gateway_pvc_auto_deletion),
   store_gateway_zone_a_backup_statefulset: overrideSuperIfExists('store_gateway_zone_a_backup_statefulset', store_gateway_pvc_auto_deletion),
   store_gateway_zone_b_backup_statefulset: overrideSuperIfExists('store_gateway_zone_b_backup_statefulset', store_gateway_pvc_auto_deletion),
+  store_gateway_zone_a_statefulsets+: overrideSuperCompartmentsIfExists('store_gateway_zone_a_statefulsets', store_gateway_pvc_auto_deletion),
+  store_gateway_zone_b_statefulsets+: overrideSuperCompartmentsIfExists('store_gateway_zone_b_statefulsets', store_gateway_pvc_auto_deletion),
+  store_gateway_zone_c_statefulsets+: overrideSuperCompartmentsIfExists('store_gateway_zone_c_statefulsets', store_gateway_pvc_auto_deletion),
+  store_gateway_zone_a_backup_statefulsets+: overrideSuperCompartmentsIfExists('store_gateway_zone_a_backup_statefulsets', store_gateway_pvc_auto_deletion),
+  store_gateway_zone_b_backup_statefulsets+: overrideSuperCompartmentsIfExists('store_gateway_zone_b_backup_statefulsets', store_gateway_pvc_auto_deletion),
 
   compactor_statefulset: overrideSuperIfExists('compactor_statefulset', compactor_pvc_auto_deletion),
+  compactor_statefulsets+: overrideSuperCompartmentsIfExists('compactor_statefulsets', compactor_pvc_auto_deletion),
 
   ingester_statefulset: overrideSuperIfExists('ingester_statefulset', ingester_pvc_auto_deletion),
   ingester_zone_a_statefulset: overrideSuperIfExists('ingester_zone_a_statefulset', ingester_pvc_auto_deletion),
   ingester_zone_b_statefulset: overrideSuperIfExists('ingester_zone_b_statefulset', ingester_pvc_auto_deletion),
   ingester_zone_c_statefulset: overrideSuperIfExists('ingester_zone_c_statefulset', ingester_pvc_auto_deletion),
+  ingester_zone_a_statefulsets+: overrideSuperCompartmentsIfExists('ingester_zone_a_statefulsets', ingester_pvc_auto_deletion),
+  ingester_zone_b_statefulsets+: overrideSuperCompartmentsIfExists('ingester_zone_b_statefulsets', ingester_pvc_auto_deletion),
+  ingester_zone_c_statefulsets+: overrideSuperCompartmentsIfExists('ingester_zone_c_statefulsets', ingester_pvc_auto_deletion),
 
   local overrideSuperIfExists(name, override) = if !( name in super) || super[name] == null || super[name] == {} then null else
     super[name] + override,
+
+  // Like overrideSuperIfExists, but merges the override into each entry of a per-compartment workload map.
+  local overrideSuperCompartmentsIfExists(name, override) =
+    if !( name in super) || !std.isObject(super[name]) then {}
+    else { [compartment]+: override for compartment in std.objectFields(super[name]) },
 }

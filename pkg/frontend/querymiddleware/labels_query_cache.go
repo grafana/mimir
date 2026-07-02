@@ -18,6 +18,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	v1 "github.com/prometheus/prometheus/web/api/v1"
 
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/splitandcache"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/promqlext"
 )
@@ -41,7 +42,7 @@ func newLabelsQueryCacheRoundTripper(
 		limits: limits,
 	}
 
-	return newGenericQueryCacheRoundTripper(cache, generator.LabelValues, ttl, next, logger, NewResultsCacheMetrics(queryTypeLabels, reg))
+	return newGenericQueryCacheRoundTripper(cache, generator.LabelValues, ttl, next, logger, splitandcache.NewResultsCacheMetrics(queryTypeLabels, reg))
 }
 
 type labelsQueryTTL struct {
