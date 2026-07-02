@@ -120,7 +120,7 @@ func TestChildMethod(t *testing.T) {
 			s := resolveAnnotatedStruct(t, pkg)
 			imports := newImportsCollector()
 
-			actual, err := ChildMethod.Generate(s, imports)
+			actual, err := ChildMethod.Generate(s, imports, pkg.Registry)
 			require.NoError(t, err)
 
 			expected := gofmt(t, tc.expected)
@@ -213,7 +213,7 @@ func TestChildMethod_Unsupported(t *testing.T) {
 			s := resolveAnnotatedStruct(t, pkg)
 			imports := newImportsCollector()
 
-			out, err := ChildMethod.Generate(s, imports)
+			out, err := ChildMethod.Generate(s, imports, pkg.Registry)
 			require.EqualError(t, err, tc.expectedErr)
 			require.Empty(t, out)
 			require.Empty(t, imports.Paths(), "no imports should be registered for an unsupported struct")
@@ -302,7 +302,7 @@ func TestChildCountMethod(t *testing.T) {
 			s := resolveAnnotatedStruct(t, pkg)
 			imports := newImportsCollector()
 
-			actual, err := ChildCountMethod.Generate(s, imports)
+			actual, err := ChildCountMethod.Generate(s, imports, pkg.Registry)
 			require.NoError(t, err)
 
 			expected := gofmt(t, tc.expected)

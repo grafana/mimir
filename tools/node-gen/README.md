@@ -8,13 +8,14 @@ top of `planning.Node`.
 
 # Supported generators
 
-| Method                                             | Description                                                           |
-| -------------------------------------------------- | --------------------------------------------------------------------- |
-| `Child(idx int) planning.Node`                     | Returns the child at the given index.                                 |
-| `ChildCount() int`                                 | Returns the number of children.                                       |
-| `SetChildren(children []planning.Node) error`      | Sets all children at once, validating the count and child types.      |
-| `ReplaceChild(idx int, child planning.Node) error` | Replaces the child at the given index, validating the index and type. |
-| `ChildrenLabels() []string`                        | Returns a human-readable label for each child, shown in plan output.  |
+| Method                                                           | Description                                                                       |
+| ---------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| `Child(idx int) planning.Node`                                   | Returns the child at the given index.                                             |
+| `ChildCount() int`                                               | Returns the number of children.                                                   |
+| `SetChildren(children []planning.Node) error`                    | Sets all children at once, validating the count and child types.                  |
+| `ReplaceChild(idx int, child planning.Node) error`               | Replaces the child at the given index, validating the index and type.             |
+| `ChildrenLabels() []string`                                      | Returns a human-readable label for each child, shown in plan output.              |
+| `EquivalentToIgnoringHintsAndChildren(other planning.Node) bool` | Reports whether `other` is an equivalent node by comparing its fields one by one. |
 
 # How to opt a struct in
 
@@ -37,6 +38,14 @@ top of `planning.Node`.
      has exactly one child its label is collapsed to `""`.
      `nocollapse` disables that, so even a lone child is labeled via
      `labelfmt` (e.g. `RemoteExecutionGroup` always shows `node 0`).
+4. `EquivalentToIgnoringHintsAndChildren` is generated for every annotated
+   struct, comparing all of its fields. A struct-typed field of type `T` is
+   compared using a helper named `genEqualsT` (e.g. `genEqualsVectorMatching`).
+   This helper is generated once per struct type and shared by every node in
+   the package that has a field of that type. To exclude a field, list it in a
+   `node:"hints=A;B"` tag on the embedded `*Details` field — these are hints that
+   should not affect equality (e.g. `BinaryExpression` excludes `Hints`,
+   `MatrixSelector`/`VectorSelector` exclude `SkipHistogramBuckets`).
 
 # How to run
 

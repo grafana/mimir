@@ -6,7 +6,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"slices"
 	"strings"
 	"time"
 
@@ -45,17 +44,6 @@ func (s *SplitFunctionCall) NodeType() planning.NodeType {
 func (s *SplitFunctionCall) MergeHints(other planning.Node) error {
 	// Nothing to do.
 	return nil
-}
-
-func (s *SplitFunctionCall) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
-	otherSplit, ok := other.(*SplitFunctionCall)
-	if !ok {
-		return false
-	}
-
-	return slices.EqualFunc(s.SplitRanges, otherSplit.SplitRanges, func(a, b SplitRange) bool {
-		return a.Start == b.Start && a.End == b.End && a.Cacheable == b.Cacheable
-	})
 }
 
 func (s *SplitFunctionCall) Describe() string {

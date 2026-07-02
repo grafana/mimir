@@ -93,7 +93,7 @@ var ChildrenLabelsMethod = MethodGenerator{
 	Generate: childrenLabelsMethodGenerate,
 }
 
-func childMethodGenerate(s *Struct, imports *ImportsCollector) (string, error) {
+func childMethodGenerate(s *Struct, imports *ImportsCollector, _ *TypeRegistry) (string, error) {
 	data, err := buildTemplateStructData(s)
 	if err != nil {
 		return "", err
@@ -117,7 +117,7 @@ func childMethodGenerate(s *Struct, imports *ImportsCollector) (string, error) {
 	return renderTemplate(childTmpl, subtmplName, data)
 }
 
-func childCountMethodGenerate(s *Struct, _ *ImportsCollector) (string, error) {
+func childCountMethodGenerate(s *Struct, _ *ImportsCollector, _ *TypeRegistry) (string, error) {
 	data, err := buildTemplateStructData(s)
 	if err != nil {
 		return "", err
@@ -136,7 +136,7 @@ func childCountMethodGenerate(s *Struct, _ *ImportsCollector) (string, error) {
 	return renderTemplate(childCountTmpl, subtmplName, data)
 }
 
-func setChildrenMethodGenerate(s *Struct, imports *ImportsCollector) (string, error) {
+func setChildrenMethodGenerate(s *Struct, imports *ImportsCollector, _ *TypeRegistry) (string, error) {
 	data, err := buildTemplateStructData(s)
 	if err != nil {
 		return "", err
@@ -163,7 +163,7 @@ func setChildrenMethodGenerate(s *Struct, imports *ImportsCollector) (string, er
 	return renderTemplate(setChildrenTmpl, subtmplName, data)
 }
 
-func replaceChildMethodGenerate(s *Struct, imports *ImportsCollector) (string, error) {
+func replaceChildMethodGenerate(s *Struct, imports *ImportsCollector, _ *TypeRegistry) (string, error) {
 	data, err := buildTemplateStructData(s)
 	if err != nil {
 		return "", err
@@ -190,7 +190,7 @@ func replaceChildMethodGenerate(s *Struct, imports *ImportsCollector) (string, e
 	return renderTemplate(replaceChildTmpl, subtmplName, data)
 }
 
-func childrenLabelsMethodGenerate(s *Struct, imports *ImportsCollector) (string, error) {
+func childrenLabelsMethodGenerate(s *Struct, imports *ImportsCollector, _ *TypeRegistry) (string, error) {
 	data, err := buildTemplateStructData(s)
 	if err != nil {
 		return "", err
@@ -273,10 +273,13 @@ func buildTemplateStructData(s *Struct) (*templateStructData, error) {
 			if f.Tag.Nilable {
 				nilableFieldCount++
 			}
+			if f.Type == nil {
+				return nil, fmt.Errorf("field %q: unsupported field type", f.Name)
+			}
 			childFields = append(childFields, childField{
 				Name:       f.Name,
 				Nilable:    f.Tag.Nilable,
-				Type:       f.Type.Name,
+				Type:       f.Type.Render(),
 				TypeImport: f.Type.ImportPath,
 				Label:      f.Tag.Label,
 			})

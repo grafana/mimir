@@ -44,12 +44,6 @@ func (s *TimeRangeSplit) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_TIME_RANGE_SPLIT
 }
 
-func (s *TimeRangeSplit) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
-	otherConsumer, ok := other.(*TimeRangeSplit)
-
-	return ok && s.SplitInterval == otherConsumer.SplitInterval
-}
-
 func (s *TimeRangeSplit) MergeHints(other planning.Node) error {
 	return nil
 }
@@ -169,12 +163,6 @@ func (c *Cache) Details() proto.Message {
 
 func (c *Cache) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_CACHE
-}
-
-func (c *Cache) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
-	otherCache, ok := other.(*Cache)
-
-	return ok && c.SplitInterval == otherCache.SplitInterval
 }
 
 func (c *Cache) MergeHints(other planning.Node) error {

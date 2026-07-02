@@ -5,7 +5,6 @@ package commonsubexpressionelimination
 import (
 	"context"
 	"fmt"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -41,12 +40,6 @@ func (d *Duplicate) Details() proto.Message {
 
 func (d *Duplicate) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_DUPLICATE
-}
-
-func (d *Duplicate) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
-	_, ok := other.(*Duplicate)
-
-	return ok
 }
 
 func (d *Duplicate) MergeHints(_ planning.Node) error {
@@ -154,14 +147,6 @@ func (f *DuplicateFilter) Details() proto.Message {
 
 func (f *DuplicateFilter) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_DUPLICATE_FILTER
-}
-
-func (f *DuplicateFilter) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
-	otherFilter, ok := other.(*DuplicateFilter)
-
-	return ok && slices.EqualFunc(f.Filters, otherFilter.Filters, func(a *core.LabelMatcher, b *core.LabelMatcher) bool {
-		return a.Equal(b)
-	})
 }
 
 func (f *DuplicateFilter) MergeHints(_ planning.Node) error {

@@ -48,6 +48,12 @@ func (r *RemoteExecutionConsumer) ChildrenLabels() []string {
 	return []string{""}
 }
 
+func (r *RemoteExecutionConsumer) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
+	oi, ok := other.(*RemoteExecutionConsumer)
+	return ok &&
+		r.NodeIndex == oi.NodeIndex
+}
+
 func (r *RemoteExecutionGroup) Child(idx int) planning.Node {
 	if idx >= len(r.Nodes) {
 		panic(fmt.Sprintf("this RemoteExecutionGroup node has %d children, but attempted to get child at index %d", len(r.Nodes), idx))
@@ -87,4 +93,9 @@ func (r *RemoteExecutionGroup) ChildrenLabels() []string {
 		}
 		return labels
 	}
+}
+
+func (r *RemoteExecutionGroup) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
+	_, ok := other.(*RemoteExecutionGroup)
+	return ok
 }
