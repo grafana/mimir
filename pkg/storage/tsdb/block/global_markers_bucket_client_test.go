@@ -114,6 +114,62 @@ func TestUploadToGlobalMarkerPath(t *testing.T) {
 	}
 }
 
+func TestGlobalMarkersBucket_UploadOptions(t *testing.T) {
+	t.Run("supported options exclude conditional options", func(t *testing.T) {
+		parent := &bucketWithObjectUploadOptions{
+			Bucket: objstore.NewInMemBucket(),
+			options: []objstore.ObjectUploadOptionType{
+				objstore.ContentType,
+				objstore.IfNotExists,
+				objstore.IfMatch,
+				objstore.IfNotMatch,
+			},
+		}
+
+		supportedOptions := BucketWithGlobalMarkers(parent).SupportedObjectUploadOptions()
+
+		require.Equal(t, []objstore.ObjectUploadOptionType{objstore.ContentType}, supportedOptions)
+	})
+
+	t.Run("upload rejects conditional options without writing marker", func(t *testing.T) {
+		blockID := ulid.MustNew(1, nil)
+
+		for name, tc := range map[string]struct {
+			blockMarker  string
+			globalMarker string
+		}{
+			"deletion mark": {
+				blockMarker:  path.Join(blockID.String(), DeletionMarkFilename),
+				globalMarker: DeletionMarkFilepath(blockID),
+			},
+			"no compact": {
+				blockMarker:  path.Join(blockID.String(), NoCompactMarkFilename),
+				globalMarker: NoCompactMarkFilepath(blockID),
+			},
+		} {
+			t.Run(name, func(t *testing.T) {
+				parent := objstore.NewInMemBucket()
+				bkt := BucketWithGlobalMarkers(parent)
+
+				err := bkt.Upload(t.Context(), tc.blockMarker, strings.NewReader("mark file"), objstore.WithIfNotExists())
+				require.ErrorIs(t, err, objstore.ErrUploadOptionNotSupported)
+
+				verifyPathExists(t, parent, tc.blockMarker, false)
+				verifyPathExists(t, parent, tc.globalMarker, false)
+			})
+		}
+	})
+}
+
+type bucketWithObjectUploadOptions struct {
+	objstore.Bucket
+	options []objstore.ObjectUploadOptionType
+}
+
+func (b *bucketWithObjectUploadOptions) SupportedObjectUploadOptions() []objstore.ObjectUploadOptionType {
+	return b.options
+}
+
 func TestGlobalMarkersBucket_ExistShouldReportTrueOnlyIfBothExist(t *testing.T) {
 	blockID := ulid.MustNew(1, nil)
 
