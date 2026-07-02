@@ -431,7 +431,7 @@ _Look for: `"failed to check ring"`, `"context deadline exceeded"`, `"ring not i
 
 ### MimirRulerTooManyFailedPushes
 
-This alert fires when rulers cannot push new samples (result of rule evaluation) to ingesters.
+This alert fires when rulers cannot push new samples (result of rule evaluation) to ingesters or remote distributors.
 
 In general, pushing samples can fail due to problems with Mimir operations (eg. too many ingesters have crashed, and ruler cannot write samples to them), or due to problems with resulting data (eg. user hitting limit for number of series, out of order samples, etc.).
 This alert fires only for first kind of problems, and not for problems caused by limits or invalid rules.
@@ -439,6 +439,7 @@ This alert fires only for first kind of problems, and not for problems caused by
 How to **fix** it:
 
 - Investigate the ruler logs to find out the reason why ruler cannot write samples. Note that ruler logs all push errors, including "user errors", but those are not causing the alert to fire. Focus on problems with ingesters.
+  If remote distributor writes are enabled, also check ruler-to-distributor gRPC connectivity and the remote distributors' write path.
 - When using Memberlist as KV store for hash rings, ensure that Memberlist is working correctly. See instructions for the [`MimirGossipMembersTooHigh`](#MimirGossipMembersTooHigh) and [`MimirGossipMembersTooLow`](#MimirGossipMembersTooLow) alerts.
 
 ### MimirRulerTooManyFailedQueries

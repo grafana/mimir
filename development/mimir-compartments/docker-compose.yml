@@ -550,7 +550,7 @@
     "command":
       - "sh"
       - "-c"
-      - "exec ./mimir -config.file=./config/mimir.yaml -target=ruler -activity-tracker.filepath=/activity/ruler-1 -distributor.write-compartment-id=0 -ingest-storage.kafka.address=kafka-wc-0:9092 -ingest-storage.kafka.topic='mimir-ingest-rc-<read-compartment-id>'"
+      - "exec ./mimir -config.file=./config/mimir.yaml -target=ruler -activity-tracker.filepath=/activity/ruler-1 -ruler.distributor.address=dns:///distributor:9095"
     "depends_on":
       "kafka-wc-0":
         "condition": "service_healthy"
