@@ -228,6 +228,9 @@ func timestampAllowsCaching(ts *time.Time, timeRange types.QueryTimeRange, fresh
 }
 
 func isStepAligned(timeRange types.QueryTimeRange) bool {
+	// Note that this deliberately differs from the middleware implementation:
+	// the middleware implementation also checks that the end timestamp is step aligned, but this is not necessary.
+	// All step timestamps are calculated relative to the start timestamp, so it is sufficient to check that the start timestamp is step aligned.
 	return timeRange.StartT%timeRange.IntervalMilliseconds == 0
 }
 

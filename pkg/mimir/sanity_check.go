@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/go-kit/log"
@@ -16,6 +17,7 @@ import (
 	"github.com/pkg/errors"
 
 	alertstorelocal "github.com/grafana/mimir/pkg/alertmanager/alertstore/local"
+	"github.com/grafana/mimir/pkg/compartments"
 	"github.com/grafana/mimir/pkg/ruler/rulestore"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/util/fs"
@@ -128,7 +130,7 @@ func checkObjectStoresConfig(ctx context.Context, cfg Config, logger log.Logger)
 
 	// Check blocks storage config only if running at least one component using it.
 	if cfg.isIngesterEnabled() || cfg.isQuerierEnabled() || cfg.isRulerEnabled() || cfg.isStoreGatewayEnabled() || cfg.isCompactorEnabled() {
-		errs.Add(errors.Wrap(checkObjectStoreConfig(ctx, cfg.BlocksStorage.Bucket, logger), "blocks storage"))
+		errs.Add(errors.Wrap(checkBlocksStorageConfig(ctx, cfg, logger), "blocks storage"))
 	}
 
 	// Check alertmanager storage config.
@@ -141,6 +143,23 @@ func checkObjectStoresConfig(ctx context.Context, cfg Config, logger log.Logger)
 		errs.Add(errors.Wrap(checkObjectStoreConfig(ctx, cfg.RulerStorage.Config, logger), "ruler storage"))
 	}
 
+	return errs.Err()
+}
+
+// checkBlocksStorageConfig checks connectivity to the blocks storage bucket. With compartments enabled the
+// querier's bucket name carries the read-compartment placeholder (it reads one bucket per read
+// compartment), so each compartment's resolved bucket is checked; otherwise the single configured bucket
+// is checked, as the placeholder is invalid as an actual bucket name.
+func checkBlocksStorageConfig(ctx context.Context, cfg Config, logger log.Logger) error {
+	bucketCfg := cfg.BlocksStorage.Bucket
+	if !cfg.Compartments.Enabled || !strings.Contains(bucketCfg.BucketName(), compartments.ReadCompartmentIDPlaceholder) {
+		return checkObjectStoreConfig(ctx, bucketCfg, logger)
+	}
+
+	errs := multierror.New()
+	for c := 0; c < cfg.Compartments.Read.NumCompartments; c++ {
+		errs.Add(errors.Wrapf(checkObjectStoreConfig(ctx, bucketCfg.ReadCompartmentConfig(c), logger), "read compartment %d", c))
+	}
 	return errs.Err()
 }
 

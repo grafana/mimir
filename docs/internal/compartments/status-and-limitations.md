@@ -13,10 +13,11 @@ the other files is implemented today; this page tracks the gap.
 - **Multi-cluster consumption**: an ingester consumes its read compartment's topic from **every** write
   compartment's Kafka cluster and unions the records into its TSDB. Each per-cluster consumption tracks
   its own offsets independently.
-- **Compartment-aware querying of ingesters**: the query layer narrows a query to the compartments that
-  can hold the selected metric names (a single compartment for an equality matcher, the union for an
-  enumerable metric-name set) and fans out to all compartments otherwise (see
-  [Read compartments](./read-compartments.md)).
+- **Compartment-aware querying of ingesters and store-gateways**: the query layer narrows a query to the
+  compartments that can hold the selected metric names (a single compartment for an equality matcher, the
+  union for an enumerable metric-name set) and fans out to all compartments otherwise, then merges the
+  results (see [Read compartments](./read-compartments.md)). For blocks, it queries each targeted
+  compartment's store-gateways and discovers that compartment's blocks from its dedicated bucket.
 - **Per-compartment store-gateway and compactor rings**: a store-gateway or compactor configured for a
   read compartment registers into that compartment's own dedicated ring, separate from the
   non-compartment ring and from the other compartments' rings.
@@ -26,11 +27,8 @@ the other files is implemented today; this page tracks the gap.
   each Kafka cluster (falling back to the last produced offset when offsets aren't propagated).
 - A local development environment (`development/mimir-compartments`).
 
-## Blocks-storage querying is not compartment-aware yet
+## Blocks storage is only partially compartment-aware
 
-- The query path still uses the single, non-compartment store-gateway ring, so it does not yet route
-  block queries to the store-gateways of the compartment that holds the blocks. Compartment-aware
-  querying of store-gateways (mirroring the compartment-aware querying of ingesters) is not wired yet.
 - Running store-gateways and compactors as separate per-compartment deployments, each with a dedicated
   object-storage bucket, is wired in the local development environment but not yet in the production
   deployment tooling.

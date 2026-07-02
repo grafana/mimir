@@ -124,6 +124,7 @@ const (
 	QueryScheduler                   string = "query-scheduler"
 	Queryable                        string = "queryable"
 	Ruler                            string = "ruler"
+	RulerDistributorClient           string = "ruler-distributor-client"
 	RulerStorage                     string = "ruler-storage"
 	RuntimeConfig                    string = "runtime-config"
 	SanityCheck                      string = "sanity-check"
@@ -256,6 +257,7 @@ func (t *Mimir) initVault() (services.Service, error) {
 	t.Cfg.QueryScheduler.GRPCClientConfig.TLS.Reader = t.Vault
 	t.Cfg.Ruler.ClientTLSConfig.TLS.Reader = t.Vault
 	t.Cfg.Ruler.DeprecatedNotifier.TLS.Reader = t.Vault
+	t.Cfg.Ruler.Distributor.GRPCClientConfig.TLS.Reader = t.Vault
 	t.Cfg.Ruler.QueryFrontend.GRPCClientConfig.TLS.Reader = t.Vault
 	t.Cfg.Worker.QueryFrontendGRPCClientConfig.TLS.Reader = t.Vault
 	t.Cfg.Worker.QuerySchedulerGRPCClientConfig.TLS.Reader = t.Vault
@@ -525,11 +527,11 @@ func (t *Mimir) initDistributorService() (serv services.Service, err error) {
 	// ruler's dependency)
 	canJoinDistributorsRing := t.Cfg.isDistributorEnabled()
 
-	// Only run the ingest-storage writer in processes that actually push (the distributor and the ruler,
-	// which writes rule results). When the distributor is used purely as a query dependency (querier), the
-	// writer is unnecessary and, under compartments, would fail to start trying to auto-create topics it
-	// has no write-compartment context for.
-	writerEnabled := t.Cfg.isDistributorEnabled() || t.Cfg.isRulerEnabled()
+	// Only run the ingest-storage writer in processes that actually push (the distributor and rulers using
+	// local writes for rule results). When the distributor is used purely as a query dependency or the ruler
+	// pushes via remote distributors, the writer is unnecessary and, under compartments, would fail to start
+	// trying to auto-create topics it has no write-compartment context for.
+	writerEnabled := t.Cfg.isDistributorEnabled() || (t.Cfg.isRulerEnabled() && t.Cfg.rulerLocalWritesEnabled())
 
 	t.Cfg.Distributor.StreamingChunksPerIngesterSeriesBufferSize = t.Cfg.Querier.StreamingChunksPerIngesterSeriesBufferSize
 	t.Cfg.Distributor.MinimizeIngesterRequests = t.Cfg.Querier.MinimizeIngesterRequests
@@ -773,7 +775,7 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 
 func (t *Mimir) initStoreQueryable() (services.Service, error) {
 	q, err := querier.NewBlocksStoreQueryableFromConfig(
-		t.Cfg.Querier, t.Cfg.StoreGateway, t.Cfg.BlocksStorage, t.Overrides, util_log.Logger, t.Registerer,
+		t.Cfg.Querier, t.Cfg.StoreGateway, t.Cfg.BlocksStorage, t.Cfg.Compartments, t.Overrides, util_log.Logger, t.Registerer,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize block store queryable: %v", err)
@@ -1211,7 +1213,7 @@ func (t *Mimir) createQueryFrontendPromQLEngineOptions() streamingpromql.EngineO
 
 func (t *Mimir) initRulerStorage() (serv services.Service, err error) {
 	// If the ruler is not configured and Mimir is running in monolithic mode, then we just skip starting the ruler.
-	if t.Cfg.isAnyModuleExplicitlyTargeted(All) && t.Cfg.RulerStorage.IsDefaults() {
+	if !t.Cfg.shouldInitRulerStorage() {
 		level.Info(util_log.Logger).Log("msg", "The ruler is not being started because you need to configure the ruler storage.")
 		return
 	}
@@ -1222,6 +1224,15 @@ func (t *Mimir) initRulerStorage() (serv services.Service, err error) {
 	cacheTTL := t.Cfg.Ruler.PollInterval
 	t.RulerStorage, err = ruler.NewRuleStore(context.Background(), t.Cfg.RulerStorage, t.Overrides, cacheTTL, util_log.Logger, t.Registerer)
 	return
+}
+
+func (t *Mimir) initRulerDistributorClient() (services.Service, error) {
+	client, err := ruler.NewDistributorGRPCClient(t.Cfg.Ruler.Distributor, t.Registerer, util_log.Logger)
+	if err != nil {
+		return nil, err
+	}
+	t.RulerDistributorClient = client
+	return client, nil
 }
 
 func (t *Mimir) initRuler() (serv services.Service, err error) {
@@ -1326,9 +1337,13 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 		)
 	}
 	rulesFS := afero.NewMemMapFs()
+	var pusher ruler.Pusher = t.Distributor
+	if t.Cfg.rulerRemoteWritesEnabled() {
+		pusher = t.RulerDistributorClient
+	}
 	managerFactory := ruler.DefaultTenantManagerFactory(
 		t.Cfg.Ruler,
-		t.Distributor,
+		pusher,
 		embeddedQueryable,
 		queryFunc,
 		rulesFS,
@@ -1362,7 +1377,7 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 		t.Overrides,
 	)
 	if err != nil {
-		return
+		return nil, err
 	}
 
 	// Expose HTTP/GRPC admin endpoints for the Ruler service
@@ -1674,6 +1689,7 @@ func (t *Mimir) setupModuleManager() error {
 	mm.RegisterModule(QueryScheduler, t.initQueryScheduler)
 	mm.RegisterModule(Queryable, t.initQueryable, modules.UserInvisibleModule)
 	mm.RegisterModule(Ruler, t.initRuler)
+	mm.RegisterModule(RulerDistributorClient, t.initRulerDistributorClient, modules.UserInvisibleModule)
 	mm.RegisterModule(RulerStorage, t.initRulerStorage, modules.UserInvisibleModule)
 	mm.RegisterModule(RuntimeConfig, t.initRuntimeConfig, modules.UserInvisibleModule)
 	mm.RegisterModule(SanityCheck, t.initSanityCheck, modules.UserInvisibleModule)
@@ -1688,6 +1704,24 @@ func (t *Mimir) setupModuleManager() error {
 	mm.RegisterModule(Vault, t.initVault, modules.UserInvisibleModule)
 
 	mm.RegisterModule(All, nil)
+
+	rulerDeps := []string{API, MemberlistKV, Overrides, RulerStorage, RuntimeConfig, Vault}
+	addRulerDep := func(dep string) {
+		if !slices.Contains(rulerDeps, dep) {
+			rulerDeps = append(rulerDeps, dep)
+		}
+	}
+	if t.Cfg.Ruler.QueryFrontend.Address == "" {
+		addRulerDep(DistributorService)
+		addRulerDep(StoreQueryable)
+		addRulerDep(QuerierQueryPlanner)
+	}
+	if t.Cfg.rulerLocalWritesEnabled() {
+		addRulerDep(DistributorService)
+	}
+	if t.Cfg.rulerRemoteWritesEnabled() && t.Cfg.shouldInitRulerStorage() {
+		addRulerDep(RulerDistributorClient)
+	}
 
 	// Add dependencies
 	deps := map[string][]string{
@@ -1719,7 +1753,8 @@ func (t *Mimir) setupModuleManager() error {
 		QueryFrontendTripperware:         {API, Overrides, QueryFrontendCodec, QueryFrontendTopicOffsetsReaders, QuerierRing, QueryFrontendCacheClient, CacheKeyGenerator},
 		QueryScheduler:                   {API, Overrides, MemberlistKV, Vault},
 		Queryable:                        {Overrides, DistributorService, IngesterRing, IngesterPartitionRing, API, StoreQueryable, MemberlistKV, QuerierQueryPlanner},
-		Ruler:                            {DistributorService, StoreQueryable, RulerStorage, Vault, QuerierQueryPlanner},
+		Ruler:                            rulerDeps,
+		RulerDistributorClient:           {Vault},
 		RulerStorage:                     {Overrides},
 		RuntimeConfig:                    {API},
 		Server:                           {ActivityTracker, SanityCheck, UsageStats},
