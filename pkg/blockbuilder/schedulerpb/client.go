@@ -11,6 +11,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/backoff"
+	"github.com/grafana/mimir/pkg/util/hyperassert"
 )
 
 // SchedulerClient is a client for the scheduler service.
@@ -180,6 +181,7 @@ func (s *schedulerClient) GetJob(ctx context.Context) (JobKey, JobSpec, error) {
 		s.mu.Lock()
 		if _, ok := s.jobs[key]; ok {
 			// This should never happen; we'd like to see a log if it does.
+			hyperassert.Unreachable("job already assigned", map[string]any{"job_id": key.Id, "epoch": key.Epoch})
 			level.Warn(s.logger).Log("msg", "job already assigned", "job_id", key.Id, "epoch", key.Epoch)
 		}
 
