@@ -39,11 +39,11 @@ import (
 type MultiClusterPartitionReader struct {
 	services.Service
 
-	logger  log.Logger
-	readers []*SingleClusterPartitionReader
-	merger  *HeapMerger // nil when heap merging is disabled
-	manager *services.Manager
-	watcher *services.FailureWatcher
+	logger         log.Logger
+	readers        []*SingleClusterPartitionReader
+	merger         *HeapMerger // nil when heap merging is disabled
+	readersManager *services.Manager
+	watcher        *services.FailureWatcher
 }
 
 // NewMultiClusterPartitionReader creates a MultiClusterPartitionReader that consumes the given partition
@@ -136,35 +136,46 @@ func NewMultiClusterPartitionReader(
 }
 
 func (r *MultiClusterPartitionReader) starting(ctx context.Context) error {
-	svcs := make([]services.Service, 0, len(r.readers)+1)
-	// The merger is managed alongside the readers. The input channel is buffered, so records a reader
-	// submits before the merger's run loop starts draining are simply queued rather than lost.
+	// The merger is started before the readers and, crucially, stopped after them (see stopping()). A
+	// reader finishes its in-flight consume on a non-cancellable context even while stopping, and that
+	// consume may still submit records to the merger and block waiting for their acks. If the merger
+	// stopped first, those submissions would never be flushed or acked and the reader would hang forever.
+	// So the merger is managed separately from the readers to control the start/stop order.
 	if r.merger != nil {
-		svcs = append(svcs, r.merger)
+		if err := services.StartAndAwaitRunning(ctx, r.merger); err != nil {
+			return errors.Wrap(err, "starting heap merger")
+		}
 	}
-	for _, reader := range r.readers {
-		svcs = append(svcs, reader)
+
+	svcs := make([]services.Service, len(r.readers))
+	for i, reader := range r.readers {
+		svcs[i] = reader
 	}
 
 	var err error
-	if r.manager, err = services.NewManager(svcs...); err != nil {
+	if r.readersManager, err = services.NewManager(svcs...); err != nil {
+		r.stopMerger()
 		return errors.Wrap(err, "creating partition readers service manager")
 	}
 
 	// If any per-cluster reader fails to start, the whole reader fails to start. This is required to
 	// guarantee that the caller doesn't end up with partial consumption if a subset of readers fails to start.
-	if err := services.StartManagerAndAwaitHealthy(ctx, r.manager); err != nil {
-		// Stop the readers that did start, so we don't leak them when starting() fails.
-		r.manager.StopAsync()
-		_ = r.manager.AwaitStopped(context.Background())
+	if err := services.StartManagerAndAwaitHealthy(ctx, r.readersManager); err != nil {
+		// Stop the readers that did start, then the merger, so we don't leak them when starting() fails.
+		r.readersManager.StopAsync()
+		_ = r.readersManager.AwaitStopped(context.Background())
+		r.stopMerger()
 		return errors.Wrap(err, "starting per-cluster partition readers")
 	}
 
-	// Only start watching for failures once all readers are running: the watcher's goroutine blocks on
-	// the failure channel, which is drained by running() and closed by stopping(), neither of which runs
-	// if starting() fails.
+	// Only start watching for failures once everything is running: the watcher's goroutine blocks on the
+	// failure channel, which is drained by running() and closed by stopping(), neither of which runs if
+	// starting() fails.
 	r.watcher = services.NewFailureWatcher()
-	r.watcher.WatchManager(r.manager)
+	r.watcher.WatchManager(r.readersManager)
+	if r.merger != nil {
+		r.watcher.WatchService(r.merger)
+	}
 
 	return nil
 }
@@ -179,11 +190,28 @@ func (r *MultiClusterPartitionReader) running(ctx context.Context) error {
 }
 
 func (r *MultiClusterPartitionReader) stopping(_ error) error {
-	// stopping() only runs if starting() returned without error, so the manager and the failure watcher
-	// are always set here.
+	// stopping() only runs if starting() returned without error, so the readers manager and the failure
+	// watcher are always set here.
 	r.watcher.Close()
-	r.manager.StopAsync()
-	return r.manager.AwaitStopped(context.Background())
+
+	// Stop the readers first and wait for them to fully terminate. A reader finishes its in-flight consume
+	// on a non-cancellable context, which may still submit records to the merger and wait for their acks,
+	// so the merger must stay running until every reader has stopped submitting. Only then is it safe to
+	// stop the merger.
+	r.readersManager.StopAsync()
+	err := r.readersManager.AwaitStopped(context.Background())
+
+	r.stopMerger()
+	return err
+}
+
+// stopMerger stops the heap merger and waits for it to terminate. It is a no-op when merging is disabled.
+func (r *MultiClusterPartitionReader) stopMerger() {
+	if r.merger == nil {
+		return
+	}
+	r.merger.StopAsync()
+	_ = r.merger.AwaitTerminated(context.Background())
 }
 
 // LastSeenOffsets returns the highest record offset seen by each Kafka cluster's reader, indexed by
