@@ -585,6 +585,7 @@ which allows us to keep generating everything for the default zone.
   "nodeSelector" ($rolloutZone.nodeSelector | default (dict) )
   "replicas" $replicaPerZone
   "storageClass" $rolloutZone.storageClass
+  "volumeAttributesClassName" $rolloutZone.volumeAttributesClassName
   "noDownscale"  $rolloutZone.noDownscale
   "downscaleLeader" $downscaleLeader
   "prepareDownscale" $rolloutZone.prepareDownscale
@@ -741,4 +742,107 @@ fallback:
   behavior: {{ . | quote }}
   {{- end -}}
 {{- end -}}
+{{- end -}}
+
+{{/*
+Return the VolumeAttributesClass API version for the target Kubernetes cluster.
+*/}}
+{{- define "mimir.volumeAttributesClass.apiVersion" -}}
+{{- if semverCompare ">= 1.34-0" (include "mimir.kubeVersion" .) -}}
+storage.k8s.io/v1
+{{- else -}}
+storage.k8s.io/v1beta1
+{{- end -}}
+{{- end -}}
+
+{{/*
+Return the Kubernetes resource name for a chart-managed VolumeAttributesClass.
+Params:
+  ctx = root context
+  key = logical key from volumeAttributesClasses map (optional)
+  component = component name for inline create (optional)
+  spec = VolumeAttributesClass values dict (optional)
+*/}}
+{{- define "mimir.volumeAttributesClassResourceName" -}}
+{{- $ctx := .ctx -}}
+{{- $spec := .spec | default dict -}}
+{{- if $spec.name -}}
+{{- $spec.name | trunc 63 | trimSuffix "-" -}}
+{{- else if .component -}}
+{{- printf "%s-%s-vac" (include "mimir.fullname" $ctx) .component | trunc 63 | trimSuffix "-" -}}
+{{- else if .key -}}
+{{- printf "%s-%s" (include "mimir.fullname" $ctx) .key | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Resolve the volumeAttributesClassName to set on a PVC.
+Params:
+  ctx = root context
+  component = component name
+  persistentVolume = persistentVolume or persistence values dict
+  rolloutZone = zone rollout dict (optional)
+*/}}
+{{- define "mimir.volumeAttributesClassName" -}}
+{{- if not (semverCompare ">= 1.31-0" (include "mimir.kubeVersion" .ctx)) -}}
+{{- else -}}
+{{- $pv := .persistentVolume -}}
+{{- $vac := $pv.volumeAttributesClass | default dict -}}
+{{- $name := "" -}}
+{{- if $vac.create -}}
+{{- $name = include "mimir.volumeAttributesClassResourceName" (dict "ctx" .ctx "component" .component "spec" $vac) -}}
+{{- else -}}
+{{- $rolloutZone := .rolloutZone | default dict -}}
+{{- $requestedName := default $pv.volumeAttributesClassName $rolloutZone.volumeAttributesClassName -}}
+{{- if $requestedName -}}
+{{- if hasKey $.ctx.Values.volumeAttributesClasses $requestedName -}}
+{{- $name = include "mimir.volumeAttributesClassResourceName" (dict "ctx" .ctx "key" $requestedName "spec" (index $.ctx.Values.volumeAttributesClasses $requestedName)) -}}
+{{- else -}}
+{{- $name = $requestedName -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- $name -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Render the spec block for a PersistentVolumeClaim in volumeClaimTemplates.
+Params:
+  ctx = root context
+  component = component name
+  persistentVolume = persistentVolume or persistence values dict
+  rolloutZone = zone rollout dict (optional)
+  storageClassKey = field name for storage class (default: storageClass)
+  storageSizeKey = field name for storage size (default: size)
+  accessModes = list of access modes (optional, defaults to persistentVolume.accessModes)
+*/}}
+{{- define "mimir.persistentVolumeClaimSpec" -}}
+{{- $pv := .persistentVolume -}}
+{{- $storageClassKey := .storageClassKey | default "storageClass" -}}
+{{- $storageSizeKey := .storageSizeKey | default "size" -}}
+{{- $storageClass := index $pv $storageClassKey -}}
+{{- if .rolloutZone -}}
+{{- $storageClass = default $storageClass (index .rolloutZone $storageClassKey) -}}
+{{- end -}}
+{{- if $storageClass }}
+{{- if (eq "-" $storageClass) }}
+storageClassName: ""
+{{- else }}
+storageClassName: {{ $storageClass }}
+{{- end }}
+{{- end }}
+{{- $vacName := include "mimir.volumeAttributesClassName" (dict "ctx" .ctx "component" .component "persistentVolume" $pv "rolloutZone" (.rolloutZone | default dict)) }}
+{{- if $vacName }}
+volumeAttributesClassName: {{ $vacName }}
+{{- end }}
+accessModes:
+{{- if .accessModes }}
+  {{- toYaml .accessModes | nindent 2 }}
+{{- else }}
+  {{- toYaml $pv.accessModes | nindent 2 }}
+{{- end }}
+resources:
+  requests:
+    storage: "{{ index $pv $storageSizeKey }}"
 {{- end -}}

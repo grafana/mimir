@@ -8,7 +8,7 @@ should_be_namespaced(contents) {
 }
 
 should_be_namespaced(contents) {
-	not contents.kind in ["ClusterRole", "ClusterRoleBinding", "CustomResourceDefinition", "MutatingWebhookConfiguration", "Namespace", "PodSecurityPolicy", "ValidatingWebhookConfiguration"]
+	not contents.kind in ["ClusterRole", "ClusterRoleBinding", "CustomResourceDefinition", "MutatingWebhookConfiguration", "Namespace", "PodSecurityPolicy", "ValidatingWebhookConfiguration", "VolumeAttributesClass"]
 }
 
 metadata_has_namespace(metadata) {

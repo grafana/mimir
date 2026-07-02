@@ -608,6 +608,19 @@ alertmanager:
     # A per-zone storageClass configuration in `alertmanager.zoneAwareReplication.zones[*].storageClass` takes precedence over this field.
     # storageClass: "-"
 
+    # VolumeAttributesClass to attach to PVCs. Requires Kubernetes 1.31+ and a CSI driver with ModifyVolume support.
+    # If the value matches a key in the top-level volumeAttributesClasses map, the chart-managed class name is used.
+    # Otherwise the value is used as-is to reference an existing cluster VolumeAttributesClass.
+    # A per-zone volumeAttributesClassName in `alertmanager.zoneAwareReplication.zones[*].volumeAttributesClassName` takes precedence over this field when set.
+    # volumeAttributesClassName: silver
+    #
+    # Alternatively, create a component-specific VolumeAttributesClass inline:
+    # volumeAttributesClass:
+    #   create: true
+    #   driverName: ebs.csi.aws.com
+    #   parameters:
+    #     type: gp3
+
     # -- Enable StatefulSetAutoDeletePVC feature
     # https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/#persistentvolumeclaim-retention
     enableRetentionPolicy: false
@@ -728,6 +741,9 @@ alertmanager:
         # If set to "-", then use `storageClassName: ""`, which disables dynamic provisioning
         # If undefined or set to null (the default), then fall back to the value of `alertmanager.persistentVolume.storageClass`.
         storageClass: null
+        # -- Persistent Volume VolumeAttributesClass for this zone.
+        # If undefined or set to null (the default), then fall back to the component `persistentVolume.volumeAttributesClassName`.
+        volumeAttributesClassName: null
         # -- noDownscale adds a label that can be used by the rollout-operator as documented in the rollout-operator repo: https://github.com/grafana/rollout-operator#webhooks
         noDownscale: false
         # -- downscaleLeader is an Annotation used by the rollout-operator to coordinate downscaling across zones.
@@ -748,6 +764,9 @@ alertmanager:
         # If set to "-", then use `storageClassName: ""`, which disables dynamic provisioning
         # If undefined or set to null (the default), then fall back to the value of `alertmanager.persistentVolume.storageClass`.
         storageClass: null
+        # -- Persistent Volume VolumeAttributesClass for this zone.
+        # If undefined or set to null (the default), then fall back to the component `persistentVolume.volumeAttributesClassName`.
+        volumeAttributesClassName: null
         # -- noDownscale adds a label that can be used by the rollout-operator as documented in the rollout-operator repo: https://github.com/grafana/rollout-operator#webhooks
         noDownscale: false
         # -- downscaleLeader is an Annotation used by the rollout-operator to coordinate downscaling across zones.
@@ -768,6 +787,9 @@ alertmanager:
         # If set to "-", then use `storageClassName: ""`, which disables dynamic provisioning
         # If undefined or set to null (the default), then fall back to the value of `alertmanager.persistentVolume.storageClass`.
         storageClass: null
+        # -- Persistent Volume VolumeAttributesClass for this zone.
+        # If undefined or set to null (the default), then fall back to the component `persistentVolume.volumeAttributesClassName`.
+        volumeAttributesClassName: null
         # -- noDownscale adds a label that can be used by the rollout-operator as documented in the rollout-operator repo: https://github.com/grafana/rollout-operator#webhooks
         noDownscale: false
         # -- downscaleLeader is an Annotation used by the rollout-operator to coordinate downscaling across zones.
@@ -1029,6 +1051,19 @@ ingester:
     #
     # storageClass: "-"
 
+    # VolumeAttributesClass to attach to PVCs. Requires Kubernetes 1.31+ and a CSI driver with ModifyVolume support.
+    # If the value matches a key in the top-level volumeAttributesClasses map, the chart-managed class name is used.
+    # Otherwise the value is used as-is to reference an existing cluster VolumeAttributesClass.
+    # A per-zone volumeAttributesClassName in `ingester.zoneAwareReplication.zones[*].volumeAttributesClassName` takes precedence over this field when set.
+    # volumeAttributesClassName: silver
+    #
+    # Alternatively, create a component-specific VolumeAttributesClass inline:
+    # volumeAttributesClass:
+    #   create: true
+    #   driverName: ebs.csi.aws.com
+    #   parameters:
+    #     type: gp3
+
   livenessProbe: null
   readinessProbe:
     httpGet:
@@ -1128,6 +1163,9 @@ ingester:
         # If set to "-", then use `storageClassName: ""`, which disables dynamic provisioning
         # If undefined or set to null (the default), then fall back to the value of `ingester.persistentVolume.storageClass`.
         storageClass: null
+        # -- Persistent Volume VolumeAttributesClass for this zone.
+        # If undefined or set to null (the default), then fall back to the component `persistentVolume.volumeAttributesClassName`.
+        volumeAttributesClassName: null
         # -- noDownscale adds a label that can be used by the rollout-operator as documented in the rollout-operator repo: https://github.com/grafana/rollout-operator#webhooks
         noDownscale: false
         # -- downscaleLeader is an Annotation used by the rollout-operator to coordinate downscaling across zones.
@@ -1150,6 +1188,9 @@ ingester:
         # If set to "-", then use `storageClassName: ""`, which disables dynamic provisioning
         # If undefined or set to null (the default), then fall back to the value of `ingester.persistentVolume.storageClass`.
         storageClass: null
+        # -- Persistent Volume VolumeAttributesClass for this zone.
+        # If undefined or set to null (the default), then fall back to the component `persistentVolume.volumeAttributesClassName`.
+        volumeAttributesClassName: null
         # -- noDownscale adds a label that can be used by the rollout-operator as documented in the rollout-operator repo: https://github.com/grafana/rollout-operator#webhooks
         noDownscale: false
         # -- downscaleLeader is an Annotation used by the rollout-operator to coordinate downscaling across zones.
@@ -1172,6 +1213,9 @@ ingester:
         # If set to "-", then use `storageClassName: ""`, which disables dynamic provisioning
         # If undefined or set to null (the default), then fall back to the value of `ingester.persistentVolume.storageClass`.
         storageClass: null
+        # -- Persistent Volume VolumeAttributesClass for this zone.
+        # If undefined or set to null (the default), then fall back to the component `persistentVolume.volumeAttributesClassName`.
+        volumeAttributesClassName: null
         # -- noDownscale adds a label that can be used by the rollout-operator as documented in the rollout-operator repo: https://github.com/grafana/rollout-operator#webhooks
         noDownscale: false
         # -- downscaleLeader is an Annotation used by the rollout-operator to coordinate downscaling across zones.
@@ -2236,6 +2280,19 @@ store_gateway:
     # A per-zone storageClass configuration in `store_gateway.zoneAwareReplication.zones[*].storageClass` takes precedence over this field.
     # storageClass: "-"
 
+    # VolumeAttributesClass to attach to PVCs. Requires Kubernetes 1.31+ and a CSI driver with ModifyVolume support.
+    # If the value matches a key in the top-level volumeAttributesClasses map, the chart-managed class name is used.
+    # Otherwise the value is used as-is to reference an existing cluster VolumeAttributesClass.
+    # A per-zone volumeAttributesClassName in `store_gateway.zoneAwareReplication.zones[*].volumeAttributesClassName` takes precedence over this field when set.
+    # volumeAttributesClassName: silver
+    #
+    # Alternatively, create a component-specific VolumeAttributesClass inline:
+    # volumeAttributesClass:
+    #   create: true
+    #   driverName: ebs.csi.aws.com
+    #   parameters:
+    #     type: gp3
+
     # -- Enable StatefulSetAutoDeletePVC feature
     # https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/#persistentvolumeclaim-retention
     enableRetentionPolicy: false
@@ -2325,6 +2382,9 @@ store_gateway:
         # If set to "-", then use `storageClassName: ""`, which disables dynamic provisioning
         # If undefined or set to null (the default), then fall back to the value of `store_gateway.persistentVolume.storageClass`.
         storageClass: null
+        # -- Persistent Volume VolumeAttributesClass for this zone.
+        # If undefined or set to null (the default), then fall back to the component `persistentVolume.volumeAttributesClassName`.
+        volumeAttributesClassName: null
         # -- noDownscale adds a label that can be used by the rollout-operator as documented in the rollout-operator repo: https://github.com/grafana/rollout-operator#webhooks
         noDownscale: false
         # -- downscaleLeader is an Annotation used by the rollout-operator to coordinate downscaling across zones.
@@ -2347,6 +2407,9 @@ store_gateway:
         # If set to "-", then use `storageClassName: ""`, which disables dynamic provisioning
         # If undefined or set to null (the default), then fall back to the value of `store_gateway.persistentVolume.storageClass`.
         storageClass: null
+        # -- Persistent Volume VolumeAttributesClass for this zone.
+        # If undefined or set to null (the default), then fall back to the component `persistentVolume.volumeAttributesClassName`.
+        volumeAttributesClassName: null
         # -- noDownscale adds a label that can be used by the rollout-operator as documented in the rollout-operator repo: https://github.com/grafana/rollout-operator#webhooks
         noDownscale: false
         # -- downscaleLeader is an Annotation used by the rollout-operator to coordinate downscaling across zones.
@@ -2369,6 +2432,9 @@ store_gateway:
         # If set to "-", then use `storageClassName: ""`, which disables dynamic provisioning
         # If undefined or set to null (the default), then fall back to the value of `store_gateway.persistentVolume.storageClass`.
         storageClass: null
+        # -- Persistent Volume VolumeAttributesClass for this zone.
+        # If undefined or set to null (the default), then fall back to the component `persistentVolume.volumeAttributesClassName`.
+        volumeAttributesClassName: null
         # -- noDownscale adds a label that can be used by the rollout-operator as documented in the rollout-operator repo: https://github.com/grafana/rollout-operator#webhooks
         noDownscale: false
         # -- downscaleLeader is an Annotation used by the rollout-operator to coordinate downscaling across zones.
@@ -2484,6 +2550,18 @@ compactor:
     #   set, choosing the default provisioner.
     #
     # storageClass: "-"
+
+    # VolumeAttributesClass to attach to PVCs. Requires Kubernetes 1.31+ and a CSI driver with ModifyVolume support.
+    # If the value matches a key in the top-level volumeAttributesClasses map, the chart-managed class name is used.
+    # Otherwise the value is used as-is to reference an existing cluster VolumeAttributesClass.
+    # volumeAttributesClassName: silver
+    #
+    # Alternatively, create a component-specific VolumeAttributesClass inline:
+    # volumeAttributesClass:
+    #   create: true
+    #   driverName: ebs.csi.aws.com
+    #   parameters:
+    #     type: gp3
 
     # -- Enable StatefulSetAutoDeletePVC feature
     # https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/#persistentvolumeclaim-retention
@@ -3078,6 +3156,17 @@ kafka:
     enabled: true
     size: 5Gi
     storageClassName: ""
+    # VolumeAttributesClass to attach to PVCs. Requires Kubernetes 1.31+ and a CSI driver with ModifyVolume support.
+    # If the value matches a key in the top-level volumeAttributesClasses map, the chart-managed class name is used.
+    # Otherwise the value is used as-is to reference an existing cluster VolumeAttributesClass.
+    # volumeAttributesClassName: silver
+    #
+    # Alternatively, create a component-specific VolumeAttributesClass inline:
+    # volumeAttributesClass:
+    #   create: true
+    #   driverName: ebs.csi.aws.com
+    #   parameters:
+    #     type: gp3
     # Additional settings for emptyDir if persistence is disabled
     emptyDir: {}
   # -- Resource requests and limits for Kafka
@@ -3968,3 +4057,19 @@ continuous_test:
 #   data: |
 #     extra.yml: "{{ include some-mimir-define }}"
 extraObjects: []
+
+# -- Create cluster-scoped VolumeAttributesClass resources from chart values.
+# Components reference classes by key via `*.persistentVolume.volumeAttributesClassName` or `kafka.persistence.volumeAttributesClassName`.
+# Requires Kubernetes 1.31+ and a CSI driver that supports the ModifyVolume API.
+# Example:
+# volumeAttributesClasses:
+#   silver:
+#     driverName: ebs.csi.aws.com
+#     parameters:
+#       type: gp3
+#       iops: "3000"
+#     # Optional. Defaults to "<release-fullname>-silver".
+#     name: null
+#     labels: {}
+#     annotations: {}
+volumeAttributesClasses: {}

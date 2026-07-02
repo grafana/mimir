@@ -38,18 +38,7 @@ spec:
           {{- toYaml .labels | nindent 10 }}
         {{- end }}
       spec:
-        {{- if .storageClass }}
-        {{- if (eq "-" .storageClass) }}
-        storageClassName: ""
-        {{- else }}
-        storageClassName: "{{ .storageClass }}"
-        {{- end }}
-        {{- end }}
-        accessModes:
-          {{- toYaml .accessModes | nindent 10 }}
-        resources:
-          requests:
-            storage: "{{ .size }}"
+{{ include "mimir.persistentVolumeClaimSpec" (dict "ctx" $ "component" "compactor" "persistentVolume" .) | trimPrefix "\n" | indent 8 }}
   {{- end }}
   {{- end }}
   template:
