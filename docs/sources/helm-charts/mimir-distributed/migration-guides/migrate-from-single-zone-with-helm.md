@@ -635,6 +635,7 @@ Before starting this procedure, set up your zones according to [Configure zone-a
        enabled: true
        migration:
          enabled: true
+         replicas: <N>  # Keep this set to your current migration replica count
          writePath: true
 
    rollout_operator:
@@ -642,6 +643,8 @@ Before starting this procedure, set up your zones according to [Configure zone-a
    ```
 
    [//]: # "ingester-step3"
+
+   > **Important**: Ensure that `ingester.zoneAwareReplication.migration.replicas` is kept set to the same value from step 5. The chart uses this value to calculate replicas per zone throughout the migration period, including when `writePath` is enabled. This ensures each zone maintains the correct number of replicas and prevents unintended downscaling.
 
 1. Upgrade the installation with the `helm` command and make sure to provide the flag `-f migrate.yaml` as the last flag.
 
