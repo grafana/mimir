@@ -18,7 +18,7 @@ import (
 
 const (
 	checkContextErrorSeriesCount    = 1000 // series count interval in which context cancellation must be checked.
-	dimensionLabelValuesSeriesCount = "labelValuesSeriesCount"
+	dimensionLabelValuesSeriesCount = "label-values-series-count"
 )
 
 // LabelValuesCountConfig holds the label-values-cardinality-specific settings.

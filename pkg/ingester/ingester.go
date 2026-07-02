@@ -683,7 +683,7 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 		}
 	}
 
-	i.computeWorkerPool, err = workerpool.New(workerpool.Config{Size: cfg.ComputeWorkers}, "ingester-worker-pool", registerer, logger)
+	i.computeWorkerPool, err = workerpool.New(workerpool.Config{Size: cfg.ComputeWorkers}, "ingester-compute", registerer, logger)
 	if err != nil {
 		return nil, errors.Wrap(err, "creating ingester compute worker pool")
 	}
