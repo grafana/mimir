@@ -3,12 +3,10 @@
 package scheduler
 
 import (
-	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"iter"
-	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -704,17 +702,25 @@ func (s *BlockBuilderScheduler) finalizeObservations() {
 			continue
 		}
 
-		// Sort observations by start offset
-		slices.SortFunc(observations, func(a, b *observation) int {
-			return cmp.Compare(a.spec.StartOffset, b.spec.StartOffset)
-		})
+		// Track the highest epoch across all observations so setEpoch resumes
+		// assigning epochs above every recovered job's epoch. Done before the
+		// skip check below so a partition we choose not to recover still advances
+		// the counter past its jobs.
+		for _, obs := range observations {
+			maxEpoch = max(maxEpoch, obs.key.epoch)
+		}
+
+		ordered, err := orderObservationsForImport(observations, len(ps.offsets))
+		if err != nil {
+			level.Error(s.logger).Log("msg", "startup: skipping partition recovery",
+				"partition", partition, "observations", len(observations), "err", err)
+			continue
+		}
 
 		// Find the highest contiguous coverage by processing jobs in order.
 		// Stop importing jobs if we find a gap. The last continuous job defines
 		// our latest planned offset which will be where we resume job planning.
-		for _, obs := range observations {
-			maxEpoch = max(maxEpoch, obs.key.epoch)
-
+		for _, obs := range ordered {
 			if !contiguous {
 				// We found a gap earlier. Skip and warn.
 				level.Warn(s.logger).Log("msg", "startup: skipping job import due to offset gap",
