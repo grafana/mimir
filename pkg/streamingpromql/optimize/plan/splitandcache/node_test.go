@@ -238,6 +238,7 @@ func TestMaterializeSplit(t *testing.T) {
 			}
 
 			require.Equal(t, float64(len(testCase.expectedTimeRanges)), testutil.ToFloat64(splitMaterializer.splitQueriesCounter))
+			require.Equal(t, 1.0, testutil.ToFloat64(splitMaterializer.splitRequestsCounter))
 		})
 	}
 }

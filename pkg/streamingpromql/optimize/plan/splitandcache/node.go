@@ -79,8 +79,9 @@ func (s *TimeRangeSplit) MinimumRequiredPlanVersion(timeRange types.QueryTimeRan
 }
 
 type TimeRangeSplitMaterializer struct {
-	splittingEnabled    bool
-	splitQueriesCounter prometheus.Counter
+	splittingEnabled     bool
+	splitQueriesCounter  prometheus.Counter
+	splitRequestsCounter prometheus.Counter
 }
 
 func NewTimeRangeSplitMaterializer(splittingEnabled bool, reg prometheus.Registerer) *TimeRangeSplitMaterializer {
@@ -91,6 +92,7 @@ func NewTimeRangeSplitMaterializer(splittingEnabled bool, reg prometheus.Registe
 	if splittingEnabled {
 		// Only register the metric if splitting is enabled, to avoid conflicting with the query-frontend middleware doing the same thing.
 		m.splitQueriesCounter = NewSplitQueriesCounter(reg)
+		m.splitRequestsCounter = NewSplitRequestsCounter(reg)
 	}
 
 	return m
@@ -135,6 +137,7 @@ func (m *TimeRangeSplitMaterializer) Materialize(ctx context.Context, n planning
 	queryStats := stats.FromContext(ctx)
 	queryStats.AddSplitQueries(uint32(len(ranges)))
 	m.splitQueriesCounter.Add(float64(len(ranges)))
+	m.splitRequestsCounter.Inc()
 
 	if len(ranges) == 1 {
 		// If we have just one range, return the inner operator without wrapping it.
