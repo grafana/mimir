@@ -5,8 +5,10 @@ package multiaggregation
 
 import (
 	"fmt"
+	"slices"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
+	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 )
 
 func (m *MultiAggregationGroup) Child(idx int) planning.Node {
@@ -38,6 +40,11 @@ func (m *MultiAggregationGroup) ReplaceChild(idx int, node planning.Node) error 
 
 func (m *MultiAggregationGroup) ChildrenLabels() []string {
 	return []string{""}
+}
+
+func (m *MultiAggregationGroup) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
+	_, ok := other.(*MultiAggregationGroup)
+	return ok
 }
 
 func (m *MultiAggregationInstance) Child(idx int) planning.Node {
@@ -105,4 +112,26 @@ func (m *MultiAggregationInstance) ChildrenLabels() []string {
 		return []string{""}
 	}
 	return []string{"expression", "parameter"}
+}
+
+func (m *MultiAggregationInstance) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
+	oi, ok := other.(*MultiAggregationInstance)
+	return ok &&
+		((m.Aggregation == nil && oi.Aggregation == nil) || (m.Aggregation != nil && oi.Aggregation != nil && genEqualsAggregateExpressionDetails(*m.Aggregation, *oi.Aggregation))) &&
+		slices.EqualFunc(m.Filters, oi.Filters, func(a, b *core.LabelMatcher) bool {
+			return ((a == nil && b == nil) || (a != nil && b != nil && genEqualsLabelMatcher(*a, *b)))
+		}) &&
+		m.SubsetIndex == oi.SubsetIndex
+}
+
+func genEqualsAggregateExpressionDetails(a, b core.AggregateExpressionDetails) bool {
+	return slices.Equal(a.Grouping, b.Grouping) &&
+		a.Op == b.Op &&
+		a.Without == b.Without
+}
+
+func genEqualsLabelMatcher(a, b core.LabelMatcher) bool {
+	return a.Name == b.Name &&
+		a.Type == b.Type &&
+		a.Value == b.Value
 }

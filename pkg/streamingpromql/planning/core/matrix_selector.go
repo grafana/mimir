@@ -5,7 +5,6 @@ package core
 import (
 	"context"
 	"fmt"
-	"slices"
 	"time"
 
 	"github.com/gogo/protobuf/proto"
@@ -20,7 +19,7 @@ import (
 
 //node:generate
 type MatrixSelector struct {
-	*MatrixSelectorDetails
+	*MatrixSelectorDetails `node:"hints=SkipHistogramBuckets"`
 }
 
 func (m *MatrixSelector) IsSplittable() bool {
@@ -44,15 +43,6 @@ func (m *MatrixSelector) Details() proto.Message {
 
 func (m *MatrixSelector) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_MATRIX_SELECTOR
-}
-
-func (m *MatrixSelector) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
-	otherMatrixSelector, ok := other.(*MatrixSelector)
-
-	return ok &&
-		slices.EqualFunc(m.Matchers, otherMatrixSelector.Matchers, matchersEqual) &&
-		slices.EqualFunc(m.Subsets, otherMatrixSelector.Subsets, subsetsEqual) &&
-		m.EquivalentToIgnoringMatchersAndHints(otherMatrixSelector)
 }
 
 func (m *MatrixSelector) EquivalentToIgnoringMatchersAndHints(other planning.Node) bool {

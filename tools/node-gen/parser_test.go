@@ -142,6 +142,20 @@ func TestParser_BadTag(t *testing.T) {
 					 type S struct{ X []int ` + "`" + `node:"children,min=abc"` + "`" + ` }`,
 			errContains: `invalid children min value "abc"`,
 		},
+		{
+			name: "empty hints",
+			source: `package core
+					 //node:generate
+					 type S struct{ *SDetails ` + "`" + `node:"hints="` + "`" + ` }`,
+			errContains: `hints tag requires at least one field name`,
+		},
+		{
+			name: "hints on non-embedded field",
+			source: `package core
+					 //node:generate
+					 type S struct{ X int ` + "`" + `node:"hints=Y"` + "`" + ` }`,
+			errContains: `hints tag is only supported on embedded fields`,
+		},
 	}
 
 	for _, tc := range cases {
@@ -161,5 +175,5 @@ func parseFiles(t *testing.T, files map[string]string) (*Package, error) {
 		require.NoError(t, err)
 		asts = append(asts, f)
 	}
-	return buildPackage(asts)
+	return buildPackage(asts, nil)
 }
