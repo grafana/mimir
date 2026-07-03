@@ -174,7 +174,7 @@ func TestMergeSeriesMetadata_PassesMatchersToSources(t *testing.T) {
 		newSplitRange(innerOperators[1], memoryConsumptionTracker),
 	}
 
-	matchers := types.Matchers{{Type: labels.MatchEqual, Name: "foo", Value: "bar"}}
+	matchers := types.Matchers{{Type: labels.MatchRegexp, Name: "idx", Value: "0|1"}}
 
 	series, outputSeries, err := mergeSeriesMetadataFromMultipleSources(ctx, sources, matchers, memoryConsumptionTracker)
 	require.NoError(t, err)

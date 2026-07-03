@@ -616,7 +616,7 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storegatewaypb.Stor
 		}
 	}
 
-	logSeriesRequestToSpan(spanLogger, req.MinTime, req.MaxTime, matchers, reqBlockMatchers, shardSelector, req.StreamingChunksBatchSize)
+	logSeriesRequestToSpan(spanLogger, req.MinTime, req.MaxTime, matchers, reqBlockMatchers, shardSelector, req.StreamingChunksBatchSize, req.Limit)
 
 	defer s.recordBucketIndexDiscoveryDiff(ctx)
 
@@ -683,7 +683,7 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storegatewaypb.Stor
 	readers := newChunkReaders(chunkReaders)
 	chunksLoadStart := time.Now()
 
-	seriesChunkIt := s.createIteratorForChunksStreamingChunksPhase(ctx, readers, stats, chunksLimiter, seriesLimiter, streamingIterators)
+	seriesChunkIt := s.createIteratorForChunksStreamingChunksPhase(ctx, readers, stats, chunksLimiter, seriesLimiter, req.Limit, streamingIterators)
 	err = s.sendStreamingChunks(req, srv, seriesChunkIt, stats, streamingSeriesCount)
 	if err != nil {
 		return err
@@ -965,7 +965,7 @@ func (s *BucketStore) sendStats(srv storegatewaypb.StoreGateway_SeriesServer, st
 	return nil
 }
 
-func logSeriesRequestToSpan(spanLogger *spanlogger.SpanLogger, minT, maxT int64, matchers, blockMatchers []*labels.Matcher, shardSelector *sharding.ShardSelector, streamingChunksBatchSize uint64) {
+func logSeriesRequestToSpan(spanLogger *spanlogger.SpanLogger, minT, maxT int64, matchers, blockMatchers []*labels.Matcher, shardSelector *sharding.ShardSelector, streamingChunksBatchSize uint64, limit int64) {
 	spanLogger.DebugLog(
 		"msg", "BucketStore.Series",
 		"request min time", time.UnixMilli(minT).UTC().Format(time.RFC3339Nano),
@@ -974,6 +974,7 @@ func logSeriesRequestToSpan(spanLogger *spanlogger.SpanLogger, minT, maxT int64,
 		"request block matchers", util.MatchersStringer(blockMatchers),
 		"request shard selector", maybeNilShard(shardSelector).LabelValue(),
 		"streaming chunks batch size", streamingChunksBatchSize,
+		"request limit", limit,
 	)
 }
 
@@ -1016,10 +1017,11 @@ func (s *BucketStore) createIteratorForChunksStreamingChunksPhase(
 	stats *safeQueryStats,
 	chunksLimiter ChunksLimiter,
 	seriesLimiter SeriesLimiter,
+	limit int64,
 	iterators *streamingSeriesIterators,
 ) iterator[seriesChunksSet] {
 	preparedIterators := iterators.prepareForChunksStreamingPhase()
-	it := s.getSeriesIteratorFromPerBlockIterators(preparedIterators, chunksLimiter, seriesLimiter)
+	it := s.getSeriesIteratorFromPerBlockIterators(preparedIterators, chunksLimiter, seriesLimiter, limit)
 	scsi := newChunksPreloadingIterator(ctx, s.logger, s.userID, *chunkReaders, it, s.maxSeriesPerBatch, stats)
 
 	return scsi
@@ -1099,14 +1101,20 @@ func (s *BucketStore) getSeriesIteratorFromBlocks(
 		stats.streamingSeriesExpandPostingsDuration += time.Since(begin)
 	})
 
-	return s.getSeriesIteratorFromPerBlockIterators(batches, chunksLimiter, seriesLimiter), nil
+	return s.getSeriesIteratorFromPerBlockIterators(batches, chunksLimiter, seriesLimiter, req.Limit), nil
 }
 
-func (s *BucketStore) getSeriesIteratorFromPerBlockIterators(perBlockIterators []iterator[seriesChunkRefsSet], chunksLimiter ChunksLimiter, seriesLimiter SeriesLimiter) iterator[seriesChunkRefsSet] {
+func (s *BucketStore) getSeriesIteratorFromPerBlockIterators(perBlockIterators []iterator[seriesChunkRefsSet], chunksLimiter ChunksLimiter, seriesLimiter SeriesLimiter, limit int64) iterator[seriesChunkRefsSet] {
 	mergedIterator := mergedSeriesChunkRefsSetIterators(s.maxSeriesPerBatch, perBlockIterators...)
 
-	// Apply limits after the merging, so that if the same series is part of multiple blocks it just gets
-	// counted once towards the limit.
+	// Apply the functional request limit before per-query limits so protective limits are only charged
+	// for series that are actually returned. limit <= 0 means no limit was requested.
+	if limit > 0 {
+		mergedIterator = newTruncatingSeriesChunkRefsSetIterator(int(limit), mergedIterator)
+	}
+
+	// Apply per-query limits after merging (and functional truncation), so that if the same series is
+	// part of multiple blocks it just gets counted once towards the limit.
 	mergedIterator = newLimitingSeriesChunkRefsSetIterator(mergedIterator, chunksLimiter, seriesLimiter)
 
 	return mergedIterator
@@ -1703,13 +1711,16 @@ func labelValuesFromSeries(ctx context.Context, labelName string, seriesPerBatch
 	return vals, nil
 }
 
-func labelValuesFromPostings(ctx context.Context, labelName string, indexr *bucketIndexReader, allValues []streamindex.PostingListOffset, p []storage.SeriesRef, stats *safeQueryStats) ([]string, error) {
-	keys := make([]labels.Label, len(allValues))
+func labelValuesFromPostings(
+	ctx context.Context, labelName string, indexr *bucketIndexReader,
+	allValues []streamindex.PostingListOffset, p []storage.SeriesRef, stats *safeQueryStats,
+) ([]string, error) {
+	keysOffsets := make([]labelPostingOffset, len(allValues))
 	for i, value := range allValues {
-		keys[i] = labels.Label{Name: labelName, Value: value.LabelValue}
+		keysOffsets[i] = labelPostingOffset{labels.Label{Name: labelName, Value: value.LabelValue}, value.Off}
 	}
 
-	fetchedPostings, err := indexr.FetchPostings(ctx, keys, stats)
+	fetchedPostings, err := indexr.FetchPostingsIndexV2(ctx, keysOffsets, stats)
 	if err != nil {
 		return nil, errors.Wrap(err, "get postings")
 	}

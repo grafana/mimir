@@ -24,6 +24,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware/querydetails"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/splitandcache"
@@ -250,8 +251,8 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req MetricsQueryReques
 			return nil, err
 		}
 
-		if details := QueryDetailsFromContext(ctx); details != nil {
-			details.ResultsCacheMissBytes = splitReqs.countDownstreamResponseBytes()
+		if details := querydetails.QueryDetailsFromContext(ctx); details != nil {
+			details.ResultsCacheMissBytes += splitReqs.countDownstreamResponseBytes()
 		}
 	}
 
@@ -307,7 +308,7 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req MetricsQueryReques
 			}
 
 			// Put back into the cache the filtered ones.
-			s.storeCacheExtents(spanLog, splitReq.cacheKey, tenantIDs, filteredExtents)
+			s.storeCacheExtents(ctx, spanLog, splitReq.cacheKey, tenantIDs, filteredExtents)
 		}
 	}
 
@@ -445,8 +446,11 @@ func (s *splitAndCacheMiddleware) fetchCacheExtents(ctx context.Context, now tim
 		"extents filtered out due to ttl", extentsOutOfTTL,
 	)
 
-	if details := QueryDetailsFromContext(ctx); details != nil {
-		details.ResultsCacheHitBytes = usedBytes
+	if details := querydetails.QueryDetailsFromContext(ctx); details != nil {
+		details.ResultsCacheHitBytes += usedBytes
+
+		details.ResultsCacheHitCount += len(founds)
+		details.ResultsCacheMissCount += len(keys) - len(founds)
 	}
 
 	return extents
@@ -460,7 +464,7 @@ func (s *splitAndCacheMiddleware) getCacheOptions(tenantIDs []string) (ttl, ttlI
 }
 
 // storeCacheExtents stores the extents for given key in the cache.
-func (s *splitAndCacheMiddleware) storeCacheExtents(spanLog *spanlogger.SpanLogger, key string, tenantIDs []string, extents []Extent) {
+func (s *splitAndCacheMiddleware) storeCacheExtents(ctx context.Context, spanLog *spanlogger.SpanLogger, key string, tenantIDs []string, extents []Extent) {
 	if len(extents) == 0 {
 		level.Debug(spanLog).Log("msg", "skipping storing response in cache as there are no extents", "key", key)
 		return
@@ -480,6 +484,11 @@ func (s *splitAndCacheMiddleware) storeCacheExtents(spanLog *spanlogger.SpanLogg
 
 	level.Debug(spanLog).Log("msg", "asynchronously storing response in cache", "key", key, "size", len(buf), "ttl", usedTTL, "extents", len(extents))
 	s.cache.SetAsync(hashCacheKey(key), buf, usedTTL)
+
+	queryDetails := querydetails.QueryDetailsFromContext(ctx)
+	if queryDetails != nil {
+		queryDetails.ResultsCacheSetCount++
+	}
 }
 
 func getTTLForExtent(now time.Time, ttl, ttlInOOOWindow, oooWindow time.Duration, e Extent) time.Duration {

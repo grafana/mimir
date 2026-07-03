@@ -281,6 +281,6 @@ func prepareCompartmentsTestDistributor(t *testing.T, numCompartments int) (*Dis
 	return distributors[0], kafkaCluster, compartmentTopics
 }
 
-func compartmentsTestRouter(numCompartments int) *compartments.Router {
-	return compartments.NewRouter(numCompartments, compartmentsTestTopicFormat)
+func compartmentsTestRouter(numCompartments int) *compartments.TopicRouter {
+	return compartments.NewTopicRouter(numCompartments, compartmentsTestTopicFormat)
 }

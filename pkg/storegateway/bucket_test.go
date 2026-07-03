@@ -601,6 +601,17 @@ func TestBlockLabelValues(t *testing.T) {
 		require.Empty(t, values)
 	})
 
+	t.Run("happy case with case-insensitive matchers", func(t *testing.T) {
+		b := newTestBucketBlock()
+
+		matchers := []*labels.Matcher{
+			labels.MustNewMatcher(labels.MatchRegexp, "j", "(?i)f.*"),
+		}
+		values, err := blockLabelValues(context.Background(), b, worstCaseFetchedDataStrategy{1.0}, 5000, "j", matchers, log.NewNopLogger(), newSafeQueryStats())
+		require.NoError(t, err)
+		require.Equal(t, []string{"foo"}, values)
+	})
+
 	t.Run("happy case cached with exact matchers", func(t *testing.T) {
 		b := newTestBucketBlock()
 		b.indexCache = newInMemoryIndexCache(t)
@@ -1089,6 +1100,132 @@ func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 		require.NoError(t, err)
 		assert.Empty(t, pendingMatchers)
 		assert.Equal(t, refsWithoutPendingMatchers, refsWithPendingMatchers)
+	})
+}
+
+func TestBucketIndexReader_FetchPostingsIndexV2(t *testing.T) {
+	const (
+		series    = 50000
+		labelName = "n"
+	)
+
+	ctx := context.Background()
+	tb := test.NewTB(t)
+	testBlock := fixtures.SetupTestBlock(tb, fixtures.AppendTestSeries(series))
+	newTestBucketBlock := testBlockToBucketBlock(tb, testBlock)
+
+	offsetsForLabel := func(b *bucketBlock, name, prefix string) []streamindex.PostingListOffset {
+		offsets, err := b.indexHeaderReader.LabelValuesOffsets(ctx, name, prefix, nil)
+		require.NoError(t, err)
+		require.NotEmpty(t, offsets)
+		return offsets
+	}
+
+	keysOffsets := func(name string, offsets []streamindex.PostingListOffset) []labelPostingOffset {
+		keysOffsets := make([]labelPostingOffset, len(offsets))
+		for i, o := range offsets {
+			keysOffsets[i] = labelPostingOffset{labels.Label{Name: name, Value: o.LabelValue}, o.Off}
+		}
+		return keysOffsets
+	}
+
+	expectedRefs := func(b *bucketBlock, name, value string) []storage.SeriesRef {
+		matcher := labels.MustNewMatcher(labels.MatchEqual, name, value)
+		refs, _, err := b.indexReader(selectAllStrategy{}).ExpandedPostings(ctx, []*labels.Matcher{matcher}, newSafeQueryStats())
+		require.NoError(t, err)
+		require.NotEmpty(t, refs, "test setup: expected some series for %s=%s", name, value)
+		return refs
+	}
+
+	expandPostings := func(p index.Postings) []storage.SeriesRef {
+		refs, err := index.ExpandPostings(p)
+		require.NoError(t, err)
+		return refs
+	}
+
+	t.Run("returns correct postings for every value using knownOffsets", func(t *testing.T) {
+		b := newTestBucketBlock()
+		offsets := offsetsForLabel(b, labelName, "")
+		kos := keysOffsets(labelName, offsets)
+
+		// With known offsets supplied,
+		// FetchPostingsIndexV2 must use the supplied offsets and never resolve an offset with PostingsOffset.
+		iir := &interceptedIndexReader{
+			Reader: b.indexHeaderReader,
+			onPostingsOffsetCalled: func(name, value string) error {
+				return fmt.Errorf("didn't expect a PostingsOffset(%q, %q) call when offsets are known", name, value)
+			},
+		}
+		b.indexHeaderReader = iir
+		ps, err := b.indexReader(selectAllStrategy{}).FetchPostingsIndexV2(ctx, kos, newSafeQueryStats())
+		require.NoError(t, err)
+		require.Len(t, ps, len(kos))
+
+		// reset index header reader so we can properly expand postings in expectedRefs to assert correctness against
+		b.indexHeaderReader = iir.Reader
+
+		for i, ko := range kos {
+			assert.Equal(t, expectedRefs(b, ko.Name, ko.Value), expandPostings(ps[i]), "postings for %s=%s", ko.Name, ko.Value)
+		}
+	})
+
+	t.Run("returns postings for values matching the prefix", func(t *testing.T) {
+		b := newTestBucketBlock()
+		prefix := "1"
+		offsets := offsetsForLabel(b, labelName, prefix)
+		kos := keysOffsets(labelName, offsets)
+
+		ps, err := b.indexReader(selectAllStrategy{}).FetchPostingsIndexV2(ctx, kos, newSafeQueryStats())
+		require.NoError(t, err)
+		require.Len(t, ps, len(kos))
+		for i, ko := range kos {
+			require.True(t, strings.HasPrefix(ko.Value, prefix), "LabelValuesOffsets returned a value not matching the prefix: %s", ko.Value)
+			assert.Equal(t, expectedRefs(b, ko.Name, ko.Value), expandPostings(ps[i]), "postings for %s=%s", ko.Name, ko.Value)
+		}
+	})
+
+	t.Run("no keys returns no postings", func(t *testing.T) {
+		b := newTestBucketBlock()
+		ps, err := b.indexReader(selectAllStrategy{}).FetchPostingsIndexV2(ctx, nil, newSafeQueryStats())
+		require.NoError(t, err)
+		require.Empty(t, ps)
+	})
+
+	t.Run("postings are served from the cache", func(t *testing.T) {
+		b := newTestBucketBlock()
+		b.indexCache = newInMemoryIndexCache(t)
+		offsets := offsetsForLabel(b, labelName, "")
+		kos := keysOffsets(labelName, offsets)
+
+		// First call misses cache, does the fetch
+		first, err := b.indexReader(selectAllStrategy{}).FetchPostingsIndexV2(ctx, kos, newSafeQueryStats())
+		require.NoError(t, err)
+		require.Len(t, first, len(kos))
+
+		for ix := range kos {
+			kos[ix].off = index.Range{}
+		}
+
+		b.indexHeaderReader = &interceptedIndexReader{
+			Reader: b.indexHeaderReader,
+			onPostingsOffsetCalled: func(name, value string) error {
+				return fmt.Errorf("didn't expect a PostingsOffset(%q, %q) call when offsets are known", name, value)
+			},
+		}
+
+		// The second call passes empty known offsets,
+		// but should still hit the cache (and therefore not execute any PostingOffset calls) when resolving postings offsets to postings
+		secondCallStats := newSafeQueryStats()
+		second, err := b.indexReader(selectAllStrategy{}).FetchPostingsIndexV2(ctx, kos, secondCallStats)
+		require.NoError(t, err)
+		require.Len(t, second, len(kos))
+
+		for i, ko := range kos {
+			assert.Equal(t, expandPostings(first[i]), expandPostings(second[i]), "postings for %s=%s", ko.Name, ko.Value)
+		}
+
+		// All postings were served from the cache, so nothing should have been fetched from the bucket.
+		assert.Zero(t, secondCallStats.export().postingsFetchCount)
 	})
 }
 

@@ -5,7 +5,6 @@ package rangevectorsplitting
 
 import (
 	"fmt"
-	"slices"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
@@ -51,13 +50,6 @@ func (s *SplitFunctionCall) ChildrenLabels() []string {
 }
 
 func (s *SplitFunctionCall) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
-	oi, ok := other.(*SplitFunctionCall)
-	return ok &&
-		slices.EqualFunc(s.SplitRanges, oi.SplitRanges, genEqualsSplitRange)
-}
-
-func genEqualsSplitRange(a, b SplitRange) bool {
-	return a.Cacheable == b.Cacheable &&
-		a.End == b.End &&
-		a.Start == b.Start
+	_, ok := other.(*SplitFunctionCall)
+	return ok
 }

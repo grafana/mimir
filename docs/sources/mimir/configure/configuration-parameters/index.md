@@ -2300,8 +2300,7 @@ results_cache:
 [enable_multiple_node_remote_execution_requests: <boolean> | default = false]
 
 # (experimental) Set to true to enable performing query sharding inside the
-# Mimir query engine (MQE). This setting has no effect if sharding is disabled.
-# Requires remote execution and MQE to be enabled.
+# Mimir query engine (MQE). Requires remote execution and MQE to be enabled.
 # CLI flag: -query-frontend.use-mimir-query-engine-for-sharding
 [use_mimir_query_engine_for_sharding: <boolean> | default = false]
 
@@ -2377,6 +2376,12 @@ The `query_scheduler` block configures the query-scheduler.
 # skips the per-tick scan over inflight requests.
 # CLI flag: -query-scheduler.inflight-max-age-metric-enabled
 [inflight_max_age_metric_enabled: <boolean> | default = true]
+
+# (experimental) Enable the cortex_query_scheduler_max_queue_length metric,
+# which reports the per-tenant peak queue length observed since the last scrape.
+# Disabling it skips per-tenant peak tracking on enqueue and dequeue.
+# CLI flag: -query-scheduler.max-queue-length-metric-enabled
+[max_queue_length_metric_enabled: <boolean> | default = false]
 
 # This configures the gRPC client used to report errors back to the
 # query-frontend.
@@ -2899,6 +2904,25 @@ query_frontend:
   # CLI flag: -ruler.query-frontend.max-retries-rate
   [max_retries_rate: <float> | default = 170]
 
+distributor:
+  # (experimental) gRPC listen address of the distributor(s) to push rule-result
+  # series to. If empty, the ruler writes using the internal distributor. Use a
+  # DNS address (prefixed with dns:///) to enable gRPC client-side load
+  # balancing; in Kubernetes, use the distributor headless service on the gRPC
+  # port.
+  # CLI flag: -ruler.distributor.address
+  [address: <string> | default = ""]
+
+  # (experimental) Timeout for requests to remote distributors.
+  # CLI flag: -ruler.distributor.remote-timeout
+  [remote_timeout: <duration> | default = 10s]
+
+  # Advanced standard gRPC client configuration used by rulers to communicate
+  # with distributors.
+  # The CLI flags prefix for this block configuration is:
+  # ruler.distributor.grpc-client-config
+  [grpc_client_config: <grpc_client>]
+
 tenant_federation:
   # Enable rule groups to query against multiple tenants. The tenant IDs
   # involved need to be in the rule group's 'source_tenants' field. If this flag
@@ -3397,6 +3421,7 @@ The `grpc_client` block configures the gRPC client used to communicate between t
 - `querier.scheduler-client`
 - `query-frontend.grpc-client-config`
 - `query-scheduler.grpc-client-config`
+- `ruler.distributor.grpc-client-config`
 - `ruler.query-frontend.grpc-client-config`
 
 &nbsp;

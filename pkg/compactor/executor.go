@@ -262,7 +262,7 @@ func parseLaneRequests(configuredLanes flagext.StringSliceCSV) ([][]*compactorsc
 }
 
 func (e *schedulerExecutor) run(ctx context.Context, c *MultitenantCompactor) error {
-	baseWorkerID := fmt.Sprintf("compactor-%s", c.ringLifecycler.GetInstanceID())
+	baseWorkerID := c.ringLifecycler.GetInstanceID()
 	level.Info(e.logger).Log("msg", "compactor running in scheduler mode", "scheduler_endpoint", e.cfg.SchedulerEndpoint, "worker_id", baseWorkerID)
 
 	// Scheduler mode compactors work on jobs for arbitrary tenants, so unlike standalone mode they
@@ -592,7 +592,7 @@ func (e *schedulerExecutor) executeCompactionJob(ctx context.Context, c *Multite
 	filters := []block.MetadataFilter{
 		NewLabelRemoverFilter(compactionIgnoredLabels),
 	}
-	fetcher := newBatchCachingMetaFetcher(userBucket, e.metadataCache, userLogger, userID, c.compactorCfg.MetaSyncConcurrency, e.cfg.MetadataCacheConfig.MetafileContentTTL)
+	fetcher := newBatchCachingMetaFetcher(userBucket, e.metadataCache, userLogger, userID, c.compactorCfg.MetaSyncConcurrency, e.cfg.MetadataCacheConfig.MetafileContentTTL, c.cacheBucketID())
 	metaMap, err := fetcher.fetchMetasFromIDs(ctx, blockIDs, filters)
 	if err != nil {
 		// Abandon the job if a block metadata was not found or corrupt
@@ -682,7 +682,7 @@ func (e *schedulerExecutor) executePlanningJob(ctx context.Context, c *Multitena
 
 	// The BatchCachingMetaFetcher handles marker filtering on its own
 	deduplicateBlocksFilter := NewShardAwareDeduplicateFilter()
-	fetcher := newBatchCachingMetaFetcher(userBucket, e.metadataCache, userLogger, tenant, c.compactorCfg.MetaSyncConcurrency, e.cfg.MetadataCacheConfig.MetafileContentTTL)
+	fetcher := newBatchCachingMetaFetcher(userBucket, e.metadataCache, userLogger, tenant, c.compactorCfg.MetaSyncConcurrency, e.cfg.MetadataCacheConfig.MetafileContentTTL, c.cacheBucketID())
 
 	level.Info(userLogger).Log("msg", "start sync of metas")
 	metas, err := fetcher.fetchCompactableMetasFromListing(ctx, maxLookback, []block.MetadataFilter{

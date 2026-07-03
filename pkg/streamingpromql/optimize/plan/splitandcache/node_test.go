@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
@@ -201,13 +203,15 @@ func TestMaterializeSplit(t *testing.T) {
 				QueryParameters: &planning.QueryParameters{LookbackDelta: 5 * time.Minute},
 			}
 
+			reg := prometheus.NewPedanticRegistry()
+			splitMaterializer := NewTimeRangeSplitMaterializer(true, reg)
 			materializer := planning.NewMaterializer(params, map[planning.NodeType]planning.NodeMaterializer{
 				planning.NODE_TYPE_VECTOR_SELECTOR:  planning.NodeMaterializerFunc[*core.VectorSelector](core.MaterializeVectorSelector),
-				planning.NODE_TYPE_TIME_RANGE_SPLIT: planning.NodeMaterializerFunc[*TimeRangeSplit](MaterializeSplit),
+				planning.NODE_TYPE_TIME_RANGE_SPLIT: splitMaterializer,
 			})
 
 			queryStats, ctx := stats.ContextWithEmptyStats(context.Background())
-			resultFactory, err := MaterializeSplit(ctx, splitNode, materializer, testCase.timeRange, params)
+			resultFactory, err := splitMaterializer.Materialize(ctx, splitNode, materializer, testCase.timeRange, params, planning.RangeParams{})
 			require.NoError(t, err)
 
 			result, err := resultFactory.Produce()
@@ -232,6 +236,9 @@ func TestMaterializeSplit(t *testing.T) {
 
 				require.Equal(t, testCase.expectedTimeRanges, actualTimeRanges, "time ranges of inner operators should match expected")
 			}
+
+			require.Equal(t, float64(len(testCase.expectedTimeRanges)), testutil.ToFloat64(splitMaterializer.splitQueriesCounter))
+			require.Equal(t, 1.0, testutil.ToFloat64(splitMaterializer.splitRequestsCounter))
 		})
 	}
 }

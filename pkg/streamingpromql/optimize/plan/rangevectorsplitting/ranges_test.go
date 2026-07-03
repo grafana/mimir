@@ -20,14 +20,14 @@ func TestComputeSplitRanges(t *testing.T) {
 		startTs        int64
 		endTs          int64
 		splitInterval  time.Duration
-		expectedRanges []SplitRange
+		expectedRanges []Range
 	}{
 		{
 			name:          "5h range at 6h with 2h splits",
 			startTs:       1 * hourInMs,
 			endTs:         6 * hourInMs,
 			splitInterval: 2 * time.Hour,
-			expectedRanges: []SplitRange{
+			expectedRanges: []Range{
 				{Start: 1 * hourInMs, End: 2*hourInMs - 1, Cacheable: false},  // Head: (1h, 2h-1ms]
 				{Start: 2*hourInMs - 1, End: 4*hourInMs - 1, Cacheable: true}, // Block: (2h-1ms, 4h-1ms]
 				{Start: 4*hourInMs - 1, End: 6*hourInMs - 1, Cacheable: true}, // Block: (4h-1ms, 6h-1ms]
@@ -39,7 +39,7 @@ func TestComputeSplitRanges(t *testing.T) {
 			startTs:       1*hourInMs + 10*minuteInMs,
 			endTs:         6*hourInMs + 10*minuteInMs,
 			splitInterval: 2 * time.Hour,
-			expectedRanges: []SplitRange{
+			expectedRanges: []Range{
 				{Start: 1*hourInMs + 10*minuteInMs, End: 2*hourInMs - 1, Cacheable: false}, // Head: (1h10m, 2h-1ms]
 				{Start: 2*hourInMs - 1, End: 4*hourInMs - 1, Cacheable: true},              // Block: (2h-1ms, 4h-1ms]
 				{Start: 4*hourInMs - 1, End: 6*hourInMs - 1, Cacheable: true},              // Block: (4h-1ms, 6h-1ms]
@@ -51,7 +51,7 @@ func TestComputeSplitRanges(t *testing.T) {
 			startTs:       2 * hourInMs,
 			endTs:         7 * hourInMs,
 			splitInterval: 2 * time.Hour,
-			expectedRanges: []SplitRange{
+			expectedRanges: []Range{
 				{Start: 2 * hourInMs, End: 4*hourInMs - 1, Cacheable: false},  // Head: (2h, 4h-1ms]
 				{Start: 4*hourInMs - 1, End: 6*hourInMs - 1, Cacheable: true}, // Block: (4h-1ms, 6h-1ms]
 				{Start: 6*hourInMs - 1, End: 7 * hourInMs, Cacheable: false},  // Tail: (6h-1ms, 7h]
@@ -62,7 +62,7 @@ func TestComputeSplitRanges(t *testing.T) {
 			startTs:       3*hourInMs + 20*minuteInMs,
 			endTs:         8*hourInMs + 20*minuteInMs,
 			splitInterval: 2 * time.Hour,
-			expectedRanges: []SplitRange{
+			expectedRanges: []Range{
 				{Start: 3*hourInMs + 20*minuteInMs, End: 4*hourInMs - 1, Cacheable: false}, // Head: (3h20m, 4h-1ms]
 				{Start: 4*hourInMs - 1, End: 6*hourInMs - 1, Cacheable: true},              // Block: (4h-1ms, 6h-1ms]
 				{Start: 6*hourInMs - 1, End: 8*hourInMs - 1, Cacheable: true},              // Block: (6h-1ms, 8h-1ms]
@@ -74,7 +74,7 @@ func TestComputeSplitRanges(t *testing.T) {
 			startTs:       2 * hourInMs,
 			endTs:         6 * hourInMs,
 			splitInterval: 2 * time.Hour,
-			expectedRanges: []SplitRange{
+			expectedRanges: []Range{
 				{Start: 2 * hourInMs, End: 4*hourInMs - 1, Cacheable: false},  // Head: (2h, 4h-1ms]
 				{Start: 4*hourInMs - 1, End: 6*hourInMs - 1, Cacheable: true}, // Block: (4h-1ms, 6h-1ms]
 				{Start: 6*hourInMs - 1, End: 6 * hourInMs, Cacheable: false},  // Tail: (6h-1ms, 6h]
@@ -85,7 +85,7 @@ func TestComputeSplitRanges(t *testing.T) {
 			startTs:       2*hourInMs - 1,
 			endTs:         6*hourInMs - 1,
 			splitInterval: 2 * time.Hour,
-			expectedRanges: []SplitRange{
+			expectedRanges: []Range{
 				{Start: 2*hourInMs - 1, End: 4*hourInMs - 1, Cacheable: true}, // Block: (2h-1ms, 4h-1ms]
 				{Start: 4*hourInMs - 1, End: 6*hourInMs - 1, Cacheable: true}, // Block: (4h-1ms, 6h-1ms]
 			},
@@ -95,7 +95,7 @@ func TestComputeSplitRanges(t *testing.T) {
 			startTs:       1*hourInMs + 30*minuteInMs,
 			endTs:         4*hourInMs + 30*minuteInMs,
 			splitInterval: 2 * time.Hour,
-			expectedRanges: []SplitRange{
+			expectedRanges: []Range{
 				{Start: 1*hourInMs + 30*minuteInMs, End: 2*hourInMs - 1, Cacheable: false}, // Head: (1h30m, 2h-1ms]
 				{Start: 2*hourInMs - 1, End: 4*hourInMs - 1, Cacheable: true},              // Block: (2h-1ms, 4h-1ms]
 				{Start: 4*hourInMs - 1, End: 4*hourInMs + 30*minuteInMs, Cacheable: false}, // Tail: (4h-1ms, 4h30m]
@@ -124,7 +124,7 @@ func TestComputeSplitRangesWithOOOWindow(t *testing.T) {
 		endTs          int64
 		splitInterval  time.Duration
 		oooThreshold   int64 // 0 means no OOO window
-		expectedRanges []SplitRange
+		expectedRanges []Range
 	}{
 		{
 			name:          "no OOO window (threshold = 0)",
@@ -132,7 +132,7 @@ func TestComputeSplitRangesWithOOOWindow(t *testing.T) {
 			endTs:         6 * hourInMs,
 			splitInterval: 2 * time.Hour,
 			oooThreshold:  0,
-			expectedRanges: []SplitRange{
+			expectedRanges: []Range{
 				{Start: 1 * hourInMs, End: 2*hourInMs - 1, Cacheable: false},  // Head
 				{Start: 2*hourInMs - 1, End: 4*hourInMs - 1, Cacheable: true}, // Block
 				{Start: 4*hourInMs - 1, End: 6*hourInMs - 1, Cacheable: true}, // Block
@@ -145,7 +145,7 @@ func TestComputeSplitRangesWithOOOWindow(t *testing.T) {
 			endTs:         6 * hourInMs,
 			splitInterval: 2 * time.Hour,
 			oooThreshold:  5 * hourInMs,
-			expectedRanges: []SplitRange{
+			expectedRanges: []Range{
 				{Start: 1 * hourInMs, End: 2*hourInMs - 1, Cacheable: false},
 				{Start: 2*hourInMs - 1, End: 4*hourInMs - 1, Cacheable: true},
 				{Start: 4*hourInMs - 1, End: 6 * hourInMs, Cacheable: false},
@@ -157,7 +157,7 @@ func TestComputeSplitRangesWithOOOWindow(t *testing.T) {
 			endTs:         6 * hourInMs,
 			splitInterval: 2 * time.Hour,
 			oooThreshold:  1*hourInMs + 30*minuteInMs,
-			expectedRanges: []SplitRange{
+			expectedRanges: []Range{
 				{Start: 1 * hourInMs, End: 6 * hourInMs, Cacheable: false},
 			},
 		},
@@ -167,7 +167,7 @@ func TestComputeSplitRangesWithOOOWindow(t *testing.T) {
 			endTs:         6 * hourInMs,
 			splitInterval: 2 * time.Hour,
 			oooThreshold:  30 * minuteInMs,
-			expectedRanges: []SplitRange{
+			expectedRanges: []Range{
 				{Start: 1 * hourInMs, End: 6 * hourInMs, Cacheable: false},
 			},
 		},
@@ -177,7 +177,7 @@ func TestComputeSplitRangesWithOOOWindow(t *testing.T) {
 			endTs:         8 * hourInMs,
 			splitInterval: 2 * time.Hour,
 			oooThreshold:  2*hourInMs - 1,
-			expectedRanges: []SplitRange{
+			expectedRanges: []Range{
 				{Start: 1 * hourInMs, End: 8 * hourInMs, Cacheable: false},
 			},
 		},
@@ -189,7 +189,7 @@ func TestComputeSplitRangesWithOOOWindow(t *testing.T) {
 			oooThreshold:  4*hourInMs - 1,
 			// First cacheable block (2h-1ms, 4h-1ms] ends exactly at the threshold.
 			// The block includes the threshold timestamp (right-closed), so it can't be cached.
-			expectedRanges: []SplitRange{
+			expectedRanges: []Range{
 				{Start: 1 * hourInMs, End: 2*hourInMs - 1, Cacheable: false}, // Head
 				{Start: 2*hourInMs - 1, End: 8 * hourInMs, Cacheable: false}, // Merged: all blocks in OOO
 			},
@@ -202,7 +202,7 @@ func TestComputeSplitRangesWithOOOWindow(t *testing.T) {
 			oooThreshold:  6*hourInMs - 1,
 			// Block (4h-1ms, 6h-1ms] ends exactly at the threshold. Since ranges are (Start, End],
 			// the block includes the timestamp at the threshold, which could receive OOO writes.
-			expectedRanges: []SplitRange{
+			expectedRanges: []Range{
 				{Start: 1 * hourInMs, End: 2*hourInMs - 1, Cacheable: false},  // Head
 				{Start: 2*hourInMs - 1, End: 4*hourInMs - 1, Cacheable: true}, // Block: cacheable, before OOO
 				{Start: 4*hourInMs - 1, End: 8 * hourInMs, Cacheable: false},  // Merged: range at boundary + tail in OOO
@@ -214,7 +214,7 @@ func TestComputeSplitRangesWithOOOWindow(t *testing.T) {
 			endTs:         9 * hourInMs,
 			splitInterval: 2 * time.Hour,
 			oooThreshold:  now - 1*hourInMs, // 9h threshold
-			expectedRanges: []SplitRange{
+			expectedRanges: []Range{
 				{Start: 0, End: 2*hourInMs - 1, Cacheable: false},             // Head
 				{Start: 2*hourInMs - 1, End: 4*hourInMs - 1, Cacheable: true}, // Block
 				{Start: 4*hourInMs - 1, End: 6*hourInMs - 1, Cacheable: true}, // Block

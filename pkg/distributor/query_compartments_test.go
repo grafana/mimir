@@ -412,7 +412,7 @@ func prepareCompartmentsQueryTestDistributor(t *testing.T, tenantID string, numC
 
 // metricNamesByCompartment returns, indexed by compartment, a metric name that the router assigns to that
 // compartment for the given tenant.
-func metricNamesByCompartment(t *testing.T, router *compartments.Router, tenantID string, numCompartments int) []string {
+func metricNamesByCompartment(t *testing.T, router *compartments.TopicRouter, tenantID string, numCompartments int) []string {
 	t.Helper()
 
 	metricForCompartment := make([]string, numCompartments)

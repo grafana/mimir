@@ -18,5 +18,23 @@
     compartments_enabled: true,
     compartments_read_count: 2,
     compartments_write_count: 2,
+
+    compactor_scheduler_enabled: true,
+    autoscaling_compactor_enabled: true,
+    autoscaling_compactor_min_replicas: 2,
+    autoscaling_compactor_max_replicas: 30,
+    cortex_compactor_concurrent_rollout_enabled: true,
+    enable_pvc_auto_deletion_for_compactors: true,
+    enable_pvc_auto_deletion_for_ingesters: true,
+
+    // Exercise the per-compartment store-gateways (zones a/b/c, no backup zones).
+    multi_zone_store_gateway_enabled: true,
+    multi_zone_store_gateway_replicas: 3,
+    autoscaling_store_gateway_enabled: true,
+    autoscaling_store_gateway_min_replicas_per_zone: 1,
+    autoscaling_store_gateway_max_replicas_per_zone: 6,
+    autoscaling_store_gateway_min_replicas_per_compartment_zone: 1,
+    autoscaling_store_gateway_max_replicas_per_compartment_zone: 3,
+    enable_pvc_auto_deletion_for_store_gateways: true,
   },
 }

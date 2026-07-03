@@ -132,11 +132,65 @@ assert isError(err9, '-distributor.write-compartment-id=1') && isError(err9, 'do
 local err10 = validate(
   { gf: overrideContainerArgs(
     distributor { metadata+: { name: 'distributor' } },
-    ['-ingest-storage.kafka.address=' + env.compartments_ingest_storage_kafka_address],
+    ['-ingest-storage.kafka.address=' + env._config.compartments_ingest_storage_kafka_address],
   ) },
   ['gf'],
 );
 assert isError(err10, '-distributor.write-compartment-id=0') && isError(err10, 'does not belong to a write compartment') :
        'case 10: expected global-resource compartment-id error, got: %s' % err10;
+
+// 11. validateBlocksBucket: read compartment pointed at another compartment's bucket.
+local err11 = validate(
+  { ing: overrideContainerArgs(ingester, ['-blocks-storage.gcs.bucket-name=blocks-bucket-rc-0']) },
+  ['ing'],
+);
+assert isError(err11, '-blocks-storage.gcs.bucket-name=blocks-bucket-rc-0') && isError(err11, 'uses its own blocks-storage bucket') :
+       'case 11: expected blocks-storage bucket mismatch error, got: %s' % err11;
+
+// 12. validateBlocksBucket: read compartment pointed at the shared non-compartment bucket.
+local err12 = validate(
+  { ing: overrideContainerArgs(ingester, ['-blocks-storage.gcs.bucket-name=blocks-bucket']) },
+  ['ing'],
+);
+assert isError(err12, '-blocks-storage.gcs.bucket-name=blocks-bucket') && isError(err12, 'uses its own blocks-storage bucket') :
+       'case 12: expected blocks-storage shared-bucket error, got: %s' % err12;
+
+// 13. validateBlocksBucket: read compartment keeping the parametrised placeholder is accepted.
+local err13 = validate(
+  { ing: overrideContainerArgs(ingester, ['-blocks-storage.gcs.bucket-name=blocks-bucket-rc-<read-compartment-id>']) },
+  ['ing'],
+);
+assert err13 == null :
+       'case 13: expected no error for a parametrised blocks-storage bucket, got: %s' % err13;
+
+// 14. validateBlocksBucket: read compartment with its own concrete bucket is accepted.
+local err14 = validate(
+  { ing: overrideContainerArgs(ingester, ['-blocks-storage.gcs.bucket-name=blocks-bucket-rc-1']) },
+  ['ing'],
+);
+assert err14 == null :
+       'case 14: expected no error for the matching per-compartment bucket, got: %s' % err14;
+
+// A global deployment (no compartment marker) built from the distributor: the Kafka address is reset to the
+// placeholder and the write-compartment-id flag removed, so only the blocks-storage bucket is under test.
+local globalWithBucket(bucket) =
+  overrideContainerArgs(
+    removeContainerArg(distributor { metadata+: { name: 'querier' } }, '-distributor.write-compartment-id'),
+    [
+      '-ingest-storage.kafka.address=' + env._config.compartments_ingest_storage_kafka_address,
+      '-blocks-storage.gcs.bucket-name=' + bucket,
+    ],
+  );
+
+// 15. validateBlocksBucket: global deployment with a concrete per-compartment bucket must be rejected,
+// because one bucket can't serve every read compartment.
+local err15 = validate({ gf: globalWithBucket('blocks-bucket-rc-0') }, ['gf']);
+assert isError(err15, '-blocks-storage.gcs.bucket-name=blocks-bucket-rc-0') && isError(err15, 'only a read compartment owns a dedicated blocks-storage bucket') :
+       'case 15: expected global-deployment blocks-storage bucket error, got: %s' % err15;
+
+// 16. validateBlocksBucket: global deployment keeping the parametrised placeholder is accepted.
+local err16 = validate({ gf: globalWithBucket('blocks-bucket-rc-<read-compartment-id>') }, ['gf']);
+assert err16 == null :
+       'case 16: expected no error for a parametrised blocks-storage bucket on a global deployment, got: %s' % err16;
 
 {}

@@ -5,7 +5,6 @@ syntax = "proto3";
 package rangevectorsplitting;
 
 import "gogoproto/gogo.proto";
-import "google/protobuf/duration.proto";
 
 option (gogoproto.equal_all) = false;
 option (gogoproto.marshaler_all) = true;
@@ -13,16 +12,8 @@ option (gogoproto.messagename_all) = true;
 option (gogoproto.unmarshaler_all) = true;
 
 message SplitFunctionCallDetails {
-  repeated SplitRange splitRanges = 1 [(gogoproto.nullable) = false];
+  // Deprecated: no longer populated as of QueryPlanV18. Split ranges are now computed at materialize time.
+  reserved 1; // was: splitRanges
   // Deprecated: no longer populated as of QueryPlanV13. The cache key is now derived from the inner node at materialize time.
   reserved 2; // was: innerNodeCacheKey
-}
-
-// SplitRange represents a time range within a split.
-// Start is exclusive (points with timestamp > Start are included).
-// End is inclusive (points with timestamp <= End are included).
-message SplitRange {
-  int64 start = 1;
-  int64 end = 2;
-  bool cacheable = 3;
 }

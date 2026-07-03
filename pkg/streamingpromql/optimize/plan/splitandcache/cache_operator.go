@@ -13,13 +13,13 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/tracing"
-	"github.com/grafana/dskit/user"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/util/annotations"
 	"go.opentelemetry.io/otel"
 
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware/querydetails"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/querierpb"
 	"github.com/grafana/mimir/pkg/streamingpromql/caching"
@@ -42,6 +42,7 @@ var tracer = otel.Tracer("pkg/streamingpromql/optimize/plan/splitandcache")
 // It works with a single cache entry made up of multiple extents.
 type CacheOperator struct {
 	Backend                  caching.Backend
+	CacheKeyGenerator        *caching.CacheKeyGenerator
 	Materializer             InstantVectorMaterializer
 	Inner                    planning.Node
 	DesiredTimeRange         types.QueryTimeRange
@@ -52,6 +53,7 @@ type CacheOperator struct {
 	limitsProvider     LimitsProvider
 	logger             log.Logger
 	cacheEntryInterval time.Duration
+	metrics            *ResultsCacheMetrics
 
 	// minCacheExtent is the minimum length of a cached extent for it to be used.
 	// Extents smaller than this are ignored and re-evaluated, to avoid freshly evaluating many small extents.
@@ -64,7 +66,9 @@ type CacheOperator struct {
 	ttlForOOOExtent    time.Duration
 	oooWindow          time.Duration
 
-	key       []byte
+	// key is the full key which includes the prefix from the PrefixGenerator. This plain []byte is kept for collision detection.
+	key []byte
+	// hashedKey is the hashed version of the above key and should be used for interacting with the cache backend.
 	hashedKey string
 	extents   extents
 	prepared  bool
@@ -88,6 +92,7 @@ var _ types.InstantVectorOperator = &CacheOperator{}
 
 func newCacheOperator(
 	backend caching.Backend,
+	cacheKeyGenerator *caching.CacheKeyGenerator,
 	materializer InstantVectorMaterializer,
 	inner planning.Node,
 	desiredTimeRange types.QueryTimeRange,
@@ -98,9 +103,11 @@ func newCacheOperator(
 	logger log.Logger,
 	cacheEntryInterval time.Duration,
 	minCacheExtent time.Duration,
+	metrics *ResultsCacheMetrics,
 ) *CacheOperator {
 	return &CacheOperator{
 		Backend:                  backend,
+		CacheKeyGenerator:        cacheKeyGenerator,
 		Materializer:             materializer,
 		Inner:                    inner,
 		DesiredTimeRange:         desiredTimeRange,
@@ -113,15 +120,11 @@ func newCacheOperator(
 		minCacheExtent:           minCacheExtent,
 		timeNow:                  time.Now,
 		getCurrentTraceID:        tracing.ExtractTraceID,
+		metrics:                  metrics,
 	}
 }
 
-func (c *CacheOperator) computeCacheKey(ctx context.Context) ([]byte, error) {
-	orgID, err := user.ExtractOrgID(ctx)
-	if err != nil {
-		return nil, err
-	}
-
+func (c *CacheOperator) computeCacheKey(ctx context.Context) ([]byte, string, error) {
 	startTime := timestamp.Time(c.DesiredTimeRange.StartT)
 	cacheEntryStartT := timestamp.FromTime(startTime.Truncate(c.cacheEntryInterval))
 
@@ -133,12 +136,11 @@ func (c *CacheOperator) computeCacheKey(ctx context.Context) ([]byte, error) {
 
 	encodedQueryPlanBytes, err := c.encodeNodeForCacheKey() // This includes the query, time range and all other parameters that affect query results.
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
 	key := bytes.Join(
 		[][]byte{
-			[]byte(orgID),
 			[]byte(strconv.FormatInt(cacheEntryStartT, 10)),
 			[]byte(strconv.FormatInt(c.DesiredTimeRange.IntervalMilliseconds, 10)),
 			[]byte(strconv.FormatInt(offsetFromStepGrid, 10)),
@@ -147,7 +149,12 @@ func (c *CacheOperator) computeCacheKey(ctx context.Context) ([]byte, error) {
 		[]byte(":"),
 	)
 
-	return key, nil
+	key, hashed, err := c.CacheKeyGenerator.ComputeCacheKey(ctx, key)
+	if err != nil {
+		return nil, "", fmt.Errorf("generating cache key prefix: %w", err)
+	}
+
+	return key, hashed, nil
 }
 
 func (c *CacheOperator) encodeNodeForCacheKey() ([]byte, error) {
@@ -172,13 +179,13 @@ func (c *CacheOperator) encodeNodeForCacheKey() ([]byte, error) {
 }
 
 func (c *CacheOperator) populateCacheKey(ctx context.Context) error {
-	var err error
-	c.key, err = c.computeCacheKey(ctx)
+	key, hashed, err := c.computeCacheKey(ctx)
 	if err != nil {
 		return err
 	}
 
-	c.hashedKey = caching.HashCacheKey(c.key)
+	c.key = key
+	c.hashedKey = hashed
 	return nil
 }
 
@@ -293,7 +300,7 @@ func (c *CacheOperator) calculateExtents(ctx context.Context, existingExtents []
 	// For example, if the desired time range is T=5m to T=8m30s with a step of 1m, then the last step is T=8m.
 	stepAlignedEndT := calculateLastStepAlignedPoint(c.DesiredTimeRange.StartT, c.DesiredTimeRange.EndT, c.DesiredTimeRange.IntervalMilliseconds)
 
-	existingExtents = c.discardSmallExtents(existingExtents, stepAlignedEndT)
+	existingExtents = c.discardSmallExtents(existingExtents, stepAlignedEndT, spanLogger)
 
 	maxFreshness, err := c.limitsProvider.GetMaxCacheFreshness(ctx)
 	if err != nil {
@@ -433,7 +440,7 @@ func (c *CacheOperator) logUsedExtent(spanLogger *spanlogger.SpanLogger, extent 
 //
 // This mirrors the behaviour of the split-and-cache query middleware (see partitionCacheExtents in
 // pkg/frontend/querymiddleware/results_cache.go).
-func (c *CacheOperator) discardSmallExtents(existingExtents []CachedExtent, stepAlignedEndT int64) []CachedExtent {
+func (c *CacheOperator) discardSmallExtents(existingExtents []CachedExtent, stepAlignedEndT int64, logger *spanlogger.SpanLogger) []CachedExtent {
 	// Only discard small extents if the desired time range is itself large: if the query is small, re-evaluating is no
 	// cheaper than reading the cached extent. Instant queries (start == end) are never affected.
 	minCacheExtentMilliseconds := c.minCacheExtent.Milliseconds()
@@ -452,6 +459,15 @@ func (c *CacheOperator) discardSmallExtents(existingExtents []CachedExtent, step
 
 		if extentIsSmall && overlapsDesiredTimeRange {
 			// We won't read this extent, so release the memory we reserved for it in fetchExistingExtents.
+			logger.DebugLog(
+				"msg", "ignoring small extent in desired time range",
+				"extent_oldest_evaluation_time", extent.OldestEvaluationTime,
+				"extent_start_ts", extent.StartT,
+				"extent_end_ts", extent.EndT,
+				"extent_newest_evaluation_trace_id", extent.NewestEvaluationTraceID,
+				"extent_series_count", len(extent.SeriesMetadata),
+			)
+
 			extent.close(c.MemoryConsumptionTracker)
 			continue
 		}
@@ -819,6 +835,22 @@ func (c *CacheOperator) Finalize(ctx context.Context) (*types.OperatorEvaluation
 		}
 	}
 
+	queryDetails := querydetails.QueryDetailsFromContext(ctx)
+
+	for _, e := range c.extents.inDesiredTimeRange {
+		if size, cacheHit := e.GetEstimatedSize(); cacheHit {
+			if queryDetails != nil {
+				queryDetails.ResultsCacheHitBytes += int(size)
+			}
+			c.metrics.UsedExtents.Inc()
+		} else {
+			if queryDetails != nil {
+				queryDetails.ResultsCacheMissBytes += int(size)
+			}
+			c.metrics.EvaluatedExtents.Inc()
+		}
+	}
+
 	return desiredTimeRangeStats, annos, nil
 }
 
@@ -873,13 +905,22 @@ func (c *CacheOperator) finalizeExtents(ctx context.Context) (desiredTimeRangeSt
 }
 
 func (c *CacheOperator) writeCacheEntry(ctx context.Context, stats *types.OperatorEvaluationStats, annos annotations.Annotations) error {
+	spanLogger := spanlogger.FromContext(ctx, c.logger)
 	if c.seriesMetadata == nil {
-		// SeriesMetadata() never called, don't write cache entry.
+		spanLogger.DebugLog(
+			"msg", "skipping storing entry in cache because SeriesMetadata() never called",
+			"key", c.hashedKey,
+		)
 		return nil
 	}
 
 	if c.nextOutputSeriesIdx < len(c.seriesMetadata) {
-		// Not all series were read, don't write cache entry.
+		spanLogger.DebugLog(
+			"msg", "skipping storing entry in cache because not all series were read",
+			"key", c.hashedKey,
+			"read_count", c.nextOutputSeriesIdx,
+			"total_count", len(c.seriesMetadata),
+		)
 		return nil
 	}
 
@@ -922,6 +963,18 @@ func (c *CacheOperator) writeCacheEntry(ctx context.Context, stats *types.Operat
 	value, err := entry.Marshal()
 	if err != nil {
 		return err
+	}
+
+	spanLogger.DebugLog(
+		"msg", "storing new entry in cache",
+		"key", c.hashedKey,
+		"extent_count", len(extents),
+		"entry_size_bytes", len(value),
+	)
+
+	queryDetails := querydetails.QueryDetailsFromContext(ctx)
+	if queryDetails != nil {
+		queryDetails.ResultsCacheSetCount++
 	}
 
 	if err := c.Backend.SetAsync(ctx, c.hashedKey, value, ttl); err != nil {
@@ -1043,16 +1096,22 @@ type extent interface {
 
 	GetEvaluationTimestamp() int64
 
+	// GetEstimatedSize() returns an estimate of the size of the extent, in bytes, and true if
+	// this extent was a cache hit.
+	GetEstimatedSize() (uint64, bool)
+
 	Close()
 }
 
 type cachedExtentReader struct {
 	extent CachedExtent
 	parent *CacheOperator
+
+	sizeEstimator *extentSizeEstimator
 }
 
 func newCachedExtentReader(extent CachedExtent, parent *CacheOperator) *cachedExtentReader {
-	return &cachedExtentReader{extent: extent, parent: parent}
+	return &cachedExtentReader{extent: extent, parent: parent, sizeEstimator: &extentSizeEstimator{}}
 }
 
 func (c *cachedExtentReader) GetStartT() int64 {
@@ -1089,6 +1148,7 @@ func (c *cachedExtentReader) SeriesMetadata(_ context.Context, _ types.Matchers)
 	}
 
 	c.extent.closeSeriesMetadata(c.parent.MemoryConsumptionTracker)
+	c.sizeEstimator.AccumulateSeriesMetadata(seriesMetadata)
 
 	return seriesMetadata, nil
 }
@@ -1109,6 +1169,8 @@ func (c *cachedExtentReader) GetSeries(_ context.Context, seriesIdx int) (types.
 	// Clear the cached data so we don't try to remove it from the memory consumption estimate later.
 	// We don't need to retain this data here if this extent will be merged into others: that is the responsibility of CacheOperator.
 	c.extent.Data[seriesIdx] = querierpb.InstantVectorSeriesData{}
+
+	c.sizeEstimator.AccumulateSeriesData(mqeData)
 
 	var err error
 
@@ -1142,6 +1204,10 @@ func (c *cachedExtentReader) GetEvaluationTimestamp() int64 {
 	return c.extent.OldestEvaluationTime
 }
 
+func (c *cachedExtentReader) GetEstimatedSize() (uint64, bool) {
+	return c.sizeEstimator.estimatedSizeBytes, true
+}
+
 func (c *cachedExtentReader) Close() {
 	c.extent.close(c.parent.MemoryConsumptionTracker)
 }
@@ -1152,14 +1218,17 @@ type evaluatedExtent struct {
 	buffer *operators.InstantVectorOperatorBuffer
 	startT int64
 	endT   int64
+
+	sizeEstimator *extentSizeEstimator
 }
 
 func newEvaluatedExtent(inner types.InstantVectorOperator, parent *CacheOperator, startT int64, endT int64) *evaluatedExtent {
 	return &evaluatedExtent{
-		inner:  inner,
-		parent: parent,
-		startT: startT,
-		endT:   endT,
+		inner:         inner,
+		parent:        parent,
+		startT:        startT,
+		endT:          endT,
+		sizeEstimator: &extentSizeEstimator{},
 	}
 }
 
@@ -1185,6 +1254,7 @@ func (e *evaluatedExtent) SeriesMetadata(ctx context.Context, matchers types.Mat
 		return nil, err
 	}
 
+	e.sizeEstimator.AccumulateSeriesMetadata(metadata)
 	e.buffer = operators.NewInstantVectorOperatorBuffer(e.inner, nil, len(metadata)-1, e.parent.MemoryConsumptionTracker)
 
 	return metadata, nil
@@ -1196,11 +1266,16 @@ func (e *evaluatedExtent) GetSeries(ctx context.Context, seriesIdx int) (types.I
 		return types.InstantVectorSeriesData{}, err
 	}
 
-	return series[0], nil
+	data := series[0]
+	e.sizeEstimator.AccumulateSeriesData(data)
+
+	return data, nil
 }
 
 func (e *evaluatedExtent) FinishedReading(ctx context.Context) error {
-	e.buffer.FinishedReading()
+	if e.buffer != nil {
+		e.buffer.FinishedReading()
+	}
 
 	return e.inner.FinishedReading(ctx)
 }
@@ -1211,6 +1286,10 @@ func (e *evaluatedExtent) Finalize(ctx context.Context) (*types.OperatorEvaluati
 
 func (e *evaluatedExtent) GetEvaluationTimestamp() int64 {
 	return timestamp.FromTime(e.parent.evaluationTime)
+}
+
+func (e *evaluatedExtent) GetEstimatedSize() (uint64, bool) {
+	return e.sizeEstimator.estimatedSizeBytes, false
 }
 
 func (e *evaluatedExtent) Close() {
@@ -1302,12 +1381,29 @@ func estimateLabelsSize(labels []mimirpb.LabelAdapter) uint64 {
 	return size
 }
 
+type extentSizeEstimator struct {
+	estimatedSizeBytes uint64
+}
+
+func (e *extentSizeEstimator) AccumulateSeriesMetadata(series []types.SeriesMetadata) {
+	e.estimatedSizeBytes += uint64(len(series)) * types.SeriesMetadataSize
+	for _, s := range series {
+		e.estimatedSizeBytes += s.Labels.ByteSize()
+	}
+}
+
+func (e *extentSizeEstimator) AccumulateSeriesData(data types.InstantVectorSeriesData) {
+	e.estimatedSizeBytes += uint64(len(data.Floats)) * types.FPointSize
+	e.estimatedSizeBytes += uint64(len(data.Histograms)) * types.HPointSize
+}
+
 func PrepareCacheOperators(ctx context.Context, params *types.PrepareParams, operators []*CacheOperator, now time.Time) error {
 	if len(operators) == 0 {
 		return nil
 	}
 
-	logger := operators[0].logger // We don't bother checking that each operator has the same logger like we do for the limits provider or cache backend below, as this won't affect query correctness, just debug logging.
+	logger := operators[0].logger // We don't bother checking that each operator has the same logger and metrics like we do for the limits provider or cache backend below, as this won't affect query correctness, just debug logging and metrics.
+	metrics := operators[0].metrics
 	spanLogger, ctx := spanlogger.New(ctx, logger, tracer, "PrepareCacheOperators")
 	defer spanLogger.Finish()
 	spanLogger.SetTag("operator_count", len(operators))
@@ -1343,9 +1439,18 @@ func PrepareCacheOperators(ctx context.Context, params *types.PrepareParams, ope
 	}
 
 	spanLogger.DebugLog("msg", "fetching cached results", "keys", keys)
+	metrics.CacheRequests.Add(float64(len(keys)))
 	cacheHits, err := cacheBackend.GetMulti(ctx, keys)
 	if err != nil {
 		return fmt.Errorf("fetching cached results: %w", err)
+	}
+
+	metrics.CacheHits.Add(float64(len(cacheHits)))
+
+	queryDetails := querydetails.QueryDetailsFromContext(ctx)
+	if queryDetails != nil {
+		queryDetails.ResultsCacheMissCount += len(keys) - len(cacheHits)
+		queryDetails.ResultsCacheHitCount += len(cacheHits)
 	}
 
 	for key, o := range operatorMap {

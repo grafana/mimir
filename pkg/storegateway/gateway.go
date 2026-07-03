@@ -187,8 +187,8 @@ func newStoreGateway(gatewayCfg Config, storageCfg mimir_tsdb.BlocksStorageConfi
 	// With compartments enabled the store-gateway registers into its read compartment's own ring.
 	ringName, ringKey := RingNameForServer, RingKey
 	if gatewayCfg.Compartments.Enabled {
-		ringName = compartments.ReadCompartmentRingName(gatewayCfg.ReadCompartmentID, RingNameForServer)
-		ringKey = compartments.ReadCompartmentRingKey(gatewayCfg.ReadCompartmentID, RingKey)
+		ringName = compartments.WithReadCompartmentSuffix(RingNameForServer, gatewayCfg.ReadCompartmentID)
+		ringKey = compartments.WithReadCompartmentSuffix(RingKey, gatewayCfg.ReadCompartmentID)
 	}
 
 	// Define lifecycler delegates in reverse order (last to be called defined first because they're
@@ -231,7 +231,18 @@ func newStoreGateway(gatewayCfg Config, storageCfg mimir_tsdb.BlocksStorageConfi
 		level.Info(logger).Log("msg", "store-gateway using disabled users", "disabled", gatewayCfg.DisabledTenants)
 	}
 
-	g.stores, err = NewBucketStores(storageCfg, shardingStrategy, bucketClient, allowedTenants, limits, logger, prometheus.WrapRegistererWith(prometheus.Labels{"component": "store-gateway"}, reg))
+	// cacheBucketID prefixes the caching-bucket keys. The bucket ID should be "blocks" but we pass an empty
+	// string to not cause a massive cache invalidation when rolling out a new Mimir version introducing the
+	// bucket ID. This is still fine, as far as all other caching bucket implementations specify their own
+	// unique ID. With compartments enabled the store-gateways of different read compartments read different
+	// buckets at identical object paths through a shared cache, so each is scoped to its read compartment or
+	// they collide.
+	cacheBucketID := ""
+	if gatewayCfg.Compartments.Enabled {
+		cacheBucketID = compartments.WithReadCompartmentSuffix("blocks", gatewayCfg.ReadCompartmentID)
+	}
+
+	g.stores, err = NewBucketStores(storageCfg, cacheBucketID, shardingStrategy, bucketClient, allowedTenants, limits, logger, prometheus.WrapRegistererWith(prometheus.Labels{"component": "store-gateway"}, reg))
 	if err != nil {
 		return nil, errors.Wrap(err, "create bucket stores")
 	}

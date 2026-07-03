@@ -17,6 +17,7 @@ import (
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/kv/consul"
 	"github.com/grafana/dskit/ring"
+	"github.com/grafana/dskit/ring/client"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
 	"github.com/oklog/ulid/v2"
@@ -356,7 +357,8 @@ func TestBlocksStoreReplicationSet_GetClientsFor(t *testing.T) {
 			}
 
 			reg := prometheus.NewPedanticRegistry()
-			s, err := newBlocksStoreReplicationSet(r, noLoadBalancing, storegateway.NewNopDynamicReplication(ringCfg.ReplicationFactor), nil, limits, StoreGatewayClientConfig{}, log.NewNopLogger(), reg)
+			pool := newStoreGatewayClientPool(client.NewRingServiceDiscovery(r), StoreGatewayClientConfig{}, log.NewNopLogger(), reg)
+			s, err := newBlocksStoreReplicationSet(r, pool, noLoadBalancing, storegateway.NewNopDynamicReplication(ringCfg.ReplicationFactor), nil, limits)
 			require.NoError(t, err)
 			require.NoError(t, services.StartAndAwaitRunning(ctx, s))
 			defer services.StopAndAwaitTerminated(ctx, s) //nolint:errcheck
@@ -427,7 +429,8 @@ func TestBlocksStoreReplicationSet_GetClientsFor_ShouldSupportRandomLoadBalancin
 
 		limits := &blocksStoreLimitsMock{storeGatewayTenantShardSize: 0}
 		reg := prometheus.NewPedanticRegistry()
-		s, err := newBlocksStoreReplicationSet(r, randomLoadBalancing, storegateway.NewNopDynamicReplication(ringCfg.ReplicationFactor), preferredZones, limits, StoreGatewayClientConfig{}, log.NewNopLogger(), reg)
+		pool := newStoreGatewayClientPool(client.NewRingServiceDiscovery(r), StoreGatewayClientConfig{}, log.NewNopLogger(), reg)
+		s, err := newBlocksStoreReplicationSet(r, pool, randomLoadBalancing, storegateway.NewNopDynamicReplication(ringCfg.ReplicationFactor), preferredZones, limits)
 		require.NoError(t, err)
 		require.NoError(t, services.StartAndAwaitRunning(ctx, s))
 		t.Cleanup(func() {
@@ -661,7 +664,8 @@ func TestBlocksStoreReplicationSet_GetClientsFor_BufferReuseSafety(t *testing.T)
 	limits := &blocksStoreLimitsMock{storeGatewayTenantShardSize: 0}
 
 	reg := prometheus.NewPedanticRegistry()
-	s, err := newBlocksStoreReplicationSet(r, noLoadBalancing, storegateway.NewNopDynamicReplication(ringCfg.ReplicationFactor), nil, limits, StoreGatewayClientConfig{}, log.NewNopLogger(), reg)
+	pool := newStoreGatewayClientPool(client.NewRingServiceDiscovery(r), StoreGatewayClientConfig{}, log.NewNopLogger(), reg)
+	s, err := newBlocksStoreReplicationSet(r, pool, noLoadBalancing, storegateway.NewNopDynamicReplication(ringCfg.ReplicationFactor), nil, limits)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(ctx, s))
 	t.Cleanup(func() {
@@ -802,7 +806,8 @@ func BenchmarkBlocksStoreReplicationSet_GetClientsFor(b *testing.B) {
 
 			// Create blocksStoreReplicationSet.
 			limits := &blocksStoreLimitsMock{storeGatewayTenantShardSize: 0}
-			s, err := newBlocksStoreReplicationSet(r, noLoadBalancing, dynRepl, nil, limits, StoreGatewayClientConfig{}, log.NewNopLogger(), prometheus.NewPedanticRegistry())
+			pool := newStoreGatewayClientPool(client.NewRingServiceDiscovery(r), StoreGatewayClientConfig{}, log.NewNopLogger(), prometheus.NewPedanticRegistry())
+			s, err := newBlocksStoreReplicationSet(r, pool, noLoadBalancing, dynRepl, nil, limits)
 			require.NoError(b, err)
 			require.NoError(b, services.StartAndAwaitRunning(ctx, s))
 			b.Cleanup(func() {

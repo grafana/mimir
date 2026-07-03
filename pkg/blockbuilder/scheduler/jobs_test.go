@@ -13,6 +13,7 @@ import (
 	promtest "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/blockbuilder/schedulerpb"
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -22,7 +23,7 @@ type testSpec struct {
 }
 
 func TestAssign(t *testing.T) {
-	s := newJobQueue(988*time.Hour, noOpJobCreationPolicy[testSpec]{}, 2, newSchedulerMetrics(prometheus.NewPedanticRegistry()), test.NewTestingLogger(t))
+	s := newJobQueue(988*time.Hour, noOpJobCreationPolicy[testSpec]{}, 2, newSchedulerMetrics(prometheus.NewPedanticRegistry(), false, 1), test.NewTestingLogger(t))
 	require.NotNil(t, s)
 
 	j0, j0spec, err := s.assign("w0")
@@ -53,7 +54,7 @@ func TestAssign(t *testing.T) {
 }
 
 func TestAssignComplete(t *testing.T) {
-	s := newJobQueue(988*time.Hour, noOpJobCreationPolicy[testSpec]{}, 2, newSchedulerMetrics(prometheus.NewPedanticRegistry()), test.NewTestingLogger(t))
+	s := newJobQueue(988*time.Hour, noOpJobCreationPolicy[testSpec]{}, 2, newSchedulerMetrics(prometheus.NewPedanticRegistry(), false, 1), test.NewTestingLogger(t))
 	require.NotNil(t, s)
 
 	{
@@ -99,7 +100,7 @@ func TestAssignComplete(t *testing.T) {
 }
 
 func TestLease(t *testing.T) {
-	s := newJobQueue(988*time.Hour, noOpJobCreationPolicy[testSpec]{}, 2, newSchedulerMetrics(prometheus.NewPedanticRegistry()), test.NewTestingLogger(t))
+	s := newJobQueue(988*time.Hour, noOpJobCreationPolicy[testSpec]{}, 2, newSchedulerMetrics(prometheus.NewPedanticRegistry(), false, 1), test.NewTestingLogger(t))
 	require.NotNil(t, s)
 
 	e := s.add("job1", testSpec{topic: "hello", commitRecTs: time.Now()})
@@ -142,7 +143,7 @@ func TestLease(t *testing.T) {
 
 func TestPersistentFailure(t *testing.T) {
 	reg := prometheus.NewPedanticRegistry()
-	s := newJobQueue(988*time.Hour, noOpJobCreationPolicy[testSpec]{}, 2, newSchedulerMetrics(reg), test.NewTestingLogger(t))
+	s := newJobQueue(988*time.Hour, noOpJobCreationPolicy[testSpec]{}, 2, newSchedulerMetrics(reg, false, 1), test.NewTestingLogger(t))
 	require.NotNil(t, s)
 
 	require.NoError(t, s.add("job1", testSpec{topic: "hello", commitRecTs: time.Now()}))
@@ -177,7 +178,7 @@ func TestPersistentFailure(t *testing.T) {
 // TestImportJob tests the importJob method - the method that is called to learn
 // about jobs in-flight from a previous scheduler instance.
 func TestImportJob(t *testing.T) {
-	s := newJobQueue(988*time.Hour, noOpJobCreationPolicy[testSpec]{}, 2, newSchedulerMetrics(prometheus.NewPedanticRegistry()), test.NewTestingLogger(t))
+	s := newJobQueue(988*time.Hour, noOpJobCreationPolicy[testSpec]{}, 2, newSchedulerMetrics(prometheus.NewPedanticRegistry(), false, 1), test.NewTestingLogger(t))
 	require.NotNil(t, s)
 
 	spec := testSpec{commitRecTs: time.Now().Add(-1 * time.Hour)}
@@ -197,7 +198,7 @@ func TestImportJob(t *testing.T) {
 
 func TestJobCreationPolicies(t *testing.T) {
 	t.Run("noOpJobCreationPolicy", func(t *testing.T) {
-		s := newJobQueue(988*time.Hour, noOpJobCreationPolicy[testSpec]{}, 2, newSchedulerMetrics(prometheus.NewPedanticRegistry()), test.NewTestingLogger(t))
+		s := newJobQueue(988*time.Hour, noOpJobCreationPolicy[testSpec]{}, 2, newSchedulerMetrics(prometheus.NewPedanticRegistry(), false, 1), test.NewTestingLogger(t))
 		require.NotNil(t, s)
 
 		// noOp policy should always allow job creation
@@ -211,7 +212,7 @@ func TestJobCreationPolicies(t *testing.T) {
 	})
 
 	t.Run("allowNone", func(t *testing.T) {
-		s := newJobQueue(988*time.Hour, noOpJobCreationPolicy[testSpec]{}, 2, newSchedulerMetrics(prometheus.NewPedanticRegistry()), test.NewTestingLogger(t))
+		s := newJobQueue(988*time.Hour, noOpJobCreationPolicy[testSpec]{}, 2, newSchedulerMetrics(prometheus.NewPedanticRegistry(), false, 1), test.NewTestingLogger(t))
 		require.NotNil(t, s)
 		s.creationPolicy = allowNoneJobCreationPolicy[testSpec]{}
 
@@ -224,6 +225,39 @@ func TestJobCreationPolicies(t *testing.T) {
 		_, ok2 := s.jobs["job2"]
 		require.False(t, ok2, "job2 should not be created")
 	})
+}
+
+func TestJobIDForSpec(t *testing.T) {
+	tests := map[string]struct {
+		compartmentsEnabled bool
+		spec                *schedulerpb.JobSpec
+		expected            string
+	}{
+		"non-compartment mode uses the single start offset": {
+			compartmentsEnabled: false,
+			spec:                &schedulerpb.JobSpec{Topic: "ingest", Partition: 3, StartOffset: 42},
+			expected:            "ingest/3/42",
+		},
+		"compartment mode includes each cluster's start offset sorted by cluster ID": {
+			compartmentsEnabled: true,
+			spec: &schedulerpb.JobSpec{
+				Topic:     "ingest",
+				Partition: 3,
+				OffsetRanges: map[int32]schedulerpb.OffsetRange{
+					2: {StartOffset: 20, EndOffset: 30},
+					0: {StartOffset: 5, EndOffset: 9},
+					1: {StartOffset: 10, EndOffset: 15},
+				},
+			},
+			expected: "ingest/3/0:5-1:10-2:20",
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			require.Equal(t, tc.expected, jobIDForSpec(tc.compartmentsEnabled, tc.spec))
+		})
+	}
 }
 
 // allowNoneJobCreationPolicy is a job creation policy that never allows job creation.

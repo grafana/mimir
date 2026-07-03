@@ -821,6 +821,32 @@ func IsSafeToApplyFilteringAfterFunction(functionCall *core.FunctionCall, group 
 
 		return !group.haveAnyFiltersForLabel(model.MetricNameLabel), nil
 
+	case functions.FUNCTION_HISTOGRAM_QUANTILES:
+		// Like histogram_quantile, this drops the 'le' label on native histograms, so we can never apply filtering
+		// after the function if the filter is on that label.
+		if group.haveAnyFiltersForLabel(model.BucketLabel) {
+			return false, nil
+		}
+
+		// histogram_quantiles also adds the configured quantile label (its second argument), so it's not safe to
+		// push filtering on that label through the function call.
+		quantileLabelName, err := extractDestinationLabel(functionCall)
+		if err != nil {
+			return false, err
+		}
+
+		if group.haveAnyFiltersForLabel(quantileLabelName) {
+			return false, nil
+		}
+
+		// It drops the __name__ label if delayed name removal is not enabled, so it's only safe to apply filtering
+		// after the function if delayed name removal is enabled, or there is no filtering by __name__.
+		if delayedNameRemovalEnabled {
+			return true, nil
+		}
+
+		return !group.haveAnyFiltersForLabel(model.MetricNameLabel), nil
+
 	case functions.FUNCTION_MAX_OF,
 		functions.FUNCTION_MIN_OF,
 		functions.FUNCTION_PI,

@@ -56,7 +56,7 @@ func (s *SkipHistogramDecodingOptimizationPass) applyToNode(node planning.Node, 
 		switch f.Function {
 		case functions.FUNCTION_HISTOGRAM_COUNT, functions.FUNCTION_HISTOGRAM_SUM, functions.FUNCTION_HISTOGRAM_AVG:
 			skipHistogramBuckets = true
-		case functions.FUNCTION_HISTOGRAM_FRACTION, functions.FUNCTION_HISTOGRAM_QUANTILE:
+		case functions.FUNCTION_HISTOGRAM_FRACTION, functions.FUNCTION_HISTOGRAM_QUANTILE, functions.FUNCTION_HISTOGRAM_QUANTILES:
 			skipHistogramBuckets = false
 		default:
 			// Nothing to do.

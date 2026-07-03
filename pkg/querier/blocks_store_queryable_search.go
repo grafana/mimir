@@ -77,23 +77,24 @@ func (q *blocksStoreQuerier) SearchLabelNames(
 	}
 
 	var (
-		mtx               sync.Mutex
-		resSources        []storage.SearchResultSet
 		convertedMatchers = convertMatchersToLabelMatcher(matchers)
+
+		resMtx     sync.Mutex
+		resSources []storage.SearchResultSet
 	)
 
-	queryF := func(clients map[BlocksStoreClient][]ulid.ULID, qMinT, qMaxT int64, indexMeta *bucketindex.Metadata) ([]ulid.ULID, error) {
+	queryF := func(ctx context.Context, clients map[BlocksStoreClient][]ulid.ULID, qMinT, qMaxT int64, indexMeta *bucketindex.Metadata) ([]ulid.ULID, error) {
 		sources, queriedBlocks, err := q.fetchSearchLabelNamesFromStore(ctx, clients, qMinT, qMaxT, tenantID, params, hints, convertedMatchers, indexMeta)
 		if err != nil {
 			return nil, err
 		}
-		mtx.Lock()
+		resMtx.Lock()
 		resSources = append(resSources, sources...)
-		mtx.Unlock()
+		resMtx.Unlock()
 		return queriedBlocks, nil
 	}
 
-	if err := q.queryWithConsistencyCheck(ctx, spanLog, minT, maxT, tenantID, nil, queryF); err != nil {
+	if err := q.queryCompartmentsWithConsistencyCheck(ctx, q.targetCompartments(tenantID, matchers), spanLog, minT, maxT, tenantID, nil, queryF); err != nil {
 		closeSearchResultSets(resSources)
 		return storage.ErrSearchResultSet(err)
 	}
@@ -129,23 +130,24 @@ func (q *blocksStoreQuerier) SearchLabelValues(
 	}
 
 	var (
-		mtx               sync.Mutex
-		resSources        []storage.SearchResultSet
 		convertedMatchers = convertMatchersToLabelMatcher(matchers)
+
+		resMtx     sync.Mutex
+		resSources []storage.SearchResultSet
 	)
 
-	queryF := func(clients map[BlocksStoreClient][]ulid.ULID, qMinT, qMaxT int64, indexMeta *bucketindex.Metadata) ([]ulid.ULID, error) {
+	queryF := func(ctx context.Context, clients map[BlocksStoreClient][]ulid.ULID, qMinT, qMaxT int64, indexMeta *bucketindex.Metadata) ([]ulid.ULID, error) {
 		sources, queriedBlocks, err := q.fetchSearchLabelValuesFromStore(ctx, name, clients, qMinT, qMaxT, tenantID, params, hints, convertedMatchers, indexMeta)
 		if err != nil {
 			return nil, err
 		}
-		mtx.Lock()
+		resMtx.Lock()
 		resSources = append(resSources, sources...)
-		mtx.Unlock()
+		resMtx.Unlock()
 		return queriedBlocks, nil
 	}
 
-	if err := q.queryWithConsistencyCheck(ctx, spanLog, minT, maxT, tenantID, nil, queryF); err != nil {
+	if err := q.queryCompartmentsWithConsistencyCheck(ctx, q.targetCompartments(tenantID, matchers), spanLog, minT, maxT, tenantID, nil, queryF); err != nil {
 		closeSearchResultSets(resSources)
 		return storage.ErrSearchResultSet(err)
 	}

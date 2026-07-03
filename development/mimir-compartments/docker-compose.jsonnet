@@ -8,8 +8,10 @@ std.manifestYamlDoc({
     self.querier +
     self.store_gateways +
     self.compactors +
-    self.block_builder +
-    self.block_builder_scheduler +
+    // The block-builder is not compartment-aware yet (it would build only read compartment 0's blocks), so
+    // it is disabled and ingesters ship their own blocks per compartment instead.
+    // self.block_builder +
+    // self.block_builder_scheduler +
     self.rulers(1) +
     self.alertmanagers(1) +
     self.usage_trackers +
@@ -78,6 +80,9 @@ std.manifestYamlDoc({
         // redirections by the "sh -c" command.
         "-ingest-storage.kafka.address='kafka-wc-<write-compartment-id>:9092'",
         "-ingest-storage.kafka.topic='mimir-ingest-rc-<read-compartment-id>'",
+        // The block-builder is disabled, so each ingester ships its own blocks to its read compartment's
+        // dedicated bucket (mimir-blocks-rc-<id>), where the compartment's store-gateways serve them.
+        '-blocks-storage.s3.bucket-name=mimir-blocks-rc-%d' % compartment,
       ],
       extraVolumes: ['.data-ingester-%s-rc-%d-%d:/data:delegated' % [zones[zoneIdx], compartment, partition]],
     })
@@ -86,11 +91,17 @@ std.manifestYamlDoc({
     for zoneIdx in std.range(0, std.length(zones) - 1)
   },
 
+  // The querier is compartment-aware: it resolves the <read-compartment-id> placeholder in the blocks
+  // bucket name to query every read compartment's dedicated bucket, narrowing a query to the compartments
+  // that own the selected metric names. Single-quoted so "<...>" isn't read as a shell redirection.
   querier:: {
     querier: mimirService({
       name: 'querier',
       target: 'querier',
       publishedHttpPort: 8005,
+      extraArguments: [
+        "-blocks-storage.s3.bucket-name='mimir-blocks-rc-<read-compartment-id>'",
+      ],
     }),
   },
 
@@ -155,17 +166,15 @@ std.manifestYamlDoc({
     for zoneIdx in std.range(0, std.length(zones) - 1)
   },
 
+  // The ruler evaluates rules via remote rule evaluation, so it needs no per-compartment bucket configuration.
   rulers(count):: if count <= 0 then {} else {
     ['ruler-%d' % id]: mimirService({
       name: 'ruler-' + id,
       target: 'ruler',
       publishedHttpPort: 8030 + id,
       jaegerApp: 'ruler-%d' % id,
-      // The ruler embeds a distributor to write rule results, so it needs the same compartment-aware Kafka
-      // config as the distributors (otherwise it falls back to the concrete base topic and auto-creates
-      // duplicate topics). A single ruler can't shard across write compartments, so pin it to write
-      // compartment 0; ingesters consume every write compartment, so its writes are still read back.
-      extraArguments: writeCompartmentArgs(0),
+      // The ruler writes rule results through distributors, which own write-compartment routing.
+      extraArguments: ['-ruler.distributor.address=dns:///distributor:9095'],
     })
     for id in std.range(1, count)
   },
@@ -268,9 +277,9 @@ std.manifestYamlDoc({
   },
 
   minio:: {
-    // One blocks bucket per read compartment (mimir-blocks-rc-<id>), plus the legacy mimir-blocks
-    // bucket still referenced by the default config (e.g. the querier, whose block querying isn't
-    // compartment-aware yet), and the ruler, alertmanager and usage-tracker buckets.
+    // One blocks bucket per read compartment (mimir-blocks-rc-<id>): the per-compartment store-gateways,
+    // compactors and block-builder write/serve their own bucket, and the querier read every
+    // compartment's bucket by resolving the <read-compartment-id> placeholder.
     local buckets = ['mimir-blocks'] +
                     ['mimir-blocks-rc-%d' % compartment for compartment in std.range(0, numCompartments - 1)] +
                     ['mimir-ruler', 'mimir-alertmanager', 'usage-tracker-snapshots'],

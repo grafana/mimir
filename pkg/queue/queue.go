@@ -66,6 +66,7 @@ type Queue struct {
 	queueLength       *prometheus.GaugeVec   // per user
 	discardedRequests *prometheus.CounterVec // per user
 	enqueueDuration   prometheus.Histogram
+	maxQueueLength    *MaxQueueLengthGauge // per user; nil when the metric is disabled
 
 	stopRequested chan struct{} // Written to by stop() to wake up dispatcherLoop() in response to a stop request.
 	stopCompleted chan struct{} // Closed by dispatcherLoop() after a stop is requested and the dispatcher has stopped.
@@ -161,6 +162,7 @@ func New(
 	maxOutstandingPerTenant int,
 	forgetDelay time.Duration,
 	queueLength *prometheus.GaugeVec,
+	maxQueueLength *MaxQueueLengthGauge,
 	discardedRequests *prometheus.CounterVec,
 	enqueueDuration prometheus.Histogram,
 ) (*Queue, error) {
@@ -173,6 +175,7 @@ func New(
 		// metrics for reporting
 		connectedConsumerWorkers: atomic.NewInt64(0),
 		queueLength:              queueLength,
+		maxQueueLength:           maxQueueLength,
 		discardedRequests:        discardedRequests,
 		enqueueDuration:          enqueueDuration,
 
@@ -332,6 +335,9 @@ func (q *Queue) enqueueItemInternal(r itemToEnqueue) error {
 	}
 
 	q.queueLength.WithLabelValues(r.tenantID).Inc()
+	if q.maxQueueLength != nil {
+		q.maxQueueLength.inc(r.tenantID)
+	}
 	return nil
 }
 
@@ -368,6 +374,9 @@ func (q *Queue) trySendNextItemForConsumer(dequeueReq *ConsumerWorkerDequeueRequ
 	sent := dequeueReq.sendResponse(response)
 	if sent {
 		q.queueLength.WithLabelValues(tenant.tenantID).Dec()
+		if q.maxQueueLength != nil {
+			q.maxQueueLength.dec(tenant.tenantID)
+		}
 	} else {
 		// should never error; any item previously in the queue already passed validation
 		err := q.queueBroker.enqueueItemFront(dequeued, tenant.maxConsumers)

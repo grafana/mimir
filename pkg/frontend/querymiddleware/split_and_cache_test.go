@@ -33,6 +33,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/atomic"
 
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware/querydetails"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/testdatagen"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier"
@@ -46,6 +47,8 @@ import (
 
 const resultsCacheTTL = 24 * time.Hour
 const resultsCacheLowerTTL = 10 * time.Minute
+
+var splitAndCacheMetricNames = []string{"cortex_frontend_query_result_cache_attempted_total", "cortex_frontend_query_result_cache_skipped_total", "cortex_frontend_split_queries_total", "cortex_frontend_query_result_cache_requests_total", "cortex_frontend_query_result_cache_hits_total", "cortex_querier_inflight_query_current_estimated_memory_consumption_bytes", "cortex_querier_inflight_query_max_age_seconds", "cortex_querier_inflight_query_max_estimated_memory_consumption_limit_bytes", "cortex_querier_inflight_query_peak_estimated_memory_consumption_bytes", "cortex_querier_inflight_query_sampled_count"}
 
 func TestSplitAndCacheMiddleware_SplitByInterval(t *testing.T) {
 	var (
@@ -218,7 +221,7 @@ func TestSplitAndCacheMiddleware_SplitByInterval(t *testing.T) {
 
 	// Assert metrics
 	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
-		# HELP cortex_frontend_query_result_cache_attempted_total Total number of queries that were attempted to be fetched from cache.
+		# HELP cortex_frontend_query_result_cache_attempted_total Total number of queries that were attempted to be fetched from cache. This metric is tracked for each request when time-splitting is running inside MQE, and for each partial query otherwise.
 		# TYPE cortex_frontend_query_result_cache_attempted_total counter
 		cortex_frontend_query_result_cache_attempted_total 0
 		# HELP cortex_frontend_query_result_cache_skipped_total Total number of times a query was not cacheable. This metric is tracked for each request when time-splitting is running inside MQE, and for each partial query otherwise.
@@ -250,7 +253,7 @@ func TestSplitAndCacheMiddleware_SplitByInterval(t *testing.T) {
 		# HELP cortex_querier_inflight_query_sampled_count Number of in-flight memory consumption trackers accumulated during the last metrics collection.
 		# TYPE cortex_querier_inflight_query_sampled_count gauge
 		cortex_querier_inflight_query_sampled_count 0
-	`)))
+	`), splitAndCacheMetricNames...))
 
 	// Assert query stats from context
 	queryStats := stats.FromContext(ctx)
@@ -333,7 +336,7 @@ func TestSplitAndCacheMiddleware_ResultsCache(t *testing.T) {
 		queryExpr: parseQuery(t, `{__name__=~".+"}`),
 	})
 
-	queryDetails, ctx := ContextWithEmptyDetails(context.Background())
+	queryDetails, ctx := querydetails.ContextWithEmptyDetails(context.Background())
 	ctx = user.InjectOrgID(ctx, "1")
 	resp, err := rc.Do(ctx, req)
 	require.NoError(t, err)
@@ -349,8 +352,13 @@ func TestSplitAndCacheMiddleware_ResultsCache(t *testing.T) {
 
 	assert.NotZero(t, queryDetails.ResultsCacheMissBytes)
 	assert.Zero(t, queryDetails.ResultsCacheHitBytes)
+	assert.Equal(t, 1, queryDetails.ResultsCacheMissCount)
+	assert.Equal(t, 0, queryDetails.ResultsCacheHitCount)
+	assert.Equal(t, 1, queryDetails.ResultsCacheSetCount)
 
 	// Doing same request again shouldn't change anything.
+	queryDetails, ctx = querydetails.ContextWithEmptyDetails(context.Background())
+	ctx = user.InjectOrgID(ctx, "1")
 	resp, err = rc.Do(ctx, req)
 	require.NoError(t, err)
 	prometheusResponse, ok = resp.GetPrometheusResponse()
@@ -360,23 +368,31 @@ func TestSplitAndCacheMiddleware_ResultsCache(t *testing.T) {
 	assert.Equal(t, 1, cacheBackend.CountStoreCalls())
 	// Assert query stats from context
 	queryStats = stats.FromContext(ctx)
-	assert.Equal(t, uint32(1), queryStats.LoadSplitQueries())
+	assert.Equal(t, uint32(0), queryStats.LoadSplitQueries())
+	assert.Equal(t, 0, queryDetails.ResultsCacheMissCount)
+	assert.Equal(t, 1, queryDetails.ResultsCacheHitCount)
+	assert.Equal(t, 0, queryDetails.ResultsCacheSetCount)
 
 	// Doing request with new end time should do one more query.
 	req, err = req.WithStartEnd(req.GetStart(), req.GetEnd()+step)
 	require.NoError(t, err)
 
+	queryDetails, ctx = querydetails.ContextWithEmptyDetails(context.Background())
+	ctx = user.InjectOrgID(ctx, "1")
 	_, err = rc.Do(ctx, req)
 	require.NoError(t, err)
 	require.Equal(t, 2, downstreamReqs)
 	assert.Equal(t, 2, cacheBackend.CountStoreCalls())
 	// Assert query stats from context
 	queryStats = stats.FromContext(ctx)
-	assert.Equal(t, uint32(2), queryStats.LoadSplitQueries())
+	assert.Equal(t, uint32(1), queryStats.LoadSplitQueries())
+	assert.Equal(t, 0, queryDetails.ResultsCacheMissCount)
+	assert.Equal(t, 1, queryDetails.ResultsCacheHitCount)
+	assert.Equal(t, 1, queryDetails.ResultsCacheSetCount)
 
 	// Assert metrics
 	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
-		# HELP cortex_frontend_query_result_cache_attempted_total Total number of queries that were attempted to be fetched from cache.
+		# HELP cortex_frontend_query_result_cache_attempted_total Total number of queries that were attempted to be fetched from cache. This metric is tracked for each request when time-splitting is running inside MQE, and for each partial query otherwise.
 		# TYPE cortex_frontend_query_result_cache_attempted_total counter
 		cortex_frontend_query_result_cache_attempted_total 3
 
@@ -412,7 +428,7 @@ func TestSplitAndCacheMiddleware_ResultsCache(t *testing.T) {
 		# HELP cortex_querier_inflight_query_sampled_count Number of in-flight memory consumption trackers accumulated during the last metrics collection.
 		# TYPE cortex_querier_inflight_query_sampled_count gauge
 		cortex_querier_inflight_query_sampled_count 0
-	`)))
+	`), splitAndCacheMetricNames...))
 }
 
 // TestSplitAndCacheMiddleware_ResultsCache_NativeHistogramPartialCacheHit exercises a bug where
@@ -609,7 +625,7 @@ func TestSplitAndCacheMiddleware_ResultsCacheNoStore(t *testing.T) {
 		options:   requestoptions.Options{CacheDisabled: true},
 	})
 
-	queryDetails, ctx := ContextWithEmptyDetails(context.Background())
+	queryDetails, ctx := querydetails.ContextWithEmptyDetails(context.Background())
 	ctx = user.InjectOrgID(ctx, "1")
 	resp, err := rc.Do(ctx, req)
 	require.NoError(t, err)
@@ -641,7 +657,7 @@ func TestSplitAndCacheMiddleware_ResultsCacheNoStore(t *testing.T) {
 
 	// Assert metrics
 	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
-		# HELP cortex_frontend_query_result_cache_attempted_total Total number of queries that were attempted to be fetched from cache.
+		# HELP cortex_frontend_query_result_cache_attempted_total Total number of queries that were attempted to be fetched from cache. This metric is tracked for each request when time-splitting is running inside MQE, and for each partial query otherwise.
 		# TYPE cortex_frontend_query_result_cache_attempted_total counter
 		cortex_frontend_query_result_cache_attempted_total 0
 
@@ -662,7 +678,7 @@ func TestSplitAndCacheMiddleware_ResultsCacheNoStore(t *testing.T) {
 		# HELP cortex_frontend_query_result_cache_hits_total Total number of requests (or partial requests) fetched from the results cache.
 		# TYPE cortex_frontend_query_result_cache_hits_total counter
 		cortex_frontend_query_result_cache_hits_total{request_type="query_range"} 0
-	`)))
+	`), splitAndCacheMetricNames...))
 }
 
 func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotLookupCacheIfStepIsNotAligned(t *testing.T) {
@@ -760,7 +776,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotLookupCacheIfStepIsNotAli
 
 	// Assert metrics
 	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
-		# HELP cortex_frontend_query_result_cache_attempted_total Total number of queries that were attempted to be fetched from cache.
+		# HELP cortex_frontend_query_result_cache_attempted_total Total number of queries that were attempted to be fetched from cache. This metric is tracked for each request when time-splitting is running inside MQE, and for each partial query otherwise.
 		# TYPE cortex_frontend_query_result_cache_attempted_total counter
 		cortex_frontend_query_result_cache_attempted_total 1
 		# HELP cortex_frontend_query_result_cache_skipped_total Total number of times a query was not cacheable. This metric is tracked for each request when time-splitting is running inside MQE, and for each partial query otherwise.
@@ -777,7 +793,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotLookupCacheIfStepIsNotAli
 		# HELP cortex_frontend_query_result_cache_requests_total Total number of requests (or partial requests) looked up in the results cache.
 		# TYPE cortex_frontend_query_result_cache_requests_total counter
 		cortex_frontend_query_result_cache_requests_total{request_type="query_range"} 0
-	`)))
+	`), splitAndCacheMetricNames...))
 }
 
 func TestSplitAndCacheMiddleware_ResultsCache_EnabledCachingOfStepUnalignedRequest(t *testing.T) {
@@ -918,7 +934,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotCacheRequestEarlierThanMa
 			expectedDownstreamEndTime:   now,
 			expectedCachedResponses:     nil,
 			expectedMetrics: `
-				# HELP cortex_frontend_query_result_cache_attempted_total Total number of queries that were attempted to be fetched from cache.
+				# HELP cortex_frontend_query_result_cache_attempted_total Total number of queries that were attempted to be fetched from cache. This metric is tracked for each request when time-splitting is running inside MQE, and for each partial query otherwise.
 				# TYPE cortex_frontend_query_result_cache_attempted_total counter
 				cortex_frontend_query_result_cache_attempted_total 2
 				# HELP cortex_frontend_query_result_cache_skipped_total Total number of times a query was not cacheable. This metric is tracked for each request when time-splitting is running inside MQE, and for each partial query otherwise.
@@ -1040,7 +1056,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotCacheRequestEarlierThanMa
 			}
 
 			if testData.expectedMetrics != "" {
-				assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(testData.expectedMetrics)))
+				assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(testData.expectedMetrics), splitAndCacheMetricNames...))
 			}
 		})
 	}
@@ -1535,7 +1551,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_ExtentsEdgeCases(t *testing.T) {
 			// Store all extents fixtures in the cache.
 			cacheKey := keyGenerator.QueryRequest(ctx, userID, testData.req)
 			spanLog, ctx := spanlogger.New(ctx, logger, tracer, "")
-			mw.storeCacheExtents(spanLog, cacheKey, []string{userID}, testData.cachedExtents)
+			mw.storeCacheExtents(ctx, spanLog, cacheKey, []string{userID}, testData.cachedExtents)
 
 			// Run the request.
 			actualRes, err := mw.Do(ctx, testData.req)
@@ -1594,8 +1610,8 @@ func TestSplitAndCacheMiddleware_StoreAndFetchCacheExtents(t *testing.T) {
 	})
 
 	t.Run("fetchCacheExtents() should return a slice with the same number of input keys and some extends filled up on partial cache hit", func(t *testing.T) {
-		mw.storeCacheExtents(spanLog, "key-1", []string{"tenant"}, []Extent{mkExtent(10, 20)})
-		mw.storeCacheExtents(spanLog, "key-3", []string{"tenant"}, []Extent{mkExtent(20, 30), mkExtent(40, 50)})
+		mw.storeCacheExtents(ctx, spanLog, "key-1", []string{"tenant"}, []Extent{mkExtent(10, 20)})
+		mw.storeCacheExtents(ctx, spanLog, "key-3", []string{"tenant"}, []Extent{mkExtent(20, 30), mkExtent(40, 50)})
 
 		actual := mw.fetchCacheExtents(ctx, time.Now(), []string{"tenant"}, []string{"key-1", "key-2", "key-3"})
 		expected := [][]Extent{{mkExtent(10, 20)}, nil, {mkExtent(20, 30), mkExtent(40, 50)}}
@@ -1608,7 +1624,7 @@ func TestSplitAndCacheMiddleware_StoreAndFetchCacheExtents(t *testing.T) {
 		require.NoError(t, err)
 		cacheBackend.SetAsync(hashCacheKey("key-1"), buf, 0)
 
-		mw.storeCacheExtents(spanLog, "key-3", []string{"tenant"}, []Extent{mkExtent(20, 30), mkExtent(40, 50)})
+		mw.storeCacheExtents(ctx, spanLog, "key-3", []string{"tenant"}, []Extent{mkExtent(20, 30), mkExtent(40, 50)})
 
 		actual := mw.fetchCacheExtents(ctx, time.Now(), []string{"tenant"}, []string{"key-1", "key-2", "key-3"})
 		expected := [][]Extent{nil, nil, {mkExtent(20, 30), mkExtent(40, 50)}}
@@ -1620,24 +1636,24 @@ func TestSplitAndCacheMiddleware_StoreAndFetchCacheExtents(t *testing.T) {
 
 		// Query time outside of TTL (1h), extent ends outside of OOO window (30m) -- will be filtered out.
 		e1 := mkExtentWithStepAndQueryTime(10, 20, 10, now-3*time.Hour.Milliseconds())
-		mw.storeCacheExtents(spanLog, "key-1", []string{"tenant"}, []Extent{e1})
+		mw.storeCacheExtents(ctx, spanLog, "key-1", []string{"tenant"}, []Extent{e1})
 
 		// Query time inside of TTL (1h), extent ends outside of OOO window (30m) -- will be used.
 		e2 := mkExtentWithStepAndQueryTime(20, 30, 10, now-45*time.Minute.Milliseconds())
-		mw.storeCacheExtents(spanLog, "key-2", []string{"tenant"}, []Extent{e2})
+		mw.storeCacheExtents(ctx, spanLog, "key-2", []string{"tenant"}, []Extent{e2})
 
 		// Query time outside of (short) TTL (10m), extent ends inside of OOO window (30min)
 		extentEnd := now - 25*time.Minute.Milliseconds()
 		e3 := mkExtentWithStepAndQueryTime(extentEnd-100, extentEnd, 10, now-15*time.Minute.Milliseconds())
-		mw.storeCacheExtents(spanLog, "key-3", []string{"tenant"}, []Extent{e3})
+		mw.storeCacheExtents(ctx, spanLog, "key-3", []string{"tenant"}, []Extent{e3})
 
 		// Query time inside of (short) TTL (10m), extent ends inside of OOO window (30min)
 		e4 := mkExtentWithStepAndQueryTime(extentEnd-100, extentEnd, 10, now-5*time.Minute.Milliseconds())
-		mw.storeCacheExtents(spanLog, "key-4", []string{"tenant"}, []Extent{e4})
+		mw.storeCacheExtents(ctx, spanLog, "key-4", []string{"tenant"}, []Extent{e4})
 
 		// No query time, extent ends inside of OOO window (30min). This will be used.
 		e5 := mkExtentWithStepAndQueryTime(extentEnd-100, extentEnd, 10, 0)
-		mw.storeCacheExtents(spanLog, "key-5", []string{"tenant"}, []Extent{e5})
+		mw.storeCacheExtents(ctx, spanLog, "key-5", []string{"tenant"}, []Extent{e5})
 
 		actual := mw.fetchCacheExtents(ctx, time.UnixMilli(now), []string{"tenant"}, []string{"key-1", "key-2", "key-3", "key-4", "key-5"})
 		expected := [][]Extent{
@@ -2290,7 +2306,8 @@ func TestSplitAndCacheMiddlewareLowerTTL(t *testing.T) {
 	for i, c := range cases {
 		// Store.
 		key := fmt.Sprintf("k%d", i)
-		m.storeCacheExtents(spanLog, key, []string{"ten1"}, []Extent{
+		ctx := context.Background()
+		m.storeCacheExtents(ctx, spanLog, key, []string{"ten1"}, []Extent{
 			{Start: 0, End: c.endTime.UnixMilli()},
 		})
 

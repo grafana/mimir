@@ -5,6 +5,8 @@ package remoteexec
 import (
 	"context"
 	"fmt"
+	"maps"
+	"slices"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize"
@@ -42,7 +44,7 @@ func (o *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, 
 	// instant query) runs on the query-frontend.
 	if evaluationRoots := collectEvaluationRoots(plan.Root); len(evaluationRoots) > 0 {
 		for _, evaluationRoot := range evaluationRoots {
-			if err := o.wrapEvaluationRoot(evaluationRoot, multiNodeGroupsEnabled); err != nil {
+			if err := o.wrapEvaluationRoot(evaluationRoot, multiNodeGroupsEnabled, len(evaluationRoots) > 1); err != nil {
 				return nil, err
 			}
 		}
@@ -58,7 +60,7 @@ func (o *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, 
 }
 
 func (o *OptimizationPass) wrapPlanRoot(plan *planning.QueryPlan, multiNodeGroupsEnabled bool) error {
-	newRoot, err := o.applyToRootNode(plan.Root, multiNodeGroupsEnabled)
+	newRoot, err := o.applyToRootNode(plan.Root, multiNodeGroupsEnabled, false)
 	if err != nil {
 		return err
 	}
@@ -74,8 +76,8 @@ func (o *OptimizationPass) wrapPlanRoot(plan *planning.QueryPlan, multiNodeGroup
 // EvaluationRoot when grouping nodes that share a selector into the same request.
 // FIXME: in the future we could share groups between roots and avoid evaluating duplicate expressions shared across
 // roots.
-func (o *OptimizationPass) wrapEvaluationRoot(evaluationRoot *core.EvaluationRoot, multiNodeGroupsEnabled bool) error {
-	newRoot, err := o.applyToRootNode(evaluationRoot.Inner, multiNodeGroupsEnabled)
+func (o *OptimizationPass) wrapEvaluationRoot(evaluationRoot *core.EvaluationRoot, multiNodeGroupsEnabled bool, haveMultipleRoots bool) error {
+	newRoot, err := o.applyToRootNode(evaluationRoot.Inner, multiNodeGroupsEnabled, haveMultipleRoots)
 	if err != nil {
 		return err
 	}
@@ -90,7 +92,7 @@ func (o *OptimizationPass) wrapEvaluationRoot(evaluationRoot *core.EvaluationRoo
 // Otherwise the entire child is wrapped (beneath any splitting and caching nodes, which run on the query-frontend).
 //
 // The new root node is returned, which may or may not be the same as the provided root node.
-func (o *OptimizationPass) applyToRootNode(root planning.Node, multiNodeGroupsEnabled bool) (planning.Node, error) {
+func (o *OptimizationPass) applyToRootNode(root planning.Node, multiNodeGroupsEnabled bool, eagerLoad bool) (planning.Node, error) {
 	var groups remoteExecutionGroupSet
 
 	if multiNodeGroupsEnabled {
@@ -109,13 +111,16 @@ func (o *OptimizationPass) applyToRootNode(root planning.Node, multiNodeGroupsEn
 	// We want the splitting and caching nodes to run on the query-frontend, so the remote execution
 	// node should be a child of any splitting and caching nodes.
 	for isSplittingOrCachingNode(child) {
+		// If a splitting node is present, then we need to eagerly load this instance for the same reason as for sharded expressions.
+		eagerLoad = eagerLoad || isSplittingNode(child)
+
 		parent = child
 		child = child.Child(0)
 	}
 
 	wrappedChild, err := o.wrapInRemoteExecutionNode(
 		child,
-		false,
+		eagerLoad,
 		nil, // No need to pass groups here as we'll wrap the whole child in a single group.
 	)
 	if err != nil {
@@ -136,11 +141,12 @@ func (o *OptimizationPass) applyToRootNode(root planning.Node, multiNodeGroupsEn
 
 // collectEvaluationRoots returns the EvaluationRoot nodes in the plan.
 func collectEvaluationRoots(node planning.Node) []*core.EvaluationRoot {
-	var roots []*core.EvaluationRoot
+	roots := map[*core.EvaluationRoot]struct{}{} // We use a map to deduplicate roots referenced by multiple paths (eg. duplicate expressions).
+
 	var visit func(planning.Node)
 	visit = func(n planning.Node) {
 		if evaluationRoot, ok := n.(*core.EvaluationRoot); ok {
-			roots = append(roots, evaluationRoot)
+			roots[evaluationRoot] = struct{}{}
 
 			// EvaluationRoot markers are never nested inside one another, so no need to visit children.
 			return
@@ -153,7 +159,7 @@ func collectEvaluationRoots(node planning.Node) []*core.EvaluationRoot {
 
 	visit(node)
 
-	return roots
+	return slices.Collect(maps.Keys(roots))
 }
 
 func (o *OptimizationPass) wrapInRemoteExecutionNode(child planning.Node, eagerLoad bool, groups remoteExecutionGroupSet) (planning.Node, error) {
@@ -287,7 +293,11 @@ func (s remoteExecutionGroupSet) createGroup(eagerLoad bool) *RemoteExecutionGro
 }
 
 func isSplittingOrCachingNode(n planning.Node) bool {
-	_, isTimeRangeSplit := n.(*splitandcache.TimeRangeSplit)
 	_, isCache := n.(*splitandcache.Cache)
-	return isTimeRangeSplit || isCache
+	return isSplittingNode(n) || isCache
+}
+
+func isSplittingNode(n planning.Node) bool {
+	_, isTimeRangeSplit := n.(*splitandcache.TimeRangeSplit)
+	return isTimeRangeSplit
 }

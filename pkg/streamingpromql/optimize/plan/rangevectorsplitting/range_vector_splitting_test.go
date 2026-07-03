@@ -432,11 +432,11 @@ func TestQuerySplitting_WithCSE(t *testing.T) {
 
 	expectedPlan := `
 		- BinaryExpression: LHS / RHS, hints exclude ()
-			- LHS: SplitFunctionCall: splits=4 [(3600000,7199999], (7199999,14399999]*, (14399999,21599999]*, (21599999,21600000]]
+			- LHS: SplitFunctionCall
 				- FunctionCall: sum_over_time(...)
 					- ref#1 Duplicate
 						- MatrixSelector: {__name__="test_metric"}[5h0m0s]
-			- RHS: SplitFunctionCall: splits=4 [(3600000,7199999], (7199999,14399999]*, (14399999,21599999]*, (21599999,21600000]]
+			- RHS: SplitFunctionCall
 				- FunctionCall: count_over_time(...)
 					- ref#1 Duplicate ...
 	`
@@ -563,15 +563,18 @@ func TestQuerySplitting_WithSSE(t *testing.T) {
 	expectedH := mimirpb.FromFloatHistogramToHistogramProto(0, h)
 	expectedIntermediate := rangevectorsplitting.FirstLastOverTimeIntermediate{H: &expectedH}
 
+	cacheKeyGenerator := createEmptyPrefixCacheKeyGenerator()
 	// Both keys must contain the full histogram (skip=false fetches buckets).
-	countKey := cache.TestGenerateHashedCacheKey(functions.FUNCTION_LAST_OVER_TIME, splittingCacheKey(t, countSplit, params), 2*hourInMs-1, 4*hourInMs-1)
+	countKey, err := cache.TestGenerateHashedCacheKey(t.Context(), cacheKeyGenerator, functions.FUNCTION_LAST_OVER_TIME, splittingCacheKey(t, countSplit, params), 2*hourInMs-1, 4*hourInMs-1)
+	require.NoError(t, err)
 	var countEntry cache.CachedSeries
 	require.NoError(t, countEntry.Unmarshal(backend.Entries[countKey].Value))
 	var countList rangevectorsplitting.FirstLastOverTimeIntermediateList
 	require.NoError(t, countList.Unmarshal(countEntry.Results))
 	require.Equal(t, []rangevectorsplitting.FirstLastOverTimeIntermediate{expectedIntermediate}, countList.Results)
 
-	fractionKey := cache.TestGenerateHashedCacheKey(functions.FUNCTION_LAST_OVER_TIME, splittingCacheKey(t, fractionSplit, params), 2*hourInMs-1, 4*hourInMs-1)
+	fractionKey, err := cache.TestGenerateHashedCacheKey(t.Context(), cacheKeyGenerator, functions.FUNCTION_LAST_OVER_TIME, splittingCacheKey(t, fractionSplit, params), 2*hourInMs-1, 4*hourInMs-1)
+	require.NoError(t, err)
 	var fractionEntry cache.CachedSeries
 	require.NoError(t, fractionEntry.Unmarshal(backend.Entries[fractionKey].Value))
 	var fractionList rangevectorsplitting.FirstLastOverTimeIntermediateList
@@ -591,7 +594,7 @@ func TestQuerySplitting_SkipHistogramBucketsNotApplied(t *testing.T) {
 
 	require.Equal(t, testutils.TrimIndent(`
 		- FunctionCall: histogram_count(...)
-			- SplitFunctionCall: splits=4 [(3600000,7199999], (7199999,14399999]*, (14399999,21599999]*, (21599999,21600000]]
+			- SplitFunctionCall
 				- FunctionCall: rate(...)
 					- MatrixSelector: {__name__="some_metric"}[5h0m0s]
 	`), p.String())
@@ -644,8 +647,12 @@ func TestQuerySplitting_CacheKeyReflectsPostOptimizationState(t *testing.T) {
 		Range:              5 * time.Hour,
 		ExpressionPosition: core.PositionRange{Start: 72, End: 99},
 	}}
-	narrowKeyNoSSE := cache.TestGenerateHashedCacheKey(functions.FUNCTION_SUM_OVER_TIME, splittingCacheKey(t, narrowNoSSE, params), blockStart, blockEnd)
-	broadKeyNoSSE := cache.TestGenerateHashedCacheKey(functions.FUNCTION_SUM_OVER_TIME, splittingCacheKey(t, broadNoSSE, params), blockStart, blockEnd)
+
+	cacheKeyGenerator := createEmptyPrefixCacheKeyGenerator()
+	narrowKeyNoSSE, err := cache.TestGenerateHashedCacheKey(t.Context(), cacheKeyGenerator, functions.FUNCTION_SUM_OVER_TIME, splittingCacheKey(t, narrowNoSSE, params), blockStart, blockEnd)
+	require.NoError(t, err)
+	broadKeyNoSSE, err := cache.TestGenerateHashedCacheKey(t.Context(), cacheKeyGenerator, functions.FUNCTION_SUM_OVER_TIME, splittingCacheKey(t, broadNoSSE, params), blockStart, blockEnd)
+	require.NoError(t, err)
 	require.Contains(t, backendNoSSE.Entries, narrowKeyNoSSE, "expected bare-matchers cache key for narrow selector when SSE is off")
 	require.Contains(t, backendNoSSE.Entries, broadKeyNoSSE, "expected bare-matchers cache key for broad selector when SSE is off")
 
@@ -683,8 +690,12 @@ func TestQuerySplitting_CacheKeyReflectsPostOptimizationState(t *testing.T) {
 		DuplicateDetails: &commonsubexpressionelimination.DuplicateDetails{},
 		Inner:            broadSSE,
 	}
-	narrowKeySSE := cache.TestGenerateHashedCacheKey(functions.FUNCTION_SUM_OVER_TIME, splittingCacheKey(t, narrowSSE, params), blockStart, blockEnd)
-	broadKeySSE := cache.TestGenerateHashedCacheKey(functions.FUNCTION_SUM_OVER_TIME, splittingCacheKey(t, broadSplitSSE, params), blockStart, blockEnd)
+
+	cacheKeyGenerator = createEmptyPrefixCacheKeyGenerator()
+	narrowKeySSE, err := cache.TestGenerateHashedCacheKey(t.Context(), cacheKeyGenerator, functions.FUNCTION_SUM_OVER_TIME, splittingCacheKey(t, narrowSSE, params), blockStart, blockEnd)
+	require.NoError(t, err)
+	broadKeySSE, err := cache.TestGenerateHashedCacheKey(t.Context(), cacheKeyGenerator, functions.FUNCTION_SUM_OVER_TIME, splittingCacheKey(t, broadSplitSSE, params), blockStart, blockEnd)
+	require.NoError(t, err)
 	require.Contains(t, backendSSE.Entries, narrowKeySSE, "expected duplicate_filter cache key for narrow selector when SSE is on")
 	require.Contains(t, backendSSE.Entries, broadKeySSE, "expected subset-aware cache key for broad selector when SSE is on")
 	require.NotContains(t, backendNoSSE.Entries, narrowKeySSE, "narrow SSE cache key must not exist in no-SSE backend (key reflects post-optimization plan)")
@@ -704,7 +715,7 @@ func TestQuerySplitting_ProjectionNotApplied(t *testing.T) {
 	// Checking there's no include annotation on MatrixSelector
 	require.Equal(t, testutils.TrimIndent(`
 		- AggregateExpression: sum by (job)
-			- SplitFunctionCall: splits=4 [(3600000,7199999], (7199999,14399999]*, (14399999,21599999]*, (21599999,21600000]]
+			- SplitFunctionCall
 				- FunctionCall: rate(...)
 					- MatrixSelector: {__name__="some_metric"}[5h0m0s]
 	`), p.String())
@@ -831,8 +842,9 @@ func TestQuerySplitting_With3hRange_NoCacheableRanges(t *testing.T) {
 
 	// Query at 5h + 1ms with 3h range: (2h+1ms, 5h+1ms]
 	// First aligned boundary after 2h+1ms: 4h
-	// Check complete block: 4h + 2h = 6h > 5h+1ms, so NO complete block
-	// Query splitting should NOT be applied
+	// Check complete block: 4h + 2h = 6h > 5h+1ms, so NO complete block.
+	// A split node is introduced at planning time, but the materializer falls back to unsplit execution because there
+	// is no complete cacheable block.
 	// Data: first sample @ 2h10m = 13, last sample @ 5h = 30, samples = 18
 	// Sum: (13+30)*(18/2) = 387
 	expr := "sum_over_time(test_metric[3h])"
@@ -841,12 +853,12 @@ func TestQuerySplitting_With3hRange_NoCacheableRanges(t *testing.T) {
 	require.Equal(t, expectedScalarResult(ts, 387, "env", "prod"), result)
 	verifyEvaluationStats(t, stats, 18, 18)
 
-	// Since query splitting is not applied, should be a single storage query
+	// Since the query falls back to unsplit execution, there should be a single storage query.
 	require.Equal(t, []storageQueryRange{
 		{mint: 2*hourInMs + 2, maxt: 5*hourInMs + 1},
 	}, ranges)
 
-	// No cache operations should occur since splitting wasn't applied
+	// No cache operations should occur since the query falls back to unsplit execution.
 	verifyCacheStats(t, testCache, 0, 0, 0)
 }
 
@@ -863,7 +875,9 @@ func TestQuerySplitting_With3hRangeAndOffset_NoCacheableRanges(t *testing.T) {
 	// Query at 4h30m with 3h range and 31m offset
 	// Storage time: (4h30m - 3h - 31m, 4h30m - 31m] = (59m, 3h59m]
 	// First aligned boundary after 59m: 2h
-	// 2h + 2h = 4h > 3h59m (end time of query), so NO complete block
+	// 2h + 2h = 4h > 3h59m (end time of query), so NO complete block.
+	// A split node is introduced at planning time, but the materializer falls back to unsplit execution because there
+	// is no complete cacheable block.
 	expr := "sum_over_time(test_metric[3h] offset 31m)"
 	ts := baseT.Add(4*time.Hour + 30*time.Minute)
 
@@ -871,18 +885,19 @@ func TestQuerySplitting_With3hRangeAndOffset_NoCacheableRanges(t *testing.T) {
 	require.Equal(t, expectedScalarResult(ts, 261, "env", "prod"), result)
 	verifyEvaluationStats(t, stats, 18, 18)
 
-	// Since query splitting is not applied, should be a single storage query
+	// Since the query falls back to unsplit execution, there should be a single storage query.
 	require.Equal(t, []storageQueryRange{
 		{mint: 59*minuteInMs + 1, maxt: 3*hourInMs + 59*minuteInMs},
 	}, ranges)
 
-	// No cache operations should occur since splitting wasn't applied
+	// No cache operations should occur since the query falls back to unsplit execution.
 	verifyCacheStats(t, testCache, 0, 0, 0)
 }
 
 func TestQuerySplitting_WithOOOWindow(t *testing.T) {
 	backend := caching.NewInMemoryCache()
-	irCache := cache.NewCacheFactoryWithBackend(backend, streamingpromql.NewStaticQueryLimitsProvider(), prometheus.NewRegistry(), log.NewNopLogger())
+	cacheKeyGenerator := createEmptyPrefixCacheKeyGenerator()
+	irCache := cache.NewCacheFactoryWithBackend(backend, streamingpromql.NewStaticQueryLimitsProvider(), cacheKeyGenerator, prometheus.NewRegistry(), log.NewNopLogger())
 
 	opts := defaultSplittingOpts()
 	limits := streamingpromql.NewStaticQueryLimitsProvider()
@@ -891,8 +906,10 @@ func TestQuerySplitting_WithOOOWindow(t *testing.T) {
 
 	baseT := timestamp.Time(0)
 	fixedNow := baseT.Add(12 * time.Hour)
+	// The out-of-order threshold is computed at materialize time using the engine's TimeNow, so set a fixed "now".
+	opts.TimeNow = func() time.Time { return fixedNow }
 
-	queryPlanner, err := streamingpromql.NewQueryPlannerWithTime(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider(), func() time.Time { return fixedNow })
+	queryPlanner, err := streamingpromql.NewQueryPlanner(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
 
 	mimirEngine, err := streamingpromql.NewEngineWithCache(opts, stats.NewQueryMetrics(nil), queryPlanner, irCache)
@@ -1096,7 +1113,8 @@ func TestQuerySplitting_MiddleCacheEntryEvicted(t *testing.T) {
 		ExpressionPosition: core.PositionRange{Start: 14, End: 29},
 	}}
 	params := &planning.QueryParameters{LookbackDelta: streamingpromql.DefaultLookbackDelta}
-	block2Key := cache.TestGenerateHashedCacheKey(functions.FUNCTION_SUM_OVER_TIME, splittingCacheKey(t, inner, params), 4*hourInMs-1, 6*hourInMs-1)
+	block2Key, err := cache.TestGenerateHashedCacheKey(t.Context(), createEmptyPrefixCacheKeyGenerator(), functions.FUNCTION_SUM_OVER_TIME, splittingCacheKey(t, inner, params), 4*hourInMs-1, 6*hourInMs-1)
+	require.NoError(t, err)
 	_, exists := testCache.Entries[block2Key]
 	require.True(t, exists, "Block2 cache key should exist before eviction")
 	delete(testCache.Entries, block2Key)
@@ -1116,7 +1134,8 @@ func TestQuerySplitting_MiddleCacheEntryEvicted(t *testing.T) {
 
 func TestQuerySplitting_DelayedNameRemoval(t *testing.T) {
 	sharedCache := caching.NewInMemoryCache()
-	cacheFactory := cache.NewCacheFactoryWithBackend(sharedCache, streamingpromql.NewStaticQueryLimitsProvider(), prometheus.NewPedanticRegistry(), log.NewNopLogger())
+	cacheKeyGenerator := createEmptyPrefixCacheKeyGenerator()
+	cacheFactory := cache.NewCacheFactoryWithBackend(sharedCache, streamingpromql.NewStaticQueryLimitsProvider(), cacheKeyGenerator, prometheus.NewPedanticRegistry(), log.NewNopLogger())
 
 	engineDisabled := createSplittingEngine(t, prometheus.NewPedanticRegistry(), 2*time.Hour, false, true, cacheFactory)
 	engineEnabled := createSplittingEngine(t, prometheus.NewPedanticRegistry(), 2*time.Hour, true, true, cacheFactory)
@@ -1436,11 +1455,15 @@ func TestQuerySplitting_PerRangeSeriesMetadata(t *testing.T) {
 	}
 }
 
+func createEmptyPrefixCacheKeyGenerator() *caching.CacheKeyGenerator {
+	return caching.NewCacheKeyGenerator(nil, func(ctx context.Context) (string, error) { return "", nil })
+}
+
 func createSplittingEngineWithCache(t *testing.T, registry *prometheus.Registry, splitInterval time.Duration, enableDelayedNameRemoval bool, enableEliminateDeduplicateAndMerge bool) (promql.QueryEngine, *caching.InMemoryCache) {
 	t.Helper()
 
 	cacheBackend := caching.NewInMemoryCache()
-	cacheFactory := cache.NewCacheFactoryWithBackend(cacheBackend, streamingpromql.NewStaticQueryLimitsProvider(), registry, log.NewNopLogger())
+	cacheFactory := cache.NewCacheFactoryWithBackend(cacheBackend, streamingpromql.NewStaticQueryLimitsProvider(), createEmptyPrefixCacheKeyGenerator(), registry, log.NewNopLogger())
 
 	engine := createSplittingEngine(t, registry, splitInterval, enableDelayedNameRemoval, enableEliminateDeduplicateAndMerge, cacheFactory)
 	return engine, cacheBackend
@@ -1476,7 +1499,8 @@ func setupEngineAndCache(t *testing.T) (*caching.InMemoryCache, promql.QueryEngi
 
 func setupEngineAndCacheWithOpts(t *testing.T, opts streamingpromql.EngineOpts) (*caching.InMemoryCache, promql.QueryEngine) {
 	backend := caching.NewInMemoryCache()
-	irCache := cache.NewCacheFactoryWithBackend(backend, streamingpromql.NewStaticQueryLimitsProvider(), prometheus.NewRegistry(), log.NewNopLogger())
+	cacheKeyGenerator := createEmptyPrefixCacheKeyGenerator()
+	irCache := cache.NewCacheFactoryWithBackend(backend, streamingpromql.NewStaticQueryLimitsProvider(), cacheKeyGenerator, prometheus.NewRegistry(), log.NewNopLogger())
 
 	queryPlanner, err := streamingpromql.NewQueryPlanner(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)

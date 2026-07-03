@@ -13,6 +13,7 @@
     querier: self.mimir,
     query_frontend: self.mimir,
     compactor: self.mimir,
+    compactor_scheduler: self.mimir,
     ruler: self.mimir,
     store_gateway: self.mimir,
     query_scheduler: self.mimir,
@@ -20,5 +21,6 @@
 
     query_tee: 'grafana/query-tee:3.1.2',
     continuous_test: self.mimir,
+    mimirtool: 'grafana/mimirtool:3.1.1',
   },
 }

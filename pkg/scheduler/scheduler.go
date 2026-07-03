@@ -84,6 +84,7 @@ type Scheduler struct {
 
 	// Metrics.
 	queueLength              *prometheus.GaugeVec
+	maxQueueLength           *queue.MaxQueueLengthGauge
 	discardedRequests        *prometheus.CounterVec
 	cancelledRequests        *prometheus.CounterVec
 	connectedQuerierClients  prometheus.GaugeFunc
@@ -107,6 +108,7 @@ type Config struct {
 	MaxOutstandingPerTenant     int           `yaml:"max_outstanding_requests_per_tenant"`
 	QuerierForgetDelay          time.Duration `yaml:"querier_forget_delay" category:"experimental"`
 	InflightMaxAgeMetricEnabled bool          `yaml:"inflight_max_age_metric_enabled" category:"experimental"`
+	MaxQueueLengthMetricEnabled bool          `yaml:"max_queue_length_metric_enabled" category:"experimental"`
 
 	GRPCClientConfig grpcclient.Config         `yaml:"grpc_client_config" doc:"description=This configures the gRPC client used to report errors back to the query-frontend."`
 	ServiceDiscovery schedulerdiscovery.Config `yaml:",inline"`
@@ -116,6 +118,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.IntVar(&cfg.MaxOutstandingPerTenant, "query-scheduler.max-outstanding-requests-per-tenant", 100, "Maximum number of outstanding requests per tenant per query-scheduler. In-flight requests above this limit will fail with HTTP response status code 429.")
 	f.DurationVar(&cfg.QuerierForgetDelay, "query-scheduler.querier-forget-delay", 0, "If a querier disconnects without sending notification about graceful shutdown, the query-scheduler will keep the querier in the tenant's shard until the forget delay has passed. This feature is useful to reduce the blast radius when shuffle-sharding is enabled.")
 	f.BoolVar(&cfg.InflightMaxAgeMetricEnabled, "query-scheduler.inflight-max-age-metric-enabled", true, "Enable the cortex_query_scheduler_inflight_max_age_seconds metric, which reports the age of the oldest inflight request. Disabling it skips the per-tick scan over inflight requests.")
+	f.BoolVar(&cfg.MaxQueueLengthMetricEnabled, "query-scheduler.max-queue-length-metric-enabled", false, "Enable the cortex_query_scheduler_max_queue_length metric, which reports the per-tenant peak queue length observed since the last scrape. Disabling it skips per-tenant peak tracking on enqueue and dequeue.")
 
 	cfg.GRPCClientConfig.CustomCompressors = []string{s2.Name}
 	cfg.GRPCClientConfig.RegisterFlagsWithPrefix("query-scheduler.grpc-client-config", f)
@@ -145,6 +148,14 @@ func NewScheduler(cfg Config, limits Limits, log log.Logger, registerer promethe
 		Name: "cortex_query_scheduler_queue_length",
 		Help: "Number of queries in the queue.",
 	}, []string{"user"})
+
+	if cfg.MaxQueueLengthMetricEnabled {
+		s.maxQueueLength = queue.NewMaxQueueLengthGauge()
+		// registerer is nil in some tests; mirror promauto.With(nil) by skipping registration.
+		if registerer != nil {
+			registerer.MustRegister(s.maxQueueLength)
+		}
+	}
 
 	s.cancelledRequests = promauto.With(registerer).NewCounterVec(prometheus.CounterOpts{
 		Name: "cortex_query_scheduler_cancelled_requests_total",
@@ -181,6 +192,7 @@ func NewScheduler(cfg Config, limits Limits, log log.Logger, registerer promethe
 		limits,
 		s.log,
 		s.queueLength,
+		s.maxQueueLength,
 		s.discardedRequests,
 		enqueueDuration,
 		querierInflightRequestsMetric,
@@ -738,6 +750,9 @@ func (s *Scheduler) stopping(_ error) error {
 
 func (s *Scheduler) cleanupMetricsForInactiveUser(user string) {
 	s.queueLength.DeleteLabelValues(user)
+	if s.maxQueueLength != nil {
+		s.maxQueueLength.DeleteTenant(user)
+	}
 	s.discardedRequests.DeleteLabelValues(user)
 	s.cancelledRequests.DeleteLabelValues(user)
 }

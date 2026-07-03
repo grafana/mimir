@@ -12,6 +12,17 @@ local jsonpath = import 'github.com/jsonnet-libs/xtd/jsonpath.libsonnet';
     // Kafka topic produced/consumed per read compartment. Must contain the '<read-compartment-id>'
     // placeholder, which Mimir replaces with the read compartment index at runtime.
     compartments_ingest_storage_kafka_topic: 'ingest-rc-<read-compartment-id>',
+
+    // Kafka cluster address template for compartment components. Carries the '<write-compartment-id>'
+    // placeholder, which Mimir replaces with the write compartment index at runtime (distributors target
+    // their own cluster; ingesters consume from every write compartment's cluster). Mimir's jsonnet does
+    // not deploy Kafka, so this is a fictitious address mirroring the non-compartment default.
+    compartments_ingest_storage_kafka_address: 'kafka-wc-<write-compartment-id>.%(namespace)s.svc.%(cluster_domain)s:9092' % $._config,
+
+    // Blocks-storage bucket per read compartment. Must contain the '<read-compartment-id>' placeholder,
+    // which the querier replaces with each read compartment index to read that compartment's bucket (each
+    // read compartment's store-gateways and compactors own a dedicated bucket).
+    compartments_blocks_storage_bucket_name: '%s-rc-<read-compartment-id>' % $._config.blocks_storage_bucket_name,
   },
 
   assert $._config.compartments_read_count >= 1 : 'compartments_read_count must be >= 1',
@@ -20,11 +31,23 @@ local jsonpath = import 'github.com/jsonnet-libs/xtd/jsonpath.libsonnet';
   assert !$._config.compartments_enabled || $._config.ruler_remote_evaluation_enabled
          : 'compartments require ruler remote rule evaluation (ruler_remote_evaluation_enabled)',
 
-  // Kafka cluster address template for compartment components. Carries the '<write-compartment-id>'
-  // placeholder, which Mimir replaces with the write compartment index at runtime (distributors target
-  // their own cluster; ingesters consume from every write compartment's cluster). Mimir's jsonnet does
-  // not deploy Kafka, so this is a fictitious address mirroring the non-compartment default.
-  compartments_ingest_storage_kafka_address:: 'kafka-wc-<write-compartment-id>.%(namespace)s.svc.%(cluster_domain)s:9092' % $._config,
+  assert !$._config.compartments_enabled || std.length(std.findSubstr('<read-compartment-id>', $._config.compartments_blocks_storage_bucket_name)) > 0
+         : 'compartments_blocks_storage_bucket_name must contain the "<read-compartment-id>" placeholder',
+
+  // Concrete blocks-storage bucket name for the given read compartment, resolving the
+  // '<read-compartment-id>' placeholder in compartments_blocks_storage_bucket_name.
+  mimirBlocksStorageCompartmentBucketName(compartmentID):: std.strReplace($._config.compartments_blocks_storage_bucket_name, '<read-compartment-id>', std.toString(compartmentID)),
+
+  // Concrete Kafka topic for the given read compartment, resolving the '<read-compartment-id>' placeholder
+  // in compartments_ingest_storage_kafka_topic.
+  mimirIngestStorageCompartmentKafkaTopic(compartmentID):: std.strReplace($._config.compartments_ingest_storage_kafka_topic, '<read-compartment-id>', std.toString(compartmentID)),
+
+  // The blocks-storage bucket-name CLI flag for the configured storage backend.
+  mimirBlocksStorageBucketNameFlag::
+    if $._config.storage_backend == 'gcs' then 'blocks-storage.gcs.bucket-name'
+    else if $._config.storage_backend == 's3' then 'blocks-storage.s3.bucket-name'
+    else if $._config.storage_backend == 'azure' then 'blocks-storage.azure.container-name'
+    else error 'compartments do not support the "%s" storage backend' % $._config.storage_backend,
 
   // Common CLI args shared by every compartment-aware Mimir component.
   mimirCompartmentsCommonArgs:: {
@@ -60,6 +83,7 @@ local jsonpath = import 'github.com/jsonnet-libs/xtd/jsonpath.libsonnet';
     local root = $;
     local addressFlag = '-ingest-storage.kafka.address';
     local topicFlag = '-ingest-storage.kafka.topic';
+    local blocksBucketFlag = '-' + root.mimirBlocksStorageBucketNameFlag;
     local writeIdSuffix = '.write-compartment-id';
     local readIdSuffix = '.read-compartment-id';
     local writePlaceholder = '<write-compartment-id>';
@@ -120,7 +144,7 @@ local jsonpath = import 'github.com/jsonnet-libs/xtd/jsonpath.libsonnet';
           local eq = std.findSubstr('=', arg)[0];
           { flag: std.substr(arg, 0, eq), value: std.substr(arg, eq + 1, std.length(arg) - eq - 1) };
 
-    local validateAddress(name, compartment, container) =
+    local validateKafkaAddress(name, compartment, container) =
       local value = flagValue(container, addressFlag);
       if value == null then
         null
@@ -139,7 +163,7 @@ local jsonpath = import 'github.com/jsonnet-libs/xtd/jsonpath.libsonnet';
       else
         null;
 
-    local validateTopic(name, compartment, container) =
+    local validateKafkaTopic(name, compartment, container) =
       local value = flagValue(container, topicFlag);
       if value == null then
         null
@@ -157,6 +181,23 @@ local jsonpath = import 'github.com/jsonnet-libs/xtd/jsonpath.libsonnet';
           'The Deployment or StatefulSet "%s" sets "%s=%s", but a global deployment queries every read compartment\'s topic, so the topic must contain the "%s" placeholder.' % [name, topicFlag, value, readPlaceholder]
       else
         null;
+
+    // The blocks-storage bucket is per read compartment. A read compartment must point at its own bucket
+    // (name contains "-rc-<id>") or keep the "<read-compartment-id>" placeholder; any other deployment that
+    // sets a blocks bucket must keep the placeholder, since one concrete bucket can't serve every compartment.
+    local validateBlocksBucket(name, compartment, container) =
+      local value = flagValue(container, blocksBucketFlag);
+      if value == null then
+        null
+      else if std.length(std.findSubstr(readPlaceholder, value)) > 0 then
+        null
+      else if compartment.kind == 'read' then
+        if !containsIdToken(value, '-rc-%d' % compartment.id) then
+          'The Deployment or StatefulSet "%s" sets "%s=%s", but read compartment %d uses its own blocks-storage bucket (the bucket name must contain "-rc-%d" or the "%s" placeholder).' % [name, blocksBucketFlag, value, compartment.id, compartment.id, readPlaceholder]
+        else
+          null
+      else
+        'The Deployment or StatefulSet "%s" sets "%s=%s", but only a read compartment owns a dedicated blocks-storage bucket, so a bucket name here must contain the "%s" placeholder to address every read compartment.' % [name, blocksBucketFlag, value, readPlaceholder];
 
     // A "<kind>-compartment-id" flag must appear only on a matching compartment, and its value must
     // equal the id encoded in the resource name.
@@ -180,7 +221,7 @@ local jsonpath = import 'github.com/jsonnet-libs/xtd/jsonpath.libsonnet';
     local validateContainer(name, compartment, container) =
       std.foldl(
         function(firstError, validator) if firstError != null then firstError else validator(name, compartment, container),
-        [validateAddress, validateTopic, validateWriteCompartmentId, validateReadCompartmentId],
+        [validateKafkaAddress, validateKafkaTopic, validateBlocksBucket, validateWriteCompartmentId, validateReadCompartmentId],
         null
       );
 

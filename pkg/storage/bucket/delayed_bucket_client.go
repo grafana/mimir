@@ -43,6 +43,10 @@ func (m *DelayedBucketClient) Upload(ctx context.Context, name string, r io.Read
 	return m.wrapped.Upload(ctx, name, r, opts...)
 }
 
+func (m *DelayedBucketClient) SupportedObjectUploadOptions() []objstore.ObjectUploadOptionType {
+	return m.wrapped.SupportedObjectUploadOptions()
+}
+
 func (m *DelayedBucketClient) Delete(ctx context.Context, name string) error {
 	m.delay()
 	defer m.delay()
@@ -101,6 +105,10 @@ func (m *DelayedBucketClient) IsObjNotFoundErr(err error) bool {
 
 func (m *DelayedBucketClient) IsAccessDeniedErr(err error) bool {
 	return m.wrapped.IsAccessDeniedErr(err)
+}
+
+func (m *DelayedBucketClient) IsConditionNotMetErr(err error) bool {
+	return m.wrapped.IsConditionNotMetErr(err)
 }
 
 func (m *DelayedBucketClient) Attributes(ctx context.Context, name string) (objstore.ObjectAttributes, error) {

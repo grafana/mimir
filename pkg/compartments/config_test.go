@@ -64,9 +64,8 @@ func TestReplaceWriteCompartment(t *testing.T) {
 	assert.Equal(t, "kafka:9092", ReplaceWriteCompartment("kafka:9092", 1))
 }
 
-func TestReadCompartmentRingKeyAndName(t *testing.T) {
-	assert.Equal(t, "ingester-partitions-rc-0", ReadCompartmentRingKey(0, "ingester-partitions"))
-	assert.Equal(t, "ingester-partitions-rc-3", ReadCompartmentRingKey(3, "ingester-partitions"))
-	assert.Equal(t, "partition-ring-rc-0", ReadCompartmentRingName(0, "partition-ring"))
-	assert.Equal(t, "partition-ring-rc-2", ReadCompartmentRingName(2, "partition-ring"))
+func TestWithReadCompartmentSuffix(t *testing.T) {
+	assert.Equal(t, "ingester-partitions-rc-0", WithReadCompartmentSuffix("ingester-partitions", 0))
+	assert.Equal(t, "ingester-partitions-rc-3", WithReadCompartmentSuffix("ingester-partitions", 3))
+	assert.Equal(t, "blocks-rc-2", WithReadCompartmentSuffix("blocks", 2))
 }

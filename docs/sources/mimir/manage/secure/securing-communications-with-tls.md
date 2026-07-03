@@ -140,6 +140,7 @@ The following Grafana Mimir components support TLS for inter-communication, whic
 - Query-frontend gRPC client used to connect to query-schedulers: `-query-frontend.grpc-client-config.*`
 - Ruler gRPC client used to connect to other ruler instances: `-ruler.client.*`
 - Ruler gRPC client used to connect to query-frontend: `-ruler.query-frontend.grpc-client-config.*`
+- Ruler gRPC client used to connect to distributors for remote rule-result writes: `-ruler.distributor.grpc-client-config.*`
 - Distributor gRPC client used to forward series matching a configured set to a dedicated remote endpoint: `-distributor.forwarding.grpc-client.*`
 - Alertmanager gRPC client used to connect to other Alertmanager instances: `-alertmanager.alertmanager-client.*`
 - gRPC client used by distributors, queriers, and rulers to connect to ingesters: `-ingester.client.*`

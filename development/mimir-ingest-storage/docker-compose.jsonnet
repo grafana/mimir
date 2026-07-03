@@ -235,6 +235,17 @@ std.manifestYamlDoc({
     // 'KAFKA_LOG_SEGMENT_BYTES=1000000',
   ],
 
+  // The healthcheck shells out to the JVM-based kafka-broker-api-versions CLI, which can take
+  // several seconds to start up, so the timeout and start_period are generous to avoid the broker
+  // being flagged unhealthy (and aborting services that depend_on it) while it's actually fine.
+  local commonKafkaHealthcheck = {
+    test: 'kafka-broker-api-versions --bootstrap-server localhost:9092 || exit 1',
+    start_period: '10s',
+    interval: '5s',
+    timeout: '10s',
+    retries: '30',
+  },
+
   kafka_1:: {
     kafka_1: {
       image: 'confluentinc/cp-kafka:latest',
@@ -246,13 +257,7 @@ std.manifestYamlDoc({
       ports: [
         '29092:29092',
       ],
-      healthcheck: {
-        test: 'kafka-broker-api-versions --bootstrap-server localhost:9092 || exit 1',
-        start_period: '1s',
-        interval: '1s',
-        timeout: '1s',
-        retries: '30',
-      },
+      healthcheck: commonKafkaHealthcheck,
     },
   },
   kafka_2:: {
@@ -266,13 +271,7 @@ std.manifestYamlDoc({
       ports: [
         '29093:29093',
       ],
-      healthcheck: {
-        test: 'kafka-broker-api-versions --bootstrap-server localhost:9092 || exit 1',
-        start_period: '1s',
-        interval: '1s',
-        timeout: '1s',
-        retries: '30',
-      },
+      healthcheck: commonKafkaHealthcheck,
     },
   },
   kafka_3:: {
@@ -286,13 +285,7 @@ std.manifestYamlDoc({
       ports: [
         '29094:29094',
       ],
-      healthcheck: {
-        test: 'kafka-broker-api-versions --bootstrap-server localhost:9092 || exit 1',
-        start_period: '1s',
-        interval: '1s',
-        timeout: '1s',
-        retries: '30',
-      },
+      healthcheck: commonKafkaHealthcheck,
     },
   },
   redpanda_console:: {

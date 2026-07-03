@@ -75,7 +75,7 @@ func TestIngester_Compartments_RegistersPartitionInReadCompartmentRing(t *testin
 	}
 
 	// The partition is registered under the read compartment's ring key.
-	compartmentKey := compartments.ReadCompartmentRingKey(readCompartmentID, PartitionRingKey)
+	compartmentKey := compartments.WithReadCompartmentSuffix(PartitionRingKey, readCompartmentID)
 	test.Poll(t, 5*time.Second, 1, func() interface{} {
 		return countPartitions(compartmentKey)
 	})
@@ -130,6 +130,12 @@ func TestIngester_Compartments_ShouldConsumeReadCompartmentTopicAtStartup(t *tes
 	cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = headCompactionIntervalWhileRunning
 	cfg.BlocksStorageConfig.TSDB.HeadCompactionIntervalWhileStarting = headCompactionIntervalWhileStarting
 	cfg.BlocksStorageConfig.TSDB.HeadCompactionIntervalJitterEnabled = false
+
+	// Disable the minimum delay between compaction iterations, otherwise it would dominate the small
+	// headCompactionIntervalWhileStarting used above and the compaction loop would run only once during
+	// startup, before the replayed series is appended to the head. The default 10s delay is only
+	// meaningful with production-sized intervals.
+	cfg.minCompactionLoopDelay = 0
 
 	// Create the ingester, consuming the read compartment's topic from one Kafka cluster per write compartment.
 	overrides := validation.NewOverrides(defaultLimitsTestConfig(), nil)
@@ -206,7 +212,7 @@ func TestIngester_Compartments_ShouldConsumeReadCompartmentTopicAtStartup(t *tes
 	}))
 
 	// Add the partition and owner in the read compartment's partition ring, to simulate an ingester restart.
-	require.NoError(t, cfg.IngesterPartitionRing.KVStore.Mock.CAS(context.Background(), compartments.ReadCompartmentRingKey(readCompartmentID, PartitionRingKey), func(in interface{}) (out interface{}, retry bool, err error) {
+	require.NoError(t, cfg.IngesterPartitionRing.KVStore.Mock.CAS(context.Background(), compartments.WithReadCompartmentSuffix(PartitionRingKey, readCompartmentID), func(in interface{}) (out interface{}, retry bool, err error) {
 		desc := ring.GetOrCreatePartitionRingDesc(in)
 		desc.AddPartition(partitionID, ring.PartitionActive, time.Now())
 		desc.AddOrUpdateOwner(cfg.IngesterRing.InstanceID, ring.OwnerDeleted, partitionID, time.Now())
@@ -496,8 +502,8 @@ func createTestCompartmentsIngester(t *testing.T, ingesterCfg *Config, overrides
 
 	// Create and start the partition ring watcher on the ingester's read compartment ring.
 	prw := ring.NewPartitionRingWatcher(
-		compartments.ReadCompartmentRingName(ingesterCfg.ReadCompartmentID, PartitionRingName),
-		compartments.ReadCompartmentRingKey(ingesterCfg.ReadCompartmentID, PartitionRingKey),
+		compartments.WithReadCompartmentSuffix(PartitionRingName, ingesterCfg.ReadCompartmentID),
+		compartments.WithReadCompartmentSuffix(PartitionRingKey, ingesterCfg.ReadCompartmentID),
 		kv, log.NewNopLogger(), nil)
 	require.NoError(t, services.StartAndAwaitRunning(ctx, prw))
 	t.Cleanup(func() {

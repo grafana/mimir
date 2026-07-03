@@ -132,6 +132,7 @@ func BenchmarkConcurrentQueueOperations(b *testing.B) {
 								maxOutstandingRequestsPerTenant,
 								forgetConsumerDelay,
 								promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
+								nil,
 								promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 								promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
 							)
@@ -401,6 +402,7 @@ func TestDispatchToWaitingDequeueRequestForUnregisteredConsumerWorker(t *testing
 		2,
 		forgetDelay,
 		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
+		nil,
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
 	)
@@ -517,6 +519,7 @@ func TestQueue_RegisterAndUnregisterConsumerWorkerConnections(t *testing.T) {
 		1,
 		forgetDelay,
 		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
+		nil,
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
 	)
@@ -602,6 +605,7 @@ func TestQueue_GetNextRequestForConsumer_ShouldGetRequestAfterReshardingBecauseC
 		1,
 		forgetDelay,
 		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
+		nil,
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
 	)
@@ -674,6 +678,7 @@ func TestQueue_GetNextRequestForConsumer_ReshardNotifiedCorrectlyForMultipleCons
 		1,
 		forgetDelay,
 		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
+		nil,
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
 	)
@@ -762,6 +767,7 @@ func TestQueue_GetNextRequestForConsumer_ShouldReturnAfterContextCancelled(t *te
 		1,
 		forgetDelay,
 		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
+		nil,
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
 	)
@@ -817,6 +823,7 @@ func TestQueue_GetNextRequestForConsumer_ShouldReturnImmediatelyIfConsumerIsAlre
 		1,
 		forgetDelay,
 		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
+		nil,
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
 	)
@@ -847,6 +854,7 @@ func TestQueue_tryDispatchRequestToConsumer_ShouldReEnqueueAfterFailedSendToCons
 		1,
 		forgetDelay,
 		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
+		nil,
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
 	)
@@ -912,6 +920,7 @@ func TestQueue_ShutdownWithPendingRequests_ShouldDrainRequests(t *testing.T) {
 		1,
 		0,
 		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
+		nil,
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
 	)

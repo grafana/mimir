@@ -31,6 +31,15 @@ flowchart LR
     K1 --> ING
 ```
 
+### Spreading consumer resources across write compartments
+
+Some read-compartment components consume from every write compartment's Kafka cluster: ingesters
+consume their partition from all of them, and block-builders read the same partition across all of
+them to build blocks. Such a component maintains a separate consumer per write compartment, and the
+resources dedicated to consumption are divided across these consumers, so the component's total
+consumption resource usage stays independent of the number of write compartments instead of growing
+with it.
+
 ## Blocks storage
 
 Each read compartment owns its blocks storage end to end:

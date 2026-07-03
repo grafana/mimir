@@ -542,6 +542,15 @@ func newMultitenantCompactor(
 	return c, nil
 }
 
+// cacheBucketID returns the metadata-cache bucket ID used to scope the cache keys.
+func (c *MultitenantCompactor) cacheBucketID() string {
+	// The logic must match the store-gateway's one.
+	if !c.compactorCfg.Compartments.Enabled {
+		return ""
+	}
+	return compartments.WithReadCompartmentSuffix("blocks", c.compactorCfg.ReadCompartmentID)
+}
+
 // Start the compactor.
 func (c *MultitenantCompactor) starting(ctx context.Context) error {
 	var err error
@@ -565,8 +574,8 @@ func (c *MultitenantCompactor) starting(ctx context.Context) error {
 	// registers into its read compartment's own ring.
 	name, key := ringName, ringKey
 	if c.compactorCfg.Compartments.Enabled {
-		name = compartments.ReadCompartmentRingName(c.compactorCfg.ReadCompartmentID, ringName)
-		key = compartments.ReadCompartmentRingKey(c.compactorCfg.ReadCompartmentID, ringKey)
+		name = compartments.WithReadCompartmentSuffix(ringName, c.compactorCfg.ReadCompartmentID)
+		key = compartments.WithReadCompartmentSuffix(ringKey, c.compactorCfg.ReadCompartmentID)
 	}
 	c.ring, c.ringLifecycler, err = newRingAndLifecycler(c.compactorCfg.ShardingRing, name, key, c.logger, c.registerer)
 	if err != nil {

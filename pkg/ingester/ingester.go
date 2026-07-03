@@ -203,8 +203,9 @@ type Config struct {
 	IngestStorageConfig ingest.Config       `yaml:"-"`
 	Compartments        compartments.Config `yaml:"-"`
 
-	// This config can be overridden in tests.
+	// These configs can be overridden in tests.
 	limitMetricsUpdatePeriod time.Duration `yaml:"-"`
+	minCompactionLoopDelay   time.Duration `yaml:"-"`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
@@ -238,6 +239,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 
 	// Hardcoded config (can only be overridden in tests).
 	cfg.limitMetricsUpdatePeriod = time.Second * 15
+	cfg.minCompactionLoopDelay = defaultMinCompactionLoopDelay
 }
 
 func (cfg *Config) Validate(compartmentsCfg compartments.Config) error {
@@ -577,12 +579,7 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 			// write compartment's Kafka cluster. The per-cluster offset files live in the TSDB directory
 			// alongside the ingester's data, one per write compartment.
 			readCompartmentTopic := compartments.ReplaceReadCompartment(kafkaCfg.Topic, cfg.ReadCompartmentID)
-			kafkaCfgs := make([]ingest.KafkaConfig, cfg.Compartments.Write.NumCompartments)
-			for writeCompartmentID := range kafkaCfgs {
-				clusterCfg := kafkaCfg.WriteCompartmentConfig(writeCompartmentID)
-				clusterCfg.Topic = readCompartmentTopic
-				kafkaCfgs[writeCompartmentID] = clusterCfg
-			}
+			kafkaCfgs := ingest.WriteCompartmentConfigs(kafkaCfg, cfg.Compartments.Write.NumCompartments, readCompartmentTopic)
 			offsetFilePath := filepath.Join(cfg.BlocksStorageConfig.TSDB.Dir, "kafka-offset-wc-"+compartments.WriteCompartmentIDPlaceholder+".json")
 
 			i.ingestReader, err = ingest.NewMultiClusterPartitionReader(kafkaCfgs, i.ingestPartitionID, cfg.IngesterRing.InstanceID, offsetFilePath, profilingIngester, log.With(logger, "component", "ingest_reader"), registerer)
@@ -612,8 +609,8 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 		// validated by Config.Validate.
 		partitionRingName, partitionRingKey := PartitionRingName, PartitionRingKey
 		if cfg.Compartments.Enabled {
-			partitionRingName = compartments.ReadCompartmentRingName(cfg.ReadCompartmentID, PartitionRingName)
-			partitionRingKey = compartments.ReadCompartmentRingKey(cfg.ReadCompartmentID, PartitionRingKey)
+			partitionRingName = compartments.WithReadCompartmentSuffix(PartitionRingName, cfg.ReadCompartmentID)
+			partitionRingKey = compartments.WithReadCompartmentSuffix(PartitionRingKey, cfg.ReadCompartmentID)
 		}
 
 		i.ingestPartitionLifecycler = ring.NewPartitionInstanceLifecycler(

@@ -59,6 +59,24 @@
     autoscaling_alertmanager_max_replicas: error 'you must set autoscaling_alertmanager_max_replicas in the _config',
     autoscaling_alertmanager_cpu_target_utilization: 1,
     autoscaling_alertmanager_memory_target_utilization: 1,
+
+    autoscaling_compactor_enabled: false,
+    autoscaling_compactor_min_replicas: error 'you must set autoscaling_compactor_min_replicas in the _config',
+    autoscaling_compactor_max_replicas: error 'you must set autoscaling_compactor_max_replicas in the _config',
+    // Compactors spend a lot of time downloading and uploading blocks, so we can't utilize CPU at 100%.
+    autoscaling_compactor_cpu_target_utilization: 0.7,
+
+    // When the compactor-scheduler is enabled, autoscale compactors based on the estimated time to
+    // drain the scheduler queue instead of CPU utilization.
+    autoscaling_compactor_scheduler_drain_enabled: $._config.compactor_scheduler_enabled && $._config.autoscaling_compactor_enabled,
+    autoscaling_compactor_scheduler_drain_target_seconds: 3600,
+    // Lookback window for the rate-based processing-speed estimates that drive the drain-time autoscaler.
+    autoscaling_compactor_scheduler_estimation_lookback: '3h',
+    // Lag trigger: bumps the desired replica count by +10% for every hour the pending queue stays non-empty, capped at +100%.
+    autoscaling_compactor_scheduler_lag_trigger_enabled: true,
+    // When enabled, the lag trigger uses the last-empty timestamp straight from the
+    // cortex_compactor_scheduler_pending_jobs_last_empty_timestamp_seconds gauge instead of deriving it.
+    autoscaling_compactor_scheduler_lag_trigger_use_last_empty_metric: true,
   },
 
   // Utility used to override a field only if exists in super.
@@ -856,6 +874,276 @@
   alertmanager_statefulset: overrideSuperIfExists(
     'alertmanager_statefulset',
     if !$._config.autoscaling_alertmanager_enabled then {} else $.removeReplicasFromSpec
+  ),
+
+  //
+  // Compactors
+  //
+
+  // Build a CPU-based ScaledObject for a compactor StatefulSet.
+  newCompactorScaledObject(service_name, min_replicas, max_replicas, cpu_target_utilization, container_name=service_name, extra_matchers='')::
+    local matchers = if extra_matchers == '' then '' else ',%s' % extra_matchers;
+
+    self.newScaledObject(service_name, $._config.namespace, {
+      min_replica_count: min_replicas,
+      max_replica_count: max_replicas,
+
+      triggers: [
+        {
+          metric_name: 'cortex_%s_cpu_hpa_%s' % [std.strReplace(service_name, '-', '_'), $._config.namespace],
+          query:
+            |||
+              1000 * sum (rate(container_cpu_usage_seconds_total{namespace="%(namespace)s",container="%(container)s"%(matchers)s}[2h]))
+              /
+              max (mimir_compactor_max_concurrency{namespace="%(namespace)s"} or vector(1))
+            ||| % {
+              container: container_name,
+              matchers: matchers,
+              namespace: $._config.namespace,
+            },
+
+          // threshold is expected to be a string.
+          threshold: std.toString(1000 * cpu_target_utilization),
+        },
+      ],
+    }, kind='StatefulSet') + {
+      spec+: {
+        advanced: {
+          horizontalPodAutoscalerConfig: {
+            behavior: {
+              // Scale up fast, if needed.
+              scaleUp: {
+                policies: [{
+                  type: 'Percent',
+                  value: 25,
+                  periodSeconds: $.util.parseDuration('15m'),
+                }],
+                selectPolicy: 'Min',  // This only applies when there are multiple policies.
+                stabilizationWindowSeconds: $.util.parseDuration('10m'),
+              },
+              // Scale down slowly.
+              scaleDown: {
+                policies: [{
+                  type: 'Percent',
+                  value: 10,
+                  periodSeconds: $.util.parseDuration('30m'),
+                }],
+                selectPolicy: 'Max',  // This only applies when there are multiple policies.
+                stabilizationWindowSeconds: $.util.parseDuration('1h'),
+              },
+            },
+          },
+        },
+      },
+    },
+
+  newCompactorSchedulerDrainScaledObject(service_name, scheduler_matchers, compactor_matchers, min_replicas, max_replicas)::
+    // We calculate the estimated time it would take a single worker to drain the queue,
+    // then divide by the target drain time to get the desired number of replicas.
+    //
+    // The estimation has 2 parts:
+    // 1) Outstanding split/merge compaction jobs: outstanding_bytes / observed_avg_processing_speed, per compaction type.
+    // 2) Pending plan jobs: pending_plan_jobs * observed_avg_plan_duration.
+    // If we don't have enough duration samples for the rates, we fall back to fixed values based on observed data.
+    // The whole expression is wrapped in a max_over_time to hold the peak across each plan cycle, smoothing the sawtooth
+    // we'd otherwise get.
+    //
+    // Finally, the result is multiplied by a lag-trigger factor that grows from 1 to lag_max_multiplier the longer the
+    // pending queue stays non-empty.
+    local min_duration_samples = 12;
+    local default_compaction_seconds_per_byte = 1e-7;
+    local default_plan_job_seconds = 1;
+    local lookback = $._config.autoscaling_compactor_scheduler_estimation_lookback;
+    // TODO: peak_window should always be in sync with planning interval.
+    local peak_window = '1h';
+
+    // Extra label matchers, prefixed with ", " when set so they slot into an existing label set.
+    local promql_scheduler_matchers = if scheduler_matchers == '' then '' else ', %s' % scheduler_matchers;
+    local promql_compactor_matchers = if compactor_matchers == '' then '' else ', %s' % compactor_matchers;
+
+    // Lag trigger: multiplies the drain-time signal by a factor that grows the longer the pending
+    // queue stays non-empty. Starts at 1, grows by `lag_period_increase` per period the queue has
+    // been continuously non-empty, capped at `lag_max_multiplier`.
+    local lag_period_seconds = $._config.autoscaling_compactor_scheduler_drain_target_seconds;
+    local lag_period_increase = 0.1;
+    local lag_max_multiplier = 2;
+    local lag_max_periods = (lag_max_multiplier - 1) / lag_period_increase;
+    local lag_lookback_seconds = lag_max_periods * lag_period_seconds;
+    local lag_multiplier = |||
+      # A [1;%(max_multiplier)d] multiplier, based on the time since we last saw an empty queue.
+      # We increment %(period_increase)g every %(period_seconds)d seconds of continuous pending jobs.
+      * (
+        1 + %(period_increase)g * (
+          floor(
+            (
+              time()
+              -
+              # Most recent timestamp within the lookback window where the pending queue was empty.
+              # min_over_time catches sub-minute zero dips that the outer 1m subquery grid would miss.
+              # `or on() vector(0)` treats missing series as an empty queue, making the multiplier no-op.
+              last_over_time(
+                timestamp(
+                  (sum(min_over_time(cortex_compactor_scheduler_pending_jobs{namespace="%(namespace)s"%(promql_scheduler_matchers)s}[1m])) or on() vector(0))
+                  == 0
+                )[%(lookback_seconds)ds:1m]
+              )
+            ) / %(period_seconds)d
+          )
+          # If no zero observed in the lookback, cap at %(max_multiplier)dx
+          or on() vector(%(max_periods)d)
+        )
+      )
+    ||| % {
+      namespace: $._config.namespace,
+      period_seconds: lag_period_seconds,
+      period_increase: lag_period_increase,
+      lookback_seconds: lag_lookback_seconds,
+      max_periods: lag_max_periods,
+      max_multiplier: lag_max_multiplier,
+      promql_scheduler_matchers: promql_scheduler_matchers,
+    };
+
+    // Same factor, but sourced from the cortex_compactor_scheduler_pending_jobs_last_empty_timestamp_seconds gauge.
+    local lag_multiplier_last_empty = |||
+      # A [1;%(max_multiplier)d] multiplier, based on the time since we last saw an empty queue.
+      # We increment %(period_increase)g every %(period_seconds)d seconds of continuous pending jobs.
+      * (
+        clamp_max(
+          1 + %(period_increase)g * floor(
+            (time() - max(max_over_time(cortex_compactor_scheduler_pending_jobs_last_empty_timestamp_seconds{namespace="%(namespace)s"%(promql_scheduler_matchers)s}[%(lookback_seconds)ds]) > 0)) / %(period_seconds)d
+          ),
+          %(max_multiplier)d
+        )
+        or on() vector(2)
+      )
+    ||| % {
+      namespace: $._config.namespace,
+      period_seconds: lag_period_seconds,
+      period_increase: lag_period_increase,
+      lookback_seconds: lag_lookback_seconds,
+      max_periods: lag_max_periods,
+      max_multiplier: lag_max_multiplier,
+      promql_scheduler_matchers: promql_scheduler_matchers,
+    };
+
+    local q = |||
+      max_over_time(
+        (
+          (
+            # Compaction jobs: outstanding bytes * seconds/byte per compaction type
+            sum(
+              (
+                sum by (compaction_type) (cortex_compactor_scheduler_incomplete_compaction_jobs_bytes{namespace="%(namespace)s", compaction_type=~"split|merge"%(promql_scheduler_matchers)s})
+                * (
+                  sum by (compaction_type) (histogram_sum(rate(cortex_compactor_job_duration_seconds{namespace="%(namespace)s", job_type="compaction", compaction_type=~"split|merge"%(promql_compactor_matchers)s}[%(lookback)s] @ end())))
+                  / sum by (compaction_type) (histogram_sum(rate(cortex_compactor_compaction_job_bytes{namespace="%(namespace)s", compaction_type=~"split|merge"%(promql_compactor_matchers)s}[%(lookback)s] @ end())))
+                  and sum by (compaction_type) (histogram_count(increase(cortex_compactor_job_duration_seconds{namespace="%(namespace)s", job_type="compaction", compaction_type=~"split|merge"%(promql_compactor_matchers)s}[%(lookback)s] @ end()))) >= %(min_duration_samples)d
+                )
+              )
+              or
+              sum by (compaction_type) (cortex_compactor_scheduler_incomplete_compaction_jobs_bytes{namespace="%(namespace)s", compaction_type=~"split|merge"%(promql_scheduler_matchers)s}) * %(default_compaction_seconds_per_byte)g
+            )
+            +
+            # Plan jobs: pending jobs * seconds/job.
+            sum(cortex_compactor_scheduler_pending_jobs{namespace="%(namespace)s", job_type="plan"%(promql_scheduler_matchers)s})
+            * (
+              histogram_avg(sum(rate(cortex_compactor_job_duration_seconds{namespace="%(namespace)s", job_type="plan"%(promql_compactor_matchers)s}[%(lookback)s] @ end())))
+              and on() (sum(histogram_count(increase(cortex_compactor_job_duration_seconds{namespace="%(namespace)s", job_type="plan"%(promql_compactor_matchers)s}[%(lookback)s] @ end()))) >= %(min_duration_samples)d)
+              or on() vector(%(default_plan_job_seconds)d)
+            )
+          )
+          / %(drain_target_seconds)d
+        )[%(peak_window)s:5m]
+      )
+      %(lag_multiplier)s
+    ||| % {
+      namespace: $._config.namespace,
+      drain_target_seconds: $._config.autoscaling_compactor_scheduler_drain_target_seconds,
+      min_duration_samples: min_duration_samples,
+      default_compaction_seconds_per_byte: default_compaction_seconds_per_byte,
+      default_plan_job_seconds: default_plan_job_seconds,
+      lookback: lookback,
+      peak_window: peak_window,
+      promql_scheduler_matchers: promql_scheduler_matchers,
+      promql_compactor_matchers: promql_compactor_matchers,
+      lag_multiplier:
+        if !$._config.autoscaling_compactor_scheduler_lag_trigger_enabled then ''
+        else if $._config.autoscaling_compactor_scheduler_lag_trigger_use_last_empty_metric then lag_multiplier_last_empty
+        else lag_multiplier,
+    };
+
+    self.newScaledObject(service_name, $._config.namespace, {
+      min_replica_count: min_replicas,
+      max_replica_count: max_replicas,
+      triggers: [
+        {
+          metric_name: 'cortex_%s_drain_scheduler_hpa_%s' % [std.strReplace(service_name, '-', '_'), $._config.namespace],
+          query: q,
+          metric_type: 'AverageValue',  // HPA will compute desired replicas as "<query result> / <threshold>".
+          threshold: '1',
+          // We always expect results, unless something is wrong.
+          ignore_null_values: false,
+        },
+      ],
+    }, kind='StatefulSet') + {
+      spec+: {
+        advanced: {
+          horizontalPodAutoscalerConfig: {
+            // In general we want to minimize scale-up/down frequency to avoid ring disruptions,
+            // But we are more tolerant to it when scaling up, as we prefer to not fall behind.
+            behavior: {
+              scaleUp: {
+                policies: [{
+                  // Allow for big jumps to quickly reach the desired replica count
+                  type: 'Percent',
+                  value: 100,
+                  periodSeconds: $.util.parseDuration('10m'),
+                }],
+                selectPolicy: 'Max',  // This only applies when there are multiple policies.
+                // React quickly to scale ups
+                stabilizationWindowSeconds: $.util.parseDuration('5m'),
+              },
+              scaleDown: {
+                policies: [{
+                  // Allow for big jumps to quickly reach the desired replica count.
+                  type: 'Percent',
+                  value: 50,
+                  periodSeconds: $.util.parseDuration('30m'),  // Maximum allowed by KEDA/HPA
+                }],
+                selectPolicy: 'Max',  // This only applies when there are multiple policies.
+                // Probably the most important config: react slowly to scale downs.
+                // The scheduler re-plans every hour, don't rush it.
+                stabilizationWindowSeconds: $.util.parseDuration('1h'),
+              },
+            },
+          },
+        },
+      },
+    },
+
+  // When the compactor-scheduler is enabled, scale compactors based on the scheduler queue drain time,
+  // otherwise fall back to CPU-based autoscaling.
+  compactor_scaled_object:
+    if $._config.autoscaling_compactor_scheduler_drain_enabled then
+      $.newCompactorSchedulerDrainScaledObject(
+        'compactor',
+        '',
+        '',
+        $._config.autoscaling_compactor_min_replicas,
+        $._config.autoscaling_compactor_max_replicas,
+      )
+    else if $._config.autoscaling_compactor_enabled then
+      $.newCompactorScaledObject(
+        'compactor',
+        $._config.autoscaling_compactor_min_replicas,
+        $._config.autoscaling_compactor_max_replicas,
+        $._config.autoscaling_compactor_cpu_target_utilization,
+      )
+    else null,
+
+  compactor_statefulset: overrideSuperIfExists(
+    'compactor_statefulset',
+    if !$._config.autoscaling_compactor_enabled then {} else $.removeReplicasFromSpec
   ),
 
   //

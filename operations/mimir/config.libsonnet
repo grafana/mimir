@@ -84,6 +84,15 @@
     compactor_data_disk_size: '250Gi',
     compactor_data_disk_class: 'standard',
 
+    // Ephemeral storage requested by Mimir component containers, reserving node-local scratch
+    // space (logs, tmp) so pods aren't evicted first under node disk pressure. Set to null to
+    // disable the request.
+    ephemeral_storage_request_size: '50Mi',
+
+    // Enable the experimental compactor-scheduler. When enabled, compactors pull jobs from
+    // the scheduler instead of planning them locally.
+    compactor_scheduler_enabled: false,
+
     // Allow to fine tune compactor.
     compactor_max_concurrency: 1,
     // While this is the default value, we want to pass the same to the -blocks-storage.bucket-store.sync-interval
