@@ -2389,6 +2389,8 @@ Usage of ./cmd/mimir/mimir:
     	Override the expected name on the server certificate.
   -querier.mimir-query-engine.range-vector-splitting.split-interval duration
     	[experimental] Time interval used for splitting function over range vectors queries into cacheable blocks. (default 2h0m0s)
+  -querier.mimir-query-engine.time-splitting-and-caching.cache-unconsumed-results
+    	[experimental] Enable caching of query results that were not fully consumed by the query. When enabled, if a query stops reading before all series have been read, the remaining series are read and buffered so that the complete set of results can be cached. (default true)
   -querier.minimize-ingester-requests
     	If true, when querying ingesters, only the minimum required ingesters required to reach quorum will be queried initially, with other ingesters queried only if needed due to failures from the initial set of ingesters. Enabling this option reduces resource consumption for the happy path at the cost of increased latency for the unhappy path. (default true)
   -querier.minimize-ingester-requests-hedging-delay duration

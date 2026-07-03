@@ -210,23 +210,25 @@ func (c *Cache) MinimumRequiredPlanVersion(_ types.QueryTimeRange) (planning.Que
 }
 
 type CacheMaterializer struct {
-	enabled           bool
-	cache             caching.Backend
-	cacheKeyGenerator *caching.CacheKeyGenerator
-	limitsProvider    LimitsProvider
-	metrics           *ResultsCacheMetrics
-	minCacheExtent    time.Duration
+	enabled                bool
+	cache                  caching.Backend
+	cacheKeyGenerator      *caching.CacheKeyGenerator
+	limitsProvider         LimitsProvider
+	metrics                *ResultsCacheMetrics
+	minCacheExtent         time.Duration
+	cacheUnconsumedResults bool
 }
 
-func NewCacheMaterializer(enabled bool, baseCache cache.Cache, cachePrefixGenerator caching.PrefixGenerator, limitsProvider LimitsProvider, minCacheExtent time.Duration, metrics *ResultsCacheMetrics) *CacheMaterializer {
+func NewCacheMaterializer(enabled bool, baseCache cache.Cache, cachePrefixGenerator caching.PrefixGenerator, limitsProvider LimitsProvider, minCacheExtent time.Duration, metrics *ResultsCacheMetrics, cacheUnconsumedResults bool) *CacheMaterializer {
 	m := &CacheMaterializer{
-		enabled:        enabled,
-		limitsProvider: limitsProvider,
-		minCacheExtent: minCacheExtent,
-		metrics:        metrics,
+		enabled:                enabled,
+		limitsProvider:         limitsProvider,
+		minCacheExtent:         minCacheExtent,
+		metrics:                metrics,
+		cacheUnconsumedResults: cacheUnconsumedResults,
 	}
 
-	if enabled {
+	if m.enabled {
 		m.cache = caching.NewAdaptor(baseCache)
 		// The CacheKeyGenerator takes a non-hashable and hashable prefix.
 		// The type/version prefix is not included in the hashed key, but the generated cache prefix (tenant ids) will be folded into the hashed key.
@@ -269,6 +271,7 @@ func (m *CacheMaterializer) Materialize(ctx context.Context, n planning.Node, ma
 		node.SplitInterval,
 		m.minCacheExtent,
 		m.metrics,
+		m.cacheUnconsumedResults,
 	)
 
 	return planning.NewSingleUseOperatorFactory(operator), nil

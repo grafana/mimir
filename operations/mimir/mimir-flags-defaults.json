@@ -199,6 +199,7 @@
   "querier.mimir-query-engine.range-vector-splitting.memcached.tls-cipher-suites": "",
   "querier.mimir-query-engine.range-vector-splitting.memcached.tls-min-version": "",
   "querier.mimir-query-engine.range-vector-splitting.compression": "",
+  "querier.mimir-query-engine.time-splitting-and-caching.cache-unconsumed-results": true,
   "querier.ring.store": "memberlist",
   "querier.ring.prefix": "collectors/",
   "querier.ring.consul.hostname": "localhost:8500",

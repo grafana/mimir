@@ -2076,6 +2076,14 @@ mimir_query_engine:
       # CLI flag: -querier.mimir-query-engine.range-vector-splitting.compression
       [compression: <string> | default = ""]
 
+  time_splitting_and_caching:
+    # (experimental) Enable caching of query results that were not fully
+    # consumed by the query. When enabled, if a query stops reading before all
+    # series have been read, the remaining series are read and buffered so that
+    # the complete set of results can be cached.
+    # CLI flag: -querier.mimir-query-engine.time-splitting-and-caching.cache-unconsumed-results
+    [cache_unconsumed_results: <boolean> | default = true]
+
 ring:
   # The key-value store used to share the hash ring across multiple instances.
   kvstore:

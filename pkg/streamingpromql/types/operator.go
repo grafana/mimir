@@ -51,8 +51,9 @@ type Operator interface {
 	// Implementations may use this to clean up any buffered or outstanding data in memory.
 	// It must be safe to call FinishedReading even if other methods on the operator have not been called or returned an error.
 	// It must be safe to call FinishedReading multiple times.
-	// FinishedReading must not call any method other than FinishedReading on another operator and is expected to call FinishedReading on
-	// any nested operators.
+	// FinishedReading is expected to call FinishedReading on any nested operators.
+	// FinishedReading may only call methods other than FinishedReading on nested operators if it is guaranteed that FinishedReading has not
+	// previously been called on those nested operators.
 	// Once FinishedReading has been called, calling methods other than Finalize or Close may result in unpredictable behaviour, corruption or crashes.
 	FinishedReading(ctx context.Context) error
 

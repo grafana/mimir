@@ -55,6 +55,11 @@ type CacheOperator struct {
 	cacheEntryInterval time.Duration
 	metrics            *ResultsCacheMetrics
 
+	// cacheUnconsumedResults controls whether results that were not consumed by the consuming operator are
+	// read and buffered when FinishedReading is called. If this is disabled and not all series are read by
+	// the consuming operator, then the cache entry will not be written.
+	cacheUnconsumedResults bool
+
 	// minCacheExtent is the minimum length of a cached extent for it to be used.
 	// Extents smaller than this are ignored and re-evaluated, to avoid freshly evaluating many small extents.
 	// If the desired time range is smaller than minCacheExtent, then minCacheExtent is ignored and all cache extents are used.
@@ -104,6 +109,7 @@ func newCacheOperator(
 	cacheEntryInterval time.Duration,
 	minCacheExtent time.Duration,
 	metrics *ResultsCacheMetrics,
+	cacheUnconsumedResults bool,
 ) *CacheOperator {
 	return &CacheOperator{
 		Backend:                  backend,
@@ -121,6 +127,7 @@ func newCacheOperator(
 		timeNow:                  time.Now,
 		getCurrentTraceID:        tracing.ExtractTraceID,
 		metrics:                  metrics,
+		cacheUnconsumedResults:   cacheUnconsumedResults,
 	}
 }
 
@@ -812,11 +819,52 @@ func (c *CacheOperator) indexOfLastHPointAtOrBefore(p []promql.HPoint, t int64) 
 func (c *CacheOperator) FinishedReading(ctx context.Context) error {
 	c.finishedReading = true
 
+	if err := c.bufferUnconsumedSeries(ctx); err != nil {
+		return err
+	}
+
 	for _, e := range c.extents.inDesiredTimeRange {
 		if err := e.FinishedReading(ctx); err != nil {
 			return err
 		}
 	}
+
+	return nil
+}
+
+// bufferUnconsumedSeries reads and buffers any series that were not consumed by the consuming operator, so that a
+// cache entry can be written even if the consuming operator stopped reading before all series were read (for example,
+// because not all series from this operator match the series on the other side of a binary operation).
+// It is a no-op if caching of unconsumed results is disabled, if no cache entry will be written, or if all series
+// have already been buffered.
+func (c *CacheOperator) bufferUnconsumedSeries(ctx context.Context) error {
+	if !c.cacheUnconsumedResults || !c.extents.shouldWriteCacheEntry {
+		return nil
+	}
+
+	unconsumedSeriesCount := len(c.seriesMetadata) - c.nextOutputSeriesIdx
+	if unconsumedSeriesCount <= 0 {
+		return nil
+	}
+
+	spanLogger, ctx := spanlogger.New(ctx, c.logger, tracer, "CacheOperator.bufferUnconsumedSeries")
+	defer spanLogger.Finish()
+	spanLogger.SetTag("hashed_key", c.hashedKey)
+	spanLogger.SetTag("unconsumed_series_count", unconsumedSeriesCount)
+
+	for c.nextOutputSeriesIdx < len(c.seriesMetadata) {
+		desiredTimeRangeData, cacheableTimeRangeData, seriesIdx, err := c.getDataForNextSeries(ctx)
+		if err != nil {
+			return err
+		}
+
+		c.data[seriesIdx] = cacheableTimeRangeData
+
+		// The consuming operator will never read this series, so return the desired time range data to the pool.
+		types.PutInstantVectorSeriesData(desiredTimeRangeData, c.MemoryConsumptionTracker)
+	}
+
+	c.metrics.UnconsumedSeriesRead.Observe(float64(unconsumedSeriesCount))
 
 	return nil
 }
