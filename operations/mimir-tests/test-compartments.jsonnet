@@ -1,13 +1,17 @@
-// Renders Mimir with the experimental compartments architecture enabled.
-// Based on test-ingest-storage-autoscaling-one-trigger.jsonnet.
+// Renders Mimir with the experimental compartments architecture enabled, deployed multi-AZ across all
+// components (write and read path).
 (import 'test-ingest-storage-autoscaling-one-trigger.jsonnet') {
   _config+:: {
     multi_zone_availability_zones: ['us-east-2a', 'us-east-2b'],
     ingest_storage_ingester_zones: 2,
 
-    // Multi-AZ write path.
-    multi_zone_ingester_multi_az_enabled: true,
+    // Multi-AZ write and read path.
     multi_zone_write_path_enabled: true,
+    multi_zone_read_path_enabled: true,
+    multi_zone_read_path_multi_az_enabled: true,
+    multi_zone_memberlist_bridge_enabled: true,
+    memberlist_zone_aware_routing_enabled: true,
+    query_scheduler_service_discovery_mode: 'ring',
 
     // Exercise the per-compartment distributor scaled objects.
     autoscaling_distributor_enabled: true,
