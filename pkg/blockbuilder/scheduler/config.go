@@ -77,3 +77,10 @@ func (cfg *Config) Validate() error {
 	}
 	return nil
 }
+
+func (cfg *Config) NumClusters() int {
+	if !cfg.Compartments.Enabled {
+		return 1
+	}
+	return cfg.Compartments.Write.NumCompartments
+}

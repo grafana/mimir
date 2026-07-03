@@ -58,13 +58,13 @@ func New(
 		cfg:      cfg,
 		logger:   logger,
 		register: reg,
+		metrics:  newSchedulerMetrics(reg, cfg.Compartments.Enabled, cfg.NumClusters()),
 
 		observations:    make(obsMap),
 		partitionStates: make(map[int32]*partitionState),
 
 		onScheduleUpdated: func() {},
 	}
-	s.metrics = newSchedulerMetrics(reg, cfg.Compartments.Enabled, s.numClusters())
 	s.Service = services.NewBasicService(s.starting, s.running, s.stopping)
 	return s, nil
 }
@@ -85,7 +85,7 @@ func (s *BlockBuilderScheduler) starting(_ context.Context) error {
 
 	// One Kafka client per write compartment, each targeting that compartment's cluster. The
 	// per-client reader metrics are labeled by write_compartment so they stay distinct.
-	configs := ingest.WriteCompartmentConfigs(s.cfg.Kafka, s.cfg.Compartments.Write.NumCompartments, s.cfg.Kafka.Topic)
+	configs := ingest.WriteCompartmentConfigs(s.cfg.Kafka, s.cfg.NumClusters(), s.cfg.Kafka.Topic)
 	clients := make([]*kadm.Client, len(configs))
 	for clusterID, kcfg := range configs {
 		reg := prometheus.WrapRegistererWith(prometheus.Labels{"write_compartment": strconv.Itoa(clusterID)}, s.register)
@@ -173,18 +173,18 @@ func (s *BlockBuilderScheduler) running(ctx context.Context) error {
 // loadInitialCommittedOffsets seeds each partition's committed offset from every cluster's
 // committed offsets, so startup recovery resumes from where the previous scheduler left off.
 func (s *BlockBuilderScheduler) loadInitialCommittedOffsets(ctx context.Context) error {
-	for clusterID, admin := range s.adminClients {
-		c, err := fetchCommittedOffsets(ctx, admin, s.cfg.ConsumerGroup, s.cfg.Kafka.Topic)
+	for clusterID, client := range s.adminClients {
+		logger := s.compartmentLogger(clusterID)
+		c, err := fetchCommittedOffsets(ctx, client, s.cfg.ConsumerGroup, s.cfg.Kafka.Topic)
 		if err != nil {
 			if errors.Is(err, context.Canceled) {
 				return err
 			}
-			err = s.compartmentError(clusterID, fmt.Errorf("fetch committed offsets: %w", err))
-			level.Error(s.logger).Log("msg", "failed to load initial committed offsets", "err", err)
+			level.Error(logger).Log("msg", "failed to load initial committed offsets", "err", err)
 			s.metrics.fetchOffsetsFailed.Inc()
-			return err
+			return s.compartmentError(clusterID, fmt.Errorf("fetch committed offsets: %w", err))
 		}
-		level.Info(s.compartmentLogger(clusterID)).Log("msg", "loaded initial committed offsets", "offsets", offsetsStr(c))
+		level.Info(logger).Log("msg", "loaded initial committed offsets", "offsets", offsetsStr(c))
 		s.mu.Lock()
 		c.Each(func(o kadm.Offset) {
 			ps := s.getPartitionState(o.Topic, o.Partition)
@@ -215,8 +215,6 @@ func (s *BlockBuilderScheduler) completeObservationMode(ctx context.Context) {
 	s.jobs = newJobQueue(s.cfg.JobLeaseExpiry, policy, s.cfg.JobFailuresAllowed, s.metrics, s.logger)
 	s.finalizeObservations()
 
-	// Probe each cluster independently for its consumption offsets, grouped by partition so a
-	// partition's clusters are seeded together, and give each cluster its own offset finder.
 	offsetsByPartition, err := s.initConsumptionOffsets(ctx, time.Now().Add(-s.cfg.LookbackOnNoCommit))
 	if err != nil {
 		level.Warn(s.logger).Log("msg", "failed to get consumption offsets", "err", err)
@@ -249,13 +247,14 @@ func (s *BlockBuilderScheduler) updateSchedule(ctx context.Context) {
 	// across all clusters.
 	touched := make(map[int32]struct{})
 	for clusterID, ac := range s.adminClients {
+		logger := s.compartmentLogger(clusterID)
 		endOffsets, err := ac.ListEndOffsets(ctx, s.cfg.Kafka.Topic)
 		if err != nil {
-			level.Warn(s.compartmentLogger(clusterID)).Log("msg", "failed to list end offsets", "err", err)
+			level.Warn(logger).Log("msg", "failed to list end offsets", "err", err)
 			return
 		}
 		if endOffsets.Error() != nil {
-			level.Warn(s.compartmentLogger(clusterID)).Log("msg", "failed to list end offsets", "err", endOffsets.Error())
+			level.Warn(logger).Log("msg", "failed to list end offsets", "err", endOffsets.Error())
 			return
 		}
 		s.recordEndOffsets(clusterID, endOffsets, touched)
@@ -394,7 +393,7 @@ func (s *BlockBuilderScheduler) getPartitionState(topic string, partition int32)
 		return ps
 	}
 
-	ps := newPartitionState(topic, partition, s.numClusters(), s.cfg.Compartments.Enabled, &s.metrics, s.logger)
+	ps := newPartitionState(topic, partition, s.cfg.NumClusters(), s.cfg.Compartments.Enabled, &s.metrics, s.logger)
 	s.partitionStates[partition] = ps
 	return ps
 }
@@ -587,7 +586,7 @@ func (s *BlockBuilderScheduler) snapshotOffsets(clusterID int) (kadm.Offsets, ka
 func (s *BlockBuilderScheduler) flushOffsetsToKafka(ctx context.Context) error {
 	// TODO: only flush if dirty.
 	var errs []error
-	for clusterID := range s.adminClients {
+	for clusterID, client := range s.adminClients {
 		committed, planned := s.snapshotOffsets(clusterID)
 
 		committed.Each(func(o kadm.Offset) {
@@ -597,7 +596,7 @@ func (s *BlockBuilderScheduler) flushOffsetsToKafka(ctx context.Context) error {
 			s.metrics.perClusterMetrics[clusterID].plannedOffset.WithLabelValues(fmt.Sprint(o.Partition)).Set(float64(o.At))
 		})
 
-		if err := s.adminClients[clusterID].CommitAllOffsets(ctx, s.cfg.ConsumerGroup, committed); err != nil {
+		if err := client.CommitAllOffsets(ctx, s.cfg.ConsumerGroup, committed); err != nil {
 			errs = append(errs, s.compartmentError(clusterID, fmt.Errorf("commit offsets: %w", err)))
 			continue
 		}
@@ -624,15 +623,6 @@ func offsetsStr(offsets kadm.Offsets) string {
 		offsetsStr = "<none>"
 	}
 	return offsetsStr
-}
-
-// numClusters returns the number of write clusters consumed from: one per write compartment
-// when compartments are enabled, otherwise 1 for the single Kafka cluster.
-func (s *BlockBuilderScheduler) numClusters() int {
-	if !s.cfg.Compartments.Enabled {
-		return 1
-	}
-	return s.cfg.Compartments.Write.NumCompartments
 }
 
 // compartmentLogger returns a logger annotated with the write compartment ID. With compartments
@@ -701,7 +691,7 @@ func (s *BlockBuilderScheduler) assignJob(workerID string) (jobKey, schedulerpb.
 
 // UpdateJob takes a job update from the client and records it, if necessary.
 func (s *BlockBuilderScheduler) UpdateJob(_ context.Context, req *schedulerpb.UpdateJobRequest) (*schedulerpb.UpdateJobResponse, error) {
-	if err := req.Spec.Validate(s.cfg.Compartments.Enabled, s.numClusters()); err != nil {
+	if err := req.Spec.Validate(s.cfg.Compartments.Enabled, s.cfg.NumClusters()); err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 	k := jobKey{
