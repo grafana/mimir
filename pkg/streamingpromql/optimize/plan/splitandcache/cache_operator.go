@@ -642,149 +642,118 @@ func (c *CacheOperator) getDataForNextSeries(ctx context.Context) (desiredTimeRa
 
 func (c *CacheOperator) accumulateDataForSeries(data types.InstantVectorSeriesData, desiredTimeRangeData *types.InstantVectorSeriesData, cacheableTimeRangeData *types.InstantVectorSeriesData) error {
 	if c.extents.shouldWriteCacheEntry {
-		if err := c.accumulateCacheableFloats(data, cacheableTimeRangeData); err != nil {
+		if err := c.accumulateFloats(data, cacheableTimeRangeData, c.extents.cacheableRangeStartT, c.extents.cacheableRangeEndT, false); err != nil {
 			return err
 		}
 
-		if err := c.accumulateCacheableHistograms(data, cacheableTimeRangeData); err != nil {
+		if err := c.accumulateHistograms(data, cacheableTimeRangeData, c.extents.cacheableRangeStartT, c.extents.cacheableRangeEndT, false); err != nil {
 			return err
 		}
 	}
 
-	if err := c.accumulateDesiredFloats(data, desiredTimeRangeData); err != nil {
+	if err := c.accumulateFloats(data, desiredTimeRangeData, c.DesiredTimeRange.StartT, c.DesiredTimeRange.EndT, true); err != nil {
 		return err
 	}
 
-	if err := c.accumulateDesiredHistograms(data, desiredTimeRangeData); err != nil {
+	if err := c.accumulateHistograms(data, desiredTimeRangeData, c.DesiredTimeRange.StartT, c.DesiredTimeRange.EndT, true); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func (c *CacheOperator) accumulateCacheableFloats(data types.InstantVectorSeriesData, cacheableTimeRangeData *types.InstantVectorSeriesData) error {
-	if len(data.Floats) == 0 {
+// accumulateFloats accumulates float points from sourceData in the given time range into destinationData.
+// If takeOwnershipOfSourceData is true, it takes ownership of sourceData.Floats, either reusing it as destinationData.Floats or returning it to a pool.
+// If takeOwnershipOfSourceData is false, it does not return sourceData.Floats to a pool.
+func (c *CacheOperator) accumulateFloats(sourceData types.InstantVectorSeriesData, destinationData *types.InstantVectorSeriesData, startT, endT int64, takeOwnershipOfSourceData bool) error {
+	putIfOwned := func() {
+		if takeOwnershipOfSourceData {
+			types.FPointSlicePool.Put(&sourceData.Floats, c.MemoryConsumptionTracker)
+		}
+	}
+
+	if len(sourceData.Floats) == 0 {
+		putIfOwned()
 		return nil
 	}
 
-	firstCacheableIndex := c.indexOfFirstFPointAtOrAfter(data.Floats, c.extents.cacheableRangeStartT)
-	if firstCacheableIndex == -1 {
+	firstSourceIndex := c.indexOfFirstFPointAtOrAfter(sourceData.Floats, startT)
+	if firstSourceIndex == -1 {
+		putIfOwned()
 		return nil
 	}
 
-	lastCacheableIndex := c.indexOfLastFPointAtOrBefore(data.Floats, c.extents.cacheableRangeEndT)
-	if lastCacheableIndex < firstCacheableIndex {
+	lastSourceIndex := c.indexOfLastFPointAtOrBefore(sourceData.Floats, endT)
+	if lastSourceIndex < firstSourceIndex {
+		putIfOwned()
 		return nil
 	}
 
-	var err error
-	cacheableTimeRangeData.Floats, err = types.FPointSlicePool.AppendToSlice(cacheableTimeRangeData.Floats, c.MemoryConsumptionTracker, data.Floats[firstCacheableIndex:lastCacheableIndex+1]...)
-	if err != nil {
-		return err
-	}
+	if takeOwnershipOfSourceData && destinationData.Floats == nil {
+		// We don't already have a slice, so reuse sourceData.Floats.
+		pointCount := lastSourceIndex - firstSourceIndex + 1
 
-	return nil
-}
-
-// accumulateCacheableHistograms accumulates cacheable histogram points from the given data into cacheableTimeRangeData.
-// It clones any accumulated FloatHistogram instances.
-func (c *CacheOperator) accumulateCacheableHistograms(data types.InstantVectorSeriesData, cacheableTimeRangeData *types.InstantVectorSeriesData) error {
-	if len(data.Histograms) == 0 {
-		return nil
-	}
-
-	firstCacheableIndex := c.indexOfFirstHPointAtOrAfter(data.Histograms, c.extents.cacheableRangeStartT)
-	if firstCacheableIndex == -1 {
-		return nil
-	}
-
-	lastCacheableIndex := c.indexOfLastHPointAtOrBefore(data.Histograms, c.extents.cacheableRangeEndT)
-	if lastCacheableIndex < firstCacheableIndex {
-		return nil
-	}
-
-	var err error
-	cacheableTimeRangeData.Histograms, err = types.AppendHPointCopies(cacheableTimeRangeData.Histograms, data.Histograms[firstCacheableIndex:lastCacheableIndex+1], c.MemoryConsumptionTracker)
-	return err
-}
-
-// accumulateDesiredFloats accumulates desired float points from the given data into desiredTimeRangeData.
-// It takes ownership of data.Floats, either returning it as desiredTimeRangeData.Floats or returning it to a pool.
-// It expects that data.Floats has already been accounted for in the memory consumption estimate.
-func (c *CacheOperator) accumulateDesiredFloats(data types.InstantVectorSeriesData, desiredTimeRangeData *types.InstantVectorSeriesData) error {
-	if len(data.Floats) == 0 {
-		types.FPointSlicePool.Put(&data.Floats, c.MemoryConsumptionTracker)
-		return nil
-	}
-
-	firstDesiredIndex := c.indexOfFirstFPointAtOrAfter(data.Floats, c.DesiredTimeRange.StartT)
-	if firstDesiredIndex == -1 {
-		types.FPointSlicePool.Put(&data.Floats, c.MemoryConsumptionTracker)
-		return nil
-	}
-
-	lastDesiredIndex := c.indexOfLastFPointAtOrBefore(data.Floats, c.DesiredTimeRange.EndT)
-	if lastDesiredIndex < firstDesiredIndex {
-		types.FPointSlicePool.Put(&data.Floats, c.MemoryConsumptionTracker)
-		return nil
-	}
-
-	if desiredTimeRangeData.Floats == nil {
-		// We don't already have a slice, so reuse data.Floats.
-		pointCount := lastDesiredIndex - firstDesiredIndex + 1
-
-		if firstDesiredIndex > 0 {
-			copy(data.Floats[0:pointCount], data.Floats[firstDesiredIndex:lastDesiredIndex+1])
+		if firstSourceIndex > 0 {
+			copy(sourceData.Floats[0:pointCount], sourceData.Floats[firstSourceIndex:lastSourceIndex+1])
 		}
 
-		desiredTimeRangeData.Floats = data.Floats[:pointCount]
+		destinationData.Floats = sourceData.Floats[:pointCount]
 	} else {
 		var err error
-		desiredTimeRangeData.Floats, err = types.FPointSlicePool.AppendToSlice(desiredTimeRangeData.Floats, c.MemoryConsumptionTracker, data.Floats[firstDesiredIndex:lastDesiredIndex+1]...)
+		destinationData.Floats, err = types.FPointSlicePool.AppendToSlice(destinationData.Floats, c.MemoryConsumptionTracker, sourceData.Floats[firstSourceIndex:lastSourceIndex+1]...)
 		if err != nil {
 			return err
 		}
 
-		types.FPointSlicePool.Put(&data.Floats, c.MemoryConsumptionTracker)
+		putIfOwned()
 	}
 
 	return nil
 }
 
-// accumulateDesiredHistograms accumulates desired histograms points from the given data into desiredTimeRangeData.
-// It takes ownership of data.Histograms, either returning it as desiredTimeRangeData.Histograms or returning it to a pool.
-// It expects that data.Floats has already been accounted for in the memory consumption estimate.
-func (c *CacheOperator) accumulateDesiredHistograms(data types.InstantVectorSeriesData, desiredTimeRangeData *types.InstantVectorSeriesData) error {
-	if len(data.Histograms) == 0 {
-		types.HPointSlicePool.Put(&data.Histograms, c.MemoryConsumptionTracker)
+// accumulateHistograms accumulates histograms points from sourceData in the given time range into destinationData.
+// If takeOwnershipOfSourceData is true, it takes ownership of sourceData.Histograms, either reusing it as destinationData.Histograms or returning it to a pool.
+// If takeOwnershipOfSourceData is false, it does not return sourceData.Histograms to a pool, and clones any accumulated FloatHistogram instances returned in destinationData.
+func (c *CacheOperator) accumulateHistograms(sourceData types.InstantVectorSeriesData, destinationData *types.InstantVectorSeriesData, startT, endT int64, takeOwnershipOfSourceData bool) error {
+	putIfOwned := func() {
+		if takeOwnershipOfSourceData {
+			types.HPointSlicePool.Put(&sourceData.Histograms, c.MemoryConsumptionTracker)
+		}
+	}
+
+	if len(sourceData.Histograms) == 0 {
+		putIfOwned()
 		return nil
 	}
 
-	firstDesiredIndex := c.indexOfFirstHPointAtOrAfter(data.Histograms, c.DesiredTimeRange.StartT)
-	if firstDesiredIndex == -1 {
-		types.HPointSlicePool.Put(&data.Histograms, c.MemoryConsumptionTracker)
+	firstSourceIndex := c.indexOfFirstHPointAtOrAfter(sourceData.Histograms, startT)
+	if firstSourceIndex == -1 {
+		putIfOwned()
 		return nil
 	}
 
-	lastDesiredIndex := c.indexOfLastHPointAtOrBefore(data.Histograms, c.DesiredTimeRange.EndT)
-	if lastDesiredIndex < firstDesiredIndex {
-		types.HPointSlicePool.Put(&data.Histograms, c.MemoryConsumptionTracker)
+	lastSourceIndex := c.indexOfLastHPointAtOrBefore(sourceData.Histograms, endT)
+	if lastSourceIndex < firstSourceIndex {
+		putIfOwned()
 		return nil
 	}
 
-	if desiredTimeRangeData.Histograms == nil {
-		// We don't already have a slice, so reuse data.Histograms.
-		pointCount := lastDesiredIndex - firstDesiredIndex + 1
+	if takeOwnershipOfSourceData {
+		if destinationData.Histograms == nil {
+			// We don't already have a slice, so reuse sourceData.Histograms.
+			pointCount := lastSourceIndex - firstSourceIndex + 1
 
-		if firstDesiredIndex > 0 {
-			copy(data.Histograms[0:pointCount], data.Histograms[firstDesiredIndex:lastDesiredIndex+1])
+			if firstSourceIndex > 0 {
+				copy(sourceData.Histograms[0:pointCount], sourceData.Histograms[firstSourceIndex:lastSourceIndex+1])
+			}
+
+			clear(sourceData.Histograms[pointCount:len(sourceData.Histograms)]) // Clear any values remaining in the slice so we don't have two HPoint instances that reference the same FloatHistogram instance.
+			destinationData.Histograms = sourceData.Histograms[:pointCount]
+			return nil
 		}
 
-		clear(data.Histograms[pointCount:len(data.Histograms)]) // Clear any values remaining in the slice so we don't have two HPoint instances that reference the same FloatHistogram instance.
-		desiredTimeRangeData.Histograms = data.Histograms[:pointCount]
-	} else {
 		var err error
-		desiredTimeRangeData.Histograms, err = types.HPointSlicePool.AppendToSlice(desiredTimeRangeData.Histograms, c.MemoryConsumptionTracker, data.Histograms[firstDesiredIndex:lastDesiredIndex+1]...)
+		destinationData.Histograms, err = types.HPointSlicePool.AppendToSlice(destinationData.Histograms, c.MemoryConsumptionTracker, sourceData.Histograms[firstSourceIndex:lastSourceIndex+1]...)
 		if err != nil {
 			return err
 		}
@@ -793,11 +762,15 @@ func (c *CacheOperator) accumulateDesiredHistograms(data types.InstantVectorSeri
 		// instances with data.Histograms. Clear the copied range before returning data.Histograms to the pool so the
 		// pooled slice doesn't retain references to instances now owned by desiredTimeRangeData: otherwise a later reuse
 		// of the pooled slice could alias those instances and corrupt the result.
-		clear(data.Histograms[firstDesiredIndex : lastDesiredIndex+1])
-		types.HPointSlicePool.Put(&data.Histograms, c.MemoryConsumptionTracker)
+		clear(sourceData.Histograms[firstSourceIndex : lastSourceIndex+1])
+		types.HPointSlicePool.Put(&sourceData.Histograms, c.MemoryConsumptionTracker)
+
+		return nil
 	}
 
-	return nil
+	var err error
+	destinationData.Histograms, err = types.AppendHPointCopies(destinationData.Histograms, sourceData.Histograms[firstSourceIndex:lastSourceIndex+1], c.MemoryConsumptionTracker)
+	return err
 }
 
 func (c *CacheOperator) indexOfFirstFPointAtOrAfter(p []promql.FPoint, t int64) int {
