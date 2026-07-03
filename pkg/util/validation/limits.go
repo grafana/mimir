@@ -22,7 +22,9 @@ import (
 	"github.com/grafana/dskit/tenant"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/otlptranslator"
+	promcfg "github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/relabel"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"go.uber.org/atomic"
 	"go.yaml.in/yaml/v3"
 	"golang.org/x/crypto/blake2b"
@@ -89,6 +91,7 @@ var (
 	errInvalidIngestStorageReadConsistency         = fmt.Errorf("invalid ingest storage read consistency (supported values: %s)", strings.Join(api.ReadConsistencies, ", "))
 	errInvalidMaxEstimatedChunksPerQueryMultiplier = fmt.Errorf("invalid value for -%s: must be 0 or greater than or equal to 1", MaxEstimatedChunksPerQueryMultiplierFlag)
 	errNegativeUpdateTimeoutJitterMax              = errors.New("HA tracker max update timeout jitter shouldn't be negative")
+	errInvalidFloatChunkEncoding                   = fmt.Errorf("invalid float chunk encoding (supported values: %q, %q)", promcfg.FloatChunkEncodingXOR, promcfg.FloatChunkEncodingXOR2)
 )
 
 const (
@@ -187,8 +190,11 @@ type Limits struct {
 	// Per-tenant early head compaction
 	EarlyHeadCompactionOwnedSeriesThreshold                  int `yaml:"early_head_compaction_owned_series_threshold" json:"early_head_compaction_owned_series_threshold" category:"experimental"`
 	EarlyHeadCompactionMinEstimatedSeriesReductionPercentage int `yaml:"early_head_compaction_min_estimated_series_reduction_percentage" json:"early_head_compaction_min_estimated_series_reduction_percentage" category:"experimental"`
-	// Native histograms
+	// Native histograms.
 	NativeHistogramsIngestionEnabled bool `yaml:"native_histograms_ingestion_enabled" json:"native_histograms_ingestion_enabled" category:"experimental"`
+
+	// Float chunk encoding.
+	FloatChunkEncoding string `yaml:"float_chunk_encoding" json:"float_chunk_encoding" category:"experimental"`
 
 	// Active series custom trackers
 	ActiveSeriesBaseCustomTrackersConfig       asmodel.CustomTrackersConfig                  `yaml:"active_series_custom_trackers" json:"active_series_custom_trackers" doc:"description=Custom trackers for active metrics. If there are active series matching a provided matcher (map value), the count is exposed in the custom trackers metric labeled using the tracker name (map key). Zero-valued counts are not exposed and are removed when they go back to zero." category:"advanced"`
@@ -407,6 +413,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.Var(&l.ActiveSeriesBaseCustomTrackersConfig, "ingester.active-series-custom-trackers", "Additional active series metrics, matching the provided matchers. Matchers should be in form <name>:<matcher>, like 'foobar:{foo=\"bar\"}'. Multiple matchers can be provided either providing the flag multiple times or providing multiple semicolon-separated values to a single flag.")
 	f.Var(&l.OutOfOrderTimeWindow, OutOfOrderTimeWindowFlag, fmt.Sprintf("Non-zero value enables out-of-order support for most recent samples that are within the time window in relation to the TSDB's maximum time, i.e., within [db.maxTime-timeWindow, db.maxTime]). The ingester will need more memory as a factor of rate of out-of-order samples being ingested and the number of series that are getting out-of-order samples. If query falls into this window, cached results will use value from -%s option to specify TTL for resulting cache entry.", resultsCacheTTLForOutOfOrderWindowFlag))
 	f.BoolVar(&l.NativeHistogramsIngestionEnabled, "ingester.native-histograms-ingestion-enabled", true, "Enable ingestion of native histogram samples. If false, native histogram samples are ignored without an error. To query native histograms with query-sharding enabled make sure to set -query-frontend.query-result-response-format to 'protobuf'.")
+	f.StringVar(&l.FloatChunkEncoding, "ingester.float-chunk-encoding", "xor", "Encoding used for float chunks in the ingester and block builder for this tenant. Valid values are 'xor' and 'xor2'.")
 	f.BoolVar(&l.OutOfOrderBlocksExternalLabelEnabled, "ingester.out-of-order-blocks-external-label-enabled", false, "Whether the shipper should label out-of-order blocks with an external label before uploading them. Setting this label will compact out-of-order blocks separately from non-out-of-order blocks")
 	f.IntVar(&l.EarlyHeadCompactionOwnedSeriesThreshold, "ingester.early-head-compaction-owned-series-threshold", 0, "When the number of owned series for a tenant across the cluster exceeds this threshold, trigger early head compaction. 0 to disable.")
 	f.IntVar(&l.EarlyHeadCompactionMinEstimatedSeriesReductionPercentage, "ingester.early-head-compaction-min-estimated-series-reduction-percentage", 15, "Minimum estimated series reduction percentage (0-100) required to trigger per-tenant early compaction.")
@@ -712,6 +719,12 @@ func (l *Limits) Validate() error {
 
 	if l.HATrackerUpdateTimeoutJitterMax < 0 {
 		return errNegativeUpdateTimeoutJitterMax
+	}
+
+	switch l.FloatChunkEncoding {
+	case "", promcfg.FloatChunkEncodingXOR, promcfg.FloatChunkEncodingXOR2:
+	default:
+		return errInvalidFloatChunkEncoding
 	}
 
 	if l.HATrackerUpdateTimeout > 0 || l.HATrackerFailoverTimeout > 0 {
@@ -1379,9 +1392,17 @@ func (o *Overrides) MetricRelabelConfigs(userID string) []*relabel.Config {
 	return relabelConfigs
 }
 
-// NativeHistogramsIngestionEnabled returns whether to ingest native histograms in the ingester
+// NativeHistogramsIngestionEnabled returns whether to ingest native histograms in the ingester.
 func (o *Overrides) NativeHistogramsIngestionEnabled(userID string) bool {
 	return o.getOverridesForUser(userID).NativeHistogramsIngestionEnabled
+}
+
+// FloatChunkEncoding returns the float chunk encoding for this tenant, defaulting to XOR for unknown values.
+func (o *Overrides) FloatChunkEncoding(userID string) chunkenc.Encoding {
+	if o.getOverridesForUser(userID).FloatChunkEncoding == promcfg.FloatChunkEncodingXOR2 {
+		return chunkenc.EncXOR2
+	}
+	return chunkenc.EncXOR
 }
 
 func (o *Overrides) MaxExemplarsPerSeriesPerRequest(userID string) int {

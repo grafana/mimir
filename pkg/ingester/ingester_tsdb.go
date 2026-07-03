@@ -25,6 +25,7 @@ import (
 	promcfg "github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
 
@@ -41,6 +42,7 @@ import (
 // applyTSDBSettings goes through all tenants and applies
 // * The current max-exemplars setting. If it changed, tsdb will resize the buffer; if it didn't change tsdb will return quickly.
 // * The current out-of-order time window. If it changes from 0 to >0, then a new Write-Behind-Log gets created for that tenant.
+// * The current XOR2 encoding setting, enabling or disabling XOR2 chunk encoding for new float sample chunks.
 func (i *Ingester) applyTSDBSettings() {
 	for _, userID := range i.getTSDBUsers() {
 		oooTW := i.limits.OutOfOrderTimeWindow(userID)
@@ -59,6 +61,9 @@ func (i *Ingester) applyTSDBSettings() {
 				},
 				TSDBConfig: &promcfg.TSDBConfig{
 					OutOfOrderTimeWindow: oooTW.Milliseconds(),
+					ChunkEncoding: promcfg.ChunkEncodingConfig{
+						Floats: floatChunkEncodingConfig(i.limits.FloatChunkEncoding(userID)),
+					},
 				},
 			},
 		}
@@ -70,6 +75,15 @@ func (i *Ingester) applyTSDBSettings() {
 			level.Error(i.logger).Log("msg", "failed to apply config to TSDB", "user", userID, "err", err)
 		}
 	}
+}
+
+// floatChunkEncodingConfig normalizes a per-tenant encoding into a value accepted
+// by chunk_encoding.floats, defaulting to XOR for unknown values.
+func floatChunkEncodingConfig(enc chunkenc.Encoding) string {
+	if enc == chunkenc.EncXOR2 {
+		return promcfg.FloatChunkEncodingXOR2
+	}
+	return promcfg.FloatChunkEncodingXOR
 }
 
 func (i *Ingester) getTSDB(userID string) *userTSDB {
@@ -208,9 +222,11 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		EnableBiggerOOOBlockForOldSamples:    i.cfg.BlocksStorageConfig.TSDB.BiggerOutOfOrderBlocksForOldSamples,
 		IsolationDisabled:                    true,
 		HeadChunksWriteQueueSize:             i.cfg.BlocksStorageConfig.TSDB.HeadChunksWriteQueueSize,
-		EnableOverlappingCompaction:          false,                // always false since Mimir only uploads lvl 1 compacted blocks
-		EnableSharding:                       true,                 // Always enable query sharding support.
-		OutOfOrderTimeWindow:                 oooTW.Milliseconds(), // The unit must be same as our timestamps.
+		EnableOverlappingCompaction:          false,                               // always false since Mimir only uploads lvl 1 compacted blocks
+		EnableSharding:                       true,                                // Always enable query sharding support.
+		OutOfOrderTimeWindow:                 oooTW.Milliseconds(),                // The unit must be same as our timestamps.
+		FloatChunkEncoding:                   i.limits.FloatChunkEncoding(userID), // Seeds the encoding at open; updated per tenant via applyTSDBSettings.
+		XOR2EncodingAllowed:                  true,                                // Allow applyTSDBSettings to switch tenants to xor2 at runtime.
 		OutOfOrderCapMax:                     int64(i.cfg.BlocksStorageConfig.TSDB.OutOfOrderCapacityMax),
 		TimelyCompaction:                     i.cfg.BlocksStorageConfig.TSDB.TimelyHeadCompaction,
 		SharedPostingsForMatchersCache:       i.cfg.BlocksStorageConfig.TSDB.SharedPostingsForMatchersCache,

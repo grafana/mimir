@@ -4427,6 +4427,11 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -ingester.native-histograms-ingestion-enabled
 [native_histograms_ingestion_enabled: <boolean> | default = true]
 
+# (experimental) Encoding used for float chunks in the ingester and block
+# builder for this tenant. Valid values are 'xor' and 'xor2'.
+# CLI flag: -ingester.float-chunk-encoding
+[float_chunk_encoding: <string> | default = "xor"]
+
 # (advanced) Custom trackers for active metrics. If there are active series
 # matching a provided matcher (map value), the count is exposed in the custom
 # trackers metric labeled using the tracker name (map key). Zero-valued counts
