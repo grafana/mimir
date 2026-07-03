@@ -17,7 +17,7 @@ require (
 	github.com/golang/snappy v1.0.0
 	github.com/google/gopacket v1.1.19
 	github.com/gorilla/mux v1.8.1
-	github.com/grafana/dskit v0.0.0-20260630075432-df12b608edb1
+	github.com/grafana/dskit v0.0.0-20260703035724-7db839a548fc
 	github.com/grafana/e2e v0.1.2-0.20260625155804-481ec71161b5
 	github.com/hashicorp/golang-lru v1.0.2 // indirect
 	github.com/influxdata/influxdb/v2 v2.9.1

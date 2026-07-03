@@ -70,7 +70,7 @@ func TestPartitionRingWatchers_DoesNotPanicWithRealRegistererAndMultipleCompartm
 
 	// A real registerer would panic on duplicate metric registration if the per-compartment ring
 	// metrics weren't disambiguated.
-	var w *PartitionRingWatchers
+	var w *ring.PartitionRingWatchers
 	require.NotPanics(t, func() {
 		var err error
 		w, err = NewPartitionRingWatchers(true, 4, testRingName, testRingKey, kvClient, log.NewNopLogger(), prometheus.NewPedanticRegistry())
@@ -107,7 +107,7 @@ func writePartitions(t *testing.T, kvClient kv.Client, key string, partitionIDs 
 	}))
 }
 
-func startPartitionRingWatchers(t *testing.T, w *PartitionRingWatchers) {
+func startPartitionRingWatchers(t *testing.T, w *ring.PartitionRingWatchers) {
 	t.Helper()
 
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), w))

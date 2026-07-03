@@ -225,12 +225,12 @@ type Distributor struct {
 
 	// ingesterPartitionRings holds the per-read-compartment ingester partition rings (a single ring
 	// when compartments are disabled). It's used by the write path when ingest storage is enabled.
-	ingesterPartitionRings *ingest.PartitionRingWatchers
+	ingesterPartitionRings *ring.PartitionRingWatchers
 
 	// partitionInstanceRings holds the per-read-compartment partition+instance rings used by the read
 	// (query) path when ingest storage is enabled. The read path is not yet compartment-aware, so it
 	// always uses compartment 0 (that is also the only ring when compartments are disabled).
-	partitionInstanceRings *ingest.PartitionInstanceRings
+	partitionInstanceRings *ring.PartitionInstanceRings
 
 	// compartmentRouter shards series to read compartments. Nil when compartments are disabled.
 	compartmentRouter *compartments.TopicRouter
@@ -522,7 +522,7 @@ func (m *PushMetrics) deleteUserMetrics(user string) {
 }
 
 // New constructs a new Distributor
-func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Overrides, activeGroupsCleanupService *util.ActiveGroupsCleanupService, costAttributionMgr *costattribution.Manager, ingestersRing ring.ReadRing, partitionInstanceRings *ingest.PartitionInstanceRings, partitionRings *ingest.PartitionRingWatchers, canJoinDistributorsRing bool, writerEnabled bool, usageTrackerPartitionRing *ring.MultiPartitionInstanceRing, usageTrackerInstanceRing ring.ReadRing, reg prometheus.Registerer, log log.Logger) (*Distributor, error) {
+func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Overrides, activeGroupsCleanupService *util.ActiveGroupsCleanupService, costAttributionMgr *costattribution.Manager, ingestersRing ring.ReadRing, partitionInstanceRings *ring.PartitionInstanceRings, partitionRings *ring.PartitionRingWatchers, canJoinDistributorsRing bool, writerEnabled bool, usageTrackerPartitionRing *ring.MultiPartitionInstanceRing, usageTrackerInstanceRing ring.ReadRing, reg prometheus.Registerer, log log.Logger) (*Distributor, error) {
 	clientMetrics := ingester_client.NewMetrics(reg)
 	if cfg.IngesterClientFactory == nil {
 		cfg.IngesterClientFactory = ring_client.PoolInstFunc(func(inst ring.InstanceDesc) (ring_client.PoolClient, error) {
