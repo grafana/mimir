@@ -283,15 +283,47 @@ func (s *partitionState) committedEmpty(clusterID int) bool {
 	return s.offsets[clusterID].committed.empty()
 }
 
-// committedBeyondSpec reports whether every cluster range in spec is already at or
-// under that cluster's committed offset (i.e. the whole job is already consumed).
-func (s *partitionState) committedBeyondSpec(spec schedulerpb.JobSpec) bool {
+// specBeyond classifies a job spec's per-cluster ranges against one offset kind
+// (committed or planned).
+type specBeyond int
+
+const (
+	// beyondNone means no cluster's offset is at or past its range end.
+	beyondNone specBeyond = iota
+	// beyondSome means some clusters' offsets are at or past their range ends, others' are not.
+	// Only expressible with more than one cluster in the spec.
+	beyondSome
+	// beyondAll means every cluster's offset is at or past its range end.
+	beyondAll
+)
+
+// classifyBeyondSpec classifies spec's cluster ranges against the offsets selected by
+// offsetFor. A cluster whose offset is still empty is never beyond its range.
+func classifyBeyondSpec(spec schedulerpb.JobSpec, offsetFor func(clusterID int32) *advancingOffset) specBeyond {
+	beyond, needed := false, false
 	for clusterID, offsetRange := range spec.Ranges() {
-		if !s.offsets[clusterID].committed.beyondOffsetRange(offsetRange) {
-			return false
+		if offsetFor(clusterID).beyondOffsetRange(offsetRange) {
+			beyond = true
+		} else {
+			needed = true
 		}
 	}
-	return true
+	switch {
+	case beyond && needed:
+		return beyondSome
+	case beyond:
+		return beyondAll
+	default:
+		return beyondNone
+	}
+}
+
+// committedBeyondSpec classifies spec's cluster ranges against each cluster's committed
+// offset (beyondAll means the whole job is already consumed).
+func (s *partitionState) committedBeyondSpec(spec schedulerpb.JobSpec) specBeyond {
+	return classifyBeyondSpec(spec, func(clusterID int32) *advancingOffset {
+		return s.offsets[clusterID].committed
+	})
 }
 
 func (s *partitionState) plannedOffset(clusterID int) int64 {
@@ -302,15 +334,12 @@ func (s *partitionState) plannedEmpty(clusterID int) bool {
 	return s.offsets[clusterID].planned.empty()
 }
 
-// plannedBeyondSpec reports whether every cluster range in spec is already at or
-// under that cluster's planned offset (i.e. the whole job has already been planned).
-func (s *partitionState) plannedBeyondSpec(spec schedulerpb.JobSpec) bool {
-	for clusterID, offsetRange := range spec.Ranges() {
-		if !s.offsets[clusterID].planned.beyondOffsetRange(offsetRange) {
-			return false
-		}
-	}
-	return true
+// plannedBeyondSpec classifies spec's cluster ranges against each cluster's planned
+// offset (beyondAll means the whole job has already been planned).
+func (s *partitionState) plannedBeyondSpec(spec schedulerpb.JobSpec) specBeyond {
+	return classifyBeyondSpec(spec, func(clusterID int32) *advancingOffset {
+		return s.offsets[clusterID].planned
+	})
 }
 
 // plannedValidNextSpec reports whether spec is the contiguous next job for
