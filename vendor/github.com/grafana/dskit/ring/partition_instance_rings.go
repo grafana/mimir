@@ -8,7 +8,7 @@ import (
 // group, each pairing that watcher's partition ring with a shared instance ring. Rings are accessed
 // by the same index used by the underlying PartitionRingWatchers group.
 type PartitionInstanceRings struct {
-	// rings is indexed by position in the group. It always has at least one element.
+	// rings is indexed by position in the group.
 	rings []*PartitionInstanceRing
 }
 
