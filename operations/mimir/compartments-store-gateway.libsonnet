@@ -48,9 +48,6 @@
     'ingest-storage.kafka.topic': $.mimirIngestStorageCompartmentKafkaTopic(compartmentIdx),
   },
 
-  // Each per-compartment store-gateway zone points at its per-compartment blocks chunks/index cache
-  // (compartments-memcached.libsonnet populates blocks_chunks_zone_*_caching_configs; empty when
-  // per-compartment memcached is disabled). Backup zones reuse their primary zone's config.
   store_gateway_zone_a_compartments_args:: $.mimirCompartmentsCreateIf(isEnabled && isZoneAEnabled, numCompartments, function(c) $.store_gateway_zone_a_args + perCompartmentStoreGatewayArgs(c) + $.blocks_chunks_zone_a_caching_configs['compartment_%d' % c]),
   store_gateway_zone_b_compartments_args:: $.mimirCompartmentsCreateIf(isEnabled && isZoneBEnabled, numCompartments, function(c) $.store_gateway_zone_b_args + perCompartmentStoreGatewayArgs(c) + $.blocks_chunks_zone_b_caching_configs['compartment_%d' % c]),
   store_gateway_zone_c_compartments_args:: $.mimirCompartmentsCreateIf(isEnabled && isZoneCEnabled, numCompartments, function(c) $.store_gateway_zone_c_args + perCompartmentStoreGatewayArgs(c) + $.blocks_chunks_zone_c_caching_configs['compartment_%d' % c]),

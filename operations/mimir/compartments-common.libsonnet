@@ -77,9 +77,7 @@ local jsonpath = import 'github.com/jsonnet-libs/xtd/jsonpath.libsonnet';
     for compartment in std.range(0, numCompartments - 1)
   },
 
-  // Per-compartment blocks chunks/index caching config, keyed by compartment. Empty by default;
-  // compartments-memcached.libsonnet layers the per-compartment memcached addresses on top, and
-  // compartments-store-gateway.libsonnet merges them into each per-compartment store-gateway zone's args.
+  // Base (empty) per-compartment caching config.
   blocks_chunks_zone_a_caching_configs:: $.mimirCompartmentsCreateIf(true, $._config.compartments_read_count, function(c) {}),
   blocks_chunks_zone_b_caching_configs:: $.mimirCompartmentsCreateIf(true, $._config.compartments_read_count, function(c) {}),
   blocks_chunks_zone_c_caching_configs:: $.mimirCompartmentsCreateIf(true, $._config.compartments_read_count, function(c) {}),
