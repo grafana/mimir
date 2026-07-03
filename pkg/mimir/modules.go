@@ -413,7 +413,7 @@ func (t *Mimir) initIngesterPartitionRing() (services.Service, error) {
 
 	// One partition-instance ring per read compartment, pairing each compartment's partition ring with
 	// the shared ingester instance ring.
-	t.IngesterPartitionInstanceRings = ingest.NewPartitionInstanceRings(t.IngesterPartitionRingWatchers, t.IngesterRing, t.Cfg.Ingester.IngesterRing.HeartbeatTimeout)
+	t.IngesterPartitionInstanceRings = ring.NewPartitionInstanceRings(t.IngesterPartitionRingWatchers, t.IngesterRing, t.Cfg.Ingester.IngesterRing.HeartbeatTimeout)
 
 	// Expose a web page to view the partition ring state. With compartments enabled there's one page
 	// per read compartment, linked from an index page.
