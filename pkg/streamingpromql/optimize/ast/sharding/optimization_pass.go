@@ -81,6 +81,12 @@ func (o *OptimizationPass) shard(ctx context.Context, tenantIDs []string, expr p
 		seriesCount = hints.GetCardinalityEstimate()
 
 		if hints.TotalQueries > 0 {
+			// If splitting and caching inside MQE is enabled, this will be 1, and that is OK:
+			// the impact of this is that the -query-frontend.query-sharding-max-sharded-queries limit will apply per time-split
+			// interval and evaluation root, rather than to the entire time range (or entire spun-off subquery).
+			//
+			// (In the middleware implementation, the limit considers all shards across all time-split intervals, except if
+			// subquery spin-off applies, in which case it applies per evaluation root.)
 			totalQueries = hints.TotalQueries
 		}
 	}
