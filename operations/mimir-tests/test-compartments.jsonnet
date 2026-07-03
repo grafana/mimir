@@ -1,16 +1,11 @@
 // Renders Mimir with the experimental compartments architecture enabled, deployed multi-AZ across all
-// components (write and read path). This matches the production topology (e.g. mimir-dev-26): the
-// per-compartment memcached caches are zonal (memcached-zone-<zone>-rc-<id>) and each per-compartment
-// store-gateway zone routes to its zonal cache, exercising the 2-AZ zone-c->zone-a fallback.
-// Based on test-ingest-storage-autoscaling-one-trigger.jsonnet.
+// components (write and read path).
 (import 'test-ingest-storage-autoscaling-one-trigger.jsonnet') {
   _config+:: {
     multi_zone_availability_zones: ['us-east-2a', 'us-east-2b'],
     ingest_storage_ingester_zones: 2,
 
-    // Multi-AZ write and read path: distributors, ingesters, queriers, query-frontends, query-schedulers,
-    // rulers, store-gateways and memcached all become zonal/AZ-pinned (multi_zone_read_path_multi_az_enabled
-    // also drives the ingester multi-AZ deployment that the compartments ingester requires).
+    // Multi-AZ write and read path.
     multi_zone_write_path_enabled: true,
     multi_zone_read_path_enabled: true,
     multi_zone_read_path_multi_az_enabled: true,
