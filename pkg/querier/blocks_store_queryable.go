@@ -821,19 +821,27 @@ func (q *blocksStoreQuerier) targetCompartments(tenantID string, matchers []*lab
 
 // forEachCompartment runs fn for each targeted compartment. With a single target it runs inline (no
 // goroutine), so the compartments-disabled path is unchanged. With several, it runs them concurrently
-// and returns the first error, cancelling the in-flight siblings through the shared context.
+// and returns the first error, cancelling the in-flight siblings on error.
 func (q *blocksStoreQuerier) forEachCompartment(ctx context.Context, targets []int, fn func(ctx context.Context, c blocksStoreCompartment) error) error {
 	if len(targets) == 1 {
 		return fn(ctx, q.compartments[targets[0]])
 	}
 
-	g, gCtx := errgroup.WithContext(ctx)
+	// fn may open store-gateway streams that are read lazily after this returns, so the context passed to
+	// fn must outlive this call and only be cancelled on error, never on normal completion (mirrors the
+	// contract in fetchSeriesFromStores; errgroup.WithContext would cancel it when Wait returns).
+	ctx, cancel := context.WithCancelCause(ctx) //nolint:govet
+	g := &errgroup.Group{}
 	for _, c := range targets {
 		g.Go(func() error {
-			return fn(gCtx, q.compartments[c])
+			if err := fn(ctx, q.compartments[c]); err != nil {
+				cancel(err)
+				return err
+			}
+			return nil
 		})
 	}
-	return g.Wait()
+	return g.Wait() //nolint:govet // OK to return without cancelling ctx on success, see comment above.
 }
 
 // queryCompartmentsWithConsistencyCheck runs queryWithConsistencyCheck against each targeted compartment
