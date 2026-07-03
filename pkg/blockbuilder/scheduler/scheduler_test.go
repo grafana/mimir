@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"iter"
+	"maps"
 	"math/rand"
 	"net"
 	"slices"
@@ -74,9 +75,28 @@ func mustScheduler(t *testing.T, partitions int32) (*BlockBuilderScheduler, *kgo
 	return mustSchedulerWithKafkaAddrAndDialer(t, kafkaAddr, vnet.DialContext)
 }
 
-// mustMultiClusterScheduler returns a compartments-enabled scheduler backed by numClusters
-// independent Kafka clusters, one per write compartment, along with a producer client for each.
-func mustMultiClusterScheduler(t *testing.T, partitions int32, numClusters int) (*BlockBuilderScheduler, []*kgo.Client) {
+// testCluster is one fake Kafka cluster and the coordinates needed to connect more clients to it.
+type testCluster struct {
+	cluster *kfake.Cluster
+	addr    string
+	dialer  dialerFunc
+}
+
+// createTestClusters creates n independent fake Kafka clusters, one per write compartment.
+func createTestClusters(t *testing.T, partitions int32, n int) []testCluster {
+	clusters := make([]testCluster, n)
+	for c := range n {
+		var vnet kfake.VirtualNetwork
+		cluster, kafkaAddr := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, partitions, "ingest", testkafka.WithVirtualNetwork(&vnet))
+		clusters[c] = testCluster{cluster: cluster, addr: kafkaAddr, dialer: vnet.DialContext}
+	}
+	return clusters
+}
+
+// mustMultiClusterSchedulerWithClusters returns a compartments-enabled scheduler backed by the
+// given Kafka clusters, along with a producer client for each. Multiple schedulers can be created
+// against the same clusters to exercise restart scenarios.
+func mustMultiClusterSchedulerWithClusters(t *testing.T, clusters []testCluster) (*BlockBuilderScheduler, []*kgo.Client) {
 	cfg := Config{
 		Kafka: ingest.KafkaConfig{
 			Topic:        "ingest",
@@ -88,7 +108,7 @@ func mustMultiClusterScheduler(t *testing.T, partitions int32, numClusters int) 
 		MaxJobsPerPartition: 1,
 		Compartments: compartments.Config{
 			Enabled: true,
-			Write:   compartments.WriteConfig{NumCompartments: numClusters},
+			Write:   compartments.WriteConfig{NumCompartments: len(clusters)},
 		},
 	}
 
@@ -96,14 +116,12 @@ func mustMultiClusterScheduler(t *testing.T, partitions int32, numClusters int) 
 	sched, err := New(cfg, test.NewTestingLogger(t), reg)
 	require.NoError(t, err)
 
-	clients := make([]*kgo.Client, numClusters)
-	admins := make([]*kadm.Client, numClusters)
-	for c := range numClusters {
-		var vnet kfake.VirtualNetwork
-		_, kafkaAddr := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, partitions, "ingest", testkafka.WithVirtualNetwork(&vnet))
+	clients := make([]*kgo.Client, len(clusters))
+	admins := make([]*kadm.Client, len(clusters))
+	for c, tc := range clusters {
 		cli, err := kgo.NewClient(
-			kgo.SeedBrokers(kafkaAddr),
-			kgo.Dialer(vnet.DialContext),
+			kgo.SeedBrokers(tc.addr),
+			kgo.Dialer(tc.dialer),
 			kgo.RecordPartitioner(kgo.ManualPartitioner()),
 		)
 		require.NoError(t, err)
@@ -113,6 +131,35 @@ func mustMultiClusterScheduler(t *testing.T, partitions int32, numClusters int) 
 	}
 	sched.adminClients = admins
 	return sched, clients
+}
+
+// mustMultiClusterScheduler returns a compartments-enabled scheduler backed by numClusters
+// independent Kafka clusters, one per write compartment, along with a producer client for each.
+func mustMultiClusterScheduler(t *testing.T, partitions int32, numClusters int) (*BlockBuilderScheduler, []*kgo.Client) {
+	return mustMultiClusterSchedulerWithClusters(t, createTestClusters(t, partitions, numClusters))
+}
+
+// forEachClusterMode runs f once against a single-cluster (compartments disabled) scheduler and
+// once against a compartments-enabled scheduler with two clusters. Test bodies should apply the
+// same (mirrored) setup to every cluster in sched.adminClients/clients, so single-cluster
+// scenarios also exercise the compartments code path. Mirrored data cannot catch cross-cluster
+// wiring mistakes; those need dedicated tests with asymmetric per-cluster data.
+func forEachClusterMode(t *testing.T, partitions int32, f func(t *testing.T, sched *BlockBuilderScheduler, clients []*kgo.Client)) {
+	t.Run("compartments disabled", func(t *testing.T) {
+		sched, cli := mustScheduler(t, partitions)
+		f(t, sched, []*kgo.Client{cli})
+	})
+	t.Run("two mirrored compartments", func(t *testing.T) {
+		sched, clients := mustMultiClusterScheduler(t, partitions, 2)
+		f(t, sched, clients)
+	})
+}
+
+// initCommitAll seeds the same committed offset into every cluster slot of ps.
+func initCommitAll(ps *partitionState, commit int64) {
+	for clusterID := range ps.offsets {
+		ps.initCommit(clusterID, commit)
+	}
 }
 
 // observationCompleteLocked: a getter for tests.
@@ -627,10 +674,14 @@ func TestObservations(t *testing.T) {
 	verifyCommits()
 }
 
+// requireOffset asserts every cluster slot's committed offset equals expected. Tests exercising
+// asymmetric per-cluster offsets should assert the slots individually instead.
 func (s *BlockBuilderScheduler) requireOffset(t *testing.T, topic string, partition int32, expected int64, msgAndArgs ...any) {
 	t.Helper()
 	ps := s.getPartitionState(topic, partition)
-	require.Equal(t, expected, ps.offsets[0].committed.offset(), msgAndArgs...)
+	for clusterID := range ps.offsets {
+		require.Equal(t, expected, ps.offsets[clusterID].committed.offset(), msgAndArgs...)
+	}
 }
 
 func TestOffsetMovement(t *testing.T) {
@@ -675,65 +726,152 @@ func TestOffsetMovement(t *testing.T) {
 }
 
 func TestKafkaFlush(t *testing.T) {
-	sched, _ := mustScheduler(t, 4)
-	ctx := context.Background()
-	sched.completeObservationMode(ctx)
+	forEachClusterMode(t, 4, func(t *testing.T, sched *BlockBuilderScheduler, _ []*kgo.Client) {
+		ctx := context.Background()
+		sched.completeObservationMode(ctx)
 
-	flushAndRequireOffsets := func(topic string, offsets map[int32]int64, args ...any) {
-		require.NoError(t, sched.flushOffsetsToKafka(ctx))
+		flushAndRequireOffsets := func(topic string, offsets map[int32]int64, args ...any) {
+			require.NoError(t, sched.flushOffsetsToKafka(ctx))
 
-		offs, err := fetchCommittedOffsets(ctx, sched.adminClients[0], sched.cfg.ConsumerGroup, sched.cfg.Kafka.Topic)
-		require.NoError(t, err)
-		offcount := 0
-		offs.Each(func(o kadm.Offset) {
-			offcount++
-		})
-		require.Equal(t, len(offsets), offcount)
+			for _, admin := range sched.adminClients {
+				offs, err := fetchCommittedOffsets(ctx, admin, sched.cfg.ConsumerGroup, sched.cfg.Kafka.Topic)
+				require.NoError(t, err)
+				offcount := 0
+				offs.Each(func(o kadm.Offset) {
+					offcount++
+				})
+				require.Equal(t, len(offsets), offcount)
 
-		for partition, expected := range offsets {
-			o, ok := offs.Lookup(topic, partition)
-			require.True(t, ok, args...)
-			require.Equal(t, expected, o.At, args...)
+				for partition, expected := range offsets {
+					o, ok := offs.Lookup(topic, partition)
+					require.True(t, ok, args...)
+					require.Equal(t, expected, o.At, args...)
+				}
+			}
 		}
-	}
 
-	flushAndRequireOffsets("ingest", map[int32]int64{}, "no group found -> no offsets")
+		flushAndRequireOffsets("ingest", map[int32]int64{}, "no group found -> no offsets")
 
-	_ = sched.getPartitionState("ingest", 0)
-	// (No commit yet for p0.)
+		_ = sched.getPartitionState("ingest", 0)
+		// (No commit yet for p0.)
 
+		p1 := sched.getPartitionState("ingest", 1)
+		initCommitAll(p1, 2000)
+		flushAndRequireOffsets("ingest", map[int32]int64{
+			1: 2000,
+		})
+
+		p4 := sched.getPartitionState("ingest", 4)
+		initCommitAll(p4, 65535)
+		flushAndRequireOffsets("ingest", map[int32]int64{
+			1: 2000,
+			4: 65535,
+		})
+
+		initCommitAll(p1, 4000)
+		flushAndRequireOffsets("ingest", map[int32]int64{
+			1: 4000,
+			4: 65535,
+		}, "should be able to advance an existing offset")
+
+		expectedGauge := func(name, help string, offsets map[int32]int64) string {
+			var b strings.Builder
+			fmt.Fprintf(&b, "# HELP %s %s\n# TYPE %s gauge\n", name, help, name)
+			for _, partition := range slices.Sorted(maps.Keys(offsets)) {
+				if sched.cfg.Compartments.Enabled {
+					for clusterID := range sched.adminClients {
+						fmt.Fprintf(&b, "%s{partition=\"%d\",write_compartment=\"%d\"} %d\n", name, partition, clusterID, offsets[partition])
+					}
+				} else {
+					fmt.Fprintf(&b, "%s{partition=\"%d\"} %d\n", name, partition, offsets[partition])
+				}
+			}
+			return b.String()
+		}
+
+		reg := sched.register.(*prometheus.Registry)
+		require.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(
+			expectedGauge("cortex_blockbuilder_scheduler_partition_committed_offset",
+				"The observed committed offset of each partition.",
+				map[int32]int64{1: 4000, 4: 65535}),
+		), "cortex_blockbuilder_scheduler_partition_committed_offset"), "should only modify commit gauge for non-empty commit offsets")
+		require.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(
+			expectedGauge("cortex_blockbuilder_scheduler_partition_planned_offset",
+				"The planned offset of each partition.",
+				map[int32]int64{1: 4000, 4: 65535}),
+		), "cortex_blockbuilder_scheduler_partition_planned_offset"), "should only modify planned gauge for non-empty planned offsets")
+	})
+}
+
+// TestKafkaFlush_MultiCluster verifies that each cluster's Kafka receives exactly that cluster's
+// committed offsets. Offsets are asymmetric (including a partition committed on only one cluster)
+// so offsets flushed to the wrong cluster fail the test.
+func TestKafkaFlush_MultiCluster(t *testing.T) {
+	sched, _ := mustMultiClusterScheduler(t, 2, 2)
+	ctx := t.Context()
+
+	p0 := sched.getPartitionState("ingest", 0)
+	p0.initCommit(0, 100)
+	p0.initCommit(1, 900)
 	p1 := sched.getPartitionState("ingest", 1)
-	p1.initCommit(0, 2000)
-	flushAndRequireOffsets("ingest", map[int32]int64{
-		1: 2000,
+	p1.initCommit(0, 55)
+	// (No commit for partition 1 on cluster 1.)
+
+	require.NoError(t, sched.flushOffsetsToKafka(ctx))
+
+	requireCommitted := func(clusterID int, expected map[int32]int64) {
+		offs, err := fetchCommittedOffsets(ctx, sched.adminClients[clusterID], sched.cfg.ConsumerGroup, sched.cfg.Kafka.Topic)
+		require.NoError(t, err)
+		got := make(map[int32]int64)
+		offs.Each(func(o kadm.Offset) {
+			got[o.Partition] = o.At
+		})
+		require.Equal(t, expected, got, "cluster %d should hold exactly its own committed offsets", clusterID)
+	}
+	requireCommitted(0, map[int32]int64{0: 100, 1: 55})
+	requireCommitted(1, map[int32]int64{0: 900})
+}
+
+// TestKafkaFlush_MultiCluster_OneClusterFailsToCommit verifies that when one cluster rejects
+// offset commits, the error identifies that compartment and the other cluster's offsets are
+// still flushed.
+func TestKafkaFlush_MultiCluster_OneClusterFailsToCommit(t *testing.T) {
+	clusters := createTestClusters(t, 1, 2)
+	sched, _ := mustMultiClusterSchedulerWithClusters(t, clusters)
+	ctx := t.Context()
+
+	failing := clusters[1].cluster
+	failing.ControlKey(kmsg.OffsetCommit.Int16(), func(req kmsg.Request) (kmsg.Response, error, bool) {
+		failing.KeepControl()
+		commitR := req.(*kmsg.OffsetCommitRequest)
+		resp := req.ResponseKind().(*kmsg.OffsetCommitResponse)
+		resp.Default()
+		for _, reqTopic := range commitR.Topics {
+			respTopic := kmsg.OffsetCommitResponseTopic{Topic: reqTopic.Topic, TopicID: reqTopic.TopicID}
+			for _, reqPartition := range reqTopic.Partitions {
+				respTopic.Partitions = append(respTopic.Partitions, kmsg.OffsetCommitResponseTopicPartition{
+					Partition: reqPartition.Partition,
+					ErrorCode: kerr.GroupAuthorizationFailed.Code,
+				})
+			}
+			resp.Topics = append(resp.Topics, respTopic)
+		}
+		return resp, nil, true
 	})
 
-	p4 := sched.getPartitionState("ingest", 4)
-	p4.initCommit(0, 65535)
-	flushAndRequireOffsets("ingest", map[int32]int64{
-		1: 2000,
-		4: 65535,
-	})
+	ps := sched.getPartitionState("ingest", 0)
+	ps.initCommit(0, 100)
+	ps.initCommit(1, 900)
 
-	p1.initCommit(0, 4000)
-	flushAndRequireOffsets("ingest", map[int32]int64{
-		1: 4000,
-		4: 65535,
-	}, "should be able to advance an existing offset")
+	err := sched.flushOffsetsToKafka(ctx)
+	require.ErrorContains(t, err, "write compartment 1")
+	require.NotContains(t, err.Error(), "write compartment 0", "the healthy compartment should not be reported as failed")
 
-	reg := sched.register.(*prometheus.Registry)
-	require.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(
-		`# HELP cortex_blockbuilder_scheduler_partition_committed_offset The observed committed offset of each partition.
-		# TYPE cortex_blockbuilder_scheduler_partition_committed_offset gauge
-		cortex_blockbuilder_scheduler_partition_committed_offset{partition="1"} 4000
-		cortex_blockbuilder_scheduler_partition_committed_offset{partition="4"} 65535
-	`), "cortex_blockbuilder_scheduler_partition_committed_offset"), "should only modify commit gauge for non-empty commit offsets")
-	require.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(
-		`# HELP cortex_blockbuilder_scheduler_partition_planned_offset The planned offset of each partition.
-		# TYPE cortex_blockbuilder_scheduler_partition_planned_offset gauge
-		cortex_blockbuilder_scheduler_partition_planned_offset{partition="1"} 4000
-		cortex_blockbuilder_scheduler_partition_planned_offset{partition="4"} 65535
-	`), "cortex_blockbuilder_scheduler_partition_planned_offset"), "should only modify planned gauge for non-empty planned offsets")
+	offs, err := fetchCommittedOffsets(ctx, sched.adminClients[0], sched.cfg.ConsumerGroup, sched.cfg.Kafka.Topic)
+	require.NoError(t, err)
+	o, ok := offs.Lookup("ingest", 0)
+	require.True(t, ok)
+	require.Equal(t, int64(100), o.At, "the healthy cluster's offsets should be flushed despite the other cluster failing")
 }
 
 func TestUpdateSchedule(t *testing.T) {
@@ -827,6 +965,58 @@ func TestUpdateSchedule_MultiCluster(t *testing.T) {
 	require.Equal(t, int64(5), ps.offsets[1].endOffset, "cluster 1 end offset should be probed")
 }
 
+// TestUpdateSchedule_MultiCluster_OneClusterProbeFails verifies that when probing one cluster's
+// end offsets fails, the tick is abandoned without advancing partition time or enqueuing jobs,
+// while the already-probed cluster's recorded end offsets are kept.
+func TestUpdateSchedule_MultiCluster_OneClusterProbeFails(t *testing.T) {
+	ctx, cancel := context.WithCancelCause(context.Background())
+	t.Cleanup(func() { cancel(errors.New("test done")) })
+
+	clusters := createTestClusters(t, 1, 2)
+	sched, clients := mustMultiClusterSchedulerWithClusters(t, clusters)
+	sched.completeObservationMode(ctx)
+
+	produce := func(cli *kgo.Client, n int) {
+		for i := range n {
+			produceResult := cli.ProduceSync(ctx, &kgo.Record{
+				Timestamp: time.Unix(int64(i), 0),
+				Value:     []byte("value"),
+				Topic:     "ingest",
+				Partition: 0,
+			})
+			require.NoError(t, produceResult.FirstErr())
+		}
+	}
+	produce(clients[0], 3)
+	produce(clients[1], 5)
+
+	failing := clusters[1].cluster
+	failing.ControlKey(kmsg.ListOffsets.Int16(), func(req kmsg.Request) (kmsg.Response, error, bool) {
+		failing.KeepControl()
+		listR := req.(*kmsg.ListOffsetsRequest)
+		resp := req.ResponseKind().(*kmsg.ListOffsetsResponse)
+		resp.Default()
+		for _, reqTopic := range listR.Topics {
+			respTopic := kmsg.ListOffsetsResponseTopic{Topic: reqTopic.Topic}
+			for _, reqPartition := range reqTopic.Partitions {
+				respTopic.Partitions = append(respTopic.Partitions, kmsg.ListOffsetsResponseTopicPartition{
+					Partition: reqPartition.Partition,
+					ErrorCode: kerr.UnknownServerError.Code,
+				})
+			}
+			resp.Topics = append(resp.Topics, respTopic)
+		}
+		return resp, nil, true
+	})
+
+	sched.updateSchedule(ctx)
+
+	ps := sched.getPartitionState("ingest", 0)
+	require.Equal(t, int64(3), ps.offsets[0].endOffset, "the healthy cluster's end offsets should be recorded")
+	require.Equal(t, int64(0), ps.offsets[1].endOffset, "the failing cluster's end offset should keep its startup value, not advance to 5")
+	require.Equal(t, 0, ps.pendingJobs.Len(), "no job should be enqueued when a cluster's probe fails")
+}
+
 // TestPopulateInitialJobs_MultiCluster verifies that at startup a partition's clusters are
 // probed and replayed together, producing a single job whose offset ranges bundle every cluster
 // that had new data.
@@ -893,24 +1083,53 @@ func TestPopulateInitialJobs_PartitionOnSubsetOfClusters(t *testing.T) {
 // TestLoadInitialCommittedOffsets verifies that the consumer group's committed offsets seed
 // each partition's state, and that commits for other topics in the group don't pollute it.
 func TestLoadInitialCommittedOffsets(t *testing.T) {
-	sched, _ := mustScheduler(t, 2)
+	forEachClusterMode(t, 2, func(t *testing.T, sched *BlockBuilderScheduler, _ []*kgo.Client) {
+		ctx := t.Context()
+
+		for _, admin := range sched.adminClients {
+			_, err := admin.CreateTopic(ctx, 1, 1, nil, "other-topic")
+			require.NoError(t, err)
+
+			offs := make(kadm.Offsets)
+			offs.AddOffset("ingest", 0, 42, -1)
+			offs.AddOffset("ingest", 1, 64, -1)
+			offs.AddOffset("other-topic", 0, 99, -1)
+			require.NoError(t, admin.CommitAllOffsets(ctx, sched.cfg.ConsumerGroup, offs))
+		}
+
+		require.NoError(t, sched.loadInitialCommittedOffsets(ctx))
+
+		sched.requireOffset(t, "ingest", 0, 42, "partition 0 should be seeded from its committed offset")
+		sched.requireOffset(t, "ingest", 1, 64, "partition 1 should be seeded from its committed offset")
+		require.Len(t, sched.partitionStates, 2, "foreign topic commits should not seed partition state")
+	})
+}
+
+// TestLoadInitialCommittedOffsets_MultiCluster verifies each cluster's committed offsets seed
+// that cluster's slot in partition state. Offsets are asymmetric so that commits applied to the
+// wrong cluster's slot fail the test.
+func TestLoadInitialCommittedOffsets_MultiCluster(t *testing.T) {
+	sched, _ := mustMultiClusterScheduler(t, 2, 2)
 	ctx := t.Context()
-	admin := sched.adminClients[0]
 
-	_, err := admin.CreateTopic(ctx, 1, 1, nil, "other-topic")
-	require.NoError(t, err)
-
-	offs := make(kadm.Offsets)
-	offs.AddOffset("ingest", 0, 42, -1)
-	offs.AddOffset("ingest", 1, 64, -1)
-	offs.AddOffset("other-topic", 0, 99, -1)
-	require.NoError(t, admin.CommitAllOffsets(ctx, sched.cfg.ConsumerGroup, offs))
+	commit := func(clusterID int, offsets map[int32]int64) {
+		offs := make(kadm.Offsets)
+		for partition, offset := range offsets {
+			offs.AddOffset("ingest", partition, offset, -1)
+		}
+		require.NoError(t, sched.adminClients[clusterID].CommitAllOffsets(ctx, sched.cfg.ConsumerGroup, offs))
+	}
+	commit(0, map[int32]int64{0: 42, 1: 64})
+	commit(1, map[int32]int64{0: 1000, 1: 7})
 
 	require.NoError(t, sched.loadInitialCommittedOffsets(ctx))
 
-	sched.requireOffset(t, "ingest", 0, 42, "partition 0 should be seeded from its committed offset")
-	sched.requireOffset(t, "ingest", 1, 64, "partition 1 should be seeded from its committed offset")
-	require.Len(t, sched.partitionStates, 2, "foreign topic commits should not seed partition state")
+	ps0 := sched.getPartitionState("ingest", 0)
+	require.Equal(t, int64(42), ps0.committedOffset(0))
+	require.Equal(t, int64(1000), ps0.committedOffset(1))
+	ps1 := sched.getPartitionState("ingest", 1)
+	require.Equal(t, int64(64), ps1.committedOffset(0))
+	require.Equal(t, int64(7), ps1.committedOffset(1))
 }
 
 // TestFetchCommittedOffsets_IgnoresForeignTopics verifies that committed offsets for other
@@ -1400,6 +1619,47 @@ func TestBlockBuilderScheduler_EnqueuePendingJobs_GapDetection(t *testing.T) {
 		expectedStart = spec.EndOffset
 		requireGaps(t, reg, 2, commitGaps, "expected %d commit gaps at job %d", commitGaps, j)
 	}
+}
+
+// TestBlockBuilderScheduler_EnqueuePendingJobs_GapDetection_MultiCluster verifies gap accounting
+// with per-cluster offset ranges: a gap in a single cluster's range is detected even when the
+// other cluster's range is contiguous, and doesn't block job queueing.
+func TestBlockBuilderScheduler_EnqueuePendingJobs_GapDetection_MultiCluster(t *testing.T) {
+	sched, _ := mustMultiClusterScheduler(t, 1, 2)
+	sched.cfg.MaxJobsPerPartition = 0
+	sched.completeObservationMode(context.Background())
+
+	reg := sched.register.(*prometheus.Registry)
+
+	pt := sched.getPartitionState("ingest", 0)
+	spec := func(start0, end0, start1, end1 int64) *schedulerpb.JobSpec {
+		return &schedulerpb.JobSpec{Topic: "ingest", Partition: 0, OffsetRanges: map[int32]schedulerpb.OffsetRange{
+			0: {StartOffset: start0, EndOffset: end0},
+			1: {StartOffset: start1, EndOffset: end1},
+		}}
+	}
+
+	pt.addPendingJob(spec(0, 30, 0, 100))
+	pt.addPendingJob(spec(30, 40, 100, 200))
+	sched.enqueuePendingJobs()
+	require.Equal(t, 2, sched.jobs.count())
+	require.Equal(t, int64(40), pt.plannedOffset(0))
+	require.Equal(t, int64(200), pt.plannedOffset(1))
+	requireGaps(t, reg, 0, 0)
+
+	// A gap in cluster 1's ranges only; cluster 0's are contiguous.
+	pt.addPendingJob(spec(40, 50, 250, 300))
+	sched.enqueuePendingJobs()
+	require.Equal(t, 3, sched.jobs.count(), "a gap should not interfere with job queueing")
+	require.Equal(t, int64(50), pt.plannedOffset(0))
+	require.Equal(t, int64(300), pt.plannedOffset(1))
+	requireGaps(t, reg, 1, 0, "the gap in cluster 1's ranges should be detected")
+
+	// A gap in both clusters' ranges counts once per cluster.
+	pt.addPendingJob(spec(60, 70, 350, 400))
+	sched.enqueuePendingJobs()
+	require.Equal(t, 4, sched.jobs.count())
+	requireGaps(t, reg, 3, 0, "gaps in both clusters' ranges should each be detected")
 }
 
 func TestBlockBuilderScheduler_NoCommit_NoGap(t *testing.T) {
