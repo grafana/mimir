@@ -119,7 +119,8 @@ message PersistenceMetadata {
 // StoredDurationPredictor persists the learned duration-predictor state. The version and k fields
 // guard against loading state produced by an incompatible model: on mismatch the reader discards it
 // and warm-starts from defaults. The a/b fields are the raw (row-major) sufficient statistics of the
-// per-job-type least-squares fit.
+// per-job-type least-squares fit. plan_ema is the moving average of observed planning-job durations
+// (seconds), and plan_count is how many durations have been folded into it (0 means unlearned).
 message StoredDurationPredictor {
   uint32 version = 1;
   uint32 k = 2;
@@ -127,4 +128,6 @@ message StoredDurationPredictor {
   repeated double merge_b = 4;
   repeated double split_a = 5;
   repeated double split_b = 6;
+  double plan_ema = 7;
+  int64 plan_count = 8;
 }

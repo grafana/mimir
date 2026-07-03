@@ -19,12 +19,13 @@ import (
 // least squares (accumulate sufficient statistics, solve periodically), warm-started from global
 // defaults. See P3_GO_HANDOFF.md for the derivation. All durations here are in seconds.
 const (
-	predictorFeatures       = 5     // model dimension k
-	predictorLambda         = 0.997 // forgetting factor (~333-job effective window)
-	predictorRidge          = 1e-2  // diagonal regularizer, keeps the solve well-conditioned
-	predictorWarmStrength   = 20    // warm-start confidence, in pseudo-jobs
-	planJobPredictedSeconds = 1.0   // fixed estimate for a planning job
-	durationPredictorSchema = 1     // bumped when the persisted layout or model changes
+	predictorFeatures       = 5          // model dimension k
+	predictorLambda         = 0.997      // forgetting factor (~333-job effective window)
+	predictorRidge          = 1e-2       // diagonal regularizer, keeps the solve well-conditioned
+	predictorWarmStrength   = 20         // warm-start confidence, in pseudo-jobs
+	planJobDefaultSeconds   = 1.0        // estimate for a planning job until a duration has been observed
+	planEMAAlpha            = 1.0 / 7000 // new-sample weight in the planning-job duration EMA (~7000-job window)
+	durationPredictorSchema = 1          // bumped when the persisted layout or model changes
 )
 
 // Global cold-start default weights (scaled feature units, seconds), one vector per compaction job
@@ -75,16 +76,69 @@ type jobPredictor interface {
 	estimatePending() float64 // estimated drain time (seconds) for this type's pending jobs
 }
 
-// planPredictor is a trivial predictor for planning jobs: a hardcoded duration, no learning.
-// It is its own type so it can grow a real model later without touching callers.
+// planPredictor estimates planning-job drain time from a moving average of observed plan-job
+// durations (seconds). While warming up it is a true running mean (weight 1/count), settling to a
+// fixed exponential weight (planEMAAlpha, a ~7000-job window) once enough samples accumulate. This
+// gives an outlier-robust cold start while still forgetting old regimes in steady state. Until the
+// first observation it reports a default.
 type planPredictor struct {
-	pending atomic.Int64
+	mu          sync.Mutex
+	pending     int
+	ema         float64 // moving average of observed plan-job durations (seconds); valid once count > 0
+	count       int64   // number of durations folded into ema, capping the warm-up weight
+	unpersisted bool    // true when ema changed since the last marshal
 }
 
-func (p *planPredictor) recordPending(TrackedJob)                    { p.pending.Add(1) }
-func (p *planPredictor) recordUnpending(TrackedJob, time.Time, bool) { p.pending.Add(-1) }
+func (p *planPredictor) recordPending(TrackedJob) {
+	p.mu.Lock()
+	p.pending++
+	p.mu.Unlock()
+}
+
+func (p *planPredictor) recordUnpending(j TrackedJob, now time.Time, success bool) {
+	p.mu.Lock()
+	p.pending--
+	if success && !j.LeaseStartTime().IsZero() {
+		if dur := now.Sub(j.LeaseStartTime()); dur > 0 {
+			p.count++
+			alpha := 1.0 / float64(p.count) // running mean while warming up (alpha = 1 folds the first sample)
+			if alpha < planEMAAlpha {
+				alpha = planEMAAlpha
+			}
+			p.ema = alpha*dur.Seconds() + (1-alpha)*p.ema
+			p.unpersisted = true
+		}
+	}
+	p.mu.Unlock()
+}
+
 func (p *planPredictor) estimatePending() float64 {
-	return float64(p.pending.Load()) * planJobPredictedSeconds
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	perJob := planJobDefaultSeconds
+	if p.count > 0 {
+		perJob = p.ema
+	}
+	return clampNonNeg(float64(p.pending) * perJob)
+}
+
+func (p *planPredictor) hasUnpersisted() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.unpersisted
+}
+
+func (p *planPredictor) marshalState() (ema float64, count int64) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.unpersisted = false
+	return p.ema, p.count
+}
+
+func (p *planPredictor) loadState(ema float64, count int64) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.ema, p.count = ema, count
 }
 
 // compactionJobPredictor is the forgetting-least-squares model for one compaction job type.
@@ -305,7 +359,7 @@ func (p *perJobTypePredictor) Estimate() float64 {
 // MarshalStateIfChanged snapshots the learned state for persistence, or returns nil if nothing has
 // been learned since the last marshal (so periodic callers can skip writing unchanged state).
 func (p *perJobTypePredictor) MarshalStateIfChanged() *compactorschedulerpb.StoredDurationPredictor {
-	if !p.merges.hasUnpersisted() && !p.splits.hasUnpersisted() {
+	if !p.merges.hasUnpersisted() && !p.splits.hasUnpersisted() && !p.plans.hasUnpersisted() {
 		return nil
 	}
 	return p.MarshalState()
@@ -315,13 +369,16 @@ func (p *perJobTypePredictor) MarshalStateIfChanged() *compactorschedulerpb.Stor
 func (p *perJobTypePredictor) MarshalState() *compactorschedulerpb.StoredDurationPredictor {
 	ma, mb := p.merges.marshalState()
 	sa, sb := p.splits.marshalState()
+	planEMA, planCount := p.plans.marshalState()
 	return &compactorschedulerpb.StoredDurationPredictor{
-		Version: durationPredictorSchema,
-		K:       predictorFeatures,
-		MergeA:  ma,
-		MergeB:  mb,
-		SplitA:  sa,
-		SplitB:  sb,
+		Version:   durationPredictorSchema,
+		K:         predictorFeatures,
+		MergeA:    ma,
+		MergeB:    mb,
+		SplitA:    sa,
+		SplitB:    sb,
+		PlanEma:   planEMA,
+		PlanCount: planCount,
 	}
 }
 
@@ -337,6 +394,13 @@ func (p *perJobTypePredictor) LoadState(s *compactorschedulerpb.StoredDurationPr
 	}
 	p.merges.loadState(s.MergeA, s.MergeB)
 	p.splits.loadState(s.SplitA, s.SplitB)
+	// Discard implausible persisted plan state (corruption, or a future writer with different
+	// semantics) rather than reporting a bogus estimate; the plan EMA simply re-learns from live jobs.
+	planEMA, planCount := s.PlanEma, s.PlanCount
+	if planCount < 0 || planEMA < 0 || math.IsNaN(planEMA) || math.IsInf(planEMA, 0) {
+		planEMA, planCount = 0, 0
+	}
+	p.plans.loadState(planEMA, planCount)
 	p.merges.resolve()
 	p.splits.resolve()
 	return true

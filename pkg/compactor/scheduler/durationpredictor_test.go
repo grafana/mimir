@@ -103,9 +103,72 @@ func TestPlanPredictor_PendingAccumulator(t *testing.T) {
 	require.Equal(t, 0.0, p.estimatePending())
 	p.recordPending(NewTrackedPlanJob(time.Now()))
 	p.recordPending(NewTrackedPlanJob(time.Now()))
-	require.Equal(t, 2*planJobPredictedSeconds, p.estimatePending())
+	require.Equal(t, 2*planJobDefaultSeconds, p.estimatePending())
 	p.recordUnpending(NewTrackedPlanJob(time.Now()), time.Now(), false)
-	require.Equal(t, planJobPredictedSeconds, p.estimatePending())
+	require.Equal(t, planJobDefaultSeconds, p.estimatePending())
+}
+
+// leaseAndComplete records a plan job as pending, leases it at base, and completes it dur later.
+func leaseAndComplete(p *planPredictor, base time.Time, dur time.Duration) {
+	job := NewTrackedPlanJob(base)
+	job.MarkLeased(base)
+	p.recordPending(job)
+	p.recordUnpending(job, base.Add(dur), true)
+}
+
+func TestPlanPredictor_LearnsEMAFromDurations(t *testing.T) {
+	p := &planPredictor{}
+	base := time.Unix(1000, 0)
+
+	// Before any observation, a pending plan job is priced at the default.
+	p.recordPending(NewTrackedPlanJob(base))
+	require.Equal(t, planJobDefaultSeconds, p.estimatePending())
+	p.recordUnpending(NewTrackedPlanJob(base), base, false) // not leased: no learning
+	require.Equal(t, 0.0, p.estimatePending())
+
+	// The first observation seeds the estimate directly.
+	leaseAndComplete(p, base, 40*time.Second)
+	p.recordPending(NewTrackedPlanJob(base))
+	require.InDelta(t, 40, p.estimatePending(), 1e-9)
+
+	// While warming up (fewer than ~7000 samples) the estimate is the running mean of all samples, so
+	// an anomalous first observation is diluted quickly rather than lingering for a full window.
+	for range 50 {
+		leaseAndComplete(p, base, 80*time.Second)
+	}
+	require.InDelta(t, (40+50*80)/51.0, p.estimatePending(), 1e-9)
+
+	// A failed (or never-leased) completion must not move the estimate.
+	before := p.estimatePending()
+	p.recordPending(NewTrackedPlanJob(base))
+	p.recordUnpending(NewTrackedPlanJob(base), base.Add(time.Hour), false)
+	require.InDelta(t, before, p.estimatePending(), 1e-9)
+}
+
+func TestPlanPredictor_LoadStateRejectsInvalidEMA(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		ema   float64
+		count int64
+	}{
+		{"negative ema", -5, 3},
+		{"nan ema", math.NaN(), 3},
+		{"inf ema", math.Inf(1), 3},
+		{"negative count", 10, -1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := newPerJobTypePredictor(clock.New())
+			require.True(t, p.LoadState(&compactorschedulerpb.StoredDurationPredictor{
+				Version: durationPredictorSchema, K: predictorFeatures,
+				MergeA: make([]float64, predictorFeatures*predictorFeatures), MergeB: make([]float64, predictorFeatures),
+				SplitA: make([]float64, predictorFeatures*predictorFeatures), SplitB: make([]float64, predictorFeatures),
+				PlanEma: tc.ema, PlanCount: tc.count,
+			}))
+			// Corrupt plan state is discarded, so a pending plan job falls back to the default estimate.
+			p.plans.recordPending(NewTrackedPlanJob(time.Unix(1, 0)))
+			require.Equal(t, planJobDefaultSeconds, p.plans.estimatePending())
+		})
+	}
 }
 
 func TestPerJobTypePredictor_EstimateEqualsSumOfPredictions(t *testing.T) {
@@ -128,7 +191,7 @@ func TestPerJobTypePredictor_EstimateEqualsSumOfPredictions(t *testing.T) {
 	}
 	p.RecordPending(NewTrackedPlanJob(time.Now()))
 	p.RecordPending(NewTrackedPlanJob(time.Now()))
-	want += 2 * planJobPredictedSeconds
+	want += 2 * planJobDefaultSeconds
 
 	require.InDelta(t, want, p.Estimate(), 1e-9)
 
@@ -136,7 +199,7 @@ func TestPerJobTypePredictor_EstimateEqualsSumOfPredictions(t *testing.T) {
 	for _, j := range jobs {
 		p.RecordUnpending(j, false)
 	}
-	require.InDelta(t, 2*planJobPredictedSeconds, p.Estimate(), 1e-9)
+	require.InDelta(t, 2*planJobDefaultSeconds, p.Estimate(), 1e-9)
 }
 
 func TestPerJobTypePredictor_PersistenceRoundTrip(t *testing.T) {
@@ -150,6 +213,7 @@ func TestPerJobTypePredictor_PersistenceRoundTrip(t *testing.T) {
 		p1.merges.observe(fmj, float64(i%50+10))
 		p1.splits.observe(fsj, float64(i%30+20))
 	}
+	leaseAndComplete(p1.plans, time.Unix(1000, 0), 42*time.Second)
 	require.True(t, p1.Resolve())
 
 	p2 := newPerJobTypePredictor(clock.New())
@@ -159,6 +223,12 @@ func TestPerJobTypePredictor_PersistenceRoundTrip(t *testing.T) {
 	fs := features(5, 9e6, 6000)
 	require.InDelta(t, p1.merges.estimateSum(fm), p2.merges.estimateSum(fm), 1e-9)
 	require.InDelta(t, p1.splits.estimateSum(fs), p2.splits.estimateSum(fs), 1e-9)
+
+	// The learned plan-job EMA survives the round-trip.
+	p1.plans.recordPending(NewTrackedPlanJob(time.Unix(1000, 0)))
+	p2.plans.recordPending(NewTrackedPlanJob(time.Unix(1000, 0)))
+	require.InDelta(t, 42, p2.plans.estimatePending(), 1e-9)
+	require.InDelta(t, p1.plans.estimatePending(), p2.plans.estimatePending(), 1e-9)
 }
 
 func TestPerJobTypePredictor_LoadStateRejectsIncompatible(t *testing.T) {

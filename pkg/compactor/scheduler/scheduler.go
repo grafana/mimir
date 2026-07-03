@@ -170,7 +170,7 @@ func newCompactorScheduler(
 	// scrape time (which also lazily re-solves the model) rather than refreshing it from a loop.
 	promauto.With(registerer).NewGaugeFunc(prometheus.GaugeOpts{
 		Name: "cortex_compactor_scheduler_estimated_queue_drain_seconds",
-		Help: "Estimated time to drain all incomplete jobs, from the learned per-job duration model. Planning jobs are counted as 1 second each.",
+		Help: "Estimated time to drain all incomplete jobs, from the learned per-job duration model. Planning jobs use a learned moving average of their duration (1 second until one is observed).",
 	}, func() float64 {
 		predictor.Resolve()
 		return predictor.Estimate()
