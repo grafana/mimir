@@ -2543,6 +2543,14 @@ func TestPartitionReader_ShouldNotMissRecordsIfKafkaReturnsAFetchBothWithAnError
 						// Ensure no record was duplicated
 						require.Equal(t, int64(totalProducedRecords), totalConsumedRecords.Load(), "expected each produced record to be consumed exactly once")
 
+						// Ensure every configured error was actually injected
+						injectedErrors := 0
+						errorInjectedAtOffset.Range(func(_, _ any) bool {
+							injectedErrors++
+							return true
+						})
+						require.Equal(t, len(errorOffsets), injectedErrors, "expected every configured error to be injected")
+
 						// We expect the last consumed offset to be tracked in a metric.
 						test.Poll(t, time.Second, nil, func() interface{} {
 							return promtest.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
