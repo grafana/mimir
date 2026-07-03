@@ -581,8 +581,8 @@ jobs:
           pattern: dist-linux-*
           path: dist
           merge-multiple: true
-      - name: Build DEB/RPM packages
-        run: make packages
+      - name: Build and test DEB/RPM packages
+        run: make test-packages
       # Only the release job consumes these, so they're only uploaded for release tags.
       - name: Upload packages artifacts
         if: startsWith(github.ref, 'refs/tags/mimir-')
