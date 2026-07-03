@@ -589,7 +589,7 @@ func (c *CacheOperator) bufferSeriesMetadataForCacheEntry(series []types.SeriesM
 }
 
 func (c *CacheOperator) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
-	desiredTimeRangeData, cacheableTimeRangeData, seriesIdx, err := c.getDataForNextSeries(ctx)
+	desiredTimeRangeData, cacheableTimeRangeData, seriesIdx, err := c.getDataForNextSeries(ctx, true)
 	if err != nil {
 		return types.InstantVectorSeriesData{}, err
 	}
@@ -601,7 +601,7 @@ func (c *CacheOperator) NextSeries(ctx context.Context) (types.InstantVectorSeri
 	return desiredTimeRangeData, nil
 }
 
-func (c *CacheOperator) getDataForNextSeries(ctx context.Context) (desiredTimeRangeData types.InstantVectorSeriesData, cacheableTimeRangeData types.InstantVectorSeriesData, seriesIdx int, err error) {
+func (c *CacheOperator) getDataForNextSeries(ctx context.Context, needDesiredTimeRangeData bool) (desiredTimeRangeData types.InstantVectorSeriesData, cacheableTimeRangeData types.InstantVectorSeriesData, seriesIdx int, err error) {
 	var sourceSeriesIndices []int
 	thisSeriesIndex := c.nextOutputSeriesIdx
 	c.nextOutputSeriesIdx++
@@ -632,7 +632,7 @@ func (c *CacheOperator) getDataForNextSeries(ctx context.Context) (desiredTimeRa
 			return types.InstantVectorSeriesData{}, types.InstantVectorSeriesData{}, -1, err
 		}
 
-		if err := c.accumulateDataForSeries(data, &desiredTimeRangeData, &cacheableTimeRangeData); err != nil {
+		if err := c.accumulateDataForSeries(data, &desiredTimeRangeData, &cacheableTimeRangeData, needDesiredTimeRangeData); err != nil {
 			return types.InstantVectorSeriesData{}, types.InstantVectorSeriesData{}, -1, err
 		}
 	}
@@ -640,23 +640,25 @@ func (c *CacheOperator) getDataForNextSeries(ctx context.Context) (desiredTimeRa
 	return desiredTimeRangeData, cacheableTimeRangeData, thisSeriesIndex, nil
 }
 
-func (c *CacheOperator) accumulateDataForSeries(data types.InstantVectorSeriesData, desiredTimeRangeData *types.InstantVectorSeriesData, cacheableTimeRangeData *types.InstantVectorSeriesData) error {
+func (c *CacheOperator) accumulateDataForSeries(data types.InstantVectorSeriesData, desiredTimeRangeData *types.InstantVectorSeriesData, cacheableTimeRangeData *types.InstantVectorSeriesData, needDesiredTimeRangeData bool) error {
 	if c.extents.shouldWriteCacheEntry {
-		if err := c.accumulateFloats(data, cacheableTimeRangeData, c.extents.cacheableRangeStartT, c.extents.cacheableRangeEndT, false); err != nil {
+		if err := c.accumulateFloats(data, cacheableTimeRangeData, c.extents.cacheableRangeStartT, c.extents.cacheableRangeEndT, !needDesiredTimeRangeData); err != nil {
 			return err
 		}
 
-		if err := c.accumulateHistograms(data, cacheableTimeRangeData, c.extents.cacheableRangeStartT, c.extents.cacheableRangeEndT, false); err != nil {
+		if err := c.accumulateHistograms(data, cacheableTimeRangeData, c.extents.cacheableRangeStartT, c.extents.cacheableRangeEndT, !needDesiredTimeRangeData); err != nil {
 			return err
 		}
 	}
 
-	if err := c.accumulateFloats(data, desiredTimeRangeData, c.DesiredTimeRange.StartT, c.DesiredTimeRange.EndT, true); err != nil {
-		return err
-	}
+	if needDesiredTimeRangeData {
+		if err := c.accumulateFloats(data, desiredTimeRangeData, c.DesiredTimeRange.StartT, c.DesiredTimeRange.EndT, true); err != nil {
+			return err
+		}
 
-	if err := c.accumulateHistograms(data, desiredTimeRangeData, c.DesiredTimeRange.StartT, c.DesiredTimeRange.EndT, true); err != nil {
-		return err
+		if err := c.accumulateHistograms(data, desiredTimeRangeData, c.DesiredTimeRange.StartT, c.DesiredTimeRange.EndT, true); err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -839,7 +841,7 @@ func (c *CacheOperator) bufferUnconsumedSeries(ctx context.Context) error {
 	spanLogger.SetTag("unconsumed_series_count", unconsumedSeriesCount)
 
 	for c.nextOutputSeriesIdx < len(c.seriesMetadata) {
-		desiredTimeRangeData, cacheableTimeRangeData, seriesIdx, err := c.getDataForNextSeries(ctx)
+		desiredTimeRangeData, cacheableTimeRangeData, seriesIdx, err := c.getDataForNextSeries(ctx, false)
 		if err != nil {
 			return err
 		}
