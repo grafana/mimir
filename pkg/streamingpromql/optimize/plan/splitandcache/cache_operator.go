@@ -843,13 +843,26 @@ func (c *CacheOperator) bufferUnconsumedSeries(ctx context.Context) error {
 	}
 
 	unconsumedSeriesCount := len(c.seriesMetadata) - c.nextOutputSeriesIdx
-	if unconsumedSeriesCount <= 0 {
+	if c.seriesMetadata != nil && unconsumedSeriesCount <= 0 {
 		return nil
 	}
 
 	spanLogger, ctx := spanlogger.New(ctx, c.logger, tracer, "CacheOperator.bufferUnconsumedSeries")
 	defer spanLogger.Finish()
 	spanLogger.SetTag("hashed_key", c.hashedKey)
+
+	if c.seriesMetadata == nil {
+		spanLogger.DebugLog("msg", "series metadata not read, reading now")
+
+		series, err := c.SeriesMetadata(ctx, nil)
+		if err != nil {
+			return err
+		}
+
+		unconsumedSeriesCount = len(series)
+		types.SeriesMetadataSlicePool.Put(&series, c.MemoryConsumptionTracker)
+	}
+
 	spanLogger.SetTag("unconsumed_series_count", unconsumedSeriesCount)
 
 	for c.nextOutputSeriesIdx < len(c.seriesMetadata) {
