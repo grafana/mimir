@@ -1,7 +1,7 @@
 {
   _config+:: {
-    // Deploy per-compartment memcached (chunks) and memcached-index-queries. Per-zone when multi-AZ
-    // memcached is enabled, otherwise a single per-compartment instance.
+    // Deploy per-compartment memcached (chunks) and memcached-index-queries, one instance per zone
+    // (compartments require multi-AZ memcached with multi-zone routing).
     compartments_memcached_enabled: $._config.compartments_enabled,
     no_compartments_memcached_enabled: !self.compartments_memcached_enabled,
 
@@ -10,14 +10,12 @@
     memcached_index_queries_replicas_per_compartment: $._config.memcached_index_queries_replicas,
   },
 
-  // Per-compartment memcached must be deployed zonal (multi-AZ), matching the per-compartment store-gateways
-  // and ingesters that also require multi-AZ. Single-zone may additionally be enabled during migrations.
+  // Per-compartment memcached is always deployed zonal (multi-AZ) and routed multi-zone, matching the
+  // per-compartment store-gateways and ingesters that also require multi-AZ.
   assert !$._config.compartments_memcached_enabled || $._config.multi_zone_memcached_enabled
          : 'compartments_memcached_enabled requires multi_zone_memcached_enabled',
-  assert !$._config.compartments_memcached_enabled || !$._config.multi_zone_memcached_routing_enabled || $._config.multi_zone_memcached_enabled
-         : 'compartments memcached: multi_zone_memcached_routing_enabled requires multi_zone_memcached_enabled',
-  assert !$._config.compartments_memcached_enabled || $._config.multi_zone_memcached_routing_enabled || $._config.single_zone_memcached_enabled
-         : 'compartments memcached: single-zone routing (multi_zone_memcached_routing_enabled=false) requires single_zone_memcached_enabled',
+  assert !$._config.compartments_memcached_enabled || $._config.multi_zone_memcached_routing_enabled
+         : 'compartments_memcached_enabled requires multi_zone_memcached_routing_enabled',
 
   local statefulSet = $.apps.v1.statefulSet,
 
@@ -25,7 +23,6 @@
   local isNoCompartmentsEnabled = $._config.no_compartments_memcached_enabled,
   local numCompartments = $._config.compartments_read_count,
 
-  local isSingleZoneEnabled = $._config.single_zone_memcached_enabled,
   local isMultiZoneEnabled = $._config.multi_zone_memcached_enabled,
   local isZoneAEnabled = isMultiZoneEnabled && std.length($._config.multi_zone_availability_zones) >= 1,
   local isZoneBEnabled = isMultiZoneEnabled && std.length($._config.multi_zone_availability_zones) >= 2,
@@ -35,21 +32,11 @@
   local cacheIndexQueriesEnabled = $._config.cache_index_queries_enabled,
 
   // Builders.
-  newMemcachedChunksCompartment(compartmentIdx, nodeAffinityMatchers=[])::
-    $.newMemcachedChunks('memcached-rc-%d' % compartmentIdx, nodeAffinityMatchers) + {
-      statefulSet+: statefulSet.mixin.spec.withReplicas($._config.memcached_chunks_replicas_per_compartment),
-    },
-
   newMemcachedChunksCompartmentZone(zone, compartmentIdx, nodeAffinityMatchers=[])::
     $.newMemcachedChunks('memcached-zone-%s-rc-%d' % [zone, compartmentIdx], nodeAffinityMatchers) + {
       statefulSet+:
         statefulSet.mixin.spec.withReplicas($._config.memcached_chunks_replicas_per_compartment) +
         statefulSet.mixin.spec.template.spec.withTolerationsMixin($.newMimirMultiZoneToleration()),
-    },
-
-  newMemcachedIndexQueriesCompartment(compartmentIdx, nodeAffinityMatchers=[])::
-    $.newMemcachedIndexQueries('memcached-index-queries-rc-%d' % compartmentIdx, nodeAffinityMatchers) + {
-      statefulSet+: statefulSet.mixin.spec.withReplicas($._config.memcached_index_queries_replicas_per_compartment),
     },
 
   newMemcachedIndexQueriesCompartmentZone(zone, compartmentIdx, nodeAffinityMatchers=[])::
@@ -59,13 +46,7 @@
         statefulSet.mixin.spec.template.spec.withTolerationsMixin($.newMimirMultiZoneToleration()),
     },
 
-  // Single-zone per-compartment caches.
-  memcached_chunks_compartments: $.mimirCompartmentsCreateIf(isEnabled && isSingleZoneEnabled && cacheChunksEnabled, numCompartments, function(c)
-    $.newMemcachedChunksCompartment(c, $.memcached_chunks_node_affinity_matchers)),
-  memcached_index_queries_compartments: $.mimirCompartmentsCreateIf(isEnabled && isSingleZoneEnabled && cacheIndexQueriesEnabled, numCompartments, function(c)
-    $.newMemcachedIndexQueriesCompartment(c, $.memcached_index_queries_node_affinity_matchers)),
-
-  // Multi-AZ per-compartment caches.
+  // Per-compartment zonal caches.
   memcached_chunks_zone_a_compartments: $.mimirCompartmentsCreateIf(isEnabled && isZoneAEnabled && cacheChunksEnabled, numCompartments, function(c)
     $.newMemcachedChunksCompartmentZone('a', c, $.memcached_chunks_zone_a_node_affinity_matchers)),
   memcached_chunks_zone_b_compartments: $.mimirCompartmentsCreateIf(isEnabled && isZoneBEnabled && cacheChunksEnabled, numCompartments, function(c)
@@ -84,20 +65,16 @@
   // uses zone-a's per-compartment cache.
   local memcachedZone(zone) = if zone == 'c' && !isZoneCEnabled then 'a' else zone,
 
-  // Resolved caching config for a store-gateway zone: the zonal per-compartment cache when routed
-  // multi-zone, otherwise the single non-zonal one. Bundles both index-cache and chunks-cache addresses.
+  // Zonal per-compartment caching config for a store-gateway zone. Bundles both index-cache and
+  // chunks-cache addresses.
   local blocksChunksCompartmentZoneCachingConfig(zone, compartmentIdx) =
     (if !cacheIndexQueriesEnabled || !isEnabled then {} else {
        'blocks-storage.bucket-store.index-cache.memcached.addresses':
-         if $._config.multi_zone_memcached_routing_enabled
-         then 'dnssrvnoa+memcached-index-queries-zone-%(zone)s-rc-%(idx)d.%(namespace)s.svc.%(cluster_domain)s:11211' % ($._config { zone: memcachedZone(zone), idx: compartmentIdx })
-         else 'dnssrvnoa+memcached-index-queries-rc-%(idx)d.%(namespace)s.svc.%(cluster_domain)s:11211' % ($._config { idx: compartmentIdx }),
+         'dnssrvnoa+memcached-index-queries-zone-%(zone)s-rc-%(idx)d.%(namespace)s.svc.%(cluster_domain)s:11211' % ($._config { zone: memcachedZone(zone), idx: compartmentIdx }),
      }) +
     (if !cacheChunksEnabled || !isEnabled then {} else {
        'blocks-storage.bucket-store.chunks-cache.memcached.addresses':
-         if $._config.multi_zone_memcached_routing_enabled
-         then 'dnssrvnoa+memcached-zone-%(zone)s-rc-%(idx)d.%(namespace)s.svc.%(cluster_domain)s:11211' % ($._config { zone: memcachedZone(zone), idx: compartmentIdx })
-         else 'dnssrvnoa+memcached-rc-%(idx)d.%(namespace)s.svc.%(cluster_domain)s:11211' % ($._config { idx: compartmentIdx }),
+         'dnssrvnoa+memcached-zone-%(zone)s-rc-%(idx)d.%(namespace)s.svc.%(cluster_domain)s:11211' % ($._config { zone: memcachedZone(zone), idx: compartmentIdx }),
      }),
 
   blocks_chunks_zone_a_caching_configs+:: $.mimirCompartmentsOverrides(super.blocks_chunks_zone_a_caching_configs, function(c) blocksChunksCompartmentZoneCachingConfig('a', c)),
