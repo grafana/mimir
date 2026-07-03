@@ -62,7 +62,7 @@ func (i *Ingester) applyTSDBSettings() {
 				TSDBConfig: &promcfg.TSDBConfig{
 					OutOfOrderTimeWindow: oooTW.Milliseconds(),
 					ChunkEncoding: promcfg.ChunkEncodingConfig{
-						Floats: floatChunkEncodingConfigFromString(i.limits.FloatChunkEncoding(userID)),
+						Floats: floatChunkEncodingConfig(i.limits.FloatChunkEncoding(userID)),
 					},
 				},
 			},
@@ -77,17 +77,10 @@ func (i *Ingester) applyTSDBSettings() {
 	}
 }
 
-func floatChunkEncodingFromString(s string) chunkenc.Encoding {
-	if s == promcfg.FloatChunkEncodingXOR2 {
-		return chunkenc.EncXOR2
-	}
-	return chunkenc.EncXOR
-}
-
-// floatChunkEncodingConfigFromString normalizes a per-tenant encoding limit into a
-// value accepted by chunk_encoding.floats, defaulting to XOR for unknown values.
-func floatChunkEncodingConfigFromString(s string) string {
-	if s == promcfg.FloatChunkEncodingXOR2 {
+// floatChunkEncodingConfig normalizes a per-tenant encoding into a value accepted
+// by chunk_encoding.floats, defaulting to XOR for unknown values.
+func floatChunkEncodingConfig(enc chunkenc.Encoding) string {
+	if enc == chunkenc.EncXOR2 {
 		return promcfg.FloatChunkEncodingXOR2
 	}
 	return promcfg.FloatChunkEncodingXOR
@@ -229,11 +222,11 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		EnableBiggerOOOBlockForOldSamples:    i.cfg.BlocksStorageConfig.TSDB.BiggerOutOfOrderBlocksForOldSamples,
 		IsolationDisabled:                    true,
 		HeadChunksWriteQueueSize:             i.cfg.BlocksStorageConfig.TSDB.HeadChunksWriteQueueSize,
-		EnableOverlappingCompaction:          false,                                                             // always false since Mimir only uploads lvl 1 compacted blocks
-		EnableSharding:                       true,                                                              // Always enable query sharding support.
-		OutOfOrderTimeWindow:                 oooTW.Milliseconds(),                                              // The unit must be same as our timestamps.
-		FloatChunkEncoding:                   floatChunkEncodingFromString(i.limits.FloatChunkEncoding(userID)), // Seeds the encoding at open; updated per tenant via applyTSDBSettings.
-		XOR2EncodingAllowed:                  true,                                                              // Allow applyTSDBSettings to switch tenants to xor2 at runtime.
+		EnableOverlappingCompaction:          false,                               // always false since Mimir only uploads lvl 1 compacted blocks
+		EnableSharding:                       true,                                // Always enable query sharding support.
+		OutOfOrderTimeWindow:                 oooTW.Milliseconds(),                // The unit must be same as our timestamps.
+		FloatChunkEncoding:                   i.limits.FloatChunkEncoding(userID), // Seeds the encoding at open; updated per tenant via applyTSDBSettings.
+		XOR2EncodingAllowed:                  true,                                // Allow applyTSDBSettings to switch tenants to xor2 at runtime.
 		OutOfOrderCapMax:                     int64(i.cfg.BlocksStorageConfig.TSDB.OutOfOrderCapacityMax),
 		TimelyCompaction:                     i.cfg.BlocksStorageConfig.TSDB.TimelyHeadCompaction,
 		SharedPostingsForMatchersCache:       i.cfg.BlocksStorageConfig.TSDB.SharedPostingsForMatchersCache,

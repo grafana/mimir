@@ -21,12 +21,10 @@ import (
 	dskittenant "github.com/grafana/dskit/tenant"
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/client_golang/prometheus"
-	promcfg "github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
-	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
@@ -306,17 +304,6 @@ func (b *TSDBBuilder) getOrCreateTSDB(tenant tsdbTenant) (*userTSDB, error) {
 	return db, nil
 }
 
-func floatChunkEncodingForUser(limits *validation.Overrides, userID string) chunkenc.Encoding {
-	return floatChunkEncodingFromString(limits.FloatChunkEncoding(userID))
-}
-
-func floatChunkEncodingFromString(s string) chunkenc.Encoding {
-	if s == promcfg.FloatChunkEncodingXOR2 {
-		return chunkenc.EncXOR2
-	}
-	return chunkenc.EncXOR
-}
-
 func (b *TSDBBuilder) newTSDB(tenant tsdbTenant) (*userTSDB, error) {
 	tsdbPromReg := prometheus.NewRegistry()
 
@@ -365,7 +352,7 @@ func (b *TSDBBuilder) newTSDB(tenant tsdbTenant) (*userTSDB, error) {
 		IsolationDisabled:                    true,
 		EnableOverlappingCompaction:          false,                                                // Always false since Mimir only uploads lvl 1 compacted blocks
 		OutOfOrderTimeWindow:                 b.limits.OutOfOrderTimeWindow(userID).Milliseconds(), // The unit must be same as our timestamps.
-		FloatChunkEncoding:                   floatChunkEncodingForUser(b.limits, userID),          // Evaluated once at creation; no dynamic reload unlike the ingester.
+		FloatChunkEncoding:                   b.limits.FloatChunkEncoding(userID),                  // Evaluated once at creation; no dynamic reload unlike the ingester.
 		XOR2EncodingAllowed:                  true,                                                 // Allow xor2 to be selected as the per-tenant float chunk encoding.
 		OutOfOrderCapMax:                     int64(b.cfg.BlocksStorage.TSDB.OutOfOrderCapacityMax),
 		EnableBiggerOOOBlockForOldSamples:    b.cfg.BlocksStorage.TSDB.BiggerOutOfOrderBlocksForOldSamples,

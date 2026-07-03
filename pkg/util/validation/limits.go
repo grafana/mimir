@@ -24,6 +24,7 @@ import (
 	"github.com/prometheus/otlptranslator"
 	promcfg "github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/relabel"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"go.uber.org/atomic"
 	"go.yaml.in/yaml/v3"
 	"golang.org/x/crypto/blake2b"
@@ -1396,9 +1397,12 @@ func (o *Overrides) NativeHistogramsIngestionEnabled(userID string) bool {
 	return o.getOverridesForUser(userID).NativeHistogramsIngestionEnabled
 }
 
-// FloatChunkEncoding returns the float chunk encoding for this tenant. Valid values are "xor" and "xor2".
-func (o *Overrides) FloatChunkEncoding(userID string) string {
-	return o.getOverridesForUser(userID).FloatChunkEncoding
+// FloatChunkEncoding returns the float chunk encoding for this tenant, defaulting to XOR for unknown values.
+func (o *Overrides) FloatChunkEncoding(userID string) chunkenc.Encoding {
+	if o.getOverridesForUser(userID).FloatChunkEncoding == promcfg.FloatChunkEncodingXOR2 {
+		return chunkenc.EncXOR2
+	}
+	return chunkenc.EncXOR
 }
 
 func (o *Overrides) MaxExemplarsPerSeriesPerRequest(userID string) int {
