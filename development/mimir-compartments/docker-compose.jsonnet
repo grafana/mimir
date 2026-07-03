@@ -8,10 +8,8 @@ std.manifestYamlDoc({
     self.querier +
     self.store_gateways +
     self.compactors +
-    // The block-builder is not compartment-aware yet (it would build only read compartment 0's blocks), so
-    // it is disabled and ingesters ship their own blocks per compartment instead.
-    // self.block_builder +
-    // self.block_builder_scheduler +
+    self.block_builder +
+    self.block_builder_scheduler +
     self.rulers(1) +
     self.alertmanagers(1) +
     self.usage_trackers +
@@ -80,9 +78,8 @@ std.manifestYamlDoc({
         // redirections by the "sh -c" command.
         "-ingest-storage.kafka.address='kafka-wc-<write-compartment-id>:9092'",
         "-ingest-storage.kafka.topic='mimir-ingest-rc-<read-compartment-id>'",
-        // The block-builder is disabled, so each ingester ships its own blocks to its read compartment's
-        // dedicated bucket (mimir-blocks-rc-<id>), where the compartment's store-gateways serve them.
-        '-blocks-storage.s3.bucket-name=mimir-blocks-rc-%d' % compartment,
+        // Each read compartment's block-builder ships that compartment's blocks (ingester shipping is
+        // disabled in mimir.yaml), so ingesters don't need a per-compartment blocks bucket here.
       ],
       extraVolumes: ['.data-ingester-%s-rc-%d-%d:/data:delegated' % [zones[zoneIdx], compartment, partition]],
     })
@@ -190,25 +187,34 @@ std.manifestYamlDoc({
     for id in std.range(1, count)
   },
 
-  // The block-builder isn't compartment-aware yet: it consumes read compartment 0's topic and uploads
-  // to that compartment's dedicated bucket, so read compartment 0 is a full end-to-end slice whose
-  // blocks are compacted and served by its own compactor and store-gateways. The other compartments'
-  // compactors and store-gateways run against (empty) buckets until the block-builder is compartmentalised.
   block_builder:: {
-    'block-builder-0': mimirService({
-      name: 'block-builder-0',
+    ['block-builder-rc-%d' % compartment]: mimirService({
+      name: 'block-builder-rc-%d' % compartment,
       target: 'block-builder',
-      publishedHttpPort: 8009,
-      extraArguments: ['-blocks-storage.s3.bucket-name=mimir-blocks-rc-0'],
-    }),
+      publishedHttpPort: 8070 + compartment,
+      jaegerApp: 'block-builder-rc-%d' % compartment,
+      extraArguments: [
+        "-ingest-storage.kafka.address='kafka-wc-<write-compartment-id>:9092'",
+        '-ingest-storage.kafka.topic=mimir-ingest-rc-%d' % compartment,
+        '-blocks-storage.s3.bucket-name=mimir-blocks-rc-%d' % compartment,
+        '-block-builder.scheduler.address=block-builder-scheduler-rc-%d:9095' % compartment,
+      ],
+    })
+    for compartment in std.range(0, numCompartments - 1)
   },
 
   block_builder_scheduler:: {
-    'block-builder-scheduler-0': mimirService({
-      name: 'block-builder-scheduler-0',
+    ['block-builder-scheduler-rc-%d' % compartment]: mimirService({
+      name: 'block-builder-scheduler-rc-%d' % compartment,
       target: 'block-builder-scheduler',
-      publishedHttpPort: 8010,
-    }),
+      publishedHttpPort: 8075 + compartment,
+      jaegerApp: 'block-builder-scheduler-rc-%d' % compartment,
+      extraArguments: [
+        "-ingest-storage.kafka.address='kafka-wc-<write-compartment-id>:9092'",
+        '-ingest-storage.kafka.topic=mimir-ingest-rc-%d' % compartment,
+      ],
+    })
+    for compartment in std.range(0, numCompartments - 1)
   },
 
   usage_trackers:: {
@@ -336,7 +342,7 @@ std.manifestYamlDoc({
         test: 'kafka-broker-api-versions --bootstrap-server localhost:9092 || exit 1',
         start_period: '1s',
         interval: '1s',
-        timeout: '1s',
+        timeout: '2s',
         retries: '30',
       },
     }
