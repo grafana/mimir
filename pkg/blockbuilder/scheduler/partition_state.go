@@ -136,6 +136,20 @@ func (s *partitionState) updateTime(ts time.Time, jobSize time.Duration) (*sched
 // than one already replayed folds into the current bucket rather than reopening an earlier
 // one.
 func (s *partitionState) replayOffsetsAtStartup(perCluster [][]*offsetTime, jobSize time.Duration, logger log.Logger) {
+	// Special casing for the single cluster path. We don't need to worry about aligning the offsets by time between
+	// clusters for better job alignment, so we can replay the offsets and their recorded time.
+	if len(perCluster) == 1 {
+		for _, offset := range perCluster[0] {
+			s.updateEndOffset(0, offset.offset)
+			if job, err := s.updateTime(offset.time, jobSize); err != nil {
+				level.Warn(logger).Log("msg", "failed to update partition time", "partition", s.partition, "err", err)
+			} else if job != nil {
+				s.addPendingJob(job)
+			}
+		}
+		return
+	}
+
 	// Start the boundary walk at the earliest offset's timestamp across clusters.
 	var firstTime time.Time
 	for _, offsets := range perCluster {

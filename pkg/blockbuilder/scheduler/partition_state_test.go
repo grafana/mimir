@@ -735,6 +735,34 @@ func TestReplayOffsetsAtStartup(t *testing.T) {
 			expectedJobBucket: at(13, 0),
 			expectedOpen:      []openBucket{{300, 300}},
 		},
+		"does not emit jobs for buckets that are empty across all clusters": {
+			// Both clusters have data in the 10:00 and 13:00 windows but none in 11:00 or 12:00.
+			// The empty windows cut zero-width ranges for both clusters (no jobs). The 14:00 offsets
+			// end the 13:00 window and open the current 14:00 bucket, which is left open.
+			numClusters: 2,
+			perCluster: [][]*offsetTime{
+				{
+					{offset: 100, time: at(10, 7)},
+					{offset: 150, time: at(10, 40)},
+					{offset: 200, time: at(13, 7)},
+					{offset: 250, time: at(13, 40)},
+					{offset: 300, time: at(14, 0)},
+				},
+				{
+					{offset: 1000, time: at(10, 7)},
+					{offset: 1150, time: at(10, 40)},
+					{offset: 1200, time: at(13, 7)},
+					{offset: 1250, time: at(13, 40)},
+					{offset: 1300, time: at(14, 0)},
+				},
+			},
+			expectedJobs: []map[int32]schedulerpb.OffsetRange{
+				{0: {StartOffset: 100, EndOffset: 200}, 1: {StartOffset: 1000, EndOffset: 1200}},
+				{0: {StartOffset: 200, EndOffset: 300}, 1: {StartOffset: 1200, EndOffset: 1300}},
+			},
+			expectedJobBucket: at(14, 0),
+			expectedOpen:      []openBucket{{300, 300}, {1300, 1300}},
+		},
 		"carries the end across several empty buckets to the current one": {
 			// Each cluster's only offset after the 10:00 window is far ahead at 13:00, so it's the
 			// exclusive end of the 10:00 window and of the empty 11:00 and 12:00 windows. One
