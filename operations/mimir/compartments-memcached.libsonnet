@@ -10,6 +10,10 @@
     memcached_index_queries_replicas_per_compartment: $._config.memcached_index_queries_replicas,
   },
 
+  // Per-compartment memcached must be deployed zonal (multi-AZ), matching the per-compartment store-gateways
+  // and ingesters that also require multi-AZ. Single-zone may additionally be enabled during migrations.
+  assert !$._config.compartments_memcached_enabled || $._config.multi_zone_memcached_enabled
+         : 'compartments_memcached_enabled requires multi_zone_memcached_enabled',
   assert !$._config.compartments_memcached_enabled || !$._config.multi_zone_memcached_routing_enabled || $._config.multi_zone_memcached_enabled
          : 'compartments memcached: multi_zone_memcached_routing_enabled requires multi_zone_memcached_enabled',
   assert !$._config.compartments_memcached_enabled || $._config.multi_zone_memcached_routing_enabled || $._config.single_zone_memcached_enabled

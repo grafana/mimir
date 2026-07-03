@@ -8,6 +8,11 @@
          : 'compartments_store_gateway_enabled requires compartments_compactor_enabled (per-compartment blocks buckets)',
   assert !$._config.compartments_store_gateway_enabled || $._config.multi_zone_store_gateway_enabled
          : 'compartments_store_gateway_enabled requires multi_zone_store_gateway_enabled',
+  // Per-compartment store-gateways must run multi-AZ so they route to the zonal per-compartment memcached
+  // (their zonal cache args are only set when multi-AZ). Otherwise they'd fall back to the single-AZ caches,
+  // which aren't deployed under multi-zone memcached.
+  assert !$._config.compartments_store_gateway_enabled || $._config.multi_zone_store_gateway_multi_az_enabled
+         : 'compartments_store_gateway_enabled requires multi_zone_store_gateway_multi_az_enabled',
 
   local statefulSet = $.apps.v1.statefulSet,
   local podDisruptionBudget = $.policy.v1.podDisruptionBudget,
