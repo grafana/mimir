@@ -349,7 +349,7 @@ require (
 	helm.sh/helm/v3 v3.20.2 // indirect
 	mvdan.cc/xurls/v2 v2.6.0 // indirect
 	olympos.io/encoding/edn v0.0.0-20201019073823-d3554ca0b0a3 // indirect
-	oras.land/oras-go/v2 v2.6.0 // indirect
+	oras.land/oras-go/v2 v2.6.1 // indirect
 	pluginrpc.com/pluginrpc v0.5.0 // indirect
 	sigs.k8s.io/yaml v1.6.0 // indirect
 )
