@@ -554,19 +554,17 @@ jobs:
         run: git config --global --add safe.directory '*'
       - name: Build
         run: make BUILD_IN_CONTAINER=false dist GOOS=${{ matrix.os }} GOARCH=${{ matrix.arch }}
-      # Only release tags need the binaries.
+      # Upload Linux binaries for build-packages always. The rest, for releases only.
       - name: Upload dist artifacts
-        if: startsWith(github.ref, 'refs/tags/mimir-')
+        if: matrix.os == 'linux' || startsWith(github.ref, 'refs/tags/mimir-')
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7
         with:
           name: dist-${{ matrix.os }}-${{ matrix.arch }}
           path: dist/
           retention-days: 1
 
-  # Build the DEB/RPM packages that get attached to the GitHub release. This only
-  # runs for release tags, reusing the linux binaries produced by build-dist.
+  # Build the DEB/RPM packages that get attached to the GitHub release.
   build-packages:
-    if: startsWith(github.ref, 'refs/tags/mimir-')
     # Runs on ubuntu-latest (not inside the build container) because nfpm.sh needs
     # Docker to run the jsonnet, envsubst, and nfpm helper containers.
     runs-on: ubuntu-latest
@@ -585,7 +583,9 @@ jobs:
           merge-multiple: true
       - name: Build DEB/RPM packages
         run: make packages
+      # Only the release job consumes these, so they're only uploaded for release tags.
       - name: Upload packages artifacts
+        if: startsWith(github.ref, 'refs/tags/mimir-')
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7
         with:
           name: packages
@@ -609,6 +609,7 @@ jobs:
       - build-mimirtool-image
       - build-copyblocks-image
       - build-dist
+      - build-packages
     steps:
       - run: echo "All dependencies succeeded!"
 
@@ -824,7 +825,6 @@ jobs:
         run: |
           gh release edit "$(jq -r .tag <<< "$RELEASE")" \
             --draft=false \
-            --prerelease="$(jq -r .prerelease <<< "$RELEASE")" \
             --latest="$(jq -r .latest <<< "$RELEASE")"
 
   send-slack-notification-on-automated-vendoring:

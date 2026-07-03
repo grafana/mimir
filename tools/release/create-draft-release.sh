@@ -89,14 +89,15 @@ else
   # Create the release as a draft, so the artifacts can be attached before the caller publishes
   # it (and it becomes immutable). If a draft already exists (e.g. this is a re-run after a
   # transient failure), update it instead so that re-runs are idempotent.
-  echo "Creating the draft release ${LAST_RELEASE_TAG}..." > /dev/stderr
   if gh release view "${LAST_RELEASE_TAG}" > /dev/null 2>&1; then
+    echo "Updating existing release ${LAST_RELEASE_TAG}..." > /dev/stderr
     gh release edit "${LAST_RELEASE_TAG}" \
       --draft \
       --prerelease="${PRERELEASE}" \
       --title "${RELEASE_TITLE}" \
       --notes-file "${RELEASE_NOTES_FILE}" > /dev/stderr
   else
+    echo "Creating the draft release ${LAST_RELEASE_TAG}..." > /dev/stderr
     gh release create "${LAST_RELEASE_TAG}" \
       --draft \
       --prerelease="${PRERELEASE}" \
