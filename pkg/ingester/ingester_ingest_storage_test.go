@@ -1175,6 +1175,8 @@ func createTestIngesterWithIngestStorage(
 	ingester, err := New(*ingesterCfg, overrides, ingestersRing, prw, nil, nil, reg, logger)
 	require.NoError(t, err)
 
+	stopWatchedSubservicesOnCleanup(t, ingester)
+
 	return ingester, kafkaCluster, prw
 }
 
