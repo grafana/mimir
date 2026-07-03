@@ -11,6 +11,7 @@ import (
 
 	"github.com/grafana/dskit/httpgrpc"
 	"go.opentelemetry.io/otel/trace"
+	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/queue"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
@@ -38,6 +39,8 @@ type SchedulerRequest struct {
 	AdditionalQueueDimensions []string
 
 	EnqueueTime time.Time
+	// Dispatched is set once the request has sent to a querier for execution.
+	Dispatched atomic.Bool
 
 	Ctx        context.Context
 	CancelFunc context.CancelCauseFunc
