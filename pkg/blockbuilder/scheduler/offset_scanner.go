@@ -23,7 +23,8 @@ type offsetTime struct {
 // offsetScanner computes an initial set of <offset, time> pairs for each
 // partition, used to seed the scheduler at startup.
 type offsetScanner struct {
-	store   offsetStore
+	// stores are indexed by clusterID.
+	stores  []offsetStore
 	endTime time.Time
 	// probeTimes are the timestamps to query Kafka offsets at, in descending
 	// order so the scan stops once it reaches the partition's resume offset.
@@ -31,20 +32,41 @@ type offsetScanner struct {
 	recordTimeDelta prometheus.Observer
 }
 
-func newOffsetScanner(offs offsetStore, endTime time.Time, jobSize, maxScanAge time.Duration, recordTimeDelta prometheus.Observer) *offsetScanner {
+func newOffsetScanner(stores []offsetStore, endTime time.Time, jobSize, maxScanAge time.Duration, recordTimeDelta prometheus.Observer) *offsetScanner {
 	minScanTime := endTime.Add(-maxScanAge)
 	return &offsetScanner{
-		store:           offs,
+		stores:          stores,
 		endTime:         endTime,
 		probeTimes:      scanProbeTimes(endTime, jobSize, minScanTime),
 		recordTimeDelta: recordTimeDelta,
 	}
 }
 
-// probeInitialOffsets computes an initial set of <offset, time> pairs that exist between this
-// partition's resume and end offsets. These pairs can be used to seed a bunch of
-// end offset observations to start the scheduler.
-func (s *offsetScanner) probeInitialOffsets(ctx context.Context, po partitionOffsets, logger log.Logger) ([]*offsetTime, error) {
+// probeInitialPartitionOffsets probes every cluster of a partition and returns their offsets,
+// indexed by clusterID. These offsets can be used to seed the scheduler's per-cluster end
+// offset tracking at startup. clusterOffsets is indexed by clusterID; a nil entry means the
+// partition has no offsets on that cluster and is skipped, leaving a nil slot in the result.
+func (s *offsetScanner) probeInitialPartitionOffsets(ctx context.Context, clusterOffsets []*partitionOffsets, logger log.Logger) ([][]*offsetTime, error) {
+	perCluster := make([][]*offsetTime, len(clusterOffsets))
+	for clusterID, po := range clusterOffsets {
+		if po == nil {
+			continue
+		}
+		offsets, err := s.probeSingleClusterOffsets(ctx, clusterID, *po, logger)
+		if err != nil {
+			return nil, err
+		}
+		perCluster[clusterID] = offsets
+	}
+	return perCluster, nil
+}
+
+// probeSingleClusterOffsets computes an initial set of offsets that exist between this
+// partition's resume and end offsets on a single cluster. These offsets can be used to
+// seed the scheduler's per-cluster end offset tracking at startup.
+func (s *offsetScanner) probeSingleClusterOffsets(ctx context.Context, clusterID int, po partitionOffsets, logger log.Logger) ([]*offsetTime, error) {
+	store := s.stores[clusterID]
+
 	if po.resume >= po.end || po.start >= po.end {
 		// No new data to consume. Return the single end offset so it is initially registered.
 		return []*offsetTime{{offset: po.end, time: s.endTime}}, nil
@@ -58,7 +80,7 @@ func (s *offsetScanner) probeInitialOffsets(ctx context.Context, po partitionOff
 	// given a timestamp, so we iteratively call that API for each probe time
 	// until we reach the resume offset.
 	for _, pb := range s.probeTimes {
-		offset, t, isEndOffset, err := s.store.offsetAfterTime(ctx, po.topic, po.partition, pb)
+		offset, t, isEndOffset, err := store.offsetAfterTime(ctx, po.topic, po.partition, pb)
 		if err != nil {
 			return nil, err
 		}

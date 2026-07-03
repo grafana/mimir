@@ -188,7 +188,7 @@ func (s *BlockBuilderScheduler) completeObservationMode(ctx context.Context) {
 		return
 	}
 
-	scanner := newOffsetScanner(newOffsetFinder(s.adminClient), time.Now(), s.cfg.JobSize, s.cfg.MaxScanAge, s.metrics.probeRecordTimeDelta)
+	scanner := newOffsetScanner([]offsetStore{newOffsetFinder(s.adminClient)}, time.Now(), s.cfg.JobSize, s.cfg.MaxScanAge, s.metrics.probeRecordTimeDelta)
 	s.populateInitialJobs(ctx, consumeOffs, scanner)
 	s.observations = nil
 	s.observationComplete = true
@@ -317,27 +317,18 @@ func (s *BlockBuilderScheduler) populateInitialJobs(ctx context.Context, consume
 	// those two offsets and seeding the schedule by calling updateEndOffset and
 	// updateTime for each of them- just like we do during normal operation.
 
-	for _, off := range consumeOffs {
-		o, err := scanner.probeInitialOffsets(ctx, off, s.logger)
+	// A partition currently maps to a single cluster, so each entry is reconstructed as
+	// a one-cluster partition (its offsets sit at clusterID 0). Once consumptionOffsets
+	// returns per-cluster offsets, they can be grouped by partition and passed together.
+	for i := range consumeOffs {
+		off := &consumeOffs[i]
+		ps := s.getPartitionState(off.topic, off.partition)
+		perCluster, err := scanner.probeInitialPartitionOffsets(ctx, []*partitionOffsets{off}, s.logger)
 		if err != nil {
 			level.Warn(s.logger).Log("msg", "failed to probe initial offsets", "partition", off.partition, "err", err)
 			continue
 		}
-		if len(o) == 0 {
-			// No new data to consume, so skip.
-			continue
-		}
-
-		ps := s.getPartitionState(off.topic, off.partition)
-
-		for _, io := range o {
-			ps.updateEndOffset(0, io.offset)
-			if job, err := ps.updateTime(io.time, s.cfg.JobSize); err != nil {
-				level.Warn(s.logger).Log("msg", "failed to update partition time", "partition", ps.partition, "err", err)
-			} else if job != nil {
-				ps.addPendingJob(job)
-			}
-		}
+		ps.replayOffsetsAtStartup(perCluster, s.cfg.JobSize, s.logger)
 	}
 }
 
