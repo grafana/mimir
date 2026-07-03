@@ -90,7 +90,7 @@ func (s *partitionState) updateTime(ts time.Time, jobSize time.Duration) (*sched
 	case bucketBefore:
 		// New bucket is before our current one. This should only happen if our
 		// Kafka's end offsets aren't monotonically increasing.
-		return nil, fmt.Errorf("time went backwards: %s < %s (offsets: %s)", newJobBucket, s.jobBucket, s.offsetsSummary(false))
+		return nil, fmt.Errorf("time went backwards: %s < %s (offsets: %s)", newJobBucket, s.jobBucket, s.offsetsSummary(false, false))
 
 	case bucketSame:
 		// Observation is in the currently tracked bucket. No action needed.
@@ -202,7 +202,7 @@ func (s *partitionState) replayOffsetsAtStartup(perCluster [][]*offsetTime, jobS
 }
 
 // offsetsSummary returns a per-cluster offset summary for debugging.
-func (s *partitionState) offsetsSummary(includePlanned bool) string {
+func (s *partitionState) offsetsSummary(includeCommitted, includePlanned bool) string {
 	var b strings.Builder
 	for clusterID := range s.offsets {
 		if clusterID > 0 {
@@ -212,6 +212,9 @@ func (s *partitionState) offsetsSummary(includePlanned bool) string {
 			fmt.Fprintf(&b, "%d:", clusterID)
 		}
 		fmt.Fprintf(&b, "[%d,%d)", s.offsets[clusterID].startOffset, s.offsets[clusterID].endOffset)
+		if includeCommitted {
+			fmt.Fprintf(&b, " committed=%d", s.offsets[clusterID].committed.offset())
+		}
 		if includePlanned {
 			fmt.Fprintf(&b, " planned=%d", s.offsets[clusterID].planned.offset())
 		}
@@ -234,7 +237,7 @@ func (s *partitionState) addPlannedJob(id string, spec schedulerpb.JobSpec) {
 		// This shouldn't happen. All callers of addPlannedJob must do so in
 		// increasing offset order (for all clusters).
 		if s.offsets[clusterID].planned.beyondOffsetRange(offsetRange) {
-			panic(fmt.Sprintf("planned job %q for partition %d is behind the current planned offset: job=%v current=%s", id, s.partition, spec.Ranges(), s.offsetsSummary(true)))
+			panic(fmt.Sprintf("planned job %q for partition %d is behind the current planned offset: job=%v current=%s", id, s.partition, spec.Ranges(), s.offsetsSummary(false, true)))
 		}
 	}
 

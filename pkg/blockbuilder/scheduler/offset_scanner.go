@@ -25,6 +25,7 @@ type offsetTime struct {
 type offsetScanner struct {
 	// stores are indexed by clusterID.
 	stores  []offsetStore
+	topic   string
 	endTime time.Time
 	// probeTimes are the timestamps to query Kafka offsets at, in descending
 	// order so the scan stops once it reaches the partition's resume offset.
@@ -32,10 +33,11 @@ type offsetScanner struct {
 	recordTimeDelta prometheus.Observer
 }
 
-func newOffsetScanner(stores []offsetStore, endTime time.Time, jobSize, maxScanAge time.Duration, recordTimeDelta prometheus.Observer) *offsetScanner {
+func newOffsetScanner(stores []offsetStore, topic string, endTime time.Time, jobSize, maxScanAge time.Duration, recordTimeDelta prometheus.Observer) *offsetScanner {
 	minScanTime := endTime.Add(-maxScanAge)
 	return &offsetScanner{
 		stores:          stores,
+		topic:           topic,
 		endTime:         endTime,
 		probeTimes:      scanProbeTimes(endTime, jobSize, minScanTime),
 		recordTimeDelta: recordTimeDelta,
@@ -80,12 +82,12 @@ func (s *offsetScanner) probeSingleClusterOffsets(ctx context.Context, clusterID
 	// given a timestamp, so we iteratively call that API for each probe time
 	// until we reach the resume offset.
 	for _, pb := range s.probeTimes {
-		offset, t, isEndOffset, err := store.offsetAfterTime(ctx, po.topic, po.partition, pb)
+		offset, t, isEndOffset, err := store.offsetAfterTime(ctx, s.topic, po.partition, pb)
 		if err != nil {
 			return nil, err
 		}
 		level.Debug(logger).Log("msg", "found next boundary offset", "ts", pb,
-			"topic", po.topic, "partition", po.partition, "offset", offset, "isEndOffset", isEndOffset)
+			"topic", s.topic, "partition", po.partition, "offset", offset, "isEndOffset", isEndOffset)
 
 		// Don't want to probe for offsets before the resume offset.
 		offset = max(offset, po.resume)

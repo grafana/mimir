@@ -5,6 +5,8 @@ package schedulerpb
 import (
 	"errors"
 	"fmt"
+	"slices"
+	"strings"
 )
 
 // Ranges returns the offset ranges to consume keyed by cluster ID. In non-compartment mode,
@@ -14,6 +16,28 @@ func (m JobSpec) Ranges() map[int32]OffsetRange {
 		return m.OffsetRanges
 	}
 	return map[int32]OffsetRange{0: {StartOffset: m.StartOffset, EndOffset: m.EndOffset}}
+}
+
+// RangesString returns a compact, log-friendly rendering of the offset ranges. In non-compartment
+// mode it is "[start,end)"; in compartment mode it is "clusterID:[start,end)" per cluster, sorted
+// by cluster ID (e.g. "0:[100,200) 1:[500,700)").
+func (m JobSpec) RangesString() string {
+	if len(m.OffsetRanges) == 0 {
+		return fmt.Sprintf("[%d,%d)", m.StartOffset, m.EndOffset)
+	}
+	clusters := make([]int32, 0, len(m.OffsetRanges))
+	for clusterID := range m.OffsetRanges {
+		clusters = append(clusters, clusterID)
+	}
+	slices.Sort(clusters)
+	var b strings.Builder
+	for i, clusterID := range clusters {
+		if i > 0 {
+			b.WriteByte(' ')
+		}
+		fmt.Fprintf(&b, "%d:[%d,%d)", clusterID, m.OffsetRanges[clusterID].StartOffset, m.OffsetRanges[clusterID].EndOffset)
+	}
+	return b.String()
 }
 
 func (m JobSpec) Validate(compartmentsEnabled bool, numCompartments int) error {

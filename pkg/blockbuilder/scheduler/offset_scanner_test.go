@@ -250,8 +250,8 @@ func TestProbeSingleClusterOffsets(t *testing.T) {
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
 			f := &mockOffsetFinder{offsets: tt.offsets, end: tt.end, distinctTimes: make(map[time.Time]struct{})}
-			scanner := newOffsetScanner([]offsetStore{f}, tt.endTime, tt.jobSize, tt.endTime.Sub(tt.minScanTime), promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}))
-			j, err := scanner.probeSingleClusterOffsets(ctx, 0, partitionOffsets{topic: "topic", partition: 0, start: tt.start, resume: tt.resume, end: tt.end}, test.NewTestingLogger(t))
+			scanner := newOffsetScanner([]offsetStore{f}, "topic", tt.endTime, tt.jobSize, tt.endTime.Sub(tt.minScanTime), promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}))
+			j, err := scanner.probeSingleClusterOffsets(ctx, 0, partitionOffsets{partition: 0, start: tt.start, resume: tt.resume, end: tt.end}, test.NewTestingLogger(t))
 			assert.NoError(t, err)
 			assert.EqualValues(t, tt.expectedRanges, j, tt.msg)
 		})
@@ -263,12 +263,12 @@ func TestProbeInitialPartitionOffsets(t *testing.T) {
 	endTime := time.Date(2025, 3, 1, 13, 0, 0, 0, time.UTC)
 	at := func(h, m int) time.Time { return time.Date(2025, 3, 1, h, m, 0, 0, time.UTC) }
 	newScanner := func(stores []offsetStore) *offsetScanner {
-		return newOffsetScanner(stores, endTime, time.Hour, 13*time.Hour, promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}))
+		return newOffsetScanner(stores, "topic", endTime, time.Hour, 13*time.Hour, promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}))
 	}
 	clusterOffsets := []*partitionOffsets{
-		{topic: "topic", partition: 0, resume: 100, end: 250},
-		{topic: "topic", partition: 0, resume: 1000, end: 1150},
-		{topic: "topic", partition: 0, resume: 5000, end: 5150},
+		{partition: 0, resume: 100, end: 250},
+		{partition: 0, resume: 1000, end: 1150},
+		{partition: 0, resume: 5000, end: 5150},
 	}
 	// probed is what probeSingleClusterOffsets yields for a store holding a single record at
 	// 10:07: the record itself, then the end-offset seed stamped at endTime.
@@ -295,9 +295,9 @@ func TestProbeInitialPartitionOffsets(t *testing.T) {
 			&mockOffsetFinder{offsets: []*offsetTime{{offset: 5000, time: at(10, 7)}}, end: 5150, distinctTimes: make(map[time.Time]struct{})},
 		}
 		clusterOffsets := []*partitionOffsets{
-			{topic: "topic", partition: 0, resume: 100, end: 250},
+			{partition: 0, resume: 100, end: 250},
 			nil,
-			{topic: "topic", partition: 0, resume: 5000, end: 5150},
+			{partition: 0, resume: 5000, end: 5150},
 		}
 
 		perCluster, err := newScanner(stores).probeInitialPartitionOffsets(ctx, clusterOffsets, test.NewTestingLogger(t))
@@ -450,6 +450,9 @@ type mockOffsetFinder struct {
 func (o *mockOffsetFinder) offsetAfterTime(_ context.Context, _ string, _ int32, t time.Time) (int64, time.Time, bool, error) {
 	if o.err != nil {
 		return 0, time.Time{}, false, o.err
+	}
+	if o.distinctTimes == nil {
+		o.distinctTimes = make(map[time.Time]struct{})
 	}
 	o.distinctTimes[t] = struct{}{}
 	// scan the offsets slice and return the lowest offset whose time is after t.
