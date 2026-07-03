@@ -36,5 +36,10 @@
     autoscaling_store_gateway_min_replicas_per_compartment_zone: 1,
     autoscaling_store_gateway_max_replicas_per_compartment_zone: 3,
     enable_pvc_auto_deletion_for_store_gateways: true,
+
+    // Exercise the per-compartment memcached (chunks + index-queries) multi-AZ path, including the
+    // store-gateway per-compartment caching-config wiring and the 2-AZ zone-c->zone-a fallback.
+    multi_zone_memcached_enabled: true,
+    multi_zone_memcached_routing_enabled: true,
   },
 }

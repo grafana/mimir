@@ -124,53 +124,157 @@ apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
   labels:
-    name: memcached
-  name: memcached
+    name: memcached-frontend-zone-a
+  name: memcached-frontend-zone-a
   namespace: default
 spec:
   maxUnavailable: 1
   selector:
     matchLabels:
-      name: memcached
+      name: memcached-frontend-zone-a
 ---
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
   labels:
-    name: memcached-frontend
-  name: memcached-frontend
+    name: memcached-frontend-zone-b
+  name: memcached-frontend-zone-b
   namespace: default
 spec:
   maxUnavailable: 1
   selector:
     matchLabels:
-      name: memcached-frontend
+      name: memcached-frontend-zone-b
 ---
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
   labels:
-    name: memcached-index-queries
-  name: memcached-index-queries
+    name: memcached-index-queries-zone-a-rc-0
+  name: memcached-index-queries-zone-a-rc-0
   namespace: default
 spec:
   maxUnavailable: 1
   selector:
     matchLabels:
-      name: memcached-index-queries
+      name: memcached-index-queries-zone-a-rc-0
 ---
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
   labels:
-    name: memcached-metadata
-  name: memcached-metadata
+    name: memcached-index-queries-zone-a-rc-1
+  name: memcached-index-queries-zone-a-rc-1
   namespace: default
 spec:
   maxUnavailable: 1
   selector:
     matchLabels:
-      name: memcached-metadata
+      name: memcached-index-queries-zone-a-rc-1
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    name: memcached-index-queries-zone-b-rc-0
+  name: memcached-index-queries-zone-b-rc-0
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: memcached-index-queries-zone-b-rc-0
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    name: memcached-index-queries-zone-b-rc-1
+  name: memcached-index-queries-zone-b-rc-1
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: memcached-index-queries-zone-b-rc-1
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    name: memcached-metadata-zone-a
+  name: memcached-metadata-zone-a
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: memcached-metadata-zone-a
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    name: memcached-metadata-zone-b
+  name: memcached-metadata-zone-b
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: memcached-metadata-zone-b
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    name: memcached-zone-a-rc-0
+  name: memcached-zone-a-rc-0
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: memcached-zone-a-rc-0
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    name: memcached-zone-a-rc-1
+  name: memcached-zone-a-rc-1
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: memcached-zone-a-rc-1
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    name: memcached-zone-b-rc-0
+  name: memcached-zone-b-rc-0
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: memcached-zone-b-rc-0
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    name: memcached-zone-b-rc-1
+  name: memcached-zone-b-rc-1
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: memcached-zone-b-rc-1
 ---
 apiVersion: policy/v1
 kind: PodDisruptionBudget
@@ -742,8 +846,8 @@ apiVersion: v1
 kind: Service
 metadata:
   labels:
-    name: memcached
-  name: memcached
+    name: memcached-frontend-zone-a
+  name: memcached-frontend-zone-a
   namespace: default
 spec:
   clusterIP: None
@@ -755,14 +859,14 @@ spec:
     port: 9150
     targetPort: 9150
   selector:
-    name: memcached
+    name: memcached-frontend-zone-a
 ---
 apiVersion: v1
 kind: Service
 metadata:
   labels:
-    name: memcached-frontend
-  name: memcached-frontend
+    name: memcached-frontend-zone-b
+  name: memcached-frontend-zone-b
   namespace: default
 spec:
   clusterIP: None
@@ -774,14 +878,14 @@ spec:
     port: 9150
     targetPort: 9150
   selector:
-    name: memcached-frontend
+    name: memcached-frontend-zone-b
 ---
 apiVersion: v1
 kind: Service
 metadata:
   labels:
-    name: memcached-index-queries
-  name: memcached-index-queries
+    name: memcached-index-queries-zone-a-rc-0
+  name: memcached-index-queries-zone-a-rc-0
   namespace: default
 spec:
   clusterIP: None
@@ -793,14 +897,14 @@ spec:
     port: 9150
     targetPort: 9150
   selector:
-    name: memcached-index-queries
+    name: memcached-index-queries-zone-a-rc-0
 ---
 apiVersion: v1
 kind: Service
 metadata:
   labels:
-    name: memcached-metadata
-  name: memcached-metadata
+    name: memcached-index-queries-zone-a-rc-1
+  name: memcached-index-queries-zone-a-rc-1
   namespace: default
 spec:
   clusterIP: None
@@ -812,7 +916,178 @@ spec:
     port: 9150
     targetPort: 9150
   selector:
-    name: memcached-metadata
+    name: memcached-index-queries-zone-a-rc-1
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    name: memcached-index-queries-zone-b-rc-0
+  name: memcached-index-queries-zone-b-rc-0
+  namespace: default
+spec:
+  clusterIP: None
+  ports:
+  - name: memcached-client
+    port: 11211
+    targetPort: 11211
+  - name: exporter-http-metrics
+    port: 9150
+    targetPort: 9150
+  selector:
+    name: memcached-index-queries-zone-b-rc-0
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    name: memcached-index-queries-zone-b-rc-1
+  name: memcached-index-queries-zone-b-rc-1
+  namespace: default
+spec:
+  clusterIP: None
+  ports:
+  - name: memcached-client
+    port: 11211
+    targetPort: 11211
+  - name: exporter-http-metrics
+    port: 9150
+    targetPort: 9150
+  selector:
+    name: memcached-index-queries-zone-b-rc-1
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    name: memcached-metadata-multi-zone
+  name: memcached-metadata-multi-zone
+  namespace: default
+spec:
+  clusterIP: None
+  ports:
+  - name: memcached-client
+    port: 11211
+    protocol: TCP
+    targetPort: 11211
+  selector:
+    cache-group: metadata
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    name: memcached-metadata-zone-a
+  name: memcached-metadata-zone-a
+  namespace: default
+spec:
+  clusterIP: None
+  ports:
+  - name: memcached-client
+    port: 11211
+    targetPort: 11211
+  - name: exporter-http-metrics
+    port: 9150
+    targetPort: 9150
+  selector:
+    cache-group: metadata
+    name: memcached-metadata-zone-a
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    name: memcached-metadata-zone-b
+  name: memcached-metadata-zone-b
+  namespace: default
+spec:
+  clusterIP: None
+  ports:
+  - name: memcached-client
+    port: 11211
+    targetPort: 11211
+  - name: exporter-http-metrics
+    port: 9150
+    targetPort: 9150
+  selector:
+    cache-group: metadata
+    name: memcached-metadata-zone-b
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    name: memcached-zone-a-rc-0
+  name: memcached-zone-a-rc-0
+  namespace: default
+spec:
+  clusterIP: None
+  ports:
+  - name: memcached-client
+    port: 11211
+    targetPort: 11211
+  - name: exporter-http-metrics
+    port: 9150
+    targetPort: 9150
+  selector:
+    name: memcached-zone-a-rc-0
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    name: memcached-zone-a-rc-1
+  name: memcached-zone-a-rc-1
+  namespace: default
+spec:
+  clusterIP: None
+  ports:
+  - name: memcached-client
+    port: 11211
+    targetPort: 11211
+  - name: exporter-http-metrics
+    port: 9150
+    targetPort: 9150
+  selector:
+    name: memcached-zone-a-rc-1
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    name: memcached-zone-b-rc-0
+  name: memcached-zone-b-rc-0
+  namespace: default
+spec:
+  clusterIP: None
+  ports:
+  - name: memcached-client
+    port: 11211
+    targetPort: 11211
+  - name: exporter-http-metrics
+    port: 9150
+    targetPort: 9150
+  selector:
+    name: memcached-zone-b-rc-0
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    name: memcached-zone-b-rc-1
+  name: memcached-zone-b-rc-1
+  namespace: default
+spec:
+  clusterIP: None
+  ports:
+  - name: memcached-client
+    port: 11211
+    targetPort: 11211
+  - name: exporter-http-metrics
+    port: 9150
+    targetPort: 9150
+  selector:
+    name: memcached-zone-b-rc-1
 ---
 apiVersion: v1
 kind: Service
@@ -2560,7 +2835,7 @@ spec:
         - -compactor.ring.wait-stability-min-duration=1m
         - -compactor.scheduler-client.enabled=true
         - -compactor.scheduler-client.metadata-cache.backend=memcached
-        - -compactor.scheduler-client.metadata-cache.memcached.addresses=dnssrvnoa+memcached-metadata.default.svc.cluster.local.:11211
+        - -compactor.scheduler-client.metadata-cache.memcached.addresses=dnssrvnoa+memcached-metadata-zone-a.default.svc.cluster.local.:11211
         - -compactor.scheduler-client.metadata-cache.memcached.max-async-concurrency=50
         - -compactor.scheduler-client.metadata-cache.memcached.max-item-size=1048576
         - -compactor.scheduler-client.scheduler-endpoint=dns:///compactor-scheduler-rc-0.default.svc.cluster.local.:9095
@@ -2682,7 +2957,7 @@ spec:
         - -compactor.ring.wait-stability-min-duration=1m
         - -compactor.scheduler-client.enabled=true
         - -compactor.scheduler-client.metadata-cache.backend=memcached
-        - -compactor.scheduler-client.metadata-cache.memcached.addresses=dnssrvnoa+memcached-metadata.default.svc.cluster.local.:11211
+        - -compactor.scheduler-client.metadata-cache.memcached.addresses=dnssrvnoa+memcached-metadata-zone-a.default.svc.cluster.local.:11211
         - -compactor.scheduler-client.metadata-cache.memcached.max-async-concurrency=50
         - -compactor.scheduler-client.metadata-cache.memcached.max-item-size=1048576
         - -compactor.scheduler-client.scheduler-endpoint=dns:///compactor-scheduler-rc-1.default.svc.cluster.local.:9095
@@ -3643,86 +3918,34 @@ spec:
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: memcached
+  name: memcached-frontend-zone-a
   namespace: default
 spec:
   minReadySeconds: 60
   replicas: 3
   selector:
     matchLabels:
-      name: memcached
-  serviceName: memcached
+      name: memcached-frontend-zone-a
+  serviceName: memcached-frontend-zone-a
   template:
     metadata:
       labels:
-        name: memcached
+        name: memcached-frontend-zone-a
     spec:
       affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: topology.kubernetes.io/zone
+                operator: In
+                values:
+                - us-east-2a
         podAntiAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
           - labelSelector:
               matchLabels:
-                name: memcached
-            topologyKey: kubernetes.io/hostname
-      containers:
-      - args:
-        - -m 6144
-        - -I 1m
-        - -c 16384
-        - -v
-        image: memcached:1.6.34-alpine
-        imagePullPolicy: IfNotPresent
-        name: memcached
-        ports:
-        - containerPort: 11211
-          name: client
-        resources:
-          limits:
-            memory: 9Gi
-          requests:
-            cpu: 500m
-            memory: 6552Mi
-      - args:
-        - --memcached.address=localhost:11211
-        - --web.listen-address=0.0.0.0:9150
-        image: prom/memcached-exporter:v0.15.3
-        imagePullPolicy: IfNotPresent
-        name: exporter
-        ports:
-        - containerPort: 9150
-          name: http-metrics
-        resources:
-          limits:
-            memory: 250Mi
-          requests:
-            cpu: "0.05"
-            memory: 50Mi
-  updateStrategy:
-    type: RollingUpdate
----
-apiVersion: apps/v1
-kind: StatefulSet
-metadata:
-  name: memcached-frontend
-  namespace: default
-spec:
-  minReadySeconds: 60
-  replicas: 3
-  selector:
-    matchLabels:
-      name: memcached-frontend
-  serviceName: memcached-frontend
-  template:
-    metadata:
-      labels:
-        name: memcached-frontend
-    spec:
-      affinity:
-        podAntiAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-          - labelSelector:
-              matchLabels:
-                name: memcached-frontend
+                name: memcached-frontend-zone-a
             topologyKey: kubernetes.io/hostname
       containers:
       - args:
@@ -3757,32 +3980,118 @@ spec:
           requests:
             cpu: "0.05"
             memory: 50Mi
+      tolerations:
+      - effect: NoSchedule
+        key: topology
+        operator: Equal
+        value: secondary-az
   updateStrategy:
     type: RollingUpdate
 ---
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: memcached-index-queries
+  name: memcached-frontend-zone-b
   namespace: default
 spec:
   minReadySeconds: 60
   replicas: 3
   selector:
     matchLabels:
-      name: memcached-index-queries
-  serviceName: memcached-index-queries
+      name: memcached-frontend-zone-b
+  serviceName: memcached-frontend-zone-b
   template:
     metadata:
       labels:
-        name: memcached-index-queries
+        name: memcached-frontend-zone-b
     spec:
       affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: topology.kubernetes.io/zone
+                operator: In
+                values:
+                - us-east-2b
         podAntiAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
           - labelSelector:
               matchLabels:
-                name: memcached-index-queries
+                name: memcached-frontend-zone-b
+            topologyKey: kubernetes.io/hostname
+      containers:
+      - args:
+        - -m 1024
+        - -I 25m
+        - -c 16384
+        - -v
+        image: memcached:1.6.34-alpine
+        imagePullPolicy: IfNotPresent
+        name: memcached
+        ports:
+        - containerPort: 11211
+          name: client
+        resources:
+          limits:
+            memory: 1536Mi
+          requests:
+            cpu: 500m
+            memory: 1176Mi
+      - args:
+        - --memcached.address=localhost:11211
+        - --web.listen-address=0.0.0.0:9150
+        image: prom/memcached-exporter:v0.15.3
+        imagePullPolicy: IfNotPresent
+        name: exporter
+        ports:
+        - containerPort: 9150
+          name: http-metrics
+        resources:
+          limits:
+            memory: 250Mi
+          requests:
+            cpu: "0.05"
+            memory: 50Mi
+      tolerations:
+      - effect: NoSchedule
+        key: topology
+        operator: Equal
+        value: secondary-az
+  updateStrategy:
+    type: RollingUpdate
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: memcached-index-queries-zone-a-rc-0
+  namespace: default
+spec:
+  minReadySeconds: 60
+  replicas: 3
+  selector:
+    matchLabels:
+      name: memcached-index-queries-zone-a-rc-0
+  serviceName: memcached-index-queries-zone-a-rc-0
+  template:
+    metadata:
+      labels:
+        name: memcached-index-queries-zone-a-rc-0
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: topology.kubernetes.io/zone
+                operator: In
+                values:
+                - us-east-2a
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                name: memcached-index-queries-zone-a-rc-0
             topologyKey: kubernetes.io/hostname
       containers:
       - args:
@@ -3817,32 +4126,265 @@ spec:
           requests:
             cpu: "0.05"
             memory: 50Mi
+      tolerations:
+      - effect: NoSchedule
+        key: topology
+        operator: Equal
+        value: secondary-az
   updateStrategy:
     type: RollingUpdate
 ---
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: memcached-metadata
+  name: memcached-index-queries-zone-a-rc-1
   namespace: default
 spec:
   minReadySeconds: 60
   replicas: 3
   selector:
     matchLabels:
-      name: memcached-metadata
-  serviceName: memcached-metadata
+      name: memcached-index-queries-zone-a-rc-1
+  serviceName: memcached-index-queries-zone-a-rc-1
   template:
     metadata:
       labels:
-        name: memcached-metadata
+        name: memcached-index-queries-zone-a-rc-1
     spec:
       affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: topology.kubernetes.io/zone
+                operator: In
+                values:
+                - us-east-2a
         podAntiAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
           - labelSelector:
               matchLabels:
-                name: memcached-metadata
+                name: memcached-index-queries-zone-a-rc-1
+            topologyKey: kubernetes.io/hostname
+      containers:
+      - args:
+        - -m 1024
+        - -I 5m
+        - -c 16384
+        - -v
+        image: memcached:1.6.34-alpine
+        imagePullPolicy: IfNotPresent
+        name: memcached
+        ports:
+        - containerPort: 11211
+          name: client
+        resources:
+          limits:
+            memory: 1536Mi
+          requests:
+            cpu: 500m
+            memory: 1176Mi
+      - args:
+        - --memcached.address=localhost:11211
+        - --web.listen-address=0.0.0.0:9150
+        image: prom/memcached-exporter:v0.15.3
+        imagePullPolicy: IfNotPresent
+        name: exporter
+        ports:
+        - containerPort: 9150
+          name: http-metrics
+        resources:
+          limits:
+            memory: 250Mi
+          requests:
+            cpu: "0.05"
+            memory: 50Mi
+      tolerations:
+      - effect: NoSchedule
+        key: topology
+        operator: Equal
+        value: secondary-az
+  updateStrategy:
+    type: RollingUpdate
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: memcached-index-queries-zone-b-rc-0
+  namespace: default
+spec:
+  minReadySeconds: 60
+  replicas: 3
+  selector:
+    matchLabels:
+      name: memcached-index-queries-zone-b-rc-0
+  serviceName: memcached-index-queries-zone-b-rc-0
+  template:
+    metadata:
+      labels:
+        name: memcached-index-queries-zone-b-rc-0
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: topology.kubernetes.io/zone
+                operator: In
+                values:
+                - us-east-2b
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                name: memcached-index-queries-zone-b-rc-0
+            topologyKey: kubernetes.io/hostname
+      containers:
+      - args:
+        - -m 1024
+        - -I 5m
+        - -c 16384
+        - -v
+        image: memcached:1.6.34-alpine
+        imagePullPolicy: IfNotPresent
+        name: memcached
+        ports:
+        - containerPort: 11211
+          name: client
+        resources:
+          limits:
+            memory: 1536Mi
+          requests:
+            cpu: 500m
+            memory: 1176Mi
+      - args:
+        - --memcached.address=localhost:11211
+        - --web.listen-address=0.0.0.0:9150
+        image: prom/memcached-exporter:v0.15.3
+        imagePullPolicy: IfNotPresent
+        name: exporter
+        ports:
+        - containerPort: 9150
+          name: http-metrics
+        resources:
+          limits:
+            memory: 250Mi
+          requests:
+            cpu: "0.05"
+            memory: 50Mi
+      tolerations:
+      - effect: NoSchedule
+        key: topology
+        operator: Equal
+        value: secondary-az
+  updateStrategy:
+    type: RollingUpdate
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: memcached-index-queries-zone-b-rc-1
+  namespace: default
+spec:
+  minReadySeconds: 60
+  replicas: 3
+  selector:
+    matchLabels:
+      name: memcached-index-queries-zone-b-rc-1
+  serviceName: memcached-index-queries-zone-b-rc-1
+  template:
+    metadata:
+      labels:
+        name: memcached-index-queries-zone-b-rc-1
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: topology.kubernetes.io/zone
+                operator: In
+                values:
+                - us-east-2b
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                name: memcached-index-queries-zone-b-rc-1
+            topologyKey: kubernetes.io/hostname
+      containers:
+      - args:
+        - -m 1024
+        - -I 5m
+        - -c 16384
+        - -v
+        image: memcached:1.6.34-alpine
+        imagePullPolicy: IfNotPresent
+        name: memcached
+        ports:
+        - containerPort: 11211
+          name: client
+        resources:
+          limits:
+            memory: 1536Mi
+          requests:
+            cpu: 500m
+            memory: 1176Mi
+      - args:
+        - --memcached.address=localhost:11211
+        - --web.listen-address=0.0.0.0:9150
+        image: prom/memcached-exporter:v0.15.3
+        imagePullPolicy: IfNotPresent
+        name: exporter
+        ports:
+        - containerPort: 9150
+          name: http-metrics
+        resources:
+          limits:
+            memory: 250Mi
+          requests:
+            cpu: "0.05"
+            memory: 50Mi
+      tolerations:
+      - effect: NoSchedule
+        key: topology
+        operator: Equal
+        value: secondary-az
+  updateStrategy:
+    type: RollingUpdate
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: memcached-metadata-zone-a
+  namespace: default
+spec:
+  minReadySeconds: 60
+  replicas: 3
+  selector:
+    matchLabels:
+      name: memcached-metadata-zone-a
+  serviceName: memcached-metadata-zone-a
+  template:
+    metadata:
+      labels:
+        cache-group: metadata
+        name: memcached-metadata-zone-a
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: topology.kubernetes.io/zone
+                operator: In
+                values:
+                - us-east-2a
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                name: memcached-metadata-zone-a
             topologyKey: kubernetes.io/hostname
       containers:
       - args:
@@ -3877,6 +4419,377 @@ spec:
           requests:
             cpu: "0.05"
             memory: 50Mi
+      tolerations:
+      - effect: NoSchedule
+        key: topology
+        operator: Equal
+        value: secondary-az
+  updateStrategy:
+    type: RollingUpdate
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: memcached-metadata-zone-b
+  namespace: default
+spec:
+  minReadySeconds: 60
+  replicas: 3
+  selector:
+    matchLabels:
+      name: memcached-metadata-zone-b
+  serviceName: memcached-metadata-zone-b
+  template:
+    metadata:
+      labels:
+        cache-group: metadata
+        name: memcached-metadata-zone-b
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: topology.kubernetes.io/zone
+                operator: In
+                values:
+                - us-east-2b
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                name: memcached-metadata-zone-b
+            topologyKey: kubernetes.io/hostname
+      containers:
+      - args:
+        - -m 512
+        - -I 1m
+        - -c 16384
+        - -v
+        image: memcached:1.6.34-alpine
+        imagePullPolicy: IfNotPresent
+        name: memcached
+        ports:
+        - containerPort: 11211
+          name: client
+        resources:
+          limits:
+            memory: 768Mi
+          requests:
+            cpu: 500m
+            memory: 638Mi
+      - args:
+        - --memcached.address=localhost:11211
+        - --web.listen-address=0.0.0.0:9150
+        image: prom/memcached-exporter:v0.15.3
+        imagePullPolicy: IfNotPresent
+        name: exporter
+        ports:
+        - containerPort: 9150
+          name: http-metrics
+        resources:
+          limits:
+            memory: 250Mi
+          requests:
+            cpu: "0.05"
+            memory: 50Mi
+      tolerations:
+      - effect: NoSchedule
+        key: topology
+        operator: Equal
+        value: secondary-az
+  updateStrategy:
+    type: RollingUpdate
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: memcached-zone-a-rc-0
+  namespace: default
+spec:
+  minReadySeconds: 60
+  replicas: 3
+  selector:
+    matchLabels:
+      name: memcached-zone-a-rc-0
+  serviceName: memcached-zone-a-rc-0
+  template:
+    metadata:
+      labels:
+        name: memcached-zone-a-rc-0
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: topology.kubernetes.io/zone
+                operator: In
+                values:
+                - us-east-2a
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                name: memcached-zone-a-rc-0
+            topologyKey: kubernetes.io/hostname
+      containers:
+      - args:
+        - -m 6144
+        - -I 1m
+        - -c 16384
+        - -v
+        image: memcached:1.6.34-alpine
+        imagePullPolicy: IfNotPresent
+        name: memcached
+        ports:
+        - containerPort: 11211
+          name: client
+        resources:
+          limits:
+            memory: 9Gi
+          requests:
+            cpu: 500m
+            memory: 6552Mi
+      - args:
+        - --memcached.address=localhost:11211
+        - --web.listen-address=0.0.0.0:9150
+        image: prom/memcached-exporter:v0.15.3
+        imagePullPolicy: IfNotPresent
+        name: exporter
+        ports:
+        - containerPort: 9150
+          name: http-metrics
+        resources:
+          limits:
+            memory: 250Mi
+          requests:
+            cpu: "0.05"
+            memory: 50Mi
+      tolerations:
+      - effect: NoSchedule
+        key: topology
+        operator: Equal
+        value: secondary-az
+  updateStrategy:
+    type: RollingUpdate
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: memcached-zone-a-rc-1
+  namespace: default
+spec:
+  minReadySeconds: 60
+  replicas: 3
+  selector:
+    matchLabels:
+      name: memcached-zone-a-rc-1
+  serviceName: memcached-zone-a-rc-1
+  template:
+    metadata:
+      labels:
+        name: memcached-zone-a-rc-1
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: topology.kubernetes.io/zone
+                operator: In
+                values:
+                - us-east-2a
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                name: memcached-zone-a-rc-1
+            topologyKey: kubernetes.io/hostname
+      containers:
+      - args:
+        - -m 6144
+        - -I 1m
+        - -c 16384
+        - -v
+        image: memcached:1.6.34-alpine
+        imagePullPolicy: IfNotPresent
+        name: memcached
+        ports:
+        - containerPort: 11211
+          name: client
+        resources:
+          limits:
+            memory: 9Gi
+          requests:
+            cpu: 500m
+            memory: 6552Mi
+      - args:
+        - --memcached.address=localhost:11211
+        - --web.listen-address=0.0.0.0:9150
+        image: prom/memcached-exporter:v0.15.3
+        imagePullPolicy: IfNotPresent
+        name: exporter
+        ports:
+        - containerPort: 9150
+          name: http-metrics
+        resources:
+          limits:
+            memory: 250Mi
+          requests:
+            cpu: "0.05"
+            memory: 50Mi
+      tolerations:
+      - effect: NoSchedule
+        key: topology
+        operator: Equal
+        value: secondary-az
+  updateStrategy:
+    type: RollingUpdate
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: memcached-zone-b-rc-0
+  namespace: default
+spec:
+  minReadySeconds: 60
+  replicas: 3
+  selector:
+    matchLabels:
+      name: memcached-zone-b-rc-0
+  serviceName: memcached-zone-b-rc-0
+  template:
+    metadata:
+      labels:
+        name: memcached-zone-b-rc-0
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: topology.kubernetes.io/zone
+                operator: In
+                values:
+                - us-east-2b
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                name: memcached-zone-b-rc-0
+            topologyKey: kubernetes.io/hostname
+      containers:
+      - args:
+        - -m 6144
+        - -I 1m
+        - -c 16384
+        - -v
+        image: memcached:1.6.34-alpine
+        imagePullPolicy: IfNotPresent
+        name: memcached
+        ports:
+        - containerPort: 11211
+          name: client
+        resources:
+          limits:
+            memory: 9Gi
+          requests:
+            cpu: 500m
+            memory: 6552Mi
+      - args:
+        - --memcached.address=localhost:11211
+        - --web.listen-address=0.0.0.0:9150
+        image: prom/memcached-exporter:v0.15.3
+        imagePullPolicy: IfNotPresent
+        name: exporter
+        ports:
+        - containerPort: 9150
+          name: http-metrics
+        resources:
+          limits:
+            memory: 250Mi
+          requests:
+            cpu: "0.05"
+            memory: 50Mi
+      tolerations:
+      - effect: NoSchedule
+        key: topology
+        operator: Equal
+        value: secondary-az
+  updateStrategy:
+    type: RollingUpdate
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: memcached-zone-b-rc-1
+  namespace: default
+spec:
+  minReadySeconds: 60
+  replicas: 3
+  selector:
+    matchLabels:
+      name: memcached-zone-b-rc-1
+  serviceName: memcached-zone-b-rc-1
+  template:
+    metadata:
+      labels:
+        name: memcached-zone-b-rc-1
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: topology.kubernetes.io/zone
+                operator: In
+                values:
+                - us-east-2b
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                name: memcached-zone-b-rc-1
+            topologyKey: kubernetes.io/hostname
+      containers:
+      - args:
+        - -m 6144
+        - -I 1m
+        - -c 16384
+        - -v
+        image: memcached:1.6.34-alpine
+        imagePullPolicy: IfNotPresent
+        name: memcached
+        ports:
+        - containerPort: 11211
+          name: client
+        resources:
+          limits:
+            memory: 9Gi
+          requests:
+            cpu: 500m
+            memory: 6552Mi
+      - args:
+        - --memcached.address=localhost:11211
+        - --web.listen-address=0.0.0.0:9150
+        image: prom/memcached-exporter:v0.15.3
+        imagePullPolicy: IfNotPresent
+        name: exporter
+        ports:
+        - containerPort: 9150
+          name: http-metrics
+        resources:
+          limits:
+            memory: 250Mi
+          requests:
+            cpu: "0.05"
+            memory: 50Mi
+      tolerations:
+      - effect: NoSchedule
+        key: topology
+        operator: Equal
+        value: secondary-az
   updateStrategy:
     type: RollingUpdate
 ---
@@ -3929,14 +4842,14 @@ spec:
       containers:
       - args:
         - -blocks-storage.bucket-store.chunks-cache.backend=memcached
-        - -blocks-storage.bucket-store.chunks-cache.memcached.addresses=dnssrvnoa+memcached.default.svc.cluster.local.:11211
+        - -blocks-storage.bucket-store.chunks-cache.memcached.addresses=dnssrvnoa+memcached-zone-a-rc-0.default.svc.cluster.local.:11211
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-async-concurrency=50
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-get-multi-concurrency=100
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-idle-connections=150
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-item-size=1048576
         - -blocks-storage.bucket-store.chunks-cache.memcached.timeout=750ms
         - -blocks-storage.bucket-store.index-cache.backend=memcached
-        - -blocks-storage.bucket-store.index-cache.memcached.addresses=dnssrvnoa+memcached-index-queries.default.svc.cluster.local.:11211
+        - -blocks-storage.bucket-store.index-cache.memcached.addresses=dnssrvnoa+memcached-index-queries-zone-a-rc-0.default.svc.cluster.local.:11211
         - -blocks-storage.bucket-store.index-cache.memcached.max-async-concurrency=50
         - -blocks-storage.bucket-store.index-cache.memcached.max-get-multi-concurrency=100
         - -blocks-storage.bucket-store.index-cache.memcached.max-idle-connections=150
@@ -4087,14 +5000,14 @@ spec:
       containers:
       - args:
         - -blocks-storage.bucket-store.chunks-cache.backend=memcached
-        - -blocks-storage.bucket-store.chunks-cache.memcached.addresses=dnssrvnoa+memcached.default.svc.cluster.local.:11211
+        - -blocks-storage.bucket-store.chunks-cache.memcached.addresses=dnssrvnoa+memcached-zone-a-rc-1.default.svc.cluster.local.:11211
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-async-concurrency=50
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-get-multi-concurrency=100
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-idle-connections=150
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-item-size=1048576
         - -blocks-storage.bucket-store.chunks-cache.memcached.timeout=750ms
         - -blocks-storage.bucket-store.index-cache.backend=memcached
-        - -blocks-storage.bucket-store.index-cache.memcached.addresses=dnssrvnoa+memcached-index-queries.default.svc.cluster.local.:11211
+        - -blocks-storage.bucket-store.index-cache.memcached.addresses=dnssrvnoa+memcached-index-queries-zone-a-rc-1.default.svc.cluster.local.:11211
         - -blocks-storage.bucket-store.index-cache.memcached.max-async-concurrency=50
         - -blocks-storage.bucket-store.index-cache.memcached.max-get-multi-concurrency=100
         - -blocks-storage.bucket-store.index-cache.memcached.max-idle-connections=150
@@ -4247,14 +5160,14 @@ spec:
       containers:
       - args:
         - -blocks-storage.bucket-store.chunks-cache.backend=memcached
-        - -blocks-storage.bucket-store.chunks-cache.memcached.addresses=dnssrvnoa+memcached.default.svc.cluster.local.:11211
+        - -blocks-storage.bucket-store.chunks-cache.memcached.addresses=dnssrvnoa+memcached-zone-b-rc-0.default.svc.cluster.local.:11211
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-async-concurrency=50
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-get-multi-concurrency=100
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-idle-connections=150
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-item-size=1048576
         - -blocks-storage.bucket-store.chunks-cache.memcached.timeout=750ms
         - -blocks-storage.bucket-store.index-cache.backend=memcached
-        - -blocks-storage.bucket-store.index-cache.memcached.addresses=dnssrvnoa+memcached-index-queries.default.svc.cluster.local.:11211
+        - -blocks-storage.bucket-store.index-cache.memcached.addresses=dnssrvnoa+memcached-index-queries-zone-b-rc-0.default.svc.cluster.local.:11211
         - -blocks-storage.bucket-store.index-cache.memcached.max-async-concurrency=50
         - -blocks-storage.bucket-store.index-cache.memcached.max-get-multi-concurrency=100
         - -blocks-storage.bucket-store.index-cache.memcached.max-idle-connections=150
@@ -4409,14 +5322,14 @@ spec:
       containers:
       - args:
         - -blocks-storage.bucket-store.chunks-cache.backend=memcached
-        - -blocks-storage.bucket-store.chunks-cache.memcached.addresses=dnssrvnoa+memcached.default.svc.cluster.local.:11211
+        - -blocks-storage.bucket-store.chunks-cache.memcached.addresses=dnssrvnoa+memcached-zone-b-rc-1.default.svc.cluster.local.:11211
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-async-concurrency=50
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-get-multi-concurrency=100
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-idle-connections=150
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-item-size=1048576
         - -blocks-storage.bucket-store.chunks-cache.memcached.timeout=750ms
         - -blocks-storage.bucket-store.index-cache.backend=memcached
-        - -blocks-storage.bucket-store.index-cache.memcached.addresses=dnssrvnoa+memcached-index-queries.default.svc.cluster.local.:11211
+        - -blocks-storage.bucket-store.index-cache.memcached.addresses=dnssrvnoa+memcached-index-queries-zone-b-rc-1.default.svc.cluster.local.:11211
         - -blocks-storage.bucket-store.index-cache.memcached.max-async-concurrency=50
         - -blocks-storage.bucket-store.index-cache.memcached.max-get-multi-concurrency=100
         - -blocks-storage.bucket-store.index-cache.memcached.max-idle-connections=150
@@ -4571,14 +5484,14 @@ spec:
       containers:
       - args:
         - -blocks-storage.bucket-store.chunks-cache.backend=memcached
-        - -blocks-storage.bucket-store.chunks-cache.memcached.addresses=dnssrvnoa+memcached.default.svc.cluster.local.:11211
+        - -blocks-storage.bucket-store.chunks-cache.memcached.addresses=dnssrvnoa+memcached-zone-a-rc-0.default.svc.cluster.local.:11211
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-async-concurrency=50
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-get-multi-concurrency=100
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-idle-connections=150
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-item-size=1048576
         - -blocks-storage.bucket-store.chunks-cache.memcached.timeout=750ms
         - -blocks-storage.bucket-store.index-cache.backend=memcached
-        - -blocks-storage.bucket-store.index-cache.memcached.addresses=dnssrvnoa+memcached-index-queries.default.svc.cluster.local.:11211
+        - -blocks-storage.bucket-store.index-cache.memcached.addresses=dnssrvnoa+memcached-index-queries-zone-a-rc-0.default.svc.cluster.local.:11211
         - -blocks-storage.bucket-store.index-cache.memcached.max-async-concurrency=50
         - -blocks-storage.bucket-store.index-cache.memcached.max-get-multi-concurrency=100
         - -blocks-storage.bucket-store.index-cache.memcached.max-idle-connections=150
@@ -4731,14 +5644,14 @@ spec:
       containers:
       - args:
         - -blocks-storage.bucket-store.chunks-cache.backend=memcached
-        - -blocks-storage.bucket-store.chunks-cache.memcached.addresses=dnssrvnoa+memcached.default.svc.cluster.local.:11211
+        - -blocks-storage.bucket-store.chunks-cache.memcached.addresses=dnssrvnoa+memcached-zone-a-rc-1.default.svc.cluster.local.:11211
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-async-concurrency=50
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-get-multi-concurrency=100
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-idle-connections=150
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-item-size=1048576
         - -blocks-storage.bucket-store.chunks-cache.memcached.timeout=750ms
         - -blocks-storage.bucket-store.index-cache.backend=memcached
-        - -blocks-storage.bucket-store.index-cache.memcached.addresses=dnssrvnoa+memcached-index-queries.default.svc.cluster.local.:11211
+        - -blocks-storage.bucket-store.index-cache.memcached.addresses=dnssrvnoa+memcached-index-queries-zone-a-rc-1.default.svc.cluster.local.:11211
         - -blocks-storage.bucket-store.index-cache.memcached.max-async-concurrency=50
         - -blocks-storage.bucket-store.index-cache.memcached.max-get-multi-concurrency=100
         - -blocks-storage.bucket-store.index-cache.memcached.max-idle-connections=150
