@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"strconv"
 	"sync"
 
@@ -47,8 +46,8 @@ func (s *shardLabelPresenceMiddleware) RoundTrip(r *http.Request) (*http.Respons
 		return nil, apierror.New(apierror.TypeBadData, err.Error())
 	}
 
-	// Decode the request up-front so we can carry label[]/limit onto every shard
-	// and reuse the parsed values when a shard count of <2 disables sharding.
+	// Decode the request up-front so we know the expected labels and limit to use
+	// when merging the per-shard responses.
 	reqValues, err := util.ParseRequestFormWithoutConsumingBody(r)
 	if err != nil {
 		return nil, apierror.New(apierror.TypeBadData, err.Error())
@@ -84,13 +83,8 @@ func (s *shardLabelPresenceMiddleware) RoundTrip(r *http.Request) (*http.Respons
 
 	spanLog.DebugLog("msg", "sharding label presence query", "shardCount", shardCount, "selector", selector.String())
 
-	extraValues := url.Values{}
-	for _, l := range parsed.Labels {
-		extraValues.Add("label[]", l)
-	}
-	extraValues.Set("limit", strconv.Itoa(parsed.Limit))
-
-	reqs, err := buildShardedRequests(ctx, r, shardCount, selector, extraValues)
+	// buildShardedRequests inherits the label[] and limit params from r.
+	reqs, err := buildShardedRequests(ctx, r, shardCount, selector)
 	if err != nil {
 		return nil, apierror.New(apierror.TypeInternal, err.Error())
 	}
