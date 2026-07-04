@@ -74,7 +74,7 @@ func (s *shardBySeriesBase) shardBySeriesSelector(ctx context.Context, spanLog *
 		"shardCount", shardCount, "selector", selector.String(),
 	)
 
-	reqs, err := buildShardedRequests(ctx, r, shardCount, selector)
+	reqs, err := buildShardedRequests(ctx, r, shardCount, selector, nil)
 	if err != nil {
 		return nil, apierror.New(apierror.TypeInternal, err.Error())
 	}
@@ -127,7 +127,10 @@ func parseSelector(req *http.Request) (*parser.VectorSelector, error) {
 	return selector, nil
 }
 
-func buildShardedRequests(ctx context.Context, req *http.Request, numRequests int, selector parser.Expr) ([]*http.Request, error) {
+// buildShardedRequests builds one request per shard, each carrying the sharded
+// selector. extraValues, if non-nil, are copied onto every sharded request
+// (e.g. label[] and limit params that must be preserved across shards).
+func buildShardedRequests(ctx context.Context, req *http.Request, numRequests int, selector parser.Expr, extraValues url.Values) ([]*http.Request, error) {
 	reqs := make([]*http.Request, numRequests)
 	for i := 0; i < numRequests; i++ {
 		r, err := http.NewRequestWithContext(ctx, http.MethodGet, req.URL.Path, http.NoBody)
@@ -141,6 +144,11 @@ func buildShardedRequests(ctx context.Context, req *http.Request, numRequests in
 		}
 
 		vals := url.Values{}
+		for k, vs := range extraValues {
+			for _, v := range vs {
+				vals.Add(k, v)
+			}
+		}
 		vals.Set("selector", sharded.String())
 		r.URL.RawQuery = vals.Encode()
 		// This is the field read by httpgrpc.FromHTTPRequest, so we need to populate it

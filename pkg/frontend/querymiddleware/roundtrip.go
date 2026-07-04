@@ -40,6 +40,7 @@ const (
 	cardinalityLabelValuesPathSuffix                  = "/api/v1/cardinality/label_values"
 	cardinalityActiveSeriesPathSuffix                 = "/api/v1/cardinality/active_series"
 	cardinalityActiveNativeHistogramMetricsPathSuffix = "/api/v1/cardinality/active_native_histogram_metrics"
+	cardinalityLabelPresencePathSuffix                = "/api/v1/cardinality/label_presence"
 	labelNamesPathSuffix                              = "/api/v1/labels"
 	remoteReadPathSuffix                              = "/api/v1/read"
 	seriesPathSuffix                                  = "/api/v1/series"
@@ -51,6 +52,7 @@ const (
 	queryTypeLabels                       = "label_names_and_values"
 	queryTypeActiveSeries                 = "active_series"
 	queryTypeActiveNativeHistogramMetrics = "active_native_histogram_metrics"
+	queryTypeLabelPresence                = "label_presence"
 	queryTypeOther                        = "other"
 
 	EnableRemoteExecutionFlag = "query-frontend.enable-remote-execution"
@@ -646,6 +648,8 @@ func newQueryCountTripperware(registerer prometheus.Registerer) Tripperware {
 				op = queryTypeActiveSeries
 			case IsActiveNativeHistogramMetricsQuery(r.URL.Path):
 				op = queryTypeActiveNativeHistogramMetrics
+			case IsLabelPresenceQuery(r.URL.Path):
+				op = queryTypeLabelPresence
 			case IsLabelsQuery(r.URL.Path):
 				op = queryTypeLabels
 			}
@@ -695,6 +699,10 @@ func IsSeriesQuery(path string) bool {
 
 func IsActiveSeriesQuery(path string) bool {
 	return strings.HasSuffix(path, cardinalityActiveSeriesPathSuffix)
+}
+
+func IsLabelPresenceQuery(path string) bool {
+	return strings.HasSuffix(path, cardinalityLabelPresencePathSuffix)
 }
 
 func IsActiveNativeHistogramMetricsQuery(path string) bool {
