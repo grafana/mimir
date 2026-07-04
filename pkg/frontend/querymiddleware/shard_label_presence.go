@@ -4,11 +4,13 @@ package querymiddleware
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"strconv"
+	"sync"
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/tenant"
@@ -25,17 +27,15 @@ import (
 // partitions series disjointly, the counts can be summed across shards without
 // double counting.
 type shardLabelPresenceMiddleware struct {
-	upstream http.RoundTripper
-	limits   Limits
-	logger   log.Logger
+	shardBySeriesBase
 }
 
 func newShardLabelPresenceMiddleware(upstream http.RoundTripper, limits Limits, logger log.Logger) http.RoundTripper {
-	return &shardLabelPresenceMiddleware{
+	return &shardLabelPresenceMiddleware{shardBySeriesBase{
 		upstream: upstream,
 		limits:   limits,
 		logger:   logger,
-	}
+	}}
 }
 
 func (s *shardLabelPresenceMiddleware) RoundTrip(r *http.Request) (*http.Response, error) {
@@ -66,7 +66,11 @@ func (s *shardLabelPresenceMiddleware) RoundTrip(r *http.Request) (*http.Respons
 		return s.upstream.RoundTrip(r)
 	}
 
-	if maxShards := s.limits.QueryShardingMaxShardedQueries(tenantID); shardCount > maxShards {
+	maxShards := s.limits.QueryShardingMaxShardedQueries(tenantID)
+	if cardinalityMaxShards := s.limits.CardinalityShardingMaxShardedQueries(tenantID); cardinalityMaxShards > 0 {
+		maxShards = cardinalityMaxShards
+	}
+	if maxShards > 0 && shardCount > maxShards {
 		return nil, apierror.New(
 			apierror.TypeBadData,
 			fmt.Sprintf("shard count %d exceeds allowed maximum (%d)", shardCount, maxShards),
@@ -91,18 +95,15 @@ func (s *shardLabelPresenceMiddleware) RoundTrip(r *http.Request) (*http.Respons
 		return nil, apierror.New(apierror.TypeInternal, err.Error())
 	}
 
-	responses, err := doShardedRequests(ctx, reqs, s.upstream)
-	if err != nil {
+	merger := newLabelPresenceMerger(parsed.Labels, parsed.Limit)
+	if err := s.processShardedRequests(ctx, reqs, merger.merge); err != nil {
 		if errors.Is(err, errShardCountTooLow) {
 			return nil, apierror.New(apierror.TypeTooLargeEntry, fmt.Errorf("%w: try increasing the requested shard count", err).Error())
 		}
 		return nil, apierror.New(apierror.TypeInternal, err.Error())
 	}
 
-	merged, err := mergeLabelPresenceResponses(responses, parsed.Labels, parsed.Limit)
-	if err != nil {
-		return nil, apierror.New(apierror.TypeInternal, err.Error())
-	}
+	merged := merger.result()
 
 	body, err := json.Marshal(merged)
 	if err != nil {
@@ -120,10 +121,18 @@ func (s *shardLabelPresenceMiddleware) RoundTrip(r *http.Request) (*http.Respons
 	return resp, nil
 }
 
-// mergeLabelPresenceResponses additively folds the per-shard aggregates into a
-// single response. labelNames defines the label order in the merged response;
-// limit caps the number of example series returned.
-func mergeLabelPresenceResponses(responses []*http.Response, labelNames []string, limit int) (*cardinality.LabelPresenceResponse, error) {
+// labelPresenceMerger additively folds the per-shard aggregates into a single
+// response. Because processShardedRequests invokes merge concurrently across
+// shards, all mutations are guarded by mu. labelNames defines the label order
+// in the merged response; limit caps the number of example series returned.
+type labelPresenceMerger struct {
+	mu            sync.Mutex
+	merged        *cardinality.LabelPresenceResponse
+	missingByName map[string]int
+	limit         int
+}
+
+func newLabelPresenceMerger(labelNames []string, limit int) *labelPresenceMerger {
 	merged := &cardinality.LabelPresenceResponse{
 		Labels: make([]cardinality.LabelPresenceItem, len(labelNames)),
 	}
@@ -132,36 +141,49 @@ func mergeLabelPresenceResponses(responses []*http.Response, labelNames []string
 		merged.Labels[i].LabelName = name
 		missingByName[name] = i
 	}
+	return &labelPresenceMerger{
+		merged:        merged,
+		missingByName: missingByName,
+		limit:         limit,
+	}
+}
 
-	for _, res := range responses {
-		if res == nil {
-			continue
-		}
-		body, err := io.ReadAll(res.Body)
-		_ = res.Body.Close()
-		if err != nil {
-			return nil, fmt.Errorf("error reading shard response: %w", err)
-		}
-
-		var shardResp cardinality.LabelPresenceResponse
-		if err := json.Unmarshal(body, &shardResp); err != nil {
-			return nil, fmt.Errorf("error decoding shard response: %w", err)
-		}
-
-		merged.TotalSeries += shardResp.TotalSeries
-		merged.CompliantSeries += shardResp.CompliantSeries
-		for _, item := range shardResp.Labels {
-			if idx, ok := missingByName[item.LabelName]; ok {
-				merged.Labels[idx].MissingCount += item.MissingCount
-			}
-		}
-		for _, ex := range shardResp.Examples {
-			if len(merged.Examples) >= limit {
-				break
-			}
-			merged.Examples = append(merged.Examples, ex)
-		}
+// merge decodes a single shard response and folds it into the accumulated
+// result. It satisfies the handle callback signature of processShardedRequests.
+func (m *labelPresenceMerger) merge(_ context.Context, res *http.Response) error {
+	body, err := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if err != nil {
+		return fmt.Errorf("error reading shard response: %w", err)
 	}
 
-	return merged, nil
+	var shardResp cardinality.LabelPresenceResponse
+	if err := json.Unmarshal(body, &shardResp); err != nil {
+		return fmt.Errorf("error decoding shard response: %w", err)
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.merged.TotalSeries += shardResp.TotalSeries
+	m.merged.CompliantSeries += shardResp.CompliantSeries
+	for _, item := range shardResp.Labels {
+		if idx, ok := m.missingByName[item.LabelName]; ok {
+			m.merged.Labels[idx].MissingCount += item.MissingCount
+		}
+	}
+	for _, ex := range shardResp.Examples {
+		if len(m.merged.Examples) >= m.limit {
+			break
+		}
+		m.merged.Examples = append(m.merged.Examples, ex)
+	}
+
+	return nil
+}
+
+func (m *labelPresenceMerger) result() *cardinality.LabelPresenceResponse {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.merged
 }

@@ -326,6 +326,7 @@ func newQueryTripperware(
 		cardinality := next
 		activeSeries := next
 		activeNativeHistogramMetrics := next
+		labelPresence := next
 		labels := next
 		series := next
 
@@ -334,11 +335,13 @@ func newQueryTripperware(
 			series = newRetryRoundTripper(series, log, cfg.MaxRetries, retryMetrics)
 			labels = newRetryRoundTripper(labels, log, cfg.MaxRetries, retryMetrics)
 			activeSeries = newRetryRoundTripper(series, log, cfg.MaxRetries, retryMetrics)
+			labelPresence = newRetryRoundTripper(labelPresence, log, cfg.MaxRetries, retryMetrics)
 		}
 
 		// Shard active series requests using special middleware.
 		activeSeries = newShardActiveSeriesMiddleware(activeSeries, cfg.ActiveSeriesMaxShardConcurrency, limits, log)
 		activeNativeHistogramMetrics = newShardActiveNativeHistogramMetricsMiddleware(activeNativeHistogramMetrics, cfg.ActiveSeriesMaxShardConcurrency, limits, log)
+		labelPresence = newShardLabelPresenceMiddleware(labelPresence, limits, log)
 
 		// Enforce read consistency after caching.
 		if ingestStorageOffsetsReader != nil {
@@ -349,6 +352,7 @@ func newQueryTripperware(
 			cardinality = newReadConsistencyRoundTripper(cardinality, ingestStorageOffsetsReader, limits, log, metrics)
 			activeSeries = newReadConsistencyRoundTripper(activeSeries, ingestStorageOffsetsReader, limits, log, metrics)
 			activeNativeHistogramMetrics = newReadConsistencyRoundTripper(activeNativeHistogramMetrics, ingestStorageOffsetsReader, limits, log, metrics)
+			labelPresence = newReadConsistencyRoundTripper(labelPresence, ingestStorageOffsetsReader, limits, log, metrics)
 			labels = newReadConsistencyRoundTripper(labels, ingestStorageOffsetsReader, limits, log, metrics)
 			series = newReadConsistencyRoundTripper(series, ingestStorageOffsetsReader, limits, log, metrics)
 			remoteRead = newReadConsistencyRoundTripper(remoteRead, ingestStorageOffsetsReader, limits, log, metrics)
@@ -358,6 +362,7 @@ func newQueryTripperware(
 		// Look up cache as first thing after validation.
 		if cfg.CacheResults {
 			cardinality = newCardinalityQueryCacheRoundTripper(cacheClient, cacheKeyGenerator, limits, cardinality, log, registerer)
+			labelPresence = newCardinalityQueryCacheRoundTripper(cacheClient, cacheKeyGenerator, limits, labelPresence, log, registerer)
 			labels = newLabelsQueryCacheRoundTripper(cacheClient, cacheKeyGenerator, limits, labels, log, registerer)
 		}
 
@@ -387,6 +392,8 @@ func newQueryTripperware(
 				return activeSeries.RoundTrip(r)
 			case IsActiveNativeHistogramMetricsQuery(r.URL.Path):
 				return activeNativeHistogramMetrics.RoundTrip(r)
+			case IsLabelPresenceQuery(r.URL.Path):
+				return labelPresence.RoundTrip(r)
 			case IsLabelsQuery(r.URL.Path):
 				return labels.RoundTrip(r)
 			case IsSeriesQuery(r.URL.Path):
