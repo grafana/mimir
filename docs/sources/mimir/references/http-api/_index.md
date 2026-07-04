@@ -66,6 +66,7 @@ This document groups API endpoints by service. Note that the API endpoints are e
 | [Remote read](#remote-read) | Query-frontend | `POST <prometheus-http-prefix>/api/v1/read` |
 | [Label names cardinality](#label-names-cardinality) | Query-frontend | `GET, POST <prometheus-http-prefix>/api/v1/cardinality/label_names` |
 | [Label values cardinality](#label-values-cardinality) | Query-frontend | `GET, POST <prometheus-http-prefix>/api/v1/cardinality/label_values` |
+| [Label presence cardinality](#label-presence-cardinality) | Query-frontend | `GET, POST <prometheus-http-prefix>/api/v1/cardinality/label_presence` |
 | [Build information](#build-information) | Query-frontend, Ruler | `GET <prometheus-http-prefix>/api/v1/status/buildinfo` |
 | [Format query](#format-query) | Query-frontend | `GET, POST <prometheus-http-prefix>/api/v1/format_query` |
 | [Get tenant ingestion stats](#get-tenant-ingestion-stats) | Querier | `GET /api/v1/user_stats` |
@@ -956,6 +957,72 @@ The query-frontend can return a stale response fetched from the query results ca
 - **labels[].series_count** - total number of series having `labels[].label_name`
 - **labels[].cardinality[].label_value** - label value associated to `labels[].label_name`
 - **labels[].cardinality[].series_count** - total number of series having `label_value` for `label_name`
+
+### Label presence cardinality
+
+{{< admonition type="note" >}}
+The label presence cardinality endpoint is an [experimental feature](../../configure/about-versioning/#experimental-features).
+{{< /admonition >}}
+
+```
+GET,POST <prometheus-http-prefix>/api/v1/cardinality/label_presence
+```
+
+Reports how consistently a set of labels is present on the active series that match a selector, for the authenticated tenant, in `JSON` format.
+Given a `selector` and a list of `label[]` names, it counts the matching active series, how many of them carry every requested label (compliant series), the per-label count of series that are missing that label, and returns up to `limit` example series that are missing at least one of the requested labels.
+
+This endpoint is useful for finding series that are missing labels you expect to be present, such as a `cluster` or `namespace` label enforced by a relabeling policy.
+
+The items in the field `labels` are returned in the same order as the requested `label[]` names, sorted alphabetically.
+
+This endpoint is disabled by default; you can enable it via the `-querier.cardinality-analysis-enabled` CLI flag (or its respective YAML configuration option).
+
+Requires [authentication](#authentication).
+
+#### Caching
+
+The query-frontend can return a stale response fetched from the query results cache if `-query-frontend.cache-results` is enabled and `-query-frontend.results-cache-ttl-for-cardinality-query` set to a value greater than `0`.
+
+#### Request params
+
+- **selector** - _required_ - specifies the PromQL selector that filters the series to analyze.
+- **label[]** - _required_ - specifies the label names whose presence is checked on the matching series. Can be repeated to check multiple labels.
+- **limit** - _optional_ - specifies the max count of example non-compliant series in the `examples` field of the response (default=20, min=0, max=500).
+
+#### Example request
+
+```
+$ curl -G 'http://localhost:9090/prometheus/api/v1/cardinality/label_presence' \
+    --data-urlencode 'selector={job="my-service"}' \
+    --data-urlencode 'label[]=cluster' \
+    --data-urlencode 'label[]=namespace'
+```
+
+#### Response schema
+
+```json
+{
+  "total_series": <number>,
+  "compliant_series": <number>,
+  "labels": [
+    {
+      "label_name": <string>,
+      "missing_count": <number>
+    }
+  ],
+  "examples": [
+    {
+      "<label_name>": "<label_value>"
+    }
+  ]
+}
+```
+
+- **total_series** - total number of active series matching `selector` across all ingesters.
+- **compliant_series** - number of matching series that carry every label listed in `label[]`.
+- **labels[].label_name** - label name requested via the `label[]` request param.
+- **labels[].missing_count** - number of matching series that don't have `labels[].label_name`.
+- **examples** - up to `limit` example series that are missing at least one of the requested labels, each represented as a set of label name/value pairs. Omitted when there are no non-compliant series.
 
 ## Querier
 
