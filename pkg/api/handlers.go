@@ -336,6 +336,7 @@ func NewQuerierHandler(
 	router.Path(path.Join(promPrefix, "/cardinality/label_values")).Methods("GET", "POST").Handler(cardinalityQueryStats.Wrap(querier.LabelValuesCardinalityHandler(distributor, limits)))
 	router.Path(path.Join(promPrefix, "/cardinality/active_series")).Methods("GET", "POST").Handler(cardinalityQueryStats.Wrap(querier.ActiveSeriesCardinalityHandler(distributor, limits)))
 	router.Path(path.Join(promPrefix, "/cardinality/active_native_histogram_metrics")).Methods("GET", "POST").Handler(cardinalityQueryStats.Wrap(querier.ActiveNativeHistogramMetricsHandler(distributor, limits)))
+	router.Path(path.Join(promPrefix, "/cardinality/label_presence")).Methods("GET", "POST").Handler(cardinalityQueryStats.Wrap(querier.LabelPresenceHandler(distributor, limits)))
 	router.Path(path.Join(promPrefix, "/format_query")).Methods("GET", "POST").Handler(formattingQueryStats.Wrap(promRouter))
 
 	// Streaming label/value search endpoints (experimental; gated by the
