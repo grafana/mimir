@@ -3061,6 +3061,24 @@ func (d *Distributor) ActiveNativeHistogramMetrics(ctx context.Context, matchers
 	return &cardinality.ActiveNativeHistogramMetricsResponse{Data: metrics}, nil
 }
 
+// LabelPresence queries active series matching the given selector and reports,
+// for the expected labelNames, how many series carry every label (compliant)
+// and how many are missing each individual label, along with up to limit
+// example non-compliant series.
+func (d *Distributor) LabelPresence(ctx context.Context, matchers []*labels.Matcher, labelNames []string, limit int) (*cardinality.LabelPresenceResponse, error) {
+	res, err := d.deduplicateActiveSeries(ctx, matchers, false)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, fetchedSeries := res.labelPresenceResult(labelNames, limit)
+
+	reqStats := stats.FromContext(ctx)
+	reqStats.AddFetchedSeries(fetchedSeries)
+
+	return resp, nil
+}
+
 func (d *Distributor) deduplicateActiveSeries(ctx context.Context, matchers []*labels.Matcher, nativeHistograms bool) (*activeSeriesResponse, error) {
 	replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx, matchers)
 	if err != nil {
@@ -3253,6 +3271,51 @@ func (r *activeSeriesResponse) result() ([]labels.Labels, uint64) {
 		}
 	}
 	return result, uint64(len(result))
+}
+
+// labelPresenceResult folds over the deduplicated series and reports, for the
+// expected labelNames, how many series carry every label (compliant) and how
+// many are missing each individual label. Up to limit non-compliant series are
+// returned as examples. It also returns the number of deduplicated series folded.
+func (r *activeSeriesResponse) labelPresenceResult(labelNames []string, limit int) (*cardinality.LabelPresenceResponse, uint64) {
+	r.m.Lock()
+	defer r.m.Unlock()
+
+	resp := &cardinality.LabelPresenceResponse{
+		Labels: make([]cardinality.LabelPresenceItem, len(labelNames)),
+	}
+	for i, name := range labelNames {
+		resp.Labels[i].LabelName = name
+	}
+
+	fetchedSeries := uint64(0)
+	fold := func(series labels.Labels) {
+		fetchedSeries++
+		resp.TotalSeries++
+		compliant := true
+		for i, name := range labelNames {
+			if series.Get(name) == "" {
+				resp.Labels[i].MissingCount++
+				compliant = false
+			}
+		}
+		if compliant {
+			resp.CompliantSeries++
+			return
+		}
+		if len(resp.Examples) < limit {
+			resp.Examples = append(resp.Examples, series)
+		}
+	}
+
+	for _, series := range r.series {
+		fold(series.first.Labels)
+		for _, collision := range series.collisions {
+			fold(collision.Labels)
+		}
+	}
+
+	return resp, fetchedSeries
 }
 
 type metricBucketCounts struct {
