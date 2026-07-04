@@ -123,6 +123,7 @@
 * [ENHANCEMENT] Mimirtool: `partition-ring` subcommands now accept an optional `--partition-ring.key` flag to select the KV store key of the partition ring to operate on. It defaults to `ingester-partitions`. #15719
 * [ENHANCEMENT] Makefile: `build-mixin` and `mixin-screenshots` can now be configured to use native histograms for latency panels in dashboards. #15269
 * [ENHANCEMENT] kafkatool: Add a README. #15898
+* [ENHANCEMENT] kafkatool: `--kafka-address` is now optional. Commands that only operate on a local dump file (`dump print`, `dump analyse`, `dump find-duplicates`) no longer require it; commands that contact Kafka still require it and fail with a clear error if it is missing. #15917
 
 ### Query-tee
 

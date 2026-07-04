@@ -4,7 +4,7 @@ A command-line tool to inspect and manage the Kafka cluster backing Mimir's [ing
 
 Build it with `go build .` in this directory.
 
-Every command needs `--kafka-address` (e.g. `localhost:9092`). For authenticated clusters, also pass `--kafka-sasl-username` and `--kafka-sasl-password`. Run any command with `--help` to see its flags.
+Every command needs `--kafka-address` (e.g. `localhost:9092`) — except `dump print`, `dump analyse`, and `dump find-duplicates`, which only read a local dump file and therefore don't contact Kafka. For authenticated clusters, also pass `--kafka-sasl-username` and `--kafka-sasl-password`. Run any command with `--help` to see its flags.
 
 ## Examples
 
@@ -28,10 +28,10 @@ Dump a partition's raw records to a file. Useful for offline analysis:
 ./kafkatool --kafka-address localhost:9092 dump export --file ./dump.json --topic ingest --partition 0 --offset 0 --export-max-records 100000
 ```
 
-Analyze a dump file (these subcommands never contact the broker, `--kafka-address` is just a placeholder):
+Analyze a dump file (these subcommands never contact the broker, so `--kafka-address` is not required):
 
 ```bash
-./kafkatool --kafka-address localhost:9092 dump --file ./dump.json analyse
-./kafkatool --kafka-address localhost:9092 dump --file ./dump.json print --format json
-./kafkatool --kafka-address localhost:9092 dump --file ./dump.json find-duplicates
+./kafkatool dump --file ./dump.json analyse
+./kafkatool dump --file ./dump.json print --format json
+./kafkatool dump --file ./dump.json find-duplicates
 ```
