@@ -973,7 +973,7 @@ Given a `selector` and a list of `label[]` names, it counts the matching active 
 
 This endpoint is useful for finding series that are missing labels you expect to be present, such as a `cluster` or `namespace` label enforced by a relabeling policy.
 
-The items in the field `labels` are returned in the same order as the requested `label[]` names, sorted alphabetically.
+The items in the field `labels` are sorted alphabetically by label name, regardless of the order in which the `label[]` params are supplied.
 
 This endpoint is disabled by default; you can enable it via the `-querier.cardinality-analysis-enabled` CLI flag (or its respective YAML configuration option).
 
