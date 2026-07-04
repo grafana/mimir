@@ -39,3 +39,19 @@ type LabelNamesCardinalityItem struct {
 type ActiveSeriesResponse struct {
 	Data []labels.Labels `json:"data"`
 }
+
+// LabelPresenceResponse is the response of the label presence cardinality endpoint.
+// It reports, for the active series matching a selector, how many carry every
+// expected label and how many are missing each individual label.
+type LabelPresenceResponse struct {
+	TotalSeries     uint64              `json:"total_series"`
+	CompliantSeries uint64              `json:"compliant_series"`
+	Labels          []LabelPresenceItem `json:"labels"`
+	Examples        []labels.Labels     `json:"examples,omitempty"`
+}
+
+// LabelPresenceItem reports how many series are missing a specific expected label.
+type LabelPresenceItem struct {
+	LabelName    string `json:"label_name"`
+	MissingCount uint64 `json:"missing_count"`
+}
