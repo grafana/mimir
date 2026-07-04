@@ -1497,6 +1497,10 @@ func (m *errDistributor) ActiveNativeHistogramMetrics(context.Context, []*labels
 	return nil, errDistributorError
 }
 
+func (m *errDistributor) LabelPresence(context.Context, []*labels.Matcher, []string, int) (*cardinality.LabelPresenceResponse, error) {
+	return nil, errDistributorError
+}
+
 func (m *errDistributor) SearchLabelNames(context.Context, model.Time, model.Time, *streaminglabelvalues.Params, *storage.SearchHints, []*labels.Matcher) storage.SearchResultSet {
 	return storage.ErrSearchResultSet(errDistributorError)
 }
