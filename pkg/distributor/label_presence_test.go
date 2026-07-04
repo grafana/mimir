@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -17,7 +18,7 @@ import (
 
 func newTestActiveSeriesResponse(t *testing.T, series ...labels.Labels) *activeSeriesResponse {
 	t.Helper()
-	res := newActiveSeriesResponse(prometheus.NewCounter(prometheus.CounterOpts{}), math.MaxInt, true)
+	res := newActiveSeriesResponse(promauto.With(nil).NewCounter(prometheus.CounterOpts{}), math.MaxInt, true)
 	metrics := make([]*mimirpb.Metric, 0, len(series))
 	for _, s := range series {
 		metrics = append(metrics, &mimirpb.Metric{Labels: mimirpb.FromLabelsToLabelAdapters(s)})

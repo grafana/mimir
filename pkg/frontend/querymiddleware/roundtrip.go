@@ -362,7 +362,7 @@ func newQueryTripperware(
 		// Look up cache as first thing after validation.
 		if cfg.CacheResults {
 			cardinality = newCardinalityQueryCacheRoundTripper(cacheClient, cacheKeyGenerator, limits, cardinality, log, registerer)
-			labelPresence = newCardinalityQueryCacheRoundTripper(cacheClient, cacheKeyGenerator, limits, labelPresence, log, registerer)
+			labelPresence = newLabelPresenceQueryCacheRoundTripper(cacheClient, cacheKeyGenerator, limits, labelPresence, log, registerer)
 			labels = newLabelsQueryCacheRoundTripper(cacheClient, cacheKeyGenerator, limits, labels, log, registerer)
 		}
 
