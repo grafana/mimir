@@ -113,6 +113,12 @@ func TestCardinalityQueryCache_RoundTrip(t *testing.T) {
 			cacheKey:       "user-1:metric_1\x01metric_2\x00job=\"test\"\x00inmemory\x00100",
 			hashedCacheKey: cardinalityLabelValuesQueryCachePrefix + hashCacheKey("user-1:metric_1\x01metric_2\x00job=\"test\"\x00inmemory\x00100"),
 		},
+		"label presence request": {
+			reqPath:        "/prometheus/api/v1/cardinality/label_presence",
+			reqData:        url.Values{"selector": []string{`{job="test"}`}, "label[]": []string{"cluster", "namespace"}, "limit": []string{"100"}},
+			cacheKey:       "user-1:job=\"test\"\x00cluster\x01namespace\x00100",
+			hashedCacheKey: cardinalityLabelPresenceQueryCachePrefix + hashCacheKey("user-1:job=\"test\"\x00cluster\x01namespace\x00100"),
+		},
 	})
 }
 

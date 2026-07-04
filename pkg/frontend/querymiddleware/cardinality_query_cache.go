@@ -19,9 +19,10 @@ import (
 )
 
 const (
-	cardinalityLabelNamesQueryCachePrefix   = "cn:"
-	cardinalityLabelValuesQueryCachePrefix  = "cv:"
-	cardinalityActiveSeriesQueryCachePrefix = "ca:"
+	cardinalityLabelNamesQueryCachePrefix    = "cn:"
+	cardinalityLabelValuesQueryCachePrefix   = "cv:"
+	cardinalityActiveSeriesQueryCachePrefix  = "ca:"
+	cardinalityLabelPresenceQueryCachePrefix = "cp:"
 )
 
 func newCardinalityQueryCacheRoundTripper(cache cache.Cache, generator CacheKeyGenerator, limits Limits, next http.RoundTripper, logger log.Logger, reg prometheus.Registerer) http.RoundTripper {
@@ -76,6 +77,16 @@ func (DefaultCacheKeyGenerator) LabelValuesCardinality(r *http.Request) (*Generi
 		return &GenericQueryCacheKey{
 			CacheKey:       parsed.String(),
 			CacheKeyPrefix: cardinalityActiveSeriesQueryCachePrefix,
+		}, nil
+	case strings.HasSuffix(r.URL.Path, cardinalityLabelPresencePathSuffix):
+		parsed, err := cardinality.DecodeLabelPresenceRequestFromValues(reqValues)
+		if err != nil {
+			return nil, err
+		}
+
+		return &GenericQueryCacheKey{
+			CacheKey:       parsed.String(),
+			CacheKeyPrefix: cardinalityLabelPresenceQueryCachePrefix,
 		}, nil
 	default:
 		return nil, errors.New("unknown cardinality API endpoint")
