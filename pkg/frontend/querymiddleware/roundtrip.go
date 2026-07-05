@@ -79,6 +79,7 @@ type Config struct {
 	RewriteQueriesHistogram                   bool               `yaml:"rewrite_histogram_queries" category:"experimental"`
 	RewriteQueriesPropagateMatchers           bool               `yaml:"rewrite_propagate_matchers" category:"experimental"`
 	TargetSeriesPerShard                      uint64             `yaml:"query_sharding_target_series_per_shard" category:"advanced"`
+	ActiveSeriesMaxShardConcurrency           int                `yaml:"active_series_max_shard_concurrency" category:"advanced"`
 
 	// CacheKeyGenerator allows to inject a CacheKeyGenerator to use for generating cache keys.
 	// If nil, the querymiddleware package uses a DefaultCacheKeyGenerator with SplitQueriesByInterval.
@@ -119,6 +120,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.RewriteQueriesHistogram, "query-frontend.rewrite-histogram-queries", false, "Set to true to enable rewriting histogram queries for a more efficient order of execution.")
 	f.BoolVar(&cfg.RewriteQueriesPropagateMatchers, "query-frontend.rewrite-propagate-matchers", false, "Set to true to enable rewriting queries to propagate label matchers across binary expressions.")
 	f.Uint64Var(&cfg.TargetSeriesPerShard, "query-frontend.query-sharding-target-series-per-shard", 0, "How many series a single sharded partial query should load at most. This is not a strict requirement guaranteed to be honoured by query sharding, but a hint given to the query sharding when the query execution is initially planned. 0 to disable cardinality-based hints.")
+	f.IntVar(&cfg.ActiveSeriesMaxShardConcurrency, "query-frontend.active-series-max-shard-concurrency", 0, "Maximum number of sharded active series (and active native histogram metrics) sub-requests dispatched and merged concurrently within a single request. This bounds the resource usage caused by fanning out to a large number of shards, both on queriers and on the query-frontend. 0 to disable the limit.")
 	f.Var(&cfg.ExtraPropagateHeaders, "query-frontend.extra-propagated-headers", "Comma-separated list of request header names to allow to pass through to the rest of the query path. This is in addition to a list of required headers that the read path needs.")
 	f.StringVar(&cfg.QueryResultResponseFormat, "query-frontend.query-result-response-format", formatProtobuf, fmt.Sprintf("Format to use when retrieving query results from queriers. Supported values: %s", strings.Join(allFormats, ", ")))
 	f.BoolVar(&cfg.CacheSamplesProcessedStats, "query-frontend.cache-samples-processed-stats", false, "Cache statistics of processed samples on results cache. Deprecated: has no effect.")
@@ -333,8 +335,8 @@ func newQueryTripperware(
 		}
 
 		// Shard active series requests using special middleware.
-		activeSeries = newShardActiveSeriesMiddleware(activeSeries, limits, log)
-		activeNativeHistogramMetrics = newShardActiveNativeHistogramMetricsMiddleware(activeNativeHistogramMetrics, limits, log)
+		activeSeries = newShardActiveSeriesMiddleware(activeSeries, cfg.ActiveSeriesMaxShardConcurrency, limits, log)
+		activeNativeHistogramMetrics = newShardActiveNativeHistogramMetricsMiddleware(activeNativeHistogramMetrics, cfg.ActiveSeriesMaxShardConcurrency, limits, log)
 
 		// Enforce read consistency after caching.
 		if ingestStorageOffsetsReader != nil {
