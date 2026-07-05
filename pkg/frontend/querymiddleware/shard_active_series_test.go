@@ -5,6 +5,7 @@ package querymiddleware
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"net/http"
@@ -29,6 +30,7 @@ import (
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/cardinality"
+	querierapi "github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
 )
@@ -317,6 +319,7 @@ func Test_shardActiveSeriesMiddleware_RoundTrip(t *testing.T) {
 			s := newShardActiveSeriesMiddleware(
 				upstream,
 				0,
+				false,
 				mockLimits{maxShardedQueries: tenantMaxShardCount, totalShards: tenantShardCount},
 				log.NewNopLogger(),
 			)
@@ -378,7 +381,9 @@ func Test_shardBySeriesBase_cardinalityShardingMaxShardedQueries(t *testing.T) {
 		name       string
 		middleware func(http.RoundTripper, int, Limits, log.Logger) http.RoundTripper
 	}{
-		{"active series", newShardActiveSeriesMiddleware},
+		{"active series", func(upstream http.RoundTripper, maxConcurrency int, limits Limits, logger log.Logger) http.RoundTripper {
+			return newShardActiveSeriesMiddleware(upstream, maxConcurrency, false, limits, logger)
+		}},
 		{"active native histogram metrics", newShardActiveNativeHistogramMetricsMiddleware},
 	}
 
@@ -457,6 +462,7 @@ func Test_shardActiveSeriesMiddleware_RoundTrip_concurrent(t *testing.T) {
 	s := newShardActiveSeriesMiddleware(
 		upstream,
 		0,
+		false,
 		mockLimits{maxShardedQueries: shardCount, totalShards: shardCount},
 		log.NewNopLogger(),
 	)
@@ -533,6 +539,7 @@ func Test_shardActiveSeriesMiddleware_RoundTrip_maxConcurrency(t *testing.T) {
 		s := newShardActiveSeriesMiddleware(
 			upstream,
 			maxConcurrency,
+			false,
 			mockLimits{maxShardedQueries: shardCount, totalShards: shardCount},
 			log.NewNopLogger(),
 		)
@@ -572,6 +579,142 @@ func Test_shardActiveSeriesMiddleware_RoundTrip_maxConcurrency(t *testing.T) {
 	})
 }
 
+func encodeFramedActiveSeries(t *testing.T, series []labels.Labels) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	var lenBuf [binary.MaxVarintLen64]byte
+	for i := range series {
+		obj, err := series[i].MarshalJSON()
+		require.NoError(t, err)
+		n := binary.PutUvarint(lenBuf[:], uint64(len(obj)))
+		buf.Write(lenBuf[:n])
+		buf.Write(obj)
+	}
+	return buf.Bytes()
+}
+
+func Test_shardActiveSeriesMiddleware_RoundTrip_framed(t *testing.T) {
+	const shardCount = 4
+
+	shardSeries := [][]labels.Labels{
+		{labels.FromStrings(model.MetricNameLabel, "metric", "shard", "0", "extra", "a")},
+		{labels.FromStrings(model.MetricNameLabel, "metric", "shard", "1", "extra", "b")},
+		{labels.FromStrings(model.MetricNameLabel, "metric", "shard", "2", "extra", "c")},
+		{labels.FromStrings(model.MetricNameLabel, "metric", "shard", "3", "extra", "d")},
+	}
+	var expected []labels.Labels
+	for _, s := range shardSeries {
+		expected = append(expected, s...)
+	}
+
+	for name, framedShards := range map[string]map[int]bool{
+		"all shards framed":                   {0: true, 1: true, 2: true, 3: true},
+		"mixed framed and json (rollout)":     {0: true, 1: false, 2: true, 3: false},
+		"no shards framed (querier fallback)": {0: false, 1: false, 2: false, 3: false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			var sawAcceptFramed atomic.Bool
+			upstream := RoundTripFunc(func(r *http.Request) (*http.Response, error) {
+				if r.Header.Get("Accept") == querierapi.ContentTypeActiveSeriesFramed {
+					sawAcceptFramed.Store(true)
+				}
+				require.NoError(t, r.ParseForm())
+				req, err := cardinality.DecodeActiveSeriesRequestFromValues(r.Form)
+				require.NoError(t, err)
+				shard, _, err := sharding.ShardFromMatchers(req.Matchers)
+				require.NoError(t, err)
+				require.NotNil(t, shard)
+				series := shardSeries[shard.ShardIndex]
+
+				resp := &http.Response{StatusCode: http.StatusOK, Header: http.Header{}}
+				if framedShards[int(shard.ShardIndex)] {
+					resp.Header.Set("Content-Type", querierapi.ContentTypeActiveSeriesFramed)
+					resp.Body = io.NopCloser(bytes.NewReader(encodeFramedActiveSeries(t, series)))
+				} else {
+					body, err := json.Marshal(result{Data: series})
+					require.NoError(t, err)
+					resp.Header.Set("Content-Type", "application/json")
+					resp.Body = io.NopCloser(bytes.NewReader(body))
+				}
+				return resp, nil
+			})
+
+			s := newShardActiveSeriesMiddleware(upstream, 0, true, mockLimits{maxShardedQueries: shardCount, totalShards: shardCount}, log.NewNopLogger())
+
+			req := httptest.NewRequest("POST", "/active_series", strings.NewReader(`selector={__name__="metric"}`))
+			req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+			req = req.WithContext(user.InjectOrgID(t.Context(), "test"))
+
+			resp, err := s.RoundTrip(req)
+			require.NoError(t, err)
+			defer resp.Body.Close()
+			require.Equal(t, http.StatusOK, resp.StatusCode)
+
+			var res result
+			require.NoError(t, json.NewDecoder(resp.Body).Decode(&res))
+			require.ElementsMatch(t, expected, res.Data)
+
+			// Assert after draining: sub-requests are dispatched lazily as the response streams.
+			require.True(t, sawAcceptFramed.Load(), "expected upstream to receive Accept: framed header")
+		})
+	}
+}
+
+func Test_shardActiveSeriesMiddleware_framed_matches_json(t *testing.T) {
+	const shardCount = 4
+
+	shardSeries := make([][]labels.Labels, shardCount)
+	for shard := 0; shard < shardCount; shard++ {
+		for k := 0; k < 5; k++ {
+			shardSeries[shard] = append(shardSeries[shard], labels.FromStrings(
+				model.MetricNameLabel, fmt.Sprintf("metric_%d", shard),
+				"instance", fmt.Sprintf("instance_%d", k),
+				"job", "prometheus",
+			))
+		}
+	}
+
+	run := func(framed bool) []byte {
+		upstream := RoundTripFunc(func(r *http.Request) (*http.Response, error) {
+			require.NoError(t, r.ParseForm())
+			req, err := cardinality.DecodeActiveSeriesRequestFromValues(r.Form)
+			require.NoError(t, err)
+			shard, _, err := sharding.ShardFromMatchers(req.Matchers)
+			require.NoError(t, err)
+			require.NotNil(t, shard)
+			series := shardSeries[shard.ShardIndex]
+
+			resp := &http.Response{StatusCode: http.StatusOK, Header: http.Header{}}
+			if framed {
+				resp.Header.Set("Content-Type", querierapi.ContentTypeActiveSeriesFramed)
+				resp.Body = io.NopCloser(bytes.NewReader(encodeFramedActiveSeries(t, series)))
+			} else {
+				body, err := json.Marshal(result{Data: series})
+				require.NoError(t, err)
+				resp.Body = io.NopCloser(bytes.NewReader(body))
+			}
+			return resp, nil
+		})
+
+		s := newShardActiveSeriesMiddleware(upstream, 0, framed, mockLimits{maxShardedQueries: shardCount, totalShards: shardCount}, log.NewNopLogger())
+		req := httptest.NewRequest("POST", "/active_series", strings.NewReader(`selector={__name__=~"metric.*"}`))
+		req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+		req = req.WithContext(user.InjectOrgID(t.Context(), "test"))
+		resp, err := s.RoundTrip(req)
+		require.NoError(t, err)
+		defer resp.Body.Close()
+		body, err := io.ReadAll(resp.Body)
+		require.NoError(t, err)
+		return body
+	}
+
+	// Series order across shards isn't deterministic, so compare the decoded sets.
+	var jsonRes, framedRes result
+	require.NoError(t, json.Unmarshal(run(false), &jsonRes))
+	require.NoError(t, json.Unmarshal(run(true), &framedRes))
+	require.ElementsMatch(t, jsonRes.Data, framedRes.Data)
+}
+
 func Test_shardActiveSeriesMiddleware_mergeResponse_contextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancelCause(context.Background())
 	defer cancel(fmt.Errorf("test ran to completion"))
@@ -588,7 +731,7 @@ func Test_shardActiveSeriesMiddleware_mergeResponse_contextCancellation(t *testi
 		{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(body))},
 		{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(body))},
 	}
-	s := newShardActiveSeriesMiddleware(upstreamServingResponses(responses), 0, mockLimits{}, log.NewNopLogger()).(*shardActiveSeriesMiddleware)
+	s := newShardActiveSeriesMiddleware(upstreamServingResponses(responses), 0, false, mockLimits{}, log.NewNopLogger()).(*shardActiveSeriesMiddleware)
 
 	resp, err := s.mergeResponses(ctx, shardRequests(ctx, len(responses)), "")
 	require.NoError(t, err)
@@ -607,19 +750,27 @@ func Test_shardActiveSeriesMiddleware_mergeResponse_contextCancellation(t *testi
 
 func BenchmarkActiveSeriesMiddlewareMergeResponses(b *testing.B) {
 	b.Run("encoding=none", func(b *testing.B) {
-		benchmarkActiveSeriesMiddlewareMergeResponses(b, "", 1)
+		benchmarkActiveSeriesMiddlewareMergeResponses(b, "", 1, false)
 	})
 
 	b.Run("encoding=snappy", func(b *testing.B) {
-		benchmarkActiveSeriesMiddlewareMergeResponses(b, encodingTypeSnappyFramed, 1)
+		benchmarkActiveSeriesMiddlewareMergeResponses(b, encodingTypeSnappyFramed, 1, false)
 	})
 
 	b.Run("seriesCount=1_000", func(b *testing.B) {
-		benchmarkActiveSeriesMiddlewareMergeResponses(b, "", 1_000)
+		benchmarkActiveSeriesMiddlewareMergeResponses(b, "", 1_000, false)
 	})
 
 	b.Run("seriesCount=10_000", func(b *testing.B) {
-		benchmarkActiveSeriesMiddlewareMergeResponses(b, "", 10_000)
+		benchmarkActiveSeriesMiddlewareMergeResponses(b, "", 10_000, false)
+	})
+
+	b.Run("format=framed/seriesCount=1_000", func(b *testing.B) {
+		benchmarkActiveSeriesMiddlewareMergeResponses(b, "", 1_000, true)
+	})
+
+	b.Run("format=framed/seriesCount=10_000", func(b *testing.B) {
+		benchmarkActiveSeriesMiddlewareMergeResponses(b, "", 10_000, true)
 	})
 }
 
@@ -627,7 +778,7 @@ type activeSeriesResponse struct {
 	Data []labels.Labels `json:"data"`
 }
 
-func benchmarkActiveSeriesMiddlewareMergeResponses(b *testing.B, encoding string, numSeries int) {
+func benchmarkActiveSeriesMiddlewareMergeResponses(b *testing.B, encoding string, numSeries int, framed bool) {
 
 	bcs := []int{4, 16, 64, 128}
 
@@ -649,18 +800,24 @@ func benchmarkActiveSeriesMiddlewareMergeResponses(b *testing.B, encoding string
 							"series", fmt.Sprintf("series_%d", seriesIdx),
 						))
 					}
-					body, _ := json.Marshal(&apiResp)
 
-					allResponses = append(allResponses, &http.Response{
+					resp := &http.Response{
 						StatusCode: http.StatusOK,
 						Header:     http.Header{},
-						Body:       io.NopCloser(bytes.NewReader(body)),
-					})
+					}
+					if framed {
+						resp.Header.Set("Content-Type", querierapi.ContentTypeActiveSeriesFramed)
+						resp.Body = io.NopCloser(bytes.NewReader(encodeFramedActiveSeriesBench(apiResp.Data)))
+					} else {
+						body, _ := json.Marshal(&apiResp)
+						resp.Body = io.NopCloser(bytes.NewReader(body))
+					}
+					allResponses = append(allResponses, resp)
 				}
 				benchRequests[i] = shardRequests(context.Background(), numResponses)
 			}
 
-			s := newShardActiveSeriesMiddleware(upstreamServingResponses(allResponses), 0, mockLimits{}, log.NewNopLogger()).(*shardActiveSeriesMiddleware)
+			s := newShardActiveSeriesMiddleware(upstreamServingResponses(allResponses), 0, framed, mockLimits{}, log.NewNopLogger()).(*shardActiveSeriesMiddleware)
 
 			b.ResetTimer()
 			b.ReportAllocs()
@@ -674,6 +831,18 @@ func benchmarkActiveSeriesMiddlewareMergeResponses(b *testing.B, encoding string
 			}
 		})
 	}
+}
+
+func encodeFramedActiveSeriesBench(series []labels.Labels) []byte {
+	var buf bytes.Buffer
+	var lenBuf [binary.MaxVarintLen64]byte
+	for i := range series {
+		obj, _ := series[i].MarshalJSON()
+		n := binary.PutUvarint(lenBuf[:], uint64(len(obj)))
+		buf.Write(lenBuf[:n])
+		buf.Write(obj)
+	}
+	return buf.Bytes()
 }
 
 type result struct {

@@ -3,13 +3,18 @@
 package querier
 
 import (
+	"bufio"
+	"bytes"
 	"context"
+	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -884,6 +889,105 @@ func TestActiveSeriesCardinalityHandler(t *testing.T) {
 			assert.Len(t, resp.Data, len(series))
 		})
 	}
+}
+
+func TestActiveSeriesCardinalityHandler_framedResponse(t *testing.T) {
+	series := []labels.Labels{
+		labels.FromStrings("__name__", "up", "job", "prometheus"),
+		labels.FromStrings("__name__", "process_start_time_seconds", "instance", "localhost:9090", "job", "prometheus"),
+	}
+
+	newRequest := func(t *testing.T, accept string) *http.Request {
+		ctx := user.InjectOrgID(context.Background(), "test")
+		r, err := http.NewRequestWithContext(ctx, "POST", "/active_series", strings.NewReader(`selector={job="prometheus"}`))
+		require.NoError(t, err)
+		r.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+		if accept != "" {
+			r.Header.Add("Accept", accept)
+		}
+		return r
+	}
+
+	serve := func(t *testing.T, accept string) *http.Response {
+		d := &mockDistributor{}
+		d.On("ActiveSeries", mock.Anything, mock.Anything).Return(series, error(nil))
+		handler := createEnabledHandler(t, ActiveSeriesCardinalityHandler, d)
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, newRequest(t, accept))
+		return recorder.Result()
+	}
+
+	t.Run("returns framed response when requested via Accept", func(t *testing.T) {
+		resp := serve(t, api.ContentTypeActiveSeriesFramed)
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+		require.Equal(t, api.ContentTypeActiveSeriesFramed, resp.Header.Get("Content-Type"))
+
+		body, err := io.ReadAll(resp.Body)
+		require.NoError(t, err)
+		require.Equal(t, len(body), func() int { l, _ := strconv.Atoi(resp.Header.Get("Content-Length")); return l }())
+
+		decoded := decodeFramedActiveSeries(t, body)
+		require.ElementsMatch(t, series, decoded)
+	})
+
+	t.Run("framed frames are byte-identical to the JSON array elements", func(t *testing.T) {
+		framed := serve(t, api.ContentTypeActiveSeriesFramed)
+		framedBody, err := io.ReadAll(framed.Body)
+		require.NoError(t, err)
+
+		jsonResp := serve(t, "")
+		require.Equal(t, "application/json", jsonResp.Header.Get("Content-Type"))
+		jsonBody, err := io.ReadAll(jsonResp.Body)
+		require.NoError(t, err)
+
+		// Reconstruct the JSON array from the framed frames and compare it to the JSON handler's output.
+		var out bytes.Buffer
+		out.WriteString(`{"data":[`)
+		for i, frame := range framedFrames(t, framedBody) {
+			if i > 0 {
+				out.WriteByte(',')
+			}
+			out.Write(frame)
+		}
+		out.WriteString(`]}`)
+		require.JSONEq(t, string(jsonBody), out.String())
+		require.Equal(t, string(jsonBody), out.String(), "framed frames must byte-match the JSON array elements")
+	})
+
+	t.Run("returns JSON when Accept does not request framing", func(t *testing.T) {
+		resp := serve(t, "application/json")
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+		require.Equal(t, "application/json", resp.Header.Get("Content-Type"))
+	})
+}
+
+func framedFrames(t *testing.T, body []byte) [][]byte {
+	t.Helper()
+	var frames [][]byte
+	r := bytes.NewReader(body)
+	br := bufio.NewReader(r)
+	for {
+		n, err := binary.ReadUvarint(br)
+		if errors.Is(err, io.EOF) {
+			return frames
+		}
+		require.NoError(t, err)
+		frame := make([]byte, n)
+		_, err = io.ReadFull(br, frame)
+		require.NoError(t, err)
+		frames = append(frames, frame)
+	}
+}
+
+func decodeFramedActiveSeries(t *testing.T, body []byte) []labels.Labels {
+	t.Helper()
+	var out []labels.Labels
+	for _, frame := range framedFrames(t, body) {
+		var ls labels.Labels
+		require.NoError(t, ls.UnmarshalJSON(frame))
+		out = append(out, ls)
+	}
+	return out
 }
 
 func BenchmarkActiveSeriesHandler_ServeHTTP(b *testing.B) {

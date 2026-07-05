@@ -3,7 +3,9 @@
 package querier
 
 import (
+	"bytes"
 	"cmp"
+	"encoding/binary"
 	"fmt"
 	"net/http"
 	"slices"
@@ -14,6 +16,7 @@ import (
 	"github.com/grafana/dskit/tenant"
 	jsoniter "github.com/json-iterator/go"
 	"github.com/pkg/errors"
+	"github.com/prometheus/prometheus/model/labels"
 
 	"github.com/grafana/mimir/pkg/cardinality"
 	"github.com/grafana/mimir/pkg/distributor"
@@ -119,6 +122,11 @@ func ActiveSeriesCardinalityHandler(d Distributor, limits *validation.Overrides)
 			return
 		}
 
+		if activeSeriesRequestAcceptsFramed(r) {
+			writeActiveSeriesFramedResponse(w, res)
+			return
+		}
+
 		var json = jsoniter.ConfigCompatibleWithStandardLibrary
 		bytes, err := json.Marshal(api.ActiveSeriesResponse{Data: res})
 		if err != nil {
@@ -132,6 +140,38 @@ func ActiveSeriesCardinalityHandler(d Distributor, limits *validation.Overrides)
 		// Nothing we can do about this error, so ignore it.
 		_, _ = w.Write(bytes)
 	})
+}
+
+func activeSeriesRequestAcceptsFramed(r *http.Request) bool {
+	for _, accept := range r.Header.Values("Accept") {
+		if strings.Contains(accept, api.ContentTypeActiveSeriesFramed) {
+			return true
+		}
+	}
+	return false
+}
+
+// writeActiveSeriesFramedResponse writes series in the length-delimited format described by api.ContentTypeActiveSeriesFramed.
+func writeActiveSeriesFramedResponse(w http.ResponseWriter, series []labels.Labels) {
+	var buf bytes.Buffer
+	var lenBuf [binary.MaxVarintLen64]byte
+	for i := range series {
+		obj, err := series[i].MarshalJSON()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		n := binary.PutUvarint(lenBuf[:], uint64(len(obj)))
+		buf.Write(lenBuf[:n])
+		buf.Write(obj)
+	}
+
+	w.Header().Set("Content-Type", api.ContentTypeActiveSeriesFramed)
+	w.Header().Set("Content-Length", strconv.Itoa(buf.Len()))
+	w.Header().Set(worker.ResponseStreamingEnabledHeader, "true")
+
+	// Nothing we can do about this error, so ignore it.
+	_, _ = w.Write(buf.Bytes())
 }
 
 func ActiveNativeHistogramMetricsHandler(d Distributor, limits *validation.Overrides) http.Handler {

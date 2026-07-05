@@ -19,6 +19,7 @@ import (
 	"github.com/pkg/errors"
 	"go.opentelemetry.io/otel/attribute"
 
+	querierapi "github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
@@ -52,12 +53,13 @@ type shardActiveSeriesMiddleware struct {
 	shardBySeriesBase
 }
 
-func newShardActiveSeriesMiddleware(upstream http.RoundTripper, maxConcurrency int, limits Limits, logger log.Logger) http.RoundTripper {
+func newShardActiveSeriesMiddleware(upstream http.RoundTripper, maxConcurrency int, requestFramedResponses bool, limits Limits, logger log.Logger) http.RoundTripper {
 	return &shardActiveSeriesMiddleware{shardBySeriesBase{
-		upstream:       upstream,
-		limits:         limits,
-		logger:         logger,
-		maxConcurrency: maxConcurrency,
+		upstream:               upstream,
+		limits:                 limits,
+		logger:                 logger,
+		maxConcurrency:         maxConcurrency,
+		requestFramedResponses: requestFramedResponses,
 	}}
 }
 
@@ -70,6 +72,10 @@ func (s *shardActiveSeriesMiddleware) RoundTrip(r *http.Request) (*http.Response
 		return nil, err
 	}
 	return resp, nil
+}
+
+func responseIsActiveSeriesFramed(r *http.Response) bool {
+	return r.Header.Get("Content-Type") == querierapi.ContentTypeActiveSeriesFramed
 }
 
 func (s *shardActiveSeriesMiddleware) mergeResponses(ctx context.Context, reqs []*http.Request, encoding string) (*http.Response, error) {
@@ -92,6 +98,10 @@ func (s *shardActiveSeriesMiddleware) mergeResponses(ctx context.Context, reqs [
 				dec.close()
 				reuseShardActiveSeriesResponseDecoder(dec)
 			}()
+
+			if responseIsActiveSeriesFramed(resp) {
+				return dec.streamFramedData()
+			}
 
 			if err := dec.decode(); err != nil {
 				return err
