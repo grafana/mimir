@@ -42,6 +42,12 @@ type rulerNotifier struct {
 	sdManager *discovery.Manager
 	wg        sync.WaitGroup
 	logger    gklog.Logger
+
+	// appliedExternalLabels are the external labels the notifier was configured with. The rules
+	// manager uses the same values for the rule-evaluation template context, so templates always
+	// render the labels actually attached to delivered alerts. It is guarded by
+	// DefaultMultiTenantManager.notifiersMtx.
+	appliedExternalLabels labels.Labels
 }
 
 func newRulerNotifier(nameValidationScheme model.ValidationScheme, o *notifier.Options, l gklog.Logger) (*rulerNotifier, error) {

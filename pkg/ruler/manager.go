@@ -19,6 +19,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/discovery"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/notifier"
 	promRules "github.com/prometheus/prometheus/rules"
@@ -215,8 +216,9 @@ func (r *DefaultMultiTenantManager) syncRulesToManager(user string, groups rules
 	r.configUpdatesTotal.WithLabelValues(user).Inc()
 
 	// External labels are made available to alerting rule templates (for example {{ $externalLabels.cluster }}).
-	// They are attached to alerts sent to Alertmanager separately, via the notifier config (see getOrCreateNotifier).
-	err = manager.Update(r.cfg.EvaluationInterval, files, r.limits.RulerExternalLabels(user), r.cfg.ExternalURL.String(), nil)
+	// They are attached to alerts sent to Alertmanager separately, via the notifier config (see getOrCreateNotifier),
+	// and templates use the values the notifier was configured with so both always stay consistent.
+	err = manager.Update(r.cfg.EvaluationInterval, files, r.notifierAppliedExternalLabels(user), r.cfg.ExternalURL.String(), nil)
 	if err != nil {
 		r.lastReloadSuccessful.WithLabelValues(user).Set(0)
 		level.Error(r.logger).Log("msg", "unable to update rule manager", "user", user, "err", err)
@@ -324,7 +326,8 @@ func (r *DefaultMultiTenantManager) getOrCreateNotifier(userID string) (*notifie
 	n.run()
 
 	userSpecificCfg := r.limits.RulerAlertmanagerClientConfig(userID)
-	notifierCfg, err := buildNotifierConfig(userSpecificCfg.AlertmanagerURL, userSpecificCfg.NotifierConfig, r.limits.RulerExternalLabels(userID), r.limits.RulerAlertRelabelConfigs(userID), r.limits.NameValidationScheme(userID), r.dnsResolver, r.cfg.NotificationTimeout, r.cfg.AlertmanagerRefreshInterval, r.refreshMetrics)
+	externalLabels := r.limits.RulerExternalLabels(userID)
+	notifierCfg, err := buildNotifierConfig(userSpecificCfg.AlertmanagerURL, userSpecificCfg.NotifierConfig, externalLabels, r.limits.RulerAlertRelabelConfigs(userID), r.limits.NameValidationScheme(userID), r.dnsResolver, r.cfg.NotificationTimeout, r.cfg.AlertmanagerRefreshInterval, r.refreshMetrics)
 	if err != nil {
 		return nil, err
 	}
@@ -333,9 +336,25 @@ func (r *DefaultMultiTenantManager) getOrCreateNotifier(userID string) (*notifie
 	if err := n.applyConfig(notifierCfg); err != nil {
 		return nil, err
 	}
+	n.appliedExternalLabels = externalLabels
 
 	r.notifiers[userID] = n
 	return n.notifier, nil
+}
+
+// notifierAppliedExternalLabels returns the external labels the tenant's notifier was configured
+// with, so the rules manager can expose the same values to rule-evaluation templates. The whole
+// Alertmanager client config, like alertmanager_url, is applied when the notifier is created, so
+// reading the current limits here instead could return newer labels than the ones the notifier
+// attaches to delivered alerts.
+func (r *DefaultMultiTenantManager) notifierAppliedExternalLabels(userID string) labels.Labels {
+	r.notifiersMtx.Lock()
+	defer r.notifiersMtx.Unlock()
+
+	if n, ok := r.notifiers[userID]; ok {
+		return n.appliedExternalLabels
+	}
+	return labels.EmptyLabels()
 }
 
 // removeUsersIf stops the manager and cleanup the resources for each user for which

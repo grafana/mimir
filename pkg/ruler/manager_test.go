@@ -387,7 +387,7 @@ func TestDefaultMultiTenantManager_NotifierConfiguration(t *testing.T) {
 }
 
 func TestDefaultMultiTenantManager_PerTenantExternalLabelsPassedToRuleManager(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	logger := testutil.NewTestingLogger(t)
 
 	const user1 = "user-1"
@@ -431,7 +431,12 @@ func TestDefaultMultiTenantManager_PerTenantExternalLabelsAndRelabelingOnSentAle
 		var payload []struct {
 			Labels map[string]string `json:"labels"`
 		}
-		require.NoError(t, json.NewDecoder(r.Body).Decode(&payload))
+		// Report the error instead of failing the test from a non-test goroutine.
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Errorf("failed to decode the alertmanager request: %v", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
 
 		got := make([]labels.Labels, 0, len(payload))
 		for _, a := range payload {
@@ -442,7 +447,7 @@ func TestDefaultMultiTenantManager_PerTenantExternalLabelsAndRelabelingOnSentAle
 	}))
 	defer alertmanager.Close()
 
-	ctx := context.Background()
+	ctx := t.Context()
 	logger := testutil.NewTestingLogger(t)
 
 	const user1 = "user-1"
@@ -500,6 +505,10 @@ func TestDefaultMultiTenantManager_PerTenantExternalLabelsAndRelabelingOnSentAle
 		}
 	}
 
+	// Keep draining briefly, so the dropped-alert assertion below can't pass just because the
+	// alert would have been delivered in a later batch.
+	drainReceivedAlerts(receivedAlerts, byName, 500*time.Millisecond)
+
 	// alert-3 was dropped by the alert relabel config.
 	require.NotContains(t, byName, "alert-3")
 
@@ -510,6 +519,68 @@ func TestDefaultMultiTenantManager_PerTenantExternalLabelsAndRelabelingOnSentAle
 	// The pre-existing cluster label on alert-2 was preserved; external labels do not override.
 	require.Equal(t, "local", byName["alert-2"].Get("cluster"))
 	require.Equal(t, "eu", byName["alert-2"].Get("region"))
+}
+
+// drainReceivedAlerts keeps consuming alert batches from ch into byName for the given grace
+// period, so assertions about alerts that must not have been delivered don't pass just because
+// the alert would have arrived in a batch after the awaited one.
+func drainReceivedAlerts(ch chan []labels.Labels, byName map[string]labels.Labels, grace time.Duration) {
+	deadline := time.After(grace)
+	for {
+		select {
+		case batch := <-ch:
+			for _, l := range batch {
+				byName[l.Get(labels.AlertName)] = l
+			}
+		case <-deadline:
+			return
+		}
+	}
+}
+
+func TestDefaultMultiTenantManager_ExternalLabelsStayConsistentWithNotifierOnLimitsChange(t *testing.T) {
+	ctx := t.Context()
+	logger := testutil.NewTestingLogger(t)
+
+	const user1 = "user-1"
+	user1Group := createRuleGroup("group-1", user1, createRecordingRule("count:metric_1", "count(metric_1)"))
+
+	// Keep a reference to the tenant limits, so the test can change them between syncs.
+	var tenantLimits map[string]*validation.Limits
+	overrides := validation.MockOverrides(func(defaults *validation.Limits, tl map[string]*validation.Limits) {
+		*defaults = *validation.MockDefaultLimits()
+		tl[user1] = validation.MockDefaultLimits()
+		tl[user1].RulerAlertmanagerClientConfig = rulernotifier.AlertmanagerClientConfig{
+			ExternalLabels: map[string]string{"cluster": "before"},
+		}
+		tenantLimits = tl
+	})
+
+	m, err := NewDefaultMultiTenantManager(Config{RulePath: t.TempDir()}, managerMockFactory, nil, logger, nil, overrides, afero.NewMemMapFs())
+	require.NoError(t, err)
+	defer m.Stop()
+
+	m.SyncFullRuleGroups(ctx, map[string]rulespb.RuleGroupList{user1: {user1Group}})
+	m.Start()
+
+	userMock := assertManagerMockRunningForUser(t, m, user1)
+	require.Equal(t, labels.FromStrings("cluster", "before"), userMock.getUpdateExternalLabels())
+	require.Equal(t, 1, userMock.getUpdateCount())
+
+	// Change the tenant's external labels. The whole Alertmanager client config, like
+	// alertmanager_url, is applied when the tenant's notifier is created, so the change is not
+	// expected to be picked up by a re-sync.
+	tenantLimits[user1].RulerAlertmanagerClientConfig.ExternalLabels = map[string]string{"cluster": "after"}
+	m.SyncFullRuleGroups(ctx, map[string]rulespb.RuleGroupList{user1: {user1Group}})
+	require.Equal(t, 1, userMock.getUpdateCount())
+
+	// Sync with a changed rule group: the rule manager is updated, but the external labels exposed
+	// to rule-evaluation templates must still be the ones the notifier attaches to delivered
+	// alerts, not the changed ones.
+	user1GroupChanged := createRuleGroup("group-1", user1, createRecordingRule("sum:metric_1", "sum(metric_1)"))
+	m.SyncFullRuleGroups(ctx, map[string]rulespb.RuleGroupList{user1: {user1GroupChanged}})
+	require.Equal(t, 2, userMock.getUpdateCount())
+	require.Equal(t, labels.FromStrings("cluster", "before"), userMock.getUpdateExternalLabels())
 }
 
 func TestDefaultMultiTenantManager_WaitsToDrainPendingNotificationsOnShutdown(t *testing.T) {
@@ -721,6 +792,7 @@ type managerMock struct {
 	onStop   func()
 
 	mtx                  sync.Mutex
+	updateCount          int
 	updateExternalLabels labels.Labels
 }
 
@@ -741,6 +813,7 @@ func (m *managerMock) Stop() {
 func (m *managerMock) Update(_ time.Duration, _ []string, externalLabels labels.Labels, _ string, _ promRules.GroupEvalIterationFunc) error {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
+	m.updateCount++
 	m.updateExternalLabels = externalLabels
 	return nil
 }
@@ -749,6 +822,12 @@ func (m *managerMock) getUpdateExternalLabels() labels.Labels {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 	return m.updateExternalLabels
+}
+
+func (m *managerMock) getUpdateCount() int {
+	m.mtx.Lock()
+	defer m.mtx.Unlock()
+	return m.updateCount
 }
 
 func (m *managerMock) RuleGroups() []*promRules.Group {
