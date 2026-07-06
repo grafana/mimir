@@ -15,6 +15,7 @@ import (
 	"math/rand"
 	"net"
 	"net/http"
+	"runtime"
 	"strconv"
 	"sync"
 	"time"
@@ -393,20 +394,7 @@ func (f *Frontend) DoProtobufRequest(requestContext context.Context, req proto.M
 	freq.protobufRequest = req
 	freq.protobufRequestHeaders = maps.Clone(querymiddleware.HeadersToPropagateFromContext(streamContext)) // Take a shallow copy of the headers, so that we don't mutate the shared map when adding trace headers later.
 	freq.protobufResponseDone = make(chan struct{})
-	freq.protobufResponseStream = &ProtobufResponseStream{
-		requestContext: requestContext,
-		streamContext:  streamContext,
-		cancelStream:   cancelStream,
-		spanLogger:     freq.spanLogger,
-		// Buffer of 1 to ensure response or error can be written to the channel
-		// even if this goroutine goes away due to client context cancellation.
-		messages:     make(chan protobufResponseMessage, 1),
-		enqueueError: make(chan error, 1), // Note that we never close this channel, otherwise ProtobufResponseStream.Next() will not reliably return any buffered messages in the stream channel.
-
-		responseStarted: make(chan struct{}),
-		notifyClosed:    make(chan struct{}),
-		isClosed:        atomic.NewBool(false),
-	}
+	freq.protobufResponseStream = newProtobufResponseStream(requestContext, streamContext, cancelStream, freq.spanLogger)
 
 	f.requests.put(freq)
 	f.inflightRequestCount.Inc()
@@ -506,6 +494,56 @@ type ProtobufResponseStream struct {
 type protobufResponseMessage struct {
 	msg *frontendv2pb.QueryResultStreamRequest
 	err error
+}
+
+func newProtobufResponseStream(requestContext, streamContext context.Context, cancelStream context.CancelCauseFunc, spanLogger *spanlogger.SpanLogger) *ProtobufResponseStream {
+	s := &ProtobufResponseStream{
+		requestContext: requestContext,
+		streamContext:  streamContext,
+		cancelStream:   cancelStream,
+		spanLogger:     spanLogger,
+		// Buffer of 1 to ensure response or error can be written to the channel
+		// even if this goroutine goes away due to client context cancellation.
+		messages:     make(chan protobufResponseMessage, 1),
+		enqueueError: make(chan error, 1), // Note that we never close this channel, otherwise ProtobufResponseStream.Next() will not reliably return any buffered messages in the stream channel.
+
+		responseStarted: make(chan struct{}),
+		notifyClosed:    make(chan struct{}),
+		isClosed:        atomic.NewBool(false),
+	}
+
+	// Backstop for the bounded buffer leak that Close drains eagerly: if the stream is
+	// abandoned with a message still buffered in s.messages — a write() that races in
+	// after Close's drain, or a caller that drops the stream without calling Close — its
+	// retained gRPC frame buffer is released once the stream becomes unreachable.
+	// The cleanup captures only the channel, never s, so holding it cannot keep s alive
+	// (and cannot resurrect it); FreeBuffer's LoadAndDelete makes a redundant release a
+	// no-op, so this never double-frees a buffer already released by the drain or a consumer.
+	runtime.AddCleanup(s, drainAndReleaseMessages, s.messages)
+
+	return s
+}
+
+// drainAndReleaseMessages non-blockingly empties a response stream's message channel,
+// releasing the gRPC receive-frame buffer retained by each drained message. It is safe to
+// call repeatedly and concurrently: the channel hands each message to a single receiver,
+// and QueryResultStreamRequest.FreeBuffer (a sync.Map LoadAndDelete) is a no-op once a
+// message's buffer has already been released.
+func drainAndReleaseMessages(messages chan protobufResponseMessage) {
+	for {
+		select {
+		case m, ok := <-messages:
+			if !ok {
+				// Channel closed by receiveResultForProtobufRequest; nothing left to drain.
+				return
+			}
+			if m.msg != nil {
+				m.msg.FreeBuffer()
+			}
+		default:
+			return
+		}
+	}
 }
 
 func (s *ProtobufResponseStream) write(msg *frontendv2pb.QueryResultStreamRequest, err error) error {
@@ -637,6 +675,13 @@ func (s *ProtobufResponseStream) Close() {
 		if s.isClosed.CompareAndSwap(false, true) {
 			close(s.notifyClosed)
 		}
+
+		// Release the gRPC frame buffer retained by any message left unread in the
+		// 1-element channel. Without this, a message abandoned in the channel keeps its
+		// grpcBuffers entry (and the mem.Buffer it references) alive forever — a bounded
+		// per-stream leak. A message that races in after this drain is caught by the
+		// runtime.AddCleanup backstop registered in newProtobufResponseStream.
+		drainAndReleaseMessages(s.messages)
 	}()
 
 	select {

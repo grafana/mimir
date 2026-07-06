@@ -623,7 +623,7 @@ NoPrescan entry point.
 
 ## Known limitations
 
-### cqa.3: bounded permanent leak in QueryResultStreamRequest buffer retention
+### cqa.3: QueryResultStreamRequest gRPC frame-buffer retention
 
 `pkg/frontend/v2/frontendv2pb/wiresmith_compat.go` implements `SetBuffer` /
 `FreeBuffer` / `Buffer` on `QueryResultStreamRequest` via a global `sync.Map`
@@ -633,20 +633,21 @@ aliases `Name` and `Value` directly into the gRPC receive-frame buffer using
 `yoloString`; that buffer must be kept alive until the caller is done with the
 label strings.
 
-**The leak:** `ProtobufResponseStream` passes decoded messages through a
-1-element buffered channel. If a consumer calls `Close()` while a message is
-already committed to that channel buffer, Go's runtime may select the
-`notifyClosed` branch in `Next()`'s select rather than the `messages` branch.
-The abandoned message is never read, `FreeBuffer` is never called, and the
-`sync.Map` entry — holding strong references to both the
-`*QueryResultStreamRequest` key and the `mem.Buffer` value — is never removed
-and cannot be GC'd.
+**The leak (fixed on this branch):** `ProtobufResponseStream` passes decoded
+messages through a 1-element buffered channel. If a consumer called `Close()`
+while a message was still buffered in that channel, the message was never read,
+`FreeBuffer` was never called, and its `sync.Map` entry — holding strong
+references to both the `*QueryResultStreamRequest` key and the `mem.Buffer`
+value — leaked permanently (bounded at one entry per early-closed stream).
+`ProtobufResponseStream.Close` now drains that buffered channel and calls
+`FreeBuffer` on each message it finds, and `newProtobufResponseStream` registers
+a `runtime.AddCleanup` backstop that releases any message which escapes the
+drain (for example a `write` that races in afterwards) once the stream is
+garbage collected. Both paths are idempotent through the `sync.Map`'s
+`LoadAndDelete`, so a buffer is never double-freed, and the hot per-message
+send/receive path is untouched.
 
-The leak is **bounded**: at most one entry per early-closed stream, so the
-total retained memory is proportional to the number of streams abandoned with a
-buffered message at any moment.
-
-**Proper fix:** wiresmith bead **wiresmith-egvq** (P1) will add `unique`-interned
+**Longer term:** wiresmith bead **wiresmith-egvq** (P1) will add `unique`-interned
 buffer-independent strings, eliminating `yoloString` frame-aliasing in
 `LabelAdapter.UnmarshalWiresmith` entirely. Once that ships, the
 `wiresmith_compat.go` `sync.Map` mechanism and the `SetBuffer`/`FreeBuffer`

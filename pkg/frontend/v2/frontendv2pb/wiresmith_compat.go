@@ -15,18 +15,19 @@ import (
 // the frame from being returned to the pool while those strings are live.
 // The gRPC codec calls SetBuffer on messages that implement MessageWithBufferRef.
 //
-// Known limitation — bounded permanent leak: if a consumer calls
-// ProtobufResponseStream.Close() while a QueryResultStreamRequest is already
-// buffered in the 1-element messages channel, Go's select is free to take the
-// notifyClosed branch rather than the messages branch, leaving that message
-// permanently in the channel. Nobody reads it, FreeBuffer is never called, and
-// the sync.Map entry (the *QueryResultStreamRequest key plus its mem.Buffer) is
-// never removed and cannot be GC'd (the map holds a strong reference to both).
-// The leak is bounded: at most one entry per early-closed stream, so the total
-// retained memory is proportional to concurrent abandoned streams at any moment.
-// The proper fix — wiresmith `unique`-interned buffer-independent strings that
-// eliminate the yoloString frame-aliasing entirely — is tracked as wiresmith bead
-// wiresmith-egvq (P1, prerequisite for the mimir migration upstream merge).
+// A message left buffered in ProtobufResponseStream's 1-element channel when the
+// stream is closed early would once have leaked its entry here permanently (the map
+// strongly references both the *QueryResultStreamRequest key and its mem.Buffer). That
+// is now handled on the stream side: Close drains the buffered channel and calls
+// FreeBuffer on each message, and a runtime.AddCleanup backstop releases any message
+// that escapes the drain once the stream is collected (see pkg/frontend/v2/frontend.go).
+// FreeBuffer's LoadAndDelete keeps those paths idempotent, so a buffer is never
+// double-freed.
+//
+// The proper fix — wiresmith `unique`-interned buffer-independent strings that eliminate
+// the yoloString frame-aliasing entirely — is tracked as wiresmith bead wiresmith-egvq
+// (P1, prerequisite for the mimir migration upstream merge); once it ships, this whole
+// side-channel and its SetBuffer/FreeBuffer call sites can be removed.
 var grpcBuffers sync.Map // map[*QueryResultStreamRequest]mem.Buffer
 
 // SetBuffer satisfies mimirpb.MessageWithBufferRef; called by the gRPC codec after
