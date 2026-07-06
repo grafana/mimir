@@ -1510,12 +1510,21 @@ func (o *Overrides) RulerExternalLabels(userID string) labels.Labels {
 }
 
 // RulerAlertRelabelConfigs returns the alert relabel configs applied to alerts before they are sent
-// to Alertmanager for a given user.
+// to Alertmanager for a given user. The returned configs are copies: the tenant's name validation
+// scheme is written into them, while the underlying objects can be shared between tenants falling
+// back to the default limits and are read concurrently by running notifiers.
 func (o *Overrides) RulerAlertRelabelConfigs(userID string) []*relabel.Config {
-	relabelConfigs := o.getOverridesForUser(userID).RulerAlertmanagerClientConfig.AlertRelabelConfigs
+	src := o.getOverridesForUser(userID).RulerAlertmanagerClientConfig.AlertRelabelConfigs
+	if len(src) == 0 {
+		return nil
+	}
+
 	validationScheme := o.NameValidationScheme(userID)
-	for i := range relabelConfigs {
-		relabelConfigs[i].NameValidationScheme = validationScheme
+	relabelConfigs := make([]*relabel.Config, len(src))
+	for i, cfg := range src {
+		copied := *cfg
+		copied.NameValidationScheme = validationScheme
+		relabelConfigs[i] = &copied
 	}
 	return relabelConfigs
 }
