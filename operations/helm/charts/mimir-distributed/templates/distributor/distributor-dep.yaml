@@ -51,6 +51,10 @@ spec:
         - name: distributor
           image: {{ include "mimir.imageReference" (dict "ctx" . "component" "distributor") }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- with .Values.distributor.command }}
+          command:
+            - {{ . | quote }}
+          {{- end }}
           args:
             - "-target=distributor"
             - "-config.expand-env=true"

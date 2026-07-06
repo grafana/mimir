@@ -50,6 +50,10 @@ spec:
         - name: ruler-querier
           image: {{ include "mimir.imageReference" (dict "ctx" . "component" "ruler-querier") }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- with .Values.ruler_querier.command }}
+          command:
+            - {{ . | quote }}
+          {{- end }}
           args:
             - "-target=querier"
             - "-config.expand-env=true"
