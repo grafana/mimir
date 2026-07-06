@@ -8,23 +8,22 @@
 syntax = "proto3";
 package thanos;
 
-import "gogoproto/gogo.proto";
+import "github.com/grafana/mimir/pkg/storegateway/storepb/types.proto";
 import "google/protobuf/any.proto";
-import "types.proto";
+import "wiresmith/options.proto";
 
 option go_package = "storepb";
-option (gogoproto.goproto_getters_all) = false;
-option (gogoproto.goproto_sizecache_all) = false; // Do not generate XXX_sizecache fields to reduce memory footprint and allow zero-copy casts to/from Prometheus data types.
-option (gogoproto.goproto_unkeyed_all) = false; // Do not generate XXX_sizecache fields to reduce memory footprint and allow zero-copy casts to/from Prometheus data types.
-option (gogoproto.goproto_unrecognized_all) = false; // Do not generate XXX_sizecache fields to reduce memory footprint and allow zero-copy casts to/from Prometheus data types.
-option (gogoproto.marshaler_all) = true;
-option (gogoproto.sizer_all) = true;
-option (gogoproto.unmarshaler_all) = true;
+// no_presence_all reproduces the gogoproto goproto_{unkeyed,unrecognized,
+// sizecache}_all=false layout (declared-fields-only, no presence bitmap).
+option (wiresmith.options.no_presence_all) = true;
+// enum_no_prefix_all reproduces gogoproto's unprefixed enum value constants
+// (ORDER_BY_VALUE_ASC, FUZZ_ALG_SUBSEQUENCE, ...).
+option (wiresmith.options.enum_no_prefix_all) = true;
 
 message SeriesRequest {
   int64 min_time = 1;
   int64 max_time = 2;
-  repeated LabelMatcher matchers = 3 [(gogoproto.nullable) = false];
+  repeated LabelMatcher matchers = 3;
 
   // Thanos max_resolution_window.
   reserved 4;
@@ -46,7 +45,10 @@ message SeriesRequest {
   // implementation of a specific store.
   //
   // Deprecated: use request_hints instead.
-  google.protobuf.Any hints = 9;
+  //
+  // The payload is a gogo-registry hintspb message unpacked via gogo
+  // types.UnmarshalAny, so this Any bridges to gogo types.Any via AnyAdapter.
+  google.protobuf.Any hints = 9 [(wiresmith.options.customtype) = "AnyAdapter"];
 
   // Thanos step.
   reserved 10;
@@ -62,7 +64,7 @@ message SeriesRequest {
 
   // Additional information from the read path that the store can use to more efficiently
   // return series.
-  SeriesRequestHints request_hints = 14;
+  SeriesRequestHints request_hints = 14 [(wiresmith.options.pointer) = true];
 
   // limit is the maximum number of series to return. The store-gateway applies it after
   // merging and deduplicating series across blocks, so it avoids loading chunks for series
@@ -87,7 +89,7 @@ message SeriesRequestHints {
   // block_matchers is a list of label matchers that are evaluated against each single block's
   // labels to filter which blocks get queried. If the list is empty, no per-block filtering
   // is applied.
-  repeated thanos.LabelMatcher block_matchers = 1 [(gogoproto.nullable) = false];
+  repeated thanos.LabelMatcher block_matchers = 1;
 
   reserved 2; // projections include, not used anymore.
   reserved 3; // projections labels, not used anymore.
@@ -113,6 +115,10 @@ message SeriesResponse {
     // be handled in such case (ie. merged vs keep the first/last one).
     //
     // Deprecated: use response_hints instead.
+    //
+    // customtype cannot be applied to oneof variants, so this keeps wiresmith's
+    // native anypb.Any; the querier bridges it to gogo types.Any at the single
+    // read site (blocks_store_queryable.go) for gogo types.UnmarshalAny.
     google.protobuf.Any hints = 3;
 
     // stats is a object containing stats for a series response from the store-gateways so that we can collect stats
@@ -142,7 +148,7 @@ message SeriesResponse {
 
 message SeriesResponseHints {
   // queried_blocks is the list of blocks that have been queried.
-  repeated Block queried_blocks = 1 [(gogoproto.nullable) = false];
+  repeated Block queried_blocks = 1;
 }
 
 message Block {
@@ -165,20 +171,20 @@ message LabelNamesRequest {
   // implementation of a specific store.
   //
   // Deprecated: use request_hints instead.
-  google.protobuf.Any hints = 5;
+  google.protobuf.Any hints = 5 [(wiresmith.options.customtype) = "AnyAdapter"];
 
-  repeated LabelMatcher matchers = 6 [(gogoproto.nullable) = false];
+  repeated LabelMatcher matchers = 6;
 
   int64 limit = 7;
 
-  LabelNamesRequestHints request_hints = 8;
+  LabelNamesRequestHints request_hints = 8 [(wiresmith.options.pointer) = true];
 }
 
 message LabelNamesRequestHints {
   // block_matchers is a list of label matchers that are evaluated against each single block's
   // labels to filter which blocks get queried. If the list is empty, no per-block filtering
   // is applied.
-  repeated thanos.LabelMatcher block_matchers = 1 [(gogoproto.nullable) = false];
+  repeated thanos.LabelMatcher block_matchers = 1;
 }
 
 message LabelNamesResponse {
@@ -190,14 +196,14 @@ message LabelNamesResponse {
   // implementation of a specific store.
   //
   // Deprecated: use response_hints instead.
-  google.protobuf.Any hints = 3;
+  google.protobuf.Any hints = 3 [(wiresmith.options.customtype) = "AnyAdapter"];
 
-  LabelNamesResponseHints response_hints = 4;
+  LabelNamesResponseHints response_hints = 4 [(wiresmith.options.pointer) = true];
 }
 
 message LabelNamesResponseHints {
   // queried_blocks is the list of blocks that have been queried.
-  repeated Block queried_blocks = 1 [(gogoproto.nullable) = false];
+  repeated Block queried_blocks = 1;
 }
 
 message LabelValuesRequest {
@@ -218,20 +224,20 @@ message LabelValuesRequest {
   // implementation of a specific store.
   //
   // Deprecated: use request_hints instead.
-  google.protobuf.Any hints = 6;
+  google.protobuf.Any hints = 6 [(wiresmith.options.customtype) = "AnyAdapter"];
 
-  repeated LabelMatcher matchers = 7 [(gogoproto.nullable) = false];
+  repeated LabelMatcher matchers = 7;
 
   int64 limit = 8;
 
-  LabelValuesRequestHints request_hints = 9;
+  LabelValuesRequestHints request_hints = 9 [(wiresmith.options.pointer) = true];
 }
 
 message LabelValuesRequestHints {
   // block_matchers is a list of label matchers that are evaluated against each single block's
   // labels to filter which blocks get queried. If the list is empty, no per-block filtering
   // is applied.
-  repeated thanos.LabelMatcher block_matchers = 1 [(gogoproto.nullable) = false];
+  repeated thanos.LabelMatcher block_matchers = 1;
 }
 
 message LabelValuesResponse {
@@ -243,14 +249,14 @@ message LabelValuesResponse {
   // implementation of a specific store.
   //
   // Deprecated: use response_hints instead.
-  google.protobuf.Any hints = 3;
+  google.protobuf.Any hints = 3 [(wiresmith.options.customtype) = "AnyAdapter"];
 
-  LabelValuesResponseHints response_hints = 4;
+  LabelValuesResponseHints response_hints = 4 [(wiresmith.options.pointer) = true];
 }
 
 message LabelValuesResponseHints {
   // queried_blocks is the list of blocks that have been queried.
-  repeated Block queried_blocks = 1 [(gogoproto.nullable) = false];
+  repeated Block queried_blocks = 1;
 }
 
 // SearchOrdering selects the result ordering wire-side. Values mirror the
@@ -288,11 +294,11 @@ message SearchFilter {
 message SearchLabelNamesRequest {
   int64 start = 1;
   int64 end = 2;
-  repeated LabelMatcher matchers = 3 [(gogoproto.nullable) = false];
-  SearchFilter filter = 4;
+  repeated LabelMatcher matchers = 3;
+  SearchFilter filter = 4 [(wiresmith.options.pointer) = true];
   SearchOrdering ordering = 5;
   int64 limit = 6;
-  SearchLabelNamesRequestHints request_hints = 7;
+  SearchLabelNamesRequestHints request_hints = 7 [(wiresmith.options.pointer) = true];
 }
 
 message SearchLabelNamesRequestHints {
@@ -300,24 +306,24 @@ message SearchLabelNamesRequestHints {
   // to scope which blocks the store-gateway queries. Empty disables per-block filtering.
   // Mirrors the LabelNamesRequestHints semantics so the querier's per-replica block
   // assignment from queryWithConsistencyCheck is honoured.
-  repeated LabelMatcher block_matchers = 1 [(gogoproto.nullable) = false];
+  repeated LabelMatcher block_matchers = 1;
 }
 
 message SearchLabelValuesRequest {
   int64 start = 1;
   int64 end = 2;
   string label = 3;
-  repeated LabelMatcher matchers = 4 [(gogoproto.nullable) = false];
-  SearchFilter filter = 5;
+  repeated LabelMatcher matchers = 4;
+  SearchFilter filter = 5 [(wiresmith.options.pointer) = true];
   SearchOrdering ordering = 6;
   int64 limit = 7;
-  SearchLabelValuesRequestHints request_hints = 8;
+  SearchLabelValuesRequestHints request_hints = 8 [(wiresmith.options.pointer) = true];
 }
 
 message SearchLabelValuesRequestHints {
   // block_matchers is a list of label matchers evaluated against each block's labels
   // to scope which blocks the store-gateway queries. Empty disables per-block filtering.
-  repeated LabelMatcher block_matchers = 1 [(gogoproto.nullable) = false];
+  repeated LabelMatcher block_matchers = 1;
 }
 
 // SearchResultBatch carries one batch of (value, score) pairs in a streaming
@@ -327,17 +333,17 @@ message SearchResultBatch {
     string value = 1;
     double score = 2;
   }
-  repeated Result results = 1 [(gogoproto.nullable) = false];
+  repeated Result results = 1;
   repeated string warnings = 2;
 
   // response_hints reports which blocks the store-gateway actually queried
   // for this RPC. The querier feeds these into queryWithConsistencyCheck so
   // missing blocks (e.g. unloaded on the selected store-gateway) trigger a
   // retry instead of silently dropping results.
-  SearchResponseHints response_hints = 3;
+  SearchResponseHints response_hints = 3 [(wiresmith.options.pointer) = true];
 }
 
 message SearchResponseHints {
   // queried_blocks is the list of blocks that have been queried.
-  repeated Block queried_blocks = 1 [(gogoproto.nullable) = false];
+  repeated Block queried_blocks = 1;
 }

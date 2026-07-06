@@ -7,16 +7,16 @@ syntax = "proto3";
 package thanos;
 
 import "github.com/grafana/mimir/pkg/mimirpb/mimir.proto";
-import "gogoproto/gogo.proto";
+import "wiresmith/options.proto";
 
 option go_package = "storepb";
-option (gogoproto.goproto_getters_all) = false;
-option (gogoproto.goproto_sizecache_all) = false; // Do not generate XXX_sizecache fields to reduce memory footprint and allow zero-copy casts to/from Prometheus data types.
-option (gogoproto.goproto_unkeyed_all) = false; // Do not generate XXX_sizecache fields to reduce memory footprint and allow zero-copy casts to/from Prometheus data types.
-option (gogoproto.goproto_unrecognized_all) = false; // Do not generate XXX_sizecache fields to reduce memory footprint and allow zero-copy casts to/from Prometheus data types.
-option (gogoproto.marshaler_all) = true;
-option (gogoproto.sizer_all) = true;
-option (gogoproto.unmarshaler_all) = true;
+// no_presence_all reproduces the gogoproto goproto_{unkeyed,unrecognized,
+// sizecache}_all=false layout: declared-fields-only structs with no presence
+// bitmap, which keeps the zero-copy casts to/from Prometheus data types valid.
+option (wiresmith.options.no_presence_all) = true;
+// enum_no_prefix_all reproduces gogoproto's unprefixed enum value constants
+// (Chunk_XOR, LabelMatcher_EQ, ...) rather than <EnumType>_<value>.
+option (wiresmith.options.enum_no_prefix_all) = true;
 
 message Chunk {
   enum Encoding {
@@ -27,30 +27,28 @@ message Chunk {
   }
   Encoding type = 1;
   bytes data = 2 [
-    (gogoproto.nullable) = false,
-    (gogoproto.customtype) = "github.com/grafana/mimir/pkg/mimirpb.UnsafeByteSlice"
+    (wiresmith.options.customtype) = "github.com/grafana/mimir/pkg/mimirpb.UnsafeByteSlice"
   ];
 }
 
 message StreamingSeries {
   repeated cortexpb.LabelPair labels = 1 [
-    (gogoproto.nullable) = false,
-    (gogoproto.customtype) = "github.com/grafana/mimir/pkg/mimirpb.LabelAdapter"
+    (wiresmith.options.customtype) = "github.com/grafana/mimir/pkg/mimirpb.LabelAdapter"
   ];
 }
 
 message StreamingSeriesBatch {
-  repeated StreamingSeries series = 1;
+  repeated StreamingSeries series = 1 [(wiresmith.options.pointer) = true];
   bool is_end_of_series_stream = 2;
 }
 
 message StreamingChunks {
   uint64 series_index = 1; // Index into list of all series previously sent with SeriesResponse messages by this storegateway during this query response.
-  repeated AggrChunk chunks = 2 [(gogoproto.nullable) = false];
+  repeated AggrChunk chunks = 2;
 }
 
 message StreamingChunksBatch {
-  repeated StreamingChunks series = 1;
+  repeated StreamingChunks series = 1 [(wiresmith.options.pointer) = true];
 }
 
 message StreamingChunksEstimate {
@@ -61,7 +59,7 @@ message AggrChunk {
   int64 min_time = 1;
   int64 max_time = 2;
 
-  Chunk raw = 3 [(gogoproto.nullable) = false];
+  Chunk raw = 3;
 
   // Thanos count.
   reserved 4;

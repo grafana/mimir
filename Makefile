@@ -259,7 +259,15 @@ PROTO_WIRESMITH_GOS := \
 	pkg/storage/indexheader/indexheaderpb/sparse_compare.pb.go \
 	pkg/storage/indexheader/indexheaderpb/sparse_util.pb.go \
 	pkg/streamingpromql/optimize/plan/splitandcache/cache_compare.pb.go \
-	pkg/streamingpromql/optimize/plan/splitandcache/cache_util.pb.go
+	pkg/streamingpromql/optimize/plan/splitandcache/cache_util.pb.go \
+	pkg/storegateway/storepb/types_compare.pb.go \
+	pkg/storegateway/storepb/types_util.pb.go \
+	pkg/storegateway/storepb/rpc_compare.pb.go \
+	pkg/storegateway/storepb/rpc_util.pb.go \
+	pkg/storegateway/storepb/cache_compare.pb.go \
+	pkg/storegateway/storepb/cache_util.pb.go \
+	pkg/storegateway/hintspb/hints_compare.pb.go \
+	pkg/storegateway/hintspb/hints_util.pb.go
 
 # Packages containing //node:generate-annotated structs, and the corresponding
 # generated files. Discovered at make-parse time.
@@ -571,7 +579,11 @@ endif
 # and Extent.response fields whose payloads resolve via the gogo registry bridge
 # to gogo types.Any through per-package AnyAdapter customtypes.
 CQA4_WIRESMITH_PROTOS := \
-	pkg/streamingpromql/optimize/plan/splitandcache/cache.proto
+	pkg/streamingpromql/optimize/plan/splitandcache/cache.proto \
+	pkg/storegateway/storepb/types.proto \
+	pkg/storegateway/storepb/rpc.proto \
+	pkg/storegateway/storepb/cache.proto \
+	pkg/storegateway/hintspb/hints.proto
 
 CQA4_WIRESMITH_PBGO := $(patsubst %.proto,%.pb.go,$(CQA4_WIRESMITH_PROTOS))
 

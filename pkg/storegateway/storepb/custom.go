@@ -16,7 +16,7 @@ import (
 func NewStatsResponse(indexBytesFetched int) *SeriesResponse {
 	return &SeriesResponse{
 		Result: &SeriesResponse_Stats{
-			Stats: &Stats{FetchedIndexBytes: uint64(indexBytesFetched)},
+			Stats: Stats{FetchedIndexBytes: uint64(indexBytesFetched)},
 		},
 	}
 }
@@ -24,7 +24,7 @@ func NewStatsResponse(indexBytesFetched int) *SeriesResponse {
 func NewStreamingSeriesResponse(series *StreamingSeriesBatch) *SeriesResponse {
 	return &SeriesResponse{
 		Result: &SeriesResponse_StreamingSeries{
-			StreamingSeries: series,
+			StreamingSeries: *series,
 		},
 	}
 }
@@ -32,7 +32,7 @@ func NewStreamingSeriesResponse(series *StreamingSeriesBatch) *SeriesResponse {
 func NewStreamingChunksResponse(series *StreamingChunksBatch) *SeriesResponse {
 	return &SeriesResponse{
 		Result: &SeriesResponse_StreamingChunks{
-			StreamingChunks: series,
+			StreamingChunks: *series,
 		},
 	}
 }
@@ -40,7 +40,7 @@ func NewStreamingChunksResponse(series *StreamingChunksBatch) *SeriesResponse {
 func NewStreamingChunksEstimate(estimatedChunks uint64) *SeriesResponse {
 	return &SeriesResponse{
 		Result: &SeriesResponse_StreamingChunksEstimate{
-			StreamingChunksEstimate: &StreamingChunksEstimate{
+			StreamingChunksEstimate: StreamingChunksEstimate{
 				EstimatedChunkCount: estimatedChunks,
 			},
 		},
@@ -50,7 +50,7 @@ func NewStreamingChunksEstimate(estimatedChunks uint64) *SeriesResponse {
 func NewHintsSeriesResponse(hints *SeriesResponseHints) *SeriesResponse {
 	return &SeriesResponse{
 		Result: &SeriesResponse_ResponseHints{
-			ResponseHints: hints,
+			ResponseHints: *hints,
 		},
 	}
 }

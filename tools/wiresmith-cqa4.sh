@@ -88,3 +88,20 @@ IMPORT_PROTOS=(
 	pkg/streamingpromql/planning/plan.proto
 )
 regen_cluster .cqa4-splitandcache-stage .cqa4-splitandcache-out
+
+# --- storepb / hintspb cluster ----------------------------------------------
+# types.proto is the leaf (imports mimir); rpc.proto and hintspb/hints.proto
+# import types; cache.proto imports mimir. All four emit in one invocation so
+# the intra-cluster imports resolve. The deprecated Any "hints" fields carry
+# storepb.AnyAdapter (gogo types.Any) on the direct fields and native anypb on
+# the SeriesResponse oneof variant (customtype is rejected on oneof).
+EMIT_PROTOS=(
+	pkg/storegateway/storepb/types.proto
+	pkg/storegateway/storepb/rpc.proto
+	pkg/storegateway/storepb/cache.proto
+	pkg/storegateway/hintspb/hints.proto
+)
+IMPORT_PROTOS=(
+	pkg/mimirpb/mimir.proto
+)
+regen_cluster .cqa4-storepb-stage .cqa4-storepb-out

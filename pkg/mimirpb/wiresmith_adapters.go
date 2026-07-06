@@ -120,3 +120,39 @@ func (t *UnsafeByteSlice) CompareWiresmith(other any) int {
 	}
 	return bytes.Compare([]byte(*t), []byte(o))
 }
+
+// PreallocatingMetric embeds Metric and reuses its size/marshal/equal/compare;
+// only the unmarshal path differs (it preallocates the labels slice). These
+// methods satisfy the wiresmith customtype contract for storepb's
+// CachedSeries.series (github.com/grafana/mimir/pkg/mimirpb.PreallocatingMetric).
+
+// SizeWiresmith implements the wiresmith customtype contract.
+func (m *PreallocatingMetric) SizeWiresmith() int { return m.Size() }
+
+// MarshalWiresmith implements the wiresmith customtype contract: buf is exactly
+// SizeWiresmith() bytes, so the gogo-style reverse writer fills it completely.
+func (m *PreallocatingMetric) MarshalWiresmith(buf []byte) (int, error) {
+	return m.MarshalToSizedBuffer(buf)
+}
+
+// UnmarshalWiresmith implements the wiresmith customtype contract via the
+// label-preallocating Unmarshal.
+func (m *PreallocatingMetric) UnmarshalWiresmith(buf []byte) error { return m.Unmarshal(buf) }
+
+// EqualWiresmith implements the wiresmith customtype contract.
+func (m *PreallocatingMetric) EqualWiresmith(other any) bool {
+	o, ok := other.(PreallocatingMetric)
+	if !ok {
+		return false
+	}
+	return m.Equal(&o.Metric)
+}
+
+// CompareWiresmith implements the wiresmith customtype contract.
+func (m *PreallocatingMetric) CompareWiresmith(other any) int {
+	o, ok := other.(PreallocatingMetric)
+	if !ok {
+		return -1
+	}
+	return m.Compare(&o.Metric)
+}

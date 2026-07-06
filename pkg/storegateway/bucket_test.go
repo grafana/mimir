@@ -2275,7 +2275,7 @@ func TestBucketStore_Series_ErrorUnmarshallingRequestHints(t *testing.T) {
 		Matchers: []storepb.LabelMatcher{
 			{Type: storepb.LabelMatcher_EQ, Name: "foo", Value: "bar"},
 		},
-		Hints: mustMarshalAny(&hintspb.SeriesResponseHints{}),
+		Hints: storepb.FromAny(mustMarshalAny(&hintspb.SeriesResponseHints{})),
 	}
 
 	srv := newStoreGatewayTestServer(t, store)
@@ -2972,11 +2972,11 @@ func TestLabelNamesAndValuesHints(t *testing.T) {
 			labelNamesReq: &storepb.LabelNamesRequest{
 				Start: 0,
 				End:   3,
-				Hints: mustMarshalAny(&hintspb.LabelNamesRequestHints{
+				Hints: storepb.FromAny(mustMarshalAny(&hintspb.LabelNamesRequestHints{
 					BlockMatchers: []storepb.LabelMatcher{
 						{Type: storepb.LabelMatcher_EQ, Name: block.BlockIDLabel, Value: block1.String()},
 					},
-				}),
+				})),
 			},
 			expectedNames: labelNamesFromSeriesSet(seriesSet1),
 			expectedNamesHints: &storepb.LabelNamesResponseHints{
@@ -2989,11 +2989,11 @@ func TestLabelNamesAndValuesHints(t *testing.T) {
 				Label: "ext1",
 				Start: 0,
 				End:   3,
-				Hints: mustMarshalAny(&hintspb.LabelValuesRequestHints{
+				Hints: storepb.FromAny(mustMarshalAny(&hintspb.LabelValuesRequestHints{
 					BlockMatchers: []storepb.LabelMatcher{
 						{Type: storepb.LabelMatcher_EQ, Name: block.BlockIDLabel, Value: block1.String()},
 					},
-				}),
+				})),
 			},
 			expectedValues: []string{"1"},
 			expectedValuesHints: &storepb.LabelValuesResponseHints{

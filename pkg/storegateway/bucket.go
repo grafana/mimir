@@ -602,11 +602,11 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storegatewaypb.Stor
 		if err != nil {
 			return status.Error(codes.InvalidArgument, errors.Wrap(err, "translate request hints labels matchers").Error())
 		}
-	} else if req.Hints != nil { //nolint:staticcheck // Ignore SA1019. This use will be removed in Mimir 3.2
+	} else if req.Hints.Any() != nil { //nolint:staticcheck // Ignore SA1019. This use will be removed in Mimir 3.2
 		// Note that we use a different but equivalent hints type for the opaque field.
 		reqHints := &hintspb.SeriesRequestHints{}
 		//nolint:staticcheck // Ignore SA1019. This use will be removed in Mimir 3.2
-		if err := types.UnmarshalAny(req.Hints, reqHints); err != nil {
+		if err := types.UnmarshalAny(req.Hints.Any(), reqHints); err != nil {
 			return status.Error(codes.InvalidArgument, errors.Wrap(err, "unmarshal series request hints").Error())
 		}
 
@@ -1300,10 +1300,10 @@ func (s *BucketStore) LabelNames(ctx context.Context, req *storepb.LabelNamesReq
 		if err != nil {
 			return nil, status.Error(codes.InvalidArgument, errors.Wrap(err, "translate request hints labels matchers").Error())
 		}
-	} else if req.Hints != nil { //nolint:staticcheck // Ignore SA1019. This use will be removed in Mimir 3.2
+	} else if req.Hints.Any() != nil { //nolint:staticcheck // Ignore SA1019. This use will be removed in Mimir 3.2
 		reqHints := &hintspb.LabelNamesRequestHints{}
 		//nolint:staticcheck // Ignore SA1019. This use will be removed in Mimir 3.2
-		err := types.UnmarshalAny(req.Hints, reqHints)
+		err := types.UnmarshalAny(req.Hints.Any(), reqHints)
 		if err != nil {
 			return nil, status.Error(codes.InvalidArgument, errors.Wrap(err, "unmarshal label names request hints").Error())
 		}
@@ -1496,10 +1496,10 @@ func (s *BucketStore) LabelValues(ctx context.Context, req *storepb.LabelValuesR
 		if err != nil {
 			return nil, status.Error(codes.InvalidArgument, errors.Wrap(err, "translate request hints labels matchers").Error())
 		}
-	} else if req.Hints != nil { //nolint:staticcheck // Ignore SA1019. This use will be removed in Mimir 3.2
+	} else if req.Hints.Any() != nil { //nolint:staticcheck // Ignore SA1019. This use will be removed in Mimir 3.2
 		reqHints := &hintspb.LabelValuesRequestHints{}
 		//nolint:staticcheck // Ignore SA1019. This use will be removed in Mimir 3.2
-		err := types.UnmarshalAny(req.Hints, reqHints)
+		err := types.UnmarshalAny(req.Hints.Any(), reqHints)
 		if err != nil {
 			return nil, status.Error(codes.InvalidArgument, errors.Wrap(err, "unmarshal label values request hints").Error())
 		}
