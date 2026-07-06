@@ -105,3 +105,16 @@ IMPORT_PROTOS=(
 	pkg/mimirpb/mimir.proto
 )
 regen_cluster .cqa4-storepb-stage .cqa4-storepb-out
+
+# --- querymiddleware model cluster ------------------------------------------
+# model.proto imports mimir + stats (both wiresmith). It is JSON-sensitive:
+# every field carries an explicit jsontag matching the gogoproto output, and
+# Extent.response bridges to gogo types.Any via querymiddleware.AnyAdapter.
+EMIT_PROTOS=(
+	pkg/frontend/querymiddleware/model.proto
+)
+IMPORT_PROTOS=(
+	pkg/mimirpb/mimir.proto
+	pkg/querier/stats/stats.proto
+)
+regen_cluster .cqa4-model-stage .cqa4-model-out

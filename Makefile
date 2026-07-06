@@ -267,7 +267,9 @@ PROTO_WIRESMITH_GOS := \
 	pkg/storegateway/storepb/cache_compare.pb.go \
 	pkg/storegateway/storepb/cache_util.pb.go \
 	pkg/storegateway/hintspb/hints_compare.pb.go \
-	pkg/storegateway/hintspb/hints_util.pb.go
+	pkg/storegateway/hintspb/hints_util.pb.go \
+	pkg/frontend/querymiddleware/model_compare.pb.go \
+	pkg/frontend/querymiddleware/model_util.pb.go
 
 # Packages containing //node:generate-annotated structs, and the corresponding
 # generated files. Discovered at make-parse time.
@@ -583,7 +585,8 @@ CQA4_WIRESMITH_PROTOS := \
 	pkg/storegateway/storepb/types.proto \
 	pkg/storegateway/storepb/rpc.proto \
 	pkg/storegateway/storepb/cache.proto \
-	pkg/storegateway/hintspb/hints.proto
+	pkg/storegateway/hintspb/hints.proto \
+	pkg/frontend/querymiddleware/model.proto
 
 CQA4_WIRESMITH_PBGO := $(patsubst %.proto,%.pb.go,$(CQA4_WIRESMITH_PROTOS))
 

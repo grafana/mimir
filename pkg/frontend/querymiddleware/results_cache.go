@@ -423,7 +423,7 @@ func mergeCacheExtentsWithAccumulator(extents []Extent, acc *accumulator) ([]Ext
 	return append(extents, Extent{
 		Start:            acc.Start,
 		End:              acc.End,
-		Response:         marshalled,
+		Response:         FromAny(marshalled),
 		TraceId:          acc.TraceId,
 		QueryTimestampMs: acc.QueryTimestampMs,
 	}), nil
@@ -449,7 +449,7 @@ func toExtent(ctx context.Context, req MetricsQueryRequest, res Response, queryT
 	return Extent{
 		Start:            req.GetStart(),
 		End:              req.GetEnd(),
-		Response:         marshalled,
+		Response:         FromAny(marshalled),
 		TraceId:          otelTraceID(ctx),
 		QueryTimestampMs: queryTime.UnixMilli(),
 	}, nil
@@ -544,7 +544,7 @@ func filterRecentCacheExtents(req MetricsQueryRequest, maxCacheFreshness time.Du
 			if err != nil {
 				return nil, err
 			}
-			extents[i].Response = marshalled
+			extents[i].Response = FromAny(marshalled)
 		}
 	}
 	return extents, nil
@@ -616,12 +616,12 @@ func extractSampleStream(start, end int64, stream SampleStream) (SampleStream, b
 }
 
 func (e *Extent) toResponse() (Response, error) {
-	msg, err := types.EmptyAny(e.Response)
+	msg, err := types.EmptyAny(e.Response.Any())
 	if err != nil {
 		return nil, err
 	}
 
-	if err := types.UnmarshalAny(e.Response, msg); err != nil {
+	if err := types.UnmarshalAny(e.Response.Any(), msg); err != nil {
 		return nil, err
 	}
 

@@ -121,7 +121,7 @@ func mkExtentWithStepAndQueryTime(start, end, step, queryTime int64) Extent {
 	return Extent{
 		Start:            start,
 		End:              end,
-		Response:         marshalled,
+		Response:         FromAny(marshalled),
 		QueryTimestampMs: queryTime,
 	}
 }

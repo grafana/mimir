@@ -10,105 +10,111 @@ package queryrange;
 
 import "github.com/grafana/mimir/pkg/mimirpb/mimir.proto";
 import "github.com/grafana/mimir/pkg/querier/stats/stats.proto";
-import "gogoproto/gogo.proto";
 import "google/protobuf/any.proto";
+import "wiresmith/options.proto";
 
 option go_package = "querymiddleware";
-option (gogoproto.marshaler_all) = true;
-option (gogoproto.unmarshaler_all) = true;
+// no_presence_all reproduces the gogoproto value layout (declared-fields-only,
+// no presence bitmap). This proto is JSON-sensitive (jsoniter struct tags +
+// custom codecs); every field carries an explicit jsontag matching the exact
+// gogoproto-generated tag so the serialized JSON is byte-identical.
+option (wiresmith.options.no_presence_all) = true;
 
 message PrometheusHeader {
-  string Name = 1 [(gogoproto.jsontag) = "-"];
-  repeated string Values = 2 [(gogoproto.jsontag) = "-"];
+  string Name = 1 [(wiresmith.options.jsontag) = "-"];
+  repeated string Values = 2 [(wiresmith.options.jsontag) = "-"];
 }
 
 message PrometheusResponse {
-  string Status = 1 [(gogoproto.jsontag) = "status"];
-  PrometheusData Data = 2 [(gogoproto.jsontag) = "data,omitempty"];
-  string ErrorType = 3 [(gogoproto.jsontag) = "errorType,omitempty"];
-  string Error = 4 [(gogoproto.jsontag) = "error,omitempty"];
-  repeated PrometheusHeader Headers = 5 [(gogoproto.jsontag) = "-"];
-  repeated string Warnings = 6 [(gogoproto.jsontag) = "warnings,omitempty"];
-  repeated string Infos = 7 [(gogoproto.jsontag) = "infos,omitempty"];
+  string Status = 1 [(wiresmith.options.jsontag) = "status"];
+  PrometheusData Data = 2 [
+    (wiresmith.options.pointer) = true,
+    (wiresmith.options.jsontag) = "data,omitempty"
+  ];
+  string ErrorType = 3 [(wiresmith.options.jsontag) = "errorType,omitempty"];
+  string Error = 4 [(wiresmith.options.jsontag) = "error,omitempty"];
+  repeated PrometheusHeader Headers = 5 [
+    (wiresmith.options.pointer) = true,
+    (wiresmith.options.jsontag) = "-"
+  ];
+  repeated string Warnings = 6 [(wiresmith.options.jsontag) = "warnings,omitempty"];
+  repeated string Infos = 7 [(wiresmith.options.jsontag) = "infos,omitempty"];
 }
 
 message PrometheusData {
-  string ResultType = 1 [(gogoproto.jsontag) = "resultType"];
-  repeated SampleStream Result = 2 [
-    (gogoproto.nullable) = false,
-    (gogoproto.jsontag) = "result"
-  ];
+  string ResultType = 1 [(wiresmith.options.jsontag) = "resultType"];
+  repeated SampleStream Result = 2 [(wiresmith.options.jsontag) = "result"];
 }
 
 message SampleStream {
   repeated cortexpb.LabelPair labels = 1 [
-    (gogoproto.nullable) = false,
-    (gogoproto.jsontag) = "metric",
-    (gogoproto.customtype) = "github.com/grafana/mimir/pkg/mimirpb.LabelAdapter"
+    (wiresmith.options.jsontag) = "metric",
+    (wiresmith.options.customtype) = "github.com/grafana/mimir/pkg/mimirpb.LabelAdapter"
   ];
-  repeated cortexpb.Sample samples = 2 [
-    (gogoproto.nullable) = false,
-    (gogoproto.jsontag) = "values,omitempty"
-  ];
-  repeated cortexpb.FloatHistogramPair histograms = 3 [
-    (gogoproto.nullable) = false,
-    (gogoproto.jsontag) = "histograms,omitempty"
-  ];
+  repeated cortexpb.Sample samples = 2 [(wiresmith.options.jsontag) = "values,omitempty"];
+  repeated cortexpb.FloatHistogramPair histograms = 3 [(wiresmith.options.jsontag) = "histograms,omitempty"];
 }
 
 message CachedError {
-  string key = 1 [(gogoproto.jsontag) = "key"];
-  string errorType = 2 [(gogoproto.jsontag) = "errorType"];
-  string errorMessage = 3 [(gogoproto.jsontag) = "errorMessage"];
+  string key = 1 [(wiresmith.options.jsontag) = "key"];
+  string errorType = 2 [(wiresmith.options.jsontag) = "errorType"];
+  string errorMessage = 3 [(wiresmith.options.jsontag) = "errorMessage"];
 }
 
 message CachedResponse {
-  string key = 1 [(gogoproto.jsontag) = "key"];
+  string key = 1 [(wiresmith.options.jsontag) = "key"];
 
   // List of cached responses; non-overlapping and in order.
-  repeated Extent extents = 2 [
-    (gogoproto.nullable) = false,
-    (gogoproto.jsontag) = "extents"
-  ];
+  repeated Extent extents = 2 [(wiresmith.options.jsontag) = "extents"];
 }
 
 message Extent {
-  int64 start = 1 [(gogoproto.jsontag) = "start"];
-  int64 end = 2 [(gogoproto.jsontag) = "end"];
+  int64 start = 1 [(wiresmith.options.jsontag) = "start"];
+  int64 end = 2 [(wiresmith.options.jsontag) = "end"];
   // reserved the previous key to ensure cache transition
   reserved 3;
-  string trace_id = 4 [(gogoproto.jsontag) = "-"];
-  google.protobuf.Any response = 5 [(gogoproto.jsontag) = "response"];
+  string trace_id = 4 [(wiresmith.options.jsontag) = "-"];
+  // The Any payload is unpacked with gogo types.MarshalAny/UnmarshalAny
+  // (results_cache.go), whose registry resolution wiresmith's native anypb does
+  // not provide, so this bridges to gogo types.Any via AnyAdapter. jsontag
+  // preserves the "response" tag from the gogoproto output.
+  google.protobuf.Any response = 5 [
+    (wiresmith.options.customtype) = "AnyAdapter",
+    (wiresmith.options.jsontag) = "response"
+  ];
   // Unix timestamp when the query with this response was executed.
   // If the response is combination of multiple queries over time, all of which had timestamp set, this is the timestamp of oldest query.
   // When merging extents and some of them have 0 query timestamp, we keep non-zero timestamp, if possible.
-  int64 query_timestamp_ms = 6;
+  int64 query_timestamp_ms = 6 [(wiresmith.options.jsontag) = "query_timestamp_ms,omitempty"];
   reserved 7; // Formerly: samples_processed_per_step.
 }
 
 message QueryStatistics {
-  uint64 EstimatedSeriesCount = 1;
-  string UserID = 2;
+  uint64 EstimatedSeriesCount = 1 [(wiresmith.options.jsontag) = "EstimatedSeriesCount,omitempty"];
+  string UserID = 2 [(wiresmith.options.jsontag) = "UserID,omitempty"];
 }
 
 // CachedHTTPResponse holds a generic HTTP response in the query results cache.
 message CachedHTTPResponse {
   // cacheKey contains the non-hashed cache key, used to guarantee there haven't
   // been any hashed cache key collision.
-  string cache_key = 1;
+  string cache_key = 1 [(wiresmith.options.jsontag) = "cache_key,omitempty"];
 
   // statusCode contains the HTTP response status code.
-  int32 status_code = 2;
+  int32 status_code = 2 [(wiresmith.options.jsontag) = "status_code,omitempty"];
 
   // headers contains the HTTP response headers.
-  repeated CachedHTTPHeader headers = 3;
+  repeated CachedHTTPHeader headers = 3 [
+    (wiresmith.options.pointer) = true,
+    (wiresmith.options.jsontag) = "headers,omitempty"
+  ];
 
   // body contains the HTTP response body.
-  bytes body = 4;
+  bytes body = 4 [(wiresmith.options.jsontag) = "body,omitempty"];
 }
 
 // CachedHTTPHeader holds a HTTP header.
 message CachedHTTPHeader {
-  string name = 1;
-  string value = 2;
+  string name = 1 [(wiresmith.options.jsontag) = "name,omitempty"];
+  string value = 2 [(wiresmith.options.jsontag) = "value,omitempty"];
 }
