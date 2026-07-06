@@ -46,6 +46,10 @@ spec:
         - name: overrides-exporter
           image: {{ include "mimir.imageReference" (dict "ctx" . "component" "overrides-exporter") }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- with .Values.overrides_exporter.command }}
+          command:
+            - {{ . | quote }}
+          {{- end }}
           args:
             - "-target=overrides-exporter"
             - "-config.expand-env=true"

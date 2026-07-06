@@ -125,6 +125,10 @@ spec:
         - name: compactor
           image: {{ include "mimir.imageReference" (dict "ctx" . "component" "compactor") }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- with .Values.compactor.command }}
+          command:
+            - {{ . | quote }}
+          {{- end }}
           args:
             - "-target=compactor"
             - "-config.expand-env=true"

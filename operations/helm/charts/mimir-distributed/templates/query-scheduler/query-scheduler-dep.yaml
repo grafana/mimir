@@ -45,6 +45,10 @@ spec:
         - name: query-scheduler
           image: {{ include "mimir.imageReference" (dict "ctx" . "component" "query-scheduler") }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- with .Values.query_scheduler.command }}
+          command:
+            - {{ . | quote }}
+          {{- end }}
           args:
             - "-target=query-scheduler"
             - "-config.expand-env=true"

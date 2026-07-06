@@ -51,6 +51,10 @@ spec:
         - name: ruler-query-frontend
           image: {{ include "mimir.imageReference" (dict "ctx" . "component" "ruler-query-frontend") }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- with .Values.ruler_query_frontend.command }}
+          command:
+            - {{ . | quote }}
+          {{- end }}
           args:
             - "-target=query-frontend"
             - "-config.expand-env=true"

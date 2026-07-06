@@ -151,6 +151,10 @@ spec:
         - name: store-gateway
           image: {{ include "mimir.imageReference" (dict "ctx" . "component" "store-gateway") }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- with .Values.store_gateway.command }}
+          command:
+            - {{ . | quote }}
+          {{- end }}
           args:
             - "-target=store-gateway"
             - "-config.expand-env=true"

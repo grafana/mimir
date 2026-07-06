@@ -50,6 +50,10 @@ spec:
         - name: querier
           image: {{ include "mimir.imageReference" (dict "ctx" . "component" "querier") }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- with .Values.querier.command }}
+          command:
+            - {{ . | quote }}
+          {{- end }}
           args:
             - "-target=querier"
             - "-config.expand-env=true"
