@@ -339,6 +339,11 @@ func TestOverrides_RulerExternalLabelsAndAlertRelabelConfigs(t *testing.T) {
 	utf8Cfgs := ov.RulerAlertRelabelConfigs("tenant-utf8")
 	require.Len(t, utf8Cfgs, 1)
 	assert.Equal(t, model.UTF8Validation, utf8Cfgs[0].NameValidationScheme)
+
+	// The returned configs are copies: the scheme must not be written into the underlying objects,
+	// which can be shared across tenants and are read concurrently by running notifiers.
+	assert.NotSame(t, tenantLimits["tenant-a"].RulerAlertmanagerClientConfig.AlertRelabelConfigs[0], aCfgs[0])
+	assert.Equal(t, model.UnsetValidation, tenantLimits["tenant-a"].RulerAlertmanagerClientConfig.AlertRelabelConfigs[0].NameValidationScheme)
 }
 
 func TestSmallestPositiveIntPerTenant(t *testing.T) {
