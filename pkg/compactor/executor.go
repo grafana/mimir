@@ -94,18 +94,18 @@ var (
 )
 
 type SchedulerClientConfig struct {
-	Enabled                       bool                    `yaml:"enabled" category:"experimental"`
-	SchedulerEndpoint             string                  `yaml:"scheduler_endpoint" category:"experimental"`
-	GRPCClientConfig              grpcclient.Config       `yaml:"grpc_client_config" category:"experimental"`
-	LeasingMinBackoff             time.Duration           `yaml:"leasing_min_backoff" category:"experimental"`
-	LeasingMaxBackoff             time.Duration           `yaml:"leasing_max_backoff" category:"experimental"`
-	UpdateInterval                time.Duration           `yaml:"update_interval" category:"experimental"`
-	UpdateMinBackoff              time.Duration           `yaml:"update_min_backoff" category:"experimental"`
-	UpdateMaxBackoff              time.Duration           `yaml:"update_max_backoff" category:"experimental"`
-	CompactionDirCleanupInterval  time.Duration           `yaml:"compaction_dir_cleanup_interval" category:"experimental"`
-	MetadataCacheConfig           MetadataCacheConfig     `yaml:"metadata_cache"` 
-	TerminatingFinalStatusTimeout time.Duration           `yaml:"terminating_final_status_timeout" category:"experimental"`
-	Lanes                         flagext.StringSliceCSV  `yaml:"lanes" category:"experimental"`
+	Enabled                       bool                   `yaml:"enabled" category:"experimental"`
+	SchedulerEndpoint             string                 `yaml:"scheduler_endpoint" category:"experimental"`
+	GRPCClientConfig              grpcclient.Config      `yaml:"grpc_client_config" category:"experimental"`
+	LeasingMinBackoff             time.Duration          `yaml:"leasing_min_backoff" category:"experimental"`
+	LeasingMaxBackoff             time.Duration          `yaml:"leasing_max_backoff" category:"experimental"`
+	UpdateInterval                time.Duration          `yaml:"update_interval" category:"experimental"`
+	UpdateMinBackoff              time.Duration          `yaml:"update_min_backoff" category:"experimental"`
+	UpdateMaxBackoff              time.Duration          `yaml:"update_max_backoff" category:"experimental"`
+	CompactionDirCleanupInterval  time.Duration          `yaml:"compaction_dir_cleanup_interval" category:"experimental"`
+	MetadataCacheConfig           MetadataCacheConfig    `yaml:"metadata_cache"`
+	TerminatingFinalStatusTimeout time.Duration          `yaml:"terminating_final_status_timeout" category:"experimental"`
+	Lanes                         flagext.StringSliceCSV `yaml:"lanes" category:"experimental"`
 }
 
 func (cfg *SchedulerClientConfig) RegisterFlags(f *flag.FlagSet) {
