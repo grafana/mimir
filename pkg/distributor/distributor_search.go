@@ -44,7 +44,7 @@ func (d *Distributor) SearchLabelNames(
 	hints *storage.SearchHints,
 	matchers []*labels.Matcher,
 ) storage.SearchResultSet {
-	replicationSets, _, err := d.getIngesterReplicationSetsForQuery(ctx, matchers)
+	replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx)
 	if err != nil {
 		return storage.ErrSearchResultSet(err)
 	}
@@ -71,7 +71,7 @@ func (d *Distributor) SearchLabelValues(
 	hints *storage.SearchHints,
 	matchers []*labels.Matcher,
 ) storage.SearchResultSet {
-	replicationSets, _, err := d.getIngesterReplicationSetsForQuery(ctx, matchers)
+	replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx)
 	if err != nil {
 		return storage.ErrSearchResultSet(err)
 	}

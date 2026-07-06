@@ -679,7 +679,7 @@ func TestDistributor_QueryStream_InactivePartitionsLookback(t *testing.T) {
 				})
 
 				// Verify getIngesterReplicationSetsForQuery returns the expected partitions.
-				replicationSets, _, err := d.getIngesterReplicationSetsForQuery(ctx, nil)
+				replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx)
 				require.NoError(t, err)
 
 				var actualPartitionIDs []int
@@ -717,14 +717,15 @@ func TestDistributor_QueryStream_InactivePartitionsLookback(t *testing.T) {
 	}
 }
 
-// TestDistributor_QueryStream_AttributionHint exercises the named
-// path: an exact __name__ matcher must produce a non-nil
-// partitionByInstance map whose values are the partition IDs the
-// resolution selected. The map drives readcache routing (Phase 2C)
-// and the per-call QueryAttributionHint that the readcache pod uses
-// for load attribution. The full-fanout path (no exact __name__)
-// returns nil so the read recipient bills the unnamed bucket.
-func TestDistributor_QueryStream_AttributionHint(t *testing.T) {
+// TestDistributor_QueryStream_NoMetricNamePruningOnIngesterPath
+// guards the sharding contract of the production ingest topic: it is
+// partitioned by the classic all-labels token, so a metric's series
+// are spread across ALL partitions and the ingester read path must
+// fan out to every one of them. Metric-name partition pruning (and
+// the partitionByInstance attribution hints that ride along with it)
+// exists only on the readcache path, whose topic is partitioned in
+// the metric-name-locality keyspace.
+func TestDistributor_QueryStream_NoMetricNamePruningOnIngesterPath(t *testing.T) {
 	const tenantID = "user"
 
 	ctx := user.InjectOrgID(context.Background(), tenantID)
@@ -751,38 +752,18 @@ func TestDistributor_QueryStream_AttributionHint(t *testing.T) {
 		return d.ingesterPartitionRings.PartitionRing(0).PartitionsCount()
 	})
 
-	t.Run("named path populates partitionByInstance for every queried instance", func(t *testing.T) {
-		nameMatcher := mustEqualMatcher(model.MetricNameLabel, "foo")
+	sets, err := d.getIngesterReplicationSetsForQuery(ctx)
+	require.NoError(t, err)
 
-		sets, partitionByInstance, err := d.getIngesterReplicationSetsForQuery(ctx, []*labels.Matcher{nameMatcher})
+	partitionIDs := map[int32]struct{}{}
+	for _, rs := range sets {
+		require.NotEmpty(t, rs.Instances)
+		partitionID, err := ingest.IngesterPartitionID(rs.Instances[0].Addr)
 		require.NoError(t, err)
-		require.NotEmpty(t, sets, "named path must produce at least one replication set")
-		require.NotNil(t, partitionByInstance, "named path must produce a non-nil hint map")
-
-		// Every instance in every replication set must be mapped,
-		// and the partition the map points to must match the
-		// partition the instance owns.
-		for _, rs := range sets {
-			require.NotEmpty(t, rs.Instances)
-			expected, err := ingest.IngesterPartitionID(rs.Instances[0].Addr)
-			require.NoError(t, err)
-			for _, inst := range rs.Instances {
-				got, ok := partitionByInstance[inst.Id]
-				require.True(t, ok, "instance %q in named-path replication set must appear in the hint map", inst.Id)
-				assert.Equal(t, expected, got, "instance %q hint partition must match the replication set's partition", inst.Id)
-			}
-		}
-	})
-
-	t.Run("full-fanout path returns nil hint map", func(t *testing.T) {
-		// No exact __name__ matcher → falls through to fan-out.
-		barMatcher := mustEqualMatcher("bar", "baz")
-
-		sets, partitionByInstance, err := d.getIngesterReplicationSetsForQuery(ctx, []*labels.Matcher{barMatcher})
-		require.NoError(t, err)
-		require.NotEmpty(t, sets)
-		assert.Nil(t, partitionByInstance, "fan-out queries must leave the hint map nil; the read recipient bills the unnamed bucket")
-	})
+		partitionIDs[partitionID] = struct{}{}
+	}
+	assert.Len(t, partitionIDs, 4,
+		"ingester reads must cover every partition: the production topic is all-labels sharded, so no partition can be pruned by metric name")
 }
 
 // TestDistributor_QueryStream_EmitsReadcacheHitsHistogram verifies

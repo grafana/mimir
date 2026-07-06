@@ -65,7 +65,7 @@ func (d *Distributor) QueryExemplars(ctx context.Context, from, to model.Time, m
 			return err
 		}
 
-		replicationSets, _, err := d.getIngesterReplicationSetsForQuery(ctx, nil)
+		replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx)
 		if err != nil {
 			return err
 		}
@@ -131,7 +131,11 @@ func (d *Distributor) QueryStream(ctx context.Context, queryMetrics *stats.Query
 				return err
 			}
 		} else {
-			replicationSets, partitionByInstance, err = d.getIngesterReplicationSetsForQuery(ctx, matchers)
+			// partitionByInstance stays nil on the ingester path:
+			// query-load attribution hints only exist for readcache
+			// routing, where the resolved partitions come from the
+			// assignment log.
+			replicationSets, err = d.getIngesterReplicationSetsForQuery(ctx)
 			if err != nil {
 				return err
 			}
@@ -156,19 +160,17 @@ func (d *Distributor) QueryStream(ctx context.Context, queryMetrics *stats.Query
 //
 // If multiple ring.ReplicationSets are returned, each must be queried separately, and results merged.
 //
-// When ingest storage is enabled and matchers contain an exact __name__ match, only the partitions
-// that serve the metric name's hash range are returned (query locality optimization).
-//
-// The second return value is a map from ingester instance ID to the
-// partition ID that the metric-name resolution mapped that instance
-// to. It is non-nil only on the named path; on the full-fanout path
-// it is nil. The QueryStream caller uses it to set
-// QueryRequest.QueryAttributionHint for query-load attribution on the
-// ingester.
-func (d *Distributor) getIngesterReplicationSetsForQuery(ctx context.Context, matchers []*labels.Matcher) ([]ring.ReplicationSet, map[string]int32, error) {
+// There is deliberately NO metric-name partition pruning here: the
+// production ingest topic and the ingester ring are sharded with the
+// classic all-labels token (tokenForLabels), so a metric's series are
+// spread across all partitions. Pruning by
+// mimirpb.MetricNameHashRange is only valid in the metric-name
+// locality keyspace, which exists exclusively on the Nautilus path
+// (getReadcacheReplicationSetsForQuery).
+func (d *Distributor) getIngesterReplicationSetsForQuery(ctx context.Context) ([]ring.ReplicationSet, error) {
 	userID, err := tenant.TenantID(ctx)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	if d.cfg.IngestStorageConfig.Enabled {
@@ -184,22 +186,10 @@ func (d *Distributor) getIngesterReplicationSetsForQuery(ctx context.Context, ma
 		}
 		r, err = r.ShuffleShardWithLookback(userID, shardSize, d.cfg.IngestersLookbackPeriod, time.Now())
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 
-		if metricName, ok := extractExactMetricName(matchers); ok {
-			sets, partitionByInstance, err := d.getReplicationSetsForMetricName(r, userID, metricName)
-			if err != nil {
-				return nil, nil, err
-			}
-			return sets, partitionByInstance, nil
-		}
-
-		sets, err := r.GetReplicationSetsForOperation(readNoExtend)
-		if err != nil {
-			return nil, nil, err
-		}
-		return sets, nil, nil
+		return r.GetReplicationSetsForOperation(readNoExtend)
 	}
 
 	// Lookup ingesters ring because ingest storage is disabled.
@@ -213,10 +203,10 @@ func (d *Distributor) getIngesterReplicationSetsForQuery(ctx context.Context, ma
 
 	replicationSet, err := r.GetReplicationSetForOperation(readNoExtend)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
-	return []ring.ReplicationSet{replicationSet}, nil, nil
+	return []ring.ReplicationSet{replicationSet}, nil
 }
 
 // extractExactMetricName returns the metric name from an exact __name__="..." matcher.
@@ -228,94 +218,6 @@ func extractExactMetricName(matchers []*labels.Matcher) (string, bool) {
 		}
 	}
 	return "", false
-}
-
-// getReplicationSetsForMetricName returns ReplicationSets for only the partitions that
-// serve the hash range of the given metric name. This is the query locality optimization:
-// instead of fanning out to all partitions, we only query the ones that can contain
-// series for this metric.
-//
-// The second return value maps each owner instance ID (across all
-// returned replication sets) to the partition ID it was selected for.
-// Used by QueryStream to populate QueryRequest.QueryAttributionHint
-// so the ingester can bucket samples-scanned per partition. Each
-// instance in the returned sets appears at most once because the
-// resolved partitions are disjoint.
-func (d *Distributor) getReplicationSetsForMetricName(r *ring.PartitionInstanceRing, userID string, metricName string) ([]ring.ReplicationSet, map[string]int32, error) {
-	partRing := r.PartitionRing()
-	lo, hi := mimirpb.MetricNameHashRange(userID, metricName)
-
-	// Find all partition IDs that own tokens in the hash range [lo, hi].
-	// We sample keys across the range to find partition boundaries.
-	partitionIDs := make(map[int32]struct{})
-	const sampleCount = 64
-	step := uint32(1)
-	rangeSize := hi - lo
-	if rangeSize > sampleCount {
-		step = rangeSize / sampleCount
-	}
-	for key := lo; key <= hi; key += step {
-		partID, err := partRing.ActivePartitionForKey(key)
-		if err != nil {
-			if errors.Is(err, ring.ErrNoActivePartitionFound) {
-				continue
-			}
-			return nil, nil, err
-		}
-		partitionIDs[partID] = struct{}{}
-	}
-	// Always check the endpoint to avoid missing a partition at the boundary.
-	if partID, err := partRing.ActivePartitionForKey(hi); err == nil {
-		partitionIDs[partID] = struct{}{}
-	}
-
-	if len(partitionIDs) == 0 {
-		return nil, nil, ring.ErrNoActivePartitionFound
-	}
-
-	// Build ReplicationSets for the filtered partitions.
-	instRing := r.InstanceRing()
-	result := make([]ring.ReplicationSet, 0, len(partitionIDs))
-	partitionByInstance := make(map[string]int32, len(partitionIDs))
-
-	for partID := range partitionIDs {
-		ownerIDs := partRing.PartitionOwnerIDs(partID)
-		instances := make([]ring.InstanceDesc, 0, len(ownerIDs))
-
-		for _, instanceID := range ownerIDs {
-			instance, err := instRing.GetInstance(instanceID)
-			if err != nil {
-				continue
-			}
-			instances = append(instances, instance)
-			partitionByInstance[instance.Id] = partID
-		}
-
-		if len(instances) == 0 {
-			return nil, nil, fmt.Errorf("partition %d: %w", partID, ring.ErrTooManyUnhealthyInstances)
-		}
-
-		zonesBuffer := make([]string, 0, 3)
-		for _, inst := range instances {
-			found := false
-			for _, z := range zonesBuffer {
-				if z == inst.Zone {
-					found = true
-					break
-				}
-			}
-			if !found {
-				zonesBuffer = append(zonesBuffer, inst.Zone)
-			}
-		}
-
-		result = append(result, ring.ReplicationSet{
-			Instances:            instances,
-			ZoneAwarenessEnabled: true,
-			MaxUnavailableZones:  len(zonesBuffer) - 1,
-		})
-	}
-	return result, partitionByInstance, nil
 }
 
 // getReadcacheReplicationSetsForQuery builds the replication sets for
