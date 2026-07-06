@@ -257,7 +257,9 @@ PROTO_WIRESMITH_GOS := \
 	pkg/usagetracker/usagetrackerpb/usagetracker_compare.pb.go \
 	pkg/usagetracker/usagetrackerpb/usagetracker_util.pb.go \
 	pkg/storage/indexheader/indexheaderpb/sparse_compare.pb.go \
-	pkg/storage/indexheader/indexheaderpb/sparse_util.pb.go
+	pkg/storage/indexheader/indexheaderpb/sparse_util.pb.go \
+	pkg/streamingpromql/optimize/plan/splitandcache/cache_compare.pb.go \
+	pkg/streamingpromql/optimize/plan/splitandcache/cache_util.pb.go
 
 # Packages containing //node:generate-annotated structs, and the corresponding
 # generated files. Discovered at make-parse time.
@@ -559,6 +561,25 @@ ifeq ($(GENERATE_FILES),true)
 	./tools/wiresmith-cqa5.sh
 else
 	@echo "Warning: generating files has been disabled, but the following files need to be regenerated: $(CQA5_WIRESMITH_PBGO)"
+	@echo "If this is unexpected, check if the last modified timestamps on the outputs and their .proto sources are correct."
+endif
+
+# cqa.4 (the final full switch): the last gogo-generated protos migrate to
+# wiresmith. tools/wiresmith-cqa4.sh stages each cluster into a module-path
+# layout, emits it in one invocation with -M mapping, and copies the output
+# back (same mechanism as the cqa.2/cqa.3/cqa.5 scripts). Deprecated Any "hints"
+# and Extent.response fields whose payloads resolve via the gogo registry bridge
+# to gogo types.Any through per-package AnyAdapter customtypes.
+CQA4_WIRESMITH_PROTOS := \
+	pkg/streamingpromql/optimize/plan/splitandcache/cache.proto
+
+CQA4_WIRESMITH_PBGO := $(patsubst %.proto,%.pb.go,$(CQA4_WIRESMITH_PROTOS))
+
+$(CQA4_WIRESMITH_PBGO) &: $(CQA4_WIRESMITH_PROTOS) pkg/mimirpb/mimir.proto pkg/querier/stats/stats.proto pkg/querier/querierpb/querier.proto pkg/streamingpromql/planning/plan.proto pkg/streamingpromql/types/types.proto
+ifeq ($(GENERATE_FILES),true)
+	./tools/wiresmith-cqa4.sh
+else
+	@echo "Warning: generating files has been disabled, but the following files need to be regenerated: $(CQA4_WIRESMITH_PBGO)"
 	@echo "If this is unexpected, check if the last modified timestamps on the outputs and their .proto sources are correct."
 endif
 
