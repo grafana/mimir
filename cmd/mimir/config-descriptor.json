@@ -8943,7 +8943,7 @@
           "fieldDefaultValue": 0,
           "fieldFlag": "query-frontend.active-series-max-shard-concurrency",
           "fieldType": "int",
-          "fieldCategory": "advanced"
+          "fieldCategory": "experimental"
         },
         {
           "kind": "field",

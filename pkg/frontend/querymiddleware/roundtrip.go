@@ -79,7 +79,7 @@ type Config struct {
 	RewriteQueriesHistogram                   bool               `yaml:"rewrite_histogram_queries" category:"experimental"`
 	RewriteQueriesPropagateMatchers           bool               `yaml:"rewrite_propagate_matchers" category:"experimental"`
 	TargetSeriesPerShard                      uint64             `yaml:"query_sharding_target_series_per_shard" category:"advanced"`
-	ActiveSeriesMaxShardConcurrency           int                `yaml:"active_series_max_shard_concurrency" category:"advanced"`
+	ActiveSeriesMaxShardConcurrency           int                `yaml:"active_series_max_shard_concurrency" category:"experimental"`
 
 	// CacheKeyGenerator allows to inject a CacheKeyGenerator to use for generating cache keys.
 	// If nil, the querymiddleware package uses a DefaultCacheKeyGenerator with SplitQueriesByInterval.

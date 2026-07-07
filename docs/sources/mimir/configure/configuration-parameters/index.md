@@ -2329,7 +2329,7 @@ results_cache:
 # CLI flag: -query-frontend.query-sharding-target-series-per-shard
 [query_sharding_target_series_per_shard: <int> | default = 0]
 
-# (advanced) Maximum number of sharded active series (and active native
+# (experimental) Maximum number of sharded active series (and active native
 # histogram metrics) sub-requests dispatched and merged concurrently within a
 # single request. This bounds the resource usage caused by fanning out to a
 # large number of shards, both on queriers and on the query-frontend. 0 to
