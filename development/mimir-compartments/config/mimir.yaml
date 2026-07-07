@@ -60,7 +60,7 @@ blocks_storage:
   tsdb:
     dir: /data
     # Each read compartment's block-builder builds and ships that compartment's blocks, so ingester block
-    # shipping is disabled (ship_interval: 0s). Cut blocks frequently for a fast feedback loop in development.
+    # shipping is disabled (ship_interval: 0s).
     block_ranges_period: ["2m"]
     retention_period: 20m
     ship_interval: 0s

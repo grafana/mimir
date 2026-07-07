@@ -749,29 +749,51 @@ func TestAssignJobSkipsObsoleteOffsets_PriorScheduler(t *testing.T) {
 	)
 }
 
-// TestAssignJobSkipsObsoleteOffsets_MultiCluster verifies that a job is skipped as obsolete only
-// when every cluster's range is behind that cluster's committed offset: a job whose ranges are
-// consumed on a subset of clusters must still be assigned for the lagging clusters.
+// TestAssignJobSkipsObsoleteOffsets_MultiCluster verifies that a job whose ranges are behind the
+// committed offset on every cluster (beyondAll) is skipped as obsolete, while a job behind on only
+// a subset of clusters (beyondSome) is a fatal invariant break: it should not happen for a queued
+// job, so assignJob panics rather than risk dropping the lagging clusters' ranges.
 func TestAssignJobSkipsObsoleteOffsets_MultiCluster(t *testing.T) {
+	t.Run("fully consumed job is skipped", func(t *testing.T) {
+		sched, _ := mustMultiClusterScheduler(t, 3, 3)
+		sched.cfg.MaxJobsPerPartition = 0
+		sched.completeObservationMode(context.Background())
+
+		// Every cluster's committed offset reaches its range end: fully consumed.
+		s1 := multiSpec(1, offsetRange(0, 100, 200), offsetRange(1, 300, 400), offsetRange(2, 500, 600))
+		require.NoError(t, sched.jobs.add(jobIDForSpec(true, &s1), s1))
+		initCommits(sched, "ingest", 1, map[int]int64{0: 200, 1: 400, 2: 600})
+
+		require.Empty(t, assignAllJobs(t, sched, "w0"), "fully consumed job should be skipped")
+	})
+
+	t.Run("partially consumed job panics", func(t *testing.T) {
+		sched, _ := mustMultiClusterScheduler(t, 3, 3)
+		sched.cfg.MaxJobsPerPartition = 0
+		sched.completeObservationMode(context.Background())
+
+		// Consumed on cluster 0 only; clusters 1 and 2 still need it.
+		s2 := multiSpec(2, offsetRange(0, 100, 200), offsetRange(1, 300, 400), offsetRange(2, 500, 600))
+		require.NoError(t, sched.jobs.add(jobIDForSpec(true, &s2), s2))
+		initCommits(sched, "ingest", 2, map[int]int64{0: 200, 1: 300, 2: 500})
+
+		require.Panics(t, func() { _, _, _ = sched.assignJob("w0") })
+	})
+}
+
+// TestUpdateJobPanicsOnPartiallyConsumed_MultiCluster verifies that an in-progress job update whose
+// ranges are behind the committed offset on only a subset of clusters (beyondSome) panics, matching
+// assignJob and enqueuePendingJobs, rather than renewing a lease on a torn job.
+func TestUpdateJobPanicsOnPartiallyConsumed_MultiCluster(t *testing.T) {
 	sched, _ := mustMultiClusterScheduler(t, 3, 3)
-	sched.cfg.MaxJobsPerPartition = 0
 	sched.completeObservationMode(context.Background())
 
-	// Partition 1's job is fully consumed: every cluster's committed offset reaches its range end.
-	s1 := multiSpec(1, offsetRange(0, 100, 200), offsetRange(1, 300, 400), offsetRange(2, 500, 600))
-	// Partition 2's job is consumed on cluster 0 only; clusters 1 and 2 still need it.
-	s2 := multiSpec(2, offsetRange(0, 100, 200), offsetRange(1, 300, 400), offsetRange(2, 500, 600))
-
-	require.NoError(t, sched.jobs.add(jobIDForSpec(true, &s1), s1))
-	require.NoError(t, sched.jobs.add(jobIDForSpec(true, &s2), s2))
-
-	initCommits(sched, "ingest", 1, map[int]int64{0: 200, 1: 400, 2: 600})
+	// Consumed on cluster 0 only; clusters 1 and 2 still need it.
+	spec := multiSpec(2, offsetRange(0, 100, 200), offsetRange(1, 300, 400), offsetRange(2, 500, 600))
 	initCommits(sched, "ingest", 2, map[int]int64{0: 200, 1: 300, 2: 500})
 
-	require.ElementsMatch(t,
-		[]*schedulerpb.JobSpec{&s2}, assignAllJobs(t, sched, "w0"),
-		"partition 1's job should be skipped as fully consumed; partition 2's must be assigned for the lagging clusters",
-	)
+	key := jobKey{id: jobIDForSpec(true, &spec), epoch: 0}
+	require.Panics(t, func() { _ = sched.updateJob(key, "w0", false, spec) })
 }
 
 func TestObservations(t *testing.T) {

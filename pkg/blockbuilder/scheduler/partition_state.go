@@ -268,6 +268,10 @@ func (s *partitionState) completeJob(jobID string) error {
 		}
 		s.plannedJobs.Remove(elem)
 		delete(s.plannedJobsMap, js.jobID)
+		// Advance every cluster of the job together, never partially, while the caller holds the
+		// scheduler lock. This keeps the committed offset from landing partway through a job's
+		// ranges (a beyondSome state), which assignJob/updateJob/enqueuePendingJobs reject as a
+		// fatal invariant break.
 		for clusterID, offsetRange := range js.spec.Ranges() {
 			s.offsets[clusterID].committed.advance(js.jobID, offsetRange)
 		}

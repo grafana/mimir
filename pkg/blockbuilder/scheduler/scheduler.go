@@ -242,20 +242,12 @@ func (s *BlockBuilderScheduler) updateSchedule(ctx context.Context) {
 
 	now := time.Now()
 
-	// Probe and record each cluster's end offsets in turn. Recording every cluster before
-	// advancing partition time (below) lets a single job bundle the buckets that rolled over
-	// across all clusters.
-	//
+	// Probe and record each cluster's end offsets in turn.
 	// A cluster whose probe fails is skipped for this tick rather than abandoning the tick:
-	// one cluster's outage must not block cutting jobs for the others. The skipped cluster
-	// keeps the end offsets from its last successful probe, so a job cut this tick covers its
-	// data only up to there; the rest is cut in a later bucket once probing recovers. Offsets
+	// i.e. one cluster's outage does not block cutting jobs for the others. The skipped cluster
+	// keeps the end offsets from its last successful probe, the rest is cut in a later bucket once probing recovers. Offsets
 	// stay contiguous per cluster either way, so nothing is lost or consumed twice — the
 	// cluster's data is just built into blocks later.
-	//
-	// touched is populated only by recordEndOffsets, i.e. only from successfully probed
-	// clusters — a failed cluster contributes nothing to it. A partition therefore skips its
-	// time advance below only when no cluster reported it this tick.
 	touched := make(map[int32]struct{})
 	var failedClusters []int
 	for clusterID, ac := range s.adminClients {
@@ -354,24 +346,22 @@ func (s *BlockBuilderScheduler) enqueuePendingJobs() {
 
 			switch ps.committedBeyondSpec(*spec) {
 			case beyondAll:
-				// The whole job is already consumed on every cluster. Ignore.
+				// The job discovery process happens concurrently with ongoing job
+				// completions. Now that we have the lock, ignore this job if it's
+				// older than our committed offset.
 				level.Info(s.logger).Log("msg", "ignoring pending job as it's behind the committed offset",
 					"partition", partition, "job", spec.RangesString(), "offsets", ps.offsetsSummary(true, false))
 				ps.pendingJobs.Remove(e)
 				continue
 			case beyondSome:
-				// Behind the committed offset on a subset of clusters, still needed by
-				// the rest. This should not happen as for every cluster in a pending
-				// job, committed <= planned <= the job's start. Planned and committed
-				// can catch up to a pending job's start but never pass it — unless a
-				// cluster's end offsets go backwards (e.g. topic recreation), which is
-				// a data-loss emergency.
-				// Unlike beyondAll, where the commit vouches for every range and
-				// dropping is lossless, there is no easy way out here: dropping the
-				// job would lose the fresh clusters' ranges (cuts never revisit
-				// them), but downstream logic assumes offsets cannot go backwards.
-				// Handling it gracefully (e.g. trimming the job to the clusters
-				// that still need it) may be a possible future improvement.
+				// Behind the committed offset on a subset of clusters, still needed by the rest. This
+				// should not happen: at startup, jobs in this state are dropped rather than imported, and
+				// in normal running, jobs are always created with committed <= planned <= the job's start.
+				// Planned and committed can catch up to a pending job's start but never pass it — unless a
+				// cluster's end offsets go backwards (e.g. topic recreation), a data-loss emergency.
+				// This unreachability also depends on completeJob advancing every cluster of a job
+				// together (see partition_state.go); that coupling is brittle. Handling it more gracefully
+				// (e.g. trimming the job to the clusters that still need it) may be a future improvement.
 				panic(fmt.Sprintf("pending job for partition %d is partially behind the committed offset: job=%s offsets=%s",
 					partition, spec.RangesString(), ps.offsetsSummary(true, false)))
 			case beyondNone:
@@ -711,17 +701,23 @@ func (s *BlockBuilderScheduler) assignJob(workerID string) (jobKey, schedulerpb.
 			return k, spec, err
 		}
 
-		// A job is obsolete only when every cluster's range is behind its committed
-		// offset (beyondAll). We don't expect beyondSome here, but if it happens we
-		// keep processing the job rather than drop it, to avoid possibly dropping the
-		// ranges the fresh clusters still need.
-		if ps := s.getPartitionState(spec.Topic, spec.Partition); ps.committedBeyondSpec(spec) == beyondAll {
-			// Job is before the committed offset. Remove it.
+		ps := s.getPartitionState(spec.Topic, spec.Partition)
+		switch ps.committedBeyondSpec(spec) {
+		case beyondAll:
+			// The whole job is behind the committed offset. Remove it (expected at startup).
 			level.Info(s.logger).Log("msg", "removing job as it's behind the committed offset (expected at startup)",
 				"job_id", k.id, "epoch", k.epoch, "partition", spec.Partition,
 				"job", spec.RangesString(), "offsets", ps.offsetsSummary(true, false))
 			s.jobs.removeJob(k)
 			continue
+		case beyondSome:
+			// Behind the committed offset on a subset of clusters — should not happen (see the
+			// beyondSome case in enqueuePendingJobs). Panic rather than risk dropping the ranges the
+			// lagging clusters still need; a later PR could handle it more gracefully.
+			panic(fmt.Sprintf("assigned job for partition %d is partially behind the committed offset: job=%s offsets=%s",
+				spec.Partition, spec.RangesString(), ps.offsetsSummary(true, false)))
+		case beyondNone:
+			// Fully needed; assign it below.
 		}
 
 		return k, spec, nil
@@ -777,15 +773,19 @@ func (s *BlockBuilderScheduler) updateJob(key jobKey, workerID string, complete 
 		level.Info(logger).Log("msg", "completed job")
 	} else {
 		// It's an in-progress job whose lease we need to renew.
-
-		// Ignore only when every cluster's range is behind its committed offset
-		// (beyondAll). We don't expect beyondSome here, but if it happens we renew the
-		// lease rather than ignore it, to avoid possibly dropping the ranges the fresh
-		// clusters still need.
-		if ps.committedBeyondSpec(j) == beyondAll {
+		switch ps.committedBeyondSpec(j) {
+		case beyondAll:
 			// Update of a completed/committed job. Ignore.
 			level.Debug(logger).Log("msg", "ignored historical job")
 			return nil
+		case beyondSome:
+			// Behind the committed offset on a subset of clusters — should not happen (see the
+			// beyondSome case in enqueuePendingJobs). Panic rather than risk dropping the ranges the
+			// lagging clusters still need; a later PR could handle it more gracefully.
+			panic(fmt.Sprintf("in-progress job update for partition %d is partially behind the committed offset: job=%s offsets=%s",
+				j.Partition, j.RangesString(), ps.offsetsSummary(true, false)))
+		case beyondNone:
+			// Fully needed; renew below.
 		}
 
 		if err := s.jobs.renewLease(key, workerID); err != nil {
