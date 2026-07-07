@@ -315,6 +315,14 @@ Outer:
 			// Tombstone records will be fairly rare, so not trying to optimise the allocations here.
 			deleteSeriesShards := make([][]chunks.HeadSeriesRef, concurrency)
 			for _, s := range v {
+				// A tombstone proves a series with this ref was created at some point,
+				// even if its series record is no longer in the WAL. Advance lastSeriesID
+				// accordingly: full-range tombstones are retained in checkpoints
+				// indefinitely, so if the ref were issued to a new series, the retained
+				// tombstone would delete that series on a subsequent replay.
+				if h.lastSeriesID.Load() < uint64(s.Ref) {
+					h.lastSeriesID.Store(uint64(s.Ref))
+				}
 				if len(s.Intervals) == 1 && s.Intervals[0].Mint == math.MinInt64 && s.Intervals[0].Maxt == math.MaxInt64 {
 					// This series was fully deleted at this point. This record is only done for stale series at the moment.
 					mod := uint64(s.Ref) % uint64(concurrency)
