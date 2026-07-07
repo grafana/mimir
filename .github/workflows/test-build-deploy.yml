@@ -581,12 +581,10 @@ jobs:
           pattern: dist-linux-*
           path: dist
           merge-multiple: true
-      # test-packages builds and runs the systemd base images for both amd64 and arm64, so we
-      # need QEMU/binfmt registered to build and run the arm64 images on the amd64 runner.
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@06116385d9baf250c9f4dcb4858b16962ea869c3 # v4.1.0
-      - name: Build and test DEB/RPM packages
-        run: make test-packages
+      # make packages runs nfpm against the downloaded binaries in dist/, validating that the
+      # DEB/RPM packages can be built on every push and PR (not just when cutting a release).
+      - name: Build DEB/RPM packages
+        run: make packages
       # Only the release job consumes these, so they're only uploaded for release tags.
       - name: Upload packages artifacts
         if: startsWith(github.ref, 'refs/tags/mimir-')

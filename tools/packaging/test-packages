@@ -46,12 +46,12 @@ function test_with_systemd() {
 
     echo "Testing $install_command on $image ($platform)"
 
-    container=$(docker run --platform="${platform}" --tmpfs /run --tmpfs /run/lock -v /sys/fs/cgroup:/sys/fs/cgroup:ro -id -v "$(pwd)"/dist:/opt/mimir -p 9009 "${image}")
+    container=$(docker run --platform="${platform}" --tmpfs /run --tmpfs /run/lock -v /sys/fs/cgroup:/sys/fs/cgroup:ro -itd -v "$(pwd)"/dist:/opt/mimir -p 9009 "${image}")
     CONTAINERS+=("${container}")
 
     port=$(docker inspect --format='{{(index (index .NetworkSettings.Ports "9009/tcp") 0).HostPort}}' "${container}")
 
-    docker exec -i "${container}" /bin/bash -c "${install_command}; systemctl start mimir.service; systemctl enable mimir.service"
+    docker exec -it "${container}" /bin/bash -c "${install_command}; systemctl start mimir.service; systemctl enable mimir.service"
 
     ready 10 1 "${port}" || error "Testing image: ${image} with command: '${install_command}' failed"
 }
