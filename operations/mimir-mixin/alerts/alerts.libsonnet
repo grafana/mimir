@@ -376,15 +376,15 @@ local utils = import 'mixin-utils/utils.libsonnet';
           },
         },
         {
-          // Alert if a ruler instance has no rule groups assigned while other instances in the same cell do.
+          // Alert if a ruler instance has no rule groups assigned while other instances in the same cell have a non-trivial number.
           alert: $.alertName('RulerInstanceHasNoRuleGroups'),
           'for': '1h',
           expr: |||
             # Alert on ruler instances in microservices mode that have no rule groups assigned,
             min by(%(alert_aggregation_labels)s, %(per_instance_label)s) (cortex_ruler_managers_total{%(per_instance_label)s=~"%(rulerInstanceName)s"}) == 0
-            # but only if other ruler instances of the same cell do have rule groups assigned
+            # but only if other ruler instances of the same cell do have at least 10 rule groups assigned
             and on (%(alert_aggregation_labels)s)
-            (max by(%(alert_aggregation_labels)s) (cortex_ruler_managers_total) > 0)
+            (max by(%(alert_aggregation_labels)s) (cortex_ruler_managers_total) > 10)
             # and there are more than two instances overall
             and on (%(alert_aggregation_labels)s)
             (count by (%(alert_aggregation_labels)s) (cortex_ruler_managers_total) > 2)
