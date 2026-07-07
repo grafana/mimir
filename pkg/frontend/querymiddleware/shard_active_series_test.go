@@ -376,7 +376,7 @@ func Test_shardBySeriesBase_cardinalityShardingMaxShardedQueries(t *testing.T) {
 
 	middlewares := []struct {
 		name       string
-		middleware func(http.RoundTripper, Limits, log.Logger) http.RoundTripper
+		middleware func(http.RoundTripper, int, Limits, log.Logger) http.RoundTripper
 	}{
 		{"active series", newShardActiveSeriesMiddleware},
 		{"active native histogram metrics", newShardActiveNativeHistogramMetricsMiddleware},
@@ -415,7 +415,7 @@ func Test_shardBySeriesBase_cardinalityShardingMaxShardedQueries(t *testing.T) {
 	for _, mw := range middlewares {
 		for _, tt := range tests {
 			t.Run(mw.name+": "+tt.name, func(t *testing.T) {
-				s := mw.middleware(upstream, mockLimits{
+				s := mw.middleware(upstream, 0 /* max concurrency */, mockLimits{
 					totalShards:                  tt.requestedShards,
 					maxShardedQueries:            tt.maxShardedQueries,
 					cardinalityMaxShardedQueries: tt.cardinalityMaxShardedQueries,
