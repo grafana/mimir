@@ -14,7 +14,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"strconv"
 	"strings"
 	"testing"
 
@@ -922,9 +921,10 @@ func TestActiveSeriesCardinalityHandler_framedResponse(t *testing.T) {
 		require.Equal(t, http.StatusOK, resp.StatusCode)
 		require.Equal(t, api.ContentTypeActiveSeriesFramed, resp.Header.Get("Content-Type"))
 
+		require.Empty(t, resp.Header.Get("Content-Length"))
+
 		body, err := io.ReadAll(resp.Body)
 		require.NoError(t, err)
-		require.Equal(t, len(body), func() int { l, _ := strconv.Atoi(resp.Header.Get("Content-Length")); return l }())
 
 		decoded := decodeFramedActiveSeries(t, body)
 		require.ElementsMatch(t, series, decoded)

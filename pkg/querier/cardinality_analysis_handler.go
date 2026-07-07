@@ -3,7 +3,6 @@
 package querier
 
 import (
-	"bytes"
 	"cmp"
 	"encoding/binary"
 	"fmt"
@@ -153,25 +152,29 @@ func activeSeriesRequestAcceptsFramed(r *http.Request) bool {
 
 // writeActiveSeriesFramedResponse writes series in the length-delimited format described by api.ContentTypeActiveSeriesFramed.
 func writeActiveSeriesFramedResponse(w http.ResponseWriter, series []labels.Labels) {
-	var buf bytes.Buffer
+	w.Header().Set("Content-Type", api.ContentTypeActiveSeriesFramed)
+	w.Header().Set(worker.ResponseStreamingEnabledHeader, "true")
+
 	var lenBuf [binary.MaxVarintLen64]byte
+	wroteFrame := false
 	for i := range series {
 		obj, err := series[i].MarshalJSON()
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			// A clean error status can only be sent before the first frame has been written.
+			if !wroteFrame {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+			}
 			return
 		}
 		n := binary.PutUvarint(lenBuf[:], uint64(len(obj)))
-		buf.Write(lenBuf[:n])
-		buf.Write(obj)
+		if _, err := w.Write(lenBuf[:n]); err != nil {
+			return
+		}
+		if _, err := w.Write(obj); err != nil {
+			return
+		}
+		wroteFrame = true
 	}
-
-	w.Header().Set("Content-Type", api.ContentTypeActiveSeriesFramed)
-	w.Header().Set("Content-Length", strconv.Itoa(buf.Len()))
-	w.Header().Set(worker.ResponseStreamingEnabledHeader, "true")
-
-	// Nothing we can do about this error, so ignore it.
-	_, _ = w.Write(buf.Bytes())
 }
 
 func ActiveNativeHistogramMetricsHandler(d Distributor, limits *validation.Overrides) http.Handler {
