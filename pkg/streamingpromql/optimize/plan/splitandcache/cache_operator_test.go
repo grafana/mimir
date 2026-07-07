@@ -929,7 +929,7 @@ func TestCacheOperator_UnconsumedSeries(t *testing.T) {
 	}
 }
 
-// TestCacheOperator_UnconsumedSeriesMetadataAndNoInnerSeries is like TestCacheOperator_UnconsumedSeries, but tests the
+// TestCacheOperator_CachingUnconsumedSeries_NoInnerSeries is like TestCacheOperator_UnconsumedSeries, but tests the
 // case where the inner operator produces no series and the caller does not call SeriesMetadata.
 func TestCacheOperator_CachingUnconsumedSeries_NoInnerSeries(t *testing.T) {
 	runTestCase := func(t *testing.T, readSeriesMetadata bool) {
