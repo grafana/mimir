@@ -14,6 +14,7 @@ import (
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/tenant"
 	jsoniter "github.com/json-iterator/go"
+	"github.com/munnerz/goautoneg"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/labels"
 
@@ -142,8 +143,10 @@ func ActiveSeriesCardinalityHandler(d Distributor, limits *validation.Overrides)
 }
 
 func activeSeriesRequestAcceptsFramed(r *http.Request) bool {
-	for _, accept := range r.Header.Values("Accept") {
-		if strings.Contains(accept, api.ContentTypeActiveSeriesFramed) {
+	// Require an explicit match rather than honouring wildcards, so a client sending */* keeps
+	// getting JSON: the framed format is an internal opt-in, not the public default.
+	for _, clause := range goautoneg.ParseAccept(strings.Join(r.Header.Values("Accept"), ",")) {
+		if clause.Q > 0 && clause.Type+"/"+clause.SubType == api.ContentTypeActiveSeriesFramed {
 			return true
 		}
 	}

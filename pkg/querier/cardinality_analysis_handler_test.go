@@ -920,7 +920,6 @@ func TestActiveSeriesCardinalityHandler_framedResponse(t *testing.T) {
 		resp := serve(t, api.ContentTypeActiveSeriesFramed)
 		require.Equal(t, http.StatusOK, resp.StatusCode)
 		require.Equal(t, api.ContentTypeActiveSeriesFramed, resp.Header.Get("Content-Type"))
-
 		require.Empty(t, resp.Header.Get("Content-Length"))
 
 		body, err := io.ReadAll(resp.Body)
@@ -954,9 +953,19 @@ func TestActiveSeriesCardinalityHandler_framedResponse(t *testing.T) {
 		require.Equal(t, string(jsonBody), out.String(), "framed frames must byte-match the JSON array elements")
 	})
 
-	t.Run("returns JSON when Accept does not request framing", func(t *testing.T) {
-		resp := serve(t, "application/json")
-		require.Equal(t, http.StatusOK, resp.StatusCode)
+	t.Run("returns JSON unless the framed format is explicitly requested", func(t *testing.T) {
+		for _, accept := range []string{"", "application/json", "*/*", "application/*", "text/plain, */*"} {
+			resp := serve(t, accept)
+			require.Equal(t, http.StatusOK, resp.StatusCode)
+			require.Equal(t, "application/json", resp.Header.Get("Content-Type"), "Accept %q must yield JSON", accept)
+		}
+	})
+
+	t.Run("honours framed format alongside other Accept clauses and q-values", func(t *testing.T) {
+		resp := serve(t, "application/json;q=0.5, "+api.ContentTypeActiveSeriesFramed)
+		require.Equal(t, api.ContentTypeActiveSeriesFramed, resp.Header.Get("Content-Type"))
+
+		resp = serve(t, api.ContentTypeActiveSeriesFramed+";q=0")
 		require.Equal(t, "application/json", resp.Header.Get("Content-Type"))
 	})
 }
