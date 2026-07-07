@@ -167,6 +167,9 @@ func (m *HeapMerger) run(ctx context.Context) error {
 	h := &recordHeap{}
 	heap.Init(h)
 
+	// There's no API to create an already-stopped timer, so create one with an arbitrary long duration and
+	// immediately stop and drain it. It's Reset to MaxBatchWait when the first record of a batch arrives,
+	// and timerActive tracks whether it's currently armed. The time.Hour is never actually waited on.
 	timer := time.NewTimer(time.Hour)
 	if !timer.Stop() {
 		<-timer.C
