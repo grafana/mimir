@@ -25,147 +25,86 @@ import (
 )
 
 func TestMultiClusterPartitionReader_ConsumesFromAllWriteCompartments(t *testing.T) {
-	const (
-		readTopic            = "ingest-rc-0"
-		partitionID          = int32(0)
-		tenantID             = "user-1"
-		numWriteCompartments = 3
-	)
+	for _, tc := range []struct {
+		name       string
+		orderedCfg OrderedConsumptionConfig
+	}{
+		{"ordered consumption disabled", OrderedConsumptionConfig{}},
+		{"ordered consumption enabled", OrderedConsumptionConfig{Enabled: true, MaxBatchRecords: 1024, MaxBatchWait: 10 * time.Millisecond}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			const (
+				readTopic            = "ingest-rc-0"
+				partitionID          = int32(0)
+				tenantID             = "user-1"
+				numWriteCompartments = 3
+			)
 
-	ctx := context.Background()
+			ctx := context.Background()
 
-	// Run one Kafka cluster per write compartment, and produce a distinct series to each so we can
-	// assert the reader unions records from every cluster.
-	clusterConfigs := make([]KafkaConfig, numWriteCompartments)
-	expectedMetricNames := make(map[string]struct{}, numWriteCompartments)
-	for writeCompartmentID := 0; writeCompartmentID < numWriteCompartments; writeCompartmentID++ {
-		_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, readTopic)
-		clusterConfigs[writeCompartmentID] = createTestKafkaConfig(clusterAddr, readTopic)
+			// Run one Kafka cluster per write compartment, and produce a distinct series to each so we can
+			// assert the reader unions records from every cluster.
+			clusterConfigs := make([]KafkaConfig, numWriteCompartments)
+			expectedMetricNames := make(map[string]struct{}, numWriteCompartments)
+			for writeCompartmentID := 0; writeCompartmentID < numWriteCompartments; writeCompartmentID++ {
+				_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, readTopic)
+				clusterConfigs[writeCompartmentID] = createTestKafkaConfig(clusterAddr, readTopic)
 
-		writer, _ := createTestWriter(t, clusterConfigs[writeCompartmentID])
-		metricName := fmt.Sprintf("series_wc_%d", writeCompartmentID)
-		expectedMetricNames[metricName] = struct{}{}
-		req := &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries(metricName)}, Source: mimirpb.API}
-		require.NoError(t, writer.WriteSync(ctx, readTopic, partitionID, tenantID, req))
-	}
-
-	var mtx sync.Mutex
-	receivedMetricNames := map[string]struct{}{}
-	pusher := pusherFunc(func(_ context.Context, req *mimirpb.WriteRequest) error {
-		mtx.Lock()
-		defer mtx.Unlock()
-		for _, ts := range req.Timeseries {
-			for _, lbl := range ts.Labels {
-				if lbl.Name == "__name__" {
-					receivedMetricNames[lbl.Value] = struct{}{}
-				}
+				writer, _ := createTestWriter(t, clusterConfigs[writeCompartmentID])
+				metricName := fmt.Sprintf("series_wc_%d", writeCompartmentID)
+				expectedMetricNames[metricName] = struct{}{}
+				req := &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries(metricName)}, Source: mimirpb.API}
+				require.NoError(t, writer.WriteSync(ctx, readTopic, partitionID, tenantID, req))
 			}
-		}
-		return nil
-	})
 
-	reg := prometheus.NewPedanticRegistry()
-	reader, err := NewMultiClusterPartitionReader(clusterConfigs, OrderedConsumptionConfig{}, partitionID, "ingester-0", multiClusterTestOffsetFilePath(t), pusher, log.NewNopLogger(), reg)
-	require.NoError(t, err)
-	require.NoError(t, services.StartAndAwaitRunning(ctx, reader))
-	t.Cleanup(func() { require.NoError(t, services.StopAndAwaitTerminated(ctx, reader)) })
-
-	// Every cluster's record is eventually pushed.
-	require.Eventually(t, func() bool {
-		mtx.Lock()
-		defer mtx.Unlock()
-		return len(receivedMetricNames) == numWriteCompartments
-	}, 10*time.Second, 100*time.Millisecond)
-
-	mtx.Lock()
-	assert.Equal(t, expectedMetricNames, receivedMetricNames)
-	mtx.Unlock()
-
-	// Now that everything produced so far has been consumed, waiting for read consistency returns
-	// promptly across all clusters.
-	require.NoError(t, reader.WaitReadConsistencyUntilLastProducedOffset(ctx))
-
-	// Reader metrics are registered per cluster (each per-cluster reader's registerer is wrapped with a
-	// distinct write_compartment label). Each cluster consumed exactly one record, so it pushed one write
-	// request and missed no records.
-	require.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
-		# HELP cortex_ingest_storage_reader_requests_total Number of attempted write requests after batching records from Kafka.
-		# TYPE cortex_ingest_storage_reader_requests_total counter
-		cortex_ingest_storage_reader_requests_total{write_compartment="0"} 1
-		cortex_ingest_storage_reader_requests_total{write_compartment="1"} 1
-		cortex_ingest_storage_reader_requests_total{write_compartment="2"} 1
-
-		# HELP cortex_ingest_storage_reader_missed_records_total The number of offsets that were never consumed by the reader because they weren't fetched.
-		# TYPE cortex_ingest_storage_reader_missed_records_total counter
-		cortex_ingest_storage_reader_missed_records_total{write_compartment="0"} 0
-		cortex_ingest_storage_reader_missed_records_total{write_compartment="1"} 0
-		cortex_ingest_storage_reader_missed_records_total{write_compartment="2"} 0
-	`),
-		"cortex_ingest_storage_reader_requests_total",
-		"cortex_ingest_storage_reader_missed_records_total"))
-}
-
-func TestMultiClusterPartitionReader_MergesRecordsFromAllWriteCompartments(t *testing.T) {
-	const (
-		readTopic            = "ingest-rc-0"
-		partitionID          = int32(0)
-		tenantID             = "user-1"
-		numWriteCompartments = 3
-	)
-
-	ctx := context.Background()
-
-	// Run one Kafka cluster per write compartment, and produce a distinct series to each so we can
-	// assert the reader unions records from every cluster when heap merging is enabled.
-	clusterConfigs := make([]KafkaConfig, numWriteCompartments)
-	expectedMetricNames := make(map[string]struct{}, numWriteCompartments)
-	for writeCompartmentID := 0; writeCompartmentID < numWriteCompartments; writeCompartmentID++ {
-		_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, readTopic)
-		clusterConfigs[writeCompartmentID] = createTestKafkaConfig(clusterAddr, readTopic)
-
-		writer, _ := createTestWriter(t, clusterConfigs[writeCompartmentID])
-		metricName := fmt.Sprintf("series_wc_%d", writeCompartmentID)
-		expectedMetricNames[metricName] = struct{}{}
-		req := &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries(metricName)}, Source: mimirpb.API}
-		require.NoError(t, writer.WriteSync(ctx, readTopic, partitionID, tenantID, req))
-	}
-
-	var mtx sync.Mutex
-	receivedMetricNames := map[string]struct{}{}
-	pusher := pusherFunc(func(_ context.Context, req *mimirpb.WriteRequest) error {
-		mtx.Lock()
-		defer mtx.Unlock()
-		for _, ts := range req.Timeseries {
-			for _, lbl := range ts.Labels {
-				if lbl.Name == "__name__" {
-					receivedMetricNames[lbl.Value] = struct{}{}
+			var mtx sync.Mutex
+			receivedMetricNames := map[string]struct{}{}
+			pusher := pusherFunc(func(_ context.Context, req *mimirpb.WriteRequest) error {
+				mtx.Lock()
+				defer mtx.Unlock()
+				for _, ts := range req.Timeseries {
+					for _, lbl := range ts.Labels {
+						if lbl.Name == "__name__" {
+							receivedMetricNames[lbl.Value] = struct{}{}
+						}
+					}
 				}
-			}
-		}
-		return nil
-	})
+				return nil
+			})
 
-	mergerCfg := OrderedConsumptionConfig{Enabled: true, MaxBatchRecords: 1024, MaxBatchWait: 10 * time.Millisecond}
-	reg := prometheus.NewPedanticRegistry()
-	reader, err := NewMultiClusterPartitionReader(clusterConfigs, mergerCfg, partitionID, "ingester-0", multiClusterTestOffsetFilePath(t), pusher, log.NewNopLogger(), reg)
-	require.NoError(t, err)
-	require.NoError(t, services.StartAndAwaitRunning(ctx, reader))
-	t.Cleanup(func() { require.NoError(t, services.StopAndAwaitTerminated(ctx, reader)) })
+			reg := prometheus.NewPedanticRegistry()
+			reader, err := NewMultiClusterPartitionReader(clusterConfigs, tc.orderedCfg, partitionID, "ingester-0", multiClusterTestOffsetFilePath(t), pusher, log.NewNopLogger(), reg)
+			require.NoError(t, err)
+			require.NoError(t, services.StartAndAwaitRunning(ctx, reader))
+			t.Cleanup(func() { require.NoError(t, services.StopAndAwaitTerminated(ctx, reader)) })
 
-	// Every cluster's record is eventually pushed through the merger.
-	require.Eventually(t, func() bool {
-		mtx.Lock()
-		defer mtx.Unlock()
-		return len(receivedMetricNames) == numWriteCompartments
-	}, 10*time.Second, 100*time.Millisecond)
+			// Every cluster's record is eventually pushed.
+			require.Eventually(t, func() bool {
+				mtx.Lock()
+				defer mtx.Unlock()
+				return len(receivedMetricNames) == numWriteCompartments
+			}, 10*time.Second, 100*time.Millisecond)
 
-	mtx.Lock()
-	assert.Equal(t, expectedMetricNames, receivedMetricNames)
-	mtx.Unlock()
+			mtx.Lock()
+			assert.Equal(t, expectedMetricNames, receivedMetricNames)
+			mtx.Unlock()
 
-	// Now that everything produced so far has been consumed, waiting for read consistency returns
-	// promptly across all clusters.
-	require.NoError(t, reader.WaitReadConsistencyUntilLastProducedOffset(ctx))
+			// Now that everything produced so far has been consumed, waiting for read consistency returns
+			// promptly across all clusters.
+			require.NoError(t, reader.WaitReadConsistencyUntilLastProducedOffset(ctx))
+
+			// No records were missed on any cluster. This per-cluster reader metric is registered on each
+			// reader's registerer (wrapped with a distinct write_compartment label) in both modes.
+			require.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
+				# HELP cortex_ingest_storage_reader_missed_records_total The number of offsets that were never consumed by the reader because they weren't fetched.
+				# TYPE cortex_ingest_storage_reader_missed_records_total counter
+				cortex_ingest_storage_reader_missed_records_total{write_compartment="0"} 0
+				cortex_ingest_storage_reader_missed_records_total{write_compartment="1"} 0
+				cortex_ingest_storage_reader_missed_records_total{write_compartment="2"} 0
+			`),
+				"cortex_ingest_storage_reader_missed_records_total"))
+		})
+	}
 }
 
 // Asserts that heap merging is skipped with a single Kafka cluster even when enabled, because the heap
