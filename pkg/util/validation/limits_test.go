@@ -20,6 +20,7 @@ import (
 	"github.com/grafana/dskit/flagext"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/otlptranslator"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/stretchr/testify/assert"
@@ -269,6 +270,80 @@ metric_relabel_configs:
 	require.NoError(t, dec.Decode(&l))
 
 	assert.Equal(t, []*relabel.Config{&exp}, l.MetricRelabelConfigs)
+}
+
+func TestRulerAlertmanagerClientConfigExternalLabelsAndRelabelLoadingFromYaml(t *testing.T) {
+	inp := `
+ruler_alertmanager_client_config:
+  alertmanager_url: http://alertmanager:9093
+  external_labels:
+    cluster: eu-west
+    region: prod
+  alert_relabel_configs:
+  - action: drop
+    source_labels: [severity]
+    regex: info
+`
+	l := Limits{}
+	dec := yaml.NewDecoder(strings.NewReader(inp))
+	dec.KnownFields(true)
+	require.NoError(t, dec.Decode(&l))
+
+	assert.Equal(t, map[string]string{"cluster": "eu-west", "region": "prod"}, l.RulerAlertmanagerClientConfig.ExternalLabels)
+	require.Len(t, l.RulerAlertmanagerClientConfig.AlertRelabelConfigs, 1)
+	assert.Equal(t, relabel.Drop, l.RulerAlertmanagerClientConfig.AlertRelabelConfigs[0].Action)
+	assert.Equal(t, model.LabelNames{"severity"}, l.RulerAlertmanagerClientConfig.AlertRelabelConfigs[0].SourceLabels)
+
+	require.NoError(t, l.Validate())
+}
+
+func TestOverrides_RulerExternalLabelsAndAlertRelabelConfigs(t *testing.T) {
+	dropInfo := func() *relabel.Config {
+		return &relabel.Config{
+			SourceLabels: model.LabelNames{"severity"},
+			Regex:        relabel.MustNewRegexp("info"),
+			Action:       relabel.Drop,
+		}
+	}
+
+	defaults := Limits{}
+	flagext.DefaultValues(&defaults)
+
+	tenantLimits := map[string]*Limits{
+		"tenant-a": func() *Limits {
+			l := defaults
+			l.RulerAlertmanagerClientConfig.ExternalLabels = map[string]string{"cluster": "a"}
+			l.RulerAlertmanagerClientConfig.AlertRelabelConfigs = []*relabel.Config{dropInfo()}
+			return &l
+		}(),
+		"tenant-utf8": func() *Limits {
+			l := defaults
+			l.NameValidationScheme = model.UTF8Validation
+			l.RulerAlertmanagerClientConfig.AlertRelabelConfigs = []*relabel.Config{dropInfo()}
+			return &l
+		}(),
+	}
+
+	ov := NewOverrides(defaults, NewMockTenantLimits(tenantLimits))
+
+	// Per-tenant external labels are returned as prometheus labels.Labels.
+	assert.Equal(t, labels.FromStrings("cluster", "a"), ov.RulerExternalLabels("tenant-a"))
+	// A tenant without external labels gets an empty set.
+	assert.Equal(t, labels.EmptyLabels(), ov.RulerExternalLabels("tenant-b"))
+
+	// Alert relabel configs get the tenant's effective name validation scheme applied.
+	aCfgs := ov.RulerAlertRelabelConfigs("tenant-a")
+	require.Len(t, aCfgs, 1)
+	assert.Equal(t, model.LegacyValidation, aCfgs[0].NameValidationScheme)
+
+	utf8Cfgs := ov.RulerAlertRelabelConfigs("tenant-utf8")
+	require.Len(t, utf8Cfgs, 1)
+	assert.Equal(t, model.UTF8Validation, utf8Cfgs[0].NameValidationScheme)
+
+	// The returned configs are copies: the scheme must not be written into the underlying objects,
+	// which can be shared across tenants and are read concurrently by running notifiers.
+	assert.NotSame(t, tenantLimits["tenant-a"].RulerAlertmanagerClientConfig.AlertRelabelConfigs[0], aCfgs[0])
+	assert.Equal(t, model.UnsetValidation, tenantLimits["tenant-a"].RulerAlertmanagerClientConfig.AlertRelabelConfigs[0].NameValidationScheme)
 }
 
 func TestSmallestPositiveIntPerTenant(t *testing.T) {
@@ -1974,6 +2049,71 @@ func TestLimits_Validate(t *testing.T) {
 				assert.Equal(t, 0, cfg.CompactorSplitAndMergeShards)
 				assert.Equal(t, 1, cfg.CompactorOOOSplitAndMergeShards)
 			},
+		},
+		"should pass with valid ruler external labels and alert relabel configs": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.RulerAlertmanagerClientConfig.ExternalLabels = map[string]string{"cluster": "eu-west", "region": "prod"}
+				cfg.RulerAlertmanagerClientConfig.AlertRelabelConfigs = []*relabel.Config{{
+					SourceLabels: model.LabelNames{"severity"},
+					Regex:        relabel.MustNewRegexp("info"),
+					Action:       relabel.Drop,
+				}}
+				return cfg
+			}(),
+			expectedErr: nil,
+		},
+		"should fail if a ruler external label name is invalid under the legacy validation scheme": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.NameValidationScheme = model.LegacyValidation
+				cfg.RulerAlertmanagerClientConfig.ExternalLabels = map[string]string{"invalid-label": "value"}
+				return cfg
+			}(),
+			expectedErr: errors.New(`invalid ruler_alertmanager_client_config.external_labels: "invalid-label" is not a valid label name`),
+		},
+		"should pass if a ruler external label name is invalid under legacy but valid under the utf8 validation scheme": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.NameValidationScheme = model.UTF8Validation
+				cfg.RulerAlertmanagerClientConfig.ExternalLabels = map[string]string{"invalid-label": "value"}
+				return cfg
+			}(),
+			expectedErr: nil,
+		},
+		"should fail if a ruler external label value is invalid": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.RulerAlertmanagerClientConfig.ExternalLabels = map[string]string{"cluster": "\xff"}
+				return cfg
+			}(),
+			expectedErr: errors.New("invalid ruler_alertmanager_client_config.external_labels: \"\\xff\" is not a valid label value"),
+		},
+		"should fail if a ruler alert relabel config is null": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.RulerAlertmanagerClientConfig.AlertRelabelConfigs = []*relabel.Config{nil}
+				return cfg
+			}(),
+			expectedErr: errors.New("invalid ruler_alertmanager_client_config.alert_relabel_configs: empty or null alert relabeling rule"),
+		},
+		"should fail if a ruler alert relabel config is invalid": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.RulerAlertmanagerClientConfig.AlertRelabelConfigs = []*relabel.Config{{
+					Action:      relabel.HashMod,
+					TargetLabel: "target",
+					// Missing Modulus makes the hashmod config invalid.
+				}}
+				return cfg
+			}(),
+			expectedErr: errors.New("invalid ruler_alertmanager_client_config.alert_relabel_configs: relabel configuration for hashmod requires non-zero modulus"),
 		},
 	}
 

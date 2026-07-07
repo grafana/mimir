@@ -9,6 +9,7 @@ import (
 
 	"github.com/grafana/dskit/crypto/tls"
 	"github.com/grafana/dskit/flagext"
+	"github.com/prometheus/prometheus/model/relabel"
 	"go.yaml.in/yaml/v3"
 
 	"github.com/grafana/mimir/pkg/util"
@@ -29,8 +30,10 @@ var (
 // Represents the client configuration for sending to an alertmanager.
 // It is mountable as a single config option/yaml sub-block, or as individual CLI options.
 type AlertmanagerClientConfig struct {
-	AlertmanagerURL string `yaml:"alertmanager_url"`
-	NotifierConfig  Config `yaml:",inline" json:",inline"`
+	AlertmanagerURL     string            `yaml:"alertmanager_url"`
+	ExternalLabels      map[string]string `yaml:"external_labels,omitempty" json:"external_labels,omitempty" doc:"nocli|description=External labels added to all alerts sent to Alertmanager and made available to alerting rule templates. Consistent with Prometheus, an external label is only added to an alert if the alert does not already define a label with the same name. This does not add labels to query results or recording rule output series."`
+	AlertRelabelConfigs []*relabel.Config `yaml:"alert_relabel_configs,omitempty" json:"alert_relabel_configs,omitempty" doc:"nocli|description=List of Prometheus alert relabeling rules applied to alerts before they are sent to Alertmanager. Relabeling is applied after external_labels and can rewrite or drop alerts."`
+	NotifierConfig      Config            `yaml:",inline" json:",inline"`
 }
 
 func (acc *AlertmanagerClientConfig) RegisterFlags(f *flag.FlagSet) {

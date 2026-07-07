@@ -6824,6 +6824,24 @@
             },
             {
               "kind": "field",
+              "name": "external_labels",
+              "required": false,
+              "desc": "External labels added to all alerts sent to Alertmanager and made available to alerting rule templates. Consistent with Prometheus, an external label is only added to an alert if the alert does not already define a label with the same name. This does not add labels to query results or recording rule output series.",
+              "fieldValue": null,
+              "fieldDefaultValue": {},
+              "fieldType": "map of string to string"
+            },
+            {
+              "kind": "field",
+              "name": "alert_relabel_configs",
+              "required": false,
+              "desc": "List of Prometheus alert relabeling rules applied to alerts before they are sent to Alertmanager. Relabeling is applied after external_labels and can rewrite or drop alerts.",
+              "fieldValue": null,
+              "fieldDefaultValue": null,
+              "fieldType": "relabel_config..."
+            },
+            {
+              "kind": "field",
               "name": "tls_enabled",
               "required": false,
               "desc": "Enable TLS for gRPC client connecting to alertmanager.",

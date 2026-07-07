@@ -23,6 +23,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/otlptranslator"
 	promcfg "github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"go.uber.org/atomic"
@@ -707,6 +708,25 @@ func (l *Limits) Validate() error {
 			return errors.New("invalid metric_relabel_configs")
 		}
 		cfg.NameValidationScheme = validationScheme
+	}
+
+	// Validate the ruler's per-tenant external labels and alert relabel configs the same way
+	// Prometheus validates them in config.GlobalConfig.UnmarshalYAML and config.AlertingConfig.Validate.
+	for name, value := range l.RulerAlertmanagerClientConfig.ExternalLabels {
+		if !validationScheme.IsValidLabelName(name) {
+			return fmt.Errorf("invalid ruler_alertmanager_client_config.external_labels: %q is not a valid label name", name)
+		}
+		if !model.LabelValue(value).IsValid() {
+			return fmt.Errorf("invalid ruler_alertmanager_client_config.external_labels: %q is not a valid label value", value)
+		}
+	}
+	for _, cfg := range l.RulerAlertmanagerClientConfig.AlertRelabelConfigs {
+		if cfg == nil {
+			return errors.New("invalid ruler_alertmanager_client_config.alert_relabel_configs: empty or null alert relabeling rule")
+		}
+		if err := cfg.Validate(validationScheme); err != nil {
+			return fmt.Errorf("invalid ruler_alertmanager_client_config.alert_relabel_configs: %w", err)
+		}
 	}
 
 	if l.MaxEstimatedChunksPerQueryMultiplier < 1 && l.MaxEstimatedChunksPerQueryMultiplier != 0 {
@@ -1481,6 +1501,32 @@ func (o *Overrides) RulerMaxIndependentRuleEvaluationConcurrencyPerTenant(userID
 
 func (o *Overrides) RulerAlertmanagerClientConfig(userID string) notifier.AlertmanagerClientConfig {
 	return o.getOverridesForUser(userID).RulerAlertmanagerClientConfig
+}
+
+// RulerExternalLabels returns the external labels added to alerts sent to Alertmanager and made
+// available to alerting rule templates for a given user.
+func (o *Overrides) RulerExternalLabels(userID string) labels.Labels {
+	return labels.FromMap(o.getOverridesForUser(userID).RulerAlertmanagerClientConfig.ExternalLabels)
+}
+
+// RulerAlertRelabelConfigs returns the alert relabel configs applied to alerts before they are sent
+// to Alertmanager for a given user. The returned configs are copies: the tenant's name validation
+// scheme is written into them, while the underlying objects can be shared between tenants falling
+// back to the default limits and are read concurrently by running notifiers.
+func (o *Overrides) RulerAlertRelabelConfigs(userID string) []*relabel.Config {
+	src := o.getOverridesForUser(userID).RulerAlertmanagerClientConfig.AlertRelabelConfigs
+	if len(src) == 0 {
+		return nil
+	}
+
+	validationScheme := o.NameValidationScheme(userID)
+	relabelConfigs := make([]*relabel.Config, len(src))
+	for i, cfg := range src {
+		copied := *cfg
+		copied.NameValidationScheme = validationScheme
+		relabelConfigs[i] = &copied
+	}
+	return relabelConfigs
 }
 
 func (o *Overrides) RulerMinRuleEvaluationInterval(userID string) time.Duration {

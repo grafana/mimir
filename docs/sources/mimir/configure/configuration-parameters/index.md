@@ -4954,6 +4954,18 @@ ruler_alertmanager_client_config:
   # CLI flag: -ruler.alertmanager-url
   [alertmanager_url: <string> | default = ""]
 
+  # External labels added to all alerts sent to Alertmanager and made available
+  # to alerting rule templates. Consistent with Prometheus, an external label is
+  # only added to an alert if the alert does not already define a label with the
+  # same name. This does not add labels to query results or recording rule
+  # output series.
+  [external_labels: <map of string to string> | default = ]
+
+  # List of Prometheus alert relabeling rules applied to alerts before they are
+  # sent to Alertmanager. Relabeling is applied after external_labels and can
+  # rewrite or drop alerts.
+  [alert_relabel_configs: <relabel_config...> | default = ]
+
   # (advanced) Enable TLS for gRPC client connecting to alertmanager.
   # CLI flag: -ruler.alertmanager-client.tls-enabled
   [tls_enabled: <boolean> | default = true]
