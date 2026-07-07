@@ -4586,16 +4586,19 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -query-frontend.max-queriers-per-tenant
 [max_queriers_per_tenant: <int> | default = 0]
 
-# The amount of shards to use when doing parallelisation via query sharding by
-# tenant. 0 to disable query sharding for tenant. Values greater than 1 are
-# rounded up to the next power of two, so the query shard count always meshes
-# with the compactor's power-of-two shard count. This allows querier to not
-# search the blocks which cannot possibly have the series for given query shard.
+# The number of shards to use when doing parallelisation via query sharding. 0
+# to disable query sharding for tenant. Values greater than 1 are rounded up to
+# the next power of two, so the query shard count always meshes with the
+# compactor's power-of-two shard count. This allows querier to not search the
+# blocks which cannot possibly have the series for given query shard.
 # CLI flag: -query-frontend.query-sharding-total-shards
 [query_sharding_total_shards: <int> | default = 16]
 
-# The max number of sharded queries that can be run for a given received query.
-# 0 to disable limit.
+# The maximum number of sharded queries that can be run for a given received
+# query or spun-off subquery. 0 to disable limit. When splitting and caching
+# inside MQE is enabled, this value applies per time-split interval (including
+# split intervals for spun-off subqueries). When it is disabled, this value
+# applies to the entire time range (or entire spun-off subquery).
 # CLI flag: -query-frontend.query-sharding-max-sharded-queries
 [query_sharding_max_sharded_queries: <int> | default = 128]
 
