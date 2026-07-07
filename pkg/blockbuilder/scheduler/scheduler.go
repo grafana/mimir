@@ -245,9 +245,9 @@ func (s *BlockBuilderScheduler) updateSchedule(ctx context.Context) {
 	// Probe and record each cluster's end offsets in turn.
 	// A cluster whose probe fails is skipped for this tick rather than abandoning the tick:
 	// i.e. one cluster's outage does not block cutting jobs for the others. The skipped cluster
-	// keeps the end offsets from its last successful probe, the rest is cut in a later bucket once probing recovers. Offsets
-	// stay contiguous per cluster either way, so nothing is lost or consumed twice — the
-	// cluster's data is just built into blocks later.
+	// keeps the end offsets from its last successful probe, the rest is cut in a later bucket
+	// once probing recovers. Offsets stay contiguous per cluster either way, so nothing is lost
+	// or consumed twice — the cluster's data is just built into blocks later.
 	touched := make(map[int32]struct{})
 	var failedClusters []int
 	for clusterID, ac := range s.adminClients {
@@ -350,18 +350,19 @@ func (s *BlockBuilderScheduler) enqueuePendingJobs() {
 				// completions. Now that we have the lock, ignore this job if it's
 				// older than our committed offset.
 				level.Info(s.logger).Log("msg", "ignoring pending job as it's behind the committed offset",
-					"partition", partition, "job", spec.RangesString(), "offsets", ps.offsetsSummary(true, false))
+					"partition (expected at startup)", partition, "job", spec.RangesString(), "offsets", ps.offsetsSummary(true, false))
 				ps.pendingJobs.Remove(e)
 				continue
 			case beyondSome:
-				// Behind the committed offset on a subset of clusters, still needed by the rest. This
-				// should not happen: at startup, jobs in this state are dropped rather than imported, and
-				// in normal running, jobs are always created with committed <= planned <= the job's start.
-				// Planned and committed can catch up to a pending job's start but never pass it — unless a
-				// cluster's end offsets go backwards (e.g. topic recreation), a data-loss emergency.
-				// This unreachability also depends on completeJob advancing every cluster of a job
-				// together (see partition_state.go); that coupling is brittle. Handling it more gracefully
-				// (e.g. trimming the job to the clusters that still need it) may be a future improvement.
+				// Behind the committed offset on a subset of clusters, still needed by the rest.
+				// This should not happen: at startup, jobs in this state are dropped rather than
+				// imported, and in normal running mode, jobs are always created with committed <=
+				// planned <= the job's start. Planned and committed can catch up to a pending job's
+				// start but never pass it unless a cluster's end offsets go backwards (e.g. topic
+				// recreation), which is a data-loss emergency. This unreachability depends on
+				// completeJob advancing every cluster of a job together (see partition_state.go).
+				// Since nothing enforces that coupling, handling it more gracefully (e.g. trimming
+				// the job to the clusters that still need it) may be a future improvement.
 				panic(fmt.Sprintf("pending job for partition %d is partially behind the committed offset: job=%s offsets=%s",
 					partition, spec.RangesString(), ps.offsetsSummary(true, false)))
 			case beyondNone:
@@ -704,7 +705,7 @@ func (s *BlockBuilderScheduler) assignJob(workerID string) (jobKey, schedulerpb.
 		ps := s.getPartitionState(spec.Topic, spec.Partition)
 		switch ps.committedBeyondSpec(spec) {
 		case beyondAll:
-			// The whole job is behind the committed offset. Remove it (expected at startup).
+			// The whole job is behind the committed offset. Remove it.
 			level.Info(s.logger).Log("msg", "removing job as it's behind the committed offset (expected at startup)",
 				"job_id", k.id, "epoch", k.epoch, "partition", spec.Partition,
 				"job", spec.RangesString(), "offsets", ps.offsetsSummary(true, false))
@@ -712,8 +713,7 @@ func (s *BlockBuilderScheduler) assignJob(workerID string) (jobKey, schedulerpb.
 			continue
 		case beyondSome:
 			// Behind the committed offset on a subset of clusters — should not happen (see the
-			// beyondSome case in enqueuePendingJobs). Panic rather than risk dropping the ranges the
-			// lagging clusters still need; a later PR could handle it more gracefully.
+			// beyondSome case in enqueuePendingJobs).
 			panic(fmt.Sprintf("assigned job for partition %d is partially behind the committed offset: job=%s offsets=%s",
 				spec.Partition, spec.RangesString(), ps.offsetsSummary(true, false)))
 		case beyondNone:
@@ -780,8 +780,7 @@ func (s *BlockBuilderScheduler) updateJob(key jobKey, workerID string, complete 
 			return nil
 		case beyondSome:
 			// Behind the committed offset on a subset of clusters — should not happen (see the
-			// beyondSome case in enqueuePendingJobs). Panic rather than risk dropping the ranges the
-			// lagging clusters still need; a later PR could handle it more gracefully.
+			// beyondSome case in enqueuePendingJobs).
 			panic(fmt.Sprintf("in-progress job update for partition %d is partially behind the committed offset: job=%s offsets=%s",
 				j.Partition, j.RangesString(), ps.offsetsSummary(true, false)))
 		case beyondNone:

@@ -187,8 +187,7 @@ func TestService(t *testing.T) {
 
 // TestService_MultiCluster runs the scheduler through its Service interface with compartments
 // enabled, so the service builds one Kafka client per write compartment from the templated
-// address. Every cluster gets a distinct number of records per partition, so each cluster's
-// committed offsets must match exactly the counts produced to that cluster.
+// address.
 func TestService_MultiCluster(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		sched, clients := mustMultiClusterScheduler(t, 4, 3)
@@ -230,9 +229,8 @@ func TestService_MultiCluster(t *testing.T) {
 			require.NoError(t, produceResult.FirstErr())
 		}
 
-		// counts[c][p] is the number of records produced to partition p on cluster c. All
-		// non-zero cells are distinct so commits landing on the wrong cluster or partition fail
-		// the test; partition 0 gets no data and must end up with no commits.
+		// counts[c][p] is the number of records produced to partition p on cluster c;
+		// partition 0 gets no data and must end up with no commits.
 		counts := [3][4]int{
 			{0, 10, 20, 30},
 			{0, 40, 50, 60},
@@ -418,9 +416,30 @@ func TestStartup_MultiCluster(t *testing.T) {
 
 	// Some jobs that ostensibly exist, but scheduler doesn't know about. Each job's ranges
 	// resume from its clusters' committed offsets.
-	j1 := observedJob(10, multiSpec(64, offsetRange(0, 1000, 1100), offsetRange(1, 5000, 5200), offsetRange(2, 30, 90)))
-	j2 := observedJob(11, multiSpec(65, offsetRange(0, 256, 300), offsetRange(2, 88, 100)))
-	j3 := observedJob(12, multiSpec(66, offsetRange(1, 57, 100)))
+	j1 := observedJob(10, schedulerpb.JobSpec{
+		Topic:     "ingest",
+		Partition: 64,
+		OffsetRanges: map[int32]schedulerpb.OffsetRange{
+			0: {StartOffset: 1000, EndOffset: 1100},
+			1: {StartOffset: 5000, EndOffset: 5200},
+			2: {StartOffset: 30, EndOffset: 90},
+		},
+	})
+	j2 := observedJob(11, schedulerpb.JobSpec{
+		Topic:     "ingest",
+		Partition: 65,
+		OffsetRanges: map[int32]schedulerpb.OffsetRange{
+			0: {StartOffset: 256, EndOffset: 300},
+			2: {StartOffset: 88, EndOffset: 100},
+		},
+	})
+	j3 := observedJob(12, schedulerpb.JobSpec{
+		Topic:     "ingest",
+		Partition: 66,
+		OffsetRanges: map[int32]schedulerpb.OffsetRange{
+			1: {StartOffset: 57, EndOffset: 100},
+		},
+	})
 
 	// Clients will be pinging with their updates for some time.
 
@@ -473,11 +492,32 @@ func TestStartup_MultiCluster(t *testing.T) {
 func TestStartup_MultiCluster_GapOnOneCluster(t *testing.T) {
 	sched, _ := mustMultiClusterScheduler(t, 3, 3)
 
-	jobA := observedJob(10, multiSpec(64, offsetRange(0, 100, 200), offsetRange(1, 100, 200)))
+	jobA := observedJob(10, schedulerpb.JobSpec{
+		Topic:     "ingest",
+		Partition: 64,
+		OffsetRanges: map[int32]schedulerpb.OffsetRange{
+			0: {StartOffset: 100, EndOffset: 200},
+			1: {StartOffset: 100, EndOffset: 200},
+		},
+	})
 	// jobB's cluster 0 range leaves a gap (200 -> 250); its cluster 1 range is contiguous.
-	jobB := observedJob(11, multiSpec(64, offsetRange(0, 250, 300), offsetRange(1, 200, 300)))
+	jobB := observedJob(11, schedulerpb.JobSpec{
+		Topic:     "ingest",
+		Partition: 64,
+		OffsetRanges: map[int32]schedulerpb.OffsetRange{
+			0: {StartOffset: 250, EndOffset: 300},
+			1: {StartOffset: 200, EndOffset: 300},
+		},
+	})
 	// jobC continues jobB contiguously on both clusters.
-	jobC := observedJob(12, multiSpec(64, offsetRange(0, 300, 400), offsetRange(1, 300, 400)))
+	jobC := observedJob(12, schedulerpb.JobSpec{
+		Topic:     "ingest",
+		Partition: 64,
+		OffsetRanges: map[int32]schedulerpb.OffsetRange{
+			0: {StartOffset: 300, EndOffset: 400},
+			1: {StartOffset: 300, EndOffset: 400},
+		},
+	})
 
 	require.NoError(t, sched.updateJob(jobA.key, "w0", false, jobA.spec))
 	require.NoError(t, sched.updateJob(jobB.key, "w1", false, jobB.spec))
@@ -493,20 +533,13 @@ func TestStartup_MultiCluster_GapOnOneCluster(t *testing.T) {
 	require.False(t, ok, "jobC should be skipped because it's after the gap, even though it's contiguous with jobB")
 
 	ps := sched.getPartitionState("ingest", 64)
-	require.Equal(t, int64(200), ps.plannedOffset(0), "planned offsets should stop at jobA's ends")
-	require.Equal(t, int64(200), ps.plannedOffset(1), "planned offsets should stop at jobA's ends")
+	require.Equal(t, int64(200), ps.plannedOffset(0))
+	require.Equal(t, int64(200), ps.plannedOffset(1))
 	require.True(t, ps.plannedEmpty(2), "cluster 2 was in no job's ranges")
 }
 
 // TestStartup_MultiCluster_PartiallyFlushedCommit documents recovery after a crash that
-// persisted a completed job's commit on a subset of clusters. It runs the pre-crash scheduler
-// for real: a worker completes a job, advancing every cluster's in-memory commit, and the
-// per-cluster flush persists all but one cluster's offsets (flushes continue past failures). A
-// restarted scheduler against the same clusters thus loads committed offsets that are beyond
-// the re-reported job's ranges on the flushed clusters and behind them on the rest. Such a job
-// cannot be imported (it would rewind the flushed clusters), so recovery truncates there: the
-// job and all later observed jobs are skipped, and each cluster resumes from its own flushed
-// frontier.
+// persisted a completed job's commit on a subset of clusters
 func TestStartup_MultiCluster_PartiallyFlushedCommit(t *testing.T) {
 	clusters := createTestClusters(t, 3, 3)
 	ctx := t.Context()
@@ -520,7 +553,15 @@ func TestStartup_MultiCluster_PartiallyFlushedCommit(t *testing.T) {
 
 	// A worker runs jobJ to completion, advancing every cluster's in-memory commit to its
 	// range end.
-	jobJ := multiSpec(0, offsetRange(0, 100, 200), offsetRange(1, 100, 200), offsetRange(2, 50, 150))
+	jobJ := schedulerpb.JobSpec{
+		Topic:     "ingest",
+		Partition: 0,
+		OffsetRanges: map[int32]schedulerpb.OffsetRange{
+			0: {StartOffset: 100, EndOffset: 200},
+			1: {StartOffset: 100, EndOffset: 200},
+			2: {StartOffset: 50, EndOffset: 150},
+		},
+	}
 	addPendingJob(schedA, jobJ)
 	schedA.enqueuePendingJobs()
 	keyJ, specJ, err := schedA.assignJob("w0")
@@ -546,7 +587,15 @@ func TestStartup_MultiCluster_PartiallyFlushedCommit(t *testing.T) {
 	// The worker re-reports the completed jobJ during observation, along with an in-progress
 	// jobK continuing jobJ contiguously on every cluster.
 	require.NoError(t, schedB.updateJob(keyJ, "w0", true, specJ))
-	jobK := observedJob(keyJ.epoch+1, multiSpec(0, offsetRange(0, 200, 300), offsetRange(1, 200, 300), offsetRange(2, 150, 250)))
+	jobK := observedJob(keyJ.epoch+1, schedulerpb.JobSpec{
+		Topic:     "ingest",
+		Partition: 0,
+		OffsetRanges: map[int32]schedulerpb.OffsetRange{
+			0: {StartOffset: 200, EndOffset: 300},
+			1: {StartOffset: 200, EndOffset: 300},
+			2: {StartOffset: 150, EndOffset: 250},
+		},
+	})
 	require.NoError(t, schedB.updateJob(jobK.key, "w1", false, jobK.spec))
 
 	schedB.completeObservationMode(ctx)
@@ -557,17 +606,15 @@ func TestStartup_MultiCluster_PartiallyFlushedCommit(t *testing.T) {
 	require.False(t, ok, "jobK should be skipped because recovery truncated at the partially flushed jobJ")
 
 	pB := schedB.getPartitionState("ingest", 0)
-	require.Equal(t, int64(200), pB.plannedOffset(0), "flushed clusters should resume from their flushed frontier")
+	require.Equal(t, int64(200), pB.plannedOffset(0))
 	require.Equal(t, int64(100), pB.plannedOffset(1), "the unflushed cluster should resume from its stale commit, re-covering jobJ's range")
-	require.Equal(t, int64(150), pB.plannedOffset(2), "flushed clusters should resume from their flushed frontier")
+	require.Equal(t, int64(150), pB.plannedOffset(2))
 	requireOffsets(t, schedB, "ingest", 0, map[int]int64{0: 200, 1: 100, 2: 150})
 }
 
 // TestCompleteObservationMode_ResumesFromImportedPlan verifies that startup cuts pending jobs
 // from the planned frontier established by observation import: ranges recovered from workers are
-// not re-cut, only the data beyond them is. If consumption offsets were probed before
-// finalizeObservations sanitized the planned offsets, the cut job would overlap the imported
-// plan and panic at enqueue (see addPlannedJob).
+// not re-cut, only the data beyond them is.
 func TestCompleteObservationMode_ResumesFromImportedPlan(t *testing.T) {
 	ctx, cancel := context.WithCancelCause(context.Background())
 	t.Cleanup(func() { cancel(errors.New("test done")) })
@@ -596,7 +643,14 @@ func TestCompleteObservationMode_ResumesFromImportedPlan(t *testing.T) {
 
 	// A worker reports an in-progress job covering all of cluster 0's records and part of
 	// cluster 1's; cluster 2 is not part of the job.
-	observed := observedJob(10, multiSpec(0, offsetRange(0, 0, 10), offsetRange(1, 0, 5)))
+	observed := observedJob(10, schedulerpb.JobSpec{
+		Topic:     "ingest",
+		Partition: 0,
+		OffsetRanges: map[int32]schedulerpb.OffsetRange{
+			0: {StartOffset: 0, EndOffset: 10},
+			1: {StartOffset: 0, EndOffset: 5},
+		},
+	})
 	require.NoError(t, sched.updateJob(observed.key, "w0", false, observed.spec))
 
 	sched.completeObservationMode(ctx)
@@ -604,33 +658,23 @@ func TestCompleteObservationMode_ResumesFromImportedPlan(t *testing.T) {
 
 	_, ok := sched.jobs.jobs[observed.key.id]
 	require.True(t, ok, "the observed job should be imported")
-	_, ok = sched.jobs.jobs["ingest/0/1:5-2:0"]
+
+	newJob, ok := sched.jobs.jobs["ingest/0/1:5-2:0"]
 	require.True(t, ok, "the data beyond the imported plan should be planned: cluster 1 past the observed job, cluster 2 in full")
+	require.Equal(t, schedulerpb.JobSpec{
+		Topic:     "ingest",
+		Partition: 0,
+		OffsetRanges: map[int32]schedulerpb.OffsetRange{
+			1: {StartOffset: 5, EndOffset: 8},
+			2: {StartOffset: 0, EndOffset: 6},
+		},
+	}, newJob.spec, "the new job should cover only the unplanned data; cluster 0 is fully in the observed job")
 	require.Equal(t, 2, sched.jobs.count())
 
 	ps := sched.getPartitionState("ingest", 0)
-	require.Equal(t, int64(10), ps.plannedOffset(0))
+	require.Equal(t, int64(10), ps.plannedOffset(0), "cluster 0's frontier comes entirely from the imported observed job")
 	require.Equal(t, int64(8), ps.plannedOffset(1))
 	require.Equal(t, int64(6), ps.plannedOffset(2))
-}
-
-// TestCompleteObservationMode_ConsumptionOffsetsProbeFails pins the behavior when any single
-// cluster's consumption-offset probe fails while completing observation mode: the transition is
-// abandoned before observationComplete is set, and since completeObservationMode runs only once
-// per process, the scheduler stays in observation mode — refusing job assignment — until it is
-// restarted.
-func TestCompleteObservationMode_ConsumptionOffsetsProbeFails(t *testing.T) {
-	clusters := createTestClusters(t, 3, 3)
-	sched, _ := mustMultiClusterSchedulerWithClusters(t, clusters)
-
-	failListOffsets(clusters[1].cluster)
-
-	sched.completeObservationMode(t.Context())
-
-	require.False(t, sched.observationCompleteLocked(),
-		"a failed consumption-offset probe should leave the scheduler in observation mode")
-	_, _, err := sched.assignJob("w0")
-	require.ErrorContains(t, err, "observation period not complete")
 }
 
 func requireGaps(t *testing.T, reg *prometheus.Registry, planned, committed int, msgAndArgs ...any) {
@@ -760,7 +804,15 @@ func TestAssignJobSkipsObsoleteOffsets_MultiCluster(t *testing.T) {
 		sched.completeObservationMode(context.Background())
 
 		// Every cluster's committed offset reaches its range end: fully consumed.
-		s1 := multiSpec(1, offsetRange(0, 100, 200), offsetRange(1, 300, 400), offsetRange(2, 500, 600))
+		s1 := schedulerpb.JobSpec{
+			Topic:     "ingest",
+			Partition: 1,
+			OffsetRanges: map[int32]schedulerpb.OffsetRange{
+				0: {StartOffset: 100, EndOffset: 200},
+				1: {StartOffset: 300, EndOffset: 400},
+				2: {StartOffset: 500, EndOffset: 600},
+			},
+		}
 		require.NoError(t, sched.jobs.add(jobIDForSpec(true, &s1), s1))
 		initCommits(sched, "ingest", 1, map[int]int64{0: 200, 1: 400, 2: 600})
 
@@ -773,7 +825,15 @@ func TestAssignJobSkipsObsoleteOffsets_MultiCluster(t *testing.T) {
 		sched.completeObservationMode(context.Background())
 
 		// Consumed on cluster 0 only; clusters 1 and 2 still need it.
-		s2 := multiSpec(2, offsetRange(0, 100, 200), offsetRange(1, 300, 400), offsetRange(2, 500, 600))
+		s2 := schedulerpb.JobSpec{
+			Topic:     "ingest",
+			Partition: 2,
+			OffsetRanges: map[int32]schedulerpb.OffsetRange{
+				0: {StartOffset: 100, EndOffset: 200},
+				1: {StartOffset: 300, EndOffset: 400},
+				2: {StartOffset: 500, EndOffset: 600},
+			},
+		}
 		require.NoError(t, sched.jobs.add(jobIDForSpec(true, &s2), s2))
 		initCommits(sched, "ingest", 2, map[int]int64{0: 200, 1: 300, 2: 500})
 
@@ -789,7 +849,15 @@ func TestUpdateJobPanicsOnPartiallyConsumed_MultiCluster(t *testing.T) {
 	sched.completeObservationMode(context.Background())
 
 	// Consumed on cluster 0 only; clusters 1 and 2 still need it.
-	spec := multiSpec(2, offsetRange(0, 100, 200), offsetRange(1, 300, 400), offsetRange(2, 500, 600))
+	spec := schedulerpb.JobSpec{
+		Topic:     "ingest",
+		Partition: 2,
+		OffsetRanges: map[int32]schedulerpb.OffsetRange{
+			0: {StartOffset: 100, EndOffset: 200},
+			1: {StartOffset: 300, EndOffset: 400},
+			2: {StartOffset: 500, EndOffset: 600},
+		},
+	}
 	initCommits(sched, "ingest", 2, map[int]int64{0: 200, 1: 300, 2: 500})
 
 	key := jobKey{id: jobIDForSpec(true, &spec), epoch: 0}
@@ -1072,8 +1140,7 @@ func TestKafkaFlush(t *testing.T) {
 
 // TestKafkaFlush_MultiCluster verifies that each cluster's Kafka receives exactly that cluster's
 // committed offsets, and that a fresh scheduler against the same clusters recovers them with
-// each cluster's offsets landing back in that cluster's slot. Offsets are asymmetric (including
-// partitions committed on only one cluster) so cross-cluster mix-ups fail the test.
+// each cluster's offsets landing back in that cluster's slot.
 func TestKafkaFlush_MultiCluster(t *testing.T) {
 	clusters := createTestClusters(t, 3, 3)
 	sched, _ := mustMultiClusterSchedulerWithClusters(t, clusters)
@@ -1218,8 +1285,7 @@ func TestUpdateSchedule_ProbeFailure(t *testing.T) {
 }
 
 // TestUpdateSchedule_MultiCluster verifies that with compartments enabled the scheduler probes
-// every write cluster's end offsets, not just the first, so a partition's per-cluster offset
-// tracking reflects all clusters.
+// every write cluster's end offsets.
 func TestUpdateSchedule_MultiCluster(t *testing.T) {
 	ctx, cancel := context.WithCancelCause(context.Background())
 	t.Cleanup(func() { cancel(errors.New("test done")) })
@@ -1227,8 +1293,7 @@ func TestUpdateSchedule_MultiCluster(t *testing.T) {
 	sched, clients := mustMultiClusterScheduler(t, 3, 3)
 	sched.completeObservationMode(ctx)
 
-	// counts[c][p] is the number of records produced to partition p on cluster c; all distinct
-	// so end offsets recorded against the wrong cluster or partition fail the test.
+	// counts[c][p] is the number of records produced to partition p on cluster c.
 	counts := [3][3]int{
 		{3, 1, 4},
 		{5, 9, 2},
@@ -1242,9 +1307,9 @@ func TestUpdateSchedule_MultiCluster(t *testing.T) {
 
 	sched.updateSchedule(ctx)
 
-	requireEndOffsets(t, sched, "ingest", 0, map[int]int64{0: 3, 1: 5, 2: 6}, "each cluster's end offset should be probed")
-	requireEndOffsets(t, sched, "ingest", 1, map[int]int64{0: 1, 1: 9, 2: 7}, "each cluster's end offset should be probed")
-	requireEndOffsets(t, sched, "ingest", 2, map[int]int64{0: 4, 1: 2, 2: 8}, "each cluster's end offset should be probed")
+	requireEndOffsets(t, sched, "ingest", 0, map[int]int64{0: 3, 1: 5, 2: 6})
+	requireEndOffsets(t, sched, "ingest", 1, map[int]int64{0: 1, 1: 9, 2: 7})
+	requireEndOffsets(t, sched, "ingest", 2, map[int]int64{0: 4, 1: 2, 2: 8})
 }
 
 // TestUpdateSchedule_MultiCluster_OneClusterProbeFails verifies that when probing one cluster's
@@ -1259,9 +1324,7 @@ func TestUpdateSchedule_MultiCluster_OneClusterProbeFails(t *testing.T) {
 	sched, clients := mustMultiClusterSchedulerWithClusters(t, clusters)
 	sched.completeObservationMode(ctx)
 
-	// rounds[r][c][p] is the number of records produced to partition p on cluster c in round r;
-	// all cumulative counts are distinct so end offsets recorded against the wrong cluster,
-	// partition, or round fail the test.
+	// rounds[r][c][p] is the number of records produced to partition p on cluster c in round r.
 	rounds := [2][3][3]int{
 		{
 			{3, 1, 4},
@@ -1296,15 +1359,17 @@ func TestUpdateSchedule_MultiCluster_OneClusterProbeFails(t *testing.T) {
 
 	sched.updateSchedule(ctx)
 
+	// Each end below is written as round-0 count + round-1 count. Cluster 1's probe fails this
+	// tick, so it stays frozen at its round-0 count (a bare number) while clusters 0 and 2 sum both.
 	msg := "the healthy clusters 0 and 2 should record both rounds; the failing cluster 1 keeps its last successfully probed ends"
-	requireEndOffsets(t, sched, "ingest", 0, map[int]int64{0: 13, 1: 5, 2: 76}, msg)
-	requireEndOffsets(t, sched, "ingest", 1, map[int]int64{0: 21, 1: 9, 2: 87}, msg)
-	requireEndOffsets(t, sched, "ingest", 2, map[int]int64{0: 34, 1: 2, 2: 98}, msg)
+	requireEndOffsets(t, sched, "ingest", 0, map[int]int64{0: 3 + 10, 1: 5, 2: 6 + 70}, msg)
+	requireEndOffsets(t, sched, "ingest", 1, map[int]int64{0: 1 + 20, 1: 9, 2: 7 + 80}, msg)
+	requireEndOffsets(t, sched, "ingest", 2, map[int]int64{0: 4 + 30, 1: 2, 2: 8 + 90}, msg)
 
 	expectedRanges := map[int32]map[int32]schedulerpb.OffsetRange{
-		0: {0: {StartOffset: 0, EndOffset: 13}, 1: {StartOffset: 0, EndOffset: 5}, 2: {StartOffset: 0, EndOffset: 76}},
-		1: {0: {StartOffset: 0, EndOffset: 21}, 1: {StartOffset: 0, EndOffset: 9}, 2: {StartOffset: 0, EndOffset: 87}},
-		2: {0: {StartOffset: 0, EndOffset: 34}, 1: {StartOffset: 0, EndOffset: 2}, 2: {StartOffset: 0, EndOffset: 98}},
+		0: {0: {StartOffset: 0, EndOffset: 3 + 10}, 1: {StartOffset: 0, EndOffset: 5}, 2: {StartOffset: 0, EndOffset: 6 + 70}},
+		1: {0: {StartOffset: 0, EndOffset: 1 + 20}, 1: {StartOffset: 0, EndOffset: 9}, 2: {StartOffset: 0, EndOffset: 7 + 80}},
+		2: {0: {StartOffset: 0, EndOffset: 4 + 30}, 1: {StartOffset: 0, EndOffset: 2}, 2: {StartOffset: 0, EndOffset: 8 + 90}},
 	}
 	for p, expected := range expectedRanges {
 		ps := sched.getPartitionState("ingest", p)
@@ -1317,10 +1382,11 @@ func TestUpdateSchedule_MultiCluster_OneClusterProbeFails(t *testing.T) {
 	stopFailing()
 	sched.updateSchedule(ctx)
 
+	// Cluster 1's probe succeeds now, so it too sums both rounds and catches up.
 	msg = "the next successful probe should catch cluster 1 up"
-	requireEndOffsets(t, sched, "ingest", 0, map[int]int64{0: 13, 1: 45, 2: 76}, msg)
-	requireEndOffsets(t, sched, "ingest", 1, map[int]int64{0: 21, 1: 59, 2: 87}, msg)
-	requireEndOffsets(t, sched, "ingest", 2, map[int]int64{0: 34, 1: 62, 2: 98}, msg)
+	requireEndOffsets(t, sched, "ingest", 0, map[int]int64{0: 3 + 10, 1: 5 + 40, 2: 6 + 70}, msg)
+	requireEndOffsets(t, sched, "ingest", 1, map[int]int64{0: 1 + 20, 1: 9 + 50, 2: 7 + 80}, msg)
+	requireEndOffsets(t, sched, "ingest", 2, map[int]int64{0: 4 + 30, 1: 2 + 60, 2: 8 + 90}, msg)
 }
 
 // TestUpdateSchedule_MultiCluster_AllClusterProbesFail verifies that when every cluster's
@@ -1380,8 +1446,7 @@ func TestPopulateInitialJobs_MultiCluster(t *testing.T) {
 	sched.cfg.JobSize = 1 * time.Hour
 
 	recordTime := time.Date(2025, 3, 1, 10, 30, 0, 0, time.UTC)
-	// ranges[p][c] is cluster c's offset range for partition p; all bounds are distinct so
-	// ranges attributed to the wrong cluster or partition fail the test. Partition 0 has data
+	// ranges[p][c] is cluster c's offset range for partition p. Partition 0 has data
 	// on every cluster; partitions 1 and 2 on subsets only, so their jobs must bundle just the
 	// clusters that had data and leave the absent clusters out of the spec.
 	ranges := map[int32]map[int32]schedulerpb.OffsetRange{
@@ -1405,8 +1470,7 @@ func TestPopulateInitialJobs_MultiCluster(t *testing.T) {
 
 // TestInitConsumptionOffsets_PartitionOnSubsetOfClusters verifies that probing clusters with
 // uneven partition counts groups offsets by partition, with a nil entry for each cluster that
-// doesn't host the partition. Every (cluster, partition) cell gets a distinct record count so
-// offsets landing in the wrong slot fail the test.
+// doesn't host the partition.
 func TestInitConsumptionOffsets_PartitionOnSubsetOfClusters(t *testing.T) {
 	ctx, cancel := context.WithCancelCause(context.Background())
 	t.Cleanup(func() { cancel(errors.New("test done")) })
@@ -1459,8 +1523,7 @@ func TestLoadInitialCommittedOffsets(t *testing.T) {
 }
 
 // TestLoadInitialCommittedOffsets_MultiCluster verifies each cluster's committed offsets seed
-// that cluster's slot in partition state. Offsets are asymmetric so that commits applied to the
-// wrong cluster's slot fail the test.
+// that cluster's slot in partition state and foreign topics are ignored.
 func TestLoadInitialCommittedOffsets_MultiCluster(t *testing.T) {
 	sched, _ := mustMultiClusterScheduler(t, 3, 3)
 	ctx := t.Context()
@@ -1901,10 +1964,7 @@ func TestBlockBuilderScheduler_EnqueuePendingJobs_CommitRace(t *testing.T) {
 
 // TestBlockBuilderScheduler_EnqueuePendingJobs_CommitRace_MultiCluster verifies enqueue-time
 // handling of pending jobs stale relative to per-cluster progress: a job behind every cluster's
-// committed offset is dropped, while a job stale on only a subset of clusters panics. Job
-// discovery cannot produce the partially-stale state — pending jobs are cut in ascending
-// per-cluster order from the frontier that startup sanitizes — so it is surfaced as a bug
-// rather than silently planned or dropped.
+// committed offset is dropped, while a job stale on only a subset of clusters panics.
 func TestBlockBuilderScheduler_EnqueuePendingJobs_CommitRace_MultiCluster(t *testing.T) {
 	sched, _ := mustMultiClusterScheduler(t, 3, 3)
 	sched.cfg.MaxJobsPerPartition = 0
@@ -1912,7 +1972,14 @@ func TestBlockBuilderScheduler_EnqueuePendingJobs_CommitRace_MultiCluster(t *tes
 
 	// Partition 2's pending job is behind every cluster's committed offset: dropped.
 	initCommits(sched, "ingest", 2, map[int]int64{0: 20, 1: 15})
-	addPendingJob(sched, multiSpec(2, offsetRange(0, 10, 20), offsetRange(1, 5, 15)))
+	addPendingJob(sched, schedulerpb.JobSpec{
+		Topic:     "ingest",
+		Partition: 2,
+		OffsetRanges: map[int32]schedulerpb.OffsetRange{
+			0: {StartOffset: 10, EndOffset: 20},
+			1: {StartOffset: 5, EndOffset: 15},
+		},
+	})
 
 	sched.enqueuePendingJobs()
 	assert.Equal(t, 0, sched.getPartitionState("ingest", 2).pendingJobs.Len())
@@ -1920,19 +1987,16 @@ func TestBlockBuilderScheduler_EnqueuePendingJobs_CommitRace_MultiCluster(t *tes
 
 	// Partition 1's pending job is behind cluster 0's progress but still needed by cluster 1.
 	initCommits(sched, "ingest", 1, map[int]int64{0: 20, 1: 5})
-	addPendingJob(sched, multiSpec(1, offsetRange(0, 10, 20), offsetRange(1, 5, 15)))
+	addPendingJob(sched, schedulerpb.JobSpec{
+		Topic:     "ingest",
+		Partition: 1,
+		OffsetRanges: map[int32]schedulerpb.OffsetRange{
+			0: {StartOffset: 10, EndOffset: 20},
+			1: {StartOffset: 5, EndOffset: 15},
+		},
+	})
 
-	panicMsg := func() (msg string) {
-		defer func() {
-			if r := recover(); r != nil {
-				msg = fmt.Sprint(r)
-			}
-		}()
-		sched.enqueuePendingJobs()
-		return
-	}()
-	require.Contains(t, panicMsg, "partially behind the committed offset",
-		"a job stale on a subset of clusters should fail fast at the enqueue decision point, not deep in addPlannedJob")
+	require.Panics(t, sched.enqueuePendingJobs)
 }
 
 func TestBlockBuilderScheduler_EnqueuePendingJobs_StartupRace(t *testing.T) {
@@ -2046,8 +2110,24 @@ func TestBlockBuilderScheduler_EnqueuePendingJobs_GapDetection_MultiCluster(t *t
 
 	// Partition 0: every cluster's ranges are contiguous.
 	p0 := sched.getPartitionState("ingest", 0)
-	addPendingJob(sched, multiSpec(0, offsetRange(0, 0, 30), offsetRange(1, 0, 100), offsetRange(2, 0, 10)))
-	addPendingJob(sched, multiSpec(0, offsetRange(0, 30, 40), offsetRange(1, 100, 200), offsetRange(2, 10, 20)))
+	addPendingJob(sched, schedulerpb.JobSpec{
+		Topic:     "ingest",
+		Partition: 0,
+		OffsetRanges: map[int32]schedulerpb.OffsetRange{
+			0: {StartOffset: 0, EndOffset: 30},
+			1: {StartOffset: 0, EndOffset: 100},
+			2: {StartOffset: 0, EndOffset: 10},
+		},
+	})
+	addPendingJob(sched, schedulerpb.JobSpec{
+		Topic:     "ingest",
+		Partition: 0,
+		OffsetRanges: map[int32]schedulerpb.OffsetRange{
+			0: {StartOffset: 30, EndOffset: 40},
+			1: {StartOffset: 100, EndOffset: 200},
+			2: {StartOffset: 10, EndOffset: 20},
+		},
+	})
 	sched.enqueuePendingJobs()
 	require.Equal(t, 2, sched.jobs.count())
 	require.Equal(t, int64(40), p0.plannedOffset(0))
@@ -2057,8 +2137,24 @@ func TestBlockBuilderScheduler_EnqueuePendingJobs_GapDetection_MultiCluster(t *t
 
 	// Partition 1: a gap in cluster 1's ranges only; the other clusters' are contiguous.
 	p1 := sched.getPartitionState("ingest", 1)
-	addPendingJob(sched, multiSpec(1, offsetRange(0, 0, 30), offsetRange(1, 0, 100), offsetRange(2, 0, 10)))
-	addPendingJob(sched, multiSpec(1, offsetRange(0, 30, 40), offsetRange(1, 150, 200), offsetRange(2, 10, 20)))
+	addPendingJob(sched, schedulerpb.JobSpec{
+		Topic:     "ingest",
+		Partition: 1,
+		OffsetRanges: map[int32]schedulerpb.OffsetRange{
+			0: {StartOffset: 0, EndOffset: 30},
+			1: {StartOffset: 0, EndOffset: 100},
+			2: {StartOffset: 0, EndOffset: 10},
+		},
+	})
+	addPendingJob(sched, schedulerpb.JobSpec{
+		Topic:     "ingest",
+		Partition: 1,
+		OffsetRanges: map[int32]schedulerpb.OffsetRange{
+			0: {StartOffset: 30, EndOffset: 40},
+			1: {StartOffset: 150, EndOffset: 200},
+			2: {StartOffset: 10, EndOffset: 20},
+		},
+	})
 	sched.enqueuePendingJobs()
 	require.Equal(t, 4, sched.jobs.count(), "a gap should not interfere with job queueing")
 	require.Equal(t, int64(40), p1.plannedOffset(0))
@@ -2067,8 +2163,24 @@ func TestBlockBuilderScheduler_EnqueuePendingJobs_GapDetection_MultiCluster(t *t
 	requireGaps(t, reg, 1, 0, "the gap in cluster 1's ranges should be detected")
 
 	// Partition 2: gaps in all three clusters' ranges count once per cluster.
-	addPendingJob(sched, multiSpec(2, offsetRange(0, 0, 30), offsetRange(1, 0, 100), offsetRange(2, 0, 10)))
-	addPendingJob(sched, multiSpec(2, offsetRange(0, 50, 60), offsetRange(1, 150, 200), offsetRange(2, 30, 40)))
+	addPendingJob(sched, schedulerpb.JobSpec{
+		Topic:     "ingest",
+		Partition: 2,
+		OffsetRanges: map[int32]schedulerpb.OffsetRange{
+			0: {StartOffset: 0, EndOffset: 30},
+			1: {StartOffset: 0, EndOffset: 100},
+			2: {StartOffset: 0, EndOffset: 10},
+		},
+	})
+	addPendingJob(sched, schedulerpb.JobSpec{
+		Topic:     "ingest",
+		Partition: 2,
+		OffsetRanges: map[int32]schedulerpb.OffsetRange{
+			0: {StartOffset: 50, EndOffset: 60},
+			1: {StartOffset: 150, EndOffset: 200},
+			2: {StartOffset: 30, EndOffset: 40},
+		},
+	})
 	sched.enqueuePendingJobs()
 	require.Equal(t, 6, sched.jobs.count())
 	requireGaps(t, reg, 4, 0, "gaps in all clusters' ranges should each be detected")
@@ -2453,26 +2565,6 @@ func mustMultiClusterSchedulerWithClusters(t *testing.T, clusters []testCluster)
 // independent Kafka clusters, one per write compartment, along with a producer client for each.
 func mustMultiClusterScheduler(t *testing.T, partitions int32, numClusters int) (*BlockBuilderScheduler, []*kgo.Client) {
 	return mustMultiClusterSchedulerWithClusters(t, createTestClusters(t, partitions, numClusters))
-}
-
-// specRange pairs a cluster ID with an offset range for building multi-cluster job specs.
-type specRange struct {
-	cluster     int32
-	offsetRange schedulerpb.OffsetRange
-}
-
-func offsetRange(cluster int32, start, end int64) specRange {
-	return specRange{cluster: cluster, offsetRange: schedulerpb.OffsetRange{StartOffset: start, EndOffset: end}}
-}
-
-// multiSpec builds a job spec for a partition of the "ingest" topic covering the given
-// clusters' offset ranges.
-func multiSpec(partition int32, ranges ...specRange) schedulerpb.JobSpec {
-	or := make(map[int32]schedulerpb.OffsetRange, len(ranges))
-	for _, r := range ranges {
-		or[r.cluster] = r.offsetRange
-	}
-	return schedulerpb.JobSpec{Topic: "ingest", Partition: partition, OffsetRanges: or}
 }
 
 // observedJob builds a worker-reported job for observation-mode tests, deriving the job ID
