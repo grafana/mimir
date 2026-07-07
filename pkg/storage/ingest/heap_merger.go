@@ -91,7 +91,7 @@ func NewHeapMergerMetrics(reg prometheus.Registerer) *HeapMergerMetrics {
 // to its submitter once it has been forwarded.
 type heapItem struct {
 	record         *kgo.Record
-	kafkaClusterID int        // source Kafka cluster (for tie-breaking and observability)
+	kafkaClusterID int        // source Kafka cluster (a tie-breaker in the heap ordering)
 	ackCh          chan error // signaled exactly once after the record has been forwarded
 }
 
