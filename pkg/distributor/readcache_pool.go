@@ -10,15 +10,18 @@ import (
 	"sync"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/grpcclient"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/ring"
 	"github.com/pkg/errors"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/readcache"
+	"github.com/grafana/mimir/pkg/util"
 )
 
 // ReadcacheConfig holds the distributor-side configuration for
@@ -93,6 +96,28 @@ type readcachePool struct {
 	clients map[string]readcacheClient
 }
 
+// readcachePoolMetrics instruments readcache-directed RPCs. It is a
+// separate metric family from
+// cortex_ingester_client_request_duration_seconds so dashboards can
+// tell reads served by readcache apart from reads served by
+// ingesters; sum both families to get total read-path client
+// traffic.
+type readcachePoolMetrics struct {
+	requestDuration                *prometheus.HistogramVec
+	invalidClusterValidationLabels *prometheus.CounterVec
+}
+
+func newReadcachePoolMetrics(reg prometheus.Registerer) *readcachePoolMetrics {
+	return &readcachePoolMetrics{
+		requestDuration: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
+			Name:    "cortex_readcache_client_request_duration_seconds",
+			Help:    "Time spent doing readcache requests.",
+			Buckets: prometheus.ExponentialBuckets(0.001, 4, 8),
+		}, []string{"operation", "status_code"}),
+		invalidClusterValidationLabels: util.NewRequestInvalidClusterValidationLabelsTotalCounter(reg, "readcache", util.GRPCProtocol),
+	}
+}
+
 // readcacheClient bundles a gRPC connection, a typed IngesterClient,
 // and the address it was dialed against. The address is retained so
 // the pool can detect ring updates that move an instance to a new
@@ -112,7 +137,7 @@ type readcacheClient struct {
 // clusterValidationLabel must match readcache's server cluster
 // validation label when gRPC cluster validation is enabled on
 // readcache (same as other internal clients, e.g. ingester pool).
-func newReadcachePool(cfg ReadcacheConfig, ringClient readcacheRingReader, clusterValidationLabel string, logger log.Logger) (*readcachePool, error) {
+func newReadcachePool(cfg ReadcacheConfig, ringClient readcacheRingReader, clusterValidationLabel string, reg prometheus.Registerer, logger log.Logger) (*readcachePool, error) {
 	addresses, err := parseReadcacheAddresses(cfg.Addresses)
 	if err != nil {
 		return nil, errors.Wrap(err, "parsing readcache addresses")
@@ -120,24 +145,42 @@ func newReadcachePool(cfg ReadcacheConfig, ringClient readcacheRingReader, clust
 	if ringClient == nil && len(addresses) == 0 {
 		return nil, errors.New("readcache pool requires either a ring client or a non-empty -distributor.readcache.addresses map")
 	}
-	// Install the X-Scope-OrgID propagation interceptors so reads
-	// arriving at readcache pass the standard StreamServerUserHeaderInterceptor
-	// gate. Without this every QueryStream against a readcache pod
-	// returns "no org id" on the server side.
-	unary := []grpc.UnaryClientInterceptor{middleware.ClientUserHeaderInterceptor}
-	if clusterValidationLabel != "" {
-		unary = append(unary, middleware.ClusterUnaryClientInterceptor(clusterValidationLabel, middleware.NoOpInvalidClusterValidationReporter))
+
+	// A zero-valued GRPCClientConfig (tests constructing
+	// ReadcacheConfig{} directly, without RegisterFlags) carries
+	// zero message-size limits that would reject every RPC; detect
+	// that and apply the flag defaults.
+	if cfg.GRPCClientConfig.MaxRecvMsgSize <= 0 {
+		flagext.DefaultValues(&cfg.GRPCClientConfig)
 	}
+	// Inherit the fleet-wide cluster validation label (the one the
+	// ingester client uses) unless the readcache client config sets
+	// its own.
+	if cfg.GRPCClientConfig.ClusterValidation.Label == "" {
+		cfg.GRPCClientConfig.ClusterValidation.Label = clusterValidationLabel
+	}
+
+	metrics := newReadcachePoolMetrics(reg)
+
+	// grpcclient.Instrument installs both the request-duration
+	// interceptors and the X-Scope-OrgID propagation
+	// (Client/StreamClientUserHeaderInterceptor). The latter is
+	// load-bearing: without it every QueryStream against a readcache
+	// pod fails the server-side StreamServerUserHeaderInterceptor
+	// gate with "no org id".
+	unary, stream := grpcclient.Instrument(metrics.requestDuration, middleware.ReportGRPCStatusOption)
+	dialOpts, err := cfg.GRPCClientConfig.DialOption(unary, stream,
+		util.NewInvalidClusterValidationReporter(cfg.GRPCClientConfig.ClusterValidation.Label, metrics.invalidClusterValidationLabels, logger))
+	if err != nil {
+		return nil, errors.Wrap(err, "building readcache gRPC dial options")
+	}
+
 	return &readcachePool{
 		staticAddresses: addresses,
 		ring:            ringClient,
-		dialOpts: []grpc.DialOption{
-			grpc.WithTransportCredentials(insecure.NewCredentials()),
-			grpc.WithChainUnaryInterceptor(unary...),
-			grpc.WithStreamInterceptor(middleware.StreamClientUserHeaderInterceptor),
-		},
-		logger:  logger,
-		clients: map[string]readcacheClient{},
+		dialOpts:        dialOpts,
+		logger:          logger,
+		clients:         map[string]readcacheClient{},
 	}, nil
 }
 

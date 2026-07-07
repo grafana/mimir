@@ -1056,7 +1056,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 	// readcache is simply a no-op (resolveReadcacheClientForPartition
 	// short-circuits on d.readcachePool == nil).
 	if readcacheRing != nil || cfg.Readcache.Addresses != "" {
-		pool, err := newReadcachePool(cfg.Readcache, readcacheRing, clientConfig.GRPCClientConfig.ClusterValidation.Label, log)
+		pool, err := newReadcachePool(cfg.Readcache, readcacheRing, clientConfig.GRPCClientConfig.ClusterValidation.Label, reg, log)
 		if err != nil {
 			return nil, err
 		}
