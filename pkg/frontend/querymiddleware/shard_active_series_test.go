@@ -561,14 +561,14 @@ func benchmarkActiveSeriesMiddlewareMergeResponses(b *testing.B, encoding string
 			benchRequests := make([][]*http.Request, b.N)
 
 			for i := 0; i < b.N; i++ {
-				for j := 0; j < numResponses; j++ {
+				for responseIdx := 0; responseIdx < numResponses; responseIdx++ {
 					var apiResp activeSeriesResponse
-					for k := 0; k < numSeries; k++ {
+					for seriesIdx := 0; seriesIdx < numSeries; seriesIdx++ {
 						apiResp.Data = append(apiResp.Data, labels.FromStrings(
-							"__name__", "m_"+fmt.Sprint(j),
-							"job", "prometheus"+fmt.Sprint(j),
-							"instance", "instance"+fmt.Sprint(j),
-							"series", fmt.Sprintf("series_%d", k),
+							"__name__", "m_"+fmt.Sprint(responseIdx),
+							"job", "prometheus"+fmt.Sprint(responseIdx),
+							"instance", "instance"+fmt.Sprint(responseIdx),
+							"series", fmt.Sprintf("series_%d", seriesIdx),
 						))
 					}
 					body, _ := json.Marshal(&apiResp)
