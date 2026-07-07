@@ -163,7 +163,7 @@
   "querier.streaming-chunks-per-ingester-buffer-size": 256,
   "querier.streaming-chunks-per-store-gateway-buffer-size": 256,
   "querier.minimize-ingester-requests": true,
-  "querier.minimize-ingester-requests-hedging-delay": 3000000000,
+  "querier.minimize-ingester-requests-hedging-delay": 0,
   "querier.query-engine": "mimir",
   "querier.enable-query-engine-fallback": true,
   "querier.max-concurrent-remote-read-queries": 2,

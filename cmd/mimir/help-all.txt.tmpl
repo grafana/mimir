@@ -2396,7 +2396,7 @@ Usage of ./cmd/mimir/mimir:
   -querier.minimize-ingester-requests
     	If true, when querying ingesters, only the minimum required ingesters required to reach quorum will be queried initially, with other ingesters queried only if needed due to failures from the initial set of ingesters. Enabling this option reduces resource consumption for the happy path at the cost of increased latency for the unhappy path. (default true)
   -querier.minimize-ingester-requests-hedging-delay duration
-    	Delay before initiating requests to further ingesters when request minimization is enabled and the initially selected set of ingesters have not all responded. Ignored if -querier.minimize-ingester-requests is not enabled. (default 3s)
+    	Delay before initiating requests to further ingesters when request minimization is enabled and the initially selected set of ingesters have not all responded. Set to 0 to disable hedging. Ignored if -querier.minimize-ingester-requests is not enabled.
   -querier.prefer-availability-zones comma-separated-list-of-strings
     	[experimental] Comma-separated list of availability zones to prefer when querying ingesters and store-gateways. All zones in the list are given equal priority.
   -querier.query-engine string
