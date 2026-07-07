@@ -929,6 +929,94 @@ func TestCacheOperator_UnconsumedSeries(t *testing.T) {
 	}
 }
 
+// TestCacheOperator_CachingUnconsumedSeries_NoInnerSeries is like TestCacheOperator_UnconsumedSeries, but tests the
+// case where the inner operator produces no series and the caller does not call SeriesMetadata.
+func TestCacheOperator_CachingUnconsumedSeries_NoInnerSeries(t *testing.T) {
+	runTestCase := func(t *testing.T, readSeriesMetadata bool) {
+		ctx := user.InjectOrgID(context.Background(), "some-user")
+		memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+		cache := caching.NewInMemoryCache()
+		materializer := &testMaterializer{
+			t:                        t,
+			ctx:                      ctx,
+			memoryConsumptionTracker: memoryConsumptionTracker,
+			returnNoSeries:           true,
+		}
+		limits := &mockLimitsProvider{}
+
+		timeRange := types.NewRangeQueryTimeRange(timestamp.Time(0), timestamp.Time(0).Add(2*time.Minute), time.Minute)
+		reg := prometheus.NewPedanticRegistry()
+		metrics := NewResultsCacheMetrics("query_range", reg)
+		o := newCacheOperator(cache, caching.NewCacheKeyGenerator(nil, caching.TenantPrefixGenerator), materializer, createTestNode(), timeRange, memoryConsumptionTracker, posrange.PositionRange{}, &planning.QueryParameters{OriginalExpression: "the_original_expression{}"}, limits, log.NewNopLogger(), cacheEntryInterval, 0, metrics, true)
+		timeNow := time.Now()
+		o.timeNow = func() time.Time { return timeNow }
+
+		require.NoError(t, o.Prepare(ctx, &types.PrepareParams{}))
+		require.True(t, o.extents.shouldWriteCacheEntry, "invalid test case: no cache entry to write")
+		require.NoError(t, o.AfterPrepare(ctx))
+
+		if readSeriesMetadata {
+			series, err := o.SeriesMetadata(ctx, nil)
+			require.NoError(t, err)
+			require.Empty(t, series)
+		}
+
+		require.NoError(t, o.FinishedReading(ctx))
+
+		operatorStats, _, err := o.Finalize(ctx)
+		require.NoError(t, err)
+		operatorStats.Close()
+
+		unconsumedSeriesHistogram := findHistogram(t, reg, "cortex_frontend_query_result_cache_unconsumed_series_read")
+		expectedUnconsumedSeriesCount := 0
+
+		require.Equal(t, 1, cache.SetCount, "expected a cache entry to be written, but none was")
+
+		if readSeriesMetadata {
+			require.Zero(t, unconsumedSeriesHistogram.GetSampleCount(), "expected no observations for the number of unconsumed series read")
+		} else {
+			require.Equal(t, uint64(1), unconsumedSeriesHistogram.GetSampleCount(), "expected exactly one observation of the number of unconsumed series read")
+			require.Equal(t, float64(expectedUnconsumedSeriesCount), unconsumedSeriesHistogram.GetSampleSum(), "expected the number of unconsumed series read to be recorded")
+		}
+
+		// The cache entry should contain all series, including those that weren't consumed.
+		require.Len(t, cache.Entries, 1)
+		require.Contains(t, cache.Entries, o.hashedKey)
+		entry := cache.Entries[o.hashedKey]
+
+		var writtenEntry CacheEntry
+		require.NoError(t, writtenEntry.Unmarshal(entry.Value))
+
+		expectedCacheEntry := CacheEntry{
+			CacheKey: o.key,
+			Extents: []CachedExtent{
+				{
+					StartT:               timeRange.StartT,
+					EndT:                 timeRange.EndT,
+					Annotations:          querierpb.EncodeAnnotations(annotationsForTimeRange(timeRange), ""),
+					Stats:                statsForTimeRange(timeRange),
+					OldestEvaluationTime: timestamp.FromTime(timeNow),
+				},
+			},
+		}
+
+		// Sort the annotations in each extent in both the actual and expected cache entry to make the comparison below simpler.
+		sortAnnotations(&writtenEntry)
+		sortAnnotations(&expectedCacheEntry)
+
+		require.Equal(t, expectedCacheEntry, writtenEntry)
+
+		o.Close()
+		require.Zerof(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes(), "expected all instances to be returned to pool, current memory consumption is:\n%v", memoryConsumptionTracker.DescribeCurrentMemoryConsumption())
+	}
+
+	for _, readSeriesMetadata := range []bool{true, false} {
+		t.Run(fmt.Sprintf("read series metadata=%v", readSeriesMetadata), func(t *testing.T) {
+			runTestCase(t, readSeriesMetadata)
+		})
+	}
+}
+
 // findHistogram returns the single histogram metric with the given name from reg, failing the test if it is not present.
 func findHistogram(t *testing.T, reg *prometheus.Registry, name string) *dto.Histogram {
 	families, err := reg.Gather()
@@ -1064,12 +1152,17 @@ type testMaterializer struct {
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
 	materializedTimeRanges   []types.QueryTimeRange
 	materializedOperators    []*operators.TestOperator
+	returnNoSeries           bool
 }
 
 func (m *testMaterializer) ConvertNodeToInstantVectorOperator(ctx context.Context, node planning.Node, timeRange types.QueryTimeRange) (types.InstantVectorOperator, error) {
 	m.materializedTimeRanges = append(m.materializedTimeRanges, timeRange)
 
-	data := testDataForTimeRange(timeRange)
+	var data testSeriesSet
+	if !m.returnNoSeries {
+		data = testDataForTimeRange(timeRange)
+	}
+
 	stats := statsForTimeRange(timeRange)
 	decodedStats, err := stats.Decode(m.ctx, m.memoryConsumptionTracker)
 	require.NoError(m.t, err)
