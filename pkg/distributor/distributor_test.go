@@ -6516,8 +6516,8 @@ func prepare(t testing.TB, cfg prepConfig) ([]*Distributor, []*mockIngester, []*
 
 	// Initialize the ingest storage's partitions ring.
 	var (
-		partitionInstanceRings *ingest.PartitionInstanceRings
-		partitionRings         *ingest.PartitionRingWatchers
+		partitionInstanceRings *ring.PartitionInstanceRings
+		partitionRings         *ring.PartitionRingWatchers
 	)
 	if cfg.ingestStorageEnabled {
 		partitionsStore := kvStore.WithCodec(ring.GetPartitionRingCodec())
@@ -6549,7 +6549,7 @@ func prepare(t testing.TB, cfg prepConfig) ([]*Distributor, []*mockIngester, []*
 			require.NoError(t, services.StopAndAwaitTerminated(ctx, partitionRings))
 		})
 
-		partitionInstanceRings = ingest.NewPartitionInstanceRings(partitionRings, ingestersRing, ingestersHeartbeatTimeout)
+		partitionInstanceRings = ring.NewPartitionInstanceRings(partitionRings, ingestersRing, ingestersHeartbeatTimeout)
 	}
 
 	if cfg.limits == nil {

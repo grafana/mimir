@@ -19,6 +19,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
@@ -442,6 +443,79 @@ func TestBlocksStoreQuerier_Compartments_Select(t *testing.T) {
 		// The per-query store-gateway histogram is observed once for the whole fanned-out query, summed
 		// across the two compartments (one store-gateway each), not once per compartment.
 		assertStoreGatewayInstancesHit(t, reg, 1, 2)
+	})
+
+	t.Run("should keep store-gateway streams alive until their chunks are read", func(t *testing.T) {
+		// A query that fans out to more than one compartment queries them concurrently, but each
+		// store-gateway's chunks are read lazily, after Select has returned. The per-compartment queries
+		// must therefore run under a context that outlives the fan-out. The regression this guards against:
+		// giving them a context that is cancelled the moment the fan-out completes (e.g. the one from
+		// errgroup.WithContext, which cancels when Wait returns) aborts the still-open chunk streams, so
+		// reading any series' chunks fails the whole query with "query was cancelled". The store-gateway
+		// mocks below fail once their context is cancelled, like a real gRPC stream, so that regression
+		// reproduces here instead of being masked by mocks that ignore the context.
+		ctx := user.InjectOrgID(context.Background(), compartmentsTestTenant)
+		ctx = limiter.AddQueryLimiterToContext(ctx, limiter.NewQueryLimiter(0, 0, 0, 0, nil))
+		ctx = limiter.ContextWithNewUnlimitedMemoryConsumptionTracker(ctx)
+		ctx = limiter.ContextWithNewSeriesLabelsDeduplicator(ctx, limiter.NewSeriesDeduplicatorMetrics(prometheus.NewPedanticRegistry()))
+		_, ctx = stats.ContextWithEmptyStats(ctx)
+
+		block0 := ulid.MustNew(1, nil)
+		block1 := ulid.MustNew(2, nil)
+		seriesA := labels.FromStrings(model.MetricNameLabel, "metric_a")
+		seriesB := labels.FromStrings(model.MetricNameLabel, "metric_b")
+
+		// Non-testify finders: both compartments query concurrently (see stubBlocksFinder).
+		finders := []BlocksFinder{
+			&stubBlocksFinder{blocks: bucketindex.Blocks{{ID: block0}}, meta: &bucketindex.Metadata{}},
+			&stubBlocksFinder{blocks: bucketindex.Blocks{{ID: block1}}, meta: &bucketindex.Metadata{}},
+		}
+
+		stores := []BlocksStoreSet{
+			&blocksStoreSetMock{mockedResponses: []interface{}{
+				map[BlocksStoreClient][]ulid.ULID{
+					&storeGatewayClientMock{
+						remoteAddr: "1.1.1.1",
+						mockedSeriesResponses: newSeriesResponseBuilder().
+							addValue(seriesA, minT, 1).
+							addBlocks(block0).
+							build(),
+					}: {block0},
+				},
+			}},
+			&blocksStoreSetMock{mockedResponses: []interface{}{
+				map[BlocksStoreClient][]ulid.ULID{
+					&storeGatewayClientMock{
+						remoteAddr: "2.2.2.2",
+						mockedSeriesResponses: newSeriesResponseBuilder().
+							addValue(seriesB, minT, 2).
+							addBlocks(block1).
+							build(),
+					}: {block1},
+				},
+			}},
+		}
+
+		reg := prometheus.NewPedanticRegistry()
+		q := newCompartmentsTestQuerierWithFinders(finders, stores, reg, minT, maxT)
+
+		// A matcher that doesn't pin the metric name fans out to both compartments.
+		set := q.Select(ctx, true, &storage.SelectHints{Start: minT, End: maxT}, labels.MustNewMatcher(labels.MatchEqual, "job", "test"))
+		require.NoError(t, set.Err())
+
+		// Iterating reads each store-gateway stream's chunks lazily; this is where a prematurely cancelled
+		// stream fails.
+		var got []string
+		var it chunkenc.Iterator
+		for set.Next() {
+			it = set.At().Iterator(it)
+			for it.Next() != chunkenc.ValNone { //nolint:revive
+			}
+			require.NoError(t, it.Err())
+			got = append(got, set.At().Labels().String())
+		}
+		require.NoError(t, set.Err())
+		require.Equal(t, []string{seriesA.String(), seriesB.String()}, got)
 	})
 
 	t.Run("should stop on the first compartment error", func(t *testing.T) {

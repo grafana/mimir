@@ -5412,14 +5412,35 @@
         },
         {
           "kind": "field",
-          "name": "label_values_count_request_max_concurrency",
+          "name": "compute_workers",
           "required": false,
-          "desc": "Maximum concurrency used to compute a single label values count request.",
+          "desc": "Number of worker goroutines in the ingester's shared tenant-fair compute worker pool, used to parallelize CPU-bound work (currently label-values-cardinality) fairly across tenants. 0 uses GOMAXPROCS.",
           "fieldValue": null,
-          "fieldDefaultValue": 16,
-          "fieldFlag": "ingester.label-values-count-max-concurrency",
+          "fieldDefaultValue": 0,
+          "fieldFlag": "ingester.compute-workers",
           "fieldType": "int",
           "fieldCategory": "experimental"
+        },
+        {
+          "kind": "block",
+          "name": "label_values_count",
+          "required": false,
+          "desc": "",
+          "blockEntries": [
+            {
+              "kind": "field",
+              "name": "chunk_size",
+              "required": false,
+              "desc": "Number of label values processed per work unit submitted to the ingester compute worker pool. Smaller values improve cross-tenant fairness at the cost of more scheduling overhead.",
+              "fieldValue": null,
+              "fieldDefaultValue": 32,
+              "fieldFlag": "ingester.label-values-count-chunk-size",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            }
+          ],
+          "fieldValue": null,
+          "fieldDefaultValue": null
         }
       ],
       "fieldValue": null,
@@ -5841,6 +5862,17 @@
         },
         {
           "kind": "field",
+          "name": "float_chunk_encoding",
+          "required": false,
+          "desc": "Encoding used for float chunks in the ingester and block builder for this tenant. Valid values are 'xor' and 'xor2'.",
+          "fieldValue": null,
+          "fieldDefaultValue": "xor",
+          "fieldFlag": "ingester.float-chunk-encoding",
+          "fieldType": "string",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "active_series_custom_trackers",
           "required": false,
           "desc": "Custom trackers for active metrics. If there are active series matching a provided matcher (map value), the count is exposed in the custom trackers metric labeled using the tracker name (map key). Zero-valued counts are not exposed and are removed when they go back to zero.",
@@ -6050,7 +6082,7 @@
           "kind": "field",
           "name": "query_sharding_total_shards",
           "required": false,
-          "desc": "The amount of shards to use when doing parallelisation via query sharding by tenant. 0 to disable query sharding for tenant. Values greater than 1 are rounded up to the next power of two, so the query shard count always meshes with the compactor's power-of-two shard count. This allows querier to not search the blocks which cannot possibly have the series for given query shard.",
+          "desc": "The number of shards to use when doing parallelisation via query sharding. 0 to disable query sharding for tenant. Values greater than 1 are rounded up to the next power of two, so the query shard count always meshes with the compactor's power-of-two shard count. This allows querier to not search the blocks which cannot possibly have the series for given query shard.",
           "fieldValue": null,
           "fieldDefaultValue": 16,
           "fieldFlag": "query-frontend.query-sharding-total-shards",
@@ -6060,7 +6092,7 @@
           "kind": "field",
           "name": "query_sharding_max_sharded_queries",
           "required": false,
-          "desc": "The max number of sharded queries that can be run for a given received query. 0 to disable limit.",
+          "desc": "The maximum number of sharded queries that can be run for a given received query or spun-off subquery. 0 to disable limit. When splitting and caching inside MQE is enabled, this value applies per time-split interval (including split intervals for spun-off subqueries). When it is disabled, this value applies to the entire time range (or entire spun-off subquery).",
           "fieldValue": null,
           "fieldDefaultValue": 128,
           "fieldFlag": "query-frontend.query-sharding-max-sharded-queries",

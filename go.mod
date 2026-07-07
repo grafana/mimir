@@ -17,7 +17,7 @@ require (
 	github.com/golang/snappy v1.0.0
 	github.com/google/gopacket v1.1.19
 	github.com/gorilla/mux v1.8.1
-	github.com/grafana/dskit v0.0.0-20260630075432-df12b608edb1
+	github.com/grafana/dskit v0.0.0-20260703102925-0edb19e141c4
 	github.com/grafana/e2e v0.1.2-0.20260625155804-481ec71161b5
 	github.com/hashicorp/golang-lru v1.0.2 // indirect
 	github.com/influxdata/influxdb/v2 v2.9.1
@@ -50,6 +50,7 @@ require (
 	cloud.google.com/go/storage v1.62.3
 	github.com/alecthomas/chroma/v2 v2.27.0
 	github.com/alecthomas/kingpin/v2 v2.4.0
+	github.com/antithesishq/antithesis-sdk-go v0.7.2-default-no-op
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.104.0
 	github.com/cortexproject/promqlsmith v0.0.0-20260205231645-0c8ef5fe46a5
 	github.com/dennwc/varint v1.0.0

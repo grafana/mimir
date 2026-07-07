@@ -72,12 +72,6 @@ func (e *EvaluationRoot) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_EVALUATION_ROOT
 }
 
-func (e *EvaluationRoot) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
-	_, ok := other.(*EvaluationRoot)
-
-	return ok
-}
-
 func (e *EvaluationRoot) MergeHints(_ planning.Node) error {
 	// Nothing to do.
 	return nil

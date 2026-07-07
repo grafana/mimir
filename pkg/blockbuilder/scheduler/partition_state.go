@@ -90,7 +90,7 @@ func (s *partitionState) updateTime(ts time.Time, jobSize time.Duration) (*sched
 	case bucketBefore:
 		// New bucket is before our current one. This should only happen if our
 		// Kafka's end offsets aren't monotonically increasing.
-		return nil, fmt.Errorf("time went backwards: %s < %s (offsets: %s)", newJobBucket, s.jobBucket, s.offsetsSummary(false))
+		return nil, fmt.Errorf("time went backwards: %s < %s (offsets: %s)", newJobBucket, s.jobBucket, s.offsetsSummary(false, false))
 
 	case bucketSame:
 		// Observation is in the currently tracked bucket. No action needed.
@@ -127,8 +127,82 @@ func (s *partitionState) updateTime(ts time.Time, jobSize time.Duration) (*sched
 	return nil, nil
 }
 
+// replayOffsetsAtStartup replays each cluster's probed offsets into the partition, cutting a
+// job at every jobSize boundary. perCluster[i] must hold cluster i's offsets in ascending order.
+//
+// Within a cluster, offsets are replayed in input order. Their timestamps decide
+// which job bucket each one lands in, but timestamps are not guaranteed to be monotonic, so
+// the walk only ever moves forward through boundaries: an offset whose timestamp is earlier
+// than one already replayed folds into the current bucket rather than reopening an earlier
+// one.
+func (s *partitionState) replayOffsetsAtStartup(perCluster [][]*offsetTime, jobSize time.Duration, logger log.Logger) {
+	// Special casing for the single cluster path. We don't need to worry about aligning the offsets by time between
+	// clusters for better job alignment, so we can replay the offsets and their recorded time.
+	if len(perCluster) == 1 {
+		for _, offset := range perCluster[0] {
+			s.updateEndOffset(0, offset.offset)
+			if job, err := s.updateTime(offset.time, jobSize); err != nil {
+				level.Warn(logger).Log("msg", "failed to update partition time", "partition", s.partition, "err", err)
+			} else if job != nil {
+				s.addPendingJob(job)
+			}
+		}
+		return
+	}
+
+	// Start the boundary walk at the earliest offset's timestamp across clusters.
+	var firstTime time.Time
+	for _, offsets := range perCluster {
+		if len(offsets) > 0 && (firstTime.IsZero() || offsets[0].time.Before(firstTime)) {
+			firstTime = offsets[0].time
+		}
+	}
+	if firstTime.IsZero() {
+		return // No offsets to replay.
+	}
+
+	cursors := make([]int, len(perCluster))
+	for boundary := firstTime.Truncate(jobSize); ; {
+		// Advancing to the next boundary each iteration closes the bucket we just filled, but
+		// updateTime only returns a job when that bucket actually had data (an empty bucket, or
+		// the first call that just seeds the starting bucket, returns nil).
+		if job, err := s.updateTime(boundary, jobSize); err != nil {
+			level.Warn(logger).Log("msg", "failed to update partition time", "partition", s.partition, "err", err)
+		} else if job != nil {
+			s.addPendingJob(job)
+		}
+
+		next := boundary.Add(jobSize)
+		remaining := false
+		for clusterID := range perCluster {
+			offsets := perCluster[clusterID]
+			cursor := cursors[clusterID]
+			for cursor < len(offsets) && offsets[cursor].time.Before(next) {
+				s.updateEndOffset(clusterID, offsets[cursor].offset)
+				cursor++
+			}
+			cursors[clusterID] = cursor
+			// End offsets are exclusive, so this bucket ends at the first offset at or after the
+			// next boundary. That offset is also real data belonging to a later bucket, so we record
+			// it as the end but don't increment the cursor so we can consume it when it lands in its
+			// proper bucket.
+			if cursor < len(offsets) {
+				s.updateEndOffset(clusterID, offsets[cursor].offset)
+				remaining = true
+			}
+		}
+
+		if !remaining {
+			// Leave the final (current) bucket open; it'll
+			// cut later once live updates roll it over.
+			return
+		}
+		boundary = next
+	}
+}
+
 // offsetsSummary returns a per-cluster offset summary for debugging.
-func (s *partitionState) offsetsSummary(includePlanned bool) string {
+func (s *partitionState) offsetsSummary(includeCommitted, includePlanned bool) string {
 	var b strings.Builder
 	for clusterID := range s.offsets {
 		if clusterID > 0 {
@@ -138,6 +212,9 @@ func (s *partitionState) offsetsSummary(includePlanned bool) string {
 			fmt.Fprintf(&b, "%d:", clusterID)
 		}
 		fmt.Fprintf(&b, "[%d,%d)", s.offsets[clusterID].startOffset, s.offsets[clusterID].endOffset)
+		if includeCommitted {
+			fmt.Fprintf(&b, " committed=%d", s.offsets[clusterID].committed.offset())
+		}
 		if includePlanned {
 			fmt.Fprintf(&b, " planned=%d", s.offsets[clusterID].planned.offset())
 		}
@@ -160,7 +237,7 @@ func (s *partitionState) addPlannedJob(id string, spec schedulerpb.JobSpec) {
 		// This shouldn't happen. All callers of addPlannedJob must do so in
 		// increasing offset order (for all clusters).
 		if s.offsets[clusterID].planned.beyondOffsetRange(offsetRange) {
-			panic(fmt.Sprintf("planned job %q for partition %d is behind the current planned offset: job=%v current=%s", id, s.partition, spec.Ranges(), s.offsetsSummary(true)))
+			panic(fmt.Sprintf("planned job %q for partition %d is behind the current planned offset: job=%v current=%s", id, s.partition, spec.Ranges(), s.offsetsSummary(false, true)))
 		}
 	}
 

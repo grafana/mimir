@@ -22,8 +22,13 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kadm"
+	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kfake"
 	"github.com/twmb/franz-go/pkg/kgo"
+	"github.com/twmb/franz-go/pkg/kmsg"
+	"go.uber.org/atomic"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/blockbuilder/schedulerpb"
 	"github.com/grafana/mimir/pkg/storage/ingest"
@@ -171,7 +176,7 @@ func TestService(t *testing.T) {
 		require.NoError(t, sched.flushOffsetsToKafka(ctx))
 
 		// And our offsets should have advanced.
-		offs, err := sched.fetchCommittedOffsets(ctx)
+		offs, err := fetchCommittedOffsets(ctx, sched.adminClient, sched.cfg.ConsumerGroup, sched.cfg.Kafka.Topic)
 		require.NoError(t, err)
 		o, ok := offs.Lookup(spec.Topic, spec.Partition)
 		require.True(t, ok)
@@ -556,19 +561,19 @@ func TestObservations(t *testing.T) {
 	verifyCommits()
 
 	// Make sure the resumption offsets account for the gaps.
-	offs, err := sched.consumptionOffsets(context.Background(), "ingest", time.Now())
+	offs, err := sched.initSingleClusterConsumptionOffsets(context.Background(), "ingest", time.Now())
 	require.NoError(t, err)
 	require.ElementsMatch(t, []partitionOffsets{
-		{topic: "ingest", partition: 0, resume: 0},
-		{topic: "ingest", partition: 1, resume: 6000},
-		{topic: "ingest", partition: 2, resume: 1600},
-		{topic: "ingest", partition: 3, resume: 974},
-		{topic: "ingest", partition: 4, resume: 900},
-		{topic: "ingest", partition: 5, resume: 13000},
-		{topic: "ingest", partition: 6, resume: 600},
-		{topic: "ingest", partition: 7, resume: 93874},
-		{topic: "ingest", partition: 8, resume: 1300},
-		{topic: "ingest", partition: 9, resume: 1300},
+		{partition: 0, resume: 0},
+		{partition: 1, resume: 6000},
+		{partition: 2, resume: 1600},
+		{partition: 3, resume: 974},
+		{partition: 4, resume: 900},
+		{partition: 5, resume: 13000},
+		{partition: 6, resume: 600},
+		{partition: 7, resume: 93874},
+		{partition: 8, resume: 1300},
+		{partition: 9, resume: 1300},
 	}, offs)
 
 	require.Len(t, sched.jobs.jobs, 4, "should be 4 in-progress jobs")
@@ -635,7 +640,7 @@ func TestKafkaFlush(t *testing.T) {
 	flushAndRequireOffsets := func(topic string, offsets map[int32]int64, args ...any) {
 		require.NoError(t, sched.flushOffsetsToKafka(ctx))
 
-		offs, err := sched.fetchCommittedOffsets(ctx)
+		offs, err := fetchCommittedOffsets(ctx, sched.adminClient, sched.cfg.ConsumerGroup, sched.cfg.Kafka.Topic)
 		require.NoError(t, err)
 		offcount := 0
 		offs.Each(func(o kadm.Offset) {
@@ -734,6 +739,177 @@ func TestUpdateSchedule(t *testing.T) {
 	`), "cortex_blockbuilder_scheduler_partition_end_offset"))
 }
 
+// TestUpdateSchedule_ProbeFailure verifies that a failed end-offset probe abandons the tick,
+// leaving partition state untouched and enqueuing no jobs, and that the next successful tick
+// picks up where the failed one left off.
+func TestUpdateSchedule_ProbeFailure(t *testing.T) {
+	ctx, cancel := context.WithCancelCause(context.Background())
+	t.Cleanup(func() { cancel(errors.New("test done")) })
+
+	var vnet kfake.VirtualNetwork
+	cluster, kafkaAddr := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, 1, "ingest", testkafka.WithVirtualNetwork(&vnet))
+	sched, cli := mustSchedulerWithKafkaAddrAndDialer(t, kafkaAddr, vnet.DialContext)
+	sched.completeObservationMode(ctx)
+
+	produceRecords(ctx, t, cli, 0, 3)
+	stopFailing := failListOffsets(cluster)
+
+	sched.updateSchedule(ctx)
+
+	ps := sched.getPartitionState("ingest", 0)
+	require.Equal(t, int64(0), ps.offsets[0].endOffset, "a failed probe should leave the end offset at its startup value")
+	require.Equal(t, 0, ps.pendingJobs.Len(), "a failed probe should not enqueue jobs")
+
+	stopFailing()
+	sched.updateSchedule(ctx)
+	require.Equal(t, int64(3), ps.offsets[0].endOffset, "the next successful probe should record the produced records")
+}
+
+// TestLoadInitialCommittedOffsets verifies that the consumer group's committed offsets seed
+// each partition's state, and that commits for other topics in the group don't pollute it.
+func TestLoadInitialCommittedOffsets(t *testing.T) {
+	sched, _ := mustScheduler(t, 2)
+	ctx := t.Context()
+	admin := sched.adminClient
+
+	_, err := admin.CreateTopic(ctx, 1, 1, nil, "other-topic")
+	require.NoError(t, err)
+
+	offs := make(kadm.Offsets)
+	offs.AddOffset("ingest", 0, 42, -1)
+	offs.AddOffset("ingest", 1, 64, -1)
+	offs.AddOffset("other-topic", 0, 99, -1)
+	require.NoError(t, admin.CommitAllOffsets(ctx, sched.cfg.ConsumerGroup, offs))
+
+	require.NoError(t, sched.loadInitialCommittedOffsets(ctx))
+
+	sched.requireOffset(t, "ingest", 0, 42, "partition 0 should be seeded from its committed offset")
+	sched.requireOffset(t, "ingest", 1, 64, "partition 1 should be seeded from its committed offset")
+	require.Len(t, sched.partitionStates, 2, "foreign topic commits should not seed partition state")
+}
+
+// TestFetchCommittedOffsets_IgnoresForeignTopics verifies that committed offsets for other
+// topics in the consumer group are filtered out, so they can't seed partition state.
+func TestFetchCommittedOffsets_IgnoresForeignTopics(t *testing.T) {
+	sched, _ := mustScheduler(t, 1)
+	ctx := t.Context()
+	admin := sched.adminClient
+
+	_, err := admin.CreateTopic(ctx, 1, 1, nil, "other-topic")
+	require.NoError(t, err)
+
+	offs := make(kadm.Offsets)
+	offs.AddOffset("ingest", 0, 42, -1)
+	offs.AddOffset("other-topic", 0, 99, -1)
+	require.NoError(t, admin.CommitAllOffsets(ctx, sched.cfg.ConsumerGroup, offs))
+
+	got, err := fetchCommittedOffsets(ctx, admin, sched.cfg.ConsumerGroup, "ingest")
+	require.NoError(t, err)
+	o, ok := got.Lookup("ingest", 0)
+	require.True(t, ok)
+	require.Equal(t, int64(42), o.At)
+	_, ok = got.Lookup("other-topic", 0)
+	require.False(t, ok, "foreign topic offsets should be filtered out")
+}
+
+// TestUpdateJob_ValidatesSpec verifies that specs arriving over the UpdateJob RPC are validated
+// before use, so a malformed spec (e.g. an out-of-range cluster ID in its offset ranges) is
+// rejected instead of panicking the scheduler.
+func TestUpdateJob_ValidatesSpec(t *testing.T) {
+	tests := map[string]struct {
+		spec         *schedulerpb.JobSpec
+		expectedCode codes.Code
+	}{
+		"disabled accepts start/end offsets": {
+			spec:         &schedulerpb.JobSpec{Topic: "ingest", Partition: 0, StartOffset: 5, EndOffset: 10},
+			expectedCode: codes.OK,
+		},
+		"disabled rejects offset ranges": {
+			spec: &schedulerpb.JobSpec{Topic: "ingest", Partition: 0,
+				OffsetRanges: map[int32]schedulerpb.OffsetRange{1: {StartOffset: 5, EndOffset: 10}}},
+			expectedCode: codes.InvalidArgument,
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			sched, _ := mustScheduler(t, 1)
+
+			_, err := sched.UpdateJob(t.Context(), &schedulerpb.UpdateJobRequest{
+				Key:      &schedulerpb.JobKey{Id: "job/0/1", Epoch: 1},
+				WorkerId: "w0",
+				Spec:     tc.spec,
+			})
+			if tc.expectedCode == codes.OK {
+				require.NoError(t, err)
+				return
+			}
+			require.Equal(t, tc.expectedCode, status.Code(err))
+		})
+	}
+}
+
+// TestPopulateInitialJobs_GroupedByPartition verifies the partition-grouped input contract:
+// every partition in the map is probed and replayed independently, a partition with new data
+// gets a pending job covering [resume, end), and a dormant partition (resume == end) registers
+// its end offset without producing a job.
+func TestPopulateInitialJobs_GroupedByPartition(t *testing.T) {
+	sched, _ := mustScheduler(t, 2)
+	recordTime := time.Date(2025, 3, 1, 10, 30, 0, 0, time.UTC)
+	finder := &mockOffsetFinder{offsets: []*offsetTime{{offset: 100, time: recordTime}}, end: 200}
+
+	runPopulateInitialJobs(sched, finder, map[int32][]*partitionOffsets{
+		0: {{partition: 0, start: 100, resume: 100, end: 200}},
+		1: {{partition: 1, start: 500, resume: 700, end: 700}},
+	})
+
+	ps0 := sched.getPartitionState("ingest", 0)
+	require.Equal(t, 1, ps0.pendingJobs.Len(), "the partition with new data should get one job")
+	spec := ps0.pendingJobs.Front().Value.(*schedulerpb.JobSpec)
+	require.Equal(t, int64(100), spec.StartOffset)
+	require.Equal(t, int64(200), spec.EndOffset)
+
+	ps1 := sched.getPartitionState("ingest", 1)
+	require.Equal(t, 0, ps1.pendingJobs.Len(), "the dormant partition should get no job")
+	require.Equal(t, int64(700), ps1.offsets[0].endOffset, "the dormant partition's end offset should still be registered")
+}
+
+// TestPopulateInitialJobs_NilClusterEntry verifies that a nil entry in a partition's cluster
+// slice (the partition has no offsets on that cluster) is skipped without panicking or
+// producing a job.
+func TestPopulateInitialJobs_NilClusterEntry(t *testing.T) {
+	sched, _ := mustScheduler(t, 1)
+
+	runPopulateInitialJobs(sched, &mockOffsetFinder{}, map[int32][]*partitionOffsets{
+		0: {nil},
+	})
+
+	ps := sched.getPartitionState("ingest", 0)
+	require.Equal(t, 0, ps.pendingJobs.Len())
+	require.Equal(t, int64(offsetEmpty), ps.offsets[0].endOffset, "a nil cluster entry should leave the partition's offsets untouched")
+}
+
+// TestPopulateInitialJobs_ProbeErrorIsolation verifies that a probe failure on one partition
+// only skips that partition: other partitions in the same call are still replayed.
+func TestPopulateInitialJobs_ProbeErrorIsolation(t *testing.T) {
+	sched, _ := mustScheduler(t, 2)
+	finder := &mockOffsetFinder{err: errors.New("probe failed")}
+
+	// Partition 0 has new data, so it needs a probe, which fails. Partition 1 is dormant
+	// (resume == end), which needs no probe.
+	runPopulateInitialJobs(sched, finder, map[int32][]*partitionOffsets{
+		0: {{partition: 0, start: 100, resume: 100, end: 200}},
+		1: {{partition: 1, start: 500, resume: 700, end: 700}},
+	})
+
+	ps0 := sched.getPartitionState("ingest", 0)
+	require.Equal(t, 0, ps0.pendingJobs.Len(), "the failing partition should be skipped")
+	require.Equal(t, int64(offsetEmpty), ps0.offsets[0].endOffset, "the failing partition's offsets should be untouched")
+
+	ps1 := sched.getPartitionState("ingest", 1)
+	require.Equal(t, int64(700), ps1.offsets[0].endOffset, "the other partition should still be replayed")
+}
+
 func TestPopulateInitialJobs_ProbeTimesReused(t *testing.T) {
 	// Ensure that the probe times are reused across partitions, which is a
 	// necessary condition for cached offset reuse in the offsetFinder.
@@ -750,16 +926,16 @@ func TestPopulateInitialJobs_ProbeTimesReused(t *testing.T) {
 		distinctTimes: make(map[time.Time]struct{}),
 	}
 
-	consumeOffs := []partitionOffsets{
-		{topic: "topic", partition: 0, start: 100, resume: 100, end: 1000},
-		{topic: "topic", partition: 1, start: 100, resume: 100, end: 1000},
-		{topic: "topic", partition: 2, start: 100, resume: 100, end: 1000},
-		{topic: "topic", partition: 3, start: 100, resume: 100, end: 1000},
+	offsetsByPartition := map[int32][]*partitionOffsets{
+		0: {{partition: 0, start: 100, resume: 100, end: 1000}},
+		1: {{partition: 1, start: 100, resume: 100, end: 1000}},
+		2: {{partition: 2, start: 100, resume: 100, end: 1000}},
+		3: {{partition: 3, start: 100, resume: 100, end: 1000}},
 	}
 
 	endTime := time.Date(2025, 3, 1, 11, 0, 0, 0, time.UTC)
-	scanner := newOffsetScanner(finder, endTime, sched.cfg.JobSize, sched.cfg.MaxScanAge, sched.metrics.probeRecordTimeDelta)
-	sched.populateInitialJobs(context.Background(), consumeOffs, scanner)
+	scanner := newOffsetScanner([]offsetStore{finder}, "ingest", endTime, sched.cfg.JobSize, sched.cfg.MaxScanAge, sched.metrics.probeRecordTimeDelta)
+	sched.populateInitialJobs(context.Background(), offsetsByPartition, scanner)
 	require.Len(t, finder.distinctTimes, 4, "four partitions will each be probed at the same times, so the probe times should be shared across partitions")
 }
 
@@ -1203,24 +1379,25 @@ func TestStartupToRegularModeJobProduction(t *testing.T) {
 				distinctTimes: make(map[time.Time]struct{}),
 			}
 
-			consumeOffs := []partitionOffsets{
-				{
-					topic:     "topic",
-					partition: 0,
-					start:     tt.initialStart,
-					resume:    tt.initialResume,
-					end:       tt.initialEnd,
+			offsetsByPartition := map[int32][]*partitionOffsets{
+				0: {
+					{
+						partition: 0,
+						start:     tt.initialStart,
+						resume:    tt.initialResume,
+						end:       tt.initialEnd,
+					},
 				},
 			}
 
 			// Call populateInitialJobs to set up initial state
-			scanner := newOffsetScanner(finder, tt.initialTime, sched.cfg.JobSize, sched.cfg.MaxScanAge, sched.metrics.probeRecordTimeDelta)
-			sched.populateInitialJobs(context.Background(), consumeOffs, scanner)
+			scanner := newOffsetScanner([]offsetStore{finder}, "ingest", tt.initialTime, sched.cfg.JobSize, sched.cfg.MaxScanAge, sched.metrics.probeRecordTimeDelta)
+			sched.populateInitialJobs(context.Background(), offsetsByPartition, scanner)
 
 			collectedJobs := []*schedulerpb.JobSpec{}
 
 			// Apply future end offset observations and collect jobs returned from updateTime
-			ps := sched.getPartitionState("topic", 0)
+			ps := sched.getPartitionState("ingest", 0)
 
 			for _, obs := range tt.futureObservations {
 				ps.updateEndOffset(0, obs.offset)
@@ -1257,5 +1434,56 @@ func TestStartupToRegularModeJobProduction(t *testing.T) {
 					i, current.EndOffset, next.StartOffset)
 			}
 		})
+	}
+}
+
+// runPopulateInitialJobs runs populateInitialJobs over a scanner backed by finder, with 1h
+// JobSize/MaxScanAge and buckets ending at 2025-03-01 11:00 UTC.
+func runPopulateInitialJobs(sched *BlockBuilderScheduler, finder offsetStore, offsetsByPartition map[int32][]*partitionOffsets) {
+	sched.cfg.MaxScanAge = 1 * time.Hour
+	sched.cfg.JobSize = 1 * time.Hour
+	endTime := time.Date(2025, 3, 1, 11, 0, 0, 0, time.UTC)
+	scanner := newOffsetScanner([]offsetStore{finder}, "ingest", endTime, sched.cfg.JobSize, sched.cfg.MaxScanAge, sched.metrics.probeRecordTimeDelta)
+	sched.populateInitialJobs(context.Background(), offsetsByPartition, scanner)
+}
+
+// failListOffsets makes the cluster answer ListOffsets requests with UNKNOWN_SERVER_ERROR
+// until the returned stop function is called.
+func failListOffsets(cluster *kfake.Cluster) (stop func()) {
+	failing := atomic.NewBool(true)
+	cluster.ControlKey(kmsg.ListOffsets.Int16(), func(req kmsg.Request) (kmsg.Response, error, bool) {
+		cluster.KeepControl()
+		if !failing.Load() {
+			return nil, nil, false
+		}
+		listR := req.(*kmsg.ListOffsetsRequest)
+		resp := req.ResponseKind().(*kmsg.ListOffsetsResponse)
+		resp.Default()
+		for _, reqTopic := range listR.Topics {
+			respTopic := kmsg.ListOffsetsResponseTopic{Topic: reqTopic.Topic}
+			for _, reqPartition := range reqTopic.Partitions {
+				respTopic.Partitions = append(respTopic.Partitions, kmsg.ListOffsetsResponseTopicPartition{
+					Partition: reqPartition.Partition,
+					ErrorCode: kerr.UnknownServerError.Code,
+				})
+			}
+			resp.Topics = append(resp.Topics, respTopic)
+		}
+		return resp, nil, true
+	})
+	return func() { failing.Store(false) }
+}
+
+// produceRecords produces n records to the given partition of the "ingest" topic.
+func produceRecords(ctx context.Context, t *testing.T, cli *kgo.Client, partition int32, n int) {
+	t.Helper()
+	for i := range n {
+		produceResult := cli.ProduceSync(ctx, &kgo.Record{
+			Timestamp: time.Unix(int64(i), 0),
+			Value:     []byte("value"),
+			Topic:     "ingest",
+			Partition: partition,
+		})
+		require.NoError(t, produceResult.FirstErr())
 	}
 }

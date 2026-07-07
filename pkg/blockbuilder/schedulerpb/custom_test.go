@@ -36,6 +36,31 @@ func TestJobSpec_Ranges(t *testing.T) {
 	}
 }
 
+func TestJobSpec_RangesString(t *testing.T) {
+	tests := map[string]struct {
+		spec     JobSpec
+		expected string
+	}{
+		"non-compartment renders a single range without a cluster prefix": {
+			spec:     JobSpec{StartOffset: 42, EndOffset: 100},
+			expected: "[42,100)",
+		},
+		"compartment renders one range per cluster, sorted by cluster ID": {
+			spec: JobSpec{OffsetRanges: map[int32]OffsetRange{
+				1: {StartOffset: 500, EndOffset: 700},
+				0: {StartOffset: 100, EndOffset: 200},
+			}},
+			expected: "0:[100,200) 1:[500,700)",
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			require.Equal(t, tc.expected, tc.spec.RangesString())
+		})
+	}
+}
+
 func TestJobSpec_Validate(t *testing.T) {
 	const numCompartments = 4
 

@@ -1735,10 +1735,18 @@ read_reactive_limiter:
   # CLI flag: -ingester.read-reactive-limiter.max-rejection-factor
   [max_rejection_factor: <float> | default = 3]
 
-# (experimental) Maximum concurrency used to compute a single label values count
-# request.
-# CLI flag: -ingester.label-values-count-max-concurrency
-[label_values_count_request_max_concurrency: <int> | default = 16]
+# (experimental) Number of worker goroutines in the ingester's shared
+# tenant-fair compute worker pool, used to parallelize CPU-bound work (currently
+# label-values-cardinality) fairly across tenants. 0 uses GOMAXPROCS.
+# CLI flag: -ingester.compute-workers
+[compute_workers: <int> | default = 0]
+
+label_values_count:
+  # (experimental) Number of label values processed per work unit submitted to
+  # the ingester compute worker pool. Smaller values improve cross-tenant
+  # fairness at the cost of more scheduling overhead.
+  # CLI flag: -ingester.label-values-count-chunk-size
+  [chunk_size: <int> | default = 32]
 ```
 
 ### querier
@@ -4427,6 +4435,11 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -ingester.native-histograms-ingestion-enabled
 [native_histograms_ingestion_enabled: <boolean> | default = true]
 
+# (experimental) Encoding used for float chunks in the ingester and block
+# builder for this tenant. Valid values are 'xor' and 'xor2'.
+# CLI flag: -ingester.float-chunk-encoding
+[float_chunk_encoding: <string> | default = "xor"]
+
 # (advanced) Custom trackers for active metrics. If there are active series
 # matching a provided matcher (map value), the count is exposed in the custom
 # trackers metric labeled using the tracker name (map key). Zero-valued counts
@@ -4581,16 +4594,19 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -query-frontend.max-queriers-per-tenant
 [max_queriers_per_tenant: <int> | default = 0]
 
-# The amount of shards to use when doing parallelisation via query sharding by
-# tenant. 0 to disable query sharding for tenant. Values greater than 1 are
-# rounded up to the next power of two, so the query shard count always meshes
-# with the compactor's power-of-two shard count. This allows querier to not
-# search the blocks which cannot possibly have the series for given query shard.
+# The number of shards to use when doing parallelisation via query sharding. 0
+# to disable query sharding for tenant. Values greater than 1 are rounded up to
+# the next power of two, so the query shard count always meshes with the
+# compactor's power-of-two shard count. This allows querier to not search the
+# blocks which cannot possibly have the series for given query shard.
 # CLI flag: -query-frontend.query-sharding-total-shards
 [query_sharding_total_shards: <int> | default = 16]
 
-# The max number of sharded queries that can be run for a given received query.
-# 0 to disable limit.
+# The maximum number of sharded queries that can be run for a given received
+# query or spun-off subquery. 0 to disable limit. When splitting and caching
+# inside MQE is enabled, this value applies per time-split interval (including
+# split intervals for spun-off subqueries). When it is disabled, this value
+# applies to the entire time range (or entire spun-off subquery).
 # CLI flag: -query-frontend.query-sharding-max-sharded-queries
 [query_sharding_max_sharded_queries: <int> | default = 128]
 

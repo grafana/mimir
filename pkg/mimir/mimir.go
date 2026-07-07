@@ -940,8 +940,8 @@ type Mimir struct {
 	Server                         *server.Server
 	ServerMetrics                  *server.Metrics
 	IngesterRing                   *ring.Ring
-	IngesterPartitionRingWatchers  *ingest.PartitionRingWatchers
-	IngesterPartitionInstanceRings *ingest.PartitionInstanceRings
+	IngesterPartitionRingWatchers  *ring.PartitionRingWatchers
+	IngesterPartitionInstanceRings *ring.PartitionInstanceRings
 	TenantLimits                   validation.TenantLimits
 	Overrides                      *validation.Overrides
 	QueryLimitsProvider            streamingpromql.QueryLimitsProvider

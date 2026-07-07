@@ -150,7 +150,11 @@ func NewScheduler(cfg Config, limits Limits, log log.Logger, registerer promethe
 	}, []string{"user"})
 
 	if cfg.MaxQueueLengthMetricEnabled {
-		s.maxQueueLength = queue.NewMaxQueueLengthGauge()
+		s.maxQueueLength = queue.NewMaxQueueLengthGauge(
+			"cortex_query_scheduler_max_queue_length",
+			"Maximum number of queries observed in a tenant's queue since the last metric collection (reset on each scrape). Captures the true peak queue depth between scrapes.",
+			nil,
+		)
 		// registerer is nil in some tests; mirror promauto.With(nil) by skipping registration.
 		if registerer != nil {
 			registerer.MustRegister(s.maxQueueLength)

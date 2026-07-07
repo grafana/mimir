@@ -127,6 +127,7 @@ The following features are currently experimental:
   - `cortex_ingester_tsdb_head_chunks_max_mmapped` metric. Reports the maximum, across all per-tenant TSDBs, of the maximum number of head chunks memory-mapped for any individual series during the last memory-mapping pass. Temporary measurement metric; will be removed once we have collected enough data.
   - Add variance to chunks end time to spread writing across time (`-blocks-storage.tsdb.head-chunks-end-time-variance`)
   - Snapshotting of in-memory TSDB data on disk when shutting down (`-blocks-storage.tsdb.memory-snapshot-on-shutdown`)
+  - Per-tenant float chunk encoding selection (`-ingester.float-chunk-encoding`)
   - Out-of-order samples ingestion (`-ingester.out-of-order-time-window`)
   - Shipper labeling out-of-order blocks before upload to cloud storage (`-ingester.out-of-order-blocks-external-label-enabled`)
   - Early TSDB Head compaction to reduce in-memory series:
@@ -210,6 +211,9 @@ The following features are currently experimental:
   - Per-tenant max number of active series additional custom trackers is configurable via `-validation.max-active-series-additional-custom-trackers`.
   - File based Kafka consumer group offset tracking enforcement
     - `-ingest-storage.kafka.consumer-group-offset-commit-file-enforced`
+  - Shared tenant-fair compute worker pool (first used by the label-values-cardinality endpoint)
+    - `-ingester.compute-workers`
+    - `-ingester.label-values-count-chunk-size`
   - WarpStream-aware Kafka producer backend
     - `-ingest-storage.kafka.backend`
     - all flags beginning with `-ingest-storage.kafka.warpstream-`

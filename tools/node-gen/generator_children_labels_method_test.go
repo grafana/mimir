@@ -115,7 +115,7 @@ func TestChildrenLabelsMethod(t *testing.T) {
 			s := resolveAnnotatedStruct(t, pkg)
 			imports := newImportsCollector()
 
-			actual, err := ChildrenLabelsMethod.Generate(s, imports)
+			actual, err := ChildrenLabelsMethod.Generate(s, imports, pkg.Registry)
 			require.NoError(t, err)
 
 			expected := gofmt(t, tc.expected)
@@ -182,7 +182,7 @@ func TestChildrenLabelsMethod_Unsupported(t *testing.T) {
 			s := resolveAnnotatedStruct(t, pkg)
 			imports := newImportsCollector()
 
-			out, err := ChildrenLabelsMethod.Generate(s, imports)
+			out, err := ChildrenLabelsMethod.Generate(s, imports, pkg.Registry)
 			require.EqualError(t, err, tc.expectedErr)
 			require.Empty(t, out)
 		})

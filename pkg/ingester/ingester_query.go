@@ -497,7 +497,9 @@ func (i *Ingester) LabelValuesCardinality(req *client.LabelValuesCardinalityRequ
 		idx,
 		postingsForMatchersFn,
 		labelValuesCardinalityTargetSizeBytes,
-		i.cfg.LabelValuesCountRequestMaxConcurrency,
+		i.computeWorkerPool,
+		userID,
+		i.cfg.LabelValuesCount.ChunkSize,
 		srv,
 	)
 }

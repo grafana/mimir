@@ -47,11 +47,6 @@ func (s *SplitFunctionCall) MergeHints(other planning.Node) error {
 	return nil
 }
 
-func (s *SplitFunctionCall) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
-	_, ok := other.(*SplitFunctionCall)
-	return ok
-}
-
 func (s *SplitFunctionCall) Describe() string {
 	return ""
 }

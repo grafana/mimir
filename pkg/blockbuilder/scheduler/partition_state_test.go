@@ -671,3 +671,308 @@ func TestNewSingleClusterOffsets(t *testing.T) {
 	// An end offset that moves backwards is a logical error and panics.
 	require.Panics(t, func() { o.updateEndOffset(150) })
 }
+
+func TestReplayOffsetsAtStartup(t *testing.T) {
+	at := func(h, m int) time.Time { return time.Date(2025, 3, 1, h, m, 0, 0, time.UTC) }
+
+	// openBucket is the [startOffset, endOffset) a cluster carries in the bucket left
+	// open at the end of the replay, i.e. what live operation will cut next.
+	type openBucket struct {
+		startOffset int64
+		endOffset   int64
+	}
+
+	tests := map[string]struct {
+		numClusters  int
+		perCluster   [][]*offsetTime
+		expectedJobs []map[int32]schedulerpb.OffsetRange
+		// expectedJobBucket is the bucket boundary the replay leaves open; zero means untouched.
+		expectedJobBucket time.Time
+		// expectedOpen is the open bucket per cluster, indexed by clusterID.
+		expectedOpen []openBucket
+	}{
+		"cuts a shared bucket with per-cluster ranges and leaves the current bucket open": {
+			// Both clusters have data in the 10:00 and 11:00 windows (independent, interleaved
+			// offset spaces); the 13:00 end-offset seed is the exclusive end of the 11:00 window.
+			// Both completed windows are cut together per cluster, and the current 13:00 bucket
+			// is empty (starts at the seed) and left open.
+			numClusters: 2,
+			perCluster: [][]*offsetTime{
+				{
+					{offset: 100, time: at(10, 7)},
+					{offset: 200, time: at(11, 7)},
+					{offset: 250, time: at(13, 0)},
+				},
+				{
+					{offset: 1000, time: at(10, 7)},
+					{offset: 1100, time: at(11, 7)},
+					{offset: 1150, time: at(13, 0)},
+				},
+			},
+			expectedJobs: []map[int32]schedulerpb.OffsetRange{
+				{0: {StartOffset: 100, EndOffset: 200}, 1: {StartOffset: 1000, EndOffset: 1100}},
+				{0: {StartOffset: 200, EndOffset: 250}, 1: {StartOffset: 1100, EndOffset: 1150}},
+			},
+			expectedJobBucket: at(13, 0),
+			expectedOpen:      []openBucket{{250, 250}, {1150, 1150}},
+		},
+		"does not emit a job for an empty bucket between two populated buckets": {
+			// The cluster has data in the 10:00 and 12:00 windows but none in 11:00. The empty
+			// 11:00 window cuts a zero-width range (no job). The 13:00 offset ends the 12:00 window
+			// and opens the current 13:00 bucket, which has no end yet (start == end) and is left open.
+			numClusters: 1,
+			perCluster: [][]*offsetTime{{
+				{offset: 100, time: at(10, 7)},
+				{offset: 150, time: at(10, 40)},
+				{offset: 200, time: at(12, 7)},
+				{offset: 250, time: at(12, 40)},
+				{offset: 300, time: at(13, 0)},
+			}},
+			expectedJobs: []map[int32]schedulerpb.OffsetRange{
+				{0: {StartOffset: 100, EndOffset: 200}},
+				{0: {StartOffset: 200, EndOffset: 300}},
+			},
+			expectedJobBucket: at(13, 0),
+			expectedOpen:      []openBucket{{300, 300}},
+		},
+		"does not emit jobs for buckets that are empty across all clusters": {
+			// Both clusters have data in the 10:00 and 13:00 windows but none in 11:00 or 12:00.
+			// The empty windows cut zero-width ranges for both clusters (no jobs). The 14:00 offsets
+			// end the 13:00 window and open the current 14:00 bucket, which is left open.
+			numClusters: 2,
+			perCluster: [][]*offsetTime{
+				{
+					{offset: 100, time: at(10, 7)},
+					{offset: 150, time: at(10, 40)},
+					{offset: 200, time: at(13, 7)},
+					{offset: 250, time: at(13, 40)},
+					{offset: 300, time: at(14, 0)},
+				},
+				{
+					{offset: 1000, time: at(10, 7)},
+					{offset: 1150, time: at(10, 40)},
+					{offset: 1200, time: at(13, 7)},
+					{offset: 1250, time: at(13, 40)},
+					{offset: 1300, time: at(14, 0)},
+				},
+			},
+			expectedJobs: []map[int32]schedulerpb.OffsetRange{
+				{0: {StartOffset: 100, EndOffset: 200}, 1: {StartOffset: 1000, EndOffset: 1200}},
+				{0: {StartOffset: 200, EndOffset: 300}, 1: {StartOffset: 1200, EndOffset: 1300}},
+			},
+			expectedJobBucket: at(14, 0),
+			expectedOpen:      []openBucket{{300, 300}, {1300, 1300}},
+		},
+		"carries the end across several empty buckets to the current one": {
+			// Each cluster's only offset after the 10:00 window is far ahead at 13:00, so it's the
+			// exclusive end of the 10:00 window and of the empty 11:00 and 12:00 windows. One
+			// shared job is cut, yet the walk still advances through those empty windows to 13:00,
+			// where the offsets are consumed and the current bucket left open.
+			numClusters: 2,
+			perCluster: [][]*offsetTime{
+				{
+					{offset: 100, time: at(10, 0)},
+					{offset: 400, time: at(13, 0)},
+				},
+				{
+					{offset: 1000, time: at(10, 0)},
+					{offset: 1400, time: at(13, 0)},
+				},
+			},
+			expectedJobs: []map[int32]schedulerpb.OffsetRange{
+				{0: {StartOffset: 100, EndOffset: 400}, 1: {StartOffset: 1000, EndOffset: 1400}},
+			},
+			expectedJobBucket: at(13, 0),
+			expectedOpen:      []openBucket{{400, 400}, {1400, 1400}},
+		},
+		"applies offsets in offset order even when their times are not monotonic": {
+			// Each cluster has an offset whose timestamp is earlier than the offset before it,
+			// but because the replay only ever looks ahead, that offset folds into the window the
+			// walk is already in rather than reopening an earlier one. Bucketing is independent per
+			// cluster: cluster 0's out-of-order offset (10:30) folds into its 11:00 window, while
+			// cluster 1's (11:30) folds into its 12:00 window, so cluster 1 has no data in 11:00.
+			numClusters: 2,
+			perCluster: [][]*offsetTime{
+				{
+					{offset: 100, time: at(10, 7)},
+					{offset: 200, time: at(11, 7)},
+					{offset: 300, time: at(10, 30)},
+					{offset: 400, time: at(12, 7)},
+					{offset: 500, time: at(13, 0)},
+				},
+				{
+					{offset: 1000, time: at(10, 7)},
+					{offset: 1100, time: at(12, 7)},
+					{offset: 1200, time: at(11, 30)},
+					{offset: 1300, time: at(13, 0)},
+				},
+			},
+			expectedJobs: []map[int32]schedulerpb.OffsetRange{
+				{0: {StartOffset: 100, EndOffset: 200}, 1: {StartOffset: 1000, EndOffset: 1100}},
+				{0: {StartOffset: 200, EndOffset: 400}},
+				{0: {StartOffset: 400, EndOffset: 500}, 1: {StartOffset: 1100, EndOffset: 1300}},
+			},
+			expectedJobBucket: at(13, 0),
+			expectedOpen:      []openBucket{{500, 500}, {1300, 1300}},
+		},
+		"cuts each cluster in the bucket where its data lands when clusters are staggered": {
+			// Cluster 0 has data in the 10:00 and 11:00 windows, cluster 1 in the 11:00 and
+			// 12:00 windows. Each window's job carries only the clusters with data in it, so the
+			// shared 11:00 window bundles both while 10:00 and 12:00 are single-cluster.
+			numClusters: 2,
+			perCluster: [][]*offsetTime{
+				{
+					{offset: 100, time: at(10, 7)},
+					{offset: 200, time: at(11, 7)},
+					{offset: 250, time: at(13, 0)},
+				},
+				{
+					{offset: 1000, time: at(11, 7)},
+					{offset: 1100, time: at(12, 7)},
+					{offset: 1150, time: at(13, 0)},
+				},
+			},
+			expectedJobs: []map[int32]schedulerpb.OffsetRange{
+				{0: {StartOffset: 100, EndOffset: 200}},
+				{0: {StartOffset: 200, EndOffset: 250}, 1: {StartOffset: 1000, EndOffset: 1100}},
+				{1: {StartOffset: 1100, EndOffset: 1150}},
+			},
+			expectedJobBucket: at(13, 0),
+			expectedOpen:      []openBucket{{250, 250}, {1150, 1150}},
+		},
+		"cuts a shared bucket across three clusters": {
+			// All three clusters have data in the 10:00 and 11:00 windows; the 13:00 seeds end
+			// the 11:00 window. Both completed windows are cut as single jobs carrying all three
+			// clusters' ranges.
+			numClusters: 3,
+			perCluster: [][]*offsetTime{
+				{
+					{offset: 100, time: at(10, 7)},
+					{offset: 200, time: at(11, 7)},
+					{offset: 250, time: at(13, 0)},
+				},
+				{
+					{offset: 1000, time: at(10, 7)},
+					{offset: 1100, time: at(11, 7)},
+					{offset: 1150, time: at(13, 0)},
+				},
+				{
+					{offset: 5000, time: at(10, 7)},
+					{offset: 5100, time: at(11, 7)},
+					{offset: 5150, time: at(13, 0)},
+				},
+			},
+			expectedJobs: []map[int32]schedulerpb.OffsetRange{
+				{
+					0: {StartOffset: 100, EndOffset: 200},
+					1: {StartOffset: 1000, EndOffset: 1100},
+					2: {StartOffset: 5000, EndOffset: 5100},
+				},
+				{
+					0: {StartOffset: 200, EndOffset: 250},
+					1: {StartOffset: 1100, EndOffset: 1150},
+					2: {StartOffset: 5100, EndOffset: 5150},
+				},
+			},
+			expectedJobBucket: at(13, 0),
+			expectedOpen:      []openBucket{{250, 250}, {1150, 1150}, {5150, 5150}},
+		},
+		"cuts three staggered clusters each in the bucket where its data lands": {
+			// Cluster 2 has data only in the 10:00 window, cluster 0 in 10:00 and 11:00, cluster
+			// 1 in 11:00 and 12:00. Each window's job bundles whichever clusters have data in it.
+			numClusters: 3,
+			perCluster: [][]*offsetTime{
+				{
+					{offset: 100, time: at(10, 7)},
+					{offset: 200, time: at(11, 7)},
+					{offset: 250, time: at(13, 0)},
+				},
+				{
+					{offset: 1000, time: at(11, 7)},
+					{offset: 1100, time: at(12, 7)},
+					{offset: 1150, time: at(13, 0)},
+				},
+				{
+					{offset: 5000, time: at(10, 7)},
+					{offset: 5100, time: at(10, 40)},
+					{offset: 5150, time: at(13, 0)},
+				},
+			},
+			expectedJobs: []map[int32]schedulerpb.OffsetRange{
+				{0: {StartOffset: 100, EndOffset: 200}, 2: {StartOffset: 5000, EndOffset: 5150}},
+				{0: {StartOffset: 200, EndOffset: 250}, 1: {StartOffset: 1000, EndOffset: 1100}},
+				{1: {StartOffset: 1100, EndOffset: 1150}},
+			},
+			expectedJobBucket: at(13, 0),
+			expectedOpen:      []openBucket{{250, 250}, {1150, 1150}, {5150, 5150}},
+		},
+		"leaves the in-progress bucket open with its data": {
+			// endTime falls inside the 12:00 window (the latest offsets are at 12:45), so that
+			// window is still in progress: with no offset at or after 13:00 to close it, each
+			// cluster's data stays in the open bucket for live operation to cut later rather than
+			// being emitted now.
+			numClusters: 2,
+			perCluster: [][]*offsetTime{
+				{
+					{offset: 100, time: at(10, 7)},
+					{offset: 200, time: at(12, 7)},
+					{offset: 300, time: at(12, 45)},
+				},
+				{
+					{offset: 1000, time: at(10, 7)},
+					{offset: 1100, time: at(12, 7)},
+					{offset: 1150, time: at(12, 45)},
+				},
+			},
+			expectedJobs: []map[int32]schedulerpb.OffsetRange{
+				{0: {StartOffset: 100, EndOffset: 200}, 1: {StartOffset: 1000, EndOffset: 1100}},
+			},
+			expectedJobBucket: at(12, 0),
+			expectedOpen:      []openBucket{{200, 300}, {1100, 1150}},
+		},
+		"emits no job for a single end-offset seed": {
+			// A partition with no new data since last consume yields a single end-offset seed
+			// at endTime; the replay records it as the open bucket's end without cutting a job.
+			numClusters: 1,
+			perCluster: [][]*offsetTime{{
+				{offset: 250, time: at(13, 0)},
+			}},
+			expectedJobBucket: at(13, 0),
+			expectedOpen:      []openBucket{{250, 250}},
+		},
+		"no offsets leaves partition state untouched": {
+			numClusters:  2,
+			perCluster:   [][]*offsetTime{nil, nil},
+			expectedOpen: []openBucket{{offsetEmpty, offsetEmpty}, {offsetEmpty, offsetEmpty}},
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			ps := newTestPartitionStateWithClusters(t, "topic", 0, tc.numClusters, true)
+
+			ps.replayOffsetsAtStartup(tc.perCluster, time.Hour, test.NewTestingLogger(t))
+
+			jobs := pendingJobSpecs(ps)
+			require.Len(t, jobs, len(tc.expectedJobs))
+			for i, want := range tc.expectedJobs {
+				assert.Equal(t, want, jobs[i].OffsetRanges)
+			}
+
+			assert.Equal(t, tc.expectedJobBucket, ps.jobBucket, "open job bucket")
+			require.Len(t, tc.expectedOpen, tc.numClusters)
+			for clusterID, want := range tc.expectedOpen {
+				assert.Equal(t, want.startOffset, ps.offsets[clusterID].startOffset, "cluster %d open start offset", clusterID)
+				assert.Equal(t, want.endOffset, ps.offsets[clusterID].endOffset, "cluster %d open end offset", clusterID)
+			}
+		})
+	}
+}
+
+func pendingJobSpecs(ps *partitionState) []*schedulerpb.JobSpec {
+	var jobs []*schedulerpb.JobSpec
+	for e := ps.pendingJobs.Front(); e != nil; e = e.Next() {
+		jobs = append(jobs, e.Value.(*schedulerpb.JobSpec))
+	}
+	return jobs
+}
