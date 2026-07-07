@@ -15,6 +15,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/user"
@@ -144,23 +145,22 @@ func Test_shardActiveSeriesMiddleware_RoundTrip(t *testing.T) {
 			responseStatus: http.StatusRequestEntityTooLarge,
 			responseBody:   "",
 
-			checkResponseErr: func(t *testing.T, err error) (continueTest bool) {
-				assert.Contains(t, err.Error(), errShardCountTooLow.Error())
-				resp, ok := apierror.HTTPResponseFromError(err)
-				require.True(t, ok)
-				assert.Equal(t, int(resp.Code), http.StatusRequestEntityTooLarge)
-				return false
-			},
+			// With the request lifecycle bounded, dispatch is interleaved with
+			// streaming, so a shard's 413 surfaces as an error embedded in the
+			// streamed body rather than as an HTTP status.
+			checkResponseErr:   func(t *testing.T, err error) (continueTest bool) { return assert.NoError(t, err) },
+			expectedShardCount: tenantShardCount,
+			expect:             result{Status: "error", Error: errShardCountTooLow.Error()},
 		},
 		{
 			name:    "upstream response: error",
 			request: validReq,
 
 			errorResponse: errors.New("upstream error"),
-			checkResponseErr: func(t *testing.T, err error) (continueTest bool) {
-				assert.Error(t, err)
-				return false
-			},
+			// As above, a shard dispatch error surfaces in the streamed body.
+			checkResponseErr:   func(t *testing.T, err error) (continueTest bool) { return assert.NoError(t, err) },
+			expectedShardCount: tenantShardCount,
+			expect:             result{Status: "error", Error: "upstream error"},
 		},
 		{
 			name:    "honours shard count from request header",
@@ -316,6 +316,7 @@ func Test_shardActiveSeriesMiddleware_RoundTrip(t *testing.T) {
 			// Run the request through the middleware.
 			s := newShardActiveSeriesMiddleware(
 				upstream,
+				0,
 				mockLimits{maxShardedQueries: tenantMaxShardCount, totalShards: tenantShardCount},
 				log.NewNopLogger(),
 			)
@@ -377,6 +378,7 @@ func Test_shardActiveSeriesMiddleware_RoundTrip_concurrent(t *testing.T) {
 
 	s := newShardActiveSeriesMiddleware(
 		upstream,
+		0,
 		mockLimits{maxShardedQueries: shardCount, totalShards: shardCount},
 		log.NewNopLogger(),
 	)
@@ -427,8 +429,72 @@ func Test_shardActiveSeriesMiddleware_RoundTrip_concurrent(t *testing.T) {
 	}
 }
 
+func Test_shardActiveSeriesMiddleware_RoundTrip_maxConcurrency(t *testing.T) {
+	const shardCount = 32
+	const maxConcurrency = 2
+
+	synctest.Test(t, func(t *testing.T) {
+		gate := make(chan struct{})
+		var inFlight atomic.Int32
+		upstream := RoundTripFunc(func(r *http.Request) (*http.Response, error) {
+			inFlight.Inc()
+			defer inFlight.Dec()
+			<-gate
+
+			require.NoError(t, r.ParseForm())
+			req, err := cardinality.DecodeActiveSeriesRequestFromValues(r.Form)
+			require.NoError(t, err)
+			shard, _, err := sharding.ShardFromMatchers(req.Matchers)
+			require.NoError(t, err)
+			require.NotNil(t, shard)
+
+			resp := fmt.Sprintf(`{"data": [{"__name__": "metric-%d"}]}`, shard.ShardIndex)
+			return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(resp))}, nil
+		})
+
+		s := newShardActiveSeriesMiddleware(
+			upstream,
+			maxConcurrency,
+			mockLimits{maxShardedQueries: shardCount, totalShards: shardCount},
+			log.NewNopLogger(),
+		)
+
+		req := httptest.NewRequest("POST", "/active_series", strings.NewReader(`selector={__name__=~"metric-.*"}`))
+		req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+		req = req.WithContext(user.InjectOrgID(t.Context(), "test"))
+
+		var res result
+		var roundTripErr error
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			resp, err := s.RoundTrip(req)
+			if err != nil {
+				roundTripErr = err
+				return
+			}
+			defer resp.Body.Close()
+			roundTripErr = json.NewDecoder(resp.Body).Decode(&res)
+		}()
+
+		for remaining := shardCount; remaining > 0; remaining -= maxConcurrency {
+			synctest.Wait()
+
+			want := min(maxConcurrency, remaining)
+			require.Equal(t, int32(want), inFlight.Load(), "limiter admitted the wrong number of concurrent sub-requests")
+
+			for range want {
+				gate <- struct{}{}
+			}
+		}
+
+		<-done
+		require.NoError(t, roundTripErr)
+		require.Len(t, res.Data, shardCount)
+	})
+}
+
 func Test_shardActiveSeriesMiddleware_mergeResponse_contextCancellation(t *testing.T) {
-	s := newShardActiveSeriesMiddleware(nil, mockLimits{}, log.NewNopLogger()).(*shardActiveSeriesMiddleware)
 	ctx, cancel := context.WithCancelCause(context.Background())
 	defer cancel(fmt.Errorf("test ran to completion"))
 
@@ -444,8 +510,10 @@ func Test_shardActiveSeriesMiddleware_mergeResponse_contextCancellation(t *testi
 		{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(body))},
 		{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(body))},
 	}
+	s := newShardActiveSeriesMiddleware(upstreamServingResponses(responses), 0, mockLimits{}, log.NewNopLogger()).(*shardActiveSeriesMiddleware)
 
-	resp := s.mergeResponses(ctx, responses, "")
+	resp, err := s.mergeResponses(ctx, shardRequests(ctx, len(responses)), "")
+	require.NoError(t, err)
 
 	var buf bytes.Buffer
 	_, err = io.CopyN(&buf, resp.Body, int64(os.Getpagesize()))
@@ -487,39 +555,41 @@ func benchmarkActiveSeriesMiddlewareMergeResponses(b *testing.B, encoding string
 
 	for _, numResponses := range bcs {
 		b.Run(fmt.Sprintf("num-responses-%d", numResponses), func(b *testing.B) {
-			benchResponses := make([][]*http.Response, b.N)
+			// Flatten every iteration's responses into one upstream so the timed
+			// loop needs no per-iteration setup; each iteration consumes numResponses.
+			allResponses := make([]*http.Response, 0, b.N*numResponses)
+			benchRequests := make([][]*http.Request, b.N)
 
 			for i := 0; i < b.N; i++ {
-				var responses []*http.Response
-				for i := 0; i < numResponses; i++ {
-
+				for responseIdx := 0; responseIdx < numResponses; responseIdx++ {
 					var apiResp activeSeriesResponse
-					for k := 0; k < numSeries; k++ {
+					for seriesIdx := 0; seriesIdx < numSeries; seriesIdx++ {
 						apiResp.Data = append(apiResp.Data, labels.FromStrings(
-							"__name__", "m_"+fmt.Sprint(i),
-							"job", "prometheus"+fmt.Sprint(i),
-							"instance", "instance"+fmt.Sprint(i),
-							"series", fmt.Sprintf("series_%d", k),
+							"__name__", "m_"+fmt.Sprint(responseIdx),
+							"job", "prometheus"+fmt.Sprint(responseIdx),
+							"instance", "instance"+fmt.Sprint(responseIdx),
+							"series", fmt.Sprintf("series_%d", seriesIdx),
 						))
 					}
 					body, _ := json.Marshal(&apiResp)
 
-					responses = append(responses, &http.Response{
+					allResponses = append(allResponses, &http.Response{
 						StatusCode: http.StatusOK,
 						Header:     http.Header{},
 						Body:       io.NopCloser(bytes.NewReader(body)),
 					})
 				}
-				benchResponses[i] = responses
+				benchRequests[i] = shardRequests(context.Background(), numResponses)
 			}
 
-			s := newShardActiveSeriesMiddleware(nil, mockLimits{}, log.NewNopLogger()).(*shardActiveSeriesMiddleware)
+			s := newShardActiveSeriesMiddleware(upstreamServingResponses(allResponses), 0, mockLimits{}, log.NewNopLogger()).(*shardActiveSeriesMiddleware)
 
 			b.ResetTimer()
 			b.ReportAllocs()
 
 			for i := 0; i < b.N; i++ {
-				resp := s.mergeResponses(context.Background(), benchResponses[i], encoding)
+				resp, err := s.mergeResponses(context.Background(), benchRequests[i], encoding)
+				require.NoError(b, err)
 
 				_, _ = io.Copy(io.Discard, resp.Body)
 				_ = resp.Body.Close()
@@ -532,4 +602,22 @@ type result struct {
 	Data   []labels.Labels `json:"data"`
 	Status string          `json:"status,omitempty"`
 	Error  string          `json:"error,omitempty"`
+}
+
+// upstreamServingResponses returns a RoundTripper that hands out the given
+// responses, one per request in arbitrary order, letting mergeResponses tests
+// drive the merge from pre-built shard responses.
+func upstreamServingResponses(responses []*http.Response) http.RoundTripper {
+	var idx atomic.Int64
+	return RoundTripFunc(func(*http.Request) (*http.Response, error) {
+		return responses[idx.Inc()-1], nil
+	})
+}
+
+func shardRequests(ctx context.Context, n int) []*http.Request {
+	reqs := make([]*http.Request, n)
+	for i := range reqs {
+		reqs[i], _ = http.NewRequestWithContext(ctx, http.MethodGet, "/", http.NoBody)
+	}
+	return reqs
 }

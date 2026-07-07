@@ -601,6 +601,7 @@
   "query-frontend.max-retries-per-request": 5,
   "query-frontend.not-running-timeout": 2000000000,
   "query-frontend.query-sharding-target-series-per-shard": 0,
+  "query-frontend.active-series-max-shard-concurrency": 0,
   "query-frontend.extra-propagated-headers": "",
   "query-frontend.query-result-response-format": "protobuf",
   "query-frontend.client-cluster-validation.label": "",

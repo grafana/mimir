@@ -16,7 +16,6 @@ import (
 	"github.com/golang/snappy"
 	jsoniter "github.com/json-iterator/go"
 	"github.com/pkg/errors"
-	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/mimir/pkg/cardinality"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
@@ -26,11 +25,12 @@ type shardActiveNativeHistogramMetricsMiddleware struct {
 	shardBySeriesBase
 }
 
-func newShardActiveNativeHistogramMetricsMiddleware(upstream http.RoundTripper, limits Limits, logger log.Logger) http.RoundTripper {
+func newShardActiveNativeHistogramMetricsMiddleware(upstream http.RoundTripper, maxConcurrency int, limits Limits, logger log.Logger) http.RoundTripper {
 	return &shardActiveNativeHistogramMetricsMiddleware{shardBySeriesBase{
-		upstream: upstream,
-		limits:   limits,
-		logger:   logger,
+		upstream:       upstream,
+		limits:         limits,
+		logger:         logger,
+		maxConcurrency: maxConcurrency,
 	}}
 }
 
@@ -46,7 +46,7 @@ func (s *shardActiveNativeHistogramMetricsMiddleware) RoundTrip(r *http.Request)
 	return resp, nil
 }
 
-func (s *shardActiveNativeHistogramMetricsMiddleware) mergeResponses(ctx context.Context, responses []*http.Response, encoding string) *http.Response {
+func (s *shardActiveNativeHistogramMetricsMiddleware) mergeResponses(ctx context.Context, reqs []*http.Request, encoding string) (*http.Response, error) {
 	mtx := sync.Mutex{}
 	metricIdx := make(map[string]int, 0)
 	metricBucketCount := make([]*cardinality.ActiveMetricWithBucketCount, 0)
@@ -73,70 +73,71 @@ func (s *shardActiveNativeHistogramMetricsMiddleware) mergeResponses(ctx context
 		}
 	}
 
-	g := new(errgroup.Group)
-	for _, res := range responses {
-		if res == nil {
-			continue
+	// Dispatch and decode are bounded together, so a large shard count is fanned
+	// out to the queriers only as decode slots free up. All shards must be merged
+	// before the result can be calculated, so this blocks until they complete.
+	err := s.processShardedRequests(ctx, reqs, func(reqCtx context.Context, resp *http.Response) error {
+		defer func(body io.ReadCloser) {
+			// drain body reader
+			_, _ = io.Copy(io.Discard, body)
+			_ = body.Close()
+		}(resp.Body)
+
+		bufPtr := jsoniterBufferPool.Get().(*[]byte)
+		defer jsoniterBufferPool.Put(bufPtr)
+
+		it := jsoniter.ConfigFastest.BorrowIterator(*bufPtr)
+		it.Reset(resp.Body)
+		defer func() {
+			jsoniter.ConfigFastest.ReturnIterator(it)
+		}()
+
+		// Iterate over fields until we find data or error fields
+		foundDataField := false
+		for it.Error == nil {
+			field := it.ReadObject()
+			if field == "error" {
+				return fmt.Errorf("error in partial response: %s", it.ReadString())
+			}
+			if field == "data" {
+				foundDataField = true
+				break
+			}
+			// If the field is neither data nor error, we skip it.
+			it.ReadAny()
 		}
-		r := res
-		g.Go(func() error {
-			defer func(body io.ReadCloser) {
-				// drain body reader
-				_, _ = io.Copy(io.Discard, body)
-				_ = body.Close()
-			}(r.Body)
+		if !foundDataField {
+			return fmt.Errorf("expected data field at top level, found %s", it.CurrentBuffer())
+		}
 
-			bufPtr := jsoniterBufferPool.Get().(*[]byte)
-			defer jsoniterBufferPool.Put(bufPtr)
+		if it.WhatIsNext() != jsoniter.ArrayValue {
+			err := errors.New("expected data field to contain an array")
+			return err
+		}
 
-			it := jsoniter.ConfigFastest.BorrowIterator(*bufPtr)
-			it.Reset(r.Body)
-			defer func() {
-				jsoniter.ConfigFastest.ReturnIterator(it)
-			}()
-
-			// Iterate over fields until we find data or error fields
-			foundDataField := false
-			for it.Error == nil {
-				field := it.ReadObject()
-				if field == "error" {
-					return fmt.Errorf("error in partial response: %s", it.ReadString())
+		for it.ReadArray() {
+			if err := reqCtx.Err(); err != nil {
+				if cause := context.Cause(reqCtx); cause != nil {
+					return fmt.Errorf("aborted streaming because context was cancelled: %w", cause)
 				}
-				if field == "data" {
-					foundDataField = true
-					break
-				}
-				// If the field is neither data nor error, we skip it.
-				it.ReadAny()
-			}
-			if !foundDataField {
-				return fmt.Errorf("expected data field at top level, found %s", it.CurrentBuffer())
+				return reqCtx.Err()
 			}
 
-			if it.WhatIsNext() != jsoniter.ArrayValue {
-				err := errors.New("expected data field to contain an array")
-				return err
-			}
+			item := cardinality.ActiveMetricWithBucketCount{}
+			it.ReadVal(&item)
+			updateMetric(&item)
+		}
 
-			for it.ReadArray() {
-				if err := ctx.Err(); err != nil {
-					if cause := context.Cause(ctx); cause != nil {
-						return fmt.Errorf("aborted streaming because context was cancelled: %w", cause)
-					}
-					return ctx.Err()
-				}
+		return it.Error
+	})
 
-				item := cardinality.ActiveMetricWithBucketCount{}
-				it.ReadVal(&item)
-				updateMetric(&item)
-			}
-
-			return it.Error
-		})
+	// Dispatch and non-OK status errors fail the whole request so
+	// shardBySeriesSelector can map them to an HTTP status. Errors from decoding a
+	// successful response are embedded in the body below.
+	var processingErr mergeShardResponseError
+	if err != nil && !errors.As(err, &processingErr) {
+		return nil, err
 	}
-
-	// Need to wait for all shards to be able to calculate the end result.
-	err := g.Wait()
 
 	merged := cardinality.ActiveNativeHistogramMetricsResponse{}
 	resp := &http.Response{StatusCode: http.StatusInternalServerError, Header: http.Header{}}
@@ -169,5 +170,5 @@ func (s *shardActiveNativeHistogramMetricsMiddleware) mergeResponses(ctx context
 	}
 
 	resp.Body = io.NopCloser(bytes.NewReader(body))
-	return resp
+	return resp, nil
 }

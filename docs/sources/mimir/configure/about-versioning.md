@@ -232,6 +232,7 @@ The following features are currently experimental:
   - Lower TTL for cache entries overlapping the out-of-order samples ingestion window (re-using `-ingester.out-of-order-window` from ingesters)
   - Sharding of active series queries (`-query-frontend.shard-active-series-queries`)
   - Server-side write timeout for responses to active series requests (`-query-frontend.active-series-write-timeout`)
+  - Bounding the concurrency of sharded active series requests (`-query-frontend.active-series-max-shard-concurrency`)
   - Blocking HTTP requests on a per-tenant basis (configured with the `blocked_requests` limit)
   - Spinning off (as actual range queries) subqueries from instant queries (`-query-frontend.subquery-spin-off-enabled` and the `subquery_spin_off_enabled` per-tenant limit)
   - Support for cluster validation via `-query-frontend.client-cluster-validation.label` or `-common.client-cluster-validation.label`.
