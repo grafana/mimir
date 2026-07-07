@@ -15,7 +15,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
+	"testing/synctest"
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/user"
@@ -433,46 +433,65 @@ func Test_shardActiveSeriesMiddleware_RoundTrip_maxConcurrency(t *testing.T) {
 	const shardCount = 32
 	const maxConcurrency = 2
 
-	upstream := RoundTripFunc(func(r *http.Request) (*http.Response, error) {
-		require.NoError(t, r.ParseForm())
-		req, err := cardinality.DecodeActiveSeriesRequestFromValues(r.Form)
-		require.NoError(t, err)
-		shard, _, err := sharding.ShardFromMatchers(req.Matchers)
-		require.NoError(t, err)
-		require.NotNil(t, shard)
+	synctest.Test(t, func(t *testing.T) {
+		gate := make(chan struct{})
+		var inFlight atomic.Int32
+		upstream := RoundTripFunc(func(r *http.Request) (*http.Response, error) {
+			inFlight.Inc()
+			defer inFlight.Dec()
+			<-gate
 
-		resp := fmt.Sprintf(`{"data": [{"__name__": "metric-%d"}]}`, shard.ShardIndex)
-		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(resp))}, nil
+			require.NoError(t, r.ParseForm())
+			req, err := cardinality.DecodeActiveSeriesRequestFromValues(r.Form)
+			require.NoError(t, err)
+			shard, _, err := sharding.ShardFromMatchers(req.Matchers)
+			require.NoError(t, err)
+			require.NotNil(t, shard)
+
+			resp := fmt.Sprintf(`{"data": [{"__name__": "metric-%d"}]}`, shard.ShardIndex)
+			return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(resp))}, nil
+		})
+
+		s := newShardActiveSeriesMiddleware(
+			upstream,
+			maxConcurrency,
+			mockLimits{maxShardedQueries: shardCount, totalShards: shardCount},
+			log.NewNopLogger(),
+		)
+
+		req := httptest.NewRequest("POST", "/active_series", strings.NewReader(`selector={__name__=~"metric-.*"}`))
+		req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+		req = req.WithContext(user.InjectOrgID(t.Context(), "test"))
+
+		var res result
+		var roundTripErr error
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			resp, err := s.RoundTrip(req)
+			if err != nil {
+				roundTripErr = err
+				return
+			}
+			defer resp.Body.Close()
+			roundTripErr = json.NewDecoder(resp.Body).Decode(&res)
+		}()
+
+		for remaining := shardCount; remaining > 0; remaining -= maxConcurrency {
+			synctest.Wait()
+
+			want := min(maxConcurrency, remaining)
+			require.Equal(t, int32(want), inFlight.Load(), "limiter admitted the wrong number of concurrent sub-requests")
+
+			for range want {
+				gate <- struct{}{}
+			}
+		}
+
+		<-done
+		require.NoError(t, roundTripErr)
+		require.Len(t, res.Data, shardCount)
 	})
-
-	s := newShardActiveSeriesMiddleware(
-		upstream,
-		maxConcurrency,
-		mockLimits{maxShardedQueries: shardCount, totalShards: shardCount},
-		log.NewNopLogger(),
-	)
-
-	req := httptest.NewRequest("POST", "/active_series", strings.NewReader(`selector={__name__=~"metric-.*"}`))
-	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
-	req = req.WithContext(user.InjectOrgID(t.Context(), "test"))
-
-	done := make(chan struct{})
-	var res result
-	go func() {
-		defer close(done)
-		resp, err := s.RoundTrip(req)
-		require.NoError(t, err)
-		defer resp.Body.Close()
-		require.NoError(t, json.NewDecoder(resp.Body).Decode(&res))
-	}()
-
-	select {
-	case <-done:
-	case <-time.After(30 * time.Second):
-		t.Fatal("timed out waiting for RoundTrip: the concurrency-limited merge likely deadlocked")
-	}
-
-	require.Len(t, res.Data, shardCount)
 }
 
 func Test_shardActiveSeriesMiddleware_mergeResponse_contextCancellation(t *testing.T) {
