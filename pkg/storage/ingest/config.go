@@ -103,6 +103,10 @@ func (cfg *Config) Validate() error {
 		return err
 	}
 
+	if err := cfg.OrderedConsumption.Validate(); err != nil {
+		return err
+	}
+
 	return nil
 }
 

@@ -50,6 +50,22 @@ func (cfg *OrderedConsumptionConfig) RegisterFlagsWithPrefix(prefix string, f *f
 	f.IntVar(&cfg.InputBufferSize, prefix+"input-buffer-size", 0, "Buffer size of the channel into which the per-cluster consumers submit records. When 0, defaults to 2x max-batch-records.")
 }
 
+var (
+	ErrInvalidOrderedConsumptionMaxBatchRecords = errors.New("ingest-storage.ordered-consumption.max-batch-records must be greater than 0")
+	ErrInvalidOrderedConsumptionMaxBatchWait    = errors.New("ingest-storage.ordered-consumption.max-batch-wait must be greater than 0")
+)
+
+// Validate returns an error if the config is invalid.
+func (cfg *OrderedConsumptionConfig) Validate() error {
+	if cfg.MaxBatchRecords <= 0 {
+		return ErrInvalidOrderedConsumptionMaxBatchRecords
+	}
+	if cfg.MaxBatchWait <= 0 {
+		return ErrInvalidOrderedConsumptionMaxBatchWait
+	}
+	return nil
+}
+
 type HeapMergerMetrics struct {
 	outOfOrderEmits   prometheus.Counter
 	batchFlushLatency prometheus.Histogram
@@ -132,12 +148,6 @@ type HeapMerger struct {
 // NewHeapMerger constructs a HeapMerger that forwards merged batches via consumers produced by
 // consumerFactory.
 func NewHeapMerger(cfg OrderedConsumptionConfig, consumerFactory consumerFactory, metrics *HeapMergerMetrics, logger log.Logger) *HeapMerger {
-	if cfg.MaxBatchRecords <= 0 {
-		cfg.MaxBatchRecords = 1024
-	}
-	if cfg.MaxBatchWait <= 0 {
-		cfg.MaxBatchWait = 50 * time.Millisecond
-	}
 	if cfg.InputBufferSize <= 0 {
 		cfg.InputBufferSize = 2 * cfg.MaxBatchRecords
 	}

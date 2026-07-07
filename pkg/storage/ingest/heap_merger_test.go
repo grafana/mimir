@@ -21,6 +21,23 @@ import (
 	"github.com/twmb/franz-go/pkg/kgo"
 )
 
+func TestOrderedConsumptionConfig_Validate(t *testing.T) {
+	valid := OrderedConsumptionConfig{MaxBatchRecords: 1024, MaxBatchWait: 50 * time.Millisecond}
+	require.NoError(t, valid.Validate())
+
+	t.Run("rejects non-positive max-batch-records", func(t *testing.T) {
+		cfg := valid
+		cfg.MaxBatchRecords = 0
+		require.ErrorIs(t, cfg.Validate(), ErrInvalidOrderedConsumptionMaxBatchRecords)
+	})
+
+	t.Run("rejects non-positive max-batch-wait", func(t *testing.T) {
+		cfg := valid
+		cfg.MaxBatchWait = 0
+		require.ErrorIs(t, cfg.Validate(), ErrInvalidOrderedConsumptionMaxBatchWait)
+	})
+}
+
 func TestRecordHeap_Ordering(t *testing.T) {
 	// Asserts records pop in ascending Timestamp order.
 	t.Run("orders by ascending timestamp", func(t *testing.T) {
