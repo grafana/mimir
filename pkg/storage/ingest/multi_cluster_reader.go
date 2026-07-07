@@ -27,9 +27,9 @@ import (
 // Each per-cluster reader has its own Kafka connection, consumer group, and offset file; offsets are not
 // shared across clusters because each cluster has an independent offset space.
 //
-// Cross-cluster ordering depends on whether heap merging is enabled:
-//   - When disabled, each cluster's records are pushed independently and cross-cluster ordering relies
-//     entirely on the TSDB out-of-order window.
+// Cross-cluster ordering depends on whether ordered consumption is enabled:
+//   - When disabled, each cluster's records are pushed independently, so there's no cross-cluster ordering
+//     guarantee.
 //   - When enabled, every cluster's records are funneled through a shared HeapMerger that orders them by
 //     Kafka record timestamp (best effort) before forwarding to the Pusher. A per-cluster reader only
 //     commits its offset once the merger has pushed its records, preserving at-least-once delivery.
@@ -56,8 +56,8 @@ type MultiClusterPartitionReader struct {
 // Kafka cluster so each cluster tracks offsets independently.
 //
 // When orderedCfg.Enabled is set, records from every cluster are consumed in best-effort Kafka-record-timestamp
-// order before being pushed; otherwise each cluster pushes independently and cross-cluster ordering relies
-// on the TSDB out-of-order window.
+// order before being pushed; otherwise each cluster pushes independently, so there's no cross-cluster
+// ordering guarantee.
 func NewMultiClusterPartitionReader(
 	clusterConfigs []KafkaConfig,
 	orderedCfg OrderedConsumptionConfig,
@@ -75,10 +75,10 @@ func NewMultiClusterPartitionReader(
 		return nil, fmt.Errorf("the offset file path %q must contain the %q placeholder", offsetFilePath, compartments.WriteCompartmentIDPlaceholder)
 	}
 
-	// When heap merging is enabled, all clusters feed a shared HeapMerger whose downstream consumer is a
-	// PusherConsumer that turns the merged record stream into per-tenant WriteRequests. When disabled,
-	// each per-cluster reader gets its own PusherConsumer and pushes independently (cross-cluster
-	// ordering then relies on the TSDB out-of-order window).
+	// When ordered consumption is enabled, all clusters feed a shared HeapMerger whose downstream consumer
+	// is a PusherConsumer that turns the merged record stream into per-tenant WriteRequests. When disabled,
+	// each per-cluster reader gets its own PusherConsumer and pushes independently (no cross-cluster
+	// ordering guarantee).
 	//
 	// Merging is skipped when there's a single Kafka cluster: the heap only ever holds that one cluster's
 	// records so it can't reorder anything, and routing them through the merger would add its batching

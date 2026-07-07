@@ -5701,9 +5701,9 @@ migration:
 ordered_consumption:
   # (experimental) Whether records from all write compartments' Kafka clusters
   # are consumed in best-effort Kafka-record-timestamp order before being
-  # pushed. When disabled, each Kafka cluster is consumed independently and
-  # cross-cluster ordering relies on the TSDB out-of-order window. Only takes
-  # effect when compartments are enabled with more than one write compartment.
+  # pushed. When disabled, each Kafka cluster is consumed independently, so
+  # there's no cross-cluster ordering guarantee. Only takes effect when
+  # compartments are enabled with more than one write compartment.
   # CLI flag: -ingest-storage.ordered-consumption.enabled
   [enabled: <boolean> | default = false]
 

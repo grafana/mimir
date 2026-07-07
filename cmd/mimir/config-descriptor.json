@@ -9704,7 +9704,7 @@
               "kind": "field",
               "name": "enabled",
               "required": false,
-              "desc": "Whether records from all write compartments' Kafka clusters are consumed in best-effort Kafka-record-timestamp order before being pushed. When disabled, each Kafka cluster is consumed independently and cross-cluster ordering relies on the TSDB out-of-order window. Only takes effect when compartments are enabled with more than one write compartment.",
+              "desc": "Whether records from all write compartments' Kafka clusters are consumed in best-effort Kafka-record-timestamp order before being pushed. When disabled, each Kafka cluster is consumed independently, so there's no cross-cluster ordering guarantee. Only takes effect when compartments are enabled with more than one write compartment.",
               "fieldValue": null,
               "fieldDefaultValue": false,
               "fieldFlag": "ingest-storage.ordered-consumption.enabled",

@@ -24,8 +24,8 @@ import (
 // before being pushed. It's implemented by the HeapMerger.
 type OrderedConsumptionConfig struct {
 	// Enabled controls whether records from all Kafka clusters are consumed in best-effort timestamp order
-	// before being pushed downstream. When disabled, each cluster's records are pushed independently and
-	// cross-cluster ordering relies entirely on the TSDB out-of-order window.
+	// before being pushed downstream. When disabled, each cluster's records are pushed independently, so
+	// there's no cross-cluster ordering guarantee.
 	Enabled bool `yaml:"enabled" category:"experimental"`
 
 	// MaxBatchRecords is the soft upper bound on records buffered before forcing a flush. A larger value
@@ -44,7 +44,7 @@ type OrderedConsumptionConfig struct {
 
 // RegisterFlagsWithPrefix registers OrderedConsumptionConfig flags under the given prefix.
 func (cfg *OrderedConsumptionConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
-	f.BoolVar(&cfg.Enabled, prefix+"enabled", false, "Whether records from all write compartments' Kafka clusters are consumed in best-effort Kafka-record-timestamp order before being pushed. When disabled, each Kafka cluster is consumed independently and cross-cluster ordering relies on the TSDB out-of-order window. Only takes effect when compartments are enabled with more than one write compartment.")
+	f.BoolVar(&cfg.Enabled, prefix+"enabled", false, "Whether records from all write compartments' Kafka clusters are consumed in best-effort Kafka-record-timestamp order before being pushed. When disabled, each Kafka cluster is consumed independently, so there's no cross-cluster ordering guarantee. Only takes effect when compartments are enabled with more than one write compartment.")
 	f.IntVar(&cfg.MaxBatchRecords, prefix+"max-batch-records", 1024, "Soft upper bound on records buffered before forcing a flush. Larger values give more cross-cluster mixing (better ordering) at the cost of memory and per-flush latency.")
 	f.DurationVar(&cfg.MaxBatchWait, prefix+"max-batch-wait", 50*time.Millisecond, "Maximum time records sit buffered before being flushed even if max-batch-records has not been reached.")
 	f.IntVar(&cfg.InputBufferSize, prefix+"input-buffer-size", 0, "Buffer size of the channel into which the per-cluster consumers submit records. When 0, defaults to 2x max-batch-records.")

@@ -1652,7 +1652,7 @@ Usage of ./cmd/mimir/mimir:
   -ingest-storage.migration.ingest-storage-max-wait-time duration
     	The maximum time a write request that goes through the ingest storage waits before it times out. Set to `0` to disable the timeout.
   -ingest-storage.ordered-consumption.enabled
-    	[experimental] Whether records from all write compartments' Kafka clusters are consumed in best-effort Kafka-record-timestamp order before being pushed. When disabled, each Kafka cluster is consumed independently and cross-cluster ordering relies on the TSDB out-of-order window. Only takes effect when compartments are enabled with more than one write compartment.
+    	[experimental] Whether records from all write compartments' Kafka clusters are consumed in best-effort Kafka-record-timestamp order before being pushed. When disabled, each Kafka cluster is consumed independently, so there's no cross-cluster ordering guarantee. Only takes effect when compartments are enabled with more than one write compartment.
   -ingest-storage.ordered-consumption.input-buffer-size int
     	[experimental] Buffer size of the channel into which the per-cluster consumers submit records. When 0, defaults to 2x max-batch-records.
   -ingest-storage.ordered-consumption.max-batch-records int
