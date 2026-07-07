@@ -106,6 +106,42 @@ func TestEndToEnd(t *testing.T) {
 			},
 			expectedCacheEntries: 3, // 0-20h, 24-44h, 48h (single step)
 		},
+		"query dividing by a step-invariant scalar expression": {
+			// Regression test for https://github.com/grafana/mimir/pull/15787: a step-invariant scalar
+			// subexpression (here "1024^3") was wrapped in a Duplicate node when splitting range queries,
+			// but Duplicate only supports instant/range vector operators, so the query failed to prepare with
+			// "expected InstantVectorOperator or RangeVectorOperator as child of Duplicate, got *scalars.ScalarConstant".
+			// Note that "1024^3" (2^30) is a power of two, so dividing the integer metric values by it is exact in float64.
+
+			expr:  "metric / 1024^3",
+			start: timeZero,
+			end:   timeZero.Add(48 * time.Hour),
+			step:  4 * time.Hour,
+
+			expectedResult: promql.Result{
+				Value: promql.Matrix{
+					{
+						Metric: labels.EmptyLabels(), // Division by a scalar drops the __name__ label.
+						Floats: []promql.FPoint{
+							{T: 0, F: 1.0 / 1073741824},
+							{T: 4 * millisecondsInHour, F: 5.0 / 1073741824},
+							{T: 8 * millisecondsInHour, F: 9.0 / 1073741824},
+							{T: 12 * millisecondsInHour, F: 13.0 / 1073741824},
+							{T: 16 * millisecondsInHour, F: 17.0 / 1073741824},
+							{T: 20 * millisecondsInHour, F: 21.0 / 1073741824},
+							{T: 24 * millisecondsInHour, F: 25.0 / 1073741824},
+							{T: 28 * millisecondsInHour, F: 29.0 / 1073741824},
+							{T: 32 * millisecondsInHour, F: 33.0 / 1073741824},
+							{T: 36 * millisecondsInHour, F: 37.0 / 1073741824},
+							{T: 40 * millisecondsInHour, F: 41.0 / 1073741824},
+							{T: 44 * millisecondsInHour, F: 45.0 / 1073741824},
+							{T: 48 * millisecondsInHour, F: 49.0 / 1073741824},
+						},
+					},
+				},
+			},
+			expectedCacheEntries: 3, // 0-20h, 24-44h, 48h (single step)
+		},
 	}
 
 	for name, testCase := range testCases {
