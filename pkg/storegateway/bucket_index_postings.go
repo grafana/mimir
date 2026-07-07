@@ -86,6 +86,7 @@ func newLazySubtractingPostingGroup(m *labels.Matcher) rawPostingGroup {
 func (g rawPostingGroup) toPostingGroup(ctx context.Context, r indexheader.Reader) (postingGroup, error) {
 	var (
 		keys      []labels.Label
+		offsets   []index.Range
 		totalSize int64
 	)
 	if g.isLazy {
@@ -98,13 +99,15 @@ func (g rawPostingGroup) toPostingGroup(ctx context.Context, r indexheader.Reade
 			return postingGroup{}, err
 		}
 		keys = make([]labels.Label, len(vals))
+		offsets = make([]index.Range, len(vals))
 		for i := range vals {
 			keys[i] = labels.Label{Name: g.labelName, Value: vals[i].LabelValue}
+			offsets[i] = vals[i].Off
 			totalSize += vals[i].Off.End - vals[i].Off.Start
 		}
 	} else {
 		var err error
-		keys, totalSize, err = g.filterNonExistingKeys(ctx, r)
+		keys, offsets, totalSize, err = g.filterNonExistingKeys(ctx, r)
 		if err != nil {
 			return postingGroup{}, errors.Wrap(err, "filter posting keys")
 		}
@@ -114,16 +117,18 @@ func (g rawPostingGroup) toPostingGroup(ctx context.Context, r indexheader.Reade
 		isSubtract: g.isSubtract,
 		matcher:    g.matcher,
 		keys:       keys,
+		offsets:    offsets,
 		totalSize:  totalSize,
 	}, nil
 }
 
 // filterNonExistingKeys uses the indexheader.Reader to filter out any label values that do not exist in this index.
 // modifies the underlying keys slice of the group. Do not use the rawPostingGroup after calling toPostingGroup.
-func (g rawPostingGroup) filterNonExistingKeys(ctx context.Context, r indexheader.Reader) ([]labels.Label, int64, error) {
+func (g rawPostingGroup) filterNonExistingKeys(ctx context.Context, r indexheader.Reader) ([]labels.Label, []index.Range, int64, error) {
 	var (
 		writeIdx  int
 		totalSize int64
+		offsets   = make([]index.Range, 0, len(g.keys))
 	)
 	for _, l := range g.keys {
 		offset, err := r.PostingsOffset(ctx, l.Name, l.Value)
@@ -133,13 +138,14 @@ func (g rawPostingGroup) filterNonExistingKeys(ctx context.Context, r indexheade
 			// Continue so we overwrite it next time there's an existing value.
 			continue
 		} else if err != nil {
-			return nil, 0, err
+			return nil, nil, 0, err
 		}
 		g.keys[writeIdx] = l
 		writeIdx++
+		offsets = append(offsets, offset)
 		totalSize += offset.End - offset.Start
 	}
-	return g.keys[:writeIdx], totalSize, nil
+	return g.keys[:writeIdx], offsets, totalSize, nil
 }
 
 func toRawPostingGroup(m *labels.Matcher) rawPostingGroup {
@@ -198,6 +204,7 @@ type postingGroup struct {
 	isSubtract bool
 	matcher    *labels.Matcher
 	keys       []labels.Label
+	offsets    []index.Range
 
 	// totalSize is the size in bytes of all the posting lists for keys.
 	totalSize int64

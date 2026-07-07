@@ -536,7 +536,7 @@ func (b *TSDBBuilder) CompactAndUpload(ctx context.Context, uploadBlocks blockUp
 			}
 
 			if b.cfg.GenerateSparseIndexHeaders {
-				if err := b.buildSparseIndexHeaders(dbDir, localMetas); err != nil {
+				if err := b.buildSparseIndexHeaders(ctx, dbDir, localMetas); err != nil {
 					return err
 				}
 			}
@@ -654,9 +654,9 @@ func (u *userTSDB) compactBlocks(ctx context.Context, blockRange, maxTime int64,
 }
 
 // buildSparseIndexHeaders builds sparse index-headers for all blocks in the metas list in the directory.
-func (b *TSDBBuilder) buildSparseIndexHeaders(dbDir string, metas []tsdb.BlockMeta) error {
+func (b *TSDBBuilder) buildSparseIndexHeaders(ctx context.Context, dbDir string, metas []tsdb.BlockMeta) error {
 	for _, m := range metas {
-		if err := b.buildSparseIndexHeader(dbDir, m.ULID); err != nil {
+		if err := b.buildSparseIndexHeader(ctx, dbDir, m.ULID); err != nil {
 			return err
 		}
 	}
@@ -664,12 +664,12 @@ func (b *TSDBBuilder) buildSparseIndexHeaders(dbDir string, metas []tsdb.BlockMe
 }
 
 // prepareSparseIndexHeader builds a sparse index-header for a single block.
-func (b *TSDBBuilder) buildSparseIndexHeader(dbDir string, blockID ulid.ULID) (err error) {
+func (b *TSDBBuilder) buildSparseIndexHeader(ctx context.Context, dbDir string, blockID ulid.ULID) (err error) {
 	ll := log.With(b.logger, "id", blockID)
 	start := time.Now()
 
 	if err := indexheader.BuildAndWriteSparseHeaderFromTSDBIndex(
-		blockID, dbDir, b.cfg.BlocksStorage.BucketStore.PostingOffsetsInMemSampling, ll); err != nil {
+		ctx, blockID, dbDir, b.cfg.BlocksStorage.BucketStore.PostingOffsetsInMemSampling, ll); err != nil {
 		return fmt.Errorf("failed to build and write to disk in protobuf format: %w", err)
 	}
 

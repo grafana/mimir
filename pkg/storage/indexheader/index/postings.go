@@ -41,7 +41,7 @@ type PostingsOffsetsTable interface {
 	// The Start is inclusive and is the byte offset of the number_of_entries field of a posting list.
 	// The End is exclusive and is typically the byte offset of the CRC32 field.
 	// The End might be bigger than the actual posting ending, but not larger than the whole index file.
-	PostingsOffset(name string, value string) (rng index.Range, found bool, err error)
+	PostingsOffset(ctx context.Context, name string, value string) (rng index.Range, found bool, err error)
 
 	// LabelValuesOffsets returns all postings lists for the label named name that match filter and have the prefix provided.
 	// The ranges of each posting list are the same as returned by PostingsOffset.
@@ -87,7 +87,7 @@ type PostingsOffsetsTableV2 struct {
 	tableOffset   int
 }
 
-func (t *PostingsOffsetsTableV2) PostingsOffset(name string, value string) (r index.Range, found bool, err error) {
+func (t *PostingsOffsetsTableV2) PostingsOffset(ctx context.Context, name string, value string) (rng index.Range, found bool, err error) {
 	e, ok := t.SparsePostingsOffsets[name]
 	if !ok {
 		return index.Range{}, false, nil
@@ -125,9 +125,9 @@ func (t *PostingsOffsetsTableV2) PostingsOffset(name string, value string) (r in
 		}
 		// At this point we know that our value is somewhere between the i-th offset and the next one;
 		// we shouldn't need to read/cache bucket ops beyond that.
-		d = bf.NewDecbufInSection(t.tableOffset, e.SparseTableOffsets[i].Offset, sectionEndOffset)
+		d = bf.NewDecbufInSection(ctx, t.tableOffset, e.SparseTableOffsets[i].Offset, sectionEndOffset)
 	} else {
-		d = t.decbufFactory.NewDecbufAtUnchecked(t.tableOffset)
+		d = t.decbufFactory.NewDecbufAtUnchecked(ctx, t.tableOffset)
 		d.ResetAt(e.SparseTableOffsets[i].Offset)
 	}
 	defer runutil.CloseWithErrCapture(&err, &d, "get sparsePostingsOffsets SparseTableOffsets")
@@ -217,11 +217,11 @@ func (t *PostingsOffsetsTableV2) LabelValuesOffsets(ctx context.Context, name, p
 		}
 		// For the BucketDecbufFactory, we only read the section we care about to optimize
 		// the size of cached GetRange bucket ops.
-		d = bf.NewDecbufInSection(t.tableOffset, e.SparseTableOffsets[offsetsStart].Offset, sectionEndOffset)
+		d = bf.NewDecbufInSection(ctx, t.tableOffset, e.SparseTableOffsets[offsetsStart].Offset, sectionEndOffset)
 	} else {
 		// Don't Crc32 the entire postings offset table, this is very slow
 		// so hope any issues were caught at startup.
-		d = t.decbufFactory.NewDecbufAtUnchecked(t.tableOffset)
+		d = t.decbufFactory.NewDecbufAtUnchecked(ctx, t.tableOffset)
 		d.ResetAt(e.SparseTableOffsets[offsetsStart].Offset)
 	}
 	defer runutil.CloseWithErrCapture(&err, &d, "get label values")

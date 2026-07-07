@@ -56,7 +56,7 @@ func TestPostingsOffsetsTableV2_PostingsOffset(t *testing.T) {
 	}
 
 	for factoryName, factory := range factories {
-		sparseOffsets, err := SparseValuesFromPostingsOffsetsTable(factory, tableStart, postingsListEnd, sparseSampleFactor, true)
+		sparseOffsets, err := SparseValuesFromPostingsOffsetsTable(context.Background(), factory, tableStart, postingsListEnd, sparseSampleFactor, true)
 		require.NoError(t, err)
 
 		tbl, err := NewPostingsOffsetsTableReader(index.FormatV2, factory, tableStart, sparseOffsets, sparseSampleFactor)
@@ -64,7 +64,7 @@ func TestPostingsOffsetsTableV2_PostingsOffset(t *testing.T) {
 
 		for _, tt := range tests {
 			t.Run(fmt.Sprintf("DecbufFactory=%s/%s=%s", factoryName, tt.labelName, tt.labelValue), func(t *testing.T) {
-				rng, found, err := tbl.PostingsOffset(tt.labelName, tt.labelValue)
+				rng, found, err := tbl.PostingsOffset(context.Background(), tt.labelName, tt.labelValue)
 				require.NoError(t, err)
 				require.Equal(t, tt.found, found)
 				if tt.found {
@@ -151,7 +151,7 @@ func TestPostingsOffsetsTableV2_LabelValuesOffsets(t *testing.T) {
 	}
 
 	for factoryName, factory := range factories {
-		sparseOffsets, err := SparseValuesFromPostingsOffsetsTable(factory, tableStart, postingsListEnd, sparseSampleFactor, true)
+		sparseOffsets, err := SparseValuesFromPostingsOffsetsTable(context.Background(), factory, tableStart, postingsListEnd, sparseSampleFactor, true)
 		require.NoError(t, err)
 
 		tbl, err := NewPostingsOffsetsTableReader(index.FormatV2, factory, tableStart, sparseOffsets, sparseSampleFactor)
@@ -184,7 +184,7 @@ func setupFactoriesWithPostingsOffsetsTable(t *testing.T, postingsOffsetsEncbuf 
 
 	reg := prometheus.WrapRegistererWithPrefix("indexheader_", prometheus.NewPedanticRegistry())
 	diskDecbufFactory := streamencoding.NewFilePoolDecbufFactory(filePath, 0, filepool.NewFilePoolMetrics(reg))
-	bucketDecbufFactory := streamencoding.NewBucketDecbufFactory(context.Background(), instBkt, "index")
+	bucketDecbufFactory := streamencoding.NewBucketDecbufFactory(instBkt, "index")
 
 	return map[string]streamencoding.DecbufFactory{
 		"disk":   diskDecbufFactory,
