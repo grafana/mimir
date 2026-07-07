@@ -78,6 +78,10 @@ func (d *Duplicate) MinimumRequiredPlanVersion(timeRange types.QueryTimeRange) (
 		return planning.QueryPlanV11, nil
 	}
 
+	if innerResultType == parser.ValueTypeScalar {
+		return planning.QueryPlanV19, nil
+	}
+
 	return planning.QueryPlanVersionZero, nil
 }
 
