@@ -13,6 +13,9 @@ const ContentTypeRemoteReadStreamedChunks = "application/x-streamed-protobuf; pr
 // bytes of the series' JSON object, with no outer envelope.
 const ContentTypeActiveSeriesFramed = "application/vnd.mimir.active-series-framed"
 
+// MaxActiveSeriesFrameSize guards against a corrupt length prefix causing an unbounded allocation.
+const MaxActiveSeriesFrameSize = 16 * 1024 * 1024 // 16MB
+
 type LabelValuesCardinalityResponse struct {
 	SeriesCountTotal uint64                  `json:"series_count_total"`
 	Labels           []LabelNamesCardinality `json:"labels"`

@@ -166,6 +166,12 @@ func writeActiveSeriesFramedResponse(w http.ResponseWriter, series []labels.Labe
 			}
 			return
 		}
+		if len(obj) > api.MaxActiveSeriesFrameSize {
+			if !wroteFrame {
+				http.Error(w, fmt.Sprintf("active series frame size %d exceeds maximum %d", len(obj), api.MaxActiveSeriesFrameSize), http.StatusInternalServerError)
+			}
+			return
+		}
 		n := binary.PutUvarint(lenBuf[:], uint64(len(obj)))
 		if _, err := w.Write(lenBuf[:n]); err != nil {
 			return

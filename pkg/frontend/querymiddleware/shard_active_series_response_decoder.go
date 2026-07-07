@@ -17,6 +17,8 @@ import (
 	"sync"
 	"unicode/utf16"
 	"unsafe"
+
+	querierapi "github.com/grafana/mimir/pkg/querier/api"
 )
 
 const (
@@ -25,9 +27,6 @@ const (
 	checkContextCancelledBytesInterval = 256
 
 	checkContextCancelledFramesInterval = 256
-
-	// maxActiveSeriesFrameSize guards against a corrupt length prefix causing an unbounded allocation.
-	maxActiveSeriesFrameSize = 16 * 1024 * 1024 // 16MB
 )
 
 var activeSeriesChunkBufferPool = sync.Pool{
@@ -249,9 +248,9 @@ func (d *shardActiveSeriesResponseDecoder) streamFramedData() error {
 			return d.err
 		}
 
-		if n > maxActiveSeriesFrameSize {
+		if n > querierapi.MaxActiveSeriesFrameSize {
 			reuseActiveSeriesDataStreamBuffer(cb)
-			d.stickError(fmt.Errorf("streamFramedData: series frame size %d exceeds maximum %d", n, maxActiveSeriesFrameSize))
+			d.stickError(fmt.Errorf("streamFramedData: series frame size %d exceeds maximum %d", n, querierapi.MaxActiveSeriesFrameSize))
 			return d.err
 		}
 
