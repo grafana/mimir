@@ -186,7 +186,7 @@ func (r *MultiClusterPartitionReader) running(ctx context.Context) error {
 	case <-ctx.Done():
 		return nil
 	case err := <-r.watcher.Chan():
-		return errors.Wrap(err, "a per-cluster partition reader failed")
+		return errors.Wrap(err, "a multi-cluster partition reader subservice failed")
 	}
 }
 
