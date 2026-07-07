@@ -22,19 +22,25 @@ import (
 )
 
 func TestOrderedConsumptionConfig_Validate(t *testing.T) {
-	valid := OrderedConsumptionConfig{MaxBatchRecords: 1024, MaxBatchWait: 50 * time.Millisecond}
+	valid := OrderedConsumptionConfig{Enabled: true, MaxBatchRecords: 1024, MaxBatchWait: 50 * time.Millisecond}
 	require.NoError(t, valid.Validate())
 
-	t.Run("rejects non-positive max-batch-records", func(t *testing.T) {
+	t.Run("rejects non-positive max-batch-records when enabled", func(t *testing.T) {
 		cfg := valid
 		cfg.MaxBatchRecords = 0
 		require.ErrorIs(t, cfg.Validate(), ErrInvalidOrderedConsumptionMaxBatchRecords)
 	})
 
-	t.Run("rejects non-positive max-batch-wait", func(t *testing.T) {
+	t.Run("rejects non-positive max-batch-wait when enabled", func(t *testing.T) {
 		cfg := valid
 		cfg.MaxBatchWait = 0
 		require.ErrorIs(t, cfg.Validate(), ErrInvalidOrderedConsumptionMaxBatchWait)
+	})
+
+	t.Run("skips batch tunable validation when disabled", func(t *testing.T) {
+		// A zero-valued (disabled) config must pass: the tunables are unused when the feature is off.
+		cfg := OrderedConsumptionConfig{}
+		require.NoError(t, cfg.Validate())
 	})
 }
 

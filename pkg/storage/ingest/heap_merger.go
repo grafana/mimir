@@ -55,8 +55,12 @@ var (
 	ErrInvalidOrderedConsumptionMaxBatchWait    = errors.New("ingest-storage.ordered-consumption.max-batch-wait must be greater than 0")
 )
 
-// Validate returns an error if the config is invalid.
+// Validate returns an error if the config is invalid. The batch tunables are only validated when the
+// feature is enabled, since they're unused otherwise.
 func (cfg *OrderedConsumptionConfig) Validate() error {
+	if !cfg.Enabled {
+		return nil
+	}
 	if cfg.MaxBatchRecords <= 0 {
 		return ErrInvalidOrderedConsumptionMaxBatchRecords
 	}
