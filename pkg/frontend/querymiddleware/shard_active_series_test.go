@@ -360,6 +360,84 @@ func Test_shardActiveSeriesMiddleware_RoundTrip(t *testing.T) {
 	}
 }
 
+func Test_shardBySeriesBase_cardinalityShardingMaxShardedQueries(t *testing.T) {
+	makeReq := func(shardCount int) *http.Request {
+		r := httptest.NewRequest("POST", "/active_series", strings.NewReader(`selector={__name__="metric"}`))
+		r.Header.Add("X-Scope-OrgID", "test")
+		r.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+		r.Header.Add(requestoptions.TotalShardsControlHeader, strconv.Itoa(shardCount))
+		return r.WithContext(user.InjectOrgID(r.Context(), "test"))
+	}
+
+	// return an empty but valid response for any requested shard.
+	upstream := RoundTripFunc(func(*http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{"data":[]}`))}, nil
+	})
+
+	middlewares := []struct {
+		name       string
+		middleware func(http.RoundTripper, Limits, log.Logger) http.RoundTripper
+	}{
+		{"active series", newShardActiveSeriesMiddleware},
+		{"active native histogram metrics", newShardActiveNativeHistogramMetricsMiddleware},
+	}
+
+	tests := []struct {
+		name                         string
+		maxShardedQueries            int
+		cardinalityMaxShardedQueries int
+		requestedShards              int
+		expectedErr                  string
+	}{
+		{
+			name:                         "falls back to QueryShardingMaxShardedQueries when cardinality limit is unset",
+			maxShardedQueries:            4,
+			cardinalityMaxShardedQueries: -1,
+			requestedShards:              8,
+			expectedErr:                  "shard count 8 exceeds allowed maximum (4)",
+		},
+		{
+			name:                         "cardinality limit overrides QueryShardingMaxShardedQueries when set",
+			maxShardedQueries:            128,
+			cardinalityMaxShardedQueries: 4,
+			requestedShards:              8,
+			expectedErr:                  "shard count 8 exceeds allowed maximum (4)",
+		},
+		{
+			name:                         "cardinality limit allows more shards than QueryShardingMaxShardedQueries",
+			maxShardedQueries:            4,
+			cardinalityMaxShardedQueries: 16,
+			requestedShards:              8,
+			expectedErr:                  "",
+		},
+	}
+
+	for _, mw := range middlewares {
+		for _, tt := range tests {
+			t.Run(mw.name+": "+tt.name, func(t *testing.T) {
+				s := mw.middleware(upstream, mockLimits{
+					totalShards:                  tt.requestedShards,
+					maxShardedQueries:            tt.maxShardedQueries,
+					cardinalityMaxShardedQueries: tt.cardinalityMaxShardedQueries,
+				}, log.NewNopLogger())
+
+				resp, err := s.RoundTrip(makeReq(tt.requestedShards))
+				if tt.expectedErr != "" {
+					require.Error(t, err)
+					assert.Equal(t, err.Error(), tt.expectedErr)
+					return
+				}
+
+				require.NoError(t, err)
+				require.NotNil(t, resp)
+				_, err = io.ReadAll(resp.Body)
+				assert.NoError(t, err)
+				assert.NoError(t, resp.Body.Close())
+			})
+		}
+	}
+}
+
 func Test_shardActiveSeriesMiddleware_RoundTrip_concurrent(t *testing.T) {
 	const shardCount = 4
 

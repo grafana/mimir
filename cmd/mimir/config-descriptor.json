@@ -6110,6 +6110,17 @@
         },
         {
           "kind": "field",
+          "name": "cardinality_sharding_max_sharded_queries",
+          "required": false,
+          "desc": "The max number of sharded queries that can be run for a cardinality (active series and active native histogram metrics) request. 0 to fall back to -query-frontend.query-sharding-max-sharded-queries.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "query-frontend.cardinality-sharding-max-sharded-queries",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "query_ingesters_within",
           "required": false,
           "desc": "Maximum lookback beyond which queries are not sent to ingester. 0 means all queries are sent to ingester.",

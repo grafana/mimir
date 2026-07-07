@@ -428,6 +428,7 @@
   "query-frontend.query-sharding-total-shards": 16,
   "query-frontend.query-sharding-max-sharded-queries": 128,
   "query-frontend.query-sharding-max-regexp-size-bytes": 4096,
+  "query-frontend.cardinality-sharding-max-sharded-queries": 0,
   "querier.query-ingesters-within": 46800000000000,
   "query-frontend.max-total-query-length": 0,
   "query-frontend.results-cache-ttl": 604800000000000,
