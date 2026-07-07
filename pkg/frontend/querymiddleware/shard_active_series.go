@@ -99,14 +99,7 @@ func (s *shardActiveSeriesMiddleware) mergeResponses(ctx context.Context, reqs [
 				reuseShardActiveSeriesResponseDecoder(dec)
 			}()
 
-			if responseIsActiveSeriesFramed(resp) {
-				return dec.streamFramedData()
-			}
-
-			if err := dec.decode(); err != nil {
-				return err
-			}
-			return dec.streamData()
+			return dec.stream(responseIsActiveSeriesFramed(resp))
 		})
 		close(streamCh)
 	}()

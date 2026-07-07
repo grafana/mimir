@@ -96,6 +96,16 @@ func (d *shardActiveSeriesResponseDecoder) close() {
 	_ = d.rc.Close()
 }
 
+func (d *shardActiveSeriesResponseDecoder) stream(framed bool) error {
+	if framed {
+		return d.streamFramedData()
+	}
+	if err := d.decode(); err != nil {
+		return err
+	}
+	return d.streamData()
+}
+
 func (d *shardActiveSeriesResponseDecoder) decode() error {
 	c := d.nextToken()
 	if d.err != nil {
