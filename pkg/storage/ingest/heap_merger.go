@@ -204,17 +204,20 @@ func (m *HeapMerger) run(ctx context.Context) error {
 		if err != nil {
 			level.Warn(m.logger).Log("msg", "downstream consumer returned error from merged batch", "records", len(batch), "err", err)
 		} else {
-			// Only count successful pushes; failures will be retried by the upstream readers.
-			m.pushedRecords.Add(float64(len(batch)))
+			// Only count successful pushes; failures will be retried by the upstream readers. Accumulate
+			// the out-of-order count and add it once after the loop rather than calling Inc() per record.
+			var outOfOrder int
 			for _, item := range batch {
 				ts := item.record.Timestamp
 				if !lastEmittedTs.IsZero() && ts.Before(lastEmittedTs) {
-					m.outOfOrderEmits.Inc()
+					outOfOrder++
 				}
 				if ts.After(lastEmittedTs) {
 					lastEmittedTs = ts
 				}
 			}
+			m.pushedRecords.Add(float64(len(batch)))
+			m.outOfOrderEmits.Add(float64(outOfOrder))
 		}
 
 		m.batchFlushLatency.Observe(time.Since(batchStart).Seconds())
