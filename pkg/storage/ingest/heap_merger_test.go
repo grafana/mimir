@@ -253,11 +253,18 @@ func TestHeapMerger_CountsOutOfOrderEmissionsAcrossBatches(t *testing.T) {
 	require.NoError(t, sc.Consume(context.Background(), recordsSeq([]*kgo.Record{{Timestamp: base.Add(50 * time.Millisecond), Offset: 1}})))
 	require.NoError(t, sc.Consume(context.Background(), recordsSeq([]*kgo.Record{{Timestamp: base.Add(10 * time.Millisecond), Offset: 2}})))
 
+	// Both records were pushed (the baseline); exactly one of them was out of order.
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+		# HELP cortex_ingest_storage_ordered_consumption_pushed_records_total Total number of records pushed by ordered consumption. The baseline against which the out-of-order records fraction can be computed.
+		# TYPE cortex_ingest_storage_ordered_consumption_pushed_records_total counter
+		cortex_ingest_storage_ordered_consumption_pushed_records_total 2
+
 		# HELP cortex_ingest_storage_ordered_consumption_out_of_order_records_total Total number of records pushed with a timestamp older than the most recently pushed record. This is the residual cross-cluster out-of-order that ordered consumption could not absorb.
 		# TYPE cortex_ingest_storage_ordered_consumption_out_of_order_records_total counter
 		cortex_ingest_storage_ordered_consumption_out_of_order_records_total 1
-	`), "cortex_ingest_storage_ordered_consumption_out_of_order_records_total"))
+	`),
+		"cortex_ingest_storage_ordered_consumption_pushed_records_total",
+		"cortex_ingest_storage_ordered_consumption_out_of_order_records_total"))
 }
 
 // recordingConsumer is a RecordConsumer that captures every record it sees, in order, into a shared
