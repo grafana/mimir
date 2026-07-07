@@ -19,33 +19,35 @@ import (
 	"github.com/twmb/franz-go/pkg/kgo"
 )
 
-// HeapMergerConfig holds settings for the HeapMerger.
-type HeapMergerConfig struct {
-	// Enabled controls whether records from all Kafka clusters are merged by Kafka record timestamp
-	// before being pushed downstream. When disabled, each cluster's records are pushed independently
-	// and cross-cluster ordering relies entirely on the TSDB out-of-order window.
+// OrderedConsumptionConfig configures best-effort in-order consumption across write compartments: records
+// from every write compartment's Kafka cluster are consumed in best-effort Kafka-record-timestamp order
+// before being pushed. It's implemented by the HeapMerger.
+type OrderedConsumptionConfig struct {
+	// Enabled controls whether records from all Kafka clusters are consumed in best-effort timestamp order
+	// before being pushed downstream. When disabled, each cluster's records are pushed independently and
+	// cross-cluster ordering relies entirely on the TSDB out-of-order window.
 	Enabled bool `yaml:"enabled" category:"experimental"`
 
-	// MaxBatchRecords is the soft upper bound on records buffered in the heap before forcing a flush.
-	// A larger value gives the heap more cross-cluster mixing at the cost of memory and per-flush latency.
+	// MaxBatchRecords is the soft upper bound on records buffered before forcing a flush. A larger value
+	// gives more cross-cluster mixing (better ordering) at the cost of memory and per-flush latency.
 	MaxBatchRecords int `yaml:"max_batch_records" category:"experimental"`
 
-	// MaxBatchWait is the maximum time records sit in the heap before being flushed even if
-	// MaxBatchRecords hasn't been reached. Keeps tail latency bounded when traffic is sparse.
+	// MaxBatchWait is the maximum time records sit buffered before being flushed even if MaxBatchRecords
+	// hasn't been reached. Keeps tail latency bounded when traffic is sparse.
 	MaxBatchWait time.Duration `yaml:"max_batch_wait" category:"experimental"`
 
-	// InputBufferSize is the buffer size of the channel into which submitting consumers push records.
-	// Capped to avoid unbounded memory if the merger stalls on a slow downstream consumer. When 0,
-	// defaults to 2x MaxBatchRecords.
+	// InputBufferSize is the buffer size of the channel into which per-cluster consumers submit records.
+	// Capped to avoid unbounded memory if a slow downstream consumer stalls consumption. When 0, defaults
+	// to 2x MaxBatchRecords.
 	InputBufferSize int `yaml:"input_buffer_size" category:"experimental"`
 }
 
-// RegisterFlagsWithPrefix registers HeapMergerConfig flags under the given prefix.
-func (cfg *HeapMergerConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
-	f.BoolVar(&cfg.Enabled, prefix+"enabled", false, "Whether records from all write compartments' Kafka clusters are merged by Kafka record timestamp before being pushed. When disabled, each Kafka cluster is pushed independently and cross-cluster ordering relies on the TSDB out-of-order window. Only takes effect when compartments are enabled with more than one write compartment.")
-	f.IntVar(&cfg.MaxBatchRecords, prefix+"max-batch-records", 1024, "Soft upper bound on records buffered in the heap merger before forcing a flush. Larger values give the merger more cross-cluster mixing at the cost of memory and per-flush latency.")
-	f.DurationVar(&cfg.MaxBatchWait, prefix+"max-batch-wait", 50*time.Millisecond, "Maximum time records sit in the heap merger before being flushed even if max-batch-records has not been reached.")
-	f.IntVar(&cfg.InputBufferSize, prefix+"input-buffer-size", 0, "Buffer size of the channel into which the per-cluster submitting consumers push records. When 0, defaults to 2x max-batch-records.")
+// RegisterFlagsWithPrefix registers OrderedConsumptionConfig flags under the given prefix.
+func (cfg *OrderedConsumptionConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
+	f.BoolVar(&cfg.Enabled, prefix+"enabled", false, "Whether records from all write compartments' Kafka clusters are consumed in best-effort Kafka-record-timestamp order before being pushed. When disabled, each Kafka cluster is consumed independently and cross-cluster ordering relies on the TSDB out-of-order window. Only takes effect when compartments are enabled with more than one write compartment.")
+	f.IntVar(&cfg.MaxBatchRecords, prefix+"max-batch-records", 1024, "Soft upper bound on records buffered before forcing a flush. Larger values give more cross-cluster mixing (better ordering) at the cost of memory and per-flush latency.")
+	f.DurationVar(&cfg.MaxBatchWait, prefix+"max-batch-wait", 50*time.Millisecond, "Maximum time records sit buffered before being flushed even if max-batch-records has not been reached.")
+	f.IntVar(&cfg.InputBufferSize, prefix+"input-buffer-size", 0, "Buffer size of the channel into which the per-cluster consumers submit records. When 0, defaults to 2x max-batch-records.")
 }
 
 type HeapMergerMetrics struct {
@@ -58,11 +60,11 @@ func NewHeapMergerMetrics(reg prometheus.Registerer) *HeapMergerMetrics {
 	factory := promauto.With(reg)
 	return &HeapMergerMetrics{
 		outOfOrderEmits: factory.NewCounter(prometheus.CounterOpts{
-			Name: "cortex_ingest_storage_heap_merger_out_of_order_emissions_total",
-			Help: "Total number of records emitted with a timestamp older than the most recently emitted record. This is the residual cross-cluster out-of-order that the merger could not absorb.",
+			Name: "cortex_ingest_storage_ordered_consumption_out_of_order_records_total",
+			Help: "Total number of records pushed with a timestamp older than the most recently pushed record. This is the residual cross-cluster out-of-order that ordered consumption could not absorb.",
 		}),
 		batchFlushLatency: factory.NewHistogram(prometheus.HistogramOpts{
-			Name:    "cortex_ingest_storage_heap_merger_batch_flush_latency_seconds",
+			Name:    "cortex_ingest_storage_ordered_consumption_batch_flush_latency_seconds",
 			Help:    "Elapsed time from the first record entering a batch to the batch finishing its downstream push.",
 			Buckets: prometheus.DefBuckets,
 		}),
@@ -120,7 +122,7 @@ func (h *recordHeap) Pop() any {
 type HeapMerger struct {
 	services.Service
 
-	cfg             HeapMergerConfig
+	cfg             OrderedConsumptionConfig
 	input           chan heapItem
 	consumerFactory consumerFactory
 	metrics         *HeapMergerMetrics
@@ -129,7 +131,7 @@ type HeapMerger struct {
 
 // NewHeapMerger constructs a HeapMerger that forwards merged batches via consumers produced by
 // consumerFactory.
-func NewHeapMerger(cfg HeapMergerConfig, consumerFactory consumerFactory, metrics *HeapMergerMetrics, logger log.Logger) *HeapMerger {
+func NewHeapMerger(cfg OrderedConsumptionConfig, consumerFactory consumerFactory, metrics *HeapMergerMetrics, logger log.Logger) *HeapMerger {
 	if cfg.MaxBatchRecords <= 0 {
 		cfg.MaxBatchRecords = 1024
 	}

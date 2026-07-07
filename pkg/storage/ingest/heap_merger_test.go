@@ -70,7 +70,7 @@ func TestHeapMerger_Ordering(t *testing.T) {
 	// Asserts records from a single submitter pass through unchanged and in submission order.
 	t.Run("single cluster preserves submission order", func(t *testing.T) {
 		rc := &recordingConsumer{}
-		m, _ := newTestMerger(t, rc, HeapMergerConfig{MaxBatchRecords: 3, MaxBatchWait: 10 * time.Millisecond})
+		m, _ := newTestMerger(t, rc, OrderedConsumptionConfig{MaxBatchRecords: 3, MaxBatchWait: 10 * time.Millisecond})
 
 		sc := m.NewSubmittingConsumer(0)
 		base := time.Unix(0, 0)
@@ -93,7 +93,7 @@ func TestHeapMerger_Ordering(t *testing.T) {
 		rc := &recordingConsumer{}
 		// Set MaxBatchWait high enough that both submitters land their records before flush, and
 		// MaxBatchRecords high so the flush is timer-driven, giving both clusters time to enqueue.
-		m, _ := newTestMerger(t, rc, HeapMergerConfig{MaxBatchRecords: 100, MaxBatchWait: 100 * time.Millisecond})
+		m, _ := newTestMerger(t, rc, OrderedConsumptionConfig{MaxBatchRecords: 100, MaxBatchWait: 100 * time.Millisecond})
 
 		sc0 := m.NewSubmittingConsumer(0)
 		sc1 := m.NewSubmittingConsumer(1)
@@ -135,7 +135,7 @@ func TestHeapMerger_Ordering(t *testing.T) {
 // Asserts a downstream error reaches every submitter whose records were in the failing batch.
 func TestHeapMerger_ErrorPropagatesToAllSubmittersInBatch(t *testing.T) {
 	rc := &recordingConsumer{err: errors.New("downstream boom")}
-	m, _ := newTestMerger(t, rc, HeapMergerConfig{MaxBatchRecords: 100, MaxBatchWait: 30 * time.Millisecond})
+	m, _ := newTestMerger(t, rc, OrderedConsumptionConfig{MaxBatchRecords: 100, MaxBatchWait: 30 * time.Millisecond})
 
 	sc0 := m.NewSubmittingConsumer(0)
 	sc1 := m.NewSubmittingConsumer(1)
@@ -163,7 +163,7 @@ func TestHeapMerger_ErrorPropagatesToAllSubmittersInBatch(t *testing.T) {
 // Asserts Consume returns immediately and invokes nothing downstream when given no records.
 func TestHeapMerger_EmptyConsumeIsNoop(t *testing.T) {
 	rc := &recordingConsumer{}
-	m, _ := newTestMerger(t, rc, HeapMergerConfig{MaxBatchRecords: 100, MaxBatchWait: 30 * time.Millisecond})
+	m, _ := newTestMerger(t, rc, OrderedConsumptionConfig{MaxBatchRecords: 100, MaxBatchWait: 30 * time.Millisecond})
 	sc := m.NewSubmittingConsumer(0)
 	require.NoError(t, sc.Consume(context.Background(), recordsSeq(nil)))
 	assert.Empty(t, rc.snapshot())
@@ -173,7 +173,7 @@ func TestHeapMerger_TimerFlush(t *testing.T) {
 	// Asserts the MaxBatchWait timer flushes the heap even when MaxBatchRecords isn't reached.
 	t.Run("flushes before max-batch-records is reached", func(t *testing.T) {
 		rc := &recordingConsumer{}
-		m, _ := newTestMerger(t, rc, HeapMergerConfig{MaxBatchRecords: 100, MaxBatchWait: 20 * time.Millisecond})
+		m, _ := newTestMerger(t, rc, OrderedConsumptionConfig{MaxBatchRecords: 100, MaxBatchWait: 20 * time.Millisecond})
 		sc := m.NewSubmittingConsumer(0)
 		require.NoError(t, sc.Consume(context.Background(), recordsSeq([]*kgo.Record{{Timestamp: time.Unix(1, 0), Offset: 1}})))
 		assert.Len(t, rc.snapshot(), 1)
@@ -182,7 +182,7 @@ func TestHeapMerger_TimerFlush(t *testing.T) {
 	// Asserts the MaxBatchWait timer re-arms after a flush so subsequent batches also flush on time.
 	t.Run("timer re-arms after a flush", func(t *testing.T) {
 		rc := &recordingConsumer{}
-		m, _ := newTestMerger(t, rc, HeapMergerConfig{MaxBatchRecords: 100, MaxBatchWait: 20 * time.Millisecond})
+		m, _ := newTestMerger(t, rc, OrderedConsumptionConfig{MaxBatchRecords: 100, MaxBatchWait: 20 * time.Millisecond})
 		sc := m.NewSubmittingConsumer(0)
 		base := time.Unix(0, 0)
 		require.NoError(t, sc.Consume(context.Background(), recordsSeq([]*kgo.Record{{Timestamp: base, Offset: 1}})))
@@ -197,7 +197,7 @@ func TestHeapMerger_TimerFlush(t *testing.T) {
 func TestHeapMerger_ShutdownAcksPendingRecords(t *testing.T) {
 	rc := &recordingConsumer{}
 	factory := consumerFactoryFunc(func() RecordConsumer { return rc })
-	m := NewHeapMerger(HeapMergerConfig{MaxBatchRecords: 100, MaxBatchWait: time.Hour}, factory, NewHeapMergerMetrics(prometheus.NewRegistry()), log.NewNopLogger())
+	m := NewHeapMerger(OrderedConsumptionConfig{MaxBatchRecords: 100, MaxBatchWait: time.Hour}, factory, NewHeapMergerMetrics(prometheus.NewRegistry()), log.NewNopLogger())
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), m))
 
 	sc := m.NewSubmittingConsumer(0)
@@ -229,7 +229,7 @@ func TestHeapMerger_CountsOutOfOrderEmissionsAcrossBatches(t *testing.T) {
 	rc := &recordingConsumer{}
 	// Small batch + short wait so the first record flushes alone, then the second record (with older
 	// timestamp) flushes in a second batch and trips the OOO counter.
-	m, reg := newTestMerger(t, rc, HeapMergerConfig{MaxBatchRecords: 1, MaxBatchWait: 5 * time.Millisecond})
+	m, reg := newTestMerger(t, rc, OrderedConsumptionConfig{MaxBatchRecords: 1, MaxBatchWait: 5 * time.Millisecond})
 	sc := m.NewSubmittingConsumer(0)
 
 	base := time.Unix(0, 0)
@@ -237,10 +237,10 @@ func TestHeapMerger_CountsOutOfOrderEmissionsAcrossBatches(t *testing.T) {
 	require.NoError(t, sc.Consume(context.Background(), recordsSeq([]*kgo.Record{{Timestamp: base.Add(10 * time.Millisecond), Offset: 2}})))
 
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
-		# HELP cortex_ingest_storage_heap_merger_out_of_order_emissions_total Total number of records emitted with a timestamp older than the most recently emitted record. This is the residual cross-cluster out-of-order that the merger could not absorb.
-		# TYPE cortex_ingest_storage_heap_merger_out_of_order_emissions_total counter
-		cortex_ingest_storage_heap_merger_out_of_order_emissions_total 1
-	`), "cortex_ingest_storage_heap_merger_out_of_order_emissions_total"))
+		# HELP cortex_ingest_storage_ordered_consumption_out_of_order_records_total Total number of records pushed with a timestamp older than the most recently pushed record. This is the residual cross-cluster out-of-order that ordered consumption could not absorb.
+		# TYPE cortex_ingest_storage_ordered_consumption_out_of_order_records_total counter
+		cortex_ingest_storage_ordered_consumption_out_of_order_records_total 1
+	`), "cortex_ingest_storage_ordered_consumption_out_of_order_records_total"))
 }
 
 // recordingConsumer is a RecordConsumer that captures every record it sees, in order, into a shared
@@ -270,7 +270,7 @@ func (rc *recordingConsumer) snapshot() []*kgo.Record {
 	return out
 }
 
-func newTestMerger(t *testing.T, rc *recordingConsumer, cfg HeapMergerConfig) (*HeapMerger, *prometheus.Registry) {
+func newTestMerger(t *testing.T, rc *recordingConsumer, cfg OrderedConsumptionConfig) (*HeapMerger, *prometheus.Registry) {
 	t.Helper()
 	factory := consumerFactoryFunc(func() RecordConsumer { return rc })
 	reg := prometheus.NewRegistry()

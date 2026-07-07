@@ -5698,29 +5698,29 @@ migration:
   # CLI flag: -ingest-storage.migration.ingest-storage-max-wait-time
   [ingest_storage_max_wait_time: <duration> | default = 0s]
 
-heap_merger:
+ordered_consumption:
   # (experimental) Whether records from all write compartments' Kafka clusters
-  # are merged by Kafka record timestamp before being pushed. When disabled,
-  # each Kafka cluster is pushed independently and cross-cluster ordering relies
-  # on the TSDB out-of-order window. Only takes effect when compartments are
-  # enabled with more than one write compartment.
-  # CLI flag: -ingest-storage.heap-merger.enabled
+  # are consumed in best-effort Kafka-record-timestamp order before being
+  # pushed. When disabled, each Kafka cluster is consumed independently and
+  # cross-cluster ordering relies on the TSDB out-of-order window. Only takes
+  # effect when compartments are enabled with more than one write compartment.
+  # CLI flag: -ingest-storage.ordered-consumption.enabled
   [enabled: <boolean> | default = false]
 
-  # (experimental) Soft upper bound on records buffered in the heap merger
-  # before forcing a flush. Larger values give the merger more cross-cluster
-  # mixing at the cost of memory and per-flush latency.
-  # CLI flag: -ingest-storage.heap-merger.max-batch-records
+  # (experimental) Soft upper bound on records buffered before forcing a flush.
+  # Larger values give more cross-cluster mixing (better ordering) at the cost
+  # of memory and per-flush latency.
+  # CLI flag: -ingest-storage.ordered-consumption.max-batch-records
   [max_batch_records: <int> | default = 1024]
 
-  # (experimental) Maximum time records sit in the heap merger before being
-  # flushed even if max-batch-records has not been reached.
-  # CLI flag: -ingest-storage.heap-merger.max-batch-wait
+  # (experimental) Maximum time records sit buffered before being flushed even
+  # if max-batch-records has not been reached.
+  # CLI flag: -ingest-storage.ordered-consumption.max-batch-wait
   [max_batch_wait: <duration> | default = 50ms]
 
   # (experimental) Buffer size of the channel into which the per-cluster
-  # submitting consumers push records. When 0, defaults to 2x max-batch-records.
-  # CLI flag: -ingest-storage.heap-merger.input-buffer-size
+  # consumers submit records. When 0, defaults to 2x max-batch-records.
+  # CLI flag: -ingest-storage.ordered-consumption.input-buffer-size
   [input_buffer_size: <int> | default = 0]
 
 # (advanced) Number of tenants to concurrently fsync WAL and WBL before Kafka

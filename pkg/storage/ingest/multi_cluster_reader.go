@@ -55,12 +55,12 @@ type MultiClusterPartitionReader struct {
 // tracks offsets in its own file. instanceID is the base for each reader's consumer group, suffixed per
 // Kafka cluster so each cluster tracks offsets independently.
 //
-// When mergerCfg.Enabled is set, records from every cluster are merged by Kafka record timestamp (best
-// effort) before being pushed; otherwise each cluster pushes independently and cross-cluster ordering
-// relies on the TSDB out-of-order window.
+// When orderedCfg.Enabled is set, records from every cluster are consumed in best-effort Kafka-record-timestamp
+// order before being pushed; otherwise each cluster pushes independently and cross-cluster ordering relies
+// on the TSDB out-of-order window.
 func NewMultiClusterPartitionReader(
 	clusterConfigs []KafkaConfig,
-	mergerCfg HeapMergerConfig,
+	orderedCfg OrderedConsumptionConfig,
 	partitionID int32,
 	instanceID string,
 	offsetFilePath string,
@@ -84,7 +84,7 @@ func NewMultiClusterPartitionReader(
 	// records so it can't reorder anything, and routing them through the merger would add its batching
 	// latency and single-goroutine serialization for no ordering benefit.
 	var merger *HeapMerger
-	if mergerCfg.Enabled && len(clusterConfigs) > 1 {
+	if orderedCfg.Enabled && len(clusterConfigs) > 1 {
 		mergerLogger := log.With(logger, "component", "heap_merger")
 		// The downstream push path is shared across all clusters, so its PusherConsumer metrics are
 		// registered once on the base registerer rather than per cluster.
@@ -94,7 +94,7 @@ func NewMultiClusterPartitionReader(
 			// (e.g. FallbackClientErrorSampleRate); those are identical across clusters.
 			return NewPusherConsumer(pusher, clusterConfigs[0], pusherMetrics, mergerLogger)
 		})
-		merger = NewHeapMerger(mergerCfg, pusherFactory, NewHeapMergerMetrics(reg), mergerLogger)
+		merger = NewHeapMerger(orderedCfg, pusherFactory, NewHeapMergerMetrics(reg), mergerLogger)
 	}
 
 	readers := make([]*SingleClusterPartitionReader, len(clusterConfigs))

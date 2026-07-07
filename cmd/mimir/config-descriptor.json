@@ -9696,7 +9696,7 @@
         },
         {
           "kind": "block",
-          "name": "heap_merger",
+          "name": "ordered_consumption",
           "required": false,
           "desc": "",
           "blockEntries": [
@@ -9704,10 +9704,10 @@
               "kind": "field",
               "name": "enabled",
               "required": false,
-              "desc": "Whether records from all write compartments' Kafka clusters are merged by Kafka record timestamp before being pushed. When disabled, each Kafka cluster is pushed independently and cross-cluster ordering relies on the TSDB out-of-order window. Only takes effect when compartments are enabled with more than one write compartment.",
+              "desc": "Whether records from all write compartments' Kafka clusters are consumed in best-effort Kafka-record-timestamp order before being pushed. When disabled, each Kafka cluster is consumed independently and cross-cluster ordering relies on the TSDB out-of-order window. Only takes effect when compartments are enabled with more than one write compartment.",
               "fieldValue": null,
               "fieldDefaultValue": false,
-              "fieldFlag": "ingest-storage.heap-merger.enabled",
+              "fieldFlag": "ingest-storage.ordered-consumption.enabled",
               "fieldType": "boolean",
               "fieldCategory": "experimental"
             },
@@ -9715,10 +9715,10 @@
               "kind": "field",
               "name": "max_batch_records",
               "required": false,
-              "desc": "Soft upper bound on records buffered in the heap merger before forcing a flush. Larger values give the merger more cross-cluster mixing at the cost of memory and per-flush latency.",
+              "desc": "Soft upper bound on records buffered before forcing a flush. Larger values give more cross-cluster mixing (better ordering) at the cost of memory and per-flush latency.",
               "fieldValue": null,
               "fieldDefaultValue": 1024,
-              "fieldFlag": "ingest-storage.heap-merger.max-batch-records",
+              "fieldFlag": "ingest-storage.ordered-consumption.max-batch-records",
               "fieldType": "int",
               "fieldCategory": "experimental"
             },
@@ -9726,10 +9726,10 @@
               "kind": "field",
               "name": "max_batch_wait",
               "required": false,
-              "desc": "Maximum time records sit in the heap merger before being flushed even if max-batch-records has not been reached.",
+              "desc": "Maximum time records sit buffered before being flushed even if max-batch-records has not been reached.",
               "fieldValue": null,
               "fieldDefaultValue": 50000000,
-              "fieldFlag": "ingest-storage.heap-merger.max-batch-wait",
+              "fieldFlag": "ingest-storage.ordered-consumption.max-batch-wait",
               "fieldType": "duration",
               "fieldCategory": "experimental"
             },
@@ -9737,10 +9737,10 @@
               "kind": "field",
               "name": "input_buffer_size",
               "required": false,
-              "desc": "Buffer size of the channel into which the per-cluster submitting consumers push records. When 0, defaults to 2x max-batch-records.",
+              "desc": "Buffer size of the channel into which the per-cluster consumers submit records. When 0, defaults to 2x max-batch-records.",
               "fieldValue": null,
               "fieldDefaultValue": 0,
-              "fieldFlag": "ingest-storage.heap-merger.input-buffer-size",
+              "fieldFlag": "ingest-storage.ordered-consumption.input-buffer-size",
               "fieldType": "int",
               "fieldCategory": "experimental"
             }
