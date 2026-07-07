@@ -94,7 +94,7 @@ func NewMultiClusterPartitionReader(
 			// (e.g. FallbackClientErrorSampleRate); those are identical across clusters.
 			return NewPusherConsumer(pusher, clusterConfigs[0], pusherMetrics, mergerLogger)
 		})
-		merger = NewHeapMerger(orderedCfg, pusherFactory, NewHeapMergerMetrics(reg), mergerLogger)
+		merger = NewHeapMerger(orderedCfg, pusherFactory, reg, mergerLogger)
 	}
 
 	readers := make([]*SingleClusterPartitionReader, len(clusterConfigs))

@@ -214,7 +214,7 @@ func TestHeapMerger_TimerFlush(t *testing.T) {
 func TestHeapMerger_ShutdownAcksPendingRecords(t *testing.T) {
 	rc := &recordingConsumer{}
 	factory := consumerFactoryFunc(func() RecordConsumer { return rc })
-	m := NewHeapMerger(OrderedConsumptionConfig{MaxBatchRecords: 100, MaxBatchWait: time.Hour}, factory, NewHeapMergerMetrics(prometheus.NewRegistry()), log.NewNopLogger())
+	m := NewHeapMerger(OrderedConsumptionConfig{MaxBatchRecords: 100, MaxBatchWait: time.Hour}, factory, nil, log.NewNopLogger())
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), m))
 
 	sc := m.NewSubmittingConsumer(0)
@@ -298,7 +298,7 @@ func newTestMerger(t *testing.T, rc *recordingConsumer, cfg OrderedConsumptionCo
 	t.Helper()
 	factory := consumerFactoryFunc(func() RecordConsumer { return rc })
 	reg := prometheus.NewRegistry()
-	m := NewHeapMerger(cfg, factory, NewHeapMergerMetrics(reg), log.NewNopLogger())
+	m := NewHeapMerger(cfg, factory, reg, log.NewNopLogger())
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), m))
 	t.Cleanup(func() {
 		_ = services.StopAndAwaitTerminated(context.Background(), m)

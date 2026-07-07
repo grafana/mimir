@@ -66,32 +66,6 @@ func (cfg *OrderedConsumptionConfig) Validate() error {
 	return nil
 }
 
-type HeapMergerMetrics struct {
-	pushedRecords     prometheus.Counter
-	outOfOrderEmits   prometheus.Counter
-	batchFlushLatency prometheus.Histogram
-}
-
-// NewHeapMergerMetrics creates and registers a HeapMergerMetrics on the supplied registerer.
-func NewHeapMergerMetrics(reg prometheus.Registerer) *HeapMergerMetrics {
-	factory := promauto.With(reg)
-	return &HeapMergerMetrics{
-		pushedRecords: factory.NewCounter(prometheus.CounterOpts{
-			Name: "cortex_ingest_storage_ordered_consumption_pushed_records_total",
-			Help: "Total number of records pushed by ordered consumption. The baseline against which the out-of-order records fraction can be computed.",
-		}),
-		outOfOrderEmits: factory.NewCounter(prometheus.CounterOpts{
-			Name: "cortex_ingest_storage_ordered_consumption_out_of_order_records_total",
-			Help: "Total number of records pushed with a timestamp older than the most recently pushed record. This is the residual cross-cluster out-of-order that ordered consumption could not absorb.",
-		}),
-		batchFlushLatency: factory.NewHistogram(prometheus.HistogramOpts{
-			Name:    "cortex_ingest_storage_ordered_consumption_batch_flush_latency_seconds",
-			Help:    "Elapsed time from the first record entering a batch to the batch finishing its downstream push.",
-			Buckets: prometheus.DefBuckets,
-		}),
-	}
-}
-
 // heapItem is a single record awaiting emission by the HeapMerger, plus the channel used to signal back
 // to its submitter once it has been forwarded.
 type heapItem struct {
@@ -146,22 +120,38 @@ type HeapMerger struct {
 	cfg             OrderedConsumptionConfig
 	input           chan heapItem
 	consumerFactory consumerFactory
-	metrics         *HeapMergerMetrics
 	logger          log.Logger
+
+	pushedRecords     prometheus.Counter
+	outOfOrderEmits   prometheus.Counter
+	batchFlushLatency prometheus.Histogram
 }
 
 // NewHeapMerger constructs a HeapMerger that forwards merged batches via consumers produced by
 // consumerFactory.
-func NewHeapMerger(cfg OrderedConsumptionConfig, consumerFactory consumerFactory, metrics *HeapMergerMetrics, logger log.Logger) *HeapMerger {
+func NewHeapMerger(cfg OrderedConsumptionConfig, consumerFactory consumerFactory, reg prometheus.Registerer, logger log.Logger) *HeapMerger {
 	if cfg.InputBufferSize <= 0 {
 		cfg.InputBufferSize = 2 * cfg.MaxBatchRecords
 	}
+	factory := promauto.With(reg)
 	m := &HeapMerger{
 		cfg:             cfg,
 		input:           make(chan heapItem, cfg.InputBufferSize),
 		consumerFactory: consumerFactory,
-		metrics:         metrics,
 		logger:          logger,
+		pushedRecords: factory.NewCounter(prometheus.CounterOpts{
+			Name: "cortex_ingest_storage_ordered_consumption_pushed_records_total",
+			Help: "Total number of records pushed by ordered consumption. The baseline against which the out-of-order records fraction can be computed.",
+		}),
+		outOfOrderEmits: factory.NewCounter(prometheus.CounterOpts{
+			Name: "cortex_ingest_storage_ordered_consumption_out_of_order_records_total",
+			Help: "Total number of records pushed with a timestamp older than the most recently pushed record. This is the residual cross-cluster out-of-order that ordered consumption could not absorb.",
+		}),
+		batchFlushLatency: factory.NewHistogram(prometheus.HistogramOpts{
+			Name:    "cortex_ingest_storage_ordered_consumption_batch_flush_latency_seconds",
+			Help:    "Elapsed time from the first record entering a batch to the batch finishing its downstream push.",
+			Buckets: prometheus.DefBuckets,
+		}),
 	}
 	m.Service = services.NewBasicService(nil, m.run, nil).WithName("heap-merger")
 	return m
@@ -213,13 +203,13 @@ func (m *HeapMerger) run(ctx context.Context) error {
 		err := m.consumerFactory.consumer().Consume(context.WithoutCancel(ctx), slices.Values(records))
 		if err != nil {
 			level.Warn(m.logger).Log("msg", "downstream consumer returned error from merged batch", "records", len(batch), "err", err)
-		} else if m.metrics != nil {
+		} else {
 			// Only count successful pushes; failures will be retried by the upstream readers.
-			m.metrics.pushedRecords.Add(float64(len(batch)))
+			m.pushedRecords.Add(float64(len(batch)))
 			for _, item := range batch {
 				ts := item.record.Timestamp
 				if !lastEmittedTs.IsZero() && ts.Before(lastEmittedTs) {
-					m.metrics.outOfOrderEmits.Inc()
+					m.outOfOrderEmits.Inc()
 				}
 				if ts.After(lastEmittedTs) {
 					lastEmittedTs = ts
@@ -227,9 +217,7 @@ func (m *HeapMerger) run(ctx context.Context) error {
 			}
 		}
 
-		if m.metrics != nil {
-			m.metrics.batchFlushLatency.Observe(time.Since(batchStart).Seconds())
-		}
+		m.batchFlushLatency.Observe(time.Since(batchStart).Seconds())
 		batchStart = time.Time{}
 
 		for _, item := range batch {
