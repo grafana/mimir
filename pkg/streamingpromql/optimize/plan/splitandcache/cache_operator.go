@@ -87,7 +87,8 @@ type CacheOperator struct {
 	seriesMetadata []types.SeriesMetadata
 	data           []types.InstantVectorSeriesData
 
-	finishedReading bool // Set if FinishedReading is called.
+	haveReadSeriesMetadata bool
+	finishedReading        bool // Set if FinishedReading is called.
 
 	timeNow           func() time.Time // Used to override the current time in tests.
 	getCurrentTraceID func(context.Context) (string, bool)
@@ -553,6 +554,7 @@ func (c *CacheOperator) SeriesMetadata(ctx context.Context, _ types.Matchers) ([
 	}
 
 	c.outputSeries = outputSeries
+	c.haveReadSeriesMetadata = true
 
 	if c.extents.shouldWriteCacheEntry {
 		if err := c.bufferSeriesMetadataForCacheEntry(series); err != nil {
@@ -818,7 +820,7 @@ func (c *CacheOperator) bufferUnconsumedSeries(ctx context.Context) error {
 	}
 
 	unconsumedSeriesCount := len(c.seriesMetadata) - c.nextOutputSeriesIdx
-	if c.seriesMetadata != nil && unconsumedSeriesCount <= 0 {
+	if c.haveReadSeriesMetadata && unconsumedSeriesCount <= 0 {
 		return nil
 	}
 
@@ -826,7 +828,7 @@ func (c *CacheOperator) bufferUnconsumedSeries(ctx context.Context) error {
 	defer spanLogger.Finish()
 	spanLogger.SetTag("hashed_key", c.hashedKey)
 
-	if c.seriesMetadata == nil {
+	if !c.haveReadSeriesMetadata {
 		spanLogger.DebugLog("msg", "series metadata not read, reading now")
 
 		series, err := c.SeriesMetadata(ctx, nil)
@@ -942,7 +944,7 @@ func (c *CacheOperator) finalizeExtents(ctx context.Context) (desiredTimeRangeSt
 
 func (c *CacheOperator) writeCacheEntry(ctx context.Context, stats *types.OperatorEvaluationStats, annos annotations.Annotations) error {
 	spanLogger := spanlogger.FromContext(ctx, c.logger)
-	if c.seriesMetadata == nil {
+	if !c.haveReadSeriesMetadata {
 		spanLogger.DebugLog(
 			"msg", "skipping storing entry in cache because SeriesMetadata() never called",
 			"key", c.hashedKey,
