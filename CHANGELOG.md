@@ -119,6 +119,7 @@
 * [ENHANCEMENT] Updated rollout-operator jsonnet library to v0.38.0. #15328, #15626
 * [ENHANCEMENT] Make range vector splitting configurable per query path. #15706
 * [ENHANCEMENT] Add `newMimirtoolBlocksJob` and subcommand-specific helpers to run `mimirtool blocks` as Kubernetes Jobs. #15757
+* [BUGFIX] Continuous-test: Include `._config.commonConfig` in arguments passed to continuous-test. #15988
 
 
 ### Documentation
