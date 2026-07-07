@@ -260,6 +260,9 @@ func (m *HeapMerger) run(ctx context.Context) error {
 // drain acks any remaining heap entries and any records still queued in the input channel with the
 // supplied error. Used at shutdown so that submitters never block forever on an ack.
 func (m *HeapMerger) drain(h *recordHeap, err error) {
+	if err == nil {
+		panic("heap merger drain must be called with a non-nil error")
+	}
 	for h.Len() > 0 {
 		item := heap.Pop(h).(heapItem)
 		item.ackCh <- err
