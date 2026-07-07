@@ -20481,12 +20481,12 @@
         },
         {
           "kind": "field",
-          "name": "inflight_max_age_metric_enabled",
+          "name": "queue_max_wait_metric_enabled",
           "required": false,
-          "desc": "Enable the cortex_query_scheduler_inflight_max_age_seconds metric, which reports the age of the oldest inflight request. Disabling it skips the per-tick scan over inflight requests.",
+          "desc": "Enable the cortex_query_scheduler_queue_max_wait_seconds metric, which reports how long the oldest request still waiting in the queue has been waiting. Disabling it skips the per-tick scan over inflight requests.",
           "fieldValue": null,
           "fieldDefaultValue": true,
-          "fieldFlag": "query-scheduler.inflight-max-age-metric-enabled",
+          "fieldFlag": "query-scheduler.queue-max-wait-metric-enabled",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
         },

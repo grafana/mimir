@@ -2387,11 +2387,11 @@ The `query_scheduler` block configures the query-scheduler.
 # CLI flag: -query-scheduler.querier-forget-delay
 [querier_forget_delay: <duration> | default = 0s]
 
-# (experimental) Enable the cortex_query_scheduler_inflight_max_age_seconds
-# metric, which reports the age of the oldest inflight request. Disabling it
-# skips the per-tick scan over inflight requests.
-# CLI flag: -query-scheduler.inflight-max-age-metric-enabled
-[inflight_max_age_metric_enabled: <boolean> | default = true]
+# (experimental) Enable the cortex_query_scheduler_queue_max_wait_seconds
+# metric, which reports how long the oldest request still waiting in the queue
+# has been waiting. Disabling it skips the per-tick scan over inflight requests.
+# CLI flag: -query-scheduler.queue-max-wait-metric-enabled
+[queue_max_wait_metric_enabled: <boolean> | default = true]
 
 # (experimental) Enable the cortex_query_scheduler_max_queue_length metric,
 # which reports the per-tenant peak queue length observed since the last scrape.
