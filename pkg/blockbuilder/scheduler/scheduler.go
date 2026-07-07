@@ -349,8 +349,8 @@ func (s *BlockBuilderScheduler) enqueuePendingJobs() {
 				// The job discovery process happens concurrently with ongoing job
 				// completions. Now that we have the lock, ignore this job if it's
 				// older than our committed offset.
-				level.Info(s.logger).Log("msg", "ignoring pending job as it's behind the committed offset",
-					"partition (expected at startup)", partition, "job", spec.RangesString(), "offsets", ps.offsetsSummary(true, false))
+				level.Info(s.logger).Log("msg", "ignoring pending job as it's behind the committed offset (expected at startup)",
+					"partition", partition, "job", spec.RangesString(), "offsets", ps.offsetsSummary(true, false))
 				ps.pendingJobs.Remove(e)
 				continue
 			case beyondSome:
