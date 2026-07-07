@@ -167,7 +167,7 @@
   "querier.query-engine": "mimir",
   "querier.enable-query-engine-fallback": true,
   "querier.max-concurrent-remote-read-queries": 2,
-  "querier.max-concurrent": 20,
+  "querier.max-concurrent": 8,
   "querier.timeout": 120000000000,
   "querier.max-samples": 50000000,
   "querier.default-evaluation-interval": 60000000000,

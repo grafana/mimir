@@ -1980,7 +1980,7 @@ store_gateway_client:
 # maximum number of concurrent queries in each querier. The minimum value is
 # four; lower values are ignored and set to the minimum
 # CLI flag: -querier.max-concurrent
-[max_concurrent: <int> | default = 20]
+[max_concurrent: <int> | default = 8]
 
 # The timeout for a query. This config option should be set on query-frontend
 # too when query sharding is enabled. This also applies to queries evaluated by

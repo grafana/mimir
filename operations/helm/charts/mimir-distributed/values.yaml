@@ -281,10 +281,7 @@ mimir:
       - dns+{{ include "mimir.fullname" . }}-gossip-ring.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ include "mimir.memberlistBindPort" . }}
 
     querier:
-      # With query sharding we run more but smaller queries. We must strike a balance
-      # which allows us to process more sharded queries in parallel when requested, but not overload
-      # queriers during non-sharded queries.
-      max_concurrent: 16
+      max_concurrent: 8
 
     query_scheduler:
       # Increase from default of 100 to account for queries created by query sharding
