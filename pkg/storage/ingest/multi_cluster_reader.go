@@ -107,19 +107,23 @@ func NewMultiClusterPartitionReader(
 		clusterReg := prometheus.WrapRegistererWith(prometheus.Labels{"write_compartment": strconv.Itoa(kafkaClusterID)}, reg)
 		clusterLogger := log.With(logger, "write_compartment", kafkaClusterID)
 
-		var reader *SingleClusterPartitionReader
-		var err error
+		// Pick this cluster's consumer: with ordered consumption, records stream into the shared merger,
+		// which pushes them (in merged order) via the shared PusherConsumer; otherwise each cluster pushes
+		// directly via its own PusherConsumer. The Pusher is always passed as the PreCommitNotifier so
+		// offset commits notify it directly.
+		var consumerFactory consumerFactory
 		if merger != nil {
-			// The reader streams its records into the shared merger, which pushes them (in merged order)
-			// via the shared PusherConsumer. The Pusher is still passed as the PreCommitNotifier so
-			// offset commits notify it directly.
-			consumerFactory := consumerFactoryFunc(func() RecordConsumer {
+			consumerFactory = consumerFactoryFunc(func() RecordConsumer {
 				return merger.NewSubmittingConsumer(kafkaClusterID)
 			})
-			reader, err = newSingleClusterPartitionReader(clusterCfg, partitionID, readerInstanceID, clusterOffsetFilePath, consumerFactory, pusher, clusterLogger, clusterReg)
 		} else {
-			reader, err = NewSingleClusterPartitionReader(clusterCfg, partitionID, readerInstanceID, clusterOffsetFilePath, pusher, clusterLogger, clusterReg)
+			pusherMetrics := NewPusherConsumerMetrics(clusterReg)
+			consumerFactory = consumerFactoryFunc(func() RecordConsumer {
+				return NewPusherConsumer(pusher, clusterCfg, pusherMetrics, clusterLogger)
+			})
 		}
+
+		reader, err := newSingleClusterPartitionReader(clusterCfg, partitionID, readerInstanceID, clusterOffsetFilePath, consumerFactory, pusher, clusterLogger, clusterReg)
 		if err != nil {
 			return nil, errors.Wrapf(err, "creating partition reader for write compartment %d", kafkaClusterID)
 		}
