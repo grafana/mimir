@@ -16,6 +16,7 @@ import (
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
+	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -667,9 +668,10 @@ func TestCacheOperator(t *testing.T) {
 				memoryConsumptionTracker: memoryConsumptionTracker,
 			}
 			params := &planning.QueryParameters{OriginalExpression: "the_original_expression{}"}
-			metrics := NewResultsCacheMetrics("query_range", prometheus.NewPedanticRegistry())
+			reg := prometheus.NewPedanticRegistry()
+			metrics := NewResultsCacheMetrics("query_range", reg)
 
-			o := newCacheOperator(cache, caching.NewCacheKeyGenerator(nil, caching.TenantPrefixGenerator), materializer, createTestNode(), testCase.timeRange, memoryConsumptionTracker, posrange.PositionRange{}, params, limits, log.NewNopLogger(), cacheEntryInterval, testCase.minCacheExtent, metrics)
+			o := newCacheOperator(cache, caching.NewCacheKeyGenerator(nil, caching.TenantPrefixGenerator), materializer, createTestNode(), testCase.timeRange, memoryConsumptionTracker, posrange.PositionRange{}, params, limits, log.NewNopLogger(), cacheEntryInterval, testCase.minCacheExtent, metrics, true)
 			o.timeNow = func() time.Time { return timeNow }
 			o.getCurrentTraceID = func(context.Context) (string, bool) { return newTraceID, true }
 
@@ -790,6 +792,9 @@ func TestCacheOperator(t *testing.T) {
 			require.Equal(t, float64(len(testCase.expectedFreshlyEvaluatedRanges)), testutil.ToFloat64(metrics.EvaluatedExtents))
 			require.Equal(t, float64(1), testutil.ToFloat64(metrics.CacheRequests))
 
+			// All series are read in this test, so no unconsumed series should be read and buffered.
+			require.Zero(t, findHistogram(t, reg, "cortex_frontend_query_result_cache_unconsumed_series_read").GetSampleCount(), "expected no unconsumed series to be read")
+
 			if testCase.existingCacheEntry == nil {
 				require.Zero(t, testutil.ToFloat64(metrics.CacheHits))
 				require.Zero(t, queryDetails.ResultsCacheHitCount)
@@ -803,74 +808,143 @@ func TestCacheOperator(t *testing.T) {
 	}
 }
 
-func TestCacheOperator_DoesNotSaveCacheEntryIfSeriesMetadataNotCalled(t *testing.T) {
-	for _, shouldCallFinishedReading := range []bool{true, false} {
-		t.Run("call finished reading = "+strconv.FormatBool(shouldCallFinishedReading), func(t *testing.T) {
-			ctx := user.InjectOrgID(context.Background(), "some-user")
-			memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
-			cache := caching.NewInMemoryCache()
-			materializer := &testMaterializer{
-				t:                        t,
-				ctx:                      ctx,
-				memoryConsumptionTracker: memoryConsumptionTracker,
-			}
-			limits := &mockLimitsProvider{}
+// TestCacheOperator_UnconsumedSeries verifies the behaviour when the consuming operator does not read all series
+// before calling FinishedReading:
+//   - When caching of unconsumed results is enabled, the remaining series are read and buffered during
+//     FinishedReading so that the complete set of results is still cached, and the number of series read this way is
+//     recorded in the cortex_frontend_query_result_cache_unconsumed_series_read metric.
+//   - When it is disabled, the remaining series are not read, and no cache entry is written.
+func TestCacheOperator_UnconsumedSeries(t *testing.T) {
+	runTestCase := func(t *testing.T, readSeriesMetadata bool, readAnySeries bool, cacheUnconsumedResults bool) {
+		ctx := user.InjectOrgID(context.Background(), "some-user")
+		memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+		cache := caching.NewInMemoryCache()
+		materializer := &testMaterializer{
+			t:                        t,
+			ctx:                      ctx,
+			memoryConsumptionTracker: memoryConsumptionTracker,
+		}
+		limits := &mockLimitsProvider{}
 
-			timeRange := types.NewRangeQueryTimeRange(timestamp.Time(0), timestamp.Time(0).Add(2*time.Minute), time.Minute)
-			metrics := NewResultsCacheMetrics("query_range", prometheus.NewPedanticRegistry())
-			o := newCacheOperator(cache, caching.NewCacheKeyGenerator(nil, caching.TenantPrefixGenerator), materializer, createTestNode(), timeRange, memoryConsumptionTracker, posrange.PositionRange{}, &planning.QueryParameters{OriginalExpression: "the_original_expression{}"}, limits, log.NewNopLogger(), cacheEntryInterval, 0, metrics)
+		timeRange := types.NewRangeQueryTimeRange(timestamp.Time(0), timestamp.Time(0).Add(2*time.Minute), time.Minute)
+		reg := prometheus.NewPedanticRegistry()
+		metrics := NewResultsCacheMetrics("query_range", reg)
+		o := newCacheOperator(cache, caching.NewCacheKeyGenerator(nil, caching.TenantPrefixGenerator), materializer, createTestNode(), timeRange, memoryConsumptionTracker, posrange.PositionRange{}, &planning.QueryParameters{OriginalExpression: "the_original_expression{}"}, limits, log.NewNopLogger(), cacheEntryInterval, 0, metrics, cacheUnconsumedResults)
+		timeNow := time.Now()
+		o.timeNow = func() time.Time { return timeNow }
 
-			require.NoError(t, o.Prepare(ctx, &types.PrepareParams{}))
-			require.NoError(t, o.AfterPrepare(ctx))
+		require.NoError(t, o.Prepare(ctx, &types.PrepareParams{}))
+		require.True(t, o.extents.shouldWriteCacheEntry, "invalid test case: no cache entry to write")
+		require.NoError(t, o.AfterPrepare(ctx))
 
-			require.True(t, o.extents.shouldWriteCacheEntry, "invalid test case: no cache entry to write")
+		totalSeriesCount := 2
+		readSeriesCount := 0
 
-			if shouldCallFinishedReading {
-				require.NoError(t, o.FinishedReading(ctx))
-			}
-
-			// Finalize the operator without calling SeriesMetadata().
-			_, _, err := o.Finalize(ctx)
+		if readSeriesMetadata {
+			series, err := o.SeriesMetadata(ctx, nil)
 			require.NoError(t, err)
+			require.Len(t, series, 2, "expected two series")
 
+			// Release the series metadata slice as the consuming operator would.
+			types.SeriesMetadataSlicePool.Put(&series, memoryConsumptionTracker)
+
+			if readAnySeries {
+				// Read only the first series, leaving the rest unconsumed.
+				data, err := o.NextSeries(ctx)
+				require.NoError(t, err)
+				types.PutInstantVectorSeriesData(data, memoryConsumptionTracker)
+				readSeriesCount++
+			}
+		}
+
+		require.NoError(t, o.FinishedReading(ctx))
+
+		operatorStats, _, err := o.Finalize(ctx)
+		require.NoError(t, err)
+		operatorStats.Close()
+
+		unconsumedSeriesHistogram := findHistogram(t, reg, "cortex_frontend_query_result_cache_unconsumed_series_read")
+		expectedUnconsumedSeriesCount := totalSeriesCount - readSeriesCount // All series except the one that was consumed should have been read and buffered during FinishedReading.
+
+		if cacheUnconsumedResults {
+			require.Equal(t, 1, cache.SetCount, "expected a cache entry to be written, but none was")
+
+			require.Equal(t, uint64(1), unconsumedSeriesHistogram.GetSampleCount(), "expected exactly one observation of the number of unconsumed series read")
+			require.Equal(t, float64(expectedUnconsumedSeriesCount), unconsumedSeriesHistogram.GetSampleSum(), "expected the number of unconsumed series read to be recorded")
+
+			// The cache entry should contain all series, including those that weren't consumed.
+			require.Len(t, cache.Entries, 1)
+			require.Contains(t, cache.Entries, o.hashedKey)
+			entry := cache.Entries[o.hashedKey]
+
+			var writtenEntry CacheEntry
+			require.NoError(t, writtenEntry.Unmarshal(entry.Value))
+
+			expectedCacheEntry := CacheEntry{
+				CacheKey: o.key,
+				Extents: []CachedExtent{
+					extentFor(timeRange, timeNow, ""),
+				},
+			}
+
+			// Sort the annotations in each extent in both the actual and expected cache entry to make the comparison below simpler.
+			sortAnnotations(&writtenEntry)
+			sortAnnotations(&expectedCacheEntry)
+
+			require.Equal(t, expectedCacheEntry, writtenEntry)
+		} else {
 			require.Zerof(t, cache.SetCount, "expected no cache entry to be written, but at least one was: %v", cache.Entries)
+			require.Zero(t, unconsumedSeriesHistogram.GetSampleCount(), "expected no unconsumed series to be read")
+
+			require.Len(t, materializer.materializedOperators, 1, "expected a single materialized inner operator")
+			materializedOperator := materializer.materializedOperators[0]
+			require.Len(t, materializedOperator.Data, expectedUnconsumedSeriesCount, "expected remaining series to not have been read")
+
+			// The consuming operator never read the later series, so release them as the inner operator would in a real query.
+			materializedOperator.ReleaseUnreadData(memoryConsumptionTracker)
+		}
+
+		o.Close()
+		require.Zerof(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes(), "expected all instances to be returned to pool, current memory consumption is:\n%v", memoryConsumptionTracker.DescribeCurrentMemoryConsumption())
+	}
+
+	for _, readSeriesMetadata := range []bool{true, false} {
+		t.Run(fmt.Sprintf("read series metadata=%v", readSeriesMetadata), func(t *testing.T) {
+			readAnySeriesValues := []bool{true, false}
+
+			if !readSeriesMetadata {
+				readAnySeriesValues = []bool{false}
+			}
+
+			for _, readAnySeries := range readAnySeriesValues {
+				t.Run(fmt.Sprintf("read any series=%v", readAnySeries), func(t *testing.T) {
+					for _, cacheUnconsumedResults := range []bool{true, false} {
+						t.Run(fmt.Sprintf("cache unconsumed results enabled=%v", cacheUnconsumedResults), func(t *testing.T) {
+							runTestCase(t, readSeriesMetadata, readAnySeries, cacheUnconsumedResults)
+						})
+					}
+				})
+			}
 		})
 	}
 }
 
-func TestCacheOperator_DoesNotSaveCacheEntryIfNotAllSeriesRead(t *testing.T) {
-	ctx := user.InjectOrgID(context.Background(), "some-user")
-	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
-	cache := caching.NewInMemoryCache()
-	materializer := &testMaterializer{
-		t:                        t,
-		ctx:                      ctx,
-		memoryConsumptionTracker: memoryConsumptionTracker,
+// findHistogram returns the single histogram metric with the given name from reg, failing the test if it is not present.
+func findHistogram(t *testing.T, reg *prometheus.Registry, name string) *dto.Histogram {
+	families, err := reg.Gather()
+	require.NoError(t, err)
+
+	for _, family := range families {
+		if family.GetName() != name {
+			continue
+		}
+
+		require.Len(t, family.GetMetric(), 1, "expected exactly one series for metric %q", name)
+		return family.GetMetric()[0].GetHistogram()
 	}
-	limits := &mockLimitsProvider{}
 
-	timeRange := types.NewRangeQueryTimeRange(timestamp.Time(0), timestamp.Time(0).Add(2*time.Minute), time.Minute)
-	metrics := NewResultsCacheMetrics("query_range", prometheus.NewPedanticRegistry())
-	o := newCacheOperator(cache, caching.NewCacheKeyGenerator(nil, caching.TenantPrefixGenerator), materializer, createTestNode(), timeRange, memoryConsumptionTracker, posrange.PositionRange{}, &planning.QueryParameters{OriginalExpression: "the_original_expression{}"}, limits, log.NewNopLogger(), cacheEntryInterval, 0, metrics)
-
-	require.NoError(t, o.Prepare(ctx, &types.PrepareParams{}))
-	require.NoError(t, o.AfterPrepare(ctx))
-	series, err := o.SeriesMetadata(ctx, nil)
-	require.NoError(t, err)
-	require.NotEmpty(t, series)
-	require.GreaterOrEqual(t, len(series), 2, "expected at least two series")
-
-	// Read the first series.
-	_, err = o.NextSeries(ctx)
-	require.NoError(t, err)
-
-	require.True(t, o.extents.shouldWriteCacheEntry, "invalid test case: no cache entry to write")
-
-	// Finalize the operator without reading the later series.
-	_, _, err = o.Finalize(ctx)
-	require.NoError(t, err)
-
-	require.Zerof(t, cache.SetCount, "expected no cache entry to be written, but at least one was: %v", cache.Entries)
+	require.Failf(t, "metric not found", "could not find metric %q", name)
+	return nil
 }
 
 func TestCacheOperator_DoesNotSaveCacheEntryIfFinishedReadingNotCalled(t *testing.T) {
@@ -886,7 +960,7 @@ func TestCacheOperator_DoesNotSaveCacheEntryIfFinishedReadingNotCalled(t *testin
 
 	timeRange := types.NewRangeQueryTimeRange(timestamp.Time(0), timestamp.Time(0).Add(2*time.Minute), time.Minute)
 	metrics := NewResultsCacheMetrics("query_range", prometheus.NewPedanticRegistry())
-	o := newCacheOperator(cache, caching.NewCacheKeyGenerator(nil, caching.TenantPrefixGenerator), materializer, createTestNode(), timeRange, memoryConsumptionTracker, posrange.PositionRange{}, &planning.QueryParameters{OriginalExpression: "the_original_expression{}"}, limits, log.NewNopLogger(), cacheEntryInterval, 0, metrics)
+	o := newCacheOperator(cache, caching.NewCacheKeyGenerator(nil, caching.TenantPrefixGenerator), materializer, createTestNode(), timeRange, memoryConsumptionTracker, posrange.PositionRange{}, &planning.QueryParameters{OriginalExpression: "the_original_expression{}"}, limits, log.NewNopLogger(), cacheEntryInterval, 0, metrics, true)
 
 	require.NoError(t, o.Prepare(ctx, &types.PrepareParams{}))
 	require.NoError(t, o.AfterPrepare(ctx))
@@ -1169,7 +1243,7 @@ func TestCacheOperator_CacheKey(t *testing.T) {
 		// Use the tenant prefix generator: as the org ID is not part of computeCacheKey, the
 		// prefix is what provides tenant isolation, so we exercise the full key (computed by
 		// populateCacheKey) rather than computeCacheKey alone.
-		o := newCacheOperator(nil, caching.NewCacheKeyGenerator(nil, caching.TenantPrefixGenerator), nil, node, desiredTimeRange, nil, posrange.PositionRange{}, params, nil, log.NewNopLogger(), cacheEntryInterval, 0, nil)
+		o := newCacheOperator(nil, caching.NewCacheKeyGenerator(nil, caching.TenantPrefixGenerator), nil, node, desiredTimeRange, nil, posrange.PositionRange{}, params, nil, log.NewNopLogger(), cacheEntryInterval, 0, nil, true)
 		ctx := user.InjectOrgID(context.Background(), tenantID)
 
 		require.NoError(t, o.populateCacheKey(ctx))
