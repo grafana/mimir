@@ -75,10 +75,10 @@ type Hedger struct {
 	metrics  *metrics
 
 	// hedgeBuffer batches per-wave per-agent groups across concurrent
-	// ProduceSync calls heading to the same agent. Its AgentFlushFunc is
-	// h.inner.ProduceSync directly, so hedge-origin flushes go straight
-	// through the DirectProducer chain without recursing into this Hedger.
-	hedgeBuffer *ClusterRecordBuffer
+	// ProduceSync calls heading to the same agent. Its flush hands each wave
+	// straight to inner.ProduceSync (the DirectProducer chain), so hedge-origin
+	// flushes never recurse into this Hedger.
+	hedgeBuffer *ClusterBuffer[routedEncodedTopicPartitionRecords]
 }
 
 // NewHedger wraps inner with the orchestration described on Hedger.
@@ -91,14 +91,14 @@ func NewHedger(inner DirectProducer, tracker AgentStatsReader, strategy Partitio
 		cfg:      cfg,
 		metrics:  m,
 	}
-	h.hedgeBuffer = NewClusterRecordBuffer(linger, batchMaxBytes, func(ctx context.Context, nodeID int32, parts []routedTopicPartitionRecords) ProduceResult {
+	h.hedgeBuffer = NewClusterBuffer[routedEncodedTopicPartitionRecords](linger, batchMaxBytes, func(ctx context.Context, nodeID int32, parts []routedEncodedTopicPartitionRecords) ProduceResult {
 		// Every hedge-buffer flush is one hedge wire request (possibly
 		// covering multiple partitions). The companion primary counter is
 		// incremented in ProduceSync.
 		m.produceRequestsHedgeTotal.Inc()
 
 		// DirectProducer takes unrouted partitions (the nodeID is specified separately), so we strip the routing.
-		return inner.ProduceSync(ctx, nodeID, unrouteTopicPartitionRecords(parts))
+		return inner.ProduceSync(ctx, nodeID, unrouteEncodedTopicPartitionRecords(parts))
 	}, m, nil) // nil reg: the client's main buffer owns the buffered-producer gauges.
 	return h
 }
@@ -111,7 +111,7 @@ func (h *Hedger) Close() {
 
 // ProduceSync resolves every partition to a terminal outcome and returns a
 // ProduceResult whose response merges each partition's outcome.
-func (h *Hedger) ProduceSync(ctx context.Context, primaryID int32, routedPartitions []routedTopicPartitionRecords) ProduceResult {
+func (h *Hedger) ProduceSync(ctx context.Context, primaryID int32, routedPartitions []routedEncodedTopicPartitionRecords) ProduceResult {
 	if len(routedPartitions) == 0 {
 		// Nothing to do is trivially successful. A bare ProduceResult{} would
 		// instead read as the empty/error sentinel via succeeded()/error().
@@ -143,7 +143,7 @@ func (h *Hedger) ProduceSync(ctx context.Context, primaryID int32, routedPartiti
 	// The rest of the Hedger works with unrouted partitions, because it will be
 	// responsible to route partitions to other candidate agents during hedging
 	// and retries.
-	partitions := unrouteTopicPartitionRecords(routedPartitions)
+	partitions := unrouteEncodedTopicPartitionRecords(routedPartitions)
 
 	// workCtx scopes both the primary and any hedge waves to this single
 	// ProduceSync call. Canceling it (fallback wins, or function returns)
@@ -206,7 +206,7 @@ func (h *Hedger) ProduceSync(ctx context.Context, primaryID int32, routedPartiti
 // cancel as soon as this function returns, which unwinds the losing leg.
 // The reported attempts is the depth of the winning leg: 1 when the
 // primary wins, the fallback's own depth when the fallback wins.
-func (h *Hedger) runHedgingAttemptsAndRaceWithPrimary(workCtx context.Context, primaryID int32, partitions []topicPartitionRecords, candidates *hedgerCandidates, primaryCh <-chan ProduceResult) hedgerProduceResult {
+func (h *Hedger) runHedgingAttemptsAndRaceWithPrimary(workCtx context.Context, primaryID int32, partitions []encodedTopicPartitionRecords, candidates *hedgerCandidates, primaryCh <-chan ProduceResult) hedgerProduceResult {
 	fallbackCh := make(chan hedgerProduceResult, 1)
 	go func() {
 		fallbackCh <- h.runHedgingAttempts(workCtx, primaryID, partitions, candidates)
@@ -246,7 +246,7 @@ func (h *Hedger) runHedgingAttemptsAndRaceWithPrimary(workCtx context.Context, p
 // MaxHedgeAgents, or ctx is canceled. The reported attempts is the total
 // attempt depth: 1 (the primary, which this function models as the first
 // tried agent) plus one per hedge wave dispatched.
-func (h *Hedger) runHedgingAttempts(workCtx context.Context, primaryID int32, partitions []topicPartitionRecords, candidates *hedgerCandidates) (out hedgerProduceResult) {
+func (h *Hedger) runHedgingAttempts(workCtx context.Context, primaryID int32, partitions []encodedTopicPartitionRecords, candidates *hedgerCandidates) (out hedgerProduceResult) {
 	h.metrics.hedgeAttemptsTotal.Inc()
 	// Count a win only when the result is successful AND we weren't
 	// preempted by ctx cancellation (e.g. the racing variant aborting
@@ -315,7 +315,7 @@ func (h *Hedger) runHedgingAttempt(workCtx context.Context, acc *produceResultAc
 	// loop: the batch can never produce every partition successfully, so
 	// further waves on the remaining partitions waste effort. Pending
 	// partitions will surface as per-partition errors in result().
-	groups := map[int32][]topicPartitionRecords{}
+	groups := map[int32][]encodedTopicPartitionRecords{}
 	for _, p := range pending {
 		tp := topicPartition{topic: p.topic, partition: p.partition}
 
@@ -367,7 +367,7 @@ func (h *Hedger) runHedgingAttempt(workCtx context.Context, acc *produceResultAc
 		legDone := func(res ProduceResult) {
 			once.Do(func() { results <- res })
 		}
-		h.hedgeBuffer.Add(attemptCtx, newMultiRoutedTopicPartitionRecords(parts, agent, legDone))
+		h.hedgeBuffer.Add(attemptCtx, newMultiRoutedEncodedTopicPartitionRecords(parts, agent, legDone))
 	}
 
 	for remaining := len(groups); remaining > 0; remaining-- {
@@ -388,7 +388,7 @@ func (h *Hedger) runHedgingAttempt(workCtx context.Context, acc *produceResultAc
 }
 
 // shouldHedge returns the hedge delay (and whether to hedge) for primaryID.
-func (h *Hedger) shouldHedge(now time.Time, primaryID int32, partitions []routedTopicPartitionRecords) (time.Duration, bool) {
+func (h *Hedger) shouldHedge(now time.Time, primaryID int32, partitions []routedEncodedTopicPartitionRecords) (time.Duration, bool) {
 	// Probe routing: trust the routing-time nodeState. Re-querying the
 	// strategy would consume another probe slot through the Demoter.
 	for _, p := range partitions {

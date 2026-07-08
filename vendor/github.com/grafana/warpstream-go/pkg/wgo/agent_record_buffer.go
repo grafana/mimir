@@ -5,48 +5,36 @@ import (
 	"errors"
 	"sync"
 	"time"
-
-	"github.com/twmb/franz-go/pkg/kgo"
 )
 
 // errBufferClosed is returned to Add callers attempting to enqueue after Close.
 var errBufferClosed = errors.New("record buffer is closed")
 
-// AgentFlushFunc is invoked by AgentRecordBuffer when a batch is ready to
-// send. The function only produces the batch and returns the resulting
-// ProduceResult. A successful outcome must carry a non-nil resp; an error-only
-// (or zero) ProduceResult is treated as a failure by completion handling.
-//
-// The partitions it receives satisfy two guarantees:
-//
-//   - All belong to nodeID — the agent that owns the AgentRecordBuffer doing
-//     the flush — because the buffer bins incoming routed entries by nodeID.
-//   - At most one entry per (topic, partition). The buffer coalesces
-//     same-partition records into a single entry before the call, because the
-//     produce/hedge path keys per-partition state by (topic, partition) and
-//     rejects duplicates (see produceResultAccumulator).
-type AgentFlushFunc func(ctx context.Context, nodeID int32, partitions []routedTopicPartitionRecords) ProduceResult
+// AgentFlushFunc produces one agent's batch of wire items — all targeting
+// nodeID, at most one entry per (topic, partition) — and returns the outcome. A
+// successful outcome must carry a non-nil resp; an error-only or zero
+// ProduceResult counts as a failure.
+type AgentFlushFunc[W routedBatch[W]] func(ctx context.Context, nodeID int32, wire []W) ProduceResult
 
-// AgentRecordBuffer accumulates records targeted at one Warpstream agent and
-// flushes them as a single ProduceRequest on linger expiry, batch-size
-// overflow, or Close. It exists because Warpstream's stateless model lets a
-// single Produce request to one agent carry batches for many partitions —
-// the natural unit of batching here is "records bound for this agent",
-// independent of how many topics or partitions they span.
+// AgentBuffer accumulates items targeted at one Warpstream agent and flushes
+// them as a single ProduceRequest on linger expiry, batch-size overflow, or
+// Close. It exists because Warpstream's stateless model lets a single Produce
+// request to one agent carry batches for many partitions — the natural unit of
+// batching here is "items bound for this agent", independent of how many topics
+// or partitions they span.
 //
 // The buffer is intentionally narrow: it knows nothing about routing,
-// resolvers, hedging, or other agents. ClusterRecordBuffer owns those
-// concerns. This split keeps the per-agent contention surface small (one
-// mutex per agent) and keeps the multi-agent fan-in logic out of the hot
-// per-record path. Concurrent Adds for *different* agents never touch the
-// same mutex.
+// resolvers, hedging, or other agents. ClusterBuffer owns those concerns. This
+// split keeps the per-agent contention surface small (one mutex per agent) and
+// keeps the multi-agent fan-in logic out of the hot per-item path. Concurrent
+// Adds for *different* agents never touch the same mutex.
 //
 // Two design choices stand out:
 //
 //   - Linger bounds batching on the steady path: the typical deployment has
 //     many concurrent client processes producing to the same Warpstream
 //     cluster, and lingering lets us amortise the Produce request cost. A
-//     batch still flushes early when adding the next record would exceed the
+//     batch still flushes early when adding the next item would exceed the
 //     byte cap, so linger is an upper bound on batching delay, not a floor.
 //   - Each flush runs in its own goroutine so the buffer can immediately
 //     start accumulating the next batch. This means multiple Produce
@@ -55,31 +43,30 @@ type AgentFlushFunc func(ctx context.Context, nodeID int32, partitions []routedT
 //     stateless, ordering between requests doesn't matter for the produce
 //     contract this client exposes, and the cap that would matter (memory
 //     pressure) is enforced by the caller upstream.
-type AgentRecordBuffer struct {
+type AgentBuffer[W routedBatch[W]] struct {
 	nodeID        int32
 	linger        time.Duration
 	batchMaxBytes int32
-	flush         AgentFlushFunc
+	flush         AgentFlushFunc[W]
 	metrics       *metrics
 
-	mu                        sync.Mutex
-	nextProduceFirstTimestamp int64
-	nextProducePartitions     []promisedRoutedTopicPartitionRecords
-	nextProduceRecords        int
-	nextProduceWireBytes      int64
-	nextProduceFlushTimer     *time.Timer
-	closed                    bool
+	mu                    sync.Mutex
+	nextProduceItems      []promised[W]
+	nextProduceRecords    int
+	nextProduceWireBytes  int64
+	nextProduceFlushTimer *time.Timer
+	closed                bool
 
 	flushWG        sync.WaitGroup
 	flushCtx       context.Context
 	cancelFlushCtx context.CancelFunc
 }
 
-// NewAgentRecordBuffer returns a buffer for records destined to nodeID.
-// flush runs in a background goroutine when a batch is ready.
-func NewAgentRecordBuffer(nodeID int32, linger time.Duration, batchMaxBytes int32, flush AgentFlushFunc, m *metrics) *AgentRecordBuffer {
+// NewAgentBuffer returns a buffer for items destined to nodeID. flush runs in a
+// background goroutine when a batch is ready.
+func NewAgentBuffer[W routedBatch[W]](nodeID int32, linger time.Duration, batchMaxBytes int32, flush AgentFlushFunc[W], m *metrics) *AgentBuffer[W] {
 	ctx, cancel := context.WithCancel(context.Background())
-	return &AgentRecordBuffer{
+	return &AgentBuffer[W]{
 		nodeID:         nodeID,
 		linger:         linger,
 		batchMaxBytes:  batchMaxBytes,
@@ -90,31 +77,31 @@ func NewAgentRecordBuffer(nodeID int32, linger time.Duration, batchMaxBytes int3
 	}
 }
 
-// Add buffers partition groups for produce. Each group's done fires exactly
-// once with its terminal outcome.
-func (a *AgentRecordBuffer) Add(partitions []promisedRoutedTopicPartitionRecords) {
+// Add buffers items for produce. Each item's done fires exactly once with its
+// terminal outcome.
+func (a *AgentBuffer[W]) Add(items []promised[W]) {
 	incoming := 0
-	for _, p := range partitions {
-		incoming += len(p.records)
+	for i := range items {
+		incoming += items[i].item.recordCount()
 	}
 	if incoming == 0 {
 		return
 	}
 
-	// Split any group whose own RecordBatch would exceed batchMaxBytes into
+	// Split any item whose own RecordBatch would exceed batchMaxBytes into
 	// chunks that each fit, so no single flushed per-partition batch can be
-	// rejected MessageTooLarge. Chunks are then added one at a time below, and
-	// because each is <= batchMaxBytes the overflow check keeps nextProduceWireBytes
-	// (and therefore every per-partition batch) within the cap.
-	chunks := make([]promisedRoutedTopicPartitionRecords, 0, len(partitions))
-	for _, p := range partitions {
-		chunks = append(chunks, splitPromisedRoutedTopicPartitionRecordsByBatchMaxBytes(p, a.batchMaxBytes)...)
+	// rejected MessageTooLarge. Chunks are added one at a time below, and
+	// because each is <= batchMaxBytes the overflow check keeps
+	// nextProduceWireBytes (and therefore every per-partition batch) within the cap.
+	chunks := make([]promised[W], 0, len(items))
+	for _, p := range items {
+		chunks = append(chunks, splitPromisedRoutedBatchByBatchMaxBytes(p, a.batchMaxBytes)...)
 	}
 
 	a.mu.Lock()
 	if a.closed {
 		// Closed buffer: there is no flush to carry the outcome, so resolve
-		// every group's done synchronously with errBufferClosed.
+		// every item's done synchronously with errBufferClosed.
 		a.mu.Unlock()
 		for _, p := range chunks {
 			p.done(ProduceResult{err: errBufferClosed})
@@ -131,58 +118,24 @@ func (a *AgentRecordBuffer) Add(partitions []promisedRoutedTopicPartitionRecords
 	a.mu.Unlock()
 }
 
-// addToNextProduceLocked appends one group (already <= batchMaxBytes) to the
-// pending produce, flushing first when it wouldn't fit. Groups are never merged
+// addToNextProduceLocked appends one item (already <= batchMaxBytes) to the
+// pending produce, flushing first when it wouldn't fit. Items are never merged
 // here: same-partition entries are coalesced into one wire batch at flush time
-// (startFlushLocked), which keeps each group's done untouched. Caller must hold
+// (startFlushLocked), which keeps each item's done untouched. Caller must hold
 // a.mu.
-func (a *AgentRecordBuffer) addToNextProduceLocked(p promisedRoutedTopicPartitionRecords) {
-	addBytes, firstTS := a.computeAddCostLocked(p.records)
+func (a *AgentBuffer[W]) addToNextProduceLocked(p promised[W]) {
+	addBytes := p.item.wireBytes()
 	if a.nextProduceRecords > 0 && a.nextProduceWireBytes+addBytes > int64(a.batchMaxBytes) {
-		// Re-cost after the forced flush: the batch overhead and offsetDelta
-		// values reset, so the original addBytes no longer applies.
 		a.startFlushLocked()
-		addBytes, firstTS = a.computeAddCostLocked(p.records)
 	}
-
-	if a.nextProduceRecords == 0 {
-		// Fresh produce: anchor timestamp.
-		a.nextProduceFirstTimestamp = firstTS
-	}
-	a.nextProducePartitions = append(a.nextProducePartitions, p)
-	a.nextProduceRecords += len(p.records)
+	a.nextProduceItems = append(a.nextProduceItems, p)
+	a.nextProduceRecords += p.item.recordCount()
 	a.nextProduceWireBytes += addBytes
 }
 
-// computeAddCostLocked returns the additional wire bytes that appending records
-// to the pending produce would contribute, plus the firstTimestamp that anchors
-// the computation (the pending produce's existing anchor when non-empty, the
-// first incoming record's timestamp otherwise). Includes the
-// recordBatchHeaderBytes overhead when the pending produce is empty so the
-// caller can add the result to a zeroed counter. Caller must hold a.mu.
-func (a *AgentRecordBuffer) computeAddCostLocked(records []*kgo.Record) (int64, int64) {
-	fresh := a.nextProduceRecords == 0
-	firstTS := a.nextProduceFirstTimestamp
-	if fresh && len(records) > 0 {
-		firstTS = records[0].Timestamp.UnixMilli()
-	}
-
-	var bytes int64
-	if fresh {
-		bytes = recordBatchHeaderBytes
-	}
-	offset := int32(a.nextProduceRecords)
-	for _, rec := range records {
-		tsDelta := rec.Timestamp.UnixMilli() - firstTS
-		bytes += recordEstimateBytes(rec, offset, tsDelta)
-		offset++
-	}
-	return bytes, firstTS
-}
-
-// Close flushes the pending produce and waits for every in-flight FlushFunc
-// to report. Subsequent Adds fail with errBufferClosed. Idempotent.
-func (a *AgentRecordBuffer) Close() {
+// Close flushes the pending produce and waits for every in-flight flush to
+// report. Subsequent Adds fail with errBufferClosed. Idempotent.
+func (a *AgentBuffer[W]) Close() {
 	a.mu.Lock()
 	if a.closed {
 		a.mu.Unlock()
@@ -197,7 +150,7 @@ func (a *AgentRecordBuffer) Close() {
 }
 
 // timerFlush is invoked by the linger timer.
-func (a *AgentRecordBuffer) timerFlush() {
+func (a *AgentBuffer[W]) timerFlush() {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.startFlushLocked()
@@ -206,7 +159,7 @@ func (a *AgentRecordBuffer) timerFlush() {
 // startFlushLocked dispatches the pending produce to flush in a goroutine and
 // resets buffer state so the next produce can accumulate immediately. No-op
 // if nothing is pending. Caller must hold a.mu.
-func (a *AgentRecordBuffer) startFlushLocked() {
+func (a *AgentBuffer[W]) startFlushLocked() {
 	if a.nextProduceRecords == 0 {
 		return
 	}
@@ -217,17 +170,16 @@ func (a *AgentRecordBuffer) startFlushLocked() {
 		a.nextProduceFlushTimer.Stop()
 		a.nextProduceFlushTimer = nil
 	}
-	entries := a.nextProducePartitions
-	a.nextProducePartitions = nil
+	entries := a.nextProduceItems
+	a.nextProduceItems = nil
 	a.nextProduceRecords = 0
 	a.nextProduceWireBytes = 0
-	a.nextProduceFirstTimestamp = 0
 
-	// Merge same-partition records into one wire entry: the produce/hedge path
+	// Merge same-partition items into one wire entry: the produce/hedge path
 	// keys per-partition state by (topic, partition) and rejects duplicates
 	// (see produceResultAccumulator). Completion still fans out to every
 	// original entry's done, so the merged wire view drops done.
-	wire := mergePromisedRoutedTopicPartitionRecordsByTopicPartition(entries)
+	wire := mergePromisedRoutedBatchByTopicPartition(entries)
 
 	a.flushWG.Add(1)
 	go func() {

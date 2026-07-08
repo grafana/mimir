@@ -118,56 +118,79 @@ type produceRequestStats struct {
 	compressedBytes   int64
 }
 
-// buildMultiTopicProduceRequest builds a ProduceRequest covering records that
-// may span multiple topics. topicID maps a topic name to its UUID, returning
-// ok=false when the topic is unknown to the caller; an unknown topic fails
-// the build with an error. Both topic name and UUID are populated per topic
-// so the request is valid across the v0-v12 / v13+ API divide. The returned
-// stats feed the producer-state metrics.
-func buildMultiTopicProduceRequest(version int16, topicID func(string) ([16]byte, bool), records []*kgo.Record) (*kmsg.ProduceRequest, produceRequestStats, error) {
-	byTopic := make(map[string][]*kgo.Record)
-	for _, r := range records {
-		byTopic[r.Topic] = append(byTopic[r.Topic], r)
+// add returns the element-wise sum of two stats.
+func (s produceRequestStats) add(o produceRequestStats) produceRequestStats {
+	return produceRequestStats{
+		records:           s.records + o.records,
+		batches:           s.batches + o.batches,
+		uncompressedBytes: s.uncompressedBytes + o.uncompressedBytes,
+		compressedBytes:   s.compressedBytes + o.compressedBytes,
+	}
+}
+
+// buildMultiTopicProduceRequestFromEncoded builds a ProduceRequest covering pre-encoded
+// partitions that may span multiple topics. topicID maps a topic name to its
+// UUID, returning ok=false when the topic is unknown to the caller; an unknown
+// topic fails the build with an error. Both topic name and UUID are populated
+// per topic so the request is valid across the v0-v12 / v13+ API divide.
+//
+// Each partition contributes its pre-encoded RecordBatch. The returned stats
+// feed the producer-state metrics.
+//
+// partitions must hold at most one entry per (topic, partition); duplicates are
+// rejected with an error rather than merged.
+func buildMultiTopicProduceRequestFromEncoded(version int16, topicID func(string) ([16]byte, bool), partitions []encodedTopicPartitionRecords) (*kmsg.ProduceRequest, produceRequestStats, error) {
+	// Track first-seen topic order and iterate it rather than ranging byTopic
+	// directly: Go randomises map iteration, so ranging the map would emit the
+	// request's topics in a different order on every call. Kafka doesn't care
+	// about topic order, but a stable layout keeps the output deterministic
+	// (reproducible requests, non-flaky tests).
+	byTopic := make(map[string][]encodedTopicPartitionRecords)
+	topicOrder := make([]string, 0)
+	for _, p := range partitions {
+		if _, ok := byTopic[p.topic]; !ok {
+			topicOrder = append(topicOrder, p.topic)
+		}
+		byTopic[p.topic] = append(byTopic[p.topic], p)
 	}
 
 	var stats produceRequestStats
 	req := kmsg.NewProduceRequest()
 	req.Version = version
 	req.Acks = -1 // all ISR
-	for topic, topicRecords := range byTopic {
+	for _, topic := range topicOrder {
 		id, ok := topicID(topic)
 		if !ok {
 			return nil, produceRequestStats{}, fmt.Errorf("topic %q not known", topic)
 		}
-		byPartition := groupByPartition(topicRecords)
-		partitions := make([]kmsg.ProduceRequestTopicPartition, 0, len(byPartition))
-		for partition, recs := range byPartition {
-			batch, uncompressed, compressed := encodeBatch(recs)
-			partitions = append(partitions, kmsg.ProduceRequestTopicPartition{
-				Partition: partition,
-				Records:   batch,
+		topicPartitions := byTopic[topic]
+		reqPartitions := make([]kmsg.ProduceRequestTopicPartition, 0, len(topicPartitions))
+		seen := make(map[int32]struct{}, len(topicPartitions))
+		for _, p := range topicPartitions {
+			// Merging batches for the same partition is not supported: a duplicate
+			// would emit two entries for one partition — a malformed request — so
+			// fail loud instead.
+			if _, dup := seen[p.partition]; dup {
+				return nil, produceRequestStats{}, fmt.Errorf("duplicate partition %d for topic %q", p.partition, topic)
+			}
+			seen[p.partition] = struct{}{}
+
+			if len(p.encoded) == 0 {
+				continue
+			}
+			reqPartitions = append(reqPartitions, kmsg.ProduceRequestTopicPartition{
+				Partition: p.partition,
+				Records:   p.encoded,
 			})
-			stats.records += int64(len(recs))
-			stats.batches++
-			stats.uncompressedBytes += int64(uncompressed)
-			stats.compressedBytes += int64(compressed)
+			stats = stats.add(p.encodedStats)
 		}
 		req.Topics = append(req.Topics, kmsg.ProduceRequestTopic{
 			Topic:      topic,
 			TopicID:    id,
-			Partitions: partitions,
+			Partitions: reqPartitions,
 		})
 	}
 	return &req, stats, nil
-}
-
-// groupByPartition groups records by their partition field.
-func groupByPartition(records []*kgo.Record) map[int32][]*kgo.Record {
-	m := make(map[int32][]*kgo.Record)
-	for _, r := range records {
-		m[r.Partition] = append(m[r.Partition], r)
-	}
-	return m
 }
 
 // parseProduceResponse returns the first per-partition error, or nil on no error.

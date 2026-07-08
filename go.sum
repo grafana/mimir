@@ -590,8 +590,8 @@ github.com/grafana/pyroscope-go/godeltaprof v0.1.9 h1:c1Us8i6eSmkW+Ez05d3co8kasn
 github.com/grafana/pyroscope-go/godeltaprof v0.1.9/go.mod h1:2+l7K7twW49Ct4wFluZD3tZ6e0SjanjcUUBPVD/UuGU=
 github.com/grafana/regexp v0.0.0-20250905101755-5eb4f3acbf71 h1:A4D22zZV7+EeQk9TeATDDY/PG2wnzdqKcj4IZq+PcwA=
 github.com/grafana/regexp v0.0.0-20250905101755-5eb4f3acbf71/go.mod h1:+JKpmjMGhpgPL+rXZ5nsZieVzvarn86asRlBg4uNGnk=
-github.com/grafana/warpstream-go v0.0.0-20260625083726-8ebc81451c89 h1:KVQJldbpxTf5rNhp30+WqPOu4FBOt8nZq+tPaa2uKeE=
-github.com/grafana/warpstream-go v0.0.0-20260625083726-8ebc81451c89/go.mod h1:iSsYPL1NaE7fLP9GRHhN62jaUgnPf5h8agzwOWpc9FE=
+github.com/grafana/warpstream-go v0.0.0-20260708135512-e5879b5c8615 h1:YfjfuVta5OzEZswFCf2OhoRboblUsNuclvT1GevCBEM=
+github.com/grafana/warpstream-go v0.0.0-20260708135512-e5879b5c8615/go.mod h1:9iFIyD7D+F+2Hsk+P6PNMBH8E+JYxPsLGIP2p46L1s0=
 github.com/grpc-ecosystem/go-grpc-prometheus v1.2.0/go.mod h1:8NvIoxWQoOIhqOTXgfV/d3M/q6VIi02HzZEHgUlZvzk=
 github.com/grpc-ecosystem/grpc-gateway v1.16.0/go.mod h1:BDjrQk3hbvj6Nolgz8mAMFbcEtjT1g+wF4CSlocrBnw=
 github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0 h1:5VipnvEpbqr2gA2VbM+nYVbkIF28c5ZQfqCBQ5g2xfk=
@@ -1018,8 +1018,8 @@ github.com/tklauser/go-sysconf v0.3.16/go.mod h1:/qNL9xxDhc7tx3HSRsLWNnuzbVfh3e7
 github.com/tklauser/numcpus v0.11.0 h1:nSTwhKH5e1dMNsCdVBukSZrURJRoHbSEQjdEbY+9RXw=
 github.com/tklauser/numcpus v0.11.0/go.mod h1:z+LwcLq54uWZTX0u/bGobaV34u6V7KNlTZejzM6/3MQ=
 github.com/tv42/httpunix v0.0.0-20150427012821-b75d8614f926/go.mod h1:9ESjWnEqriFuLhtthL60Sar/7RFoluCcXsuvEwTV5KM=
-github.com/twmb/franz-go v1.21.4 h1:skglTjGHOHHKxVdUG3A563gynBDhvSWFBBHXKOOMS8M=
-github.com/twmb/franz-go v1.21.4/go.mod h1:rfoMTnVk7107fhTGxfEKIHP/e7tPe6oyij/ywzO0czk=
+github.com/twmb/franz-go v1.21.5 h1:cVYI2+JTTKSvohhy8bCOleYrS7G79ZBrLVFIJsoHm8M=
+github.com/twmb/franz-go v1.21.5/go.mod h1:rfoMTnVk7107fhTGxfEKIHP/e7tPe6oyij/ywzO0czk=
 github.com/twmb/franz-go/pkg/kadm v1.18.1-0.20260529212035-11b03a277c72 h1:Uk0p3O2EPbqosXuSA6bhRMhbu+zt42Xv1G/h59fDX4s=
 github.com/twmb/franz-go/pkg/kadm v1.18.1-0.20260529212035-11b03a277c72/go.mod h1:cw/5ILOe0iIKJ81GwmCKwP11wnbU3YlMAa++wdZQHB4=
 github.com/twmb/franz-go/pkg/kfake v0.0.0-20260515175617-8268a5d078c0 h1:YWmvjmcidrKLLgObwU1k7K9KuesdYTV33OTIS0Ltj8o=
