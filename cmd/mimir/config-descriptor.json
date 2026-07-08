@@ -2627,6 +2627,17 @@
             },
             {
               "kind": "field",
+              "name": "enable_scalar_common_subexpression_elimination",
+              "required": false,
+              "desc": "Enable deduplication of scalar expressions as part of common subexpression elimination. Requires common subexpression elimination to be enabled.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "querier.mimir-query-engine.enable-scalar-common-subexpression-elimination",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
               "name": "enable_narrow_binary_selectors",
               "required": false,
               "desc": "Enable generating selectors for one side of a binary expression based on results from the other side.",
