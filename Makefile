@@ -349,6 +349,8 @@ lint: check-makefiles check-merge-conflicts
 
 	./tools/find-unpooled-slice-creation.sh
 
+	./tools/check-mangling-returned-slices-enabled.sh
+
 	# Configured via .golangci.yml (which sets build-tags matching GO_TAGS).
 	$(LINT_GO_ENV) golangci-lint run
 
