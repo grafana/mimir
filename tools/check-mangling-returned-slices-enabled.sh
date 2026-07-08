@@ -6,11 +6,15 @@
 # function. Mangling slices returned to the pool helps detect use-after-return
 # bugs, so we want it enabled whenever the engine's tests run.
 #
-# A single directory can contain test files split across an internal test
-# package ("xxx") and an external test package ("xxx_test"). Both are compiled
-# into the same test binary, so the init function can live in either package.
-# This script therefore checks all *_test.go files in a directory together and
-# passes the directory if any of them enables mangling in an init function.
+# Rather than trying to parse Go, we require each test directory to contain an
+# init_test.go file whose contents exactly match one of two canonical
+# templates. The package name is the only part allowed to vary, so we read it
+# from the file and regenerate the expected content to compare against:
+#
+#   - most packages import the types package and set
+#     types.EnableManglingReturnedSlices; and
+#   - the types package itself refers to EnableManglingReturnedSlices directly,
+#     as it cannot import itself.
 
 set -euo pipefail
 
@@ -20,51 +24,80 @@ ROOT="pkg/streamingpromql"
 
 cd "$PROJECT_DIR"
 
-# Returns success if any of the given test files sets EnableManglingReturnedSlices
-# to true inside an init function.
-has_init_enabling_mangling() {
-  awk '
-    # Enter an init function. Brace tracking below detects when we leave it,
-    # allowing multiple init functions per file.
-    /^func[ \t]+init\(\)[ \t]*{/ { in_init = 1 }
+# Prints the init_test.go contents expected for a package that imports the
+# types package. $1 is the package name.
+expected_with_import() {
+  cat <<EOF
+// SPDX-License-Identifier: AGPL-3.0-only
 
-    in_init {
-      if (index($0, "EnableManglingReturnedSlices") && $0 ~ /=[ \t]*true/) {
-        found = 1
-      }
+package $1
 
-      opens = gsub(/{/, "{")
-      closes = gsub(/}/, "}")
-      depth += opens - closes
+import (
+	"github.com/grafana/mimir/pkg/streamingpromql/types"
+)
 
-      if (depth <= 0) {
-        in_init = 0
-      }
-    }
+func init() {
+	types.EnableManglingReturnedSlices = true
+}
+EOF
+}
 
-    END { exit(found ? 0 : 1) }
-  ' "$@"
+# Prints the init_test.go contents expected for the types package itself, which
+# refers to EnableManglingReturnedSlices directly. $1 is the package name.
+expected_without_import() {
+  cat <<EOF
+// SPDX-License-Identifier: AGPL-3.0-only
+
+package $1
+
+func init() {
+	EnableManglingReturnedSlices = true
+}
+EOF
 }
 
 FAILURES=()
 
 # Find every directory including and beneath the root that contains test files.
 while IFS= read -r dir; do
-  # shellcheck disable=SC2046
-  # Word splitting is intended here: pass each test file as a separate argument.
-  if ! has_init_enabling_mangling $(find "$dir" -maxdepth 1 -name '*_test.go'); then
-    FAILURES+=("$dir")
+  file="$dir/init_test.go"
+
+  if [ ! -f "$file" ]; then
+    FAILURES+=("$dir (missing init_test.go)")
+    continue
   fi
+
+  # Read the declared package name. Go enforces that it matches the directory's
+  # package, so we only need it to regenerate the expected content.
+  pkg=$(awk '$1 == "package" { print $2; exit }' "$file")
+
+  if diff <(expected_with_import "$pkg") "$file" >/dev/null 2>&1; then
+    continue
+  fi
+
+  if diff <(expected_without_import "$pkg") "$file" >/dev/null 2>&1; then
+    continue
+  fi
+
+  FAILURES+=("$dir (init_test.go does not match the required content)")
 done < <(find "$ROOT" -name '*_test.go' -exec dirname {} \; | sort -u)
 
 if [ ${#FAILURES[@]} -ne 0 ]; then
-  echo "The following test packages do not set types.EnableManglingReturnedSlices to true in an init function:"
+  echo "The following test packages do not enable types.EnableManglingReturnedSlices in an init function:"
   echo
-  for dir in "${FAILURES[@]}"; do
-    echo "  $dir"
+  for failure in "${FAILURES[@]}"; do
+    echo "  $failure"
   done
   echo
-  echo "Add an init function to one of the package's test files (either the 'xxx' or 'xxx_test' package):"
+  echo "Each test directory must contain an init_test.go with exactly this content (using the package's own name):"
+  echo
+  echo "  // SPDX-License-Identifier: AGPL-3.0-only"
+  echo
+  echo "  package <package>"
+  echo
+  echo "  import ("
+  echo "  	\"github.com/grafana/mimir/pkg/streamingpromql/types\""
+  echo "  )"
   echo
   echo "  func init() {"
   echo "  	types.EnableManglingReturnedSlices = true"
