@@ -30,8 +30,14 @@ jobs:
       - name: Get build image from Makefile
         id: build_image_step
         run: echo "build_image=$(make print-build-image)" >> "$GITHUB_OUTPUT"
+      - name: Get supported OS/arch for dist builds
+        id: dist_matrix_step
+        run: |
+          matrix=$(make print-supported-os-arch | jq -Rc 'split("\t") | {os: .[0], arch: .[1]}' | jq -sc '{include: .}')
+          echo "dist_matrix=$matrix" >> "$GITHUB_OUTPUT"
     outputs:
       build_image: ${{ steps.build_image_step.outputs.build_image }}
+      dist_matrix: ${{ steps.dist_matrix_step.outputs.dist_matrix }}
       # Determine if we will deploy (aka push) the image to the registry.
       is_deploy: ${{ (startsWith(github.ref, 'refs/tags/') || startsWith(github.ref, 'refs/heads/r')) && github.event_name == 'push' && github.repository == 'grafana/mimir' }}
 
@@ -292,6 +298,69 @@ jobs:
           artifact_name: docker-image-copyblocks
           target: "./tools/copyblocks/.uptodate"
 
+  build-dist:
+    runs-on: ubuntu-latest
+    name: build-dist (${{ matrix.os }}, ${{ matrix.arch }})
+    needs:
+      - prepare
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.prepare.outputs.dist_matrix) }}
+    container:
+      image: ${{ needs.prepare.outputs.build_image }} # zizmor: ignore[unpinned-images] The image output produced by the prepare step is pinned
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          persist-credentials: false
+      - name: Run Git Config
+        run: git config --global --add safe.directory '*'
+      - name: Build
+        run: make BUILD_IN_CONTAINER=false dist GOOS=${{ matrix.os }} GOARCH=${{ matrix.arch }}
+      # Upload Linux binaries for build-packages always. The rest, for releases only.
+      - name: Upload dist artifacts
+        if: matrix.os == 'linux' || startsWith(github.ref, 'refs/tags/mimir-')
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7
+        with:
+          name: dist-${{ matrix.os }}-${{ matrix.arch }}
+          path: dist/
+          retention-days: 1
+
+  # Build the DEB/RPM packages that get attached to the GitHub release.
+  build-packages:
+    # Runs on ubuntu-latest (not inside the build container) because nfpm.sh needs
+    # Docker to run the jsonnet, envsubst, and nfpm helper containers.
+    runs-on: ubuntu-latest
+    needs:
+      - build-dist
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
+      - name: Download linux dist artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          pattern: dist-linux-*
+          path: dist
+          merge-multiple: true
+      # make packages runs nfpm against the downloaded binaries in dist/, validating that the
+      # DEB/RPM packages can be built on every push and PR (not just when cutting a release).
+      - name: Build DEB/RPM packages
+        run: make packages
+      # Only the release job consumes these, so they're only uploaded for release tags.
+      - name: Upload packages artifacts
+        if: startsWith(github.ref, 'refs/tags/mimir-')
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7
+        with:
+          name: packages
+          path: |
+            dist/*.deb
+            dist/*.rpm
+            dist/*.deb-sha-256
+            dist/*.rpm-sha-256
+          retention-days: 1
+
   # This job does not do anything - it exists to simplify the "needs" condition of the "deploy" job,
   # and to make it easier to configure the required passing checks in branch protection rules in GitHub,
   # as we have to specify each required passing job there. This job won't be considered successful unless
@@ -304,6 +373,8 @@ jobs:
       - build-query-tee-image
       - build-mimirtool-image
       - build-copyblocks-image
+      - build-dist
+      - build-packages
     steps:
       - run: echo "All dependencies succeeded!"
 
@@ -470,3 +541,48 @@ jobs:
       - name: Push Docker Images
         run: |
           ./.github/workflows/scripts/push-images.sh /tmp/images us-docker.pkg.dev/grafanalabs-global/dockerhub-mimir-prod-mirror/ $(make image-tag)
+
+  # Create, populate and publish the GitHub release for a Mimir release tag.
+  release:
+    needs:
+      - deploy
+      - build-dist
+      - build-packages
+    if: startsWith(github.ref, 'refs/tags/mimir-') && github.event_name == 'push' && github.repository == 'grafana/mimir'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
+          # Fetch the full history and all tags so that the release notes script
+          # can compute contributor stats and locate the previous release tag.
+          fetch-depth: 0
+      - name: Download dist artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          pattern: dist-*
+          path: dist
+          merge-multiple: true
+      - name: Download packages artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: packages
+          path: dist
+      - name: Create the draft GitHub release
+        id: draft
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: echo "release=$(./tools/release/create-draft-release.sh --artifacts-dir dist)" >> "$GITHUB_OUTPUT"
+      - name: Publish the GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE: ${{ steps.draft.outputs.release }}
+        run: |
+          gh release edit "$(jq -r .tag <<< "$RELEASE")" \
+            --draft=false \
+            --latest="$(jq -r .latest <<< "$RELEASE")"

@@ -175,6 +175,18 @@ print-build-image:
 print-build-image-build-args:
 	@printf '%s\n' revision=$(GIT_REVISION) goproxyValue=$(GOPROXY_VALUE)
 
+# Supported operating systems and architectures for dist builds.
+DIST_OSES ?= linux darwin windows freebsd
+DIST_ARCHES ?= amd64 arm64
+
+.PHONY: print-supported-os-arch
+print-supported-os-arch: ## Print supported OS/arch combinations for dist.
+	@for os in $(DIST_OSES); do \
+		for arch in $(DIST_ARCHES); do \
+			printf '%s\t%s\n' "$$os" "$$arch"; \
+		done; \
+	done
+
 # We don't want find to scan inside a bunch of directories, to accelerate the
 # 'make: Entering directory '/go/src/github.com/grafana/mimir' phase.
 DONT_FIND := -name vendor -prune -o -name .git -prune -o -name .cache -prune -o -name .pkg -prune -o -name packaging -prune -o -name mimir-mixin-tools -prune -o -name trafficdump -prune -o
@@ -532,8 +544,17 @@ dist: ## Generates binaries for a Mimir release.
 	@mkdir -p ./dist
 	@# Build binaries for various architectures and operating systems. Only
 	@# mimirtool supports Windows for now.
-	@for os in linux darwin windows freebsd; do \
-		for arch in amd64 arm64; do \
+	@# When GOOS and/or GOARCH are passed on the command line, only matching
+	@# targets are built.
+	@set -e; \
+	for os in $(DIST_OSES); do \
+		if [ -n "$(filter command line,$(origin GOOS))" ] && [ "$$os" != "$(GOOS)" ]; then \
+			continue; \
+		fi; \
+		for arch in $(DIST_ARCHES); do \
+			if [ -n "$(filter command line,$(origin GOARCH))" ] && [ "$$arch" != "$(GOARCH)" ]; then \
+				continue; \
+			fi; \
 			suffix="" ; \
 			if [ "$$os" = "windows" ]; then \
 				suffix=".exe" ; \
@@ -758,7 +779,8 @@ integration-tests-race: cmd/mimir/$(UPTODATE_RACE)
 # Those vars are needed for packages target
 export VERSION
 
-packages: dist
+.PHONY: packages
+packages:
 	@packaging/nfpm/nfpm.sh
 
 # Build both arm64 and amd64 images, so that we can test deb/rpm packages for both architectures.
