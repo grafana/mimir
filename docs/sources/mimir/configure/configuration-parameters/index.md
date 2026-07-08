@@ -5762,6 +5762,31 @@ migration:
   # CLI flag: -ingest-storage.migration.ingest-storage-max-wait-time
   [ingest_storage_max_wait_time: <duration> | default = 0s]
 
+ordered_consumption:
+  # (experimental) Whether records from all write compartments' Kafka clusters
+  # are consumed in best-effort Kafka-record-timestamp order before being
+  # pushed. When disabled, each Kafka cluster is consumed independently, so
+  # there's no cross-cluster ordering guarantee. Only takes effect when
+  # compartments are enabled with more than one write compartment.
+  # CLI flag: -ingest-storage.ordered-consumption.enabled
+  [enabled: <boolean> | default = false]
+
+  # (experimental) Soft upper bound on records buffered before forcing a flush.
+  # Larger values give more cross-cluster mixing (better ordering) at the cost
+  # of memory and per-flush latency.
+  # CLI flag: -ingest-storage.ordered-consumption.max-batch-records
+  [max_batch_records: <int> | default = 1024]
+
+  # (experimental) Maximum time records sit buffered before being flushed even
+  # if max-batch-records has not been reached.
+  # CLI flag: -ingest-storage.ordered-consumption.max-batch-wait
+  [max_batch_wait: <duration> | default = 50ms]
+
+  # (experimental) Buffer size of the channel into which the per-cluster
+  # consumers submit records. When 0, defaults to 2x max-batch-records.
+  # CLI flag: -ingest-storage.ordered-consumption.input-buffer-size
+  [input_buffer_size: <int> | default = 0]
+
 # (advanced) Number of tenants to concurrently fsync WAL and WBL before Kafka
 # offsets are committed, must be at least 1.
 # CLI flag: -ingest-storage.write-logs-fsync-before-kafka-commit-concurrency

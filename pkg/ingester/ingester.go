@@ -595,7 +595,7 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 			kafkaCfgs := ingest.WriteCompartmentConfigs(kafkaCfg, cfg.Compartments.Write.NumCompartments, readCompartmentTopic)
 			offsetFilePath := filepath.Join(cfg.BlocksStorageConfig.TSDB.Dir, "kafka-offset-wc-"+compartments.WriteCompartmentIDPlaceholder+".json")
 
-			i.ingestReader, err = ingest.NewMultiClusterPartitionReader(kafkaCfgs, i.ingestPartitionID, cfg.IngesterRing.InstanceID, offsetFilePath, profilingIngester, log.With(logger, "component", "ingest_reader"), registerer)
+			i.ingestReader, err = ingest.NewMultiClusterPartitionReader(kafkaCfgs, ingestCfg.OrderedConsumption, i.ingestPartitionID, cfg.IngesterRing.InstanceID, offsetFilePath, profilingIngester, log.With(logger, "component", "ingest_reader"), registerer)
 			if err != nil {
 				return nil, errors.Wrap(err, "creating ingest storage reader")
 			}

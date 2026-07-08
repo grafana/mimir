@@ -71,9 +71,10 @@ var (
 )
 
 type Config struct {
-	Enabled     bool            `yaml:"enabled"`
-	KafkaConfig KafkaConfig     `yaml:"kafka"`
-	Migration   MigrationConfig `yaml:"migration"`
+	Enabled            bool                     `yaml:"enabled"`
+	KafkaConfig        KafkaConfig              `yaml:"kafka"`
+	Migration          MigrationConfig          `yaml:"migration"`
+	OrderedConsumption OrderedConsumptionConfig `yaml:"ordered_consumption"`
 
 	WriteLogsFsyncBeforeKafkaCommitConcurrency int `yaml:"write_logs_fsync_before_kafka_commit_concurrency" category:"advanced"`
 }
@@ -84,6 +85,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 
 	cfg.KafkaConfig.RegisterFlagsWithPrefix("ingest-storage.kafka.", f)
 	cfg.Migration.RegisterFlagsWithPrefix("ingest-storage.migration.", f)
+	cfg.OrderedConsumption.RegisterFlagsWithPrefix("ingest-storage.ordered-consumption.", f)
 }
 
 // Validate the config.
@@ -98,6 +100,10 @@ func (cfg *Config) Validate() error {
 	}
 
 	if err := cfg.KafkaConfig.Validate(); err != nil {
+		return err
+	}
+
+	if err := cfg.OrderedConsumption.Validate(); err != nil {
 		return err
 	}
 

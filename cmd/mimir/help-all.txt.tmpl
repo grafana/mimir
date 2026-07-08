@@ -1651,6 +1651,14 @@ Usage of ./cmd/mimir/mimir:
     	When enabled, errors writing to ingest storage are logged but do not affect write success or quorum. When disabled, write requests fail if ingest storage write fails.
   -ingest-storage.migration.ingest-storage-max-wait-time duration
     	The maximum time a write request that goes through the ingest storage waits before it times out. Set to `0` to disable the timeout.
+  -ingest-storage.ordered-consumption.enabled
+    	[experimental] Whether records from all write compartments' Kafka clusters are consumed in best-effort Kafka-record-timestamp order before being pushed. When disabled, each Kafka cluster is consumed independently, so there's no cross-cluster ordering guarantee. Only takes effect when compartments are enabled with more than one write compartment.
+  -ingest-storage.ordered-consumption.input-buffer-size int
+    	[experimental] Buffer size of the channel into which the per-cluster consumers submit records. When 0, defaults to 2x max-batch-records.
+  -ingest-storage.ordered-consumption.max-batch-records int
+    	[experimental] Soft upper bound on records buffered before forcing a flush. Larger values give more cross-cluster mixing (better ordering) at the cost of memory and per-flush latency. (default 1024)
+  -ingest-storage.ordered-consumption.max-batch-wait duration
+    	[experimental] Maximum time records sit buffered before being flushed even if max-batch-records has not been reached. (default 50ms)
   -ingest-storage.read-consistency string
     	[experimental] The default consistency level to enforce for queries when using the ingest storage. Supports values: strong, eventual. (default "eventual")
   -ingest-storage.write-logs-fsync-before-kafka-commit-concurrency int

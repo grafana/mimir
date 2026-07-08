@@ -25,19 +25,25 @@ import (
 // per write compartment.
 //
 // Each per-cluster reader has its own Kafka connection, consumer group, and offset file; offsets are not
-// shared across clusters because each cluster has an independent offset space. Records from the
-// different clusters are pushed independently: there is no cross-cluster ordering, which relies on the
-// TSDB out-of-order window.
+// shared across clusters because each cluster has an independent offset space.
+//
+// Cross-cluster ordering depends on whether ordered consumption is enabled:
+//   - When disabled, each cluster's records are pushed independently, so there's no cross-cluster ordering
+//     guarantee.
+//   - When enabled, every cluster's records are funneled through a shared HeapMerger that orders them by
+//     Kafka record timestamp (best effort) before forwarding to the Pusher. A per-cluster reader only
+//     commits its offset once the merger has pushed its records, preserving at-least-once delivery.
 //
 // MultiClusterPartitionReader presents itself as a single services.Service so it can be managed like a
 // SingleClusterPartitionReader.
 type MultiClusterPartitionReader struct {
 	services.Service
 
-	logger  log.Logger
-	readers []*SingleClusterPartitionReader
-	manager *services.Manager
-	watcher *services.FailureWatcher
+	logger         log.Logger
+	readers        []*SingleClusterPartitionReader
+	merger         *HeapMerger // nil when heap merging is disabled
+	readersManager *services.Manager
+	watcher        *services.FailureWatcher
 }
 
 // NewMultiClusterPartitionReader creates a MultiClusterPartitionReader that consumes the given partition
@@ -48,8 +54,13 @@ type MultiClusterPartitionReader struct {
 // compartments.WriteCompartmentIDPlaceholder, which is replaced with the Kafka cluster ID so each cluster
 // tracks offsets in its own file. instanceID is the base for each reader's consumer group, suffixed per
 // Kafka cluster so each cluster tracks offsets independently.
+//
+// When orderedCfg.Enabled is set, records from every cluster are consumed in best-effort Kafka-record-timestamp
+// order before being pushed; otherwise each cluster pushes independently, so there's no cross-cluster
+// ordering guarantee.
 func NewMultiClusterPartitionReader(
 	clusterConfigs []KafkaConfig,
+	orderedCfg OrderedConsumptionConfig,
 	partitionID int32,
 	instanceID string,
 	offsetFilePath string,
@@ -64,6 +75,28 @@ func NewMultiClusterPartitionReader(
 		return nil, fmt.Errorf("the offset file path %q must contain the %q placeholder", offsetFilePath, compartments.WriteCompartmentIDPlaceholder)
 	}
 
+	// When ordered consumption is enabled, all clusters feed a shared HeapMerger whose downstream consumer
+	// is a PusherConsumer that turns the merged record stream into per-tenant WriteRequests. When disabled,
+	// each per-cluster reader gets its own PusherConsumer and pushes independently (no cross-cluster
+	// ordering guarantee).
+	//
+	// Merging is skipped when there's a single Kafka cluster: the heap only ever holds that one cluster's
+	// records so it can't reorder anything, and routing them through the merger would add its batching
+	// latency and single-goroutine serialization for no ordering benefit.
+	var merger *HeapMerger
+	if orderedCfg.Enabled && len(clusterConfigs) > 1 {
+		mergerLogger := log.With(logger, "component", "heap_merger")
+		// The downstream push path is shared across all clusters, so its PusherConsumer metrics are
+		// registered once on the base registerer rather than per cluster.
+		pusherMetrics := NewPusherConsumerMetrics(reg)
+		pusherFactory := consumerFactoryFunc(func() RecordConsumer {
+			// clusterConfigs[0] only carries the Kafka client tunables consulted by PusherConsumer
+			// (e.g. FallbackClientErrorSampleRate); those are identical across clusters.
+			return NewPusherConsumer(pusher, clusterConfigs[0], pusherMetrics, mergerLogger)
+		})
+		merger = NewHeapMerger(orderedCfg, pusherFactory, reg, mergerLogger)
+	}
+
 	readers := make([]*SingleClusterPartitionReader, len(clusterConfigs))
 	// There is one Kafka cluster per write compartment, so the Kafka cluster ID is also the write
 	// compartment ID. The offset file name, consumer group suffix, and metric label keep the
@@ -74,7 +107,23 @@ func NewMultiClusterPartitionReader(
 		clusterReg := prometheus.WrapRegistererWith(prometheus.Labels{"write_compartment": strconv.Itoa(kafkaClusterID)}, reg)
 		clusterLogger := log.With(logger, "write_compartment", kafkaClusterID)
 
-		reader, err := NewSingleClusterPartitionReader(clusterCfg, partitionID, readerInstanceID, clusterOffsetFilePath, pusher, clusterLogger, clusterReg)
+		// Pick this cluster's consumer: with ordered consumption, records stream into the shared merger,
+		// which pushes them (in merged order) via the shared PusherConsumer; otherwise each cluster pushes
+		// directly via its own PusherConsumer. The Pusher is always passed as the PreCommitNotifier so
+		// offset commits notify it directly.
+		var consumerFactory consumerFactory
+		if merger != nil {
+			consumerFactory = consumerFactoryFunc(func() RecordConsumer {
+				return merger.NewSubmittingConsumer(kafkaClusterID)
+			})
+		} else {
+			pusherMetrics := NewPusherConsumerMetrics(clusterReg)
+			consumerFactory = consumerFactoryFunc(func() RecordConsumer {
+				return NewPusherConsumer(pusher, clusterCfg, pusherMetrics, clusterLogger)
+			})
+		}
+
+		reader, err := newSingleClusterPartitionReader(clusterCfg, partitionID, readerInstanceID, clusterOffsetFilePath, consumerFactory, pusher, clusterLogger, clusterReg)
 		if err != nil {
 			return nil, errors.Wrapf(err, "creating partition reader for write compartment %d", kafkaClusterID)
 		}
@@ -84,36 +133,50 @@ func NewMultiClusterPartitionReader(
 	r := &MultiClusterPartitionReader{
 		logger:  logger,
 		readers: readers,
+		merger:  merger,
 	}
 	r.Service = services.NewBasicService(r.starting, r.running, r.stopping).WithName("multi-cluster-partition-reader")
 	return r, nil
 }
 
 func (r *MultiClusterPartitionReader) starting(ctx context.Context) error {
+	// The merger is started before the readers and stopped after them (see stopping()), so it stays
+	// available to flush and ack a reader's in-flight consume, which continues on a non-cancellable context.
+	if r.merger != nil {
+		if err := services.StartAndAwaitRunning(ctx, r.merger); err != nil {
+			return errors.Wrap(err, "starting heap merger")
+		}
+	}
+
 	svcs := make([]services.Service, len(r.readers))
 	for i, reader := range r.readers {
 		svcs[i] = reader
 	}
 
 	var err error
-	if r.manager, err = services.NewManager(svcs...); err != nil {
+	if r.readersManager, err = services.NewManager(svcs...); err != nil {
+		r.stopMerger()
 		return errors.Wrap(err, "creating partition readers service manager")
 	}
 
 	// If any per-cluster reader fails to start, the whole reader fails to start. This is required to
 	// guarantee that the caller doesn't end up with partial consumption if a subset of readers fails to start.
-	if err := services.StartManagerAndAwaitHealthy(ctx, r.manager); err != nil {
-		// Stop the readers that did start, so we don't leak them when starting() fails.
-		r.manager.StopAsync()
-		_ = r.manager.AwaitStopped(context.Background())
+	if err := services.StartManagerAndAwaitHealthy(ctx, r.readersManager); err != nil {
+		// Stop the readers that did start, then the merger, so we don't leak them when starting() fails.
+		r.readersManager.StopAsync()
+		_ = r.readersManager.AwaitStopped(context.Background())
+		r.stopMerger()
 		return errors.Wrap(err, "starting per-cluster partition readers")
 	}
 
-	// Only start watching for failures once all readers are running: the watcher's goroutine blocks on
-	// the failure channel, which is drained by running() and closed by stopping(), neither of which runs
-	// if starting() fails.
+	// Only start watching for failures once everything is running: the watcher's goroutine blocks on the
+	// failure channel, which is drained by running() and closed by stopping(), neither of which runs if
+	// starting() fails.
 	r.watcher = services.NewFailureWatcher()
-	r.watcher.WatchManager(r.manager)
+	r.watcher.WatchManager(r.readersManager)
+	if r.merger != nil {
+		r.watcher.WatchService(r.merger)
+	}
 
 	return nil
 }
@@ -123,16 +186,30 @@ func (r *MultiClusterPartitionReader) running(ctx context.Context) error {
 	case <-ctx.Done():
 		return nil
 	case err := <-r.watcher.Chan():
-		return errors.Wrap(err, "a per-cluster partition reader failed")
+		return errors.Wrap(err, "a multi-cluster partition reader subservice failed")
 	}
 }
 
 func (r *MultiClusterPartitionReader) stopping(_ error) error {
-	// stopping() only runs if starting() returned without error, so the manager and the failure watcher
-	// are always set here.
+	// stopping() only runs if starting() returned without error, so the readers manager and the failure
+	// watcher are always set here.
 	r.watcher.Close()
-	r.manager.StopAsync()
-	return r.manager.AwaitStopped(context.Background())
+
+	// Stop and fully drain the readers before the merger, so the merger can still flush and ack their
+	// in-flight consumes (which run on a non-cancellable context) until every reader has stopped.
+	r.readersManager.StopAsync()
+	err := r.readersManager.AwaitStopped(context.Background())
+
+	r.stopMerger()
+	return err
+}
+
+func (r *MultiClusterPartitionReader) stopMerger() {
+	if r.merger == nil {
+		return
+	}
+	r.merger.StopAsync()
+	_ = r.merger.AwaitTerminated(context.Background())
 }
 
 // LastSeenOffsets returns the highest record offset seen by each Kafka cluster's reader, indexed by
