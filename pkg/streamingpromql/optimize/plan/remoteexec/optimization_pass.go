@@ -8,6 +8,8 @@ import (
 	"maps"
 	"slices"
 
+	"github.com/antithesishq/antithesis-sdk-go/assert"
+
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/splitandcache"
@@ -253,6 +255,10 @@ func (s remoteExecutionGroupSet) GetGroupForNode(node planning.Node, eagerLoad b
 	}
 
 	if selector == nil {
+		assert.Unreachable("could not find selector for node", map[string]any{
+			"eager_load": eagerLoad,
+			"node_type":  fmt.Sprintf("%T", node),
+		})
 		return nil, fmt.Errorf("could not find selector for node of type %T (this is a bug)", node)
 	}
 
