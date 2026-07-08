@@ -135,6 +135,10 @@ func NewQueryPlanner(opts EngineOpts, versionProvider QueryPlanVersionProvider) 
 		return nil, errors.New("cannot enable range query range vector common subexpression elimination without common subexpression elimination")
 	}
 
+	if opts.EnableScalarCommonSubexpressionElimination && !opts.EnableCommonSubexpressionElimination {
+		return nil, errors.New("cannot enable scalar common subexpression elimination without common subexpression elimination")
+	}
+
 	if opts.EnableCommonSubexpressionElimination {
 		planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(opts.EnableSubsetSelectorElimination, opts.EnableRangeQueryRangeVectorCommonSubexpressionElimination, opts.EnableScalarCommonSubexpressionElimination, opts.CommonOpts.Reg, opts.Logger))
 	}
