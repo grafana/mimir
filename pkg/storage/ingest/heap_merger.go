@@ -144,7 +144,7 @@ func NewHeapMerger(cfg OrderedConsumptionConfig, consumerFactory consumerFactory
 		consumerFactory: consumerFactory,
 		logger:          logger,
 		pushedRecords: factory.NewCounter(prometheus.CounterOpts{
-			Name: "cortex_ingest_storage_ordered_consumption_pushed_records_total",
+			Name: "cortex_ingest_storage_ordered_consumption_records_total",
 			Help: "Total number of records pushed by ordered consumption. The baseline against which the out-of-order records fraction can be computed.",
 		}),
 		outOfOrderEmits: factory.NewCounter(prometheus.CounterOpts{
