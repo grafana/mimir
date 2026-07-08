@@ -53,9 +53,9 @@ func (p routedTopicPartitionRecords) getTopicPartition() topicPartition {
 
 func (p routedTopicPartitionRecords) getNodeID() int32 { return p.nodeID }
 
-// wireBytes returns the standalone RecordBatch estimate for the group, so the
-// flush-size gate agrees with splitByMaxBytes on what fits.
-func (p routedTopicPartitionRecords) wireBytes() int64 {
+// uncompressedWireBytes returns the uncompressed wire size of the group encoded
+// as a single standalone RecordBatch.
+func (p routedTopicPartitionRecords) uncompressedWireBytes() int64 {
 	return multiRecordBatchEstimateBytes(p.records)
 }
 
@@ -105,24 +105,33 @@ func (p routedTopicPartitionRecords) splitByMaxBytes(batchMaxBytes int32) []rout
 	return out
 }
 
-// mergeWith concatenates other's records after p's (arrival order) and takes
-// other's nodeState. A fresh backing slice is allocated so neither input is
-// mutated.
-func (p routedTopicPartitionRecords) mergeWith(other routedTopicPartitionRecords) routedTopicPartitionRecords {
-	// Merging items for a different topic, partition, or nodeID is a bug, not a
-	// runtime case: fail loud rather than silently combine unrelated batches.
-	if p.topic != other.topic || p.partition != other.partition || p.nodeID != other.nodeID {
-		panic(fmt.Sprintf("wgo: mergeWith mismatched routing: %s/%d nodeID=%d vs %s/%d nodeID=%d",
-			p.topic, p.partition, p.nodeID, other.topic, other.partition, other.nodeID))
+// mergeWith concatenates others' records after p's (arrival order) and takes the
+// last contributor's nodeState. A fresh backing slice is allocated so no input
+// is mutated. Returns p unchanged when others is empty.
+func (p routedTopicPartitionRecords) mergeWith(others []routedTopicPartitionRecords) routedTopicPartitionRecords {
+	if len(others) == 0 {
+		return p
 	}
 
-	combined := make([]*kgo.Record, 0, len(p.records)+len(other.records))
+	total := len(p.records)
+	for _, o := range others {
+		// Merging items for a different topic, partition, or nodeID is a bug, not
+		// a runtime case: fail loud rather than silently combine unrelated batches.
+		if p.topic != o.topic || p.partition != o.partition || p.nodeID != o.nodeID {
+			panic(fmt.Sprintf("wgo: mergeWith mismatched routing: %s/%d nodeID=%d vs %s/%d nodeID=%d",
+				p.topic, p.partition, p.nodeID, o.topic, o.partition, o.nodeID))
+		}
+		total += len(o.records)
+	}
+
+	combined := make([]*kgo.Record, 0, total)
 	combined = append(combined, p.records...)
-	combined = append(combined, other.records...)
+	for _, o := range others {
+		combined = append(combined, o.records...)
+	}
 	p.records = combined
-	// Take the latest Add's nodeState: it is the freshest
-	// routing-time view of the agent, which is what the hedger
-	// trusts to decide probe (zero-delay) hedging.
-	p.nodeState = other.nodeState
+	// Take the latest Add's nodeState: it is the freshest routing-time view of the
+	// agent, which is what the hedger trusts to decide probe (zero-delay) hedging.
+	p.nodeState = others[len(others)-1].nodeState
 	return p
 }

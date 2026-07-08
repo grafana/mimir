@@ -38,9 +38,7 @@ func (p encodedTopicPartitionRecords) recordCount() int {
 	return int(p.encodedStats.records)
 }
 
-// payloadBytes returns 0: an encoded batch retains no caller-owned record
-// payload to account for, and the buffered-bytes counter it feeds (on the hedge
-// buffer, which exposes no gauge) is never read anyway.
+// payloadBytes is unsupported and returns 0.
 func (p encodedTopicPartitionRecords) payloadBytes() int64 {
 	return 0
 }
@@ -64,10 +62,13 @@ func (p routedEncodedTopicPartitionRecords) getTopicPartition() topicPartition {
 
 func (p routedEncodedTopicPartitionRecords) getNodeID() int32 { return p.nodeID }
 
-// wireBytes returns the encoded batch length; the batch header is already
-// included in the bytes.
-func (p routedEncodedTopicPartitionRecords) wireBytes() int64 {
-	return int64(len(p.encoded))
+// uncompressedWireBytes returns the RecordBatch's wire size with the records
+// payload uncompressed (its size before Snappy compression).
+func (p routedEncodedTopicPartitionRecords) uncompressedWireBytes() int64 {
+	if p.encodedStats.records == 0 {
+		return 0
+	}
+	return recordBatchHeaderBytes + p.encodedStats.uncompressedBytes
 }
 
 // splitByMaxBytes returns the item unchanged: an encoded batch is already sized
@@ -76,27 +77,40 @@ func (p routedEncodedTopicPartitionRecords) splitByMaxBytes(int32) []routedEncod
 	return []routedEncodedTopicPartitionRecords{p}
 }
 
-// mergeWith concatenates other's batch bytes after p's and sums the stats — a
-// partition's wire payload may hold several batches back to back — and takes
-// other's nodeState. A fresh backing slice is allocated so neither input is mutated.
-func (p routedEncodedTopicPartitionRecords) mergeWith(other routedEncodedTopicPartitionRecords) routedEncodedTopicPartitionRecords {
-	// Merging items for a different topic, partition, or nodeID is a bug, not a
-	// runtime case: fail loud rather than silently combine unrelated batches.
-	if p.topic != other.topic || p.partition != other.partition || p.nodeID != other.nodeID {
-		panic(fmt.Sprintf("wgo: mergeWith mismatched routing: %s/%d nodeID=%d vs %s/%d nodeID=%d",
-			p.topic, p.partition, p.nodeID, other.topic, other.partition, other.nodeID))
+// mergeWith combines p and others into a single RecordBatch for the partition by
+// decoding every batch, concatenating the records in arrival order, and
+// re-encoding once.
+//
+// Returns p unchanged when others is empty, so non-merged partitions never decode.
+// Decoding operates on bytes this client encoded, never the caller's records, so it
+// stays race-free.
+func (p routedEncodedTopicPartitionRecords) mergeWith(others []routedEncodedTopicPartitionRecords) routedEncodedTopicPartitionRecords {
+	if len(others) == 0 {
+		return p
 	}
 
-	combined := make([]byte, 0, len(p.encoded)+len(other.encoded))
-	combined = append(combined, p.encoded...)
-	combined = append(combined, other.encoded...)
-	p.encoded = combined
-	p.encodedStats = p.encodedStats.add(other.encodedStats)
-	// Take the latest Add's nodeState: it is the freshest
-	// routing-time view of the agent, which is what the hedger
-	// trusts to decide probe (zero-delay) hedging.
-	p.nodeState = other.nodeState
-	return p
+	for _, o := range others {
+		// Merging items for a different topic, partition, or nodeID is a bug, not
+		// a runtime case: fail loud rather than silently combine unrelated batches.
+		if p.topic != o.topic || p.partition != o.partition || p.nodeID != o.nodeID {
+			panic(fmt.Sprintf("wgo: mergeWith mismatched routing: %s/%d nodeID=%d vs %s/%d nodeID=%d",
+				p.topic, p.partition, p.nodeID, o.topic, o.partition, o.nodeID))
+		}
+	}
+
+	records := decodeBatch(p.encoded)
+	for _, o := range others {
+		records = append(records, decodeBatch(o.encoded)...)
+	}
+
+	return routedEncodedTopicPartitionRecords{
+		encodedTopicPartitionRecords: newEncodedTopicPartitionRecords(p.topic, p.partition, records),
+		nodeID:                       p.nodeID,
+		// Take the latest Add's nodeState: it is the freshest routing-time view of
+		// the agent, which is what the hedger trusts to decide probe (zero-delay)
+		// hedging.
+		nodeState: others[len(others)-1].nodeState,
+	}
 }
 
 // unrouteEncodedTopicPartitionRecords returns the routing-less encodedTopicPartitionRecords view for

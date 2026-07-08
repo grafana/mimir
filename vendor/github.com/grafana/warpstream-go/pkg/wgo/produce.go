@@ -313,6 +313,53 @@ func encodeBatch(records []*kgo.Record) (buf []byte, uncompressedBytes, compress
 	return buf, uncompressedBytes, compressedBytes
 }
 
+// decodeBatch parses a serialised RecordBatch back into records, inverting
+// encodeBatch for the fields this client sets (key, value, headers, timestamp).
+// It is used to re-merge several pre-encoded batches for one partition into a
+// single batch. It expects exactly one complete batch; any bytes trailing the
+// first batch are ignored. The input is always bytes this client encoded, so a
+// decode failure is a bug and panics.
+func decodeBatch(encoded []byte) []*kgo.Record {
+	var rb kmsg.RecordBatch
+	if err := rb.ReadFrom(encoded); err != nil {
+		panic(fmt.Sprintf("wgo: decodeBatch: read RecordBatch: %v", err))
+	}
+
+	payload := rb.Records
+	if rb.Attributes&0x7 == 2 { // CodecSnappy
+		dec, err := s2.Decode(nil, payload)
+		if err != nil {
+			panic(fmt.Sprintf("wgo: decodeBatch: snappy decode: %v", err))
+		}
+		payload = dec
+	}
+
+	records := make([]*kgo.Record, 0, rb.NumRecords)
+	for len(payload) > 0 {
+		var rec kmsg.Record
+		if err := rec.ReadFrom(payload); err != nil {
+			panic(fmt.Sprintf("wgo: decodeBatch: read Record: %v", err))
+		}
+
+		var headers []kgo.RecordHeader
+		if len(rec.Headers) > 0 {
+			headers = make([]kgo.RecordHeader, len(rec.Headers))
+			for i, h := range rec.Headers {
+				headers[i] = kgo.RecordHeader{Key: h.Key, Value: h.Value}
+			}
+		}
+		records = append(records, &kgo.Record{
+			Key:       rec.Key,
+			Value:     rec.Value,
+			Headers:   headers,
+			Timestamp: time.UnixMilli(rb.FirstTimestamp + rec.TimestampDelta64),
+		})
+
+		payload = payload[kbin.VarintLen(rec.Length)+int(rec.Length):]
+	}
+	return records
+}
+
 // putBuf returns a buffer to the pool, dropping it if it grew too large.
 func putBuf(ptr *[]byte, buf []byte) {
 	if cap(buf) <= maxPooledBufCap {

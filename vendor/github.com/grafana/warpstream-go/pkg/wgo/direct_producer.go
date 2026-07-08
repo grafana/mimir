@@ -50,8 +50,7 @@ func (c *KafkaDirectProducerConfig) Validate() error {
 }
 
 // KafkaDirectProducer implements DirectProducer using kgo.Client. Wire request
-// assembly (buildMultiTopicProduceRequestFromEncoded) and per-request timing are
-// enforced here, not at a higher layer.
+// assembly and per-request timing are enforced here, not at a higher layer.
 //
 // This is the only type in this package that depends on kgo.Client directly.
 type KafkaDirectProducer struct {

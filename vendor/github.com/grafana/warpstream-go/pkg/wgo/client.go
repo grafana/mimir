@@ -167,10 +167,6 @@ func (c *WarpstreamClient) Produce(ctx context.Context, record *kgo.Record, prom
 		return
 	}
 
-	// Stamp the record's produce time at entry, before buffering, mirroring
-	// franz-go's bufferRecord.
-	ensureRecordTimestamp(record, time.Now())
-
 	routed, err := c.routeRecord(record, perRecordDone(record, func(r *kgo.Record, err error) {
 		// The buffered path counts a post-dispatch failure on any non-nil error;
 		// the pre-dispatch rejections are counted by produceRecordsRejectedTotal.
@@ -184,6 +180,10 @@ func (c *WarpstreamClient) Produce(ctx context.Context, record *kgo.Record, prom
 		promise(record, err)
 		return
 	}
+
+	// Stamp the produce time only after routing succeeds, so a failed produce
+	// leaves the caller's record unchanged. Mirrors franz-go's bufferRecord.
+	ensureRecordTimestamp(record, time.Now())
 	c.buffer.Add(ctx, []promised[routedTopicPartitionRecords]{routed})
 }
 
@@ -222,14 +222,6 @@ func (c *WarpstreamClient) ProduceSync(ctx context.Context, records []*kgo.Recor
 		return results
 	}
 
-	// Stamp each record's produce time at entry, before buffering, mirroring
-	// franz-go's bufferRecord. A single now keeps records buffered together on
-	// one produce timestamp.
-	now := time.Now()
-	for _, r := range okRecords {
-		ensureRecordTimestamp(r, now)
-	}
-
 	wg.Add(len(okRecords))
 	indexOf := make(map[*kgo.Record]int, len(okRecords))
 	for _, idx := range okIndices {
@@ -257,6 +249,14 @@ func (c *WarpstreamClient) ProduceSync(ctx context.Context, records []*kgo.Recor
 			results[i] = kgo.ProduceResult{Record: records[i], Err: err}
 		}
 		return results
+	}
+
+	// Stamp each record's produce time only after routing succeeds, so a failed
+	// produce leaves the caller's records unchanged. A single now keeps records
+	// buffered together on one produce timestamp. Mirrors franz-go's bufferRecord.
+	now := time.Now()
+	for _, r := range okRecords {
+		ensureRecordTimestamp(r, now)
 	}
 
 	c.buffer.Add(ctx, routed)
