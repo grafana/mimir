@@ -148,8 +148,7 @@ var pointBucketPool = types.NewLimitingBucketedPool(
 
 func mangleBuckets(b promql.Buckets) promql.Buckets {
 	for i := range b {
-		b[i].UpperBound = 12345678
-		b[i].Count = 12345678
+		b[i] = mangleBucket(b[i])
 	}
 	return b
 }
@@ -163,9 +162,15 @@ var bucketSliceBucketedPool = types.NewLimitingBucketedPool(
 	limiter.BucketSlices,
 	uint64(unsafe.Sizeof(promql.Bucket{})),
 	true,
-	nil,
+	mangleBucket,
 	nil,
 )
+
+func mangleBucket(b promql.Bucket) promql.Bucket {
+	b.UpperBound = 12345678
+	b.Count = 12345678
+	return b
+}
 
 func NewHistogramQuantileFunction(
 	phArg types.ScalarOperator,
@@ -480,8 +485,8 @@ func (g *histogramGrouper) saveNativeHistogramsToGroup(hPoints []promql.HPoint, 
 // called once the group's output series have all been computed.
 func (g *histogramGrouper) releaseGroup(group *bucketGroup) {
 	group.lastInputSeriesIdx = 0
-	for _, b := range group.pointBuckets {
-		bucketSliceBucketedPool.Put(&b, g.memoryConsumptionTracker)
+	for i := range group.pointBuckets {
+		bucketSliceBucketedPool.Put(&group.pointBuckets[i], g.memoryConsumptionTracker)
 	}
 	pointBucketPool.Put(&group.pointBuckets, g.memoryConsumptionTracker)
 	if group.nativeHistograms != nil {
