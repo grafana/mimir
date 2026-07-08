@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/tenant"
 	jsoniter "github.com/json-iterator/go"
@@ -24,6 +26,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/querier/worker"
 	"github.com/grafana/mimir/pkg/util"
+	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -88,7 +91,7 @@ func LabelValuesCardinalityHandler(distributor Distributor, limits *validation.O
 	})
 }
 
-func ActiveSeriesCardinalityHandler(d Distributor, limits *validation.Overrides) http.Handler {
+func ActiveSeriesCardinalityHandler(d Distributor, limits *validation.Overrides, logger log.Logger) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 		// Guarantee request's context is for a single tenant id
@@ -123,7 +126,9 @@ func ActiveSeriesCardinalityHandler(d Distributor, limits *validation.Overrides)
 		}
 
 		if activeSeriesRequestAcceptsFramed(r) {
-			writeActiveSeriesFramedResponse(w, res)
+			if err := writeActiveSeriesFramedResponse(w, res); err != nil {
+				level.Warn(util_log.WithContext(ctx, logger)).Log("msg", "failed to write framed active series response", "err", err)
+			}
 			return
 		}
 
@@ -154,7 +159,7 @@ func activeSeriesRequestAcceptsFramed(r *http.Request) bool {
 }
 
 // writeActiveSeriesFramedResponse writes series in the length-delimited format described by api.ContentTypeActiveSeriesFramed.
-func writeActiveSeriesFramedResponse(w http.ResponseWriter, series []labels.Labels) {
+func writeActiveSeriesFramedResponse(w http.ResponseWriter, series []labels.Labels) error {
 	w.Header().Set("Content-Type", api.ContentTypeActiveSeriesFramed)
 	w.Header().Set(worker.ResponseStreamingEnabledHeader, "true")
 
@@ -167,23 +172,25 @@ func writeActiveSeriesFramedResponse(w http.ResponseWriter, series []labels.Labe
 			if !wroteFrame {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 			}
-			return
+			return fmt.Errorf("marshaling active series to JSON: %w", err)
 		}
 		if len(obj) > api.MaxActiveSeriesFrameSize {
+			err := fmt.Errorf("active series frame size %d exceeds maximum %d", len(obj), api.MaxActiveSeriesFrameSize)
 			if !wroteFrame {
-				http.Error(w, fmt.Sprintf("active series frame size %d exceeds maximum %d", len(obj), api.MaxActiveSeriesFrameSize), http.StatusInternalServerError)
+				http.Error(w, err.Error(), http.StatusInternalServerError)
 			}
-			return
+			return err
 		}
 		n := binary.PutUvarint(lenBuf[:], uint64(len(obj)))
 		if _, err := w.Write(lenBuf[:n]); err != nil {
-			return
+			return fmt.Errorf("writing active series frame length: %w", err)
 		}
 		if _, err := w.Write(obj); err != nil {
-			return
+			return fmt.Errorf("writing active series frame: %w", err)
 		}
 		wroteFrame = true
 	}
+	return nil
 }
 
 func ActiveNativeHistogramMetricsHandler(d Distributor, limits *validation.Overrides) http.Handler {

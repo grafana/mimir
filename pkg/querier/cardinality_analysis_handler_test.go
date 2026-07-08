@@ -17,6 +17,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/go-kit/log"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/user"
@@ -850,7 +851,7 @@ func TestActiveSeriesCardinalityHandler(t *testing.T) {
 			}
 			d.On("ActiveSeries", mock.Anything, mock.Anything).Return(series, test.returnedError)
 
-			handler := createEnabledHandler(t, ActiveSeriesCardinalityHandler, d)
+			handler := createEnabledHandler(t, activeSeriesCardinalityHandler, d)
 			ctx := user.InjectOrgID(context.Background(), "test")
 
 			data := url.Values{}
@@ -910,7 +911,7 @@ func TestActiveSeriesCardinalityHandler_framedResponse(t *testing.T) {
 	serve := func(t *testing.T, accept string) *http.Response {
 		d := &mockDistributor{}
 		d.On("ActiveSeries", mock.Anything, mock.Anything).Return(series, error(nil))
-		handler := createEnabledHandler(t, ActiveSeriesCardinalityHandler, d)
+		handler := createEnabledHandler(t, activeSeriesCardinalityHandler, d)
 		recorder := httptest.NewRecorder()
 		handler.ServeHTTP(recorder, newRequest(t, accept))
 		return recorder.Result()
@@ -1010,7 +1011,7 @@ func BenchmarkActiveSeriesHandler_ServeHTTP(b *testing.B) {
 	}
 	d.On("ActiveSeries", mock.Anything, mock.Anything).Return(s, nil)
 
-	handler := createEnabledHandler(b, ActiveSeriesCardinalityHandler, d)
+	handler := createEnabledHandler(b, activeSeriesCardinalityHandler, d)
 	ctx := user.InjectOrgID(context.Background(), "test")
 
 	for i := 0; i < b.N; i++ {
@@ -1161,6 +1162,10 @@ func BenchmarkActiveNativeHistogramMetricsHandler_ServeHTTP(b *testing.B) {
 		// Make sure we're not benchmarking error responses.
 		require.Equal(b, http.StatusOK, recorder.Result().StatusCode)
 	}
+}
+
+func activeSeriesCardinalityHandler(d Distributor, limits *validation.Overrides) http.Handler {
+	return ActiveSeriesCardinalityHandler(d, limits, log.NewNopLogger())
 }
 
 // createEnabledHandler creates a cardinalityHandler that can be either a LabelNamesCardinalityHandler or a LabelValuesCardinalityHandler
