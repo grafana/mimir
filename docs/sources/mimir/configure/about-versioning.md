@@ -242,6 +242,9 @@ The following features are currently experimental:
   - Remote execution of queries in queriers: `-query-frontend.enable-remote-execution=true` and `-query-frontend.enable-multiple-node-remote-execution-requests=true`
   - Performing query sharding within MQE: `-query-frontend.use-mimir-query-engine-for-sharding=true`
   - Computing multiple aggregations over the same data without buffering: `-querier.mimir-query-engine.enable-multi-aggregation=true`
+  - Subset selector elimination: `-querier.mimir-query-engine.enable-subset-selector-elimination=true`
+  - Range query range vector common subexpression elimination: `-querier.mimir-query-engine.enable-range-query-range-vector-common-subexpression-elimination=true`
+  - Scalar common subexpression elimination: `-querier.mimir-query-engine.enable-scalar-common-subexpression-elimination=true`
   - Running splitting and caching inside MQE: `-query-frontend.use-mimir-query-engine-for-splitting-and-caching-results=true`
   - Rewriting of queries to optimize processing: `-query-frontend.rewrite-histogram-queries` and `-query-frontend.rewrite-propagate-matchers`
   - Enable experimental Prometheus extended range selector modifiers `smoothed` and `anchored` (`-query-frontend.enabled-promql-extended-range-selectors=smoothed,anchored`)

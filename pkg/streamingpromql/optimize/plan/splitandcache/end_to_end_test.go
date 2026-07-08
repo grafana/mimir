@@ -106,6 +106,28 @@ func TestEndToEnd(t *testing.T) {
 			},
 			expectedCacheEntries: 3, // 0-20h, 24-44h, 48h (single step)
 		},
+		"query with step-invariant scalar expression": {
+			expr:  "metric / 1024^3",
+			start: timeZero,
+			end:   timeZero.Add(48 * time.Hour),
+			step:  12 * time.Hour,
+
+			expectedResult: promql.Result{
+				Value: promql.Matrix{
+					{
+						Metric: labels.EmptyLabels(),
+						Floats: []promql.FPoint{
+							{T: 0, F: 1.0 / 1073741824},
+							{T: 12 * millisecondsInHour, F: 13.0 / 1073741824},
+							{T: 24 * millisecondsInHour, F: 25.0 / 1073741824},
+							{T: 36 * millisecondsInHour, F: 37.0 / 1073741824},
+							{T: 48 * millisecondsInHour, F: 49.0 / 1073741824},
+						},
+					},
+				},
+			},
+			expectedCacheEntries: 3, // 0-20h, 24-44h, 48h (single step)
+		},
 	}
 
 	for name, testCase := range testCases {

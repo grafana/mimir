@@ -643,7 +643,7 @@ func runOptimizationPass(
 	require.NoError(t, err)
 
 	logger := log.NewNopLogger()
-	planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(false, false, reg, logger))
+	planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, true, true, reg, logger))
 
 	if enableOptimizationPass {
 		optimizationPass := splitandcache.NewOptimizationPass(enableSplitting, 24*time.Hour, enableCaching, limits, reg, logger)
