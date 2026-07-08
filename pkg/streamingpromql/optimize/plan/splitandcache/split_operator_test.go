@@ -21,10 +21,6 @@ import (
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
-func init() {
-	types.EnableManglingReturnedSlices = true
-}
-
 func TestSplitOperator(t *testing.T) {
 	firstRangeTimeRange := types.NewRangeQueryTimeRange(timestamp.Time(1), timestamp.Time(3), time.Millisecond)
 	secondRangeTimeRange := types.NewRangeQueryTimeRange(timestamp.Time(4), timestamp.Time(6), time.Millisecond)
