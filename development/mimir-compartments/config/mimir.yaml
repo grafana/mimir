@@ -12,13 +12,11 @@ common:
 ingest_storage:
   enabled:       true
   kafka:
-    # Default Kafka cluster, used by components that don't override the address (e.g. block-builder).
-    # Distributors override this with their own write compartment's cluster, and ingesters override it
-    # with a template addressing every write compartment's cluster.
+    # ingest_storage is enabled globally, so every component validates the Kafka address and topic even if
+    # it never connects (compactor, store-gateway, querier, ruler, alertmanager). These defaults satisfy
+    # that validation; the components that actually consume/produce (distributors, ingesters, query-frontend,
+    # block-builders and schedulers) override them via CLI flags to target their own write/read compartment.
     address: kafka-wc-0:9092
-    # Default to read compartment 0's topic. Components that aren't compartment-aware yet (e.g.
-    # block-builder) use this concrete topic. Distributors and ingesters override it via CLI flag with
-    # the read-compartment-templated topic (mimir-ingest-rc-<read-compartment-id>).
     topic:   mimir-ingest-rc-0
     last_produced_offset_poll_interval: 500ms
     fetch_concurrency_max: 15
@@ -46,7 +44,8 @@ ingester:
 
 block_builder:
   scheduler_config:
-    address: block-builder-scheduler-0:9095
+    # Each per-read-compartment block-builder sets its scheduler address (block-builder-scheduler-rc-<id>)
+    # via CLI flag, so no default address is set here.
     update_interval: 5s
     max_update_age: 30m
 
@@ -60,12 +59,11 @@ blocks_storage:
     bucket_name:       mimir-blocks
   tsdb:
     dir: /data
-    # The block-builder isn't compartment-aware yet and is disabled, so ingesters ship their own blocks to
-    # their read compartment's bucket (each ingester overrides -blocks-storage.s3.bucket-name). Cut and
-    # ship blocks frequently for a fast feedback loop in development.
+    # Each read compartment's block-builder builds and ships that compartment's blocks, so ingester block
+    # shipping is disabled (ship_interval: 0s).
     block_ranges_period: ["2m"]
     retention_period: 20m
-    ship_interval: 10s
+    ship_interval: 0s
     head_postings_for_matchers_cache_force: true
     block_postings_for_matchers_cache_force: true
 

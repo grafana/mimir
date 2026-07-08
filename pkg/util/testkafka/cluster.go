@@ -70,6 +70,15 @@ func WithVirtualNetwork(vnet *kfake.VirtualNetwork) Opt {
 	}
 }
 
+// WithPort makes the (single-broker) fake cluster listen on the given port instead of a random
+// one, so the caller can predict the cluster's address. Combine with WithVirtualNetwork to host
+// multiple clusters at deterministic ports on one in-memory network.
+func WithPort(port int) Opt {
+	return func() []kfake.Opt {
+		return []kfake.Opt{kfake.Ports(port)}
+	}
+}
+
 // CreateCluster returns a fake Kafka cluster for unit testing.
 func CreateCluster(t testing.TB, numPartitions int32, topicName string, opts ...Opt) (*kfake.Cluster, string) {
 	cluster, addr := CreateClusterWithoutCustomConsumerGroupsSupport(t, numPartitions, topicName, opts...)

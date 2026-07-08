@@ -285,28 +285,52 @@ func TestPartitionState_CompartmentsTrackOffsetsPerCluster(t *testing.T) {
 	require.Equal(t, int64(900), pt.committedOffset(2))
 }
 
-func TestPartitionState_CompartmentsBeyondSpecRequiresAllClusters(t *testing.T) {
-	pt := newTestPartitionStateWithClusters(t, "topic", 1, 3, true)
+func TestPartitionState_CompartmentsCommittedBeyondSpec(t *testing.T) {
+	pt := newTestPartitionStateWithClusters(t, "topic", 1, 4, true)
 	pt.initCommit(0, 200)
 	pt.initCommit(1, 900)
 	// Cluster 2 has a committed offset but never appears in the specs below. committedBeyondSpec
 	// only considers the clusters the job covers, so cluster 2 must not affect the result.
 	pt.initCommit(2, 500)
+	// (Cluster 3 has no committed offset.)
 
 	// A job wholly at or under the committed offsets of the clusters it covers is beyond the commit.
-	require.True(t, pt.committedBeyondSpec(schedulerpb.JobSpec{
+	require.Equal(t, beyondAll, pt.committedBeyondSpec(schedulerpb.JobSpec{
 		OffsetRanges: map[int32]schedulerpb.OffsetRange{
 			0: {StartOffset: 100, EndOffset: 200},
 			1: {StartOffset: 800, EndOffset: 900},
 		},
 	}))
 
-	// Cluster 1 ends past its committed offset (1000 > 900), so it is not yet consumed and the
-	// whole job is not beyond, even though cluster 0 is.
-	require.False(t, pt.committedBeyondSpec(schedulerpb.JobSpec{
+	// Cluster 1 ends past its committed offset (1000 > 900) while cluster 0 is already
+	// consumed: a mixed, partially-stale job.
+	require.Equal(t, beyondSome, pt.committedBeyondSpec(schedulerpb.JobSpec{
 		OffsetRanges: map[int32]schedulerpb.OffsetRange{
 			0: {StartOffset: 100, EndOffset: 200},
 			1: {StartOffset: 900, EndOffset: 1000},
+		},
+	}))
+
+	// Every cluster's range ends past its committed offset: the job is fully needed.
+	require.Equal(t, beyondNone, pt.committedBeyondSpec(schedulerpb.JobSpec{
+		OffsetRanges: map[int32]schedulerpb.OffsetRange{
+			0: {StartOffset: 200, EndOffset: 300},
+			1: {StartOffset: 900, EndOffset: 1000},
+		},
+	}))
+
+	// Cluster 3's empty committed offset is never beyond its range, so a job covering only
+	// cluster 3 is fully needed, and bundling it with an already-consumed cluster 0 range
+	// yields a mixed classification.
+	require.Equal(t, beyondNone, pt.committedBeyondSpec(schedulerpb.JobSpec{
+		OffsetRanges: map[int32]schedulerpb.OffsetRange{
+			3: {StartOffset: 0, EndOffset: 50},
+		},
+	}))
+	require.Equal(t, beyondSome, pt.committedBeyondSpec(schedulerpb.JobSpec{
+		OffsetRanges: map[int32]schedulerpb.OffsetRange{
+			0: {StartOffset: 100, EndOffset: 200},
+			3: {StartOffset: 0, EndOffset: 50},
 		},
 	}))
 }
@@ -334,12 +358,12 @@ func TestPartitionState_CompartmentsPlannedBeyondSpec(t *testing.T) {
 			1: {StartOffset: 800, EndOffset: 900},
 		},
 	}
-	require.True(t, pt.plannedBeyondSpec(spec))
-	require.False(t, pt.committedBeyondSpec(spec))
+	require.Equal(t, beyondAll, pt.plannedBeyondSpec(spec))
+	require.Equal(t, beyondNone, pt.committedBeyondSpec(spec))
 
-	// Cluster 1 ends past its planned offset (1000 > 900), so it is not yet planned and the
-	// whole job is not beyond, even though cluster 0 is.
-	require.False(t, pt.plannedBeyondSpec(schedulerpb.JobSpec{
+	// Cluster 1 ends past its planned offset (1000 > 900) while cluster 0 is already planned:
+	// a mixed, partially-planned job.
+	require.Equal(t, beyondSome, pt.plannedBeyondSpec(schedulerpb.JobSpec{
 		OffsetRanges: map[int32]schedulerpb.OffsetRange{
 			0: {StartOffset: 100, EndOffset: 200},
 			1: {StartOffset: 900, EndOffset: 1000},
