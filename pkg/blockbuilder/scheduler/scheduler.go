@@ -266,7 +266,7 @@ func (s *BlockBuilderScheduler) updateSchedule(ctx context.Context) {
 		s.recordEndOffsets(clusterID, endOffsets, touched)
 	}
 	if len(failedClusters) > 0 && len(failedClusters) < len(s.adminClients) {
-		level.Warn(s.logger).Log("msg", "advancing schedule despite failed end offset probes", "failed_clusters", fmt.Sprint(failedClusters))
+		level.Warn(s.logger).Log("msg", "advancing schedule despite failed end offset probes", "failed_write_compartments", fmt.Sprint(failedClusters))
 	}
 
 	// Advance the time bucket of each touched partition, enqueuing any job that rolled over.
@@ -443,6 +443,9 @@ func (s *BlockBuilderScheduler) initConsumptionOffsets(ctx context.Context, fall
 			if !ok {
 				byCluster = make([]*partitionOffsets, len(s.adminClients))
 				offsetsByPartition[po.partition] = byCluster
+			}
+			if byCluster[clusterID] != nil {
+				panic(fmt.Sprintf("invariant violation: consumption offsets for partition %d already set for cluster %d", po.partition, clusterID))
 			}
 			byCluster[clusterID] = po
 		}

@@ -304,18 +304,18 @@ const (
 // classifyBeyondSpec classifies spec's cluster ranges against the offsets selected by
 // offsetFor. A cluster whose offset is still empty is never beyond its range.
 func classifyBeyondSpec(spec schedulerpb.JobSpec, offsetFor func(clusterID int32) *advancingOffset) specBeyond {
-	beyond, needed := false, false
+	hasBeyond, hasNotBeyond := false, false
 	for clusterID, offsetRange := range spec.Ranges() {
 		if offsetFor(clusterID).beyondOffsetRange(offsetRange) {
-			beyond = true
+			hasBeyond = true
 		} else {
-			needed = true
+			hasNotBeyond = true
 		}
 	}
 	switch {
-	case beyond && needed:
+	case hasBeyond && hasNotBeyond:
 		return beyondSome
-	case beyond:
+	case hasBeyond:
 		return beyondAll
 	default:
 		return beyondNone
