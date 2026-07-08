@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/assert"
@@ -18,6 +19,7 @@ import (
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
 	"go.uber.org/atomic"
+	"google.golang.org/grpc/codes"
 
 	"github.com/grafana/mimir/pkg/compartments"
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -118,7 +120,7 @@ func TestDistributor_Push_Compartments_ShouldNotWriteToEmptyCompartments(t *test
 		"only the non-empty compartment should receive a Produce request")
 }
 
-func TestDistributor_Push_Compartments_ErrorInOneCompartmentDoesNotAffectOthers(t *testing.T) {
+func TestDistributor_Push_Compartments_SoftErrorInOneCompartmentDoesNotCancelOthers(t *testing.T) {
 	ctx := user.InjectOrgID(context.Background(), "user")
 	now := time.Now()
 
@@ -133,15 +135,18 @@ func TestDistributor_Push_Compartments_ErrorInOneCompartmentDoesNotAffectOthers(
 	okCompartment := router.CompartmentForMetric("user", okMetric)
 	require.NotEqual(t, failCompartment, okCompartment, "test precondition: the two metrics must shard to different compartments")
 
-	// Fail the Produce request only for the failing compartment's partition (each compartment's only
-	// active partition equals its compartment ID); the other compartment succeeds. The produce request
-	// carries the topic by ID, not name, so we match on the partition.
+	// Fail the failing compartment's Produce with a soft (bad-data) error: MessageTooLarge maps to
+	// ErrWriteRequestDataItemTooLarge, a client error. A soft error must not cancel the other
+	// compartments.
+	//
+	// In this test, each compartment's only active partition equals its compartment ID, and the produce
+	// request carries the topic by ID (not name), so we match on the partition.
 	kafkaCluster.ControlKey(int16(kmsg.Produce), func(req kmsg.Request) (kmsg.Response, error, bool) {
 		kafkaCluster.KeepControl()
 		for _, topic := range req.(*kmsg.ProduceRequest).Topics {
 			for _, partition := range topic.Partitions {
 				if partition.Partition == int32(failCompartment) {
-					return testkafka.CreateProduceResponseError(req.GetVersion(), topic.Topic, partition.Partition, kerr.InvalidTopicException), nil, true
+					return testkafka.CreateProduceResponseError(req.GetVersion(), topic.Topic, partition.Partition, kerr.MessageTooLarge), nil, true
 				}
 			}
 		}
@@ -161,18 +166,94 @@ func TestDistributor_Push_Compartments_ErrorInOneCompartmentDoesNotAffectOthers(
 		makeTimeseries([]string{model.MetricNameLabel, okMetric}, makeSamples(now.UnixMilli(), 2), nil, nil),
 	}})
 
-	// The failing compartment makes the whole request fail.
-	require.Error(t, err)
+	// The soft error makes the whole request fail with a client (4xx / bad-data) error.
+	requirePushErrorWithCause(t, err, codes.InvalidArgument, mimirpb.ERROR_CAUSE_BAD_DATA)
 
 	// Cleanup ran exactly once even though one compartment failed.
 	assert.Equal(t, int64(1), cleanupCount.Load())
 
-	// The other compartment's write was not cancelled by the failure: its record landed.
+	// The soft error did not cancel the other compartment: its record landed.
 	okRecords := readAllRecordsFromKafkaTopics(t, kafkaCluster.ListenAddrs(), []string{compartmentTopics[okCompartment]}, numCompartments, time.Second)
 	assert.Contains(t, metricNamesFromRecords(t, okRecords), okMetric)
 
 	// The failing compartment stored nothing.
 	assert.Empty(t, readAllRecordsFromKafkaTopics(t, kafkaCluster.ListenAddrs(), []string{compartmentTopics[failCompartment]}, numCompartments, time.Second))
+}
+
+func TestDistributor_Push_Compartments_HardErrorCancelsOtherCompartments(t *testing.T) {
+	ctx := user.InjectOrgID(context.Background(), "user")
+	now := time.Now()
+
+	const numCompartments = 3
+	d, kafkaCluster, _ := prepareCompartmentsTestDistributor(t, numCompartments)
+	router := compartmentsTestRouter(numCompartments)
+
+	// metric_a and metric_c shard to two different read compartments (asserted below as a precondition).
+	const failMetric, slowMetric = "metric_a", "metric_c"
+	failCompartment := router.CompartmentForMetric("user", failMetric)
+	slowCompartment := router.CompartmentForMetric("user", slowMetric)
+	require.NotEqual(t, failCompartment, slowCompartment, "test precondition: the two metrics must shard to different compartments")
+
+	// The failing compartment errors immediately with a hard error, while the slow compartment's Produce
+	// blocks until the test unblocks it (simulating a degraded Kafka). We then assert Push returns with the
+	// hard error before the slow compartment is unblocked, proving its in-flight write was cancelled.
+	// Each compartment's only active partition equals its compartment ID and is pinned to its own broker,
+	// so blocking the slow compartment's broker does not hold up the failing compartment's.
+	unblockSlow := make(chan struct{})
+	kafkaCluster.ControlKey(int16(kmsg.Produce), func(req kmsg.Request) (kmsg.Response, error, bool) {
+		kafkaCluster.KeepControl()
+		for _, topic := range req.(*kmsg.ProduceRequest).Topics {
+			for _, partition := range topic.Partitions {
+				switch partition.Partition {
+				case int32(failCompartment):
+					return testkafka.CreateProduceResponseError(req.GetVersion(), topic.Topic, partition.Partition, kerr.TopicAuthorizationFailed), nil, true
+				case int32(slowCompartment):
+					// SleepControl yields to other connections while this handler sleeps, so the failing
+					// compartment (on a different broker) can still fail fast. kfake otherwise runs control
+					// functions serially, which would deadlock a plain block here.
+					kafkaCluster.SleepControl(func() { <-unblockSlow })
+				}
+			}
+		}
+		return nil, nil, false
+	})
+
+	pushErr := make(chan error, 1)
+	go func() {
+		_, err := d.Push(ctx, &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{
+			makeTimeseries([]string{model.MetricNameLabel, failMetric}, makeSamples(now.UnixMilli(), 1), nil, nil),
+			makeTimeseries([]string{model.MetricNameLabel, slowMetric}, makeSamples(now.UnixMilli(), 2), nil, nil),
+		}})
+		pushErr <- err
+	}()
+
+	// Push must return before we unblock the slow compartment: the hard error cancels its in-flight write.
+	// The remote timeout is set well above this window (see prepareCompartmentsTestDistributor), so a Push
+	// that returns quickly can only be the result of fail-fast cancellation, not the timeout firing.
+	select {
+	case err := <-pushErr:
+		requirePushErrorWithCause(t, err, codes.Internal, mimirpb.ERROR_CAUSE_UNKNOWN)
+	case <-time.After(5 * time.Second):
+		close(unblockSlow)
+		t.Fatal("Push did not fail fast: it blocked waiting on the slow compartment")
+	}
+	close(unblockSlow)
+}
+
+// requirePushErrorWithCause asserts that err is a gRPC status error with the given code and cause detail.
+func requirePushErrorWithCause(t *testing.T, err error, expectedCode codes.Code, expectedCause mimirpb.ErrorCause) {
+	t.Helper()
+
+	require.Error(t, err)
+	stat, ok := grpcutil.ErrorToStatus(err)
+	require.True(t, ok, "expected a gRPC status error, got %T: %v", err, err)
+	require.Equal(t, expectedCode, stat.Code())
+
+	details := stat.Details()
+	require.Len(t, details, 1)
+	errDetails, ok := details[0].(*mimirpb.ErrorDetails)
+	require.True(t, ok)
+	require.Equal(t, expectedCause, errDetails.Cause)
 }
 
 // metricNamesFromRecords deserializes the given Kafka records and returns the metric names of all
@@ -274,6 +355,9 @@ func prepareCompartmentsTestDistributor(t *testing.T, numCompartments int) (*Dis
 			cfg.Compartments.Enabled = true
 			cfg.Compartments.Read.NumCompartments = numCompartments
 			cfg.IngestStorageConfig.KafkaConfig.Topic = compartmentsTestTopicFormat
+			// Keep the remote timeout well above the fail-fast assertion window so that a Push returning
+			// quickly reflects cancellation rather than the timeout firing.
+			cfg.RemoteTimeout = 30 * time.Second
 		},
 	})
 	require.Len(t, distributors, 1)

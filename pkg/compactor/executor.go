@@ -35,7 +35,6 @@ import (
 
 	"github.com/grafana/mimir/pkg/compactor/scheduler/compactorschedulerpb"
 	"github.com/grafana/mimir/pkg/storage/bucket"
-	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/util"
 	util_log "github.com/grafana/mimir/pkg/util/log"
@@ -95,18 +94,18 @@ var (
 )
 
 type SchedulerClientConfig struct {
-	Enabled                       bool                           `yaml:"enabled" category:"experimental"`
-	SchedulerEndpoint             string                         `yaml:"scheduler_endpoint" category:"experimental"`
-	GRPCClientConfig              grpcclient.Config              `yaml:"grpc_client_config" category:"experimental"`
-	LeasingMinBackoff             time.Duration                  `yaml:"leasing_min_backoff" category:"experimental"`
-	LeasingMaxBackoff             time.Duration                  `yaml:"leasing_max_backoff" category:"experimental"`
-	UpdateInterval                time.Duration                  `yaml:"update_interval" category:"experimental"`
-	UpdateMinBackoff              time.Duration                  `yaml:"update_min_backoff" category:"experimental"`
-	UpdateMaxBackoff              time.Duration                  `yaml:"update_max_backoff" category:"experimental"`
-	CompactionDirCleanupInterval  time.Duration                  `yaml:"compaction_dir_cleanup_interval" category:"experimental"`
-	MetadataCacheConfig           mimir_tsdb.MetadataCacheConfig `yaml:"metadata_cache" category:"experimental"`
-	TerminatingFinalStatusTimeout time.Duration                  `yaml:"terminating_final_status_timeout" category:"experimental"`
-	Lanes                         flagext.StringSliceCSV         `yaml:"lanes" category:"experimental"`
+	Enabled                       bool                   `yaml:"enabled" category:"experimental"`
+	SchedulerEndpoint             string                 `yaml:"scheduler_endpoint" category:"experimental"`
+	GRPCClientConfig              grpcclient.Config      `yaml:"grpc_client_config" category:"experimental"`
+	LeasingMinBackoff             time.Duration          `yaml:"leasing_min_backoff" category:"experimental"`
+	LeasingMaxBackoff             time.Duration          `yaml:"leasing_max_backoff" category:"experimental"`
+	UpdateInterval                time.Duration          `yaml:"update_interval" category:"experimental"`
+	UpdateMinBackoff              time.Duration          `yaml:"update_min_backoff" category:"experimental"`
+	UpdateMaxBackoff              time.Duration          `yaml:"update_max_backoff" category:"experimental"`
+	CompactionDirCleanupInterval  time.Duration          `yaml:"compaction_dir_cleanup_interval" category:"experimental"`
+	MetadataCacheConfig           MetadataCacheConfig    `yaml:"metadata_cache"`
+	TerminatingFinalStatusTimeout time.Duration          `yaml:"terminating_final_status_timeout" category:"experimental"`
+	Lanes                         flagext.StringSliceCSV `yaml:"lanes" category:"experimental"`
 }
 
 func (cfg *SchedulerClientConfig) RegisterFlags(f *flag.FlagSet) {
@@ -155,6 +154,26 @@ func (cfg *SchedulerClientConfig) Validate() error {
 		return errInvalidSchedulerTerminatingFinalStatusTimeout
 	}
 	return nil
+}
+
+var supportedMetadataCacheBackends = []string{cache.BackendMemcached}
+
+// MetadataCacheConfig configures the cache that compactor workers use for block metadata.
+// Similar to MetadataCacheConfig from pkg/storage/tsdb/config.go, but contains only the subset of flags used.
+type MetadataCacheConfig struct {
+	cache.BackendConfig `yaml:",inline"`
+
+	MetafileContentTTL time.Duration `yaml:"metafile_content_ttl" category:"experimental"`
+}
+
+func (cfg *MetadataCacheConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
+	f.StringVar(&cfg.Backend, prefix+"backend", "", fmt.Sprintf("Backend for metadata cache, if not empty. Supported values: %s.", strings.Join(supportedMetadataCacheBackends, ", ")))
+	cfg.Memcached.RegisterFlagsWithPrefix(prefix+"memcached.", f)
+	f.DurationVar(&cfg.MetafileContentTTL, prefix+"metafile-content-ttl", 24*time.Hour, "How long to cache block metadata content.")
+}
+
+func (cfg *MetadataCacheConfig) Validate() error {
+	return cfg.BackendConfig.Validate()
 }
 
 const (

@@ -131,6 +131,12 @@ func TestIngester_Compartments_ShouldConsumeReadCompartmentTopicAtStartup(t *tes
 	cfg.BlocksStorageConfig.TSDB.HeadCompactionIntervalWhileStarting = headCompactionIntervalWhileStarting
 	cfg.BlocksStorageConfig.TSDB.HeadCompactionIntervalJitterEnabled = false
 
+	// Disable the minimum delay between compaction iterations, otherwise it would dominate the small
+	// headCompactionIntervalWhileStarting used above and the compaction loop would run only once during
+	// startup, before the replayed series is appended to the head. The default 10s delay is only
+	// meaningful with production-sized intervals.
+	cfg.minCompactionLoopDelay = 0
+
 	// Create the ingester, consuming the read compartment's topic from one Kafka cluster per write compartment.
 	overrides := validation.NewOverrides(defaultLimitsTestConfig(), nil)
 	ingester, kafkaClusters, watcher := createTestCompartmentsIngester(t, &cfg, overrides, reg, util_test.NewTestingLogger(t))

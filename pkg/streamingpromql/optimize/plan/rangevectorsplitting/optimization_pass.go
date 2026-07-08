@@ -15,36 +15,26 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
-	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
-type limitsProvider interface {
-	GetMaxOutOfOrderTimeWindow(ctx context.Context) (time.Duration, error)
-}
-
 type OptimizationPass struct {
 	splitInterval time.Duration
-	limits        limitsProvider
 
 	splitNodesIntroduced   prometheus.Counter
 	functionNodesInspected prometheus.Counter
 	functionNodesUnsplit   *prometheus.CounterVec
 
 	logger log.Logger
-
-	timeNow func() time.Time
 }
 
-func NewOptimizationPass(splitInterval time.Duration, limits limitsProvider, timeNowFn func() time.Time, reg prometheus.Registerer, logger log.Logger) *OptimizationPass {
+func NewOptimizationPass(splitInterval time.Duration, reg prometheus.Registerer, logger log.Logger) *OptimizationPass {
 	return &OptimizationPass{
 		splitInterval: splitInterval,
-		limits:        limits,
-		timeNow:       timeNowFn,
 		splitNodesIntroduced: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_mimir_query_engine_range_vector_splitting_nodes_introduced_total",
-			Help: "Total number of range vector splitting nodes introduced by the range vector splitting optimization pass.",
+			Help: "Total number of SplitFunctionCall nodes introduced by the range vector splitting optimization pass.",
 		}),
 		functionNodesInspected: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_mimir_query_engine_range_vector_splitting_function_nodes_inspected_total",
@@ -63,7 +53,7 @@ func (o *OptimizationPass) Name() string {
 }
 
 func (o *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, maximumSupportedQueryPlanVersion planning.QueryPlanVersion) (*planning.QueryPlan, error) {
-	if maximumSupportedQueryPlanVersion < planning.QueryPlanV13 {
+	if maximumSupportedQueryPlanVersion < planning.QueryPlanV18 {
 		return plan, nil
 	}
 
@@ -87,7 +77,7 @@ func (o *OptimizationPass) wrapSplitRangeVectorFunctions(ctx context.Context, n 
 
 	if functionCall, isFunctionCall := n.(*core.FunctionCall); isFunctionCall {
 		o.functionNodesInspected.Inc()
-		wrappedNode, notAppliedReason, err := o.trySplitFunction(ctx, functionCall, timeRange)
+		wrappedNode, notAppliedReason, err := o.trySplitFunction(functionCall, timeRange)
 		if err != nil {
 			o.functionNodesUnsplit.WithLabelValues("error").Inc()
 			return nil, err
@@ -118,19 +108,15 @@ func (o *OptimizationPass) wrapSplitRangeVectorFunctions(ctx context.Context, n 
 	return n, nil
 }
 
-// trySplitFunction attempts to wrap a function call with query splitting for intermediate result caching.
-// When creating the split ranges to query/cache by, the start and end timestamps are adjusted by the offset and @
-// modifiers so that splits are expressed in data-time rather than query-time. This lets us align split ranges to TSDB
-// block boundaries(ish - the split interval is currently hardcoded, while blocks vary in size), so each split typically
-// reads from a single block instead of straddling two.
-// Note: queries with different modifiers but identical underlying data DO NOT end up sharing cache entries (e.g.
-// sum_over_time(foo[2h]) at 4h and sum_over_time(foo[2h] offset 1h) at 5h), as offset and @ are part of the cache key.
-// TODO: consider if the modifier adjustments are worth it when the supported nodes/functions are expanded.
-//   - For subqueries the resulting time range might not be indicative of the actual queried timerange depending on the
-//     inner nodes for the subquery, so the split ranges might not align with the stored blocks after the adjustments.
-//   - For functions that require timestamps (e.g. ts_of_min_over_time), we will need to shift the result timestamps to
-//     accommodate for the adjustment done for modifiers.
-func (o *OptimizationPass) trySplitFunction(ctx context.Context, functionCall *core.FunctionCall, timeRange types.QueryTimeRange) (planning.Node, string, error) {
+// trySplitFunction decides whether a function call is eligible to be wrapped with query splitting for intermediate
+// result caching, based on structural properties known at planning time (the query is instant, the function is
+// supported, the inner node is splittable, and the range is longer than the split interval).
+//
+// The concrete split ranges - including out-of-order-window-based cacheability - are NOT computed here. They are
+// computed at materialize time (see Materializer.computeRanges), because they depend on the querier's current time and
+// the tenant's out-of-order window, as well as the exact time range being evaluated (which can vary if splitting
+// and caching applies).
+func (o *OptimizationPass) trySplitFunction(functionCall *core.FunctionCall, timeRange types.QueryTimeRange) (planning.Node, string, error) {
 	// For now, only support instant queries (range queries are more complex)
 	if !timeRange.IsInstant {
 		return nil, "range_query", nil
@@ -165,148 +151,9 @@ func (o *OptimizationPass) trySplitFunction(ctx context.Context, functionCall *c
 		return nil, "too_short_interval", nil
 	}
 
-	timeParams := inner.GetRangeParams()
-	startTs, endTs := calculateInnerTimeRange(timeRange.StartT, timeParams)
-
-	alignedStart := computeBlockAlignedStart(startTs, o.splitInterval)
-
-	hasCompleteBlock := alignedStart+o.splitInterval.Milliseconds() <= endTs
-	if !hasCompleteBlock {
-		return nil, "no_complete_cache_block", nil
-	}
-
-	var oooThreshold int64
-	oooWindow, err := o.limits.GetMaxOutOfOrderTimeWindow(ctx)
-	if err != nil {
-		return nil, "", err
-	}
-	if oooWindow > 0 {
-		oooThreshold = o.timeNow().Add(-oooWindow).UnixMilli()
-	}
-
-	splitRanges := computeSplitRanges(startTs, endTs, o.splitInterval, oooThreshold)
-
-	hasCacheable := false
-	for _, r := range splitRanges {
-		if r.Cacheable {
-			hasCacheable = true
-			break
-		}
-	}
-	if !hasCacheable {
-		return nil, "no_cacheable_blocks_after_ooo_filter", nil
-	}
-
-	if requestoptions.OptionsFromContext(ctx).CacheDisabled {
-		for i := range splitRanges {
-			splitRanges[i].Cacheable = false
-		}
-	}
-
 	n := &SplitFunctionCall{
-		SplitFunctionCallDetails: &SplitFunctionCallDetails{
-			SplitRanges: splitRanges,
-		},
-		Inner: functionCall,
+		SplitFunctionCallDetails: &SplitFunctionCallDetails{},
+		Inner:                    functionCall,
 	}
 	return n, "", nil
-}
-
-func calculateInnerTimeRange(evalTime int64, timeParams planning.RangeParams) (startTs, endTs int64) {
-	endTs = evalTime
-	if timeParams.HasTimestamp {
-		endTs = timeParams.Timestamp.UnixMilli()
-	}
-
-	endTs = endTs - timeParams.Offset.Milliseconds()
-	startTs = endTs - timeParams.Range.Milliseconds()
-
-	return startTs, endTs
-}
-
-// computeSplitRanges divides (startTs, endTs] into split ranges using PromQL semantics.
-//
-// Split ranges use left-open, right-closed intervals: (Start, End], aligning with PromQL range vector boundary
-// semantics.
-// When converted to storage queries, these become closed intervals [Start+1, End] on both sides,
-// since the storage API expects closed intervals [mint, maxt].
-//
-// To align with TSDB block boundaries (which use [MinTime, MaxTime) semantics), we shift
-// aligned boundaries by -1ms. This ensures that a split (Start, End] corresponds exactly
-// to block [Start+1ms, End+1ms). For example:
-//   - Split (7:59:59.999, 9:59:59.999] gets samples where 8:00:00.000 <= t <= 9:59:59.999
-//   - This would map exactly to a two hour block:
-//   - Block [8:00:00.000, 10:00:00.000) contains samples where 8:00:00.000 <= t < 10:00:00.000
-//
-// Ranges that would be within the OOO window are not cached to avoid stale data being returned.
-// The main results cache does cache results within the OOO window with a short TTL. If we also cached OOO results in
-// the intermediate cache, we could end up serving stale results for longer as a cached result returned from the
-// intermediate cache can end up in a result that's then cached in the result cache.
-func computeSplitRanges(startTs, endTs int64, splitInterval time.Duration, oooThreshold int64) []SplitRange {
-	splitIntervalMs := splitInterval.Milliseconds()
-	alignedStart := computeBlockAlignedStart(startTs, splitInterval)
-
-	var ranges []SplitRange
-
-	if alignedStart >= endTs {
-		return []SplitRange{{Start: startTs, End: endTs, Cacheable: false}}
-	}
-
-	// Check if we have an uncacheable "head" range
-	if startTs < alignedStart {
-		// Check if head range would be in ooo window (which would mean nothing can be cached)
-		if oooThreshold > 0 && alignedStart >= oooThreshold {
-			return []SplitRange{{Start: startTs, End: endTs, Cacheable: false}}
-		}
-		ranges = append(ranges, SplitRange{
-			Start:     startTs,
-			End:       alignedStart,
-			Cacheable: false,
-		})
-	}
-
-	var splitStart int64
-	for splitStart = alignedStart; splitStart+splitIntervalMs <= endTs; splitStart += splitIntervalMs {
-		splitEnd := splitStart + splitIntervalMs
-
-		// Check if range would be in ooo window
-		// oooThreshold is inclusive - that is, a sample written at the oooThreshold can be OOO, which is why we use >=
-		// for comparing the inclusive splitEnd with oooThreshold
-		if oooThreshold > 0 && splitEnd >= oooThreshold {
-			ranges = append(ranges, SplitRange{
-				Start:     splitStart,
-				End:       endTs,
-				Cacheable: false,
-			})
-			return ranges
-		}
-
-		ranges = append(ranges, SplitRange{
-			Start:     splitStart,
-			End:       splitEnd,
-			Cacheable: true,
-		})
-	}
-
-	// Add tail range if needed
-	if splitStart < endTs {
-		ranges = append(ranges, SplitRange{
-			Start:     splitStart,
-			End:       endTs,
-			Cacheable: false,
-		})
-	}
-
-	return ranges
-}
-
-func computeBlockAlignedStart(startTs int64, splitInterval time.Duration) int64 {
-	splitIntervalMs := splitInterval.Milliseconds()
-	// -1 to adjust for block boundaries. Query splitting time ranges are left open, the same as for PromQL. However,
-	// block boundaries are left closed, in the sense that a 2h block will store samples from e.g. 8h to 10h-1ms.
-	alignedStart := (startTs/splitIntervalMs)*splitIntervalMs - 1
-	if alignedStart < startTs {
-		alignedStart += splitIntervalMs
-	}
-	return alignedStart
 }

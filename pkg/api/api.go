@@ -45,7 +45,6 @@ import (
 	"github.com/grafana/mimir/pkg/ruler"
 	"github.com/grafana/mimir/pkg/scheduler"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
-	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/storegateway"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/grafana/mimir/pkg/usagetracker"
@@ -420,7 +419,7 @@ func (a *API) RegisterIngesterRing(r http.Handler) {
 // RegisterIngesterPartitionRings registers the ring UI page(s) for the ingester partition ring(s).
 // When compartments are disabled it registers a single page. When enabled it registers an index page
 // linking to one page per read compartment.
-func (a *API) RegisterIngesterPartitionRings(compartmentsEnabled bool, partitionRings *ingest.PartitionRingWatchers, ringKey string, kvClient kv.Client) {
+func (a *API) RegisterIngesterPartitionRings(compartmentsEnabled bool, partitionRings *ring.PartitionRingWatchers, ringKey string, kvClient kv.Client) {
 	a.indexPage.AddLinks(defaultWeight, "Ingester", []IndexPageLink{
 		{Desc: "Partition ring status", Path: "ingester/partition-ring"},
 	})

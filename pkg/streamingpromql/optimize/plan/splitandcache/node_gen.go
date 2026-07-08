@@ -40,6 +40,12 @@ func (c *Cache) ChildrenLabels() []string {
 	return []string{""}
 }
 
+func (c *Cache) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
+	oi, ok := other.(*Cache)
+	return ok &&
+		c.SplitInterval == oi.SplitInterval
+}
+
 func (t *TimeRangeSplit) Child(idx int) planning.Node {
 	if idx != 0 {
 		panic(fmt.Sprintf("node of type TimeRangeSplit supports 1 child, but attempted to get child at index %d", idx))
@@ -69,4 +75,10 @@ func (t *TimeRangeSplit) ReplaceChild(idx int, node planning.Node) error {
 
 func (t *TimeRangeSplit) ChildrenLabels() []string {
 	return []string{""}
+}
+
+func (t *TimeRangeSplit) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
+	oi, ok := other.(*TimeRangeSplit)
+	return ok &&
+		t.SplitInterval == oi.SplitInterval
 }

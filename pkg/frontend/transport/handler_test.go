@@ -505,6 +505,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				require.EqualValues(t, 0, msg["estimated_series_count"])
 				require.EqualValues(t, 0, msg["queue_time_seconds"])
 				require.EqualValues(t, 0, msg["remote_execution_request_count"])
+				require.EqualValues(t, 0, msg["retries"])
 				require.EqualValues(t, 0, msg["response_series_count"])
 				require.EqualValues(t, 0, msg["response_samples_count"])
 				require.EqualValues(t, 0, msg["equivalent_samples_read"])
@@ -804,11 +805,17 @@ func TestHandler_LogsFormattedQueryDetails(t *testing.T) {
 			requestFormFields: []string{},
 			setQueryDetails: func(d *querydetails.QueryDetails) {
 				d.ResultsCacheMissBytes = 10
+				d.ResultsCacheMissCount = 1
 				d.ResultsCacheHitBytes = 200
+				d.ResultsCacheHitCount = 2
+				d.ResultsCacheSetCount = 3
 			},
 			expectedLoggedFields: map[string]string{
 				"results_cache_miss_bytes": "10",
 				"results_cache_hit_bytes":  "200",
+				"results_cache_miss_count": "1",
+				"results_cache_hit_count":  "2",
+				"results_cache_set_count":  "3",
 				"header_cache_control":     "",
 			},
 		},

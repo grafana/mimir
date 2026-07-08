@@ -5,6 +5,8 @@ package remoteexec
 import (
 	"context"
 	"fmt"
+	"maps"
+	"slices"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize"
@@ -139,11 +141,12 @@ func (o *OptimizationPass) applyToRootNode(root planning.Node, multiNodeGroupsEn
 
 // collectEvaluationRoots returns the EvaluationRoot nodes in the plan.
 func collectEvaluationRoots(node planning.Node) []*core.EvaluationRoot {
-	var roots []*core.EvaluationRoot
+	roots := map[*core.EvaluationRoot]struct{}{} // We use a map to deduplicate roots referenced by multiple paths (eg. duplicate expressions).
+
 	var visit func(planning.Node)
 	visit = func(n planning.Node) {
 		if evaluationRoot, ok := n.(*core.EvaluationRoot); ok {
-			roots = append(roots, evaluationRoot)
+			roots[evaluationRoot] = struct{}{}
 
 			// EvaluationRoot markers are never nested inside one another, so no need to visit children.
 			return
@@ -156,7 +159,7 @@ func collectEvaluationRoots(node planning.Node) []*core.EvaluationRoot {
 
 	visit(node)
 
-	return roots
+	return slices.Collect(maps.Keys(roots))
 }
 
 func (o *OptimizationPass) wrapInRemoteExecutionNode(child planning.Node, eagerLoad bool, groups remoteExecutionGroupSet) (planning.Node, error) {

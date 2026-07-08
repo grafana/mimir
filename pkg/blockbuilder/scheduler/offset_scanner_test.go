@@ -4,6 +4,7 @@ package scheduler
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -19,7 +20,7 @@ import (
 	"github.com/grafana/mimir/pkg/util/testkafka"
 )
 
-func TestInitialOffsetProbing(t *testing.T) {
+func TestProbeSingleClusterOffsets(t *testing.T) {
 	ctx := context.Background()
 
 	tests := map[string]struct {
@@ -46,6 +47,23 @@ func TestInitialOffsetProbing(t *testing.T) {
 			endTime:        time.Date(2025, 3, 1, 10, 0, 0, 600*1000000, time.UTC),
 			minScanTime:    time.Date(2025, 2, 20, 10, 0, 0, 600*1000000, time.UTC),
 			expectedRanges: []*offsetTime{{offset: 2000, time: time.Date(2025, 3, 1, 10, 0, 0, 600*1000000, time.UTC)}},
+		},
+		"record at or after end time is registered instead of the end offset": {
+			// A record whose timestamp is at or after endTime means the first probe finds a
+			// real record rather than falling back to the end offset, so the end offset (2001)
+			// is never registered; the last sample is the real record at 2000. Best-effort:
+			// the current bucket ends slightly behind the true end offset.
+			offsets: []*offsetTime{
+				{offset: 2000, time: time.Date(2025, 3, 1, 10, 0, 0, 700*1000000, time.UTC)},
+			},
+			resume:      2000,
+			end:         2001,
+			jobSize:     200 * time.Millisecond,
+			endTime:     time.Date(2025, 3, 1, 10, 0, 0, 600*1000000, time.UTC),
+			minScanTime: time.Date(2025, 2, 20, 10, 0, 0, 600*1000000, time.UTC),
+			expectedRanges: []*offsetTime{
+				{offset: 2000, time: time.Date(2025, 3, 1, 10, 0, 0, 700*1000000, time.UTC)},
+			},
 		},
 		"old data with single unconsumed record": {
 			offsets: []*offsetTime{
@@ -232,12 +250,73 @@ func TestInitialOffsetProbing(t *testing.T) {
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
 			f := &mockOffsetFinder{offsets: tt.offsets, end: tt.end, distinctTimes: make(map[time.Time]struct{})}
-			scanner := newOffsetScanner(f, tt.endTime, tt.jobSize, tt.endTime.Sub(tt.minScanTime), promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}))
-			j, err := scanner.probeInitialOffsets(ctx, partitionOffsets{topic: "topic", partition: 0, start: tt.start, resume: tt.resume, end: tt.end}, test.NewTestingLogger(t))
+			scanner := newOffsetScanner([]offsetStore{f}, "topic", tt.endTime, tt.jobSize, tt.endTime.Sub(tt.minScanTime), promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}))
+			j, err := scanner.probeSingleClusterOffsets(ctx, 0, partitionOffsets{partition: 0, start: tt.start, resume: tt.resume, end: tt.end}, test.NewTestingLogger(t))
 			assert.NoError(t, err)
 			assert.EqualValues(t, tt.expectedRanges, j, tt.msg)
 		})
 	}
+}
+
+func TestProbeInitialPartitionOffsets(t *testing.T) {
+	ctx := context.Background()
+	endTime := time.Date(2025, 3, 1, 13, 0, 0, 0, time.UTC)
+	at := func(h, m int) time.Time { return time.Date(2025, 3, 1, h, m, 0, 0, time.UTC) }
+	newScanner := func(stores []offsetStore) *offsetScanner {
+		return newOffsetScanner(stores, "topic", endTime, time.Hour, 13*time.Hour, promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}))
+	}
+	clusterOffsets := []*partitionOffsets{
+		{partition: 0, resume: 100, end: 250},
+		{partition: 0, resume: 1000, end: 1150},
+		{partition: 0, resume: 5000, end: 5150},
+	}
+	// probed is what probeSingleClusterOffsets yields for a store holding a single record at
+	// 10:07: the record itself, then the end-offset seed stamped at endTime.
+	probed := func(recordOffset, endOffset int64) []*offsetTime {
+		return []*offsetTime{{offset: recordOffset, time: at(10, 7)}, {offset: endOffset, time: endTime}}
+	}
+
+	t.Run("returns each cluster's offsets indexed by clusterID", func(t *testing.T) {
+		stores := []offsetStore{
+			&mockOffsetFinder{offsets: []*offsetTime{{offset: 100, time: at(10, 7)}}, end: 250, distinctTimes: make(map[time.Time]struct{})},
+			&mockOffsetFinder{offsets: []*offsetTime{{offset: 1000, time: at(10, 7)}}, end: 1150, distinctTimes: make(map[time.Time]struct{})},
+			&mockOffsetFinder{offsets: []*offsetTime{{offset: 5000, time: at(10, 7)}}, end: 5150, distinctTimes: make(map[time.Time]struct{})},
+		}
+
+		perCluster, err := newScanner(stores).probeInitialPartitionOffsets(ctx, clusterOffsets, test.NewTestingLogger(t))
+		require.NoError(t, err)
+		assert.Equal(t, [][]*offsetTime{probed(100, 250), probed(1000, 1150), probed(5000, 5150)}, perCluster)
+	})
+
+	t.Run("skips a nil entry and leaves a nil slot for it", func(t *testing.T) {
+		stores := []offsetStore{
+			&mockOffsetFinder{offsets: []*offsetTime{{offset: 100, time: at(10, 7)}}, end: 250, distinctTimes: make(map[time.Time]struct{})},
+			&mockOffsetFinder{distinctTimes: make(map[time.Time]struct{})},
+			&mockOffsetFinder{offsets: []*offsetTime{{offset: 5000, time: at(10, 7)}}, end: 5150, distinctTimes: make(map[time.Time]struct{})},
+		}
+		clusterOffsets := []*partitionOffsets{
+			{partition: 0, resume: 100, end: 250},
+			nil,
+			{partition: 0, resume: 5000, end: 5150},
+		}
+
+		perCluster, err := newScanner(stores).probeInitialPartitionOffsets(ctx, clusterOffsets, test.NewTestingLogger(t))
+		require.NoError(t, err)
+		// The nil entry leaves a nil slot without shifting cluster 2's offsets down to slot 1.
+		assert.Equal(t, [][]*offsetTime{probed(100, 250), nil, probed(5000, 5150)}, perCluster)
+	})
+
+	t.Run("propagates a probe error", func(t *testing.T) {
+		wantErr := errors.New("boom")
+		stores := []offsetStore{
+			&mockOffsetFinder{err: wantErr, distinctTimes: make(map[time.Time]struct{})},
+			&mockOffsetFinder{distinctTimes: make(map[time.Time]struct{})},
+			&mockOffsetFinder{distinctTimes: make(map[time.Time]struct{})},
+		}
+
+		_, err := newScanner(stores).probeInitialPartitionOffsets(ctx, clusterOffsets, test.NewTestingLogger(t))
+		require.ErrorIs(t, err, wantErr)
+	})
 }
 
 func TestScanProbeTimes(t *testing.T) {
@@ -365,9 +444,16 @@ type mockOffsetFinder struct {
 	offsets       []*offsetTime
 	end           int64
 	distinctTimes map[time.Time]struct{}
+	err           error
 }
 
 func (o *mockOffsetFinder) offsetAfterTime(_ context.Context, _ string, _ int32, t time.Time) (int64, time.Time, bool, error) {
+	if o.err != nil {
+		return 0, time.Time{}, false, o.err
+	}
+	if o.distinctTimes == nil {
+		o.distinctTimes = make(map[time.Time]struct{})
+	}
 	o.distinctTimes[t] = struct{}{}
 	// scan the offsets slice and return the lowest offset whose time is after t.
 	mint := time.Time{}

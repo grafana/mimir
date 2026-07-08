@@ -22,8 +22,13 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kadm"
+	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kfake"
 	"github.com/twmb/franz-go/pkg/kgo"
+	"github.com/twmb/franz-go/pkg/kmsg"
+	"go.uber.org/atomic"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/blockbuilder/schedulerpb"
 	"github.com/grafana/mimir/pkg/storage/ingest"
@@ -171,7 +176,7 @@ func TestService(t *testing.T) {
 		require.NoError(t, sched.flushOffsetsToKafka(ctx))
 
 		// And our offsets should have advanced.
-		offs, err := sched.fetchCommittedOffsets(ctx)
+		offs, err := fetchCommittedOffsets(ctx, sched.adminClient, sched.cfg.ConsumerGroup, sched.cfg.Kafka.Topic)
 		require.NoError(t, err)
 		o, ok := offs.Lookup(spec.Topic, spec.Partition)
 		require.True(t, ok)
@@ -194,9 +199,9 @@ func TestServiceStopsCleanlyDuringStartupObservation(t *testing.T) {
 func TestStartup(t *testing.T) {
 	sched, _ := mustScheduler(t, 4)
 	// (a new scheduler starts in observation mode.)
-	sched.getPartitionState("ingest", 64).initCommit(1000)
-	sched.getPartitionState("ingest", 65).initCommit(256)
-	sched.getPartitionState("ingest", 66).initCommit(57)
+	sched.getPartitionState("ingest", 64).initCommit(0, 1000)
+	sched.getPartitionState("ingest", 65).initCommit(0, 256)
+	sched.getPartitionState("ingest", 66).initCommit(0, 57)
 
 	{
 		_, _, err := sched.assignJob("w0")
@@ -347,9 +352,9 @@ func TestAssignJobSkipsObsoleteOffsets(t *testing.T) {
 	require.Equal(t, 3, sched.jobs.count())
 
 	p1 := sched.getPartitionState("ingest", 1)
-	p1.initCommit(256)
+	p1.initCommit(0, 256)
 	p2 := sched.getPartitionState("ingest", 2)
-	p2.initCommit(500)
+	p2.initCommit(0, 500)
 
 	// Advancing offsets doesn't actually remove any jobs.
 	require.Equal(t, 3, sched.jobs.count())
@@ -388,7 +393,7 @@ func TestAssignJobSkipsObsoleteOffsets_PriorScheduler(t *testing.T) {
 
 	// Simulate a completion of a job that was created by a prior scheduler.
 	p1 := sched.getPartitionState("ingest", 1)
-	p1.initCommit(5000)
+	p1.initCommit(0, 5000)
 	// Advancing offsets doesn't actually remove any jobs.
 	require.Equal(t, 1, sched.jobs.count())
 
@@ -413,15 +418,15 @@ func TestObservations(t *testing.T) {
 	sched, _ := mustScheduler(t, 10)
 	// Initially we're in observation mode. We have Kafka's commit offsets, but no client jobs.
 
-	sched.getPartitionState("ingest", 1).initCommit(5000)
-	sched.getPartitionState("ingest", 2).initCommit(800)
-	sched.getPartitionState("ingest", 3).initCommit(974)
-	sched.getPartitionState("ingest", 4).initCommit(500)
-	sched.getPartitionState("ingest", 5).initCommit(12000)
+	sched.getPartitionState("ingest", 1).initCommit(0, 5000)
+	sched.getPartitionState("ingest", 2).initCommit(0, 800)
+	sched.getPartitionState("ingest", 3).initCommit(0, 974)
+	sched.getPartitionState("ingest", 4).initCommit(0, 500)
+	sched.getPartitionState("ingest", 5).initCommit(0, 12000)
 	sched.getPartitionState("ingest", 6) // no commit for 6
 	sched.getPartitionState("ingest", 7) // no commit for 7
-	sched.getPartitionState("ingest", 8).initCommit(1000)
-	sched.getPartitionState("ingest", 9).initCommit(1000)
+	sched.getPartitionState("ingest", 8).initCommit(0, 1000)
+	sched.getPartitionState("ingest", 9).initCommit(0, 1000)
 
 	{
 		nq := newJobQueue(988*time.Hour, noOpJobCreationPolicy[schedulerpb.JobSpec]{}, 2, sched.metrics, test.NewTestingLogger(t))
@@ -556,19 +561,19 @@ func TestObservations(t *testing.T) {
 	verifyCommits()
 
 	// Make sure the resumption offsets account for the gaps.
-	offs, err := sched.consumptionOffsets(context.Background(), "ingest", time.Now())
+	offs, err := sched.initSingleClusterConsumptionOffsets(context.Background(), "ingest", time.Now())
 	require.NoError(t, err)
 	require.ElementsMatch(t, []partitionOffsets{
-		{topic: "ingest", partition: 0, resume: 0},
-		{topic: "ingest", partition: 1, resume: 6000},
-		{topic: "ingest", partition: 2, resume: 1600},
-		{topic: "ingest", partition: 3, resume: 974},
-		{topic: "ingest", partition: 4, resume: 900},
-		{topic: "ingest", partition: 5, resume: 13000},
-		{topic: "ingest", partition: 6, resume: 600},
-		{topic: "ingest", partition: 7, resume: 93874},
-		{topic: "ingest", partition: 8, resume: 1300},
-		{topic: "ingest", partition: 9, resume: 1300},
+		{partition: 0, resume: 0},
+		{partition: 1, resume: 6000},
+		{partition: 2, resume: 1600},
+		{partition: 3, resume: 974},
+		{partition: 4, resume: 900},
+		{partition: 5, resume: 13000},
+		{partition: 6, resume: 600},
+		{partition: 7, resume: 93874},
+		{partition: 8, resume: 1300},
+		{partition: 9, resume: 1300},
 	}, offs)
 
 	require.Len(t, sched.jobs.jobs, 4, "should be 4 in-progress jobs")
@@ -583,13 +588,13 @@ func TestObservations(t *testing.T) {
 func (s *BlockBuilderScheduler) requireOffset(t *testing.T, topic string, partition int32, expected int64, msgAndArgs ...any) {
 	t.Helper()
 	ps := s.getPartitionState(topic, partition)
-	require.Equal(t, expected, ps.offsets.committed.offset(), msgAndArgs...)
+	require.Equal(t, expected, ps.offsets[0].committed.offset(), msgAndArgs...)
 }
 
 func TestOffsetMovement(t *testing.T) {
 	sched, _ := mustScheduler(t, 4)
 	ps := sched.getPartitionState("ingest", 1)
-	ps.initCommit(5000)
+	ps.initCommit(0, 5000)
 	sched.completeObservationMode(context.Background())
 
 	spec := schedulerpb.JobSpec{
@@ -613,18 +618,14 @@ func TestOffsetMovement(t *testing.T) {
 	sched.requireOffset(t, "ingest", 1, 6000, "re-completing the same job shouldn't change the commit")
 
 	p1 := sched.getPartitionState("ingest", 1)
-	p1.offsets.committed.advance("ancient_job", schedulerpb.JobSpec{
-		Topic:       "ingest",
-		Partition:   1,
+	p1.offsets[0].committed.advance("ancient_job", schedulerpb.OffsetRange{
 		StartOffset: 1000,
 		EndOffset:   2000,
 	})
 	sched.requireOffset(t, "ingest", 1, 6000, "committed offsets cannot rewind")
 
 	p2 := sched.getPartitionState("ingest", 2)
-	p2.offsets.committed.advance("ancient_job2", schedulerpb.JobSpec{
-		Topic:       "ingest",
-		Partition:   2,
+	p2.offsets[0].committed.advance("ancient_job2", schedulerpb.OffsetRange{
 		StartOffset: 6000,
 		EndOffset:   6222,
 	})
@@ -639,7 +640,7 @@ func TestKafkaFlush(t *testing.T) {
 	flushAndRequireOffsets := func(topic string, offsets map[int32]int64, args ...any) {
 		require.NoError(t, sched.flushOffsetsToKafka(ctx))
 
-		offs, err := sched.fetchCommittedOffsets(ctx)
+		offs, err := fetchCommittedOffsets(ctx, sched.adminClient, sched.cfg.ConsumerGroup, sched.cfg.Kafka.Topic)
 		require.NoError(t, err)
 		offcount := 0
 		offs.Each(func(o kadm.Offset) {
@@ -660,19 +661,19 @@ func TestKafkaFlush(t *testing.T) {
 	// (No commit yet for p0.)
 
 	p1 := sched.getPartitionState("ingest", 1)
-	p1.initCommit(2000)
+	p1.initCommit(0, 2000)
 	flushAndRequireOffsets("ingest", map[int32]int64{
 		1: 2000,
 	})
 
 	p4 := sched.getPartitionState("ingest", 4)
-	p4.initCommit(65535)
+	p4.initCommit(0, 65535)
 	flushAndRequireOffsets("ingest", map[int32]int64{
 		1: 2000,
 		4: 65535,
 	})
 
-	p1.initCommit(4000)
+	p1.initCommit(0, 4000)
 	flushAndRequireOffsets("ingest", map[int32]int64{
 		1: 4000,
 		4: 65535,
@@ -738,6 +739,177 @@ func TestUpdateSchedule(t *testing.T) {
 	`), "cortex_blockbuilder_scheduler_partition_end_offset"))
 }
 
+// TestUpdateSchedule_ProbeFailure verifies that a failed end-offset probe abandons the tick,
+// leaving partition state untouched and enqueuing no jobs, and that the next successful tick
+// picks up where the failed one left off.
+func TestUpdateSchedule_ProbeFailure(t *testing.T) {
+	ctx, cancel := context.WithCancelCause(context.Background())
+	t.Cleanup(func() { cancel(errors.New("test done")) })
+
+	var vnet kfake.VirtualNetwork
+	cluster, kafkaAddr := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, 1, "ingest", testkafka.WithVirtualNetwork(&vnet))
+	sched, cli := mustSchedulerWithKafkaAddrAndDialer(t, kafkaAddr, vnet.DialContext)
+	sched.completeObservationMode(ctx)
+
+	produceRecords(ctx, t, cli, 0, 3)
+	stopFailing := failListOffsets(cluster)
+
+	sched.updateSchedule(ctx)
+
+	ps := sched.getPartitionState("ingest", 0)
+	require.Equal(t, int64(0), ps.offsets[0].endOffset, "a failed probe should leave the end offset at its startup value")
+	require.Equal(t, 0, ps.pendingJobs.Len(), "a failed probe should not enqueue jobs")
+
+	stopFailing()
+	sched.updateSchedule(ctx)
+	require.Equal(t, int64(3), ps.offsets[0].endOffset, "the next successful probe should record the produced records")
+}
+
+// TestLoadInitialCommittedOffsets verifies that the consumer group's committed offsets seed
+// each partition's state, and that commits for other topics in the group don't pollute it.
+func TestLoadInitialCommittedOffsets(t *testing.T) {
+	sched, _ := mustScheduler(t, 2)
+	ctx := t.Context()
+	admin := sched.adminClient
+
+	_, err := admin.CreateTopic(ctx, 1, 1, nil, "other-topic")
+	require.NoError(t, err)
+
+	offs := make(kadm.Offsets)
+	offs.AddOffset("ingest", 0, 42, -1)
+	offs.AddOffset("ingest", 1, 64, -1)
+	offs.AddOffset("other-topic", 0, 99, -1)
+	require.NoError(t, admin.CommitAllOffsets(ctx, sched.cfg.ConsumerGroup, offs))
+
+	require.NoError(t, sched.loadInitialCommittedOffsets(ctx))
+
+	sched.requireOffset(t, "ingest", 0, 42, "partition 0 should be seeded from its committed offset")
+	sched.requireOffset(t, "ingest", 1, 64, "partition 1 should be seeded from its committed offset")
+	require.Len(t, sched.partitionStates, 2, "foreign topic commits should not seed partition state")
+}
+
+// TestFetchCommittedOffsets_IgnoresForeignTopics verifies that committed offsets for other
+// topics in the consumer group are filtered out, so they can't seed partition state.
+func TestFetchCommittedOffsets_IgnoresForeignTopics(t *testing.T) {
+	sched, _ := mustScheduler(t, 1)
+	ctx := t.Context()
+	admin := sched.adminClient
+
+	_, err := admin.CreateTopic(ctx, 1, 1, nil, "other-topic")
+	require.NoError(t, err)
+
+	offs := make(kadm.Offsets)
+	offs.AddOffset("ingest", 0, 42, -1)
+	offs.AddOffset("other-topic", 0, 99, -1)
+	require.NoError(t, admin.CommitAllOffsets(ctx, sched.cfg.ConsumerGroup, offs))
+
+	got, err := fetchCommittedOffsets(ctx, admin, sched.cfg.ConsumerGroup, "ingest")
+	require.NoError(t, err)
+	o, ok := got.Lookup("ingest", 0)
+	require.True(t, ok)
+	require.Equal(t, int64(42), o.At)
+	_, ok = got.Lookup("other-topic", 0)
+	require.False(t, ok, "foreign topic offsets should be filtered out")
+}
+
+// TestUpdateJob_ValidatesSpec verifies that specs arriving over the UpdateJob RPC are validated
+// before use, so a malformed spec (e.g. an out-of-range cluster ID in its offset ranges) is
+// rejected instead of panicking the scheduler.
+func TestUpdateJob_ValidatesSpec(t *testing.T) {
+	tests := map[string]struct {
+		spec         *schedulerpb.JobSpec
+		expectedCode codes.Code
+	}{
+		"disabled accepts start/end offsets": {
+			spec:         &schedulerpb.JobSpec{Topic: "ingest", Partition: 0, StartOffset: 5, EndOffset: 10},
+			expectedCode: codes.OK,
+		},
+		"disabled rejects offset ranges": {
+			spec: &schedulerpb.JobSpec{Topic: "ingest", Partition: 0,
+				OffsetRanges: map[int32]schedulerpb.OffsetRange{1: {StartOffset: 5, EndOffset: 10}}},
+			expectedCode: codes.InvalidArgument,
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			sched, _ := mustScheduler(t, 1)
+
+			_, err := sched.UpdateJob(t.Context(), &schedulerpb.UpdateJobRequest{
+				Key:      &schedulerpb.JobKey{Id: "job/0/1", Epoch: 1},
+				WorkerId: "w0",
+				Spec:     tc.spec,
+			})
+			if tc.expectedCode == codes.OK {
+				require.NoError(t, err)
+				return
+			}
+			require.Equal(t, tc.expectedCode, status.Code(err))
+		})
+	}
+}
+
+// TestPopulateInitialJobs_GroupedByPartition verifies the partition-grouped input contract:
+// every partition in the map is probed and replayed independently, a partition with new data
+// gets a pending job covering [resume, end), and a dormant partition (resume == end) registers
+// its end offset without producing a job.
+func TestPopulateInitialJobs_GroupedByPartition(t *testing.T) {
+	sched, _ := mustScheduler(t, 2)
+	recordTime := time.Date(2025, 3, 1, 10, 30, 0, 0, time.UTC)
+	finder := &mockOffsetFinder{offsets: []*offsetTime{{offset: 100, time: recordTime}}, end: 200}
+
+	runPopulateInitialJobs(sched, finder, map[int32][]*partitionOffsets{
+		0: {{partition: 0, start: 100, resume: 100, end: 200}},
+		1: {{partition: 1, start: 500, resume: 700, end: 700}},
+	})
+
+	ps0 := sched.getPartitionState("ingest", 0)
+	require.Equal(t, 1, ps0.pendingJobs.Len(), "the partition with new data should get one job")
+	spec := ps0.pendingJobs.Front().Value.(*schedulerpb.JobSpec)
+	require.Equal(t, int64(100), spec.StartOffset)
+	require.Equal(t, int64(200), spec.EndOffset)
+
+	ps1 := sched.getPartitionState("ingest", 1)
+	require.Equal(t, 0, ps1.pendingJobs.Len(), "the dormant partition should get no job")
+	require.Equal(t, int64(700), ps1.offsets[0].endOffset, "the dormant partition's end offset should still be registered")
+}
+
+// TestPopulateInitialJobs_NilClusterEntry verifies that a nil entry in a partition's cluster
+// slice (the partition has no offsets on that cluster) is skipped without panicking or
+// producing a job.
+func TestPopulateInitialJobs_NilClusterEntry(t *testing.T) {
+	sched, _ := mustScheduler(t, 1)
+
+	runPopulateInitialJobs(sched, &mockOffsetFinder{}, map[int32][]*partitionOffsets{
+		0: {nil},
+	})
+
+	ps := sched.getPartitionState("ingest", 0)
+	require.Equal(t, 0, ps.pendingJobs.Len())
+	require.Equal(t, int64(offsetEmpty), ps.offsets[0].endOffset, "a nil cluster entry should leave the partition's offsets untouched")
+}
+
+// TestPopulateInitialJobs_ProbeErrorIsolation verifies that a probe failure on one partition
+// only skips that partition: other partitions in the same call are still replayed.
+func TestPopulateInitialJobs_ProbeErrorIsolation(t *testing.T) {
+	sched, _ := mustScheduler(t, 2)
+	finder := &mockOffsetFinder{err: errors.New("probe failed")}
+
+	// Partition 0 has new data, so it needs a probe, which fails. Partition 1 is dormant
+	// (resume == end), which needs no probe.
+	runPopulateInitialJobs(sched, finder, map[int32][]*partitionOffsets{
+		0: {{partition: 0, start: 100, resume: 100, end: 200}},
+		1: {{partition: 1, start: 500, resume: 700, end: 700}},
+	})
+
+	ps0 := sched.getPartitionState("ingest", 0)
+	require.Equal(t, 0, ps0.pendingJobs.Len(), "the failing partition should be skipped")
+	require.Equal(t, int64(offsetEmpty), ps0.offsets[0].endOffset, "the failing partition's offsets should be untouched")
+
+	ps1 := sched.getPartitionState("ingest", 1)
+	require.Equal(t, int64(700), ps1.offsets[0].endOffset, "the other partition should still be replayed")
+}
+
 func TestPopulateInitialJobs_ProbeTimesReused(t *testing.T) {
 	// Ensure that the probe times are reused across partitions, which is a
 	// necessary condition for cached offset reuse in the offsetFinder.
@@ -754,16 +926,16 @@ func TestPopulateInitialJobs_ProbeTimesReused(t *testing.T) {
 		distinctTimes: make(map[time.Time]struct{}),
 	}
 
-	consumeOffs := []partitionOffsets{
-		{topic: "topic", partition: 0, start: 100, resume: 100, end: 1000},
-		{topic: "topic", partition: 1, start: 100, resume: 100, end: 1000},
-		{topic: "topic", partition: 2, start: 100, resume: 100, end: 1000},
-		{topic: "topic", partition: 3, start: 100, resume: 100, end: 1000},
+	offsetsByPartition := map[int32][]*partitionOffsets{
+		0: {{partition: 0, start: 100, resume: 100, end: 1000}},
+		1: {{partition: 1, start: 100, resume: 100, end: 1000}},
+		2: {{partition: 2, start: 100, resume: 100, end: 1000}},
+		3: {{partition: 3, start: 100, resume: 100, end: 1000}},
 	}
 
 	endTime := time.Date(2025, 3, 1, 11, 0, 0, 0, time.UTC)
-	scanner := newOffsetScanner(finder, endTime, sched.cfg.JobSize, sched.cfg.MaxScanAge, sched.metrics.probeRecordTimeDelta)
-	sched.populateInitialJobs(context.Background(), consumeOffs, scanner)
+	scanner := newOffsetScanner([]offsetStore{finder}, "ingest", endTime, sched.cfg.JobSize, sched.cfg.MaxScanAge, sched.metrics.probeRecordTimeDelta)
+	sched.populateInitialJobs(context.Background(), offsetsByPartition, scanner)
 	require.Len(t, finder.distinctTimes, 4, "four partitions will each be probed at the same times, so the probe times should be shared across partitions")
 }
 
@@ -950,7 +1122,7 @@ func TestBlockBuilderScheduler_EnqueuePendingJobs_CommitRace(t *testing.T) {
 
 	part := int32(1)
 	pt := sched.getPartitionState("ingest", part)
-	pt.initCommit(20)
+	pt.initCommit(0, 20)
 	pt.addPendingJob(&schedulerpb.JobSpec{
 		Topic:       "ingest",
 		Partition:   part,
@@ -981,7 +1153,7 @@ func TestBlockBuilderScheduler_EnqueuePendingJobs_StartupRace(t *testing.T) {
 	})
 
 	// But the job we imported from the existing workers now being completed may be (10, 20):
-	pt.initCommit(20)
+	pt.initCommit(0, 20)
 
 	assert.Equal(t, 1, pt.pendingJobs.Len())
 	assert.Equal(t, 0, sched.jobs.count())
@@ -1006,11 +1178,11 @@ func TestBlockBuilderScheduler_EnqueuePendingJobs_GapDetection(t *testing.T) {
 
 	assert.Equal(t, 3, pt.pendingJobs.Len())
 	assert.Equal(t, 0, sched.jobs.count())
-	assert.True(t, pt.offsets.planned.empty())
+	assert.True(t, pt.offsets[0].planned.empty())
 	sched.enqueuePendingJobs()
 	assert.Equal(t, 0, pt.pendingJobs.Len())
 	assert.Equal(t, 3, sched.jobs.count())
-	assert.Equal(t, int64(50), pt.offsets.planned.offset())
+	assert.Equal(t, int64(50), pt.offsets[0].planned.offset())
 
 	requireGaps(t, reg, 0, 0)
 
@@ -1019,11 +1191,11 @@ func TestBlockBuilderScheduler_EnqueuePendingJobs_GapDetection(t *testing.T) {
 
 	assert.Equal(t, 1, pt.pendingJobs.Len())
 	assert.Equal(t, 3, sched.jobs.count())
-	assert.Equal(t, int64(50), pt.offsets.planned.offset())
+	assert.Equal(t, int64(50), pt.offsets[0].planned.offset())
 	sched.enqueuePendingJobs()
 	assert.Equal(t, 0, pt.pendingJobs.Len())
 	assert.Equal(t, 4, sched.jobs.count(), "a gap should not interfere with job queueing")
-	assert.Equal(t, int64(70), pt.offsets.planned.offset())
+	assert.Equal(t, int64(70), pt.offsets[0].planned.offset())
 
 	requireGaps(t, reg, 1, 0)
 
@@ -1035,11 +1207,11 @@ func TestBlockBuilderScheduler_EnqueuePendingJobs_GapDetection(t *testing.T) {
 
 	assert.Equal(t, 3, pt.pendingJobs.Len())
 	assert.Equal(t, 4, sched.jobs.count())
-	assert.Equal(t, int64(70), pt.offsets.planned.offset())
+	assert.Equal(t, int64(70), pt.offsets[0].planned.offset())
 	sched.enqueuePendingJobs()
 	assert.Equal(t, 0, pt.pendingJobs.Len())
 	assert.Equal(t, 7, sched.jobs.count(), "a gap should not interfere with job queueing")
-	assert.Equal(t, int64(120), pt.offsets.planned.offset())
+	assert.Equal(t, int64(120), pt.offsets[0].planned.offset())
 
 	requireGaps(t, reg, 2, 0)
 
@@ -1072,36 +1244,32 @@ func TestBlockBuilderScheduler_NoCommit_NoGap(t *testing.T) {
 	requireGaps(t, reg, 0, 0)
 
 	pp := sched.getPartitionState("ingest", part)
-	require.True(t, pp.offsets.planned.empty())
-	require.True(t, pp.offsets.committed.empty())
+	require.True(t, pp.offsets[0].planned.empty())
+	require.True(t, pp.offsets[0].committed.empty())
 
 	k := jobKey{"myjob5", 5}
-	spec := schedulerpb.JobSpec{
-		Topic:       "ingest",
-		Partition:   part,
+	spec := schedulerpb.OffsetRange{
 		StartOffset: 10,
 		EndOffset:   20,
 	}
 
-	pp.offsets.planned.advance(k.id, spec)
+	pp.offsets[0].planned.advance(k.id, spec)
 	requireGaps(t, reg, 0, 0, "advancing an empty planned offset should not register a gap")
 
-	pp.offsets.committed.advance(k.id, spec)
+	pp.offsets[0].committed.advance(k.id, spec)
 	requireGaps(t, reg, 0, 0, "advancing an empty committed offset should not register a gap")
 
 	// Now create a gap:
 	k2 := jobKey{"myjob7", 23}
-	spec2 := schedulerpb.JobSpec{
-		Topic:       "ingest",
-		Partition:   part,
+	spec2 := schedulerpb.OffsetRange{
 		StartOffset: 40,
 		EndOffset:   50,
 	}
 
-	pp.offsets.planned.advance(k2.id, spec2)
+	pp.offsets[0].planned.advance(k2.id, spec2)
 	requireGaps(t, reg, 1, 0, "a gap after a non-empty planned offset should register a gap")
 
-	pp.offsets.committed.advance(k2.id, spec2)
+	pp.offsets[0].committed.advance(k2.id, spec2)
 	requireGaps(t, reg, 1, 1, "a gap after a non-empty committed offset should register a gap")
 }
 
@@ -1211,27 +1379,28 @@ func TestStartupToRegularModeJobProduction(t *testing.T) {
 				distinctTimes: make(map[time.Time]struct{}),
 			}
 
-			consumeOffs := []partitionOffsets{
-				{
-					topic:     "topic",
-					partition: 0,
-					start:     tt.initialStart,
-					resume:    tt.initialResume,
-					end:       tt.initialEnd,
+			offsetsByPartition := map[int32][]*partitionOffsets{
+				0: {
+					{
+						partition: 0,
+						start:     tt.initialStart,
+						resume:    tt.initialResume,
+						end:       tt.initialEnd,
+					},
 				},
 			}
 
 			// Call populateInitialJobs to set up initial state
-			scanner := newOffsetScanner(finder, tt.initialTime, sched.cfg.JobSize, sched.cfg.MaxScanAge, sched.metrics.probeRecordTimeDelta)
-			sched.populateInitialJobs(context.Background(), consumeOffs, scanner)
+			scanner := newOffsetScanner([]offsetStore{finder}, "ingest", tt.initialTime, sched.cfg.JobSize, sched.cfg.MaxScanAge, sched.metrics.probeRecordTimeDelta)
+			sched.populateInitialJobs(context.Background(), offsetsByPartition, scanner)
 
 			collectedJobs := []*schedulerpb.JobSpec{}
 
 			// Apply future end offset observations and collect jobs returned from updateTime
-			ps := sched.getPartitionState("topic", 0)
+			ps := sched.getPartitionState("ingest", 0)
 
 			for _, obs := range tt.futureObservations {
-				ps.updateEndOffset(obs.offset)
+				ps.updateEndOffset(0, obs.offset)
 				job, err := ps.updateTime(obs.timestamp, sched.cfg.JobSize)
 				require.NoError(t, err)
 				if job != nil {
@@ -1265,5 +1434,56 @@ func TestStartupToRegularModeJobProduction(t *testing.T) {
 					i, current.EndOffset, next.StartOffset)
 			}
 		})
+	}
+}
+
+// runPopulateInitialJobs runs populateInitialJobs over a scanner backed by finder, with 1h
+// JobSize/MaxScanAge and buckets ending at 2025-03-01 11:00 UTC.
+func runPopulateInitialJobs(sched *BlockBuilderScheduler, finder offsetStore, offsetsByPartition map[int32][]*partitionOffsets) {
+	sched.cfg.MaxScanAge = 1 * time.Hour
+	sched.cfg.JobSize = 1 * time.Hour
+	endTime := time.Date(2025, 3, 1, 11, 0, 0, 0, time.UTC)
+	scanner := newOffsetScanner([]offsetStore{finder}, "ingest", endTime, sched.cfg.JobSize, sched.cfg.MaxScanAge, sched.metrics.probeRecordTimeDelta)
+	sched.populateInitialJobs(context.Background(), offsetsByPartition, scanner)
+}
+
+// failListOffsets makes the cluster answer ListOffsets requests with UNKNOWN_SERVER_ERROR
+// until the returned stop function is called.
+func failListOffsets(cluster *kfake.Cluster) (stop func()) {
+	failing := atomic.NewBool(true)
+	cluster.ControlKey(kmsg.ListOffsets.Int16(), func(req kmsg.Request) (kmsg.Response, error, bool) {
+		cluster.KeepControl()
+		if !failing.Load() {
+			return nil, nil, false
+		}
+		listR := req.(*kmsg.ListOffsetsRequest)
+		resp := req.ResponseKind().(*kmsg.ListOffsetsResponse)
+		resp.Default()
+		for _, reqTopic := range listR.Topics {
+			respTopic := kmsg.ListOffsetsResponseTopic{Topic: reqTopic.Topic}
+			for _, reqPartition := range reqTopic.Partitions {
+				respTopic.Partitions = append(respTopic.Partitions, kmsg.ListOffsetsResponseTopicPartition{
+					Partition: reqPartition.Partition,
+					ErrorCode: kerr.UnknownServerError.Code,
+				})
+			}
+			resp.Topics = append(resp.Topics, respTopic)
+		}
+		return resp, nil, true
+	})
+	return func() { failing.Store(false) }
+}
+
+// produceRecords produces n records to the given partition of the "ingest" topic.
+func produceRecords(ctx context.Context, t *testing.T, cli *kgo.Client, partition int32, n int) {
+	t.Helper()
+	for i := range n {
+		produceResult := cli.ProduceSync(ctx, &kgo.Record{
+			Timestamp: time.Unix(int64(i), 0),
+			Value:     []byte("value"),
+			Topic:     "ingest",
+			Partition: partition,
+		})
+		require.NoError(t, produceResult.FirstErr())
 	}
 }

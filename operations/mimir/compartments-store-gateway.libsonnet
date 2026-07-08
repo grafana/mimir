@@ -8,6 +8,8 @@
          : 'compartments_store_gateway_enabled requires compartments_compactor_enabled (per-compartment blocks buckets)',
   assert !$._config.compartments_store_gateway_enabled || $._config.multi_zone_store_gateway_enabled
          : 'compartments_store_gateway_enabled requires multi_zone_store_gateway_enabled',
+  assert !$._config.compartments_store_gateway_enabled || $._config.multi_zone_store_gateway_multi_az_enabled
+         : 'compartments_store_gateway_enabled requires multi_zone_store_gateway_multi_az_enabled',
 
   local statefulSet = $.apps.v1.statefulSet,
   local podDisruptionBudget = $.policy.v1.podDisruptionBudget,
@@ -48,11 +50,11 @@
     'ingest-storage.kafka.topic': $.mimirIngestStorageCompartmentKafkaTopic(compartmentIdx),
   },
 
-  store_gateway_zone_a_compartments_args:: $.mimirCompartmentsCreateIf(isEnabled && isZoneAEnabled, numCompartments, function(c) $.store_gateway_zone_a_args + perCompartmentStoreGatewayArgs(c)),
-  store_gateway_zone_b_compartments_args:: $.mimirCompartmentsCreateIf(isEnabled && isZoneBEnabled, numCompartments, function(c) $.store_gateway_zone_b_args + perCompartmentStoreGatewayArgs(c)),
-  store_gateway_zone_c_compartments_args:: $.mimirCompartmentsCreateIf(isEnabled && isZoneCEnabled, numCompartments, function(c) $.store_gateway_zone_c_args + perCompartmentStoreGatewayArgs(c)),
-  store_gateway_zone_a_backup_compartments_args:: $.mimirCompartmentsCreateIf(isEnabled && isZoneABackupEnabled, numCompartments, function(c) $.store_gateway_zone_a_backup_args + perCompartmentStoreGatewayArgs(c)),
-  store_gateway_zone_b_backup_compartments_args:: $.mimirCompartmentsCreateIf(isEnabled && isZoneBBackupEnabled, numCompartments, function(c) $.store_gateway_zone_b_backup_args + perCompartmentStoreGatewayArgs(c)),
+  store_gateway_zone_a_compartments_args:: $.mimirCompartmentsCreateIf(isEnabled && isZoneAEnabled, numCompartments, function(c) $.store_gateway_zone_a_args + perCompartmentStoreGatewayArgs(c) + $.blocks_chunks_zone_a_caching_configs['compartment_%d' % c]),
+  store_gateway_zone_b_compartments_args:: $.mimirCompartmentsCreateIf(isEnabled && isZoneBEnabled, numCompartments, function(c) $.store_gateway_zone_b_args + perCompartmentStoreGatewayArgs(c) + $.blocks_chunks_zone_b_caching_configs['compartment_%d' % c]),
+  store_gateway_zone_c_compartments_args:: $.mimirCompartmentsCreateIf(isEnabled && isZoneCEnabled, numCompartments, function(c) $.store_gateway_zone_c_args + perCompartmentStoreGatewayArgs(c) + $.blocks_chunks_zone_c_caching_configs['compartment_%d' % c]),
+  store_gateway_zone_a_backup_compartments_args:: $.mimirCompartmentsCreateIf(isEnabled && isZoneABackupEnabled, numCompartments, function(c) $.store_gateway_zone_a_backup_args + perCompartmentStoreGatewayArgs(c) + $.blocks_chunks_zone_a_caching_configs['compartment_%d' % c]),
+  store_gateway_zone_b_backup_compartments_args:: $.mimirCompartmentsCreateIf(isEnabled && isZoneBBackupEnabled, numCompartments, function(c) $.store_gateway_zone_b_backup_args + perCompartmentStoreGatewayArgs(c) + $.blocks_chunks_zone_b_caching_configs['compartment_%d' % c]),
 
   newStoreGatewayCompartmentStatefulSet(zone, compartmentIdx, container, nodeAffinityMatchers=[], multiAZ=false)::
     local name = 'store-gateway-zone-%s-rc-%d' % [zone, compartmentIdx];

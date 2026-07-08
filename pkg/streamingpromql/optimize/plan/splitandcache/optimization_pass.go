@@ -131,6 +131,11 @@ func (o *OptimizationPass) applySplittingAndCaching(ctx context.Context, node pl
 		return node, nil
 	}
 
+	if isSplittingOrCachingNode(node) {
+		// This node has already had splitting or caching applied to it (eg. a duplicate subexpression).
+		return node, nil
+	}
+
 	if resultType, err := node.ResultType(); err != nil {
 		return nil, err
 	} else if resultType != parser.ValueTypeVector {
@@ -150,6 +155,15 @@ func (o *OptimizationPass) applySplittingAndCaching(ctx context.Context, node pl
 	return node, nil
 }
 
+func isSplittingOrCachingNode(node planning.Node) bool {
+	switch node.(type) {
+	case *Cache, *TimeRangeSplit:
+		return true
+	default:
+		return false
+	}
+}
+
 func (o *OptimizationPass) applyCaching(ctx context.Context, node planning.Node, timeRange types.QueryTimeRange, freshnessThreshold time.Time, spanLogger *spanlogger.SpanLogger) (planning.Node, error) {
 	if !o.cacheEnabled {
 		spanLogger.DebugLog("msg", "range query caching disabled by config")
@@ -163,15 +177,6 @@ func (o *OptimizationPass) applyCaching(ctx context.Context, node planning.Node,
 
 	o.cacheAttemptCounter.Inc()
 
-	if timeRange.StartT > timestamp.FromTime(freshnessThreshold) {
-		// The query starts after the freshness threshold, so the entire query is not cacheable.
-		// If the query straddles the freshness threshold, the cache operator will only cache the
-		// portion of the query that is before the freshness threshold.
-		spanLogger.DebugLog("msg", "range query not cacheable: it is entirely within the freshness window")
-		o.cacheSkippedCounter.WithLabelValues(NotCachableReasonTooNew).Inc()
-		return node, nil
-	}
-
 	if !isStepAligned(timeRange) {
 		if allowed, err := o.limits.AllowCachingUnalignedQueries(ctx); err != nil {
 			spanLogger.DebugLog("msg", "retrieving 'allow caching unaligned queries' tenant limit failed", "err", err)
@@ -181,6 +186,15 @@ func (o *OptimizationPass) applyCaching(ctx context.Context, node planning.Node,
 			o.cacheSkippedCounter.WithLabelValues(NotCachableReasonUnalignedTimeRange).Inc()
 			return node, nil
 		}
+	}
+
+	if timeRange.StartT > timestamp.FromTime(freshnessThreshold) {
+		// The query starts after the freshness threshold, so the entire query is not cacheable.
+		// If the query straddles the freshness threshold, the cache operator will only cache the
+		// portion of the query that is before the freshness threshold.
+		spanLogger.DebugLog("msg", "range query not cacheable: it is entirely within the freshness window")
+		o.cacheSkippedCounter.WithLabelValues(NotCachableReasonTooNew).Inc()
+		return node, nil
 	}
 
 	if !o.modifiersAllowCaching(node, timeRange, freshnessThreshold) {
@@ -228,6 +242,9 @@ func timestampAllowsCaching(ts *time.Time, timeRange types.QueryTimeRange, fresh
 }
 
 func isStepAligned(timeRange types.QueryTimeRange) bool {
+	// Note that this deliberately differs from the middleware implementation:
+	// the middleware implementation also checks that the end timestamp is step aligned, but this is not necessary.
+	// All step timestamps are calculated relative to the start timestamp, so it is sufficient to check that the start timestamp is step aligned.
 	return timeRange.StartT%timeRange.IntervalMilliseconds == 0
 }
 

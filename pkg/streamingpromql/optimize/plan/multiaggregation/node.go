@@ -5,7 +5,6 @@ package multiaggregation
 import (
 	"context"
 	"fmt"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -40,12 +39,6 @@ func (g *MultiAggregationGroup) Details() proto.Message {
 
 func (g *MultiAggregationGroup) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_MULTI_AGGREGATION_GROUP
-}
-
-func (g *MultiAggregationGroup) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
-	_, ok := other.(*MultiAggregationGroup)
-
-	return ok
 }
 
 func (g *MultiAggregationGroup) MergeHints(other planning.Node) error {
@@ -94,17 +87,6 @@ func (a *MultiAggregationInstance) Details() proto.Message {
 
 func (a *MultiAggregationInstance) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_MULTI_AGGREGATION_INSTANCE
-}
-
-func (a *MultiAggregationInstance) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
-	otherInstance, ok := other.(*MultiAggregationInstance)
-
-	return ok &&
-		a.Aggregation.EquivalentTo(otherInstance.Aggregation) &&
-		slices.EqualFunc(a.Filters, otherInstance.Filters, func(a *core.LabelMatcher, b *core.LabelMatcher) bool {
-			return a.Equal(b)
-		}) &&
-		a.SubsetIndex == otherInstance.SubsetIndex
 }
 
 func (a *MultiAggregationInstance) MergeHints(other planning.Node) error {

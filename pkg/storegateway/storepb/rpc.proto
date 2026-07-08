@@ -64,6 +64,11 @@ message SeriesRequest {
   // return series.
   SeriesRequestHints request_hints = 14;
 
+  // limit is the maximum number of series to return. The store-gateway applies it after
+  // merging and deduplicating series across blocks, so it avoids loading chunks for series
+  // beyond the limit. A value of 0 (the default) means no limit is applied.
+  int64 limit = 15;
+
   // If streaming_chunks_batch_size=0, the response must only contain one 'series' at a time
   // with the series labels and chunks data sent together.
   // If streaming_chunks_batch_size > 0

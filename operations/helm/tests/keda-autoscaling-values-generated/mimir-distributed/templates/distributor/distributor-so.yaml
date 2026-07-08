@@ -24,6 +24,10 @@ spec:
   maxReplicaCount: 10
   minReplicaCount: 1
   pollingInterval: 10
+  fallback:
+    failureThreshold: 3
+    replicas: 6
+    behavior: "static"
   scaleTargetRef:
     name: keda-autoscaling-values-mimir-distributor
     apiVersion: apps/v1

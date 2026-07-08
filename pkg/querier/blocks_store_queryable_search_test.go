@@ -23,6 +23,7 @@ import (
 	grpc_metadata "google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
+	"github.com/grafana/mimir/pkg/compartments"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	"github.com/grafana/mimir/pkg/storegateway"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
@@ -211,12 +212,11 @@ func newBlocksStoreSearchQuerier(t *testing.T, stores BlocksStoreSet, finder *bl
 	return &blocksStoreQuerier{
 		minT:               minT,
 		maxT:               maxT,
-		finder:             finder,
-		stores:             stores,
+		compartments:       []blocksStoreCompartment{{finder: finder, stores: stores}},
 		dynamicReplication: newDynamicReplication(),
 		consistency:        NewBlocksConsistency(0, nil),
 		logger:             log.NewNopLogger(),
-		metrics:            newBlocksStoreQueryableMetrics(reg),
+		metrics:            newBlocksStoreQueryableMetrics(compartments.Config{}, reg),
 		limits:             &blocksStoreLimitsMock{},
 	}
 }

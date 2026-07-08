@@ -124,92 +124,261 @@ apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
   labels:
-    name: memcached
-  name: memcached
+    name: memberlist-bridge-zone-a
+  name: memberlist-bridge-zone-a
   namespace: default
 spec:
   maxUnavailable: 1
   selector:
     matchLabels:
-      name: memcached
+      name: memberlist-bridge-zone-a
 ---
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
   labels:
-    name: memcached-frontend
-  name: memcached-frontend
+    name: memberlist-bridge-zone-b
+  name: memberlist-bridge-zone-b
   namespace: default
 spec:
   maxUnavailable: 1
   selector:
     matchLabels:
-      name: memcached-frontend
+      name: memberlist-bridge-zone-b
 ---
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
   labels:
-    name: memcached-index-queries
-  name: memcached-index-queries
+    name: memcached-frontend-zone-a
+  name: memcached-frontend-zone-a
   namespace: default
 spec:
   maxUnavailable: 1
   selector:
     matchLabels:
-      name: memcached-index-queries
+      name: memcached-frontend-zone-a
 ---
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
   labels:
-    name: memcached-metadata
-  name: memcached-metadata
+    name: memcached-frontend-zone-b
+  name: memcached-frontend-zone-b
   namespace: default
 spec:
   maxUnavailable: 1
   selector:
     matchLabels:
-      name: memcached-metadata
+      name: memcached-frontend-zone-b
 ---
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
   labels:
-    name: querier
-  name: querier
+    name: memcached-index-queries-zone-a-rc-0
+  name: memcached-index-queries-zone-a-rc-0
   namespace: default
 spec:
   maxUnavailable: 1
   selector:
     matchLabels:
-      name: querier
+      name: memcached-index-queries-zone-a-rc-0
 ---
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
   labels:
-    name: query-frontend
-  name: query-frontend
+    name: memcached-index-queries-zone-a-rc-1
+  name: memcached-index-queries-zone-a-rc-1
   namespace: default
 spec:
   maxUnavailable: 1
   selector:
     matchLabels:
-      name: query-frontend
+      name: memcached-index-queries-zone-a-rc-1
 ---
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
   labels:
-    name: query-scheduler
-  name: query-scheduler
+    name: memcached-index-queries-zone-b-rc-0
+  name: memcached-index-queries-zone-b-rc-0
   namespace: default
 spec:
   maxUnavailable: 1
   selector:
     matchLabels:
-      name: query-scheduler
+      name: memcached-index-queries-zone-b-rc-0
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    name: memcached-index-queries-zone-b-rc-1
+  name: memcached-index-queries-zone-b-rc-1
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: memcached-index-queries-zone-b-rc-1
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    name: memcached-metadata-zone-a
+  name: memcached-metadata-zone-a
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: memcached-metadata-zone-a
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    name: memcached-metadata-zone-b
+  name: memcached-metadata-zone-b
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: memcached-metadata-zone-b
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    name: memcached-zone-a-rc-0
+  name: memcached-zone-a-rc-0
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: memcached-zone-a-rc-0
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    name: memcached-zone-a-rc-1
+  name: memcached-zone-a-rc-1
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: memcached-zone-a-rc-1
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    name: memcached-zone-b-rc-0
+  name: memcached-zone-b-rc-0
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: memcached-zone-b-rc-0
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    name: memcached-zone-b-rc-1
+  name: memcached-zone-b-rc-1
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: memcached-zone-b-rc-1
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    name: querier-zone-a
+  name: querier-zone-a
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: querier-zone-a
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    name: querier-zone-b
+  name: querier-zone-b
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: querier-zone-b
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    name: query-frontend-zone-a
+  name: query-frontend-zone-a
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: query-frontend-zone-a
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    name: query-frontend-zone-b
+  name: query-frontend-zone-b
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: query-frontend-zone-b
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    name: query-scheduler-zone-a
+  name: query-scheduler-zone-a
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: query-scheduler-zone-a
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    name: query-scheduler-zone-b
+  name: query-scheduler-zone-b
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: query-scheduler-zone-b
 ---
 apiVersion: policy/v1
 kind: PodDisruptionBudget
@@ -228,53 +397,105 @@ apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
   labels:
-    name: ruler
-  name: ruler
+    name: ruler-querier-zone-a
+  name: ruler-querier-zone-a
   namespace: default
 spec:
   maxUnavailable: 1
   selector:
     matchLabels:
-      name: ruler
+      name: ruler-querier-zone-a
 ---
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
   labels:
-    name: ruler-querier
-  name: ruler-querier
+    name: ruler-querier-zone-b
+  name: ruler-querier-zone-b
   namespace: default
 spec:
   maxUnavailable: 1
   selector:
     matchLabels:
-      name: ruler-querier
+      name: ruler-querier-zone-b
 ---
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
   labels:
-    name: ruler-query-frontend
-  name: ruler-query-frontend
+    name: ruler-query-frontend-zone-a
+  name: ruler-query-frontend-zone-a
   namespace: default
 spec:
   maxUnavailable: 1
   selector:
     matchLabels:
-      name: ruler-query-frontend
+      name: ruler-query-frontend-zone-a
 ---
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
   labels:
-    name: ruler-query-scheduler
-  name: ruler-query-scheduler
+    name: ruler-query-frontend-zone-b
+  name: ruler-query-frontend-zone-b
   namespace: default
 spec:
   maxUnavailable: 1
   selector:
     matchLabels:
-      name: ruler-query-scheduler
+      name: ruler-query-frontend-zone-b
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    name: ruler-query-scheduler-zone-a
+  name: ruler-query-scheduler-zone-a
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: ruler-query-scheduler-zone-a
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    name: ruler-query-scheduler-zone-b
+  name: ruler-query-scheduler-zone-b
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: ruler-query-scheduler-zone-b
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    name: ruler-zone-a
+  name: ruler-zone-a
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: ruler-zone-a
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    name: ruler-zone-b
+  name: ruler-zone-b
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: ruler-zone-b
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -742,8 +963,52 @@ apiVersion: v1
 kind: Service
 metadata:
   labels:
-    name: memcached
-  name: memcached
+    name: memberlist-bridge-zone-a
+  name: memberlist-bridge-zone-a
+  namespace: default
+spec:
+  clusterIP: None
+  ports:
+  - name: memberlist-bridge-http-metrics
+    port: 8080
+    targetPort: 8080
+  - name: memberlist-bridge-grpc
+    port: 9095
+    targetPort: 9095
+  - name: memberlist-bridge-gossip-ring
+    port: 7946
+    targetPort: 7946
+  selector:
+    name: memberlist-bridge-zone-a
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    name: memberlist-bridge-zone-b
+  name: memberlist-bridge-zone-b
+  namespace: default
+spec:
+  clusterIP: None
+  ports:
+  - name: memberlist-bridge-http-metrics
+    port: 8080
+    targetPort: 8080
+  - name: memberlist-bridge-grpc
+    port: 9095
+    targetPort: 9095
+  - name: memberlist-bridge-gossip-ring
+    port: 7946
+    targetPort: 7946
+  selector:
+    name: memberlist-bridge-zone-b
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    name: memcached-frontend-zone-a
+  name: memcached-frontend-zone-a
   namespace: default
 spec:
   clusterIP: None
@@ -755,14 +1020,14 @@ spec:
     port: 9150
     targetPort: 9150
   selector:
-    name: memcached
+    name: memcached-frontend-zone-a
 ---
 apiVersion: v1
 kind: Service
 metadata:
   labels:
-    name: memcached-frontend
-  name: memcached-frontend
+    name: memcached-frontend-zone-b
+  name: memcached-frontend-zone-b
   namespace: default
 spec:
   clusterIP: None
@@ -774,14 +1039,14 @@ spec:
     port: 9150
     targetPort: 9150
   selector:
-    name: memcached-frontend
+    name: memcached-frontend-zone-b
 ---
 apiVersion: v1
 kind: Service
 metadata:
   labels:
-    name: memcached-index-queries
-  name: memcached-index-queries
+    name: memcached-index-queries-zone-a-rc-0
+  name: memcached-index-queries-zone-a-rc-0
   namespace: default
 spec:
   clusterIP: None
@@ -793,14 +1058,14 @@ spec:
     port: 9150
     targetPort: 9150
   selector:
-    name: memcached-index-queries
+    name: memcached-index-queries-zone-a-rc-0
 ---
 apiVersion: v1
 kind: Service
 metadata:
   labels:
-    name: memcached-metadata
-  name: memcached-metadata
+    name: memcached-index-queries-zone-a-rc-1
+  name: memcached-index-queries-zone-a-rc-1
   namespace: default
 spec:
   clusterIP: None
@@ -812,14 +1077,185 @@ spec:
     port: 9150
     targetPort: 9150
   selector:
-    name: memcached-metadata
+    name: memcached-index-queries-zone-a-rc-1
 ---
 apiVersion: v1
 kind: Service
 metadata:
   labels:
-    name: querier
-  name: querier
+    name: memcached-index-queries-zone-b-rc-0
+  name: memcached-index-queries-zone-b-rc-0
+  namespace: default
+spec:
+  clusterIP: None
+  ports:
+  - name: memcached-client
+    port: 11211
+    targetPort: 11211
+  - name: exporter-http-metrics
+    port: 9150
+    targetPort: 9150
+  selector:
+    name: memcached-index-queries-zone-b-rc-0
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    name: memcached-index-queries-zone-b-rc-1
+  name: memcached-index-queries-zone-b-rc-1
+  namespace: default
+spec:
+  clusterIP: None
+  ports:
+  - name: memcached-client
+    port: 11211
+    targetPort: 11211
+  - name: exporter-http-metrics
+    port: 9150
+    targetPort: 9150
+  selector:
+    name: memcached-index-queries-zone-b-rc-1
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    name: memcached-metadata-multi-zone
+  name: memcached-metadata-multi-zone
+  namespace: default
+spec:
+  clusterIP: None
+  ports:
+  - name: memcached-client
+    port: 11211
+    protocol: TCP
+    targetPort: 11211
+  selector:
+    cache-group: metadata
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    name: memcached-metadata-zone-a
+  name: memcached-metadata-zone-a
+  namespace: default
+spec:
+  clusterIP: None
+  ports:
+  - name: memcached-client
+    port: 11211
+    targetPort: 11211
+  - name: exporter-http-metrics
+    port: 9150
+    targetPort: 9150
+  selector:
+    cache-group: metadata
+    name: memcached-metadata-zone-a
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    name: memcached-metadata-zone-b
+  name: memcached-metadata-zone-b
+  namespace: default
+spec:
+  clusterIP: None
+  ports:
+  - name: memcached-client
+    port: 11211
+    targetPort: 11211
+  - name: exporter-http-metrics
+    port: 9150
+    targetPort: 9150
+  selector:
+    cache-group: metadata
+    name: memcached-metadata-zone-b
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    name: memcached-zone-a-rc-0
+  name: memcached-zone-a-rc-0
+  namespace: default
+spec:
+  clusterIP: None
+  ports:
+  - name: memcached-client
+    port: 11211
+    targetPort: 11211
+  - name: exporter-http-metrics
+    port: 9150
+    targetPort: 9150
+  selector:
+    name: memcached-zone-a-rc-0
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    name: memcached-zone-a-rc-1
+  name: memcached-zone-a-rc-1
+  namespace: default
+spec:
+  clusterIP: None
+  ports:
+  - name: memcached-client
+    port: 11211
+    targetPort: 11211
+  - name: exporter-http-metrics
+    port: 9150
+    targetPort: 9150
+  selector:
+    name: memcached-zone-a-rc-1
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    name: memcached-zone-b-rc-0
+  name: memcached-zone-b-rc-0
+  namespace: default
+spec:
+  clusterIP: None
+  ports:
+  - name: memcached-client
+    port: 11211
+    targetPort: 11211
+  - name: exporter-http-metrics
+    port: 9150
+    targetPort: 9150
+  selector:
+    name: memcached-zone-b-rc-0
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    name: memcached-zone-b-rc-1
+  name: memcached-zone-b-rc-1
+  namespace: default
+spec:
+  clusterIP: None
+  ports:
+  - name: memcached-client
+    port: 11211
+    targetPort: 11211
+  - name: exporter-http-metrics
+    port: 9150
+    targetPort: 9150
+  selector:
+    name: memcached-zone-b-rc-1
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    name: querier-zone-a
+  name: querier-zone-a
   namespace: default
 spec:
   ports:
@@ -833,14 +1269,35 @@ spec:
     port: 7946
     targetPort: 7946
   selector:
-    name: querier
+    name: querier-zone-a
 ---
 apiVersion: v1
 kind: Service
 metadata:
   labels:
-    name: query-frontend
-  name: query-frontend
+    name: querier-zone-b
+  name: querier-zone-b
+  namespace: default
+spec:
+  ports:
+  - name: querier-http-metrics
+    port: 8080
+    targetPort: 8080
+  - name: querier-grpc
+    port: 9095
+    targetPort: 9095
+  - name: querier-gossip-ring
+    port: 7946
+    targetPort: 7946
+  selector:
+    name: querier-zone-b
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    name: query-frontend-zone-a
+  name: query-frontend-zone-a
   namespace: default
 spec:
   ports:
@@ -850,15 +1307,39 @@ spec:
   - name: query-frontend-grpc
     port: 9095
     targetPort: 9095
+  - name: query-frontend-gossip-ring
+    port: 7946
+    targetPort: 7946
   selector:
-    name: query-frontend
+    name: query-frontend-zone-a
 ---
 apiVersion: v1
 kind: Service
 metadata:
   labels:
-    name: query-scheduler
-  name: query-scheduler
+    name: query-frontend-zone-b
+  name: query-frontend-zone-b
+  namespace: default
+spec:
+  ports:
+  - name: query-frontend-http-metrics
+    port: 8080
+    targetPort: 8080
+  - name: query-frontend-grpc
+    port: 9095
+    targetPort: 9095
+  - name: query-frontend-gossip-ring
+    port: 7946
+    targetPort: 7946
+  selector:
+    name: query-frontend-zone-b
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    name: query-scheduler-zone-a
+  name: query-scheduler-zone-a
   namespace: default
 spec:
   ports:
@@ -868,18 +1349,20 @@ spec:
   - name: query-scheduler-grpc
     port: 9095
     targetPort: 9095
+  - name: query-scheduler-gossip-ring
+    port: 7946
+    targetPort: 7946
   selector:
-    name: query-scheduler
+    name: query-scheduler-zone-a
 ---
 apiVersion: v1
 kind: Service
 metadata:
   labels:
-    name: query-scheduler
-  name: query-scheduler-discovery
+    name: query-scheduler-zone-b
+  name: query-scheduler-zone-b
   namespace: default
 spec:
-  clusterIP: None
   ports:
   - name: query-scheduler-http-metrics
     port: 8080
@@ -887,9 +1370,11 @@ spec:
   - name: query-scheduler-grpc
     port: 9095
     targetPort: 9095
-  publishNotReadyAddresses: true
+  - name: query-scheduler-gossip-ring
+    port: 7946
+    targetPort: 7946
   selector:
-    name: query-scheduler
+    name: query-scheduler-zone-b
 ---
 apiVersion: v1
 kind: Service
@@ -909,26 +1394,8 @@ apiVersion: v1
 kind: Service
 metadata:
   labels:
-    name: ruler
-  name: ruler
-  namespace: default
-spec:
-  ports:
-  - name: ruler-http-metrics
-    port: 8080
-    targetPort: 8080
-  - name: ruler-grpc
-    port: 9095
-    targetPort: 9095
-  selector:
-    name: ruler
----
-apiVersion: v1
-kind: Service
-metadata:
-  labels:
-    name: ruler-querier
-  name: ruler-querier
+    name: ruler-querier-zone-a
+  name: ruler-querier-zone-a
   namespace: default
 spec:
   ports:
@@ -942,14 +1409,35 @@ spec:
     port: 7946
     targetPort: 7946
   selector:
-    name: ruler-querier
+    name: ruler-querier-zone-a
 ---
 apiVersion: v1
 kind: Service
 metadata:
   labels:
-    name: ruler-query-frontend
-  name: ruler-query-frontend
+    name: ruler-querier-zone-b
+  name: ruler-querier-zone-b
+  namespace: default
+spec:
+  ports:
+  - name: ruler-querier-http-metrics
+    port: 8080
+    targetPort: 8080
+  - name: ruler-querier-grpc
+    port: 9095
+    targetPort: 9095
+  - name: ruler-querier-gossip-ring
+    port: 7946
+    targetPort: 7946
+  selector:
+    name: ruler-querier-zone-b
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    name: ruler-query-frontend-zone-a
+  name: ruler-query-frontend-zone-a
   namespace: default
 spec:
   ports:
@@ -959,15 +1447,18 @@ spec:
   - name: ruler-query-frontend-grpc
     port: 9095
     targetPort: 9095
+  - name: ruler-query-frontend-gossip-ring
+    port: 7946
+    targetPort: 7946
   selector:
-    name: ruler-query-frontend
+    name: ruler-query-frontend-zone-a
 ---
 apiVersion: v1
 kind: Service
 metadata:
   labels:
-    name: ruler-query-frontend
-  name: ruler-query-frontend-headless
+    name: ruler-query-frontend-zone-a
+  name: ruler-query-frontend-zone-a-headless
   namespace: default
 spec:
   clusterIP: None
@@ -978,46 +1469,132 @@ spec:
   - name: ruler-query-frontend-grpc
     port: 9095
     targetPort: 9095
+  - name: ruler-query-frontend-gossip-ring
+    port: 7946
+    targetPort: 7946
   selector:
-    name: ruler-query-frontend
+    name: ruler-query-frontend-zone-a
 ---
 apiVersion: v1
 kind: Service
 metadata:
   labels:
-    name: ruler-query-scheduler
-  name: ruler-query-scheduler
+    name: ruler-query-frontend-zone-b
+  name: ruler-query-frontend-zone-b
   namespace: default
 spec:
   ports:
-  - name: ruler-query-scheduler-http-metrics
+  - name: ruler-query-frontend-http-metrics
     port: 8080
     targetPort: 8080
-  - name: ruler-query-scheduler-grpc
+  - name: ruler-query-frontend-grpc
     port: 9095
     targetPort: 9095
+  - name: ruler-query-frontend-gossip-ring
+    port: 7946
+    targetPort: 7946
   selector:
-    name: ruler-query-scheduler
+    name: ruler-query-frontend-zone-b
 ---
 apiVersion: v1
 kind: Service
 metadata:
   labels:
-    name: ruler-query-scheduler
-  name: ruler-query-scheduler-discovery
+    name: ruler-query-frontend-zone-b
+  name: ruler-query-frontend-zone-b-headless
   namespace: default
 spec:
   clusterIP: None
   ports:
+  - name: ruler-query-frontend-http-metrics
+    port: 8080
+    targetPort: 8080
+  - name: ruler-query-frontend-grpc
+    port: 9095
+    targetPort: 9095
+  - name: ruler-query-frontend-gossip-ring
+    port: 7946
+    targetPort: 7946
+  selector:
+    name: ruler-query-frontend-zone-b
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    name: ruler-query-scheduler-zone-a
+  name: ruler-query-scheduler-zone-a
+  namespace: default
+spec:
+  ports:
   - name: ruler-query-scheduler-http-metrics
     port: 8080
     targetPort: 8080
   - name: ruler-query-scheduler-grpc
     port: 9095
     targetPort: 9095
-  publishNotReadyAddresses: true
+  - name: ruler-query-scheduler-gossip-ring
+    port: 7946
+    targetPort: 7946
   selector:
-    name: ruler-query-scheduler
+    name: ruler-query-scheduler-zone-a
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    name: ruler-query-scheduler-zone-b
+  name: ruler-query-scheduler-zone-b
+  namespace: default
+spec:
+  ports:
+  - name: ruler-query-scheduler-http-metrics
+    port: 8080
+    targetPort: 8080
+  - name: ruler-query-scheduler-grpc
+    port: 9095
+    targetPort: 9095
+  - name: ruler-query-scheduler-gossip-ring
+    port: 7946
+    targetPort: 7946
+  selector:
+    name: ruler-query-scheduler-zone-b
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    name: ruler-zone-a
+  name: ruler-zone-a
+  namespace: default
+spec:
+  ports:
+  - name: ruler-http-metrics
+    port: 8080
+    targetPort: 8080
+  - name: ruler-grpc
+    port: 9095
+    targetPort: 9095
+  selector:
+    name: ruler-zone-a
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    name: ruler-zone-b
+  name: ruler-zone-b
+  namespace: default
+spec:
+  ports:
+  - name: ruler-http-metrics
+    port: 8080
+    targetPort: 8080
+  - name: ruler-grpc
+    port: 9095
+    targetPort: 9095
+  selector:
+    name: ruler-zone-b
 ---
 apiVersion: v1
 kind: Service
@@ -1240,8 +1817,15 @@ spec:
         - -ingester.ring.store=memberlist
         - -ingester.ring.zone-awareness-enabled=true
         - -mem-ballast-size-bytes=1073741824
+        - -memberlist.abort-if-fast-join-fails=true
+        - -memberlist.abort-if-fast-join-fails-min-nodes=2
         - -memberlist.bind-port=7946
-        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -memberlist.join=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946,dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=300s
+        - -memberlist.rejoin-seed-nodes=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946
+        - -memberlist.zone-aware-routing.enabled=true
+        - -memberlist.zone-aware-routing.instance-availability-zone=zone-a
+        - -memberlist.zone-aware-routing.role=member
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc-max-concurrent-streams=1000
         - -server.grpc.keepalive.max-connection-age=60s
@@ -1277,6 +1861,7 @@ spec:
             memory: 4Gi
           requests:
             cpu: "2"
+            ephemeral-storage: 50Mi
             memory: 2Gi
         volumeMounts:
         - mountPath: /etc/mimir
@@ -1376,8 +1961,15 @@ spec:
         - -ingester.ring.store=memberlist
         - -ingester.ring.zone-awareness-enabled=true
         - -mem-ballast-size-bytes=1073741824
+        - -memberlist.abort-if-fast-join-fails=true
+        - -memberlist.abort-if-fast-join-fails-min-nodes=2
         - -memberlist.bind-port=7946
-        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -memberlist.join=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946,dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=300s
+        - -memberlist.rejoin-seed-nodes=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946
+        - -memberlist.zone-aware-routing.enabled=true
+        - -memberlist.zone-aware-routing.instance-availability-zone=zone-a
+        - -memberlist.zone-aware-routing.role=member
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc-max-concurrent-streams=1000
         - -server.grpc.keepalive.max-connection-age=60s
@@ -1413,6 +2005,7 @@ spec:
             memory: 4Gi
           requests:
             cpu: "2"
+            ephemeral-storage: 50Mi
             memory: 2Gi
         volumeMounts:
         - mountPath: /etc/mimir
@@ -1512,8 +2105,15 @@ spec:
         - -ingester.ring.store=memberlist
         - -ingester.ring.zone-awareness-enabled=true
         - -mem-ballast-size-bytes=1073741824
+        - -memberlist.abort-if-fast-join-fails=true
+        - -memberlist.abort-if-fast-join-fails-min-nodes=2
         - -memberlist.bind-port=7946
-        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -memberlist.join=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946,dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=300s
+        - -memberlist.rejoin-seed-nodes=dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.zone-aware-routing.enabled=true
+        - -memberlist.zone-aware-routing.instance-availability-zone=zone-b
+        - -memberlist.zone-aware-routing.role=member
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc-max-concurrent-streams=1000
         - -server.grpc.keepalive.max-connection-age=60s
@@ -1549,6 +2149,7 @@ spec:
             memory: 4Gi
           requests:
             cpu: "2"
+            ephemeral-storage: 50Mi
             memory: 2Gi
         volumeMounts:
         - mountPath: /etc/mimir
@@ -1648,8 +2249,15 @@ spec:
         - -ingester.ring.store=memberlist
         - -ingester.ring.zone-awareness-enabled=true
         - -mem-ballast-size-bytes=1073741824
+        - -memberlist.abort-if-fast-join-fails=true
+        - -memberlist.abort-if-fast-join-fails-min-nodes=2
         - -memberlist.bind-port=7946
-        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -memberlist.join=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946,dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=300s
+        - -memberlist.rejoin-seed-nodes=dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.zone-aware-routing.enabled=true
+        - -memberlist.zone-aware-routing.instance-availability-zone=zone-b
+        - -memberlist.zone-aware-routing.role=member
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc-max-concurrent-streams=1000
         - -server.grpc.keepalive.max-connection-age=60s
@@ -1685,6 +2293,7 @@ spec:
             memory: 4Gi
           requests:
             cpu: "2"
+            ephemeral-storage: 50Mi
             memory: 2Gi
         volumeMounts:
         - mountPath: /etc/mimir
@@ -1710,15 +2319,201 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: querier
+  name: memberlist-bridge-zone-a
   namespace: default
 spec:
-  minReadySeconds: 10
-  replicas: 6
+  minReadySeconds: 300
+  replicas: 3
   revisionHistoryLimit: 10
   selector:
     matchLabels:
-      name: querier
+      name: memberlist-bridge-zone-a
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        gossip_ring_member: "true"
+        name: memberlist-bridge-zone-a
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: topology.kubernetes.io/zone
+                operator: In
+                values:
+                - us-east-2a
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                name: memberlist-bridge-zone-a
+            topologyKey: kubernetes.io/hostname
+      containers:
+      - args:
+        - -ingest-storage.enabled=true
+        - -ingest-storage.kafka.address=kafka.default.svc.cluster.local.:9092
+        - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
+        - -ingest-storage.kafka.topic=ingest
+        - -memberlist.abort-if-fast-join-fails=false
+        - -memberlist.bind-port=7946
+        - -memberlist.join=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946,dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.max-concurrent-writes=15
+        - -memberlist.rejoin-interval=60s
+        - -memberlist.rejoin-seed-nodes=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946,dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.zone-aware-routing.enabled=true
+        - -memberlist.zone-aware-routing.instance-availability-zone=zone-a
+        - -memberlist.zone-aware-routing.role=bridge
+        - -query-scheduler.ring.prefix=
+        - -query-scheduler.ring.store=memberlist
+        - -server.http-listen-port=8080
+        - -target=memberlist-kv
+        - -usage-stats.installation-mode=jsonnet
+        image: grafana/mimir:3.1.2
+        imagePullPolicy: IfNotPresent
+        name: memberlist-bridge
+        ports:
+        - containerPort: 8080
+          name: http-metrics
+        - containerPort: 9095
+          name: grpc
+        - containerPort: 7946
+          name: gossip-ring
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 15
+          timeoutSeconds: 1
+        resources:
+          limits:
+            memory: 2Gi
+          requests:
+            cpu: "0.25"
+            memory: 1Gi
+      priorityClassName: high-nonpreempting
+      tolerations:
+      - effect: NoSchedule
+        key: topology
+        operator: Equal
+        value: secondary-az
+      topologySpreadConstraints:
+      - labelSelector:
+          matchLabels:
+            name: memberlist-bridge-zone-a
+        maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: memberlist-bridge-zone-b
+  namespace: default
+spec:
+  minReadySeconds: 300
+  replicas: 3
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      name: memberlist-bridge-zone-b
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        gossip_ring_member: "true"
+        name: memberlist-bridge-zone-b
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: topology.kubernetes.io/zone
+                operator: In
+                values:
+                - us-east-2b
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                name: memberlist-bridge-zone-b
+            topologyKey: kubernetes.io/hostname
+      containers:
+      - args:
+        - -ingest-storage.enabled=true
+        - -ingest-storage.kafka.address=kafka.default.svc.cluster.local.:9092
+        - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
+        - -ingest-storage.kafka.topic=ingest
+        - -memberlist.abort-if-fast-join-fails=false
+        - -memberlist.bind-port=7946
+        - -memberlist.join=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946,dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.max-concurrent-writes=15
+        - -memberlist.rejoin-interval=60s
+        - -memberlist.rejoin-seed-nodes=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946,dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.zone-aware-routing.enabled=true
+        - -memberlist.zone-aware-routing.instance-availability-zone=zone-b
+        - -memberlist.zone-aware-routing.role=bridge
+        - -query-scheduler.ring.prefix=
+        - -query-scheduler.ring.store=memberlist
+        - -server.http-listen-port=8080
+        - -target=memberlist-kv
+        - -usage-stats.installation-mode=jsonnet
+        image: grafana/mimir:3.1.2
+        imagePullPolicy: IfNotPresent
+        name: memberlist-bridge
+        ports:
+        - containerPort: 8080
+          name: http-metrics
+        - containerPort: 9095
+          name: grpc
+        - containerPort: 7946
+          name: gossip-ring
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 15
+          timeoutSeconds: 1
+        resources:
+          limits:
+            memory: 2Gi
+          requests:
+            cpu: "0.25"
+            memory: 1Gi
+      priorityClassName: high-nonpreempting
+      tolerations:
+      - effect: NoSchedule
+        key: topology
+        operator: Equal
+        value: secondary-az
+      topologySpreadConstraints:
+      - labelSelector:
+          matchLabels:
+            name: memberlist-bridge-zone-b
+        maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: querier-zone-a
+  namespace: default
+spec:
+  minReadySeconds: 10
+  replicas: 2
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      name: querier-zone-a
   strategy:
     rollingUpdate:
       maxSurge: 15%
@@ -1727,17 +2522,26 @@ spec:
     metadata:
       labels:
         gossip_ring_member: "true"
-        name: querier
+        name: querier-zone-a
     spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: topology.kubernetes.io/zone
+                operator: In
+                values:
+                - us-east-2a
       containers:
       - args:
         - -blocks-storage.bucket-store.metadata-cache.backend=memcached
-        - -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dnssrvnoa+memcached-metadata.default.svc.cluster.local.:11211
+        - -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dnssrvnoa+memcached-metadata-zone-a.default.svc.cluster.local.:11211
         - -blocks-storage.bucket-store.metadata-cache.memcached.max-async-concurrency=50
         - -blocks-storage.bucket-store.metadata-cache.memcached.max-item-size=1048576
         - -blocks-storage.bucket-store.sync-dir=/data/tsdb
         - -blocks-storage.bucket-store.sync-interval=15m
-        - -blocks-storage.gcs.bucket-name=blocks-bucket
+        - -blocks-storage.gcs.bucket-name=blocks-bucket-rc-<read-compartment-id>
         - -common.storage.backend=gcs
         - -compartments.enabled=true
         - -compartments.read.num-compartments=2
@@ -1756,13 +2560,24 @@ spec:
         - -ingester.ring.store=memberlist
         - -ingester.ring.zone-awareness-enabled=true
         - -mem-ballast-size-bytes=268435456
+        - -memberlist.abort-if-fast-join-fails=true
+        - -memberlist.abort-if-fast-join-fails-min-nodes=2
         - -memberlist.bind-port=7946
-        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -memberlist.join=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946,dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=300s
+        - -memberlist.rejoin-seed-nodes=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946
+        - -memberlist.zone-aware-routing.enabled=true
+        - -memberlist.zone-aware-routing.instance-availability-zone=zone-a
+        - -memberlist.zone-aware-routing.role=member
         - -querier.frontend-client.grpc-max-send-msg-size=104857600
         - -querier.max-concurrent=8
         - -querier.max-partial-query-length=768h
-        - -querier.scheduler-address=query-scheduler-discovery.default.svc.cluster.local.:9095
+        - -querier.prefer-availability-zones=zone-a,zone-a-backup
+        - -querier.ring.prefix=querier-zone-a/
         - -querier.store-gateway-client.grpc-max-recv-msg-size=209715200
+        - -query-scheduler.ring.prefix=query-scheduler-zone-a/
+        - -query-scheduler.ring.store=memberlist
+        - -query-scheduler.service-discovery-mode=ring
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
@@ -1799,15 +2614,21 @@ spec:
             memory: 24Gi
           requests:
             cpu: "1"
+            ephemeral-storage: 50Mi
             memory: 12Gi
         volumeMounts:
         - mountPath: /etc/mimir
           name: overrides
       terminationGracePeriodSeconds: 180
+      tolerations:
+      - effect: NoSchedule
+        key: topology
+        operator: Equal
+        value: secondary-az
       topologySpreadConstraints:
       - labelSelector:
           matchLabels:
-            name: querier
+            name: querier-zone-a
         maxSkew: 1
         topologyKey: kubernetes.io/hostname
         whenUnsatisfiable: ScheduleAnyway
@@ -1819,7 +2640,7 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: query-frontend
+  name: querier-zone-b
   namespace: default
 spec:
   minReadySeconds: 10
@@ -1827,7 +2648,7 @@ spec:
   revisionHistoryLimit: 10
   selector:
     matchLabels:
-      name: query-frontend
+      name: querier-zone-b
   strategy:
     rollingUpdate:
       maxSurge: 15%
@@ -1835,8 +2656,153 @@ spec:
   template:
     metadata:
       labels:
-        name: query-frontend
+        gossip_ring_member: "true"
+        name: querier-zone-b
     spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: topology.kubernetes.io/zone
+                operator: In
+                values:
+                - us-east-2b
+      containers:
+      - args:
+        - -blocks-storage.bucket-store.metadata-cache.backend=memcached
+        - -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dnssrvnoa+memcached-metadata-zone-b.default.svc.cluster.local.:11211
+        - -blocks-storage.bucket-store.metadata-cache.memcached.max-async-concurrency=50
+        - -blocks-storage.bucket-store.metadata-cache.memcached.max-item-size=1048576
+        - -blocks-storage.bucket-store.sync-dir=/data/tsdb
+        - -blocks-storage.bucket-store.sync-interval=15m
+        - -blocks-storage.gcs.bucket-name=blocks-bucket-rc-<read-compartment-id>
+        - -common.storage.backend=gcs
+        - -compartments.enabled=true
+        - -compartments.read.num-compartments=2
+        - -compartments.write.num-compartments=2
+        - -distributor.health-check-ingesters=true
+        - -distributor.ingestion-tenant-shard-size=3
+        - -ingest-storage.enabled=true
+        - -ingest-storage.ingestion-partition-tenant-shard-size=1
+        - -ingest-storage.kafka.address=kafka.default.svc.cluster.local.:9092
+        - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
+        - -ingest-storage.kafka.topic=ingest-rc-<read-compartment-id>
+        - -ingester.partition-ring.prefix=
+        - -ingester.ring.heartbeat-timeout=10m
+        - -ingester.ring.prefix=partition-ingesters/
+        - -ingester.ring.replication-factor=3
+        - -ingester.ring.store=memberlist
+        - -ingester.ring.zone-awareness-enabled=true
+        - -mem-ballast-size-bytes=268435456
+        - -memberlist.abort-if-fast-join-fails=true
+        - -memberlist.abort-if-fast-join-fails-min-nodes=2
+        - -memberlist.bind-port=7946
+        - -memberlist.join=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946,dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=300s
+        - -memberlist.rejoin-seed-nodes=dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.zone-aware-routing.enabled=true
+        - -memberlist.zone-aware-routing.instance-availability-zone=zone-b
+        - -memberlist.zone-aware-routing.role=member
+        - -querier.frontend-client.grpc-max-send-msg-size=104857600
+        - -querier.max-concurrent=8
+        - -querier.max-partial-query-length=768h
+        - -querier.prefer-availability-zones=zone-b,zone-b-backup
+        - -querier.ring.prefix=querier-zone-b/
+        - -querier.store-gateway-client.grpc-max-recv-msg-size=209715200
+        - -query-scheduler.ring.prefix=query-scheduler-zone-b/
+        - -query-scheduler.ring.store=memberlist
+        - -query-scheduler.service-discovery-mode=ring
+        - -runtime-config.file=/etc/mimir/overrides.yaml
+        - -server.grpc.keepalive.min-time-between-pings=10s
+        - -server.grpc.keepalive.ping-without-stream-allowed=true
+        - -server.http-listen-port=8080
+        - -store-gateway.sharding-ring.heartbeat-timeout=10m
+        - -store-gateway.sharding-ring.prefix=multi-zone/
+        - -store-gateway.sharding-ring.replication-factor=3
+        - -store-gateway.sharding-ring.store=memberlist
+        - -store-gateway.sharding-ring.zone-awareness-enabled=true
+        - -store-gateway.tenant-shard-size=3
+        - -target=querier
+        - -usage-stats.installation-mode=jsonnet
+        env:
+        - name: GOMAXPROCS
+          value: "5"
+        image: grafana/mimir:3.1.2
+        imagePullPolicy: IfNotPresent
+        name: querier
+        ports:
+        - containerPort: 8080
+          name: http-metrics
+        - containerPort: 9095
+          name: grpc
+        - containerPort: 7946
+          name: gossip-ring
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 15
+          timeoutSeconds: 1
+        resources:
+          limits:
+            memory: 24Gi
+          requests:
+            cpu: "1"
+            ephemeral-storage: 50Mi
+            memory: 12Gi
+        volumeMounts:
+        - mountPath: /etc/mimir
+          name: overrides
+      terminationGracePeriodSeconds: 180
+      tolerations:
+      - effect: NoSchedule
+        key: topology
+        operator: Equal
+        value: secondary-az
+      topologySpreadConstraints:
+      - labelSelector:
+          matchLabels:
+            name: querier-zone-b
+        maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+      volumes:
+      - configMap:
+          name: overrides
+        name: overrides
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: query-frontend-zone-a
+  namespace: default
+spec:
+  minReadySeconds: 10
+  replicas: 2
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      name: query-frontend-zone-a
+  strategy:
+    rollingUpdate:
+      maxSurge: 15%
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        gossip_ring_member: "true"
+        name: query-frontend-zone-a
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: topology.kubernetes.io/zone
+                operator: In
+                values:
+                - us-east-2a
       containers:
       - args:
         - -compartments.enabled=true
@@ -1848,16 +2814,28 @@ spec:
         - -ingest-storage.kafka.last-produced-offset-poll-interval=500ms
         - -ingest-storage.kafka.topic=ingest-rc-<read-compartment-id>
         - -ingester.partition-ring.prefix=
+        - -memberlist.abort-if-fast-join-fails=true
+        - -memberlist.abort-if-fast-join-fails-min-nodes=2
+        - -memberlist.bind-port=7946
+        - -memberlist.join=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946,dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=300s
+        - -memberlist.rejoin-seed-nodes=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946
+        - -memberlist.zone-aware-routing.enabled=true
+        - -memberlist.zone-aware-routing.instance-availability-zone=zone-a
+        - -memberlist.zone-aware-routing.role=member
+        - -querier.ring.prefix=querier-zone-a/
         - -query-frontend.cache-results=true
         - -query-frontend.max-cache-freshness=10m
         - -query-frontend.max-queriers-per-tenant=10
         - -query-frontend.max-total-query-length=12000h
         - -query-frontend.query-sharding-target-series-per-shard=2500
         - -query-frontend.results-cache.backend=memcached
-        - -query-frontend.results-cache.memcached.addresses=dnssrvnoa+memcached-frontend.default.svc.cluster.local.:11211
+        - -query-frontend.results-cache.memcached.addresses=dnssrvnoa+memcached-frontend-zone-a.default.svc.cluster.local.:11211
         - -query-frontend.results-cache.memcached.max-item-size=26214400
         - -query-frontend.results-cache.memcached.timeout=500ms
-        - -query-frontend.scheduler-address=query-scheduler-discovery.default.svc.cluster.local.:9095
+        - -query-scheduler.ring.prefix=query-scheduler-zone-a/
+        - -query-scheduler.ring.store=memberlist
+        - -query-scheduler.service-discovery-mode=ring
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc.keepalive.max-connection-age=30s
         - -server.grpc.keepalive.min-time-between-pings=10s
@@ -1874,6 +2852,8 @@ spec:
           name: http-metrics
         - containerPort: 9095
           name: grpc
+        - containerPort: 7946
+          name: gossip-ring
         readinessProbe:
           httpGet:
             path: /ready
@@ -1885,15 +2865,21 @@ spec:
             memory: 4Gi
           requests:
             cpu: "2"
+            ephemeral-storage: 50Mi
             memory: 2Gi
         volumeMounts:
         - mountPath: /etc/mimir
           name: overrides
       terminationGracePeriodSeconds: 390
+      tolerations:
+      - effect: NoSchedule
+        key: topology
+        operator: Equal
+        value: secondary-az
       topologySpreadConstraints:
       - labelSelector:
           matchLabels:
-            name: query-frontend
+            name: query-frontend-zone-a
         maxSkew: 1
         topologyKey: kubernetes.io/hostname
         whenUnsatisfiable: ScheduleAnyway
@@ -1905,7 +2891,7 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: query-scheduler
+  name: query-frontend-zone-b
   namespace: default
 spec:
   minReadySeconds: 10
@@ -1913,7 +2899,123 @@ spec:
   revisionHistoryLimit: 10
   selector:
     matchLabels:
-      name: query-scheduler
+      name: query-frontend-zone-b
+  strategy:
+    rollingUpdate:
+      maxSurge: 15%
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        gossip_ring_member: "true"
+        name: query-frontend-zone-b
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: topology.kubernetes.io/zone
+                operator: In
+                values:
+                - us-east-2b
+      containers:
+      - args:
+        - -compartments.enabled=true
+        - -compartments.read.num-compartments=2
+        - -compartments.write.num-compartments=2
+        - -ingest-storage.enabled=true
+        - -ingest-storage.kafka.address=kafka-wc-<write-compartment-id>.default.svc.cluster.local.:9092
+        - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
+        - -ingest-storage.kafka.last-produced-offset-poll-interval=500ms
+        - -ingest-storage.kafka.topic=ingest-rc-<read-compartment-id>
+        - -ingester.partition-ring.prefix=
+        - -memberlist.abort-if-fast-join-fails=true
+        - -memberlist.abort-if-fast-join-fails-min-nodes=2
+        - -memberlist.bind-port=7946
+        - -memberlist.join=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946,dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=300s
+        - -memberlist.rejoin-seed-nodes=dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.zone-aware-routing.enabled=true
+        - -memberlist.zone-aware-routing.instance-availability-zone=zone-b
+        - -memberlist.zone-aware-routing.role=member
+        - -querier.ring.prefix=querier-zone-b/
+        - -query-frontend.cache-results=true
+        - -query-frontend.max-cache-freshness=10m
+        - -query-frontend.max-queriers-per-tenant=10
+        - -query-frontend.max-total-query-length=12000h
+        - -query-frontend.query-sharding-target-series-per-shard=2500
+        - -query-frontend.results-cache.backend=memcached
+        - -query-frontend.results-cache.memcached.addresses=dnssrvnoa+memcached-frontend-zone-b.default.svc.cluster.local.:11211
+        - -query-frontend.results-cache.memcached.max-item-size=26214400
+        - -query-frontend.results-cache.memcached.timeout=500ms
+        - -query-scheduler.ring.prefix=query-scheduler-zone-b/
+        - -query-scheduler.ring.store=memberlist
+        - -query-scheduler.service-discovery-mode=ring
+        - -runtime-config.file=/etc/mimir/overrides.yaml
+        - -server.grpc.keepalive.max-connection-age=30s
+        - -server.grpc.keepalive.min-time-between-pings=10s
+        - -server.grpc.keepalive.ping-without-stream-allowed=true
+        - -server.http-listen-port=8080
+        - -shutdown-delay=90s
+        - -target=query-frontend
+        - -usage-stats.installation-mode=jsonnet
+        image: grafana/mimir:3.1.2
+        imagePullPolicy: IfNotPresent
+        name: query-frontend
+        ports:
+        - containerPort: 8080
+          name: http-metrics
+        - containerPort: 9095
+          name: grpc
+        - containerPort: 7946
+          name: gossip-ring
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 15
+          timeoutSeconds: 1
+        resources:
+          limits:
+            memory: 4Gi
+          requests:
+            cpu: "2"
+            ephemeral-storage: 50Mi
+            memory: 2Gi
+        volumeMounts:
+        - mountPath: /etc/mimir
+          name: overrides
+      terminationGracePeriodSeconds: 390
+      tolerations:
+      - effect: NoSchedule
+        key: topology
+        operator: Equal
+        value: secondary-az
+      topologySpreadConstraints:
+      - labelSelector:
+          matchLabels:
+            name: query-frontend-zone-b
+        maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+      volumes:
+      - configMap:
+          name: overrides
+        name: overrides
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: query-scheduler-zone-a
+  namespace: default
+spec:
+  minReadySeconds: 10
+  replicas: 2
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      name: query-scheduler-zone-a
   strategy:
     rollingUpdate:
       maxSurge: 1
@@ -1921,14 +3023,23 @@ spec:
   template:
     metadata:
       labels:
-        name: query-scheduler
+        gossip_ring_member: "true"
+        name: query-scheduler-zone-a
     spec:
       affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: topology.kubernetes.io/zone
+                operator: In
+                values:
+                - us-east-2a
         podAntiAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
           - labelSelector:
               matchLabels:
-                name: query-scheduler
+                name: query-scheduler-zone-a
             topologyKey: kubernetes.io/hostname
       containers:
       - args:
@@ -1936,8 +3047,20 @@ spec:
         - -ingest-storage.kafka.address=kafka.default.svc.cluster.local.:9092
         - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
         - -ingest-storage.kafka.topic=ingest
+        - -memberlist.abort-if-fast-join-fails=true
+        - -memberlist.abort-if-fast-join-fails-min-nodes=2
+        - -memberlist.bind-port=7946
+        - -memberlist.join=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946,dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=300s
+        - -memberlist.rejoin-seed-nodes=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946
+        - -memberlist.zone-aware-routing.enabled=true
+        - -memberlist.zone-aware-routing.instance-availability-zone=zone-a
+        - -memberlist.zone-aware-routing.role=member
         - -query-frontend.max-queriers-per-tenant=10
         - -query-scheduler.max-outstanding-requests-per-tenant=100
+        - -query-scheduler.ring.prefix=query-scheduler-zone-a/
+        - -query-scheduler.ring.store=memberlist
+        - -query-scheduler.service-discovery-mode=ring
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
@@ -1951,6 +3074,8 @@ spec:
           name: http-metrics
         - containerPort: 9095
           name: grpc
+        - containerPort: 7946
+          name: gossip-ring
         readinessProbe:
           httpGet:
             path: /ready
@@ -1962,11 +3087,116 @@ spec:
             memory: 2Gi
           requests:
             cpu: "2"
+            ephemeral-storage: 50Mi
             memory: 1Gi
         volumeMounts:
         - mountPath: /etc/mimir
           name: overrides
       terminationGracePeriodSeconds: 180
+      tolerations:
+      - effect: NoSchedule
+        key: topology
+        operator: Equal
+        value: secondary-az
+      volumes:
+      - configMap:
+          name: overrides
+        name: overrides
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: query-scheduler-zone-b
+  namespace: default
+spec:
+  minReadySeconds: 10
+  replicas: 2
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      name: query-scheduler-zone-b
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        gossip_ring_member: "true"
+        name: query-scheduler-zone-b
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: topology.kubernetes.io/zone
+                operator: In
+                values:
+                - us-east-2b
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                name: query-scheduler-zone-b
+            topologyKey: kubernetes.io/hostname
+      containers:
+      - args:
+        - -ingest-storage.enabled=true
+        - -ingest-storage.kafka.address=kafka.default.svc.cluster.local.:9092
+        - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
+        - -ingest-storage.kafka.topic=ingest
+        - -memberlist.abort-if-fast-join-fails=true
+        - -memberlist.abort-if-fast-join-fails-min-nodes=2
+        - -memberlist.bind-port=7946
+        - -memberlist.join=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946,dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=300s
+        - -memberlist.rejoin-seed-nodes=dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.zone-aware-routing.enabled=true
+        - -memberlist.zone-aware-routing.instance-availability-zone=zone-b
+        - -memberlist.zone-aware-routing.role=member
+        - -query-frontend.max-queriers-per-tenant=10
+        - -query-scheduler.max-outstanding-requests-per-tenant=100
+        - -query-scheduler.ring.prefix=query-scheduler-zone-b/
+        - -query-scheduler.ring.store=memberlist
+        - -query-scheduler.service-discovery-mode=ring
+        - -server.grpc.keepalive.min-time-between-pings=10s
+        - -server.grpc.keepalive.ping-without-stream-allowed=true
+        - -server.http-listen-port=8080
+        - -target=query-scheduler
+        - -usage-stats.installation-mode=jsonnet
+        image: grafana/mimir:3.1.2
+        imagePullPolicy: IfNotPresent
+        name: query-scheduler
+        ports:
+        - containerPort: 8080
+          name: http-metrics
+        - containerPort: 9095
+          name: grpc
+        - containerPort: 7946
+          name: gossip-ring
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 15
+          timeoutSeconds: 1
+        resources:
+          limits:
+            memory: 2Gi
+          requests:
+            cpu: "2"
+            ephemeral-storage: 50Mi
+            memory: 1Gi
+        volumeMounts:
+        - mountPath: /etc/mimir
+          name: overrides
+      terminationGracePeriodSeconds: 180
+      tolerations:
+      - effect: NoSchedule
+        key: topology
+        operator: Equal
+        value: secondary-az
       volumes:
       - configMap:
           name: overrides
@@ -2025,7 +3255,7 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: ruler
+  name: ruler-querier-zone-a
   namespace: default
 spec:
   minReadySeconds: 10
@@ -2033,7 +3263,713 @@ spec:
   revisionHistoryLimit: 10
   selector:
     matchLabels:
-      name: ruler
+      name: ruler-querier-zone-a
+  strategy:
+    rollingUpdate:
+      maxSurge: 15%
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        gossip_ring_member: "true"
+        name: ruler-querier-zone-a
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: topology.kubernetes.io/zone
+                operator: In
+                values:
+                - us-east-2a
+      containers:
+      - args:
+        - -blocks-storage.bucket-store.metadata-cache.backend=memcached
+        - -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dnssrvnoa+memcached-metadata-zone-a.default.svc.cluster.local.:11211
+        - -blocks-storage.bucket-store.metadata-cache.memcached.max-async-concurrency=50
+        - -blocks-storage.bucket-store.metadata-cache.memcached.max-item-size=1048576
+        - -blocks-storage.bucket-store.sync-dir=/data/tsdb
+        - -blocks-storage.bucket-store.sync-interval=15m
+        - -blocks-storage.gcs.bucket-name=blocks-bucket-rc-<read-compartment-id>
+        - -common.storage.backend=gcs
+        - -compartments.enabled=true
+        - -compartments.read.num-compartments=2
+        - -compartments.write.num-compartments=2
+        - -distributor.health-check-ingesters=true
+        - -distributor.ingestion-tenant-shard-size=3
+        - -ingest-storage.enabled=true
+        - -ingest-storage.ingestion-partition-tenant-shard-size=1
+        - -ingest-storage.kafka.address=kafka.default.svc.cluster.local.:9092
+        - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
+        - -ingest-storage.kafka.topic=ingest-rc-<read-compartment-id>
+        - -ingester.partition-ring.prefix=
+        - -ingester.ring.heartbeat-timeout=10m
+        - -ingester.ring.prefix=partition-ingesters/
+        - -ingester.ring.replication-factor=3
+        - -ingester.ring.store=memberlist
+        - -ingester.ring.zone-awareness-enabled=true
+        - -mem-ballast-size-bytes=268435456
+        - -memberlist.abort-if-fast-join-fails=true
+        - -memberlist.abort-if-fast-join-fails-min-nodes=2
+        - -memberlist.bind-port=7946
+        - -memberlist.join=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946,dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=300s
+        - -memberlist.rejoin-seed-nodes=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946
+        - -memberlist.zone-aware-routing.enabled=true
+        - -memberlist.zone-aware-routing.instance-availability-zone=zone-a
+        - -memberlist.zone-aware-routing.role=member
+        - -querier.frontend-client.grpc-max-send-msg-size=104857600
+        - -querier.max-concurrent=8
+        - -querier.max-partial-query-length=768h
+        - -querier.prefer-availability-zones=zone-a,zone-a-backup
+        - -querier.ring.prefix=ruler-querier-zone-a/
+        - -querier.store-gateway-client.grpc-max-recv-msg-size=209715200
+        - -query-scheduler.ring.prefix=ruler-query-scheduler-zone-a/
+        - -query-scheduler.ring.store=memberlist
+        - -query-scheduler.service-discovery-mode=ring
+        - -runtime-config.file=/etc/mimir/overrides.yaml
+        - -server.grpc.keepalive.min-time-between-pings=10s
+        - -server.grpc.keepalive.ping-without-stream-allowed=true
+        - -server.http-listen-port=8080
+        - -store-gateway.sharding-ring.heartbeat-timeout=10m
+        - -store-gateway.sharding-ring.prefix=multi-zone/
+        - -store-gateway.sharding-ring.replication-factor=3
+        - -store-gateway.sharding-ring.store=memberlist
+        - -store-gateway.sharding-ring.zone-awareness-enabled=true
+        - -store-gateway.tenant-shard-size=3
+        - -target=querier
+        - -usage-stats.installation-mode=jsonnet
+        env: []
+        image: grafana/mimir:3.1.2
+        imagePullPolicy: IfNotPresent
+        name: ruler-querier
+        ports:
+        - containerPort: 8080
+          name: http-metrics
+        - containerPort: 9095
+          name: grpc
+        - containerPort: 7946
+          name: gossip-ring
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 15
+          timeoutSeconds: 1
+        resources:
+          limits:
+            memory: 24Gi
+          requests:
+            cpu: "1"
+            ephemeral-storage: 50Mi
+            memory: 12Gi
+        volumeMounts:
+        - mountPath: /etc/mimir
+          name: overrides
+      terminationGracePeriodSeconds: 180
+      tolerations:
+      - effect: NoSchedule
+        key: topology
+        operator: Equal
+        value: secondary-az
+      topologySpreadConstraints:
+      - labelSelector:
+          matchLabels:
+            name: ruler-querier-zone-a
+        maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+      volumes:
+      - configMap:
+          name: overrides
+        name: overrides
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ruler-querier-zone-b
+  namespace: default
+spec:
+  minReadySeconds: 10
+  replicas: 2
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      name: ruler-querier-zone-b
+  strategy:
+    rollingUpdate:
+      maxSurge: 15%
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        gossip_ring_member: "true"
+        name: ruler-querier-zone-b
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: topology.kubernetes.io/zone
+                operator: In
+                values:
+                - us-east-2b
+      containers:
+      - args:
+        - -blocks-storage.bucket-store.metadata-cache.backend=memcached
+        - -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dnssrvnoa+memcached-metadata-zone-b.default.svc.cluster.local.:11211
+        - -blocks-storage.bucket-store.metadata-cache.memcached.max-async-concurrency=50
+        - -blocks-storage.bucket-store.metadata-cache.memcached.max-item-size=1048576
+        - -blocks-storage.bucket-store.sync-dir=/data/tsdb
+        - -blocks-storage.bucket-store.sync-interval=15m
+        - -blocks-storage.gcs.bucket-name=blocks-bucket-rc-<read-compartment-id>
+        - -common.storage.backend=gcs
+        - -compartments.enabled=true
+        - -compartments.read.num-compartments=2
+        - -compartments.write.num-compartments=2
+        - -distributor.health-check-ingesters=true
+        - -distributor.ingestion-tenant-shard-size=3
+        - -ingest-storage.enabled=true
+        - -ingest-storage.ingestion-partition-tenant-shard-size=1
+        - -ingest-storage.kafka.address=kafka.default.svc.cluster.local.:9092
+        - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
+        - -ingest-storage.kafka.topic=ingest-rc-<read-compartment-id>
+        - -ingester.partition-ring.prefix=
+        - -ingester.ring.heartbeat-timeout=10m
+        - -ingester.ring.prefix=partition-ingesters/
+        - -ingester.ring.replication-factor=3
+        - -ingester.ring.store=memberlist
+        - -ingester.ring.zone-awareness-enabled=true
+        - -mem-ballast-size-bytes=268435456
+        - -memberlist.abort-if-fast-join-fails=true
+        - -memberlist.abort-if-fast-join-fails-min-nodes=2
+        - -memberlist.bind-port=7946
+        - -memberlist.join=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946,dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=300s
+        - -memberlist.rejoin-seed-nodes=dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.zone-aware-routing.enabled=true
+        - -memberlist.zone-aware-routing.instance-availability-zone=zone-b
+        - -memberlist.zone-aware-routing.role=member
+        - -querier.frontend-client.grpc-max-send-msg-size=104857600
+        - -querier.max-concurrent=8
+        - -querier.max-partial-query-length=768h
+        - -querier.prefer-availability-zones=zone-b,zone-b-backup
+        - -querier.ring.prefix=ruler-querier-zone-b/
+        - -querier.store-gateway-client.grpc-max-recv-msg-size=209715200
+        - -query-scheduler.ring.prefix=ruler-query-scheduler-zone-b/
+        - -query-scheduler.ring.store=memberlist
+        - -query-scheduler.service-discovery-mode=ring
+        - -runtime-config.file=/etc/mimir/overrides.yaml
+        - -server.grpc.keepalive.min-time-between-pings=10s
+        - -server.grpc.keepalive.ping-without-stream-allowed=true
+        - -server.http-listen-port=8080
+        - -store-gateway.sharding-ring.heartbeat-timeout=10m
+        - -store-gateway.sharding-ring.prefix=multi-zone/
+        - -store-gateway.sharding-ring.replication-factor=3
+        - -store-gateway.sharding-ring.store=memberlist
+        - -store-gateway.sharding-ring.zone-awareness-enabled=true
+        - -store-gateway.tenant-shard-size=3
+        - -target=querier
+        - -usage-stats.installation-mode=jsonnet
+        env: []
+        image: grafana/mimir:3.1.2
+        imagePullPolicy: IfNotPresent
+        name: ruler-querier
+        ports:
+        - containerPort: 8080
+          name: http-metrics
+        - containerPort: 9095
+          name: grpc
+        - containerPort: 7946
+          name: gossip-ring
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 15
+          timeoutSeconds: 1
+        resources:
+          limits:
+            memory: 24Gi
+          requests:
+            cpu: "1"
+            ephemeral-storage: 50Mi
+            memory: 12Gi
+        volumeMounts:
+        - mountPath: /etc/mimir
+          name: overrides
+      terminationGracePeriodSeconds: 180
+      tolerations:
+      - effect: NoSchedule
+        key: topology
+        operator: Equal
+        value: secondary-az
+      topologySpreadConstraints:
+      - labelSelector:
+          matchLabels:
+            name: ruler-querier-zone-b
+        maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+      volumes:
+      - configMap:
+          name: overrides
+        name: overrides
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ruler-query-frontend-zone-a
+  namespace: default
+spec:
+  minReadySeconds: 10
+  replicas: 2
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      name: ruler-query-frontend-zone-a
+  strategy:
+    rollingUpdate:
+      maxSurge: 15%
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        gossip_ring_member: "true"
+        name: ruler-query-frontend-zone-a
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: topology.kubernetes.io/zone
+                operator: In
+                values:
+                - us-east-2a
+      containers:
+      - args:
+        - -compartments.enabled=true
+        - -compartments.read.num-compartments=2
+        - -compartments.write.num-compartments=2
+        - -ingest-storage.enabled=true
+        - -ingest-storage.kafka.address=kafka-wc-<write-compartment-id>.default.svc.cluster.local.:9092
+        - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
+        - -ingest-storage.kafka.last-produced-offset-poll-interval=500ms
+        - -ingest-storage.kafka.topic=ingest-rc-<read-compartment-id>
+        - -ingester.partition-ring.prefix=
+        - -memberlist.abort-if-fast-join-fails=true
+        - -memberlist.abort-if-fast-join-fails-min-nodes=2
+        - -memberlist.bind-port=7946
+        - -memberlist.join=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946,dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=300s
+        - -memberlist.rejoin-seed-nodes=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946
+        - -memberlist.zone-aware-routing.enabled=true
+        - -memberlist.zone-aware-routing.instance-availability-zone=zone-a
+        - -memberlist.zone-aware-routing.role=member
+        - -querier.ring.prefix=ruler-querier-zone-a/
+        - -query-frontend.cache-results=false
+        - -query-frontend.max-cache-freshness=10m
+        - -query-frontend.max-queriers-per-tenant=10
+        - -query-frontend.max-total-query-length=12000h
+        - -query-frontend.query-sharding-target-series-per-shard=2500
+        - -query-frontend.results-cache.backend=memcached
+        - -query-frontend.results-cache.memcached.addresses=dnssrvnoa+memcached-frontend-zone-a.default.svc.cluster.local.:11211
+        - -query-frontend.results-cache.memcached.max-item-size=26214400
+        - -query-frontend.results-cache.memcached.timeout=500ms
+        - -query-scheduler.ring.prefix=ruler-query-scheduler-zone-a/
+        - -query-scheduler.ring.store=memberlist
+        - -query-scheduler.service-discovery-mode=ring
+        - -runtime-config.file=/etc/mimir/overrides.yaml
+        - -server.grpc-max-concurrent-streams=300
+        - -server.grpc-max-recv-msg-size-bytes=104857600
+        - -server.grpc-max-send-msg-size-bytes=104857600
+        - -server.grpc.keepalive.max-connection-age=30s
+        - -server.grpc.keepalive.max-connection-age-grace=5m
+        - -server.grpc.keepalive.max-connection-idle=1m
+        - -server.grpc.keepalive.min-time-between-pings=10s
+        - -server.grpc.keepalive.ping-without-stream-allowed=true
+        - -server.http-listen-port=8080
+        - -shutdown-delay=90s
+        - -target=query-frontend
+        - -usage-stats.installation-mode=jsonnet
+        image: grafana/mimir:3.1.2
+        imagePullPolicy: IfNotPresent
+        name: ruler-query-frontend
+        ports:
+        - containerPort: 8080
+          name: http-metrics
+        - containerPort: 9095
+          name: grpc
+        - containerPort: 7946
+          name: gossip-ring
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 15
+          timeoutSeconds: 1
+        resources:
+          limits:
+            memory: 4Gi
+          requests:
+            cpu: "2"
+            ephemeral-storage: 50Mi
+            memory: 2Gi
+        volumeMounts:
+        - mountPath: /etc/mimir
+          name: overrides
+      terminationGracePeriodSeconds: 390
+      tolerations:
+      - effect: NoSchedule
+        key: topology
+        operator: Equal
+        value: secondary-az
+      topologySpreadConstraints:
+      - labelSelector:
+          matchLabels:
+            name: ruler-query-frontend-zone-a
+        maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+      volumes:
+      - configMap:
+          name: overrides
+        name: overrides
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ruler-query-frontend-zone-b
+  namespace: default
+spec:
+  minReadySeconds: 10
+  replicas: 2
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      name: ruler-query-frontend-zone-b
+  strategy:
+    rollingUpdate:
+      maxSurge: 15%
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        gossip_ring_member: "true"
+        name: ruler-query-frontend-zone-b
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: topology.kubernetes.io/zone
+                operator: In
+                values:
+                - us-east-2b
+      containers:
+      - args:
+        - -compartments.enabled=true
+        - -compartments.read.num-compartments=2
+        - -compartments.write.num-compartments=2
+        - -ingest-storage.enabled=true
+        - -ingest-storage.kafka.address=kafka-wc-<write-compartment-id>.default.svc.cluster.local.:9092
+        - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
+        - -ingest-storage.kafka.last-produced-offset-poll-interval=500ms
+        - -ingest-storage.kafka.topic=ingest-rc-<read-compartment-id>
+        - -ingester.partition-ring.prefix=
+        - -memberlist.abort-if-fast-join-fails=true
+        - -memberlist.abort-if-fast-join-fails-min-nodes=2
+        - -memberlist.bind-port=7946
+        - -memberlist.join=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946,dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=300s
+        - -memberlist.rejoin-seed-nodes=dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.zone-aware-routing.enabled=true
+        - -memberlist.zone-aware-routing.instance-availability-zone=zone-b
+        - -memberlist.zone-aware-routing.role=member
+        - -querier.ring.prefix=ruler-querier-zone-b/
+        - -query-frontend.cache-results=false
+        - -query-frontend.max-cache-freshness=10m
+        - -query-frontend.max-queriers-per-tenant=10
+        - -query-frontend.max-total-query-length=12000h
+        - -query-frontend.query-sharding-target-series-per-shard=2500
+        - -query-frontend.results-cache.backend=memcached
+        - -query-frontend.results-cache.memcached.addresses=dnssrvnoa+memcached-frontend-zone-b.default.svc.cluster.local.:11211
+        - -query-frontend.results-cache.memcached.max-item-size=26214400
+        - -query-frontend.results-cache.memcached.timeout=500ms
+        - -query-scheduler.ring.prefix=ruler-query-scheduler-zone-b/
+        - -query-scheduler.ring.store=memberlist
+        - -query-scheduler.service-discovery-mode=ring
+        - -runtime-config.file=/etc/mimir/overrides.yaml
+        - -server.grpc-max-concurrent-streams=300
+        - -server.grpc-max-recv-msg-size-bytes=104857600
+        - -server.grpc-max-send-msg-size-bytes=104857600
+        - -server.grpc.keepalive.max-connection-age=30s
+        - -server.grpc.keepalive.max-connection-age-grace=5m
+        - -server.grpc.keepalive.max-connection-idle=1m
+        - -server.grpc.keepalive.min-time-between-pings=10s
+        - -server.grpc.keepalive.ping-without-stream-allowed=true
+        - -server.http-listen-port=8080
+        - -shutdown-delay=90s
+        - -target=query-frontend
+        - -usage-stats.installation-mode=jsonnet
+        image: grafana/mimir:3.1.2
+        imagePullPolicy: IfNotPresent
+        name: ruler-query-frontend
+        ports:
+        - containerPort: 8080
+          name: http-metrics
+        - containerPort: 9095
+          name: grpc
+        - containerPort: 7946
+          name: gossip-ring
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 15
+          timeoutSeconds: 1
+        resources:
+          limits:
+            memory: 4Gi
+          requests:
+            cpu: "2"
+            ephemeral-storage: 50Mi
+            memory: 2Gi
+        volumeMounts:
+        - mountPath: /etc/mimir
+          name: overrides
+      terminationGracePeriodSeconds: 390
+      tolerations:
+      - effect: NoSchedule
+        key: topology
+        operator: Equal
+        value: secondary-az
+      topologySpreadConstraints:
+      - labelSelector:
+          matchLabels:
+            name: ruler-query-frontend-zone-b
+        maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+      volumes:
+      - configMap:
+          name: overrides
+        name: overrides
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ruler-query-scheduler-zone-a
+  namespace: default
+spec:
+  minReadySeconds: 10
+  replicas: 2
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      name: ruler-query-scheduler-zone-a
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        gossip_ring_member: "true"
+        name: ruler-query-scheduler-zone-a
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: topology.kubernetes.io/zone
+                operator: In
+                values:
+                - us-east-2a
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                name: ruler-query-scheduler-zone-a
+            topologyKey: kubernetes.io/hostname
+      containers:
+      - args:
+        - -ingest-storage.enabled=true
+        - -ingest-storage.kafka.address=kafka.default.svc.cluster.local.:9092
+        - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
+        - -ingest-storage.kafka.topic=ingest
+        - -memberlist.abort-if-fast-join-fails=true
+        - -memberlist.abort-if-fast-join-fails-min-nodes=2
+        - -memberlist.bind-port=7946
+        - -memberlist.join=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946,dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=300s
+        - -memberlist.rejoin-seed-nodes=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946
+        - -memberlist.zone-aware-routing.enabled=true
+        - -memberlist.zone-aware-routing.instance-availability-zone=zone-a
+        - -memberlist.zone-aware-routing.role=member
+        - -query-frontend.max-queriers-per-tenant=10
+        - -query-scheduler.max-outstanding-requests-per-tenant=100
+        - -query-scheduler.ring.prefix=ruler-query-scheduler-zone-a/
+        - -query-scheduler.ring.store=memberlist
+        - -query-scheduler.service-discovery-mode=ring
+        - -server.grpc.keepalive.min-time-between-pings=10s
+        - -server.grpc.keepalive.ping-without-stream-allowed=true
+        - -server.http-listen-port=8080
+        - -target=query-scheduler
+        - -usage-stats.installation-mode=jsonnet
+        image: grafana/mimir:3.1.2
+        imagePullPolicy: IfNotPresent
+        name: ruler-query-scheduler
+        ports:
+        - containerPort: 8080
+          name: http-metrics
+        - containerPort: 9095
+          name: grpc
+        - containerPort: 7946
+          name: gossip-ring
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 15
+          timeoutSeconds: 1
+        resources:
+          limits:
+            memory: 2Gi
+          requests:
+            cpu: "2"
+            ephemeral-storage: 50Mi
+            memory: 1Gi
+        volumeMounts:
+        - mountPath: /etc/mimir
+          name: overrides
+      terminationGracePeriodSeconds: 180
+      tolerations:
+      - effect: NoSchedule
+        key: topology
+        operator: Equal
+        value: secondary-az
+      volumes:
+      - configMap:
+          name: overrides
+        name: overrides
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ruler-query-scheduler-zone-b
+  namespace: default
+spec:
+  minReadySeconds: 10
+  replicas: 2
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      name: ruler-query-scheduler-zone-b
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        gossip_ring_member: "true"
+        name: ruler-query-scheduler-zone-b
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: topology.kubernetes.io/zone
+                operator: In
+                values:
+                - us-east-2b
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                name: ruler-query-scheduler-zone-b
+            topologyKey: kubernetes.io/hostname
+      containers:
+      - args:
+        - -ingest-storage.enabled=true
+        - -ingest-storage.kafka.address=kafka.default.svc.cluster.local.:9092
+        - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
+        - -ingest-storage.kafka.topic=ingest
+        - -memberlist.abort-if-fast-join-fails=true
+        - -memberlist.abort-if-fast-join-fails-min-nodes=2
+        - -memberlist.bind-port=7946
+        - -memberlist.join=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946,dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=300s
+        - -memberlist.rejoin-seed-nodes=dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.zone-aware-routing.enabled=true
+        - -memberlist.zone-aware-routing.instance-availability-zone=zone-b
+        - -memberlist.zone-aware-routing.role=member
+        - -query-frontend.max-queriers-per-tenant=10
+        - -query-scheduler.max-outstanding-requests-per-tenant=100
+        - -query-scheduler.ring.prefix=ruler-query-scheduler-zone-b/
+        - -query-scheduler.ring.store=memberlist
+        - -query-scheduler.service-discovery-mode=ring
+        - -server.grpc.keepalive.min-time-between-pings=10s
+        - -server.grpc.keepalive.ping-without-stream-allowed=true
+        - -server.http-listen-port=8080
+        - -target=query-scheduler
+        - -usage-stats.installation-mode=jsonnet
+        image: grafana/mimir:3.1.2
+        imagePullPolicy: IfNotPresent
+        name: ruler-query-scheduler
+        ports:
+        - containerPort: 8080
+          name: http-metrics
+        - containerPort: 9095
+          name: grpc
+        - containerPort: 7946
+          name: gossip-ring
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 15
+          timeoutSeconds: 1
+        resources:
+          limits:
+            memory: 2Gi
+          requests:
+            cpu: "2"
+            ephemeral-storage: 50Mi
+            memory: 1Gi
+        volumeMounts:
+        - mountPath: /etc/mimir
+          name: overrides
+      terminationGracePeriodSeconds: 180
+      tolerations:
+      - effect: NoSchedule
+        key: topology
+        operator: Equal
+        value: secondary-az
+      volumes:
+      - configMap:
+          name: overrides
+        name: overrides
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ruler-zone-a
+  namespace: default
+spec:
+  minReadySeconds: 10
+  replicas: 2
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      name: ruler-zone-a
   strategy:
     rollingUpdate:
       maxSurge: 50%
@@ -2042,12 +3978,21 @@ spec:
     metadata:
       labels:
         gossip_ring_member: "true"
-        name: ruler
+        name: ruler-zone-a
     spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: topology.kubernetes.io/zone
+                operator: In
+                values:
+                - us-east-2a
       containers:
       - args:
         - -blocks-storage.bucket-store.metadata-cache.backend=memcached
-        - -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dnssrvnoa+memcached-metadata.default.svc.cluster.local.:11211
+        - -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dnssrvnoa+memcached-metadata-zone-a.default.svc.cluster.local.:11211
         - -blocks-storage.bucket-store.metadata-cache.memcached.max-async-concurrency=50
         - -blocks-storage.bucket-store.metadata-cache.memcached.max-item-size=1048576
         - -blocks-storage.bucket-store.sync-dir=/data/tsdb
@@ -2071,11 +4016,18 @@ spec:
         - -ingester.ring.store=memberlist
         - -ingester.ring.zone-awareness-enabled=true
         - -mem-ballast-size-bytes=1073741824
+        - -memberlist.abort-if-fast-join-fails=true
+        - -memberlist.abort-if-fast-join-fails-min-nodes=2
         - -memberlist.bind-port=7946
-        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -memberlist.join=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946,dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=300s
+        - -memberlist.rejoin-seed-nodes=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946
+        - -memberlist.zone-aware-routing.enabled=true
+        - -memberlist.zone-aware-routing.instance-availability-zone=zone-a
+        - -memberlist.zone-aware-routing.role=member
         - -querier.max-partial-query-length=768h
         - -ruler-storage.cache.backend=memcached
-        - -ruler-storage.cache.memcached.addresses=dnssrvnoa+memcached-metadata.default.svc.cluster.local.:11211
+        - -ruler-storage.cache.memcached.addresses=dnssrvnoa+memcached-metadata-multi-zone.default.svc.cluster.local.:11211
         - -ruler-storage.cache.memcached.max-async-concurrency=50
         - -ruler-storage.cache.memcached.max-item-size=1048576
         - -ruler-storage.cache.memcached.timeout=500ms
@@ -2083,7 +4035,7 @@ spec:
         - -ruler.alertmanager-url=http://alertmanager.default.svc.cluster.local./alertmanager
         - -ruler.max-rule-groups-per-tenant=85
         - -ruler.max-rules-per-rule-group=20
-        - -ruler.query-frontend.address=dns:///ruler-query-frontend-headless.default.svc.cluster.local.:9095
+        - -ruler.query-frontend.address=dns:///ruler-query-frontend-zone-a-headless.default.svc.cluster.local.:9095
         - -ruler.query-frontend.grpc-client-config.grpc-max-recv-msg-size=104857600
         - -ruler.ring.store=memberlist
         - -ruler.rule-path=/rules
@@ -2125,10 +4077,15 @@ spec:
         - mountPath: /etc/mimir
           name: overrides
       terminationGracePeriodSeconds: 600
+      tolerations:
+      - effect: NoSchedule
+        key: topology
+        operator: Equal
+        value: secondary-az
       topologySpreadConstraints:
       - labelSelector:
           matchLabels:
-            name: ruler
+            name: ruler-zone-a
         maxSkew: 1
         topologyKey: kubernetes.io/hostname
         whenUnsatisfiable: ScheduleAnyway
@@ -2140,60 +4097,85 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: ruler-querier
+  name: ruler-zone-b
   namespace: default
 spec:
   minReadySeconds: 10
-  replicas: 6
+  replicas: 2
   revisionHistoryLimit: 10
   selector:
     matchLabels:
-      name: ruler-querier
+      name: ruler-zone-b
   strategy:
     rollingUpdate:
-      maxSurge: 15%
+      maxSurge: 50%
       maxUnavailable: 0
   template:
     metadata:
       labels:
         gossip_ring_member: "true"
-        name: ruler-querier
+        name: ruler-zone-b
     spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: topology.kubernetes.io/zone
+                operator: In
+                values:
+                - us-east-2b
       containers:
       - args:
         - -blocks-storage.bucket-store.metadata-cache.backend=memcached
-        - -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dnssrvnoa+memcached-metadata.default.svc.cluster.local.:11211
+        - -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dnssrvnoa+memcached-metadata-zone-b.default.svc.cluster.local.:11211
         - -blocks-storage.bucket-store.metadata-cache.memcached.max-async-concurrency=50
         - -blocks-storage.bucket-store.metadata-cache.memcached.max-item-size=1048576
         - -blocks-storage.bucket-store.sync-dir=/data/tsdb
         - -blocks-storage.bucket-store.sync-interval=15m
         - -blocks-storage.gcs.bucket-name=blocks-bucket
         - -common.storage.backend=gcs
-        - -compartments.enabled=true
-        - -compartments.read.num-compartments=2
-        - -compartments.write.num-compartments=2
         - -distributor.health-check-ingesters=true
         - -distributor.ingestion-tenant-shard-size=3
+        - -distributor.remote-timeout=10s
         - -ingest-storage.enabled=true
         - -ingest-storage.ingestion-partition-tenant-shard-size=1
         - -ingest-storage.kafka.address=kafka.default.svc.cluster.local.:9092
         - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
-        - -ingest-storage.kafka.topic=ingest-rc-<read-compartment-id>
+        - -ingest-storage.kafka.producer-max-buffered-bytes=1073741824
+        - -ingest-storage.kafka.producer-record-version=2
+        - -ingest-storage.kafka.topic=ingest
         - -ingester.partition-ring.prefix=
         - -ingester.ring.heartbeat-timeout=10m
         - -ingester.ring.prefix=partition-ingesters/
         - -ingester.ring.replication-factor=3
         - -ingester.ring.store=memberlist
         - -ingester.ring.zone-awareness-enabled=true
-        - -mem-ballast-size-bytes=268435456
+        - -mem-ballast-size-bytes=1073741824
+        - -memberlist.abort-if-fast-join-fails=true
+        - -memberlist.abort-if-fast-join-fails-min-nodes=2
         - -memberlist.bind-port=7946
-        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
-        - -querier.frontend-client.grpc-max-send-msg-size=104857600
-        - -querier.max-concurrent=8
+        - -memberlist.join=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946,dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=300s
+        - -memberlist.rejoin-seed-nodes=dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.zone-aware-routing.enabled=true
+        - -memberlist.zone-aware-routing.instance-availability-zone=zone-b
+        - -memberlist.zone-aware-routing.role=member
         - -querier.max-partial-query-length=768h
-        - -querier.ring.prefix=ruler-querier/
-        - -querier.scheduler-address=ruler-query-scheduler-discovery.default.svc.cluster.local.:9095
-        - -querier.store-gateway-client.grpc-max-recv-msg-size=209715200
+        - -ruler-storage.cache.backend=memcached
+        - -ruler-storage.cache.memcached.addresses=dnssrvnoa+memcached-metadata-multi-zone.default.svc.cluster.local.:11211
+        - -ruler-storage.cache.memcached.max-async-concurrency=50
+        - -ruler-storage.cache.memcached.max-item-size=1048576
+        - -ruler-storage.cache.memcached.timeout=500ms
+        - -ruler-storage.gcs.bucket-name=rules-bucket
+        - -ruler.alertmanager-url=http://alertmanager.default.svc.cluster.local./alertmanager
+        - -ruler.max-rule-groups-per-tenant=85
+        - -ruler.max-rules-per-rule-group=20
+        - -ruler.query-frontend.address=dns:///ruler-query-frontend-zone-b-headless.default.svc.cluster.local.:9095
+        - -ruler.query-frontend.grpc-client-config.grpc-max-recv-msg-size=104857600
+        - -ruler.ring.store=memberlist
+        - -ruler.rule-path=/rules
+        - -ruler.tenant-shard-size=2
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
@@ -2204,19 +4186,16 @@ spec:
         - -store-gateway.sharding-ring.store=memberlist
         - -store-gateway.sharding-ring.zone-awareness-enabled=true
         - -store-gateway.tenant-shard-size=3
-        - -target=querier
+        - -target=ruler
         - -usage-stats.installation-mode=jsonnet
-        env: []
         image: grafana/mimir:3.1.2
         imagePullPolicy: IfNotPresent
-        name: ruler-querier
+        name: ruler
         ports:
         - containerPort: 8080
           name: http-metrics
         - containerPort: 9095
           name: grpc
-        - containerPort: 7946
-          name: gossip-ring
         readinessProbe:
           httpGet:
             path: /ready
@@ -2225,183 +4204,27 @@ spec:
           timeoutSeconds: 1
         resources:
           limits:
-            memory: 24Gi
+            cpu: "16"
+            memory: 16Gi
           requests:
             cpu: "1"
-            memory: 12Gi
+            memory: 6Gi
         volumeMounts:
         - mountPath: /etc/mimir
           name: overrides
-      terminationGracePeriodSeconds: 180
+      terminationGracePeriodSeconds: 600
+      tolerations:
+      - effect: NoSchedule
+        key: topology
+        operator: Equal
+        value: secondary-az
       topologySpreadConstraints:
       - labelSelector:
           matchLabels:
-            name: ruler-querier
+            name: ruler-zone-b
         maxSkew: 1
         topologyKey: kubernetes.io/hostname
         whenUnsatisfiable: ScheduleAnyway
-      volumes:
-      - configMap:
-          name: overrides
-        name: overrides
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: ruler-query-frontend
-  namespace: default
-spec:
-  minReadySeconds: 10
-  replicas: 2
-  revisionHistoryLimit: 10
-  selector:
-    matchLabels:
-      name: ruler-query-frontend
-  strategy:
-    rollingUpdate:
-      maxSurge: 15%
-      maxUnavailable: 0
-  template:
-    metadata:
-      labels:
-        name: ruler-query-frontend
-    spec:
-      containers:
-      - args:
-        - -compartments.enabled=true
-        - -compartments.read.num-compartments=2
-        - -compartments.write.num-compartments=2
-        - -ingest-storage.enabled=true
-        - -ingest-storage.kafka.address=kafka-wc-<write-compartment-id>.default.svc.cluster.local.:9092
-        - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
-        - -ingest-storage.kafka.last-produced-offset-poll-interval=500ms
-        - -ingest-storage.kafka.topic=ingest-rc-<read-compartment-id>
-        - -ingester.partition-ring.prefix=
-        - -querier.ring.prefix=ruler-querier/
-        - -query-frontend.cache-results=false
-        - -query-frontend.max-cache-freshness=10m
-        - -query-frontend.max-queriers-per-tenant=10
-        - -query-frontend.max-total-query-length=12000h
-        - -query-frontend.query-sharding-target-series-per-shard=2500
-        - -query-frontend.results-cache.backend=memcached
-        - -query-frontend.results-cache.memcached.addresses=dnssrvnoa+memcached-frontend.default.svc.cluster.local.:11211
-        - -query-frontend.results-cache.memcached.max-item-size=26214400
-        - -query-frontend.results-cache.memcached.timeout=500ms
-        - -query-frontend.scheduler-address=ruler-query-scheduler-discovery.default.svc.cluster.local.:9095
-        - -runtime-config.file=/etc/mimir/overrides.yaml
-        - -server.grpc-max-concurrent-streams=300
-        - -server.grpc-max-recv-msg-size-bytes=104857600
-        - -server.grpc-max-send-msg-size-bytes=104857600
-        - -server.grpc.keepalive.max-connection-age=30s
-        - -server.grpc.keepalive.max-connection-age-grace=5m
-        - -server.grpc.keepalive.max-connection-idle=1m
-        - -server.grpc.keepalive.min-time-between-pings=10s
-        - -server.grpc.keepalive.ping-without-stream-allowed=true
-        - -server.http-listen-port=8080
-        - -shutdown-delay=90s
-        - -target=query-frontend
-        - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.1.2
-        imagePullPolicy: IfNotPresent
-        name: ruler-query-frontend
-        ports:
-        - containerPort: 8080
-          name: http-metrics
-        - containerPort: 9095
-          name: grpc
-        readinessProbe:
-          httpGet:
-            path: /ready
-            port: 8080
-          initialDelaySeconds: 15
-          timeoutSeconds: 1
-        resources:
-          limits:
-            memory: 4Gi
-          requests:
-            cpu: "2"
-            memory: 2Gi
-        volumeMounts:
-        - mountPath: /etc/mimir
-          name: overrides
-      terminationGracePeriodSeconds: 390
-      topologySpreadConstraints:
-      - labelSelector:
-          matchLabels:
-            name: ruler-query-frontend
-        maxSkew: 1
-        topologyKey: kubernetes.io/hostname
-        whenUnsatisfiable: ScheduleAnyway
-      volumes:
-      - configMap:
-          name: overrides
-        name: overrides
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: ruler-query-scheduler
-  namespace: default
-spec:
-  minReadySeconds: 10
-  replicas: 2
-  revisionHistoryLimit: 10
-  selector:
-    matchLabels:
-      name: ruler-query-scheduler
-  strategy:
-    rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 0
-  template:
-    metadata:
-      labels:
-        name: ruler-query-scheduler
-    spec:
-      affinity:
-        podAntiAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-          - labelSelector:
-              matchLabels:
-                name: ruler-query-scheduler
-            topologyKey: kubernetes.io/hostname
-      containers:
-      - args:
-        - -ingest-storage.enabled=true
-        - -ingest-storage.kafka.address=kafka.default.svc.cluster.local.:9092
-        - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
-        - -ingest-storage.kafka.topic=ingest
-        - -query-frontend.max-queriers-per-tenant=10
-        - -query-scheduler.max-outstanding-requests-per-tenant=100
-        - -server.grpc.keepalive.min-time-between-pings=10s
-        - -server.grpc.keepalive.ping-without-stream-allowed=true
-        - -server.http-listen-port=8080
-        - -target=query-scheduler
-        - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.1.2
-        imagePullPolicy: IfNotPresent
-        name: ruler-query-scheduler
-        ports:
-        - containerPort: 8080
-          name: http-metrics
-        - containerPort: 9095
-          name: grpc
-        readinessProbe:
-          httpGet:
-            path: /ready
-            port: 8080
-          initialDelaySeconds: 15
-          timeoutSeconds: 1
-        resources:
-          limits:
-            memory: 2Gi
-          requests:
-            cpu: "2"
-            memory: 1Gi
-        volumeMounts:
-        - mountPath: /etc/mimir
-          name: overrides
-      terminationGracePeriodSeconds: 180
       volumes:
       - configMap:
           name: overrides
@@ -2438,8 +4261,12 @@ spec:
         - -ingest-storage.kafka.address=kafka.default.svc.cluster.local.:9092
         - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
         - -ingest-storage.kafka.topic=ingest
+        - -memberlist.abort-if-fast-join-fails=true
+        - -memberlist.abort-if-fast-join-fails-min-nodes=2
         - -memberlist.bind-port=7946
-        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -memberlist.join=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946,dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=300s
+        - -memberlist.rejoin-seed-nodes=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
@@ -2550,7 +4377,7 @@ spec:
         - -compactor.ring.wait-stability-min-duration=1m
         - -compactor.scheduler-client.enabled=true
         - -compactor.scheduler-client.metadata-cache.backend=memcached
-        - -compactor.scheduler-client.metadata-cache.memcached.addresses=dnssrvnoa+memcached-metadata.default.svc.cluster.local.:11211
+        - -compactor.scheduler-client.metadata-cache.memcached.addresses=dnssrvnoa+memcached-metadata-zone-a.default.svc.cluster.local.:11211
         - -compactor.scheduler-client.metadata-cache.memcached.max-async-concurrency=50
         - -compactor.scheduler-client.metadata-cache.memcached.max-item-size=1048576
         - -compactor.scheduler-client.scheduler-endpoint=dns:///compactor-scheduler-rc-0.default.svc.cluster.local.:9095
@@ -2564,8 +4391,15 @@ spec:
         - -ingest-storage.kafka.address=kafka-wc-<write-compartment-id>.default.svc.cluster.local.:9092
         - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
         - -ingest-storage.kafka.topic=ingest-rc-0
+        - -memberlist.abort-if-fast-join-fails=true
+        - -memberlist.abort-if-fast-join-fails-min-nodes=2
         - -memberlist.bind-port=7946
-        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -memberlist.join=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946,dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=300s
+        - -memberlist.rejoin-seed-nodes=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946
+        - -memberlist.zone-aware-routing.enabled=true
+        - -memberlist.zone-aware-routing.instance-availability-zone=zone-a
+        - -memberlist.zone-aware-routing.role=member
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
@@ -2593,6 +4427,7 @@ spec:
             memory: 6Gi
           requests:
             cpu: 1
+            ephemeral-storage: 50Mi
             memory: 6Gi
         volumeMounts:
         - mountPath: /data
@@ -2671,7 +4506,7 @@ spec:
         - -compactor.ring.wait-stability-min-duration=1m
         - -compactor.scheduler-client.enabled=true
         - -compactor.scheduler-client.metadata-cache.backend=memcached
-        - -compactor.scheduler-client.metadata-cache.memcached.addresses=dnssrvnoa+memcached-metadata.default.svc.cluster.local.:11211
+        - -compactor.scheduler-client.metadata-cache.memcached.addresses=dnssrvnoa+memcached-metadata-zone-a.default.svc.cluster.local.:11211
         - -compactor.scheduler-client.metadata-cache.memcached.max-async-concurrency=50
         - -compactor.scheduler-client.metadata-cache.memcached.max-item-size=1048576
         - -compactor.scheduler-client.scheduler-endpoint=dns:///compactor-scheduler-rc-1.default.svc.cluster.local.:9095
@@ -2685,8 +4520,15 @@ spec:
         - -ingest-storage.kafka.address=kafka-wc-<write-compartment-id>.default.svc.cluster.local.:9092
         - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
         - -ingest-storage.kafka.topic=ingest-rc-1
+        - -memberlist.abort-if-fast-join-fails=true
+        - -memberlist.abort-if-fast-join-fails-min-nodes=2
         - -memberlist.bind-port=7946
-        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -memberlist.join=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946,dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=300s
+        - -memberlist.rejoin-seed-nodes=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946
+        - -memberlist.zone-aware-routing.enabled=true
+        - -memberlist.zone-aware-routing.instance-availability-zone=zone-a
+        - -memberlist.zone-aware-routing.role=member
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
@@ -2714,6 +4556,7 @@ spec:
             memory: 6Gi
           requests:
             cpu: 1
+            ephemeral-storage: 50Mi
             memory: 6Gi
         volumeMounts:
         - mountPath: /data
@@ -2801,6 +4644,7 @@ spec:
             memory: 1Gi
           requests:
             cpu: 100m
+            ephemeral-storage: 50Mi
             memory: 512Mi
         volumeMounts:
         - mountPath: /data
@@ -2887,6 +4731,7 @@ spec:
             memory: 1Gi
           requests:
             cpu: 100m
+            ephemeral-storage: 50Mi
             memory: 512Mi
         volumeMounts:
         - mountPath: /data
@@ -3022,8 +4867,14 @@ spec:
         - -ingester.ring.unregister-on-shutdown=true
         - -ingester.ring.zone-awareness-enabled=true
         - -memberlist.abort-if-fast-join-fails=true
+        - -memberlist.abort-if-fast-join-fails-min-nodes=2
         - -memberlist.bind-port=7946
-        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -memberlist.join=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946,dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=300s
+        - -memberlist.rejoin-seed-nodes=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946
+        - -memberlist.zone-aware-routing.enabled=true
+        - -memberlist.zone-aware-routing.instance-availability-zone=zone-a
+        - -memberlist.zone-aware-routing.role=member
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc-max-concurrent-streams=500
         - -server.grpc.keepalive.min-time-between-pings=10s
@@ -3063,6 +4914,7 @@ spec:
             memory: 25Gi
           requests:
             cpu: "4"
+            ephemeral-storage: 50Mi
             memory: 15Gi
         volumeMounts:
         - mountPath: /data
@@ -3204,8 +5056,14 @@ spec:
         - -ingester.ring.unregister-on-shutdown=true
         - -ingester.ring.zone-awareness-enabled=true
         - -memberlist.abort-if-fast-join-fails=true
+        - -memberlist.abort-if-fast-join-fails-min-nodes=2
         - -memberlist.bind-port=7946
-        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -memberlist.join=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946,dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=300s
+        - -memberlist.rejoin-seed-nodes=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946
+        - -memberlist.zone-aware-routing.enabled=true
+        - -memberlist.zone-aware-routing.instance-availability-zone=zone-a
+        - -memberlist.zone-aware-routing.role=member
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc-max-concurrent-streams=500
         - -server.grpc.keepalive.min-time-between-pings=10s
@@ -3245,6 +5103,7 @@ spec:
             memory: 25Gi
           requests:
             cpu: "4"
+            ephemeral-storage: 50Mi
             memory: 15Gi
         volumeMounts:
         - mountPath: /data
@@ -3382,8 +5241,14 @@ spec:
         - -ingester.ring.unregister-on-shutdown=true
         - -ingester.ring.zone-awareness-enabled=true
         - -memberlist.abort-if-fast-join-fails=true
+        - -memberlist.abort-if-fast-join-fails-min-nodes=2
         - -memberlist.bind-port=7946
-        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -memberlist.join=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946,dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=300s
+        - -memberlist.rejoin-seed-nodes=dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.zone-aware-routing.enabled=true
+        - -memberlist.zone-aware-routing.instance-availability-zone=zone-b
+        - -memberlist.zone-aware-routing.role=member
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc-max-concurrent-streams=500
         - -server.grpc.keepalive.min-time-between-pings=10s
@@ -3417,6 +5282,7 @@ spec:
             memory: 25Gi
           requests:
             cpu: "4"
+            ephemeral-storage: 50Mi
             memory: 15Gi
         volumeMounts:
         - mountPath: /data
@@ -3554,8 +5420,14 @@ spec:
         - -ingester.ring.unregister-on-shutdown=true
         - -ingester.ring.zone-awareness-enabled=true
         - -memberlist.abort-if-fast-join-fails=true
+        - -memberlist.abort-if-fast-join-fails-min-nodes=2
         - -memberlist.bind-port=7946
-        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -memberlist.join=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946,dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=300s
+        - -memberlist.rejoin-seed-nodes=dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.zone-aware-routing.enabled=true
+        - -memberlist.zone-aware-routing.instance-availability-zone=zone-b
+        - -memberlist.zone-aware-routing.role=member
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc-max-concurrent-streams=500
         - -server.grpc.keepalive.min-time-between-pings=10s
@@ -3589,6 +5461,7 @@ spec:
             memory: 25Gi
           requests:
             cpu: "4"
+            ephemeral-storage: 50Mi
             memory: 15Gi
         volumeMounts:
         - mountPath: /data
@@ -3625,86 +5498,34 @@ spec:
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: memcached
+  name: memcached-frontend-zone-a
   namespace: default
 spec:
   minReadySeconds: 60
   replicas: 3
   selector:
     matchLabels:
-      name: memcached
-  serviceName: memcached
+      name: memcached-frontend-zone-a
+  serviceName: memcached-frontend-zone-a
   template:
     metadata:
       labels:
-        name: memcached
+        name: memcached-frontend-zone-a
     spec:
       affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: topology.kubernetes.io/zone
+                operator: In
+                values:
+                - us-east-2a
         podAntiAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
           - labelSelector:
               matchLabels:
-                name: memcached
-            topologyKey: kubernetes.io/hostname
-      containers:
-      - args:
-        - -m 6144
-        - -I 1m
-        - -c 16384
-        - -v
-        image: memcached:1.6.34-alpine
-        imagePullPolicy: IfNotPresent
-        name: memcached
-        ports:
-        - containerPort: 11211
-          name: client
-        resources:
-          limits:
-            memory: 9Gi
-          requests:
-            cpu: 500m
-            memory: 6552Mi
-      - args:
-        - --memcached.address=localhost:11211
-        - --web.listen-address=0.0.0.0:9150
-        image: prom/memcached-exporter:v0.15.3
-        imagePullPolicy: IfNotPresent
-        name: exporter
-        ports:
-        - containerPort: 9150
-          name: http-metrics
-        resources:
-          limits:
-            memory: 250Mi
-          requests:
-            cpu: "0.05"
-            memory: 50Mi
-  updateStrategy:
-    type: RollingUpdate
----
-apiVersion: apps/v1
-kind: StatefulSet
-metadata:
-  name: memcached-frontend
-  namespace: default
-spec:
-  minReadySeconds: 60
-  replicas: 3
-  selector:
-    matchLabels:
-      name: memcached-frontend
-  serviceName: memcached-frontend
-  template:
-    metadata:
-      labels:
-        name: memcached-frontend
-    spec:
-      affinity:
-        podAntiAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-          - labelSelector:
-              matchLabels:
-                name: memcached-frontend
+                name: memcached-frontend-zone-a
             topologyKey: kubernetes.io/hostname
       containers:
       - args:
@@ -3739,32 +5560,118 @@ spec:
           requests:
             cpu: "0.05"
             memory: 50Mi
+      tolerations:
+      - effect: NoSchedule
+        key: topology
+        operator: Equal
+        value: secondary-az
   updateStrategy:
     type: RollingUpdate
 ---
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: memcached-index-queries
+  name: memcached-frontend-zone-b
   namespace: default
 spec:
   minReadySeconds: 60
   replicas: 3
   selector:
     matchLabels:
-      name: memcached-index-queries
-  serviceName: memcached-index-queries
+      name: memcached-frontend-zone-b
+  serviceName: memcached-frontend-zone-b
   template:
     metadata:
       labels:
-        name: memcached-index-queries
+        name: memcached-frontend-zone-b
     spec:
       affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: topology.kubernetes.io/zone
+                operator: In
+                values:
+                - us-east-2b
         podAntiAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
           - labelSelector:
               matchLabels:
-                name: memcached-index-queries
+                name: memcached-frontend-zone-b
+            topologyKey: kubernetes.io/hostname
+      containers:
+      - args:
+        - -m 1024
+        - -I 25m
+        - -c 16384
+        - -v
+        image: memcached:1.6.34-alpine
+        imagePullPolicy: IfNotPresent
+        name: memcached
+        ports:
+        - containerPort: 11211
+          name: client
+        resources:
+          limits:
+            memory: 1536Mi
+          requests:
+            cpu: 500m
+            memory: 1176Mi
+      - args:
+        - --memcached.address=localhost:11211
+        - --web.listen-address=0.0.0.0:9150
+        image: prom/memcached-exporter:v0.15.3
+        imagePullPolicy: IfNotPresent
+        name: exporter
+        ports:
+        - containerPort: 9150
+          name: http-metrics
+        resources:
+          limits:
+            memory: 250Mi
+          requests:
+            cpu: "0.05"
+            memory: 50Mi
+      tolerations:
+      - effect: NoSchedule
+        key: topology
+        operator: Equal
+        value: secondary-az
+  updateStrategy:
+    type: RollingUpdate
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: memcached-index-queries-zone-a-rc-0
+  namespace: default
+spec:
+  minReadySeconds: 60
+  replicas: 3
+  selector:
+    matchLabels:
+      name: memcached-index-queries-zone-a-rc-0
+  serviceName: memcached-index-queries-zone-a-rc-0
+  template:
+    metadata:
+      labels:
+        name: memcached-index-queries-zone-a-rc-0
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: topology.kubernetes.io/zone
+                operator: In
+                values:
+                - us-east-2a
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                name: memcached-index-queries-zone-a-rc-0
             topologyKey: kubernetes.io/hostname
       containers:
       - args:
@@ -3799,32 +5706,265 @@ spec:
           requests:
             cpu: "0.05"
             memory: 50Mi
+      tolerations:
+      - effect: NoSchedule
+        key: topology
+        operator: Equal
+        value: secondary-az
   updateStrategy:
     type: RollingUpdate
 ---
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: memcached-metadata
+  name: memcached-index-queries-zone-a-rc-1
   namespace: default
 spec:
   minReadySeconds: 60
   replicas: 3
   selector:
     matchLabels:
-      name: memcached-metadata
-  serviceName: memcached-metadata
+      name: memcached-index-queries-zone-a-rc-1
+  serviceName: memcached-index-queries-zone-a-rc-1
   template:
     metadata:
       labels:
-        name: memcached-metadata
+        name: memcached-index-queries-zone-a-rc-1
     spec:
       affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: topology.kubernetes.io/zone
+                operator: In
+                values:
+                - us-east-2a
         podAntiAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
           - labelSelector:
               matchLabels:
-                name: memcached-metadata
+                name: memcached-index-queries-zone-a-rc-1
+            topologyKey: kubernetes.io/hostname
+      containers:
+      - args:
+        - -m 1024
+        - -I 5m
+        - -c 16384
+        - -v
+        image: memcached:1.6.34-alpine
+        imagePullPolicy: IfNotPresent
+        name: memcached
+        ports:
+        - containerPort: 11211
+          name: client
+        resources:
+          limits:
+            memory: 1536Mi
+          requests:
+            cpu: 500m
+            memory: 1176Mi
+      - args:
+        - --memcached.address=localhost:11211
+        - --web.listen-address=0.0.0.0:9150
+        image: prom/memcached-exporter:v0.15.3
+        imagePullPolicy: IfNotPresent
+        name: exporter
+        ports:
+        - containerPort: 9150
+          name: http-metrics
+        resources:
+          limits:
+            memory: 250Mi
+          requests:
+            cpu: "0.05"
+            memory: 50Mi
+      tolerations:
+      - effect: NoSchedule
+        key: topology
+        operator: Equal
+        value: secondary-az
+  updateStrategy:
+    type: RollingUpdate
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: memcached-index-queries-zone-b-rc-0
+  namespace: default
+spec:
+  minReadySeconds: 60
+  replicas: 3
+  selector:
+    matchLabels:
+      name: memcached-index-queries-zone-b-rc-0
+  serviceName: memcached-index-queries-zone-b-rc-0
+  template:
+    metadata:
+      labels:
+        name: memcached-index-queries-zone-b-rc-0
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: topology.kubernetes.io/zone
+                operator: In
+                values:
+                - us-east-2b
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                name: memcached-index-queries-zone-b-rc-0
+            topologyKey: kubernetes.io/hostname
+      containers:
+      - args:
+        - -m 1024
+        - -I 5m
+        - -c 16384
+        - -v
+        image: memcached:1.6.34-alpine
+        imagePullPolicy: IfNotPresent
+        name: memcached
+        ports:
+        - containerPort: 11211
+          name: client
+        resources:
+          limits:
+            memory: 1536Mi
+          requests:
+            cpu: 500m
+            memory: 1176Mi
+      - args:
+        - --memcached.address=localhost:11211
+        - --web.listen-address=0.0.0.0:9150
+        image: prom/memcached-exporter:v0.15.3
+        imagePullPolicy: IfNotPresent
+        name: exporter
+        ports:
+        - containerPort: 9150
+          name: http-metrics
+        resources:
+          limits:
+            memory: 250Mi
+          requests:
+            cpu: "0.05"
+            memory: 50Mi
+      tolerations:
+      - effect: NoSchedule
+        key: topology
+        operator: Equal
+        value: secondary-az
+  updateStrategy:
+    type: RollingUpdate
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: memcached-index-queries-zone-b-rc-1
+  namespace: default
+spec:
+  minReadySeconds: 60
+  replicas: 3
+  selector:
+    matchLabels:
+      name: memcached-index-queries-zone-b-rc-1
+  serviceName: memcached-index-queries-zone-b-rc-1
+  template:
+    metadata:
+      labels:
+        name: memcached-index-queries-zone-b-rc-1
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: topology.kubernetes.io/zone
+                operator: In
+                values:
+                - us-east-2b
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                name: memcached-index-queries-zone-b-rc-1
+            topologyKey: kubernetes.io/hostname
+      containers:
+      - args:
+        - -m 1024
+        - -I 5m
+        - -c 16384
+        - -v
+        image: memcached:1.6.34-alpine
+        imagePullPolicy: IfNotPresent
+        name: memcached
+        ports:
+        - containerPort: 11211
+          name: client
+        resources:
+          limits:
+            memory: 1536Mi
+          requests:
+            cpu: 500m
+            memory: 1176Mi
+      - args:
+        - --memcached.address=localhost:11211
+        - --web.listen-address=0.0.0.0:9150
+        image: prom/memcached-exporter:v0.15.3
+        imagePullPolicy: IfNotPresent
+        name: exporter
+        ports:
+        - containerPort: 9150
+          name: http-metrics
+        resources:
+          limits:
+            memory: 250Mi
+          requests:
+            cpu: "0.05"
+            memory: 50Mi
+      tolerations:
+      - effect: NoSchedule
+        key: topology
+        operator: Equal
+        value: secondary-az
+  updateStrategy:
+    type: RollingUpdate
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: memcached-metadata-zone-a
+  namespace: default
+spec:
+  minReadySeconds: 60
+  replicas: 3
+  selector:
+    matchLabels:
+      name: memcached-metadata-zone-a
+  serviceName: memcached-metadata-zone-a
+  template:
+    metadata:
+      labels:
+        cache-group: metadata
+        name: memcached-metadata-zone-a
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: topology.kubernetes.io/zone
+                operator: In
+                values:
+                - us-east-2a
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                name: memcached-metadata-zone-a
             topologyKey: kubernetes.io/hostname
       containers:
       - args:
@@ -3859,6 +5999,377 @@ spec:
           requests:
             cpu: "0.05"
             memory: 50Mi
+      tolerations:
+      - effect: NoSchedule
+        key: topology
+        operator: Equal
+        value: secondary-az
+  updateStrategy:
+    type: RollingUpdate
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: memcached-metadata-zone-b
+  namespace: default
+spec:
+  minReadySeconds: 60
+  replicas: 3
+  selector:
+    matchLabels:
+      name: memcached-metadata-zone-b
+  serviceName: memcached-metadata-zone-b
+  template:
+    metadata:
+      labels:
+        cache-group: metadata
+        name: memcached-metadata-zone-b
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: topology.kubernetes.io/zone
+                operator: In
+                values:
+                - us-east-2b
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                name: memcached-metadata-zone-b
+            topologyKey: kubernetes.io/hostname
+      containers:
+      - args:
+        - -m 512
+        - -I 1m
+        - -c 16384
+        - -v
+        image: memcached:1.6.34-alpine
+        imagePullPolicy: IfNotPresent
+        name: memcached
+        ports:
+        - containerPort: 11211
+          name: client
+        resources:
+          limits:
+            memory: 768Mi
+          requests:
+            cpu: 500m
+            memory: 638Mi
+      - args:
+        - --memcached.address=localhost:11211
+        - --web.listen-address=0.0.0.0:9150
+        image: prom/memcached-exporter:v0.15.3
+        imagePullPolicy: IfNotPresent
+        name: exporter
+        ports:
+        - containerPort: 9150
+          name: http-metrics
+        resources:
+          limits:
+            memory: 250Mi
+          requests:
+            cpu: "0.05"
+            memory: 50Mi
+      tolerations:
+      - effect: NoSchedule
+        key: topology
+        operator: Equal
+        value: secondary-az
+  updateStrategy:
+    type: RollingUpdate
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: memcached-zone-a-rc-0
+  namespace: default
+spec:
+  minReadySeconds: 60
+  replicas: 3
+  selector:
+    matchLabels:
+      name: memcached-zone-a-rc-0
+  serviceName: memcached-zone-a-rc-0
+  template:
+    metadata:
+      labels:
+        name: memcached-zone-a-rc-0
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: topology.kubernetes.io/zone
+                operator: In
+                values:
+                - us-east-2a
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                name: memcached-zone-a-rc-0
+            topologyKey: kubernetes.io/hostname
+      containers:
+      - args:
+        - -m 6144
+        - -I 1m
+        - -c 16384
+        - -v
+        image: memcached:1.6.34-alpine
+        imagePullPolicy: IfNotPresent
+        name: memcached
+        ports:
+        - containerPort: 11211
+          name: client
+        resources:
+          limits:
+            memory: 9Gi
+          requests:
+            cpu: 500m
+            memory: 6552Mi
+      - args:
+        - --memcached.address=localhost:11211
+        - --web.listen-address=0.0.0.0:9150
+        image: prom/memcached-exporter:v0.15.3
+        imagePullPolicy: IfNotPresent
+        name: exporter
+        ports:
+        - containerPort: 9150
+          name: http-metrics
+        resources:
+          limits:
+            memory: 250Mi
+          requests:
+            cpu: "0.05"
+            memory: 50Mi
+      tolerations:
+      - effect: NoSchedule
+        key: topology
+        operator: Equal
+        value: secondary-az
+  updateStrategy:
+    type: RollingUpdate
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: memcached-zone-a-rc-1
+  namespace: default
+spec:
+  minReadySeconds: 60
+  replicas: 3
+  selector:
+    matchLabels:
+      name: memcached-zone-a-rc-1
+  serviceName: memcached-zone-a-rc-1
+  template:
+    metadata:
+      labels:
+        name: memcached-zone-a-rc-1
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: topology.kubernetes.io/zone
+                operator: In
+                values:
+                - us-east-2a
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                name: memcached-zone-a-rc-1
+            topologyKey: kubernetes.io/hostname
+      containers:
+      - args:
+        - -m 6144
+        - -I 1m
+        - -c 16384
+        - -v
+        image: memcached:1.6.34-alpine
+        imagePullPolicy: IfNotPresent
+        name: memcached
+        ports:
+        - containerPort: 11211
+          name: client
+        resources:
+          limits:
+            memory: 9Gi
+          requests:
+            cpu: 500m
+            memory: 6552Mi
+      - args:
+        - --memcached.address=localhost:11211
+        - --web.listen-address=0.0.0.0:9150
+        image: prom/memcached-exporter:v0.15.3
+        imagePullPolicy: IfNotPresent
+        name: exporter
+        ports:
+        - containerPort: 9150
+          name: http-metrics
+        resources:
+          limits:
+            memory: 250Mi
+          requests:
+            cpu: "0.05"
+            memory: 50Mi
+      tolerations:
+      - effect: NoSchedule
+        key: topology
+        operator: Equal
+        value: secondary-az
+  updateStrategy:
+    type: RollingUpdate
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: memcached-zone-b-rc-0
+  namespace: default
+spec:
+  minReadySeconds: 60
+  replicas: 3
+  selector:
+    matchLabels:
+      name: memcached-zone-b-rc-0
+  serviceName: memcached-zone-b-rc-0
+  template:
+    metadata:
+      labels:
+        name: memcached-zone-b-rc-0
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: topology.kubernetes.io/zone
+                operator: In
+                values:
+                - us-east-2b
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                name: memcached-zone-b-rc-0
+            topologyKey: kubernetes.io/hostname
+      containers:
+      - args:
+        - -m 6144
+        - -I 1m
+        - -c 16384
+        - -v
+        image: memcached:1.6.34-alpine
+        imagePullPolicy: IfNotPresent
+        name: memcached
+        ports:
+        - containerPort: 11211
+          name: client
+        resources:
+          limits:
+            memory: 9Gi
+          requests:
+            cpu: 500m
+            memory: 6552Mi
+      - args:
+        - --memcached.address=localhost:11211
+        - --web.listen-address=0.0.0.0:9150
+        image: prom/memcached-exporter:v0.15.3
+        imagePullPolicy: IfNotPresent
+        name: exporter
+        ports:
+        - containerPort: 9150
+          name: http-metrics
+        resources:
+          limits:
+            memory: 250Mi
+          requests:
+            cpu: "0.05"
+            memory: 50Mi
+      tolerations:
+      - effect: NoSchedule
+        key: topology
+        operator: Equal
+        value: secondary-az
+  updateStrategy:
+    type: RollingUpdate
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: memcached-zone-b-rc-1
+  namespace: default
+spec:
+  minReadySeconds: 60
+  replicas: 3
+  selector:
+    matchLabels:
+      name: memcached-zone-b-rc-1
+  serviceName: memcached-zone-b-rc-1
+  template:
+    metadata:
+      labels:
+        name: memcached-zone-b-rc-1
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: topology.kubernetes.io/zone
+                operator: In
+                values:
+                - us-east-2b
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                name: memcached-zone-b-rc-1
+            topologyKey: kubernetes.io/hostname
+      containers:
+      - args:
+        - -m 6144
+        - -I 1m
+        - -c 16384
+        - -v
+        image: memcached:1.6.34-alpine
+        imagePullPolicy: IfNotPresent
+        name: memcached
+        ports:
+        - containerPort: 11211
+          name: client
+        resources:
+          limits:
+            memory: 9Gi
+          requests:
+            cpu: 500m
+            memory: 6552Mi
+      - args:
+        - --memcached.address=localhost:11211
+        - --web.listen-address=0.0.0.0:9150
+        image: prom/memcached-exporter:v0.15.3
+        imagePullPolicy: IfNotPresent
+        name: exporter
+        ports:
+        - containerPort: 9150
+          name: http-metrics
+        resources:
+          limits:
+            memory: 250Mi
+          requests:
+            cpu: "0.05"
+            memory: 50Mi
+      tolerations:
+      - effect: NoSchedule
+        key: topology
+        operator: Equal
+        value: secondary-az
   updateStrategy:
     type: RollingUpdate
 ---
@@ -3895,6 +6406,14 @@ spec:
         rollout-group: store-gateway-rc-0
     spec:
       affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: topology.kubernetes.io/zone
+                operator: In
+                values:
+                - us-east-2a
         podAntiAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
           - labelSelector:
@@ -3911,21 +6430,21 @@ spec:
       containers:
       - args:
         - -blocks-storage.bucket-store.chunks-cache.backend=memcached
-        - -blocks-storage.bucket-store.chunks-cache.memcached.addresses=dnssrvnoa+memcached.default.svc.cluster.local.:11211
+        - -blocks-storage.bucket-store.chunks-cache.memcached.addresses=dnssrvnoa+memcached-zone-a-rc-0.default.svc.cluster.local.:11211
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-async-concurrency=50
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-get-multi-concurrency=100
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-idle-connections=150
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-item-size=1048576
         - -blocks-storage.bucket-store.chunks-cache.memcached.timeout=750ms
         - -blocks-storage.bucket-store.index-cache.backend=memcached
-        - -blocks-storage.bucket-store.index-cache.memcached.addresses=dnssrvnoa+memcached-index-queries.default.svc.cluster.local.:11211
+        - -blocks-storage.bucket-store.index-cache.memcached.addresses=dnssrvnoa+memcached-index-queries-zone-a-rc-0.default.svc.cluster.local.:11211
         - -blocks-storage.bucket-store.index-cache.memcached.max-async-concurrency=50
         - -blocks-storage.bucket-store.index-cache.memcached.max-get-multi-concurrency=100
         - -blocks-storage.bucket-store.index-cache.memcached.max-idle-connections=150
         - -blocks-storage.bucket-store.index-cache.memcached.max-item-size=5242880
         - -blocks-storage.bucket-store.index-cache.memcached.timeout=750ms
         - -blocks-storage.bucket-store.metadata-cache.backend=memcached
-        - -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dnssrvnoa+memcached-metadata.default.svc.cluster.local.:11211
+        - -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dnssrvnoa+memcached-metadata-zone-a.default.svc.cluster.local.:11211
         - -blocks-storage.bucket-store.metadata-cache.memcached.max-async-concurrency=50
         - -blocks-storage.bucket-store.metadata-cache.memcached.max-get-multi-concurrency=100
         - -blocks-storage.bucket-store.metadata-cache.memcached.max-idle-connections=150
@@ -3941,8 +6460,15 @@ spec:
         - -ingest-storage.kafka.address=kafka-wc-<write-compartment-id>.default.svc.cluster.local.:9092
         - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
         - -ingest-storage.kafka.topic=ingest-rc-0
+        - -memberlist.abort-if-fast-join-fails=true
+        - -memberlist.abort-if-fast-join-fails-min-nodes=2
         - -memberlist.bind-port=7946
-        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -memberlist.join=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946,dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=300s
+        - -memberlist.rejoin-seed-nodes=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946
+        - -memberlist.zone-aware-routing.enabled=true
+        - -memberlist.zone-aware-routing.instance-availability-zone=zone-a
+        - -memberlist.zone-aware-routing.role=member
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc-max-send-msg-size-bytes=209715200
         - -server.grpc.keepalive.min-time-between-pings=10s
@@ -3991,6 +6517,7 @@ spec:
             memory: 18Gi
           requests:
             cpu: "1"
+            ephemeral-storage: 50Mi
             memory: 12Gi
         volumeMounts:
         - mountPath: /data
@@ -4000,6 +6527,11 @@ spec:
       securityContext:
         runAsUser: 0
       terminationGracePeriodSeconds: 120
+      tolerations:
+      - effect: NoSchedule
+        key: topology
+        operator: Equal
+        value: secondary-az
       volumes:
       - configMap:
           name: overrides
@@ -4052,6 +6584,14 @@ spec:
         rollout-group: store-gateway-rc-1
     spec:
       affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: topology.kubernetes.io/zone
+                operator: In
+                values:
+                - us-east-2a
         podAntiAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
           - labelSelector:
@@ -4068,21 +6608,21 @@ spec:
       containers:
       - args:
         - -blocks-storage.bucket-store.chunks-cache.backend=memcached
-        - -blocks-storage.bucket-store.chunks-cache.memcached.addresses=dnssrvnoa+memcached.default.svc.cluster.local.:11211
+        - -blocks-storage.bucket-store.chunks-cache.memcached.addresses=dnssrvnoa+memcached-zone-a-rc-1.default.svc.cluster.local.:11211
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-async-concurrency=50
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-get-multi-concurrency=100
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-idle-connections=150
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-item-size=1048576
         - -blocks-storage.bucket-store.chunks-cache.memcached.timeout=750ms
         - -blocks-storage.bucket-store.index-cache.backend=memcached
-        - -blocks-storage.bucket-store.index-cache.memcached.addresses=dnssrvnoa+memcached-index-queries.default.svc.cluster.local.:11211
+        - -blocks-storage.bucket-store.index-cache.memcached.addresses=dnssrvnoa+memcached-index-queries-zone-a-rc-1.default.svc.cluster.local.:11211
         - -blocks-storage.bucket-store.index-cache.memcached.max-async-concurrency=50
         - -blocks-storage.bucket-store.index-cache.memcached.max-get-multi-concurrency=100
         - -blocks-storage.bucket-store.index-cache.memcached.max-idle-connections=150
         - -blocks-storage.bucket-store.index-cache.memcached.max-item-size=5242880
         - -blocks-storage.bucket-store.index-cache.memcached.timeout=750ms
         - -blocks-storage.bucket-store.metadata-cache.backend=memcached
-        - -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dnssrvnoa+memcached-metadata.default.svc.cluster.local.:11211
+        - -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dnssrvnoa+memcached-metadata-zone-a.default.svc.cluster.local.:11211
         - -blocks-storage.bucket-store.metadata-cache.memcached.max-async-concurrency=50
         - -blocks-storage.bucket-store.metadata-cache.memcached.max-get-multi-concurrency=100
         - -blocks-storage.bucket-store.metadata-cache.memcached.max-idle-connections=150
@@ -4098,8 +6638,15 @@ spec:
         - -ingest-storage.kafka.address=kafka-wc-<write-compartment-id>.default.svc.cluster.local.:9092
         - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
         - -ingest-storage.kafka.topic=ingest-rc-1
+        - -memberlist.abort-if-fast-join-fails=true
+        - -memberlist.abort-if-fast-join-fails-min-nodes=2
         - -memberlist.bind-port=7946
-        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -memberlist.join=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946,dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=300s
+        - -memberlist.rejoin-seed-nodes=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946
+        - -memberlist.zone-aware-routing.enabled=true
+        - -memberlist.zone-aware-routing.instance-availability-zone=zone-a
+        - -memberlist.zone-aware-routing.role=member
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc-max-send-msg-size-bytes=209715200
         - -server.grpc.keepalive.min-time-between-pings=10s
@@ -4148,6 +6695,7 @@ spec:
             memory: 18Gi
           requests:
             cpu: "1"
+            ephemeral-storage: 50Mi
             memory: 12Gi
         volumeMounts:
         - mountPath: /data
@@ -4157,6 +6705,11 @@ spec:
       securityContext:
         runAsUser: 0
       terminationGracePeriodSeconds: 120
+      tolerations:
+      - effect: NoSchedule
+        key: topology
+        operator: Equal
+        value: secondary-az
       volumes:
       - configMap:
           name: overrides
@@ -4211,6 +6764,14 @@ spec:
         rollout-group: store-gateway-rc-0
     spec:
       affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: topology.kubernetes.io/zone
+                operator: In
+                values:
+                - us-east-2b
         podAntiAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
           - labelSelector:
@@ -4227,21 +6788,21 @@ spec:
       containers:
       - args:
         - -blocks-storage.bucket-store.chunks-cache.backend=memcached
-        - -blocks-storage.bucket-store.chunks-cache.memcached.addresses=dnssrvnoa+memcached.default.svc.cluster.local.:11211
+        - -blocks-storage.bucket-store.chunks-cache.memcached.addresses=dnssrvnoa+memcached-zone-b-rc-0.default.svc.cluster.local.:11211
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-async-concurrency=50
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-get-multi-concurrency=100
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-idle-connections=150
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-item-size=1048576
         - -blocks-storage.bucket-store.chunks-cache.memcached.timeout=750ms
         - -blocks-storage.bucket-store.index-cache.backend=memcached
-        - -blocks-storage.bucket-store.index-cache.memcached.addresses=dnssrvnoa+memcached-index-queries.default.svc.cluster.local.:11211
+        - -blocks-storage.bucket-store.index-cache.memcached.addresses=dnssrvnoa+memcached-index-queries-zone-b-rc-0.default.svc.cluster.local.:11211
         - -blocks-storage.bucket-store.index-cache.memcached.max-async-concurrency=50
         - -blocks-storage.bucket-store.index-cache.memcached.max-get-multi-concurrency=100
         - -blocks-storage.bucket-store.index-cache.memcached.max-idle-connections=150
         - -blocks-storage.bucket-store.index-cache.memcached.max-item-size=5242880
         - -blocks-storage.bucket-store.index-cache.memcached.timeout=750ms
         - -blocks-storage.bucket-store.metadata-cache.backend=memcached
-        - -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dnssrvnoa+memcached-metadata.default.svc.cluster.local.:11211
+        - -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dnssrvnoa+memcached-metadata-zone-b.default.svc.cluster.local.:11211
         - -blocks-storage.bucket-store.metadata-cache.memcached.max-async-concurrency=50
         - -blocks-storage.bucket-store.metadata-cache.memcached.max-get-multi-concurrency=100
         - -blocks-storage.bucket-store.metadata-cache.memcached.max-idle-connections=150
@@ -4257,8 +6818,15 @@ spec:
         - -ingest-storage.kafka.address=kafka-wc-<write-compartment-id>.default.svc.cluster.local.:9092
         - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
         - -ingest-storage.kafka.topic=ingest-rc-0
+        - -memberlist.abort-if-fast-join-fails=true
+        - -memberlist.abort-if-fast-join-fails-min-nodes=2
         - -memberlist.bind-port=7946
-        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -memberlist.join=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946,dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=300s
+        - -memberlist.rejoin-seed-nodes=dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.zone-aware-routing.enabled=true
+        - -memberlist.zone-aware-routing.instance-availability-zone=zone-b
+        - -memberlist.zone-aware-routing.role=member
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc-max-send-msg-size-bytes=209715200
         - -server.grpc.keepalive.min-time-between-pings=10s
@@ -4309,6 +6877,7 @@ spec:
             memory: 18Gi
           requests:
             cpu: "1"
+            ephemeral-storage: 50Mi
             memory: 12Gi
         volumeMounts:
         - mountPath: /data
@@ -4318,6 +6887,11 @@ spec:
       securityContext:
         runAsUser: 0
       terminationGracePeriodSeconds: 120
+      tolerations:
+      - effect: NoSchedule
+        key: topology
+        operator: Equal
+        value: secondary-az
       volumes:
       - configMap:
           name: overrides
@@ -4372,6 +6946,14 @@ spec:
         rollout-group: store-gateway-rc-1
     spec:
       affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: topology.kubernetes.io/zone
+                operator: In
+                values:
+                - us-east-2b
         podAntiAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
           - labelSelector:
@@ -4388,21 +6970,21 @@ spec:
       containers:
       - args:
         - -blocks-storage.bucket-store.chunks-cache.backend=memcached
-        - -blocks-storage.bucket-store.chunks-cache.memcached.addresses=dnssrvnoa+memcached.default.svc.cluster.local.:11211
+        - -blocks-storage.bucket-store.chunks-cache.memcached.addresses=dnssrvnoa+memcached-zone-b-rc-1.default.svc.cluster.local.:11211
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-async-concurrency=50
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-get-multi-concurrency=100
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-idle-connections=150
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-item-size=1048576
         - -blocks-storage.bucket-store.chunks-cache.memcached.timeout=750ms
         - -blocks-storage.bucket-store.index-cache.backend=memcached
-        - -blocks-storage.bucket-store.index-cache.memcached.addresses=dnssrvnoa+memcached-index-queries.default.svc.cluster.local.:11211
+        - -blocks-storage.bucket-store.index-cache.memcached.addresses=dnssrvnoa+memcached-index-queries-zone-b-rc-1.default.svc.cluster.local.:11211
         - -blocks-storage.bucket-store.index-cache.memcached.max-async-concurrency=50
         - -blocks-storage.bucket-store.index-cache.memcached.max-get-multi-concurrency=100
         - -blocks-storage.bucket-store.index-cache.memcached.max-idle-connections=150
         - -blocks-storage.bucket-store.index-cache.memcached.max-item-size=5242880
         - -blocks-storage.bucket-store.index-cache.memcached.timeout=750ms
         - -blocks-storage.bucket-store.metadata-cache.backend=memcached
-        - -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dnssrvnoa+memcached-metadata.default.svc.cluster.local.:11211
+        - -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dnssrvnoa+memcached-metadata-zone-b.default.svc.cluster.local.:11211
         - -blocks-storage.bucket-store.metadata-cache.memcached.max-async-concurrency=50
         - -blocks-storage.bucket-store.metadata-cache.memcached.max-get-multi-concurrency=100
         - -blocks-storage.bucket-store.metadata-cache.memcached.max-idle-connections=150
@@ -4418,8 +7000,15 @@ spec:
         - -ingest-storage.kafka.address=kafka-wc-<write-compartment-id>.default.svc.cluster.local.:9092
         - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
         - -ingest-storage.kafka.topic=ingest-rc-1
+        - -memberlist.abort-if-fast-join-fails=true
+        - -memberlist.abort-if-fast-join-fails-min-nodes=2
         - -memberlist.bind-port=7946
-        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -memberlist.join=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946,dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=300s
+        - -memberlist.rejoin-seed-nodes=dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.zone-aware-routing.enabled=true
+        - -memberlist.zone-aware-routing.instance-availability-zone=zone-b
+        - -memberlist.zone-aware-routing.role=member
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc-max-send-msg-size-bytes=209715200
         - -server.grpc.keepalive.min-time-between-pings=10s
@@ -4470,6 +7059,7 @@ spec:
             memory: 18Gi
           requests:
             cpu: "1"
+            ephemeral-storage: 50Mi
             memory: 12Gi
         volumeMounts:
         - mountPath: /data
@@ -4479,6 +7069,11 @@ spec:
       securityContext:
         runAsUser: 0
       terminationGracePeriodSeconds: 120
+      tolerations:
+      - effect: NoSchedule
+        key: topology
+        operator: Equal
+        value: secondary-az
       volumes:
       - configMap:
           name: overrides
@@ -4549,21 +7144,21 @@ spec:
       containers:
       - args:
         - -blocks-storage.bucket-store.chunks-cache.backend=memcached
-        - -blocks-storage.bucket-store.chunks-cache.memcached.addresses=dnssrvnoa+memcached.default.svc.cluster.local.:11211
+        - -blocks-storage.bucket-store.chunks-cache.memcached.addresses=dnssrvnoa+memcached-zone-a-rc-0.default.svc.cluster.local.:11211
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-async-concurrency=50
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-get-multi-concurrency=100
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-idle-connections=150
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-item-size=1048576
         - -blocks-storage.bucket-store.chunks-cache.memcached.timeout=750ms
         - -blocks-storage.bucket-store.index-cache.backend=memcached
-        - -blocks-storage.bucket-store.index-cache.memcached.addresses=dnssrvnoa+memcached-index-queries.default.svc.cluster.local.:11211
+        - -blocks-storage.bucket-store.index-cache.memcached.addresses=dnssrvnoa+memcached-index-queries-zone-a-rc-0.default.svc.cluster.local.:11211
         - -blocks-storage.bucket-store.index-cache.memcached.max-async-concurrency=50
         - -blocks-storage.bucket-store.index-cache.memcached.max-get-multi-concurrency=100
         - -blocks-storage.bucket-store.index-cache.memcached.max-idle-connections=150
         - -blocks-storage.bucket-store.index-cache.memcached.max-item-size=5242880
         - -blocks-storage.bucket-store.index-cache.memcached.timeout=750ms
         - -blocks-storage.bucket-store.metadata-cache.backend=memcached
-        - -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dnssrvnoa+memcached-metadata.default.svc.cluster.local.:11211
+        - -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dnssrvnoa+memcached-metadata-zone-a.default.svc.cluster.local.:11211
         - -blocks-storage.bucket-store.metadata-cache.memcached.max-async-concurrency=50
         - -blocks-storage.bucket-store.metadata-cache.memcached.max-get-multi-concurrency=100
         - -blocks-storage.bucket-store.metadata-cache.memcached.max-idle-connections=150
@@ -4579,8 +7174,15 @@ spec:
         - -ingest-storage.kafka.address=kafka-wc-<write-compartment-id>.default.svc.cluster.local.:9092
         - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
         - -ingest-storage.kafka.topic=ingest-rc-0
+        - -memberlist.abort-if-fast-join-fails=true
+        - -memberlist.abort-if-fast-join-fails-min-nodes=2
         - -memberlist.bind-port=7946
-        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -memberlist.join=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946,dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=300s
+        - -memberlist.rejoin-seed-nodes=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946
+        - -memberlist.zone-aware-routing.enabled=true
+        - -memberlist.zone-aware-routing.instance-availability-zone=zone-a
+        - -memberlist.zone-aware-routing.role=member
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc-max-send-msg-size-bytes=209715200
         - -server.grpc.keepalive.min-time-between-pings=10s
@@ -4629,6 +7231,7 @@ spec:
             memory: 18Gi
           requests:
             cpu: "1"
+            ephemeral-storage: 50Mi
             memory: 12Gi
         volumeMounts:
         - mountPath: /data
@@ -4708,21 +7311,21 @@ spec:
       containers:
       - args:
         - -blocks-storage.bucket-store.chunks-cache.backend=memcached
-        - -blocks-storage.bucket-store.chunks-cache.memcached.addresses=dnssrvnoa+memcached.default.svc.cluster.local.:11211
+        - -blocks-storage.bucket-store.chunks-cache.memcached.addresses=dnssrvnoa+memcached-zone-a-rc-1.default.svc.cluster.local.:11211
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-async-concurrency=50
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-get-multi-concurrency=100
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-idle-connections=150
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-item-size=1048576
         - -blocks-storage.bucket-store.chunks-cache.memcached.timeout=750ms
         - -blocks-storage.bucket-store.index-cache.backend=memcached
-        - -blocks-storage.bucket-store.index-cache.memcached.addresses=dnssrvnoa+memcached-index-queries.default.svc.cluster.local.:11211
+        - -blocks-storage.bucket-store.index-cache.memcached.addresses=dnssrvnoa+memcached-index-queries-zone-a-rc-1.default.svc.cluster.local.:11211
         - -blocks-storage.bucket-store.index-cache.memcached.max-async-concurrency=50
         - -blocks-storage.bucket-store.index-cache.memcached.max-get-multi-concurrency=100
         - -blocks-storage.bucket-store.index-cache.memcached.max-idle-connections=150
         - -blocks-storage.bucket-store.index-cache.memcached.max-item-size=5242880
         - -blocks-storage.bucket-store.index-cache.memcached.timeout=750ms
         - -blocks-storage.bucket-store.metadata-cache.backend=memcached
-        - -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dnssrvnoa+memcached-metadata.default.svc.cluster.local.:11211
+        - -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dnssrvnoa+memcached-metadata-zone-a.default.svc.cluster.local.:11211
         - -blocks-storage.bucket-store.metadata-cache.memcached.max-async-concurrency=50
         - -blocks-storage.bucket-store.metadata-cache.memcached.max-get-multi-concurrency=100
         - -blocks-storage.bucket-store.metadata-cache.memcached.max-idle-connections=150
@@ -4738,8 +7341,15 @@ spec:
         - -ingest-storage.kafka.address=kafka-wc-<write-compartment-id>.default.svc.cluster.local.:9092
         - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
         - -ingest-storage.kafka.topic=ingest-rc-1
+        - -memberlist.abort-if-fast-join-fails=true
+        - -memberlist.abort-if-fast-join-fails-min-nodes=2
         - -memberlist.bind-port=7946
-        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -memberlist.join=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946,dns+memberlist-bridge-zone-b.default.svc.cluster.local.:7946
+        - -memberlist.rejoin-interval=300s
+        - -memberlist.rejoin-seed-nodes=dns+memberlist-bridge-zone-a.default.svc.cluster.local.:7946
+        - -memberlist.zone-aware-routing.enabled=true
+        - -memberlist.zone-aware-routing.instance-availability-zone=zone-a
+        - -memberlist.zone-aware-routing.role=member
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc-max-send-msg-size-bytes=209715200
         - -server.grpc.keepalive.min-time-between-pings=10s
@@ -4788,6 +7398,7 @@ spec:
             memory: 18Gi
           requests:
             cpu: "1"
+            ephemeral-storage: 50Mi
             memory: 12Gi
         volumeMounts:
         - mountPath: /data

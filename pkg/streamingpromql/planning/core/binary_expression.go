@@ -24,9 +24,9 @@ var errCannotMergeBinaryExpressionHints = errors.New("cannot merge hints for bin
 
 //node:generate
 type BinaryExpression struct {
-	*BinaryExpressionDetails
-	LHS planning.Node `node:"child,label=LHS"`
-	RHS planning.Node `node:"child,label=RHS"`
+	*BinaryExpressionDetails `node:"hints=Hints"`
+	LHS                      planning.Node `node:"child,label=LHS"`
+	RHS                      planning.Node `node:"child,label=RHS"`
 }
 
 func (b *BinaryExpression) Describe() string {
@@ -116,15 +116,6 @@ func (b *BinaryExpression) Details() proto.Message {
 
 func (b *BinaryExpression) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_BINARY_EXPRESSION
-}
-
-func (b *BinaryExpression) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
-	otherBinaryExpression, ok := other.(*BinaryExpression)
-
-	return ok &&
-		b.Op == otherBinaryExpression.Op &&
-		b.VectorMatching.Equals(otherBinaryExpression.VectorMatching) &&
-		b.ReturnBool == otherBinaryExpression.ReturnBool
 }
 
 // MergeHints merges the hints from other into b. It returns an error if the
@@ -308,17 +299,4 @@ func (b *BinaryExpression) ExpressionPosition() (posrange.PositionRange, error) 
 
 func (b *BinaryExpression) MinimumRequiredPlanVersion(types.QueryTimeRange) (planning.QueryPlanVersion, error) {
 	return planning.QueryPlanVersionZero, nil
-}
-
-func (v *VectorMatching) Equals(other *VectorMatching) bool {
-	if v == nil && other == nil {
-		// Both are nil.
-		return true
-	}
-
-	return v != nil && other != nil &&
-		v.On == other.On &&
-		v.Card == other.Card &&
-		slices.Equal(v.MatchingLabels, other.MatchingLabels) &&
-		slices.Equal(v.Include, other.Include)
 }

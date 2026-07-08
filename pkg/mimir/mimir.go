@@ -249,6 +249,7 @@ func (c *Config) CommonConfigInheritance() CommonConfigInheritance {
 			"query_frontend_client":            &c.Frontend.ClusterValidationConfig,
 			"scheduler_query_frontend_client":  &c.QueryScheduler.GRPCClientConfig.ClusterValidation,
 			"ruler_client":                     &c.Ruler.ClientTLSConfig.ClusterValidation,
+			"ruler_distributor_client":         &c.Ruler.Distributor.GRPCClientConfig.ClusterValidation,
 			"ruler_query_frontend_client":      &c.Ruler.QueryFrontend.GRPCClientConfig.ClusterValidation,
 			"alert_manager_client":             &c.Alertmanager.AlertmanagerClient.GRPCClientConfig.ClusterValidation,
 			"usage_tracker_client":             &c.Distributor.UsageTrackerClient.GRPCClientConfig.ClusterValidation,
@@ -330,6 +331,16 @@ func (c *Config) Validate(log log.Logger) error {
 		// space). Multi-cluster support for the offset catalogue is not implemented yet.
 		if c.Compartments.Write.NumCompartments > 1 && c.BlocksStorage.TSDB.OffsetCatalogue.Enabled {
 			return errors.New("the offset catalogue (-blocks-storage.tsdb.offset-catalogue.enabled) cannot be enabled together with more than one write compartment")
+		}
+		// The querier resolves the read-compartment placeholder in the blocks bucket name to query each
+		// read compartment's bucket, so the bucket name must carry it. Components that serve a single
+		// compartment (store-gateway, compactor, block-builder, ingester) use an explicit bucket name and
+		// don't need it. The ruler queries blocks only through remote rule evaluation (required with
+		// compartments), so it doesn't build a local compartment-aware queryable.
+		if c.isQuerierEnabled() {
+			if !strings.Contains(c.BlocksStorage.Bucket.BucketName(), compartments.ReadCompartmentIDPlaceholder) {
+				return fmt.Errorf("when compartments are enabled, the blocks storage bucket name must contain the %q placeholder for the querier", compartments.ReadCompartmentIDPlaceholder)
+			}
 		}
 	}
 	if c.isIngesterEnabled() {
@@ -461,6 +472,18 @@ func (c *Config) isAlertManagerEnabled() bool {
 
 func (c *Config) isRulerEnabled() bool {
 	return c.isAnyModuleExplicitlyTargeted(All, Ruler)
+}
+
+func (c *Config) shouldInitRulerStorage() bool {
+	return !c.isAnyModuleExplicitlyTargeted(All) || !c.RulerStorage.IsDefaults()
+}
+
+func (c *Config) rulerRemoteWritesEnabled() bool {
+	return c.Ruler.RuleEvaluationWriteEnabled && c.Ruler.Distributor.Address != ""
+}
+
+func (c *Config) rulerLocalWritesEnabled() bool {
+	return c.Ruler.RuleEvaluationWriteEnabled && c.Ruler.Distributor.Address == ""
 }
 
 func (c *Config) isStoreGatewayEnabled() bool {
@@ -917,8 +940,8 @@ type Mimir struct {
 	Server                         *server.Server
 	ServerMetrics                  *server.Metrics
 	IngesterRing                   *ring.Ring
-	IngesterPartitionRingWatchers  *ingest.PartitionRingWatchers
-	IngesterPartitionInstanceRings *ingest.PartitionInstanceRings
+	IngesterPartitionRingWatchers  *ring.PartitionRingWatchers
+	IngesterPartitionInstanceRings *ring.PartitionInstanceRings
 	TenantLimits                   validation.TenantLimits
 	Overrides                      *validation.Overrides
 	QueryLimitsProvider            streamingpromql.QueryLimitsProvider
@@ -940,6 +963,7 @@ type Mimir struct {
 	QueryFrontendCodec             querymiddleware.Codec
 	QueryFrontendCacheClient       cache.Cache
 	Ruler                          *ruler.Ruler
+	RulerDistributorClient         *ruler.DistributorGRPCClient
 	RulerStorage                   rulestore.RuleStore
 	Alertmanager                   *alertmanager.MultitenantAlertmanager
 	Compactor                      *compactor.MultitenantCompactor

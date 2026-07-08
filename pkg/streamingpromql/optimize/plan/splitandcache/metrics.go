@@ -45,6 +45,13 @@ func NewSplitQueriesCounter(reg prometheus.Registerer) prometheus.Counter {
 	})
 }
 
+func NewSplitRequestsCounter(reg prometheus.Registerer) prometheus.Counter {
+	return promauto.With(reg).NewCounter(prometheus.CounterOpts{
+		Name: "cortex_frontend_split_requests_total",
+		Help: `Total number of query requests where splitting was applied. This metric is only tracked when time-splitting is running inside MQE. Use cortex_frontend_query_range_duration_seconds{method="split_by_interval_and_results_cache"} when not running inside MQE.`,
+	})
+}
+
 type SplitAndCacheMetrics struct {
 	*ResultsCacheMetrics
 
@@ -65,10 +72,11 @@ func NewSplitAndCacheMetrics(reg prometheus.Registerer) *SplitAndCacheMetrics {
 }
 
 type ResultsCacheMetrics struct {
-	CacheRequests    prometheus.Counter
-	CacheHits        prometheus.Counter
-	UsedExtents      prometheus.Counter
-	EvaluatedExtents prometheus.Counter
+	CacheRequests        prometheus.Counter
+	CacheHits            prometheus.Counter
+	UsedExtents          prometheus.Counter
+	EvaluatedExtents     prometheus.Counter
+	UnconsumedSeriesRead prometheus.Histogram
 }
 
 func NewResultsCacheMetrics(requestType string, reg prometheus.Registerer) *ResultsCacheMetrics {
@@ -92,6 +100,12 @@ func NewResultsCacheMetrics(requestType string, reg prometheus.Registerer) *Resu
 			Name:        "cortex_frontend_query_result_cache_evaluated_extents_total",
 			Help:        "Total number of freshly evaluated extents. Only emitted if running caching inside MQE is enabled.",
 			ConstLabels: map[string]string{"request_type": requestType},
+		}),
+		UnconsumedSeriesRead: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
+			Name:                        "cortex_frontend_query_result_cache_unconsumed_series_read",
+			Help:                        "Number of series per query that were read and cached despite not being consumed by the query, because the query stopped reading before all series were read. Only emitted if running caching inside MQE is enabled.",
+			ConstLabels:                 map[string]string{"request_type": requestType},
+			NativeHistogramBucketFactor: 1.1,
 		}),
 	}
 }

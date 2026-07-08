@@ -61,4 +61,8 @@ message Stats {
   // Samples that were read once but used multiple times (eg. in duplicated expressions)
   // count only once per request, not once per use.
   uint64 physical_samples_read = 17;
+  // Retries is the number of times downstream requests were retried by the query-frontend while
+  // processing this request.
+  // 0 means all requests succeeded on the first attempt.
+  uint32 retries = 18;
 }

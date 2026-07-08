@@ -3,12 +3,10 @@
 package scheduler
 
 import (
-	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"iter"
-	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -40,11 +38,19 @@ type BlockBuilderScheduler struct {
 	mu                  sync.Mutex
 	observations        obsMap
 	observationComplete bool
-	partState           map[int32]*partitionState
+
+	partitionStates map[int32]*partitionState
 
 	// for synchronizing tests.
 	onScheduleUpdated func()
 }
+
+// Compartment support is not wired up yet; the scheduler runs a single cluster per
+// partition. These will be replaced by config once compartments are enabled.
+const (
+	compartmentsEnabled = false
+	numClusters         = 1
+)
 
 func New(
 	cfg Config,
@@ -56,10 +62,10 @@ func New(
 		cfg:      cfg,
 		logger:   logger,
 		register: reg,
-		metrics:  newSchedulerMetrics(reg),
+		metrics:  newSchedulerMetrics(reg, compartmentsEnabled, numClusters),
 
-		observations: make(obsMap),
-		partState:    make(map[int32]*partitionState),
+		observations:    make(obsMap),
+		partitionStates: make(map[int32]*partitionState),
 
 		onScheduleUpdated: func() {},
 	}
@@ -67,7 +73,7 @@ func New(
 	return s, nil
 }
 
-func (s *BlockBuilderScheduler) starting(ctx context.Context) error {
+func (s *BlockBuilderScheduler) starting(_ context.Context) error {
 	kc, err := ingest.NewKafkaReaderClient(
 		s.cfg.Kafka,
 		ingest.NewKafkaReaderClientMetrics(ingest.ReaderMetricsPrefix, "block-builder-scheduler", s.register),
@@ -99,22 +105,12 @@ func (s *BlockBuilderScheduler) running(ctx context.Context) error {
 
 	observeComplete := time.After(s.cfg.StartupObserveTime)
 
-	c, err := s.fetchCommittedOffsets(ctx)
-	if err != nil {
+	if err := s.loadInitialCommittedOffsets(ctx); err != nil {
 		if errors.Is(err, context.Canceled) {
 			return nil
 		}
-		level.Error(s.logger).Log("msg", "failed to fetch committed offsets", "err", err)
-		s.metrics.fetchOffsetsFailed.Inc()
-		return fmt.Errorf("fetch committed offsets: %w", err)
+		return err
 	}
-	level.Info(s.logger).Log("msg", "loaded initial committed offsets", "offsets", offsetsStr(c))
-	s.mu.Lock()
-	c.Each(func(o kadm.Offset) {
-		ps := s.getPartitionState(o.Topic, o.Partition)
-		ps.initCommit(o.At)
-	})
-	s.mu.Unlock()
 
 	// Wait for StartupObserveTime to pass.
 	select {
@@ -156,6 +152,29 @@ func (s *BlockBuilderScheduler) running(ctx context.Context) error {
 	}
 }
 
+// loadInitialCommittedOffsets seeds each partition's committed offset from the committed
+// offsets, so startup recovery resumes from where the previous scheduler left off.
+func (s *BlockBuilderScheduler) loadInitialCommittedOffsets(ctx context.Context) error {
+	c, err := fetchCommittedOffsets(ctx, s.adminClient, s.cfg.ConsumerGroup, s.cfg.Kafka.Topic)
+	if err != nil {
+		if errors.Is(err, context.Canceled) {
+			return err
+		}
+		err = fmt.Errorf("fetch committed offsets: %w", err)
+		level.Error(s.logger).Log("msg", "failed to load initial committed offsets", "err", err)
+		s.metrics.fetchOffsetsFailed.Inc()
+		return err
+	}
+	level.Info(s.logger).Log("msg", "loaded initial committed offsets", "offsets", offsetsStr(c))
+	s.mu.Lock()
+	c.Each(func(o kadm.Offset) {
+		ps := s.getPartitionState(o.Topic, o.Partition)
+		ps.initCommit(0, o.At)
+	})
+	s.mu.Unlock()
+	return nil
+}
+
 // completeObservationMode transitions the scheduler from observation mode to normal operation.
 func (s *BlockBuilderScheduler) completeObservationMode(ctx context.Context) {
 	s.mu.Lock()
@@ -176,14 +195,14 @@ func (s *BlockBuilderScheduler) completeObservationMode(ctx context.Context) {
 	s.jobs = newJobQueue(s.cfg.JobLeaseExpiry, policy, s.cfg.JobFailuresAllowed, s.metrics, s.logger)
 	s.finalizeObservations()
 
-	consumeOffs, err := s.consumptionOffsets(ctx, s.cfg.Kafka.Topic, time.Now().Add(-s.cfg.LookbackOnNoCommit))
+	offsetsByPartition, err := s.initConsumptionOffsets(ctx, time.Now().Add(-s.cfg.LookbackOnNoCommit))
 	if err != nil {
 		level.Warn(s.logger).Log("msg", "failed to get consumption offsets", "err", err)
 		return
 	}
 
-	scanner := newOffsetScanner(newOffsetFinder(s.adminClient), time.Now(), s.cfg.JobSize, s.cfg.MaxScanAge, s.metrics.probeRecordTimeDelta)
-	s.populateInitialJobs(ctx, consumeOffs, scanner)
+	scanner := newOffsetScanner([]offsetStore{newOffsetFinder(s.adminClient)}, s.cfg.Kafka.Topic, time.Now(), s.cfg.JobSize, s.cfg.MaxScanAge, s.metrics.probeRecordTimeDelta)
+	s.populateInitialJobs(ctx, offsetsByPartition, scanner)
 	s.observations = nil
 	s.observationComplete = true
 }
@@ -197,6 +216,7 @@ func (s *BlockBuilderScheduler) updateSchedule(ctx context.Context) {
 	}()
 
 	now := time.Now()
+
 	endOffsets, err := s.adminClient.ListEndOffsets(ctx, s.cfg.Kafka.Topic)
 	if err != nil {
 		level.Warn(s.logger).Log("msg", "failed to list end offsets", "err", err)
@@ -207,28 +227,41 @@ func (s *BlockBuilderScheduler) updateSchedule(ctx context.Context) {
 		return
 	}
 
+	touched := make(map[int32]struct{})
+	s.recordEndOffsets(endOffsets, touched)
+
+	// Advance the time bucket of each touched partition, enqueuing any job that rolled over.
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for partition := range touched {
+		ps := s.getPartitionState(s.cfg.Kafka.Topic, partition)
+		job, err := ps.updateTime(now, s.cfg.JobSize)
+		if err != nil {
+			level.Warn(s.logger).Log("msg", "failed to update partition time", "err", err)
+			continue
+		}
+		if job != nil {
+			ps.addPendingJob(job)
+		}
+	}
+
+	s.metrics.outstandingJobs.Set(float64(s.jobs.count()))
+	s.metrics.assignedJobs.Set(float64(s.jobs.assigned()))
+}
+
+// recordEndOffsets records the end offsets into each partition's state, marking every partition
+// it touched so the caller can advance them once all offsets are recorded.
+func (s *BlockBuilderScheduler) recordEndOffsets(endOffsets kadm.ListedOffsets, touched map[int32]struct{}) {
 	endOffsets.Each(func(o kadm.ListedOffset) {
-		partStr := fmt.Sprint(o.Partition)
-		s.metrics.partitionEndOffset.WithLabelValues(partStr).Set(float64(o.Offset))
+		s.metrics.perClusterMetrics[0].endOffset.WithLabelValues(fmt.Sprint(o.Partition)).Set(float64(o.Offset))
 
 		s.mu.Lock()
 		defer s.mu.Unlock()
 
 		ps := s.getPartitionState(o.Topic, o.Partition)
-		ps.updateEndOffset(o.Offset)
-		job, err := ps.updateTime(now, s.cfg.JobSize)
-
-		if err != nil {
-			level.Warn(s.logger).Log("msg", "failed to update partition time", "err", err)
-			return
-		}
-		if job != nil {
-			ps.addPendingJob(job)
-		}
+		ps.updateEndOffset(0, o.Offset)
+		touched[o.Partition] = struct{}{}
 	})
-
-	s.metrics.outstandingJobs.Set(float64(s.jobs.count()))
-	s.metrics.assignedJobs.Set(float64(s.jobs.assigned()))
 }
 
 // enqueuePendingJobsWorker is a worker method that enqueues pending jobs at a regular interval.
@@ -251,7 +284,7 @@ func (s *BlockBuilderScheduler) enqueuePendingJobsWorker(ctx context.Context) {
 // for assignment to workers, subject to the job creation policy.
 func (s *BlockBuilderScheduler) enqueuePendingJobs() {
 	s.mu.Lock()
-	pending := make(map[int32]int, len(s.partState))
+	pending := make(map[int32]int, len(s.partitionStates))
 
 	defer func() {
 		// Unlock the scheduler before populating metrics. Unblocks the concurrent goroutines a tiny bit faster.
@@ -265,7 +298,7 @@ func (s *BlockBuilderScheduler) enqueuePendingJobs() {
 	// For each partition, attempt to enqueue jobs until we run into a rejection
 	// from the job creation policy. Pending jobs are created in order of their
 	// offsets, therefore pulling from the front achieves the same.
-	for partition, ps := range s.partState {
+	for partition, ps := range s.partitionStates {
 		pending[partition] = ps.pendingJobs.Len()
 
 		for ps.pendingJobs.Len() > 0 {
@@ -277,12 +310,12 @@ func (s *BlockBuilderScheduler) enqueuePendingJobs() {
 			// older than our committed offset.
 			if ps.committedBeyondSpec(*spec) {
 				level.Info(s.logger).Log("msg", "ignoring pending job as it's behind the committed offset (expected at startup)",
-					"partition", partition, "start", spec.StartOffset, "end", spec.EndOffset, "committed", ps.committedOffset())
+					"partition", partition, "job", spec.RangesString(), "offsets", ps.offsetsSummary(true, false))
 				ps.pendingJobs.Remove(e)
 				continue
 			}
 
-			jobID := jobIDForSpec(false, spec)
+			jobID := jobIDForSpec(compartmentsEnabled, spec)
 			if err := s.jobs.add(jobID, *spec); err != nil {
 				if errors.Is(err, errJobCreationDisallowed) || errors.Is(err, errJobAlreadyExists) {
 					// We've hit the limit for this partition.
@@ -300,7 +333,7 @@ func (s *BlockBuilderScheduler) enqueuePendingJobs() {
 	}
 }
 
-func (s *BlockBuilderScheduler) populateInitialJobs(ctx context.Context, consumeOffs []partitionOffsets, scanner *offsetScanner) {
+func (s *BlockBuilderScheduler) populateInitialJobs(ctx context.Context, offsetsByPartition map[int32][]*partitionOffsets, scanner *offsetScanner) {
 	// (Note that the lock is already held because we're in startup mode.)
 
 	// While during normal operation we are periodically asking about every
@@ -311,49 +344,53 @@ func (s *BlockBuilderScheduler) populateInitialJobs(ctx context.Context, consume
 	// those two offsets and seeding the schedule by calling updateEndOffset and
 	// updateTime for each of them- just like we do during normal operation.
 
-	for _, off := range consumeOffs {
-		o, err := scanner.probeInitialOffsets(ctx, off, s.logger)
+	// Each partition's clusters are probed and replayed together (clusterOffsets is indexed by
+	// cluster ID; a nil entry means the partition has no offsets on that cluster) so jobs are cut
+	// at boundaries aligned across all of the partition's clusters.
+	for partition, clusterOffsets := range offsetsByPartition {
+		perCluster, err := scanner.probeInitialPartitionOffsets(ctx, clusterOffsets, s.logger)
 		if err != nil {
-			level.Warn(s.logger).Log("msg", "failed to probe initial offsets", "partition", off.partition, "err", err)
+			level.Warn(s.logger).Log("msg", "failed to probe initial offsets", "partition", partition, "err", err)
 			continue
 		}
-		if len(o) == 0 {
-			// No new data to consume, so skip.
-			continue
-		}
-
-		ps := s.getPartitionState(off.topic, off.partition)
-
-		for _, io := range o {
-			ps.updateEndOffset(io.offset)
-			if job, err := ps.updateTime(io.time, s.cfg.JobSize); err != nil {
-				level.Warn(s.logger).Log("msg", "failed to update partition time", "partition", ps.partition, "err", err)
-			} else if job != nil {
-				ps.addPendingJob(job)
-			}
-		}
+		ps := s.getPartitionState(s.cfg.Kafka.Topic, partition)
+		ps.replayOffsetsAtStartup(perCluster, s.cfg.JobSize, s.logger)
 	}
 }
 
 func (s *BlockBuilderScheduler) getPartitionState(topic string, partition int32) *partitionState {
-	if ps, ok := s.partState[partition]; ok {
+	if ps, ok := s.partitionStates[partition]; ok {
 		return ps
 	}
 
-	ps := newPartitionState(topic, partition, &s.metrics, s.logger)
-	s.partState[partition] = ps
+	ps := newPartitionState(topic, partition, numClusters, compartmentsEnabled, &s.metrics, s.logger)
+	s.partitionStates[partition] = ps
 	return ps
 }
 
 type partitionOffsets struct {
-	topic              string
 	partition          int32
 	start, resume, end int64
 }
 
-// consumptionOffsets returns the resumption and end offsets for each partition, falling back to the
-// fallbackTime if there is no planned offset for a partition.
-func (s *BlockBuilderScheduler) consumptionOffsets(ctx context.Context, topic string, fallbackTime time.Time) ([]partitionOffsets, error) {
+// initConsumptionOffsets probes the consumption offsets and groups them by partition. The
+// returned slice for each partition is indexed by cluster ID, currently a single cluster.
+func (s *BlockBuilderScheduler) initConsumptionOffsets(ctx context.Context, fallbackTime time.Time) (map[int32][]*partitionOffsets, error) {
+	consumeOffs, err := s.initSingleClusterConsumptionOffsets(ctx, s.cfg.Kafka.Topic, fallbackTime)
+	if err != nil {
+		return nil, err
+	}
+	offsetsByPartition := make(map[int32][]*partitionOffsets, len(consumeOffs))
+	for i := range consumeOffs {
+		po := &consumeOffs[i]
+		offsetsByPartition[po.partition] = []*partitionOffsets{po}
+	}
+	return offsetsByPartition, nil
+}
+
+// initSingleClusterConsumptionOffsets returns the resumption and end offsets for each partition,
+// falling back to the fallbackTime if there is no planned offset for a partition.
+func (s *BlockBuilderScheduler) initSingleClusterConsumptionOffsets(ctx context.Context, topic string, fallbackTime time.Time) ([]partitionOffsets, error) {
 	startOffsets, err := s.adminClient.ListStartOffsets(ctx, topic)
 	if err != nil {
 		return nil, fmt.Errorf("list start offsets: %w", err)
@@ -393,9 +430,9 @@ func (s *BlockBuilderScheduler) consumptionOffsets(ctx context.Context, topic st
 
 			var resumeOffset int64
 
-			if !ps.plannedEmpty() {
-				planned := ps.plannedOffset()
-				s.metrics.partitionPlannedOffset.WithLabelValues(partStr).Set(float64(planned))
+			if !ps.plannedEmpty(0) {
+				planned := ps.plannedOffset(0)
+				s.metrics.perClusterMetrics[0].plannedOffset.WithLabelValues(partStr).Set(float64(planned))
 				resumeOffset = planned
 			} else {
 				// Nothing planned offset for this partition. Resume from fallback offset instead.
@@ -415,14 +452,13 @@ func (s *BlockBuilderScheduler) consumptionOffsets(ctx context.Context, topic st
 				return nil, fmt.Errorf("partition %d not found in end offsets for topic %s", partition, t)
 			}
 
-			level.Debug(s.logger).Log("msg", "consumptionOffsets", "topic", t, "partition", partition,
+			level.Debug(s.logger).Log("msg", "initSingleClusterConsumptionOffsets", "topic", t, "partition", partition,
 				"start", startOffset.At, "end", end.Offset, "consumeOffset", resumeOffset)
 
-			s.metrics.partitionStartOffset.WithLabelValues(partStr).Set(float64(startOffset.At))
-			s.metrics.partitionEndOffset.WithLabelValues(partStr).Set(float64(end.Offset))
+			s.metrics.perClusterMetrics[0].startOffset.WithLabelValues(partStr).Set(float64(startOffset.At))
+			s.metrics.perClusterMetrics[0].endOffset.WithLabelValues(partStr).Set(float64(end.Offset))
 
 			offs = append(offs, partitionOffsets{
-				topic:     t,
 				partition: partition,
 				start:     startOffset.At,
 				resume:    resumeOffset,
@@ -434,9 +470,9 @@ func (s *BlockBuilderScheduler) consumptionOffsets(ctx context.Context, topic st
 	return offs, nil
 }
 
-// fetchCommittedOffsets fetches the committed offsets for the scheduler's consumer group.
-// It returns empty offsets if the consumer group is not found.
-func (s *BlockBuilderScheduler) fetchCommittedOffsets(ctx context.Context) (kadm.Offsets, error) {
+// fetchCommittedOffsets fetches the topic's committed offsets for the given consumer group on
+// the given cluster's Kafka. It returns empty offsets if the consumer group is not found.
+func fetchCommittedOffsets(ctx context.Context, adminClient *kadm.Client, consumerGroup, topic string) (kadm.Offsets, error) {
 	boff := backoff.New(ctx, backoff.Config{
 		MinBackoff: 100 * time.Millisecond,
 		MaxBackoff: 5 * time.Second,
@@ -445,7 +481,7 @@ func (s *BlockBuilderScheduler) fetchCommittedOffsets(ctx context.Context) (kadm
 	var lastErr error
 
 	for boff.Ongoing() {
-		offs, err := s.adminClient.FetchOffsets(ctx, s.cfg.ConsumerGroup)
+		offs, err := adminClient.FetchOffsets(ctx, consumerGroup)
 		if err != nil {
 			if !errors.Is(err, kerr.GroupIDNotFound) {
 				lastErr = fmt.Errorf("fetch offsets: %w", err)
@@ -464,6 +500,12 @@ func (s *BlockBuilderScheduler) fetchCommittedOffsets(ctx context.Context) (kadm
 
 		for _, ps := range offs {
 			for _, o := range ps {
+				// A write compartment's cluster hosts every read compartment's topic. The
+				// per-read-compartment consumer group should keep commits separate, but filter
+				// by topic too so another read compartment's commits can't seed our partition state.
+				if o.Topic != topic {
+					continue
+				}
 				committed.Add(kadm.Offset{
 					Topic:       o.Topic,
 					Partition:   o.Partition,
@@ -479,20 +521,20 @@ func (s *BlockBuilderScheduler) fetchCommittedOffsets(ctx context.Context) (kadm
 	return kadm.Offsets{}, lastErr
 }
 
-// snapOffsets returns a snapshot of the committed and planned offsets for all partitions.
-func (s *BlockBuilderScheduler) snapOffsets() (kadm.Offsets, kadm.Offsets) {
+// snapshotOffsets returns a snapshot of the committed and planned offsets for all partitions.
+func (s *BlockBuilderScheduler) snapshotOffsets() (kadm.Offsets, kadm.Offsets) {
 	cp := make(kadm.Offsets)
 	pp := make(kadm.Offsets)
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	for _, ps := range s.partState {
-		if !ps.committedEmpty() {
-			cp.AddOffset(ps.topic, ps.partition, ps.committedOffset(), 0)
+	for _, ps := range s.partitionStates {
+		if !ps.committedEmpty(0) {
+			cp.AddOffset(ps.topic, ps.partition, ps.committedOffset(0), 0)
 		}
-		if !ps.plannedEmpty() {
-			pp.AddOffset(ps.topic, ps.partition, ps.plannedOffset(), 0)
+		if !ps.plannedEmpty(0) {
+			pp.AddOffset(ps.topic, ps.partition, ps.plannedOffset(0), 0)
 		}
 	}
 
@@ -502,13 +544,13 @@ func (s *BlockBuilderScheduler) snapOffsets() (kadm.Offsets, kadm.Offsets) {
 // flushOffsetsToKafka flushes the committed offsets to Kafka and updates relevant metrics.
 func (s *BlockBuilderScheduler) flushOffsetsToKafka(ctx context.Context) error {
 	// TODO: only flush if dirty.
-	committed, planned := s.snapOffsets()
+	committed, planned := s.snapshotOffsets()
 
 	committed.Each(func(o kadm.Offset) {
-		s.metrics.partitionCommittedOffset.WithLabelValues(fmt.Sprint(o.Partition)).Set(float64(o.At))
+		s.metrics.perClusterMetrics[0].committedOffset.WithLabelValues(fmt.Sprint(o.Partition)).Set(float64(o.At))
 	})
 	planned.Each(func(o kadm.Offset) {
-		s.metrics.partitionPlannedOffset.WithLabelValues(fmt.Sprint(o.Partition)).Set(float64(o.At))
+		s.metrics.perClusterMetrics[0].plannedOffset.WithLabelValues(fmt.Sprint(o.Partition)).Set(float64(o.At))
 	})
 
 	err := s.adminClient.CommitAllOffsets(ctx, s.cfg.ConsumerGroup, committed)
@@ -576,8 +618,7 @@ func (s *BlockBuilderScheduler) assignJob(workerID string) (jobKey, schedulerpb.
 			// Job is before the committed offset. Remove it.
 			level.Info(s.logger).Log("msg", "removing job as it's behind the committed offset (expected at startup)",
 				"job_id", k.id, "epoch", k.epoch, "partition", spec.Partition,
-				"start_offset", spec.StartOffset, "end_offset", spec.EndOffset,
-				"committed", ps.committedOffset())
+				"job", spec.RangesString(), "offsets", ps.offsetsSummary(true, false))
 			s.jobs.removeJob(k)
 			continue
 		}
@@ -588,6 +629,9 @@ func (s *BlockBuilderScheduler) assignJob(workerID string) (jobKey, schedulerpb.
 
 // UpdateJob takes a job update from the client and records it, if necessary.
 func (s *BlockBuilderScheduler) UpdateJob(_ context.Context, req *schedulerpb.UpdateJobRequest) (*schedulerpb.UpdateJobResponse, error) {
+	if err := req.Spec.Validate(compartmentsEnabled, numClusters); err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
 	k := jobKey{
 		id:    req.Key.Id,
 		epoch: req.Key.Epoch,
@@ -600,7 +644,7 @@ func (s *BlockBuilderScheduler) UpdateJob(_ context.Context, req *schedulerpb.Up
 
 func (s *BlockBuilderScheduler) updateJob(key jobKey, workerID string, complete bool, j schedulerpb.JobSpec) error {
 	logger := log.With(s.logger, "job_id", key.id, "epoch", key.epoch,
-		"worker", workerID, "start_offset", j.StartOffset, "end_offset", j.EndOffset)
+		"worker", workerID, "job", j.RangesString())
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -696,22 +740,30 @@ func (s *BlockBuilderScheduler) finalizeObservations() {
 			continue
 		}
 
-		// Sort observations by start offset
-		slices.SortFunc(observations, func(a, b *observation) int {
-			return cmp.Compare(a.spec.StartOffset, b.spec.StartOffset)
-		})
+		// Track the highest epoch across all observations so setEpoch resumes
+		// assigning epochs above every recovered job's epoch. Done before the
+		// skip check below so a partition we choose not to recover still advances
+		// the counter past its jobs.
+		for _, obs := range observations {
+			maxEpoch = max(maxEpoch, obs.key.epoch)
+		}
+
+		ordered, err := orderObservationsForImport(observations, len(ps.offsets))
+		if err != nil {
+			level.Error(s.logger).Log("msg", "startup: skipping partition recovery",
+				"partition", partition, "observations", len(observations), "err", err)
+			continue
+		}
 
 		// Find the highest contiguous coverage by processing jobs in order.
 		// Stop importing jobs if we find a gap. The last continuous job defines
 		// our latest planned offset which will be where we resume job planning.
-		for _, obs := range observations {
-			maxEpoch = max(maxEpoch, obs.key.epoch)
-
+		for _, obs := range ordered {
 			if !contiguous {
 				// We found a gap earlier. Skip and warn.
 				level.Warn(s.logger).Log("msg", "startup: skipping job import due to offset gap",
 					"partition", partition, "job_id", obs.key.id, "epoch", obs.key.epoch,
-					"start_offset", obs.spec.StartOffset, "end_offset", obs.spec.EndOffset)
+					"job", obs.spec.RangesString())
 				continue
 			}
 
@@ -719,7 +771,7 @@ func (s *BlockBuilderScheduler) finalizeObservations() {
 				// This job is wholly before the latest planned offset. Skip.
 				level.Warn(s.logger).Log("msg", "startup: skipping job before commit",
 					"partition", partition, "job_id", obs.key.id, "epoch", obs.key.epoch,
-					"start_offset", obs.spec.StartOffset, "end_offset", obs.spec.EndOffset)
+					"job", obs.spec.RangesString())
 				continue
 			}
 
@@ -727,8 +779,8 @@ func (s *BlockBuilderScheduler) finalizeObservations() {
 				// Found a gap, can't continue the contiguous range
 				contiguous = false
 				level.Warn(s.logger).Log("msg", "startup: skipping job due to detected offset gap",
-					"partition", partition, "job_id", obs.key.id, "start_offset", obs.spec.StartOffset,
-					"end_offset", obs.spec.EndOffset, "latest_planned_offset", ps.plannedOffset())
+					"partition", partition, "job_id", obs.key.id, "job", obs.spec.RangesString(),
+					"offsets", ps.offsetsSummary(false, true))
 				continue
 			}
 

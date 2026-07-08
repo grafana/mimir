@@ -21,6 +21,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/otlptranslator"
 	"github.com/prometheus/prometheus/model/relabel"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.yaml.in/yaml/v3"
@@ -1638,6 +1639,26 @@ func TestLimits_Validate(t *testing.T) {
 			}(),
 			expectedErr: nil,
 		},
+		"should fail if float_chunk_encoding is not a known encoding": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.FloatChunkEncoding = "XOR2"
+
+				return cfg
+			}(),
+			expectedErr: errInvalidFloatChunkEncoding,
+		},
+		"should pass if float_chunk_encoding is xor2": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.FloatChunkEncoding = "xor2"
+
+				return cfg
+			}(),
+			expectedErr: nil,
+		},
 		"should pass if otel_translation_strategy is UnderscoreEscapingWithoutSuffixes and name_validation_scheme is legacy and metric name suffixes are disabled": {
 			cfg: func() Limits {
 				cfg := Limits{}
@@ -3044,6 +3065,20 @@ func TestMergeLimits(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestOverrides_FloatChunkEncoding(t *testing.T) {
+	t.Run("default is xor", func(t *testing.T) {
+		overrides := MockOverrides(nil)
+		assert.Equal(t, chunkenc.EncXOR, overrides.FloatChunkEncoding("user1"))
+	})
+	t.Run("per-tenant override to xor2", func(t *testing.T) {
+		overrides := MockOverrides(func(_ *Limits, tenantLimits map[string]*Limits) {
+			tenantLimits["user1"] = &Limits{FloatChunkEncoding: "xor2"}
+		})
+		assert.Equal(t, chunkenc.EncXOR2, overrides.FloatChunkEncoding("user1"))
+		assert.Equal(t, chunkenc.EncXOR, overrides.FloatChunkEncoding("user2"))
+	})
 }
 
 func boolPtr(b bool) *bool {

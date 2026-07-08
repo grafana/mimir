@@ -7,6 +7,7 @@ package distributor
 
 import (
 	"context"
+	stderrors "errors"
 	"flag"
 	"fmt"
 	"io"
@@ -225,12 +226,12 @@ type Distributor struct {
 
 	// ingesterPartitionRings holds the per-read-compartment ingester partition rings (a single ring
 	// when compartments are disabled). It's used by the write path when ingest storage is enabled.
-	ingesterPartitionRings *ingest.PartitionRingWatchers
+	ingesterPartitionRings *ring.PartitionRingWatchers
 
 	// partitionInstanceRings holds the per-read-compartment partition+instance rings used by the read
 	// (query) path when ingest storage is enabled. The read path is not yet compartment-aware, so it
 	// always uses compartment 0 (that is also the only ring when compartments are disabled).
-	partitionInstanceRings *ingest.PartitionInstanceRings
+	partitionInstanceRings *ring.PartitionInstanceRings
 
 	// compartmentRouter shards series to read compartments. Nil when compartments are disabled.
 	compartmentRouter *compartments.TopicRouter
@@ -522,7 +523,7 @@ func (m *PushMetrics) deleteUserMetrics(user string) {
 }
 
 // New constructs a new Distributor
-func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Overrides, activeGroupsCleanupService *util.ActiveGroupsCleanupService, costAttributionMgr *costattribution.Manager, ingestersRing ring.ReadRing, partitionInstanceRings *ingest.PartitionInstanceRings, partitionRings *ingest.PartitionRingWatchers, canJoinDistributorsRing bool, writerEnabled bool, usageTrackerPartitionRing *ring.MultiPartitionInstanceRing, usageTrackerInstanceRing ring.ReadRing, reg prometheus.Registerer, log log.Logger) (*Distributor, error) {
+func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Overrides, activeGroupsCleanupService *util.ActiveGroupsCleanupService, costAttributionMgr *costattribution.Manager, ingestersRing ring.ReadRing, partitionInstanceRings *ring.PartitionInstanceRings, partitionRings *ring.PartitionRingWatchers, canJoinDistributorsRing bool, writerEnabled bool, usageTrackerPartitionRing *ring.MultiPartitionInstanceRing, usageTrackerInstanceRing ring.ReadRing, reg prometheus.Registerer, log log.Logger) (*Distributor, error) {
 	clientMetrics := ingester_client.NewMetrics(reg)
 	if cfg.IngesterClientFactory == nil {
 		cfg.IngesterClientFactory = ring_client.PoolInstFunc(func(inst ring.InstanceDesc) (ring_client.PoolClient, error) {
@@ -2394,12 +2395,16 @@ func (d *Distributor) sendWriteRequestToCompartments(ctx context.Context, tenant
 
 	cts, initialMetadataIndex := getCompartmentTokensForWriteRequest(d.compartmentRouter, tenantID, req)
 
-	// We use an errgroup without context cancellation so that a failure writing to one compartment does
-	// not cancel the in-flight writes to the other compartments. A write can fail with a soft failure
-	// (the overall request may still succeed) or a hard failure (the whole request fails); ideally we
-	// would short-circuit the other compartments only on a hard failure, but distinguishing the two is
-	// a future improvement, so for now we never cancel.
-	var g errgroup.Group
+	// errgroup.WithContext cancels writeCtx as soon as any compartment returns a hard error, so the
+	// remaining compartments stop waiting on their in-flight ProduceSync instead of blocking until the
+	// remote timeout.
+	g, writeCtx := errgroup.WithContext(remoteRequestContext())
+
+	var (
+		softErrsMu sync.Mutex
+		softErrs   []error
+	)
+
 	for _, ct := range cts {
 		g.Go(func() error {
 			// Group this compartment's keys by partition within its own partition ring.
@@ -2419,14 +2424,35 @@ func (d *Distributor) sendWriteRequestToCompartments(ctx context.Context, tenant
 			}
 
 			// Write all partitions of this compartment in a single ProduceSync call to its topic.
-			writeCtx := remoteRequestContext()
 			err = d.ingestStorageWriter.MultiWriteSync(writeCtx, ct.topic, tenantID, partitionRequests)
 			err = wrapPartitionsPushError(err)
-			return wrapDeadlineExceededPushError(err)
+			err = wrapDeadlineExceededPushError(err)
+			if err == nil {
+				return nil
+			}
+
+			// A soft error must not cancel the other compartments, so we return nil to the group and
+			// collect it separately.
+			if isIngestionClientError(err) {
+				softErrsMu.Lock()
+				softErrs = append(softErrs, err)
+				softErrsMu.Unlock()
+				return nil
+			}
+
+			// Returning a hard error cancels writeCtx via the errgroup, unblocking the other compartments.
+			return err
 		})
 	}
 
-	return errors.Wrap(g.Wait(), "send data to partitions")
+	// Hard errors take precedence over soft ones so the client gets a 5xx and retries.
+	if hardErr := g.Wait(); hardErr != nil {
+		return errors.Wrap(hardErr, "send data to partitions")
+	}
+	if len(softErrs) > 0 {
+		return errors.Wrap(stderrors.Join(softErrs...), "send data to partitions")
+	}
+	return nil
 }
 
 // getSeriesAndMetadataTokens returns a slice of tokens for the series and metadata from the request in this specific order.

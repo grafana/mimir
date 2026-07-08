@@ -48,11 +48,6 @@ func (s *StepInvariantExpression) MinimumRequiredPlanVersion(types.QueryTimeRang
 	return planning.QueryPlanV1, nil
 }
 
-func (s *StepInvariantExpression) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
-	_, ok := other.(*StepInvariantExpression)
-	return ok
-}
-
 func (s *StepInvariantExpression) MergeHints(_ planning.Node) error {
 	// Nothing to do.
 	return nil
