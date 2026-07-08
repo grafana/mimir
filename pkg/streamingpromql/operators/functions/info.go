@@ -87,6 +87,14 @@ func (f *InfoFunction) SeriesMetadata(ctx context.Context, matchers types.Matche
 	defer types.SeriesMetadataSlicePool.Put(&innerMetadata, f.MemoryConsumptionTracker)
 
 	infoMatchers, skipQueryingInfo := f.generateInfoMatchers(innerMetadata)
+	if !skipQueryingInfo {
+		// If the info selector contains only negative __name__ matchers, add a synthetic
+		// positive __name__=~".+_info" matcher to prevent non-info metrics from being fetched.
+		// This mirrors upstream Prometheus' effectiveInfoNameMatchers logic applied at query time.
+		if syntheticMatcher := syntheticInfoNameMatcher(f.Info.Selector.Matchers); syntheticMatcher != nil {
+			infoMatchers = append(infoMatchers, *syntheticMatcher)
+		}
+	}
 	var infoMetadata []types.SeriesMetadata
 	if skipQueryingInfo {
 		infoMetadata = []types.SeriesMetadata{}
@@ -318,9 +326,10 @@ func (f *InfoFunction) identifyIgnoreSeries(innerMetadata []types.SeriesMetadata
 		return nil, nil
 	}
 
+	effectiveMatchers := effectiveInfoNameMatchers(infoNameMatchers)
 	for i, s := range innerMetadata {
 		name := s.Labels.Get(model.MetricNameLabel)
-		if matchersMatch(infoNameMatchers, name) {
+		if matchersMatch(effectiveMatchers, name) {
 			ignoreSeries[i] = struct{}{}
 		}
 	}
@@ -335,6 +344,48 @@ func matchersMatch(matchers []*labels.Matcher, value string) bool {
 		}
 	}
 	return true
+}
+
+// effectiveInfoNameMatchers mirrors upstream Prometheus logic for determining
+// which __name__ matchers to use when identifying info series to ignore.
+// When only negative matchers exist, a synthetic .+_info positive matcher is
+// prepended, ensuring non-info metrics are never treated as info metrics.
+// InsertOmittedTargetInfoSelector takes care of the case where the original
+// has no __name__ matchers at all.
+func effectiveInfoNameMatchers(matchers []*labels.Matcher) []*labels.Matcher {
+	for _, m := range matchers {
+		if m.Type == labels.MatchEqual || m.Type == labels.MatchRegexp {
+			return matchers
+		}
+	}
+	// Only negative matchers: prepend .+_info to create a contradiction for non-info names.
+	return append([]*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, model.MetricNameLabel, ".+_info")}, matchers...)
+}
+
+// syntheticInfoNameMatcher returns a synthetic __name__=~".+_info" matcher if selectorMatchers
+// contains only negative __name__ matchers, or nil otherwise.
+// This is used to augment the info fetch query so that non-info metrics are not selected,
+// mirroring upstream Prometheus' effectiveInfoNameMatchers logic applied at fetch time.
+func syntheticInfoNameMatcher(selectorMatchers types.Matchers) *types.Matcher {
+	var hasPositive, hasNegative bool
+	for _, m := range selectorMatchers {
+		if m.Name != model.MetricNameLabel {
+			continue
+		}
+		if m.Type == labels.MatchEqual || m.Type == labels.MatchRegexp {
+			hasPositive = true
+			break
+		}
+		hasNegative = true
+	}
+	if !hasPositive && hasNegative {
+		return &types.Matcher{
+			Type:  labels.MatchRegexp,
+			Name:  model.MetricNameLabel,
+			Value: ".+_info",
+		}
+	}
+	return nil
 }
 
 // combineSeriesMetadata combines inner series metadata with info series labels.

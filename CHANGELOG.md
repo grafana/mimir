@@ -90,6 +90,7 @@
 * [BUGFIX] Block-builder-scheduler: Fix a spurious "time went backwards" warning logged at startup when a partition has no records after the scan time. #15855
 * [BUGFIX] Compactor: Fix `GatherBlockHealthStats` postings walk error check to prevent swallowing errors. #15895
 * [BUGFIX] MQE: Don't evaluate unnecessary range vector splitting ranges when a split range vector is part of a spun-off subquery and running time-splitting and caching inside MQE is enabled. #15931
+* [BUGFIX] MQE: Fix `info()` function incorrectly handling negated name matchers. #15168
 
 ### Mixin
 
