@@ -96,7 +96,10 @@ const QueryPlanV17 = QueryPlanVersion(17)
 // evaluated on the querier when the operator is materialized.
 const QueryPlanV18 = QueryPlanVersion(18)
 
-var MaximumSupportedQueryPlanVersion = QueryPlanV18
+// QueryPlanV19 introduces support for deduplicating scalar expressions.
+const QueryPlanV19 = QueryPlanVersion(19)
+
+var MaximumSupportedQueryPlanVersion = QueryPlanV19
 
 type QueryPlan struct {
 	Root       Node
