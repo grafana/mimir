@@ -3365,6 +3365,10 @@ Usage of ./cmd/mimir/mimir:
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -ruler.query-frontend.grpc-client-config.tls-server-name string
     	Override the expected name on the server certificate.
+  -ruler.query-frontend.http-client-config.basic-auth-password string
+    	HTTP Basic authentication password. It overrides the password set in the URL (if any).
+  -ruler.query-frontend.http-client-config.basic-auth-username string
+    	HTTP Basic authentication username. It overrides the username set in the URL (if any).
   -ruler.query-frontend.http-client-config.connect-timeout duration
     	Timeout for establishing a connection to the query-frontend. (default 30s)
   -ruler.query-frontend.max-retries-rate float
