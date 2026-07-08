@@ -125,6 +125,14 @@ func (p *partitionPusher) PushToStorageAndReleaseRequest(ctx context.Context, re
 	if p.rc.ingestedSamples != nil {
 		p.rc.ingestedSamples.WithLabelValues(userID).Add(float64(res.Stats.SucceededSamplesCount))
 	}
+	// Discarded-samples accounting (cortex_discarded_samples_total), same
+	// counters and reasons as the ingester's updateMetricsFromPushStats.
+	// Safe to count here: the hard-failure path returned above, so the
+	// commit completed and the batch won't be retried. Group label is
+	// empty because readcache doesn't track active groups.
+	if p.rc.discarded != nil {
+		p.rc.discarded.UpdateFromPushStats(userID, "", &res.Stats)
+	}
 	// Attribute the batch to its per-range EwmaRate so the
 	// rebalancer can balance by ingest throughput. recordSampleBatch
 	// is safe to call after Append: it only reads ts.Labels (deep

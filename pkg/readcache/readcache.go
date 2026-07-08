@@ -110,6 +110,13 @@ type Readcache struct {
 	// ingester counter for correctness verification.
 	ingestedSamples *prometheus.CounterVec
 
+	// discarded tracks cortex_discarded_samples_total per rejection reason,
+	// mirroring the ingester's accounting so soft-rejected samples on the
+	// Kafka push path (e.g. sample-timestamp-too-old) are visible on
+	// dashboards instead of only in sampled warn logs. Group label is
+	// always empty: readcache doesn't track active groups.
+	discarded *ingester.DiscardedMetrics
+
 	// queriedSamples mirrors cortex_ingester_queried_samples: one
 	// observation per QueryStream call with the total samples carried
 	// by the streamed chunks. Same buckets as the ingester metric so
@@ -324,6 +331,8 @@ func New(
 		Name: "cortex_readcache_ingested_samples_total",
 		Help: "The total number of samples ingested per user. Counts successfully-appended samples only (the readcache mirror of cortex_ingester_ingested_samples_total), so the two line up 1:1 when a tenant is moved between the ingester and readcache write paths.",
 	}, []string{"user"})
+
+	r.discarded = ingester.NewDiscardedMetrics(metricReg)
 
 	r.queriedSamples = promauto.With(metricReg).NewHistogram(prometheus.HistogramOpts{
 		Name: "cortex_readcache_queried_samples",

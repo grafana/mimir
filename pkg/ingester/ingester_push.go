@@ -325,34 +325,8 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 	return nil
 }
 
-func (i *Ingester) updateMetricsFromPushStats(userID string, group string, stats *PushStats, samplesSource mimirpb.WriteRequest_SourceEnum, db *userTSDB, discarded *discardedMetrics) {
-	if stats.SampleTimestampTooOldCount > 0 {
-		discarded.sampleTimestampTooOld.WithLabelValues(userID, group).Add(float64(stats.SampleTimestampTooOldCount))
-	}
-	if stats.SampleOutOfOrderCount > 0 {
-		discarded.sampleOutOfOrder.WithLabelValues(userID, group).Add(float64(stats.SampleOutOfOrderCount))
-	}
-	if stats.SampleTooOldCount > 0 {
-		discarded.sampleTooOld.WithLabelValues(userID, group).Add(float64(stats.SampleTooOldCount))
-	}
-	if stats.SampleTooFarInFutureCount > 0 {
-		discarded.sampleTooFarInFuture.WithLabelValues(userID, group).Add(float64(stats.SampleTooFarInFutureCount))
-	}
-	if stats.NewValueForTimestampCount > 0 {
-		discarded.newValueForTimestamp.WithLabelValues(userID, group).Add(float64(stats.NewValueForTimestampCount))
-	}
-	if stats.PerUserSeriesLimitCount > 0 {
-		discarded.perUserSeriesLimit.WithLabelValues(userID, group).Add(float64(stats.PerUserSeriesLimitCount))
-	}
-	if stats.PerMetricSeriesLimitCount > 0 {
-		discarded.perMetricSeriesLimit.WithLabelValues(userID, group).Add(float64(stats.PerMetricSeriesLimitCount))
-	}
-	if stats.InvalidNativeHistogramCount > 0 {
-		discarded.invalidNativeHistogram.WithLabelValues(userID, group).Add(float64(stats.InvalidNativeHistogramCount))
-	}
-	if stats.LabelsNotSortedCount > 0 {
-		discarded.labelsNotSorted.WithLabelValues(userID, group).Add(float64(stats.LabelsNotSortedCount))
-	}
+func (i *Ingester) updateMetricsFromPushStats(userID string, group string, stats *PushStats, samplesSource mimirpb.WriteRequest_SourceEnum, db *userTSDB, discarded *DiscardedMetrics) {
+	discarded.UpdateFromPushStats(userID, group, stats)
 	if stats.SucceededSamplesCount > 0 {
 		i.ingestionRate.Add(int64(stats.SucceededSamplesCount))
 

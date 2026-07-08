@@ -83,7 +83,7 @@ type ingesterMetrics struct {
 	// Open all existing TSDBs metrics
 	openExistingTSDB prometheus.Counter
 
-	discarded *discardedMetrics
+	discarded *DiscardedMetrics
 	rejected  *prometheus.CounterVec
 
 	// Discarded metadata
@@ -407,7 +407,7 @@ func newIngesterMetrics(
 			Help: "The total time it takes to open all existing TSDBs at ingester startup. This time also includes the TSDBs WAL replay duration.",
 		}),
 
-		discarded: newDiscardedMetrics(r),
+		discarded: NewDiscardedMetrics(r),
 		rejected: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_ingester_instance_rejected_requests_total",
 			Help: "Requests rejected for hitting per-instance limits",
@@ -501,7 +501,11 @@ func (m *ingesterMetrics) resetForcedCompactions() {
 	m.forcedCompactionInProgress.Set(0)
 }
 
-type discardedMetrics struct {
+// DiscardedMetrics tracks cortex_discarded_samples_total per discard reason.
+// Exported so that other components sharing the ingester push pipeline
+// (PushWriteRequestTimeseries), like the readcache, can emit the same
+// discarded-samples accounting.
+type DiscardedMetrics struct {
 	sampleTimestampTooOld  *prometheus.CounterVec
 	sampleOutOfOrder       *prometheus.CounterVec
 	sampleTooOld           *prometheus.CounterVec
@@ -513,8 +517,8 @@ type discardedMetrics struct {
 	labelsNotSorted        *prometheus.CounterVec
 }
 
-func newDiscardedMetrics(r prometheus.Registerer) *discardedMetrics {
-	return &discardedMetrics{
+func NewDiscardedMetrics(r prometheus.Registerer) *DiscardedMetrics {
+	return &DiscardedMetrics{
 		sampleTimestampTooOld:  validation.DiscardedSamplesCounter(r, reasonSampleTimestampTooOld),
 		sampleOutOfOrder:       validation.DiscardedSamplesCounter(r, reasonSampleOutOfOrder),
 		sampleTooOld:           validation.DiscardedSamplesCounter(r, reasonSampleTooOld),
@@ -527,7 +531,41 @@ func newDiscardedMetrics(r prometheus.Registerer) *discardedMetrics {
 	}
 }
 
-func (m *discardedMetrics) DeletePartialMatch(filter prometheus.Labels) {
+// UpdateFromPushStats increments the per-reason discarded-samples counters from
+// the rejection counts accumulated by PushWriteRequestTimeseries. Call it only
+// after a successful TSDB commit (a hard append/commit error means the batch
+// will be retried, and counting on that path would double-attribute discards).
+func (m *DiscardedMetrics) UpdateFromPushStats(userID string, group string, stats *PushStats) {
+	if stats.SampleTimestampTooOldCount > 0 {
+		m.sampleTimestampTooOld.WithLabelValues(userID, group).Add(float64(stats.SampleTimestampTooOldCount))
+	}
+	if stats.SampleOutOfOrderCount > 0 {
+		m.sampleOutOfOrder.WithLabelValues(userID, group).Add(float64(stats.SampleOutOfOrderCount))
+	}
+	if stats.SampleTooOldCount > 0 {
+		m.sampleTooOld.WithLabelValues(userID, group).Add(float64(stats.SampleTooOldCount))
+	}
+	if stats.SampleTooFarInFutureCount > 0 {
+		m.sampleTooFarInFuture.WithLabelValues(userID, group).Add(float64(stats.SampleTooFarInFutureCount))
+	}
+	if stats.NewValueForTimestampCount > 0 {
+		m.newValueForTimestamp.WithLabelValues(userID, group).Add(float64(stats.NewValueForTimestampCount))
+	}
+	if stats.PerUserSeriesLimitCount > 0 {
+		m.perUserSeriesLimit.WithLabelValues(userID, group).Add(float64(stats.PerUserSeriesLimitCount))
+	}
+	if stats.PerMetricSeriesLimitCount > 0 {
+		m.perMetricSeriesLimit.WithLabelValues(userID, group).Add(float64(stats.PerMetricSeriesLimitCount))
+	}
+	if stats.InvalidNativeHistogramCount > 0 {
+		m.invalidNativeHistogram.WithLabelValues(userID, group).Add(float64(stats.InvalidNativeHistogramCount))
+	}
+	if stats.LabelsNotSortedCount > 0 {
+		m.labelsNotSorted.WithLabelValues(userID, group).Add(float64(stats.LabelsNotSortedCount))
+	}
+}
+
+func (m *DiscardedMetrics) DeletePartialMatch(filter prometheus.Labels) {
 	m.sampleTimestampTooOld.DeletePartialMatch(filter)
 	m.sampleOutOfOrder.DeletePartialMatch(filter)
 	m.sampleTooOld.DeletePartialMatch(filter)
@@ -539,7 +577,7 @@ func (m *discardedMetrics) DeletePartialMatch(filter prometheus.Labels) {
 	m.labelsNotSorted.DeletePartialMatch(filter)
 }
 
-func (m *discardedMetrics) DeleteLabelValues(userID string, group string) {
+func (m *DiscardedMetrics) DeleteLabelValues(userID string, group string) {
 	m.sampleTimestampTooOld.DeleteLabelValues(userID, group)
 	m.sampleOutOfOrder.DeleteLabelValues(userID, group)
 	m.sampleTooOld.DeleteLabelValues(userID, group)
