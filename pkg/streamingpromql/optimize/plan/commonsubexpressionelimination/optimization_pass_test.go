@@ -1129,8 +1129,9 @@ func TestOptimizationPass(t *testing.T) {
 			expectedSubsetSelectorsEliminated:    0,
 			expectedSelectorsInspected:           2,
 		},
-		"duplicate scalar expressions": {
-			expr: "scalar(foo) / (scalar(foo) + 2)",
+		"duplicate scalar expressions in instant query": {
+			expr:       "scalar(foo) / (scalar(foo) + 2)",
+			rangeQuery: false,
 			expectedPlan: `
 				- BinaryExpression: LHS / RHS
 					- LHS: ref#1 Duplicate
@@ -1145,8 +1146,45 @@ func TestOptimizationPass(t *testing.T) {
 			expectedSubsetSelectorsEliminated:    0,
 			expectedSelectorsInspected:           2,
 		},
-		"subset scalar expressions": {
-			expr: `scalar(foo) / (scalar(foo{env="prod"}) + 2)`,
+		"duplicate scalar expressions in range query": {
+			expr:       "scalar(foo) / (scalar(foo) + 2)",
+			rangeQuery: true,
+			expectedPlan: `
+				- BinaryExpression: LHS / RHS
+					- LHS: ref#1 Duplicate
+						- FunctionCall: scalar(...)
+							- VectorSelector: {__name__="foo"}
+					- RHS: BinaryExpression: LHS + RHS
+						- LHS: ref#1 Duplicate ...
+						- RHS: NumberLiteral: 2
+			`,
+			expectedDuplicateNodes:               1,
+			expectedDuplicateSelectorsEliminated: 1,
+			expectedSubsetSelectorsEliminated:    0,
+			expectedSelectorsInspected:           2,
+		},
+		"subset scalar expressions in instant query": {
+			expr:       `scalar(foo) / (scalar(foo{env="prod"}) + 2)`,
+			rangeQuery: false,
+			expectedPlan: `
+				- BinaryExpression: LHS / RHS
+					- LHS: FunctionCall: scalar(...)
+						- ref#1 Duplicate
+							- VectorSelector: {__name__="foo"}, subsets: {env="prod"}
+					- RHS: BinaryExpression: LHS + RHS
+						- LHS: FunctionCall: scalar(...)
+							- DuplicateFilter: {env="prod"}, subset index: 0
+								- ref#1 Duplicate ...
+						- RHS: NumberLiteral: 2
+			`,
+			expectedDuplicateNodes:               1,
+			expectedDuplicateSelectorsEliminated: 0,
+			expectedSubsetSelectorsEliminated:    1,
+			expectedSelectorsInspected:           2,
+		},
+		"subset scalar expressions in range query": {
+			expr:       `scalar(foo) / (scalar(foo{env="prod"}) + 2)`,
+			rangeQuery: true,
 			expectedPlan: `
 				- BinaryExpression: LHS / RHS
 					- LHS: FunctionCall: scalar(...)
