@@ -832,6 +832,13 @@ func TestSchedulerQuerierMetrics(t *testing.T) {
 		StatsEnabled: true,
 	})
 
+	require.Eventually(t, func() bool {
+		// No querier is connected yet, so the request stays waiting in the queue and
+		// queueMaxWait reports its wait time.
+		queueMaxWait := testutil.ToFloat64(scheduler.queueMaxWait)
+		return queueMaxWait > 0
+	}, time.Second, 10*time.Millisecond, "expected cortex_query_scheduler_queue_max_wait_seconds metric to be greater than zero when a request is waiting in the queue")
+
 	ctx, cancel := context.WithCancel(context.Background())
 	querierLoop, err := querierClient.QuerierLoop(ctx)
 	require.NoError(t, err)
@@ -848,10 +855,11 @@ func TestSchedulerQuerierMetrics(t *testing.T) {
 	}, time.Second, 10*time.Millisecond, "expected cortex_query_scheduler_connected_querier_clients metric to be incremented after querier connected")
 
 	require.Eventually(t, func() bool {
-		// an item is waiting in the queue, inflightMaxAge is reported
-		inflightMaxAge := testutil.ToFloat64(scheduler.inflightMaxAge)
-		return inflightMaxAge > 0
-	}, time.Second, 10*time.Millisecond, "expected cortex_query_scheduler_inflight_max_age_seconds metric to be greater than zero when an item is in the queue")
+		// The querier has picked up the request; it is now being processed rather than waiting,
+		// so it is excluded from queueMaxWait even though it is still inflight.
+		queueMaxWait := testutil.ToFloat64(scheduler.queueMaxWait)
+		return queueMaxWait == 0
+	}, time.Second, 10*time.Millisecond, "expected cortex_query_scheduler_queue_max_wait_seconds metric to be zero once the only inflight request has been dispatched to a querier")
 
 	cancel()
 	require.NoError(t, util.CloseAndExhaust[*schedulerpb.SchedulerToQuerier](querierLoop))
@@ -867,10 +875,10 @@ func TestSchedulerQuerierMetrics(t *testing.T) {
 	}, time.Second, 10*time.Millisecond, "expected cortex_query_scheduler_connected_querier_clients metric to be decremented after querier disconnected")
 
 	require.Eventually(t, func() bool {
-		// the queue is empty, inflightMaxAge reports 0
-		inflightMaxAge := testutil.ToFloat64(scheduler.inflightMaxAge)
-		return inflightMaxAge == 0
-	}, time.Second, 10*time.Millisecond, "expected cortex_query_scheduler_inflight_max_age_seconds metric to be zero when the queue is empty")
+		// the queue is empty, queueMaxWait reports 0
+		queueMaxWait := testutil.ToFloat64(scheduler.queueMaxWait)
+		return queueMaxWait == 0
+	}, time.Second, 10*time.Millisecond, "expected cortex_query_scheduler_queue_max_wait_seconds metric to be zero when the queue is empty")
 
 	require.NoError(t, promtest.HasNativeHistogram(reg, "cortex_query_scheduler_queue_duration_seconds"))
 	require.NoError(t, promtest.HasSampleCount(reg, "cortex_query_scheduler_queue_duration_seconds", 1))

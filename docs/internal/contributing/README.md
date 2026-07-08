@@ -144,6 +144,18 @@ You have to commit the changes to `go.mod` and `go.sum` before submitting the pu
 
 Please see the dedicated "[Design patterns and Code conventions](design-patterns-and-conventions.md)" page.
 
+For new Go code that combines multiple errors, prefer the standard library `errors.Join` over project-specific multi-error helpers unless surrounding APIs or existing local patterns require a specific error type or formatting.
+
+When returning a sentinel or exported classification error for invalid caller input, wrap it with `%w` so callers can use `errors.Is`; if there is a lower-level cause that helps debugging, preserve that cause too.
+
+In Go tests, prefer `t.Context()` over `context.Background()` for contexts tied to test-scoped work.
+Use an explicit background context only when the operation must intentionally outlive the test context or exercise non-cancelable cleanup behavior.
+
+In Go tests, assert concrete expected errors when the error is deterministic. Prefer `require.ErrorIs`, `require.EqualError`, or status-code/detail assertions over generic `require.Error` checks.
+
+In Go tests, do not discard returned errors from test setup, handlers, or cleanup; assert them, or route them back to the test goroutine when they occur in callbacks or servers.
+Only ignore an error when it is intentionally irrelevant, and make that explicit.
+
 ## ⚠️ Unsafe memory tricks
 
 For performance, buffers used for decompressing gRPC requests into are kept in a pool shared between requests.

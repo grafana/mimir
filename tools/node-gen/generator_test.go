@@ -48,7 +48,7 @@ func parseFixture(t *testing.T, source string) *Package {
 	fset := token.NewFileSet()
 	f, err := parser.ParseFile(fset, "fixture.go", source, parser.ParseComments)
 	require.NoError(t, err)
-	pkg, err := buildPackage([]*ast.File{f})
+	pkg, err := buildPackage([]*ast.File{f}, nil)
 	require.NoError(t, err)
 	return pkg
 }

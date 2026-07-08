@@ -28,15 +28,16 @@ type tenantQueueDepth struct {
 	max     int
 }
 
-// NewMaxQueueLengthGauge returns a MaxQueueLengthGauge. The caller is
-// responsible for registering it with a prometheus.Registerer.
-func NewMaxQueueLengthGauge() *MaxQueueLengthGauge {
+// NewMaxQueueLengthGauge returns a MaxQueueLengthGauge exposing the given metric
+// name and help, with the supplied const labels. The variable label is always
+// "user". The caller is responsible for registering it with a prometheus.Registerer.
+func NewMaxQueueLengthGauge(name, help string, constLabels prometheus.Labels) *MaxQueueLengthGauge {
 	return &MaxQueueLengthGauge{
 		desc: prometheus.NewDesc(
-			"cortex_query_scheduler_max_queue_length",
-			"Maximum number of queries observed in a tenant's queue since the last metric collection (reset on each scrape). Captures the true peak queue depth between scrapes.",
+			name,
+			help,
 			[]string{"user"},
-			nil,
+			constLabels,
 		),
 		tenants: map[string]*tenantQueueDepth{},
 	}

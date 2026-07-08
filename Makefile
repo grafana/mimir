@@ -241,7 +241,7 @@ mimir-build-image/$(UPTODATE): mimir-build-image/*
 # All the boiler plate for building golang follows:
 SUDO := $(shell docker info >/dev/null 2>&1 || echo "sudo -E")
 BUILD_IN_CONTAINER ?= true
-LATEST_BUILD_IMAGE_TAG ?= pr15908-91d6780c80@sha256:15e02bc72fa68b53736c10de6dbeac4e2da4482938f3f9d8852e2f1c80e0065b
+LATEST_BUILD_IMAGE_TAG ?= pr15993-2aae7b14a6@sha256:22d39e2459249b0b8f7bbd536e3dff12bc997e7cc92b4c218622762b7998f852
 
 # TTY is parameterized to allow CI and scripts to run builds,
 # as it currently disallows TTY devices.
@@ -901,7 +901,8 @@ warmup-build-cache-image-and-lint: ## Warm the Go build cache for image builds a
 # Those vars are needed for packages target
 export VERSION
 
-packages: dist
+.PHONY: packages
+packages:
 	@packaging/nfpm/nfpm.sh
 
 # Build both arm64 and amd64 images, so that we can test deb/rpm packages for both architectures.

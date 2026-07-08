@@ -578,6 +578,28 @@ func TestOptimizationPass_EvaluationRoots(t *testing.T) {
 						- VectorSelector: {__name__="foo"}
 			`,
 		},
+		"duplicated EvaluationRoot": {
+			expr: `
+				avg_over_time(__vector_evaluation_root__((sum(foo)))[3d:5m])
+				/
+  				stddev_over_time(__vector_evaluation_root__((sum(foo)))[3d:5m])
+			`,
+			expectedPlan: `
+				- BinaryExpression: LHS / RHS
+					- LHS: DeduplicateAndMerge
+						- FunctionCall: avg_over_time(...)
+							- ref#1 Duplicate
+								- Subquery: [72h0m0s:5m0s]
+									- EvaluationRoot
+										- TimeRangeSplit: interval 24h0m0s
+											- Cache: split interval 24h0m0s
+												- AggregateExpression: sum
+													- VectorSelector: {__name__="foo"}
+					- RHS: DeduplicateAndMerge
+						- FunctionCall: stddev_over_time(...)
+							- ref#1 Duplicate ...
+			`,
+		},
 	}
 
 	for name, testCase := range testCases {
@@ -621,7 +643,7 @@ func runOptimizationPass(
 	require.NoError(t, err)
 
 	logger := log.NewNopLogger()
-	planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(false, false, reg, logger))
+	planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, true, true, reg, logger))
 
 	if enableOptimizationPass {
 		optimizationPass := splitandcache.NewOptimizationPass(enableSplitting, 24*time.Hour, enableCaching, limits, reg, logger)

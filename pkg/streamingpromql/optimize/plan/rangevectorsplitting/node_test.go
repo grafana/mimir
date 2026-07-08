@@ -3,14 +3,17 @@
 package rangevectorsplitting
 
 import (
+	"context"
 	"testing"
 	"time"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
+	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
@@ -140,4 +143,84 @@ func TestSplittingCacheKey_DoesNotMutateCallersQueryParameters(t *testing.T) {
 	_, err := SplittingCacheKey(node, params)
 	require.NoError(t, err)
 	require.Equal(t, before, *params)
+}
+
+type staticLimits struct {
+	oooWindow time.Duration
+}
+
+func (l staticLimits) GetMaxOutOfOrderTimeWindow(context.Context) (time.Duration, error) {
+	return l.oooWindow, nil
+}
+
+// TestMaterializer_computeRanges verifies that the split ranges are computed correctly at materialize time, including
+// the fallback reasons that depend on runtime state (the out-of-order window and current time).
+func TestMaterializer_computeRanges(t *testing.T) {
+	hourInMs := int64(time.Hour / time.Millisecond)
+	minuteInMs := int64(time.Minute / time.Millisecond)
+
+	// A fixed "now" of 100h keeps the out-of-order threshold well after all the timestamps used below, unless a test
+	// deliberately configures an out-of-order window.
+	fixedNow := timestamp.Time(100 * hourInMs)
+
+	newMaterializer := func(oooWindow time.Duration) *Materializer {
+		return NewMaterializer(true, 2*time.Hour, staticLimits{oooWindow: oooWindow}, func() time.Time { return fixedNow }, nil, nil, nil)
+	}
+
+	// inner builds an inner matrix selector with the given range and offset.
+	inner := func(rng, offset time.Duration) *core.MatrixSelector {
+		return &core.MatrixSelector{MatrixSelectorDetails: &core.MatrixSelectorDetails{
+			Range:  rng,
+			Offset: offset,
+		}}
+	}
+
+	instantAt := func(evalTimeMs int64) types.QueryTimeRange {
+		return types.NewInstantQueryTimeRange(timestamp.Time(evalTimeMs))
+	}
+
+	t.Run("splits a 5h range into cacheable blocks", func(t *testing.T) {
+		m := newMaterializer(0)
+		ranges, notApplied, err := m.computeRanges(context.Background(), inner(5*time.Hour, 0), instantAt(6*hourInMs))
+		require.NoError(t, err)
+		require.Empty(t, notApplied)
+		require.Equal(t, []Range{
+			{Start: 1 * hourInMs, End: 2*hourInMs - 1, Cacheable: false},
+			{Start: 2*hourInMs - 1, End: 4*hourInMs - 1, Cacheable: true},
+			{Start: 4*hourInMs - 1, End: 6*hourInMs - 1, Cacheable: true},
+			{Start: 6*hourInMs - 1, End: 6 * hourInMs, Cacheable: false},
+		}, ranges)
+	})
+
+	t.Run("falls back when there is no complete cacheable block", func(t *testing.T) {
+		m := newMaterializer(0)
+		// Query at 4h30m with 3h range and 31m offset -> data-time (59m, 3h59m]. First aligned boundary is 2h, and
+		// 2h + 2h = 4h > 3h59m, so no complete block fits.
+		ranges, notApplied, err := m.computeRanges(context.Background(), inner(3*time.Hour, 31*time.Minute), instantAt(4*hourInMs+30*minuteInMs))
+		require.NoError(t, err)
+		require.Equal(t, "no_complete_cache_block", notApplied)
+		require.Nil(t, ranges)
+	})
+
+	t.Run("falls back when every block is within the out-of-order window", func(t *testing.T) {
+		// With now=100h, a 99h out-of-order window puts the threshold at 1h, before the first aligned block boundary
+		// (2h-1ms), so no block can be cached.
+		m := newMaterializer(99 * time.Hour)
+		ranges, notApplied, err := m.computeRanges(context.Background(), inner(5*time.Hour, 0), instantAt(6*hourInMs))
+		require.NoError(t, err)
+		require.Equal(t, "no_cacheable_blocks_after_ooo_filter", notApplied)
+		require.Nil(t, ranges)
+	})
+
+	t.Run("marks all ranges uncacheable when caching is disabled", func(t *testing.T) {
+		m := newMaterializer(0)
+		ctx := requestoptions.ContextWithOptions(context.Background(), requestoptions.Options{CacheDisabled: true})
+		ranges, notApplied, err := m.computeRanges(ctx, inner(5*time.Hour, 0), instantAt(6*hourInMs))
+		require.NoError(t, err)
+		require.Empty(t, notApplied)
+		require.NotEmpty(t, ranges)
+		for _, r := range ranges {
+			require.False(t, r.Cacheable, "expected all ranges to be uncacheable when caching is disabled")
+		}
+	})
 }

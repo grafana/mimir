@@ -675,6 +675,36 @@ func TestConfigValidation(t *testing.T) {
 			expectAnyError: false,
 		},
 		{
+			name: "should fail if compartments are enabled but the blocks bucket name is not parameterised by read compartment",
+			getTestConfig: func() *Config {
+				cfg := validCompartmentsConfig()
+				cfg.BlocksStorage.Bucket.Filesystem.Directory = "/data/blocks"
+				return cfg
+			},
+			expectAnyError: true,
+		},
+		{
+			name: "should pass if only the store-gateway is enabled and the blocks bucket name is explicit",
+			getTestConfig: func() *Config {
+				cfg := validCompartmentsConfig()
+				cfg.Target = flagext.StringSliceCSV{StoreGateway}
+				cfg.BlocksStorage.Bucket.Filesystem.Directory = "/data/blocks-rc-0"
+				return cfg
+			},
+			expectAnyError: false,
+		},
+		{
+			name: "should pass if the ruler is enabled and the blocks bucket name is not parameterised, since the ruler queries via remote rule evaluation",
+			getTestConfig: func() *Config {
+				cfg := validCompartmentsConfig()
+				cfg.Target = flagext.StringSliceCSV{Ruler}
+				cfg.Ruler.QueryFrontend.Address = "dns:///query-frontend:9095"
+				cfg.BlocksStorage.Bucket.Filesystem.Directory = "/data/blocks"
+				return cfg
+			},
+			expectAnyError: false,
+		},
+		{
 			name: "should fail if the offset catalogue is enabled together with more than one write compartment",
 			getTestConfig: func() *Config {
 				cfg := validCompartmentsConfig()
@@ -740,6 +770,8 @@ func validCompartmentsConfig() *Config {
 	cfg.Compartments.Read.NumCompartments = 2
 	cfg.Compartments.Write.NumCompartments = 2
 	cfg.Distributor.WriteCompartmentID = 1
+	cfg.BlocksStorage.Bucket.Backend = bucket.Filesystem
+	cfg.BlocksStorage.Bucket.Filesystem.Directory = "/data/blocks-rc-<read-compartment-id>"
 	return cfg
 }
 

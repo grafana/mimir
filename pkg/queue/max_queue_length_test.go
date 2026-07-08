@@ -12,6 +12,11 @@ import (
 )
 
 const maxQueueLengthMetricName = "cortex_query_scheduler_max_queue_length"
+const maxQueueLengthMetricHelp = "Maximum number of queries observed in a tenant's queue since the last metric collection (reset on each scrape). Captures the true peak queue depth between scrapes."
+
+func newTestMaxQueueLengthGauge() *MaxQueueLengthGauge {
+	return NewMaxQueueLengthGauge(maxQueueLengthMetricName, maxQueueLengthMetricHelp, nil)
+}
 
 func gatherMaxQueueLength(t *testing.T, reg *prometheus.Registry, expected string) {
 	t.Helper()
@@ -26,7 +31,7 @@ func expectedMaxQueueLength(series string) string {
 
 func TestMaxQueueLengthGauge_TracksPeak(t *testing.T) {
 	reg := prometheus.NewPedanticRegistry()
-	g := NewMaxQueueLengthGauge()
+	g := newTestMaxQueueLengthGauge()
 	reg.MustRegister(g)
 
 	g.inc("a")
@@ -38,7 +43,7 @@ func TestMaxQueueLengthGauge_TracksPeak(t *testing.T) {
 
 func TestMaxQueueLengthGauge_PeakIsIntraWindowMaxNotEndValue(t *testing.T) {
 	reg := prometheus.NewPedanticRegistry()
-	g := NewMaxQueueLengthGauge()
+	g := newTestMaxQueueLengthGauge()
 	reg.MustRegister(g)
 
 	// Within a single scrape window: rise to 3, drain to 1, rise to 2.
@@ -55,7 +60,7 @@ func TestMaxQueueLengthGauge_PeakIsIntraWindowMaxNotEndValue(t *testing.T) {
 
 func TestMaxQueueLengthGauge_ResetsToStandingDepth(t *testing.T) {
 	reg := prometheus.NewPedanticRegistry()
-	g := NewMaxQueueLengthGauge()
+	g := newTestMaxQueueLengthGauge()
 	reg.MustRegister(g)
 
 	g.inc("a")
@@ -78,7 +83,7 @@ func TestMaxQueueLengthGauge_ResetsToStandingDepth(t *testing.T) {
 
 func TestMaxQueueLengthGauge_DecNeverGoesNegative(t *testing.T) {
 	reg := prometheus.NewPedanticRegistry()
-	g := NewMaxQueueLengthGauge()
+	g := newTestMaxQueueLengthGauge()
 	reg.MustRegister(g)
 
 	// dec on an unknown / already-empty tenant must be a no-op, not a negative depth.
@@ -94,7 +99,7 @@ func TestMaxQueueLengthGauge_DecNeverGoesNegative(t *testing.T) {
 
 func TestMaxQueueLengthGauge_PerTenantAndDelete(t *testing.T) {
 	reg := prometheus.NewPedanticRegistry()
-	g := NewMaxQueueLengthGauge()
+	g := newTestMaxQueueLengthGauge()
 	reg.MustRegister(g)
 
 	g.inc("a")

@@ -191,7 +191,7 @@ func TestReplaceChildMethod(t *testing.T) {
 			s := resolveAnnotatedStruct(t, pkg)
 			imports := newImportsCollector()
 
-			actual, err := ReplaceChildMethod.Generate(s, imports)
+			actual, err := ReplaceChildMethod.Generate(s, imports, pkg.Registry)
 			require.NoError(t, err)
 
 			expected := gofmt(t, tc.expected)
@@ -212,7 +212,7 @@ func TestReplaceChildMethod_RegistersChildTypeImport(t *testing.T) {
 	s := resolveAnnotatedStruct(t, pkg)
 	imports := newImportsCollector()
 
-	actual, err := ReplaceChildMethod.Generate(s, imports)
+	actual, err := ReplaceChildMethod.Generate(s, imports, pkg.Registry)
 
 	require.NoError(t, err)
 	require.Contains(t, actual, "node.(*core.FunctionCall)")

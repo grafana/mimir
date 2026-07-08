@@ -734,7 +734,7 @@ Params:
 */}}
 {{- define "mimir.kedaFallback" -}}
 {{- $fallback := .componentFallback | default .ctx.Values.kedaAutoscaling.fallback -}}
-{{- if and $fallback $fallback.enabled }}
+{{- if and $fallback $fallback.enabled -}}
 fallback:
   failureThreshold: {{ required "kedaAutoscaling.fallback.failureThreshold is required when fallback is enabled" $fallback.failureThreshold }}
   replicas: {{ required "kedaAutoscaling.fallback.replicas is required when fallback is enabled" $fallback.replicas }}

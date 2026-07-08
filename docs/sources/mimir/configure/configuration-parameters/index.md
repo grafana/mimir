@@ -1735,10 +1735,18 @@ read_reactive_limiter:
   # CLI flag: -ingester.read-reactive-limiter.max-rejection-factor
   [max_rejection_factor: <float> | default = 3]
 
-# (experimental) Maximum concurrency used to compute a single label values count
-# request.
-# CLI flag: -ingester.label-values-count-max-concurrency
-[label_values_count_request_max_concurrency: <int> | default = 16]
+# (experimental) Number of worker goroutines in the ingester's shared
+# tenant-fair compute worker pool, used to parallelize CPU-bound work (currently
+# label-values-cardinality) fairly across tenants. 0 uses GOMAXPROCS.
+# CLI flag: -ingester.compute-workers
+[compute_workers: <int> | default = 0]
+
+label_values_count:
+  # (experimental) Number of label values processed per work unit submitted to
+  # the ingester compute worker pool. Smaller values improve cross-tenant
+  # fairness at the cost of more scheduling overhead.
+  # CLI flag: -ingester.label-values-count-chunk-size
+  [chunk_size: <int> | default = 32]
 ```
 
 ### querier
@@ -1972,7 +1980,7 @@ store_gateway_client:
 # maximum number of concurrent queries in each querier. The minimum value is
 # four; lower values are ignored and set to the minimum
 # CLI flag: -querier.max-concurrent
-[max_concurrent: <int> | default = 20]
+[max_concurrent: <int> | default = 8]
 
 # The timeout for a query. This config option should be set on query-frontend
 # too when query sharding is enabled. This also applies to queries evaluated by
@@ -2023,6 +2031,12 @@ mimir_query_engine:
   # subexpression elimination to be enabled.
   # CLI flag: -querier.mimir-query-engine.enable-range-query-range-vector-common-subexpression-elimination
   [enable_range_query_range_vector_common_subexpression_elimination: <boolean> | default = false]
+
+  # (experimental) Enable deduplication of scalar expressions as part of common
+  # subexpression elimination. Requires common subexpression elimination to be
+  # enabled.
+  # CLI flag: -querier.mimir-query-engine.enable-scalar-common-subexpression-elimination
+  [enable_scalar_common_subexpression_elimination: <boolean> | default = false]
 
   # (experimental) Enable generating selectors for one side of a binary
   # expression based on results from the other side.
@@ -2075,6 +2089,14 @@ mimir_query_engine:
       # Enable cache compression, if not empty. Supported values are: snappy.
       # CLI flag: -querier.mimir-query-engine.range-vector-splitting.compression
       [compression: <string> | default = ""]
+
+  time_splitting_and_caching:
+    # (experimental) Enable caching of query results that were not fully
+    # consumed by the query. When enabled, if a query stops reading before all
+    # series have been read, the remaining series are read and buffered so that
+    # the complete set of results can be cached.
+    # CLI flag: -querier.mimir-query-engine.time-splitting-and-caching.cache-unconsumed-results
+    [cache_unconsumed_results: <boolean> | default = true]
 
 ring:
   # The key-value store used to share the hash ring across multiple instances.
@@ -2321,6 +2343,14 @@ results_cache:
 # CLI flag: -query-frontend.query-sharding-target-series-per-shard
 [query_sharding_target_series_per_shard: <int> | default = 0]
 
+# (experimental) Maximum number of sharded active series (and active native
+# histogram metrics) sub-requests dispatched and merged concurrently within a
+# single request. This bounds the resource usage caused by fanning out to a
+# large number of shards, both on queriers and on the query-frontend. 0 to
+# disable the limit.
+# CLI flag: -query-frontend.active-series-max-shard-concurrency
+[active_series_max_shard_concurrency: <int> | default = 0]
+
 # (advanced) Comma-separated list of request header names to allow to pass
 # through to the rest of the query path. This is in addition to a list of
 # required headers that the read path needs.
@@ -2371,11 +2401,11 @@ The `query_scheduler` block configures the query-scheduler.
 # CLI flag: -query-scheduler.querier-forget-delay
 [querier_forget_delay: <duration> | default = 0s]
 
-# (experimental) Enable the cortex_query_scheduler_inflight_max_age_seconds
-# metric, which reports the age of the oldest inflight request. Disabling it
-# skips the per-tick scan over inflight requests.
-# CLI flag: -query-scheduler.inflight-max-age-metric-enabled
-[inflight_max_age_metric_enabled: <boolean> | default = true]
+# (experimental) Enable the cortex_query_scheduler_queue_max_wait_seconds
+# metric, which reports how long the oldest request still waiting in the queue
+# has been waiting. Disabling it skips the per-tick scan over inflight requests.
+# CLI flag: -query-scheduler.queue-max-wait-metric-enabled
+[queue_max_wait_metric_enabled: <boolean> | default = true]
 
 # (experimental) Enable the cortex_query_scheduler_max_queue_length metric,
 # which reports the per-tenant peak queue length observed since the last scrape.
@@ -2904,6 +2934,25 @@ query_frontend:
   # CLI flag: -ruler.query-frontend.max-retries-rate
   [max_retries_rate: <float> | default = 170]
 
+distributor:
+  # (experimental) gRPC listen address of the distributor(s) to push rule-result
+  # series to. If empty, the ruler writes using the internal distributor. Use a
+  # DNS address (prefixed with dns:///) to enable gRPC client-side load
+  # balancing; in Kubernetes, use the distributor headless service on the gRPC
+  # port.
+  # CLI flag: -ruler.distributor.address
+  [address: <string> | default = ""]
+
+  # (experimental) Timeout for requests to remote distributors.
+  # CLI flag: -ruler.distributor.remote-timeout
+  [remote_timeout: <duration> | default = 10s]
+
+  # Advanced standard gRPC client configuration used by rulers to communicate
+  # with distributors.
+  # The CLI flags prefix for this block configuration is:
+  # ruler.distributor.grpc-client-config
+  [grpc_client_config: <grpc_client>]
+
 tenant_federation:
   # Enable rule groups to query against multiple tenants. The tenant IDs
   # involved need to be in the rule group's 'source_tenants' field. If this flag
@@ -3402,6 +3451,7 @@ The `grpc_client` block configures the gRPC client used to communicate between t
 - `querier.scheduler-client`
 - `query-frontend.grpc-client-config`
 - `query-scheduler.grpc-client-config`
+- `ruler.distributor.grpc-client-config`
 - `ruler.query-frontend.grpc-client-config`
 
 &nbsp;
@@ -4399,6 +4449,11 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -ingester.native-histograms-ingestion-enabled
 [native_histograms_ingestion_enabled: <boolean> | default = true]
 
+# (experimental) Encoding used for float chunks in the ingester and block
+# builder for this tenant. Valid values are 'xor' and 'xor2'.
+# CLI flag: -ingester.float-chunk-encoding
+[float_chunk_encoding: <string> | default = "xor"]
+
 # (advanced) Custom trackers for active metrics. If there are active series
 # matching a provided matcher (map value), the count is exposed in the custom
 # trackers metric labeled using the tracker name (map key). Zero-valued counts
@@ -4553,16 +4608,19 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -query-frontend.max-queriers-per-tenant
 [max_queriers_per_tenant: <int> | default = 0]
 
-# The amount of shards to use when doing parallelisation via query sharding by
-# tenant. 0 to disable query sharding for tenant. Values greater than 1 are
-# rounded up to the next power of two, so the query shard count always meshes
-# with the compactor's power-of-two shard count. This allows querier to not
-# search the blocks which cannot possibly have the series for given query shard.
+# The number of shards to use when doing parallelisation via query sharding. 0
+# to disable query sharding for tenant. Values greater than 1 are rounded up to
+# the next power of two, so the query shard count always meshes with the
+# compactor's power-of-two shard count. This allows querier to not search the
+# blocks which cannot possibly have the series for given query shard.
 # CLI flag: -query-frontend.query-sharding-total-shards
 [query_sharding_total_shards: <int> | default = 16]
 
-# The max number of sharded queries that can be run for a given received query.
-# 0 to disable limit.
+# The maximum number of sharded queries that can be run for a given received
+# query or spun-off subquery. 0 to disable limit. When splitting and caching
+# inside MQE is enabled, this value applies per time-split interval (including
+# split intervals for spun-off subqueries). When it is disabled, this value
+# applies to the entire time range (or entire spun-off subquery).
 # CLI flag: -query-frontend.query-sharding-max-sharded-queries
 [query_sharding_max_sharded_queries: <int> | default = 128]
 
@@ -4570,6 +4628,12 @@ The `limits` block configures default and per-tenant limits imposed by component
 # longer than the configured number of bytes. 0 to disable the limit.
 # CLI flag: -query-frontend.query-sharding-max-regexp-size-bytes
 [query_sharding_max_regexp_size_bytes: <int> | default = 4096]
+
+# (experimental) The max number of sharded queries that can be run for a
+# cardinality (active series and active native histogram metrics) request. 0 to
+# fall back to -query-frontend.query-sharding-max-sharded-queries.
+# CLI flag: -query-frontend.cardinality-sharding-max-sharded-queries
+[cardinality_sharding_max_sharded_queries: <int> | default = 0]
 
 # (advanced) Maximum lookback beyond which queries are not sent to ingester. 0
 # means all queries are sent to ingester.

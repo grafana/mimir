@@ -41,10 +41,15 @@ type EngineOpts struct {
 
 	Limits QueryLimitsProvider `yaml:"-"`
 
+	// TimeNow returns the current time. It is used when materializing range vector splitting operators to compute
+	// out-of-order thresholds. Defaults to time.Now if nil. Useful for tests that need a fixed "now".
+	TimeNow func() time.Time `yaml:"-"`
+
 	EnablePruneToggles                                        bool `yaml:"enable_prune_toggles" category:"experimental"`
 	EnableCommonSubexpressionElimination                      bool `yaml:"enable_common_subexpression_elimination" category:"experimental"`
 	EnableSubsetSelectorElimination                           bool `yaml:"enable_subset_selector_elimination" category:"experimental"`
 	EnableRangeQueryRangeVectorCommonSubexpressionElimination bool `yaml:"enable_range_query_range_vector_common_subexpression_elimination" category:"experimental"`
+	EnableScalarCommonSubexpressionElimination                bool `yaml:"enable_scalar_common_subexpression_elimination" category:"experimental"`
 	EnableNarrowBinarySelectors                               bool `yaml:"enable_narrow_binary_selectors" category:"experimental"`
 	EnableEliminateDeduplicateAndMerge                        bool `yaml:"enable_eliminate_deduplicate_and_merge" category:"experimental"`
 	EnableReduceMatchers                                      bool `yaml:"enable_reduce_matchers" category:"experimental"`
@@ -53,9 +58,7 @@ type EngineOpts struct {
 
 	RangeVectorSplitting RangeVectorSplittingConfig `yaml:"range_vector_splitting" category:"experimental"`
 
-	// These values are populated from the query-frontend config, so are not exposed as config flags or in the config file.
-	// FIXME: Once we no longer support running splitting and caching in the frontend middleware, we can move the options here.
-	RangeQuerySplittingAndCaching RangeQuerySplittingAndCachingConfig `yaml:"-"`
+	RangeQuerySplittingAndCaching RangeQuerySplittingAndCachingConfig `yaml:"time_splitting_and_caching" category:"experimental"`
 
 	// CachePrefixGenerator should return a prefix for all cache keys for a given context.
 	// It should contain the tenant ID and any other relevant information that should be used to partition cache entries.
@@ -78,22 +81,27 @@ type RangeVectorSplittingConfig struct {
 }
 
 type RangeQuerySplittingAndCachingConfig struct {
-	SplitEnabled  bool
-	SplitInterval time.Duration
-	CacheEnabled  bool
+	// Most of these values are populated from the query-frontend config, so are not exposed as config flags or in the config file.
+	// FIXME: Once we no longer support running splitting and caching in the frontend middleware, we can move the options here.
+
+	SplitEnabled  bool          `yaml:"-"`
+	SplitInterval time.Duration `yaml:"-"`
+	CacheEnabled  bool          `yaml:"-"`
 
 	// MinCacheExtent is the minimum length of a cached extent for it to be used.
 	// Extents smaller than this are ignored and re-evaluated, to avoid freshly evaluating many small extents.
 	// If the desired time range is smaller than MinCacheExtent, then MinCacheExtent is ignored and all cache extents are used.
 	// A value of zero disables small extent avoidance.
-	MinCacheExtent time.Duration
+	MinCacheExtent time.Duration `yaml:"-"`
 
 	// FIXME: Once we no longer support running splitting and caching in the frontend middleware, move the cache client options here.
-	CacheClient cache.Cache
+	CacheClient cache.Cache `yaml:"-"`
 
 	// See the comment where this field is set in createQueryFrontendPromQLEngineOptions for an explanation of why
 	// we don't just register these metrics in the engine like all other metrics.
-	CacheMetrics *splitandcache.ResultsCacheMetrics
+	CacheMetrics *splitandcache.ResultsCacheMetrics `yaml:"-"`
+
+	CacheUnconsumedResults bool `yaml:"cache_unconsumed_results" category:"experimental"`
 }
 
 func (o *EngineOpts) RegisterFlags(f *flag.FlagSet) {
@@ -101,6 +109,7 @@ func (o *EngineOpts) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&o.EnableCommonSubexpressionElimination, "querier.mimir-query-engine.enable-common-subexpression-elimination", true, "Enable common subexpression elimination when evaluating queries.")
 	f.BoolVar(&o.EnableSubsetSelectorElimination, "querier.mimir-query-engine.enable-subset-selector-elimination", false, "Enable subset selector elimination when evaluating queries.")
 	f.BoolVar(&o.EnableRangeQueryRangeVectorCommonSubexpressionElimination, "querier.mimir-query-engine.enable-range-query-range-vector-common-subexpression-elimination", false, "Enable deduplication of range vector selectors in range queries as part of common subexpression elimination. Requires common subexpression elimination to be enabled.")
+	f.BoolVar(&o.EnableScalarCommonSubexpressionElimination, "querier.mimir-query-engine.enable-scalar-common-subexpression-elimination", false, "Enable deduplication of scalar expressions as part of common subexpression elimination. Requires common subexpression elimination to be enabled.")
 	f.BoolVar(&o.EnableNarrowBinarySelectors, "querier.mimir-query-engine.enable-narrow-binary-selectors", false, "Enable generating selectors for one side of a binary expression based on results from the other side.")
 	f.BoolVar(&o.EnableEliminateDeduplicateAndMerge, "querier.mimir-query-engine.enable-eliminate-deduplicate-and-merge", true, "Enable eliminating redundant DeduplicateAndMerge nodes from the query plan when it can be proven that each input series produces a unique output series.")
 	f.BoolVar(&o.EnableReduceMatchers, "querier.mimir-query-engine.enable-reduce-matchers", true, "Enable eliminating duplicate or redundant matchers that are part of selector expressions.")
@@ -108,12 +117,17 @@ func (o *EngineOpts) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&o.EnableRemoveStaticallyEmptyExpressions, "querier.mimir-query-engine.enable-remove-statically-empty-expressions", true, "Enable removing expressions that are guaranteed to produce no results.")
 
 	o.RangeVectorSplitting.RegisterFlags(f)
+	o.RangeQuerySplittingAndCaching.RegisterFlags(f)
 }
 
 func (c *RangeVectorSplittingConfig) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&c.Enabled, "querier.mimir-query-engine.range-vector-splitting.enabled", false, "Enable splitting function over range vectors queries into smaller blocks for caching.")
 	f.DurationVar(&c.SplitInterval, "querier.mimir-query-engine.range-vector-splitting.split-interval", 2*time.Hour, "Time interval used for splitting function over range vectors queries into cacheable blocks.")
 	c.IntermediateResultsCache.RegisterFlagsWithPrefix(f, "querier.mimir-query-engine.range-vector-splitting.")
+}
+
+func (c *RangeQuerySplittingAndCachingConfig) RegisterFlags(f *flag.FlagSet) {
+	f.BoolVar(&c.CacheUnconsumedResults, "querier.mimir-query-engine.time-splitting-and-caching.cache-unconsumed-results", true, "Enable caching of query results that were not fully consumed by the query. When enabled, if a query stops reading before all series have been read, the remaining series are read and buffered so that the complete set of results can be cached.")
 }
 
 func (o *EngineOpts) Validate() error {
@@ -155,6 +169,7 @@ func NewTestEngineOpts() EngineOpts {
 		EnablePruneToggles:                                        true,
 		EnableCommonSubexpressionElimination:                      true,
 		EnableSubsetSelectorElimination:                           true,
+		EnableScalarCommonSubexpressionElimination:                true,
 		EnableNarrowBinarySelectors:                               true,
 		EnableEliminateDeduplicateAndMerge:                        true,
 		EnableReduceMatchers:                                      true,
@@ -163,5 +178,9 @@ func NewTestEngineOpts() EngineOpts {
 		EnableRangeQueryRangeVectorCommonSubexpressionElimination: true,
 
 		CachePrefixGenerator: caching.TenantPrefixGenerator,
+
+		RangeQuerySplittingAndCaching: RangeQuerySplittingAndCachingConfig{
+			CacheUnconsumedResults: true,
+		},
 	}
 }

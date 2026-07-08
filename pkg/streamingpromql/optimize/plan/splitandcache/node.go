@@ -44,12 +44,6 @@ func (s *TimeRangeSplit) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_TIME_RANGE_SPLIT
 }
 
-func (s *TimeRangeSplit) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
-	otherConsumer, ok := other.(*TimeRangeSplit)
-
-	return ok && s.SplitInterval == otherConsumer.SplitInterval
-}
-
 func (s *TimeRangeSplit) MergeHints(other planning.Node) error {
 	return nil
 }
@@ -79,8 +73,9 @@ func (s *TimeRangeSplit) MinimumRequiredPlanVersion(timeRange types.QueryTimeRan
 }
 
 type TimeRangeSplitMaterializer struct {
-	splittingEnabled    bool
-	splitQueriesCounter prometheus.Counter
+	splittingEnabled     bool
+	splitQueriesCounter  prometheus.Counter
+	splitRequestsCounter prometheus.Counter
 }
 
 func NewTimeRangeSplitMaterializer(splittingEnabled bool, reg prometheus.Registerer) *TimeRangeSplitMaterializer {
@@ -91,6 +86,7 @@ func NewTimeRangeSplitMaterializer(splittingEnabled bool, reg prometheus.Registe
 	if splittingEnabled {
 		// Only register the metric if splitting is enabled, to avoid conflicting with the query-frontend middleware doing the same thing.
 		m.splitQueriesCounter = NewSplitQueriesCounter(reg)
+		m.splitRequestsCounter = NewSplitRequestsCounter(reg)
 	}
 
 	return m
@@ -135,6 +131,7 @@ func (m *TimeRangeSplitMaterializer) Materialize(ctx context.Context, n planning
 	queryStats := stats.FromContext(ctx)
 	queryStats.AddSplitQueries(uint32(len(ranges)))
 	m.splitQueriesCounter.Add(float64(len(ranges)))
+	m.splitRequestsCounter.Inc()
 
 	if len(ranges) == 1 {
 		// If we have just one range, return the inner operator without wrapping it.
@@ -171,12 +168,6 @@ func (c *Cache) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_CACHE
 }
 
-func (c *Cache) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
-	otherCache, ok := other.(*Cache)
-
-	return ok && c.SplitInterval == otherCache.SplitInterval
-}
-
 func (c *Cache) MergeHints(other planning.Node) error {
 	return nil
 }
@@ -207,23 +198,25 @@ func (c *Cache) MinimumRequiredPlanVersion(_ types.QueryTimeRange) (planning.Que
 }
 
 type CacheMaterializer struct {
-	enabled           bool
-	cache             caching.Backend
-	cacheKeyGenerator *caching.CacheKeyGenerator
-	limitsProvider    LimitsProvider
-	metrics           *ResultsCacheMetrics
-	minCacheExtent    time.Duration
+	enabled                bool
+	cache                  caching.Backend
+	cacheKeyGenerator      *caching.CacheKeyGenerator
+	limitsProvider         LimitsProvider
+	metrics                *ResultsCacheMetrics
+	minCacheExtent         time.Duration
+	cacheUnconsumedResults bool
 }
 
-func NewCacheMaterializer(enabled bool, baseCache cache.Cache, cachePrefixGenerator caching.PrefixGenerator, limitsProvider LimitsProvider, minCacheExtent time.Duration, metrics *ResultsCacheMetrics) *CacheMaterializer {
+func NewCacheMaterializer(enabled bool, baseCache cache.Cache, cachePrefixGenerator caching.PrefixGenerator, limitsProvider LimitsProvider, minCacheExtent time.Duration, metrics *ResultsCacheMetrics, cacheUnconsumedResults bool) *CacheMaterializer {
 	m := &CacheMaterializer{
-		enabled:        enabled,
-		limitsProvider: limitsProvider,
-		minCacheExtent: minCacheExtent,
-		metrics:        metrics,
+		enabled:                enabled,
+		limitsProvider:         limitsProvider,
+		minCacheExtent:         minCacheExtent,
+		metrics:                metrics,
+		cacheUnconsumedResults: cacheUnconsumedResults,
 	}
 
-	if enabled {
+	if m.enabled {
 		m.cache = caching.NewAdaptor(baseCache)
 		// The CacheKeyGenerator takes a non-hashable and hashable prefix.
 		// The type/version prefix is not included in the hashed key, but the generated cache prefix (tenant ids) will be folded into the hashed key.
@@ -266,6 +259,7 @@ func (m *CacheMaterializer) Materialize(ctx context.Context, n planning.Node, ma
 		node.SplitInterval,
 		m.minCacheExtent,
 		m.metrics,
+		m.cacheUnconsumedResults,
 	)
 
 	return planning.NewSingleUseOperatorFactory(operator), nil

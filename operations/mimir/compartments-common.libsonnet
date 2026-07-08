@@ -77,12 +77,18 @@ local jsonpath = import 'github.com/jsonnet-libs/xtd/jsonpath.libsonnet';
     for compartment in std.range(0, numCompartments - 1)
   },
 
+  // Base (empty) per-compartment caching config.
+  blocks_chunks_zone_a_caching_configs:: $.mimirCompartmentsCreateIf(true, $._config.compartments_read_count, function(c) {}),
+  blocks_chunks_zone_b_caching_configs:: $.mimirCompartmentsCreateIf(true, $._config.compartments_read_count, function(c) {}),
+  blocks_chunks_zone_c_caching_configs:: $.mimirCompartmentsCreateIf(true, $._config.compartments_read_count, function(c) {}),
+
   // Validates that per-compartment Deployments/StatefulSets configuration options are correctly
   // parameterised for the compartment they belong to.
   validateMimirCompartmentsConfig(resourceNames)::
     local root = $;
     local addressFlag = '-ingest-storage.kafka.address';
     local topicFlag = '-ingest-storage.kafka.topic';
+    local blocksBucketFlag = '-' + root.mimirBlocksStorageBucketNameFlag;
     local writeIdSuffix = '.write-compartment-id';
     local readIdSuffix = '.read-compartment-id';
     local writePlaceholder = '<write-compartment-id>';
@@ -143,7 +149,7 @@ local jsonpath = import 'github.com/jsonnet-libs/xtd/jsonpath.libsonnet';
           local eq = std.findSubstr('=', arg)[0];
           { flag: std.substr(arg, 0, eq), value: std.substr(arg, eq + 1, std.length(arg) - eq - 1) };
 
-    local validateAddress(name, compartment, container) =
+    local validateKafkaAddress(name, compartment, container) =
       local value = flagValue(container, addressFlag);
       if value == null then
         null
@@ -162,7 +168,7 @@ local jsonpath = import 'github.com/jsonnet-libs/xtd/jsonpath.libsonnet';
       else
         null;
 
-    local validateTopic(name, compartment, container) =
+    local validateKafkaTopic(name, compartment, container) =
       local value = flagValue(container, topicFlag);
       if value == null then
         null
@@ -180,6 +186,23 @@ local jsonpath = import 'github.com/jsonnet-libs/xtd/jsonpath.libsonnet';
           'The Deployment or StatefulSet "%s" sets "%s=%s", but a global deployment queries every read compartment\'s topic, so the topic must contain the "%s" placeholder.' % [name, topicFlag, value, readPlaceholder]
       else
         null;
+
+    // The blocks-storage bucket is per read compartment. A read compartment must point at its own bucket
+    // (name contains "-rc-<id>") or keep the "<read-compartment-id>" placeholder; any other deployment that
+    // sets a blocks bucket must keep the placeholder, since one concrete bucket can't serve every compartment.
+    local validateBlocksBucket(name, compartment, container) =
+      local value = flagValue(container, blocksBucketFlag);
+      if value == null then
+        null
+      else if std.length(std.findSubstr(readPlaceholder, value)) > 0 then
+        null
+      else if compartment.kind == 'read' then
+        if !containsIdToken(value, '-rc-%d' % compartment.id) then
+          'The Deployment or StatefulSet "%s" sets "%s=%s", but read compartment %d uses its own blocks-storage bucket (the bucket name must contain "-rc-%d" or the "%s" placeholder).' % [name, blocksBucketFlag, value, compartment.id, compartment.id, readPlaceholder]
+        else
+          null
+      else
+        'The Deployment or StatefulSet "%s" sets "%s=%s", but only a read compartment owns a dedicated blocks-storage bucket, so a bucket name here must contain the "%s" placeholder to address every read compartment.' % [name, blocksBucketFlag, value, readPlaceholder];
 
     // A "<kind>-compartment-id" flag must appear only on a matching compartment, and its value must
     // equal the id encoded in the resource name.
@@ -203,7 +226,7 @@ local jsonpath = import 'github.com/jsonnet-libs/xtd/jsonpath.libsonnet';
     local validateContainer(name, compartment, container) =
       std.foldl(
         function(firstError, validator) if firstError != null then firstError else validator(name, compartment, container),
-        [validateAddress, validateTopic, validateWriteCompartmentId, validateReadCompartmentId],
+        [validateKafkaAddress, validateKafkaTopic, validateBlocksBucket, validateWriteCompartmentId, validateReadCompartmentId],
         null
       );
 

@@ -1112,3 +1112,79 @@ func TestBuilderCreatedTimestamp(t *testing.T) {
 		tcNumber++
 	}
 }
+
+// TestTSDBBuilderFloatChunkEncoding verifies that the block builder honors the
+// per-tenant float_chunk_encoding limit when building blocks: "xor2" produces
+// EncXOR2 chunks and the default ("" or "xor") produces EncXOR chunks.
+func TestTSDBBuilderFloatChunkEncoding(t *testing.T) {
+	const (
+		partitionID = int32(0)
+		userID      = "user1"
+	)
+
+	for _, tc := range []struct {
+		name        string
+		encoding    string
+		expectedEnc chunkenc.Encoding
+	}{
+		{name: "default is xor", encoding: "", expectedEnc: chunkenc.EncXOR},
+		{name: "xor", encoding: "xor", expectedEnc: chunkenc.EncXOR},
+		{name: "xor2", encoding: "xor2", expectedEnc: chunkenc.EncXOR2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			limits := map[string]*validation.Limits{
+				userID: {FloatChunkEncoding: tc.encoding},
+			}
+			config, overrides := blockBuilderConfig(t, "kafka:9092", validation.NewMockTenantLimits(limits))
+
+			logger := log.NewNopLogger()
+			builder := NewTSDBBuilder(partitionID, config, overrides, logger, newTSDBBuilderMetrics(prometheus.NewPedanticRegistry()), mimir_tsdb.NewTSDBMetrics(prometheus.NewPedanticRegistry(), logger))
+			t.Cleanup(func() { require.NoError(t, builder.Close()) })
+
+			var (
+				processingRange = time.Hour.Milliseconds()
+				lastEnd         = 2 * processingRange
+				ts              = lastEnd + (processingRange / 2)
+			)
+			ctx := user.InjectOrgID(t.Context(), userID)
+			for i := 0; i < 5; i++ {
+				req := createWriteRequest("1", floatSample(ts+int64(i*1000), float64(i)), nil)
+				require.NoError(t, builder.PushToStorageAndReleaseRequest(ctx, &req))
+			}
+
+			shipperDir := t.TempDir()
+			_, err := builder.CompactAndUpload(ctx, mockUploaderFunc(t, shipperDir))
+			require.NoError(t, err)
+
+			db, err := tsdb.Open(shipperDir, promslog.NewNopLogger(), nil, nil, nil)
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, db.Close()) })
+			require.NotEmpty(t, db.Blocks())
+
+			encs := blockFloatChunkEncodings(t, db)
+			require.NotEmpty(t, encs)
+			for _, e := range encs {
+				require.Equal(t, tc.expectedEnc, e)
+			}
+		})
+	}
+}
+
+func blockFloatChunkEncodings(t *testing.T, db *tsdb.DB) []chunkenc.Encoding {
+	t.Helper()
+	q, err := db.ChunkQuerier(math.MinInt64, math.MaxInt64)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, q.Close()) })
+
+	ss := q.Select(context.Background(), true, nil, labels.MustNewMatcher(labels.MatchRegexp, "foo", ".*"))
+	var encs []chunkenc.Encoding
+	for ss.Next() {
+		it := ss.At().Iterator(nil)
+		for it.Next() {
+			encs = append(encs, it.At().Chunk.Encoding())
+		}
+		require.NoError(t, it.Err())
+	}
+	require.NoError(t, ss.Err())
+	return encs
+}

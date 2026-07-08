@@ -431,7 +431,7 @@ _Look for: `"failed to check ring"`, `"context deadline exceeded"`, `"ring not i
 
 ### MimirRulerTooManyFailedPushes
 
-This alert fires when rulers cannot push new samples (result of rule evaluation) to ingesters.
+This alert fires when rulers cannot push new samples (result of rule evaluation) to ingesters or remote distributors.
 
 In general, pushing samples can fail due to problems with Mimir operations (eg. too many ingesters have crashed, and ruler cannot write samples to them), or due to problems with resulting data (eg. user hitting limit for number of series, out of order samples, etc.).
 This alert fires only for first kind of problems, and not for problems caused by limits or invalid rules.
@@ -439,6 +439,7 @@ This alert fires only for first kind of problems, and not for problems caused by
 How to **fix** it:
 
 - Investigate the ruler logs to find out the reason why ruler cannot write samples. Note that ruler logs all push errors, including "user errors", but those are not causing the alert to fire. Focus on problems with ingesters.
+  If remote distributor writes are enabled, also check ruler-to-distributor gRPC connectivity and the remote distributors' write path.
 - When using Memberlist as KV store for hash rings, ensure that Memberlist is working correctly. See instructions for the [`MimirGossipMembersTooHigh`](#MimirGossipMembersTooHigh) and [`MimirGossipMembersTooLow`](#MimirGossipMembersTooLow) alerts.
 
 ### MimirRulerTooManyFailedQueries
@@ -3944,6 +3945,7 @@ When looking at `msg="query stats"` consider the following attributes;
 - query_wall_time_seconds — time spent actually executing the query
 - encode_time_seconds — time spent serialising the result to JSON
 - remote_execution_request_count — number of requests sent to queriers for execution
+- retries — number of times the query-frontend retried downstream requests while processing the query (0 if all requests succeeded on their first attempt)
 - split_queries — the query was split into n sub-queries by the time-splitting middleware
 - sharded_queries — the number of sharded queries
 - spun_off_subqueries — the number of subqueries spun off
@@ -3957,7 +3959,10 @@ When looking at `msg="query stats"` consider the following attributes;
 - equivalent_samples_read — equivalent number of samples that would have been read from storage to execute a query, if no caching or other optimizations were applied to the query. Remote read requests contribute to this counter and to `physical_samples_read`. For streamed-chunks remote read responses, the count reflects samples within the requested query range.
 - physical_samples_read — the number of samples read from storage. Excludes any samples not read due to caching or other optimizations.
 - results_cache_hit_bytes — the number of bytes returned from the query results cache
+- results_cache_hit_count — the number of requests to the query results cache that were a hit (note that a hit does not mean the entire request time range was served from the cache)
 - results_cache_miss_bytes — the number of bytes fetched from storage and written to the query results cache
+- results_cache_miss_count — the number of requests to the query results cache that were a miss
+- results_cache_set_count — the number of new or updated cache entries that were written to the query results cache
 - read_consistency — the read consistency level requested, if any
 - read_consistency_max_delay — the maximum delay / staleness allowed for an eventually consistent request, if any
 

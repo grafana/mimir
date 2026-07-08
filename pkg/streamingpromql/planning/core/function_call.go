@@ -5,7 +5,6 @@ package core
 import (
 	"context"
 	"fmt"
-	"slices"
 	"time"
 
 	"github.com/gogo/protobuf/proto"
@@ -46,14 +45,6 @@ func (f *FunctionCall) Details() proto.Message {
 
 func (f *FunctionCall) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_FUNCTION_CALL
-}
-
-func (f *FunctionCall) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
-	otherFunctionCall, ok := other.(*FunctionCall)
-
-	return ok &&
-		f.Function == otherFunctionCall.Function &&
-		slices.Equal(f.AbsentLabels, otherFunctionCall.AbsentLabels)
 }
 
 func (f *FunctionCall) MergeHints(_ planning.Node) error {

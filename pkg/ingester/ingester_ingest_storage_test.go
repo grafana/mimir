@@ -192,6 +192,12 @@ func TestIngester_ShouldReplayPartitionAtStartupAndThenJoinTheRings(t *testing.T
 	cfg.BlocksStorageConfig.TSDB.HeadCompactionIntervalWhileStarting = headCompactionIntervalWhileStarting
 	cfg.BlocksStorageConfig.TSDB.HeadCompactionIntervalJitterEnabled = false
 
+	// Disable the minimum delay between compaction iterations, otherwise it would dominate the small
+	// headCompactionIntervalWhileStarting used above and the compaction loop would run only once during
+	// startup, before the replayed series is appended to the head. The default 10s delay is only
+	// meaningful with production-sized intervals.
+	cfg.minCompactionLoopDelay = 0
+
 	// Create the ingester.
 	overrides := validation.NewOverrides(defaultLimitsTestConfig(), nil)
 	ingester, kafkaCluster, watcher := createTestIngesterWithIngestStorage(t, &cfg, overrides, nil, reg, util_test.NewTestingLogger(t))
@@ -1168,6 +1174,8 @@ func createTestIngesterWithIngestStorage(
 
 	ingester, err := New(*ingesterCfg, overrides, ingestersRing, prw, nil, nil, reg, logger)
 	require.NoError(t, err)
+
+	stopWatchedSubservicesOnCleanup(t, ingester)
 
 	return ingester, kafkaCluster, prw
 }

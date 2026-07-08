@@ -5,8 +5,10 @@ package commonsubexpressionelimination
 
 import (
 	"fmt"
+	"slices"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
+	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 )
 
 func (d *Duplicate) Child(idx int) planning.Node {
@@ -38,6 +40,11 @@ func (d *Duplicate) ReplaceChild(idx int, node planning.Node) error {
 
 func (d *Duplicate) ChildrenLabels() []string {
 	return []string{""}
+}
+
+func (d *Duplicate) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
+	_, ok := other.(*Duplicate)
+	return ok
 }
 
 func (d *DuplicateFilter) Child(idx int) planning.Node {
@@ -77,4 +84,19 @@ func (d *DuplicateFilter) ReplaceChild(idx int, node planning.Node) error {
 
 func (d *DuplicateFilter) ChildrenLabels() []string {
 	return []string{""}
+}
+
+func (d *DuplicateFilter) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
+	oi, ok := other.(*DuplicateFilter)
+	return ok &&
+		slices.EqualFunc(d.Filters, oi.Filters, func(a, b *core.LabelMatcher) bool {
+			return ((a == nil && b == nil) || (a != nil && b != nil && genEqualsLabelMatcher(*a, *b)))
+		}) &&
+		d.SubsetIndex == oi.SubsetIndex
+}
+
+func genEqualsLabelMatcher(a, b core.LabelMatcher) bool {
+	return a.Name == b.Name &&
+		a.Type == b.Type &&
+		a.Value == b.Value
 }
