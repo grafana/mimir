@@ -22,8 +22,7 @@ jobs:
         run: |
           LABELS=$(gh pr view ${{ github.event.pull_request.number }} --json labels --jq '.labels[].name')
 
-          # "grep -w" to check for the whole words
-          if echo "$LABELS" | grep -w -qE "(changelog-not-needed|dependency-update|vendored-mimir-prometheus-update|helm-weekly-release|backport)"; then
+          if echo "$LABELS" | grep -qE '^(changelog-not-needed|dependency-update|vendored-mimir-prometheus-update|helm-weekly-release|backport)$'; then
             echo "skip=true" >> $GITHUB_OUTPUT
             echo "PR has a label that skips changelog check, skipping changelog check"
           else
