@@ -263,7 +263,7 @@
     "command":
       - "sh"
       - "-c"
-      - "exec ./mimir -config.file=./config/mimir.yaml -target=ingester -activity-tracker.filepath=/activity/ingester-zone-a-rc-0-0 -ingester.ring.instance-availability-zone=zone-a -ingester.read-compartment-id=0 -ingest-storage.kafka.address='kafka-wc-<write-compartment-id>:9092' -ingest-storage.kafka.topic='mimir-ingest-rc-<read-compartment-id>'"
+      - "exec ./mimir -config.file=./config/mimir.yaml -target=ingester -activity-tracker.filepath=/activity/ingester-zone-a-rc-0-0 -ingester.ring.instance-availability-zone=zone-a -ingester.read-compartment-id=0 -ingest-storage.kafka.address='kafka-wc-<write-compartment-id>:9092' -ingest-storage.kafka.topic='mimir-ingest-rc-<read-compartment-id>' -blocks-storage.s3.bucket-name=mimir-blocks-rc-0"
     "depends_on":
       "kafka-wc-0":
         "condition": "service_healthy"
@@ -289,7 +289,7 @@
     "command":
       - "sh"
       - "-c"
-      - "exec ./mimir -config.file=./config/mimir.yaml -target=ingester -activity-tracker.filepath=/activity/ingester-zone-a-rc-0-1 -ingester.ring.instance-availability-zone=zone-a -ingester.read-compartment-id=0 -ingest-storage.kafka.address='kafka-wc-<write-compartment-id>:9092' -ingest-storage.kafka.topic='mimir-ingest-rc-<read-compartment-id>'"
+      - "exec ./mimir -config.file=./config/mimir.yaml -target=ingester -activity-tracker.filepath=/activity/ingester-zone-a-rc-0-1 -ingester.ring.instance-availability-zone=zone-a -ingester.read-compartment-id=0 -ingest-storage.kafka.address='kafka-wc-<write-compartment-id>:9092' -ingest-storage.kafka.topic='mimir-ingest-rc-<read-compartment-id>' -blocks-storage.s3.bucket-name=mimir-blocks-rc-0"
     "depends_on":
       "kafka-wc-0":
         "condition": "service_healthy"
@@ -315,7 +315,7 @@
     "command":
       - "sh"
       - "-c"
-      - "exec ./mimir -config.file=./config/mimir.yaml -target=ingester -activity-tracker.filepath=/activity/ingester-zone-a-rc-1-0 -ingester.ring.instance-availability-zone=zone-a -ingester.read-compartment-id=1 -ingest-storage.kafka.address='kafka-wc-<write-compartment-id>:9092' -ingest-storage.kafka.topic='mimir-ingest-rc-<read-compartment-id>'"
+      - "exec ./mimir -config.file=./config/mimir.yaml -target=ingester -activity-tracker.filepath=/activity/ingester-zone-a-rc-1-0 -ingester.ring.instance-availability-zone=zone-a -ingester.read-compartment-id=1 -ingest-storage.kafka.address='kafka-wc-<write-compartment-id>:9092' -ingest-storage.kafka.topic='mimir-ingest-rc-<read-compartment-id>' -blocks-storage.s3.bucket-name=mimir-blocks-rc-1"
     "depends_on":
       "kafka-wc-0":
         "condition": "service_healthy"
@@ -341,7 +341,7 @@
     "command":
       - "sh"
       - "-c"
-      - "exec ./mimir -config.file=./config/mimir.yaml -target=ingester -activity-tracker.filepath=/activity/ingester-zone-a-rc-1-1 -ingester.ring.instance-availability-zone=zone-a -ingester.read-compartment-id=1 -ingest-storage.kafka.address='kafka-wc-<write-compartment-id>:9092' -ingest-storage.kafka.topic='mimir-ingest-rc-<read-compartment-id>'"
+      - "exec ./mimir -config.file=./config/mimir.yaml -target=ingester -activity-tracker.filepath=/activity/ingester-zone-a-rc-1-1 -ingester.ring.instance-availability-zone=zone-a -ingester.read-compartment-id=1 -ingest-storage.kafka.address='kafka-wc-<write-compartment-id>:9092' -ingest-storage.kafka.topic='mimir-ingest-rc-<read-compartment-id>' -blocks-storage.s3.bucket-name=mimir-blocks-rc-1"
     "depends_on":
       "kafka-wc-0":
         "condition": "service_healthy"
@@ -367,7 +367,7 @@
     "command":
       - "sh"
       - "-c"
-      - "exec ./mimir -config.file=./config/mimir.yaml -target=ingester -activity-tracker.filepath=/activity/ingester-zone-b-rc-0-0 -ingester.ring.instance-availability-zone=zone-b -ingester.read-compartment-id=0 -ingest-storage.kafka.address='kafka-wc-<write-compartment-id>:9092' -ingest-storage.kafka.topic='mimir-ingest-rc-<read-compartment-id>'"
+      - "exec ./mimir -config.file=./config/mimir.yaml -target=ingester -activity-tracker.filepath=/activity/ingester-zone-b-rc-0-0 -ingester.ring.instance-availability-zone=zone-b -ingester.read-compartment-id=0 -ingest-storage.kafka.address='kafka-wc-<write-compartment-id>:9092' -ingest-storage.kafka.topic='mimir-ingest-rc-<read-compartment-id>' -blocks-storage.s3.bucket-name=mimir-blocks-rc-0"
     "depends_on":
       "kafka-wc-0":
         "condition": "service_healthy"
@@ -393,7 +393,7 @@
     "command":
       - "sh"
       - "-c"
-      - "exec ./mimir -config.file=./config/mimir.yaml -target=ingester -activity-tracker.filepath=/activity/ingester-zone-b-rc-0-1 -ingester.ring.instance-availability-zone=zone-b -ingester.read-compartment-id=0 -ingest-storage.kafka.address='kafka-wc-<write-compartment-id>:9092' -ingest-storage.kafka.topic='mimir-ingest-rc-<read-compartment-id>'"
+      - "exec ./mimir -config.file=./config/mimir.yaml -target=ingester -activity-tracker.filepath=/activity/ingester-zone-b-rc-0-1 -ingester.ring.instance-availability-zone=zone-b -ingester.read-compartment-id=0 -ingest-storage.kafka.address='kafka-wc-<write-compartment-id>:9092' -ingest-storage.kafka.topic='mimir-ingest-rc-<read-compartment-id>' -blocks-storage.s3.bucket-name=mimir-blocks-rc-0"
     "depends_on":
       "kafka-wc-0":
         "condition": "service_healthy"
@@ -419,7 +419,7 @@
     "command":
       - "sh"
       - "-c"
-      - "exec ./mimir -config.file=./config/mimir.yaml -target=ingester -activity-tracker.filepath=/activity/ingester-zone-b-rc-1-0 -ingester.ring.instance-availability-zone=zone-b -ingester.read-compartment-id=1 -ingest-storage.kafka.address='kafka-wc-<write-compartment-id>:9092' -ingest-storage.kafka.topic='mimir-ingest-rc-<read-compartment-id>'"
+      - "exec ./mimir -config.file=./config/mimir.yaml -target=ingester -activity-tracker.filepath=/activity/ingester-zone-b-rc-1-0 -ingester.ring.instance-availability-zone=zone-b -ingester.read-compartment-id=1 -ingest-storage.kafka.address='kafka-wc-<write-compartment-id>:9092' -ingest-storage.kafka.topic='mimir-ingest-rc-<read-compartment-id>' -blocks-storage.s3.bucket-name=mimir-blocks-rc-1"
     "depends_on":
       "kafka-wc-0":
         "condition": "service_healthy"
@@ -445,7 +445,7 @@
     "command":
       - "sh"
       - "-c"
-      - "exec ./mimir -config.file=./config/mimir.yaml -target=ingester -activity-tracker.filepath=/activity/ingester-zone-b-rc-1-1 -ingester.ring.instance-availability-zone=zone-b -ingester.read-compartment-id=1 -ingest-storage.kafka.address='kafka-wc-<write-compartment-id>:9092' -ingest-storage.kafka.topic='mimir-ingest-rc-<read-compartment-id>'"
+      - "exec ./mimir -config.file=./config/mimir.yaml -target=ingester -activity-tracker.filepath=/activity/ingester-zone-b-rc-1-1 -ingester.ring.instance-availability-zone=zone-b -ingester.read-compartment-id=1 -ingest-storage.kafka.address='kafka-wc-<write-compartment-id>:9092' -ingest-storage.kafka.topic='mimir-ingest-rc-<read-compartment-id>' -blocks-storage.s3.bucket-name=mimir-blocks-rc-1"
     "depends_on":
       "kafka-wc-0":
         "condition": "service_healthy"
@@ -524,7 +524,7 @@
     "entrypoint":
       - "sh"
       - "-c"
-      - "mkdir -p /data/mimir-blocks /data/mimir-blocks-rc-0 /data/mimir-blocks-rc-1 /data/mimir-ruler /data/mimir-alertmanager /data/usage-tracker-snapshots && exec minio server --console-address :9001 /data"
+      - "mkdir -p /data/mimir-blocks-rc-0 /data/mimir-blocks-rc-1 /data/mimir-ruler /data/mimir-alertmanager /data/usage-tracker-snapshots && exec minio server --console-address :9001 /data"
     "environment":
       - "MINIO_ROOT_USER=mimir"
       - "MINIO_ROOT_PASSWORD=supersecret"
@@ -650,7 +650,7 @@
     "command":
       - "sh"
       - "-c"
-      - "exec ./mimir -config.file=./config/mimir.yaml -target=ruler -activity-tracker.filepath=/activity/ruler-1 -ruler.distributor.address=dns:///distributor:9095"
+      - "exec ./mimir -config.file=./config/mimir.yaml -target=ruler -activity-tracker.filepath=/activity/ruler-1 -ruler.distributor.address=dns:///distributor:9095 -blocks-storage.s3.bucket-name=mimir-blocks-rc-0"
     "depends_on":
       "kafka-wc-0":
         "condition": "service_healthy"

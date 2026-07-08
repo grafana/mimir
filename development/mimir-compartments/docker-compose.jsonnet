@@ -78,8 +78,11 @@ std.manifestYamlDoc({
         // redirections by the "sh -c" command.
         "-ingest-storage.kafka.address='kafka-wc-<write-compartment-id>:9092'",
         "-ingest-storage.kafka.topic='mimir-ingest-rc-<read-compartment-id>'",
-        // Each read compartment's block-builder ships that compartment's blocks (ingester shipping is
-        // disabled in mimir.yaml), so ingesters don't need a per-compartment blocks bucket here.
+        // Each read compartment's block-builder ships that compartment's blocks, so ingester block
+        // shipping is disabled (mimir.yaml sets ship_interval: 0s). The ingester still needs a blocks
+        // bucket that exists for the startup object-storage sanity check, so point it at its own read
+        // compartment's bucket.
+        '-blocks-storage.s3.bucket-name=mimir-blocks-rc-%d' % compartment,
       ],
       extraVolumes: ['.data-ingester-%s-rc-%d-%d:/data:delegated' % [zones[zoneIdx], compartment, partition]],
     })
@@ -163,7 +166,9 @@ std.manifestYamlDoc({
     for zoneIdx in std.range(0, std.length(zones) - 1)
   },
 
-  // The ruler evaluates rules via remote rule evaluation, so it needs no per-compartment bucket configuration.
+  // The ruler evaluates rules via remote rule evaluation, so it never reads or writes blocks. It's not
+  // compartment-bound either, but the startup object-storage sanity check still requires a blocks bucket
+  // that exists, so point it at read compartment 0's bucket (the choice is arbitrary and unused).
   rulers(count):: if count <= 0 then {} else {
     ['ruler-%d' % id]: mimirService({
       name: 'ruler-' + id,
@@ -171,7 +176,10 @@ std.manifestYamlDoc({
       publishedHttpPort: 8030 + id,
       jaegerApp: 'ruler-%d' % id,
       // The ruler writes rule results through distributors, which own write-compartment routing.
-      extraArguments: ['-ruler.distributor.address=dns:///distributor:9095'],
+      extraArguments: [
+        '-ruler.distributor.address=dns:///distributor:9095',
+        '-blocks-storage.s3.bucket-name=mimir-blocks-rc-0',
+      ],
     })
     for id in std.range(1, count)
   },
@@ -285,9 +293,10 @@ std.manifestYamlDoc({
   minio:: {
     // One blocks bucket per read compartment (mimir-blocks-rc-<id>): the per-compartment store-gateways,
     // compactors and block-builder write/serve their own bucket, and the querier read every
-    // compartment's bucket by resolving the <read-compartment-id> placeholder.
-    local buckets = ['mimir-blocks'] +
-                    ['mimir-blocks-rc-%d' % compartment for compartment in std.range(0, numCompartments - 1)] +
+    // compartment's bucket by resolving the <read-compartment-id> placeholder. Components that don't own
+    // a compartment bucket (ingester, ruler) point at a real per-compartment bucket for the startup
+    // sanity check.
+    local buckets = ['mimir-blocks-rc-%d' % compartment for compartment in std.range(0, numCompartments - 1)] +
                     ['mimir-ruler', 'mimir-alertmanager', 'usage-tracker-snapshots'],
     minio: {
       image: 'minio/minio:RELEASE.2025-05-24T17-08-30Z',
