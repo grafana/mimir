@@ -171,6 +171,9 @@ func (s *TimeRangeSplitOperator) NextSeries(ctx context.Context) (types.InstantV
 			if err != nil {
 				return types.InstantVectorSeriesData{}, err
 			}
+
+			// We're going to retain the FloatHistogram instances that are in this slice, so remove the references to them before returning them to the pool.
+			clear(data[0].Histograms)
 			types.HPointSlicePool.Put(&data[0].Histograms, s.MemoryConsumptionTracker)
 		}
 	}
