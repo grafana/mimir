@@ -89,6 +89,7 @@ spec:
       schedulerName: {{ . | quote }}
       {{- end }}
       serviceAccountName: {{ template "mimir.serviceAccountName" . }}
+      automountServiceAccountToken: {{ .Values.ingester.automountServiceAccountToken }}
       {{- if .Values.ingester.priorityClassName }}
       priorityClassName: {{ .Values.ingester.priorityClassName }}
       {{- end }}
@@ -131,6 +132,23 @@ spec:
         {{- if not .Values.ingester.persistentVolume.enabled }}
         - name: {{ .Values.ingester.persistentVolume.name }}
           emptyDir: {}
+        {{- end }}
+        {{- if .Values.ingester.projectServiceAccountToken }}
+        - name: kube-api-access
+          projected:
+            - serviceAccountToken:
+                path: token
+            - configMap:
+                items:
+                  - key: ca.crt
+                    path: ca.crt
+                name: kube-root-ca.crt
+            - downwardAPI:
+                items:
+                  - fieldRef:
+                      apiVersion: v1
+                      fieldPath: metadata.namespace
+                    path: namespace
         {{- end }}
         {{- if .Values.ingester.extraVolumes }}
         {{ toYaml .Values.ingester.extraVolumes | nindent 8 }}
@@ -176,6 +194,11 @@ spec:
             {{- end }}
             {{- if .Values.global.extraVolumeMounts }}
             {{ toYaml .Values.global.extraVolumeMounts | nindent 12}}
+            {{- end }}
+            {{- if .Values.ingester.projectServiceAccountToken }}
+            - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+              name: kube-api-access
+              readOnly: true
             {{- end }}
             - name: config
               mountPath: /etc/mimir

@@ -1,0 +1,58 @@
+# CI values to exercise service account token automount and projected token mounts.
+kubeVersionOverride: "1.32"
+
+alertmanager:
+  automountServiceAccountToken: true
+  projectServiceAccountToken: false
+
+compactor:
+  automountServiceAccountToken: true
+  projectServiceAccountToken: false
+
+distributor:
+  automountServiceAccountToken: true
+  projectServiceAccountToken: false
+
+gateway:
+  automountServiceAccountToken: true
+  projectServiceAccountToken: false
+
+ingester:
+  automountServiceAccountToken: true
+  projectServiceAccountToken: false
+
+overrides_exporter:
+  automountServiceAccountToken: true
+  projectServiceAccountToken: false
+
+querier:
+  automountServiceAccountToken: true
+  projectServiceAccountToken: false
+
+query_frontend:
+  automountServiceAccountToken: true
+  projectServiceAccountToken: false
+
+query_scheduler:
+  automountServiceAccountToken: true
+  projectServiceAccountToken: false
+
+ruler:
+  automountServiceAccountToken: true
+  projectServiceAccountToken: false
+
+ruler_querier:
+  automountServiceAccountToken: true
+  projectServiceAccountToken: false
+
+ruler_query_frontend:
+  automountServiceAccountToken: true
+  projectServiceAccountToken: false
+
+ruler_query_scheduler:
+  automountServiceAccountToken: true
+  projectServiceAccountToken: false
+
+store_gateway:
+  automountServiceAccountToken: true
+  projectServiceAccountToken: false

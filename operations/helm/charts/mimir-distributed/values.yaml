@@ -83,6 +83,7 @@ serviceAccount:
   name:
   annotations: {}
   labels: {}
+  automountServiceAccountToken: true
 
 # -- Configuration is loaded from the secret called 'externalConfigSecretName'. If 'useExternalConfig' is true, then the configuration is not generated, just consumed.
 useExternalConfig: false
@@ -509,6 +510,10 @@ alertmanager:
     #   name: reverse-proxy
     #   targetPort: 11811
 
+  # -- Configuration for alertmanager's pod Service Account Token Automounting.
+  automountServiceAccountToken: true
+  projectServiceAccountToken: false
+
   # -- Optionally set the scheduler for pods of the alertmanager
   schedulerName: ""
 
@@ -825,6 +830,9 @@ distributor:
     # -- https://kubernetes.io/docs/concepts/services-networking/service/#traffic-distribution
     trafficDistribution: ""
 
+  # -- Configuration for distributor's pod Service Account Token Automounting.
+  automountServiceAccountToken: true
+  projectServiceAccountToken: false
 
   resources:
     requests:
@@ -929,6 +937,10 @@ ingester:
     # -- https://kubernetes.io/docs/concepts/services-networking/service/#traffic-distribution
     # Note: This service is only used for admin endpoints like TSDB statistics, not for write or read path traffic.
     trafficDistribution: ""
+
+  # -- Configuration for ingester's pod Service Account Token Automounting.
+  automountServiceAccountToken: true
+  projectServiceAccountToken: false
 
   # -- Optionally set the scheduler for pods of the ingester
   schedulerName: ""
@@ -1203,6 +1215,10 @@ overrides_exporter:
     type: ClusterIP
     extraPorts: []
 
+  # -- Configuration for overrides_exporter's pod Service Account Token Automounting.
+  automountServiceAccountToken: true
+  projectServiceAccountToken: false
+
   strategy:
     type: RollingUpdate
     rollingUpdate:
@@ -1321,6 +1337,10 @@ ruler:
     internalTrafficPolicy: Cluster
     type: ClusterIP
     extraPorts: []
+
+  # -- Configuration for ruler's pod Service Account Token Automounting.
+  automountServiceAccountToken: true
+  projectServiceAccountToken: false
 
   # -- Dedicated service account for ruler pods.
   # If not set, the default service account defined at the begining of this file will be used.
@@ -1460,6 +1480,10 @@ ruler_querier:
     type: ClusterIP
     extraPorts: []
 
+  # -- Configuration for ruler-querier's pod Service Account Token Automounting.
+  automountServiceAccountToken: true
+  projectServiceAccountToken: false
+
   resources:
     requests:
       cpu: 100m
@@ -1581,6 +1605,10 @@ ruler_query_frontend:
     type: ClusterIP
     extraPorts: []
 
+  # -- Configuration for ruler-query-frontend's pod Service Account Token Automounting.
+  automountServiceAccountToken: true
+  projectServiceAccountToken: false
+
   resources:
     requests:
       cpu: 100m
@@ -1672,6 +1700,10 @@ ruler_query_scheduler:
     internalTrafficPolicy: Cluster
     type: ClusterIP
     extraPorts: []
+
+  # -- Configuration for ruler-query-scheduler's pod Service Account Token Automounting.
+  automountServiceAccountToken: true
+  projectServiceAccountToken: false
 
   resources:
     requests:
@@ -1813,6 +1845,10 @@ querier:
     # -- https://kubernetes.io/docs/concepts/services-networking/service/#traffic-distribution
     trafficDistribution: ""
 
+  # -- Configuration for querier's pod Service Account Token Automounting.
+  automountServiceAccountToken: true
+  projectServiceAccountToken: false
+
   resources:
     requests:
       cpu: 100m
@@ -1938,6 +1974,10 @@ query_frontend:
     # -- https://kubernetes.io/docs/concepts/services-networking/service/#traffic-distribution
     trafficDistribution: ""
 
+  # -- Configuration for query-frontend's pod Service Account Token Automounting.
+  automountServiceAccountToken: true
+  projectServiceAccountToken: false
+
   resources:
     requests:
       cpu: 100m
@@ -2032,6 +2072,10 @@ query_scheduler:
     extraPorts: []
     # -- https://kubernetes.io/docs/concepts/services-networking/service/#traffic-distribution
     trafficDistribution: ""
+
+  # -- Configuration for query-scheduler's pod Service Account Token Automounting.
+  automountServiceAccountToken: true
+  projectServiceAccountToken: false
 
   resources:
     requests:
@@ -2132,6 +2176,10 @@ store_gateway:
     # -- https://kubernetes.io/docs/concepts/services-networking/service/#traffic-distribution
     # Note: This service is not responsible for read path traffic.
     trafficDistribution: ""
+
+  # -- Configuration for store-gateway's pod Service Account Token Automounting.
+  automountServiceAccountToken: true
+  projectServiceAccountToken: false
 
   # -- Optionally set the scheduler for pods of the store-gateway
   schedulerName: ""
@@ -2395,6 +2443,10 @@ compactor:
     internalTrafficPolicy: Cluster
     type: ClusterIP
     extraPorts: []
+
+  # -- Configuration for compactor's pod Service Account Token Automounting.
+  automountServiceAccountToken: true
+  projectServiceAccountToken: false
 
   # -- Optionally set the scheduler for pods of the compactor
   schedulerName: ""
@@ -3287,6 +3339,9 @@ gateway:
     # -- https://kubernetes.io/docs/concepts/services-networking/service/#traffic-distribution
     trafficDistribution: ""
 
+  # -- Configuration for gateway's pod Service Account Token Automounting.
+  automountServiceAccountToken: true
+  projectServiceAccountToken: false
 
   ingress:
     enabled: false

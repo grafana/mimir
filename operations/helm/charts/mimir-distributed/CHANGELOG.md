@@ -32,6 +32,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 * [CHANGE] Querier: Reduce the default concurrency of queriers, `querier.max_concurrent`, to 8. #15984
 * [BUGFIX] Fix bug in `ScaledObject` templates when using `kedaAutoscaling.fallback` #15793
+* [ENHANCEMENT] Improve stack security by allowing users to configure `automountServiceAccountToken` and `projectServiceAccountToken` explicitly defining the desired behaviour #15825
 
 ## 6.1.0
 

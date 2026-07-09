@@ -31,6 +31,7 @@ spec:
         {{- include "mimir.podAnnotations" (dict "ctx" . "component" "querier") | nindent 8 }}
     spec:
       serviceAccountName: {{ template "mimir.serviceAccountName" . }}
+      automountServiceAccountToken: {{ .Values.querier.automountServiceAccountToken }}
       {{- if .Values.querier.priorityClassName }}
       priorityClassName: {{ .Values.querier.priorityClassName }}
       {{- end }}
@@ -75,6 +76,11 @@ spec:
             {{- end }}
             {{- if .Values.global.extraVolumeMounts }}
               {{ toYaml .Values.global.extraVolumeMounts | nindent 12}}
+            {{- end }}
+            {{- if .Values.querier.projectServiceAccountToken }}
+            - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+              name: kube-api-access
+              readOnly: true
             {{- end }}
             - name: config
               mountPath: /etc/mimir
@@ -140,6 +146,23 @@ spec:
         - name: runtime-config
           configMap:
             name: {{ template "mimir.fullname" . }}-runtime
+        {{- if .Values.querier.projectServiceAccountToken }}
+        - name: kube-api-access
+          projected:
+            - serviceAccountToken:
+                path: token
+            - configMap:
+                items:
+                  - key: ca.crt
+                    path: ca.crt
+                name: kube-root-ca.crt
+            - downwardAPI:
+                items:
+                  - fieldRef:
+                      apiVersion: v1
+                      fieldPath: metadata.namespace
+                    path: namespace
+        {{- end }}
         {{- if .Values.querier.extraVolumes }}
         {{ toYaml .Values.querier.extraVolumes | nindent 8}}
         {{- end }}

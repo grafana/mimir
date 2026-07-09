@@ -29,6 +29,7 @@ spec:
       namespace: {{ .Release.Namespace | quote }}
     spec:
       serviceAccountName: {{ template "mimir.ruler.serviceAccountName" . }}
+      automountServiceAccountToken: {{ .Values.ruler.automountServiceAccountToken }}
       {{- if .Values.ruler.priorityClassName }}
       priorityClassName: {{ .Values.ruler.priorityClassName }}
       {{- end }}
@@ -79,6 +80,11 @@ spec:
             {{- end }}
             {{- if .Values.global.extraVolumeMounts }}
               {{ toYaml .Values.global.extraVolumeMounts | nindent 12}}
+            {{- end }}
+            {{- if .Values.ruler.projectServiceAccountToken }}
+            - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+              name: kube-api-access
+              readOnly: true
             {{- end }}
             - name: config
               mountPath: /etc/mimir
@@ -137,6 +143,23 @@ spec:
         - name: runtime-config
           configMap:
             name: {{ template "mimir.fullname" . }}-runtime
+        {{- if .Values.ruler.projectServiceAccountToken }}
+        - name: kube-api-access
+          projected:
+            - serviceAccountToken:
+                path: token
+            - configMap:
+                items:
+                  - key: ca.crt
+                    path: ca.crt
+                name: kube-root-ca.crt
+            - downwardAPI:
+                items:
+                  - fieldRef:
+                      apiVersion: v1
+                      fieldPath: metadata.namespace
+                    path: namespace
+        {{- end }}
         {{- if .Values.ruler.extraVolumes }}
         {{ toYaml .Values.ruler.extraVolumes | nindent 8}}
         {{- end }}
