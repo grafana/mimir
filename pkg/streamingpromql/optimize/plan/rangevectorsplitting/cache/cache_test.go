@@ -34,6 +34,54 @@ const (
 	testFunction = functions.FUNCTION_SUM_OVER_TIME
 )
 
+// TestCacheGetMulti verifies that a single GetMulti call handles a mix of hits, misses, undecodable entries and
+// hashed-key collisions, degrading each problematic entry to a miss without failing the whole batch.
+func TestCacheGetMulti(t *testing.T) {
+	backend := caching.NewInMemoryCache()
+	keyGenerator := caching.NewCacheKeyGenerator(nil, caching.StaticPrefixGenerator("tenant-a:"))
+	factory := NewCacheFactoryWithBackend(backend, testTTLProvider{}, keyGenerator, prometheus.NewRegistry(), log.NewNopLogger())
+	c := NewCache[int](factory, testCodec{})
+
+	ctx := user.InjectOrgID(context.Background(), "tenant-a")
+	inner := []byte("inner")
+
+	hit1 := GetRange{Start: 0, End: 100}
+	miss := GetRange{Start: 100, End: 200}
+	hit2 := GetRange{Start: 200, End: 300}
+	undecodable := GetRange{Start: 300, End: 400}
+	collision := GetRange{Start: 400, End: 500}
+
+	require.NoError(t, c.Set(ctx, testFunction, inner, hit1.Start, hit1.End, nil, querierpb.Annotations{}, []int{1, 2}, types.EncodedOperatorEvaluationStats{}, 2, &CacheStats{}))
+	require.NoError(t, c.Set(ctx, testFunction, inner, hit2.Start, hit2.End, nil, querierpb.Annotations{}, []int{3}, types.EncodedOperatorEvaluationStats{}, 1, &CacheStats{}))
+
+	// Store bytes that don't decode as a CachedSeries under the undecodable range's key.
+	undecodableKey, err := TestGenerateHashedCacheKey(ctx, keyGenerator, testFunction, inner, undecodable.Start, undecodable.End)
+	require.NoError(t, err)
+	require.NoError(t, backend.SetAsync(ctx, undecodableKey, []byte{0xff, 0xff, 0xff}, time.Hour))
+
+	// Store a valid entry whose embedded full key doesn't match under the colliding range's key.
+	collided := &CachedSeries{CacheKey: []byte("some-other-key")}
+	collidedData, err := collided.Marshal()
+	require.NoError(t, err)
+	collisionKey, err := TestGenerateHashedCacheKey(ctx, keyGenerator, testFunction, inner, collision.Start, collision.End)
+	require.NoError(t, err)
+	require.NoError(t, backend.SetAsync(ctx, collisionKey, collidedData, time.Hour))
+
+	stats := &CacheStats{}
+	results, err := c.GetMulti(ctx, testFunction, inner, []GetRange{hit1, miss, hit2, undecodable, collision}, stats)
+	require.NoError(t, err)
+	require.Len(t, results, 5)
+
+	require.True(t, results[0].Found)
+	require.False(t, results[1].Found, "range without a cache entry should be a miss")
+	require.True(t, results[2].Found)
+	require.False(t, results[3].Found, "range with an undecodable cache entry should be a miss")
+	require.False(t, results[4].Found, "range with a colliding cache entry should be a miss")
+
+	require.Equal(t, 1, backend.GetCount, "all ranges should be fetched with a single backend request")
+	require.Equal(t, 5, backend.KeysCount)
+}
+
 // TestCacheKeysIsolatesPrefixes verifies that the same inner query under two different prefixes
 // produces different full keys and different hashed keys. Because the prefix is part of the full
 // key stored in the cache entry, even a hash collision across tenants or label policies would be
