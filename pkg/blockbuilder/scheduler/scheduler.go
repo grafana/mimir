@@ -140,8 +140,6 @@ func (s *BlockBuilderScheduler) running(ctx context.Context) error {
 	// Now we can transition to normal operation.
 
 	if err := s.completeObservationMode(ctx); err != nil {
-		// context.Canceled is mapped to nil, as this is a normal shutdown and we don't want the
-		// service framework to interpret it as an error.
 		if errors.Is(err, context.Canceled) {
 			return nil
 		}
