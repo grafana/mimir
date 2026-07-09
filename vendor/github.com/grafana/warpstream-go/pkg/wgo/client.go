@@ -51,7 +51,7 @@ const produceAPIVersion int16 = 11
 //     primary/secondary mapping. Every client instance with the same pool
 //     view picks the same secondary for a given partition, which keeps
 //     hedge load predictable and analysable instead of random.
-//   - A *ClusterRecordBuffer* + per-agent *AgentRecordBuffer* implement
+//   - A *ClusterBuffer* + per-agent *AgentBuffer* implement
 //     linger-based batching keyed on the primary agent (not on partition,
 //     as franz-go does), so a single Produce request to one agent can
 //     carry batches for many partitions.
@@ -79,7 +79,7 @@ type WarpstreamClient struct {
 	demoter        *Demoter
 	directProducer *KafkaDirectProducer
 	hedger         *Hedger
-	buffer         *ClusterRecordBuffer
+	buffer         *ClusterBuffer[routedTopicPartitionRecords]
 
 	// refreshCtx is canceled by Close. It both signals the background
 	// refresh goroutine to exit and interrupts any in-flight Refresh.
@@ -143,7 +143,7 @@ func NewWarpstreamClient(logger log.Logger, reg prometheus.Registerer, opts ...O
 	// bound each flush by WriteTimeout. The Hedger is otherwise shaped
 	// like a DirectProducer (same signature as KafkaDirectProducer) so it
 	// composes directly with the buffer.
-	c.buffer = NewClusterRecordBuffer(cfg.Linger, cfg.BatchMaxBytes, c.flushBatch, m, reg)
+	c.buffer = NewClusterBuffer[routedTopicPartitionRecords](cfg.Linger, cfg.BatchMaxBytes, c.flushBatch, m, reg)
 	c.startBackgroundRefresh()
 	return c, nil
 }
@@ -151,6 +151,13 @@ func NewWarpstreamClient(logger log.Logger, reg prometheus.Registerer, opts ...O
 // Produce buffers record and invokes promise once it has been
 // acknowledged or failed. Cancelling ctx detaches the caller; the record
 // is still produced in the background.
+//
+// Record ownership: the caller must not mutate record until promise fires by
+// completion (an ack or terminal failure). After that the record is safe to
+// reuse, reset, or pool — the client has captured it and never reads it again,
+// including on any still-in-flight hedge attempt. Cancelling ctx is not a
+// completion: it detaches the caller while the background produce keeps the
+// record, so a record whose produce was cancelled must not be reused.
 func (c *WarpstreamClient) Produce(ctx context.Context, record *kgo.Record, promise func(*kgo.Record, error)) {
 	c.metrics.produceRecordsTotal.Inc()
 
@@ -173,12 +180,23 @@ func (c *WarpstreamClient) Produce(ctx context.Context, record *kgo.Record, prom
 		promise(record, err)
 		return
 	}
-	c.buffer.Add(ctx, []promisedRoutedTopicPartitionRecords{routed})
+
+	// Stamp the produce time only after routing succeeds, so a failed produce
+	// leaves the caller's record unchanged. Mirrors franz-go's bufferRecord.
+	ensureRecordTimestamp(record, time.Now())
+	c.buffer.Add(ctx, []promised[routedTopicPartitionRecords]{routed})
 }
 
 // ProduceSync produces records and blocks until each has been
 // acknowledged or failed. Results are in input order; each record has its
 // own outcome. Cancelling ctx detaches the caller, not the in-flight produce.
+//
+// Record ownership: when ProduceSync returns by completion (every record acked
+// or terminally failed), the records are safe to reuse, reset, or pool — the
+// client has captured them and never reads them again, including on any
+// still-in-flight hedge attempt. A ctx cancellation is not a completion: it
+// detaches the caller while the background produce keeps the records, so records
+// whose produce was cancelled must not be reused.
 func (c *WarpstreamClient) ProduceSync(ctx context.Context, records []*kgo.Record) kgo.ProduceResults {
 	if len(records) == 0 {
 		return nil
@@ -233,17 +251,41 @@ func (c *WarpstreamClient) ProduceSync(ctx context.Context, records []*kgo.Recor
 		return results
 	}
 
+	// Stamp each record's produce time only after routing succeeds, so a failed
+	// produce leaves the caller's records unchanged. A single now keeps records
+	// buffered together on one produce timestamp. Mirrors franz-go's bufferRecord.
+	now := time.Now()
+	for _, r := range okRecords {
+		ensureRecordTimestamp(r, now)
+	}
+
 	c.buffer.Add(ctx, routed)
 	wg.Wait()
 	return results
 }
 
-// flushBatch is the cluster buffer's AgentFlushFunc: it bounds the
-// Hedger call to WriteTimeout and forwards everything else verbatim.
+// flushBatch is the cluster buffer's AgentFlushFunc: it encodes each partition's
+// RecordBatch once, up front, then bounds the Hedger call to WriteTimeout.
 func (c *WarpstreamClient) flushBatch(ctx context.Context, nodeID int32, partitions []routedTopicPartitionRecords) ProduceResult {
+	// Encode here — synchronously on the flush goroutine, before the Hedger runs
+	// and any completion promise can fire — so the primary and every hedge leg
+	// transmit the same immutable bytes and no leg reads a *kgo.Record afterward.
+	// This is the only records->encoded conversion point.
+	encoded := make([]routedEncodedTopicPartitionRecords, 0, len(partitions))
+	for _, p := range partitions {
+		if len(p.records) == 0 {
+			continue
+		}
+		encoded = append(encoded, routedEncodedTopicPartitionRecords{
+			encodedTopicPartitionRecords: newEncodedTopicPartitionRecords(p.topic, p.partition, p.records),
+			nodeID:                       p.nodeID,
+			nodeState:                    p.nodeState,
+		})
+	}
+
 	flushCtx, cancel := context.WithTimeout(ctx, c.cfg.WriteTimeout)
 	defer cancel()
-	return c.hedger.ProduceSync(flushCtx, nodeID, partitions)
+	return c.hedger.ProduceSync(flushCtx, nodeID, encoded)
 }
 
 // BufferedProduceBytes returns the bytes of all records awaiting ack.
@@ -308,8 +350,8 @@ func (c *WarpstreamClient) startBackgroundRefresh() {
 // routeRecords groups records by (topic, partition), stamps each group with
 // its initial destination NodeID and mints the per-group done callback.
 // Returns an error if any record's partition has no known candidate.
-func (c *WarpstreamClient) routeRecords(records []*kgo.Record, doneFor func(groupRecords []*kgo.Record) func(ProduceResult)) ([]promisedRoutedTopicPartitionRecords, error) {
-	groups := make(map[topicPartition]*promisedRoutedTopicPartitionRecords)
+func (c *WarpstreamClient) routeRecords(records []*kgo.Record, doneFor func(groupRecords []*kgo.Record) func(ProduceResult)) ([]promised[routedTopicPartitionRecords], error) {
+	groups := make(map[topicPartition]*promised[routedTopicPartitionRecords])
 	order := make([]topicPartition, 0)
 	for _, r := range records {
 		key := topicPartition{topic: r.Topic, partition: r.Partition}
@@ -319,8 +361,8 @@ func (c *WarpstreamClient) routeRecords(records []*kgo.Record, doneFor func(grou
 			if len(cands) == 0 {
 				return nil, fmt.Errorf("no agent assigned for topic %q partition %d", r.Topic, r.Partition)
 			}
-			g = &promisedRoutedTopicPartitionRecords{
-				routedTopicPartitionRecords: routedTopicPartitionRecords{
+			g = &promised[routedTopicPartitionRecords]{
+				item: routedTopicPartitionRecords{
 					topicPartitionRecords: topicPartitionRecords{
 						topic:     r.Topic,
 						partition: r.Partition,
@@ -332,12 +374,12 @@ func (c *WarpstreamClient) routeRecords(records []*kgo.Record, doneFor func(grou
 			groups[key] = g
 			order = append(order, key)
 		}
-		g.records = append(g.records, r)
+		g.item.records = append(g.item.records, r)
 	}
-	out := make([]promisedRoutedTopicPartitionRecords, 0, len(order))
+	out := make([]promised[routedTopicPartitionRecords], 0, len(order))
 	for _, key := range order {
 		g := groups[key]
-		g.done = doneFor(g.records)
+		g.done = doneFor(g.item.records)
 		out = append(out, *g)
 	}
 	return out, nil
@@ -346,13 +388,13 @@ func (c *WarpstreamClient) routeRecords(records []*kgo.Record, doneFor func(grou
 // routeRecord is the single-record specialisation of routeRecords: it
 // skips the per-partition map and avoids heap-allocating an intermediate
 // group. Returns an error if the record's partition has no known candidate.
-func (c *WarpstreamClient) routeRecord(record *kgo.Record, done func(ProduceResult)) (promisedRoutedTopicPartitionRecords, error) {
+func (c *WarpstreamClient) routeRecord(record *kgo.Record, done func(ProduceResult)) (promised[routedTopicPartitionRecords], error) {
 	cands := c.demoter.Candidates(record.Topic, record.Partition, 1)
 	if len(cands) == 0 {
-		return promisedRoutedTopicPartitionRecords{}, fmt.Errorf("no agent assigned for topic %q partition %d", record.Topic, record.Partition)
+		return promised[routedTopicPartitionRecords]{}, fmt.Errorf("no agent assigned for topic %q partition %d", record.Topic, record.Partition)
 	}
-	return promisedRoutedTopicPartitionRecords{
-		routedTopicPartitionRecords: routedTopicPartitionRecords{
+	return promised[routedTopicPartitionRecords]{
+		item: routedTopicPartitionRecords{
 			topicPartitionRecords: topicPartitionRecords{
 				topic:     record.Topic,
 				partition: record.Partition,

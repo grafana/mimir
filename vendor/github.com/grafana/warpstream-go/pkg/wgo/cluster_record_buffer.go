@@ -10,15 +10,14 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
-// ClusterRecordBuffer is the cluster-wide entry point for buffering produce
-// records. It owns the routing and lifecycle of per-agent batches; each
-// AgentRecordBuffer owns its own state, linger timer, and flush loop.
+// ClusterBuffer is the cluster-wide entry point for buffering produce items. It
+// owns the routing and lifecycle of per-agent batches; each AgentBuffer owns its
+// own state, linger timer, and flush loop.
 //
-// The buffer is strategy-free: callers hand partition-grouped work
-// pre-stamped with a destination NodeID (via routedTopicPartitionRecords) and the
-// buffer just bins them by agent. The
-// routing decision is owned upstream, where the PartitionAssignmentStrategy
-// is consulted; the buffer's job is purely batching.
+// The buffer is strategy-free: callers hand items pre-stamped with a destination
+// nodeID and the buffer just bins them by agent. The routing decision is owned
+// upstream, where the PartitionAssignmentStrategy is consulted; the buffer's job
+// is purely batching.
 //
 // Batching per agent has two consequences that matter:
 //
@@ -33,7 +32,7 @@ import (
 // Concurrency is biased to the hot path: the agents map is guarded by a
 // sync.RWMutex so concurrent Adds to different agents take RLock and never
 // contend with each other. Creating a per-agent buffer is a one-time write
-// lock per new NodeID; subsequent Adds reuse it. bufferedBytes /
+// lock per new nodeID; subsequent Adds reuse it. bufferedBytes /
 // bufferedRecords are atomic counters that mirror franz-go's
 // BufferedProduceBytes / BufferedProduceRecords semantics — they reflect
 // "records the producer is responsible for", not "records the caller is
@@ -45,10 +44,10 @@ import (
 // intentionally the caller's responsibility — a caller that needs
 // backpressure must cap its own outstanding produces rather than rely on
 // the buffer to reject work.
-type ClusterRecordBuffer struct {
+type ClusterBuffer[W routedBatch[W]] struct {
 	linger        time.Duration
 	batchMaxBytes int32
-	flush         AgentFlushFunc
+	flush         AgentFlushFunc[W]
 	metrics       *metrics
 
 	// bufferedBytes is the total size in bytes of every record waiting
@@ -62,20 +61,20 @@ type ClusterRecordBuffer struct {
 	bufferedRecords atomic.Int64
 
 	mu           sync.RWMutex
-	agentBuffers map[int32]*AgentRecordBuffer
+	agentBuffers map[int32]*AgentBuffer[W]
 	closed       bool
 }
 
-// NewClusterRecordBuffer returns a buffer that lazily spawns one
-// AgentRecordBuffer per NodeID seen via Add, all sharing flush. It registers
-// the buffered-producer gauges on reg.
-func NewClusterRecordBuffer(linger time.Duration, batchMaxBytes int32, flush AgentFlushFunc, m *metrics, reg prometheus.Registerer) *ClusterRecordBuffer {
-	c := &ClusterRecordBuffer{
+// NewClusterBuffer returns a buffer that lazily spawns one AgentBuffer per
+// nodeID seen via Add, all sharing flush. It registers the buffered-producer
+// gauges on reg.
+func NewClusterBuffer[W routedBatch[W]](linger time.Duration, batchMaxBytes int32, flush AgentFlushFunc[W], m *metrics, reg prometheus.Registerer) *ClusterBuffer[W] {
+	c := &ClusterBuffer[W]{
 		linger:        linger,
 		batchMaxBytes: batchMaxBytes,
 		flush:         flush,
 		metrics:       m,
-		agentBuffers:  make(map[int32]*AgentRecordBuffer),
+		agentBuffers:  make(map[int32]*AgentBuffer[W]),
 	}
 
 	promauto.With(reg).NewGaugeFunc(prometheus.GaugeOpts{
@@ -90,25 +89,24 @@ func NewClusterRecordBuffer(linger time.Duration, batchMaxBytes int32, flush Age
 	return c
 }
 
-// Add buffers partition-grouped work for produce. Each entry's done fires
-// exactly once with the partition's final outcome (nil on success, an
-// error on terminal failure, or ctx.Err() if ctx is canceled before the
-// producer resolves the partition). Cancelling ctx detaches the caller
-// but does not stop the in-flight produce.
-func (c *ClusterRecordBuffer) Add(ctx context.Context, partitions []promisedRoutedTopicPartitionRecords) {
-	if len(partitions) == 0 {
+// Add buffers items for produce. Each item's done fires exactly once with its
+// final outcome (nil on success, an error on terminal failure, or ctx.Err() if
+// ctx is canceled before the producer resolves the partition). Cancelling ctx
+// detaches the caller but does not stop the in-flight produce.
+func (c *ClusterBuffer[W]) Add(ctx context.Context, items []promised[W]) {
+	if len(items) == 0 {
 		return
 	}
 
-	// Wrap each partition's done with two layers:
+	// Wrap each item's done with two layers:
 	//   - a once-fire that delivers either the produce outcome or
 	//     ctx.Err() (whichever first) to the original done;
 	//   - an accounting hook that decrements the buffered counters on
 	//     actual flush completion regardless of whether ctx already fired.
-	wrapped := make([]promisedRoutedTopicPartitionRecords, len(partitions))
-	for i, p := range partitions {
-		payloadBytes := p.recordPayloadBytes()
-		recCount := int64(len(p.records))
+	wrapped := make([]promised[W], len(items))
+	for i, p := range items {
+		payloadBytes := p.item.payloadBytes()
+		recCount := int64(p.item.recordCount())
 		c.bufferedBytes.Add(payloadBytes)
 		c.bufferedRecords.Add(recCount)
 
@@ -151,60 +149,53 @@ func (c *ClusterRecordBuffer) Add(ctx context.Context, partitions []promisedRout
 	c.addToBuffers(ctx, wrapped)
 }
 
-// addToBuffers bins partition groups by destination and dispatches them to
-// the matching per-agent buffer.
-func (c *ClusterRecordBuffer) addToBuffers(ctx context.Context, partitions []promisedRoutedTopicPartitionRecords) {
-	if len(partitions) == 0 {
+// addToBuffers bins items by destination and dispatches them to the matching
+// per-agent buffer.
+func (c *ClusterBuffer[W]) addToBuffers(ctx context.Context, items []promised[W]) {
+	if len(items) == 0 {
 		return
 	}
 	if err := ctx.Err(); err != nil {
-		// Pre-canceled fast path: fail every partition without dispatching.
+		// Pre-canceled fast path: fail every item without dispatching.
 		// Distinct from a mid-flight cancel (which still buffers and lets
 		// the batch flush in the background); this matters because the
 		// caller may otherwise observe a duplicate from a "no-op" call.
-		for _, p := range partitions {
+		for _, p := range items {
 			p.done(ProduceResult{err: err})
 		}
 		return
 	}
 
-	// Stamp record timestamps here, to keep it consistent with franz-go.
-	now := time.Now()
-	for _, p := range partitions {
-		for _, r := range p.records {
-			ensureRecordTimestamp(r, now)
-		}
+	byAgent := make(map[int32][]promised[W])
+	for _, p := range items {
+		nodeID := p.item.getNodeID()
+		byAgent[nodeID] = append(byAgent[nodeID], p)
 	}
-
-	byAgent := make(map[int32][]promisedRoutedTopicPartitionRecords)
-	for _, p := range partitions {
-		byAgent[p.nodeID] = append(byAgent[p.nodeID], p)
-	}
-	for nodeID, agentPartitions := range byAgent {
-		buffer, err := c.agentRecordBufferFor(nodeID)
+	for nodeID, agentItems := range byAgent {
+		buffer, err := c.agentBufferFor(nodeID)
 		if err != nil {
-			for _, p := range agentPartitions {
+			for _, p := range agentItems {
 				p.done(ProduceResult{err: err})
 			}
 			continue
 		}
-		buffer.Add(agentPartitions)
+		buffer.Add(agentItems)
 	}
 }
 
 // BufferedBytes returns the bytes of all records awaiting ack.
-func (c *ClusterRecordBuffer) BufferedBytes() int64 {
+func (c *ClusterBuffer[W]) BufferedBytes() int64 {
 	return c.bufferedBytes.Load()
 }
 
 // BufferedRecords returns the count of records awaiting ack.
-func (c *ClusterRecordBuffer) BufferedRecords() int64 {
+func (c *ClusterBuffer[W]) BufferedRecords() int64 {
 	return c.bufferedRecords.Load()
 }
 
 // Close flushes every per-agent buffer in parallel and waits for them to
 // drain. Subsequent Adds fail with errBufferClosed. Idempotent.
-func (c *ClusterRecordBuffer) Close() {
+func (c *ClusterBuffer[W]) Close() {
 	c.mu.Lock()
 	if c.closed {
 		c.mu.Unlock()
@@ -213,7 +204,7 @@ func (c *ClusterRecordBuffer) Close() {
 	c.closed = true
 
 	// Take ownership of the map and drop it from the cluster. Subsequent
-	// Add / agentRecordBufferFor calls observe c.closed and never touch it.
+	// Add / agentBufferFor calls observe c.closed and never touch it.
 	agentBuffers := c.agentBuffers
 	c.agentBuffers = nil
 	c.mu.Unlock()
@@ -221,7 +212,7 @@ func (c *ClusterRecordBuffer) Close() {
 	var wg sync.WaitGroup
 	for _, a := range agentBuffers {
 		wg.Add(1)
-		go func(a *AgentRecordBuffer) {
+		go func(a *AgentBuffer[W]) {
 			defer wg.Done()
 			a.Close()
 		}(a)
@@ -229,9 +220,9 @@ func (c *ClusterRecordBuffer) Close() {
 	wg.Wait()
 }
 
-// agentRecordBufferFor returns the per-agent buffer for nodeID, creating it
-// on first call. Errors with errBufferClosed if the cluster is closed.
-func (c *ClusterRecordBuffer) agentRecordBufferFor(nodeID int32) (*AgentRecordBuffer, error) {
+// agentBufferFor returns the per-agent buffer for nodeID, creating it on first
+// call. Errors with errBufferClosed if the cluster is closed.
+func (c *ClusterBuffer[W]) agentBufferFor(nodeID int32) (*AgentBuffer[W], error) {
 	// Hot path: read lock for an already-known agent.
 	c.mu.RLock()
 	if c.closed {
@@ -244,7 +235,7 @@ func (c *ClusterRecordBuffer) agentRecordBufferFor(nodeID int32) (*AgentRecordBu
 		return a, nil
 	}
 
-	// Cold path: create on first record for this agent.
+	// Cold path: create on first item for this agent.
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.closed {
@@ -253,7 +244,7 @@ func (c *ClusterRecordBuffer) agentRecordBufferFor(nodeID int32) (*AgentRecordBu
 	if a, ok := c.agentBuffers[nodeID]; ok {
 		return a, nil
 	}
-	a = NewAgentRecordBuffer(nodeID, c.linger, c.batchMaxBytes, c.flush, c.metrics)
+	a = NewAgentBuffer[W](nodeID, c.linger, c.batchMaxBytes, c.flush, c.metrics)
 	c.agentBuffers[nodeID] = a
 	return a, nil
 }

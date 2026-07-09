@@ -740,7 +740,7 @@ github.com/grafana/pyroscope-go/godeltaprof/internal/pprof
 ## explicit; go 1.21
 github.com/grafana/regexp
 github.com/grafana/regexp/syntax
-# github.com/grafana/warpstream-go v0.0.0-20260625083726-8ebc81451c89
+# github.com/grafana/warpstream-go v0.0.0-20260709145107-2e28adcc4bff
 ## explicit; go 1.25.10
 github.com/grafana/warpstream-go/pkg/wgo
 # github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0
@@ -1314,7 +1314,7 @@ github.com/tklauser/go-sysconf
 # github.com/tklauser/numcpus v0.11.0
 ## explicit; go 1.24.0
 github.com/tklauser/numcpus
-# github.com/twmb/franz-go v1.21.4
+# github.com/twmb/franz-go v1.21.5
 ## explicit; go 1.25.0
 github.com/twmb/franz-go/pkg/kbin
 github.com/twmb/franz-go/pkg/kerr
