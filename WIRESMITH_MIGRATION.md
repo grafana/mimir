@@ -16,7 +16,7 @@ protos) `types/known/anypb`, vendored from that release.
 
 > **der5 + 7m6 validation branch (`wiresmith-der5-7m6-validate`).** This branch
 > validates and adopts two compiler changes pinned above (`7b33489`): **der5** —
-> singular message-field getters are now uniformly `*T` in *every* presence mode
+> singular message-field getters are now uniformly `*T` in _every_ presence mode
 > (no_presence previously emitted value `T` getters); and **7m6** —
 > `google.protobuf.Any` is supported, resolving to wiresmith's shipped
 > `github.com/grafana/wiresmith/types/known/anypb` (struct `{TypeUrl, Value}` +
@@ -30,7 +30,7 @@ protos) `types/known/anypb`, vendored from that release.
 > getter is called as a value getter anywhere in the repo; `go build ./...`
 > clean), and (b) an unrelated marshal codegen improvement (single-byte
 > length-prefix fast-path: `if len <= 0x7F { dAtA[i-1] = uint8(len); i-- } else
-> { EncodeVarint }`) on every length-delimited field. The mimir expdiff still
+{ EncodeVarint }`) on every length-delimited field. The mimir expdiff still
 > reverse-applies cleanly onto fresh `7b33489` output, reproducing the committed
 > `mimir.pb.go` byte-for-byte (the expdiff's `@@` hunk line numbers drift ~225
 > lines from the der5/fast-path shifts, but the patch body is unchanged and git
@@ -45,31 +45,31 @@ pinned compiler. No `replace` remains; the vendored runtime
 
 ## Status
 
-| Proto                              | Status                                 | Expdiff                                                                                     |
-| ---------------------------------- | -------------------------------------- | ------------------------------------------------------------------------------------------- |
-| `pkg/mimirpb/mimir.proto`          | migrated (phase 1+2+3+DB-18+NoPrescan) | 1081 lines (1084 w/ guard hunk, 1094 pre-4f41063, 1087 phase 3, 1103 phase 2, 2144 phase 1) |
-| `pkg/distributor/ha_tracker.proto` | migrated (phase 2)                     | none                                                                                        |
-| `pkg/querier/stats/stats.proto`    | migrated (phase 2)                     | none (one hand-written `GoString` shim, kept while querymiddleware/querierpb are gogo)       |
-| `pkg/ruler/rulespb/rules.proto`    | migrated (7m6/Any, validate branch)    | none (no shim needed)                                                                        |
-| `pkg/streamingpromql/**` (9 protos) | migrated (cqa.1)                       | none (2 `GoString` shim methods retired in cqa.2)                                          |
-| `pkg/querier/querierpb/querier.proto` | migrated (cqa.2)                     | none (gogoproto_registry.go for gogo interop)                                               |
-| `pkg/streamingpromql/optimize/plan/rangevectorsplitting/cache/cache.proto` | migrated (cqa.2) | none                                         |
-| `pkg/scheduler/schedulerpb/scheduler.proto`   | migrated (cqa.3)                     | none                                                                 |
-| `pkg/ruler/ruler.proto`                       | migrated (cqa.3)                     | none                                                                 |
-| `pkg/blockbuilder/schedulerpb/scheduler.proto` | migrated (cqa.3)                    | none                                                                 |
-| `pkg/compactor/scheduler/compactorschedulerpb/compactorscheduler.proto` | migrated (cqa.3) | none                                              |
-| `pkg/frontend/v2/frontendv2pb/frontend.proto` | migrated (cqa.3)                     | none (wiresmith_compat.go: FreeBuffer/Buffer/SetBuffer for gRPC frame retention)             |
-| `pkg/util/httpgrpcpb/httpgrpcpb.proto`        | new (cqa.3 bridge)                   | none (dskit httpgrpc local-copy bridge with conversion helpers + HeadersCarrier)             |
-| `pkg/ingester/client/ingester.proto`          | migrated (cqa.5)                     | ingester.pb.go.expdiff: injects mimirpb.BufferHolder into 4 response structs                |
-| `pkg/distributor/distributorpb/distributor.proto` | migrated (cqa.5)                 | pure-service proto; distributor.pb.go is a stub (no messages); Distributor struct gets UnimplementedDistributorServer |
-| `pkg/usagetracker/usagetrackerpb/usagetracker.proto` | migrated (cqa.5)            | UsageTracker struct gets UnimplementedUsageTrackerServer                                     |
-| `pkg/storage/indexheader/indexheaderpb/sparse.proto` | migrated (cqa.5)            | map[string]PostingValueOffsets value form (no pointer map values in wiresmith)               |
-| `pkg/streamingpromql/optimize/plan/splitandcache/cache.proto` | migrated (cqa.4)     | none (2 `GoString` shims retired: querierpb/gostring.go, streamingpromql/types/gostring.go) |
-| `pkg/storegateway/storepb/types.proto`        | migrated (cqa.4)                     | none                                                                 |
-| `pkg/storegateway/storepb/rpc.proto`          | migrated (cqa.4)                     | rpc.pb.go.expdiff: injects mimirpb.BufferHolder into SeriesResponse; 5 direct Any hints → AnyAdapter, oneof hints → native anypb |
-| `pkg/storegateway/storepb/cache.proto`        | migrated (cqa.4)                     | cache.pb.go.expdiff: injects mimirpb.BufferHolder into CachedSeries  |
-| `pkg/storegateway/hintspb/hints.proto`        | migrated (cqa.4)                     | none (gogoproto_registry.go: hints are gogo-registry Any payloads)   |
-| `pkg/frontend/querymiddleware/model.proto`    | migrated (cqa.4)                     | model.pb.go.expdiff: injects mimirpb.BufferHolder into PrometheusResponse; Extent.response → AnyAdapter; gogoproto_registry.go; explicit jsontag per field for byte-identical JSON |
+| Proto                                                                      | Status                                 | Expdiff                                                                                                                                                                            |
+| -------------------------------------------------------------------------- | -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pkg/mimirpb/mimir.proto`                                                  | migrated (phase 1+2+3+DB-18+NoPrescan) | 1081 lines (1084 w/ guard hunk, 1094 pre-4f41063, 1087 phase 3, 1103 phase 2, 2144 phase 1)                                                                                        |
+| `pkg/distributor/ha_tracker.proto`                                         | migrated (phase 2)                     | none                                                                                                                                                                               |
+| `pkg/querier/stats/stats.proto`                                            | migrated (phase 2)                     | none (one hand-written `GoString` shim, kept while querymiddleware/querierpb are gogo)                                                                                             |
+| `pkg/ruler/rulespb/rules.proto`                                            | migrated (7m6/Any, validate branch)    | none (no shim needed)                                                                                                                                                              |
+| `pkg/streamingpromql/**` (9 protos)                                        | migrated (cqa.1)                       | none (2 `GoString` shim methods retired in cqa.2)                                                                                                                                  |
+| `pkg/querier/querierpb/querier.proto`                                      | migrated (cqa.2)                       | none (gogoproto_registry.go for gogo interop)                                                                                                                                      |
+| `pkg/streamingpromql/optimize/plan/rangevectorsplitting/cache/cache.proto` | migrated (cqa.2)                       | none                                                                                                                                                                               |
+| `pkg/scheduler/schedulerpb/scheduler.proto`                                | migrated (cqa.3)                       | none                                                                                                                                                                               |
+| `pkg/ruler/ruler.proto`                                                    | migrated (cqa.3)                       | none                                                                                                                                                                               |
+| `pkg/blockbuilder/schedulerpb/scheduler.proto`                             | migrated (cqa.3)                       | none                                                                                                                                                                               |
+| `pkg/compactor/scheduler/compactorschedulerpb/compactorscheduler.proto`    | migrated (cqa.3)                       | none                                                                                                                                                                               |
+| `pkg/frontend/v2/frontendv2pb/frontend.proto`                              | migrated (cqa.3)                       | none (wiresmith_compat.go: FreeBuffer/Buffer/SetBuffer for gRPC frame retention)                                                                                                   |
+| `pkg/util/httpgrpcpb/httpgrpcpb.proto`                                     | new (cqa.3 bridge)                     | none (dskit httpgrpc local-copy bridge with conversion helpers + HeadersCarrier)                                                                                                   |
+| `pkg/ingester/client/ingester.proto`                                       | migrated (cqa.5)                       | ingester.pb.go.expdiff: injects mimirpb.BufferHolder into 4 response structs                                                                                                       |
+| `pkg/distributor/distributorpb/distributor.proto`                          | migrated (cqa.5)                       | pure-service proto; distributor.pb.go is a stub (no messages); Distributor struct gets UnimplementedDistributorServer                                                              |
+| `pkg/usagetracker/usagetrackerpb/usagetracker.proto`                       | migrated (cqa.5)                       | UsageTracker struct gets UnimplementedUsageTrackerServer                                                                                                                           |
+| `pkg/storage/indexheader/indexheaderpb/sparse.proto`                       | migrated (cqa.5)                       | map[string]PostingValueOffsets value form (no pointer map values in wiresmith)                                                                                                     |
+| `pkg/streamingpromql/optimize/plan/splitandcache/cache.proto`              | migrated (cqa.4)                       | none (2 `GoString` shims retired: querierpb/gostring.go, streamingpromql/types/gostring.go)                                                                                        |
+| `pkg/storegateway/storepb/types.proto`                                     | migrated (cqa.4)                       | none                                                                                                                                                                               |
+| `pkg/storegateway/storepb/rpc.proto`                                       | migrated (cqa.4)                       | rpc.pb.go.expdiff: injects mimirpb.BufferHolder into SeriesResponse; 5 direct Any hints → AnyAdapter, oneof hints → native anypb                                                   |
+| `pkg/storegateway/storepb/cache.proto`                                     | migrated (cqa.4)                       | cache.pb.go.expdiff: injects mimirpb.BufferHolder into CachedSeries                                                                                                                |
+| `pkg/storegateway/hintspb/hints.proto`                                     | migrated (cqa.4)                       | none (gogoproto_registry.go: hints are gogo-registry Any payloads)                                                                                                                 |
+| `pkg/frontend/querymiddleware/model.proto`                                 | migrated (cqa.4)                       | model.pb.go.expdiff: injects mimirpb.BufferHolder into PrometheusResponse; Extent.response → AnyAdapter; gogoproto_registry.go; explicit jsontag per field for byte-identical JSON |
 
 **Mimir's own protos are now 100% wiresmith** — no `.proto` under `pkg/`
 imports `gogoproto/gogo.proto`. The alertmanager protos
@@ -302,7 +302,7 @@ opaque passthrough.
   wiresmith resolves imports by import-statement path under `--proto_path`. The
   repo does not place mimir.proto at that path, so the Makefile rule stages a
   temporary tree (`.rules-stage/github.com/grafana/mimir/pkg/mimirpb/mimir.proto`
-  + `.rules-stage/rulespb/rules.proto`), runs wiresmith with
+  and `.rules-stage/rulespb/rules.proto`), runs wiresmith with
   `-M github.com/grafana/mimir/pkg/mimirpb/mimir.proto=github.com/grafana/mimir/pkg/mimirpb`,
   and copies the four outputs back. Regen is byte-for-byte reproducible.
 
@@ -325,7 +325,7 @@ bytes via gogo `proto.Marshal`/`Unmarshal`, which dispatch to wiresmith's
 - `planning/core/core.proto` — `enum_no_prefix_all` (4 enums, distinct prefixes,
   no bare-constant collisions); `casttype` on `PositionRange.{start,end}`
   (`posrange.Pos`), `VectorMatching.card`, `LabelMatcher.type`; `customtype =
-  "...mimirpb.LabelAdapter"` on `FunctionCallDetails.absentLabels` (reuses the
+"...mimirpb.LabelAdapter"` on `FunctionCallDetails.absentLabels` (reuses the
   mimirpb adapter); `stdtime` on the three `timestamp` fields; `stdduration` on
   the offset/range/step fields; `pointer` on all `matchers` (`[]*LabelMatcher`)
   and on `BinaryExpressionDetails.{vectorMatching,hints}` (gogo `*T`).
@@ -457,11 +457,11 @@ registry (the same class of blocker as storepb/rpc.proto).
 
 ### Test results (cqa.2, all `-count=1`)
 
-| Package                                                            | Result |
-| ------------------------------------------------------------------ | ------ |
-| `./pkg/querier/...`                                                | ok     |
-| `./pkg/frontend/...`                                               | ok     |
-| `./pkg/streamingpromql/optimize/...`                               | ok     |
+| Package                                                                            | Result |
+| ---------------------------------------------------------------------------------- | ------ |
+| `./pkg/querier/...`                                                                | ok     |
+| `./pkg/frontend/...`                                                               | ok     |
+| `./pkg/streamingpromql/optimize/...`                                               | ok     |
 | `go build ./pkg/querier/... ./pkg/frontend/... ./pkg/streamingpromql/optimize/...` | clean  |
 
 ## standalone protos cluster (cqa.5)
@@ -496,13 +496,13 @@ Four protos that previously had no inter-dependency and were still gogo-generate
 
 ### Test results (cqa.5, all `-count=1`)
 
-| Package                                      | Result |
-| -------------------------------------------- | ------ |
-| `./pkg/ingester/...`                         | ok     |
-| `./pkg/distributor/...`                      | ok     |
-| `./pkg/usagetracker/...`                     | ok     |
-| `./pkg/storage/indexheader/...`              | ok     |
-| `go build ./...`                             | clean  |
+| Package                         | Result |
+| ------------------------------- | ------ |
+| `./pkg/ingester/...`            | ok     |
+| `./pkg/distributor/...`         | ok     |
+| `./pkg/usagetracker/...`        | ok     |
+| `./pkg/storage/indexheader/...` | ok     |
+| `go build ./...`                | clean  |
 
 ## storepb + hintspb + splitandcache + model cluster (cqa.4) — final full switch
 
@@ -625,11 +625,11 @@ cluster matching a later migration phase, not a blocker:
 
 ## Test results (cqa.2, all `-count=1`)
 
-| Package                               | Result |
-| ------------------------------------- | ------ |
-| `./pkg/querier/...`                   | ok     |
-| `./pkg/frontend/...`                  | ok     |
-| `./pkg/streamingpromql/optimize/...`  | ok     |
+| Package                              | Result |
+| ------------------------------------ | ------ |
+| `./pkg/querier/...`                  | ok     |
+| `./pkg/frontend/...`                 | ok     |
+| `./pkg/streamingpromql/optimize/...` | ok     |
 
 ## Benchmarks (Apple M4 Pro, benchstat-grade — streamingpromql cqa.1, 2026-06-18)
 
@@ -642,12 +642,12 @@ PromQL expressions, each with an `encode` and a `decode` sub-benchmark.
 
 Geomean across all 36 sub-benchmarks:
 
-| Metric    | gogo     | wiresmith | Δ                |
-| --------- | -------- | --------- | ---------------- |
-| sec/op    | 657.1n   | 610.4n    | **−7.11%**       |
-| B (wire)  | 145.4    | 140.4     | **−3.44%**       |
-| B/op      | 1.389Ki  | 1.298Ki   | **−6.52%**       |
-| allocs/op | 26.98    | 25.50     | **−5.49%**       |
+| Metric    | gogo    | wiresmith | Δ          |
+| --------- | ------- | --------- | ---------- |
+| sec/op    | 657.1n  | 610.4n    | **−7.11%** |
+| B (wire)  | 145.4   | 140.4     | **−3.44%** |
+| B/op      | 1.389Ki | 1.298Ki   | **−6.52%** |
+| allocs/op | 26.98   | 25.50     | **−5.49%** |
 
 **No regression on any sub-benchmark.** Every `decode` is a significant win
 (−5% to −20% wall, −5% to −25% B/op, −5% to −15% allocs) from the no_presence
