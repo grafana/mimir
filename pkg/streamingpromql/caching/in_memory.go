@@ -13,9 +13,10 @@ import (
 type InMemoryCache struct {
 	Entries map[string]InMemoryCacheEntry
 
-	GetCount int
-	HitCount int
-	SetCount int
+	GetCount  int
+	HitCount  int
+	SetCount  int
+	KeysCount int
 }
 
 // NewInMemoryCache creates a new in-memory cache.
@@ -33,6 +34,7 @@ type InMemoryCacheEntry struct {
 
 func (c *InMemoryCache) GetMulti(ctx context.Context, keys []string, opts ...cache.Option) (map[string][]byte, error) {
 	c.GetCount++
+	c.KeysCount += len(keys)
 	results := make(map[string][]byte, len(keys))
 
 	for _, key := range keys {
@@ -59,5 +61,6 @@ func (c *InMemoryCache) Reset() {
 	c.Entries = make(map[string]InMemoryCacheEntry)
 	c.SetCount = 0
 	c.GetCount = 0
+	c.KeysCount = 0
 	c.HitCount = 0
 }

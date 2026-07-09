@@ -177,6 +177,11 @@ func (m *FunctionOverRangeVectorSplit[T]) AfterPrepare(ctx context.Context) erro
 }
 
 func (m *FunctionOverRangeVectorSplit[T]) createSplits(ctx context.Context) error {
+	cachedResults, err := m.getCachedResults(ctx)
+	if err != nil {
+		return err
+	}
+
 	var currentUncachedRanges []Range
 	var currentRangeLength int64
 
@@ -195,20 +200,14 @@ func (m *FunctionOverRangeVectorSplit[T]) createSplits(ctx context.Context) erro
 		return nil
 	}
 
-	for _, splitRange := range m.splitRanges {
+	for i, splitRange := range m.splitRanges {
 		if splitRange.Cacheable {
-			// TODO: considering using a single call to retrieve all the cache entries.
-			metadata, annotations, results, stats, found, err := m.cache.Get(ctx, m.FuncId, m.innerCacheKey, splitRange.Start, splitRange.End, m.cacheStats)
-			if err != nil {
-				return err
-			}
-
-			if found {
+			if cached := cachedResults[i]; cached.Found {
 				if err := flushCurrentUncachedRanges(); err != nil {
 					return err
 				}
 
-				cachedSplit, err := NewCachedSplit(ctx, metadata, annotations, results, stats, m)
+				cachedSplit, err := NewCachedSplit(ctx, cached.SeriesMetadata, cached.Annotations, cached.Results, cached.Stats, m)
 				if err != nil {
 					return err
 				}
@@ -233,6 +232,39 @@ func (m *FunctionOverRangeVectorSplit[T]) createSplits(ctx context.Context) erro
 
 	// Create split from final uncached ranges if they exist.
 	return flushCurrentUncachedRanges()
+}
+
+// getCachedResults looks up the cache entries for all cacheable split ranges using a single cache request.
+// The returned slice is aligned with m.splitRanges. Entries for non-cacheable ranges are always not found.
+func (m *FunctionOverRangeVectorSplit[T]) getCachedResults(ctx context.Context) ([]cache.GetResult[T], error) {
+	var cacheableRanges []cache.GetRange
+
+	for _, splitRange := range m.splitRanges {
+		if splitRange.Cacheable {
+			cacheableRanges = append(cacheableRanges, cache.GetRange{Start: splitRange.Start, End: splitRange.End})
+		}
+	}
+
+	if len(cacheableRanges) == 0 {
+		return nil, nil
+	}
+
+	cachedResults, err := m.cache.GetMulti(ctx, m.FuncId, m.innerCacheKey, cacheableRanges, m.cacheStats)
+	if err != nil {
+		return nil, err
+	}
+
+	// cachedResults only contains entries for the cacheable ranges, so return them aligned with m.splitRanges.
+	results := make([]cache.GetResult[T], len(m.splitRanges))
+	nextCachedResult := 0
+	for i, splitRange := range m.splitRanges {
+		if splitRange.Cacheable {
+			results[i] = cachedResults[nextCachedResult]
+			nextCachedResult++
+		}
+	}
+
+	return results, nil
 }
 
 func (m *FunctionOverRangeVectorSplit[T]) materializeOperatorForTimeRange(ctx context.Context, start int64, end int64, step int64) (types.RangeVectorOperator, error) {
