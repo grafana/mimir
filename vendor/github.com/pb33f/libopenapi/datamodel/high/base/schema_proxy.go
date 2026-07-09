@@ -540,8 +540,8 @@ func (sp *SchemaProxy) renderTransformedRefWithSiblings(s *Schema) (*yaml.Node, 
 			continue
 		}
 		if keyNode.Value == "$ref" {
-			refKey := cloneYAMLNode(keyNode)
-			refValue := cloneYAMLNode(valueNode)
+			refKey := utils.CloneYAMLNode(keyNode)
+			refValue := utils.CloneYAMLNode(valueNode)
 			if refValue == nil {
 				refValue = utils.CreateStringNode(ref)
 			}
@@ -550,8 +550,8 @@ func (sp *SchemaProxy) renderTransformedRefWithSiblings(s *Schema) (*yaml.Node, 
 			continue
 		}
 		if _, siblingValue := findYAMLPair(siblingNode, keyNode.Value); siblingValue != nil {
-			renderKey := cloneYAMLNode(keyNode)
-			result.Content = append(result.Content, renderKey, cloneYAMLNode(siblingValue))
+			renderKey := utils.CloneYAMLNode(keyNode)
+			result.Content = append(result.Content, renderKey, utils.CloneYAMLNode(siblingValue))
 			consumed[keyNode.Value] = struct{}{}
 		}
 	}
@@ -562,7 +562,7 @@ func (sp *SchemaProxy) renderTransformedRefWithSiblings(s *Schema) (*yaml.Node, 
 		if _, ok := consumed[keyNode.Value]; ok {
 			continue
 		}
-		result.Content = append(result.Content, cloneYAMLNode(keyNode), cloneYAMLNode(valueNode))
+		result.Content = append(result.Content, utils.CloneYAMLNode(keyNode), utils.CloneYAMLNode(valueNode))
 	}
 
 	return result, true, nil
@@ -607,32 +607,6 @@ func findYAMLPair(node *yaml.Node, key string) (*yaml.Node, *yaml.Node) {
 		}
 	}
 	return nil, nil
-}
-
-func cloneYAMLNode(node *yaml.Node) *yaml.Node {
-	if node == nil {
-		return nil
-	}
-	clone := &yaml.Node{
-		Kind:        node.Kind,
-		Style:       node.Style,
-		Tag:         node.Tag,
-		Value:       node.Value,
-		Anchor:      node.Anchor,
-		Alias:       node.Alias,
-		Line:        node.Line,
-		Column:      node.Column,
-		HeadComment: node.HeadComment,
-		LineComment: node.LineComment,
-		FootComment: node.FootComment,
-	}
-	if len(node.Content) > 0 {
-		clone.Content = make([]*yaml.Node, len(node.Content))
-		for i, child := range node.Content {
-			clone.Content[i] = cloneYAMLNode(child)
-		}
-	}
-	return clone
 }
 
 // Render will return a YAML representation of the Schema object as a byte slice.

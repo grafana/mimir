@@ -64,8 +64,11 @@ type Schema struct {
 	DependentSchemas  *orderedmap.Map[string, *SchemaProxy] `json:"dependentSchemas,omitempty" yaml:"dependentSchemas,omitempty"`
 	DependentRequired *orderedmap.Map[string, []string]     `json:"dependentRequired,omitempty" yaml:"dependentRequired,omitempty"`
 	PatternProperties *orderedmap.Map[string, *SchemaProxy] `json:"patternProperties,omitempty" yaml:"patternProperties,omitempty"`
-	PropertyNames     *SchemaProxy                          `json:"propertyNames,omitempty" yaml:"propertyNames,omitempty"`
-	UnevaluatedItems  *SchemaProxy                          `json:"unevaluatedItems,omitempty" yaml:"unevaluatedItems,omitempty"`
+
+	// Defs holds reusable JSON Schema definitions declared under the $defs keyword.
+	Defs             *orderedmap.Map[string, *SchemaProxy] `json:"$defs,omitempty" yaml:"$defs,omitempty"`
+	PropertyNames    *SchemaProxy                          `json:"propertyNames,omitempty" yaml:"propertyNames,omitempty"`
+	UnevaluatedItems *SchemaProxy                          `json:"unevaluatedItems,omitempty" yaml:"unevaluatedItems,omitempty"`
 
 	// in 3.1 UnevaluatedProperties can be a Schema or a boolean
 	// https://github.com/pb33f/libopenapi/issues/118
@@ -398,6 +401,8 @@ func NewSchema(schema *base.Schema) *Schema {
 			s.DependentSchemas = props
 		case 2:
 			s.PatternProperties = props
+		case 3:
+			s.Defs = props
 		}
 	}
 
@@ -432,6 +437,13 @@ func NewSchema(schema *base.Schema) *Schema {
 	}
 	for name, schemaProxy := range schema.PatternProperties.Value.FromOldest() {
 		buildProps(name, schemaProxy, patternProps, 2)
+	}
+
+	if !schema.Defs.IsEmpty() {
+		defs := orderedmap.New[string, *SchemaProxy]()
+		for name, schemaProxy := range schema.Defs.Value.FromOldest() {
+			buildProps(name, schemaProxy, defs, 3)
+		}
 	}
 
 	var allOf []*SchemaProxy
