@@ -13,12 +13,12 @@ import "google/protobuf/any.proto";
 import "wiresmith/options.proto";
 
 option go_package = "storepb";
-// no_presence_all reproduces the gogoproto goproto_{unkeyed,unrecognized,
-// sizecache}_all=false layout (declared-fields-only, no presence bitmap).
-option (wiresmith.options.no_presence_all) = true;
 // enum_no_prefix_all reproduces gogoproto's unprefixed enum value constants
 // (ORDER_BY_VALUE_ASC, FUZZ_ALG_SUBSEQUENCE, ...).
 option (wiresmith.options.enum_no_prefix_all) = true;
+// no_presence_all reproduces the gogoproto goproto_{unkeyed,unrecognized,
+// sizecache}_all=false layout (declared-fields-only, no presence bitmap).
+option (wiresmith.options.no_presence_all) = true;
 
 message SeriesRequest {
   int64 min_time = 1;

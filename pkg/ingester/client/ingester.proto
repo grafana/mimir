@@ -12,12 +12,12 @@ import "github.com/grafana/mimir/pkg/mimirpb/mimir.proto";
 import "wiresmith/options.proto";
 
 option go_package = "github.com/grafana/mimir/pkg/ingester/client";
-// Drop the per-message presence bitmap everywhere: the gogo layout had no
-// presence tracking for proto3 non-optional fields.
-option (wiresmith.options.no_presence_all) = true;
 // gogoproto emitted unprefixed enum constants (goproto_enum_prefix=false);
 // keep that API so existing call sites compile unchanged.
 option (wiresmith.options.enum_no_prefix_all) = true;
+// Drop the per-message presence bitmap everywhere: the gogo layout had no
+// presence tracking for proto3 non-optional fields.
+option (wiresmith.options.no_presence_all) = true;
 
 service Ingester {
   rpc Push(cortexpb.WriteRequest) returns (cortexpb.WriteResponse) {}
@@ -219,9 +219,7 @@ message QueryStreamSeries {
   // LabelAdapter reuses the mimirpb wiresmith customtype adapters; see
   // pkg/mimirpb/wiresmith_adapters.go. no_presence_all makes this value-form
   // ([]LabelAdapter), matching gogo's nullable=false + customtype layout.
-  repeated cortexpb.LabelPair labels = 1 [
-    (wiresmith.options.customtype) = "github.com/grafana/mimir/pkg/mimirpb.LabelAdapter"
-  ];
+  repeated cortexpb.LabelPair labels = 1 [(wiresmith.options.customtype) = "github.com/grafana/mimir/pkg/mimirpb.LabelAdapter"];
   int64 chunk_count = 2;
 }
 

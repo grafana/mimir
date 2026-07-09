@@ -7,9 +7,8 @@ package compactorschedulerpb;
 import "wiresmith/options.proto";
 
 option go_package = "github.com/grafana/mimir/pkg/compactor/scheduler/compactorschedulerpb";
-
-option (wiresmith.options.no_presence_all) = true;
 option (wiresmith.options.enum_no_prefix_all) = true;
+option (wiresmith.options.no_presence_all) = true;
 
 message JobKey {
   string id = 1;

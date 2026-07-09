@@ -35,7 +35,6 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
 	"github.com/grafana/dskit/user"
-	"github.com/grafana/mimir/pkg/util/httpgrpcpb"
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/prometheus/model/labels"
@@ -58,6 +57,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerdiscovery"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
+	"github.com/grafana/mimir/pkg/util/httpgrpcpb"
 	"github.com/grafana/mimir/pkg/util/httpgrpcutil"
 	utiltest "github.com/grafana/mimir/pkg/util/test"
 )

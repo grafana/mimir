@@ -10,13 +10,13 @@ import "github.com/grafana/mimir/pkg/mimirpb/mimir.proto";
 import "wiresmith/options.proto";
 
 option go_package = "storepb";
+// enum_no_prefix_all reproduces gogoproto's unprefixed enum value constants
+// (Chunk_XOR, LabelMatcher_EQ, ...) rather than <EnumType>_<value>.
+option (wiresmith.options.enum_no_prefix_all) = true;
 // no_presence_all reproduces the gogoproto goproto_{unkeyed,unrecognized,
 // sizecache}_all=false layout: declared-fields-only structs with no presence
 // bitmap, which keeps the zero-copy casts to/from Prometheus data types valid.
 option (wiresmith.options.no_presence_all) = true;
-// enum_no_prefix_all reproduces gogoproto's unprefixed enum value constants
-// (Chunk_XOR, LabelMatcher_EQ, ...) rather than <EnumType>_<value>.
-option (wiresmith.options.enum_no_prefix_all) = true;
 
 message Chunk {
   enum Encoding {
@@ -26,15 +26,11 @@ message Chunk {
     Chunk_XOR2 = 3;
   }
   Encoding type = 1;
-  bytes data = 2 [
-    (wiresmith.options.customtype) = "github.com/grafana/mimir/pkg/mimirpb.UnsafeByteSlice"
-  ];
+  bytes data = 2 [(wiresmith.options.customtype) = "github.com/grafana/mimir/pkg/mimirpb.UnsafeByteSlice"];
 }
 
 message StreamingSeries {
-  repeated cortexpb.LabelPair labels = 1 [
-    (wiresmith.options.customtype) = "github.com/grafana/mimir/pkg/mimirpb.LabelAdapter"
-  ];
+  repeated cortexpb.LabelPair labels = 1 [(wiresmith.options.customtype) = "github.com/grafana/mimir/pkg/mimirpb.LabelAdapter"];
 }
 
 message StreamingSeriesBatch {

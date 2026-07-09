@@ -13,7 +13,6 @@ package mimir.httpgrpcpb;
 import "wiresmith/options.proto";
 
 option go_package = "github.com/grafana/mimir/pkg/util/httpgrpcpb";
-
 // Drop the per-message presence bitmap: gogoproto nullable=false parity.
 option (wiresmith.options.no_presence_all) = true;
 

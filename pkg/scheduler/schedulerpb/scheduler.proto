@@ -9,13 +9,11 @@ package schedulerpb;
 
 import "github.com/grafana/mimir/pkg/util/httpgrpcpb/httpgrpcpb.proto";
 import "google/protobuf/any.proto";
-
 import "wiresmith/options.proto";
 
 option go_package = "github.com/grafana/mimir/pkg/scheduler/schedulerpb";
-
-option (wiresmith.options.no_presence_all) = true;
 option (wiresmith.options.enum_no_prefix_all) = true;
+option (wiresmith.options.no_presence_all) = true;
 
 // Scheduler interface exposed to Queriers.
 service SchedulerForQuerier {

@@ -7,7 +7,6 @@ package schedulerpb;
 import "wiresmith/options.proto";
 
 option go_package = "github.com/grafana/mimir/pkg/blockbuilder/schedulerpb";
-
 option (wiresmith.options.no_presence_all) = true;
 
 message JobKey {

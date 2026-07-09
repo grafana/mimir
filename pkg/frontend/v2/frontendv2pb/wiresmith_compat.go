@@ -46,13 +46,7 @@ func (m *QueryResultStreamRequest) FreeBuffer() {
 	}
 }
 
-// noopBufferHolder is returned by Buffer() for test/compat code that calls buf.Free().
-// The actual buffer is managed via grpcBuffers; this is a separate read-only accessor.
-type noopBufferHolder struct{}
-
-func (noopBufferHolder) Free() {}
-
-// Buffer returns the stored gRPC receive-frame buffer, or a no-op holder if none.
+// Buffer returns the stored gRPC receive-frame buffer, or nil if none is held.
 // Callers that use buf.Free() to release the frame should call FreeBuffer() directly;
 // this method exists for compatibility with code that stores the result for deferred free.
 func (m *QueryResultStreamRequest) Buffer() mem.Buffer {

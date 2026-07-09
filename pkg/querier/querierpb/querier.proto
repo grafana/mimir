@@ -58,9 +58,7 @@ message EvaluateQueryResponseSeriesMetadata {
 }
 
 message SeriesMetadata {
-  repeated cortexpb.LabelPair labels = 1 [
-    (wiresmith.options.customtype) = "github.com/grafana/mimir/pkg/mimirpb.LabelAdapter"
-  ];
+  repeated cortexpb.LabelPair labels = 1 [(wiresmith.options.customtype) = "github.com/grafana/mimir/pkg/mimirpb.LabelAdapter"];
   bool dropName = 2;
 }
 

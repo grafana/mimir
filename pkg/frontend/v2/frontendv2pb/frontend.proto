@@ -7,14 +7,12 @@ syntax = "proto3";
 
 package frontendv2pb;
 
-import "github.com/grafana/mimir/pkg/util/httpgrpcpb/httpgrpcpb.proto";
 import "github.com/grafana/mimir/pkg/querier/querierpb/querier.proto";
 import "github.com/grafana/mimir/pkg/querier/stats/stats.proto";
-
+import "github.com/grafana/mimir/pkg/util/httpgrpcpb/httpgrpcpb.proto";
 import "wiresmith/options.proto";
 
 option go_package = "github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb";
-
 option (wiresmith.options.no_presence_all) = true;
 
 // Frontend interface exposed to Queriers. Used by queriers to report back the result of the query.
@@ -26,9 +24,7 @@ service FrontendForQuerier {
 message QueryResultRequest {
   uint64 queryID = 1;
   mimir.httpgrpcpb.HTTPResponse httpResponse = 2 [(wiresmith.options.pointer) = true];
-  stats.Stats stats = 3 [
-    (wiresmith.options.customtype) = "github.com/grafana/mimir/pkg/querier/stats.SafeStats"
-  ];
+  stats.Stats stats = 3 [(wiresmith.options.customtype) = "github.com/grafana/mimir/pkg/querier/stats.SafeStats"];
 
   // There is no userID field here, because Querier puts userID into the context when
   // calling QueryResult, and that is where Frontend expects to find it.
@@ -51,9 +47,7 @@ message QueryResultStreamRequest {
 message QueryResultMetadata {
   int32 code = 1;
   repeated mimir.httpgrpcpb.Header headers = 2 [(wiresmith.options.pointer) = true];
-  stats.Stats stats = 3 [
-    (wiresmith.options.customtype) = "github.com/grafana/mimir/pkg/querier/stats.SafeStats"
-  ];
+  stats.Stats stats = 3 [(wiresmith.options.customtype) = "github.com/grafana/mimir/pkg/querier/stats.SafeStats"];
 }
 
 message QueryResultBody {

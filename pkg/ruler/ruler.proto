@@ -13,13 +13,11 @@ import "github.com/grafana/mimir/pkg/mimirpb/mimir.proto";
 import "github.com/grafana/mimir/pkg/ruler/rulespb/rules.proto";
 import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";
-
 import "wiresmith/options.proto";
 
 option go_package = "github.com/grafana/mimir/pkg/ruler";
-
-option (wiresmith.options.no_presence_all) = true;
 option (wiresmith.options.enum_no_prefix_all) = true;
+option (wiresmith.options.no_presence_all) = true;
 
 service Ruler {
   // Rules returns the currently loaded on the ruler instance for the authenticated tenant.
@@ -79,12 +77,8 @@ message RuleStateDesc {
 
 message AlertStateDesc {
   string state = 1;
-  repeated cortexpb.LabelPair labels = 2 [
-    (wiresmith.options.customtype) = "github.com/grafana/mimir/pkg/mimirpb.LabelAdapter"
-  ];
-  repeated cortexpb.LabelPair annotations = 3 [
-    (wiresmith.options.customtype) = "github.com/grafana/mimir/pkg/mimirpb.LabelAdapter"
-  ];
+  repeated cortexpb.LabelPair labels = 2 [(wiresmith.options.customtype) = "github.com/grafana/mimir/pkg/mimirpb.LabelAdapter"];
+  repeated cortexpb.LabelPair annotations = 3 [(wiresmith.options.customtype) = "github.com/grafana/mimir/pkg/mimirpb.LabelAdapter"];
   double value = 4;
   google.protobuf.Timestamp active_at = 5 [(wiresmith.options.stdtime) = true];
   google.protobuf.Timestamp fired_at = 6 [(wiresmith.options.stdtime) = true];
