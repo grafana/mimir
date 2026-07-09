@@ -1944,9 +1944,10 @@ store_gateway_client:
 
 # (advanced) Delay before initiating requests to further ingesters when request
 # minimization is enabled and the initially selected set of ingesters have not
-# all responded. Ignored if -querier.minimize-ingester-requests is not enabled.
+# all responded. Set to 0 to disable hedging. Ignored if
+# -querier.minimize-ingester-requests is not enabled.
 # CLI flag: -querier.minimize-ingester-requests-hedging-delay
-[minimize_ingester_requests_hedging_delay: <duration> | default = 3s]
+[minimize_ingester_requests_hedging_delay: <duration> | default = 0s]
 
 # (experimental) Query engine to use, either 'prometheus' or 'mimir'
 # CLI flag: -querier.query-engine
