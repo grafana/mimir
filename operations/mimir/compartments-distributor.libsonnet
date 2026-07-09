@@ -6,6 +6,8 @@
 
   assert !$._config.compartments_distributor_enabled || $._config.multi_zone_distributor_enabled
          : 'compartments_distributor_enabled requires multi_zone_distributor_enabled',
+  local distributorCompartmentZonesError = $.validateMimirCompartmentsDistributorZones(),
+  assert distributorCompartmentZonesError == null : distributorCompartmentZonesError,
   assert !$._config.compartments_distributor_enabled || $._config.ingest_storage_enabled
          : 'compartments_distributor_enabled requires ingest_storage_enabled',
   assert !$._config.compartments_distributor_enabled || $._config.autoscaling_distributor_enabled
@@ -78,6 +80,13 @@
     service.mixin.spec.withSelector({ 'mimir-service': 'distributor-zone-%s' % zone }) +
     service.mixin.spec.withClusterIp('None'),
 
+  local newCompartmentsZoneService(zone, compartmentDeploy) =
+    $.util.serviceFor(compartmentDeploy, $._config.service_ignored_labels) +
+    service.mixin.metadata.withName('distributor-zone-%s-compartments' % zone) +
+    service.mixin.metadata.withLabels({ name: 'distributor-zone-%s-compartments' % zone }) +
+    service.mixin.spec.withSelector({ 'mimir-service': 'distributor-zone-%s' % zone }) +
+    service.mixin.spec.withClusterIp('None'),
+
   distributor_zone_a_service: if !isNoCompartmentsEnabled && isZoneAEnabled then
     newZoneService('a', $.distributor_zone_a_deployments.compartment_0)
   else super.distributor_zone_a_service,
@@ -87,6 +96,16 @@
   distributor_zone_c_service: if !isNoCompartmentsEnabled && isZoneCEnabled then
     newZoneService('c', $.distributor_zone_c_deployments.compartment_0)
   else super.distributor_zone_c_service,
+
+  distributor_zone_a_compartments_service: if isEnabled && isZoneAEnabled then
+    newCompartmentsZoneService('a', $.distributor_zone_a_deployments.compartment_0)
+  else null,
+  distributor_zone_b_compartments_service: if isEnabled && isZoneBEnabled then
+    newCompartmentsZoneService('b', $.distributor_zone_b_deployments.compartment_0)
+  else null,
+  distributor_zone_c_compartments_service: if isEnabled && isZoneCEnabled then
+    newCompartmentsZoneService('c', $.distributor_zone_c_deployments.compartment_0)
+  else null,
 
   // Args.
   local perCompartmentDistributorArgs(compartmentIdx) =
