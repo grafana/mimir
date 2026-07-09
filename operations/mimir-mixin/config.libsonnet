@@ -743,7 +743,8 @@
       },
       block_builder: {
         enabled: false,
-        hpa_name: $._config.autoscaling_hpa_prefix + 'block-builder',
+        hpa_name: $._config.autoscaling_hpa_prefix + 'block-builder|' +
+                  $._config.autoscaling_hpa_prefix + 'block-builder-rc-.*',
       },
     },
 
