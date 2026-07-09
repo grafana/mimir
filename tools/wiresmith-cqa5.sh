@@ -67,7 +67,7 @@ for proto in "${EMIT_PROTOS[@]}"; do
 done
 
 mkdir -p "${OUT}"
-~/go/bin/wiresmith --proto_path="./${STAGE}" --out="./${OUT}" --module="${MODULE}" \
+wiresmith --proto_path="./${STAGE}" --out="./${OUT}" --module="${MODULE}" \
 	"${M_FLAGS[@]}" \
 	"${EMIT_ARGS[@]}"
 
@@ -123,7 +123,7 @@ cp pkg/usagetracker/usagetrackerpb/usagetracker.proto \
 	"${STAGE2}/${P}/usagetracker/usagetrackerpb/"
 
 mkdir -p "${OUT2}"
-~/go/bin/wiresmith \
+wiresmith \
 	--proto_path="./${STAGE2}" \
 	--out="./${OUT2}" \
 	--module="${MODULE}" \
@@ -156,7 +156,7 @@ cp pkg/storage/indexheader/indexheaderpb/sparse.proto \
 	"${STAGE3}/${P}/storage/indexheader/indexheaderpb/"
 
 mkdir -p "${OUT3}"
-~/go/bin/wiresmith \
+wiresmith \
 	--proto_path="./${STAGE3}" \
 	--out="./${OUT3}" \
 	--module="${MODULE}" \

@@ -6,6 +6,7 @@ package rangevectorsplitting
 import (
 	"fmt"
 	"github.com/grafana/wiresmith/protohelpers"
+	"google.golang.org/protobuf/encoding/protowire"
 	"io"
 )
 

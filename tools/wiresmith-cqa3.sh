@@ -94,7 +94,7 @@ EMIT_ARGS=(
 )
 
 mkdir -p "${OUT}"
-~/go/bin/wiresmith --proto_path="./${STAGE}" --out="./${OUT}" --module="${MODULE}" \
+wiresmith --proto_path="./${STAGE}" --out="./${OUT}" --module="${MODULE}" \
 	"${M_FLAGS[@]}" \
 	"${EMIT_ARGS[@]}"
 
