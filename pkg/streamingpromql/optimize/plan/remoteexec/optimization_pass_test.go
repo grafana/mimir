@@ -985,6 +985,37 @@ func TestOptimizationPass_EvaluationRoots(t *testing.T) {
 							- ref#1 Duplicate ...
 			`,
 		},
+		"evaluation roots with common expressions": {
+			expr: `max_over_time(__vector_evaluation_root__(foo + 2)[1d:5m]) / min_over_time(__vector_evaluation_root__(foo - 2)[1d:5m])`,
+			expectedPlan: `
+				- BinaryExpression: LHS / RHS
+					- LHS: DeduplicateAndMerge
+						- FunctionCall: max_over_time(...)
+							- Subquery: [24h0m0s:5m0s]
+								- EvaluationRoot
+									- TimeRangeSplit: interval 24h0m0s
+										- Cache: split interval 24h0m0s
+											- RemoteExecutionConsumer: node 0
+												- ref#2 RemoteExecutionGroup: eager load
+													- node 0: DeduplicateAndMerge
+														- BinaryExpression: LHS + RHS
+															- LHS: ref#1 Duplicate
+																- VectorSelector: {__name__="foo"}
+															- RHS: NumberLiteral: 2
+													- node 1: DeduplicateAndMerge
+														- BinaryExpression: LHS - RHS
+															- LHS: ref#1 Duplicate ...
+															- RHS: NumberLiteral: 2
+					- RHS: DeduplicateAndMerge
+						- FunctionCall: min_over_time(...)
+							- Subquery: [24h0m0s:5m0s]
+								- EvaluationRoot
+									- TimeRangeSplit: interval 24h0m0s
+										- Cache: split interval 24h0m0s
+											- RemoteExecutionConsumer: node 1
+												- ref#2 RemoteExecutionGroup ...
+			`,
+		},
 	}
 
 	for name, testCase := range testCases {
@@ -999,7 +1030,7 @@ func TestOptimizationPass_EvaluationRoots(t *testing.T) {
 
 			planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, true, true, opts.CommonOpts.Reg, opts.Logger))
 			planner.RegisterQueryPlanOptimizationPass(splitandcache.NewOptimizationPass(true, 24*time.Hour, true, opts.Limits, opts.CommonOpts.Reg, opts.Logger))
-			planner.RegisterQueryPlanOptimizationPass(remoteexec.NewOptimizationPass(false))
+			planner.RegisterQueryPlanOptimizationPass(remoteexec.NewOptimizationPass(true))
 
 			p, err := planner.NewQueryPlan(ctx, testCase.expr, instantQueryTimeRange, streamingpromql.DefaultLookbackDelta, false, streamingpromql.NoopPlanningObserver{})
 			require.NoError(t, err)
