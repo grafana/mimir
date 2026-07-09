@@ -293,6 +293,25 @@ func TestServiceStopsCleanlyDuringStartupObservation(t *testing.T) {
 	require.NoError(t, sched.FailureCase())
 }
 
+// TestServiceFailsWhenConsumptionOffsetProbingFails verifies that a persistent failure to probe
+// the initial consumption offsets makes the service fail rather than silently switching to normal
+// operation where no jobs are ever assigned.
+func TestServiceFailsWhenConsumptionOffsetProbingFails(t *testing.T) {
+	var vnet kfake.VirtualNetwork
+	cluster, kafkaAddr := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, 4, "ingest", testkafka.WithVirtualNetwork(&vnet))
+	sched, _ := mustSchedulerWithKafkaAddrAndDialer(t, kafkaAddr, vnet.DialContext)
+	sched.cfg.StartupObserveTime = 10 * time.Millisecond
+	sched.cfg.LookbackOnNoCommit = time.Minute
+	sched.cfg.MaxScanAge = time.Hour
+
+	failListOffsets(cluster)
+
+	ctx := context.Background()
+	require.NoError(t, sched.StartAsync(ctx))
+	require.ErrorContains(t, sched.AwaitTerminated(ctx), "init consumption offsets")
+	require.ErrorContains(t, sched.FailureCase(), "init consumption offsets")
+}
+
 func TestStartup(t *testing.T) {
 	sched, _ := mustScheduler(t, 4)
 	// (a new scheduler starts in observation mode.)
@@ -355,7 +374,7 @@ func TestStartup(t *testing.T) {
 	require.NoError(t, sched.updateJob(j3.key, "w0", true, j3.spec))
 
 	// Convert the observations to actual jobs.
-	sched.completeObservationMode(context.Background())
+	require.NoError(t, sched.completeObservationMode(context.Background()))
 
 	// Now that we're out of observation mode, we should know about all the jobs.
 
@@ -453,7 +472,7 @@ func TestStartup_MultiCluster(t *testing.T) {
 	require.NoError(t, sched.updateJob(j3.key, "w0", true, j3.spec))
 
 	// Convert the observations to actual jobs.
-	sched.completeObservationMode(context.Background())
+	require.NoError(t, sched.completeObservationMode(context.Background()))
 
 	// Now that we're out of observation mode, we should know about all the jobs.
 
@@ -523,7 +542,7 @@ func TestStartup_MultiCluster_GapOnOneCluster(t *testing.T) {
 	require.NoError(t, sched.updateJob(jobB.key, "w1", false, jobB.spec))
 	require.NoError(t, sched.updateJob(jobC.key, "w2", false, jobC.spec))
 
-	sched.completeObservationMode(context.Background())
+	require.NoError(t, sched.completeObservationMode(context.Background()))
 
 	_, ok := sched.jobs.jobs[jobA.key.id]
 	require.True(t, ok, "jobA should be imported")
@@ -548,7 +567,7 @@ func TestStartup_MultiCluster_PartiallyFlushedCommit(t *testing.T) {
 	// persisted to Kafka.
 	schedA, _ := mustMultiClusterSchedulerWithClusters(t, clusters)
 	initCommits(schedA, "ingest", 0, map[int]int64{0: 100, 1: 100, 2: 50})
-	schedA.completeObservationMode(ctx)
+	require.NoError(t, schedA.completeObservationMode(ctx))
 	require.NoError(t, schedA.flushOffsetsToKafka(ctx))
 
 	// A worker runs jobJ to completion, advancing every cluster's in-memory commit to its
@@ -598,7 +617,7 @@ func TestStartup_MultiCluster_PartiallyFlushedCommit(t *testing.T) {
 	})
 	require.NoError(t, schedB.updateJob(jobK.key, "w1", false, jobK.spec))
 
-	schedB.completeObservationMode(ctx)
+	require.NoError(t, schedB.completeObservationMode(ctx))
 
 	_, ok := schedB.jobs.jobs[keyJ.id]
 	require.False(t, ok, "jobJ should not be imported: it's behind the flushed clusters' commits")
@@ -653,7 +672,7 @@ func TestCompleteObservationMode_ResumesFromImportedPlan(t *testing.T) {
 	})
 	require.NoError(t, sched.updateJob(observed.key, "w0", false, observed.spec))
 
-	sched.completeObservationMode(ctx)
+	require.NoError(t, sched.completeObservationMode(ctx))
 	sched.enqueuePendingJobs()
 
 	_, ok := sched.jobs.jobs[observed.key.id]
@@ -703,7 +722,7 @@ func requireGaps(t *testing.T, reg *prometheus.Registry, planned, committed int,
 func TestAssignJobSkipsObsoleteOffsets(t *testing.T) {
 	sched, _ := mustScheduler(t, 4)
 	sched.cfg.MaxJobsPerPartition = 0
-	sched.completeObservationMode(context.Background())
+	require.NoError(t, sched.completeObservationMode(context.Background()))
 	// Add some jobs, then move the committed offsets past some of them.
 	s1 := schedulerpb.JobSpec{
 		Topic:       "ingest",
@@ -758,7 +777,7 @@ func TestAssignJobSkipsObsoleteOffsets(t *testing.T) {
 func TestAssignJobSkipsObsoleteOffsets_PriorScheduler(t *testing.T) {
 	sched, _ := mustScheduler(t, 4)
 	sched.cfg.MaxJobsPerPartition = 0
-	sched.completeObservationMode(context.Background())
+	require.NoError(t, sched.completeObservationMode(context.Background()))
 	// Add some jobs, then move the committed offsets past some of them.
 	s1 := schedulerpb.JobSpec{
 		Topic:       "ingest",
@@ -801,7 +820,7 @@ func TestAssignJobSkipsObsoleteOffsets_MultiCluster(t *testing.T) {
 	t.Run("fully consumed job is skipped", func(t *testing.T) {
 		sched, _ := mustMultiClusterScheduler(t, 3, 3)
 		sched.cfg.MaxJobsPerPartition = 0
-		sched.completeObservationMode(context.Background())
+		require.NoError(t, sched.completeObservationMode(context.Background()))
 
 		// Every cluster's committed offset reaches its range end: fully consumed.
 		s1 := schedulerpb.JobSpec{
@@ -822,7 +841,7 @@ func TestAssignJobSkipsObsoleteOffsets_MultiCluster(t *testing.T) {
 	t.Run("partially consumed job panics", func(t *testing.T) {
 		sched, _ := mustMultiClusterScheduler(t, 3, 3)
 		sched.cfg.MaxJobsPerPartition = 0
-		sched.completeObservationMode(context.Background())
+		require.NoError(t, sched.completeObservationMode(context.Background()))
 
 		// Consumed on cluster 0 only; clusters 1 and 2 still need it.
 		s2 := schedulerpb.JobSpec{
@@ -846,7 +865,7 @@ func TestAssignJobSkipsObsoleteOffsets_MultiCluster(t *testing.T) {
 // assignJob and enqueuePendingJobs, rather than renewing a lease on a torn job.
 func TestUpdateJobPanicsOnPartiallyConsumed_MultiCluster(t *testing.T) {
 	sched, _ := mustMultiClusterScheduler(t, 3, 3)
-	sched.completeObservationMode(context.Background())
+	require.NoError(t, sched.completeObservationMode(context.Background()))
 
 	// Consumed on cluster 0 only; clusters 1 and 2 still need it.
 	spec := schedulerpb.JobSpec{
@@ -1006,7 +1025,7 @@ func TestObservations(t *testing.T) {
 	}
 
 	sendUpdates()
-	sched.completeObservationMode(context.Background())
+	require.NoError(t, sched.completeObservationMode(context.Background()))
 
 	verifyCommits()
 
@@ -1039,7 +1058,7 @@ func TestOffsetMovement(t *testing.T) {
 	sched, _ := mustScheduler(t, 4)
 	ps := sched.getPartitionState("ingest", 1)
 	ps.initCommit(0, 5000)
-	sched.completeObservationMode(context.Background())
+	require.NoError(t, sched.completeObservationMode(context.Background()))
 
 	spec := schedulerpb.JobSpec{
 		Topic:       "ingest",
@@ -1079,7 +1098,7 @@ func TestOffsetMovement(t *testing.T) {
 func TestKafkaFlush(t *testing.T) {
 	sched, _ := mustScheduler(t, 4)
 	ctx := context.Background()
-	sched.completeObservationMode(ctx)
+	require.NoError(t, sched.completeObservationMode(ctx))
 
 	flushAndRequireOffsets := func(topic string, offsets map[int32]int64, args ...any) {
 		require.NoError(t, sched.flushOffsetsToKafka(ctx))
@@ -1223,7 +1242,7 @@ func TestUpdateSchedule(t *testing.T) {
 	sched, cli := mustSchedulerWithKafkaAddrAndDialer(t, kafkaAddr, vnet.DialContext)
 	reg := sched.register.(*prometheus.Registry)
 
-	sched.completeObservationMode(ctx)
+	require.NoError(t, sched.completeObservationMode(ctx))
 
 	// Partition i gets i records.
 	for i := range int32(4) {
@@ -1268,7 +1287,7 @@ func TestUpdateSchedule_ProbeFailure(t *testing.T) {
 	var vnet kfake.VirtualNetwork
 	cluster, kafkaAddr := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, 1, "ingest", testkafka.WithVirtualNetwork(&vnet))
 	sched, cli := mustSchedulerWithKafkaAddrAndDialer(t, kafkaAddr, vnet.DialContext)
-	sched.completeObservationMode(ctx)
+	require.NoError(t, sched.completeObservationMode(ctx))
 
 	produceRecords(ctx, t, cli, 0, 3)
 	stopFailing := failListOffsets(cluster)
@@ -1291,7 +1310,7 @@ func TestUpdateSchedule_MultiCluster(t *testing.T) {
 	t.Cleanup(func() { cancel(errors.New("test done")) })
 
 	sched, clients := mustMultiClusterScheduler(t, 3, 3)
-	sched.completeObservationMode(ctx)
+	require.NoError(t, sched.completeObservationMode(ctx))
 
 	// counts[c][p] is the number of records produced to partition p on cluster c.
 	counts := [3][3]int{
@@ -1322,7 +1341,7 @@ func TestUpdateSchedule_MultiCluster_OneClusterProbeFails(t *testing.T) {
 
 	clusters := createTestClusters(t, 3, 3)
 	sched, clients := mustMultiClusterSchedulerWithClusters(t, clusters)
-	sched.completeObservationMode(ctx)
+	require.NoError(t, sched.completeObservationMode(ctx))
 
 	// rounds[r][c][p] is the number of records produced to partition p on cluster c in round r.
 	rounds := [2][3][3]int{
@@ -1398,7 +1417,7 @@ func TestUpdateSchedule_MultiCluster_AllClusterProbesFail(t *testing.T) {
 
 	clusters := createTestClusters(t, 3, 3)
 	sched, clients := mustMultiClusterSchedulerWithClusters(t, clusters)
-	sched.completeObservationMode(ctx)
+	require.NoError(t, sched.completeObservationMode(ctx))
 
 	// counts[c][p] is the number of records produced to partition p on cluster c.
 	counts := [3][3]int{
@@ -1856,7 +1875,7 @@ func TestBlockBuilderScheduler_EnqueuePendingJobs(t *testing.T) {
 
 	sched, _ := mustScheduler(t, 4)
 	sched.cfg.MaxJobsPerPartition = 1
-	sched.completeObservationMode(context.Background())
+	require.NoError(t, sched.completeObservationMode(context.Background()))
 
 	part := int32(1)
 	pt := sched.getPartitionState("ingest", part)
@@ -1911,7 +1930,7 @@ func TestBlockBuilderScheduler_EnqueuePendingJobs(t *testing.T) {
 func TestBlockBuilderScheduler_EnqueuePendingJobs_Unlimited(t *testing.T) {
 	sched, _ := mustScheduler(t, 4)
 	sched.cfg.MaxJobsPerPartition = 0
-	sched.completeObservationMode(context.Background())
+	require.NoError(t, sched.completeObservationMode(context.Background()))
 
 	part := int32(1)
 	pt := sched.getPartitionState("ingest", part)
@@ -1943,7 +1962,7 @@ func TestBlockBuilderScheduler_EnqueuePendingJobs_Unlimited(t *testing.T) {
 func TestBlockBuilderScheduler_EnqueuePendingJobs_CommitRace(t *testing.T) {
 	sched, _ := mustScheduler(t, 4)
 	sched.cfg.MaxJobsPerPartition = 0
-	sched.completeObservationMode(context.Background())
+	require.NoError(t, sched.completeObservationMode(context.Background()))
 
 	part := int32(1)
 	pt := sched.getPartitionState("ingest", part)
@@ -1968,7 +1987,7 @@ func TestBlockBuilderScheduler_EnqueuePendingJobs_CommitRace(t *testing.T) {
 func TestBlockBuilderScheduler_EnqueuePendingJobs_CommitRace_MultiCluster(t *testing.T) {
 	sched, _ := mustMultiClusterScheduler(t, 3, 3)
 	sched.cfg.MaxJobsPerPartition = 0
-	sched.completeObservationMode(context.Background())
+	require.NoError(t, sched.completeObservationMode(context.Background()))
 
 	// Partition 2's pending job is behind every cluster's committed offset: dropped.
 	initCommits(sched, "ingest", 2, map[int]int64{0: 20, 1: 15})
@@ -2002,7 +2021,7 @@ func TestBlockBuilderScheduler_EnqueuePendingJobs_CommitRace_MultiCluster(t *tes
 func TestBlockBuilderScheduler_EnqueuePendingJobs_StartupRace(t *testing.T) {
 	sched, _ := mustScheduler(t, 4)
 	sched.cfg.MaxJobsPerPartition = 0
-	sched.completeObservationMode(context.Background())
+	require.NoError(t, sched.completeObservationMode(context.Background()))
 
 	part := int32(1)
 	pt := sched.getPartitionState("ingest", part)
@@ -2027,7 +2046,7 @@ func TestBlockBuilderScheduler_EnqueuePendingJobs_StartupRace(t *testing.T) {
 func TestBlockBuilderScheduler_EnqueuePendingJobs_GapDetection(t *testing.T) {
 	sched, _ := mustScheduler(t, 4)
 	sched.cfg.MaxJobsPerPartition = 0
-	sched.completeObservationMode(context.Background())
+	require.NoError(t, sched.completeObservationMode(context.Background()))
 
 	reg := sched.register.(*prometheus.Registry)
 
@@ -2104,7 +2123,7 @@ func TestBlockBuilderScheduler_EnqueuePendingJobs_GapDetection(t *testing.T) {
 func TestBlockBuilderScheduler_EnqueuePendingJobs_GapDetection_MultiCluster(t *testing.T) {
 	sched, _ := mustMultiClusterScheduler(t, 3, 3)
 	sched.cfg.MaxJobsPerPartition = 0
-	sched.completeObservationMode(context.Background())
+	require.NoError(t, sched.completeObservationMode(context.Background()))
 
 	reg := sched.register.(*prometheus.Registry)
 
