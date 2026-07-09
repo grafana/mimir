@@ -136,7 +136,7 @@ func NewKafkaWriterClient(kafkaCfg KafkaConfig, maxInflightProduceRequests int, 
 		kgo.RecordRetries(math.MaxInt64),
 		kgo.RecordDeliveryTimeout(kafkaCfg.WriteTimeout),
 		kgo.ProduceRequestTimeout(kafkaCfg.WriteTimeout),
-		kgo.RequestTimeoutOverhead(writerRequestTimeoutOverhead),
+		kgo.RequestTimeoutOverhead(kafkaCfg.WriteTimeoutOverhead),
 
 		// Unlimited number of buffered records because we limit on bytes in Writer. The reason why we don't use
 		// kgo.MaxBufferedBytes() is because it suffers a deadlock issue:

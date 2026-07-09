@@ -217,6 +217,8 @@ The following features are currently experimental:
   - WarpStream-aware Kafka producer backend
     - `-ingest-storage.kafka.backend`
     - all flags beginning with `-ingest-storage.kafka.warpstream-`
+  - Kafka write request timeout overhead
+    - `-ingest-storage.kafka.write-timeout-overhead`
 - Querier
   - Streaming label/value search HTTP endpoints `/api/v1/search/{metric_names,label_names,label_values}` returning NDJSON, mirroring the [Prometheus search API](https://github.com/prometheus/prometheus/pull/18573) (`-querier.experimental-search-api-enabled`).
   - Max concurrency for tenant federated queries (`-tenant-federation.max-concurrent`)

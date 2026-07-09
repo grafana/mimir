@@ -37,6 +37,18 @@ const (
 	KafkaBackendWarpstream = "warpstream"
 )
 
+const (
+	// DefaultKafkaRequestTimeoutOverhead is the default overhead applied by the writer on top of
+	// every Kafka write timeout. It accounts for the extra time a request sits in the client's
+	// buffer before being sent on the wire, plus the time to send it over the network and have
+	// Kafka start processing it.
+	DefaultKafkaRequestTimeoutOverhead = 2 * time.Second
+
+	// MinKafkaRequestTimeoutOverhead is the minimum allowed request timeout overhead. It matches
+	// the lower bound the franz-go client enforces on its request timeout overhead.
+	MinKafkaRequestTimeoutOverhead = 100 * time.Millisecond
+)
+
 var kafkaBackendOptions = []string{KafkaBackendKafka, KafkaBackendWarpstream}
 
 var (
@@ -59,7 +71,8 @@ var (
 	ErrInvalidFetchMaxWait               = errors.New("the Kafka fetch max wait must be between 5s and 30s")
 	ErrInvalidRecordVersion              = errors.New("invalid record format version")
 	ErrInvalidWriteLogsFsyncConcurrency  = errors.New("the configured number of tenants to fsync concurrently before Kafka offsets are committed must be at least 1")
-	ErrInvalidWarpstreamWriteTimeout     = fmt.Errorf("ingest-storage.kafka.write-timeout must be greater than %s when ingest-storage.kafka.backend=%s", writerRequestTimeoutOverhead*2, KafkaBackendWarpstream)
+	ErrInvalidWriteTimeoutOverhead       = fmt.Errorf("ingest-storage.kafka.write-timeout-overhead must be at least %s", MinKafkaRequestTimeoutOverhead)
+	ErrInvalidWarpstreamWriteTimeout     = fmt.Errorf("ingest-storage.kafka.write-timeout must be greater than or equal to twice ingest-storage.kafka.write-timeout-overhead when ingest-storage.kafka.backend=%s", KafkaBackendWarpstream)
 
 	consumeFromPositionOptions = []string{consumeFromLastOffset, consumeFromStart, consumeFromEnd, consumeFromTimestamp}
 
@@ -116,13 +129,14 @@ type KafkaConfig struct {
 	Backend string `yaml:"backend" category:"experimental"`
 
 	// Address is a list of seed brokers. The config name is singular for backward compatibility.
-	Address      flagext.StringSliceCSV `yaml:"address"`
-	Topic        string                 `yaml:"topic"`
-	ClientID     string                 `yaml:"client_id"`
-	ClientRack   string                 `yaml:"client_rack"`
-	DialTimeout  time.Duration          `yaml:"dial_timeout"`
-	WriteTimeout time.Duration          `yaml:"write_timeout"`
-	WriteClients int                    `yaml:"write_clients" category:"deprecated"` // TODO Remove in Mimir 3.3.
+	Address              flagext.StringSliceCSV `yaml:"address"`
+	Topic                string                 `yaml:"topic"`
+	ClientID             string                 `yaml:"client_id"`
+	ClientRack           string                 `yaml:"client_rack"`
+	DialTimeout          time.Duration          `yaml:"dial_timeout"`
+	WriteTimeout         time.Duration          `yaml:"write_timeout"`
+	WriteTimeoutOverhead time.Duration          `yaml:"write_timeout_overhead" category:"experimental"`
+	WriteClients         int                    `yaml:"write_clients" category:"deprecated"` // TODO Remove in Mimir 3.3.
 
 	// Warpstream-only settings, ignored when Backend != KafkaBackendWarpstream.
 	WarpstreamHealthCheckSlowMultiplier    float64 `yaml:"warpstream_health_check_slow_multiplier" category:"experimental"`
@@ -231,6 +245,7 @@ func (cfg *KafkaConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) 
 	f.StringVar(&cfg.ClientRack, prefix+"client-rack", "", "The rack identifier for this Kafka client. Corresponds to the Kafka client.rack setting. Only supported when "+prefix+"backend=kafka.")
 	f.DurationVar(&cfg.DialTimeout, prefix+"dial-timeout", 2*time.Second, "The maximum time allowed to establish the TCP connection to a Kafka broker, including the TLS handshake when TLS is enabled. It does not include the subsequent SASL authentication handshake.")
 	f.DurationVar(&cfg.WriteTimeout, prefix+"write-timeout", 10*time.Second, "How long to wait for an incoming write request to be successfully committed to the Kafka backend.")
+	f.DurationVar(&cfg.WriteTimeoutOverhead, prefix+"write-timeout-overhead", DefaultKafkaRequestTimeoutOverhead, "Additional time added on top of the write timeout, accounting for a write request sitting in the client buffer and travelling over the network before the Kafka backend starts processing it. Lower values fail slow writes faster, at the cost of less tolerance to network and buffer latency.")
 	f.IntVar(&cfg.WriteClients, prefix+"write-clients", 1, "The number of Kafka clients used by producers. When the configured number of clients is greater than 1, partitions are sharded among Kafka clients. A higher number of clients may provide higher write throughput at the cost of additional Metadata requests pressure to Kafka. Deprecated: has no effect (Mimir always uses a single Kafka write client).")
 
 	f.StringVar(&cfg.ConsumerGroup, prefix+"consumer-group", "", "The consumer group used by the consumer to track the last consumed offset. The consumer group must be different for each ingester. If the configured consumer group contains the '<partition>' placeholder, it is replaced with the actual partition ID owned by the ingester. When empty (recommended), Mimir uses the ingester instance ID to guarantee uniqueness.")
@@ -349,12 +364,18 @@ func (cfg *KafkaConfig) Validate() error {
 		}
 	}
 
-	// The Warpstream backend derives the per-attempt produce timeout as
-	// write-timeout minus the request overhead. That only leaves a per-attempt
-	// timeout larger than the overhead itself when write-timeout exceeds twice
-	// the overhead; below that the split stops making sense.
-	if cfg.Backend == KafkaBackendWarpstream && cfg.WriteTimeout <= writerRequestTimeoutOverhead*2 {
-		return ErrInvalidWarpstreamWriteTimeout
+	// The franz-go client rejects a request timeout overhead below 100ms, and the Warpstream
+	// backend requires a positive overhead. Enforce the franz-go floor for both backends so a
+	// misconfiguration surfaces here instead of as a cryptic client construction error.
+	if cfg.WriteTimeoutOverhead < MinKafkaRequestTimeoutOverhead {
+		return fmt.Errorf("%w, is %s", ErrInvalidWriteTimeoutOverhead, cfg.WriteTimeoutOverhead)
+	}
+
+	// The Warpstream backend derives the per-attempt produce timeout as write-timeout minus the
+	// request overhead, then adds the overhead back as client-side slack. That split only holds
+	// when write-timeout is at least twice the overhead, so the per-attempt timeout stays positive.
+	if cfg.Backend == KafkaBackendWarpstream && cfg.WriteTimeout < cfg.WriteTimeoutOverhead*2 {
+		return fmt.Errorf("%w (write-timeout=%s, write-timeout-overhead=%s)", ErrInvalidWarpstreamWriteTimeout, cfg.WriteTimeout, cfg.WriteTimeoutOverhead)
 	}
 
 	// The dialer is only expected to be used in tests.
@@ -391,10 +412,10 @@ func (cfg *KafkaConfig) ToWarpstreamClientOptions() ([]wgo.Opt, error) {
 		wgo.WithMetadataRefreshInterval(defaultMetadataRefreshInterval),
 		// WriteTimeout bounds the whole hedge cascade, so the per-attempt produce
 		// timeout plus its overhead must fit within it (wgo rejects a config where
-		// they don't). Validate guarantees WriteTimeout exceeds twice the overhead,
-		// so the per-attempt timeout stays larger than the overhead.
-		wgo.WithProduceRequestTimeout(cfg.WriteTimeout - writerRequestTimeoutOverhead),
-		wgo.WithProduceRequestTimeoutOverhead(writerRequestTimeoutOverhead),
+		// they don't). Validate guarantees WriteTimeout is at least twice the overhead,
+		// so the per-attempt timeout stays positive.
+		wgo.WithProduceRequestTimeout(cfg.WriteTimeout - cfg.WriteTimeoutOverhead),
+		wgo.WithProduceRequestTimeoutOverhead(cfg.WriteTimeoutOverhead),
 	}
 
 	// The dialer is only expected to be used in tests (e.g. kfake's virtual network).

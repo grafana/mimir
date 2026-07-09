@@ -5389,6 +5389,14 @@ kafka:
   # CLI flag: -ingest-storage.kafka.write-timeout
   [write_timeout: <duration> | default = 10s]
 
+  # (experimental) Additional time added on top of the write timeout, accounting
+  # for a write request sitting in the client buffer and travelling over the
+  # network before the Kafka backend starts processing it. Lower values fail
+  # slow writes faster, at the cost of less tolerance to network and buffer
+  # latency.
+  # CLI flag: -ingest-storage.kafka.write-timeout-overhead
+  [write_timeout_overhead: <duration> | default = 2s]
+
   # (deprecated) The number of Kafka clients used by producers. When the
   # configured number of clients is greater than 1, partitions are sharded among
   # Kafka clients. A higher number of clients may provide higher write
