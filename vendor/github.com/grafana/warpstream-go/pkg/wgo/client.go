@@ -7,8 +7,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kgo"
@@ -71,7 +69,7 @@ type WarpstreamClient struct {
 	*kgo.Client
 
 	cfg     Config
-	logger  log.Logger
+	logger  kgo.Logger
 	metrics *metrics
 
 	pool           *AgentPool
@@ -93,13 +91,20 @@ type WarpstreamClient struct {
 // from DefaultConfig and is overridden by opts. The initial AgentPool refresh
 // is synchronous: if Metadata cannot be reached on startup we fail fast rather
 // than serving traffic against an empty pool.
-func NewWarpstreamClient(logger log.Logger, reg prometheus.Registerer, opts ...Opt) (*WarpstreamClient, error) {
+//
+// logger is used both for the client's own logs and installed on the embedded
+// franz-go client, so the two share a single logger. A nil logger disables logging.
+func NewWarpstreamClient(logger kgo.Logger, reg prometheus.Registerer, opts ...Opt) (*WarpstreamClient, error) {
+	if logger == nil {
+		logger = nopLogger{}
+	}
+
 	cfg := NewConfig(opts...)
 	if err := cfg.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid warpstream client config: %w", err)
 	}
 
-	kgoClient, err := newKgoClient(cfg, reg)
+	kgoClient, err := newKgoClient(cfg, logger, reg)
 	if err != nil {
 		return nil, fmt.Errorf("creating kgo client: %w", err)
 	}
@@ -335,7 +340,7 @@ func (c *WarpstreamClient) startBackgroundRefresh() {
 			case <-ticker.C:
 				removed, err := c.pool.Refresh(c.refreshCtx)
 				if err != nil {
-					level.Warn(c.logger).Log("msg", "warpstream client metadata refresh failed", "err", err)
+					log(c.logger, kgo.LogLevelWarn, "warpstream client metadata refresh failed", "err", err)
 					continue
 				}
 				if len(removed) > 0 {
@@ -457,10 +462,11 @@ func perRecordDone(record *kgo.Record, promise func(*kgo.Record, error)) func(Pr
 // newKgoClient constructs the kgo.Client used by the WarpstreamClient for
 // connection management and metadata. It wires the kprom transport-metrics
 // hook (registered on reg) alongside any caller hooks from cfg.
-func newKgoClient(cfg Config, reg prometheus.Registerer) (*kgo.Client, error) {
+func newKgoClient(cfg Config, logger kgo.Logger, reg prometheus.Registerer) (*kgo.Client, error) {
 	opts := []kgo.Opt{
 		kgo.SeedBrokers(cfg.Address...),
 		kgo.ClientID(cfg.ClientID),
+		kgo.WithLogger(logger),
 		kgo.DialTimeout(cfg.DialTimeout),
 		kgo.RequestTimeoutOverhead(cfg.WriteTimeout),
 		kgo.MetadataMaxAge(cfg.MetadataRefreshInterval),
@@ -524,4 +530,18 @@ func produceMaxVersions() *kversion.Versions {
 // to the configured cap.
 func errRecordTooLarge(r *kgo.Record) error {
 	return fmt.Errorf("%w (uncompressed_bytes=%d)", kerr.MessageTooLarge, singleRecordBatchEstimateBytes(r))
+}
+
+// nopLogger is a kgo.Logger that discards all messages.
+type nopLogger struct{}
+
+func (nopLogger) Level() kgo.LogLevel              { return kgo.LogLevelNone }
+func (nopLogger) Log(kgo.LogLevel, string, ...any) {}
+
+// log emits msg through logger only when level is enabled, matching how the
+// embedded franz-go client gates its own logs by Logger.Level().
+func log(logger kgo.Logger, level kgo.LogLevel, msg string, keyvals ...any) {
+	if level <= logger.Level() {
+		logger.Log(level, msg, keyvals...)
+	}
 }
