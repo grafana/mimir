@@ -670,7 +670,7 @@ func TestKafkaConfig_ToWarpstreamClientOptions(t *testing.T) {
 		// kafka-backend defaults; ClusterStatsTTL is hardcoded to 1s.
 		assert.Equal(t, defaultProducerLinger, wsCfg.Linger)
 		assert.Equal(t, int32(producerBatchMaxBytes), wsCfg.BatchMaxBytes)
-		assert.Equal(t, defaultMetadataRefreshInterval, wsCfg.MetadataRefreshInterval)
+		assert.Equal(t, DefaultMetadataRefreshInterval, wsCfg.MetadataRefreshInterval)
 		assert.Equal(t, time.Second, wsCfg.ClusterStatsTTL)
 		assert.Equal(t, 1.5, wsCfg.HealthCheck.SlowMultiplier)
 		assert.Equal(t, 0.4, wsCfg.HealthCheck.MaxSlowFraction)
