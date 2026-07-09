@@ -21,7 +21,7 @@ import (
 	"go.opentelemetry.io/otel"
 )
 
-var tracer = otel.Tracer("pkg/tools/writetee")
+var tracer = otel.Tracer("tools/write-tee")
 
 const (
 	defaultReportGRPCCodesInInstrumentationLabel = true
