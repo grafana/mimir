@@ -65,6 +65,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [BUGFIX] Fix Kafka image reference to include the registry in the StatefulSet template. #14211.
 * [BUGFIX] Helm: Removed helm's empty selector for the smoke-test-job file that is throwing errors in ArgoCD #14684
 * [BUGFIX] Meta-monitoring: Do not emit `spec.clients: null` on `LogsInstance` or `basicAuth: null` on `MetricsInstance.spec.remoteWrite[*]` when the corresponding `metaMonitoring.grafanaAgent.{logs,metrics}.remote.url` / `auth` fields are empty. The resulting manifests failed CRD validation under ArgoCD ServerSideApply. #15135
+* [BUGFIX] Meta-monitoring: Update `MimirRulerInstanceHasNoRuleGroups` to not alert on false-positives when rulers are running in multiple zones. #16029
 
 ## 6.0.6
 
