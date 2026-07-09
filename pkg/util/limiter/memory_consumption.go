@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/antithesishq/antithesis-sdk-go/assert"
 	"github.com/grafana/dskit/tracing"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
@@ -406,6 +407,14 @@ func (l *MemoryConsumptionTracker) DecreaseMemoryConsumption(b uint64, source Me
 		if l.traceID != "" {
 			traceDescription = fmt.Sprintf(" (trace ID: %v)", l.traceID)
 		}
+
+		assert.Unreachable("returning memory to consumption tracker would result in negative number of bytes", map[string]any{
+			"source":              source,
+			"current_consumption": l.currentEstimatedMemoryConsumptionBySource[source],
+			"num_bytes":           b,
+			"current_query":       l.queryDescription,
+			"trace_description":   traceDescription,
+		})
 
 		panic(fmt.Sprintf(
 			"Estimated memory consumption of all instances of %s in this query is %d bytes when trying to return %d bytes. This indicates something has been returned to a pool more than once, which is a bug. The affected query is: %v%v",
