@@ -207,6 +207,42 @@ How to **fix** it:
 1. Ensure shuffle-sharding is enabled in the Mimir cluster
 1. Assuming shuffle-sharding is enabled, scaling up ingesters will lower the number of tenants per ingester. However, the effect of this change will be visible only after `-blocks-storage.tsdb.close-idle-tsdb-timeout` period so you may have to temporarily increase the limit
 
+### MimirTenantReachingSeriesLimit
+
+This alert fires when a tenant is close to reaching its per-tenant series limit (`max_global_series_per_user`) on at least one ingester.
+The threshold is set at 80% (`warning`) and 90% (`critical`) to give the chance to react before the limit is reached.
+
+Unlike the `max_series` per ingester instance limit (see [`MimirIngesterReachingSeriesLimit`](#MimirIngesterReachingSeriesLimit)), which is a "server error" (5xx), reaching the per-tenant series limit is considered a "client error" (4xx): once the limit is reached, appending samples to new series is rejected and the excess data is discarded (the tenant sees `err-mimir-max-series-per-user` errors). Appending samples to existing series continues to succeed.
+
+The limit is enforced per ingester against the tenant's local share of the global limit, so a tenant with an uneven series distribution across ingesters may reach the limit on some ingesters before its global series count reaches `max_global_series_per_user`.
+
+How the limit is **configured**:
+
+- The limit can be configured either on CLI (`-ingester.max-global-series-per-user`) or in the runtime config:
+  ```
+  overrides:
+    <tenant>:
+      max_global_series_per_user: <int>
+  ```
+- The per-ingester local share of the limit can be queried via `cortex_ingester_local_limits{limit="max_global_series_per_user"}`, and the configured global limit via `cortex_limits_overrides{limit_name="max_global_series_per_user"}` (or `cortex_limits_defaults` when the tenant uses the default).
+
+How to **fix** it:
+
+1. Use the `Mimir / Tenants` dashboard to inspect the tenant's in-memory and owned series against its limit, and to identify whether the series are unevenly distributed across ingesters.
+2. If the tenant's series growth is legitimate, increase the `max_global_series_per_user` limit for the affected tenant via the runtime config (applied live, no restart required). Increasing the limit will increase the ingesters' memory utilization, so monitor it via the `Mimir / Writes Resources` dashboard.
+3. If the series are unevenly distributed across ingesters, check that the tenant's `ingestion_tenant_shard_size` (and `ingestion_partitions_tenant_shard_size` when ingest storage is enabled) is appropriate.
+4. If the growth is unexpected, investigate the tenant for a cardinality explosion using the `Mimir / Tenants` dashboard and the cardinality API.
+
+### MimirTenantSeriesLimitDiscardingSamples
+
+This alert fires when Mimir is actively discarding samples for a tenant because it reached its per-tenant series limit (`max_global_series_per_user`).
+This is the symptom that immediately follows [`MimirTenantReachingSeriesLimit`](#MimirTenantReachingSeriesLimit): samples for new series are being rejected with `err-mimir-max-series-per-user` and the excess data is lost.
+
+How to **fix** it:
+
+1. Follow the steps in the [`MimirTenantReachingSeriesLimit`](#MimirTenantReachingSeriesLimit) runbook to either raise the tenant's `max_global_series_per_user` limit or reduce the tenant's series cardinality.
+2. The rate of discarded samples per tenant can be queried via `sum by (user) (rate(cortex_discarded_samples_total{reason="per_user_series_limit"}[5m]))`.
+
 ### MimirDistributorGcUsesTooMuchCpu
 
 This alert fires when distributors spend too much CPU time on garbage collection.
