@@ -4,12 +4,10 @@
 package rangevectorsplitting
 
 import (
-	"fmt"
 	"github.com/grafana/wiresmith/protohelpers"
 	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/runtime/protoimpl"
 	"reflect"
-	"slices"
 	"strings"
 	"unsafe"
 )
@@ -50,36 +48,6 @@ func (m *SplitFunctionCallDetails) String() string {
 		return "<nil>"
 	}
 	var b strings.Builder
-	for _, e := range m.SplitRanges {
-		b.WriteString("splitRanges: ")
-		b.WriteString("{")
-		b.WriteString(e.String())
-		b.WriteString("}")
-		b.WriteString(" ")
-	}
-	return strings.TrimSpace(b.String())
-}
-
-func (m *SplitRange) String() string {
-	if m == nil {
-		return "<nil>"
-	}
-	var b strings.Builder
-	if m.Start != 0 {
-		b.WriteString("start: ")
-		fmt.Fprintf(&b, "%v", m.Start)
-		b.WriteString(" ")
-	}
-	if m.End != 0 {
-		b.WriteString("end: ")
-		fmt.Fprintf(&b, "%v", m.End)
-		b.WriteString(" ")
-	}
-	if m.Cacheable {
-		b.WriteString("cacheable: ")
-		fmt.Fprintf(&b, "%v", m.Cacheable)
-		b.WriteString(" ")
-	}
 	return strings.TrimSpace(b.String())
 }
 
@@ -88,21 +56,6 @@ func (m *SplitFunctionCallDetails) Clone() *SplitFunctionCallDetails {
 		return nil
 	}
 	out := &SplitFunctionCallDetails{}
-	out.SplitRanges = slices.Clone(m.SplitRanges)
-	for i := range out.SplitRanges {
-		out.SplitRanges[i] = *m.SplitRanges[i].Clone()
-	}
-	return out
-}
-
-func (m *SplitRange) Clone() *SplitRange {
-	if m == nil {
-		return nil
-	}
-	out := &SplitRange{}
-	out.Start = m.Start
-	out.End = m.End
-	out.Cacheable = m.Cacheable
 	return out
 }
 
@@ -111,37 +64,27 @@ func (x *SplitFunctionCallDetails) ProtoReflect() protoreflect.Message {
 	return protohelpers.NewMessageReflect(&file_github_com_grafana_mimir_pkg_streamingpromql_optimize_plan_rangevectorsplitting_node_proto_msgTypes[0], x)
 }
 
-func (x *SplitRange) ProtoReflect() protoreflect.Message {
-	file_github_com_grafana_mimir_pkg_streamingpromql_optimize_plan_rangevectorsplitting_node_proto_init()
-	return protohelpers.NewMessageReflect(&file_github_com_grafana_mimir_pkg_streamingpromql_optimize_plan_rangevectorsplitting_node_proto_msgTypes[1], x)
-}
-
 const file_github_com_grafana_mimir_pkg_streamingpromql_optimize_plan_rangevectorsplitting_node_proto_rawDesc = "" +
 	"\x0a\x5a\x67\x69\x74\x68\x75\x62\x2e\x63\x6f\x6d\x2f\x67\x72\x61\x66\x61\x6e\x61\x2f\x6d\x69\x6d\x69\x72\x2f\x70\x6b\x67\x2f\x73\x74\x72\x65\x61\x6d\x69\x6e\x67" +
 	"\x70\x72\x6f\x6d\x71\x6c\x2f\x6f\x70\x74\x69\x6d\x69\x7a\x65\x2f\x70\x6c\x61\x6e\x2f\x72\x61\x6e\x67\x65\x76\x65\x63\x74\x6f\x72\x73\x70\x6c\x69\x74\x74\x69\x6e" +
-	"\x67\x2f\x6e\x6f\x64\x65\x2e\x70\x72\x6f\x74\x6f\x12\x14\x72\x61\x6e\x67\x65\x76\x65\x63\x74\x6f\x72\x73\x70\x6c\x69\x74\x74\x69\x6e\x67\x22\x64\x0a\x18\x53\x70" +
-	"\x6c\x69\x74\x46\x75\x6e\x63\x74\x69\x6f\x6e\x43\x61\x6c\x6c\x44\x65\x74\x61\x69\x6c\x73\x12\x42\x0a\x0b\x73\x70\x6c\x69\x74\x52\x61\x6e\x67\x65\x73\x18\x01\x20" +
-	"\x03\x28\x0b\x32\x20\x2e\x72\x61\x6e\x67\x65\x76\x65\x63\x74\x6f\x72\x73\x70\x6c\x69\x74\x74\x69\x6e\x67\x2e\x53\x70\x6c\x69\x74\x52\x61\x6e\x67\x65\x52\x0b\x73" +
-	"\x70\x6c\x69\x74\x52\x61\x6e\x67\x65\x73\x4a\x04\x08\x02\x10\x03\x22\x52\x0a\x0a\x53\x70\x6c\x69\x74\x52\x61\x6e\x67\x65\x12\x14\x0a\x05\x73\x74\x61\x72\x74\x18" +
-	"\x01\x20\x01\x28\x03\x52\x05\x73\x74\x61\x72\x74\x12\x10\x0a\x03\x65\x6e\x64\x18\x02\x20\x01\x28\x03\x52\x03\x65\x6e\x64\x12\x1c\x0a\x09\x63\x61\x63\x68\x65\x61" +
-	"\x62\x6c\x65\x18\x03\x20\x01\x28\x08\x52\x09\x63\x61\x63\x68\x65\x61\x62\x6c\x65\x42\x04\xc8\xb7\x18\x01\x62\x06\x70\x72\x6f\x74\x6f\x33"
+	"\x67\x2f\x6e\x6f\x64\x65\x2e\x70\x72\x6f\x74\x6f\x12\x14\x72\x61\x6e\x67\x65\x76\x65\x63\x74\x6f\x72\x73\x70\x6c\x69\x74\x74\x69\x6e\x67\x22\x26\x0a\x18\x53\x70" +
+	"\x6c\x69\x74\x46\x75\x6e\x63\x74\x69\x6f\x6e\x43\x61\x6c\x6c\x44\x65\x74\x61\x69\x6c\x73\x4a\x04\x08\x01\x10\x02\x4a\x04\x08\x02\x10\x03\x42\x04\xc8\xb7\x18\x01" +
+	"\x62\x06\x70\x72\x6f\x74\x6f\x33"
 
 var file_github_com_grafana_mimir_pkg_streamingpromql_optimize_plan_rangevectorsplitting_node_proto_fd protoreflect.FileDescriptor
 
-var file_github_com_grafana_mimir_pkg_streamingpromql_optimize_plan_rangevectorsplitting_node_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
+var file_github_com_grafana_mimir_pkg_streamingpromql_optimize_plan_rangevectorsplitting_node_proto_msgTypes = make([]protoimpl.MessageInfo, 1)
 
 var file_github_com_grafana_mimir_pkg_streamingpromql_optimize_plan_rangevectorsplitting_node_proto_goTypes = []any{
 	(*SplitFunctionCallDetails)(nil), // 0: rangevectorsplitting.SplitFunctionCallDetails
-	(*SplitRange)(nil),               // 1: rangevectorsplitting.SplitRange
 }
 
 var file_github_com_grafana_mimir_pkg_streamingpromql_optimize_plan_rangevectorsplitting_node_proto_depIdxs = []int32{
-	1, // 0: rangevectorsplitting.SplitFunctionCallDetails.splitRanges:type_name -> rangevectorsplitting.SplitRange
-	1, // [1:1] is the sub-list for method output_type
-	1, // [1:1] is the sub-list for method input_type
-	1, // [1:1] is the sub-list for extension type_name
-	1, // [1:1] is the sub-list for extension extendee
-	0, // [0:1] is the sub-list for field type_name
+	0, // [0:0] is the sub-list for method output_type
+	0, // [0:0] is the sub-list for method input_type
+	0, // [0:0] is the sub-list for extension type_name
+	0, // [0:0] is the sub-list for extension extendee
+	0, // [0:0] is the sub-list for field type_name
 }
 
 func init() {
@@ -158,7 +101,7 @@ func file_github_com_grafana_mimir_pkg_streamingpromql_optimize_plan_rangevector
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_github_com_grafana_mimir_pkg_streamingpromql_optimize_plan_rangevectorsplitting_node_proto_rawDesc), len(file_github_com_grafana_mimir_pkg_streamingpromql_optimize_plan_rangevectorsplitting_node_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   2,
+			NumMessages:   1,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

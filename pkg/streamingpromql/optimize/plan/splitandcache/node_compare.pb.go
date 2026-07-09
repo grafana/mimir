@@ -47,6 +47,31 @@ func (this *TimeRangeSplitDetails) Equal(that interface{}) bool {
 	return true
 }
 
+func (this *CacheDetails) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*CacheDetails)
+	if !ok {
+		that2, ok := that.(CacheDetails)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if this.SplitInterval != that1.SplitInterval {
+		return false
+	}
+	return true
+}
+
 func (this *TimeRangeSplitDetails) Compare(that interface{}) int {
 	if that == nil {
 		if this == nil {
@@ -58,6 +83,39 @@ func (this *TimeRangeSplitDetails) Compare(that interface{}) int {
 	that1, ok := that.(*TimeRangeSplitDetails)
 	if !ok {
 		that2, ok := that.(TimeRangeSplitDetails)
+		if ok {
+			that1 = &that2
+		} else {
+			return 1
+		}
+	}
+	if that1 == nil {
+		if this == nil {
+			return 0
+		}
+		return 1
+	} else if this == nil {
+		return -1
+	}
+	if this.SplitInterval < that1.SplitInterval {
+		return -1
+	} else if this.SplitInterval > that1.SplitInterval {
+		return 1
+	}
+	return 0
+}
+
+func (this *CacheDetails) Compare(that interface{}) int {
+	if that == nil {
+		if this == nil {
+			return 0
+		}
+		return 1
+	}
+
+	that1, ok := that.(*CacheDetails)
+	if !ok {
+		that2, ok := that.(CacheDetails)
 		if ok {
 			that1 = &that2
 		} else {

@@ -56,6 +56,17 @@ func (m *TimeRangeSplitDetails) String() string {
 	return strings.TrimSpace(b.String())
 }
 
+func (m *CacheDetails) String() string {
+	if m == nil {
+		return "<nil>"
+	}
+	var b strings.Builder
+	b.WriteString("splitInterval: ")
+	fmt.Fprintf(&b, "%v", m.SplitInterval)
+	b.WriteString(" ")
+	return strings.TrimSpace(b.String())
+}
+
 func (m *TimeRangeSplitDetails) Clone() *TimeRangeSplitDetails {
 	if m == nil {
 		return nil
@@ -65,9 +76,23 @@ func (m *TimeRangeSplitDetails) Clone() *TimeRangeSplitDetails {
 	return out
 }
 
+func (m *CacheDetails) Clone() *CacheDetails {
+	if m == nil {
+		return nil
+	}
+	out := &CacheDetails{}
+	out.SplitInterval = m.SplitInterval
+	return out
+}
+
 func (x *TimeRangeSplitDetails) ProtoReflect() protoreflect.Message {
 	file_github_com_grafana_mimir_pkg_streamingpromql_optimize_plan_splitandcache_node_proto_init()
 	return protohelpers.NewMessageReflect(&file_github_com_grafana_mimir_pkg_streamingpromql_optimize_plan_splitandcache_node_proto_msgTypes[0], x)
+}
+
+func (x *CacheDetails) ProtoReflect() protoreflect.Message {
+	file_github_com_grafana_mimir_pkg_streamingpromql_optimize_plan_splitandcache_node_proto_init()
+	return protohelpers.NewMessageReflect(&file_github_com_grafana_mimir_pkg_streamingpromql_optimize_plan_splitandcache_node_proto_msgTypes[1], x)
 }
 
 const file_github_com_grafana_mimir_pkg_streamingpromql_optimize_plan_splitandcache_node_proto_rawDesc = "" +
@@ -76,25 +101,29 @@ const file_github_com_grafana_mimir_pkg_streamingpromql_optimize_plan_splitandca
 	"\x70\x72\x6f\x74\x6f\x12\x0d\x73\x70\x6c\x69\x74\x61\x6e\x64\x63\x61\x63\x68\x65\x1a\x1e\x67\x6f\x6f\x67\x6c\x65\x2f\x70\x72\x6f\x74\x6f\x62\x75\x66\x2f\x64\x75" +
 	"\x72\x61\x74\x69\x6f\x6e\x2e\x70\x72\x6f\x74\x6f\x22\x5e\x0a\x15\x54\x69\x6d\x65\x52\x61\x6e\x67\x65\x53\x70\x6c\x69\x74\x44\x65\x74\x61\x69\x6c\x73\x12\x45\x0a" +
 	"\x0d\x73\x70\x6c\x69\x74\x49\x6e\x74\x65\x72\x76\x61\x6c\x18\x01\x20\x01\x28\x0b\x32\x19\x2e\x67\x6f\x6f\x67\x6c\x65\x2e\x70\x72\x6f\x74\x6f\x62\x75\x66\x2e\x44" +
-	"\x75\x72\x61\x74\x69\x6f\x6e\x42\x04\x98\xb7\x18\x01\x52\x0d\x73\x70\x6c\x69\x74\x49\x6e\x74\x65\x72\x76\x61\x6c\x42\x04\xc8\xb7\x18\x01\x62\x06\x70\x72\x6f\x74" +
-	"\x6f\x33"
+	"\x75\x72\x61\x74\x69\x6f\x6e\x42\x04\x98\xb7\x18\x01\x52\x0d\x73\x70\x6c\x69\x74\x49\x6e\x74\x65\x72\x76\x61\x6c\x22\x55\x0a\x0c\x43\x61\x63\x68\x65\x44\x65\x74" +
+	"\x61\x69\x6c\x73\x12\x45\x0a\x0d\x73\x70\x6c\x69\x74\x49\x6e\x74\x65\x72\x76\x61\x6c\x18\x01\x20\x01\x28\x0b\x32\x19\x2e\x67\x6f\x6f\x67\x6c\x65\x2e\x70\x72\x6f" +
+	"\x74\x6f\x62\x75\x66\x2e\x44\x75\x72\x61\x74\x69\x6f\x6e\x42\x04\x98\xb7\x18\x01\x52\x0d\x73\x70\x6c\x69\x74\x49\x6e\x74\x65\x72\x76\x61\x6c\x42\x04\xc8\xb7\x18" +
+	"\x01\x62\x06\x70\x72\x6f\x74\x6f\x33"
 
 var file_github_com_grafana_mimir_pkg_streamingpromql_optimize_plan_splitandcache_node_proto_fd protoreflect.FileDescriptor
 
-var file_github_com_grafana_mimir_pkg_streamingpromql_optimize_plan_splitandcache_node_proto_msgTypes = make([]protoimpl.MessageInfo, 1)
+var file_github_com_grafana_mimir_pkg_streamingpromql_optimize_plan_splitandcache_node_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
 
 var file_github_com_grafana_mimir_pkg_streamingpromql_optimize_plan_splitandcache_node_proto_goTypes = []any{
 	(*TimeRangeSplitDetails)(nil), // 0: splitandcache.TimeRangeSplitDetails
-	(*durationpb.Duration)(nil),   // 1: google.protobuf.Duration
+	(*CacheDetails)(nil),          // 1: splitandcache.CacheDetails
+	(*durationpb.Duration)(nil),   // 2: google.protobuf.Duration
 }
 
 var file_github_com_grafana_mimir_pkg_streamingpromql_optimize_plan_splitandcache_node_proto_depIdxs = []int32{
-	1, // 0: splitandcache.TimeRangeSplitDetails.splitInterval:type_name -> google.protobuf.Duration
-	1, // [1:1] is the sub-list for method output_type
-	1, // [1:1] is the sub-list for method input_type
-	1, // [1:1] is the sub-list for extension type_name
-	1, // [1:1] is the sub-list for extension extendee
-	0, // [0:1] is the sub-list for field type_name
+	2, // 0: splitandcache.TimeRangeSplitDetails.splitInterval:type_name -> google.protobuf.Duration
+	2, // 1: splitandcache.CacheDetails.splitInterval:type_name -> google.protobuf.Duration
+	2, // [2:2] is the sub-list for method output_type
+	2, // [2:2] is the sub-list for method input_type
+	2, // [2:2] is the sub-list for extension type_name
+	2, // [2:2] is the sub-list for extension extendee
+	0, // [0:2] is the sub-list for field type_name
 }
 
 func init() {
@@ -111,7 +140,7 @@ func file_github_com_grafana_mimir_pkg_streamingpromql_optimize_plan_splitandcac
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_github_com_grafana_mimir_pkg_streamingpromql_optimize_plan_splitandcache_node_proto_rawDesc), len(file_github_com_grafana_mimir_pkg_streamingpromql_optimize_plan_splitandcache_node_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   1,
+			NumMessages:   2,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

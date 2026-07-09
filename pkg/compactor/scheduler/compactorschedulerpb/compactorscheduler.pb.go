@@ -120,8 +120,13 @@ type CompactionJob struct {
 	TotalBlocksBytes uint64   `protobuf:"varint,3,opt,name=total_blocks_bytes,json=totalBlocksBytes,proto3" json:"total_blocks_bytes,omitempty"`
 }
 
+type LaneRequest struct {
+	JobType JobType `protobuf:"varint,1,opt,name=job_type,json=jobType,proto3,enum=compactorschedulerpb.JobType" json:"job_type,omitempty"`
+}
+
 type LeaseJobRequest struct {
-	WorkerId string `protobuf:"bytes,1,opt,name=worker_id,json=workerId,proto3" json:"worker_id,omitempty"`
+	WorkerId     string        `protobuf:"bytes,1,opt,name=worker_id,json=workerId,proto3" json:"worker_id,omitempty"`
+	LaneRequests []LaneRequest `protobuf:"bytes,2,rep,name=lane_requests,json=laneRequests,proto3" json:"lane_requests,omitempty"`
 }
 
 type LeaseJobResponse struct {
@@ -202,6 +207,14 @@ func (m *CompactionJob) Reset() {
 	*m = CompactionJob{}
 }
 func (*CompactionJob) ProtoMessage() {}
+
+func (m *LaneRequest) Reset() {
+	if m == nil {
+		return
+	}
+	*m = LaneRequest{}
+}
+func (*LaneRequest) ProtoMessage() {}
 
 func (m *LeaseJobRequest) Reset() {
 	if m == nil {
@@ -347,11 +360,25 @@ func (m *CompactionJob) GetTotalBlocksBytes() uint64 {
 	return 0
 }
 
+func (m *LaneRequest) GetJobType() JobType {
+	if m != nil {
+		return m.JobType
+	}
+	return 0
+}
+
 func (m *LeaseJobRequest) GetWorkerId() string {
 	if m != nil {
 		return m.WorkerId
 	}
 	return ""
+}
+
+func (m *LeaseJobRequest) GetLaneRequests() []LaneRequest {
+	if m != nil {
+		return m.LaneRequests
+	}
+	return nil
 }
 
 func (m *LeaseJobResponse) GetKey() *JobKey {
@@ -564,6 +591,17 @@ func (m *CompactionJob) Size() int {
 	return n
 }
 
+func (m *LaneRequest) Size() int {
+	if m == nil {
+		return 0
+	}
+	var n int
+	if m.JobType != 0 {
+		n += 1 + protowire.SizeVarint(uint64(m.JobType))
+	}
+	return n
+}
+
 func (m *LeaseJobRequest) Size() int {
 	if m == nil {
 		return 0
@@ -571,6 +609,10 @@ func (m *LeaseJobRequest) Size() int {
 	var n int
 	if len(m.WorkerId) > 0 {
 		n += 1 + protowire.SizeVarint(uint64(len(m.WorkerId))) + len(m.WorkerId)
+	}
+	for i := range m.LaneRequests {
+		s := m.LaneRequests[i].Size()
+		n += 1 + protowire.SizeVarint(uint64(s)) + s
 	}
 	return n
 }
@@ -908,6 +950,43 @@ func (m *CompactionJob) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	return len(dAtA) - i, nil
 }
 
+func (m *LaneRequest) Marshal() (dAtA []byte, err error) {
+	if m == nil {
+		return nil, nil
+	}
+	size := m.Size()
+	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *LaneRequest) MarshalTo(dAtA []byte) (int, error) {
+	if m == nil {
+		return 0, nil
+	}
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *LaneRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	if m == nil {
+		return 0, nil
+	}
+	i := len(dAtA)
+	if m.JobType != 0 {
+		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.JobType))
+		i--
+		dAtA[i] = 0x08
+	}
+	return len(dAtA) - i, nil
+}
+
 func (m *LeaseJobRequest) Marshal() (dAtA []byte, err error) {
 	if m == nil {
 		return nil, nil
@@ -937,6 +1016,21 @@ func (m *LeaseJobRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 		return 0, nil
 	}
 	i := len(dAtA)
+	for iNdEx := len(m.LaneRequests) - 1; iNdEx >= 0; iNdEx-- {
+		size, err := m.LaneRequests[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+		if err != nil {
+			return 0, err
+		}
+		i -= size
+		if size <= 0x7F {
+			dAtA[i-1] = uint8(size)
+			i--
+		} else {
+			i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0x12
+	}
 	if len(m.WorkerId) > 0 {
 		i -= len(m.WorkerId)
 		copy(dAtA[i:], m.WorkerId)
@@ -2048,6 +2142,92 @@ func (m *CompactionJob) UnmarshalNoPrescan(dAtA []byte) error {
 	return m.unmarshal(dAtA, -1)
 }
 
+func (m *LaneRequest) Unmarshal(b []byte) error {
+	return m.unmarshal(b, 0)
+}
+
+func (m *LaneRequest) UnmarshalWithDepth(b []byte, depth int) error {
+	if depth < 0 {
+		depth = 0
+	}
+	return m.unmarshal(b, depth)
+}
+
+func (m *LaneRequest) unmarshal(dAtA []byte, depth int) error {
+	if depth > protohelpers.MaxUnmarshalDepth {
+		return fmt.Errorf("exceeded max recursion depth")
+	}
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		var wire uint64
+		if iNdEx < l && dAtA[iNdEx] < 0x80 {
+			wire = uint64(dAtA[iNdEx])
+			iNdEx++
+		} else {
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 35 {
+					return fmt.Errorf("proto: integer overflow")
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				wire |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		}
+		if wire>>3 < 1 || wire>>3 > 0x1FFFFFFF {
+			return fmt.Errorf("invalid field number")
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		switch fieldNum {
+		case 1: // job_type
+			if wireType != 0 {
+				n, err := protohelpers.SkipValue(dAtA[iNdEx:], wireType, fieldNum)
+				if err != nil {
+					return err
+				}
+				iNdEx += n
+				continue
+			}
+			var v uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return fmt.Errorf("proto: integer overflow")
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				v |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					if shift == 63 && b > 1 {
+						return fmt.Errorf("proto: varint overflow")
+					}
+					break
+				}
+			}
+			m.JobType = JobType(v)
+		default:
+			n, err := protohelpers.SkipValue(dAtA[iNdEx:], wireType, fieldNum)
+			if err != nil {
+				return err
+			}
+			iNdEx += n
+		}
+	}
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+
 func (m *LeaseJobRequest) Unmarshal(b []byte) error {
 	return m.unmarshal(b, 0)
 }
@@ -2065,6 +2245,71 @@ func (m *LeaseJobRequest) unmarshal(dAtA []byte, depth int) error {
 	}
 	l := len(dAtA)
 	iNdEx := 0
+	if l >= 256 && depth >= 0 {
+		var preIdx int
+		var field2count int
+		for preIdx < l {
+			var preWire uint64
+			for shift := uint(0); ; shift += 7 {
+				if preIdx >= l {
+					break
+				}
+				b := dAtA[preIdx]
+				preIdx++
+				preWire |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			preNum := int32(preWire >> 3)
+			preTyp := int(preWire & 0x7)
+			switch preNum {
+			case 2:
+				field2count++
+			}
+			switch preTyp {
+			case 0:
+				for preIdx < l {
+					preIdx++
+					if dAtA[preIdx-1] < 0x80 {
+						break
+					}
+				}
+			case 1:
+				preIdx += 8
+			case 2:
+				var preLen uint64
+				for shift := uint(0); ; shift += 7 {
+					if preIdx >= l {
+						break
+					}
+					b := dAtA[preIdx]
+					preIdx++
+					preLen |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				preIdx += int(preLen)
+			case 5:
+				preIdx += 4
+			default:
+				preIdx = -1
+			}
+			if preIdx < 0 || preIdx > l {
+				break
+			}
+		}
+		preCapMax := l / 2
+		if c := field2count; c > 0 {
+			if c > preCapMax {
+				c = preCapMax
+			}
+			if len(m.LaneRequests) == 0 && cap(m.LaneRequests) < c {
+				m.LaneRequests = make([]LaneRequest, 0, c)
+			}
+		}
+	}
 	for iNdEx < l {
 		var wire uint64
 		if iNdEx < l && dAtA[iNdEx] < 0x80 {
@@ -2137,6 +2382,54 @@ func (m *LeaseJobRequest) unmarshal(dAtA []byte, depth int) error {
 			}
 			m.WorkerId = string(dAtA[iNdEx:postIndex])
 			iNdEx = postIndex
+		case 2: // lane_requests
+			if wireType != 2 {
+				n, err := protohelpers.SkipValue(dAtA[iNdEx:], wireType, fieldNum)
+				if err != nil {
+					return err
+				}
+				iNdEx += n
+				continue
+			}
+			var byteLen uint64
+			if iNdEx < l && dAtA[iNdEx] < 0x80 {
+				byteLen = uint64(dAtA[iNdEx])
+				iNdEx++
+			} else {
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return fmt.Errorf("proto: integer overflow")
+					}
+					if iNdEx >= l {
+						return io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					byteLen |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						if shift == 63 && b > 1 {
+							return fmt.Errorf("proto: varint overflow")
+						}
+						break
+					}
+				}
+			}
+			if byteLen > uint64(math.MaxInt) {
+				return io.ErrUnexpectedEOF
+			}
+			intByteLen := int(byteLen)
+			postIndex := iNdEx + intByteLen
+			if postIndex < 0 {
+				return fmt.Errorf("proto: negative length")
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.LaneRequests = append(m.LaneRequests, LaneRequest{})
+			if err := m.LaneRequests[len(m.LaneRequests)-1].unmarshal(dAtA[iNdEx:postIndex], depth+1); err != nil {
+				return err
+			}
+			iNdEx = postIndex
 		default:
 			n, err := protohelpers.SkipValue(dAtA[iNdEx:], wireType, fieldNum)
 			if err != nil {
@@ -2149,6 +2442,10 @@ func (m *LeaseJobRequest) unmarshal(dAtA []byte, depth int) error {
 		return io.ErrUnexpectedEOF
 	}
 	return nil
+}
+
+func (m *LeaseJobRequest) UnmarshalNoPrescan(dAtA []byte) error {
+	return m.unmarshal(dAtA, -1)
 }
 
 func (m *LeaseJobResponse) Unmarshal(b []byte) error {

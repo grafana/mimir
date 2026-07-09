@@ -41,45 +41,6 @@ func (this *SplitFunctionCallDetails) Equal(that interface{}) bool {
 	} else if this == nil {
 		return false
 	}
-	if len(this.SplitRanges) != len(that1.SplitRanges) {
-		return false
-	}
-	for i := range this.SplitRanges {
-		if !this.SplitRanges[i].Equal(that1.SplitRanges[i]) {
-			return false
-		}
-	}
-	return true
-}
-
-func (this *SplitRange) Equal(that interface{}) bool {
-	if that == nil {
-		return this == nil
-	}
-
-	that1, ok := that.(*SplitRange)
-	if !ok {
-		that2, ok := that.(SplitRange)
-		if ok {
-			that1 = &that2
-		} else {
-			return false
-		}
-	}
-	if that1 == nil {
-		return this == nil
-	} else if this == nil {
-		return false
-	}
-	if this.Start != that1.Start {
-		return false
-	}
-	if this.End != that1.End {
-		return false
-	}
-	if this.Cacheable != that1.Cacheable {
-		return false
-	}
 	return true
 }
 
@@ -107,63 +68,6 @@ func (this *SplitFunctionCallDetails) Compare(that interface{}) int {
 		return 1
 	} else if this == nil {
 		return -1
-	}
-	if len(this.SplitRanges) != len(that1.SplitRanges) {
-		if len(this.SplitRanges) < len(that1.SplitRanges) {
-			return -1
-		}
-		return 1
-	}
-	for i := range this.SplitRanges {
-		if c := this.SplitRanges[i].Compare(that1.SplitRanges[i]); c != 0 {
-			return c
-		}
-	}
-	return 0
-}
-
-func (this *SplitRange) Compare(that interface{}) int {
-	if that == nil {
-		if this == nil {
-			return 0
-		}
-		return 1
-	}
-
-	that1, ok := that.(*SplitRange)
-	if !ok {
-		that2, ok := that.(SplitRange)
-		if ok {
-			that1 = &that2
-		} else {
-			return 1
-		}
-	}
-	if that1 == nil {
-		if this == nil {
-			return 0
-		}
-		return 1
-	} else if this == nil {
-		return -1
-	}
-	if this.Start != that1.Start {
-		if this.Start < that1.Start {
-			return -1
-		}
-		return 1
-	}
-	if this.End != that1.End {
-		if this.End < that1.End {
-			return -1
-		}
-		return 1
-	}
-	if this.Cacheable != that1.Cacheable {
-		if !this.Cacheable && that1.Cacheable {
-			return -1
-		}
-		return 1
 	}
 	return 0
 }

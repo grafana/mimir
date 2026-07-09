@@ -6,22 +6,10 @@ package rangevectorsplitting
 import (
 	"fmt"
 	"github.com/grafana/wiresmith/protohelpers"
-	"google.golang.org/protobuf/encoding/protowire"
 	"io"
-	"math"
 )
 
 type SplitFunctionCallDetails struct {
-	SplitRanges []SplitRange `protobuf:"bytes,1,rep,name=splitRanges,proto3" json:"splitRanges,omitempty"`
-}
-
-// SplitRange represents a time range within a split.
-// Start is exclusive (points with timestamp > Start are included).
-// End is inclusive (points with timestamp <= End are included).
-type SplitRange struct {
-	Start     int64 `protobuf:"varint,1,opt,name=start,proto3" json:"start,omitempty"`
-	End       int64 `protobuf:"varint,2,opt,name=end,proto3" json:"end,omitempty"`
-	Cacheable bool  `protobuf:"varint,3,opt,name=cacheable,proto3" json:"cacheable,omitempty"`
 }
 
 func (m *SplitFunctionCallDetails) Reset() {
@@ -32,68 +20,11 @@ func (m *SplitFunctionCallDetails) Reset() {
 }
 func (*SplitFunctionCallDetails) ProtoMessage() {}
 
-func (m *SplitRange) Reset() {
-	if m == nil {
-		return
-	}
-	*m = SplitRange{}
-}
-func (*SplitRange) ProtoMessage() {}
-
-func (m *SplitFunctionCallDetails) GetSplitRanges() []SplitRange {
-	if m != nil {
-		return m.SplitRanges
-	}
-	return nil
-}
-
-func (m *SplitRange) GetStart() int64 {
-	if m != nil {
-		return m.Start
-	}
-	return 0
-}
-
-func (m *SplitRange) GetEnd() int64 {
-	if m != nil {
-		return m.End
-	}
-	return 0
-}
-
-func (m *SplitRange) GetCacheable() bool {
-	if m != nil {
-		return m.Cacheable
-	}
-	return false
-}
-
 func (m *SplitFunctionCallDetails) Size() int {
 	if m == nil {
 		return 0
 	}
 	var n int
-	for i := range m.SplitRanges {
-		s := m.SplitRanges[i].Size()
-		n += 1 + protowire.SizeVarint(uint64(s)) + s
-	}
-	return n
-}
-
-func (m *SplitRange) Size() int {
-	if m == nil {
-		return 0
-	}
-	var n int
-	if m.Start != 0 {
-		n += 1 + protowire.SizeVarint(uint64(m.Start))
-	}
-	if m.End != 0 {
-		n += 1 + protowire.SizeVarint(uint64(m.End))
-	}
-	if m.Cacheable {
-		n += 2
-	}
 	return n
 }
 
@@ -126,73 +57,6 @@ func (m *SplitFunctionCallDetails) MarshalToSizedBuffer(dAtA []byte) (int, error
 		return 0, nil
 	}
 	i := len(dAtA)
-	for iNdEx := len(m.SplitRanges) - 1; iNdEx >= 0; iNdEx-- {
-		size, err := m.SplitRanges[iNdEx].MarshalToSizedBuffer(dAtA[:i])
-		if err != nil {
-			return 0, err
-		}
-		i -= size
-		if size <= 0x7F {
-			dAtA[i-1] = uint8(size)
-			i--
-		} else {
-			i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
-		}
-		i--
-		dAtA[i] = 0x0a
-	}
-	return len(dAtA) - i, nil
-}
-
-func (m *SplitRange) Marshal() (dAtA []byte, err error) {
-	if m == nil {
-		return nil, nil
-	}
-	size := m.Size()
-	dAtA = make([]byte, size)
-	if size == 0 {
-		return dAtA, nil
-	}
-	n, err := m.MarshalToSizedBuffer(dAtA[:size])
-	if err != nil {
-		return nil, err
-	}
-	return dAtA[:n], nil
-}
-
-func (m *SplitRange) MarshalTo(dAtA []byte) (int, error) {
-	if m == nil {
-		return 0, nil
-	}
-	size := m.Size()
-	return m.MarshalToSizedBuffer(dAtA[:size])
-}
-
-func (m *SplitRange) MarshalToSizedBuffer(dAtA []byte) (int, error) {
-	if m == nil {
-		return 0, nil
-	}
-	i := len(dAtA)
-	if m.Cacheable {
-		i--
-		if m.Cacheable {
-			dAtA[i] = 1
-		} else {
-			dAtA[i] = 0
-		}
-		i--
-		dAtA[i] = 0x18
-	}
-	if m.End != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.End))
-		i--
-		dAtA[i] = 0x10
-	}
-	if m.Start != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.Start))
-		i--
-		dAtA[i] = 0x08
-	}
 	return len(dAtA) - i, nil
 }
 
@@ -213,71 +77,6 @@ func (m *SplitFunctionCallDetails) unmarshal(dAtA []byte, depth int) error {
 	}
 	l := len(dAtA)
 	iNdEx := 0
-	if l >= 256 && depth >= 0 {
-		var preIdx int
-		var field1count int
-		for preIdx < l {
-			var preWire uint64
-			for shift := uint(0); ; shift += 7 {
-				if preIdx >= l {
-					break
-				}
-				b := dAtA[preIdx]
-				preIdx++
-				preWire |= uint64(b&0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-			preNum := int32(preWire >> 3)
-			preTyp := int(preWire & 0x7)
-			switch preNum {
-			case 1:
-				field1count++
-			}
-			switch preTyp {
-			case 0:
-				for preIdx < l {
-					preIdx++
-					if dAtA[preIdx-1] < 0x80 {
-						break
-					}
-				}
-			case 1:
-				preIdx += 8
-			case 2:
-				var preLen uint64
-				for shift := uint(0); ; shift += 7 {
-					if preIdx >= l {
-						break
-					}
-					b := dAtA[preIdx]
-					preIdx++
-					preLen |= uint64(b&0x7F) << shift
-					if b < 0x80 {
-						break
-					}
-				}
-				preIdx += int(preLen)
-			case 5:
-				preIdx += 4
-			default:
-				preIdx = -1
-			}
-			if preIdx < 0 || preIdx > l {
-				break
-			}
-		}
-		preCapMax := l / 2
-		if c := field1count; c > 0 {
-			if c > preCapMax {
-				c = preCapMax
-			}
-			if len(m.SplitRanges) == 0 && cap(m.SplitRanges) < c {
-				m.SplitRanges = make([]SplitRange, 0, c)
-			}
-		}
-	}
 	for iNdEx < l {
 		var wire uint64
 		if iNdEx < l && dAtA[iNdEx] < 0x80 {
@@ -305,200 +104,6 @@ func (m *SplitFunctionCallDetails) unmarshal(dAtA []byte, depth int) error {
 		fieldNum := int32(wire >> 3)
 		wireType := int(wire & 0x7)
 		switch fieldNum {
-		case 1: // splitRanges
-			if wireType != 2 {
-				n, err := protohelpers.SkipValue(dAtA[iNdEx:], wireType, fieldNum)
-				if err != nil {
-					return err
-				}
-				iNdEx += n
-				continue
-			}
-			var byteLen uint64
-			if iNdEx < l && dAtA[iNdEx] < 0x80 {
-				byteLen = uint64(dAtA[iNdEx])
-				iNdEx++
-			} else {
-				for shift := uint(0); ; shift += 7 {
-					if shift >= 64 {
-						return fmt.Errorf("proto: integer overflow")
-					}
-					if iNdEx >= l {
-						return io.ErrUnexpectedEOF
-					}
-					b := dAtA[iNdEx]
-					iNdEx++
-					byteLen |= uint64(b&0x7F) << shift
-					if b < 0x80 {
-						if shift == 63 && b > 1 {
-							return fmt.Errorf("proto: varint overflow")
-						}
-						break
-					}
-				}
-			}
-			if byteLen > uint64(math.MaxInt) {
-				return io.ErrUnexpectedEOF
-			}
-			intByteLen := int(byteLen)
-			postIndex := iNdEx + intByteLen
-			if postIndex < 0 {
-				return fmt.Errorf("proto: negative length")
-			}
-			if postIndex > l {
-				return io.ErrUnexpectedEOF
-			}
-			m.SplitRanges = append(m.SplitRanges, SplitRange{})
-			if err := m.SplitRanges[len(m.SplitRanges)-1].unmarshal(dAtA[iNdEx:postIndex], depth+1); err != nil {
-				return err
-			}
-			iNdEx = postIndex
-		default:
-			n, err := protohelpers.SkipValue(dAtA[iNdEx:], wireType, fieldNum)
-			if err != nil {
-				return err
-			}
-			iNdEx += n
-		}
-	}
-	if iNdEx > l {
-		return io.ErrUnexpectedEOF
-	}
-	return nil
-}
-
-func (m *SplitFunctionCallDetails) UnmarshalNoPrescan(dAtA []byte) error {
-	return m.unmarshal(dAtA, -1)
-}
-
-func (m *SplitRange) Unmarshal(b []byte) error {
-	return m.unmarshal(b, 0)
-}
-
-func (m *SplitRange) UnmarshalWithDepth(b []byte, depth int) error {
-	if depth < 0 {
-		depth = 0
-	}
-	return m.unmarshal(b, depth)
-}
-
-func (m *SplitRange) unmarshal(dAtA []byte, depth int) error {
-	if depth > protohelpers.MaxUnmarshalDepth {
-		return fmt.Errorf("exceeded max recursion depth")
-	}
-	l := len(dAtA)
-	iNdEx := 0
-	for iNdEx < l {
-		var wire uint64
-		if iNdEx < l && dAtA[iNdEx] < 0x80 {
-			wire = uint64(dAtA[iNdEx])
-			iNdEx++
-		} else {
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 35 {
-					return fmt.Errorf("proto: integer overflow")
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				wire |= uint64(b&0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-		}
-		if wire>>3 < 1 || wire>>3 > 0x1FFFFFFF {
-			return fmt.Errorf("invalid field number")
-		}
-		fieldNum := int32(wire >> 3)
-		wireType := int(wire & 0x7)
-		switch fieldNum {
-		case 1: // start
-			if wireType != 0 {
-				n, err := protohelpers.SkipValue(dAtA[iNdEx:], wireType, fieldNum)
-				if err != nil {
-					return err
-				}
-				iNdEx += n
-				continue
-			}
-			var v uint64
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return fmt.Errorf("proto: integer overflow")
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				v |= uint64(b&0x7F) << shift
-				if b < 0x80 {
-					if shift == 63 && b > 1 {
-						return fmt.Errorf("proto: varint overflow")
-					}
-					break
-				}
-			}
-			m.Start = int64(v)
-		case 2: // end
-			if wireType != 0 {
-				n, err := protohelpers.SkipValue(dAtA[iNdEx:], wireType, fieldNum)
-				if err != nil {
-					return err
-				}
-				iNdEx += n
-				continue
-			}
-			var v uint64
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return fmt.Errorf("proto: integer overflow")
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				v |= uint64(b&0x7F) << shift
-				if b < 0x80 {
-					if shift == 63 && b > 1 {
-						return fmt.Errorf("proto: varint overflow")
-					}
-					break
-				}
-			}
-			m.End = int64(v)
-		case 3: // cacheable
-			if wireType != 0 {
-				n, err := protohelpers.SkipValue(dAtA[iNdEx:], wireType, fieldNum)
-				if err != nil {
-					return err
-				}
-				iNdEx += n
-				continue
-			}
-			var v uint64
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return fmt.Errorf("proto: integer overflow")
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				v |= uint64(b&0x7F) << shift
-				if b < 0x80 {
-					if shift == 63 && b > 1 {
-						return fmt.Errorf("proto: varint overflow")
-					}
-					break
-				}
-			}
-			m.Cacheable = v != 0
 		default:
 			n, err := protohelpers.SkipValue(dAtA[iNdEx:], wireType, fieldNum)
 			if err != nil {

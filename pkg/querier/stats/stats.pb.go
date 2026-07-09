@@ -51,6 +51,10 @@ type Stats struct {
 	// Samples that were read once but used multiple times (eg. in duplicated expressions)
 	// count only once per request, not once per use.
 	PhysicalSamplesRead uint64 `protobuf:"varint,17,opt,name=physical_samples_read,json=physicalSamplesRead,proto3" json:"physical_samples_read,omitempty"`
+	// Retries is the number of times downstream requests were retried by the query-frontend while
+	// processing this request.
+	// 0 means all requests succeeded on the first attempt.
+	Retries uint32 `protobuf:"varint,18,opt,name=retries,proto3" json:"retries,omitempty"`
 }
 
 func (m *Stats) Reset() {
@@ -173,6 +177,13 @@ func (m *Stats) GetPhysicalSamplesRead() uint64 {
 	return 0
 }
 
+func (m *Stats) GetRetries() uint32 {
+	if m != nil {
+		return m.Retries
+	}
+	return 0
+}
+
 func (m *Stats) Size() int {
 	if m == nil {
 		return 0
@@ -229,6 +240,9 @@ func (m *Stats) Size() int {
 	if m.PhysicalSamplesRead != 0 {
 		n += 2 + protowire.SizeVarint(uint64(m.PhysicalSamplesRead))
 	}
+	if m.Retries != 0 {
+		n += 2 + protowire.SizeVarint(uint64(m.Retries))
+	}
 	return n
 }
 
@@ -261,6 +275,13 @@ func (m *Stats) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 		return 0, nil
 	}
 	i := len(dAtA)
+	if m.Retries != 0 {
+		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.Retries))
+		i--
+		dAtA[i] = 0x01
+		i--
+		dAtA[i] = 0x90
+	}
 	if m.PhysicalSamplesRead != 0 {
 		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.PhysicalSamplesRead))
 		i--
@@ -912,6 +933,34 @@ func (m *Stats) unmarshal(dAtA []byte, depth int) error {
 				}
 			}
 			m.PhysicalSamplesRead = v
+		case 18: // retries
+			if wireType != 0 {
+				n, err := protohelpers.SkipValue(dAtA[iNdEx:], wireType, fieldNum)
+				if err != nil {
+					return err
+				}
+				iNdEx += n
+				continue
+			}
+			var v uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return fmt.Errorf("proto: integer overflow")
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				v |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					if shift == 63 && b > 1 {
+						return fmt.Errorf("proto: varint overflow")
+					}
+					break
+				}
+			}
+			m.Retries = uint32(v)
 		default:
 			n, err := protohelpers.SkipValue(dAtA[iNdEx:], wireType, fieldNum)
 			if err != nil {

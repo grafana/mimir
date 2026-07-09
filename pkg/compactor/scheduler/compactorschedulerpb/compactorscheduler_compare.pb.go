@@ -124,6 +124,31 @@ func (this *CompactionJob) Equal(that interface{}) bool {
 	return true
 }
 
+func (this *LaneRequest) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*LaneRequest)
+	if !ok {
+		that2, ok := that.(LaneRequest)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if this.JobType != that1.JobType {
+		return false
+	}
+	return true
+}
+
 func (this *LeaseJobRequest) Equal(that interface{}) bool {
 	if that == nil {
 		return this == nil
@@ -145,6 +170,14 @@ func (this *LeaseJobRequest) Equal(that interface{}) bool {
 	}
 	if this.WorkerId != that1.WorkerId {
 		return false
+	}
+	if len(this.LaneRequests) != len(that1.LaneRequests) {
+		return false
+	}
+	for i := range this.LaneRequests {
+		if !this.LaneRequests[i].Equal(that1.LaneRequests[i]) {
+			return false
+		}
 	}
 	return true
 }
@@ -612,6 +645,40 @@ func (this *CompactionJob) Compare(that interface{}) int {
 	return 0
 }
 
+func (this *LaneRequest) Compare(that interface{}) int {
+	if that == nil {
+		if this == nil {
+			return 0
+		}
+		return 1
+	}
+
+	that1, ok := that.(*LaneRequest)
+	if !ok {
+		that2, ok := that.(LaneRequest)
+		if ok {
+			that1 = &that2
+		} else {
+			return 1
+		}
+	}
+	if that1 == nil {
+		if this == nil {
+			return 0
+		}
+		return 1
+	} else if this == nil {
+		return -1
+	}
+	if this.JobType != that1.JobType {
+		if this.JobType < that1.JobType {
+			return -1
+		}
+		return 1
+	}
+	return 0
+}
+
 func (this *LeaseJobRequest) Compare(that interface{}) int {
 	if that == nil {
 		if this == nil {
@@ -642,6 +709,17 @@ func (this *LeaseJobRequest) Compare(that interface{}) int {
 			return -1
 		}
 		return 1
+	}
+	if len(this.LaneRequests) != len(that1.LaneRequests) {
+		if len(this.LaneRequests) < len(that1.LaneRequests) {
+			return -1
+		}
+		return 1
+	}
+	for i := range this.LaneRequests {
+		if c := this.LaneRequests[i].Compare(that1.LaneRequests[i]); c != 0 {
+			return c
+		}
 	}
 	return 0
 }

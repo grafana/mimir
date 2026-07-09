@@ -89,6 +89,9 @@ func (this *Stats) Equal(that interface{}) bool {
 	if this.PhysicalSamplesRead != that1.PhysicalSamplesRead {
 		return false
 	}
+	if this.Retries != that1.Retries {
+		return false
+	}
 	return true
 }
 
@@ -206,6 +209,12 @@ func (this *Stats) Compare(that interface{}) int {
 	}
 	if this.PhysicalSamplesRead != that1.PhysicalSamplesRead {
 		if this.PhysicalSamplesRead < that1.PhysicalSamplesRead {
+			return -1
+		}
+		return 1
+	}
+	if this.Retries != that1.Retries {
+		if this.Retries < that1.Retries {
 			return -1
 		}
 		return 1

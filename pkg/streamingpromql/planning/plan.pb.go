@@ -43,6 +43,8 @@ const (
 	NODE_TYPE_NO_OP                            NodeType = 21
 	NODE_TYPE_DATA_LABEL_SELECTOR              NodeType = 22
 	NODE_TYPE_TIME_RANGE_SPLIT                 NodeType = 23
+	NODE_TYPE_CACHE                            NodeType = 24
+	NODE_TYPE_EVALUATION_ROOT                  NodeType = 25
 )
 
 var NodeType_name = map[int32]string{
@@ -70,6 +72,8 @@ var NodeType_name = map[int32]string{
 	21: "NODE_TYPE_NO_OP",
 	22: "NODE_TYPE_DATA_LABEL_SELECTOR",
 	23: "NODE_TYPE_TIME_RANGE_SPLIT",
+	24: "NODE_TYPE_CACHE",
+	25: "NODE_TYPE_EVALUATION_ROOT",
 }
 
 var NodeType_value = map[string]int32{
@@ -97,6 +101,8 @@ var NodeType_value = map[string]int32{
 	"NODE_TYPE_NO_OP":                            21,
 	"NODE_TYPE_DATA_LABEL_SELECTOR":              22,
 	"NODE_TYPE_TIME_RANGE_SPLIT":                 23,
+	"NODE_TYPE_CACHE":                            24,
+	"NODE_TYPE_EVALUATION_ROOT":                  25,
 }
 
 func (x NodeType) String() string {

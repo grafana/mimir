@@ -233,12 +233,12 @@ func (o *OptimizationPass) modifiersAllowCaching(node planning.Node, timeRange t
 	}
 }
 
-func timestampAllowsCaching(ts *time.Time, timeRange types.QueryTimeRange, freshnessThreshold time.Time) bool {
-	if ts == nil {
+func timestampAllowsCaching(ts time.Time, timeRange types.QueryTimeRange, freshnessThreshold time.Time) bool {
+	if ts.IsZero() {
 		return true
 	}
 
-	return timestamp.FromTime(*ts) <= timeRange.EndT && (*ts).Before(freshnessThreshold)
+	return timestamp.FromTime(ts) <= timeRange.EndT && ts.Before(freshnessThreshold)
 }
 
 func isStepAligned(timeRange types.QueryTimeRange) bool {

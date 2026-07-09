@@ -770,13 +770,13 @@ func TestSchedulerMaxQueueLengthMetric(t *testing.T) {
 		Type:    schedulerpb.ENQUEUE,
 		QueryID: 1,
 		UserID:  "test",
-		Payload: &schedulerpb.FrontendToScheduler_HttpRequest{HttpRequest: &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"}},
+		Payload: &schedulerpb.FrontendToScheduler_HttpRequest{HttpRequest: httpgrpcpb.HTTPRequest{Method: "GET", Url: "/hello"}},
 	})
 	frontendToScheduler(t, frontendLoop, &schedulerpb.FrontendToScheduler{
 		Type:    schedulerpb.ENQUEUE,
 		QueryID: 1,
 		UserID:  "another",
-		Payload: &schedulerpb.FrontendToScheduler_HttpRequest{HttpRequest: &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"}},
+		Payload: &schedulerpb.FrontendToScheduler_HttpRequest{HttpRequest: httpgrpcpb.HTTPRequest{Method: "GET", Url: "/hello"}},
 	})
 
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`

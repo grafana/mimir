@@ -16,6 +16,12 @@ type TimeRangeSplitDetails struct {
 	SplitInterval time.Duration `protobuf:"bytes,1,opt,name=splitInterval,proto3" json:"splitInterval,omitempty"`
 }
 
+type CacheDetails struct {
+	// This should match the parent TimeRangeSplit's splitInterval.
+	// It is used to calculate the cache key for each cache entry.
+	SplitInterval time.Duration `protobuf:"bytes,1,opt,name=splitInterval,proto3" json:"splitInterval,omitempty"`
+}
+
 func (m *TimeRangeSplitDetails) Reset() {
 	if m == nil {
 		return
@@ -24,6 +30,14 @@ func (m *TimeRangeSplitDetails) Reset() {
 }
 func (*TimeRangeSplitDetails) ProtoMessage() {}
 
+func (m *CacheDetails) Reset() {
+	if m == nil {
+		return
+	}
+	*m = CacheDetails{}
+}
+func (*CacheDetails) ProtoMessage() {}
+
 func (m *TimeRangeSplitDetails) GetSplitInterval() time.Duration {
 	if m != nil {
 		return m.SplitInterval
@@ -31,7 +45,26 @@ func (m *TimeRangeSplitDetails) GetSplitInterval() time.Duration {
 	return 0
 }
 
+func (m *CacheDetails) GetSplitInterval() time.Duration {
+	if m != nil {
+		return m.SplitInterval
+	}
+	return 0
+}
+
 func (m *TimeRangeSplitDetails) Size() int {
+	if m == nil {
+		return 0
+	}
+	var n int
+	if m.SplitInterval != 0 {
+		inner := protohelpers.SizeStdDuration(m.SplitInterval)
+		n += 1 + protowire.SizeVarint(uint64(inner)) + inner
+	}
+	return n
+}
+
+func (m *CacheDetails) Size() int {
 	if m == nil {
 		return 0
 	}
@@ -83,6 +116,46 @@ func (m *TimeRangeSplitDetails) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	return len(dAtA) - i, nil
 }
 
+func (m *CacheDetails) Marshal() (dAtA []byte, err error) {
+	if m == nil {
+		return nil, nil
+	}
+	size := m.Size()
+	dAtA = make([]byte, size)
+	if size == 0 {
+		return dAtA, nil
+	}
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *CacheDetails) MarshalTo(dAtA []byte) (int, error) {
+	if m == nil {
+		return 0, nil
+	}
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *CacheDetails) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	if m == nil {
+		return 0, nil
+	}
+	i := len(dAtA)
+	if m.SplitInterval != 0 {
+		start := i
+		i = protohelpers.EncodeStdDuration(dAtA, i, m.SplitInterval)
+		inner := start - i
+		i = protohelpers.EncodeVarint(dAtA, i, uint64(inner))
+		i--
+		dAtA[i] = 0x0a
+	}
+	return len(dAtA) - i, nil
+}
+
 func (m *TimeRangeSplitDetails) Unmarshal(b []byte) error {
 	return m.unmarshal(b, 0)
 }
@@ -95,6 +168,113 @@ func (m *TimeRangeSplitDetails) UnmarshalWithDepth(b []byte, depth int) error {
 }
 
 func (m *TimeRangeSplitDetails) unmarshal(dAtA []byte, depth int) error {
+	if depth > protohelpers.MaxUnmarshalDepth {
+		return fmt.Errorf("exceeded max recursion depth")
+	}
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		var wire uint64
+		if iNdEx < l && dAtA[iNdEx] < 0x80 {
+			wire = uint64(dAtA[iNdEx])
+			iNdEx++
+		} else {
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 35 {
+					return fmt.Errorf("proto: integer overflow")
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				wire |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		}
+		if wire>>3 < 1 || wire>>3 > 0x1FFFFFFF {
+			return fmt.Errorf("invalid field number")
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		switch fieldNum {
+		case 1: // splitInterval
+			if wireType != 2 {
+				n, err := protohelpers.SkipValue(dAtA[iNdEx:], wireType, fieldNum)
+				if err != nil {
+					return err
+				}
+				iNdEx += n
+				continue
+			}
+			var byteLen uint64
+			if iNdEx < l && dAtA[iNdEx] < 0x80 {
+				byteLen = uint64(dAtA[iNdEx])
+				iNdEx++
+			} else {
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return fmt.Errorf("proto: integer overflow")
+					}
+					if iNdEx >= l {
+						return io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					byteLen |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						if shift == 63 && b > 1 {
+							return fmt.Errorf("proto: varint overflow")
+						}
+						break
+					}
+				}
+			}
+			if byteLen > uint64(math.MaxInt) {
+				return io.ErrUnexpectedEOF
+			}
+			intByteLen := int(byteLen)
+			postIndex := iNdEx + intByteLen
+			if postIndex < 0 {
+				return fmt.Errorf("proto: negative length")
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			stddurationVal, err := protohelpers.DecodeStdDuration(dAtA[iNdEx:postIndex])
+			if err != nil {
+				return err
+			}
+			m.SplitInterval = stddurationVal
+			iNdEx = postIndex
+		default:
+			n, err := protohelpers.SkipValue(dAtA[iNdEx:], wireType, fieldNum)
+			if err != nil {
+				return err
+			}
+			iNdEx += n
+		}
+	}
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+
+func (m *CacheDetails) Unmarshal(b []byte) error {
+	return m.unmarshal(b, 0)
+}
+
+func (m *CacheDetails) UnmarshalWithDepth(b []byte, depth int) error {
+	if depth < 0 {
+		depth = 0
+	}
+	return m.unmarshal(b, depth)
+}
+
+func (m *CacheDetails) unmarshal(dAtA []byte, depth int) error {
 	if depth > protohelpers.MaxUnmarshalDepth {
 		return fmt.Errorf("exceeded max recursion depth")
 	}

@@ -638,6 +638,28 @@ func (this *DropNameDetails) Equal(that interface{}) bool {
 	return true
 }
 
+func (this *EvaluationRootDetails) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*EvaluationRootDetails)
+	if !ok {
+		that2, ok := that.(EvaluationRootDetails)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	return true
+}
+
 func (this *NoOpDetails) Equal(that interface{}) bool {
 	if that == nil {
 		return this == nil
@@ -1587,6 +1609,34 @@ func (this *DropNameDetails) Compare(that interface{}) int {
 	that1, ok := that.(*DropNameDetails)
 	if !ok {
 		that2, ok := that.(DropNameDetails)
+		if ok {
+			that1 = &that2
+		} else {
+			return 1
+		}
+	}
+	if that1 == nil {
+		if this == nil {
+			return 0
+		}
+		return 1
+	} else if this == nil {
+		return -1
+	}
+	return 0
+}
+
+func (this *EvaluationRootDetails) Compare(that interface{}) int {
+	if that == nil {
+		if this == nil {
+			return 0
+		}
+		return 1
+	}
+
+	that1, ok := that.(*EvaluationRootDetails)
+	if !ok {
+		that2, ok := that.(EvaluationRootDetails)
 		if ok {
 			that1 = &that2
 		} else {
