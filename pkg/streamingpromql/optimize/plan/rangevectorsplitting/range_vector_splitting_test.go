@@ -73,6 +73,24 @@ func TestQuerySplitting_InstantQueryWith1hRange_NotCached(t *testing.T) {
 	verifyCacheStats(t, testCache, 0, 0, 0)
 }
 
+func TestQuerySplitting_CacheLookupsAreBatched(t *testing.T) {
+	testCache, mimirEngine := setupEngineAndCache(t)
+
+	promStorage := promqltest.LoadedStorage(t, `
+		load 10m
+			some_metric{env="1"} 0+1x140
+	`)
+	t.Cleanup(func() { require.NoError(t, promStorage.Close()) })
+
+	// A 21h range queried at 22h produces ten cacheable blocks: (2h-1ms, 4h-1ms], (4h-1ms, 6h-1ms], ..., (20h-1ms, 22h-1ms].
+	ts := timestamp.Time(0).Add(22 * time.Hour)
+	result, _, _ := executeQuery(t, mimirEngine, promStorage, "sum_over_time(some_metric[21h])", ts)
+	require.NoError(t, result.Err)
+
+	require.Equal(t, 10, testCache.KeysCount, "expected a lookup for each cacheable range")
+	require.Equal(t, 1, testCache.GetCount, "expected all cacheable ranges to be looked up with a single backend request")
+}
+
 // TestQuerySplitting_InstantQueryWith5hRange_UsesCache validates query splitting with caching.
 //
 // Important: SplitRanges use PromQL notation (Start, End] (left-open, right-closed), but storage
@@ -1553,8 +1571,8 @@ func verifyEvaluationStats(t *testing.T, stats *promstats.QuerySamples, expected
 	require.Equal(t, expectedSamplesRead, stats.SamplesRead, "Expected %d samples read, got %d", expectedSamplesRead, stats.SamplesRead)
 }
 
-func verifyCacheStats(t *testing.T, backend *caching.InMemoryCache, expectedGets, expectedHits, expectedSets int) {
-	require.Equal(t, expectedGets, backend.GetCount, "Expected %d cache gets, got %d", expectedGets, backend.GetCount)
+func verifyCacheStats(t *testing.T, backend *caching.InMemoryCache, expectedKeys, expectedHits, expectedSets int) {
+	require.Equal(t, expectedKeys, backend.KeysCount, "Expected %d cache key lookups, got %d", expectedKeys, backend.KeysCount)
 	require.Equal(t, expectedHits, backend.HitCount, "Expected %d cache hits, got %d", expectedHits, backend.HitCount)
 	require.Equal(t, expectedSets, backend.SetCount, "Expected %d cache sets, got %d", expectedSets, backend.SetCount)
 }

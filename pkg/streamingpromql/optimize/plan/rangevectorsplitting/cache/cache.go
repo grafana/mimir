@@ -137,56 +137,102 @@ func (c *Cache[T]) cacheKeys(ctx context.Context, function functions.Function, i
 	return fullKey, hashed, nil
 }
 
-func (c *Cache[T]) Get(
-	ctx context.Context,
-	function functions.Function,
-	innerKey []byte,
-	start, end int64,
-	stats *CacheStats,
-) (seriesMetadata []querierpb.SeriesMetadata, annotations querierpb.Annotations, results []T, operatorStats types.EncodedOperatorEvaluationStats, found bool, err error) {
-	tenant, err := user.ExtractOrgID(ctx)
+// GetRange identifies the time range of a single cache entry to look up.
+type GetRange struct {
+	Start int64
+	End   int64
+}
+
+// GetResult holds the outcome of the lookup of a single range. When Found is false, all other fields are zero.
+type GetResult[T any] struct {
+	SeriesMetadata []querierpb.SeriesMetadata
+	Annotations    querierpb.Annotations
+	Results        []T
+	Stats          types.EncodedOperatorEvaluationStats
+	Found          bool
+}
+
+// GetMulti looks up the cache entries for all the given ranges using a single backend request.
+// The returned slice is aligned with ranges. An entry that is missing, fails to decode or
+// collides on its hashed key is reported as not found. Only backend or codec errors fail the call.
+func (c *Cache[T]) GetMulti(ctx context.Context, function functions.Function, innerKey []byte, ranges []GetRange, stats *CacheStats) ([]GetResult[T], error) {
+	if len(ranges) == 0 {
+		return nil, nil
+	}
+
+	tenantID, err := user.ExtractOrgID(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	c.metrics.cacheRequests.Add(float64(len(ranges)))
+
+	cacheKeys := make([][]byte, len(ranges))
+	hashedKeys := make([]string, len(ranges))
+	for i, r := range ranges {
+		cacheKeys[i], hashedKeys[i], err = c.cacheKeys(ctx, function, innerKey, r.Start, r.End)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	foundData, err := c.backend.GetMulti(ctx, hashedKeys)
+	if err != nil {
+		return nil, fmt.Errorf("getting cached results: %w", err)
+	}
+
+	results := make([]GetResult[T], len(ranges))
+
+	for i, r := range ranges {
+		hashedKey := hashedKeys[i]
+
+		data, ok := foundData[hashedKey]
+		if !ok || len(data) == 0 {
+			continue
+		}
+
+		var cached CachedSeries
+		if err := cached.Unmarshal(data); err != nil {
+			level.Warn(c.logger).Log("msg", "failed to decode cached result", "hashed_cache_key", hashedKey, "err", err)
+			continue
+		}
+
+		if !bytes.Equal(cached.CacheKey, cacheKeys[i]) {
+			level.Warn(c.logger).Log("msg", "skipped cached result because a cache key collision has been found", "hashed_cache_key", hashedKey)
+			continue
+		}
+
+		decoded, err := c.codec.Unmarshal(cached.Results)
+		if err != nil {
+			return nil, fmt.Errorf("unmarshaling cached results: %w", err)
+		}
+
+		c.metrics.cacheHits.Inc()
+		level.Debug(c.logger).Log("msg", "cache hit", "tenant", tenantID, "function", function, "hashed_cache_key", hashedKey, "start", r.Start, "end", r.End)
+
+		stats.AddReadEntryStat(len(cached.SeriesMetadata), len(data))
+
+		results[i] = GetResult[T]{
+			SeriesMetadata: cached.SeriesMetadata,
+			Annotations:    cached.Annotations,
+			Results:        decoded,
+			Stats:          cached.Stats,
+			Found:          true,
+		}
+	}
+
+	return results, nil
+}
+
+// Get looks up the cache entry for a single range. It is a convenience wrapper around GetMulti.
+func (c *Cache[T]) Get(ctx context.Context, function functions.Function, innerKey []byte, start, end int64, stats *CacheStats) (seriesMetadata []querierpb.SeriesMetadata, annotations querierpb.Annotations, results []T, operatorStats types.EncodedOperatorEvaluationStats, found bool, err error) {
+	getResults, err := c.GetMulti(ctx, function, innerKey, []GetRange{{Start: start, End: end}}, stats)
 	if err != nil {
 		return nil, querierpb.Annotations{}, nil, types.EncodedOperatorEvaluationStats{}, false, err
 	}
 
-	c.metrics.cacheRequests.Inc()
-	cacheKey, hashedKey, err := c.cacheKeys(ctx, function, innerKey, start, end)
-	if err != nil {
-		return nil, querierpb.Annotations{}, nil, types.EncodedOperatorEvaluationStats{}, false, err
-	}
-
-	foundData, err := c.backend.GetMulti(ctx, []string{hashedKey})
-	if err != nil {
-		return nil, querierpb.Annotations{}, nil, types.EncodedOperatorEvaluationStats{}, false, fmt.Errorf("getting cached results: %w", err)
-	}
-
-	data, ok := foundData[hashedKey]
-	if !ok || len(data) == 0 {
-		return nil, querierpb.Annotations{}, nil, types.EncodedOperatorEvaluationStats{}, false, nil
-	}
-
-	var cached CachedSeries
-	if err := cached.Unmarshal(data); err != nil {
-		level.Warn(c.logger).Log("msg", "failed to decode cached result", "hashed_cache_key", hashedKey, "err", err)
-		return nil, querierpb.Annotations{}, nil, types.EncodedOperatorEvaluationStats{}, false, nil
-	}
-
-	if !bytes.Equal(cached.CacheKey, cacheKey) {
-		level.Warn(c.logger).Log("msg", "skipped cached result because a cache key collision has been found", "hashed_cache_key", hashedKey)
-		return nil, querierpb.Annotations{}, nil, types.EncodedOperatorEvaluationStats{}, false, nil
-	}
-
-	c.metrics.cacheHits.Inc()
-	level.Debug(c.logger).Log("msg", "cache hit", "tenant", tenant, "function", function, "hashed_cache_key", hashedKey, "start", start, "end", end)
-
-	stats.AddReadEntryStat(len(cached.SeriesMetadata), len(data))
-
-	results, err = c.codec.Unmarshal(cached.Results)
-	if err != nil {
-		return nil, querierpb.Annotations{}, nil, types.EncodedOperatorEvaluationStats{}, false, fmt.Errorf("unmarshaling cached results: %w", err)
-	}
-
-	return cached.SeriesMetadata, cached.Annotations, results, cached.Stats, true, nil
+	r := getResults[0]
+	return r.SeriesMetadata, r.Annotations, r.Results, r.Stats, r.Found, nil
 }
 
 func (c *Cache[T]) Set(
