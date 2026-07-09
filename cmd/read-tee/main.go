@@ -18,7 +18,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/util/instrumentation"
 	util_log "github.com/grafana/mimir/pkg/util/log"
-	"github.com/grafana/mimir/tools/readtee"
+	"github.com/grafana/mimir/tools/read-tee"
 )
 
 type Config struct {
