@@ -1016,6 +1016,88 @@ func TestOptimizationPass_EvaluationRoots(t *testing.T) {
 												- ref#2 RemoteExecutionGroup ...
 			`,
 		},
+		"common evaluation roots": {
+			expr: `max_over_time(__vector_evaluation_root__(foo + 2)[1d:5m]) / min_over_time(__vector_evaluation_root__(foo + 2)[1d:5m])`,
+			expectedPlan: `
+				- BinaryExpression: LHS / RHS
+					- LHS: DeduplicateAndMerge
+						- FunctionCall: max_over_time(...)
+							- ref#1 Duplicate
+								- Subquery: [24h0m0s:5m0s]
+									- EvaluationRoot
+										- TimeRangeSplit: interval 24h0m0s
+											- Cache: split interval 24h0m0s
+												- RemoteExecutionConsumer: node 0
+													- RemoteExecutionGroup: eager load
+														- node 0: DeduplicateAndMerge
+															- BinaryExpression: LHS + RHS
+																- LHS: VectorSelector: {__name__="foo"}
+																- RHS: NumberLiteral: 2
+					- RHS: DeduplicateAndMerge
+						- FunctionCall: min_over_time(...)
+							- ref#1 Duplicate ...
+			`,
+		},
+		"evaluation roots with common expressions but different steps": {
+			expr: `max_over_time(__vector_evaluation_root__(foo + 2)[1d:5m]) / min_over_time(__vector_evaluation_root__(foo - 2)[1d:10m])`,
+			expectedPlan: `
+				- BinaryExpression: LHS / RHS
+					- LHS: DeduplicateAndMerge
+						- FunctionCall: max_over_time(...)
+							- Subquery: [24h0m0s:5m0s]
+								- EvaluationRoot
+									- TimeRangeSplit: interval 24h0m0s
+										- Cache: split interval 24h0m0s
+											- RemoteExecutionConsumer: node 0
+												- RemoteExecutionGroup: eager load
+													- node 0: DeduplicateAndMerge
+														- BinaryExpression: LHS + RHS
+															- LHS: VectorSelector: {__name__="foo"}
+															- RHS: NumberLiteral: 2
+					- RHS: DeduplicateAndMerge
+						- FunctionCall: min_over_time(...)
+							- Subquery: [24h0m0s:10m0s]
+								- EvaluationRoot
+									- TimeRangeSplit: interval 24h0m0s
+										- Cache: split interval 24h0m0s
+											- RemoteExecutionConsumer: node 0
+												- RemoteExecutionGroup: eager load
+													- node 0: DeduplicateAndMerge
+														- BinaryExpression: LHS - RHS
+															- LHS: VectorSelector: {__name__="foo"}
+															- RHS: NumberLiteral: 2
+			`,
+		},
+		"evaluation roots with common expressions but different ranges": {
+			expr: `max_over_time(__vector_evaluation_root__(foo + 2)[1d:5m]) / min_over_time(__vector_evaluation_root__(foo - 2)[2d:5m])`,
+			expectedPlan: `
+				- BinaryExpression: LHS / RHS
+					- LHS: DeduplicateAndMerge
+						- FunctionCall: max_over_time(...)
+							- Subquery: [24h0m0s:5m0s]
+								- EvaluationRoot
+									- TimeRangeSplit: interval 24h0m0s
+										- Cache: split interval 24h0m0s
+											- RemoteExecutionConsumer: node 0
+												- RemoteExecutionGroup: eager load
+													- node 0: DeduplicateAndMerge
+														- BinaryExpression: LHS + RHS
+															- LHS: VectorSelector: {__name__="foo"}
+															- RHS: NumberLiteral: 2
+					- RHS: DeduplicateAndMerge
+						- FunctionCall: min_over_time(...)
+							- Subquery: [48h0m0s:5m0s]
+								- EvaluationRoot
+									- TimeRangeSplit: interval 24h0m0s
+										- Cache: split interval 24h0m0s
+											- RemoteExecutionConsumer: node 0
+												- RemoteExecutionGroup: eager load
+													- node 0: DeduplicateAndMerge
+														- BinaryExpression: LHS - RHS
+															- LHS: VectorSelector: {__name__="foo"}
+															- RHS: NumberLiteral: 2
+			`,
+		},
 	}
 
 	for name, testCase := range testCases {
