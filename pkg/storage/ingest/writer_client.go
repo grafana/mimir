@@ -23,9 +23,11 @@ const (
 	// defaultProducerLinger is the producer-side batching delay.
 	defaultProducerLinger = 50 * time.Millisecond
 
-	// defaultMetadataRefreshInterval is how often Kafka metadata (broker
-	// list and partition leaders) is refreshed in the background.
-	defaultMetadataRefreshInterval = 10 * time.Second
+	// DefaultMetadataRefreshInterval is how often Kafka metadata (broker
+	// list and partition leaders) is refreshed. It is used for both the
+	// minimum and maximum metadata age so the metadata request frequency
+	// stays constant regardless of errors.
+	DefaultMetadataRefreshInterval = 10 * time.Second
 )
 
 // newKafkaProducerForBackend selects and constructs the producer

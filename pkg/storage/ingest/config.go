@@ -388,7 +388,7 @@ func (cfg *KafkaConfig) ToWarpstreamClientOptions() ([]wgo.Opt, error) {
 		wgo.WithHedgerMaxHedgeAgents(cfg.WarpstreamHedgeMaxAgents),
 		wgo.WithDemoterProbeInterval(cfg.WarpstreamDemoterProbeInterval),
 		wgo.WithClusterStatsTTL(time.Second),
-		wgo.WithMetadataRefreshInterval(defaultMetadataRefreshInterval),
+		wgo.WithMetadataRefreshInterval(DefaultMetadataRefreshInterval),
 		// WriteTimeout bounds the whole hedge cascade, so the per-attempt produce
 		// timeout plus its overhead must fit within it (wgo rejects a config where
 		// they don't). Validate guarantees WriteTimeout exceeds twice the overhead,
