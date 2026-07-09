@@ -343,7 +343,7 @@ func (g *GroupedVectorVectorBinaryOperation) computeOutputSeries() ([]types.Seri
 	manySideMap := map[string]*manySide{}                                        // Series from the "many" side, grouped by which output series they'll contribute to.
 	manySideGroupKeyFunc := g.manySideGroupKeyFunc()
 	outputSeriesLabelsFunc := g.outputSeriesLabelsFunc()
-	buf := make([]byte, 0, 1024)
+	buf := make([]byte, 0, types.LabelBytesBufferSize)
 
 	manySideSeriesUsed, err := types.BoolSlicePool.Get(len(g.manySideMetadata), g.MemoryConsumptionTracker)
 	if err != nil {
@@ -468,7 +468,7 @@ func (g *GroupedVectorVectorBinaryOperation) additionalLabelsKeyFunc() func(oneS
 		}
 	}
 
-	buf := make([]byte, 0, 1024)
+	buf := make([]byte, 0, types.LabelBytesBufferSize)
 
 	return func(oneSideLabels labels.Labels) []byte {
 		buf = oneSideLabels.BytesWithLabels(buf, g.VectorMatching.Include...)
@@ -479,7 +479,7 @@ func (g *GroupedVectorVectorBinaryOperation) additionalLabelsKeyFunc() func(oneS
 // manySideGroupKeyFunc returns a function that extracts a key representing the set of labels from the "many" side that will contribute
 // to the same set of output series.
 func (g *GroupedVectorVectorBinaryOperation) manySideGroupKeyFunc() func(manySideLabels labels.Labels) []byte {
-	buf := make([]byte, 0, 1024)
+	buf := make([]byte, 0, types.LabelBytesBufferSize)
 
 	if !g.shouldRemoveMetricNameFromManySide() && len(g.VectorMatching.Include) == 0 {
 		return func(manySideLabels labels.Labels) []byte {
