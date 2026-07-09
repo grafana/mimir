@@ -353,17 +353,8 @@ $(EXES_RACE):
 	CGO_ENABLED=1 GOOS=$(GOOS) GOARCH=$(GOARCH) go build -race $(GO_FLAGS) -o "$@$(BINARY_SUFFIX)" ./$(@D)
 
 protos: ## Generates protobuf files.
-# TODO(wiresmith): the wiresmith proto generator is not yet part of the published
-# mimir-build-image and lives in a private repo CI can't fetch, so guard
-# regeneration on its availability. When absent (CI), the committed .pb.go files
-# are used as-is. Remove the check once wiresmith ships in the build image.
-ifneq (,$(shell which wiresmith 2>/dev/null))
 protos: $(PROTO_GOS) $(PROTO_GRPC_GOS) $(PROTO_WIRESMITH_GOS)
 	@./tools/apply-expected-diffs.sh $(PROTO_GOS) $(PROTO_GRPC_GOS)
-else
-protos:
-	@echo "wiresmith not found in PATH; skipping proto regeneration (committed .pb.go files are used as-is)"
-endif
 
 GENERATE_FILES ?= true
 
@@ -821,15 +812,8 @@ mod-check: ## Check the go mod is clean and tidy.
 	@./tools/find-diff-or-untracked.sh go.sum go.mod vendor/ || (echo "Please update vendoring by running 'make mod-check'" && false)
 
 check-protos: ## Check the protobuf files are up to date.
-# TODO(wiresmith): skip when the wiresmith generator is unavailable (see the
-# protos target above). Remove the check once wiresmith ships in the build image.
-ifneq (,$(shell which wiresmith 2>/dev/null))
 check-protos: clean-protos protos
-	@./tools/find-diff-or-untracked.sh $(PROTO_GOS) $(PROTO_GRPC_GOS) || (echo "Please rebuild protobuf code by running 'check-protos'" && false)
-else
-check-protos:
-	@echo "wiresmith not found in PATH; skipping check-protos"
-endif
+	@./tools/find-diff-or-untracked.sh $(PROTO_GOS) $(PROTO_GRPC_GOS) $(PROTO_WIRESMITH_GOS) || (echo "Please rebuild protobuf code by running 'check-protos'" && false)
 
 .PHONY: generate-node-methods check-node-methods clean-node-methods
 clean-node-methods: ## Remove generated node method files.
@@ -1021,7 +1005,7 @@ clean: ## Cleanup the docker images, object files and executables.
 	go clean ./...
 
 clean-protos: ## Clean protobuf files.
-	rm -rf $(PROTO_GOS) $(PROTO_GRPC_GOS)
+	rm -rf $(PROTO_GOS) $(PROTO_GRPC_GOS) $(PROTO_WIRESMITH_GOS)
 
 list-image-targets: ## List all images building make targets.
 	@echo $(UPTODATE_FILES) | tr " " "\n"
