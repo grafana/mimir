@@ -54,12 +54,11 @@ func TestCacheGetMulti(t *testing.T) {
 	require.NoError(t, c.Set(ctx, testFunction, inner, hit1.Start, hit1.End, nil, querierpb.Annotations{}, []int{1, 2}, types.EncodedOperatorEvaluationStats{}, 2, &CacheStats{}))
 	require.NoError(t, c.Set(ctx, testFunction, inner, hit2.Start, hit2.End, nil, querierpb.Annotations{}, []int{3}, types.EncodedOperatorEvaluationStats{}, 1, &CacheStats{}))
 
-	// Store bytes that don't decode as a CachedSeries under the undecodable range's key.
+	// Store bytes that don't decode as a CachedSeries
 	undecodableKey, err := TestGenerateHashedCacheKey(ctx, keyGenerator, testFunction, inner, undecodable.Start, undecodable.End)
 	require.NoError(t, err)
 	require.NoError(t, backend.SetAsync(ctx, undecodableKey, []byte{0xff, 0xff, 0xff}, time.Hour))
 
-	// Store a valid entry whose embedded full key doesn't match under the colliding range's key.
 	collided := &CachedSeries{CacheKey: []byte("some-other-key")}
 	collidedData, err := collided.Marshal()
 	require.NoError(t, err)
