@@ -224,7 +224,6 @@ func (c *Cache[T]) GetMulti(ctx context.Context, function functions.Function, in
 	return results, nil
 }
 
-// Get looks up the cache entry for a single range. It is a convenience wrapper around GetMulti.
 func (c *Cache[T]) Get(ctx context.Context, function functions.Function, innerKey []byte, start, end int64, stats *CacheStats) (seriesMetadata []querierpb.SeriesMetadata, annotations querierpb.Annotations, results []T, operatorStats types.EncodedOperatorEvaluationStats, found bool, err error) {
 	getResults, err := c.GetMulti(ctx, function, innerKey, []GetRange{{Start: start, End: end}}, stats)
 	if err != nil {
