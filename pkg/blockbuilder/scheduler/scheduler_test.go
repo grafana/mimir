@@ -312,6 +312,41 @@ func TestServiceFailsWhenConsumptionOffsetProbingFails(t *testing.T) {
 	require.ErrorContains(t, sched.FailureCase(), "init consumption offsets")
 }
 
+// TestServiceExitsCleanlyWhenListOffsetsCanceledDuringStartup verifies that a shutdown while the
+// startup ListOffsets request (used to initialize consumption offsets) is in flight is treated as a
+// clean exit rather than a failure.
+func TestServiceExitsCleanlyWhenListOffsetsCanceledDuringStartup(t *testing.T) {
+	var vnet kfake.VirtualNetwork
+	cluster, kafkaAddr := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, 4, "ingest", testkafka.WithVirtualNetwork(&vnet))
+	sched, _ := mustSchedulerWithKafkaAddrAndDialer(t, kafkaAddr, vnet.DialContext)
+	sched.cfg.StartupObserveTime = 10 * time.Millisecond
+	sched.cfg.LookbackOnNoCommit = time.Minute
+	sched.cfg.MaxScanAge = time.Hour
+
+	listOffsetsCalled := make(chan struct{})
+	release := make(chan struct{})
+	t.Cleanup(func() { close(release) })
+	var signaled atomic.Bool
+	cluster.ControlKey(kmsg.ListOffsets.Int16(), func(kmsg.Request) (kmsg.Response, error, bool) {
+		cluster.KeepControl()
+		if signaled.CompareAndSwap(false, true) {
+			close(listOffsetsCalled)
+		}
+		// Keep the ListOffsets request in flight: it only returns once the test releases it at
+		// cleanup, so the shutdown below is what ends it, mid-call.
+		<-release
+		return nil, nil, false
+	})
+
+	ctx := context.Background()
+	require.NoError(t, services.StartAndAwaitRunning(ctx, sched))
+	// Wait for the ListOffsets request to reach the Kafka cluster, so the shutdown below lands while
+	// it is in flight.
+	<-listOffsetsCalled
+	require.NoError(t, services.StopAndAwaitTerminated(ctx, sched))
+	require.NoError(t, sched.FailureCase())
+}
+
 func TestStartup(t *testing.T) {
 	sched, _ := mustScheduler(t, 4)
 	// (a new scheduler starts in observation mode.)
