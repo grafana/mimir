@@ -84,10 +84,10 @@ local utils = import 'mixin-utils/utils.libsonnet';
             message: '%(product)s {{ $labels.%(per_instance_label)s }} in %(alert_aggregation_variables)s is failing to commit the last consumed offset.' % $._config,
           },
         },
-
+      ] + [
         {
           alert: $.alertName('IngesterKafkaReadFailed'),
-          'for': '5m',
+          'for': alert["for"],
 
           // Metric used by this alert is reported by Kafka client on read errors from connection to Kafka.
           // We use node_id to only alert if problems to the same Kafka node are repeating.
@@ -101,12 +101,17 @@ local utils = import 'mixin-utils/utils.libsonnet';
             range: $.rateInterval('1m'),
           },
           labels: {
-            severity: 'critical',
+            severity: alert.severity,
           },
           annotations: {
             message: '%(product)s {{ $labels.%(per_instance_label)s }} in %(alert_aggregation_variables)s is failing to read records from Kafka.' % $._config,
           },
-        },
+        } for alert in [
+        // It's not really an issue if one ingester has a transient issue, queriers should retry on a different zone, so we just warn in that case.
+        { 'for': '5m', severity: 'warning' },
+        // If issues persist in time, we send a critical alert to bring the oncall engineer's attention to investigate.
+        { 'for': '30m', severity: 'critical' },
+      ] + [
 
         {
           alert: $.alertName('IngesterKafkaFetchErrorsRateTooHigh'),
@@ -206,6 +211,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
         },
 
         // Alert firing if Mimir is failing to enforce strong read consistency.
+        // This is a warning because queriers are expected to retry on a different ingester if one fails.
+        // If querier's retry fails, it should fire it's own alerts.
         {
           alert: $.alertName('StrongConsistencyEnforcementFailed'),
           'for': '5m',
@@ -217,7 +224,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
             range: $.rateInterval('1m'),
           },
           labels: {
-            severity: 'critical',
+            severity: 'warning',
           },
           annotations: {
             message: '%(product)s {{ $labels.%(per_instance_label)s }} in %(alert_aggregation_variables)s fails to enforce strong-consistency on read-path.' % $._config,
