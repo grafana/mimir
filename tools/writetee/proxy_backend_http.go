@@ -16,38 +16,23 @@ import (
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
-type BackendType int
-
-const (
-	BackendTypeMirrored BackendType = iota
-	BackendTypeAmplified
-)
-
 type ProxyBackend interface {
 	Name() string
 	Endpoint() *url.URL
-	Preferred() bool
-	SetPreferred(preferred bool)
-	BackendType() BackendType
 	ForwardRequest(ctx context.Context, orig *http.Request, body io.ReadCloser) (time.Duration, int, []byte, http.Header, error)
 	Close() error
 }
 
 // httpProxyBackend holds the information of a single backend.
 type httpProxyBackend struct {
-	name        string
-	endpoint    *url.URL
-	client      *http.Client
-	timeout     time.Duration
-	backendType BackendType
-
-	// Whether this is the preferred backend from which picking up
-	// the response and sending it back to the client.
-	preferred bool
+	name     string
+	endpoint *url.URL
+	client   *http.Client
+	timeout  time.Duration
 }
 
 // NewHTTPProxyBackend makes a new httpProxyBackend
-func NewHTTPProxyBackend(name string, endpoint *url.URL, timeout time.Duration, preferred bool, skipTLSVerify bool, backendType BackendType) ProxyBackend {
+func NewHTTPProxyBackend(name string, endpoint *url.URL, timeout time.Duration, skipTLSVerify bool) ProxyBackend {
 	innerTransport := &http.Transport{
 		Proxy: http.ProxyFromEnvironment,
 		TLSClientConfig: &tls.Config{
@@ -66,11 +51,9 @@ func NewHTTPProxyBackend(name string, endpoint *url.URL, timeout time.Duration, 
 	tracingTransport := otelhttp.NewTransport(innerTransport)
 
 	return &httpProxyBackend{
-		name:        name,
-		endpoint:    endpoint,
-		timeout:     timeout,
-		preferred:   preferred,
-		backendType: backendType,
+		name:     name,
+		endpoint: endpoint,
+		timeout:  timeout,
 		client: &http.Client{
 			CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
 				return errors.New("the write-tee proxy does not follow redirects")
@@ -86,18 +69,6 @@ func (b *httpProxyBackend) Name() string {
 
 func (b *httpProxyBackend) Endpoint() *url.URL {
 	return b.endpoint
-}
-
-func (b *httpProxyBackend) Preferred() bool {
-	return b.preferred
-}
-
-func (b *httpProxyBackend) SetPreferred(preferred bool) {
-	b.preferred = preferred
-}
-
-func (b *httpProxyBackend) BackendType() BackendType {
-	return b.backendType
 }
 
 func (b *httpProxyBackend) ForwardRequest(ctx context.Context, orig *http.Request, body io.ReadCloser) (time.Duration, int, []byte, http.Header, error) {

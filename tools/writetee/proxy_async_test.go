@@ -5,6 +5,7 @@ package writetee
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -13,38 +14,42 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/golang/snappy"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
 )
 
-func TestAsyncBackendDispatcher_ShouldNotBlockOnNonPreferredBackends(t *testing.T) {
+func TestProxyEndpoint_AmplifiedCopiesAreFireAndForget(t *testing.T) {
+	// With amplification factor > 1, the original (unsuffixed) request is sent synchronously and
+	// its response returned immediately, while the amplified (suffixed) copies are dispatched
+	// fire-and-forget. A slow amplified copy must not delay the client response.
 	logger := log.NewNopLogger()
 	registry := prometheus.NewRegistry()
 	metrics := NewProxyMetrics(registry)
 
-	// Create a slow non-preferred backend
-	slowBackendReceived := make(chan struct{})
-	slowServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		close(slowBackendReceived)
-		// Simulate slow backend - sleep longer than the test timeout
-		time.Sleep(5 * time.Second)
+	amplifiedReceived := make(chan struct{})
+	unblock := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		decompressed, err := snappy.Decode(nil, body)
+		if err == nil && bytes.Contains(decompressed, []byte("_amp")) {
+			// Amplified copy: signal receipt and block until the test unblocks us,
+			// simulating a slow backend without delaying the synchronous response.
+			close(amplifiedReceived)
+			<-unblock
+			w.WriteHeader(200)
+			return
+		}
+		// Original request: respond immediately.
 		w.WriteHeader(200)
-		_, _ = w.Write([]byte("slow response"))
+		_, _ = w.Write([]byte("original response"))
 	}))
-	defer slowServer.Close()
+	// Unblock the slow amplified handler before closing the server (defers run LIFO).
+	defer server.Close()
+	defer close(unblock)
 
-	// Create a fast preferred backend
-	fastServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(200)
-		_, _ = w.Write([]byte("fast response"))
-	}))
-	defer fastServer.Close()
-
-	preferredBackend := NewHTTPProxyBackend("fast", mustParseURLAsync(fastServer.URL), 5*time.Second, true, false, BackendTypeMirrored)
-	slowBackend := NewHTTPProxyBackend("slow", mustParseURLAsync(slowServer.URL), 5*time.Second, false, false, BackendTypeMirrored)
-	backends := []ProxyBackend{preferredBackend, slowBackend}
+	backend := NewHTTPProxyBackend("backend", mustParseURLAsync(server.URL), 10*time.Second, false)
 
 	asyncDispatcher := NewAsyncBackendDispatcher(1000, metrics, logger)
 	defer asyncDispatcher.Stop()
@@ -55,31 +60,29 @@ func TestAsyncBackendDispatcher_ShouldNotBlockOnNonPreferredBackends(t *testing.
 		Methods:   []string{"POST"},
 	}
 
-	endpoint, err := NewProxyEndpoint(backends, route, metrics, logger, 1.0, nil, asyncDispatcher)
-	require.NoError(t, err)
+	endpoint := NewProxyEndpoint(backend, route, metrics, logger, 2.0, NewAmplificationTracker(), asyncDispatcher)
 
-	// Create a test request
-	req := httptest.NewRequest("POST", "/api/v1/push", bytes.NewReader([]byte("test body")))
+	req := httptest.NewRequest("POST", "/api/v1/push", bytes.NewReader(makeTestWriteRequest(t)))
 	rec := httptest.NewRecorder()
 
-	// Execute the request - should return quickly even though slow backend is slow
+	// Execute the request - should return quickly even though the amplified copy is slow.
 	start := time.Now()
 	endpoint.ServeHTTP(rec, req)
 	elapsed := time.Since(start)
 
-	// Response should come from fast preferred backend
+	// Response should come from the synchronous original request.
 	assert.Equal(t, 200, rec.Code)
-	assert.Equal(t, "fast response", rec.Body.String())
+	assert.Equal(t, "original response", rec.Body.String())
 
-	// Should complete quickly (well under 1 second, not waiting for slow backend)
-	assert.Less(t, elapsed, 1*time.Second, "Request should not wait for slow non-preferred backend")
+	// Should complete quickly (well under 1 second, not waiting for the slow amplified copy).
+	assert.Less(t, elapsed, 1*time.Second, "Request should not wait for slow amplified copy")
 
-	// Wait for slow backend to receive the request (confirming fire-and-forget dispatch)
+	// Confirm the amplified copy was dispatched fire-and-forget.
 	select {
-	case <-slowBackendReceived:
-		// Good - slow backend received the request
+	case <-amplifiedReceived:
+		// Good - amplified copy was received.
 	case <-time.After(2 * time.Second):
-		t.Fatal("Slow backend should have received the request")
+		t.Fatal("Amplified copy should have been received")
 	}
 }
 
@@ -99,7 +102,7 @@ func TestAsyncBackendDispatcher_ShouldEnforceMaxInFlightLimit(t *testing.T) {
 	}))
 	defer blockingServer.Close()
 
-	backend := NewHTTPProxyBackend("backend", mustParseURLAsync(blockingServer.URL), 5*time.Second, false, false, BackendTypeMirrored)
+	backend := NewHTTPProxyBackend("backend", mustParseURLAsync(blockingServer.URL), 5*time.Second, false)
 
 	const maxInFlight = 5
 	const totalRequests = 10
@@ -144,7 +147,7 @@ func TestAsyncBackendDispatcher_ConcurrentRequests(t *testing.T) {
 	}))
 	defer server.Close()
 
-	backend := NewHTTPProxyBackend("test", mustParseURLAsync(server.URL), 5*time.Second, false, false, BackendTypeMirrored)
+	backend := NewHTTPProxyBackend("test", mustParseURLAsync(server.URL), 5*time.Second, false)
 
 	// Create dispatcher allowing 10 concurrent requests
 	asyncDispatcher := NewAsyncBackendDispatcher(10, metrics, logger)
@@ -186,7 +189,7 @@ func TestAsyncBackendDispatcher_GracefulShutdown(t *testing.T) {
 	}))
 	defer server.Close()
 
-	backend := NewHTTPProxyBackend("test", mustParseURLAsync(server.URL), 5*time.Second, false, false, BackendTypeMirrored)
+	backend := NewHTTPProxyBackend("test", mustParseURLAsync(server.URL), 5*time.Second, false)
 
 	asyncDispatcher := NewAsyncBackendDispatcher(10, metrics, logger)
 
@@ -229,8 +232,8 @@ func TestAsyncBackendDispatcher_MultipleBackends(t *testing.T) {
 	}))
 	defer server2.Close()
 
-	backend1 := NewHTTPProxyBackend("backend1", mustParseURLAsync(server1.URL), 5*time.Second, false, false, BackendTypeMirrored)
-	backend2 := NewHTTPProxyBackend("backend2", mustParseURLAsync(server2.URL), 5*time.Second, false, false, BackendTypeMirrored)
+	backend1 := NewHTTPProxyBackend("backend1", mustParseURLAsync(server1.URL), 5*time.Second, false)
+	backend2 := NewHTTPProxyBackend("backend2", mustParseURLAsync(server2.URL), 5*time.Second, false)
 
 	// Each backend has its own semaphore with max 2
 	asyncDispatcher := NewAsyncBackendDispatcher(2, metrics, logger)

@@ -35,54 +35,50 @@ func TestNewProxy_Validation(t *testing.T) {
 		expectedErr string
 	}{
 		{
-			name: "no backends",
+			name: "no endpoint",
 			cfg: ProxyConfig{
-				BackendMirroredEndpoints: "",
+				BackendEndpoint:            "",
+				AmplificationFactor:        1.0,
+				AsyncMaxInFlightPerBackend: 1000,
 			},
 			routes:      []Route{},
-			expectedErr: "at least 1 backend is required",
+			expectedErr: "backend endpoint is required",
 		},
 		{
 			name: "invalid backend URL",
 			cfg: ProxyConfig{
-				BackendMirroredEndpoints: "://invalid-url",
+				BackendEndpoint:            "://invalid-url",
+				AmplificationFactor:        1.0,
+				AsyncMaxInFlightPerBackend: 1000,
 			},
 			routes:      []Route{},
 			expectedErr: "invalid backend endpoint",
 		},
 		{
-			name: "preferred backend not in list",
+			name: "amplification factor below 1",
 			cfg: ProxyConfig{
-				BackendMirroredEndpoints: "http://backend1:8080,http://backend2:8080",
-				PreferredBackend:         "backend3",
+				BackendEndpoint:            "http://backend1:8080",
+				AmplificationFactor:        0.5,
+				AsyncMaxInFlightPerBackend: 1000,
 			},
 			routes:      []Route{},
-			expectedErr: "the preferred backend (hostname) has not been found among the list of configured backends",
+			expectedErr: "amplification-factor must be >= 1.0",
 		},
 		{
-			name: "no preferred backend configured",
+			name: "valid single endpoint",
 			cfg: ProxyConfig{
-				BackendMirroredEndpoints: "http://backend1:8080",
-				PreferredBackend:         "",
-			},
-			routes:      []Route{},
-			expectedErr: "preferred backend is required",
-		},
-		{
-			name: "valid single backend with preferred",
-			cfg: ProxyConfig{
-				BackendMirroredEndpoints:   "http://backend1:8080",
-				PreferredBackend:           "backend1",
+				BackendEndpoint:            "http://backend1:8080",
+				AmplificationFactor:        1.0,
 				AsyncMaxInFlightPerBackend: 1000,
 			},
 			routes:      []Route{},
 			expectedErr: "",
 		},
 		{
-			name: "valid multiple backends with preferred",
+			name: "valid with amplification",
 			cfg: ProxyConfig{
-				BackendMirroredEndpoints:   "http://backend1:8080,http://backend2:8080",
-				PreferredBackend:           "backend1",
+				BackendEndpoint:            "http://backend1:8080",
+				AmplificationFactor:        10.0,
 				AsyncMaxInFlightPerBackend: 1000,
 			},
 			routes:      []Route{},
@@ -91,8 +87,8 @@ func TestNewProxy_Validation(t *testing.T) {
 		{
 			name: "negative async max in-flight",
 			cfg: ProxyConfig{
-				BackendMirroredEndpoints:   "http://backend1:8080",
-				PreferredBackend:           "backend1",
+				BackendEndpoint:            "http://backend1:8080",
+				AmplificationFactor:        1.0,
 				AsyncMaxInFlightPerBackend: -1,
 			},
 			routes:      []Route{},
@@ -101,8 +97,8 @@ func TestNewProxy_Validation(t *testing.T) {
 		{
 			name: "zero async max in-flight",
 			cfg: ProxyConfig{
-				BackendMirroredEndpoints:   "http://backend1:8080",
-				PreferredBackend:           "backend1",
+				BackendEndpoint:            "http://backend1:8080",
+				AmplificationFactor:        1.0,
 				AsyncMaxInFlightPerBackend: 0,
 			},
 			routes:      []Route{},
@@ -124,232 +120,41 @@ func TestNewProxy_Validation(t *testing.T) {
 	}
 }
 
-func TestNewProxy_PreferredBackendSelection(t *testing.T) {
-	logger := log.NewNopLogger()
-
-	tests := []struct {
-		name                      string
-		mirroredEndpoints         string
-		amplifiedEndpoints        string
-		preferredBackend          string
-		expectedPreferredIdx      int // Index of backend that should be preferred
-		expectedPreferredType     BackendType
-		expectedNonPreferredCount int // Number of backends that should NOT be preferred
-	}{
-		{
-			name:                      "same hostname in mirrored and amplified - mirrored should be preferred",
-			mirroredEndpoints:         "http://backend1:8080",
-			amplifiedEndpoints:        "http://backend1:8080",
-			preferredBackend:          "backend1",
-			expectedPreferredIdx:      0, // First backend (mirrored)
-			expectedPreferredType:     BackendTypeMirrored,
-			expectedNonPreferredCount: 1, // The amplified backend should NOT be preferred
-		},
-		{
-			name:                      "different hostnames - normal behavior",
-			mirroredEndpoints:         "http://backend1:8080",
-			amplifiedEndpoints:        "http://backend2:8080",
-			preferredBackend:          "backend1",
-			expectedPreferredIdx:      0,
-			expectedPreferredType:     BackendTypeMirrored,
-			expectedNonPreferredCount: 1,
-		},
-		{
-			name:                      "only amplified backends with matching hostname",
-			mirroredEndpoints:         "http://other:8080",
-			amplifiedEndpoints:        "http://backend1:8080",
-			preferredBackend:          "backend1",
-			expectedPreferredIdx:      1, // Second backend (amplified)
-			expectedPreferredType:     BackendTypeAmplified,
-			expectedNonPreferredCount: 1,
-		},
-		{
-			name:                      "numeric preferred backend index",
-			mirroredEndpoints:         "http://backend1:8080",
-			amplifiedEndpoints:        "http://backend1:8080",
-			preferredBackend:          "1", // Select second backend by index
-			expectedPreferredIdx:      1,
-			expectedPreferredType:     BackendTypeAmplified,
-			expectedNonPreferredCount: 1,
-		},
-		{
-			name:                      "multiple mirrored backends - first match wins",
-			mirroredEndpoints:         "http://backend1:8080,http://backend1:8081",
-			amplifiedEndpoints:        "",
-			preferredBackend:          "backend1",
-			expectedPreferredIdx:      0,
-			expectedPreferredType:     BackendTypeMirrored,
-			expectedNonPreferredCount: 1,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			registry := prometheus.NewRegistry()
-			cfg := ProxyConfig{
-				BackendMirroredEndpoints:   tt.mirroredEndpoints,
-				BackendAmplifiedEndpoints:  tt.amplifiedEndpoints,
-				PreferredBackend:           tt.preferredBackend,
-				AmplificationFactor:        1.0,
-				AsyncMaxInFlightPerBackend: 1000,
-			}
-
-			proxy, err := NewProxy(cfg, logger, []Route{}, registry)
-			require.NoError(t, err)
-
-			// Count preferred and non-preferred backends
-			var preferredCount, nonPreferredCount int
-			var preferredIdx int
-			var preferredType BackendType
-			for idx, b := range proxy.backends {
-				if b.Preferred() {
-					preferredCount++
-					preferredIdx = idx
-					preferredType = b.BackendType()
-				} else {
-					nonPreferredCount++
-				}
-			}
-
-			assert.Equal(t, 1, preferredCount, "exactly one backend should be preferred")
-			assert.Equal(t, tt.expectedPreferredIdx, preferredIdx, "wrong backend selected as preferred")
-			assert.Equal(t, tt.expectedPreferredType, preferredType, "wrong backend type selected as preferred")
-			assert.Equal(t, tt.expectedNonPreferredCount, nonPreferredCount, "wrong number of non-preferred backends")
-		})
-	}
-}
-
-func TestProxyEndpoint_SameHostnameMirroredAndAmplified_BothReceiveTraffic(t *testing.T) {
-	// This test verifies the fix for the bug where same hostname in both
-	// mirrored and amplified endpoints resulted in only 1x traffic instead of 2x.
-	logger := log.NewNopLogger()
-	registry := prometheus.NewRegistry()
-	metrics := NewProxyMetrics(registry)
-
-	var mirroredRequests, amplifiedRequests int
-	var mu sync.Mutex
-
-	// Create a server that tracks requests
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		mu.Lock()
-		// We can't distinguish backends by URL since they're the same, but in the real
-		// test we just verify total request count equals 2 (1 sync + 1 async)
-		w.WriteHeader(200)
-		mu.Unlock()
-	}))
-	defer server.Close()
-
-	serverURL := mustParseURL(server.URL)
-
-	// Create two backends pointing to the same server, but one is preferred (mirrored) and one is not (amplified)
-	mirroredBackend := NewHTTPProxyBackend(serverURL.Hostname(), serverURL, 5*time.Second, true, false, BackendTypeMirrored)
-	amplifiedBackend := NewHTTPProxyBackend(serverURL.Hostname(), serverURL, 5*time.Second, false, false, BackendTypeAmplified)
-
-	// Track requests via custom backends that wrap the real ones
-	mirroredWrapper := &trackingBackend{ProxyBackend: mirroredBackend, counter: &mirroredRequests, mu: &mu}
-	amplifiedWrapper := &trackingBackend{ProxyBackend: amplifiedBackend, counter: &amplifiedRequests, mu: &mu}
-
-	route := Route{
-		Path:      "/api/v1/push",
-		RouteName: "api_v1_push",
-		Methods:   []string{"POST"},
-	}
-
-	asyncDispatcher := NewAsyncBackendDispatcher(1000, metrics, logger)
-	defer asyncDispatcher.Stop()
-
-	tracker := NewAmplificationTracker()
-	endpoint, err := NewProxyEndpoint([]ProxyBackend{mirroredWrapper, amplifiedWrapper}, route, metrics, logger, 1.0, tracker, asyncDispatcher)
-	require.NoError(t, err)
-
-	// Make a request
-	req := httptest.NewRequest("POST", "/api/v1/push", bytes.NewReader(makeTestWriteRequest(t)))
-	rec := httptest.NewRecorder()
-
-	endpoint.ServeHTTP(rec, req)
-
-	// Wait for async requests to complete
-	asyncDispatcher.Stop()
-	asyncDispatcher.Await()
-
-	// Verify both backends received requests
-	mu.Lock()
-	defer mu.Unlock()
-	assert.Equal(t, 1, mirroredRequests, "mirrored backend should receive 1 request (synchronous)")
-	assert.Equal(t, 1, amplifiedRequests, "amplified backend should receive 1 request (async)")
-}
-
-// trackingBackend wraps a ProxyBackend and counts requests
-type trackingBackend struct {
-	ProxyBackend
-	counter *int
-	mu      *sync.Mutex
-}
-
-func (t *trackingBackend) ForwardRequest(ctx context.Context, orig *http.Request, body io.ReadCloser) (time.Duration, int, []byte, http.Header, error) {
-	t.mu.Lock()
-	*t.counter++
-	t.mu.Unlock()
-	return t.ProxyBackend.ForwardRequest(ctx, orig, body)
-}
-
-func TestProxyEndpoint_ResponseSelection(t *testing.T) {
+func TestProxyEndpoint_Response(t *testing.T) {
 	logger := log.NewNopLogger()
 
 	tests := []struct {
 		name               string
-		backends           []mockBackend
-		preferredBackend   string
+		backendStatus      int
+		backendBody        string
 		expectedStatusCode int
 	}{
 		{
-			name: "preferred backend succeeds",
-			backends: []mockBackend{
-				{name: "backend1", response: mockResponse{statusCode: 200, body: "ok"}},
-				{name: "backend2", response: mockResponse{statusCode: 200, body: "ok"}},
-			},
-			preferredBackend:   "backend1",
+			name:               "backend succeeds",
+			backendStatus:      200,
+			backendBody:        "ok",
 			expectedStatusCode: 200,
 		},
 		{
-			name: "preferred backend fails, still returns preferred response",
-			backends: []mockBackend{
-				{name: "backend1", response: mockResponse{statusCode: 500, body: "error"}},
-				{name: "backend2", response: mockResponse{statusCode: 200, body: "ok"}},
-			},
-			preferredBackend:   "backend1",
+			name:               "backend fails, status returned to client",
+			backendStatus:      500,
+			backendBody:        "error",
 			expectedStatusCode: 500,
-		},
-		{
-			name: "single preferred backend succeeds",
-			backends: []mockBackend{
-				{name: "backend1", response: mockResponse{statusCode: 200, body: "ok"}},
-			},
-			preferredBackend:   "backend1",
-			expectedStatusCode: 200,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Create a new registry and metrics for each test
 			registry := prometheus.NewRegistry()
 			metrics := NewProxyMetrics(registry)
 
-			// Create test HTTP servers for each backend
-			backendInterfaces := make([]ProxyBackend, 0, len(tt.backends))
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(tt.backendStatus)
+				_, _ = w.Write([]byte(tt.backendBody))
+			}))
+			defer server.Close()
 
-			for _, mb := range tt.backends {
-				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					w.WriteHeader(mb.response.statusCode)
-					_, _ = w.Write([]byte(mb.response.body))
-				}))
-				defer server.Close()
-
-				// Parse the server URL and create a backend
-				backend := NewHTTPProxyBackend(mb.name, mustParseURL(server.URL), 5*time.Second, mb.name == tt.preferredBackend, false, BackendTypeMirrored)
-				backendInterfaces = append(backendInterfaces, backend)
-			}
+			backend := NewHTTPProxyBackend("backend1", mustParseURL(server.URL), 5*time.Second, false)
 
 			route := Route{
 				Path:      "/api/v1/push",
@@ -357,21 +162,16 @@ func TestProxyEndpoint_ResponseSelection(t *testing.T) {
 				Methods:   []string{"POST"},
 			}
 
-			// Create async dispatcher for non-preferred backends
 			asyncDispatcher := NewAsyncBackendDispatcher(1000, metrics, logger)
 			defer asyncDispatcher.Stop()
 
-			endpoint, err := NewProxyEndpoint(backendInterfaces, route, metrics, logger, 1.0, nil, asyncDispatcher)
-			require.NoError(t, err)
+			endpoint := NewProxyEndpoint(backend, route, metrics, logger, 1.0, nil, asyncDispatcher)
 
-			// Create a test request
 			req := httptest.NewRequest("POST", "/api/v1/push", bytes.NewReader([]byte("test body")))
 			rec := httptest.NewRecorder()
 
-			// Execute the request
 			endpoint.ServeHTTP(rec, req)
 
-			// Verify the response
 			assert.Equal(t, tt.expectedStatusCode, rec.Code)
 		})
 	}
@@ -383,14 +183,13 @@ func TestProxyEndpoint_BodySizeLimit(t *testing.T) {
 	metrics := NewProxyMetrics(registry)
 
 	// Create a test backend
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(200)
 		_, _ = w.Write([]byte("ok"))
 	}))
 	defer server.Close()
 
-	backend := NewHTTPProxyBackend("backend1", mustParseURL(server.URL), 5*time.Second, true, false, BackendTypeMirrored)
-	backendInterfaces := []ProxyBackend{backend}
+	backend := NewHTTPProxyBackend("backend1", mustParseURL(server.URL), 5*time.Second, false)
 
 	route := Route{
 		Path:      "/api/v1/push",
@@ -398,12 +197,10 @@ func TestProxyEndpoint_BodySizeLimit(t *testing.T) {
 		Methods:   []string{"POST"},
 	}
 
-	// Create async dispatcher for non-preferred backends
 	asyncDispatcher := NewAsyncBackendDispatcher(1000, metrics, logger)
 	defer asyncDispatcher.Stop()
 
-	endpoint, err := NewProxyEndpoint(backendInterfaces, route, metrics, logger, 1.0, nil, asyncDispatcher)
-	require.NoError(t, err)
+	endpoint := NewProxyEndpoint(backend, route, metrics, logger, 1.0, nil, asyncDispatcher)
 
 	tests := []struct {
 		name               string
@@ -462,8 +259,7 @@ func TestProxyEndpoint_ServeHTTPPassthrough(t *testing.T) {
 	}))
 	defer server.Close()
 
-	backend := NewHTTPProxyBackend("backend1", mustParseURL(server.URL), 5*time.Second, true, false, BackendTypeMirrored)
-	backendInterfaces := []ProxyBackend{backend}
+	backend := NewHTTPProxyBackend("backend1", mustParseURL(server.URL), 5*time.Second, false)
 
 	route := Route{
 		Path:      "/api/v1/push",
@@ -474,8 +270,7 @@ func TestProxyEndpoint_ServeHTTPPassthrough(t *testing.T) {
 	asyncDispatcher := NewAsyncBackendDispatcher(1000, metrics, logger)
 	defer asyncDispatcher.Stop()
 
-	endpoint, err := NewProxyEndpoint(backendInterfaces, route, metrics, logger, 1.0, nil, asyncDispatcher)
-	require.NoError(t, err)
+	endpoint := NewProxyEndpoint(backend, route, metrics, logger, 1.0, nil, asyncDispatcher)
 
 	// Create a test request with Content-Type
 	req := httptest.NewRequest("POST", "/some/other/path", bytes.NewReader([]byte("test body")))
@@ -554,7 +349,7 @@ func TestProxyBackend_AuthHandling(t *testing.T) {
 			testServerURL := mustParseURL(server.URL)
 			endpointURL.Host = testServerURL.Host
 
-			backend := NewHTTPProxyBackend("backend1", endpointURL, 5*time.Second, false, false, BackendTypeMirrored)
+			backend := NewHTTPProxyBackend("backend1", endpointURL, 5*time.Second, false)
 
 			// Create a request with auth if specified
 			req := httptest.NewRequest("POST", "/api/v1/push", bytes.NewReader([]byte("test")))
@@ -630,16 +425,6 @@ func TestBackendResponse_Succeeded(t *testing.T) {
 
 // Helper types and functions
 
-type mockBackend struct {
-	name     string
-	response mockResponse
-}
-
-type mockResponse struct {
-	statusCode int
-	body       string
-}
-
 func mustParseURL(rawURL string) *url.URL {
 	u, err := url.Parse(rawURL)
 	if err != nil {
@@ -648,56 +433,40 @@ func mustParseURL(rawURL string) *url.URL {
 	return u
 }
 
-func TestPrepareAmplifiedBodies(t *testing.T) {
+// TestAmplifiedBodies verifies amplifiedBodies returns ONLY the suffixed copies (replicas 2..N),
+// excluding the unsuffixed original (replica 1) which is sent synchronously.
+func TestAmplifiedBodies(t *testing.T) {
 	logger := log.NewNopLogger()
 
 	tests := []struct {
 		name           string
 		amplifyFactor  float64
-		backendType    BackendType
-		expectedBodies int
+		expectedCopies int
 	}{
 		{
-			name:           "non-amplified backend returns 1 body",
-			amplifyFactor:  10.0,
-			backendType:    BackendTypeMirrored,
-			expectedBodies: 1,
-		},
-		{
-			name:           "factor 1.0 returns 1 body",
+			name:           "factor 1.0 returns 0 copies",
 			amplifyFactor:  1.0,
-			backendType:    BackendTypeAmplified,
-			expectedBodies: 1,
+			expectedCopies: 0,
 		},
 		{
-			name:           "factor 0.5 sampling returns 1 body",
-			amplifyFactor:  0.5,
-			backendType:    BackendTypeAmplified,
-			expectedBodies: 1,
-		},
-		{
-			name:           "factor 2.0 returns 2 bodies",
+			name:           "factor 2.0 returns 1 copy",
 			amplifyFactor:  2.0,
-			backendType:    BackendTypeAmplified,
-			expectedBodies: 2,
+			expectedCopies: 1,
 		},
 		{
-			name:           "factor 10.0 returns 10 bodies",
-			amplifyFactor:  10.0,
-			backendType:    BackendTypeAmplified,
-			expectedBodies: 10,
-		},
-		{
-			name:           "factor 2.5 returns 3 bodies (2 full + 1 fractional)",
+			name:           "factor 2.5 returns 2 copies (1 full + 1 fractional)",
 			amplifyFactor:  2.5,
-			backendType:    BackendTypeAmplified,
-			expectedBodies: 3,
+			expectedCopies: 2,
 		},
 		{
-			name:           "factor 5.2 returns 6 bodies (5 full + 1 fractional)",
+			name:           "factor 10.0 returns 9 copies",
+			amplifyFactor:  10.0,
+			expectedCopies: 9,
+		},
+		{
+			name:           "factor 5.2 returns 5 copies (4 full + 1 fractional)",
 			amplifyFactor:  5.2,
-			backendType:    BackendTypeAmplified,
-			expectedBodies: 6,
+			expectedCopies: 5,
 		},
 	}
 
@@ -707,61 +476,54 @@ func TestPrepareAmplifiedBodies(t *testing.T) {
 			metrics := NewProxyMetrics(registry)
 			tracker := NewAmplificationTracker()
 
-			backend := NewHTTPProxyBackend("test", mustParseURL("http://localhost:9090"), 5*time.Second, false, false, tt.backendType)
+			backend := NewHTTPProxyBackend("test", mustParseURL("http://localhost:9090"), 5*time.Second, false)
 			route := Route{Path: "/api/v1/push", RouteName: "test", Methods: []string{"POST"}}
 
-			endpoint := &ProxyEndpoint{
-				backends:             []ProxyBackend{backend},
-				route:                route,
-				metrics:              metrics,
-				logger:               logger,
-				amplificationFactor:  tt.amplifyFactor,
-				amplificationTracker: tracker,
-			}
+			endpoint := NewProxyEndpoint(backend, route, metrics, logger, tt.amplifyFactor, tracker, nil)
 
 			body := makeTestWriteRequest(t)
 			spLogger := spanlogger.FromContext(context.Background(), logger)
-			bodies := endpoint.prepareAmplifiedBodies(body, backend, spLogger)
+			bodies := endpoint.amplifiedBodies(body, spLogger)
 
-			assert.Equal(t, tt.expectedBodies, len(bodies), "expected %d bodies, got %d", tt.expectedBodies, len(bodies))
+			assert.Equal(t, tt.expectedCopies, len(bodies), "expected %d amplified copies, got %d", tt.expectedCopies, len(bodies))
 
-			// For amplification > 1, verify all bodies have suffixes (none should equal the original)
-			if tt.amplifyFactor > 1.0 && tt.backendType == BackendTypeAmplified && len(bodies) > 1 {
-				for i := 0; i < len(bodies); i++ {
-					assert.NotEqual(t, body, bodies[i], "body %d should differ from original - all amplified copies must have a label suffix to avoid clashing with the mirrored endpoint", i)
-				}
+			// All returned bodies must be suffixed - none should equal the unsuffixed original.
+			for i := range bodies {
+				assert.NotEqual(t, body, bodies[i], "amplified copy %d must differ from the original (suffixed)", i)
 			}
 		})
 	}
 }
 
+// TestProxyEndpoint_Amplification verifies the TOTAL number of requests sent to the single backend
+// endpoint (the synchronous original + async amplified copies) for various amplification factors.
 func TestProxyEndpoint_Amplification(t *testing.T) {
 	logger := log.NewNopLogger()
 
 	tests := []struct {
 		name                string
 		amplificationFactor float64
-		expectedRequests    int // Expected number of requests to the amplified backend
+		expectedRequests    int // Total requests to the backend (original + amplified copies)
 	}{
 		{
-			name:                "no amplification",
+			name:                "factor 1.0 sends 1 request",
 			amplificationFactor: 1.0,
 			expectedRequests:    1,
 		},
 		{
-			name:                "10x amplification",
+			name:                "factor 2.0 sends 2 requests",
+			amplificationFactor: 2.0,
+			expectedRequests:    2,
+		},
+		{
+			name:                "factor 2.5 sends 3 requests",
+			amplificationFactor: 2.5,
+			expectedRequests:    3, // original + _amp1 + _amp2 (sampled)
+		},
+		{
+			name:                "factor 10.0 sends 10 requests",
 			amplificationFactor: 10.0,
 			expectedRequests:    10,
-		},
-		{
-			name:                "2.5x amplification",
-			amplificationFactor: 2.5,
-			expectedRequests:    3, // 2 full + 1 fractional
-		},
-		{
-			name:                "0.5x sampling",
-			amplificationFactor: 0.5,
-			expectedRequests:    1, // 1 sampled request
 		},
 	}
 
@@ -770,32 +532,21 @@ func TestProxyEndpoint_Amplification(t *testing.T) {
 			registry := prometheus.NewRegistry()
 			metrics := NewProxyMetrics(registry)
 
-			// Track requests to the amplified backend
-			var amplifiedBackendRequests int
+			// Track all requests hitting the single backend (sync original + async copies).
 			var receivedBodies [][]byte
 			var mu sync.Mutex
 
-			// Create preferred backend
-			preferredServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				w.WriteHeader(200)
-				_, _ = w.Write([]byte("ok"))
-			}))
-			defer preferredServer.Close()
-
-			// Create amplified backend that counts requests and captures bodies
-			amplifiedServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				body, _ := io.ReadAll(r.Body)
 				mu.Lock()
-				amplifiedBackendRequests++
 				receivedBodies = append(receivedBodies, body)
 				mu.Unlock()
 				w.WriteHeader(200)
 				_, _ = w.Write([]byte("ok"))
 			}))
-			defer amplifiedServer.Close()
+			defer server.Close()
 
-			preferredBackend := NewHTTPProxyBackend("preferred", mustParseURL(preferredServer.URL), 5*time.Second, true, false, BackendTypeMirrored)
-			amplifiedBackend := NewHTTPProxyBackend("amplified", mustParseURL(amplifiedServer.URL), 5*time.Second, false, false, BackendTypeAmplified)
+			backend := NewHTTPProxyBackend("backend", mustParseURL(server.URL), 5*time.Second, false)
 
 			route := Route{
 				Path:      "/api/v1/push",
@@ -807,34 +558,46 @@ func TestProxyEndpoint_Amplification(t *testing.T) {
 			defer asyncDispatcher.Stop()
 
 			tracker := NewAmplificationTracker()
-			endpoint, err := NewProxyEndpoint([]ProxyBackend{preferredBackend, amplifiedBackend}, route, metrics, logger, tt.amplificationFactor, tracker, asyncDispatcher)
-			require.NoError(t, err)
+			endpoint := NewProxyEndpoint(backend, route, metrics, logger, tt.amplificationFactor, tracker, asyncDispatcher)
 
-			// Create a minimal valid write request
-			req := httptest.NewRequest("POST", "/api/v1/push", bytes.NewReader(makeTestWriteRequest(t)))
+			// Create a minimal valid write request.
+			originalBody := makeTestWriteRequest(t)
+			req := httptest.NewRequest("POST", "/api/v1/push", bytes.NewReader(originalBody))
 			rec := httptest.NewRecorder()
 
 			endpoint.ServeHTTP(rec, req)
 
-			// Wait for async requests to complete
+			// Wait for async requests to complete.
 			asyncDispatcher.Stop()
 			asyncDispatcher.Await()
 
-			// Verify response from preferred backend
+			// The synchronous original returns 200.
 			assert.Equal(t, 200, rec.Code)
 
-			// Verify the number of requests to the amplified backend
 			mu.Lock()
 			defer mu.Unlock()
-			assert.Equal(t, tt.expectedRequests, amplifiedBackendRequests, "expected %d requests to amplified backend, got %d", tt.expectedRequests, amplifiedBackendRequests)
 
-			// For amplification > 1, verify that bodies are different (unique labels)
-			if tt.amplificationFactor > 1.0 && len(receivedBodies) > 1 {
-				// Bodies should be different due to different label suffixes
-				firstBody := receivedBodies[0]
-				for i := 1; i < len(receivedBodies); i++ {
-					assert.NotEqual(t, firstBody, receivedBodies[i], "request %d should have different body than request 0 (different label suffixes)", i)
+			// Verify the total number of requests to the backend.
+			require.Equal(t, tt.expectedRequests, len(receivedBodies), "expected %d total requests to the backend, got %d", tt.expectedRequests, len(receivedBodies))
+
+			// Exactly one received request must be the unmodified original (replica 1).
+			originalCount := 0
+			for _, b := range receivedBodies {
+				if bytes.Equal(b, originalBody) {
+					originalCount++
 				}
+			}
+			assert.Equal(t, 1, originalCount, "exactly one request must be the unmodified original")
+
+			// Any amplified copies must differ from the original (suffixed labels).
+			if tt.expectedRequests > 1 {
+				differing := 0
+				for _, b := range receivedBodies {
+					if !bytes.Equal(b, originalBody) {
+						differing++
+					}
+				}
+				assert.Equal(t, tt.expectedRequests-1, differing, "all amplified copies must differ from the original")
 			}
 		})
 	}

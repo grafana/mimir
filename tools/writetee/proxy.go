@@ -33,10 +33,8 @@ const (
 type ProxyConfig struct {
 	Server server.Config
 
-	BackendMirroredEndpoints   string
-	BackendAmplifiedEndpoints  string
+	BackendEndpoint            string
 	AmplificationFactor        float64
-	PreferredBackend           string
 	BackendReadTimeout         time.Duration
 	BackendSkipTLSVerify       bool
 	AsyncMaxInFlightPerBackend int
@@ -78,29 +76,24 @@ func (cfg *ProxyConfig) registerServerFlagsWithChangedDefaultValues(fs *flag.Fla
 func (cfg *ProxyConfig) RegisterFlags(f *flag.FlagSet) {
 	cfg.Server.MetricsNamespace = writeTeeMetricsNamespace
 
-	f.StringVar(&cfg.BackendMirroredEndpoints, "backend.mirrored-endpoints", "",
-		"Comma-separated list of backend endpoints to mirror writes to (without amplification). "+
+	f.StringVar(&cfg.BackendEndpoint, "backend.endpoint", "",
+		"The backend endpoint to send writes to. Required. "+
+			"The original (unmodified) request is sent synchronously and its response is returned to the client. "+
+			"When amplification-factor > 1, additional suffixed copies are sent asynchronously (fire-and-forget). "+
 			"If the client request contains basic auth, it will be forwarded to the backend. "+
 			"Basic auth is also accepted as part of the endpoint URL and takes precedence over the basic auth in the client request. "+
 			"If the endpoint URL doesn't contain basic auth password, then the basic auth password from the client request is used. "+
 			"If the endpoint basic auth username is __REQUEST_HEADER_X_SCOPE_ORGID__, then the value of the X-Scope-OrgID header will be used as the username.",
 	)
-	f.StringVar(&cfg.BackendAmplifiedEndpoints, "backend.amplified-endpoints", "",
-		"Comma-separated list of backend endpoints to send amplified writes to. "+
-			"Writes to these backends will have metrics duplicated based on the amplification-factor. "+
-			"Same auth behavior as backend.mirrored-endpoints.",
-	)
 	f.Float64Var(&cfg.AmplificationFactor, "backend.amplification-factor", 1.0,
-		"The factor by which to amplify or sample writes to amplified backends. "+
-			"Values > 1.0 amplify (duplicate) metrics: 3.5 means each metric is duplicated 3.5 times on average. "+
-			"Values < 1.0 sample (reduce) metrics: 0.1 means only 10% of metrics are sent. "+
-			"Amplified metrics have all label values (except __name__) suffixed with _amp{N} where N is the replica number. "+
-			"Only applies to backends specified in backend.amplified-endpoints.",
+		"The factor by which to amplify writes to the backend. Must be >= 1.0. "+
+			"1.0 means no amplification (only the original request is sent). "+
+			"Values > 1.0 amplify (duplicate) metrics: 3.5 means each metric is sent 3.5 times on average. "+
+			"Amplified copies have all label values (except __name__) suffixed with _amp{N} where N is the replica number (starting at 2).",
 	)
 	f.BoolVar(&cfg.BackendSkipTLSVerify, "backend.skip-tls-verify", false, "Skip TLS verification on backend targets.")
-	f.StringVar(&cfg.PreferredBackend, "backend.preferred", "", "The hostname of the preferred backend. Required. Non-preferred backends receive fire-and-forget requests.")
 	f.DurationVar(&cfg.BackendReadTimeout, "backend.read-timeout", 90*time.Second, "The timeout when reading the response from a backend.")
-	f.IntVar(&cfg.AsyncMaxInFlightPerBackend, "backend.async-max-in-flight", 1000, "Maximum concurrent in-flight requests per non-preferred backend (async fire-and-forget). Requests are dropped when at capacity.")
+	f.IntVar(&cfg.AsyncMaxInFlightPerBackend, "backend.async-max-in-flight", 1000, "Maximum concurrent in-flight amplified requests (async fire-and-forget). Requests are dropped when at capacity.")
 	f.DurationVar(&cfg.HTTPConnectionTTLMin, "server.http-connection-ttl-min", 0, "Minimum TTL for HTTP connections. Connections will be closed after a random duration between min and max TTL.")
 	f.DurationVar(&cfg.HTTPConnectionTTLMax, "server.http-connection-ttl-max", 0, "Maximum TTL for HTTP connections. Set to 0 to disable connection TTL.")
 	f.DurationVar(&cfg.HTTPConnectionTTLIdleCheckFrequency, "server.http-connection-ttl-idle-check-frequency", 30*time.Second, "Frequency at which idle connections are checked for TTL expiration.")
@@ -117,7 +110,7 @@ type Route struct {
 
 type Proxy struct {
 	cfg                  ProxyConfig
-	backends             []ProxyBackend
+	backend              ProxyBackend
 	logger               log.Logger
 	registerer           prometheus.Registerer
 	metrics              *ProxyMetrics
@@ -143,86 +136,36 @@ func NewProxy(cfg ProxyConfig, logger log.Logger, routes []Route, registerer pro
 		amplificationTracker: NewAmplificationTracker(),
 	}
 
-	// Parse mirrored backend endpoints (comma separated).
-	if cfg.BackendMirroredEndpoints != "" {
-		parts := strings.Split(cfg.BackendMirroredEndpoints, ",")
-		for _, part := range parts {
-			backend, err := p.parseBackendEndpoint(part, BackendTypeMirrored)
-			if err != nil {
-				return nil, err
-			}
-			if backend != nil {
-				p.backends = append(p.backends, backend)
-			}
-		}
+	// Endpoint is required.
+	if strings.TrimSpace(cfg.BackendEndpoint) == "" {
+		return nil, errors.New("backend endpoint is required (set -backend.endpoint)")
 	}
 
-	// Parse amplified backend endpoints (comma separated).
-	if cfg.BackendAmplifiedEndpoints != "" {
-		parts := strings.Split(cfg.BackendAmplifiedEndpoints, ",")
-		for _, part := range parts {
-			backend, err := p.parseBackendEndpoint(part, BackendTypeAmplified)
-			if err != nil {
-				return nil, err
-			}
-			if backend != nil {
-				p.backends = append(p.backends, backend)
-			}
-		}
+	// The amplification factor must be >= 1.0 so the endpoint always receives the full original request.
+	if cfg.AmplificationFactor < 1.0 {
+		return nil, errors.New("amplification-factor must be >= 1.0")
 	}
 
-	// At least 1 backend is required
-	if len(p.backends) < 1 {
-		return nil, errors.New("at least 1 backend is required (specify backend.mirrored-endpoints or backend.amplified-endpoints)")
-	}
-
-	// Preferred backend is required
-	if cfg.PreferredBackend == "" {
-		return nil, errors.New("preferred backend is required (set -backend.preferred)")
-	}
-
-	// Validate amplification configuration
-	hasAmplifiedBackend := false
-	for _, b := range p.backends {
-		if b.BackendType() == BackendTypeAmplified {
-			hasAmplifiedBackend = true
-			break
-		}
-	}
-	if hasAmplifiedBackend && cfg.AmplificationFactor <= 0.0 {
-		return nil, errors.New("amplification-factor must be > 0.0 when amplified backends are configured")
-	}
-
-	// Select the preferred backend. When multiple backends share the same hostname
-	// (e.g., same endpoint in both mirrored and amplified lists), only ONE backend
-	// is marked as preferred. This ensures async dispatch correctly sends to the
-	// non-preferred backends.
-	if !p.selectPreferredBackend() {
-		return nil, fmt.Errorf("the preferred backend (hostname) has not been found among the list of configured backends")
-	}
-
-	// At least 2 backends are suggested
-	if len(p.backends) < 2 {
-		level.Warn(p.logger).Log("msg", "The proxy is running with only 1 backend. At least 2 backends are required to fulfil the purpose of the proxy and fan out writes.")
-	}
-
-	// Validate async max in-flight
+	// Validate async max in-flight.
 	if cfg.AsyncMaxInFlightPerBackend <= 0 {
 		return nil, errors.New("backend.async-max-in-flight must be greater than 0")
 	}
 
-	// Create the async dispatcher for non-preferred backends
+	// Parse the single backend endpoint.
+	backend, err := p.parseBackendEndpoint(cfg.BackendEndpoint)
+	if err != nil {
+		return nil, err
+	}
+	p.backend = backend
+
+	// Create the async dispatcher for amplified (fire-and-forget) copies.
 	p.asyncDispatcher = NewAsyncBackendDispatcher(cfg.AsyncMaxInFlightPerBackend, p.metrics, logger)
 
 	return p, nil
 }
 
-func (p *Proxy) parseBackendEndpoint(endpoint string, backendType BackendType) (ProxyBackend, error) {
-	// Skip empty ones.
+func (p *Proxy) parseBackendEndpoint(endpoint string) (ProxyBackend, error) {
 	endpoint = strings.TrimSpace(endpoint)
-	if endpoint == "" {
-		return nil, nil
-	}
 
 	u, err := url.Parse(endpoint)
 	if err != nil {
@@ -232,61 +175,18 @@ func (p *Proxy) parseBackendEndpoint(endpoint string, backendType BackendType) (
 	// The backend name is hardcoded as the backend hostname.
 	name := u.Hostname()
 
-	// Preferred is determined later in selectPreferredBackend() after all backends are parsed.
-	// This ensures that when multiple backends have the same hostname, only one is marked as preferred.
 	switch u.Scheme {
 	case "http", "https":
-		return NewHTTPProxyBackend(name, u, p.cfg.BackendReadTimeout, false, p.cfg.BackendSkipTLSVerify, backendType), nil
+		return NewHTTPProxyBackend(name, u, p.cfg.BackendReadTimeout, p.cfg.BackendSkipTLSVerify), nil
 	case "dns":
 		grpcCfg := GRPCBackendConfig{
 			MaxRecvMsgSize: p.cfg.GRPCMaxRecvMsgSize,
 			MaxSendMsgSize: p.cfg.GRPCMaxSendMsgSize,
 		}
-		return NewGRPCProxyBackend(name, u, p.cfg.BackendReadTimeout, false, backendType, grpcCfg)
+		return NewGRPCProxyBackend(name, u, p.cfg.BackendReadTimeout, grpcCfg)
 	default:
 		return nil, fmt.Errorf("unsupported backend scheme %q for endpoint %s (supported: http, https, dns)", u.Scheme, endpoint)
 	}
-}
-
-// selectPreferredBackend selects a single backend as the preferred one based on the configured
-// PreferredBackend setting. When multiple backends match the preferred hostname (e.g., same
-// hostname in both mirrored and amplified endpoints), this function prioritizes:
-// 1. First matching mirrored backend (preferred, as it returns unmodified data)
-// 2. First matching amplified backend (fallback)
-// This ensures async dispatch works correctly when the same hostname appears in both lists.
-func (p *Proxy) selectPreferredBackend() bool {
-	// Support numeric preferred backend index (used in tests where all backends have the same hostname)
-	if preferredIdx, err := strconv.Atoi(p.cfg.PreferredBackend); err == nil {
-		if preferredIdx >= 0 && preferredIdx < len(p.backends) {
-			p.backends[preferredIdx].SetPreferred(true)
-			return true
-		}
-		return false
-	}
-
-	// Find the preferred backend by hostname, prioritizing mirrored over amplified
-	var firstAmplifiedMatch ProxyBackend
-	for _, b := range p.backends {
-		if b.Name() == p.cfg.PreferredBackend {
-			if b.BackendType() == BackendTypeMirrored {
-				// Found a mirrored backend match - use it immediately
-				b.SetPreferred(true)
-				return true
-			}
-			// Keep track of the first amplified match as fallback
-			if firstAmplifiedMatch == nil {
-				firstAmplifiedMatch = b
-			}
-		}
-	}
-
-	// No mirrored match found, use the first amplified match if available
-	if firstAmplifiedMatch != nil {
-		firstAmplifiedMatch.SetPreferred(true)
-		return true
-	}
-
-	return false
 }
 
 func (p *Proxy) Start() error {
@@ -315,12 +215,9 @@ func (p *Proxy) Start() error {
 		w.WriteHeader(http.StatusOK)
 	}))
 
-	// register fan-out routes (explicit endpoints we want to mirror)
+	// register fan-out routes (explicit endpoints we want to amplify)
 	for _, route := range p.routes {
-		endpoint, err := NewProxyEndpoint(p.backends, route, p.metrics, p.logger, p.cfg.AmplificationFactor, p.amplificationTracker, p.asyncDispatcher)
-		if err != nil {
-			return err
-		}
+		endpoint := NewProxyEndpoint(p.backend, route, p.metrics, p.logger, p.cfg.AmplificationFactor, p.amplificationTracker, p.asyncDispatcher)
 		router.Path(route.Path).Methods(route.Methods...).Handler(endpoint)
 	}
 
@@ -331,10 +228,7 @@ func (p *Proxy) Start() error {
 		RouteName: "passthrough",
 		Methods:   []string{"GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"},
 	}
-	passthroughEndpoint, err := NewProxyEndpoint(p.backends, passthroughRoute, p.metrics, p.logger, p.cfg.AmplificationFactor, p.amplificationTracker, p.asyncDispatcher)
-	if err != nil {
-		return err
-	}
+	passthroughEndpoint := NewProxyEndpoint(p.backend, passthroughRoute, p.metrics, p.logger, p.cfg.AmplificationFactor, p.amplificationTracker, p.asyncDispatcher)
 	router.PathPrefix("/").Handler(http.HandlerFunc(passthroughEndpoint.ServeHTTPPassthrough))
 
 	// Create HTTP connection TTL middleware if enabled.
@@ -391,10 +285,10 @@ func (p *Proxy) Await() {
 		p.asyncDispatcher.Await()
 	}
 
-	// Close all backends after async requests have drained (important for gRPC backends to close connections).
-	for _, backend := range p.backends {
-		if err := backend.Close(); err != nil {
-			level.Warn(p.logger).Log("msg", "failed to close backend", "backend", backend.Name(), "err", err)
+	// Close the backend after async requests have drained (important for gRPC backends to close connections).
+	if p.backend != nil {
+		if err := p.backend.Close(); err != nil {
+			level.Warn(p.logger).Log("msg", "failed to close backend", "backend", p.backend.Name(), "err", err)
 		}
 	}
 }

@@ -1,65 +1,62 @@
 # Write-Tee
 
-Write-tee is a reverse proxy that fans out Prometheus remote write requests to multiple backend Mimir clusters. It enables testing, migration, and validation scenarios where writes need to be duplicated across multiple clusters.
+Write-tee is a reverse proxy that sits in front of a single backend endpoint (typically a cell's own distributors) and amplifies Prometheus remote write traffic to it. It enables load-testing and validation scenarios where a cell needs to receive a multiple of its real write traffic.
 
 ## Features
 
 ### Core Functionality
 
-- **Request Fan-Out**: Receives write requests and forwards them to multiple backend clusters in parallel
-- **Backend Types**:
-  - **Mirrored backends** (`-backend.mirrored-endpoints`): Receive unmodified write requests (1:1 traffic mirroring)
-  - **Amplified backends** (`-backend.amplified-endpoints`): Receive amplified write requests with duplicated time series
-- **Write Amplification**: Duplicate time series based on configurable amplification factor
-  - Factor 1.0: No amplification (pass-through)
-  - Factor 2.0: Each time series duplicated once (2x total series)
-  - Factor 3.5: Each time series gets 3 full copies + 50% probability of 4th copy (3.5x average)
-  - Amplified copies have all label values (except `__name__`) suffixed with `_amp{N}` where N is the replica number
+- **Single Endpoint** (`-backend.endpoint`): All traffic is sent to one backend endpoint
+- **Synchronous Original**: The original (unmodified) request is sent synchronously and its response is returned to the client (this is replica 1)
+- **Write Amplification**: When `-backend.amplification-factor` > 1, additional suffixed copies are sent to the same endpoint fire-and-forget
+  - Factor 1.0: No amplification — only the original request is sent (1x total series)
+  - Factor 2.0: Original + one suffixed copy `_amp2` (2x total series)
+  - Factor 3.5: Original + copies `_amp2`, `_amp3` + a 50%-sampled copy `_amp4` (3.5x average)
+  - Amplified copies have all label values (except `__name__`) suffixed with `_amp{N}` where N is the replica number (starting at 2)
 - **Protocol Support**: Prometheus Remote Write 1.0 and 2.0
-- **Preferred Backend**: Required preferred backend whose response is returned to clients
-- **Fire-and-Forget**: Non-preferred backends receive requests asynchronously without blocking the response
-- **Backpressure Handling**: Bounded concurrent in-flight requests per non-preferred backend; requests dropped when at capacity
-- **Authentication**: Supports basic auth forwarding and per-backend auth override
+- **Fire-and-Forget**: Amplified copies are dispatched asynchronously without blocking the client response
+- **Backpressure Handling**: Bounded concurrent in-flight amplified requests; requests dropped (and counted) when at capacity
+- **Authentication**: Supports basic auth forwarding and per-endpoint auth override
 
 ## Example Usage
 
-Amplify traffic to test cluster scalability:
+Amplify a cell's incoming write traffic 10x onto its own distributors:
 
 ```bash
 write-tee \
-  -backend.mirrored-endpoints=http://prod-mimir:8080 \
-  -backend.amplified-endpoints=http://test-mimir:8080 \
+  -backend.endpoint=http://distributor:8080 \
   -backend.amplification-factor=10.0 \
-  -backend.preferred=prod-mimir \
   -server.http-listen-port=8080
 ```
 
-Production cluster (`prod-mimir`) is the preferred backend - it receives normal traffic (1x), and its response is returned to clients immediately. Test cluster (`test-mimir`) receives 10x amplified traffic via fire-and-forget.
+The endpoint receives the original request synchronously (its response is returned to the client immediately) plus 9 additional suffixed copies (`_amp2`..`_amp10`) via fire-and-forget, for 10x total series.
 
 ## Architecture
 
 ### Request Flow
 
 ```
-Client → Write-Tee → [Preferred Backend] ← Response returned immediately
-                   ↘ [Non-Preferred Backends] (fire-and-forget, bounded concurrency)
+Client → Write-Tee → [Backend Endpoint] (original, synchronous) ← Response returned immediately
+                   ↘ [Backend Endpoint] (amplified copies, fire-and-forget, bounded concurrency)
 ```
 
 1. **Receive**: Client sends Prometheus remote write request to write-tee
 2. **Buffer**: Entire request body is buffered in memory (writes cannot be streamed)
-3. **Dispatch to Non-Preferred**: A goroutine is spawned for async delivery to each non-preferred backend (fire-and-forget)
-4. **Send to Preferred**: Request sent synchronously to preferred backend
-5. **Return**: Preferred backend's response returned to client immediately (does not wait for non-preferred backends)
-6. **Async Processing**: Spawned goroutines send requests to non-preferred backends concurrently (bounded by max-in-flight limit)
+3. **Dispatch Amplified Copies**: When factor > 1, a goroutine is spawned per suffixed copy for async delivery to the endpoint (fire-and-forget)
+4. **Send Original**: Original request sent synchronously to the endpoint
+5. **Return**: The endpoint's response to the original request is returned to the client immediately (does not wait for amplified copies)
+6. **Async Processing**: Spawned goroutines send the amplified copies concurrently (bounded by max-in-flight limit)
 7. **Metrics**: Request duration, errors, dropped requests, and response status recorded per backend
 
 ### Amplification Process
 
-For each time series in the incoming request:
+For each time series in the incoming request, with amplification factor F:
 
-1. **Original series**: Forwarded as-is (considered replica 1, no label changes)
-2. **Amplified copies**: Duplicated with all label values (except `__name__`) suffixed with `_amp2`, `_amp3`, etc.
-3. **Fractional amplification**: If factor is 3.5, each series gets 3 guaranteed copies + 50% probability of 4th
+1. **Original series**: Sent synchronously as-is (replica 1, no label changes)
+2. **Full copies**: `floor(F)-1` copies with all label values (except `__name__`) suffixed `_amp2`, `_amp3`, …, `_amp{floor(F)}`
+3. **Fractional copy**: If `F` has a fractional part (e.g. 3.5), one more copy is sampled to that fraction and suffixed `_amp{floor(F)+1}`
+
+So the endpoint receives `floor(F) + (frac>0 ? 1 : 0)` requests total.
 
 **Remote Write 1.0** (with embedded label strings):
 
@@ -82,30 +79,25 @@ The RW 2.0 approach only adds suffixed value strings to the symbol table and dup
 
 ## Configuration
 
-### Backend Endpoints
+### Backend Endpoint
 
 ```bash
--backend.mirrored-endpoints string
-    Comma-separated list of backend endpoints to mirror writes to (without amplification).
-    Example: http://mimir-1:8080,http://mimir-2:8080
-
--backend.amplified-endpoints string
-    Comma-separated list of backend endpoints to send amplified writes to.
-    Example: http://loadtest-mimir:8080
+-backend.endpoint string (REQUIRED)
+    The backend endpoint to send writes to. The original (unmodified) request is sent
+    synchronously and its response is returned to the client; when amplification-factor > 1,
+    additional suffixed copies are sent asynchronously (fire-and-forget).
+    Supported schemes: http, https (HTTP), and dns (HTTPgRPC).
+    Example: http://distributor:8080
 
 -backend.amplification-factor float
-    The factor by which to amplify writes to amplified backends.
-    Default: 1.0 (no amplification)
-    Example: 3.5 (each series duplicated 3.5 times on average)
-    Note: Only applies to backends in -backend.amplified-endpoints
-
--backend.preferred string (REQUIRED)
-    The hostname of the preferred backend. This backend's response is always
-    returned to the client. Non-preferred backends receive fire-and-forget requests.
-    Example: mimir-1
+    The factor by which to amplify writes to the backend. Must be >= 1.0.
+    Default: 1.0 (no amplification — only the original request is sent)
+    Example: 3.5 (each series sent 3.5 times on average)
+    Amplified copies have all label values (except __name__) suffixed with _amp{N}
+    where N is the replica number (starting at 2).
 
 -backend.async-max-in-flight int
-    Maximum concurrent in-flight requests per non-preferred backend (async fire-and-forget).
-    Requests are dropped silently when at capacity.
+    Maximum concurrent in-flight amplified requests (async fire-and-forget).
+    Requests are dropped (and counted) when at capacity.
     Default: 1000
 ```

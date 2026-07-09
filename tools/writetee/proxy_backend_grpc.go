@@ -30,18 +30,16 @@ type GRPCBackendConfig struct {
 
 // grpcProxyBackend implements ProxyBackend for HTTPgRPC backends.
 type grpcProxyBackend struct {
-	name        string
-	endpoint    *url.URL
-	timeout     time.Duration
-	backendType BackendType
-	preferred   bool
+	name     string
+	endpoint *url.URL
+	timeout  time.Duration
 
 	conn   *grpc.ClientConn
 	client httpgrpc.HTTPClient
 }
 
 // NewGRPCProxyBackend creates a new gRPC backend.
-func NewGRPCProxyBackend(name string, endpoint *url.URL, timeout time.Duration, preferred bool, backendType BackendType, cfg GRPCBackendConfig) (ProxyBackend, error) {
+func NewGRPCProxyBackend(name string, endpoint *url.URL, timeout time.Duration, cfg GRPCBackendConfig) (ProxyBackend, error) {
 	// Build the target address from the endpoint.
 	// For dns:// scheme, use the host directly with dns resolver.
 	target := "dns:///" + endpoint.Host
@@ -68,13 +66,11 @@ func NewGRPCProxyBackend(name string, endpoint *url.URL, timeout time.Duration, 
 	}
 
 	return &grpcProxyBackend{
-		name:        name,
-		endpoint:    endpoint,
-		timeout:     timeout,
-		backendType: backendType,
-		preferred:   preferred,
-		conn:        conn,
-		client:      httpgrpc.NewHTTPClient(conn),
+		name:     name,
+		endpoint: endpoint,
+		timeout:  timeout,
+		conn:     conn,
+		client:   httpgrpc.NewHTTPClient(conn),
 	}, nil
 }
 
@@ -84,18 +80,6 @@ func (b *grpcProxyBackend) Name() string {
 
 func (b *grpcProxyBackend) Endpoint() *url.URL {
 	return b.endpoint
-}
-
-func (b *grpcProxyBackend) Preferred() bool {
-	return b.preferred
-}
-
-func (b *grpcProxyBackend) SetPreferred(preferred bool) {
-	b.preferred = preferred
-}
-
-func (b *grpcProxyBackend) BackendType() BackendType {
-	return b.backendType
 }
 
 func (b *grpcProxyBackend) ForwardRequest(ctx context.Context, orig *http.Request, body io.ReadCloser) (time.Duration, int, []byte, http.Header, error) {

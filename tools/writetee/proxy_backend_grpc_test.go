@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 
@@ -42,7 +43,7 @@ func TestGRPCProxyBackend_ForwardRequest(t *testing.T) {
 
 	// Create a gRPC backend pointing to the test server.
 	endpoint := mustParseURL("dns://" + addr)
-	backend, err := NewGRPCProxyBackend("test-backend", endpoint, 5*time.Second, false, BackendTypeMirrored, GRPCBackendConfig{
+	backend, err := NewGRPCProxyBackend("test-backend", endpoint, 5*time.Second, GRPCBackendConfig{
 		MaxRecvMsgSize: 100 * 1024 * 1024,
 		MaxSendMsgSize: 100 * 1024 * 1024,
 	})
@@ -88,7 +89,7 @@ func TestGRPCProxyBackend_OrgIDPropagation(t *testing.T) {
 	defer grpcServer.Stop()
 
 	endpoint := mustParseURL("dns://" + addr)
-	backend, err := NewGRPCProxyBackend("test-backend", endpoint, 5*time.Second, false, BackendTypeMirrored, GRPCBackendConfig{
+	backend, err := NewGRPCProxyBackend("test-backend", endpoint, 5*time.Second, GRPCBackendConfig{
 		MaxRecvMsgSize: 100 * 1024 * 1024,
 		MaxSendMsgSize: 100 * 1024 * 1024,
 	})
@@ -123,7 +124,7 @@ func TestGRPCProxyBackend_AuthorizationHeaderStripped(t *testing.T) {
 	defer grpcServer.Stop()
 
 	endpoint := mustParseURL("dns://" + addr)
-	backend, err := NewGRPCProxyBackend("test-backend", endpoint, 5*time.Second, false, BackendTypeMirrored, GRPCBackendConfig{
+	backend, err := NewGRPCProxyBackend("test-backend", endpoint, 5*time.Second, GRPCBackendConfig{
 		MaxRecvMsgSize: 100 * 1024 * 1024,
 		MaxSendMsgSize: 100 * 1024 * 1024,
 	})
@@ -158,7 +159,7 @@ func TestGRPCProxyBackend_ErrorHandling(t *testing.T) {
 	defer grpcServer.Stop()
 
 	endpoint := mustParseURL("dns://" + addr)
-	backend, err := NewGRPCProxyBackend("test-backend", endpoint, 5*time.Second, false, BackendTypeMirrored, GRPCBackendConfig{
+	backend, err := NewGRPCProxyBackend("test-backend", endpoint, 5*time.Second, GRPCBackendConfig{
 		MaxRecvMsgSize: 100 * 1024 * 1024,
 		MaxSendMsgSize: 100 * 1024 * 1024,
 	})
@@ -190,7 +191,7 @@ func TestGRPCProxyBackend_5xxError(t *testing.T) {
 	defer grpcServer.Stop()
 
 	endpoint := mustParseURL("dns://" + addr)
-	backend, err := NewGRPCProxyBackend("test-backend", endpoint, 5*time.Second, false, BackendTypeMirrored, GRPCBackendConfig{
+	backend, err := NewGRPCProxyBackend("test-backend", endpoint, 5*time.Second, GRPCBackendConfig{
 		MaxRecvMsgSize: 100 * 1024 * 1024,
 		MaxSendMsgSize: 100 * 1024 * 1024,
 	})
@@ -224,7 +225,7 @@ func TestGRPCProxyBackend_PathPrepending(t *testing.T) {
 
 	// Create an endpoint with a path prefix.
 	endpoint := mustParseURL("dns://" + addr + "/prefix")
-	backend, err := NewGRPCProxyBackend("test-backend", endpoint, 5*time.Second, false, BackendTypeMirrored, GRPCBackendConfig{
+	backend, err := NewGRPCProxyBackend("test-backend", endpoint, 5*time.Second, GRPCBackendConfig{
 		MaxRecvMsgSize: 100 * 1024 * 1024,
 		MaxSendMsgSize: 100 * 1024 * 1024,
 	})
@@ -255,7 +256,7 @@ func TestGRPCProxyBackend_QueryParameters(t *testing.T) {
 	defer grpcServer.Stop()
 
 	endpoint := mustParseURL("dns://" + addr)
-	backend, err := NewGRPCProxyBackend("test-backend", endpoint, 5*time.Second, false, BackendTypeMirrored, GRPCBackendConfig{
+	backend, err := NewGRPCProxyBackend("test-backend", endpoint, 5*time.Second, GRPCBackendConfig{
 		MaxRecvMsgSize: 100 * 1024 * 1024,
 		MaxSendMsgSize: 100 * 1024 * 1024,
 	})
@@ -284,7 +285,7 @@ func TestGRPCProxyBackend_Close(t *testing.T) {
 	defer grpcServer.Stop()
 
 	endpoint := mustParseURL("dns://" + addr)
-	backend, err := NewGRPCProxyBackend("test-backend", endpoint, 5*time.Second, false, BackendTypeMirrored, GRPCBackendConfig{
+	backend, err := NewGRPCProxyBackend("test-backend", endpoint, 5*time.Second, GRPCBackendConfig{
 		MaxRecvMsgSize: 100 * 1024 * 1024,
 		MaxSendMsgSize: 100 * 1024 * 1024,
 	})
@@ -306,17 +307,17 @@ func TestNewProxy_GRPCBackendValidation(t *testing.T) {
 		{
 			name: "invalid scheme",
 			cfg: ProxyConfig{
-				BackendMirroredEndpoints:   "ftp://backend:8080",
-				PreferredBackend:           "backend",
+				BackendEndpoint:            "ftp://backend:8080",
+				AmplificationFactor:        1.0,
 				AsyncMaxInFlightPerBackend: 1000,
 			},
 			expectedErr: "unsupported backend scheme",
 		},
 		{
-			name: "mixed http and dns backends",
+			name: "dns (gRPC) backend",
 			cfg: ProxyConfig{
-				BackendMirroredEndpoints:   "http://backend1:8080,dns://backend2:9095",
-				PreferredBackend:           "backend1",
+				BackendEndpoint:            "dns://backend2:9095",
+				AmplificationFactor:        1.0,
 				AsyncMaxInFlightPerBackend: 1000,
 				GRPCMaxRecvMsgSize:         100 * 1024 * 1024,
 				GRPCMaxSendMsgSize:         100 * 1024 * 1024,
@@ -343,30 +344,26 @@ func TestNewProxy_GRPCBackendValidation(t *testing.T) {
 	}
 }
 
-func TestProxyEndpoint_MixedHTTPAndGRPCBackends(t *testing.T) {
+func TestProxyEndpoint_GRPCBackend(t *testing.T) {
 	logger := log.NewNopLogger()
 	registry := prometheus.NewRegistry()
 	metrics := NewProxyMetrics(registry)
 
-	// Create an HTTP backend.
-	httpServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("http response"))
-	}))
-	defer httpServer.Close()
-
-	// Create a gRPC backend.
+	// Create a gRPC backend that counts requests.
+	var mu sync.Mutex
+	var requestCount int
 	grpcHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		requestCount++
+		mu.Unlock()
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("grpc response"))
 	})
 	grpcServer, grpcAddr := startTestGRPCServer(t, grpcHandler)
 	defer grpcServer.Stop()
 
-	httpBackend := NewHTTPProxyBackend("http-backend", mustParseURL(httpServer.URL), 5*time.Second, true, false, BackendTypeMirrored)
-
 	grpcEndpoint := mustParseURL("dns://" + grpcAddr)
-	grpcBackend, err := NewGRPCProxyBackend("grpc-backend", grpcEndpoint, 5*time.Second, false, BackendTypeAmplified, GRPCBackendConfig{
+	grpcBackend, err := NewGRPCProxyBackend("grpc-backend", grpcEndpoint, 5*time.Second, GRPCBackendConfig{
 		MaxRecvMsgSize: 100 * 1024 * 1024,
 		MaxSendMsgSize: 100 * 1024 * 1024,
 	})
@@ -383,11 +380,12 @@ func TestProxyEndpoint_MixedHTTPAndGRPCBackends(t *testing.T) {
 	defer asyncDispatcher.Stop()
 
 	tracker := NewAmplificationTracker()
-	endpoint, err := NewProxyEndpoint([]ProxyBackend{httpBackend, grpcBackend}, route, metrics, logger, 1.0, tracker, asyncDispatcher)
-	require.NoError(t, err)
+	// Amplification factor 2.0: original (sync) + one amplified copy (async) → 2 requests.
+	endpoint := NewProxyEndpoint(grpcBackend, route, metrics, logger, 2.0, tracker, asyncDispatcher)
 
-	// Make a request.
+	// Make a request. HTTPgRPC backends require a tenant via X-Scope-OrgID.
 	req := httptest.NewRequest("POST", "/api/v1/push", bytes.NewReader(makeTestWriteRequest(t)))
+	req.Header.Set("X-Scope-OrgID", "test-tenant")
 	rec := httptest.NewRecorder()
 
 	endpoint.ServeHTTP(rec, req)
@@ -396,9 +394,13 @@ func TestProxyEndpoint_MixedHTTPAndGRPCBackends(t *testing.T) {
 	asyncDispatcher.Stop()
 	asyncDispatcher.Await()
 
-	// Verify we get the response from the preferred HTTP backend.
+	// Verify we get the response from the gRPC backend (the synchronous original).
 	assert.Equal(t, http.StatusOK, rec.Code)
-	assert.Equal(t, "http response", rec.Body.String())
+	assert.Equal(t, "grpc response", rec.Body.String())
+
+	mu.Lock()
+	defer mu.Unlock()
+	assert.Equal(t, 2, requestCount, "backend should receive the original + 1 amplified copy")
 }
 
 func contains(s, substr string) bool {

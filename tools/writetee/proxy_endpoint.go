@@ -22,48 +22,26 @@ const (
 )
 
 type ProxyEndpoint struct {
-	backends             []ProxyBackend
+	backend              ProxyBackend
 	metrics              *ProxyMetrics
 	logger               log.Logger
 	amplificationFactor  float64
 	amplificationTracker *AmplificationTracker
 	asyncDispatcher      *AsyncBackendDispatcher
 
-	// The preferred backend (required).
-	preferredBackend ProxyBackend
-
 	route Route
 }
 
-func NewProxyEndpoint(backends []ProxyBackend, route Route, metrics *ProxyMetrics, logger log.Logger, amplificationFactor float64, amplificationTracker *AmplificationTracker, asyncDispatcher *AsyncBackendDispatcher) (*ProxyEndpoint, error) {
-	var preferredBackend ProxyBackend
-	for _, backend := range backends {
-		if backend.Preferred() {
-			preferredBackend = backend
-			break
-		}
-	}
-
-	if preferredBackend == nil {
-		return nil, fmt.Errorf("no preferred backend configured")
-	}
-
-	// Warn if preferred backend is configured as amplified - it will not be amplified
-	// since we always send the original body to the preferred backend for fast client responses
-	if preferredBackend.BackendType() == BackendTypeAmplified && amplificationFactor != 1.0 {
-		level.Warn(logger).Log("msg", "Preferred backend is configured with BackendTypeAmplified but will not be amplified. Only non-preferred backends are amplified.", "backend", preferredBackend.Name(), "amplification_factor", amplificationFactor)
-	}
-
+func NewProxyEndpoint(backend ProxyBackend, route Route, metrics *ProxyMetrics, logger log.Logger, amplificationFactor float64, amplificationTracker *AmplificationTracker, asyncDispatcher *AsyncBackendDispatcher) *ProxyEndpoint {
 	return &ProxyEndpoint{
-		backends:             backends,
+		backend:              backend,
 		route:                route,
 		metrics:              metrics,
 		logger:               logger,
 		amplificationFactor:  amplificationFactor,
 		amplificationTracker: amplificationTracker,
-		preferredBackend:     preferredBackend,
 		asyncDispatcher:      asyncDispatcher,
-	}, nil
+	}
 }
 
 func (p *ProxyEndpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -100,15 +78,15 @@ func (p *ProxyEndpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Track body size
 	p.metrics.bodySize.WithLabelValues(p.route.RouteName).Observe(float64(len(body)))
 
-	// Dispatch to non-preferred backends asynchronously (fire-and-forget).
-	p.dispatchToNonPreferredBackends(ctx, r, body, logger)
+	// Dispatch amplified copies to the backend asynchronously (fire-and-forget).
+	p.dispatchAmplifiedRequests(ctx, r, body, logger)
 
-	// Send to preferred backend synchronously and return its response.
-	res := p.executePreferredBackendRequest(ctx, r, body)
+	// Send the original (unmodified) request to the backend synchronously and return its response.
+	res := p.executeOriginalRequest(ctx, r, body)
 
-	// Return the preferred backend's response to the client
+	// Return the backend's response to the client
 	if res.err != nil {
-		level.Error(logger).Log("msg", "Preferred backend failed", "err", res.err)
+		level.Error(logger).Log("msg", "Backend request failed", "err", res.err)
 		http.Error(w, res.err.Error(), res.statusCode())
 	} else {
 		// Copy all headers from backend response (includes Content-Type and RW 2.0 statistics headers)
@@ -124,33 +102,26 @@ func (p *ProxyEndpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	p.metrics.responsesTotal.WithLabelValues(res.backend.Name(), r.Method, p.route.RouteName).Inc()
 }
 
-// ServeHTTPPassthrough forwards the request directly to the preferred backend without fan-out.
-// This is used for endpoints we don't want to mirror (e.g., OTLP, Influx).
+// ServeHTTPPassthrough forwards the request directly to the backend without amplification.
+// This is used for endpoints we don't want to amplify (e.g., OTLP, Influx).
 func (p *ProxyEndpoint) ServeHTTPPassthrough(w http.ResponseWriter, r *http.Request) {
 	logger, ctx := spanlogger.New(r.Context(), p.logger, tracer, "Passthrough proxied request")
 	defer logger.Finish()
 
 	logger.SetSpanAndLogTag("path", r.URL.Path)
 	logger.SetSpanAndLogTag("method", r.Method)
-	logger.SetSpanAndLogTag("backend", p.preferredBackend.Name())
+	logger.SetSpanAndLogTag("backend", p.backend.Name())
 
-	level.Debug(logger).Log("msg", "Passing through request to preferred backend")
+	level.Debug(logger).Log("msg", "Passing through request to backend")
 
-	// If no preferred backend, return error
-	if p.preferredBackend == nil {
-		level.Error(logger).Log("msg", "No preferred backend configured for passthrough")
-		http.Error(w, "no preferred backend configured", http.StatusInternalServerError)
-		return
-	}
-
-	// Forward request directly to preferred backend
-	elapsed, status, body, headers, err := p.preferredBackend.ForwardRequest(ctx, r, r.Body)
+	// Forward request directly to the backend
+	elapsed, status, body, headers, err := p.backend.ForwardRequest(ctx, r, r.Body)
 
 	// Track metrics
-	p.metrics.RecordBackendResult(p.preferredBackend.Name(), r.Method, "passthrough", elapsed, status, err)
+	p.metrics.RecordBackendResult(p.backend.Name(), r.Method, "passthrough", elapsed, status, err)
 
 	if err != nil {
-		level.Error(logger).Log("msg", "Passthrough request failed", "backend", p.preferredBackend.Name(), "err", err)
+		level.Error(logger).Log("msg", "Passthrough request failed", "backend", p.backend.Name(), "err", err)
 
 		// Determine appropriate status code
 		statusCode := http.StatusBadGateway
@@ -170,34 +141,26 @@ func (p *ProxyEndpoint) ServeHTTPPassthrough(w http.ResponseWriter, r *http.Requ
 		level.Warn(logger).Log("msg", "Unable to write response", "err", writeErr)
 	}
 
-	p.metrics.responsesTotal.WithLabelValues(p.preferredBackend.Name(), r.Method, "passthrough").Inc()
+	p.metrics.responsesTotal.WithLabelValues(p.backend.Name(), r.Method, "passthrough").Inc()
 }
 
-// dispatchToNonPreferredBackends sends the request to all non-preferred backends
-// asynchronously via the async dispatcher. This is fire-and-forget - we don't wait
-// for responses from non-preferred backends.
-func (p *ProxyEndpoint) dispatchToNonPreferredBackends(ctx context.Context, req *http.Request, body []byte, logger *spanlogger.SpanLogger) {
+// dispatchAmplifiedRequests sends the amplified (suffixed) copies of the request to the backend
+// asynchronously via the async dispatcher. This is fire-and-forget - we don't wait for their
+// responses. The original (unsuffixed) request is sent synchronously elsewhere.
+func (p *ProxyEndpoint) dispatchAmplifiedRequests(ctx context.Context, req *http.Request, body []byte, logger *spanlogger.SpanLogger) {
 	if p.asyncDispatcher == nil {
 		return
 	}
 
-	for _, backend := range p.backends {
-		// Skip the preferred backend - it's handled synchronously
-		if backend.Preferred() {
-			continue
-		}
-
-		bodiesToSend := p.prepareAmplifiedBodies(body, backend, logger)
-		for _, bodyToSend := range bodiesToSend {
-			p.asyncDispatcher.Dispatch(ctx, req, bodyToSend, backend, p.route.RouteName)
-		}
+	for _, bodyToSend := range p.amplifiedBodies(body, logger) {
+		p.asyncDispatcher.Dispatch(ctx, req, bodyToSend, p.backend, p.route.RouteName)
 	}
 }
 
-// executePreferredBackendRequest sends the request to the preferred backend synchronously
+// executeOriginalRequest sends the original (unmodified) request to the backend synchronously
 // and returns its response.
-func (p *ProxyEndpoint) executePreferredBackendRequest(ctx context.Context, req *http.Request, body []byte) *backendResponse {
-	b := p.preferredBackend
+func (p *ProxyEndpoint) executeOriginalRequest(ctx context.Context, req *http.Request, body []byte) *backendResponse {
+	b := p.backend
 
 	logger, ctx := spanlogger.New(ctx, p.logger, tracer, "Outgoing proxied write request")
 	defer logger.Finish()
@@ -206,11 +169,8 @@ func (p *ProxyEndpoint) executePreferredBackendRequest(ctx context.Context, req 
 	logger.SetSpanAndLogTag("route_name", p.route.RouteName)
 	logger.SetSpanAndLogTag("backend", b.Name())
 	logger.SetSpanAndLogTag("method", req.Method)
-	logger.SetSpanAndLogTag("preferred", "true")
-	logger.SetSpanAndLogTag("backend_type", fmt.Sprintf("%d", b.BackendType()))
 
-	// For the preferred backend, just send the original body (no amplification)
-	// since we're synchronously waiting for the response
+	// Send the original body unmodified - this is replica 1, and we synchronously wait for its response.
 	elapsed, status, respBody, headers, err := b.ForwardRequest(ctx, req, io.NopCloser(bytes.NewReader(body)))
 
 	// Set a default Content-Type if the backend didn't provide one
@@ -248,61 +208,44 @@ func (p *ProxyEndpoint) executePreferredBackendRequest(ctx context.Context, req 
 	return res
 }
 
-// prepareAmplifiedBodies prepares request bodies for amplification.
-// For amplified backends with factor > 1, returns multiple requests each with unique label suffixes.
-// For factor < 1, returns a single sampled request.
-// For non-amplified backends or factor == 1, returns the original body.
-func (p *ProxyEndpoint) prepareAmplifiedBodies(body []byte, backend ProxyBackend, logger *spanlogger.SpanLogger) [][]byte {
-	if backend.BackendType() != BackendTypeAmplified || p.amplificationFactor == 1.0 || len(body) == 0 {
-		return [][]byte{body}
+// amplifiedBodies returns ONLY the suffixed amplified copies of the request body (replicas 2..N).
+// The unsuffixed original (replica 1) is sent synchronously by executeOriginalRequest and is NOT
+// included here. Returns an empty slice when there is nothing to amplify (factor == 1 or empty body).
+//
+// For amplification factor F:
+//   - floor(F)-1 full copies are created with suffixes _amp2 .. _amp{floor(F)} (skipped when floor(F) < 2).
+//   - if the fractional part frac = F - floor(F) > 0, one more copy is sampled to frac and suffixed
+//     _amp{floor(F)+1}.
+func (p *ProxyEndpoint) amplifiedBodies(body []byte, logger *spanlogger.SpanLogger) [][]byte {
+	if p.amplificationFactor <= 1.0 || len(body) == 0 {
+		return nil
 	}
 
-	// Handle sampling (factor < 1.0) - return a single sampled request
-	if p.amplificationFactor < 1.0 {
-		result, err := SampleWriteRequest(body, p.amplificationFactor, p.amplificationTracker)
+	floor := int(p.amplificationFactor)
+	fractionalPart := p.amplificationFactor - float64(floor)
+
+	var bodies [][]byte
+
+	// Full amplified copies _amp1 .. _amp{floor-1} (floor-1 copies). The unsuffixed original that
+	// the endpoint receives synchronously is the base, so amplified copies are 1-indexed with no gap.
+	if fullCopies := floor - 1; fullCopies >= 1 {
+		replicaBodies, err := AmplifyRequestBody(body, fullCopies, 1)
 		if err != nil {
-			level.Error(logger).Log("msg", "Failed to sample write request", "backend", backend.Name(), "err", err)
-			return [][]byte{body} // Fall back to original
+			level.Error(logger).Log("msg", "Failed to create amplified replicas", "backend", p.backend.Name(), "err", err)
+		} else {
+			bodies = append(bodies, replicaBodies...)
 		}
-
-		// Log sampling stats
-		rw1, rw2, rw2Ratio := p.amplificationTracker.GetStats()
-		logger.SetSpanAndLogTag("sampled", "true")
-		logger.SetSpanAndLogTag("sampling_factor", fmt.Sprintf("%.2f", p.amplificationFactor))
-		logger.SetSpanAndLogTag("original_series_count", result.OriginalSeriesCount)
-		logger.SetSpanAndLogTag("sampled_series_count", result.SampledSeriesCount)
-		logger.SetSpanAndLogTag("rw2_ratio", fmt.Sprintf("%.3f", rw2Ratio))
-		logger.SetSpanAndLogTag("total_rw1_series", rw1)
-		logger.SetSpanAndLogTag("total_rw2_series", rw2)
-
-		return [][]byte{result.Body}
 	}
 
-	// Handle amplification (factor > 1.0) - create multiple separate requests with unique label suffixes
-	// Each request represents one amplification replica with suffixed labels
-	fullCopies := int(p.amplificationFactor)
-	fractionalPart := p.amplificationFactor - float64(fullCopies)
-
-	// Create replicas 2 through fullCopies+1 (starting at 2 so all copies have a suffix,
-	// avoiding a series clash with the unsuffixed mirrored/preferred endpoint)
-	replicaBodies, err := AmplifyRequestBody(body, fullCopies, 1)
-	if err != nil {
-		level.Error(logger).Log("msg", "Failed to create amplified replicas", "backend", backend.Name(), "err", err)
-		return [][]byte{body} // Fall back to original
-	}
-
-	bodies := replicaBodies
-
-	// Handle fractional part by sampling and suffixing
-	// For the fractional part, we sample the data (e.g., 50% for 0.5) and add the next replica suffix
+	// Fractional part: sample the data (e.g., 50% for 0.5) and add the next amplified suffix _amp{floor}.
 	if fractionalPart > 0 {
 		result, err := SampleWriteRequest(body, fractionalPart, p.amplificationTracker)
 		if err != nil {
-			level.Error(logger).Log("msg", "Failed to create fractional request", "backend", backend.Name(), "err", err)
+			level.Error(logger).Log("msg", "Failed to create fractional request", "backend", p.backend.Name(), "err", err)
 		} else {
-			fractionalBodies, err := AmplifyRequestBody(result.Body, 1, fullCopies+1)
+			fractionalBodies, err := AmplifyRequestBody(result.Body, 1, floor)
 			if err != nil {
-				level.Error(logger).Log("msg", "Failed to suffix fractional request", "backend", backend.Name(), "err", err)
+				level.Error(logger).Log("msg", "Failed to suffix fractional request", "backend", p.backend.Name(), "err", err)
 			} else {
 				bodies = append(bodies, fractionalBodies...)
 			}
@@ -311,7 +254,7 @@ func (p *ProxyEndpoint) prepareAmplifiedBodies(body []byte, backend ProxyBackend
 
 	logger.SetSpanAndLogTag("amplified", "true")
 	logger.SetSpanAndLogTag("amplification_factor", fmt.Sprintf("%.1f", p.amplificationFactor))
-	logger.SetSpanAndLogTag("num_requests", len(bodies))
+	logger.SetSpanAndLogTag("num_amplified_copies", len(bodies))
 
 	return bodies
 }
