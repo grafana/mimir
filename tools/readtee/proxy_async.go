@@ -1,0 +1,106 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
+package readtee
+
+import (
+	"bytes"
+	"context"
+	"io"
+	"net/http"
+	"sync"
+
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
+)
+
+// AsyncBackendDispatcher handles fire-and-forget requests to non-preferred backends.
+// It uses a semaphore per backend to limit concurrent in-flight requests.
+type AsyncBackendDispatcher struct {
+	maxInFlight int
+	metrics     *ProxyMetrics
+	logger      log.Logger
+
+	mu         sync.Mutex
+	semaphores map[string]chan struct{} // semaphore per backend (buffered channel)
+	wg         sync.WaitGroup
+	stopped    bool
+}
+
+// NewAsyncBackendDispatcher creates a new dispatcher for non-preferred backends.
+// maxInFlight controls the maximum number of concurrent in-flight requests per backend.
+func NewAsyncBackendDispatcher(maxInFlight int, metrics *ProxyMetrics, logger log.Logger) *AsyncBackendDispatcher {
+	return &AsyncBackendDispatcher{
+		maxInFlight: maxInFlight,
+		metrics:     metrics,
+		logger:      logger,
+		semaphores:  make(map[string]chan struct{}),
+	}
+}
+
+// Stop signals the dispatcher to stop accepting new requests.
+// Call Await() after Stop() to wait for in-flight requests to complete.
+func (d *AsyncBackendDispatcher) Stop() {
+	d.mu.Lock()
+	d.stopped = true
+	d.mu.Unlock()
+}
+
+// Await waits for all in-flight requests to complete.
+// Call this after Stop() to ensure graceful shutdown.
+func (d *AsyncBackendDispatcher) Await() {
+	d.wg.Wait()
+}
+
+// Dispatch spawns a goroutine to send a request to the backend. Returns true if dispatched, false if dropped.
+// Requests are dropped when the maximum number of in-flight requests is reached.
+//
+// Each amplified copy is passed as a distinct *http.Request (already rewritten: URL and/or
+// headers) together with its own body bytes. The dispatcher does not mutate req in place; it
+// clones it inside ForwardRequest, so it is safe to dispatch multiple copies concurrently.
+func (d *AsyncBackendDispatcher) Dispatch(ctx context.Context, req *http.Request, body []byte, backend ProxyBackend, routeName string) bool {
+	d.mu.Lock()
+	if d.stopped {
+		d.mu.Unlock()
+		d.metrics.droppedRequestsTotal.WithLabelValues(backend.Name(), "shutdown").Inc()
+		level.Warn(d.logger).Log("msg", "dropping request due to shutdown", "backend", backend.Name(), "route", routeName)
+		return false
+	}
+
+	// Lazily create semaphore for this backend
+	sema, ok := d.semaphores[backend.Name()]
+	if !ok {
+		sema = make(chan struct{}, d.maxInFlight)
+		d.semaphores[backend.Name()] = sema
+	}
+
+	// Try to acquire permit (non-blocking) while holding lock.
+	// This ensures wg.Add(1) happens before Stop()/Await() can observe
+	// the stopped state change, preventing a race where Await() returns
+	// before all goroutines have incremented the WaitGroup.
+	acquired := false
+	select {
+	case sema <- struct{}{}:
+		acquired = true
+		d.wg.Add(1)
+	default:
+	}
+	d.mu.Unlock()
+
+	if !acquired {
+		d.metrics.droppedRequestsTotal.WithLabelValues(backend.Name(), "max_in_flight").Inc()
+		return false
+	}
+
+	go func() {
+		defer d.wg.Done()
+		defer func() { <-sema }() // release permit
+
+		elapsed, status, _, _, err := backend.ForwardRequest(context.WithoutCancel(ctx), req, io.NopCloser(bytes.NewReader(body)))
+		d.metrics.RecordBackendResult(backend.Name(), req.Method, routeName, elapsed, status, err)
+
+		if err != nil {
+			level.Warn(d.logger).Log("msg", "async backend request failed", "backend", backend.Name(), "route", routeName, "method", req.Method, "status", status, "elapsed", elapsed, "err", err)
+		}
+	}()
+	return true
+}
