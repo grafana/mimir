@@ -1,0 +1,12 @@
+diff --git a/pkg/streamingpromql/optimize/plan/rangevectorsplitting/node.pb.go b/pkg/streamingpromql/optimize/plan/rangevectorsplitting/node.pb.go
+index df1ac20915..e3f84ab892 100644
+--- a/pkg/streamingpromql/optimize/plan/rangevectorsplitting/node.pb.go
++++ b/pkg/streamingpromql/optimize/plan/rangevectorsplitting/node.pb.go
+@@ -6,6 +6,7 @@ package rangevectorsplitting
+ import (
+ 	"fmt"
+ 	"github.com/grafana/wiresmith/protohelpers"
++	"google.golang.org/protobuf/encoding/protowire"
+ 	"io"
+ )
+ 

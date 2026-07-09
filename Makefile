@@ -354,7 +354,7 @@ $(EXES_RACE):
 
 protos: ## Generates protobuf files.
 protos: $(PROTO_GOS) $(PROTO_GRPC_GOS) $(PROTO_WIRESMITH_GOS)
-	@./tools/apply-expected-diffs.sh $(PROTO_GOS) $(PROTO_GRPC_GOS)
+	@./tools/apply-expected-diffs.sh $(PROTO_GOS) $(PROTO_GRPC_GOS) $(PROTO_WIRESMITH_GOS)
 
 GENERATE_FILES ?= true
 
