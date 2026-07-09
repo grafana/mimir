@@ -139,7 +139,14 @@ func (s *BlockBuilderScheduler) running(ctx context.Context) error {
 
 	// Now we can transition to normal operation.
 
-	s.completeObservationMode(ctx)
+	if err := s.completeObservationMode(ctx); err != nil {
+		// context.Canceled is mapped to nil, as this is a normal shutdown and we don't want the
+		// service framework to interpret it as an error.
+		if errors.Is(err, context.Canceled) {
+			return nil
+		}
+		return err
+	}
 	go s.enqueuePendingJobsWorker(ctx)
 
 	level.Info(s.logger).Log("msg", "entering normal operation")
@@ -196,12 +203,12 @@ func (s *BlockBuilderScheduler) loadInitialCommittedOffsets(ctx context.Context)
 }
 
 // completeObservationMode transitions the scheduler from observation mode to normal operation.
-func (s *BlockBuilderScheduler) completeObservationMode(ctx context.Context) {
+func (s *BlockBuilderScheduler) completeObservationMode(ctx context.Context) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	if s.observationComplete {
-		return
+		return nil
 	}
 
 	var policy jobCreationPolicy[schedulerpb.JobSpec]
@@ -218,7 +225,7 @@ func (s *BlockBuilderScheduler) completeObservationMode(ctx context.Context) {
 	offsetsByPartition, err := s.initConsumptionOffsets(ctx, time.Now().Add(-s.cfg.LookbackOnNoCommit))
 	if err != nil {
 		level.Warn(s.logger).Log("msg", "failed to get consumption offsets", "err", err)
-		return
+		return fmt.Errorf("init consumption offsets: %w", err)
 	}
 
 	stores := make([]offsetStore, len(s.adminClients))
@@ -230,6 +237,7 @@ func (s *BlockBuilderScheduler) completeObservationMode(ctx context.Context) {
 	s.populateInitialJobs(ctx, offsetsByPartition, scanner)
 	s.observations = nil
 	s.observationComplete = true
+	return nil
 }
 
 // updateSchedule examines the state of the Kafka topic and updates the
