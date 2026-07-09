@@ -96,6 +96,7 @@
 ### Mixin
 
 * [CHANGE] Dashboards: Show maximum queue length, not minimum queue length, on the "Queue length" panel in the "Query-scheduler" row of the "Reads" and "Remote ruler reads" dashboards. #15326
+* [FEATURE] Alerts: Add `MimirTenantReachingSeriesLimit` and `MimirTenantSeriesLimitDiscardingSamples` alerts to detect when a tenant is close to, or is discarding samples because of, its per-tenant series limit (`max_global_series_per_user`). #16018
 * [ENHANCEMENT] Alerts: Make `MimirInconsistentRuntimeConfig` alert less flaky when performing multiple configuration changes in a row in a large Kubernetes cluster. #15257
 * [ENHANCEMENT] Alerts: Widen the `MimirBlockBuilderPersistentJobFailure` lookback window to 20m to prevent the alert from flapping. #15332
 * [ENHANCEMENT] Alerts: Add a native histogram variant of the `MimirRequestLatency` alert, distinguished by the `histogram` label (`classic` or `native`). #15413

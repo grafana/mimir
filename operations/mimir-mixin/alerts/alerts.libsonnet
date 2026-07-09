@@ -746,6 +746,82 @@ local utils = import 'mixin-utils/utils.libsonnet';
       ],
     },
     {
+      name: 'mimir_tenant_limits_alerts',
+      rules: [
+        {
+          alert: $.alertName('TenantReachingSeriesLimit'),
+          expr: |||
+            max by (%(alert_aggregation_labels)s, user) (
+              (
+                (cortex_ingester_memory_series_created_total{%(ingester)s} - cortex_ingester_memory_series_removed_total{%(ingester)s})
+                / ignoring(limit) cortex_ingester_local_limits{%(ingester)s, limit="max_global_series_per_user"}
+              )
+              and ignoring(limit)
+              (cortex_ingester_local_limits{%(ingester)s, limit="max_global_series_per_user"} > 0)
+            ) > 0.8
+          ||| % {
+            alert_aggregation_labels: $._config.alert_aggregation_labels,
+            ingester: $.jobMatcher($._config.job_names.ingester),
+          },
+          'for': '1h',
+          labels: {
+            severity: 'warning',
+          },
+          annotations: {
+            message: |||
+              Tenant {{ $labels.user }} in %(alert_aggregation_variables)s has reached {{ $value | humanizePercentage }} of its per-tenant series limit (max_global_series_per_user) on at least one ingester.
+            ||| % $._config,
+          } + $.dashboardURLAnnotation('mimir-tenants.json'),
+        },
+        {
+          alert: $.alertName('TenantReachingSeriesLimit'),
+          expr: |||
+            max by (%(alert_aggregation_labels)s, user) (
+              (
+                (cortex_ingester_memory_series_created_total{%(ingester)s} - cortex_ingester_memory_series_removed_total{%(ingester)s})
+                / ignoring(limit) cortex_ingester_local_limits{%(ingester)s, limit="max_global_series_per_user"}
+              )
+              and ignoring(limit)
+              (cortex_ingester_local_limits{%(ingester)s, limit="max_global_series_per_user"} > 0)
+            ) > 0.9
+          ||| % {
+            alert_aggregation_labels: $._config.alert_aggregation_labels,
+            ingester: $.jobMatcher($._config.job_names.ingester),
+          },
+          'for': '15m',
+          labels: {
+            severity: 'critical',
+          },
+          annotations: {
+            message: |||
+              Tenant {{ $labels.user }} in %(alert_aggregation_variables)s has reached {{ $value | humanizePercentage }} of its per-tenant series limit (max_global_series_per_user) on at least one ingester.
+            ||| % $._config,
+          } + $.dashboardURLAnnotation('mimir-tenants.json'),
+        },
+        {
+          alert: $.alertName('TenantSeriesLimitDiscardingSamples'),
+          expr: |||
+            sum by (%(alert_aggregation_labels)s, user) (
+              rate(cortex_discarded_samples_total{reason="per_user_series_limit", %(ingester)s}[%(rate_interval)s])
+            ) > 0
+          ||| % {
+            alert_aggregation_labels: $._config.alert_aggregation_labels,
+            ingester: $.jobMatcher($._config.job_names.ingester),
+            rate_interval: $.rateInterval('5m'),
+          },
+          'for': '15m',
+          labels: {
+            severity: 'critical',
+          },
+          annotations: {
+            message: |||
+              %(product)s is discarding samples for tenant {{ $labels.user }} in %(alert_aggregation_variables)s because it reached the per-tenant series limit (max_global_series_per_user).
+            ||| % $._config,
+          } + $.dashboardURLAnnotation('mimir-tenants.json'),
+        },
+      ],
+    },
+    {
       local statefulset_rollout_stuck(for_duration, severity) = {
         alert: $.alertName('RolloutStuck'),
         expr: |||

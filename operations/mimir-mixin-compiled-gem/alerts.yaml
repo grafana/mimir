@@ -487,6 +487,54 @@ groups:
           for: 5m
           labels:
             severity: critical
+    - name: mimir_tenant_limits_alerts
+      rules:
+        - alert: MimirTenantReachingSeriesLimit
+          annotations:
+            message: |
+                Tenant {{ $labels.user }} in {{ $labels.cluster }}/{{ $labels.namespace }} has reached {{ $value | humanizePercentage }} of its per-tenant series limit (max_global_series_per_user) on at least one ingester.
+            runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirtenantreachingserieslimit
+          expr: |
+            max by (cluster, namespace, user) (
+              (
+                (cortex_ingester_memory_series_created_total{job=~".*/(ingester.*|cortex|mimir)"} - cortex_ingester_memory_series_removed_total{job=~".*/(ingester.*|cortex|mimir)"})
+                / ignoring(limit) cortex_ingester_local_limits{job=~".*/(ingester.*|cortex|mimir)", limit="max_global_series_per_user"}
+              )
+              and ignoring(limit)
+              (cortex_ingester_local_limits{job=~".*/(ingester.*|cortex|mimir)", limit="max_global_series_per_user"} > 0)
+            ) > 0.8
+          for: 1h
+          labels:
+            severity: warning
+        - alert: MimirTenantReachingSeriesLimit
+          annotations:
+            message: |
+                Tenant {{ $labels.user }} in {{ $labels.cluster }}/{{ $labels.namespace }} has reached {{ $value | humanizePercentage }} of its per-tenant series limit (max_global_series_per_user) on at least one ingester.
+            runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirtenantreachingserieslimit
+          expr: |
+            max by (cluster, namespace, user) (
+              (
+                (cortex_ingester_memory_series_created_total{job=~".*/(ingester.*|cortex|mimir)"} - cortex_ingester_memory_series_removed_total{job=~".*/(ingester.*|cortex|mimir)"})
+                / ignoring(limit) cortex_ingester_local_limits{job=~".*/(ingester.*|cortex|mimir)", limit="max_global_series_per_user"}
+              )
+              and ignoring(limit)
+              (cortex_ingester_local_limits{job=~".*/(ingester.*|cortex|mimir)", limit="max_global_series_per_user"} > 0)
+            ) > 0.9
+          for: 15m
+          labels:
+            severity: critical
+        - alert: MimirTenantSeriesLimitDiscardingSamples
+          annotations:
+            message: |
+                GEM is discarding samples for tenant {{ $labels.user }} in {{ $labels.cluster }}/{{ $labels.namespace }} because it reached the per-tenant series limit (max_global_series_per_user).
+            runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirtenantserieslimitdiscardingsamples
+          expr: |
+            sum by (cluster, namespace, user) (
+              rate(cortex_discarded_samples_total{reason="per_user_series_limit", job=~".*/(ingester.*|cortex|mimir)"}[5m])
+            ) > 0
+          for: 15m
+          labels:
+            severity: critical
     - name: mimir-rollout-alerts
       rules:
         - alert: MimirRolloutStuck
