@@ -21,7 +21,7 @@ import (
 	"go.opentelemetry.io/otel"
 )
 
-var tracer = otel.Tracer("pkg/tools/readtee")
+var tracer = otel.Tracer("pkg/tools/read-tee")
 
 const (
 	defaultReportGRPCCodesInInstrumentationLabel = true
