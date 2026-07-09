@@ -252,9 +252,9 @@ groups:
             # but only if other ruler instances of the same cell do have rule groups assigned
             and on (cluster, namespace)
             (max by(cluster, namespace) (cortex_ruler_managers_total) > 0)
-            # and there are more than two instances overall
+            # and there are more than two instances in any zone (or overall)
             and on (cluster, namespace)
-            (count by (cluster, namespace) (cortex_ruler_managers_total) > 2)
+            (max by (cluster, namespace) (count by (cluster, namespace, job) (cortex_ruler_managers_total) > 2))
           for: 1h
           labels:
             severity: warning
