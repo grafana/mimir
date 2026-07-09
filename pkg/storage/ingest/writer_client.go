@@ -46,7 +46,9 @@ func newKafkaProducerForBackend(cfg KafkaConfig, maxInflight int, logger log.Log
 		// kafka_* extended latency metrics, to match the kafka backend.
 		warpstreamOpts = append(warpstreamOpts, wgo.WithHooks(NewKafkaClientExtendedMetrics(reg)))
 
-		warpstreamClient, err := wgo.NewWarpstreamClient(logger, reg, warpstreamOpts...)
+		// Use the same logger adapter as the kafka backend so warpstream-go's own
+		// logs and its embedded franz-go client both log with component=kafka_client.
+		warpstreamClient, err := wgo.NewWarpstreamClient(NewKafkaLogger(logger), reg, warpstreamOpts...)
 		if err != nil {
 			return nil, err
 		}
