@@ -552,7 +552,9 @@ which allows us to keep generating everything for the default zone.
 {{- end -}}
 
 {{- $requestedReplicas := $componentSection.replicas -}}
-{{- if and (has .component (list "ingester" "alertmanager")) $componentSection.zoneAwareReplication.migration.enabled (not $componentSection.zoneAwareReplication.migration.writePath) -}}
+{{- if and (eq .component "ingester") $componentSection.zoneAwareReplication.migration.enabled -}}
+{{- $requestedReplicas = $componentSection.zoneAwareReplication.migration.replicas }}
+{{- else if and (eq .component "alertmanager") $componentSection.zoneAwareReplication.migration.enabled (not $componentSection.zoneAwareReplication.migration.writePath) -}}
 {{- $requestedReplicas = $componentSection.zoneAwareReplication.migration.replicas }}
 {{- end -}}
 {{- $replicaPerZone := div (add $requestedReplicas $numberOfZones -1) $numberOfZones -}}

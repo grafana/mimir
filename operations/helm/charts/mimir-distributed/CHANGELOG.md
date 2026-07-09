@@ -65,6 +65,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [BUGFIX] Fix Kafka image reference to include the registry in the StatefulSet template. #14211.
 * [BUGFIX] Helm: Removed helm's empty selector for the smoke-test-job file that is throwing errors in ArgoCD #14684
 * [BUGFIX] Meta-monitoring: Do not emit `spec.clients: null` on `LogsInstance` or `basicAuth: null` on `MetricsInstance.spec.remoteWrite[*]` when the corresponding `metaMonitoring.grafanaAgent.{logs,metrics}.remote.url` / `auth` fields are empty. The resulting manifests failed CRD validation under ArgoCD ServerSideApply. #15135
+* [BUGFIX] Fix zone-aware replication migration replica handling. When `writePath` is enabled during ingester/alertmanager migration to zone-aware replication, the chart now maintains the correct number of replicas per zone instead of incorrectly dividing by the number of zones. This prevents unintended downscaling and ensures all partitions remain healthy during migration. #15297
 
 ## 6.0.6
 

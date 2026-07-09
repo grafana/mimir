@@ -1,0 +1,71 @@
+# Test zone-aware replication migration with writePath enabled
+# This test verifies that migration.replicas is used correctly when writePath is enabled
+# See issue #15297
+
+kubeVersionOverride: "1.32"
+
+# Remove resource requests and limits because in CI we only have limited memory and CPU
+ci_resources: &ci_resources
+  requests:
+  limits:
+
+ingester:
+  replicas: 6
+  resources:
+    <<: *ci_resources
+  persistentVolume:
+    enabled: false
+  zoneAwareReplication:
+    enabled: true
+    migration:
+      enabled: true
+      replicas: 6
+      writePath: true
+    zones:
+      - name: zone-a
+      - name: zone-b
+      - name: zone-c
+
+alertmanager:
+  replicas: 3
+  resources:
+    <<: *ci_resources
+  persistentVolume:
+    enabled: false
+  zoneAwareReplication:
+    enabled: true
+    migration:
+      enabled: true
+      replicas: 3
+      writePath: true
+    zones:
+      - name: zone-a
+      - name: zone-b
+      - name: zone-c
+
+compactor:
+  resources:
+    <<: *ci_resources
+  persistentVolume:
+    enabled: false
+
+store_gateway:
+  resources:
+    <<: *ci_resources
+  persistentVolume:
+    enabled: false
+
+querier:
+  resources:
+    <<: *ci_resources
+
+query_frontend:
+  resources:
+    <<: *ci_resources
+
+query_scheduler:
+  resources:
+    <<: *ci_resources
+
+rollout_operator:
+  enabled: true
