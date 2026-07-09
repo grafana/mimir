@@ -191,7 +191,7 @@ func (f *InfoFunction) signature(lset labels.Labels) []byte {
 func (f *InfoFunction) processSamplesFromInfoSeries(ctx context.Context, infoMetadata []types.SeriesMetadata) error {
 	// Initialize dedicated buffer and scratch builder for signature,
 	// since this is also called later when the local buf and lb would be out of scope.
-	f.sigBuf = make([]byte, 0, 1024)
+	f.sigBuf = make([]byte, 0, types.LabelBytesBufferSize)
 	f.sigLb = labels.NewScratchBuilder(0)
 
 	// metric name:(timestamp:(labels-only signature:labels + timestamp))

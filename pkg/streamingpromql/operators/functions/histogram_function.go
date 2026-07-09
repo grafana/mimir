@@ -314,7 +314,7 @@ func (g *histogramGrouper) buildGroups(innerSeries []types.SeriesMetadata) (map[
 	g.seriesGroupPairs = g.seriesGroupPairs[:len(innerSeries)]
 
 	groups := map[string]groupWithLabels{}
-	b := make([]byte, 0, 1024)
+	b := make([]byte, 0, types.LabelBytesBufferSize)
 	lb := labels.NewBuilder(labels.EmptyLabels())
 
 	for innerIdx, series := range innerSeries {

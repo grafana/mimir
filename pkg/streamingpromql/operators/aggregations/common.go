@@ -96,8 +96,7 @@ func GroupLabelsBytesFunc(grouping []string, without bool) SeriesToGroupLabelsBy
 		return groupToSingleSeriesLabelsBytesFunc
 	}
 
-	// Why 1024 bytes? It's what labels.Labels.String() uses as a buffer size, so we use that as a sensible starting point too.
-	b := make([]byte, 0, 1024)
+	b := make([]byte, 0, types.LabelBytesBufferSize)
 	if without {
 		return func(l labels.Labels) []byte {
 			// NewAggregation and NewTopKBottomK will add __name__ to Grouping for 'without' aggregations, so no need to add it here.
