@@ -92,6 +92,7 @@
 * [BUGFIX] Compactor: Fix `GatherBlockHealthStats` postings walk error check to prevent swallowing errors. #15895
 * [BUGFIX] MQE: Don't evaluate unnecessary range vector splitting ranges when a split range vector is part of a spun-off subquery and running time-splitting and caching inside MQE is enabled. #15931
 * [BUGFIX] MQE: Fix `info()` function incorrectly handling negated name matchers. #15168
+* [BUGFIX] Query-frontend: Fix issue where series for a range query can be returned in the wrong order if splitting applies and splitting is not running inside MQE. #16036
 
 ### Mixin
 
