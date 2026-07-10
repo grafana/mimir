@@ -72,6 +72,10 @@ type WarpstreamClient struct {
 	logger  kgo.Logger
 	metrics *metrics
 
+	// produceHooks are the produce-record lifecycle hooks driven on this
+	// client's own produce path.
+	produceHooks produceHooks
+
 	pool           *AgentPool
 	tracker        *CachedAgentStatsTracker
 	demoter        *Demoter
@@ -131,6 +135,7 @@ func NewWarpstreamClient(logger kgo.Logger, reg prometheus.Registerer, opts ...O
 		cfg:            cfg,
 		logger:         logger,
 		metrics:        m,
+		produceHooks:   newProduceHooks(cfg.Hooks),
 		Client:         kgoClient,
 		pool:           pool,
 		tracker:        tracker,
@@ -164,6 +169,21 @@ func NewWarpstreamClient(logger kgo.Logger, reg prometheus.Registerer, opts ...O
 // completion: it detaches the caller while the background produce keeps the
 // record, so a record whose produce was cancelled must not be reused.
 func (c *WarpstreamClient) Produce(ctx context.Context, record *kgo.Record, promise func(*kgo.Record, error)) {
+	// Seed the record's parent context (like franz-go).
+	ensureRecordContext(record, ctx)
+
+	// Fire the buffered hook (which may inject a trace header) before any rejection,
+	// and wrap the promise so the unbuffered hook fires just before the caller sees
+	// the outcome on every path.
+	if c.produceHooks.enabled() {
+		c.produceHooks.fireBuffered(record)
+		userPromise := promise
+		promise = func(r *kgo.Record, err error) {
+			c.produceHooks.fireUnbuffered(r, err)
+			userPromise(r, err)
+		}
+	}
+
 	c.metrics.produceRecordsTotal.Inc()
 
 	if singleRecordBatchEstimateBytes(record) > int64(c.cfg.BatchMaxBytes) {
@@ -208,7 +228,30 @@ func (c *WarpstreamClient) ProduceSync(ctx context.Context, records []*kgo.Recor
 	}
 	c.metrics.produceRecordsTotal.Add(float64(len(records)))
 
+	// Seed each record's parent context (like franz-go) and fire the buffered
+	// hook for every record up front, before any rejection.
+	hasProduceHooks := c.produceHooks.enabled()
+	for _, r := range records {
+		ensureRecordContext(r, ctx)
+		if hasProduceHooks {
+			c.produceHooks.fireBuffered(r)
+		}
+	}
+
 	results := make(kgo.ProduceResults, len(records))
+
+	// Fire the unbuffered hook for each record from this goroutine, in input order,
+	// just before returning. Every return path below fully populates results first
+	// (wg.Wait blocks until the async completions have run), so the terminal error
+	// is final here. Mirrors franz-go's "unbuffered hook, then the record's outcome".
+	if hasProduceHooks {
+		defer func() {
+			for i, r := range records {
+				c.produceHooks.fireUnbuffered(r, results[i].Err)
+			}
+		}()
+	}
+
 	var (
 		okRecords []*kgo.Record
 		okIndices []int

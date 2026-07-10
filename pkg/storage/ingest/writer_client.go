@@ -46,6 +46,12 @@ func newKafkaProducerForBackend(cfg KafkaConfig, maxInflight int, logger log.Log
 		// kafka_* extended latency metrics, to match the kafka backend.
 		warpstreamOpts = append(warpstreamOpts, wgo.WithHooks(NewKafkaClientExtendedMetrics(reg)))
 
+		// Trace produces like the kafka backend. warpstream-go drives the
+		// produce-record hooks on its own produce path, so the same sampled-only
+		// tracer yields the same producer spans and traceparent propagation as a
+		// franz-go client.
+		warpstreamOpts = append(warpstreamOpts, wgo.WithHooks(newSampledOnlyTracer()))
+
 		warpstreamClient, err := wgo.NewWarpstreamClient(NewKafkaLogger(logger), reg, warpstreamOpts...)
 		if err != nil {
 			return nil, err
