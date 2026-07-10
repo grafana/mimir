@@ -5,6 +5,8 @@ package readcache
 import (
 	"context"
 	"flag"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -95,6 +97,152 @@ func TestReadcache_KafkaConsumption(t *testing.T) {
 	db, err = rc.getOrOpenTSDB(tenantID, 2)
 	require.NoError(t, err)
 	assert.Nil(t, db)
+}
+
+// TestReadcache_ResumesFromStoredOffsetAcrossRestart reproduces the
+// mimir-dev-15 autoscaler-eviction data hole: a readcache that stops
+// (pod restart/eviction) while records keep being produced must
+// consume those records after it comes back on the same data volume,
+// instead of rejoining at the Kafka live edge and skipping them
+// forever. The stored offset file in DataDir is what makes the resume
+// possible.
+func TestReadcache_ResumesFromStoredOffsetAcrossRestart(t *testing.T) {
+	const (
+		tenantID = "user-1"
+		topic    = "test-topic"
+	)
+
+	_, addr := testkafka.CreateCluster(t, 1, topic)
+
+	cfg := newTestConfigNoKafka(t)
+	cfg.KafkaTopic = topic
+	cfg.OwnedPartitions = "0"
+
+	var kafkaCfg ingest.KafkaConfig
+	kafkaCfg.RegisterFlags(flag.NewFlagSet("", flag.PanicOnError))
+	kafkaCfg.Address = flagext.StringSliceCSV{addr}
+	kafkaCfg.Topic = topic
+	cfg.Kafka = kafkaCfg
+
+	limits := validation.NewOverrides(validation.Limits{}, nil)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	writer := makeKafkaWriter(t, kafkaCfg, prometheus.NewPedanticRegistry())
+	defer func() { _ = services.StopAndAwaitTerminated(ctx, writer) }()
+
+	writeSample := func(name string, ts int64) {
+		req := &mimirpb.WriteRequest{
+			Timeseries: []mimirpb.PreallocTimeseries{
+				{
+					TimeSeries: &mimirpb.TimeSeries{
+						Labels: mimirpb.FromLabelsToLabelAdapters(
+							labels.FromStrings("__name__", name, "job", "test")),
+						Samples: []mimirpb.Sample{{TimestampMs: ts, Value: 1.0}},
+					},
+				},
+			},
+		}
+		require.NoError(t, writer.WriteSync(user.InjectOrgID(ctx, tenantID), topic, 0, tenantID, req))
+	}
+
+	// First incarnation: consume one record, which persists the offset
+	// file into DataDir.
+	rc1, err := New(cfg, limits, nil, log.NewNopLogger(), prometheus.NewPedanticRegistry())
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(ctx, rc1))
+
+	writeSample("series_before_restart", 1000)
+	require.Eventually(t, func() bool {
+		db, err := rc1.getOrOpenTSDB(tenantID, 0)
+		return err == nil && db != nil && db.Head().NumSeries() == 1
+	}, 10*time.Second, 100*time.Millisecond, "first incarnation should consume the pre-restart record")
+
+	require.NoError(t, services.StopAndAwaitTerminated(ctx, rc1))
+	require.FileExists(t, filepath.Join(cfg.DataDir, "partition-0.offset.json"),
+		"offset file must survive a process stop so the next incarnation can resume")
+
+	// Produce while the readcache is down: this is the eviction window.
+	writeSample("series_during_downtime", 2000)
+
+	// Second incarnation on the same DataDir: must resume from the
+	// stored offset and consume the downtime record. With the old
+	// always-join-at-end behaviour this record was skipped forever.
+	rc2, err := New(cfg, limits, nil, log.NewNopLogger(), prometheus.NewPedanticRegistry())
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(ctx, rc2))
+	defer func() { _ = services.StopAndAwaitTerminated(ctx, rc2) }()
+
+	require.Eventually(t, func() bool {
+		db, err := rc2.getOrOpenTSDB(tenantID, 0)
+		if err != nil || db == nil {
+			return false
+		}
+		// WAL replay restores series_before_restart; the resumed reader
+		// must add series_during_downtime on top.
+		return db.Head().NumSeries() == 2
+	}, 20*time.Second, 100*time.Millisecond, "second incarnation must consume the record produced during downtime")
+}
+
+// TestReadcache_OwnershipLossDeletesOffsetFile ensures losing a
+// partition (rebalancer reassignment -> removePartition/freeze)
+// removes the stored offset file, so a later re-acquisition of the
+// same partition joins at the live edge instead of replaying records
+// an intermediate owner already ingested and still serves from its
+// frozen epoch.
+func TestReadcache_OwnershipLossDeletesOffsetFile(t *testing.T) {
+	const (
+		tenantID = "user-1"
+		topic    = "test-topic"
+	)
+
+	_, addr := testkafka.CreateCluster(t, 1, topic)
+
+	cfg := newTestConfigNoKafka(t)
+	cfg.KafkaTopic = topic
+	cfg.OwnedPartitions = "0"
+
+	var kafkaCfg ingest.KafkaConfig
+	kafkaCfg.RegisterFlags(flag.NewFlagSet("", flag.PanicOnError))
+	kafkaCfg.Address = flagext.StringSliceCSV{addr}
+	kafkaCfg.Topic = topic
+	cfg.Kafka = kafkaCfg
+
+	limits := validation.NewOverrides(validation.Limits{}, nil)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	writer := makeKafkaWriter(t, kafkaCfg, prometheus.NewPedanticRegistry())
+	defer func() { _ = services.StopAndAwaitTerminated(ctx, writer) }()
+
+	rc, err := New(cfg, limits, nil, log.NewNopLogger(), prometheus.NewPedanticRegistry())
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(ctx, rc))
+	defer func() { _ = services.StopAndAwaitTerminated(ctx, rc) }()
+
+	req := &mimirpb.WriteRequest{
+		Timeseries: []mimirpb.PreallocTimeseries{
+			{
+				TimeSeries: &mimirpb.TimeSeries{
+					Labels: mimirpb.FromLabelsToLabelAdapters(
+						labels.FromStrings("__name__", "some_series", "job", "test")),
+					Samples: []mimirpb.Sample{{TimestampMs: 1000, Value: 1.0}},
+				},
+			},
+		},
+	}
+	require.NoError(t, writer.WriteSync(user.InjectOrgID(ctx, tenantID), topic, 0, tenantID, req))
+
+	offsetFile := filepath.Join(cfg.DataDir, "partition-0.offset.json")
+	require.Eventually(t, func() bool {
+		_, err := os.Stat(offsetFile)
+		return err == nil
+	}, 10*time.Second, 100*time.Millisecond, "offset file should be written once consumption starts")
+
+	require.NoError(t, rc.removePartition(0))
+	assert.NoFileExists(t, offsetFile, "losing ownership must delete the offset file")
 }
 
 // makeKafkaWriter is a small helper that constructs an ingest writer

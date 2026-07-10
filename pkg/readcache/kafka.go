@@ -5,6 +5,7 @@ package readcache
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strconv"
 	"time"
@@ -155,6 +156,22 @@ func (p *partitionPusher) NotifyPreCommit(_ context.Context) error {
 	return nil
 }
 
+// maxOffsetResumeReplay caps how far back a resumed reader replays
+// from its stored offset file. Records older than the tenant
+// out-of-order window can no longer be appended to the head anyway
+// (they'd be rejected as sample-timestamp-too-old), so replaying past
+// that horizon is wasted consumption. 2h matches the OOO window the
+// readcache fleet runs with (-ingester.out-of-order-time-window).
+const maxOffsetResumeReplay = 2 * time.Hour
+
+// partitionOffsetFilePath is where the partition reader persists its
+// last consumed Kafka offset. It lives in DataDir (the PVC) so it
+// survives pod restarts and rescheduling alongside the TSDB data it
+// describes.
+func (r *Readcache) partitionOffsetFilePath(partitionID int32) string {
+	return filepath.Join(r.cfg.DataDir, fmt.Sprintf("partition-%d.offset.json", partitionID))
+}
+
 // startKafkaReader spins up the per-partition ingest.PartitionReader
 // for partitionID. Idempotent: calling twice on the same partition is
 // a no-op.
@@ -166,18 +183,18 @@ func (r *Readcache) startKafkaReader(ctx context.Context, p *partitionState) err
 		return nil
 	}
 
-	offsetFilePath := filepath.Join(r.cfg.DataDir, fmt.Sprintf("partition-%d.offset.json", p.partitionID))
+	offsetFilePath := r.partitionOffsetFilePath(p.partitionID)
 
 	kafkaCfg := r.cfg.Kafka
 	if r.cfg.KafkaTopic != "" {
 		kafkaCfg.Topic = r.cfg.KafkaTopic
 	}
-	// Always adopt new partitions at the live edge: skip
-	// PartitionReader's startup catch-up loop entirely. addPartition
-	// is on the critical path of every readcache assignment change
-	// (see Readcache.applyAssignment), and the rebalancer serializes
-	// adds within one snapshot; if start() blocks for catch-up on
-	// each partition, a pod that just received N partitions takes
+	// Adopt NEW partitions at the live edge: skip PartitionReader's
+	// startup catch-up loop entirely. addPartition is on the critical
+	// path of every readcache assignment change (see
+	// Readcache.applyAssignment), and the rebalancer serializes adds
+	// within one snapshot; if start() blocks for catch-up on each
+	// partition, a pod that just received N partitions takes
 	// O(N * MaxConsumerLagAtStartup) wall-clock to finish
 	// reconciling. By forcing the consume position to the partition
 	// end, getStartOffset returns kafkaOffsetEnd, which
@@ -191,10 +208,45 @@ func (r *Readcache) startKafkaReader(ctx context.Context, p *partitionState) err
 	// over the following minutes, and ingester/blockbuilder remain
 	// the canonical sources for anything older.
 	//
-	// The literal "end" is the user-facing flag value validated by
-	// ingest.KafkaConfig.Validate, so it's stable wire surface; the
-	// underlying constant lives in pkg/storage/ingest/config.go.
-	kafkaCfg.ConsumeFromPositionAtStartup = "end"
+	// RESUMED partitions are different. If the offset file exists on
+	// this volume, this pod was consuming the partition when the
+	// process last stopped (restart, eviction, node reschedule) — the
+	// TSDB head data survived on the PVC, and joining at the live edge
+	// would permanently skip every record produced during the
+	// downtime. That hole is invisible for live-edge traffic but very
+	// visible for lagged writers (e.g. mimir-continuous-test running
+	// minutes behind wall clock): the skipped records carry sample
+	// timestamps well in the past, punching gaps into already-queried
+	// history (observed as query-tee mismatches on mimir-dev-15 after
+	// an autoscaler eviction). Resuming from the stored offset closes
+	// the hole. Startup lag enforcement stays disabled (both lag
+	// values zeroed) so addPartition does not block on catch-up: the
+	// reader starts at the stored offset and catches up to the live
+	// edge asynchronously while running. Replay is bounded by
+	// MaxReplayPeriod so a stale file cannot trigger an unbounded
+	// backlog replay.
+	//
+	// The literals "end"/"last-offset" are the user-facing flag values
+	// validated by ingest.KafkaConfig.Validate, so they're stable wire
+	// surface; the underlying constants live in
+	// pkg/storage/ingest/config.go.
+	//
+	// Ownership loss deletes the offset file (see freezePartition), so
+	// a re-acquisition after a rebalancer move takes the live-edge
+	// path, not the resume path.
+	if _, err := os.Stat(offsetFilePath); err == nil {
+		kafkaCfg.ConsumeFromPositionAtStartup = "last-offset"
+		kafkaCfg.ConsumerGroupOffsetCommitFileEnforced = true
+		kafkaCfg.TargetConsumerLagAtStartup = 0
+		kafkaCfg.MaxConsumerLagAtStartup = 0
+		if kafkaCfg.MaxReplayPeriod <= 0 || kafkaCfg.MaxReplayPeriod > maxOffsetResumeReplay {
+			kafkaCfg.MaxReplayPeriod = maxOffsetResumeReplay
+		}
+		level.Info(r.logger).Log("msg", "readcache: resuming partition from stored offset file",
+			"partition", p.partitionID, "offset_file", offsetFilePath)
+	} else {
+		kafkaCfg.ConsumeFromPositionAtStartup = "end"
+	}
 
 	pusher := &partitionPusher{rc: r, partitionID: p.partitionID, ranges: p.ranges}
 	if r.samplesIngestedTotal != nil {
@@ -291,10 +343,10 @@ func (r *Readcache) startKafkaReader(ctx context.Context, p *partitionState) err
 
 	p.reader = reader
 	p.readerMetrics = partitionCollector
-	// Capture the offset we joined at and when. The reader started at
-	// the live edge (ConsumeFromPositionAtStartup = "end") and has
-	// finished starting, so LastSeenOffsets is the partition's
-	// high-water offset at acquisition. Both are kept for the admin
+	// Capture the offset we joined at and when. For live-edge
+	// adoption ("end") LastSeenOffsets is the partition's high-water
+	// offset at acquisition; for an offset-file resume it's the
+	// stored offset we're resuming from. Both are kept for the admin
 	// page's TSDB listing; the current end offset is read live from
 	// the reader.
 	p.startOffset.Store(reader.LastSeenOffsets().ForKafkaCluster(0))

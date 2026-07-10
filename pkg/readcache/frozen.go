@@ -94,6 +94,19 @@ func (r *Readcache) freezePartition(partitionID int32, p *partitionState) error 
 		level.Warn(r.logger).Log("msg", "stopping partition reader before freeze", "partition", partitionID, "err", err)
 	}
 
+	// Ownership is gone: drop the stored offset file so a future
+	// re-acquisition of this partition joins at the live edge instead
+	// of resuming. Resuming across another pod's ownership stint would
+	// replay records the intermediate owner already ingested (and still
+	// serves from its frozen epoch), double-counting them at query
+	// time. The resume-from-offset path in startKafkaReader is only
+	// for process restarts within a single ownership stint, where the
+	// file is intentionally left in place (process shutdown goes
+	// through stopPartition, not freezePartition).
+	if err := os.Remove(r.partitionOffsetFilePath(partitionID)); err != nil && !os.IsNotExist(err) {
+		level.Warn(r.logger).Log("msg", "removing partition offset file on freeze", "partition", partitionID, "err", err)
+	}
+
 	// Detach the tenant TSDBs from the (now unreachable) live state.
 	// The reader has returned from StopAndAwaitTerminated, so no
 	// goroutine is appending; taking tenantsMu is safe.
