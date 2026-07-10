@@ -259,7 +259,12 @@ func (m *FunctionOverRangeVectorSplit[T]) getCachedResults(ctx context.Context) 
 	nextCachedResult := 0
 	for i, splitRange := range m.splitRanges {
 		if splitRange.Cacheable {
-			results[i] = cachedResults[nextCachedResult]
+			result := cachedResults[nextCachedResult]
+			if result.Start != splitRange.Start || result.End != splitRange.End {
+				panic(fmt.Sprintf("cached result time range (%d, %d] does not match split range (%d, %d]",
+					result.Start, result.End, splitRange.Start, splitRange.End))
+			}
+			results[i] = result
 			nextCachedResult++
 		}
 	}
