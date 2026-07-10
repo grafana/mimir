@@ -89,64 +89,71 @@ func NewClusterBuffer[W routedBatch[W]](linger time.Duration, batchMaxBytes int3
 	return c
 }
 
-// Add buffers items for produce. Each item's done fires exactly once with its
+// Add buffers a single item for produce. Its done fires exactly once with its
 // final outcome (nil on success, an error on terminal failure, or ctx.Err() if
 // ctx is canceled before the producer resolves the partition). Cancelling ctx
 // detaches the caller but does not stop the in-flight produce.
-func (c *ClusterBuffer[W]) Add(ctx context.Context, items []promised[W]) {
+func (c *ClusterBuffer[W]) Add(ctx context.Context, item promised[W]) {
+	c.addToBuffer(ctx, c.wrap(ctx, item))
+}
+
+// MultiAdd is Add for a batch of items: the same per-item completion contract,
+// binned by destination agent in a single pass.
+func (c *ClusterBuffer[W]) MultiAdd(ctx context.Context, items []promised[W]) {
 	if len(items) == 0 {
 		return
 	}
-
-	// Wrap each item's done with two layers:
-	//   - a once-fire that delivers either the produce outcome or
-	//     ctx.Err() (whichever first) to the original done;
-	//   - an accounting hook that decrements the buffered counters on
-	//     actual flush completion regardless of whether ctx already fired.
 	wrapped := make([]promised[W], len(items))
 	for i, p := range items {
-		payloadBytes := p.item.payloadBytes()
-		recCount := int64(p.item.recordCount())
-		c.bufferedBytes.Add(payloadBytes)
-		c.bufferedRecords.Add(recCount)
+		wrapped[i] = c.wrap(ctx, p)
+	}
+	c.addToBuffers(ctx, wrapped)
+}
 
-		var (
-			origDone = p.done
+// wrap layers p's done with two hooks:
+//   - a once-fire that delivers either the produce outcome or ctx.Err()
+//     (whichever first) to the original done;
+//   - an accounting hook that decrements the buffered counters on actual flush
+//     completion regardless of whether ctx already fired.
+func (c *ClusterBuffer[W]) wrap(ctx context.Context, p promised[W]) promised[W] {
+	payloadBytes := p.item.payloadBytes()
+	recCount := int64(p.item.recordCount())
+	c.bufferedBytes.Add(payloadBytes)
+	c.bufferedRecords.Add(recCount)
 
-			// origDoneFired gates the original done ("ctx-cancel vs flush" race).
-			origDoneFired atomic.Bool
+	var (
+		origDone = p.done
 
-			// ourDoneFired gates the accounting decrement (flush only).
-			ourDoneFired atomic.Bool
-		)
+		// origDoneFired gates the original done ("ctx-cancel vs flush" race).
+		origDoneFired atomic.Bool
 
-		fireOrigDone := func(res ProduceResult) {
-			if origDoneFired.CompareAndSwap(false, true) {
-				origDone(res)
-			}
+		// ourDoneFired gates the accounting decrement (flush only).
+		ourDoneFired atomic.Bool
+	)
+
+	fireOrigDone := func(res ProduceResult) {
+		if origDoneFired.CompareAndSwap(false, true) {
+			origDone(res)
 		}
-
-		// AfterFunc's callback always runs in a separate goroutine and
-		// never races with the stopCtxWatch assignment below — done()
-		// can only fire via addToBuffers further down (synchronous on
-		// pre-canceled ctx) or via the flush (later still), so
-		// stopCtxWatch is already bound by the time it's read.
-		stopCtxWatch := context.AfterFunc(ctx, func() {
-			fireOrigDone(ProduceResult{err: ctx.Err()})
-		})
-
-		p.done = func(res ProduceResult) {
-			if ourDoneFired.CompareAndSwap(false, true) {
-				stopCtxWatch()
-				c.bufferedBytes.Add(-payloadBytes)
-				c.bufferedRecords.Add(-recCount)
-			}
-			fireOrigDone(res)
-		}
-		wrapped[i] = p
 	}
 
-	c.addToBuffers(ctx, wrapped)
+	// AfterFunc's callback always runs in a separate goroutine and never races
+	// with the stopCtxWatch assignment below — done() can only fire via
+	// addToBuffers/addToBuffer (synchronous on pre-canceled ctx) or via the
+	// flush (later still), so stopCtxWatch is already bound by the time it's read.
+	stopCtxWatch := context.AfterFunc(ctx, func() {
+		fireOrigDone(ProduceResult{err: ctx.Err()})
+	})
+
+	p.done = func(res ProduceResult) {
+		if ourDoneFired.CompareAndSwap(false, true) {
+			stopCtxWatch()
+			c.bufferedBytes.Add(-payloadBytes)
+			c.bufferedRecords.Add(-recCount)
+		}
+		fireOrigDone(res)
+	}
+	return p
 }
 
 // addToBuffers bins items by destination and dispatches them to the matching
@@ -179,8 +186,28 @@ func (c *ClusterBuffer[W]) addToBuffers(ctx context.Context, items []promised[W]
 			}
 			continue
 		}
-		buffer.Add(agentItems)
+		buffer.MultiAdd(agentItems)
 	}
+}
+
+// addToBuffer is addToBuffers for a single already-wrapped item.
+func (c *ClusterBuffer[W]) addToBuffer(ctx context.Context, p promised[W]) {
+	if err := ctx.Err(); err != nil {
+		// Pre-canceled fast path: fail the item without dispatching. Distinct
+		// from a mid-flight cancel (which still buffers and lets the batch flush
+		// in the background); this matters because the caller may otherwise
+		// observe a duplicate from a "no-op" call.
+		p.done(ProduceResult{err: err})
+		return
+	}
+
+	buffer, err := c.agentBufferFor(p.item.getNodeID())
+	if err != nil {
+		p.done(ProduceResult{err: err})
+		return
+	}
+
+	buffer.Add(p)
 }
 
 // BufferedBytes returns the bytes of all records awaiting ack.

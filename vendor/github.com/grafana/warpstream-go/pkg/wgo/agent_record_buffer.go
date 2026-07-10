@@ -77,9 +77,38 @@ func NewAgentBuffer[W routedBatch[W]](nodeID int32, linger time.Duration, batchM
 	}
 }
 
-// Add buffers items for produce. Each item's done fires exactly once with its
+// Add buffers a single item for produce. Its done fires exactly once with its
 // terminal outcome.
-func (a *AgentBuffer[W]) Add(items []promised[W]) {
+func (a *AgentBuffer[W]) Add(p promised[W]) {
+	if p.item.recordCount() == 0 {
+		return
+	}
+
+	// A fitting item is added directly, skipping the chunk slice and the split. An
+	// item that overflows batchMaxBytes must be split so no flushed per-partition
+	// batch is rejected MessageTooLarge; that case delegates to MultiAdd rather
+	// than duplicating the split here.
+	if p.item.uncompressedWireBytes() > int64(a.batchMaxBytes) {
+		a.MultiAdd([]promised[W]{p})
+		return
+	}
+
+	a.mu.Lock()
+	if a.closed {
+		// Closed buffer: there is no flush to carry the outcome, so resolve the
+		// item's done synchronously with errBufferClosed.
+		a.mu.Unlock()
+		p.done(ProduceResult{err: errBufferClosed})
+		return
+	}
+
+	a.addToNextProduceLocked(p)
+	a.maybeStartNextFlushTimerLocked()
+	a.mu.Unlock()
+}
+
+// MultiAdd is Add for a batch of items.
+func (a *AgentBuffer[W]) MultiAdd(items []promised[W]) {
 	incoming := 0
 	for i := range items {
 		incoming += items[i].item.recordCount()
@@ -112,10 +141,16 @@ func (a *AgentBuffer[W]) Add(items []promised[W]) {
 	for i := range chunks {
 		a.addToNextProduceLocked(chunks[i])
 	}
+	a.maybeStartNextFlushTimerLocked()
+	a.mu.Unlock()
+}
+
+// maybeStartNextFlushTimerLocked starts the linger flush timer when work is pending and no
+// timer is already running. Caller must hold a.mu.
+func (a *AgentBuffer[W]) maybeStartNextFlushTimerLocked() {
 	if a.nextProduceRecords > 0 && a.nextProduceFlushTimer == nil {
 		a.nextProduceFlushTimer = time.AfterFunc(a.linger, a.timerFlush)
 	}
-	a.mu.Unlock()
 }
 
 // addToNextProduceLocked appends one item (already <= batchMaxBytes) to the

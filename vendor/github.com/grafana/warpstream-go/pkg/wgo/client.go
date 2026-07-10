@@ -209,7 +209,7 @@ func (c *WarpstreamClient) Produce(ctx context.Context, record *kgo.Record, prom
 	// Stamp the produce time only after routing succeeds, so a failed produce
 	// leaves the caller's record unchanged. Mirrors franz-go's bufferRecord.
 	ensureRecordTimestamp(record, time.Now())
-	c.buffer.Add(ctx, []promised[routedTopicPartitionRecords]{routed})
+	c.buffer.Add(ctx, routed)
 }
 
 // ProduceSync produces records and blocks until each has been
@@ -307,7 +307,7 @@ func (c *WarpstreamClient) ProduceSync(ctx context.Context, records []*kgo.Recor
 		ensureRecordTimestamp(r, now)
 	}
 
-	c.buffer.Add(ctx, routed)
+	c.buffer.MultiAdd(ctx, routed)
 	wg.Wait()
 	return results
 }
