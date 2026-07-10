@@ -143,12 +143,14 @@ type GetRange struct {
 	End   int64
 }
 
-// GetResult holds the outcome of the lookup of a single range. When Found is false, all other fields are zero.
+// GetResult holds the outcome of the lookup of a single range. When Found is false, data fields are zero.
 type GetResult[T any] struct {
 	SeriesMetadata []querierpb.SeriesMetadata
 	Annotations    querierpb.Annotations
 	Results        []T
 	Stats          types.EncodedOperatorEvaluationStats
+	Start          int64
+	End            int64
 	Found          bool
 }
 
@@ -184,6 +186,8 @@ func (c *Cache[T]) GetMulti(ctx context.Context, function functions.Function, in
 	results := make([]GetResult[T], len(ranges))
 
 	for i, r := range ranges {
+		results[i] = GetResult[T]{Start: r.Start, End: r.End}
+
 		hashedKey := hashedKeys[i]
 
 		data, ok := foundData[hashedKey]
@@ -217,21 +221,13 @@ func (c *Cache[T]) GetMulti(ctx context.Context, function functions.Function, in
 			Annotations:    cached.Annotations,
 			Results:        decoded,
 			Stats:          cached.Stats,
+			Start:          cached.Start,
+			End:            cached.End,
 			Found:          true,
 		}
 	}
 
 	return results, nil
-}
-
-func (c *Cache[T]) Get(ctx context.Context, function functions.Function, innerKey []byte, start, end int64, stats *CacheStats) (seriesMetadata []querierpb.SeriesMetadata, annotations querierpb.Annotations, results []T, operatorStats types.EncodedOperatorEvaluationStats, found bool, err error) {
-	getResults, err := c.GetMulti(ctx, function, innerKey, []GetRange{{Start: start, End: end}}, stats)
-	if err != nil {
-		return nil, querierpb.Annotations{}, nil, types.EncodedOperatorEvaluationStats{}, false, err
-	}
-
-	r := getResults[0]
-	return r.SeriesMetadata, r.Annotations, r.Results, r.Stats, r.Found, nil
 }
 
 func (c *Cache[T]) Set(

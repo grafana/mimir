@@ -72,8 +72,14 @@ func TestCacheGetMulti(t *testing.T) {
 	require.Len(t, results, 5)
 
 	require.True(t, results[0].Found)
+	require.Equal(t, hit1.Start, results[0].Start)
+	require.Equal(t, hit1.End, results[0].End)
 	require.False(t, results[1].Found, "range without a cache entry should be a miss")
+	require.Equal(t, miss.Start, results[1].Start)
+	require.Equal(t, miss.End, results[1].End)
 	require.True(t, results[2].Found)
+	require.Equal(t, hit2.Start, results[2].Start)
+	require.Equal(t, hit2.End, results[2].End)
 	require.False(t, results[3].Found, "range with an undecodable cache entry should be a miss")
 	require.False(t, results[4].Found, "range with a colliding cache entry should be a miss")
 
@@ -115,20 +121,20 @@ func TestCacheIsolatesTenants(t *testing.T) {
 	factory := NewCacheFactoryWithBackend(backend, testTTLProvider{}, caching.NewCacheKeyGenerator(nil, prefixGeneratorFunc), prometheus.NewRegistry(), log.NewNopLogger())
 	c := NewCache[int](factory, testCodec{})
 
-	// Get extracts the org ID for logging, so an org ID must be present in the context.
+	// GetMulti extracts the org ID for logging, so an org ID must be present in the context.
 	ctx := user.InjectOrgID(context.Background(), "tenant-a")
 	function := testFunction
 	inner := []byte("inner")
-	var start, end int64 = 0, 100
+	ranges := []GetRange{{Start: 0, End: 100}}
 
-	require.NoError(t, c.Set(ctx, function, inner, start, end, nil, querierpb.Annotations{}, []int{1}, types.EncodedOperatorEvaluationStats{}, 1, &CacheStats{}))
+	require.NoError(t, c.Set(ctx, function, inner, ranges[0].Start, ranges[0].End, nil, querierpb.Annotations{}, []int{1}, types.EncodedOperatorEvaluationStats{}, 1, &CacheStats{}))
 
-	_, _, _, _, found, err := c.Get(ctx, function, inner, start, end, &CacheStats{})
+	results, err := c.GetMulti(ctx, function, inner, ranges, &CacheStats{})
 	require.NoError(t, err)
-	require.True(t, found, "entry should be found when the same prefix is active")
+	require.True(t, results[0].Found, "entry should be found when the same prefix is active")
 
 	prefix = "tenant-b:"
-	_, _, _, _, found, err = c.Get(ctx, function, inner, start, end, &CacheStats{})
+	results, err = c.GetMulti(ctx, function, inner, ranges, &CacheStats{})
 	require.NoError(t, err)
-	require.False(t, found, "entry written under one prefix must not be visible under another prefix")
+	require.False(t, results[0].Found, "entry written under one prefix must not be visible under another prefix")
 }
