@@ -2589,6 +2589,8 @@ Usage of ./cmd/mimir/mimir:
     	Number of series to buffer per store-gateway when streaming chunks from store-gateways. (default 256)
   -querier.timeout duration
     	The timeout for a query. This config option should be set on query-frontend too when query sharding is enabled. This also applies to queries evaluated by the ruler (internally or remotely). (default 2m0s)
+  -query-frontend.active-series-framed-responses
+    	[experimental] Request active series responses from queriers in a length-delimited framed format that the query-frontend can merge using significantly less CPU. Queriers that don't support the format fall back to JSON transparently.
   -query-frontend.active-series-max-shard-concurrency int
     	[experimental] Maximum number of sharded active series (and active native histogram metrics) sub-requests dispatched and merged concurrently within a single request. This bounds the resource usage caused by fanning out to a large number of shards, both on queriers and on the query-frontend. 0 to disable the limit.
   -query-frontend.active-series-write-timeout duration

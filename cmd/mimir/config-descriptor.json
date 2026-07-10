@@ -8990,6 +8990,17 @@
         },
         {
           "kind": "field",
+          "name": "active_series_framed_responses",
+          "required": false,
+          "desc": "Request active series responses from queriers in a length-delimited framed format that the query-frontend can merge using significantly less CPU. Queriers that don't support the format fall back to JSON transparently.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "query-frontend.active-series-framed-responses",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "extra_propagated_headers",
           "required": false,
           "desc": "Comma-separated list of request header names to allow to pass through to the rest of the query path. This is in addition to a list of required headers that the read path needs.",

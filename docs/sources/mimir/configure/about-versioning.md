@@ -231,6 +231,7 @@ The following features are currently experimental:
 - Query-frontend
   - Lower TTL for cache entries overlapping the out-of-order samples ingestion window (re-using `-ingester.out-of-order-window` from ingesters)
   - Sharding of active series queries (`-query-frontend.shard-active-series-queries`)
+  - Length-delimited framed format for active series responses between queriers and query-frontends (`-query-frontend.active-series-framed-responses`)
   - Server-side write timeout for responses to active series requests (`-query-frontend.active-series-write-timeout`)
   - Bounding the concurrency of sharded active series requests (`-query-frontend.active-series-max-shard-concurrency`)
   - Blocking HTTP requests on a per-tenant basis (configured with the `blocked_requests` limit)

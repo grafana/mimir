@@ -2352,6 +2352,13 @@ results_cache:
 # CLI flag: -query-frontend.active-series-max-shard-concurrency
 [active_series_max_shard_concurrency: <int> | default = 0]
 
+# (experimental) Request active series responses from queriers in a
+# length-delimited framed format that the query-frontend can merge using
+# significantly less CPU. Queriers that don't support the format fall back to
+# JSON transparently.
+# CLI flag: -query-frontend.active-series-framed-responses
+[active_series_framed_responses: <boolean> | default = false]
+
 # (advanced) Comma-separated list of request header names to allow to pass
 # through to the rest of the query path. This is in addition to a list of
 # required headers that the read path needs.
