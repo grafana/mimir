@@ -26,8 +26,10 @@ type Config struct {
 	// SASLOptions are pre-built kgo options for SASL authentication.
 	SASLOptions []kgo.Opt
 
-	// Hooks are franz-go hooks appended to the internal kgo.Client, letting
-	// callers observe the wire layer (e.g. their own metrics or tracing hooks).
+	// Hooks are franz-go hooks the client observes: broker, consume, and lifecycle
+	// hooks fire on the embedded kgo.Client, while the produce-record hooks are driven
+	// on the client's own produce path (e.g. for metrics or tracing). See WithHooks for
+	// the two produce hooks that are not supported.
 	Hooks []kgo.Hook
 
 	// Producer settings.
@@ -235,10 +237,10 @@ func WithSASL(opts ...kgo.Opt) Opt {
 	return opt{func(c *Config) { c.SASLOptions = opts }}
 }
 
-// WithHooks appends franz-go hooks to the internal kgo.Client. Hooks observe
-// the wire layer (broker connect/read/write, throttling, request E2E), so a
-// caller can attach its own metrics or tracing. The client also installs its
-// own kprom hook internally; these are added on top.
+// WithHooks appends franz-go hooks to the client. All franz-go hooks are
+// supported except:
+// - kgo.HookProduceBatchWritten
+// - kgo.HookProduceRecordPartitioned
 func WithHooks(hooks ...kgo.Hook) Opt {
 	return opt{func(c *Config) { c.Hooks = append(c.Hooks, hooks...) }}
 }

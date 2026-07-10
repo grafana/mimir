@@ -351,12 +351,12 @@ func (h *Hedger) runHedgingAttempt(workCtx context.Context, acc *produceResultAc
 
 	// Wave-local workCtx so we can short-circuit the wait the moment the
 	// batch is fully resolved (or aborted). Cancellation flows through
-	// hedgeBuffer.Add's ctx-watch, making slow agents fire their legDone
+	// hedgeBuffer.MultiAdd's ctx-watch, making slow agents fire their legDone
 	// with ctx.Err() instead of blocking us on their actual flush.
 	attemptCtx, cancel := context.WithCancel(workCtx)
 	defer cancel()
 
-	// hedgeBuffer.Add is async: issue every group's Add then collect
+	// hedgeBuffer.MultiAdd is async: issue every group's MultiAdd then collect
 	// outcomes on a shared channel. One slot per group; sync.Once gates
 	// legDone so each group sends at most once. The buffered capacity
 	// ensures a late legDone (e.g. fired after we returned because the
@@ -367,7 +367,7 @@ func (h *Hedger) runHedgingAttempt(workCtx context.Context, acc *produceResultAc
 		legDone := func(res ProduceResult) {
 			once.Do(func() { results <- res })
 		}
-		h.hedgeBuffer.Add(attemptCtx, newMultiRoutedEncodedTopicPartitionRecords(parts, agent, legDone))
+		h.hedgeBuffer.MultiAdd(attemptCtx, newMultiRoutedEncodedTopicPartitionRecords(parts, agent, legDone))
 	}
 
 	for remaining := len(groups); remaining > 0; remaining-- {

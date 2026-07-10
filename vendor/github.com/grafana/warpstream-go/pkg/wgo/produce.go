@@ -1,6 +1,7 @@
 package wgo
 
 import (
+	"context"
 	"encoding/binary"
 	"fmt"
 	"hash/crc32"
@@ -60,6 +61,14 @@ const batchMaxBytesCeiling int32 = 1 << 30 // 1 GiB
 func ensureRecordTimestamp(record *kgo.Record, now time.Time) {
 	if record.Timestamp.IsZero() {
 		record.Timestamp = now.Truncate(time.Millisecond)
+	}
+}
+
+// ensureRecordContext defaults an unset record context to ctx, mirroring
+// franz-go, which seeds Record.Context from the Produce ctx.
+func ensureRecordContext(record *kgo.Record, ctx context.Context) {
+	if record.Context == nil {
+		record.Context = ctx
 	}
 }
 
