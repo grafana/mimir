@@ -1331,16 +1331,14 @@ func matrixMerge(resps []*PrometheusResponse) []SampleStream {
 		}
 	}
 
-	keys := make([]string, 0, len(output))
-	for key := range output {
-		keys = append(keys, key)
-	}
-	slices.Sort(keys)
-
 	result := make([]SampleStream, 0, len(output))
-	for _, key := range keys {
-		result = append(result, *output[key])
+	for _, s := range output {
+		result = append(result, *s)
 	}
+
+	slices.SortFunc(result, func(a, b SampleStream) int {
+		return mimirpb.CompareLabelAdapters(a.Labels, b.Labels)
+	})
 
 	return result
 }
