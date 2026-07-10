@@ -58,6 +58,7 @@
 * [ENHANCEMENT] MQE: Respect the `Cache-Control: no-store` request header when caching intermediate results for range vector splitting. #15148
 * [ENHANCEMENT] MQE: Extend experimental support for computing multiple aggregations over the same data without buffering to quantile aggregations. #15624
 * [ENHANCEMENT] Ingest storage: skip per-record tracing span and attribute allocations on the Kafka fetch path when the producer trace is not sampled. The producer's trace context is still extracted from record headers for every record. #15614
+* [ENHANCEMENT] Ingest storage: the experimental WarpStream Kafka producer backend (`-ingest-storage.kafka.backend=warpstream`) now traces produce requests, emitting the same producer spans and `traceparent` propagation as the default Kafka backend. #16039
 * [ENHANCEMENT] Distributor: Add a tracing span around the OTLP to Prometheus conversion so its latency is independently visible in traces. #15682
 * [ENHANCEMENET] Runtimeconfig: The HTTP client used to fetch runtime configurations from HTTP endpoints now has keep-alives disabled by default. New CLI flag `-runtime-config.http-client-disable-keep-alives` is enabled by default, an can be set to `false` in-order to re-enable keep-alives. #15695
 * [ENHANCEMENT] MQE: Support for native histograms in `smoothed` and `anchored` extended range selector modifiers. #15398
