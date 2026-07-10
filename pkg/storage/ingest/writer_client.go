@@ -175,8 +175,6 @@ type KafkaProducerClient interface {
 	Close()
 }
 
-// KafkaProducer is a KafkaProducerClient wrapper exposing some higher level features and metrics useful for producers.
-
 // kafkaProducerCompressionFromConfig translates the configured producer compression codec name
 // into a franz-go CompressionCodec preference list. An empty config value returns nil so that
 // the franz-go default (snappy with no-compression fallback) is preserved.
