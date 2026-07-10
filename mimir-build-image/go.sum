@@ -429,8 +429,8 @@ github.com/grafana/regexp v0.0.0-20240518133315-a468a5bfb3bc h1:GN2Lv3MGO7AS6PrR
 github.com/grafana/regexp v0.0.0-20240518133315-a468a5bfb3bc/go.mod h1:+JKpmjMGhpgPL+rXZ5nsZieVzvarn86asRlBg4uNGnk=
 github.com/grafana/tanka v0.28.0 h1:t5TmNA7O4shCYtl6Zeqjj6LL2OAxffnEfcVlv3JjSg4=
 github.com/grafana/tanka v0.28.0/go.mod h1:Zi9P/RnYPWC+aK5UQMLMZiku6jcofT7Iw3BrGQldZpQ=
-github.com/grafana/wiresmith v0.0.0-20260702150418-af5e08c4bdb1 h1:3bz1elmErk8bWgWqZKcrLk6V89ApTVaKSksVWrrvDHE=
-github.com/grafana/wiresmith v0.0.0-20260702150418-af5e08c4bdb1/go.mod h1:tbNC+NhZdF/BduWbmHlgxiOuBzhJ3VQGJlkjY7IIwvM=
+github.com/grafana/wiresmith v0.9.0 h1:6plIcMbi3gWVbLjSEyzG7s4HLIbV6XGz83D76eUZuLA=
+github.com/grafana/wiresmith v0.9.0/go.mod h1:tbNC+NhZdF/BduWbmHlgxiOuBzhJ3VQGJlkjY7IIwvM=
 github.com/grpc-ecosystem/grpc-opentracing v0.0.0-20180507213350-8e809c8a8645/go.mod h1:6iZfnjpejD4L/4DwD7NryNaJyCQdzwWwH2MWhCA90Kw=
 github.com/hashicorp/aws-sdk-go-base/v2 v2.0.0-beta.73 h1:LXhjywNxHsex3qFY2p2iOaHK4nFvdqVp9T9QLdZfpjQ=
 github.com/hashicorp/aws-sdk-go-base/v2 v2.0.0-beta.73/go.mod h1:AsbUhwFfdK9ipM8G0i8WVHS0IesKck6M0M9NcuMQTJ8=
