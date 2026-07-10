@@ -363,6 +363,17 @@ func (r *Readcache) starting(ctx context.Context) error {
 		return fmt.Errorf("creating readcache data-dir %q: %w", r.cfg.DataDir, err)
 	}
 
+	// Re-adopt frozen epoch directories left behind by a previous
+	// process: expired ones are deleted, unexpired ones are reopened
+	// as frozen epochs so the slices the distributor still routes to
+	// this pod for stay queryable across restarts (and get reaped by
+	// the normal path when they age out). Also seeds epochSeq past
+	// the restored epochs so re-acquisitions can't collide with their
+	// directories. Must run before this pod is visible in the ring
+	// and before any partition is added (both the rebalancer watch
+	// and the static-assignment fallback below).
+	r.restoreFrozenEpochsOnStartup(time.Now())
+
 	// Register in the readcache ring BEFORE subscribing to the
 	// rebalancer: the rebalancer's slicer enumerates the ring for
 	// eligible instances, so any partition this pod is meant to own

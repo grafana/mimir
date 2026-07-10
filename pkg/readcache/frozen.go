@@ -3,11 +3,14 @@
 package readcache
 
 import (
+	"encoding/json"
 	"math"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/go-kit/log/level"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 const (
@@ -25,6 +28,17 @@ const (
 	// the log still names this pod as a past owner but its slice is
 	// already gone.
 	frozenEpochReapGrace = 30 * time.Minute
+
+	// frozenMarkerFilename is the JSON marker written into each
+	// per-tenant TSDB directory when its epoch is frozen. It persists
+	// the state the reaper needs (most importantly the epoch's maxT)
+	// so a restarted pod can still delete aged-out frozen directories:
+	// the reaper's bookkeeping is otherwise in-memory only and a
+	// restart would orphan the directories on disk forever. The file
+	// lives inside the TSDB dir so it is created and deleted
+	// atomically with the data it describes (RemoveAll on the dir
+	// takes the marker with it).
+	frozenMarkerFilename = "readcache-frozen.json"
 )
 
 // frozenEpoch is a read-only TSDB set retained after this pod stopped
@@ -61,6 +75,30 @@ type frozenEpoch struct {
 	// startedConsumingAt is 0 when the reader never started.
 	startedConsumingAt int64
 	stoppedConsumingAt int64
+}
+
+// frozenMarker is the on-disk (JSON) record of a frozen epoch's state,
+// written into every per-tenant TSDB directory of the epoch at freeze
+// time. MaxT is what the restart-time sweep needs to decide whether
+// the directory has aged out; the remaining fields snapshot the rest
+// of the frozenEpoch so future restores (e.g. reopening the epoch for
+// querying after a restart) don't need to re-derive them.
+//
+// All epoch-level fields carry the EPOCH's values (identical across
+// every tenant dir of the same epoch), not per-tenant ones, so the
+// whole epoch expires as one unit — the same grouping the in-memory
+// reaper uses. MinT/MaxT are the math.MaxInt64/math.MinInt64 sentinels
+// when the epoch held no data; such directories are already reapable.
+type frozenMarker struct {
+	PartitionID        int32  `json:"partition_id"`
+	Epoch              int    `json:"epoch"`
+	MinT               int64  `json:"min_t"`
+	MaxT               int64  `json:"max_t"`
+	StartOffset        int64  `json:"start_offset"`
+	EndOffset          int64  `json:"end_offset"`
+	StartedConsumingAt int64  `json:"started_consuming_at"`
+	StoppedConsumingAt int64  `json:"stopped_consuming_at"`
+	Tenant             string `json:"tenant"`
 }
 
 // freezePartition stops the partition's Kafka reader and moves its
@@ -150,6 +188,19 @@ func (r *Readcache) freezePartition(partitionID int32, p *partitionState) error 
 		}
 	}
 
+	// Persist the freeze on disk so the reaper survives restarts:
+	// without a marker, a restart would forget these directories and
+	// leak them forever (the in-memory frozen map starts empty and
+	// nothing else re-discovers the dirs). Best-effort per tenant — a
+	// failed write only degrades that one dir back to the pre-marker
+	// behavior.
+	for tenant, db := range tenants {
+		if err := writeFrozenMarker(db.dir, ep, tenant); err != nil {
+			level.Warn(r.logger).Log("msg", "writing frozen epoch marker",
+				"user", tenant, "partition", partitionID, "epoch", p.epoch, "dir", db.dir, "err", err)
+		}
+	}
+
 	r.frozenMu.Lock()
 	r.frozen[partitionID] = append(r.frozen[partitionID], ep)
 	r.frozenMu.Unlock()
@@ -157,6 +208,28 @@ func (r *Readcache) freezePartition(partitionID int32, p *partitionState) error 
 	level.Info(r.logger).Log("msg", "readcache: partition frozen",
 		"partition", partitionID, "epoch", p.epoch, "minT", ep.minT, "maxT", ep.maxT)
 	return firstErr
+}
+
+// writeFrozenMarker serializes the epoch's state into
+// <dir>/readcache-frozen.json. The Prometheus TSDB only interprets
+// ULID-named subdirectories and its own well-known files, so an extra
+// file in the DB root is inert if the directory is ever reopened.
+func writeFrozenMarker(dir string, ep *frozenEpoch, tenant string) error {
+	data, err := json.Marshal(frozenMarker{
+		PartitionID:        ep.partitionID,
+		Epoch:              ep.epoch,
+		MinT:               ep.minT,
+		MaxT:               ep.maxT,
+		StartOffset:        ep.startOffset,
+		EndOffset:          ep.endOffset,
+		StartedConsumingAt: ep.startedConsumingAt,
+		StoppedConsumingAt: ep.stoppedConsumingAt,
+		Tenant:             tenant,
+	})
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(dir, frozenMarkerFilename), data, 0o644)
 }
 
 // reapFrozenEpochs closes and deletes frozen epochs whose newest
@@ -205,5 +278,182 @@ func (r *Readcache) reapFrozenEpochs(now time.Time) {
 		}
 		level.Info(r.logger).Log("msg", "readcache: frozen epoch reaped",
 			"partition", ep.partitionID, "epoch", ep.epoch, "maxT", ep.maxT)
+	}
+}
+
+// restoreFrozenEpochsOnStartup rebuilds the frozen-epoch state left
+// behind by a previous process: freezing writes a marker file into
+// each per-tenant TSDB dir (see writeFrozenMarker), but the frozen map
+// itself is in-memory, so without this a restart would both leak the
+// directories on disk forever AND silently stop serving slices the
+// distributor still routes to this pod for (the readcache assignment
+// log names this pod as a past owner for the whole serving horizon,
+// regardless of restarts).
+//
+// For every <DataDir>/<tenant>/partition-* directory carrying a
+// marker:
+//
+//   - already past the serving horizon: the directory is deleted
+//     immediately;
+//   - still within the horizon: the TSDB is reopened (WAL replay
+//     included — freezing does not compact the head, so recent
+//     samples live in the WAL) and grouped back into its
+//     (partition, epoch) frozenEpoch in r.frozen. From there it is
+//     queryable and reaped exactly like an epoch frozen by this
+//     process;
+//   - unopenable (e.g. unrepairable corruption): the directory is
+//     deleted. Readcache is a cache — the canonical copy of the data
+//     lives with the ingester/blockbuilder — and a dir we cannot open
+//     can never be served, so keeping it would only re-create the
+//     disk leak this restore exists to prevent.
+//
+// epochSeq is seeded past every surviving marker's epoch so that
+// re-acquiring the partition can never hand out an epoch whose
+// directory is still in use by a restored frozen epoch.
+//
+// Directories without a marker (a crash while the partition was still
+// live) are left untouched: re-acquiring the partition reopens them
+// (epoch numbers restart at 0), which preserves the pre-existing
+// data-continuity behavior.
+//
+// Must run during starting(), before this pod registers in the ring
+// and starts receiving assignments: distributors may route to us the
+// moment we are visible, and epochSeq seeding must win any race with
+// addPartition.
+func (r *Readcache) restoreFrozenEpochsOnStartup(now time.Time) {
+	cutoff := now.Add(-r.cfg.LocalBlockRetention - frozenEpochReapGrace).UnixMilli()
+
+	tenantEntries, err := os.ReadDir(r.cfg.DataDir)
+	if err != nil {
+		level.Warn(r.logger).Log("msg", "reading readcache data-dir for frozen epoch restore", "dir", r.cfg.DataDir, "err", err)
+		return
+	}
+
+	type epochKey struct {
+		partitionID int32
+		epoch       int
+	}
+	restored := map[epochKey]*frozenEpoch{}
+	var restoredDBs, deleted int
+
+	for _, tenantEntry := range tenantEntries {
+		if !tenantEntry.IsDir() {
+			continue // e.g. partition-<id>.offset.json files at the root
+		}
+		tenantDir := filepath.Join(r.cfg.DataDir, tenantEntry.Name())
+		dbEntries, err := os.ReadDir(tenantDir)
+		if err != nil {
+			level.Warn(r.logger).Log("msg", "reading tenant dir for frozen epoch restore", "dir", tenantDir, "err", err)
+			continue
+		}
+
+		for _, dbEntry := range dbEntries {
+			if !dbEntry.IsDir() {
+				continue
+			}
+			dir := filepath.Join(tenantDir, dbEntry.Name())
+			data, err := os.ReadFile(filepath.Join(dir, frozenMarkerFilename))
+			if os.IsNotExist(err) {
+				continue // live TSDB dir (crash before freeze); leave for re-acquisition
+			}
+			if err != nil {
+				level.Warn(r.logger).Log("msg", "reading frozen epoch marker", "dir", dir, "err", err)
+				continue
+			}
+			var marker frozenMarker
+			if err := json.Unmarshal(data, &marker); err != nil {
+				level.Warn(r.logger).Log("msg", "parsing frozen epoch marker", "dir", dir, "err", err)
+				continue
+			}
+
+			if marker.MaxT < cutoff {
+				// Aged out (or the epoch never held data — the maxT
+				// sentinel is math.MinInt64): delete now rather than
+				// paying to reopen a DB the reaper would drop anyway.
+				if err := os.RemoveAll(dir); err != nil {
+					level.Warn(r.logger).Log("msg", "removing expired frozen epoch dir on startup",
+						"partition", marker.PartitionID, "epoch", marker.Epoch, "dir", dir, "err", err)
+					continue
+				}
+				deleted++
+				level.Info(r.logger).Log("msg", "readcache: expired frozen epoch dir removed on startup",
+					"partition", marker.PartitionID, "epoch", marker.Epoch, "dir", dir, "maxT", marker.MaxT)
+				continue
+			}
+
+			// Reopen the TSDB so the slice is queryable again. No
+			// tsdbMetrics registration: freezing released the
+			// (tenant, partition) metrics key so the next live epoch
+			// can claim it, and a restored frozen epoch must not
+			// steal it back.
+			tenant := tenantEntry.Name()
+			db, err := openPartitionTSDB(
+				tenant,
+				marker.PartitionID,
+				marker.Epoch,
+				r.cfg.DataDir,
+				r.cfg.BlocksStorage.TSDB,
+				r.cfg.LocalBlockRetention,
+				r.limits,
+				r.cfg.MaxExemplarsPerPartitionTSDB,
+				r.seriesHashCache,
+				r.headPostingsForMatchersCacheFactory,
+				r.blockPostingsForMatchersCacheFactory,
+				prometheus.NewRegistry(),
+				r.logger,
+			)
+			if err != nil {
+				level.Warn(r.logger).Log("msg", "reopening frozen epoch TSDB on startup failed; deleting dir",
+					"user", tenant, "partition", marker.PartitionID, "epoch", marker.Epoch, "dir", dir, "err", err)
+				if err := os.RemoveAll(dir); err != nil {
+					level.Warn(r.logger).Log("msg", "removing unopenable frozen epoch dir",
+						"user", tenant, "partition", marker.PartitionID, "epoch", marker.Epoch, "dir", dir, "err", err)
+				}
+				continue
+			}
+
+			key := epochKey{partitionID: marker.PartitionID, epoch: marker.Epoch}
+			ep := restored[key]
+			if ep == nil {
+				ep = &frozenEpoch{
+					partitionID:        marker.PartitionID,
+					epoch:              marker.Epoch,
+					tenants:            map[string]*partitionTSDB{},
+					minT:               marker.MinT,
+					maxT:               marker.MaxT,
+					startOffset:        marker.StartOffset,
+					endOffset:          marker.EndOffset,
+					startedConsumingAt: marker.StartedConsumingAt,
+					stoppedConsumingAt: marker.StoppedConsumingAt,
+				}
+				restored[key] = ep
+			}
+			ep.tenants[tenant] = db
+			restoredDBs++
+
+			r.partitionMu.Lock()
+			if next := marker.Epoch + 1; next > r.epochSeq[marker.PartitionID] {
+				r.epochSeq[marker.PartitionID] = next
+			}
+			r.partitionMu.Unlock()
+		}
+
+		// Best-effort: drop the tenant dir if the sweep emptied it.
+		// os.Remove fails on non-empty directories, which is exactly
+		// the behavior we want.
+		_ = os.Remove(tenantDir)
+	}
+
+	if len(restored) > 0 {
+		r.frozenMu.Lock()
+		for _, ep := range restored {
+			r.frozen[ep.partitionID] = append(r.frozen[ep.partitionID], ep)
+		}
+		r.frozenMu.Unlock()
+	}
+
+	if restoredDBs > 0 || deleted > 0 {
+		level.Info(r.logger).Log("msg", "readcache: frozen epoch restore finished",
+			"restored_epochs", len(restored), "restored_tsdbs", restoredDBs, "deleted_expired_dirs", deleted)
 	}
 }
