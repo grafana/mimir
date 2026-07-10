@@ -73,6 +73,7 @@ enum UpdateType {
   UPDATE_TYPE_COMPLETE = 2;
   UPDATE_TYPE_REASSIGN = 3;
   UPDATE_TYPE_ABANDON = 4;
+  UPDATE_TYPE_INTERRUPTED_REASSIGN = 5;
 }
 
 message UpdatePlanJobRequest {
