@@ -388,7 +388,7 @@ local filename = 'mimir-reads.json';
       $.thanosMemcachedCache(
         'Memcached – metadata cache (querier accesses)',
         $._config.job_names.querier,
-        'querier',
+        'querier|querier-rc-.*',
         'metadata-cache'
       )
     )

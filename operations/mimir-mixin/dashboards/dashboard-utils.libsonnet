@@ -1331,7 +1331,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
           sum by(operation) (
             rate(thanos_cache_operations_total{
               %(jobMatcher)s,
-              component="%(component)s",
+              component=~"%(component)s",
               name="%(cacheName)s"
             }[$__rate_interval])
           )
@@ -1346,7 +1346,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.ncLatencyPanel(
         'thanos_cache_operation_duration_seconds',
         |||
-          %(jobMatcher)s, operation="getmulti", component="%(component)s", name="%(cacheName)s"
+          %(jobMatcher)s, operation="getmulti", component=~"%(component)s", name="%(cacheName)s"
         ||| % config
       )
     )
@@ -1357,7 +1357,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
           sum(
             rate(thanos_cache_hits_total{
               %(jobMatcher)s,
-              component="%(component)s",
+              component=~"%(component)s",
               name="%(cacheName)s"
             }[$__rate_interval])
           )
@@ -1365,7 +1365,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
           sum(
             rate(thanos_cache_requests_total{
               %(jobMatcher)s,
-              component="%(component)s",
+              component=~"%(component)s",
               name="%(cacheName)s"
             }[$__rate_interval])
           )
