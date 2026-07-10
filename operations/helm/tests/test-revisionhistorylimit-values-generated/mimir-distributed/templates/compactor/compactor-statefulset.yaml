@@ -16,6 +16,7 @@ metadata:
 spec:
   podManagementPolicy: OrderedReady
   replicas: 1
+  revisionHistoryLimit: 3
   selector:
     matchLabels:
       app.kubernetes.io/name: mimir
