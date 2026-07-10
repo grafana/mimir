@@ -27,6 +27,7 @@ spec:
       namespace: {{ .Release.Namespace | quote }}
     spec:
       serviceAccountName: {{ template "mimir.serviceAccountName" . }}
+      automountServiceAccountToken: {{ .Values.overrides_exporter.automountServiceAccountToken }}
       {{- if .Values.overrides_exporter.priorityClassName }}
       priorityClassName: {{ .Values.overrides_exporter.priorityClassName }}
       {{- end }}
@@ -59,6 +60,11 @@ spec:
             {{- end }}
             {{- if .Values.global.extraVolumeMounts }}
               {{ toYaml .Values.global.extraVolumeMounts | nindent 12}}
+            {{- end }}
+            {{- if .Values.overrides_exporter.projectServiceAccountToken }}
+            - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+              name: kube-api-access
+              readOnly: true
             {{- end }}
             - name: config
               mountPath: /etc/mimir
@@ -114,6 +120,23 @@ spec:
         - name: runtime-config
           configMap:
             name: {{ template "mimir.fullname" . }}-runtime
+        {{- if .Values.overrides_exporter.projectServiceAccountToken }}
+        - name: kube-api-access
+          projected:
+            - serviceAccountToken:
+                path: token
+            - configMap:
+                items:
+                  - key: ca.crt
+                    path: ca.crt
+                name: kube-root-ca.crt
+            - downwardAPI:
+                items:
+                  - fieldRef:
+                      apiVersion: v1
+                      fieldPath: metadata.namespace
+                    path: namespace
+        {{- end }}
         {{- if .Values.overrides_exporter.extraVolumes }}
         {{ toYaml .Values.overrides_exporter.extraVolumes | nindent 8}}
         {{- end }}

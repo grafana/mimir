@@ -31,8 +31,9 @@ spec:
       namespace: {{ .Release.Namespace | quote }}
     spec:
       serviceAccountName: {{ template "mimir.alertmanager.serviceAccountName" . }}
+      automountServiceAccountToken: {{ .Values.alertmanager.automountServiceAccountToken }}
       {{- if .Values.alertmanager.priorityClassName }}
-      priorityClassName: {{ .Values.query_frontend.priorityClassName }}
+      priorityClassName: {{ .Values.alertmanager.priorityClassName }}
       {{- end }}
       securityContext:
         {{- include "mimir.lib.podSecurityContext" (dict "ctx" . "component" "alertmanager") | nindent 8 }}
@@ -63,6 +64,11 @@ spec:
             {{- end }}
             {{- if .Values.global.extraVolumeMounts }}
               {{ toYaml .Values.global.extraVolumeMounts | nindent 12}}
+            {{- end }}
+            {{- if .Values.alertmanager.projectServiceAccountToken }}
+            - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+              name: kube-api-access
+              readOnly: true
             {{- end }}
             - name: config
               mountPath: /etc/mimir
@@ -127,6 +133,23 @@ spec:
         - name: runtime-config
           configMap:
             name: {{ template "mimir.fullname" . }}-runtime
+        {{- if .Values.alertmanager.projectServiceAccountToken }}
+        - name: kube-api-access
+          projected:
+            - serviceAccountToken:
+                path: token
+            - configMap:
+                items:
+                  - key: ca.crt
+                    path: ca.crt
+                name: kube-root-ca.crt
+            - downwardAPI:
+                items:
+                  - fieldRef:
+                      apiVersion: v1
+                      fieldPath: metadata.namespace
+                    path: namespace
+        {{- end }}
         {{- if .Values.alertmanager.extraVolumes }}
         {{ toYaml .Values.alertmanager.extraVolumes | nindent 8}}
         {{- end }}
