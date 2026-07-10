@@ -73,7 +73,7 @@ spec:
               {{- if .Values.alertmanager.persistence.subPath }}
               subPath: {{ .Values.alertmanager.persistence.subPath }}
               {{- end }}
-            {{- if .Values.alertmanager.fallbackConfig }}
+            {{- if or .Values.alertmanager.fallbackConfig .Values.alertmanager.externalFallbackConfigSecret }}
             - name: alertmanager-fallback-config
               mountPath: /configs/
             {{- end }}
@@ -139,10 +139,18 @@ spec:
           emptyDir: {}
         - name: active-queries
           emptyDir: {}
-        {{- if .Values.alertmanager.fallbackConfig }}
+        {{- if and .Values.alertmanager.fallbackConfig (not .Values.alertmanager.externalFallbackConfigSecret) }}
         - name: alertmanager-fallback-config
           configMap:
             name: {{ include "mimir.resourceName" (dict "ctx" . "component" "alertmanager") }}-fallback-config
+        {{- end }}
+        {{- with .Values.alertmanager.externalFallbackConfigSecret }}
+        - name: alertmanager-fallback-config
+          secret:
+            secretName: {{ .name }}
+            items:
+              - key: {{ .key }}
+                path: alertmanager_fallback_config.yaml
         {{- end }}
 {{- end -}}
 {{- end -}}
