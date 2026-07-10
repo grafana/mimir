@@ -2093,27 +2093,15 @@ local utils = import 'mixin-utils/utils.libsonnet';
     $.queryPanel([
       |||
         sum(
-            # Old metric.
-            rate(cortex_ingest_storage_writer_produce_requests_total{%(job_matcher)s}[$__rate_interval])
-            or
-            # New metric.
             rate(cortex_ingest_storage_writer_produce_records_enqueued_total{%(job_matcher)s}[$__rate_interval])
         )
         -
         (sum(
-            # Old metric.
-            rate(cortex_ingest_storage_writer_produce_failures_total{%(job_matcher)s}[$__rate_interval])
-            or
-            # New metric.
             rate(cortex_ingest_storage_writer_produce_records_failed_total{%(job_matcher)s}[$__rate_interval])
         ) or vector(0))
       ||| % { job_matcher: $.jobMatcher($._config.job_names[jobName]) },
       |||
         sum by(reason) (
-            # Old metric.
-            rate(cortex_ingest_storage_writer_produce_failures_total{%(job_matcher)s}[$__rate_interval])
-            or
-            # New metric.
             rate(cortex_ingest_storage_writer_produce_records_failed_total{%(job_matcher)s}[$__rate_interval])
         )
       ||| % { job_matcher: $.jobMatcher($._config.job_names[jobName]) },
