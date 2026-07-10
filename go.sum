@@ -1009,8 +1009,8 @@ github.com/tencentyun/cos-go-sdk-v5 v0.7.40/go.mod h1:4dCEtLHGh8QPxHEkgq+nFaky7y
 github.com/thanos-io/objstore v0.0.0-20260615134008-fb6fd3a5170a h1:jZpnHlnKFgGBQzDqLvlXcXt6xl2W74U0ZTFZvTyAKwU=
 github.com/thanos-io/objstore v0.0.0-20260615134008-fb6fd3a5170a/go.mod h1:pI5Ppb4ommu4PgplxxRUyEPMMu625BpJQCkCYbHk7Ac=
 github.com/tinylib/msgp v1.1.8/go.mod h1:qkpG+2ldGg4xRFmx+jfTvZPxfGFhi64BcnL9vkCm/Tw=
-github.com/tinylib/msgp v1.6.1 h1:ESRv8eL3u+DNHUoSAAQRE50Hm162zqAnBoGv9PzScPY=
-github.com/tinylib/msgp v1.6.1/go.mod h1:RSp0LW9oSxFut3KzESt5Voq4GVWyS+PSulT77roAqEA=
+github.com/tinylib/msgp v1.6.4 h1:mOwYbyYDLPj35mkA2BjjYejgJk9BuHxDdvRnb6v2ZcQ=
+github.com/tinylib/msgp v1.6.4/go.mod h1:RSp0LW9oSxFut3KzESt5Voq4GVWyS+PSulT77roAqEA=
 github.com/tjhop/slog-gokit v0.2.0 h1:tUNkuukDjpswQ2abhsugEobRRxN1aHEW8h4rvwdHMqU=
 github.com/tjhop/slog-gokit v0.2.0/go.mod h1:yA48zAHvV+Sg4z4VRyeFyFUNNXd3JY5Zg84u3USICq0=
 github.com/tklauser/go-sysconf v0.3.16 h1:frioLaCQSsF5Cy1jgRBrzr6t502KIIwQ0MArYICU0nA=
