@@ -172,7 +172,6 @@
   "querier.max-samples": 50000000,
   "querier.default-evaluation-interval": 60000000000,
   "querier.lookback-delta": 300000000000,
-  "querier.mimir-query-engine.enable-prune-toggles": true,
   "querier.mimir-query-engine.enable-common-subexpression-elimination": true,
   "querier.mimir-query-engine.enable-eliminate-deduplicate-and-merge": true,
   "querier.mimir-query-engine.enable-reduce-matchers": true,

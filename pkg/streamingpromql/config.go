@@ -45,7 +45,6 @@ type EngineOpts struct {
 	// out-of-order thresholds. Defaults to time.Now if nil. Useful for tests that need a fixed "now".
 	TimeNow func() time.Time `yaml:"-"`
 
-	EnablePruneToggles                                        bool `yaml:"enable_prune_toggles" category:"experimental"`
 	EnableCommonSubexpressionElimination                      bool `yaml:"enable_common_subexpression_elimination" category:"experimental"`
 	EnableSubsetSelectorElimination                           bool `yaml:"enable_subset_selector_elimination" category:"experimental"`
 	EnableRangeQueryRangeVectorCommonSubexpressionElimination bool `yaml:"enable_range_query_range_vector_common_subexpression_elimination" category:"experimental"`
@@ -105,7 +104,6 @@ type RangeQuerySplittingAndCachingConfig struct {
 }
 
 func (o *EngineOpts) RegisterFlags(f *flag.FlagSet) {
-	f.BoolVar(&o.EnablePruneToggles, "querier.mimir-query-engine.enable-prune-toggles", true, "Enable pruning query expressions that are toggled off with constants.")
 	f.BoolVar(&o.EnableCommonSubexpressionElimination, "querier.mimir-query-engine.enable-common-subexpression-elimination", true, "Enable common subexpression elimination when evaluating queries.")
 	f.BoolVar(&o.EnableSubsetSelectorElimination, "querier.mimir-query-engine.enable-subset-selector-elimination", false, "Enable subset selector elimination when evaluating queries.")
 	f.BoolVar(&o.EnableRangeQueryRangeVectorCommonSubexpressionElimination, "querier.mimir-query-engine.enable-range-query-range-vector-common-subexpression-elimination", false, "Enable deduplication of range vector selectors in range queries as part of common subexpression elimination. Requires common subexpression elimination to be enabled.")
@@ -166,7 +164,6 @@ func NewTestEngineOpts() EngineOpts {
 		Logger:   log.NewNopLogger(),
 		Limits:   NewStaticQueryLimitsProvider(),
 
-		EnablePruneToggles:                                        true,
 		EnableCommonSubexpressionElimination:                      true,
 		EnableSubsetSelectorElimination:                           true,
 		EnableScalarCommonSubexpressionElimination:                true,

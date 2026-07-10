@@ -2343,8 +2343,6 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Enable computing multiple aggregations over the same data without buffering. Requires common subexpression elimination to be enabled. (default true)
   -querier.mimir-query-engine.enable-narrow-binary-selectors
     	[experimental] Enable generating selectors for one side of a binary expression based on results from the other side.
-  -querier.mimir-query-engine.enable-prune-toggles
-    	[experimental] Enable pruning query expressions that are toggled off with constants. (default true)
   -querier.mimir-query-engine.enable-range-query-range-vector-common-subexpression-elimination
     	[experimental] Enable deduplication of range vector selectors in range queries as part of common subexpression elimination. Requires common subexpression elimination to be enabled.
   -querier.mimir-query-engine.enable-reduce-matchers

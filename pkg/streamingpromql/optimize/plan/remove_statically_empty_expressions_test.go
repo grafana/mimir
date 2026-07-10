@@ -14,8 +14,11 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/timestamp"
+	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan"
@@ -32,10 +35,17 @@ func TestRemoveStaticallyEmptyExpressionsOptimizationPass(t *testing.T) {
 	nonSelectorThresholdMs := (constant * time.Second).Milliseconds()
 
 	testCases := map[string]struct {
-		expr            string
-		queryStart      time.Time // instant query time
-		expectedPlan    string
-		expectUnchanged bool
+		expr       string
+		queryStart time.Time // instant query time
+
+		// expectedPlan is the expected plan, rendered as a tree. Exactly one of expectedPlan,
+		// generateExpectedPlanFromExpr or expectUnchanged should be set.
+		expectedPlan string
+		// generateExpectedPlanFromExpr, when set, computes the expected plan by planning this expression
+		// with the optimization pass disabled. Useful when the expected plan is the plan of another
+		// expression (eg. a subexpression of expr) that is awkward to write out as a tree by hand.
+		generateExpectedPlanFromExpr string
+		expectUnchanged              bool
 	}{
 		"timestamp(v) < C: query time range is on threshold, should optimize": {
 			expr:       "timestamp(metric) < CONSTANT",
@@ -475,6 +485,65 @@ func TestRemoveStaticallyEmptyExpressionsOptimizationPass(t *testing.T) {
 				- NoOp
 			`,
 		},
+
+		// Constant comparison toggles: vector(N) == M. This is the dashboard "histogram toggle" idiom.
+
+		// Toggle off (N != M): the comparison is statically empty, so the whole 'and' is empty.
+		"toggle off: A and on() (vector(0) == 1) is statically empty": {
+			expr: `(avg(rate(foo[2m]))) and on() (vector(0) == 1)`,
+			expectedPlan: `
+				- NoOp
+			`,
+		},
+		"toggle off: A and on() (vector(3) == 4.5) is statically empty": {
+			expr: `(avg(rate(foo[2m]))) and on() (vector(3) == 4.5)`,
+			expectedPlan: `
+				- NoOp
+			`,
+		},
+		// Toggle on (N == M): the comparison always matches, so 'and on()' can be dropped, leaving A.
+		"toggle on: A and on() (vector(1) == 1) simplifies to A": {
+			expr:                         `(avg(rate(foo[2m]))) and on() (vector(1) == 1)`,
+			generateExpectedPlanFromExpr: `avg(rate(foo[2m]))`,
+		},
+		"toggle on: A and on() (vector(5.5) == 5.5) simplifies to A": {
+			expr:                         `(avg(rate(foo[2m]))) and on() (vector(5.5) == 5.5)`,
+			generateExpectedPlanFromExpr: `avg(rate(foo[2m]))`,
+		},
+		// The toggle-on simplification is only valid for on() with no matching labels: with on(<labels>)
+		// or ignoring() the result depends on A's labels, so the expression is left unchanged.
+		"toggle on with on(id): left unchanged": {
+			expr:            `(avg(rate(foo[2m]))) and on(id) (vector(1) == 1)`,
+			expectUnchanged: true,
+		},
+		"toggle on with ignoring(): left unchanged": {
+			expr:            `(avg(rate(foo[2m]))) and ignoring() (vector(1) == 1)`,
+			expectUnchanged: true,
+		},
+		// The toggle-on simplification is only valid if the toggle is on the right-hand side.
+		"toggle on: (vector(1) == 1) and on() A is not simplified": {
+			expr:            `(vector(1) == 1) and on() foo`,
+			expectUnchanged: true,
+		},
+		// A and B with a statically-empty side is empty regardless of the matching modifier or which side is empty.
+		"empty on left-hand side of 'and': statically empty": {
+			expr: `(vector(0) == 1) and on() (avg(rate(foo[2m])))`,
+			expectedPlan: `
+				- NoOp
+			`,
+		},
+		"empty toggle with on(id): statically empty": {
+			expr: `(avg(rate(foo[2m]))) and on(id) (vector(0) == 1)`,
+			expectedPlan: `
+				- NoOp
+			`,
+		},
+		"empty toggle with ignoring(): statically empty": {
+			expr: `(avg(rate(foo[2m]))) and ignoring() (vector(0) == 1)`,
+			expectedPlan: `
+				- NoOp
+			`,
+		},
 	}
 
 	ctx := context.Background()
@@ -506,6 +575,12 @@ func TestRemoveStaticallyEmptyExpressionsOptimizationPass(t *testing.T) {
 			if testCase.expectUnchanged {
 				testCase.expectedPlan = generatePlan(t, false, testCase.expr, timeRange, nil)
 				expectedModified = 0
+			}
+
+			if testCase.generateExpectedPlanFromExpr != "" {
+				expectedExpr := strings.ReplaceAll(testCase.generateExpectedPlanFromExpr, "CONSTANT", strconv.Itoa(constant))
+				expectedExpr = strings.ReplaceAll(expectedExpr, "EMPTY_RESULT", `some_metric{foo="bar", foo="not-bar"}`)
+				testCase.expectedPlan = generatePlan(t, false, expectedExpr, timeRange, nil)
 			}
 
 			reg := prometheus.NewPedanticRegistry()
@@ -647,4 +722,53 @@ func getMaxFunctionOrdinal() int32 {
 	}
 
 	return maxFuncOrd
+}
+
+func TestRemoveStaticallyEmptyExpressions_Toggles_EndToEnd(t *testing.T) {
+	data := `
+		load 1m
+			foo{series="1"} 0+1x10
+			foo{series="2"} 0+2x10
+	`
+
+	queries := []string{
+		`(avg(rate(foo[2m]))) and on() (vector(0) == 1)`,   // toggle off: statically empty
+		`(avg(rate(foo[2m]))) and on() (vector(1) == 1)`,   // toggle on: equal to avg(rate(foo[2m]))
+		`(avg(rate(foo[2m]))) and on(id) (vector(1) == 1)`, // left unchanged by the pass
+	}
+
+	ctx := context.Background()
+	end := timestamp.Time(0).Add(10 * time.Minute)
+
+	storage := promqltest.LoadedStorage(t, data)
+	t.Cleanup(func() { require.NoError(t, storage.Close()) })
+
+	runQuery := func(t *testing.T, expr string, withOptimization bool) string {
+		opts := streamingpromql.NewTestEngineOpts()
+		planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
+		require.NoError(t, err)
+
+		if withOptimization {
+			planner.RegisterQueryPlanOptimizationPass(plan.NewRemoveStaticallyEmptyExpressionsOptimizationPass(opts.CommonOpts.Reg, opts.Logger))
+		}
+
+		engine, err := streamingpromql.NewEngine(opts, stats.NewQueryMetrics(opts.CommonOpts.Reg), planner)
+		require.NoError(t, err)
+
+		q, err := engine.NewInstantQuery(ctx, storage, nil, expr, end)
+		require.NoError(t, err)
+		t.Cleanup(q.Close)
+
+		res := q.Exec(ctx)
+		require.NoError(t, res.Err)
+		return res.String()
+	}
+
+	for _, expr := range queries {
+		t.Run(expr, func(t *testing.T) {
+			withOptimization := runQuery(t, expr, true)
+			withoutOptimization := runQuery(t, expr, false)
+			require.Equal(t, withoutOptimization, withOptimization)
+		})
+	}
 }

@@ -45,6 +45,13 @@ var (
 //
 // This exact match selector is guaranteed to not match any results.
 //
+// It detects constant comparisons that can never match, such as the expressions used to toggle parts of a
+// query on and off in dashboards:
+//
+//	vector(0) == 1   (and the symmetric form 1 == vector(0))
+//
+// A comparison of the form vector(N) == M (in either order) is guaranteed to return no results when N != M.
+//
 // It also detects combinations of the above with 'and', 'or' and 'unless' operations:
 //
 //	empty AND anything is empty
@@ -53,6 +60,13 @@ var (
 //	LHS OR empty is LHS
 //	empty UNLESS anything is empty
 //	LHS UNLESS empty is LHS
+//
+// Finally, it simplifies a query that is guarded by an always-true toggle:
+//
+//	LHS and on() (vector(N) == N) is LHS
+//
+// This is only valid for 'on()' with no matching labels, where every series on the left-hand side matches the
+// single (empty-labelled) series produced by the right-hand side.
 type RemoveStaticallyEmptyExpressionsOptimizationPass struct {
 	attempts prometheus.Counter
 	modified prometheus.Counter
@@ -395,6 +409,18 @@ func isAlwaysEmptyBinaryExpression(node *core.BinaryExpression, params *planning
 		// A unless B is empty whenever A is empty, regardless of B.
 		return isAlwaysEmpty(node.LHS, params)
 
+	case core.BINARY_EQLC:
+		// Check for a constant comparison such as vector(0) == 1 that can never match.
+		if empty, matched := constantVectorComparisonEmpty(node); matched {
+			if empty {
+				return true, nil
+			}
+
+			return false, nil
+		}
+
+		return isEitherBinaryExpressionSideEmpty(node, params)
+
 	case core.BINARY_LSS:
 		// Check for timestamp(v) < C.
 		empty, err := isAlwaysEmptyTimestampComparison(node.LHS, node.RHS, false, params)
@@ -545,6 +571,46 @@ func findConstant(node planning.Node) (*core.NumberLiteral, bool) {
 	return literal, ok
 }
 
+// findConstantVector returns the number literal node and true if node is (or wraps) a call to the
+// vector() function with a single number literal argument, such as vector(5).
+func findConstantVector(node planning.Node) (*core.NumberLiteral, bool) {
+	node = unwrap(node)
+
+	f, ok := node.(*core.FunctionCall)
+	if !ok || f.Function != functions.FUNCTION_VECTOR || len(f.Args) != 1 {
+		return nil, false
+	}
+
+	return findConstant(f.Args[0])
+}
+
+// constantVectorComparisonEmpty reports whether node is an equality comparison (used as a filter,
+// not with the 'bool' modifier) between a constant vector and a number literal, such as
+// vector(0) == 1 (in either order). matched is true if node has that shape, and empty is true if the
+// comparison can never match because the two constants differ.
+func constantVectorComparisonEmpty(node planning.Node) (empty, matched bool) {
+	node = unwrap(node)
+
+	binExpr, ok := node.(*core.BinaryExpression)
+	if !ok || binExpr.Op != core.BINARY_EQLC || binExpr.ReturnBool {
+		return false, false
+	}
+
+	if vec, ok := findConstantVector(binExpr.LHS); ok {
+		if num, ok := findConstant(binExpr.RHS); ok {
+			return vec.Value != num.Value, true
+		}
+	}
+
+	if vec, ok := findConstantVector(binExpr.RHS); ok {
+		if num, ok := findConstant(binExpr.LHS); ok {
+			return vec.Value != num.Value, true
+		}
+	}
+
+	return false, false
+}
+
 // simplify returns a simpler version of node, or nil if no simplification applies.
 func simplify(node planning.Node) planning.Node {
 	switch node := node.(type) {
@@ -568,14 +634,26 @@ func simplify(node planning.Node) planning.Node {
 		}
 
 	case *core.BinaryExpression:
-		if node.Op != core.BINARY_LUNLESS {
-			return nil
-		}
+		switch node.Op {
+		case core.BINARY_LUNLESS:
+			// If the LHS is a no-op this means the whole expression is a no-op, and that is
+			// handled by isAlwaysEmptyBinaryExpression.
+			if _, noOp := node.RHS.(*core.NoOp); noOp {
+				return node.LHS
+			}
 
-		// If the LHS is a no-op this means the whole expression is a no-op, and that is
-		// handled by isAlwaysEmptyBinaryExpression.
-		if _, noOp := node.RHS.(*core.NoOp); noOp {
-			return node.LHS
+		case core.BINARY_LAND:
+			// LHS and on() (vector(N) == N) is equivalent to LHS: the right-hand side always produces a
+			// single empty-labelled series, so every series on the left-hand side matches it on the empty
+			// label set. This is only valid for on() with no matching labels; with on(<labels>) or
+			// ignoring() the result depends on the left-hand side's labels.
+			if node.VectorMatching == nil || !node.VectorMatching.On || len(node.VectorMatching.MatchingLabels) != 0 {
+				return nil
+			}
+
+			if empty, matched := constantVectorComparisonEmpty(node.RHS); matched && !empty {
+				return node.LHS
+			}
 		}
 	}
 

@@ -2013,11 +2013,6 @@ store_gateway_client:
 [enable_delayed_name_removal_prometheus_engine: <boolean> | default = false]
 
 mimir_query_engine:
-  # (experimental) Enable pruning query expressions that are toggled off with
-  # constants.
-  # CLI flag: -querier.mimir-query-engine.enable-prune-toggles
-  [enable_prune_toggles: <boolean> | default = true]
-
   # (experimental) Enable common subexpression elimination when evaluating
   # queries.
   # CLI flag: -querier.mimir-query-engine.enable-common-subexpression-elimination
