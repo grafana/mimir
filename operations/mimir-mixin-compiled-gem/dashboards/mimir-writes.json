@@ -2582,13 +2582,13 @@
                   "span": 6,
                   "targets": [
                      {
-                        "expr": "sum(\n    # Old metric.\n    rate(cortex_ingest_storage_writer_produce_requests_total{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir))\"}[$__rate_interval])\n    or\n    # New metric.\n    rate(cortex_ingest_storage_writer_produce_records_enqueued_total{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir))\"}[$__rate_interval])\n)\n-\n(sum(\n    # Old metric.\n    rate(cortex_ingest_storage_writer_produce_failures_total{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir))\"}[$__rate_interval])\n    or\n    # New metric.\n    rate(cortex_ingest_storage_writer_produce_records_failed_total{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir))\"}[$__rate_interval])\n) or vector(0))\n",
+                        "expr": "sum(\n    rate(cortex_ingest_storage_writer_produce_records_enqueued_total{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir))\"}[$__rate_interval])\n)\n-\n(sum(\n    rate(cortex_ingest_storage_writer_produce_records_failed_total{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir))\"}[$__rate_interval])\n) or vector(0))\n",
                         "format": "time_series",
                         "legendFormat": "success",
                         "legendLink": null
                      },
                      {
-                        "expr": "sum by(reason) (\n    # Old metric.\n    rate(cortex_ingest_storage_writer_produce_failures_total{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir))\"}[$__rate_interval])\n    or\n    # New metric.\n    rate(cortex_ingest_storage_writer_produce_records_failed_total{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir))\"}[$__rate_interval])\n)\n",
+                        "expr": "sum by(reason) (\n    rate(cortex_ingest_storage_writer_produce_records_failed_total{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir))\"}[$__rate_interval])\n)\n",
                         "format": "time_series",
                         "legendFormat": "failed - {{ reason }}",
                         "legendLink": null
