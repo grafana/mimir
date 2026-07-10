@@ -94,6 +94,24 @@ func TestNewKafkaWriterClient_ShouldSupportSASLPlainAuthentication(t *testing.T)
 	})
 }
 
+func TestNewKafkaWriterClient_ShouldConfigureRequestTimeoutOverhead(t *testing.T) {
+	const (
+		topicName     = "test"
+		numPartitions = 1
+	)
+
+	_, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
+
+	cfg := createTestKafkaConfig(clusterAddr, topicName)
+	cfg.WriteTimeoutOverhead = time.Second
+
+	client, err := NewKafkaWriterClient(cfg, 1, log.NewNopLogger(), prometheus.NewPedanticRegistry())
+	require.NoError(t, err)
+	t.Cleanup(client.Close)
+
+	assert.Equal(t, time.Second, client.OptValue(kgo.RequestTimeoutOverhead))
+}
+
 func TestNewKafkaWriterClient_ShouldTrackExtendedKafkaClientMetrics(t *testing.T) {
 	const (
 		topicName     = "test"

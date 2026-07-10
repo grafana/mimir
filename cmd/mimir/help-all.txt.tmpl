@@ -1645,6 +1645,8 @@ Usage of ./cmd/mimir/mimir:
     	[deprecated] The number of Kafka clients used by producers. When the configured number of clients is greater than 1, partitions are sharded among Kafka clients. A higher number of clients may provide higher write throughput at the cost of additional Metadata requests pressure to Kafka. Deprecated: has no effect (Mimir always uses a single Kafka write client). (default 1)
   -ingest-storage.kafka.write-timeout duration
     	How long to wait for an incoming write request to be successfully committed to the Kafka backend. (default 10s)
+  -ingest-storage.kafka.write-timeout-overhead duration
+    	[experimental] Additional time added on top of the write timeout, accounting for a write request sitting in the client buffer and travelling over the network before the Kafka backend starts processing it. Lower values fail slow writes faster, at the cost of less tolerance to network and buffer latency. (default 2s)
   -ingest-storage.migration.distributor-send-to-ingesters-enabled
     	When both this option and ingest storage are enabled, distributors write to both Kafka and ingesters. A write request is considered successful only when written to both backends.
   -ingest-storage.migration.ignore-ingest-storage-errors

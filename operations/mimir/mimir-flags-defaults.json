@@ -615,6 +615,7 @@
   "ingest-storage.kafka.client-rack": "",
   "ingest-storage.kafka.dial-timeout": 2000000000,
   "ingest-storage.kafka.write-timeout": 10000000000,
+  "ingest-storage.kafka.write-timeout-overhead": 2000000000,
   "ingest-storage.kafka.write-clients": 1,
   "ingest-storage.kafka.warpstream-health-check-slow-multiplier": 2,
   "ingest-storage.kafka.warpstream-health-check-max-slow-fraction": 0.3,
