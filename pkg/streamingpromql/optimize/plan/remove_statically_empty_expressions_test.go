@@ -221,15 +221,32 @@ func TestRemoveStaticallyEmptyExpressionsOptimizationPass(t *testing.T) {
 				- NoOp
 			`,
 		},
-		"timestamp condition inside subquery: should not optimize": {
-			// The "and timestamp(metric) < CONSTANT" is inside the subquery, so it is ignored.
-			expr:            "avg_over_time((metric and timestamp(metric) < CONSTANT)[2h:1m])",
-			queryStart:      time.Unix(10000, 0),
+		"timestamp condition inside subquery: should optimize": {
+			// The "and timestamp(metric) < CONSTANT" is inside the subquery, so it is evaluated over the
+			// subquery's shifted time range. queryStart is far enough after the threshold that even the
+			// subquery's extended (earlier) time range is entirely after it, so the whole thing is empty.
+			expr:       "avg_over_time((timestamp(metric) < CONSTANT)[2h:1m])",
+			queryStart: time.Unix(10000, 0),
+			expectedPlan: `
+				- NoOp
+			`,
+		},
+		"timestamp condition inside subquery, but not empty over the subquery's time range: should not optimize": {
+			// timestamp(metric) < CONSTANT would be empty over the outer query time range, but the subquery's
+			// time range extends further back (before the threshold), so it can still return results and must
+			// not be optimized away.
+			expr:            "avg_over_time((timestamp(metric) < CONSTANT)[2h:1m])",
+			queryStart:      time.Unix(5000, 0),
 			expectUnchanged: true,
 		},
-		"function over subquery with empty results: should not optimize": {
-			// We short-circuit on subqueries now for simplicity
-			expr:            `max_over_time(EMPTY_RESULT[1d:5m])`,
+		"function over subquery with empty results: should optimize": {
+			expr: `max_over_time(EMPTY_RESULT[1d:5m])`,
+			expectedPlan: `
+				- NoOp
+			`,
+		},
+		"non-empty subquery: should not optimize": {
+			expr:            `avg_over_time(metric[5m:1m])`,
 			expectUnchanged: true,
 		},
 		"function over subquery binary operation with empty results: should optimize": {
