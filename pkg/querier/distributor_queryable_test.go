@@ -889,6 +889,11 @@ func (m *mockDistributor) ActiveNativeHistogramMetrics(ctx context.Context, matc
 	return args.Get(0).(*cardinality.ActiveNativeHistogramMetricsResponse), args.Error(1)
 }
 
+func (m *mockDistributor) LabelPresence(ctx context.Context, matchers []*labels.Matcher, labelNames []string, limit int) (*cardinality.LabelPresenceResponse, error) {
+	args := m.Called(ctx, matchers, labelNames, limit)
+	return args.Get(0).(*cardinality.LabelPresenceResponse), args.Error(1)
+}
+
 func (m *mockDistributor) SearchLabelNames(ctx context.Context, from, to model.Time, params *streaminglabelvalues.Params, hints *storage.SearchHints, matchers []*labels.Matcher) storage.SearchResultSet {
 	m.searchLabelNamesCalls.Add(1)
 	if m.searchLabelNamesFn != nil {

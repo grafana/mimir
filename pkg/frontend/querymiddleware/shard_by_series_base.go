@@ -127,7 +127,15 @@ func parseSelector(req *http.Request) (*parser.VectorSelector, error) {
 	return selector, nil
 }
 
+// buildShardedRequests builds one request per shard. Each sharded request
+// inherits all query params from the original request (e.g. label[] and limit)
+// with the selector replaced by the per-shard selector.
 func buildShardedRequests(ctx context.Context, req *http.Request, numRequests int, selector parser.Expr) ([]*http.Request, error) {
+	origValues, err := util.ParseRequestFormWithoutConsumingBody(req)
+	if err != nil {
+		return nil, err
+	}
+
 	reqs := make([]*http.Request, numRequests)
 	for i := 0; i < numRequests; i++ {
 		r, err := http.NewRequestWithContext(ctx, http.MethodGet, req.URL.Path, http.NoBody)
@@ -140,7 +148,7 @@ func buildShardedRequests(ctx context.Context, req *http.Request, numRequests in
 			return nil, err
 		}
 
-		vals := url.Values{}
+		vals := cloneValues(origValues)
 		vals.Set("selector", sharded.String())
 		r.URL.RawQuery = vals.Encode()
 		// This is the field read by httpgrpc.FromHTTPRequest, so we need to populate it
@@ -155,6 +163,15 @@ func buildShardedRequests(ctx context.Context, req *http.Request, numRequests in
 	}
 
 	return reqs, nil
+}
+
+// cloneValues returns a deep copy of the given url.Values.
+func cloneValues(src url.Values) url.Values {
+	dst := make(url.Values, len(src))
+	for k, vs := range src {
+		dst[k] = append([]string(nil), vs...)
+	}
+	return dst
 }
 
 func (s *shardBySeriesBase) processShardedRequests(ctx context.Context, reqs []*http.Request, handle func(ctx context.Context, resp *http.Response) error) error {

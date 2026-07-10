@@ -40,6 +40,7 @@ const (
 	cardinalityLabelValuesPathSuffix                  = "/api/v1/cardinality/label_values"
 	cardinalityActiveSeriesPathSuffix                 = "/api/v1/cardinality/active_series"
 	cardinalityActiveNativeHistogramMetricsPathSuffix = "/api/v1/cardinality/active_native_histogram_metrics"
+	cardinalityLabelPresencePathSuffix                = "/api/v1/cardinality/label_presence"
 	labelNamesPathSuffix                              = "/api/v1/labels"
 	remoteReadPathSuffix                              = "/api/v1/read"
 	seriesPathSuffix                                  = "/api/v1/series"
@@ -51,6 +52,7 @@ const (
 	queryTypeLabels                       = "label_names_and_values"
 	queryTypeActiveSeries                 = "active_series"
 	queryTypeActiveNativeHistogramMetrics = "active_native_histogram_metrics"
+	queryTypeLabelPresence                = "label_presence"
 	queryTypeOther                        = "other"
 
 	EnableRemoteExecutionFlag = "query-frontend.enable-remote-execution"
@@ -324,6 +326,7 @@ func newQueryTripperware(
 		cardinality := next
 		activeSeries := next
 		activeNativeHistogramMetrics := next
+		labelPresence := next
 		labels := next
 		series := next
 
@@ -332,11 +335,13 @@ func newQueryTripperware(
 			series = newRetryRoundTripper(series, log, cfg.MaxRetries, retryMetrics)
 			labels = newRetryRoundTripper(labels, log, cfg.MaxRetries, retryMetrics)
 			activeSeries = newRetryRoundTripper(series, log, cfg.MaxRetries, retryMetrics)
+			labelPresence = newRetryRoundTripper(labelPresence, log, cfg.MaxRetries, retryMetrics)
 		}
 
 		// Shard active series requests using special middleware.
 		activeSeries = newShardActiveSeriesMiddleware(activeSeries, cfg.ActiveSeriesMaxShardConcurrency, limits, log)
 		activeNativeHistogramMetrics = newShardActiveNativeHistogramMetricsMiddleware(activeNativeHistogramMetrics, cfg.ActiveSeriesMaxShardConcurrency, limits, log)
+		labelPresence = newShardLabelPresenceMiddleware(labelPresence, limits, log)
 
 		// Enforce read consistency after caching.
 		if ingestStorageOffsetsReader != nil {
@@ -347,6 +352,7 @@ func newQueryTripperware(
 			cardinality = newReadConsistencyRoundTripper(cardinality, ingestStorageOffsetsReader, limits, log, metrics)
 			activeSeries = newReadConsistencyRoundTripper(activeSeries, ingestStorageOffsetsReader, limits, log, metrics)
 			activeNativeHistogramMetrics = newReadConsistencyRoundTripper(activeNativeHistogramMetrics, ingestStorageOffsetsReader, limits, log, metrics)
+			labelPresence = newReadConsistencyRoundTripper(labelPresence, ingestStorageOffsetsReader, limits, log, metrics)
 			labels = newReadConsistencyRoundTripper(labels, ingestStorageOffsetsReader, limits, log, metrics)
 			series = newReadConsistencyRoundTripper(series, ingestStorageOffsetsReader, limits, log, metrics)
 			remoteRead = newReadConsistencyRoundTripper(remoteRead, ingestStorageOffsetsReader, limits, log, metrics)
@@ -356,6 +362,7 @@ func newQueryTripperware(
 		// Look up cache as first thing after validation.
 		if cfg.CacheResults {
 			cardinality = newCardinalityQueryCacheRoundTripper(cacheClient, cacheKeyGenerator, limits, cardinality, log, registerer)
+			labelPresence = newLabelPresenceQueryCacheRoundTripper(cacheClient, cacheKeyGenerator, limits, labelPresence, log, registerer)
 			labels = newLabelsQueryCacheRoundTripper(cacheClient, cacheKeyGenerator, limits, labels, log, registerer)
 		}
 
@@ -385,6 +392,8 @@ func newQueryTripperware(
 				return activeSeries.RoundTrip(r)
 			case IsActiveNativeHistogramMetricsQuery(r.URL.Path):
 				return activeNativeHistogramMetrics.RoundTrip(r)
+			case IsLabelPresenceQuery(r.URL.Path):
+				return labelPresence.RoundTrip(r)
 			case IsLabelsQuery(r.URL.Path):
 				return labels.RoundTrip(r)
 			case IsSeriesQuery(r.URL.Path):
@@ -646,6 +655,8 @@ func newQueryCountTripperware(registerer prometheus.Registerer) Tripperware {
 				op = queryTypeActiveSeries
 			case IsActiveNativeHistogramMetricsQuery(r.URL.Path):
 				op = queryTypeActiveNativeHistogramMetrics
+			case IsLabelPresenceQuery(r.URL.Path):
+				op = queryTypeLabelPresence
 			case IsLabelsQuery(r.URL.Path):
 				op = queryTypeLabels
 			}
@@ -695,6 +706,10 @@ func IsSeriesQuery(path string) bool {
 
 func IsActiveSeriesQuery(path string) bool {
 	return strings.HasSuffix(path, cardinalityActiveSeriesPathSuffix)
+}
+
+func IsLabelPresenceQuery(path string) bool {
+	return strings.HasSuffix(path, cardinalityLabelPresencePathSuffix)
 }
 
 func IsActiveNativeHistogramMetricsQuery(path string) bool {

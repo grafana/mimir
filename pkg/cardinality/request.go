@@ -328,6 +328,122 @@ func DecodeActiveSeriesRequestFromValues(values url.Values) (*ActiveSeriesReques
 	return parsed, nil
 }
 
+type LabelPresenceRequest struct {
+	Matchers []*labels.Matcher
+	Labels   []string
+	Limit    int
+}
+
+// LabelPresenceResponse is the response of the label presence cardinality endpoint.
+// It reports, for the active series matching a selector, how many carry every
+// expected label and how many are missing each individual label.
+type LabelPresenceResponse struct {
+	TotalSeries     uint64              `json:"total_series"`
+	CompliantSeries uint64              `json:"compliant_series"`
+	Labels          []LabelPresenceItem `json:"labels"`
+	Examples        []labels.Labels     `json:"examples,omitempty"`
+}
+
+// LabelPresenceItem reports how many series are missing a specific expected label.
+type LabelPresenceItem struct {
+	LabelName    string `json:"label_name"`
+	MissingCount uint64 `json:"missing_count"`
+}
+
+// DecodeLabelPresenceRequest decodes the input http.Request into a LabelPresenceRequest.
+// The input http.Request can either be a GET or POST with URL-encoded parameters.
+func DecodeLabelPresenceRequest(r *http.Request, tenantMaxLimit int) (*LabelPresenceRequest, error) {
+	if err := r.ParseForm(); err != nil {
+		return nil, err
+	}
+
+	return DecodeLabelPresenceRequestFromValuesWithTenantMaxLimit(r.Form, tenantMaxLimit)
+}
+
+// DecodeLabelPresenceRequestFromValues is like DecodeLabelPresenceRequest but takes url.Values in input.
+func DecodeLabelPresenceRequestFromValues(values url.Values) (*LabelPresenceRequest, error) {
+	return DecodeLabelPresenceRequestFromValuesWithTenantMaxLimit(values, 0)
+}
+
+// DecodeLabelPresenceRequestFromValuesWithTenantMaxLimit is like DecodeLabelPresenceRequestFromValues but also accepts the tenantMaxLimit.
+func DecodeLabelPresenceRequestFromValuesWithTenantMaxLimit(values url.Values, tenantMaxLimit int) (*LabelPresenceRequest, error) {
+	var (
+		parsed = &LabelPresenceRequest{}
+		err    error
+	)
+
+	if !values.Has("selector") {
+		return nil, fmt.Errorf("missing 'selector' parameter")
+	}
+
+	parsed.Matchers, err = extractSelector(values)
+	if err != nil {
+		return nil, err
+	}
+
+	parsed.Labels, err = extractPresenceLabels(values)
+	if err != nil {
+		return nil, err
+	}
+
+	parsed.Limit, err = extractLimit(values, tenantMaxLimit)
+	if err != nil {
+		return nil, err
+	}
+
+	return parsed, nil
+}
+
+// extractPresenceLabels parses and gets the label[] query parameter containing the labels whose presence is checked.
+func extractPresenceLabels(values url.Values) ([]string, error) {
+	labelParams := values["label[]"]
+	if len(labelParams) == 0 {
+		return nil, fmt.Errorf("'label[]' param is required")
+	}
+
+	labelNames := make([]string, 0, len(labelParams))
+	for _, labelName := range labelParams {
+		if !model.UTF8Validation.IsValidLabelName(labelName) {
+			return nil, fmt.Errorf("invalid 'label[]' param '%v'", labelName)
+		}
+		labelNames = append(labelNames, labelName)
+	}
+
+	// Ensure stable sorting (improves query results cache hit ratio).
+	slices.Sort(labelNames)
+
+	return labelNames, nil
+}
+
+// String returns a full representation of the request. The returned string can be
+// used to uniquely identify the request.
+func (r *LabelPresenceRequest) String() string {
+	b := strings.Builder{}
+
+	// Add matchers.
+	for idx, matcher := range r.Matchers {
+		if idx > 0 {
+			b.WriteRune(stringValueSeparator)
+		}
+		b.WriteString(matcher.String())
+	}
+
+	// Add labels.
+	b.WriteRune(stringParamSeparator)
+	for idx, name := range r.Labels {
+		if idx > 0 {
+			b.WriteRune(stringValueSeparator)
+		}
+		b.WriteString(name)
+	}
+
+	// Add limit.
+	b.WriteRune(stringParamSeparator)
+	b.WriteString(strconv.Itoa(r.Limit))
+
+	return b.String()
+}
+
 // String returns a string representation that uniquely identifies the request.
 func (r *ActiveSeriesRequest) String() string {
 	b := strings.Builder{}

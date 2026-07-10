@@ -886,6 +886,81 @@ func TestActiveSeriesCardinalityHandler(t *testing.T) {
 	}
 }
 
+func TestLabelPresenceHandler(t *testing.T) {
+	tests := []struct {
+		name             string
+		requestParams    map[string][]string
+		returnedError    error
+		expectStatusCode int
+	}{
+		{
+			name:             "should error on missing selector param",
+			requestParams:    map[string][]string{"label[]": {"cluster"}},
+			expectStatusCode: http.StatusBadRequest,
+		},
+		{
+			name:             "should error on missing label[] param",
+			requestParams:    map[string][]string{"selector": {`{job="prometheus"}`}},
+			expectStatusCode: http.StatusBadRequest,
+		},
+		{
+			name:             "valid request",
+			requestParams:    map[string][]string{"selector": {`{job="prometheus"}`}, "label[]": {"cluster"}},
+			expectStatusCode: http.StatusOK,
+		},
+		{
+			name:             "upstream error: response too large",
+			requestParams:    map[string][]string{"selector": {`{job="prometheus"}`}, "label[]": {"cluster"}},
+			returnedError:    pkg_distributor.ErrResponseTooLarge,
+			expectStatusCode: http.StatusRequestEntityTooLarge,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			d := &mockDistributor{}
+			response := &cardinality.LabelPresenceResponse{
+				TotalSeries:     3,
+				CompliantSeries: 2,
+				Labels:          []cardinality.LabelPresenceItem{{LabelName: "cluster", MissingCount: 1}},
+			}
+			d.On("LabelPresence", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(response, test.returnedError)
+
+			handler := createEnabledHandler(t, LabelPresenceHandler, d)
+			ctx := user.InjectOrgID(context.Background(), "test")
+
+			data := url.Values{}
+			for key, values := range test.requestParams {
+				for _, value := range values {
+					data.Add(key, value)
+				}
+			}
+			request, err := http.NewRequestWithContext(ctx, "POST", "/label_presence", strings.NewReader(data.Encode()))
+			require.NoError(t, err)
+			request.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+
+			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(recorder, request)
+
+			assert.Equal(t, test.expectStatusCode, recorder.Result().StatusCode)
+			if test.expectStatusCode != http.StatusOK {
+				return
+			}
+
+			bodyContent, err := io.ReadAll(recorder.Result().Body)
+			require.NoError(t, err)
+			require.NoError(t, recorder.Result().Body.Close())
+
+			resp := cardinality.LabelPresenceResponse{}
+			require.NoError(t, json.Unmarshal(bodyContent, &resp))
+			assert.Equal(t, uint64(3), resp.TotalSeries)
+			assert.Equal(t, uint64(2), resp.CompliantSeries)
+			require.Len(t, resp.Labels, 1)
+			assert.Equal(t, uint64(1), resp.Labels[0].MissingCount)
+		})
+	}
+}
+
 func BenchmarkActiveSeriesHandler_ServeHTTP(b *testing.B) {
 	const numResponseSeries = 1000
 

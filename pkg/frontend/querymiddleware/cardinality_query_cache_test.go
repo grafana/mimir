@@ -14,6 +14,7 @@ import (
 	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/dskit/user"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -113,6 +114,46 @@ func TestCardinalityQueryCache_RoundTrip(t *testing.T) {
 			cacheKey:       "user-1:metric_1\x01metric_2\x00job=\"test\"\x00inmemory\x00100",
 			hashedCacheKey: cardinalityLabelValuesQueryCachePrefix + hashCacheKey("user-1:metric_1\x01metric_2\x00job=\"test\"\x00inmemory\x00100"),
 		},
+		"label presence request": {
+			reqPath:        "/prometheus/api/v1/cardinality/label_presence",
+			reqData:        url.Values{"selector": []string{`{job="test"}`}, "label[]": []string{"cluster", "namespace"}, "limit": []string{"100"}},
+			cacheKey:       "user-1:job=\"test\"\x00cluster\x01namespace\x00100",
+			hashedCacheKey: cardinalityLabelPresenceQueryCachePrefix + hashCacheKey("user-1:job=\"test\"\x00cluster\x01namespace\x00100"),
+		},
+	})
+}
+
+// TestLabelPresenceQueryCache_RoundTrip verifies the label presence cache round
+// tripper behaves like the other cardinality endpoints.
+func TestLabelPresenceQueryCache_RoundTrip(t *testing.T) {
+	testGenericQueryCacheRoundTrip(t, newLabelPresenceQueryCacheRoundTripper, "label_presence", map[string]testGenericQueryCacheRequestType{
+		"label presence request": {
+			reqPath:        "/prometheus/api/v1/cardinality/label_presence",
+			reqData:        url.Values{"selector": []string{`{job="test"}`}, "label[]": []string{"cluster", "namespace"}, "limit": []string{"100"}},
+			cacheKey:       "user-1:job=\"test\"\x00cluster\x01namespace\x00100",
+			hashedCacheKey: cardinalityLabelPresenceQueryCachePrefix + hashCacheKey("user-1:job=\"test\"\x00cluster\x01namespace\x00100"),
+		},
+	})
+}
+
+// TestCardinalityAndLabelPresenceQueryCache_SharedRegisterer ensures the
+// cardinality and label presence cache round trippers can be constructed with
+// the same registerer, as happens at query-frontend startup. They both register
+// results cache metrics, so they must use distinct request_type labels to avoid
+// a duplicate collector registration panic.
+func TestCardinalityAndLabelPresenceQueryCache_SharedRegisterer(t *testing.T) {
+	reg := prometheus.NewPedanticRegistry()
+	cacheBackend := cache.NewInstrumentedMockCache()
+	limits := multiTenantMockLimits{}
+	downstream := RoundTripFunc(func(*http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader("{}"))}, nil
+	})
+	generator := DefaultCacheKeyGenerator{}
+	logger := mimirtest.NewTestingLogger(t)
+
+	require.NotPanics(t, func() {
+		_ = newCardinalityQueryCacheRoundTripper(cacheBackend, generator, limits, downstream, logger, reg)
+		_ = newLabelPresenceQueryCacheRoundTripper(cacheBackend, generator, limits, downstream, logger, reg)
 	})
 }
 

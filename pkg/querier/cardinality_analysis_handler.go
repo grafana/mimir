@@ -134,6 +134,57 @@ func ActiveSeriesCardinalityHandler(d Distributor, limits *validation.Overrides)
 	})
 }
 
+func LabelPresenceHandler(d Distributor, limits *validation.Overrides) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+		// Guarantee request's context is for a single tenant id
+		tenantID, err := tenant.TenantID(ctx)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		if !limits.CardinalityAnalysisEnabled(tenantID) {
+			http.Error(w, fmt.Sprintf("cardinality analysis is disabled for the tenant: %v", tenantID), http.StatusBadRequest)
+			return
+		}
+
+		tenantMaxLimit := limits.CardinalityAnalysisMaxResults(tenantID)
+		req, err := cardinality.DecodeLabelPresenceRequest(r, tenantMaxLimit)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		res, err := d.LabelPresence(ctx, req.Matchers, req.Labels, req.Limit)
+		if err != nil {
+			if errors.Is(err, distributor.ErrResponseTooLarge) {
+				// http.StatusRequestEntityTooLarge (413) is about the request (not the response)
+				// body size, but it's the closest we have, and we're using the same status code
+				// in the query scheduler to express the same error condition.
+				http.Error(w, fmt.Errorf("%w: try increasing the requested shard count", err).Error(), http.StatusRequestEntityTooLarge)
+				return
+			}
+			respondFromError(err, w)
+			return
+		}
+
+		var json = jsoniter.ConfigCompatibleWithStandardLibrary
+		bytes, err := json.Marshal(res)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Content-Length", strconv.Itoa(len(bytes)))
+		w.Header().Set(worker.ResponseStreamingEnabledHeader, "true")
+
+		// Nothing we can do about this error, so ignore it.
+		_, _ = w.Write(bytes)
+	})
+}
+
 func ActiveNativeHistogramMetricsHandler(d Distributor, limits *validation.Overrides) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()

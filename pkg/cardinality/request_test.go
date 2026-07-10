@@ -147,3 +147,80 @@ func TestActiveSeriesRequest_String(t *testing.T) {
 
 	assert.Equal(t, "first=\"1\"\x01second!=\"2\"", req.String())
 }
+
+func TestDecodeLabelPresenceRequest(t *testing.T) {
+	var (
+		params = url.Values{
+			"selector": []string{`{second!="2",first="1"}`},
+			"label[]":  []string{"cluster", "namespace"},
+			"limit":    []string{"50"},
+		}
+
+		expected = &LabelPresenceRequest{
+			Matchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchEqual, "first", "1"),
+				labels.MustNewMatcher(labels.MatchNotEqual, "second", "2"),
+			},
+			Labels: []string{"cluster", "namespace"},
+			Limit:  50,
+		}
+	)
+
+	t.Run("with GET request", func(t *testing.T) {
+		req, err := http.NewRequest("GET", "http://localhost?"+params.Encode(), nil)
+		require.NoError(t, err)
+
+		actual, err := DecodeLabelPresenceRequest(req, 0)
+		require.NoError(t, err)
+
+		assert.Equal(t, expected, actual)
+	})
+
+	t.Run("with POST request", func(t *testing.T) {
+		req, err := http.NewRequest("POST", "http://localhost/", strings.NewReader(params.Encode()))
+		require.NoError(t, err)
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+		actual, err := DecodeLabelPresenceRequest(req, 0)
+		require.NoError(t, err)
+
+		assert.Equal(t, expected, actual)
+	})
+}
+
+func TestDecodeLabelPresenceRequest_Errors(t *testing.T) {
+	t.Run("missing selector", func(t *testing.T) {
+		_, err := DecodeLabelPresenceRequestFromValues(url.Values{
+			"label[]": []string{"cluster"},
+		})
+		require.EqualError(t, err, "missing 'selector' parameter")
+	})
+
+	t.Run("missing label[]", func(t *testing.T) {
+		_, err := DecodeLabelPresenceRequestFromValues(url.Values{
+			"selector": []string{`{first="1"}`},
+		})
+		require.EqualError(t, err, "'label[]' param is required")
+	})
+
+	t.Run("invalid label name", func(t *testing.T) {
+		_, err := DecodeLabelPresenceRequestFromValues(url.Values{
+			"selector": []string{`{first="1"}`},
+			"label[]":  []string{""},
+		})
+		require.EqualError(t, err, "invalid 'label[]' param ''")
+	})
+}
+
+func TestLabelPresenceRequest_String(t *testing.T) {
+	req := &LabelPresenceRequest{
+		Matchers: []*labels.Matcher{
+			labels.MustNewMatcher(labels.MatchEqual, "first", "1"),
+			labels.MustNewMatcher(labels.MatchNotEqual, "second", "2"),
+		},
+		Labels: []string{"cluster", "namespace"},
+		Limit:  50,
+	}
+
+	assert.Equal(t, "first=\"1\"\x01second!=\"2\"\x00cluster\x01namespace\x0050", req.String())
+}
