@@ -75,8 +75,24 @@ local filename = 'mimir-block-builder.json';
           'Number of records in the backlog of a partition.',
         ) +
         $.queryPanel(
-          '(cortex_blockbuilder_scheduler_partition_end_offset{%(job)s} -cortex_blockbuilder_scheduler_partition_committed_offset{%(job)s}) > 0' % { job: $.jobMatcher($._config.job_names.block_builder_scheduler) },
-          '{{partition}}',
+          [
+            |||
+              # Non-compartmentalized block-builder (write_compartment label absent): the partition number
+              # alone is a unique series, so the legend stays clean. The sibling query (write_compartment!="")
+              # covers compartmentalized deployments.
+              (cortex_blockbuilder_scheduler_partition_end_offset{%(job)s, write_compartment=""} - cortex_blockbuilder_scheduler_partition_committed_offset{%(job)s, write_compartment=""}) > 0
+            ||| % { job: $.jobMatcher($._config.job_names.block_builder_scheduler) },
+            |||
+              # Compartmentalized block-builder: the same partition number recurs across read and write
+              # compartments, so the legend surfaces both to keep series distinct (the read compartment lives
+              # only in the pod name). The sibling query (write_compartment="") covers non-compartmentalized deployments.
+              label_replace((cortex_blockbuilder_scheduler_partition_end_offset{%(job)s, write_compartment!=""} - cortex_blockbuilder_scheduler_partition_committed_offset{%(job)s, write_compartment!=""}) > 0, "read_compartment", "$1", "pod", ".*-rc-([0-9]+)-.*")
+            ||| % { job: $.jobMatcher($._config.job_names.block_builder_scheduler) },
+          ],
+          [
+            '{{partition}}',
+            'rc {{read_compartment}} / wc {{write_compartment}} / partition {{partition}}',
+          ],
         ) +
         { fieldConfig+: { defaults+: { custom+: { unit: 'short', fillOpacity: 0 } } } },
       )
@@ -91,8 +107,25 @@ local filename = 'mimir-block-builder.json';
           |||,
         ) +
         $.queryPanel(
-          'sum by (partition) (cortex_blockbuilder_scheduler_pending_jobs{%(job)s}) > 0' % { job: $.jobMatcher($._config.job_names.block_builder_scheduler) },
-          '{{partition}}',
+          [
+            |||
+              # Non-compartmentalized block-builder (scheduler pod has no -rc-<idx> suffix): the partition
+              # number alone is a unique series, so the legend stays clean. This metric carries no
+              # write_compartment label, so the split is on the pod name; the sibling query (pod=~".*-rc-.*")
+              # covers compartmentalized deployments.
+              sum by (partition) (cortex_blockbuilder_scheduler_pending_jobs{%(job)s, pod!~".*-rc-.*"}) > 0
+            ||| % { job: $.jobMatcher($._config.job_names.block_builder_scheduler) },
+            |||
+              # Compartmentalized block-builder: group per read compartment so that partition N of one
+              # compartment's topic isn't summed together with partition N of another's. The sibling query
+              # (pod!~".*-rc-.*") covers non-compartmentalized deployments.
+              sum by (read_compartment, partition) (label_replace(cortex_blockbuilder_scheduler_pending_jobs{%(job)s, pod=~".*-rc-.*"}, "read_compartment", "$1", "pod", ".*-rc-([0-9]+)-.*")) > 0
+            ||| % { job: $.jobMatcher($._config.job_names.block_builder_scheduler) },
+          ],
+          [
+            '{{partition}}',
+            'rc {{read_compartment}} / partition {{partition}}',
+          ],
         ) +
         { fieldConfig+: { defaults+: { custom+: { unit: 'short', fillOpacity: 0 } } } },
       )
