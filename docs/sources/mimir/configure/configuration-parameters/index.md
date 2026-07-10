@@ -5696,6 +5696,15 @@ kafka:
   # CLI flag: -ingest-storage.kafka.producer-max-buffered-bytes
   [producer_max_buffered_bytes: <int> | default = 1073741824]
 
+  # The compression codec used by the Kafka producer when writing records to the
+  # Kafka backend. Supported values: none, gzip, snappy, lz4, zstd. When unset,
+  # the franz-go default (snappy with no-compression fallback) is used. Set to
+  # "none" to disable compression entirely; this is required when targeting
+  # Azure Event Hub via its Kafka-compatible endpoint, which does not support
+  # compressed produce requests.
+  # CLI flag: -ingest-storage.kafka.producer-compression
+  [producer_compression: <string> | default = ""]
+
   # The maximum allowed for a read requests processed by an ingester to wait
   # until strong read consistency is enforced. 0 to disable the timeout.
   # CLI flag: -ingest-storage.kafka.wait-strong-read-consistency-timeout
