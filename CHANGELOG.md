@@ -73,6 +73,7 @@
 * [ENHANCEMENT] Query-frontend: Add `query-frontend.cardinality-sharding-max-sharded-queries` to optionally limit sharding for `cardinality/active_series` and `cardinality/active_native_histogram_metrics` endpoints separately from `query-frontend.query-sharding-max-sharded-queries`. #15922
 * [ENHANCEMENT] Ingest storage: Add experimental `-ingest-storage.kafka.write-timeout-overhead` to configure the overhead added on top of the Kafka write timeout (default 2s, unchanged). #16023
 * [BUGFIX] Query-frontend: Fix `cardinality_analysis_max_results` being ignored when set higher than the default of 500. #15581
+* [BUGFIX] Store-gateway: Allow cancelling prepare-shutdown when the sync directory does not exist. #16049
 * [BUGFIX] Ingest storage: Fix `KafkaProducer.ProduceSync()` returning a single result with a nil record when the context is canceled, instead of one result per input record (with the record set) as the underlying franz-go client does. #15199
 * [BUGFIX] Ingest storage: Fix `cortex_ingest_storage_reader_receive_delay_seconds` inflation by no longer setting the Kafka record `Timestamp` on the distributor side; the Kafka client now sets it at produce time. #15572
 * [BUGFIX] Distributor: Return HTTP 200 with OTLP partial-success when only some samples in an OTLP request are rejected by distributor-level validation (e.g. `too_far_in_past`). #15253
