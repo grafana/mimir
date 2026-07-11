@@ -133,6 +133,8 @@
 
 ### Documentation
 
+* [BUGFIX] Configuration reference: Removed references to the hidden `-blocks-storage.tsdb.block-ranges-period` flag from the `-compactor.max-lookback` and `-blocks-storage.tsdb.retention-period` descriptions; they now state the default 2h block range period instead. #16046
+
 ### Tools
 
 * [CHANGE] The `mark-blocks`, `listblocks`, `copyblocks`, `splitblocks`, and `undelete-blocks` tools are now subcommands of `mimirtool blocks`: `mark`, `list`, `copy`, `split`, `undelete`. #15757
