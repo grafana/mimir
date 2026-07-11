@@ -2473,6 +2473,8 @@ Usage of ./cmd/mimir/mimir:
     	Maximum number of label names allowed to be queried in a single /api/v1/cardinality/label_values API call. (default 100)
   -querier.lookback-delta duration
     	Time since the last sample after which a time series is considered stale and ignored by expression evaluations. This config option should be set on query-frontend too when query sharding is enabled. (default 5m0s)
+  -querier.max-blocks-per-store-request int
+    	[experimental] Maximum number of blocks that a querier will reference in a single request to a store-gateway. When a request would exceed this, it is split into multiple requests to the same store-gateway. 0 disables the limit.
   -querier.max-concurrent int
     	The number of workers running in each querier process. This setting limits the maximum number of concurrent queries in each querier. The minimum value is four; lower values are ignored and set to the minimum (default 8)
   -querier.max-concurrent-remote-read-queries int

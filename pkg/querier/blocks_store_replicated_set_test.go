@@ -69,7 +69,7 @@ func TestBlocksStoreReplicationSet_GetClientsFor(t *testing.T) {
 		setup             func(*ring.Desc)
 		queryBlocks       bucketindex.Blocks
 		exclude           map[ulid.ULID][]string
-		expectedClients   map[string][]ulid.ULID
+		expectedClients   map[string][][]ulid.ULID
 		expectedErr       error
 	}{
 		"shard size 0, single instance in the ring with RF = 1": {
@@ -79,8 +79,8 @@ func TestBlocksStoreReplicationSet_GetClientsFor(t *testing.T) {
 				d.AddIngester("instance-1", "127.0.0.1", "", []uint32{block1Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{}, nil)
 			},
 			queryBlocks: []*bucketindex.Block{block1, block2},
-			expectedClients: map[string][]ulid.ULID{
-				"127.0.0.1": {blockID1, blockID2},
+			expectedClients: map[string][][]ulid.ULID{
+				"127.0.0.1": {{blockID1, blockID2}},
 			},
 		},
 		"shard size 0, single instance in the ring with RF = 1 but excluded": {
@@ -105,8 +105,8 @@ func TestBlocksStoreReplicationSet_GetClientsFor(t *testing.T) {
 			exclude: map[ulid.ULID][]string{
 				blockID3: {"127.0.0.1"},
 			},
-			expectedClients: map[string][]ulid.ULID{
-				"127.0.0.1": {blockID1, blockID2},
+			expectedClients: map[string][][]ulid.ULID{
+				"127.0.0.1": {{blockID1, blockID2}},
 			},
 		},
 		"shard size 0, single instance in the ring with RF = 2": {
@@ -116,8 +116,8 @@ func TestBlocksStoreReplicationSet_GetClientsFor(t *testing.T) {
 				d.AddIngester("instance-1", "127.0.0.1", "", []uint32{block1Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{}, nil)
 			},
 			queryBlocks: []*bucketindex.Block{block1, block2},
-			expectedClients: map[string][]ulid.ULID{
-				"127.0.0.1": {blockID1, blockID2},
+			expectedClients: map[string][][]ulid.ULID{
+				"127.0.0.1": {{blockID1, blockID2}},
 			},
 		},
 		"shard size 0, multiple instances in the ring with each requested block belonging to a different store-gateway and RF = 1": {
@@ -130,10 +130,10 @@ func TestBlocksStoreReplicationSet_GetClientsFor(t *testing.T) {
 				d.AddIngester("instance-4", "127.0.0.4", "", []uint32{block4Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{}, nil)
 			},
 			queryBlocks: []*bucketindex.Block{block1, block3, block4},
-			expectedClients: map[string][]ulid.ULID{
-				"127.0.0.1": {blockID1},
-				"127.0.0.3": {blockID3},
-				"127.0.0.4": {blockID4},
+			expectedClients: map[string][][]ulid.ULID{
+				"127.0.0.1": {{blockID1}},
+				"127.0.0.3": {{blockID3}},
+				"127.0.0.4": {{blockID4}},
 			},
 		},
 		"shard size 0, multiple instances in the ring with each requested block belonging to a different store-gateway and RF = 1 but excluded": {
@@ -161,10 +161,10 @@ func TestBlocksStoreReplicationSet_GetClientsFor(t *testing.T) {
 				d.AddIngester("instance-4", "127.0.0.4", "", []uint32{block4Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{}, nil)
 			},
 			queryBlocks: []*bucketindex.Block{block1, block3, block4},
-			expectedClients: map[string][]ulid.ULID{
-				"127.0.0.1": {blockID1},
-				"127.0.0.3": {blockID3},
-				"127.0.0.4": {blockID4},
+			expectedClients: map[string][][]ulid.ULID{
+				"127.0.0.1": {{blockID1}},
+				"127.0.0.3": {{blockID3}},
+				"127.0.0.4": {{blockID4}},
 			},
 		},
 		"shard size 0, multiple instances in the ring with multiple requested blocks belonging to the same store-gateway and RF = 2": {
@@ -175,9 +175,9 @@ func TestBlocksStoreReplicationSet_GetClientsFor(t *testing.T) {
 				d.AddIngester("instance-2", "127.0.0.2", "", []uint32{block3Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{}, nil)
 			},
 			queryBlocks: []*bucketindex.Block{block1, block2, block3, block4},
-			expectedClients: map[string][]ulid.ULID{
-				"127.0.0.1": {blockID1, blockID4},
-				"127.0.0.2": {blockID2, blockID3},
+			expectedClients: map[string][][]ulid.ULID{
+				"127.0.0.1": {{blockID1, blockID4}},
+				"127.0.0.2": {{blockID2, blockID3}},
 			},
 		},
 		"shard size 0, multiple instances in the ring with each requested block belonging to a different store-gateway and RF = 2 and some blocks excluded but with replacement available": {
@@ -194,9 +194,9 @@ func TestBlocksStoreReplicationSet_GetClientsFor(t *testing.T) {
 				blockID3: {"127.0.0.3"},
 				blockID1: {"127.0.0.1"},
 			},
-			expectedClients: map[string][]ulid.ULID{
-				"127.0.0.2": {blockID1},
-				"127.0.0.4": {blockID3, blockID4},
+			expectedClients: map[string][][]ulid.ULID{
+				"127.0.0.2": {{blockID1}},
+				"127.0.0.4": {{blockID3, blockID4}},
 			},
 		},
 		"shard size 0, multiple instances in the ring are JOINING, the requested block + its replicas only belongs to JOINING instances": {
@@ -209,8 +209,8 @@ func TestBlocksStoreReplicationSet_GetClientsFor(t *testing.T) {
 				d.AddIngester("instance-4", "127.0.0.4", "", []uint32{block4Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{}, nil)
 			},
 			queryBlocks: []*bucketindex.Block{block1},
-			expectedClients: map[string][]ulid.ULID{
-				"127.0.0.4": {blockID1},
+			expectedClients: map[string][][]ulid.ULID{
+				"127.0.0.4": {{blockID1}},
 			},
 		},
 		"shard size 1, single instance in the ring with RF = 1": {
@@ -220,8 +220,8 @@ func TestBlocksStoreReplicationSet_GetClientsFor(t *testing.T) {
 				d.AddIngester("instance-1", "127.0.0.1", "", []uint32{block1Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{}, nil)
 			},
 			queryBlocks: []*bucketindex.Block{block1, block2},
-			expectedClients: map[string][]ulid.ULID{
-				"127.0.0.1": {blockID1, blockID2},
+			expectedClients: map[string][][]ulid.ULID{
+				"127.0.0.1": {{blockID1, blockID2}},
 			},
 		},
 		"shard size 1, single instance in the ring with RF = 1, but store-gateway excluded": {
@@ -243,8 +243,8 @@ func TestBlocksStoreReplicationSet_GetClientsFor(t *testing.T) {
 				d.AddIngester("instance-1", "127.0.0.1", "", []uint32{block1Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{}, nil)
 			},
 			queryBlocks: []*bucketindex.Block{block1, block2},
-			expectedClients: map[string][]ulid.ULID{
-				"127.0.0.1": {blockID1, blockID2},
+			expectedClients: map[string][][]ulid.ULID{
+				"127.0.0.1": {{blockID1, blockID2}},
 			},
 		},
 		"shard size 1, multiple instances in the ring with RF = 1": {
@@ -257,8 +257,8 @@ func TestBlocksStoreReplicationSet_GetClientsFor(t *testing.T) {
 				d.AddIngester("instance-4", "127.0.0.4", "", []uint32{block4Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{}, nil)
 			},
 			queryBlocks: []*bucketindex.Block{block1, block2, block4},
-			expectedClients: map[string][]ulid.ULID{
-				"127.0.0.1": {blockID1, blockID2, blockID4},
+			expectedClients: map[string][][]ulid.ULID{
+				"127.0.0.1": {{blockID1, blockID2, blockID4}},
 			},
 		},
 		"shard size 2, shuffle sharding, multiple instances in the ring with RF = 1": {
@@ -271,9 +271,9 @@ func TestBlocksStoreReplicationSet_GetClientsFor(t *testing.T) {
 				d.AddIngester("instance-4", "127.0.0.4", "", []uint32{block4Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{}, nil)
 			},
 			queryBlocks: []*bucketindex.Block{block1, block2, block4},
-			expectedClients: map[string][]ulid.ULID{
-				"127.0.0.1": {blockID1, blockID4},
-				"127.0.0.3": {blockID2},
+			expectedClients: map[string][][]ulid.ULID{
+				"127.0.0.1": {{blockID1, blockID4}},
+				"127.0.0.3": {{blockID2}},
 			},
 		},
 		"shard size 4, multiple instances in the ring with RF = 1": {
@@ -286,10 +286,10 @@ func TestBlocksStoreReplicationSet_GetClientsFor(t *testing.T) {
 				d.AddIngester("instance-4", "127.0.0.4", "", []uint32{block4Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{}, nil)
 			},
 			queryBlocks: []*bucketindex.Block{block1, block2, block4},
-			expectedClients: map[string][]ulid.ULID{
-				"127.0.0.1": {blockID1},
-				"127.0.0.2": {blockID2},
-				"127.0.0.4": {blockID4},
+			expectedClients: map[string][][]ulid.ULID{
+				"127.0.0.1": {{blockID1}},
+				"127.0.0.2": {{blockID2}},
+				"127.0.0.4": {{blockID4}},
 			},
 		},
 		"shard size 2, multiple instances in the ring with RF = 2, with excluded blocks but some replacement available": {
@@ -306,8 +306,8 @@ func TestBlocksStoreReplicationSet_GetClientsFor(t *testing.T) {
 				blockID1: {"127.0.0.1"},
 				blockID2: {"127.0.0.1"},
 			},
-			expectedClients: map[string][]ulid.ULID{
-				"127.0.0.3": {blockID1, blockID2},
+			expectedClients: map[string][][]ulid.ULID{
+				"127.0.0.3": {{blockID1, blockID2}},
 			},
 		},
 		"shard size 2, multiple instances in the ring with RF = 2, SS = 2 with excluded blocks and no replacement available": {
@@ -709,11 +709,11 @@ func TestBlocksStoreReplicationSet_GetClientsFor_BufferReuseSafety(t *testing.T)
 
 	// Verify the block assignment is correct.
 	clientAddrs := getStoreGatewayClientAddrs(clients)
-	expectedClients := map[string][]ulid.ULID{
-		"127.0.0.1": {blockID1},
-		"127.0.0.2": {blockID2},
-		"127.0.0.3": {blockID3},
-		"127.0.0.4": {blockID4},
+	expectedClients := map[string][][]ulid.ULID{
+		"127.0.0.1": {{blockID1}},
+		"127.0.0.2": {{blockID2}},
+		"127.0.0.3": {{blockID3}},
+		"127.0.0.4": {{blockID4}},
 	}
 	assert.Equal(t, expectedClients, clientAddrs)
 }
@@ -839,10 +839,52 @@ func BenchmarkBlocksStoreReplicationSet_GetClientsFor(b *testing.B) {
 	}
 }
 
-func getStoreGatewayClientAddrs(clients map[BlocksStoreClient][]ulid.ULID) map[string][]ulid.ULID {
-	addrs := map[string][]ulid.ULID{}
-	for c, blockIDs := range clients {
-		addrs[c.RemoteAddress()] = blockIDs
+func TestPartitionBlocks(t *testing.T) {
+	id1 := ulid.MustNew(1, nil)
+	id2 := ulid.MustNew(2, nil)
+	id3 := ulid.MustNew(3, nil)
+	id4 := ulid.MustNew(4, nil)
+	id5 := ulid.MustNew(5, nil)
+
+	tests := map[string]struct {
+		blocks   []ulid.ULID
+		max      int
+		expected [][]ulid.ULID
+	}{
+		"disabled keeps input order in a single partition": {
+			blocks:   []ulid.ULID{id3, id1, id2},
+			max:      0,
+			expected: [][]ulid.ULID{{id3, id1, id2}},
+		},
+		"exactly max stays in one partition": {
+			blocks:   []ulid.ULID{id1, id2, id3},
+			max:      3,
+			expected: [][]ulid.ULID{{id1, id2, id3}},
+		},
+		"one over max splits into two": {
+			blocks:   []ulid.ULID{id1, id2, id3, id4},
+			max:      3,
+			expected: [][]ulid.ULID{{id1, id2, id3}, {id4}},
+		},
+		"splits into multiple partitions of max size": {
+			blocks:   []ulid.ULID{id1, id2, id3, id4, id5},
+			max:      2,
+			expected: [][]ulid.ULID{{id1, id2}, {id3, id4}, {id5}},
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			require.Equal(t, tc.expected, partitionBlocks(tc.blocks, tc.max))
+		})
+	}
+}
+
+// getStoreGatewayClientAddrs returns each client's partitions keyed by store-gateway address.
+func getStoreGatewayClientAddrs(clients map[BlocksStoreClient][][]ulid.ULID) map[string][][]ulid.ULID {
+	addrs := map[string][][]ulid.ULID{}
+	for c, partitions := range clients {
+		addrs[c.RemoteAddress()] = partitions
 	}
 	return addrs
 }

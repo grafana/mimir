@@ -104,7 +104,7 @@ func (s *blocksStoreReplicationSet) stopping(_ error) error {
 	return services.StopManagerAndAwaitStopped(context.Background(), s.subservices)
 }
 
-func (s *blocksStoreReplicationSet) GetClientsFor(userID string, blocks bucketindex.Blocks, exclude map[ulid.ULID][]string) (map[BlocksStoreClient][]ulid.ULID, error) {
+func (s *blocksStoreReplicationSet) GetClientsFor(userID string, blocks bucketindex.Blocks, exclude map[ulid.ULID][]string) (map[BlocksStoreClient][][]ulid.ULID, error) {
 	blocksByAddr := make(map[string][]ulid.ULID)
 	instances := make(map[string]ring.InstanceDesc)
 	userRing := storegateway.GetShuffleShardingSubring(s.storesRing, userID, s.limits)
@@ -137,7 +137,8 @@ func (s *blocksStoreReplicationSet) GetClientsFor(userID string, blocks bucketin
 		blocksByAddr[inst.Addr] = append(blocksByAddr[inst.Addr], block.ID)
 	}
 
-	clients := map[BlocksStoreClient][]ulid.ULID{}
+	clients := map[BlocksStoreClient][][]ulid.ULID{}
+	maxBlocksPerClient := s.limits.MaxBlocksPerStoreRequest(userID)
 
 	// Get the client for each store-gateway.
 	for addr, instance := range instances {
@@ -146,10 +147,19 @@ func (s *blocksStoreReplicationSet) GetClientsFor(userID string, blocks bucketin
 			return nil, errors.Wrapf(err, "failed to get store-gateway client for %s %s", instance.Id, addr)
 		}
 
-		clients[c.(BlocksStoreClient)] = blocksByAddr[addr]
+		clients[c.(BlocksStoreClient)] = partitionBlocks(blocksByAddr[addr], maxBlocksPerClient)
 	}
 
 	return clients, nil
+}
+
+// partitionBlocks splits blocks into consecutive partitions of at most max blocks each.
+// When max is 0 the function returns all blocks in a single partition.
+func partitionBlocks(blocks []ulid.ULID, max int) [][]ulid.ULID {
+	if max == 0 {
+		return [][]ulid.ULID{blocks}
+	}
+	return slices.Collect(slices.Chunk(blocks, max))
 }
 
 func getNonExcludedInstance(set ring.ReplicationSet, exclude []string, balancingStrategy loadBalancingStrategy, preferredZones []string) *ring.InstanceDesc {
