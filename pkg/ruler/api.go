@@ -6,6 +6,7 @@
 package ruler
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -388,7 +389,7 @@ var (
 )
 
 func marshalAndSend(output interface{}, w http.ResponseWriter, logger log.Logger, headers ...http.Header) {
-	d, err := yaml.Marshal(&output)
+	d, err := marshalRuleGroupsYAML(output)
 	if err != nil {
 		level.Error(logger).Log("msg", "error marshalling yaml rule groups", "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -407,6 +408,34 @@ func marshalAndSend(output interface{}, w http.ResponseWriter, logger log.Logger
 	if _, err := w.Write(d); err != nil {
 		level.Error(logger).Log("msg", "error writing yaml response", "err", err)
 		return
+	}
+}
+
+func marshalRuleGroupsYAML(output interface{}) ([]byte, error) {
+	var buf bytes.Buffer
+	encoder := yaml.NewEncoder(&buf)
+	encoder.SetIndent(2)
+	if err := encoder.Encode(&output); err != nil {
+		return nil, err
+	}
+	if err := encoder.Close(); err != nil {
+		return nil, err
+	}
+
+	var node yaml.Node
+	if err := yaml.Unmarshal(buf.Bytes(), &node); err != nil {
+		return nil, err
+	}
+	quoteMultilineStringsWithLeadingWhitespace(&node)
+	return yaml.Marshal(&node)
+}
+
+func quoteMultilineStringsWithLeadingWhitespace(node *yaml.Node) {
+	if node.Kind == yaml.ScalarNode && node.Tag == "!!str" && strings.HasPrefix(node.Value, " ") && strings.Contains(node.Value, "\n") {
+		node.Style = yaml.DoubleQuotedStyle
+	}
+	for _, child := range node.Content {
+		quoteMultilineStringsWithLeadingWhitespace(child)
 	}
 }
 

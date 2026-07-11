@@ -96,6 +96,7 @@
 * [BUGFIX] Compactor: Fix `GatherBlockHealthStats` postings walk error check to prevent swallowing errors. #15895
 * [BUGFIX] MQE: Don't evaluate unnecessary range vector splitting ranges when a split range vector is part of a spun-off subquery and running time-splitting and caching inside MQE is enabled. #15931
 * [BUGFIX] MQE: Fix `info()` function incorrectly handling negated name matchers. #15168
+* [BUGFIX] Ruler: Preserve leading whitespace in rule expressions returned by the configuration API. #16047
 
 ### Mixin
 

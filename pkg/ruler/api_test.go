@@ -1504,6 +1504,20 @@ rules:
 			status: 202,
 		},
 		{
+			name: "with leading whitespace in a rule expression",
+			cfg:  defaultCfg,
+			input: `
+name: test
+interval: 15s
+rules:
+    - alert: TestRule
+      expr: |2
+            vector(0)
+      for: 1m
+`,
+			status: 202,
+		},
+		{
 			name: "with valid rules and both evaluation delay and query offset set to the same value",
 			cfg:  defaultCfg,
 			input: `
