@@ -95,6 +95,12 @@ func sampleTimestamps(ts mimirpb.PreallocTimeseries) []int64 {
 	return out
 }
 
+func makeTimeseriesWithCT(lbls []string, samples []mimirpb.Sample, createdTimestamp int64) mimirpb.PreallocTimeseries {
+	ts := makeTimeseries(lbls, samples, nil, nil)
+	ts.CreatedTimestamp = createdTimestamp
+	return ts
+}
+
 func TestDistributor_prePushMergeMiddleware(t *testing.T) {
 	d := newMergeTestDistributor(t)
 
@@ -156,6 +162,27 @@ func TestDistributor_prePushMergeMiddleware(t *testing.T) {
 		require.Len(t, got.Timeseries, 1)
 		assert.Equal(t, []int64{10}, sampleTimestamps(got.Timeseries[0]))
 		assert.Len(t, got.Timeseries[0].Histograms, 1)
+	})
+
+	t.Run("preserves the earliest non-zero created timestamp on merge", func(t *testing.T) {
+		// The ingester injects a created-timestamp zero sample from ts.CreatedTimestamp
+		// (per timeseries object). The merge must therefore keep a meaningful created
+		// timestamp: adopt one when the first occurrence has none, and keep the earliest
+		// (smallest) non-zero value across duplicates. A later zero must not reset it.
+		lbls := []string{model.MetricNameLabel, "series_1"}
+		req := &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{
+			makeTimeseriesWithCT(lbls, makeSamples(100, 1), 0),
+			makeTimeseriesWithCT(lbls, makeSamples(200, 2), 50),
+			makeTimeseriesWithCT(lbls, makeSamples(300, 3), 30),
+			makeTimeseriesWithCT(lbls, makeSamples(400, 4), 90),
+			makeTimeseriesWithCT(lbls, makeSamples(500, 5), 0),
+		}}
+
+		got := runPrePushMerge(t, d, req)
+
+		require.Len(t, got.Timeseries, 1)
+		assert.Equal(t, int64(30), got.Timeseries[0].CreatedTimestamp)
+		assert.Len(t, got.Timeseries[0].Samples, 5)
 	})
 
 	t.Run("folds multiple duplicate label sets into the first occurrence", func(t *testing.T) {
@@ -254,4 +281,45 @@ func TestDistributor_prePushMergeMiddleware_InvalidatesMarshalCache(t *testing.T
 	assert.Len(t, verify.Timeseries[0].Samples, 2, "merged samples must survive re-marshalling")
 	assert.Len(t, verify.Timeseries[0].Histograms, 1, "merged histogram must survive re-marshalling")
 	assert.Len(t, verify.Timeseries[0].Exemplars, 1, "merged exemplar must survive re-marshalling")
+}
+
+// TestDistributor_prePushMergeMiddleware_PreservesCreatedTimestampToIngester is an
+// end-to-end check through the full distributor push pipeline: a request with two
+// identically-labelled objects, where only the later duplicate carries a created
+// timestamp, must reach the ingester as a single merged series that still carries
+// that created timestamp (so created-timestamp zero-sample ingestion still fires).
+func TestDistributor_prePushMergeMiddleware_PreservesCreatedTimestampToIngester(t *testing.T) {
+	ctx := user.InjectOrgID(context.Background(), "user")
+
+	var limits validation.Limits
+	flagext.DefaultValues(&limits)
+	ds, ingesters, _, _ := prepare(t, prepConfig{
+		numIngesters:    2,
+		happyIngesters:  2,
+		numDistributors: 1,
+		limits:          &limits,
+	})
+
+	const createdTS = int64(50)
+	lbls := []string{model.MetricNameLabel, "series_1"}
+	req := &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{
+		makeTimeseriesWithCT(lbls, makeSamples(100, 1), 0),
+		makeTimeseriesWithCT(lbls, makeSamples(200, 2), createdTS),
+	}}
+
+	_, err := ds[0].Push(ctx, req)
+	require.NoError(t, err)
+
+	sawSeries := false
+	for i := range ingesters {
+		received := ingesters[i].series()
+		// The duplicate must have been merged away before reaching any ingester.
+		assert.LessOrEqual(t, len(received), 1, "ingester should receive at most the single merged series")
+		for _, s := range received {
+			sawSeries = true
+			assert.Equal(t, createdTS, s.CreatedTimestamp, "merged series must reach the ingester with the created timestamp preserved")
+			assert.Len(t, s.Samples, 2, "both duplicate objects' samples must be merged into one series")
+		}
+	}
+	require.True(t, sawSeries, "expected at least one ingester to receive the merged series")
 }

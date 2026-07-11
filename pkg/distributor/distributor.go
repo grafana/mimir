@@ -1387,7 +1387,7 @@ func (d *Distributor) prePushMergeMiddleware(next PushFunc) PushFunc {
 				continue
 			}
 
-			// Merge samples and histograms from the later timeseries into the first.
+			// Merge samples, histograms and exemplars from the later timeseries into the first.
 			if len(ts.Samples) > 0 {
 				req.Timeseries[firstIdx].Samples = append(req.Timeseries[firstIdx].Samples, ts.Samples...)
 			}
@@ -1396,6 +1396,13 @@ func (d *Distributor) prePushMergeMiddleware(next PushFunc) PushFunc {
 			}
 			if len(ts.Exemplars) > 0 {
 				req.Timeseries[firstIdx].Exemplars = append(req.Timeseries[firstIdx].Exemplars, ts.Exemplars...)
+			}
+			// Preserve the earliest non-zero created timestamp so the ingester
+			// still performs created-timestamp zero-sample ingestion for the
+			// merged series. Otherwise a non-zero timestamp carried only by an
+			// absorbed duplicate would be dropped.
+			if ts.CreatedTimestamp != 0 && (req.Timeseries[firstIdx].CreatedTimestamp == 0 || ts.CreatedTimestamp < req.Timeseries[firstIdx].CreatedTimestamp) {
+				req.Timeseries[firstIdx].CreatedTimestamp = ts.CreatedTimestamp
 			}
 			// Invalidate the marshal cache after merging — without this,
 			// Size()/Marshal() return stale pre-merge bytes and drop the
