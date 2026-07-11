@@ -36,6 +36,7 @@
 ### Tools
 
 * [CHANGE] `create-draft-release-notes.sh` doesn't require release notes ready for release candidate. #16286
+* [BUGFIX] Mimirtool: `partition-ring` subcommands now operate on the partition ring key under the KV store prefix used by Mimir (`collectors/` by default), instead of the bare key, which made commands fail with errors like `partition 1 does not exist in the ring` against a healthy cluster. Use the new `--partition-ring.prefix` flag if Mimir runs with a custom `-ingester.partition-ring.prefix`. #16045
 
 ## 3.2.0-rc.0
 
