@@ -26,6 +26,11 @@ import (
 	"github.com/grafana/mimir/pkg/ingester"
 )
 
+// defaultPartitionRingKeyPrefix is the default prefix under which Mimir stores the partition
+// ring key in the KV store. It matches the default value of the -ingester.partition-ring.prefix
+// Mimir configuration option.
+const defaultPartitionRingKeyPrefix = "collectors/"
+
 // PartitionRingCommand is the kingpin command for partition ring operations.
 type PartitionRingCommand struct{}
 
@@ -35,6 +40,7 @@ type AddPartitionCommand struct {
 	memberlistClusterLabel string
 	memberlistBindPort     int
 	ringKey                string
+	ringPrefix             string
 	partitionIDs           string
 	partitionState         string
 	verbose                bool
@@ -48,6 +54,7 @@ type RemovePartitionCommand struct {
 	memberlistClusterLabel string
 	memberlistBindPort     int
 	ringKey                string
+	ringPrefix             string
 	partitionIDs           string
 	verbose                bool
 	logger                 log.Logger
@@ -60,6 +67,7 @@ type AddOwnerCommand struct {
 	memberlistClusterLabel string
 	memberlistBindPort     int
 	ringKey                string
+	ringPrefix             string
 	ownerIDs               string
 	partitionID            string
 	verbose                bool
@@ -73,6 +81,7 @@ type RemoveOwnerCommand struct {
 	memberlistClusterLabel string
 	memberlistBindPort     int
 	ringKey                string
+	ringPrefix             string
 	ownerIDs               string
 	verbose                bool
 	logger                 log.Logger
@@ -169,12 +178,13 @@ func (c *PartitionRingCommand) Register(app *kingpin.Application, _ EnvVarNames,
 		memberlistClusterLabel *string
 		memberlistBindPort     *int
 		ringKey                *string
+		ringPrefix             *string
 		verbose                *bool
 	}{
-		{addPartitionCmd, &addCmd.memberlistJoin, &addCmd.memberlistClusterLabel, &addCmd.memberlistBindPort, &addCmd.ringKey, &addCmd.verbose},
-		{removePartitionCmd, &removeCmd.memberlistJoin, &removeCmd.memberlistClusterLabel, &removeCmd.memberlistBindPort, &removeCmd.ringKey, &removeCmd.verbose},
-		{addOwnerCmdClause, &addOwnerCmd.memberlistJoin, &addOwnerCmd.memberlistClusterLabel, &addOwnerCmd.memberlistBindPort, &addOwnerCmd.ringKey, &addOwnerCmd.verbose},
-		{removeOwnerCmdClause, &removeOwnerCmd.memberlistJoin, &removeOwnerCmd.memberlistClusterLabel, &removeOwnerCmd.memberlistBindPort, &removeOwnerCmd.ringKey, &removeOwnerCmd.verbose},
+		{addPartitionCmd, &addCmd.memberlistJoin, &addCmd.memberlistClusterLabel, &addCmd.memberlistBindPort, &addCmd.ringKey, &addCmd.ringPrefix, &addCmd.verbose},
+		{removePartitionCmd, &removeCmd.memberlistJoin, &removeCmd.memberlistClusterLabel, &removeCmd.memberlistBindPort, &removeCmd.ringKey, &removeCmd.ringPrefix, &removeCmd.verbose},
+		{addOwnerCmdClause, &addOwnerCmd.memberlistJoin, &addOwnerCmd.memberlistClusterLabel, &addOwnerCmd.memberlistBindPort, &addOwnerCmd.ringKey, &addOwnerCmd.ringPrefix, &addOwnerCmd.verbose},
+		{removeOwnerCmdClause, &removeOwnerCmd.memberlistJoin, &removeOwnerCmd.memberlistClusterLabel, &removeOwnerCmd.memberlistBindPort, &removeOwnerCmd.ringKey, &removeOwnerCmd.ringPrefix, &removeOwnerCmd.verbose},
 	} {
 		cfg.cmd.Flag("memberlist.join", "Address of a memberlist node to join. Can be specified multiple times.").
 			Required().
@@ -193,6 +203,10 @@ func (c *PartitionRingCommand) Register(app *kingpin.Application, _ EnvVarNames,
 		cfg.cmd.Flag("partition-ring.key", "The KV store key under which the partition ring is stored.").
 			Default(ingester.PartitionRingKey).
 			StringVar(cfg.ringKey)
+
+		cfg.cmd.Flag("partition-ring.prefix", "The prefix for the keys in the KV store. Must match the -ingester.partition-ring.prefix Mimir configuration option. Should end with a /.").
+			Default(defaultPartitionRingKeyPrefix).
+			StringVar(cfg.ringPrefix)
 
 		cfg.cmd.Flag("verbose", "Enable verbose logging.").
 			Default("false").
@@ -227,7 +241,7 @@ About to add partition(s) %v with state '%s' to the ring.`, partitionIDs, state.
 
 	// Initialize memberlist KV.
 	fmt.Fprintln(os.Stderr, "Joining memberlist cluster...")
-	kvClient, cleanup, err := initMemberlistKV(ctx, c.memberlistJoin, c.memberlistClusterLabel, c.memberlistBindPort, c.logger)
+	kvClient, cleanup, err := initMemberlistKV(ctx, c.memberlistJoin, c.memberlistClusterLabel, c.memberlistBindPort, c.ringPrefix, c.logger)
 	if err != nil {
 		return errors.Wrap(err, "failed to initialize memberlist KV")
 	}
@@ -264,7 +278,7 @@ About to remove partition(s) %v from the ring.`, partitionIDs)
 
 	// Initialize memberlist KV.
 	fmt.Fprintln(os.Stderr, "Joining memberlist cluster...")
-	kvClient, cleanup, err := initMemberlistKV(ctx, c.memberlistJoin, c.memberlistClusterLabel, c.memberlistBindPort, c.logger)
+	kvClient, cleanup, err := initMemberlistKV(ctx, c.memberlistJoin, c.memberlistClusterLabel, c.memberlistBindPort, c.ringPrefix, c.logger)
 	if err != nil {
 		return errors.Wrap(err, "failed to initialize memberlist KV")
 	}
@@ -366,7 +380,7 @@ About to add owner(s) %v to partition %d.`, ownerIDs, partitionID)
 
 	// Initialize memberlist KV.
 	fmt.Fprintln(os.Stderr, "Joining memberlist cluster...")
-	kvClient, cleanup, err := initMemberlistKV(ctx, c.memberlistJoin, c.memberlistClusterLabel, c.memberlistBindPort, c.logger)
+	kvClient, cleanup, err := initMemberlistKV(ctx, c.memberlistJoin, c.memberlistClusterLabel, c.memberlistBindPort, c.ringPrefix, c.logger)
 	if err != nil {
 		return errors.Wrap(err, "failed to initialize memberlist KV")
 	}
@@ -410,7 +424,7 @@ About to remove owner(s) %v from the ring.`, ownerIDs)
 
 	// Initialize memberlist KV.
 	fmt.Fprintln(os.Stderr, "Joining memberlist cluster...")
-	kvClient, cleanup, err := initMemberlistKV(ctx, c.memberlistJoin, c.memberlistClusterLabel, c.memberlistBindPort, c.logger)
+	kvClient, cleanup, err := initMemberlistKV(ctx, c.memberlistJoin, c.memberlistClusterLabel, c.memberlistBindPort, c.ringPrefix, c.logger)
 	if err != nil {
 		return errors.Wrap(err, "failed to initialize memberlist KV")
 	}
@@ -456,7 +470,7 @@ func askForConfirmation(message string, stdin io.Reader) error {
 	return nil
 }
 
-func initMemberlistKV(ctx context.Context, joinAddrs []string, clusterLabel string, bindPort int, logger log.Logger) (_ kv.Client, _ func(), returnErr error) {
+func initMemberlistKV(ctx context.Context, joinAddrs []string, clusterLabel string, bindPort int, keyPrefix string, logger log.Logger) (_ kv.Client, _ func(), returnErr error) {
 	// Create memberlist config with defaults.
 	cfg := memberlist.KVConfig{}
 	flagext.DefaultValues(&cfg)
@@ -511,7 +525,16 @@ func initMemberlistKV(ctx context.Context, joinAddrs []string, clusterLabel stri
 		return nil, nil, errors.Wrap(err, "failed to create memberlist client")
 	}
 
-	return kvClient, cleanup, nil
+	// Mimir accesses the ring through a KV client that prepends a configured prefix to all keys
+	// (see the -ingester.partition-ring.prefix configuration option, "collectors/" by default).
+	// Wrap the client the same way so that the commands operate on the same keys as Mimir.
+	// An empty prefix leaves the keys unchanged.
+	client := kv.Client(kvClient)
+	if keyPrefix != "" {
+		client = kv.PrefixClient(client, keyPrefix)
+	}
+
+	return client, cleanup, nil
 }
 
 func addPartitions(ctx context.Context, kvClient kv.Client, ringKey string, partitionIDs []int32, state ring.PartitionState) error {
