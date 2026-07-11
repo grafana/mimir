@@ -1501,7 +1501,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
             container_fs_writes_bytes_total{
               %(namespaceMatcher)s,
               container=~"%(containerName)s",
-              device!~".*sda.*"
+              device!~"%(nodeDiskDeviceExcludeRegex)s"
             }
           ),
           "device",
@@ -1514,6 +1514,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       instanceLabel: $._config.per_instance_label,
       containerName: containerName,
       nodeLabel: $._config.per_node_label,
+      nodeDiskDeviceExcludeRegex: $._config.node_disk_device_exclude_regex,
       namespaceMatcher: $.namespaceMatcher(),
     },
 
