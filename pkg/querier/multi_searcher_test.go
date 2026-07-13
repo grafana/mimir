@@ -11,7 +11,9 @@ import (
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/stretchr/testify/assert"
@@ -100,13 +102,26 @@ func searchResult(v string, score float64) storage.SearchResult {
 	return storage.SearchResult{Value: v, Score: score}
 }
 
-func drainSearchResultSet(t *testing.T, rs storage.SearchResultSet) (vals []string, scores []float64, warns []string, err error) {
+func searchResultMetadata(v string, score float64, mt model.MetricType, help, unit string) storage.SearchResult {
+	return storage.SearchResult{
+		Value: v,
+		Score: score,
+		Metadata: &metadata.Metadata{
+			Type: mt,
+			Help: help,
+			Unit: unit,
+		},
+	}
+}
+
+func drainSearchResultSet(t *testing.T, rs storage.SearchResultSet) (vals []string, scores []float64, metadatas []*metadata.Metadata, warns []string, err error) {
 	t.Helper()
 	defer rs.Close()
 	for rs.Next() {
 		r := rs.At()
 		vals = append(vals, r.Value)
 		scores = append(scores, r.Score)
+		metadatas = append(metadatas, r.Metadata)
 	}
 	err = rs.Err()
 	for _, w := range rs.Warnings() {
@@ -122,7 +137,7 @@ func TestMultiQuerier_SearchLabelNames_BothChildrenOK(t *testing.T) {
 
 	ctx := user.InjectOrgID(context.Background(), "user-1")
 	rs := mq.SearchLabelNames(ctx, nil, &storage.SearchHints{OrderBy: storage.OrderByValueAsc})
-	vals, _, _, err := drainSearchResultSet(t, rs)
+	vals, _, _, _, err := drainSearchResultSet(t, rs)
 	require.NoError(t, err)
 	assert.Equal(t, []string{"a", "b", "c", "d"}, vals)
 }
@@ -135,7 +150,7 @@ func TestMultiQuerier_SearchLabelNames_DistributorErrorSurfacesViaMerge(t *testi
 
 	ctx := user.InjectOrgID(context.Background(), "user-1")
 	rs := mq.SearchLabelNames(ctx, nil, &storage.SearchHints{OrderBy: storage.OrderByValueAsc})
-	_, _, _, err := drainSearchResultSet(t, rs)
+	_, _, _, _, err := drainSearchResultSet(t, rs)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, wantErr)
 }
@@ -148,7 +163,7 @@ func TestMultiQuerier_SearchLabelNames_BlockStoreErrorSurfacesViaMerge(t *testin
 
 	ctx := user.InjectOrgID(context.Background(), "user-1")
 	rs := mq.SearchLabelNames(ctx, nil, &storage.SearchHints{OrderBy: storage.OrderByValueAsc})
-	_, _, _, err := drainSearchResultSet(t, rs)
+	_, _, _, _, err := drainSearchResultSet(t, rs)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, wantErr)
 }
@@ -157,7 +172,7 @@ func TestMultiQuerier_SearchLabelNames_BothChildrenEmptyReturnsEmpty(t *testing.
 	mq := buildSearchTestMultiQuerier(t, &mockSearchQuerier{}, &mockSearchQuerier{})
 	ctx := user.InjectOrgID(context.Background(), "user-1")
 	rs := mq.SearchLabelNames(ctx, nil, &storage.SearchHints{OrderBy: storage.OrderByValueAsc})
-	vals, _, _, err := drainSearchResultSet(t, rs)
+	vals, _, _, _, err := drainSearchResultSet(t, rs)
 	require.NoError(t, err)
 	assert.Empty(t, vals)
 }
@@ -173,7 +188,7 @@ func TestMultiQuerier_SearchLabelNames_TimeRangeShortCircuit(t *testing.T) {
 
 	ctx := user.InjectOrgID(context.Background(), "user-1")
 	rs := mq.SearchLabelNames(ctx, nil, &storage.SearchHints{OrderBy: storage.OrderByValueAsc})
-	vals, _, _, err := drainSearchResultSet(t, rs)
+	vals, _, _, _, err := drainSearchResultSet(t, rs)
 	require.NoError(t, err)
 	assert.Empty(t, vals)
 }
@@ -186,7 +201,7 @@ func TestMultiQuerier_SearchLabelNames_LimitClampTriggersWarning(t *testing.T) {
 
 	ctx := user.InjectOrgID(context.Background(), "user-1")
 	rs := mq.SearchLabelNames(ctx, nil, &storage.SearchHints{OrderBy: storage.OrderByValueAsc, Limit: 10_000})
-	_, _, warns, err := drainSearchResultSet(t, rs)
+	_, _, _, warns, err := drainSearchResultSet(t, rs)
 	require.NoError(t, err)
 	require.Len(t, warns, 1, "expected one clamp warning")
 	assert.Contains(t, warns[0], validation.MaxLabelNamesLimitFlag)
@@ -200,7 +215,7 @@ func TestMultiQuerier_SearchLabelNames_LimitClampNotTriggered(t *testing.T) {
 
 	ctx := user.InjectOrgID(context.Background(), "user-1")
 	rs := mq.SearchLabelNames(ctx, nil, &storage.SearchHints{OrderBy: storage.OrderByValueAsc, Limit: 50})
-	_, _, warns, err := drainSearchResultSet(t, rs)
+	_, _, _, warns, err := drainSearchResultSet(t, rs)
 	require.NoError(t, err)
 	assert.Empty(t, warns)
 }
@@ -214,7 +229,7 @@ func TestMultiQuerier_SearchLabelNames_DedupAcrossSourcesKeepsHighestScoreUnderV
 
 	ctx := user.InjectOrgID(context.Background(), "user-1")
 	rs := mq.SearchLabelNames(ctx, nil, &storage.SearchHints{OrderBy: storage.OrderByValueAsc})
-	vals, scores, _, err := drainSearchResultSet(t, rs)
+	vals, scores, _, _, err := drainSearchResultSet(t, rs)
 	require.NoError(t, err)
 	assert.Equal(t, []string{"bar", "baz", "foo"}, vals)
 	require.Len(t, scores, 3)
@@ -228,7 +243,7 @@ func TestMultiQuerier_SearchLabelNames_OrderByValueDesc(t *testing.T) {
 
 	ctx := user.InjectOrgID(context.Background(), "user-1")
 	rs := mq.SearchLabelNames(ctx, nil, &storage.SearchHints{OrderBy: storage.OrderByValueDesc})
-	vals, _, _, err := drainSearchResultSet(t, rs)
+	vals, _, _, _, err := drainSearchResultSet(t, rs)
 	require.NoError(t, err)
 	assert.Equal(t, []string{"d", "c", "b", "a"}, vals)
 }
@@ -241,7 +256,7 @@ func TestMultiQuerier_SearchLabelNames_OrderByScoreDesc(t *testing.T) {
 
 	ctx := user.InjectOrgID(context.Background(), "user-1")
 	rs := mq.SearchLabelNames(ctx, nil, &storage.SearchHints{OrderBy: storage.OrderByScoreDesc})
-	vals, _, _, err := drainSearchResultSet(t, rs)
+	vals, _, _, _, err := drainSearchResultSet(t, rs)
 	require.NoError(t, err)
 	assert.Equal(t, []string{"alpha", "beta", "gamma", "delta"}, vals)
 }
@@ -253,7 +268,7 @@ func TestMultiQuerier_SearchLabelValues_ForwardsLabelName(t *testing.T) {
 
 	ctx := user.InjectOrgID(context.Background(), "user-1")
 	rs := mq.SearchLabelValues(ctx, "env", nil, &storage.SearchHints{OrderBy: storage.OrderByValueAsc})
-	vals, _, _, err := drainSearchResultSet(t, rs)
+	vals, _, _, _, err := drainSearchResultSet(t, rs)
 	require.NoError(t, err)
 	assert.Equal(t, []string{"dev", "prod", "staging"}, vals)
 }
@@ -267,9 +282,29 @@ func TestMultiQuerier_SearchLabelValues_LimitClampUsesValuesLimit(t *testing.T) 
 
 	ctx := user.InjectOrgID(context.Background(), "user-1")
 	rs := mq.SearchLabelValues(ctx, "env", nil, &storage.SearchHints{OrderBy: storage.OrderByValueAsc, Limit: 10_000})
-	_, _, warns, err := drainSearchResultSet(t, rs)
+	_, _, _, warns, err := drainSearchResultSet(t, rs)
 	require.NoError(t, err)
 	require.Len(t, warns, 1)
 	assert.Contains(t, warns[0], validation.MaxLabelValuesLimitFlag)
 	assert.NotContains(t, warns[0], validation.MaxLabelNamesLimitFlag)
+}
+
+func TestMultiQuerier_SearchLabelValues_MetadataKept(t *testing.T) {
+	distQ := &mockSearchQuerier{namesResults: []storage.SearchResult{searchResultMetadata("a", 1.0, model.MetricTypeGauge, "It's a.", "seconds"), searchResult("b", 0.5)}}
+	blockQ := &mockSearchQuerier{namesResults: []storage.SearchResult{searchResult("a", 1.0), searchResultMetadata("b", 0.5, model.MetricTypeGauge, "It's b.", "seconds")}}
+	mq := buildSearchTestMultiQuerier(t, distQ, blockQ)
+
+	ctx := user.InjectOrgID(context.Background(), "user-1")
+	rs := mq.SearchLabelNames(ctx, nil, &storage.SearchHints{OrderBy: storage.OrderByValueAsc})
+	vals, _, metadatas, _, err := drainSearchResultSet(t, rs)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"a", "b"}, vals)
+	require.NotNil(t, metadatas[0])
+	assert.Equal(t, model.MetricTypeGauge, metadatas[0].Type)
+	assert.Equal(t, "It's a.", metadatas[0].Help)
+	assert.Equal(t, "seconds", metadatas[0].Unit)
+	require.NotNil(t, metadatas[1])
+	assert.Equal(t, model.MetricTypeGauge, metadatas[1].Type)
+	assert.Equal(t, "It's b.", metadatas[1].Help)
+	assert.Equal(t, "seconds", metadatas[1].Unit)
 }
