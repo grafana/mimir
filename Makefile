@@ -179,7 +179,7 @@ print-supported-os-arch: ## Print supported OS/arch combinations for dist.
 
 # We don't want find to scan inside a bunch of directories, to accelerate the
 # 'make: Entering directory '/go/src/github.com/grafana/mimir' phase.
-DONT_FIND := -name vendor -prune -o -name proto-include -prune -o -name .git -prune -o -name .cache -prune -o -name .pkg -prune -o -name packaging -prune -o -name mimir-mixin-tools -prune -o -name trafficdump -prune -o
+DONT_FIND := -name vendor -prune -o -name .git -prune -o -name .cache -prune -o -name .pkg -prune -o -name packaging -prune -o -name mimir-mixin-tools -prune -o -name trafficdump -prune -o
 
 # MAKE_FILES is a list of make files to lint.
 # We purposefully avoid MAKEFILES as a variable name as it influences
@@ -243,19 +243,27 @@ PROTO_WIRESMITH_GOS := \
 	pkg/util/httpgrpcpb/httpgrpcpb_util.pb.go \
 	pkg/scheduler/schedulerpb/scheduler_compare.pb.go \
 	pkg/scheduler/schedulerpb/scheduler_util.pb.go \
+	pkg/scheduler/schedulerpb/scheduler_grpc.pb.go \
 	pkg/ruler/ruler_compare.pb.go \
 	pkg/ruler/ruler_util.pb.go \
+	pkg/ruler/ruler_grpc.pb.go \
 	pkg/blockbuilder/schedulerpb/scheduler_compare.pb.go \
 	pkg/blockbuilder/schedulerpb/scheduler_util.pb.go \
+	pkg/blockbuilder/schedulerpb/scheduler_grpc.pb.go \
 	pkg/compactor/scheduler/compactorschedulerpb/compactorscheduler_compare.pb.go \
 	pkg/compactor/scheduler/compactorschedulerpb/compactorscheduler_util.pb.go \
+	pkg/compactor/scheduler/compactorschedulerpb/compactorscheduler_grpc.pb.go \
 	pkg/frontend/v2/frontendv2pb/frontend_compare.pb.go \
 	pkg/frontend/v2/frontendv2pb/frontend_util.pb.go \
+	pkg/frontend/v2/frontendv2pb/frontend_grpc.pb.go \
 	pkg/ingester/client/ingester_compare.pb.go \
 	pkg/ingester/client/ingester_util.pb.go \
+	pkg/ingester/client/ingester_grpc.pb.go \
 	pkg/distributor/distributorpb/distributor_util.pb.go \
+	pkg/distributor/distributorpb/distributor_grpc.pb.go \
 	pkg/usagetracker/usagetrackerpb/usagetracker_compare.pb.go \
 	pkg/usagetracker/usagetrackerpb/usagetracker_util.pb.go \
+	pkg/usagetracker/usagetrackerpb/usagetracker_grpc.pb.go \
 	pkg/storage/indexheader/indexheaderpb/sparse_compare.pb.go \
 	pkg/storage/indexheader/indexheaderpb/sparse_util.pb.go \
 	pkg/streamingpromql/optimize/plan/splitandcache/cache_compare.pb.go \
@@ -269,7 +277,10 @@ PROTO_WIRESMITH_GOS := \
 	pkg/storegateway/hintspb/hints_compare.pb.go \
 	pkg/storegateway/hintspb/hints_util.pb.go \
 	pkg/frontend/querymiddleware/model_compare.pb.go \
-	pkg/frontend/querymiddleware/model_util.pb.go
+	pkg/frontend/querymiddleware/model_util.pb.go \
+	pkg/storegateway/storegatewaypb/gateway_grpc.pb.go \
+	pkg/storegateway/storegatewaypb/gateway_util.pb.go \
+	pkg/streamingpromql/operators/functions/functions_util.pb.go
 
 # Packages containing //node:generate-annotated structs, and the corresponding
 # generated files. Discovered at make-parse time.
@@ -361,7 +372,7 @@ GENERATE_FILES ?= true
 # alertspb and alertmanagerpb embed types from prometheus/alertmanager's clusterpb,
 # which switched away from gogo-protobuf in v0.32.0. We therefore generate these
 # packages with the standard protoc-gen-go (and protoc-gen-go-grpc) toolchain
-# instead of the gogoslick rule below.
+# rather than wiresmith or gogoslick.
 pkg/alertmanager/alertspb/alerts.pb.go: pkg/alertmanager/alertspb/alerts.proto
 ifeq ($(GENERATE_FILES),true)
 	protoc -I $(GOPATH)/src:./vendor:./$(@D) --go_out=paths=source_relative:./$(@D) ./$<
@@ -446,9 +457,9 @@ endif
 # the module-path layout, run wiresmith against it, and copy the outputs back.
 # The -M flag maps the imported mimir.proto to its real Go import path. The
 # google.protobuf.Any "options" field resolves to wiresmith's shipped
-# types/known/anypb replacement. rules.proto is still imported by the gogo-
-# compiled pkg/ruler/ruler.proto; protoc resolves the wiresmith/options.proto
-# import via ./proto-include.
+# types/known/anypb replacement. rules.proto is also imported by
+# pkg/ruler/ruler.proto (wiresmith-compiled since cqa.3, staged separately
+# under CQA3_WIRESMITH_PROTOS below).
 pkg/ruler/rulespb/rules.pb.go \
 pkg/ruler/rulespb/rules_compare.pb.go \
 pkg/ruler/rulespb/rules_util.pb.go &: pkg/ruler/rulespb/rules.proto pkg/mimirpb/mimir.proto
@@ -472,13 +483,12 @@ endif
 # (github.com/grafana/mimir/pkg/streamingpromql/...), and wiresmith resolves
 # imports by their import-statement path under --proto_path, so we stage a
 # temporary tree mirroring the module-path layout and emit the whole cluster in
-# one invocation. The imported-but-not-emitted protos (mimir.proto, already
-# wiresmith; operators/functions/functions.proto, an enum-only gogo leaf) are
-# staged too and pinned import-only with -M to their real Go import paths.
-# core.proto imports mimir.proto (LabelAdapter customtype) and the functions
-# enum; types.proto, planning/plan.proto, and the optimize/plan/* node protos
-# round out the cluster. These migrated protos are still imported by the
-# wiresmith/options.proto import is resolved for protoc via ./proto-include.
+# one invocation. The imported-but-not-emitted protos (mimir.proto and
+# operators/functions/functions.proto, both wiresmith-compiled by their own
+# rules) are staged too and pinned import-only with -M to their real Go
+# import paths. core.proto imports mimir.proto (LabelAdapter customtype) and
+# the functions enum; types.proto, planning/plan.proto, and the
+# optimize/plan/* node protos round out the cluster.
 STREAMINGPROMQL_WIRESMITH_PROTOS := \
 	pkg/streamingpromql/types/types.proto \
 	pkg/streamingpromql/planning/plan.proto \
@@ -585,12 +595,69 @@ else
 	@echo "If this is unexpected, check if the last modified timestamps on the outputs and their .proto sources are correct."
 endif
 
-%.pb.go: %.proto
+# pkg/storegateway/storegatewaypb/gateway.proto is compiled by wiresmith
+# (cqa.6, migrated together with functions.proto below -- the last 2 gogoslick
+# protos in mimir). It is a pure-service proto (5 RPCs, 3 streaming, no
+# message types of its own) that imports storepb/rpc.proto (already
+# wiresmith) by Go module path, so it is staged the same way as rules.proto
+# above. rpc.proto's own transitive imports (types.proto, mimir.proto) are
+# staged import-only so they resolve. gateway.pb.go is a placeholder stub
+# (see the distributor.proto rule under cqa.5 for the same shape): wiresmith
+# emits only gateway_grpc.pb.go and gateway_util.pb.go, and the recipe
+# rewrites the stub on every run because check-protos deletes every file
+# matched by the %.proto -> %.pb.go patsubst (PROTO_GOS) before regenerating,
+# including this one, even though this rule doesn't otherwise produce it.
+pkg/storegateway/storegatewaypb/gateway.pb.go \
+pkg/storegateway/storegatewaypb/gateway_grpc.pb.go \
+pkg/storegateway/storegatewaypb/gateway_util.pb.go &: pkg/storegateway/storegatewaypb/gateway.proto pkg/storegateway/storepb/rpc.proto
 ifeq ($(GENERATE_FILES),true)
-	protoc -I $(GOPATH)/src:./vendor/github.com/gogo/protobuf:./vendor:./$(@D):./pkg/storegateway/storepb:./proto-include --gogoslick_out=plugins=grpc,Mgoogle/protobuf/any.proto=github.com/gogo/protobuf/types,:./$(@D) ./$(patsubst %.pb.go,%.proto,$@)
+	rm -rf .gateway-stage .gateway-out
+	mkdir -p .gateway-stage/github.com/grafana/mimir/pkg/storegateway/storegatewaypb .gateway-stage/github.com/grafana/mimir/pkg/storegateway/storepb .gateway-stage/github.com/grafana/mimir/pkg/mimirpb
+	cp pkg/storegateway/storegatewaypb/gateway.proto .gateway-stage/github.com/grafana/mimir/pkg/storegateway/storegatewaypb/gateway.proto
+	cp pkg/storegateway/storepb/rpc.proto pkg/storegateway/storepb/types.proto .gateway-stage/github.com/grafana/mimir/pkg/storegateway/storepb/
+	cp pkg/mimirpb/mimir.proto .gateway-stage/github.com/grafana/mimir/pkg/mimirpb/mimir.proto
+	wiresmith --proto_path=./.gateway-stage --out=./.gateway-out --module=github.com/grafana/mimir \
+		-M github.com/grafana/mimir/pkg/storegateway/storegatewaypb/gateway.proto=github.com/grafana/mimir/pkg/storegateway/storegatewaypb \
+		-M github.com/grafana/mimir/pkg/storegateway/storepb/rpc.proto=github.com/grafana/mimir/pkg/storegateway/storepb \
+		-M github.com/grafana/mimir/pkg/storegateway/storepb/types.proto=github.com/grafana/mimir/pkg/storegateway/storepb \
+		-M github.com/grafana/mimir/pkg/mimirpb/mimir.proto=github.com/grafana/mimir/pkg/mimirpb \
+		./.gateway-stage/github.com/grafana/mimir/pkg/storegateway/storegatewaypb/gateway.proto
+	cp .gateway-out/github.com/grafana/mimir/pkg/storegateway/storegatewaypb/gateway_grpc.pb.go pkg/storegateway/storegatewaypb/gateway_grpc.pb.go
+	cp .gateway-out/github.com/grafana/mimir/pkg/storegateway/storegatewaypb/gateway_util.pb.go pkg/storegateway/storegatewaypb/gateway_util.pb.go
+	rm -rf .gateway-stage .gateway-out
+	printf '%s\n' \
+		'// SPDX-License-Identifier: AGPL-3.0-only' \
+		'// Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/pkg/storegateway/storegatewaypb/gateway.proto' \
+		'// Provenance-includes-license: Apache-2.0' \
+		'// Provenance-includes-copyright: The Cortex Authors.' \
+		'' \
+		'// Code generated by wiresmith. DO NOT EDIT.' \
+		'// source: github.com/grafana/mimir/pkg/storegateway/storegatewaypb/gateway.proto' \
+		'' \
+		'// gateway.proto defines only a gRPC service (no message types of its own).' \
+		'// All generated code lives in gateway_grpc.pb.go and gateway_util.pb.go.' \
+		'' \
+		'package storegatewaypb' \
+		> pkg/storegateway/storegatewaypb/gateway.pb.go
 else
-	@echo "Warning: generating files has been disabled, but the following file needs to be regenerated: $@"
-	@echo "If this is unexpected, check if the last modified timestamps on $@ and $(patsubst %.pb.go,%.proto,$@) are correct."
+	@echo "Warning: generating files has been disabled, but the following files need to be regenerated: $@"
+	@echo "If this is unexpected, check if the last modified timestamps on the outputs and $< are correct."
+endif
+
+# pkg/streamingpromql/operators/functions/functions.proto is compiled by
+# wiresmith (cqa.6). It is enum-only with zero imports, so -- like
+# mimirpb/ha_tracker/stats above -- it is a flat invocation with --out
+# pointing at its own directory. It is still staged import-only by
+# tools/wiresmith-streamingpromql.sh so rangevectorsplitting/node.proto's
+# reference to the Function enum resolves; that staging is unaffected by
+# which compiler generates this file.
+pkg/streamingpromql/operators/functions/functions.pb.go \
+pkg/streamingpromql/operators/functions/functions_util.pb.go &: pkg/streamingpromql/operators/functions/functions.proto
+ifeq ($(GENERATE_FILES),true)
+	wiresmith --proto_path=./pkg/streamingpromql/operators/functions --out=./pkg/streamingpromql/operators/functions --module=github.com/grafana/mimir pkg/streamingpromql/operators/functions/functions.proto
+else
+	@echo "Warning: generating files has been disabled, but the following files need to be regenerated: $@"
+	@echo "If this is unexpected, check if the last modified timestamps on the outputs and $< are correct."
 endif
 
 lint-packaging-scripts: packaging/nfpm/mimir/postinstall.sh packaging/nfpm/mimir/preremove.sh

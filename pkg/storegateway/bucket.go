@@ -84,6 +84,8 @@ type BucketStoreStats struct {
 // When used with in-memory cache, memory usage should decrease overall, thanks to postings being smaller.
 type BucketStore struct {
 	services.Service
+	// wiresmith-generated StoreGatewayServer requires this embedded field.
+	storegatewaypb.UnimplementedStoreGatewayServer
 
 	userID          string
 	logger          log.Logger

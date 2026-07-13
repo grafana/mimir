@@ -4,6 +4,10 @@ syntax = "proto3";
 
 package functions;
 
+import "wiresmith/options.proto";
+
+option (wiresmith.options.enum_no_prefix_all) = true;
+
 enum Function {
   FUNCTION_UNKNOWN = 0;
 
