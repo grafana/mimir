@@ -1355,48 +1355,35 @@ func (d *Distributor) prePushMergeMiddleware(next PushFunc) PushFunc {
 			return next(ctx, pushReq)
 		}
 
-		// Build an index of label-set hash → first timeseries index. On
-		// collision (same hash + labels), merge the later timeseries' samples
-		// and histograms into the first and mark the later one for removal.
-		//
-		// The common case (no duplicates) adds only one hash-map lookup per
-		// timeseries — comparable to the cost of the label sort in the
-		// previous middleware.
-		seen := make(map[uint64]int, len(req.Timeseries))
+		// seen maps a label-set hash to the indexes of the already-kept timeseries
+		// with that hash. There's normally exactly one index per hash; there is
+		// more than one only on a (vanishingly rare) hash collision between
+		// different label sets, which we resolve by comparing the labels.
+		seen := make(map[uint64][]int, len(req.Timeseries))
 		var removeTsIndexes []int
 
 		for tsIdx := 0; tsIdx < len(req.Timeseries); tsIdx++ {
 			ts := req.Timeseries[tsIdx]
-			hash := labels.StableHash(mimirpb.FromLabelAdaptersToLabels(ts.Labels))
+			hash := mimirpb.FromLabelAdaptersToLabels(ts.Labels).Hash()
 
-			firstIdx, exists := seen[hash]
-			if !exists {
-				seen[hash] = tsIdx
-				continue
+			firstIdx := -1
+			for _, candidate := range seen[hash] {
+				if slices.Equal(req.Timeseries[candidate].Labels, ts.Labels) {
+					firstIdx = candidate
+					break
+				}
 			}
-
-			// Same hash — verify labels actually match (hash collision guard).
-			first := req.Timeseries[firstIdx]
-			if mimirpb.CompareLabelAdapters(first.Labels, ts.Labels) != 0 {
-				// Hash collision with genuinely different labels. Overwrite the
-				// map entry so that later timeseries with the SAME labels as this
-				// one can still merge (Bugbot: "hash collision skips label-set
-				// merge"). StableHash collisions are vanishingly rare (~1 in 2^64)
-				// on real label sets, so a single-slot-per-hash map is sufficient.
-				seen[hash] = tsIdx
+			if firstIdx < 0 {
+				// First timeseries with this label set (or a hash collision with a
+				// different one): keep it and record its index.
+				seen[hash] = append(seen[hash], tsIdx)
 				continue
 			}
 
 			// Merge samples, histograms and exemplars from the later timeseries into the first.
-			if len(ts.Samples) > 0 {
-				req.Timeseries[firstIdx].Samples = append(req.Timeseries[firstIdx].Samples, ts.Samples...)
-			}
-			if len(ts.Histograms) > 0 {
-				req.Timeseries[firstIdx].Histograms = append(req.Timeseries[firstIdx].Histograms, ts.Histograms...)
-			}
-			if len(ts.Exemplars) > 0 {
-				req.Timeseries[firstIdx].Exemplars = append(req.Timeseries[firstIdx].Exemplars, ts.Exemplars...)
-			}
+			req.Timeseries[firstIdx].Samples = append(req.Timeseries[firstIdx].Samples, ts.Samples...)
+			req.Timeseries[firstIdx].Histograms = append(req.Timeseries[firstIdx].Histograms, ts.Histograms...)
+			req.Timeseries[firstIdx].Exemplars = append(req.Timeseries[firstIdx].Exemplars, ts.Exemplars...)
 			// Preserve the earliest non-zero created timestamp so the ingester
 			// still performs created-timestamp zero-sample ingestion for the
 			// merged series. Otherwise a non-zero timestamp carried only by an
