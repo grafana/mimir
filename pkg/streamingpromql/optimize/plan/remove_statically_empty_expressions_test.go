@@ -532,6 +532,16 @@ func TestRemoveStaticallyEmptyExpressionsOptimizationPass(t *testing.T) {
 				- NoOp
 			`,
 		},
+		"toggle on, with literal on LHS": {
+			expr:                         `(avg(rate(foo[2m]))) and on() (1 == vector(1))`,
+			generateExpectedPlanFromExpr: `avg(rate(foo[2m]))`,
+		},
+		"toggle off, with literal on LHS": {
+			expr: `(avg(rate(foo[2m]))) and on() (vector(-1) == 1)`,
+			expectedPlan: `
+				- NoOp
+			`,
+		},
 		"empty toggle with on(id): statically empty": {
 			expr: `(avg(rate(foo[2m]))) and on(id) (vector(0) == 1)`,
 			expectedPlan: `
