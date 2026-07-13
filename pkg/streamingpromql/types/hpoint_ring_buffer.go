@@ -5,6 +5,7 @@ package types
 import (
 	"fmt"
 
+	"github.com/antithesishq/antithesis-sdk-go/assert"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/promql"
 
@@ -47,6 +48,17 @@ func (b *HPointRingBuffer) DiscardPointsAtOrBefore(t int64) {
 	}
 }
 
+func (b *HPointRingBuffer) RemoveFirst() {
+	if b.size > 0 {
+		b.firstIndex++
+		b.size--
+
+		if b.firstIndex >= len(b.points) {
+			b.firstIndex = 0
+		}
+	}
+}
+
 // Append adds p to this buffer, expanding it if required.
 // A boolean is returned indicating if the underlying buffer had to be resized.
 // If this buffer is non-empty, p.T must be greater than or equal to the
@@ -74,7 +86,7 @@ func (b *HPointRingBuffer) ViewUntilSearchingForwards(maxT int64, existing *HPoi
 
 	size := 0
 
-	for size < b.size && b.pointAt(size).T <= maxT {
+	for size < b.size && b.PointAt(size).T <= maxT {
 		size++
 	}
 
@@ -92,7 +104,7 @@ func (b *HPointRingBuffer) ViewUntilSearchingBackwards(maxT int64, existing *HPo
 
 	nextPositionToCheck := b.size - 1
 
-	for nextPositionToCheck >= 0 && b.pointAt(nextPositionToCheck).T > maxT {
+	for nextPositionToCheck >= 0 && b.PointAt(nextPositionToCheck).T > maxT {
 		nextPositionToCheck--
 	}
 
@@ -101,9 +113,63 @@ func (b *HPointRingBuffer) ViewUntilSearchingBackwards(maxT int64, existing *HPo
 	return existing
 }
 
-// pointAt returns the point at index 'position'.
-func (b *HPointRingBuffer) pointAt(position int) promql.HPoint {
+// ViewBetweenSearchingBackwards returns a view into this buffer including only points with timestamps
+// greater than minT and less than or equal to maxT. The method panics if minT is greater than maxT.
+func (b *HPointRingBuffer) ViewBetweenSearchingBackwards(minT, maxT int64, existing *HPointRingBufferView) *HPointRingBufferView {
+	if existing == nil {
+		existing = &HPointRingBufferView{buffer: b}
+	}
+
+	if minT > maxT {
+		assert.Unreachable("attempted to create an HPointRingBufferView with minT > maxT", map[string]any{
+			"min_t": minT,
+			"max_t": maxT,
+		})
+		panic(fmt.Sprintf("attempted to create an HPointRingBufferView with minT(%d) > maxT(%d) (this is a bug)", minT, maxT))
+	}
+
+	// If the buffer is empty or min time is beyond the last point in this buffer,
+	// return a zero-sized view since there are no points or no matching points.
+	if b.size == 0 || b.Last().T < minT {
+		existing.offset = 0
+		existing.size = 0
+		return existing
+	}
+
+	var start int
+	for start = b.size - 1; start >= 0; start-- {
+		if b.PointAt(start).T <= minT {
+			break
+		}
+	}
+
+	var end int
+	for end = b.size - 1; end >= 0; end-- {
+		if b.PointAt(end).T <= maxT {
+			break
+		}
+	}
+
+	existing.offset = start + 1
+	existing.size = end - start
+
+	return existing
+}
+
+// PointAt returns the point at index 'position'.
+func (b *HPointRingBuffer) PointAt(position int) promql.HPoint {
 	return b.points[(b.firstIndex+position)&b.pointsIndexMask]
+}
+
+// Last returns the last point in the buffer.
+// Note that it is the caller's responsibility to have checked that the buffer size is not empty.
+func (b *HPointRingBuffer) Last() promql.HPoint {
+	return b.PointAt(b.size - 1)
+}
+
+// Count returns the current number of points in the buffer.
+func (b *HPointRingBuffer) Count() int {
+	return b.size
 }
 
 // NextPoint gets the next point in this buffer, expanding it if required.
@@ -173,6 +239,37 @@ func (b *HPointRingBuffer) RemoveLastPoint() {
 	if b.size == 0 {
 		b.firstIndex = 0
 	}
+}
+
+// CountUntil returns the number of samples in this buffer with timestamp up to and including maxT.
+func (b *HPointRingBuffer) CountUntil(maxT int64) int {
+	count := b.size
+
+	for count > 0 && b.PointAt(count-1).T > maxT {
+		count--
+	}
+
+	return count
+}
+
+// CountBetween returns the number of samples in this buffer with timestamp after minT and up to and including maxT.
+func (b *HPointRingBuffer) CountBetween(minT, maxT int64) int {
+	// Why do this rather than just loop over all the elements?
+	// It's expected that most of the elements in the buffer are in the time range, so it's faster
+	// to check for points outside the range at the start and end to count how many are in the range.
+	countToMaxT := b.CountUntil(maxT)
+
+	if countToMaxT == 0 {
+		return 0
+	}
+
+	countAtOrBeforeMinT := 0
+
+	for countAtOrBeforeMinT < countToMaxT && b.PointAt(countAtOrBeforeMinT).T <= minT {
+		countAtOrBeforeMinT++
+	}
+
+	return countToMaxT - countAtOrBeforeMinT
 }
 
 // Reset clears the contents of this buffer, but retains the underlying point slice for future reuse.
@@ -247,6 +344,23 @@ func (v HPointRingBufferView) UnsafePoints() (head []promql.HPoint, tail []promq
 	}
 
 	return v.buffer.points[startIndex:endOfHeadSegment], nil
+}
+
+// UnsafePointsInIndexRange returns the points with logical indices in [first, last] (inclusive) as
+// up to two contiguous slices. The second slice is non-empty only when the requested range wraps
+// the underlying ring buffer. It is the index-range equivalent of UnsafePoints, and lets callers
+// iterate a sub-range with a plain slice range loop instead of repeated PointAt calls.
+// Like UnsafePoints, the returned slices alias the buffer and must not be modified nor returned to
+// a pool.
+func (v HPointRingBufferView) UnsafePointsInIndexRange(first, last int) (head []promql.HPoint, tail []promql.HPoint) {
+	if first < 0 || last >= v.size || first > last {
+		panic("HPointRingBufferView.UnsafePointsInIndexRange(): index out of range")
+	}
+
+	// A view starting at v.offset+first holding (last-first+1) points has the same wraparound
+	// structure as any other view, so delegate to UnsafePoints to keep that logic in one place.
+	sub := HPointRingBufferView{buffer: v.buffer, offset: v.offset + first, size: last - first + 1}
+	return sub.UnsafePoints()
 }
 
 // CopyPoints returns a single slice of the points in this buffer view.
@@ -340,7 +454,7 @@ func (b *HPointRingBuffer) EquivalentFloatSampleCountUntil(maxT int64) int64 {
 	count := int64(0)
 
 	for i := range b.size {
-		p := b.pointAt(i)
+		p := b.PointAt(i)
 
 		if p.T > maxT {
 			// We've reached the end of the range we need to search.
@@ -358,7 +472,7 @@ func (b *HPointRingBuffer) EquivalentFloatSampleCountBetween(minT, maxT int64) i
 	count := int64(0)
 
 	for i := range b.size {
-		p := b.pointAt(i)
+		p := b.PointAt(i)
 
 		if p.T > maxT {
 			// We've reached the end of the range we need to search.
@@ -382,10 +496,12 @@ func (v HPointRingBufferView) Any() bool {
 // It panics if i is outside the range of points in this view.
 func (v HPointRingBufferView) PointAt(i int) promql.HPoint {
 	if i >= v.size {
-		panic(fmt.Sprintf("PointAt(): out of range, requested index %v but have length %v", i, v.size))
+		// A constant-string panic (rather than fmt.Sprintf) keeps PointAt cheap enough to be
+		// inlined into hot loops, e.g. the per-sample passes in extendedHistogramRate.
+		panic("HPointRingBufferView.PointAt(): index out of range")
 	}
 
-	return v.buffer.pointAt(v.offset + i)
+	return v.buffer.PointAt(v.offset + i)
 }
 
 // Clone returns a clone of this view and its underlying ring buffer.

@@ -3,6 +3,7 @@
 package core
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -29,9 +30,10 @@ func (s *StepInvariantExpression) Describe() string {
 	return ""
 }
 
-func (s *StepInvariantExpression) ChildrenTimeRange(timeRange types.QueryTimeRange) types.QueryTimeRange {
-	// note that we set the StartT == EndT with a single step count.
-	return types.NewInstantQueryTimeRange(timestamp.Time(timeRange.StartT))
+func (s *StepInvariantExpression) ChildrenTimeRange(_ types.QueryTimeRange) types.QueryTimeRange {
+	// The time range used doesn't matter as long as it is a single step, given the expression is step invariant.
+	// So use T=0, to ensure there's no accidental dependency on the actual time range.
+	return types.NewInstantQueryTimeRange(timestamp.Time(0))
 }
 
 func (s *StepInvariantExpression) Details() proto.Message {
@@ -46,73 +48,9 @@ func (s *StepInvariantExpression) MinimumRequiredPlanVersion(types.QueryTimeRang
 	return planning.QueryPlanV1, nil
 }
 
-func (s *StepInvariantExpression) SetChildren(children []planning.Node) error {
-	if len(children) != 1 {
-		return fmt.Errorf("node of type StepInvariantExpression expects 1 child, but got %d", len(children))
-	}
-
-	s.Inner = children[0]
-
-	return nil
-}
-
-func (s *StepInvariantExpression) ReplaceChild(idx int, node planning.Node) error {
-	if idx != 0 {
-		return fmt.Errorf("node of type StepInvariantExpression supports 1 child, but attempted to replace child at index %d", idx)
-	}
-
-	s.Inner = node
-	return nil
-}
-
-func (s *StepInvariantExpression) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
-	_, ok := other.(*StepInvariantExpression)
-	return ok
-}
-
 func (s *StepInvariantExpression) MergeHints(_ planning.Node) error {
 	// Nothing to do.
 	return nil
-}
-
-func (s *StepInvariantExpression) ChildrenLabels() []string {
-	return []string{""}
-}
-
-func MaterializeStepInvariantExpression(s *StepInvariantExpression, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
-	resultType, err := s.Inner.ResultType()
-	if err != nil {
-		return nil, err
-	}
-
-	if resultType == parser.ValueTypeMatrix {
-		// Earlier versions incorrectly wrapped range vector expressions in step-invariant expression nodes.
-		// This has since been fixed, but new queriers might still get incorrect plans from old query-frontends.
-		// If this happens, materialize the inner node as if the step-invariant node does not exist: both the range
-		// vector selector operator and subquery operator behave correctly in this case.
-		op, err := materializer.ConvertNodeToRangeVectorOperator(s.Inner, timeRange)
-		if err != nil {
-			return nil, err
-		}
-
-		return planning.NewSingleUseOperatorFactory(op), nil
-	}
-
-	adjustedTimeRange := s.ChildrenTimeRange(timeRange)
-
-	op, err := materializer.ConvertNodeToOperator(s.Inner, adjustedTimeRange)
-	if err != nil {
-		return nil, err
-	}
-
-	switch op := op.(type) {
-	case types.InstantVectorOperator:
-		return planning.NewSingleUseOperatorFactory(operators.NewStepInvariantInstantVectorOperator(op, timeRange, params.MemoryConsumptionTracker)), nil
-	case types.ScalarOperator:
-		return planning.NewSingleUseOperatorFactory(operators.NewStepInvariantScalarOperator(op, timeRange, params.MemoryConsumptionTracker)), nil
-	}
-
-	return nil, fmt.Errorf("unable to materialize step invariant expression with inner node type %T", op)
 }
 
 func (s *StepInvariantExpression) ResultType() (parser.ValueType, error) {
@@ -125,4 +63,40 @@ func (s *StepInvariantExpression) QueriedTimeRange(queryTimeRange types.QueryTim
 
 func (s *StepInvariantExpression) ExpressionPosition() (posrange.PositionRange, error) {
 	return s.Inner.ExpressionPosition()
+}
+
+func MaterializeStepInvariantExpression(ctx context.Context, s *StepInvariantExpression, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
+	resultType, err := s.Inner.ResultType()
+	if err != nil {
+		return nil, err
+	}
+
+	if resultType == parser.ValueTypeMatrix {
+		// Earlier versions incorrectly wrapped range vector expressions in step-invariant expression nodes.
+		// This has since been fixed, but new queriers might still get incorrect plans from old query-frontends.
+		// If this happens, materialize the inner node as if the step-invariant node does not exist: both the range
+		// vector selector operator and subquery operator behave correctly in this case.
+		op, err := materializer.ConvertNodeToRangeVectorOperator(ctx, s.Inner, timeRange)
+		if err != nil {
+			return nil, err
+		}
+
+		return planning.NewSingleUseOperatorFactory(op), nil
+	}
+
+	adjustedTimeRange := s.ChildrenTimeRange(timeRange)
+
+	op, err := materializer.ConvertNodeToOperator(ctx, s.Inner, adjustedTimeRange)
+	if err != nil {
+		return nil, err
+	}
+
+	switch op := op.(type) {
+	case types.InstantVectorOperator:
+		return planning.NewSingleUseOperatorFactory(operators.NewStepInvariantInstantVectorOperator(op, timeRange, params.MemoryConsumptionTracker)), nil
+	case types.ScalarOperator:
+		return planning.NewSingleUseOperatorFactory(operators.NewStepInvariantScalarOperator(op, timeRange, params.MemoryConsumptionTracker)), nil
+	}
+
+	return nil, fmt.Errorf("unable to materialize step invariant expression with inner node type %T", op)
 }

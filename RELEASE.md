@@ -87,8 +87,8 @@ If something is not clear, you can get back to this document to learn more about
   - [ ] Remove "main / unreleased" section from the CHANGELOG
   - [ ] If a new minor or major version is being released, adjust the settings in the `renovate.json5` configuration on the `main` branch by adding the new version.
         This way we ensure that dependency updates maintain the new version, as well as the latest two minor versions.
-        For instance, if versions 3.0 and 2.10 are configured in `renovate.json`, and version 3.1 is being released,
-        during the release process `renovate.json5` should keep updated the following branches: `main`, `release-3.1`, `release-3.0` and `release-2.10`.
+        For instance, if versions 3.1, 3.0 and 2.10 are configured in `renovate.json`, and version 3.2 is being released,
+        during the release process `renovate.json5` should keep updated the following branches: `main`, `release-3.2`, `release-3.1`, `release-3.0`, and `release-2.10`.
 - [ ] Publish the Mimir release candidate
   - [ ] Update VERSION in the release branch and update CHANGELOG with version and release date.
     - Keep in mind this is a release candidate, so the version string in VERSION and CHANGELOG must end in `-rc.#`, where `#` is the release candidate number, starting at 0.
@@ -98,17 +98,12 @@ If something is not clear, you can get back to this document to learn more about
     ./tools/release/tag-release.sh
     ```
   - [ ] Wait until the CI pipeline succeeds
-  - [ ] [Create a pre-release on GitHub](https://github.com/grafana/mimir/blob/main/RELEASE.md#creating-release-on-github)
-    ```bash
-    git checkout release-<version>
-    ./tools/release/create-draft-release.sh
-    ```
+    - [ ] Review the GitHub pre-release published by CI
   - [ ] [Merge the release branch release-<version> into main](https://github.com/grafana/mimir/blob/main/RELEASE.md#merging-release-branch-into-main)
     ```bash
     ./tools/release/create-pr-to-merge-release-branch-to-main.sh
     ```
     This prepares a PR into `main` branch. On approval, **use** the `merge-approved-pr-branch-to-main.sh` script, following the [instruction](https://github.com/grafana/mimir/blob/main/RELEASE.md#merging-release-branch-into-main) on how to merge the PR with "Merge commit" (i.e. we DO NOT "Squash and merge" this one).
-  - [ ] Publish the Github pre-release draft after getting review from at least one maintainer
   - [ ] Announce the release candidate on social media such as on Mimir community slack using your own Twitter, Mastodon or LinkedIn account
 - [ ] Publish a `mimir-distributed` Helm chart release candidate. Follow the instructions in [Release process for a release candidate](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/RELEASE.md#release-process-for-a-release-candidate)
 - [ ] Promote experimental features to stable and remove deprecated features for the **next** release:
@@ -132,20 +127,16 @@ If something is not clear, you can get back to this document to learn more about
     ./tools/release/tag-release.sh
     ```
   - [ ] Wait until the CI pipeline succeeds
-  - [ ] [Create a release on GitHub](https://github.com/grafana/mimir/blob/main/RELEASE.md#creating-release-on-github)
-    ```bash
-    git checkout release-<version>
-    ./tools/release/create-draft-release.sh
-    ```
+  - [ ] Review the GitHub release published by CI
   - [ ] [Merge the release branch release-<version> into main](https://github.com/grafana/mimir/blob/main/RELEASE.md#merging-release-branch-into-main)
     ```bash
     ./tools/release/create-pr-to-merge-release-branch-to-main.sh
     ```
     This prepares a PR into `main` branch. On approval, **use** the `merge-approved-pr-branch-to-main.sh` script, following the [instruction](https://github.com/grafana/mimir/blob/main/RELEASE.md#merging-release-branch-into-main) on how to merge the PR with "Merge commit" (i.e. we DO NOT "Squash and merge" this one).
   - [ ] If during the release process settings in the `renovate.json5` have been modified in such a way that dependency updates maintain more than the latest two minor versions,
-        modify it again to ensure that only the latest two minor versions get updated.
-        For instance, if versions 3.1, 3.0 and 2.10 are configured in `renovate.json5`, `renovate.json5` should keep updated the following branches:
-        `main`, `release-3.1` and `release-3.0`.
+        modify it again to ensure that only the latest two minor versions get updated, plus any older major version that we still want to keep updated.
+        For instance, if versions 3.2, 3.1, 3.0 and 2.10 are configured in `renovate.json5`, `renovate.json5` should keep updated the following branches:
+        `main`, `release-3.2`, `release-3.1`, and `release-2.10`.
   - [ ] Announce the release on socials
   - [ ] Open a PR to add the new version to the backward compatibility integration test (`integration/backward_compatibility.go`)
     - Keep the last 3 minor releases
@@ -232,39 +223,28 @@ To publish a release candidate:
 1. Do not change the release branch directly; make a PR to the release-X.Y branch with VERSION and any CHANGELOG changes.
    1. Ensure the `VERSION` file has the `-rc.X` suffix (`X` starting from `0`).
 1. After merging your PR to the release branch, run `./tools/release/tag-release.sh` to tag the new release from the release branch (see [How to tag a release](#how-to-tag-a-release)).
-1. Wait until the CI pipeline succeeds (once a tag is created, the release process through GitHub Actions will be triggered for this tag).
-1. Merge the release branch `release-x.y` into `main` (see [Merging release branch into main](#merging-release-branch-into-main))
-1. Create a pre-release on GitHub. See [Creating release on GitHub](#creating-release-on-github).
+1. Wait until the CI pipeline succeeds. Once a tag is created, CI builds the release artifacts and [creates and publishes the GitHub pre-release](#creating-release-on-github).
+1. Review the GitHub pre-release published by CI.
+1. Merge the release branch `release-x.y` into `main` (see [Merging release branch into main](#merging-release-branch-into-main)).
 
 ### Creating release on GitHub
 
-**How to create the release using the script:**
+When you [push the release tag](#how-to-tag-a-release), the [`test-build-deploy.yml`](https://github.com/grafana/mimir/actions/workflows/test-build-deploy.yml) workflow:
 
-```bash
-git checkout release-<version>
+1. Builds the release binaries (`make dist`, in the standardized build container) and the DEB/RPM packages (`make packages`).
+1. Runs [`./tools/release/create-draft-release.sh`](tools/release/create-draft-release.sh), which:
+   - Generates the release description with [`./tools/release/create-draft-release-notes.sh`](tools/release/create-draft-release-notes.sh), which contains:
+     - The CHANGELOG section for the version being released.
+     - For major and minor releases (including their release candidates), the content of the release notes document [written previously](#write-release-notes-document).
+   - Creates a draft GitHub release titled `Mimir <VERSION>` and attaches the binaries and packages to it.
+1. Publishes the release, which makes it immutable. Release candidates are published as pre-releases; stable releases are published as the final release and, when they are the newest stable release, marked as "latest".
 
-# Ensure you are authenticated and there is not a stale token in the GITHUB_TOKEN environment variable
-gh auth login
+Publishing the release makes it immutable, so make sure everything the release description needs is committed to the release branch **before** [tagging the release](#how-to-tag-a-release):
 
-# Then run the following script and follow the instructions:
-./tools/release/create-draft-release.sh
-```
+- For major and minor releases, the release notes document must be present at `docs/sources/mimir/release-notes/` on the release branch (not just on `main`). If it is missing, the `release` job fails instead of publishing an incomplete release.
+- The CHANGELOG must contain the section for the version being released.
 
-**How to create the release manually:**
-
-1. Go to https://github.com/grafana/mimir/releases/new to start a new release on GitHub (or click "Draft a new release" at https://github.com/grafana/mimir/releases page.)
-1. Select your new tag, use `Mimir <VERSION>` as Release Title. Check that "Previous tag" next to "Generate release notes" button shows previous Mimir release.
-   Click "Generate release notes" button. This will pre-fill the changelog for the release.
-   You can delete all of it, but keep "New Contributors" section and "Full Changelog" link for later.
-1. Release description consists of:
-   - "This release contains XX contributions from YY authors. Thank you!" at the beginning.
-     You can find the numbers by running `./tools/release/check-changelog.sh LAST-RELEASE-TAG...NEW-RELEASE-TAG`.
-     As an example, running the script with `mimir-2.0.0...mimir-2.1.0` argument reports `Found 417 PRs from 47 authors.`.
-   - After contributor stats, please include content of the release notes document [created previously](#write-release-notes-document).
-   - After release notes, please copy-paste content of CHANGELOG.md file since the previous release.
-   - After CHANGELOG, please include "New Contributors" section and "Full Changelog" link at the end.
-     Both were created previously by "Generate release notes" button in GitHub UI.
-1. Build binaries with `make BUILD_IN_CONTAINER=true dist` and attach them to the release (building in container ensures standardized toolchain).
+Follow the `release` job and, if it fails, fix the issue and re-run. You can preview the release details (title, pre-release/latest flags, artifacts, and description) without creating anything by running `./tools/release/create-draft-release.sh --dry-run` from the release tag.
 
 ### Publish a stable release
 
@@ -291,11 +271,9 @@ To publish a stable release:
    1. Review all updated screenshots and ensure no sensitive data is disclosed
    1. Open a PR
 1. After merging your PR to the release branch, run `./tools/release/tag-release.sh` to tag the new release from the release branch (see [How to tag a release](#how-to-tag-a-release)).
-1. Wait until the CI pipeline succeeds (once a tag is created, the release process through GitHub Actions will be triggered for this tag)
-1. Create a release on GitHub.
-   1. See [Creating release on GitHub](#creating-release-on-github) again.
-   1. Copy the release notes from pre-release version, with up-to-date CHANGELOG (if there were any changes in release candidates).
-   1. Don't forget the binaries, you'll need to build them again for this version.
+1. Wait until the CI pipeline succeeds. Once a tag is created, CI builds the release artifacts and [creates and publishes the GitHub release](#creating-release-on-github).
+   1. The description is generated from the release notes and/or CHANGELOG, so make sure they are up-to-date. Note though that it's possible to amend the description afterwards.
+1. Review the GitHub release published by CI.
 1. Merge the release branch `release-x.y` into `main` (see [Merging release branch into main](#merging-release-branch-into-main))
 1. Check the `README.md` file for any broken links.
 1. Open a PR to **add** the new version to the backward compatibility integration test (`integration/backward_compatibility_test.go`)

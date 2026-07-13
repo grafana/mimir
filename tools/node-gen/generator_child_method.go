@@ -11,10 +11,13 @@ import (
 
 // templateStructData carries the per-struct data templates use to render a generated method.
 type templateStructData struct {
-	Receiver      string
-	Type          string
-	ChildFields   []childField
-	ChildrenField string
+	Receiver           string
+	Type               string
+	ChildFields        []childField
+	ChildrenField      string
+	ChildrenMin        int
+	ChildrenLabelFmt   string
+	ChildrenNoCollapse bool
 }
 
 func (d *templateStructData) LastField() childField {
@@ -29,8 +32,18 @@ func (d *templateStructData) CountWithoutLast() int {
 
 // childField represents a struct field tagged with child/children.
 type childField struct {
-	Name    string
-	Nilable bool
+	Name       string
+	Nilable    bool
+	Type       string // source type (e.g. *core.FunctionCall)
+	TypeImport string
+	Label      *string // nil when unset
+}
+
+func (c *childField) LabelText() string {
+	if c.Label == nil {
+		return ""
+	}
+	return *c.Label
 }
 
 //go:embed child_method.tmpl
@@ -53,7 +66,34 @@ var ChildCountMethod = MethodGenerator{
 	Generate: childCountMethodGenerate,
 }
 
-func childMethodGenerate(s *Struct, imports *ImportsCollector) (string, error) {
+//go:embed set_children_method.tmpl
+var setChildrenTmplContent string
+var setChildrenTmpl = template.Must(template.New("set_children_method").Parse(setChildrenTmplContent))
+
+var SetChildrenMethod = MethodGenerator{
+	Name:     "SetChildren",
+	Generate: setChildrenMethodGenerate,
+}
+
+//go:embed replace_child_method.tmpl
+var replaceChildTmplContent string
+var replaceChildTmpl = template.Must(template.New("replace_child_method").Parse(replaceChildTmplContent))
+
+var ReplaceChildMethod = MethodGenerator{
+	Name:     "ReplaceChild",
+	Generate: replaceChildMethodGenerate,
+}
+
+//go:embed children_labels_method.tmpl
+var childrenLabelsTmplContent string
+var childrenLabelsTmpl = template.Must(template.New("children_labels_method").Parse(childrenLabelsTmplContent))
+
+var ChildrenLabelsMethod = MethodGenerator{
+	Name:     "ChildrenLabels",
+	Generate: childrenLabelsMethodGenerate,
+}
+
+func childMethodGenerate(s *Struct, imports *ImportsCollector, _ *TypeRegistry) (string, error) {
 	data, err := buildTemplateStructData(s)
 	if err != nil {
 		return "", err
@@ -77,7 +117,7 @@ func childMethodGenerate(s *Struct, imports *ImportsCollector) (string, error) {
 	return renderTemplate(childTmpl, subtmplName, data)
 }
 
-func childCountMethodGenerate(s *Struct, _ *ImportsCollector) (string, error) {
+func childCountMethodGenerate(s *Struct, _ *ImportsCollector, _ *TypeRegistry) (string, error) {
 	data, err := buildTemplateStructData(s)
 	if err != nil {
 		return "", err
@@ -96,17 +136,127 @@ func childCountMethodGenerate(s *Struct, _ *ImportsCollector) (string, error) {
 	return renderTemplate(childCountTmpl, subtmplName, data)
 }
 
+func setChildrenMethodGenerate(s *Struct, imports *ImportsCollector, _ *TypeRegistry) (string, error) {
+	data, err := buildTemplateStructData(s)
+	if err != nil {
+		return "", err
+	}
+
+	imports.Add("fmt")
+	imports.Add("github.com/grafana/mimir/pkg/streamingpromql/planning")
+	for _, cf := range data.ChildFields {
+		imports.Add(cf.TypeImport)
+	}
+
+	var subtmplName string
+	switch {
+	case data.ChildrenField != "":
+		subtmplName = "children_field"
+	case len(data.ChildFields) == 0:
+		subtmplName = "no_fields"
+	case data.LastField().Nilable:
+		subtmplName = "nilable_last"
+	default:
+		subtmplName = "child_fields"
+	}
+
+	return renderTemplate(setChildrenTmpl, subtmplName, data)
+}
+
+func replaceChildMethodGenerate(s *Struct, imports *ImportsCollector, _ *TypeRegistry) (string, error) {
+	data, err := buildTemplateStructData(s)
+	if err != nil {
+		return "", err
+	}
+
+	imports.Add("fmt")
+	imports.Add("github.com/grafana/mimir/pkg/streamingpromql/planning")
+	for _, cf := range data.ChildFields {
+		imports.Add(cf.TypeImport)
+	}
+
+	var subtmplName string
+	switch {
+	case data.ChildrenField != "":
+		subtmplName = "children_field"
+	case len(data.ChildFields) == 1:
+		subtmplName = "single_child_field"
+	case len(data.ChildFields) > 1:
+		subtmplName = "multi_child_fields"
+	default:
+		subtmplName = "no_fields"
+	}
+
+	return renderTemplate(replaceChildTmpl, subtmplName, data)
+}
+
+func childrenLabelsMethodGenerate(s *Struct, imports *ImportsCollector, _ *TypeRegistry) (string, error) {
+	data, err := buildTemplateStructData(s)
+	if err != nil {
+		return "", err
+	}
+
+	if err := validateChildLabels(data); err != nil {
+		return "", err
+	}
+
+	var subtmplName string
+	switch {
+	case data.ChildrenField != "":
+		imports.Add("fmt")
+		subtmplName = "children_field"
+	case len(data.ChildFields) == 0:
+		subtmplName = "no_fields"
+	case data.LastField().Nilable:
+		subtmplName = "nilable_last"
+	default:
+		subtmplName = "child_fields"
+	}
+
+	return renderTemplate(childrenLabelsTmpl, subtmplName, data)
+}
+
+// validateChildLabels validates the labels of the tagged fields.
+// Returns an error if:
+//   - a node:"children" field is missing a labelfmt,
+//   - a child sets an empty label,
+//   - two child fields share the same label.
+func validateChildLabels(data *templateStructData) error {
+	if data.ChildrenField != "" {
+		if data.ChildrenLabelFmt == "" {
+			return fmt.Errorf(`node:"children" requires a labelfmt option`)
+		}
+		return nil
+	}
+	seenLabels := make(map[string]struct{}, len(data.ChildFields))
+	for _, field := range data.ChildFields {
+		label := field.LabelText()
+		if field.Label != nil && label == "" {
+			return fmt.Errorf("child field %q has an empty label", field.Name)
+		}
+		if _, dup := seenLabels[label]; dup {
+			return fmt.Errorf("child field %q has a duplicate label %q", field.Name, label)
+		}
+		seenLabels[label] = struct{}{}
+	}
+	return nil
+}
+
 // buildTemplateStructData validates the tagged fields of the given structure and returns the template input for it.
 // Returns an error if the tags violate the supported shape:
+//   - node:"children,min=N" must have a non-negative N,
 //   - node:"child" and node:"children" cannot be mixed,
 //   - at most one node:"children" field,
 //   - at most one node:"child,nilable" field, and it must be the last node:"child" field,
 //   - node:"child" and node:"children" tags on embedded fields are not supported.
 func buildTemplateStructData(s *Struct) (*templateStructData, error) {
 	var (
-		childFields       []childField
-		nilableFieldCount int
-		childrenFieldName string
+		childFields        []childField
+		nilableFieldCount  int
+		childrenFieldName  string
+		childrenMin        int
+		childrenLabelFmt   string
+		childrenNoCollapse bool
 	)
 	for _, f := range s.Fields {
 		if f.Tag == nil {
@@ -123,12 +273,27 @@ func buildTemplateStructData(s *Struct) (*templateStructData, error) {
 			if f.Tag.Nilable {
 				nilableFieldCount++
 			}
-			childFields = append(childFields, childField{Name: f.Name, Nilable: f.Tag.Nilable})
+			if f.Type == nil {
+				return nil, fmt.Errorf("field %q: unsupported field type", f.Name)
+			}
+			childFields = append(childFields, childField{
+				Name:       f.Name,
+				Nilable:    f.Tag.Nilable,
+				Type:       f.Type.Render(),
+				TypeImport: f.Type.ImportPath,
+				Label:      f.Tag.Label,
+			})
 		case f.Tag.IsChildren:
 			if childrenFieldName != "" {
 				return nil, fmt.Errorf(`multiple node:"children" fields are not supported`)
 			}
+			if f.Tag.Min < 0 {
+				return nil, fmt.Errorf(`node:"children" min must be non-negative, got %d`, f.Tag.Min)
+			}
 			childrenFieldName = f.Name
+			childrenMin = f.Tag.Min
+			childrenLabelFmt = f.Tag.LabelFmt
+			childrenNoCollapse = f.Tag.NoCollapse
 		}
 	}
 	if len(childFields) > 0 && childrenFieldName != "" {
@@ -142,10 +307,13 @@ func buildTemplateStructData(s *Struct) (*templateStructData, error) {
 	}
 
 	return &templateStructData{
-		Receiver:      receiverName(s.Name),
-		Type:          s.Name,
-		ChildFields:   childFields,
-		ChildrenField: childrenFieldName,
+		Receiver:           receiverName(s.Name),
+		Type:               s.Name,
+		ChildFields:        childFields,
+		ChildrenField:      childrenFieldName,
+		ChildrenMin:        childrenMin,
+		ChildrenLabelFmt:   childrenLabelFmt,
+		ChildrenNoCollapse: childrenNoCollapse,
 	}, nil
 }
 

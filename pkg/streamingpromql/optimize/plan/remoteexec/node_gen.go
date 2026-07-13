@@ -20,6 +20,40 @@ func (r *RemoteExecutionConsumer) ChildCount() int {
 	return 1
 }
 
+func (r *RemoteExecutionConsumer) SetChildren(children []planning.Node) error {
+	if len(children) != 1 {
+		return fmt.Errorf("node of type RemoteExecutionConsumer expects one child, but got %d", len(children))
+	}
+	child0, ok := children[0].(*RemoteExecutionGroup)
+	if !ok {
+		return fmt.Errorf("node of type RemoteExecutionConsumer expects child Group to be of type *RemoteExecutionGroup, but got %T", children[0])
+	}
+	r.Group = child0
+	return nil
+}
+
+func (r *RemoteExecutionConsumer) ReplaceChild(idx int, node planning.Node) error {
+	if idx != 0 {
+		return fmt.Errorf("node of type RemoteExecutionConsumer supports 1 child, but attempted to replace child at index %d", idx)
+	}
+	child, ok := node.(*RemoteExecutionGroup)
+	if !ok {
+		return fmt.Errorf("node of type RemoteExecutionConsumer expects child Group to be of type *RemoteExecutionGroup, but got %T", node)
+	}
+	r.Group = child
+	return nil
+}
+
+func (r *RemoteExecutionConsumer) ChildrenLabels() []string {
+	return []string{""}
+}
+
+func (r *RemoteExecutionConsumer) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
+	oi, ok := other.(*RemoteExecutionConsumer)
+	return ok &&
+		r.NodeIndex == oi.NodeIndex
+}
+
 func (r *RemoteExecutionGroup) Child(idx int) planning.Node {
 	if idx >= len(r.Nodes) {
 		panic(fmt.Sprintf("this RemoteExecutionGroup node has %d children, but attempted to get child at index %d", len(r.Nodes), idx))
@@ -29,4 +63,39 @@ func (r *RemoteExecutionGroup) Child(idx int) planning.Node {
 
 func (r *RemoteExecutionGroup) ChildCount() int {
 	return len(r.Nodes)
+}
+
+func (r *RemoteExecutionGroup) SetChildren(children []planning.Node) error {
+	if len(children) < 1 {
+		return fmt.Errorf("node of type RemoteExecutionGroup expects at least one child, but got %d", len(children))
+	}
+
+	r.Nodes = children
+	return nil
+}
+
+func (r *RemoteExecutionGroup) ReplaceChild(idx int, node planning.Node) error {
+	if idx >= len(r.Nodes) {
+		return fmt.Errorf("this RemoteExecutionGroup node has %d children, but attempted to replace child at index %d", len(r.Nodes), idx)
+	}
+	r.Nodes[idx] = node
+	return nil
+}
+
+func (r *RemoteExecutionGroup) ChildrenLabels() []string {
+	switch len(r.Nodes) {
+	case 0:
+		return nil
+	default:
+		labels := make([]string, len(r.Nodes))
+		for i := range labels {
+			labels[i] = fmt.Sprintf("node %d", i)
+		}
+		return labels
+	}
+}
+
+func (r *RemoteExecutionGroup) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
+	_, ok := other.(*RemoteExecutionGroup)
+	return ok
 }

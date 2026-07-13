@@ -177,6 +177,11 @@ func (m *FunctionOverRangeVectorSplit[T]) AfterPrepare(ctx context.Context) erro
 }
 
 func (m *FunctionOverRangeVectorSplit[T]) createSplits(ctx context.Context) error {
+	cachedResults, err := m.getCachedResults(ctx)
+	if err != nil {
+		return err
+	}
+
 	var currentUncachedRanges []Range
 	var currentRangeLength int64
 
@@ -185,7 +190,7 @@ func (m *FunctionOverRangeVectorSplit[T]) createSplits(ctx context.Context) erro
 			return nil
 		}
 
-		split, err := NewUncachedSplit(currentUncachedRanges, currentRangeLength, m)
+		split, err := NewUncachedSplit(ctx, currentUncachedRanges, currentRangeLength, m)
 		if err != nil {
 			return err
 		}
@@ -195,20 +200,14 @@ func (m *FunctionOverRangeVectorSplit[T]) createSplits(ctx context.Context) erro
 		return nil
 	}
 
-	for _, splitRange := range m.splitRanges {
+	for i, splitRange := range m.splitRanges {
 		if splitRange.Cacheable {
-			// TODO: considering using a single call to retrieve all the cache entries.
-			metadata, annotations, results, stats, found, err := m.cache.Get(ctx, m.FuncId, m.innerCacheKey, splitRange.Start, splitRange.End, m.cacheStats)
-			if err != nil {
-				return err
-			}
-
-			if found {
+			if cached := cachedResults[i]; cached.Found {
 				if err := flushCurrentUncachedRanges(); err != nil {
 					return err
 				}
 
-				cachedSplit, err := NewCachedSplit(ctx, metadata, annotations, results, stats, m)
+				cachedSplit, err := NewCachedSplit(ctx, cached.SeriesMetadata, cached.Annotations, cached.Results, cached.Stats, m)
 				if err != nil {
 					return err
 				}
@@ -235,7 +234,45 @@ func (m *FunctionOverRangeVectorSplit[T]) createSplits(ctx context.Context) erro
 	return flushCurrentUncachedRanges()
 }
 
-func (m *FunctionOverRangeVectorSplit[T]) materializeOperatorForTimeRange(start int64, end int64, step int64) (types.RangeVectorOperator, error) {
+// getCachedResults looks up the cache entries for all cacheable split ranges using a single cache request.
+// The returned slice is aligned with m.splitRanges. Entries for non-cacheable ranges are always not found.
+func (m *FunctionOverRangeVectorSplit[T]) getCachedResults(ctx context.Context) ([]cache.GetResult[T], error) {
+	var cacheableRanges []cache.GetRange
+
+	for _, splitRange := range m.splitRanges {
+		if splitRange.Cacheable {
+			cacheableRanges = append(cacheableRanges, cache.GetRange{Start: splitRange.Start, End: splitRange.End})
+		}
+	}
+
+	if len(cacheableRanges) == 0 {
+		return nil, nil
+	}
+
+	cachedResults, err := m.cache.GetMulti(ctx, m.FuncId, m.innerCacheKey, cacheableRanges, m.cacheStats)
+	if err != nil {
+		return nil, err
+	}
+
+	// cachedResults only contains entries for the cacheable ranges, so return them aligned with m.splitRanges.
+	results := make([]cache.GetResult[T], len(m.splitRanges))
+	nextCachedResult := 0
+	for i, splitRange := range m.splitRanges {
+		if splitRange.Cacheable {
+			result := cachedResults[nextCachedResult]
+			if result.Start != splitRange.Start || result.End != splitRange.End {
+				panic(fmt.Sprintf("cached result time range (%d, %d] does not match split range (%d, %d]",
+					result.Start, result.End, splitRange.Start, splitRange.End))
+			}
+			results[i] = result
+			nextCachedResult++
+		}
+	}
+
+	return results, nil
+}
+
+func (m *FunctionOverRangeVectorSplit[T]) materializeOperatorForTimeRange(ctx context.Context, start int64, end int64, step int64) (types.RangeVectorOperator, error) {
 	subRange := time.Duration(step) * time.Millisecond
 
 	overrideTimeParams := planning.RangeParams{
@@ -257,7 +294,7 @@ func (m *FunctionOverRangeVectorSplit[T]) materializeOperatorForTimeRange(start 
 		splitTimeRange = types.NewRangeQueryTimeRange(promts.Time(start).Add(subRange), promts.Time(end), subRange)
 	}
 
-	op, err := m.materializer.ConvertNodeToOperatorWithSubRange(m.innerNode, splitTimeRange, overrideTimeParams)
+	op, err := m.materializer.ConvertNodeToOperatorWithSubRange(ctx, m.innerNode, splitTimeRange, overrideTimeParams)
 	if err != nil {
 		return nil, err
 	}
@@ -307,7 +344,7 @@ func (m *FunctionOverRangeVectorSplit[T]) mergeSplitsMetadata(ctx context.Contex
 	seriesMap := make(map[string]int)
 	var seriesToSplits [][]SplitSeries
 
-	labelBytes := make([]byte, 0, 1024)
+	labelBytes := make([]byte, 0, types.LabelBytesBufferSize)
 
 	// Reuse split 0's metadata as base instead of copying.
 	mergedMetadata, err := m.splits[0].SeriesMetadata(ctx, matchers)
@@ -688,16 +725,7 @@ func (c *CachedSplit[T]) FinishedReading(_ context.Context) error {
 }
 
 func (c *CachedSplit[T]) Finalize(ctx context.Context) ([]*types.OperatorEvaluationStats, annotations.Annotations, error) {
-	var annos annotations.Annotations
-
-	for _, w := range c.annotations.Warnings {
-		annos.Add(querierpb.NewWarningAnnotation(w))
-	}
-	for _, i := range c.annotations.Infos {
-		annos.Add(querierpb.NewInfoAnnotation(i))
-	}
-
-	return []*types.OperatorEvaluationStats{c.stats}, annos, nil
+	return []*types.OperatorEvaluationStats{c.stats}, c.annotations.Decode(), nil
 }
 
 func (c *CachedSplit[T]) StoreResultsInCache(_ context.Context) error {
@@ -742,11 +770,12 @@ func (p *UncachedSplit[T]) RangeCount() int {
 }
 
 func NewUncachedSplit[T any](
+	ctx context.Context,
 	ranges []Range,
 	rangeLength int64,
 	parent *FunctionOverRangeVectorSplit[T],
 ) (*UncachedSplit[T], error) {
-	operator, err := parent.materializeOperatorForTimeRange(ranges[0].Start, ranges[len(ranges)-1].End, rangeLength)
+	operator, err := parent.materializeOperatorForTimeRange(ctx, ranges[0].Start, ranges[len(ranges)-1].End, rangeLength)
 	if err != nil {
 		return nil, err
 	}
@@ -786,13 +815,7 @@ func (p *UncachedSplit[T]) SeriesMetadata(ctx context.Context, _ types.Matchers)
 		return nil, err
 	}
 
-	p.seriesMetadata = make([]querierpb.SeriesMetadata, len(seriesMetadata))
-	for i, sm := range seriesMetadata {
-		p.seriesMetadata[i] = querierpb.SeriesMetadata{
-			Labels:   mimirpb.FromLabelsToLabelAdapters(sm.Labels),
-			DropName: sm.DropName,
-		}
-	}
+	p.seriesMetadata = querierpb.EncodeSeriesMetadataSlice(seriesMetadata)
 	p.localToMergedIdx = make([]int, len(seriesMetadata))
 
 	p.resultGetter = NewResultGetter(p.NextSeries)
@@ -894,9 +917,6 @@ func (p *UncachedSplit[T]) StoreResultsInCache(ctx context.Context) error {
 			continue
 		}
 
-		var ann querierpb.Annotations
-		ann.Warnings, ann.Infos = p.rangeAnnotations[rangeIdx].AsStrings("", 0, 0)
-
 		seriesMetadata := make([]querierpb.SeriesMetadata, 0, len(p.rangeSeriesMetadata[rangeIdx]))
 		for _, seriesMetadataIdx := range p.rangeSeriesMetadata[rangeIdx] {
 			seriesMetadata = append(seriesMetadata, p.seriesMetadata[seriesMetadataIdx])
@@ -909,7 +929,7 @@ func (p *UncachedSplit[T]) StoreResultsInCache(ctx context.Context) error {
 			splitRange.Start,
 			splitRange.End,
 			seriesMetadata,
-			ann,
+			querierpb.EncodeAnnotations(*p.rangeAnnotations[rangeIdx], ""),
 			p.rangeResults[rangeIdx],
 			p.stats[rangeIdx].Encode(),
 			len(p.seriesMetadata),

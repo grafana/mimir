@@ -3,6 +3,7 @@
 package scheduler
 
 import (
+	"container/list"
 	"context"
 	"sync"
 	"time"
@@ -17,23 +18,21 @@ import (
 	"github.com/grafana/mimir/pkg/compactor/scheduler/compactorschedulerpb"
 )
 
-const outsideRotation int = -1
-
 type rotationTransition int
 
 const (
-	rotationNoChange rotationTransition = iota
-	rotationAddTracker
+	rotationAddTracker rotationTransition = iota
 	rotationRemoveTracker
 )
 
-// Rotator rotates initial calls to LeaseJob between per-tenant job trackers for fairness and to reduce contention.
-// Hints are given by a tenant's job tracker when an operation causes it to transition states:
+// Rotator rotates calls to LeaseJob between per-tenant job trackers for fairness and to reduce contention.
+// Each lane has its own rotation: a tenant is in a lane's rotation while it has pending work in that lane. Hints
+// are given by a tenant's job tracker when an operation changes a lane's pending state:
 //
-//	pending jobs -> no pending jobs: The tenant's job tracker is taken out of rotation
-//	no pending jobs -> pending jobs: The tenant's job tracker is placed into rotation
+//	pending jobs -> no pending jobs: The tenant is taken out of that lane's rotation
+//	no pending jobs -> pending jobs: The tenant is placed into that lane's rotation
 //
-// A mapping is maintained for each tenant even if they are not currently in the rotation for lease interaction.
+// A mapping is maintained for each tenant even if they are not currently in any rotation for lease updates.
 // Note: The rotation mechanism could be extended for weighted fairness if needed.
 type Rotator struct {
 	services.Service
@@ -45,21 +44,31 @@ type Rotator struct {
 	intervalsBeforeLeaseExpiration   int
 	intervalsBeforeColdStartPlanning int
 	clock                            clock.Clock
-	rotationIndexCounter             *atomic.Int32 // only increments, overflow is okay
 	pendingJobsLastEmpty             prometheus.Gauge
 	logger                           log.Logger
 
 	mtx            sync.RWMutex
-	tenantStateMap map[string]*TenantRotationState
-	rotation       []string
+	tenantStateMap map[string]*tenantRotationState
+	laneRotations  map[lane]*laneRotation
 }
 
-type TenantRotationState struct {
-	tracker       *JobTracker
-	rotationIndex int
+// rotation of tenants with pending work in a lane
+type laneRotation struct {
+	rotation *list.List
+	cursor   atomic.Pointer[list.Element] // points to next element (tenant) in the rotation; nil iff rotation is empty
 }
 
-func NewRotator(leaseDuration, planningInterval, compactionWaitPeriod, maintenanceInterval time.Duration, intervalsBeforeLeaseExpiration, intervalsBeforeColdStartPlanning int, pendingJobsLastEmpty prometheus.Gauge, logger log.Logger) *Rotator {
+type tenantRotationState struct {
+	tracker  *JobTracker
+	elements map[lane]*list.Element // tenant's slot in each lane's rotation (if they are present in that lane)
+}
+
+func NewRotator(leaseDuration, planningInterval, compactionWaitPeriod, maintenanceInterval time.Duration, intervalsBeforeLeaseExpiration, intervalsBeforeColdStartPlanning int, lanePolicy lanePolicy, pendingJobsLastEmpty prometheus.Gauge, logger log.Logger) *Rotator {
+	laneRotations := make(map[lane]*laneRotation)
+	for _, lane := range lanePolicy.AllLanes() {
+		laneRotations[lane] = &laneRotation{rotation: list.New()}
+	}
+
 	r := &Rotator{
 		leaseDuration:                    leaseDuration,
 		planningInterval:                 planningInterval,
@@ -68,11 +77,10 @@ func NewRotator(leaseDuration, planningInterval, compactionWaitPeriod, maintenan
 		intervalsBeforeLeaseExpiration:   intervalsBeforeLeaseExpiration,
 		intervalsBeforeColdStartPlanning: intervalsBeforeColdStartPlanning,
 		clock:                            clock.New(),
-		rotationIndexCounter:             atomic.NewInt32(0),
 		pendingJobsLastEmpty:             pendingJobsLastEmpty,
 		mtx:                              sync.RWMutex{},
-		tenantStateMap:                   make(map[string]*TenantRotationState),
-		rotation:                         make([]string, 0, 10), // initial size doesn't really matter
+		tenantStateMap:                   make(map[string]*tenantRotationState),
+		laneRotations:                    laneRotations,
 		logger:                           logger,
 	}
 
@@ -108,13 +116,16 @@ func (r *Rotator) iter(ctx context.Context) error {
 	return nil
 }
 
-// PrepareForShutdown empties out tenants and the rotation. This prevents further persist calls to the underlying state.
+// PrepareForShutdown empties out tenants and all lane rotations. This prevents further persist calls to the underlying state.
 func (r *Rotator) PrepareForShutdown() {
 	r.mtx.Lock()
 	defer r.mtx.Unlock()
 
-	r.tenantStateMap = make(map[string]*TenantRotationState)
-	r.rotation = []string{}
+	r.tenantStateMap = make(map[string]*tenantRotationState)
+	for _, lr := range r.laneRotations {
+		lr.rotation = list.New()
+		lr.cursor.Store(nil)
+	}
 }
 
 func (r *Rotator) RecoverFrom(jobTrackers map[string]*JobTracker, creationTime time.Time) {
@@ -136,62 +147,79 @@ func (r *Rotator) RecoverFrom(jobTrackers map[string]*JobTracker, creationTime t
 		}
 	}
 
-	// Place recovered tenants that have pending work in the rotation
+	// Place recovered tenants into the rotation of every lane they have pending work in
 	for tenant, jobTracker := range jobTrackers {
-		rotationState := &TenantRotationState{
-			tracker:       jobTracker,
-			rotationIndex: outsideRotation,
+		rotationState := &tenantRotationState{
+			tracker:  jobTracker,
+			elements: make(map[lane]*list.Element),
 		}
 		r.tenantStateMap[tenant] = rotationState
-		if !jobTracker.isPendingEmpty() {
-			r.addToRotation(tenant, rotationState)
+		for _, l := range jobTracker.nonEmptyLanes() {
+			r.addToRotation(l, tenant, rotationState)
 		}
 	}
 
-	if len(r.rotation) == 0 {
+	if r.allRotationsEmpty() {
 		r.pendingJobsLastEmpty.Set(float64(r.clock.Now().Unix()))
 	}
 }
 
-func (r *Rotator) LeaseJob(ctx context.Context) (*compactorschedulerpb.LeaseJobResponse, bool, error) {
+func (r *Rotator) LeaseJob(ctx context.Context, lanes []lane) (*compactorschedulerpb.LeaseJobResponse, bool, error) {
 	r.mtx.RLock()
 
-	length := len(r.rotation)
-	if length == 0 {
-		// avoid divide by zero
-		r.mtx.RUnlock()
-		return nil, false, nil
-	}
+	for _, l := range lanes {
 
-	// Handle potential overflow of rotationIndexCounter
-	i := ((int(r.rotationIndexCounter.Add(1)) % length) + length) % length
+		// The lane must be valid according to the policy.
+		lr := r.laneRotations[l]
 
-	// Check possibly all tenants. Tenants get removed from the rotation once they are out of work,
-	// but this may still encounter some due to holding the read lock
-	for range length {
-		tenant := r.rotation[i]
-		response, transition, err := r.tenantStateMap[tenant].tracker.Lease()
-		if err != nil {
-			r.mtx.RUnlock()
-			return nil, false, err
+		length := lr.rotation.Len()
+		if length == 0 {
+			continue
 		}
-		if response != nil {
-			// must drop the read lock if acquiring the write lock in possiblyRemoveFromRotation
-			r.mtx.RUnlock()
-			if transition {
-				r.possiblyRemoveFromRotation(tenant)
+
+		// Take a starting tenant from the lane's cursor for fairness across concurrent callers, then walk
+		// the rotation locally: walking the shared cursor instead would let a concurrent caller advance it
+		// past tenants we never tried, including one with pending work.
+		elem := r.advanceCursor(lr)
+		for range length {
+			tenant := elem.Value.(string)
+			response, becameEmpty, err := r.tenantStateMap[tenant].tracker.Lease(l)
+			if err != nil {
+				r.mtx.RUnlock()
+				return nil, false, err
 			}
-			return response, true, nil
-
-		}
-		i += 1
-		if i == length {
-			i = 0
+			if response != nil {
+				// must drop the read lock if acquiring the write lock in possiblyRemoveFromRotation
+				r.mtx.RUnlock()
+				if becameEmpty {
+					r.possiblyRemoveFromRotation(l, tenant)
+				}
+				return response, true, nil
+			}
+			elem = elem.Next()
+			if elem == nil {
+				elem = lr.rotation.Front()
+			}
 		}
 	}
 
 	r.mtx.RUnlock()
 	return nil, false, nil
+}
+
+// advanceCursor atomically advances a lane's cursor by one and returns its previous element.
+// Must be called while holding the lock, with a non-empty rotation.
+func (r *Rotator) advanceCursor(lr *laneRotation) *list.Element {
+	for {
+		elem := lr.cursor.Load()
+		next := elem.Next()
+		if next == nil {
+			next = lr.rotation.Front()
+		}
+		if lr.cursor.CompareAndSwap(elem, next) {
+			return elem
+		}
+	}
 }
 
 func (r *Rotator) RenewJobLease(tenant string, key string, epoch int64) bool {
@@ -215,12 +243,12 @@ func (r *Rotator) CancelJobLease(tenant string, key string, epoch int64) (bool, 
 		return false, nil
 	}
 
-	canceled, transition, err := tenantState.tracker.CancelLease(key, epoch)
+	canceled, becamePending, err := tenantState.tracker.CancelLease(key, epoch)
 	if err != nil {
 		r.mtx.RUnlock()
 		return false, err
 	}
-	if !transition {
+	if becamePending == nil {
 		r.mtx.RUnlock()
 		return canceled, nil
 	}
@@ -235,8 +263,9 @@ func (r *Rotator) CancelJobLease(tenant string, key string, epoch int64) (bool, 
 		return canceled, nil
 	}
 
-	if tenantState.rotationIndex == outsideRotation && !tenantState.tracker.isPendingEmpty() {
-		r.addToRotation(tenant, tenantState)
+	l := *becamePending
+	if tenantState.elements[l] == nil && !tenantState.tracker.isPendingEmpty(l) {
+		r.addToRotation(l, tenant, tenantState)
 	}
 
 	return canceled, nil
@@ -250,34 +279,40 @@ func (r *Rotator) OfferCompactionJobs(tenant string, jobs []*TrackedCompactionJo
 		r.mtx.RUnlock()
 		return 0, false, nil
 	}
-	added, found, transition, err := tenantState.tracker.OfferCompactionJobs(jobs, planJobEpoch)
+	added, found, transitions, err := tenantState.tracker.OfferCompactionJobs(jobs, planJobEpoch)
 	if err != nil {
 		r.mtx.RUnlock()
 		return 0, found, err
 	}
 
-	// Must still be holding the read lock to read rotation index
-	switch transition {
-	case rotationAddTracker:
-		if tenantState.rotationIndex == outsideRotation {
-			r.mtx.RUnlock() // drop read lock to acquire write lock
-			r.mtx.Lock()
-			// Double check still present, not in rotation, and there are pending jobs
-			if tenantState, ok := r.tenantStateMap[tenant]; ok && tenantState.rotationIndex == outsideRotation && !tenantState.tracker.isPendingEmpty() {
-				r.addToRotation(tenant, tenantState)
+	if len(transitions) == 0 {
+		r.mtx.RUnlock()
+		return added, found, nil
+	}
+
+	// Drop the read lock to acquire a write lock and apply the membership changes.
+	r.mtx.RUnlock()
+	r.mtx.Lock()
+	defer r.mtx.Unlock()
+
+	tenantState, ok = r.tenantStateMap[tenant]
+	if !ok {
+		return added, found, nil
+	}
+
+	for _, t := range transitions {
+		switch t.kind {
+		case rotationAddTracker:
+			if tenantState.elements[t.lane] == nil && !tenantState.tracker.isPendingEmpty(t.lane) {
+				r.addToRotation(t.lane, tenant, tenantState)
 			}
-			r.mtx.Unlock()
-			return added, found, nil
-		}
-	case rotationRemoveTracker:
-		if tenantState.rotationIndex != outsideRotation {
-			r.mtx.RUnlock() // drop read lock to acquire write lock
-			r.possiblyRemoveFromRotation(tenant)
-			return added, found, nil
+		case rotationRemoveTracker:
+			if tenantState.elements[t.lane] != nil && tenantState.tracker.isPendingEmpty(t.lane) {
+				r.removeFromRotation(t.lane, tenantState)
+			}
 		}
 	}
 
-	r.mtx.RUnlock()
 	return added, found, nil
 }
 
@@ -290,15 +325,15 @@ func (r *Rotator) RemoveJob(tenant string, key string, epoch int64, complete boo
 		return false, nil
 	}
 
-	removed, emptyAvailable, err := tenantState.tracker.Remove(key, epoch, complete)
+	removed, emptied, err := tenantState.tracker.Remove(key, epoch, complete)
 	r.mtx.RUnlock()
 	if err != nil {
 		return false, err
 	}
 
-	if emptyAvailable {
+	if emptied != nil {
 		// This branch is unlikely. The lease would have had to have expired but we're honoring the completion anyway (because it's too late)
-		r.possiblyRemoveFromRotation(tenant)
+		r.possiblyRemoveFromRotation(*emptied, tenant)
 	}
 	return removed, nil
 }
@@ -312,14 +347,14 @@ func (r *Rotator) AddTenant(tenant string, jobTracker *JobTracker) {
 		return
 	}
 
-	rotationState := &TenantRotationState{
-		tracker:       jobTracker,
-		rotationIndex: outsideRotation,
+	rotationState := &tenantRotationState{
+		tracker:  jobTracker,
+		elements: make(map[lane]*list.Element),
 	}
 
 	r.tenantStateMap[tenant] = rotationState
-	if !jobTracker.isPendingEmpty() {
-		r.addToRotation(tenant, rotationState)
+	for _, l := range jobTracker.nonEmptyLanes() {
+		r.addToRotation(l, tenant, rotationState)
 	}
 }
 
@@ -335,29 +370,36 @@ func (r *Rotator) RemoveTenant(tenant string) (*JobTracker, bool) {
 	// Note: don't care if there are active/pending jobs in this tenant.
 	// A caller would only call this function if it sees the tenant as entirely empty. We could still be
 	// generating plan jobs that achieve nothing in that case.
-	if tenantState.rotationIndex != outsideRotation {
-		r.removeFromRotation(tenantState)
+	for l := range tenantState.elements {
+		r.removeFromRotation(l, tenantState)
 	}
 	delete(r.tenantStateMap, tenant)
 	return tenantState.tracker, true
 }
 
 func (r *Rotator) Maintenance(ctx context.Context, enforceLeaseExpiration, plan bool) {
+	type tenantLane struct {
+		tenant string
+		lane   lane
+	}
+
 	r.mtx.RLock()
-	addRotationFor := make([]string, 0, 10) // size is arbitrary
+	addRotationFor := make([]tenantLane, 0, 10) // size is arbitrary
 	for tenant, tenantState := range r.tenantStateMap {
 		if ctx.Err() != nil {
 			r.mtx.RUnlock()
 			return
 		}
-		transition, err := tenantState.tracker.Maintenance(r.leaseDuration, enforceLeaseExpiration, plan, r.planningInterval, r.compactionWaitPeriod)
+		becameNonEmpty, err := tenantState.tracker.Maintenance(r.leaseDuration, enforceLeaseExpiration, plan, r.planningInterval, r.compactionWaitPeriod)
 		if err != nil {
 			level.Warn(r.logger).Log("msg", "background maintenance failed for job tracker", "user", tenant, "err", err)
-		} else if transition {
-			addRotationFor = append(addRotationFor, tenant)
+			continue
+		}
+		for _, l := range becameNonEmpty {
+			addRotationFor = append(addRotationFor, tenantLane{tenant: tenant, lane: l})
 		}
 	}
-	stayingEmpty := len(addRotationFor) == 0 && len(r.rotation) == 0
+	stayingEmpty := len(addRotationFor) == 0 && r.allRotationsEmpty()
 	r.mtx.RUnlock()
 
 	if len(addRotationFor) == 0 || ctx.Err() != nil {
@@ -372,15 +414,15 @@ func (r *Rotator) Maintenance(ctx context.Context, enforceLeaseExpiration, plan 
 
 	r.mtx.Lock()
 	defer r.mtx.Unlock()
-	for _, tenant := range addRotationFor {
-		tenantState, ok := r.tenantStateMap[tenant]
-		if ok && tenantState.rotationIndex == outsideRotation && !tenantState.tracker.isPendingEmpty() {
-			r.addToRotation(tenant, tenantState)
+	for _, tl := range addRotationFor {
+		tenantState, ok := r.tenantStateMap[tl.tenant]
+		if ok && tenantState.elements[tl.lane] == nil && !tenantState.tracker.isPendingEmpty(tl.lane) {
+			r.addToRotation(tl.lane, tl.tenant, tenantState)
 		}
 	}
 }
 
-func (r *Rotator) possiblyRemoveFromRotation(tenant string) {
+func (r *Rotator) possiblyRemoveFromRotation(l lane, tenant string) {
 	r.mtx.Lock()
 	defer r.mtx.Unlock()
 
@@ -388,30 +430,44 @@ func (r *Rotator) possiblyRemoveFromRotation(tenant string) {
 	// Since we hold the write lock, we have exclusive access to all trackers.
 	// Therefore, the tracker lock isn't necessary for isPendingEmpty(). Be quick.
 	tenantState, ok := r.tenantStateMap[tenant]
-	if ok && tenantState.rotationIndex != outsideRotation && tenantState.tracker.isPendingEmpty() {
-		r.removeFromRotation(tenantState)
+	if ok && tenantState.elements[l] != nil && tenantState.tracker.isPendingEmpty(l) {
+		r.removeFromRotation(l, tenantState)
 	}
 }
 
-// Adds the specified tenant to the rotation. A write lock must be held in order to call this function.
-func (r *Rotator) addToRotation(tenant string, tenantState *TenantRotationState) {
-	tenantState.rotationIndex = len(r.rotation)
-	r.rotation = append(r.rotation, tenant)
+// addToRotation appends the tenant to a lane's rotation. A write lock must be held in order to call this function.
+func (r *Rotator) addToRotation(l lane, tenant string, tenantState *tenantRotationState) {
+	lr := r.laneRotations[l]
+	tenantState.elements[l] = lr.rotation.PushBack(tenant)
+	if lr.cursor.Load() == nil {
+		lr.cursor.Store(tenantState.elements[l])
+	}
 }
 
-// Removes the specified tenant from the rotation. A write lock must be held in order to call this function.
-func (r *Rotator) removeFromRotation(tenantState *TenantRotationState) {
-	length := len(r.rotation)
-	if tenantState.rotationIndex != length-1 {
-		// Swap with the last tenant. This causes an imperfect rotation, but such is life
-		r.rotation[tenantState.rotationIndex] = r.rotation[length-1]
-		r.tenantStateMap[r.rotation[length-1]].rotationIndex = tenantState.rotationIndex
+// removeFromRotation removes the tenant from a lane's rotation. A write lock must be held in order to call this function.
+func (r *Rotator) removeFromRotation(l lane, tenantState *tenantRotationState) {
+	lr := r.laneRotations[l]
+	elem := tenantState.elements[l]
+	if lr.cursor.Load() == elem {
+		r.advanceCursor(lr)
+		if lr.cursor.Load() == elem {
+			lr.cursor.Store(nil)
+		}
 	}
-	// Remove the tenant from the rotation
-	r.rotation = r.rotation[:length-1]
-	tenantState.rotationIndex = outsideRotation
+	lr.rotation.Remove(elem)
+	delete(tenantState.elements, l)
 
-	if len(r.rotation) == 0 {
+	if r.allRotationsEmpty() {
 		r.pendingJobsLastEmpty.Set(float64(r.clock.Now().Unix()))
 	}
+}
+
+// allRotationsEmpty reports whether no tenant has pending work in any lane. A write lock must be held in order to call this function.
+func (r *Rotator) allRotationsEmpty() bool {
+	for _, lr := range r.laneRotations {
+		if lr.rotation.Len() > 0 {
+			return false
+		}
+	}
+	return true
 }

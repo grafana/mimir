@@ -16,7 +16,7 @@ import (
 // RenderGenerators uses the collected paths to produce the file's import block.
 type MethodGenerator struct {
 	Name     string
-	Generate func(s *Struct, imports *ImportsCollector) (string, error)
+	Generate func(s *Struct, imports *ImportsCollector, registry *TypeRegistry) (string, error)
 }
 
 // CreateGenerators returns the fixed list of code generators applied to every annotated struct, in the order returned.
@@ -25,6 +25,10 @@ func CreateGenerators() []MethodGenerator {
 	return []MethodGenerator{
 		ChildMethod,
 		ChildCountMethod,
+		SetChildrenMethod,
+		ReplaceChildMethod,
+		ChildrenLabelsMethod,
+		newEquivalentMethod(),
 	}
 }
 
@@ -61,7 +65,7 @@ func RenderGenerators(pkg *Package, generators []MethodGenerator, filename strin
 	var blocks []string
 	for _, s := range pkg.NodeStructs {
 		for _, g := range generators {
-			generatedMethod, err := g.Generate(s, importsCollector)
+			generatedMethod, err := g.Generate(s, importsCollector, pkg.Registry)
 			if err != nil {
 				return nil, fmt.Errorf("failed to generate %s for %s: %w", g.Name, s.Name, err)
 			}

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/antithesishq/antithesis-sdk-go/assert"
 	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -259,6 +260,10 @@ func IsAlwaysEmptyFunctionCall(node *core.FunctionCall, params *planning.QueryPa
 		functions.FUNCTION_TS_OF_MAX_OVER_TIME,
 		functions.FUNCTION_TS_OF_MIN_OVER_TIME:
 		if len(node.Args) < 1 {
+			assert.Unreachable("expected at least one argument in call", map[string]any{
+				"function":      node.Function,
+				"num_arguments": len(node.Args),
+			})
 			return false, fmt.Errorf("%w: expected at least one argument in call to %s, got %d (this is a bug)", ErrInvalidFunctionArgs, node.Function, len(node.Args))
 		}
 
@@ -266,16 +271,36 @@ func IsAlwaysEmptyFunctionCall(node *core.FunctionCall, params *planning.QueryPa
 	case functions.FUNCTION_HISTOGRAM_QUANTILE,
 		functions.FUNCTION_QUANTILE_OVER_TIME:
 		if len(node.Args) < 2 {
+			assert.Unreachable("expected at least two arguments in call", map[string]any{
+				"function":      node.Function,
+				"num_arguments": len(node.Args),
+			})
 			return false, fmt.Errorf("%w: expected at least two arguments in call to %s, got %d (this is a bug)", ErrInvalidFunctionArgs, node.Function, len(node.Args))
 		}
 
 		return isAlwaysEmpty(node.Args[1], params)
 	case functions.FUNCTION_HISTOGRAM_FRACTION:
 		if len(node.Args) < 3 {
+			assert.Unreachable("expected at least three arguments in call", map[string]any{
+				"function":      node.Function,
+				"num_arguments": len(node.Args),
+			})
 			return false, fmt.Errorf("%w: expected at least three arguments in call to %s, got %d (this is a bug)", ErrInvalidFunctionArgs, node.Function, len(node.Args))
 		}
 
 		return isAlwaysEmpty(node.Args[2], params)
+	case functions.FUNCTION_HISTOGRAM_QUANTILES:
+		// histogram_quantiles takes the instant vector as its first argument, followed by the
+		// quantile label name and one or more quantiles.
+		if len(node.Args) < 3 {
+			assert.Unreachable("expected at least three arguments in call", map[string]any{
+				"function":      node.Function,
+				"num_arguments": len(node.Args),
+			})
+			return false, fmt.Errorf("%w: expected at least three arguments in call to %s, got %d (this is a bug)", ErrInvalidFunctionArgs, node.Function, len(node.Args))
+		}
+
+		return isAlwaysEmpty(node.Args[0], params)
 	case functions.FUNCTION_SHARDING_CONCAT:
 		for i := range node.ChildCount() {
 			empty, err := isAlwaysEmpty(node.Child(i), params)
@@ -294,6 +319,8 @@ func IsAlwaysEmptyFunctionCall(node *core.FunctionCall, params *planning.QueryPa
 		functions.FUNCTION_DAY_OF_WEEK,
 		functions.FUNCTION_DAY_OF_YEAR,
 		functions.FUNCTION_HOUR,
+		functions.FUNCTION_MAX_OF,
+		functions.FUNCTION_MIN_OF,
 		functions.FUNCTION_MINUTE,
 		functions.FUNCTION_MONTH,
 		functions.FUNCTION_VECTOR,
@@ -306,6 +333,9 @@ func IsAlwaysEmptyFunctionCall(node *core.FunctionCall, params *planning.QueryPa
 		// on vectors.
 		return false, nil
 	default:
+		assert.Unreachable("unexpected function call", map[string]any{
+			"function": node.Function,
+		})
 		return false, fmt.Errorf("%w: function call %s is unexpected (this is a bug)", ErrUnknownFunction, node.Function)
 	}
 }

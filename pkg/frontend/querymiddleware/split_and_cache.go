@@ -18,67 +18,31 @@ import (
 	"github.com/grafana/dskit/tenant"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/promql/parser"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware/querydetails"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/splitandcache"
 	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 const (
-	NotCachableReasonUnalignedTimeRange                   = "unaligned-time-range"
-	NotCachableReasonTooNew                               = "too-new"
-	NotCachableReasonModifiersNotCachable                 = "has-modifiers"
 	notCachableReasonModifiersNotCachableFailedParse      = "has-modifiers-failed-parse"
 	notCachableReasonModifiersNotCachableFailedPreprocess = "has-modifiers-failed-preprocess"
 )
 
 var (
-	// defaultMinCacheExtent is the minimum time range of a query response to
+	// DefaultMinCacheExtent is the minimum time range of a query response to
 	// be eligible for caching.
-	defaultMinCacheExtent = (5 * time.Minute).Milliseconds()
+	DefaultMinCacheExtent = 5 * time.Minute
 )
-
-type SplitAndCacheMetrics struct {
-	*ResultsCacheMetrics
-
-	SplitQueriesCount              prometheus.Counter
-	QueryResultCacheAttemptedCount prometheus.Counter
-	QueryResultCacheSkippedCount   *prometheus.CounterVec
-}
-
-func NewSplitAndCacheMetrics(reg prometheus.Registerer) *SplitAndCacheMetrics {
-	m := &SplitAndCacheMetrics{
-		ResultsCacheMetrics: NewResultsCacheMetrics("query_range", reg),
-		SplitQueriesCount: promauto.With(reg).NewCounter(prometheus.CounterOpts{
-			Name: "cortex_frontend_split_queries_total",
-			Help: "Total number of underlying query requests after the split by interval is applied.",
-		}),
-		QueryResultCacheAttemptedCount: promauto.With(reg).NewCounter(prometheus.CounterOpts{
-			Name: "cortex_frontend_query_result_cache_attempted_total",
-			Help: "Total number of queries that were attempted to be fetched from cache.",
-		}),
-		QueryResultCacheSkippedCount: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
-			Name: "cortex_frontend_query_result_cache_skipped_total",
-			Help: "Total number of times a query was not cacheable because of a reason. This metric is tracked for each partial query when time-splitting is enabled.",
-		}, []string{"reason"}),
-	}
-
-	// Initialize known label values.
-	for _, reason := range []string{NotCachableReasonUnalignedTimeRange, NotCachableReasonTooNew,
-		NotCachableReasonModifiersNotCachable} {
-		m.QueryResultCacheSkippedCount.WithLabelValues(reason)
-	}
-
-	return m
-}
 
 // splitAndCacheMiddleware is a MetricsQueryMiddleware that can (optionally) split the query by interval
 // and run split queries through the results cache.
@@ -89,7 +53,7 @@ type splitAndCacheMiddleware struct {
 
 	merger  Merger
 	logger  log.Logger
-	metrics *SplitAndCacheMetrics
+	metrics *splitandcache.SplitAndCacheMetrics
 
 	// Split by interval.
 	splitEnabled  bool
@@ -124,7 +88,7 @@ func newSplitAndCacheMiddleware(
 	logger log.Logger,
 	reg prometheus.Registerer,
 	memoryConsumptionTrackerFactory *limiter.InflightMemoryConsumptionTracker) MetricsQueryMiddleware {
-	metrics := NewSplitAndCacheMetrics(reg)
+	metrics := splitandcache.NewSplitAndCacheMetrics(reg)
 
 	return MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
 		return &splitAndCacheMiddleware{
@@ -209,7 +173,7 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req MetricsQueryReques
 
 			// We have some extents. This means some parts of the response has been cached and we need
 			// to generate the queries for the missing parts.
-			requests, responses, err := partitionCacheExtents(lookupReqs[lookupIdx].orig, extents, defaultMinCacheExtent, s.extractor)
+			requests, responses, err := partitionCacheExtents(lookupReqs[lookupIdx].orig, extents, DefaultMinCacheExtent.Milliseconds(), s.extractor)
 			if err != nil {
 				return nil, err
 			}
@@ -217,10 +181,10 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req MetricsQueryReques
 			// Count the cached response against the queries memory consumption tracker
 			for _, resp := range responses {
 				bytes := uint64(proto.Size(resp))
-				if err := memoryTracker.IncreaseMemoryConsumption(bytes, limiter.SplitMiddlewareCachedResponses); err != nil {
+				if err := memoryTracker.IncreaseMemoryConsumption(bytes, limiter.CachedResponses); err != nil {
 					return nil, err
 				}
-				defer memoryTracker.DecreaseMemoryConsumption(bytes, limiter.SplitMiddlewareCachedResponses)
+				defer memoryTracker.DecreaseMemoryConsumption(bytes, limiter.CachedResponses)
 			}
 
 			if len(requests) == 0 {
@@ -287,8 +251,8 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req MetricsQueryReques
 			return nil, err
 		}
 
-		if details := QueryDetailsFromContext(ctx); details != nil {
-			details.ResultsCacheMissBytes = splitReqs.countDownstreamResponseBytes()
+		if details := querydetails.QueryDetailsFromContext(ctx); details != nil {
+			details.ResultsCacheMissBytes += splitReqs.countDownstreamResponseBytes()
 		}
 	}
 
@@ -344,7 +308,7 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req MetricsQueryReques
 			}
 
 			// Put back into the cache the filtered ones.
-			s.storeCacheExtents(spanLog, splitReq.cacheKey, tenantIDs, filteredExtents)
+			s.storeCacheExtents(ctx, spanLog, splitReq.cacheKey, tenantIDs, filteredExtents)
 		}
 	}
 
@@ -482,8 +446,11 @@ func (s *splitAndCacheMiddleware) fetchCacheExtents(ctx context.Context, now tim
 		"extents filtered out due to ttl", extentsOutOfTTL,
 	)
 
-	if details := QueryDetailsFromContext(ctx); details != nil {
-		details.ResultsCacheHitBytes = usedBytes
+	if details := querydetails.QueryDetailsFromContext(ctx); details != nil {
+		details.ResultsCacheHitBytes += usedBytes
+
+		details.ResultsCacheHitCount += len(founds)
+		details.ResultsCacheMissCount += len(keys) - len(founds)
 	}
 
 	return extents
@@ -497,7 +464,7 @@ func (s *splitAndCacheMiddleware) getCacheOptions(tenantIDs []string) (ttl, ttlI
 }
 
 // storeCacheExtents stores the extents for given key in the cache.
-func (s *splitAndCacheMiddleware) storeCacheExtents(spanLog *spanlogger.SpanLogger, key string, tenantIDs []string, extents []Extent) {
+func (s *splitAndCacheMiddleware) storeCacheExtents(ctx context.Context, spanLog *spanlogger.SpanLogger, key string, tenantIDs []string, extents []Extent) {
 	if len(extents) == 0 {
 		level.Debug(spanLog).Log("msg", "skipping storing response in cache as there are no extents", "key", key)
 		return
@@ -517,6 +484,11 @@ func (s *splitAndCacheMiddleware) storeCacheExtents(spanLog *spanlogger.SpanLogg
 
 	level.Debug(spanLog).Log("msg", "asynchronously storing response in cache", "key", key, "size", len(buf), "ttl", usedTTL, "extents", len(extents))
 	s.cache.SetAsync(hashCacheKey(key), buf, usedTTL)
+
+	queryDetails := querydetails.QueryDetailsFromContext(ctx)
+	if queryDetails != nil {
+		queryDetails.ResultsCacheSetCount++
+	}
 }
 
 func getTTLForExtent(now time.Time, ttl, ttlInOOOWindow, oooWindow time.Duration, e Extent) time.Duration {

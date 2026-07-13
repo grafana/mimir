@@ -19,7 +19,9 @@ type resolvedSchemaBuildInput struct {
 	ctx         context.Context
 	idx         *index.SpecIndex
 	valueNode   *yaml.Node
+	scopeNode   *yaml.Node
 	refNode     *yaml.Node
+	transformed *transformedSiblingRef
 	refLocation string
 }
 
@@ -41,7 +43,7 @@ func buildPropertyMap(ctx context.Context, parent *Schema, root *yaml.Node, idx 
 			propertyMap.Set(low.KeyReference[string]{
 				KeyNode: currentProp,
 				Value:   currentProp.Value,
-			}, buildSchemaProxy(resolved.ctx, resolved.idx, currentProp, resolved.valueNode, resolved.refNode, resolved.refLocation != "", resolved.refLocation))
+			}, buildSchemaProxy(resolved.ctx, resolved.idx, currentProp, resolved.valueNode, resolved.scopeNode, resolved.refNode, resolved.transformed, resolved.refLocation))
 		}
 
 		return &low.NodeReference[*orderedmap.Map[low.KeyReference[string], low.ValueReference[*SchemaProxy]]]{
@@ -100,13 +102,9 @@ func (s *Schema) extractExtensions(root *yaml.Node) {
 }
 
 // buildSchemaProxy builds out a SchemaProxy for a single node.
-func buildSchemaProxy(ctx context.Context, idx *index.SpecIndex, kn, vn *yaml.Node, rf *yaml.Node, isRef bool, refLocation string) low.ValueReference[*SchemaProxy] {
+func buildSchemaProxy(ctx context.Context, idx *index.SpecIndex, kn, vn, scopeNode, rf *yaml.Node, transformed *transformedSiblingRef, refLocation string) low.ValueReference[*SchemaProxy] {
 	sp := new(SchemaProxy)
-	if isRef {
-		sp.prepareForResolvedBuild(ctx, kn, vn, idx, refLocation, rf)
-	} else {
-		sp.prepareForResolvedBuild(ctx, kn, vn, idx, "", nil)
-	}
+	sp.prepareForResolvedBuild(ctx, kn, vn, scopeNode, idx, refLocation, rf, transformed)
 	return low.ValueReference[*SchemaProxy]{
 		Value:     sp,
 		ValueNode: sp.vn,
@@ -130,7 +128,7 @@ func buildSchema(ctx context.Context, labelNode, valueNode *yaml.Node, idx *inde
 		return low.ValueReference[*SchemaProxy]{}, err
 	}
 
-	return buildSchemaProxy(resolved.ctx, resolved.idx, labelNode, resolved.valueNode, resolved.refNode, resolved.refLocation != "", resolved.refLocation), nil
+	return buildSchemaProxy(resolved.ctx, resolved.idx, labelNode, resolved.valueNode, resolved.scopeNode, resolved.refNode, resolved.transformed, resolved.refLocation), nil
 }
 
 // buildSchemaList builds out child schemas for a parent schema. Expected to be an array of schema objects.
@@ -152,7 +150,7 @@ func buildSchemaList(ctx context.Context, labelNode, valueNode *yaml.Node, idx *
 		if err != nil {
 			return nil, err
 		}
-		r := buildSchemaProxy(resolved.ctx, resolved.idx, resolved.valueNode, resolved.valueNode, resolved.refNode, resolved.refLocation != "", resolved.refLocation)
+		r := buildSchemaProxy(resolved.ctx, resolved.idx, resolved.valueNode, resolved.valueNode, resolved.scopeNode, resolved.refNode, resolved.transformed, resolved.refLocation)
 		results = append(results, r)
 	}
 
@@ -190,9 +188,16 @@ func resolveSchemaBuildInput(ctx context.Context, valueNode *yaml.Node, idx *ind
 		ctx:       ctx,
 		idx:       idx,
 		valueNode: valueNode,
+		scopeNode: valueNode,
 	}
 
 	if valueNode == nil {
+		return resolved, nil
+	}
+
+	if transformedValue, transformedRef, wasTransformed := transformSiblingRefNode(valueNode, idx); wasTransformed {
+		resolved.valueNode = transformedValue
+		resolved.transformed = transformedRef
 		return resolved, nil
 	}
 
@@ -201,6 +206,7 @@ func resolveSchemaBuildInput(ctx context.Context, valueNode *yaml.Node, idx *ind
 		if ref != nil {
 			resolved.refNode = valueNode
 			resolved.valueNode = ref
+			resolved.scopeNode = ref
 			resolved.refLocation = refLocation
 			resolved.ctx = foundCtx
 			resolved.idx = foundIdx
@@ -211,8 +217,16 @@ func resolveSchemaBuildInput(ctx context.Context, valueNode *yaml.Node, idx *ind
 			resolved.refLocation = refLocation
 			return resolved, nil
 		}
-		return resolved, fmt.Errorf(errFormat, valueNode.Content[1].Value, valueNode.Content[1].Line, valueNode.Content[1].Column)
+		return resolved, schemaReferenceBuildError(errFormat, valueNode)
 	}
 
 	return resolved, nil
+}
+
+func schemaReferenceBuildError(errFormat string, valueNode *yaml.Node) error {
+	refValue := valueNode.Content[1].Value
+	if refValue == "" {
+		refValue = "[empty]"
+	}
+	return fmt.Errorf(errFormat, refValue, valueNode.Content[1].Line, valueNode.Content[1].Column)
 }

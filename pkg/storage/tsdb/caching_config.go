@@ -67,10 +67,11 @@ func (cfg *MetadataCacheConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix 
 type IndexHeaderCacheConfig struct {
 	cache.BackendConfig `yaml:",inline"  category:"experimental"`
 
-	AttributesTTL            time.Duration `yaml:"attributes_ttl" category:"experimental"`
-	SubrangeTTL              time.Duration `yaml:"subrange_ttl" category:"experimental"`
-	SubRangeInMemoryMaxItems int           `yaml:"subrange_in_memory_max_items" category:"experimental"`
-	MaxGetRangeRequests      int           `yaml:"max_get_range_requests" category:"experimental"`
+	AttributesTTL              time.Duration `yaml:"attributes_ttl" category:"experimental"`
+	AttributesInMemoryMaxItems int           `yaml:"attributes_in_memory_max_items" category:"experimental"`
+	SubrangeTTL                time.Duration `yaml:"subrange_ttl" category:"experimental"`
+	SubRangeInMemoryMaxItems   int           `yaml:"subrange_in_memory_max_items" category:"experimental"`
+	MaxGetRangeRequests        int           `yaml:"max_get_range_requests" category:"experimental"`
 }
 
 func (cfg *IndexHeaderCacheConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
@@ -78,6 +79,7 @@ func (cfg *IndexHeaderCacheConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, pref
 	cfg.Memcached.RegisterFlagsWithPrefix(prefix+"memcached.", f)
 
 	f.DurationVar(&cfg.AttributesTTL, prefix+"attributes-ttl", 168*time.Hour, "TTL for caching object attributes of the block index for the index-header reader.  If the metadata cache is configured, attributes will be stored in the metadata cache backend, otherwise attributes are stored in the index-header cache backend.")
+	f.IntVar(&cfg.AttributesInMemoryMaxItems, prefix+"attributes-in-memory-max-items", 10000, "Maximum number of individual attributes items to keep in a first level in-memory LRU cache. Attributes will be stored and fetched in-memory before hitting the cache backend. 0 to disable the in-memory cache.")
 	f.DurationVar(&cfg.SubrangeTTL, prefix+"subrange-ttl", 24*time.Hour, "TTL for caching individual index-header subranges.")
 	f.IntVar(&cfg.SubRangeInMemoryMaxItems, prefix+"subrange-in-memory-max-items", 100000, "Maximum number of individual subrange items to keep in a first level in-memory LRU cache. Subranges will be stored and fetched in-memory before hitting the cache backend. 0 to disable the in-memory cache.")
 	f.IntVar(&cfg.MaxGetRangeRequests, prefix+"max-get-range-requests", 3, "Maximum number of sub-GetRange requests that a single GetRange request can be split into when fetching index-header ranges. Zero or negative value = unlimited number of sub-requests.")
@@ -155,8 +157,10 @@ func configureMetadataCaching(
 	return cachingBucketCfg
 }
 
-// NewMetadataCachingBucket creates a caching bucket for metadata and indexes of the bucket store and its tenant TSDBs.
+// NewMetadataCachingBucket creates a caching bucket for metadata and indexes of the bucket store and
+// its tenant TSDBs. The bucketID prefixes every cache key.
 func NewMetadataCachingBucket(
+	bucketID string,
 	metadataCfg MetadataCacheConfig,
 	bkt objstore.Bucket,
 	logger log.Logger,
@@ -174,11 +178,7 @@ func NewMetadataCachingBucket(
 	cachingBucketCfg := bucketcache.NewCachingBucketConfig()
 	cachingBucketCfg = configureMetadataCaching(metadataCache, metadataCfg, cachingBucketCfg)
 
-	// NOTE: the bucket ID should be "blocks" but we're passing an empty string to not cause
-	// a massive cache invalidation when rolling out a new Mimir version introducing the bucket
-	// ID. This is still fine, as far as all other caching bucket implementations specify their
-	// own unique ID.
-	return bucketcache.NewCachingBucket("", bkt, cachingBucketCfg, logger, reg)
+	return bucketcache.NewCachingBucket(bucketID, bkt, cachingBucketCfg, logger, reg)
 }
 
 func NewChunksCacheClient(
@@ -208,13 +208,15 @@ func NewIndexHeaderCacheClient(
 }
 
 // NewStoreCachingBucket creates a single caching bucket that handles metadata, index-header, and chunks caching.
-// Cache clients may be passed as nil to disable the corresponding bucket cache.
+// Cache clients may be passed as nil to disable the corresponding bucket cache. cacheBucketID prefixes
+// every cache key.
 //
 //   - Index-header config matches isBlockIndexFile to cache GetRange calls.
 //   - Chunks config matches isTSDBChunkFile to cache GetRange calls.
 //   - Metadata caching is shared with across index-header and chunks caching buckets if enabled,
 //     otherwise each cache handles its own metadata storage.
 func NewStoreCachingBucket(
+	cacheBucketID string,
 	cfg BlocksStorageConfig,
 	metadataCache cache.Cache,
 	indexHeaderCache cache.Cache,
@@ -225,12 +227,13 @@ func NewStoreCachingBucket(
 ) (objstore.Bucket, error) {
 	cachingBucketCfg := bucketcache.NewCachingBucketConfig()
 	return newStoreCachingBucket(
-		cachingBucketCfg, cfg, metadataCache, indexHeaderCache, chunksCache, bkt, logger, reg,
+		cachingBucketCfg, cacheBucketID, cfg, metadataCache, indexHeaderCache, chunksCache, bkt, logger, reg,
 	)
 }
 
 func newStoreCachingBucket(
 	cachingBucketCfg *bucketcache.CachingBucketConfig,
+	cacheBucketID string,
 	cfg BlocksStorageConfig,
 	metadataCache cache.Cache,
 	indexHeaderCache cache.Cache,
@@ -259,6 +262,20 @@ func newStoreCachingBucket(
 		if metadataCache != nil {
 			attributesCache = metadataCache
 		}
+		if cfg.BucketStore.IndexHeaderCache.AttributesInMemoryMaxItems > 0 {
+			attributesCache, err = cache.WrapWithLRUCache(
+				attributesCache,
+				"block-index-header-attributes-cache",
+				prometheus.WrapRegistererWithPrefix("cortex_", reg),
+				cfg.BucketStore.IndexHeaderCache.AttributesInMemoryMaxItems,
+				cfg.BucketStore.IndexHeaderCache.AttributesTTL,
+				logger,
+			)
+			if err != nil {
+				return nil, errors.Wrapf(err, "wrap index-header attributes cache with in-memory cache")
+			}
+		}
+
 		if cfg.BucketStore.IndexHeaderCache.SubRangeInMemoryMaxItems > 0 {
 			indexHeaderCache, err = cache.WrapWithLRUCache(
 				indexHeaderCache,
@@ -322,11 +339,7 @@ func newStoreCachingBucket(
 		return bkt, nil
 	}
 
-	// NOTE: the bucket ID should be "blocks" but we're passing an empty string to not cause
-	// a massive cache invalidation when rolling out a new Mimir version introducing the bucket
-	// ID. This is still fine, as far as all other caching bucket implementations specify their
-	// own unique ID.
-	return bucketcache.NewCachingBucket("", bkt, cachingBucketCfg, logger, reg)
+	return bucketcache.NewCachingBucket(cacheBucketID, bkt, cachingBucketCfg, logger, reg)
 }
 
 var chunksMatcher = regexp.MustCompile(`^.*/chunks/\d+$`)

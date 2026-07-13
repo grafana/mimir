@@ -25,7 +25,6 @@ import (
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
-	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -41,13 +40,12 @@ import (
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/querierpb" //lint:ignore faillint we can't avoid using this given that's where the Protobuf definition lives
-	"github.com/grafana/mimir/pkg/scheduler/queue"
+	"github.com/grafana/mimir/pkg/queue"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerdiscovery"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/grpcencoding/s2"
 	"github.com/grafana/mimir/pkg/util/httpgrpcutil"
-	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 var errEnqueuingRequestFailed = cancellation.NewErrorf("enqueuing request failed")
@@ -67,13 +65,13 @@ type Scheduler struct {
 	connectedFrontendsMu sync.Mutex
 	connectedFrontends   map[string]*connectedFrontend
 
-	requestQueue *queue.RequestQueue
-	activeUsers  *util.ActiveUsersCleanupService
+	queue       *schedulerQueue
+	activeUsers *util.ActiveUsersCleanupService
 
 	inflightRequestsMu sync.Mutex
 	// schedulerInflightRequests tracks requests from the time they are received to be enqueued by the scheduler
 	// to the time they are completed by the querier or failed due to cancel, timeout, or disconnect.
-	schedulerInflightRequests     map[queue.RequestKey]*queue.SchedulerRequest
+	schedulerInflightRequests     map[RequestKey]*SchedulerRequest
 	schedulerInflightRequestCount *atomic.Int64
 
 	// The ring is used to let other components discover query-scheduler replicas.
@@ -86,6 +84,7 @@ type Scheduler struct {
 
 	// Metrics.
 	queueLength              *prometheus.GaugeVec
+	maxQueueLength           *queue.MaxQueueLengthGauge
 	discardedRequests        *prometheus.CounterVec
 	cancelledRequests        *prometheus.CounterVec
 	connectedQuerierClients  prometheus.GaugeFunc
@@ -93,7 +92,7 @@ type Scheduler struct {
 	queueDuration            *prometheus.HistogramVec
 	inflightRequests         prometheus.Summary
 	invalidClusterValidation *prometheus.CounterVec
-	inflightMaxAge           prometheus.Gauge
+	queueMaxWait             prometheus.Gauge
 }
 
 type connectedFrontend struct {
@@ -108,7 +107,8 @@ type connectedFrontend struct {
 type Config struct {
 	MaxOutstandingPerTenant     int           `yaml:"max_outstanding_requests_per_tenant"`
 	QuerierForgetDelay          time.Duration `yaml:"querier_forget_delay" category:"experimental"`
-	InflightMaxAgeMetricEnabled bool          `yaml:"inflight_max_age_metric_enabled" category:"experimental"`
+	QueueMaxWaitMetricEnabled   bool          `yaml:"queue_max_wait_metric_enabled" category:"experimental"`
+	MaxQueueLengthMetricEnabled bool          `yaml:"max_queue_length_metric_enabled" category:"experimental"`
 
 	GRPCClientConfig grpcclient.Config         `yaml:"grpc_client_config" doc:"description=This configures the gRPC client used to report errors back to the query-frontend."`
 	ServiceDiscovery schedulerdiscovery.Config `yaml:",inline"`
@@ -117,7 +117,8 @@ type Config struct {
 func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.IntVar(&cfg.MaxOutstandingPerTenant, "query-scheduler.max-outstanding-requests-per-tenant", 100, "Maximum number of outstanding requests per tenant per query-scheduler. In-flight requests above this limit will fail with HTTP response status code 429.")
 	f.DurationVar(&cfg.QuerierForgetDelay, "query-scheduler.querier-forget-delay", 0, "If a querier disconnects without sending notification about graceful shutdown, the query-scheduler will keep the querier in the tenant's shard until the forget delay has passed. This feature is useful to reduce the blast radius when shuffle-sharding is enabled.")
-	f.BoolVar(&cfg.InflightMaxAgeMetricEnabled, "query-scheduler.inflight-max-age-metric-enabled", true, "Enable the cortex_query_scheduler_inflight_max_age_seconds metric, which reports the age of the oldest inflight request. Disabling it skips the per-tick scan over inflight requests.")
+	f.BoolVar(&cfg.QueueMaxWaitMetricEnabled, "query-scheduler.queue-max-wait-metric-enabled", true, "Enable the cortex_query_scheduler_queue_max_wait_seconds metric, which reports how long the oldest request still waiting in the queue has been waiting. Disabling it skips the per-tick scan over inflight requests.")
+	f.BoolVar(&cfg.MaxQueueLengthMetricEnabled, "query-scheduler.max-queue-length-metric-enabled", false, "Enable the cortex_query_scheduler_max_queue_length metric, which reports the per-tenant peak queue length observed since the last scrape. Disabling it skips per-tenant peak tracking on enqueue and dequeue.")
 
 	cfg.GRPCClientConfig.CustomCompressors = []string{s2.Name}
 	cfg.GRPCClientConfig.RegisterFlagsWithPrefix("query-scheduler.grpc-client-config", f)
@@ -137,7 +138,7 @@ func NewScheduler(cfg Config, limits Limits, log log.Logger, registerer promethe
 		log:    log,
 		limits: limits,
 
-		schedulerInflightRequests:     map[queue.RequestKey]*queue.SchedulerRequest{},
+		schedulerInflightRequests:     map[RequestKey]*SchedulerRequest{},
 		schedulerInflightRequestCount: atomic.NewInt64(0),
 		connectedFrontends:            map[string]*connectedFrontend{},
 		subservicesWatcher:            services.NewFailureWatcher(),
@@ -147,6 +148,18 @@ func NewScheduler(cfg Config, limits Limits, log log.Logger, registerer promethe
 		Name: "cortex_query_scheduler_queue_length",
 		Help: "Number of queries in the queue.",
 	}, []string{"user"})
+
+	if cfg.MaxQueueLengthMetricEnabled {
+		s.maxQueueLength = queue.NewMaxQueueLengthGauge(
+			"cortex_query_scheduler_max_queue_length",
+			"Maximum number of queries observed in a tenant's queue since the last metric collection (reset on each scrape). Captures the true peak queue depth between scrapes.",
+			nil,
+		)
+		// registerer is nil in some tests; mirror promauto.With(nil) by skipping registration.
+		if registerer != nil {
+			registerer.MustRegister(s.maxQueueLength)
+		}
+	}
 
 	s.cancelledRequests = promauto.With(registerer).NewCounterVec(prometheus.CounterOpts{
 		Name: "cortex_query_scheduler_cancelled_requests_total",
@@ -160,10 +173,10 @@ func NewScheduler(cfg Config, limits Limits, log log.Logger, registerer promethe
 		Name: "cortex_query_scheduler_enqueue_duration_seconds",
 		Help: "Time spent by requests waiting to join the queue or be rejected.",
 	})
-	if cfg.InflightMaxAgeMetricEnabled {
-		s.inflightMaxAge = promauto.With(registerer).NewGauge(prometheus.GaugeOpts{
-			Name: "cortex_query_scheduler_inflight_max_age_seconds",
-			Help: "Time since the oldest inflight request (queued or being processed) was enqueued. 0 if there are no inflight requests.",
+	if cfg.QueueMaxWaitMetricEnabled {
+		s.queueMaxWait = promauto.With(registerer).NewGauge(prometheus.GaugeOpts{
+			Name: "cortex_query_scheduler_queue_max_wait_seconds",
+			Help: "Time the oldest request still waiting in the queue has spent waiting since it was enqueued. Requests already dispatched to a querier for execution are excluded. 0 if no requests are waiting in the queue.",
 		})
 	}
 	querierInflightRequestsMetric := promauto.With(registerer).NewSummaryVec(
@@ -178,11 +191,12 @@ func NewScheduler(cfg Config, limits Limits, log log.Logger, registerer promethe
 	)
 	s.invalidClusterValidation = util.NewRequestInvalidClusterValidationLabelsTotalCounter(registerer, "query-scheduler", util.GRPCProtocol)
 
-	s.requestQueue, err = queue.NewRequestQueue(
+	s.queue, err = newSchedulerQueue(
+		cfg,
+		limits,
 		s.log,
-		cfg.MaxOutstandingPerTenant,
-		cfg.QuerierForgetDelay,
 		s.queueLength,
+		s.maxQueueLength,
 		s.discardedRequests,
 		enqueueDuration,
 		querierInflightRequestsMetric,
@@ -202,7 +216,7 @@ func NewScheduler(cfg Config, limits Limits, log log.Logger, registerer promethe
 	s.connectedQuerierClients = promauto.With(registerer).NewGaugeFunc(prometheus.GaugeOpts{
 		Name: "cortex_query_scheduler_connected_querier_clients",
 		Help: "Number of querier worker clients currently connected to the query-scheduler.",
-	}, s.requestQueue.GetConnectedQuerierWorkersMetric)
+	}, s.queue.GetConnectedQuerierWorkersMetric)
 	s.connectedFrontendClients = promauto.With(registerer).NewGaugeFunc(prometheus.GaugeOpts{
 		Name: "cortex_query_scheduler_connected_frontend_clients",
 		Help: "Number of query-frontend worker clients currently connected to the query-scheduler.",
@@ -217,7 +231,7 @@ func NewScheduler(cfg Config, limits Limits, log log.Logger, registerer promethe
 	})
 
 	s.activeUsers = util.NewActiveUsersCleanupWithDefaultValues(s.cleanupMetricsForInactiveUser)
-	subservices := []services.Service{s.requestQueue, s.activeUsers}
+	subservices := []services.Service{s.queue, s.activeUsers}
 
 	// Init the ring only if the ring-based service discovery mode is used.
 	if cfg.ServiceDiscovery.Mode == schedulerdiscovery.ModeRing {
@@ -312,11 +326,11 @@ func (s *Scheduler) FrontendLoop(frontend schedulerpb.SchedulerForFrontend_Front
 
 			enqueueSpan.End()
 		case schedulerpb.CANCEL:
-			requestKey := queue.NewSchedulerRequestKey(frontendAddress, msg.QueryID)
+			requestKey := NewSchedulerRequestKey(frontendAddress, msg.QueryID)
 			schedulerReq := s.cancelRequestAndRemoveFromPending(requestKey, "frontend cancelled query")
 			// we may not have reached MarkRequestSent for this query before receiving the cancel,
 			// but RequestQueue will just no-op if the request was not yet tracked in the inflightRequests map.
-			s.requestQueue.QueryComponentUtilization.MarkRequestCompleted(schedulerReq)
+			s.queue.MarkRequestCompleted(schedulerReq)
 			resp = &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
 
 		default:
@@ -384,7 +398,7 @@ func (s *Scheduler) enqueueRequest(requestContext context.Context, frontendAddr 
 
 	userID := msg.GetUserID()
 
-	req := &queue.SchedulerRequest{
+	req := &SchedulerRequest{
 		FrontendAddr:              frontendAddr,
 		UserID:                    msg.UserID,
 		QueryID:                   msg.QueryID,
@@ -408,21 +422,14 @@ func (s *Scheduler) enqueueRequest(requestContext context.Context, frontendAddr 
 	req.EnqueueTime = now
 	req.CancelFunc = cancel
 
-	// aggregate the max queriers limit in the case of a multi tenant query
-	tenantIDs, err := tenant.TenantIDsFromOrgID(userID)
-	if err != nil {
-		return err
-	}
-	maxQueriers := validation.SmallestPositiveNonZeroIntPerTenant(tenantIDs, s.limits.MaxQueriersPerUser)
-
-	s.activeUsers.UpdateUserTimestamp(userID, now)
-	return s.requestQueue.SubmitRequestToEnqueue(userID, req, maxQueriers, func() {
+	return s.queue.Enqueue(req, func() {
 		shouldCancel = false
+		s.activeUsers.UpdateUserTimestamp(userID, now)
 		s.addRequestToPending(req)
 	})
 }
 
-func (s *Scheduler) addRequestToPending(req *queue.SchedulerRequest) {
+func (s *Scheduler) addRequestToPending(req *SchedulerRequest) {
 	s.inflightRequestsMu.Lock()
 	defer s.inflightRequestsMu.Unlock()
 
@@ -430,8 +437,12 @@ func (s *Scheduler) addRequestToPending(req *queue.SchedulerRequest) {
 	s.schedulerInflightRequestCount.Store(int64(len(s.schedulerInflightRequests)))
 }
 
+func (s *Scheduler) markRequestDispatched(req *SchedulerRequest) {
+	req.Dispatched.Store(true)
+}
+
 // This method doesn't do removal from the queue.
-func (s *Scheduler) cancelRequestAndRemoveFromPending(key queue.RequestKey, reason string) *queue.SchedulerRequest {
+func (s *Scheduler) cancelRequestAndRemoveFromPending(key RequestKey, reason string) *SchedulerRequest {
 	s.inflightRequestsMu.Lock()
 	defer s.inflightRequestsMu.Unlock()
 
@@ -466,19 +477,19 @@ func (s *Scheduler) QuerierLoop(querier schedulerpb.SchedulerForQuerier_QuerierL
 	}
 
 	querierID := resp.GetQuerierID()
-	querierWorkerConn := queue.NewUnregisteredQuerierWorkerConn(querier.Context(), querierID)
-	err = s.requestQueue.AwaitRegisterQuerierWorkerConn(querierWorkerConn)
+	querierWorkerConn := queue.NewUnregisteredConsumerWorkerConn(querier.Context(), querierID)
+	err = s.queue.AwaitRegisterQuerierWorkerConn(querierWorkerConn)
 	if err != nil {
 		return s.transformRequestQueueError(err)
 	}
-	defer s.requestQueue.SubmitUnregisterQuerierWorkerConn(querierWorkerConn)
+	defer s.queue.SubmitUnregisterQuerierWorkerConn(querierWorkerConn)
 
 	lastTenantIdx := queue.FirstTenant()
 
 	// In stopping state scheduler is not accepting new queries, but still dispatching queries in the queues.
 	for s.isRunningOrStopping() {
-		dequeueReq := queue.NewQuerierWorkerDequeueRequest(querierWorkerConn, lastTenantIdx)
-		queryReq, idx, err := s.requestQueue.AwaitRequestForQuerier(dequeueReq)
+		dequeueReq := queue.NewConsumerWorkerDequeueRequest(querierWorkerConn, lastTenantIdx)
+		queryReq, idx, err := s.queue.AwaitRequestForQuerier(dequeueReq)
 		if err != nil {
 			// The error returned can either be ErrQuerierShuttingDown or ErrQuerierWorkerDisconnected.
 			// ErrQuerierShuttingDown is a control-flow message between services to exit this loop.
@@ -491,7 +502,7 @@ func (s *Scheduler) QuerierLoop(querier schedulerpb.SchedulerForQuerier_QuerierL
 
 		lastTenantIdx = idx
 
-		schedulerReq := queryReq.(*queue.SchedulerRequest)
+		schedulerReq := queryReq.(*SchedulerRequest)
 
 		queueTime := time.Since(schedulerReq.EnqueueTime)
 		additionalQueueDimensionLabels := strings.Join(schedulerReq.AdditionalQueueDimensions, ":")
@@ -513,7 +524,7 @@ func (s *Scheduler) QuerierLoop(querier schedulerpb.SchedulerForQuerier_QuerierL
 		if schedulerReq.Ctx.Err() != nil {
 			// remove from pending requests
 			s.cancelRequestAndRemoveFromPending(schedulerReq.Key(), "request cancelled")
-			s.requestQueue.QueryComponentUtilization.MarkRequestCompleted(schedulerReq)
+			s.queue.MarkRequestCompleted(schedulerReq)
 			lastTenantIdx = lastTenantIdx.ReuseLastTenant()
 			continue
 		}
@@ -531,14 +542,15 @@ func (s *Scheduler) QuerierLoop(querier schedulerpb.SchedulerForQuerier_QuerierL
 func (s *Scheduler) NotifyQuerierShutdown(ctx context.Context, req *schedulerpb.NotifyQuerierShutdownRequest) (*schedulerpb.NotifyQuerierShutdownResponse, error) {
 	level.Info(s.log).Log("msg", "received shutdown notification from querier", "querier", req.GetQuerierID())
 
-	s.requestQueue.SubmitNotifyQuerierShutdown(ctx, req.GetQuerierID())
+	s.queue.SubmitNotifyQuerierShutdown(ctx, req.GetQuerierID())
 
 	return &schedulerpb.NotifyQuerierShutdownResponse{}, nil
 }
 
-func (s *Scheduler) forwardRequestToQuerier(querier schedulerpb.SchedulerForQuerier_QuerierLoopServer, querierID string, req *queue.SchedulerRequest, queueTime time.Duration) error {
-	s.requestQueue.QueryComponentUtilization.MarkRequestSent(req)
-	defer s.requestQueue.QueryComponentUtilization.MarkRequestCompleted(req)
+func (s *Scheduler) forwardRequestToQuerier(querier schedulerpb.SchedulerForQuerier_QuerierLoopServer, querierID string, req *SchedulerRequest, queueTime time.Duration) error {
+	s.markRequestDispatched(req)
+	s.queue.MarkRequestSent(req)
+	defer s.queue.MarkRequestCompleted(req)
 	defer s.cancelRequestAndRemoveFromPending(req.Key(), "request complete")
 
 	// Handle the stream sending & receiving on a goroutine so we can
@@ -621,7 +633,7 @@ func (s *Scheduler) forwardRequestToQuerier(querier schedulerpb.SchedulerForQuer
 	}
 }
 
-func (s *Scheduler) forwardErrorToFrontend(ctx context.Context, req *queue.SchedulerRequest, requestErr error) {
+func (s *Scheduler) forwardErrorToFrontend(ctx context.Context, req *SchedulerRequest, requestErr error) {
 	opts, err := s.cfg.GRPCClientConfig.DialOption(
 		[]grpc.UnaryClientInterceptor{
 			middleware.ClientUserHeaderInterceptor,
@@ -725,8 +737,8 @@ func (s *Scheduler) running(ctx context.Context) error {
 		select {
 		case <-inflightRequestsTicker.C:
 			s.inflightRequests.Observe(float64(s.schedulerInflightRequestCount.Load()))
-			if s.cfg.InflightMaxAgeMetricEnabled {
-				s.observeInflightMaxAge()
+			if s.cfg.QueueMaxWaitMetricEnabled {
+				s.observeQueueMaxWait()
 			}
 		case <-ctx.Done():
 			return nil
@@ -747,6 +759,9 @@ func (s *Scheduler) stopping(_ error) error {
 
 func (s *Scheduler) cleanupMetricsForInactiveUser(user string) {
 	s.queueLength.DeleteLabelValues(user)
+	if s.maxQueueLength != nil {
+		s.maxQueueLength.DeleteTenant(user)
+	}
 	s.discardedRequests.DeleteLabelValues(user)
 	s.cancelledRequests.DeleteLabelValues(user)
 }
@@ -763,10 +778,10 @@ func (s *Scheduler) getConnectedFrontendClientsMetric() float64 {
 	return float64(count)
 }
 
-func (s *Scheduler) observeInflightMaxAge() {
+func (s *Scheduler) observeQueueMaxWait() {
 	if s.schedulerInflightRequestCount.Load() == 0 {
 		// no inflight requests
-		s.inflightMaxAge.Set(0)
+		s.queueMaxWait.Set(0)
 		return
 	}
 
@@ -775,19 +790,22 @@ func (s *Scheduler) observeInflightMaxAge() {
 
 	var oldest time.Time
 	for _, req := range s.schedulerInflightRequests {
+		// Only requests still waiting in the queue count towards the metric.
+		if req.Dispatched.Load() {
+			continue
+		}
 		if oldest.IsZero() || req.EnqueueTime.Before(oldest) {
 			oldest = req.EnqueueTime
 		}
 	}
 
 	if oldest.IsZero() {
-		// schedulerInflightRequests is empty
-		s.inflightMaxAge.Set(0)
+		s.queueMaxWait.Set(0)
 		return
 	}
 
 	latency := time.Since(oldest).Seconds()
-	s.inflightMaxAge.Set(latency)
+	s.queueMaxWait.Set(latency)
 }
 
 func (s *Scheduler) RingHandler(w http.ResponseWriter, req *http.Request) {

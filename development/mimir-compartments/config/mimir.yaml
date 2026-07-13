@@ -1,0 +1,194 @@
+multitenancy_enabled: false
+
+common:
+  storage:
+    backend: s3
+    s3:
+      endpoint:          minio:9000
+      access_key_id:     mimir
+      secret_access_key: supersecret
+      insecure:          true
+
+ingest_storage:
+  enabled:       true
+  kafka:
+    # ingest_storage is enabled globally, so every component validates the Kafka address and topic even if
+    # it never connects (compactor, store-gateway, querier, ruler, alertmanager). These defaults satisfy
+    # that validation; the components that actually consume/produce (distributors, ingesters, query-frontend,
+    # block-builders and schedulers) override them via CLI flags to target their own write/read compartment.
+    address: kafka-wc-0:9092
+    topic:   mimir-ingest-rc-0
+    last_produced_offset_poll_interval: 500ms
+    fetch_concurrency_max: 15
+
+compartments:
+  enabled: true
+  read:
+    num_compartments: 2
+  write:
+    num_compartments: 2
+
+ingester:
+  push_grpc_method_enabled: false
+  track_ingester_owned_series: true
+  active_series_metrics_update_period: 10s
+  active_series_metrics_idle_timeout:  1m
+
+  ring:
+    num_tokens: 0
+
+  partition_ring:
+    min_partition_owners_count:       1
+    min_partition_owners_duration:    10s
+    delete_inactive_partition_after:  1m
+
+block_builder:
+  scheduler_config:
+    # Each per-read-compartment block-builder sets its scheduler address (block-builder-scheduler-rc-<id>)
+    # via CLI flag, so no default address is set here.
+    update_interval: 5s
+    max_update_age: 30m
+
+block_builder_scheduler:
+  scheduling_interval: 30s
+  job_size: 1m
+  startup_observe_time: 5s
+
+blocks_storage:
+  s3:
+    bucket_name:       mimir-blocks
+  tsdb:
+    dir: /data
+    # Each read compartment's block-builder builds and ships that compartment's blocks, so ingester block
+    # shipping is disabled (ship_interval: 0s).
+    block_ranges_period: ["2m"]
+    retention_period: 20m
+    ship_interval: 0s
+    head_postings_for_matchers_cache_force: true
+    block_postings_for_matchers_cache_force: true
+
+  bucket_store:
+    # Sync blocks frequently.
+    sync_interval: 1m
+    ignore_blocks_within: 2m
+
+    index_cache:
+      backend: memcached
+      memcached:
+        addresses: dns+memcached:11211
+
+    chunks_cache:
+      backend: memcached
+      memcached:
+        addresses: dns+memcached:11211
+
+    metadata_cache:
+      backend: memcached
+      memcached:
+        addresses: dns+memcached:11211
+
+# Compact frequently so the small, frequently-cut blocks are merged quickly in development. Each
+# compactor still operates only on its own read compartment's bucket.
+compactor:
+  block_ranges: [2m, 4m, 8m, 16m]
+  compaction_interval: 1m
+  compaction_concurrency: 2
+  cleanup_interval: 1m
+  tenant_cleanup_delay: 1m
+
+querier:
+  # Query store-gateways for recent data too, so the compartment-aware blocks-storage path is exercised in
+  # development.
+  query_store_after: 5m
+
+
+memberlist:
+  join_members:
+    - distributor-wc-0
+    - distributor-wc-1
+    - localhost
+  rejoin_interval: 10s
+
+  propagation_delay_tracker:
+    enabled: true
+
+ruler:
+  alertmanager_url: http://alertmanager-1:8041/alertmanager,http://alertmanager-2:8042/alertmanager,http://alertmanager-3:8043/alertmanager
+  # Force the ruler to restore the state of any alert with a "for" period longer than 1s.
+  for_grace_period: 1s
+  # Evaluate rules via query-frontend (remote rule evaluation).
+  query_frontend:
+    address: dns:///query-frontend:9095
+
+ruler_storage:
+  s3:
+    bucket_name:       mimir-ruler
+  cache:
+    backend: memcached
+    memcached:
+      addresses: dns+memcached:11211
+
+query_scheduler:
+  service_discovery_mode: "ring"
+
+alertmanager:
+  fallback_config_file: ./config/alertmanager-fallback-config.yaml
+
+alertmanager_storage:
+  s3:
+    bucket_name: mimir-alertmanager
+
+overrides_exporter:
+  enabled_metrics: ingestion_rate,ingestion_burst_size,ingestion_artificial_delay,max_global_series_per_user,max_global_series_per_metric,max_global_exemplars_per_user,max_fetched_chunks_per_query,max_fetched_series_per_query,max_fetched_chunk_bytes_per_query,ruler_max_rules_per_rule_group,ruler_max_rule_groups_per_tenant
+
+  ring:
+    enabled: true
+    wait_stability_min_duration: 30s
+
+usage_tracker:
+  enabled: false
+  idle_timeout: 20m
+  partitions: 16
+  max_partitions_to_create_per_reconcile: 16
+  snapshots_storage:
+    s3:
+      bucket_name: usage-tracker-snapshots
+  events_storage_writer:
+    address: kafka-wc-0:9092
+    topic: usage-tracker-events
+    auto_create_topic_enabled: true
+    auto_create_topic_default_partitions: 16
+  events_storage_reader:
+    address: kafka-wc-0:9092
+    topic: usage-tracker-events
+  snapshots_metadata_writer:
+    address: kafka-wc-0:9092
+    topic: usage-tracker-snapshots-metadata
+    auto_create_topic_enabled: true
+    auto_create_topic_default_partitions: 16
+  snapshots_metadata_reader:
+    address: kafka-wc-0:9092
+    topic: usage-tracker-snapshots-metadata
+  instance_ring:
+    kvstore:
+      prefix: ''
+    heartbeat_period: 30s
+    heartbeat_timeout: 2m
+  partition_ring:
+    kvstore:
+      prefix: ''
+
+limits:
+  native_histograms_ingestion_enabled: true
+  ingestion_rate: 100000
+  # Enforce strong read consistency on every query so the compartments strong-consistency path (the
+  # query-frontend monitoring per-write-compartment offsets and propagating them to ingesters) is
+  # exercised locally.
+  ingest_storage_read_consistency: strong
+
+runtime_config:
+  file: ./config/runtime.yaml
+
+server:
+  log_level: info
+  trace_request_headers: true

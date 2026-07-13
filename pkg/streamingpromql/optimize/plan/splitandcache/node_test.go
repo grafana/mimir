@@ -3,15 +3,19 @@
 package splitandcache
 
 import (
+	"context"
 	"fmt"
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/selectors"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
@@ -199,16 +203,21 @@ func TestMaterializeSplit(t *testing.T) {
 				QueryParameters: &planning.QueryParameters{LookbackDelta: 5 * time.Minute},
 			}
 
+			reg := prometheus.NewPedanticRegistry()
+			splitMaterializer := NewTimeRangeSplitMaterializer(true, reg)
 			materializer := planning.NewMaterializer(params, map[planning.NodeType]planning.NodeMaterializer{
 				planning.NODE_TYPE_VECTOR_SELECTOR:  planning.NodeMaterializerFunc[*core.VectorSelector](core.MaterializeVectorSelector),
-				planning.NODE_TYPE_TIME_RANGE_SPLIT: planning.NodeMaterializerFunc[*TimeRangeSplit](MaterializeSplit),
+				planning.NODE_TYPE_TIME_RANGE_SPLIT: splitMaterializer,
 			})
 
-			resultFactory, err := MaterializeSplit(splitNode, materializer, testCase.timeRange, params)
+			queryStats, ctx := stats.ContextWithEmptyStats(context.Background())
+			resultFactory, err := splitMaterializer.Materialize(ctx, splitNode, materializer, testCase.timeRange, params, planning.RangeParams{})
 			require.NoError(t, err)
 
 			result, err := resultFactory.Produce()
 			require.NoError(t, err)
+
+			require.Equal(t, len(testCase.expectedTimeRanges), int(queryStats.LoadSplitQueries()))
 
 			if len(testCase.expectedTimeRanges) == 1 {
 				require.IsType(t, &selectors.InstantVectorSelector{}, result, "should return inner operator directly if only one range")
@@ -227,6 +236,9 @@ func TestMaterializeSplit(t *testing.T) {
 
 				require.Equal(t, testCase.expectedTimeRanges, actualTimeRanges, "time ranges of inner operators should match expected")
 			}
+
+			require.Equal(t, float64(len(testCase.expectedTimeRanges)), testutil.ToFloat64(splitMaterializer.splitQueriesCounter))
+			require.Equal(t, 1.0, testutil.ToFloat64(splitMaterializer.splitRequestsCounter))
 		})
 	}
 }

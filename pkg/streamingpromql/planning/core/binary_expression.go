@@ -3,6 +3,7 @@
 package core
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"slices"
@@ -23,9 +24,9 @@ var errCannotMergeBinaryExpressionHints = errors.New("cannot merge hints for bin
 
 //node:generate
 type BinaryExpression struct {
-	*BinaryExpressionDetails
-	LHS planning.Node `node:"child"`
-	RHS planning.Node `node:"child"`
+	*BinaryExpressionDetails `node:"hints=Hints"`
+	LHS                      planning.Node `node:"child,label=LHS"`
+	RHS                      planning.Node `node:"child,label=RHS"`
 }
 
 func (b *BinaryExpression) Describe() string {
@@ -117,38 +118,6 @@ func (b *BinaryExpression) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_BINARY_EXPRESSION
 }
 
-func (b *BinaryExpression) SetChildren(children []planning.Node) error {
-	if len(children) != 2 {
-		return fmt.Errorf("node of type BinaryExpression expects 2 children, but got %d", len(children))
-	}
-
-	b.LHS, b.RHS = children[0], children[1]
-
-	return nil
-}
-
-func (b *BinaryExpression) ReplaceChild(idx int, node planning.Node) error {
-	switch idx {
-	case 0:
-		b.LHS = node
-		return nil
-	case 1:
-		b.RHS = node
-		return nil
-	default:
-		return fmt.Errorf("node of type BinaryExpression expects 1 or 2 children, but attempted to replace child at index %d", idx)
-	}
-}
-
-func (b *BinaryExpression) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
-	otherBinaryExpression, ok := other.(*BinaryExpression)
-
-	return ok &&
-		b.Op == otherBinaryExpression.Op &&
-		b.VectorMatching.Equals(otherBinaryExpression.VectorMatching) &&
-		b.ReturnBool == otherBinaryExpression.ReturnBool
-}
-
 // MergeHints merges the hints from other into b. It returns an error if the
 // hints are incompatible.
 //
@@ -195,22 +164,18 @@ func (b *BinaryExpression) MergeHints(other planning.Node) error {
 	return errCannotMergeBinaryExpressionHints
 }
 
-func (b *BinaryExpression) ChildrenLabels() []string {
-	return []string{"LHS", "RHS"}
-}
-
-func MaterializeBinaryExpression(b *BinaryExpression, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
+func MaterializeBinaryExpression(ctx context.Context, b *BinaryExpression, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
 	op, ok := b.Op.ToItemType()
 	if !ok {
 		return nil, compat.NewNotSupportedError(fmt.Sprintf("'%v' binary expression", b.Op.String()))
 	}
 
-	lhsVector, lhsScalar, err := b.getChildOperator(b.LHS, timeRange, materializer, "left")
+	lhsVector, lhsScalar, err := b.getChildOperator(ctx, b.LHS, timeRange, materializer, "left")
 	if err != nil {
 		return nil, err
 	}
 
-	rhsVector, rhsScalar, err := b.getChildOperator(b.RHS, timeRange, materializer, "right")
+	rhsVector, rhsScalar, err := b.getChildOperator(ctx, b.RHS, timeRange, materializer, "right")
 	if err != nil {
 		return nil, err
 	}
@@ -254,8 +219,8 @@ func MaterializeBinaryExpression(b *BinaryExpression, materializer *planning.Mat
 	return planning.NewSingleUseOperatorFactory(o), nil
 }
 
-func (b *BinaryExpression) getChildOperator(node planning.Node, timeRange types.QueryTimeRange, materializer *planning.Materializer, side string) (types.InstantVectorOperator, types.ScalarOperator, error) {
-	o, err := materializer.ConvertNodeToOperator(node, timeRange)
+func (b *BinaryExpression) getChildOperator(ctx context.Context, node planning.Node, timeRange types.QueryTimeRange, materializer *planning.Materializer, side string) (types.InstantVectorOperator, types.ScalarOperator, error) {
+	o, err := materializer.ConvertNodeToOperator(ctx, node, timeRange)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -334,17 +299,4 @@ func (b *BinaryExpression) ExpressionPosition() (posrange.PositionRange, error) 
 
 func (b *BinaryExpression) MinimumRequiredPlanVersion(types.QueryTimeRange) (planning.QueryPlanVersion, error) {
 	return planning.QueryPlanVersionZero, nil
-}
-
-func (v *VectorMatching) Equals(other *VectorMatching) bool {
-	if v == nil && other == nil {
-		// Both are nil.
-		return true
-	}
-
-	return v != nil && other != nil &&
-		v.On == other.On &&
-		v.Card == other.Card &&
-		slices.Equal(v.MatchingLabels, other.MatchingLabels) &&
-		slices.Equal(v.Include, other.Include)
 }

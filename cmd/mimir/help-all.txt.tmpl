@@ -373,6 +373,8 @@ Usage of ./cmd/mimir/mimir:
     	Allows to disable enforcement of the label count limit "max_label_names_per_series" via X-Mimir-SkipLabelCountValidation header on the http write path. Allowing this for external clients allows any client to send invalid label counts. After enabling it, requests with a specific HTTP header set to true will not have label counts validated.
   -api.skip-label-name-validation-header-enabled
     	Allows to skip label name validation via X-Mimir-SkipLabelNameValidation header on the http write path. Use with caution as it breaks PromQL. Allowing this for external clients allows any client to send invalid label names. After enabling it, requests with a specific HTTP header set to true will not have label names validated.
+  -auth.label-access-control-enabled
+    	[experimental] If enabled, Mimir enforces label-based access control on metric read queries using the X-Prom-Label-Policy HTTP header.
   -auth.multitenancy-enabled
     	When set to true, incoming HTTP requests must specify tenant ID in HTTP X-Scope-OrgId header. When set to false, tenant ID from -auth.no-auth-tenant is used instead. (default true)
   -auth.no-auth-tenant string
@@ -437,6 +439,10 @@ Usage of ./cmd/mimir/mimir:
     	Maximum number of sub-GetRange requests that a single GetRange request can be split into when fetching chunks. Zero or negative value = unlimited number of sub-requests. (default 3)
   -blocks-storage.bucket-store.chunks-cache.memcached.addresses comma-separated-list-of-strings
     	Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.
+  -blocks-storage.bucket-store.chunks-cache.memcached.addresses-lookup-period duration
+    	How often each address is resolved to an IP address or list of host names. (default 30s)
+  -blocks-storage.bucket-store.chunks-cache.memcached.addresses-lookup-pool-size uint
+    	How many idle connections to the DNS resolver are kept open. 0 disables keeping any idle connections open.
   -blocks-storage.bucket-store.chunks-cache.memcached.connect-timeout duration
     	The connection timeout. (default 200ms)
   -blocks-storage.bucket-store.chunks-cache.memcached.max-async-buffer-size int
@@ -485,6 +491,10 @@ Usage of ./cmd/mimir/mimir:
     	Maximum size in bytes of in-memory index cache used to speed up blocks index lookups (shared between all tenants). (default 1073741824)
   -blocks-storage.bucket-store.index-cache.memcached.addresses comma-separated-list-of-strings
     	Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.
+  -blocks-storage.bucket-store.index-cache.memcached.addresses-lookup-period duration
+    	How often each address is resolved to an IP address or list of host names. (default 30s)
+  -blocks-storage.bucket-store.index-cache.memcached.addresses-lookup-pool-size uint
+    	How many idle connections to the DNS resolver are kept open. 0 disables keeping any idle connections open.
   -blocks-storage.bucket-store.index-cache.memcached.connect-timeout duration
     	The connection timeout. (default 200ms)
   -blocks-storage.bucket-store.index-cache.memcached.max-async-buffer-size int
@@ -519,6 +529,8 @@ Usage of ./cmd/mimir/mimir:
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -blocks-storage.bucket-store.index-cache.memcached.tls-server-name string
     	Override the expected name on the server certificate.
+  -blocks-storage.bucket-store.index-header-cache.attributes-in-memory-max-items int
+    	[experimental] Maximum number of individual attributes items to keep in a first level in-memory LRU cache. Attributes will be stored and fetched in-memory before hitting the cache backend. 0 to disable the in-memory cache. (default 10000)
   -blocks-storage.bucket-store.index-header-cache.attributes-ttl duration
     	[experimental] TTL for caching object attributes of the block index for the index-header reader.  If the metadata cache is configured, attributes will be stored in the metadata cache backend, otherwise attributes are stored in the index-header cache backend. (default 168h0m0s)
   -blocks-storage.bucket-store.index-header-cache.backend string
@@ -527,6 +539,10 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Maximum number of sub-GetRange requests that a single GetRange request can be split into when fetching index-header ranges. Zero or negative value = unlimited number of sub-requests. (default 3)
   -blocks-storage.bucket-store.index-header-cache.memcached.addresses comma-separated-list-of-strings
     	Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.
+  -blocks-storage.bucket-store.index-header-cache.memcached.addresses-lookup-period duration
+    	How often each address is resolved to an IP address or list of host names. (default 30s)
+  -blocks-storage.bucket-store.index-header-cache.memcached.addresses-lookup-pool-size uint
+    	How many idle connections to the DNS resolver are kept open. 0 disables keeping any idle connections open.
   -blocks-storage.bucket-store.index-header-cache.memcached.connect-timeout duration
     	The connection timeout. (default 200ms)
   -blocks-storage.bucket-store.index-header-cache.memcached.max-async-buffer-size int
@@ -599,6 +615,10 @@ Usage of ./cmd/mimir/mimir:
     	How long to cache list of chunks for a block. (default 24h0m0s)
   -blocks-storage.bucket-store.metadata-cache.memcached.addresses comma-separated-list-of-strings
     	Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.
+  -blocks-storage.bucket-store.metadata-cache.memcached.addresses-lookup-period duration
+    	How often each address is resolved to an IP address or list of host names. (default 30s)
+  -blocks-storage.bucket-store.metadata-cache.memcached.addresses-lookup-pool-size uint
+    	How many idle connections to the DNS resolver are kept open. 0 disables keeping any idle connections open.
   -blocks-storage.bucket-store.metadata-cache.memcached.connect-timeout duration
     	The connection timeout. (default 200ms)
   -blocks-storage.bucket-store.metadata-cache.memcached.max-async-buffer-size int
@@ -1136,7 +1156,7 @@ Usage of ./cmd/mimir/mimir:
   -compactor.meta-sync-concurrency int
     	Number of goroutines to use when syncing block meta files from the long term storage. (default 20)
   -compactor.ooo-split-and-merge-shards int
-    	The number of shards to use when splitting out-of-order blocks. 0 to use the value of -compactor.split-and-merge-shards. Only applies to blocks with the out-of-order external label, see -ingester.out-of-order-blocks-external-label-enabled.
+    	The number of shards to use when splitting out-of-order blocks. 0 to use the value of -compactor.split-and-merge-shards. Values greater than 1 are rounded up to the next power of two. Only applies to blocks with the out-of-order external label, see -ingester.out-of-order-blocks-external-label-enabled.
   -compactor.partial-block-deletion-delay duration
     	If a partial block (unfinished block without meta.json file) hasn't been modified for this time, it will be marked for deletion. The minimum accepted value is 4h0m0s: a lower value will be ignored and the feature disabled. 0 to disable. (default 1d)
   -compactor.ring.auto-forget-unhealthy-periods int
@@ -1214,7 +1234,7 @@ Usage of ./cmd/mimir/mimir:
   -compactor.ring.wait-stability-min-duration duration
     	Minimum time to wait for ring stability at startup. 0 to disable.
   -compactor.split-and-merge-shards int
-    	The number of shards to use when splitting blocks. 0 to disable splitting.
+    	The number of shards to use when splitting blocks. 0 to disable splitting. Values greater than 1 are rounded up to the next power of two.
   -compactor.split-groups int
     	Number of groups that blocks for splitting should be grouped into. Each group of blocks is then split separately. Number of output split shards is controlled by -compactor.split-and-merge-shards. (default 1)
   -compactor.symbols-flushers-concurrency int
@@ -1505,10 +1525,12 @@ Usage of ./cmd/mimir/mimir:
     	When auto-creation of Kafka topic is enabled and this value is positive, Mimir creates the topic with this number of partitions. When the value is -1 the Kafka broker uses the default number of partitions (num.partitions configuration). (default -1)
   -ingest-storage.kafka.auto-create-topic-enabled
     	Enable auto-creation of Kafka topic on startup if it doesn't exist. If creating the topic fails and the topic doesn't already exist, Mimir fails to start. (default true)
+  -ingest-storage.kafka.backend string
+    	[experimental] The Kafka backend implementation. Supported values: kafka, warpstream. (default "kafka")
   -ingest-storage.kafka.client-id string
     	The Kafka client ID.
   -ingest-storage.kafka.client-rack string
-    	The rack identifier for this Kafka client. Corresponds to the Kafka client.rack setting.
+    	The rack identifier for this Kafka client. Corresponds to the Kafka client.rack setting. Only supported when ingest-storage.kafka.backend=kafka.
   -ingest-storage.kafka.consume-from-position-at-startup string
     	From which position to start consuming the partition at startup. Supported options: last-offset, start, end, timestamp. (default "last-offset")
   -ingest-storage.kafka.consume-from-timestamp-at-startup int
@@ -1520,7 +1542,7 @@ Usage of ./cmd/mimir/mimir:
   -ingest-storage.kafka.consumer-group-offset-commit-interval duration
     	How frequently a consumer should commit the consumed offset to Kafka. The last committed offset is used at startup to continue the consumption from where it was left. (default 1s)
   -ingest-storage.kafka.dial-timeout duration
-    	The maximum time allowed to open a connection to a Kafka broker. (default 2s)
+    	The maximum time allowed to establish the TCP connection to a Kafka broker, including the TLS handshake when TLS is enabled. It does not include the subsequent SASL authentication handshake. (default 2s)
   -ingest-storage.kafka.fetch-concurrency-max int
     	The maximum number of concurrent fetch requests that the ingester makes when reading data from Kafka during startup. Concurrent fetch requests are issued only when there is sufficient backlog of records to consume. Set to 0 to disable. (default 12)
   -ingest-storage.kafka.fetch-max-wait duration
@@ -1543,6 +1565,8 @@ Usage of ./cmd/mimir/mimir:
     	The maximum number of buffered records ready to be processed. This limit applies to the sum of all inflight requests. Set to 0 to disable the limit. (default 1000000000)
   -ingest-storage.kafka.max-consumer-lag-at-startup duration
     	The guaranteed maximum lag before a consumer is considered to have caught up reading from a partition at startup, becomes ACTIVE in the hash ring and passes the readiness check. Set both -ingest-storage.kafka.target-consumer-lag-at-startup and -ingest-storage.kafka.max-consumer-lag-at-startup to 0 to disable waiting for maximum consumer lag being honored at startup. (default 15s)
+  -ingest-storage.kafka.producer-compression string
+    	The compression codec used by the Kafka producer when writing records to the Kafka backend. Supported values: none, gzip, snappy, lz4, zstd. When unset, the franz-go default (snappy with no-compression fallback) is used. Set to "none" to disable compression entirely; this is required when targeting Azure Event Hub via its Kafka-compatible endpoint, which does not support compressed produce requests.
   -ingest-storage.kafka.producer-max-buffered-bytes int
     	The maximum size of (uncompressed) buffered and unacknowledged produced records sent to Kafka. The produce request fails once this limit is reached. This limit is per Kafka client. 0 to disable the limit. (default 1073741824)
   -ingest-storage.kafka.producer-max-record-size-bytes int
@@ -1605,16 +1629,40 @@ Usage of ./cmd/mimir/mimir:
     	When enabled, the fetch request MaxBytes field is computed using the compressed size of previous records. When disabled, MaxBytes is computed using uncompressed bytes. Different Kafka implementations interpret MaxBytes differently. (default true)
   -ingest-storage.kafka.wait-strong-read-consistency-timeout duration
     	The maximum allowed for a read requests processed by an ingester to wait until strong read consistency is enforced. 0 to disable the timeout. (default 20s)
+  -ingest-storage.kafka.warpstream-demoter-probe-interval duration
+    	[experimental] Minimum wall-clock gap between probes to a demoted agent. Only applies when -ingest-storage.kafka.backend=warpstream. (default 1s)
+  -ingest-storage.kafka.warpstream-health-check-faulty-threshold float
+    	[experimental] Mark an agent as faulty when its observed error rate exceeds this fraction. Only applies when -ingest-storage.kafka.backend=warpstream. (default 0.2)
+  -ingest-storage.kafka.warpstream-health-check-max-faulty-fraction float
+    	[experimental] Suppress faulty-based hedging and demotion when more than this fraction of agents are faulty (cluster-wide issue). Only applies when -ingest-storage.kafka.backend=warpstream. (default 0.3)
+  -ingest-storage.kafka.warpstream-health-check-max-slow-fraction float
+    	[experimental] Suppress slow-based hedging when more than this fraction of agents are slow (cluster-wide issue). Only applies when -ingest-storage.kafka.backend=warpstream. (default 0.3)
+  -ingest-storage.kafka.warpstream-health-check-slow-multiplier float
+    	[experimental] Mark an agent as slow when its window-average latency exceeds this multiple of the cluster baseline. Only applies when -ingest-storage.kafka.backend=warpstream. (default 2)
+  -ingest-storage.kafka.warpstream-hedge-max-agents int
+    	[experimental] Cap on how many per-partition candidates the hedge fanout considers when picking a fallback (excluding the primary and any agent already tried). Only applies when -ingest-storage.kafka.backend=warpstream. (default 3)
+  -ingest-storage.kafka.warpstream-hedge-min-delay duration
+    	[experimental] Floor on the dynamically-computed hedge delay. Only applies when -ingest-storage.kafka.backend=warpstream. (default 500ms)
   -ingest-storage.kafka.write-clients int
     	[deprecated] The number of Kafka clients used by producers. When the configured number of clients is greater than 1, partitions are sharded among Kafka clients. A higher number of clients may provide higher write throughput at the cost of additional Metadata requests pressure to Kafka. Deprecated: has no effect (Mimir always uses a single Kafka write client). (default 1)
   -ingest-storage.kafka.write-timeout duration
     	How long to wait for an incoming write request to be successfully committed to the Kafka backend. (default 10s)
+  -ingest-storage.kafka.write-timeout-overhead duration
+    	[experimental] Additional time added on top of the write timeout, accounting for a write request sitting in the client buffer and travelling over the network before the Kafka backend starts processing it. Lower values fail slow writes faster, at the cost of less tolerance to network and buffer latency. (default 2s)
   -ingest-storage.migration.distributor-send-to-ingesters-enabled
     	When both this option and ingest storage are enabled, distributors write to both Kafka and ingesters. A write request is considered successful only when written to both backends.
   -ingest-storage.migration.ignore-ingest-storage-errors
     	When enabled, errors writing to ingest storage are logged but do not affect write success or quorum. When disabled, write requests fail if ingest storage write fails.
   -ingest-storage.migration.ingest-storage-max-wait-time duration
     	The maximum time a write request that goes through the ingest storage waits before it times out. Set to `0` to disable the timeout.
+  -ingest-storage.ordered-consumption.enabled
+    	[experimental] Whether records from all write compartments' Kafka clusters are consumed in best-effort Kafka-record-timestamp order before being pushed. When disabled, each Kafka cluster is consumed independently, so there's no cross-cluster ordering guarantee. Only takes effect when compartments are enabled with more than one write compartment.
+  -ingest-storage.ordered-consumption.input-buffer-size int
+    	[experimental] Buffer size of the channel into which the per-cluster consumers submit records. When 0, defaults to 2x max-batch-records.
+  -ingest-storage.ordered-consumption.max-batch-records int
+    	[experimental] Soft upper bound on records buffered before forcing a flush. Larger values give more cross-cluster mixing (better ordering) at the cost of memory and per-flush latency. (default 1024)
+  -ingest-storage.ordered-consumption.max-batch-wait duration
+    	[experimental] Maximum time records sit buffered before being flushed even if max-batch-records has not been reached. (default 50ms)
   -ingest-storage.read-consistency string
     	[experimental] The default consistency level to enforce for queries when using the ingest storage. Supports values: strong, eventual. (default "eventual")
   -ingest-storage.write-logs-fsync-before-kafka-commit-concurrency int
@@ -1673,12 +1721,22 @@ Usage of ./cmd/mimir/mimir:
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -ingester.client.tls-server-name string
     	Override the expected name on the server certificate.
+  -ingester.compute-workers int
+    	[experimental] Number of worker goroutines in the ingester's shared tenant-fair compute worker pool, used to parallelize CPU-bound work (currently label-values-cardinality) fairly across tenants. 0 uses GOMAXPROCS.
+  -ingester.early-compaction-non-owned-series-enabled
+    	[experimental] When enabled, the ingester triggers an early TSDB head compaction for series that are no longer owned by the ingester after a ring change. Requires -ingester.track-ingester-owned-series or -ingester.use-ingester-owned-series-for-limits to be enabled.
+  -ingester.early-compaction-non-owned-series-max-grace-period duration
+    	[experimental] Maximum time a series may remain non-owned before it is evicted, regardless of the owned-series threshold. This ensures eventual eviction even for tenants below their threshold. A value of 0 disables the maximum grace period, so eviction depends solely on the owned-series threshold. (default 5m0s)
+  -ingester.early-compaction-non-owned-series-min-grace-period duration
+    	[experimental] Minimum time a series must remain non-owned before it can be evicted when the local owned-series threshold is exceeded. New non-owned series reset the timer. A value of 0 evicts immediately. A per-replica startup jitter spreads evictions across replicas. (default 30s)
   -ingester.early-head-compaction-min-estimated-series-reduction-percentage int
     	[experimental] Minimum estimated series reduction percentage (0-100) required to trigger per-tenant early compaction. (default 15)
   -ingester.early-head-compaction-owned-series-threshold int
     	[experimental] When the number of owned series for a tenant across the cluster exceeds this threshold, trigger early head compaction. 0 to disable.
   -ingester.error-sample-rate int
     	Each error will be logged once in this many times. Use 0 to log all of them. (default 10)
+  -ingester.float-chunk-encoding string
+    	[experimental] Encoding used for float chunks in the ingester and block builder for this tenant. Valid values are 'xor' and 'xor2'. (default "xor")
   -ingester.ignore-ooo-exemplars
     	[experimental] Whether to ignore exemplars with out-of-order timestamps. If enabled, exemplars with out-of-order timestamps are silently dropped, otherwise they cause partial errors.
   -ingester.ignore-series-limit-for-metric-names string
@@ -1693,8 +1751,8 @@ Usage of ./cmd/mimir/mimir:
     	Max series that this ingester can hold (across all tenants). Requests to create additional series will be rejected. 0 = unlimited.
   -ingester.instance-limits.max-tenants int
     	Max tenants that this ingester can hold. Requests from additional tenants will be rejected. 0 = unlimited.
-  -ingester.label-values-count-max-concurrency int
-    	[experimental] Maximum concurrency used to compute a single label values count request. (default 16)
+  -ingester.label-values-count-chunk-size int
+    	[experimental] Number of label values processed per work unit submitted to the ingester compute worker pool. Smaller values improve cross-tenant fairness at the cost of more scheduling overhead. (default 32)
   -ingester.max-global-exemplars-per-user int
     	[experimental] The maximum number of exemplars in memory, across the cluster. 0 to disable exemplars ingestion.
   -ingester.max-global-metadata-per-metric int
@@ -2254,7 +2312,7 @@ Usage of ./cmd/mimir/mimir:
   -querier.lookback-delta duration
     	Time since the last sample after which a time series is considered stale and ignored by expression evaluations. This config option should be set on query-frontend too when query sharding is enabled. (default 5m0s)
   -querier.max-concurrent int
-    	The number of workers running in each querier process. This setting limits the maximum number of concurrent queries in each querier. The minimum value is four; lower values are ignored and set to the minimum (default 20)
+    	The number of workers running in each querier process. This setting limits the maximum number of concurrent queries in each querier. The minimum value is four; lower values are ignored and set to the minimum (default 8)
   -querier.max-concurrent-remote-read-queries int
     	Maximum number of remote read queries that can be executed concurrently. 0 or negative values mean unlimited concurrency. (default 2)
   -querier.max-estimated-fetched-chunks-per-query-multiplier float
@@ -2289,8 +2347,6 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Enable computing multiple aggregations over the same data without buffering. Requires common subexpression elimination to be enabled. (default true)
   -querier.mimir-query-engine.enable-narrow-binary-selectors
     	[experimental] Enable generating selectors for one side of a binary expression based on results from the other side.
-  -querier.mimir-query-engine.enable-projection-pushdown
-    	[experimental] Enable projection pushdown to only fetch labels required for the query from storage.
   -querier.mimir-query-engine.enable-prune-toggles
     	[experimental] Enable pruning query expressions that are toggled off with constants. (default true)
   -querier.mimir-query-engine.enable-range-query-range-vector-common-subexpression-elimination
@@ -2299,6 +2355,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Enable eliminating duplicate or redundant matchers that are part of selector expressions. (default true)
   -querier.mimir-query-engine.enable-remove-statically-empty-expressions
     	[experimental] Enable removing expressions that are guaranteed to produce no results. (default true)
+  -querier.mimir-query-engine.enable-scalar-common-subexpression-elimination
+    	[experimental] Enable deduplication of scalar expressions as part of common subexpression elimination. Requires common subexpression elimination to be enabled.
   -querier.mimir-query-engine.enable-subset-selector-elimination
     	[experimental] Enable subset selector elimination when evaluating queries.
   -querier.mimir-query-engine.range-vector-splitting.backend string
@@ -2309,6 +2367,10 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Enable splitting function over range vectors queries into smaller blocks for caching.
   -querier.mimir-query-engine.range-vector-splitting.memcached.addresses comma-separated-list-of-strings
     	Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.
+  -querier.mimir-query-engine.range-vector-splitting.memcached.addresses-lookup-period duration
+    	How often each address is resolved to an IP address or list of host names. (default 30s)
+  -querier.mimir-query-engine.range-vector-splitting.memcached.addresses-lookup-pool-size uint
+    	How many idle connections to the DNS resolver are kept open. 0 disables keeping any idle connections open.
   -querier.mimir-query-engine.range-vector-splitting.memcached.connect-timeout duration
     	The connection timeout. (default 200ms)
   -querier.mimir-query-engine.range-vector-splitting.memcached.max-async-buffer-size int
@@ -2345,10 +2407,12 @@ Usage of ./cmd/mimir/mimir:
     	Override the expected name on the server certificate.
   -querier.mimir-query-engine.range-vector-splitting.split-interval duration
     	[experimental] Time interval used for splitting function over range vectors queries into cacheable blocks. (default 2h0m0s)
+  -querier.mimir-query-engine.time-splitting-and-caching.cache-unconsumed-results
+    	[experimental] Enable caching of query results that were not fully consumed by the query. When enabled, if a query stops reading before all series have been read, the remaining series are read and buffered so that the complete set of results can be cached. (default true)
   -querier.minimize-ingester-requests
     	If true, when querying ingesters, only the minimum required ingesters required to reach quorum will be queried initially, with other ingesters queried only if needed due to failures from the initial set of ingesters. Enabling this option reduces resource consumption for the happy path at the cost of increased latency for the unhappy path. (default true)
   -querier.minimize-ingester-requests-hedging-delay duration
-    	Delay before initiating requests to further ingesters when request minimization is enabled and the initially selected set of ingesters have not all responded. Ignored if -querier.minimize-ingester-requests is not enabled. (default 3s)
+    	Delay before initiating requests to further ingesters when request minimization is enabled and the initially selected set of ingesters have not all responded. Set to 0 to disable hedging. Ignored if -querier.minimize-ingester-requests is not enabled.
   -querier.prefer-availability-zones comma-separated-list-of-strings
     	[experimental] Comma-separated list of availability zones to prefer when querying ingesters and store-gateways. All zones in the list are given equal priority.
   -querier.query-engine string
@@ -2529,6 +2593,10 @@ Usage of ./cmd/mimir/mimir:
     	Number of series to buffer per store-gateway when streaming chunks from store-gateways. (default 256)
   -querier.timeout duration
     	The timeout for a query. This config option should be set on query-frontend too when query sharding is enabled. This also applies to queries evaluated by the ruler (internally or remotely). (default 2m0s)
+  -query-frontend.active-series-framed-responses
+    	[experimental] Request active series responses from queriers in a length-delimited framed format that the query-frontend can merge using significantly less CPU. Queriers that don't support the format fall back to JSON transparently.
+  -query-frontend.active-series-max-shard-concurrency int
+    	[experimental] Maximum number of sharded active series (and active native histogram metrics) sub-requests dispatched and merged concurrently within a single request. This bounds the resource usage caused by fanning out to a large number of shards, both on queriers and on the query-frontend. 0 to disable the limit.
   -query-frontend.active-series-write-timeout duration
     	[experimental] Timeout for writing active series responses. 0 means the value from `-server.http-write-timeout` is used. (default 5m0s)
   -query-frontend.align-queries-with-step
@@ -2541,6 +2609,8 @@ Usage of ./cmd/mimir/mimir:
     	[deprecated] Cache statistics of processed samples on results cache. Deprecated: has no effect.
   -query-frontend.cache-unaligned-requests
     	Cache requests that are not step-aligned.
+  -query-frontend.cardinality-sharding-max-sharded-queries int
+    	[experimental] The max number of sharded queries that can be run for a cardinality (active series and active native histogram metrics) request. 0 to fall back to -query-frontend.query-sharding-max-sharded-queries.
   -query-frontend.client-cluster-validation.label string
     	[experimental] Primary cluster validation label.
   -query-frontend.enable-multiple-node-remote-execution-requests
@@ -2640,11 +2710,11 @@ Usage of ./cmd/mimir/mimir:
   -query-frontend.query-sharding-max-regexp-size-bytes int
     	Disable query sharding for any query containing a regular expression matcher longer than the configured number of bytes. 0 to disable the limit. (default 4096)
   -query-frontend.query-sharding-max-sharded-queries int
-    	The max number of sharded queries that can be run for a given received query. 0 to disable limit. (default 128)
+    	The maximum number of sharded queries that can be run for a given received query or spun-off subquery. 0 to disable limit. When splitting and caching inside MQE is enabled, this value applies per time-split interval (including split intervals for spun-off subqueries). When it is disabled, this value applies to the entire time range (or entire spun-off subquery). (default 128)
   -query-frontend.query-sharding-target-series-per-shard uint
     	How many series a single sharded partial query should load at most. This is not a strict requirement guaranteed to be honoured by query sharding, but a hint given to the query sharding when the query execution is initially planned. 0 to disable cardinality-based hints.
   -query-frontend.query-sharding-total-shards int
-    	The amount of shards to use when doing parallelisation via query sharding by tenant. 0 to disable query sharding for tenant. Query sharding implementation will adjust the number of query shards based on compactor shards. This allows querier to not search the blocks which cannot possibly have the series for given query shard. (default 16)
+    	The number of shards to use when doing parallelisation via query sharding. 0 to disable query sharding for tenant. Values greater than 1 are rounded up to the next power of two, so the query shard count always meshes with the compactor's power-of-two shard count. This allows querier to not search the blocks which cannot possibly have the series for given query shard. (default 16)
   -query-frontend.query-stats-enabled
     	False to disable query statistics tracking. When enabled, a message with some statistics is logged for every query. (default true)
   -query-frontend.remote-execution-batch-size uint
@@ -2667,6 +2737,10 @@ Usage of ./cmd/mimir/mimir:
     	Enable cache compression, if not empty. Supported values are: snappy.
   -query-frontend.results-cache.memcached.addresses comma-separated-list-of-strings
     	Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.
+  -query-frontend.results-cache.memcached.addresses-lookup-period duration
+    	How often each address is resolved to an IP address or list of host names. (default 30s)
+  -query-frontend.results-cache.memcached.addresses-lookup-pool-size uint
+    	How many idle connections to the DNS resolver are kept open. 0 disables keeping any idle connections open.
   -query-frontend.results-cache.memcached.connect-timeout duration
     	The connection timeout. (default 200ms)
   -query-frontend.results-cache.memcached.max-async-buffer-size int
@@ -2716,7 +2790,9 @@ Usage of ./cmd/mimir/mimir:
   -query-frontend.subquery-spin-off-enabled
     	[experimental] Enable spinning off subqueries from instant queries as range queries to optimize their performance.
   -query-frontend.use-mimir-query-engine-for-sharding
-    	[experimental] Set to true to enable performing query sharding inside the Mimir query engine (MQE). This setting has no effect if sharding is disabled. Requires remote execution and MQE to be enabled.
+    	[experimental] Set to true to enable performing query sharding inside the Mimir query engine (MQE). Requires remote execution and MQE to be enabled.
+  -query-frontend.use-mimir-query-engine-for-splitting-and-caching-results
+    	[experimental] Set to true to enable performing splitting range queries by interval and caching inside the Mimir query engine (MQE), and spinning off subqueries from instant queries inside MQE. This only has an effect if the corresponding feature is enabled (with -query-frontend.split-queries-by-interval=true, -query-frontend.cache-results=true or -query-frontend.subquery-spin-off-enabled=true, respectively). Requires MQE, remote execution and sharding inside MQE to be enabled.
   -query-scheduler.grpc-client-config.backoff-max-period duration
     	Maximum delay when backing off. (default 10s)
   -query-scheduler.grpc-client-config.backoff-min-period duration
@@ -2763,14 +2839,16 @@ Usage of ./cmd/mimir/mimir:
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -query-scheduler.grpc-client-config.tls-server-name string
     	Override the expected name on the server certificate.
-  -query-scheduler.inflight-max-age-metric-enabled
-    	[experimental] Enable the cortex_query_scheduler_inflight_max_age_seconds metric, which reports the age of the oldest inflight request. Disabling it skips the per-tick scan over inflight requests. (default true)
   -query-scheduler.max-outstanding-requests-per-tenant int
     	Maximum number of outstanding requests per tenant per query-scheduler. In-flight requests above this limit will fail with HTTP response status code 429. (default 100)
+  -query-scheduler.max-queue-length-metric-enabled
+    	[experimental] Enable the cortex_query_scheduler_max_queue_length metric, which reports the per-tenant peak queue length observed since the last scrape. Disabling it skips per-tenant peak tracking on enqueue and dequeue.
   -query-scheduler.max-used-instances int
     	The maximum number of query-scheduler instances to use, regardless how many replicas are running. This option can be set only when -query-scheduler.service-discovery-mode is set to 'ring'. 0 to use all available query-scheduler instances.
   -query-scheduler.querier-forget-delay duration
     	[experimental] If a querier disconnects without sending notification about graceful shutdown, the query-scheduler will keep the querier in the tenant's shard until the forget delay has passed. This feature is useful to reduce the blast radius when shuffle-sharding is enabled.
+  -query-scheduler.queue-max-wait-metric-enabled
+    	[experimental] Enable the cortex_query_scheduler_queue_max_wait_seconds metric, which reports how long the oldest request still waiting in the queue has been waiting. Disabling it skips the per-tick scan over inflight requests. (default true)
   -query-scheduler.ring.auto-forget-unhealthy-periods int
     	Number of consecutive timeout periods after which Mimir automatically removes an unhealthy instance in the ring. Set to 0 to disable auto-forget. (default 10)
   -query-scheduler.ring.consul.acl-token string
@@ -2885,6 +2963,10 @@ Usage of ./cmd/mimir/mimir:
     	Backend for ruler storage cache, if not empty. The cache is supported for any storage backend except "local". Supported values: memcached.
   -ruler-storage.cache.memcached.addresses comma-separated-list-of-strings
     	Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.
+  -ruler-storage.cache.memcached.addresses-lookup-period duration
+    	How often each address is resolved to an IP address or list of host names. (default 30s)
+  -ruler-storage.cache.memcached.addresses-lookup-pool-size uint
+    	How many idle connections to the DNS resolver are kept open. 0 disables keeping any idle connections open.
   -ruler-storage.cache.memcached.connect-timeout duration
     	The connection timeout. (default 200ms)
   -ruler-storage.cache.memcached.max-async-buffer-size int
@@ -3151,6 +3233,56 @@ Usage of ./cmd/mimir/mimir:
     	Override the expected name on the server certificate.
   -ruler.disabled-tenants comma-separated-list-of-strings
     	Comma separated list of tenants whose rules this ruler cannot evaluate. If specified, a ruler that would normally pick the specified tenant(s) for processing will ignore them instead. Subject to sharding.
+  -ruler.distributor.address string
+    	[experimental] gRPC listen address of the distributor(s) to push rule-result series to. If empty, the ruler writes using the internal distributor. Use a DNS address (prefixed with dns:///) to enable gRPC client-side load balancing; in Kubernetes, use the distributor headless service on the gRPC port.
+  -ruler.distributor.grpc-client-config.backoff-max-period duration
+    	Maximum delay when backing off. (default 10s)
+  -ruler.distributor.grpc-client-config.backoff-min-period duration
+    	Minimum delay when backing off. (default 100ms)
+  -ruler.distributor.grpc-client-config.backoff-on-ratelimits
+    	Enable backoff and retry when we hit rate limits.
+  -ruler.distributor.grpc-client-config.backoff-retries int
+    	Number of times to backoff and retry before failing. (default 10)
+  -ruler.distributor.grpc-client-config.cluster-validation.label string
+    	[experimental] Primary cluster validation label.
+  -ruler.distributor.grpc-client-config.connect-backoff-base-delay duration
+    	Initial backoff delay after first connection failure. Only relevant if ConnectTimeout > 0. (default 1s)
+  -ruler.distributor.grpc-client-config.connect-backoff-max-delay duration
+    	Maximum backoff delay when establishing a connection. Only relevant if ConnectTimeout > 0. (default 5s)
+  -ruler.distributor.grpc-client-config.connect-timeout duration
+    	The maximum amount of time to establish a connection. A value of 0 means default gRPC client connect timeout and backoff. (default 5s)
+  -ruler.distributor.grpc-client-config.grpc-client-rate-limit float
+    	Rate limit for gRPC client; 0 means disabled.
+  -ruler.distributor.grpc-client-config.grpc-client-rate-limit-burst int
+    	Rate limit burst for gRPC client.
+  -ruler.distributor.grpc-client-config.grpc-compression string
+    	Use compression when sending messages. Supported values are: 'gzip', 'snappy', 's2' and '' (disable compression)
+  -ruler.distributor.grpc-client-config.grpc-max-recv-msg-size int
+    	gRPC client max receive message size (bytes). (default 104857600)
+  -ruler.distributor.grpc-client-config.grpc-max-send-msg-size int
+    	gRPC client max send message size (bytes). (default 104857600)
+  -ruler.distributor.grpc-client-config.initial-connection-window-size value
+    	[experimental] Initial connection window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator. (default 63KiB1023B)
+  -ruler.distributor.grpc-client-config.initial-stream-window-size value
+    	[experimental] Initial stream window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator. (default 63KiB1023B)
+  -ruler.distributor.grpc-client-config.tls-ca-path string
+    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
+  -ruler.distributor.grpc-client-config.tls-cert-path string
+    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -ruler.distributor.grpc-client-config.tls-cipher-suites string
+    	Override the default cipher suite list (separated by commas).
+  -ruler.distributor.grpc-client-config.tls-enabled
+    	Enable TLS in the gRPC client. This flag needs to be enabled when any other TLS flag is set. If set to false, insecure connection to gRPC server will be used.
+  -ruler.distributor.grpc-client-config.tls-insecure-skip-verify
+    	Skip validating server certificate.
+  -ruler.distributor.grpc-client-config.tls-key-path string
+    	Path to the key for the client certificate. Also requires the client certificate to be configured.
+  -ruler.distributor.grpc-client-config.tls-min-version string
+    	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
+  -ruler.distributor.grpc-client-config.tls-server-name string
+    	Override the expected name on the server certificate.
+  -ruler.distributor.remote-timeout duration
+    	[experimental] Timeout for requests to remote distributors. (default 10s)
   -ruler.enable-api
     	Enable the ruler config API. (default true)
   -ruler.enabled-tenants comma-separated-list-of-strings
@@ -3343,6 +3475,8 @@ Usage of ./cmd/mimir/mimir:
     	Comma separated list of yaml files or URLs with the configuration that can be updated at runtime. Runtime config files will be merged from left to right.
   -runtime-config.http-client-cluster-validation.label string
     	[experimental] Primary cluster validation label.
+  -runtime-config.http-client-disable-keep-alives
+    	Disable HTTP keep-alives for the runtime config HTTP client. When enabled, each reload opens a new connection, which prevents long-lived connections from being pinned to a single backend when the runtime config URL is served by multiple replicas behind a connection-level (L4) load balancer, such as a Kubernetes Service. (default true)
   -runtime-config.http-client-timeout duration
     	HTTP client timeout when fetching runtime config from URLs. (default 30s)
   -runtime-config.reload-period duration
@@ -3621,7 +3755,7 @@ Usage of ./cmd/mimir/mimir:
     	The maximum number of series to write in a single request. (default 1000)
   -tests.write-endpoint string
     	The base endpoint on the write path. The URL should have no trailing slash. The specific API path is appended by the tool to the URL, for example /api/v1/push for the remote write API endpoint, so the configured URL must not include it.
-  -tests.write-protocol string
+  -tests.write-protocol value
     	The protocol to use to write series data. Supported values are: prometheus, prometheus2, otlp-http (default "prometheus")
   -tests.write-read-ooo-test.enabled
     	Enables a test that writes samples out-of-order and verifies query results.
@@ -3631,14 +3765,16 @@ Usage of ./cmd/mimir/mimir:
     	How back in the past metrics can be queried at most. (default 168h0m0s)
   -tests.write-read-ooo-test.num-series int
     	Number of series used for the test. (default 5000)
+  -tests.write-read-series-test.fan-out-query-enabled
+    	Set to true to additionally run each test query with a regex metric-name matcher. This prevents the query from being pinned to a single ingest-storage compartment, forcing the read path to fan out across all compartments and validating cross-compartment query result merging. Roughly doubles the number of queries issued per run.
   -tests.write-read-series-test.float-samples-enabled
     	Set to true to use float samples (default true)
   -tests.write-read-series-test.histogram-samples-enabled
     	Set to true to use native histogram samples
   -tests.write-read-series-test.max-query-age duration
-    	How back in the past metrics can be queried at most. (default 168h0m0s)
+    	How back in the past metrics can be queried at most. (default 48h0m0s)
   -tests.write-read-series-test.num-series int
-    	Number of series used for the test. (default 10000)
+    	Number of series used for the test. (default 1000)
   -tests.write-timeout duration
     	The timeout for a single write request. (default 5s)
   -timeseries-unmarshal-caching-optimization-enabled
@@ -3649,6 +3785,8 @@ Usage of ./cmd/mimir/mimir:
     	Installation mode. Supported values: custom, helm, jsonnet. (default "custom")
   -validation.cost-attribution-cooldown duration
     	[experimental] Defines how long cost attribution stays in overflow before attempting a reset, with received/discarded samples extending the cooldown if overflow persists, while active series reset and restart tracking after the cooldown.
+  -validation.cost-attribution-trackers value
+    	[experimental] Base cost attribution trackers configuration as JSON. Each tracker defines labels to track for cost attribution. Example: '{"by-team":{"labels":[{"input":"team"}]}}'.
   -validation.create-grace-period duration
     	Controls how far into the future incoming samples and exemplars are accepted compared to the wall clock. Any sample or exemplar will be rejected if its timestamp is greater than '(now + creation_grace_period)'. This configuration is enforced in the distributor and ingester. (default 10m)
   -validation.enforce-metadata-metric-name

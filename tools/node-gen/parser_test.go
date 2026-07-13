@@ -69,7 +69,10 @@ func TestParser_FieldTags(t *testing.T) {
 		type S struct {
 			Inner    planning.Node   ` + "`" + `node:"child"` + "`" + `
 			Param    planning.Node   ` + "`" + `node:"child,nilable"` + "`" + `
+			Labeled  planning.Node   ` + "`" + `node:"child,label=LHS"` + "`" + `
 			Args     []planning.Node ` + "`" + `node:"children"` + "`" + `
+			Bounded  []planning.Node ` + "`" + `node:"children,min=1"` + "`" + `
+			Fmtd     []planning.Node ` + "`" + `node:"children,labelfmt=node %d"` + "`" + `
 			Untagged int
 			*Embedded
 		}`})
@@ -77,7 +80,7 @@ func TestParser_FieldTags(t *testing.T) {
 
 	require.Len(t, pkg.NodeStructs, 1)
 	fields := pkg.NodeStructs[0].Fields
-	require.Len(t, fields, 5)
+	require.Len(t, fields, 8)
 
 	require.Equal(t, "Inner", fields[0].Name)
 	require.Equal(t, &NodeTag{IsChild: true}, fields[0].Tag)
@@ -85,14 +88,24 @@ func TestParser_FieldTags(t *testing.T) {
 	require.Equal(t, "Param", fields[1].Name)
 	require.Equal(t, &NodeTag{IsChild: true, Nilable: true}, fields[1].Tag)
 
-	require.Equal(t, "Args", fields[2].Name)
-	require.Equal(t, &NodeTag{IsChildren: true}, fields[2].Tag)
+	require.Equal(t, "Labeled", fields[2].Name)
+	label := "LHS"
+	require.Equal(t, &NodeTag{IsChild: true, Label: &label}, fields[2].Tag)
 
-	require.Equal(t, "Untagged", fields[3].Name)
-	require.Nil(t, fields[3].Tag)
+	require.Equal(t, "Args", fields[3].Name)
+	require.Equal(t, &NodeTag{IsChildren: true}, fields[3].Tag)
 
-	require.True(t, fields[4].Embedded)
-	require.Equal(t, "", fields[4].Name)
+	require.Equal(t, "Bounded", fields[4].Name)
+	require.Equal(t, &NodeTag{IsChildren: true, Min: 1}, fields[4].Tag)
+
+	require.Equal(t, "Fmtd", fields[5].Name)
+	require.Equal(t, &NodeTag{IsChildren: true, LabelFmt: "node %d"}, fields[5].Tag)
+
+	require.Equal(t, "Untagged", fields[6].Name)
+	require.Nil(t, fields[6].Tag)
+
+	require.True(t, fields[7].Embedded)
+	require.Equal(t, "", fields[7].Name)
 }
 
 func TestParser_BadTag(t *testing.T) {
@@ -115,6 +128,34 @@ func TestParser_BadTag(t *testing.T) {
 					 type S struct{ X int ` + "`" + `node:"child,bogus"` + "`" + ` }`,
 			errContains: `unknown child tag option "bogus"`,
 		},
+		{
+			name: "unknown children option",
+			source: `package core
+					 //node:generate
+					 type S struct{ X []int ` + "`" + `node:"children,bogus"` + "`" + ` }`,
+			errContains: `unknown children tag option "bogus"`,
+		},
+		{
+			name: "invalid children min",
+			source: `package core
+					 //node:generate
+					 type S struct{ X []int ` + "`" + `node:"children,min=abc"` + "`" + ` }`,
+			errContains: `invalid children min value "abc"`,
+		},
+		{
+			name: "empty hints",
+			source: `package core
+					 //node:generate
+					 type S struct{ *SDetails ` + "`" + `node:"hints="` + "`" + ` }`,
+			errContains: `hints tag requires at least one field name`,
+		},
+		{
+			name: "hints on non-embedded field",
+			source: `package core
+					 //node:generate
+					 type S struct{ X int ` + "`" + `node:"hints=Y"` + "`" + ` }`,
+			errContains: `hints tag is only supported on embedded fields`,
+		},
 	}
 
 	for _, tc := range cases {
@@ -134,5 +175,5 @@ func parseFiles(t *testing.T, files map[string]string) (*Package, error) {
 		require.NoError(t, err)
 		asts = append(asts, f)
 	}
-	return buildPackage(asts)
+	return buildPackage(asts, nil)
 }

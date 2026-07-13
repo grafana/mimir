@@ -616,7 +616,7 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storegatewaypb.Stor
 		}
 	}
 
-	logSeriesRequestToSpan(spanLogger, req.MinTime, req.MaxTime, matchers, reqBlockMatchers, shardSelector, req.StreamingChunksBatchSize)
+	logSeriesRequestToSpan(spanLogger, req.MinTime, req.MaxTime, matchers, reqBlockMatchers, shardSelector, req.StreamingChunksBatchSize, req.Limit)
 
 	defer s.recordBucketIndexDiscoveryDiff(ctx)
 
@@ -640,10 +640,7 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storegatewaypb.Stor
 	}
 	defer done()
 
-	// Send hints about the blocks loaded for this query before sending series or stats. Note that we
-	// only send the opaque hints type because we don't want to send the same information in two different
-	// messages (queriers don't expect to have to deduplicate the hints). We are rolling out support for
-	// reading both the opaque and non-opaque type in queriers before switching this.
+	// Send hints about the blocks loaded for this query before sending series or stats.
 	resHints := buildSeriesResponseHints(blocks)
 	if err = s.sendHints(srv, resHints); err != nil {
 		return err
@@ -686,7 +683,7 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storegatewaypb.Stor
 	readers := newChunkReaders(chunkReaders)
 	chunksLoadStart := time.Now()
 
-	seriesChunkIt := s.createIteratorForChunksStreamingChunksPhase(ctx, readers, stats, chunksLimiter, seriesLimiter, streamingIterators)
+	seriesChunkIt := s.createIteratorForChunksStreamingChunksPhase(ctx, readers, stats, chunksLimiter, seriesLimiter, req.Limit, streamingIterators)
 	err = s.sendStreamingChunks(req, srv, seriesChunkIt, stats, streamingSeriesCount)
 	if err != nil {
 		return err
@@ -703,8 +700,8 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storegatewaypb.Stor
 	return nil
 }
 
-func buildSeriesResponseHints(blocks []*bucketBlock) *hintspb.SeriesResponseHints {
-	resHints := &hintspb.SeriesResponseHints{}
+func buildSeriesResponseHints(blocks []*bucketBlock) *storepb.SeriesResponseHints {
+	resHints := &storepb.SeriesResponseHints{}
 	for _, b := range blocks {
 		resHints.AddQueriedBlock(b.meta.ULID)
 		b.queried.Store(true)
@@ -947,14 +944,8 @@ func (s *BucketStore) sendMessage(typ string, srv storegatewaypb.StoreGateway_Se
 	return nil
 }
 
-func (s *BucketStore) sendHints(srv storegatewaypb.StoreGateway_SeriesServer, resHints *hintspb.SeriesResponseHints) error {
-	var anyHints *types.Any
-	var err error
-	if anyHints, err = types.MarshalAny(resHints); err != nil {
-		return status.Error(codes.Internal, errors.Wrap(err, "marshal series response hints").Error())
-	}
-
-	if err := srv.Send(storepb.NewHintsSeriesResponse(anyHints)); err != nil {
+func (s *BucketStore) sendHints(srv storegatewaypb.StoreGateway_SeriesServer, resHints *storepb.SeriesResponseHints) error {
+	if err := srv.Send(storepb.NewHintsSeriesResponse(resHints)); err != nil {
 		return status.Error(codes.Unknown, errors.Wrap(err, "send series response hints").Error())
 	}
 
@@ -974,7 +965,7 @@ func (s *BucketStore) sendStats(srv storegatewaypb.StoreGateway_SeriesServer, st
 	return nil
 }
 
-func logSeriesRequestToSpan(spanLogger *spanlogger.SpanLogger, minT, maxT int64, matchers, blockMatchers []*labels.Matcher, shardSelector *sharding.ShardSelector, streamingChunksBatchSize uint64) {
+func logSeriesRequestToSpan(spanLogger *spanlogger.SpanLogger, minT, maxT int64, matchers, blockMatchers []*labels.Matcher, shardSelector *sharding.ShardSelector, streamingChunksBatchSize uint64, limit int64) {
 	spanLogger.DebugLog(
 		"msg", "BucketStore.Series",
 		"request min time", time.UnixMilli(minT).UTC().Format(time.RFC3339Nano),
@@ -983,6 +974,7 @@ func logSeriesRequestToSpan(spanLogger *spanlogger.SpanLogger, minT, maxT int64,
 		"request block matchers", util.MatchersStringer(blockMatchers),
 		"request shard selector", maybeNilShard(shardSelector).LabelValue(),
 		"streaming chunks batch size", streamingChunksBatchSize,
+		"request limit", limit,
 	)
 }
 
@@ -1025,10 +1017,11 @@ func (s *BucketStore) createIteratorForChunksStreamingChunksPhase(
 	stats *safeQueryStats,
 	chunksLimiter ChunksLimiter,
 	seriesLimiter SeriesLimiter,
+	limit int64,
 	iterators *streamingSeriesIterators,
 ) iterator[seriesChunksSet] {
 	preparedIterators := iterators.prepareForChunksStreamingPhase()
-	it := s.getSeriesIteratorFromPerBlockIterators(preparedIterators, chunksLimiter, seriesLimiter)
+	it := s.getSeriesIteratorFromPerBlockIterators(preparedIterators, chunksLimiter, seriesLimiter, limit)
 	scsi := newChunksPreloadingIterator(ctx, s.logger, s.userID, *chunkReaders, it, s.maxSeriesPerBatch, stats)
 
 	return scsi
@@ -1108,14 +1101,20 @@ func (s *BucketStore) getSeriesIteratorFromBlocks(
 		stats.streamingSeriesExpandPostingsDuration += time.Since(begin)
 	})
 
-	return s.getSeriesIteratorFromPerBlockIterators(batches, chunksLimiter, seriesLimiter), nil
+	return s.getSeriesIteratorFromPerBlockIterators(batches, chunksLimiter, seriesLimiter, req.Limit), nil
 }
 
-func (s *BucketStore) getSeriesIteratorFromPerBlockIterators(perBlockIterators []iterator[seriesChunkRefsSet], chunksLimiter ChunksLimiter, seriesLimiter SeriesLimiter) iterator[seriesChunkRefsSet] {
+func (s *BucketStore) getSeriesIteratorFromPerBlockIterators(perBlockIterators []iterator[seriesChunkRefsSet], chunksLimiter ChunksLimiter, seriesLimiter SeriesLimiter, limit int64) iterator[seriesChunkRefsSet] {
 	mergedIterator := mergedSeriesChunkRefsSetIterators(s.maxSeriesPerBatch, perBlockIterators...)
 
-	// Apply limits after the merging, so that if the same series is part of multiple blocks it just gets
-	// counted once towards the limit.
+	// Apply the functional request limit before per-query limits so protective limits are only charged
+	// for series that are actually returned. limit <= 0 means no limit was requested.
+	if limit > 0 {
+		mergedIterator = newTruncatingSeriesChunkRefsSetIterator(int(limit), mergedIterator)
+	}
+
+	// Apply per-query limits after merging (and functional truncation), so that if the same series is
+	// part of multiple blocks it just gets counted once towards the limit.
 	mergedIterator = newLimitingSeriesChunkRefsSetIterator(mergedIterator, chunksLimiter, seriesLimiter)
 
 	return mergedIterator
@@ -1288,9 +1287,8 @@ func (s *BucketStore) LabelNames(ctx context.Context, req *storepb.LabelNamesReq
 	}
 
 	var (
-		stats          = newSafeQueryStats()
-		resHints       = &storepb.LabelNamesResponseHints{}
-		opaqueResHints = &hintspb.LabelNamesResponseHints{}
+		stats    = newSafeQueryStats()
+		resHints = &storepb.LabelNamesResponseHints{}
 	)
 
 	defer s.recordLabelNamesCallResult(stats)
@@ -1327,7 +1325,6 @@ func (s *BucketStore) LabelNames(ctx context.Context, req *storepb.LabelNamesReq
 
 	s.blockSet.filter(req.Start, req.End, reqBlockMatchers, func(b *bucketBlock) {
 		resHints.AddQueriedBlock(b.meta.ULID)
-		opaqueResHints.AddQueriedBlock(b.meta.ULID)
 
 		blocksQueriedByBlockMeta[newBlockQueriedMeta(b.meta)]++
 
@@ -1369,22 +1366,13 @@ func (s *BucketStore) LabelNames(ctx context.Context, req *storepb.LabelNamesReq
 		}
 	})
 
-	anyHints, err := types.MarshalAny(opaqueResHints)
-	if err != nil {
-		return nil, status.Error(codes.Unknown, errors.Wrap(err, "marshal label names response hints").Error())
-	}
-
 	names := util.MergeSlices(sets...)
 	if req.Limit > 0 && len(names) > int(req.Limit) {
 		names = names[:req.Limit]
 	}
 
-	// Send both opaque and non-opaque response hints. New queriers will prefer
-	// to use the non-opaque type and ignore the opaque one. Old queriers will
-	// ignore the unknown non-opaque type and use the opaque one instead.
 	return &storepb.LabelNamesResponse{
 		Names:         names,
-		Hints:         anyHints,
 		ResponseHints: resHints,
 	}, nil
 }
@@ -1500,8 +1488,6 @@ func (s *BucketStore) LabelValues(ctx context.Context, req *storepb.LabelValuesR
 	defer s.recordRequestAmbientTime(stats, time.Now())
 
 	resHints := &storepb.LabelValuesResponseHints{}
-	opaqueResHints := &hintspb.LabelValuesResponseHints{}
-
 	g, gctx := errgroup.WithContext(ctx)
 
 	var reqBlockMatchers []*labels.Matcher
@@ -1530,7 +1516,6 @@ func (s *BucketStore) LabelValues(ctx context.Context, req *storepb.LabelValuesR
 	var sets [][]string
 	s.blockSet.filter(req.Start, req.End, reqBlockMatchers, func(b *bucketBlock) {
 		resHints.AddQueriedBlock(b.meta.ULID)
-		opaqueResHints.AddQueriedBlock(b.meta.ULID)
 
 		// This index reader shouldn't be used for ExpandedPostings, since it doesn't have the correct strategy.
 		// It's here only to make sure the block is held open inside the goroutine below.
@@ -1564,22 +1549,13 @@ func (s *BucketStore) LabelValues(ctx context.Context, req *storepb.LabelValuesR
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
-	anyHints, err := types.MarshalAny(opaqueResHints)
-	if err != nil {
-		return nil, status.Error(codes.Unknown, errors.Wrap(err, "marshal label values response hints").Error())
-	}
-
 	values := util.MergeSlices(sets...)
 	if req.Limit > 0 && len(values) > int(req.Limit) {
 		values = values[:req.Limit]
 	}
 
-	// Send both opaque and non-opaque response hints. New queriers will prefer
-	// to use the non-opaque type and ignore the opaque one. Old queriers will
-	// ignore the unknown non-opaque type and use the opaque one instead.
 	return &storepb.LabelValuesResponse{
 		Values:        values,
-		Hints:         anyHints,
 		ResponseHints: resHints,
 	}, nil
 }
@@ -1735,13 +1711,16 @@ func labelValuesFromSeries(ctx context.Context, labelName string, seriesPerBatch
 	return vals, nil
 }
 
-func labelValuesFromPostings(ctx context.Context, labelName string, indexr *bucketIndexReader, allValues []streamindex.PostingListOffset, p []storage.SeriesRef, stats *safeQueryStats) ([]string, error) {
-	keys := make([]labels.Label, len(allValues))
+func labelValuesFromPostings(
+	ctx context.Context, labelName string, indexr *bucketIndexReader,
+	allValues []streamindex.PostingListOffset, p []storage.SeriesRef, stats *safeQueryStats,
+) ([]string, error) {
+	keysOffsets := make([]labelPostingOffset, len(allValues))
 	for i, value := range allValues {
-		keys[i] = labels.Label{Name: labelName, Value: value.LabelValue}
+		keysOffsets[i] = labelPostingOffset{labels.Label{Name: labelName, Value: value.LabelValue}, value.Off}
 	}
 
-	fetchedPostings, err := indexr.FetchPostings(ctx, keys, stats)
+	fetchedPostings, err := indexr.FetchPostingsIndexV2(ctx, keysOffsets, stats)
 	if err != nil {
 		return nil, errors.Wrap(err, "get postings")
 	}

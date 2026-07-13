@@ -88,12 +88,15 @@ func (s *ScalarScalarBinaryOperation) GetValues(ctx context.Context) (types.Scal
 			return types.ScalarData{}, err
 		}
 
-		if !ok {
-			panic(fmt.Sprintf("%v binary operation between two scalars (%v and %v) did not produce a result, this should never happen", s.Op.String(), left.F, right.F))
+		if !valid {
+			// Some operators (e.g. the native histogram trim operators "</" and ">/") are not defined
+			// between two scalars. The parser allows such expressions, so we report them as a query error
+			// here rather than panicking, matching Prometheus' behaviour.
+			return types.ScalarData{}, fmt.Errorf("operator %q not allowed between two scalars", s.Op.String())
 		}
 
-		if !valid {
-			panic(fmt.Sprintf("%v binary operation between two scalars (%v and %v) is not considered a valid operation, this should never happen", s.Op.String(), left.F, right.F))
+		if !ok {
+			panic(fmt.Sprintf("%v binary operation between two scalars (%v and %v) did not produce a result, this should never happen", s.Op.String(), left.F, right.F))
 		}
 
 		if h != nil {

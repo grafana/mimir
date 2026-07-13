@@ -4,7 +4,7 @@
 # Provenance-includes-copyright: The Cortex Authors.
 
 FROM registry.k8s.io/kustomize/kustomize:v5.4.3 AS kustomize
-FROM alpine/helm:4.2.0@sha256:af08f75a3130d666a50b9fc150f40987ef20b885cf67659aabf4b83a5f2c5501 AS helm
+FROM alpine/helm:4.2.2@sha256:ee6fe3e96d9f8ea8dd1af9ecd7bbb3e233616a25f145392376f020fd2a51eb33 AS helm
 FROM quay.io/skopeo/stable:v1.22.2-immutable@sha256:4a16d57b37617a04b3d643079a477a2848efe892dffcdf0ce56df4262b65f810 AS skopeo
 FROM golang:1.26.4-trixie@sha256:0dcba0d95dbfb072e9917a106b9e07d7cc298097dc83e9307056ef1889de654d
 ARG goproxyValue
@@ -44,7 +44,7 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 # Set --ignore-scripts to avoid arbitrary code execution in build hook scripts. (Prettier 2.3.2 doesn't happen to have any.)
-RUN npm install -g --ignore-scripts prettier@3.8.3
+RUN npm install -g --ignore-scripts prettier@3.8.4
 
 # renovate: datasource=github-release-attachments depName=mvdan/sh
 ENV SHFMT_VERSION=v3.13.1
@@ -60,11 +60,11 @@ RUN set -o pipefail && \
     chmod a+x /usr/bin/shfmt
 
 # renovate: datasource=github-release-attachments depName=grafana/tanka
-ENV TANKA_VERSION=v0.37.2
-# renovate: datasource=github-release-attachments depName=grafana/tanka digestVersion=v0.37.2
-ENV TANKA_AMD64_DIGEST=cd79b6ec20092466184e8e8263a322384c1a2d484ae0bc53ef022495ac1fb926
-# renovate: datasource=github-release-attachments depName=grafana/tanka digestVersion=v0.37.2
-ENV TANKA_ARM64_DIGEST=6be39c524f8f405e023c58d4ba2f210dea25de0f74e9cdffe1a3a9f79cc26c74
+ENV TANKA_VERSION=v0.37.5
+# renovate: datasource=github-release-attachments depName=grafana/tanka digestVersion=v0.37.5
+ENV TANKA_AMD64_DIGEST=b16b71d7a7bb16c16da67843a9e77efb5222dcb67922d3df385a291b044cb0dd
+# renovate: datasource=github-release-attachments depName=grafana/tanka digestVersion=v0.37.5
+ENV TANKA_ARM64_DIGEST=38ea58e6105d5cc65528ce54b9780e95fe5cf4589ccd7d52fa1989a893560d58
 RUN set -o pipefail && \
     GOARCH=$(go env GOARCH) && \
     DIGEST=$(case "$GOARCH" in amd64) echo $TANKA_AMD64_DIGEST;; arm64) echo $TANKA_ARM64_DIGEST;; *) echo "unknown architecture $GOARCH" >/dev/stderr && exit 1;; esac) && \

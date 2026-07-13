@@ -199,3 +199,18 @@ eval range from 0m to 2m step 1m info(test_metric, {priority=~"high|medium", pri
 eval range from 0m to 2m step 1m info(test_metric, {__name__=~".*info", __name__=~"target.*", category=~"web|api"})
   test_metric{instance="a", job="1", env="prod", category="web"} 1 2 3
   test_metric{instance="b", job="2", env="dev", category="api"} 4 5 6
+
+clear
+
+# When the second argument has no __name__ matcher, target_info is used by default.
+# build_info is excluded even though its env label also matches env=~".+".
+# The result has env="prod" (from target_info), not env="staging" (from build_info),
+# proving only target_info contributed. If build_info were also used, there would be
+# a conflict on the env label and the query would fail.
+load 5m
+  metric{instance="a", job="1"} 1
+  target_info{instance="a", job="1", env="prod"} 1
+  build_info{instance="a", job="1", env="staging"} 1
+
+eval range from 0m to 0m step 5m info(metric, {env=~".+"})
+  metric{instance="a", job="1", env="prod"} 1

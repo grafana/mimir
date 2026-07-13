@@ -14,6 +14,37 @@ import (
 	"github.com/grafana/mimir/pkg/usagetracker/clock"
 )
 
+func TestMapStats(t *testing.T) {
+	series := atomic.NewUint64(0)
+	limit := atomic.NewUint64(1000)
+
+	// Start small so that inserts force a rehash.
+	m := New(8)
+
+	s := m.Stats()
+	require.Equal(t, uint32(0), s.Resident)
+	require.Equal(t, uint32(0), s.Dead)
+	require.Equal(t, uint32(0), s.Rehashes)
+	require.Greater(t, s.Length, 0)
+	// The limit is always the number of groups times the target average group load.
+	require.Equal(t, uint32(s.Length)*maxAvgGroupLoad, s.Limit)
+
+	const inserted = 50
+	for i := range inserted {
+		created, rejected := m.Put(uint64(i+1), clock.Minutes(1), series, limit, false)
+		require.True(t, created)
+		require.False(t, rejected)
+	}
+
+	s = m.Stats()
+	require.Equal(t, uint32(inserted), s.Resident)
+	require.Equal(t, inserted, m.Count())
+	require.Equal(t, uint32(0), s.Dead)
+	// Inserting 50 elements into a map that started with capacity for 8 must have triggered rehashes.
+	require.Greater(t, s.Rehashes, uint32(0))
+	require.Equal(t, uint32(s.Length)*maxAvgGroupLoad, s.Limit)
+}
+
 func TestMap(t *testing.T) {
 	series := atomic.NewUint64(0)
 	const events = 5

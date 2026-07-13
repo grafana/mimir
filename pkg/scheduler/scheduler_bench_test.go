@@ -12,14 +12,12 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"go.uber.org/atomic"
-
-	"github.com/grafana/mimir/pkg/scheduler/queue"
 )
 
-// BenchmarkScheduler_ObserveInflightMaxAge measures the cost of a single call to
-// observeInflightMaxAge at varying inflight sizes. Multiply the per-op time by the
+// BenchmarkScheduler_ObserveQueueMaxWait measures the cost of a single call to
+// observeQueueMaxWait at varying inflight sizes. Multiply the per-op time by the
 // configured ticker rate (250ms in production) to estimate steady-state overhead.
-func BenchmarkScheduler_ObserveInflightMaxAge(b *testing.B) {
+func BenchmarkScheduler_ObserveQueueMaxWait(b *testing.B) {
 	for _, n := range []int{100, 1_000, 10_000, 100_000, 1_000_000} {
 		b.Run(fmt.Sprintf("inflight=%d", n), func(b *testing.B) {
 			s := newBenchScheduler(b, true)
@@ -28,7 +26,7 @@ func BenchmarkScheduler_ObserveInflightMaxAge(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				s.observeInflightMaxAge()
+				s.observeQueueMaxWait()
 			}
 		})
 	}
@@ -36,7 +34,7 @@ func BenchmarkScheduler_ObserveInflightMaxAge(b *testing.B) {
 
 // BenchmarkScheduler_InflightChurn measures throughput of the enqueue/dequeue paths
 // (addRequestToPending + cancelRequestAndRemoveFromPending) under concurrency, with
-// and without the inflight-max-age observer running on its production 250ms cadence.
+// and without the queue-max-wait observer running on its production 250ms cadence.
 //
 // Use a long -benchtime (e.g. 5s) so the ticker fires enough times for the
 // observer's impact to land in the measurement window.
@@ -64,7 +62,7 @@ func BenchmarkScheduler_InflightChurn(b *testing.B) {
 							case <-stop:
 								return
 							case <-t.C:
-								s.observeInflightMaxAge()
+								s.observeQueueMaxWait()
 							}
 						}
 					})
@@ -97,20 +95,20 @@ func BenchmarkScheduler_InflightChurn(b *testing.B) {
 // the service is started and stopped — overhead we don't want in benchmarks.
 func newBenchScheduler(_ *testing.B, observerEnabled bool) *Scheduler {
 	s := &Scheduler{
-		cfg:                           Config{InflightMaxAgeMetricEnabled: observerEnabled},
-		schedulerInflightRequests:     map[queue.RequestKey]*queue.SchedulerRequest{},
+		cfg:                           Config{QueueMaxWaitMetricEnabled: observerEnabled},
+		schedulerInflightRequests:     map[RequestKey]*SchedulerRequest{},
 		schedulerInflightRequestCount: atomic.NewInt64(0),
 	}
 	if observerEnabled {
 		r := prometheus.NewRegistry()
-		s.inflightMaxAge = promauto.With(r).NewGauge(prometheus.GaugeOpts{Name: "bench_inflight_max_age_seconds"})
+		s.queueMaxWait = promauto.With(r).NewGauge(prometheus.GaugeOpts{Name: "bench_queue_max_wait_seconds"})
 	}
 	return s
 }
 
-func newBenchRequest(frontendAddr string, queryID uint64) *queue.SchedulerRequest {
+func newBenchRequest(frontendAddr string, queryID uint64) *SchedulerRequest {
 	ctx, cancel := context.WithCancelCause(context.Background())
-	return &queue.SchedulerRequest{
+	return &SchedulerRequest{
 		FrontendAddr: frontendAddr,
 		QueryID:      queryID,
 		EnqueueTime:  time.Now(),

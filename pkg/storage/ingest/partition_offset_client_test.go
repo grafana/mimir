@@ -42,24 +42,24 @@ func TestPartitionOffsetClient_FetchPartitionLastProducedOffset(t *testing.T) {
 			kafkaCfg       = createTestKafkaConfig(clusterAddr, topicName)
 			client         = createTestKafkaClient(t, kafkaCfg)
 			reg            = prometheus.NewPedanticRegistry()
-			reader         = newPartitionOffsetClient(client, topicName, reg, logger)
+			reader         = newPartitionOffsetClient(client, reg, logger)
 		)
 
-		offset, err := reader.FetchPartitionLastProducedOffset(ctx, partitionID)
+		offset, err := reader.FetchPartitionLastProducedOffset(ctx, topicName, partitionID)
 		require.NoError(t, err)
 		assert.Equal(t, int64(-1), offset)
 
 		// Write the 1st message.
 		produceRecord(ctx, t, client, topicName, partitionID, []byte("message 1"))
 
-		offset, err = reader.FetchPartitionLastProducedOffset(ctx, partitionID)
+		offset, err = reader.FetchPartitionLastProducedOffset(ctx, topicName, partitionID)
 		require.NoError(t, err)
 		assert.Equal(t, int64(0), offset)
 
 		// Write the 2nd message.
 		produceRecord(ctx, t, client, topicName, partitionID, []byte("message 2"))
 
-		offset, err = reader.FetchPartitionLastProducedOffset(ctx, partitionID)
+		offset, err = reader.FetchPartitionLastProducedOffset(ctx, topicName, partitionID)
 		require.NoError(t, err)
 		assert.Equal(t, int64(1), offset)
 
@@ -83,7 +83,7 @@ func TestPartitionOffsetClient_FetchPartitionLastProducedOffset(t *testing.T) {
 			kafkaCfg             = createTestKafkaConfig(clusterAddr, topicName)
 			client               = createTestKafkaClient(t, kafkaCfg)
 			reg                  = prometheus.NewPedanticRegistry()
-			reader               = newPartitionOffsetClient(client, topicName, reg, logger)
+			reader               = newPartitionOffsetClient(client, reg, logger)
 
 			firstRequest         = atomic.NewBool(true)
 			firstRequestReceived = make(chan struct{})
@@ -112,14 +112,14 @@ func TestPartitionOffsetClient_FetchPartitionLastProducedOffset(t *testing.T) {
 			ctxWithTimeout, cancel := context.WithTimeout(ctx, firstRequestTimeout)
 			defer cancel()
 
-			_, err := reader.FetchPartitionLastProducedOffset(ctxWithTimeout, partitionID)
+			_, err := reader.FetchPartitionLastProducedOffset(ctxWithTimeout, topicName, partitionID)
 			require.ErrorIs(t, err, context.DeadlineExceeded)
 		})
 
 		// Run a 2nd FetchPartitionLastProducedOffset() once the 1st request is received. This request
 		// is expected to succeed.
 		runAsyncAfter(&wg, firstRequestReceived, func() {
-			offset, err := reader.FetchPartitionLastProducedOffset(ctx, partitionID)
+			offset, err := reader.FetchPartitionLastProducedOffset(ctx, topicName, partitionID)
 			require.NoError(t, err)
 			assert.Equal(t, expectedOffset, offset)
 		})
@@ -148,24 +148,24 @@ func TestPartitionOffsetClient_FetchPartitionStartOffset(t *testing.T) {
 			kafkaCfg       = createTestKafkaConfig(clusterAddr, topicName)
 			client         = createTestKafkaClient(t, kafkaCfg)
 			reg            = prometheus.NewPedanticRegistry()
-			reader         = newPartitionOffsetClient(client, topicName, reg, logger)
+			reader         = newPartitionOffsetClient(client, reg, logger)
 		)
 
-		offset, err := reader.FetchPartitionStartOffset(ctx, partitionID)
+		offset, err := reader.FetchPartitionStartOffset(ctx, topicName, partitionID)
 		require.NoError(t, err)
 		assert.Equal(t, int64(0), offset)
 
 		// Write the 1st record.
 		produceRecord(ctx, t, client, topicName, partitionID, []byte("record 1"))
 
-		offset, err = reader.FetchPartitionStartOffset(ctx, partitionID)
+		offset, err = reader.FetchPartitionStartOffset(ctx, topicName, partitionID)
 		require.NoError(t, err)
 		assert.Equal(t, int64(0), offset)
 
 		// Write the 2nd record.
 		produceRecord(ctx, t, client, topicName, partitionID, []byte("record 2"))
 
-		offset, err = reader.FetchPartitionStartOffset(ctx, partitionID)
+		offset, err = reader.FetchPartitionStartOffset(ctx, topicName, partitionID)
 		require.NoError(t, err)
 		assert.Equal(t, int64(0), offset)
 
@@ -177,7 +177,7 @@ func TestPartitionOffsetClient_FetchPartitionStartOffset(t *testing.T) {
 		require.NoError(t, err)
 		t.Log("advanced partition start offset to 1")
 
-		offset, err = reader.FetchPartitionStartOffset(ctx, partitionID)
+		offset, err = reader.FetchPartitionStartOffset(ctx, topicName, partitionID)
 		require.NoError(t, err)
 		assert.Equal(t, int64(1), offset)
 
@@ -201,7 +201,7 @@ func TestPartitionOffsetClient_FetchPartitionStartOffset(t *testing.T) {
 			kafkaCfg             = createTestKafkaConfig(clusterAddr, topicName)
 			client               = createTestKafkaClient(t, kafkaCfg)
 			reg                  = prometheus.NewPedanticRegistry()
-			reader               = newPartitionOffsetClient(client, topicName, reg, logger)
+			reader               = newPartitionOffsetClient(client, reg, logger)
 
 			firstRequest         = atomic.NewBool(true)
 			firstRequestReceived = make(chan struct{})
@@ -240,14 +240,14 @@ func TestPartitionOffsetClient_FetchPartitionStartOffset(t *testing.T) {
 			ctxWithTimeout, cancel := context.WithTimeout(ctx, firstRequestTimeout)
 			defer cancel()
 
-			_, err := reader.FetchPartitionStartOffset(ctxWithTimeout, partitionID)
+			_, err := reader.FetchPartitionStartOffset(ctxWithTimeout, topicName, partitionID)
 			require.ErrorIs(t, err, context.DeadlineExceeded)
 		})
 
 		// Run a 2nd FetchPartitionStartOffset() once the 1st request is received. This request
 		// is expected to succeed.
 		runAsyncAfter(&wg, firstRequestReceived, func() {
-			offset, err := reader.FetchPartitionStartOffset(ctx, partitionID)
+			offset, err := reader.FetchPartitionStartOffset(ctx, topicName, partitionID)
 			require.NoError(t, err)
 			assert.Equal(t, expectedStartOffset, offset)
 		})
@@ -276,36 +276,37 @@ func TestPartitionOffsetClient_FetchPartitionsLastProducedOffsets(t *testing.T) 
 			kafkaCfg       = createTestKafkaConfig(clusterAddr, topicName)
 			client         = createTestKafkaClient(t, kafkaCfg)
 			reg            = prometheus.NewPedanticRegistry()
-			reader         = newPartitionOffsetClient(client, topicName, reg, logger)
+			reader         = newPartitionOffsetClient(client, reg, logger)
 		)
 
-		offsets, err := reader.FetchPartitionsLastProducedOffsets(ctx, allPartitionIDs)
+		offsets, err := reader.FetchPartitionsLastProducedOffsets(ctx, map[string][]int32{topicName: allPartitionIDs})
 		require.NoError(t, err)
-		assert.Equal(t, map[int32]int64{0: -1, 1: -1, 2: -1}, offsets)
+		assert.Equal(t, map[int32]int64{0: -1, 1: -1, 2: -1}, offsets[topicName])
 
 		// Write some records.
 		produceRecord(ctx, t, client, topicName, 0, []byte("message 1"))
 		produceRecord(ctx, t, client, topicName, 0, []byte("message 2"))
 		produceRecord(ctx, t, client, topicName, 1, []byte("message 3"))
 
-		offsets, err = reader.FetchPartitionsLastProducedOffsets(ctx, allPartitionIDs)
+		offsets, err = reader.FetchPartitionsLastProducedOffsets(ctx, map[string][]int32{topicName: allPartitionIDs})
 		require.NoError(t, err)
-		assert.Equal(t, map[int32]int64{0: 1, 1: 0, 2: -1}, offsets)
+		assert.Equal(t, map[int32]int64{0: 1, 1: 0, 2: -1}, offsets[topicName])
 
 		// Write more records.
 		produceRecord(ctx, t, client, topicName, 0, []byte("message 4"))
 		produceRecord(ctx, t, client, topicName, 1, []byte("message 5"))
 		produceRecord(ctx, t, client, topicName, 2, []byte("message 6"))
 
-		offsets, err = reader.FetchPartitionsLastProducedOffsets(ctx, allPartitionIDs)
+		offsets, err = reader.FetchPartitionsLastProducedOffsets(ctx, map[string][]int32{topicName: allPartitionIDs})
 		require.NoError(t, err)
-		assert.Equal(t, map[int32]int64{0: 2, 1: 1, 2: 0}, offsets)
+		assert.Equal(t, map[int32]int64{0: 2, 1: 1, 2: 0}, offsets[topicName])
 
 		// Fetch offsets for a subset of partitions.
-		offsets, err = reader.FetchPartitionsLastProducedOffsets(ctx, []int32{0, 2})
+		offsets, err = reader.FetchPartitionsLastProducedOffsets(ctx, map[string][]int32{topicName: {0, 2}})
 		require.NoError(t, err)
-		assert.Equal(t, map[int32]int64{0: 2, 2: 0}, offsets)
+		assert.Equal(t, map[int32]int64{0: 2, 2: 0}, offsets[topicName])
 
+		// A single topic was requested, so the "topic" label tracks its actual name.
 		assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
 			# HELP cortex_ingest_storage_reader_last_produced_offset_failures_total Total number of failed requests to get the last produced offset.
 			# TYPE cortex_ingest_storage_reader_last_produced_offset_failures_total counter
@@ -326,7 +327,7 @@ func TestPartitionOffsetClient_FetchPartitionsLastProducedOffsets(t *testing.T) 
 			kafkaCfg       = createTestKafkaConfig(clusterAddr, topicName)
 			client         = createTestKafkaClient(t, kafkaCfg)
 			reg            = prometheus.NewPedanticRegistry()
-			reader         = newPartitionOffsetClient(client, topicName, reg, logger)
+			reader         = newPartitionOffsetClient(client, reg, logger)
 		)
 
 		// Write some records.
@@ -334,7 +335,7 @@ func TestPartitionOffsetClient_FetchPartitionsLastProducedOffsets(t *testing.T) 
 		produceRecord(ctx, t, client, topicName, 0, []byte("message 2"))
 		produceRecord(ctx, t, client, topicName, 1, []byte("message 3"))
 
-		offsets, err := reader.FetchPartitionsLastProducedOffsets(ctx, []int32{})
+		offsets, err := reader.FetchPartitionsLastProducedOffsets(ctx, map[string][]int32{topicName: {}})
 		require.NoError(t, err)
 		assert.Empty(t, offsets)
 
@@ -351,7 +352,7 @@ func TestPartitionOffsetClient_FetchPartitionsLastProducedOffsets(t *testing.T) 
 			kafkaCfg             = createTestKafkaConfig(clusterAddr, topicName)
 			client               = createTestKafkaClient(t, kafkaCfg)
 			reg                  = prometheus.NewPedanticRegistry()
-			reader               = newPartitionOffsetClient(client, topicName, reg, logger)
+			reader               = newPartitionOffsetClient(client, reg, logger)
 
 			firstRequest         = atomic.NewBool(true)
 			firstRequestReceived = make(chan struct{})
@@ -380,22 +381,22 @@ func TestPartitionOffsetClient_FetchPartitionsLastProducedOffsets(t *testing.T) 
 			ctxWithTimeout, cancel := context.WithTimeout(ctx, firstRequestTimeout)
 			defer cancel()
 
-			_, err := reader.FetchPartitionsLastProducedOffsets(ctxWithTimeout, allPartitionIDs)
+			_, err := reader.FetchPartitionsLastProducedOffsets(ctxWithTimeout, map[string][]int32{topicName: allPartitionIDs})
 			require.ErrorIs(t, err, context.DeadlineExceeded)
 		})
 
 		// Run a 2nd FetchPartitionsLastProducedOffsets() once the 1st request is received. This request
 		// is expected to succeed.
 		runAsyncAfter(&wg, firstRequestReceived, func() {
-			offsets, err := reader.FetchPartitionsLastProducedOffsets(ctx, allPartitionIDs)
+			offsets, err := reader.FetchPartitionsLastProducedOffsets(ctx, map[string][]int32{topicName: allPartitionIDs})
 			require.NoError(t, err)
-			assert.Equal(t, expectedOffsets, offsets)
+			assert.Equal(t, expectedOffsets, offsets[topicName])
 		})
 
 		wg.Wait()
 	})
 
-	t.Run("should return error if response contains an unexpected number of topics", func(t *testing.T) {
+	t.Run("should return error if response contains an unexpected topic", func(t *testing.T) {
 		t.Parallel()
 
 		cluster, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
@@ -406,7 +407,7 @@ func TestPartitionOffsetClient_FetchPartitionsLastProducedOffsets(t *testing.T) 
 
 		client := createTestKafkaClient(t, kafkaCfg)
 		reg := prometheus.NewPedanticRegistry()
-		reader := newPartitionOffsetClient(client, topicName, reg, logger)
+		reader := newPartitionOffsetClient(client, reg, logger)
 
 		cluster.ControlKey(int16(kmsg.ListOffsets), func(kreq kmsg.Request) (kmsg.Response, error, bool) {
 			cluster.KeepControl()
@@ -422,9 +423,9 @@ func TestPartitionOffsetClient_FetchPartitionsLastProducedOffsets(t *testing.T) 
 			return res, nil, true
 		})
 
-		_, err := reader.FetchPartitionsLastProducedOffsets(ctx, allPartitionIDs)
+		_, err := reader.FetchPartitionsLastProducedOffsets(ctx, map[string][]int32{topicName: allPartitionIDs})
 		require.Error(t, err)
-		require.ErrorContains(t, err, "unexpected number of topics in the response")
+		require.ErrorContains(t, err, "unexpected topic in the response")
 	})
 
 	t.Run("should return error if response contains a 1 topic but it's not the expected one", func(t *testing.T) {
@@ -438,7 +439,7 @@ func TestPartitionOffsetClient_FetchPartitionsLastProducedOffsets(t *testing.T) 
 
 		client := createTestKafkaClient(t, kafkaCfg)
 		reg := prometheus.NewPedanticRegistry()
-		reader := newPartitionOffsetClient(client, topicName, reg, logger)
+		reader := newPartitionOffsetClient(client, reg, logger)
 
 		cluster.ControlKey(int16(kmsg.ListOffsets), func(kreq kmsg.Request) (kmsg.Response, error, bool) {
 			cluster.KeepControl()
@@ -453,7 +454,7 @@ func TestPartitionOffsetClient_FetchPartitionsLastProducedOffsets(t *testing.T) 
 			return res, nil, true
 		})
 
-		_, err := reader.FetchPartitionsLastProducedOffsets(ctx, allPartitionIDs)
+		_, err := reader.FetchPartitionsLastProducedOffsets(ctx, map[string][]int32{topicName: allPartitionIDs})
 		require.Error(t, err)
 		require.ErrorContains(t, err, "unexpected topic in the response")
 	})
@@ -469,7 +470,7 @@ func TestPartitionOffsetClient_FetchPartitionsLastProducedOffsets(t *testing.T) 
 
 		client := createTestKafkaClient(t, kafkaCfg)
 		reg := prometheus.NewPedanticRegistry()
-		reader := newPartitionOffsetClient(client, topicName, reg, logger)
+		reader := newPartitionOffsetClient(client, reg, logger)
 
 		cluster.ControlKey(int16(kmsg.ListOffsets), func(kreq kmsg.Request) (kmsg.Response, error, bool) {
 			cluster.KeepControl()
@@ -495,8 +496,96 @@ func TestPartitionOffsetClient_FetchPartitionsLastProducedOffsets(t *testing.T) 
 			return res, nil, true
 		})
 
-		_, err := reader.FetchPartitionsLastProducedOffsets(ctx, allPartitionIDs)
+		_, err := reader.FetchPartitionsLastProducedOffsets(ctx, map[string][]int32{topicName: allPartitionIDs})
 		require.ErrorIs(t, err, kerr.NotLeaderForPartition)
+	})
+
+	t.Run("should fetch the offsets of multiple topics in a single request", func(t *testing.T) {
+		t.Parallel()
+
+		const (
+			topic0 = "topic-0"
+			topic1 = "topic-1"
+		)
+
+		cluster, clusterAddr := testkafka.CreateCluster(t, numPartitions, topic0)
+
+		// Create the second topic on the already-running cluster (testkafka.CreateCluster only seeds one topic).
+		topic1Client := createTestKafkaClient(t, createTestKafkaConfig(clusterAddr, topic1))
+		_, err := kadm.NewClient(topic1Client).CreateTopic(context.Background(), numPartitions, 1, nil, topic1)
+		require.NoError(t, err)
+
+		reg := prometheus.NewPedanticRegistry()
+		client := createTestKafkaClient(t, createTestKafkaConfig(clusterAddr, topic0))
+		reader := newPartitionOffsetClient(client, reg, logger)
+
+		// topic0: partition 0 → 2 records (last offset 1), partition 1 → 1 record (last offset 0).
+		// topic1: partition 0 → 1 record (last offset 0), partition 1 → empty (-1).
+		produceRecord(ctx, t, client, topic0, 0, []byte("a"))
+		produceRecord(ctx, t, client, topic0, 0, []byte("b"))
+		produceRecord(ctx, t, client, topic0, 1, []byte("c"))
+		produceRecord(ctx, t, client, topic1, 0, []byte("d"))
+
+		// Count the ListOffsets requests issued to the cluster (set after producing, so only the offset fetch counts).
+		listOffsetsRequests := atomic.NewInt64(0)
+		cluster.ControlKey(int16(kmsg.ListOffsets), func(kmsg.Request) (kmsg.Response, error, bool) {
+			cluster.KeepControl()
+			listOffsetsRequests.Inc()
+			return nil, nil, false
+		})
+
+		offsets, err := reader.FetchPartitionsLastProducedOffsets(ctx, map[string][]int32{
+			topic0: {0, 1},
+			topic1: {0, 1},
+		})
+		require.NoError(t, err)
+		assert.Equal(t, map[string]map[int32]int64{
+			topic0: {0: 1, 1: 0},
+			topic1: {0: 0, 1: -1},
+		}, offsets)
+
+		// All topics and partitions are fetched in a single ListOffsets request (the fake cluster has one broker).
+		assert.Equal(t, int64(1), listOffsetsRequests.Load())
+
+		// Multiple topics were requested, so the "topic" label is tracked as "mixed".
+		assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
+			# HELP cortex_ingest_storage_reader_last_produced_offset_failures_total Total number of failed requests to get the last produced offset.
+			# TYPE cortex_ingest_storage_reader_last_produced_offset_failures_total counter
+			cortex_ingest_storage_reader_last_produced_offset_failures_total{partition="mixed",topic="mixed"} 0
+
+			# HELP cortex_ingest_storage_reader_last_produced_offset_requests_total Total number of requests issued to get the last produced offset.
+			# TYPE cortex_ingest_storage_reader_last_produced_offset_requests_total counter
+			cortex_ingest_storage_reader_last_produced_offset_requests_total{partition="mixed",topic="mixed"} 1
+		`), "cortex_ingest_storage_reader_last_produced_offset_requests_total",
+			"cortex_ingest_storage_reader_last_produced_offset_failures_total"))
+	})
+
+	t.Run("should return error if the response is missing a requested topic-partition", func(t *testing.T) {
+		t.Parallel()
+
+		cluster, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
+		client := createTestKafkaClient(t, createTestKafkaConfig(clusterAddr, topicName))
+		reader := newPartitionOffsetClient(client, prometheus.NewPedanticRegistry(), logger)
+
+		// Return a successful response that only includes partition 0, omitting the other requested partitions.
+		cluster.ControlKey(int16(kmsg.ListOffsets), func(kreq kmsg.Request) (kmsg.Response, error, bool) {
+			cluster.KeepControl()
+
+			req := kreq.(*kmsg.ListOffsetsRequest)
+			res := req.ResponseKind().(*kmsg.ListOffsetsResponse)
+			res.Default()
+			res.Topics = []kmsg.ListOffsetsResponseTopic{
+				{
+					Topic:      topicName,
+					Partitions: []kmsg.ListOffsetsResponseTopicPartition{{Partition: 0, Offset: 1}},
+				},
+			}
+
+			return res, nil, true
+		})
+
+		_, err := reader.FetchPartitionsLastProducedOffsets(ctx, map[string][]int32{topicName: allPartitionIDs})
+		require.ErrorContains(t, err, "missing in the response")
 	})
 }
 
@@ -518,10 +607,10 @@ func TestPartitionOffsetClient_ListTopicPartitionIDs(t *testing.T) {
 			_, clusterAddr = testkafka.CreateCluster(t, numPartitions, topicName)
 			kafkaCfg       = createTestKafkaConfig(clusterAddr, topicName)
 			client         = createTestKafkaClient(t, kafkaCfg)
-			reader         = newPartitionOffsetClient(client, topicName, nil, logger)
+			reader         = newPartitionOffsetClient(client, nil, logger)
 		)
 
-		actualIDs, actualErr := reader.ListTopicPartitionIDs(ctx)
+		actualIDs, actualErr := reader.ListTopicPartitionIDs(ctx, topicName)
 		require.NoError(t, actualErr)
 		assert.Equal(t, []int32{0, 1, 2}, actualIDs)
 	})
@@ -535,7 +624,7 @@ func TestPartitionOffsetClient_ListTopicPartitionIDs(t *testing.T) {
 			cluster, clusterAddr = testkafka.CreateCluster(t, numPartitions, topicName)
 			kafkaCfg             = createTestKafkaConfig(clusterAddr, topicName)
 			client               = createTestKafkaClient(t, kafkaCfg)
-			reader               = newPartitionOffsetClient(client, topicName, nil, logger)
+			reader               = newPartitionOffsetClient(client, nil, logger)
 		)
 
 		cluster.ControlKey(int16(kmsg.Metadata), func(kreq kmsg.Request) (kmsg.Response, error, bool) {
@@ -554,7 +643,7 @@ func TestPartitionOffsetClient_ListTopicPartitionIDs(t *testing.T) {
 			return res, nil, true
 		})
 
-		_, actualErr := reader.ListTopicPartitionIDs(ctx)
+		_, actualErr := reader.ListTopicPartitionIDs(ctx, topicName)
 		require.ErrorIs(t, actualErr, kerr.UnknownServerError)
 	})
 }

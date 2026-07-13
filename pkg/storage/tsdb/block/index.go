@@ -291,7 +291,7 @@ func GatherBlockHealthStats(ctx context.Context, logger log.Logger, blockDir str
 			level.Debug(logger).Log("msg", "found out of order series", "labels", lset)
 		}
 	}
-	if p.Err() != nil {
+	if err = p.Err(); err != nil {
 		return stats, errors.Wrap(err, "walk postings")
 	}
 

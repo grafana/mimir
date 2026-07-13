@@ -18,9 +18,11 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/gorilla/mux"
+	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/kv/memberlist"
 	dskitlog "github.com/grafana/dskit/log"
 	"github.com/grafana/dskit/middleware"
+	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/server"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -30,6 +32,7 @@ import (
 	bbschedulerpb "github.com/grafana/mimir/pkg/blockbuilder/schedulerpb"
 	"github.com/grafana/mimir/pkg/compactor"
 	"github.com/grafana/mimir/pkg/compactor/scheduler/compactorschedulerpb"
+	"github.com/grafana/mimir/pkg/compartments"
 	"github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/distributor/distributorpb"
 	frontendv2 "github.com/grafana/mimir/pkg/frontend/v2"
@@ -413,12 +416,28 @@ func (a *API) RegisterIngesterRing(r http.Handler) {
 	a.RegisterRoute("/ingester/ring", r, false, true, "GET", "POST")
 }
 
-// RegisterIngesterPartitionRing registers the ring UI page associated with the ingester partitions ring.
-func (a *API) RegisterIngesterPartitionRing(r http.Handler) {
+// RegisterIngesterPartitionRings registers the ring UI page(s) for the ingester partition ring(s).
+// When compartments are disabled it registers a single page. When enabled it registers an index page
+// linking to one page per read compartment.
+func (a *API) RegisterIngesterPartitionRings(compartmentsEnabled bool, partitionRings *ring.PartitionRingWatchers, ringKey string, kvClient kv.Client) {
 	a.indexPage.AddLinks(defaultWeight, "Ingester", []IndexPageLink{
 		{Desc: "Partition ring status", Path: "ingester/partition-ring"},
 	})
-	a.RegisterRoute("/ingester/partition-ring", r, false, true, "GET", "POST")
+
+	if !compartmentsEnabled {
+		handler := ring.NewPartitionRingPageHandler(partitionRings.Watcher(0), ring.NewPartitionRingEditor(ringKey, kvClient))
+		a.RegisterRoute("/ingester/partition-ring", handler, false, true, "GET", "POST")
+		return
+	}
+
+	index := compartments.NewIndexPageHandler("Partitions Ring Status", "partition-ring/compartment-"+compartments.ReadCompartmentIDPlaceholder, partitionRings.Count())
+	a.RegisterRoute("/ingester/partition-ring", index, false, true, "GET")
+
+	for compartmentID, partitionRing := range partitionRings.All() {
+		key := compartments.WithReadCompartmentSuffix(ringKey, compartmentID)
+		handler := ring.NewPartitionRingPageHandler(partitionRing, ring.NewPartitionRingEditor(key, kvClient))
+		a.RegisterRoute(fmt.Sprintf("/ingester/partition-ring/compartment-%d", compartmentID), handler, false, true, "GET", "POST")
+	}
 }
 
 // RegisterStoreGateway registers the ring UI page associated with the store-gateway.
@@ -547,6 +566,12 @@ func (a *API) RegisterOverridesExporter(oe *exporter.OverridesExporter) {
 func (a *API) RegisterUsageTracker(t *usagetracker.UsageTracker) {
 	usagetrackerpb.RegisterUsageTrackerServer(a.server.GRPC, t)
 	a.RegisterRoute("/usage-tracker/prepare-instance-ring-downscale", http.HandlerFunc(t.PrepareInstanceRingDownscaleHandler), false, true, "GET", "POST", "DELETE")
+
+	a.indexPage.AddLinks(defaultWeight, "Usage-tracker", []IndexPageLink{
+		{Desc: "Partitions", Path: "usage-tracker/partitions"},
+	})
+	a.RegisterRoute("/usage-tracker/partitions", http.HandlerFunc(t.PartitionsHandler), false, true, "GET")
+	a.RegisterRoute("/usage-tracker/partitions/{partition}", http.HandlerFunc(t.PartitionHandler), false, true, "GET")
 }
 
 func (a *API) RegisterUsageTrackerInstanceRing(instanceRingHandler http.Handler) {

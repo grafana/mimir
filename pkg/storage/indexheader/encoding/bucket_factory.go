@@ -15,7 +15,6 @@ import (
 // BucketDecbufFactory creates new bucket-reader-backed Decbuf instances
 // for a specific index file in object storage
 type BucketDecbufFactory struct {
-	ctx             context.Context
 	bkt             objstore.BucketReader
 	objectPath      string // Path to index file in bucket
 	sectionLenCache map[int]int
@@ -23,9 +22,8 @@ type BucketDecbufFactory struct {
 }
 
 // NewBucketDecbufFactory creates a new BucketDecbufFactory for the given object path.
-func NewBucketDecbufFactory(ctx context.Context, bkt objstore.BucketReader, objectPath string) *BucketDecbufFactory {
+func NewBucketDecbufFactory(bkt objstore.BucketReader, objectPath string) *BucketDecbufFactory {
 	return &BucketDecbufFactory{
-		ctx:        ctx,
 		bkt:        bkt,
 		objectPath: objectPath,
 		// Allocate cache to hold the start offsets of Symbols and Postings Offsets tables.
@@ -40,12 +38,12 @@ func (bf *BucketDecbufFactory) getCachedContentLength(offset int) (int, bool) {
 	return length, ok
 }
 
-func (bf *BucketDecbufFactory) getContentLength(offset int) (int, error) {
+func (bf *BucketDecbufFactory) getContentLength(ctx context.Context, offset int) (int, error) {
 	// Check for content length before making a bucket attributes call.
 	if length, ok := bf.getCachedContentLength(offset); ok {
 		return length, nil
 	}
-	attrs, err := bf.bkt.Attributes(bf.ctx, bf.objectPath)
+	attrs, err := bf.bkt.Attributes(ctx, bf.objectPath)
 	if err != nil {
 		return 0, fmt.Errorf("get size from %s: %w", bf.objectPath, err)
 	}
@@ -62,7 +60,7 @@ func (bf *BucketDecbufFactory) getContentLength(offset int) (int, error) {
 		// We do not know section length yet;
 		// use the lower-level BucketReader to scan the length data
 		metaReader := NewBucketReader(
-			bf.ctx, bf.bkt, bf.objectPath, offset, int(attrs.Size)-offset,
+			ctx, bf.bkt, bf.objectPath, offset, int(attrs.Size)-offset,
 		)
 
 		lengthBytes := make([]byte, numLenBytes)
@@ -82,15 +80,15 @@ func (bf *BucketDecbufFactory) getContentLength(offset int) (int, error) {
 	return contentLength, nil
 }
 
-func (bf *BucketDecbufFactory) NewDecbufAtChecked(offset int, table *crc32.Table) Decbuf {
-	contentLength, err := bf.getContentLength(offset)
+func (bf *BucketDecbufFactory) NewDecbufAtChecked(ctx context.Context, offset int, table *crc32.Table) Decbuf {
+	contentLength, err := bf.getContentLength(ctx, offset)
 	if err != nil {
 		return Decbuf{E: err}
 	}
 
 	bufferLength := numLenBytes + contentLength + crc32.Size
 
-	bufReader := NewBucketBufReader(bf.ctx, bf.bkt, bf.objectPath, offset, bufferLength)
+	bufReader := NewBucketBufReader(ctx, bf.bkt, bf.objectPath, offset, bufferLength)
 	// bufReader is expected start at base offset + 4 after consuming length bytes
 	err = bufReader.Skip(numLenBytes)
 	if err != nil {
@@ -114,8 +112,8 @@ func (bf *BucketDecbufFactory) NewDecbufAtChecked(offset int, table *crc32.Table
 // NewDecbufInSection creates a Decbuf which can only read a section of a table.
 // sectionStartOffset and sectionEndOffset are relative offsets from tableOffset (an absolute offset).
 // If sectionEndOffset is beyond the end of the table, length is adjusted to only read to the end of the table.
-func (bf *BucketDecbufFactory) NewDecbufInSection(tableOffset, sectionStartOffset, sectionEndOffset int) Decbuf {
-	length, err := bf.getContentLength(tableOffset)
+func (bf *BucketDecbufFactory) NewDecbufInSection(ctx context.Context, tableOffset, sectionStartOffset, sectionEndOffset int) Decbuf {
+	length, err := bf.getContentLength(ctx, tableOffset)
 	if err != nil {
 		return Decbuf{E: err}
 	}
@@ -131,7 +129,7 @@ func (bf *BucketDecbufFactory) NewDecbufInSection(tableOffset, sectionStartOffse
 		return Decbuf{E: fmt.Errorf("section length must be greater than 0")}
 	}
 	bufReader := NewBucketBufReader(
-		bf.ctx,
+		ctx,
 		bf.bkt,
 		bf.objectPath,
 		tableOffset+sectionStartOffset,
@@ -141,20 +139,20 @@ func (bf *BucketDecbufFactory) NewDecbufInSection(tableOffset, sectionStartOffse
 	return Decbuf{r: bufReader}
 }
 
-func (bf *BucketDecbufFactory) NewDecbufAtUnchecked(offset int) Decbuf {
-	return bf.NewDecbufAtChecked(offset, nil)
+func (bf *BucketDecbufFactory) NewDecbufAtUnchecked(ctx context.Context, offset int) Decbuf {
+	return bf.NewDecbufAtChecked(ctx, offset, nil)
 }
 
-func (bf *BucketDecbufFactory) NewRawDecbuf() Decbuf {
+func (bf *BucketDecbufFactory) NewRawDecbuf(ctx context.Context) Decbuf {
 	const offset = 0
 
-	attrs, err := bf.bkt.Attributes(bf.ctx, bf.objectPath)
+	attrs, err := bf.bkt.Attributes(ctx, bf.objectPath)
 	if err != nil {
 		return Decbuf{E: fmt.Errorf("get size from %s: %w", bf.objectPath, err)}
 	}
 	// Create reader from full file range
 	r := NewBucketBufReader(
-		bf.ctx, bf.bkt, bf.objectPath, offset, int(attrs.Size),
+		ctx, bf.bkt, bf.objectPath, offset, int(attrs.Size),
 	)
 	d := Decbuf{r: r}
 	return d

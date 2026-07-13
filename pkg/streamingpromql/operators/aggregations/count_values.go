@@ -95,7 +95,7 @@ func (c *CountValues) SeriesMetadata(ctx context.Context, matchers types.Matcher
 	defer types.SeriesMetadataSlicePool.Put(&innerMetadata, c.MemoryConsumptionTracker)
 
 	c.labelsBuilder = labels.NewBuilder(labels.EmptyLabels())
-	c.labelsBytesBuffer = make([]byte, 0, 1024) // Why 1024 bytes? It's what labels.Labels.String() uses as a buffer size, so we use that as a sensible starting point too.
+	c.labelsBytesBuffer = make([]byte, 0, types.LabelBytesBufferSize)
 	defer func() {
 		// Don't hold onto the instances used to generate series labels for longer than necessary.
 		c.labelsBuilder = nil

@@ -8,6 +8,8 @@ import (
 	"math"
 
 	"github.com/prometheus/prometheus/promql/parser"
+
+	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
 type CollapseConstants struct{}
@@ -16,7 +18,7 @@ func (c *CollapseConstants) Name() string {
 	return "Collapse constants"
 }
 
-func (c *CollapseConstants) Apply(_ context.Context, expr parser.Expr) (parser.Expr, error) {
+func (c *CollapseConstants) Apply(_ context.Context, expr parser.Expr, _ types.QueryTimeRange) (parser.Expr, error) {
 	return c.apply(expr), nil
 }
 

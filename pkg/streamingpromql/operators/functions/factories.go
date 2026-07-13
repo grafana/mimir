@@ -348,6 +348,31 @@ func ClampFunctionOperatorFactory(args []types.Operator, _ labels.Labels, opPara
 	return NewFunctionOverInstantVector(inner, []types.ScalarOperator{min, max}, opParams.MemoryConsumptionTracker, f, expressionPosition, timeRange, opParams.QueryParameters.EnableDelayedNameRemoval), nil
 }
 
+func MinOfMaxOfOperatorFactory(functionName string, isMin bool) FunctionOperatorFactory {
+	return func(args []types.Operator, absentLabels labels.Labels, opParams *planning.OperatorParameters, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.Operator, error) {
+		if len(args) != 2 {
+			// Should be caught by the PromQL parser, but we check here for safety.
+			return nil, fmt.Errorf("expected exactly 2 arguments for %s, got %v", functionName, len(args))
+		}
+
+		a, ok := args[0].(types.ScalarOperator)
+		if !ok {
+			return nil, fmt.Errorf("expected a scalar for 1st argument for %s, got %T", functionName, args[0])
+		}
+
+		b, ok := args[1].(types.ScalarOperator)
+		if !ok {
+			return nil, fmt.Errorf("expected a scalar for 2nd argument for %s, got %T", functionName, args[1])
+		}
+
+		if isMin {
+			return NewMinOf(a, b, timeRange, opParams.MemoryConsumptionTracker, expressionPosition), nil
+		}
+
+		return NewMaxOf(a, b, timeRange, opParams.MemoryConsumptionTracker, expressionPosition), nil
+	}
+}
+
 func ClampMinMaxFunctionOperatorFactory(functionName string, isMin bool) FunctionOperatorFactory {
 	return func(args []types.Operator, _ labels.Labels, opParams *planning.OperatorParameters, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.Operator, error) {
 		if len(args) != 2 {
@@ -453,6 +478,36 @@ func HistogramFractionFunctionOperatorFactory(args []types.Operator, _ labels.La
 	}
 
 	return NewHistogramFractionFunction(lower, upper, inner, opParams.MemoryConsumptionTracker, expressionPosition, timeRange, opParams.QueryParameters.EnableDelayedNameRemoval), nil
+}
+
+func HistogramQuantilesFunctionOperatorFactory(args []types.Operator, _ labels.Labels, opParams *planning.OperatorParameters, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.Operator, error) {
+	if len(args) < 3 {
+		// Should be caught by the PromQL parser, but we check here for safety.
+		return nil, fmt.Errorf("expected at least 3 arguments for histogram_quantiles, got %v", len(args))
+	}
+
+	inner, ok := args[0].(types.InstantVectorOperator)
+	if !ok {
+		// Should be caught by the PromQL parser, but we check here for safety.
+		return nil, fmt.Errorf("expected an instant vector for 1st argument for histogram_quantiles, got %T", args[0])
+	}
+
+	quantileLabelOp, ok := args[1].(types.StringOperator)
+	if !ok {
+		// Should be caught by the PromQL parser, but we check here for safety.
+		return nil, fmt.Errorf("expected a string for 2nd argument for histogram_quantiles, got %T", args[1])
+	}
+
+	quantileArgs := make([]types.ScalarOperator, 0, len(args)-2)
+	for i := 2; i < len(args); i++ {
+		q, ok := args[i].(types.ScalarOperator)
+		if !ok {
+			return nil, fmt.Errorf("expected a scalar for argument %d for histogram_quantiles, got %T", i+1, args[i])
+		}
+		quantileArgs = append(quantileArgs, q)
+	}
+
+	return NewHistogramQuantilesFunction(quantileArgs, quantileLabelOp, inner, opParams.MemoryConsumptionTracker, expressionPosition, timeRange, opParams.QueryParameters.EnableDelayedNameRemoval), nil
 }
 
 func TimestampFunctionOperatorFactory(args []types.Operator, _ labels.Labels, opParams *planning.OperatorParameters, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.Operator, error) {
@@ -717,6 +772,7 @@ func init() {
 	must(RegisterFunction(FUNCTION_HISTOGRAM_COUNT, "histogram_count", parser.ValueTypeVector, InstantVectorTransformationFunctionOperatorFactory("histogram_count", HistogramCount)))
 	must(RegisterFunction(FUNCTION_HISTOGRAM_FRACTION, "histogram_fraction", parser.ValueTypeVector, HistogramFractionFunctionOperatorFactory))
 	must(RegisterFunction(FUNCTION_HISTOGRAM_QUANTILE, "histogram_quantile", parser.ValueTypeVector, HistogramQuantileFunctionOperatorFactory))
+	must(RegisterFunction(FUNCTION_HISTOGRAM_QUANTILES, "histogram_quantiles", parser.ValueTypeVector, HistogramQuantilesFunctionOperatorFactory))
 	must(RegisterFunction(FUNCTION_HISTOGRAM_STDDEV, "histogram_stddev", parser.ValueTypeVector, InstantVectorTransformationFunctionOperatorFactory("histogram_stddev", HistogramStdDevStdVar(true))))
 	must(RegisterFunction(FUNCTION_HISTOGRAM_STDVAR, "histogram_stdvar", parser.ValueTypeVector, InstantVectorTransformationFunctionOperatorFactory("histogram_stdvar", HistogramStdDevStdVar(false))))
 	must(RegisterFunction(FUNCTION_HISTOGRAM_SUM, "histogram_sum", parser.ValueTypeVector, InstantVectorTransformationFunctionOperatorFactory("histogram_sum", HistogramSum)))
@@ -732,8 +788,10 @@ func init() {
 	must(RegisterFunction(FUNCTION_LOG10, "log10", parser.ValueTypeVector, InstantVectorTransformationFunctionOperatorFactory("log10", Log10)))
 	must(RegisterFunction(FUNCTION_LOG2, "log2", parser.ValueTypeVector, InstantVectorTransformationFunctionOperatorFactory("log2", Log2)))
 	must(RegisterFunction(FUNCTION_MAD_OVER_TIME, "mad_over_time", parser.ValueTypeVector, FunctionOverRangeVectorOperatorFactory("mad_over_time", MadOverTime)))
+	must(RegisterFunction(FUNCTION_MAX_OF, "max_of", parser.ValueTypeScalar, MinOfMaxOfOperatorFactory("max_of", false)))
 	must(RegisterFunction(FUNCTION_MAX_OVER_TIME, "max_over_time", parser.ValueTypeVector, FunctionOverRangeVectorOperatorFactory("max_over_time", MaxOverTime)))
 	must(RegisterFunction(FUNCTION_MINUTE, "minute", parser.ValueTypeVector, TimeTransformationFunctionOperatorFactory("minute", Minute)))
+	must(RegisterFunction(FUNCTION_MIN_OF, "min_of", parser.ValueTypeScalar, MinOfMaxOfOperatorFactory("min_of", true)))
 	must(RegisterFunction(FUNCTION_MIN_OVER_TIME, "min_over_time", parser.ValueTypeVector, FunctionOverRangeVectorOperatorFactory("min_over_time", MinOverTime)))
 	must(RegisterFunction(FUNCTION_MONTH, "month", parser.ValueTypeVector, TimeTransformationFunctionOperatorFactory("month", Month)))
 	must(RegisterFunction(FUNCTION_PI, "pi", parser.ValueTypeScalar, piOperatorFactory))

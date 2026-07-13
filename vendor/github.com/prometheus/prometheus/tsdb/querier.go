@@ -1022,7 +1022,7 @@ func (p *populateWithDelSeriesIterator) AtT() int64 {
 	return p.curr.AtT()
 }
 
-// AtST TODO(krajorama): test AtST() when chunks support it.
+// AtST TODO(krajorama,ywwg): test AtST() when chunks support it.
 func (p *populateWithDelSeriesIterator) AtST() int64 {
 	return p.curr.AtST()
 }
@@ -1244,7 +1244,7 @@ func (p *populateWithDelChunkSeriesIterator) populateChunksFromIterable() bool {
 				p.chunksFromIterable = append(p.chunksFromIterable, chunks.Meta{Chunk: currentChunk, MinTime: cmint, MaxTime: cmaxt})
 			}
 			cmint = p.currDelIter.AtT()
-			if currentChunk, err = currentValueType.NewChunk(needTS); err != nil {
+			if currentChunk, err = currentValueType.NewChunk(needTS, needTS); err != nil {
 				break
 			}
 			if app, err = currentChunk.Appender(); err != nil {
@@ -1525,7 +1525,7 @@ func (it *DeletedIterator) AtT() int64 {
 	return it.Iter.AtT()
 }
 
-// AtST TODO(krajorama): test AtST() when chunks support it.
+// AtST TODO(krajorama,ywwg): test AtST() when chunks support it.
 func (it *DeletedIterator) AtST() int64 {
 	return it.Iter.AtST()
 }

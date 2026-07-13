@@ -58,7 +58,7 @@ JSONNET_FMT := jsonnetfmt
 # path to the mimir-mixin
 MIXIN_PATH := operations/mimir-mixin
 MIXIN_OUT_PATH ?= operations/mimir-mixin-compiled
-MIXIN_OUT_PATH_SUFFIXES := "" "-baremetal" "-gem"
+MIXIN_OUT_PATH_SUFFIXES := "" "-baremetal"
 
 # path to the mimir jsonnet manifests
 JSONNET_MANIFESTS_PATHS := operations/mimir operations/mimir-tests development
@@ -112,13 +112,13 @@ SED ?= $(shell which gsed 2>/dev/null || which sed)
 
 %/$(UPTODATE_RACE): GOOS=linux
 %/$(UPTODATE_RACE): %/Dockerfile
-	# We need gcompat -- compatibility layer with glibc, as race-detector currently requires glibc.
+	# The race detector requires glibc, so we use the distroless base-nossl image rather than static.
 	$(SUDO) docker build \
 		--build-arg=revision=$(GIT_REVISION) \
 		--build-arg=goproxyValue=$(GOPROXY_VALUE) \
 		--build-arg=USE_BINARY_SUFFIX=true \
 		--build-arg=BINARY_SUFFIX=_race \
-		--build-arg=BASEIMG="gcr.io/distroless/base-nossl-debian12@sha256:c8430558b9a8688298c060ddc5e6f2993c8a092dee8a6b7058139ac8472e8ad0" \
+		--build-arg=BASEIMG="gcr.io/distroless/base-nossl-debian13@sha256:792f51c506fc67f7eaa38093f6d4937a053cebb79ec0e7c3b7746f6bbba85606" \
 		-t $(IMAGE_PREFIX)$(shell basename $(@D)):$(IMAGE_TAG_RACE) $(@D)/
 	@echo
 	@echo Go binaries were built using GOOS=$(GOOS) and GOARCH=$(GOARCH)
@@ -241,7 +241,7 @@ mimir-build-image/$(UPTODATE): mimir-build-image/*
 # All the boiler plate for building golang follows:
 SUDO := $(shell docker info >/dev/null 2>&1 || echo "sudo -E")
 BUILD_IN_CONTAINER ?= true
-LATEST_BUILD_IMAGE_TAG ?= pr15566-f22eba381e@sha256:94364ca7730cfe0853c29e3a245dddf25a206c5771f2af66ab97b633cf2aa293
+LATEST_BUILD_IMAGE_TAG ?= pr16010-43d917fef0@sha256:8c26ebb94785dfa7c34a57f114ad43a530b0df11b5b970bfe0960b3acdae7530
 
 # TTY is parameterized to allow CI and scripts to run builds,
 # as it currently disallows TTY devices.
@@ -349,6 +349,8 @@ lint: check-makefiles check-merge-conflicts
 
 	./tools/find-unpooled-slice-creation.sh
 
+	./tools/check-mangling-returned-slices-enabled.sh
+
 	# Configured via .golangci.yml (which sets build-tags matching GO_TAGS).
 	$(LINT_GO_ENV) golangci-lint run
 
@@ -448,6 +450,7 @@ lint: check-makefiles check-merge-conflicts
 		./pkg/alertmanager/alertspb/... \
 		./pkg/ruler/rulespb/... \
 		./pkg/storage/sharding/... \
+		./pkg/storage/ingest/kmeta/... \
 		./pkg/querier/engine/... \
 		./pkg/querier/api/... \
 		./pkg/util/math/...
@@ -642,9 +645,6 @@ dist: ## Generates binaries for a Mimir release.
 			echo "Building metaconvert for $$os/$$arch"; \
 			GOOS=$$os GOARCH=$$arch CGO_ENABLED=0 go build $(GO_FLAGS) -o ./dist/metaconvert-$$os-$$arch$$suffix ./cmd/metaconvert; \
 			sha256sum ./dist/metaconvert-$$os-$$arch$$suffix | cut -d ' ' -f 1 > ./dist/metaconvert-$$os-$$arch$$suffix-sha-256; \
-			echo "Building mark-blocks for $$os/$$arch"; \
-			GOOS=$$os GOARCH=$$arch CGO_ENABLED=0 go build $(GO_FLAGS) -o ./dist/mark-blocks-$$os-$$arch$$suffix ./tools/mark-blocks; \
-			sha256sum ./dist/mark-blocks-$$os-$$arch$$suffix | cut -d ' ' -f 1 > ./dist/mark-blocks-$$os-$$arch$$suffix-sha-256; \
 			done; \
 		done; \
 		touch $@
@@ -903,7 +903,8 @@ warmup-build-cache-image-and-lint: ## Warm the Go build cache for image builds a
 # Those vars are needed for packages target
 export VERSION
 
-packages: dist
+.PHONY: packages
+packages:
 	@packaging/nfpm/nfpm.sh
 
 # Build both arm64 and amd64 images, so that we can test deb/rpm packages for both architectures.

@@ -15,6 +15,9 @@ import (
 const (
 	// resultsCacheVersion should be increased every time the cache format changes.
 	resultsCacheVersion = 3
+
+	// cacheItemTypePrefix identifies range vector splitting intermediate-result entries.
+	cacheItemTypePrefix = "MQERVSIR"
 )
 
 var (

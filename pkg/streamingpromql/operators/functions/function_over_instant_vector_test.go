@@ -172,3 +172,33 @@ func (t *testScalarOperator) Finalize(ctx context.Context) (*types.OperatorEvalu
 func (t *testScalarOperator) Close() {
 	t.closed = true
 }
+
+type testStringOperator struct {
+	value string
+}
+
+func (t *testStringOperator) GetValue() string {
+	return t.value
+}
+
+func (t *testStringOperator) ExpressionPosition() posrange.PositionRange {
+	return posrange.PositionRange{}
+}
+
+func (t *testStringOperator) Prepare(_ context.Context, _ *types.PrepareParams) error {
+	return nil
+}
+
+func (t *testStringOperator) AfterPrepare(_ context.Context) error {
+	return nil
+}
+
+func (t *testStringOperator) FinishedReading(_ context.Context) error {
+	return nil
+}
+
+func (t *testStringOperator) Finalize(_ context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
+	return nil, nil, nil
+}
+
+func (t *testStringOperator) Close() {}

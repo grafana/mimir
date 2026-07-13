@@ -505,6 +505,24 @@ func RunCorrectnessTests(t *testing.T, runTestCase func(t *testing.T, testCase C
 			Query:                  `histogram_fraction(0, 0.5, sum(metric_native_histogram))`,
 			ExpectedShardedQueries: 1,
 		},
+		// Native histogram trim operators ("</", ">/") act as a per-series filter (like
+		// comparison operators), so the operator is pushed into each shard.
+		`metric_native_histogram </ 2`: {
+			Query:                  `metric_native_histogram </ 2`,
+			ExpectedShardedQueries: 1,
+		},
+		`metric_native_histogram >/ 2`: {
+			Query:                  `metric_native_histogram >/ 2`,
+			ExpectedShardedQueries: 1,
+		},
+		`histogram_count(metric_native_histogram </ 2)`: {
+			Query:                  `histogram_count(metric_native_histogram </ 2)`,
+			ExpectedShardedQueries: 1,
+		},
+		`sum(metric_native_histogram </ 2)`: {
+			Query:                  `sum(metric_native_histogram </ 2)`,
+			ExpectedShardedQueries: 1,
+		},
 		`histogram_stdvar`: {
 			Query:                  `histogram_stdvar(metric_native_histogram)`,
 			ExpectedShardedQueries: 0,
@@ -800,6 +818,8 @@ func testQueryShardingFunctionCorrectness(t *testing.T, runTestCase functionCorr
 
 	fnToIgnore := map[string]struct{}{
 		"end":    {},
+		"max_of": {},
+		"min_of": {},
 		"pi":     {},
 		"range":  {},
 		"scalar": {},

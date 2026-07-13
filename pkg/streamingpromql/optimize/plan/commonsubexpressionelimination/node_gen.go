@@ -5,8 +5,10 @@ package commonsubexpressionelimination
 
 import (
 	"fmt"
+	"slices"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
+	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 )
 
 func (d *Duplicate) Child(idx int) planning.Node {
@@ -20,6 +22,31 @@ func (d *Duplicate) ChildCount() int {
 	return 1
 }
 
+func (d *Duplicate) SetChildren(children []planning.Node) error {
+	if len(children) != 1 {
+		return fmt.Errorf("node of type Duplicate expects one child, but got %d", len(children))
+	}
+	d.Inner = children[0]
+	return nil
+}
+
+func (d *Duplicate) ReplaceChild(idx int, node planning.Node) error {
+	if idx != 0 {
+		return fmt.Errorf("node of type Duplicate supports 1 child, but attempted to replace child at index %d", idx)
+	}
+	d.Inner = node
+	return nil
+}
+
+func (d *Duplicate) ChildrenLabels() []string {
+	return []string{""}
+}
+
+func (d *Duplicate) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
+	_, ok := other.(*Duplicate)
+	return ok
+}
+
 func (d *DuplicateFilter) Child(idx int) planning.Node {
 	if idx != 0 {
 		panic(fmt.Sprintf("node of type DuplicateFilter supports 1 child, but attempted to get child at index %d", idx))
@@ -29,4 +56,47 @@ func (d *DuplicateFilter) Child(idx int) planning.Node {
 
 func (d *DuplicateFilter) ChildCount() int {
 	return 1
+}
+
+func (d *DuplicateFilter) SetChildren(children []planning.Node) error {
+	if len(children) != 1 {
+		return fmt.Errorf("node of type DuplicateFilter expects one child, but got %d", len(children))
+	}
+	child0, ok := children[0].(*Duplicate)
+	if !ok {
+		return fmt.Errorf("node of type DuplicateFilter expects child Inner to be of type *Duplicate, but got %T", children[0])
+	}
+	d.Inner = child0
+	return nil
+}
+
+func (d *DuplicateFilter) ReplaceChild(idx int, node planning.Node) error {
+	if idx != 0 {
+		return fmt.Errorf("node of type DuplicateFilter supports 1 child, but attempted to replace child at index %d", idx)
+	}
+	child, ok := node.(*Duplicate)
+	if !ok {
+		return fmt.Errorf("node of type DuplicateFilter expects child Inner to be of type *Duplicate, but got %T", node)
+	}
+	d.Inner = child
+	return nil
+}
+
+func (d *DuplicateFilter) ChildrenLabels() []string {
+	return []string{""}
+}
+
+func (d *DuplicateFilter) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
+	oi, ok := other.(*DuplicateFilter)
+	return ok &&
+		slices.EqualFunc(d.Filters, oi.Filters, func(a, b *core.LabelMatcher) bool {
+			return ((a == nil && b == nil) || (a != nil && b != nil && genEqualsLabelMatcher(*a, *b)))
+		}) &&
+		d.SubsetIndex == oi.SubsetIndex
+}
+
+func genEqualsLabelMatcher(a, b core.LabelMatcher) bool {
+	return a.Name == b.Name &&
+		a.Type == b.Type &&
+		a.Value == b.Value
 }

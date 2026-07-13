@@ -44,10 +44,11 @@ type OptimizationPass struct {
 
 	subsetSelectorEliminationEnabled        bool
 	rangeQueryRangeVectorEliminationEnabled bool
+	scalarEliminationEnabled                bool
 	logger                                  log.Logger
 }
 
-func NewOptimizationPass(subsetSelectorEliminationEnabled bool, rangeQueryRangeVectorEliminationEnabled bool, reg prometheus.Registerer, logger log.Logger) *OptimizationPass {
+func NewOptimizationPass(subsetSelectorEliminationEnabled bool, rangeQueryRangeVectorEliminationEnabled bool, scalarEliminationEnabled bool, reg prometheus.Registerer, logger log.Logger) *OptimizationPass {
 	selectorsEliminated := promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 		Name: "cortex_mimir_query_engine_common_subexpression_elimination_selectors_eliminated_total",
 		Help: "Number of selectors eliminated by the common subexpression elimination optimization pass.",
@@ -67,6 +68,7 @@ func NewOptimizationPass(subsetSelectorEliminationEnabled bool, rangeQueryRangeV
 
 		subsetSelectorEliminationEnabled:        subsetSelectorEliminationEnabled,
 		rangeQueryRangeVectorEliminationEnabled: rangeQueryRangeVectorEliminationEnabled,
+		scalarEliminationEnabled:                scalarEliminationEnabled,
 		logger:                                  logger,
 	}
 }
@@ -86,7 +88,8 @@ func (e *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, 
 	}
 
 	rangeQueryRangeVectorEliminationEnabled := e.rangeQueryRangeVectorEliminationEnabled && maximumSupportedQueryPlanVersion >= planning.QueryPlanV11
-	stats, err := e.applyDeduplicationToGroups(groups, 0, plan.Parameters.EnableDelayedNameRemoval, rangeQueryRangeVectorEliminationEnabled)
+	scalarEliminationEnabled := e.scalarEliminationEnabled && maximumSupportedQueryPlanVersion >= planning.QueryPlanV19
+	stats, err := e.applyDeduplicationToGroups(groups, 0, plan.Parameters.EnableDelayedNameRemoval, rangeQueryRangeVectorEliminationEnabled, scalarEliminationEnabled)
 	if err != nil {
 		return nil, err
 	}
@@ -172,11 +175,11 @@ func (e *OptimizationPass) ShouldSkipChild(node planning.Node, childIdx int) boo
 	return false
 }
 
-func (e *OptimizationPass) applyDeduplicationToGroups(groups []SharedSelectorGroup, offset int, delayedNameRemovalEnabled bool, rangeQueryRangeVectorEliminationEnabled bool) (deduplicationStats, error) {
+func (e *OptimizationPass) applyDeduplicationToGroups(groups []SharedSelectorGroup, offset int, delayedNameRemovalEnabled bool, rangeQueryRangeVectorEliminationEnabled bool, scalarEliminationEnabled bool) (deduplicationStats, error) {
 	totalStats := deduplicationStats{}
 
 	for _, group := range groups {
-		groupStats, err := e.applyDeduplication(group, offset, delayedNameRemovalEnabled, rangeQueryRangeVectorEliminationEnabled)
+		groupStats, err := e.applyDeduplication(group, offset, delayedNameRemovalEnabled, rangeQueryRangeVectorEliminationEnabled, scalarEliminationEnabled)
 		if err != nil {
 			return deduplicationStats{}, err
 		}
@@ -431,7 +434,7 @@ func (e *OptimizationPass) groupPathsForSubsequentIteration(paths []path, offset
 
 // applyDeduplication replaces duplicate expressions at the tails of paths in group with a single expression.
 // It searches for duplicate expressions from offset, and returns the number of duplicates eliminated.
-func (e *OptimizationPass) applyDeduplication(group SharedSelectorGroup, offset int, delayedNameRemovalEnabled bool, rangeQueryRangeVectorEliminationEnabled bool) (deduplicationStats, error) {
+func (e *OptimizationPass) applyDeduplication(group SharedSelectorGroup, offset int, delayedNameRemovalEnabled bool, rangeQueryRangeVectorEliminationEnabled bool, scalarEliminationEnabled bool) (deduplicationStats, error) {
 	duplicatePathLength, err := e.findCommonSubexpressionLength(group, offset+1, delayedNameRemovalEnabled)
 	if err != nil {
 		return deduplicationStats{}, err
@@ -446,22 +449,36 @@ func (e *OptimizationPass) applyDeduplication(group SharedSelectorGroup, offset 
 	}
 
 	skipLongerExpressions := false
-	skippedBecauseRangeVectorSelectorInRangeQuery := false
+	skippedBecauseResultTypeUnsupported := false
 	stats := group.computeStats()
 
-	if resultType == parser.ValueTypeVector || (resultType == parser.ValueTypeMatrix && (rangeQueryRangeVectorEliminationEnabled || timeRange.IsInstant)) {
+	switch resultType {
+	case parser.ValueTypeVector:
 		skipLongerExpressions, err = e.introduceDuplicateNode(group, duplicatePathLength)
-	} else if _, isSubquery := duplicatedExpression.(*core.Subquery); isSubquery {
-		// We've identified a subquery is duplicated (but not the function that encloses it), and the parent is not an instant
-		// query, and range query range vector CSE is not enabled.
-		// We don't want to deduplicate the subquery itself, but we do want to deduplicate the inner expression of the
-		// subquery.
-		skipLongerExpressions, err = e.introduceDuplicateNode(group, duplicatePathLength-1)
-	} else {
-		// Duplicated range vector selector in a range query with range query range vector CSE disabled, and the function that encloses
-		// each instance isn't the same (or isn't the same on all paths).
-		skippedBecauseRangeVectorSelectorInRangeQuery = true
-		stats = deduplicationStats{}
+	case parser.ValueTypeScalar:
+		if scalarEliminationEnabled {
+			skipLongerExpressions, err = e.introduceDuplicateNode(group, duplicatePathLength)
+		} else {
+			skippedBecauseResultTypeUnsupported = true
+			stats = deduplicationStats{}
+		}
+	case parser.ValueTypeMatrix:
+		if rangeQueryRangeVectorEliminationEnabled || timeRange.IsInstant {
+			skipLongerExpressions, err = e.introduceDuplicateNode(group, duplicatePathLength)
+		} else if _, isSubquery := duplicatedExpression.(*core.Subquery); isSubquery {
+			// We've identified a subquery is duplicated (but not the function that encloses it), and the parent is not an instant
+			// query, and range query range vector CSE is not enabled.
+			// We don't want to deduplicate the subquery itself, but we do want to deduplicate the inner expression of the
+			// subquery.
+			skipLongerExpressions, err = e.introduceDuplicateNode(group, duplicatePathLength-1)
+		} else {
+			// Duplicated range vector selector in a range query with range query range vector CSE disabled, and the function that encloses
+			// each instance isn't the same (or isn't the same on all paths).
+			skippedBecauseResultTypeUnsupported = true
+			stats = deduplicationStats{}
+		}
+	default:
+		return deduplicationStats{}, fmt.Errorf("unexpected result type in common subexpression elimination: %v", resultType)
 	}
 
 	if err != nil {
@@ -484,10 +501,10 @@ func (e *OptimizationPass) applyDeduplication(group SharedSelectorGroup, offset 
 	// eg. in "rate(foo[5m]) + rate(foo[5m]) + increase(foo[5m])", we may have just identified the "foo[5m]" expression,
 	// but we can also deduplicate the "rate(foo[5m])" expressions.
 	subsequentGroups := e.groupPathsForSubsequentIteration(group.Paths, duplicatePathLength)
-	if nextLevelStats, err := e.applyDeduplicationToGroups(subsequentGroups, duplicatePathLength, delayedNameRemovalEnabled, rangeQueryRangeVectorEliminationEnabled); err != nil {
+	if nextLevelStats, err := e.applyDeduplicationToGroups(subsequentGroups, duplicatePathLength, delayedNameRemovalEnabled, rangeQueryRangeVectorEliminationEnabled, scalarEliminationEnabled); err != nil {
 		return deduplicationStats{}, err
-	} else if skippedBecauseRangeVectorSelectorInRangeQuery {
-		// If we didn't eliminate any paths at this level (because the duplicate expression was a range vector selector
+	} else if skippedBecauseResultTypeUnsupported {
+		// If we didn't eliminate any paths at this level (for example, because the duplicate expression was a range vector selector
 		// in a range query with range query range vector CSE disabled), return the number returned by the next level.
 		stats = nextLevelStats
 	}
@@ -821,7 +838,37 @@ func IsSafeToApplyFilteringAfterFunction(functionCall *core.FunctionCall, group 
 
 		return !group.haveAnyFiltersForLabel(model.MetricNameLabel), nil
 
-	case functions.FUNCTION_PI, functions.FUNCTION_VECTOR, functions.FUNCTION_TIME:
+	case functions.FUNCTION_HISTOGRAM_QUANTILES:
+		// Like histogram_quantile, this drops the 'le' label on native histograms, so we can never apply filtering
+		// after the function if the filter is on that label.
+		if group.haveAnyFiltersForLabel(model.BucketLabel) {
+			return false, nil
+		}
+
+		// histogram_quantiles also adds the configured quantile label (its second argument), so it's not safe to
+		// push filtering on that label through the function call.
+		quantileLabelName, err := extractDestinationLabel(functionCall)
+		if err != nil {
+			return false, err
+		}
+
+		if group.haveAnyFiltersForLabel(quantileLabelName) {
+			return false, nil
+		}
+
+		// It drops the __name__ label if delayed name removal is not enabled, so it's only safe to apply filtering
+		// after the function if delayed name removal is enabled, or there is no filtering by __name__.
+		if delayedNameRemovalEnabled {
+			return true, nil
+		}
+
+		return !group.haveAnyFiltersForLabel(model.MetricNameLabel), nil
+
+	case functions.FUNCTION_MAX_OF,
+		functions.FUNCTION_MIN_OF,
+		functions.FUNCTION_PI,
+		functions.FUNCTION_VECTOR,
+		functions.FUNCTION_TIME:
 		// These functions should never directly contain a selector, so this method should never be called for
 		// these functions, but return false to be safe.
 		return false, nil

@@ -601,6 +601,17 @@ func TestBlockLabelValues(t *testing.T) {
 		require.Empty(t, values)
 	})
 
+	t.Run("happy case with case-insensitive matchers", func(t *testing.T) {
+		b := newTestBucketBlock()
+
+		matchers := []*labels.Matcher{
+			labels.MustNewMatcher(labels.MatchRegexp, "j", "(?i)f.*"),
+		}
+		values, err := blockLabelValues(context.Background(), b, worstCaseFetchedDataStrategy{1.0}, 5000, "j", matchers, log.NewNopLogger(), newSafeQueryStats())
+		require.NoError(t, err)
+		require.Equal(t, []string{"foo"}, values)
+	})
+
 	t.Run("happy case cached with exact matchers", func(t *testing.T) {
 		b := newTestBucketBlock()
 		b.indexCache = newInMemoryIndexCache(t)
@@ -1092,6 +1103,132 @@ func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 	})
 }
 
+func TestBucketIndexReader_FetchPostingsIndexV2(t *testing.T) {
+	const (
+		series    = 50000
+		labelName = "n"
+	)
+
+	ctx := context.Background()
+	tb := test.NewTB(t)
+	testBlock := fixtures.SetupTestBlock(tb, fixtures.AppendTestSeries(series))
+	newTestBucketBlock := testBlockToBucketBlock(tb, testBlock)
+
+	offsetsForLabel := func(b *bucketBlock, name, prefix string) []streamindex.PostingListOffset {
+		offsets, err := b.indexHeaderReader.LabelValuesOffsets(ctx, name, prefix, nil)
+		require.NoError(t, err)
+		require.NotEmpty(t, offsets)
+		return offsets
+	}
+
+	keysOffsets := func(name string, offsets []streamindex.PostingListOffset) []labelPostingOffset {
+		keysOffsets := make([]labelPostingOffset, len(offsets))
+		for i, o := range offsets {
+			keysOffsets[i] = labelPostingOffset{labels.Label{Name: name, Value: o.LabelValue}, o.Off}
+		}
+		return keysOffsets
+	}
+
+	expectedRefs := func(b *bucketBlock, name, value string) []storage.SeriesRef {
+		matcher := labels.MustNewMatcher(labels.MatchEqual, name, value)
+		refs, _, err := b.indexReader(selectAllStrategy{}).ExpandedPostings(ctx, []*labels.Matcher{matcher}, newSafeQueryStats())
+		require.NoError(t, err)
+		require.NotEmpty(t, refs, "test setup: expected some series for %s=%s", name, value)
+		return refs
+	}
+
+	expandPostings := func(p index.Postings) []storage.SeriesRef {
+		refs, err := index.ExpandPostings(p)
+		require.NoError(t, err)
+		return refs
+	}
+
+	t.Run("returns correct postings for every value using knownOffsets", func(t *testing.T) {
+		b := newTestBucketBlock()
+		offsets := offsetsForLabel(b, labelName, "")
+		kos := keysOffsets(labelName, offsets)
+
+		// With known offsets supplied,
+		// FetchPostingsIndexV2 must use the supplied offsets and never resolve an offset with PostingsOffset.
+		iir := &interceptedIndexReader{
+			Reader: b.indexHeaderReader,
+			onPostingsOffsetCalled: func(name, value string) error {
+				return fmt.Errorf("didn't expect a PostingsOffset(%q, %q) call when offsets are known", name, value)
+			},
+		}
+		b.indexHeaderReader = iir
+		ps, err := b.indexReader(selectAllStrategy{}).FetchPostingsIndexV2(ctx, kos, newSafeQueryStats())
+		require.NoError(t, err)
+		require.Len(t, ps, len(kos))
+
+		// reset index header reader so we can properly expand postings in expectedRefs to assert correctness against
+		b.indexHeaderReader = iir.Reader
+
+		for i, ko := range kos {
+			assert.Equal(t, expectedRefs(b, ko.Name, ko.Value), expandPostings(ps[i]), "postings for %s=%s", ko.Name, ko.Value)
+		}
+	})
+
+	t.Run("returns postings for values matching the prefix", func(t *testing.T) {
+		b := newTestBucketBlock()
+		prefix := "1"
+		offsets := offsetsForLabel(b, labelName, prefix)
+		kos := keysOffsets(labelName, offsets)
+
+		ps, err := b.indexReader(selectAllStrategy{}).FetchPostingsIndexV2(ctx, kos, newSafeQueryStats())
+		require.NoError(t, err)
+		require.Len(t, ps, len(kos))
+		for i, ko := range kos {
+			require.True(t, strings.HasPrefix(ko.Value, prefix), "LabelValuesOffsets returned a value not matching the prefix: %s", ko.Value)
+			assert.Equal(t, expectedRefs(b, ko.Name, ko.Value), expandPostings(ps[i]), "postings for %s=%s", ko.Name, ko.Value)
+		}
+	})
+
+	t.Run("no keys returns no postings", func(t *testing.T) {
+		b := newTestBucketBlock()
+		ps, err := b.indexReader(selectAllStrategy{}).FetchPostingsIndexV2(ctx, nil, newSafeQueryStats())
+		require.NoError(t, err)
+		require.Empty(t, ps)
+	})
+
+	t.Run("postings are served from the cache", func(t *testing.T) {
+		b := newTestBucketBlock()
+		b.indexCache = newInMemoryIndexCache(t)
+		offsets := offsetsForLabel(b, labelName, "")
+		kos := keysOffsets(labelName, offsets)
+
+		// First call misses cache, does the fetch
+		first, err := b.indexReader(selectAllStrategy{}).FetchPostingsIndexV2(ctx, kos, newSafeQueryStats())
+		require.NoError(t, err)
+		require.Len(t, first, len(kos))
+
+		for ix := range kos {
+			kos[ix].off = index.Range{}
+		}
+
+		b.indexHeaderReader = &interceptedIndexReader{
+			Reader: b.indexHeaderReader,
+			onPostingsOffsetCalled: func(name, value string) error {
+				return fmt.Errorf("didn't expect a PostingsOffset(%q, %q) call when offsets are known", name, value)
+			},
+		}
+
+		// The second call passes empty known offsets,
+		// but should still hit the cache (and therefore not execute any PostingOffset calls) when resolving postings offsets to postings
+		secondCallStats := newSafeQueryStats()
+		second, err := b.indexReader(selectAllStrategy{}).FetchPostingsIndexV2(ctx, kos, secondCallStats)
+		require.NoError(t, err)
+		require.Len(t, second, len(kos))
+
+		for i, ko := range kos {
+			assert.Equal(t, expandPostings(first[i]), expandPostings(second[i]), "postings for %s=%s", ko.Name, ko.Value)
+		}
+
+		// All postings were served from the cache, so nothing should have been fetched from the bucket.
+		assert.Zero(t, secondCallStats.export().postingsFetchCount)
+	})
+}
+
 func newInMemoryIndexCache(t testing.TB) indexcache.IndexCache {
 	cache, err := indexcache.NewInMemoryIndexCacheWithConfig(
 		indexcache.InMemoryIndexCacheConfig{
@@ -1479,7 +1616,7 @@ func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries 
 	var (
 		logger                = log.NewNopLogger()
 		series                []*storeTestSeries
-		expectedQueriesBlocks []hintspb.Block
+		expectedQueriesBlocks []storepb.Block
 		random                = rand.New(rand.NewSource(120))
 	)
 
@@ -1516,7 +1653,7 @@ func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries 
 		id := createBlockFromHead(t, blockDir, head)
 		assert.NoError(t, head.Close())
 		series = append(series, bSeries...)
-		expectedQueriesBlocks = append(expectedQueriesBlocks, hintspb.Block{Id: id.String()})
+		expectedQueriesBlocks = append(expectedQueriesBlocks, storepb.Block{Id: id.String()})
 
 		meta, err := block.InjectThanosMeta(logger, filepath.Join(blockDir, id.String()), thanosMeta)
 		assert.NoError(t, err)
@@ -1563,7 +1700,7 @@ func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries 
 					},
 					SkipChunks: skipChunk,
 				},
-				ExpectedHints: hintspb.SeriesResponseHints{
+				ExpectedHints: storepb.SeriesResponseHints{
 					QueriedBlocks: expectedQueriesBlocks,
 				},
 				// This does not cut chunks properly, but those are assured against for non benchmarks only, where we use 100% case only.
@@ -1720,7 +1857,7 @@ func TestBucketStore_Series_Concurrency(t *testing.T) {
 	t.Log("generated test blocks")
 
 	// Prepare a request to query all series.
-	hints := &hintspb.SeriesRequestHints{
+	hints := &storepb.SeriesRequestHints{
 		BlockMatchers: []storepb.LabelMatcher{
 			{
 				Type:  storepb.LabelMatcher_RE,
@@ -1730,9 +1867,6 @@ func TestBucketStore_Series_Concurrency(t *testing.T) {
 		},
 	}
 
-	marshalledHints, err := types.MarshalAny(hints)
-	require.NoError(t, err)
-
 	runRequest := func(t *testing.T, srv *storeTestServer, streamBatchSize int) {
 		req := &storepb.SeriesRequest{
 			MinTime: math.MinInt64,
@@ -1740,7 +1874,7 @@ func TestBucketStore_Series_Concurrency(t *testing.T) {
 			Matchers: []storepb.LabelMatcher{
 				{Type: storepb.LabelMatcher_EQ, Name: model.MetricNameLabel, Value: "test_metric"},
 			},
-			Hints:                    marshalledHints,
+			RequestHints:             hints,
 			StreamingChunksBatchSize: uint64(streamBatchSize),
 		}
 		seriesSet, warnings, _, _, err := srv.Series(context.Background(), req)
@@ -2030,8 +2164,8 @@ func TestBucketStore_Series_RequestAndResponseHints(t *testing.T) {
 					},
 				},
 				ExpectedSeries: seriesSet1,
-				ExpectedHints: hintspb.SeriesResponseHints{
-					QueriedBlocks: []hintspb.Block{
+				ExpectedHints: storepb.SeriesResponseHints{
+					QueriedBlocks: []storepb.Block{
 						{Id: block1.String()},
 					},
 				},
@@ -2045,8 +2179,8 @@ func TestBucketStore_Series_RequestAndResponseHints(t *testing.T) {
 					},
 				},
 				ExpectedSeries: append(append([]*storeTestSeries{}, seriesSet1...), seriesSet2...),
-				ExpectedHints: hintspb.SeriesResponseHints{
-					QueriedBlocks: []hintspb.Block{
+				ExpectedHints: storepb.SeriesResponseHints{
+					QueriedBlocks: []storepb.Block{
 						{Id: block1.String()},
 						{Id: block2.String()},
 					},
@@ -2059,15 +2193,15 @@ func TestBucketStore_Series_RequestAndResponseHints(t *testing.T) {
 					Matchers: []storepb.LabelMatcher{
 						{Type: storepb.LabelMatcher_EQ, Name: "foo", Value: "bar"},
 					},
-					Hints: mustMarshalAny(&hintspb.SeriesRequestHints{
+					RequestHints: &storepb.SeriesRequestHints{
 						BlockMatchers: []storepb.LabelMatcher{
 							{Type: storepb.LabelMatcher_EQ, Name: block.BlockIDLabel, Value: block1.String()},
 						},
-					}),
+					},
 				},
 				ExpectedSeries: seriesSet1,
-				ExpectedHints: hintspb.SeriesResponseHints{
-					QueriedBlocks: []hintspb.Block{
+				ExpectedHints: storepb.SeriesResponseHints{
+					QueriedBlocks: []storepb.Block{
 						{Id: block1.String()},
 					},
 				},
@@ -2766,15 +2900,13 @@ func TestLabelNamesAndValuesHints(t *testing.T) {
 	type labelNamesValuesCase struct {
 		name string
 
-		labelNamesReq            *storepb.LabelNamesRequest
-		expectedNames            []string
-		expectedOpaqueNamesHints hintspb.LabelNamesResponseHints
-		expectedNamesHints       *storepb.LabelNamesResponseHints
+		labelNamesReq      *storepb.LabelNamesRequest
+		expectedNames      []string
+		expectedNamesHints *storepb.LabelNamesResponseHints
 
-		labelValuesReq            *storepb.LabelValuesRequest
-		expectedValues            []string
-		expectedOpaqueValuesHints hintspb.LabelValuesResponseHints
-		expectedValuesHints       *storepb.LabelValuesResponseHints
+		labelValuesReq      *storepb.LabelValuesRequest
+		expectedValues      []string
+		expectedValuesHints *storepb.LabelValuesResponseHints
 	}
 
 	testCases := []labelNamesValuesCase{
@@ -2786,11 +2918,6 @@ func TestLabelNamesAndValuesHints(t *testing.T) {
 				End:   1,
 			},
 			expectedNames: labelNamesFromSeriesSet(seriesSet1),
-			expectedOpaqueNamesHints: hintspb.LabelNamesResponseHints{
-				QueriedBlocks: []hintspb.Block{
-					{Id: block1.String()},
-				},
-			},
 			expectedNamesHints: &storepb.LabelNamesResponseHints{
 				QueriedBlocks: []storepb.Block{
 					{Id: block1.String()},
@@ -2803,11 +2930,6 @@ func TestLabelNamesAndValuesHints(t *testing.T) {
 				End:   1,
 			},
 			expectedValues: []string{"1"},
-			expectedOpaqueValuesHints: hintspb.LabelValuesResponseHints{
-				QueriedBlocks: []hintspb.Block{
-					{Id: block1.String()},
-				},
-			},
 			expectedValuesHints: &storepb.LabelValuesResponseHints{
 				QueriedBlocks: []storepb.Block{
 					{Id: block1.String()},
@@ -2824,12 +2946,6 @@ func TestLabelNamesAndValuesHints(t *testing.T) {
 			expectedNames: labelNamesFromSeriesSet(
 				append(append([]*storeTestSeries{}, seriesSet1...), seriesSet2...),
 			),
-			expectedOpaqueNamesHints: hintspb.LabelNamesResponseHints{
-				QueriedBlocks: []hintspb.Block{
-					{Id: block1.String()},
-					{Id: block2.String()},
-				},
-			},
 			expectedNamesHints: &storepb.LabelNamesResponseHints{
 				QueriedBlocks: []storepb.Block{
 					{Id: block1.String()},
@@ -2843,12 +2959,6 @@ func TestLabelNamesAndValuesHints(t *testing.T) {
 				End:   3,
 			},
 			expectedValues: []string{"1"},
-			expectedOpaqueValuesHints: hintspb.LabelValuesResponseHints{
-				QueriedBlocks: []hintspb.Block{
-					{Id: block1.String()},
-					{Id: block2.String()},
-				},
-			},
 			expectedValuesHints: &storepb.LabelValuesResponseHints{
 				QueriedBlocks: []storepb.Block{
 					{Id: block1.String()},
@@ -2869,11 +2979,6 @@ func TestLabelNamesAndValuesHints(t *testing.T) {
 				}),
 			},
 			expectedNames: labelNamesFromSeriesSet(seriesSet1),
-			expectedOpaqueNamesHints: hintspb.LabelNamesResponseHints{
-				QueriedBlocks: []hintspb.Block{
-					{Id: block1.String()},
-				},
-			},
 			expectedNamesHints: &storepb.LabelNamesResponseHints{
 				QueriedBlocks: []storepb.Block{
 					{Id: block1.String()},
@@ -2891,11 +2996,6 @@ func TestLabelNamesAndValuesHints(t *testing.T) {
 				}),
 			},
 			expectedValues: []string{"1"},
-			expectedOpaqueValuesHints: hintspb.LabelValuesResponseHints{
-				QueriedBlocks: []hintspb.Block{
-					{Id: block1.String()},
-				},
-			},
 			expectedValuesHints: &storepb.LabelValuesResponseHints{
 				QueriedBlocks: []storepb.Block{
 					{Id: block1.String()},
@@ -2910,27 +3010,9 @@ func TestLabelNamesAndValuesHints(t *testing.T) {
 			assert.NoError(t, err)
 			assert.Equal(t, tc.expectedNames, namesResp.Names)
 
-			var opaqueNamesHints hintspb.LabelNamesResponseHints
-			//nolint:staticcheck // Ignore SA1019. This use will be removed in Mimir 3.2
-			assert.NoError(t, types.UnmarshalAny(namesResp.Hints, &opaqueNamesHints))
-			// The order is not determinate, so we are sorting them.
-			slices.SortFunc(opaqueNamesHints.QueriedBlocks, func(a, b hintspb.Block) int {
-				return strings.Compare(a.Id, b.Id)
-			})
-			assert.Equal(t, tc.expectedOpaqueNamesHints, opaqueNamesHints)
-
 			valuesResp, err := store.LabelValues(context.Background(), tc.labelValuesReq)
 			assert.NoError(t, err)
 			assert.Equal(t, tc.expectedValues, valuesResp.Values)
-
-			var opaqueValuesHints hintspb.LabelValuesResponseHints
-			//nolint:staticcheck // Ignore SA1019. This use will be removed in Mimir 3.2
-			assert.NoError(t, types.UnmarshalAny(valuesResp.Hints, &opaqueValuesHints))
-			// The order is not determinate, so we are sorting them.
-			slices.SortFunc(opaqueValuesHints.QueriedBlocks, func(a, b hintspb.Block) int {
-				return strings.Compare(a.Id, b.Id)
-			})
-			assert.Equal(t, tc.expectedOpaqueValuesHints, opaqueValuesHints)
 
 			// Verify the non-opaque hint types. We currently return both opaque and non-opaque
 			// hints from label name and label value requests.
@@ -3168,7 +3250,7 @@ type seriesCase struct {
 	// Exact expectations are checked only for tests. For benchmarks only length is assured.
 	ExpectedSeries   []*storeTestSeries
 	ExpectedWarnings []string
-	ExpectedHints    hintspb.SeriesResponseHints
+	ExpectedHints    storepb.SeriesResponseHints
 }
 
 // runTestServerSeries runs tests against given cases.

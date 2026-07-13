@@ -5,8 +5,10 @@ package multiaggregation
 
 import (
 	"fmt"
+	"slices"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
+	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 )
 
 func (m *MultiAggregationGroup) Child(idx int) planning.Node {
@@ -20,13 +22,116 @@ func (m *MultiAggregationGroup) ChildCount() int {
 	return 1
 }
 
-func (m *MultiAggregationInstance) Child(idx int) planning.Node {
-	if idx != 0 {
-		panic(fmt.Sprintf("node of type MultiAggregationInstance supports 1 child, but attempted to get child at index %d", idx))
+func (m *MultiAggregationGroup) SetChildren(children []planning.Node) error {
+	if len(children) != 1 {
+		return fmt.Errorf("node of type MultiAggregationGroup expects one child, but got %d", len(children))
 	}
-	return m.Group
+	m.Inner = children[0]
+	return nil
+}
+
+func (m *MultiAggregationGroup) ReplaceChild(idx int, node planning.Node) error {
+	if idx != 0 {
+		return fmt.Errorf("node of type MultiAggregationGroup supports 1 child, but attempted to replace child at index %d", idx)
+	}
+	m.Inner = node
+	return nil
+}
+
+func (m *MultiAggregationGroup) ChildrenLabels() []string {
+	return []string{""}
+}
+
+func (m *MultiAggregationGroup) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
+	_, ok := other.(*MultiAggregationGroup)
+	return ok
+}
+
+func (m *MultiAggregationInstance) Child(idx int) planning.Node {
+	switch idx {
+	case 0:
+		return m.Group
+	case 1:
+		if m.Param == nil {
+			panic("cannot get MultiAggregationInstance child at index 1 if Param is nil")
+		}
+		return m.Param
+	default:
+		panic(fmt.Sprintf("node of type MultiAggregationInstance supports 2 children, but attempted to get child at index %d", idx))
+	}
 }
 
 func (m *MultiAggregationInstance) ChildCount() int {
-	return 1
+	if m.Param == nil {
+		return 1
+	}
+	return 2
+}
+
+func (m *MultiAggregationInstance) SetChildren(children []planning.Node) error {
+	switch len(children) {
+	case 1:
+		child0, ok := children[0].(*MultiAggregationGroup)
+		if !ok {
+			return fmt.Errorf("node of type MultiAggregationInstance expects child Group to be of type *MultiAggregationGroup, but got %T", children[0])
+		}
+		m.Group = child0
+		m.Param = nil
+	case 2:
+		child0, ok := children[0].(*MultiAggregationGroup)
+		if !ok {
+			return fmt.Errorf("node of type MultiAggregationInstance expects child Group to be of type *MultiAggregationGroup, but got %T", children[0])
+		}
+		m.Group = child0
+		m.Param = children[1]
+	default:
+		return fmt.Errorf("node of type MultiAggregationInstance expects 1 or 2 children, but got %d", len(children))
+	}
+	return nil
+}
+
+func (m *MultiAggregationInstance) ReplaceChild(idx int, node planning.Node) error {
+	switch idx {
+	case 0:
+		child, ok := node.(*MultiAggregationGroup)
+		if !ok {
+			return fmt.Errorf("node of type MultiAggregationInstance expects child Group to be of type *MultiAggregationGroup, but got %T", node)
+		}
+		m.Group = child
+		return nil
+	case 1:
+		m.Param = node
+		return nil
+	default:
+		return fmt.Errorf("node of type MultiAggregationInstance supports 2 children, but attempted to replace child at index %d", idx)
+	}
+}
+
+func (m *MultiAggregationInstance) ChildrenLabels() []string {
+	if m.Param == nil {
+		return []string{""}
+	}
+	return []string{"expression", "parameter"}
+}
+
+func (m *MultiAggregationInstance) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
+	oi, ok := other.(*MultiAggregationInstance)
+	return ok &&
+		((m.Aggregation == nil && oi.Aggregation == nil) || (m.Aggregation != nil && oi.Aggregation != nil && genEqualsAggregateExpressionDetails(*m.Aggregation, *oi.Aggregation))) &&
+		slices.EqualFunc(m.Filters, oi.Filters, func(a, b *core.LabelMatcher) bool {
+			return ((a == nil && b == nil) || (a != nil && b != nil && genEqualsLabelMatcher(*a, *b)))
+		}) &&
+		m.SubsetIndex == oi.SubsetIndex
+}
+
+func genEqualsAggregateExpressionDetails(a, b core.AggregateExpressionDetails) bool {
+	return slices.Equal(a.Grouping, b.Grouping) &&
+		a.Op == b.Op &&
+		a.Without == b.Without
+}
+
+func genEqualsLabelMatcher(a, b core.LabelMatcher) bool {
+	return a.Name == b.Name &&
+		a.Type == b.Type &&
+		a.Value == b.Value
 }

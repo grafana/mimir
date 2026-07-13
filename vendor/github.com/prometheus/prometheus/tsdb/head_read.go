@@ -22,7 +22,6 @@ import (
 	"sync"
 
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -230,110 +229,142 @@ func (h *headIndexReader) Series(ref storage.SeriesRef, builder *labels.ScratchB
 	return nil
 }
 
-func (h *Head) staleIndex(mint, maxt int64, staleSeriesRefs []storage.SeriesRef) (*headStaleIndexReader, error) {
-	return &headStaleIndexReader{
-		headIndexReader: h.indexRange(mint, maxt),
-		staleSeriesRefs: staleSeriesRefs,
+func (h *Head) selectedSeriesIndex(mint, maxt int64, selectedSeriesRefs seriesRefs) (*headSelectedSeriesIndexReader, error) {
+	return &headSelectedSeriesIndexReader{
+		headIndexReader:    h.indexRange(mint, maxt),
+		selectedSeriesRefs: selectedSeriesRefs,
 	}, nil
 }
 
-// headStaleIndexReader gives the stale series that have no out-of-order data.
-// This is only used for stale series compaction at the moment, that will only ask for all
-// the series during compaction. So to make that efficient, this index reader requires the
-// pre-calculated list of stale series refs that can be returned without re-reading the Head.
-type headStaleIndexReader struct {
+// headSelectedSeriesIndexReader exposes the head index restricted to an explicit list of
+// series refs. Compaction callers only request AllPostings, which is served from the
+// precomputed ref list without re-reading the Head. Other IndexReader methods delegate to
+// the caller-supplied filter, which encodes the compaction flow's notion of "matching series".
+type headSelectedSeriesIndexReader struct {
 	*headIndexReader
-	staleSeriesRefs []storage.SeriesRef
+	selectedSeriesRefs seriesRefs
 }
 
-func (h *headStaleIndexReader) Postings(ctx context.Context, name string, values ...string) (index.Postings, error) {
-	// If all postings are requested, return the precalculated list.
-	k, v := index.AllPostingsKey()
-	if len(h.staleSeriesRefs) > 0 && name == k && len(values) == 1 && values[0] == v {
-		return index.NewListPostings(h.staleSeriesRefs), nil
+type allSelectedSeriesPostings struct{ index.Postings }
+
+func (h *headSelectedSeriesIndexReader) Postings(ctx context.Context, name string, values ...string) (index.Postings, error) {
+	if len(h.selectedSeriesRefs.sortedByRef) == 0 {
+		return index.EmptyPostings(), nil
 	}
-	seriesRefs, err := h.head.filterStaleSeriesAndSortPostings(h.head.postings.Postings(ctx, name, values...))
-	if err != nil {
-		return index.ErrPostings(err), err
+
+	selectedSeriesPostings := index.NewListPostings(h.selectedSeriesRefs.sortedByRef)
+	// This method is only expected to be called during compaction from the AllSortedPostings, with AllPostingsKey.
+	// The result of this method will be passed to SortedPostings().
+	// In order to avoid sorting head twice, but still return the correct results, we return a postings type with a marker here.
+	// This marker will be used by SortedPostings to swap the full postings by the ones sorted by labels.
+	// However, the results is still valid to be used as normal postings as well.
+	if k, v := index.AllPostingsKey(); name == k && len(values) == 1 && values[0] == v {
+		return allSelectedSeriesPostings{selectedSeriesPostings}, nil
 	}
-	return index.NewListPostings(seriesRefs), nil
+
+	// This is not expected to be used, as headSelectedSeriesIndexReader is only expected to be used during compaction.
+	return index.Intersect(selectedSeriesPostings, h.head.postings.Postings(ctx, name, values...)), nil
 }
 
-func (h *headStaleIndexReader) PostingsForLabelMatching(ctx context.Context, name string, match func(string) bool) index.Postings {
-	// Unused for compaction, so we don't need to optimise.
-	seriesRefs, err := h.head.filterStaleSeriesAndSortPostings(h.head.postings.PostingsForLabelMatching(ctx, name, match))
-	if err != nil {
-		return index.ErrPostings(err)
-	}
-	return index.NewListPostings(seriesRefs)
+func (h *headSelectedSeriesIndexReader) PostingsForLabelMatching(ctx context.Context, name string, match func(string) bool) index.Postings {
+	// This is not expected to be used, as headSelectedSeriesIndexReader is only expected to be used during compaction.
+	return index.Intersect(
+		index.NewListPostings(h.selectedSeriesRefs.sortedByRef),
+		h.head.postings.PostingsForLabelMatching(ctx, name, match),
+	)
 }
 
-func (h *headStaleIndexReader) PostingsForAllLabelValues(ctx context.Context, name string) index.Postings {
-	// Unused for compaction, so we don't need to optimise.
-	seriesRefs, err := h.head.filterStaleSeriesAndSortPostings(h.head.postings.PostingsForAllLabelValues(ctx, name))
-	if err != nil {
-		return index.ErrPostings(err)
-	}
-	return index.NewListPostings(seriesRefs)
+func (h *headSelectedSeriesIndexReader) PostingsForAllLabelValues(ctx context.Context, name string) index.Postings {
+	// This is not expected to be used, as headSelectedSeriesIndexReader is only expected to be used during compaction.
+	return index.Intersect(
+		index.NewListPostings(h.selectedSeriesRefs.sortedByRef),
+		h.head.postings.PostingsForAllLabelValues(ctx, name),
+	)
 }
 
-// filterStaleSeriesAndSortPostings returns the stale series references from the given postings
-// that also do not have any out-of-order data.
-func (h *Head) filterStaleSeriesAndSortPostings(p index.Postings) ([]storage.SeriesRef, error) {
-	series := make([]*memSeries, 0, 1024)
+type seriesRefs struct {
+	sortedByRef    []storage.SeriesRef
+	sortedByLabels []storage.SeriesRef
+}
+
+// filterSeriesAndSortPostings resolves the series referenced by p and
+// returns the subset that exists in the head and, when keep is non-nil,
+// satisfies keep.
+//
+// The returned series are provided in two orders:
+//
+//   - sortedByRef preserves the order of the input postings
+//   - sortedByLabels is sorted by series labels
+//
+// When keep is non-nil, it is invoked while holding the series lock and
+// may inspect any series field. A nil keep accepts all resolved series.
+//
+// Refs that do not resolve to a head series are silently dropped and
+// reported in a single debug log line per call. Errors returned by the
+// underlying postings iterator are wrapped with "expand postings".
+func (h *Head) filterSeriesAndSortPostings(p index.Postings, keep func(*memSeries) bool) (seriesRefs, error) {
+	sortedByRef := make([]storage.SeriesRef, 0, 1024)
+	keptSeries := make([]*memSeries, 0, 1024)
 
 	notFoundSeriesCount := 0
 	for p.Next() {
-		s := h.series.getByID(chunks.HeadSeriesRef(p.At()))
+		ref := p.At()
+		s := h.series.getByID(chunks.HeadSeriesRef(ref))
 		if s == nil {
 			notFoundSeriesCount++
 			continue
 		}
 
-		s.Lock()
-		if s.ooo != nil {
-			// Has out-of-order data; skip it because we cannot determine if a series
-			// is stale when it's getting out-of-order data.
+		if keep != nil {
+			s.Lock()
+			ok := keep(s)
 			s.Unlock()
-			continue
+			if !ok {
+				continue
+			}
 		}
 
-		if value.IsStaleNaN(s.lastValue) ||
-			(s.lastHistogramValue != nil && value.IsStaleNaN(s.lastHistogramValue.Sum)) ||
-			(s.lastFloatHistogramValue != nil && value.IsStaleNaN(s.lastFloatHistogramValue.Sum)) {
-			series = append(series, s)
-		}
-		s.Unlock()
+		sortedByRef = append(sortedByRef, ref)
+		keptSeries = append(keptSeries, s)
 	}
 	if notFoundSeriesCount > 0 {
-		h.logger.Debug("Looked up stale series not found", "count", notFoundSeriesCount)
+		h.logger.Debug("Looked up series not found", "count", notFoundSeriesCount)
 	}
 	if err := p.Err(); err != nil {
-		return nil, fmt.Errorf("expand postings: %w", err)
+		return seriesRefs{}, fmt.Errorf("expand postings: %w", err)
 	}
 
-	slices.SortFunc(series, func(a, b *memSeries) int {
+	slices.SortFunc(keptSeries, func(a, b *memSeries) int {
 		return labels.Compare(a.labels(), b.labels())
 	})
 
-	refs := make([]storage.SeriesRef, 0, len(series))
-	for _, p := range series {
-		refs = append(refs, storage.SeriesRef(p.ref))
+	sortedByLabels := make([]storage.SeriesRef, 0, len(keptSeries))
+	for _, s := range keptSeries {
+		sortedByLabels = append(sortedByLabels, storage.SeriesRef(s.ref))
 	}
-	return refs, nil
+	return seriesRefs{sortedByRef: sortedByRef, sortedByLabels: sortedByLabels}, nil
 }
 
-// SortedPostings returns the postings as it is because we expect any postings obtained via
-// headStaleIndexReader to be already sorted.
-func (*headStaleIndexReader) SortedPostings(p index.Postings) index.Postings {
-	// All the postings function above already give the sorted list of postings.
-	return p
+// SortedPostings returns the provided postings sorted by labels.
+// This implementation expects the input postings to be the one returned by headStaleIndexReader.Postings() with AllPostingsKey,
+// and will return the pre-sorted postings by labels in that case.
+func (h *headSelectedSeriesIndexReader) SortedPostings(p index.Postings) index.Postings {
+	switch p.(type) {
+	case allSelectedSeriesPostings:
+		// This is the marker we expect.
+		return index.NewListPostings(h.selectedSeriesRefs.sortedByLabels)
+	default:
+		// This is not expected, but implementing it is easy: just delegate to headIndexReader's logic.
+		return h.headIndexReader.SortedPostings(p)
+	}
 }
 
-// SortedStaleSeriesRefsNoOOOData returns all the series refs of the stale series that do not have any out-of-order data.
-func (h *Head) SortedStaleSeriesRefsNoOOOData(ctx context.Context) ([]storage.SeriesRef, error) {
+// staleSeriesRefsNoOOOData returns all the series refs of the stale series that do not have any out-of-order data.
+func (h *Head) staleSeriesRefsNoOOOData(ctx context.Context) (seriesRefs, error) {
 	k, v := index.AllPostingsKey()
-	return h.filterStaleSeriesAndSortPostings(h.postings.Postings(ctx, k, v))
+	return h.filterSeriesAndSortPostings(h.postings.Postings(ctx, k, v), func(s *memSeries) bool {
+		return isSeriesWithoutOOO(s) && isStaleSeries(s)
+	})
 }
 
 // appendSeriesChunks appends chunk metadata for s to chks.
@@ -370,7 +401,6 @@ func appendSeriesChunks(s *memSeries, mint, maxt int64, chks []chunks.Meta, head
 
 	// Multiple head chunks: collect once O(N), iterate O(N).
 	headChunksBuf = collectHeadChunks(s.headChunks, headChunksBuf[:0])
-	clear(headChunksBuf[len(headChunksBuf):cap(headChunksBuf)])
 	for i, chk := range headChunksBuf {
 		maxTime := chk.maxTime
 		if i == len(headChunksBuf)-1 {
@@ -480,40 +510,74 @@ type headChunkReader struct {
 	enableCache bool
 	// Cache for head chunks — avoids O(n²) linked-list walks when
 	// iterating all chunks of a series oldest-to-newest.
-	cachedSeriesRef      storage.SeriesRef
-	cachedHeadChunks     []*memChunk
-	cachedHeadChunksHead *memChunk // Head pointer at collection time; detects head-chunk replacement.
-	cachedMmapLen        int       // len(s.mmappedChunks) at collection time; detects mmap events.
+	cachedKey        headChunkCacheKey
+	cachedHeadChunks []*memChunk
+}
+
+// headChunkCacheKey identifies the chunk-layout state of a series at
+// collection time; any layout change (append, mmapping, truncation) alters at
+// least one field, invalidating the cached slice.
+type headChunkCacheKey struct {
+	ref          storage.SeriesRef
+	head         *memChunk          // Head pointer; detects head-chunk replacement.
+	mmapLen      int                // len(s.mmappedChunks); detects mmap events.
+	firstChunkID chunks.HeadChunkID // Detects truncation.
+}
+
+// headChunkCacheKeyFor returns the cache key for the current chunk layout of s.
+// The series lock must be held.
+func headChunkCacheKeyFor(s *memSeries) headChunkCacheKey {
+	return headChunkCacheKey{
+		ref:          storage.SeriesRef(s.ref),
+		head:         s.headChunks,
+		mmapLen:      len(s.mmappedChunks),
+		firstChunkID: s.firstChunkID,
+	}
 }
 
 func (h *headChunkReader) Close() error {
 	if h.isoState != nil {
 		h.isoState.Close()
 	}
+	// Release the cache so a closed reader retains no chunk data.
+	h.cachedKey = headChunkCacheKey{}
+	h.cachedHeadChunks = nil
 	return nil
 }
 
+// EnableChunkCache enables the head-chunk cache for sequential chunk access
+// patterns (range queries), which look up every chunk of a series. The cache
+// is invalidated whenever the series' chunk layout changes (a parallel append,
+// mmapping, or truncation), falling back to O(n) for that lookup.
+func (h *headChunkReader) EnableChunkCache() {
+	h.enableCache = true
+}
+
+// getOrCollectHeadChunks returns the cached head-chunk slice for s, collecting
+// it first if the cache does not match the series' current chunk layout.
+// The series lock must be held; the fingerprint comparison is only consistent
+// against concurrent appends, mmapping, and truncation under that lock.
 func (h *headChunkReader) getOrCollectHeadChunks(s *memSeries) []*memChunk {
 	// Skip if the cache is disabled (instant queries) or there are no head chunks or there's only one.
 	if !h.enableCache || s.headChunks == nil || s.headChunks.prev == nil {
 		return nil
 	}
 
-	ref := storage.SeriesRef(s.ref)
-	if ref == h.cachedSeriesRef && s.headChunks == h.cachedHeadChunksHead && h.cachedMmapLen == len(s.mmappedChunks) {
+	key := headChunkCacheKeyFor(s)
+	if key == h.cachedKey {
 		return h.cachedHeadChunks
 	}
 
-	var buf []*memChunk
-	if h.cachedHeadChunks != nil {
-		buf = h.cachedHeadChunks[:0]
+	buf := h.cachedHeadChunks[:0]
+	// Pre-size the first collection, and do not carry oversized backing arrays
+	// from one series to the next (the headChunksBufMaxCap policy used for
+	// headChunksBuf) — but keep a large array while it still serves the same
+	// series.
+	if c := cap(buf); c == 0 || (c > headChunksBufMaxCap && key.ref != h.cachedKey.ref) {
+		buf = make([]*memChunk, 0, s.headChunkCount.Load())
 	}
 	h.cachedHeadChunks = collectHeadChunks(s.headChunks, buf)
-	// Allow GC of *memChunk pointers left over from a previous, longer collection.
-	clear(h.cachedHeadChunks[len(h.cachedHeadChunks):cap(h.cachedHeadChunks)])
-	h.cachedSeriesRef = ref
-	h.cachedHeadChunksHead = s.headChunks
-	h.cachedMmapLen = len(s.mmappedChunks)
+	h.cachedKey = key
 	return h.cachedHeadChunks
 }
 

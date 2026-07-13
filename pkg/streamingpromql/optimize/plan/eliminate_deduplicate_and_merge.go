@@ -124,7 +124,7 @@ func canEliminateDeduplicateAndMergeDelayedNameRemoval(node planning.Node) bool 
 	case *core.DropName:
 		return areSeriesUniqueDropName(node)
 	case *core.FunctionCall:
-		if isLabelReplaceOrJoinFunction(node) {
+		if isLabelModifyingFunction(node) {
 			return false
 		}
 
@@ -147,7 +147,7 @@ func canEliminateDeduplicateAndMerge(node planning.Node) (bool, error) {
 	case *core.MatrixSelector:
 		return hasExactNameMatcher(node.Matchers), nil
 	case *core.FunctionCall:
-		if isLabelReplaceOrJoinFunction(node) {
+		if isLabelModifyingFunction(node) {
 			return false, nil
 		}
 
@@ -200,12 +200,12 @@ func areSeriesUniqueFunctionCall(node *core.FunctionCall) bool {
 		for i := len(path) - 1; i >= 0; i-- {
 			switch e := path[i].(type) {
 			case *core.FunctionCall:
-				if isLabelReplaceOrJoinFunction(e) {
-					// If series are currently unique and we see a call to label_replace or
-					// label_join, we need _two_ subsequent DeduplicateAndMerge nodes in the
-					// query plan. One that ensures that results from the function are unique
-					// since it modifies labels and one that ensures results are unique after
-					// the __name__ label is dropped.
+				if isLabelModifyingFunction(e) {
+					// If series are currently unique and we see a call to a label-modifying
+					// function (label_replace, label_join or histogram_quantiles), we need
+					// _two_ subsequent DeduplicateAndMerge nodes in the query plan. One that
+					// ensures that results from the function are unique since it modifies labels
+					// and one that ensures results are unique after the __name__ label is dropped.
 					if dedupeNeeded == 0 {
 						dedupeNeeded += 2
 					} else {
@@ -233,7 +233,7 @@ func areSeriesUniqueDropName(node *core.DropName) bool {
 		for i := len(path) - 1; i >= 0; i-- {
 			switch e := path[i].(type) {
 			case *core.FunctionCall:
-				if isLabelReplaceOrJoinFunction(e) {
+				if isLabelModifyingFunction(e) {
 					dedupeNeeded++
 				}
 			case *core.BinaryExpression:
@@ -274,10 +274,14 @@ func walkToSelectors(n planning.Node, examine func(dedupeNeeded int, path []plan
 	return unique
 }
 
-func isLabelReplaceOrJoinFunction(node planning.Node) bool {
+// isLabelModifyingFunction reports whether the function call sets or rewrites a label based on its
+// arguments, and therefore can produce duplicate series. This covers label_replace and label_join,
+// as well as histogram_quantiles, which sets a configurable quantile label (its second argument)
+// that may collide with an existing label or with another quantile in the same call.
+func isLabelModifyingFunction(node planning.Node) bool {
 	if funcNode, isFunctionCall := node.(*core.FunctionCall); isFunctionCall {
 		fn := funcNode.Function
-		return fn == functions.FUNCTION_LABEL_REPLACE || fn == functions.FUNCTION_LABEL_JOIN
+		return fn == functions.FUNCTION_LABEL_REPLACE || fn == functions.FUNCTION_LABEL_JOIN || fn == functions.FUNCTION_HISTOGRAM_QUANTILES
 	}
 	return false
 }

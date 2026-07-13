@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/antithesishq/antithesis-sdk-go/assert"
 	"github.com/prometheus/prometheus/promql"
 
 	"github.com/grafana/mimir/pkg/util/limiter"
@@ -251,6 +252,49 @@ func (b *FPointRingBuffer) ViewUntilSearchingBackwards(maxT int64, existing *FPo
 
 	existing.offset = 0
 	existing.size = nextPositionToCheck + 1
+	return existing
+}
+
+// ViewBetweenSearchingBackwards returns a view into this buffer including only points with timestamps
+// greater than minT and less than or equal to maxT. The method panics if minT is greater than maxT.
+func (b *FPointRingBuffer) ViewBetweenSearchingBackwards(minT, maxT int64, existing *FPointRingBufferView) *FPointRingBufferView {
+	if existing == nil {
+		existing = &FPointRingBufferView{buffer: b}
+	}
+
+	if minT > maxT {
+		assert.Unreachable("attempted to create an FPointRingBufferView with minT > maxT", map[string]any{
+			"min_t": minT,
+			"max_t": maxT,
+		})
+		panic(fmt.Sprintf("attempted to create an FPointRingBufferView with minT(%d) > maxT(%d) (this is a bug)", minT, maxT))
+	}
+
+	// If the buffer is empty or min time is beyond the last point in this buffer,
+	// return a zero-sized view since there are no points or no matching points.
+	if b.size == 0 || b.Last().T < minT {
+		existing.offset = 0
+		existing.size = 0
+		return existing
+	}
+
+	var start int
+	for start = b.size - 1; start >= 0; start-- {
+		if b.PointAt(start).T <= minT {
+			break
+		}
+	}
+
+	var end int
+	for end = b.size - 1; end >= 0; end-- {
+		if b.PointAt(end).T <= maxT {
+			break
+		}
+	}
+
+	existing.offset = start + 1
+	existing.size = end - start
+
 	return existing
 }
 

@@ -16,6 +16,9 @@ spec:
     whenScaled: {{ .Values.compactor.persistentVolume.whenScaled }}
   {{- end }}
   replicas: {{ .Values.compactor.replicas }}
+  {{- with .Values.compactor.revisionHistoryLimit }}
+  revisionHistoryLimit: {{ . }}
+  {{- end }}
   selector:
     matchLabels:
       {{- include "mimir.selectorLabels" (dict "ctx" . "component" "compactor" "memberlist" true) | nindent 6 }}

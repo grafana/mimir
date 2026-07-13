@@ -3,7 +3,7 @@
 package core
 
 import (
-	"fmt"
+	"context"
 	"time"
 
 	"github.com/gogo/protobuf/proto"
@@ -32,23 +32,6 @@ func (n *NoOp) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_NO_OP
 }
 
-func (n *NoOp) SetChildren(children []planning.Node) error {
-	if len(children) != 0 {
-		return fmt.Errorf("node of type NoOp expects 0 children, but got %d", len(children))
-	}
-
-	return nil
-}
-
-func (n *NoOp) ReplaceChild(idx int, _ planning.Node) error {
-	return fmt.Errorf("node of type NoOp supports no children, but attempted to replace child at index %d", idx)
-}
-
-func (n *NoOp) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
-	o, ok := other.(*NoOp)
-	return ok && n.MatrixSelector == o.MatrixSelector
-}
-
 func (n *NoOp) MergeHints(_ planning.Node) error {
 	// Nothing to do.
 	return nil
@@ -59,10 +42,6 @@ func (n *NoOp) Describe() string {
 		return "matrix"
 	}
 	return ""
-}
-
-func (n *NoOp) ChildrenLabels() []string {
-	return nil
 }
 
 func (n *NoOp) ChildrenTimeRange(timeRange types.QueryTimeRange) types.QueryTimeRange {
@@ -88,7 +67,7 @@ func (n *NoOp) MinimumRequiredPlanVersion(types.QueryTimeRange) (planning.QueryP
 	return planning.QueryPlanV10, nil
 }
 
-func MaterializeNoOp(n *NoOp, _ *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
+func MaterializeNoOp(_ context.Context, n *NoOp, _ *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
 	var o types.Operator
 
 	if n.MatrixSelector {

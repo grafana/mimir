@@ -10,18 +10,23 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
 	"sync"
 	"unicode/utf16"
 	"unsafe"
+
+	querierapi "github.com/grafana/mimir/pkg/querier/api"
 )
 
 const (
 	defaultActiveSeriesChunkMaxBufferSize = 1024 * 1024 // 1MB
 
 	checkContextCancelledBytesInterval = 256
+
+	checkContextCancelledFramesInterval = 256
 )
 
 var activeSeriesChunkBufferPool = sync.Pool{
@@ -88,6 +93,16 @@ func (d *shardActiveSeriesResponseDecoder) stickError(err error) {
 func (d *shardActiveSeriesResponseDecoder) close() {
 	_, _ = io.Copy(io.Discard, d.rc)
 	_ = d.rc.Close()
+}
+
+func (d *shardActiveSeriesResponseDecoder) stream(framed bool) error {
+	if framed {
+		return d.streamFramedData()
+	}
+	if err := d.decode(); err != nil {
+		return err
+	}
+	return d.streamData()
 }
 
 func (d *shardActiveSeriesResponseDecoder) decode() error {
@@ -209,6 +224,68 @@ func (d *shardActiveSeriesResponseDecoder) streamData() error {
 	}
 	d.checkContextCanceled()
 	return d.err
+}
+
+func (d *shardActiveSeriesResponseDecoder) streamFramedData() error {
+	firstItem := true
+	frameCount := 0
+
+	cb := activeSeriesChunkBufferPool.Get().(*bytes.Buffer)
+	for {
+		n, err := binary.ReadUvarint(d.br)
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				if cb.Len() > 0 {
+					d.streamCh <- cb
+				} else {
+					reuseActiveSeriesDataStreamBuffer(cb)
+				}
+				d.checkContextCanceled()
+				return d.err
+			}
+			reuseActiveSeriesDataStreamBuffer(cb)
+			d.stickError(err)
+			return d.err
+		}
+
+		if n > querierapi.MaxActiveSeriesFrameSize {
+			reuseActiveSeriesDataStreamBuffer(cb)
+			d.stickError(fmt.Errorf("streamFramedData: series frame size %d exceeds maximum %d", n, querierapi.MaxActiveSeriesFrameSize))
+			return d.err
+		}
+
+		frameCount++
+		if frameCount%checkContextCancelledFramesInterval == 0 {
+			d.checkContextCanceled()
+			if d.err != nil {
+				reuseActiveSeriesDataStreamBuffer(cb)
+				return d.err
+			}
+		}
+
+		if !firstItem {
+			cb.WriteByte(',')
+		} else {
+			firstItem = false
+		}
+
+		if uint64(cap(d.strBuff)) < n {
+			d.strBuff = make([]byte, n)
+		}
+		frame := d.strBuff[:n]
+		if _, err := io.ReadFull(d.br, frame); err != nil {
+			reuseActiveSeriesDataStreamBuffer(cb)
+			d.stickError(err)
+			return d.err
+		}
+		cb.Write(frame)
+
+		if cb.Len() >= d.chunkBufferMaxSize {
+			d.streamCh <- cb
+			cb = activeSeriesChunkBufferPool.Get().(*bytes.Buffer)
+			firstItem = true
+		}
+	}
 }
 
 func (d *shardActiveSeriesResponseDecoder) nextToken() byte {

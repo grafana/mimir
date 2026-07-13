@@ -705,6 +705,10 @@ func (m multiTenantMockLimits) QueryShardingMaxShardedQueries(userID string) int
 	return m.byTenant[userID].maxShardedQueries
 }
 
+func (m multiTenantMockLimits) CardinalityShardingMaxShardedQueries(userID string) int {
+	return m.byTenant[userID].cardinalityMaxShardedQueries
+}
+
 func (m multiTenantMockLimits) QueryShardingMaxRegexpSizeBytes(userID string) int {
 	return m.byTenant[userID].maxRegexpSizeBytes
 }
@@ -806,6 +810,7 @@ type mockLimits struct {
 	maxCacheFreshness                     time.Duration
 	maxQueryParallelism                   int
 	maxShardedQueries                     int
+	cardinalityMaxShardedQueries          int
 	maxRegexpSizeBytes                    int
 	totalShards                           int
 	compactorShards                       int
@@ -872,6 +877,10 @@ func (m mockLimits) QueryShardingMaxShardedQueries(string) int {
 
 func (m mockLimits) QueryShardingMaxRegexpSizeBytes(string) int {
 	return m.maxRegexpSizeBytes
+}
+
+func (m mockLimits) CardinalityShardingMaxShardedQueries(string) int {
+	return m.cardinalityMaxShardedQueries
 }
 
 func (m mockLimits) CompactorSplitAndMergeShards(string) int {
@@ -982,8 +991,21 @@ func (m mockQueryLimitsProvider) GetEnableDelayedNameRemoval(ctx context.Context
 func (m mockQueryLimitsProvider) GetMaxOutOfOrderTimeWindow(ctx context.Context) (time.Duration, error) {
 	return m.m.outOfOrderTimeWindow, nil
 }
+
 func (m mockQueryLimitsProvider) GetMinResultsCacheTTL(ctx context.Context) (time.Duration, error) {
 	return m.m.resultsCacheTTL, nil
+}
+
+func (m mockQueryLimitsProvider) GetMinOutOfOrderResultsCacheTTL(ctx context.Context) (time.Duration, error) {
+	return m.m.resultsCacheOutOfOrderWindowTTL, nil
+}
+
+func (m mockQueryLimitsProvider) GetMaxCacheFreshness(_ context.Context) (time.Duration, error) {
+	return m.m.maxCacheFreshness, nil
+}
+
+func (m mockQueryLimitsProvider) AllowCachingUnalignedQueries(ctx context.Context) (bool, error) {
+	return m.m.resultsCacheForUnalignedQueryEnabled, nil
 }
 
 type mockHandler struct {
@@ -1276,7 +1298,7 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 		return expr
 	}
 
-	encodedOffsets := string(api.EncodeOffsets(map[int32]int64{0: 1, 1: 2}))
+	encodedOffsets := string(api.EncodeOffsetsV1(map[int32]int64{0: 1, 1: 2}))
 
 	requestHeaders := []*PrometheusHeader{
 		{Name: compat.ForceFallbackHeaderName, Values: []string{"true"}},
