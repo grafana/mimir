@@ -21,6 +21,14 @@ Before a piece of work is finished:
 - If you have made any changes to flags or config, run `make reference-help doc` and commit the changed files to update the config file documentation.
 - Follow the [pull request template](.github/PULL_REQUEST_TEMPLATE.md) when creating PRs.
 
+### Use signed and verified commits
+
+Effective June 22, 2026, all Grafana Labs repositories, including Mimir, [require signed and verified commits](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches#require-signed-commits).
+Commits must be both **signed and verified**: you sign a commit with your GPG or SSH key, and GitHub marks it as verified once you've added that key to your GitHub profile. A signed commit whose key isn't on your profile still shows as "Unverified" and doesn't satisfy the requirement.
+To learn how to enable commit verification, refer to [about commit signature verification](https://docs.github.com/en/authentication/managing-commit-signature-verification/about-commit-signature-verification), and to [checking your commit signature verification status](https://docs.github.com/en/authentication/troubleshooting-commit-signature-verification/checking-your-commit-and-tag-signature-verification-status) to confirm your commits are verified.
+
+**NOTE** Branch protection blocks merging a pull request until all of its commits are signed and verified. If your pull request contains unsigned or unverified commits, a maintainer will ask you to sign them and rebase before it can be merged. This applies to commits authored in whole or in part by AI coding tools.
+
 ## Experimental features
 
 By default, new experimental features should be disabled and gated behind a per-tenant limit or configuration flag, so that they can be tested and introduced gradually. Document the feature in [`docs/sources/mimir/configure/about-versioning.md`](../../sources/mimir/configure/about-versioning.md#experimental-features).
