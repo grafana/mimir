@@ -25,6 +25,10 @@
     // Added default flag for GEM-specific dashboards and alerts.
     gem_enabled: false,
 
+    // If Mimir deployments has compartments enabled, set to true to enable
+    // specific dropdowns and job selectors.
+    compartments_enabled: false,
+
     rollout_operator_alerts_enable: $._config.gem_enabled == false && $._config.deployment_type == 'kubernetes' && $._config.singleBinary == false,
     rollout_operator_dashboard_enable: true,
     rollout_operator_dashboard_title: 'rollout-operator',
@@ -126,6 +130,15 @@
       federation_frontend: ['federation-frontend.*'],  // Match federation-frontend deployments
     },
 
+    // List of job names that are replicated in different compartments.
+    compartmentalizedJobs: [
+      $._config.job_names.ingester,
+      $._config.job_names.block_builder,
+      $._config.job_names.compactor,
+      $._config.job_names.compactor_scheduler,
+      $._config.job_names.store_gateway,
+    ],
+
     // Name selectors for different application instances, using the "per_instance_label".
     instance_names: {
       // Wrap the regexp into an Helm compatible matcher if the deployment type is "kubernetes".
@@ -216,6 +229,8 @@
       job_query: 'cortex_build_info',  // Only used if singleBinary is true.
       cluster_query: 'cortex_build_info',
       namespace_query: 'cortex_build_info{%s=~"$cluster"}' % $._config.per_cluster_label,
+      read_compartments_query: '{%s=~"%s(.*-rc-.*)"}' % [$._config.per_job_label, $._config.job_prefix],
+      read_compartments_query_regex: '/.*-(?<text>rc-[0-9]+)|.*(?<value>-rc-[0-9]+)/g',  // match "-rc-XX" but shown as "rc-XX" in the UI
     },
 
     // Controls whether dashboards show classic or native latency histograms. Allowed values: 'classic' (default), 'native'.
