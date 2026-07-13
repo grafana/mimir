@@ -160,7 +160,7 @@ func newMetrics(reg prometheus.Registerer) *metrics {
 // buffer, neither of which this client uses — it produces via raw
 // Broker.Request — so kprom would report them as a constant zero. We register
 // the same names with real values (the produceWire* counters above and the
-// ClusterRecordBuffer gauges) and drop kprom's versions to avoid a duplicate
+// ClusterBuffer gauges) and drop kprom's versions to avoid a duplicate
 // registration.
 var kpromProducerStateMetricNames = []string{
 	"produce_bytes_total",

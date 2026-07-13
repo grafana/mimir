@@ -718,7 +718,8 @@
       },
       store_gateway: {
         enabled: false,
-        hpa_name: $._config.autoscaling_hpa_prefix + 'store-gateway-zone-a',
+        hpa_name: $._config.autoscaling_hpa_prefix + 'store-gateway-zone-a|' +
+                  $._config.autoscaling_hpa_prefix + 'store-gateway-zone-a-rc-.*',
       },
       distributor: {
         enabled: false,
@@ -734,16 +735,19 @@
       },
       ingester: {
         enabled: false,
-        hpa_name: $._config.autoscaling_hpa_prefix + 'ingester-zone-a',
+        hpa_name: $._config.autoscaling_hpa_prefix + 'ingester-zone-a|' +
+                  $._config.autoscaling_hpa_prefix + 'ingester-zone-a-rc-.*',
         replica_template_name: 'ingester-zone-a',
       },
       compactor: {
         enabled: false,
-        hpa_name: $._config.autoscaling_hpa_prefix + 'compactor',
+        hpa_name: $._config.autoscaling_hpa_prefix + 'compactor|' +
+                  $._config.autoscaling_hpa_prefix + 'compactor-rc-.*',
       },
       block_builder: {
         enabled: false,
-        hpa_name: $._config.autoscaling_hpa_prefix + 'block-builder',
+        hpa_name: $._config.autoscaling_hpa_prefix + 'block-builder|' +
+                  $._config.autoscaling_hpa_prefix + 'block-builder-rc-.*',
       },
     },
 

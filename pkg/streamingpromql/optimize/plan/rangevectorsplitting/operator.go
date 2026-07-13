@@ -307,7 +307,7 @@ func (m *FunctionOverRangeVectorSplit[T]) mergeSplitsMetadata(ctx context.Contex
 	seriesMap := make(map[string]int)
 	var seriesToSplits [][]SplitSeries
 
-	labelBytes := make([]byte, 0, 1024)
+	labelBytes := make([]byte, 0, types.LabelBytesBufferSize)
 
 	// Reuse split 0's metadata as base instead of copying.
 	mergedMetadata, err := m.splits[0].SeriesMetadata(ctx, matchers)

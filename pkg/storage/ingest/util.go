@@ -170,8 +170,8 @@ func commonKafkaClientOptions(cfg KafkaConfig, metrics *kprom.Metrics, logger lo
 		//
 		// We currently set min and max age to the same value to have constant load on the Kafka backend: regardless
 		// there are errors or not, the metadata requests frequency doesn't change.
-		kgo.MetadataMinAge(defaultMetadataRefreshInterval),
-		kgo.MetadataMaxAge(defaultMetadataRefreshInterval),
+		kgo.MetadataMinAge(DefaultMetadataRefreshInterval),
+		kgo.MetadataMaxAge(DefaultMetadataRefreshInterval),
 
 		kgo.WithLogger(NewKafkaLogger(logger)),
 

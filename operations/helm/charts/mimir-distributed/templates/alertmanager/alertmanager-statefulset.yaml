@@ -31,6 +31,9 @@ spec:
     whenDeleted: {{ .Values.alertmanager.persistentVolume.whenDeleted }}
     whenScaled: {{ .Values.alertmanager.persistentVolume.whenScaled }}
   {{- end }}
+  {{- with .Values.alertmanager.revisionHistoryLimit }}
+  revisionHistoryLimit: {{ . }}
+  {{- end }}
   selector:
     matchLabels:
       {{- include "mimir.selectorLabels" $args | nindent 6 }}

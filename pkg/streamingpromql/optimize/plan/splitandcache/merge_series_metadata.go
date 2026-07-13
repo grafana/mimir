@@ -62,7 +62,7 @@ func mergeSeriesMetadataFromMultipleSources[S seriesMetadataSource](ctx context.
 
 	// Build up a map of the series labels to their index in the output.
 	seriesIndices := make(map[string]int, len(allSeries))
-	labelBytesBuf := make([]byte, 0, 1024)
+	labelBytesBuf := make([]byte, 0, types.LabelBytesBufferSize)
 	for seriesIdx, series := range allSeries {
 		labelBytesBuf = series.Labels.Bytes(labelBytesBuf)
 		seriesIndices[string(labelBytesBuf)] = seriesIdx // Important: don't extract the string(...) call here - passing it directly allows us to avoid allocating it.

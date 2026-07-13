@@ -21,12 +21,6 @@ import (
 )
 
 const (
-	// writerRequestTimeoutOverhead is the overhead applied by the Writer to every Kafka timeout.
-	// You can think about this overhead as an extra time for requests sitting in the client's buffer
-	// before being sent on the wire and the actual time it takes to send it over the network and
-	// start being processed by Kafka.
-	writerRequestTimeoutOverhead = 2 * time.Second
-
 	// producerBatchMaxBytes is the max allowed size of a batch of Kafka records.
 	producerBatchMaxBytes = 16_000_000
 

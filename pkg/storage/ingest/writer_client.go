@@ -23,9 +23,11 @@ const (
 	// defaultProducerLinger is the producer-side batching delay.
 	defaultProducerLinger = 50 * time.Millisecond
 
-	// defaultMetadataRefreshInterval is how often Kafka metadata (broker
-	// list and partition leaders) is refreshed in the background.
-	defaultMetadataRefreshInterval = 10 * time.Second
+	// DefaultMetadataRefreshInterval is how often Kafka metadata (broker
+	// list and partition leaders) is refreshed. It is used for both the
+	// minimum and maximum metadata age so the metadata request frequency
+	// stays constant regardless of errors.
+	DefaultMetadataRefreshInterval = 10 * time.Second
 )
 
 // newKafkaProducerForBackend selects and constructs the producer
@@ -44,7 +46,13 @@ func newKafkaProducerForBackend(cfg KafkaConfig, maxInflight int, logger log.Log
 		// kafka_* extended latency metrics, to match the kafka backend.
 		warpstreamOpts = append(warpstreamOpts, wgo.WithHooks(NewKafkaClientExtendedMetrics(reg)))
 
-		warpstreamClient, err := wgo.NewWarpstreamClient(logger, reg, warpstreamOpts...)
+		// Trace produces like the kafka backend. warpstream-go drives the
+		// produce-record hooks on its own produce path, so the same sampled-only
+		// tracer yields the same producer spans and traceparent propagation as a
+		// franz-go client.
+		warpstreamOpts = append(warpstreamOpts, wgo.WithHooks(newSampledOnlyTracer()))
+
+		warpstreamClient, err := wgo.NewWarpstreamClient(NewKafkaLogger(logger), reg, warpstreamOpts...)
 		if err != nil {
 			return nil, err
 		}
@@ -136,7 +144,7 @@ func NewKafkaWriterClient(kafkaCfg KafkaConfig, maxInflightProduceRequests int, 
 		kgo.RecordRetries(math.MaxInt64),
 		kgo.RecordDeliveryTimeout(kafkaCfg.WriteTimeout),
 		kgo.ProduceRequestTimeout(kafkaCfg.WriteTimeout),
-		kgo.RequestTimeoutOverhead(writerRequestTimeoutOverhead),
+		kgo.RequestTimeoutOverhead(kafkaCfg.WriteTimeoutOverhead),
 
 		// Unlimited number of buffered records because we limit on bytes in Writer. The reason why we don't use
 		// kgo.MaxBufferedBytes() is because it suffers a deadlock issue:
@@ -154,6 +162,13 @@ func NewKafkaWriterClient(kafkaCfg KafkaConfig, maxInflightProduceRequests int, 
 		kgoOpts = append(kgoOpts, kgo.DefaultProduceTopic(kafkaCfg.Topic))
 	}
 
+	if codecs := kafkaProducerCompressionFromConfig(kafkaCfg.ProducerCompression); codecs != nil {
+		// Override the franz-go default (snappy with no-compression fallback) when the operator
+		// has explicitly configured a producer compression codec. This is required for Kafka-compatible
+		// backends that don't support snappy, such as Azure Event Hub.
+		kgoOpts = append(kgoOpts, kgo.ProducerBatchCompression(codecs...))
+	}
+
 	return kgo.NewClient(kgoOpts...)
 }
 
@@ -166,7 +181,27 @@ type KafkaProducerClient interface {
 	Close()
 }
 
-// KafkaProducer is a KafkaProducerClient wrapper exposing some higher level features and metrics useful for producers.
+// kafkaProducerCompressionFromConfig translates the configured producer compression codec name
+// into a franz-go CompressionCodec preference list. An empty config value returns nil so that
+// the franz-go default (snappy with no-compression fallback) is preserved.
+func kafkaProducerCompressionFromConfig(name string) []kgo.CompressionCodec {
+	switch name {
+	case kafkaCompressionNone:
+		return []kgo.CompressionCodec{kgo.NoCompression()}
+	case kafkaCompressionGzip:
+		return []kgo.CompressionCodec{kgo.GzipCompression()}
+	case kafkaCompressionSnappy:
+		return []kgo.CompressionCodec{kgo.SnappyCompression()}
+	case kafkaCompressionLz4:
+		return []kgo.CompressionCodec{kgo.Lz4Compression()}
+	case kafkaCompressionZstd:
+		return []kgo.CompressionCodec{kgo.ZstdCompression()}
+	default:
+		return nil
+	}
+}
+
+// KafkaProducer is a kgo.Client wrapper exposing some higher level features and metrics useful for producers.
 type KafkaProducer struct {
 	client KafkaProducerClient
 

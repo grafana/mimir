@@ -2347,6 +2347,13 @@ results_cache:
 # CLI flag: -query-frontend.active-series-max-shard-concurrency
 [active_series_max_shard_concurrency: <int> | default = 0]
 
+# (experimental) Request active series responses from queriers in a
+# length-delimited framed format that the query-frontend can merge using
+# significantly less CPU. Queriers that don't support the format fall back to
+# JSON transparently.
+# CLI flag: -query-frontend.active-series-framed-responses
+[active_series_framed_responses: <boolean> | default = false]
+
 # (advanced) Comma-separated list of request header names to allow to pass
 # through to the rest of the query path. This is in addition to a list of
 # required headers that the read path needs.
@@ -5384,6 +5391,14 @@ kafka:
   # CLI flag: -ingest-storage.kafka.write-timeout
   [write_timeout: <duration> | default = 10s]
 
+  # (experimental) Additional time added on top of the write timeout, accounting
+  # for a write request sitting in the client buffer and travelling over the
+  # network before the Kafka backend starts processing it. Lower values fail
+  # slow writes faster, at the cost of less tolerance to network and buffer
+  # latency.
+  # CLI flag: -ingest-storage.kafka.write-timeout-overhead
+  [write_timeout_overhead: <duration> | default = 2s]
+
   # (deprecated) The number of Kafka clients used by producers. When the
   # configured number of clients is greater than 1, partitions are sharded among
   # Kafka clients. A higher number of clients may provide higher write
@@ -5675,6 +5690,15 @@ kafka:
   # This limit is per Kafka client. 0 to disable the limit.
   # CLI flag: -ingest-storage.kafka.producer-max-buffered-bytes
   [producer_max_buffered_bytes: <int> | default = 1073741824]
+
+  # The compression codec used by the Kafka producer when writing records to the
+  # Kafka backend. Supported values: none, gzip, snappy, lz4, zstd. When unset,
+  # the franz-go default (snappy with no-compression fallback) is used. Set to
+  # "none" to disable compression entirely; this is required when targeting
+  # Azure Event Hub via its Kafka-compatible endpoint, which does not support
+  # compressed produce requests.
+  # CLI flag: -ingest-storage.kafka.producer-compression
+  [producer_compression: <string> | default = ""]
 
   # The maximum allowed for a read requests processed by an ingester to wait
   # until strong read consistency is enforced. 0 to disable the timeout.

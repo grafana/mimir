@@ -1213,10 +1213,18 @@ func madOverTime(step *types.RangeVectorStepData, _ []types.ScalarData, _ types.
 	// MAD = median( | xᵢ - median(x) | )
 
 	for _, p := range head {
+		if math.IsNaN(p.F) {
+			return math.NaN(), true, nil, nil
+		}
+
 		values = append(values, p.F)
 	}
 
 	for _, p := range tail {
+		if math.IsNaN(p.F) {
+			return math.NaN(), true, nil, nil
+		}
+
 		values = append(values, p.F)
 	}
 

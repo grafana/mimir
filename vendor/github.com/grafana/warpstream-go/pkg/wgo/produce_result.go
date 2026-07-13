@@ -101,7 +101,7 @@ func getProduceResultErr(err error) produceResultErr {
 // produced records are tolerated.
 type produceResultAccumulator struct {
 	mu       sync.Mutex
-	pending  map[topicPartition][]*kgo.Record
+	pending  map[topicPartition]encodedTopicPartitionRecords
 	resolved map[topicPartition]kmsg.ProduceResponseTopicPartition
 	// failed holds the most recent per-partition entry with a non-zero
 	// ErrorCode for partitions still in pending. response() prefers
@@ -121,9 +121,9 @@ type produceResultAccumulator struct {
 // newProduceResultAccumulator returns an accumulator seeded with the
 // topic-partitions to produce. Duplicate (topic, partition) keys return
 // an error.
-func newProduceResultAccumulator(partitions []topicPartitionRecords) (*produceResultAccumulator, error) {
+func newProduceResultAccumulator(partitions []encodedTopicPartitionRecords) (*produceResultAccumulator, error) {
 	a := &produceResultAccumulator{
-		pending:          make(map[topicPartition][]*kgo.Record, len(partitions)),
+		pending:          make(map[topicPartition]encodedTopicPartitionRecords, len(partitions)),
 		resolved:         make(map[topicPartition]kmsg.ProduceResponseTopicPartition),
 		failed:           make(map[topicPartition]kmsg.ProduceResponseTopicPartition),
 		responseTopicIDs: make(map[string][16]byte),
@@ -131,25 +131,22 @@ func newProduceResultAccumulator(partitions []topicPartitionRecords) (*produceRe
 	for _, p := range partitions {
 		key := topicPartition{topic: p.topic, partition: p.partition}
 		if _, exists := a.pending[key]; exists {
-			// Reject duplicates: the merge logic assumes one record set per key.
+			// Reject duplicates: the merge logic assumes one entry per key.
 			return nil, fmt.Errorf("duplicate topic-partition in input: topic=%q partition=%d", p.topic, p.partition)
 		}
-		a.pending[key] = p.records
+		a.pending[key] = p
 	}
 	return a, nil
 }
 
-// remaining returns the partitions still pending.
-func (a *produceResultAccumulator) remaining() []topicPartitionRecords {
+// remaining returns the partitions still pending, each carrying its pre-encoded
+// batch.
+func (a *produceResultAccumulator) remaining() []encodedTopicPartitionRecords {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	out := make([]topicPartitionRecords, 0, len(a.pending))
-	for tp, records := range a.pending {
-		out = append(out, topicPartitionRecords{
-			topic:     tp.topic,
-			partition: tp.partition,
-			records:   records,
-		})
+	out := make([]encodedTopicPartitionRecords, 0, len(a.pending))
+	for _, p := range a.pending {
+		out = append(out, p)
 	}
 	return out
 }

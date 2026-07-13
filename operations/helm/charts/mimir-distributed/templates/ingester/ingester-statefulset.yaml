@@ -36,6 +36,9 @@ spec:
     whenDeleted: {{ .Values.ingester.persistentVolume.whenDeleted }}
     whenScaled: {{ .Values.ingester.persistentVolume.whenScaled }}
   {{- end }}
+  {{- with .Values.ingester.revisionHistoryLimit }}
+  revisionHistoryLimit: {{ . }}
+  {{- end }}
   selector:
     matchLabels:
       {{- include "mimir.selectorLabels" $args | nindent 6 }}
