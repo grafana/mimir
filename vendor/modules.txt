@@ -743,8 +743,8 @@ github.com/grafana/regexp/syntax
 # github.com/grafana/warpstream-go v0.0.0-20260710130640-f4258f6a3f82
 ## explicit; go 1.25.10
 github.com/grafana/warpstream-go/pkg/wgo
-# github.com/grafana/wiresmith v0.0.0-20260618160438-f15959a1e4e7
-## explicit; go 1.26.4
+# github.com/grafana/wiresmith v0.9.0
+## explicit; go 1.25.0
 github.com/grafana/wiresmith/protohelpers
 github.com/grafana/wiresmith/types/known/anypb
 # github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0
