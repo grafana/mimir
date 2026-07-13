@@ -347,6 +347,11 @@ type Options struct {
 	// is implemented.
 	EnableSTAsZeroSample bool
 
+	// EnableHistogramSTEncoding enables the ST-capable chunk encoding for
+	// integer and float histograms (EncHistogramST and EncFloatHistogramST).
+	// Independent of FloatChunkEncoding; only controls histogram families.
+	EnableHistogramSTEncoding bool
+
 	// EnableSTStorage determines whether TSDB should write a Start Timestamp (ST)
 	// per sample to WAL.
 	// TODO(bwplotka): Implement this option as per PROM-60, currently it's noop.
@@ -1030,6 +1035,7 @@ func Open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, st
 		opts.FeatureRegistry.Enable(features.TSDB, "native_histograms")
 		opts.FeatureRegistry.Set(features.TSDB, "st_storage", opts.EnableSTStorage)
 		opts.FeatureRegistry.Set(features.TSDB, "xor2_encoding", opts.XOR2EncodingAllowed)
+		opts.FeatureRegistry.Set(features.TSDB, "histograms_st_encoding", opts.EnableHistogramSTEncoding)
 	}
 
 	return open(dir, l, r, opts, rngs, stats)
@@ -1144,6 +1150,8 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 		}
 	}
 
+	var wal, wbl *wlog.WL
+
 	db := &DB{
 		dir:            dir,
 		logger:         l,
@@ -1160,6 +1168,23 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 		// Close files if startup fails somewhere.
 		if returnedErr == nil {
 			return
+		}
+
+		// If head was never initialized, WAL/WBL goroutines need explicit
+		// cleanup since db.Close() -> head.Close() won't reach them.
+		if db.head == nil {
+			if wal != nil {
+				returnedErr = errors.Join(returnedErr, wal.Close())
+			}
+			if wbl != nil {
+				returnedErr = errors.Join(returnedErr, wbl.Close())
+			}
+		}
+
+		// db.Close() short-circuits once db.donec is closed below, so release
+		// the lockfile here to ensure it is always released on error.
+		if db.locker != nil {
+			returnedErr = errors.Join(returnedErr, db.locker.Release())
 		}
 
 		close(db.donec) // DB is never run if it was an error, so close this channel here.
@@ -1193,6 +1218,7 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 			PD:                          opts.PostingsDecoderFactory,
 			UseUncachedIO:               opts.UseUncachedIO,
 			BlockExcludeFilter:          opts.BlockCompactionExcludeFunc,
+			FloatChunkEncoding:          db.floatChunkEncoding,
 		})
 	}
 	if err != nil {
@@ -1237,7 +1263,6 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 		db.fsSizeFunc = opts.FsSizeFunc
 	}
 
-	var wal, wbl *wlog.WL
 	segmentSize := wlog.DefaultSegmentSize
 	// Wal is enabled.
 	if opts.WALSegmentSize >= 0 {
@@ -1303,6 +1328,7 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 	headOpts.EnableSTAsZeroSample = opts.EnableSTAsZeroSample
 	headOpts.EnableSTStorage.Store(opts.EnableSTStorage)
 	headOpts.FloatChunkEncoding.Store(uint32(opts.FloatChunkEncoding))
+	headOpts.EnableHistogramSTEncoding.Store(opts.EnableHistogramSTEncoding)
 	headOpts.EnableMetadataWALRecords = opts.EnableMetadataWALRecords
 	headOpts.EnableFastStartup = opts.EnableFastStartup
 	if opts.WALReplayConcurrency > 0 {
@@ -2778,8 +2804,9 @@ func (db *DB) Querier(mint, maxt int64) (_ storage.Querier, err error) {
 		if err != nil {
 			// If we fail, all previously opened queriers must be closed.
 			for _, q := range blockQueriers {
-				// TODO(bwplotka): Handle error.
-				_ = q.Close()
+				if closeErr := q.Close(); closeErr != nil {
+					err = errors.Join(err, fmt.Errorf("close querier during cleanup: %w", closeErr))
+				}
 			}
 		}
 	}()
@@ -2856,8 +2883,9 @@ func (db *DB) blockChunkQuerierForRange(mint, maxt int64) (_ []storage.ChunkQuer
 		if err != nil {
 			// If we fail, all previously opened queriers must be closed.
 			for _, q := range blockQueriers {
-				// TODO(bwplotka): Handle error.
-				_ = q.Close()
+				if closeErr := q.Close(); closeErr != nil {
+					err = errors.Join(err, fmt.Errorf("close querier during cleanup: %w", closeErr))
+				}
 			}
 		}
 	}()
@@ -2913,13 +2941,24 @@ func (db *DB) blockChunkQuerierForRange(mint, maxt int64) (_ []storage.ChunkQuer
 	return blockQueriers, nil
 }
 
+// floatChunkEncoding returns the float chunk encoding currently in effect,
+// following runtime configuration reloads. Falls back to the startup option before
+// the head exists; only called from compaction and queries, which start after
+// open() has set db.head.
+func (db *DB) floatChunkEncoding() chunkenc.Encoding {
+	if h := db.head; h != nil {
+		return chunkenc.Encoding(h.opts.FloatChunkEncoding.Load())
+	}
+	return db.opts.FloatChunkEncoding
+}
+
 // ChunkQuerier returns a new chunk querier over the data partition for the given time range.
 func (db *DB) ChunkQuerier(mint, maxt int64) (storage.ChunkQuerier, error) {
 	blockQueriers, err := db.blockChunkQuerierForRange(mint, maxt)
 	if err != nil {
 		return nil, err
 	}
-	return storage.NewMergeChunkQuerier(blockQueriers, nil, storage.NewCompactingChunkSeriesMerger(storage.ChainedSeriesMerge)), nil
+	return storage.NewMergeChunkQuerier(blockQueriers, nil, storage.NewCompactingChunkSeriesMergerWithFloatEncoding(storage.ChainedSeriesMerge, db.floatChunkEncoding)), nil
 }
 
 // UnorderedChunkQuerier returns a new chunk querier over the data partition for the given time range.

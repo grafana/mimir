@@ -110,6 +110,9 @@ func FromLabelAdaptersToMetric(ls []LabelAdapter) model.Metric {
 
 // FromLabelAdaptersToKeyString makes a string to be used as a key to a map.
 // It's much simpler than FromLabelAdaptersToString, but not human-readable.
+//
+// This value should not be used for sorting series, as it does not produce the same sort order as labels.Labels.Compare().
+// Use CompareLabelAdapters instead.
 func FromLabelAdaptersToKeyString(ls []LabelAdapter) string {
 	buf := make([]byte, 0, 1024)
 	for i := range ls {

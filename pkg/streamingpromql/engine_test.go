@@ -66,8 +66,6 @@ const (
 )
 
 func init() {
-	types.EnableManglingReturnedSlices = true
-
 	// Set a tracer provider with in memory span exporter so we can check the spans later.
 	otel.SetTracerProvider(
 		tracesdk.NewTracerProvider(

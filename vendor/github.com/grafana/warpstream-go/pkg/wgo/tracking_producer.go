@@ -19,7 +19,7 @@ func NewTrackingProducer(inner DirectProducer, tracker AgentStatsTracker) *Track
 }
 
 // ProduceSync implements DirectProducer.
-func (p *TrackingProducer) ProduceSync(ctx context.Context, nodeID int32, partitions []topicPartitionRecords) ProduceResult {
+func (p *TrackingProducer) ProduceSync(ctx context.Context, nodeID int32, partitions []encodedTopicPartitionRecords) ProduceResult {
 	start := time.Now()
 	res := p.inner.ProduceSync(ctx, nodeID, partitions)
 	// Use ProduceResult.error() so the tracked error is consistent with what
