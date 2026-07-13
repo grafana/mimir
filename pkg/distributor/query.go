@@ -214,7 +214,6 @@ func mergeExemplarSets(a, b []mimirpb.Exemplar) []mimirpb.Exemplar {
 }
 
 func mergeExemplarQueryResponses(results []*ingester_client.ExemplarQueryResponse) *ingester_client.ExemplarQueryResponse {
-	var keys []string
 	exemplarResults := make(map[string]mimirpb.TimeSeries)
 	for _, r := range results {
 		for _, ts := range r.Timeseries {
@@ -222,7 +221,6 @@ func mergeExemplarQueryResponses(results []*ingester_client.ExemplarQueryRespons
 			e, ok := exemplarResults[lbls]
 			if !ok {
 				exemplarResults[lbls] = ts
-				keys = append(keys, lbls)
 			} else {
 				// Merge in any missing values from another ingesters exemplars for this series.
 				ts.Exemplars = mergeExemplarSets(e.Exemplars, ts.Exemplars)
@@ -231,14 +229,16 @@ func mergeExemplarQueryResponses(results []*ingester_client.ExemplarQueryRespons
 		}
 	}
 
-	// Query results from each ingester were sorted, but are not necessarily still sorted after merging.
-	slices.Sort(keys)
-
-	result := make([]mimirpb.TimeSeries, len(exemplarResults))
-	for i, k := range keys {
-		result[i] = exemplarResults[k]
-		result[i].MakeReferencesSafeToRetain()
+	result := make([]mimirpb.TimeSeries, 0, len(exemplarResults))
+	for _, r := range exemplarResults {
+		r.MakeReferencesSafeToRetain()
+		result = append(result, r)
 	}
+
+	// Query results from each ingester were sorted, but are not necessarily still sorted after merging.
+	slices.SortFunc(result, func(a, b mimirpb.TimeSeries) int {
+		return mimirpb.CompareLabelAdapters(a.Labels, b.Labels)
+	})
 
 	return &ingester_client.ExemplarQueryResponse{Timeseries: result}
 }
