@@ -30,6 +30,26 @@ data:
     blocks_storage:
       backend: s3
       bucket_store:
+        chunks_cache:
+          backend: memcached
+          memcached:
+            addresses: dnssrvnoa+test-revisionhistorylimit-values-mimir-chunks-cache.citestns.svc.cluster.local.:11211
+            max_idle_connections: 150
+            max_item_size: 1048576
+            timeout: 750ms
+        index_cache:
+          backend: memcached
+          memcached:
+            addresses: dnssrvnoa+test-revisionhistorylimit-values-mimir-index-cache.citestns.svc.cluster.local.:11211
+            max_idle_connections: 150
+            max_item_size: 5242880
+            timeout: 750ms
+        metadata_cache:
+          backend: memcached
+          memcached:
+            addresses: dnssrvnoa+test-revisionhistorylimit-values-mimir-metadata-cache.citestns.svc.cluster.local.:11211
+            max_idle_connections: 150
+            max_item_size: 1048576
         sync_dir: /data/tsdb-sync
       s3:
         access_key_id: grafana-mimir
@@ -59,7 +79,15 @@ data:
         heartbeat_period: 1m
         heartbeat_timeout: 4m
     frontend:
+      cache_results: true
       parallelize_shardable_queries: true
+      query_sharding_target_series_per_shard: 2500
+      results_cache:
+        backend: memcached
+        memcached:
+          addresses: dnssrvnoa+test-revisionhistorylimit-values-mimir-results-cache.citestns.svc.cluster.local.:11211
+          max_item_size: 26214400
+          timeout: 500ms
       scheduler_address: test-revisionhistorylimit-values-mimir-query-scheduler-headless.citestns.svc:9095
     frontend_worker:
       grpc_client_config:
@@ -105,6 +133,12 @@ data:
       rule_path: /data
     ruler_storage:
       backend: s3
+      cache:
+        backend: memcached
+        memcached:
+          addresses: dnssrvnoa+test-revisionhistorylimit-values-mimir-metadata-cache.citestns.svc.cluster.local.:11211
+          max_item_size: 1048576
+          timeout: 500ms
       s3:
         access_key_id: grafana-mimir
         bucket_name: mimir-ruler

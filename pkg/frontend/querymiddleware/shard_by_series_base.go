@@ -21,6 +21,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
+	querierapi "github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
@@ -37,6 +38,10 @@ type shardBySeriesBase struct {
 	// maxConcurrency bounds how many shards are in flight concurrently. 0 means
 	// no limit.
 	maxConcurrency int
+
+	// requestFramedResponses makes the sharded sub-requests advertise, via the
+	// Accept header, that they can consume the length-delimited response format.
+	requestFramedResponses bool
 }
 
 func (s *shardBySeriesBase) shardBySeriesSelector(ctx context.Context, spanLog *spanlogger.SpanLogger, r *http.Request, mergeFn func(ctx context.Context, reqs []*http.Request, encoding string) (*http.Response, error)) (*http.Response, error) {
@@ -74,7 +79,7 @@ func (s *shardBySeriesBase) shardBySeriesSelector(ctx context.Context, spanLog *
 		"shardCount", shardCount, "selector", selector.String(),
 	)
 
-	reqs, err := buildShardedRequests(ctx, r, shardCount, selector)
+	reqs, err := buildShardedRequests(ctx, r, shardCount, selector, s.requestFramedResponses)
 	if err != nil {
 		return nil, apierror.New(apierror.TypeInternal, err.Error())
 	}
@@ -127,7 +132,7 @@ func parseSelector(req *http.Request) (*parser.VectorSelector, error) {
 	return selector, nil
 }
 
-func buildShardedRequests(ctx context.Context, req *http.Request, numRequests int, selector parser.Expr) ([]*http.Request, error) {
+func buildShardedRequests(ctx context.Context, req *http.Request, numRequests int, selector parser.Expr, requestFramedResponses bool) ([]*http.Request, error) {
 	reqs := make([]*http.Request, numRequests)
 	for i := 0; i < numRequests; i++ {
 		r, err := http.NewRequestWithContext(ctx, http.MethodGet, req.URL.Path, http.NoBody)
@@ -146,6 +151,10 @@ func buildShardedRequests(ctx context.Context, req *http.Request, numRequests in
 		// This is the field read by httpgrpc.FromHTTPRequest, so we need to populate it
 		// here to ensure the request parameter makes it to the querier.
 		r.RequestURI = r.URL.String()
+
+		if requestFramedResponses {
+			r.Header.Set("Accept", querierapi.ContentTypeActiveSeriesFramed)
+		}
 
 		if err := user.InjectOrgIDIntoHTTPRequest(ctx, r); err != nil {
 			return nil, err

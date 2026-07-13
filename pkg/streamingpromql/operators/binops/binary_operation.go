@@ -33,7 +33,7 @@ import (
 //
 // The return value from the function is valid until it is called again.
 func vectorMatchingGroupKeyFunc(vectorMatching parser.VectorMatching) func(labels.Labels) []byte {
-	buf := make([]byte, 0, 1024)
+	buf := make([]byte, 0, types.LabelBytesBufferSize)
 
 	if vectorMatching.On {
 		slices.Sort(vectorMatching.MatchingLabels)

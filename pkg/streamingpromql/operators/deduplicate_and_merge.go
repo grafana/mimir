@@ -67,8 +67,7 @@ func (d *DeduplicateAndMerge) computeOutputSeriesGroups(innerMetadata []types.Se
 	// Why use a string, rather than the labels hash as a key here? This avoids any issues with hash collisions.
 	outputGroupMap := map[string][]int{}
 
-	// Why 1024 bytes? It's what labels.Labels.String() uses as a buffer size, so we use that as a sensible starting point too.
-	labelBytes := make([]byte, 0, 1024)
+	labelBytes := make([]byte, 0, types.LabelBytesBufferSize)
 
 	for seriesIdx, series := range innerMetadata {
 		labelBytes = series.Labels.Bytes(labelBytes)

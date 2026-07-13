@@ -52,15 +52,24 @@ func TestConfig_Validate(t *testing.T) {
 				cfg.KafkaConfig.Backend = KafkaBackendWarpstream
 			},
 		},
-		"should fail if backend is warpstream and write timeout is not greater than twice the request overhead": {
+		"should fail if backend is warpstream and write timeout is less than twice the request overhead": {
 			setup: func(cfg *Config) {
 				cfg.Enabled = true
 				cfg.KafkaConfig.Address = flagext.StringSliceCSV{"localhost"}
 				cfg.KafkaConfig.Topic = "test"
 				cfg.KafkaConfig.Backend = KafkaBackendWarpstream
-				cfg.KafkaConfig.WriteTimeout = writerRequestTimeoutOverhead * 2
+				cfg.KafkaConfig.WriteTimeout = DefaultKafkaRequestTimeoutOverhead*2 - time.Millisecond
 			},
 			expectedErr: ErrInvalidWarpstreamWriteTimeout,
+		},
+		"should pass if backend is warpstream and write timeout equals twice the request overhead": {
+			setup: func(cfg *Config) {
+				cfg.Enabled = true
+				cfg.KafkaConfig.Address = flagext.StringSliceCSV{"localhost"}
+				cfg.KafkaConfig.Topic = "test"
+				cfg.KafkaConfig.Backend = KafkaBackendWarpstream
+				cfg.KafkaConfig.WriteTimeout = DefaultKafkaRequestTimeoutOverhead * 2
+			},
 		},
 		"should pass if backend is warpstream and write timeout is just above twice the request overhead": {
 			setup: func(cfg *Config) {
@@ -68,7 +77,35 @@ func TestConfig_Validate(t *testing.T) {
 				cfg.KafkaConfig.Address = flagext.StringSliceCSV{"localhost"}
 				cfg.KafkaConfig.Topic = "test"
 				cfg.KafkaConfig.Backend = KafkaBackendWarpstream
-				cfg.KafkaConfig.WriteTimeout = writerRequestTimeoutOverhead*2 + time.Millisecond
+				cfg.KafkaConfig.WriteTimeout = DefaultKafkaRequestTimeoutOverhead*2 + time.Millisecond
+			},
+		},
+		"should honor a custom write timeout overhead when enforcing the warpstream write timeout floor": {
+			setup: func(cfg *Config) {
+				cfg.Enabled = true
+				cfg.KafkaConfig.Address = flagext.StringSliceCSV{"localhost"}
+				cfg.KafkaConfig.Topic = "test"
+				cfg.KafkaConfig.Backend = KafkaBackendWarpstream
+				cfg.KafkaConfig.WriteTimeoutOverhead = 500 * time.Millisecond
+				cfg.KafkaConfig.WriteTimeout = 500*time.Millisecond*2 - time.Millisecond
+			},
+			expectedErr: ErrInvalidWarpstreamWriteTimeout,
+		},
+		"should fail if the write timeout overhead is below the minimum": {
+			setup: func(cfg *Config) {
+				cfg.Enabled = true
+				cfg.KafkaConfig.Address = flagext.StringSliceCSV{"localhost"}
+				cfg.KafkaConfig.Topic = "test"
+				cfg.KafkaConfig.WriteTimeoutOverhead = MinKafkaRequestTimeoutOverhead - time.Millisecond
+			},
+			expectedErr: ErrInvalidWriteTimeoutOverhead,
+		},
+		"should pass if the write timeout overhead equals the minimum": {
+			setup: func(cfg *Config) {
+				cfg.Enabled = true
+				cfg.KafkaConfig.Address = flagext.StringSliceCSV{"localhost"}
+				cfg.KafkaConfig.Topic = "test"
+				cfg.KafkaConfig.WriteTimeoutOverhead = MinKafkaRequestTimeoutOverhead
 			},
 		},
 		"should not enforce the warpstream write timeout floor for the kafka backend": {
@@ -152,6 +189,31 @@ func TestConfig_Validate(t *testing.T) {
 				cfg.KafkaConfig.ProducerMaxRecordSizeBytes = maxProducerRecordDataBytesLimit + 1
 			},
 			expectedErr: ErrInvalidProducerMaxRecordSizeBytes,
+		},
+		"should pass if ingest storage is enabled and producer compression is set to none": {
+			setup: func(cfg *Config) {
+				cfg.Enabled = true
+				cfg.KafkaConfig.Address = flagext.StringSliceCSV{"localhost"}
+				cfg.KafkaConfig.Topic = "test"
+				cfg.KafkaConfig.ProducerCompression = kafkaCompressionNone
+			},
+		},
+		"should pass if ingest storage is enabled and producer compression is set to zstd": {
+			setup: func(cfg *Config) {
+				cfg.Enabled = true
+				cfg.KafkaConfig.Address = flagext.StringSliceCSV{"localhost"}
+				cfg.KafkaConfig.Topic = "test"
+				cfg.KafkaConfig.ProducerCompression = kafkaCompressionZstd
+			},
+		},
+		"should fail if ingest storage is enabled and producer compression is set to an unsupported codec": {
+			setup: func(cfg *Config) {
+				cfg.Enabled = true
+				cfg.KafkaConfig.Address = flagext.StringSliceCSV{"localhost"}
+				cfg.KafkaConfig.Topic = "test"
+				cfg.KafkaConfig.ProducerCompression = "brotli"
+			},
+			expectedErr: ErrInvalidProducerCompression,
 		},
 		"should fail if target consumer lag is enabled but max consumer lag is not": {
 			setup: func(cfg *Config) {
@@ -642,6 +704,7 @@ func TestKafkaConfig_ToWarpstreamClientOptions(t *testing.T) {
 			ClientID:                               "client-1",
 			DialTimeout:                            3 * time.Second,
 			WriteTimeout:                           7 * time.Second,
+			WriteTimeoutOverhead:                   DefaultKafkaRequestTimeoutOverhead,
 			WarpstreamHealthCheckSlowMultiplier:    1.5,
 			WarpstreamHealthCheckMaxSlowFraction:   0.4,
 			WarpstreamHealthCheckFaultyThreshold:   0.06,
@@ -670,7 +733,7 @@ func TestKafkaConfig_ToWarpstreamClientOptions(t *testing.T) {
 		// kafka-backend defaults; ClusterStatsTTL is hardcoded to 1s.
 		assert.Equal(t, defaultProducerLinger, wsCfg.Linger)
 		assert.Equal(t, int32(producerBatchMaxBytes), wsCfg.BatchMaxBytes)
-		assert.Equal(t, defaultMetadataRefreshInterval, wsCfg.MetadataRefreshInterval)
+		assert.Equal(t, DefaultMetadataRefreshInterval, wsCfg.MetadataRefreshInterval)
 		assert.Equal(t, time.Second, wsCfg.ClusterStatsTTL)
 		assert.Equal(t, 1.5, wsCfg.HealthCheck.SlowMultiplier)
 		assert.Equal(t, 0.4, wsCfg.HealthCheck.MaxSlowFraction)
@@ -681,12 +744,25 @@ func TestKafkaConfig_ToWarpstreamClientOptions(t *testing.T) {
 		assert.Equal(t, 2*time.Second, wsCfg.Demoter.ProbeInterval)
 		// The per-attempt produce timeout plus its overhead must sum to
 		// WriteTimeout so the whole hedge cascade fits within it.
-		assert.Equal(t, 7*time.Second-writerRequestTimeoutOverhead, wsCfg.DirectProducer.ProduceRequestTimeout)
-		assert.Equal(t, writerRequestTimeoutOverhead, wsCfg.DirectProducer.ProduceRequestTimeoutOverhead)
+		assert.Equal(t, 7*time.Second-DefaultKafkaRequestTimeoutOverhead, wsCfg.DirectProducer.ProduceRequestTimeout)
+		assert.Equal(t, DefaultKafkaRequestTimeoutOverhead, wsCfg.DirectProducer.ProduceRequestTimeoutOverhead)
 		assert.False(t, wsCfg.TLSEnabled)
 		assert.Nil(t, wsCfg.TLSConfig)
 
 		// The applied config must satisfy wgo's own validation.
+		require.NoError(t, wsCfg.Validate())
+	})
+
+	t.Run("honors a custom write timeout overhead", func(t *testing.T) {
+		cfg := baseConfig()
+		cfg.WriteTimeoutOverhead = time.Second
+
+		opts, err := cfg.ToWarpstreamClientOptions()
+		require.NoError(t, err)
+
+		wsCfg := wgo.NewConfig(opts...)
+		assert.Equal(t, 7*time.Second-time.Second, wsCfg.DirectProducer.ProduceRequestTimeout)
+		assert.Equal(t, time.Second, wsCfg.DirectProducer.ProduceRequestTimeoutOverhead)
 		require.NoError(t, wsCfg.Validate())
 	})
 

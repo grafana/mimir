@@ -67,10 +67,6 @@ local filename = 'mimir-ruler.json';
                 +
                 # Ingest storage architecture.
                 (sum(
-                    # Old metric.
-                    rate(cortex_ingest_storage_writer_produce_requests_total{%(job_matcher)s}[$__rate_interval])
-                    or
-                    # New metric.
                     rate(cortex_ingest_storage_writer_produce_records_enqueued_total{%(job_matcher)s}[$__rate_interval])
                 ) or vector(0))
               ||| % params

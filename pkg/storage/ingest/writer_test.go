@@ -580,7 +580,7 @@ func testWriter_WriteSync(t *testing.T, backend string) {
 
 					// Inject a slowdown on the 1st Produce request received by Kafka.
 					// NOTE: the slowdown is 1s longer than the client timeout.
-					time.Sleep(kafkaCfg.WriteTimeout + writerRequestTimeoutOverhead + time.Second)
+					time.Sleep(kafkaCfg.WriteTimeout + kafkaCfg.WriteTimeoutOverhead + time.Second)
 				}
 
 				return nil, nil, false
@@ -593,7 +593,7 @@ func testWriter_WriteSync(t *testing.T, backend string) {
 				elapsedTime := time.Since(startTime)
 
 				// It should take nearly the client's write timeout.
-				expectedElapsedTime := kafkaCfg.WriteTimeout + writerRequestTimeoutOverhead
+				expectedElapsedTime := kafkaCfg.WriteTimeout + kafkaCfg.WriteTimeoutOverhead
 				assert.InDelta(t, expectedElapsedTime, elapsedTime, float64(time.Second))
 			})
 
@@ -604,7 +604,7 @@ func testWriter_WriteSync(t *testing.T, backend string) {
 
 				// Wait 500ms less than the client timeout.
 				delay := 500 * time.Millisecond
-				time.Sleep(kafkaCfg.WriteTimeout + writerRequestTimeoutOverhead - delay)
+				time.Sleep(kafkaCfg.WriteTimeout + kafkaCfg.WriteTimeoutOverhead - delay)
 
 				startTime := time.Now()
 				assert.ErrorIs(t, writer.WriteSync(ctx, topicName, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: series2, Metadata: nil, Source: mimirpb.API}), kgo.ErrRecordTimeout)
@@ -803,7 +803,7 @@ func testWriter_WriteSync(t *testing.T, backend string) {
 				writeErrsMx.Lock()
 				defer writeErrsMx.Unlock()
 				return len(writeErrs) == 10
-			}, cfg.WriteTimeout+writerRequestTimeoutOverhead+time.Second, 100*time.Millisecond)
+			}, cfg.WriteTimeout+cfg.WriteTimeoutOverhead+time.Second, 100*time.Millisecond)
 
 			// Assert on the actual errors returned by WriteSync().
 			actualErrRecordTimeoutCount := 0

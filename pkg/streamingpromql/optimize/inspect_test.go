@@ -72,6 +72,29 @@ func TestWalk(t *testing.T) {
 	}
 }
 
+func BenchmarkWalk(b *testing.B) {
+	const query = "sum(rate(some_metric[5m]) + rate(other_metric[5m]))"
+
+	ctx := context.Background()
+	timeRange := types.NewInstantQueryTimeRange(time.Now())
+	observer := streamingpromql.NoopPlanningObserver{}
+
+	opts := streamingpromql.NewTestEngineOpts()
+	planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
+	require.NoError(b, err)
+
+	p, err := planner.NewQueryPlan(ctx, query, timeRange, streamingpromql.DefaultLookbackDelta, false, observer)
+	require.NoError(b, err)
+
+	visitor := optimize.VisitorFunc(func(node planning.Node, path []planning.Node) error {
+		return nil // no-op
+	})
+
+	for b.Loop() {
+		_ = optimize.Walk(p.Root, visitor)
+	}
+}
+
 type TestVisitor struct {
 	test *testing.T
 

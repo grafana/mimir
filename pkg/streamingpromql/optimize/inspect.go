@@ -26,8 +26,15 @@ func walk(node planning.Node, path []planning.Node, visitor Visitor) error {
 		return err
 	}
 
-	path = append(path, node)
+	updated := false
 	for child := range planning.ChildrenIter(node) {
+		// Avoid an allocation updating the path when there are no children
+		// of this node that will use it.
+		if !updated {
+			path = append(path, node)
+			updated = true
+		}
+
 		if err := walk(child, path, visitor); err != nil {
 			return err
 		}

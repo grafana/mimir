@@ -80,7 +80,7 @@ type PartitionAssignmentStrategy interface {
 
 // LazyPartitionAssignmentStrategy resolves the underlying strategy on every
 // call. The strategy is rebuilt by AgentPool.Refresh, but consumers like
-// Hedger and ClusterRecordBuffer are wired once at startup; this indirection
+// Hedger and ClusterBuffer are wired once at startup; this indirection
 // lets them pick up the latest snapshot without rewiring.
 type LazyPartitionAssignmentStrategy struct {
 	resolve func() PartitionAssignmentStrategy

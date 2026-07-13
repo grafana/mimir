@@ -1520,7 +1520,7 @@ eval instant at 70s mad_over_time(metric_mix[80s])
 
 eval instant at 70s mad_over_time(metric_mix_nan[80s])
   expect no_info
-  {} 43.7
+  {} NaN
 
 eval instant at 70s mad_over_time(metric_none[80s])
   expect no_info
