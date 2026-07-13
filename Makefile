@@ -395,19 +395,14 @@ endif
 # produces all outputs atomically -- deleting any one of them forces a
 # regeneration of the set.
 #
-# wiresmith routes flat (single-file) layouts under <proto-package>/<basename>
-# (see buildImportMapping in compiler/generator/generator.go), so its output
-# lands at pkg/mimirpb/cortexpb/mimir*.pb.go. We move the generated set up one
-# directory to keep the Go package import path stable for downstream consumers.
+# wiresmith >=v0.9.0 keys flat (single-file) layouts under --proto_path by
+# their bare filename, not by proto package (fc34fad "path-parity keying"),
+# so output lands directly at pkg/mimirpb/mimir*.pb.go with no relocation step.
 pkg/mimirpb/mimir.pb.go \
 pkg/mimirpb/mimir_compare.pb.go \
 pkg/mimirpb/mimir_util.pb.go &: pkg/mimirpb/mimir.proto
 ifeq ($(GENERATE_FILES),true)
 	wiresmith --proto_path=./pkg/mimirpb --out=./pkg/mimirpb --module=github.com/grafana/mimir pkg/mimirpb/mimir.proto
-	mv pkg/mimirpb/cortexpb/mimir.pb.go pkg/mimirpb/mimir.pb.go
-	mv pkg/mimirpb/cortexpb/mimir_compare.pb.go pkg/mimirpb/mimir_compare.pb.go
-	mv pkg/mimirpb/cortexpb/mimir_util.pb.go pkg/mimirpb/mimir_util.pb.go
-	rmdir pkg/mimirpb/cortexpb
 else
 	@echo "Warning: generating files has been disabled, but the following files need to be regenerated: $@"
 	@echo "If this is unexpected, check if the last modified timestamps on the outputs and $< are correct."
@@ -415,28 +410,29 @@ endif
 
 # pkg/distributor/ha_tracker.proto is compiled by wiresmith. Passing the file
 # as a positional argument scopes compilation to it and its transitive imports,
-# so the still-gogo sibling protos in the directory are ignored. The flat
-# layout routes output under the proto package name ("distributor"), which
-# lines up with the target directory when --out points one level up.
+# so the still-gogo sibling protos in the directory are ignored. wiresmith
+# >=v0.9.0 keys flat layouts by bare filename rather than proto package (see
+# the mimirpb rule above), so --out points at the file's own directory rather
+# than one level up.
 pkg/distributor/ha_tracker.pb.go \
 pkg/distributor/ha_tracker_compare.pb.go \
 pkg/distributor/ha_tracker_util.pb.go &: pkg/distributor/ha_tracker.proto
 ifeq ($(GENERATE_FILES),true)
-	wiresmith --proto_path=./pkg/distributor --out=./pkg --module=github.com/grafana/mimir pkg/distributor/ha_tracker.proto
+	wiresmith --proto_path=./pkg/distributor --out=./pkg/distributor --module=github.com/grafana/mimir pkg/distributor/ha_tracker.proto
 else
 	@echo "Warning: generating files has been disabled, but the following files need to be regenerated: $@"
 	@echo "If this is unexpected, check if the last modified timestamps on the outputs and $< are correct."
 endif
 
 # pkg/querier/stats/stats.proto is compiled by wiresmith (positionally scoped
-# like ha_tracker.proto above). It is still imported by the gogo-compiled
-# querymiddleware model proto; protoc resolves the wiresmith/options.proto
-# import via ./proto-include.
+# like ha_tracker.proto above, and with --out adjusted the same way for the
+# same reason). It is also imported by the wiresmith-compiled querymiddleware
+# model proto (CQA4_WIRESMITH_PROTOS below).
 pkg/querier/stats/stats.pb.go \
 pkg/querier/stats/stats_compare.pb.go \
 pkg/querier/stats/stats_util.pb.go &: pkg/querier/stats/stats.proto
 ifeq ($(GENERATE_FILES),true)
-	wiresmith --proto_path=./pkg/querier/stats --out=./pkg/querier --module=github.com/grafana/mimir pkg/querier/stats/stats.proto
+	wiresmith --proto_path=./pkg/querier/stats --out=./pkg/querier/stats --module=github.com/grafana/mimir pkg/querier/stats/stats.proto
 else
 	@echo "Warning: generating files has been disabled, but the following files need to be regenerated: $@"
 	@echo "If this is unexpected, check if the last modified timestamps on the outputs and $< are correct."
