@@ -13,6 +13,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
+	"github.com/prometheus/prometheus/promql/parser"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
@@ -133,7 +134,11 @@ func (s *RemoveStaticallyEmptyExpressionsOptimizationPass) apply(node planning.N
 	if empty, err := isAlwaysEmpty(node, params); err != nil {
 		return nil, false, err
 	} else if empty {
-		noOp := &core.NoOp{NoOpDetails: &core.NoOpDetails{}}
+		noOp, err := s.createNoOpReplacement(node)
+		if err != nil {
+			return nil, false, err
+		}
+
 		return noOp, true, nil
 	}
 
@@ -142,6 +147,25 @@ func (s *RemoveStaticallyEmptyExpressionsOptimizationPass) apply(node planning.N
 	}
 
 	return nil, modified, nil
+}
+
+func (s *RemoveStaticallyEmptyExpressionsOptimizationPass) createNoOpReplacement(node planning.Node) (planning.Node, error) {
+	resultType, err := node.ResultType()
+	if err != nil {
+		return nil, err
+	}
+
+	noOp := &core.NoOp{NoOpDetails: &core.NoOpDetails{}}
+	switch resultType {
+	case parser.ValueTypeVector:
+		// Nothing to do, default for a NoOp is a vector value.
+	case parser.ValueTypeMatrix:
+		noOp.MatrixSelector = true
+	default:
+		return nil, fmt.Errorf("unsupported result type %s for NoOp", resultType)
+	}
+
+	return noOp, nil
 }
 
 // childParameters returns a copy of params adjusted for evaluating the children of a node.

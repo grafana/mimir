@@ -14,6 +14,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/streamingpromql"
@@ -33,7 +34,8 @@ func TestRemoveStaticallyEmptyExpressionsOptimizationPass(t *testing.T) {
 
 	testCases := map[string]struct {
 		expr            string
-		queryStart      time.Time // instant query time
+		queryStart      time.Time
+		useInstantQuery bool
 		expectedPlan    string
 		expectUnchanged bool
 	}{
@@ -244,6 +246,13 @@ func TestRemoveStaticallyEmptyExpressionsOptimizationPass(t *testing.T) {
 			expectedPlan: `
 				- NoOp
 			`,
+		},
+		"subquery with empty results: should optimize": {
+			expr: `(EMPTY_RESULT[1d:5m])`,
+			expectedPlan: `
+				- NoOp: matrix
+			`,
+			useInstantQuery: true,
 		},
 		"non-empty subquery: should not optimize": {
 			expr:            `avg_over_time(metric[5m:1m])`,
@@ -517,7 +526,13 @@ func TestRemoveStaticallyEmptyExpressionsOptimizationPass(t *testing.T) {
 			testCase.expr = strings.ReplaceAll(testCase.expr, "CONSTANT", strconv.Itoa(constant))
 			testCase.expr = strings.ReplaceAll(testCase.expr, "EMPTY_RESULT", `some_metric{foo="bar", foo="not-bar"}`)
 
-			timeRange := types.NewRangeQueryTimeRange(testCase.queryStart, testCase.queryStart.Add(24*time.Hour), time.Minute)
+			var timeRange types.QueryTimeRange
+			if testCase.useInstantQuery {
+				timeRange = types.NewInstantQueryTimeRange(testCase.queryStart)
+			} else {
+				timeRange = types.NewRangeQueryTimeRange(testCase.queryStart, testCase.queryStart.Add(24*time.Hour), time.Minute)
+			}
+
 			expectedModified := 1
 
 			if testCase.expectUnchanged {
@@ -546,13 +561,22 @@ func TestRemoveStaticallyEmptyExpressions_AdaptiveMetrics(t *testing.T) {
 	// This test confirms that expressions rewritten by Adaptive Metrics are correctly optimised away.
 	// Expressions like timestamp(foo) < C are rewritten to wrapper(timestamp(foo)) < C.
 
+	// These functions aren't registered in open source Mimir, so register dummy instances now.
+	require.NotContains(t, functions.RegisteredFunctions, functions.FUNCTION_ADAPTIVE_METRICS_RESERVED_1, "unexpected test environment: expected Adaptive Metrics functions not to be registered")
+	require.NotContains(t, functions.RegisteredFunctions, functions.FUNCTION_ADAPTIVE_METRICS_RESERVED_2, "unexpected test environment: expected Adaptive Metrics functions not to be registered")
+	require.NoError(t, functions.RegisterFunction(functions.FUNCTION_ADAPTIVE_METRICS_RESERVED_1, "adaptive_metrics_function_1", parser.ValueTypeVector, nil))
+	require.NoError(t, functions.RegisterFunction(functions.FUNCTION_ADAPTIVE_METRICS_RESERVED_2, "adaptive_metrics_function_2", parser.ValueTypeVector, nil))
+
+	t.Cleanup(func() {
+		delete(functions.RegisteredFunctions, functions.FUNCTION_ADAPTIVE_METRICS_RESERVED_1)
+		delete(functions.RegisteredFunctions, functions.FUNCTION_ADAPTIVE_METRICS_RESERVED_2)
+	})
+
 	reg := prometheus.NewPedanticRegistry()
 	opts := streamingpromql.NewTestEngineOpts()
 	optimizationPass := plan.NewRemoveStaticallyEmptyExpressionsOptimizationPass(reg, opts.Logger)
 
 	for _, function := range []functions.Function{functions.FUNCTION_ADAPTIVE_METRICS_RESERVED_1, functions.FUNCTION_ADAPTIVE_METRICS_RESERVED_2} {
-		// We have to manually create the query plan instead of parsing it from an expression because the Adaptive Metrics wrapper
-		// functions aren't registered in open source Mimir.
 		selector := &core.VectorSelector{
 			VectorSelectorDetails: &core.VectorSelectorDetails{
 				Matchers: []*core.LabelMatcher{
