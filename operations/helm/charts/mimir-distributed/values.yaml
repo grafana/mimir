@@ -605,18 +605,10 @@ alertmanager:
     # A per-zone storageClass configuration in `alertmanager.zoneAwareReplication.zones[*].storageClass` takes precedence over this field.
     # storageClass: "-"
 
-    # VolumeAttributesClass to attach to PVCs. Requires Kubernetes 1.31+ and a CSI driver with ModifyVolume support.
-    # If the value matches a key in the top-level volumeAttributesClasses map, the chart-managed class name is used.
-    # Otherwise the value is used as-is to reference an existing cluster VolumeAttributesClass.
+    # volumeAttributesClassName: my-cluster-vac
+    # Requires Kubernetes 1.31+ and a CSI driver with ModifyVolume support.
+    # Must reference an existing cluster VolumeAttributesClass.
     # A per-zone volumeAttributesClassName in `alertmanager.zoneAwareReplication.zones[*].volumeAttributesClassName` takes precedence over this field when set.
-    # volumeAttributesClassName: silver
-    #
-    # Alternatively, create a component-specific VolumeAttributesClass inline:
-    # volumeAttributesClass:
-    #   create: true
-    #   driverName: ebs.csi.aws.com
-    #   parameters:
-    #     type: gp3
 
     # -- Enable StatefulSetAutoDeletePVC feature
     # https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/#persistentvolumeclaim-retention
@@ -1048,18 +1040,10 @@ ingester:
     #
     # storageClass: "-"
 
-    # VolumeAttributesClass to attach to PVCs. Requires Kubernetes 1.31+ and a CSI driver with ModifyVolume support.
-    # If the value matches a key in the top-level volumeAttributesClasses map, the chart-managed class name is used.
-    # Otherwise the value is used as-is to reference an existing cluster VolumeAttributesClass.
+    # volumeAttributesClassName: my-cluster-vac
+    # Requires Kubernetes 1.31+ and a CSI driver with ModifyVolume support.
+    # Must reference an existing cluster VolumeAttributesClass.
     # A per-zone volumeAttributesClassName in `ingester.zoneAwareReplication.zones[*].volumeAttributesClassName` takes precedence over this field when set.
-    # volumeAttributesClassName: silver
-    #
-    # Alternatively, create a component-specific VolumeAttributesClass inline:
-    # volumeAttributesClass:
-    #   create: true
-    #   driverName: ebs.csi.aws.com
-    #   parameters:
-    #     type: gp3
 
   livenessProbe: null
   readinessProbe:
@@ -2277,18 +2261,10 @@ store_gateway:
     # A per-zone storageClass configuration in `store_gateway.zoneAwareReplication.zones[*].storageClass` takes precedence over this field.
     # storageClass: "-"
 
-    # VolumeAttributesClass to attach to PVCs. Requires Kubernetes 1.31+ and a CSI driver with ModifyVolume support.
-    # If the value matches a key in the top-level volumeAttributesClasses map, the chart-managed class name is used.
-    # Otherwise the value is used as-is to reference an existing cluster VolumeAttributesClass.
+    # volumeAttributesClassName: my-cluster-vac
+    # Requires Kubernetes 1.31+ and a CSI driver with ModifyVolume support.
+    # Must reference an existing cluster VolumeAttributesClass.
     # A per-zone volumeAttributesClassName in `store_gateway.zoneAwareReplication.zones[*].volumeAttributesClassName` takes precedence over this field when set.
-    # volumeAttributesClassName: silver
-    #
-    # Alternatively, create a component-specific VolumeAttributesClass inline:
-    # volumeAttributesClass:
-    #   create: true
-    #   driverName: ebs.csi.aws.com
-    #   parameters:
-    #     type: gp3
 
     # -- Enable StatefulSetAutoDeletePVC feature
     # https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/#persistentvolumeclaim-retention
@@ -2548,17 +2524,9 @@ compactor:
     #
     # storageClass: "-"
 
-    # VolumeAttributesClass to attach to PVCs. Requires Kubernetes 1.31+ and a CSI driver with ModifyVolume support.
-    # If the value matches a key in the top-level volumeAttributesClasses map, the chart-managed class name is used.
-    # Otherwise the value is used as-is to reference an existing cluster VolumeAttributesClass.
-    # volumeAttributesClassName: silver
-    #
-    # Alternatively, create a component-specific VolumeAttributesClass inline:
-    # volumeAttributesClass:
-    #   create: true
-    #   driverName: ebs.csi.aws.com
-    #   parameters:
-    #     type: gp3
+    # volumeAttributesClassName: my-cluster-vac
+    # Requires Kubernetes 1.31+ and a CSI driver with ModifyVolume support.
+    # Must reference an existing cluster VolumeAttributesClass.
 
     # -- Enable StatefulSetAutoDeletePVC feature
     # https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/#persistentvolumeclaim-retention
@@ -3153,17 +3121,9 @@ kafka:
     enabled: true
     size: 5Gi
     storageClassName: ""
-    # VolumeAttributesClass to attach to PVCs. Requires Kubernetes 1.31+ and a CSI driver with ModifyVolume support.
-    # If the value matches a key in the top-level volumeAttributesClasses map, the chart-managed class name is used.
-    # Otherwise the value is used as-is to reference an existing cluster VolumeAttributesClass.
-    # volumeAttributesClassName: silver
-    #
-    # Alternatively, create a component-specific VolumeAttributesClass inline:
-    # volumeAttributesClass:
-    #   create: true
-    #   driverName: ebs.csi.aws.com
-    #   parameters:
-    #     type: gp3
+    # volumeAttributesClassName: my-cluster-vac
+    # Requires Kubernetes 1.31+ and a CSI driver with ModifyVolume support.
+    # Must reference an existing cluster VolumeAttributesClass.
     # Additional settings for emptyDir if persistence is disabled
     emptyDir: {}
   # -- Resource requests and limits for Kafka
@@ -4054,19 +4014,3 @@ continuous_test:
 #   data: |
 #     extra.yml: "{{ include some-mimir-define }}"
 extraObjects: []
-
-# -- Create cluster-scoped VolumeAttributesClass resources from chart values.
-# Components reference classes by key via `*.persistentVolume.volumeAttributesClassName` or `kafka.persistence.volumeAttributesClassName`.
-# Requires Kubernetes 1.31+ and a CSI driver that supports the ModifyVolume API.
-# Example:
-# volumeAttributesClasses:
-#   silver:
-#     driverName: ebs.csi.aws.com
-#     parameters:
-#       type: gp3
-#       iops: "3000"
-#     # Optional. Defaults to "<release-fullname>-silver".
-#     name: null
-#     labels: {}
-#     annotations: {}
-volumeAttributesClasses: {}

@@ -39,7 +39,7 @@ spec:
       metadata:
         name: storage
       spec:
-        volumeAttributesClassName: test-volume-attributes-class-values-mimir-gp3-standard
+        volumeAttributesClassName: gp3-standard
         accessModes:
           - ReadWriteOnce
         resources:
@@ -180,7 +180,7 @@ spec:
       metadata:
         name: storage
       spec:
-        volumeAttributesClassName: test-volume-attributes-class-values-mimir-gp3-standard
+        volumeAttributesClassName: gp3-standard
         accessModes:
           - ReadWriteOnce
         resources:
@@ -321,7 +321,7 @@ spec:
       metadata:
         name: storage
       spec:
-        volumeAttributesClassName: test-volume-attributes-class-values-mimir-gp3-standard
+        volumeAttributesClassName: gp3-standard
         accessModes:
           - ReadWriteOnce
         resources:

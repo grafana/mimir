@@ -30,7 +30,7 @@ spec:
       metadata:
         name: storage
       spec:
-        volumeAttributesClassName: test-volume-attributes-class-values-mimir-compactor-vac
+        volumeAttributesClassName: compactor-vac
         accessModes:
           - ReadWriteOnce
         resources:

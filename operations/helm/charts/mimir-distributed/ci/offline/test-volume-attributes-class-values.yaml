@@ -1,14 +1,6 @@
 # Pin kube version so results are the same for running in CI and locally where the installed kube version may be different.
 kubeVersionOverride: "1.34"
 
-volumeAttributesClasses:
-  gp3-standard:
-    driverName: ebs.csi.aws.com
-    parameters:
-      type: gp3
-      iops: "3000"
-      throughput: "125"
-
 ingester:
   persistentVolume:
     volumeAttributesClassName: gp3-standard
@@ -41,12 +33,7 @@ ingester:
 
 compactor:
   persistentVolume:
-    volumeAttributesClass:
-      create: true
-      driverName: ebs.csi.aws.com
-      parameters:
-        type: gp3
-        iops: "5000"
+    volumeAttributesClassName: compactor-vac
 
 kafka:
   persistence:
