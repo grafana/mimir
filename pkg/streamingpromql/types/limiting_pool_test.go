@@ -217,7 +217,11 @@ func TestLimitingPool_Mangling(t *testing.T) {
 		1,
 		false,
 		func(_ int) int { return 123 },
-		nil,
+		func(s []int, _ *limiter.MemoryConsumptionTracker) {
+			for idx, i := range s {
+				require.NotEqualf(t, 123, i, "Put() hook should be called before mangling, but element at index %d was mangled already", idx)
+			}
+		},
 	)
 
 	// Test with mangling disabled.

@@ -244,16 +244,17 @@ func (p *LimitingBucketedPool[S, E]) Put(s *S, tracker *limiter.MemoryConsumptio
 		return
 	}
 
+	tracker.DecreaseMemoryConsumption(uint64(cap(*s))*p.elementSize, p.source)
+	if p.onPutHook != nil {
+		p.onPutHook(*s, tracker)
+	}
+
 	if EnableManglingReturnedSlices && p.mangle != nil {
 		for i, e := range *s {
 			(*s)[i] = p.mangle(e)
 		}
 	}
 
-	tracker.DecreaseMemoryConsumption(uint64(cap(*s))*p.elementSize, p.source)
-	if p.onPutHook != nil {
-		p.onPutHook(*s, tracker)
-	}
 	p.inner.Put(*s)
 
 	*s = nil
