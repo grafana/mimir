@@ -4,6 +4,7 @@ package distributor
 
 import (
 	"context"
+	"slices"
 	"testing"
 
 	"github.com/grafana/dskit/flagext"
@@ -203,12 +204,9 @@ func TestDistributor_prePushMergeMiddleware(t *testing.T) {
 	})
 
 	t.Run("preserves distinct label sets", func(t *testing.T) {
-		// prePushMergeMiddleware guards against StableHash collisions by comparing
-		// labels with CompareLabelAdapters before merging. A genuine 64-bit hash
-		// collision between two different label sets cannot be synthesized in a
-		// unit test (there is no hash-injection seam), so that specific branch is
-		// not covered here. This case instead pins the user-visible guarantee:
-		// distinct label sets are never merged.
+		// Distinct label sets must never be merged. This pins the common case where
+		// different labels also produce different hashes; the same-hash collision
+		// case is covered by "merges duplicates whose label sets share a hash".
 		req := &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{
 			makeTimeseries([]string{model.MetricNameLabel, "series_1"}, makeSamples(1, 1), nil, nil),
 			makeTimeseries([]string{model.MetricNameLabel, "series_2"}, makeSamples(2, 2), nil, nil),
@@ -221,6 +219,39 @@ func TestDistributor_prePushMergeMiddleware(t *testing.T) {
 		assert.Equal(t, []int64{1}, sampleTimestamps(got.Timeseries[0]))
 		assert.Equal(t, []int64{2}, sampleTimestamps(got.Timeseries[1]))
 		assert.Equal(t, []int64{3}, sampleTimestamps(got.Timeseries[2]))
+	})
+
+	t.Run("merges duplicates whose label sets share a hash", func(t *testing.T) {
+		// c1 and c2 are two DIFFERENT label sets that collide on the same
+		// FromLabelAdaptersToLabels(...).Hash() value the middleware keys on. This
+		// exercises the collision overflow path: label sets sharing a hash must each
+		// be deduplicated independently and never merged into each other.
+		c1, c2 := labelsWithHashCollision()
+		mkTS := func(lbls []mimirpb.LabelAdapter, ts int64) mimirpb.PreallocTimeseries {
+			// Each object owns its own label backing, as produced by unmarshalling,
+			// so returning a removed duplicate to the pool can't corrupt a survivor.
+			return mimirpb.PreallocTimeseries{TimeSeries: &mimirpb.TimeSeries{
+				Labels:  slices.Clone(lbls),
+				Samples: makeSamples(ts, 1),
+			}}
+		}
+		req := &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{
+			mkTS(c1, 10), mkTS(c2, 20), mkTS(c2, 30), mkTS(c1, 40),
+		}}
+
+		got := runPrePushMerge(t, d, req)
+
+		require.Len(t, got.Timeseries, 2)
+		for _, ts := range got.Timeseries {
+			switch {
+			case slices.Equal(ts.Labels, c1):
+				assert.Equal(t, []int64{10, 40}, sampleTimestamps(ts))
+			case slices.Equal(ts.Labels, c2):
+				assert.Equal(t, []int64{20, 30}, sampleTimestamps(ts))
+			default:
+				t.Fatalf("unexpected labels reached the ingester: %v", ts.Labels)
+			}
+		}
 	})
 
 	t.Run("passes through single-series request unchanged", func(t *testing.T) {

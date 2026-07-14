@@ -1356,27 +1356,46 @@ func (d *Distributor) prePushMergeMiddleware(next PushFunc) PushFunc {
 		}
 
 		// seen maps a label-set hash to the indexes of the already-kept timeseries
-		// with that hash. There's normally exactly one index per hash; there is
-		// more than one only on a (vanishingly rare) hash collision between
-		// different label sets, which we resolve by comparing the labels.
-		seen := make(map[uint64][]int, len(req.Timeseries))
+		// with that hash. Almost always a hash maps to a single index, so the happy
+		// path stores just that index and allocates nothing extra. On a vanishingly
+		// rare hash collision between different label sets, the extra indexes are
+		// tracked in more (allocated only then), so every distinct label set is
+		// still deduplicated independently.
+		type seenEntry struct {
+			index int   // first kept timeseries with this hash
+			more  []int // additional indexes on a hash collision; nil on the happy path
+		}
+		seen := make(map[uint64]seenEntry, len(req.Timeseries))
 		var removeTsIndexes []int
 
 		for tsIdx := 0; tsIdx < len(req.Timeseries); tsIdx++ {
 			ts := req.Timeseries[tsIdx]
 			hash := mimirpb.FromLabelAdaptersToLabels(ts.Labels).Hash()
 
+			e, exists := seen[hash]
+			if !exists {
+				seen[hash] = seenEntry{index: tsIdx}
+				continue
+			}
+
+			// Find the kept timeseries with the same label set, checking the first
+			// index and then any collision overflow.
 			firstIdx := -1
-			for _, candidate := range seen[hash] {
-				if slices.Equal(req.Timeseries[candidate].Labels, ts.Labels) {
-					firstIdx = candidate
-					break
+			if slices.Equal(req.Timeseries[e.index].Labels, ts.Labels) {
+				firstIdx = e.index
+			} else {
+				for _, candidate := range e.more {
+					if slices.Equal(req.Timeseries[candidate].Labels, ts.Labels) {
+						firstIdx = candidate
+						break
+					}
 				}
 			}
 			if firstIdx < 0 {
-				// First timeseries with this label set (or a hash collision with a
-				// different one): keep it and record its index.
-				seen[hash] = append(seen[hash], tsIdx)
+				// Hash collision with a different label set: track this index too so
+				// its own later duplicates still merge.
+				e.more = append(e.more, tsIdx)
+				seen[hash] = e
 				continue
 			}
 
