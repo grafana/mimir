@@ -84,10 +84,13 @@ func (q *distributorQuerier) SearchLabelValues(
 func (q *distributorQuerier) fetchMetricMetadata(ctx context.Context, names []string) (map[string]metadata.Metadata, error) {
 	resp, err := q.distributor.MetricsMetadata(ctx, &client.MetricsMetadataRequest{
 		MetricNames: names,
-		// Bound the response to the requested names. With LimitPerMetric=1 this
-		// is the exact number of records we can get, and it caps the reply of a
-		// metric_names-unaware ingester (which ignores MetricNames) to len(names)
-		// records instead of the tenant's entire metadata set during a rollout.
+		// Bound the response to the number of requested names. With
+		// LimitPerMetric=1 that's the exact number of records we can use. It also
+		// caps an ingester that predates the MetricNames field (which ignores it)
+		// to len(names) records rather than the tenant's whole metadata set. The
+		// trade-off is that such an ingester returns an arbitrary subset, so some
+		// names may be left un-enriched during a mixed-version rollout; we prefer
+		// that bounded degradation over an unbounded response.
 		Limit:          int32(len(names)),
 		LimitPerMetric: 1,
 	})

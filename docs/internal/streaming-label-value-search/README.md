@@ -176,10 +176,29 @@ their metadata via the ingester `MetricsMetadata` fan-out (the same all-ingester
 path the legacy `/api/v1/metadata` uses, extended to accept multiple metric names),
 then joins by name.
 
-Metadata is best-effort: a fetch failure surfaces as a warning and leaves results
-un-enriched rather than failing the search.
+Metadata is best-effort: a fetch failure, or a time range outside the ingesters'
+retention window (so no ingester is queried), surfaces a warning and leaves
+results un-enriched rather than failing the search.
 
 The store-gateway has no metric metadata and is not consulted for it.
+
+### Known limitations
+
+- **Classic histograms and summaries are not enriched.** Metadata is keyed by
+  metric family name (e.g. `http_request_duration_seconds`), but the search
+  returns the actual `__name__` series values, which for classic
+  histograms/summaries are the `_bucket`/`_count`/`_sum` sub-series. Those names
+  don't match the family key, so the join misses. Native histograms (a single
+  series named after the family) and plain counters/gauges enrich fine. Closing
+  this would require resolving a series name back to its family name, which is
+  only a naming convention and not reliable.
+- **During a mixed-version rollout**, an ingester that predates the batched
+  `metric_names` metadata field ignores it. The fetch bounds the response to the
+  number of requested names, so such an ingester returns an arbitrary subset
+  rather than the requested metrics — some results may come back un-enriched
+  until the rollout completes. The feature is experimental and off by default,
+  so this transient degradation is acceptable; the alternative (unbounded
+  response) risks a memory spike.
 
 ## Per-source notes
 

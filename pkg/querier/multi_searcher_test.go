@@ -36,8 +36,9 @@ type mockSearchQuerier struct {
 	valuesResults []storage.SearchResult
 	valuesErr     error
 
-	metadata    map[string]metadata.Metadata
-	metadataErr error
+	metadata          map[string]metadata.Metadata
+	metadataErr       error
+	metadataFetchCall int // number of fetchMetricMetadata calls
 }
 
 func (m *mockSearchQuerier) Select(_ context.Context, _ bool, _ *storage.SelectHints, _ ...*labels.Matcher) storage.SeriesSet {
@@ -66,6 +67,7 @@ func (m *mockSearchQuerier) SearchLabelValues(_ context.Context, _ string, _ *st
 }
 
 func (m *mockSearchQuerier) fetchMetricMetadata(_ context.Context, names []string) (map[string]metadata.Metadata, error) {
+	m.metadataFetchCall++
 	if m.metadataErr != nil {
 		return nil, m.metadataErr
 	}
@@ -451,6 +453,30 @@ func TestMultiQuerier_SearchLabelValues_ShouldSupportMetadata(t *testing.T) {
 		}
 		require.Len(t, warns, 1)
 		assert.Contains(t, warns[0], "metric metadata is only available")
+	})
+
+	t.Run("a small batch_size does not turn into one metadata fetch per result", func(t *testing.T) {
+		// The enrichment buffer is floored at searchDefaultBatchSize so a
+		// client-chosen batch_size=1 can't fan out one all-ingester metadata
+		// fetch per emitted result.
+		distQ := &mockSearchQuerier{
+			valuesResults: []storage.SearchResult{searchResult("a", 1.0), searchResult("b", 1.0), searchResult("c", 1.0)},
+			metadata: map[string]metadata.Metadata{
+				"a": {Type: model.MetricTypeCounter},
+				"b": {Type: model.MetricTypeCounter},
+				"c": {Type: model.MetricTypeCounter},
+			},
+		}
+		mq := buildSearchTestMultiQuerier(t, distQ, nil)
+
+		params := &streaminglabelvalues.Params{IncludeMetadata: true, BatchSize: 1}
+		rs := mq.SearchLabelValues(ctx, model.MetricNameLabel, params, &storage.SearchHints{OrderBy: storage.OrderByValueAsc})
+		vals, metas := drainSearchResultSetWithMetadata(t, rs)
+		assert.Equal(t, []string{"a", "b", "c"}, vals)
+		for i := range metas {
+			require.NotNil(t, metas[i], "%q must be enriched", vals[i])
+		}
+		assert.Equal(t, 1, distQ.metadataFetchCall, "all names must be fetched in a single batch despite batch_size=1")
 	})
 }
 
