@@ -49,7 +49,9 @@ func (o *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, 
 	// query and must have remote execution applied to it independently: if its subtree is sharded, each
 	// sharded leg is executed remotely; otherwise the entire subtree is. The rest of the plan (the outer
 	// instant query) runs on the query-frontend.
-	if evaluationRoots := collectEvaluationRoots(plan.Root); len(evaluationRoots) > 0 {
+	if evaluationRoots, err := collectEvaluationRoots(plan.Root); err != nil {
+		return nil, err
+	} else if len(evaluationRoots) > 0 {
 		for _, evaluationRoot := range evaluationRoots {
 			if err := o.wrapEvaluationRoot(evaluationRoot, groups, len(evaluationRoots) > 1); err != nil {
 				return nil, err
@@ -136,12 +138,11 @@ func (o *OptimizationPass) applyToRootNode(root planning.Node, groups remoteExec
 }
 
 // collectEvaluationRoots returns the EvaluationRoot nodes in the plan.
-func collectEvaluationRoots(node planning.Node) []*core.EvaluationRoot {
+func collectEvaluationRoots(node planning.Node) ([]*core.EvaluationRoot, error) {
 	var uniqueRoots []*core.EvaluationRoot
 
-	var visit func(planning.Node)
-	visit = func(n planning.Node) {
-		if evaluationRoot, ok := n.(*core.EvaluationRoot); ok {
+	err := optimize.Walk(node, optimize.VisitorFunc(func(node planning.Node, path []planning.Node) (bool, error) {
+		if evaluationRoot, ok := node.(*core.EvaluationRoot); ok {
 			// We might see the same root multiple times if the entire root is a duplicate expression.
 			// We don't expect there to be many EvaluationRoots, so we search a slice (rather than use a map).
 			// This keeps the return order consistent, which keeps behaviour predictable and makes tests simpler.
@@ -150,17 +151,17 @@ func collectEvaluationRoots(node planning.Node) []*core.EvaluationRoot {
 			}
 
 			// EvaluationRoot markers are never nested inside one another, so no need to visit children.
-			return
+			return false, nil
 		}
 
-		for child := range planning.ChildrenIter(n) {
-			visit(child)
-		}
+		return true, nil
+	}))
+
+	if err != nil {
+		return nil, err
 	}
 
-	visit(node)
-
-	return uniqueRoots
+	return uniqueRoots, nil
 }
 
 func (o *OptimizationPass) wrapInRemoteExecutionNode(child planning.Node, eagerLoad bool, groups remoteExecutionGroupSet) (planning.Node, error) {

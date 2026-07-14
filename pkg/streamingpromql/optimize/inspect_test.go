@@ -17,19 +17,16 @@ import (
 
 func TestWalk(t *testing.T) {
 	testCases := map[string]struct {
-		expr   string
-		visits int
-		paths  [][]string
+		expr           string
+		paths          [][]string
+		skipChildrenOf string
 	}{
 		"success no children": {
-			expr:   "some_metric[5m]",
-			visits: 1,
-			paths:  [][]string{},
+			expr:  "some_metric[5m]",
+			paths: [][]string{},
 		},
-
 		"success with children": {
-			expr:   "sum(rate(some_metric[5m]))",
-			visits: 4,
+			expr: "sum(rate(some_metric[5m]))",
 			paths: [][]string{
 				{"sum"},
 				{"sum", ""}, // Query planning inserts a DeduplicateAndMerge node around the rate function
@@ -37,8 +34,7 @@ func TestWalk(t *testing.T) {
 			},
 		},
 		"success with multiple children": {
-			expr:   "sum(rate(some_metric[5m]) + rate(other_metric[5m]))",
-			visits: 8,
+			expr: "sum(rate(some_metric[5m]) + rate(other_metric[5m]))",
 			paths: [][]string{
 				{"sum"},
 				{"sum", "LHS + RHS"},
@@ -47,6 +43,18 @@ func TestWalk(t *testing.T) {
 				{"sum", "LHS + RHS"},
 				{"sum", "LHS + RHS", ""}, // Query planning inserts a DeduplicateAndMerge node around the rate function
 				{"sum", "LHS + RHS", "", "rate(...)"},
+			},
+		},
+		"success with skipping of some branches": {
+			expr:           `sum(metric_1 * metric_2) + avg(metric_3 * metric_4)`,
+			skipChildrenOf: "avg",
+			paths: [][]string{
+				{"LHS + RHS"},
+				{"LHS + RHS", "sum"},
+				{"LHS + RHS", "sum", "LHS * RHS"},
+				{"LHS + RHS", "sum", "LHS * RHS"},
+				{"LHS + RHS"},
+				{"LHS + RHS", "avg"},
 			},
 		},
 	}
@@ -64,10 +72,10 @@ func TestWalk(t *testing.T) {
 			p, err := planner.NewQueryPlan(ctx, testCase.expr, timeRange, streamingpromql.DefaultLookbackDelta, false, observer)
 			require.NoError(t, err)
 
-			visitor := NewTestVisitor(t)
+			visitor := NewTestVisitor(t, testCase.skipChildrenOf)
 			require.NoError(t, optimize.Walk(p.Root, visitor))
 			require.Equal(t, testCase.paths, visitor.Paths)
-			require.Equal(t, testCase.visits, visitor.Visits)
+			require.Equal(t, len(testCase.paths)+1, visitor.Visits)
 		})
 	}
 }
@@ -86,8 +94,8 @@ func BenchmarkWalk(b *testing.B) {
 	p, err := planner.NewQueryPlan(ctx, query, timeRange, streamingpromql.DefaultLookbackDelta, false, observer)
 	require.NoError(b, err)
 
-	visitor := optimize.VisitorFunc(func(node planning.Node, path []planning.Node) error {
-		return nil // no-op
+	visitor := optimize.VisitorFunc(func(node planning.Node, path []planning.Node) (bool, error) {
+		return true, nil // no-op
 	})
 
 	for b.Loop() {
@@ -98,16 +106,22 @@ func BenchmarkWalk(b *testing.B) {
 type TestVisitor struct {
 	test *testing.T
 
-	Paths  [][]string
-	Visits int
+	SkipChildrenOf string
+	Paths          [][]string
+	Visits         int
 }
 
-func NewTestVisitor(t *testing.T) *TestVisitor {
-	return &TestVisitor{test: t, Paths: [][]string{}}
+func NewTestVisitor(t *testing.T, skipChildrenOf string) *TestVisitor {
+	return &TestVisitor{
+		test:           t,
+		Paths:          [][]string{},
+		SkipChildrenOf: skipChildrenOf,
+	}
 }
 
-func (v *TestVisitor) Visit(node planning.Node, path []planning.Node) error {
+func (v *TestVisitor) Visit(node planning.Node, path []planning.Node) (bool, error) {
 	require.NotNil(v.test, node)
+	v.Visits++
 
 	if len(path) != 0 {
 		thisPath := make([]string, 0, len(path))
@@ -116,10 +130,13 @@ func (v *TestVisitor) Visit(node planning.Node, path []planning.Node) error {
 		}
 
 		v.Paths = append(v.Paths, thisPath)
+
+		if v.SkipChildrenOf != "" && thisPath[len(thisPath)-1] == v.SkipChildrenOf {
+			return false, nil
+		}
 	}
 
-	v.Visits++
-	return nil
+	return true, nil
 }
 
 func TestInspectSelectors(t *testing.T) {
