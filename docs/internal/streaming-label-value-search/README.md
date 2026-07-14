@@ -165,21 +165,17 @@ only by the metric-names endpoint — that is the only response shape with
 `/api/v1/search/label_names` and `/api/v1/search/label_values`, including
 `label_values?label=__name__`.
 
-Enrichment is **applied in the metric-names HTTP handler
-(`SearchMetricNamesHandler`), above every merge** (cross-`match[]`,
-tenant-federation and distributor↔blocks), not in the ingesters. Metric
-metadata is sharded by metric name (`ShardByMetricName`) independently of series
+Enrichment is **applied in the querier's metric-names HTTP handler, not in
+the ingesters. Metric metadata is sharded by metric name independently of series
 (sharded by all labels), so the ingester that owns a metric's metadata is
-usually not the one that holds a series with that name — enrichment can't be
-attached reliably at the per-source leaves.
+usually not the one that holds a series with that name.
 
 The handler wraps the fully-merged result set with a buffering enricher: it
 batches the streamed metric names, fetches their metadata via
-`FetchMetricMetadata` on the opened querier, and joins by name. Because this
-runs above every merge, a single batched fetch covers the deduped result and no
-merge can drop the attached metadata (so no change to the vendored merge is
-needed). The handler stays tenant-federation-agnostic: the fetcher it obtains is
-federation-aware. `FetchMetricMetadata` is implemented by:
+`FetchMetricMetadata` on the opened querier, and joins by name. The handler
+stays tenant-federation-agnostic, but the the fetcher it obtains is federation-aware.
+
+`FetchMetricMetadata` is implemented by:
 
 - `distributorQuerier` — via the ingester `MetricsMetadata` fan-out (the same
   all-ingester path `/api/v1/metadata` uses, extended to accept multiple names);
@@ -187,12 +183,9 @@ federation-aware. `FetchMetricMetadata` is implemented by:
 - `tenantfederation.mergeQuerier` — fans out per tenant and unions by name; on a
   name present in several tenants the first tenant by sorted ID wins.
 
-Metadata is **silently best-effort**: metadata is optional per result (many
-metrics have none), so a fetch failure or a time range outside the ingesters'
-retention window simply leaves results un-enriched, exactly like a metric that
-has no metadata. No response warning is emitted (a warning here would be
-indistinguishable from "this metric has no metadata"); fetch errors are logged
-in the querier for observability.
+Metadata is **best-effort**: metadata is optional per result, so a fetch failure
+or a time range outside the ingesters' retention window simply leaves results
+un-enriched, exactly like a metric that has no metadata.
 
 The store-gateway has no metric metadata and is not consulted for it.
 
@@ -202,17 +195,8 @@ The store-gateway has no metric metadata and is not consulted for it.
   metric family name (e.g. `http_request_duration_seconds`), but the search
   returns the actual `__name__` series values, which for classic
   histograms/summaries are the `_bucket`/`_count`/`_sum` sub-series. Those names
-  don't match the family key, so the join misses. Native histograms (a single
-  series named after the family) and plain counters/gauges enrich fine. Closing
-  this would require resolving a series name back to its family name, which is
-  only a naming convention and not reliable.
-- **During a mixed-version rollout**, an ingester that predates the batched
-  `metric_names` metadata field ignores it. The fetch bounds the response to the
-  number of requested names, so such an ingester returns an arbitrary subset
-  rather than the requested metrics — some results may come back un-enriched
-  until the rollout completes. The feature is experimental and off by default,
-  so this transient degradation is acceptable; the alternative (unbounded
-  response) risks a memory spike.
+  don't match the family key, so the join misses. Native histograms and plain
+  counters/gauges enrich fine.
 
 ## Per-source notes
 
