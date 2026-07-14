@@ -1,6 +1,6 @@
 module github.com/grafana/mimir
 
-go 1.26.4
+go 1.25.10
 
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v1.8.0
