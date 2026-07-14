@@ -505,7 +505,7 @@ func TestMetadataEnrichingSearchResultSet_Next(t *testing.T) {
 			fetched = true
 			return nil, nil
 		}
-		rs := newMetadataEnrichingSearchResultSet(t.Context(), newInner(""), fetch, 10)
+		rs := newMetadataEnrichingSearchResultSet(t.Context(), newInner(""), fetch, 10, log.NewNopLogger())
 
 		assert.Equal(t, storage.SearchResult{}, rs.At(), "At() before Next() must be the zero value")
 		require.False(t, rs.Next())
@@ -516,7 +516,7 @@ func TestMetadataEnrichingSearchResultSet_Next(t *testing.T) {
 		fetch := func(_ context.Context, _ []string) (map[string]metadata.Metadata, error) {
 			return map[string]metadata.Metadata{"a": md("help a")}, nil
 		}
-		rs := newMetadataEnrichingSearchResultSet(t.Context(), newInner("", "a", "b"), fetch, 10)
+		rs := newMetadataEnrichingSearchResultSet(t.Context(), newInner("", "a", "b"), fetch, 10, log.NewNopLogger())
 
 		got := drain(t, rs)
 		require.Len(t, got, 2)
@@ -537,7 +537,7 @@ func TestMetadataEnrichingSearchResultSet_Next(t *testing.T) {
 			}
 			return out, nil
 		}
-		rs := newMetadataEnrichingSearchResultSet(t.Context(), newInner("", "a", "b", "c", "d", "e"), fetch, 2)
+		rs := newMetadataEnrichingSearchResultSet(t.Context(), newInner("", "a", "b", "c", "d", "e"), fetch, 2, log.NewNopLogger())
 
 		got := drain(t, rs)
 		var vals []string
@@ -554,7 +554,7 @@ func TestMetadataEnrichingSearchResultSet_Next(t *testing.T) {
 		fetch := func(context.Context, []string) (map[string]metadata.Metadata, error) {
 			return nil, errors.New("ingesters unavailable")
 		}
-		rs := newMetadataEnrichingSearchResultSet(t.Context(), newInner("", "a", "b"), fetch, 10)
+		rs := newMetadataEnrichingSearchResultSet(t.Context(), newInner("", "a", "b"), fetch, 10, log.NewNopLogger())
 
 		got := drain(t, rs)
 		require.Len(t, got, 2)
@@ -574,7 +574,7 @@ func TestMetadataEnrichingSearchResultSet_Next(t *testing.T) {
 			}
 			return out, nil
 		}
-		rs := newMetadataEnrichingSearchResultSet(t.Context(), newInner("", "a", "b", "c", "d"), fetch, 2)
+		rs := newMetadataEnrichingSearchResultSet(t.Context(), newInner("", "a", "b", "c", "d"), fetch, 2, log.NewNopLogger())
 
 		got := drain(t, rs)
 		require.Len(t, got, 4)
@@ -588,7 +588,7 @@ func TestMetadataEnrichingSearchResultSet_Next(t *testing.T) {
 		fetch := func(context.Context, []string) (map[string]metadata.Metadata, error) {
 			return nil, nil
 		}
-		rs := newMetadataEnrichingSearchResultSet(t.Context(), newInner("inner warn", "a"), fetch, 10)
+		rs := newMetadataEnrichingSearchResultSet(t.Context(), newInner("inner warn", "a"), fetch, 10, log.NewNopLogger())
 
 		_ = drain(t, rs)
 		var warns []string
@@ -608,7 +608,7 @@ func TestMetadataEnrichingSearchResultSet_Next(t *testing.T) {
 			}
 			return out, nil
 		}
-		rs := newMetadataEnrichingSearchResultSet(t.Context(), inner, fetch, 10)
+		rs := newMetadataEnrichingSearchResultSet(t.Context(), inner, fetch, 10, log.NewNopLogger())
 
 		got := drain(t, rs)
 		require.Len(t, got, 1)

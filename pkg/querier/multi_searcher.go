@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/tenant"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
@@ -118,7 +120,7 @@ func (mq *multiQuerier) SearchLabelValues(ctx context.Context, name string, para
 			// fan-out per result. batch_size only controls the wire flush
 			// granularity, not how many names we fetch metadata for at a time.
 			batchSize := max(params.BatchSize, searchDefaultBatchSize)
-			return newMetadataEnrichingSearchResultSet(ctx, merged, fetcher.fetchMetricMetadata, batchSize)
+			return newMetadataEnrichingSearchResultSet(ctx, merged, fetcher.fetchMetricMetadata, batchSize, mq.logger)
 		}
 	}
 	return merged
@@ -184,26 +186,27 @@ type metadataEnrichingSearchResultSet struct {
 	inner     storage.SearchResultSet
 	fetch     func(ctx context.Context, names []string) (map[string]metadata.Metadata, error)
 	batchSize int
+	logger    log.Logger
 
-	buf       []storage.SearchResult
-	pos       int
-	innerDone bool
+	buf            []storage.SearchResult
+	bufNextReadIdx int
+	innerDone      bool
 }
 
-func newMetadataEnrichingSearchResultSet(ctx context.Context, inner storage.SearchResultSet, fetch func(context.Context, []string) (map[string]metadata.Metadata, error), batchSize int) *metadataEnrichingSearchResultSet {
-	return &metadataEnrichingSearchResultSet{ctx: ctx, inner: inner, fetch: fetch, batchSize: batchSize}
+func newMetadataEnrichingSearchResultSet(ctx context.Context, inner storage.SearchResultSet, fetch func(context.Context, []string) (map[string]metadata.Metadata, error), batchSize int, logger log.Logger) *metadataEnrichingSearchResultSet {
+	return &metadataEnrichingSearchResultSet{ctx: ctx, inner: inner, fetch: fetch, batchSize: batchSize, logger: logger}
 }
 
 func (s *metadataEnrichingSearchResultSet) Next() bool {
-	if s.pos+1 < len(s.buf) {
-		s.pos++
+	if s.bufNextReadIdx+1 < len(s.buf) {
+		s.bufNextReadIdx++
 		return true
 	}
 	if s.innerDone {
 		return false
 	}
 	s.buf = s.buf[:0]
-	s.pos = 0
+	s.bufNextReadIdx = 0
 	for len(s.buf) < s.batchSize {
 		if !s.inner.Next() {
 			s.innerDone = true
@@ -225,7 +228,10 @@ func (s *metadataEnrichingSearchResultSet) enrich() {
 	}
 	md, err := s.fetch(s.ctx, names)
 	if err != nil {
-		// Best-effort: leave the batch un-enriched on a fetch error.
+		// Best-effort: leave the batch un-enriched on a fetch error. Metadata is
+		// optional per result, so we don't fail the search or warn the client,
+		// but log it for observability.
+		level.Warn(spanlogger.FromContext(s.ctx, s.logger)).Log("msg", "failed to fetch metric metadata for search results enrichment", "err", err)
 		return
 	}
 	for i := range s.buf {
@@ -237,8 +243,8 @@ func (s *metadataEnrichingSearchResultSet) enrich() {
 }
 
 func (s *metadataEnrichingSearchResultSet) At() storage.SearchResult {
-	if s.pos < len(s.buf) {
-		return s.buf[s.pos]
+	if s.bufNextReadIdx < len(s.buf) {
+		return s.buf[s.bufNextReadIdx]
 	}
 	return storage.SearchResult{}
 }
