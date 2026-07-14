@@ -235,6 +235,18 @@ func (r *MultiClusterPartitionReader) EnforceReadMaxDelay(maxDelay time.Duration
 	return errs.Err()
 }
 
+// CheckReady returns an error if any Kafka cluster's reader is not ready to consume records.
+// The ingester is ready only when all Kafka clusters are.
+func (r *MultiClusterPartitionReader) CheckReady() error {
+	var errs multierror.MultiError
+	for kafkaClusterID, reader := range r.readers {
+		if err := reader.CheckReady(); err != nil {
+			errs.Add(errors.Wrapf(err, "write compartment %d", kafkaClusterID))
+		}
+	}
+	return errs.Err()
+}
+
 // WaitReadConsistencyUntilOffsets waits, for every Kafka cluster in parallel, until that cluster's reader
 // has consumed up to its own offset. The offsets must cover exactly one offset per Kafka cluster; a
 // mismatch is an invariant violation by the caller. Each per-cluster offset is forwarded to that cluster's

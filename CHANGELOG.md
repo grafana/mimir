@@ -103,6 +103,7 @@
 * [BUGFIX] MQE: Fix `this indicates something has been returned to a pool more than once` panic when a `sum()` or `avg()` group contains, at the same output step, a float sample and native histograms that cannot be added together (e.g. exponential and custom bucket schemas). #16059
 * [BUGFIX] Query-frontend: Fix issue where series for a range query can be returned in the wrong order if splitting applies and splitting is not running inside MQE. #16036
 * [BUGFIX] Querier: Fix issue where exemplars can be returned in the wrong order if a series contains a label that is a prefix of another (eg. `env="foo"` and `env="foobar"`). #16036
+* [BUGFIX] Ingester: Report the ingester as not ready when the ingest storage reader is unable to fetch Kafka offsets or commit consumed offsets. #15222
 
 ### Mixin
 

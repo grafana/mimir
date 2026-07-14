@@ -8,6 +8,7 @@ import (
 	"iter"
 	"math"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/go-kit/log"
@@ -85,6 +86,9 @@ type PartitionReader interface {
 	// WaitReadConsistencyUntilLastProducedOffset waits until the reader has caught up with the
 	// last-produced offset of every Kafka cluster.
 	WaitReadConsistencyUntilLastProducedOffset(ctx context.Context) error
+
+	// CheckReady returns an error if the reader is not ready to consume records.
+	CheckReady() error
 }
 
 type SingleClusterPartitionReader struct {
@@ -214,6 +218,31 @@ func (r *SingleClusterPartitionReader) LastSeenOffsets() kmeta.PartitionOffsets 
 
 func (r *SingleClusterPartitionReader) LastCommittedOffset() int64 {
 	return r.committer.LastCommittedOffset()
+}
+
+// CheckReady returns an error if the partition reader is not ready to consume records.
+func (r *SingleClusterPartitionReader) CheckReady() error {
+	if state := r.State(); state != services.Running {
+		return fmt.Errorf("partition reader service is not running (state: %s)", state.String())
+	}
+
+	return r.checkDependenciesReady()
+}
+
+func (r *SingleClusterPartitionReader) checkDependenciesReady() error {
+	if r.offsetReader != nil {
+		if _, err := r.offsetReader.CachedOffset(); err != nil {
+			return fmt.Errorf("partition reader failed to fetch last produced offset: %w", err)
+		}
+	}
+
+	if r.committer != nil {
+		if err := r.committer.LastCommitError(); err != nil {
+			return fmt.Errorf("partition reader failed to commit last consumed offset: %w", err)
+		}
+	}
+
+	return nil
 }
 
 func (r *SingleClusterPartitionReader) start(ctx context.Context) (returnErr error) {
@@ -1036,6 +1065,8 @@ type partitionCommitter struct {
 
 	logger     log.Logger
 	offsetFile *offsetFile
+	errMx      sync.RWMutex
+	lastErr    error
 
 	// Metrics.
 	commitRequestsTotal   prometheus.Counter
@@ -1101,6 +1132,14 @@ func (r *partitionCommitter) LastCommittedOffset() int64 {
 	return r.lastCommittedOffset.Load()
 }
 
+// LastCommitError returns the most recent offset commit error, if any.
+func (r *partitionCommitter) LastCommitError() error {
+	r.errMx.RLock()
+	defer r.errMx.RUnlock()
+
+	return r.lastErr
+}
+
 func (r *partitionCommitter) run(ctx context.Context) error {
 	commitTicker := time.NewTicker(r.kafkaCfg.ConsumerGroupOffsetCommitInterval)
 	defer commitTicker.Stop()
@@ -1133,6 +1172,10 @@ func (r *partitionCommitter) commit(ctx context.Context, offset int64) (returnEr
 	}
 
 	defer func() {
+		r.errMx.Lock()
+		r.lastErr = returnErr
+		r.errMx.Unlock()
+
 		r.commitRequestsLatency.Observe(time.Since(startTime).Seconds())
 		if returnErr != nil {
 			level.Error(r.logger).Log("msg", "failed to commit last consumed offset", "err", returnErr, "offset", offset)
