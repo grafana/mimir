@@ -17,15 +17,20 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
+	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/ingester/client"
+	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/querier/worker"
 	"github.com/grafana/mimir/pkg/streaminglabelvalues"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -1145,6 +1150,86 @@ func TestSearchMetricNamesHandler_IncludeScoreAndMetadataCompose(t *testing.T) {
 	assert.InDelta(t, 0.92, rec["score"], 1e-9)
 	assert.Equal(t, "counter", rec["type"])
 	assert.Equal(t, "h", rec["help"])
+}
+
+func TestSearchMetricNamesHandler_ShouldFetchMetadataFromIngesters(t *testing.T) {
+	makeQueryable := func(dist *mockDistributor) storage.Queryable {
+		var cfg Config
+		flagext.DefaultValues(&cfg)
+
+		limits := defaultLimitsConfig()
+		limits.QueryIngestersWithin = 0 // Always query the ingester leaf, regardless of time range.
+		overrides := validation.NewOverrides(limits, nil)
+
+		distQueryable := NewDistributorQueryable(dist, newMockConfigProvider(0), stats.NewQueryMetrics(nil), log.NewNopLogger())
+		return newMultiQueryable(cfg, distQueryable, nil, overrides, stats.NewQueryMetrics(nil), log.NewNopLogger())
+	}
+
+	searchValues := func(results ...string) func(context.Context, model.Time, model.Time, string, *streaminglabelvalues.Params, *storage.SearchHints, []*labels.Matcher) storage.SearchResultSet {
+		set := make([]storage.SearchResult, len(results))
+		for i, v := range results {
+			set[i] = storage.SearchResult{Value: v, Score: 1.0}
+		}
+		return func(context.Context, model.Time, model.Time, string, *streaminglabelvalues.Params, *storage.SearchHints, []*labels.Matcher) storage.SearchResultSet {
+			return storage.NewSearchResultSetFromSlice(set, nil)
+		}
+	}
+
+	t.Run("enriches metric names via the metadata fan-out across the full querier stack", func(t *testing.T) {
+		var gotReq *client.MetricsMetadataRequest
+		// Results are ascending (the merge assumes each source is pre-sorted).
+		dist := &mockDistributor{searchLabelValuesFn: searchValues("cpu_usage_seconds", "http_requests_total")}
+		// Metadata is produced only by the metadata fan-out RPC, never alongside
+		// the series results: enrichment working therefore proves the handler
+		// does not rely on metadata riding along with series (the original bug).
+		dist.On("MetricsMetadata", mock.Anything, mock.Anything).
+			Run(func(args mock.Arguments) { gotReq = args.Get(1).(*client.MetricsMetadataRequest) }).
+			Return([]scrape.MetricMetadata{
+				{MetricFamily: "cpu_usage_seconds", Type: model.MetricTypeGauge, Help: "CPU usage.", Unit: "seconds"},
+				{MetricFamily: "http_requests_total", Type: model.MetricTypeCounter, Help: "Total HTTP requests."},
+			}, nil)
+
+		h := SearchMetricNamesHandler(makeQueryable(dist), enabledSearchConfig(), nil, log.NewNopLogger())
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/metric_names?include_metadata=true"))
+
+		require.Equal(t, http.StatusOK, w.Code)
+		lines := drainNDJSON(t, w.Body.String())
+		require.Len(t, lines, 2)
+		batch := lines[0]["results"].([]any)
+		require.Len(t, batch, 2)
+
+		cpuRec := batch[0].(map[string]any)
+		assert.Equal(t, "cpu_usage_seconds", cpuRec["name"])
+		assert.Equal(t, "gauge", cpuRec["type"])
+		assert.Equal(t, "CPU usage.", cpuRec["help"])
+		assert.Equal(t, "seconds", cpuRec["unit"])
+
+		httpRec := batch[1].(map[string]any)
+		assert.Equal(t, "http_requests_total", httpRec["name"])
+		assert.Equal(t, "counter", httpRec["type"])
+		assert.Equal(t, "Total HTTP requests.", httpRec["help"])
+
+		require.NotNil(t, gotReq, "the metadata fan-out RPC must be invoked")
+		assert.Equal(t, []string{"cpu_usage_seconds", "http_requests_total"}, gotReq.MetricNames)
+	})
+
+	t.Run("leaves results un-enriched when the metadata fetch fails", func(t *testing.T) {
+		dist := &mockDistributor{searchLabelValuesFn: searchValues("http_requests_total")}
+		dist.On("MetricsMetadata", mock.Anything, mock.Anything).Return([]scrape.MetricMetadata(nil), errors.New("boom"))
+
+		h := SearchMetricNamesHandler(makeQueryable(dist), enabledSearchConfig(), nil, log.NewNopLogger())
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/metric_names?include_metadata=true"))
+
+		require.Equal(t, http.StatusOK, w.Code, "a metadata fetch failure must not fail the request")
+		lines := drainNDJSON(t, w.Body.String())
+		require.Len(t, lines, 2)
+		rec := lines[0]["results"].([]any)[0].(map[string]any)
+		assert.Equal(t, "http_requests_total", rec["name"])
+		_, hasType := rec["type"]
+		assert.False(t, hasType, "a failed metadata fetch leaves enrichment fields absent")
+	})
 }
 
 func TestSearchLabelNamesHandler_MetadataParamSilentlyIgnored(t *testing.T) {
