@@ -2928,6 +2928,16 @@ query_frontend:
     # CLI flag: -ruler.query-frontend.http-client-config.connect-timeout
     [connect_timeout: <duration> | default = 30s]
 
+    # HTTP Basic authentication username. It overrides the username set in the
+    # URL (if any).
+    # CLI flag: -ruler.query-frontend.http-client-config.basic-auth-username
+    [basic_auth_username: <string> | default = ""]
+
+    # HTTP Basic authentication password. It overrides the password set in the
+    # URL (if any).
+    # CLI flag: -ruler.query-frontend.http-client-config.basic-auth-password
+    [basic_auth_password: <string> | default = ""]
+
   # Format to use when retrieving query results from query-frontends. Supported
   # values: json, protobuf
   # CLI flag: -ruler.query-frontend.query-result-response-format

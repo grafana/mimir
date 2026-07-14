@@ -16061,6 +16061,26 @@
                   "fieldFlag": "ruler.query-frontend.http-client-config.connect-timeout",
                   "fieldType": "duration",
                   "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "basic_auth_username",
+                  "required": false,
+                  "desc": "HTTP Basic authentication username. It overrides the username set in the URL (if any).",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "ruler.query-frontend.http-client-config.basic-auth-username",
+                  "fieldType": "string"
+                },
+                {
+                  "kind": "field",
+                  "name": "basic_auth_password",
+                  "required": false,
+                  "desc": "HTTP Basic authentication password. It overrides the password set in the URL (if any).",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "ruler.query-frontend.http-client-config.basic-auth-password",
+                  "fieldType": "string"
                 }
               ],
               "fieldValue": null,

@@ -1112,6 +1112,8 @@
   "ruler.query-frontend.grpc-client-config.connect-backoff-max-delay": 5000000000,
   "ruler.query-frontend.grpc-client-config.cluster-validation.label": "",
   "ruler.query-frontend.http-client-config.connect-timeout": 30000000000,
+  "ruler.query-frontend.http-client-config.basic-auth-username": "",
+  "ruler.query-frontend.http-client-config.basic-auth-password": "",
   "ruler.query-frontend.query-result-response-format": "protobuf",
   "ruler.query-frontend.max-retries-rate": 170,
   "ruler.distributor.address": "",
