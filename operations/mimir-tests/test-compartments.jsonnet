@@ -46,6 +46,8 @@ local env = (import 'test-ingest-storage-autoscaling-one-trigger.jsonnet') {
 local rulerDistributorAddress(zone) =
   'dns:///distributor-zone-%s.%s.svc.%s:9095' % [zone, env._config.namespace, env._config.cluster_domain];
 
+local rulerBlocksBucket(args) = args[env.mimirBlocksStorageBucketNameFlag];
+
 local coexistenceEnv = env {
   _config+:: {
     no_compartments_distributor_enabled: true,
@@ -88,7 +90,11 @@ assert env.ruler_zone_b_args['ingest-storage.kafka.address'] == env._config.comp
        'expected zone-b ruler to use the compartments Kafka address template';
 assert !std.objectHas(env.ruler_args, 'distributor.write-compartment-id') :
        'rulers must stay global and must not set distributor.write-compartment-id';
-assert std.length(std.findSubstr('<read-compartment-id>', env.ruler_args[env.mimirBlocksStorageBucketNameFlag])) == 0 :
-       'rulers must keep the normal ruler blocks bucket instead of a per-read-compartment bucket';
+assert rulerBlocksBucket(env.ruler_args) == env._config.compartments_blocks_storage_bucket_name :
+       'expected single-zone ruler to use the parametrised blocks bucket';
+assert rulerBlocksBucket(env.ruler_zone_a_args) == env._config.compartments_blocks_storage_bucket_name :
+       'expected zone-a ruler to use the parametrised blocks bucket';
+assert rulerBlocksBucket(env.ruler_zone_b_args) == env._config.compartments_blocks_storage_bucket_name :
+       'expected zone-b ruler to use the parametrised blocks bucket';
 
 env

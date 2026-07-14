@@ -86,7 +86,6 @@ local jsonpath = import 'github.com/jsonnet-libs/xtd/jsonpath.libsonnet';
   // parameterised for the compartment they belong to.
   validateMimirCompartmentsConfig(resourceNames)::
     local root = $;
-    local targetFlag = '-target';
     local addressFlag = '-ingest-storage.kafka.address';
     local topicFlag = '-ingest-storage.kafka.topic';
     local blocksBucketFlag = '-' + root.mimirBlocksStorageBucketNameFlag;
@@ -150,15 +149,6 @@ local jsonpath = import 'github.com/jsonnet-libs/xtd/jsonpath.libsonnet';
           local eq = std.findSubstr('=', arg)[0];
           { flag: std.substr(arg, 0, eq), value: std.substr(arg, eq + 1, std.length(arg) - eq - 1) };
 
-    // An omitted target defaults to "all", which includes every component.
-    local hasTarget(container, target) =
-      local value = flagValue(container, targetFlag);
-      if value == null then
-        true
-      else
-        local targets = std.split(value, ',');
-        std.member(targets, 'all') || std.member(targets, target);
-
     local validateKafkaAddress(name, compartment, container) =
       local value = flagValue(container, addressFlag);
       if value == null then
@@ -197,14 +187,12 @@ local jsonpath = import 'github.com/jsonnet-libs/xtd/jsonpath.libsonnet';
       else
         null;
 
-    // The blocks-storage bucket is per read compartment. Read compartments must point at their own bucket
-    // or keep the "<read-compartment-id>" placeholder, and global query workloads must keep the placeholder.
-    // Other global workloads, such as rulers, may keep their normal concrete bucket.
+    // The blocks-storage bucket is per read compartment. A read compartment must point at its own bucket
+    // (name contains "-rc-<id>") or keep the "<read-compartment-id>" placeholder; any other deployment that
+    // sets a blocks bucket must keep the placeholder, since one concrete bucket can't serve every compartment.
     local validateBlocksBucket(name, compartment, container) =
       local value = flagValue(container, blocksBucketFlag);
       if value == null then
-        null
-      else if compartment.kind == 'global' && !hasTarget(container, 'querier') then
         null
       else if std.length(std.findSubstr(readPlaceholder, value)) > 0 then
         null

@@ -13,6 +13,8 @@
 
   local rulerCompartmentArgs(zone) =
     $.mimirCompartmentsCommonArgs {
+      // Rulers are global, so keep the placeholder needed to address every read compartment.
+      [$.mimirBlocksStorageBucketNameFlag]: $._config.compartments_blocks_storage_bucket_name,
       'ingest-storage.kafka.address': $._config.compartments_ingest_storage_kafka_address,
       'ruler.distributor.address': $.rulerDistributorZoneAddress(zone),
       'ruler.distributor.remote-timeout': '10s',

@@ -182,14 +182,10 @@ assert isError(err15, '-blocks-storage.gcs.bucket-name=blocks-bucket-rc-0') && i
 
 // A global deployment (no compartment marker) built from the distributor: the Kafka address is reset to the
 // placeholder and the write-compartment-id flag removed, so only the blocks-storage bucket is under test.
-local globalWithBucket(bucket, target='querier') =
-  local resource = removeContainerArg(
-    removeContainerArg(distributor { metadata+: { name: 'querier' } }, '-distributor.write-compartment-id'),
-    '-target',
-  );
+local globalWithBucket(bucket) =
   overrideContainerArgs(
-    resource,
-    (if target == null then [] else ['-target=' + target]) + [
+    removeContainerArg(distributor { metadata+: { name: 'global' } }, '-distributor.write-compartment-id'),
+    [
       '-ingest-storage.kafka.address=' + env._config.compartments_ingest_storage_kafka_address,
       '-blocks-storage.gcs.bucket-name=' + bucket,
     ],
@@ -205,15 +201,5 @@ assert isError(err16, '-blocks-storage.gcs.bucket-name=blocks-bucket-rc-0') && i
 local err17 = validate({ gf: globalWithBucket('blocks-bucket-rc-<read-compartment-id>') }, ['gf']);
 assert err17 == null :
        'case 17: expected no error for a parametrised blocks-storage bucket on a global deployment, got: %s' % err17;
-
-// 18. The "all" target includes the querier and therefore requires a parametrised blocks-storage bucket.
-local err18 = validate({ gf: globalWithBucket('blocks-bucket-rc-0', 'all') }, ['gf']);
-assert isError(err18, '-blocks-storage.gcs.bucket-name=blocks-bucket-rc-0') && isError(err18, 'only a read compartment owns a dedicated blocks-storage bucket') :
-       'case 18: expected all-target blocks-storage bucket error, got: %s' % err18;
-
-// 19. An omitted target defaults to "all" and therefore also includes the querier.
-local err19 = validate({ gf: globalWithBucket('blocks-bucket-rc-0', null) }, ['gf']);
-assert isError(err19, '-blocks-storage.gcs.bucket-name=blocks-bucket-rc-0') && isError(err19, 'only a read compartment owns a dedicated blocks-storage bucket') :
-       'case 19: expected default-target blocks-storage bucket error, got: %s' % err19;
 
 {}
