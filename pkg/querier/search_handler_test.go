@@ -911,7 +911,7 @@ func TestParseSearchRequest_ParamRoundTrip(t *testing.T) {
 	assert.True(t, req.includeScore)
 	assert.Equal(t, 42, req.limit, "user-facing limit is the URL value")
 	assert.Equal(t, 43, req.hints.Limit, "downstream hint is limit+1 (the has_more probe)")
-	assert.Equal(t, 7, req.batchSize)
+	assert.Equal(t, 7, req.params.BatchSize)
 	require.Len(t, req.matchers, 1, "one match[] entry → one matcher set")
 	require.Len(t, req.matchers[0], 1)
 	assert.Equal(t, "job", req.matchers[0][0].Name)
@@ -925,7 +925,7 @@ func TestParseSearchRequest_BatchSizeZeroKeepsDefault(t *testing.T) {
 	r := newSearchHandlerRequest(t, "/api/v1/search/label_names?batch_size=0")
 	req, err := parseSearchRequest(r, false, false)
 	require.NoError(t, err)
-	assert.Equal(t, searchDefaultBatchSize, req.batchSize)
+	assert.Equal(t, searchDefaultBatchSize, req.params.BatchSize)
 }
 
 // TestSearchLabelNamesHandler_AcceptsPOSTForm covers the spec parity case:

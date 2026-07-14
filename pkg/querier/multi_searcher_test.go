@@ -382,7 +382,7 @@ func TestMultiQuerier_SearchLabelValues_ShouldSupportMetadata(t *testing.T) {
 		assert.Nil(t, metas[0])
 	})
 
-	t.Run("a metadata fetch error leaves results un-enriched and surfaces a warning", func(t *testing.T) {
+	t.Run("a metadata fetch error leaves results un-enriched, best-effort with no warning", func(t *testing.T) {
 		distQ := &mockSearchQuerier{
 			valuesResults: []storage.SearchResult{searchResult("a", 1.0)},
 			metadataErr:   errors.New("ingesters unavailable"),
@@ -393,13 +393,8 @@ func TestMultiQuerier_SearchLabelValues_ShouldSupportMetadata(t *testing.T) {
 		rs := mq.SearchLabelValues(ctx, model.MetricNameLabel, params, &storage.SearchHints{OrderBy: storage.OrderByValueAsc})
 		vals, metas := drainSearchResultSetWithMetadata(t, rs)
 		assert.Equal(t, []string{"a"}, vals)
-		assert.Nil(t, metas[0])
-		var warnStrs []string
-		for _, w := range rs.Warnings() {
-			warnStrs = append(warnStrs, w.Error())
-		}
-		require.Len(t, warnStrs, 1)
-		assert.Contains(t, warnStrs[0], "failed to fetch metric metadata")
+		assert.Nil(t, metas[0], "a fetch error leaves results un-enriched")
+		assert.Empty(t, rs.Warnings(), "enrichment is best-effort; a fetch error is not surfaced as a warning")
 	})
 
 	t.Run("the k-way merge carries metadata forward when duplicate values collapse", func(t *testing.T) {
@@ -435,7 +430,7 @@ func TestMultiQuerier_SearchLabelValues_ShouldSupportMetadata(t *testing.T) {
 		assert.Nil(t, metas[0], "metadata must not be attached for a non-__name__ label")
 	})
 
-	t.Run("include_metadata surfaces a warning when no source can supply metadata", func(t *testing.T) {
+	t.Run("no metadata source leaves results un-enriched, best-effort with no warning", func(t *testing.T) {
 		// Only a blocks-store-like source (no metadata fetcher) is configured —
 		// as happens when the time range is outside the ingesters' retention.
 		mq := buildSearchTestMultiQuerier(t, nil, nil)
@@ -446,13 +441,7 @@ func TestMultiQuerier_SearchLabelValues_ShouldSupportMetadata(t *testing.T) {
 		vals, metas := drainSearchResultSetWithMetadata(t, rs)
 		assert.Equal(t, []string{"foo"}, vals)
 		assert.Nil(t, metas[0], "no source can enrich, so metadata stays nil")
-
-		var warns []string
-		for _, w := range rs.Warnings() {
-			warns = append(warns, w.Error())
-		}
-		require.Len(t, warns, 1)
-		assert.Contains(t, warns[0], "metric metadata is only available")
+		assert.Empty(t, rs.Warnings(), "a missing metadata source is best-effort, not a warning")
 	})
 
 	t.Run("a small batch_size does not turn into one metadata fetch per result", func(t *testing.T) {
@@ -561,7 +550,7 @@ func TestMetadataEnrichingSearchResultSet_Next(t *testing.T) {
 		assert.Equal(t, [][]string{{"a", "b"}, {"c", "d"}, {"e"}}, calls, "each response batch must trigger exactly one fetch of that batch's names")
 	})
 
-	t.Run("a fetch error emits the batch un-enriched and records a warning", func(t *testing.T) {
+	t.Run("a fetch error emits the batch un-enriched, best-effort with no warning", func(t *testing.T) {
 		fetch := func(context.Context, []string) (map[string]metadata.Metadata, error) {
 			return nil, errors.New("ingesters unavailable")
 		}
@@ -571,12 +560,7 @@ func TestMetadataEnrichingSearchResultSet_Next(t *testing.T) {
 		require.Len(t, got, 2)
 		assert.Nil(t, got[0].Metadata)
 		assert.Nil(t, got[1].Metadata)
-		var warns []string
-		for _, w := range rs.Warnings() {
-			warns = append(warns, w.Error())
-		}
-		require.Len(t, warns, 1)
-		assert.Contains(t, warns[0], "failed to fetch metric metadata")
+		assert.Empty(t, rs.Warnings(), "a fetch error is best-effort and not surfaced as a warning")
 	})
 
 	t.Run("a per-batch fetch error only de-enriches that batch", func(t *testing.T) {
@@ -612,5 +596,24 @@ func TestMetadataEnrichingSearchResultSet_Next(t *testing.T) {
 			warns = append(warns, w.Error())
 		}
 		assert.Equal(t, []string{"inner warn"}, warns)
+	})
+
+	t.Run("surfaces the inner source error via Err and enriches partial results", func(t *testing.T) {
+		innerErr := errors.New("source failed")
+		inner := storage.NewSearchResultSetFromSliceAndError([]storage.SearchResult{searchResult("a", 1.0)}, nil, innerErr)
+		fetch := func(_ context.Context, names []string) (map[string]metadata.Metadata, error) {
+			out := make(map[string]metadata.Metadata, len(names))
+			for _, n := range names {
+				out[n] = md("help " + n)
+			}
+			return out, nil
+		}
+		rs := newMetadataEnrichingSearchResultSet(t.Context(), inner, fetch, 10)
+
+		got := drain(t, rs)
+		require.Len(t, got, 1)
+		require.NotNil(t, got[0].Metadata, "partial results before the error are still enriched")
+		require.ErrorIs(t, rs.Err(), innerErr, "the wrapper must surface the inner source error via Err()")
+		require.NoError(t, rs.Close(), "Close delegates to the inner set")
 	})
 }

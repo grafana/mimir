@@ -19,12 +19,6 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
-// errSearchMetadataUnavailable is surfaced as a warning when include_metadata
-// was requested but no source can supply metadata (e.g. the time range is
-// outside the ingesters' retention window), so callers can distinguish it from
-// metrics that genuinely have no metadata.
-var errSearchMetadataUnavailable = errors.New("metric metadata is only available within the ingester retention window; results for this time range are not enriched with metadata")
-
 // metricMetadataFetcher fetches metric metadata for a set of metric names,
 // returning it keyed by metric name.
 type metricMetadataFetcher interface {
@@ -109,32 +103,23 @@ func (mq *multiQuerier) SearchLabelValues(ctx context.Context, name string, para
 	sets := fanOutSearch(queriers, clampWarn, func(s mimirSearcher) storage.SearchResultSet {
 		return s.SearchLabelValues(ctx, name, params, hints, matchers...)
 	})
+	merged := storage.MergeSearchResultSets(sets, hints)
 
 	// Metadata enrichment (include_metadata) only applies to metric names, and
 	// must run above the source merge: metric metadata is sharded by metric
 	// name independently of series, so it can't be attached reliably at the
-	// per-source leaves.
-	var fetcher metricMetadataFetcher
+	// per-source leaves. Enrichment is best-effort: if no source can supply
+	// metadata (e.g. the time range is outside the ingesters' retention window)
+	// results are simply returned un-enriched, like any metric with no metadata.
 	if params != nil && params.IncludeMetadata && name == model.MetricNameLabel {
-		if fetcher = findMetadataFetcher(queriers); fetcher == nil {
-			// No source can supply metadata (e.g. the time range is older than
-			// query-ingesters-within, so ingesters aren't queried). Warn so the
-			// caller can tell this apart from "these metrics have no metadata",
-			// mirroring the best-effort-with-warning fetch-error path.
-			var warn annotations.Annotations
-			warn.Add(errSearchMetadataUnavailable)
-			sets = append(sets, storage.NewSearchResultSetFromSlice(nil, warn))
+		if fetcher := findMetadataFetcher(queriers); fetcher != nil {
+			// Each buffer fill triggers one all-ingester metadata fan-out, so floor
+			// the buffer: a client-chosen batch_size of 1 must not turn into one
+			// fan-out per result. batch_size only controls the wire flush
+			// granularity, not how many names we fetch metadata for at a time.
+			batchSize := max(params.BatchSize, searchDefaultBatchSize)
+			return newMetadataEnrichingSearchResultSet(ctx, merged, fetcher.fetchMetricMetadata, batchSize)
 		}
-	}
-
-	merged := storage.MergeSearchResultSets(sets, hints)
-	if fetcher != nil {
-		// Each buffer fill triggers one all-ingester metadata fan-out, so floor
-		// the buffer: a client-chosen batch_size of 1 must not turn into one
-		// fan-out per result. batch_size only controls the wire flush
-		// granularity, not how many names we fetch metadata for at a time.
-		batchSize := max(params.BatchSize, searchDefaultBatchSize)
-		return newMetadataEnrichingSearchResultSet(ctx, merged, fetcher.fetchMetricMetadata, batchSize)
 	}
 	return merged
 }
@@ -191,8 +176,9 @@ func fanOutSearch(queriers []storage.Querier, clampWarn annotations.Annotations,
 // sets it, then streams the enriched batch out — so metadata is fetched exactly
 // one response batch at a time, preserving the streaming contract.
 //
-// Metadata is best-effort: a fetch error does not fail the search. It is
-// surfaced as a warning and the batch is emitted un-enriched.
+// Metadata is best-effort: a fetch error does not fail the search, it just
+// leaves that batch un-enriched (metadata is optional per result), so no
+// warning is surfaced.
 type metadataEnrichingSearchResultSet struct {
 	ctx       context.Context
 	inner     storage.SearchResultSet
@@ -202,7 +188,6 @@ type metadataEnrichingSearchResultSet struct {
 	buf       []storage.SearchResult
 	pos       int
 	innerDone bool
-	warnings  annotations.Annotations
 }
 
 func newMetadataEnrichingSearchResultSet(ctx context.Context, inner storage.SearchResultSet, fetch func(context.Context, []string) (map[string]metadata.Metadata, error), batchSize int) *metadataEnrichingSearchResultSet {
@@ -240,7 +225,7 @@ func (s *metadataEnrichingSearchResultSet) enrich() {
 	}
 	md, err := s.fetch(s.ctx, names)
 	if err != nil {
-		s.warnings.Add(fmt.Errorf("failed to fetch metric metadata: %w", err))
+		// Best-effort: leave the batch un-enriched on a fetch error.
 		return
 	}
 	for i := range s.buf {
@@ -259,10 +244,7 @@ func (s *metadataEnrichingSearchResultSet) At() storage.SearchResult {
 }
 
 func (s *metadataEnrichingSearchResultSet) Warnings() annotations.Annotations {
-	var ws annotations.Annotations
-	ws.Merge(s.inner.Warnings())
-	ws.Merge(s.warnings)
-	return ws
+	return s.inner.Warnings()
 }
 
 func (s *metadataEnrichingSearchResultSet) Err() error   { return s.inner.Err() }

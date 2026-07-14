@@ -176,13 +176,24 @@ their metadata via the ingester `MetricsMetadata` fan-out (the same all-ingester
 path the legacy `/api/v1/metadata` uses, extended to accept multiple metric names),
 then joins by name.
 
-Metadata is best-effort: a fetch failure, or a time range outside the ingesters'
-retention window (so no ingester is queried), surfaces a warning and leaves
-results un-enriched rather than failing the search.
+Metadata is **silently best-effort**: metadata is optional per result (many
+metrics have none), so a fetch failure or a time range outside the ingesters'
+retention window simply leaves results un-enriched, exactly like a metric that
+has no metadata. No warning is emitted — a warning here would be
+indistinguishable from "this metric has no metadata" and, in a streaming
+`limit+1` context, risks firing on the dropped has-more probe or on empty
+results.
 
 The store-gateway has no metric metadata and is not consulted for it.
 
 ### Known limitations
+
+- **Repeated `match[]` selectors fetch metadata per selector.** Enrichment runs
+  inside `multiQuerier.SearchLabelValues`, which the handler invokes once per
+  `match[]` selector, so an N-selector request issues N metadata fan-outs whose
+  (overlapping) results are then union-merged. Acceptable for the broadcast-v1
+  fetch; a single enrichment above the cross-selector union would need
+  enrichment to move above that merge.
 
 - **Classic histograms and summaries are not enriched.** Metadata is keyed by
   metric family name (e.g. `http_request_duration_seconds`), but the search

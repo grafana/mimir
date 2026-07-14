@@ -181,7 +181,6 @@ type searchRequest struct {
 	limit        int
 	startMs      int64
 	endMs        int64
-	batchSize    int
 	includeScore bool
 	// labelName is only set for the label-values endpoint; required there.
 	labelName string
@@ -333,8 +332,7 @@ func parseSearchRequest(r *http.Request, requireLabelName, supportsMetadata bool
 	params.BatchSize = batchSize
 
 	// include_metadata is only parsed for endpoints whose response shape can
-	// carry Type/Help/Unit (metric_names). Elsewhere the param is ignored, so
-	// an unsupported value is neither validated nor acted on.
+	// carry Type/Help/Unit. Elsewhere the param is ignored and forced to false.
 	if supportsMetadata {
 		includeMetadata, err := parseBoolParam(q, "include_metadata", false)
 		if err != nil {
@@ -358,7 +356,6 @@ func parseSearchRequest(r *http.Request, requireLabelName, supportsMetadata bool
 		limit:        limit,
 		startMs:      startMs,
 		endMs:        endMs,
-		batchSize:    batchSize,
 		includeScore: includeScore,
 		labelName:    labelName,
 	}, nil
@@ -522,8 +519,8 @@ func SearchMetricNamesHandler(queryable storage.Queryable, querierCfg Config, _ 
 			writeSearchFeatureDisabled(w)
 			return
 		}
-		// supportsMetadata=true: this is the only endpoint whose record shape
-		// carries Type/Help/Unit, so include_metadata is parsed and applied here.
+
+		// This endpoint supports "include_metadata" parameter.
 		req, err := parseSearchRequest(r, false, true)
 		if err != nil {
 			writeSearchBadRequest(w, err)
@@ -617,21 +614,21 @@ func writeSearcherForRequestError(w http.ResponseWriter, err error) {
 }
 
 // getSearchEnvelope returns the per-batch envelope for the request. Uses
-// the pool only when req.batchSize matches the pool's pre-allocated
+// the pool only when the batch size matches the pool's pre-allocated
 // capacity; otherwise allocates a fresh envelope so an outsized user
-// batchSize does not grow the pool's backing slices indefinitely.
+// batch size does not grow the pool's backing slices indefinitely.
 func getSearchEnvelope[T any](req *searchRequest, pool *sync.Pool) *searchBatchEnvelope[T] {
-	if req.batchSize == searchDefaultBatchSize {
+	if req.params.BatchSize == searchDefaultBatchSize {
 		return pool.Get().(*searchBatchEnvelope[T])
 	}
-	return &searchBatchEnvelope[T]{Results: make([]T, 0, req.batchSize)}
+	return &searchBatchEnvelope[T]{Results: make([]T, 0, req.params.BatchSize)}
 }
 
-// putSearchEnvelope returns env to pool when req.batchSize matches the
+// putSearchEnvelope returns env to pool when the batch size matches the
 // default; for non-default sizes the envelope is dropped on the floor
 // (matches getSearchEnvelope's allocation rule).
 func putSearchEnvelope[T any](env *searchBatchEnvelope[T], pool *sync.Pool, req *searchRequest) {
-	if req.batchSize != searchDefaultBatchSize {
+	if req.params.BatchSize != searchDefaultBatchSize {
 		return
 	}
 	env.Results = env.Results[:0]
@@ -639,7 +636,7 @@ func putSearchEnvelope[T any](env *searchBatchEnvelope[T], pool *sync.Pool, req 
 }
 
 // streamSearchNDJSON drains rs and writes NDJSON to w. One JSON object per
-// line; results batched per req.batchSize; flusher.Flush() called after each
+// line; results batched per req.params.BatchSize; flusher.Flush() called after each
 // batch line. NDJSON Content-Type is set lazily on the first batch flush so
 // pre-flush errors can fall back to the standard application/json envelope
 // per Prometheus PR #18573 (web/api/v1/search.go: respondPreStreamSearchError
@@ -698,7 +695,7 @@ func streamSearchNDJSON[T any](w http.ResponseWriter, rs storage.SearchResultSet
 			break
 		}
 		env.Results = append(env.Results, build(rs.At()))
-		if len(env.Results) >= req.batchSize {
+		if len(env.Results) >= req.params.BatchSize {
 			if err := flushBatch(); err != nil {
 				return
 			}
