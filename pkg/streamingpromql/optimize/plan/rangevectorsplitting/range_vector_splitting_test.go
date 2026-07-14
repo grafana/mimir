@@ -1537,7 +1537,7 @@ func runInstantQueryWithContext(t *testing.T, ctx context.Context, eng promql.Qu
 	ctx = user.InjectOrgID(ctx, "test-user")
 	q, err := eng.NewInstantQuery(ctx, storage, nil, expr, ts)
 	require.NoError(t, err)
-	defer q.Close()
+	t.Cleanup(q.Close)
 
 	return q.Exec(ctx), q.Stats().Samples
 }
@@ -1549,7 +1549,8 @@ func executeQuery(t *testing.T, engine promql.QueryEngine, storage storage.Stora
 	require.NoError(t, err)
 	result := q.Exec(ctx)
 	stats := q.Stats().Samples
-	q.Close()
+	t.Cleanup(q.Close)
+
 	return result, stats, wrapped.ranges
 }
 
