@@ -353,6 +353,7 @@ var instantQuerySeriesSlicePool = types.NewLimitingBucketedPool(
 	limiter.TopKBottomKInstantQuerySeriesSlices,
 	uint64(unsafe.Sizeof(instantQuerySeries{})),
 	true,
+	types.EnableManglingReturnedSlices,
 	nil,
 	nil,
 )

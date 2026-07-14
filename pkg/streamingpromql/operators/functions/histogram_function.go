@@ -119,6 +119,7 @@ var seriesGroupPairPool = types.NewLimitingBucketedPool(
 	limiter.SeriesGroupPairSlices,
 	seriesGroupPairSize,
 	true, // clearOnGet: zero out stale pointers and strings from previous use
+	types.EnableManglingReturnedSlices,
 	nil,
 	nil,
 )
@@ -131,6 +132,7 @@ var bucketGroupPointerSlicePool = types.NewLimitingBucketedPool(
 	limiter.BucketGroupPointerSlices,
 	bucketGroupPointerSize,
 	true, // clearOnGet: zero out stale pointers from previous use
+	types.EnableManglingReturnedSlices,
 	nil,
 	nil,
 )
@@ -142,6 +144,7 @@ var pointBucketPool = types.NewLimitingBucketedPool(
 	limiter.BucketsSlices,
 	uint64(unsafe.Sizeof(promql.Buckets{})),
 	true,
+	types.EnableManglingReturnedSlices,
 	mangleBuckets,
 	nil,
 )
@@ -162,6 +165,7 @@ var bucketSliceBucketedPool = types.NewLimitingBucketedPool(
 	limiter.BucketSlices,
 	uint64(unsafe.Sizeof(promql.Bucket{})),
 	true,
+	types.EnableManglingReturnedSlices,
 	mangleBucket,
 	nil,
 )

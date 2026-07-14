@@ -69,7 +69,7 @@ main() {
     echo "  )"
     echo
     echo "  func init() {"
-    echo "  	types.EnableManglingReturnedSlices = true"
+    echo "  	types.EnableManglingReturnedSlices.Store(true)"
     echo "  }"
     echo
     echo "This helps detect use-after-return bugs by mangling slices returned to the pool."
@@ -92,7 +92,7 @@ import (
 )
 
 func init() {
-	types.EnableManglingReturnedSlices = true
+	types.EnableManglingReturnedSlices.Store(true)
 }
 EOF
 }
@@ -106,7 +106,7 @@ expected_without_import() {
 package $1
 
 func init() {
-	EnableManglingReturnedSlices = true
+	EnableManglingReturnedSlices.Store(true)
 }
 EOF
 }

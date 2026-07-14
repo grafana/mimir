@@ -154,6 +154,7 @@ var qGroupPool = types.NewLimitingBucketedPool(
 	limiter.QuantileGroupSlices,
 	uint64(unsafe.Sizeof(qGroup{})),
 	true,
+	types.EnableManglingReturnedSlices,
 	nil,
 	nil,
 )
