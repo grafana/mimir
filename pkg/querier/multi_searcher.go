@@ -15,39 +15,56 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
 
+	querierapi "github.com/grafana/mimir/pkg/querier/api"
+	"github.com/grafana/mimir/pkg/storage/lazyquery"
 	"github.com/grafana/mimir/pkg/streaminglabelvalues"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
-type metricMetadataFetcher interface {
-	// FetchMetricMetadata fetches metric metadata for a set of metric names,
-	// returning it keyed by metric name.
-	FetchMetricMetadata(ctx context.Context, names []string) (map[string]metadata.Metadata, error)
-}
+// The production wrappers around multiQuerier must forward the fetch, else
+// enrichment silently regresses to skipped.
+var (
+	_ querierapi.MetricMetadataFetcher = (*memoryTrackingQuerier)(nil)
+	_ querierapi.MetricMetadataFetcher = lazyquery.LazyQuerier{}
+)
 
 // findMetadataFetcher returns the first querier that can fetch metric metadata,
 // or nil if none can (e.g. ingesters not queried for this time range).
-func findMetadataFetcher(queriers []storage.Querier) metricMetadataFetcher {
+func findMetadataFetcher(queriers []storage.Querier) querierapi.MetricMetadataFetcher {
 	for _, q := range queriers {
-		if f, ok := q.(metricMetadataFetcher); ok {
+		if f, ok := q.(querierapi.MetricMetadataFetcher); ok {
 			return f
 		}
 	}
 	return nil
 }
 
-// FetchMetricMetadata implements metricMetadataFetcher by delegating to the
-// per-source querier that can supply metadata. It returns nil when no such source
-// is available.
+// FetchMetricMetadata delegates to the per-source querier that can supply
+// metadata. It returns nil when no such source is available.
 func (mq *multiQuerier) FetchMetricMetadata(ctx context.Context, names []string) (map[string]metadata.Metadata, error) {
-	ctx, queriers, _, _, err := mq.getQueriers(ctx, mq.minT, mq.maxT)
-	if errors.Is(err, errEmptyTimeRange) {
-		return nil, nil
+	// Reuse the queriers the in-flight search already opened rather than
+	// re-deriving them: getQueriers also opens and counts (via
+	// QueriesExecutedTotal) the store-gateway leaf, which the metadata fetch
+	// never uses. The handler always runs the search before enriching, so the
+	// queriers are already open by the time enrichment fetches metadata.
+	mq.queriersMtx.Lock()
+	queriers := mq.queriers
+	mq.queriersMtx.Unlock()
+
+	if len(queriers) == 0 {
+		// No prior search on this querier (e.g. a direct FetchMetricMetadata
+		// call): open the queriers now.
+		var err error
+		ctx, queriers, _, _, err = mq.getQueriers(ctx, mq.minT, mq.maxT)
+		if errors.Is(err, errEmptyTimeRange) {
+			return nil, nil
+		}
+		if err != nil {
+			return nil, err
+		}
 	}
-	if err != nil {
-		return nil, err
-	}
+
 	if fetcher := findMetadataFetcher(queriers); fetcher != nil {
 		return fetcher.FetchMetricMetadata(ctx, names)
 	}
@@ -189,6 +206,7 @@ type metadataEnrichingSearchResultSet struct {
 	buf            []storage.SearchResult
 	bufNextReadIdx int
 	innerDone      bool
+	warnedFetchErr bool
 }
 
 func newMetadataEnrichingSearchResultSet(ctx context.Context, inner storage.SearchResultSet, fetch func(context.Context, []string) (map[string]metadata.Metadata, error), batchSize int, logger log.Logger) *metadataEnrichingSearchResultSet {
@@ -234,8 +252,11 @@ func (s *metadataEnrichingSearchResultSet) enrich() {
 	if err != nil {
 		// Best-effort: leave the batch un-enriched on a fetch error. Metadata is
 		// optional per result, so we don't fail the search or warn the client,
-		// but log it for observability.
-		level.Warn(spanlogger.FromContext(s.ctx, s.logger)).Log("msg", "failed to fetch metric metadata for search results enrichment", "err", err)
+		// but log it once per request (fetch runs per batch) for observability.
+		if !s.warnedFetchErr {
+			s.warnedFetchErr = true
+			level.Warn(spanlogger.FromContext(s.ctx, s.logger)).Log("msg", "failed to fetch metric metadata for search results enrichment", "err", err)
+		}
 		return
 	}
 

@@ -41,7 +41,7 @@ import (
 // fields, letting each test express exactly the iterator behaviour it wants
 // (results, mid-stream error, warnings, etc.).
 //
-// When metadata is non-nil the mock also satisfies metricMetadataFetcher, so
+// When metadata is non-nil the mock also satisfies querierapi.MetricMetadataFetcher, so
 // the metric-names handler can enrich results from it (mirroring the querier's
 // ingester metadata fan-out). metadataFetchCalls counts the fetches.
 type searchMockQuerier struct {
@@ -87,7 +87,7 @@ func (s *searchMockQuerier) SearchLabelValues(_ context.Context, name string, pa
 	return s.valuesFn(name, params, hints, matchers...)
 }
 
-// FetchMetricMetadata is only present (as far as the metricMetadataFetcher
+// FetchMetricMetadata is only present (as far as the querierapi.MetricMetadataFetcher
 // type-assert is concerned) to let the handler enrich; it returns metadata for
 // the requested names found in the configured map.
 func (s *searchMockQuerier) FetchMetricMetadata(_ context.Context, names []string) (map[string]metadata.Metadata, error) {
@@ -887,7 +887,7 @@ func TestParseSortOrder_Cases(t *testing.T) {
 func TestParseSearchRequest_DefaultTimeRange(t *testing.T) {
 	r := newSearchHandlerRequest(t, "/api/v1/search/label_names?search[]=foo")
 	before := time.Now().UnixMilli()
-	req, err := parseSearchRequest(r, false, false)
+	req, err := parseSearchRequest(r, false)
 	after := time.Now().UnixMilli()
 	require.NoError(t, err)
 
@@ -905,13 +905,13 @@ func TestParseSearchRequest_DefaultTimeRange(t *testing.T) {
 func TestParseSearchRequest_RejectsInvertedTimeRange(t *testing.T) {
 	t.Run("end before start is rejected", func(t *testing.T) {
 		r := newSearchHandlerRequest(t, "/api/v1/search/label_names?start=7200&end=3600")
-		_, err := parseSearchRequest(r, false, false)
+		_, err := parseSearchRequest(r, false)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "end timestamp must not be before start timestamp")
 	})
 	t.Run("end equal to start is permitted", func(t *testing.T) {
 		r := newSearchHandlerRequest(t, "/api/v1/search/label_names?start=3600&end=3600")
-		req, err := parseSearchRequest(r, false, false)
+		req, err := parseSearchRequest(r, false)
 		require.NoError(t, err)
 		assert.Equal(t, req.startMs, req.endMs)
 	})
@@ -919,7 +919,7 @@ func TestParseSearchRequest_RejectsInvertedTimeRange(t *testing.T) {
 
 func TestParseSearchRequest_ParamRoundTrip(t *testing.T) {
 	r := newSearchHandlerRequest(t, "/api/v1/search/label_names?search[]=foo&search[]=bar&case_sensitive=false&fuzz_alg=jarowinkler&fuzz_threshold=75&sort_by=alpha&sort_dir=dsc&include_score=true&limit=42&batch_size=7&match[]={job=\"prom\"}")
-	req, err := parseSearchRequest(r, false, false)
+	req, err := parseSearchRequest(r, false)
 	require.NoError(t, err)
 	assert.Equal(t, []string{"foo", "bar"}, req.params.Terms)
 	assert.False(t, req.params.CaseSensitive)
@@ -941,7 +941,7 @@ func TestParseSearchRequest_ParamRoundTrip(t *testing.T) {
 // searchDefaultBatchSize. Previously Mimir rejected 0; upstream accepts it.
 func TestParseSearchRequest_BatchSizeZeroKeepsDefault(t *testing.T) {
 	r := newSearchHandlerRequest(t, "/api/v1/search/label_names?batch_size=0")
-	req, err := parseSearchRequest(r, false, false)
+	req, err := parseSearchRequest(r, false)
 	require.NoError(t, err)
 	assert.Equal(t, searchDefaultBatchSize, req.batchSize)
 }
@@ -1282,13 +1282,13 @@ func TestSearchLabelValuesHandler_NameLabelNotEnrichedWithMetadata(t *testing.T)
 	assert.False(t, hasType, "label_values records must never carry type/help/unit")
 }
 
-func TestSearchLabelValuesHandler_MalformedMetadataParamIgnored(t *testing.T) {
-	// include_metadata is not parsed for endpoints that can't carry metadata,
-	// so a malformed value is ignored rather than rejected (unlike metric_names).
+func TestSearchLabelValuesHandler_MalformedMetadataParamReturns400(t *testing.T) {
+	// include_metadata is parsed on every endpoint, so a malformed value is a 400
+	// even where the param has no effect on the response.
 	h := SearchLabelValuesHandler(newSearchMockQueryable(&searchMockQuerier{}), enabledSearchConfig(), nil)
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_values?label=env&include_metadata=maybe"))
-	assert.Equal(t, http.StatusOK, w.Code, "malformed include_metadata must be ignored, not 400, on endpoints that don't support it")
+	assert.Equal(t, http.StatusBadRequest, w.Code)
 }
 
 // TestDefaultSuccessTrailer_MatchesEncoderOutput pins the byte-for-byte

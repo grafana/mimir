@@ -165,7 +165,7 @@ only by the metric-names endpoint — that is the only response shape with
 `/api/v1/search/label_names` and `/api/v1/search/label_values`, including
 `label_values?label=__name__`.
 
-Enrichment is **applied in the querier's metric-names HTTP handler, not in
+Enrichment is applied in the querier's metric-names HTTP handler, not in
 the ingesters. Metric metadata is sharded by metric name independently of series
 (sharded by all labels), so the ingester that owns a metric's metadata is
 usually not the one that holds a series with that name.
@@ -173,7 +173,7 @@ usually not the one that holds a series with that name.
 The handler wraps the fully-merged result set with a buffering enricher: it
 batches the streamed metric names, fetches their metadata via
 `FetchMetricMetadata` on the opened querier, and joins by name. The handler
-stays tenant-federation-agnostic, but the the fetcher it obtains is federation-aware.
+stays tenant-federation-agnostic, but the fetcher it obtains is federation-aware.
 
 `FetchMetricMetadata` is implemented by:
 

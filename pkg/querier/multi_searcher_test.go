@@ -28,7 +28,7 @@ import (
 // methods return either an err or the configured slice; non-search methods
 // return zero values (not used in these tests).
 //
-// When metadata is non-nil the mock also satisfies metricMetadataFetcher,
+// When metadata is non-nil the mock also satisfies querierapi.MetricMetadataFetcher,
 // standing in for the distributor querier's ingester metadata fan-out.
 type mockSearchQuerier struct {
 	namesResults  []storage.SearchResult
@@ -90,7 +90,7 @@ func (qq *mockSearchQueryable) Querier(_, _ int64) (storage.Querier, error) {
 }
 
 // nonMetadataSearchQuerier implements mimirSearcher and storage.Querier but NOT
-// metricMetadataFetcher, standing in for a source that can't supply metadata
+// querierapi.MetricMetadataFetcher, standing in for a source that can't supply metadata
 // (e.g. the blocks-store querier).
 type nonMetadataSearchQuerier struct{ values []storage.SearchResult }
 

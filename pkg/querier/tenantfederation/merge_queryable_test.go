@@ -35,6 +35,7 @@ import (
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.uber.org/atomic"
 
+	querierapi "github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/storage/series"
 	"github.com/grafana/mimir/pkg/streaminglabelvalues"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
@@ -1342,9 +1343,9 @@ func TestMergeQueryable_SearchLabelValues_MultiTenantFanout(t *testing.T) {
 		"fan-out must dedup across tenants and respect value-asc ordering")
 }
 
-// TestMergeQueryable_FetchMetricMetadata_MultiTenantFanout pins the metadata
-// fan-out: metadata is fetched per tenant and unioned by name, and on a name
-// present in several tenants the first tenant by sorted ID wins (deterministic).
+// TestMergeQueryable_FetchMetricMetadata covers the metadata fetch across
+// multiple tenants (fan out, union by name, first tenant by sorted ID wins ties)
+// and the single-tenant forward.
 func TestMergeQueryable_FetchMetricMetadata(t *testing.T) {
 	t.Run("fans out across tenants and unions results, breaking ties in favor of the first tenant by sorted ID", func(t *testing.T) {
 		src := &searchableTenantQueryable{
@@ -1361,10 +1362,10 @@ func TestMergeQueryable_FetchMetricMetadata(t *testing.T) {
 		querier, err := q.Querier(0, 1000)
 		require.NoError(t, err)
 		defer querier.Close()
-		f, ok := querier.(metricMetadataFetcher)
+		f, ok := querier.(querierapi.MetricMetadataFetcher)
 		require.True(t, ok, "mergeQuerier must satisfy the metadata fetcher interface")
 
-		ctx := user.InjectOrgID(context.Background(), "t1|t2")
+		ctx := user.InjectOrgID(t.Context(), "t1|t2")
 		got, err := f.FetchMetricMetadata(ctx, []string{"shared", "only_t2"})
 		require.NoError(t, err)
 		assert.Equal(t, map[string]metadata.Metadata{
@@ -1384,9 +1385,9 @@ func TestMergeQueryable_FetchMetricMetadata(t *testing.T) {
 		querier, err := q.Querier(0, 1000)
 		require.NoError(t, err)
 		defer querier.Close()
-		f := querier.(metricMetadataFetcher)
+		f := querier.(querierapi.MetricMetadataFetcher)
 
-		ctx := user.InjectOrgID(context.Background(), "only")
+		ctx := user.InjectOrgID(t.Context(), "only")
 		got, err := f.FetchMetricMetadata(ctx, []string{"a", "missing"})
 		require.NoError(t, err)
 		assert.Equal(t, map[string]metadata.Metadata{"a": {Type: model.MetricTypeCounter, Help: "h"}}, got)

@@ -26,6 +26,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/util/annotations"
 
+	querierapi "github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/streaminglabelvalues"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
@@ -37,12 +38,6 @@ import (
 type searcher interface {
 	SearchLabelNames(ctx context.Context, params *streaminglabelvalues.Params, hints *storage.SearchHints, matchers ...*labels.Matcher) storage.SearchResultSet
 	SearchLabelValues(ctx context.Context, name string, params *streaminglabelvalues.Params, hints *storage.SearchHints, matchers ...*labels.Matcher) storage.SearchResultSet
-}
-
-type metricMetadataFetcher interface {
-	// FetchMetricMetadata fetches metric metadata for a set of metric names,
-	// returning it keyed by metric name.
-	FetchMetricMetadata(ctx context.Context, names []string) (map[string]metadata.Metadata, error)
 }
 
 // NewQueryable returns a queryable that iterates through all the tenant IDs
@@ -129,7 +124,7 @@ func (q *tenantQuerier) SearchLabelValues(ctx context.Context, id string, name s
 // FetchMetricMetadata forwards the metadata fetch to the upstream with the
 // per-tenant org ID injected.
 func (q *tenantQuerier) FetchMetricMetadata(ctx context.Context, id string, names []string) (map[string]metadata.Metadata, error) {
-	f, ok := q.upstream.(metricMetadataFetcher)
+	f, ok := q.upstream.(querierapi.MetricMetadataFetcher)
 	if !ok {
 		return nil, errors.Errorf("upstream %T does not support metric metadata fetch", q.upstream)
 	}

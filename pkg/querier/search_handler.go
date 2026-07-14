@@ -23,6 +23,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 
+	querierapi "github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/querier/worker"
 	"github.com/grafana/mimir/pkg/streaminglabelvalues"
 	"github.com/grafana/mimir/pkg/util"
@@ -184,9 +185,8 @@ type searchRequest struct {
 	endMs        int64
 	batchSize    int
 	includeScore bool
-	// includeMetadata is only parsed/honoured by the metric-names endpoint,
-	// whose record shape can carry Type/Help/Unit. The handler uses it to
-	// decide whether to enrich the merged result above every merge.
+	// includeMetadata specifies whether the response should include per-metric
+	// metadata. Always parsed, but only the metric-names handler acts on it.
 	includeMetadata bool
 	// labelName is only set for the label-values endpoint; required there.
 	labelName string
@@ -194,11 +194,9 @@ type searchRequest struct {
 
 // parseSearchRequest reads the HTTP request and builds a searchRequest.
 // requireLabelName is true for the label-values endpoint where the `label`
-// parameter is mandatory. supportsMetadata is true only for the metric-names
-// endpoint, whose response shape can carry metadata; it gates whether
-// include_metadata is parsed and applied. Returns a wrapped error suitable for
-// surfacing as HTTP 400.
-func parseSearchRequest(r *http.Request, requireLabelName, supportsMetadata bool) (*searchRequest, error) {
+// parameter is mandatory. Returns a wrapped error suitable for surfacing as
+// HTTP 400.
+func parseSearchRequest(r *http.Request, requireLabelName bool) (*searchRequest, error) {
 	if err := r.ParseForm(); err != nil {
 		return nil, fmt.Errorf("parse form: %w", err)
 	}
@@ -334,14 +332,11 @@ func parseSearchRequest(r *http.Request, requireLabelName, supportsMetadata bool
 		return nil, errors.New(`missing required parameter "label"`)
 	}
 
-	// include_metadata is only parsed for endpoints whose response shape can
-	// carry Type/Help/Unit. Elsewhere the param is ignored and left false.
-	var includeMetadata bool
-	if supportsMetadata {
-		includeMetadata, err = parseBoolParam(q, "include_metadata", false)
-		if err != nil {
-			return nil, err
-		}
+	// include_metadata is always parsed (so a malformed value is a 400 on every
+	// endpoint); only the metric-names handler acts on it.
+	includeMetadata, err := parseBoolParam(q, "include_metadata", false)
+	if err != nil {
+		return nil, err
 	}
 
 	// hintsLimit asks downstream for one extra result so the handler can
@@ -448,7 +443,7 @@ func SearchLabelNamesHandler(queryable storage.Queryable, querierCfg Config, _ *
 			writeSearchFeatureDisabled(w)
 			return
 		}
-		req, err := parseSearchRequest(r, false, false)
+		req, err := parseSearchRequest(r, false)
 		if err != nil {
 			writeSearchBadRequest(w, err)
 			return
@@ -486,7 +481,7 @@ func SearchLabelValuesHandler(queryable storage.Queryable, querierCfg Config, _ 
 			writeSearchFeatureDisabled(w)
 			return
 		}
-		req, err := parseSearchRequest(r, true, false)
+		req, err := parseSearchRequest(r, true)
 		if err != nil {
 			writeSearchBadRequest(w, err)
 			return
@@ -525,8 +520,7 @@ func SearchMetricNamesHandler(queryable storage.Queryable, querierCfg Config, _ 
 			return
 		}
 
-		// This endpoint supports "include_metadata" parameter.
-		req, err := parseSearchRequest(r, false, true)
+		req, err := parseSearchRequest(r, false)
 		if err != nil {
 			writeSearchBadRequest(w, err)
 			return
@@ -552,7 +546,7 @@ func SearchMetricNamesHandler(queryable storage.Queryable, querierCfg Config, _ 
 		// Metadata enrichment is best-effort: a missing fetcher or a fetch error
 		// just leaves results un-enriched.
 		if req.includeMetadata {
-			if fetcher, ok := querier.(metricMetadataFetcher); ok {
+			if fetcher, ok := querier.(querierapi.MetricMetadataFetcher); ok {
 				// Floor the fetch batch so a batch_size=1 (or, generally speaking a
 				// small batch_size requested via the API) can't turn into one all-ingester
 				// metadata fan-out per single/few results.
