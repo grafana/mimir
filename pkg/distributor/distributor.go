@@ -314,6 +314,9 @@ type Distributor struct {
 	// nautilusPartitionSamplesWritten counts samples successfully
 	// written to the nautilus ingest topic, per partition and tenant.
 	nautilusPartitionSamplesWritten *prometheus.CounterVec
+	// nautilusPartitionsWrittenPerRequest records the number of distinct
+	// partitions written to the nautilus ingest topic by each push request.
+	nautilusPartitionsWrittenPerRequest prometheus.Histogram
 
 	// spotlights is the distributor's local cache of the
 	// rebalancer's "spotlighted hash range" set plus an accumulator
@@ -865,6 +868,11 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 			Name: "cortex_distributor_nautilus_partition_samples_written_total",
 			Help: "Total number of float and native histogram samples successfully written to the nautilus ingest Kafka topic (-distributor.nautilus-ingest-topic), per partition and tenant. Only incremented for tenants enrolled in nautilus_ingest_routing when the startup write policy includes the nautilus topic.",
 		}, []string{"partition", "user"}),
+		nautilusPartitionsWrittenPerRequest: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
+			Name:    "cortex_distributor_nautilus_partitions_written_per_request",
+			Help:    "Number of distinct partitions successfully written to the nautilus ingest Kafka topic by a push request.",
+			Buckets: prometheus.LinearBuckets(1, 1, 300),
+		}),
 
 		spotlights: newDistributorSpotlightTracker(),
 
@@ -2934,18 +2942,28 @@ func writeRequestSampleCount(req *mimirpb.WriteRequest) int {
 	return n
 }
 
-// observeNautilusPartitionWrites records per-partition sample counts
-// for tenants writing to the nautilus ingest topic.
+// observeNautilusPartitionWrites records per-partition sample counts and the
+// number of distinct partitions for requests written to the nautilus ingest topic.
 func (d *Distributor) observeNautilusPartitionWrites(tenantID, topic string, partitionRequests []ingest.PartitionWriteRequest) {
-	if d.nautilusPartitionSamplesWritten == nil || d.cfg.NautilusIngestTopic == "" || topic != d.cfg.NautilusIngestTopic {
+	if d.cfg.NautilusIngestTopic == "" || topic != d.cfg.NautilusIngestTopic {
 		return
 	}
+
+	partitions := make(map[int32]struct{}, len(partitionRequests))
 	for _, pr := range partitionRequests {
+		partitions[pr.PartitionID] = struct{}{}
+
+		if d.nautilusPartitionSamplesWritten == nil {
+			continue
+		}
 		n := writeRequestSampleCount(pr.WriteRequest)
 		if n == 0 {
 			continue
 		}
 		d.nautilusPartitionSamplesWritten.WithLabelValues(strconv.FormatInt(int64(pr.PartitionID), 10), tenantID).Add(float64(n))
+	}
+	if d.nautilusPartitionsWrittenPerRequest != nil {
+		d.nautilusPartitionsWrittenPerRequest.Observe(float64(len(partitions)))
 	}
 }
 

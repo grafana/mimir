@@ -5,6 +5,7 @@ package distributor
 import (
 	"context"
 	"math"
+	"strings"
 	"testing"
 	"time"
 
@@ -181,10 +182,16 @@ func TestObserveNautilusPartitionWrites(t *testing.T) {
 		Name: "cortex_distributor_nautilus_partition_samples_written_total",
 		Help: "test",
 	}, []string{"partition", "user"})
+	partitionsPerRequest := promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
+		Name:    "cortex_distributor_nautilus_partitions_written_per_request",
+		Help:    "Number of distinct partitions successfully written to the nautilus ingest Kafka topic by a push request.",
+		Buckets: []float64{1, 2, 3},
+	})
 
 	d := &Distributor{
-		cfg:                             Config{NautilusIngestTopic: "nautilus_ingest"},
-		nautilusPartitionSamplesWritten: partitionSamples,
+		cfg:                                 Config{NautilusIngestTopic: "nautilus_ingest"},
+		nautilusPartitionSamplesWritten:     partitionSamples,
+		nautilusPartitionsWrittenPerRequest: partitionsPerRequest,
 	}
 
 	d.observeNautilusPartitionWrites("tenant-a", "production_topic", []ingest.PartitionWriteRequest{
@@ -207,9 +214,20 @@ func TestObserveNautilusPartitionWrites(t *testing.T) {
 				{TimeSeries: &mimirpb.TimeSeries{Histograms: []mimirpb.Histogram{{}}}},
 			},
 		}},
+		{PartitionID: 42},
 	})
 	assert.Equal(t, float64(2), testutil.ToFloat64(partitionSamples.WithLabelValues("1", "tenant-a")))
 	assert.Equal(t, float64(1), testutil.ToFloat64(partitionSamples.WithLabelValues("42", "tenant-a")))
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+# HELP cortex_distributor_nautilus_partitions_written_per_request Number of distinct partitions successfully written to the nautilus ingest Kafka topic by a push request.
+# TYPE cortex_distributor_nautilus_partitions_written_per_request histogram
+cortex_distributor_nautilus_partitions_written_per_request_bucket{le="1"} 0
+cortex_distributor_nautilus_partitions_written_per_request_bucket{le="2"} 1
+cortex_distributor_nautilus_partitions_written_per_request_bucket{le="3"} 1
+cortex_distributor_nautilus_partitions_written_per_request_bucket{le="+Inf"} 1
+cortex_distributor_nautilus_partitions_written_per_request_sum 2
+cortex_distributor_nautilus_partitions_written_per_request_count 1
+`), "cortex_distributor_nautilus_partitions_written_per_request"))
 }
 
 func TestIngestStorageTopicsForTenant(t *testing.T) {
