@@ -27,6 +27,7 @@ type FPointRingBuffer struct {
 	pointsIndexMask          int // Bitmask used to calculate indices into points efficiently. Computing modulo is relatively expensive, but points is always sized as a power of two, so we can a bitmask to calculate remainders cheaply.
 	firstIndex               int // Index into 'points' of first point in this buffer.
 	size                     int // Number of points in this buffer.
+	generation               int // Incremented when views of this buffer are invalidated.
 }
 
 func NewFPointRingBuffer(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *FPointRingBuffer {
@@ -80,6 +81,8 @@ func (b *FPointRingBuffer) resizeIfRequired(additionalPoints int, appendingAtSta
 	putFPointSliceForRingBuffer(&b.points, b.memoryConsumptionTracker)
 	b.points = newSlice
 	b.pointsIndexMask = cap(newSlice) - 1
+	b.generation++
+
 	return true, nil
 }
 
@@ -87,6 +90,7 @@ func (b *FPointRingBuffer) resizeIfRequired(additionalPoints int, appendingAtSta
 // Note that the actual underlying points buffer is not reduced in size.
 func (b *FPointRingBuffer) DiscardPointsAtOrBefore(t int64) {
 	for b.size > 0 && b.points[b.firstIndex].T <= t {
+		b.generation++
 		b.firstIndex++
 		b.size--
 
@@ -104,12 +108,14 @@ func (b *FPointRingBuffer) DiscardPointsAtOrBefore(t int64) {
 // It is safe to call this function on an empty buffer.
 func (b *FPointRingBuffer) RemoveLast() {
 	if b.size > 0 {
+		b.generation++
 		b.size--
 	}
 }
 
 func (b *FPointRingBuffer) RemoveFirst() {
 	if b.size > 0 {
+		b.generation++
 		b.firstIndex++
 		b.size--
 
@@ -127,6 +133,7 @@ func (b *FPointRingBuffer) ReplaceLast(point promql.FPoint) error {
 		return errors.New("unable to replace point to the tail of the buffer - current buffer is empty")
 	}
 
+	// No generation change since we aren't changing the buffer size.
 	position := b.size - 1
 	b.points[(b.firstIndex+position)&b.pointsIndexMask] = point
 	return nil
@@ -140,6 +147,7 @@ func (b *FPointRingBuffer) ReplaceFirst(point promql.FPoint) error {
 		return errors.New("unable to replace point to the head of the buffer - current buffer is empty")
 	}
 
+	// No generation change since we aren't changing the buffer size.
 	b.points[b.firstIndex] = point
 	return nil
 }
@@ -204,6 +212,17 @@ func (b *FPointRingBuffer) AppendSlice(points []promql.FPoint) (bool, error) {
 	return resized, nil
 }
 
+// EmptyView returns an empty view associated with this buffer that is marked as dirty. This
+// view cannot be used directly and instead must be recreated (using "existing") before being
+// used by a caller. This differs from creating an empty FPointRingBufferView directly since
+// this instance will be "dirty" while the struct created directly is not.
+func (b *FPointRingBuffer) EmptyView() *FPointRingBufferView {
+	return &FPointRingBufferView{
+		buffer:     b,
+		generation: -1,
+	}
+}
+
 // ViewUntilSearchingForwards returns a view into this buffer, including only points with timestamps less than or equal to maxT.
 // ViewUntilSearchingForwards examines the points in the buffer starting from the front of the buffer, so is preferred over
 // ViewUntilSearchingBackwards if it is expected that there are many points with timestamp greater than maxT, and few points with
@@ -221,6 +240,7 @@ func (b *FPointRingBuffer) ViewUntilSearchingForwards(maxT int64, existing *FPoi
 		size++
 	}
 
+	existing.generation = b.generation
 	existing.offset = 0
 	existing.size = size
 	return existing
@@ -232,6 +252,8 @@ func (b *FPointRingBuffer) ViewAll(existing *FPointRingBufferView) *FPointRingBu
 	if existing == nil {
 		existing = &FPointRingBufferView{buffer: b}
 	}
+
+	existing.generation = b.generation
 	existing.offset = 0
 	existing.size = b.size
 	return existing
@@ -250,6 +272,7 @@ func (b *FPointRingBuffer) ViewUntilSearchingBackwards(maxT int64, existing *FPo
 		nextPositionToCheck--
 	}
 
+	existing.generation = b.generation
 	existing.offset = 0
 	existing.size = nextPositionToCheck + 1
 	return existing
@@ -269,6 +292,8 @@ func (b *FPointRingBuffer) ViewBetweenSearchingBackwards(minT, maxT int64, exist
 		})
 		panic(fmt.Sprintf("attempted to create an FPointRingBufferView with minT(%d) > maxT(%d) (this is a bug)", minT, maxT))
 	}
+
+	existing.generation = b.generation
 
 	// If the buffer is empty or min time is beyond the last point in this buffer,
 	// return a zero-sized view since there are no points or no matching points.
@@ -348,6 +373,7 @@ func (b *FPointRingBuffer) CountBetween(minT, maxT int64) int {
 
 // Reset clears the contents of this buffer, but retains the underlying point slice for future reuse.
 func (b *FPointRingBuffer) Reset() {
+	b.generation++
 	b.firstIndex = 0
 	b.size = 0
 }
@@ -374,6 +400,7 @@ func (b *FPointRingBuffer) Use(s []promql.FPoint) error {
 
 	putFPointSliceForRingBuffer(&b.points, b.memoryConsumptionTracker)
 
+	b.generation++
 	b.points = s[:cap(s)]
 	b.firstIndex = 0
 	b.size = len(s)
@@ -388,9 +415,21 @@ func (b *FPointRingBuffer) Close() {
 }
 
 type FPointRingBufferView struct {
-	buffer *FPointRingBuffer
-	offset int // Offset from buffer's firstIndex where this view starts
-	size   int
+	buffer     *FPointRingBuffer
+	offset     int // Offset from buffer's firstIndex where this view starts
+	size       int
+	generation int // Generation of the buffer when this view was created
+}
+
+// IsDirty returns true if this view is associated with a buffer and the buffer
+// has been modified since the view was created. When this is the case, the view
+// must be recreated before being used by callers.
+func (v *FPointRingBufferView) IsDirty() bool {
+	if v.buffer == nil {
+		return false
+	}
+
+	return v.generation != v.buffer.generation
 }
 
 // UnsafePoints returns slices of the points in this buffer view.
@@ -506,10 +545,10 @@ func (v *FPointRingBufferView) Clone() (*FPointRingBufferView, *FPointRingBuffer
 		return nil, nil, err
 	}
 
-	view := &FPointRingBufferView{
-		buffer: buffer,
-		size:   v.size,
-	}
+	// Ensure that the newly created buffer (and hence view) has the same generation
+	// as this view so they will compare as equal to this view (some tests rely on this).
+	buffer.generation = v.generation
+	view := buffer.ViewAll(nil)
 
 	return view, buffer, nil
 }

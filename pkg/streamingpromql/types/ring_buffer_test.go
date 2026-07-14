@@ -10,6 +10,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/util/limiter"
@@ -23,6 +24,7 @@ type ringBuffer[T any] interface {
 	Reset()
 	Use(s []T) error
 	Release()
+	ViewBetweenSearchingBackwardsForTesting(minT, maxT int64) ringBufferView[T]
 	ViewUntilSearchingForwardsForTesting(maxT int64) ringBufferView[T]
 	ViewUntilSearchingBackwardsForTesting(maxT int64) ringBufferView[T]
 	GetPoints() []T
@@ -31,6 +33,7 @@ type ringBuffer[T any] interface {
 }
 
 type ringBufferView[T any] interface {
+	IsDirty() bool
 	ForEach(f func(p T))
 	UnsafePoints() (head []T, tail []T)
 	CopyPoints() ([]T, error)
@@ -495,6 +498,35 @@ func shouldHavePointsAtOrBeforeTime[T any](t *testing.T, buf ringBuffer[T], ts i
 	viewShouldHavePoints(t, buf.ViewUntilSearchingBackwardsForTesting(ts), expected...)
 }
 
+type viewsForIsDirtyTests[T any] struct {
+	untilForwards  ringBufferView[T]
+	untilBackwards ringBufferView[T]
+	between        ringBufferView[T]
+}
+
+func shouldHaveCleanViews[T any](t *testing.T, buf ringBuffer[T]) viewsForIsDirtyTests[T] {
+	untilForwards := buf.ViewUntilSearchingForwardsForTesting(math.MaxInt64)
+	require.False(t, untilForwards.IsDirty(), "expected ViewUntilSearchingForwards to not return dirty view")
+
+	untilBackwards := buf.ViewUntilSearchingBackwardsForTesting(math.MaxInt64)
+	require.False(t, untilBackwards.IsDirty(), "expected ViewUntilSearchingBackwards to not return dirty view")
+
+	between := buf.ViewBetweenSearchingBackwardsForTesting(math.MinInt64, math.MaxInt64)
+	require.False(t, between.IsDirty(), "expected ViewBetweenSearchingBackwards to not return dirty view")
+
+	return viewsForIsDirtyTests[T]{
+		untilForwards:  untilForwards,
+		untilBackwards: untilBackwards,
+		between:        between,
+	}
+}
+
+func shouldHaveDirtyViews[T any](t *testing.T, buf ringBuffer[T], views viewsForIsDirtyTests[T]) {
+	assert.True(t, views.untilForwards.IsDirty(), "expected view created by ViewUntilSearchingForwards from %+v to be dirty. view: %+v", buf, views.untilForwards)
+	assert.True(t, views.untilBackwards.IsDirty(), "expected view created by ViewUntilSearchingBackwards from %+v to be dirty. view: %+v", buf, views.untilBackwards)
+	assert.True(t, views.between.IsDirty(), "expected view created by ViewBetweenSearchingBackwards from %+v to be dirty. view: %+v", buf, views.between)
+}
+
 func viewShouldHavePoints[T any](t *testing.T, view ringBufferView[T], expected ...T) {
 	head, tail := view.UnsafePoints()
 	combinedPoints := append(head, tail...)
@@ -538,6 +570,10 @@ type fPointRingBufferWrapper struct {
 	*FPointRingBuffer
 }
 
+func (w *fPointRingBufferWrapper) ViewBetweenSearchingBackwardsForTesting(minT, maxT int64) ringBufferView[promql.FPoint] {
+	return w.ViewBetweenSearchingBackwards(minT, maxT, nil)
+}
+
 func (w *fPointRingBufferWrapper) ViewUntilSearchingForwardsForTesting(maxT int64) ringBufferView[promql.FPoint] {
 	return w.ViewUntilSearchingForwards(maxT, nil)
 }
@@ -561,6 +597,10 @@ func (w *fPointRingBufferWrapper) GetTimestamp(point promql.FPoint) int64 {
 // Wrapper for HPointRingBuffer to work around indirection to get points
 type hPointRingBufferWrapper struct {
 	*HPointRingBuffer
+}
+
+func (w *hPointRingBufferWrapper) ViewBetweenSearchingBackwardsForTesting(minT, maxT int64) ringBufferView[promql.HPoint] {
+	return w.ViewBetweenSearchingBackwards(minT, maxT, nil)
 }
 
 func (w *hPointRingBufferWrapper) ViewUntilSearchingForwardsForTesting(maxT int64) ringBufferView[promql.HPoint] {
@@ -1238,4 +1278,118 @@ func TestHPointRingBufferView_UnsafePointsInIndexRange(t *testing.T) {
 		require.Panics(t, func() { view.UnsafePointsInIndexRange(0, view.Count()) })
 		require.Panics(t, func() { view.UnsafePointsInIndexRange(2, 1) })
 	})
+}
+
+func TestRingBufferView_IsDirty(t *testing.T) {
+	t.Run("resize", func(t *testing.T) {
+		fbuff := &fPointRingBufferWrapper{NewFPointRingBuffer(limiter.NewUnlimitedMemoryConsumptionTracker(context.Background()))}
+		hbuff := &hPointRingBufferWrapper{NewHPointRingBuffer(limiter.NewUnlimitedMemoryConsumptionTracker(context.Background()))}
+
+		fviews := shouldHaveCleanViews(t, fbuff)
+		hviews := shouldHaveCleanViews(t, hbuff)
+
+		for ts := int64(10); ts < 90; ts += 10 {
+			mustAppend(t, fbuff, promql.FPoint{T: ts})
+			mustAppend(t, hbuff, promql.HPoint{T: ts, H: &histogram.FloatHistogram{}})
+		}
+
+		shouldHaveDirtyViews(t, fbuff, fviews)
+		shouldHaveDirtyViews(t, hbuff, hviews)
+	})
+
+	t.Run("discard points", func(t *testing.T) {
+		fbuff := &fPointRingBufferWrapper{NewFPointRingBuffer(limiter.NewUnlimitedMemoryConsumptionTracker(context.Background()))}
+		hbuff := &hPointRingBufferWrapper{NewHPointRingBuffer(limiter.NewUnlimitedMemoryConsumptionTracker(context.Background()))}
+
+		for ts := int64(10); ts < 90; ts += 10 {
+			mustAppend(t, fbuff, promql.FPoint{T: ts})
+			mustAppend(t, hbuff, promql.HPoint{T: ts, H: &histogram.FloatHistogram{}})
+		}
+
+		fviews := shouldHaveCleanViews(t, fbuff)
+		hviews := shouldHaveCleanViews(t, hbuff)
+
+		fbuff.DiscardPointsAtOrBefore(30)
+		hbuff.DiscardPointsAtOrBefore(30)
+
+		shouldHaveDirtyViews(t, fbuff, fviews)
+		shouldHaveDirtyViews(t, hbuff, hviews)
+	})
+
+	t.Run("remove last", func(t *testing.T) {
+		fbuff := &fPointRingBufferWrapper{NewFPointRingBuffer(limiter.NewUnlimitedMemoryConsumptionTracker(context.Background()))}
+		hbuff := &hPointRingBufferWrapper{NewHPointRingBuffer(limiter.NewUnlimitedMemoryConsumptionTracker(context.Background()))}
+
+		for ts := int64(10); ts < 90; ts += 10 {
+			mustAppend(t, fbuff, promql.FPoint{T: ts})
+			mustAppend(t, hbuff, promql.HPoint{T: ts, H: &histogram.FloatHistogram{}})
+		}
+
+		fviews := shouldHaveCleanViews(t, fbuff)
+		hviews := shouldHaveCleanViews(t, hbuff)
+
+		fbuff.RemoveLast()
+		hbuff.RemoveLastPoint()
+
+		shouldHaveDirtyViews(t, fbuff, fviews)
+		shouldHaveDirtyViews(t, hbuff, hviews)
+	})
+
+	t.Run("remove first", func(t *testing.T) {
+		fbuff := &fPointRingBufferWrapper{NewFPointRingBuffer(limiter.NewUnlimitedMemoryConsumptionTracker(context.Background()))}
+		hbuff := &hPointRingBufferWrapper{NewHPointRingBuffer(limiter.NewUnlimitedMemoryConsumptionTracker(context.Background()))}
+
+		for ts := int64(10); ts < 90; ts += 10 {
+			mustAppend(t, fbuff, promql.FPoint{T: ts})
+			mustAppend(t, hbuff, promql.HPoint{T: ts, H: &histogram.FloatHistogram{}})
+		}
+
+		fviews := shouldHaveCleanViews(t, fbuff)
+		hviews := shouldHaveCleanViews(t, hbuff)
+
+		fbuff.RemoveFirst()
+		hbuff.RemoveFirst()
+
+		shouldHaveDirtyViews(t, fbuff, fviews)
+		shouldHaveDirtyViews(t, hbuff, hviews)
+	})
+
+	t.Run("reset", func(t *testing.T) {
+		fbuff := &fPointRingBufferWrapper{NewFPointRingBuffer(limiter.NewUnlimitedMemoryConsumptionTracker(context.Background()))}
+		hbuff := &hPointRingBufferWrapper{NewHPointRingBuffer(limiter.NewUnlimitedMemoryConsumptionTracker(context.Background()))}
+
+		for ts := int64(10); ts < 90; ts += 10 {
+			mustAppend(t, fbuff, promql.FPoint{T: ts})
+			mustAppend(t, hbuff, promql.HPoint{T: ts, H: &histogram.FloatHistogram{}})
+		}
+
+		fviews := shouldHaveCleanViews(t, fbuff)
+		hviews := shouldHaveCleanViews(t, hbuff)
+
+		fbuff.Reset()
+		hbuff.Reset()
+
+		shouldHaveDirtyViews(t, fbuff, fviews)
+		shouldHaveDirtyViews(t, hbuff, hviews)
+	})
+
+	t.Run("use", func(t *testing.T) {
+		fbuff := &fPointRingBufferWrapper{NewFPointRingBuffer(limiter.NewUnlimitedMemoryConsumptionTracker(context.Background()))}
+		hbuff := &hPointRingBufferWrapper{NewHPointRingBuffer(limiter.NewUnlimitedMemoryConsumptionTracker(context.Background()))}
+
+		for ts := int64(10); ts < 90; ts += 10 {
+			mustAppend(t, fbuff, promql.FPoint{T: ts})
+			mustAppend(t, hbuff, promql.HPoint{T: ts, H: &histogram.FloatHistogram{}})
+		}
+
+		fviews := shouldHaveCleanViews(t, fbuff)
+		hviews := shouldHaveCleanViews(t, hbuff)
+
+		require.NoError(t, fbuff.Use(make([]promql.FPoint, 0, 16)))
+		require.NoError(t, hbuff.Use(make([]promql.HPoint, 0, 16)))
+
+		shouldHaveDirtyViews(t, fbuff, fviews)
+		shouldHaveDirtyViews(t, hbuff, hviews)
+	})
+
 }

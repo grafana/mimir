@@ -26,6 +26,7 @@ type HPointRingBuffer struct {
 	pointsIndexMask          int // Bitmask used to calculate indices into points efficiently. Computing modulo is relatively expensive, but points is always sized as a power of two, so we can a bitmask to calculate remainders cheaply.
 	firstIndex               int // Index into 'points' of first point in this buffer.
 	size                     int // Number of points in this buffer.
+	generation               int // Incremented when views of this buffer are invalidated.
 }
 
 func NewHPointRingBuffer(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *HPointRingBuffer {
@@ -35,6 +36,7 @@ func NewHPointRingBuffer(memoryConsumptionTracker *limiter.MemoryConsumptionTrac
 // DiscardPointsAtOrBefore discards all points in this buffer with timestamp less than or equal to t.
 func (b *HPointRingBuffer) DiscardPointsAtOrBefore(t int64) {
 	for b.size > 0 && b.points[b.firstIndex].T <= t {
+		b.generation++
 		b.firstIndex++
 		b.size--
 
@@ -50,6 +52,7 @@ func (b *HPointRingBuffer) DiscardPointsAtOrBefore(t int64) {
 
 func (b *HPointRingBuffer) RemoveFirst() {
 	if b.size > 0 {
+		b.generation++
 		b.firstIndex++
 		b.size--
 
@@ -73,6 +76,17 @@ func (b *HPointRingBuffer) Append(p promql.HPoint) (bool, error) {
 	return resized, nil
 }
 
+// EmptyView returns an empty view associated with this buffer that is marked as dirty. This
+// view cannot be used directly and instead must be recreated (using "existing") before being
+// used by a caller. This differs from creating an empty HPointRingBufferView directly since
+// this instance will be "dirty" while the struct created directly is not.
+func (b *HPointRingBuffer) EmptyView() *HPointRingBufferView {
+	return &HPointRingBufferView{
+		buffer:     b,
+		generation: -1,
+	}
+}
+
 // ViewUntilSearchingForwards returns a view into this buffer, including only points with timestamps less than or equal to maxT.
 // ViewUntilSearchingForwards examines the points in the buffer starting from the front of the buffer, so is preferred over
 // ViewUntilSearchingBackwards if it is expected that there are many points with timestamp greater than maxT, and few points with
@@ -90,8 +104,22 @@ func (b *HPointRingBuffer) ViewUntilSearchingForwards(maxT int64, existing *HPoi
 		size++
 	}
 
+	existing.generation = b.generation
 	existing.offset = 0
 	existing.size = size
+	return existing
+}
+
+// ViewAll returns a view which includes all points in the ring buffer.
+// The returned view is no longer valid if this buffer is modified (eg. a point is added, or the buffer is reset or closed).
+func (b *HPointRingBuffer) ViewAll(existing *HPointRingBufferView) *HPointRingBufferView {
+	if existing == nil {
+		existing = &HPointRingBufferView{buffer: b}
+	}
+
+	existing.generation = b.generation
+	existing.offset = 0
+	existing.size = b.size
 	return existing
 }
 
@@ -108,6 +136,7 @@ func (b *HPointRingBuffer) ViewUntilSearchingBackwards(maxT int64, existing *HPo
 		nextPositionToCheck--
 	}
 
+	existing.generation = b.generation
 	existing.offset = 0
 	existing.size = nextPositionToCheck + 1
 	return existing
@@ -127,6 +156,8 @@ func (b *HPointRingBuffer) ViewBetweenSearchingBackwards(minT, maxT int64, exist
 		})
 		panic(fmt.Sprintf("attempted to create an HPointRingBufferView with minT(%d) > maxT(%d) (this is a bug)", minT, maxT))
 	}
+
+	existing.generation = b.generation
 
 	// If the buffer is empty or min time is beyond the last point in this buffer,
 	// return a zero-sized view since there are no points or no matching points.
@@ -218,10 +249,12 @@ func (b *HPointRingBuffer) NextPoint() (*promql.HPoint, bool, error) {
 		b.points = newSlice
 		b.firstIndex = 0
 		b.pointsIndexMask = cap(newSlice) - 1
+		b.generation++
 	}
 
 	nextIndex := (b.firstIndex + b.size) & b.pointsIndexMask
 	b.size++
+
 	return &b.points[nextIndex], resized, nil
 }
 
@@ -235,6 +268,7 @@ func (b *HPointRingBuffer) RemoveLastPoint() {
 		panic("There are no points to remove")
 	}
 
+	b.generation++
 	b.size--
 	if b.size == 0 {
 		b.firstIndex = 0
@@ -274,6 +308,7 @@ func (b *HPointRingBuffer) CountBetween(minT, maxT int64) int {
 
 // Reset clears the contents of this buffer, but retains the underlying point slice for future reuse.
 func (b *HPointRingBuffer) Reset() {
+	b.generation++
 	b.firstIndex = 0
 	b.size = 0
 }
@@ -300,6 +335,7 @@ func (b *HPointRingBuffer) Use(s []promql.HPoint) error {
 
 	putHPointSliceForRingBuffer(&b.points, b.memoryConsumptionTracker)
 
+	b.generation++
 	b.points = s[:cap(s)]
 	b.firstIndex = 0
 	b.size = len(s)
@@ -314,9 +350,21 @@ func (b *HPointRingBuffer) Close() {
 }
 
 type HPointRingBufferView struct {
-	buffer *HPointRingBuffer
-	offset int // Offset from buffer's firstIndex where this view starts
-	size   int
+	buffer     *HPointRingBuffer
+	offset     int // Offset from buffer's firstIndex where this view starts
+	size       int
+	generation int // Generation of the buffer when this view was created
+}
+
+// IsDirty returns true if this view is associated with a buffer and the buffer
+// has been modified since the view was created. When this is the case, the view
+// must be recreated before being used by callers.
+func (v *HPointRingBufferView) IsDirty() bool {
+	if v.buffer == nil {
+		return false
+	}
+
+	return v.generation != v.buffer.generation
 }
 
 // UnsafePoints returns slices of the points in this buffer view.
@@ -328,7 +376,7 @@ type HPointRingBufferView struct {
 //
 // FIXME: the fact we have to expose this is a bit gross, but the overhead of calling a function with ForEach is terrible.
 // Perhaps we can use range-over function iterators (https://go.dev/wiki/RangefuncExperiment) once this is not experimental?
-func (v HPointRingBufferView) UnsafePoints() (head []promql.HPoint, tail []promql.HPoint) {
+func (v *HPointRingBufferView) UnsafePoints() (head []promql.HPoint, tail []promql.HPoint) {
 	if v.size == 0 {
 		return nil, nil
 	}
@@ -352,7 +400,7 @@ func (v HPointRingBufferView) UnsafePoints() (head []promql.HPoint, tail []promq
 // iterate a sub-range with a plain slice range loop instead of repeated PointAt calls.
 // Like UnsafePoints, the returned slices alias the buffer and must not be modified nor returned to
 // a pool.
-func (v HPointRingBufferView) UnsafePointsInIndexRange(first, last int) (head []promql.HPoint, tail []promql.HPoint) {
+func (v *HPointRingBufferView) UnsafePointsInIndexRange(first, last int) (head []promql.HPoint, tail []promql.HPoint) {
 	if first < 0 || last >= v.size || first > last {
 		panic("HPointRingBufferView.UnsafePointsInIndexRange(): index out of range")
 	}
@@ -368,7 +416,7 @@ func (v HPointRingBufferView) UnsafePointsInIndexRange(first, last int) (head []
 // PutHPointSlice when it is no longer needed.
 // Calling UnsafePoints is more efficient than calling CopyPoints, as CopyPoints will create a new slice and copy all
 // points into the slice, whereas UnsafePoints returns a view into the internal state of this buffer.
-func (v HPointRingBufferView) CopyPoints() ([]promql.HPoint, error) {
+func (v *HPointRingBufferView) CopyPoints() ([]promql.HPoint, error) {
 	if v.size == 0 {
 		return nil, nil
 	}
@@ -402,7 +450,7 @@ func (v HPointRingBufferView) CopyPoints() ([]promql.HPoint, error) {
 }
 
 // ForEach calls f for each point in this buffer view.
-func (v HPointRingBufferView) ForEach(f func(p promql.HPoint)) {
+func (v *HPointRingBufferView) ForEach(f func(p promql.HPoint)) {
 	for i := 0; i < v.size; i++ {
 		f(v.PointAt(i))
 	}
@@ -410,7 +458,7 @@ func (v HPointRingBufferView) ForEach(f func(p promql.HPoint)) {
 
 // First returns the first point in this ring buffer view.
 // It panics if the buffer is empty.
-func (v HPointRingBufferView) First() promql.HPoint {
+func (v *HPointRingBufferView) First() promql.HPoint {
 	if v.size == 0 {
 		panic("Can't get first element of empty buffer")
 	}
@@ -420,7 +468,7 @@ func (v HPointRingBufferView) First() promql.HPoint {
 
 // Last returns the last point in this ring buffer view.
 // It returns false if the view is empty.
-func (v HPointRingBufferView) Last() (promql.HPoint, bool) {
+func (v *HPointRingBufferView) Last() (promql.HPoint, bool) {
 	if v.size == 0 {
 		return promql.HPoint{}, false
 	}
@@ -429,12 +477,12 @@ func (v HPointRingBufferView) Last() (promql.HPoint, bool) {
 }
 
 // Count returns the number of points in this ring buffer view.
-func (v HPointRingBufferView) Count() int {
+func (v *HPointRingBufferView) Count() int {
 	return v.size
 }
 
 // EquivalentFloatSampleCount returns the equivalent number of float samples in this ring buffer view.
-func (v HPointRingBufferView) EquivalentFloatSampleCount() int64 {
+func (v *HPointRingBufferView) EquivalentFloatSampleCount() int64 {
 	count := int64(0)
 	head, tail := v.UnsafePoints()
 
@@ -488,13 +536,13 @@ func (b *HPointRingBuffer) EquivalentFloatSampleCountBetween(minT, maxT int64) i
 }
 
 // Any returns true if this ring buffer view contains any points.
-func (v HPointRingBufferView) Any() bool {
+func (v *HPointRingBufferView) Any() bool {
 	return v.size != 0
 }
 
 // PointAt returns the point at index i in this ring buffer view.
 // It panics if i is outside the range of points in this view.
-func (v HPointRingBufferView) PointAt(i int) promql.HPoint {
+func (v *HPointRingBufferView) PointAt(i int) promql.HPoint {
 	if i >= v.size {
 		// A constant-string panic (rather than fmt.Sprintf) keeps PointAt cheap enough to be
 		// inlined into hot loops, e.g. the per-sample passes in extendedHistogramRate.
@@ -507,7 +555,7 @@ func (v HPointRingBufferView) PointAt(i int) promql.HPoint {
 // Clone returns a clone of this view and its underlying ring buffer.
 // All histogram.FloatHistogram instances in the underlying buffer are cloned.
 // The caller is responsible for closing the returned ring buffer when it is no longer needed.
-func (v HPointRingBufferView) Clone() (*HPointRingBufferView, *HPointRingBuffer, error) {
+func (v *HPointRingBufferView) Clone() (*HPointRingBufferView, *HPointRingBuffer, error) {
 	if v.size == 0 {
 		return &HPointRingBufferView{}, nil, nil
 	}
@@ -522,10 +570,10 @@ func (v HPointRingBufferView) Clone() (*HPointRingBufferView, *HPointRingBuffer,
 		return nil, nil, err
 	}
 
-	view := &HPointRingBufferView{
-		buffer: buffer,
-		size:   v.size,
-	}
+	// Ensure that the newly created buffer (and hence view) has the same generation
+	// as this view so they will compare as equal to this view (some tests rely on this).
+	buffer.generation = v.generation
+	view := buffer.ViewAll(nil)
 
 	return view, buffer, nil
 }
