@@ -5811,6 +5811,12 @@ ordered_consumption:
 # offsets are committed, must be at least 1.
 # CLI flag: -ingest-storage.write-logs-fsync-before-kafka-commit-concurrency
 [write_logs_fsync_before_kafka_commit_concurrency: <int> | default = 4]
+
+# (experimental) True to wrap all ingester metrics with an ingester_partition
+# label identifying the Kafka partition the ingester consumes. Planned to become
+# the default in Mimir 3.2 and to be removed in Mimir 3.5.
+# CLI flag: -ingest-storage.ingester-partition-metric-label-enabled
+[ingester_partition_metric_label_enabled: <boolean> | default = false]
 ```
 
 ### blocks_storage
