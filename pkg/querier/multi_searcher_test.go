@@ -66,7 +66,7 @@ func (m *mockSearchQuerier) SearchLabelValues(_ context.Context, _ string, _ *st
 	return storage.NewSearchResultSetFromSlice(m.valuesResults, nil)
 }
 
-func (m *mockSearchQuerier) fetchMetricMetadata(_ context.Context, names []string) (map[string]metadata.Metadata, error) {
+func (m *mockSearchQuerier) FetchMetricMetadata(_ context.Context, names []string) (map[string]metadata.Metadata, error) {
 	m.metadataFetchCall++
 	if m.metadataErr != nil {
 		return nil, m.metadataErr
@@ -323,149 +323,34 @@ func TestMultiQuerier_SearchLabelValues_LimitClampUsesValuesLimit(t *testing.T) 
 	assert.NotContains(t, warns[0], validation.MaxLabelNamesLimitFlag)
 }
 
-func metadataResult(v string, score float64, md metadata.Metadata) storage.SearchResult {
-	return storage.SearchResult{Value: v, Score: score, Metadata: &md}
-}
-
-func drainSearchResultSetWithMetadata(t *testing.T, rs storage.SearchResultSet) (vals []string, metas []*metadata.Metadata) {
-	t.Helper()
-	defer rs.Close()
-	for rs.Next() {
-		r := rs.At()
-		vals = append(vals, r.Value)
-		metas = append(metas, r.Metadata)
-	}
-	require.NoError(t, rs.Err())
-	return
-}
-
-func TestMultiQuerier_SearchLabelValues_ShouldSupportMetadata(t *testing.T) {
+// TestMultiQuerier_FetchMetricMetadata covers the delegation to the
+// metadata-capable source (the distributor querier). The end-to-end enrichment
+// is exercised at the handler level (see search_handler_test.go).
+func TestMultiQuerier_FetchMetricMetadata(t *testing.T) {
 	ctx := user.InjectOrgID(t.Context(), "user-1")
 
-	t.Run("metric-name search enriches results with metadata fetched by name, surviving dedup across sources", func(t *testing.T) {
-		distQ := &mockSearchQuerier{
-			valuesResults: []storage.SearchResult{searchResult("a", 1.0), searchResult("b", 1.0)},
-			metadata: map[string]metadata.Metadata{
-				"a": {Type: model.MetricTypeCounter, Help: "help a", Unit: "s"},
-				"b": {Type: model.MetricTypeGauge, Help: "help b"},
-			},
-		}
-		// Blocks return "a" too but without metadata: the dedup happens below
-		// the enrichment, so the metadata must still be attached.
-		blockQ := &mockSearchQuerier{valuesResults: []storage.SearchResult{searchResult("a", 1.0)}}
-		mq := buildSearchTestMultiQuerier(t, distQ, blockQ)
-
-		params := &streaminglabelvalues.Params{IncludeMetadata: true}
-		rs := mq.SearchLabelValues(ctx, model.MetricNameLabel, params, &storage.SearchHints{OrderBy: storage.OrderByValueAsc})
-		vals, metas := drainSearchResultSetWithMetadata(t, rs)
-
-		assert.Equal(t, []string{"a", "b"}, vals)
-		require.NotNil(t, metas[0])
-		assert.Equal(t, model.MetricTypeCounter, metas[0].Type)
-		assert.Equal(t, "help a", metas[0].Help)
-		assert.Equal(t, "s", metas[0].Unit)
-		require.NotNil(t, metas[1])
-		assert.Equal(t, model.MetricTypeGauge, metas[1].Type)
-		assert.Equal(t, "help b", metas[1].Help)
-	})
-
-	t.Run("no metadata is fetched when include_metadata is unset", func(t *testing.T) {
-		distQ := &mockSearchQuerier{
-			valuesResults: []storage.SearchResult{searchResult("a", 1.0)},
-			metadata:      map[string]metadata.Metadata{"a": {Type: model.MetricTypeCounter, Help: "help a"}},
-		}
+	t.Run("delegates to the distributor child and returns its metadata by name", func(t *testing.T) {
+		distQ := &mockSearchQuerier{metadata: map[string]metadata.Metadata{
+			"a": {Type: model.MetricTypeCounter, Help: "help a", Unit: "s"},
+		}}
+		// A blocks-store-like source (no fetcher) is also configured and must be
+		// ignored by the fetch.
 		mq := buildSearchTestMultiQuerier(t, distQ, nil)
+		mq.blockStore = nonMetadataSearchQueryable{q: nonMetadataSearchQuerier{}}
 
-		rs := mq.SearchLabelValues(ctx, model.MetricNameLabel, nil, &storage.SearchHints{OrderBy: storage.OrderByValueAsc})
-		_, metas := drainSearchResultSetWithMetadata(t, rs)
-		require.Len(t, metas, 1)
-		assert.Nil(t, metas[0])
+		got, err := mq.FetchMetricMetadata(ctx, []string{"a", "b"})
+		require.NoError(t, err)
+		assert.Equal(t, map[string]metadata.Metadata{"a": {Type: model.MetricTypeCounter, Help: "help a", Unit: "s"}}, got)
+		assert.Equal(t, 1, distQ.metadataFetchCall)
 	})
 
-	t.Run("a metadata fetch error leaves results un-enriched, best-effort with no warning", func(t *testing.T) {
-		distQ := &mockSearchQuerier{
-			valuesResults: []storage.SearchResult{searchResult("a", 1.0)},
-			metadataErr:   errors.New("ingesters unavailable"),
-		}
-		mq := buildSearchTestMultiQuerier(t, distQ, nil)
-
-		params := &streaminglabelvalues.Params{IncludeMetadata: true}
-		rs := mq.SearchLabelValues(ctx, model.MetricNameLabel, params, &storage.SearchHints{OrderBy: storage.OrderByValueAsc})
-		vals, metas := drainSearchResultSetWithMetadata(t, rs)
-		assert.Equal(t, []string{"a"}, vals)
-		assert.Nil(t, metas[0], "a fetch error leaves results un-enriched")
-		assert.Empty(t, rs.Warnings(), "enrichment is best-effort; a fetch error is not surfaced as a warning")
-	})
-
-	t.Run("the k-way merge carries metadata forward when duplicate values collapse", func(t *testing.T) {
-		withMD := storage.NewSearchResultSetFromSlice([]storage.SearchResult{
-			metadataResult("foo", 1.0, metadata.Metadata{Type: model.MetricTypeGauge, Help: "h"}),
-		}, nil)
-		withoutMD := storage.NewSearchResultSetFromSlice([]storage.SearchResult{
-			searchResult("foo", 1.0),
-		}, nil)
-
-		// Order the metadata-less set first so, absent the fix, it would win the
-		// tie and drop the metadata.
-		merged := storage.MergeSearchResultSets([]storage.SearchResultSet{withoutMD, withMD}, &storage.SearchHints{OrderBy: storage.OrderByValueAsc})
-		vals, metas := drainSearchResultSetWithMetadata(t, merged)
-		require.Equal(t, []string{"foo"}, vals)
-		require.NotNil(t, metas[0])
-		assert.Equal(t, model.MetricTypeGauge, metas[0].Type)
-	})
-
-	t.Run("a non-__name__ label search is not enriched even with include_metadata set", func(t *testing.T) {
-		// The fetcher holds metadata for "prod", but the label being searched is
-		// "env", not __name__, so enrichment must be skipped entirely.
-		distQ := &mockSearchQuerier{
-			valuesResults: []storage.SearchResult{searchResult("prod", 1.0)},
-			metadata:      map[string]metadata.Metadata{"prod": {Type: model.MetricTypeCounter, Help: "help prod"}},
-		}
-		mq := buildSearchTestMultiQuerier(t, distQ, nil)
-
-		params := &streaminglabelvalues.Params{IncludeMetadata: true}
-		rs := mq.SearchLabelValues(ctx, "env", params, &storage.SearchHints{OrderBy: storage.OrderByValueAsc})
-		vals, metas := drainSearchResultSetWithMetadata(t, rs)
-		assert.Equal(t, []string{"prod"}, vals)
-		assert.Nil(t, metas[0], "metadata must not be attached for a non-__name__ label")
-	})
-
-	t.Run("no metadata source leaves results un-enriched, best-effort with no warning", func(t *testing.T) {
-		// Only a blocks-store-like source (no metadata fetcher) is configured —
-		// as happens when the time range is outside the ingesters' retention.
+	t.Run("returns nil when no metadata-capable source is queried", func(t *testing.T) {
 		mq := buildSearchTestMultiQuerier(t, nil, nil)
-		mq.blockStore = nonMetadataSearchQueryable{q: nonMetadataSearchQuerier{values: []storage.SearchResult{searchResult("foo", 1.0)}}}
+		mq.blockStore = nonMetadataSearchQueryable{q: nonMetadataSearchQuerier{}}
 
-		params := &streaminglabelvalues.Params{IncludeMetadata: true}
-		rs := mq.SearchLabelValues(ctx, model.MetricNameLabel, params, &storage.SearchHints{OrderBy: storage.OrderByValueAsc})
-		vals, metas := drainSearchResultSetWithMetadata(t, rs)
-		assert.Equal(t, []string{"foo"}, vals)
-		assert.Nil(t, metas[0], "no source can enrich, so metadata stays nil")
-		assert.Empty(t, rs.Warnings(), "a missing metadata source is best-effort, not a warning")
-	})
-
-	t.Run("a small batch_size does not turn into one metadata fetch per result", func(t *testing.T) {
-		// The enrichment buffer is floored at searchDefaultBatchSize so a
-		// client-chosen batch_size=1 can't fan out one all-ingester metadata
-		// fetch per emitted result.
-		distQ := &mockSearchQuerier{
-			valuesResults: []storage.SearchResult{searchResult("a", 1.0), searchResult("b", 1.0), searchResult("c", 1.0)},
-			metadata: map[string]metadata.Metadata{
-				"a": {Type: model.MetricTypeCounter},
-				"b": {Type: model.MetricTypeCounter},
-				"c": {Type: model.MetricTypeCounter},
-			},
-		}
-		mq := buildSearchTestMultiQuerier(t, distQ, nil)
-
-		params := &streaminglabelvalues.Params{IncludeMetadata: true, BatchSize: 1}
-		rs := mq.SearchLabelValues(ctx, model.MetricNameLabel, params, &storage.SearchHints{OrderBy: storage.OrderByValueAsc})
-		vals, metas := drainSearchResultSetWithMetadata(t, rs)
-		assert.Equal(t, []string{"a", "b", "c"}, vals)
-		for i := range metas {
-			require.NotNil(t, metas[i], "%q must be enriched", vals[i])
-		}
-		assert.Equal(t, 1, distQ.metadataFetchCall, "all names must be fetched in a single batch despite batch_size=1")
+		got, err := mq.FetchMetricMetadata(ctx, []string{"a"})
+		require.NoError(t, err)
+		assert.Nil(t, got)
 	})
 }
 

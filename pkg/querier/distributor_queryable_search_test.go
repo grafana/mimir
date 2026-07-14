@@ -143,7 +143,7 @@ func newTestDistributorQuerier(_ *testing.T, dist *mockDistributor, cfg distribu
 	}
 }
 
-func TestDistributorQuerier_fetchMetricMetadata(t *testing.T) {
+func TestDistributorQuerier_FetchMetricMetadata(t *testing.T) {
 	nowMs := time.Now().UnixMilli()
 
 	t.Run("joins by metric family, first record wins, and sends the expected request", func(t *testing.T) {
@@ -158,7 +158,7 @@ func TestDistributorQuerier_fetchMetricMetadata(t *testing.T) {
 			}, nil)
 		q := newTestDistributorQuerier(t, dist, newMockConfigProvider(time.Hour), 0, nowMs)
 
-		got, err := q.fetchMetricMetadata(user.InjectOrgID(t.Context(), "user-1"), []string{"a", "b"})
+		got, err := q.FetchMetricMetadata(user.InjectOrgID(t.Context(), "user-1"), []string{"a", "b"})
 		require.NoError(t, err)
 		assert.Equal(t, map[string]metadata.Metadata{
 			"a": {Type: model.MetricTypeCounter, Help: "help a", Unit: "s"},
@@ -177,7 +177,7 @@ func TestDistributorQuerier_fetchMetricMetadata(t *testing.T) {
 		dist.On("MetricsMetadata", mock.Anything, mock.Anything).Return([]scrape.MetricMetadata(nil), errors.New("boom"))
 		q := newTestDistributorQuerier(t, dist, newMockConfigProvider(time.Hour), 0, nowMs)
 
-		_, err := q.fetchMetricMetadata(user.InjectOrgID(t.Context(), "user-1"), []string{"a"})
+		_, err := q.FetchMetricMetadata(user.InjectOrgID(t.Context(), "user-1"), []string{"a"})
 		require.EqualError(t, err, "boom")
 	})
 }

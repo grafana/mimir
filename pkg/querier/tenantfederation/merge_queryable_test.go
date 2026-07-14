@@ -23,6 +23,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
 	promtestutil "github.com/prometheus/prometheus/util/testutil"
@@ -1064,6 +1065,9 @@ type spanWithAttributes struct {
 // through the tenant adapter and back to per-tenant test results.
 type searchableTenantQueryable struct {
 	resultsByTenant map[string][]storage.SearchResult
+	// metadataByTenant, when set, makes the per-tenant querier satisfy the
+	// metric-metadata fetcher so mergeQuerier.FetchMetricMetadata can be tested.
+	metadataByTenant map[string]map[string]metadata.Metadata
 
 	// mu guards valueNamesObservedByTenant against concurrent updates
 	// from the federation fan-out goroutines.
@@ -1145,6 +1149,18 @@ func (q *searchableTenantQuerier) SearchLabelValues(ctx context.Context, name st
 	tenantID, _ := tenant.TenantID(ctx)
 	q.src.recordValueName(tenantID, name)
 	return storage.NewSearchResultSetFromSlice(q.src.resultsByTenant[tenantID], nil)
+}
+
+func (q *searchableTenantQuerier) FetchMetricMetadata(ctx context.Context, names []string) (map[string]metadata.Metadata, error) {
+	tenantID, _ := tenant.TenantID(ctx)
+	tenantMD := q.src.metadataByTenant[tenantID]
+	out := make(map[string]metadata.Metadata, len(names))
+	for _, n := range names {
+		if md, ok := tenantMD[n]; ok {
+			out[n] = md
+		}
+	}
+	return out, nil
 }
 
 // TestMergeQueryable_SearchLabelNames_MultiTenantFanout pins the federation
@@ -1324,6 +1340,57 @@ func TestMergeQueryable_SearchLabelValues_MultiTenantFanout(t *testing.T) {
 
 	assert.Equal(t, []string{"alpha", "beta", "gamma"}, drainSearchResultSet(t, rs),
 		"fan-out must dedup across tenants and respect value-asc ordering")
+}
+
+// TestMergeQueryable_FetchMetricMetadata_MultiTenantFanout pins the metadata
+// fan-out: metadata is fetched per tenant and unioned by name, and on a name
+// present in several tenants the first tenant by sorted ID wins (deterministic).
+func TestMergeQueryable_FetchMetricMetadata(t *testing.T) {
+	t.Run("fans out across tenants and unions results, breaking ties in favor of the first tenant by sorted ID", func(t *testing.T) {
+		src := &searchableTenantQueryable{
+			metadataByTenant: map[string]map[string]metadata.Metadata{
+				"t1": {"shared": {Type: model.MetricTypeCounter, Help: "from t1"}},
+				"t2": {
+					"shared":  {Type: model.MetricTypeGauge, Help: "from t2"},
+					"only_t2": {Type: model.MetricTypeGauge, Help: "t2 only"},
+				},
+			},
+		}
+		q := NewQueryable(src, false, defaultConcurrency, prometheus.NewRegistry(), log.NewNopLogger())
+
+		querier, err := q.Querier(0, 1000)
+		require.NoError(t, err)
+		defer querier.Close()
+		f, ok := querier.(metricMetadataFetcher)
+		require.True(t, ok, "mergeQuerier must satisfy the metadata fetcher interface")
+
+		ctx := user.InjectOrgID(context.Background(), "t1|t2")
+		got, err := f.FetchMetricMetadata(ctx, []string{"shared", "only_t2"})
+		require.NoError(t, err)
+		assert.Equal(t, map[string]metadata.Metadata{
+			"shared":  {Type: model.MetricTypeCounter, Help: "from t1"},
+			"only_t2": {Type: model.MetricTypeGauge, Help: "t2 only"},
+		}, got)
+	})
+
+	t.Run("forwards straight to the upstream when the request targets a single tenant", func(t *testing.T) {
+		src := &searchableTenantQueryable{
+			metadataByTenant: map[string]map[string]metadata.Metadata{
+				"only": {"a": {Type: model.MetricTypeCounter, Help: "h"}},
+			},
+		}
+		q := NewQueryable(src, false, defaultConcurrency, prometheus.NewRegistry(), log.NewNopLogger())
+
+		querier, err := q.Querier(0, 1000)
+		require.NoError(t, err)
+		defer querier.Close()
+		f := querier.(metricMetadataFetcher)
+
+		ctx := user.InjectOrgID(context.Background(), "only")
+		got, err := f.FetchMetricMetadata(ctx, []string{"a", "missing"})
+		require.NoError(t, err)
+		assert.Equal(t, map[string]metadata.Metadata{"a": {Type: model.MetricTypeCounter, Help: "h"}}, got)
+	})
 }
 
 // TestMergeQueryable_SearchLabelValues_SingleTenantBypass pins the bypass

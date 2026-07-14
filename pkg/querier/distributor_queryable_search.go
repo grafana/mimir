@@ -78,10 +78,10 @@ func (q *distributorQuerier) SearchLabelValues(
 	return q.distributor.SearchLabelValues(ctx, model.Time(mint), model.Time(q.maxt), name, params, hints, matchers)
 }
 
-// fetchMetricMetadata fetches metric metadata for the given metric names
-// from the ingesters. When a metric has more than one metadata record, the
-// first one seen wins.
-func (q *distributorQuerier) fetchMetricMetadata(ctx context.Context, names []string) (map[string]metadata.Metadata, error) {
+// FetchMetricMetadata fetches metric metadata for the given metric names from
+// the ingesters. When a metric has more than one metadata record, the first one
+// seen wins.
+func (q *distributorQuerier) FetchMetricMetadata(ctx context.Context, names []string) (map[string]metadata.Metadata, error) {
 	resp, err := q.distributor.MetricsMetadata(ctx, &client.MetricsMetadataRequest{
 		MetricNames: names,
 		// Bound the response to the number of requested names. With

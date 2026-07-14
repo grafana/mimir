@@ -17,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-kit/log"
 	"github.com/grafana/dskit/tenant"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
@@ -181,7 +182,12 @@ type searchRequest struct {
 	limit        int
 	startMs      int64
 	endMs        int64
+	batchSize    int
 	includeScore bool
+	// includeMetadata is only parsed/honoured by the metric-names endpoint,
+	// whose record shape can carry Type/Help/Unit. The handler uses it to
+	// decide whether to enrich the merged result above every merge.
+	includeMetadata bool
 	// labelName is only set for the label-values endpoint; required there.
 	labelName string
 }
@@ -328,17 +334,14 @@ func parseSearchRequest(r *http.Request, requireLabelName, supportsMetadata bool
 		return nil, errors.New(`missing required parameter "label"`)
 	}
 
-	// BatchSize lets the querier size its metadata-enrichment buffer.
-	params.BatchSize = batchSize
-
 	// include_metadata is only parsed for endpoints whose response shape can
-	// carry Type/Help/Unit. Elsewhere the param is ignored and forced to false.
+	// carry Type/Help/Unit. Elsewhere the param is ignored and left false.
+	var includeMetadata bool
 	if supportsMetadata {
-		includeMetadata, err := parseBoolParam(q, "include_metadata", false)
+		includeMetadata, err = parseBoolParam(q, "include_metadata", false)
 		if err != nil {
 			return nil, err
 		}
-		params.IncludeMetadata = includeMetadata
 	}
 
 	// hintsLimit asks downstream for one extra result so the handler can
@@ -350,14 +353,16 @@ func parseSearchRequest(r *http.Request, requireLabelName, supportsMetadata bool
 	}
 
 	return &searchRequest{
-		params:       params,
-		matchers:     matchers,
-		hints:        &storage.SearchHints{OrderBy: order, Limit: hintsLimit},
-		limit:        limit,
-		startMs:      startMs,
-		endMs:        endMs,
-		includeScore: includeScore,
-		labelName:    labelName,
+		params:          params,
+		matchers:        matchers,
+		hints:           &storage.SearchHints{OrderBy: order, Limit: hintsLimit},
+		limit:           limit,
+		startMs:         startMs,
+		endMs:           endMs,
+		batchSize:       batchSize,
+		includeScore:    includeScore,
+		includeMetadata: includeMetadata,
+		labelName:       labelName,
 	}, nil
 }
 
@@ -513,7 +518,7 @@ func SearchLabelValuesHandler(queryable storage.Queryable, querierCfg Config, _ 
 }
 
 // SearchMetricNamesHandler returns the handler for /api/v1/search/metric_names.
-func SearchMetricNamesHandler(queryable storage.Queryable, querierCfg Config, _ *validation.Overrides) http.Handler {
+func SearchMetricNamesHandler(queryable storage.Queryable, querierCfg Config, _ *validation.Overrides, logger log.Logger) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !querierCfg.ExperimentalSearchAPIEnabled {
 			writeSearchFeatureDisabled(w)
@@ -537,7 +542,28 @@ func SearchMetricNamesHandler(queryable storage.Queryable, querierCfg Config, _ 
 		rs := dispatchSearchOverMatcherSets(req.matchers, req.hints, func(m []*labels.Matcher) storage.SearchResultSet {
 			return searcher.SearchLabelValues(ctx, model.MetricNameLabel, req.params, req.hints, m...)
 		})
+
+		// Metric metadata (include_metadata) is enriched here, above every merge,
+		// so a single batched fetch covers the fully-deduped result.
+		//
+		// This handler stays tenant federation agnostic, but if the queryable is
+		// tenant federation aware then the metadata will be fetched across tenants.
+		//
+		// Metadata enrichment is best-effort: a missing fetcher or a fetch error
+		// just leaves results un-enriched.
+		if req.includeMetadata {
+			if fetcher, ok := querier.(metricMetadataFetcher); ok {
+				// Floor the fetch batch so a batch_size=1 (or, generally speaking a
+				// small batch_size requested via the API) can't turn into one all-ingester
+				// metadata fan-out per single/few results.
+				fetchBatchSize := max(req.batchSize, searchDefaultBatchSize)
+				rs = newMetadataEnrichingSearchResultSet(ctx, rs, fetcher.FetchMetricMetadata, fetchBatchSize, logger)
+			}
+		}
+
+		// Ensure the result set gets closed (cascading when result sets are wrapped).
 		defer rs.Close()
+
 		if req.includeScore {
 			env := getSearchEnvelope[searchMetricNameRecordWithScore](req, &searchMetricNameWithScorePool)
 			defer putSearchEnvelope(env, &searchMetricNameWithScorePool, req)
@@ -618,17 +644,17 @@ func writeSearcherForRequestError(w http.ResponseWriter, err error) {
 // capacity; otherwise allocates a fresh envelope so an outsized user
 // batch size does not grow the pool's backing slices indefinitely.
 func getSearchEnvelope[T any](req *searchRequest, pool *sync.Pool) *searchBatchEnvelope[T] {
-	if req.params.BatchSize == searchDefaultBatchSize {
+	if req.batchSize == searchDefaultBatchSize {
 		return pool.Get().(*searchBatchEnvelope[T])
 	}
-	return &searchBatchEnvelope[T]{Results: make([]T, 0, req.params.BatchSize)}
+	return &searchBatchEnvelope[T]{Results: make([]T, 0, req.batchSize)}
 }
 
 // putSearchEnvelope returns env to pool when the batch size matches the
 // default; for non-default sizes the envelope is dropped on the floor
 // (matches getSearchEnvelope's allocation rule).
 func putSearchEnvelope[T any](env *searchBatchEnvelope[T], pool *sync.Pool, req *searchRequest) {
-	if req.params.BatchSize != searchDefaultBatchSize {
+	if req.batchSize != searchDefaultBatchSize {
 		return
 	}
 	env.Results = env.Results[:0]
@@ -636,7 +662,7 @@ func putSearchEnvelope[T any](env *searchBatchEnvelope[T], pool *sync.Pool, req 
 }
 
 // streamSearchNDJSON drains rs and writes NDJSON to w. One JSON object per
-// line; results batched per req.params.BatchSize; flusher.Flush() called after each
+// line; results batched per req.batchSize; flusher.Flush() called after each
 // batch line. NDJSON Content-Type is set lazily on the first batch flush so
 // pre-flush errors can fall back to the standard application/json envelope
 // per Prometheus PR #18573 (web/api/v1/search.go: respondPreStreamSearchError
@@ -695,7 +721,7 @@ func streamSearchNDJSON[T any](w http.ResponseWriter, rs storage.SearchResultSet
 			break
 		}
 		env.Results = append(env.Results, build(rs.At()))
-		if len(env.Results) >= req.params.BatchSize {
+		if len(env.Results) >= req.batchSize {
 			if err := flushBatch(); err != nil {
 				return
 			}

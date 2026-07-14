@@ -10,7 +10,6 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/tenant"
-	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/storage"
@@ -21,10 +20,10 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
-// metricMetadataFetcher fetches metric metadata for a set of metric names,
-// returning it keyed by metric name.
 type metricMetadataFetcher interface {
-	fetchMetricMetadata(ctx context.Context, names []string) (map[string]metadata.Metadata, error)
+	// FetchMetricMetadata fetches metric metadata for a set of metric names,
+	// returning it keyed by metric name.
+	FetchMetricMetadata(ctx context.Context, names []string) (map[string]metadata.Metadata, error)
 }
 
 // findMetadataFetcher returns the first querier that can fetch metric metadata,
@@ -36,6 +35,23 @@ func findMetadataFetcher(queriers []storage.Querier) metricMetadataFetcher {
 		}
 	}
 	return nil
+}
+
+// FetchMetricMetadata implements metricMetadataFetcher by delegating to the
+// per-source querier that can supply metadata. It returns nil when no such source
+// is available.
+func (mq *multiQuerier) FetchMetricMetadata(ctx context.Context, names []string) (map[string]metadata.Metadata, error) {
+	ctx, queriers, _, _, err := mq.getQueriers(ctx, mq.minT, mq.maxT)
+	if errors.Is(err, errEmptyTimeRange) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if fetcher := findMetadataFetcher(queriers); fetcher != nil {
+		return fetcher.FetchMetricMetadata(ctx, names)
+	}
+	return nil, nil
 }
 
 // mimirSearcher is the cross-source Searcher interface used at the querier
@@ -105,25 +121,7 @@ func (mq *multiQuerier) SearchLabelValues(ctx context.Context, name string, para
 	sets := fanOutSearch(queriers, clampWarn, func(s mimirSearcher) storage.SearchResultSet {
 		return s.SearchLabelValues(ctx, name, params, hints, matchers...)
 	})
-	merged := storage.MergeSearchResultSets(sets, hints)
-
-	// Metadata enrichment (include_metadata) only applies to metric names, and
-	// must run above the source merge: metric metadata is sharded by metric
-	// name independently of series, so it can't be attached reliably at the
-	// per-source leaves. Enrichment is best-effort: if no source can supply
-	// metadata (e.g. the time range is outside the ingesters' retention window)
-	// results are simply returned un-enriched, like any metric with no metadata.
-	if params != nil && params.IncludeMetadata && name == model.MetricNameLabel {
-		if fetcher := findMetadataFetcher(queriers); fetcher != nil {
-			// Each buffer fill triggers one all-ingester metadata fan-out, so floor
-			// the buffer: a client-chosen batch_size of 1 must not turn into one
-			// fan-out per result. batch_size only controls the wire flush
-			// granularity, not how many names we fetch metadata for at a time.
-			batchSize := max(params.BatchSize, searchDefaultBatchSize)
-			return newMetadataEnrichingSearchResultSet(ctx, merged, fetcher.fetchMetricMetadata, batchSize, mq.logger)
-		}
-	}
-	return merged
+	return storage.MergeSearchResultSets(sets, hints)
 }
 
 // clampSearchHintsLimit returns a defensively-copied hints with Limit clamped

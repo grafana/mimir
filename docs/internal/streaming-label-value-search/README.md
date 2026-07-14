@@ -165,35 +165,38 @@ only by the metric-names endpoint — that is the only response shape with
 `/api/v1/search/label_names` and `/api/v1/search/label_values`, including
 `label_values?label=__name__`.
 
-Enrichment is **applied on the querier, above the source merges**
-(`pkg/querier/multi_searcher.go`), not in the ingesters. Metric metadata is
-sharded by metric name (`ShardByMetricName`) independently of series (sharded
-by all labels), so the ingester that owns a metric's metadata is usually not
-the one that holds a series with that name.
+Enrichment is **applied in the metric-names HTTP handler
+(`SearchMetricNamesHandler`), above every merge** (cross-`match[]`,
+tenant-federation and distributor↔blocks), not in the ingesters. Metric
+metadata is sharded by metric name (`ShardByMetricName`) independently of series
+(sharded by all labels), so the ingester that owns a metric's metadata is
+usually not the one that holds a series with that name — enrichment can't be
+attached reliably at the per-source leaves.
 
-For this reason, `multiQuerier` batches the streamed metric names and fetches
-their metadata via the ingester `MetricsMetadata` fan-out (the same all-ingester
-path the legacy `/api/v1/metadata` uses, extended to accept multiple metric names),
-then joins by name.
+The handler wraps the fully-merged result set with a buffering enricher: it
+batches the streamed metric names, fetches their metadata via
+`FetchMetricMetadata` on the opened querier, and joins by name. Because this
+runs above every merge, a single batched fetch covers the deduped result and no
+merge can drop the attached metadata (so no change to the vendored merge is
+needed). The handler stays tenant-federation-agnostic: the fetcher it obtains is
+federation-aware. `FetchMetricMetadata` is implemented by:
+
+- `distributorQuerier` — via the ingester `MetricsMetadata` fan-out (the same
+  all-ingester path `/api/v1/metadata` uses, extended to accept multiple names);
+- `multiQuerier` — delegates to the child querier that queries the ingesters;
+- `tenantfederation.mergeQuerier` — fans out per tenant and unions by name; on a
+  name present in several tenants the first tenant by sorted ID wins.
 
 Metadata is **silently best-effort**: metadata is optional per result (many
 metrics have none), so a fetch failure or a time range outside the ingesters'
 retention window simply leaves results un-enriched, exactly like a metric that
-has no metadata. No warning is emitted — a warning here would be
-indistinguishable from "this metric has no metadata" and, in a streaming
-`limit+1` context, risks firing on the dropped has-more probe or on empty
-results.
+has no metadata. No response warning is emitted (a warning here would be
+indistinguishable from "this metric has no metadata"); fetch errors are logged
+in the querier for observability.
 
 The store-gateway has no metric metadata and is not consulted for it.
 
 ### Known limitations
-
-- **Repeated `match[]` selectors fetch metadata per selector.** Enrichment runs
-  inside `multiQuerier.SearchLabelValues`, which the handler invokes once per
-  `match[]` selector, so an N-selector request issues N metadata fan-outs whose
-  (overlapping) results are then union-merged. Acceptable for the broadcast-v1
-  fetch; a single enrichment above the cross-selector union would need
-  enrichment to move above that merge.
 
 - **Classic histograms and summaries are not enriched.** Metadata is keyed by
   metric family name (e.g. `http_request_duration_seconds`), but the search
@@ -242,7 +245,7 @@ the ingester is a single-source leaf, the limit applied here is the
 limit across all ingesters in the quorum.
 
 **Files**: `pkg/ingester/ingester_search.go` (RPC handlers, streaming
-loop, metadata decorator, wire/internal converters);
+loop, wire/internal converters);
 `pkg/ingester/client/ingester.proto` (RPC + batch wire definitions).
 
 **Per-call flow:**
@@ -375,9 +378,9 @@ defers before the merge is constructed.
 
 **What the store-gateway does NOT do:**
 
-- **Metadata enrichment**: the proto's `Result.Metadata` field is never
-  populated by the store-gateway. Metric metadata lives only at the
-  ingester (see [Metadata enrichment](#metadata-enrichment-include_metadata)).
+- **Metadata enrichment**: the store-gateway has no metric metadata. Metadata
+  is fetched from the ingesters and joined on the querier (see
+  [Metadata enrichment](#metadata-enrichment-include_metadata)).
 - **Tenant federation**: per-tenant scoping happens upstream at the
   querier; the store-gateway sees one tenant per call.
 

@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-kit/log"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
@@ -35,17 +36,18 @@ import (
 // fields, letting each test express exactly the iterator behaviour it wants
 // (results, mid-stream error, warnings, etc.).
 //
-// includeMetadataSeen captures the include-metadata context bit observed by
-// SearchLabelValues so tests can assert the handler propagated the URL
-// param through to the searcher chain.
+// When metadata is non-nil the mock also satisfies metricMetadataFetcher, so
+// the metric-names handler can enrich results from it (mirroring the querier's
+// ingester metadata fan-out). metadataFetchCalls counts the fetches.
 type searchMockQuerier struct {
-	namesFn             func(params *streaminglabelvalues.Params, hints *storage.SearchHints, matchers ...*labels.Matcher) storage.SearchResultSet
-	valuesFn            func(name string, params *streaminglabelvalues.Params, hints *storage.SearchHints, matchers ...*labels.Matcher) storage.SearchResultSet
-	includeMetadataSeen bool
-	lastName            string
-	lastParams          *streaminglabelvalues.Params
-	lastHints           *storage.SearchHints
-	lastMatchers        []*labels.Matcher
+	namesFn      func(params *streaminglabelvalues.Params, hints *storage.SearchHints, matchers ...*labels.Matcher) storage.SearchResultSet
+	valuesFn     func(name string, params *streaminglabelvalues.Params, hints *storage.SearchHints, matchers ...*labels.Matcher) storage.SearchResultSet
+	metadata     map[string]metadata.Metadata
+	fetchedNames [][]string
+	lastName     string
+	lastParams   *streaminglabelvalues.Params
+	lastHints    *storage.SearchHints
+	lastMatchers []*labels.Matcher
 }
 
 func (s *searchMockQuerier) Select(_ context.Context, _ bool, _ *storage.SelectHints, _ ...*labels.Matcher) storage.SeriesSet {
@@ -74,13 +76,24 @@ func (s *searchMockQuerier) SearchLabelValues(_ context.Context, name string, pa
 	s.lastParams = params
 	s.lastHints = hints
 	s.lastMatchers = matchers
-	if params != nil {
-		s.includeMetadataSeen = params.IncludeMetadata
-	}
 	if s.valuesFn == nil {
 		return storage.EmptySearchResultSet()
 	}
 	return s.valuesFn(name, params, hints, matchers...)
+}
+
+// FetchMetricMetadata is only present (as far as the metricMetadataFetcher
+// type-assert is concerned) to let the handler enrich; it returns metadata for
+// the requested names found in the configured map.
+func (s *searchMockQuerier) FetchMetricMetadata(_ context.Context, names []string) (map[string]metadata.Metadata, error) {
+	s.fetchedNames = append(s.fetchedNames, append([]string(nil), names...))
+	out := make(map[string]metadata.Metadata, len(names))
+	for _, n := range names {
+		if md, ok := s.metadata[n]; ok {
+			out[n] = md
+		}
+	}
+	return out, nil
 }
 
 type searchMockQueryable struct {
@@ -520,7 +533,7 @@ func TestSearchHandlers_ResultJSONKey(t *testing.T) {
 		{
 			name: "metric_names emits name",
 			newHandler: func(q storage.Queryable) http.Handler {
-				return SearchMetricNamesHandler(q, enabledSearchConfig(), nil)
+				return SearchMetricNamesHandler(q, enabledSearchConfig(), nil, log.NewNopLogger())
 			},
 			url:       "/api/v1/search/metric_names?include_score=true",
 			wantKey:   "name",
@@ -826,7 +839,7 @@ func TestSearchMetricNamesHandler_ForwardsMetricNameLabel(t *testing.T) {
 			return storage.NewSearchResultSetFromSlice([]storage.SearchResult{sr("metric_a", 1.0)}, nil)
 		},
 	}
-	h := SearchMetricNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil)
+	h := SearchMetricNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil, log.NewNopLogger())
 
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/metric_names"))
@@ -911,7 +924,7 @@ func TestParseSearchRequest_ParamRoundTrip(t *testing.T) {
 	assert.True(t, req.includeScore)
 	assert.Equal(t, 42, req.limit, "user-facing limit is the URL value")
 	assert.Equal(t, 43, req.hints.Limit, "downstream hint is limit+1 (the has_more probe)")
-	assert.Equal(t, 7, req.params.BatchSize)
+	assert.Equal(t, 7, req.batchSize)
 	require.Len(t, req.matchers, 1, "one match[] entry → one matcher set")
 	require.Len(t, req.matchers[0], 1)
 	assert.Equal(t, "job", req.matchers[0][0].Name)
@@ -925,7 +938,7 @@ func TestParseSearchRequest_BatchSizeZeroKeepsDefault(t *testing.T) {
 	r := newSearchHandlerRequest(t, "/api/v1/search/label_names?batch_size=0")
 	req, err := parseSearchRequest(r, false, false)
 	require.NoError(t, err)
-	assert.Equal(t, searchDefaultBatchSize, req.params.BatchSize)
+	assert.Equal(t, searchDefaultBatchSize, req.batchSize)
 }
 
 // TestSearchLabelNamesHandler_AcceptsPOSTForm covers the spec parity case:
@@ -1055,24 +1068,26 @@ func TestSearchLabelNamesHandler_RepeatedMatchUnionsSelectors(t *testing.T) {
 }
 
 func TestSearchMetricNamesHandler_MetadataEnrichesRecords(t *testing.T) {
-	// The mock simulates what the wire-decode boundary in
-	// pkg/distributor/distributor_search.go produces: SearchResults that
-	// carry *metadata.Metadata directly. The handler reads them off the
-	// result; no side channel involved.
+	// The search returns bare metric names; the handler enriches them from the
+	// querier's FetchMetricMetadata (the metadata fan-out) above every merge.
 	mq := &searchMockQuerier{
 		valuesFn: func(_ string, _ *streaminglabelvalues.Params, _ *storage.SearchHints, _ ...*labels.Matcher) storage.SearchResultSet {
 			return storage.NewSearchResultSetFromSlice([]storage.SearchResult{
-				srMD("http_requests_total", 1.0, model.MetricTypeCounter, "Total HTTP requests.", ""),
-				srMD("cpu_usage_seconds", 1.0, model.MetricTypeGauge, "CPU usage.", "seconds"),
+				sr("http_requests_total", 1.0),
+				sr("cpu_usage_seconds", 1.0),
 			}, nil)
 		},
+		metadata: map[string]metadata.Metadata{
+			"http_requests_total": {Type: model.MetricTypeCounter, Help: "Total HTTP requests."},
+			"cpu_usage_seconds":   {Type: model.MetricTypeGauge, Help: "CPU usage.", Unit: "seconds"},
+		},
 	}
-	h := SearchMetricNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil)
+	h := SearchMetricNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil, log.NewNopLogger())
 
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/metric_names?include_metadata=true"))
 	assert.Equal(t, http.StatusOK, w.Code)
-	assert.True(t, mq.includeMetadataSeen, "include_metadata context bit must reach the downstream search call")
+	require.NotEmpty(t, mq.fetchedNames, "the handler must fetch metadata for the returned names")
 	lines := drainNDJSON(t, w.Body.String())
 	require.Len(t, lines, 2)
 	batch := lines[0]["results"].([]any)
@@ -1098,7 +1113,7 @@ func TestSearchMetricNamesHandler_MissingMetadataLeavesFieldsEmpty(t *testing.T)
 			return storage.NewSearchResultSetFromSlice([]storage.SearchResult{sr("orphan_metric", 1.0)}, nil)
 		},
 	}
-	h := SearchMetricNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil)
+	h := SearchMetricNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil, log.NewNopLogger())
 
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/metric_names?include_metadata=true"))
@@ -1116,12 +1131,11 @@ func TestSearchMetricNamesHandler_MissingMetadataLeavesFieldsEmpty(t *testing.T)
 func TestSearchMetricNamesHandler_IncludeScoreAndMetadataCompose(t *testing.T) {
 	mq := &searchMockQuerier{
 		valuesFn: func(_ string, _ *streaminglabelvalues.Params, _ *storage.SearchHints, _ ...*labels.Matcher) storage.SearchResultSet {
-			return storage.NewSearchResultSetFromSlice([]storage.SearchResult{
-				srMD("http_requests_total", 0.92, model.MetricTypeCounter, "h", ""),
-			}, nil)
+			return storage.NewSearchResultSetFromSlice([]storage.SearchResult{sr("http_requests_total", 0.92)}, nil)
 		},
+		metadata: map[string]metadata.Metadata{"http_requests_total": {Type: model.MetricTypeCounter, Help: "h"}},
 	}
-	h := SearchMetricNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil)
+	h := SearchMetricNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil, log.NewNopLogger())
 
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/metric_names?include_metadata=true&include_score=true"))
@@ -1154,7 +1168,7 @@ func TestSearchLabelNamesHandler_MetadataParamSilentlyIgnored(t *testing.T) {
 }
 
 func TestSearchMetricNamesHandler_InvalidMetadataParamReturns400(t *testing.T) {
-	h := SearchMetricNamesHandler(newSearchMockQueryable(&searchMockQuerier{}), enabledSearchConfig(), nil)
+	h := SearchMetricNamesHandler(newSearchMockQueryable(&searchMockQuerier{}), enabledSearchConfig(), nil, log.NewNopLogger())
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/metric_names?include_metadata=maybe"))
 	assert.Equal(t, http.StatusBadRequest, w.Code)
@@ -1162,12 +1176,14 @@ func TestSearchMetricNamesHandler_InvalidMetadataParamReturns400(t *testing.T) {
 
 func TestSearchLabelValuesHandler_NameLabelNotEnrichedWithMetadata(t *testing.T) {
 	// label_values?label=__name__ looks like metric_names, but its record shape
-	// can't carry Type/Help/Unit, so include_metadata must be ignored. The gate
-	// is in the handler: only SearchMetricNamesHandler sets params.IncludeMetadata.
+	// can't carry Type/Help/Unit, so include_metadata must be ignored. Only the
+	// metric-names handler enriches, so the label-values handler must never call
+	// the metadata fetcher.
 	mq := &searchMockQuerier{
 		valuesFn: func(_ string, _ *streaminglabelvalues.Params, _ *storage.SearchHints, _ ...*labels.Matcher) storage.SearchResultSet {
 			return storage.NewSearchResultSetFromSlice([]storage.SearchResult{sr("metric_a", 1.0)}, nil)
 		},
+		metadata: map[string]metadata.Metadata{"metric_a": {Type: model.MetricTypeCounter, Help: "h"}},
 	}
 	h := SearchLabelValuesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil)
 
@@ -1175,7 +1191,10 @@ func TestSearchLabelValuesHandler_NameLabelNotEnrichedWithMetadata(t *testing.T)
 	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_values?label=__name__&include_metadata=true"))
 	assert.Equal(t, http.StatusOK, w.Code)
 	assert.Equal(t, "__name__", mq.lastName, "sanity: the searcher was invoked for __name__")
-	assert.False(t, mq.includeMetadataSeen, "label_values must not request metadata enrichment, even for label=__name__")
+	assert.Empty(t, mq.fetchedNames, "label_values must not fetch metadata, even for label=__name__")
+	rec := drainNDJSON(t, w.Body.String())[0]["results"].([]any)[0].(map[string]any)
+	_, hasType := rec["type"]
+	assert.False(t, hasType, "label_values records must never carry type/help/unit")
 }
 
 func TestSearchLabelValuesHandler_MalformedMetadataParamIgnored(t *testing.T) {
@@ -1292,7 +1311,7 @@ func BenchmarkSearchMetricNamesHandler_MetadataEncoding(b *testing.B) {
 					return storage.NewSearchResultSetFromSlice(fixture, nil)
 				},
 			}
-			h := SearchMetricNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil)
+			h := SearchMetricNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil, log.NewNopLogger())
 
 			target := fmt.Sprintf("/api/v1/search/metric_names?limit=%d&include_metadata=%t", results, withMetadata)
 			name := fmt.Sprintf("results=%d/include_metadata=%t", results, withMetadata)
