@@ -82,12 +82,6 @@ local jsonpath = import 'github.com/jsonnet-libs/xtd/jsonpath.libsonnet';
   blocks_chunks_zone_b_caching_configs:: $.mimirCompartmentsCreateIf(true, $._config.compartments_read_count, function(c) {}),
   blocks_chunks_zone_c_caching_configs:: $.mimirCompartmentsCreateIf(true, $._config.compartments_read_count, function(c) {}),
 
-  validateMimirCompartmentsDistributorZones()::
-    if !$._config.compartments_distributor_enabled || std.length($._config.multi_zone_availability_zones) >= 1 then
-      null
-    else
-      'compartments_distributor_enabled requires at least one configured multi_zone_availability_zones entry',
-
   // Validates that per-compartment Deployments/StatefulSets configuration options are correctly
   // parameterised for the compartment they belong to.
   validateMimirCompartmentsConfig(resourceNames)::
@@ -96,7 +90,6 @@ local jsonpath = import 'github.com/jsonnet-libs/xtd/jsonpath.libsonnet';
     local addressFlag = '-ingest-storage.kafka.address';
     local topicFlag = '-ingest-storage.kafka.topic';
     local blocksBucketFlag = '-' + root.mimirBlocksStorageBucketNameFlag;
-    local rulerQueryFrontendAddressFlag = '-ruler.query-frontend.address';
     local writeIdSuffix = '.write-compartment-id';
     local readIdSuffix = '.read-compartment-id';
     local writePlaceholder = '<write-compartment-id>';
@@ -157,9 +150,14 @@ local jsonpath = import 'github.com/jsonnet-libs/xtd/jsonpath.libsonnet';
           local eq = std.findSubstr('=', arg)[0];
           { flag: std.substr(arg, 0, eq), value: std.substr(arg, eq + 1, std.length(arg) - eq - 1) };
 
+    // An omitted target defaults to "all", which includes every component.
     local hasTarget(container, target) =
       local value = flagValue(container, targetFlag);
-      value != null && std.member(std.split(value, ','), target);
+      if value == null then
+        true
+      else
+        local targets = std.split(value, ',');
+        std.member(targets, 'all') || std.member(targets, target);
 
     local validateKafkaAddress(name, compartment, container) =
       local value = flagValue(container, addressFlag);
@@ -218,15 +216,6 @@ local jsonpath = import 'github.com/jsonnet-libs/xtd/jsonpath.libsonnet';
       else
         'The Deployment or StatefulSet "%s" sets "%s=%s", but only a read compartment owns a dedicated blocks-storage bucket, so a bucket name here must contain the "%s" placeholder to address every read compartment.' % [name, blocksBucketFlag, value, readPlaceholder];
 
-    local validateRulerRemoteEvaluation(name, compartment, container) =
-      local value = flagValue(container, rulerQueryFrontendAddressFlag);
-      if !hasTarget(container, 'ruler') then
-        null
-      else if value == null || value == '' then
-        'The Deployment or StatefulSet "%s" runs "%s=%s", but compartments require a non-empty "%s=..." so the ruler evaluates queries through the ruler query-frontend.' % [name, targetFlag, flagValue(container, targetFlag), rulerQueryFrontendAddressFlag]
-      else
-        null;
-
     // A "<kind>-compartment-id" flag must appear only on a matching compartment, and its value must
     // equal the id encoded in the resource name.
     local validateCompartmentId(name, compartment, container, suffix, kind) =
@@ -249,7 +238,7 @@ local jsonpath = import 'github.com/jsonnet-libs/xtd/jsonpath.libsonnet';
     local validateContainer(name, compartment, container) =
       std.foldl(
         function(firstError, validator) if firstError != null then firstError else validator(name, compartment, container),
-        [validateKafkaAddress, validateKafkaTopic, validateBlocksBucket, validateRulerRemoteEvaluation, validateWriteCompartmentId, validateReadCompartmentId],
+        [validateKafkaAddress, validateKafkaTopic, validateBlocksBucket, validateWriteCompartmentId, validateReadCompartmentId],
         null
       );
 

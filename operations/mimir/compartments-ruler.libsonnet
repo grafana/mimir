@@ -8,13 +8,13 @@
 
   local isEnabled = $._config.compartments_ruler_enabled,
 
-  rulerDistributorCompartmentAddress(zone)::
-    'dns:///distributor-zone-%s-compartments.%s.svc.%s:9095' % [zone, $._config.namespace, $._config.cluster_domain],
+  rulerDistributorZoneAddress(zone)::
+    'dns:///distributor-zone-%s.%s.svc.%s:9095' % [zone, $._config.namespace, $._config.cluster_domain],
 
   local rulerCompartmentArgs(zone) =
     $.mimirCompartmentsCommonArgs {
       'ingest-storage.kafka.address': $._config.compartments_ingest_storage_kafka_address,
-      'ruler.distributor.address': $.rulerDistributorCompartmentAddress(zone),
+      'ruler.distributor.address': $.rulerDistributorZoneAddress(zone),
       'ruler.distributor.remote-timeout': '10s',
     },
 

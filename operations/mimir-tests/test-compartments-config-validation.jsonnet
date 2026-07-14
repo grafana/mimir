@@ -47,7 +47,6 @@ local validate(resources, resourceNames) =
 
 local distributor = env.distributor_zone_a_deployments.compartment_0;  // distributor-zone-a-wc-0
 local ingester = env.ingester_zone_a_statefulsets.compartment_1;  // ingester-zone-a-rc-1
-local ruler = env.ruler_zone_a_deployment;
 
 // 1. Write compartment whose "distributor.write-compartment-id" doesn't match its name.
 local err1 = validate(
@@ -183,11 +182,14 @@ assert isError(err15, '-blocks-storage.gcs.bucket-name=blocks-bucket-rc-0') && i
 
 // A global deployment (no compartment marker) built from the distributor: the Kafka address is reset to the
 // placeholder and the write-compartment-id flag removed, so only the blocks-storage bucket is under test.
-local globalWithBucket(bucket) =
-  overrideContainerArgs(
+local globalWithBucket(bucket, target='querier') =
+  local resource = removeContainerArg(
     removeContainerArg(distributor { metadata+: { name: 'querier' } }, '-distributor.write-compartment-id'),
-    [
-      '-target=querier',
+    '-target',
+  );
+  overrideContainerArgs(
+    resource,
+    (if target == null then [] else ['-target=' + target]) + [
       '-ingest-storage.kafka.address=' + env._config.compartments_ingest_storage_kafka_address,
       '-blocks-storage.gcs.bucket-name=' + bucket,
     ],
@@ -204,30 +206,14 @@ local err17 = validate({ gf: globalWithBucket('blocks-bucket-rc-<read-compartmen
 assert err17 == null :
        'case 17: expected no error for a parametrised blocks-storage bucket on a global deployment, got: %s' % err17;
 
-// 18. Compartment distributors need at least one AZ so the ruler can route to a zone-a service.
-local err18 = (compartmentsCommon {
-                 _config+: env._config {
-                   compartments_distributor_enabled: true,
-                   multi_zone_availability_zones: [],
-                 },
-               }).validateMimirCompartmentsDistributorZones();
-assert isError(err18, 'at least one configured multi_zone_availability_zones entry') :
-       'case 18: expected distributor zone validation error, got: %s' % err18;
+// 18. The "all" target includes the querier and therefore requires a parametrised blocks-storage bucket.
+local err18 = validate({ gf: globalWithBucket('blocks-bucket-rc-0', 'all') }, ['gf']);
+assert isError(err18, '-blocks-storage.gcs.bucket-name=blocks-bucket-rc-0') && isError(err18, 'only a read compartment owns a dedicated blocks-storage bucket') :
+       'case 18: expected all-target blocks-storage bucket error, got: %s' % err18;
 
-// 19. Compartmented rulers must have a query-frontend address so they don't fall back to local queries.
-local err19 = validate(
-  { ruler: removeContainerArg(ruler, '-ruler.query-frontend.address') },
-  ['ruler'],
-);
-assert isError(err19, '-ruler.query-frontend.address') && isError(err19, 'non-empty') :
-       'case 19: expected missing ruler query-frontend address error, got: %s' % err19;
-
-// 20. An empty ruler query-frontend address is equivalent to disabling remote evaluation at runtime.
-local err20 = validate(
-  { ruler: overrideContainerArgs(ruler, ['-ruler.query-frontend.address=']) },
-  ['ruler'],
-);
-assert isError(err20, '-ruler.query-frontend.address') && isError(err20, 'non-empty') :
-       'case 20: expected empty ruler query-frontend address error, got: %s' % err20;
+// 19. An omitted target defaults to "all" and therefore also includes the querier.
+local err19 = validate({ gf: globalWithBucket('blocks-bucket-rc-0', null) }, ['gf']);
+assert isError(err19, '-blocks-storage.gcs.bucket-name=blocks-bucket-rc-0') && isError(err19, 'only a read compartment owns a dedicated blocks-storage bucket') :
+       'case 19: expected default-target blocks-storage bucket error, got: %s' % err19;
 
 {}

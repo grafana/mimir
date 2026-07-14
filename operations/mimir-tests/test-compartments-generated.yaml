@@ -829,52 +829,8 @@ apiVersion: v1
 kind: Service
 metadata:
   labels:
-    name: distributor-zone-a-compartments
-  name: distributor-zone-a-compartments
-  namespace: default
-spec:
-  clusterIP: None
-  ports:
-  - name: distributor-http-metrics
-    port: 8080
-    targetPort: 8080
-  - name: distributor-grpc
-    port: 9095
-    targetPort: 9095
-  - name: distributor-gossip-ring
-    port: 7946
-    targetPort: 7946
-  selector:
-    mimir-service: distributor-zone-a
----
-apiVersion: v1
-kind: Service
-metadata:
-  labels:
     name: distributor-zone-b
   name: distributor-zone-b
-  namespace: default
-spec:
-  clusterIP: None
-  ports:
-  - name: distributor-http-metrics
-    port: 8080
-    targetPort: 8080
-  - name: distributor-grpc
-    port: 9095
-    targetPort: 9095
-  - name: distributor-gossip-ring
-    port: 7946
-    targetPort: 7946
-  selector:
-    mimir-service: distributor-zone-b
----
-apiVersion: v1
-kind: Service
-metadata:
-  labels:
-    name: distributor-zone-b-compartments
-  name: distributor-zone-b-compartments
   namespace: default
 spec:
   clusterIP: None
@@ -4080,7 +4036,7 @@ spec:
         - -ruler-storage.cache.memcached.timeout=500ms
         - -ruler-storage.gcs.bucket-name=rules-bucket
         - -ruler.alertmanager-url=http://alertmanager.default.svc.cluster.local./alertmanager
-        - -ruler.distributor.address=dns:///distributor-zone-a-compartments.default.svc.cluster.local.:9095
+        - -ruler.distributor.address=dns:///distributor-zone-a.default.svc.cluster.local.:9095
         - -ruler.distributor.remote-timeout=10s
         - -ruler.max-rule-groups-per-tenant=85
         - -ruler.max-rules-per-rule-group=20
@@ -4221,7 +4177,7 @@ spec:
         - -ruler-storage.cache.memcached.timeout=500ms
         - -ruler-storage.gcs.bucket-name=rules-bucket
         - -ruler.alertmanager-url=http://alertmanager.default.svc.cluster.local./alertmanager
-        - -ruler.distributor.address=dns:///distributor-zone-b-compartments.default.svc.cluster.local.:9095
+        - -ruler.distributor.address=dns:///distributor-zone-b.default.svc.cluster.local.:9095
         - -ruler.distributor.remote-timeout=10s
         - -ruler.max-rule-groups-per-tenant=85
         - -ruler.max-rules-per-rule-group=20

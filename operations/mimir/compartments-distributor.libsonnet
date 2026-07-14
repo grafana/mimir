@@ -2,12 +2,18 @@
   _config+:: {
     compartments_distributor_enabled: $._config.compartments_enabled,
     no_compartments_distributor_enabled: !self.compartments_distributor_enabled,
+
+    // Controls whether the zonal distributor services route to compartment distributors.
+    // This setting can be used by downstream projects during migrations.
+    compartments_distributor_routing_enabled: !self.no_compartments_distributor_enabled,
   },
 
   assert !$._config.compartments_distributor_enabled || $._config.multi_zone_distributor_enabled
          : 'compartments_distributor_enabled requires multi_zone_distributor_enabled',
-  local distributorCompartmentZonesError = $.validateMimirCompartmentsDistributorZones(),
-  assert distributorCompartmentZonesError == null : distributorCompartmentZonesError,
+  assert !$._config.compartments_distributor_enabled || std.length($._config.multi_zone_availability_zones) >= 1
+         : 'compartments_distributor_enabled requires at least one configured multi_zone_availability_zones entry',
+  assert $._config.no_compartments_distributor_enabled || $._config.compartments_distributor_routing_enabled
+         : 'compartments_distributor_routing_enabled must be true when no_compartments_distributor_enabled is false',
   assert !$._config.compartments_distributor_enabled || $._config.ingest_storage_enabled
          : 'compartments_distributor_enabled requires ingest_storage_enabled',
   assert !$._config.compartments_distributor_enabled || $._config.autoscaling_distributor_enabled
@@ -24,6 +30,7 @@
   local isZoneCEnabled = $._config.multi_zone_distributor_enabled && std.length($._config.multi_zone_availability_zones) >= 3,
   local isAutoscalingEnabled = $._config.autoscaling_distributor_enabled,
   local isNoCompartmentsEnabled = $._config.no_compartments_distributor_enabled,
+  local isRoutingEnabled = isEnabled && $._config.compartments_distributor_routing_enabled,
 
   newDistributorCompartmentContainer(zone, compartmentIdx, args, extraEnvVarMap={})::
     $.newDistributorZoneContainer(zone, args, extraEnvVarMap),
@@ -69,10 +76,9 @@
   distributor_zone_b_scaled_object: if !isNoCompartmentsEnabled && isZoneBEnabled then null else super.distributor_zone_b_scaled_object,
   distributor_zone_c_scaled_object: if !isNoCompartmentsEnabled && isZoneCEnabled then null else super.distributor_zone_c_scaled_object,
 
-  // When decommissioning, the zone deployment is null, so super.distributor_zone_X_service
-  // can't be accessed (it calls util.serviceFor on the null deployment). Re-create the
-  // service from scratch instead, deriving ports from compartment_0 and overriding the name/selector
-  // so the service covers all compartments in the zone.
+  // Re-create the stable zonal service when routing is enabled, deriving ports from compartment_0
+  // and selecting all compartment distributors in the zone. Otherwise the inherited service keeps
+  // routing to the no-compartments deployment during migration.
   local newZoneService(zone, compartmentDeploy) =
     $.util.serviceFor(compartmentDeploy, $._config.service_ignored_labels) +
     service.mixin.metadata.withName('distributor-zone-%s' % zone) +
@@ -80,32 +86,15 @@
     service.mixin.spec.withSelector({ 'mimir-service': 'distributor-zone-%s' % zone }) +
     service.mixin.spec.withClusterIp('None'),
 
-  local newCompartmentsZoneService(zone, compartmentDeploy) =
-    $.util.serviceFor(compartmentDeploy, $._config.service_ignored_labels) +
-    service.mixin.metadata.withName('distributor-zone-%s-compartments' % zone) +
-    service.mixin.metadata.withLabels({ name: 'distributor-zone-%s-compartments' % zone }) +
-    service.mixin.spec.withSelector({ 'mimir-service': 'distributor-zone-%s' % zone }) +
-    service.mixin.spec.withClusterIp('None'),
-
-  distributor_zone_a_service: if !isNoCompartmentsEnabled && isZoneAEnabled then
+  distributor_zone_a_service: if isRoutingEnabled && isZoneAEnabled then
     newZoneService('a', $.distributor_zone_a_deployments.compartment_0)
   else super.distributor_zone_a_service,
-  distributor_zone_b_service: if !isNoCompartmentsEnabled && isZoneBEnabled then
+  distributor_zone_b_service: if isRoutingEnabled && isZoneBEnabled then
     newZoneService('b', $.distributor_zone_b_deployments.compartment_0)
   else super.distributor_zone_b_service,
-  distributor_zone_c_service: if !isNoCompartmentsEnabled && isZoneCEnabled then
+  distributor_zone_c_service: if isRoutingEnabled && isZoneCEnabled then
     newZoneService('c', $.distributor_zone_c_deployments.compartment_0)
   else super.distributor_zone_c_service,
-
-  distributor_zone_a_compartments_service: if isEnabled && isZoneAEnabled then
-    newCompartmentsZoneService('a', $.distributor_zone_a_deployments.compartment_0)
-  else null,
-  distributor_zone_b_compartments_service: if isEnabled && isZoneBEnabled then
-    newCompartmentsZoneService('b', $.distributor_zone_b_deployments.compartment_0)
-  else null,
-  distributor_zone_c_compartments_service: if isEnabled && isZoneCEnabled then
-    newCompartmentsZoneService('c', $.distributor_zone_c_deployments.compartment_0)
-  else null,
 
   // Args.
   local perCompartmentDistributorArgs(compartmentIdx) =
