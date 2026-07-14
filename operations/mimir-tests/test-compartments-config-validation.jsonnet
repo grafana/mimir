@@ -171,26 +171,35 @@ local err14 = validate(
 assert err14 == null :
        'case 14: expected no error for the matching per-compartment bucket, got: %s' % err14;
 
+// 15. validateBlocksBucket: write compartment with a concrete per-compartment bucket must be rejected,
+// because only read compartments own dedicated blocks-storage buckets.
+local err15 = validate(
+  { dist: overrideContainerArgs(distributor, ['-blocks-storage.gcs.bucket-name=blocks-bucket-rc-0']) },
+  ['dist'],
+);
+assert isError(err15, '-blocks-storage.gcs.bucket-name=blocks-bucket-rc-0') && isError(err15, 'only a read compartment owns a dedicated blocks-storage bucket') :
+       'case 15: expected write-compartment blocks-storage bucket error, got: %s' % err15;
+
 // A global deployment (no compartment marker) built from the distributor: the Kafka address is reset to the
 // placeholder and the write-compartment-id flag removed, so only the blocks-storage bucket is under test.
 local globalWithBucket(bucket) =
   overrideContainerArgs(
-    removeContainerArg(distributor { metadata+: { name: 'querier' } }, '-distributor.write-compartment-id'),
+    removeContainerArg(distributor { metadata+: { name: 'global' } }, '-distributor.write-compartment-id'),
     [
       '-ingest-storage.kafka.address=' + env._config.compartments_ingest_storage_kafka_address,
       '-blocks-storage.gcs.bucket-name=' + bucket,
     ],
   );
 
-// 15. validateBlocksBucket: global deployment with a concrete per-compartment bucket must be rejected,
+// 16. validateBlocksBucket: global deployment with a concrete per-compartment bucket must be rejected,
 // because one bucket can't serve every read compartment.
-local err15 = validate({ gf: globalWithBucket('blocks-bucket-rc-0') }, ['gf']);
-assert isError(err15, '-blocks-storage.gcs.bucket-name=blocks-bucket-rc-0') && isError(err15, 'only a read compartment owns a dedicated blocks-storage bucket') :
-       'case 15: expected global-deployment blocks-storage bucket error, got: %s' % err15;
+local err16 = validate({ gf: globalWithBucket('blocks-bucket-rc-0') }, ['gf']);
+assert isError(err16, '-blocks-storage.gcs.bucket-name=blocks-bucket-rc-0') && isError(err16, 'only a read compartment owns a dedicated blocks-storage bucket') :
+       'case 16: expected global-deployment blocks-storage bucket error, got: %s' % err16;
 
-// 16. validateBlocksBucket: global deployment keeping the parametrised placeholder is accepted.
-local err16 = validate({ gf: globalWithBucket('blocks-bucket-rc-<read-compartment-id>') }, ['gf']);
-assert err16 == null :
-       'case 16: expected no error for a parametrised blocks-storage bucket on a global deployment, got: %s' % err16;
+// 17. validateBlocksBucket: global deployment keeping the parametrised placeholder is accepted.
+local err17 = validate({ gf: globalWithBucket('blocks-bucket-rc-<read-compartment-id>') }, ['gf']);
+assert err17 == null :
+       'case 17: expected no error for a parametrised blocks-storage bucket on a global deployment, got: %s' % err17;
 
 {}
