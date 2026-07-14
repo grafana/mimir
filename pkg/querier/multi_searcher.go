@@ -19,6 +19,12 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
+// errSearchMetadataUnavailable is surfaced as a warning when include_metadata
+// was requested but no source can supply metadata (e.g. the time range is
+// outside the ingesters' retention window), so callers can distinguish it from
+// metrics that genuinely have no metadata.
+var errSearchMetadataUnavailable = errors.New("metric metadata is only available within the ingester retention window; results for this time range are not enriched with metadata")
+
 // metricMetadataFetcher fetches metric metadata for a set of metric names,
 // returning it keyed by metric name.
 type metricMetadataFetcher interface {
@@ -103,24 +109,33 @@ func (mq *multiQuerier) SearchLabelValues(ctx context.Context, name string, para
 	sets := fanOutSearch(queriers, clampWarn, func(s mimirSearcher) storage.SearchResultSet {
 		return s.SearchLabelValues(ctx, name, params, hints, matchers...)
 	})
-	merged := storage.MergeSearchResultSets(sets, hints)
 
 	// Metadata enrichment (include_metadata) only applies to metric names, and
 	// must run above the source merge: metric metadata is sharded by metric
 	// name independently of series, so it can't be attached reliably at the
 	// per-source leaves.
+	var fetcher metricMetadataFetcher
 	if params != nil && params.IncludeMetadata && name == model.MetricNameLabel {
-		if fetcher := findMetadataFetcher(queriers); fetcher != nil {
-			// Each buffer fill triggers one all-ingester metadata fan-out, so
-			// floor the buffer: a client-chosen batch_size of 1 must not turn
-			// into one fan-out per result. batch_size only controls the wire
-			// flush granularity, not how many names we fetch metadata for at a
-			// time.
-			batchSize := max(params.BatchSize, searchDefaultBatchSize)
-			return newMetadataEnrichingSearchResultSet(ctx, merged, fetcher.fetchMetricMetadata, batchSize)
+		if fetcher = findMetadataFetcher(queriers); fetcher == nil {
+			// No source can supply metadata (e.g. the time range is older than
+			// query-ingesters-within, so ingesters aren't queried). Warn so the
+			// caller can tell this apart from "these metrics have no metadata",
+			// mirroring the best-effort-with-warning fetch-error path.
+			var warn annotations.Annotations
+			warn.Add(errSearchMetadataUnavailable)
+			sets = append(sets, storage.NewSearchResultSetFromSlice(nil, warn))
 		}
 	}
 
+	merged := storage.MergeSearchResultSets(sets, hints)
+	if fetcher != nil {
+		// Each buffer fill triggers one all-ingester metadata fan-out, so floor
+		// the buffer: a client-chosen batch_size of 1 must not turn into one
+		// fan-out per result. batch_size only controls the wire flush
+		// granularity, not how many names we fetch metadata for at a time.
+		batchSize := max(params.BatchSize, searchDefaultBatchSize)
+		return newMetadataEnrichingSearchResultSet(ctx, merged, fetcher.fetchMetricMetadata, batchSize)
+	}
 	return merged
 }
 

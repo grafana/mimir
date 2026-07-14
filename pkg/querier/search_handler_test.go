@@ -1160,6 +1160,33 @@ func TestSearchMetricNamesHandler_InvalidMetadataParamReturns400(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 }
 
+func TestSearchLabelValuesHandler_NameLabelNotEnrichedWithMetadata(t *testing.T) {
+	// label_values?label=__name__ looks like metric_names, but its record shape
+	// can't carry Type/Help/Unit, so include_metadata must be ignored. The gate
+	// is in the handler: only SearchMetricNamesHandler sets params.IncludeMetadata.
+	mq := &searchMockQuerier{
+		valuesFn: func(_ string, _ *streaminglabelvalues.Params, _ *storage.SearchHints, _ ...*labels.Matcher) storage.SearchResultSet {
+			return storage.NewSearchResultSetFromSlice([]storage.SearchResult{sr("metric_a", 1.0)}, nil)
+		},
+	}
+	h := SearchLabelValuesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil)
+
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_values?label=__name__&include_metadata=true"))
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, "__name__", mq.lastName, "sanity: the searcher was invoked for __name__")
+	assert.False(t, mq.includeMetadataSeen, "label_values must not request metadata enrichment, even for label=__name__")
+}
+
+func TestSearchLabelValuesHandler_MalformedMetadataParamIgnored(t *testing.T) {
+	// include_metadata is not parsed for endpoints that can't carry metadata,
+	// so a malformed value is ignored rather than rejected (unlike metric_names).
+	h := SearchLabelValuesHandler(newSearchMockQueryable(&searchMockQuerier{}), enabledSearchConfig(), nil)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_values?label=env&include_metadata=maybe"))
+	assert.Equal(t, http.StatusOK, w.Code, "malformed include_metadata must be ignored, not 400, on endpoints that don't support it")
+}
+
 // TestDefaultSuccessTrailer_MatchesEncoderOutput pins the byte-for-byte
 // equivalence between the hand-rolled defaultSuccessTrailer constant and
 // what json.Encoder produces for a zero-warning success trailer. If

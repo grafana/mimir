@@ -89,17 +89,20 @@ func (mm *userMetricsMetadata) purge(deadline time.Time) {
 }
 
 func (mm *userMetricsMetadata) toClientMetadata(req *client.MetricsMetadataRequest) []*mimirpb.MetricMetadata {
+	if req.Limit == 0 {
+		return nil
+	}
 	mm.mtx.RLock()
 	defer mm.mtx.RUnlock()
 	rCap := int32(len(mm.metricToMetadata))
 	// A MetricNames request returns only the requested subset, so size to it
 	// rather than the tenant's entire metric-family count (the Limit<0 the
-	// search API sends would otherwise skip the clamp below).
+	// search API sends would otherwise skip the clamp below). We assume one
+	// metadata record per metric (the common case) and let the slice grow for
+	// the rare metric with several; sizing by LimitPerMetric would badly
+	// over-allocate, since that cap rarely reflects the actual variant count.
 	if len(req.MetricNames) > 0 {
 		rCap = int32(len(req.MetricNames))
-		if req.LimitPerMetric > 0 {
-			rCap *= req.LimitPerMetric
-		}
 	}
 	if req.Limit >= 0 && req.Limit < rCap {
 		rCap = req.Limit
@@ -114,9 +117,6 @@ func (mm *userMetricsMetadata) toClientMetadata(req *client.MetricsMetadataReque
 			r = append(r, &m)
 			lengthPerMetric++
 		}
-	}
-	if req.Limit == 0 {
-		return r
 	}
 
 	// MetricNames takes precedence over the single-name Metric filter: return

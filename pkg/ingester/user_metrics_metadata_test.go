@@ -272,6 +272,29 @@ func TestUserMetricsMetadataRequest(t *testing.T) {
 				{},
 			},
 		},
+		// This is the request shape the search API's fetchMetricMetadata sends:
+		// LimitPerMetric=1 returns one (arbitrary) record per requested metric.
+		"metric_names with limit_per_metric=1 returns one record per metric": {
+			request: &client.MetricsMetadataRequest{Limit: int32(len([]string{"test_metric_1", "test_metric_2"})), LimitPerMetric: 1, MetricNames: []string{"test_metric_1", "test_metric_2"}},
+			possibleExpectedMetadata: [][]*mimirpb.MetricMetadata{
+				{
+					{Type: mimirpb.COUNTER, MetricFamilyName: "test_metric_1", Help: "foo"},
+					{Type: mimirpb.COUNTER, MetricFamilyName: "test_metric_2", Help: "baz"},
+				},
+				{
+					{Type: mimirpb.COUNTER, MetricFamilyName: "test_metric_1", Help: "foo"},
+					{Type: mimirpb.COUNTER, MetricFamilyName: "test_metric_2", Help: "qux"},
+				},
+				{
+					{Type: mimirpb.COUNTER, MetricFamilyName: "test_metric_1", Help: "bar"},
+					{Type: mimirpb.COUNTER, MetricFamilyName: "test_metric_2", Help: "baz"},
+				},
+				{
+					{Type: mimirpb.COUNTER, MetricFamilyName: "test_metric_1", Help: "bar"},
+					{Type: mimirpb.COUNTER, MetricFamilyName: "test_metric_2", Help: "qux"},
+				},
+			},
+		},
 	}
 
 	dummyT := noopTestingT{}

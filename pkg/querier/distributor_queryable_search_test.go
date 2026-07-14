@@ -167,7 +167,7 @@ func TestDistributorQuerier_fetchMetricMetadata(t *testing.T) {
 
 		require.NotNil(t, gotReq)
 		assert.Equal(t, []string{"a", "b"}, gotReq.MetricNames)
-		assert.Equal(t, int32(-1), gotReq.Limit, "Limit=-1 requests all matching metadata")
+		assert.Equal(t, int32(2), gotReq.Limit, "Limit bounds the response to the number of requested names")
 		assert.Equal(t, int32(1), gotReq.LimitPerMetric, "LimitPerMetric=1 keeps the response small")
 		assert.Empty(t, gotReq.Metric, "the single-name Metric field must not be used")
 	})

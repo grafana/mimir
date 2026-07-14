@@ -87,6 +87,32 @@ func (qq *mockSearchQueryable) Querier(_, _ int64) (storage.Querier, error) {
 	return qq.q, nil
 }
 
+// nonMetadataSearchQuerier implements mimirSearcher and storage.Querier but NOT
+// metricMetadataFetcher, standing in for a source that can't supply metadata
+// (e.g. the blocks-store querier).
+type nonMetadataSearchQuerier struct{ values []storage.SearchResult }
+
+func (nonMetadataSearchQuerier) Select(_ context.Context, _ bool, _ *storage.SelectHints, _ ...*labels.Matcher) storage.SeriesSet {
+	return storage.EmptySeriesSet()
+}
+func (nonMetadataSearchQuerier) LabelValues(_ context.Context, _ string, _ *storage.LabelHints, _ ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	return nil, nil, nil
+}
+func (nonMetadataSearchQuerier) LabelNames(_ context.Context, _ *storage.LabelHints, _ ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	return nil, nil, nil
+}
+func (nonMetadataSearchQuerier) Close() error { return nil }
+func (nonMetadataSearchQuerier) SearchLabelNames(_ context.Context, _ *streaminglabelvalues.Params, _ *storage.SearchHints, _ ...*labels.Matcher) storage.SearchResultSet {
+	return storage.EmptySearchResultSet()
+}
+func (q nonMetadataSearchQuerier) SearchLabelValues(_ context.Context, _ string, _ *streaminglabelvalues.Params, _ *storage.SearchHints, _ ...*labels.Matcher) storage.SearchResultSet {
+	return storage.NewSearchResultSetFromSlice(q.values, nil)
+}
+
+type nonMetadataSearchQueryable struct{ q storage.Querier }
+
+func (qq nonMetadataSearchQueryable) Querier(_, _ int64) (storage.Querier, error) { return qq.q, nil }
+
 // buildSearchTestMultiQuerier wires a multiQuerier with two child queryables.
 // Setting either to nil simulates that source not being configured.
 func buildSearchTestMultiQuerier(t *testing.T, distQ, blockQ *mockSearchQuerier, opts ...func(*validation.Limits)) *multiQuerier {
@@ -405,6 +431,26 @@ func TestMultiQuerier_SearchLabelValues_ShouldSupportMetadata(t *testing.T) {
 		vals, metas := drainSearchResultSetWithMetadata(t, rs)
 		assert.Equal(t, []string{"prod"}, vals)
 		assert.Nil(t, metas[0], "metadata must not be attached for a non-__name__ label")
+	})
+
+	t.Run("include_metadata surfaces a warning when no source can supply metadata", func(t *testing.T) {
+		// Only a blocks-store-like source (no metadata fetcher) is configured —
+		// as happens when the time range is outside the ingesters' retention.
+		mq := buildSearchTestMultiQuerier(t, nil, nil)
+		mq.blockStore = nonMetadataSearchQueryable{q: nonMetadataSearchQuerier{values: []storage.SearchResult{searchResult("foo", 1.0)}}}
+
+		params := &streaminglabelvalues.Params{IncludeMetadata: true}
+		rs := mq.SearchLabelValues(ctx, model.MetricNameLabel, params, &storage.SearchHints{OrderBy: storage.OrderByValueAsc})
+		vals, metas := drainSearchResultSetWithMetadata(t, rs)
+		assert.Equal(t, []string{"foo"}, vals)
+		assert.Nil(t, metas[0], "no source can enrich, so metadata stays nil")
+
+		var warns []string
+		for _, w := range rs.Warnings() {
+			warns = append(warns, w.Error())
+		}
+		require.Len(t, warns, 1)
+		assert.Contains(t, warns[0], "metric metadata is only available")
 	})
 }
 
