@@ -31,7 +31,7 @@ func TestLimitingBucketedPool_Unlimited(t *testing.T) {
 		limiter.FPointSlices,
 		FPointSize,
 		false,
-		nil,
+		func(point promql.FPoint) promql.FPoint { return point },
 		nil,
 	)
 
@@ -86,7 +86,7 @@ func TestLimitingPool_Limited(t *testing.T) {
 		limiter.FPointSlices,
 		FPointSize,
 		false,
-		nil,
+		func(point promql.FPoint) promql.FPoint { return point },
 		nil,
 	)
 
@@ -209,40 +209,80 @@ func TestLimitingPool_Mangling(t *testing.T) {
 	}()
 
 	_, metric := createRejectedMetric()
-	tracker := limiter.NewMemoryConsumptionTracker(context.Background(), 0, metric, "")
 
-	p := NewLimitingBucketedPool(
-		pool.NewBucketedPool(1024, func(size int) []int { return make([]int, 0, size) }),
-		limiter.IntSlices,
-		1,
-		false,
-		func(_ int) int { return 123 },
-		func(s []int, _ *limiter.MemoryConsumptionTracker) {
-			for idx, i := range s {
-				require.NotEqualf(t, 123, i, "Put() hook should be called before mangling, but element at index %d was mangled already", idx)
-			}
-		},
-	)
+	t.Run("with mangling function", func(t *testing.T) {
+		tracker := limiter.NewMemoryConsumptionTracker(context.Background(), 0, metric, "")
 
-	// Test with mangling disabled.
-	EnableManglingReturnedSlices = false
-	s, err := p.Get(4, tracker)
-	require.NoError(t, err)
-	s = append(s, 1000, 2000, 3000, 4000)
-	sCopy := s // Take another reference to s, so that we can check that it was mangled. (Put will set s to nil when it is called below, so we need to take a copy.)
+		p := NewLimitingBucketedPool(
+			pool.NewBucketedPool(1024, func(size int) []int { return make([]int, 0, size) }),
+			limiter.IntSlices,
+			1,
+			false,
+			func(_ int) int { return 123 },
+			func(s []int, _ *limiter.MemoryConsumptionTracker) {
+				for idx, i := range s {
+					require.NotEqualf(t, 123, i, "Put() hook should be called before mangling, but element at index %d was mangled already", idx)
+				}
+			},
+		)
 
-	p.Put(&s, tracker)
-	require.Equal(t, []int{1000, 2000, 3000, 4000}, sCopy, "returned slice should not be mangled when mangling is disabled")
+		// Test with mangling disabled.
+		EnableManglingReturnedSlices = false
+		s, err := p.Get(4, tracker)
+		require.NoError(t, err)
+		s = append(s, 1000, 2000, 3000, 4000)
+		sCopy := s // Take another reference to s, so that we can check that it was mangled. (Put will set s to nil when it is called below, so we need to take a copy.)
 
-	// Test with mangling enabled.
-	EnableManglingReturnedSlices = true
-	s, err = p.Get(4, tracker)
-	require.NoError(t, err)
-	s = append(s, 1000, 2000, 3000, 4000)
-	sCopy = s
+		p.Put(&s, tracker)
+		require.Equal(t, []int{1000, 2000, 3000, 4000}, sCopy, "returned slice should not be mangled when mangling is disabled")
+		require.Nil(t, s, "provided slice should be nil-ed out")
 
-	p.Put(&s, tracker)
-	require.Equal(t, []int{123, 123, 123, 123}, sCopy, "returned slice should be mangled when mangling is enabled")
+		// Test with mangling enabled.
+		EnableManglingReturnedSlices = true
+		s, err = p.Get(4, tracker)
+		require.NoError(t, err)
+		s = append(s, 1000, 2000, 3000, 4000)
+		sCopy = s
+
+		p.Put(&s, tracker)
+		require.Equal(t, []int{123, 123, 123, 123}, sCopy, "returned slice should be mangled when mangling is enabled")
+		require.Nil(t, s, "provided slice should be nil-ed out")
+	})
+
+	t.Run("without mangling function but 'clear on get' set", func(t *testing.T) {
+		tracker := limiter.NewMemoryConsumptionTracker(context.Background(), 0, metric, "")
+
+		p := NewLimitingBucketedPool(
+			pool.NewBucketedPool(1024, func(size int) []int { return make([]int, 0, size) }),
+			limiter.IntSlices,
+			1,
+			true,
+			func(_ int) int { return 123 },
+			nil,
+		)
+
+		// Test with mangling disabled.
+		EnableManglingReturnedSlices = false
+		s, err := p.Get(4, tracker)
+		require.NoError(t, err)
+		s = append(s, 1000, 2000, 3000, 4000)
+		sCopy := s // Take another reference to s, so that we can check that it was mangled. (Put will set s to nil when it is called below, so we need to take a copy.)
+
+		p.Put(&s, tracker)
+		require.Equal(t, []int{1000, 2000, 3000, 4000}, sCopy, "returned slice should not be cleared when mangling is disabled")
+		require.Nil(t, s, "provided slice should be nil-ed out")
+
+		// Test with mangling enabled.
+		EnableManglingReturnedSlices = true
+		s, err = p.Get(4, tracker)
+		require.NoError(t, err)
+		s = append(s, 1000, 2000, 3000, 4000)
+		sCopy = s
+
+		p.Put(&s, tracker)
+		require.Equal(t, []int{0, 0, 0, 0}, sCopy, "returned slice should be cleared when mangling is enabled")
+		require.Nil(t, s, "provided slice should be nil-ed out")
+	})
 }
 
 func TestLimitingBucketedPool_AppendToSlice(t *testing.T) {
@@ -253,7 +293,7 @@ func TestLimitingBucketedPool_AppendToSlice(t *testing.T) {
 		limiter.FPointSlices,
 		FPointSize,
 		false,
-		nil,
+		func(point promql.FPoint) promql.FPoint { return point },
 		func(s []promql.FPoint, _ *limiter.MemoryConsumptionTracker) {
 			onPutHookSlices = append(onPutHookSlices, s)
 		},
@@ -303,7 +343,7 @@ func TestLimitingBucketedPool_AppendToSlice_Error(t *testing.T) {
 		limiter.FPointSlices,
 		FPointSize,
 		false,
-		nil,
+		func(point promql.FPoint) promql.FPoint { return point },
 		nil,
 	)
 
