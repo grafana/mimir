@@ -83,6 +83,9 @@ func Test_newStoreGatewayClientFactory(t *testing.T) {
 }
 
 type mockStoreGatewayServer struct {
+	// wiresmith-generated StoreGatewayServer requires this embedded field.
+	storegatewaypb.UnimplementedStoreGatewayServer
+
 	onSeries      func(req *storepb.SeriesRequest, srv storegatewaypb.StoreGateway_SeriesServer) error
 	onLabelNames  func(ctx context.Context, req *storepb.LabelNamesRequest) (*storepb.LabelNamesResponse, error)
 	onLabelValues func(ctx context.Context, req *storepb.LabelValuesRequest) (*storepb.LabelValuesResponse, error)

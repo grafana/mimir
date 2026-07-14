@@ -170,7 +170,7 @@ func prepareCompactorForExecutorTest(t *testing.T, cfg Config, bkt objstore.Buck
 func testLeaseJobRequest() *compactorschedulerpb.LeaseJobRequest {
 	return &compactorschedulerpb.LeaseJobRequest{
 		WorkerId: "test-compactor",
-		LaneRequests: []*compactorschedulerpb.LaneRequest{
+		LaneRequests: []compactorschedulerpb.LaneRequest{
 			{JobType: compactorschedulerpb.JOB_TYPE_COMPACTION},
 			{JobType: compactorschedulerpb.JOB_TYPE_PLANNING},
 		},

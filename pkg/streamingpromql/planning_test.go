@@ -2166,7 +2166,7 @@ func requireHistogramCounts(t *testing.T, reg *prometheus.Registry, name string,
 	require.Equal(t, strings.TrimSpace(expected), builder.String())
 }
 
-func timestampOf(ts int64) *time.Time {
+func timestampOf(ts int64) time.Time {
 	return core.TimeFromTimestamp(&ts)
 }
 

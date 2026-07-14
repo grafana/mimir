@@ -34,7 +34,7 @@ func (i *Ingester) SearchLabelNames(req *client.SearchLabelNamesRequest, stream 
 	// Validate user input ahead of the deferred read-error mapper so request
 	// errors surface as codes.InvalidArgument rather than being re-tagged as
 	// codes.Internal — matching the store-gateway side (bucket_search.go).
-	hints, matchers, err := buildSearchHints(req.Filter, req.Ordering, req.Limit, req.Matchers)
+	hints, matchers, err := buildSearchHints(&req.Filter, req.Ordering, req.Limit, req.Matchers)
 	if err != nil {
 		return status.Error(codes.InvalidArgument, err.Error())
 	}
@@ -72,7 +72,7 @@ func (i *Ingester) SearchLabelNames(req *client.SearchLabelNamesRequest, stream 
 // SearchLabelValues streams label values for req.Name matching the search filter.
 func (i *Ingester) SearchLabelValues(req *client.SearchLabelValuesRequest, stream client.Ingester_SearchLabelValuesServer) (err error) {
 	// See SearchLabelNames for why validation runs ahead of the deferred mapper.
-	hints, matchers, err := buildSearchHints(req.Filter, req.Ordering, req.Limit, req.Matchers)
+	hints, matchers, err := buildSearchHints(&req.Filter, req.Ordering, req.Limit, req.Matchers)
 	if err != nil {
 		return status.Error(codes.InvalidArgument, err.Error())
 	}

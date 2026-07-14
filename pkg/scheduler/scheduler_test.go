@@ -18,15 +18,14 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/gogo/protobuf/types"
 	"github.com/grafana/dskit/cancellation"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/grpcutil"
-	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
 	"github.com/grafana/dskit/user"
+	"github.com/grafana/wiresmith/types/known/anypb"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
@@ -46,7 +45,7 @@ import (
 	"github.com/grafana/mimir/pkg/queue"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
 	"github.com/grafana/mimir/pkg/util"
-	"github.com/grafana/mimir/pkg/util/httpgrpcutil"
+	"github.com/grafana/mimir/pkg/util/httpgrpcpb"
 	"github.com/grafana/mimir/pkg/util/promtest"
 	util_test "github.com/grafana/mimir/pkg/util/test"
 )
@@ -189,7 +188,7 @@ func TestSchedulerBasicEnqueue_HTTPPayload(t *testing.T) {
 		Type:         schedulerpb.ENQUEUE,
 		QueryID:      1,
 		UserID:       "test",
-		Payload:      &schedulerpb.FrontendToScheduler_HttpRequest{HttpRequest: &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"}},
+		Payload:      &schedulerpb.FrontendToScheduler_HttpRequest{HttpRequest: httpgrpcpb.HTTPRequest{Method: "GET", Url: "/hello"}},
 		StatsEnabled: true,
 	})
 
@@ -218,12 +217,12 @@ func TestSchedulerBasicEnqueue_ProtobufPayload(t *testing.T) {
 	scheduler, frontendClient, querierClient := setupScheduler(t, nil)
 
 	frontendLoop := initFrontendLoop(t, frontendClient, "frontend-12345")
-	request := &schedulerpb.ProtobufRequest{Payload: &types.Any{TypeUrl: "http://my.types/some_request", Value: []byte("hello world")}}
+	request := &schedulerpb.ProtobufRequest{Payload: anypb.Any{TypeUrl: "http://my.types/some_request", Value: []byte("hello world")}}
 	frontendToScheduler(t, frontendLoop, &schedulerpb.FrontendToScheduler{
 		Type:         schedulerpb.ENQUEUE,
 		QueryID:      1,
 		UserID:       "test",
-		Payload:      &schedulerpb.FrontendToScheduler_ProtobufRequest{ProtobufRequest: request},
+		Payload:      &schedulerpb.FrontendToScheduler_ProtobufRequest{ProtobufRequest: *request},
 		StatsEnabled: true,
 	})
 
@@ -255,7 +254,7 @@ func TestSchedulerEnqueueWithCancel(t *testing.T) {
 		Type:    schedulerpb.ENQUEUE,
 		QueryID: 1,
 		UserID:  "test",
-		Payload: &schedulerpb.FrontendToScheduler_HttpRequest{HttpRequest: &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"}},
+		Payload: &schedulerpb.FrontendToScheduler_HttpRequest{HttpRequest: httpgrpcpb.HTTPRequest{Method: "GET", Url: "/hello"}},
 	})
 
 	frontendToScheduler(t, frontendLoop, &schedulerpb.FrontendToScheduler{
@@ -280,14 +279,14 @@ func TestSchedulerEnqueueByMultipleFrontendsWithCancel(t *testing.T) {
 		Type:    schedulerpb.ENQUEUE,
 		QueryID: 1,
 		UserID:  "test",
-		Payload: &schedulerpb.FrontendToScheduler_HttpRequest{HttpRequest: &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello1"}},
+		Payload: &schedulerpb.FrontendToScheduler_HttpRequest{HttpRequest: httpgrpcpb.HTTPRequest{Method: "GET", Url: "/hello1"}},
 	})
 
 	frontendToScheduler(t, frontendLoop2, &schedulerpb.FrontendToScheduler{
 		Type:    schedulerpb.ENQUEUE,
 		QueryID: 1,
 		UserID:  "test",
-		Payload: &schedulerpb.FrontendToScheduler_HttpRequest{HttpRequest: &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello2"}},
+		Payload: &schedulerpb.FrontendToScheduler_HttpRequest{HttpRequest: httpgrpcpb.HTTPRequest{Method: "GET", Url: "/hello2"}},
 	})
 
 	// Cancel first query by first frontend.
@@ -320,7 +319,7 @@ func TestSchedulerEnqueueWithFrontendDisconnect(t *testing.T) {
 		Type:    schedulerpb.ENQUEUE,
 		QueryID: 1,
 		UserID:  "test",
-		Payload: &schedulerpb.FrontendToScheduler_HttpRequest{HttpRequest: &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"}},
+		Payload: &schedulerpb.FrontendToScheduler_HttpRequest{HttpRequest: httpgrpcpb.HTTPRequest{Method: "GET", Url: "/hello"}},
 	})
 
 	// Wait until the frontend has connected to the scheduler.
@@ -351,7 +350,7 @@ func TestCancelRequestInProgress_QuerierFinishesBeforeObservingCancellation(t *t
 		Type:    schedulerpb.ENQUEUE,
 		QueryID: 1,
 		UserID:  "test",
-		Payload: &schedulerpb.FrontendToScheduler_HttpRequest{HttpRequest: &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"}},
+		Payload: &schedulerpb.FrontendToScheduler_HttpRequest{HttpRequest: httpgrpcpb.HTTPRequest{Method: "GET", Url: "/hello"}},
 	})
 
 	querierLoop, err := querierClient.QuerierLoop(context.Background())
@@ -389,7 +388,7 @@ func TestCancelRequestInProgress_QuerierObservesCancellation(t *testing.T) {
 		Type:    schedulerpb.ENQUEUE,
 		QueryID: 1,
 		UserID:  "test",
-		Payload: &schedulerpb.FrontendToScheduler_HttpRequest{HttpRequest: &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"}},
+		Payload: &schedulerpb.FrontendToScheduler_HttpRequest{HttpRequest: httpgrpcpb.HTTPRequest{Method: "GET", Url: "/hello"}},
 	})
 
 	querierLoop, err := querierClient.QuerierLoop(context.Background())
@@ -423,13 +422,13 @@ func TestTracingContext(t *testing.T) {
 		Type:            schedulerpb.ENQUEUE,
 		QueryID:         1,
 		UserID:          "test",
-		Payload:         &schedulerpb.FrontendToScheduler_HttpRequest{HttpRequest: &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"}},
+		Payload:         &schedulerpb.FrontendToScheduler_HttpRequest{HttpRequest: httpgrpcpb.HTTPRequest{Method: "GET", Url: "/hello"}},
 		FrontendAddress: "frontend-12345",
 	}
 
 	ctx, sp := tracer.Start(context.Background(), "client")
 	defer sp.End()
-	otel.GetTextMapPropagator().Inject(ctx, (*httpgrpcutil.HttpgrpcHeadersCarrier)(req.GetHttpRequest()))
+	otel.GetTextMapPropagator().Inject(ctx, (*httpgrpcpb.HeadersCarrier)(req.GetHttpRequest()))
 
 	frontendToScheduler(t, frontendLoop, req)
 
@@ -463,7 +462,7 @@ func TestSchedulerShutdown_FrontendLoop(t *testing.T) {
 		Type:    schedulerpb.ENQUEUE,
 		QueryID: 1,
 		UserID:  "test",
-		Payload: &schedulerpb.FrontendToScheduler_HttpRequest{HttpRequest: &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"}},
+		Payload: &schedulerpb.FrontendToScheduler_HttpRequest{HttpRequest: httpgrpcpb.HTTPRequest{Method: "GET", Url: "/hello"}},
 	}))
 
 	msg, err := frontendLoop.Recv()
@@ -480,7 +479,7 @@ func TestSchedulerShutdown_QuerierLoop(t *testing.T) {
 		Type:    schedulerpb.ENQUEUE,
 		QueryID: 1,
 		UserID:  "test",
-		Payload: &schedulerpb.FrontendToScheduler_HttpRequest{HttpRequest: &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"}},
+		Payload: &schedulerpb.FrontendToScheduler_HttpRequest{HttpRequest: httpgrpcpb.HTTPRequest{Method: "GET", Url: "/hello"}},
 	})
 
 	// Scheduler now has 1 query. Let's connect querier and fetch it.
@@ -517,13 +516,13 @@ func TestSchedulerShutdown_PendingRequests(t *testing.T) {
 		Type:    schedulerpb.ENQUEUE,
 		QueryID: 1,
 		UserID:  "test",
-		Payload: &schedulerpb.FrontendToScheduler_HttpRequest{HttpRequest: &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"}},
+		Payload: &schedulerpb.FrontendToScheduler_HttpRequest{HttpRequest: httpgrpcpb.HTTPRequest{Method: "GET", Url: "/hello"}},
 	})
 	frontendToScheduler(t, frontendLoop, &schedulerpb.FrontendToScheduler{
 		Type:    schedulerpb.ENQUEUE,
 		QueryID: 2,
 		UserID:  "test",
-		Payload: &schedulerpb.FrontendToScheduler_HttpRequest{HttpRequest: &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"}},
+		Payload: &schedulerpb.FrontendToScheduler_HttpRequest{HttpRequest: httpgrpcpb.HTTPRequest{Method: "GET", Url: "/hello"}},
 	})
 
 	// Scheduler now has 2 queries. Let's connect querier and fetch it.
@@ -582,7 +581,7 @@ func TestSchedulerMaxOutstandingRequests(t *testing.T) {
 			Type:    schedulerpb.ENQUEUE,
 			QueryID: uint64(i),
 			UserID:  "test", // for same user.
-			Payload: &schedulerpb.FrontendToScheduler_HttpRequest{HttpRequest: &httpgrpc.HTTPRequest{}},
+			Payload: &schedulerpb.FrontendToScheduler_HttpRequest{HttpRequest: httpgrpcpb.HTTPRequest{}},
 		}))
 
 		msg, err := fl.Recv()
@@ -597,14 +596,14 @@ func TestSchedulerMaxOutstandingRequests(t *testing.T) {
 		Type:    schedulerpb.ENQUEUE,
 		QueryID: 0,
 		UserID:  "test",
-		Payload: &schedulerpb.FrontendToScheduler_HttpRequest{HttpRequest: &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"}},
+		Payload: &schedulerpb.FrontendToScheduler_HttpRequest{HttpRequest: httpgrpcpb.HTTPRequest{Method: "GET", Url: "/hello"}},
 	}
 
 	// Inject span context to the request so we can check handling of max outstanding requests.
 	spanExporter.Reset()
 	ctx, sp := tracer.Start(context.Background(), "client")
 	defer sp.End()
-	otel.GetTextMapPropagator().Inject(ctx, (*httpgrpcutil.HttpgrpcHeadersCarrier)(req.GetHttpRequest()))
+	otel.GetTextMapPropagator().Inject(ctx, (*httpgrpcpb.HeadersCarrier)(req.GetHttpRequest()))
 
 	require.NoError(t, fl.Send(&req))
 
@@ -626,7 +625,7 @@ func TestSchedulerForwardsErrorToFrontend_HTTPPayload(t *testing.T) {
 		Type:    schedulerpb.ENQUEUE,
 		QueryID: 100,
 		UserID:  "test",
-		Payload: &schedulerpb.FrontendToScheduler_HttpRequest{HttpRequest: &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"}},
+		Payload: &schedulerpb.FrontendToScheduler_HttpRequest{HttpRequest: httpgrpcpb.HTTPRequest{Method: "GET", Url: "/hello"}},
 	})
 
 	// Scheduler now has 1 query. We now connect querier, fetch the request, and then close the connection.
@@ -663,12 +662,12 @@ func TestSchedulerForwardsErrorToFrontend_ProtobufPayload(t *testing.T) {
 
 	// After preparations, start frontend and querier.
 	frontendLoop := initFrontendLoop(t, frontendClient, frontendAddress)
-	request := &schedulerpb.ProtobufRequest{Payload: &types.Any{TypeUrl: "http://my.types/some_request", Value: []byte("hello world")}}
+	request := &schedulerpb.ProtobufRequest{Payload: anypb.Any{TypeUrl: "http://my.types/some_request", Value: []byte("hello world")}}
 	frontendToScheduler(t, frontendLoop, &schedulerpb.FrontendToScheduler{
 		Type:    schedulerpb.ENQUEUE,
 		QueryID: 100,
 		UserID:  "test",
-		Payload: &schedulerpb.FrontendToScheduler_ProtobufRequest{ProtobufRequest: request},
+		Payload: &schedulerpb.FrontendToScheduler_ProtobufRequest{ProtobufRequest: *request},
 	})
 
 	// Scheduler now has 1 query. We now connect querier, fetch the request, and then close the connection.
@@ -697,7 +696,7 @@ func TestSchedulerForwardsErrorToFrontend_ProtobufPayload(t *testing.T) {
 			{
 				QueryID: 100,
 				Data: &frontendv2pb.QueryResultStreamRequest_Error{
-					Error: &querierpb.Error{
+					Error: querierpb.Error{
 						Type:    mimirpb.QUERY_ERROR_TYPE_INTERNAL,
 						Message: "failed to receive response from querier 'querier-1': EOF",
 					},
@@ -727,13 +726,13 @@ func TestSchedulerQueueMetrics(t *testing.T) {
 		Type:    schedulerpb.ENQUEUE,
 		QueryID: 1,
 		UserID:  "test",
-		Payload: &schedulerpb.FrontendToScheduler_HttpRequest{HttpRequest: &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"}},
+		Payload: &schedulerpb.FrontendToScheduler_HttpRequest{HttpRequest: httpgrpcpb.HTTPRequest{Method: "GET", Url: "/hello"}},
 	})
 	frontendToScheduler(t, frontendLoop, &schedulerpb.FrontendToScheduler{
 		Type:    schedulerpb.ENQUEUE,
 		QueryID: 1,
 		UserID:  "another",
-		Payload: &schedulerpb.FrontendToScheduler_HttpRequest{HttpRequest: &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"}},
+		Payload: &schedulerpb.FrontendToScheduler_HttpRequest{HttpRequest: httpgrpcpb.HTTPRequest{Method: "GET", Url: "/hello"}},
 	})
 
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
@@ -771,13 +770,13 @@ func TestSchedulerMaxQueueLengthMetric(t *testing.T) {
 		Type:    schedulerpb.ENQUEUE,
 		QueryID: 1,
 		UserID:  "test",
-		Payload: &schedulerpb.FrontendToScheduler_HttpRequest{HttpRequest: &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"}},
+		Payload: &schedulerpb.FrontendToScheduler_HttpRequest{HttpRequest: httpgrpcpb.HTTPRequest{Method: "GET", Url: "/hello"}},
 	})
 	frontendToScheduler(t, frontendLoop, &schedulerpb.FrontendToScheduler{
 		Type:    schedulerpb.ENQUEUE,
 		QueryID: 1,
 		UserID:  "another",
-		Payload: &schedulerpb.FrontendToScheduler_HttpRequest{HttpRequest: &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"}},
+		Payload: &schedulerpb.FrontendToScheduler_HttpRequest{HttpRequest: httpgrpcpb.HTTPRequest{Method: "GET", Url: "/hello"}},
 	})
 
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
@@ -828,7 +827,7 @@ func TestSchedulerQuerierMetrics(t *testing.T) {
 		Type:         schedulerpb.ENQUEUE,
 		QueryID:      1,
 		UserID:       "test",
-		Payload:      &schedulerpb.FrontendToScheduler_HttpRequest{HttpRequest: &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"}},
+		Payload:      &schedulerpb.FrontendToScheduler_HttpRequest{HttpRequest: httpgrpcpb.HTTPRequest{Method: "GET", Url: "/hello"}},
 		StatsEnabled: true,
 	})
 
@@ -963,13 +962,14 @@ func (l limits) MaxQueriersPerUser(_ string) int {
 
 type frontendMock struct {
 	mu            sync.Mutex
-	httpResponses map[uint64]*httpgrpc.HTTPResponse
+	httpResponses map[uint64]*httpgrpcpb.HTTPResponse
 	grpcResponses map[uint64][]*frontendv2pb.QueryResultStreamRequest
+	frontendv2pb.UnimplementedFrontendForQuerierServer
 }
 
 func newFrontendMock(t *testing.T) (*frontendMock, string) {
 	mock := &frontendMock{
-		httpResponses: map[uint64]*httpgrpc.HTTPResponse{},
+		httpResponses: map[uint64]*httpgrpcpb.HTTPResponse{},
 		grpcResponses: map[uint64][]*frontendv2pb.QueryResultStreamRequest{},
 	}
 
@@ -1038,12 +1038,12 @@ func (f *frontendMock) QueryResultStream(stream frontendv2pb.FrontendForQuerier_
 		}
 
 		queryID = msg.QueryID
-		msg.BufferHolder = mimirpb.BufferHolder{} // Clear the reference to the underlying buffer to make assertions easier.
+		// BufferHolder was a gogo-era buffer-pooling hook; wiresmith types have no backing buffer to release.
 		msgs = append(msgs, msg)
 	}
 }
 
-func (f *frontendMock) getRequest(queryID uint64) (*httpgrpc.HTTPResponse, []*frontendv2pb.QueryResultStreamRequest) {
+func (f *frontendMock) getRequest(queryID uint64) (*httpgrpcpb.HTTPResponse, []*frontendv2pb.QueryResultStreamRequest) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 

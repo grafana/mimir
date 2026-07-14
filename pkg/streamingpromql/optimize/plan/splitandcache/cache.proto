@@ -6,16 +6,12 @@ package splitandcache;
 
 import "github.com/grafana/mimir/pkg/querier/querierpb/querier.proto";
 import "github.com/grafana/mimir/pkg/streamingpromql/types/types.proto";
-import "gogoproto/gogo.proto";
+import "wiresmith/options.proto";
 
-option (gogoproto.equal_all) = false;
-option (gogoproto.goproto_sizecache_all) = false;
-option (gogoproto.goproto_unkeyed_all) = false;
-option (gogoproto.goproto_unrecognized_all) = false;
-option (gogoproto.marshaler_all) = true;
-option (gogoproto.messagename_all) = true;
-option (gogoproto.sizer_all) = true;
-option (gogoproto.unmarshaler_all) = true;
+// no_presence_all keeps gogoproto value semantics (no presence bitmap,
+// declared-fields-only struct layout), matching the rest of the cluster and the
+// nullable=false shape the previous gogoproto output produced.
+option (wiresmith.options.no_presence_all) = true;
 
 message CacheEntry {
   // cacheKey is the original (unhashed) cache key, used to detect hash collisions.
@@ -29,7 +25,7 @@ message CacheEntry {
   // Adjacent entries must be separated by at least one step.
   // For example, with a step of 1m, an extent that ends at 08:04:00 may be followed by an extent that starts at 08:06:00,
   // but not one that starts at 08:05:00.
-  repeated CachedExtent extents = 2 [(gogoproto.nullable) = false];
+  repeated CachedExtent extents = 2;
 }
 
 message CachedExtent {
@@ -37,14 +33,14 @@ message CachedExtent {
   int64 endT = 2; // End timestamp, in milliseconds since Unix epoch.
 
   // Series metadata for each series stored in this extent.
-  repeated querierpb.SeriesMetadata seriesMetadata = 3 [(gogoproto.nullable) = false];
+  repeated querierpb.SeriesMetadata seriesMetadata = 3;
 
   // Series data for each series stored in this extent, one per series in seriesMetadata.
   // The entries must be in the same order as seriesMetadata.
-  repeated querierpb.InstantVectorSeriesData data = 4 [(gogoproto.nullable) = false];
+  repeated querierpb.InstantVectorSeriesData data = 4;
 
-  querierpb.Annotations annotations = 5 [(gogoproto.nullable) = false];
-  types.EncodedOperatorEvaluationStats stats = 6 [(gogoproto.nullable) = false];
+  querierpb.Annotations annotations = 5;
+  types.EncodedOperatorEvaluationStats stats = 6;
 
   // ID of the trace that wrote this extent.
   // If this extent is the combination of multiple separate evaluations, this is the ID of the most recent evaluation.

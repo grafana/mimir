@@ -1250,8 +1250,11 @@ func (q *blocksStoreQuerier) receiveMessage(c BlocksStoreClient, stream storegat
 
 	if h := resp.GetHints(); h != nil {
 		// Note that we use a different but equivalent hints type for the opaque field.
+		// SeriesResponse.hints is a oneof variant, where customtype (AnyAdapter)
+		// is rejected, so it keeps wiresmith's native anypb.Any; bridge it to a
+		// gogo types.Any (wire-identical) for gogo's registry-based UnmarshalAny.
 		opaqueResHints := hintspb.SeriesResponseHints{}
-		if err := types.UnmarshalAny(h, &opaqueResHints); err != nil {
+		if err := types.UnmarshalAny(&types.Any{TypeUrl: h.TypeUrl, Value: h.Value}, &opaqueResHints); err != nil {
 			return myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched, false, false, errors.Wrapf(err, "failed to unmarshal series hints from %s", c.RemoteAddress())
 		}
 
@@ -1352,11 +1355,11 @@ func (q *blocksStoreQuerier) fetchLabelNamesFromStore(
 				}
 
 				myQueriedBlocks = ids
-			} else if namesResp.Hints != nil { //nolint:staticcheck // Ignore SA1019. This use will be removed in Mimir 3.2
+			} else if namesResp.Hints.Any() != nil { //nolint:staticcheck // Ignore SA1019. This use will be removed in Mimir 3.2
 				// Note that we use a different but equivalent hints type for the opaque field.
 				resHints := hintspb.LabelNamesResponseHints{}
 				//nolint:staticcheck // Ignore SA1019. This use will be removed in Mimir 3.2
-				if err := types.UnmarshalAny(namesResp.Hints, &resHints); err != nil {
+				if err := types.UnmarshalAny(namesResp.Hints.Any(), &resHints); err != nil {
 					return errors.Wrapf(err, "failed to unmarshal label names hints from %s", c.RemoteAddress())
 				}
 
@@ -1442,11 +1445,11 @@ func (q *blocksStoreQuerier) fetchLabelValuesFromStore(
 				}
 
 				myQueriedBlocks = ids
-			} else if valuesResp.Hints != nil { //nolint:staticcheck // Ignore SA1019. This use will be removed in Mimir 3.2
+			} else if valuesResp.Hints.Any() != nil { //nolint:staticcheck // Ignore SA1019. This use will be removed in Mimir 3.2
 				// Note that we use a different but equivalent hints type for the opaque field.
 				resHints := hintspb.LabelValuesResponseHints{}
 				//nolint:staticcheck // Ignore SA1019. This use will be removed in Mimir 3.2
-				if err := types.UnmarshalAny(valuesResp.Hints, &resHints); err != nil {
+				if err := types.UnmarshalAny(valuesResp.Hints.Any(), &resHints); err != nil {
 					return errors.Wrapf(err, "failed to unmarshal label values hints from %s", c.RemoteAddress())
 				}
 
@@ -1546,7 +1549,7 @@ func createSeriesRequest(minT, maxT int64, matchers []storepb.LabelMatcher, skip
 		MaxTime:  maxT,
 		Matchers: matchers,
 		//nolint:staticcheck // Ignore SA1019. This use will be removed in Mimir 3.2
-		Hints:                    anyHints,
+		Hints:                    storepb.FromAny(anyHints),
 		RequestHints:             requestHints,
 		SkipChunks:               skipChunks,
 		StreamingChunksBatchSize: streamingBatchSize,
@@ -1596,7 +1599,7 @@ func createLabelNamesRequest(minT, maxT int64, blockIDs []ulid.ULID, hints *stor
 	}
 
 	//nolint:staticcheck // Ignore SA1019. This use will be removed in Mimir 3.2
-	req.Hints = anyHints
+	req.Hints = storepb.FromAny(anyHints)
 	req.RequestHints = requestHints
 
 	return req, nil
@@ -1646,7 +1649,7 @@ func createLabelValuesRequest(minT, maxT int64, label string, blockIDs []ulid.UL
 	}
 
 	//nolint:staticcheck // Ignore SA1019. This use will be removed in Mimir 3.2
-	req.Hints = anyHints
+	req.Hints = storepb.FromAny(anyHints)
 	req.RequestHints = requestHints
 
 	return req, nil

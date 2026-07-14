@@ -430,7 +430,7 @@ func (s *splitAndCacheMiddleware) fetchCacheExtents(ctx context.Context, now tim
 				"start", time.UnixMilli(cachedExtent.Start),
 				"end", time.UnixMilli(cachedExtent.End),
 			)
-			usedBytes += cachedExtent.Response.Size()
+			usedBytes += cachedExtent.Response.SizeWiresmith()
 		}
 
 		if len(extents[keyIdx]) == 0 {

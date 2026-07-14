@@ -7,22 +7,18 @@ syntax = "proto3";
 package hintspb;
 
 import "github.com/grafana/mimir/pkg/storegateway/storepb/types.proto";
-import "gogoproto/gogo.proto";
+import "wiresmith/options.proto";
 
 option go_package = "hintspb";
-option (gogoproto.goproto_getters_all) = false;
-option (gogoproto.goproto_sizecache_all) = false; // Do not generate XXX_sizecache fields to reduce memory footprint.
-option (gogoproto.goproto_unkeyed_all) = false; // Do not generate XXX_unkeyed fields to reduce memory footprint.
-option (gogoproto.goproto_unrecognized_all) = false; // Do not generate XXX_unrecognized fields to reduce memory footprint.
-option (gogoproto.marshaler_all) = true;
-option (gogoproto.sizer_all) = true;
-option (gogoproto.unmarshaler_all) = true;
+// no_presence_all reproduces the gogoproto goproto_{unkeyed,unrecognized,
+// sizecache}_all=false layout (declared-fields-only, no presence bitmap).
+option (wiresmith.options.no_presence_all) = true;
 
 message SeriesRequestHints {
   // block_matchers is a list of label matchers that are evaluated against each single block's
   // labels to filter which blocks get queried. If the list is empty, no per-block filtering
   // is applied.
-  repeated thanos.LabelMatcher block_matchers = 1 [(gogoproto.nullable) = false];
+  repeated thanos.LabelMatcher block_matchers = 1;
 
   reserved 2; // projections include, not used anymore.
   reserved 3; // projections labels, not used anymore.
@@ -30,7 +26,7 @@ message SeriesRequestHints {
 
 message SeriesResponseHints {
   // queried_blocks is the list of blocks that have been queried.
-  repeated Block queried_blocks = 1 [(gogoproto.nullable) = false];
+  repeated Block queried_blocks = 1;
 }
 
 message Block {
@@ -41,22 +37,22 @@ message LabelNamesRequestHints {
   // block_matchers is a list of label matchers that are evaluated against each single block's
   // labels to filter which blocks get queried. If the list is empty, no per-block filtering
   // is applied.
-  repeated thanos.LabelMatcher block_matchers = 1 [(gogoproto.nullable) = false];
+  repeated thanos.LabelMatcher block_matchers = 1;
 }
 
 message LabelNamesResponseHints {
   // queried_blocks is the list of blocks that have been queried.
-  repeated Block queried_blocks = 1 [(gogoproto.nullable) = false];
+  repeated Block queried_blocks = 1;
 }
 
 message LabelValuesRequestHints {
   // block_matchers is a list of label matchers that are evaluated against each single block's
   // labels to filter which blocks get queried. If the list is empty, no per-block filtering
   // is applied.
-  repeated thanos.LabelMatcher block_matchers = 1 [(gogoproto.nullable) = false];
+  repeated thanos.LabelMatcher block_matchers = 1;
 }
 
 message LabelValuesResponseHints {
   // queried_blocks is the list of blocks that have been queried.
-  repeated Block queried_blocks = 1 [(gogoproto.nullable) = false];
+  repeated Block queried_blocks = 1;
 }

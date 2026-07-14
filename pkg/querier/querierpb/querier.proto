@@ -8,15 +8,18 @@ import "github.com/grafana/mimir/pkg/mimirpb/mimir.proto";
 import "github.com/grafana/mimir/pkg/querier/stats/stats.proto";
 import "github.com/grafana/mimir/pkg/streamingpromql/planning/plan.proto";
 import "github.com/grafana/mimir/pkg/streamingpromql/types/types.proto";
-import "gogoproto/gogo.proto";
+import "wiresmith/options.proto";
 
 option go_package = "querierpb";
-option (gogoproto.marshaler_all) = true;
-option (gogoproto.unmarshaler_all) = true;
+// Note: gogoproto.marshaler_all / unmarshaler_all are unnecessary under
+// wiresmith — Marshal/Unmarshal methods are always emitted. no_presence_all
+// keeps gogoproto value semantics (no presence bitmap, declared-fields-only
+// struct layout).
+option (wiresmith.options.no_presence_all) = true;
 
 message EvaluateQueryRequest {
-  planning.EncodedQueryPlan plan = 1 [(gogoproto.nullable) = false];
-  repeated EvaluationNode nodes = 2 [(gogoproto.nullable) = false];
+  planning.EncodedQueryPlan plan = 1;
+  repeated EvaluationNode nodes = 2;
   reserved 3; // Formerly: enablePerStepStats
   uint64 batchSize = 4;
   // seriesMetadataBatchSize is the maximum number of series metadata entries to include in a single
@@ -29,7 +32,7 @@ message EvaluateQueryRequest {
 
 message EvaluationNode {
   int64 nodeIndex = 1;
-  types.EncodedQueryTimeRange timeRange = 2 [(gogoproto.nullable) = false];
+  types.EncodedQueryTimeRange timeRange = 2;
 }
 
 message EvaluateQueryResponse {
@@ -45,7 +48,7 @@ message EvaluateQueryResponse {
 
 message EvaluateQueryResponseSeriesMetadata {
   int64 nodeIndex = 1;
-  repeated SeriesMetadata series = 2 [(gogoproto.nullable) = false];
+  repeated SeriesMetadata series = 2;
 
   // totalSeriesCountForNode is non-zero if the EvaluateQueryRequest has a non-zero seriesMetadataBatchSize and the
   // querier supports batching series metadata messages.
@@ -55,10 +58,7 @@ message EvaluateQueryResponseSeriesMetadata {
 }
 
 message SeriesMetadata {
-  repeated cortexpb.LabelPair labels = 1 [
-    (gogoproto.nullable) = false,
-    (gogoproto.customtype) = "github.com/grafana/mimir/pkg/mimirpb.LabelAdapter"
-  ];
+  repeated cortexpb.LabelPair labels = 1 [(wiresmith.options.customtype) = "github.com/grafana/mimir/pkg/mimirpb.LabelAdapter"];
   bool dropName = 2;
 }
 
@@ -69,17 +69,17 @@ message EvaluateQueryResponseStringValue {
 
 message EvaluateQueryResponseScalarValue {
   int64 nodeIndex = 1;
-  repeated cortexpb.Sample values = 2 [(gogoproto.nullable) = false];
+  repeated cortexpb.Sample values = 2;
 }
 
 message EvaluateQueryResponseInstantVectorSeriesData {
   int64 nodeIndex = 1;
-  repeated InstantVectorSeriesData series = 2 [(gogoproto.nullable) = false];
+  repeated InstantVectorSeriesData series = 2;
 }
 
 message InstantVectorSeriesData {
-  repeated cortexpb.Sample floats = 1 [(gogoproto.nullable) = false];
-  repeated cortexpb.FloatHistogramPair histograms = 2 [(gogoproto.nullable) = false];
+  repeated cortexpb.Sample floats = 1;
+  repeated cortexpb.FloatHistogramPair histograms = 2;
 }
 
 message EvaluateQueryResponseRangeVectorStepData {
@@ -91,8 +91,8 @@ message EvaluateQueryResponseRangeVectorStepData {
   int64 range_start = 4;
   int64 range_end = 5;
 
-  repeated cortexpb.Sample floats = 6 [(gogoproto.nullable) = false];
-  repeated cortexpb.FloatHistogramPair histograms = 7 [(gogoproto.nullable) = false];
+  repeated cortexpb.Sample floats = 6;
+  repeated cortexpb.FloatHistogramPair histograms = 7;
 }
 
 message Error {
@@ -101,10 +101,10 @@ message Error {
 }
 
 message EvaluateQueryResponseEvaluationCompleted {
-  Annotations annotations = 1 [(gogoproto.nullable) = false]; // Deprecated, retained only for backwards compatibility with query-frontends that do not support per-node annotations.
-  stats.Stats stats = 2 [(gogoproto.nullable) = false];
-  map<int64, types.EncodedOperatorEvaluationStats> perNodeStats = 3 [(gogoproto.nullable) = false];
-  map<int64, Annotations> perNodeAnnotations = 4 [(gogoproto.nullable) = false];
+  Annotations annotations = 1; // Deprecated, retained only for backwards compatibility with query-frontends that do not support per-node annotations.
+  stats.Stats stats = 2;
+  map<int64, types.EncodedOperatorEvaluationStats> perNodeStats = 3;
+  map<int64, Annotations> perNodeAnnotations = 4;
 }
 
 message Annotations {

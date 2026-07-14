@@ -27,6 +27,7 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/user"
 	"github.com/grafana/regexp"
+	"github.com/grafana/wiresmith/types/known/anypb"
 	"github.com/oklog/ulid/v2"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -3560,7 +3561,7 @@ func mockStreamingSeriesBatchResponse(endOfStream bool, lbls ...[]mimirpb.LabelA
 	res.IsEndOfSeriesStream = endOfStream
 	return &storepb.SeriesResponse{
 		Result: &storepb.SeriesResponse_StreamingSeries{
-			StreamingSeries: res,
+			StreamingSeries: *res,
 		},
 	}
 }
@@ -3568,7 +3569,7 @@ func mockStreamingSeriesBatchResponse(endOfStream bool, lbls ...[]mimirpb.LabelA
 func mockStreamingSeriesChunksResponse(index uint64, chks []storepb.AggrChunk) *storepb.SeriesResponse {
 	return &storepb.SeriesResponse{
 		Result: &storepb.SeriesResponse_StreamingChunks{
-			StreamingChunks: &storepb.StreamingChunksBatch{
+			StreamingChunks: storepb.StreamingChunksBatch{
 				Series: []*storepb.StreamingChunks{
 					{
 						SeriesIndex: index,
@@ -3583,7 +3584,7 @@ func mockStreamingSeriesChunksResponse(index uint64, chks []storepb.AggrChunk) *
 func mockStatsResponse(fetchedIndexBytes uint64) *storepb.SeriesResponse {
 	return &storepb.SeriesResponse{
 		Result: &storepb.SeriesResponse_Stats{
-			Stats: &storepb.Stats{FetchedIndexBytes: fetchedIndexBytes},
+			Stats: storepb.Stats{FetchedIndexBytes: fetchedIndexBytes},
 		},
 	}
 }
@@ -3601,12 +3602,14 @@ func mockHintsResponse(ids ...ulid.ULID) *storepb.SeriesResponse {
 
 	return &storepb.SeriesResponse{
 		Result: &storepb.SeriesResponse_Hints{
-			Hints: marshalled,
+			// SeriesResponse.hints is wiresmith-native anypb.Any (customtype is
+			// rejected on oneof variants); bridge the gogo Any into it.
+			Hints: anypb.Any{TypeUrl: marshalled.TypeUrl, Value: marshalled.Value},
 		},
 	}
 }
 
-func mockNamesHints(ids ...ulid.ULID) *types.Any {
+func mockNamesHints(ids ...ulid.ULID) storepb.AnyAdapter {
 	hints := &hintspb.LabelNamesResponseHints{}
 	for _, id := range ids {
 		hints.AddQueriedBlock(id)
@@ -3617,7 +3620,7 @@ func mockNamesHints(ids ...ulid.ULID) *types.Any {
 		panic(err)
 	}
 
-	return marshalled
+	return storepb.FromAny(marshalled)
 }
 
 func mockNamesResponseHints(ids ...ulid.ULID) *storepb.LabelNamesResponseHints {
@@ -3628,7 +3631,7 @@ func mockNamesResponseHints(ids ...ulid.ULID) *storepb.LabelNamesResponseHints {
 	return hints
 }
 
-func mockValuesHints(ids ...ulid.ULID) *types.Any {
+func mockValuesHints(ids ...ulid.ULID) storepb.AnyAdapter {
 	hints := &hintspb.LabelValuesResponseHints{}
 	for _, id := range ids {
 		hints.AddQueriedBlock(id)
@@ -3639,7 +3642,7 @@ func mockValuesHints(ids ...ulid.ULID) *types.Any {
 		panic(err)
 	}
 
-	return marshalled
+	return storepb.FromAny(marshalled)
 }
 
 func mockValuesResponseHints(ids ...ulid.ULID) *storepb.LabelValuesResponseHints {

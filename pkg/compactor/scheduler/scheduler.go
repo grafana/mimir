@@ -98,6 +98,7 @@ func (cfg *Config) Validate() error {
 
 type Scheduler struct {
 	services.Service
+	compactorschedulerpb.UnimplementedCompactorSchedulerServer
 
 	running            *atomic.Bool
 	cfg                Config

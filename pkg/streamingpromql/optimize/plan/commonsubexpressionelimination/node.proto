@@ -5,18 +5,15 @@ syntax = "proto3";
 package commonsubexpressionelimination;
 
 import "github.com/grafana/mimir/pkg/streamingpromql/planning/core/core.proto";
-import "gogoproto/gogo.proto";
+import "wiresmith/options.proto";
 
-option (gogoproto.equal_all) = false;
-option (gogoproto.marshaler_all) = true;
-option (gogoproto.messagename_all) = true;
-option (gogoproto.unmarshaler_all) = true;
+option (wiresmith.options.no_presence_all) = true;
 
 message DuplicateDetails {
   // No fields yet.
 }
 
 message DuplicateFilterDetails {
-  repeated core.LabelMatcher filters = 1;
+  repeated core.LabelMatcher filters = 1 [(wiresmith.options.pointer) = true];
   int64 subsetIndex = 2; // If filters is non-empty, the index in the inner operator's stats that we expect to find the subset statistics for this consumer.
 }

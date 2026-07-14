@@ -4,11 +4,11 @@ syntax = "proto3";
 
 package compactorschedulerpb;
 
-import "gogoproto/gogo.proto";
+import "wiresmith/options.proto";
 
-option go_package = "compactorschedulerpb";
-option (gogoproto.marshaler_all) = true;
-option (gogoproto.unmarshaler_all) = true;
+option go_package = "github.com/grafana/mimir/pkg/compactor/scheduler/compactorschedulerpb";
+option (wiresmith.options.enum_no_prefix_all) = true;
+option (wiresmith.options.no_presence_all) = true;
 
 message JobKey {
   string id = 1;
@@ -23,7 +23,8 @@ enum JobType {
 
 message JobSpec {
   string tenant = 1;
-  CompactionJob job = 2;
+  // pointer = true: gogo nullable=true; call sites nil-check and use &CompactionJob{}.
+  CompactionJob job = 2 [(wiresmith.options.pointer) = true];
   JobType job_type = 3;
 }
 
@@ -50,19 +51,20 @@ message LeaseJobRequest {
 }
 
 message LeaseJobResponse {
-  JobKey key = 1;
-  JobSpec spec = 2;
+  // pointer = true: gogo nullable=true (default); call sites pass *JobKey/*JobSpec to helpers.
+  JobKey key = 1 [(wiresmith.options.pointer) = true];
+  JobSpec spec = 2 [(wiresmith.options.pointer) = true];
 }
 
 message PlannedCompactionJob {
   string id = 1;
-  CompactionJob job = 2;
+  CompactionJob job = 2 [(wiresmith.options.pointer) = true];
 }
 
 message PlannedJobsRequest {
-  JobKey key = 1;
+  JobKey key = 1 [(wiresmith.options.pointer) = true];
   string tenant = 2;
-  repeated PlannedCompactionJob jobs = 3;
+  repeated PlannedCompactionJob jobs = 3 [(wiresmith.options.pointer) = true];
 }
 
 message PlannedJobsResponse {}
@@ -76,13 +78,13 @@ enum UpdateType {
 }
 
 message UpdatePlanJobRequest {
-  JobKey key = 1;
+  JobKey key = 1 [(wiresmith.options.pointer) = true];
   string tenant = 2;
   UpdateType update = 3;
 }
 
 message UpdateCompactionJobRequest {
-  JobKey key = 1;
+  JobKey key = 1 [(wiresmith.options.pointer) = true];
   string tenant = 2;
   UpdateType update = 3;
 }
@@ -105,8 +107,9 @@ message StoredJobInfo {
 }
 
 message StoredCompactionJob {
-  StoredJobInfo info = 1;
-  CompactionJob job = 2;
+  // pointer = true: gogo nullable=true (default); serialized with &StoredJobInfo{}.
+  StoredJobInfo info = 1 [(wiresmith.options.pointer) = true];
+  CompactionJob job = 2 [(wiresmith.options.pointer) = true];
   uint32 order = 3;
 }
 

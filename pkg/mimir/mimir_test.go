@@ -1329,6 +1329,8 @@ func TestNewReturnsErrorOnEmptyTarget(t *testing.T) {
 }
 
 type mockGrpcServiceHandler struct {
+	schedulerpb.UnimplementedSchedulerForQuerierServer
+	ruler.UnimplementedRulerServer
 	querierShutdownCalled atomic.Bool
 	rulerSyncRulesCalled  atomic.Bool
 }

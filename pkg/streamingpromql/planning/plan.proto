@@ -5,15 +5,15 @@ syntax = "proto3";
 package planning;
 
 import "github.com/grafana/mimir/pkg/streamingpromql/types/types.proto";
-import "gogoproto/gogo.proto";
 import "google/protobuf/duration.proto";
+import "wiresmith/options.proto";
 
-option (gogoproto.marshaler_all) = true;
-option (gogoproto.unmarshaler_all) = true;
+option (wiresmith.options.enum_no_prefix_all) = true;
+option (wiresmith.options.no_presence_all) = true;
 
 message EncodedQueryPlan {
-  types.EncodedQueryTimeRange timeRange = 1 [(gogoproto.nullable) = false];
-  repeated EncodedNode nodes = 2;
+  types.EncodedQueryTimeRange timeRange = 1;
+  repeated EncodedNode nodes = 2 [(wiresmith.options.pointer) = true];
   int64 rootNode = 3;
 
   // The original PromQL expression for this query.
@@ -23,14 +23,11 @@ message EncodedQueryPlan {
   bool enableDelayedNameRemoval = 5;
 
   uint64 version = 6 [
-    (gogoproto.casttype) = "QueryPlanVersion",
-    (gogoproto.jsontag) = "version" // Override default value to remove 'omitempty'
+    (wiresmith.options.casttype) = "QueryPlanVersion",
+    (wiresmith.options.jsontag) = "version" // Override default value to remove 'omitempty'
   ];
 
-  google.protobuf.Duration lookbackDelta = 7 [
-    (gogoproto.nullable) = false,
-    (gogoproto.stdduration) = true
-  ];
+  google.protobuf.Duration lookbackDelta = 7 [(wiresmith.options.stdduration) = true];
 }
 
 message EncodedNode {

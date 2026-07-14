@@ -112,6 +112,8 @@ type activityTracker interface {
 
 type StoreGateway struct {
 	services.Service
+	// wiresmith-generated StoreGatewayServer requires this embedded field.
+	storegatewaypb.UnimplementedStoreGatewayServer
 
 	gatewayCfg Config
 	storageCfg mimir_tsdb.BlocksStorageConfig

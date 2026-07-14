@@ -47,6 +47,15 @@ coverage.txt
 # Go Telemetry
 .config/go/telemetry/
 
+# wiresmith rules.proto staging dirs (transient; created/removed by the
+# pkg/ruler/rulespb/rules.pb.go make rule)
+/.rules-stage/
+/.rules-out/
+
+# wiresmith streamingpromql staging dirs (transient)
+/.streamingpromql-stage/
+/.streamingpromql-out/
+
 # Vendored AI agent configuration files
 vendor/**/AGENTS.md
 

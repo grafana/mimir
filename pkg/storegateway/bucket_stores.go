@@ -52,6 +52,8 @@ const (
 // BucketStores is a multi-tenant wrapper of Thanos BucketStore.
 type BucketStores struct {
 	services.Service
+	// wiresmith-generated StoreGatewayServer requires this embedded field.
+	storegatewaypb.UnimplementedStoreGatewayServer
 
 	logger             log.Logger
 	cfg                tsdb.BlocksStorageConfig

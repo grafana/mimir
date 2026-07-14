@@ -1506,10 +1506,11 @@ func TestSplitAndCacheMiddleware_ResultsCache_ExtentsEdgeCases(t *testing.T) {
 					Start: 60,
 					End:   80,
 
-					// if the optimization of "sorting by End when Start of 2 Extents are equal" is not there, this nil
+					// if the optimization of "sorting by End when Start of 2 Extents are equal" is not there, this empty
 					// response would cause error during Extents merge phase. With the optimization
 					// this bad Extent should be dropped. The good Extent below can be used instead.
-					Response: nil,
+					// The zero AnyAdapter yields a nil Any (see AnyAdapter.Any), so toResponse errors as before.
+					Response: AnyAdapter{},
 				},
 				mkExtentWithStepAndQueryTime(60, 160, 20, now-100),
 			},
@@ -1895,7 +1896,7 @@ func mockProtobufResponseWithSamplesAndHistograms(labels []mimirpb.LabelAdapter,
 	return &mimirpb.QueryResponse{
 		Status: mimirpb.QUERY_STATUS_SUCCESS,
 		Data: &mimirpb.QueryResponse_Matrix{
-			Matrix: &mimirpb.MatrixData{
+			Matrix: mimirpb.MatrixData{
 				Series: []mimirpb.MatrixSeries{
 					{
 						Metric:     stringArrayFromLabels(labels),

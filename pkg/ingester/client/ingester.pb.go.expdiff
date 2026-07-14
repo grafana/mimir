@@ -1,44 +1,44 @@
 diff --git a/pkg/ingester/client/ingester.pb.go b/pkg/ingester/client/ingester.pb.go
-index 5e8a0e3da6..3c290e1541 100644
+index 9a8217be80..c2cbdd0a2f 100644
 --- a/pkg/ingester/client/ingester.pb.go
 +++ b/pkg/ingester/client/ingester.pb.go
-@@ -603,9 +603,6 @@ func (m *ActiveSeriesRequest) GetType() ActiveSeriesRequest_RequestType {
+@@ -273,9 +273,6 @@ type SearchResultBatch struct {
  //
  // Only one of these two options will be populated.
  type QueryStreamResponse struct {
 -	// Keep reference to buffer for unsafe references.
 -	mimirpb.BufferHolder
 -
- 	StreamingSeries       []QueryStreamSeries       `protobuf:"bytes,3,rep,name=streaming_series,json=streamingSeries,proto3" json:"streaming_series"`
- 	IsEndOfSeriesStream   bool                      `protobuf:"varint,4,opt,name=is_end_of_series_stream,json=isEndOfSeriesStream,proto3" json:"is_end_of_series_stream,omitempty"`
- 	StreamingSeriesChunks []QueryStreamSeriesChunks `protobuf:"bytes,5,rep,name=streaming_series_chunks,json=streamingSeriesChunks,proto3" json:"streaming_series_chunks"`
-@@ -760,9 +757,6 @@ func (m *QueryStreamSeriesChunks) GetChunks() []Chunk {
+ 	// no_presence_all makes repeated-message default value-form ([]QueryStreamSeries),
+ 	// matching gogo's nullable=false layout.
+ 	StreamingSeries     []QueryStreamSeries `protobuf:"bytes,3,rep,name=streaming_series,json=streamingSeries,proto3" json:"streaming_series,omitempty"`
+@@ -299,9 +296,6 @@ type QueryStreamSeriesChunks struct {
  }
  
  type ExemplarQueryResponse struct {
 -	// Keep reference to buffer for unsafe references.
 -	mimirpb.BufferHolder
 -
- 	Timeseries []mimirpb.TimeSeries `protobuf:"bytes,1,rep,name=timeseries,proto3" json:"timeseries"`
+ 	// no_presence_all makes this value-form ([]TimeSeries), matching gogo nullable=false.
+ 	Timeseries []mimirpb.TimeSeries `protobuf:"bytes,1,rep,name=timeseries,proto3" json:"timeseries,omitempty"`
  }
- 
-@@ -1305,9 +1299,6 @@ func (m *MetricsForLabelMatchersRequest) GetLimit() int64 {
+@@ -362,9 +356,6 @@ type MetricsForLabelMatchersRequest struct {
  }
  
  type MetricsForLabelMatchersResponse struct {
 -	// Keep reference to buffer for unsafe references.
 -	mimirpb.BufferHolder
 -
+ 	// pointer=true preserves the []*cortexpb.Metric shape from gogo's nullable=true default.
  	Metric []*mimirpb.Metric `protobuf:"bytes,1,rep,name=metric,proto3" json:"metric,omitempty"`
  }
- 
-@@ -1453,9 +1444,6 @@ func (m *MetricsMetadataResponse) GetMetadata() []*mimirpb.MetricMetadata {
+@@ -381,9 +372,6 @@ type MetricsMetadataResponse struct {
  }
  
  type ActiveSeriesResponse struct {
 -	// Keep reference to buffer for unsafe references.
 -	mimirpb.BufferHolder
 -
+ 	// pointer=true preserves the []*cortexpb.Metric shape from gogo's nullable=true default.
  	Metric []*mimirpb.Metric `protobuf:"bytes,1,rep,name=metric,proto3" json:"metric,omitempty"`
  	// bucket_count is only used when the request type was NATIVE_HISTOGRAM_SERIES.
- 	// bucket_count contains the native histogram active buckets count for each series in "metric" above.

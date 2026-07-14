@@ -19,6 +19,10 @@ import (
 
 // ActivityTrackerWrapper is a wrapper around Ingester that adds queries to activity tracker.
 type ActivityTrackerWrapper struct {
+	// wiresmith-generated IngesterServer requires this embedded field; all
+	// unimplemented methods are delegated to ing at the call site via explicit
+	// forwarding methods defined elsewhere in this file.
+	client.UnimplementedIngesterServer
 	ing     API
 	tracker *activitytracker.ActivityTracker
 }
@@ -277,47 +281,11 @@ func queryRequestActivity(name, userID, traceID string, req *client.QueryRequest
 	return sb.String()
 }
 
+// queryRequestToString serialises req into sb. It delegates to the wiresmith-generated
+// String() method which produces the proto-text format without reflection overhead.
+// queryRequestToString serialises req into sb. It delegates to the wiresmith-generated
+// String() method which produces the proto-text format without reflection overhead.
 func queryRequestToString(sb *bytes.Buffer, req *client.QueryRequest) {
-	if req == nil {
-		sb.WriteString("nil")
-		return
-	}
-	b := make([]byte, 0, 32)
-
-	sb.WriteString("&QueryRequest{")
-
-	sb.WriteString("StartTimestampMs:")
-	sb.Write(strconv.AppendInt(b, req.StartTimestampMs, 10))
-	sb.WriteString(",")
-
-	b = b[:0]
-	sb.WriteString("EndTimestampMs:")
-	sb.Write(strconv.AppendInt(b, req.EndTimestampMs, 10))
-	sb.WriteString(",")
-
-	sb.WriteString("Matchers:[]*LabelMatcher{")
-	for _, m := range req.Matchers {
-		labelMatcherToString(sb, m)
-		sb.WriteString(",")
-	}
-	sb.WriteString("},")
-
-	b = b[:0]
-	sb.WriteString("StreamingChunksBatchSize:")
-	sb.Write(strconv.AppendUint(b, req.StreamingChunksBatchSize, 10))
-	sb.WriteString(",}")
-}
-
-func labelMatcherToString(sb *bytes.Buffer, m *client.LabelMatcher) {
-	if m == nil {
-		sb.WriteString("nil")
-		return
-	}
-	sb.WriteString("&LabelMatcher{Type:")
-	sb.WriteString(m.Type.String())
-	sb.WriteString(",Name:")
-	sb.WriteString(m.Name)
-	sb.WriteString(",Value:")
-	sb.WriteString(m.Value)
-	sb.WriteString(",}")
+	// "<nil>" matches the wiresmith-generated String() return for nil receivers.
+	sb.WriteString(req.String())
 }

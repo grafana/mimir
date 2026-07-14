@@ -9,11 +9,15 @@ syntax = "proto3";
 package cortex;
 
 import "github.com/grafana/mimir/pkg/mimirpb/mimir.proto";
-import "gogoproto/gogo.proto";
+import "wiresmith/options.proto";
 
-option go_package = "client";
-option (gogoproto.marshaler_all) = true;
-option (gogoproto.unmarshaler_all) = true;
+option go_package = "github.com/grafana/mimir/pkg/ingester/client";
+// gogoproto emitted unprefixed enum constants (goproto_enum_prefix=false);
+// keep that API so existing call sites compile unchanged.
+option (wiresmith.options.enum_no_prefix_all) = true;
+// Drop the per-message presence bitmap everywhere: the gogo layout had no
+// presence tracking for proto3 non-optional fields.
+option (wiresmith.options.no_presence_all) = true;
 
 service Ingester {
   rpc Push(cortexpb.WriteRequest) returns (cortexpb.WriteResponse) {}
@@ -48,12 +52,14 @@ service Ingester {
 }
 
 message LabelNamesAndValuesRequest {
-  repeated LabelMatcher matchers = 1;
+  // pointer=true preserves the []*LabelMatcher shape from gogo's nullable=true default.
+  repeated LabelMatcher matchers = 1 [(wiresmith.options.pointer) = true];
   CountMethod count_method = 2;
 }
 
 message LabelNamesAndValuesResponse {
-  repeated LabelValues items = 1;
+  // pointer=true preserves the []*LabelValues shape from gogo's nullable=true default.
+  repeated LabelValues items = 1 [(wiresmith.options.pointer) = true];
 }
 
 message LabelValues {
@@ -68,12 +74,14 @@ enum CountMethod {
 
 message LabelValuesCardinalityRequest {
   repeated string label_names = 1;
-  repeated LabelMatcher matchers = 2;
+  // pointer=true preserves the []*LabelMatcher shape from gogo's nullable=true default.
+  repeated LabelMatcher matchers = 2 [(wiresmith.options.pointer) = true];
   CountMethod count_method = 3;
 }
 
 message LabelValuesCardinalityResponse {
-  repeated LabelValueSeriesCount items = 1;
+  // pointer=true preserves the []*LabelValueSeriesCount shape from gogo's nullable=true default.
+  repeated LabelValueSeriesCount items = 1 [(wiresmith.options.pointer) = true];
 }
 
 message LabelValueSeriesCount {
@@ -84,7 +92,8 @@ message LabelValueSeriesCount {
 message QueryRequest {
   int64 start_timestamp_ms = 1;
   int64 end_timestamp_ms = 2;
-  repeated LabelMatcher matchers = 3;
+  // pointer=true preserves the []*LabelMatcher shape from gogo's nullable=true default.
+  repeated LabelMatcher matchers = 3 [(wiresmith.options.pointer) = true];
   reserved 4; // projections include, not used anymore.
   reserved 5; // projections labels, not used anymore.
 
@@ -95,11 +104,13 @@ message QueryRequest {
 message ExemplarQueryRequest {
   int64 start_timestamp_ms = 1;
   int64 end_timestamp_ms = 2;
-  repeated LabelMatchers matchers = 3;
+  // pointer=true preserves the []*LabelMatchers shape from gogo's nullable=true default.
+  repeated LabelMatchers matchers = 3 [(wiresmith.options.pointer) = true];
 }
 
 message ActiveSeriesRequest {
-  repeated LabelMatcher matchers = 1;
+  // pointer=true preserves the []*LabelMatcher shape from gogo's nullable=true default.
+  repeated LabelMatcher matchers = 1 [(wiresmith.options.pointer) = true];
   enum RequestType {
     SERIES = 0;
     NATIVE_HISTOGRAM_SERIES = 1;
@@ -142,7 +153,8 @@ message SearchFilter {
 message SearchLabelNamesRequest {
   int64 start_timestamp_ms = 1;
   int64 end_timestamp_ms = 2;
-  repeated LabelMatcher matchers = 3;
+  // pointer=true preserves the []*LabelMatcher shape from gogo's nullable=true default.
+  repeated LabelMatcher matchers = 3 [(wiresmith.options.pointer) = true];
   SearchFilter filter = 4;
   SearchOrdering ordering = 5;
   // Limit caps the number of accepted results; 0 means no limit.
@@ -154,7 +166,8 @@ message SearchLabelValuesRequest {
   int64 end_timestamp_ms = 2;
   // Name is the label whose values are searched.
   string name = 3;
-  repeated LabelMatcher matchers = 4;
+  // pointer=true preserves the []*LabelMatcher shape from gogo's nullable=true default.
+  repeated LabelMatcher matchers = 4 [(wiresmith.options.pointer) = true];
   SearchFilter filter = 5;
   SearchOrdering ordering = 6;
   int64 limit = 7;
@@ -175,9 +188,12 @@ message SearchResultBatch {
     double score = 2;
     // Metadata is populated only when the request set include_metadata=true
     // and the underlying source has metric metadata for value. Nil otherwise.
-    cortexpb.MetricMetadata metadata = 3;
+    // pointer=true preserves the *cortexpb.MetricMetadata shape from gogo's nullable=true default.
+    cortexpb.MetricMetadata metadata = 3 [(wiresmith.options.pointer) = true];
   }
-  repeated Result results = 1 [(gogoproto.nullable) = false];
+  // no_presence_all makes the repeated-message default value-form ([]Result),
+  // matching gogo's nullable=false layout.
+  repeated Result results = 1;
   repeated string warnings = 2;
 }
 
@@ -190,34 +206,40 @@ message QueryStreamResponse {
   reserved 1; // "chunkseries" aren't used anymore, only streaming series.
   reserved 2; // "timeseries" aren't used anymore, only streaming series.
 
-  repeated QueryStreamSeries streaming_series = 3 [(gogoproto.nullable) = false];
+  // no_presence_all makes repeated-message default value-form ([]QueryStreamSeries),
+  // matching gogo's nullable=false layout.
+  repeated QueryStreamSeries streaming_series = 3;
   bool is_end_of_series_stream = 4;
 
-  repeated QueryStreamSeriesChunks streaming_series_chunks = 5 [(gogoproto.nullable) = false];
+  // Same value-form default as streaming_series.
+  repeated QueryStreamSeriesChunks streaming_series_chunks = 5;
 }
 
 message QueryStreamSeries {
-  repeated cortexpb.LabelPair labels = 1 [
-    (gogoproto.nullable) = false,
-    (gogoproto.customtype) = "github.com/grafana/mimir/pkg/mimirpb.LabelAdapter"
-  ];
+  // LabelAdapter reuses the mimirpb wiresmith customtype adapters; see
+  // pkg/mimirpb/wiresmith_adapters.go. no_presence_all makes this value-form
+  // ([]LabelAdapter), matching gogo's nullable=false + customtype layout.
+  repeated cortexpb.LabelPair labels = 1 [(wiresmith.options.customtype) = "github.com/grafana/mimir/pkg/mimirpb.LabelAdapter"];
   int64 chunk_count = 2;
 }
 
 message QueryStreamSeriesChunks {
   uint64 series_index = 1; // Index into list of all series previously sent with QueryStreamSeries messages by this ingester during this query response.
-  repeated Chunk chunks = 2 [(gogoproto.nullable) = false];
+  // no_presence_all makes this value-form ([]Chunk), matching gogo nullable=false.
+  repeated Chunk chunks = 2;
 }
 
 message ExemplarQueryResponse {
-  repeated cortexpb.TimeSeries timeseries = 1 [(gogoproto.nullable) = false];
+  // no_presence_all makes this value-form ([]TimeSeries), matching gogo nullable=false.
+  repeated cortexpb.TimeSeries timeseries = 1;
 }
 
 message LabelValuesRequest {
   string label_name = 1;
   int64 start_timestamp_ms = 2;
   int64 end_timestamp_ms = 3;
-  LabelMatchers matchers = 4;
+  // pointer=true preserves the *LabelMatchers shape from gogo's nullable=true default.
+  LabelMatchers matchers = 4 [(wiresmith.options.pointer) = true];
   int64 limit = 5;
 }
 
@@ -228,7 +250,8 @@ message LabelValuesResponse {
 message LabelNamesRequest {
   int64 start_timestamp_ms = 1;
   int64 end_timestamp_ms = 2;
-  LabelMatchers matchers = 3;
+  // pointer=true preserves the *LabelMatchers shape from gogo's nullable=true default.
+  LabelMatchers matchers = 3 [(wiresmith.options.pointer) = true];
   int64 limit = 4;
 }
 
@@ -249,22 +272,26 @@ message UserStatsResponse {
 
 message UserIDStatsResponse {
   string user_id = 1;
-  UserStatsResponse data = 2;
+  // pointer=true preserves the *UserStatsResponse shape from gogo's nullable=true default.
+  UserStatsResponse data = 2 [(wiresmith.options.pointer) = true];
 }
 
 message UsersStatsResponse {
-  repeated UserIDStatsResponse stats = 1;
+  // pointer=true preserves the []*UserIDStatsResponse shape from gogo's nullable=true default.
+  repeated UserIDStatsResponse stats = 1 [(wiresmith.options.pointer) = true];
 }
 
 message MetricsForLabelMatchersRequest {
   int64 start_timestamp_ms = 1;
   int64 end_timestamp_ms = 2;
-  repeated LabelMatchers matchers_set = 3;
+  // pointer=true preserves the []*LabelMatchers shape from gogo's nullable=true default.
+  repeated LabelMatchers matchers_set = 3 [(wiresmith.options.pointer) = true];
   int64 limit = 4;
 }
 
 message MetricsForLabelMatchersResponse {
-  repeated cortexpb.Metric metric = 1;
+  // pointer=true preserves the []*cortexpb.Metric shape from gogo's nullable=true default.
+  repeated cortexpb.Metric metric = 1 [(wiresmith.options.pointer) = true];
 }
 
 message MetricsMetadataRequest {
@@ -274,11 +301,13 @@ message MetricsMetadataRequest {
 }
 
 message MetricsMetadataResponse {
-  repeated cortexpb.MetricMetadata metadata = 1;
+  // pointer=true preserves the []*cortexpb.MetricMetadata shape from gogo's nullable=true default.
+  repeated cortexpb.MetricMetadata metadata = 1 [(wiresmith.options.pointer) = true];
 }
 
 message ActiveSeriesResponse {
-  repeated cortexpb.Metric metric = 1;
+  // pointer=true preserves the []*cortexpb.Metric shape from gogo's nullable=true default.
+  repeated cortexpb.Metric metric = 1 [(wiresmith.options.pointer) = true];
   // bucket_count is only used when the request type was NATIVE_HISTOGRAM_SERIES.
   // bucket_count contains the native histogram active buckets count for each series in "metric" above.
   repeated uint64 bucket_count = 2;
@@ -288,14 +317,14 @@ message Chunk {
   int64 start_timestamp_ms = 1;
   int64 end_timestamp_ms = 2;
   int32 encoding = 3;
-  bytes data = 4 [
-    (gogoproto.nullable) = false,
-    (gogoproto.customtype) = "github.com/grafana/mimir/pkg/mimirpb.UnsafeByteSlice"
-  ];
+  // UnsafeByteSlice zero-copies the gRPC frame bytes; see wiresmith_adapters.go.
+  // customtype contract methods live in pkg/mimirpb/wiresmith_adapters.go.
+  bytes data = 4 [(wiresmith.options.customtype) = "github.com/grafana/mimir/pkg/mimirpb.UnsafeByteSlice"];
 }
 
 message LabelMatchers {
-  repeated LabelMatcher matchers = 1;
+  // pointer=true preserves the []*LabelMatcher shape from gogo's nullable=true default.
+  repeated LabelMatcher matchers = 1 [(wiresmith.options.pointer) = true];
 }
 
 enum MatchType {

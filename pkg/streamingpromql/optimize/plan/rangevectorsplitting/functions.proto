@@ -5,28 +5,20 @@ syntax = "proto3";
 package rangevectorsplitting;
 
 import "github.com/grafana/mimir/pkg/mimirpb/mimir.proto";
-import "gogoproto/gogo.proto";
+import "wiresmith/options.proto";
 
-option go_package = "rangevectorsplitting";
-option (gogoproto.goproto_getters_all) = false;
-option (gogoproto.goproto_sizecache_all) = false;
-// Do not generate XXX fields to reduce memory footprint.
-option (gogoproto.goproto_unkeyed_all) = false;
-option (gogoproto.goproto_unrecognized_all) = false;
-option (gogoproto.marshaler_all) = true;
-option (gogoproto.sizer_all) = true;
-option (gogoproto.unmarshaler_all) = true;
+option (wiresmith.options.no_presence_all) = true;
 
 message SumOverTimeIntermediate {
   double sumF = 1;
   bool hasFloat = 2;
   double sumC = 3;
-  cortexpb.Histogram sumH = 4;
+  cortexpb.Histogram sumH = 4 [(wiresmith.options.pointer) = true];
   bool forceEmptyResult = 5;
 }
 
 message SumOverTimeIntermediateList {
-  repeated SumOverTimeIntermediate results = 1 [(gogoproto.nullable) = false];
+  repeated SumOverTimeIntermediate results = 1;
 }
 
 message CountOverTimeIntermediate {
@@ -35,7 +27,7 @@ message CountOverTimeIntermediate {
 }
 
 message CountOverTimeIntermediateList {
-  repeated CountOverTimeIntermediate results = 1 [(gogoproto.nullable) = false];
+  repeated CountOverTimeIntermediate results = 1;
 }
 
 message MinMaxOverTimeIntermediate {
@@ -45,7 +37,7 @@ message MinMaxOverTimeIntermediate {
 }
 
 message MinMaxOverTimeIntermediateList {
-  repeated MinMaxOverTimeIntermediate results = 1 [(gogoproto.nullable) = false];
+  repeated MinMaxOverTimeIntermediate results = 1;
 }
 
 message RateIntermediate {
@@ -53,14 +45,14 @@ message RateIntermediate {
   bool is_histogram = 2;
 
   // For floats
-  cortexpb.Sample first_sample = 3;
-  cortexpb.Sample last_sample = 4;
+  cortexpb.Sample first_sample = 3 [(wiresmith.options.pointer) = true];
+  cortexpb.Sample last_sample = 4 [(wiresmith.options.pointer) = true];
   double delta = 5;
 
   // For histograms
-  cortexpb.Histogram first_histogram = 10;
-  cortexpb.Histogram last_histogram = 11;
-  cortexpb.Histogram delta_histogram = 12;
+  cortexpb.Histogram first_histogram = 10 [(wiresmith.options.pointer) = true];
+  cortexpb.Histogram last_histogram = 11 [(wiresmith.options.pointer) = true];
+  cortexpb.Histogram delta_histogram = 12 [(wiresmith.options.pointer) = true];
   int64 first_histogram_timestamp = 14;
   int64 last_histogram_timestamp = 15;
 
@@ -71,17 +63,17 @@ message RateIntermediate {
 }
 
 message RateIntermediateList {
-  repeated RateIntermediate results = 1 [(gogoproto.nullable) = false];
+  repeated RateIntermediate results = 1;
 }
 
 message FirstLastOverTimeIntermediate {
   double f = 1;
   bool hasFloat = 2;
-  cortexpb.Histogram h = 3;
+  cortexpb.Histogram h = 3 [(wiresmith.options.pointer) = true];
 }
 
 message FirstLastOverTimeIntermediateList {
-  repeated FirstLastOverTimeIntermediate results = 1 [(gogoproto.nullable) = false];
+  repeated FirstLastOverTimeIntermediate results = 1;
 }
 
 message AvgOverTimeIntermediate {
@@ -94,13 +86,13 @@ message AvgOverTimeIntermediate {
   // Otherwise, it’s carrying the compensation for the sum.
   double compF = 5;
 
-  cortexpb.Histogram avgH = 6;
+  cortexpb.Histogram avgH = 6 [(wiresmith.options.pointer) = true];
   int64 countH = 7;
   bool forceEmptyResult = 8;
 }
 
 message AvgOverTimeIntermediateList {
-  repeated AvgOverTimeIntermediate results = 1 [(gogoproto.nullable) = false];
+  repeated AvgOverTimeIntermediate results = 1;
 }
 
 message PresentOverTimeIntermediate {
@@ -108,5 +100,5 @@ message PresentOverTimeIntermediate {
 }
 
 message PresentOverTimeIntermediateList {
-  repeated PresentOverTimeIntermediate results = 1 [(gogoproto.nullable) = false];
+  repeated PresentOverTimeIntermediate results = 1;
 }

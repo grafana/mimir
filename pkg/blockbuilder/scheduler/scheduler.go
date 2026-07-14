@@ -28,6 +28,8 @@ import (
 
 type BlockBuilderScheduler struct {
 	services.Service
+	// Required by the wiresmith gRPC stub (grpc-go v2 forward-compatibility).
+	schedulerpb.UnimplementedBlockBuilderSchedulerServer
 
 	// adminClients holds one Kafka admin client per write cluster, indexed by cluster ID.
 	// When compartments are disabled there is a single client at index 0.

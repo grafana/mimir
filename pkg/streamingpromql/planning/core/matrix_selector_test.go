@@ -738,7 +738,7 @@ func TestMatrixSelector_QueriedTimeRange(t *testing.T) {
 			selector: &MatrixSelector{
 				MatrixSelectorDetails: &MatrixSelectorDetails{
 					Range:     rng,
-					Timestamp: &ts,
+					Timestamp: ts,
 				},
 			},
 			expected: planning.NewQueriedTimeRange(ts.Add(-rng).Add(excludeLowerBoundary), ts),
@@ -757,7 +757,7 @@ func TestMatrixSelector_QueriedTimeRange(t *testing.T) {
 				MatrixSelectorDetails: &MatrixSelectorDetails{
 					Range:     rng,
 					Offset:    offset,
-					Timestamp: &ts,
+					Timestamp: ts,
 				},
 			},
 			expected: planning.NewQueriedTimeRange(ts.Add(-rng).Add(-offset).Add(excludeLowerBoundary), ts.Add(-offset)),

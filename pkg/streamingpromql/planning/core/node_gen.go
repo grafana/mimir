@@ -370,7 +370,7 @@ func (m *MatrixSelector) EquivalentToIgnoringHintsAndChildren(other planning.Nod
 		m.Range == oi.Range &&
 		m.Smoothed == oi.Smoothed &&
 		slices.EqualFunc(m.Subsets, oi.Subsets, genEqualsSubsetMatchers) &&
-		((m.Timestamp == nil && oi.Timestamp == nil) || (m.Timestamp != nil && oi.Timestamp != nil && (*m.Timestamp).Equal(*oi.Timestamp)))
+		(m.Timestamp).Equal(oi.Timestamp)
 }
 
 func genEqualsSubsetMatchers(a, b SubsetMatchers) bool {
@@ -539,7 +539,7 @@ func (s *Subquery) EquivalentToIgnoringHintsAndChildren(other planning.Node) boo
 		s.Offset == oi.Offset &&
 		s.Range == oi.Range &&
 		s.Step == oi.Step &&
-		((s.Timestamp == nil && oi.Timestamp == nil) || (s.Timestamp != nil && oi.Timestamp != nil && (*s.Timestamp).Equal(*oi.Timestamp)))
+		(s.Timestamp).Equal(oi.Timestamp)
 }
 
 func (u *UnaryExpression) Child(idx int) planning.Node {
@@ -613,5 +613,5 @@ func (v *VectorSelector) EquivalentToIgnoringHintsAndChildren(other planning.Nod
 		v.ReturnSampleTimestampsPreserveHistograms == oi.ReturnSampleTimestampsPreserveHistograms &&
 		v.Smoothed == oi.Smoothed &&
 		slices.EqualFunc(v.Subsets, oi.Subsets, genEqualsSubsetMatchers) &&
-		((v.Timestamp == nil && oi.Timestamp == nil) || (v.Timestamp != nil && oi.Timestamp != nil && (*v.Timestamp).Equal(*oi.Timestamp)))
+		(v.Timestamp).Equal(oi.Timestamp)
 }

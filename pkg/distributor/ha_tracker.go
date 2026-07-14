@@ -51,7 +51,7 @@ type haTracker interface {
 
 // ProtoReplicaDescFactory makes new InstanceDescs
 func ProtoReplicaDescFactory() proto.Message {
-	return NewReplicaDesc()
+	return newMergeableReplicaDesc()
 }
 
 // NewReplicaDesc returns an empty *distributor.ReplicaDesc.
@@ -59,24 +59,41 @@ func NewReplicaDesc() *ReplicaDesc {
 	return &ReplicaDesc{}
 }
 
+// mergeableReplicaDesc adapts a *ReplicaDesc to dskit's memberlist.Mergeable.
+// The Mergeable methods can't live on *ReplicaDesc directly: wiresmith now
+// generates a Clone() *ReplicaDesc on the message, which collides with
+// Mergeable's Clone() Mergeable. By embedding the pointer, the wrapper promotes
+// ReplicaDesc's proto.Message method set (so it remains a valid KV codec value)
+// while owning the Mergeable implementation. This type is what flows through
+// the memberlist KV store; the embedded *ReplicaDesc is unwrapped at read sites.
+type mergeableReplicaDesc struct {
+	*ReplicaDesc
+}
+
+// newMergeableReplicaDesc allocates the embedded pointer so the promoted
+// proto.Message Unmarshal (used by the KV codec's Decode) has a non-nil target.
+func newMergeableReplicaDesc() *mergeableReplicaDesc {
+	return &mergeableReplicaDesc{ReplicaDesc: NewReplicaDesc()}
+}
+
 // Merge merges other ReplicaDesc into this one.
 // The decision is made based on the ReceivedAt timestamp, if the Replica name is the same and at the ElectedAt if the
 // Replica name is different
-func (r *ReplicaDesc) Merge(other memberlist.Mergeable, _ bool) (change memberlist.Mergeable, error error) {
+func (r *mergeableReplicaDesc) Merge(other memberlist.Mergeable, _ bool) (change memberlist.Mergeable, error error) {
 	return r.mergeWithTime(other)
 }
 
-func (r *ReplicaDesc) mergeWithTime(mergeable memberlist.Mergeable) (memberlist.Mergeable, error) {
+func (r *mergeableReplicaDesc) mergeWithTime(mergeable memberlist.Mergeable) (memberlist.Mergeable, error) {
 	if mergeable == nil {
 		return nil, nil
 	}
 
-	other, ok := mergeable.(*ReplicaDesc)
+	other, ok := mergeable.(*mergeableReplicaDesc)
 	if !ok {
-		return nil, fmt.Errorf("expected *distributor.ReplicaDesc, got %T", mergeable)
+		return nil, fmt.Errorf("expected *distributor.mergeableReplicaDesc, got %T", mergeable)
 	}
 
-	if other == nil {
+	if other == nil || other.ReplicaDesc == nil {
 		return nil, nil
 	}
 
@@ -84,21 +101,21 @@ func (r *ReplicaDesc) mergeWithTime(mergeable memberlist.Mergeable) (memberlist.
 	if other.Replica == r.Replica {
 		// Keeping the one with the most recent receivedAt timestamp
 		if other.ReceivedAt > r.ReceivedAt {
-			*r = *other
+			*r.ReplicaDesc = *other.ReplicaDesc
 			changed = true
 		} else if r.ReceivedAt == other.ReceivedAt && r.DeletedAt == 0 && other.DeletedAt != 0 {
-			*r = *other
+			*r.ReplicaDesc = *other.ReplicaDesc
 			changed = true
 		}
 	} else {
 		// keep the most recent ElectedAt to reach consistency
 		if other.ElectedAt > r.ElectedAt {
-			*r = *other
+			*r.ReplicaDesc = *other.ReplicaDesc
 			changed = true
 		} else if other.ElectedAt == r.ElectedAt {
 			// if the timestamps are equal we compare ReceivedAt
 			if other.ReceivedAt > r.ReceivedAt {
-				*r = *other
+				*r.ReplicaDesc = *other.ReplicaDesc
 				changed = true
 			}
 		}
@@ -109,15 +126,15 @@ func (r *ReplicaDesc) mergeWithTime(mergeable memberlist.Mergeable) (memberlist.
 		return nil, nil
 	}
 
-	out := NewReplicaDesc()
-	*out = *r
+	out := newMergeableReplicaDesc()
+	*out.ReplicaDesc = *r.ReplicaDesc
 	return out, nil
 }
 
 // MergeContent describes content of this Mergeable.
 // Given that ReplicaDesc can have only one instance at a time, it returns the ReplicaDesc it contains. By doing this we choose
 // to not make use of the subset invalidation feature of memberlist
-func (r *ReplicaDesc) MergeContent() []string {
+func (r *mergeableReplicaDesc) MergeContent() []string {
 	result := []string(nil)
 	if len(r.Replica) != 0 {
 		result = append(result, r.String())
@@ -126,13 +143,13 @@ func (r *ReplicaDesc) MergeContent() []string {
 }
 
 // RemoveTombstones is noOp because we will handle replica deletions outside the context of memberlist.
-func (r *ReplicaDesc) RemoveTombstones(_ time.Time) (total, removed int) {
+func (r *mergeableReplicaDesc) RemoveTombstones(_ time.Time) (total, removed int) {
 	return
 }
 
 // Clone returns a deep copy of the ReplicaDesc.
-func (r *ReplicaDesc) Clone() memberlist.Mergeable {
-	return proto.Clone(r).(*ReplicaDesc)
+func (r *mergeableReplicaDesc) Clone() memberlist.Mergeable {
+	return &mergeableReplicaDesc{ReplicaDesc: r.ReplicaDesc.Clone()}
 }
 
 // HATrackerConfig contains the configuration required to
@@ -319,12 +336,12 @@ func (h *defaultHaTracker) syncHATrackerStateOnStart(ctx context.Context) error 
 			level.Warn(h.logger).Log("msg", "sync HA state on start: failed to get replica value", "key", keys[i], "err", err)
 			return nil
 		}
-		desc, ok := val.(*ReplicaDesc)
+		desc, ok := val.(*mergeableReplicaDesc)
 		if !ok {
 			level.Error(h.logger).Log("msg", "sync HA state on start: Skipping key: "+keys[i]+", got invalid ReplicaDesc")
 			continue
 		}
-		h.processKVStoreEntry(keys[i], desc)
+		h.processKVStoreEntry(keys[i], desc.ReplicaDesc)
 	}
 	level.Info(h.logger).Log("msg", "sync HA state on start: HA cache sync finished successfully")
 	return nil
@@ -345,14 +362,14 @@ func (h *defaultHaTracker) loop(ctx context.Context) error {
 	// which would have given us a prefixed KVStore client. So, we can pass an empty string here.
 	// WatchPrefix blocks until ctx is done or the function provided returns false.
 	h.client.WatchPrefix(ctx, "", func(key string, value interface{}) bool {
-		replica, ok := value.(*ReplicaDesc)
+		replica, ok := value.(*mergeableReplicaDesc)
 		if !ok {
 			// Always return true to ensure WatchPrefix() is never interrupted, otherwise the HA tracker stops to receive updates.
 			level.Error(h.logger).Log("msg", "unexpected data type receive when watching for HA tracker updates", "return type", fmt.Sprintf("%T", value), "key", key)
 			h.replicasDescFailedTypeAssertions.Inc()
 			return true
 		}
-		h.processKVStoreEntry(key, replica)
+		h.processKVStoreEntry(key, replica.ReplicaDesc)
 		return true
 	})
 
@@ -500,7 +517,7 @@ func (h *defaultHaTracker) cleanupOldReplicas(ctx context.Context, deadline time
 			continue
 		}
 
-		desc, ok := val.(*ReplicaDesc)
+		desc, ok := val.(*mergeableReplicaDesc)
 		if !ok {
 			level.Error(h.logger).Log("msg", "cleanup: got invalid replica descriptor", "key", key)
 			continue
@@ -533,8 +550,8 @@ func (h *defaultHaTracker) cleanupOldReplicas(ctx context.Context, deadline time
 		// Not marked as deleted yet.
 		if desc.DeletedAt == 0 && timestamp.Time(desc.ReceivedAt).Before(deadline) {
 			err := h.client.CAS(ctx, key, func(in interface{}) (out interface{}, retry bool, err error) {
-				d, ok := in.(*ReplicaDesc)
-				if !ok || d == nil || d.DeletedAt > 0 || !timestamp.Time(desc.ReceivedAt).Before(deadline) {
+				d, ok := in.(*mergeableReplicaDesc)
+				if !ok || d == nil || d.ReplicaDesc == nil || d.DeletedAt > 0 || !timestamp.Time(desc.ReceivedAt).Before(deadline) {
 					return nil, false, nil
 				}
 
@@ -664,8 +681,13 @@ func (h *defaultHaTrackerForUser) updateKVStore(ctx context.Context, cluster, re
 	var desc *ReplicaDesc
 	var electedAtTime, electedChanges int64
 	err := h.client.CAS(ctx, key, func(in interface{}) (out interface{}, retry bool, err error) {
-		var ok bool
-		if desc, ok = in.(*ReplicaDesc); ok && desc.DeletedAt == 0 {
+		// Unwrap the stored memberlist value back to the bare *ReplicaDesc. A
+		// failed assertion leaves desc nil, matching the previous behavior.
+		desc = nil
+		if inDesc, ok := in.(*mergeableReplicaDesc); ok {
+			desc = inDesc.ReplicaDesc
+		}
+		if desc != nil && desc.DeletedAt == 0 {
 			// If the entry in KVStore is up-to-date, just stop the loop.
 			if h.withinUpdateTimeout(now, desc.ReceivedAt) {
 				return nil, false, nil
@@ -710,7 +732,7 @@ func (h *defaultHaTrackerForUser) updateKVStore(ctx context.Context, cluster, re
 			ElectedAt:      electedAtTime,
 			ElectedChanges: electedChanges,
 		}
-		return desc, true, nil
+		return &mergeableReplicaDesc{ReplicaDesc: desc}, true, nil
 	})
 	h.kvCASCalls.WithLabelValues(h.userID, cluster).Inc()
 	// Add data stored or received from KVStore, if available.
