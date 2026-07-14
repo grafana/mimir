@@ -183,9 +183,11 @@ stays tenant-federation-agnostic, but the fetcher it obtains is federation-aware
 - `tenantfederation.mergeQuerier` — fans out per tenant and unions by name; on a
   name present in several tenants the first tenant by sorted ID wins.
 
-Metadata is **best-effort**: metadata is optional per result, so a fetch failure
-or a time range outside the ingesters' retention window simply leaves results
-un-enriched, exactly like a metric that has no metadata.
+Metadata is fetched from the ingesters (keyed by metric name, independent of the
+query time range), so it is always current rather than tied to the searched
+window. It is **best-effort**: metadata is optional per result, so a fetch
+failure, or a metric that no ingester currently holds metadata for, simply leaves
+results un-enriched, exactly like a metric that has no metadata.
 
 The store-gateway has no metric metadata and is not consulted for it.
 

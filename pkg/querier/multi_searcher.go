@@ -43,32 +43,34 @@ func findMetadataFetcher(queriers []storage.Querier) querierapi.MetricMetadataFe
 // FetchMetricMetadata delegates to the per-source querier that can supply
 // metadata. It returns nil when no such source is available.
 func (mq *multiQuerier) FetchMetricMetadata(ctx context.Context, names []string) (map[string]metadata.Metadata, error) {
-	// Reuse the queriers the in-flight search already opened rather than
-	// re-deriving them: getQueriers also opens and counts (via
-	// QueriesExecutedTotal) the store-gateway leaf, which the metadata fetch
-	// never uses. The handler always runs the search before enriching, so the
-	// queriers are already open by the time enrichment fetches metadata.
+	// Metadata lives in the ingesters, keyed by metric name and independent of
+	// the query time range, so fetch it from the distributor querier directly
+	// rather than via getQueriers. getQueriers gates the ingester leaf on the
+	// search time range (so an older-than-query-ingesters-within search would
+	// enrich nothing) and also opens and counts the store-gateway, which holds no
+	// metadata.
+	if mq.distributor == nil {
+		return nil, nil
+	}
+
+	// Reuse the distributor querier the in-flight search already opened, if any.
 	mq.queriersMtx.Lock()
-	queriers := mq.queriers
+	fetcher := findMetadataFetcher(mq.queriers)
 	mq.queriersMtx.Unlock()
 
-	if len(queriers) == 0 {
-		// No prior search on this querier (e.g. a direct FetchMetricMetadata
-		// call): open the queriers now.
-		var err error
-		ctx, queriers, _, _, err = mq.getQueriers(ctx, mq.minT, mq.maxT)
-		if errors.Is(err, errEmptyTimeRange) {
-			return nil, nil
-		}
+	if fetcher == nil {
+		q, err := mq.distributor.Querier(mq.minT, mq.maxT)
 		if err != nil {
 			return nil, err
 		}
+		mq.addQueriersToCleanup([]storage.Querier{q})
+		var ok bool
+		if fetcher, ok = q.(querierapi.MetricMetadataFetcher); !ok {
+			return nil, nil
+		}
 	}
 
-	if fetcher := findMetadataFetcher(queriers); fetcher != nil {
-		return fetcher.FetchMetricMetadata(ctx, names)
-	}
-	return nil, nil
+	return fetcher.FetchMetricMetadata(ctx, names)
 }
 
 // mimirSearcher is the cross-source Searcher interface used at the querier

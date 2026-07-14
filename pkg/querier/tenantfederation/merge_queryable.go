@@ -434,9 +434,10 @@ func (m *mergeQuerier) SearchLabelValues(ctx context.Context, name string, param
 
 // FetchMetricMetadata fetches metric metadata across all involved federation
 // IDs and unions the per-tenant results by metric name. When a name exists in
-// several tenants, the first tenant by sorted ID wins, so the union is
-// deterministic. Per-tenant fetch errors are best-effort: they are logged and
-// that tenant is skipped, since metadata enrichment is optional.
+// several tenants, the first tenant wins, so the union is deterministic:
+// resolver.TenantIDs returns the IDs sorted (as the sibling search methods also
+// rely on). Per-tenant fetch errors are best-effort: they are logged and that
+// tenant is skipped, since metadata enrichment is optional.
 func (m *mergeQuerier) FetchMetricMetadata(ctx context.Context, names []string) (map[string]metadata.Metadata, error) {
 	ids, err := m.resolver.TenantIDs(ctx)
 	if err != nil {
@@ -446,7 +447,6 @@ func (m *mergeQuerier) FetchMetricMetadata(ctx context.Context, names []string) 
 		return m.upstream.FetchMetricMetadata(ctx, ids[0], names)
 	}
 
-	slices.Sort(ids)
 	perTenant := make([]map[string]metadata.Metadata, len(ids))
 	errs := make([]error, len(ids))
 	run := func(_ context.Context, idx int) error {
