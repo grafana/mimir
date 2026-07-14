@@ -57,4 +57,13 @@ func TestDispatcher_HandleProtobuf_SumOverMixedHistogramSchemas(t *testing.T) {
 	dispatcher := NewDispatcher(engine, storage, requestMetrics, serverMetrics, &propagation.NoopExtractor{}, opts.Logger)
 
 	dispatcher.HandleProtobuf(ctx, req, &propagation.MapCarrier{}, stream)
+
+	// HandleProtobuf never returns an error: on failure it writes an error message to the stream
+	// and returns normally. Assert the query actually ran to completion so this stays a real
+	// regression guard even if the double-free is ever turned into a written error, or the query
+	// starts failing before it reaches the aggregation (e.g. the node paths above drift).
+	require.NotEmpty(t, stream.messages, "expected the query to stream at least one result message")
+	for _, msg := range stream.messages {
+		require.Nil(t, msg.GetError(), "query returned an error instead of exercising the aggregation: %v", msg.GetError())
+	}
 }
