@@ -158,10 +158,28 @@ return.
 
 ## Metadata enrichment (`include_metadata`)
 
-The `include_metadata=true` URL param on `/api/v1/search/metric_names` asks
-for per-metric `Type/Help/Unit` metadata to be inlined on each result. This
-enrichment is **applied only at the ingester**, the store-gateway has no metric metadata
-to enrich with.
+The `include_metadata=true` URL param on `/api/v1/search/metric_names` asks for
+per-metric `Type/Help/Unit` metadata to be inlined on each result. It is honoured
+only by the metric-names endpoint — that is the only response shape with
+`Type/Help/Unit` fields — so the param is ignored (no metadata fetch) on
+`/api/v1/search/label_names` and `/api/v1/search/label_values`, including
+`label_values?label=__name__`.
+
+Enrichment is **applied on the querier, above the source merges**
+(`pkg/querier/multi_searcher.go`), not in the ingesters. Metric metadata is
+sharded by metric name (`ShardByMetricName`) independently of series (sharded
+by all labels), so the ingester that owns a metric's metadata is usually not
+the one that holds a series with that name.
+
+For this reason, `multiQuerier` batches the streamed metric names and fetches
+their metadata via the ingester `MetricsMetadata` fan-out (the same all-ingester
+path the legacy `/api/v1/metadata` uses, extended to accept multiple metric names),
+then joins by name.
+
+Metadata is best-effort: a fetch failure surfaces as a warning and leaves results
+un-enriched rather than failing the search.
+
+The store-gateway has no metric metadata and is not consulted for it.
 
 ## Per-source notes
 

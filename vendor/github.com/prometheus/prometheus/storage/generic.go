@@ -763,6 +763,17 @@ func (s *mergingSearchResultSet) Next() bool {
 			} else {
 				s.curr = s.aVal
 			}
+			// Equal-Value entries collapse to one result, but Metadata may live
+			// on the losing side (metadata is not part of the comparison, and
+			// sources attach it inconsistently). Keep it so a metadata-less
+			// duplicate does not erase a duplicate's metadata.
+			if s.curr.Metadata == nil {
+				if s.aVal.Metadata != nil {
+					s.curr.Metadata = s.aVal.Metadata
+				} else if s.bVal.Metadata != nil {
+					s.curr.Metadata = s.bVal.Metadata
+				}
+			}
 			s.aOk = s.a.Next()
 			if s.aOk {
 				s.aVal = s.a.At()

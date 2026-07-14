@@ -127,8 +127,7 @@ type searchLabelValueRecordWithScore struct {
 }
 
 // searchMetricNameRecord carries optional Type/Help/Unit fields for the
-// metric-names endpoint. They are not yet populated by Mimir but the wire
-// shape is kept compatible with upstream.
+// metric-names endpoint.
 type searchMetricNameRecord struct {
 	Name string `json:"name"`
 	Type string `json:"type,omitempty"`
@@ -190,9 +189,11 @@ type searchRequest struct {
 
 // parseSearchRequest reads the HTTP request and builds a searchRequest.
 // requireLabelName is true for the label-values endpoint where the `label`
-// parameter is mandatory. Returns a wrapped error suitable for surfacing as
-// HTTP 400.
-func parseSearchRequest(r *http.Request, requireLabelName bool) (*searchRequest, error) {
+// parameter is mandatory. supportsMetadata is true only for the metric-names
+// endpoint, whose response shape can carry metadata; it gates whether
+// include_metadata is parsed and applied. Returns a wrapped error suitable for
+// surfacing as HTTP 400.
+func parseSearchRequest(r *http.Request, requireLabelName, supportsMetadata bool) (*searchRequest, error) {
 	if err := r.ParseForm(); err != nil {
 		return nil, fmt.Errorf("parse form: %w", err)
 	}
@@ -287,11 +288,6 @@ func parseSearchRequest(r *http.Request, requireLabelName bool) (*searchRequest,
 		return nil, err
 	}
 
-	includeMetadata, err := parseBoolParam(q, "include_metadata", false)
-	if err != nil {
-		return nil, err
-	}
-
 	// Time range. Defaults match Prometheus PR #18573: start defaults to one
 	// hour before now, end defaults to now. Keeps the default window narrow
 	// enough that searches over an unspecified range stay cheap.
@@ -333,10 +329,19 @@ func parseSearchRequest(r *http.Request, requireLabelName bool) (*searchRequest,
 		return nil, errors.New(`missing required parameter "label"`)
 	}
 
-	// This is poked in after the params validation. Noting that this will be
-	// ignored for non-metric name searches. It is also only actioned on
-	// search requests sent to ingesters.
-	params.IncludeMetadata = includeMetadata
+	// BatchSize lets the querier size its metadata-enrichment buffer.
+	params.BatchSize = batchSize
+
+	// include_metadata is only parsed for endpoints whose response shape can
+	// carry Type/Help/Unit (metric_names). Elsewhere the param is ignored, so
+	// an unsupported value is neither validated nor acted on.
+	if supportsMetadata {
+		includeMetadata, err := parseBoolParam(q, "include_metadata", false)
+		if err != nil {
+			return nil, err
+		}
+		params.IncludeMetadata = includeMetadata
+	}
 
 	// hintsLimit asks downstream for one extra result so the handler can
 	// determine if there is more data available past the given limit.
@@ -441,7 +446,7 @@ func SearchLabelNamesHandler(queryable storage.Queryable, querierCfg Config, _ *
 			writeSearchFeatureDisabled(w)
 			return
 		}
-		req, err := parseSearchRequest(r, false)
+		req, err := parseSearchRequest(r, false, false)
 		if err != nil {
 			writeSearchBadRequest(w, err)
 			return
@@ -479,7 +484,7 @@ func SearchLabelValuesHandler(queryable storage.Queryable, querierCfg Config, _ 
 			writeSearchFeatureDisabled(w)
 			return
 		}
-		req, err := parseSearchRequest(r, true)
+		req, err := parseSearchRequest(r, true, false)
 		if err != nil {
 			writeSearchBadRequest(w, err)
 			return
@@ -517,7 +522,9 @@ func SearchMetricNamesHandler(queryable storage.Queryable, querierCfg Config, _ 
 			writeSearchFeatureDisabled(w)
 			return
 		}
-		req, err := parseSearchRequest(r, false)
+		// supportsMetadata=true: this is the only endpoint whose record shape
+		// carries Type/Help/Unit, so include_metadata is parsed and applied here.
+		req, err := parseSearchRequest(r, false, true)
 		if err != nil {
 			writeSearchBadRequest(w, err)
 			return

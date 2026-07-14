@@ -237,6 +237,41 @@ func TestUserMetricsMetadataRequest(t *testing.T) {
 				},
 			},
 		},
+		"metric_names with multiple names": {
+			request: &client.MetricsMetadataRequest{Limit: -1, LimitPerMetric: -1, MetricNames: []string{"test_metric_1", "test_metric_2"}},
+			possibleExpectedMetadata: [][]*mimirpb.MetricMetadata{
+				{
+					{Type: mimirpb.COUNTER, MetricFamilyName: "test_metric_1", Help: "foo"},
+					{Type: mimirpb.COUNTER, MetricFamilyName: "test_metric_1", Help: "bar"},
+					{Type: mimirpb.COUNTER, MetricFamilyName: "test_metric_2", Help: "baz"},
+					{Type: mimirpb.COUNTER, MetricFamilyName: "test_metric_2", Help: "qux"},
+				},
+			},
+		},
+		"metric_names restricts to a subset": {
+			request: &client.MetricsMetadataRequest{Limit: -1, LimitPerMetric: -1, MetricNames: []string{"test_metric_2"}},
+			possibleExpectedMetadata: [][]*mimirpb.MetricMetadata{
+				{
+					{Type: mimirpb.COUNTER, MetricFamilyName: "test_metric_2", Help: "baz"},
+					{Type: mimirpb.COUNTER, MetricFamilyName: "test_metric_2", Help: "qux"},
+				},
+			},
+		},
+		"metric_names takes precedence over metric": {
+			request: &client.MetricsMetadataRequest{Limit: -1, LimitPerMetric: -1, Metric: "test_metric_1", MetricNames: []string{"test_metric_2"}},
+			possibleExpectedMetadata: [][]*mimirpb.MetricMetadata{
+				{
+					{Type: mimirpb.COUNTER, MetricFamilyName: "test_metric_2", Help: "baz"},
+					{Type: mimirpb.COUNTER, MetricFamilyName: "test_metric_2", Help: "qux"},
+				},
+			},
+		},
+		"metric_names with unknown name yields nothing": {
+			request: &client.MetricsMetadataRequest{Limit: -1, LimitPerMetric: -1, MetricNames: []string{"does_not_exist"}},
+			possibleExpectedMetadata: [][]*mimirpb.MetricMetadata{
+				{},
+			},
+		},
 	}
 
 	dummyT := noopTestingT{}

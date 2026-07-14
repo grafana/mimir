@@ -869,7 +869,7 @@ func TestParseSortOrder_Cases(t *testing.T) {
 func TestParseSearchRequest_DefaultTimeRange(t *testing.T) {
 	r := newSearchHandlerRequest(t, "/api/v1/search/label_names?search[]=foo")
 	before := time.Now().UnixMilli()
-	req, err := parseSearchRequest(r, false)
+	req, err := parseSearchRequest(r, false, false)
 	after := time.Now().UnixMilli()
 	require.NoError(t, err)
 
@@ -887,13 +887,13 @@ func TestParseSearchRequest_DefaultTimeRange(t *testing.T) {
 func TestParseSearchRequest_RejectsInvertedTimeRange(t *testing.T) {
 	t.Run("end before start is rejected", func(t *testing.T) {
 		r := newSearchHandlerRequest(t, "/api/v1/search/label_names?start=7200&end=3600")
-		_, err := parseSearchRequest(r, false)
+		_, err := parseSearchRequest(r, false, false)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "end timestamp must not be before start timestamp")
 	})
 	t.Run("end equal to start is permitted", func(t *testing.T) {
 		r := newSearchHandlerRequest(t, "/api/v1/search/label_names?start=3600&end=3600")
-		req, err := parseSearchRequest(r, false)
+		req, err := parseSearchRequest(r, false, false)
 		require.NoError(t, err)
 		assert.Equal(t, req.startMs, req.endMs)
 	})
@@ -901,7 +901,7 @@ func TestParseSearchRequest_RejectsInvertedTimeRange(t *testing.T) {
 
 func TestParseSearchRequest_ParamRoundTrip(t *testing.T) {
 	r := newSearchHandlerRequest(t, "/api/v1/search/label_names?search[]=foo&search[]=bar&case_sensitive=false&fuzz_alg=jarowinkler&fuzz_threshold=75&sort_by=alpha&sort_dir=dsc&include_score=true&limit=42&batch_size=7&match[]={job=\"prom\"}")
-	req, err := parseSearchRequest(r, false)
+	req, err := parseSearchRequest(r, false, false)
 	require.NoError(t, err)
 	assert.Equal(t, []string{"foo", "bar"}, req.params.Terms)
 	assert.False(t, req.params.CaseSensitive)
@@ -923,7 +923,7 @@ func TestParseSearchRequest_ParamRoundTrip(t *testing.T) {
 // searchDefaultBatchSize. Previously Mimir rejected 0; upstream accepts it.
 func TestParseSearchRequest_BatchSizeZeroKeepsDefault(t *testing.T) {
 	r := newSearchHandlerRequest(t, "/api/v1/search/label_names?batch_size=0")
-	req, err := parseSearchRequest(r, false)
+	req, err := parseSearchRequest(r, false, false)
 	require.NoError(t, err)
 	assert.Equal(t, searchDefaultBatchSize, req.batchSize)
 }

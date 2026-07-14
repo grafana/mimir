@@ -42,10 +42,13 @@ type Params struct {
 	// BuildFilter divides by 100 before passing to filter constructors.
 	// Zero accepts any subseq match (Prometheus's default).
 	FuzzThreshold int
-	// IncludeMetadata asks the source (e.g. ingester) to attach metric
-	// MetricMetadata to each result on the wire. Only valid for use on
-	// metric names and for requests sent to the ingesters.
+	// IncludeMetadata asks the querier to enrich metric-name results with
+	// metric metadata (Type/Help/Unit). Only meaningful for metric-name
+	// searches; ignored for any other label.
 	IncludeMetadata bool
+	// BatchSize is the response batch size the caller streams at.
+	// 0 when unknown.
+	BatchSize int
 }
 
 // NewParams constructs and validates a Params. Returns an error if any

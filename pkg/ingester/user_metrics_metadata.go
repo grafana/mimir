@@ -92,6 +92,15 @@ func (mm *userMetricsMetadata) toClientMetadata(req *client.MetricsMetadataReque
 	mm.mtx.RLock()
 	defer mm.mtx.RUnlock()
 	rCap := int32(len(mm.metricToMetadata))
+	// A MetricNames request returns only the requested subset, so size to it
+	// rather than the tenant's entire metric-family count (the Limit<0 the
+	// search API sends would otherwise skip the clamp below).
+	if len(req.MetricNames) > 0 {
+		rCap = int32(len(req.MetricNames))
+		if req.LimitPerMetric > 0 {
+			rCap *= req.LimitPerMetric
+		}
+	}
 	if req.Limit >= 0 && req.Limit < rCap {
 		rCap = req.Limit
 	}
@@ -109,11 +118,33 @@ func (mm *userMetricsMetadata) toClientMetadata(req *client.MetricsMetadataReque
 	if req.Limit == 0 {
 		return r
 	}
+
+	// MetricNames takes precedence over the single-name Metric filter: return
+	// metadata for each requested name we hold.
+	if len(req.MetricNames) > 0 {
+		var numMetrics int32
+		for _, name := range req.MetricNames {
+			if req.Limit > 0 && numMetrics >= req.Limit {
+				break
+			}
+			set, ok := mm.metricToMetadata[name]
+			if !ok {
+				continue
+			}
+			addMetricMetadataSet(set)
+			numMetrics++
+		}
+		return r
+	}
+
+	// Fallback to the single-name Metric filter, if set.
 	if req.Metric != "" {
 		set := mm.metricToMetadata[req.Metric]
 		addMetricMetadataSet(set)
 		return r
 	}
+
+	// Otherwise return all metric names, up to the limit.
 	var numMetrics int32
 	for _, set := range mm.metricToMetadata {
 		if req.Limit > 0 && numMetrics >= req.Limit {

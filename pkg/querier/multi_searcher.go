@@ -8,7 +8,9 @@ import (
 	"fmt"
 
 	"github.com/grafana/dskit/tenant"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
 
@@ -16,6 +18,23 @@ import (
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
+
+// metricMetadataFetcher fetches metric metadata for a set of metric names,
+// returning it keyed by metric name.
+type metricMetadataFetcher interface {
+	fetchMetricMetadata(ctx context.Context, names []string) (map[string]metadata.Metadata, error)
+}
+
+// findMetadataFetcher returns the first querier that can fetch metric metadata,
+// or nil if none can (e.g. ingesters not queried for this time range).
+func findMetadataFetcher(queriers []storage.Querier) metricMetadataFetcher {
+	for _, q := range queriers {
+		if f, ok := q.(metricMetadataFetcher); ok {
+			return f
+		}
+	}
+	return nil
+}
 
 // mimirSearcher is the cross-source Searcher interface used at the querier
 // fan-out layer. It differs from Prometheus's storage.Searcher
@@ -84,7 +103,25 @@ func (mq *multiQuerier) SearchLabelValues(ctx context.Context, name string, para
 	sets := fanOutSearch(queriers, clampWarn, func(s mimirSearcher) storage.SearchResultSet {
 		return s.SearchLabelValues(ctx, name, params, hints, matchers...)
 	})
-	return storage.MergeSearchResultSets(sets, hints)
+	merged := storage.MergeSearchResultSets(sets, hints)
+
+	// Metadata enrichment (include_metadata) only applies to metric names, and
+	// must run above the source merge: metric metadata is sharded by metric
+	// name independently of series, so it can't be attached reliably at the
+	// per-source leaves.
+	if params != nil && params.IncludeMetadata && name == model.MetricNameLabel {
+		if fetcher := findMetadataFetcher(queriers); fetcher != nil {
+			// Each buffer fill triggers one all-ingester metadata fan-out, so
+			// floor the buffer: a client-chosen batch_size of 1 must not turn
+			// into one fan-out per result. batch_size only controls the wire
+			// flush granularity, not how many names we fetch metadata for at a
+			// time.
+			batchSize := max(params.BatchSize, searchDefaultBatchSize)
+			return newMetadataEnrichingSearchResultSet(ctx, merged, fetcher.fetchMetricMetadata, batchSize)
+		}
+	}
+
+	return merged
 }
 
 // clampSearchHintsLimit returns a defensively-copied hints with Limit clamped
@@ -132,3 +169,86 @@ func fanOutSearch(queriers []storage.Querier, clampWarn annotations.Annotations,
 	}
 	return sets
 }
+
+// metadataEnrichingSearchResultSet wraps a metric-name SearchResultSet and
+// inlines metric metadata (Type/Help/Unit) on each result. It buffers one
+// response batch worth of results, fetches their metadata in one batched call,
+// sets it, then streams the enriched batch out — so metadata is fetched exactly
+// one response batch at a time, preserving the streaming contract.
+//
+// Metadata is best-effort: a fetch error does not fail the search. It is
+// surfaced as a warning and the batch is emitted un-enriched.
+type metadataEnrichingSearchResultSet struct {
+	ctx       context.Context
+	inner     storage.SearchResultSet
+	fetch     func(ctx context.Context, names []string) (map[string]metadata.Metadata, error)
+	batchSize int
+
+	buf       []storage.SearchResult
+	pos       int
+	innerDone bool
+	warnings  annotations.Annotations
+}
+
+func newMetadataEnrichingSearchResultSet(ctx context.Context, inner storage.SearchResultSet, fetch func(context.Context, []string) (map[string]metadata.Metadata, error), batchSize int) *metadataEnrichingSearchResultSet {
+	return &metadataEnrichingSearchResultSet{ctx: ctx, inner: inner, fetch: fetch, batchSize: batchSize}
+}
+
+func (s *metadataEnrichingSearchResultSet) Next() bool {
+	if s.pos+1 < len(s.buf) {
+		s.pos++
+		return true
+	}
+	if s.innerDone {
+		return false
+	}
+	s.buf = s.buf[:0]
+	s.pos = 0
+	for len(s.buf) < s.batchSize {
+		if !s.inner.Next() {
+			s.innerDone = true
+			break
+		}
+		s.buf = append(s.buf, s.inner.At())
+	}
+	if len(s.buf) == 0 {
+		return false
+	}
+	s.enrich()
+	return true
+}
+
+func (s *metadataEnrichingSearchResultSet) enrich() {
+	names := make([]string, len(s.buf))
+	for i := range s.buf {
+		names[i] = s.buf[i].Value
+	}
+	md, err := s.fetch(s.ctx, names)
+	if err != nil {
+		s.warnings.Add(fmt.Errorf("failed to fetch metric metadata: %w", err))
+		return
+	}
+	for i := range s.buf {
+		if m, ok := md[s.buf[i].Value]; ok {
+			mm := m
+			s.buf[i].Metadata = &mm
+		}
+	}
+}
+
+func (s *metadataEnrichingSearchResultSet) At() storage.SearchResult {
+	if s.pos < len(s.buf) {
+		return s.buf[s.pos]
+	}
+	return storage.SearchResult{}
+}
+
+func (s *metadataEnrichingSearchResultSet) Warnings() annotations.Annotations {
+	var ws annotations.Annotations
+	ws.Merge(s.inner.Warnings())
+	ws.Merge(s.warnings)
+	return ws
+}
+
+func (s *metadataEnrichingSearchResultSet) Err() error   { return s.inner.Err() }
+func (s *metadataEnrichingSearchResultSet) Close() error { return s.inner.Close() }
