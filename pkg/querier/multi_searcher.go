@@ -198,13 +198,17 @@ func newMetadataEnrichingSearchResultSet(ctx context.Context, inner storage.Sear
 }
 
 func (s *metadataEnrichingSearchResultSet) Next() bool {
+	// Advance reading from the already-enriched result (if available).
 	if s.bufNextReadIdx+1 < len(s.buf) {
 		s.bufNextReadIdx++
 		return true
 	}
+
 	if s.innerDone {
 		return false
 	}
+
+	// Read the next batch of results, and then enrich it.
 	s.buf = s.buf[:0]
 	s.bufNextReadIdx = 0
 	for len(s.buf) < s.batchSize {
@@ -218,6 +222,7 @@ func (s *metadataEnrichingSearchResultSet) Next() bool {
 		return false
 	}
 	s.enrich()
+
 	return true
 }
 
@@ -226,6 +231,7 @@ func (s *metadataEnrichingSearchResultSet) enrich() {
 	for i := range s.buf {
 		names[i] = s.buf[i].Value
 	}
+
 	md, err := s.fetch(s.ctx, names)
 	if err != nil {
 		// Best-effort: leave the batch un-enriched on a fetch error. Metadata is
@@ -234,6 +240,7 @@ func (s *metadataEnrichingSearchResultSet) enrich() {
 		level.Warn(spanlogger.FromContext(s.ctx, s.logger)).Log("msg", "failed to fetch metric metadata for search results enrichment", "err", err)
 		return
 	}
+
 	for i := range s.buf {
 		if m, ok := md[s.buf[i].Value]; ok {
 			mm := m
