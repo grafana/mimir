@@ -22,8 +22,10 @@ func Walk(node planning.Node, visitor Visitor) error {
 }
 
 func walk(node planning.Node, path []planning.Node, visitor Visitor) error {
-	if err := visitor.Visit(node, path); err != nil {
+	if visitChildren, err := visitor.Visit(node, path); err != nil {
 		return err
+	} else if !visitChildren {
+		return nil
 	}
 
 	updated := false
@@ -49,12 +51,15 @@ type Visitor interface {
 	// Visit examines node and has access to the path of nodes visited
 	// before node was reached, not including node, with the root in the
 	// first index and closest parent in the last.
-	Visit(node planning.Node, path []planning.Node) error
+	//
+	// Returning false from Visit will skip walking children of node, but continue
+	// walking siblings.
+	Visit(node planning.Node, path []planning.Node) (bool, error)
 }
 
-type VisitorFunc func(node planning.Node, path []planning.Node) error
+type VisitorFunc func(node planning.Node, path []planning.Node) (bool, error)
 
-func (f VisitorFunc) Visit(node planning.Node, path []planning.Node) error {
+func (f VisitorFunc) Visit(node planning.Node, path []planning.Node) (bool, error) {
 	return f(node, path)
 }
 
@@ -73,7 +78,7 @@ type InspectSelectorsResult struct {
 func InspectSelectors(node planning.Node) InspectSelectorsResult {
 	var res InspectSelectorsResult
 
-	_ = Walk(node, VisitorFunc(func(n planning.Node, _ []planning.Node) error {
+	_ = Walk(node, VisitorFunc(func(n planning.Node, _ []planning.Node) (bool, error) {
 		switch e := n.(type) {
 		case *core.MatrixSelector:
 			res.HasSelectors = true
@@ -82,7 +87,7 @@ func InspectSelectors(node planning.Node) InspectSelectorsResult {
 			res.HasSelectors = true
 			res.IsRewrittenByMiddleware = res.IsRewrittenByMiddleware || isSharded(e)
 		}
-		return nil
+		return true, nil
 	}))
 
 	return res
