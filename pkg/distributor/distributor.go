@@ -3528,9 +3528,11 @@ func (d *Distributor) adjustQueryRequestLimit(ctx context.Context, userID string
 // MetricsMetadata returns the metrics metadata based on the provided req.
 func (d *Distributor) MetricsMetadata(ctx context.Context, req *ingester_client.MetricsMetadataRequest) ([]scrape.MetricMetadata, error) {
 	// The metadata request can include an optional filter on the metric name.
+	// The deprecated single-name Metric field is still honored for the classic
+	// /api/v1/metadata?metric= endpoint.
 	var matchers []*labels.Matcher
-	if req.Metric != "" {
-		matchers = []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, req.Metric)}
+	if metric := req.Metric; metric != "" { //nolint:staticcheck // req.Metric is deprecated but still supported here.
+		matchers = []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, metric)}
 	}
 
 	replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx, matchers)

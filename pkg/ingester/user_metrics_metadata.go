@@ -138,9 +138,10 @@ func (mm *userMetricsMetadata) toClientMetadata(req *client.MetricsMetadataReque
 		return r
 	}
 
-	// Fallback to the single-name Metric filter, if set.
-	if req.Metric != "" {
-		set := mm.metricToMetadata[req.Metric]
+	// Fallback to the deprecated single-name Metric filter, still honored for the
+	// classic /api/v1/metadata?metric= endpoint.
+	if metric := req.Metric; metric != "" { //nolint:staticcheck // req.Metric is deprecated but still supported here.
+		set := mm.metricToMetadata[metric]
 		addMetricMetadataSet(set)
 		return r
 	}

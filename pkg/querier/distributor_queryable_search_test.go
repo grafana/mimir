@@ -169,7 +169,7 @@ func TestDistributorQuerier_FetchMetricMetadata(t *testing.T) {
 		assert.Equal(t, []string{"a", "b"}, gotReq.MetricNames)
 		assert.Equal(t, int32(2), gotReq.Limit, "Limit bounds the response to the number of requested names")
 		assert.Equal(t, int32(1), gotReq.LimitPerMetric, "LimitPerMetric=1 keeps the response small")
-		assert.Empty(t, gotReq.Metric, "the single-name Metric field must not be used")
+		assert.Empty(t, gotReq.Metric, "the single-name Metric field must not be used") //nolint:staticcheck // Asserting the deprecated field stays unset.
 	})
 
 	t.Run("propagates the fetch error", func(t *testing.T) {
