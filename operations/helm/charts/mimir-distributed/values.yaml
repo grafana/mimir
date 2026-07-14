@@ -605,10 +605,12 @@ alertmanager:
     # A per-zone storageClass configuration in `alertmanager.zoneAwareReplication.zones[*].storageClass` takes precedence over this field.
     # storageClass: "-"
 
-    # volumeAttributesClassName: my-cluster-vac
+    # Alertmanager data Persistent Volume Attributes Class
+    # Allows you to dynamically modify a volume's attributes on the fly
     # Requires Kubernetes 1.31+ and a CSI driver with ModifyVolume support.
     # Must reference an existing cluster VolumeAttributesClass.
     # A per-zone volumeAttributesClassName in `alertmanager.zoneAwareReplication.zones[*].volumeAttributesClassName` takes precedence over this field when set.
+    # volumeAttributesClassName: my-cluster-vac
 
     # -- Enable StatefulSetAutoDeletePVC feature
     # https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/#persistentvolumeclaim-retention
@@ -1040,10 +1042,12 @@ ingester:
     #
     # storageClass: "-"
 
-    # volumeAttributesClassName: my-cluster-vac
+    # Ingester data Persistent Volume Attributes Class
+    # Allows you to dynamically modify a volume's attributes on the fly
     # Requires Kubernetes 1.31+ and a CSI driver with ModifyVolume support.
     # Must reference an existing cluster VolumeAttributesClass.
     # A per-zone volumeAttributesClassName in `ingester.zoneAwareReplication.zones[*].volumeAttributesClassName` takes precedence over this field when set.
+    # volumeAttributesClassName: my-cluster-vac
 
   livenessProbe: null
   readinessProbe:
@@ -2524,9 +2528,11 @@ compactor:
     #
     # storageClass: "-"
 
-    # volumeAttributesClassName: my-cluster-vac
+    # compactor Persistent Volume Attributes Class
+    # Allows you to dynamically modify a volume's attributes on the fly
     # Requires Kubernetes 1.31+ and a CSI driver with ModifyVolume support.
     # Must reference an existing cluster VolumeAttributesClass.
+    # volumeAttributesClassName: my-cluster-vac
 
     # -- Enable StatefulSetAutoDeletePVC feature
     # https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/#persistentvolumeclaim-retention
