@@ -504,7 +504,7 @@ STREAMINGPROMQL_WIRESMITH_PBGO := $(patsubst %.proto,%.pb.go,$(STREAMINGPROMQL_W
 
 $(STREAMINGPROMQL_WIRESMITH_PBGO) &: $(STREAMINGPROMQL_WIRESMITH_PROTOS) pkg/mimirpb/mimir.proto pkg/streamingpromql/operators/functions/functions.proto
 ifeq ($(GENERATE_FILES),true)
-	./tools/wiresmith-streamingpromql.sh
+	./tools/wiresmith-regen.sh streamingpromql
 else
 	@echo "Warning: generating files has been disabled, but the following files need to be regenerated: $(STREAMINGPROMQL_WIRESMITH_PBGO)"
 	@echo "If this is unexpected, check if the last modified timestamps on the outputs and their .proto sources are correct."
@@ -521,7 +521,7 @@ CQA2_WIRESMITH_PBGO := $(patsubst %.proto,%.pb.go,$(CQA2_WIRESMITH_PROTOS))
 
 $(CQA2_WIRESMITH_PBGO) &: $(CQA2_WIRESMITH_PROTOS) pkg/mimirpb/mimir.proto pkg/querier/stats/stats.proto pkg/streamingpromql/planning/plan.proto pkg/streamingpromql/types/types.proto
 ifeq ($(GENERATE_FILES),true)
-	./tools/wiresmith-cqa2.sh
+	./tools/wiresmith-regen.sh cqa2
 else
 	@echo "Warning: generating files has been disabled, but the following files need to be regenerated: $(CQA2_WIRESMITH_PBGO)"
 	@echo "If this is unexpected, check if the last modified timestamps on the outputs and their .proto sources are correct."
@@ -544,7 +544,7 @@ CQA3_WIRESMITH_PBGO := $(patsubst %.proto,%.pb.go,$(CQA3_WIRESMITH_PROTOS))
 
 $(CQA3_WIRESMITH_PBGO) &: $(CQA3_WIRESMITH_PROTOS) pkg/mimirpb/mimir.proto pkg/querier/stats/stats.proto pkg/ruler/rulespb/rules.proto pkg/querier/querierpb/querier.proto pkg/streamingpromql/planning/plan.proto pkg/streamingpromql/types/types.proto
 ifeq ($(GENERATE_FILES),true)
-	./tools/wiresmith-cqa3.sh
+	./tools/wiresmith-regen.sh cqa3
 else
 	@echo "Warning: generating files has been disabled, but the following files need to be regenerated: $(CQA3_WIRESMITH_PBGO)"
 	@echo "If this is unexpected, check if the last modified timestamps on the outputs and their .proto sources are correct."
@@ -565,18 +565,19 @@ CQA5_WIRESMITH_PBGO := $(patsubst %.proto,%.pb.go,$(CQA5_WIRESMITH_PROTOS))
 
 $(CQA5_WIRESMITH_PBGO) &: $(CQA5_WIRESMITH_PROTOS) pkg/mimirpb/mimir.proto
 ifeq ($(GENERATE_FILES),true)
-	./tools/wiresmith-cqa5.sh
+	./tools/wiresmith-regen.sh cqa5
 else
 	@echo "Warning: generating files has been disabled, but the following files need to be regenerated: $(CQA5_WIRESMITH_PBGO)"
 	@echo "If this is unexpected, check if the last modified timestamps on the outputs and their .proto sources are correct."
 endif
 
 # cqa.4 (the final full switch): the last gogo-generated protos migrate to
-# wiresmith. tools/wiresmith-cqa4.sh stages each cluster into a module-path
+# wiresmith. tools/wiresmith-regen.sh stages each cluster into a module-path
 # layout, emits it in one invocation with -M mapping, and copies the output
-# back (same mechanism as the cqa.2/cqa.3/cqa.5 scripts). Deprecated Any "hints"
-# and Extent.response fields whose payloads resolve via the gogo registry bridge
-# to gogo types.Any through per-package AnyAdapter customtypes.
+# back (same mechanism as the streamingpromql/cqa.2/cqa.3/cqa.5 clusters).
+# Deprecated Any "hints" and Extent.response fields whose payloads resolve via
+# the gogo registry bridge to gogo types.Any through per-package AnyAdapter
+# customtypes.
 CQA4_WIRESMITH_PROTOS := \
 	pkg/streamingpromql/optimize/plan/splitandcache/cache.proto \
 	pkg/storegateway/storepb/types.proto \
@@ -589,7 +590,7 @@ CQA4_WIRESMITH_PBGO := $(patsubst %.proto,%.pb.go,$(CQA4_WIRESMITH_PROTOS))
 
 $(CQA4_WIRESMITH_PBGO) &: $(CQA4_WIRESMITH_PROTOS) pkg/mimirpb/mimir.proto pkg/querier/stats/stats.proto pkg/querier/querierpb/querier.proto pkg/streamingpromql/planning/plan.proto pkg/streamingpromql/types/types.proto
 ifeq ($(GENERATE_FILES),true)
-	./tools/wiresmith-cqa4.sh
+	./tools/wiresmith-regen.sh cqa4
 else
 	@echo "Warning: generating files has been disabled, but the following files need to be regenerated: $(CQA4_WIRESMITH_PBGO)"
 	@echo "If this is unexpected, check if the last modified timestamps on the outputs and their .proto sources are correct."
@@ -648,7 +649,7 @@ endif
 # wiresmith (cqa.6). It is enum-only with zero imports, so -- like
 # mimirpb/ha_tracker/stats above -- it is a flat invocation with --out
 # pointing at its own directory. It is still staged import-only by
-# tools/wiresmith-streamingpromql.sh so rangevectorsplitting/node.proto's
+# `tools/wiresmith-regen.sh streamingpromql` so rangevectorsplitting/node.proto's
 # reference to the Function enum resolves; that staging is unaffected by
 # which compiler generates this file.
 pkg/streamingpromql/operators/functions/functions.pb.go \
