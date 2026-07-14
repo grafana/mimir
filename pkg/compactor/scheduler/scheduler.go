@@ -55,7 +55,7 @@ type Config struct {
 }
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
-	f.IntVar(&cfg.MaxLeases, "compactor-scheduler.max-leases", 3, "The maximum number of times a job can be retried before it is removed. 0 for no limit.")
+	f.IntVar(&cfg.MaxLeases, "compactor-scheduler.max-leases", 3, "The maximum number of times a job can be retried before it is removed. Leases that are reassigned due to an interrupted worker do not count against this limit. 0 for no limit.")
 	f.DurationVar(&cfg.LeaseDuration, "compactor-scheduler.lease-duration", 10*time.Minute, "The duration of time without contact until the scheduler is able to lease a work item to another worker.")
 	f.DurationVar(&cfg.PlanningInterval, "compactor-scheduler.planning-interval", 30*time.Minute, "The duration of time between when plan jobs are submitted aligned by UTC. Note that -compactor.first-level-compaction-wait-period is accounted for during alignment of this interval.")
 	f.DurationVar(&cfg.MaintenanceInterval, "compactor-scheduler.maintenance-interval", 2*time.Minute, "The duration of time between when maintenance tasks are performed on job trackers. This includes lease expiration and plan job submission checks.")
@@ -64,7 +64,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.DurationVar(&cfg.TenantDiscoveryInterval, "compactor-scheduler.tenant-discovery-interval", 10*time.Minute, "The duration of time between bucket listings to discover new tenants.")
 	cfg.TenantDiscoveryBackoff.RegisterFlagsWithPrefix("compactor-scheduler.tenant-discovery-backoff", f)
 	f.StringVar(&cfg.PersistenceType, "compactor-scheduler.persistence-type", "bbolt", "The type of persistence the compactor scheduler should use. Valid values: none, bbolt")
-	f.IntVar(&cfg.RepeatedFailureReportThreshold, "compactor-scheduler.repeated-failure-report-threshold", 2, "The number of times a job can fail before a repeated failure is recorded. 0 for no limit.")
+	f.IntVar(&cfg.RepeatedFailureReportThreshold, "compactor-scheduler.repeated-failure-report-threshold", 2, "The number of times a job can fail before a repeated failure is recorded. Reassignments due to an interrupted worker are not counted as a failure. 0 for no limit.")
 	cfg.Bbolt.RegisterFlagsWithPrefix("compactor-scheduler.bbolt", f)
 	cfg.LanePolicy.RegisterFlagsWithPrefix("compactor-scheduler.lane-policy", f)
 }
@@ -349,14 +349,15 @@ func (s *Scheduler) UpdatePlanJob(ctx context.Context, req *compactorschedulerpb
 			level.Info(logger).Log("msg", "plan job abandoned")
 			return &compactorschedulerpb.UpdateJobResponse{}, nil
 		}
-	case compactorschedulerpb.UPDATE_TYPE_REASSIGN:
-		canceled, err := s.rotator.CancelJobLease(req.Tenant, req.Key.Id, req.Key.Epoch)
+	case compactorschedulerpb.UPDATE_TYPE_REASSIGN, compactorschedulerpb.UPDATE_TYPE_INTERRUPTED_REASSIGN:
+		interrupted := req.Update == compactorschedulerpb.UPDATE_TYPE_INTERRUPTED_REASSIGN
+		canceled, err := s.rotator.CancelJobLease(req.Tenant, req.Key.Id, req.Key.Epoch, interrupted)
 		if err != nil {
 			level.Error(logger).Log("msg", "failed plan job cancel", "err", err)
 			return nil, errFailedCancelLease
 		}
 		if canceled {
-			level.Info(logger).Log("msg", "plan job canceled")
+			level.Info(logger).Log("msg", "plan job canceled", "worker_interrupted", interrupted)
 			return &compactorschedulerpb.UpdateJobResponse{}, nil
 		}
 	case compactorschedulerpb.UPDATE_TYPE_COMPLETE:
@@ -414,14 +415,15 @@ func (s *Scheduler) UpdateCompactionJob(ctx context.Context, req *compactorsched
 			level.Info(logger).Log("msg", "compaction job abandoned")
 			return &compactorschedulerpb.UpdateJobResponse{}, nil
 		}
-	case compactorschedulerpb.UPDATE_TYPE_REASSIGN:
-		canceled, err := s.rotator.CancelJobLease(req.Tenant, req.Key.Id, req.Key.Epoch)
+	case compactorschedulerpb.UPDATE_TYPE_REASSIGN, compactorschedulerpb.UPDATE_TYPE_INTERRUPTED_REASSIGN:
+		interrupted := req.Update == compactorschedulerpb.UPDATE_TYPE_INTERRUPTED_REASSIGN
+		canceled, err := s.rotator.CancelJobLease(req.Tenant, req.Key.Id, req.Key.Epoch, interrupted)
 		if err != nil {
 			level.Error(logger).Log("msg", "failed compaction job cancel", "err", err)
 			return nil, errFailedCancelLease
 		}
 		if canceled {
-			level.Info(logger).Log("msg", "compaction job lease canceled")
+			level.Info(logger).Log("msg", "compaction job lease canceled", "worker_interrupted", interrupted)
 			return &compactorschedulerpb.UpdateJobResponse{}, nil
 		}
 	default:

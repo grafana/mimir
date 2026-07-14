@@ -234,7 +234,7 @@ func (r *Rotator) RenewJobLease(tenant string, key string, epoch int64) bool {
 	return tenantState.tracker.RenewLease(key, epoch)
 }
 
-func (r *Rotator) CancelJobLease(tenant string, key string, epoch int64) (bool, error) {
+func (r *Rotator) CancelJobLease(tenant string, key string, epoch int64, interrupted bool) (bool, error) {
 	r.mtx.RLock()
 
 	tenantState, ok := r.tenantStateMap[tenant]
@@ -243,7 +243,7 @@ func (r *Rotator) CancelJobLease(tenant string, key string, epoch int64) (bool, 
 		return false, nil
 	}
 
-	canceled, becamePending, err := tenantState.tracker.CancelLease(key, epoch)
+	canceled, becamePending, err := tenantState.tracker.CancelLease(key, epoch, interrupted)
 	if err != nil {
 		r.mtx.RUnlock()
 		return false, err
