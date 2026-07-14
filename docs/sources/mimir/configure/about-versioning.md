@@ -66,6 +66,10 @@ The following features are currently experimental:
 - Compactor
   - Limit blocks processed in each compaction cycle. Blocks uploaded prior to the maximum lookback aren't processed.
     - `-compactor.max-lookback`
+- Compactor scheduler
+  - Coordinate compactors through a shared job queue and expose additional metrics about pending and active compaction work.
+    - `-compactor-scheduler.*`
+    - `-compactor.scheduler-client.*`
 - Ruler
   - Allow defining limits on the maximum number of rules allowed in a rule group by namespace and the maximum number of rule groups by namespace. If set, this supersedes the `-ruler.max-rules-per-rule-group` and `-ruler.max-rule-groups-per-tenant` limits.
   - `-ruler.max-rules-per-rule-group-by-namespace`

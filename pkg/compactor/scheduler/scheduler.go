@@ -55,7 +55,7 @@ type Config struct {
 }
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
-	f.IntVar(&cfg.MaxLeases, "compactor-scheduler.max-leases", 3, "The maximum number of times a job can be retried before it is removed. Leases that are reassigned due to an interrupted worker do not count against this limit. 0 for no limit.")
+	f.IntVar(&cfg.MaxLeases, "compactor-scheduler.max-leases", 3, "The maximum number of times a compaction job can be retried before it is removed. Leases that are reassigned due to an interrupted worker do not count against this limit. 0 for no limit.")
 	f.DurationVar(&cfg.LeaseDuration, "compactor-scheduler.lease-duration", 10*time.Minute, "The duration of time without contact until the scheduler is able to lease a work item to another worker.")
 	f.DurationVar(&cfg.PlanningInterval, "compactor-scheduler.planning-interval", 30*time.Minute, "The duration of time between when plan jobs are submitted aligned by UTC. Note that -compactor.first-level-compaction-wait-period is accounted for during alignment of this interval.")
 	f.DurationVar(&cfg.MaintenanceInterval, "compactor-scheduler.maintenance-interval", 2*time.Minute, "The duration of time between when maintenance tasks are performed on job trackers. This includes lease expiration and plan job submission checks.")
