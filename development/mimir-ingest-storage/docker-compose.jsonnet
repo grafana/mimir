@@ -16,7 +16,7 @@ std.manifestYamlDoc({
     self.nginx +
     self.minio +
     self.grafana +
-    self.grafana_agent +
+    self.grafana_alloy +
     self.memcached +
     self.kafka_1 +
     self.kafka_2 +
@@ -322,17 +322,16 @@ std.manifestYamlDoc({
     },
   },
 
-  grafana_agent:: {
-    // Scrape the metrics also with the Grafana agent (useful to test metadata ingestion
-    // until metadata remote write is not supported by Prometheus).
-    'grafana-agent': {
-      image: 'grafana/agent:v0.40.0',
-      command: ['run', '--storage.path=/tmp', '--server.http.listen-addr=127.0.0.1:9091', '/etc/agent-config/grafana-agent.flow'],
+  grafana_alloy:: {
+    // Scrape the metrics also with Grafana Alloy, sending them to Mimir via remote write 2.0
+    // with metric metadata (useful to test metadata ingestion).
+    'grafana-alloy': {
+      image: 'grafana/alloy:v1.17.1@sha256:4f6ddc56ffdcf8a6316748fc5162972e20cb301523cac1bb4a31957df733ae9b',
+      // --stability.level=experimental is required by remote write 2.0 (protobuf_message)
+      // and honor_metadata, both still experimental in Alloy.
+      command: ['run', '--storage.path=/tmp', '--server.http.listen-addr=127.0.0.1:9091', '--stability.level=experimental', '/etc/agent-config/config.alloy'],
       volumes: ['./config:/etc/agent-config'],
       ports: ['9091:9091'],
-      environment: {
-        AGENT_MODE: 'flow',
-      },
     },
   },
 
