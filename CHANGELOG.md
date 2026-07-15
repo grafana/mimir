@@ -148,6 +148,7 @@
 * [ENHANCEMENT] Mimirtool: `partition-ring` subcommands now accept an optional `--partition-ring.key` flag to select the KV store key of the partition ring to operate on. It defaults to `ingester-partitions`. #15719
 * [ENHANCEMENT] Makefile: `build-mixin` and `mixin-screenshots` can now be configured to use native histograms for latency panels in dashboards. #15269
 * [ENHANCEMENT] kafkatool: Add a README. #15898
+* [BUGFIX] Mimirtool: `partition-ring` subcommands now operate on the partition ring key under the KV store prefix used by Mimir (`collectors/` by default), instead of the bare key, which made commands fail with errors like `partition 1 does not exist in the ring` against a healthy cluster. Use the new `--partition-ring.prefix` flag if Mimir runs with a custom `-ingester.partition-ring.prefix`. #16045
 
 ### Query-tee
 
