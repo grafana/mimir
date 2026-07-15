@@ -130,18 +130,7 @@ spec:
       metadata:
         name: kafka-data
       spec:
-        {{- if .persistence.storageClassName }}
-        {{- if (eq "-" .persistence.storageClassName) }}
-        storageClassName: ""
-        {{- else }}
-        storageClassName: "{{ .persistence.storageClassName }}"
-        {{- end }}
-        {{- end }}
-        accessModes:
-          - ReadWriteOnce
-        resources:
-          requests:
-            storage: "{{ .persistence.size }}"
+{{ include "mimir.persistentVolumeClaimSpec" (dict "ctx" $ "component" "kafka" "persistentVolume" .persistence "storageClassKey" "storageClassName" "accessModes" (list "ReadWriteOnce")) | trimPrefix "\n" | indent 8 }}
   {{- end }}
 {{- end }}
 {{- end }}

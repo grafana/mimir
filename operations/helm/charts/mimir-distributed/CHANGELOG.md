@@ -30,6 +30,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
+* [FEATURE] Add VolumeAttributesClass support: reference existing VolumeAttributesClass resources on PVCs for alertmanager, ingester, store-gateway, compactor, and kafka. #15919
 * [CHANGE] Querier: Reduce the default concurrency of queriers, `querier.max_concurrent`, to 8. #15984
 * [BUGFIX] Fix bug in `ScaledObject` templates when using `kedaAutoscaling.fallback` #15793
 * [ENHANCEMENT] Add support for `revisionHistoryLimit` on StatefulSet-based components: `alertmanager`, `ingester`, `store_gateway`, `compactor`, and the `chunks-cache`, `index-cache`, `metadata-cache`, and `results-cache` memcached StatefulSets. Previously `revisionHistoryLimit` was only honored on Deployment-based components. #PR
