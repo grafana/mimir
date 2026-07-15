@@ -1334,6 +1334,21 @@ func (d *Distributor) prePushSortAndFilterMiddleware(next PushFunc) PushFunc {
 	})
 }
 
+// prePushMergeSeenEntry tracks, for one label-set hash, the indexes of the
+// already-kept timeseries with that hash. more is nil on the happy path and
+// grows only on a hash collision between distinct (label set, created timestamp)
+// pairs.
+type prePushMergeSeenEntry struct {
+	index int
+	more  []int
+}
+
+// prePushMergeSeenPool reuses the per-request lookup map across pushes to keep
+// prePushMergeMiddleware allocation-free on the no-duplicate happy path.
+var prePushMergeSeenPool = sync.Pool{
+	New: func() any { return make(map[uint64]prePushMergeSeenEntry) },
+}
+
 // prePushMergeMiddleware merges timeseries objects that share the same label set
 // and created timestamp within a single write request. Without this, the
 // within-timeseries dedup in validateSamples only catches duplicates inside one
@@ -1367,11 +1382,13 @@ func (d *Distributor) prePushMergeMiddleware(next PushFunc) PushFunc {
 		// the same label set carried with different created timestamps), the extra
 		// indexes are tracked in more (allocated only then), so every distinct
 		// (label set, created timestamp) is still deduplicated independently.
-		type seenEntry struct {
-			index int   // first kept timeseries with this hash
-			more  []int // additional indexes on a hash collision; nil on the happy path
-		}
-		seen := make(map[uint64]seenEntry, len(req.Timeseries))
+		//
+		// The map is pooled and reused across requests because this runs on the
+		// distributor's hottest path: a fresh map per push would allocate one bucket
+		// (and its overflow buckets) for every series even when nothing is merged.
+		seen := prePushMergeSeenPool.Get().(map[uint64]prePushMergeSeenEntry)
+		clear(seen)
+		defer prePushMergeSeenPool.Put(seen)
 		var removeTsIndexes []int
 
 		for tsIdx := 0; tsIdx < len(req.Timeseries); tsIdx++ {
@@ -1380,7 +1397,7 @@ func (d *Distributor) prePushMergeMiddleware(next PushFunc) PushFunc {
 
 			e, exists := seen[hash]
 			if !exists {
-				seen[hash] = seenEntry{index: tsIdx}
+				seen[hash] = prePushMergeSeenEntry{index: tsIdx}
 				continue
 			}
 

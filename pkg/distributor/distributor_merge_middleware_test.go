@@ -4,6 +4,7 @@ package distributor
 
 import (
 	"context"
+	"fmt"
 	"slices"
 	"testing"
 
@@ -386,4 +387,50 @@ func TestDistributor_prePushMergeMiddleware_PreservesCreatedTimestampToIngester(
 		}
 	}
 	require.True(t, sawSeries, "expected at least one ingester to receive the merged series")
+}
+
+// BenchmarkDistributor_prePushMergeMiddleware measures the middleware on the two
+// extremes it runs on: a request with no cross-object duplicates (the common,
+// hot-path case, where the middleware only tracks each series) and a request
+// where every object shares one label set (worst case for merging).
+func BenchmarkDistributor_prePushMergeMiddleware(b *testing.B) {
+	const numSeriesPerRequest = 1000
+	ctx := user.InjectOrgID(context.Background(), "user")
+
+	var limits validation.Limits
+	flagext.DefaultValues(&limits)
+
+	cases := map[string]func(s int) []string{
+		"no duplicates":  func(s int) []string { return []string{model.MetricNameLabel, fmt.Sprintf("series_%d", s)} },
+		"all duplicates": func(int) []string { return []string{model.MetricNameLabel, "series"} },
+	}
+
+	for name, labelsFor := range cases {
+		b.Run(name, func(b *testing.B) {
+			// Pre-generate every request outside the timed section so only the
+			// middleware is measured. Each request is consumed once.
+			reqs := make([]*mimirpb.WriteRequest, b.N)
+			for r := range reqs {
+				ts := make([]mimirpb.PreallocTimeseries, 0, numSeriesPerRequest)
+				for s := 0; s < numSeriesPerRequest; s++ {
+					ts = append(ts, makeTimeseries(labelsFor(s), makeSamples(int64(s), float64(s)), nil, nil))
+				}
+				reqs[r] = &mimirpb.WriteRequest{Timeseries: ts}
+			}
+
+			ds, _, _, _ := prepare(b, prepConfig{numDistributors: 1, limits: &limits})
+			noop := func(context.Context, *Request) error { return nil }
+			fn := ds[0].prePushMergeMiddleware(noop)
+
+			b.ReportAllocs()
+			b.ResetTimer()
+			for n := 0; n < b.N; n++ {
+				req := reqs[n]
+				err := fn(ctx, newRequest(func() (*mimirpb.WriteRequest, func(), int, error) {
+					return req, func() {}, 0, nil
+				}))
+				require.NoError(b, err)
+			}
+		})
+	}
 }
