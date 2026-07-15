@@ -384,3 +384,30 @@ func createRejectedMetric() (*prometheus.Registry, prometheus.Counter) {
 
 	return reg, metric
 }
+
+func BenchmarkLimitingPool_GetPut(b *testing.B) {
+	for _, mangle := range []bool{false, true} {
+		b.Run(fmt.Sprintf("unlimited pool, mangle=%t", mangle), func(b *testing.B) {
+			p := NewLimitingBucketedPool(
+				pool.NewBucketedPool(1024, func(size int) []promql.FPoint { return make([]promql.FPoint, 0, size) }),
+				limiter.FPointSlices,
+				FPointSize,
+				false,
+				atomic.NewBool(mangle),
+				mangleFPoint,
+				nil,
+			)
+
+			tracker := limiter.NewUnlimitedMemoryConsumptionTracker(context.Background())
+
+			for b.Loop() {
+				s, err := p.Get(128, tracker)
+				if err != nil {
+					require.NoError(b, err)
+				}
+
+				p.Put(&s, tracker)
+			}
+		})
+	}
+}
