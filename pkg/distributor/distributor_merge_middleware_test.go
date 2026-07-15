@@ -180,25 +180,43 @@ func TestDistributor_prePushMergeMiddleware(t *testing.T) {
 		assert.Len(t, got.Timeseries[0].Histograms, 1)
 	})
 
-	t.Run("preserves the earliest non-zero created timestamp on merge", func(t *testing.T) {
-		// The ingester injects a created-timestamp zero sample from ts.CreatedTimestamp
-		// (per timeseries object). The merge must therefore keep a meaningful created
-		// timestamp: adopt one when the first occurrence has none, and keep the earliest
-		// (smallest) non-zero value across duplicates. A later zero must not reset it.
+	t.Run("merges identical label sets sharing a created timestamp", func(t *testing.T) {
 		lbls := []string{model.MetricNameLabel, "series_1"}
 		req := &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{
-			makeTimeseriesWithCT(lbls, makeSamples(100, 1), 0),
-			makeTimeseriesWithCT(lbls, makeSamples(200, 2), 50),
-			makeTimeseriesWithCT(lbls, makeSamples(300, 3), 30),
-			makeTimeseriesWithCT(lbls, makeSamples(400, 4), 90),
-			makeTimeseriesWithCT(lbls, makeSamples(500, 5), 0),
+			makeTimeseriesWithCT(lbls, makeSamples(100, 1), 42),
+			makeTimeseriesWithCT(lbls, makeSamples(200, 2), 42),
 		}}
 
 		got := runPrePushMerge(t, d, req)
 
 		require.Len(t, got.Timeseries, 1)
-		assert.Equal(t, int64(30), got.Timeseries[0].CreatedTimestamp)
-		assert.Len(t, got.Timeseries[0].Samples, 5)
+		assert.Equal(t, int64(42), got.Timeseries[0].CreatedTimestamp)
+		assert.Equal(t, []int64{100, 200}, sampleTimestamps(got.Timeseries[0]))
+	})
+
+	t.Run("does not merge identical label sets with different created timestamps", func(t *testing.T) {
+		// The ingester injects a created-timestamp zero sample per object from
+		// ts.CreatedTimestamp, so the created timestamp is part of the merge
+		// identity. OTLP created-timestamp handling emits one object per distinct
+		// created timestamp for a label set; those objects must stay separate so
+		// each still triggers its own zero-sample ingestion downstream.
+		lbls := []string{model.MetricNameLabel, "series_1"}
+		req := &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{
+			makeTimeseriesWithCT(lbls, makeSamples(100, 1), 10),
+			makeTimeseriesWithCT(lbls, makeSamples(200, 2), 20),
+			makeTimeseriesWithCT(lbls, makeSamples(300, 3), 10),
+		}}
+
+		got := runPrePushMerge(t, d, req)
+
+		// CT=10 objects merge together; the CT=20 object stays separate.
+		require.Len(t, got.Timeseries, 2)
+		byCT := map[int64][]int64{}
+		for _, ts := range got.Timeseries {
+			byCT[ts.CreatedTimestamp] = sampleTimestamps(ts)
+		}
+		assert.Equal(t, []int64{100, 300}, byCT[10])
+		assert.Equal(t, []int64{200}, byCT[20])
 	})
 
 	t.Run("folds multiple duplicate label sets into the first occurrence", func(t *testing.T) {
@@ -331,9 +349,9 @@ func TestDistributor_prePushMergeMiddleware_InvalidatesMarshalCache(t *testing.T
 
 // TestDistributor_prePushMergeMiddleware_PreservesCreatedTimestampToIngester is an
 // end-to-end check through the full distributor push pipeline: a request with two
-// identically-labelled objects, where only the later duplicate carries a created
-// timestamp, must reach the ingester as a single merged series that still carries
-// that created timestamp (so created-timestamp zero-sample ingestion still fires).
+// identically-labelled objects that share a created timestamp must reach the
+// ingester as a single merged series that still carries that created timestamp
+// (so created-timestamp zero-sample ingestion still fires).
 func TestDistributor_prePushMergeMiddleware_PreservesCreatedTimestampToIngester(t *testing.T) {
 	ctx := user.InjectOrgID(context.Background(), "user")
 
@@ -349,7 +367,7 @@ func TestDistributor_prePushMergeMiddleware_PreservesCreatedTimestampToIngester(
 	const createdTS = int64(50)
 	lbls := []string{model.MetricNameLabel, "series_1"}
 	req := &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{
-		makeTimeseriesWithCT(lbls, makeSamples(100, 1), 0),
+		makeTimeseriesWithCT(lbls, makeSamples(100, 1), createdTS),
 		makeTimeseriesWithCT(lbls, makeSamples(200, 2), createdTS),
 	}}
 

@@ -1335,15 +1335,20 @@ func (d *Distributor) prePushSortAndFilterMiddleware(next PushFunc) PushFunc {
 }
 
 // prePushMergeMiddleware merges timeseries objects that share the same label set
-// within a single write request. Without this, the within-timeseries dedup in
-// validateSamples only catches duplicates inside one object — if the same
-// sample appears in two different timeseries objects with the same labels, both
-// copies pass through to the ingesters, where the duplicate is silently dropped
-// without incrementing cortex_discarded_samples_total (issue #15550).
+// and created timestamp within a single write request. Without this, the
+// within-timeseries dedup in validateSamples only catches duplicates inside one
+// object: if the same sample appears in two different timeseries objects with the
+// same labels, both copies pass through to the ingesters, where the duplicate is
+// silently dropped without incrementing cortex_discarded_samples_total (issue
+// #15550).
 //
-// After this middleware, each distinct label set appears in at most one
-// timeseries object. The existing within-timeseries dedup then handles any
-// timestamp collisions that result from the merge.
+// The created timestamp is part of the merge identity because it drives
+// per-object created-timestamp zero-sample ingestion at the ingester: OTLP
+// created-timestamp handling emits one object per distinct created timestamp for
+// a label set, and each must reach the ingester separately to inject its own
+// zero sample. After this middleware, each (label set, created timestamp) pair
+// appears in at most one timeseries object, and the existing within-timeseries
+// dedup then handles any timestamp collisions that result from the merge.
 func (d *Distributor) prePushMergeMiddleware(next PushFunc) PushFunc {
 	return WithCleanup(next, func(next PushFunc, ctx context.Context, pushReq *Request) error {
 		req, err := pushReq.WriteRequest()
@@ -1357,10 +1362,11 @@ func (d *Distributor) prePushMergeMiddleware(next PushFunc) PushFunc {
 
 		// seen maps a label-set hash to the indexes of the already-kept timeseries
 		// with that hash. Almost always a hash maps to a single index, so the happy
-		// path stores just that index and allocates nothing extra. On a vanishingly
-		// rare hash collision between different label sets, the extra indexes are
-		// tracked in more (allocated only then), so every distinct label set is
-		// still deduplicated independently.
+		// path stores just that index and allocates nothing extra. When several kept
+		// series share a hash (a rare hash collision between different label sets, or
+		// the same label set carried with different created timestamps), the extra
+		// indexes are tracked in more (allocated only then), so every distinct
+		// (label set, created timestamp) is still deduplicated independently.
 		type seenEntry struct {
 			index int   // first kept timeseries with this hash
 			more  []int // additional indexes on a hash collision; nil on the happy path
@@ -1378,38 +1384,41 @@ func (d *Distributor) prePushMergeMiddleware(next PushFunc) PushFunc {
 				continue
 			}
 
-			// Find the kept timeseries with the same label set, checking the first
-			// index and then any collision overflow.
+			// A later timeseries merges into a kept one only when both its label set
+			// and its created timestamp match, since the created timestamp is part of
+			// the series' ingestion identity. Check the first index and then any
+			// collision overflow.
+			sameSeries := func(keptIdx int) bool {
+				return req.Timeseries[keptIdx].CreatedTimestamp == ts.CreatedTimestamp &&
+					slices.Equal(req.Timeseries[keptIdx].Labels, ts.Labels)
+			}
 			firstIdx := -1
-			if slices.Equal(req.Timeseries[e.index].Labels, ts.Labels) {
+			if sameSeries(e.index) {
 				firstIdx = e.index
 			} else {
 				for _, candidate := range e.more {
-					if slices.Equal(req.Timeseries[candidate].Labels, ts.Labels) {
+					if sameSeries(candidate) {
 						firstIdx = candidate
 						break
 					}
 				}
 			}
 			if firstIdx < 0 {
-				// Hash collision with a different label set: track this index too so
-				// its own later duplicates still merge.
+				// No kept series shares this label set and created timestamp (a hash
+				// collision with a different label set, or the same label set carried
+				// with a different created timestamp): track this index too so its own
+				// later duplicates still merge.
 				e.more = append(e.more, tsIdx)
 				seen[hash] = e
 				continue
 			}
 
-			// Merge samples, histograms and exemplars from the later timeseries into the first.
+			// Merge samples, histograms and exemplars from the later timeseries into
+			// the first. The created timestamp is identical by construction, so it
+			// needs no reconciliation.
 			req.Timeseries[firstIdx].Samples = append(req.Timeseries[firstIdx].Samples, ts.Samples...)
 			req.Timeseries[firstIdx].Histograms = append(req.Timeseries[firstIdx].Histograms, ts.Histograms...)
 			req.Timeseries[firstIdx].Exemplars = append(req.Timeseries[firstIdx].Exemplars, ts.Exemplars...)
-			// Preserve the earliest non-zero created timestamp so the ingester
-			// still performs created-timestamp zero-sample ingestion for the
-			// merged series. Otherwise a non-zero timestamp carried only by an
-			// absorbed duplicate would be dropped.
-			if ts.CreatedTimestamp != 0 && (req.Timeseries[firstIdx].CreatedTimestamp == 0 || ts.CreatedTimestamp < req.Timeseries[firstIdx].CreatedTimestamp) {
-				req.Timeseries[firstIdx].CreatedTimestamp = ts.CreatedTimestamp
-			}
 			// Invalidate the marshal cache after merging — without this,
 			// Size()/Marshal() return stale pre-merge bytes and drop the
 			// merged histograms/exemplars.
