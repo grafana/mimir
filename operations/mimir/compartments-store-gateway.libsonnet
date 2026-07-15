@@ -35,18 +35,13 @@
   local isZoneBBackupMultiAZ = $._config.multi_zone_store_gateway_zone_b_backup_multi_az_enabled && std.length($._config.multi_zone_availability_zones) >= 2,
 
   // Args.
-  local perCompartmentStoreGatewayArgs(compartmentIdx) = {
+  local perCompartmentStoreGatewayArgs(compartmentIdx) = $.mimirCompartmentsCommonArgs {
     [$.mimirBlocksStorageBucketNameFlag]: $.mimirBlocksStorageCompartmentBucketName(compartmentIdx),
 
-    'compartments.enabled': true,
-    'compartments.read.num-compartments': $._config.compartments_read_count,
-    'compartments.write.num-compartments': $._config.compartments_write_count,
     'store-gateway.read-compartment-id': compartmentIdx,
 
     // The store-gateway doesn't consume Kafka, but it inherits the ingest-storage args from the common config,
-    // so set them to this read compartment's values for consistency (and so the compartments config
-    // validation passes).
-    'ingest-storage.kafka.address': $._config.compartments_ingest_storage_kafka_address,
+    // so set the topic to this read compartment's value for consistency.
     'ingest-storage.kafka.topic': $.mimirIngestStorageCompartmentKafkaTopic(compartmentIdx),
   },
 

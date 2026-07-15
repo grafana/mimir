@@ -69,9 +69,12 @@
 (import 'compartments-ingester.libsonnet') +
 (import 'compartments-querier.libsonnet') +
 (import 'compartments-query-frontend.libsonnet') +
+(import 'compartments-alertmanager.libsonnet') +
+(import 'compartments-query-scheduler.libsonnet') +
 (import 'compartments-compactor.libsonnet') +
 (import 'compartments-compactor-scheduler.libsonnet') +
 (import 'compartments-store-gateway.libsonnet') +
+(import 'compartments-overrides-exporter.libsonnet') +
 (import 'compartments-memcached.libsonnet') +
 
 // Store-gateway autoscaling. Keep it after multi-zone-store-gateway (it patches those StatefulSets) and after
@@ -84,4 +87,5 @@
 
 // Add memberlist support. Keep it at the end because it overrides all Mimir components.
 (import 'memberlist.libsonnet') +
-(import 'multi-zone-memberlist-bridge.libsonnet')
+(import 'multi-zone-memberlist-bridge.libsonnet') +
+(import 'compartments-memberlist-bridge.libsonnet')

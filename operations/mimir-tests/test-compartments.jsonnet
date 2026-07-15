@@ -40,6 +40,9 @@ local env = (import 'test-ingest-storage-autoscaling-one-trigger.jsonnet') {
     autoscaling_store_gateway_min_replicas_per_compartment_zone: 1,
     autoscaling_store_gateway_max_replicas_per_compartment_zone: 3,
     enable_pvc_auto_deletion_for_store_gateways: true,
+
+    // Exercise the global overrides-exporter workload.
+    overrides_exporter_enabled: true,
   },
 };
 
@@ -48,7 +51,21 @@ local rulerDistributorAddress(zone) =
 
 local rulerBlocksBucket(args) = args[env.mimirBlocksStorageBucketNameFlag];
 
+local all(values) = std.foldl(function(acc, value) acc && value, values, true);
 local any(values) = std.foldl(function(acc, value) acc || value, values, false);
+
+local hasCommonArgs(args) = all([
+  std.objectHas(args, flag) && args[flag] == env.mimirCompartmentsCommonArgs[flag]
+  for flag in std.objectFields(env.mimirCompartmentsCommonArgs)
+]);
+
+local globalComponentArgs = {
+  alertmanager: env.alertmanager_args,
+  query_scheduler: env.query_scheduler_args,
+  ruler_query_scheduler: env.ruler_query_scheduler_args,
+  overrides_exporter: env.overrides_exporter_args,
+  memberlist_bridge: env.memberlist_bridge_args,
+};
 
 local resourceContainers(resource) =
   if resource == null ||
@@ -101,6 +118,10 @@ local dataPathCoexistenceResources = {
   compactor: dataPathCoexistenceEnv.compactor_statefulset,
   compactor_scheduler: dataPathCoexistenceEnv.compactor_scheduler_statefulset,
 };
+
+local missingCommonArgs = [name for name in std.objectFields(globalComponentArgs) if !hasCommonArgs(globalComponentArgs[name])];
+assert std.length(missingCommonArgs) == 0 :
+       'expected global Mimir component args to inherit compartments defaults; missing on: %s' % std.join(', ', missingCommonArgs);
 
 local missingCoexistenceResources = [name for name in std.objectFields(dataPathCoexistenceResources) if std.length(resourceContainers(dataPathCoexistenceResources[name])) == 0];
 assert std.length(missingCoexistenceResources) == 0 :

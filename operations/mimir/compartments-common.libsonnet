@@ -54,6 +54,7 @@ local jsonpath = import 'github.com/jsonnet-libs/xtd/jsonpath.libsonnet';
     'compartments.enabled': true,
     'compartments.read.num-compartments': $._config.compartments_read_count,
     'compartments.write.num-compartments': $._config.compartments_write_count,
+    'ingest-storage.kafka.address': $._config.compartments_ingest_storage_kafka_address,
     'ingest-storage.kafka.topic': $._config.compartments_ingest_storage_kafka_topic,
   },
 

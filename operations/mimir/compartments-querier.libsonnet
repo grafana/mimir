@@ -1,10 +1,6 @@
 {
   // Make queriers compartment-aware.
   local perCompartmentQuerierArgs = if !$._config.compartments_ingester_enabled then {} else $.mimirCompartmentsCommonArgs {
-    // Queriers inherit this otherwise unused setting through commonConfig. Keep it consistent with
-    // compartments so shared config validation can verify the rendered workload.
-    'ingest-storage.kafka.address': $._config.compartments_ingest_storage_kafka_address,
-
     // The querier reads each read compartment's dedicated blocks bucket, resolving the
     // '<read-compartment-id>' placeholder per compartment. This overrides the single bucket name set by
     // blocksStorageConfig, and is required: with compartments enabled the querier fails to start unless
