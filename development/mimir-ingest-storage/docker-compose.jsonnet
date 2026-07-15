@@ -205,9 +205,12 @@ std.manifestYamlDoc({
   },
 
   minio:: {
+    local buckets = ['mimir-blocks', 'mimir-ruler', 'mimir-alertmanager', 'usage-tracker-snapshots'],
     minio: {
       image: 'minio/minio:RELEASE.2025-05-24T17-08-30Z',
-      command: ['server', '--console-address', ':9001', '/data'],
+      // MinIO serves each top-level directory under /data as a bucket. The data dir is gitignored and
+      // starts empty, so create the buckets the dev cluster needs before starting the server.
+      entrypoint: ['sh', '-c', 'mkdir -p %s && exec minio server --console-address :9001 /data' % std.join(' ', ['/data/%s' % bucket for bucket in buckets])],
       environment: ['MINIO_ROOT_USER=mimir', 'MINIO_ROOT_PASSWORD=supersecret'],
       ports: [
         '9000:9000',
