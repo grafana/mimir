@@ -524,7 +524,11 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr, timeRange types.QueryTimeR
 
 	case *parser.BinaryExpr:
 		if expr.VectorMatching != nil && (expr.VectorMatching.FillValues.RHS != nil || expr.VectorMatching.FillValues.LHS != nil) {
-			return nil, compat.NewNotSupportedError("'fill' modifier")
+			// Only one-to-one matching supports the 'fill' modifier so far.
+			// Grouped (group_left/group_right) fills, and fills on set operators, remain unsupported.
+			if expr.VectorMatching.Card != parser.CardOneToOne {
+				return nil, compat.NewNotSupportedError("'fill' modifier with grouping")
+			}
 		}
 
 		lhs, err := p.nodeFromExpr(expr.LHS, timeRange)
