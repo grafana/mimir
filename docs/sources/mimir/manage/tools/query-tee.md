@@ -193,6 +193,7 @@ The `min_data_queried_age` field supports Go duration format. Valid time units a
 #### Configure tenant-based routing
 
 You can prevent a backend from receiving requests for specific tenants using the `exclude_tenants` setting.
+The ability to exclude certain users from the query-tee is useful when you intend to only mirror a subset of the queries received by a Mimir cluster to another one.
 
 **How tenant-based routing works:**
 
