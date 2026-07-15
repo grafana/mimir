@@ -96,6 +96,7 @@
 * [BUGFIX] Compactor: Fix `GatherBlockHealthStats` postings walk error check to prevent swallowing errors. #15895
 * [BUGFIX] MQE: Don't evaluate unnecessary range vector splitting ranges when a split range vector is part of a spun-off subquery and running time-splitting and caching inside MQE is enabled. #15931
 * [BUGFIX] MQE: Fix `info()` function incorrectly handling negated name matchers. #15168
+* [BUGFIX] MQE: Fix `this indicates something has been returned to a pool more than once` panic when a `sum()` or `avg()` group contains, at the same output step, a float sample and native histograms that cannot be added together (e.g. exponential and custom bucket schemas). #16059
 
 ### Mixin
 
