@@ -102,7 +102,8 @@ require (
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/cli/browser v1.3.0 // indirect
 	github.com/client9/misspell v0.3.4 // indirect
-	github.com/clipperhouse/uax29/v2 v2.2.0 // indirect
+	github.com/clipperhouse/displaywidth v0.10.0 // indirect
+	github.com/clipperhouse/uax29/v2 v2.6.0 // indirect
 	github.com/cncf/xds/go v0.0.0-20260202195803-dba9d589def2 // indirect
 	github.com/cockroachdb/apd/v3 v3.2.1 // indirect
 	github.com/containerd/errdefs v1.0.0 // indirect
@@ -232,9 +233,10 @@ require (
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/mwitkow/go-conntrack v0.0.0-20190716064945-2f068394615f // indirect
 	github.com/norwoodj/helm-docs v1.14.2 // indirect
-	github.com/olekukonko/errors v1.1.0 // indirect
-	github.com/olekukonko/ll v0.0.9 // indirect
-	github.com/olekukonko/tablewriter v1.1.0 // indirect
+	github.com/olekukonko/cat v0.0.0-20250911104152-50322a0618f6 // indirect
+	github.com/olekukonko/errors v1.2.0 // indirect
+	github.com/olekukonko/ll v0.1.6 // indirect
+	github.com/olekukonko/tablewriter v1.1.4 // indirect
 	github.com/open-policy-agent/conftest v0.68.2 // indirect
 	github.com/open-policy-agent/opa v1.15.2 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
