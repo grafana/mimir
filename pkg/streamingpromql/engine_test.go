@@ -80,9 +80,10 @@ func TestUnsupportedPromQLFeatures(t *testing.T) {
 	// The goal of this is not to list every conceivable expression that is unsupported, but to cover all the
 	// different cases and make sure we produce a reasonable error message when these cases are encountered.
 	unsupportedExpressions := map[string]string{
-		"left_vector + fill_right(0) right_vector": "'fill' modifier",
-		"left_vector + fill(0) right_vector":       "'fill' modifier",
-		"left_vector + fill_left(0) right_vector":  "'fill' modifier",
+		// Grouped (group_left/group_right) fills are not supported yet.
+		"left_vector + on(instance) group_left fill_right(0) right_vector": "'fill' modifier with grouping",
+		"left_vector + on(instance) group_left fill(0) right_vector":       "'fill' modifier with grouping",
+		"left_vector + on(instance) group_right fill_left(0) right_vector": "'fill' modifier with grouping",
 	}
 
 	for expression, expectedError := range unsupportedExpressions {
