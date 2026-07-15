@@ -1008,6 +1008,152 @@ func TestParsePartitionIDs(t *testing.T) {
 	}
 }
 
+func TestRemoveAllOwnersAndPartitionsCommand(t *testing.T) {
+	t.Parallel()
+
+	t.Run("clears all partitions and owners from a populated ring", func(t *testing.T) {
+		t.Parallel()
+		ctx := context.Background()
+
+		seedKV, seedClient := startMemberlistKV(t)
+		seedAddr := net.JoinHostPort("127.0.0.1", strconv.Itoa(seedKV.GetListeningPort()))
+
+		err := seedClient.CAS(ctx, ingester.PartitionRingKey, func(in interface{}) (out interface{}, retry bool, err error) {
+			ringDesc := ring.GetOrCreatePartitionRingDesc(in)
+			now := time.Now()
+			ringDesc.AddPartition(0, ring.PartitionActive, now)
+			ringDesc.AddPartition(1, ring.PartitionInactive, now)
+			ringDesc.AddOrUpdateOwner("ingester-0", ring.OwnerActive, 0, now)
+			ringDesc.AddOrUpdateOwner("ingester-1", ring.OwnerActive, 1, now)
+			return ringDesc, true, nil
+		})
+		require.NoError(t, err)
+
+		cmd := &RemoveAllOwnersAndPartitionsCommand{
+			memberlistJoin:     []string{seedAddr},
+			memberlistBindPort: 0,
+			ringKey:            ingester.PartitionRingKey,
+			stdin:              strings.NewReader("yes\n"),
+			logger:             log.NewNopLogger(),
+		}
+		require.NoError(t, cmd.run())
+
+		require.Eventually(t, func() bool {
+			val, err := seedClient.Get(ctx, ingester.PartitionRingKey)
+			if err != nil || val == nil {
+				return false
+			}
+			ringDesc, ok := val.(*ring.PartitionRingDesc)
+			if !ok {
+				return false
+			}
+			partitions, owners := countLivePartitionsAndOwners(ringDesc)
+			return partitions == 0 && owners == 0
+		}, 5*time.Second, 100*time.Millisecond, "all partitions and owners should be removed")
+	})
+
+	t.Run("succeeds and makes no change on an already-empty ring", func(t *testing.T) {
+		t.Parallel()
+		ctx := context.Background()
+
+		seedKV, seedClient := startMemberlistKV(t)
+		seedAddr := net.JoinHostPort("127.0.0.1", strconv.Itoa(seedKV.GetListeningPort()))
+
+		cmd := &RemoveAllOwnersAndPartitionsCommand{
+			memberlistJoin:     []string{seedAddr},
+			memberlistBindPort: 0,
+			ringKey:            ingester.PartitionRingKey,
+			stdin:              strings.NewReader("yes\n"),
+			logger:             log.NewNopLogger(),
+		}
+		require.NoError(t, cmd.run())
+
+		val, err := seedClient.Get(ctx, ingester.PartitionRingKey)
+		require.NoError(t, err)
+		if val != nil {
+			ringDesc := val.(*ring.PartitionRingDesc)
+			partitions, owners := countLivePartitionsAndOwners(ringDesc)
+			require.Zero(t, partitions)
+			require.Zero(t, owners)
+		}
+	})
+
+	t.Run("operates on the partition ring identified by the custom ring key", func(t *testing.T) {
+		t.Parallel()
+		ctx := context.Background()
+
+		const customRingKey = "custom-partition-ring"
+
+		seedKV, seedClient := startMemberlistKV(t)
+		seedAddr := net.JoinHostPort("127.0.0.1", strconv.Itoa(seedKV.GetListeningPort()))
+
+		err := seedClient.CAS(ctx, customRingKey, func(in interface{}) (out interface{}, retry bool, err error) {
+			ringDesc := ring.GetOrCreatePartitionRingDesc(in)
+			now := time.Now()
+			ringDesc.AddPartition(0, ring.PartitionInactive, now)
+			ringDesc.AddOrUpdateOwner("ingester-0", ring.OwnerActive, 0, now)
+			return ringDesc, true, nil
+		})
+		require.NoError(t, err)
+
+		cmd := &RemoveAllOwnersAndPartitionsCommand{
+			memberlistJoin:     []string{seedAddr},
+			memberlistBindPort: 0,
+			ringKey:            customRingKey,
+			stdin:              strings.NewReader("yes\n"),
+			logger:             log.NewNopLogger(),
+		}
+		require.NoError(t, cmd.run())
+
+		require.Eventually(t, func() bool {
+			val, err := seedClient.Get(ctx, customRingKey)
+			if err != nil || val == nil {
+				return false
+			}
+			ringDesc, ok := val.(*ring.PartitionRingDesc)
+			if !ok {
+				return false
+			}
+			partitions, owners := countLivePartitionsAndOwners(ringDesc)
+			return partitions == 0 && owners == 0
+		}, 5*time.Second, 100*time.Millisecond, "custom ring key should be cleared")
+	})
+
+	t.Run("makes no change when the user declines confirmation", func(t *testing.T) {
+		t.Parallel()
+		ctx := context.Background()
+
+		seedKV, seedClient := startMemberlistKV(t)
+		seedAddr := net.JoinHostPort("127.0.0.1", strconv.Itoa(seedKV.GetListeningPort()))
+
+		err := seedClient.CAS(ctx, ingester.PartitionRingKey, func(in interface{}) (out interface{}, retry bool, err error) {
+			ringDesc := ring.GetOrCreatePartitionRingDesc(in)
+			now := time.Now()
+			ringDesc.AddPartition(0, ring.PartitionActive, now)
+			ringDesc.AddOrUpdateOwner("ingester-0", ring.OwnerActive, 0, now)
+			return ringDesc, true, nil
+		})
+		require.NoError(t, err)
+
+		cmd := &RemoveAllOwnersAndPartitionsCommand{
+			memberlistJoin:     []string{seedAddr},
+			memberlistBindPort: 0,
+			ringKey:            ingester.PartitionRingKey,
+			stdin:              strings.NewReader("no\n"),
+			logger:             log.NewNopLogger(),
+		}
+		err = cmd.run()
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "operation cancelled by user")
+
+		val, err := seedClient.Get(ctx, ingester.PartitionRingKey)
+		require.NoError(t, err)
+		ringDesc := val.(*ring.PartitionRingDesc)
+		require.True(t, ringDesc.HasPartition(0), "partition should be untouched when confirmation is declined")
+		require.True(t, ringDesc.HasOwner("ingester-0"), "owner should be untouched when confirmation is declined")
+	})
+}
+
 // startMemberlistKV starts a memberlist KV node for testing and returns both the KV and a client.
 // The KV is automatically stopped when the test completes.
 func startMemberlistKV(t *testing.T) (*memberlist.KV, *memberlist.Client) {

@@ -79,6 +79,17 @@ type RemoveOwnerCommand struct {
 	stdin                  io.Reader // For testing; defaults to os.Stdin if nil.
 }
 
+// RemoveAllOwnersAndPartitionsCommand handles the remove-all-owners-and-partitions subcommand.
+type RemoveAllOwnersAndPartitionsCommand struct {
+	memberlistJoin         []string
+	memberlistClusterLabel string
+	memberlistBindPort     int
+	ringKey                string
+	verbose                bool
+	logger                 log.Logger
+	stdin                  io.Reader // For testing; defaults to os.Stdin if nil.
+}
+
 // Register is used to register the command to a parent command.
 func (c *PartitionRingCommand) Register(app *kingpin.Application, _ EnvVarNames, logConfig *LoggerConfig) {
 	partitionRingCmd := app.Command("partition-ring", "Commands for managing the ingest storage partition ring.")
@@ -431,6 +442,22 @@ func (c *RemoveOwnerCommand) getStdin() io.Reader {
 		return c.stdin
 	}
 	return os.Stdin
+}
+
+func (c *RemoveAllOwnersAndPartitionsCommand) run() error {
+	return errors.New("not implemented")
+}
+
+func (c *RemoveAllOwnersAndPartitionsCommand) getStdin() io.Reader {
+	if c.stdin != nil {
+		return c.stdin
+	}
+	return os.Stdin
+}
+
+// countLivePartitionsAndOwners counts the partitions and owners present in ringDesc.
+func countLivePartitionsAndOwners(ringDesc *ring.PartitionRingDesc) (partitions, owners int) {
+	return 0, 0
 }
 
 // askForConfirmation prints the given message to stderr and asks the user to type 'yes' to confirm.
