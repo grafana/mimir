@@ -108,7 +108,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.Var(&cfg.PreferAvailabilityZones, "querier.prefer-availability-zones", "Comma-separated list of availability zones to prefer when querying ingesters and store-gateways. All zones in the list are given equal priority.")
 
 	f.BoolVar(&cfg.MinimizeIngesterRequests, minimiseIngesterRequestsFlag, true, "If true, when querying ingesters, only the minimum required ingesters required to reach quorum will be queried initially, with other ingesters queried only if needed due to failures from the initial set of ingesters. Enabling this option reduces resource consumption for the happy path at the cost of increased latency for the unhappy path.")
-	f.DurationVar(&cfg.MinimiseIngesterRequestsHedgingDelay, minimiseIngesterRequestsFlag+"-hedging-delay", 3*time.Second, "Delay before initiating requests to further ingesters when request minimization is enabled and the initially selected set of ingesters have not all responded. Ignored if -"+minimiseIngesterRequestsFlag+" is not enabled.")
+	f.DurationVar(&cfg.MinimiseIngesterRequestsHedgingDelay, minimiseIngesterRequestsFlag+"-hedging-delay", 0, "Delay before initiating requests to further ingesters when request minimization is enabled and the initially selected set of ingesters have not all responded. Set to 0 to disable hedging. Ignored if -"+minimiseIngesterRequestsFlag+" is not enabled.")
 
 	// Why 256 series / ingester/store-gateway?
 	// Based on our testing, 256 series / ingester was a good balance between memory consumption and the CPU overhead of managing a batch of series.

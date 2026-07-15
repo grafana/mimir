@@ -13,8 +13,12 @@
 * [CHANGE] Continuous-test: Change default values for `tests.write-read-series-test.num-series` and `tests.write-read-series-test.max-query-age` to match the values being set in jsonnet. #15705
 * [CHANGE] Update Docker image bases from Debian 12 to Debian 13 (`gcr.io/distroless/static-debian13`; race images use `base-nossl-debian13`). #15629
 * [CHANGE] Querier: Query planning metrics previously emitted with a `component="querier"` label are now emitted with a `engine="querier"` label instead, mirroring the similar metrics emitted by the query-frontend and other querier metrics. #15787
+* [CHANGE] Querier: Reduce the default concurrency of queriers, `-querier.max-concurrent`, to 8. #15984
 * [CHANGE] Query-frontend: the number of query shards is now always rounded up to the next power of two, both for the configured `-query-frontend.query-sharding-total-shards` and for the per-query computed value. #15807
 * [CHANGE] Compactor: `-compactor.split-and-merge-shards` and `-compactor.ooo-split-and-merge-shards` are now rounded up to the next power of two, so compactor and query shards always mesh (one is a divisor or multiple of the other). #15807
+* [CHANGE] Querier: Hedging of query requests to ingesters is now disabled by default. The previous behaviour can be restored by setting `-querier.minimize-ingester-requests-hedging-delay=3s`. #15976
+* [CHANGE] MQE: Removed the experimental prune-toggles optimization pass and its CLI flag `-querier.mimir-query-engine.enable-prune-toggles`. Pruning of toggled query expressions such as `... and on() (vector(0) == 1)` are now handled by the remove-statically-empty-expressions optimization pass, enabled with `-querier.mimir-query-engine.enable-remove-statically-empty-expressions=true`. #16037
+* [FEATURE] Ingest storage: Add `-ingest-storage.kafka.producer-compression` flag to configure the Kafka producer compression codec. Supported values are `none`, `gzip`, `snappy`, `lz4`, and `zstd`. Set it to `none` to target Azure Event Hub's Kafka-compatible endpoint, which does not support compressed produce requests. #15235
 * [FEATURE] Ingester: Shared tenant-fair compute worker pool. Replaces the previous per-request fanout (which could let a heavy tenant occupy all CPU) with a fixed pool of workers backed by a round-robin per-tenant queue. The label-values-cardinality endpoint is the first consumer. New experimental flags: `-ingester.compute-workers` (default 0 = GOMAXPROCS) and `-ingester.label-values-count-chunk-size` (default 32). #15493
 * [FEATURE] Ingester, Block-builder: Add experimental `-ingester.float-chunk-encoding` flag (per-tenant `float_chunk_encoding` limit) to select the float chunk encoding (`xor` or `xor2`). The overrides-exporter can export it as a numeric value (`4` for `xor`, `7` for `xor2`) when `float_chunk_encoding` is added to `-overrides-exporter.enabled-metrics`. #15831
 * [FEATURE] Querier: Add experimental label-based access control (LBAC) for metric read queries. When enabled via `-auth.label-access-control-enabled`, Mimir enforces label selectors from the `X-Prom-Label-Policy` HTTP header at query time, filtering series and exemplars per tenant policy. Cache key isolation is applied automatically in the query-frontend. #15554
@@ -23,7 +27,7 @@
 * [FEATURE] Cost attribution: Support multiple named cost attribution trackers per tenant via new `additional_cost_attribution_trackers` config field. #15302
 * [FEATURE] MQE: Add `cortex_querier_inflight_query_max_age_seconds` metric reporting the age of the oldest in-flight query memory consumption tracker. #15300
 * [FEATURE] MQE: Add experimental support for splitting and caching `present_over_time` over range vectors in instant queries. #15386
-* [FEATURE] Query-scheduler: Add experimental `cortex_query_scheduler_inflight_max_age_seconds` metric reporting how long the oldest inflight request has been waiting since it was enqueued. Reports 0 when no requests are inflight. Enabled by default; can be disabled with `-query-scheduler.inflight-max-age-metric-enabled=false`. #15419
+* [FEATURE] Query-scheduler: Add experimental `cortex_query_scheduler_queue_max_wait_seconds` metric reporting how long the oldest request still waiting in the queue has been waiting since it was enqueued. Requests already dispatched to a querier for execution are excluded, so the metric reflects only queue wait time and acts as a queue-starvation detector. Reports 0 when no requests are waiting. Enabled by default; can be disabled with `-query-scheduler.queue-max-wait-metric-enabled=false`. #15419 #15960
 * [FEATURE] Query-scheduler: Add experimental `cortex_query_scheduler_max_queue_length` metric reporting the per-tenant peak queue length observed since the last scrape. Enable with `-query-scheduler.max-queue-length-metric-enabled=true`. #15906
 * [FEATURE] MQE: Add support for experimental PromQL functions `min_of` and `max_of`. #15597
 * [FEATURE] MQE: Add support for the experimental PromQL function `histogram_quantiles`, which computes multiple quantiles from classic or native histograms in a single call. #15710
@@ -32,11 +36,16 @@
 * [FEATURE] Ingester: Add experimental `cortex_ingester_tsdb_head_chunks_max_mmapped` gauge reporting the maximum, across all per-tenant TSDBs, of the maximum number of head chunks memory-mapped for any individual series during the last memory-mapping pass. Temporary measurement metric; will be removed once we have collected enough data. #15616
 * [FEATURE] kafkatool: Add `dump find-duplicates` command to scan an exported dump and report float samples re-sent with the same timestamp and value as the previous sample for a series. These exact duplicates are silently dropped by the ingester but still count toward received-samples metrics. An optional `--tenant` flag restricts the scan to a single tenant. #15506
 * [FEATURE] Ingest storage: Add an experimental WarpStream-aware Kafka producer backend, enabled with `-ingest-storage.kafka.backend=warpstream`. It hedges and reroutes produce requests across WarpStream agents to reduce write tail latency, and is tuned via the experimental `-ingest-storage.kafka.warpstream-*` flags. #15236 #15809
-* [FEATURE] MQE: Add experimental support for running splitting, caching and spinning off subqueries from instant queries inside MQE. Enabled with `-query-frontend.use-mimir-query-engine-for-splitting-and-caching-results=true`. #15348 #15393 #15397 #15650 #15720 #15750 #15769 #15783 #15787 #15795 #15804 #15822 #15823 #15846 #15827 #15884 #15887 #15912 #15928 #15930 #15955
+* [FEATURE] MQE: Add experimental support for running splitting, caching and spinning off subqueries from instant queries inside MQE. Enabled with `-query-frontend.use-mimir-query-engine-for-splitting-and-caching-results=true`. #15348 #15393 #15397 #15650 #15720 #15750 #15769 #15783 #15787 #15795 #15804 #15822 #15823 #15846 #15827 #15884 #15887 #15912 #15928 #15930 #15954 #15955 #15978 #15999 #16015
   * Important: When splitting and caching inside MQE is enabled, the `-query-frontend.query-sharding-max-sharded-queries` limit applies per time-split interval and spun-off subquery, rather than to the entire interval (or entire spun-off subquery).
 * [FEATURE] Ruler: Add experimental `-ruler.distributor.address` support for pushing rule evaluation results to distributors over native gRPC instead of using an internal distributor. Configure the per-request timeout with `-ruler.distributor.remote-timeout`. #15891
+* [FEATURE] MQE: Add experimental support for scalar common subexpression elimination. Enabled with `-querier.mimir-query-engine.enable-scalar-common-subexpression-elimination=true`. #15991
+* [FEATURE] Compactor scheduler: Add the experimental compactor scheduler component, which coordinates work between compactors and exposes additional metrics about pending and active compaction work. #14493 #14553 #14657 #14747 #14768 #14772 #14781 #14804 #14833 #14844 #14849 #14910 #14937 #14945 #14987 #15026 #15094 #15112 #15113 #15267 #15293 #15321 #15606 #15728 #15850 #15897 #15974 #15989 #16042
+* [ENHANCEMENT] Query-frontend: Add experimental `-query-frontend.active-series-max-shard-concurrency` to bound how many sharded active series (and active native histogram metrics) sub-requests are dispatched and merged concurrently within a single request, limiting the resource usage caused by fanning out to a large number of shards, both on queriers and on the query-frontend. 0 (the default) keeps the previous unbounded behavior. #15970
+* [ENHANCEMENT] Query-frontend, Querier: Add experimental `-query-frontend.active-series-framed-responses` to request active series responses from queriers in a length-delimited framed format that the query-frontend can merge using significantly less CPU (roughly 5-6x faster merges for high shard counts). Queriers that don't support the format fall back to JSON transparently. #15971
 * [ENHANCEMENT] Store-gateway, Ingester: Add read support for XOR2 chunk encoding. XOR2 is a new Prometheus TSDB encoding that provides better compression than XOR, particularly for stale markers. #15371
 * [ENHANCEMENT] MQE: Improve experimental support for reporting the number of samples read per query. #14838 #15179 #15191 #15220 #15223 #15232 #15237 #15255 #15276 #15282 #15285
+* [FEATURE] Ingester: added experimental `-ingest-storage.ingester-partition-metric-label-enabled` flag. When set together with `-ingest-storage.enabled`, every metric emitted by the ingester (and the ingest-storage reader / partition-ring lifecycler it owns) carries an `ingester_partition` label identifying the Kafka partition the ingester consumes. Planned to default to enabled in Mimir 3.2 and to be removed in Mimir 3.5. #15130
 * [ENHANCEMENT] Distributor: Relabel middleware returns early if neither label dropping nor relabeling is configured. #15246
 * [ENHANCEMENT] Distributor: Improve distributor push middleware cleanup handling. #15245
 * [ENHANCEMENT] Distributor: Avoid allocating a string per received timeseries when aggregating cost attribution samples per attribution group in the write path. #15751
@@ -44,6 +53,7 @@
 * [ENHANCEMENT] MQE: Simplify `unless` and `or` operations where one side can be proven to be empty by inspecting the expression. #15198
 * [ENHANCEMENT] Store-gateway: Remove outdated limit on caching LabelValues responses that contain more than 655360 values. The gob library panic which required workaround was fixed. #5021 #15271
 * [ENHANCEMENT] MQE: Reduce memory consumption of range vector splitting when many consecutive intervals are not cached. #15173
+* [ENHANCEMENT] MQE: Reduce the number of requests to the intermediate result cache of range vector splitting by using the batch API. #16024
 * [ENHANCEMENT] Querier: track physical and equivalent samples read for remote read requests in query statistics, mirroring the statistics emitted for instant and range queries. #15694
 * [ENHANCEMENT] Ingest storage: Add `cortex_ingest_storage_writer_serialize_duration_seconds` native histogram metric tracking the time spent serializing an incoming request to Kafka records. #15527
 * [ENHANCEMENT] Memberlist: Add `-memberlist.compression-algorithm` flag to select the algorithm used to compress outgoing messages. Supported values: `lzw` (default) and `snappy`. The flag is ignored when `-memberlist.compression-enabled` is false. Before reconfiguring any node to emit a new algorithm, upgrade every cluster member to a build that can decode it, otherwise messages are dropped. #15357
@@ -53,6 +63,7 @@
 * [ENHANCEMENT] MQE: Respect the `Cache-Control: no-store` request header when caching intermediate results for range vector splitting. #15148
 * [ENHANCEMENT] MQE: Extend experimental support for computing multiple aggregations over the same data without buffering to quantile aggregations. #15624
 * [ENHANCEMENT] Ingest storage: skip per-record tracing span and attribute allocations on the Kafka fetch path when the producer trace is not sampled. The producer's trace context is still extracted from record headers for every record. #15614
+* [ENHANCEMENT] Ingest storage: the experimental WarpStream Kafka producer backend (`-ingest-storage.kafka.backend=warpstream`) now traces produce requests, emitting the same producer spans and `traceparent` propagation as the default Kafka backend. #16039
 * [ENHANCEMENT] Distributor: Add a tracing span around the OTLP to Prometheus conversion so its latency is independently visible in traces. #15682
 * [ENHANCEMENET] Runtimeconfig: The HTTP client used to fetch runtime configurations from HTTP endpoints now has keep-alives disabled by default. New CLI flag `-runtime-config.http-client-disable-keep-alives` is enabled by default, an can be set to `false` in-order to re-enable keep-alives. #15695
 * [ENHANCEMENT] MQE: Support for native histograms in `smoothed` and `anchored` extended range selector modifiers. #15398
@@ -63,6 +74,8 @@
 * [ENHANCEMENT] Block-builder: Respect `-blocks-storage.tsdb.bigger-out-of-order-blocks-for-old-samples` to produce 24h blocks for out-of-order data belonging to previous days. #15892
 * [ENHANCEMENT] MQE: Ensure that intermediate results cache keys can not exceed the cache backend's key-size limit when a query federates over many tenants. #15847
 * [ENHANCEMENT] Query-frontend: add a `retries` field to the "query stats" log line reporting the number of times requests were retried while processing the query. The value is 0 when all requests succeeded on their first attempt. #15929
+* [ENHANCEMENT] Query-frontend: Add `query-frontend.cardinality-sharding-max-sharded-queries` to optionally limit sharding for `cardinality/active_series` and `cardinality/active_native_histogram_metrics` endpoints separately from `query-frontend.query-sharding-max-sharded-queries`. #15922
+* [ENHANCEMENT] Ingest storage: Add experimental `-ingest-storage.kafka.write-timeout-overhead` to configure the overhead added on top of the Kafka write timeout (default 2s, unchanged). #16023
 * [BUGFIX] Query-frontend: Fix `cardinality_analysis_max_results` being ignored when set higher than the default of 500. #15581
 * [BUGFIX] Ingest storage: Fix `KafkaProducer.ProduceSync()` returning a single result with a nil record when the context is canceled, instead of one result per input record (with the record set) as the underlying franz-go client does. #15199
 * [BUGFIX] Ingest storage: Fix `cortex_ingest_storage_reader_receive_delay_seconds` inflation by no longer setting the Kafka record `Timestamp` on the distributor side; the Kafka client now sets it at produce time. #15572
@@ -73,6 +86,7 @@
 * [BUGFIX] Query-frontend: Fixed a memory leak caused that could occur on some error paths if MQE was enabled. #15392
 * [BUGFIX] MQE: Fix issue where subqueries unnecessarily compute and then discard an additional step if the parent query is not aligned to the step. #15438
 * [BUGFIX] Upgrade Go to 1.26.4 to address [CVE-2026-42507](https://pkg.go.dev/vuln/GO-2026-5039). #15566
+* [BUGFIX] Upgrade Go to 1.26.5 to address [CVE-2026-39822](https://pkg.go.dev/vuln/GO-2026-4970) and [CVE-2026-42505](https://pkg.go.dev/vuln/GO-2026-5856). #16066
 * [BUGFIX] Memcached: Disable TCP DNS connection pooling used for service discovery by default. #15573
 * [BUGFIX] Ingest storage: Fix `cortex_ingest_storage_writer_produce_records_enqueued_total` not being incremented when `KafkaProducer.ProduceSync()` rejects a batch because a record has its `Timestamp` set by the caller. #15610
 * [BUGFIX] Compactor: Remove temporary block upload validation directories left behind in the data directory when the compactor crashes mid-validation. This prevents leaking disk space. #15647
@@ -86,10 +100,16 @@
 * [BUGFIX] Block-builder-scheduler: Fix a spurious "time went backwards" warning logged at startup when a partition has no records after the scan time. #15855
 * [BUGFIX] Compactor: Fix `GatherBlockHealthStats` postings walk error check to prevent swallowing errors. #15895
 * [BUGFIX] MQE: Don't evaluate unnecessary range vector splitting ranges when a split range vector is part of a spun-off subquery and running time-splitting and caching inside MQE is enabled. #15931
+* [BUGFIX] MQE: Fix `info()` function incorrectly handling negated name matchers. #15168
+* [BUGFIX] MQE: Fix `this indicates something has been returned to a pool more than once` panic when a `sum()` or `avg()` group contains, at the same output step, a float sample and native histograms that cannot be added together (e.g. exponential and custom bucket schemas). #16059
+* [BUGFIX] Query-frontend: Fix issue where series for a range query can be returned in the wrong order if splitting applies and splitting is not running inside MQE. #16036
+* [BUGFIX] Querier: Fix issue where exemplars can be returned in the wrong order if a series contains a label that is a prefix of another (eg. `env="foo"` and `env="foobar"`). #16036
 
 ### Mixin
 
 * [CHANGE] Dashboards: Show maximum queue length, not minimum queue length, on the "Queue length" panel in the "Query-scheduler" row of the "Reads" and "Remote ruler reads" dashboards. #15326
+* [CHANGE] Alerts: `MimirIngesterKafkaReadFailed` now fires as `warning` after 5m, and escalates to `critical` if it persists for 30m. `MimirStrongConsistencyEnforcementFailed` severity changed from `critical` to `warning`, since queriers retry on a different ingester and fire their own alerts if that retry fails. #16019
+* [CHANGE] Remove Grafana Enterprise Metrics (GEM) specific build of the mixin. #16031
 * [ENHANCEMENT] Alerts: Make `MimirInconsistentRuntimeConfig` alert less flaky when performing multiple configuration changes in a row in a large Kubernetes cluster. #15257
 * [ENHANCEMENT] Alerts: Widen the `MimirBlockBuilderPersistentJobFailure` lookback window to 20m to prevent the alert from flapping. #15332
 * [ENHANCEMENT] Alerts: Add a native histogram variant of the `MimirRequestLatency` alert, distinguished by the `histogram` label (`classic` or `native`). #15413
@@ -100,7 +120,9 @@
 * [ENHANCEMENT] Dashboards: Add "p90 compaction delay by level" and "Store-gateway blocks queried by level" panels to the "Compaction" row of the "Compactor" dashboard. #15619
 * [ENHANCEMENT] Store-gateway, Querier: Push down the `limit` parameter of the `/prometheus/api/v1/series` endpoint to store-gateways, so they stop loading series (and their chunks) once the limit is reached instead of fetching all matching series and discarding the excess downstream. #15834
 * [ENHANCEMENT] Dashboards: Split the server-side "Usage Tracker" row of the "Writes" dashboard into separate "TrackSeries" (non-batched) and "TrackSeriesBatch" (batched) rows, so batched tracking RPCs are visible now that synchronous batched tracking can drive `TrackSeriesBatch`. #15805
+* [ENHANCEMENT] Dashboards: Simplify the ingest storage produced-records queries in the "Writes" and "Ruler" dashboards by removing the fallback to the `cortex_ingest_storage_writer_produce_requests_total` and `cortex_ingest_storage_writer_produce_failures_total` metrics, which were renamed to `cortex_ingest_storage_writer_produce_records_enqueued_total` and `cortex_ingest_storage_writer_produce_records_failed_total` more than a year ago. #16035
 * [BUGFIX] Dashboards: Fix the classic/ingest-storage split in the "Tenants", "Top tenants" and "Writes" dashboards so that selecting multiple clusters with a mix of architectures no longer drops the classic clusters' data. The `unless on (job)` filter against `cortex_partition_ring_partitions` now also matches on the cluster aggregation labels. #15400
+* [BUGFIX] Alerts: Update `MimirRulerInstanceHasNoRuleGroups` to not alert on false-positives when rulers are running in multiple zones. #16029
 
 ### Jsonnet
 
@@ -108,11 +130,13 @@
 * [CHANGE] Query-frontend: Increase memory requested and limit to 2GiB and 4GiB respectively. #15688
 * [CHANGE] Continuous-test: Don't explicitly set `tests.write-read-series-test.num-series` and `tests.write-read-series-test.max-query-age` to their default values. #15705
 * [CHANGE] Request 50Mi of ephemeral storage for the distributor, ingester, querier, query-frontend, query-scheduler, ruler-querier, ruler-query-frontend, ruler-query-scheduler, store-gateway, compactor, compactor-scheduler and continuous-test containers. Configure with the new `ephemeral_storage_request_size` option (set it to `null` to disable). #15916
+* [CHANGE] Querier: Reduce the default concurrency of queriers, `-querier.max-concurrent`, to 8. #15984
 * [FEATURE] Compactor: add support for deploying the experimental compactor-scheduler. Enable with `compactor_scheduler_enabled: true`. #15850
 * [FEATURE] Compactor: add experimental compactor autoscaling, enabled with `autoscaling_compactor_enabled: true`. When the compactor-scheduler is enabled, compactors are autoscaled based on the estimated time to drain the scheduler queue instead of CPU utilization. #15850
 * [ENHANCEMENT] Updated rollout-operator jsonnet library to v0.38.0. #15328, #15626
 * [ENHANCEMENT] Make range vector splitting configurable per query path. #15706
 * [ENHANCEMENT] Add `newMimirtoolBlocksJob` and subcommand-specific helpers to run `mimirtool blocks` as Kubernetes Jobs. #15757
+* [BUGFIX] Continuous-test: Include `._config.commonConfig` in arguments passed to continuous-test. #15988
 
 
 ### Documentation

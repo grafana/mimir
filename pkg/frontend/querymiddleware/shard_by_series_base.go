@@ -21,6 +21,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
+	querierapi "github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
@@ -33,9 +34,17 @@ type shardBySeriesBase struct {
 	upstream http.RoundTripper
 	limits   Limits
 	logger   log.Logger
+
+	// maxConcurrency bounds how many shards are in flight concurrently. 0 means
+	// no limit.
+	maxConcurrency int
+
+	// requestFramedResponses makes the sharded sub-requests advertise, via the
+	// Accept header, that they can consume the length-delimited response format.
+	requestFramedResponses bool
 }
 
-func (s *shardBySeriesBase) shardBySeriesSelector(ctx context.Context, spanLog *spanlogger.SpanLogger, r *http.Request, mergeFn func(ctx context.Context, reponses []*http.Response, encoding string) *http.Response) (*http.Response, error) {
+func (s *shardBySeriesBase) shardBySeriesSelector(ctx context.Context, spanLog *spanlogger.SpanLogger, r *http.Request, mergeFn func(ctx context.Context, reqs []*http.Request, encoding string) (*http.Response, error)) (*http.Response, error) {
 	tenantID, err := tenant.TenantID(ctx)
 	if err != nil {
 		return nil, apierror.New(apierror.TypeBadData, err.Error())
@@ -49,7 +58,11 @@ func (s *shardBySeriesBase) shardBySeriesSelector(ctx context.Context, spanLog *
 		return s.upstream.RoundTrip(r)
 	}
 
-	if maxShards := s.limits.QueryShardingMaxShardedQueries(tenantID); shardCount > maxShards {
+	maxShards := s.limits.QueryShardingMaxShardedQueries(tenantID)
+	if cardinalityMaxShards := s.limits.CardinalityShardingMaxShardedQueries(tenantID); cardinalityMaxShards > 0 {
+		maxShards = cardinalityMaxShards
+	}
+	if maxShards > 0 && shardCount > maxShards {
 		return nil, apierror.New(
 			apierror.TypeBadData,
 			fmt.Sprintf("shard count %d exceeds allowed maximum (%d)", shardCount, maxShards),
@@ -66,21 +79,22 @@ func (s *shardBySeriesBase) shardBySeriesSelector(ctx context.Context, spanLog *
 		"shardCount", shardCount, "selector", selector.String(),
 	)
 
-	reqs, err := buildShardedRequests(ctx, r, shardCount, selector)
+	reqs, err := buildShardedRequests(ctx, r, shardCount, selector, s.requestFramedResponses)
 	if err != nil {
 		return nil, apierror.New(apierror.TypeInternal, err.Error())
 	}
 
-	resp, err := doShardedRequests(ctx, reqs, s.upstream)
+	acceptEncoding := r.Header.Get("Accept-Encoding")
+
+	resp, err := mergeFn(ctx, reqs, acceptEncoding)
 	if err != nil {
 		if errors.Is(err, errShardCountTooLow) {
 			return nil, apierror.New(apierror.TypeTooLargeEntry, fmt.Errorf("%w: try increasing the requested shard count", err).Error())
 		}
 		return nil, apierror.New(apierror.TypeInternal, err.Error())
 	}
-	acceptEncoding := r.Header.Get("Accept-Encoding")
 
-	return mergeFn(ctx, resp, acceptEncoding), nil
+	return resp, nil
 }
 
 func setShardCountFromHeader(origShardCount int, r *http.Request, spanLog *spanlogger.SpanLogger) int {
@@ -118,7 +132,7 @@ func parseSelector(req *http.Request) (*parser.VectorSelector, error) {
 	return selector, nil
 }
 
-func buildShardedRequests(ctx context.Context, req *http.Request, numRequests int, selector parser.Expr) ([]*http.Request, error) {
+func buildShardedRequests(ctx context.Context, req *http.Request, numRequests int, selector parser.Expr, requestFramedResponses bool) ([]*http.Request, error) {
 	reqs := make([]*http.Request, numRequests)
 	for i := 0; i < numRequests; i++ {
 		r, err := http.NewRequestWithContext(ctx, http.MethodGet, req.URL.Path, http.NoBody)
@@ -138,6 +152,10 @@ func buildShardedRequests(ctx context.Context, req *http.Request, numRequests in
 		// here to ensure the request parameter makes it to the querier.
 		r.RequestURI = r.URL.String()
 
+		if requestFramedResponses {
+			r.Header.Set("Accept", querierapi.ContentTypeActiveSeriesFramed)
+		}
+
 		if err := user.InjectOrgIDIntoHTTPRequest(ctx, r); err != nil {
 			return nil, err
 		}
@@ -148,13 +166,14 @@ func buildShardedRequests(ctx context.Context, req *http.Request, numRequests in
 	return reqs, nil
 }
 
-func doShardedRequests(ctx context.Context, upstreamRequests []*http.Request, next http.RoundTripper) ([]*http.Response, error) {
-	resps := make([]*http.Response, len(upstreamRequests))
-
+func (s *shardBySeriesBase) processShardedRequests(ctx context.Context, reqs []*http.Request, handle func(ctx context.Context, resp *http.Response) error) error {
 	g, ctx := errgroup.WithContext(ctx)
+	if s.maxConcurrency > 0 {
+		g.SetLimit(s.maxConcurrency)
+	}
 	queryStats := stats.FromContext(ctx)
-	for i, req := range upstreamRequests {
-		i, r := i, req
+	for _, req := range reqs {
+		r := req
 		g.Go(func() error {
 			partialStats, childCtx := stats.ContextWithEmptyStats(ctx)
 			partialStats.AddShardedQueries(1)
@@ -163,7 +182,7 @@ func doShardedRequests(ctx context.Context, upstreamRequests []*http.Request, ne
 			childCtx, span = tracer.Start(childCtx, "shardBySeries.doShardedRequest")
 			defer span.End()
 
-			resp, err := next.RoundTrip(r.WithContext(childCtx))
+			resp, err := s.upstream.RoundTrip(r.WithContext(childCtx))
 			if err != nil {
 				span.RecordError(err)
 				return err
@@ -171,17 +190,20 @@ func doShardedRequests(ctx context.Context, upstreamRequests []*http.Request, ne
 
 			if resp.StatusCode != http.StatusOK {
 				span.SetAttributes(attribute.Int("statusCode", resp.StatusCode))
+				defer func() {
+					_, _ = io.Copy(io.Discard, resp.Body)
+					_ = resp.Body.Close()
+				}()
 				if resp.StatusCode == http.StatusRequestEntityTooLarge {
 					return errShardCountTooLow
 				}
-				var body []byte
-				if resp.Body != nil {
-					body, _ = io.ReadAll(resp.Body)
-				}
+				body, _ := io.ReadAll(resp.Body)
 				return fmt.Errorf("received unexpected response from upstream: status %d, body: %s", resp.StatusCode, string(body))
 			}
 
-			resps[i] = resp
+			if err := handle(childCtx, resp); err != nil {
+				return mergeShardResponseError{err}
+			}
 
 			span.SetAttributes(attribute.Int64("seriesCount", int64(partialStats.LoadFetchedSeries())))
 			queryStats.Merge(partialStats)
@@ -190,19 +212,13 @@ func doShardedRequests(ctx context.Context, upstreamRequests []*http.Request, ne
 		})
 	}
 
-	err := g.Wait()
-	if err != nil {
-		// If there was an error, we need to read and close all response bodies.
-		for _, resp := range resps {
-			if resp != nil {
-				_, _ = io.ReadAll(resp.Body)
-				_ = resp.Body.Close()
-			}
-		}
-	}
-
-	return resps, err
+	return g.Wait()
 }
+
+type mergeShardResponseError struct{ err error }
+
+func (e mergeShardResponseError) Error() string { return e.err.Error() }
+func (e mergeShardResponseError) Unwrap() error { return e.err }
 
 func shardedSelector(shardCount, currentShard int, expr parser.Expr) (parser.Expr, error) {
 	originalSelector, ok := expr.(*parser.VectorSelector)

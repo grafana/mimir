@@ -29,12 +29,31 @@ const (
 	consumeFromStart      = "start"
 	consumeFromEnd        = "end"
 	consumeFromTimestamp  = "timestamp"
+
+	kafkaCompressionDefault = ""
+	kafkaCompressionNone    = "none"
+	kafkaCompressionGzip    = "gzip"
+	kafkaCompressionSnappy  = "snappy"
+	kafkaCompressionLz4     = "lz4"
+	kafkaCompressionZstd    = "zstd"
 )
 
 // KafkaBackend identifies the producer implementation used by the ingest writer.
 const (
 	KafkaBackendKafka      = "kafka"
 	KafkaBackendWarpstream = "warpstream"
+)
+
+const (
+	// DefaultKafkaRequestTimeoutOverhead is the default overhead applied by the writer on top of
+	// every Kafka write timeout. It accounts for the extra time a request sits in the client's
+	// buffer before being sent on the wire, plus the time to send it over the network and have
+	// Kafka start processing it.
+	DefaultKafkaRequestTimeoutOverhead = 2 * time.Second
+
+	// MinKafkaRequestTimeoutOverhead is the minimum allowed request timeout overhead. It matches
+	// the lower bound the franz-go client enforces on its request timeout overhead.
+	MinKafkaRequestTimeoutOverhead = 100 * time.Millisecond
 )
 
 var kafkaBackendOptions = []string{KafkaBackendKafka, KafkaBackendWarpstream}
@@ -59,9 +78,25 @@ var (
 	ErrInvalidFetchMaxWait               = errors.New("the Kafka fetch max wait must be between 5s and 30s")
 	ErrInvalidRecordVersion              = errors.New("invalid record format version")
 	ErrInvalidWriteLogsFsyncConcurrency  = errors.New("the configured number of tenants to fsync concurrently before Kafka offsets are committed must be at least 1")
-	ErrInvalidWarpstreamWriteTimeout     = fmt.Errorf("ingest-storage.kafka.write-timeout must be greater than %s when ingest-storage.kafka.backend=%s", writerRequestTimeoutOverhead*2, KafkaBackendWarpstream)
+	ErrInvalidWriteTimeoutOverhead       = fmt.Errorf("ingest-storage.kafka.write-timeout-overhead must be at least %s", MinKafkaRequestTimeoutOverhead)
+	ErrInvalidWarpstreamWriteTimeout     = fmt.Errorf("ingest-storage.kafka.write-timeout must be greater than or equal to twice ingest-storage.kafka.write-timeout-overhead when ingest-storage.kafka.backend=%s", KafkaBackendWarpstream)
+
+	ErrInvalidProducerCompression = fmt.Errorf("the configured Kafka producer compression codec is invalid, must be one of: %s", strings.Join(kafkaProducerCompressionConfigurableOptions, ", "))
 
 	consumeFromPositionOptions = []string{consumeFromLastOffset, consumeFromStart, consumeFromEnd, consumeFromTimestamp}
+
+	kafkaProducerCompressionConfigurableOptions = []string{
+		kafkaCompressionNone,
+		kafkaCompressionGzip,
+		kafkaCompressionSnappy,
+		kafkaCompressionLz4,
+		kafkaCompressionZstd,
+	}
+
+	kafkaProducerCompressionAllOptions = append(
+		[]string{kafkaCompressionDefault},
+		kafkaProducerCompressionConfigurableOptions...,
+	)
 
 	defaultFetchBackoffConfig = backoff.Config{
 		MinBackoff: 250 * time.Millisecond,
@@ -71,19 +106,24 @@ var (
 )
 
 type Config struct {
-	Enabled     bool            `yaml:"enabled"`
-	KafkaConfig KafkaConfig     `yaml:"kafka"`
-	Migration   MigrationConfig `yaml:"migration"`
+	Enabled            bool                     `yaml:"enabled"`
+	KafkaConfig        KafkaConfig              `yaml:"kafka"`
+	Migration          MigrationConfig          `yaml:"migration"`
+	OrderedConsumption OrderedConsumptionConfig `yaml:"ordered_consumption"`
 
 	WriteLogsFsyncBeforeKafkaCommitConcurrency int `yaml:"write_logs_fsync_before_kafka_commit_concurrency" category:"advanced"`
+
+	IngesterPartitionMetricLabelEnabled bool `yaml:"ingester_partition_metric_label_enabled" category:"experimental"`
 }
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.Enabled, "ingest-storage.enabled", false, "True to enable the ingestion via object storage.")
 	f.IntVar(&cfg.WriteLogsFsyncBeforeKafkaCommitConcurrency, "ingest-storage.write-logs-fsync-before-kafka-commit-concurrency", 4, "Number of tenants to concurrently fsync WAL and WBL before Kafka offsets are committed, must be at least 1.")
+	f.BoolVar(&cfg.IngesterPartitionMetricLabelEnabled, "ingest-storage.ingester-partition-metric-label-enabled", false, "True to wrap all ingester metrics with an ingester_partition label identifying the Kafka partition the ingester consumes. Planned to become the default in Mimir 3.2 and to be removed in Mimir 3.5.")
 
 	cfg.KafkaConfig.RegisterFlagsWithPrefix("ingest-storage.kafka.", f)
 	cfg.Migration.RegisterFlagsWithPrefix("ingest-storage.migration.", f)
+	cfg.OrderedConsumption.RegisterFlagsWithPrefix("ingest-storage.ordered-consumption.", f)
 }
 
 // Validate the config.
@@ -101,6 +141,10 @@ func (cfg *Config) Validate() error {
 		return err
 	}
 
+	if err := cfg.OrderedConsumption.Validate(); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -110,13 +154,14 @@ type KafkaConfig struct {
 	Backend string `yaml:"backend" category:"experimental"`
 
 	// Address is a list of seed brokers. The config name is singular for backward compatibility.
-	Address      flagext.StringSliceCSV `yaml:"address"`
-	Topic        string                 `yaml:"topic"`
-	ClientID     string                 `yaml:"client_id"`
-	ClientRack   string                 `yaml:"client_rack"`
-	DialTimeout  time.Duration          `yaml:"dial_timeout"`
-	WriteTimeout time.Duration          `yaml:"write_timeout"`
-	WriteClients int                    `yaml:"write_clients" category:"deprecated"` // TODO Remove in Mimir 3.3.
+	Address              flagext.StringSliceCSV `yaml:"address"`
+	Topic                string                 `yaml:"topic"`
+	ClientID             string                 `yaml:"client_id"`
+	ClientRack           string                 `yaml:"client_rack"`
+	DialTimeout          time.Duration          `yaml:"dial_timeout"`
+	WriteTimeout         time.Duration          `yaml:"write_timeout"`
+	WriteTimeoutOverhead time.Duration          `yaml:"write_timeout_overhead" category:"experimental"`
+	WriteClients         int                    `yaml:"write_clients" category:"deprecated"` // TODO Remove in Mimir 3.3.
 
 	// Warpstream-only settings, ignored when Backend != KafkaBackendWarpstream.
 	WarpstreamHealthCheckSlowMultiplier    float64 `yaml:"warpstream_health_check_slow_multiplier" category:"experimental"`
@@ -152,8 +197,9 @@ type KafkaConfig struct {
 	AutoCreateTopicEnabled           bool `yaml:"auto_create_topic_enabled"`
 	AutoCreateTopicDefaultPartitions int  `yaml:"auto_create_topic_default_partitions"`
 
-	ProducerMaxRecordSizeBytes int   `yaml:"producer_max_record_size_bytes"`
-	ProducerMaxBufferedBytes   int64 `yaml:"producer_max_buffered_bytes"`
+	ProducerMaxRecordSizeBytes int    `yaml:"producer_max_record_size_bytes"`
+	ProducerMaxBufferedBytes   int64  `yaml:"producer_max_buffered_bytes"`
+	ProducerCompression        string `yaml:"producer_compression"`
 
 	WaitStrongReadConsistencyTimeout time.Duration `yaml:"wait_strong_read_consistency_timeout"`
 
@@ -225,6 +271,7 @@ func (cfg *KafkaConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) 
 	f.StringVar(&cfg.ClientRack, prefix+"client-rack", "", "The rack identifier for this Kafka client. Corresponds to the Kafka client.rack setting. Only supported when "+prefix+"backend=kafka.")
 	f.DurationVar(&cfg.DialTimeout, prefix+"dial-timeout", 2*time.Second, "The maximum time allowed to establish the TCP connection to a Kafka broker, including the TLS handshake when TLS is enabled. It does not include the subsequent SASL authentication handshake.")
 	f.DurationVar(&cfg.WriteTimeout, prefix+"write-timeout", 10*time.Second, "How long to wait for an incoming write request to be successfully committed to the Kafka backend.")
+	f.DurationVar(&cfg.WriteTimeoutOverhead, prefix+"write-timeout-overhead", DefaultKafkaRequestTimeoutOverhead, "Additional time added on top of the write timeout, accounting for a write request sitting in the client buffer and travelling over the network before the Kafka backend starts processing it. Lower values fail slow writes faster, at the cost of less tolerance to network and buffer latency.")
 	f.IntVar(&cfg.WriteClients, prefix+"write-clients", 1, "The number of Kafka clients used by producers. When the configured number of clients is greater than 1, partitions are sharded among Kafka clients. A higher number of clients may provide higher write throughput at the cost of additional Metadata requests pressure to Kafka. Deprecated: has no effect (Mimir always uses a single Kafka write client).")
 
 	f.StringVar(&cfg.ConsumerGroup, prefix+"consumer-group", "", "The consumer group used by the consumer to track the last consumed offset. The consumer group must be different for each ingester. If the configured consumer group contains the '<partition>' placeholder, it is replaced with the actual partition ID owned by the ingester. When empty (recommended), Mimir uses the ingester instance ID to guarantee uniqueness.")
@@ -248,6 +295,7 @@ func (cfg *KafkaConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) 
 
 	f.IntVar(&cfg.ProducerMaxRecordSizeBytes, prefix+"producer-max-record-size-bytes", maxProducerRecordDataBytesLimit, "The maximum size of a Kafka record data that should be generated by the producer. An incoming write request larger than this size is split into multiple Kafka records. We strongly recommend to not change this setting unless for testing purposes.")
 	f.Int64Var(&cfg.ProducerMaxBufferedBytes, prefix+"producer-max-buffered-bytes", 1024*1024*1024, "The maximum size of (uncompressed) buffered and unacknowledged produced records sent to Kafka. The produce request fails once this limit is reached. This limit is per Kafka client. 0 to disable the limit.")
+	f.StringVar(&cfg.ProducerCompression, prefix+"producer-compression", kafkaCompressionDefault, fmt.Sprintf("The compression codec used by the Kafka producer when writing records to the Kafka backend. Supported values: %s. When unset, the franz-go default (snappy with no-compression fallback) is used. Set to %q to disable compression entirely; this is required when targeting Azure Event Hub via its Kafka-compatible endpoint, which does not support compressed produce requests.", strings.Join(kafkaProducerCompressionConfigurableOptions, ", "), kafkaCompressionNone))
 
 	f.DurationVar(&cfg.WaitStrongReadConsistencyTimeout, prefix+"wait-strong-read-consistency-timeout", 20*time.Second, "The maximum allowed for a read requests processed by an ingester to wait until strong read consistency is enforced. 0 to disable the timeout.")
 
@@ -296,6 +344,9 @@ func (cfg *KafkaConfig) Validate() error {
 	if cfg.ProducerMaxRecordSizeBytes < minProducerRecordDataBytesLimit || cfg.ProducerMaxRecordSizeBytes > maxProducerRecordDataBytesLimit {
 		return ErrInvalidProducerMaxRecordSizeBytes
 	}
+	if !slices.Contains(kafkaProducerCompressionAllOptions, cfg.ProducerCompression) {
+		return ErrInvalidProducerCompression
+	}
 	if (cfg.TargetConsumerLagAtStartup != 0) != (cfg.MaxConsumerLagAtStartup != 0) {
 		return ErrInconsistentConsumerLagAtStartup
 	}
@@ -343,12 +394,18 @@ func (cfg *KafkaConfig) Validate() error {
 		}
 	}
 
-	// The Warpstream backend derives the per-attempt produce timeout as
-	// write-timeout minus the request overhead. That only leaves a per-attempt
-	// timeout larger than the overhead itself when write-timeout exceeds twice
-	// the overhead; below that the split stops making sense.
-	if cfg.Backend == KafkaBackendWarpstream && cfg.WriteTimeout <= writerRequestTimeoutOverhead*2 {
-		return ErrInvalidWarpstreamWriteTimeout
+	// The franz-go client rejects a request timeout overhead below 100ms, and the Warpstream
+	// backend requires a positive overhead. Enforce the franz-go floor for both backends so a
+	// misconfiguration surfaces here instead of as a cryptic client construction error.
+	if cfg.WriteTimeoutOverhead < MinKafkaRequestTimeoutOverhead {
+		return fmt.Errorf("%w, is %s", ErrInvalidWriteTimeoutOverhead, cfg.WriteTimeoutOverhead)
+	}
+
+	// The Warpstream backend derives the per-attempt produce timeout as write-timeout minus the
+	// request overhead, then adds the overhead back as client-side slack. That split only holds
+	// when write-timeout is at least twice the overhead, so the per-attempt timeout stays positive.
+	if cfg.Backend == KafkaBackendWarpstream && cfg.WriteTimeout < cfg.WriteTimeoutOverhead*2 {
+		return fmt.Errorf("%w (write-timeout=%s, write-timeout-overhead=%s)", ErrInvalidWarpstreamWriteTimeout, cfg.WriteTimeout, cfg.WriteTimeoutOverhead)
 	}
 
 	// The dialer is only expected to be used in tests.
@@ -382,13 +439,13 @@ func (cfg *KafkaConfig) ToWarpstreamClientOptions() ([]wgo.Opt, error) {
 		wgo.WithHedgerMaxHedgeAgents(cfg.WarpstreamHedgeMaxAgents),
 		wgo.WithDemoterProbeInterval(cfg.WarpstreamDemoterProbeInterval),
 		wgo.WithClusterStatsTTL(time.Second),
-		wgo.WithMetadataRefreshInterval(defaultMetadataRefreshInterval),
+		wgo.WithMetadataRefreshInterval(DefaultMetadataRefreshInterval),
 		// WriteTimeout bounds the whole hedge cascade, so the per-attempt produce
 		// timeout plus its overhead must fit within it (wgo rejects a config where
-		// they don't). Validate guarantees WriteTimeout exceeds twice the overhead,
-		// so the per-attempt timeout stays larger than the overhead.
-		wgo.WithProduceRequestTimeout(cfg.WriteTimeout - writerRequestTimeoutOverhead),
-		wgo.WithProduceRequestTimeoutOverhead(writerRequestTimeoutOverhead),
+		// they don't). Validate guarantees WriteTimeout is at least twice the overhead,
+		// so the per-attempt timeout stays positive.
+		wgo.WithProduceRequestTimeout(cfg.WriteTimeout - cfg.WriteTimeoutOverhead),
+		wgo.WithProduceRequestTimeoutOverhead(cfg.WriteTimeoutOverhead),
 	}
 
 	// The dialer is only expected to be used in tests (e.g. kfake's virtual network).

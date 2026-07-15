@@ -5,8 +5,9 @@ package remoteexec
 import (
 	"context"
 	"fmt"
-	"maps"
 	"slices"
+
+	"github.com/antithesishq/antithesis-sdk-go/assert"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize"
@@ -38,13 +39,21 @@ func (o *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, 
 
 	multiNodeGroupsEnabled := o.enableMultipleNodeRequests && maximumSupportedQueryPlanVersion >= planning.QueryPlanV3
 
+	var groups remoteExecutionGroupSet
+
+	if multiNodeGroupsEnabled {
+		groups = remoteExecutionGroupSet{}
+	}
+
 	// When a query has been rewritten to spin off subqueries, each evaluation root is a separate
 	// query and must have remote execution applied to it independently: if its subtree is sharded, each
 	// sharded leg is executed remotely; otherwise the entire subtree is. The rest of the plan (the outer
 	// instant query) runs on the query-frontend.
-	if evaluationRoots := collectEvaluationRoots(plan.Root); len(evaluationRoots) > 0 {
+	if evaluationRoots, err := collectEvaluationRoots(plan.Root); err != nil {
+		return nil, err
+	} else if len(evaluationRoots) > 0 {
 		for _, evaluationRoot := range evaluationRoots {
-			if err := o.wrapEvaluationRoot(evaluationRoot, multiNodeGroupsEnabled, len(evaluationRoots) > 1); err != nil {
+			if err := o.wrapEvaluationRoot(evaluationRoot, groups, len(evaluationRoots) > 1); err != nil {
 				return nil, err
 			}
 		}
@@ -52,15 +61,15 @@ func (o *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, 
 		return plan, nil
 	}
 
-	if err := o.wrapPlanRoot(plan, multiNodeGroupsEnabled); err != nil {
+	if err := o.wrapPlanRoot(plan, groups); err != nil {
 		return nil, err
 	}
 
 	return plan, nil
 }
 
-func (o *OptimizationPass) wrapPlanRoot(plan *planning.QueryPlan, multiNodeGroupsEnabled bool) error {
-	newRoot, err := o.applyToRootNode(plan.Root, multiNodeGroupsEnabled, false)
+func (o *OptimizationPass) wrapPlanRoot(plan *planning.QueryPlan, groups remoteExecutionGroupSet) error {
+	newRoot, err := o.applyToRootNode(plan.Root, groups, false)
 	if err != nil {
 		return err
 	}
@@ -71,13 +80,8 @@ func (o *OptimizationPass) wrapPlanRoot(plan *planning.QueryPlan, multiNodeGroup
 
 // wrapEvaluationRoot applies remote execution to a single EvaluationRoot's subtree, mirroring the
 // behaviour applied to the whole plan when there are no EvaluationRoot markers.
-//
-// Each EvaluationRoot is a separate query, so a fresh remote execution group set is used per
-// EvaluationRoot when grouping nodes that share a selector into the same request.
-// FIXME: in the future we could share groups between roots and avoid evaluating duplicate expressions shared across
-// roots.
-func (o *OptimizationPass) wrapEvaluationRoot(evaluationRoot *core.EvaluationRoot, multiNodeGroupsEnabled bool, haveMultipleRoots bool) error {
-	newRoot, err := o.applyToRootNode(evaluationRoot.Inner, multiNodeGroupsEnabled, haveMultipleRoots)
+func (o *OptimizationPass) wrapEvaluationRoot(evaluationRoot *core.EvaluationRoot, groups remoteExecutionGroupSet, haveMultipleRoots bool) error {
+	newRoot, err := o.applyToRootNode(evaluationRoot.Inner, groups, haveMultipleRoots)
 	if err != nil {
 		return err
 	}
@@ -92,13 +96,7 @@ func (o *OptimizationPass) wrapEvaluationRoot(evaluationRoot *core.EvaluationRoo
 // Otherwise the entire child is wrapped (beneath any splitting and caching nodes, which run on the query-frontend).
 //
 // The new root node is returned, which may or may not be the same as the provided root node.
-func (o *OptimizationPass) applyToRootNode(root planning.Node, multiNodeGroupsEnabled bool, eagerLoad bool) (planning.Node, error) {
-	var groups remoteExecutionGroupSet
-
-	if multiNodeGroupsEnabled {
-		groups = remoteExecutionGroupSet{}
-	}
-
+func (o *OptimizationPass) applyToRootNode(root planning.Node, groups remoteExecutionGroupSet, eagerLoad bool) (planning.Node, error) {
 	if wrappedAnyChild, err := o.wrapShardedExpressions(root, groups); err != nil {
 		return nil, err
 	} else if wrappedAnyChild {
@@ -121,7 +119,7 @@ func (o *OptimizationPass) applyToRootNode(root planning.Node, multiNodeGroupsEn
 	wrappedChild, err := o.wrapInRemoteExecutionNode(
 		child,
 		eagerLoad,
-		nil, // No need to pass groups here as we'll wrap the whole child in a single group.
+		groups,
 	)
 	if err != nil {
 		return nil, err
@@ -140,26 +138,30 @@ func (o *OptimizationPass) applyToRootNode(root planning.Node, multiNodeGroupsEn
 }
 
 // collectEvaluationRoots returns the EvaluationRoot nodes in the plan.
-func collectEvaluationRoots(node planning.Node) []*core.EvaluationRoot {
-	roots := map[*core.EvaluationRoot]struct{}{} // We use a map to deduplicate roots referenced by multiple paths (eg. duplicate expressions).
+func collectEvaluationRoots(node planning.Node) ([]*core.EvaluationRoot, error) {
+	var uniqueRoots []*core.EvaluationRoot
 
-	var visit func(planning.Node)
-	visit = func(n planning.Node) {
-		if evaluationRoot, ok := n.(*core.EvaluationRoot); ok {
-			roots[evaluationRoot] = struct{}{}
+	err := optimize.Walk(node, optimize.VisitorFunc(func(node planning.Node, path []planning.Node) (bool, error) {
+		if evaluationRoot, ok := node.(*core.EvaluationRoot); ok {
+			// We might see the same root multiple times if the entire root is a duplicate expression.
+			// We don't expect there to be many EvaluationRoots, so we search a slice (rather than use a map).
+			// This keeps the return order consistent, which keeps behaviour predictable and makes tests simpler.
+			if !slices.Contains(uniqueRoots, evaluationRoot) {
+				uniqueRoots = append(uniqueRoots, evaluationRoot)
+			}
 
 			// EvaluationRoot markers are never nested inside one another, so no need to visit children.
-			return
+			return false, nil
 		}
 
-		for child := range planning.ChildrenIter(n) {
-			visit(child)
-		}
+		return true, nil
+	}))
+
+	if err != nil {
+		return nil, err
 	}
 
-	visit(node)
-
-	return slices.Collect(maps.Keys(roots))
+	return uniqueRoots, nil
 }
 
 func (o *OptimizationPass) wrapInRemoteExecutionNode(child planning.Node, eagerLoad bool, groups remoteExecutionGroupSet) (planning.Node, error) {
@@ -253,6 +255,10 @@ func (s remoteExecutionGroupSet) GetGroupForNode(node planning.Node, eagerLoad b
 	}
 
 	if selector == nil {
+		assert.Unreachable("could not find selector for node", map[string]any{
+			"eager_load": eagerLoad,
+			"node_type":  fmt.Sprintf("%T", node),
+		})
 		return nil, fmt.Errorf("could not find selector for node of type %T (this is a bug)", node)
 	}
 

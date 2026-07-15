@@ -264,9 +264,9 @@ spec:
               # but only if other ruler instances of the same cell do have rule groups assigned
               and on (cluster, namespace)
               (max by(cluster, namespace) (cortex_ruler_managers_total) > 0)
-              # and there are more than two instances overall
+              # and there are more than two instances in any zone (or overall)
               and on (cluster, namespace)
-              (count by (cluster, namespace) (cortex_ruler_managers_total) > 2)
+              (max by (cluster, namespace) (count by (cluster, namespace, job) (cortex_ruler_managers_total) > 2))
             for: 1h
             labels:
               severity: warning
@@ -1415,6 +1415,16 @@ spec:
               > 0
             for: 5m
             labels:
+              severity: warning
+          - alert: MimirIngesterKafkaReadFailed
+            annotations:
+              message: Mimir {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace }} is failing to read records from Kafka.
+              runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimiringesterkafkareadfailed
+            expr: |
+              sum by(cluster, namespace, pod, node_id) (rate(cortex_ingest_storage_reader_read_errors_total[1m]))
+              > 0
+            for: 30m
+            labels:
               severity: critical
           - alert: MimirIngesterKafkaFetchErrorsRateTooHigh
             annotations:
@@ -1570,7 +1580,7 @@ spec:
               sum by (cluster, namespace, pod) (rate(cortex_ingest_storage_strong_consistency_failures_total[1m])) > 0
             for: 5m
             labels:
-              severity: critical
+              severity: warning
           - alert: MimirStrongConsistencyOffsetMissing
             annotations:
               message: Mimir ingesters in {{ $labels.cluster }}/{{ $labels.namespace }} are receiving an unexpected high number of strongly consistent requests without an offset specified.

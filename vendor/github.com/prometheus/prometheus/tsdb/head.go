@@ -183,6 +183,11 @@ type HeadOptions struct {
 	// Store and load using uint32(chunkenc.Encoding) / chunkenc.Encoding(Load()).
 	FloatChunkEncoding atomic.Uint32
 
+	// EnableHistogramSTEncoding enables the ST-capable chunk encoding for
+	// integer and float histograms (EncHistogramST and EncFloatHistogramST).
+	// Represents the 'histograms-st-encoding' feature flag.
+	EnableHistogramSTEncoding atomic.Bool
+
 	ChunkRange int64
 	// ChunkDirRoot is the parent directory of the chunks directory.
 	ChunkDirRoot         string
@@ -1079,8 +1084,7 @@ func (h *Head) loadMmappedChunks(refSeries map[chunks.HeadSeriesRef]*memSeries) 
 			if ms.headChunkCount.Load() >= 2 {
 				h.series.decMmapReady(ms.ref)
 			}
-			ms.headChunks = nil
-			ms.headChunkCount.Store(0)
+			ms.setHeadChunks(nil, 0)
 			ms.app = nil
 		}
 		return nil
@@ -2423,6 +2427,14 @@ func (h *Head) deleteSeriesByID(refs []chunks.HeadSeriesRef) {
 		h.series.hashes[hashStripe].del(hash, series.ref)
 		h.series.locks[hashStripe].Unlock()
 
+		// Keep the series record in checkpoints until its last sample time; while the
+		// WAL may still hold samples for this ref, they can't outlive maxt.
+		if h.wal != nil {
+			if maxt := series.maxTime(); maxt != math.MinInt64 {
+				h.updateWALExpiry(series.ref, maxt)
+			}
+		}
+
 		if value.IsStaleNaN(series.lastValue) ||
 			(series.lastHistogramValue != nil && value.IsStaleNaN(series.lastHistogramValue.Sum)) ||
 			(series.lastFloatHistogramValue != nil && value.IsStaleNaN(series.lastFloatHistogramValue.Sum)) {
@@ -2595,6 +2607,16 @@ func (s *stripeSeries) getByHash(hash uint64, lset labels.Labels) *memSeries {
 	return series
 }
 
+// unlinkHash removes the series with the given ref from the hash index, but leaves it
+// in the by-ref map so refs to it remain resolvable until it is fully deleted.
+func (s *stripeSeries) unlinkHash(hash uint64, ref chunks.HeadSeriesRef) {
+	i := hash & uint64(s.size-1)
+
+	s.locks[i].Lock()
+	defer s.locks[i].Unlock()
+	s.hashes[i].del(hash, ref)
+}
+
 func (s *stripeSeries) setUnlessAlreadySet(hash uint64, lset labels.Labels, series *memSeries) (*memSeries, bool) {
 	i := hash & uint64(s.size-1)
 	s.locks[i].Lock()
@@ -2706,9 +2728,8 @@ type memSeries struct {
 	nextAt                           int64 // Timestamp at which to cut the next chunk.
 	histogramChunkHasComputedEndTime bool  // True if nextAt has been predicted for the current histograms chunk; false otherwise.
 	pendingCommit                    bool  // Whether there are samples waiting to be committed to this series.
-	// headChunkCount tracks the number of head chunks.
-	// It is incremented in cutNewHeadChunk and the histogram new-chunk paths,
-	// and reset by mmapChunks and truncateChunksBefore.
+	// headChunkCount tracks the number of head chunks. All mutations of the
+	// headChunks/headChunkCount pair go through pushHeadChunk and setHeadChunks.
 	// Chunk counts are bounded by the 3-byte field in HeadChunkRef, so cannot overflow uint32.
 	// Explicitly uses sync/atomic.Uint32 (4 bytes) to fit in the existing padding
 	// between two bools and a float64.
@@ -2775,6 +2796,26 @@ func (s *memSeries) maxTime() int64 {
 	return math.MinInt64
 }
 
+// pushHeadChunk prepends chk to the head-chunk list, keeping headChunkCount in
+// sync with the list length. The invariant is that headChunkCount equals the
+// list length whenever the series lock is released; direct prev unlinks
+// (mmapChunks, truncateChunksBefore) must be immediately paired with a
+// setHeadChunks call.
+func (s *memSeries) pushHeadChunk(chk *memChunk) *memChunk {
+	chk.prev = s.headChunks
+	s.headChunks = chk
+	s.headChunkCount.Add(1)
+	return chk
+}
+
+// setHeadChunks replaces the head-chunk list with head, which must be a list
+// of count chunks, keeping headChunkCount in sync with the list length. See
+// pushHeadChunk for the invariant.
+func (s *memSeries) setHeadChunks(head *memChunk, count uint32) {
+	s.headChunks = head
+	s.headChunkCount.Store(count)
+}
+
 // truncateChunksBefore removes all chunks from the series that
 // have no timestamp at or after mint.
 // Chunk IDs remain unchanged.
@@ -2791,12 +2832,11 @@ func (s *memSeries) truncateChunksBefore(mint int64, minOOOMmapRef chunks.ChunkD
 				s.firstChunkID += chunks.HeadChunkID(removedInOrder)
 				if i == 0 {
 					// This is the first chunk on the list so we need to remove the entire list.
-					s.headChunks = nil
-					s.headChunkCount.Store(0)
+					s.setHeadChunks(nil, 0)
 				} else {
 					// This is NOT the first chunk, unlink it from parent.
 					nextChk.prev = nil
-					s.headChunkCount.Store(i)
+					s.setHeadChunks(s.headChunks, i)
 				}
 				s.mmappedChunks = nil
 				break
@@ -2864,10 +2904,12 @@ func (mc *memChunk) len() (count int) {
 	return count
 }
 
+// collectHeadChunks walks the headChunks linked list once and returns a slice
+// in oldest-first order (matching mmappedChunks ordering).
+// buf must have length 0 but may have non-zero capacity for reuse; the
+// returned slice's tail beyond its length is zeroed, so a reused, shrinking
+// buffer does not pin chunks from a previous, longer collection.
 func collectHeadChunks(head *memChunk, buf []*memChunk) []*memChunk {
-	if head == nil {
-		return buf
-	}
 	// Single walk: append newest-to-oldest (following prev pointers), then
 	// reverse to oldest-to-newest. Pointer-chasing the linked list is the
 	// expensive part; slices.Reverse on a contiguous array is essentially
@@ -2877,6 +2919,7 @@ func collectHeadChunks(head *memChunk, buf []*memChunk) []*memChunk {
 		hc = append(hc, elem)
 	}
 	slices.Reverse(hc)
+	clear(hc[len(hc):cap(hc)])
 	return hc
 }
 

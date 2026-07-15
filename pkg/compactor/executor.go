@@ -35,7 +35,6 @@ import (
 
 	"github.com/grafana/mimir/pkg/compactor/scheduler/compactorschedulerpb"
 	"github.com/grafana/mimir/pkg/storage/bucket"
-	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/util"
 	util_log "github.com/grafana/mimir/pkg/util/log"
@@ -95,18 +94,19 @@ var (
 )
 
 type SchedulerClientConfig struct {
-	Enabled                       bool                           `yaml:"enabled" category:"experimental"`
-	SchedulerEndpoint             string                         `yaml:"scheduler_endpoint" category:"experimental"`
-	GRPCClientConfig              grpcclient.Config              `yaml:"grpc_client_config" category:"experimental"`
-	LeasingMinBackoff             time.Duration                  `yaml:"leasing_min_backoff" category:"experimental"`
-	LeasingMaxBackoff             time.Duration                  `yaml:"leasing_max_backoff" category:"experimental"`
-	UpdateInterval                time.Duration                  `yaml:"update_interval" category:"experimental"`
-	UpdateMinBackoff              time.Duration                  `yaml:"update_min_backoff" category:"experimental"`
-	UpdateMaxBackoff              time.Duration                  `yaml:"update_max_backoff" category:"experimental"`
-	CompactionDirCleanupInterval  time.Duration                  `yaml:"compaction_dir_cleanup_interval" category:"experimental"`
-	MetadataCacheConfig           mimir_tsdb.MetadataCacheConfig `yaml:"metadata_cache" category:"experimental"`
-	TerminatingFinalStatusTimeout time.Duration                  `yaml:"terminating_final_status_timeout" category:"experimental"`
-	Lanes                         flagext.StringSliceCSV         `yaml:"lanes" category:"experimental"`
+	Enabled                       bool                   `yaml:"enabled" category:"experimental"`
+	SchedulerEndpoint             string                 `yaml:"scheduler_endpoint" category:"experimental"`
+	GRPCClientConfig              grpcclient.Config      `yaml:"grpc_client_config" category:"experimental"`
+	LeasingMinBackoff             time.Duration          `yaml:"leasing_min_backoff" category:"experimental"`
+	LeasingMaxBackoff             time.Duration          `yaml:"leasing_max_backoff" category:"experimental"`
+	UpdateInterval                time.Duration          `yaml:"update_interval" category:"experimental"`
+	UpdateMinBackoff              time.Duration          `yaml:"update_min_backoff" category:"experimental"`
+	UpdateMaxBackoff              time.Duration          `yaml:"update_max_backoff" category:"experimental"`
+	CompactionDirCleanupInterval  time.Duration          `yaml:"compaction_dir_cleanup_interval" category:"experimental"`
+	MetadataCacheConfig           MetadataCacheConfig    `yaml:"metadata_cache"`
+	TerminatingFinalStatusTimeout time.Duration          `yaml:"terminating_final_status_timeout" category:"experimental"`
+	Lanes                         flagext.StringSliceCSV `yaml:"lanes" category:"experimental"`
+	EnableInterruptedReassign     bool                   `yaml:"enable_interrupted_reassign" category:"experimental"`
 }
 
 func (cfg *SchedulerClientConfig) RegisterFlags(f *flag.FlagSet) {
@@ -120,8 +120,9 @@ func (cfg *SchedulerClientConfig) RegisterFlags(f *flag.FlagSet) {
 	f.DurationVar(&cfg.UpdateMaxBackoff, flagPrefix+"update-max-backoff", 32*time.Second, "Maximum backoff time for compaction executor retries when sending scheduler status updates.")
 	f.DurationVar(&cfg.CompactionDirCleanupInterval, flagPrefix+"compaction-dir-cleanup-interval", 30*time.Minute, "Defines how frequently to clean up the compaction working directory. The directory is cleaned on startup and then only when this interval has elapsed since the last cleanup. Set to 0 to disable periodic cleanup.")
 	f.DurationVar(&cfg.TerminatingFinalStatusTimeout, flagPrefix+"terminating-final-status-timeout", 30*time.Second, "Timeout for sending a final job status update to the scheduler when the parent context is canceled (e.g. during shutdown).")
+	f.BoolVar(&cfg.EnableInterruptedReassign, flagPrefix+"enable-interrupted-reassign", true, "Report a distinct job update status to the scheduler when a job is interrupted (e.g., clean shutdown).")
 	cfg.Lanes = flagext.StringSliceCSV{"compact+plan", "plan"}
-	f.Var(&cfg.Lanes, flagPrefix+"lanes", "Lanes to request for each worker goroutine. Each entry is a '+'-separated list of job types in priority order. Defaults to compact+plan,plan")
+	f.Var(&cfg.Lanes, flagPrefix+"lanes", "Lanes to request for each worker goroutine. Each entry is a '+'-separated list of job types in priority order.")
 	cfg.GRPCClientConfig.RegisterFlagsWithPrefix(flagPrefix+"grpc-client-config", f)
 	cfg.MetadataCacheConfig.RegisterFlagsWithPrefix(f, flagPrefix+"metadata-cache.")
 }
@@ -155,6 +156,26 @@ func (cfg *SchedulerClientConfig) Validate() error {
 		return errInvalidSchedulerTerminatingFinalStatusTimeout
 	}
 	return nil
+}
+
+var supportedMetadataCacheBackends = []string{cache.BackendMemcached}
+
+// MetadataCacheConfig configures the cache that compactor workers use for block metadata.
+// Similar to MetadataCacheConfig from pkg/storage/tsdb/config.go, but contains only the subset of flags used.
+type MetadataCacheConfig struct {
+	cache.BackendConfig `yaml:",inline"`
+
+	MetafileContentTTL time.Duration `yaml:"metafile_content_ttl" category:"experimental"`
+}
+
+func (cfg *MetadataCacheConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
+	f.StringVar(&cfg.Backend, prefix+"backend", "", fmt.Sprintf("Backend for metadata cache, if not empty. Supported values: %s.", strings.Join(supportedMetadataCacheBackends, ", ")))
+	cfg.Memcached.RegisterFlagsWithPrefix(prefix+"memcached.", f)
+	f.DurationVar(&cfg.MetafileContentTTL, prefix+"metafile-content-ttl", 24*time.Hour, "How long to cache block metadata content.")
+}
+
+func (cfg *MetadataCacheConfig) Validate() error {
+	return cfg.BackendConfig.Validate()
 }
 
 const (
@@ -415,6 +436,10 @@ func (e *schedulerExecutor) startJobStatusUpdater(ctx context.Context, c *Multit
 // Compaction jobs send final statuses on completion, planning jobs only on failure for reassignment.
 // If ctx is canceled (e.g. during shutdown), attempting to send a final status can continue for up to TerminatingFinalStatusTimeout.
 func (e *schedulerExecutor) sendFinalJobStatus(ctx context.Context, key *compactorschedulerpb.JobKey, spec *compactorschedulerpb.JobSpec, status compactorschedulerpb.UpdateType) {
+	if e.cfg.EnableInterruptedReassign && status == compactorschedulerpb.UPDATE_TYPE_REASSIGN && ctx.Err() != nil {
+		status = compactorschedulerpb.UPDATE_TYPE_INTERRUPTED_REASSIGN
+	}
+
 	graceCtx, cancel := context.WithCancelCause(context.WithoutCancel(ctx))
 	defer cancel(nil)
 	stop := context.AfterFunc(ctx, func() {

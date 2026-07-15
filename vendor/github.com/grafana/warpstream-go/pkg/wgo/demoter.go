@@ -5,10 +5,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/twmb/franz-go/pkg/kgo"
 )
 
 // demotionSuppressionReason is why demotion is suppressed. Its string value is
@@ -93,7 +92,7 @@ type Demoter struct {
 	tracker    AgentStatsReader
 	healthCfg  HealthCheckConfig
 	demoterCfg DemoterConfig
-	logger     log.Logger
+	logger     kgo.Logger
 
 	// now is injectable for testing; defaults to time.Now.
 	now func() time.Time
@@ -110,9 +109,9 @@ type Demoter struct {
 }
 
 // NewDemoter wraps inner with the demotion policy described on Demoter.
-func NewDemoter(inner PartitionAssignmentStrategy, tracker AgentStatsReader, health HealthCheckConfig, cfg DemoterConfig, logger log.Logger, reg prometheus.Registerer) *Demoter {
+func NewDemoter(inner PartitionAssignmentStrategy, tracker AgentStatsReader, health HealthCheckConfig, cfg DemoterConfig, logger kgo.Logger, reg prometheus.Registerer) *Demoter {
 	if logger == nil {
-		logger = log.NewNopLogger()
+		logger = nopLogger{}
 	}
 	d := &Demoter{
 		inner:            inner,
@@ -285,9 +284,9 @@ func (d *Demoter) isDemoted(now time.Time, nodeID int32, clusterStats ClusterSta
 
 	switch {
 	case demoted:
-		level.Info(d.logger).Log("msg", "warpstream agent demoted", "node_id", nodeID, "error_rate", stats.ErrorRate, "request_count", stats.RequestCount, "min_requests", minRequests, "faulty_threshold", clusterStats.FaultyThreshold)
+		log(d.logger, kgo.LogLevelInfo, "warpstream agent demoted", "node_id", nodeID, "error_rate", stats.ErrorRate, "request_count", stats.RequestCount, "min_requests", minRequests, "faulty_threshold", clusterStats.FaultyThreshold)
 	case restored:
-		level.Info(d.logger).Log("msg", "warpstream agent restored", "node_id", nodeID)
+		log(d.logger, kgo.LogLevelInfo, "warpstream agent restored", "node_id", nodeID)
 	}
 
 	return isFaulty

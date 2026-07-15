@@ -60,21 +60,21 @@ func (n *NarrowSelectorsOptimizationPass) Apply(ctx context.Context, plan *plann
 	n.attempts.Inc()
 	addedHint := false
 
-	_ = optimize.Walk(plan.Root, optimize.VisitorFunc(func(node planning.Node, _ []planning.Node) error {
+	_ = optimize.Walk(plan.Root, optimize.VisitorFunc(func(node planning.Node, _ []planning.Node) (bool, error) {
 		e, ok := node.(*core.BinaryExpression)
 		if !ok {
-			return nil
+			return true, nil
 		}
 
 		// Only set hints for operations that are compatible with adding extra selectors to
 		// the right side of the expression. For example, "logical or" includes series from
 		// the right side only when they _don't_ have matching label sets on the left side.
 		if _, disallowed := disallowedOperations[e.Op]; disallowed {
-			return nil
+			return true, nil
 		}
 
 		if e.VectorMatching == nil {
-			return nil
+			return true, nil
 		}
 
 		// Skip narrowing when a fill value is set: narrowing the filled side would drop the unmatched
@@ -97,7 +97,7 @@ func (n *NarrowSelectorsOptimizationPass) Apply(ctx context.Context, plan *plann
 			addedHint = n.hintsForIgnoring(ctx, e, created) || addedHint
 		}
 
-		return nil
+		return true, nil
 	}))
 
 	if addedHint {
@@ -229,7 +229,7 @@ func filterLabels(lbls []string, created map[string]struct{}) []string {
 func createdLabels(node planning.Node) map[string]struct{} {
 	created := make(map[string]struct{})
 
-	_ = optimize.Walk(node, optimize.VisitorFunc(func(n planning.Node, path []planning.Node) error {
+	_ = optimize.Walk(node, optimize.VisitorFunc(func(n planning.Node, path []planning.Node) (bool, error) {
 		if f, ok := n.(*core.FunctionCall); ok {
 			switch f.Function {
 			case functions.FUNCTION_LABEL_REPLACE, functions.FUNCTION_LABEL_JOIN, functions.FUNCTION_HISTOGRAM_QUANTILES:
@@ -244,7 +244,7 @@ func createdLabels(node planning.Node) map[string]struct{} {
 			}
 		}
 
-		return nil
+		return true, nil
 	}))
 
 	return created

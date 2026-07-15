@@ -326,7 +326,7 @@ func (b *OneToOneVectorVectorBinaryOperation) computeOutputSeries() ([]types.Ser
 	lastRightSeriesUsedIndex := -1
 	labelsFunc := groupLabelsFunc(b.VectorMatching, b.Op, b.ReturnBool)
 	fillLabelsFunc := fillGroupLabelsFunc(b.VectorMatching)
-	outputSeriesLabelsBytes := make([]byte, 0, 1024)
+	outputSeriesLabelsBytes := make([]byte, 0, types.LabelBytesBufferSize)
 
 	// matchedRightGroups records, by group key, which right-side groups have a matching series on
 	// the left side. Only tracked (and only needed) when filling the left side.

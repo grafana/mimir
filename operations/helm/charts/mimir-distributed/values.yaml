@@ -281,10 +281,7 @@ mimir:
       - dns+{{ include "mimir.fullname" . }}-gossip-ring.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ include "mimir.memberlistBindPort" . }}
 
     querier:
-      # With query sharding we run more but smaller queries. We must strike a balance
-      # which allows us to process more sharded queries in parallel when requested, but not overload
-      # queriers during non-sharded queries.
-      max_concurrent: 16
+      max_concurrent: 8
 
     query_scheduler:
       # Increase from default of 100 to account for queries created by query sharding
@@ -918,6 +915,7 @@ ingester:
   # Otherwise each zone starts `ceil(replicas / number_of_zones)` number of pods.
   #   E.g. if 'replicas' is set to 4 and there are 3 zones, then 4/3=1.33 and after rounding up it means 2 pods per zone are started.
   replicas: 3
+  revisionHistoryLimit: null
 
   statefulSet:
     enabled: true
@@ -2124,6 +2122,7 @@ store_gateway:
   # Otherwise each zone starts `ceil(replicas / number_of_zones)` number of pods.
   #   E.g. if 'replicas' is set to 4 and there are 3 zones, then 4/3=1.33 and after rounding up it means 2 pods per zone are started.
   replicas: 1
+  revisionHistoryLimit: null
 
   service:
     annotations: {}
@@ -2390,6 +2389,7 @@ compactor:
     # tag: 3.0.0
 
   replicas: 1
+  revisionHistoryLimit: null
 
   service:
     annotations: {}
@@ -2590,6 +2590,9 @@ chunks-cache:
   # -- Total number of chunks-cache replicas
   replicas: 1
 
+  # -- Number of old ReplicaSets to retain to allow rollback (if not set, the default Kubernetes value is set to 10)
+  revisionHistoryLimit: null
+
   # -- Port of the chunks-cache service
   port: 11211
 
@@ -2694,6 +2697,9 @@ index-cache:
 
   # -- Total number of index-cache replicas
   replicas: 1
+
+  # -- Number of old ReplicaSets to retain to allow rollback (if not set, the default Kubernetes value is set to 10)
+  revisionHistoryLimit: null
 
   # -- Port of the index-cache service
   port: 11211
@@ -2800,6 +2806,9 @@ metadata-cache:
   # -- Total number of metadata-cache replicas
   replicas: 1
 
+  # -- Number of old ReplicaSets to retain to allow rollback (if not set, the default Kubernetes value is set to 10)
+  revisionHistoryLimit: null
+
   # -- Port of the metadata-cache service
   port: 11211
 
@@ -2904,6 +2913,9 @@ results-cache:
 
   # -- Total number of results-cache replicas
   replicas: 1
+
+  # -- Number of old ReplicaSets to retain to allow rollback (if not set, the default Kubernetes value is set to 10)
+  revisionHistoryLimit: null
 
   # -- Port of the results-cache service
   port: 11211

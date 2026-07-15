@@ -9,7 +9,7 @@ require (
 	github.com/edsrzf/mmap-go v1.2.1-0.20241212181136-fad1cd13edbd
 	github.com/failsafe-go/failsafe-go v0.9.6
 	github.com/go-kit/log v0.2.1
-	github.com/go-openapi/strfmt v0.26.3
+	github.com/go-openapi/strfmt v0.26.4
 	github.com/go-openapi/swag v0.26.1 // indirect
 	github.com/gogo/protobuf v1.3.2
 	github.com/gogo/status v1.1.1
@@ -59,7 +59,7 @@ require (
 	github.com/google/go-cmp v0.7.0
 	github.com/google/uuid v1.6.0
 	github.com/grafana/regexp v0.0.0-20250905093917-f7b3be9d1853
-	github.com/grafana/warpstream-go v0.0.0-20260625083726-8ebc81451c89
+	github.com/grafana/warpstream-go v0.0.0-20260710130640-f4258f6a3f82
 	github.com/hashicorp/golang-lru/v2 v2.0.7
 	github.com/hashicorp/vault/api v1.23.0
 	github.com/mitchellh/colorstring v0.0.0-20190213212951-d06e56a500db
@@ -74,7 +74,7 @@ require (
 	github.com/spf13/pflag v1.0.10
 	github.com/thanos-io/objstore v0.0.0-20260615134008-fb6fd3a5170a
 	github.com/tjhop/slog-gokit v0.2.0
-	github.com/twmb/franz-go v1.21.4
+	github.com/twmb/franz-go v1.21.5
 	github.com/twmb/franz-go/pkg/kadm v1.18.1-0.20260529212035-11b03a277c72
 	github.com/twmb/franz-go/pkg/kfake v0.0.0-20260515175617-8268a5d078c0
 	github.com/twmb/franz-go/pkg/kmsg v1.13.1
@@ -110,11 +110,11 @@ require (
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/detectors/gcp v1.31.0 // indirect
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/metric v0.55.0 // indirect
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/internal/resourcemapping v0.55.0 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/v4a v1.4.30 // indirect
-	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.12 // indirect
-	github.com/aws/aws-sdk-go-v2/service/signin v1.2.0 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/v4a v1.4.31 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.13 // indirect
+	github.com/aws/aws-sdk-go-v2/service/signin v1.3.0 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sns v1.39.17 // indirect
-	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.36.6 // indirect
+	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.37.0 // indirect
 	github.com/bahlo/generic-list-go v0.2.0 // indirect
 	github.com/bboreham/go-loser v0.0.0-20230920113527-fcc2c21820a3 // indirect
 	github.com/buger/jsonparser v1.1.2 // indirect
@@ -149,7 +149,7 @@ require (
 	github.com/grafana/otel-profiling-go v0.6.0 // indirect
 	github.com/grafana/pyroscope-go/godeltaprof v0.1.9 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0 // indirect
-	github.com/hashicorp/go-metrics v0.5.4 // indirect
+	github.com/hashicorp/go-metrics v0.6.0 // indirect
 	github.com/hashicorp/go-msgpack/v2 v2.1.5 // indirect
 	github.com/hashicorp/go-retryablehttp v0.7.8 // indirect
 	github.com/hashicorp/go-secure-stdlib/parseutil v0.2.0 // indirect
@@ -163,8 +163,8 @@ require (
 	github.com/knadh/koanf/providers/confmap v1.0.0 // indirect
 	github.com/knadh/koanf/v2 v2.3.5 // indirect
 	github.com/lufia/plan9stats v0.0.0-20211012122336-39d0f177ccd0 // indirect
-	github.com/mdlayher/socket v0.4.1 // indirect
-	github.com/mdlayher/vsock v1.2.1 // indirect
+	github.com/mdlayher/socket v0.6.0 // indirect
+	github.com/mdlayher/vsock v1.3.0 // indirect
 	github.com/minio/crc64nvme v1.1.1 // indirect
 	github.com/mitchellh/copystructure v1.2.0 // indirect
 	github.com/mitchellh/reflectwalk v1.0.2 // indirect
@@ -172,11 +172,11 @@ require (
 	github.com/open-telemetry/opentelemetry-collector-contrib/pkg/pdatautil v0.154.0 // indirect
 	github.com/open-telemetry/opentelemetry-collector-contrib/processor/deltatocumulativeprocessor v0.154.0 // indirect
 	github.com/pb33f/jsonpath v0.8.2 // indirect
-	github.com/pb33f/libopenapi v0.38.1 // indirect
+	github.com/pb33f/libopenapi v0.38.5 // indirect
 	github.com/pb33f/ordered-map/v2 v2.3.1 // indirect
 	github.com/philhofer/fwd v1.2.0 // indirect
 	github.com/pires/go-proxyproto v0.11.0 // indirect
-	github.com/pkg/xattr v0.4.10 // indirect
+	github.com/pkg/xattr v0.4.12 // indirect
 	github.com/planetscale/vtprotobuf v0.6.1-0.20240319094008-0393e58bdf10 // indirect
 	github.com/power-devops/perfstat v0.0.0-20240221224432-82ca36839d55 // indirect
 	github.com/prometheus/client_golang/exp v0.0.0-20260621222812-74560058a7af // indirect
@@ -184,7 +184,7 @@ require (
 	github.com/ryanuber/go-glob v1.0.0 // indirect
 	github.com/sercand/kuberesolver/v6 v6.0.1 // indirect
 	github.com/spiffe/go-spiffe/v2 v2.6.0 // indirect
-	github.com/tinylib/msgp v1.6.1 // indirect
+	github.com/tinylib/msgp v1.6.4 // indirect
 	github.com/tklauser/go-sysconf v0.3.16 // indirect
 	github.com/tklauser/numcpus v0.11.0 // indirect
 	github.com/twmb/franz-go/plugin/kslog v1.0.0 // indirect
@@ -221,7 +221,7 @@ require (
 	go.opentelemetry.io/otel/sdk/log v0.19.0 // indirect
 	go.opentelemetry.io/otel/sdk/metric v1.44.0 // indirect
 	go.yaml.in/yaml/v2 v2.4.4 // indirect
-	go.yaml.in/yaml/v4 v4.0.0-rc.5 // indirect
+	go.yaml.in/yaml/v4 v4.0.0-rc.6 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/ini.v1 v1.67.2 // indirect
 	gopkg.in/telebot.v3 v3.3.8 // indirect
@@ -240,19 +240,19 @@ require (
 	cloud.google.com/go/iam v1.7.0 // indirect
 	github.com/DmitriyVTitov/size v1.5.0
 	github.com/armon/go-metrics v0.4.1 // indirect
-	github.com/aws/aws-sdk-go-v2 v1.42.0 // indirect
-	github.com/aws/aws-sdk-go-v2/config v1.32.25 // indirect
-	github.com/aws/aws-sdk-go-v2/credentials v1.19.24 // indirect
-	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.18.29 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/configsources v1.4.29 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.7.29 // indirect
-	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.13.29 // indirect
-	github.com/aws/aws-sdk-go-v2/service/sso v1.31.3 // indirect
-	github.com/aws/aws-sdk-go-v2/service/sts v1.43.3 // indirect
-	github.com/aws/smithy-go v1.27.2 // indirect
+	github.com/aws/aws-sdk-go-v2 v1.42.1 // indirect
+	github.com/aws/aws-sdk-go-v2/config v1.32.28 // indirect
+	github.com/aws/aws-sdk-go-v2/credentials v1.19.27 // indirect
+	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.18.30 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/configsources v1.4.30 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.7.30 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.13.30 // indirect
+	github.com/aws/aws-sdk-go-v2/service/sso v1.32.0 // indirect
+	github.com/aws/aws-sdk-go-v2/service/sts v1.44.0 // indirect
+	github.com/aws/smithy-go v1.27.3 // indirect
 	github.com/benbjohnson/clock v1.3.5
 	github.com/beorn7/perks v1.0.1 // indirect
-	github.com/bits-and-blooms/bitset v1.24.5 // indirect
+	github.com/bits-and-blooms/bitset v1.24.6 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0
 	github.com/coreos/go-semver v0.3.1 // indirect
@@ -281,7 +281,7 @@ require (
 	github.com/gogo/googleapis v1.4.1 // indirect
 	github.com/google/btree v1.1.3 // indirect
 	github.com/google/s2a-go v0.1.9 // indirect
-	github.com/googleapis/enterprise-certificate-proxy v0.3.16 // indirect
+	github.com/googleapis/enterprise-certificate-proxy v0.3.18 // indirect
 	github.com/googleapis/gax-go/v2 v2.22.0 // indirect
 	github.com/grafana/gomemcache v0.0.0-20251127154401-74f93547077b
 	github.com/hashicorp/consul/api v1.33.7 // indirect
@@ -292,8 +292,8 @@ require (
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/hashicorp/go-rootcerts v1.0.2 // indirect
 	github.com/hashicorp/go-sockaddr v1.0.7 // indirect
-	github.com/hashicorp/memberlist v0.5.4 // indirect
-	github.com/hashicorp/serf v0.10.2 // indirect
+	github.com/hashicorp/memberlist v0.6.0 // indirect
+	github.com/hashicorp/serf v0.10.4 // indirect
 	github.com/hashicorp/vault/api/auth/approle v0.12.0
 	github.com/hashicorp/vault/api/auth/kubernetes v0.12.0
 	github.com/hashicorp/vault/api/auth/userpass v0.12.0
@@ -304,8 +304,8 @@ require (
 	github.com/klauspost/compress v1.18.6
 	github.com/klauspost/cpuid/v2 v2.2.11 // indirect
 	github.com/kylelemons/godebug v1.1.0 // indirect
-	github.com/mattn/go-colorable v0.1.14 // indirect
-	github.com/mattn/go-isatty v0.0.20 // indirect
+	github.com/mattn/go-colorable v0.1.15 // indirect
+	github.com/mattn/go-isatty v0.0.22 // indirect
 	github.com/miekg/dns v1.1.72 // indirect
 	github.com/minio/md5-simd v1.1.2 // indirect
 	github.com/mitchellh/go-homedir v1.1.0 // indirect
@@ -318,12 +318,12 @@ require (
 	github.com/oklog/run v1.2.0 // indirect
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
-	github.com/prometheus/exporter-toolkit v0.16.0 // indirect
+	github.com/prometheus/exporter-toolkit v0.17.1 // indirect
 	github.com/rs/cors v1.11.1 // indirect
 	github.com/rs/xid v1.6.0 // indirect
 	github.com/sean-/seed v0.0.0-20170313163322-e2103e2c3529 // indirect
 	github.com/spf13/cobra v1.10.2 // indirect
-	github.com/stretchr/objx v0.5.2 // indirect
+	github.com/stretchr/objx v0.5.3 // indirect
 	github.com/uber/jaeger-lib v2.4.1+incompatible // indirect
 	github.com/xhit/go-str2duration/v2 v2.1.0 // indirect
 	go.etcd.io/etcd/api/v3 v3.6.9 // indirect
@@ -337,7 +337,7 @@ require (
 	golang.org/x/oauth2 v0.36.0 // indirect
 	golang.org/x/sys v0.46.0 // indirect
 	golang.org/x/text v0.38.0 // indirect
-	golang.org/x/tools v0.46.0
+	golang.org/x/tools v0.47.0
 	google.golang.org/genproto v0.0.0-20260319201613-d00831a3d3e7 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260615183401-62b3387ff324 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260610212136-7ab31c22f7ad
@@ -346,7 +346,7 @@ require (
 	sigs.k8s.io/yaml v1.6.0 // indirect
 )
 
-replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v1.8.2-0.20260630205300-968c5f8d6535
+replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v1.8.2-0.20260710235338-c2914fbf45a2
 
 // Replace memberlist with our fork which includes some changes that haven't been
 // merged upstream yet for years and we don't expect to change anytime soon.

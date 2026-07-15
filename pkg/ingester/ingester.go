@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -474,10 +475,26 @@ func newIngester(cfg Config, limits *validation.Overrides, ingestersRing ring.Re
 
 // New returns an Ingester that uses Mimir block storage.
 func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, partitionRingWatcher *ring.PartitionRingWatcher, activeGroupsCleanupService *util.ActiveGroupsCleanupService, costAttributionMgr *costattribution.Manager, registerer prometheus.Registerer, logger log.Logger) (*Ingester, error) {
+	// Resolve the partition ID up front when ingest storage is enabled, so we can wrap the
+	// registerer with an ingester_partition label before any metric is registered. The wrapping
+	// itself is gated by an additional flag so the label can be rolled out and removed gradually.
+	var ingestPartitionID int32
+	if cfg.IngestStorageConfig.Enabled {
+		var err error
+		ingestPartitionID, err = ingest.IngesterPartitionID(cfg.IngesterRing.InstanceID)
+		if err != nil {
+			return nil, errors.Wrap(err, "calculating ingester partition ID")
+		}
+		if cfg.IngestStorageConfig.IngesterPartitionMetricLabelEnabled {
+			registerer = prometheus.WrapRegistererWith(prometheus.Labels{"ingester_partition": strconv.Itoa(int(ingestPartitionID))}, registerer)
+		}
+	}
+
 	i, err := newIngester(cfg, limits, ingestersRing, registerer, logger)
 	if err != nil {
 		return nil, err
 	}
+	i.ingestPartitionID = ingestPartitionID
 	i.ingestionRate = util_math.NewEWMARate(0.2, instanceIngestionRateTickInterval)
 	i.metrics = newIngesterMetrics(registerer, cfg.ActiveSeriesMetrics.Enabled, i.getInstanceLimits, i.ingestionRate, &i.inflightPushRequests, &i.inflightPushRequestsBytes)
 	i.activeGroups = activeGroupsCleanupService
@@ -572,11 +589,6 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 	if ingestCfg := cfg.IngestStorageConfig; ingestCfg.Enabled {
 		kafkaCfg := ingestCfg.KafkaConfig
 
-		i.ingestPartitionID, err = ingest.IngesterPartitionID(cfg.IngesterRing.InstanceID)
-		if err != nil {
-			return nil, errors.Wrap(err, "calculating ingester partition ID")
-		}
-
 		// We use the ingester instance ID as consumer group. This means that we have N consumer groups
 		// where N is the total number of ingesters. Each ingester is part of their own consumer group
 		// so that they all replay the owned partition with no gaps.
@@ -595,7 +607,7 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 			kafkaCfgs := ingest.WriteCompartmentConfigs(kafkaCfg, cfg.Compartments.Write.NumCompartments, readCompartmentTopic)
 			offsetFilePath := filepath.Join(cfg.BlocksStorageConfig.TSDB.Dir, "kafka-offset-wc-"+compartments.WriteCompartmentIDPlaceholder+".json")
 
-			i.ingestReader, err = ingest.NewMultiClusterPartitionReader(kafkaCfgs, i.ingestPartitionID, cfg.IngesterRing.InstanceID, offsetFilePath, profilingIngester, log.With(logger, "component", "ingest_reader"), registerer)
+			i.ingestReader, err = ingest.NewMultiClusterPartitionReader(kafkaCfgs, ingestCfg.OrderedConsumption, i.ingestPartitionID, cfg.IngesterRing.InstanceID, offsetFilePath, profilingIngester, log.With(logger, "component", "ingest_reader"), registerer)
 			if err != nil {
 				return nil, errors.Wrap(err, "creating ingest storage reader")
 			}

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/antithesishq/antithesis-sdk-go/assert"
 	"github.com/prometheus/prometheus/promql"
 
 	"github.com/grafana/mimir/pkg/util/limiter"
@@ -262,6 +263,10 @@ func (b *FPointRingBuffer) ViewBetweenSearchingBackwards(minT, maxT int64, exist
 	}
 
 	if minT > maxT {
+		assert.Unreachable("attempted to create an FPointRingBufferView with minT > maxT", map[string]any{
+			"min_t": minT,
+			"max_t": maxT,
+		})
 		panic(fmt.Sprintf("attempted to create an FPointRingBufferView with minT(%d) > maxT(%d) (this is a bug)", minT, maxT))
 	}
 

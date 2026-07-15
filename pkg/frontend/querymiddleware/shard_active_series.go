@@ -18,8 +18,8 @@ import (
 	"github.com/klauspost/compress/s2"
 	"github.com/pkg/errors"
 	"go.opentelemetry.io/otel/attribute"
-	"golang.org/x/sync/errgroup"
 
+	querierapi "github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
@@ -53,11 +53,13 @@ type shardActiveSeriesMiddleware struct {
 	shardBySeriesBase
 }
 
-func newShardActiveSeriesMiddleware(upstream http.RoundTripper, limits Limits, logger log.Logger) http.RoundTripper {
+func newShardActiveSeriesMiddleware(upstream http.RoundTripper, maxConcurrency int, requestFramedResponses bool, limits Limits, logger log.Logger) http.RoundTripper {
 	return &shardActiveSeriesMiddleware{shardBySeriesBase{
-		upstream: upstream,
-		limits:   limits,
-		logger:   logger,
+		upstream:               upstream,
+		limits:                 limits,
+		logger:                 logger,
+		maxConcurrency:         maxConcurrency,
+		requestFramedResponses: requestFramedResponses,
 	}}
 }
 
@@ -72,34 +74,33 @@ func (s *shardActiveSeriesMiddleware) RoundTrip(r *http.Request) (*http.Response
 	return resp, nil
 }
 
-func (s *shardActiveSeriesMiddleware) mergeResponses(ctx context.Context, responses []*http.Response, encoding string) *http.Response {
+func responseIsActiveSeriesFramed(r *http.Response) bool {
+	return r.Header.Get("Content-Type") == querierapi.ContentTypeActiveSeriesFramed
+}
+
+func (s *shardActiveSeriesMiddleware) mergeResponses(ctx context.Context, reqs []*http.Request, encoding string) (*http.Response, error) {
 	reader, writer := io.Pipe()
 
 	streamCh := make(chan *bytes.Buffer)
+	errCh := make(chan error, 1)
 
-	g, gCtx := errgroup.WithContext(ctx)
-	for _, res := range responses {
-		if res == nil {
-			continue
-		}
-		r := res
-		g.Go(func() error {
-			dec := borrowShardActiveSeriesResponseDecoder(gCtx, r.Body, streamCh)
+	// Dispatch and decode the shards from a separate goroutine so that
+	// mergeResponses can return and writeMergedResponse can start draining
+	// streamCh. When maxConcurrency is set, processShardedRequests blocks once
+	// the limit is reached, and the running decoders block on streamCh until the
+	// consumer is running, so this must not happen on the path that starts the
+	// consumer. Dispatch is bounded together with decoding, so a large shard
+	// count is fanned out to the queriers only as decode slots free up.
+	go func() {
+		errCh <- s.processShardedRequests(ctx, reqs, func(reqCtx context.Context, resp *http.Response) error {
+			dec := borrowShardActiveSeriesResponseDecoder(reqCtx, resp.Body, streamCh)
 			defer func() {
 				dec.close()
 				reuseShardActiveSeriesResponseDecoder(dec)
 			}()
 
-			if err := dec.decode(); err != nil {
-				return err
-			}
-			return dec.streamData()
+			return dec.stream(responseIsActiveSeriesFramed(resp))
 		})
-	}
-
-	go func() {
-		// We ignore the error from the errgroup because it will be checked again later.
-		_ = g.Wait()
 		close(streamCh)
 	}()
 
@@ -109,9 +110,12 @@ func (s *shardActiveSeriesMiddleware) mergeResponses(ctx context.Context, respon
 		resp.Header.Set("Content-Encoding", encodingTypeSnappyFramed)
 	}
 
-	go s.writeMergedResponse(gCtx, g.Wait, writer, streamCh, encoding)
+	// The response is already committed as 200 OK by the time any shard fails, so
+	// errors (including errShardCountTooLow from a shard returning 413) surface as
+	// an error object embedded in the streamed body rather than an HTTP status.
+	go s.writeMergedResponse(ctx, func() error { return <-errCh }, writer, streamCh, encoding)
 
-	return resp
+	return resp, nil
 }
 
 func (s *shardActiveSeriesMiddleware) writeMergedResponse(ctx context.Context, check func() error, w io.WriteCloser, streamCh chan *bytes.Buffer, encoding string) {

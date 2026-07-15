@@ -78,6 +78,10 @@ func (d *Duplicate) MinimumRequiredPlanVersion(timeRange types.QueryTimeRange) (
 		return planning.QueryPlanV11, nil
 	}
 
+	if innerResultType == parser.ValueTypeScalar {
+		return planning.QueryPlanV19, nil
+	}
+
 	return planning.QueryPlanVersionZero, nil
 }
 
@@ -114,8 +118,12 @@ func MaterializeDuplicate(ctx context.Context, d *Duplicate, materializer *plann
 		return &RangeVectorDuplicationConsumerOperatorFactory{
 			Buffer: NewRangeVectorDuplicationBuffer(inner, params.MemoryConsumptionTracker, timeRange, params.Logger),
 		}, nil
+	case types.ScalarOperator:
+		return &ScalarDuplicationConsumerOperatorFactory{
+			Buffer: NewScalarDuplicationBuffer(inner, params.MemoryConsumptionTracker),
+		}, nil
 	default:
-		return nil, fmt.Errorf("expected InstantVectorOperator or RangeVectorOperator as child of Duplicate, got %T", inner)
+		return nil, fmt.Errorf("expected InstantVectorOperator, RangeVectorOperator or ScalarOperator as child of Duplicate, got %T", inner)
 	}
 }
 
@@ -132,6 +140,14 @@ type RangeVectorDuplicationConsumerOperatorFactory struct {
 }
 
 func (d *RangeVectorDuplicationConsumerOperatorFactory) Produce() (types.Operator, error) {
+	return d.Buffer.AddConsumer(), nil
+}
+
+type ScalarDuplicationConsumerOperatorFactory struct {
+	Buffer *ScalarDuplicationBuffer
+}
+
+func (d *ScalarDuplicationConsumerOperatorFactory) Produce() (types.Operator, error) {
 	return d.Buffer.AddConsumer(), nil
 }
 

@@ -260,7 +260,7 @@ type distributorExemplarQuerier struct {
 	logger      log.Logger
 }
 
-// Select querys for exemplars, prometheus' storage.ExemplarQuerier's Select function takes the time range as two int64 values.
+// Select queries for exemplars, prometheus' storage.ExemplarQuerier's Select function takes the time range as two int64 values.
 func (q *distributorExemplarQuerier) Select(start, end int64, matchers ...[]*labels.Matcher) ([]exemplar.QueryResult, error) {
 	spanlog, ctx := spanlogger.New(q.ctx, q.logger, tracer, "distributorExemplarQuerier.Select")
 	defer spanlog.Finish()

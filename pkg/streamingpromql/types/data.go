@@ -17,6 +17,8 @@ import (
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
+const LabelBytesBufferSize = 1024 // Why 1024 bytes? It's what labels.Labels.String() uses as a buffer size, so we use that as a sensible starting point too.
+
 type SeriesMetadata struct {
 	Labels   labels.Labels
 	DropName bool

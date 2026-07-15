@@ -58,7 +58,7 @@ JSONNET_FMT := jsonnetfmt
 # path to the mimir-mixin
 MIXIN_PATH := operations/mimir-mixin
 MIXIN_OUT_PATH ?= operations/mimir-mixin-compiled
-MIXIN_OUT_PATH_SUFFIXES := "" "-baremetal" "-gem"
+MIXIN_OUT_PATH_SUFFIXES := "" "-baremetal"
 
 # path to the mimir jsonnet manifests
 JSONNET_MANIFESTS_PATHS := operations/mimir operations/mimir-tests development
@@ -241,7 +241,7 @@ mimir-build-image/$(UPTODATE): mimir-build-image/*
 # All the boiler plate for building golang follows:
 SUDO := $(shell docker info >/dev/null 2>&1 || echo "sudo -E")
 BUILD_IN_CONTAINER ?= true
-LATEST_BUILD_IMAGE_TAG ?= pr15964-860f2e05f0@sha256:7cccab05b26b8e764096999040126b57bfd2a2a50612b500386dfa2702b36e66
+LATEST_BUILD_IMAGE_TAG ?= pr15952-b9a9b84b53@sha256:4447d995250b73d9c489806541a976eaaf923f1ef30a64e14632566d3f2a3643
 
 # TTY is parameterized to allow CI and scripts to run builds,
 # as it currently disallows TTY devices.
@@ -348,6 +348,8 @@ lint: check-makefiles check-merge-conflicts
 	misspell -error $(DOC_SOURCES_PATH)
 
 	./tools/find-unpooled-slice-creation.sh
+
+	./tools/check-mangling-returned-slices-enabled.sh
 
 	# Configured via .golangci.yml (which sets build-tags matching GO_TAGS).
 	$(LINT_GO_ENV) golangci-lint run
@@ -901,7 +903,8 @@ warmup-build-cache-image-and-lint: ## Warm the Go build cache for image builds a
 # Those vars are needed for packages target
 export VERSION
 
-packages: dist
+.PHONY: packages
+packages:
 	@packaging/nfpm/nfpm.sh
 
 # Build both arm64 and amd64 images, so that we can test deb/rpm packages for both architectures.

@@ -315,15 +315,26 @@ Outer:
 			// Tombstone records will be fairly rare, so not trying to optimise the allocations here.
 			deleteSeriesShards := make([][]chunks.HeadSeriesRef, concurrency)
 			for _, s := range v {
+				// A tombstone means this ref was previously allocated, even if its series record is no
+				// longer in the WAL. Advance lastSeriesID so the ref is not reissued.
+				if h.lastSeriesID.Load() < uint64(s.Ref) {
+					h.lastSeriesID.Store(uint64(s.Ref))
+				}
 				if len(s.Intervals) == 1 && s.Intervals[0].Mint == math.MinInt64 && s.Intervals[0].Maxt == math.MaxInt64 {
 					// This series was fully deleted at this point. This record is only done for stale series at the moment.
-					mod := uint64(s.Ref) % uint64(concurrency)
-					deleteSeriesShards[mod] = append(deleteSeriesShards[mod], chunks.HeadSeriesRef(s.Ref))
-
-					// If the series is with a different reference, try deleting that.
-					if r, ok := multiRef[chunks.HeadSeriesRef(s.Ref)]; ok {
-						mod := uint64(r) % uint64(concurrency)
-						deleteSeriesShards[mod] = append(deleteSeriesShards[mod], r)
+					ref := chunks.HeadSeriesRef(s.Ref)
+					// If the series is with a different reference, delete that one.
+					if r, ok := multiRef[ref]; ok {
+						ref = r
+					}
+					if series := h.series.getByID(ref); series != nil {
+						// Remove the series from the hash index so that a later series
+						// record with the same labels creates a fresh series instead of
+						// mapping onto this one. It stays in the by-ref map so
+						// already-queued samples still resolve until the deletion applies.
+						h.series.unlinkHash(series.lset.Hash(), ref)
+						mod := uint64(ref) % uint64(concurrency)
+						deleteSeriesShards[mod] = append(deleteSeriesShards[mod], ref)
 					}
 					continue
 				}
@@ -643,8 +654,7 @@ func (h *Head) resetSeriesWithMMappedChunks(mSeries *memSeries, mmc, oooMmc []*m
 	if mSeries.headChunkCount.Load() >= 2 {
 		h.series.decMmapReady(mSeries.ref)
 	}
-	mSeries.headChunks = nil
-	mSeries.headChunkCount.Store(0)
+	mSeries.setHeadChunks(nil, 0)
 	mSeries.app = nil
 	return overlapped
 }
@@ -741,6 +751,7 @@ func (wp *walSubsetProcessor) processWALSamples(h *Head, mmappedChunks, oooMmapp
 		chunkRange:      h.chunkRange.Load(),
 		samplesPerChunk: h.opts.SamplesPerChunk,
 		useXOR2:         h.opts.UseXOR2FloatEncoding(),
+		useHistogramST:  h.opts.EnableHistogramSTEncoding.Load(),
 		storeST:         h.opts.EnableSTStorage.Load(),
 	}
 
@@ -1196,6 +1207,7 @@ func (wp *wblSubsetProcessor) processWBLSamples(h *Head) (map[chunks.HeadSeriesR
 		chunkRange:      h.chunkRange.Load(),
 		samplesPerChunk: h.opts.SamplesPerChunk,
 		useXOR2:         h.opts.UseXOR2FloatEncoding(),
+		useHistogramST:  h.opts.EnableHistogramSTEncoding.Load(),
 		storeST:         h.opts.EnableSTStorage.Load(),
 	}
 	// We don't check for minValidTime for ooo samples.
@@ -1319,9 +1331,9 @@ func (s *memSeries) encodeToSnapshotRecord(b []byte) []byte {
 			}
 			buf.PutBE64int64(0)
 			buf.PutBEFloat64(s.lastValue)
-		case chunkenc.EncHistogram:
+		case chunkenc.EncHistogram, chunkenc.EncHistogramST:
 			record.EncodeHistogram(&buf, s.lastHistogramValue)
-		case chunkenc.EncFloatHistogram:
+		case chunkenc.EncFloatHistogram, chunkenc.EncFloatHistogramST:
 			record.EncodeFloatHistogram(&buf, s.lastFloatHistogramValue)
 		default:
 			panic(fmt.Sprintf("unknown chunk encoding: %v", enc))
@@ -1374,10 +1386,10 @@ func decodeSeriesFromChunkSnapshot(d *record.Decoder, b []byte) (csr chunkSnapsh
 		}
 		_ = dec.Be64int64()
 		csr.lastValue = dec.Be64Float64()
-	case chunkenc.EncHistogram:
+	case chunkenc.EncHistogram, chunkenc.EncHistogramST:
 		csr.lastHistogramValue = &histogram.Histogram{}
 		record.DecodeHistogram(&dec, csr.lastHistogramValue)
-	case chunkenc.EncFloatHistogram:
+	case chunkenc.EncFloatHistogram, chunkenc.EncFloatHistogramST:
 		csr.lastFloatHistogramValue = &histogram.FloatHistogram{}
 		record.DecodeFloatHistogram(&dec, csr.lastFloatHistogramValue)
 	default:
@@ -1763,9 +1775,8 @@ func (h *Head) loadChunkSnapshot() (int, int, map[chunks.HeadSeriesRef]*memSerie
 					continue
 				}
 				series.nextAt = csr.mc.maxTime // This will create a new chunk on append.
-				series.headChunks = csr.mc
 				chunkCount := uint32(csr.mc.len())
-				series.headChunkCount.Store(chunkCount)
+				series.setHeadChunks(csr.mc, chunkCount)
 				if chunkCount >= 2 {
 					h.series.incMmapReady(series.ref)
 				}

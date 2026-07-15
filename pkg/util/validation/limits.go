@@ -227,6 +227,7 @@ type Limits struct {
 	QueryShardingTotalShards              int            `yaml:"query_sharding_total_shards" json:"query_sharding_total_shards"`
 	QueryShardingMaxShardedQueries        int            `yaml:"query_sharding_max_sharded_queries" json:"query_sharding_max_sharded_queries"`
 	QueryShardingMaxRegexpSizeBytes       int            `yaml:"query_sharding_max_regexp_size_bytes" json:"query_sharding_max_regexp_size_bytes"`
+	CardinalityShardingMaxShardedQueries  int            `yaml:"cardinality_sharding_max_sharded_queries" json:"cardinality_sharding_max_sharded_queries" category:"experimental"`
 	QueryIngestersWithin                  model.Duration `yaml:"query_ingesters_within" json:"query_ingesters_within" category:"advanced"`
 	EnableDelayedNameRemoval              bool           `yaml:"enable_delayed_name_removal" json:"enable_delayed_name_removal" category:"experimental"`
 
@@ -452,6 +453,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.QueryShardingTotalShards, "query-frontend.query-sharding-total-shards", 16, "The number of shards to use when doing parallelisation via query sharding. 0 to disable query sharding for tenant. Values greater than 1 are rounded up to the next power of two, so the query shard count always meshes with the compactor's power-of-two shard count. This allows querier to not search the blocks which cannot possibly have the series for given query shard.")
 	f.IntVar(&l.QueryShardingMaxShardedQueries, "query-frontend.query-sharding-max-sharded-queries", 128, "The maximum number of sharded queries that can be run for a given received query or spun-off subquery. 0 to disable limit. When splitting and caching inside MQE is enabled, this value applies per time-split interval (including split intervals for spun-off subqueries). When it is disabled, this value applies to the entire time range (or entire spun-off subquery).")
 	f.IntVar(&l.QueryShardingMaxRegexpSizeBytes, "query-frontend.query-sharding-max-regexp-size-bytes", 4096, "Disable query sharding for any query containing a regular expression matcher longer than the configured number of bytes. 0 to disable the limit.")
+	f.IntVar(&l.CardinalityShardingMaxShardedQueries, "query-frontend.cardinality-sharding-max-sharded-queries", 0, "The max number of sharded queries that can be run for a cardinality (active series and active native histogram metrics) request. 0 to fall back to -query-frontend.query-sharding-max-sharded-queries.")
 	_ = l.QueryIngestersWithin.Set("13h")
 	f.Var(&l.QueryIngestersWithin, QueryIngestersWithinFlag, "Maximum lookback beyond which queries are not sent to ingester. 0 means all queries are sent to ingester.")
 	f.BoolVar(&l.EnableDelayedNameRemoval, EnableDelayedNameRemovalFlag, false, "Enable the experimental Prometheus feature for delayed name removal within MQE, which only works if remote execution and running sharding within MQE is enabled.")
@@ -1150,6 +1152,12 @@ func (o *Overrides) QueryShardingMaxShardedQueries(userID string) int {
 // than this limit, the query will not be sharded. 0 to disable limit.
 func (o *Overrides) QueryShardingMaxRegexpSizeBytes(userID string) int {
 	return o.getOverridesForUser(userID).QueryShardingMaxRegexpSizeBytes
+}
+
+// CardinalityShardingMaxShardedQueries returns the max number of sharded queries that can
+// be run for a cardinality (active series and active native histogram metrics) request.
+func (o *Overrides) CardinalityShardingMaxShardedQueries(userID string) int {
+	return o.getOverridesForUser(userID).CardinalityShardingMaxShardedQueries
 }
 
 // QueryIngestersWithin returns the maximum lookback beyond which queries are not sent to ingester.

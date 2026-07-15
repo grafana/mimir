@@ -36,6 +36,9 @@ spec:
     whenDeleted: {{ .Values.store_gateway.persistentVolume.whenDeleted }}
     whenScaled: {{ .Values.store_gateway.persistentVolume.whenScaled }}
   {{- end }}
+  {{- with .Values.store_gateway.revisionHistoryLimit }}
+  revisionHistoryLimit: {{ . }}
+  {{- end }}
   selector:
     matchLabels:
       {{- include "mimir.selectorLabels" $args | nindent 6 }}

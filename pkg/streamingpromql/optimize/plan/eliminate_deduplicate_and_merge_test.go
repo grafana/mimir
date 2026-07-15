@@ -1248,11 +1248,6 @@ func TestEliminateDeduplicateAndMergeOptimizationWithDelayedNameRemovalDisabled(
 }
 
 func runTestCasesWithDelayedNameRemovalDisabled(t *testing.T, globPattern string) {
-	types.EnableManglingReturnedSlices = true
-	t.Cleanup(func() {
-		types.EnableManglingReturnedSlices = false
-	})
-
 	testdataFS := os.DirFS("../../testdata")
 	testFiles, err := fs.Glob(testdataFS, globPattern)
 	require.NoError(t, err)

@@ -143,7 +143,7 @@ type Config struct {
 	SparseIndexHeadersConfig       indexheader.Config `yaml:"-"`
 
 	// Configuration for interacting with a compaction job scheduler
-	SchedulerClientConfig SchedulerClientConfig `yaml:"scheduler_client" category:"experimental" doc:"hidden"`
+	SchedulerClientConfig SchedulerClientConfig `yaml:"scheduler_client"`
 
 	// ReadCompartmentID is the read compartment this compactor serves.
 	ReadCompartmentID int `yaml:"read_compartment_id" category:"experimental" doc:"hidden"`
