@@ -102,6 +102,37 @@ func groupLabelsFunc(vectorMatching parser.VectorMatching, op parser.ItemType, r
 	}
 }
 
+// fillGroupLabelsFunc returns a function that computes the output labels of a filled-in series from the labels of the
+// present side. The absent side contributes no labels becuase PromQL evaluates each timestep independently, so we dont
+// have a way of knowing what the absent series' labels would have been.
+func fillGroupLabelsFunc(vectorMatching parser.VectorMatching) func(labels.Labels) labels.Labels {
+	lb := labels.NewBuilder(labels.EmptyLabels())
+
+	if vectorMatching.On {
+		lbls := vectorMatching.MatchingLabels
+
+		// We never include __name__, even if it's explicitly mentioned in on(...) as per https://github.com/prometheus/prometheus/issues/16631.
+		if i := slices.Index(vectorMatching.MatchingLabels, model.MetricNameLabel); i != -1 {
+			lbls = make([]string, 0, len(vectorMatching.MatchingLabels)-1)
+			lbls = append(lbls, vectorMatching.MatchingLabels[:i]...)
+			lbls = append(lbls, vectorMatching.MatchingLabels[i+1:]...)
+		}
+
+		return func(l labels.Labels) labels.Labels {
+			lb.Reset(l)
+			lb.Keep(lbls...)
+			return lb.Labels()
+		}
+	}
+
+	return func(l labels.Labels) labels.Labels {
+		lb.Reset(l)
+		lb.Del(model.MetricNameLabel)
+		lb.Del(vectorMatching.MatchingLabels...)
+		return lb.Labels()
+	}
+}
+
 func formatConflictError(
 	firstConflictingSeriesIndex int,
 	secondConflictingSeriesIndex int,
@@ -222,6 +253,17 @@ type vectorVectorBinaryOperationEvaluator struct {
 	annotations              annotations.Annotations
 	expressionPosition       posrange.PositionRange
 	emitAnnotation           types.EmitAnnotationFunc
+
+	// fillLeft/fillRight are the fill modifier values substituted when only the other side has a
+	// sample at a timestep (fill_left/fill and fill_right/fill respectively). nil disables filling.
+	fillLeft  *float64
+	fillRight *float64
+}
+
+// setFillValues sets the fill values used by computeResult. A nil value disables filling for that side.
+func (e *vectorVectorBinaryOperationEvaluator) setFillValues(fillLeft, fillRight *float64) {
+	e.fillLeft = fillLeft
+	e.fillRight = fillRight
 }
 
 func newVectorVectorBinaryOperationEvaluator(
@@ -266,7 +308,20 @@ func (e *vectorVectorBinaryOperationEvaluator) computeResult(left types.InstantV
 	canReturnLeftFPointSlice, canReturnLeftHPointSlice, canReturnRightFPointSlice, canReturnRightHPointSlice := takeOwnershipOfLeft, takeOwnershipOfLeft, takeOwnershipOfRight, takeOwnershipOfRight
 	leftPoints := len(left.Floats) + len(left.Histograms)
 	rightPoints := len(right.Floats) + len(right.Histograms)
-	minPoints := min(leftPoints, rightPoints)
+
+	// maxPoints is an upper bound on the number of output points, used to size a newly allocated
+	// output slice. Without fill, output only occurs where both sides have a sample, so the smaller
+	// side bounds it. A fill lets every sample on the other side produce output, so a set fill side
+	// is bounded by the opposite side's point count, and both fills by their sum.
+	maxPoints := min(leftPoints, rightPoints)
+	switch {
+	case e.fillLeft != nil && e.fillRight != nil:
+		maxPoints = leftPoints + rightPoints
+	case e.fillRight != nil:
+		maxPoints = leftPoints
+	case e.fillLeft != nil:
+		maxPoints = rightPoints
+	}
 
 	// We cannot re-use any slices when the series contain a mix of floats and histograms.
 	// Consider the following, where f is a float at a particular step, and h is a histogram.
@@ -282,12 +337,18 @@ func (e *vectorVectorBinaryOperationEvaluator) computeResult(left types.InstantV
 	// accept the cost of a new slice.
 	mixedPoints := (len(left.Floats) > 0 && len(left.Histograms) > 0) || (len(right.Floats) > 0 && len(right.Histograms) > 0)
 
+	// In-place slice reuse relies on never writing an output point ahead of the reused side's consumed
+	// index. With fill active, a timestep where only one side has a sample still produces output, so
+	// the output index can run ahead and overwrite unread samples. Disable reuse when fill is active
+	// and always allocate a fresh slice; fill is the uncommon path, so the extra allocation is fine.
+	fillActive := e.fillLeft != nil || e.fillRight != nil
+
 	prepareFSlice := func() error {
-		canFitInLeftSide := minPoints <= cap(left.Floats)
+		canFitInLeftSide := maxPoints <= cap(left.Floats)
 		leftSideIsSmaller := cap(left.Floats) < cap(right.Floats)
-		safeToReuseLeftSide := !mixedPoints && canFitInLeftSide && takeOwnershipOfLeft
-		canFitInRightSide := minPoints <= cap(right.Floats)
-		safeToReuseRightSide := !mixedPoints && canFitInRightSide && takeOwnershipOfRight
+		safeToReuseLeftSide := !fillActive && !mixedPoints && canFitInLeftSide && takeOwnershipOfLeft
+		canFitInRightSide := maxPoints <= cap(right.Floats)
+		safeToReuseRightSide := !fillActive && !mixedPoints && canFitInRightSide && takeOwnershipOfRight
 
 		if safeToReuseLeftSide && (leftSideIsSmaller || !safeToReuseRightSide) {
 			canReturnLeftFPointSlice = false
@@ -303,18 +364,18 @@ func (e *vectorVectorBinaryOperationEvaluator) computeResult(left types.InstantV
 
 		// We can't reuse either existing slice, so create a new one.
 		var err error
-		if fPoints, err = types.FPointSlicePool.Get(minPoints, e.memoryConsumptionTracker); err != nil {
+		if fPoints, err = types.FPointSlicePool.Get(maxPoints, e.memoryConsumptionTracker); err != nil {
 			return err
 		}
 		return nil
 	}
 
 	prepareHSlice := func() error {
-		canFitInLeftSide := minPoints <= cap(left.Histograms)
+		canFitInLeftSide := maxPoints <= cap(left.Histograms)
 		leftSideIsSmaller := cap(left.Histograms) < cap(right.Histograms)
-		safeToReuseLeftSide := !mixedPoints && canFitInLeftSide && takeOwnershipOfLeft
-		canFitInRightSide := minPoints <= cap(right.Histograms)
-		safeToReuseRightSide := !mixedPoints && canFitInRightSide && takeOwnershipOfRight
+		safeToReuseLeftSide := !fillActive && !mixedPoints && canFitInLeftSide && takeOwnershipOfLeft
+		canFitInRightSide := maxPoints <= cap(right.Histograms)
+		safeToReuseRightSide := !fillActive && !mixedPoints && canFitInRightSide && takeOwnershipOfRight
 
 		if safeToReuseLeftSide && (leftSideIsSmaller || !safeToReuseRightSide) {
 			canReturnLeftHPointSlice = false
@@ -330,7 +391,7 @@ func (e *vectorVectorBinaryOperationEvaluator) computeResult(left types.InstantV
 
 		// We can't reuse either existing slice, so create a new one.
 		var err error
-		if hPoints, err = types.HPointSlicePool.Get(minPoints, e.memoryConsumptionTracker); err != nil {
+		if hPoints, err = types.HPointSlicePool.Get(maxPoints, e.memoryConsumptionTracker); err != nil {
 			return err
 		}
 		return nil
@@ -383,8 +444,14 @@ func (e *vectorVectorBinaryOperationEvaluator) computeResult(left types.InstantV
 		return nil
 	}
 
-	appendNextSample := func() error {
-		resultFloat, resultHist, keep, valid, err := e.opFunc(lF, rF, lH, rH, takeOwnershipOfLeft, takeOwnershipOfRight, e.emitAnnotation)
+	// appendNextSample evaluates opFunc for a single output timestep and appends the result (if kept).
+	// Operands are passed explicitly so a fill value can be substituted for a side with no sample at
+	// this timestep (its histogram operand then being nil, as fill values are floats).
+	//
+	// appendHistogram compares its result against the outer loop values to decide whether to nil them for
+	// safe slice reuse, and on fill paths lHOp/rHOp differ from them (ie if one operand is nil).
+	appendNextSample := func(t int64, lF, rF float64, lHOp, rHOp *histogram.FloatHistogram) error {
+		resultFloat, resultHist, keep, valid, err := e.opFunc(lF, rF, lHOp, rHOp, takeOwnershipOfLeft, takeOwnershipOfRight, e.emitAnnotation)
 
 		if err != nil {
 			if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) {
@@ -401,7 +468,8 @@ func (e *vectorVectorBinaryOperationEvaluator) computeResult(left types.InstantV
 		}
 
 		if !valid {
-			e.annotations.Add(newIncompatibleTypesAnnotation(e.op, lH, rH, e.expressionPosition))
+			// Describe the operands actually combined here (lHOp/rHOp), which differ from the outer lH/rH on fill steps.
+			e.annotations.Add(newIncompatibleTypesAnnotation(e.op, lHOp, rHOp, e.expressionPosition))
 		}
 
 		if !keep {
@@ -409,29 +477,45 @@ func (e *vectorVectorBinaryOperationEvaluator) computeResult(left types.InstantV
 		}
 
 		if resultHist != nil {
-			return appendHistogram(lT, resultHist)
+			return appendHistogram(t, resultHist)
 		}
 
-		return appendFloat(lT, resultFloat)
+		return appendFloat(t, resultFloat)
 	}
 
-	// Continue iterating until we exhaust either the LHS or RHS
-	// denoted by lOk or rOk being false.
-	for lOk && rOk {
-		if lT == rT {
-			// We have samples on both sides at this timestep.
-			if err := appendNextSample(); err != nil {
+	// Iterate until both sides are exhausted. Where only one side has a sample, we emit output only if
+	// that side's opposite has a fill value set; otherwise we advance without emitting.
+	for lOk || rOk {
+		switch {
+		case lOk && rOk && lT == rT:
+			// Both sides have a sample at this timestep.
+			if err := appendNextSample(lT, lF, rF, lH, rH); err != nil {
 				return types.InstantVectorSeriesData{}, err
+			}
+		case lOk && (!rOk || lT < rT):
+			// Only the left side has a sample; fill the right operand if a fill value is set.
+			if e.fillRight != nil {
+				if err := appendNextSample(lT, lF, *e.fillRight, lH, nil); err != nil {
+					return types.InstantVectorSeriesData{}, err
+				}
+			}
+		default:
+			// Only the right side has a sample; fill the left operand if a fill value is set.
+			if e.fillLeft != nil {
+				if err := appendNextSample(rT, *e.fillLeft, rF, nil, rH); err != nil {
+					return types.InstantVectorSeriesData{}, err
+				}
 			}
 		}
 
-		// Advance the iterator with the lower timestamp, or both if equal
-		if lT == rT {
+		// Advance the iterator with the lower timestamp, or both if equal.
+		switch {
+		case lOk && rOk && lT == rT:
 			lT, lF, lH, lHIndex, lOk = e.leftIterator.Next()
 			rT, rF, rH, rHIndex, rOk = e.rightIterator.Next()
-		} else if lT < rT {
+		case lOk && (!rOk || lT < rT):
 			lT, lF, lH, lHIndex, lOk = e.leftIterator.Next()
-		} else {
+		default:
 			rT, rF, rH, rHIndex, rOk = e.rightIterator.Next()
 		}
 	}

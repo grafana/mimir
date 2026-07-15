@@ -691,6 +691,425 @@ func TestOneToOneVectorVectorBinaryOperation_CallsFinishedReadingOnInnerOperator
 	}
 }
 
+func TestOneToOneVectorVectorBinaryOperation_FillModifiers_OutputSeries(t *testing.T) {
+	// Tests the output series and labels produced with fill modifiers set, including the asymmetry
+	// between fill directions: a filled-right series takes its labels from the left series (as a real
+	// match would), while a filled-left series takes only the matching labels and no metric name.
+	fillZero := 0.0
+
+	testCases := map[string]struct {
+		vectorMatching parser.VectorMatching
+		op             parser.ItemType
+		returnBool     bool
+		leftSeries     []labels.Labels
+		rightSeries    []labels.Labels
+
+		expectedOutputSeries []labels.Labels
+	}{
+		"fill both sides, partial overlap, arithmetic": {
+			vectorMatching: parser.VectorMatching{Card: parser.CardOneToOne, FillValues: parser.VectorMatchFillValues{LHS: &fillZero, RHS: &fillZero}},
+			op:             parser.ADD,
+			leftSeries: []labels.Labels{
+				labels.FromStrings(model.MetricNameLabel, "left", "label", "a"),
+				labels.FromStrings(model.MetricNameLabel, "left", "label", "c"),
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings(model.MetricNameLabel, "right", "label", "a"),
+				labels.FromStrings(model.MetricNameLabel, "right", "label", "d"),
+			},
+			expectedOutputSeries: []labels.Labels{
+				labels.FromStrings("label", "a"),
+				labels.FromStrings("label", "c"),
+				labels.FromStrings("label", "d"),
+			},
+		},
+		"fill_right only keeps unmatched left groups": {
+			vectorMatching: parser.VectorMatching{Card: parser.CardOneToOne, FillValues: parser.VectorMatchFillValues{RHS: &fillZero}},
+			op:             parser.ADD,
+			leftSeries: []labels.Labels{
+				labels.FromStrings(model.MetricNameLabel, "left", "label", "a"),
+				labels.FromStrings(model.MetricNameLabel, "left", "label", "c"),
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings(model.MetricNameLabel, "right", "label", "a"),
+				labels.FromStrings(model.MetricNameLabel, "right", "label", "d"),
+			},
+			expectedOutputSeries: []labels.Labels{
+				labels.FromStrings("label", "a"),
+				labels.FromStrings("label", "c"),
+			},
+		},
+		"fill_left only keeps unmatched right groups": {
+			vectorMatching: parser.VectorMatching{Card: parser.CardOneToOne, FillValues: parser.VectorMatchFillValues{LHS: &fillZero}},
+			op:             parser.ADD,
+			leftSeries: []labels.Labels{
+				labels.FromStrings(model.MetricNameLabel, "left", "label", "a"),
+				labels.FromStrings(model.MetricNameLabel, "left", "label", "c"),
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings(model.MetricNameLabel, "right", "label", "a"),
+				labels.FromStrings(model.MetricNameLabel, "right", "label", "d"),
+			},
+			expectedOutputSeries: []labels.Labels{
+				labels.FromStrings("label", "a"),
+				labels.FromStrings("label", "d"),
+			},
+		},
+		"no overlap with fill both sides": {
+			vectorMatching: parser.VectorMatching{Card: parser.CardOneToOne, FillValues: parser.VectorMatchFillValues{LHS: &fillZero, RHS: &fillZero}},
+			op:             parser.ADD,
+			leftSeries: []labels.Labels{
+				labels.FromStrings(model.MetricNameLabel, "left", "label", "a"),
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings(model.MetricNameLabel, "right", "label", "b"),
+			},
+			expectedOutputSeries: []labels.Labels{
+				labels.FromStrings("label", "a"),
+				labels.FromStrings("label", "b"),
+			},
+		},
+		"complete overlap with fill has no extra series": {
+			vectorMatching: parser.VectorMatching{Card: parser.CardOneToOne, FillValues: parser.VectorMatchFillValues{LHS: &fillZero, RHS: &fillZero}},
+			op:             parser.ADD,
+			leftSeries: []labels.Labels{
+				labels.FromStrings(model.MetricNameLabel, "left", "label", "a"),
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings(model.MetricNameLabel, "right", "label", "a"),
+			},
+			expectedOutputSeries: []labels.Labels{
+				labels.FromStrings("label", "a"),
+			},
+		},
+		"comparison filter retains name for matched and filled-right groups but not filled-left": {
+			// left != fill_left(0)/fill(0) right, comparison filter (no bool): matched and filled-right
+			// output series keep the left metric name; the filled-left output series has no metric name.
+			vectorMatching: parser.VectorMatching{Card: parser.CardOneToOne, FillValues: parser.VectorMatchFillValues{LHS: &fillZero, RHS: &fillZero}},
+			op:             parser.NEQ,
+			leftSeries: []labels.Labels{
+				labels.FromStrings(model.MetricNameLabel, "left_metric", "label", "a"),
+				labels.FromStrings(model.MetricNameLabel, "left_metric", "label", "c"),
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings(model.MetricNameLabel, "right_metric", "label", "a"),
+				labels.FromStrings(model.MetricNameLabel, "right_metric", "label", "d"),
+			},
+			expectedOutputSeries: []labels.Labels{
+				labels.FromStrings(model.MetricNameLabel, "left_metric", "label", "a"),
+				labels.FromStrings(model.MetricNameLabel, "left_metric", "label", "c"),
+				labels.FromStrings("label", "d"),
+			},
+		},
+		"on matching with fill both sides": {
+			vectorMatching: parser.VectorMatching{Card: parser.CardOneToOne, On: true, MatchingLabels: []string{"job", "instance"}, FillValues: parser.VectorMatchFillValues{LHS: &fillZero, RHS: &fillZero}},
+			op:             parser.ADD,
+			leftSeries: []labels.Labels{
+				labels.FromStrings(model.MetricNameLabel, "left", "job", "foo", "instance", "a"),
+				labels.FromStrings(model.MetricNameLabel, "left", "job", "bar", "instance", "c"),
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings(model.MetricNameLabel, "right", "job", "foo", "instance", "a"),
+				labels.FromStrings(model.MetricNameLabel, "right", "job", "foo", "instance", "d"),
+			},
+			expectedOutputSeries: []labels.Labels{
+				labels.FromStrings("job", "foo", "instance", "a"),
+				labels.FromStrings("job", "bar", "instance", "c"),
+				labels.FromStrings("job", "foo", "instance", "d"),
+			},
+		},
+		"ignoring matching with fill both sides": {
+			vectorMatching: parser.VectorMatching{Card: parser.CardOneToOne, On: false, MatchingLabels: []string{"job"}, FillValues: parser.VectorMatchFillValues{LHS: &fillZero, RHS: &fillZero}},
+			op:             parser.ADD,
+			leftSeries: []labels.Labels{
+				labels.FromStrings(model.MetricNameLabel, "left", "job", "foo", "instance", "a"),
+				labels.FromStrings(model.MetricNameLabel, "left", "job", "bar", "instance", "c"),
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings(model.MetricNameLabel, "right", "job", "foo", "instance", "a"),
+				labels.FromStrings(model.MetricNameLabel, "right", "job", "foo", "instance", "d"),
+			},
+			expectedOutputSeries: []labels.Labels{
+				labels.FromStrings("instance", "a"),
+				labels.FromStrings("instance", "c"),
+				labels.FromStrings("instance", "d"),
+			},
+		},
+		"left side empty with fill_left keeps right groups": {
+			vectorMatching: parser.VectorMatching{Card: parser.CardOneToOne, FillValues: parser.VectorMatchFillValues{LHS: &fillZero}},
+			op:             parser.ADD,
+			leftSeries:     []labels.Labels{},
+			rightSeries: []labels.Labels{
+				labels.FromStrings(model.MetricNameLabel, "right", "label", "a"),
+				labels.FromStrings(model.MetricNameLabel, "right", "label", "b"),
+			},
+			expectedOutputSeries: []labels.Labels{
+				labels.FromStrings("label", "a"),
+				labels.FromStrings("label", "b"),
+			},
+		},
+		"right side empty with fill_right keeps left groups": {
+			vectorMatching: parser.VectorMatching{Card: parser.CardOneToOne, FillValues: parser.VectorMatchFillValues{RHS: &fillZero}},
+			op:             parser.ADD,
+			leftSeries: []labels.Labels{
+				labels.FromStrings(model.MetricNameLabel, "left", "label", "a"),
+				labels.FromStrings(model.MetricNameLabel, "left", "label", "b"),
+			},
+			rightSeries: []labels.Labels{},
+			expectedOutputSeries: []labels.Labels{
+				labels.FromStrings("label", "a"),
+				labels.FromStrings("label", "b"),
+			},
+		},
+		"right side empty with fill_left produces no series": {
+			vectorMatching: parser.VectorMatching{Card: parser.CardOneToOne, FillValues: parser.VectorMatchFillValues{LHS: &fillZero}},
+			op:             parser.ADD,
+			leftSeries: []labels.Labels{
+				labels.FromStrings(model.MetricNameLabel, "left", "label", "a"),
+			},
+			rightSeries:          []labels.Labels{},
+			expectedOutputSeries: []labels.Labels{},
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			ctx := context.Background()
+			timeRange := types.NewInstantQueryTimeRange(time.Now())
+			memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+			left := &operators.TestOperator{Series: testCase.leftSeries, Data: make([]types.InstantVectorSeriesData, len(testCase.leftSeries)), MemoryConsumptionTracker: memoryConsumptionTracker}
+			right := &operators.TestOperator{Series: testCase.rightSeries, Data: make([]types.InstantVectorSeriesData, len(testCase.rightSeries)), MemoryConsumptionTracker: memoryConsumptionTracker}
+
+			o, err := NewOneToOneVectorVectorBinaryOperation(left, right, testCase.vectorMatching, testCase.op, testCase.returnBool, memoryConsumptionTracker, posrange.PositionRange{}, timeRange, nil, log.NewNopLogger())
+			require.NoError(t, err)
+
+			outputSeries, err := o.SeriesMetadata(ctx, nil)
+			require.NoError(t, err)
+
+			if len(testCase.expectedOutputSeries) == 0 {
+				require.Empty(t, outputSeries)
+			} else {
+				require.ElementsMatch(t, testutils.LabelsToSeriesMetadata(testCase.expectedOutputSeries), outputSeries)
+			}
+
+			types.SeriesMetadataSlicePool.Put(&outputSeries, memoryConsumptionTracker)
+			require.NoError(t, o.FinishedReading(ctx))
+			o.Close()
+		})
+	}
+}
+
+func TestOneToOneVectorVectorBinaryOperation_FillModifiers_EvaluationAndPooling(t *testing.T) {
+	// Evaluates a one-to-one fill expression over a range query, verifying the produced data and that
+	// all pooled memory is released once reading is complete.
+	fillZero := 0.0
+
+	step1 := timestamp.Time(0)
+	step2 := step1.Add(5 * time.Minute)
+	step3 := step2.Add(5 * time.Minute)
+	timeRange := types.NewRangeQueryTimeRange(step1, step3, 5*time.Minute)
+
+	t0 := timestamp.FromTime(step1)
+	t1 := timestamp.FromTime(step2)
+	t2 := timestamp.FromTime(step3)
+
+	testCases := map[string]struct {
+		fillValues parser.VectorMatchFillValues
+
+		expected map[string][]promql.FPoint
+	}{
+		"fill both sides": {
+			fillValues: parser.VectorMatchFillValues{LHS: &fillZero, RHS: &fillZero},
+			expected: map[string][]promql.FPoint{
+				// Matched group "a": left + right at every step.
+				`{label="a"}`: {{T: t0, F: 11}, {T: t1, F: 22}, {T: t2, F: 33}},
+				// Left-only group "b": right filled with 0.
+				`{label="b"}`: {{T: t0, F: 100}, {T: t1, F: 200}, {T: t2, F: 300}},
+				// Right-only group "c": left filled with 0.
+				`{label="c"}`: {{T: t0, F: 1000}, {T: t1, F: 2000}, {T: t2, F: 3000}},
+			},
+		},
+		"fill_right only": {
+			fillValues: parser.VectorMatchFillValues{RHS: &fillZero},
+			expected: map[string][]promql.FPoint{
+				`{label="a"}`: {{T: t0, F: 11}, {T: t1, F: 22}, {T: t2, F: 33}},
+				`{label="b"}`: {{T: t0, F: 100}, {T: t1, F: 200}, {T: t2, F: 300}},
+			},
+		},
+		"fill_left only": {
+			fillValues: parser.VectorMatchFillValues{LHS: &fillZero},
+			expected: map[string][]promql.FPoint{
+				`{label="a"}`: {{T: t0, F: 11}, {T: t1, F: 22}, {T: t2, F: 33}},
+				`{label="c"}`: {{T: t0, F: 1000}, {T: t1, F: 2000}, {T: t2, F: 3000}},
+			},
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			ctx := context.Background()
+			memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+
+			makeData := func(f0, f1, f2 float64) types.InstantVectorSeriesData {
+				floats, err := types.FPointSlicePool.Get(3, memoryConsumptionTracker)
+				require.NoError(t, err)
+				floats = append(floats, promql.FPoint{T: t0, F: f0}, promql.FPoint{T: t1, F: f1}, promql.FPoint{T: t2, F: f2})
+				return types.InstantVectorSeriesData{Floats: floats}
+			}
+
+			leftSeries := []labels.Labels{
+				labels.FromStrings(model.MetricNameLabel, "left", "label", "a"),
+				labels.FromStrings(model.MetricNameLabel, "left", "label", "b"),
+			}
+			rightSeries := []labels.Labels{
+				labels.FromStrings(model.MetricNameLabel, "right", "label", "a"),
+				labels.FromStrings(model.MetricNameLabel, "right", "label", "c"),
+			}
+
+			leftData := []types.InstantVectorSeriesData{makeData(1, 2, 3), makeData(100, 200, 300)}
+			rightData := []types.InstantVectorSeriesData{makeData(10, 20, 30), makeData(1000, 2000, 3000)}
+
+			left := &operators.TestOperator{Series: leftSeries, Data: leftData, MemoryConsumptionTracker: memoryConsumptionTracker}
+			right := &operators.TestOperator{Series: rightSeries, Data: rightData, MemoryConsumptionTracker: memoryConsumptionTracker}
+
+			vectorMatching := parser.VectorMatching{Card: parser.CardOneToOne, FillValues: testCase.fillValues}
+			o, err := NewOneToOneVectorVectorBinaryOperation(left, right, vectorMatching, parser.ADD, false, memoryConsumptionTracker, posrange.PositionRange{}, timeRange, nil, log.NewNopLogger())
+			require.NoError(t, err)
+
+			metadata, err := o.SeriesMetadata(ctx, nil)
+			require.NoError(t, err)
+
+			actual := map[string][]promql.FPoint{}
+			for range metadata {
+				d, err := o.NextSeries(ctx)
+				require.NoError(t, err)
+				idx := len(actual)
+				actual[metadata[idx].Labels.String()] = slices.Clone(d.Floats)
+				require.Empty(t, d.Histograms)
+				types.PutInstantVectorSeriesData(d, memoryConsumptionTracker)
+			}
+
+			require.Equal(t, testCase.expected, actual)
+
+			_, err = o.NextSeries(ctx)
+			require.Equal(t, types.EOS, err)
+
+			types.SeriesMetadataSlicePool.Put(&metadata, memoryConsumptionTracker)
+			require.NoError(t, o.FinishedReading(ctx))
+
+			// Release legitimately-dropped input series. In a real query the source operator's
+			// FinishedReading does this; the TestOperator leaves it to the test.
+			left.ReleaseUnreadData(memoryConsumptionTracker)
+			right.ReleaseUnreadData(memoryConsumptionTracker)
+
+			require.Equal(t, uint64(0), memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes(), "all pooled memory should be released")
+			o.Close()
+		})
+	}
+}
+
+func TestOneToOneVectorVectorBinaryOperation_FillModifiers_IntermittentPresenceAndPooling(t *testing.T) {
+	// Tests per-timestep fill within a matched group whose left and right series are present at
+	// different timesteps, verifying the values produced and that all pooled memory is released.
+	fillZero := 0.0
+
+	step1 := timestamp.Time(0)
+	timeRange := types.NewRangeQueryTimeRange(step1, step1.Add(4*5*time.Minute), 5*time.Minute)
+
+	ts := make([]int64, 5)
+	for i := range ts {
+		ts[i] = timestamp.FromTime(step1.Add(time.Duration(i) * 5 * time.Minute))
+	}
+
+	// A single matched group "a" whose left samples are at even steps and right samples at odd steps,
+	// so no step has both sides present. This forces every emitted point through the fill path.
+	//   left  : t0=1  t2=3  t4=5
+	//   right : t1=200 t3=400
+	leftPoints := []promql.FPoint{{T: ts[0], F: 1}, {T: ts[2], F: 3}, {T: ts[4], F: 5}}
+	rightPoints := []promql.FPoint{{T: ts[1], F: 200}, {T: ts[3], F: 400}}
+
+	testCases := map[string]struct {
+		fillValues parser.VectorMatchFillValues
+		expected   []promql.FPoint
+	}{
+		"fill both sides: output at every step where either side is present": {
+			fillValues: parser.VectorMatchFillValues{LHS: &fillZero, RHS: &fillZero},
+			expected: []promql.FPoint{
+				{T: ts[0], F: 1},   // left + 0
+				{T: ts[1], F: 200}, // 0 + right
+				{T: ts[2], F: 3},   // left + 0
+				{T: ts[3], F: 400}, // 0 + right
+				{T: ts[4], F: 5},   // left + 0
+			},
+		},
+		"fill_right: output only where the left side is present": {
+			fillValues: parser.VectorMatchFillValues{RHS: &fillZero},
+			expected: []promql.FPoint{
+				{T: ts[0], F: 1},
+				{T: ts[2], F: 3},
+				{T: ts[4], F: 5},
+			},
+		},
+		"fill_left: output only where the right side is present": {
+			fillValues: parser.VectorMatchFillValues{LHS: &fillZero},
+			expected: []promql.FPoint{
+				{T: ts[1], F: 200},
+				{T: ts[3], F: 400},
+			},
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			ctx := context.Background()
+			memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+
+			makeData := func(points []promql.FPoint) types.InstantVectorSeriesData {
+				floats, err := types.FPointSlicePool.Get(len(points), memoryConsumptionTracker)
+				require.NoError(t, err)
+				floats = append(floats, points...)
+				return types.InstantVectorSeriesData{Floats: floats}
+			}
+
+			leftSeries := []labels.Labels{labels.FromStrings(model.MetricNameLabel, "left", "label", "a")}
+			rightSeries := []labels.Labels{labels.FromStrings(model.MetricNameLabel, "right", "label", "a")}
+
+			leftData := []types.InstantVectorSeriesData{makeData(leftPoints)}
+			rightData := []types.InstantVectorSeriesData{makeData(rightPoints)}
+
+			left := &operators.TestOperator{Series: leftSeries, Data: leftData, MemoryConsumptionTracker: memoryConsumptionTracker}
+			right := &operators.TestOperator{Series: rightSeries, Data: rightData, MemoryConsumptionTracker: memoryConsumptionTracker}
+
+			vectorMatching := parser.VectorMatching{Card: parser.CardOneToOne, FillValues: testCase.fillValues}
+			o, err := NewOneToOneVectorVectorBinaryOperation(left, right, vectorMatching, parser.ADD, false, memoryConsumptionTracker, posrange.PositionRange{}, timeRange, nil, log.NewNopLogger())
+			require.NoError(t, err)
+
+			metadata, err := o.SeriesMetadata(ctx, nil)
+			require.NoError(t, err)
+			require.Len(t, metadata, 1)
+			require.Equal(t, `{label="a"}`, metadata[0].Labels.String())
+
+			d, err := o.NextSeries(ctx)
+			require.NoError(t, err)
+			require.Empty(t, d.Histograms)
+			require.Equal(t, testCase.expected, d.Floats)
+			types.PutInstantVectorSeriesData(d, memoryConsumptionTracker)
+
+			_, err = o.NextSeries(ctx)
+			require.Equal(t, types.EOS, err)
+
+			types.SeriesMetadataSlicePool.Put(&metadata, memoryConsumptionTracker)
+			require.NoError(t, o.FinishedReading(ctx))
+
+			left.ReleaseUnreadData(memoryConsumptionTracker)
+			right.ReleaseUnreadData(memoryConsumptionTracker)
+
+			require.Equal(t, uint64(0), memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes(), "all pooled memory should be released")
+			o.Close()
+		})
+	}
+}
+
 func TestOneToOneVectorVectorBinaryOperation_PassesWithoutDerivedMatchersToRHS(t *testing.T) {
 	// Verifies that exclude-style matchers are forwarded to the RHS via explicit
 	// exclude hints (set by an up-to-date query-frontend). When hints are nil

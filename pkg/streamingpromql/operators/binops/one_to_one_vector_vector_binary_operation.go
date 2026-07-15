@@ -53,19 +53,37 @@ var _ types.InstantVectorOperator = &OneToOneVectorVectorBinaryOperation{}
 type oneToOneBinaryOperationOutputSeries struct {
 	leftSeriesIndices []int
 	rightSide         *oneToOneBinaryOperationRightSide
+
+	// fillMissingLeft is true when this output series has no real left side and the left operand is
+	// synthesised from the LHS fill value. leftSeriesIndices is then empty and rightSide is populated.
+	fillMissingLeft bool
+
+	// fillMissingRight is true when this output series has no real right side and the right operand is
+	// synthesised from the RHS fill value. rightSide is then nil and leftSeriesIndices is populated.
+	fillMissingRight bool
 }
 
 // latestLeftSeries returns the index of the last series from the left source needed for this output series.
 //
 // It assumes that leftSeriesIndices is sorted in ascending order.
+// It returns -1 for output series that only exist because of a left-side fill, as those have no left series.
 func (s oneToOneBinaryOperationOutputSeries) latestLeftSeries() int {
+	if len(s.leftSeriesIndices) == 0 {
+		return -1
+	}
+
 	return s.leftSeriesIndices[len(s.leftSeriesIndices)-1]
 }
 
 // latestRightSeries returns the index of the last series from the right source needed for this output series.
 //
 // It assumes that rightSide.rightSeriesIndices is sorted in ascending order.
+// It returns -1 for output series that only exist because of a right-side fill, as those have no right series.
 func (s oneToOneBinaryOperationOutputSeries) latestRightSeries() int {
+	if s.rightSide == nil {
+		return -1
+	}
+
 	return s.rightSide.rightSeriesIndices[len(s.rightSide.rightSeriesIndices)-1]
 }
 
@@ -136,6 +154,10 @@ func NewOneToOneVectorVectorBinaryOperation(
 		return nil, err
 	}
 
+	// The one-to-one operator never swaps operands, so the fill values map directly onto
+	// computeResult's left and right arguments.
+	e.setFillValues(vectorMatching.FillValues.LHS, vectorMatching.FillValues.RHS)
+
 	b := &OneToOneVectorVectorBinaryOperation{
 		Left:                     left,
 		Right:                    right,
@@ -174,12 +196,17 @@ func (b *OneToOneVectorVectorBinaryOperation) ExpressionPosition() posrange.Posi
 // contain points, but that would mean we'd need to hold the entire result in memory at once, which we want to
 // avoid.)
 func (b *OneToOneVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
+	// When a side is filled, the other side's series still produce output, so we cannot short-circuit
+	// when the filled side is empty.
+	fillLeft := b.VectorMatching.FillValues.LHS != nil
+	fillRight := b.VectorMatching.FillValues.RHS != nil
+
 	var err error
 	b.leftMetadata, err = b.Left.SeriesMetadata(ctx, matchers)
 	if err != nil {
 		return nil, err
-	} else if len(b.leftMetadata) == 0 {
-		// No series on left-hand side, we'll never have any output series.
+	} else if len(b.leftMetadata) == 0 && !fillLeft {
+		// No series on left-hand side and not filling it, so we'll never have any output series.
 		if err = b.FinishedReading(ctx); err != nil {
 			return nil, err
 		}
@@ -195,6 +222,9 @@ func (b *OneToOneVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context
 	// pass are set specifically for each binary operation and include only fields that are
 	// valid to be passed to its RHS. We drop existing extra matchers since they may refer
 	// to labels that don't exist on the RHS of this binary operation.
+	//
+	// b.hints is nil for fill expressions (the optimisation pass sets no hints for them), so we
+	// won't narrow the right side here.
 	if b.hints != nil {
 		matchers = BuildMatchers(ctx, b.logger, b.leftMetadata, b.hints)
 	}
@@ -202,8 +232,17 @@ func (b *OneToOneVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context
 	b.rightMetadata, err = b.Right.SeriesMetadata(ctx, matchers)
 	if err != nil {
 		return nil, err
-	} else if len(b.rightMetadata) == 0 {
-		// No series on right-hand side, we'll never have any output series.
+	} else if len(b.rightMetadata) == 0 && !fillRight {
+		// No series on right-hand side and not filling it, so we'll never have any output series.
+		if err = b.FinishedReading(ctx); err != nil {
+			return nil, err
+		}
+
+		return nil, nil
+	}
+
+	if len(b.leftMetadata) == 0 && len(b.rightMetadata) == 0 {
+		// Both sides are empty, so there is nothing to fill, so there will never be any output series.
 		if err = b.FinishedReading(ctx); err != nil {
 			return nil, err
 		}
@@ -250,6 +289,10 @@ func (b *OneToOneVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context
 func (b *OneToOneVectorVectorBinaryOperation) computeOutputSeries() ([]types.SeriesMetadata, []*oneToOneBinaryOperationOutputSeries, []bool, int, []bool, int, error) {
 	groupKeyFunc := vectorMatchingGroupKeyFunc(b.VectorMatching)
 
+	// When a fill value is set, match groups that exist on only one side must still produce output.
+	fillLeft := b.VectorMatching.FillValues.LHS != nil
+	fillRight := b.VectorMatching.FillValues.RHS != nil
+
 	// If the left side is smaller than the right, build a map of the possible groups from the left side
 	// to allow us to avoid creating unnecessary groups when iterating through the right side in computeRightSideGroups.
 	// This optimisation assumes that most series on either side match at most one series on the other side,
@@ -257,7 +300,9 @@ func (b *OneToOneVectorVectorBinaryOperation) computeOutputSeries() ([]types.Ser
 	// FIXME: a possible improvement would be to only bother with this if the left side is significantly smaller
 	var leftSideGroupsMap map[string]struct{}
 
-	if len(b.leftMetadata) < len(b.rightMetadata) {
+	// When filling the left side, unmatched right-side groups must still produce output, so we can't
+	// prune them via the left-side groups map.
+	if !fillLeft && len(b.leftMetadata) < len(b.rightMetadata) {
 		leftSideGroupsMap = b.computeLeftSideGroups(groupKeyFunc)
 	}
 
@@ -280,23 +325,49 @@ func (b *OneToOneVectorVectorBinaryOperation) computeOutputSeries() ([]types.Ser
 	rightSeriesUsed = rightSeriesUsed[:len(b.rightMetadata)]
 	lastRightSeriesUsedIndex := -1
 	labelsFunc := groupLabelsFunc(b.VectorMatching, b.Op, b.ReturnBool)
+	fillLabelsFunc := fillGroupLabelsFunc(b.VectorMatching)
 	outputSeriesLabelsBytes := make([]byte, 0, 1024)
 
+	// matchedRightGroups records, by group key, which right-side groups have a matching series on
+	// the left side. Only tracked (and only needed) when filling the left side.
+	var matchedRightGroups map[string]struct{}
+	if fillLeft {
+		matchedRightGroups = make(map[string]struct{}, len(rightSideGroupsMap))
+	}
+
 	for leftSeriesIndex, s := range b.leftMetadata {
+		groupKey := groupKeyFunc(s.Labels)
+
+		// Important: don't extract the string(...) call below - passing it directly allows us to avoid allocating it.
+		rightSide, rightExists := rightSideGroupsMap[string(groupKey)]
+
+		if !rightExists {
+			// No matching series on the right side.
+			if !fillRight {
+				continue
+			}
+
+			// Fill the right side using the same label function as a real match (the result metric is derived from the left operand).
+			if err := b.addLeftSeriesToOutput(outputSeriesMap, &outputSeriesLabelsBytes, labelsFunc(s.Labels), nil, true, leftSeriesIndex, leftSeriesUsed); err != nil {
+				return nil, nil, nil, -1, nil, -1, err
+			}
+
+			lastLeftSeriesUsedIndex = leftSeriesIndex
+			continue
+		}
+
+		if fillLeft {
+			matchedRightGroups[string(groupKey)] = struct{}{}
+		}
+
 		outputSeriesLabels := labelsFunc(s.Labels)
 		outputSeriesLabelsBytes = outputSeriesLabels.Bytes(outputSeriesLabelsBytes) // FIXME: it'd be better if we could just get the underlying byte slice without copying here
 		outputSeries, exists := outputSeriesMap[string(outputSeriesLabelsBytes)]
 
+		// If two left series produce the same output labels (possible for comparison filters, which retain __name__),
+		// we merge them into one output series (appending leftSeriesIndex below) and let them compete per-timestep.
+		// For arithmetic operators the output labels are 1:1 with the match group key, so this never happens.
 		if !exists {
-			groupKey := groupKeyFunc(s.Labels)
-
-			// Important: don't extract the string(...) call below - passing it directly allows us to avoid allocating it.
-			rightSide, rightExists := rightSideGroupsMap[string(groupKey)]
-			if !rightExists {
-				// No matching series on the right side.
-				continue
-			}
-
 			if rightSide.outputSeriesCount == 0 {
 				// First output series the right side has matched to.
 				for _, rightSeriesIndex := range rightSide.rightSeriesIndices {
@@ -329,6 +400,14 @@ func (b *OneToOneVectorVectorBinaryOperation) computeOutputSeries() ([]types.Ser
 		lastLeftSeriesUsedIndex = leftSeriesIndex
 	}
 
+	// Fill the left side: emit output driven by the right side alone for any unmatched right group.
+	if fillLeft {
+		lastRightSeriesUsedIndex, err = b.addFilledLeftSeries(outputSeriesMap, &outputSeriesLabelsBytes, fillLabelsFunc, rightSideGroupsMap, matchedRightGroups, rightSeriesUsed, lastRightSeriesUsedIndex)
+		if err != nil {
+			return nil, nil, nil, -1, nil, -1, err
+		}
+	}
+
 	allMetadata, err := types.SeriesMetadataSlicePool.Get(len(outputSeriesMap), b.MemoryConsumptionTracker)
 	if err != nil {
 		return nil, nil, nil, -1, nil, -1, err
@@ -344,6 +423,92 @@ func (b *OneToOneVectorVectorBinaryOperation) computeOutputSeries() ([]types.Ser
 	}
 
 	return allMetadata, allSeries, leftSeriesUsed, lastLeftSeriesUsedIndex, rightSeriesUsed, lastRightSeriesUsedIndex, nil
+}
+
+// addLeftSeriesToOutput registers a left-side series into the output series identified by
+// outputSeriesLabels. When fillMissingRight is true, the right side is synthesised from the RHS fill
+// value at evaluation time. outputSeriesLabelsBytes is a scratch buffer reused across calls.
+func (b *OneToOneVectorVectorBinaryOperation) addLeftSeriesToOutput(
+	outputSeriesMap map[string]oneToOneBinaryOperationOutputSeriesWithLabels,
+	outputSeriesLabelsBytes *[]byte,
+	outputSeriesLabels labels.Labels,
+	rightSide *oneToOneBinaryOperationRightSide,
+	fillMissingRight bool,
+	leftSeriesIndex int,
+	leftSeriesUsed []bool,
+) error {
+	*outputSeriesLabelsBytes = outputSeriesLabels.Bytes(*outputSeriesLabelsBytes)
+	outputSeries, exists := outputSeriesMap[string(*outputSeriesLabelsBytes)]
+
+	// If an output series with these labels already exists, we merge by appending this left series'
+	// index below rather than overwriting (see the matched path in computeOutputSeries).
+	if !exists {
+		if err := b.MemoryConsumptionTracker.IncreaseMemoryConsumptionForLabels(outputSeriesLabels); err != nil {
+			return err
+		}
+
+		outputSeries = oneToOneBinaryOperationOutputSeriesWithLabels{
+			labels: outputSeriesLabels,
+			series: &oneToOneBinaryOperationOutputSeries{rightSide: rightSide, fillMissingRight: fillMissingRight},
+		}
+
+		outputSeriesMap[string(*outputSeriesLabelsBytes)] = outputSeries
+	}
+
+	outputSeries.series.leftSeriesIndices = append(outputSeries.series.leftSeriesIndices, leftSeriesIndex)
+	leftSeriesUsed[leftSeriesIndex] = true
+
+	return nil
+}
+
+// addFilledLeftSeries emits output series for right-side groups that have no matching series on the
+// left side, using the LHS fill value. The left side of each such output series is synthesised at
+// evaluation time. It returns the updated index of the last right series that is needed.
+func (b *OneToOneVectorVectorBinaryOperation) addFilledLeftSeries(
+	outputSeriesMap map[string]oneToOneBinaryOperationOutputSeriesWithLabels,
+	outputSeriesLabelsBytes *[]byte,
+	fillLabelsFunc func(labels.Labels) labels.Labels,
+	rightSideGroupsMap map[string]*oneToOneBinaryOperationRightSide,
+	matchedRightGroups map[string]struct{},
+	rightSeriesUsed []bool,
+	lastRightSeriesUsedIndex int,
+) (int, error) {
+	for groupKey, rightSide := range rightSideGroupsMap {
+		if _, matched := matchedRightGroups[groupKey]; matched {
+			continue
+		}
+
+		// Derive the output labels from the first right-side series in the group. All series in the
+		// group share the same matching labels, so any of them produces the same filled labels.
+		outputSeriesLabels := fillLabelsFunc(b.rightMetadata[rightSide.rightSeriesIndices[0]].Labels)
+		*outputSeriesLabelsBytes = outputSeriesLabels.Bytes(*outputSeriesLabelsBytes)
+
+		if _, exists := outputSeriesMap[string(*outputSeriesLabelsBytes)]; exists {
+			// Collision with a left-derived output series. A fill-left series can't be merged into it
+			// (it has no leftSeriesIndices), and overwriting would discard real data, so we keep the
+			// existing series and skip this one. Only reachable in a degenerate empty-__name__ case for
+			// comparison filters; impossible for arithmetic operators.
+			continue
+		}
+
+		for _, rightSeriesIndex := range rightSide.rightSeriesIndices {
+			rightSeriesUsed[rightSeriesIndex] = true
+		}
+
+		lastRightSeriesUsedIndex = max(lastRightSeriesUsedIndex, rightSide.latestRightSeriesIndex())
+		rightSide.outputSeriesCount++
+
+		if err := b.MemoryConsumptionTracker.IncreaseMemoryConsumptionForLabels(outputSeriesLabels); err != nil {
+			return -1, err
+		}
+
+		outputSeriesMap[string(*outputSeriesLabelsBytes)] = oneToOneBinaryOperationOutputSeriesWithLabels{
+			labels: outputSeriesLabels,
+			series: &oneToOneBinaryOperationOutputSeries{rightSide: rightSide, fillMissingLeft: true},
+		}
+	}
+
+	return lastRightSeriesUsedIndex, nil
 }
 
 func (b *OneToOneVectorVectorBinaryOperation) computeLeftSideGroups(groupKeyFunc func(labels.Labels) []byte) map[string]struct{} {
@@ -467,18 +632,28 @@ func (b *OneToOneVectorVectorBinaryOperation) NextSeries(ctx context.Context) (t
 
 	thisSeries := b.remainingSeries[0]
 	b.remainingSeries = b.remainingSeries[1:]
+
+	if thisSeries.fillMissingLeft {
+		return b.nextFilledLeftSeries(ctx, thisSeries)
+	}
+
 	rightSide := thisSeries.rightSide
 
-	if rightSide.rightSeriesIndices != nil {
+	if !thisSeries.fillMissingRight && rightSide.rightSeriesIndices != nil {
 		// Right side hasn't been populated yet.
 		if err := b.populateRightSide(ctx, rightSide); err != nil {
 			return types.InstantVectorSeriesData{}, err
 		}
 	}
 
-	// We don't need to return thisSeries.rightSide.mergedData here - computeResult will return it below if this is the last output series that references this right side.
-	rightSide.outputSeriesCount--
-	isLastUseOfRightSide := rightSide.outputSeriesCount == 0
+	// A filled-right output series has no shared right side, so this is always its last use.
+	isLastUseOfRightSide := true
+
+	if !thisSeries.fillMissingRight {
+		// We don't need to return thisSeries.rightSide.mergedData here - computeResult will return it below if this is the last output series that references this right side.
+		rightSide.outputSeriesCount--
+		isLastUseOfRightSide = rightSide.outputSeriesCount == 0
+	}
 
 	allLeftSeries, err := b.leftBuffer.GetSeries(ctx, thisSeries.leftSeriesIndices)
 	if err != nil {
@@ -487,7 +662,7 @@ func (b *OneToOneVectorVectorBinaryOperation) NextSeries(ctx context.Context) (t
 
 	// If the right side matches to many output series, check for conflicts between those left side series
 	// before we apply any filtering operations (https://github.com/prometheus/prometheus/pull/17668).
-	if rightSide.leftSidePresence != nil {
+	if !thisSeries.fillMissingRight && rightSide.leftSidePresence != nil {
 		for i, leftSeries := range allLeftSeries {
 			seriesIdx := thisSeries.leftSeriesIndices[i]
 
@@ -502,7 +677,53 @@ func (b *OneToOneVectorVectorBinaryOperation) NextSeries(ctx context.Context) (t
 		return types.InstantVectorSeriesData{}, err
 	}
 
-	finalResult, err := b.evaluator.computeResult(mergedLeftSide, rightSide.mergedData, true, isLastUseOfRightSide)
+	// For a fillMissingRight series we pass an empty right operand; the evaluator's RHS fill value
+	// then produces output at every left timestep, via the same per-timestep fill path used for
+	// intermittently matched groups.
+	var rightData types.InstantVectorSeriesData
+	if !thisSeries.fillMissingRight {
+		rightData = rightSide.mergedData
+	}
+
+	finalResult, err := b.evaluator.computeResult(mergedLeftSide, rightData, true, isLastUseOfRightSide)
+	if err != nil {
+		return types.InstantVectorSeriesData{}, err
+	}
+
+	if thisSeries.fillMissingRight {
+		// There was no real right side to release.
+		return finalResult, nil
+	}
+
+	if isLastUseOfRightSide {
+		// We've passed ownership of mergedData to the evaluator, so clear it now to avoid returning it to the pool in FinishedReading().
+		rightSide.mergedData = types.InstantVectorSeriesData{}
+
+		rightSide.FinishedReading(b.MemoryConsumptionTracker)
+	}
+
+	return finalResult, nil
+}
+
+// nextFilledLeftSeries produces the output for a series with no real left side, synthesising the left
+// operand from the LHS fill value at each timestep the right side has a sample.
+func (b *OneToOneVectorVectorBinaryOperation) nextFilledLeftSeries(ctx context.Context, thisSeries *oneToOneBinaryOperationOutputSeries) (types.InstantVectorSeriesData, error) {
+	rightSide := thisSeries.rightSide
+
+	if rightSide.rightSeriesIndices != nil {
+		// Right side hasn't been populated yet.
+		if err := b.populateRightSide(ctx, rightSide); err != nil {
+			return types.InstantVectorSeriesData{}, err
+		}
+	}
+
+	// A filled-left output series is the only user of its right side, so this is always the last use.
+	rightSide.outputSeriesCount--
+	isLastUseOfRightSide := rightSide.outputSeriesCount == 0
+
+	// We pass an empty left operand; the evaluator's LHS fill value then produces output at every
+	// right timestep, via the same per-timestep fill path used for intermittently matched groups.
+	finalResult, err := b.evaluator.computeResult(types.InstantVectorSeriesData{}, rightSide.mergedData, true, isLastUseOfRightSide)
 	if err != nil {
 		return types.InstantVectorSeriesData{}, err
 	}
@@ -625,7 +846,10 @@ func (b *OneToOneVectorVectorBinaryOperation) FinishedReading(ctx context.Contex
 	}
 
 	for _, s := range b.remainingSeries {
-		s.rightSide.FinishedReading(b.MemoryConsumptionTracker)
+		// Output series that only exist because of a right-side fill have no right side to release.
+		if s.rightSide != nil {
+			s.rightSide.FinishedReading(b.MemoryConsumptionTracker)
+		}
 	}
 
 	b.remainingSeries = nil
