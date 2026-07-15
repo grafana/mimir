@@ -80,6 +80,11 @@ func (p *ProxyEndpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	if len(backends) == 0 {
+		level.Warn(p.logger).Log("msg", "No backends selected for request", "route", p.route.RouteName)
+		http.Error(w, "no backends selected for request", http.StatusBadRequest)
+		return
+	}
 	resCh := make(chan *backendResponse, len(backends))
 	go p.executeBackendRequests(r, backends, resCh)
 
