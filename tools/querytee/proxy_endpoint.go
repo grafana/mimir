@@ -18,6 +18,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/tenant"
 
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
@@ -79,6 +80,11 @@ func (p *ProxyEndpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	if len(backends) == 0 {
+		level.Warn(p.logger).Log("msg", "No backends selected for request", "route", p.route.RouteName)
+		http.Error(w, "no backends selected for request", http.StatusBadRequest)
+		return
+	}
 	resCh := make(chan *backendResponse, len(backends))
 	go p.executeBackendRequests(r, backends, resCh)
 
@@ -107,6 +113,9 @@ func (p *ProxyEndpoint) selectBackends(r *http.Request) ([]ProxyBackendInterface
 		return nil, fmt.Errorf("extract min query time: %w", err)
 	}
 
+	// On a missing or invalid X-Scope-OrgID header we ignore the error and treat it as no tenants, so the request is still forwarded (and compared) rather than rejected with a query-tee-generated error.
+	tenantIDs, _ := tenant.TenantIDsFromOrgID(r.Header.Get("X-Scope-OrgID"))
+
 	selected := []ProxyBackendInterface{}
 
 	if p.preferredBackend != nil {
@@ -119,6 +128,10 @@ func (p *ProxyEndpoint) selectBackends(r *http.Request) ([]ProxyBackendInterface
 		}
 
 		if !backend.ShouldHandleQuery(minQueryTime) {
+			continue
+		}
+
+		if !backend.ShouldHandleTenants(tenantIDs) {
 			continue
 		}
 
