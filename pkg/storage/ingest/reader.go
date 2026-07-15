@@ -379,6 +379,7 @@ func (r *SingleClusterPartitionReader) processNextFetches(ctx context.Context, r
 	if err != nil {
 		return fmt.Errorf("consume %d records: %w", fetches.NumRecords(), err)
 	}
+	r.metrics.recordsConsumed.WithLabelValues(strconv.Itoa(int(r.partitionID))).Add(float64(fetches.NumRecords()))
 	r.enqueueCommit(fetches)
 	r.notifyLastConsumedOffset(fetches)
 	r.updateHighestConsumedTimestampAfterConsumption(fetches, receiveAndConsumeDelayObserver)
@@ -1196,6 +1197,7 @@ type ReaderMetrics struct {
 	fetchedDiscardedRecordBytes        prometheus.Counter
 	strongConsistencyMetrics           *StrongReadConsistencyMetrics
 	lastConsumedOffset                 *prometheus.GaugeVec
+	recordsConsumed                    *prometheus.CounterVec
 	consumeLatency                     prometheus.Histogram
 	kprom                              *kprom.Metrics
 	missedRecords                      prometheus.Counter
@@ -1287,7 +1289,11 @@ func NewReaderMetrics(reg prometheus.Registerer, metricsSource ReaderMetricsSour
 		}),
 		strongConsistencyMetrics: NewStrongReadConsistencyMetrics(reg, component, []string{topic}),
 		lastConsumedOffset:       lastConsumedOffset,
-		kprom:                    kpromMetrics,
+		recordsConsumed: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_ingest_storage_reader_records_consumed_total",
+			Help: "Total number of records successfully consumed by the partition reader.",
+		}, []string{"partition"}),
+		kprom: kpromMetrics,
 		missedRecords: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_ingest_storage_reader_missed_records_total",
 			Help: "The number of offsets that were never consumed by the reader because they weren't fetched.",

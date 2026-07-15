@@ -857,10 +857,14 @@ func TestSingleClusterPartitionReader_ConsumeAtStartup(t *testing.T) {
 						# TYPE cortex_ingest_storage_reader_last_consumed_offset gauge
 						cortex_ingest_storage_reader_last_consumed_offset{partition="1"} 1
 
+						# HELP cortex_ingest_storage_reader_records_consumed_total Total number of records successfully consumed by the partition reader.
+						# TYPE cortex_ingest_storage_reader_records_consumed_total counter
+						cortex_ingest_storage_reader_records_consumed_total{partition="1"} 2
+
 						# HELP cortex_ingest_storage_reader_buffered_fetch_records_total Total number of records buffered within the client ready to be consumed
 						# TYPE cortex_ingest_storage_reader_buffered_fetch_records_total gauge
 						cortex_ingest_storage_reader_buffered_fetch_records_total{component="partition-reader"} 0
-					`), "cortex_ingest_storage_reader_last_consumed_offset", "cortex_ingest_storage_reader_buffered_fetch_records_total")
+					`), "cortex_ingest_storage_reader_last_consumed_offset", "cortex_ingest_storage_reader_records_consumed_total", "cortex_ingest_storage_reader_buffered_fetch_records_total")
 				})
 			})
 		}
