@@ -42,7 +42,7 @@ import (
 
 	mimirapi "github.com/grafana/mimir/pkg/api"
 	apierror "github.com/grafana/mimir/pkg/api/error"
-	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware/querydetails"
 	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/util/activitytracker"
 )
@@ -505,6 +505,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				require.EqualValues(t, 0, msg["estimated_series_count"])
 				require.EqualValues(t, 0, msg["queue_time_seconds"])
 				require.EqualValues(t, 0, msg["remote_execution_request_count"])
+				require.EqualValues(t, 0, msg["retries"])
 				require.EqualValues(t, 0, msg["response_series_count"])
 				require.EqualValues(t, 0, msg["response_samples_count"])
 				require.EqualValues(t, 0, msg["equivalent_samples_read"])
@@ -745,7 +746,7 @@ func TestHandler_LogsFormattedQueryDetails(t *testing.T) {
 		requestFormFields            []string
 		requestAdditionalHeaders     map[string]string
 		logQueryRequestHeaders       []string
-		setQueryDetails              func(*querymiddleware.QueryDetails)
+		setQueryDetails              func(*querydetails.QueryDetails)
 		expectedLoggedFields         map[string]string
 		expectedMissingFields        []string
 		expectedApproximateDurations map[string]time.Duration
@@ -753,7 +754,7 @@ func TestHandler_LogsFormattedQueryDetails(t *testing.T) {
 		{
 			name:              "query_range",
 			requestFormFields: []string{"start", "end", "step"},
-			setQueryDetails: func(d *querymiddleware.QueryDetails) {
+			setQueryDetails: func(d *querydetails.QueryDetails) {
 				d.Start, d.MinT = t1, t1.Add(-time.Minute)
 				d.End, d.MaxT = t2, t2
 				d.Step = time.Minute
@@ -769,7 +770,7 @@ func TestHandler_LogsFormattedQueryDetails(t *testing.T) {
 		{
 			name:              "instant",
 			requestFormFields: []string{"time"},
-			setQueryDetails: func(d *querymiddleware.QueryDetails) {
+			setQueryDetails: func(d *querydetails.QueryDetails) {
 				d.Start = t1
 				d.End = t1
 			},
@@ -782,7 +783,7 @@ func TestHandler_LogsFormattedQueryDetails(t *testing.T) {
 			// the details are used to figure out the length regardless of the user setting explicit or implicit time
 			name:              "instant, missing time from request",
 			requestFormFields: []string{},
-			setQueryDetails: func(d *querymiddleware.QueryDetails) {
+			setQueryDetails: func(d *querydetails.QueryDetails) {
 				d.Start = t1
 				d.End = t1
 			},
@@ -794,7 +795,7 @@ func TestHandler_LogsFormattedQueryDetails(t *testing.T) {
 			// the details aren't set by the query stats middleware if the request isn't a query
 			name:                         "not a query request",
 			requestFormFields:            []string{},
-			setQueryDetails:              func(*querymiddleware.QueryDetails) {},
+			setQueryDetails:              func(*querydetails.QueryDetails) {},
 			expectedLoggedFields:         map[string]string{},
 			expectedApproximateDurations: map[string]time.Duration{},
 			expectedMissingFields:        []string{"length", "param_time", "time_since_param_start", "time_since_param_end"},
@@ -802,20 +803,26 @@ func TestHandler_LogsFormattedQueryDetails(t *testing.T) {
 		{
 			name:              "results cache statistics",
 			requestFormFields: []string{},
-			setQueryDetails: func(d *querymiddleware.QueryDetails) {
+			setQueryDetails: func(d *querydetails.QueryDetails) {
 				d.ResultsCacheMissBytes = 10
+				d.ResultsCacheMissCount = 1
 				d.ResultsCacheHitBytes = 200
+				d.ResultsCacheHitCount = 2
+				d.ResultsCacheSetCount = 3
 			},
 			expectedLoggedFields: map[string]string{
 				"results_cache_miss_bytes": "10",
 				"results_cache_hit_bytes":  "200",
+				"results_cache_miss_count": "1",
+				"results_cache_hit_count":  "2",
+				"results_cache_set_count":  "3",
 				"header_cache_control":     "",
 			},
 		},
 		{
 			name:              "response series and samples count",
 			requestFormFields: []string{},
-			setQueryDetails: func(d *querymiddleware.QueryDetails) {
+			setQueryDetails: func(d *querydetails.QueryDetails) {
 				d.ResponseSeriesCount = 42
 				d.ResponseSamplesCount = 1234
 			},
@@ -830,7 +837,7 @@ func TestHandler_LogsFormattedQueryDetails(t *testing.T) {
 			requestAdditionalHeaders: map[string]string{
 				"Cache-Control": "no-store",
 			},
-			setQueryDetails: func(d *querymiddleware.QueryDetails) {
+			setQueryDetails: func(d *querydetails.QueryDetails) {
 				d.ResultsCacheMissBytes = 200
 				d.ResultsCacheHitBytes = 0
 			},
@@ -848,7 +855,7 @@ func TestHandler_LogsFormattedQueryDetails(t *testing.T) {
 				"X-Form-ID":     "12345",
 			},
 			logQueryRequestHeaders: []string{"Cache-Control", "X-Form-ID"},
-			setQueryDetails: func(d *querymiddleware.QueryDetails) {
+			setQueryDetails: func(d *querydetails.QueryDetails) {
 				d.ResultsCacheMissBytes = 200
 				d.ResultsCacheHitBytes = 0
 			},
@@ -867,7 +874,7 @@ func TestHandler_LogsFormattedQueryDetails(t *testing.T) {
 				"x-form-id":     "12345",
 			},
 			logQueryRequestHeaders: []string{"cache-control", "X-Form-ID"},
-			setQueryDetails: func(d *querymiddleware.QueryDetails) {
+			setQueryDetails: func(d *querydetails.QueryDetails) {
 				d.ResultsCacheMissBytes = 200
 				d.ResultsCacheHitBytes = 0
 			},
@@ -881,7 +888,7 @@ func TestHandler_LogsFormattedQueryDetails(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			roundTripper := roundTripperFunc(func(req *http.Request) (*http.Response, error) {
-				tt.setQueryDetails(querymiddleware.QueryDetailsFromContext(req.Context()))
+				tt.setQueryDetails(querydetails.QueryDetailsFromContext(req.Context()))
 				return &http.Response{
 					StatusCode: http.StatusOK,
 					Body:       io.NopCloser(strings.NewReader("{}")),
@@ -1036,7 +1043,7 @@ func TestQueryStatsLogFieldsDocumentedInRunbook(t *testing.T) {
 
 	roundTripper := roundTripperFunc(func(req *http.Request) (*http.Response, error) {
 		// Populate all conditional QueryDetails fields so the log line includes every field.
-		details := querymiddleware.QueryDetailsFromContext(req.Context())
+		details := querydetails.QueryDetailsFromContext(req.Context())
 		now := time.Now()
 		details.MinT = now.Add(-time.Hour)
 		details.MaxT = now

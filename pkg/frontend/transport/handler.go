@@ -31,6 +31,7 @@ import (
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware/querydetails"
 	querierapi "github.com/grafana/mimir/pkg/querier/api"
 	querier_stats "github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
@@ -244,14 +245,14 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		f.mtx.Unlock()
 	}()
 
-	var queryDetails *querymiddleware.QueryDetails
+	var queryDetails *querydetails.QueryDetails
 
 	// Initialise the queryDetails in the context and make sure it's propagated
 	// down the request chain.
 	queryStatsHeaderNameOk, _ := strconv.ParseBool(r.Header.Get(responseQueryStatsHeaderName))
 	if f.cfg.QueryStatsEnabled || queryStatsHeaderNameOk {
 		var ctx context.Context
-		queryDetails, ctx = querymiddleware.ContextWithEmptyDetails(r.Context())
+		queryDetails, ctx = querydetails.ContextWithEmptyDetails(r.Context())
 		r = r.WithContext(ctx)
 	}
 
@@ -333,7 +334,7 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // reportSlowQuery reports slow queries.
-func (f *Handler) reportSlowQuery(r *http.Request, queryString url.Values, queryResponseTime time.Duration, details *querymiddleware.QueryDetails) {
+func (f *Handler) reportSlowQuery(r *http.Request, queryString url.Values, queryResponseTime time.Duration, details *querydetails.QueryDetails) {
 	logMessage := []any{
 		"msg", "slow query detected",
 		"method", dskitlog.DropUnsafeChars(r.Method),
@@ -357,7 +358,7 @@ func (f *Handler) reportQueryStats(
 	queryStartTime time.Time,
 	queryResponseTime time.Duration,
 	queryResponseSizeBytes int64,
-	details *querymiddleware.QueryDetails,
+	details *querydetails.QueryDetails,
 	queryResponseStatusCode int,
 	queryErr error,
 ) {
@@ -417,6 +418,7 @@ func (f *Handler) reportQueryStats(
 		encodeTimeSeconds, stats.LoadEncodeTime().Seconds(),
 		remoteExecutionRequestCount, stats.LoadRemoteExecutionRequestCount(),
 		"readcache_query_stream_calls", stats.LoadReadcacheQueryStreamCalls(),
+		"retries", stats.LoadRetries(),
 		"samples_processed", samplesProcessed,
 		"equivalent_samples_read", equivalentSamplesRead,
 		"physical_samples_read", physicalSamplesRead,
@@ -437,6 +439,9 @@ func (f *Handler) reportQueryStats(
 		logMessage = append(logMessage,
 			resultsCacheHitBytes, details.ResultsCacheHitBytes,
 			resultsCacheMissBytes, details.ResultsCacheMissBytes,
+			"results_cache_hit_count", details.ResultsCacheHitCount,
+			"results_cache_miss_count", details.ResultsCacheMissCount,
+			"results_cache_set_count", details.ResultsCacheSetCount,
 			"response_series_count", details.ResponseSeriesCount,
 			"response_samples_count", details.ResponseSamplesCount,
 		)
@@ -481,7 +486,7 @@ func (f *Handler) reportQueryStats(
 }
 
 // formatQueryString prefers printing start, end, and step from details if they are not nil.
-func formatQueryString(details *querymiddleware.QueryDetails, queryString url.Values) (fields []any) {
+func formatQueryString(details *querydetails.QueryDetails, queryString url.Values) (fields []any) {
 	for k, v := range queryString {
 		var formattedValue string
 		if details != nil {
@@ -499,7 +504,7 @@ func formatQueryString(details *querymiddleware.QueryDetails, queryString url.Va
 // paramValueFromDetails returns the value of the parameter from details if the value there is non-zero.
 // Otherwise, it returns an empty string.
 // One reason why details field may be zero-values is if the value was not parseable.
-func paramValueFromDetails(details *querymiddleware.QueryDetails, paramName string) string {
+func paramValueFromDetails(details *querydetails.QueryDetails, paramName string) string {
 	switch paramName {
 	case "start", "time":
 		if !details.Start.IsZero() {
@@ -637,7 +642,7 @@ func writeError(w http.ResponseWriter, err error) int {
 	return statusCode
 }
 
-func getQueryStats(queryResponseTime time.Duration, details *querymiddleware.QueryDetails) []string {
+func getQueryStats(queryResponseTime time.Duration, details *querydetails.QueryDetails) []string {
 	if details == nil {
 		return nil
 	}
@@ -653,7 +658,7 @@ func getQueryStats(queryResponseTime time.Duration, details *querymiddleware.Que
 
 // getResponseQueryStats returns the response query stats in the format of Server-Timing header.
 // contentLengthBytes must be the http.Response.ContentLength field value; -1 means unknown (streaming response).
-func getResponseQueryStats(queryResponseTime time.Duration, contentLengthBytes int64, details *querymiddleware.QueryDetails) []string {
+func getResponseQueryStats(queryResponseTime time.Duration, contentLengthBytes int64, details *querydetails.QueryDetails) []string {
 	if details == nil {
 		return nil
 	}

@@ -385,7 +385,7 @@ func (r *Rebalancer) starting(_ context.Context) error {
 	// so the symmetry with the production topic is exact: if you
 	// opt into auto-creation there, you also get it here.
 	//
-	// CreateTopic is idempotent (TopicAlreadyExists is swallowed),
+	// CreateTopics is idempotent (TopicAlreadyExists is swallowed),
 	// so it's safe to call on every restart. The override below
 	// touches only the fields specific to the nautilus topic; all
 	// connection/auth/TLS/SASL/etc. comes from the production
@@ -394,7 +394,7 @@ func (r *Rebalancer) starting(_ context.Context) error {
 		topicCfg := r.cfg.Kafka
 		topicCfg.Topic = r.cfg.KafkaTopic
 		topicCfg.AutoCreateTopicDefaultPartitions = int(r.cfg.PartitionCount)
-		if err := ingest.CreateTopic(topicCfg, log.With(r.logger, "component", "rebalancer_topic_bootstrap")); err != nil {
+		if err := ingest.CreateTopics(topicCfg, log.With(r.logger, "component", "rebalancer_topic_bootstrap"), r.cfg.KafkaTopic); err != nil {
 			return fmt.Errorf("auto-creating nautilus kafka topic %q: %w", r.cfg.KafkaTopic, err)
 		}
 	}

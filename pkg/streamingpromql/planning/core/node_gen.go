@@ -5,7 +5,9 @@ package core
 
 import (
 	"fmt"
+	"slices"
 
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 )
 
@@ -57,6 +59,21 @@ func (a *AggregateExpression) ReplaceChild(idx int, node planning.Node) error {
 	}
 }
 
+func (a *AggregateExpression) ChildrenLabels() []string {
+	if a.Param == nil {
+		return []string{""}
+	}
+	return []string{"expression", "parameter"}
+}
+
+func (a *AggregateExpression) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
+	oi, ok := other.(*AggregateExpression)
+	return ok &&
+		slices.Equal(a.Grouping, oi.Grouping) &&
+		a.Op == oi.Op &&
+		a.Without == oi.Without
+}
+
 func (b *BinaryExpression) Child(idx int) planning.Node {
 	switch idx {
 	case 0:
@@ -94,6 +111,33 @@ func (b *BinaryExpression) ReplaceChild(idx int, node planning.Node) error {
 	}
 }
 
+func (b *BinaryExpression) ChildrenLabels() []string {
+	return []string{"LHS", "RHS"}
+}
+
+func (b *BinaryExpression) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
+	oi, ok := other.(*BinaryExpression)
+	return ok &&
+		b.Op == oi.Op &&
+		b.ReturnBool == oi.ReturnBool &&
+		((b.VectorMatching == nil && oi.VectorMatching == nil) || (b.VectorMatching != nil && oi.VectorMatching != nil && genEqualsVectorMatching(*b.VectorMatching, *oi.VectorMatching)))
+}
+
+func genEqualsVectorMatchFillValues(a, b VectorMatchFillValues) bool {
+	return a.Lhs == b.Lhs &&
+		a.LhsSet == b.LhsSet &&
+		a.Rhs == b.Rhs &&
+		a.RhsSet == b.RhsSet
+}
+
+func genEqualsVectorMatching(a, b VectorMatching) bool {
+	return a.Card == b.Card &&
+		genEqualsVectorMatchFillValues(a.FillValues, b.FillValues) &&
+		slices.Equal(a.Include, b.Include) &&
+		slices.Equal(a.MatchingLabels, b.MatchingLabels) &&
+		a.On == b.On
+}
+
 func (d *DataLabelSelector) Child(idx int) planning.Node {
 	panic(fmt.Sprintf("node of type DataLabelSelector has no children, but attempted to get child at index %d", idx))
 }
@@ -111,6 +155,24 @@ func (d *DataLabelSelector) SetChildren(children []planning.Node) error {
 
 func (d *DataLabelSelector) ReplaceChild(idx int, _ planning.Node) error {
 	return fmt.Errorf("node of type DataLabelSelector has no children, but attempted to replace child at index %d", idx)
+}
+
+func (d *DataLabelSelector) ChildrenLabels() []string {
+	return nil
+}
+
+func (d *DataLabelSelector) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
+	oi, ok := other.(*DataLabelSelector)
+	return ok &&
+		slices.EqualFunc(d.Matchers, oi.Matchers, func(a, b *LabelMatcher) bool {
+			return ((a == nil && b == nil) || (a != nil && b != nil && genEqualsLabelMatcher(*a, *b)))
+		})
+}
+
+func genEqualsLabelMatcher(a, b LabelMatcher) bool {
+	return a.Name == b.Name &&
+		a.Type == b.Type &&
+		a.Value == b.Value
 }
 
 func (d *DeduplicateAndMerge) Child(idx int) planning.Node {
@@ -140,6 +202,15 @@ func (d *DeduplicateAndMerge) ReplaceChild(idx int, node planning.Node) error {
 	return nil
 }
 
+func (d *DeduplicateAndMerge) ChildrenLabels() []string {
+	return []string{""}
+}
+
+func (d *DeduplicateAndMerge) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
+	_, ok := other.(*DeduplicateAndMerge)
+	return ok
+}
+
 func (d *DropName) Child(idx int) planning.Node {
 	if idx != 0 {
 		panic(fmt.Sprintf("node of type DropName supports 1 child, but attempted to get child at index %d", idx))
@@ -167,6 +238,51 @@ func (d *DropName) ReplaceChild(idx int, node planning.Node) error {
 	return nil
 }
 
+func (d *DropName) ChildrenLabels() []string {
+	return []string{""}
+}
+
+func (d *DropName) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
+	_, ok := other.(*DropName)
+	return ok
+}
+
+func (e *EvaluationRoot) Child(idx int) planning.Node {
+	if idx != 0 {
+		panic(fmt.Sprintf("node of type EvaluationRoot supports 1 child, but attempted to get child at index %d", idx))
+	}
+	return e.Inner
+}
+
+func (e *EvaluationRoot) ChildCount() int {
+	return 1
+}
+
+func (e *EvaluationRoot) SetChildren(children []planning.Node) error {
+	if len(children) != 1 {
+		return fmt.Errorf("node of type EvaluationRoot expects one child, but got %d", len(children))
+	}
+	e.Inner = children[0]
+	return nil
+}
+
+func (e *EvaluationRoot) ReplaceChild(idx int, node planning.Node) error {
+	if idx != 0 {
+		return fmt.Errorf("node of type EvaluationRoot supports 1 child, but attempted to replace child at index %d", idx)
+	}
+	e.Inner = node
+	return nil
+}
+
+func (e *EvaluationRoot) ChildrenLabels() []string {
+	return []string{""}
+}
+
+func (e *EvaluationRoot) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
+	_, ok := other.(*EvaluationRoot)
+	return ok
+}
+
 func (f *FunctionCall) Child(idx int) planning.Node {
 	if idx >= len(f.Args) {
 		panic(fmt.Sprintf("this FunctionCall node has %d children, but attempted to get child at index %d", len(f.Args), idx))
@@ -191,6 +307,33 @@ func (f *FunctionCall) ReplaceChild(idx int, node planning.Node) error {
 	return nil
 }
 
+func (f *FunctionCall) ChildrenLabels() []string {
+	switch len(f.Args) {
+	case 0:
+		return nil
+	case 1:
+		return []string{""}
+	default:
+		labels := make([]string, len(f.Args))
+		for i := range labels {
+			labels[i] = fmt.Sprintf("param %d", i)
+		}
+		return labels
+	}
+}
+
+func (f *FunctionCall) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
+	oi, ok := other.(*FunctionCall)
+	return ok &&
+		slices.EqualFunc(f.AbsentLabels, oi.AbsentLabels, genEqualsLabelAdapter) &&
+		f.Function == oi.Function
+}
+
+func genEqualsLabelAdapter(a, b mimirpb.LabelAdapter) bool {
+	return a.Name == b.Name &&
+		a.Value == b.Value
+}
+
 func (m *MatrixSelector) Child(idx int) planning.Node {
 	panic(fmt.Sprintf("node of type MatrixSelector has no children, but attempted to get child at index %d", idx))
 }
@@ -208,6 +351,32 @@ func (m *MatrixSelector) SetChildren(children []planning.Node) error {
 
 func (m *MatrixSelector) ReplaceChild(idx int, _ planning.Node) error {
 	return fmt.Errorf("node of type MatrixSelector has no children, but attempted to replace child at index %d", idx)
+}
+
+func (m *MatrixSelector) ChildrenLabels() []string {
+	return nil
+}
+
+func (m *MatrixSelector) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
+	oi, ok := other.(*MatrixSelector)
+	return ok &&
+		m.Anchored == oi.Anchored &&
+		m.AnchoredResetsChanges == oi.AnchoredResetsChanges &&
+		m.CounterAware == oi.CounterAware &&
+		slices.EqualFunc(m.Matchers, oi.Matchers, func(a, b *LabelMatcher) bool {
+			return ((a == nil && b == nil) || (a != nil && b != nil && genEqualsLabelMatcher(*a, *b)))
+		}) &&
+		m.Offset == oi.Offset &&
+		m.Range == oi.Range &&
+		m.Smoothed == oi.Smoothed &&
+		slices.EqualFunc(m.Subsets, oi.Subsets, genEqualsSubsetMatchers) &&
+		((m.Timestamp == nil && oi.Timestamp == nil) || (m.Timestamp != nil && oi.Timestamp != nil && (*m.Timestamp).Equal(*oi.Timestamp)))
+}
+
+func genEqualsSubsetMatchers(a, b SubsetMatchers) bool {
+	return slices.EqualFunc(a.Matchers, b.Matchers, func(a, b *LabelMatcher) bool {
+		return ((a == nil && b == nil) || (a != nil && b != nil && genEqualsLabelMatcher(*a, *b)))
+	})
 }
 
 func (n *NoOp) Child(idx int) planning.Node {
@@ -229,6 +398,16 @@ func (n *NoOp) ReplaceChild(idx int, _ planning.Node) error {
 	return fmt.Errorf("node of type NoOp has no children, but attempted to replace child at index %d", idx)
 }
 
+func (n *NoOp) ChildrenLabels() []string {
+	return nil
+}
+
+func (n *NoOp) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
+	oi, ok := other.(*NoOp)
+	return ok &&
+		n.MatrixSelector == oi.MatrixSelector
+}
+
 func (n *NumberLiteral) Child(idx int) planning.Node {
 	panic(fmt.Sprintf("node of type NumberLiteral has no children, but attempted to get child at index %d", idx))
 }
@@ -246,6 +425,16 @@ func (n *NumberLiteral) SetChildren(children []planning.Node) error {
 
 func (n *NumberLiteral) ReplaceChild(idx int, _ planning.Node) error {
 	return fmt.Errorf("node of type NumberLiteral has no children, but attempted to replace child at index %d", idx)
+}
+
+func (n *NumberLiteral) ChildrenLabels() []string {
+	return nil
+}
+
+func (n *NumberLiteral) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
+	oi, ok := other.(*NumberLiteral)
+	return ok &&
+		n.Value == oi.Value
 }
 
 func (s *StepInvariantExpression) Child(idx int) planning.Node {
@@ -275,6 +464,15 @@ func (s *StepInvariantExpression) ReplaceChild(idx int, node planning.Node) erro
 	return nil
 }
 
+func (s *StepInvariantExpression) ChildrenLabels() []string {
+	return []string{""}
+}
+
+func (s *StepInvariantExpression) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
+	_, ok := other.(*StepInvariantExpression)
+	return ok
+}
+
 func (s *StringLiteral) Child(idx int) planning.Node {
 	panic(fmt.Sprintf("node of type StringLiteral has no children, but attempted to get child at index %d", idx))
 }
@@ -292,6 +490,16 @@ func (s *StringLiteral) SetChildren(children []planning.Node) error {
 
 func (s *StringLiteral) ReplaceChild(idx int, _ planning.Node) error {
 	return fmt.Errorf("node of type StringLiteral has no children, but attempted to replace child at index %d", idx)
+}
+
+func (s *StringLiteral) ChildrenLabels() []string {
+	return nil
+}
+
+func (s *StringLiteral) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
+	oi, ok := other.(*StringLiteral)
+	return ok &&
+		s.Value == oi.Value
 }
 
 func (s *Subquery) Child(idx int) planning.Node {
@@ -321,6 +529,19 @@ func (s *Subquery) ReplaceChild(idx int, node planning.Node) error {
 	return nil
 }
 
+func (s *Subquery) ChildrenLabels() []string {
+	return []string{""}
+}
+
+func (s *Subquery) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
+	oi, ok := other.(*Subquery)
+	return ok &&
+		s.Offset == oi.Offset &&
+		s.Range == oi.Range &&
+		s.Step == oi.Step &&
+		((s.Timestamp == nil && oi.Timestamp == nil) || (s.Timestamp != nil && oi.Timestamp != nil && (*s.Timestamp).Equal(*oi.Timestamp)))
+}
+
 func (u *UnaryExpression) Child(idx int) planning.Node {
 	if idx != 0 {
 		panic(fmt.Sprintf("node of type UnaryExpression supports 1 child, but attempted to get child at index %d", idx))
@@ -348,6 +569,16 @@ func (u *UnaryExpression) ReplaceChild(idx int, node planning.Node) error {
 	return nil
 }
 
+func (u *UnaryExpression) ChildrenLabels() []string {
+	return []string{""}
+}
+
+func (u *UnaryExpression) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
+	oi, ok := other.(*UnaryExpression)
+	return ok &&
+		u.Op == oi.Op
+}
+
 func (v *VectorSelector) Child(idx int) planning.Node {
 	panic(fmt.Sprintf("node of type VectorSelector has no children, but attempted to get child at index %d", idx))
 }
@@ -365,4 +596,22 @@ func (v *VectorSelector) SetChildren(children []planning.Node) error {
 
 func (v *VectorSelector) ReplaceChild(idx int, _ planning.Node) error {
 	return fmt.Errorf("node of type VectorSelector has no children, but attempted to replace child at index %d", idx)
+}
+
+func (v *VectorSelector) ChildrenLabels() []string {
+	return nil
+}
+
+func (v *VectorSelector) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
+	oi, ok := other.(*VectorSelector)
+	return ok &&
+		slices.EqualFunc(v.Matchers, oi.Matchers, func(a, b *LabelMatcher) bool {
+			return ((a == nil && b == nil) || (a != nil && b != nil && genEqualsLabelMatcher(*a, *b)))
+		}) &&
+		v.Offset == oi.Offset &&
+		v.ReturnSampleTimestamps == oi.ReturnSampleTimestamps &&
+		v.ReturnSampleTimestampsPreserveHistograms == oi.ReturnSampleTimestampsPreserveHistograms &&
+		v.Smoothed == oi.Smoothed &&
+		slices.EqualFunc(v.Subsets, oi.Subsets, genEqualsSubsetMatchers) &&
+		((v.Timestamp == nil && oi.Timestamp == nil) || (v.Timestamp != nil && oi.Timestamp != nil && (*v.Timestamp).Equal(*oi.Timestamp)))
 }

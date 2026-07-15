@@ -329,6 +329,24 @@ func TestNarrowSelectorsOptimizationPass(t *testing.T) {
 			expectedAttempts: 1,
 			expectedModified: 1,
 		},
+		"binary expression with histogram_quantiles on one side for non-hint label": {
+			// q is synthesised by histogram_quantiles on the RHS, so it is excluded from the
+			// LHS aggregation labels. The remaining label (env) is used as an Include hint.
+			expr: `sum by (env, q) (first_metric) - sum by (env, q) (histogram_quantiles(second_metric, "q", 0.5))`,
+			expectedPlan: `
+				- BinaryExpression: LHS - RHS, hints include (env)
+					- LHS: AggregateExpression: sum by (env, q)
+						- VectorSelector: {__name__="first_metric"}
+					- RHS: AggregateExpression: sum by (env, q)
+						- DeduplicateAndMerge
+							- FunctionCall: histogram_quantiles(...)
+								- param 0: VectorSelector: {__name__="second_metric"}
+								- param 1: StringLiteral: "q"
+								- param 2: NumberLiteral: 0.5
+			`,
+			expectedAttempts: 1,
+			expectedModified: 1,
+		},
 		"multiple binary expressions with label_replace on only a single one": {
 			expr: `(first_metric * on (env, region) second_metric) * on (env, region) label_replace(third_metric, "region", "$1", "cluster", ".*")`,
 			expectedPlan: `

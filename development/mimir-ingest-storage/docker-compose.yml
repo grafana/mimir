@@ -216,11 +216,11 @@
       - "KAFKA_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093,PLAINTEXT_HOST://:29092"
       - "KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka_1:9092,PLAINTEXT_HOST://localhost:29092"
     "healthcheck":
-      "interval": "1s"
+      "interval": "5s"
       "retries": "30"
-      "start_period": "1s"
+      "start_period": "10s"
       "test": "kafka-broker-api-versions --bootstrap-server localhost:9092 || exit 1"
-      "timeout": "1s"
+      "timeout": "10s"
     "image": "confluentinc/cp-kafka:latest"
     "ports":
       - "29092:29092"
@@ -240,11 +240,11 @@
       - "KAFKA_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093,PLAINTEXT_HOST://:29093"
       - "KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka_2:9092,PLAINTEXT_HOST://localhost:29093"
     "healthcheck":
-      "interval": "1s"
+      "interval": "5s"
       "retries": "30"
-      "start_period": "1s"
+      "start_period": "10s"
       "test": "kafka-broker-api-versions --bootstrap-server localhost:9092 || exit 1"
-      "timeout": "1s"
+      "timeout": "10s"
     "image": "confluentinc/cp-kafka:latest"
     "ports":
       - "29093:29093"
@@ -264,11 +264,11 @@
       - "KAFKA_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093,PLAINTEXT_HOST://:29094"
       - "KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka_3:9092,PLAINTEXT_HOST://localhost:29094"
     "healthcheck":
-      "interval": "1s"
+      "interval": "5s"
       "retries": "30"
-      "start_period": "1s"
+      "start_period": "10s"
       "test": "kafka-broker-api-versions --bootstrap-server localhost:9092 || exit 1"
-      "timeout": "1s"
+      "timeout": "10s"
     "image": "confluentinc/cp-kafka:latest"
     "ports":
       - "29094:29094"

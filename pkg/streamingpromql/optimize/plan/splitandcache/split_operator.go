@@ -5,12 +5,12 @@ package splitandcache
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/util/annotations"
 
-	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
@@ -22,24 +22,37 @@ type TimeRangeSplitOperator struct {
 	TimeRange                types.QueryTimeRange
 
 	ranges       []*splitRange // Sorted in descending time order.
-	outputSeries []splitOutputSeries
+	outputSeries []splitOrCacheOutputSeries
 }
 
 var _ types.InstantVectorOperator = &TimeRangeSplitOperator{}
 
 type splitRange struct {
-	operator types.InstantVectorOperator
-	buffer   *operators.InstantVectorOperatorBuffer
+	operator                 types.InstantVectorOperator
+	buffer                   *operators.InstantVectorOperatorBuffer
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
 }
 
-type splitOutputSeries struct {
-	sourceSeriesIndices []int // One entry per range. -1 indicates that the series is not present in the range.
+func (r *splitRange) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
+	series, err := r.operator.SeriesMetadata(ctx, matchers)
+	if err != nil {
+		return nil, err
+	}
+
+	r.buffer = operators.NewInstantVectorOperatorBuffer(r.operator, nil, len(series)-1, r.memoryConsumptionTracker)
+
+	return series, nil
+}
+
+type splitOrCacheOutputSeries struct {
+	sourceSeriesIndices []int // One entry per range or extent. -1 indicates that the series is not present in the range/extent.
 }
 
 // newTimeRangeSplitOperator creates a new TimeRangeSplitOperator.
 //
 // ranges must be sorted in descending time order and must not overlap.
-// ranges must not be empty.
+// ranges must contain at least two ranges: when there is only a single range, callers should use the inner operator
+// directly rather than wrapping it in a TimeRangeSplitOperator.
 func newTimeRangeSplitOperator(ranges []*splitRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, timeRange types.QueryTimeRange) *TimeRangeSplitOperator {
 	return &TimeRangeSplitOperator{
 		MemoryConsumptionTracker: memoryConsumptionTracker,
@@ -48,20 +61,45 @@ func newTimeRangeSplitOperator(ranges []*splitRange, memoryConsumptionTracker *l
 	}
 }
 
-func newSplitRange(operator types.InstantVectorOperator) *splitRange {
-	return &splitRange{operator: operator}
+func newSplitRange(operator types.InstantVectorOperator, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *splitRange {
+	return &splitRange{operator: operator, memoryConsumptionTracker: memoryConsumptionTracker}
 }
 
 func (s *TimeRangeSplitOperator) Prepare(ctx context.Context, params *types.PrepareParams) error {
-	queryStats := stats.FromContext(ctx)
-	queryStats.AddSplitQueries(uint32(len(s.ranges)))
+	if ok, cacheOperators := s.allChildrenAreCacheOperators(); ok {
+		return PrepareCacheOperators(ctx, params, cacheOperators, time.Now())
+	}
 
+	// Children aren't cache operators, so prepare them individually.
 	for _, r := range s.ranges {
 		if err := r.operator.Prepare(ctx, params); err != nil {
 			return err
 		}
 	}
+
 	return nil
+}
+
+func (s *TimeRangeSplitOperator) allChildrenAreCacheOperators() (bool, []*CacheOperator) {
+	if len(s.ranges) == 0 {
+		return false, nil
+	}
+
+	var operators []*CacheOperator
+
+	for _, r := range s.ranges {
+		if c, ok := r.operator.(*CacheOperator); !ok {
+			return false, nil
+		} else {
+			if operators == nil {
+				operators = make([]*CacheOperator, 0, len(s.ranges))
+			}
+
+			operators = append(operators, c)
+		}
+	}
+
+	return true, operators
 }
 
 func (s *TimeRangeSplitOperator) AfterPrepare(ctx context.Context) error {
@@ -74,90 +112,22 @@ func (s *TimeRangeSplitOperator) AfterPrepare(ctx context.Context) error {
 }
 
 func (s *TimeRangeSplitOperator) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
-	// Use the slice from the first range as the base for the returned series metadata.
-	allSeries, err := s.ranges[0].operator.SeriesMetadata(ctx, matchers)
+	if len(s.ranges) < 2 {
+		// mergeSeriesMetadataFromMultipleSources takes a fast path for a single source that leaves outputSeries unpopulated, but
+		// TimeRangeSplitOperator's NextSeries relies on outputSeries being populated. In production this is never
+		// hit, as MaterializeSplit returns the inner operator directly rather than constructing a
+		// TimeRangeSplitOperator when there is only one range.
+		return nil, fmt.Errorf("TimeRangeSplitOperator requires at least two ranges, but has %d", len(s.ranges))
+	}
+
+	series, outputSeries, err := mergeSeriesMetadataFromMultipleSources(ctx, s.ranges, matchers, s.MemoryConsumptionTracker)
 	if err != nil {
 		return nil, err
 	}
 
-	s.ranges[0].buffer = operators.NewInstantVectorOperatorBuffer(s.ranges[0].operator, nil, len(allSeries)-1, s.MemoryConsumptionTracker)
+	s.outputSeries = outputSeries
 
-	seriesIndices := make(map[string]int, len(allSeries))
-	labelBytesBuf := make([]byte, 0, 1024)
-	for seriesIdx, series := range allSeries {
-		labelBytesBuf = series.Labels.Bytes(labelBytesBuf)
-		seriesIndices[string(labelBytesBuf)] = seriesIdx // Important: don't extract the string(...) call here - passing it directly allows us to avoid allocating it.
-
-		if err := s.addNewOutputSeries(0, seriesIdx); err != nil {
-			return nil, err
-		}
-	}
-
-	// Now go through the remaining ranges.
-	for rangeIdx := 1; rangeIdx < len(s.ranges); rangeIdx++ {
-		r := s.ranges[rangeIdx]
-		rangeSeries, err := r.operator.SeriesMetadata(ctx, matchers)
-		if err != nil {
-			return nil, err
-		}
-
-		for rangeSeriesIdx, series := range rangeSeries {
-			labelBytesBuf = series.Labels.Bytes(labelBytesBuf)
-
-			// Important: don't extract the string(...) call in the map lookup below - passing it directly allows us to avoid allocating it.
-			if outputSeriesIdx, seenAlready := seriesIndices[string(labelBytesBuf)]; seenAlready {
-				if series.DropName != allSeries[outputSeriesIdx].DropName {
-					return nil, fmt.Errorf("series with labels %s has conflicting drop name values in different ranges", series.Labels.String())
-				}
-
-				s.outputSeries[outputSeriesIdx].sourceSeriesIndices[rangeIdx] = rangeSeriesIdx
-
-				// We're not going to keep this labels instance (we already have it from a previous range), so
-				// decrease memory consumption now.
-				s.MemoryConsumptionTracker.DecreaseMemoryConsumptionForLabels(series.Labels)
-			} else {
-				seriesIndices[string(labelBytesBuf)] = len(allSeries)
-				allSeries, err = types.SeriesMetadataSlicePool.AppendToSlice(allSeries, s.MemoryConsumptionTracker, series)
-				if err != nil {
-					return nil, err
-				}
-
-				if err := s.addNewOutputSeries(rangeIdx, rangeSeriesIdx); err != nil {
-					return nil, err
-				}
-			}
-
-			// We've already accounted for the memory consumption of this series' labels with the DecreaseMemoryConsumptionForLabels
-			// or AppendToSlice calls above, so clear the labels now so they're not double-decremented when we return the series
-			// slice to the pool below.
-			rangeSeries[rangeSeriesIdx] = types.SeriesMetadata{}
-		}
-
-		r.buffer = operators.NewInstantVectorOperatorBuffer(r.operator, nil, len(rangeSeries)-1, s.MemoryConsumptionTracker)
-		types.SeriesMetadataSlicePool.Put(&rangeSeries, s.MemoryConsumptionTracker)
-	}
-
-	return allSeries, nil
-}
-
-func (s *TimeRangeSplitOperator) addNewOutputSeries(sourceRangeIndex int, sourceRangeSeriesIndex int) error {
-	sourceSeriesIndices, err := types.IntSlicePool.Get(len(s.ranges), s.MemoryConsumptionTracker)
-	if err != nil {
-		return err
-	}
-
-	sourceSeriesIndices = sourceSeriesIndices[:len(s.ranges)]
-
-	for idx := range s.ranges {
-		if idx == sourceRangeIndex {
-			sourceSeriesIndices[idx] = sourceRangeSeriesIndex
-		} else {
-			sourceSeriesIndices[idx] = -1
-		}
-	}
-
-	s.outputSeries = append(s.outputSeries, splitOutputSeries{sourceSeriesIndices: sourceSeriesIndices})
-	return nil
+	return series, nil
 }
 
 func (s *TimeRangeSplitOperator) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
@@ -201,6 +171,9 @@ func (s *TimeRangeSplitOperator) NextSeries(ctx context.Context) (types.InstantV
 			if err != nil {
 				return types.InstantVectorSeriesData{}, err
 			}
+
+			// We're going to retain the FloatHistogram instances that are in this slice, so remove the references to them before returning them to the pool.
+			clear(data[0].Histograms)
 			types.HPointSlicePool.Put(&data[0].Histograms, s.MemoryConsumptionTracker)
 		}
 	}
@@ -217,24 +190,29 @@ func (s *TimeRangeSplitOperator) FinishedReading(ctx context.Context) error {
 			return err
 		}
 
-		r.buffer.FinishedReading()
+		if r.buffer != nil {
+			r.buffer.FinishedReading()
+		}
 	}
 
 	return nil
 }
 
 func (s *TimeRangeSplitOperator) Finalize(ctx context.Context) (*types.OperatorEvaluationStats, annotations.Annotations, error) {
-	combinedStats, err := types.NewOperatorEvaluationStats(ctx, s.TimeRange, s.MemoryConsumptionTracker, 0)
-	if err != nil {
-		return nil, nil, err
-	}
-
+	var combinedStats *types.OperatorEvaluationStats // We can't create this immediately as we don't know the subset count yet.
 	var combinedAnnotations annotations.Annotations
 
 	for _, r := range s.ranges {
 		rangeStats, rangeAnnotations, err := r.operator.Finalize(ctx)
 		if err != nil {
 			return nil, nil, err
+		}
+
+		if combinedStats == nil {
+			combinedStats, err = types.NewOperatorEvaluationStats(ctx, s.TimeRange, s.MemoryConsumptionTracker, rangeStats.GetSubsetCount())
+			if err != nil {
+				return nil, nil, err
+			}
 		}
 
 		if err := combinedStats.AddSubRange(rangeStats); err != nil {

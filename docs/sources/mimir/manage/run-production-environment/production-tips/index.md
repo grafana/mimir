@@ -126,11 +126,9 @@ While working with large tenants, there are two compactor-specific settings to c
 - `-compactor.split-groups`
 - `-compactor.split-and-merge-shards`
 
-As a best practice, use one shard per every 8 million series in a tenant, rounded to the nearest even number. For example, for a tenant with 100 million series, use approximately 12 shards.
+As a best practice, use one shard per every 8 million series in a tenant, rounded up to the next power of two. For example, for a tenant with 100 million series, use 16 shards. Values greater than 1 are automatically rounded up to the next power of two, which keeps the compactor and query shard counts compatible and avoids extra load on the read path when query sharding is enabled.
 
 Additionally, as a best practice, set the number of split-groups to be the same as the shard count.
-
-Alternatively, if you're using query sharding on the query frontend, use the next power of 2 to avoid extra load on the read path. For example, use 16 shards for a tenant with 100 million series.
 
 For more information about how these settings work, refer to [Compaction algorithm](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/components/compactor/#compaction-algorithm).
 

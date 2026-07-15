@@ -3,6 +3,7 @@
 package core
 
 import (
+	"context"
 	"time"
 
 	"github.com/gogo/protobuf/proto"
@@ -28,12 +29,6 @@ func (d *DeduplicateAndMerge) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_DEDUPLICATE_AND_MERGE
 }
 
-func (d *DeduplicateAndMerge) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
-	_, ok := other.(*DeduplicateAndMerge)
-
-	return ok
-}
-
 func (d *DeduplicateAndMerge) MergeHints(_ planning.Node) error {
 	// Nothing to do.
 	return nil
@@ -41,10 +36,6 @@ func (d *DeduplicateAndMerge) MergeHints(_ planning.Node) error {
 
 func (d *DeduplicateAndMerge) Describe() string {
 	return ""
-}
-
-func (d *DeduplicateAndMerge) ChildrenLabels() []string {
-	return []string{""}
 }
 
 func (d *DeduplicateAndMerge) ChildrenTimeRange(parentTimeRange types.QueryTimeRange) types.QueryTimeRange {
@@ -67,8 +58,8 @@ func (d *DeduplicateAndMerge) MinimumRequiredPlanVersion(types.QueryTimeRange) (
 	return planning.QueryPlanVersionZero, nil
 }
 
-func MaterializeDeduplicateAndMerge(d *DeduplicateAndMerge, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
-	inner, err := materializer.ConvertNodeToInstantVectorOperator(d.Inner, timeRange)
+func MaterializeDeduplicateAndMerge(ctx context.Context, d *DeduplicateAndMerge, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
+	inner, err := materializer.ConvertNodeToInstantVectorOperator(ctx, d.Inner, timeRange)
 	if err != nil {
 		return nil, err
 	}

@@ -280,7 +280,7 @@ func (b *OneToOneVectorVectorBinaryOperation) computeOutputSeries() ([]types.Ser
 	rightSeriesUsed = rightSeriesUsed[:len(b.rightMetadata)]
 	lastRightSeriesUsedIndex := -1
 	labelsFunc := groupLabelsFunc(b.VectorMatching, b.Op, b.ReturnBool)
-	outputSeriesLabelsBytes := make([]byte, 0, 1024)
+	outputSeriesLabelsBytes := make([]byte, 0, types.LabelBytesBufferSize)
 
 	for leftSeriesIndex, s := range b.leftMetadata {
 		outputSeriesLabels := labelsFunc(s.Labels)

@@ -80,10 +80,13 @@ func TestMain(m *testing.M) {
 	util_test.VerifyNoLeakTestMain(m)
 }
 
-func setupScheduler(t *testing.T, reg prometheus.Registerer) (*Scheduler, schedulerpb.SchedulerForFrontendClient, schedulerpb.SchedulerForQuerierClient) {
+func setupScheduler(t *testing.T, reg prometheus.Registerer, opts ...func(*Config)) (*Scheduler, schedulerpb.SchedulerForFrontendClient, schedulerpb.SchedulerForQuerierClient) {
 	cfg := Config{}
 	flagext.DefaultValues(&cfg)
 	cfg.MaxOutstandingPerTenant = testMaxOutstandingPerTenant
+	for _, opt := range opts {
+		opt(&cfg)
+	}
 
 	s, err := NewScheduler(cfg, &limits{queriers: 2}, log.NewNopLogger(), reg)
 	require.NoError(t, err)
@@ -749,6 +752,69 @@ func TestSchedulerQueueMetrics(t *testing.T) {
 	`), "cortex_query_scheduler_queue_length"))
 }
 
+func TestSchedulerMaxQueueLengthMetric(t *testing.T) {
+	reg := prometheus.NewPedanticRegistry()
+
+	scheduler, frontendClient, _ := setupScheduler(t, reg, func(c *Config) {
+		c.MaxQueueLengthMetricEnabled = true
+	})
+
+	t.Cleanup(func() {
+		drainScheduler(t, scheduler)
+		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), scheduler))
+	})
+
+	require.NotNil(t, scheduler.maxQueueLength, "metric should be constructed when enabled")
+
+	frontendLoop := initFrontendLoop(t, frontendClient, "frontend-12345")
+	frontendToScheduler(t, frontendLoop, &schedulerpb.FrontendToScheduler{
+		Type:    schedulerpb.ENQUEUE,
+		QueryID: 1,
+		UserID:  "test",
+		Payload: &schedulerpb.FrontendToScheduler_HttpRequest{HttpRequest: &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"}},
+	})
+	frontendToScheduler(t, frontendLoop, &schedulerpb.FrontendToScheduler{
+		Type:    schedulerpb.ENQUEUE,
+		QueryID: 1,
+		UserID:  "another",
+		Payload: &schedulerpb.FrontendToScheduler_HttpRequest{HttpRequest: &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"}},
+	})
+
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+		# HELP cortex_query_scheduler_max_queue_length Maximum number of queries observed in a tenant's queue since the last metric collection (reset on each scrape). Captures the true peak queue depth between scrapes.
+		# TYPE cortex_query_scheduler_max_queue_length gauge
+		cortex_query_scheduler_max_queue_length{user="another"} 1
+		cortex_query_scheduler_max_queue_length{user="test"} 1
+	`), "cortex_query_scheduler_max_queue_length"))
+
+	scheduler.cleanupMetricsForInactiveUser("test")
+
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+		# HELP cortex_query_scheduler_max_queue_length Maximum number of queries observed in a tenant's queue since the last metric collection (reset on each scrape). Captures the true peak queue depth between scrapes.
+		# TYPE cortex_query_scheduler_max_queue_length gauge
+		cortex_query_scheduler_max_queue_length{user="another"} 1
+	`), "cortex_query_scheduler_max_queue_length"))
+}
+
+func TestSchedulerMaxQueueLengthMetricDisabled(t *testing.T) {
+	cfg := Config{}
+	flagext.DefaultValues(&cfg)
+	cfg.MaxOutstandingPerTenant = testMaxOutstandingPerTenant
+	cfg.MaxQueueLengthMetricEnabled = false
+
+	reg := prometheus.NewPedanticRegistry()
+	s, err := NewScheduler(cfg, &limits{queriers: 2}, log.NewNopLogger(), reg)
+	require.NoError(t, err)
+
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), s))
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), s))
+	})
+
+	require.Nil(t, s.maxQueueLength, "tracker must not be constructed when the metric is disabled")
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(""), "cortex_query_scheduler_max_queue_length"))
+}
+
 func TestSchedulerQuerierMetrics(t *testing.T) {
 	reg := prometheus.NewPedanticRegistry()
 	scheduler, frontendClient, querierClient := setupScheduler(t, reg)
@@ -766,6 +832,13 @@ func TestSchedulerQuerierMetrics(t *testing.T) {
 		StatsEnabled: true,
 	})
 
+	require.Eventually(t, func() bool {
+		// No querier is connected yet, so the request stays waiting in the queue and
+		// queueMaxWait reports its wait time.
+		queueMaxWait := testutil.ToFloat64(scheduler.queueMaxWait)
+		return queueMaxWait > 0
+	}, time.Second, 10*time.Millisecond, "expected cortex_query_scheduler_queue_max_wait_seconds metric to be greater than zero when a request is waiting in the queue")
+
 	ctx, cancel := context.WithCancel(context.Background())
 	querierLoop, err := querierClient.QuerierLoop(ctx)
 	require.NoError(t, err)
@@ -782,10 +855,11 @@ func TestSchedulerQuerierMetrics(t *testing.T) {
 	}, time.Second, 10*time.Millisecond, "expected cortex_query_scheduler_connected_querier_clients metric to be incremented after querier connected")
 
 	require.Eventually(t, func() bool {
-		// an item is waiting in the queue, inflightMaxAge is reported
-		inflightMaxAge := testutil.ToFloat64(scheduler.inflightMaxAge)
-		return inflightMaxAge > 0
-	}, time.Second, 10*time.Millisecond, "expected cortex_query_scheduler_inflight_max_age_seconds metric to be greater than zero when an item is in the queue")
+		// The querier has picked up the request; it is now being processed rather than waiting,
+		// so it is excluded from queueMaxWait even though it is still inflight.
+		queueMaxWait := testutil.ToFloat64(scheduler.queueMaxWait)
+		return queueMaxWait == 0
+	}, time.Second, 10*time.Millisecond, "expected cortex_query_scheduler_queue_max_wait_seconds metric to be zero once the only inflight request has been dispatched to a querier")
 
 	cancel()
 	require.NoError(t, util.CloseAndExhaust[*schedulerpb.SchedulerToQuerier](querierLoop))
@@ -801,10 +875,10 @@ func TestSchedulerQuerierMetrics(t *testing.T) {
 	}, time.Second, 10*time.Millisecond, "expected cortex_query_scheduler_connected_querier_clients metric to be decremented after querier disconnected")
 
 	require.Eventually(t, func() bool {
-		// the queue is empty, inflightMaxAge reports 0
-		inflightMaxAge := testutil.ToFloat64(scheduler.inflightMaxAge)
-		return inflightMaxAge == 0
-	}, time.Second, 10*time.Millisecond, "expected cortex_query_scheduler_inflight_max_age_seconds metric to be zero when the queue is empty")
+		// the queue is empty, queueMaxWait reports 0
+		queueMaxWait := testutil.ToFloat64(scheduler.queueMaxWait)
+		return queueMaxWait == 0
+	}, time.Second, 10*time.Millisecond, "expected cortex_query_scheduler_queue_max_wait_seconds metric to be zero when the queue is empty")
 
 	require.NoError(t, promtest.HasNativeHistogram(reg, "cortex_query_scheduler_queue_duration_seconds"))
 	require.NoError(t, promtest.HasSampleCount(reg, "cortex_query_scheduler_queue_duration_seconds", 1))

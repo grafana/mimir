@@ -3,8 +3,8 @@
 package commonsubexpressionelimination
 
 import (
+	"context"
 	"fmt"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -42,12 +42,6 @@ func (d *Duplicate) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_DUPLICATE
 }
 
-func (d *Duplicate) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
-	_, ok := other.(*Duplicate)
-
-	return ok
-}
-
 func (d *Duplicate) MergeHints(_ planning.Node) error {
 	// Nothing to do.
 	return nil
@@ -55,10 +49,6 @@ func (d *Duplicate) MergeHints(_ planning.Node) error {
 
 func (d *Duplicate) Describe() string {
 	return ""
-}
-
-func (d *Duplicate) ChildrenLabels() []string {
-	return []string{""}
 }
 
 func (d *Duplicate) ChildrenTimeRange(parentTimeRange types.QueryTimeRange) types.QueryTimeRange {
@@ -88,6 +78,10 @@ func (d *Duplicate) MinimumRequiredPlanVersion(timeRange types.QueryTimeRange) (
 		return planning.QueryPlanV11, nil
 	}
 
+	if innerResultType == parser.ValueTypeScalar {
+		return planning.QueryPlanV19, nil
+	}
+
 	return planning.QueryPlanVersionZero, nil
 }
 
@@ -109,8 +103,8 @@ func (d *Duplicate) GetRangeParams() planning.RangeParams {
 
 var _ planning.SplitNode = &Duplicate{}
 
-func MaterializeDuplicate(d *Duplicate, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters, overrideTimeParams planning.RangeParams) (planning.OperatorFactory, error) {
-	inner, err := materializer.ConvertNodeToOperatorWithSubRange(d.Inner, timeRange, overrideTimeParams)
+func MaterializeDuplicate(ctx context.Context, d *Duplicate, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters, overrideTimeParams planning.RangeParams) (planning.OperatorFactory, error) {
+	inner, err := materializer.ConvertNodeToOperatorWithSubRange(ctx, d.Inner, timeRange, overrideTimeParams)
 	if err != nil {
 		return nil, err
 	}
@@ -124,8 +118,12 @@ func MaterializeDuplicate(d *Duplicate, materializer *planning.Materializer, tim
 		return &RangeVectorDuplicationConsumerOperatorFactory{
 			Buffer: NewRangeVectorDuplicationBuffer(inner, params.MemoryConsumptionTracker, timeRange, params.Logger),
 		}, nil
+	case types.ScalarOperator:
+		return &ScalarDuplicationConsumerOperatorFactory{
+			Buffer: NewScalarDuplicationBuffer(inner, params.MemoryConsumptionTracker),
+		}, nil
 	default:
-		return nil, fmt.Errorf("expected InstantVectorOperator or RangeVectorOperator as child of Duplicate, got %T", inner)
+		return nil, fmt.Errorf("expected InstantVectorOperator, RangeVectorOperator or ScalarOperator as child of Duplicate, got %T", inner)
 	}
 }
 
@@ -145,6 +143,14 @@ func (d *RangeVectorDuplicationConsumerOperatorFactory) Produce() (types.Operato
 	return d.Buffer.AddConsumer(), nil
 }
 
+type ScalarDuplicationConsumerOperatorFactory struct {
+	Buffer *ScalarDuplicationBuffer
+}
+
+func (d *ScalarDuplicationConsumerOperatorFactory) Produce() (types.Operator, error) {
+	return d.Buffer.AddConsumer(), nil
+}
+
 //node:generate
 type DuplicateFilter struct {
 	*DuplicateFilterDetails
@@ -157,14 +163,6 @@ func (f *DuplicateFilter) Details() proto.Message {
 
 func (f *DuplicateFilter) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_DUPLICATE_FILTER
-}
-
-func (f *DuplicateFilter) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
-	otherFilter, ok := other.(*DuplicateFilter)
-
-	return ok && slices.EqualFunc(f.Filters, otherFilter.Filters, func(a *core.LabelMatcher, b *core.LabelMatcher) bool {
-		return a.Equal(b)
-	})
 }
 
 func (f *DuplicateFilter) MergeHints(_ planning.Node) error {
@@ -180,10 +178,6 @@ func (f *DuplicateFilter) Describe() string {
 	builder.WriteString(strconv.FormatInt(f.SubsetIndex, 10))
 
 	return builder.String()
-}
-
-func (f *DuplicateFilter) ChildrenLabels() []string {
-	return []string{""}
 }
 
 func (f *DuplicateFilter) ChildrenTimeRange(parentTimeRange types.QueryTimeRange) types.QueryTimeRange {
@@ -216,8 +210,8 @@ func (f *DuplicateFilter) GetRangeParams() planning.RangeParams {
 
 var _ planning.SplitNode = &DuplicateFilter{}
 
-func MaterializeDuplicateFilter(f *DuplicateFilter, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters, overrideTimeParams planning.RangeParams) (planning.OperatorFactory, error) {
-	operator, err := materializer.ConvertNodeToOperatorWithSubRange(f.Inner, timeRange, overrideTimeParams)
+func MaterializeDuplicateFilter(ctx context.Context, f *DuplicateFilter, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters, overrideTimeParams planning.RangeParams) (planning.OperatorFactory, error) {
+	operator, err := materializer.ConvertNodeToOperatorWithSubRange(ctx, f.Inner, timeRange, overrideTimeParams)
 	if err != nil {
 		return nil, err
 	}

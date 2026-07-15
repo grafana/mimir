@@ -45,7 +45,6 @@ import (
 	"github.com/grafana/mimir/pkg/ruler"
 	"github.com/grafana/mimir/pkg/scheduler"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
-	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/storegateway"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/grafana/mimir/pkg/usagetracker"
@@ -420,7 +419,7 @@ func (a *API) RegisterIngesterRing(r http.Handler) {
 // RegisterIngesterPartitionRings registers the ring UI page(s) for the ingester partition ring(s).
 // When compartments are disabled it registers a single page. When enabled it registers an index page
 // linking to one page per read compartment.
-func (a *API) RegisterIngesterPartitionRings(compartmentsEnabled bool, partitionRings *ingest.PartitionRingWatchers, ringKey string, kvClient kv.Client) {
+func (a *API) RegisterIngesterPartitionRings(compartmentsEnabled bool, partitionRings *ring.PartitionRingWatchers, ringKey string, kvClient kv.Client) {
 	a.indexPage.AddLinks(defaultWeight, "Ingester", []IndexPageLink{
 		{Desc: "Partition ring status", Path: "ingester/partition-ring"},
 	})
@@ -435,7 +434,7 @@ func (a *API) RegisterIngesterPartitionRings(compartmentsEnabled bool, partition
 	a.RegisterRoute("/ingester/partition-ring", index, false, true, "GET")
 
 	for compartmentID, partitionRing := range partitionRings.All() {
-		key := compartments.ReadCompartmentRingKey(compartmentID, ringKey)
+		key := compartments.WithReadCompartmentSuffix(ringKey, compartmentID)
 		handler := ring.NewPartitionRingPageHandler(partitionRing, ring.NewPartitionRingEditor(key, kvClient))
 		a.RegisterRoute(fmt.Sprintf("/ingester/partition-ring/compartment-%d", compartmentID), handler, false, true, "GET", "POST")
 	}
@@ -596,6 +595,12 @@ func (a *API) RegisterOverridesExporter(oe *exporter.OverridesExporter) {
 func (a *API) RegisterUsageTracker(t *usagetracker.UsageTracker) {
 	usagetrackerpb.RegisterUsageTrackerServer(a.server.GRPC, t)
 	a.RegisterRoute("/usage-tracker/prepare-instance-ring-downscale", http.HandlerFunc(t.PrepareInstanceRingDownscaleHandler), false, true, "GET", "POST", "DELETE")
+
+	a.indexPage.AddLinks(defaultWeight, "Usage-tracker", []IndexPageLink{
+		{Desc: "Partitions", Path: "usage-tracker/partitions"},
+	})
+	a.RegisterRoute("/usage-tracker/partitions", http.HandlerFunc(t.PartitionsHandler), false, true, "GET")
+	a.RegisterRoute("/usage-tracker/partitions/{partition}", http.HandlerFunc(t.PartitionHandler), false, true, "GET")
 }
 
 func (a *API) RegisterUsageTrackerInstanceRing(instanceRingHandler http.Handler) {

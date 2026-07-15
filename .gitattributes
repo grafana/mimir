@@ -1,2 +1,7 @@
 **/*.pb.go linguist-generated=true
 vendor/**/* linguist-generated=true
+# Resolve conflicts in changelogs by merging both sides together.
+# This can cause misleading resolutions, with duplicated records in the changelog. But it allows the bakporting CI job to pass
+# and let the human to resolve it later, rather than failing.
+CHANGELOG.md merge=union
+operations/**/CHANGELOG.md merge=union

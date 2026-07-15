@@ -11,6 +11,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
+	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 )
 
 // NewPropagateMatchersMapper optimizes queries by propagating matchers across binary operations.
@@ -225,11 +226,13 @@ func VectorSelectorArgumentIndex(funcName string) (int, error) {
 	case "end", "max_of", "min_of", "pi", "range", "start", "step", "time", "vector":
 		return -1, nil
 	// Explicitly not supported because it's not valid to propagate matchers across these functions.
-	case "scalar", "absent", "absent_over_time":
+	case "scalar", "absent", "absent_over_time", core.ScalarEvaluationRootFunctionName:
 		return -1, nil
 	// Explicitly not supported because we want to avoid unexpected interactions with labels or ordering.
 	case "label_join", "label_replace", "info", "sort", "sort_desc", "sort_by_label", "sort_by_label_desc":
 		return -1, nil
+	case core.VectorEvaluationRootFunctionName:
+		return 0, nil
 	default:
 		return -1, fmt.Errorf("function support unknown: %s", funcName)
 	}

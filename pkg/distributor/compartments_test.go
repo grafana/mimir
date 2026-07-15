@@ -39,8 +39,8 @@ func TestCompartmentTokens_WriteRequestIndexes(t *testing.T) {
 func TestGetCompartmentTokensForWriteRequest(t *testing.T) {
 	userID := "user-1"
 
-	newTestCompartmentRouter := func(numCompartments int) *compartments.Router {
-		return compartments.NewRouter(numCompartments, "comp-<read-compartment-id>")
+	newTestCompartmentRouter := func(numCompartments int) *compartments.TopicRouter {
+		return compartments.NewTopicRouter(numCompartments, "comp-<read-compartment-id>")
 	}
 
 	req := &mimirpb.WriteRequest{

@@ -3,6 +3,7 @@
 package core
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -39,24 +40,13 @@ func (u *UnaryExpression) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_UNARY_EXPRESSION
 }
 
-func (u *UnaryExpression) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
-	otherUnaryExpression, ok := other.(*UnaryExpression)
-
-	return ok &&
-		u.Op == otherUnaryExpression.Op
-}
-
 func (u *UnaryExpression) MergeHints(_ planning.Node) error {
 	// Nothing to do.
 	return nil
 }
 
-func (u *UnaryExpression) ChildrenLabels() []string {
-	return []string{""}
-}
-
-func MaterializeUnaryExpression(u *UnaryExpression, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
-	inner, err := materializer.ConvertNodeToOperator(u.Inner, timeRange)
+func MaterializeUnaryExpression(ctx context.Context, u *UnaryExpression, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
+	inner, err := materializer.ConvertNodeToOperator(ctx, u.Inner, timeRange)
 	if err != nil {
 		return nil, fmt.Errorf("could not create inner operator for UnaryExpression: %w", err)
 	}

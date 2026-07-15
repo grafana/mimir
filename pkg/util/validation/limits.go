@@ -22,7 +22,9 @@ import (
 	"github.com/grafana/dskit/tenant"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/otlptranslator"
+	promcfg "github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/relabel"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"go.uber.org/atomic"
 	"go.yaml.in/yaml/v3"
 	"golang.org/x/crypto/blake2b"
@@ -33,6 +35,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/ruler/notifier"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
+	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
@@ -78,6 +81,7 @@ const (
 	alignQueriesWithStepFlag                    = "query-frontend.align-queries-with-step"
 	QueryIngestersWithinFlag                    = "querier.query-ingesters-within"
 	EnableDelayedNameRemovalFlag                = "querier.enable-delayed-name-removal"
+	SubquerySpinOffEnabledFlag                  = "query-frontend.subquery-spin-off-enabled"
 
 	// MinCompactorPartialBlockDeletionDelay is the minimum partial blocks deletion delay that can be configured in Mimir.
 	MinCompactorPartialBlockDeletionDelay = 4 * time.Hour
@@ -98,6 +102,7 @@ var (
 	errInvalidIngestStorageReadConsistency         = fmt.Errorf("invalid ingest storage read consistency (supported values: %s)", strings.Join(api.ReadConsistencies, ", "))
 	errInvalidMaxEstimatedChunksPerQueryMultiplier = fmt.Errorf("invalid value for -%s: must be 0 or greater than or equal to 1", MaxEstimatedChunksPerQueryMultiplierFlag)
 	errNegativeUpdateTimeoutJitterMax              = errors.New("HA tracker max update timeout jitter shouldn't be negative")
+	errInvalidFloatChunkEncoding                   = fmt.Errorf("invalid float chunk encoding (supported values: %q, %q)", promcfg.FloatChunkEncodingXOR, promcfg.FloatChunkEncodingXOR2)
 )
 
 const (
@@ -196,8 +201,11 @@ type Limits struct {
 	// Per-tenant early head compaction
 	EarlyHeadCompactionOwnedSeriesThreshold                  int `yaml:"early_head_compaction_owned_series_threshold" json:"early_head_compaction_owned_series_threshold" category:"experimental"`
 	EarlyHeadCompactionMinEstimatedSeriesReductionPercentage int `yaml:"early_head_compaction_min_estimated_series_reduction_percentage" json:"early_head_compaction_min_estimated_series_reduction_percentage" category:"experimental"`
-	// Native histograms
+	// Native histograms.
 	NativeHistogramsIngestionEnabled bool `yaml:"native_histograms_ingestion_enabled" json:"native_histograms_ingestion_enabled" category:"experimental"`
+
+	// Float chunk encoding.
+	FloatChunkEncoding string `yaml:"float_chunk_encoding" json:"float_chunk_encoding" category:"experimental"`
 
 	// Active series custom trackers
 	ActiveSeriesBaseCustomTrackersConfig       asmodel.CustomTrackersConfig                  `yaml:"active_series_custom_trackers" json:"active_series_custom_trackers" doc:"description=Custom trackers for active metrics. If there are active series matching a provided matcher (map value), the count is exposed in the custom trackers metric labeled using the tracker name (map key). Zero-valued counts are not exposed and are removed when they go back to zero." category:"advanced"`
@@ -230,6 +238,7 @@ type Limits struct {
 	QueryShardingTotalShards              int            `yaml:"query_sharding_total_shards" json:"query_sharding_total_shards"`
 	QueryShardingMaxShardedQueries        int            `yaml:"query_sharding_max_sharded_queries" json:"query_sharding_max_sharded_queries"`
 	QueryShardingMaxRegexpSizeBytes       int            `yaml:"query_sharding_max_regexp_size_bytes" json:"query_sharding_max_regexp_size_bytes"`
+	CardinalityShardingMaxShardedQueries  int            `yaml:"cardinality_sharding_max_sharded_queries" json:"cardinality_sharding_max_sharded_queries" category:"experimental"`
 	QueryIngestersWithin                  model.Duration `yaml:"query_ingesters_within" json:"query_ingesters_within" category:"advanced"`
 	EnableDelayedNameRemoval              bool           `yaml:"enable_delayed_name_removal" json:"enable_delayed_name_removal" category:"experimental"`
 
@@ -435,6 +444,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.Var(&l.ActiveSeriesBaseCustomTrackersConfig, "ingester.active-series-custom-trackers", "Additional active series metrics, matching the provided matchers. Matchers should be in form <name>:<matcher>, like 'foobar:{foo=\"bar\"}'. Multiple matchers can be provided either providing the flag multiple times or providing multiple semicolon-separated values to a single flag.")
 	f.Var(&l.OutOfOrderTimeWindow, OutOfOrderTimeWindowFlag, fmt.Sprintf("Non-zero value enables out-of-order support for most recent samples that are within the time window in relation to the TSDB's maximum time, i.e., within [db.maxTime-timeWindow, db.maxTime]). The ingester will need more memory as a factor of rate of out-of-order samples being ingested and the number of series that are getting out-of-order samples. If query falls into this window, cached results will use value from -%s option to specify TTL for resulting cache entry.", resultsCacheTTLForOutOfOrderWindowFlag))
 	f.BoolVar(&l.NativeHistogramsIngestionEnabled, "ingester.native-histograms-ingestion-enabled", true, "Enable ingestion of native histogram samples. If false, native histogram samples are ignored without an error. To query native histograms with query-sharding enabled make sure to set -query-frontend.query-result-response-format to 'protobuf'.")
+	f.StringVar(&l.FloatChunkEncoding, "ingester.float-chunk-encoding", "xor", "Encoding used for float chunks in the ingester and block builder for this tenant. Valid values are 'xor' and 'xor2'.")
 	f.BoolVar(&l.OutOfOrderBlocksExternalLabelEnabled, "ingester.out-of-order-blocks-external-label-enabled", false, "Whether the shipper should label out-of-order blocks with an external label before uploading them. Setting this label will compact out-of-order blocks separately from non-out-of-order blocks")
 	f.IntVar(&l.EarlyHeadCompactionOwnedSeriesThreshold, "ingester.early-head-compaction-owned-series-threshold", 0, "When the number of owned series for a tenant across the cluster exceeds this threshold, trigger early head compaction. 0 to disable.")
 	f.IntVar(&l.EarlyHeadCompactionMinEstimatedSeriesReductionPercentage, "ingester.early-head-compaction-min-estimated-series-reduction-percentage", 15, "Minimum estimated series reduction percentage (0-100) required to trigger per-tenant early compaction.")
@@ -470,9 +480,10 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.Var(&l.MaxCacheFreshness, "query-frontend.max-cache-freshness", "Most recent allowed cacheable result per-tenant, to prevent caching very recent results that might still be in flux.")
 
 	f.IntVar(&l.MaxQueriersPerTenant, "query-frontend.max-queriers-per-tenant", 0, "Maximum number of queriers that can handle requests for a single tenant. If set to 0 or value higher than number of available queriers, *all* queriers will handle requests for the tenant. Each frontend (or query-scheduler, if used) will select the same set of queriers for the same tenant (given that all queriers are connected to all frontends / query-schedulers). This option only works with queriers connecting to the query-frontend / query-scheduler, not when using downstream URL.")
-	f.IntVar(&l.QueryShardingTotalShards, "query-frontend.query-sharding-total-shards", 16, "The amount of shards to use when doing parallelisation via query sharding by tenant. 0 to disable query sharding for tenant. Query sharding implementation will adjust the number of query shards based on compactor shards. This allows querier to not search the blocks which cannot possibly have the series for given query shard.")
-	f.IntVar(&l.QueryShardingMaxShardedQueries, "query-frontend.query-sharding-max-sharded-queries", 128, "The max number of sharded queries that can be run for a given received query. 0 to disable limit.")
+	f.IntVar(&l.QueryShardingTotalShards, "query-frontend.query-sharding-total-shards", 16, "The number of shards to use when doing parallelisation via query sharding. 0 to disable query sharding for tenant. Values greater than 1 are rounded up to the next power of two, so the query shard count always meshes with the compactor's power-of-two shard count. This allows querier to not search the blocks which cannot possibly have the series for given query shard.")
+	f.IntVar(&l.QueryShardingMaxShardedQueries, "query-frontend.query-sharding-max-sharded-queries", 128, "The maximum number of sharded queries that can be run for a given received query or spun-off subquery. 0 to disable limit. When splitting and caching inside MQE is enabled, this value applies per time-split interval (including split intervals for spun-off subqueries). When it is disabled, this value applies to the entire time range (or entire spun-off subquery).")
 	f.IntVar(&l.QueryShardingMaxRegexpSizeBytes, "query-frontend.query-sharding-max-regexp-size-bytes", 4096, "Disable query sharding for any query containing a regular expression matcher longer than the configured number of bytes. 0 to disable the limit.")
+	f.IntVar(&l.CardinalityShardingMaxShardedQueries, "query-frontend.cardinality-sharding-max-sharded-queries", 0, "The max number of sharded queries that can be run for a cardinality (active series and active native histogram metrics) request. 0 to fall back to -query-frontend.query-sharding-max-sharded-queries.")
 	_ = l.QueryIngestersWithin.Set("13h")
 	f.Var(&l.QueryIngestersWithin, QueryIngestersWithinFlag, "Maximum lookback beyond which queries are not sent to ingester. 0 means all queries are sent to ingester.")
 	f.BoolVar(&l.EnableDelayedNameRemoval, EnableDelayedNameRemovalFlag, false, "Enable the experimental Prometheus feature for delayed name removal within MQE, which only works if remote execution and running sharding within MQE is enabled.")
@@ -508,8 +519,8 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.RulerMaxRuleEvaluationResults, "ruler.max-rule-evaluation-results", 0, "Maximum number of alerts or series one alerting rule or one recording rule respectively can produce. 0 is no limit.")
 
 	f.Var(&l.CompactorBlocksRetentionPeriod, "compactor.blocks-retention-period", "Delete blocks containing samples older than the specified retention period. Also used by query-frontend to avoid querying beyond the retention period by instant, range or remote read queries. 0 to disable.")
-	f.IntVar(&l.CompactorSplitAndMergeShards, "compactor.split-and-merge-shards", 0, "The number of shards to use when splitting blocks. 0 to disable splitting.")
-	f.IntVar(&l.CompactorOOOSplitAndMergeShards, "compactor.ooo-split-and-merge-shards", 0, "The number of shards to use when splitting out-of-order blocks. 0 to use the value of -compactor.split-and-merge-shards. Only applies to blocks with the out-of-order external label, see -ingester.out-of-order-blocks-external-label-enabled.")
+	f.IntVar(&l.CompactorSplitAndMergeShards, "compactor.split-and-merge-shards", 0, "The number of shards to use when splitting blocks. 0 to disable splitting. Values greater than 1 are rounded up to the next power of two.")
+	f.IntVar(&l.CompactorOOOSplitAndMergeShards, "compactor.ooo-split-and-merge-shards", 0, "The number of shards to use when splitting out-of-order blocks. 0 to use the value of -compactor.split-and-merge-shards. Values greater than 1 are rounded up to the next power of two. Only applies to blocks with the out-of-order external label, see -ingester.out-of-order-blocks-external-label-enabled.")
 	f.IntVar(&l.CompactorSplitGroups, "compactor.split-groups", 1, "Number of groups that blocks for splitting should be grouped into. Each group of blocks is then split separately. Number of output split shards is controlled by -compactor.split-and-merge-shards.")
 	f.IntVar(&l.CompactorTenantShardSize, "compactor.compactor-tenant-shard-size", 0, "Max number of compactors that can compact blocks for single tenant. 0 to disable the limit and use all compactors.")
 	_ = l.CompactorPartialBlockDeletionDelay.Set("1d")
@@ -537,7 +548,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.Var(&l.EnabledPromQLExperimentalFunctions, "query-frontend.enabled-promql-experimental-functions", "Enable certain experimental PromQL functions, which are subject to being changed or removed at any time, on a per-tenant basis. Defaults to empty which means all experimental functions are disabled. Set to 'all' to enable all experimental functions.")
 	f.Var(&l.EnabledPromQLExtendedRangeSelectors, "query-frontend.enabled-promql-extended-range-selectors", "Enable certain experimental PromQL extended range selector modifiers, which are subject to being changed or removed at any time, on a per-tenant basis. Defaults to empty which means all experimental modifiers are disabled. Set to 'all' to enable all experimental modifiers.")
 	f.BoolVar(&l.Prom2RangeCompat, "query-frontend.prom2-range-compat", false, "Rewrite queries using the same range selector and resolution [X:X] which don't work in Prometheus 3.0 to a nearly identical form that works with Prometheus 3.0 semantics")
-	f.BoolVar(&l.SubquerySpinOffEnabled, "query-frontend.subquery-spin-off-enabled", false, "Enable spinning off subqueries from instant queries as range queries to optimize their performance.")
+	f.BoolVar(&l.SubquerySpinOffEnabled, SubquerySpinOffEnabledFlag, false, "Enable spinning off subqueries from instant queries as range queries to optimize their performance.")
 	f.BoolVar(&l.LabelsQueryOptimizerEnabled, "query-frontend.labels-query-optimizer-enabled", true, "Enable labels query optimizations. When enabled, the query-frontend may rewrite labels queries to improve their performance.")
 
 	// Store-gateway.
@@ -763,6 +774,12 @@ func (l *Limits) Validate() error {
 		return errNegativeUpdateTimeoutJitterMax
 	}
 
+	switch l.FloatChunkEncoding {
+	case "", promcfg.FloatChunkEncodingXOR, promcfg.FloatChunkEncodingXOR2:
+	default:
+		return errInvalidFloatChunkEncoding
+	}
+
 	if l.HATrackerUpdateTimeout > 0 || l.HATrackerFailoverTimeout > 0 {
 		minFailureTimeout := l.HATrackerUpdateTimeout + l.HATrackerUpdateTimeoutJitterMax + model.Duration(time.Second)
 		if l.HATrackerFailoverTimeout < minFailureTimeout {
@@ -794,6 +811,20 @@ func (l *Limits) Validate() error {
 	// Validate additional custom tracker config doesn't exceed the limit.
 	if err := l.ActiveSeriesAdditionalCustomTrackersConfig.Validate(l.MaxActiveSeriesAdditionalCustomTrackers); err != nil {
 		return fmt.Errorf("active_series_additional_custom_trackers validation failed: %w", err)
+	}
+
+	// Round the shard counts up to the next power of two. Query sharding and the compactor's
+	// split-and-merge sharding work best when one shard count is a divisor or multiple of the
+	// other, and powers of two always satisfy that relationship. A value of 0 or 1 disables
+	// sharding (or falls through to another setting), so it's left untouched.
+	if l.QueryShardingTotalShards > 1 {
+		l.QueryShardingTotalShards = util_math.NextPowerTwo(l.QueryShardingTotalShards)
+	}
+	if l.CompactorSplitAndMergeShards > 1 {
+		l.CompactorSplitAndMergeShards = util_math.NextPowerTwo(l.CompactorSplitAndMergeShards)
+	}
+	if l.CompactorOOOSplitAndMergeShards > 1 {
+		l.CompactorOOOSplitAndMergeShards = util_math.NextPowerTwo(l.CompactorOOOSplitAndMergeShards)
 	}
 
 	return nil
@@ -1174,6 +1205,12 @@ func (o *Overrides) QueryShardingMaxRegexpSizeBytes(userID string) int {
 	return o.getOverridesForUser(userID).QueryShardingMaxRegexpSizeBytes
 }
 
+// CardinalityShardingMaxShardedQueries returns the max number of sharded queries that can
+// be run for a cardinality (active series and active native histogram metrics) request.
+func (o *Overrides) CardinalityShardingMaxShardedQueries(userID string) int {
+	return o.getOverridesForUser(userID).CardinalityShardingMaxShardedQueries
+}
+
 // QueryIngestersWithin returns the maximum lookback beyond which queries are not sent to ingester.
 // 0 means all queries are sent to ingester.
 func (o *Overrides) QueryIngestersWithin(userID string) time.Duration {
@@ -1414,9 +1451,17 @@ func (o *Overrides) MetricRelabelConfigs(userID string) []*relabel.Config {
 	return relabelConfigs
 }
 
-// NativeHistogramsIngestionEnabled returns whether to ingest native histograms in the ingester
+// NativeHistogramsIngestionEnabled returns whether to ingest native histograms in the ingester.
 func (o *Overrides) NativeHistogramsIngestionEnabled(userID string) bool {
 	return o.getOverridesForUser(userID).NativeHistogramsIngestionEnabled
+}
+
+// FloatChunkEncoding returns the float chunk encoding for this tenant, defaulting to XOR for unknown values.
+func (o *Overrides) FloatChunkEncoding(userID string) chunkenc.Encoding {
+	if o.getOverridesForUser(userID).FloatChunkEncoding == promcfg.FloatChunkEncodingXOR2 {
+		return chunkenc.EncXOR2
+	}
+	return chunkenc.EncXOR
 }
 
 func (o *Overrides) MaxExemplarsPerSeriesPerRequest(userID string) int {

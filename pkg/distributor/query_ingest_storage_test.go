@@ -679,7 +679,7 @@ func TestDistributor_QueryStream_InactivePartitionsLookback(t *testing.T) {
 				})
 
 				// Verify getIngesterReplicationSetsForQuery returns the expected partitions.
-				replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx)
+				replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx, nil)
 				require.NoError(t, err)
 
 				var actualPartitionIDs []int
@@ -752,7 +752,7 @@ func TestDistributor_QueryStream_NoMetricNamePruningOnIngesterPath(t *testing.T)
 		return d.ingesterPartitionRings.PartitionRing(0).PartitionsCount()
 	})
 
-	sets, err := d.getIngesterReplicationSetsForQuery(ctx)
+	sets, err := d.getIngesterReplicationSetsForQuery(ctx, nil)
 	require.NoError(t, err)
 
 	partitionIDs := map[int32]struct{}{}

@@ -24,47 +24,72 @@ import (
 // via OfferCompactionJobs. At most one plan job exists at a time. Lease moves a selected
 // job from pending to active.
 //
-// An active job returns to pending if its lease expires (via Maintenance) or is canceled within
-// the attempt limit.
+// Pending jobs are partitioned into per-lane queues according to the lanePolicy.
+//
+// Active jobs share a single list ordered by oldest. An active job returns to a pending lane if its lease expires
+// (via Maintenance) or is canceled within the attempt limit.
 //
 // Plan jobs complete via OfferCompactionJobs. Compaction jobs complete via Remove. Compaction jobs that complete
 // while a plan job is active are temporarily retained for conflict detection.
 type JobTracker struct {
-	persister JobPersister
-	tenant    string
-	clock     clock.Clock
-	logger    log.Logger
+	persister  JobPersister
+	tenant     string
+	clock      clock.Clock
+	logger     log.Logger
+	lanePolicy lanePolicy // determines how to organize pending jobs into lanes
 
 	maxLeases                      int // maximum lease attempts per job where 0 (infiniteLeases) means unlimited. Plan jobs ignore this.
 	repeatedFailureReportThreshold int // number of failures before a repeated failure is recorded. 0 (infiniteLeases) means unlimited.
 	metrics                        *trackerMetrics
 
 	mtx                    sync.Mutex
-	pending                *list.List
+	pending                map[lane]*list.List
 	active                 *list.List               // ordered by oldest lease first
 	isPlanJobLeased        bool                     // used to decide whether to retain completed compaction jobs
-	incompleteJobs         map[string]*list.Element // all incomplete jobs will be in this map, element is in one and only one of pending or active
+	incompleteJobs         map[string]*list.Element // all incomplete jobs; element is in active or in exactly one lane's pending list
 	completePlanTime       time.Time                // time of the last completed plan job. Zero time if planning has never completed or a plan job is currently incomplete (pending or active).
 	completeCompactionJobs []*TrackedCompactionJob  // tracked in order to reject jobs that may be from a stale planning view.
 }
 
-func NewJobTracker(jobPersister JobPersister, tenant string, clock clock.Clock, maxLeases int, repeatedFailureReportThreshold int, metrics *trackerMetrics, logger log.Logger) *JobTracker {
+func NewJobTracker(jobPersister JobPersister, tenant string, clock clock.Clock, lanePolicy lanePolicy, maxLeases int, repeatedFailureReportThreshold int, metrics *trackerMetrics, logger log.Logger) *JobTracker {
+	pending := make(map[lane]*list.List)
+	for _, l := range lanePolicy.AllLanes() {
+		pending[l] = list.New()
+	}
+
 	jt := &JobTracker{
 		persister:                      jobPersister,
 		tenant:                         tenant,
 		clock:                          clock,
 		logger:                         log.With(logger, "user", tenant),
+		lanePolicy:                     lanePolicy,
 		maxLeases:                      maxLeases,
 		repeatedFailureReportThreshold: repeatedFailureReportThreshold,
 		metrics:                        metrics,
 		mtx:                            sync.Mutex{},
-		pending:                        list.New(),
+		pending:                        pending,
 		active:                         list.New(),
 		isPlanJobLeased:                false,
 		incompleteJobs:                 make(map[string]*list.Element),
 		completeCompactionJobs:         make([]*TrackedCompactionJob, 0),
 	}
 	return jt
+}
+
+// toPendingBack adds a job to the back of its lane's queue. Callers must have exclusive access.
+func (jt *JobTracker) toPendingBack(j TrackedJob) {
+	l := jt.lanePolicy.LaneForJob(j)
+	jt.incompleteJobs[j.ID()] = jt.pending[l].PushBack(j)
+}
+
+// toPendingFront adds a job to the front of its lane's queue, reporting whether that
+// lane was empty beforehand. Callers must have exclusive access.
+func (jt *JobTracker) toPendingFront(j TrackedJob) (lane, bool) {
+	l := jt.lanePolicy.LaneForJob(j)
+	p := jt.pending[l]
+	wasEmpty := p.Len() == 0
+	jt.incompleteJobs[j.ID()] = p.PushFront(j)
+	return l, wasEmpty
 }
 
 func (jt *JobTracker) recoverFrom(compactionJobs []*TrackedCompactionJob, planJob *TrackedPlanJob) {
@@ -99,7 +124,7 @@ func (jt *JobTracker) recoverFrom(compactionJobs []*TrackedCompactionJob, planJo
 		return cmp.Compare(a.Order(), b.Order())
 	})
 	for _, job := range pending {
-		jt.incompleteJobs[job.ID()] = jt.pending.PushBack(job)
+		jt.toPendingBack(job)
 	}
 
 	slices.SortFunc(leased, func(a TrackedJob, b TrackedJob) int {
@@ -112,14 +137,15 @@ func (jt *JobTracker) recoverFrom(compactionJobs []*TrackedCompactionJob, planJo
 	jt.metrics.queue.Recover(pending, leased)
 }
 
-// Lease tries to find a pending job, returning a non-nil response if one was found.
-func (jt *JobTracker) Lease() (response *compactorschedulerpb.LeaseJobResponse, becameEmpty bool, err error) {
+// Lease tries to find a pending job in the given lane, returning a non-nil response if one was found.
+// becameEmpty reports whether the lane's pending queue is now empty.
+func (jt *JobTracker) Lease(l lane) (response *compactorschedulerpb.LeaseJobResponse, becameEmpty bool, err error) {
 	jt.mtx.Lock()
 	defer jt.mtx.Unlock()
 
-	e := jt.pending.Front()
+	p := jt.pending[l]
+	e := p.Front()
 	if e == nil {
-		// There were no jobs
 		return nil, false, nil
 	}
 
@@ -132,7 +158,7 @@ func (jt *JobTracker) Lease() (response *compactorschedulerpb.LeaseJobResponse, 
 		return nil, false, err
 	}
 
-	jt.pending.Remove(e)
+	p.Remove(e)
 
 	id := jj.ID()
 	if id == planJobId {
@@ -141,32 +167,43 @@ func (jt *JobTracker) Lease() (response *compactorschedulerpb.LeaseJobResponse, 
 	jt.incompleteJobs[id] = jt.active.PushBack(jj)
 	jt.metrics.queue.Leased(jj)
 
-	return jj.ToLeaseResponse(jt.tenant), jt.isPendingEmpty(), nil
+	return jj.ToLeaseResponse(jt.tenant), p.Len() == 0, nil
 }
 
-// Does not acquire any lock. It is required that any callers hold an appropriate lock.
-func (jt *JobTracker) isPendingEmpty() bool {
-	return jt.pending.Front() == nil
+// isPendingEmpty reports whether the provided lane has no pending jobs. Callers must have exclusive access.
+func (jt *JobTracker) isPendingEmpty(l lane) bool {
+	return jt.pending[l].Len() == 0
 }
 
-func (jt *JobTracker) Remove(id string, epoch int64, complete bool) (removed bool, becameEmpty bool, err error) {
+// nonEmptyLanes returns the lanes with pending jobs. Callers must have exclusive access.
+func (jt *JobTracker) nonEmptyLanes() []lane {
+	lanes := make([]lane, 0, len(jt.pending))
+	for l, lst := range jt.pending {
+		if lst.Len() > 0 {
+			lanes = append(lanes, l)
+		}
+	}
+	return lanes
+}
+
+func (jt *JobTracker) Remove(id string, epoch int64, complete bool) (removed bool, emptied *lane, err error) {
 	jt.mtx.Lock()
 	defer jt.mtx.Unlock()
 
 	e, ok := jt.incompleteJobs[id]
 	if !ok {
-		return false, false, nil
+		return false, nil, nil
 	}
 
 	j := e.Value.(TrackedJob)
 	if j.Epoch() != epoch {
-		return false, false, nil
+		return false, nil, nil
 	}
 
 	if jt.isPlanJobLeased && id == planJobId {
 		// A plan job that was leased is being abandoned. Complete is not checked here because plan jobs are completed through OfferCompactionJobs.
 		if err := jt.persister.WriteAndDeleteJobs(nil, jt.completedJobsWith(j)); err != nil {
-			return false, false, fmt.Errorf("failed deleting jobs: %w", err)
+			return false, nil, fmt.Errorf("failed deleting jobs: %w", err)
 		}
 		jt.stopTrackingCompleteCompactionJobs()
 	} else if jt.isPlanJobLeased && complete {
@@ -175,17 +212,17 @@ func (jt *JobTracker) Remove(id string, epoch int64, complete bool) (removed boo
 		jj, ok := copied.(*TrackedCompactionJob)
 		if !ok {
 			// This should never happen
-			return false, false, fmt.Errorf("unexpected job type encountered")
+			return false, nil, fmt.Errorf("unexpected job type encountered")
 		}
 		jj.MarkComplete(jt.clock.Now())
 		if err := jt.persister.WriteAndDeleteJobs([]TrackedJob{jj}, nil); err != nil {
-			return false, false, fmt.Errorf("failed writing complete job: %w", err)
+			return false, nil, fmt.Errorf("failed writing complete job: %w", err)
 		}
 		jt.completeCompactionJobs = append(jt.completeCompactionJobs, jj)
 	} else {
 		// This job is either completed or abandoned and we don't need to track it anymore
 		if err := jt.persister.DeleteJob(j); err != nil {
-			return false, false, fmt.Errorf("failed deleting job: %w", err)
+			return false, nil, fmt.Errorf("failed deleting job: %w", err)
 		}
 	}
 
@@ -193,12 +230,17 @@ func (jt *JobTracker) Remove(id string, epoch int64, complete bool) (removed boo
 	if j.IsLeased() {
 		jt.active.Remove(e)
 		jt.metrics.queue.Complete(j)
-		return true, false, nil
+		return true, nil, nil
 	}
 
-	jt.pending.Remove(e)
+	l := jt.lanePolicy.LaneForJob(j)
+	p := jt.pending[l]
+	p.Remove(e)
 	jt.metrics.queue.DropPending(j)
-	return true, jt.isPendingEmpty(), nil
+	if p.Len() == 0 {
+		return true, &l, nil
+	}
+	return true, nil, nil
 }
 
 // Maintenance performs two periodic tasks: expiring leases and scheduling plan jobs.
@@ -209,8 +251,8 @@ func (jt *JobTracker) Remove(id string, epoch int64, complete bool) (removed boo
 // A new plan job is added to pending when the current planning window (determined by planningInterval
 // and compactionWaitPeriod) has not yet been planned.
 //
-// Maintenance returns true when err is nil and the pending queue transitioned from empty to non-empty.
-func (jt *JobTracker) Maintenance(leaseDuration time.Duration, enforceLeaseExpiration, plan bool, planningInterval, compactionWaitPeriod time.Duration) (bool, error) {
+// Maintenance returns the lanes whose pending queues transitioned from empty to non-empty.
+func (jt *JobTracker) Maintenance(leaseDuration time.Duration, enforceLeaseExpiration, plan bool, planningInterval, compactionWaitPeriod time.Duration) ([]lane, error) {
 	jt.mtx.Lock()
 	defer jt.mtx.Unlock()
 
@@ -229,7 +271,7 @@ func (jt *JobTracker) Maintenance(leaseDuration time.Duration, enforceLeaseExpir
 	}
 
 	if len(reviveJobs) == 0 && len(deleteJobs) == 0 && planJob == nil {
-		return false, nil
+		return nil, nil
 	}
 
 	writeJobs := reviveJobs
@@ -237,10 +279,10 @@ func (jt *JobTracker) Maintenance(leaseDuration time.Duration, enforceLeaseExpir
 		writeJobs = append(writeJobs, planJob)
 	}
 	if err := jt.persister.WriteAndDeleteJobs(writeJobs, deleteJobs); err != nil {
-		return false, fmt.Errorf("failed persisting during job tracker maintenance: %w", err)
+		return nil, fmt.Errorf("failed persisting during job tracker maintenance: %w", err)
 	}
 
-	wasEmpty := jt.isPendingEmpty()
+	var becameNonEmpty []lane
 
 	for _, j := range reviveJobs {
 		jt.trackFailure(j)
@@ -251,7 +293,9 @@ func (jt *JobTracker) Maintenance(leaseDuration time.Duration, enforceLeaseExpir
 		}
 
 		jt.active.Remove(jt.incompleteJobs[id])
-		jt.incompleteJobs[id] = jt.pending.PushFront(j)
+		if l, wasEmpty := jt.toPendingFront(j); wasEmpty {
+			becameNonEmpty = append(becameNonEmpty, l)
+		}
 		jt.metrics.queue.Revive(j)
 	}
 
@@ -266,17 +310,19 @@ func (jt *JobTracker) Maintenance(leaseDuration time.Duration, enforceLeaseExpir
 
 	if planJob != nil {
 		// Prefer the plan job at the front of the queue to refresh the view of pending jobs
-		jt.incompleteJobs[planJobId] = jt.pending.PushFront(planJob)
+		if l, wasEmpty := jt.toPendingFront(planJob); wasEmpty {
+			becameNonEmpty = append(becameNonEmpty, l)
+		}
 		jt.metrics.queue.Pending(planJob)
 		// Drop the previous completion time since there is now a pending job that overwrote it
 		jt.completePlanTime = time.Time{}
 	}
 
-	return wasEmpty && !jt.isPendingEmpty(), nil
+	return becameNonEmpty, nil
 }
 
 // computeLeaseExpiration iterates through all the active jobs known by the JobTracker to find ones that have expired leases.
-// If a job has an expired lease and has been active under the maximum number of times, it will be returned to the front of the queue.
+// If a job has an expired lease and has been active under the maximum number of times, it will be returned to the front of its pending queue.
 // Otherwise a job with an expired lease will be removed from the tracker.
 // This function only computes what needs to change without persisting or modifying in-memory state.
 // A write lock must be held in order to call this function.
@@ -288,7 +334,7 @@ func (jt *JobTracker) computeLeaseExpiration(leaseDuration time.Duration, now ti
 
 		j := e.Value.(TrackedJob)
 		if now.Sub(j.StatusTime()) > leaseDuration {
-			// Can the job be returned to the queue?
+			// Can the job be returned to its pending queue?
 			if jt.canRetry(j) {
 				// Copy before modifying
 				jj := j.CopyBase()
@@ -353,58 +399,65 @@ func (jt *JobTracker) RenewLease(id string, epoch int64) bool {
 	return false
 }
 
-func (jt *JobTracker) CancelLease(id string, epoch int64) (canceled bool, becamePending bool, err error) {
+func (jt *JobTracker) CancelLease(id string, epoch int64, interrupted bool) (canceled bool, becamePending *lane, err error) {
 	jt.mtx.Lock()
 	defer jt.mtx.Unlock()
 
 	e, ok := jt.incompleteJobs[id]
 	if !ok {
-		return false, false, nil
+		return false, nil, nil
 	}
 
 	j := e.Value.(TrackedJob)
 	if !j.IsLeased() || j.Epoch() != epoch {
-		return false, false, nil
+		return false, nil, nil
 	}
 
-	wasEmpty := jt.isPendingEmpty()
-	revive := jt.canRetry(j)
+	revive := interrupted || jt.canRetry(j)
 	if revive {
 		// Copy the value, don't want to leave a modification if the write fails
 		jj := j.CopyBase()
 		jj.ClearLease()
+		if interrupted {
+			// Don't count the previous lease against the job
+			jj.DecrementLeaseCount()
+		}
 
 		if jj.ID() == planJobId {
 			err = jt.persister.WriteAndDeleteJobs([]TrackedJob{jj}, jt.completedJobsWith())
 			if err != nil {
-				return false, false, err
+				return false, nil, err
 			}
 		} else {
 			err = jt.persister.WriteJob(jj)
 			if err != nil {
-				return false, false, err
+				return false, nil, err
 			}
 		}
-		jt.active.Remove(jt.incompleteJobs[jj.ID()])
-		jt.incompleteJobs[jj.ID()] = jt.pending.PushFront(jj)
+		jt.active.Remove(e)
+		l, wasEmpty := jt.toPendingFront(jj)
 		jt.metrics.queue.Revive(jj)
-
+		if wasEmpty {
+			becamePending = &l
+		}
 	} else {
 		err := jt.persister.DeleteJob(j)
 		if err != nil {
-			return false, false, err
+			return false, nil, err
 		}
 		jt.metrics.queue.Complete(j)
-		jt.active.Remove(jt.incompleteJobs[j.ID()])
-		delete(jt.incompleteJobs, j.ID())
+		jt.active.Remove(e)
+		delete(jt.incompleteJobs, id)
 	}
-	jt.trackFailure(j)
+	if !interrupted {
+		jt.trackFailure(j)
+	}
 
 	if id == planJobId {
 		jt.stopTrackingCompleteCompactionJobs()
 	}
 
-	return true, wasEmpty && revive, nil
+	return true, becamePending, nil
 }
 
 // trackFailure records a repeated failure metric if the job exceeded the failure threshold.
@@ -423,13 +476,13 @@ func (jt *JobTracker) canRetry(j TrackedJob) bool {
 // OfferCompactionJobs processes the results from a plan job. Since planning offers a fresh view of pending work all remaining pending work
 // is replaced. Only a subset of the offered jobs may be accepted. The plan job itself will be considered completed if the epoch
 // provided was a match.
-func (jt *JobTracker) OfferCompactionJobs(jobs []*TrackedCompactionJob, planJobEpoch int64) (accepted int, found bool, transition rotationTransition, err error) {
+func (jt *JobTracker) OfferCompactionJobs(jobs []*TrackedCompactionJob, planJobEpoch int64) (accepted int, found bool, transitions []laneTransition, err error) {
 	jt.mtx.Lock()
 	defer jt.mtx.Unlock()
 
 	planJob, match := jt.checkPlanJobEpoch(planJobEpoch)
 	if !match {
-		return 0, false, rotationNoChange, nil
+		return 0, false, nil, nil
 	}
 
 	conflictMap := make(map[string]struct{})
@@ -472,7 +525,11 @@ func (jt *JobTracker) OfferCompactionJobs(jobs []*TrackedCompactionJob, planJobE
 		preventDeleteIds[j.ID()] = struct{}{}
 	}
 
-	deleteJobs := make([]TrackedJob, 0, len(jt.completeCompactionJobs)+jt.pending.Len())
+	pendingCount := 0
+	for _, lst := range jt.pending {
+		pendingCount += lst.Len()
+	}
+	deleteJobs := make([]TrackedJob, 0, len(jt.completeCompactionJobs)+pendingCount)
 	// Delete completed jobs, unless they will be overwritten anyway by an accepted job.
 	for _, j := range jt.completeCompactionJobs {
 		id := j.ID()
@@ -481,11 +538,13 @@ func (jt *JobTracker) OfferCompactionJobs(jobs []*TrackedCompactionJob, planJobE
 		}
 	}
 	// Previous pending jobs need to be deleted, unless they are already being overwritten. They are getting completely replaced by acceptedJobs.
-	for e := jt.pending.Front(); e != nil; e = e.Next() {
-		j := e.Value.(TrackedJob)
-		id := j.ID()
-		if _, ok := preventDeleteIds[id]; !ok {
-			deleteJobs = append(deleteJobs, j)
+	for _, lst := range jt.pending {
+		for e := lst.Front(); e != nil; e = e.Next() {
+			j := e.Value.(TrackedJob)
+			id := j.ID()
+			if _, ok := preventDeleteIds[id]; !ok {
+				deleteJobs = append(deleteJobs, j)
+			}
 		}
 	}
 
@@ -496,45 +555,69 @@ func (jt *JobTracker) OfferCompactionJobs(jobs []*TrackedCompactionJob, planJobE
 
 	err = jt.persister.WriteAndDeleteJobs(writeJobs, deleteJobs)
 	if err != nil {
-		return 0, true, rotationNoChange, fmt.Errorf("failed writing offered jobs: %w", err)
+		return 0, true, nil, fmt.Errorf("failed writing offered jobs: %w", err)
 	}
 
 	// Remember the time the plan completed to help determine when to submit the next plan job
 	jt.completePlanTime = pjj.StatusTime()
 
-	wasEmpty := jt.isPendingEmpty()
+	prevNonEmpty := jt.nonEmptyLaneSet()
 
-	// Clear out previously pending jobs from incompleteJobs
-	for e := jt.pending.Front(); e != nil; e = e.Next() {
-		j := e.Value.(TrackedJob)
-		delete(jt.incompleteJobs, j.ID())
-		jt.metrics.queue.DropPending(j)
+	// Clear out previously pending jobs and rebuild the per-lane queues in order.
+	for _, lst := range jt.pending {
+		for e := lst.Front(); e != nil; e = e.Next() {
+			j := e.Value.(TrackedJob)
+			delete(jt.incompleteJobs, j.ID())
+			jt.metrics.queue.DropPending(j)
+		}
 	}
-
-	// Recreate the pending list in order
-	jt.pending = list.New()
+	jt.pending = make(map[lane]*list.List)
+	for _, l := range jt.lanePolicy.AllLanes() {
+		jt.pending[l] = list.New()
+	}
 	for _, j := range acceptedJobs {
-		jt.incompleteJobs[j.ID()] = jt.pending.PushBack(j)
+		jt.toPendingBack(j)
 		jt.metrics.queue.Pending(j)
 	}
 
 	jt.stopTrackingCompleteCompactionJobs()
 
 	// Remove the plan job
-	e := jt.incompleteJobs[planJobId]
-	jt.active.Remove(e)
+	jt.active.Remove(jt.incompleteJobs[planJobId])
 	delete(jt.incompleteJobs, planJobId)
 	jt.metrics.queue.Complete(planJob)
 	accepted = len(acceptedJobs)
 
-	// Determine rotation transition
-	transition = rotationNoChange
-	if accepted > 0 && wasEmpty {
-		transition = rotationAddTracker
-	} else if accepted == 0 && !wasEmpty {
-		transition = rotationRemoveTracker
+	transitions = laneTransitionsBetween(prevNonEmpty, jt.nonEmptyLaneSet())
+	return accepted, true, transitions, nil
+}
+
+// nonEmptyLaneSet returns the set of lanes with pending jobs. Callers must have exclusive access.
+func (jt *JobTracker) nonEmptyLaneSet() map[lane]struct{} {
+	set := make(map[lane]struct{}, len(jt.pending))
+	for l, lst := range jt.pending {
+		if lst.Len() > 0 {
+			set[l] = struct{}{}
+		}
 	}
-	return accepted, true, transition, nil
+	return set
+}
+
+// laneTransitionsBetween reports add transitions for lanes newly non-empty and remove transitions for
+// lanes newly empty.
+func laneTransitionsBetween(before, after map[lane]struct{}) []laneTransition {
+	var transitions []laneTransition
+	for l := range after {
+		if _, ok := before[l]; !ok {
+			transitions = append(transitions, laneTransition{lane: l, kind: rotationAddTracker})
+		}
+	}
+	for l := range before {
+		if _, ok := after[l]; !ok {
+			transitions = append(transitions, laneTransition{lane: l, kind: rotationRemoveTracker})
+		}
+	}
+	return transitions
 }
 
 func addBlocksToConflictMap(conflict map[string]struct{}, job *TrackedCompactionJob) {

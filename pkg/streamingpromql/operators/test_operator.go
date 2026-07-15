@@ -4,6 +4,7 @@ package operators
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -21,6 +22,7 @@ type TestOperator struct {
 	Data                     []types.InstantVectorSeriesData
 	EvaluationStats          *types.OperatorEvaluationStats
 	Annotations              annotations.Annotations
+	SeriesMetadataCalled     bool
 	Prepared                 bool
 	AfterPrepareCalled       bool
 	FinishedReadingCalled    bool
@@ -38,6 +40,11 @@ func (t *TestOperator) ExpressionPosition() posrange.PositionRange {
 }
 
 func (t *TestOperator) SeriesMetadata(_ context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
+	if t.SeriesMetadataCalled {
+		return nil, errors.New("cannot call SeriesMetadata on an operator twice")
+	}
+
+	t.SeriesMetadataCalled = true
 	t.MatchersProvided = matchers
 
 	if len(t.Series) == 0 {
@@ -83,15 +90,12 @@ func (t *TestOperator) SeriesMetadata(_ context.Context, matchers types.Matchers
 }
 
 func (t *TestOperator) matches(series labels.Labels, matchers []*labels.Matcher) bool {
-	matches := true
 	for _, m := range matchers {
-		series.Range(func(l labels.Label) {
-			if l.Name == m.Name && !m.Matches(l.Value) {
-				matches = false
-			}
-		})
+		if !m.Matches(series.Get(m.Name)) {
+			return false
+		}
 	}
-	return matches
+	return true
 }
 
 func (t *TestOperator) NextSeries(_ context.Context) (types.InstantVectorSeriesData, error) {

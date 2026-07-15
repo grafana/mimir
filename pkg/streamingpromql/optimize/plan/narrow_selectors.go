@@ -60,21 +60,21 @@ func (n *NarrowSelectorsOptimizationPass) Apply(ctx context.Context, plan *plann
 	n.attempts.Inc()
 	addedHint := false
 
-	_ = optimize.Walk(plan.Root, optimize.VisitorFunc(func(node planning.Node, _ []planning.Node) error {
+	_ = optimize.Walk(plan.Root, optimize.VisitorFunc(func(node planning.Node, _ []planning.Node) (bool, error) {
 		e, ok := node.(*core.BinaryExpression)
 		if !ok {
-			return nil
+			return true, nil
 		}
 
 		// Only set hints for operations that are compatible with adding extra selectors to
 		// the right side of the expression. For example, "logical or" includes series from
 		// the right side only when they _don't_ have matching label sets on the left side.
 		if _, disallowed := disallowedOperations[e.Op]; disallowed {
-			return nil
+			return true, nil
 		}
 
 		if e.VectorMatching == nil {
-			return nil
+			return true, nil
 		}
 
 		// Labels created by label_replace or label_join anywhere within this binary
@@ -90,7 +90,7 @@ func (n *NarrowSelectorsOptimizationPass) Apply(ctx context.Context, plan *plann
 			addedHint = n.hintsForIgnoring(ctx, e, created) || addedHint
 		}
 
-		return nil
+		return true, nil
 	}))
 
 	if addedHint {
@@ -217,22 +217,27 @@ func filterLabels(lbls []string, created map[string]struct{}) []string {
 	return out
 }
 
-// createdLabels returns a set of label names created by a call to label_replace or label_join
-// by any children of the given node.
+// createdLabels returns a set of label names created by a call to label_replace, label_join or
+// histogram_quantiles by any children of the given node.
 func createdLabels(node planning.Node) map[string]struct{} {
 	created := make(map[string]struct{})
 
-	_ = optimize.Walk(node, optimize.VisitorFunc(func(n planning.Node, path []planning.Node) error {
+	_ = optimize.Walk(node, optimize.VisitorFunc(func(n planning.Node, path []planning.Node) (bool, error) {
 		if f, ok := n.(*core.FunctionCall); ok {
-			if (f.Function == functions.FUNCTION_LABEL_REPLACE || f.Function == functions.FUNCTION_LABEL_JOIN) && len(f.Args) > 1 {
-				// The second parameter for both label_replace and label_join is the destination label.
-				if lbl, ok := f.Args[1].(*core.StringLiteral); ok {
-					created[lbl.Value] = struct{}{}
+			switch f.Function {
+			case functions.FUNCTION_LABEL_REPLACE, functions.FUNCTION_LABEL_JOIN, functions.FUNCTION_HISTOGRAM_QUANTILES:
+				// The second parameter for label_replace, label_join and histogram_quantiles is the
+				// destination label. It is synthesised by the function and does not exist on the raw
+				// series fetched from storage, so we must not generate a matcher for it.
+				if len(f.Args) > 1 {
+					if lbl, ok := f.Args[1].(*core.StringLiteral); ok {
+						created[lbl.Value] = struct{}{}
+					}
 				}
 			}
 		}
 
-		return nil
+		return true, nil
 	}))
 
 	return created

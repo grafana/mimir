@@ -5,9 +5,13 @@ package remoteexec
 import (
 	"context"
 	"fmt"
+	"slices"
+
+	"github.com/antithesishq/antithesis-sdk-go/assert"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/splitandcache"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 )
@@ -33,29 +37,131 @@ func (o *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, 
 		return plan, nil
 	}
 
+	multiNodeGroupsEnabled := o.enableMultipleNodeRequests && maximumSupportedQueryPlanVersion >= planning.QueryPlanV3
+
 	var groups remoteExecutionGroupSet
 
-	if o.enableMultipleNodeRequests && maximumSupportedQueryPlanVersion >= planning.QueryPlanV3 {
+	if multiNodeGroupsEnabled {
 		groups = remoteExecutionGroupSet{}
 	}
 
-	if wrappedAnyChild, err := o.wrapShardedExpressions(plan.Root, groups); err != nil {
+	// When a query has been rewritten to spin off subqueries, each evaluation root is a separate
+	// query and must have remote execution applied to it independently: if its subtree is sharded, each
+	// sharded leg is executed remotely; otherwise the entire subtree is. The rest of the plan (the outer
+	// instant query) runs on the query-frontend.
+	if evaluationRoots, err := collectEvaluationRoots(plan.Root); err != nil {
 		return nil, err
-	} else if wrappedAnyChild {
+	} else if len(evaluationRoots) > 0 {
+		for _, evaluationRoot := range evaluationRoots {
+			if err := o.wrapEvaluationRoot(evaluationRoot, groups, len(evaluationRoots) > 1); err != nil {
+				return nil, err
+			}
+		}
+
 		return plan, nil
 	}
 
-	var err error
-	plan.Root, err = o.wrapInRemoteExecutionNode(
-		plan.Root,
-		false,
-		nil, // No need to pass groups here as we'll wrap the whole request in a single group.
+	if err := o.wrapPlanRoot(plan, groups); err != nil {
+		return nil, err
+	}
+
+	return plan, nil
+}
+
+func (o *OptimizationPass) wrapPlanRoot(plan *planning.QueryPlan, groups remoteExecutionGroupSet) error {
+	newRoot, err := o.applyToRootNode(plan.Root, groups, false)
+	if err != nil {
+		return err
+	}
+
+	plan.Root = newRoot
+	return nil
+}
+
+// wrapEvaluationRoot applies remote execution to a single EvaluationRoot's subtree, mirroring the
+// behaviour applied to the whole plan when there are no EvaluationRoot markers.
+func (o *OptimizationPass) wrapEvaluationRoot(evaluationRoot *core.EvaluationRoot, groups remoteExecutionGroupSet, haveMultipleRoots bool) error {
+	newRoot, err := o.applyToRootNode(evaluationRoot.Inner, groups, haveMultipleRoots)
+	if err != nil {
+		return err
+	}
+
+	evaluationRoot.Inner = newRoot
+	return nil
+}
+
+// applyToRootNode applies remote execution nodes to the provided root node.
+//
+// If the expression beneath the provided node is sharded, each sharded leg is wrapped in a RemoteExecutionGroup node.
+// Otherwise the entire child is wrapped (beneath any splitting and caching nodes, which run on the query-frontend).
+//
+// The new root node is returned, which may or may not be the same as the provided root node.
+func (o *OptimizationPass) applyToRootNode(root planning.Node, groups remoteExecutionGroupSet, eagerLoad bool) (planning.Node, error) {
+	if wrappedAnyChild, err := o.wrapShardedExpressions(root, groups); err != nil {
+		return nil, err
+	} else if wrappedAnyChild {
+		return root, nil
+	}
+
+	child := root
+	var parent planning.Node
+
+	// We want the splitting and caching nodes to run on the query-frontend, so the remote execution
+	// node should be a child of any splitting and caching nodes.
+	for isSplittingOrCachingNode(child) {
+		// If a splitting node is present, then we need to eagerly load this instance for the same reason as for sharded expressions.
+		eagerLoad = eagerLoad || isSplittingNode(child)
+
+		parent = child
+		child = child.Child(0)
+	}
+
+	wrappedChild, err := o.wrapInRemoteExecutionNode(
+		child,
+		eagerLoad,
+		groups,
 	)
 	if err != nil {
 		return nil, err
 	}
 
-	return plan, nil
+	if parent == nil {
+		// We want to replace the root with the wrapped child.
+		return wrappedChild, nil
+	}
+
+	if err := parent.ReplaceChild(0, wrappedChild); err != nil {
+		return nil, err
+	}
+
+	return root, nil
+}
+
+// collectEvaluationRoots returns the EvaluationRoot nodes in the plan.
+func collectEvaluationRoots(node planning.Node) ([]*core.EvaluationRoot, error) {
+	var uniqueRoots []*core.EvaluationRoot
+
+	err := optimize.Walk(node, optimize.VisitorFunc(func(node planning.Node, path []planning.Node) (bool, error) {
+		if evaluationRoot, ok := node.(*core.EvaluationRoot); ok {
+			// We might see the same root multiple times if the entire root is a duplicate expression.
+			// We don't expect there to be many EvaluationRoots, so we search a slice (rather than use a map).
+			// This keeps the return order consistent, which keeps behaviour predictable and makes tests simpler.
+			if !slices.Contains(uniqueRoots, evaluationRoot) {
+				uniqueRoots = append(uniqueRoots, evaluationRoot)
+			}
+
+			// EvaluationRoot markers are never nested inside one another, so no need to visit children.
+			return false, nil
+		}
+
+		return true, nil
+	}))
+
+	if err != nil {
+		return nil, err
+	}
+
+	return uniqueRoots, nil
 }
 
 func (o *OptimizationPass) wrapInRemoteExecutionNode(child planning.Node, eagerLoad bool, groups remoteExecutionGroupSet) (planning.Node, error) {
@@ -149,6 +255,10 @@ func (s remoteExecutionGroupSet) GetGroupForNode(node planning.Node, eagerLoad b
 	}
 
 	if selector == nil {
+		assert.Unreachable("could not find selector for node", map[string]any{
+			"eager_load": eagerLoad,
+			"node_type":  fmt.Sprintf("%T", node),
+		})
 		return nil, fmt.Errorf("could not find selector for node of type %T (this is a bug)", node)
 	}
 
@@ -186,4 +296,14 @@ func (s remoteExecutionGroupSet) createGroup(eagerLoad bool) *RemoteExecutionGro
 	return &RemoteExecutionGroup{
 		RemoteExecutionGroupDetails: &RemoteExecutionGroupDetails{EagerLoad: eagerLoad},
 	}
+}
+
+func isSplittingOrCachingNode(n planning.Node) bool {
+	_, isCache := n.(*splitandcache.Cache)
+	return isSplittingNode(n) || isCache
+}
+
+func isSplittingNode(n planning.Node) bool {
+	_, isTimeRangeSplit := n.(*splitandcache.TimeRangeSplit)
+	return isTimeRangeSplit
 }

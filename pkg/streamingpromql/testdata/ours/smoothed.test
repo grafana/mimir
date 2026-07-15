@@ -313,15 +313,11 @@ load 1s
   nans 0 NaN 2 NaN NaN 5 NaN NaN NaN NaN NaN
   infs 0 Inf 2 Inf Inf 5 Inf Inf Inf Inf Inf
 
-# These tests have been commented out since upstream Prometheus has recently
-# added support for smoothed/anchored histograms.
-# These tests have been commented out whilst a Mimir implementation is completed.
-
+# Instant `mixed smoothed` cases hit an upstream Prometheus engine panic (engine.go indexes
+# s.Floats[0] / s.Histograms[0] without checking len > 0 when both buckets are empty after the
+# smoothed selection). The MQE-side coverage lives in ours-only/smoothed.test.
 # eval instant at 1s mixed smoothed
-#  expect fail msg: smoothed and anchored modifiers do not work with native histograms
-
 # eval instant at 8s mixed smoothed
-#  expect fail msg: smoothed and anchored modifiers do not work with native histograms
 
 eval instant at 0 missing smoothed
   missing 0
@@ -550,21 +546,26 @@ eval instant at 5m delta(metric{instance="1"}[1m] smoothed)
 
 eval instant at 5m delta(metric{instance="2"}[1m] smoothed)
 
-# These tests have been commented out since upstream Prometheus has recently
-# added support for smoothed/anchored histograms.
-# These tests have been commented out whilst a Mimir implementation is completed.
+# At t=11s the extended smoothed window for instance="3" mixes floats and a histogram, so the
+# series emits MixedFloatsHistogramsWarning and is dropped. instance="1" and instance="2" return
+# their float-only smoothed results.
+eval instant at 11s increase(metric[1m] smoothed)
+  expect info msg: PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "metric"
+  expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "metric"
+  {instance="1"} 13.333333333333334
+  {instance="2"} NaN
 
-# MQE and Prometheus have different behaviour here.
-# MQE will fail a query where histograms are found within the query range, or in the points immediately either side of the range.
-# Prometheus will fail a query where histograms are found anywhere within the extended range window.
-# eval instant at 11s increase(metric[1m] smoothed)
-#   expect fail msg: smoothed and anchored modifiers do not work with native histograms
+eval instant at 11s rate(metric[1m] smoothed)
+  expect info msg: PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "metric"
+  expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "metric"
+  {instance="1"} 0.22222222222222224
+  {instance="2"} NaN
 
-# eval instant at 11s rate(metric[1m] smoothed)
-#   expect fail msg: smoothed and anchored modifiers do not work with native histograms
-
-# eval instant at 11s delta(metric[1m] smoothed)
-#   expect fail msg: smoothed and anchored modifiers do not work with native histograms
+eval instant at 11s delta(metric[1m] smoothed)
+  expect no_info
+  expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "metric"
+  {instance="1"} 9.666666666666666
+  {instance="2"} NaN
 
 clear
 load 1m
@@ -786,3 +787,43 @@ eval instant at 182s delta(metric[1m1s] smoothed)
 eval instant at 182s rate(metric[1m1s] smoothed) / delta(metric[1m1s] smoothed)
   {} 0.017031319767812723
 
+# Smoothed instant interpolation between two gauge custom-bucket histograms with mismatched
+# bounds must reconcile the bounds and emit the mismatched-custom-buckets info annotation, matching
+# Prometheus. Here the look-back sample at t=0 (bounds [5]) and the look-ahead sample at t=30s
+# (bounds [5 10]) are interpolated at t=15s; the Sub reconciles the bounds (info: subtraction).
+clear
+load 30s
+  cb_gauge {{schema:-53 sum:2 count:2 custom_values:[5] buckets:[2] counter_reset_hint:gauge}} {{schema:-53 sum:6 count:6 custom_values:[5 10] buckets:[3 3] counter_reset_hint:gauge}}
+
+eval instant at 15s cb_gauge smoothed
+  expect info msg:PromQL info: mismatched custom buckets were reconciled during subtraction
+  cb_gauge {{schema:-53 count:4 sum:4 custom_values:[5] counter_reset_hint:gauge buckets:[2.5 1.5]}}
+
+# A float series in the requested range with a histogram only in the smoothed look-ahead window
+# (beyond the first sample after rangeEnd) must be treated as a mixed float/histogram window:
+# rate/increase/delta drop the point and emit MixedFloatsHistogramsWarning, matching Prometheus
+# which scans the full extended matrix. The look-ahead must be filled fully for MQE to see the
+# histogram at t=200s.
+clear
+load 10s
+  mixed _ _ _ _ 4 5 6 7 8 9 10 _ _ _ _ _ _ _ _ _ {{schema:0 sum:3 count:3 buckets:[3]}}
+
+eval instant at 100s rate(mixed[1m] smoothed)
+  expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "mixed"
+
+# Range-query variant of the look-ahead mixed-window check. A stepped smoothed range query reuses
+# the range vector ring buffer across steps, so this exercises the fillBuffer guard's "skip re-fill"
+# path that a single instant query never reaches. Floats sit at t=0m..9m and a single histogram at
+# t=10m. From t=5m onwards the smoothed look-ahead window (rangeEnd, rangeEnd+5m] reaches the t=10m
+# histogram, so those steps are a mixed float/histogram window and must be dropped with
+# MixedFloatsHistogramsWarning - matching Prometheus, which scans the full extended matrix. If the
+# look-ahead were only filled to the first sample past rangeEnd, MQE would miss the t=10m histogram
+# on the reused buffer and emit spurious rate values for t>=5m.
+clear
+load 1m
+  ramp 0 1 2 3 4 5 6 7 8 9 {{schema:0 count:1 sum:1}}
+
+eval range from 1m to 12m step 1m rate(ramp[2m] smoothed)
+  expect info msg: PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "ramp"
+  expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "ramp"
+  {} 0.008333333333333333 0.016666666666666666 0.016666666666666666 0.016666666666666666 _ _ _ _ _ _ _ _

@@ -597,7 +597,17 @@ func TestConfigValidation(t *testing.T) {
 			expectAnyError: true,
 		},
 		{
-			name: "should fail if compartments are enabled but the Kafka address is not parameterised by write compartment",
+			name: "should pass if only the ingester is enabled and the Kafka topic uses an explicit read compartment instead of the placeholder",
+			getTestConfig: func() *Config {
+				cfg := validCompartmentsConfig()
+				cfg.Target = flagext.StringSliceCSV{Ingester}
+				cfg.IngestStorage.KafkaConfig.Topic = "mimir-ingest-rc-0"
+				return cfg
+			},
+			expectAnyError: false,
+		},
+		{
+			name: "should fail if the ingester is enabled with more than one write compartment but the Kafka address is not parameterised by write compartment",
 			getTestConfig: func() *Config {
 				cfg := validCompartmentsConfig()
 				cfg.IngestStorage.KafkaConfig.Address = flagext.StringSliceCSV{"localhost:9092"}
@@ -606,7 +616,7 @@ func TestConfigValidation(t *testing.T) {
 			expectAnyError: true,
 		},
 		{
-			name: "should fail if compartments are enabled but only some of the Kafka addresses are parameterised by write compartment",
+			name: "should fail if the ingester is enabled with more than one write compartment but only some of the Kafka addresses are parameterised by write compartment",
 			getTestConfig: func() *Config {
 				cfg := validCompartmentsConfig()
 				cfg.IngestStorage.KafkaConfig.Address = flagext.StringSliceCSV{"kafka-wc-<write-compartment-id>:9092", "localhost:9092"}
@@ -615,13 +625,84 @@ func TestConfigValidation(t *testing.T) {
 			expectAnyError: true,
 		},
 		{
-			name: "should fail if compartments and the distributor are enabled but Kafka topic auto-creation is on",
+			name: "should pass if there is a single write compartment and the Kafka address is not parameterised by write compartment",
+			getTestConfig: func() *Config {
+				cfg := validCompartmentsConfig()
+				cfg.Compartments.Write.NumCompartments = 1
+				cfg.Distributor.WriteCompartmentID = 0
+				cfg.IngestStorage.KafkaConfig.Address = flagext.StringSliceCSV{"localhost:9092"}
+				return cfg
+			},
+			expectAnyError: false,
+		},
+		{
+			name: "should pass if the ingester is not enabled and the Kafka address is not parameterised by write compartment",
+			getTestConfig: func() *Config {
+				cfg := validCompartmentsConfig()
+				cfg.Target = flagext.StringSliceCSV{Distributor}
+				cfg.IngestStorage.KafkaConfig.Address = flagext.StringSliceCSV{"localhost:9092"}
+				return cfg
+			},
+			expectAnyError: false,
+		},
+		{
+			name: "should fail if the query-frontend is enabled but the Kafka topic is not parameterised by read compartment",
+			getTestConfig: func() *Config {
+				cfg := validCompartmentsConfig()
+				cfg.Target = flagext.StringSliceCSV{QueryFrontend}
+				cfg.IngestStorage.KafkaConfig.Topic = "mimir-ingest"
+				return cfg
+			},
+			expectAnyError: true,
+		},
+		{
+			name: "should fail if the query-frontend is enabled with more than one write compartment but the Kafka address is not parameterised by write compartment",
+			getTestConfig: func() *Config {
+				cfg := validCompartmentsConfig()
+				cfg.Target = flagext.StringSliceCSV{QueryFrontend}
+				cfg.IngestStorage.KafkaConfig.Address = flagext.StringSliceCSV{"localhost:9092"}
+				return cfg
+			},
+			expectAnyError: true,
+		},
+		{
+			name: "should pass if compartments and the distributor are enabled with Kafka topic auto-creation on",
 			getTestConfig: func() *Config {
 				cfg := validCompartmentsConfig()
 				cfg.IngestStorage.KafkaConfig.AutoCreateTopicEnabled = true
 				return cfg
 			},
+			expectAnyError: false,
+		},
+		{
+			name: "should fail if compartments are enabled but the blocks bucket name is not parameterised by read compartment",
+			getTestConfig: func() *Config {
+				cfg := validCompartmentsConfig()
+				cfg.BlocksStorage.Bucket.Filesystem.Directory = "/data/blocks"
+				return cfg
+			},
 			expectAnyError: true,
+		},
+		{
+			name: "should pass if only the store-gateway is enabled and the blocks bucket name is explicit",
+			getTestConfig: func() *Config {
+				cfg := validCompartmentsConfig()
+				cfg.Target = flagext.StringSliceCSV{StoreGateway}
+				cfg.BlocksStorage.Bucket.Filesystem.Directory = "/data/blocks-rc-0"
+				return cfg
+			},
+			expectAnyError: false,
+		},
+		{
+			name: "should pass if the ruler is enabled and the blocks bucket name is not parameterised, since the ruler queries via remote rule evaluation",
+			getTestConfig: func() *Config {
+				cfg := validCompartmentsConfig()
+				cfg.Target = flagext.StringSliceCSV{Ruler}
+				cfg.Ruler.QueryFrontend.Address = "dns:///query-frontend:9095"
+				cfg.BlocksStorage.Bucket.Filesystem.Directory = "/data/blocks"
+				return cfg
+			},
+			expectAnyError: false,
 		},
 		{
 			name: "should fail if the offset catalogue is enabled together with more than one write compartment",
@@ -689,6 +770,8 @@ func validCompartmentsConfig() *Config {
 	cfg.Compartments.Read.NumCompartments = 2
 	cfg.Compartments.Write.NumCompartments = 2
 	cfg.Distributor.WriteCompartmentID = 1
+	cfg.BlocksStorage.Bucket.Backend = bucket.Filesystem
+	cfg.BlocksStorage.Bucket.Filesystem.Directory = "/data/blocks-rc-<read-compartment-id>"
 	return cfg
 }
 

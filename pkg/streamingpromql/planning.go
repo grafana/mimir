@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/model/timestamp"
@@ -31,6 +32,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/commonsubexpressionelimination"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/multiaggregation"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/rangevectorsplitting"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/splitandcache"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	planningmetrics "github.com/grafana/mimir/pkg/streamingpromql/planning/metrics"
@@ -77,27 +79,13 @@ type QueryPlanner struct {
 }
 
 func NewQueryPlanner(opts EngineOpts, versionProvider QueryPlanVersionProvider) (*QueryPlanner, error) {
-	return NewQueryPlannerWithTime(opts, versionProvider, time.Now)
-}
-
-// NewQueryPlannerWithTime is like NewQueryPlanner but uses the given time function. Useful for tests that need a fixed
-// "now" for OOO window calculations).
-func NewQueryPlannerWithTime(opts EngineOpts, versionProvider QueryPlanVersionProvider, timeNow func() time.Time) (*QueryPlanner, error) {
 	planner, err := NewQueryPlannerWithoutOptimizationPasses(opts, versionProvider)
 	if err != nil {
 		return nil, err
 	}
 
-	// FIXME: it makes sense to register these common optimization passes here, but we'll likely need to rework this once
-	// we introduce query-frontend-specific optimization passes like sharding and splitting for two reasons:
-	//  1. We want to avoid a circular dependency between this package and the query-frontend package where most of the logic for these optimization passes lives.
-	//  2. We don't want to register these optimization passes in queriers.
 	planner.RegisterASTOptimizationPass(&ast.InsertOmittedTargetInfoSelector{}) // We apply this first so that all other optimization passes can safely assume that info functions have exactly 2 arguments.
 	planner.RegisterASTOptimizationPass(&ast.CollapseConstants{})               // We expect this to be applied early to simplify the logic for the rest of the optimization passes.
-
-	if opts.EnablePruneToggles {
-		planner.RegisterASTOptimizationPass(ast.NewPruneToggles(opts.CommonOpts.Reg)) // Do this next to ensure that toggled off expressions are removed before the other optimization passes are applied.
-	}
 
 	// NOTE: This optimization pass MUST run before SortLabelsAndMatchers since it does not preserve the order of matchers.
 	if opts.EnableReduceMatchers {
@@ -129,7 +117,7 @@ func NewQueryPlannerWithTime(opts EngineOpts, versionProvider QueryPlanVersionPr
 			return nil, errors.New("range vector splitting and common subexpression elimination are enabled but range query range vector common subexpression elimination is not enabled")
 		}
 
-		planner.RegisterQueryPlanOptimizationPass(rangevectorsplitting.NewOptimizationPass(splitInterval, opts.Limits, timeNow, opts.CommonOpts.Reg, opts.Logger))
+		planner.RegisterQueryPlanOptimizationPass(rangevectorsplitting.NewOptimizationPass(splitInterval, opts.CommonOpts.Reg, opts.Logger))
 	}
 
 	// This optimization pass must be registered before common subexpression elimination, if that is enabled.
@@ -143,8 +131,12 @@ func NewQueryPlannerWithTime(opts EngineOpts, versionProvider QueryPlanVersionPr
 		return nil, errors.New("cannot enable range query range vector common subexpression elimination without common subexpression elimination")
 	}
 
+	if opts.EnableScalarCommonSubexpressionElimination && !opts.EnableCommonSubexpressionElimination {
+		return nil, errors.New("cannot enable scalar common subexpression elimination without common subexpression elimination")
+	}
+
 	if opts.EnableCommonSubexpressionElimination {
-		planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(opts.EnableSubsetSelectorElimination, opts.EnableRangeQueryRangeVectorCommonSubexpressionElimination, opts.CommonOpts.Reg, opts.Logger))
+		planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(opts.EnableSubsetSelectorElimination, opts.EnableRangeQueryRangeVectorCommonSubexpressionElimination, opts.EnableScalarCommonSubexpressionElimination, opts.CommonOpts.Reg, opts.Logger))
 	}
 
 	if opts.EnableMultiAggregation {
@@ -157,6 +149,17 @@ func NewQueryPlannerWithTime(opts EngineOpts, versionProvider QueryPlanVersionPr
 
 	if opts.EnableNarrowBinarySelectors {
 		planner.RegisterQueryPlanOptimizationPass(plan.NewNarrowSelectorsOptimizationPass(opts.CommonOpts.Reg, opts.Logger))
+	}
+
+	if opts.RangeQuerySplittingAndCaching.SplitEnabled || opts.RangeQuerySplittingAndCaching.CacheEnabled {
+		planner.RegisterQueryPlanOptimizationPass(splitandcache.NewOptimizationPass(
+			opts.RangeQuerySplittingAndCaching.SplitEnabled,
+			opts.RangeQuerySplittingAndCaching.SplitInterval,
+			opts.RangeQuerySplittingAndCaching.CacheEnabled,
+			opts.Limits,
+			opts.CommonOpts.Reg,
+			opts.Logger,
+		))
 	}
 
 	return planner, nil
@@ -253,7 +256,7 @@ func (p *QueryPlanner) ParseAndApplyASTOptimizationPasses(ctx context.Context, q
 	}
 
 	for _, o := range p.astOptimizationPasses {
-		expr, err = p.runASTStage(o.Name(), observer, func() (parser.Expr, error) { return o.Apply(ctx, expr) })
+		expr, err = p.runASTStage(o.Name(), observer, func() (parser.Expr, error) { return o.Apply(ctx, expr, timeRange) })
 
 		if err != nil {
 			return nil, err
@@ -339,7 +342,11 @@ func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange ty
 	}
 
 	if plan.Version > maximumSupportedQueryPlanVersion {
-		return nil, fmt.Errorf("maximum supported query plan version is %d, but generated plan version is %d - this is a bug", maximumSupportedQueryPlanVersion, plan.Version)
+		level.Warn(spanLogger).Log(
+			"msg", "generated query plan has version higher than maximum version supported by queriers - this may be OK if the affected nodes will only be evaluated by this query-frontend",
+			"generated_plan_version", plan.Version,
+			"maximum_supported_query_plan_version", maximumSupportedQueryPlanVersion,
+		)
 	}
 
 	p.generatedPlans.WithLabelValues(plan.Version.String()).Inc()
@@ -561,9 +568,9 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr, timeRange types.QueryTimeR
 			(lhsType == parser.ValueTypeScalar && rhsType == parser.ValueTypeVector)
 
 		if isVectorScalar {
-			// Comparison vector-scalar operations without bool modifier don't drop the __name__ label.
-			// So don't need to wrap in DeduplicateAndMerge.
-			if expr.Op.IsComparisonOperator() && !expr.ReturnBool {
+			// Vector-scalar operations that retain the __name__ label (comparison filters and trim operators)
+			// don't need to be wrapped in DeduplicateAndMerge.
+			if promqlext.RetainsMetricName(expr.Op, expr.ReturnBool) {
 				return binExpr, nil
 			}
 
@@ -576,6 +583,22 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr, timeRange types.QueryTimeR
 		return binExpr, nil
 
 	case *parser.Call:
+		if core.IsEvaluationRootFunctionCall(expr) {
+			if len(expr.Args) != 1 {
+				return nil, fmt.Errorf("%s expects exactly one argument, but got %d", expr.Func.Name, len(expr.Args))
+			}
+
+			inner, err := p.nodeFromExpr(expr.Args[0], timeRange)
+			if err != nil {
+				return nil, err
+			}
+
+			return &core.EvaluationRoot{
+				EvaluationRootDetails: &core.EvaluationRootDetails{},
+				Inner:                 inner,
+			}, nil
+		}
+
 		fnc, ok := findFunction(expr.Func.Name)
 		if !ok {
 			return nil, compat.NewNotSupportedError(fmt.Sprintf("'%s' function", expr.Func.Name))
@@ -594,6 +617,10 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr, timeRange types.QueryTimeR
 				if !supported {
 					return nil, ErrAnchoredIncompatibleFunction{functionName: expr.Func.Name}
 				}
+				// resets and changes select the anchor across both floats and histograms and count
+				// transitions through the in-range samples; they do not need synthetic float boundary values.
+				// Flag this so the range vector selector skips the float boundary mutation for these functions.
+				matrixSelector.AnchoredResetsChanges = expr.Func.Name == "resets" || expr.Func.Name == "changes"
 			}
 			if ok && matrixSelector.Smoothed {
 				_, supported := promql.SmoothedSafeFunctions[expr.Func.Name]
@@ -898,6 +925,7 @@ func functionNeedsDeduplication(fnc functions.Function) bool {
 		functions.FUNCTION_HISTOGRAM_COUNT,
 		functions.FUNCTION_HISTOGRAM_FRACTION,
 		functions.FUNCTION_HISTOGRAM_QUANTILE,
+		functions.FUNCTION_HISTOGRAM_QUANTILES,
 		functions.FUNCTION_HISTOGRAM_STDDEV,
 		functions.FUNCTION_HISTOGRAM_STDVAR,
 		functions.FUNCTION_HISTOGRAM_SUM,

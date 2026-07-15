@@ -241,6 +241,7 @@
           ||| % $._config {
             rate_interval: $.rateInterval('15m'),
           },
+          'for': '2m',  // Extra buffer to allow the compactor that was restarted close to the end of previous update cycle to discover the tenant and udpate their bucket.
           labels: {
             severity: 'critical',
           },

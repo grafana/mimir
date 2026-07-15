@@ -164,19 +164,29 @@ func (st *sampleTracker) IncrementReceivedSamples(req *mimirpb.WriteRequest, now
 
 	// We precompute the cost attribution per request before update Observations and State to avoid frequently update the atomic counters.
 	// This is based on the assumption that usually a single WriteRequest will have samples that belong to the same or few cost attribution groups.
-	dict := make(map[string]int)
+	// The map value is a pointer so that the hot path can look the key up without
+	// allocating a string for it (the `m[string(buf.Bytes())]` lookup is special-cased
+	// by the compiler to not allocate) and accumulate through the pointer. A string is
+	// only allocated when a new group is inserted, i.e. once per distinct group.
+	dict := make(map[string]*int)
 	buf := bufferPool.Get().(*bytes.Buffer)
 	buf.Reset()
 	defer bufferPool.Put(buf)
 	for _, ts := range req.Timeseries {
 		st.fillKeyFromLabelAdapters(ts.Labels, buf)
-		dict[string(buf.Bytes())] += len(ts.Samples) + len(ts.Histograms)
+		count := len(ts.Samples) + len(ts.Histograms)
+		if c := dict[string(buf.Bytes())]; c != nil {
+			*c += count
+		} else {
+			newCount := count
+			dict[string(buf.Bytes())] = &newCount
+		}
 	}
 
 	// Update the observations for each label set and update the state per request,
 	// this would be less precised than per sample but it's more efficient
 	for k, v := range dict {
-		count := float64(v)
+		count := float64(*v)
 		st.updateObservations(k, now, count, 0, nil)
 	}
 }

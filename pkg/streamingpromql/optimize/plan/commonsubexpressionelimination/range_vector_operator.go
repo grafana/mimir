@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"math"
 
+	"github.com/antithesishq/antithesis-sdk-go/assert"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/prometheus/model/labels"
@@ -566,11 +567,12 @@ func (b *RangeVectorDuplicationBuffer) allConsumersFinalized() bool {
 func cloneStepData(stepData *types.RangeVectorStepData) (bufferedRangeVectorStepData, error) {
 	cloned := bufferedRangeVectorStepData{
 		stepData: &types.RangeVectorStepData{
-			StepT:      stepData.StepT,
-			RangeStart: stepData.RangeStart,
-			RangeEnd:   stepData.RangeEnd,
-			Smoothed:   stepData.Smoothed,
-			Anchored:   stepData.Anchored,
+			StepT:                stepData.StepT,
+			RangeStart:           stepData.RangeStart,
+			RangeEnd:             stepData.RangeEnd,
+			Smoothed:             stepData.Smoothed,
+			Anchored:             stepData.Anchored,
+			MixedInExtendedRange: stepData.MixedInExtendedRange,
 		},
 	}
 
@@ -592,6 +594,14 @@ func cloneStepData(stepData *types.RangeVectorStepData) (bufferedRangeVectorStep
 // The dedicated buffers in bufferedRangeVectorStepData will be nil since the shared buffers are used.
 func (b *RangeVectorDuplicationBuffer) mergeStepData(stepData *types.RangeVectorStepData, seriesIndex int) (bufferedRangeVectorStepData, error) {
 	if stepData.Anchored || stepData.Smoothed {
+		assert.Unreachable("cannot use shared FPoint and HPoint buffers with anchored/smoothed modifiers", map[string]any{
+			"anchored":     stepData.Anchored,
+			"smoothed":     stepData.Smoothed,
+			"range_start":  stepData.RangeStart,
+			"range_end":    stepData.RangeEnd,
+			"step_ts":      stepData.StepT,
+			"series_index": seriesIndex,
+		})
 		return bufferedRangeVectorStepData{}, fmt.Errorf("cannot use shared FPoint and HPoint buffers with anchored/smoothed modifiers (this is a bug)")
 	}
 

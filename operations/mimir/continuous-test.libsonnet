@@ -12,12 +12,14 @@ local k = import 'ksonnet-util/kausal.libsonnet';
   local containerPort = k.core.v1.containerPort,
   local deployment = k.apps.v1.deployment,
 
-  continuous_test_args:: {
-    target: 'continuous-test',
-    'tests.write-endpoint': $._config.continuous_test_write_endpoint,
-    'tests.read-endpoint': $._config.continuous_test_read_endpoint,
-    'tests.tenant-id': $._config.continuous_test_tenant_id,
-  },
+  continuous_test_args::
+    $._config.commonConfig
+    {
+      target: 'continuous-test',
+      'tests.write-endpoint': $._config.continuous_test_write_endpoint,
+      'tests.read-endpoint': $._config.continuous_test_read_endpoint,
+      'tests.tenant-id': $._config.continuous_test_tenant_id,
+    },
 
   continuous_test_node_affinity_matchers:: [],
 
@@ -29,6 +31,7 @@ local k = import 'ksonnet-util/kausal.libsonnet';
     ]) +
     k.util.resourcesRequests('1', '512Mi') +
     k.util.resourcesLimits(null, '1Gi') +
+    $.mimirEphemeralStorageRequest +
     $.tracing_env_mixin,
 
   continuous_test_deployment: if !$._config.continuous_test_enabled then null else

@@ -3,8 +3,8 @@
 package core
 
 import (
+	"context"
 	"fmt"
-	"slices"
 	"time"
 
 	"github.com/gogo/protobuf/proto"
@@ -19,7 +19,7 @@ import (
 
 //node:generate
 type MatrixSelector struct {
-	*MatrixSelectorDetails
+	*MatrixSelectorDetails `node:"hints=SkipHistogramBuckets"`
 }
 
 func (m *MatrixSelector) IsSplittable() bool {
@@ -45,15 +45,6 @@ func (m *MatrixSelector) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_MATRIX_SELECTOR
 }
 
-func (m *MatrixSelector) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
-	otherMatrixSelector, ok := other.(*MatrixSelector)
-
-	return ok &&
-		slices.EqualFunc(m.Matchers, otherMatrixSelector.Matchers, matchersEqual) &&
-		slices.EqualFunc(m.Subsets, otherMatrixSelector.Subsets, subsetsEqual) &&
-		m.EquivalentToIgnoringMatchersAndHints(otherMatrixSelector)
-}
-
 func (m *MatrixSelector) EquivalentToIgnoringMatchersAndHints(other planning.Node) bool {
 	otherMatrixSelector, ok := other.(*MatrixSelector)
 
@@ -63,7 +54,8 @@ func (m *MatrixSelector) EquivalentToIgnoringMatchersAndHints(other planning.Nod
 		m.Range == otherMatrixSelector.Range &&
 		m.Anchored == otherMatrixSelector.Anchored &&
 		m.Smoothed == otherMatrixSelector.Smoothed &&
-		m.CounterAware == otherMatrixSelector.CounterAware
+		m.CounterAware == otherMatrixSelector.CounterAware &&
+		m.AnchoredResetsChanges == otherMatrixSelector.AnchoredResetsChanges
 }
 
 func (m *MatrixSelector) GetMatchers() []*LabelMatcher {
@@ -80,11 +72,7 @@ func (m *MatrixSelector) MergeHints(other planning.Node) error {
 	return nil
 }
 
-func (m *MatrixSelector) ChildrenLabels() []string {
-	return nil
-}
-
-func MaterializeMatrixSelector(m *MatrixSelector, _ *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters, overrideTimeParams planning.RangeParams) (planning.OperatorFactory, error) {
+func MaterializeMatrixSelector(_ context.Context, m *MatrixSelector, _ *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters, overrideTimeParams planning.RangeParams) (planning.OperatorFactory, error) {
 	selectorRange := m.Range
 	selectorTs := m.Timestamp
 	selectorOffset := m.Offset.Milliseconds()
@@ -117,6 +105,7 @@ func MaterializeMatrixSelector(m *MatrixSelector, _ *planning.Materializer, time
 		Anchored:                 m.Anchored,
 		Smoothed:                 m.Smoothed,
 		CounterAware:             m.CounterAware,
+		AnchoredResetsChanges:    m.AnchoredResetsChanges,
 		Subsets:                  subsets,
 	}
 

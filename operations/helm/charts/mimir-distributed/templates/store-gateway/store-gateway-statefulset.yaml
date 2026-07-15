@@ -36,6 +36,9 @@ spec:
     whenDeleted: {{ .Values.store_gateway.persistentVolume.whenDeleted }}
     whenScaled: {{ .Values.store_gateway.persistentVolume.whenScaled }}
   {{- end }}
+  {{- with .Values.store_gateway.revisionHistoryLimit }}
+  revisionHistoryLimit: {{ . }}
+  {{- end }}
   selector:
     matchLabels:
       {{- include "mimir.selectorLabels" $args | nindent 6 }}
@@ -62,19 +65,7 @@ spec:
           {{- toYaml .labels | nindent 10 }}
         {{- end }}
       spec:
-        {{- $storageClass := default .storageClass $rolloutZone.storageClass }}
-        {{- if $storageClass }}
-        {{- if (eq "-" $storageClass) }}
-        storageClassName: ""
-        {{- else }}
-        storageClassName: {{ $storageClass }}
-        {{- end }}
-        {{- end }}
-        accessModes:
-          {{- toYaml .accessModes | nindent 10 }}
-        resources:
-          requests:
-            storage: "{{ .size }}"
+{{ include "mimir.persistentVolumeClaimSpec" (dict "ctx" $ "component" "store-gateway" "persistentVolume" . "rolloutZone" $rolloutZone) | trimPrefix "\n" | indent 8 }}
   {{- end }}
   {{- end }}
   template:

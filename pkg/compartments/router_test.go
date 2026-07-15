@@ -5,22 +5,34 @@ package compartments
 import (
 	"fmt"
 	"strconv"
+	"strings"
 	"testing"
 
+	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func newTestRouter(numCompartments int) *Router {
-	return NewRouter(numCompartments, "mimir-rc-<read-compartment-id>")
+func newTestRouter(numCompartments int) *TopicRouter {
+	return NewTopicRouter(numCompartments, "mimir-rc-<read-compartment-id>")
 }
 
-func TestRouter_TopicForCompartment(t *testing.T) {
+func TestTopicRouter_TopicForCompartment(t *testing.T) {
 	r := newTestRouter(3)
 	require.Equal(t, 3, r.NumCompartments())
 	assert.Equal(t, "mimir-rc-0", r.TopicForCompartment(0))
 	assert.Equal(t, "mimir-rc-1", r.TopicForCompartment(1))
 	assert.Equal(t, "mimir-rc-2", r.TopicForCompartment(2))
+}
+
+func TestTopicRouter_Topics(t *testing.T) {
+	r := newTestRouter(3)
+	assert.Equal(t, []string{"mimir-rc-0", "mimir-rc-1", "mimir-rc-2"}, r.Topics())
+
+	// The returned slice is a copy: mutating it must not affect the router.
+	r.Topics()[0] = "mutated"
+	assert.Equal(t, "mimir-rc-0", r.TopicForCompartment(0))
 }
 
 func TestRouter_CompartmentForMetric(t *testing.T) {
@@ -49,6 +61,71 @@ func TestRouter_CompartmentForMetric(t *testing.T) {
 	})
 }
 
+func TestRouter_CompartmentsForMatchers(t *testing.T) {
+	const (
+		numCompartments = 4
+		userID          = "user-1"
+	)
+	r := newTestRouter(numCompartments)
+
+	eq := func(name, value string) *labels.Matcher { return labels.MustNewMatcher(labels.MatchEqual, name, value) }
+	re := func(name, value string) *labels.Matcher {
+		return labels.MustNewMatcher(labels.MatchRegexp, name, value)
+	}
+	neq := func(name, value string) *labels.Matcher {
+		return labels.MustNewMatcher(labels.MatchNotEqual, name, value)
+	}
+
+	t.Run("exact __name__ matcher pins to the routing compartment", func(t *testing.T) {
+		want := r.CompartmentForMetric(userID, "my_metric")
+		got := r.CompartmentsForMatchers(userID, []*labels.Matcher{eq(model.MetricNameLabel, "my_metric"), eq("job", "x")})
+		assert.Equal(t, []int{want}, got)
+	})
+
+	t.Run("enumerable regexp __name__ targets the union of the matched names' compartments", func(t *testing.T) {
+		names := []string{"metric_a", "metric_b", "metric_c", "metric_d", "metric_e"}
+		want := map[int]struct{}{}
+		for _, n := range names {
+			want[r.CompartmentForMetric(userID, n)] = struct{}{}
+		}
+
+		got := r.CompartmentsForMatchers(userID, []*labels.Matcher{re(model.MetricNameLabel, strings.Join(names, "|"))})
+		assert.Len(t, got, len(want), "should return one entry per distinct compartment")
+		gotSet := map[int]struct{}{}
+		for _, c := range got {
+			gotSet[c] = struct{}{}
+		}
+		assert.Equal(t, want, gotSet)
+	})
+
+	t.Run("exact matcher wins over a regexp set", func(t *testing.T) {
+		want := r.CompartmentForMetric(userID, "metric_a")
+		got := r.CompartmentsForMatchers(userID, []*labels.Matcher{eq(model.MetricNameLabel, "metric_a"), re(model.MetricNameLabel, "metric_a|metric_b|metric_c")})
+		assert.Equal(t, []int{want}, got)
+	})
+
+	t.Run("conflicting exact names pin to the first one (the query matches no series anyway)", func(t *testing.T) {
+		want := r.CompartmentForMetric(userID, "metric_a")
+		got := r.CompartmentsForMatchers(userID, []*labels.Matcher{eq(model.MetricNameLabel, "metric_a"), eq(model.MetricNameLabel, "metric_b")})
+		assert.Equal(t, []int{want}, got)
+	})
+
+	t.Run("queries that cannot be restricted return all compartments", func(t *testing.T) {
+		allCompartments := []int{0, 1, 2, 3}
+		cases := map[string][]*labels.Matcher{
+			"no matchers":         nil,
+			"no __name__ matcher": {eq("job", "x")},
+			"unbounded regex":     {re(model.MetricNameLabel, "foo.*")},
+			"negative __name__":   {neq(model.MetricNameLabel, "x")},
+		}
+		for name, matchers := range cases {
+			t.Run(name, func(t *testing.T) {
+				assert.Equal(t, allCompartments, r.CompartmentsForMatchers(userID, matchers))
+			})
+		}
+	})
+}
+
 func TestRouter_TopicForMetric(t *testing.T) {
 	t.Run("the same metric may map to different compartments for different tenants", func(t *testing.T) {
 		r := newTestRouter(16)
@@ -72,5 +149,28 @@ func TestRouter_TopicForMetric(t *testing.T) {
 			seen[r.CompartmentForMetric("user-1", fmt.Sprintf("metric_%d", i))] = struct{}{}
 		}
 		assert.Len(t, seen, numCompartments)
+	})
+}
+
+func TestNewRouter(t *testing.T) {
+	const numCompartments = 4
+	r := NewRouter(numCompartments)
+	withTopics := NewTopicRouter(numCompartments, "mimir-rc-<read-compartment-id>")
+
+	assert.Equal(t, numCompartments, r.NumCompartments())
+
+	t.Run("routes identically to a topic-aware router", func(t *testing.T) {
+		for i := 0; i < 1000; i++ {
+			name := "metric_" + strconv.Itoa(i)
+			assert.Equal(t, withTopics.CompartmentForMetric("user-1", name), r.CompartmentForMetric("user-1", name))
+		}
+	})
+
+	t.Run("CompartmentsForMatchers narrows and fans out", func(t *testing.T) {
+		exact := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "the_metric")}
+		assert.Equal(t, []int{r.CompartmentForMetric("user-1", "the_metric")}, r.CompartmentsForMatchers("user-1", exact))
+
+		none := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "job", "test")}
+		assert.ElementsMatch(t, []int{0, 1, 2, 3}, r.CompartmentsForMatchers("user-1", none))
 	})
 }

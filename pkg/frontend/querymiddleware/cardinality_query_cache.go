@@ -14,6 +14,7 @@ import (
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/cardinality"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/splitandcache"
 	"github.com/grafana/mimir/pkg/util"
 )
 
@@ -28,7 +29,7 @@ func newCardinalityQueryCacheRoundTripper(cache cache.Cache, generator CacheKeyG
 		limits: limits,
 	}
 
-	return newGenericQueryCacheRoundTripper(cache, generator.LabelValuesCardinality, ttl, next, logger, NewResultsCacheMetrics(queryTypeCardinality, reg))
+	return newGenericQueryCacheRoundTripper(cache, generator.LabelValuesCardinality, ttl, next, logger, splitandcache.NewResultsCacheMetrics(queryTypeCardinality, reg))
 }
 
 type cardinalityQueryTTL struct {

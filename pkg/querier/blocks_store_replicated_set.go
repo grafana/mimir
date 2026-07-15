@@ -11,13 +11,11 @@ import (
 	"math/rand"
 	"slices"
 
-	"github.com/go-kit/log"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/ring/client"
 	"github.com/grafana/dskit/services"
 	"github.com/oklog/ulid/v2"
 	"github.com/pkg/errors"
-	"github.com/prometheus/client_golang/prometheus"
 
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
@@ -52,17 +50,15 @@ type blocksStoreReplicationSet struct {
 
 func newBlocksStoreReplicationSet(
 	storesRing *ring.Ring,
+	clientsPool *client.Pool,
 	balancingStrategy loadBalancingStrategy,
 	dynamicReplication storegateway.DynamicReplication,
 	preferredZones []string,
 	limits BlocksStoreLimits,
-	clientConfig StoreGatewayClientConfig,
-	logger log.Logger,
-	reg prometheus.Registerer,
 ) (*blocksStoreReplicationSet, error) {
 	s := &blocksStoreReplicationSet{
 		storesRing:         storesRing,
-		clientsPool:        newStoreGatewayClientPool(client.NewRingServiceDiscovery(storesRing), clientConfig, logger, reg),
+		clientsPool:        clientsPool,
 		dynamicReplication: dynamicReplication,
 		balancingStrategy:  balancingStrategy,
 		preferredZones:     preferredZones,
@@ -70,8 +66,10 @@ func newBlocksStoreReplicationSet(
 		subservicesWatcher: services.NewFailureWatcher(),
 	}
 
+	// The clients pool is shared across compartments and managed by the queryable, so this set manages
+	// only its ring.
 	var err error
-	s.subservices, err = services.NewManager(s.storesRing, s.clientsPool)
+	s.subservices, err = services.NewManager(s.storesRing)
 	if err != nil {
 		return nil, err
 	}

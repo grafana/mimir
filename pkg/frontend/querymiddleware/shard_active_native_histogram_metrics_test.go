@@ -565,6 +565,7 @@ func Test_shardActiveNativeHistogramMetricsMiddleware_RoundTrip(t *testing.T) {
 			// Run the request through the middleware.
 			s := newShardActiveNativeHistogramMetricsMiddleware(
 				upstream,
+				0,
 				mockLimits{maxShardedQueries: tenantMaxShardCount, totalShards: tenantShardCount},
 				log.NewNopLogger(),
 			)
@@ -638,6 +639,7 @@ func TestShardActiveNativeHistogramMetricsMiddlewareRoundTripConcurrent(t *testi
 
 	s := newShardActiveNativeHistogramMetricsMiddleware(
 		upstream,
+		0,
 		mockLimits{maxShardedQueries: shardCount, totalShards: shardCount},
 		log.NewNopLogger(),
 	)
@@ -689,7 +691,6 @@ func TestShardActiveNativeHistogramMetricsMiddlewareRoundTripConcurrent(t *testi
 }
 
 func TestShardActiveNativeHistogramMetricsMiddlewareMergeResponseContextCancellation(t *testing.T) {
-	s := newShardActiveNativeHistogramMetricsMiddleware(nil, mockLimits{}, log.NewNopLogger()).(*shardActiveNativeHistogramMetricsMiddleware)
 	ctx, cancel := context.WithCancelCause(context.Background())
 	defer cancel(fmt.Errorf("test ran to completion"))
 
@@ -712,19 +713,21 @@ func TestShardActiveNativeHistogramMetricsMiddlewareMergeResponseContextCancella
 		{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(body))},
 		{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(body))},
 	}
+	s := newShardActiveNativeHistogramMetricsMiddleware(upstreamServingResponses(responses), 0, mockLimits{}, log.NewNopLogger()).(*shardActiveNativeHistogramMetricsMiddleware)
 	var resp *http.Response
 
 	g := sync.WaitGroup{}
 	g.Add(1)
 	go func() {
 		defer g.Done()
-		resp = s.mergeResponses(ctx, responses, "")
+		resp, err = s.mergeResponses(ctx, shardRequests(ctx, len(responses)), "")
 	}()
 
 	cancelCause := "request canceled while streaming response"
 	cancel(errors.New(cancelCause))
 
 	g.Wait()
+	require.NoError(t, err)
 
 	var buf bytes.Buffer
 	_, err = io.Copy(&buf, resp.Body)

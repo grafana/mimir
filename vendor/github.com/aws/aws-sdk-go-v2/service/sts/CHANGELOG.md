@@ -1,3 +1,20 @@
+# v1.44.0 (2026-07-06)
+
+* **Feature**: Add request serialization snapshot tests.
+
+# v1.43.5 (2026-07-01)
+
+* **Bug Fix**: Bump smithy-go to 1.27.3, fix JSON encorder for document.Number, endpoint host label format validation and CBOR union serialization on new serde
+* **Dependency Update**: Updated to the latest SDK module versions
+
+# v1.43.4 (2026-06-29)
+
+* No change notes available for this release.
+
+# v1.43.3 (2026-06-08)
+
+* **Dependency Update**: Updated to the latest SDK module versions
+
 # v1.43.2 (2026-06-04)
 
 * **Dependency Update**: Update to smithy-go v1.27.1 to fix several union-related deserialization bugs in schema-serde-enabled services.

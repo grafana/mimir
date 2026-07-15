@@ -3,26 +3,28 @@
 package scheduler
 
 import (
+	"strconv"
+
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
 type schedulerMetrics struct {
-	updateScheduleDuration   prometheus.Histogram
-	partitionStartOffset     *prometheus.GaugeVec
-	partitionCommittedOffset *prometheus.GaugeVec
-	partitionPlannedOffset   *prometheus.GaugeVec
-	partitionEndOffset       *prometheus.GaugeVec
-	flushFailed              prometheus.Counter
-	fetchOffsetsFailed       prometheus.Counter
-	outstandingJobs          prometheus.Gauge
-	assignedJobs             prometheus.Gauge
-	pendingJobs              *prometheus.GaugeVec
-	persistentJobFailures    prometheus.Counter
-	jobGapDetected           *prometheus.CounterVec
+	updateScheduleDuration prometheus.Histogram
+	probeRecordTimeDelta   prometheus.Histogram
+	flushFailed            prometheus.Counter
+	fetchOffsetsFailed     prometheus.Counter
+	outstandingJobs        prometheus.Gauge
+	assignedJobs           prometheus.Gauge
+	pendingJobs            *prometheus.GaugeVec
+	persistentJobFailures  prometheus.Counter
+	jobGapDetected         *prometheus.CounterVec
+
+	// perClusterMetrics holds one set of partition offset gauges per cluster, indexed by cluster ID.
+	perClusterMetrics []singleClusterMetrics
 }
 
-func newSchedulerMetrics(reg prometheus.Registerer) schedulerMetrics {
+func newSchedulerMetrics(reg prometheus.Registerer, compartmentsEnabled bool, numClusters int) schedulerMetrics {
 	scm := schedulerMetrics{
 		updateScheduleDuration: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
 			Name: "cortex_blockbuilder_scheduler_schedule_update_seconds",
@@ -30,22 +32,12 @@ func newSchedulerMetrics(reg prometheus.Registerer) schedulerMetrics {
 
 			NativeHistogramBucketFactor: 1.1,
 		}),
-		partitionStartOffset: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
-			Name: "cortex_blockbuilder_scheduler_partition_start_offset",
-			Help: "The observed start offset of each partition.",
-		}, []string{"partition"}),
-		partitionEndOffset: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
-			Name: "cortex_blockbuilder_scheduler_partition_end_offset",
-			Help: "The observed end offset of each partition.",
-		}, []string{"partition"}),
-		partitionCommittedOffset: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
-			Name: "cortex_blockbuilder_scheduler_partition_committed_offset",
-			Help: "The observed committed offset of each partition.",
-		}, []string{"partition"}),
-		partitionPlannedOffset: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
-			Name: "cortex_blockbuilder_scheduler_partition_planned_offset",
-			Help: "The planned offset of each partition.",
-		}, []string{"partition"}),
+		probeRecordTimeDelta: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
+			Name: "cortex_blockbuilder_scheduler_initial_probe_record_time_delta_seconds",
+			Help: "Delta between a probe's requested time and the timestamp of the record at the returned offset, during initial offset probing.",
+
+			NativeHistogramBucketFactor: 1.1,
+		}),
 		flushFailed: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_blockbuilder_scheduler_flush_failed_total",
 			Help: "The total number of Kafka flushes that failed.",
@@ -80,5 +72,51 @@ func newSchedulerMetrics(reg prometheus.Registerer) schedulerMetrics {
 	scm.jobGapDetected.WithLabelValues(offsetNamePlanned)
 	scm.jobGapDetected.WithLabelValues(offsetNameCommitted)
 
+	scm.perClusterMetrics = newClusterMetrics(reg, compartmentsEnabled, numClusters)
+
 	return scm
+}
+
+// singleClusterMetrics holds the observed offset gauges for a single cluster.
+type singleClusterMetrics struct {
+	startOffset     *prometheus.GaugeVec
+	endOffset       *prometheus.GaugeVec
+	committedOffset *prometheus.GaugeVec
+	plannedOffset   *prometheus.GaugeVec
+}
+
+// newClusterMetrics builds one set of partition offset gauges per cluster, indexed
+// by cluster ID. With compartments enabled each cluster's gauges carry a constant
+// write_compartment label; with compartments disabled there is a single unlabeled set.
+func newClusterMetrics(reg prometheus.Registerer, compartmentsEnabled bool, numClusters int) []singleClusterMetrics {
+	metrics := make([]singleClusterMetrics, numClusters)
+	for clusterID := range metrics {
+		clusterReg := reg
+		if compartmentsEnabled {
+			clusterReg = prometheus.WrapRegistererWith(prometheus.Labels{"write_compartment": strconv.Itoa(clusterID)}, reg)
+		}
+		metrics[clusterID] = newSingleClusterMetrics(clusterReg)
+	}
+	return metrics
+}
+
+func newSingleClusterMetrics(reg prometheus.Registerer) singleClusterMetrics {
+	return singleClusterMetrics{
+		startOffset: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
+			Name: "cortex_blockbuilder_scheduler_partition_start_offset",
+			Help: "The observed start offset of each partition.",
+		}, []string{"partition"}),
+		endOffset: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
+			Name: "cortex_blockbuilder_scheduler_partition_end_offset",
+			Help: "The observed end offset of each partition.",
+		}, []string{"partition"}),
+		committedOffset: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
+			Name: "cortex_blockbuilder_scheduler_partition_committed_offset",
+			Help: "The observed committed offset of each partition.",
+		}, []string{"partition"}),
+		plannedOffset: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
+			Name: "cortex_blockbuilder_scheduler_partition_planned_offset",
+			Help: "The planned offset of each partition.",
+		}, []string{"partition"}),
+	}
 }

@@ -3,6 +3,7 @@
 package core
 
 import (
+	"context"
 	"fmt"
 	"strconv"
 	"strings"
@@ -105,28 +106,14 @@ func (s *Subquery) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_SUBQUERY
 }
 
-func (s *Subquery) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
-	otherSubquery, ok := other.(*Subquery)
-
-	return ok &&
-		((s.Timestamp == nil && otherSubquery.Timestamp == nil) || (s.Timestamp != nil && otherSubquery.Timestamp != nil && s.Timestamp.Equal(*otherSubquery.Timestamp))) &&
-		s.Offset == otherSubquery.Offset &&
-		s.Range == otherSubquery.Range &&
-		s.Step == otherSubquery.Step
-}
-
 func (s *Subquery) MergeHints(_ planning.Node) error {
 	// Nothing to do.
 	return nil
 }
 
-func (s *Subquery) ChildrenLabels() []string {
-	return []string{""}
-}
-
-func MaterializeSubquery(s *Subquery, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
+func MaterializeSubquery(ctx context.Context, s *Subquery, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
 	innerTimeRange := s.ChildrenTimeRange(timeRange)
-	inner, err := materializer.ConvertNodeToInstantVectorOperator(s.Inner, innerTimeRange)
+	inner, err := materializer.ConvertNodeToInstantVectorOperator(ctx, s.Inner, innerTimeRange)
 	if err != nil {
 		return nil, fmt.Errorf("could not create inner operator for Subquery: %w", err)
 	}

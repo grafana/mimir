@@ -8,6 +8,7 @@ package storegateway
 import (
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"net/http"
@@ -47,6 +48,7 @@ import (
 	grpc_metadata "google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
+	"github.com/grafana/mimir/pkg/compartments"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
@@ -64,8 +66,9 @@ import (
 
 func TestConfig_Validate(t *testing.T) {
 	tests := map[string]struct {
-		setup    func(cfg *Config, limits *validation.Limits)
-		expected error
+		setup        func(cfg *Config, limits *validation.Limits)
+		compartments compartments.Config
+		expected     error
 	}{
 		"should pass by default": {
 			setup:    func(*Config, *validation.Limits) {},
@@ -83,6 +86,26 @@ func TestConfig_Validate(t *testing.T) {
 			},
 			expected: nil,
 		},
+		"should pass with an in-range read compartment ID when compartments are enabled": {
+			setup: func(cfg *Config, _ *validation.Limits) {
+				cfg.ReadCompartmentID = 1
+			},
+			compartments: compartments.Config{Enabled: true, Read: compartments.ReadConfig{NumCompartments: 2}, Write: compartments.WriteConfig{NumCompartments: 1}},
+			expected:     nil,
+		},
+		"should fail with an out-of-range read compartment ID when compartments are enabled": {
+			setup: func(cfg *Config, _ *validation.Limits) {
+				cfg.ReadCompartmentID = 2
+			},
+			compartments: compartments.Config{Enabled: true, Read: compartments.ReadConfig{NumCompartments: 2}, Write: compartments.WriteConfig{NumCompartments: 1}},
+			expected:     fmt.Errorf("store-gateway read compartment ID %d is out of range [0, %d)", 2, 2),
+		},
+		"should fail with a non-zero read compartment ID when compartments are disabled": {
+			setup: func(cfg *Config, _ *validation.Limits) {
+				cfg.ReadCompartmentID = 1
+			},
+			expected: errors.New("store-gateway read compartment ID must be 0 when compartments are disabled"),
+		},
 	}
 
 	for testName, testData := range tests {
@@ -92,7 +115,12 @@ func TestConfig_Validate(t *testing.T) {
 			flagext.DefaultValues(cfg, limits)
 			testData.setup(cfg, limits)
 
-			assert.Equal(t, testData.expected, cfg.Validate(*limits))
+			err := cfg.Validate(*limits, testData.compartments)
+			if testData.expected == nil {
+				assert.NoError(t, err)
+			} else {
+				assert.EqualError(t, err, testData.expected.Error())
+			}
 		})
 	}
 }

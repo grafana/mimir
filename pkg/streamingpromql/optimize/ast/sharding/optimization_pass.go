@@ -17,7 +17,9 @@ import (
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize"
+	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
+	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
 type OptimizationPass struct {
@@ -34,7 +36,7 @@ func (o *OptimizationPass) Name() string {
 	return "Sharding"
 }
 
-func (o *OptimizationPass) Apply(ctx context.Context, expr parser.Expr) (parser.Expr, error) {
+func (o *OptimizationPass) Apply(ctx context.Context, expr parser.Expr, _ types.QueryTimeRange) (parser.Expr, error) {
 	if containsSpunOffSubquery(expr) {
 		return expr, nil
 	}
@@ -49,6 +51,28 @@ func (o *OptimizationPass) Apply(ctx context.Context, expr parser.Expr) (parser.
 		return nil, apierror.New(apierror.TypeBadData, err.Error())
 	}
 
+	// When the query has been rewritten to spin off subqueries, each __vector_evaluation_root__ or __scalar_evaluation_root__ marks a
+	// separate query that must be sharded independently. Some of these subtrees may be shardable and
+	// others not; that's fine, just like for top-level range queries today, where the shardable parts
+	// are sharded and the rest is left unchanged.
+	if roots := collectEvaluationRoots(expr); len(roots) > 0 {
+		for _, root := range roots {
+			shardedChild, err := o.shard(ctx, tenantIDs, root.Args[0], options)
+			if err != nil {
+				return nil, err
+			}
+
+			root.Args[0] = shardedChild
+		}
+
+		return expr, nil
+	}
+
+	return o.shard(ctx, tenantIDs, expr, options)
+}
+
+// shard shards expr, returning the sharded expression, or expr unchanged if it cannot be sharded.
+func (o *OptimizationPass) shard(ctx context.Context, tenantIDs []string, expr parser.Expr, options requestoptions.Options) (parser.Expr, error) {
 	requestedShardCount := int(options.TotalShards)
 	totalQueries := int32(1)
 	var seriesCount *querymiddleware.EstimatedSeriesCount
@@ -57,6 +81,12 @@ func (o *OptimizationPass) Apply(ctx context.Context, expr parser.Expr) (parser.
 		seriesCount = hints.GetCardinalityEstimate()
 
 		if hints.TotalQueries > 0 {
+			// If splitting and caching inside MQE is enabled, this will be 1, and that is OK:
+			// the impact of this is that the -query-frontend.query-sharding-max-sharded-queries limit will apply per time-split
+			// interval and evaluation root, rather than to the entire time range (or entire spun-off subquery).
+			//
+			// (In the middleware implementation, the limit considers all shards across all time-split intervals, except if
+			// subquery spin-off applies, in which case it applies per evaluation root.)
 			totalQueries = hints.TotalQueries
 		}
 	}
@@ -71,6 +101,30 @@ func (o *OptimizationPass) Apply(ctx context.Context, expr parser.Expr) (parser.
 	}
 
 	return shardedExpr, nil
+}
+
+// collectEvaluationRoots returns the __vector_evaluation_root__ and __scalar_evaluation_root__ marker function calls in expr.
+//
+// Markers are never nested inside one another (the subquery spin-off mapper does not recurse into a
+// query once it has spun it off), so this does not descend into a marker once found.
+func collectEvaluationRoots(expr parser.Expr) []*parser.Call {
+	var roots []*parser.Call
+
+	var visit func(node parser.Node)
+	visit = func(node parser.Node) {
+		if call, ok := node.(*parser.Call); ok && core.IsEvaluationRootFunctionCall(call) {
+			roots = append(roots, call)
+			return
+		}
+
+		for _, child := range parser.Children(node) {
+			visit(child)
+		}
+	}
+
+	visit(expr)
+
+	return roots
 }
 
 var ConcatSquasher astmapper.Squasher = &concatSquasher{}

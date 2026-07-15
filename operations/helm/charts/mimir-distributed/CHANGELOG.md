@@ -30,6 +30,16 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
+* [FEATURE] Add VolumeAttributesClass support: reference existing VolumeAttributesClass resources on PVCs for alertmanager, ingester, store-gateway, compactor, and kafka. #15919
+* [CHANGE] Querier: Reduce the default concurrency of queriers, `querier.max_concurrent`, to 8. #15984
+* [BUGFIX] Fix bug in `ScaledObject` templates when using `kedaAutoscaling.fallback` #15793
+* [ENHANCEMENT] Add support for `revisionHistoryLimit` on StatefulSet-based components: `alertmanager`, `ingester`, `store_gateway`, `compactor`, and the `chunks-cache`, `index-cache`, `metadata-cache`, and `results-cache` memcached StatefulSets. Previously `revisionHistoryLimit` was only honored on Deployment-based components. #PR
+* [ENHANCEMENT] Add support for `revisionHistoryLimit` on StatefulSet-based components: `alertmanager`, `ingester`, `store_gateway`, `compactor`, and the `chunks-cache`, `index-cache`, `metadata-cache`, and `results-cache` memcached StatefulSets. Previously `revisionHistoryLimit` was only honored on Deployment-based components. #15950
+* [BUGFIX]: Fix bug in `ScaledObject` templates when using `kedaAutoscaling.fallback` #15793
+
+## 6.1.0
+
+* [CHANGE] Upgrade Mimir to [3.1.2](https://github.com/grafana/mimir/blob/release-3.1/CHANGELOG.md). #15839
 * [CHANGE] Kafka: Removed `kafka.extraEnv`. Use `kafka.env` instead. #14892
 * [ENHANCEMENT] Kafka: Add `kafka.env` to let users selectively override default Kafka environment variables by name, following the same merge pattern used by other chart components (`ingester.env`, etc.). Individual defaults can be replaced in-place without discarding the rest of the list. #14892
 * [CHANGE] Update minimum supported Kubernetes version to 1.32. This reflects the fact that Grafana does not test with older versions of Kubernetes. #14335
@@ -59,6 +69,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [BUGFIX] Fix Kafka image reference to include the registry in the StatefulSet template. #14211.
 * [BUGFIX] Helm: Removed helm's empty selector for the smoke-test-job file that is throwing errors in ArgoCD #14684
 * [BUGFIX] Meta-monitoring: Do not emit `spec.clients: null` on `LogsInstance` or `basicAuth: null` on `MetricsInstance.spec.remoteWrite[*]` when the corresponding `metaMonitoring.grafanaAgent.{logs,metrics}.remote.url` / `auth` fields are empty. The resulting manifests failed CRD validation under ArgoCD ServerSideApply. #15135
+* [BUGFIX] Meta-monitoring: Update `MimirRulerInstanceHasNoRuleGroups` to not alert on false-positives when rulers are running in multiple zones. #16029
 
 ## 6.0.6
 

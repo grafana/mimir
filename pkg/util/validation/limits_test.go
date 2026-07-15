@@ -21,6 +21,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/otlptranslator"
 	"github.com/prometheus/prometheus/model/relabel"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.yaml.in/yaml/v3"
@@ -1556,6 +1557,21 @@ metric_relabel_configs:
 	}
 }
 
+// TestUnmarshalYAML_ShouldRoundShardCounts ensures that shard counts set through YAML (as used by
+// per-tenant runtime overrides) are rounded up to the next power of two, just like the base config.
+func TestUnmarshalYAML_ShouldRoundShardCounts(t *testing.T) {
+	limits := getDefaultLimits()
+	cfg := `
+query_sharding_total_shards: 10
+compactor_split_and_merge_shards: 10
+compactor_ooo_split_and_merge_shards: 5
+`
+	require.NoError(t, yaml.Unmarshal([]byte(cfg), &limits))
+	assert.Equal(t, 16, limits.QueryShardingTotalShards)
+	assert.Equal(t, 16, limits.CompactorSplitAndMergeShards)
+	assert.Equal(t, 8, limits.CompactorOOOSplitAndMergeShards)
+}
+
 func TestUnmarshalJSON_ShouldValidateConfig(t *testing.T) {
 	tests := map[string]struct {
 		cfg         string
@@ -1618,6 +1634,26 @@ func TestLimits_Validate(t *testing.T) {
 				cfg.HATrackerFailoverTimeout = model.Duration(7 * time.Second)
 				cfg.HATrackerUpdateTimeout = model.Duration(4 * time.Second)
 				cfg.HATrackerUpdateTimeoutJitterMax = model.Duration(2 * time.Second)
+
+				return cfg
+			}(),
+			expectedErr: nil,
+		},
+		"should fail if float_chunk_encoding is not a known encoding": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.FloatChunkEncoding = "XOR2"
+
+				return cfg
+			}(),
+			expectedErr: errInvalidFloatChunkEncoding,
+		},
+		"should pass if float_chunk_encoding is xor2": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.FloatChunkEncoding = "xor2"
 
 				return cfg
 			}(),
@@ -1956,6 +1992,36 @@ func TestLimits_Validate(t *testing.T) {
 				return cfg
 			}(),
 			expectedErr: nil,
+		},
+		"should round shard counts up to the next power of two": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.QueryShardingTotalShards = 10
+				cfg.CompactorSplitAndMergeShards = 10
+				cfg.CompactorOOOSplitAndMergeShards = 5
+				return cfg
+			}(),
+			verify: func(t *testing.T, cfg Limits) {
+				assert.Equal(t, 16, cfg.QueryShardingTotalShards)
+				assert.Equal(t, 16, cfg.CompactorSplitAndMergeShards)
+				assert.Equal(t, 8, cfg.CompactorOOOSplitAndMergeShards)
+			},
+		},
+		"should leave power-of-two and disabled shard counts untouched": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.QueryShardingTotalShards = 16
+				cfg.CompactorSplitAndMergeShards = 0 // Disabled.
+				cfg.CompactorOOOSplitAndMergeShards = 1
+				return cfg
+			}(),
+			verify: func(t *testing.T, cfg Limits) {
+				assert.Equal(t, 16, cfg.QueryShardingTotalShards)
+				assert.Equal(t, 0, cfg.CompactorSplitAndMergeShards)
+				assert.Equal(t, 1, cfg.CompactorOOOSplitAndMergeShards)
+			},
 		},
 	}
 
@@ -3047,6 +3113,20 @@ func TestMergeLimits(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestOverrides_FloatChunkEncoding(t *testing.T) {
+	t.Run("default is xor", func(t *testing.T) {
+		overrides := MockOverrides(nil)
+		assert.Equal(t, chunkenc.EncXOR, overrides.FloatChunkEncoding("user1"))
+	})
+	t.Run("per-tenant override to xor2", func(t *testing.T) {
+		overrides := MockOverrides(func(_ *Limits, tenantLimits map[string]*Limits) {
+			tenantLimits["user1"] = &Limits{FloatChunkEncoding: "xor2"}
+		})
+		assert.Equal(t, chunkenc.EncXOR2, overrides.FloatChunkEncoding("user1"))
+		assert.Equal(t, chunkenc.EncXOR, overrides.FloatChunkEncoding("user2"))
+	})
 }
 
 func boolPtr(b bool) *bool {

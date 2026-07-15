@@ -3,21 +3,22 @@
 package rangevectorsplitting
 
 import (
-	"errors"
+	"context"
 	"fmt"
-	"slices"
-	"strings"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/gogo/protobuf/proto"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/rangevectorsplitting/cache"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
+	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
@@ -46,46 +47,8 @@ func (s *SplitFunctionCall) MergeHints(other planning.Node) error {
 	return nil
 }
 
-func (s *SplitFunctionCall) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
-	otherSplit, ok := other.(*SplitFunctionCall)
-	if !ok {
-		return false
-	}
-
-	return slices.EqualFunc(s.SplitRanges, otherSplit.SplitRanges, func(a, b SplitRange) bool {
-		return a.Start == b.Start && a.End == b.End && a.Cacheable == b.Cacheable
-	})
-}
-
 func (s *SplitFunctionCall) Describe() string {
-	if len(s.SplitRanges) == 0 {
-		return "splits=0"
-	}
-
-	// Format: splits=4 [(3600000,7199999], (7199999,14399999]*, (14399999,21599999]*, (21599999,21600000]]
-	// where * indicates cacheable ranges
-	// Timestamps are in milliseconds since epoch
-	var b strings.Builder
-	fmt.Fprintf(&b, "splits=%d [", len(s.SplitRanges))
-
-	for i, sr := range s.SplitRanges {
-		if i > 0 {
-			b.WriteString(", ")
-		}
-
-		fmt.Fprintf(&b, "(%d,%d]", sr.Start, sr.End)
-
-		if sr.Cacheable {
-			b.WriteByte('*')
-		}
-	}
-
-	b.WriteByte(']')
-	return b.String()
-}
-
-func (s *SplitFunctionCall) ChildrenLabels() []string {
-	return []string{""}
+	return ""
 }
 
 func (s *SplitFunctionCall) ChildrenTimeRange(parentTimeRange types.QueryTimeRange) types.QueryTimeRange {
@@ -105,28 +68,54 @@ func (s *SplitFunctionCall) ExpressionPosition() (posrange.PositionRange, error)
 }
 
 func (s *SplitFunctionCall) MinimumRequiredPlanVersion(types.QueryTimeRange) (planning.QueryPlanVersion, error) {
-	return planning.QueryPlanV13, nil
+	return planning.QueryPlanV18, nil
+}
+
+// limitsProvider provides the tenant limits needed to compute split ranges at materialize time.
+type limitsProvider interface {
+	GetMaxOutOfOrderTimeWindow(ctx context.Context) (time.Duration, error)
 }
 
 type Materializer struct {
-	enabled bool
-	cache   *cache.CacheFactory
-	logger  log.Logger
+	enabled       bool
+	splitInterval time.Duration
+	limits        limitsProvider
+	timeNow       func() time.Time
+	cache         *cache.CacheFactory
+	logger        log.Logger
+
+	nodesSplit   prometheus.Counter
+	nodesUnsplit *prometheus.CounterVec
 }
 
 var _ planning.NodeMaterializer = &Materializer{}
 
-func NewMaterializer(enabled bool, cache *cache.CacheFactory, logger log.Logger) *Materializer {
+func NewMaterializer(enabled bool, splitInterval time.Duration, limits limitsProvider, timeNow func() time.Time, cache *cache.CacheFactory, reg prometheus.Registerer, logger log.Logger) *Materializer {
+	if timeNow == nil {
+		timeNow = time.Now
+	}
+
 	return &Materializer{
-		enabled: enabled,
-		cache:   cache,
-		logger:  logger,
+		enabled:       enabled,
+		splitInterval: splitInterval,
+		limits:        limits,
+		timeNow:       timeNow,
+		cache:         cache,
+		logger:        logger,
+		nodesSplit: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_mimir_query_engine_range_vector_splitting_nodes_materialized_split_total",
+			Help: "Total number of range vector splitting nodes materialized as split operators.",
+		}),
+		nodesUnsplit: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_mimir_query_engine_range_vector_splitting_nodes_materialized_unsplit_total",
+			Help: "Total number of range vector splitting nodes that fell back to unsplit execution at materialize time.",
+		}, []string{"reason"}),
 	}
 }
 
-func (m Materializer) Materialize(n planning.Node, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters, overrideRangeParams planning.RangeParams) (planning.OperatorFactory, error) {
+func (m Materializer) Materialize(ctx context.Context, n planning.Node, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters, overrideRangeParams planning.RangeParams) (planning.OperatorFactory, error) {
 	if overrideRangeParams.IsSet {
-		return nil, errors.New("overrideRangeParams not supported for rangevectorsplitting.Materialize")
+		return nil, fmt.Errorf("overrideRangeParams not supported for %T", n)
 	}
 	s, ok := n.(*SplitFunctionCall)
 	if !ok {
@@ -135,17 +124,13 @@ func (m Materializer) Materialize(n planning.Node, materializer *planning.Materi
 
 	if !m.enabled {
 		level.Warn(m.logger).Log("msg", "split function node is present but range vector splitting is disabled, falling back to unsplit execution; this can happen if splitting is enabled on the query-frontend but not yet on the querier")
-		return materializer.FactoryForNode(s.Inner, timeRange)
+		m.nodesUnsplit.WithLabelValues("disabled").Inc()
+		return materializer.FactoryForNode(ctx, s.Inner, timeRange)
 	}
 
 	splitFactory, exists := SplitFunctionRegistry[s.Inner.Function]
 	if !exists {
 		return nil, fmt.Errorf("function %v does not support range vector splitting", s.Inner.Function.PromQLName())
-	}
-
-	ranges := make([]Range, len(s.SplitRanges))
-	for i, sr := range s.SplitRanges {
-		ranges[i] = Range(sr)
 	}
 
 	if s.Inner.ChildCount() != 1 {
@@ -157,6 +142,21 @@ func (m Materializer) Materialize(n planning.Node, materializer *planning.Materi
 	if !ok {
 		return nil, fmt.Errorf("inner node of split function call does not implement SplitNode: %T", innerNode)
 	}
+
+	// The split ranges are computed here, at materialize time, rather than at planning time, because they depend on
+	// the querier's current time and the tenant's out-of-order window. If the ranges turn out not to be worth
+	// splitting (e.g. there's no complete cacheable block, or every block falls within the out-of-order window), fall
+	// back to unsplit execution.
+	ranges, notApplied, err := m.computeRanges(ctx, splitNode, timeRange)
+	if err != nil {
+		return nil, err
+	}
+	if notApplied != "" {
+		level.Debug(m.logger).Log("msg", "range vector splitting not applied at materialize time, falling back to unsplit execution", "function", s.Inner.Function.PromQLName(), "reason", notApplied)
+		m.nodesUnsplit.WithLabelValues(notApplied).Inc()
+		return materializer.FactoryForNode(ctx, s.Inner, timeRange)
+	}
+	m.nodesSplit.Inc()
 
 	expressionPos, err := s.Inner.ExpressionPosition()
 	if err != nil {
@@ -185,6 +185,58 @@ func (m Materializer) Materialize(n planning.Node, materializer *planning.Materi
 	}
 
 	return planning.NewSingleUseOperatorFactory(splitOp), nil
+}
+
+// computeRanges computes the split ranges for the inner node at the given query time range.
+//
+// It returns the ranges to split into, or a non-empty notApplied reason if splitting is not worthwhile (in which case
+// ranges is nil and the caller should fall back to unsplit execution). The notApplied reasons mirror those recorded by
+// the optimization pass at planning time, but for the checks that depend on runtime state (the current time and the
+// tenant's out-of-order window).
+func (m Materializer) computeRanges(ctx context.Context, inner planning.SplitNode, timeRange types.QueryTimeRange) (ranges []Range, notApplied string, err error) {
+	timeParams := inner.GetRangeParams()
+	if !timeParams.IsSet {
+		// Should always be set if it's a splittable node.
+		return nil, "", fmt.Errorf("time range params not specified")
+	}
+
+	startTs, endTs := calculateInnerTimeRange(timeRange.StartT, timeParams)
+
+	alignedStart := computeBlockAlignedStart(startTs, m.splitInterval)
+	hasCompleteBlock := alignedStart+m.splitInterval.Milliseconds() <= endTs
+	if !hasCompleteBlock {
+		return nil, "no_complete_cache_block", nil
+	}
+
+	var oooThreshold int64
+	oooWindow, err := m.limits.GetMaxOutOfOrderTimeWindow(ctx)
+	if err != nil {
+		return nil, "", err
+	}
+	if oooWindow > 0 {
+		oooThreshold = m.timeNow().Add(-oooWindow).UnixMilli()
+	}
+
+	ranges = computeSplitRanges(startTs, endTs, m.splitInterval, oooThreshold)
+
+	hasCacheable := false
+	for _, r := range ranges {
+		if r.Cacheable {
+			hasCacheable = true
+			break
+		}
+	}
+	if !hasCacheable {
+		return nil, "no_cacheable_blocks_after_ooo_filter", nil
+	}
+
+	if requestoptions.OptionsFromContext(ctx).CacheDisabled {
+		for i := range ranges {
+			ranges[i].Cacheable = false
+		}
+	}
+
+	return ranges, "", nil
 }
 
 func SplittingCacheKey(node planning.Node, params *planning.QueryParameters) ([]byte, error) {

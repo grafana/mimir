@@ -84,21 +84,8 @@ func ReplaceWriteCompartment(s string, writeCompartmentID int) string {
 	return strings.ReplaceAll(s, WriteCompartmentIDPlaceholder, strconv.Itoa(writeCompartmentID))
 }
 
-// readCompartmentRingSuffix builds the "-rc-<id>" suffix appended to a ring key or name to
-// scope it to a single read compartment. A suffix is used for consistency with how the read
-// compartment ID is appended elsewhere (e.g. Kubernetes resource names, offset filenames).
-func readCompartmentRingSuffix(compartmentID int) string {
-	return "-rc-" + strconv.Itoa(compartmentID)
-}
-
-// ReadCompartmentRingKey returns the KVStore key for the partition ring of the given read
-// compartment, derived from the non-compartment ring key.
-func ReadCompartmentRingKey(compartmentID int, ringKey string) string {
-	return ringKey + readCompartmentRingSuffix(compartmentID)
-}
-
-// ReadCompartmentRingName returns the ring name for the given read compartment, derived from the
-// non-compartment ring name.
-func ReadCompartmentRingName(compartmentID int, ringName string) string {
-	return ringName + readCompartmentRingSuffix(compartmentID)
+// WithReadCompartmentSuffix returns name with the "-rc-<id>" suffix that scopes it to a single read
+// compartment.
+func WithReadCompartmentSuffix(name string, compartmentID int) string {
+	return name + "-rc-" + strconv.Itoa(compartmentID)
 }

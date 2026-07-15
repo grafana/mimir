@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/warpstream-go/pkg/wgo"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -17,6 +18,55 @@ import (
 	"github.com/twmb/franz-go/plugin/kprom"
 	"go.uber.org/atomic"
 )
+
+const (
+	// defaultProducerLinger is the producer-side batching delay.
+	defaultProducerLinger = 50 * time.Millisecond
+
+	// DefaultMetadataRefreshInterval is how often Kafka metadata (broker
+	// list and partition leaders) is refreshed. It is used for both the
+	// minimum and maximum metadata age so the metadata request frequency
+	// stays constant regardless of errors.
+	DefaultMetadataRefreshInterval = 10 * time.Second
+)
+
+// newKafkaProducerForBackend selects and constructs the producer
+// implementation based on cfg.Backend. The caller owns the lifecycle of the
+// returned producer and must call Close() when done.
+func newKafkaProducerForBackend(cfg KafkaConfig, maxInflight int, logger log.Logger, reg prometheus.Registerer) (*KafkaProducer, error) {
+	var producerClient KafkaProducerClient
+
+	switch cfg.Backend {
+	case KafkaBackendWarpstream:
+		warpstreamOpts, err := cfg.ToWarpstreamClientOptions()
+		if err != nil {
+			return nil, err
+		}
+		// warpstream-go emits the client metrics itself; we only add our bespoke
+		// kafka_* extended latency metrics, to match the kafka backend.
+		warpstreamOpts = append(warpstreamOpts, wgo.WithHooks(NewKafkaClientExtendedMetrics(reg)))
+
+		// Trace produces like the kafka backend. warpstream-go drives the
+		// produce-record hooks on its own produce path, so the same sampled-only
+		// tracer yields the same producer spans and traceparent propagation as a
+		// franz-go client.
+		warpstreamOpts = append(warpstreamOpts, wgo.WithHooks(newSampledOnlyTracer()))
+
+		warpstreamClient, err := wgo.NewWarpstreamClient(NewKafkaLogger(logger), reg, warpstreamOpts...)
+		if err != nil {
+			return nil, err
+		}
+		producerClient = warpstreamClient
+	default:
+		kafkaClient, err := NewKafkaWriterClient(cfg, maxInflight, logger, reg, WithDisableDefaultTopic())
+		if err != nil {
+			return nil, err
+		}
+		producerClient = kafkaClient
+	}
+
+	return NewKafkaProducer(producerClient, cfg.ProducerMaxBufferedBytes, reg), nil
+}
 
 // KafkaWriterClientOption is a functional option for NewKafkaWriterClient.
 type KafkaWriterClientOption func(*kafkaWriterClientOptions)
@@ -45,7 +95,7 @@ func NewKafkaWriterClient(kafkaCfg KafkaConfig, maxInflightProduceRequests int, 
 		kprom.FetchAndProduceDetail(kprom.Batches, kprom.Records, kprom.CompressedBytes, kprom.UncompressedBytes))
 
 	// Allow to disable linger in tests.
-	linger := 50 * time.Millisecond
+	linger := defaultProducerLinger
 	if kafkaCfg.DisableLinger {
 		linger = 0
 	}
@@ -94,7 +144,7 @@ func NewKafkaWriterClient(kafkaCfg KafkaConfig, maxInflightProduceRequests int, 
 		kgo.RecordRetries(math.MaxInt64),
 		kgo.RecordDeliveryTimeout(kafkaCfg.WriteTimeout),
 		kgo.ProduceRequestTimeout(kafkaCfg.WriteTimeout),
-		kgo.RequestTimeoutOverhead(writerRequestTimeoutOverhead),
+		kgo.RequestTimeoutOverhead(kafkaCfg.WriteTimeoutOverhead),
 
 		// Unlimited number of buffered records because we limit on bytes in Writer. The reason why we don't use
 		// kgo.MaxBufferedBytes() is because it suffers a deadlock issue:
@@ -112,12 +162,48 @@ func NewKafkaWriterClient(kafkaCfg KafkaConfig, maxInflightProduceRequests int, 
 		kgoOpts = append(kgoOpts, kgo.DefaultProduceTopic(kafkaCfg.Topic))
 	}
 
+	if codecs := kafkaProducerCompressionFromConfig(kafkaCfg.ProducerCompression); codecs != nil {
+		// Override the franz-go default (snappy with no-compression fallback) when the operator
+		// has explicitly configured a producer compression codec. This is required for Kafka-compatible
+		// backends that don't support snappy, such as Azure Event Hub.
+		kgoOpts = append(kgoOpts, kgo.ProducerBatchCompression(codecs...))
+	}
+
 	return kgo.NewClient(kgoOpts...)
+}
+
+// KafkaProducerClient is the minimum surface KafkaProducer needs from the
+// underlying client.
+type KafkaProducerClient interface {
+	Produce(ctx context.Context, r *kgo.Record, promise func(*kgo.Record, error))
+	BufferedProduceBytes() int64
+	BufferedProduceRecords() int64
+	Close()
+}
+
+// kafkaProducerCompressionFromConfig translates the configured producer compression codec name
+// into a franz-go CompressionCodec preference list. An empty config value returns nil so that
+// the franz-go default (snappy with no-compression fallback) is preserved.
+func kafkaProducerCompressionFromConfig(name string) []kgo.CompressionCodec {
+	switch name {
+	case kafkaCompressionNone:
+		return []kgo.CompressionCodec{kgo.NoCompression()}
+	case kafkaCompressionGzip:
+		return []kgo.CompressionCodec{kgo.GzipCompression()}
+	case kafkaCompressionSnappy:
+		return []kgo.CompressionCodec{kgo.SnappyCompression()}
+	case kafkaCompressionLz4:
+		return []kgo.CompressionCodec{kgo.Lz4Compression()}
+	case kafkaCompressionZstd:
+		return []kgo.CompressionCodec{kgo.ZstdCompression()}
+	default:
+		return nil
+	}
 }
 
 // KafkaProducer is a kgo.Client wrapper exposing some higher level features and metrics useful for producers.
 type KafkaProducer struct {
-	*kgo.Client
+	client KafkaProducerClient
 
 	closeOnce *sync.Once
 	closed    chan struct{}
@@ -142,9 +228,9 @@ type KafkaProducer struct {
 //
 // The input prometheus.Registerer must be wrapped with a prefix (the names of metrics
 // registered don't have a prefix).
-func NewKafkaProducer(client *kgo.Client, maxBufferedBytes int64, reg prometheus.Registerer) *KafkaProducer {
+func NewKafkaProducer(client KafkaProducerClient, maxBufferedBytes int64, reg prometheus.Registerer) *KafkaProducer {
 	producer := &KafkaProducer{
-		Client:           client,
+		client:           client,
 		closeOnce:        &sync.Once{},
 		closed:           make(chan struct{}),
 		bufferedBytes:    atomic.NewInt64(0),
@@ -205,7 +291,13 @@ func (c *KafkaProducer) Close() {
 		close(c.closed)
 	})
 
-	c.Client.Close()
+	c.client.Close()
+}
+
+// BufferedProduceRecords returns the count of records currently buffered (or
+// in-flight) in the underlying client.
+func (c *KafkaProducer) BufferedProduceRecords() int64 {
+	return c.client.BufferedProduceRecords()
 }
 
 func (c *KafkaProducer) updateMetricsLoop() {
@@ -216,7 +308,7 @@ func (c *KafkaProducer) updateMetricsLoop() {
 	for {
 		select {
 		case <-ticker.C:
-			c.bufferedProduceBytes.Observe(float64(c.BufferedProduceBytes()))
+			c.bufferedProduceBytes.Observe(float64(c.client.BufferedProduceBytes()))
 
 		case <-c.closed:
 			return
@@ -355,7 +447,7 @@ func (c *KafkaProducer) ProduceSync(ctx context.Context, records []*kgo.Record) 
 			// Produce() may theoretically block if the buffer is full, but we configure the Kafka client with
 			// unlimited buffer because we implement the buffer limit ourselves (see maxBufferedBytes). This means
 			// Produce() should never block for us in practice.
-			c.Produce(context.WithoutCancel(ctx), record, onProduceDone)
+			c.client.Produce(context.WithoutCancel(ctx), record, onProduceDone)
 		}
 
 		c.produceRecordsEnqueueDuration.Observe(time.Since(enqueueStartTime).Seconds())

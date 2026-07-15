@@ -209,6 +209,87 @@ api:
 # The compactor block configures the compactor component.
 [compactor: <compactor>]
 
+compactor_scheduler:
+  # (experimental) The maximum number of times a compaction job can be retried
+  # before it is removed. Leases that are reassigned due to an interrupted
+  # worker do not count against this limit. 0 for no limit.
+  # CLI flag: -compactor-scheduler.max-leases
+  [max_leases: <int> | default = 3]
+
+  # (experimental) The duration of time without contact until the scheduler is
+  # able to lease a work item to another worker.
+  # CLI flag: -compactor-scheduler.lease-duration
+  [lease_duration: <duration> | default = 10m]
+
+  # (experimental) The duration of time between when plan jobs are submitted
+  # aligned by UTC. Note that -compactor.first-level-compaction-wait-period is
+  # accounted for during alignment of this interval.
+  # CLI flag: -compactor-scheduler.planning-interval
+  [planning_interval: <duration> | default = 30m]
+
+  # (experimental) The duration of time between when maintenance tasks are
+  # performed on job trackers. This includes lease expiration and plan job
+  # submission checks.
+  # CLI flag: -compactor-scheduler.maintenance-interval
+  [maintenance_interval: <duration> | default = 2m]
+
+  # (experimental) The number of maintenance intervals before lease expiration
+  # is enforced. Nonpositive values are all treated as zero.
+  # CLI flag: -compactor-scheduler.maintenance-intervals-before-lease-expiration
+  [maintenance_intervals_before_lease_expiration: <int> | default = 3]
+
+  # (experimental) The number of maintenance intervals before planning occurs
+  # when starting from no recovered state. Nonpositive values are all treated as
+  # zero.
+  # CLI flag: -compactor-scheduler.maintenance-intervals-before-cold-start-planning
+  [maintenance_intervals_before_cold_start_planning: <int> | default = 5]
+
+  # (experimental) The duration of time between bucket listings to discover new
+  # tenants.
+  # CLI flag: -compactor-scheduler.tenant-discovery-interval
+  [tenant_discovery_interval: <duration> | default = 10m]
+
+  tenant_discovery_backoff:
+    # (advanced) Minimum delay when backing off.
+    # CLI flag: -compactor-scheduler.tenant-discovery-backoff.backoff-min-period
+    [min_period: <duration> | default = 100ms]
+
+    # (advanced) Maximum delay when backing off.
+    # CLI flag: -compactor-scheduler.tenant-discovery-backoff.backoff-max-period
+    [max_period: <duration> | default = 10s]
+
+    # (advanced) Number of times to backoff and retry before failing.
+    # CLI flag: -compactor-scheduler.tenant-discovery-backoff.backoff-retries
+    [max_retries: <int> | default = 10]
+
+  # (experimental) The type of persistence the compactor scheduler should use.
+  # Valid values: none, bbolt
+  # CLI flag: -compactor-scheduler.persistence-type
+  [persistence_type: <string> | default = "bbolt"]
+
+  # (experimental) The number of times a job can fail before a repeated failure
+  # is recorded. Reassignments due to an interrupted worker are not counted as a
+  # failure. 0 for no limit.
+  # CLI flag: -compactor-scheduler.repeated-failure-report-threshold
+  [repeated_failure_report_threshold: <int> | default = 2]
+
+  bbolt:
+    # (experimental) The directory where bbolt shard database files are stored
+    # for the compactor scheduler.
+    # CLI flag: -compactor-scheduler.bbolt.dir
+    [dir: <string> | default = "./data-compactor-scheduler"]
+
+    # (experimental) The target number of bbolt database shards for the
+    # compactor scheduler.
+    # CLI flag: -compactor-scheduler.bbolt.shard-count
+    [shard_count: <int> | default = 16]
+
+  lane_policy:
+    # (experimental) The lane policy the compactor scheduler should use. Valid
+    # values: simple
+    # CLI flag: -compactor-scheduler.lane-policy.policy
+    [policy: <string> | default = "simple"]
+
 # The store_gateway block configures the store-gateway component.
 [store_gateway: <store_gateway>]
 
@@ -522,6 +603,11 @@ instrument_ref_leaks:
   # regardless of the configured percentage. Zero means no limit.
   # CLI flag: -instrument-reference-leaks.max-inflight-instrumented-bytes
   [max_inflight_instrumented_bytes: <int> | default = 0]
+
+# (experimental) If enabled, Mimir enforces label-based access control on metric
+# read queries using the X-Prom-Label-Policy HTTP header.
+# CLI flag: -auth.label-access-control-enabled
+[label_access_control_enabled: <boolean> | default = false]
 ```
 
 ### common
@@ -1763,10 +1849,18 @@ read_reactive_limiter:
   # CLI flag: -ingester.read-reactive-limiter.max-rejection-factor
   [max_rejection_factor: <float> | default = 3]
 
-# (experimental) Maximum concurrency used to compute a single label values count
-# request.
-# CLI flag: -ingester.label-values-count-max-concurrency
-[label_values_count_request_max_concurrency: <int> | default = 16]
+# (experimental) Number of worker goroutines in the ingester's shared
+# tenant-fair compute worker pool, used to parallelize CPU-bound work (currently
+# label-values-cardinality) fairly across tenants. 0 uses GOMAXPROCS.
+# CLI flag: -ingester.compute-workers
+[compute_workers: <int> | default = 0]
+
+label_values_count:
+  # (experimental) Number of label values processed per work unit submitted to
+  # the ingester compute worker pool. Smaller values improve cross-tenant
+  # fairness at the cost of more scheduling overhead.
+  # CLI flag: -ingester.label-values-count-chunk-size
+  [chunk_size: <int> | default = 32]
 ```
 
 ### querier
@@ -1964,9 +2058,10 @@ store_gateway_client:
 
 # (advanced) Delay before initiating requests to further ingesters when request
 # minimization is enabled and the initially selected set of ingesters have not
-# all responded. Ignored if -querier.minimize-ingester-requests is not enabled.
+# all responded. Set to 0 to disable hedging. Ignored if
+# -querier.minimize-ingester-requests is not enabled.
 # CLI flag: -querier.minimize-ingester-requests-hedging-delay
-[minimize_ingester_requests_hedging_delay: <duration> | default = 3s]
+[minimize_ingester_requests_hedging_delay: <duration> | default = 0s]
 
 # (experimental) Query engine to use, either 'prometheus' or 'mimir'
 # CLI flag: -querier.query-engine
@@ -2000,7 +2095,7 @@ store_gateway_client:
 # maximum number of concurrent queries in each querier. The minimum value is
 # four; lower values are ignored and set to the minimum
 # CLI flag: -querier.max-concurrent
-[max_concurrent: <int> | default = 20]
+[max_concurrent: <int> | default = 8]
 
 # The timeout for a query. This config option should be set on query-frontend
 # too when query sharding is enabled. This also applies to queries evaluated by
@@ -2032,11 +2127,6 @@ store_gateway_client:
 [enable_delayed_name_removal_prometheus_engine: <boolean> | default = false]
 
 mimir_query_engine:
-  # (experimental) Enable pruning query expressions that are toggled off with
-  # constants.
-  # CLI flag: -querier.mimir-query-engine.enable-prune-toggles
-  [enable_prune_toggles: <boolean> | default = true]
-
   # (experimental) Enable common subexpression elimination when evaluating
   # queries.
   # CLI flag: -querier.mimir-query-engine.enable-common-subexpression-elimination
@@ -2051,6 +2141,12 @@ mimir_query_engine:
   # subexpression elimination to be enabled.
   # CLI flag: -querier.mimir-query-engine.enable-range-query-range-vector-common-subexpression-elimination
   [enable_range_query_range_vector_common_subexpression_elimination: <boolean> | default = false]
+
+  # (experimental) Enable deduplication of scalar expressions as part of common
+  # subexpression elimination. Requires common subexpression elimination to be
+  # enabled.
+  # CLI flag: -querier.mimir-query-engine.enable-scalar-common-subexpression-elimination
+  [enable_scalar_common_subexpression_elimination: <boolean> | default = false]
 
   # (experimental) Enable generating selectors for one side of a binary
   # expression based on results from the other side.
@@ -2103,6 +2199,14 @@ mimir_query_engine:
       # Enable cache compression, if not empty. Supported values are: snappy.
       # CLI flag: -querier.mimir-query-engine.range-vector-splitting.compression
       [compression: <string> | default = ""]
+
+  time_splitting_and_caching:
+    # (experimental) Enable caching of query results that were not fully
+    # consumed by the query. When enabled, if a query stops reading before all
+    # series have been read, the remaining series are read and buffered so that
+    # the complete set of results can be cached.
+    # CLI flag: -querier.mimir-query-engine.time-splitting-and-caching.cache-unconsumed-results
+    [cache_unconsumed_results: <boolean> | default = true]
 
 ring:
   # The key-value store used to share the hash ring across multiple instances.
@@ -2286,6 +2390,17 @@ results_cache:
 # CLI flag: -query-frontend.cache-results
 [cache_results: <boolean> | default = false]
 
+# (experimental) Set to true to enable performing splitting range queries by
+# interval and caching inside the Mimir query engine (MQE), and spinning off
+# subqueries from instant queries inside MQE. This only has an effect if the
+# corresponding feature is enabled (with
+# -query-frontend.split-queries-by-interval=true,
+# -query-frontend.cache-results=true or
+# -query-frontend.subquery-spin-off-enabled=true, respectively). Requires MQE,
+# remote execution and sharding inside MQE to be enabled.
+# CLI flag: -query-frontend.use-mimir-query-engine-for-splitting-and-caching-results
+[use_mimir_query_engine_for_splitting_and_caching_results: <boolean> | default = false]
+
 # Cache non-transient errors from queries.
 # CLI flag: -query-frontend.cache-errors
 [cache_errors: <boolean> | default = false]
@@ -2317,8 +2432,7 @@ results_cache:
 [enable_multiple_node_remote_execution_requests: <boolean> | default = false]
 
 # (experimental) Set to true to enable performing query sharding inside the
-# Mimir query engine (MQE). This setting has no effect if sharding is disabled.
-# Requires remote execution and MQE to be enabled.
+# Mimir query engine (MQE). Requires remote execution and MQE to be enabled.
 # CLI flag: -query-frontend.use-mimir-query-engine-for-sharding
 [use_mimir_query_engine_for_sharding: <boolean> | default = false]
 
@@ -2338,6 +2452,21 @@ results_cache:
 # planned. 0 to disable cardinality-based hints.
 # CLI flag: -query-frontend.query-sharding-target-series-per-shard
 [query_sharding_target_series_per_shard: <int> | default = 0]
+
+# (experimental) Maximum number of sharded active series (and active native
+# histogram metrics) sub-requests dispatched and merged concurrently within a
+# single request. This bounds the resource usage caused by fanning out to a
+# large number of shards, both on queriers and on the query-frontend. 0 to
+# disable the limit.
+# CLI flag: -query-frontend.active-series-max-shard-concurrency
+[active_series_max_shard_concurrency: <int> | default = 0]
+
+# (experimental) Request active series responses from queriers in a
+# length-delimited framed format that the query-frontend can merge using
+# significantly less CPU. Queriers that don't support the format fall back to
+# JSON transparently.
+# CLI flag: -query-frontend.active-series-framed-responses
+[active_series_framed_responses: <boolean> | default = false]
 
 # (advanced) Comma-separated list of request header names to allow to pass
 # through to the rest of the query path. This is in addition to a list of
@@ -2389,11 +2518,17 @@ The `query_scheduler` block configures the query-scheduler.
 # CLI flag: -query-scheduler.querier-forget-delay
 [querier_forget_delay: <duration> | default = 0s]
 
-# (experimental) Enable the cortex_query_scheduler_inflight_max_age_seconds
-# metric, which reports the age of the oldest inflight request. Disabling it
-# skips the per-tick scan over inflight requests.
-# CLI flag: -query-scheduler.inflight-max-age-metric-enabled
-[inflight_max_age_metric_enabled: <boolean> | default = true]
+# (experimental) Enable the cortex_query_scheduler_queue_max_wait_seconds
+# metric, which reports how long the oldest request still waiting in the queue
+# has been waiting. Disabling it skips the per-tick scan over inflight requests.
+# CLI flag: -query-scheduler.queue-max-wait-metric-enabled
+[queue_max_wait_metric_enabled: <boolean> | default = true]
+
+# (experimental) Enable the cortex_query_scheduler_max_queue_length metric,
+# which reports the per-tenant peak queue length observed since the last scrape.
+# Disabling it skips per-tenant peak tracking on enqueue and dequeue.
+# CLI flag: -query-scheduler.max-queue-length-metric-enabled
+[max_queue_length_metric_enabled: <boolean> | default = false]
 
 # This configures the gRPC client used to report errors back to the
 # query-frontend.
@@ -2916,6 +3051,25 @@ query_frontend:
   # CLI flag: -ruler.query-frontend.max-retries-rate
   [max_retries_rate: <float> | default = 170]
 
+distributor:
+  # (experimental) gRPC listen address of the distributor(s) to push rule-result
+  # series to. If empty, the ruler writes using the internal distributor. Use a
+  # DNS address (prefixed with dns:///) to enable gRPC client-side load
+  # balancing; in Kubernetes, use the distributor headless service on the gRPC
+  # port.
+  # CLI flag: -ruler.distributor.address
+  [address: <string> | default = ""]
+
+  # (experimental) Timeout for requests to remote distributors.
+  # CLI flag: -ruler.distributor.remote-timeout
+  [remote_timeout: <duration> | default = 10s]
+
+  # Advanced standard gRPC client configuration used by rulers to communicate
+  # with distributors.
+  # The CLI flags prefix for this block configuration is:
+  # ruler.distributor.grpc-client-config
+  [grpc_client_config: <grpc_client>]
+
 tenant_federation:
   # Enable rule groups to query against multiple tenants. The tenant IDs
   # involved need to be in the rule group's 'source_tenants' field. If this flag
@@ -3410,11 +3564,13 @@ The `ingester_client` block configures how the distributors connect to the inges
 
 The `grpc_client` block configures the gRPC client used to communicate between two Mimir components. The supported CLI flags `<prefix>` used to reference this configuration block are:
 
+- `compactor.scheduler-client.grpc-client-config`
 - `distributor.readcache.grpc-client-config`
 - `ingester.client`
 - `querier.scheduler-client`
 - `query-frontend.grpc-client-config`
 - `query-scheduler.grpc-client-config`
+- `ruler.distributor.grpc-client-config`
 - `ruler.query-frontend.grpc-client-config`
 
 &nbsp;
@@ -4412,6 +4568,11 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -ingester.native-histograms-ingestion-enabled
 [native_histograms_ingestion_enabled: <boolean> | default = true]
 
+# (experimental) Encoding used for float chunks in the ingester and block
+# builder for this tenant. Valid values are 'xor' and 'xor2'.
+# CLI flag: -ingester.float-chunk-encoding
+[float_chunk_encoding: <string> | default = "xor"]
+
 # (advanced) Custom trackers for active metrics. If there are active series
 # matching a provided matcher (map value), the count is exposed in the custom
 # trackers metric labeled using the tracker name (map key). Zero-valued counts
@@ -4566,16 +4727,19 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -query-frontend.max-queriers-per-tenant
 [max_queriers_per_tenant: <int> | default = 0]
 
-# The amount of shards to use when doing parallelisation via query sharding by
-# tenant. 0 to disable query sharding for tenant. Query sharding implementation
-# will adjust the number of query shards based on compactor shards. This allows
-# querier to not search the blocks which cannot possibly have the series for
-# given query shard.
+# The number of shards to use when doing parallelisation via query sharding. 0
+# to disable query sharding for tenant. Values greater than 1 are rounded up to
+# the next power of two, so the query shard count always meshes with the
+# compactor's power-of-two shard count. This allows querier to not search the
+# blocks which cannot possibly have the series for given query shard.
 # CLI flag: -query-frontend.query-sharding-total-shards
 [query_sharding_total_shards: <int> | default = 16]
 
-# The max number of sharded queries that can be run for a given received query.
-# 0 to disable limit.
+# The maximum number of sharded queries that can be run for a given received
+# query or spun-off subquery. 0 to disable limit. When splitting and caching
+# inside MQE is enabled, this value applies per time-split interval (including
+# split intervals for spun-off subqueries). When it is disabled, this value
+# applies to the entire time range (or entire spun-off subquery).
 # CLI flag: -query-frontend.query-sharding-max-sharded-queries
 [query_sharding_max_sharded_queries: <int> | default = 128]
 
@@ -4583,6 +4747,12 @@ The `limits` block configures default and per-tenant limits imposed by component
 # longer than the configured number of bytes. 0 to disable the limit.
 # CLI flag: -query-frontend.query-sharding-max-regexp-size-bytes
 [query_sharding_max_regexp_size_bytes: <int> | default = 4096]
+
+# (experimental) The max number of sharded queries that can be run for a
+# cardinality (active series and active native histogram metrics) request. 0 to
+# fall back to -query-frontend.query-sharding-max-sharded-queries.
+# CLI flag: -query-frontend.cardinality-sharding-max-sharded-queries
+[cardinality_sharding_max_sharded_queries: <int> | default = 0]
 
 # (advanced) Maximum lookback beyond which queries are not sent to ingester. 0
 # means all queries are sent to ingester.
@@ -5064,13 +5234,14 @@ ruler_alertmanager_client_config:
 [compactor_blocks_retention_period: <duration> | default = 0s]
 
 # The number of shards to use when splitting blocks. 0 to disable splitting.
+# Values greater than 1 are rounded up to the next power of two.
 # CLI flag: -compactor.split-and-merge-shards
 [compactor_split_and_merge_shards: <int> | default = 0]
 
 # The number of shards to use when splitting out-of-order blocks. 0 to use the
-# value of -compactor.split-and-merge-shards. Only applies to blocks with the
-# out-of-order external label, see
-# -ingester.out-of-order-blocks-external-label-enabled.
+# value of -compactor.split-and-merge-shards. Values greater than 1 are rounded
+# up to the next power of two. Only applies to blocks with the out-of-order
+# external label, see -ingester.out-of-order-blocks-external-label-enabled.
 # CLI flag: -compactor.ooo-split-and-merge-shards
 [compactor_ooo_split_and_merge_shards: <int> | default = 0]
 
@@ -5315,6 +5486,11 @@ The `ingest_storage` block configures the Kafka-based ingest storage.
 [enabled: <boolean> | default = false]
 
 kafka:
+  # (experimental) The Kafka backend implementation. Supported values: kafka,
+  # warpstream.
+  # CLI flag: -ingest-storage.kafka.backend
+  [backend: <string> | default = "kafka"]
+
   # The Kafka seed broker address, or a comma-separated list of seed broker
   # addresses.
   # CLI flag: -ingest-storage.kafka.address
@@ -5329,11 +5505,13 @@ kafka:
   [client_id: <string> | default = ""]
 
   # The rack identifier for this Kafka client. Corresponds to the Kafka
-  # client.rack setting.
+  # client.rack setting. Only supported when ingest-storage.kafka.backend=kafka.
   # CLI flag: -ingest-storage.kafka.client-rack
   [client_rack: <string> | default = ""]
 
-  # The maximum time allowed to open a connection to a Kafka broker.
+  # The maximum time allowed to establish the TCP connection to a Kafka broker,
+  # including the TLS handshake when TLS is enabled. It does not include the
+  # subsequent SASL authentication handshake.
   # CLI flag: -ingest-storage.kafka.dial-timeout
   [dial_timeout: <duration> | default = 2s]
 
@@ -5342,6 +5520,14 @@ kafka:
   # CLI flag: -ingest-storage.kafka.write-timeout
   [write_timeout: <duration> | default = 10s]
 
+  # (experimental) Additional time added on top of the write timeout, accounting
+  # for a write request sitting in the client buffer and travelling over the
+  # network before the Kafka backend starts processing it. Lower values fail
+  # slow writes faster, at the cost of less tolerance to network and buffer
+  # latency.
+  # CLI flag: -ingest-storage.kafka.write-timeout-overhead
+  [write_timeout_overhead: <duration> | default = 2s]
+
   # (deprecated) The number of Kafka clients used by producers. When the
   # configured number of clients is greater than 1, partitions are sharded among
   # Kafka clients. A higher number of clients may provide higher write
@@ -5349,6 +5535,45 @@ kafka:
   # Deprecated: has no effect (Mimir always uses a single Kafka write client).
   # CLI flag: -ingest-storage.kafka.write-clients
   [write_clients: <int> | default = 1]
+
+  # (experimental) Mark an agent as slow when its window-average latency exceeds
+  # this multiple of the cluster baseline. Only applies when
+  # -ingest-storage.kafka.backend=warpstream.
+  # CLI flag: -ingest-storage.kafka.warpstream-health-check-slow-multiplier
+  [warpstream_health_check_slow_multiplier: <float> | default = 2]
+
+  # (experimental) Suppress slow-based hedging when more than this fraction of
+  # agents are slow (cluster-wide issue). Only applies when
+  # -ingest-storage.kafka.backend=warpstream.
+  # CLI flag: -ingest-storage.kafka.warpstream-health-check-max-slow-fraction
+  [warpstream_health_check_max_slow_fraction: <float> | default = 0.3]
+
+  # (experimental) Mark an agent as faulty when its observed error rate exceeds
+  # this fraction. Only applies when -ingest-storage.kafka.backend=warpstream.
+  # CLI flag: -ingest-storage.kafka.warpstream-health-check-faulty-threshold
+  [warpstream_health_check_faulty_threshold: <float> | default = 0.2]
+
+  # (experimental) Suppress faulty-based hedging and demotion when more than
+  # this fraction of agents are faulty (cluster-wide issue). Only applies when
+  # -ingest-storage.kafka.backend=warpstream.
+  # CLI flag: -ingest-storage.kafka.warpstream-health-check-max-faulty-fraction
+  [warpstream_health_check_max_faulty_fraction: <float> | default = 0.3]
+
+  # (experimental) Floor on the dynamically-computed hedge delay. Only applies
+  # when -ingest-storage.kafka.backend=warpstream.
+  # CLI flag: -ingest-storage.kafka.warpstream-hedge-min-delay
+  [warpstream_hedge_min_delay: <duration> | default = 500ms]
+
+  # (experimental) Cap on how many per-partition candidates the hedge fanout
+  # considers when picking a fallback (excluding the primary and any agent
+  # already tried). Only applies when -ingest-storage.kafka.backend=warpstream.
+  # CLI flag: -ingest-storage.kafka.warpstream-hedge-max-agents
+  [warpstream_hedge_max_agents: <int> | default = 3]
+
+  # (experimental) Minimum wall-clock gap between probes to a demoted agent.
+  # Only applies when -ingest-storage.kafka.backend=warpstream.
+  # CLI flag: -ingest-storage.kafka.warpstream-demoter-probe-interval
+  [warpstream_demoter_probe_interval: <duration> | default = 1s]
 
   # The SASL mechanism used to authenticate to Kafka. Supported values: PLAIN,
   # SCRAM-SHA-256, SCRAM-SHA-512, OAUTHBEARER, AWS_MSK_IAM. For
@@ -5595,6 +5820,15 @@ kafka:
   # CLI flag: -ingest-storage.kafka.producer-max-buffered-bytes
   [producer_max_buffered_bytes: <int> | default = 1073741824]
 
+  # The compression codec used by the Kafka producer when writing records to the
+  # Kafka backend. Supported values: none, gzip, snappy, lz4, zstd. When unset,
+  # the franz-go default (snappy with no-compression fallback) is used. Set to
+  # "none" to disable compression entirely; this is required when targeting
+  # Azure Event Hub via its Kafka-compatible endpoint, which does not support
+  # compressed produce requests.
+  # CLI flag: -ingest-storage.kafka.producer-compression
+  [producer_compression: <string> | default = ""]
+
   # The maximum allowed for a read requests processed by an ingester to wait
   # until strong read consistency is enforced. 0 to disable the timeout.
   # CLI flag: -ingest-storage.kafka.wait-strong-read-consistency-timeout
@@ -5677,10 +5911,41 @@ migration:
   # CLI flag: -ingest-storage.migration.ingest-storage-max-wait-time
   [ingest_storage_max_wait_time: <duration> | default = 0s]
 
+ordered_consumption:
+  # (experimental) Whether records from all write compartments' Kafka clusters
+  # are consumed in best-effort Kafka-record-timestamp order before being
+  # pushed. When disabled, each Kafka cluster is consumed independently, so
+  # there's no cross-cluster ordering guarantee. Only takes effect when
+  # compartments are enabled with more than one write compartment.
+  # CLI flag: -ingest-storage.ordered-consumption.enabled
+  [enabled: <boolean> | default = false]
+
+  # (experimental) Soft upper bound on records buffered before forcing a flush.
+  # Larger values give more cross-cluster mixing (better ordering) at the cost
+  # of memory and per-flush latency.
+  # CLI flag: -ingest-storage.ordered-consumption.max-batch-records
+  [max_batch_records: <int> | default = 1024]
+
+  # (experimental) Maximum time records sit buffered before being flushed even
+  # if max-batch-records has not been reached.
+  # CLI flag: -ingest-storage.ordered-consumption.max-batch-wait
+  [max_batch_wait: <duration> | default = 50ms]
+
+  # (experimental) Buffer size of the channel into which the per-cluster
+  # consumers submit records. When 0, defaults to 2x max-batch-records.
+  # CLI flag: -ingest-storage.ordered-consumption.input-buffer-size
+  [input_buffer_size: <int> | default = 0]
+
 # (advanced) Number of tenants to concurrently fsync WAL and WBL before Kafka
 # offsets are committed, must be at least 1.
 # CLI flag: -ingest-storage.write-logs-fsync-before-kafka-commit-concurrency
 [write_logs_fsync_before_kafka_commit_concurrency: <int> | default = 4]
+
+# (experimental) True to wrap all ingester metrics with an ingester_partition
+# label identifying the Kafka partition the ingester consumes. Planned to become
+# the default in Mimir 3.2 and to be removed in Mimir 3.5.
+# CLI flag: -ingest-storage.ingester-partition-metric-label-enabled
+[ingester_partition_metric_label_enabled: <boolean> | default = false]
 ```
 
 ### blocks_storage
@@ -6533,6 +6798,80 @@ sharding_ring:
 # smallest-range-oldest-blocks-first, newest-blocks-first.
 # CLI flag: -compactor.compaction-jobs-order
 [compaction_jobs_order: <string> | default = "smallest-range-oldest-blocks-first"]
+
+scheduler_client:
+  # (experimental) Controls whether compactors should contact a scheduler to
+  # request work.
+  # CLI flag: -compactor.scheduler-client.enabled
+  [enabled: <boolean> | default = false]
+
+  # (experimental) Compactor scheduler endpoint.
+  # CLI flag: -compactor.scheduler-client.scheduler-endpoint
+  [scheduler_endpoint: <string> | default = ""]
+
+  # The grpc_client block configures the gRPC client used to communicate between
+  # two Mimir components.
+  # The CLI flags prefix for this block configuration is:
+  # compactor.scheduler-client.grpc-client-config
+  [grpc_client_config: <grpc_client>]
+
+  # (experimental) Minimum backoff time between scheduler job lease requests.
+  # CLI flag: -compactor.scheduler-client.leasing-min-backoff
+  [leasing_min_backoff: <duration> | default = 100ms]
+
+  # (experimental) Maximum backoff time between scheduler job lease requests.
+  # CLI flag: -compactor.scheduler-client.leasing-max-backoff
+  [leasing_max_backoff: <duration> | default = 2m]
+
+  # (experimental) Interval between scheduler job lease updates.
+  # CLI flag: -compactor.scheduler-client.update-interval
+  [update_interval: <duration> | default = 15s]
+
+  # (experimental) Minimum backoff time for compaction executor retries when
+  # sending scheduler status updates.
+  # CLI flag: -compactor.scheduler-client.update-min-backoff
+  [update_min_backoff: <duration> | default = 1s]
+
+  # (experimental) Maximum backoff time for compaction executor retries when
+  # sending scheduler status updates.
+  # CLI flag: -compactor.scheduler-client.update-max-backoff
+  [update_max_backoff: <duration> | default = 32s]
+
+  # (experimental) Defines how frequently to clean up the compaction working
+  # directory. The directory is cleaned on startup and then only when this
+  # interval has elapsed since the last cleanup. Set to 0 to disable periodic
+  # cleanup.
+  # CLI flag: -compactor.scheduler-client.compaction-dir-cleanup-interval
+  [compaction_dir_cleanup_interval: <duration> | default = 30m]
+
+  metadata_cache:
+    # Backend for metadata cache, if not empty. Supported values: memcached.
+    # CLI flag: -compactor.scheduler-client.metadata-cache.backend
+    [backend: <string> | default = ""]
+
+    # The memcached block configures the Memcached-based caching backend.
+    # The CLI flags prefix for this block configuration is:
+    # compactor.scheduler-client.metadata-cache
+    [memcached: <memcached>]
+
+    # (experimental) How long to cache block metadata content.
+    # CLI flag: -compactor.scheduler-client.metadata-cache.metafile-content-ttl
+    [metafile_content_ttl: <duration> | default = 24h]
+
+  # (experimental) Timeout for sending a final job status update to the
+  # scheduler when the parent context is canceled (e.g. during shutdown).
+  # CLI flag: -compactor.scheduler-client.terminating-final-status-timeout
+  [terminating_final_status_timeout: <duration> | default = 30s]
+
+  # (experimental) Lanes to request for each worker goroutine. Each entry is a
+  # '+'-separated list of job types in priority order.
+  # CLI flag: -compactor.scheduler-client.lanes
+  [lanes: <string> | default = "compact+plan,plan"]
+
+  # (experimental) Report a distinct job update status to the scheduler when a
+  # job is interrupted (e.g., clean shutdown).
+  # CLI flag: -compactor.scheduler-client.enable-interrupted-reassign
+  [enable_interrupted_reassign: <boolean> | default = true]
 ```
 
 ### store_gateway
@@ -6719,6 +7058,7 @@ The `memcached` block configures the Memcached-based caching backend. The suppor
 - `blocks-storage.bucket-store.index-cache`
 - `blocks-storage.bucket-store.index-header-cache`
 - `blocks-storage.bucket-store.metadata-cache`
+- `compactor.scheduler-client.metadata-cache`
 - `querier.mimir-query-engine.range-vector-splitting`
 - `query-frontend.results-cache`
 - `ruler-storage.cache`

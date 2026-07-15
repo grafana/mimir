@@ -123,7 +123,7 @@ data:
       join_members:
       - dns+test-oss-values-mimir-gossip-ring.citestns.svc.cluster.local.:7946
     querier:
-      max_concurrent: 16
+      max_concurrent: 8
     query_scheduler:
       max_outstanding_requests_per_tenant: 800
     ruler:

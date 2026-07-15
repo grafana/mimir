@@ -44,3 +44,12 @@ func (s *SplitFunctionCall) ReplaceChild(idx int, node planning.Node) error {
 	s.Inner = child
 	return nil
 }
+
+func (s *SplitFunctionCall) ChildrenLabels() []string {
+	return []string{""}
+}
+
+func (s *SplitFunctionCall) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
+	_, ok := other.(*SplitFunctionCall)
+	return ok
+}

@@ -3,6 +3,7 @@
 package core
 
 import (
+	"context"
 	"strconv"
 	"time"
 
@@ -36,22 +37,12 @@ func (n *NumberLiteral) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_NUMBER_LITERAL
 }
 
-func (n *NumberLiteral) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
-	otherLiteral, ok := other.(*NumberLiteral)
-
-	return ok && n.Value == otherLiteral.Value
-}
-
 func (n *NumberLiteral) MergeHints(_ planning.Node) error {
 	// Nothing to do.
 	return nil
 }
 
-func (n *NumberLiteral) ChildrenLabels() []string {
-	return nil
-}
-
-func MaterializeNumberLiteral(n *NumberLiteral, _ *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
+func MaterializeNumberLiteral(_ context.Context, n *NumberLiteral, _ *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
 	o := scalars.NewScalarConstant(n.Value, timeRange, params.MemoryConsumptionTracker, n.GetExpressionPosition().ToPrometheusType())
 
 	return planning.NewSingleUseOperatorFactory(o), nil

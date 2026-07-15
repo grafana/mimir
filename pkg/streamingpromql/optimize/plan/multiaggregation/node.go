@@ -3,8 +3,8 @@
 package multiaggregation
 
 import (
+	"context"
 	"fmt"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -41,12 +41,6 @@ func (g *MultiAggregationGroup) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_MULTI_AGGREGATION_GROUP
 }
 
-func (g *MultiAggregationGroup) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
-	_, ok := other.(*MultiAggregationGroup)
-
-	return ok
-}
-
 func (g *MultiAggregationGroup) MergeHints(other planning.Node) error {
 	_, ok := other.(*MultiAggregationGroup)
 	if !ok {
@@ -58,10 +52,6 @@ func (g *MultiAggregationGroup) MergeHints(other planning.Node) error {
 
 func (g *MultiAggregationGroup) Describe() string {
 	return ""
-}
-
-func (g *MultiAggregationGroup) ChildrenLabels() []string {
-	return []string{""}
 }
 
 func (g *MultiAggregationGroup) ChildrenTimeRange(parentTimeRange types.QueryTimeRange) types.QueryTimeRange {
@@ -87,8 +77,8 @@ func (g *MultiAggregationGroup) MinimumRequiredPlanVersion(types.QueryTimeRange)
 //node:generate
 type MultiAggregationInstance struct {
 	*MultiAggregationInstanceDetails
-	Group *MultiAggregationGroup `node:"child"`
-	Param planning.Node          `node:"child,nilable"` // nil for non-parameterized aggregations (eg. sum), set for quantile.
+	Group *MultiAggregationGroup `node:"child,label=expression"`
+	Param planning.Node          `node:"child,nilable,label=parameter"` // nil for non-parameterized aggregations (eg. sum), set for quantile.
 }
 
 func (a *MultiAggregationInstance) Details() proto.Message {
@@ -97,17 +87,6 @@ func (a *MultiAggregationInstance) Details() proto.Message {
 
 func (a *MultiAggregationInstance) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_MULTI_AGGREGATION_INSTANCE
-}
-
-func (a *MultiAggregationInstance) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
-	otherInstance, ok := other.(*MultiAggregationInstance)
-
-	return ok &&
-		a.Aggregation.EquivalentTo(otherInstance.Aggregation) &&
-		slices.EqualFunc(a.Filters, otherInstance.Filters, func(a *core.LabelMatcher, b *core.LabelMatcher) bool {
-			return a.Equal(b)
-		}) &&
-		a.SubsetIndex == otherInstance.SubsetIndex
 }
 
 func (a *MultiAggregationInstance) MergeHints(other planning.Node) error {
@@ -132,14 +111,6 @@ func (a *MultiAggregationInstance) Describe() string {
 	}
 
 	return builder.String()
-}
-
-func (a *MultiAggregationInstance) ChildrenLabels() []string {
-	if a.Param == nil {
-		return []string{""}
-	}
-
-	return []string{"expression", "parameter"}
 }
 
 func (a *MultiAggregationInstance) ChildrenTimeRange(parentTimeRange types.QueryTimeRange) types.QueryTimeRange {
@@ -184,8 +155,8 @@ func (a *MultiAggregationInstance) MinimumRequiredPlanVersion(types.QueryTimeRan
 	return planning.QueryPlanV5, nil
 }
 
-func MaterializeMultiAggregationGroup(node *MultiAggregationGroup, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
-	inner, err := materializer.ConvertNodeToInstantVectorOperator(node.Inner, timeRange)
+func MaterializeMultiAggregationGroup(ctx context.Context, node *MultiAggregationGroup, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
+	inner, err := materializer.ConvertNodeToInstantVectorOperator(ctx, node.Inner, timeRange)
 	if err != nil {
 		return nil, err
 	}
@@ -203,8 +174,8 @@ func (m *MultiAggregationInstanceFactory) Produce() (types.Operator, error) {
 	return m.group.AddInstance(), nil
 }
 
-func MaterializeMultiAggregationInstance(node *MultiAggregationInstance, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
-	operator, err := materializer.ConvertNodeToInstantVectorOperator(node.Group, timeRange)
+func MaterializeMultiAggregationInstance(ctx context.Context, node *MultiAggregationInstance, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
+	operator, err := materializer.ConvertNodeToInstantVectorOperator(ctx, node.Group, timeRange)
 	if err != nil {
 		return nil, err
 	}
@@ -226,7 +197,7 @@ func MaterializeMultiAggregationInstance(node *MultiAggregationInstance, materia
 
 	var param types.ScalarOperator
 	if node.Param != nil {
-		param, err = materializer.ConvertNodeToScalarOperator(node.Param, timeRange)
+		param, err = materializer.ConvertNodeToScalarOperator(ctx, node.Param, timeRange)
 		if err != nil {
 			return nil, fmt.Errorf("could not create parameter operator for MultiAggregationInstance %s: %w", node.Aggregation.Op.String(), err)
 		}

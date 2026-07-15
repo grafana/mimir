@@ -108,7 +108,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.Var(&cfg.PreferAvailabilityZones, "querier.prefer-availability-zones", "Comma-separated list of availability zones to prefer when querying ingesters and store-gateways. All zones in the list are given equal priority.")
 
 	f.BoolVar(&cfg.MinimizeIngesterRequests, minimiseIngesterRequestsFlag, true, "If true, when querying ingesters, only the minimum required ingesters required to reach quorum will be queried initially, with other ingesters queried only if needed due to failures from the initial set of ingesters. Enabling this option reduces resource consumption for the happy path at the cost of increased latency for the unhappy path.")
-	f.DurationVar(&cfg.MinimiseIngesterRequestsHedgingDelay, minimiseIngesterRequestsFlag+"-hedging-delay", 3*time.Second, "Delay before initiating requests to further ingesters when request minimization is enabled and the initially selected set of ingesters have not all responded. Ignored if -"+minimiseIngesterRequestsFlag+" is not enabled.")
+	f.DurationVar(&cfg.MinimiseIngesterRequestsHedgingDelay, minimiseIngesterRequestsFlag+"-hedging-delay", 0, "Delay before initiating requests to further ingesters when request minimization is enabled and the initially selected set of ingesters have not all responded. Set to 0 to disable hedging. Ignored if -"+minimiseIngesterRequestsFlag+" is not enabled.")
 
 	// Why 256 series / ingester/store-gateway?
 	// Based on our testing, 256 series / ingester was a good balance between memory consumption and the CPU overhead of managing a batch of series.
@@ -208,23 +208,23 @@ func New(
 	distributorQueryable := NewDistributorQueryable(distributor, limits, queryMetrics, logger)
 	queryable := newMultiQueryable(cfg, distributorQueryable, storeQueryable, limits, queryMetrics, logger)
 
-	opts, mqeOpts := engine.NewPromQLEngineOptions(cfg.EngineConfig, tracker, logger, reg, limitsProvider)
+	opts := engine.NewPromQLEngineOptions(cfg.EngineConfig, tracker, logger, reg, limitsProvider)
 
 	var eng promql.QueryEngine
 	var streamingEngine *streamingpromql.Engine
 
 	switch cfg.QueryEngine {
 	case PrometheusEngine:
-		eng = limiter.NewUnlimitedMemoryTrackerPromQLEngine(promql.NewEngine(opts))
+		eng = limiter.NewUnlimitedMemoryTrackerPromQLEngine(promql.NewEngine(opts.CommonOpts))
 	case MimirEngine:
 		var err error
-		streamingEngine, err = streamingpromql.NewEngine(mqeOpts, queryMetrics, planner)
+		streamingEngine, err = streamingpromql.NewEngine(opts, queryMetrics, planner)
 		if err != nil {
 			return nil, nil, nil, nil, err
 		}
 
 		if cfg.EnableQueryEngineFallback {
-			prometheusEngine := limiter.NewUnlimitedMemoryTrackerPromQLEngine(promql.NewEngine(opts))
+			prometheusEngine := limiter.NewUnlimitedMemoryTrackerPromQLEngine(promql.NewEngine(opts.CommonOpts))
 			eng = compat.NewEngineWithFallback(streamingEngine, prometheusEngine, reg, logger)
 		} else {
 			eng = streamingEngine
@@ -904,6 +904,33 @@ func (p *TenantQueryLimitsProvider) GetMinResultsCacheTTL(ctx context.Context) (
 	}
 
 	return validation.SmallestPositiveNonZeroDurationPerTenant(tenantIDs, p.limits.ResultsCacheTTL), nil
+}
+
+func (p *TenantQueryLimitsProvider) GetMinOutOfOrderResultsCacheTTL(ctx context.Context) (time.Duration, error) {
+	tenantIDs, err := tenant.TenantIDs(ctx)
+	if err != nil {
+		return 0, err
+	}
+
+	return validation.SmallestPositiveNonZeroDurationPerTenant(tenantIDs, p.limits.ResultsCacheTTLForOutOfOrderTimeWindow), nil
+}
+
+func (p *TenantQueryLimitsProvider) GetMaxCacheFreshness(ctx context.Context) (time.Duration, error) {
+	tenantIDs, err := tenant.TenantIDs(ctx)
+	if err != nil {
+		return 0, err
+	}
+
+	return validation.MaxDurationPerTenant(tenantIDs, p.limits.MaxCacheFreshness), nil
+}
+
+func (p *TenantQueryLimitsProvider) AllowCachingUnalignedQueries(ctx context.Context) (bool, error) {
+	tenantIDs, err := tenant.TenantIDs(ctx)
+	if err != nil {
+		return false, err
+	}
+
+	return validation.AllTrueBooleansPerTenant(tenantIDs, p.limits.ResultsCacheForUnalignedQueryEnabled), nil
 }
 
 type RequestMetrics struct {

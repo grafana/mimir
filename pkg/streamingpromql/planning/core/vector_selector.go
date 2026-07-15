@@ -3,8 +3,8 @@
 package core
 
 import (
+	"context"
 	"fmt"
-	"slices"
 	"time"
 
 	"github.com/gogo/protobuf/proto"
@@ -19,7 +19,7 @@ import (
 
 //node:generate
 type VectorSelector struct {
-	*VectorSelectorDetails
+	*VectorSelectorDetails `node:"hints=SkipHistogramBuckets"`
 }
 
 func (v *VectorSelector) Describe() string {
@@ -48,15 +48,6 @@ func (v *VectorSelector) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_VECTOR_SELECTOR
 }
 
-func (v *VectorSelector) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
-	otherVectorSelector, ok := other.(*VectorSelector)
-
-	return ok &&
-		slices.EqualFunc(v.Matchers, otherVectorSelector.Matchers, matchersEqual) &&
-		slices.EqualFunc(v.Subsets, otherVectorSelector.Subsets, subsetsEqual) &&
-		v.EquivalentToIgnoringMatchersAndHints(otherVectorSelector)
-}
-
 func (v *VectorSelector) EquivalentToIgnoringMatchersAndHints(other planning.Node) bool {
 	otherVectorSelector, ok := other.(*VectorSelector)
 
@@ -82,11 +73,7 @@ func (v *VectorSelector) MergeHints(other planning.Node) error {
 	return nil
 }
 
-func (v *VectorSelector) ChildrenLabels() []string {
-	return nil
-}
-
-func MaterializeVectorSelector(v *VectorSelector, _ *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
+func MaterializeVectorSelector(_ context.Context, v *VectorSelector, _ *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
 	subsets, err := SubsetsToSelectorType(v.Subsets)
 	if err != nil {
 		return nil, err

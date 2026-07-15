@@ -83,7 +83,23 @@ const QueryPlanV14 = QueryPlanVersion(14)
 // QueryPlanV15 introduces support for quantile aggregation in multi-aggregation nodes.
 const QueryPlanV15 = QueryPlanVersion(15)
 
-var MaximumSupportedQueryPlanVersion = QueryPlanV15
+// QueryPlanV16 introduces support for caching the result of an instant vector operator.
+const QueryPlanV16 = QueryPlanVersion(16)
+
+// QueryPlanV17 introduces the EvaluationRoot node used when spinning off subqueries from instant
+// queries. EvaluationRoot nodes only ever run in query-frontends, so queriers do not need to support
+// this version.
+const QueryPlanV17 = QueryPlanVersion(17)
+
+// QueryPlanV18 computes the SplitFunctionCall split ranges at materialize time rather than storing
+// them in the proto. The split ranges depend on the out-of-order window and current time, which are
+// evaluated on the querier when the operator is materialized.
+const QueryPlanV18 = QueryPlanVersion(18)
+
+// QueryPlanV19 introduces support for deduplicating scalar expressions.
+const QueryPlanV19 = QueryPlanVersion(19)
+
+var MaximumSupportedQueryPlanVersion = QueryPlanV19
 
 type QueryPlan struct {
 	Root       Node

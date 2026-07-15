@@ -3,6 +3,7 @@
 package core
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -29,12 +30,6 @@ func (n *DropName) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_DROP_NAME
 }
 
-func (n *DropName) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
-	_, ok := other.(*DropName)
-
-	return ok
-}
-
 func (n *DropName) MergeHints(_ planning.Node) error {
 	// Nothing to do.
 	return nil
@@ -42,10 +37,6 @@ func (n *DropName) MergeHints(_ planning.Node) error {
 
 func (n *DropName) Describe() string {
 	return ""
-}
-
-func (n *DropName) ChildrenLabels() []string {
-	return []string{""}
 }
 
 func (n *DropName) ChildrenTimeRange(parentTimeRange types.QueryTimeRange) types.QueryTimeRange {
@@ -68,8 +59,8 @@ func (n *DropName) MinimumRequiredPlanVersion(types.QueryTimeRange) (planning.Qu
 	return planning.QueryPlanV1, nil
 }
 
-func MaterializeDropName(n *DropName, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
-	inner, err := materializer.ConvertNodeToOperator(n.Inner, timeRange)
+func MaterializeDropName(ctx context.Context, n *DropName, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
+	inner, err := materializer.ConvertNodeToOperator(ctx, n.Inner, timeRange)
 	if err != nil {
 		return nil, err
 	}

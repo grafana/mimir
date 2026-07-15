@@ -17,6 +17,9 @@ spec:
   podManagementPolicy: {{ .podManagementPolicy }}
   minReadySeconds: {{ .minReadySeconds }}
   replicas: {{ .replicas }}
+  {{- with .revisionHistoryLimit }}
+  revisionHistoryLimit: {{ . }}
+  {{- end }}
   selector:
     matchLabels:
       {{- include "mimir.selectorLabels" (dict "ctx" $.ctx "component" $.component) | nindent 6 }}

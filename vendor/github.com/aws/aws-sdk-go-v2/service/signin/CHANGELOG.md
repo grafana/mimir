@@ -1,3 +1,24 @@
+# v1.3.0 (2026-07-06)
+
+* **Feature**: Add request serialization snapshot tests.
+
+# v1.2.2 (2026-07-01)
+
+* **Bug Fix**: Bump smithy-go to 1.27.3, fix JSON encorder for document.Number, endpoint host label format validation and CBOR union serialization on new serde
+* **Dependency Update**: Updated to the latest SDK module versions
+
+# v1.2.1 (2026-06-29)
+
+* No change notes available for this release.
+
+# v1.2.0 (2026-06-10)
+
+* **Feature**: AWS Sign-In now allows customers to control access to the AWS Management Console using resource-based policies. With this release customers can restrict console access based on network perimeters such as VPC IDs, VPC endpoints, and IP addresses.
+
+# v1.1.5 (2026-06-08)
+
+* **Dependency Update**: Updated to the latest SDK module versions
+
 # v1.1.4 (2026-06-04)
 
 * **Dependency Update**: Update to smithy-go v1.27.1 to fix several union-related deserialization bugs in schema-serde-enabled services.

@@ -4,19 +4,45 @@ package ingester
 
 import (
 	"context"
+	"errors"
+	"flag"
 	"sync"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/index"
-	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/ingester/client"
+	"github.com/grafana/mimir/pkg/util/workerpool"
 )
 
 const (
-	checkContextErrorSeriesCount = 1000 // series count interval in which context cancellation must be checked.
+	checkContextErrorSeriesCount    = 1000 // series count interval in which context cancellation must be checked.
+	dimensionLabelValuesSeriesCount = "label-values-series-count"
 )
+
+// LabelValuesCountConfig holds the label-values-cardinality-specific settings.
+// The work itself runs on the ingester's shared compute pool (see Config.ComputeWorkers);
+// this config only carries the knobs specific to label-values.
+type LabelValuesCountConfig struct {
+	ChunkSize int `yaml:"chunk_size" category:"experimental"`
+}
+
+// RegisterFlags registers config flags.
+func (cfg *LabelValuesCountConfig) RegisterFlags(f *flag.FlagSet) {
+	// 32 is a gut-feel default (not benchmarked):
+	// big enough to amortize per-task dispatch overhead,
+	// small enough to stay fair across tenants.
+	f.IntVar(&cfg.ChunkSize, "ingester.label-values-count-chunk-size", 32, "Number of label values processed per work unit submitted to the ingester compute worker pool. Smaller values improve cross-tenant fairness at the cost of more scheduling overhead.")
+}
+
+// Validate returns an error if the config is invalid.
+func (cfg *LabelValuesCountConfig) Validate() error {
+	if cfg.ChunkSize < 1 {
+		return errors.New("-ingester.label-values-count-chunk-size must be >= 1")
+	}
+	return nil
+}
 
 type labelValueCountResult struct {
 	val   string
@@ -119,10 +145,16 @@ func labelValuesCardinality(
 	idxReader tsdb.IndexReader,
 	postingsForMatchersFn func(context.Context, tsdb.IndexPostingsReader, ...*labels.Matcher) (index.Postings, error),
 	msgSizeThreshold int,
-	concurrency int,
+	pool *workerpool.Pool,
+	tenantID string,
+	chunkSize int,
 	srv client.Ingester_LabelValuesCardinalityServer,
 ) error {
-	ctx := srv.Context()
+	// Cancel on return so any in-flight chunk tasks still running on the shared
+	// worker pool bail out at their next ctx.Err() check instead of computing
+	// counts no one will read and holding pool workers from other tenants.
+	ctx, cancel := context.WithCancelCause(srv.Context())
+	defer cancel(nil)
 
 	resp := client.LabelValuesCardinalityResponse{}
 	respSize := 0
@@ -140,7 +172,7 @@ func labelValuesCardinality(
 		// For each value count total number of series storing the result into cardinality response item.
 		var respItem *client.LabelValueSeriesCount
 
-		resultCh := computeLabelValuesSeriesCount(ctx, lblName, lblValues, matchers, idxReader, postingsForMatchersFn, concurrency)
+		resultCh := computeLabelValuesSeriesCount(ctx, pool, tenantID, chunkSize, lblName, lblValues, matchers, idxReader, postingsForMatchersFn)
 
 		for countRes := range resultCh {
 			if countRes.err != nil {
@@ -181,43 +213,56 @@ func labelValuesCardinality(
 
 func computeLabelValuesSeriesCount(
 	ctx context.Context,
+	pool *workerpool.Pool,
+	tenantID string,
+	chunkSize int,
 	lblName string,
 	lblValues []string,
 	matchers []*labels.Matcher,
 	idxReader tsdb.IndexReader,
 	postingsForMatchersFn func(context.Context, tsdb.IndexPostingsReader, ...*labels.Matcher) (index.Postings, error),
-	maxConcurrency int,
 ) <-chan labelValueCountResult {
-	if len(lblValues) < maxConcurrency {
-		maxConcurrency = len(lblValues)
-	}
-
-	wg := sync.WaitGroup{}
-	wg.Add(len(lblValues))
-
 	countCh := make(chan labelValueCountResult, len(lblValues))
 
-	indexes := atomic.NewInt64(-1)
-	for ix := 0; ix < maxConcurrency; ix++ {
-		go func() {
-			for {
-				idx := int(indexes.Inc())
-				if idx >= len(lblValues) {
-					return
-				}
-				seriesCount, err := countLabelValueSeries(ctx, lblName, lblValues[idx], matchers, idxReader, postingsForMatchersFn)
-				countCh <- labelValueCountResult{
-					val:   lblValues[idx],
-					count: seriesCount,
-					err:   err,
-				}
-				wg.Done()
-			}
-		}()
-	}
-	go func() {
-		wg.Wait()
+	if len(lblValues) == 0 {
 		close(countCh)
+		return countCh
+	}
+
+	processChunk := func(start, end int) {
+		for i := start; i < end; i++ {
+			seriesCount, err := countLabelValueSeries(ctx, lblName, lblValues[i], matchers, idxReader, postingsForMatchersFn)
+			countCh <- labelValueCountResult{
+				val:   lblValues[i],
+				count: seriesCount,
+				err:   err,
+			}
+		}
+	}
+
+	var wg sync.WaitGroup
+	go func() {
+		defer func() {
+			wg.Wait()
+			close(countCh)
+		}()
+		for start := 0; start < len(lblValues); start += chunkSize {
+			if err := ctx.Err(); err != nil {
+				countCh <- labelValueCountResult{err: err}
+				return
+			}
+			end := min(start+chunkSize, len(lblValues))
+			wg.Add(1)
+			err := pool.Submit(dimensionLabelValuesSeriesCount, tenantID, func() {
+				defer wg.Done()
+				processChunk(start, end)
+			})
+			if err != nil {
+				wg.Done()
+				countCh <- labelValueCountResult{err: err}
+				return
+			}
+		}
 	}()
 
 	return countCh

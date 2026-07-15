@@ -13,15 +13,31 @@ the other files is implemented today; this page tracks the gap.
 - **Multi-cluster consumption**: an ingester consumes its read compartment's topic from **every** write
   compartment's Kafka cluster and unions the records into its TSDB. Each per-cluster consumption tracks
   its own offsets independently.
+- **Compartment-aware querying of ingesters and store-gateways**: the query layer narrows a query to the
+  compartments that can hold the selected metric names (a single compartment for an equality matcher, the
+  union for an enumerable metric-name set) and fans out to all compartments otherwise, then merges the
+  results (see [Read compartments](./read-compartments.md)). For blocks, it queries each targeted
+  compartment's store-gateways and discovers that compartment's blocks from its dedicated bucket.
+- **Per-compartment store-gateway and compactor rings**: a store-gateway or compactor configured for a
+  read compartment registers into that compartment's own dedicated ring, separate from the
+  non-compartment ring and from the other compartments' rings.
+- **Compartment-aware strong read consistency**: the query-frontend monitors the last produced offset of
+  every read compartment's topic in every write compartment's Kafka cluster and propagates them to the
+  ingesters, so an ingester enforcing strong read consistency waits for the specific requested offsets of
+  each Kafka cluster (falling back to the last produced offset when offsets aren't propagated).
+- **Global ruler evaluation and writes**: rulers evaluate rules through the remote, compartment-aware
+  query path and send generated series through a zonal distributor endpoint pool that spans all write
+  compartments. The selected distributor then applies the normal read-compartment sharding (see
+  [Ruler](./ruler.md)).
 - A local development environment (`development/mimir-compartments`).
 
-## The query path is not compartment-aware yet
+## Blocks storage is only partially compartment-aware
 
-- Queries only consult **read compartment 0**. Series that hash to any other compartment are ingested
-  correctly but are **not queryable** yet.
-- Strong read consistency does not propagate per-compartment offsets from the query-frontend and querier
-  to the ingester, so an ingester enforcing read consistency waits for the last produced offset of every
-  Kafka cluster rather than for the specific requested offsets.
+- Running store-gateways and compactors as separate per-compartment deployments, each with a dedicated
+  object-storage bucket, is wired in the local development environment but not yet in the production
+  deployment tooling.
+- The block-builder is not compartment-aware yet, so blocks for every read compartment are not produced
+  independently.
 
 ## Not yet addressed
 
@@ -39,7 +55,5 @@ compartment has its own single-broker Kafka cluster, and each read compartment h
 ingester set. The ingesters of each read compartment consume that compartment's topic from both Kafka
 clusters.
 
-Because the query path only reads compartment 0, only metrics that hash to compartment 0 are queryable
-in this environment. In particular, the metric used to populate the bundled dashboards' template
-variables happens to hash to a different compartment, so those dashboards render blank. Querying metrics
-that hash to compartment 0 returns data as expected.
+Metrics in either compartment are queryable: a query that pins a metric name is served from the owning
+compartment, and a query without a metric-name equality matcher fans out to both.
