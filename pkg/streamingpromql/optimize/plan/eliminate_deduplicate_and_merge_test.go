@@ -15,6 +15,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/model/timestamp"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/stretchr/testify/require"
 
@@ -25,6 +26,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
 func TestEliminateDeduplicateAndMergeOptimizationPassPlan(t *testing.T) {
@@ -1274,6 +1276,12 @@ func runTestCasesWithDelayedNameRemovalDisabled(t *testing.T, globPattern string
 
 			testScript := string(b)
 			opts := streamingpromql.NewTestEngineOpts()
+
+			// Enable the experimental fill binary operator modifiers for tests.
+			fillParserOpts := promqlext.NewPromQLParserOptions()
+			fillParserOpts.EnableBinopFillModifiers = true
+			opts.CommonOpts.Parser = parser.NewParser(fillParserOpts)
+
 			planner, err := streamingpromql.NewQueryPlanner(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 			require.NoError(t, err)
 			engine, err := streamingpromql.NewEngine(opts, stats.NewQueryMetrics(nil), planner)

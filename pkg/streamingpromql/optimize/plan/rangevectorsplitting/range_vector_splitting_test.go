@@ -16,6 +16,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
@@ -37,6 +38,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
 	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
 // Checks the case where results are not cached as the range (1h) is lower than the split interval (test default is 2h).
@@ -1480,6 +1482,11 @@ func createSplittingEngine(t *testing.T, registry *prometheus.Registry, splitInt
 	opts.RangeVectorSplitting.SplitInterval = splitInterval
 	opts.CommonOpts.Reg = registry
 	opts.CommonOpts.EnableDelayedNameRemoval = enableDelayedNameRemoval
+
+	// Enable the experimental fill binary operator modifiers for tests.
+	fillParserOpts := promqlext.NewPromQLParserOptions()
+	fillParserOpts.EnableBinopFillModifiers = true
+	opts.CommonOpts.Parser = parser.NewParser(fillParserOpts)
 	if !enableEliminateDeduplicateAndMerge {
 		opts.EnableEliminateDeduplicateAndMerge = false
 	}
