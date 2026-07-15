@@ -546,8 +546,8 @@ github.com/lestrrat-go/dsig-secp256k1 v1.0.0 h1:JpDe4Aybfl0soBvoVwjqDbp+9S1Y2OM7
 github.com/lestrrat-go/dsig-secp256k1 v1.0.0/go.mod h1:CxUgAhssb8FToqbL8NjSPoGQlnO4w3LG1P0qPWQm/NU=
 github.com/lestrrat-go/httpcc v1.0.1 h1:ydWCStUeJLkpYyjLDHihupbn2tYmZ7m22BGkcvZZrIE=
 github.com/lestrrat-go/httpcc v1.0.1/go.mod h1:qiltp3Mt56+55GPVCbTdM9MlqhvzyuL6W/NMDA8vA5E=
-github.com/lestrrat-go/httprc/v3 v3.0.2 h1:7u4HUaD0NQbf2/n5+fyp+T10hNCsAnwKfqn4A4Baif0=
-github.com/lestrrat-go/httprc/v3 v3.0.2/go.mod h1:mSMtkZW92Z98M5YoNNztbRGxbXHql7tSitCvaxvo9l0=
+github.com/lestrrat-go/httprc/v3 v3.0.6 h1:4FpLQ18KK/ypPbVU3NLWJNRvH3kcYiqKqWfKGqNWxxI=
+github.com/lestrrat-go/httprc/v3 v3.0.6/go.mod h1:mSMtkZW92Z98M5YoNNztbRGxbXHql7tSitCvaxvo9l0=
 github.com/lestrrat-go/jwx/v3 v3.0.13 h1:AdHKiPIYeCSnOJtvdpipPg/0SuFh9rdkN+HF3O0VdSk=
 github.com/lestrrat-go/jwx/v3 v3.0.13/go.mod h1:2m0PV1A9tM4b/jVLMx8rh6rBl7F6WGb3EG2hufN9OQU=
 github.com/lestrrat-go/option/v2 v2.0.0 h1:XxrcaJESE1fokHy3FpaQ/cXW8ZsIdWcdFzzLOcID3Ss=
