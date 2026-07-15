@@ -25,6 +25,10 @@ the other files is implemented today; this page tracks the gap.
   every read compartment's topic in every write compartment's Kafka cluster and propagates them to the
   ingesters, so an ingester enforcing strong read consistency waits for the specific requested offsets of
   each Kafka cluster (falling back to the last produced offset when offsets aren't propagated).
+- **Global ruler evaluation and writes**: rulers evaluate rules through the remote, compartment-aware
+  query path and send generated series through a zonal distributor endpoint pool that spans all write
+  compartments. The selected distributor then applies the normal read-compartment sharding (see
+  [Ruler](./ruler.md)).
 - A local development environment (`development/mimir-compartments`).
 
 ## Blocks storage is only partially compartment-aware
