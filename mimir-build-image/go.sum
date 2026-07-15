@@ -811,8 +811,8 @@ github.com/timtadh/data-structures v0.5.3 h1:F2tEjoG9qWIyUjbvXVgJqEOGJPMIiYn7U5W
 github.com/timtadh/data-structures v0.5.3/go.mod h1:9R4XODhJ8JdWFEI8P/HJKqxuJctfBQw6fDibMQny2oU=
 github.com/timtadh/lexmachine v0.2.2 h1:g55RnjdYazm5wnKv59pwFcBJHOyvTPfDEoz21s4PHmY=
 github.com/timtadh/lexmachine v0.2.2/go.mod h1:GBJvD5OAfRn/gnp92zb9KTgHLB7akKyxmVivoYCcjQI=
-github.com/tmccombs/hcl2json v0.6.7 h1:RYKTs4kd/gzRsEiv7J3M2WQ7TYRYZVc+0H0pZdERkxA=
-github.com/tmccombs/hcl2json v0.6.7/go.mod h1:lJgBOOGDpbhjvdG2dLaWsqB4KBzul2HytfDTS3H465o=
+github.com/tmccombs/hcl2json v0.6.9 h1:Pvqe6XgLQ8WxuQWp/QPRmV+8uHvUIuCs5b+Q8jvbrdc=
+github.com/tmccombs/hcl2json v0.6.9/go.mod h1:JIcW8tgtY0DTxXAIXxfNYvBa6MvMptf6GabOCjiOOak=
 github.com/tonistiigi/go-csvvalue v0.0.0-20240814133006-030d3b2625d0 h1:2f304B10LaZdB8kkVEaoXvAMVan2tl9AiK4G0odjQtE=
 github.com/tonistiigi/go-csvvalue v0.0.0-20240814133006-030d3b2625d0/go.mod h1:278M4p8WsNh3n4a1eqiFcV2FGk7wE5fwUpUom9mK9lE=
 github.com/tufanbarisyildirim/gonginx v0.0.0-20260220081509-8e17ce617db3 h1:ClWHRIz18WRVT3RD9y9uTwEWU9eEi+VYFEIumg05FLk=

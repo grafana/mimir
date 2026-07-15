@@ -287,7 +287,7 @@ require (
 	github.com/tchap/go-patricia/v2 v2.3.3 // indirect
 	github.com/tetratelabs/wazero v1.12.0 // indirect
 	github.com/tidwall/btree v1.8.1 // indirect
-	github.com/tmccombs/hcl2json v0.6.7 // indirect
+	github.com/tmccombs/hcl2json v0.6.9 // indirect
 	github.com/tonistiigi/go-csvvalue v0.0.0-20240814133006-030d3b2625d0 // indirect
 	github.com/tufanbarisyildirim/gonginx v0.0.0-20260220081509-8e17ce617db3 // indirect
 	github.com/tzrikka/xdg v1.3.2 // indirect
