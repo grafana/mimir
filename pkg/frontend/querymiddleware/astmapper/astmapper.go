@@ -65,6 +65,16 @@ func NewMultiMapper(xs ...ASTMapper) *MultiMapper {
 	return m
 }
 
+// cloneFloatPtr returns a deep copy of a *float64, so the clone shares no pointers with the original.
+func cloneFloatPtr(f *float64) *float64 {
+	if f == nil {
+		return nil
+	}
+
+	v := *f
+	return &v
+}
+
 // CloneExpr is a helper function to clone an expression.
 func CloneExpr(expr parser.Expr) (parser.Expr, error) {
 	switch e := expr.(type) {
@@ -90,6 +100,10 @@ func CloneExpr(expr parser.Expr) (parser.Expr, error) {
 				MatchingLabels: slices.Clone(e.VectorMatching.MatchingLabels),
 				On:             e.VectorMatching.On,
 				Include:        slices.Clone(e.VectorMatching.Include),
+				FillValues: parser.VectorMatchFillValues{
+					LHS: cloneFloatPtr(e.VectorMatching.FillValues.LHS),
+					RHS: cloneFloatPtr(e.VectorMatching.FillValues.RHS),
+				},
 			}
 		}
 
