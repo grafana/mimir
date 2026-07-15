@@ -797,6 +797,7 @@ type mockProxyBackend struct {
 	fakeResponseLatencies []time.Duration
 	responseIndex         int
 	requestProportion     float64
+	excludeTenants        map[string]struct{}
 }
 
 func newMockProxyBackend(name string, timeout time.Duration, preferred bool, fakeResponseLatencies []time.Duration) ProxyBackendInterface {
@@ -839,6 +840,18 @@ func (b *mockProxyBackend) MinDataQueriedAge() time.Duration {
 
 func (b *mockProxyBackend) ShouldHandleQuery(minQueryTime time.Time) bool {
 	return true // Default to handling all queries in tests
+}
+
+func (b *mockProxyBackend) ShouldHandleTenants(tenantIDs []string) bool {
+	if len(b.excludeTenants) == 0 || len(tenantIDs) == 0 {
+		return true
+	}
+	for _, tenantID := range tenantIDs {
+		if _, excluded := b.excludeTenants[tenantID]; !excluded {
+			return true
+		}
+	}
+	return false
 }
 
 func (b *mockProxyBackend) ForwardRequest(_ context.Context, _ *http.Request, _ io.ReadCloser) (time.Duration, int, []byte, *http.Response, error) {

@@ -97,6 +97,7 @@ The following configuration options are available for each backend:
 - `request_headers`: Additional HTTP headers to send to this backend
 - `request_proportion`: Proportion of requests to send to this backend. Set between 0.0 -1.0. This value overrides the global `-proxy.secondary-backends-request-proportion` setting for this backend.
 - `min_data_queried_age`: Minimum time threshold for time-based query routing (Go duration format like "24h", "168h", "1h30m"). Default is "0s", which means to serve all queries.
+- `exclude_tenants`: List of tenant IDs (as found in the `X-Scope-OrgID` header) whose requests must not be sent to this backend. This setting has no effect on the preferred backend, which always receives all traffic.
 
 #### Backend configuration examples
 
@@ -188,6 +189,26 @@ This allows you to route queries to appropriate storage tiers based on data age,
 {{< admonition type="note" >}}
 The `min_data_queried_age` field supports Go duration format. Valid time units are `ns`, `us` (or `µs`), `ms`, `s`, `m`, `h`. Examples: `"30s"`, `"15m"`, `"24h"`, `"168h"` (7 days), `"1h30m"`. Days are not supported directly; use hours instead (e.g., `"168h"` for 7 days).
 {{< /admonition >}}
+
+#### Configure tenant-based routing
+
+You can prevent a backend from receiving requests for specific tenants using the `exclude_tenants` setting.
+
+**How tenant-based routing works:**
+
+- query-tee reads the tenant IDs from the incoming request's `X-Scope-OrgID` header. Multiple tenants may be present, separated by `|`.
+- A backend with `exclude_tenants: ["1", "2"]` does not receive requests whose tenant is `1` or `2`.
+- A request that targets multiple tenants is skipped for a backend only when all of its tenants are excluded. A request mixing excluded and non-excluded tenants is still forwarded.
+- Requests without an `X-Scope-OrgID` header are always sent to all backends.
+- The preferred backend always receives all traffic, so `exclude_tenants` cannot be set on it.
+
+Example:
+
+```yaml
+prometheus-main: {} # preferred backend, receives all tenants
+prometheus-secondary:
+  exclude_tenants: ["1", "2"] # receives every tenant except 1 and 2
+```
 
 ### Backend response selection
 

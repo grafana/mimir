@@ -13,6 +13,7 @@ import (
 	"math/rand"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -107,6 +108,8 @@ func (p *ProxyEndpoint) selectBackends(r *http.Request) ([]ProxyBackendInterface
 		return nil, fmt.Errorf("extract min query time: %w", err)
 	}
 
+	tenantIDs := extractTenantIDs(r)
+
 	selected := []ProxyBackendInterface{}
 
 	if p.preferredBackend != nil {
@@ -122,6 +125,10 @@ func (p *ProxyEndpoint) selectBackends(r *http.Request) ([]ProxyBackendInterface
 			continue
 		}
 
+		if !backend.ShouldHandleTenants(tenantIDs) {
+			continue
+		}
+
 		var proportion float64
 		if backend.HasConfiguredProportion() {
 			proportion = backend.RequestProportion()
@@ -134,6 +141,25 @@ func (p *ProxyEndpoint) selectBackends(r *http.Request) ([]ProxyBackendInterface
 		}
 	}
 	return selected, nil
+}
+
+// extractTenantIDs returns the tenant IDs found in the request's X-Scope-OrgID header.
+// Multiple tenants may be present, separated by "|". Empty entries are ignored.
+func extractTenantIDs(r *http.Request) []string {
+	orgID := r.Header.Get("X-Scope-OrgID")
+	if orgID == "" {
+		return nil
+	}
+
+	parts := strings.Split(orgID, "|")
+	tenantIDs := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			tenantIDs = append(tenantIDs, part)
+		}
+	}
+	return tenantIDs
 }
 
 func (p *ProxyEndpoint) executeBackendRequests(req *http.Request, backends []ProxyBackendInterface, resCh chan *backendResponse) {
