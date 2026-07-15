@@ -81,7 +81,7 @@ func (n *NarrowSelectorsOptimizationPass) Apply(ctx context.Context, plan *plann
 		// series that fill relies on to produce output.
 		// TODO: still narrow the non-filled side, which is safe.
 		if e.VectorMatching.FillValues.RhsSet || e.VectorMatching.FillValues.LhsSet {
-			return nil
+			return true, nil
 		}
 
 		// Labels created by label_replace or label_join anywhere within this binary
