@@ -1370,7 +1370,7 @@ func (d *Distributor) prePushMergeMiddleware(next PushFunc) PushFunc {
 
 		for tsIdx := 0; tsIdx < len(req.Timeseries); tsIdx++ {
 			ts := req.Timeseries[tsIdx]
-			hash := mimirpb.FromLabelAdaptersToLabels(ts.Labels).Hash()
+			hash := mimirpb.NonStableHash(ts.Labels)
 
 			e, exists := seen[hash]
 			if !exists {

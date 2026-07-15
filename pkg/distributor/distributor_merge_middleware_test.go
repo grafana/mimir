@@ -102,6 +102,21 @@ func makeTimeseriesWithCT(lbls []string, samples []mimirpb.Sample, createdTimest
 	return ts
 }
 
+// labelsWithNonStableHashCollision returns two DIFFERENT label sets that produce
+// the same mimirpb.NonStableHash — the hash prePushMergeMiddleware keys on. They
+// were found with https://github.com/pstibrany/labels_hash_collisions. Because
+// NonStableHash hashes the label adapters directly (name\xffvalue\xff, matching
+// the slicelabels labels.Labels.Hash), the collision holds regardless of the
+// labels build tag.
+func labelsWithNonStableHashCollision() ([]mimirpb.LabelAdapter, []mimirpb.LabelAdapter) {
+	ls1 := labelAdapters("__name__", "metric", "lbl1", "value", "lbl2", "l6CQ5y")
+	ls2 := labelAdapters("__name__", "metric", "lbl1", "value", "lbl2", "v7uDlF")
+	if mimirpb.NonStableHash(ls1) != mimirpb.NonStableHash(ls2) {
+		panic("This code needs to be updated: find new labels with colliding NonStableHash values.")
+	}
+	return ls1, ls2
+}
+
 func TestDistributor_prePushMergeMiddleware(t *testing.T) {
 	d := newMergeTestDistributor(t)
 
@@ -223,10 +238,10 @@ func TestDistributor_prePushMergeMiddleware(t *testing.T) {
 
 	t.Run("merges duplicates whose label sets share a hash", func(t *testing.T) {
 		// c1 and c2 are two DIFFERENT label sets that collide on the same
-		// FromLabelAdaptersToLabels(...).Hash() value the middleware keys on. This
-		// exercises the collision overflow path: label sets sharing a hash must each
-		// be deduplicated independently and never merged into each other.
-		c1, c2 := labelsWithHashCollision()
+		// mimirpb.NonStableHash value the middleware keys on. This exercises the
+		// collision overflow path: label sets sharing a hash must each be
+		// deduplicated independently and never merged into each other.
+		c1, c2 := labelsWithNonStableHashCollision()
 		mkTS := func(lbls []mimirpb.LabelAdapter, ts int64) mimirpb.PreallocTimeseries {
 			// Each object owns its own label backing, as produced by unmarshalling,
 			// so returning a removed duplicate to the pool can't corrupt a survivor.
