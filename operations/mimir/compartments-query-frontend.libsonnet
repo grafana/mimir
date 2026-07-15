@@ -12,6 +12,13 @@
   // Config validation.
   local queryFrontendCompartmentConfigError = if !$._config.compartments_ingester_enabled then null else $.validateMimirCompartmentsConfig([
     'query_frontend_deployment',
+    'query_frontend_zone_a_deployment',
+    'query_frontend_zone_b_deployment',
+    'query_frontend_zone_c_deployment',
+    'ruler_query_frontend_deployment',
+    'ruler_query_frontend_zone_a_deployment',
+    'ruler_query_frontend_zone_b_deployment',
+    'ruler_query_frontend_zone_c_deployment',
   ]),
   assert queryFrontendCompartmentConfigError == null : queryFrontendCompartmentConfigError,
 }

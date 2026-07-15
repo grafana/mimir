@@ -19,7 +19,7 @@
 
   // Args.
   compactor_scheduler_compartments_args:: $.mimirCompartmentsCreateIf(isEnabled, numCompartments, function(compartmentIdx)
-    $.compactor_scheduler_args {
+    $.compactor_scheduler_args + $.mimirCompartmentsCommonArgs {
       [$.mimirBlocksStorageBucketNameFlag]: $.mimirBlocksStorageCompartmentBucketName(compartmentIdx),
 
       // The scheduler doesn't consume Kafka, but it inherits the ingest-storage args from the common config,

@@ -48,6 +48,31 @@ local rulerDistributorAddress(zone) =
 
 local rulerBlocksBucket(args) = args[env.mimirBlocksStorageBucketNameFlag];
 
+local any(values) = std.foldl(function(acc, value) acc || value, values, false);
+
+local resourceContainers(resource) =
+  if resource == null ||
+     !std.objectHas(resource, 'spec') ||
+     !std.objectHas(resource.spec, 'template') ||
+     !std.objectHas(resource.spec.template, 'spec') ||
+     !std.objectHas(resource.spec.template.spec, 'containers') then
+    []
+  else
+    resource.spec.template.spec.containers;
+
+local rootFlagNames = [
+  '-compartments.enabled',
+  '-compartments.read.num-compartments',
+  '-compartments.write.num-compartments',
+];
+
+local hasAnyRootFlag(resource) = any([
+  std.isString(arg) && any([std.startsWith(arg, flag + '=') for flag in rootFlagNames])
+  for container in resourceContainers(resource)
+  if std.objectHas(container, 'args')
+  for arg in container.args
+]);
+
 local coexistenceEnv = env {
   _config+:: {
     no_compartments_distributor_enabled: true,
@@ -59,6 +84,31 @@ local routedCoexistenceEnv = coexistenceEnv {
     compartments_distributor_routing_enabled: true,
   },
 };
+
+local dataPathCoexistenceEnv = env {
+  _config+:: {
+    no_compartments_distributor_enabled: true,
+    no_compartments_ingester_enabled: true,
+    no_compartments_store_gateway_enabled: true,
+    no_compartments_compactor_enabled: true,
+  },
+};
+
+local dataPathCoexistenceResources = {
+  distributor: dataPathCoexistenceEnv.distributor_zone_a_deployment,
+  ingester: dataPathCoexistenceEnv.ingester_zone_a_statefulset,
+  store_gateway: dataPathCoexistenceEnv.store_gateway_zone_a_statefulset,
+  compactor: dataPathCoexistenceEnv.compactor_statefulset,
+  compactor_scheduler: dataPathCoexistenceEnv.compactor_scheduler_statefulset,
+};
+
+local missingCoexistenceResources = [name for name in std.objectFields(dataPathCoexistenceResources) if std.length(resourceContainers(dataPathCoexistenceResources[name])) == 0];
+assert std.length(missingCoexistenceResources) == 0 :
+       'expected legacy no-compartments coexistence resources to render; missing: %s' % std.join(', ', missingCoexistenceResources);
+
+local coexistenceResourcesWithRootFlags = [name for name in std.objectFields(dataPathCoexistenceResources) if hasAnyRootFlag(dataPathCoexistenceResources[name])];
+assert std.length(coexistenceResourcesWithRootFlags) == 0 :
+       'expected legacy no-compartments coexistence resources to omit compartments root flags; found on: %s' % std.join(', ', coexistenceResourcesWithRootFlags);
 
 assert env._config.compartments_distributor_routing_enabled :
        'expected compartments-only deployments to route to compartment distributors';

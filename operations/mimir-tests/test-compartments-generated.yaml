@@ -2550,7 +2550,7 @@ spec:
         - -distributor.ingestion-tenant-shard-size=3
         - -ingest-storage.enabled=true
         - -ingest-storage.ingestion-partition-tenant-shard-size=1
-        - -ingest-storage.kafka.address=kafka.default.svc.cluster.local.:9092
+        - -ingest-storage.kafka.address=kafka-wc-<write-compartment-id>.default.svc.cluster.local.:9092
         - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
         - -ingest-storage.kafka.topic=ingest-rc-<read-compartment-id>
         - -ingester.partition-ring.prefix=
@@ -2685,7 +2685,7 @@ spec:
         - -distributor.ingestion-tenant-shard-size=3
         - -ingest-storage.enabled=true
         - -ingest-storage.ingestion-partition-tenant-shard-size=1
-        - -ingest-storage.kafka.address=kafka.default.svc.cluster.local.:9092
+        - -ingest-storage.kafka.address=kafka-wc-<write-compartment-id>.default.svc.cluster.local.:9092
         - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
         - -ingest-storage.kafka.topic=ingest-rc-<read-compartment-id>
         - -ingester.partition-ring.prefix=
@@ -3300,7 +3300,7 @@ spec:
         - -distributor.ingestion-tenant-shard-size=3
         - -ingest-storage.enabled=true
         - -ingest-storage.ingestion-partition-tenant-shard-size=1
-        - -ingest-storage.kafka.address=kafka.default.svc.cluster.local.:9092
+        - -ingest-storage.kafka.address=kafka-wc-<write-compartment-id>.default.svc.cluster.local.:9092
         - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
         - -ingest-storage.kafka.topic=ingest-rc-<read-compartment-id>
         - -ingester.partition-ring.prefix=
@@ -3433,7 +3433,7 @@ spec:
         - -distributor.ingestion-tenant-shard-size=3
         - -ingest-storage.enabled=true
         - -ingest-storage.ingestion-partition-tenant-shard-size=1
-        - -ingest-storage.kafka.address=kafka.default.svc.cluster.local.:9092
+        - -ingest-storage.kafka.address=kafka-wc-<write-compartment-id>.default.svc.cluster.local.:9092
         - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
         - -ingest-storage.kafka.topic=ingest-rc-<read-compartment-id>
         - -ingester.partition-ring.prefix=
@@ -4626,6 +4626,9 @@ spec:
         - -compactor-scheduler.bbolt.dir=/data
         - -compactor-scheduler.persistence-type=bbolt
         - -compactor-scheduler.planning-interval=30m
+        - -compartments.enabled=true
+        - -compartments.read.num-compartments=2
+        - -compartments.write.num-compartments=2
         - -ingest-storage.enabled=true
         - -ingest-storage.kafka.address=kafka-wc-<write-compartment-id>.default.svc.cluster.local.:9092
         - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
@@ -4713,6 +4716,9 @@ spec:
         - -compactor-scheduler.bbolt.dir=/data
         - -compactor-scheduler.persistence-type=bbolt
         - -compactor-scheduler.planning-interval=30m
+        - -compartments.enabled=true
+        - -compartments.read.num-compartments=2
+        - -compartments.write.num-compartments=2
         - -ingest-storage.enabled=true
         - -ingest-storage.kafka.address=kafka-wc-<write-compartment-id>.default.svc.cluster.local.:9092
         - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
