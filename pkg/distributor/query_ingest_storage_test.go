@@ -20,6 +20,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/compartments"
 	"github.com/grafana/mimir/pkg/ingester"
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -557,9 +558,12 @@ func TestDistributor_QueryStream_InactivePartitionsLookback(t *testing.T) {
 
 	selectAllSeriesMatcher := mustEqualMatcher("bar", "baz")
 
+	// The compartmentsEnabled variants put all partitions in a single read compartment, so the topology
+	// matches the single-ring case and the per-scenario expectations below hold for both query paths.
 	shardingConfigs := map[string]struct {
 		shuffleShardingEnabled bool
 		tenantShardSize        int
+		compartmentsEnabled    bool
 	}{
 		"shuffle sharding disabled": {
 			shuffleShardingEnabled: false,
@@ -572,6 +576,11 @@ func TestDistributor_QueryStream_InactivePartitionsLookback(t *testing.T) {
 		"shuffle sharding enabled with shard size > 0": {
 			shuffleShardingEnabled: true,
 			tenantShardSize:        10, // Larger than partition count, so all partitions are included.
+		},
+		"compartments enabled": {
+			shuffleShardingEnabled: false,
+			tenantShardSize:        0,
+			compartmentsEnabled:    true,
 		},
 	}
 
@@ -640,10 +649,22 @@ func TestDistributor_QueryStream_InactivePartitionsLookback(t *testing.T) {
 					ingester3Data = makeWriteRequest(0, 1, 0, false, false, "foo3")
 				}
 
+				// When compartments are enabled, put all 4 partitions in a single read compartment so the
+				// topology matches the single-ring case and the same scenarios and expectations apply to
+				// both query paths.
+				numCompartments := 0
+				var compartmentActivePartitions map[int][]int32
+				if shardingCfg.compartmentsEnabled {
+					numCompartments = 1
+					compartmentActivePartitions = map[int][]int32{0: {0, 1, 2, 3}}
+				}
+
 				cfg := prepConfig{
-					numDistributors:         1,
-					ingestStorageEnabled:    true,
-					ingestStoragePartitions: 4,
+					numDistributors:             1,
+					ingestStorageEnabled:        true,
+					ingestStoragePartitions:     4,
+					numCompartments:             numCompartments,
+					compartmentActivePartitions: compartmentActivePartitions,
 					ingesterStateByZone: map[string]ingesterZoneState{
 						"zone-a": {states: []ingesterState{ingesterStateHappy, ingesterStateHappy, ingesterStateHappy, ingester3State}},
 					},
@@ -661,6 +682,11 @@ func TestDistributor_QueryStream_InactivePartitionsLookback(t *testing.T) {
 					configure: func(config *Config) {
 						config.ShuffleShardingEnabled = shardingCfg.shuffleShardingEnabled
 						config.IngestersLookbackPeriod = lookbackPeriod
+						if shardingCfg.compartmentsEnabled {
+							config.Compartments.Enabled = true
+							config.Compartments.Read.NumCompartments = 1
+							config.IngestStorageConfig.KafkaConfig.Topic = compartmentsTestTopicFormat
+						}
 					},
 				}
 
@@ -679,7 +705,11 @@ func TestDistributor_QueryStream_InactivePartitionsLookback(t *testing.T) {
 				// - Partition 3: Inactive since scenario.partition3InactiveSince
 				now := time.Now()
 				partitionsStore := d.cfg.DistributorRing.Common.KVStore.Mock.(*consul.Client).WithCodec(ring.GetPartitionRingCodec())
-				err := partitionsStore.CAS(ctx, ingester.PartitionRingKey, func(in interface{}) (interface{}, bool, error) {
+				ringKey := ingester.PartitionRingKey
+				if shardingCfg.compartmentsEnabled {
+					ringKey = compartments.WithReadCompartmentSuffix(ingester.PartitionRingKey, 0)
+				}
+				err := partitionsStore.CAS(ctx, ringKey, func(in interface{}) (interface{}, bool, error) {
 					desc := ring.GetOrCreatePartitionRingDesc(in)
 					if _, err := desc.UpdatePartitionState(2, ring.PartitionInactive, now.Add(-1*time.Hour)); err != nil {
 						return nil, false, err
