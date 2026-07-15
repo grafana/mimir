@@ -13,12 +13,12 @@ import (
 	"math/rand"
 	"net/http"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/tenant"
 
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
@@ -108,7 +108,8 @@ func (p *ProxyEndpoint) selectBackends(r *http.Request) ([]ProxyBackendInterface
 		return nil, fmt.Errorf("extract min query time: %w", err)
 	}
 
-	tenantIDs := extractTenantIDs(r)
+	// On a missing or invalid X-Scope-OrgID header we ignore the error and treat it as no tenants, so the request is still forwarded (and compared) rather than rejected with a query-tee-generated error.
+	tenantIDs, _ := tenant.TenantIDsFromOrgID(r.Header.Get("X-Scope-OrgID"))
 
 	selected := []ProxyBackendInterface{}
 
@@ -141,25 +142,6 @@ func (p *ProxyEndpoint) selectBackends(r *http.Request) ([]ProxyBackendInterface
 		}
 	}
 	return selected, nil
-}
-
-// extractTenantIDs returns the tenant IDs found in the request's X-Scope-OrgID header.
-// Multiple tenants may be present, separated by "|". Empty entries are ignored.
-func extractTenantIDs(r *http.Request) []string {
-	orgID := r.Header.Get("X-Scope-OrgID")
-	if orgID == "" {
-		return nil
-	}
-
-	parts := strings.Split(orgID, "|")
-	tenantIDs := make([]string, 0, len(parts))
-	for _, part := range parts {
-		part = strings.TrimSpace(part)
-		if part != "" {
-			tenantIDs = append(tenantIDs, part)
-		}
-	}
-	return tenantIDs
 }
 
 func (p *ProxyEndpoint) executeBackendRequests(req *http.Request, backends []ProxyBackendInterface, resCh chan *backendResponse) {
