@@ -103,7 +103,7 @@ func groupLabelsFunc(vectorMatching parser.VectorMatching, op parser.ItemType, r
 }
 
 // fillGroupLabelsFunc returns a function that computes the output labels of a filled-in series from the labels of the
-// present side. The absent side contributes no labels becuase PromQL evaluates each timestep independently, so we dont
+// present side. The absent side contributes no labels because PromQL evaluates each timestep independently, so we don't
 // have a way of knowing what the absent series' labels would have been.
 func fillGroupLabelsFunc(vectorMatching parser.VectorMatching) func(labels.Labels) labels.Labels {
 	lb := labels.NewBuilder(labels.EmptyLabels())
