@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"net/url"
 	"slices"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -26,6 +27,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/histogram"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	v1API "github.com/prometheus/prometheus/web/api/v1"
 	"github.com/stretchr/testify/assert"
@@ -2390,4 +2393,91 @@ func TestCodec_MergeResponse_TransfersOwnershipOnSuccess(t *testing.T) {
 	merged.Close()
 	require.True(t, in1.Closed(), "closing the merged response must close each input")
 	require.True(t, in2.Closed(), "closing the merged response must close each input")
+}
+
+func TestCodec_MatrixMerge_SeriesSortingShouldBeConsistentWithEngine(t *testing.T) {
+	testCases := [][]labels.Labels{
+		{
+			labels.FromStrings("foo", "1"),
+			labels.FromStrings("foo", "2"),
+		},
+		{
+			labels.FromStrings("bar", "1", "baz", "1"),
+			labels.FromStrings("bar", "1", "foo", "1"),
+		},
+		{
+			labels.FromStrings("bar", "1", "baz", "1"),
+			labels.FromStrings("bar", "2", "baz", "1"),
+		},
+		{
+			labels.FromStrings("bar", "abc", "baz", "1"),
+			labels.FromStrings("bar", "abcdef", "baz", "1"),
+		},
+		{
+			labels.FromStrings("bar", "1", "baz", "1"),
+			labels.FromStrings("bar", "1", "bazzzz", "1"),
+		},
+		{
+			labels.FromStrings("bar", "1", "baz", "aaa"),
+			labels.FromStrings("bar", "1", "baz", "aaabbb"),
+		},
+	}
+
+	runTestCase := func(testCase []labels.Labels, expectedOrder []labels.Labels) {
+		t.Run(fmt.Sprintf("%v", testCase), func(t *testing.T) {
+			resp := createResponseWithLabels(testCase)
+			merged := matrixMerge([]*PrometheusResponse{resp})
+			mergedSeries := getSeriesLabels(merged)
+			require.Equal(t, expectedOrder, mergedSeries)
+		})
+	}
+
+	for _, testCase := range testCases {
+		expectedOrder := getExpectedMatrixLabelOrder(testCase)
+
+		reversed := slices.Clone(testCase)
+		slices.Reverse(reversed)
+
+		runTestCase(testCase, expectedOrder)
+		runTestCase(reversed, expectedOrder)
+	}
+}
+
+func getExpectedMatrixLabelOrder(lbls []labels.Labels) []labels.Labels {
+	m := promql.Matrix{}
+
+	for _, l := range lbls {
+		m = append(m, promql.Series{Metric: l})
+	}
+
+	sort.Sort(m)
+	sortedLabels := make([]labels.Labels, 0, len(m))
+
+	for _, s := range m {
+		sortedLabels = append(sortedLabels, s.Metric)
+	}
+	return sortedLabels
+}
+
+func createResponseWithLabels(lbls []labels.Labels) *PrometheusResponse {
+	series := make([]SampleStream, 0, len(lbls))
+
+	for _, l := range lbls {
+		series = append(series, SampleStream{Labels: mimirpb.FromLabelsToLabelAdapters(l)})
+	}
+
+	return &PrometheusResponse{
+		Data: &PrometheusData{
+			ResultType: model.ValMatrix.String(),
+			Result:     series,
+		},
+	}
+}
+
+func getSeriesLabels(ss []SampleStream) []labels.Labels {
+	lbls := make([]labels.Labels, 0, len(ss))
+	for _, s := range ss {
+		lbls = append(lbls, mimirpb.FromLabelAdaptersToLabels(s.Labels))
+	}
+	return lbls
 }

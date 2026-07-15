@@ -250,7 +250,7 @@ func areSeriesUniqueDropName(node *core.DropName) bool {
 func walkToSelectors(n planning.Node, examine func(dedupeNeeded int, path []planning.Node) bool) bool {
 	unique := true
 
-	_ = optimize.Walk(n, optimize.VisitorFunc(func(node planning.Node, path []planning.Node) error {
+	_ = optimize.Walk(n, optimize.VisitorFunc(func(node planning.Node, path []planning.Node) (bool, error) {
 		switch e := node.(type) {
 		case *core.VectorSelector:
 			var dedupeNeeded int
@@ -268,7 +268,7 @@ func walkToSelectors(n planning.Node, examine func(dedupeNeeded int, path []plan
 			unique = unique && examine(dedupeNeeded, path)
 		}
 
-		return nil
+		return true, nil
 	}))
 
 	return unique

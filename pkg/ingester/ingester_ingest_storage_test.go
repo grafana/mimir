@@ -1105,6 +1105,78 @@ func TestIngester_timeUntilCompaction(t *testing.T) {
 	}
 }
 
+func TestIngester_IngesterPartitionMetricLabel(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("flag enabled: every metric registered by the ingester carries the ingester_partition label", func(t *testing.T) {
+		cfg := defaultIngesterTestConfig(t)
+		cfg.IngesterRing.InstanceID = "ingester-zone-b-7"
+		cfg.IngestStorageConfig.IngesterPartitionMetricLabelEnabled = true
+
+		reg := prometheus.NewPedanticRegistry()
+		overrides := validation.NewOverrides(defaultLimitsTestConfig(), nil)
+		ing, _, _ := createTestIngesterWithIngestStorage(t, &cfg, overrides, nil, reg, util_test.NewTestingLogger(t))
+		require.NoError(t, services.StartAndAwaitRunning(ctx, ing))
+		t.Cleanup(func() { require.NoError(t, services.StopAndAwaitTerminated(ctx, ing)) })
+
+		families, err := reg.Gather()
+		require.NoError(t, err)
+		require.NotEmpty(t, families)
+
+		for _, mf := range families {
+			for _, m := range mf.GetMetric() {
+				found := false
+				for _, l := range m.GetLabel() {
+					if l.GetName() == "ingester_partition" {
+						assert.Equal(t, "7", l.GetValue(), "metric %s has unexpected ingester_partition value", mf.GetName())
+						found = true
+						break
+					}
+				}
+				assert.True(t, found, "metric %s is missing the ingester_partition label", mf.GetName())
+			}
+		}
+	})
+
+	t.Run("flag disabled under ingest storage: no metric carries the ingester_partition label", func(t *testing.T) {
+		cfg := defaultIngesterTestConfig(t)
+		// Flag defaults to false; don't set it.
+
+		reg := prometheus.NewPedanticRegistry()
+		overrides := validation.NewOverrides(defaultLimitsTestConfig(), nil)
+		ing, _, _ := createTestIngesterWithIngestStorage(t, &cfg, overrides, nil, reg, util_test.NewTestingLogger(t))
+		require.NoError(t, services.StartAndAwaitRunning(ctx, ing))
+		t.Cleanup(func() { require.NoError(t, services.StopAndAwaitTerminated(ctx, ing)) })
+
+		assertNoIngesterPartitionLabel(t, reg)
+	})
+
+	t.Run("classic ingester: no metric carries the ingester_partition label", func(t *testing.T) {
+		cfg := defaultIngesterTestConfig(t)
+
+		reg := prometheus.NewPedanticRegistry()
+		ing, _, err := prepareIngesterWithBlocksStorage(t, cfg, nil, reg)
+		require.NoError(t, err)
+		require.NoError(t, services.StartAndAwaitRunning(ctx, ing))
+		t.Cleanup(func() { require.NoError(t, services.StopAndAwaitTerminated(ctx, ing)) })
+
+		assertNoIngesterPartitionLabel(t, reg)
+	})
+}
+
+func assertNoIngesterPartitionLabel(t *testing.T, reg *prometheus.Registry) {
+	t.Helper()
+	families, err := reg.Gather()
+	require.NoError(t, err)
+	for _, mf := range families {
+		for _, m := range mf.GetMetric() {
+			for _, l := range m.GetLabel() {
+				assert.NotEqual(t, "ingester_partition", l.GetName(), "metric %s unexpectedly has an ingester_partition label", mf.GetName())
+			}
+		}
+	}
+}
+
 // Returned ingester is NOT started.
 func createTestIngesterWithIngestStorage(
 	t testing.TB,

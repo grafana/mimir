@@ -1099,6 +1099,36 @@ Usage of ./cmd/mimir/mimir:
     	OpenStack Swift user ID.
   -common.storage.swift.username string
     	OpenStack Swift username.
+  -compactor-scheduler.bbolt.dir string
+    	[experimental] The directory where bbolt shard database files are stored for the compactor scheduler. (default "./data-compactor-scheduler")
+  -compactor-scheduler.bbolt.shard-count int
+    	[experimental] The target number of bbolt database shards for the compactor scheduler. (default 16)
+  -compactor-scheduler.lane-policy.policy string
+    	[experimental] The lane policy the compactor scheduler should use. Valid values: simple (default "simple")
+  -compactor-scheduler.lease-duration duration
+    	[experimental] The duration of time without contact until the scheduler is able to lease a work item to another worker. (default 10m0s)
+  -compactor-scheduler.maintenance-interval duration
+    	[experimental] The duration of time between when maintenance tasks are performed on job trackers. This includes lease expiration and plan job submission checks. (default 2m0s)
+  -compactor-scheduler.maintenance-intervals-before-cold-start-planning int
+    	[experimental] The number of maintenance intervals before planning occurs when starting from no recovered state. Nonpositive values are all treated as zero. (default 5)
+  -compactor-scheduler.maintenance-intervals-before-lease-expiration int
+    	[experimental] The number of maintenance intervals before lease expiration is enforced. Nonpositive values are all treated as zero. (default 3)
+  -compactor-scheduler.max-leases int
+    	[experimental] The maximum number of times a compaction job can be retried before it is removed. Leases that are reassigned due to an interrupted worker do not count against this limit. 0 for no limit. (default 3)
+  -compactor-scheduler.persistence-type string
+    	[experimental] The type of persistence the compactor scheduler should use. Valid values: none, bbolt (default "bbolt")
+  -compactor-scheduler.planning-interval duration
+    	[experimental] The duration of time between when plan jobs are submitted aligned by UTC. Note that -compactor.first-level-compaction-wait-period is accounted for during alignment of this interval. (default 30m0s)
+  -compactor-scheduler.repeated-failure-report-threshold int
+    	[experimental] The number of times a job can fail before a repeated failure is recorded. Reassignments due to an interrupted worker are not counted as a failure. 0 for no limit. (default 2)
+  -compactor-scheduler.tenant-discovery-backoff.backoff-max-period duration
+    	Maximum delay when backing off. (default 10s)
+  -compactor-scheduler.tenant-discovery-backoff.backoff-min-period duration
+    	Minimum delay when backing off. (default 100ms)
+  -compactor-scheduler.tenant-discovery-backoff.backoff-retries int
+    	Number of times to backoff and retry before failing. (default 10)
+  -compactor-scheduler.tenant-discovery-interval duration
+    	[experimental] The duration of time between bucket listings to discover new tenants. (default 10m0s)
   -compactor.block-ranges comma-separated-list-of-durations
     	List of compaction time ranges. (default 2h0m0s,12h0m0s,24h0m0s)
   -compactor.block-sync-concurrency int
@@ -1233,6 +1263,118 @@ Usage of ./cmd/mimir/mimir:
     	Maximum time to wait for ring stability at startup. If the compactor ring keeps changing after this period of time, the compactor will start anyway. (default 5m0s)
   -compactor.ring.wait-stability-min-duration duration
     	Minimum time to wait for ring stability at startup. 0 to disable.
+  -compactor.scheduler-client.compaction-dir-cleanup-interval duration
+    	[experimental] Defines how frequently to clean up the compaction working directory. The directory is cleaned on startup and then only when this interval has elapsed since the last cleanup. Set to 0 to disable periodic cleanup. (default 30m0s)
+  -compactor.scheduler-client.enable-interrupted-reassign
+    	[experimental] Report a distinct job update status to the scheduler when a job is interrupted (e.g., clean shutdown). (default true)
+  -compactor.scheduler-client.enabled
+    	[experimental] Controls whether compactors should contact a scheduler to request work.
+  -compactor.scheduler-client.grpc-client-config.backoff-max-period duration
+    	Maximum delay when backing off. (default 10s)
+  -compactor.scheduler-client.grpc-client-config.backoff-min-period duration
+    	Minimum delay when backing off. (default 100ms)
+  -compactor.scheduler-client.grpc-client-config.backoff-on-ratelimits
+    	Enable backoff and retry when we hit rate limits.
+  -compactor.scheduler-client.grpc-client-config.backoff-retries int
+    	Number of times to backoff and retry before failing. (default 10)
+  -compactor.scheduler-client.grpc-client-config.cluster-validation.label string
+    	[experimental] Primary cluster validation label.
+  -compactor.scheduler-client.grpc-client-config.connect-backoff-base-delay duration
+    	Initial backoff delay after first connection failure. Only relevant if ConnectTimeout > 0. (default 1s)
+  -compactor.scheduler-client.grpc-client-config.connect-backoff-max-delay duration
+    	Maximum backoff delay when establishing a connection. Only relevant if ConnectTimeout > 0. (default 5s)
+  -compactor.scheduler-client.grpc-client-config.connect-timeout duration
+    	The maximum amount of time to establish a connection. A value of 0 means default gRPC client connect timeout and backoff. (default 5s)
+  -compactor.scheduler-client.grpc-client-config.grpc-client-rate-limit float
+    	Rate limit for gRPC client; 0 means disabled.
+  -compactor.scheduler-client.grpc-client-config.grpc-client-rate-limit-burst int
+    	Rate limit burst for gRPC client.
+  -compactor.scheduler-client.grpc-client-config.grpc-compression string
+    	Use compression when sending messages. Supported values are: 'gzip', 'snappy' and '' (disable compression)
+  -compactor.scheduler-client.grpc-client-config.grpc-max-recv-msg-size int
+    	gRPC client max receive message size (bytes). (default 104857600)
+  -compactor.scheduler-client.grpc-client-config.grpc-max-send-msg-size int
+    	gRPC client max send message size (bytes). (default 104857600)
+  -compactor.scheduler-client.grpc-client-config.initial-connection-window-size value
+    	[experimental] Initial connection window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator. (default 63KiB1023B)
+  -compactor.scheduler-client.grpc-client-config.initial-stream-window-size value
+    	[experimental] Initial stream window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator. (default 63KiB1023B)
+  -compactor.scheduler-client.grpc-client-config.tls-ca-path string
+    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
+  -compactor.scheduler-client.grpc-client-config.tls-cert-path string
+    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -compactor.scheduler-client.grpc-client-config.tls-cipher-suites string
+    	Override the default cipher suite list (separated by commas).
+  -compactor.scheduler-client.grpc-client-config.tls-enabled
+    	Enable TLS in the gRPC client. This flag needs to be enabled when any other TLS flag is set. If set to false, insecure connection to gRPC server will be used.
+  -compactor.scheduler-client.grpc-client-config.tls-insecure-skip-verify
+    	Skip validating server certificate.
+  -compactor.scheduler-client.grpc-client-config.tls-key-path string
+    	Path to the key for the client certificate. Also requires the client certificate to be configured.
+  -compactor.scheduler-client.grpc-client-config.tls-min-version string
+    	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
+  -compactor.scheduler-client.grpc-client-config.tls-server-name string
+    	Override the expected name on the server certificate.
+  -compactor.scheduler-client.lanes comma-separated-list-of-strings
+    	[experimental] Lanes to request for each worker goroutine. Each entry is a '+'-separated list of job types in priority order. (default compact+plan,plan)
+  -compactor.scheduler-client.leasing-max-backoff duration
+    	[experimental] Maximum backoff time between scheduler job lease requests. (default 2m0s)
+  -compactor.scheduler-client.leasing-min-backoff duration
+    	[experimental] Minimum backoff time between scheduler job lease requests. (default 100ms)
+  -compactor.scheduler-client.metadata-cache.backend string
+    	Backend for metadata cache, if not empty. Supported values: memcached.
+  -compactor.scheduler-client.metadata-cache.memcached.addresses comma-separated-list-of-strings
+    	Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.
+  -compactor.scheduler-client.metadata-cache.memcached.addresses-lookup-period duration
+    	How often each address is resolved to an IP address or list of host names. (default 30s)
+  -compactor.scheduler-client.metadata-cache.memcached.addresses-lookup-pool-size uint
+    	How many idle connections to the DNS resolver are kept open. 0 disables keeping any idle connections open.
+  -compactor.scheduler-client.metadata-cache.memcached.connect-timeout duration
+    	The connection timeout. (default 200ms)
+  -compactor.scheduler-client.metadata-cache.memcached.max-async-buffer-size int
+    	The maximum number of enqueued asynchronous operations allowed. (default 25000)
+  -compactor.scheduler-client.metadata-cache.memcached.max-async-concurrency int
+    	The maximum number of concurrent asynchronous operations can occur. (default 50)
+  -compactor.scheduler-client.metadata-cache.memcached.max-get-multi-batch-size int
+    	The maximum number of keys a single underlying get operation should run. If more keys are specified, internally keys are split into multiple batches and fetched concurrently, honoring the max concurrency. If set to 0, the max batch size is unlimited. (default 100)
+  -compactor.scheduler-client.metadata-cache.memcached.max-get-multi-concurrency int
+    	The maximum number of concurrent connections running get operations. If set to 0, concurrency is unlimited. (default 100)
+  -compactor.scheduler-client.metadata-cache.memcached.max-idle-connections int
+    	The maximum number of idle connections that will be maintained per address. (default 100)
+  -compactor.scheduler-client.metadata-cache.memcached.max-item-size int
+    	The maximum size of an item stored in memcached, in bytes. Bigger items are not stored. If set to 0, no maximum size is enforced. (default 1048576)
+  -compactor.scheduler-client.metadata-cache.memcached.min-idle-connections-headroom-percentage float
+    	The minimum number of idle connections to keep open as a percentage (0-100) of the number of recently used idle connections. If negative, idle connections are kept open indefinitely. (default -1)
+  -compactor.scheduler-client.metadata-cache.memcached.timeout duration
+    	The socket read/write timeout. (default 200ms)
+  -compactor.scheduler-client.metadata-cache.memcached.tls-ca-path string
+    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
+  -compactor.scheduler-client.metadata-cache.memcached.tls-cert-path string
+    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -compactor.scheduler-client.metadata-cache.memcached.tls-cipher-suites string
+    	Override the default cipher suite list (separated by commas).
+  -compactor.scheduler-client.metadata-cache.memcached.tls-enabled
+    	Enable connecting to Memcached with TLS.
+  -compactor.scheduler-client.metadata-cache.memcached.tls-insecure-skip-verify
+    	Skip validating server certificate.
+  -compactor.scheduler-client.metadata-cache.memcached.tls-key-path string
+    	Path to the key for the client certificate. Also requires the client certificate to be configured.
+  -compactor.scheduler-client.metadata-cache.memcached.tls-min-version string
+    	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
+  -compactor.scheduler-client.metadata-cache.memcached.tls-server-name string
+    	Override the expected name on the server certificate.
+  -compactor.scheduler-client.metadata-cache.metafile-content-ttl duration
+    	[experimental] How long to cache block metadata content. (default 24h0m0s)
+  -compactor.scheduler-client.scheduler-endpoint string
+    	[experimental] Compactor scheduler endpoint.
+  -compactor.scheduler-client.terminating-final-status-timeout duration
+    	[experimental] Timeout for sending a final job status update to the scheduler when the parent context is canceled (e.g. during shutdown). (default 30s)
+  -compactor.scheduler-client.update-interval duration
+    	[experimental] Interval between scheduler job lease updates. (default 15s)
+  -compactor.scheduler-client.update-max-backoff duration
+    	[experimental] Maximum backoff time for compaction executor retries when sending scheduler status updates. (default 32s)
+  -compactor.scheduler-client.update-min-backoff duration
+    	[experimental] Minimum backoff time for compaction executor retries when sending scheduler status updates. (default 1s)
   -compactor.split-and-merge-shards int
     	The number of shards to use when splitting blocks. 0 to disable splitting. Values greater than 1 are rounded up to the next power of two.
   -compactor.split-groups int
@@ -1515,6 +1657,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Include tenant ID in pprof labels for profiling. Currently only supported by the ingester. This can help debug performance issues for specific tenants. (default true)
   -ingest-storage.enabled
     	True to enable the ingestion via object storage.
+  -ingest-storage.ingester-partition-metric-label-enabled
+    	[experimental] True to wrap all ingester metrics with an ingester_partition label identifying the Kafka partition the ingester consumes. Planned to become the default in Mimir 3.2 and to be removed in Mimir 3.5.
   -ingest-storage.ingestion-partition-tenant-shard-size int
     	[experimental] The number of partitions a tenant's data should be sharded to when using the ingest storage. Tenants are sharded across partitions using shuffle-sharding. 0 disables shuffle sharding and tenant is sharded across all partitions.
   -ingest-storage.ingestion-partition-tenant-write-shard-size int
@@ -2347,8 +2491,6 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Enable computing multiple aggregations over the same data without buffering. Requires common subexpression elimination to be enabled. (default true)
   -querier.mimir-query-engine.enable-narrow-binary-selectors
     	[experimental] Enable generating selectors for one side of a binary expression based on results from the other side.
-  -querier.mimir-query-engine.enable-prune-toggles
-    	[experimental] Enable pruning query expressions that are toggled off with constants. (default true)
   -querier.mimir-query-engine.enable-range-query-range-vector-common-subexpression-elimination
     	[experimental] Enable deduplication of range vector selectors in range queries as part of common subexpression elimination. Requires common subexpression elimination to be enabled.
   -querier.mimir-query-engine.enable-reduce-matchers

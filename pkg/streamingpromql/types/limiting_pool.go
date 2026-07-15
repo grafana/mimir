@@ -49,7 +49,7 @@ var (
 		limiter.FPointSlices,
 		FPointSize,
 		false,
-		nil,
+		mangleFPoint,
 		nil,
 	)
 
@@ -74,7 +74,7 @@ var (
 		limiter.Vectors,
 		VectorSampleSize,
 		false,
-		nil,
+		mangleSample,
 		nil,
 	)
 
@@ -161,6 +161,32 @@ var (
 	)
 )
 
+func mangleFPoint(point promql.FPoint) promql.FPoint {
+	point.T = mangleInt64(point.T)
+	point.F = mangleFloat64(point.F)
+	return point
+}
+
+func mangleInt64(_ int64) int64 {
+	return 123456789
+}
+
+func mangleFloat64(_ float64) float64 {
+	return 123456789.987654321
+}
+
+func mangleSample(sample promql.Sample) promql.Sample {
+	sample.T = mangleInt64(sample.T)
+
+	if sample.H == nil {
+		sample.F = mangleFloat64(sample.F)
+	} else {
+		sample.H = mangleHistogram(sample.H)
+	}
+
+	return sample
+}
+
 func mangleHistogram(h *histogram.FloatHistogram) *histogram.FloatHistogram {
 	if h == nil {
 		return nil
@@ -199,6 +225,10 @@ type LimitingBucketedPool[S ~[]E, E any] struct {
 }
 
 func NewLimitingBucketedPool[S ~[]E, E any](inner *pool.BucketedPool[S, E], source limiter.MemoryConsumptionSource, elementSize uint64, clearOnGet bool, mangle func(E) E, onPutHook func(S, *limiter.MemoryConsumptionTracker)) *LimitingBucketedPool[S, E] {
+	if !clearOnGet && mangle == nil {
+		panic("must provide a mangling function for pools where items are not cleared on retrieval")
+	}
+
 	return &LimitingBucketedPool[S, E]{
 		inner:       inner,
 		source:      source,
@@ -244,16 +274,24 @@ func (p *LimitingBucketedPool[S, E]) Put(s *S, tracker *limiter.MemoryConsumptio
 		return
 	}
 
-	if EnableManglingReturnedSlices && p.mangle != nil {
-		for i, e := range *s {
-			(*s)[i] = p.mangle(e)
-		}
-	}
-
 	tracker.DecreaseMemoryConsumption(uint64(cap(*s))*p.elementSize, p.source)
 	if p.onPutHook != nil {
 		p.onPutHook(*s, tracker)
 	}
+
+	if EnableManglingReturnedSlices {
+		if p.mangle != nil {
+			for i, e := range *s {
+				(*s)[i] = p.mangle(e)
+			}
+		}
+
+		if p.clearOnGet {
+			// Clear the slice now, to catch any instances where the slice is still referenced after being returned to the pool.
+			clear(*s)
+		}
+	}
+
 	p.inner.Put(*s)
 
 	*s = nil

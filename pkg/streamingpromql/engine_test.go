@@ -2456,6 +2456,12 @@ func runAnnotationTests(t *testing.T, testCases map[string]annotationTestCase) {
 					subTestName := fmt.Sprintf("%s - delayed name removal enabled=%t", queryType, engineSet.delayedNameRemovalEnabled)
 					t.Run(subTestName, func(t *testing.T) {
 						results := make([]*promql.Result, 0, 2)
+						cleanups := make([]func(), 0, 2)
+						t.Cleanup(func() {
+							for _, cleanup := range cleanups {
+								cleanup()
+							}
+						})
 
 						for _, engine := range []promql.QueryEngine{engineSet.mimirEngine, engineSet.prometheusEngine} {
 							if engine == engineSet.prometheusEngine && testCase.skipComparisonWithPrometheusReason != "" {
@@ -2469,7 +2475,7 @@ func runAnnotationTests(t *testing.T, testCases map[string]annotationTestCase) {
 							t.Run(engineName, func(t *testing.T) {
 								query, err := generator(engine)
 								require.NoError(t, err)
-								t.Cleanup(query.Close)
+								cleanups = append(cleanups, query.Close)
 
 								res := query.Exec(context.Background())
 								require.NoError(t, res.Err)
@@ -3455,8 +3461,7 @@ func TestQueryStats(t *testing.T) {
 		}
 
 		require.NoError(t, err)
-
-		defer q.Close()
+		t.Cleanup(q.Close)
 
 		res := q.Exec(context.Background())
 		require.NoError(t, res.Err)
@@ -4131,7 +4136,7 @@ func TestQueryStatsUpstreamTestCases(t *testing.T) {
 		}
 
 		require.NoError(t, err)
-		defer q.Close()
+		t.Cleanup(q.Close)
 
 		res := q.Exec(context.Background())
 		require.NoError(t, res.Err)

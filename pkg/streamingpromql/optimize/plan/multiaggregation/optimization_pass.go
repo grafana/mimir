@@ -60,7 +60,7 @@ func (o *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, 
 	ineligibleDuplicateNodes := make(map[*commonsubexpressionelimination.Duplicate]struct{})
 	candidateDuplicateNodes := make(map[*commonsubexpressionelimination.Duplicate][]aggregateOverDuplicate)
 
-	err := optimize.Walk(plan.Root, optimize.VisitorFunc(func(node planning.Node, path []planning.Node) error {
+	err := optimize.Walk(plan.Root, optimize.VisitorFunc(func(node planning.Node, path []planning.Node) (bool, error) {
 		// If we've reached a Duplicate node, check that its parent on this path is a supported aggregation.
 		// If it's not, then we can't apply this optimisation to this Duplicate node.
 		duplicate, isDuplicate := node.(*commonsubexpressionelimination.Duplicate)
@@ -68,7 +68,7 @@ func (o *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, 
 			_, isIneligible := ineligibleDuplicateNodes[duplicate]
 			if isIneligible {
 				// We already know this Duplicate node is ineligible, so there's nothing more to do.
-				return nil
+				return true, nil
 			}
 
 			parent := path[len(path)-1]
@@ -134,7 +134,7 @@ func (o *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, 
 			})
 		}
 
-		return nil
+		return true, nil
 	}))
 
 	if err != nil {
