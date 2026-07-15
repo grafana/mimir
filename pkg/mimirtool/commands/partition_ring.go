@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -146,6 +147,18 @@ func (c *PartitionRingCommand) Register(app *kingpin.Application, _ EnvVarNames,
 			return removeOwnerCmd.run()
 		})
 
+	// Register remove-all-owners-and-partitions subcommand.
+	removeAllCmd := &RemoveAllOwnersAndPartitionsCommand{}
+	removeAllCmdClause := partitionRingCmd.Command("remove-all-owners-and-partitions", "Forcefully remove all owners and partitions from the ingest storage partition ring.").
+		Action(func(_ *kingpin.ParseContext) error {
+			if removeAllCmd.verbose {
+				removeAllCmd.logger = logConfig.Logger()
+			} else {
+				removeAllCmd.logger = log.NewNopLogger()
+			}
+			return removeAllCmd.run()
+		})
+
 	// Register partition.id flag on partition subcommands and add-owner.
 	for _, cfg := range []struct {
 		cmd          *kingpin.CmdClause
@@ -186,6 +199,7 @@ func (c *PartitionRingCommand) Register(app *kingpin.Application, _ EnvVarNames,
 		{removePartitionCmd, &removeCmd.memberlistJoin, &removeCmd.memberlistClusterLabel, &removeCmd.memberlistBindPort, &removeCmd.ringKey, &removeCmd.verbose},
 		{addOwnerCmdClause, &addOwnerCmd.memberlistJoin, &addOwnerCmd.memberlistClusterLabel, &addOwnerCmd.memberlistBindPort, &addOwnerCmd.ringKey, &addOwnerCmd.verbose},
 		{removeOwnerCmdClause, &removeOwnerCmd.memberlistJoin, &removeOwnerCmd.memberlistClusterLabel, &removeOwnerCmd.memberlistBindPort, &removeOwnerCmd.ringKey, &removeOwnerCmd.verbose},
+		{removeAllCmdClause, &removeAllCmd.memberlistJoin, &removeAllCmd.memberlistClusterLabel, &removeAllCmd.memberlistBindPort, &removeAllCmd.ringKey, &removeAllCmd.verbose},
 	} {
 		cfg.cmd.Flag("memberlist.join", "Address of a memberlist node to join. Can be specified multiple times.").
 			Required().
@@ -445,7 +459,26 @@ func (c *RemoveOwnerCommand) getStdin() io.Reader {
 }
 
 func (c *RemoveAllOwnersAndPartitionsCommand) run() error {
-	return errors.New("not implemented")
+	message := fmt.Sprintf(`WARNING: This is a dangerous operation NOT intended for production systems.
+Removing owners and partitions directly from the ring bypasses normal ingester lifecycle.
+About to remove ALL partitions and owners from ring %q.`, c.ringKey)
+	if err := askForConfirmation(message, c.getStdin()); err != nil {
+		return err
+	}
+
+	// Use a timeout to avoid hanging indefinitely if memberlist can't join.
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	fmt.Fprintln(os.Stderr, "Joining memberlist cluster...")
+	kvClient, cleanup, err := initMemberlistKV(ctx, c.memberlistJoin, c.memberlistClusterLabel, c.memberlistBindPort, c.logger)
+	if err != nil {
+		return errors.Wrap(err, "failed to initialize memberlist KV")
+	}
+	defer cleanup()
+	fmt.Fprintln(os.Stderr, "Successfully joined memberlist cluster.")
+
+	return removeAllOwnersAndPartitions(ctx, kvClient, c.ringKey)
 }
 
 func (c *RemoveAllOwnersAndPartitionsCommand) getStdin() io.Reader {
@@ -453,11 +486,6 @@ func (c *RemoveAllOwnersAndPartitionsCommand) getStdin() io.Reader {
 		return c.stdin
 	}
 	return os.Stdin
-}
-
-// countLivePartitionsAndOwners counts the partitions and owners present in ringDesc.
-func countLivePartitionsAndOwners(ringDesc *ring.PartitionRingDesc) (partitions, owners int) {
-	return 0, 0
 }
 
 // askForConfirmation prints the given message to stderr and asks the user to type 'yes' to confirm.
@@ -629,6 +657,57 @@ func removeOwners(ctx context.Context, kvClient kv.Client, ringKey string, owner
 
 		return ringDesc, true, nil
 	})
+}
+
+func removeAllOwnersAndPartitions(ctx context.Context, kvClient kv.Client, ringKey string) error {
+	var removedPartitions []int32
+	var removedOwners []string
+
+	err := kvClient.CAS(ctx, ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
+		ringDesc := ring.GetOrCreatePartitionRingDesc(in)
+
+		// Reset the accumulators in case the CAS callback is retried.
+		removedPartitions = removedPartitions[:0]
+		removedOwners = removedOwners[:0]
+
+		for id, partition := range ringDesc.Partitions {
+			if partition.State != ring.PartitionDeleted {
+				removedPartitions = append(removedPartitions, id)
+			}
+		}
+		for id, owner := range ringDesc.Owners {
+			if owner.State != ring.OwnerDeleted {
+				removedOwners = append(removedOwners, id)
+			}
+		}
+
+		if len(removedPartitions) == 0 && len(removedOwners) == 0 {
+			return nil, false, nil
+		}
+
+		for _, id := range removedPartitions {
+			ringDesc.RemovePartition(id)
+		}
+		for _, id := range removedOwners {
+			ringDesc.RemoveOwner(id)
+		}
+
+		return ringDesc, true, nil
+	})
+	if err != nil {
+		return err
+	}
+
+	slices.Sort(removedPartitions)
+	slices.Sort(removedOwners)
+
+	if len(removedPartitions) == 0 && len(removedOwners) == 0 {
+		fmt.Fprintf(os.Stderr, "Ring %q is already empty, nothing to remove.\n", ringKey)
+		return nil
+	}
+
+	fmt.Fprintf(os.Stderr, "Successfully removed partition(s) %v and owner(s) %v from ring %q.\n", removedPartitions, removedOwners, ringKey)
+	return nil
 }
 
 // parseOwnerIDs parses a comma-separated list of owner IDs.

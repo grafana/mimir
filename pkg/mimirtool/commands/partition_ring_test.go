@@ -1154,6 +1154,20 @@ func TestRemoveAllOwnersAndPartitionsCommand(t *testing.T) {
 	})
 }
 
+func countLivePartitionsAndOwners(ringDesc *ring.PartitionRingDesc) (partitions, owners int) {
+	for _, p := range ringDesc.Partitions {
+		if p.State != ring.PartitionDeleted {
+			partitions++
+		}
+	}
+	for _, o := range ringDesc.Owners {
+		if o.State != ring.OwnerDeleted {
+			owners++
+		}
+	}
+	return partitions, owners
+}
+
 // startMemberlistKV starts a memberlist KV node for testing and returns both the KV and a client.
 // The KV is automatically stopped when the test completes.
 func startMemberlistKV(t *testing.T) (*memberlist.KV, *memberlist.Client) {
