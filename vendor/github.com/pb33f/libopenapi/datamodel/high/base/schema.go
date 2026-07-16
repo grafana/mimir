@@ -597,12 +597,12 @@ func (s *Schema) MarshalYAMLInlineWithContext(ctx any) (interface{}, error) {
 		// this avoids mutating shared state and prevents race conditions.
 		for _, sp := range s.OneOf {
 			if sp != nil && sp.IsReference() {
-				renderCtx.MarkRefAsPreserved(sp.GetReference())
+				markDiscriminatorReferenceAsPreserved(renderCtx, sp)
 			}
 		}
 		for _, sp := range s.AnyOf {
 			if sp != nil && sp.IsReference() {
-				renderCtx.MarkRefAsPreserved(sp.GetReference())
+				markDiscriminatorReferenceAsPreserved(renderCtx, sp)
 			}
 		}
 	}
@@ -618,6 +618,14 @@ func (s *Schema) MarshalYAMLInlineWithContext(ctx any) (interface{}, error) {
 		}
 	}
 	return nb.Render(), errors.Join(nb.Errors...)
+}
+
+func markDiscriminatorReferenceAsPreserved(ctx *InlineRenderContext, sp *SchemaProxy) {
+	if sp.GoLow() == nil {
+		ctx.MarkScopedRefAsPreserved(nil, sp.GetReference())
+		return
+	}
+	ctx.MarkReferenceNodeAsPreserved(sp.GetReferenceNode())
 }
 
 // MarshalYAMLInline will render out the Schema pointer as YAML, and all refs will be inlined fully.

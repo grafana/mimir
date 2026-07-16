@@ -11,6 +11,7 @@ package v3
 
 import (
 	"bytes"
+	"errors"
 
 	"github.com/pb33f/libopenapi/datamodel/high"
 	"github.com/pb33f/libopenapi/datamodel/high/base"
@@ -196,6 +197,16 @@ func (d *Document) RenderInline() ([]byte, error) {
 	return yaml.Marshal(di)
 }
 
+// RenderInlineWithContext renders the document using one shared inline render
+// context and propagates every NodeBuilder error before marshaling output.
+func (d *Document) RenderInlineWithContext(ctx *base.InlineRenderContext) ([]byte, error) {
+	di, err := d.MarshalYAMLInlineWithContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return yaml.Marshal(di)
+}
+
 // MarshalYAML will create a ready to render YAML representation of the Document object.
 func (d *Document) MarshalYAML() (interface{}, error) {
 	nb := high.NewNodeBuilder(d, d.low)
@@ -206,6 +217,24 @@ func (d *Document) MarshalYAMLInline() (interface{}, error) {
 	nb := high.NewNodeBuilder(d, d.low)
 	nb.Resolve = true
 	return nb.Render(), nil
+}
+
+// MarshalYAMLInlineWithContext creates the inline YAML node graph using one
+// context for the complete document render and returns accumulated builder
+// errors instead of silently emitting a partial document.
+func (d *Document) MarshalYAMLInlineWithContext(ctx any) (interface{}, error) {
+	renderCtx, ok := ctx.(*base.InlineRenderContext)
+	if !ok || renderCtx == nil {
+		renderCtx = base.NewInlineRenderContext()
+	}
+	nb := high.NewNodeBuilder(d, d.low)
+	nb.Resolve = true
+	nb.RenderContext = renderCtx
+	node := nb.Render()
+	if err := errors.Join(nb.Errors...); err != nil {
+		return nil, err
+	}
+	return node, nil
 }
 
 func (d *Document) GetIndex() *index.SpecIndex {
