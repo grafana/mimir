@@ -1447,6 +1447,27 @@ mimirtool partition-ring remove-owner \
   --memberlist.bind-port=0
 ```
 
+#### `remove-all-owners-and-partitions`
+
+Forcefully removes all owners and partitions from the partition ring, resetting it to an empty state. This is intended for testing scenarios where you need to reset a partition ring.
+
+| Flag                         | Description                                                                                                 |
+| :--------------------------- | :---------------------------------------------------------------------------------------------------------- |
+| `--memberlist.join`          | Required. Address of a memberlist node to join. Can be specified multiple times.                            |
+| `--memberlist.cluster-label` | The cluster label to use when joining the memberlist cluster.                                               |
+| `--memberlist.bind-port`     | Port to listen on for memberlist gossip messages. Default: `7946`. Use `0` to pick a random available port. |
+| `--partition-ring.key`       | The KV store key under which the partition ring is stored. Default: `ingester-partitions`.                  |
+| `--verbose`                  | Enable verbose logging.                                                                                     |
+
+##### Example
+
+```bash
+mimirtool partition-ring remove-all-owners-and-partitions \
+  --memberlist.join=<ingester-pod-ip>:7946 \
+  --memberlist.cluster-label=<cluster>.<namespace> \
+  --memberlist.bind-port=0
+```
+
 ## License
 
 This software is licensed as AGPLv3. For more information, see [LICENSE](https://github.com/grafana/mimir/blob/main/LICENSE).
