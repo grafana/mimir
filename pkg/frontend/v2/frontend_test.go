@@ -942,6 +942,7 @@ func TestFrontendCancellation(t *testing.T) {
 
 			ctx, cancel := context.WithTimeout(user.InjectOrgID(context.Background(), "test"), 200*time.Millisecond)
 			ctx = querymiddleware.ContextWithParallelismLimiter(ctx, querymiddleware.NewParallelismLimiter(math.MaxInt))
+			reqStats, ctx := stats.ContextWithEmptyStats(ctx)
 			defer cancel()
 
 			makeRequest(ctx, t, f)
@@ -960,6 +961,8 @@ func TestFrontendCancellation(t *testing.T) {
 				require.Equal(t, schedulerpb.CANCEL, ms.msgs[1].Type)
 				require.Equal(t, ms.msgs[0].QueryID, ms.msgs[1].QueryID)
 			})
+
+			require.Greater(t, reqStats.LoadQueueTime(), time.Duration(0))
 		})
 	}
 
