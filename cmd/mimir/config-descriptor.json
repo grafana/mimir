@@ -2110,6 +2110,28 @@
           "fieldCategory": "experimental"
         },
         {
+          "kind": "field",
+          "name": "nautilus_ingest_write_to_ingest_topic",
+          "required": false,
+          "desc": "When true, tenants enrolled in nautilus_ingest_routing also write to the production ingest-storage Kafka topic. Enable with -distributor.nautilus-ingest-write-to-nautilus-topic=true to tee enrolled tenants to both topics.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "distributor.nautilus-ingest-write-to-ingest-topic",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "nautilus_ingest_write_to_nautilus_topic",
+          "required": false,
+          "desc": "When true, tenants enrolled in nautilus_ingest_routing write to -distributor.nautilus-ingest-topic. Disable only with -distributor.nautilus-ingest-write-to-ingest-topic=true to keep enrolled tenants on production ingest while leaving tenant runtime overrides unchanged.",
+          "fieldValue": null,
+          "fieldDefaultValue": true,
+          "fieldFlag": "distributor.nautilus-ingest-write-to-nautilus-topic",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
           "kind": "block",
           "name": "readcache",
           "required": false,
@@ -7835,7 +7857,7 @@
           "kind": "field",
           "name": "nautilus_ingest_routing",
           "required": false,
-          "desc": "Which Kafka topic this tenant's writes are forwarded to. Valid values: 'disabled' (production ingest topic), 'nautilus-only' (experimental nautilus_ingest topic consumed by readcache). Must move in lockstep with readcache_read_routing.",
+          "desc": "Whether this tenant is enrolled in the Nautilus write policy. Valid values: 'disabled' (production ingest topic), 'nautilus-only' (startup-configured Nautilus write destinations: production ingest, nautilus ingest, or both). Must move in lockstep with readcache_read_routing.",
           "fieldValue": null,
           "fieldDefaultValue": "disabled",
           "fieldFlag": "distributor.nautilus-ingest-routing",

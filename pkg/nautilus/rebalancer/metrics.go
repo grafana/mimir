@@ -54,6 +54,14 @@ type metrics struct {
 	// "readcache pods are restarting".
 	rateZeroExclusions prometheus.Gauge
 
+	// roundActions counts slicer actions by kind, incremented once
+	// per rebalance round with that round's action counts. The
+	// "move" series is the primary churn signal: an increase() at
+	// or near max-moves-per-round × rounds means the slicer wants
+	// to move more than the cap allows (investigate the load
+	// signal), while a steady trickle is healthy convergence.
+	roundActions *prometheus.CounterVec
+
 	// tier2RoundDecisions counts tier-2 gate decisions by reason
 	// ("first_round", "interval_zero", "interval_elapsed",
 	// "instances_changed" for fires; "interval_pending" for
@@ -106,6 +114,10 @@ func newMetrics(r prometheus.Registerer) *metrics {
 			Name: "cortex_nautilus_rebalancer_phase3_excluded_partitions",
 			Help: "Number of partitions runPhase3 skipped on the most recent round because their reported sample rate was 0 despite holding in-memory series (typically a partition whose readcache was just reassigned by tier-2 and whose EWMA has not yet ramped up).",
 		}),
+		roundActions: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_nautilus_rebalancer_actions_total",
+			Help: "Total slicer actions produced by rebalance rounds, by kind (move, reassign, split, merge). A sustained move rate at -nautilus-rebalancer.max-moves-per-round per round indicates the slicer wants more churn than the cap allows.",
+		}, []string{"kind"}),
 		tier2RoundDecisions: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_nautilus_rebalancer_tier2_round_decisions_total",
 			Help: "Count of tier-2 (readcache slicer) gate decisions partitioned by outcome (fire vs skip) and reason. Lets dashboards show why tier-2 chose to fire or wait, without re-reading logs.",
@@ -232,6 +244,21 @@ func (m *metrics) updateReadcacheRound(plan readcachePlan) {
 		}
 	}
 	m.lastReadcachePartitionKeys = nextPartitionKeys
+}
+
+// recordRoundActions adds one round's slicer action counts to the
+// per-kind counters. All four series are always touched (zero adds
+// included) so every kind is present from the first round and
+// increase() never has to infer a missing series. Safe on a nil
+// receiver (test wiring).
+func (m *metrics) recordRoundActions(c actionCounts) {
+	if m == nil {
+		return
+	}
+	m.roundActions.WithLabelValues("move").Add(float64(c.moves))
+	m.roundActions.WithLabelValues("reassign").Add(float64(c.reassigns))
+	m.roundActions.WithLabelValues("split").Add(float64(c.splits))
+	m.roundActions.WithLabelValues("merge").Add(float64(c.merges))
 }
 
 // setRateZeroExclusions records how many partitions runPhase3

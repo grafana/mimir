@@ -1504,9 +1504,13 @@ Usage of ./cmd/mimir/mimir:
   -distributor.max-request-pool-buffer-size int
     	[experimental] Max size of the pooled buffers used for marshaling write requests. If 0, no max size is enforced.
   -distributor.nautilus-ingest-routing string
-    	[experimental] Which Kafka topic this tenant's writes are forwarded to. Valid values: 'disabled' (production ingest topic), 'nautilus-only' (experimental nautilus_ingest topic consumed by readcache). Must move in lockstep with readcache_read_routing. (default "disabled")
+    	[experimental] Whether this tenant is enrolled in the Nautilus write policy. Valid values: 'disabled' (production ingest topic), 'nautilus-only' (startup-configured Nautilus write destinations: production ingest, nautilus ingest, or both). Must move in lockstep with readcache_read_routing. (default "disabled")
   -distributor.nautilus-ingest-topic string
     	[experimental] Kafka topic to which writes for tenants in nautilus_ingest_routing=nautilus-only are forwarded. The production -ingest-storage.kafka.topic is unaffected. Must match the topic the readcache pods consume from. (default "nautilus_ingest")
+  -distributor.nautilus-ingest-write-to-ingest-topic
+    	[experimental] When true, tenants enrolled in nautilus_ingest_routing also write to the production ingest-storage Kafka topic. Enable with -distributor.nautilus-ingest-write-to-nautilus-topic=true to tee enrolled tenants to both topics.
+  -distributor.nautilus-ingest-write-to-nautilus-topic
+    	[experimental] When true, tenants enrolled in nautilus_ingest_routing write to -distributor.nautilus-ingest-topic. Disable only with -distributor.nautilus-ingest-write-to-ingest-topic=true to keep enrolled tenants on production ingest while leaving tenant runtime overrides unchanged. (default true)
   -distributor.nautilus-rebalancer-address string
     	[experimental] gRPC address of the nautilus rebalancer. When set, the distributor polls it for hash-range-to-partition assignments.
   -distributor.nautilus-required

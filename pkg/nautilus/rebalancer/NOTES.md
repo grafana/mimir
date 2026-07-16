@@ -197,6 +197,41 @@ bookkeeping.
    pass 2 to spread zero-load partitions deterministically
    (round-robin starting from an offset that shifts each round).
 
+## Phase 3 churn guards (implemented, 7/16/2026)
+
+Observed on mimir-dev-15: >100 hash-range moves per round, with the
+same range repeatedly relocated to different partitions, fragmenting
+the assignment log (every move appends a preempted lease plus a
+successor lease; historical owners grow query fan-out via
+`PartitionsOverlappingInterval` until `entry_retention` prunes).
+
+Mechanisms and fixes:
+
+1.  **Move count was unbounded.** `movement_budget` caps hash-space
+    fraction, not count, and the `improvement / moveCost` score
+    prefers tiny ranges, so a fragmented tiling yields hundreds of
+    sub-budget moves. Added `max_moves_per_round` (default 30, 0
+    disables) as a hard Phase 3 cap, and `min_move_improvement`
+    (default 0.01 × meanL, 0 disables) so noise-level moves no
+    longer consume the allowance.
+2.  **Cooldown never spanned rounds.** The 90s `move_cooldown`
+    default was always expired by the next steady-state round
+    (~5 min, lease-driven). Default raised to 15m. Cooldowns are now
+    also armed for Phase 1 reassigns and cross-partition Phase 2
+    merges (they relocate hash space too; cooldowns only gate
+    Phase 3 candidates, so recovery is never delayed), and persisted
+    to `move-cooldowns.json` under `data_dir` so restarts don't
+    forget them (follow-up 3 above; `recent_moves` no longer exists
+    since slicer v5).
+3.  **Observability.** `cortex_nautilus_rebalancer_actions_total`
+    counter (by kind) accumulates per-round action counts; a
+    sustained `kind="move"` increase of max_moves_per_round per
+    round means the slicer wants more churn than allowed and the
+    load signal deserves a look.
+
+`SlicerVersion` bumped to "7" (new knobs land in `ConfigSnapshot`;
+v6 traces zero-fill them and stay replayable).
+
 ## Per-(partition, range) reporting (implemented)
 
 Finding 2 above — "per-range counts are ~99% zero" — is addressed by

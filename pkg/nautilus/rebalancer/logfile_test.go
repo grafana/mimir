@@ -81,6 +81,33 @@ func TestLogFile_ReadcacheRoundTrip(t *testing.T) {
 	}
 }
 
+func TestLogFile_MoveCooldownsRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, moveCooldownsFilename)
+	f := newLogFile(path, log.NewNopLogger())
+
+	// Cold start: read before any write.
+	cooldowns, ok := f.readMoveCooldowns()
+	assert.False(t, ok)
+	assert.Empty(t, cooldowns)
+
+	// Round trip through the same wire encoding the rebalancer uses.
+	deadline := time.Unix(2000, 0).UTC()
+	want := map[assignment.HashRange]time.Time{
+		{Lo: 0, Hi: 999}:     deadline,
+		{Lo: 1000, Hi: 1999}: deadline.Add(time.Minute),
+	}
+	require.NoError(t, f.writeMoveCooldowns(cooldownsToWire(want)))
+
+	wire, ok := f.readMoveCooldowns()
+	require.True(t, ok)
+	got := cooldownsFromWire(wire)
+	require.Len(t, got, 2)
+	for hr, wantDeadline := range want {
+		assert.True(t, wantDeadline.Equal(got[hr]), "deadline mismatch for %v", hr)
+	}
+}
+
 func TestLogFile_CorruptionFallsBackToColdStart(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, assignmentLogFilename)

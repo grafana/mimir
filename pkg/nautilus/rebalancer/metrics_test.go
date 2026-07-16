@@ -41,6 +41,30 @@ func TestMetrics_UpdateRound_AddsAndDeletesGauges(t *testing.T) {
 func TestMetrics_UpdateRound_NilSafe(t *testing.T) {
 	var m *metrics
 	m.updateRound(map[int32]float64{0: 1.0}, map[string]float64{"a": 1.0}) // must not panic
+	m.recordRoundActions(actionCounts{moves: 1})                           // must not panic
+}
+
+func TestMetrics_RecordRoundActions(t *testing.T) {
+	reg := prometheus.NewPedanticRegistry()
+	m := newMetrics(reg)
+
+	m.recordRoundActions(actionCounts{moves: 12, reassigns: 3, splits: 2, merges: 1})
+
+	got := mustGather(t, reg)
+	assert.Contains(t, got, `cortex_nautilus_rebalancer_actions_total{kind="move"} 12`)
+	assert.Contains(t, got, `cortex_nautilus_rebalancer_actions_total{kind="reassign"} 3`)
+	assert.Contains(t, got, `cortex_nautilus_rebalancer_actions_total{kind="split"} 2`)
+	assert.Contains(t, got, `cortex_nautilus_rebalancer_actions_total{kind="merge"} 1`)
+
+	// Counts accumulate across rounds; a quiet round leaves the
+	// totals unchanged (all four series stay present).
+	m.recordRoundActions(actionCounts{})
+	m.recordRoundActions(actionCounts{moves: 5})
+	got = mustGather(t, reg)
+	assert.Contains(t, got, `cortex_nautilus_rebalancer_actions_total{kind="move"} 17`)
+	assert.Contains(t, got, `cortex_nautilus_rebalancer_actions_total{kind="reassign"} 3`)
+	assert.Contains(t, got, `cortex_nautilus_rebalancer_actions_total{kind="split"} 2`)
+	assert.Contains(t, got, `cortex_nautilus_rebalancer_actions_total{kind="merge"} 1`)
 }
 
 func mustGather(t *testing.T, reg *prometheus.Registry) string {

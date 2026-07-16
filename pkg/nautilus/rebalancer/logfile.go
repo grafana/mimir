@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -23,18 +24,22 @@ import (
 // migration in load() for any prior version we still want to read.
 const logFileVersion = 1
 
-// logFileData is the JSON envelope shared by both the assignment log
-// and the readcache-assignment log. We persist them in separate
-// files so the rebalancer can mount independent data sources during
-// migrations.
+// logFileData is the JSON envelope shared by the assignment log, the
+// readcache-assignment log, and the move-cooldown state. We persist
+// them in separate files so the rebalancer can mount independent
+// data sources during migrations.
 type logFileData struct {
 	Version int `json:"version"`
 
-	// Exactly one of the two slices is populated, depending on the
+	// Exactly one of the fields below is populated, depending on the
 	// file kind. Marshalled with omitempty so the on-disk file
 	// reflects only the relevant kind.
 	Entries          []assignment.LogEntry          `json:"entries,omitempty"`
 	ReadcacheEntries []readcacheassignment.LogEntry `json:"readcache_entries,omitempty"`
+
+	// MoveCooldowns is keyed by "lo:hi" (decimal), the same encoding
+	// Trace.Cooldowns uses; see FormatHashRangeKey / ParseHashRangeKey.
+	MoveCooldowns map[string]time.Time `json:"move_cooldowns,omitempty"`
 }
 
 // logFile is a small atomic-write helper for the rebalancer logs.
@@ -128,6 +133,40 @@ func (f *logFile) writeReadcacheLog(entries []readcacheassignment.LogEntry) erro
 	return f.write(logFileData{Version: logFileVersion, ReadcacheEntries: entries})
 }
 
+// readMoveCooldowns mirrors readAssignmentLog for the per-range
+// move-cooldown state. The same missing/corrupt/unknown-version
+// handling applies: any failure reads as a cold start (no cooldowns)
+// rather than an error, because stale or absent cooldowns only relax
+// churn protection — they can't corrupt routing.
+func (f *logFile) readMoveCooldowns() (map[string]time.Time, bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	data, err := os.ReadFile(f.filePath)
+	if os.IsNotExist(err) {
+		return nil, false
+	}
+	if err != nil {
+		level.Error(f.logger).Log("msg", "failed to read rebalancer move-cooldowns file", "file", f.filePath, "err", err)
+		return nil, false
+	}
+
+	var parsed logFileData
+	if err := json.Unmarshal(data, &parsed); err != nil {
+		level.Error(f.logger).Log("msg", "failed to parse rebalancer move-cooldowns file", "file", f.filePath, "err", err)
+		return nil, false
+	}
+	if parsed.Version != logFileVersion {
+		level.Error(f.logger).Log("msg", "rebalancer move-cooldowns file has unknown version", "file", f.filePath, "version", parsed.Version)
+		return nil, false
+	}
+	return parsed.MoveCooldowns, true
+}
+
+func (f *logFile) writeMoveCooldowns(cooldowns map[string]time.Time) error {
+	return f.write(logFileData{Version: logFileVersion, MoveCooldowns: cooldowns})
+}
+
 func (f *logFile) write(data logFileData) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -153,3 +192,9 @@ const assignmentLogFilename = "assignment-log.json"
 // readcacheLogFilename is the on-disk filename for the (partition ->
 // readcache instance) log.
 const readcacheLogFilename = "readcache-assignment-log.json"
+
+// moveCooldownsFilename is the on-disk filename for the per-range
+// move-cooldown state. Persisted so a rebalancer restart doesn't
+// forget in-flight cooldowns and immediately re-move ranges it just
+// relocated.
+const moveCooldownsFilename = "move-cooldowns.json"

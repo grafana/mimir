@@ -60,7 +60,16 @@ import (
 // (rate, L) pairs in the trace yield no exclusions. A v5 trace
 // whose rates would now be excluded would produce different
 // actions; refuse such traces by version-checking before replay.
-const SlicerVersion = "6"
+//
+// Version "7" adds two churn guards to Phase 3: a hard per-round
+// move-count cap (Config.MaxMovesPerRound) and a minimum-improvement
+// floor (Config.MinMoveImprovement, a fraction of the mean partition
+// load a candidate move must improve the imbalance by). Both land in
+// ConfigSnapshot. Traces captured under v6 zero-fill the new fields,
+// which disables both guards on replay, so v6 traces remain
+// byte-replayable against v7; traces captured under v7 with either
+// guard enabled cannot be replayed by a v6 binary.
+const SlicerVersion = "7"
 
 // RangeRate is the JSON-serializable view of a per-(partition, range)
 // rate signal. Mirrors the unexported rangeRate but with JSON tags
@@ -89,8 +98,10 @@ type RangeRate struct {
 // parameters even if production config changes between capture and
 // replay.
 type ConfigSnapshot struct {
-	MovementBudget float64       `json:"movement_budget"`
-	MoveCooldown   time.Duration `json:"move_cooldown"`
+	MovementBudget     float64       `json:"movement_budget"`
+	MoveCooldown       time.Duration `json:"move_cooldown"`
+	MaxMovesPerRound   int           `json:"max_moves_per_round"`
+	MinMoveImprovement float64       `json:"min_move_improvement"`
 }
 
 // Trace is the full input/output of a single rebalance round, with
@@ -237,8 +248,10 @@ func cooldownsFromWire(in map[string]time.Time) map[assignment.HashRange]time.Ti
 func ReplayTrace(t Trace) (*assignment.Assignment, []Action) {
 	r := &Rebalancer{
 		cfg: Config{
-			MovementBudget: t.Config.MovementBudget,
-			MoveCooldown:   t.Config.MoveCooldown,
+			MovementBudget:     t.Config.MovementBudget,
+			MoveCooldown:       t.Config.MoveCooldown,
+			MaxMovesPerRound:   t.Config.MaxMovesPerRound,
+			MinMoveImprovement: t.Config.MinMoveImprovement,
 		},
 		moveCooldowns: cooldownsFromWire(t.Cooldowns),
 	}

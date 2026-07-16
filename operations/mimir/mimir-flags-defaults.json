@@ -140,6 +140,7 @@
   "distributor.reactive-limiter.max-rejection-factor": 2,
   "distributor.nautilus-rebalancer-address": "",
   "distributor.nautilus-ingest-topic": "nautilus_ingest",
+  "distributor.nautilus-ingest-write-to-nautilus-topic": true,
   "distributor.readcache.addresses": "",
   "distributor.readcache.grpc-client-config.grpc-max-recv-msg-size": 104857600,
   "distributor.readcache.grpc-client-config.grpc-max-send-msg-size": 104857600,

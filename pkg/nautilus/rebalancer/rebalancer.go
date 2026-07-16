@@ -45,6 +45,28 @@ type Config struct {
 
 	MovementBudget float64 `yaml:"movement_budget"`
 
+	// MaxMovesPerRound caps the number of Phase 3 (weighted-move)
+	// actions per rebalance round. MovementBudget alone bounds the
+	// fraction of hash space moved, not the move count: with many
+	// small ranges the slicer can commit hundreds of tiny moves per
+	// round without approaching the budget, and every move appends
+	// a preempted lease plus a successor lease to the assignment
+	// log. This cap bounds per-round log growth and downstream
+	// query fan-out directly. Phase 1 reassigns (inactive-partition
+	// recovery) are not counted. <= 0 disables the cap.
+	MaxMovesPerRound int `yaml:"max_moves_per_round"`
+
+	// MinMoveImprovement is the minimum imbalance improvement — as a
+	// fraction of the mean per-partition load — a candidate Phase 3
+	// move must deliver to be committed. Without a floor, any
+	// improvement > 0 is accepted and the score function
+	// (improvement / range size) actively prefers tiny ranges, so
+	// the slicer burns its per-round moves chasing noise-level
+	// ranges whose relocation doesn't reduce the imbalance an
+	// operator can observe. <= 0 disables the floor (any positive
+	// improvement qualifies).
+	MinMoveImprovement float64 `yaml:"min_move_improvement"`
+
 	// IngesterRPCTimeout bounds each individual HashRangeStats /
 	// SetHashRanges call to a single ingester. RPCs are issued in
 	// parallel, but a stuck ingester (e.g. mid-rollout, with a stale
@@ -60,10 +82,18 @@ type Config struct {
 	IngesterRPCConcurrency int `yaml:"ingester_rpc_concurrency"`
 
 	// MoveCooldown is the minimum time a hash range must sit on its new
-	// partition after a move before it (or any range overlapping its
+	// partition after a relocation (Phase 3 move, Phase 1 reassign, or
+	// cross-partition merge) before it (or any range overlapping its
 	// former boundaries) is eligible to be moved again. Acts as a
 	// per-range anti-flap guard; aggregate per-round churn is bounded
 	// by MovementBudget.
+	//
+	// Must exceed the steady-state rebalance interval (approximately
+	// LeaseDuration, 5m by default) to have any effect: a cooldown
+	// shorter than the gap between rounds is always expired by the
+	// time the next round evaluates candidates. Cooldowns are
+	// persisted under DataDir (when set) so restarts don't forget
+	// in-flight cooldowns.
 	MoveCooldown time.Duration `yaml:"move_cooldown"`
 
 	// LeaseDuration is how long each freshly-issued lease is valid.
@@ -179,9 +209,11 @@ func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.DurationVar(&cfg.MinRebalanceInterval, prefix+"min-rebalance-interval", 30*time.Second, "Lower bound on the gap between rebalance rounds. The rebalancer schedules itself dynamically (next round at lease_horizon - LeaseLookahead), but this floor protects against degenerate cases such as just-truncated leases or a fully-expired log.")
 	f.DurationVar(&cfg.MaxRebalanceInterval, prefix+"max-rebalance-interval", 5*time.Minute, "Upper bound on the gap between rebalance rounds. Acts as a heartbeat for stats collection and reassignment reactivity even when the lease horizon would otherwise allow a longer wait.")
 	f.Float64Var(&cfg.MovementBudget, prefix+"movement-budget", 0.09, "Maximum fraction of the hash space that can be moved per round.")
+	f.IntVar(&cfg.MaxMovesPerRound, prefix+"max-moves-per-round", 30, "Maximum number of weighted-move (Phase 3) actions per rebalance round. The movement budget bounds the hash-space fraction moved, not the move count, so many small ranges can produce hundreds of moves per round without this cap; every move appends entries to the assignment log and grows query fan-out. Phase 1 reassigns (inactive-partition recovery) are not counted. 0 or negative disables the cap.")
+	f.Float64Var(&cfg.MinMoveImprovement, prefix+"min-move-improvement", 0.01, "Minimum imbalance improvement, as a fraction of the mean per-partition load, that a Phase 3 move must deliver to be committed. Filters out noise-level moves of nearly-empty ranges that consume the per-round move allowance without observably reducing imbalance. 0 or negative disables the floor.")
 	f.DurationVar(&cfg.IngesterRPCTimeout, prefix+"ingester-rpc-timeout", 4*time.Second, "Per-call timeout for HashRangeStats and SetHashRanges RPCs to each ingester. Prevents one stuck pod (e.g. mid-rollout) from stalling the whole rebalance round. 0 disables.")
 	f.IntVar(&cfg.IngesterRPCConcurrency, prefix+"ingester-rpc-concurrency", 10, "Maximum concurrent ingester RPCs per round. 0 means one per ingester (unbounded).")
-	f.DurationVar(&cfg.MoveCooldown, prefix+"move-cooldown", 90*time.Second, "Minimum time between consecutive moves of the same hash range (or any range overlapping it). Per-range anti-flap guard; aggregate per-round churn is bounded by MovementBudget. 0 disables.")
+	f.DurationVar(&cfg.MoveCooldown, prefix+"move-cooldown", 15*time.Minute, "Minimum time between consecutive relocations of the same hash range (or any range overlapping it). Per-range anti-flap guard; aggregate per-round churn is bounded by MovementBudget. Must exceed the steady-state rebalance interval (approximately the lease duration) to have any effect. 0 disables.")
 	f.DurationVar(&cfg.LeaseDuration, prefix+"lease-duration", 5*time.Minute, "Duration of each freshly-issued or pre-issued successor assignment-log lease. Consumers fall back to the partition ring once a lease expires, so this caps how long stale routing can persist after a rebalancer outage.")
 	f.DurationVar(&cfg.LeaseLookahead, prefix+"lease-lookahead", 90*time.Second, "How far before an active lease's expiry the rebalancer pre-issues its successor. Steady-state rebalance interval is approximately LeaseDuration; LeaseLookahead is the safety buffer to disseminate the successor to all consumers before the active lease ends.")
 	f.DurationVar(&cfg.EntryRetention, prefix+"entry-retention", 24*time.Hour, "How long expired assignment-log entries are retained after their lease ended. Active and pre-issued leases are never pruned. Must exceed querier QueryIngestersWithin plus a drain buffer once queriers consume the log; today the value chiefly caps the rebalancer's snapshot size sent to distributor stream subscribers.")
@@ -258,6 +290,13 @@ type Rebalancer struct {
 	// its boundaries) becomes eligible to be moved again. Mutated only
 	// by rebalance(), which runs single-threaded from running().
 	moveCooldowns map[assignment.HashRange]time.Time
+
+	// cooldownsFile persists moveCooldowns under cfg.DataDir so a
+	// restart doesn't forget in-flight cooldowns and immediately
+	// re-move ranges it just relocated. Nil when persistence is
+	// disabled (empty DataDir). Written by rebalance() on rounds
+	// that armed or pruned at least one cooldown.
+	cooldownsFile *logFile
 
 	// readcacheCooldowns tracks per-partition cooldowns for the
 	// second slicer round (partition -> readcache instance). Mutated
@@ -377,6 +416,12 @@ func (r *Rebalancer) starting(_ context.Context) error {
 			r.readcacheStore.seedFromEntries(entries)
 		}
 		r.readcacheStore.setPersistFn(readcacheFile.writeReadcacheLog, r.logger)
+
+		r.cooldownsFile = newLogFile(filepath.Join(r.cfg.DataDir, moveCooldownsFilename), log.With(r.logger, "component", "move_cooldowns_file"))
+		if cooldowns, ok := r.cooldownsFile.readMoveCooldowns(); ok {
+			r.moveCooldowns = cooldownsFromWire(cooldowns)
+			level.Info(r.logger).Log("msg", "seeded move cooldowns from disk", "cooldowns", len(r.moveCooldowns))
+		}
 	}
 
 	// Auto-create the nautilus_ingest topic on startup so the dev-cell
@@ -789,7 +834,7 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 	}
 
 	r.metrics.updateRound(partitionQuerySamples, unnamedPerInstance)
-	r.pruneExpiredCooldowns(now)
+	cooldownsPruned := r.pruneExpiredCooldowns(now)
 	if r.spotlights != nil {
 		r.spotlights.prune(now)
 	}
@@ -888,9 +933,13 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 		return nil
 	}
 
-	r.recordMoveCooldowns(now, actions)
+	cooldownsArmed := r.recordMoveCooldowns(now, actions)
+	if cooldownsArmed > 0 || cooldownsPruned > 0 {
+		r.persistMoveCooldowns()
+	}
 
 	actionSummary := countActions(actions)
+	r.metrics.recordRoundActions(actionSummary)
 	if n := actionSummary.moves + actionSummary.reassigns + actionSummary.splits + actionSummary.merges; n > 0 {
 		level.Info(r.logger).Log(
 			"msg", "slicer produced actions",
@@ -1033,8 +1082,10 @@ func (r *Rebalancer) rebalance(ctx context.Context) error {
 		ActivePartitions:      append([]int32(nil), activePartitions...),
 		Cooldowns:             cooldownsSnapshot,
 		Config: ConfigSnapshot{
-			MovementBudget: r.cfg.MovementBudget,
-			MoveCooldown:   r.cfg.MoveCooldown,
+			MovementBudget:     r.cfg.MovementBudget,
+			MoveCooldown:       r.cfg.MoveCooldown,
+			MaxMovesPerRound:   r.cfg.MaxMovesPerRound,
+			MinMoveImprovement: r.cfg.MinMoveImprovement,
 		},
 		End: append([]assignment.Entry(nil), newAssignment.Entries...),
 	})
@@ -1708,6 +1759,16 @@ func (r *Rebalancer) runPhase3(
 	movementBudget := r.cfg.MovementBudget * float64(uint64(math.MaxUint32)+1)
 	var moved float64
 
+	// Improvement floor: a candidate move must narrow the hot/cold
+	// imbalance by at least this much to be committed. Derived from
+	// meanL so the floor scales with cluster load. Zero when the
+	// floor is disabled (or the cluster reports no load), which
+	// degrades to the legacy "any positive improvement" behavior.
+	var minImprovement float64
+	if r.cfg.MinMoveImprovement > 0 {
+		minImprovement = r.cfg.MinMoveImprovement * meanL
+	}
+
 	// Partitions excluded from "hottest" consideration: those that had
 	// no profitable range to move when examined. Without this guard a
 	// single budget-exhausted-but-still-nominally-hot partition could
@@ -1730,6 +1791,15 @@ func (r *Rebalancer) runPhase3(
 	var actions []Action
 
 	for iter := 0; iter < len(entries); iter++ {
+		// Hard cap on per-round move count. MovementBudget alone
+		// doesn't bound the count: the score function prefers small
+		// ranges, so with a fragmented tiling the loop can commit
+		// hundreds of tiny moves without approaching the budget,
+		// and each one appends preempted+successor leases to the
+		// assignment log.
+		if r.cfg.MaxMovesPerRound > 0 && len(actions) >= r.cfg.MaxMovesPerRound {
+			break
+		}
 		// Hot: argmax effectiveSource among partitions with movable > 0
 		// and not excluded.
 		var hotPID, coldPID int32
@@ -1835,7 +1905,7 @@ func (r *Rebalancer) runPhase3(
 			imbalanceBefore := math.Abs(hotL-meanL) + math.Abs(coldL-meanL)
 			imbalanceAfter := math.Abs(newHot-meanL) + math.Abs(newCold-meanL)
 			improvement := imbalanceBefore - imbalanceAfter
-			if improvement <= 0 {
+			if improvement <= 0 || improvement < minImprovement {
 				continue
 			}
 			score := improvement / moveCost
@@ -2180,17 +2250,34 @@ func (r *Rebalancer) isInMoveCooldown(now time.Time, hr assignment.HashRange) bo
 }
 
 // recordMoveCooldowns scans the slicer's actions and starts a cooldown
-// timer for every ActionMove. ActionReassign is intentionally excluded:
-// it's a recovery action triggered by an inactive partition, not a
-// load-balancing decision, so cooldowning it would needlessly delay
-// recovery.
-func (r *Rebalancer) recordMoveCooldowns(now time.Time, actions []Action) {
+// timer for every action that relocated hash space to a different
+// partition: Phase 3 moves, Phase 1 reassigns, and cross-partition
+// Phase 2 merges. Cooldowns only gate Phase 3's candidate selection,
+// so arming one after a reassign never delays the recovery itself —
+// it just stops the next round from immediately re-moving the
+// freshly relocated range. Splits and same-partition merges don't
+// change ownership and are excluded: cooldowning a split would block
+// Phase 3 from placing the halves, defeating the split's purpose.
+//
+// Returns the number of cooldowns armed so the caller can decide
+// whether the persisted cooldown state needs rewriting.
+func (r *Rebalancer) recordMoveCooldowns(now time.Time, actions []Action) int {
 	if r.cfg.MoveCooldown <= 0 {
-		return
+		return 0
 	}
 	deadline := now.Add(r.cfg.MoveCooldown)
+	armed := 0
 	for _, a := range actions {
-		if a.Kind != ActionMove {
+		switch a.Kind {
+		case ActionMove, ActionReassign:
+		case ActionMerge:
+			// Same-partition merges carry FromPart == 0 (the zero
+			// value; mergeAdjacentCold only sets FromPart on the
+			// cross-partition path) and don't relocate anything.
+			if a.FromPart == 0 || a.FromPart == a.ToPart {
+				continue
+			}
+		default:
 			continue
 		}
 		if r.moveCooldowns == nil {
@@ -2200,16 +2287,36 @@ func (r *Rebalancer) recordMoveCooldowns(now time.Time, actions []Action) {
 		// later round splits or merges this range, the overlap test
 		// in isInMoveCooldown will still match.
 		r.moveCooldowns[a.Range] = deadline
+		armed++
+	}
+	return armed
+}
+
+// persistMoveCooldowns writes the current cooldown map to disk. No-op
+// when persistence is disabled. Failures are logged but never fail
+// the round: losing cooldown state on the next restart only relaxes
+// churn protection, the same posture as a missing file at startup.
+func (r *Rebalancer) persistMoveCooldowns() {
+	if r.cooldownsFile == nil {
+		return
+	}
+	if err := r.cooldownsFile.writeMoveCooldowns(cooldownsToWire(r.moveCooldowns)); err != nil {
+		level.Warn(r.logger).Log("msg", "failed to persist move cooldowns", "err", err)
 	}
 }
 
-// pruneExpiredCooldowns drops cooldown entries whose deadline has passed.
-func (r *Rebalancer) pruneExpiredCooldowns(now time.Time) {
+// pruneExpiredCooldowns drops cooldown entries whose deadline has
+// passed and returns how many were removed, so the caller can decide
+// whether the persisted cooldown state needs rewriting.
+func (r *Rebalancer) pruneExpiredCooldowns(now time.Time) int {
+	pruned := 0
 	for hr, deadline := range r.moveCooldowns {
 		if !now.Before(deadline) {
 			delete(r.moveCooldowns, hr)
+			pruned++
 		}
 	}
+	return pruned
 }
 
 // hashRangesOverlap returns true if the two ranges share at least one

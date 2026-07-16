@@ -1809,6 +1809,119 @@ func TestRunSlicer_MoveCooldown_OverlapMatchesSplitsAndMerges(t *testing.T) {
 	assert.False(t, r.isInMoveCooldown(now, assignment.HashRange{Lo: 0, Hi: 999}))
 }
 
+// TestRunSlicer_MaxMovesPerRound_CapsPhase3 verifies the hard
+// per-round move-count cap: with a fragmented tiling and a heavy
+// skew, the uncapped slicer commits many Phase 3 moves per round
+// (the movement budget only bounds hash-space fraction, not count),
+// while the capped slicer stops at the configured limit.
+func TestRunSlicer_MaxMovesPerRound_CapsPhase3(t *testing.T) {
+	partitions := []int32{0, 1}
+	buildRates := func(a *assignment.Assignment) []rangeRate {
+		var rates []rangeRate
+		for _, e := range a.Entries {
+			if e.PartitionID == 0 {
+				rates = append(rates, rangeRate{hr: e.Range, series: 10000 / initialSlicesPerPartition, partitionID: e.PartitionID})
+			} else {
+				rates = append(rates, rangeRate{hr: e.Range, series: 100 / initialSlicesPerPartition, partitionID: e.PartitionID})
+			}
+		}
+		return withSampleRateFromSeries(rates)
+	}
+	countMoves := func(actions []Action) int {
+		n := 0
+		for _, a := range actions {
+			if a.Kind == ActionMove {
+				n++
+			}
+		}
+		return n
+	}
+
+	// Uncapped baseline: the skew produces well more than `cap` moves.
+	uncapped := &Rebalancer{cfg: seriesCfg(0.5)}
+	initial := assignment.FineEvenSplit(partitions, initialSlicesPerPartition)
+	require.NoError(t, initial.Validate())
+	result, actions := uncapped.runSlicer(initial, buildRates(initial), nil, partitions, nil, time.Time{})
+	require.NoError(t, result.Validate())
+	uncappedMoves := countMoves(actions)
+
+	const maxMoves = 3
+	require.Greater(t, uncappedMoves, maxMoves,
+		"test premise: the uncapped slicer must want more than %d moves for the cap to be observable", maxMoves)
+
+	cfg := seriesCfg(0.5)
+	cfg.MaxMovesPerRound = maxMoves
+	capped := &Rebalancer{cfg: cfg}
+	initial = assignment.FineEvenSplit(partitions, initialSlicesPerPartition)
+	result, actions = capped.runSlicer(initial, buildRates(initial), nil, partitions, nil, time.Time{})
+	require.NoError(t, result.Validate())
+	assert.Equal(t, maxMoves, countMoves(actions),
+		"capped slicer must stop at exactly MaxMovesPerRound moves when more are wanted")
+}
+
+// TestRunPhase3_MinMoveImprovement_FiltersNoiseMoves verifies the
+// minimum-improvement floor: a move whose imbalance improvement is
+// below MinMoveImprovement × meanL is not committed, while the same
+// move is committed when the floor is disabled.
+func TestRunPhase3_MinMoveImprovement_FiltersNoiseMoves(t *testing.T) {
+	partitions := []int32{0, 1}
+	// p0=105, p1=95: meanL=100, gap=10. The movable candidate has
+	// load 4, so committing it improves the imbalance by 8
+	// (10 before, 2 after). A floor of 0.1×meanL=10 must reject it.
+	buildEntries := func() []rangeLoad {
+		return []rangeLoad{
+			{entry: assignment.Entry{Range: assignment.HashRange{Lo: 0, Hi: 999}, PartitionID: 0}, load: 4},
+			{entry: assignment.Entry{Range: assignment.HashRange{Lo: 1000, Hi: 1999}, PartitionID: 0}, load: 101},
+			{entry: assignment.Entry{Range: assignment.HashRange{Lo: 2000, Hi: 2999}, PartitionID: 1}, load: 95},
+		}
+	}
+	load := map[int32]float64{0: 105, 1: 95}
+
+	noFloor := &Rebalancer{cfg: Config{MovementBudget: 0.5}}
+	actions := noFloor.runPhase3(buildEntries(), load, partitions, nil, time.Time{})
+	require.Len(t, actions, 1, "without a floor the profitable 4-load move must be committed")
+	assert.Equal(t, ActionMove, actions[0].Kind)
+
+	withFloor := &Rebalancer{cfg: Config{MovementBudget: 0.5, MinMoveImprovement: 0.1}}
+	actions = withFloor.runPhase3(buildEntries(), load, partitions, nil, time.Time{})
+	assert.Empty(t, actions,
+		"with a 0.1×meanL floor, the move's improvement (8) is below the floor (10) and must be filtered")
+}
+
+// TestRecordMoveCooldowns_ArmsAllRelocationKinds verifies which
+// action kinds arm a cooldown: Phase 3 moves, Phase 1 reassigns, and
+// cross-partition merges relocate hash space and are armed;
+// same-partition merges and splits don't change ownership and are
+// not.
+func TestRecordMoveCooldowns_ArmsAllRelocationKinds(t *testing.T) {
+	r := &Rebalancer{cfg: Config{MoveCooldown: time.Minute}}
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	moved := assignment.HashRange{Lo: 0, Hi: 99}
+	reassigned := assignment.HashRange{Lo: 100, Hi: 199}
+	crossMerged := assignment.HashRange{Lo: 200, Hi: 299}
+	sameMerged := assignment.HashRange{Lo: 300, Hi: 399}
+	split := assignment.HashRange{Lo: 400, Hi: 499}
+
+	armed := r.recordMoveCooldowns(now, []Action{
+		{Kind: ActionMove, Range: moved, FromPart: 1, ToPart: 2},
+		{Kind: ActionReassign, Range: reassigned, FromPart: 3, ToPart: 1},
+		{Kind: ActionMerge, Range: crossMerged, FromPart: 1, ToPart: 2},
+		{Kind: ActionMerge, Range: sameMerged, ToPart: 2}, // same-partition: FromPart zero
+		{Kind: ActionSplit, Range: split, ToPart: 2},
+	})
+	assert.Equal(t, 3, armed)
+	assert.Contains(t, r.moveCooldowns, moved)
+	assert.Contains(t, r.moveCooldowns, reassigned)
+	assert.Contains(t, r.moveCooldowns, crossMerged)
+	assert.NotContains(t, r.moveCooldowns, sameMerged, "same-partition merges don't relocate hash space")
+	assert.NotContains(t, r.moveCooldowns, split, "cooldowning a split would block Phase 3 from placing the halves")
+
+	pruned := r.pruneExpiredCooldowns(now.Add(2 * time.Minute))
+	assert.Equal(t, 3, pruned)
+	assert.Empty(t, r.moveCooldowns)
+}
+
 // TestRunSlicer_ExhaustedBudgetDoesNotStallOthers reproduces the bug
 // (previously expressed as "orphan-locked partition"): Phase 3 of the
 // slicer must not terminate its loop when the nominally-hottest
