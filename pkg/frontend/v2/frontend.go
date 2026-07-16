@@ -353,7 +353,17 @@ func (f *Frontend) RoundTripGRPC(ctx context.Context, httpRequest *httpgrpc.HTTP
 			level.Warn(freq.spanLogger).Log("msg", "failed to send cancellation request to scheduler, queue full")
 		}
 
-		stats.FromContext(ctx).AddQueueTime(time.Since(freq.enqueuedAt))
+		select {
+		case resp := <-freq.httpResponse:
+			// The response arrived at (almost) the same time as the cancellation. Prefer its real
+			// queue time over our wall-clock approximation, since select would otherwise pick
+			// between this case and <-ctx.Done() at random and could discard it.
+			if stats.ShouldTrackHTTPGRPCResponse(resp.queryResult.HttpResponse) {
+				stats.FromContext(ctx).Merge(resp.queryResult.Stats) // Safe if stats is nil.
+			}
+		default:
+			stats.FromContext(ctx).AddQueueTime(time.Since(freq.enqueuedAt))
+		}
 
 		return nil, nil, context.Cause(ctx)
 
