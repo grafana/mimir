@@ -166,6 +166,11 @@ type frontendRequest struct {
 
 	enqueue chan enqueueResult
 
+	// enqueuedAt is set once the scheduler has accepted this request into its queue.
+	// Used to approximate queue time if the request is cancelled before a querier
+	// processes it and reports the real queue time.
+	enqueuedAt time.Time
+
 	// If this is a httpgrpc request, then these fields will be populated:
 	httpRequest  *httpgrpc.HTTPRequest
 	httpResponse chan queryResultWithBody
@@ -332,6 +337,7 @@ func (f *Frontend) RoundTripGRPC(ctx context.Context, httpRequest *httpgrpc.HTTP
 	if err != nil {
 		return nil, nil, err
 	}
+	freq.enqueuedAt = time.Now()
 
 	freq.spanLogger.DebugLog("msg", "request enqueued successfully, waiting for response")
 
@@ -346,6 +352,8 @@ func (f *Frontend) RoundTripGRPC(ctx context.Context, httpRequest *httpgrpc.HTTP
 			// failed to cancel, ignore.
 			level.Warn(freq.spanLogger).Log("msg", "failed to send cancellation request to scheduler, queue full")
 		}
+
+		stats.FromContext(ctx).AddQueueTime(time.Since(freq.enqueuedAt))
 
 		return nil, nil, context.Cause(ctx)
 
@@ -428,6 +436,7 @@ func (f *Frontend) DoProtobufRequest(requestContext context.Context, req proto.M
 			freq.protobufResponseStream.writeEnqueueError(err)
 			return
 		}
+		freq.enqueuedAt = time.Now()
 
 		freq.spanLogger.DebugLog("msg", "request enqueued successfully, waiting for response")
 
@@ -467,6 +476,8 @@ func (f *Frontend) DoProtobufRequest(requestContext context.Context, req proto.M
 
 			default:
 				freq.spanLogger.DebugLog("msg", "request context cancelled or response stream closed by caller after enqueuing request but before querier started sending response, cancelling by sending notification to scheduler", "cause", context.Cause(streamContext))
+
+				stats.FromContext(streamContext).AddQueueTime(time.Since(freq.enqueuedAt))
 
 				select {
 				case cancelCh <- freq.queryID:
