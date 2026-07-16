@@ -520,9 +520,11 @@ func (jt *JobTracker) trackFailure(j TrackedJob) {
 	}
 }
 
-// canRetry returns whether a failed leased job can be retried.
+// canRetry returns whether a failed leased job can be retried. Plan and cleanup jobs are always retried;
+// dropping them would just gap the work and have maintenance recreate them anyway.
 func (jt *JobTracker) canRetry(j TrackedJob) bool {
-	return j.ID() == planJobId || jt.maxLeases == infiniteLeases || j.NumLeases() < jt.maxLeases
+	id := j.ID()
+	return id == planJobId || id == cleanupJobId || jt.maxLeases == infiniteLeases || j.NumLeases() < jt.maxLeases
 }
 
 // OfferCompactionJobs processes the results from a plan job. Since planning offers a fresh view of pending work all remaining pending work
@@ -589,11 +591,15 @@ func (jt *JobTracker) OfferCompactionJobs(jobs []*TrackedCompactionJob, planJobE
 			deleteJobs = append(deleteJobs, j)
 		}
 	}
-	// Previous pending jobs need to be deleted, unless they are already being overwritten. They are getting completely replaced by acceptedJobs.
+	// Previous pending compaction jobs need to be deleted, unless they are already being overwritten. They are getting
+	// completely replaced by acceptedJobs. Reserved jobs (e.g. cleanup) are independent of the compaction plan and are preserved.
 	for _, lst := range jt.pending {
 		for e := lst.Front(); e != nil; e = e.Next() {
 			j := e.Value.(TrackedJob)
 			id := j.ID()
+			if len(id) == reservedJobIdLen {
+				continue
+			}
 			if _, ok := preventDeleteIds[id]; !ok {
 				deleteJobs = append(deleteJobs, j)
 			}
@@ -615,10 +621,16 @@ func (jt *JobTracker) OfferCompactionJobs(jobs []*TrackedCompactionJob, planJobE
 
 	prevNonEmpty := jt.nonEmptyLaneSet()
 
-	// Clear out previously pending jobs and rebuild the per-lane queues in order.
+	// Clear out previously pending compaction jobs and rebuild the per-lane queues in order. Reserved jobs (e.g. cleanup)
+	// are independent of the compaction plan and are carried over.
+	var reservedPending []TrackedJob
 	for _, lst := range jt.pending {
 		for e := lst.Front(); e != nil; e = e.Next() {
 			j := e.Value.(TrackedJob)
+			if len(j.ID()) == reservedJobIdLen {
+				reservedPending = append(reservedPending, j)
+				continue
+			}
 			delete(jt.incompleteJobs, j.ID())
 			jt.metrics.queue.DropPending(j)
 		}
@@ -626,6 +638,9 @@ func (jt *JobTracker) OfferCompactionJobs(jobs []*TrackedCompactionJob, planJobE
 	jt.pending = make(map[lane]*list.List)
 	for _, l := range jt.lanePolicy.AllLanes() {
 		jt.pending[l] = list.New()
+	}
+	for _, j := range reservedPending {
+		jt.toPendingBack(j)
 	}
 	for _, j := range acceptedJobs {
 		jt.toPendingBack(j)

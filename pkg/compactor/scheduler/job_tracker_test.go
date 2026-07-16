@@ -227,6 +227,49 @@ func TestJobTracker_CompleteCleanup_RequiresCleanupJob(t *testing.T) {
 	require.Contains(t, jt.incompleteJobs, "aa")
 }
 
+// deleteRecordingPersister records the IDs of jobs deleted via WriteAndDeleteJobs.
+type deleteRecordingPersister struct {
+	NopJobPersister
+	deleted []string
+}
+
+func (p *deleteRecordingPersister) WriteAndDeleteJobs(_, deletes []TrackedJob) error {
+	for _, j := range deletes {
+		p.deleted = append(p.deleted, j.ID())
+	}
+	return nil
+}
+
+func TestJobTracker_OfferCompactionJobs_PreservesPendingCleanup(t *testing.T) {
+	clk := clock.NewMock()
+	clk.Set(at(3, 0))
+
+	persister := &deleteRecordingPersister{}
+	metrics := newSchedulerMetrics(prometheus.NewPedanticRegistry())
+	jt := NewJobTracker(persister, "test", clk, newSimpleLanePolicy(), infiniteLeases, infiniteLeases, metrics.newTrackerMetricsForTenant("test"), log.NewNopLogger())
+
+	// Create a pending plan job and a pending cleanup job, then lease the plan job.
+	_, err := jt.Maintenance(time.Minute, false, true, time.Hour, 15*time.Minute, 0)
+	require.NoError(t, err)
+	require.Contains(t, jt.incompleteJobs, cleanupJobId)
+
+	planLease, _, err := jt.Lease(planLane)
+	require.NoError(t, err)
+	require.Equal(t, planJobId, planLease.Key.Id)
+
+	// Completing the plan replaces pending compaction work, but the independent cleanup job must survive.
+	offered := []*TrackedCompactionJob{NewTrackedCompactionJob("compaction-1", &CompactionJob{}, 1, 0, clk.Now())}
+	accepted, found, _, err := jt.OfferCompactionJobs(offered, planLease.Key.Epoch)
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, 1, accepted)
+
+	require.Contains(t, jt.incompleteJobs, cleanupJobId, "pending cleanup job must remain tracked")
+	require.Contains(t, jt.incompleteJobs, "compaction-1")
+	require.Equal(t, 1, jt.pending[cleanupLane].Len(), "cleanup job must remain pending in its lane")
+	require.NotContains(t, persister.deleted, cleanupJobId, "cleanup job must not be deleted from persistence")
+}
+
 func TestJobTracker_recoverFrom(t *testing.T) {
 	newAvailableCompaction := func(id string, order uint32) *TrackedCompactionJob {
 		return NewTrackedCompactionJob(id, &CompactionJob{}, order, 0, at(1, 0))
@@ -512,6 +555,29 @@ func TestJobTracker_CancelLease_PlanJobAlwaysRevives(t *testing.T) {
 		job, _, err := jt.Lease(planLane)
 		require.NoError(t, err)
 		require.NotNil(t, job, "plan job should always be leaseable")
+
+		canceled, _, err := jt.CancelLease(job.Key.Id, job.Key.Epoch, false)
+		require.NoError(t, err)
+		require.True(t, canceled)
+	}
+}
+
+func TestJobTracker_CancelLease_CleanupJobAlwaysRevives(t *testing.T) {
+	const maxLeases = 2
+
+	clk := clock.NewMock()
+	clk.Set(at(3, 0))
+	metrics := newSchedulerMetrics(prometheus.NewPedanticRegistry())
+	jt := NewJobTracker(&NopJobPersister{}, "test", clk, newSimpleLanePolicy(), maxLeases, infiniteLeases, metrics.newTrackerMetricsForTenant("test"), log.NewNopLogger())
+
+	_, err := jt.Maintenance(time.Minute, false, false, 0, 15*time.Minute, 0)
+	require.NoError(t, err)
+
+	for range maxLeases + 1 {
+		job, _, err := jt.Lease(cleanupLane)
+		require.NoError(t, err)
+		require.NotNil(t, job, "cleanup job should always be leaseable")
+		require.Equal(t, cleanupJobId, job.Key.Id)
 
 		canceled, _, err := jt.CancelLease(job.Key.Id, job.Key.Epoch, false)
 		require.NoError(t, err)
