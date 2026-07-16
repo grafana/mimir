@@ -200,7 +200,8 @@
       commitMessageExtra: 'to {{ lookup (split newVersion "/") 1 }}',
     }
   ],
-  branchPrefixOld: 'deps-update/',
+  branchPrefix: 'deps-update/',
+  branchPrefixOld: 'renovate/',
   labels: [
     'dependency-update',
   ],
