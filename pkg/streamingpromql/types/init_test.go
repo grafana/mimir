@@ -3,5 +3,5 @@
 package types
 
 func init() {
-	EnableManglingReturnedSlices = true
+	EnableManglingReturnedSlices.Store(true)
 }
