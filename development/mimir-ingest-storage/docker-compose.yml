@@ -275,11 +275,10 @@
   "memcached":
     "image": "memcached:1.6.19-alpine"
   "minio":
-    "command":
-      - "server"
-      - "--console-address"
-      - ":9001"
-      - "/data"
+    "entrypoint":
+      - "sh"
+      - "-c"
+      - "mkdir -p /data/mimir-blocks /data/mimir-ruler /data/mimir-alertmanager /data/usage-tracker-snapshots && exec minio server --console-address :9001 /data"
     "environment":
       - "MINIO_ROOT_USER=mimir"
       - "MINIO_ROOT_PASSWORD=supersecret"
