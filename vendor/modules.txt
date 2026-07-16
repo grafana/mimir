@@ -1010,7 +1010,7 @@ github.com/opentracing/opentracing-go/log
 github.com/pb33f/jsonpath/pkg/jsonpath
 github.com/pb33f/jsonpath/pkg/jsonpath/config
 github.com/pb33f/jsonpath/pkg/jsonpath/token
-# github.com/pb33f/libopenapi v0.38.5
+# github.com/pb33f/libopenapi v0.38.6
 ## explicit; go 1.25.7
 github.com/pb33f/libopenapi/datamodel
 github.com/pb33f/libopenapi/datamodel/high
