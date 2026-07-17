@@ -40,6 +40,19 @@ resources dedicated to consumption are divided across these consumers, so the co
 consumption resource usage stays independent of the number of write compartments instead of growing
 with it.
 
+### Ordering records across write compartments
+
+A component that consumes the same partition from every write compartment's Kafka cluster sees each
+cluster's stream independently, with no inherent ordering between them. Appending one cluster's records
+and then the next's could produce out-of-order samples if the clusters' records overlap in time, since
+the second cluster's timestamps then rewind to earlier in the window. To reduce this, the per-cluster
+streams can be merged into a single stream ordered by Kafka record timestamp before being consumed.
+
+- **Ingesters** can optionally merge on the live path. A live stream is unbounded, so the merge is
+  best-effort within a bounded window.
+- **Block-builders** always merge a job's per-cluster ranges this way. Because a job's start and end
+  offsets are known up front, the merge sorts exactly across clusters for the window.
+
 ## Blocks storage
 
 Each read compartment owns its blocks storage end to end:
@@ -61,6 +74,29 @@ bucket scale independently of the others.
 The global query layer queries each read compartment's store-gateways the same way it queries that
 compartment's ingesters: it narrows a query to the compartments that can hold the selected metric
 names and fans out otherwise (see [Querying read compartments](#querying-read-compartments)).
+
+## Block-builders
+
+Each read compartment runs its own block-builder scheduler and pool of block-builders. The scheduler
+monitors the compartment's topic across every write compartment's Kafka cluster and cuts jobs; the
+block-builders consume those clusters, build the compartment's blocks, and upload them to its bucket.
+
+- **One job spans every write compartment.** A job is scoped to one partition but carries a separate
+  offset range per cluster, built into a single block with the ranges merged in record-timestamp order.
+  Scoping a job to a single cluster instead would produce a separate block per cluster for the same
+  window, multiplying blocks and chunks by roughly the number of write compartments until compaction
+  merges them away — raising object-storage cost and query load, since store-gateways then load more
+  blocks per query.
+- **A job is all-or-nothing across its clusters.** The block-builder reads every cluster's range
+  together, and if any read fails the whole job is retried, so committed offsets never advance past
+  unread data. One unhealthy write compartment therefore blocks the compartment's block building until
+  it recovers — acceptable because block building is delayed (store-gateways don't need a block for
+  hours) and no worse than a single Kafka cluster being down without compartments.
+- **Backlog reconstruction on restart.** As in non-compartments mode, on restart the scheduler rebuilds
+  the backlog from what already sits in Kafka — probing historical offsets and replaying them by
+  timestamp to reproduce the job boundaries it would have cut live. The compartment difference is that
+  the probed offsets from every cluster are grouped by time, so data ingested around the same time
+  across clusters lands in the same job, keeping one block per window.
 
 ## Querying read compartments
 
@@ -112,6 +148,3 @@ are specific to Warpstream; the design above is Kafka-cluster-generic.
   fetch portions of files from one another. As a result, consuming a partition across all VCs may, under
   the hood, require data from any read agent in any write compartment. This is a potential scalability
   and availability limitation that needs further investigation.
-- **Cross-VC consumption ordering.** An ingester consumes from multiple VCs, and consumption from each VC
-  is independent, so there is no guarantee of in-order consumption across VCs. The plan is to offset this
-  by merging the per-VC streams with a heap that orders Kafka records by their creation timestamp.

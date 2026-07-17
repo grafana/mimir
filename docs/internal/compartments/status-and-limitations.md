@@ -21,6 +21,10 @@ the other files is implemented today; this page tracks the gap.
 - **Per-compartment store-gateway and compactor rings**: a store-gateway or compactor configured for a
   read compartment registers into that compartment's own dedicated ring, separate from the
   non-compartment ring and from the other compartments' rings.
+- **Compartment-aware block-builders**: each read compartment runs its own block-builder scheduler and
+  pool of block-builders. The scheduler cuts a single job per partition and time window that bundles
+  each write compartment cluster's offset range, and the block-builder consumes those ranges together,
+  merges them by record timestamp, and builds one block per window into the compartment's bucket.
 - **Compartment-aware strong read consistency**: the query-frontend monitors the last produced offset of
   every read compartment's topic in every write compartment's Kafka cluster and propagates them to the
   ingesters, so an ingester enforcing strong read consistency waits for the specific requested offsets of
@@ -31,19 +35,10 @@ the other files is implemented today; this page tracks the gap.
   [Ruler](./ruler.md)).
 - A local development environment (`development/mimir-compartments`).
 
-## Blocks storage is only partially compartment-aware
-
-- Running store-gateways and compactors as separate per-compartment deployments, each with a dedicated
-  object-storage bucket, is wired in the local development environment but not yet in the production
-  deployment tooling.
-- The block-builder is not compartment-aware yet, so blocks for every read compartment are not produced
-  independently.
-
 ## Not yet addressed
 
-- **Cross-cluster ordering.** Consumption from each write compartment's Kafka cluster is independent, so
-  there is no guarantee of in-order consumption across clusters. Merging the per-cluster streams to
-  reduce out-of-order samples (see [Read compartments](./read-compartments.md)) is not implemented yet.
+- Per-compartment block-builders run only in the local development environment; they are not part of
+  the jsonnet deployment library yet.
 - Even on the write path, some things are not done yet — for example shuffle sharding and integration
   tests. There is no changelog or experimental-feature documentation entry until compartments work
   end-to-end.
