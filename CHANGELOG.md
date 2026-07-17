@@ -154,6 +154,13 @@
 
 ### Query-tee
 
+## 3.1.3
+
+### Grafana Mimir
+
+* [BUGFIX] Fix build failure on Windows and FreeBSD due to reference leaks instrumentation code. Enabling reference leaks instrumentation in those platforms now causes a configuration validation error instead. #15837
+* [BUGFIX] Upgrade Go to 1.26.5 to address [CVE-2026-39822](https://pkg.go.dev/vuln/GO-2026-4970) and [CVE-2026-42505](https://pkg.go.dev/vuln/GO-2026-5856). #16078
+
 ## 3.1.2
 
 ### Grafana Mimir
