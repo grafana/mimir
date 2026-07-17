@@ -30,6 +30,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
+* [CHANGE] Set `automountServiceAccountToken: false` on all pods directly managed by the chart, following the CIS Kubernetes Benchmark recommendation "Ensure that Service Account Tokens are only mounted where necessary". Components that authenticate to Vault keep the token mounted automatically either when `vaultAgent.enabled` is true, or when Mimir configuration is set to use native Vault support with Kubernetes authentication (`vault.enabled: true`, `vault.auth.type: kubernetes`). If you rely on the token being available in custom sidecars (`extraContainers`), or you use `useExternalConfig: true` with a configuration that uses Vault with Kubernetes authentication, set `global.automountServiceAccountToken` or `<component>.automountServiceAccountToken: true` explicitly. #16127
 * [FEATURE] Add VolumeAttributesClass support: reference existing VolumeAttributesClass resources on PVCs for alertmanager, ingester, store-gateway, compactor, and kafka. #15919
 * [CHANGE] Querier: Reduce the default concurrency of queriers, `querier.max_concurrent`, to 8. #15984
 * [BUGFIX] Fix bug in `ScaledObject` templates when using `kedaAutoscaling.fallback` #15793

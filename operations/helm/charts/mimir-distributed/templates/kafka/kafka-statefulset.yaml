@@ -26,6 +26,7 @@ spec:
       namespace: {{ $.Release.Namespace | quote }}
     spec:
       serviceAccountName: {{ template "mimir.serviceAccountName" $ }}
+      automountServiceAccountToken: {{ include "mimir.lib.automountServiceAccountToken" (dict "ctx" $ "component" "kafka") }}
       {{- if .priorityClassName }}
       priorityClassName: {{ .priorityClassName }}
       {{- end }}

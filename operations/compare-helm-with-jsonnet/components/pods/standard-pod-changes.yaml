@@ -23,6 +23,7 @@ spec:
           preferredDuringSchedulingIgnoredDuringExecution:
       serviceAccount:
       serviceAccountName:
+      automountServiceAccountToken: # Helm sets this per the CIS Kubernetes Benchmark, but not Jsonnet
       securityContext: # TODO(logiraptor): We set a pod security context only in Jsonnet
       containers:
       - name: mimir # This section applies to the first container in all mimir components

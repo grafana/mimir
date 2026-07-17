@@ -37,6 +37,7 @@ spec:
       annotations:
     spec:
       serviceAccountName: test-gomaxprocs-override-values-mimir
+      automountServiceAccountToken: false
       securityContext:
         fsGroup: 10001
         runAsGroup: 10001

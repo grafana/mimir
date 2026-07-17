@@ -11,6 +11,8 @@ When you deploy Mimir, Vault Agent fetches the relevant secrets from Vault accor
 
 > **Note:** Vault and Vault Agent must to be running already.
 
+> **Note:** The chart sets `automountServiceAccountToken: false` on Pods by default. Because Vault Agent uses the Pod's ServiceAccount token to authenticate to Vault via the Kubernetes authentication method, the chart automatically keeps the token mounted, that is `automountServiceAccountToken: true`, on all components that receive Vault Agent injection while `vaultAgent.enabled` is true. You can override this behavior per component with `<component>.automountServiceAccountToken`.
+
 Example `values.yaml` file:
 
 ```yaml

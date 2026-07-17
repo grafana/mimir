@@ -27,6 +27,7 @@ spec:
       namespace: {{ .Release.Namespace | quote }}
     spec:
       serviceAccountName: {{ template "mimir.serviceAccountName" . }}
+      automountServiceAccountToken: {{ include "mimir.lib.automountServiceAccountToken" (dict "ctx" . "component" "overrides-exporter") }}
       {{- if .Values.overrides_exporter.priorityClassName }}
       priorityClassName: {{ .Values.overrides_exporter.priorityClassName }}
       {{- end }}

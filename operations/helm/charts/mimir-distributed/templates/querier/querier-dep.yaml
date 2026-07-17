@@ -31,6 +31,7 @@ spec:
         {{- include "mimir.podAnnotations" (dict "ctx" . "component" "querier") | nindent 8 }}
     spec:
       serviceAccountName: {{ template "mimir.serviceAccountName" . }}
+      automountServiceAccountToken: {{ include "mimir.lib.automountServiceAccountToken" (dict "ctx" . "component" "querier") }}
       {{- if .Values.querier.priorityClassName }}
       priorityClassName: {{ .Values.querier.priorityClassName }}
       {{- end }}
