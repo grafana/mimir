@@ -734,16 +734,11 @@ func (jt *JobTracker) CleanupMetrics() {
 }
 
 // CompleteCleanup marks the cleanup job as complete, persists the completion time, and removes it from incomplete tracking.
-func (jt *JobTracker) CompleteCleanup(id string, epoch int64) (bool, error) {
+func (jt *JobTracker) CompleteCleanup(epoch int64) (bool, error) {
 	jt.mtx.Lock()
 	defer jt.mtx.Unlock()
 
-	if id != cleanupJobId {
-		// Only cleanup jobs may be completed through this path
-		return false, nil
-	}
-
-	e, ok := jt.incompleteJobs[id]
+	e, ok := jt.incompleteJobs[cleanupJobId]
 	if !ok {
 		return false, nil
 	}
@@ -761,7 +756,7 @@ func (jt *JobTracker) CompleteCleanup(id string, epoch int64) (bool, error) {
 
 	jt.completeCleanupTime = jj.StatusTime()
 	jt.active.Remove(e)
-	delete(jt.incompleteJobs, id)
+	delete(jt.incompleteJobs, cleanupJobId)
 	jt.metrics.queue.Complete(j)
 	return true, nil
 }

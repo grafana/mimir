@@ -207,26 +207,6 @@ func TestJobTracker_Maintenance_Cleanup(t *testing.T) {
 	}
 }
 
-func TestJobTracker_CompleteCleanup_RequiresCleanupJob(t *testing.T) {
-	clk := clock.NewMock()
-	clk.Set(at(3, 0))
-	jt, _ := newTestJobTracker(clk)
-
-	jt.recoverFrom([]*TrackedCompactionJob{
-		NewTrackedCompactionJob("aa", &CompactionJob{}, 1, 100, clk.Now()),
-	}, nil, nil)
-
-	leaseResp, _, err := jt.Lease(compactionLane)
-	require.NoError(t, err)
-
-	// A compaction job key must not be completable through the cleanup path.
-	completed, err := jt.CompleteCleanup(leaseResp.Key.Id, leaseResp.Key.Epoch)
-	require.NoError(t, err)
-	require.False(t, completed)
-	require.True(t, jt.completeCleanupTime.IsZero())
-	require.Contains(t, jt.incompleteJobs, "aa")
-}
-
 // deleteRecordingPersister records the IDs of jobs deleted via WriteAndDeleteJobs.
 type deleteRecordingPersister struct {
 	NopJobPersister
