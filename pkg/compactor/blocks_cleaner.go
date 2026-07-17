@@ -423,6 +423,17 @@ func (c *BlocksCleaner) deleteUserMarkedForDeletion(ctx context.Context, userID 
 	// Note: this UPDATES the tenant deletion mark. Components that use caching bucket will NOT SEE this update,
 	// but that is fine -- they only check whether tenant deletion marker exists or not.
 	if deletedBlocks > 0 || mark.FinishedTime == 0 {
+		// Re-read the mark just before clobbering it, in case another cleaner finished
+		// and removed the mark while we were deleting blocks. This avoids recreating a
+		// deletion mark for a tenant whose cleanup already completed.
+		mark, err = mimir_tsdb.ReadTenantDeletionMark(ctx, c.bucketClient, userID, c.logger)
+		if err != nil {
+			return fmt.Errorf("failed to read tenant deletion mark: %w", err)
+		}
+		if mark == nil {
+			return nil
+		}
+
 		level.Info(userLogger).Log("msg", "updating finished time in tenant deletion mark")
 		mark.FinishedTime = util.UnixSecondsFromTime(time.Now())
 		if err = mimir_tsdb.WriteTenantDeletionMark(ctx, c.bucketClient, userID, c.cfgProvider, mark); err != nil {
