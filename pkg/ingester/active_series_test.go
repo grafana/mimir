@@ -322,62 +322,85 @@ func BenchmarkIngester_ActiveSeries(b *testing.B) {
 func BenchmarkIngester_ActiveSeriesFullFanout(b *testing.B) {
 	const userID = "test"
 
-	for _, method := range benchmarkActiveSeriesMethods() {
-		b.Run("method="+method.name, func(b *testing.B) {
-			for _, state := range []struct {
-				name       string
-				concurrent bool
-			}{
-				{name: "clean"},
-				{name: "dirty-after-concurrent-series-creation", concurrent: true},
-			} {
-				b.Run("state="+state.name, func(b *testing.B) {
-					if b.N != 1 {
-						b.Skip("run with -benchtime=1x so each sample measures one aggregate replacement")
-					}
-					if state.concurrent && runtime.GOMAXPROCS(0) < 2 {
-						b.Skip("concurrent series creation requires GOMAXPROCS >= 2")
-					}
+	b.Run("recycler=off", func(b *testing.B) {
+		for _, method := range benchmarkActiveSeriesMethods() {
+			b.Run("method="+method.name, func(b *testing.B) {
+				for _, state := range []struct {
+					name       string
+					concurrent bool
+					warm       bool
+				}{
+					{name: "clean"},
+					{name: "dirty-cold", concurrent: true},
+					{name: "dirty-warm", concurrent: true, warm: true},
+				} {
+					b.Run("state="+state.name, func(b *testing.B) {
+						if b.N != 1 {
+							b.Skip("run with -benchtime=1x so each sample measures one aggregate replacement")
+						}
+						if state.concurrent && runtime.GOMAXPROCS(0) < 2 {
+							b.Skip("concurrent series creation requires GOMAXPROCS >= 2")
+						}
 
-					in := prepareActiveSeriesBenchmarkIngester(b)
-					ctx := user.InjectOrgID(context.Background(), userID)
-					benchmarkPopulateActiveHeadSeries(b, ctx, in)
-					db := in.getTSDB(userID)
-					require.NotNil(b, db)
-					benchmarkPopulateInactiveHeadSeries(b, ctx, in, db)
+						in := prepareActiveSeriesBenchmarkIngester(b)
+						ctx := user.InjectOrgID(context.Background(), userID)
+						benchmarkPopulateActiveHeadSeries(b, ctx, in)
+						db := in.getTSDB(userID)
+						require.NotNil(b, db)
+						benchmarkPopulateInactiveHeadSeries(b, ctx, in, db)
 
-					buckets := benchmarkAllShardBuckets()
-					require.Zero(b, benchmarkShardBucketStatsFor(b, db.Head(), buckets).dirtyBuckets)
-					requests := benchmarkActiveSeriesFullFanoutRequests(b, method.matchers)
-					baseline, err := benchmarkActiveSeriesQueryWave(b, ctx, in, requests)
-					require.NoError(b, err)
-					require.Positive(b, baseline)
+						buckets := benchmarkAllShardBuckets()
+						require.Zero(b, benchmarkShardBucketStatsFor(b, db.Head(), buckets).dirtyBuckets)
+						requests := benchmarkActiveSeriesFullFanoutRequests(b, method.matchers)
+						baseline, err := benchmarkActiveSeriesQueryWave(b, ctx, in, requests)
+						require.NoError(b, err)
+						require.Positive(b, baseline)
 
-					generation := fmt.Sprintf("full-fanout-%s-%s", method.name, state.name)
-					writeRequestGroups := benchmarkFullFanoutWriteRequestGroups(b, generation)
-					benchmarkPushRequestGroups(b, ctx, in, writeRequestGroups, state.concurrent)
-					deactivateBenchmarkSeries(b, ctx, db, generation, benchmarkFullFanoutSeriesCount)
-					stats := benchmarkShardBucketStatsFor(b, db.Head(), buckets)
-					if state.concurrent && stats.dirtyBuckets != len(buckets) {
-						b.Skipf("concurrent creation left %d of %d target buckets dirty with GOMAXPROCS=%d", stats.dirtyBuckets, len(buckets), runtime.GOMAXPROCS(0))
-					}
-					if !state.concurrent {
-						require.Zero(b, stats.dirtyBuckets)
-					}
+						prepare := func(generation string) benchmarkShardBucketStats {
+							waves := 1
+							if state.concurrent {
+								waves = 3
+							}
+							for wave := range waves {
+								waveGeneration := fmt.Sprintf("%s-%d", generation, wave)
+								writeRequestGroups := benchmarkFullFanoutWriteRequestGroups(b, waveGeneration)
+								benchmarkPushRequestGroups(b, ctx, in, writeRequestGroups, state.concurrent)
+								deactivateBenchmarkSeries(b, ctx, db, waveGeneration, benchmarkFullFanoutSeriesCount)
+							}
+							stats := benchmarkShardBucketStatsFor(b, db.Head(), buckets)
+							if state.concurrent && stats.dirtyBuckets != len(buckets) {
+								b.Fatalf("concurrent creation left %d of %d target buckets dirty with GOMAXPROCS=%d", stats.dirtyBuckets, len(buckets), runtime.GOMAXPROCS(0))
+							}
+							if !state.concurrent {
+								require.Zero(b, stats.dirtyBuckets)
+							}
+							return stats
+						}
 
-					b.ReportAllocs()
-					b.ResetTimer()
-					got, err := benchmarkActiveSeriesQueryWave(b, ctx, in, requests)
-					b.StopTimer()
-					require.NoError(b, err)
-					require.Equal(b, baseline, got)
-					require.Zero(b, benchmarkShardBucketStatsFor(b, db.Head(), buckets).dirtyBuckets)
-					b.ReportMetric(float64(stats.dirtyBuckets), "dirty-buckets/op")
-					b.ReportMetric(float64(stats.refs), "target-refs/op")
-				})
-			}
-		})
-	}
+						if state.warm {
+							prepare(fmt.Sprintf("full-fanout-%s-%s-prime", method.name, state.name))
+							got, err := benchmarkActiveSeriesQueryWave(b, ctx, in, requests)
+							require.NoError(b, err)
+							require.Equal(b, baseline, got)
+							require.Zero(b, benchmarkShardBucketStatsFor(b, db.Head(), buckets).dirtyBuckets)
+						}
+
+						stats := prepare(fmt.Sprintf("full-fanout-%s-%s-measured", method.name, state.name))
+
+						b.ReportAllocs()
+						b.ResetTimer()
+						got, err := benchmarkActiveSeriesQueryWave(b, ctx, in, requests)
+						b.StopTimer()
+						require.NoError(b, err)
+						require.Equal(b, baseline, got)
+						require.Zero(b, benchmarkShardBucketStatsFor(b, db.Head(), buckets).dirtyBuckets)
+						b.ReportMetric(float64(stats.dirtyBuckets), "dirty-buckets/op")
+						b.ReportMetric(float64(stats.refs), "target-refs/op")
+					})
+				}
+			})
+		}
+	})
 }
 
 const (
