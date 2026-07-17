@@ -97,8 +97,8 @@ func (jt *JobTracker) recoverFrom(compactionJobs []*TrackedCompactionJob, planJo
 	jt.mtx.Lock()
 	defer jt.mtx.Unlock()
 
-	leased := make([]TrackedJob, 0, len(compactionJobs)+1)
-	pending := make([]TrackedJob, 0, len(compactionJobs)+1)
+	leased := make([]TrackedJob, 0, len(compactionJobs)+2)
+	pending := make([]TrackedJob, 0, len(compactionJobs)+2)
 
 	if planJob != nil {
 		if planJob.IsLeased() {
