@@ -84,11 +84,9 @@
 * [BUGFIX] Distributor: Return HTTP 200 with OTLP partial-success when only some samples in an OTLP request are rejected by distributor-level validation (e.g. `too_far_in_past`). #15253
 * [BUGFIX] MQE: Bugfixes for experimental range vector splitting. #15147 #15270 #14878
 * [BUGFIX] Querier: Fix querier ScaledObjects native histogram querying and triggering `MimirAutoscalerKedaFailing` when queriers have no traffic because `cortex_querier_request_duration_seconds_sum` is not published until the first request is received. #15106
-* [BUGFIX] Fix build failure on Windows and FreeBSD due to reference leaks instrumentation code. Enabling reference leaks instrumentation in those platforms now causes a configuration validation error instead. #15291
 * [BUGFIX] Query-frontend: Fixed a memory leak caused that could occur on some error paths if MQE was enabled. #15392
 * [BUGFIX] MQE: Fix issue where subqueries unnecessarily compute and then discard an additional step if the parent query is not aligned to the step. #15438
 * [BUGFIX] Upgrade Go to 1.26.4 to address [CVE-2026-42507](https://pkg.go.dev/vuln/GO-2026-5039). #15566
-* [BUGFIX] Upgrade Go to 1.26.5 to address [CVE-2026-39822](https://pkg.go.dev/vuln/GO-2026-4970) and [CVE-2026-42505](https://pkg.go.dev/vuln/GO-2026-5856). #16066
 * [BUGFIX] Memcached: Disable TCP DNS connection pooling used for service discovery by default. #15573
 * [BUGFIX] Ingest storage: Fix `cortex_ingest_storage_writer_produce_records_enqueued_total` not being incremented when `KafkaProducer.ProduceSync()` rejects a batch because a record has its `Timestamp` set by the caller. #15610
 * [BUGFIX] Compactor: Remove temporary block upload validation directories left behind in the data directory when the compactor crashes mid-validation. This prevents leaking disk space. #15647
