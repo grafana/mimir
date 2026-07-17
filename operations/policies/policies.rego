@@ -66,7 +66,15 @@ is_mimir_or_gem_image(image) {
 }
 
 is_mimir_or_gem_image(image) {
+	startswith(image, "docker.io/grafana/mimir")
+}
+
+is_mimir_or_gem_image(image) {
 	startswith(image, "grafana/enterprise-metrics")
+}
+
+is_mimir_or_gem_image(image) {
+	startswith(image, "docker.io/grafana/enterprise-metrics")
 }
 
 is_openshift(x) {
