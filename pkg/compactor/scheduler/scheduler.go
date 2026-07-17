@@ -459,13 +459,13 @@ func (s *Scheduler) UpdateCleanupJob(ctx context.Context, req *compactorschedule
 
 	switch req.Update {
 	case compactorschedulerpb.UPDATE_TYPE_IN_PROGRESS:
-		if s.rotator.RenewJobLease(req.Tenant, req.Key.Id, req.Key.Epoch) {
+		if s.rotator.RenewJobLease(req.Tenant, cleanupJobId, req.Key.Epoch) {
 			// Lease renewals are only debug logged to prevent noise
 			level.Debug(logger).Log("msg", "cleanup job lease renewed")
 			return &compactorschedulerpb.UpdateJobResponse{}, nil
 		}
 	case compactorschedulerpb.UPDATE_TYPE_COMPLETE:
-		completed, err := s.rotator.CompleteCleanupJob(req.Tenant, req.Key.Id, req.Key.Epoch)
+		completed, err := s.rotator.CompleteCleanupJob(req.Tenant, req.Key.Epoch)
 		if err != nil {
 			level.Error(logger).Log("msg", "failed cleanup job completion", "err", err)
 			return nil, errFailedCompletingJob
@@ -476,7 +476,7 @@ func (s *Scheduler) UpdateCleanupJob(ctx context.Context, req *compactorschedule
 			return &compactorschedulerpb.UpdateJobResponse{}, nil
 		}
 	case compactorschedulerpb.UPDATE_TYPE_ABANDON:
-		removed, err := s.rotator.RemoveJob(req.Tenant, req.Key.Id, req.Key.Epoch, false)
+		removed, err := s.rotator.RemoveJob(req.Tenant, cleanupJobId, req.Key.Epoch, false)
 		if err != nil {
 			level.Error(logger).Log("msg", "failed cleanup job abandon", "err", err)
 			return nil, errFailedAbandoningJob
@@ -487,7 +487,7 @@ func (s *Scheduler) UpdateCleanupJob(ctx context.Context, req *compactorschedule
 		}
 	case compactorschedulerpb.UPDATE_TYPE_REASSIGN, compactorschedulerpb.UPDATE_TYPE_INTERRUPTED_REASSIGN:
 		interrupted := req.Update == compactorschedulerpb.UPDATE_TYPE_INTERRUPTED_REASSIGN
-		canceled, err := s.rotator.CancelJobLease(req.Tenant, req.Key.Id, req.Key.Epoch, interrupted)
+		canceled, err := s.rotator.CancelJobLease(req.Tenant, cleanupJobId, req.Key.Epoch, interrupted)
 		if err != nil {
 			level.Error(logger).Log("msg", "failed cleanup job cancel", "err", err)
 			return nil, errFailedCancelLease
