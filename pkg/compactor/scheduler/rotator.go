@@ -349,7 +349,7 @@ func (r *Rotator) CompleteCleanupJob(tenant string, key string, epoch int64) (bo
 		return false, nil
 	}
 
-	return tenantState.tracker.CompleteCleanup(key, epoch)
+	return tenantState.tracker.CompleteCleanup(epoch)
 }
 
 // AddTenant adds the tenant to the rotator if the tenant did not already exist
