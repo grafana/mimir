@@ -14421,7 +14421,7 @@
               "kind": "field",
               "name": "lanes",
               "required": false,
-              "desc": "Comma-separated lanes, where each entry becomes one worker goroutine requesting a '+'-separated list of lanes in priority order. Append ':N' to a single entry to create N goroutines for it, e.g. 'compact+plan,cleanup:4' creates one compaction and planning goroutine plus four cleanup goroutines.",
+              "desc": "Comma-separated entries, where each entry becomes one worker goroutine requesting a '+'-separated list of lanes in priority order. Append ':N' to a single entry to create N goroutines for it, e.g. 'plan,cleanup:4' creates one plan goroutine plus four cleanup goroutines.",
               "fieldValue": null,
               "fieldDefaultValue": "compact+plan,plan",
               "fieldFlag": "compactor.scheduler-client.lanes",
@@ -14492,7 +14492,7 @@
           "required": false,
           "desc": "The duration of time between when cleanup jobs are submitted aligned by UTC. Set to 0 to disable cleanup job submission.",
           "fieldValue": null,
-          "fieldDefaultValue": 1200000000000,
+          "fieldDefaultValue": 0,
           "fieldFlag": "compactor-scheduler.cleanup-interval",
           "fieldType": "duration",
           "fieldCategory": "experimental"

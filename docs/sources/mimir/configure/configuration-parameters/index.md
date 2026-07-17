@@ -230,7 +230,7 @@ compactor_scheduler:
   # (experimental) The duration of time between when cleanup jobs are submitted
   # aligned by UTC. Set to 0 to disable cleanup job submission.
   # CLI flag: -compactor-scheduler.cleanup-interval
-  [cleanup_interval: <duration> | default = 20m]
+  [cleanup_interval: <duration> | default = 0s]
 
   # (experimental) The duration of time between when maintenance tasks are
   # performed on job trackers. This includes lease expiration and plan job
@@ -6828,11 +6828,10 @@ scheduler_client:
   # CLI flag: -compactor.scheduler-client.terminating-final-status-timeout
   [terminating_final_status_timeout: <duration> | default = 30s]
 
-  # (experimental) Comma-separated lanes, where each entry becomes one worker
+  # (experimental) Comma-separated entries, where each entry becomes one worker
   # goroutine requesting a '+'-separated list of lanes in priority order. Append
-  # ':N' to a single entry to create N goroutines for it, e.g.
-  # 'compact+plan,cleanup:4' creates one compaction and planning goroutine plus
-  # four cleanup goroutines.
+  # ':N' to a single entry to create N goroutines for it, e.g. 'plan,cleanup:4'
+  # creates one plan goroutine plus four cleanup goroutines.
   # CLI flag: -compactor.scheduler-client.lanes
   [lanes: <string> | default = "compact+plan,plan"]
 
