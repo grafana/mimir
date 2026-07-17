@@ -27,5 +27,5 @@ CHANGELOG.md
 go.mod @stevesg @grafana/mimir-maintainers
 go.sum @stevesg @grafana/mimir-maintainers
 /vendor/ @stevesg @grafana/mimir-maintainers
-/vendor/github.com/prometheus/alertmanager @grafana/mimir-ruler-and-alertmanager-maintainers @grafana/mimir-maintainers
-/vendor/github.com/grafana/alerting @grafana/mimir-ruler-and-alertmanager-maintainers @grafana/mimir-maintainers
+/vendor/github.com/prometheus/alertmanager @grafana/mimir-ruler-and-alertmanager-maintainers
+/vendor/github.com/grafana/alerting @grafana/mimir-ruler-and-alertmanager-maintainers
