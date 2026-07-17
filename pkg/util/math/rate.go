@@ -19,15 +19,27 @@ type EwmaRate struct {
 	alpha    float64
 	interval time.Duration
 
-	mutex    sync.RWMutex
-	lastRate float64
-	init     bool
+	mutex         sync.RWMutex
+	lastRate      float64
+	init          bool
+	count         uint8
+	warmupSamples uint8
+	warmupSum     float64
 }
 
 func NewEWMARate(alpha float64, interval time.Duration) *EwmaRate {
 	return &EwmaRate{
-		alpha:    alpha,
-		interval: interval,
+		alpha:         alpha,
+		interval:      interval,
+		warmupSamples: 0,
+	}
+}
+
+func NewEWMARateWithWarmup(alpha float64, interval time.Duration, warmupSamples uint8) *EwmaRate {
+	return &EwmaRate{
+		alpha:         alpha,
+		interval:      interval,
+		warmupSamples: warmupSamples,
 	}
 }
 
@@ -35,6 +47,11 @@ func NewEWMARate(alpha float64, interval time.Duration) *EwmaRate {
 func (r *EwmaRate) Rate() float64 {
 	r.mutex.RLock()
 	defer r.mutex.RUnlock()
+
+	if r.count < r.warmupSamples {
+		return 0
+	}
+
 	return r.lastRate
 }
 
@@ -45,6 +62,16 @@ func (r *EwmaRate) Tick() {
 
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
+
+	if r.count < r.warmupSamples {
+		r.warmupSum += instantRate
+		r.count++
+		if r.count == r.warmupSamples {
+			r.lastRate = r.warmupSum / float64(r.count)
+			r.init = true
+		}
+		return
+	}
 
 	if r.init {
 		r.lastRate += r.alpha * (instantRate - r.lastRate)
