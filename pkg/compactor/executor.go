@@ -356,8 +356,7 @@ func (e *schedulerExecutor) runWorker(ctx context.Context, c *MultitenantCompact
 		ok, err := e.leaseAndExecuteJob(ctx, c, compactDir, req)
 		if err != nil {
 			level.Warn(e.logger).Log("msg", "failed to lease or execute job", "err", err)
-		}
-		if ok && err == nil {
+		} else if ok {
 			b.Reset()
 		}
 
