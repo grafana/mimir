@@ -805,13 +805,21 @@ func tsdbMetricsTenantID(tenantID string, partitionID int32) string {
 // can react. Returning the partial set of warm partitions would
 // silently produce incomplete results, which is strictly worse than
 // failing fast.
+//
+// With a non-nil hint, also returns errPartitionEpochUnavailable when
+// this pod has neither a live nor a frozen epoch for the hinted
+// partition. The distributor only sends that hint for owners named by
+// the assignment log; an empty success here was observed to produce
+// silent under-counts (query-tee histogram sum ratios like 0.557).
 func (r *Readcache) listTSDBsForTenant(tenantID string, hint *client.QueryAttributionHint) ([]*partitionTSDB, error) {
 	var out []*partitionTSDB
+	liveForHint := false
 
 	// Live partitions this pod currently owns.
 	r.partitionMu.RLock()
 	if hint != nil {
 		if p, ok := r.partitions[hint.PartitionId]; ok {
+			liveForHint = true
 			if !p.warm.Load() {
 				r.partitionMu.RUnlock()
 				return nil, errStillWarming(hint.PartitionId)
@@ -846,8 +854,10 @@ func (r *Readcache) listTSDBsForTenant(tenantID string, hint *client.QueryAttrib
 	// no series. Acquired after partitionMu is released to keep a
 	// strict lock order (partitionMu -> frozenMu) free of nesting.
 	r.frozenMu.RLock()
+	frozenForHint := false
 	addFrozen := func(partitionID int32) {
 		for _, ep := range r.frozen[partitionID] {
+			frozenForHint = true
 			if db := ep.tenants[tenantID]; db != nil {
 				out = append(out, db)
 			}
@@ -861,6 +871,10 @@ func (r *Readcache) listTSDBsForTenant(tenantID string, hint *client.QueryAttrib
 		}
 	}
 	r.frozenMu.RUnlock()
+
+	if hint != nil && !liveForHint && !frozenForHint {
+		return nil, errPartitionEpochUnavailable(hint.PartitionId)
+	}
 
 	return out, nil
 }

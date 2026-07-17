@@ -84,7 +84,11 @@ readcache:
   # arrives.
   rebalancer_address: nautilus-rebalancer:9095
   head_compaction_interval: 1m
-  local_block_retention: 1h
+  # Must be >= querier query_ingesters_within (6h here) and > query_store_after
+  # (5h). If retention is shorter than the readcache query window, ownership
+  # moves leave gaps: frozen epochs are reaped while the assignment log still
+  # routes to those owners (silent under-counts before fail-fast; 503s after).
+  local_block_retention: 6h
   instance_ring:
     # Memberlist matches the rest of the nautilus stack (ingester,
     # distributor, query-frontend, etc.) so all rings share a single

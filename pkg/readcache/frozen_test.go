@@ -96,8 +96,11 @@ func TestReadcache_FreezeKeepsSliceQueryableThenReaps(t *testing.T) {
 	// Advancing the clock past maxT + retention + grace reaps it.
 	r.reapFrozenEpochs(time.Now().Add(cfg.LocalBlockRetention + frozenEpochReapGrace + 10*time.Minute))
 	dbs, err = r.listTSDBsForTenant(tenantID, hint)
-	require.NoError(t, err)
-	require.Empty(t, dbs, "aged-out frozen epoch must be reaped")
+	// Assignment log may still name this pod as a historical owner; an
+	// empty success would silently under-count. Fail fast instead.
+	require.Error(t, err)
+	require.Contains(t, err.Error(), partitionEpochUnavailableDetail)
+	require.Nil(t, dbs)
 }
 
 // newFrozenTestReadcache builds a bare Readcache suitable for
