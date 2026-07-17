@@ -340,7 +340,7 @@ func (r *Rotator) RemoveJob(tenant string, key string, epoch int64, complete boo
 	return removed, nil
 }
 
-func (r *Rotator) CompleteCleanupJob(tenant string, key string, epoch int64) (bool, error) {
+func (r *Rotator) CompleteCleanupJob(tenant string, epoch int64) (bool, error) {
 	r.mtx.RLock()
 	defer r.mtx.RUnlock()
 
