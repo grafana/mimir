@@ -20,8 +20,8 @@ import (
 
 // JobTracker tracks pending, active, and (temporarily) complete jobs for tenants.
 //
-// Pending jobs are either plan jobs scheduled during Maintenance, or compaction jobs offered
-// via OfferCompactionJobs. At most one plan job exists at a time. Lease moves a selected
+// Pending jobs are either plan or cleanup jobs scheduled during Maintenance, or compaction jobs offered
+// via OfferCompactionJobs. At most one plan job and one cleanup job exist at a time. Lease moves a selected
 // job from pending to active.
 //
 // Pending jobs are partitioned into per-lane queues according to the lanePolicy.
@@ -29,8 +29,8 @@ import (
 // Active jobs share a single list ordered by oldest. An active job returns to a pending lane if its lease expires
 // (via Maintenance) or is canceled within the attempt limit.
 //
-// Plan jobs complete via OfferCompactionJobs. Compaction jobs complete via Remove. Compaction jobs that complete
-// while a plan job is active are temporarily retained for conflict detection.
+// Plan jobs complete via OfferCompactionJobs. Cleanup jobs complete via CompleteCleanup. Compaction jobs complete
+// via Remove. Compaction jobs that complete while a plan job is active are temporarily retained for conflict detection.
 type JobTracker struct {
 	persister  JobPersister
 	tenant     string
