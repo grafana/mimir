@@ -361,6 +361,12 @@ func (f *Frontend) RoundTripGRPC(ctx context.Context, httpRequest *httpgrpc.HTTP
 			if stats.ShouldTrackHTTPGRPCResponse(resp.queryResult.HttpResponse) {
 				stats.FromContext(ctx).Merge(resp.queryResult.Stats) // Safe if stats is nil.
 			}
+			if resp.bodyStream != nil {
+				// We're discarding this response (the caller only gets the cancellation error), but if the
+				// querier sent it via QueryResultStream, that call is blocked writing to this pipe until it's
+				// read or closed. Close it so that goroutine isn't leaked.
+				_ = resp.bodyStream.Close()
+			}
 		default:
 			stats.FromContext(ctx).AddQueueTime(time.Since(freq.enqueuedAt))
 		}
