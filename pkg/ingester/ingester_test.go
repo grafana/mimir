@@ -11879,6 +11879,11 @@ func checkErrorWithStatus(t *testing.T, err error, expectedErr error) {
 }
 
 func buildSeriesSet(t *testing.T, series *Series) []labels.Labels {
+	t.Helper()
+	defer func() {
+		require.NoError(t, series.Close())
+	}()
+
 	var labelSets []labels.Labels
 	for series.Next() {
 		l := series.At()

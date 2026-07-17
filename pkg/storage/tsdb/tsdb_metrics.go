@@ -16,32 +16,35 @@ type TSDBMetrics struct {
 	regs *dskit_metrics.TenantRegistries
 
 	// Metrics aggregated from TSDB.
-	tsdbCompactionsTotal              *prometheus.Desc
-	tsdbCompactionDuration            *prometheus.Desc
-	tsdbFsyncDuration                 *prometheus.Desc
-	tsdbPageFlushes                   *prometheus.Desc
-	tsdbPageCompletions               *prometheus.Desc
-	tsdbWALTruncateFail               *prometheus.Desc
-	tsdbWALTruncateTotal              *prometheus.Desc
-	tsdbWALTruncateDuration           *prometheus.Desc
-	tsdbWALCorruptionsTotal           *prometheus.Desc
-	tsdbWALWritesFailed               *prometheus.Desc
-	tsdbHeadTruncateFail              *prometheus.Desc
-	tsdbHeadTruncateTotal             *prometheus.Desc
-	tsdbHeadGcDuration                *prometheus.Desc
-	tsdbActiveAppenders               *prometheus.Desc
-	tsdbSeriesNotFound                *prometheus.Desc
-	tsdbShardedPostingsSubfiltered    *prometheus.Desc
-	tsdbShardedPostingsFallback       *prometheus.Desc
-	tsdbShardedAllPostingsFallback    *prometheus.Desc
-	tsdbChunks                        *prometheus.Desc
-	tsdbChunksCreatedTotal            *prometheus.Desc
-	tsdbChunksRemovedTotal            *prometheus.Desc
-	tsdbMmapChunkCorruptionTotal      *prometheus.Desc
-	tsdbMmapChunkQueueOperationsTotal *prometheus.Desc
-	tsdbMmapChunksTotal               *prometheus.Desc
-	tsdbHeadChunksMaxMmapped          *prometheus.Desc // TODO(krajorama): experimental, remove once we have measurements.
-	tsdbOOOHistogram                  *prometheus.Desc
+	tsdbCompactionsTotal                *prometheus.Desc
+	tsdbCompactionDuration              *prometheus.Desc
+	tsdbFsyncDuration                   *prometheus.Desc
+	tsdbPageFlushes                     *prometheus.Desc
+	tsdbPageCompletions                 *prometheus.Desc
+	tsdbWALTruncateFail                 *prometheus.Desc
+	tsdbWALTruncateTotal                *prometheus.Desc
+	tsdbWALTruncateDuration             *prometheus.Desc
+	tsdbWALCorruptionsTotal             *prometheus.Desc
+	tsdbWALWritesFailed                 *prometheus.Desc
+	tsdbHeadTruncateFail                *prometheus.Desc
+	tsdbHeadTruncateTotal               *prometheus.Desc
+	tsdbHeadGcDuration                  *prometheus.Desc
+	tsdbActiveAppenders                 *prometheus.Desc
+	tsdbSeriesNotFound                  *prometheus.Desc
+	tsdbShardedPostingsSubfiltered      *prometheus.Desc
+	tsdbShardedPostingsFallback         *prometheus.Desc
+	tsdbShardedAllPostingsFallback      *prometheus.Desc
+	tsdbShardBucketRepairs              *prometheus.Desc
+	tsdbShardBucketRepairAllocations    *prometheus.Desc
+	tsdbShardBucketRepairAllocatedBytes *prometheus.Desc
+	tsdbChunks                          *prometheus.Desc
+	tsdbChunksCreatedTotal              *prometheus.Desc
+	tsdbChunksRemovedTotal              *prometheus.Desc
+	tsdbMmapChunkCorruptionTotal        *prometheus.Desc
+	tsdbMmapChunkQueueOperationsTotal   *prometheus.Desc
+	tsdbMmapChunksTotal                 *prometheus.Desc
+	tsdbHeadChunksMaxMmapped            *prometheus.Desc // TODO(krajorama): experimental, remove once we have measurements.
+	tsdbOOOHistogram                    *prometheus.Desc
 
 	tsdbExemplarsTotal          *prometheus.Desc
 	tsdbExemplarsInStorage      *prometheus.Desc
@@ -150,6 +153,18 @@ func NewTSDBMetrics(r prometheus.Registerer, logger log.Logger) *TSDBMetrics {
 		tsdbShardedAllPostingsFallback: prometheus.NewDesc(
 			"tsdb_head_sharded_all_postings_fallback_total",
 			"Total number of TSDB head ShardedAllPostings calls served by a full series scan because the shard count is not a power of two or the shard bucket index is disabled.",
+			nil, nil),
+		tsdbShardBucketRepairs: prometheus.NewDesc(
+			"tsdb_head_shard_bucket_repairs_total",
+			"Total number of dirty TSDB head shard buckets repaired.",
+			nil, nil),
+		tsdbShardBucketRepairAllocations: prometheus.NewDesc(
+			"tsdb_head_shard_bucket_repair_buffer_allocations_total",
+			"Total number of TSDB head shard bucket repair buffers allocated.",
+			nil, nil),
+		tsdbShardBucketRepairAllocatedBytes: prometheus.NewDesc(
+			"tsdb_head_shard_bucket_repair_buffer_allocated_bytes_total",
+			"Total capacity in bytes of TSDB head shard bucket repair buffers allocated.",
 			nil, nil),
 		tsdbChunks: prometheus.NewDesc(
 			"tsdb_head_chunks",
@@ -315,6 +330,9 @@ func (sm *TSDBMetrics) Describe(out chan<- *prometheus.Desc) {
 	out <- sm.tsdbShardedPostingsSubfiltered
 	out <- sm.tsdbShardedPostingsFallback
 	out <- sm.tsdbShardedAllPostingsFallback
+	out <- sm.tsdbShardBucketRepairs
+	out <- sm.tsdbShardBucketRepairAllocations
+	out <- sm.tsdbShardBucketRepairAllocatedBytes
 	out <- sm.tsdbChunks
 	out <- sm.tsdbChunksCreatedTotal
 	out <- sm.tsdbChunksRemovedTotal
@@ -374,6 +392,9 @@ func (sm *TSDBMetrics) Collect(out chan<- prometheus.Metric) {
 	data.SendSumOfCounters(out, sm.tsdbShardedPostingsSubfiltered, "prometheus_tsdb_head_sharded_postings_subfiltered_total")
 	data.SendSumOfCounters(out, sm.tsdbShardedPostingsFallback, "prometheus_tsdb_head_sharded_postings_fallback_total")
 	data.SendSumOfCounters(out, sm.tsdbShardedAllPostingsFallback, "prometheus_tsdb_head_sharded_all_postings_fallback_total")
+	data.SendSumOfCounters(out, sm.tsdbShardBucketRepairs, "prometheus_tsdb_head_shard_bucket_repairs_total")
+	data.SendSumOfCounters(out, sm.tsdbShardBucketRepairAllocations, "prometheus_tsdb_head_shard_bucket_repair_buffer_allocations_total")
+	data.SendSumOfCounters(out, sm.tsdbShardBucketRepairAllocatedBytes, "prometheus_tsdb_head_shard_bucket_repair_buffer_allocated_bytes_total")
 	data.SendSumOfGauges(out, sm.tsdbChunks, "prometheus_tsdb_head_chunks")
 	data.SendSumOfCountersPerTenant(out, sm.tsdbChunksCreatedTotal, "prometheus_tsdb_head_chunks_created_total")
 	data.SendSumOfCountersPerTenant(out, sm.tsdbChunksRemovedTotal, "prometheus_tsdb_head_chunks_removed_total")

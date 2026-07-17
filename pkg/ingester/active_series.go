@@ -4,11 +4,11 @@ package ingester
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/tenant"
-	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -58,6 +58,9 @@ func (i *Ingester) ActiveSeries(request *client.ActiveSeriesRequest, stream clie
 	if err != nil {
 		return fmt.Errorf("error getting index: %w", err)
 	}
+	defer func() {
+		err = errors.Join(err, idx.Close())
+	}()
 
 	isNativeHistogram := request.GetType() == client.NATIVE_HISTOGRAM_SERIES
 	postings, err := getPostings(ctx, db, idx, matchers, isNativeHistogram)
@@ -121,7 +124,16 @@ func getPostings(ctx context.Context, db *userTSDB, idx tsdb.IndexReader, matche
 
 	var postings index.Postings
 	if shard != nil && matchAllSeries(matchers) {
-		postings = db.Head().ShardedAllPostings(ctx, shard.ShardIndex, shard.ShardCount)
+		if shardedReader, ok := idx.(tsdb.ShardedAllPostingsReader); ok {
+			postings = shardedReader.ShardedAllPostings(ctx, shard.ShardIndex, shard.ShardCount)
+		} else {
+			name, value := index.AllPostingsKey()
+			postings, err = idx.Postings(ctx, name, value)
+			if err != nil {
+				return nil, fmt.Errorf("error getting all postings: %w", err)
+			}
+			postings = idx.ShardedPostings(postings, shard.ShardIndex, shard.ShardCount)
+		}
 	} else {
 		postings, err = tsdb.PostingsForMatchers(ctx, idx, matchers...)
 		if err != nil {

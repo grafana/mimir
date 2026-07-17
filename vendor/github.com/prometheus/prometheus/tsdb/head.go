@@ -124,7 +124,9 @@ type Head struct {
 
 	// Sorted series refs per shard hash bucket, used by ShardedPostings.
 	// Nil when sharding is disabled.
-	shardBuckets *shardBucketPostings
+	shardBuckets                 *shardBucketPostings
+	shardPostingsBufferLifecycle *shardPostingsBufferLifecycle
+	shardBucketRepairStats       shardBucketRepairStats
 
 	tombstones *tombstones.MemTombstones
 
@@ -244,6 +246,10 @@ type HeadOptions struct {
 	// Only used when EnableSharding is true.
 	ShardedPostingsBuckets int
 
+	// ShardedPostingsBufferRecycler optionally reuses dirty-repair buffers. A
+	// recycler may be shared across Heads.
+	ShardedPostingsBufferRecycler *ShardedPostingsBufferRecycler
+
 	// EnableSTAsZeroSample represents 'created-timestamp-zero-ingestion' feature flag.
 	// If true, ST, if non-empty and earlier than sample timestamp, will be stored
 	// as a zero sample before the actual sample.
@@ -358,6 +364,10 @@ func NewHead(r prometheus.Registerer, l *slog.Logger, wal, wbl *wlog.WL, opts *H
 	if !opts.EnableExemplarStorage {
 		opts.MaxExemplars.Store(0)
 	}
+	var shardPostingsBufferLifecycle *shardPostingsBufferLifecycle
+	if opts.EnableSharding && opts.ShardedPostingsBuckets >= 0 {
+		shardPostingsBufferLifecycle = newShardPostingsBufferLifecycle(opts.ShardedPostingsBufferRecycler)
+	}
 
 	shf := opts.SecondaryHashFunction
 	if shf == nil {
@@ -376,11 +386,12 @@ func NewHead(r prometheus.Registerer, l *slog.Logger, wal, wbl *wlog.WL, opts *H
 				return &memChunk{}
 			},
 		},
-		stats:             stats,
-		reg:               r,
-		secondaryHashFunc: shf,
-		pfmc:              opts.PostingsForMatchersCacheFactory.NewPostingsForMatchersCache([]attribute.KeyValue{attribute.String("block", headULID.String())}),
-		seriesStateQuit:   make(chan struct{}),
+		stats:                        stats,
+		reg:                          r,
+		secondaryHashFunc:            shf,
+		pfmc:                         opts.PostingsForMatchersCacheFactory.NewPostingsForMatchersCache([]attribute.KeyValue{attribute.String("block", headULID.String())}),
+		seriesStateQuit:              make(chan struct{}),
+		shardPostingsBufferLifecycle: shardPostingsBufferLifecycle,
 	}
 	if err := h.resetInMemoryState(); err != nil {
 		return nil, err
@@ -450,6 +461,8 @@ func (h *Head) resetInMemoryState() error {
 			buckets = DefaultShardedPostingsBuckets
 		}
 		h.shardBuckets = newShardBucketPostings(buckets)
+		h.shardBuckets.lifecycle = h.shardPostingsBufferLifecycle
+		h.shardBuckets.repairStats = &h.shardBucketRepairStats
 	}
 	h.tombstones = tombstones.NewMemTombstones()
 	h.walExpiries = map[chunks.HeadSeriesRef]int64{}
@@ -484,6 +497,9 @@ type headMetrics struct {
 	shardedPostingsSubfiltered prometheus.Counter
 	shardedPostingsFallback    prometheus.Counter
 	shardedAllPostingsFallback prometheus.Counter
+	shardBucketRepairs         prometheus.CounterFunc
+	shardBucketAllocations     prometheus.CounterFunc
+	shardBucketAllocatedBytes  prometheus.CounterFunc
 	chunks                     prometheus.Gauge
 	chunksCreated              prometheus.Counter
 	chunksRemoved              prometheus.Counter
@@ -557,6 +573,24 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 		shardedAllPostingsFallback: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "prometheus_tsdb_head_sharded_all_postings_fallback_total",
 			Help: "Total number of ShardedAllPostings calls served by a full series scan because the shard count is not a power of two or the shard bucket index is disabled.",
+		}),
+		shardBucketRepairs: prometheus.NewCounterFunc(prometheus.CounterOpts{
+			Name: "prometheus_tsdb_head_shard_bucket_repairs_total",
+			Help: "Total number of dirty shard buckets repaired.",
+		}, func() float64 {
+			return float64(h.shardBucketRepairStats.repairs.Load())
+		}),
+		shardBucketAllocations: prometheus.NewCounterFunc(prometheus.CounterOpts{
+			Name: "prometheus_tsdb_head_shard_bucket_repair_buffer_allocations_total",
+			Help: "Total number of shard bucket repair buffers allocated.",
+		}, func() float64 {
+			return float64(h.shardBucketRepairStats.allocations.Load())
+		}),
+		shardBucketAllocatedBytes: prometheus.NewCounterFunc(prometheus.CounterOpts{
+			Name: "prometheus_tsdb_head_shard_bucket_repair_buffer_allocated_bytes_total",
+			Help: "Total capacity in bytes of shard bucket repair buffers allocated.",
+		}, func() float64 {
+			return float64(h.shardBucketRepairStats.allocatedBytes.Load())
 		}),
 		chunks: prometheus.NewGauge(prometheus.GaugeOpts{
 			Name: "prometheus_tsdb_head_chunks",
@@ -687,6 +721,9 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			m.shardedPostingsSubfiltered,
 			m.shardedPostingsFallback,
 			m.shardedAllPostingsFallback,
+			m.shardBucketRepairs,
+			m.shardBucketAllocations,
+			m.shardBucketAllocatedBytes,
 			m.gcDuration,
 			m.walTruncateDuration,
 			m.walCorruptionsTotal,
@@ -3169,50 +3206,6 @@ func (p pairOfSlices[T1, T2]) append(t1 T1, t2 T2) pairOfSlices[T1, T2] {
 
 func (p pairOfSlices[T1, T2]) len() int {
 	return len(p.slice1)
-}
-
-// ShardedAllPostings returns the postings of all series in the head that belong
-// to shard shardIndex of shardCount. Power-of-two shard counts use the shard
-// hash bucket index when it is enabled; other shard counts and disabled bucket
-// indexes fall back to a full series scan. The returned postings are sorted by
-// ref and may include refs of series deleted since the call began, which callers
-// resolve like any other stale postings entry. For shard counts larger than the
-// bucket count, the single candidate bucket is lazily sub-filtered by resolving
-// candidate refs' shard hashes. Shard 0 of 1 returns all head postings directly.
-// It returns empty postings when sharding is disabled or the shard index is out
-// of range. The context controls construction only; callers remain responsible
-// for cancellation while iterating the returned postings. Cancellation observed
-// during construction is reported by the returned postings' Err method.
-func (h *Head) ShardedAllPostings(ctx context.Context, shardIndex, shardCount uint64) index.Postings {
-	if !h.opts.EnableSharding || shardIndex >= shardCount {
-		return index.EmptyPostings()
-	}
-	if err := ctx.Err(); err != nil {
-		return index.ErrPostings(err)
-	}
-	if shardCount == 1 {
-		p := h.postings.All()
-		if err := ctx.Err(); err != nil {
-			return index.ErrPostings(err)
-		}
-		return p
-	}
-	if h.shardBuckets == nil || !isPowerOfTwo(shardCount) {
-		return h.shardedAllPostingsViaSeriesScan(ctx, shardIndex, shardCount)
-	}
-	lists, needsShardHashFilter := h.shardBuckets.postingsFor(shardIndex, shardCount)
-	if err := ctx.Err(); err != nil {
-		return index.ErrPostings(err)
-	}
-	// Iteration is caller-controlled, so do not bind the lazy merge to ctx.
-	p := index.Merge(context.Background(), lists...)
-	if err := ctx.Err(); err != nil {
-		return index.ErrPostings(err)
-	}
-	if needsShardHashFilter {
-		return newShardHashLookupFilterPostings(p, h.series, shardIndex, shardCount)
-	}
-	return p
 }
 
 // The context check interval keeps fallback scan cancellation responsive while

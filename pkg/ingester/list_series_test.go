@@ -25,6 +25,7 @@ func listActiveSeries(ctx context.Context, db *userTSDB, matchers []*labels.Matc
 	}
 	postings, err := getPostings(ctx, db, idx, matchers, false)
 	if err != nil {
+		_ = idx.Close()
 		return nil, err
 	}
 	return newSeries(postings, idx), nil
@@ -67,6 +68,10 @@ func (s *Series) Err() error {
 		return fmt.Errorf("error listing series: %w", multierror.MultiError{s.err, s.postings.Err()}.Err())
 	}
 	return s.postings.Err()
+}
+
+func (s *Series) Close() error {
+	return s.idx.Close()
 }
 
 func TestSeries(t *testing.T) {

@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/grafana/dskit/user"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb"
@@ -124,6 +126,56 @@ func TestIngester_ActiveSeries(t *testing.T) {
 		require.False(t, postings.Next())
 		require.ErrorIs(t, postings.Err(), context.Canceled)
 	})
+
+	t.Run("sharded match-all compatibility fallback", func(t *testing.T) {
+		db := ingesterClient.getTSDB(userID)
+		require.NotNil(t, db)
+		idx, err := db.Head().Index()
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			require.NoError(t, idx.Close())
+		})
+
+		postings, err := getPostings(ctx, db, indexReaderWithoutShardedAll{idx}, []*labels.Matcher{
+			labels.MustNewMatcher(labels.MatchEqual, sharding.ShardLabel, "1_of_4"),
+			labels.MustNewMatcher(labels.MatchRegexp, model.MetricNameLabel, ".*"),
+		}, false)
+		require.NoError(t, err)
+		count := 0
+		for postings.Next() {
+			count++
+		}
+		require.NoError(t, postings.Err())
+		require.Equal(t, 1012, count)
+	})
+}
+
+type indexReaderWithoutShardedAll struct {
+	tsdb.IndexReader
+}
+
+func TestIngester_ShardedPostingsBufferRecycler(t *testing.T) {
+	cfg := defaultIngesterTestConfig(t)
+	cfg.BlocksStorageConfig.TSDB.ShardedPostingsBufferRecyclerMaxRetainedBytes = 16 * 1024 * 1024
+	registry := prometheus.NewRegistry()
+	in, ring, err := prepareIngesterWithBlocksStorage(t, cfg, nil, registry)
+	require.NoError(t, err)
+	startAndWaitHealthy(t, in, ring)
+	require.NotNil(t, in.shardedPostingsBufferRecycler)
+
+	metricNames := []string{
+		"cortex_ingester_tsdb_sharded_postings_buffer_recycler_hits_total",
+		"cortex_ingester_tsdb_sharded_postings_buffer_recycler_misses_total",
+		"cortex_ingester_tsdb_sharded_postings_buffer_recycler_evictions_total",
+		"cortex_ingester_tsdb_sharded_postings_buffer_recycler_rejections_total",
+		"cortex_ingester_tsdb_sharded_postings_buffer_recycler_retained_buffers",
+		"cortex_ingester_tsdb_sharded_postings_buffer_recycler_retained_capacity_bytes",
+		"cortex_ingester_tsdb_sharded_postings_buffer_recycler_pending_retirement_buffers",
+		"cortex_ingester_tsdb_sharded_postings_buffer_recycler_pending_retirement_capacity_bytes",
+	}
+	count, err := testutil.GatherAndCount(registry, metricNames...)
+	require.NoError(t, err)
+	require.Equal(t, len(metricNames), count)
 }
 
 func TestIngester_ActiveNativeHistogramSeries(t *testing.T) {
@@ -322,102 +374,132 @@ func BenchmarkIngester_ActiveSeries(b *testing.B) {
 func BenchmarkIngester_ActiveSeriesFullFanout(b *testing.B) {
 	const userID = "test"
 
-	b.Run("recycler=off", func(b *testing.B) {
-		for _, method := range benchmarkActiveSeriesMethods() {
-			b.Run("method="+method.name, func(b *testing.B) {
-				for _, state := range []struct {
-					name       string
-					concurrent bool
-					warm       bool
-				}{
-					{name: "clean"},
-					{name: "dirty-cold", concurrent: true},
-					{name: "dirty-warm", concurrent: true, warm: true},
-				} {
-					b.Run("state="+state.name, func(b *testing.B) {
-						if b.N != 1 {
-							b.Skip("run with -benchtime=1x so each sample measures one aggregate replacement")
-						}
-						if state.concurrent && runtime.GOMAXPROCS(0) < 2 {
-							b.Skip("concurrent series creation requires GOMAXPROCS >= 2")
-						}
-
-						in := prepareActiveSeriesBenchmarkIngester(b)
-						ctx := user.InjectOrgID(context.Background(), userID)
-						benchmarkPopulateActiveHeadSeries(b, ctx, in)
-						db := in.getTSDB(userID)
-						require.NotNil(b, db)
-						benchmarkPopulateInactiveHeadSeries(b, ctx, in, db)
-
-						buckets := benchmarkAllShardBuckets()
-						require.Zero(b, benchmarkShardBucketStatsFor(b, db.Head(), buckets).dirtyBuckets)
-						requests := benchmarkActiveSeriesFullFanoutRequests(b, method.matchers)
-						baseline, err := benchmarkActiveSeriesQueryWave(b, ctx, in, requests)
-						require.NoError(b, err)
-						require.Positive(b, baseline)
-
-						prepare := func(generation string) benchmarkShardBucketStats {
-							waves := 1
-							if state.concurrent {
-								waves = 3
+	for _, recycler := range []struct {
+		name             string
+		maxRetainedBytes uint64
+	}{
+		{name: "off"},
+		{name: "on", maxRetainedBytes: benchmarkShardedPostingsRecyclerBytes},
+	} {
+		b.Run("recycler="+recycler.name, func(b *testing.B) {
+			for _, method := range benchmarkActiveSeriesMethods() {
+				b.Run("method="+method.name, func(b *testing.B) {
+					for _, state := range []struct {
+						name       string
+						concurrent bool
+						warm       bool
+					}{
+						{name: "clean"},
+						{name: "dirty-cold", concurrent: true},
+						{name: "dirty-warm", concurrent: true, warm: true},
+					} {
+						b.Run("state="+state.name, func(b *testing.B) {
+							if b.N != 1 {
+								b.Skip("run with -benchtime=1x so each sample measures one aggregate replacement")
 							}
-							for wave := range waves {
-								waveGeneration := fmt.Sprintf("%s-%d", generation, wave)
-								writeRequestGroups := benchmarkFullFanoutWriteRequestGroups(b, waveGeneration)
-								benchmarkPushRequestGroups(b, ctx, in, writeRequestGroups, state.concurrent)
-								deactivateBenchmarkSeries(b, ctx, db, waveGeneration, benchmarkFullFanoutSeriesCount)
+							if state.concurrent && runtime.GOMAXPROCS(0) < 2 {
+								b.Skip("concurrent series creation requires GOMAXPROCS >= 2")
 							}
-							stats := benchmarkShardBucketStatsFor(b, db.Head(), buckets)
-							if state.concurrent && stats.dirtyBuckets != len(buckets) {
-								b.Fatalf("concurrent creation left %d of %d target buckets dirty with GOMAXPROCS=%d", stats.dirtyBuckets, len(buckets), runtime.GOMAXPROCS(0))
-							}
-							if !state.concurrent {
-								require.Zero(b, stats.dirtyBuckets)
-							}
-							return stats
-						}
 
-						if state.warm {
-							prepare(fmt.Sprintf("full-fanout-%s-%s-prime", method.name, state.name))
+							in, registry := prepareActiveSeriesBenchmarkIngesterWithRecycler(b, recycler.maxRetainedBytes)
+							ctx := user.InjectOrgID(context.Background(), userID)
+							benchmarkPopulateActiveHeadSeries(b, ctx, in)
+							db := in.getTSDB(userID)
+							require.NotNil(b, db)
+							benchmarkPopulateInactiveHeadSeries(b, ctx, in, db)
+
+							buckets := benchmarkAllShardBuckets()
+							require.Zero(b, benchmarkShardBucketStatsFor(b, db.Head(), buckets).dirtyBuckets)
+							requests := benchmarkActiveSeriesFullFanoutRequests(b, method.matchers)
+							baseline, err := benchmarkActiveSeriesQueryWave(b, ctx, in, requests)
+							require.NoError(b, err)
+							require.Positive(b, baseline)
+
+							prepare := func(generation string) benchmarkShardBucketStats {
+								waves := 1
+								if state.concurrent {
+									waves = benchmarkFullFanoutChurnWaves
+								}
+								for wave := range waves {
+									waveGeneration := fmt.Sprintf("%s-%d", generation, wave)
+									writeRequestGroups := benchmarkFullFanoutWriteRequestGroups(b, waveGeneration)
+									benchmarkPushRequestGroups(b, ctx, in, writeRequestGroups, state.concurrent)
+									deactivateBenchmarkSeries(b, ctx, db, waveGeneration, benchmarkFullFanoutSeriesCount)
+								}
+								stats := benchmarkShardBucketStatsFor(b, db.Head(), buckets)
+								if state.concurrent && stats.dirtyBuckets != len(buckets) {
+									b.Fatalf("concurrent creation left %d of %d target buckets dirty with GOMAXPROCS=%d", stats.dirtyBuckets, len(buckets), runtime.GOMAXPROCS(0))
+								}
+								if !state.concurrent {
+									require.Zero(b, stats.dirtyBuckets)
+								}
+								return stats
+							}
+
+							if state.warm {
+								benchmarkPrimeActiveSeriesRecycler(b, in)
+							}
+
+							stats := prepare(fmt.Sprintf("full-fanout-%s-%s-measured", method.name, state.name))
+							beforeHits := benchmarkMetricValue(b, registry, "cortex_ingester_tsdb_sharded_postings_buffer_recycler_hits_total")
+							beforeMisses := benchmarkMetricValue(b, registry, "cortex_ingester_tsdb_sharded_postings_buffer_recycler_misses_total")
+							beforeAllocations := benchmarkMetricValue(b, registry, "cortex_ingester_tsdb_head_shard_bucket_repair_buffer_allocations_total")
+							retainedBuffers := benchmarkMetricValue(b, registry, "cortex_ingester_tsdb_sharded_postings_buffer_recycler_retained_buffers")
+							retainedBytes := benchmarkMetricValue(b, registry, "cortex_ingester_tsdb_sharded_postings_buffer_recycler_retained_capacity_bytes")
+							pendingBuffers := benchmarkMetricValue(b, registry, "cortex_ingester_tsdb_sharded_postings_buffer_recycler_pending_retirement_buffers")
+							pendingBytes := benchmarkMetricValue(b, registry, "cortex_ingester_tsdb_sharded_postings_buffer_recycler_pending_retirement_capacity_bytes")
+
+							b.ReportAllocs()
+							b.ResetTimer()
 							got, err := benchmarkActiveSeriesQueryWave(b, ctx, in, requests)
+							b.StopTimer()
 							require.NoError(b, err)
 							require.Equal(b, baseline, got)
 							require.Zero(b, benchmarkShardBucketStatsFor(b, db.Head(), buckets).dirtyBuckets)
-						}
-
-						stats := prepare(fmt.Sprintf("full-fanout-%s-%s-measured", method.name, state.name))
-
-						b.ReportAllocs()
-						b.ResetTimer()
-						got, err := benchmarkActiveSeriesQueryWave(b, ctx, in, requests)
-						b.StopTimer()
-						require.NoError(b, err)
-						require.Equal(b, baseline, got)
-						require.Zero(b, benchmarkShardBucketStatsFor(b, db.Head(), buckets).dirtyBuckets)
-						b.ReportMetric(float64(stats.dirtyBuckets), "dirty-buckets/op")
-						b.ReportMetric(float64(stats.refs), "target-refs/op")
-					})
-				}
-			})
-		}
-	})
+							hits := benchmarkMetricValue(b, registry, "cortex_ingester_tsdb_sharded_postings_buffer_recycler_hits_total") - beforeHits
+							misses := benchmarkMetricValue(b, registry, "cortex_ingester_tsdb_sharded_postings_buffer_recycler_misses_total") - beforeMisses
+							allocations := benchmarkMetricValue(b, registry, "cortex_ingester_tsdb_head_shard_bucket_repair_buffer_allocations_total") - beforeAllocations
+							if state.warm && recycler.maxRetainedBytes > 0 {
+								require.Equal(b, float64(len(buckets)), retainedBuffers)
+								require.Equal(b, float64(stats.dirtyBuckets), hits)
+								require.Zero(b, misses)
+								require.Zero(b, allocations)
+							}
+							b.ReportMetric(float64(stats.dirtyBuckets), "dirty-buckets/op")
+							b.ReportMetric(hits, "recycler-hits/op")
+							b.ReportMetric(misses, "recycler-misses/op")
+							b.ReportMetric(pendingBuffers, "recycler-pending-buffers")
+							b.ReportMetric(pendingBytes, "recycler-pending-bytes")
+							b.ReportMetric(retainedBuffers, "recycler-retained-buffers")
+							b.ReportMetric(retainedBytes, "recycler-retained-bytes")
+							b.ReportMetric(allocations, "repair-buffer-allocations/op")
+							b.ReportMetric(float64(stats.refs), "target-refs/op")
+						})
+					}
+				})
+			}
+		})
+	}
 }
 
 const (
-	benchmarkActiveSeriesShardCount      = 4 * tsdb.DefaultShardedPostingsBuckets
-	benchmarkBucketsPerCase              = tsdb.DefaultShardedPostingsBuckets / 4
-	benchmarkInactiveSeriesCount         = 1_000_000
-	benchmarkInactiveSeriesBatch         = 10_000
-	benchmarkSingleBucketSeriesCount     = 128
-	benchmarkFullFanoutRequestsPerBucket = tsdb.DefaultShardedPostingsBuckets
-	benchmarkFullFanoutSeriesPerRequest  = 4
-	benchmarkFullFanoutSeriesCount       = benchmarkFullFanoutRequestsPerBucket * tsdb.DefaultShardedPostingsBuckets * benchmarkFullFanoutSeriesPerRequest
-	benchmarkMaxChurnIterations          = 10
-	benchmarkGenerationLabel             = "benchmark_generation"
-	benchmarkCandidateLabel              = "benchmark_candidate"
-	benchmarkChurnMetric                 = "benchmark_shard_bucket_churn"
-	benchmarkHeadCompactionInterval      = 15 * time.Minute
-	benchmarkActiveHeadSeriesCount       = 2 * 5 * 13 * 17 * 19
+	benchmarkActiveSeriesShardCount       = 4 * tsdb.DefaultShardedPostingsBuckets
+	benchmarkBucketsPerCase               = tsdb.DefaultShardedPostingsBuckets / 4
+	benchmarkInactiveSeriesCount          = 1_000_000
+	benchmarkInactiveSeriesBatch          = 10_000
+	benchmarkSingleBucketSeriesCount      = 128
+	benchmarkFullFanoutChurnWaves         = 4
+	benchmarkFullFanoutRequestsPerBucket  = tsdb.DefaultShardedPostingsBuckets
+	benchmarkFullFanoutSeriesPerRequest   = 4
+	benchmarkFullFanoutSeriesCount        = benchmarkFullFanoutRequestsPerBucket * tsdb.DefaultShardedPostingsBuckets * benchmarkFullFanoutSeriesPerRequest
+	benchmarkMaxChurnIterations           = 10
+	benchmarkGenerationLabel              = "benchmark_generation"
+	benchmarkCandidateLabel               = "benchmark_candidate"
+	benchmarkChurnMetric                  = "benchmark_shard_bucket_churn"
+	benchmarkHeadCompactionInterval       = 15 * time.Minute
+	benchmarkActiveHeadSeriesCount        = 2 * 5 * 13 * 17 * 19
+	benchmarkRecyclerDonorSeriesCount     = benchmarkInactiveSeriesCount + 15*benchmarkInactiveSeriesCount/100
+	benchmarkShardedPostingsRecyclerBytes = 16 * 1024 * 1024
 )
 
 type benchmarkActiveSeriesMethod struct {
@@ -447,20 +529,75 @@ func benchmarkActiveSeriesMethods() []benchmarkActiveSeriesMethod {
 func prepareActiveSeriesBenchmarkIngester(b testing.TB) *Ingester {
 	b.Helper()
 
+	in, _ := prepareActiveSeriesBenchmarkIngesterWithRecycler(b, 0)
+	return in
+}
+
+func prepareActiveSeriesBenchmarkIngesterWithRecycler(b testing.TB, maxRetainedBytes uint64) (*Ingester, *prometheus.Registry) {
+	b.Helper()
+
 	cfg := defaultIngesterTestConfig(b)
 	cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = benchmarkHeadCompactionInterval
 	cfg.BlocksStorageConfig.TSDB.HeadCompactionIntervalWhileStarting = benchmarkHeadCompactionInterval
 	cfg.BlocksStorageConfig.TSDB.HeadCompactionIntervalJitterEnabled = false
 	cfg.BlocksStorageConfig.TSDB.EarlyHeadCompactionMinInMemorySeries = 0
+	cfg.BlocksStorageConfig.TSDB.ShardedPostingsBufferRecyclerMaxRetainedBytes = maxRetainedBytes
 	limits := defaultLimitsTestConfig()
 	limits.MaxGlobalSeriesPerMetric = 0
 	limits.MaxGlobalSeriesPerUser = 0
 	limits.EarlyHeadCompactionOwnedSeriesThreshold = 0
 
-	in, ring, err := prepareIngesterWithBlocksStorageAndLimits(b, cfg, limits, nil, "", nil)
+	registry := prometheus.NewRegistry()
+	in, ring, err := prepareIngesterWithBlocksStorageAndLimits(b, cfg, limits, nil, "", registry)
 	require.NoError(b, err)
 	startAndWaitHealthy(b, in, ring)
-	return in
+	return in, registry
+}
+
+func benchmarkPrimeActiveSeriesRecycler(b testing.TB, in *Ingester) {
+	b.Helper()
+
+	const donorUserID = "recycler-donor"
+	ctx := user.InjectOrgID(context.Background(), donorUserID)
+	benchmarkPopulateActiveHeadSeries(b, ctx, in)
+	db := in.getTSDB(donorUserID)
+	require.NotNil(b, db)
+	benchmarkPopulateInactiveHeadSeriesCount(b, ctx, in, db, benchmarkRecyclerDonorSeriesCount)
+
+	buckets := benchmarkAllShardBuckets()
+	for wave := range benchmarkFullFanoutChurnWaves {
+		generation := fmt.Sprintf("recycler-donor-%d", wave)
+		benchmarkPushRequestGroups(b, ctx, in, benchmarkFullFanoutWriteRequestGroups(b, generation), true)
+		deactivateBenchmarkSeries(b, ctx, db, generation, benchmarkFullFanoutSeriesCount)
+	}
+	stats := benchmarkShardBucketStatsFor(b, db.Head(), buckets)
+	require.Equal(b, len(buckets), stats.dirtyBuckets)
+
+	readers := make([]tsdb.IndexReader, len(buckets))
+	defer func() {
+		for _, reader := range readers {
+			if reader != nil {
+				require.NoError(b, reader.Close())
+			}
+		}
+	}()
+	for shardIndex := range buckets {
+		reader, err := db.Head().Index()
+		require.NoError(b, err)
+		readers[shardIndex] = reader
+		shardedReader, ok := reader.(tsdb.ShardedAllPostingsReader)
+		require.True(b, ok)
+		postings := shardedReader.ShardedAllPostings(ctx, uint64(shardIndex), uint64(len(buckets)))
+		for postings.Next() {
+		}
+		require.NoError(b, postings.Err())
+	}
+	for i, reader := range readers {
+		require.NoError(b, reader.Close())
+		readers[i] = nil
+	}
+	require.Zero(b, benchmarkShardBucketStatsFor(b, db.Head(), buckets).dirtyBuckets)
+	runtime.GC()
 }
 
 func benchmarkActiveSeriesShardRequests(b testing.TB, matchers []*client.LabelMatcher, bucket uint64) []*client.ActiveSeriesRequest {
@@ -546,11 +683,16 @@ func benchmarkPopulateActiveHeadSeries(b testing.TB, ctx context.Context, in *In
 // increasing the active-series response size.
 func benchmarkPopulateInactiveHeadSeries(b testing.TB, ctx context.Context, in *Ingester, db *userTSDB) {
 	b.Helper()
+	benchmarkPopulateInactiveHeadSeriesCount(b, ctx, in, db, benchmarkInactiveSeriesCount)
+}
+
+func benchmarkPopulateInactiveHeadSeriesCount(b testing.TB, ctx context.Context, in *Ingester, db *userTSDB, seriesCount int) {
+	b.Helper()
 
 	before := db.Head().NumSeries()
 	samples := []mimirpb.Sample{{TimestampMs: 1_000, Value: 1}}
-	for start := 0; start < benchmarkInactiveSeriesCount; start += benchmarkInactiveSeriesBatch {
-		count := min(benchmarkInactiveSeriesBatch, benchmarkInactiveSeriesCount-start)
+	for start := 0; start < seriesCount; start += benchmarkInactiveSeriesBatch {
+		count := min(benchmarkInactiveSeriesBatch, seriesCount-start)
 		generation := fmt.Sprintf("inactive-%d", start)
 		req := &mimirpb.WriteRequest{Source: mimirpb.API, Timeseries: make([]mimirpb.PreallocTimeseries, 0, count)}
 		for i := range count {
@@ -569,7 +711,30 @@ func benchmarkPopulateInactiveHeadSeries(b testing.TB, ctx context.Context, in *
 		require.NoError(b, err)
 		deactivateBenchmarkSeries(b, ctx, db, generation, count)
 	}
-	require.Equal(b, before+uint64(benchmarkInactiveSeriesCount), db.Head().NumSeries())
+	require.Equal(b, before+uint64(seriesCount), db.Head().NumSeries())
+}
+
+func benchmarkMetricValue(b testing.TB, gatherer prometheus.Gatherer, name string) float64 {
+	b.Helper()
+
+	families, err := gatherer.Gather()
+	require.NoError(b, err)
+	for _, family := range families {
+		if family.GetName() != name {
+			continue
+		}
+		value := 0.0
+		for _, metric := range family.Metric {
+			if metric.Counter != nil {
+				value += metric.GetCounter().GetValue()
+			}
+			if metric.Gauge != nil {
+				value += metric.GetGauge().GetValue()
+			}
+		}
+		return value
+	}
+	return 0
 }
 
 func benchmarkSingleBucketWriteRequests(b testing.TB, bucket uint64, generation string) []*mimirpb.WriteRequest {

@@ -240,3 +240,15 @@ func TestConfig_DurationList(t *testing.T) {
 		})
 	}
 }
+
+func TestTSDBConfig_ShardedPostingsBufferRecyclerMaxRetainedBytes(t *testing.T) {
+	cfg := TSDBConfig{}
+	f := flag.NewFlagSet(t.Name(), flag.ContinueOnError)
+	cfg.RegisterFlags(f)
+
+	assert.Zero(t, cfg.ShardedPostingsBufferRecyclerMaxRetainedBytes)
+	assert.NoError(t, f.Parse([]string{
+		"-blocks-storage.tsdb.sharded-postings-buffer-recycler-max-retained-bytes=16777216",
+	}))
+	assert.Equal(t, uint64(16*1024*1024), cfg.ShardedPostingsBufferRecyclerMaxRetainedBytes)
+}

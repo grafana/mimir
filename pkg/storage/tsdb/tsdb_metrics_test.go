@@ -153,6 +153,18 @@ func TestTSDBMetrics(t *testing.T) {
 			# TYPE cortex_ingester_tsdb_head_sharded_postings_subfiltered_total counter
 			cortex_ingester_tsdb_head_sharded_postings_subfiltered_total 3172192
 
+			# HELP cortex_ingester_tsdb_head_shard_bucket_repairs_total Total number of dirty TSDB head shard buckets repaired.
+			# TYPE cortex_ingester_tsdb_head_shard_bucket_repairs_total counter
+			cortex_ingester_tsdb_head_shard_bucket_repairs_total 3.469585e+06
+
+			# HELP cortex_ingester_tsdb_head_shard_bucket_repair_buffer_allocations_total Total number of TSDB head shard bucket repair buffers allocated.
+			# TYPE cortex_ingester_tsdb_head_shard_bucket_repair_buffer_allocations_total counter
+			cortex_ingester_tsdb_head_shard_bucket_repair_buffer_allocations_total 3.568716e+06
+
+			# HELP cortex_ingester_tsdb_head_shard_bucket_repair_buffer_allocated_bytes_total Total capacity in bytes of TSDB head shard bucket repair buffers allocated.
+			# TYPE cortex_ingester_tsdb_head_shard_bucket_repair_buffer_allocated_bytes_total counter
+			cortex_ingester_tsdb_head_shard_bucket_repair_buffer_allocated_bytes_total 3.667847e+06
+
 			# HELP cortex_ingester_tsdb_head_chunks_created_total Total number of series created in the TSDB head.
 			# TYPE cortex_ingester_tsdb_head_chunks_created_total counter
 			cortex_ingester_tsdb_head_chunks_created_total{user="user1"} 283935
@@ -411,6 +423,18 @@ func TestTSDBMetricsWithRemoval(t *testing.T) {
 			# TYPE cortex_ingester_tsdb_head_sharded_postings_subfiltered_total counter
 			cortex_ingester_tsdb_head_sharded_postings_subfiltered_total 3172192
 
+			# HELP cortex_ingester_tsdb_head_shard_bucket_repairs_total Total number of dirty TSDB head shard buckets repaired.
+			# TYPE cortex_ingester_tsdb_head_shard_bucket_repairs_total counter
+			cortex_ingester_tsdb_head_shard_bucket_repairs_total 3.469585e+06
+
+			# HELP cortex_ingester_tsdb_head_shard_bucket_repair_buffer_allocations_total Total number of TSDB head shard bucket repair buffers allocated.
+			# TYPE cortex_ingester_tsdb_head_shard_bucket_repair_buffer_allocations_total counter
+			cortex_ingester_tsdb_head_shard_bucket_repair_buffer_allocations_total 3.568716e+06
+
+			# HELP cortex_ingester_tsdb_head_shard_bucket_repair_buffer_allocated_bytes_total Total capacity in bytes of TSDB head shard bucket repair buffers allocated.
+			# TYPE cortex_ingester_tsdb_head_shard_bucket_repair_buffer_allocated_bytes_total counter
+			cortex_ingester_tsdb_head_shard_bucket_repair_buffer_allocated_bytes_total 3.667847e+06
+
 			# HELP cortex_ingester_tsdb_head_chunks_created_total Total number of series created in the TSDB head.
 			# TYPE cortex_ingester_tsdb_head_chunks_created_total counter
 			cortex_ingester_tsdb_head_chunks_created_total{user="user1"} 283935
@@ -551,10 +575,22 @@ func TestTSDBMetrics_ShardingMetricNamesMatchPrometheus(t *testing.T) {
 		# HELP cortex_ingester_tsdb_head_sharded_postings_subfiltered_total Total number of TSDB head ShardedPostings calls for a power-of-two shard count larger than the shard bucket count, served by sub-filtering the single candidate bucket.
 		# TYPE cortex_ingester_tsdb_head_sharded_postings_subfiltered_total counter
 		cortex_ingester_tsdb_head_sharded_postings_subfiltered_total 0
+		# HELP cortex_ingester_tsdb_head_shard_bucket_repairs_total Total number of dirty TSDB head shard buckets repaired.
+		# TYPE cortex_ingester_tsdb_head_shard_bucket_repairs_total counter
+		cortex_ingester_tsdb_head_shard_bucket_repairs_total 0
+		# HELP cortex_ingester_tsdb_head_shard_bucket_repair_buffer_allocations_total Total number of TSDB head shard bucket repair buffers allocated.
+		# TYPE cortex_ingester_tsdb_head_shard_bucket_repair_buffer_allocations_total counter
+		cortex_ingester_tsdb_head_shard_bucket_repair_buffer_allocations_total 0
+		# HELP cortex_ingester_tsdb_head_shard_bucket_repair_buffer_allocated_bytes_total Total capacity in bytes of TSDB head shard bucket repair buffers allocated.
+		# TYPE cortex_ingester_tsdb_head_shard_bucket_repair_buffer_allocated_bytes_total counter
+		cortex_ingester_tsdb_head_shard_bucket_repair_buffer_allocated_bytes_total 0
 	`),
 		"cortex_ingester_tsdb_head_sharded_all_postings_fallback_total",
 		"cortex_ingester_tsdb_head_sharded_postings_fallback_total",
 		"cortex_ingester_tsdb_head_sharded_postings_subfiltered_total",
+		"cortex_ingester_tsdb_head_shard_bucket_repairs_total",
+		"cortex_ingester_tsdb_head_shard_bucket_repair_buffer_allocations_total",
+		"cortex_ingester_tsdb_head_shard_bucket_repair_buffer_allocated_bytes_total",
 	)
 	require.NoError(t, err)
 }
@@ -681,6 +717,24 @@ func populateTSDBMetrics(base float64) *prometheus.Registry {
 		Help: "Total number of ShardedAllPostings calls served by a full series scan.",
 	})
 	shardedAllPostingsFallback.Add(34 * base)
+
+	shardBucketRepairs := promauto.With(r).NewCounter(prometheus.CounterOpts{
+		Name: "prometheus_tsdb_head_shard_bucket_repairs_total",
+		Help: "Total number of dirty shard buckets repaired.",
+	})
+	shardBucketRepairs.Add(35 * base)
+
+	shardBucketRepairAllocations := promauto.With(r).NewCounter(prometheus.CounterOpts{
+		Name: "prometheus_tsdb_head_shard_bucket_repair_buffer_allocations_total",
+		Help: "Total number of shard bucket repair buffers allocated.",
+	})
+	shardBucketRepairAllocations.Add(36 * base)
+
+	shardBucketRepairAllocatedBytes := promauto.With(r).NewCounter(prometheus.CounterOpts{
+		Name: "prometheus_tsdb_head_shard_bucket_repair_buffer_allocated_bytes_total",
+		Help: "Total capacity in bytes of shard bucket repair buffers allocated.",
+	})
+	shardBucketRepairAllocatedBytes.Add(37 * base)
 
 	chunks := promauto.With(r).NewGauge(prometheus.GaugeOpts{
 		Name: "prometheus_tsdb_head_chunks",

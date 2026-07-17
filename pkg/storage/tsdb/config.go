@@ -208,6 +208,9 @@ type TSDBConfig struct {
 	// Series hash cache.
 	SeriesHashCacheMaxBytes uint64 `yaml:"series_hash_cache_max_size_bytes" category:"advanced"`
 
+	// Shared dirty shard-postings repair buffers.
+	ShardedPostingsBufferRecyclerMaxRetainedBytes uint64 `yaml:"sharded_postings_buffer_recycler_max_retained_bytes" category:"experimental"`
+
 	// If true, user TSDBs are not closed on shutdown. Only for testing.
 	// If false (default), user TSDBs are closed to make sure all resources are released and closed properly.
 	KeepUserTSDBOpenOnShutdown bool `yaml:"-"`
@@ -313,6 +316,7 @@ func (cfg *TSDBConfig) RegisterFlags(f *flag.FlagSet) {
 	//
 	// ceil(13h retention - 2h head) / 2h blocks * 2M series * 28 bytes = 320MB, rounded to 350M
 	f.Uint64Var(&cfg.SeriesHashCacheMaxBytes, "blocks-storage.tsdb.series-hash-cache-max-size-bytes", uint64(350*units.Mebibyte), "Max size - in bytes - of the in-memory series hash cache. The cache is shared across all tenants and it's used only when query sharding is enabled.")
+	f.Uint64Var(&cfg.ShardedPostingsBufferRecyclerMaxRetainedBytes, "blocks-storage.tsdb.sharded-postings-buffer-recycler-max-retained-bytes", 0, "Maximum size in bytes of dirty shard-postings repair buffers retained for reuse across all tenants. 0 disables recycling.")
 
 	f.DurationVar(&cfg.HeadCompactionInterval, headCompactionIntervalFlag, 1*time.Minute, "How frequently the ingester checks whether the TSDB head should be compacted and, if so, triggers the compaction. Mimir applies a jitter to the first check, and subsequent checks will happen at the configured interval. A block is only created if data covers the smallest block range. The configured interval must be between 0 and 15 minutes.")
 	f.IntVar(&cfg.HeadCompactionConcurrency, "blocks-storage.tsdb.head-compaction-concurrency", 1, "Maximum number of tenants concurrently compacting TSDB head into a new block")

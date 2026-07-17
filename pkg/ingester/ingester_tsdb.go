@@ -218,6 +218,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		EnableExemplarStorage:                true, // enable for everyone so we can raise the limit later
 		MaxExemplars:                         int64(i.limiter.maxExemplarsPerUser(userID)),
 		SeriesHashCache:                      i.seriesHashCache,
+		ShardedPostingsBufferRecycler:        i.shardedPostingsBufferRecycler,
 		EnableMemorySnapshotOnShutdown:       i.cfg.BlocksStorageConfig.TSDB.MemorySnapshotOnShutdown,
 		EnableBiggerOOOBlockForOldSamples:    i.cfg.BlocksStorageConfig.TSDB.BiggerOutOfOrderBlocksForOldSamples,
 		IsolationDisabled:                    true,

@@ -374,6 +374,9 @@ type Ingester struct {
 	// Maps the per-block series ID with its labels hash.
 	seriesHashCache *hashcache.SeriesHashCache
 
+	// Reuses shard-postings repair buffers across tenant TSDBs.
+	shardedPostingsBufferRecycler *tsdb.ShardedPostingsBufferRecycler
+
 	// Timeout chosen for idle compactions.
 	compactionIdleTimeout time.Duration
 
@@ -441,6 +444,10 @@ func newIngester(cfg Config, limits *validation.Overrides, ingestersRing ring.Re
 		forceCompactTrigger:    make(chan requestWithUsersAndCallback),
 		shipTrigger:            make(chan requestWithUsersAndCallback),
 		seriesHashCache:        hashcache.NewSeriesHashCache(cfg.BlocksStorageConfig.TSDB.SeriesHashCacheMaxBytes),
+		shardedPostingsBufferRecycler: tsdb.NewShardedPostingsBufferRecycler(
+			cfg.BlocksStorageConfig.TSDB.ShardedPostingsBufferRecyclerMaxRetainedBytes,
+			prometheus.WrapRegistererWithPrefix("cortex_ingester_", registerer),
+		),
 		headPostingsForMatchersCacheFactory: tsdb.NewPostingsForMatchersCacheFactory(
 			tsdb.PostingsForMatchersCacheConfig{
 				Shared:                cfg.BlocksStorageConfig.TSDB.SharedPostingsForMatchersCache,
