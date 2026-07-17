@@ -2805,6 +2805,67 @@ func TestSingleClusterPartitionReader_getStartOffset_RetentionPeriodFallback(t *
 		assert.True(t, lastConsumedOffset == -1 || lastConsumedOffset == startOffset-1)
 	})
 
+	// Reproduces the mimir-dedicated-17 incident: ingesters resolve to log-end instead of the
+	// correct lookback offset when ListOffsetsAfterMilli returns the Timestamp=-1 sentinel.
+	//
+	// Production scenario (zone-b pods 14, 17, 106):
+	//   1. Ingester starts with ConsumerGroupOffsetCommitFileEnforced=true but no offset file
+	//   2. MaxReplayPeriod path calls ListOffsetsAfterMilli(now - retention)
+	//   3. ListOffsetsAfterMilli returns log-end with Timestamp=-1 (no records after the lookback ts)
+	//   4. fetchFirstOffsetAfterTime returns (logEndOffset, exists=true) — treats log-end as valid
+	//   5. getStartOffset uses logEndOffset as the start, silently skipping all existing records
+	//
+	// In production this caused a ~37% sample deficit on 3 partitions (zone-b only had data from
+	// its start time, not from the lookback window). Kafka records were confirmed present via
+	// kafkatool — the ingester simply never consumed them.
+	t.Run("must not resolve to log-end when sentinel is returned", func(t *testing.T) {
+		clusterAddr, consumer, cleanup := setupTest(t)
+		defer cleanup()
+
+		writeClient := newKafkaProduceClient(t, clusterAddr)
+
+		// Produce records simulating continuous production on the partition.
+		const numRecords = 10
+		for i := range numRecords {
+			produceRecord(ctx, t, writeClient, topicName, partitionID, []byte(fmt.Sprintf("record-%d", i)))
+		}
+
+		// Fetch the actual log-end offset for comparison.
+		adminClient := kadm.NewClient(writeClient)
+		endOffsets, err := adminClient.ListEndOffsets(ctx, topicName)
+		require.NoError(t, err)
+		endOffset, exists := endOffsets.Lookup(topicName, partitionID)
+		require.True(t, exists)
+		require.NoError(t, endOffset.Err)
+		logEndOffset := endOffset.Offset
+		require.Equal(t, int64(numRecords), logEndOffset, "sanity: log-end should equal number of produced records")
+
+		// Wait so all records' timestamps are older than MaxReplayPeriod.
+		// This triggers the Timestamp=-1 sentinel from ListOffsetsAfterMilli,
+		// which is what happened in production (likely due to WarpStream timing).
+		time.Sleep(200 * time.Millisecond)
+
+		reader := createReader(t, clusterAddr, topicName, partitionID, consumer,
+			withConsumeFromPositionAtStartup(consumeFromLastOffset),
+			withFileBasedOffsetEnforcement(true),
+			withReplayFromDurationWhenFileOffsetMissing(10*time.Millisecond),
+			withTargetAndMaxConsumerLagAtStartup(0, 0),
+		)
+
+		startOffset, lastConsumedOffset, err := reader.getStartOffset(ctx)
+		require.NoError(t, err)
+
+		// When ListOffsetsAfterMilli returns log-end with Timestamp=-1 (no records
+		// after the lookback time), fetchFirstOffsetAfterTime must detect the sentinel
+		// and NOT use log-end as the start offset. Starting from log-end silently
+		// skips all existing records — this is the mimir-dedicated-17 bug where
+		// zone-b ingesters had a ~37% sample deficit on partitions 14, 17, 106.
+		assert.NotEqual(t, logEndOffset, startOffset,
+			"must not resolve to log-end (%d), which would silently skip %d existing records", logEndOffset, numRecords)
+		assert.NotEqual(t, logEndOffset-1, lastConsumedOffset,
+			"must not mark records 0..%d as consumed without processing them", numRecords-1)
+	})
+
 	// When ConsumeFromPositionAtStartup != last-offset, behavior must be identical with and without ConsumerGroupOffsetCommitFileEnforced.
 	t.Run("behaviour unchanged for position != last-offset with and without file enforcement", func(t *testing.T) {
 		clusterAddr, consumer, cleanup := setupTest(t)
