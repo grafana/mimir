@@ -245,6 +245,93 @@ func TestReadcache_OwnershipLossDeletesOffsetFile(t *testing.T) {
 	assert.NoFileExists(t, offsetFile, "losing ownership must delete the offset file")
 }
 
+// TestReadcache_FreshAcquisitionIgnoresStaleOffsetFile reproduces the
+// mimir-dev-15 backlog-replay incident: a pod goes down while owning a
+// partition (leaving its offset file on the PVC), the rebalancer
+// reassigns the partition elsewhere while the pod is down (so the
+// freeze-time file deletion never runs), and hours later the partition
+// is moved back. The stale file must NOT be trusted: a partition
+// acquired after the initial startup reconciliation joins at the live
+// edge, and the stale file is deleted.
+func TestReadcache_FreshAcquisitionIgnoresStaleOffsetFile(t *testing.T) {
+	const (
+		tenantID = "user-1"
+		topic    = "test-topic"
+	)
+
+	_, addr := testkafka.CreateCluster(t, 2, topic)
+
+	cfg := newTestConfigNoKafka(t)
+	cfg.KafkaTopic = topic
+	cfg.OwnedPartitions = "0"
+
+	var kafkaCfg ingest.KafkaConfig
+	kafkaCfg.RegisterFlags(flag.NewFlagSet("", flag.PanicOnError))
+	kafkaCfg.Address = flagext.StringSliceCSV{addr}
+	kafkaCfg.Topic = topic
+	cfg.Kafka = kafkaCfg
+
+	limits := validation.NewOverrides(validation.Limits{}, nil)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	writer := makeKafkaWriter(t, kafkaCfg, prometheus.NewPedanticRegistry())
+	defer func() { _ = services.StopAndAwaitTerminated(ctx, writer) }()
+
+	writeSample := func(name string, ts int64) {
+		req := &mimirpb.WriteRequest{
+			Timeseries: []mimirpb.PreallocTimeseries{
+				{
+					TimeSeries: &mimirpb.TimeSeries{
+						Labels: mimirpb.FromLabelsToLabelAdapters(
+							labels.FromStrings("__name__", name, "job", "test")),
+						Samples: []mimirpb.Sample{{TimestampMs: ts, Value: 1.0}},
+					},
+				},
+			},
+		}
+		require.NoError(t, writer.WriteSync(user.InjectOrgID(ctx, tenantID), topic, 1, tenantID, req))
+	}
+
+	// Records produced to partition 1 before this pod (re-)acquires it:
+	// offsets 0 and 1. A trusted stale file (below) would replay offset 1.
+	writeSample("stale_series_1", 1000)
+	writeSample("stale_series_2", 2000)
+
+	// Plant a stale offset file from a previous ownership stint, claiming
+	// offset 0 was the last consumed. The format mirrors
+	// pkg/storage/ingest's offsetFileData.
+	staleOffsetFile := filepath.Join(cfg.DataDir, "partition-1.offset.json")
+	require.NoError(t, os.MkdirAll(cfg.DataDir, 0o755))
+	require.NoError(t, os.WriteFile(staleOffsetFile, []byte(`{"version":1,"partition_id":1,"offset":0}`), 0o644))
+
+	// Start owning only partition 0: the startup reconciliation completes
+	// without partition 1, so a later acquisition of it is fresh.
+	rc, err := New(cfg, limits, nil, log.NewNopLogger(), prometheus.NewPedanticRegistry())
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(ctx, rc))
+	defer func() { _ = services.StopAndAwaitTerminated(ctx, rc) }()
+
+	// The rebalancer moves partition 1 onto this pod.
+	require.NoError(t, rc.addPartition(ctx, 1))
+	assert.NoFileExists(t, staleOffsetFile,
+		"a fresh acquisition must delete the stale offset file instead of resuming from it")
+
+	// Only records produced from now on are consumed.
+	writeSample("fresh_series", 3000)
+	require.Eventually(t, func() bool {
+		db, err := rc.getOrOpenTSDB(tenantID, 1)
+		return err == nil && db != nil && db.Head().NumSeries() > 0
+	}, 20*time.Second, 100*time.Millisecond, "the fresh acquisition must consume records produced after it joined")
+
+	db, err := rc.getOrOpenTSDB(tenantID, 1)
+	require.NoError(t, err)
+	require.NotNil(t, db)
+	assert.Equal(t, uint64(1), db.Head().NumSeries(),
+		"records produced before the fresh acquisition must not be replayed from the stale offset")
+}
+
 // makeKafkaWriter is a small helper that constructs an ingest writer
 // for tests. It hides the boilerplate of NewWriter (which expects a
 // flag-derived config and a registerer).

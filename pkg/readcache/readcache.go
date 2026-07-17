@@ -165,6 +165,20 @@ type Readcache struct {
 	// (0 on first acquisition). Mutated only in addPartition under
 	// partitionMu.
 	epochSeq map[int32]int
+
+	// startupReconcileDone flips to true once the initial partition
+	// set has been reconciled: after the first rebalancer assignment
+	// snapshot is applied, or after the static-assignment adds in
+	// starting(). Partitions added while it is false are the ones this
+	// pod may have been consuming when the previous process stopped,
+	// so a stored offset file is trusted to resume them. Partitions
+	// added after it is true were acquired while this process was
+	// already running and did not own them — any offset file on disk
+	// is a stale leftover from an earlier ownership stint (e.g. the
+	// pod went down owning the partition and the rebalancer moved it
+	// elsewhere before the pod returned), so startKafkaReader deletes
+	// it and adopts the live edge.
+	startupReconcileDone atomic.Bool
 }
 
 // partitionState bundles the per-partition Kafka reader and the
@@ -418,6 +432,7 @@ func (r *Readcache) starting(ctx context.Context) error {
 			return fmt.Errorf("starting partition %d: %w", pid, err)
 		}
 	}
+	r.startupReconcileDone.Store(true)
 
 	level.Info(r.logger).Log(
 		"msg", "readcache started with static partition assignment",
@@ -994,6 +1009,13 @@ func (r *Readcache) consumeAssignmentStream(ctx context.Context, stream rebalanc
 // semantics the distributor uses on the read path, so add/remove
 // transitions happen at the same instant on both sides.
 func (r *Readcache) applyAssignment(ctx context.Context, entries []readcacheassignment.LogEntry, at time.Time) error {
+	// The first snapshot's adds are the only ones eligible to resume
+	// from a stored offset file (see startupReconcileDone); everything
+	// after this call is a fresh acquisition. Set via defer so the
+	// addPartition calls issued below still observe the pre-reconcile
+	// state on the first invocation.
+	defer r.startupReconcileDone.Store(true)
+
 	wanted := map[int32]struct{}{}
 	var snapshotForInstance int
 	for _, e := range entries {

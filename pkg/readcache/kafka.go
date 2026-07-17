@@ -209,7 +209,8 @@ func (r *Readcache) startKafkaReader(ctx context.Context, p *partitionState) err
 	// the canonical sources for anything older.
 	//
 	// RESUMED partitions are different. If the offset file exists on
-	// this volume, this pod was consuming the partition when the
+	// this volume AND the partition arrived with the initial startup
+	// reconciliation, this pod was consuming the partition when the
 	// process last stopped (restart, eviction, node reschedule) — the
 	// TSDB head data survived on the PVC, and joining at the live edge
 	// would permanently skip every record produced during the
@@ -223,18 +224,42 @@ func (r *Readcache) startKafkaReader(ctx context.Context, p *partitionState) err
 	// values zeroed) so addPartition does not block on catch-up: the
 	// reader starts at the stored offset and catches up to the live
 	// edge asynchronously while running. Replay is bounded by
-	// MaxReplayPeriod so a stale file cannot trigger an unbounded
+	// MaxReplayPeriod — the reader clamps a stored offset older than
+	// the period — so a long downtime cannot trigger an unbounded
 	// backlog replay.
+	//
+	// Partitions acquired AFTER startup reconciliation never resume,
+	// regardless of what's on disk: the process was already running
+	// and did not own the partition, so any offset file is a stale
+	// leftover from an earlier ownership stint. Trusting it replays
+	// records that intermediate owners already ingested (and still
+	// serve from their frozen epochs), double-counting them at query
+	// time — observed on mimir-dev-15 as a 17h backlog replay when a
+	// partition returned to a pod whose offset file survived a
+	// restart because ownership was taken away while the pod was
+	// down (the freezePartition delete never ran). The stale file is
+	// deleted so a crash before the reader's first offset commit
+	// can't leave it around for the next incarnation to trust.
 	//
 	// The literals "end"/"last-offset" are the user-facing flag values
 	// validated by ingest.KafkaConfig.Validate, so they're stable wire
 	// surface; the underlying constants live in
 	// pkg/storage/ingest/config.go.
 	//
-	// Ownership loss deletes the offset file (see freezePartition), so
-	// a re-acquisition after a rebalancer move takes the live-edge
-	// path, not the resume path.
-	if _, err := os.Stat(offsetFilePath); err == nil {
+	// Ownership loss while running deletes the offset file too (see
+	// freezePartition), which keeps the restart-resume path above
+	// honest: a file present at startup reconciliation can only have
+	// been written by this pod's own previous ownership stint.
+	if r.startupReconcileDone.Load() {
+		kafkaCfg.ConsumeFromPositionAtStartup = "end"
+		if err := os.Remove(offsetFilePath); err == nil {
+			level.Info(r.logger).Log("msg", "readcache: deleted stale offset file on fresh partition acquisition",
+				"partition", p.partitionID, "offset_file", offsetFilePath)
+		} else if !os.IsNotExist(err) {
+			level.Warn(r.logger).Log("msg", "readcache: removing stale offset file on fresh partition acquisition",
+				"partition", p.partitionID, "offset_file", offsetFilePath, "err", err)
+		}
+	} else if _, err := os.Stat(offsetFilePath); err == nil {
 		kafkaCfg.ConsumeFromPositionAtStartup = "last-offset"
 		kafkaCfg.ConsumerGroupOffsetCommitFileEnforced = true
 		kafkaCfg.TargetConsumerLagAtStartup = 0

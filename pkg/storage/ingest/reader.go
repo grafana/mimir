@@ -801,6 +801,23 @@ func (r *SingleClusterPartitionReader) getStartOffset(ctx context.Context) (star
 				if startExists && fileOffset >= partitionStart {
 					offset = fileOffset + 1
 					lastConsumedOffset = fileOffset
+
+					// Cap the replay at MaxReplayPeriod. A file offset that is still valid
+					// (within retention) but very old — e.g. the process was down for a long
+					// time, or the file is a stale leftover from a previous ownership stint —
+					// must not trigger an unbounded backlog replay: records older than the
+					// period are typically not ingestible anymore (outside the TSDB retention
+					// or out-of-order window), so consuming them is wasted work.
+					horizonOffset, horizonExists, err := r.fetchFirstOffsetAfterTime(ctx, cl, time.Now().Add(-r.kafkaCfg.MaxReplayPeriod))
+					if err != nil {
+						return 0, -1, err
+					}
+					if horizonExists && horizonOffset > offset {
+						level.Warn(r.logger).Log("msg", "file-stored offset is older than the max replay period, clamping the start offset", "max_replay_period", r.kafkaCfg.MaxReplayPeriod, "file_offset", fileOffset, "start_offset", horizonOffset, "consumer_group", r.consumerGroup)
+						offset = horizonOffset
+						lastConsumedOffset = horizonOffset - 1
+					}
+
 					level.Info(r.logger).Log("msg", "starting consumption from file-stored offset (enforcement enabled)", "last_consumed_offset", lastConsumedOffset, "start_offset", offset, "consumer_group", r.consumerGroup)
 					return offset, lastConsumedOffset, nil
 				}
