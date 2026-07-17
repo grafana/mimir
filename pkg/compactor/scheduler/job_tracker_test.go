@@ -375,6 +375,7 @@ func TestJobTracker_recoverFrom(t *testing.T) {
 
 			jt.recoverFrom(tc.compactionJobs, tc.planJob, tc.cleanupJob)
 			pendingIDs := append(toSlice(jt.pending[planLane]), toSlice(jt.pending[compactionLane])...)
+			pendingIDs = append(pendingIDs, toSlice(jt.pending[cleanupLane])...)
 			require.Equal(t, tc.expectedPending, pendingIDs)
 
 			require.Equal(t, tc.expectedActive, toSlice(jt.active))
@@ -385,6 +386,7 @@ func TestJobTracker_recoverFrom(t *testing.T) {
 			require.Equal(t, tc.expectedCompleteJobs, completeIDs)
 			require.Equal(t, tc.expectedPlanLeased, jt.isPlanJobLeased)
 			require.Equal(t, tc.expectedPlanTime, jt.completePlanTime)
+			require.Equal(t, tc.expectedCleanupTime, jt.completeCleanupTime)
 			require.Len(t, jt.incompleteJobs, len(tc.expectedPending)+len(tc.expectedActive))
 		})
 	}
