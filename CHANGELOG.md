@@ -11,7 +11,6 @@
 * [CHANGE] Querier, Store-gateway: Only send non-opaque GRPC types between queriers and store-gateways. Note that this change requires upgrading from Mimir 3.1. See associated release notes for more information. #15358
 * [CHANGE] Querier: Remove experimental MQE Projection Pushdown optimization pass and associated CLI flag `querier.mimir-query-engine.enable-projection-pushdown`. #15618
 * [CHANGE] Continuous-test: Change default values for `tests.write-read-series-test.num-series` and `tests.write-read-series-test.max-query-age` to match the values being set in jsonnet. #15705
-* [CHANGE] Update Docker image bases from Debian 12 to Debian 13 (`gcr.io/distroless/static-debian13`; race images use `base-nossl-debian13`). #15629
 * [CHANGE] Querier: Query planning metrics previously emitted with a `component="querier"` label are now emitted with a `engine="querier"` label instead, mirroring the similar metrics emitted by the query-frontend and other querier metrics. #15787
 * [CHANGE] Querier: Reduce the default concurrency of queriers, `-querier.max-concurrent`, to 8. #15984
 * [CHANGE] Query-frontend: the number of query shards is now always rounded up to the next power of two, both for the configured `-query-frontend.query-sharding-total-shards` and for the per-query computed value. #15807
@@ -86,14 +85,12 @@
 * [BUGFIX] Querier: Fix querier ScaledObjects native histogram querying and triggering `MimirAutoscalerKedaFailing` when queriers have no traffic because `cortex_querier_request_duration_seconds_sum` is not published until the first request is received. #15106
 * [BUGFIX] Query-frontend: Fixed a memory leak caused that could occur on some error paths if MQE was enabled. #15392
 * [BUGFIX] MQE: Fix issue where subqueries unnecessarily compute and then discard an additional step if the parent query is not aligned to the step. #15438
-* [BUGFIX] Upgrade Go to 1.26.4 to address [CVE-2026-42507](https://pkg.go.dev/vuln/GO-2026-5039). #15566
 * [BUGFIX] Memcached: Disable TCP DNS connection pooling used for service discovery by default. #15573
 * [BUGFIX] Ingest storage: Fix `cortex_ingest_storage_writer_produce_records_enqueued_total` not being incremented when `KafkaProducer.ProduceSync()` rejects a batch because a record has its `Timestamp` set by the caller. #15610
 * [BUGFIX] Compactor: Remove temporary block upload validation directories left behind in the data directory when the compactor crashes mid-validation. This prevents leaking disk space. #15647
 * [BUGFIX] Continuous-test: Fix a crash when histogram tests were enabled in combination with the OTLP-HTTP write protocol. #15641
 * [BUGFIX] Store-gateway: Fix a regex label matcher that also matches the empty string (e.g. `label=~"|foo|bar"`) incorrectly excluding series that don't have the label, potentially resulting in incomplete query results. #15767
 * [BUGFIX] Block-builder-scheduler: Exit cleanly when shut down during startup observation. #15730
-* [BUGFIX] Ingest storage: Cap maximum Kafka protocol version, the client negotiates with the broker to v3.9.0. #15745
 * [BUGFIX] MQE: Report a query that panics during evaluation as failed in the `evaluation stats` log, instead of logging it as successful. The querier still re-panics afterwards, crash behaviour is unchanged. #15753
 * [BUGFIX] Memcached: Fix issue where cache-related trace spans included events emitted with an empty `name` label. #15794
 * [BUGFIX] MQE: Fix issue where LBAC is not respected by range vector splitting cache. #15802
