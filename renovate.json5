@@ -125,6 +125,16 @@
       enabled: false,
     },
     {
+      description: 'Only update antithesis-sdk-go to default-no-op release variants',
+      matchManagers: ['gomod'],
+      matchPackageNames: [
+        'github.com/antithesishq/antithesis-sdk-go',
+      ],
+      // Mark -default-no-op as a suffix not used in comparing version numbers.
+      versionCompatibility: '^(?<version>.+)(?<compatibility>-default-no-op)$',
+      versioning: 'semver',
+    },
+    {
       // Update Go version everywhere at once: build image, go.mod and GitHub Actions workflows.
       matchDatasources: [
         'docker',
