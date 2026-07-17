@@ -22,7 +22,7 @@ require (
 	github.com/hashicorp/golang-lru v1.0.2 // indirect
 	github.com/influxdata/influxdb/v2 v2.9.1
 	github.com/json-iterator/go v1.1.12
-	github.com/minio/minio-go/v7 v7.2.0
+	github.com/minio/minio-go/v7 v7.2.1
 	github.com/mitchellh/go-wordwrap v1.0.1
 	github.com/opentracing-contrib/go-grpc v0.1.4
 	github.com/opentracing-contrib/go-stdlib v1.1.2-0.20260528155411-f102363ff79b // indirect
