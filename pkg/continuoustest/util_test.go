@@ -49,6 +49,96 @@ func TestGetQueryStep(t *testing.T) {
 	}
 }
 
+// TestStepAlignmentShiftsQueryMinTimeBackward reproduces the root cause of a
+// continuous-test false-positive: when the query time range grows large enough
+// for getQueryStep to return a step bigger than writeInterval, and the
+// query-frontend has align_queries_with_step=true, the frontend floors the
+// start timestamp via integer division (start = (start/step)*step). If
+// queryMinTime is not a multiple of the new step, this shifts start to a
+// timestamp before queryMinTime where old/stale data causes verifySamplesSum
+// to report a mismatch.
+func TestStepAlignmentShiftsQueryMinTimeBackward(t *testing.T) {
+	const (
+		numSeries     = 5000
+		alignInterval = 20 * time.Second // writeInterval
+	)
+
+	// queryMinTime aligned to writeInterval but NOT to multiples of 40s/60s.
+	// This is the exact value from the incident: 2026-07-16T20:31:40Z.
+	queryMinTime := time.UnixMilli(1784233900000).UTC()
+	require.Equal(t, int64(0), queryMinTime.UnixMilli()%alignInterval.Milliseconds(),
+		"queryMinTime must be aligned to writeInterval")
+
+	tests := map[string]struct {
+		end          time.Time
+		expectedStep time.Duration
+		// The aligned start the query-frontend would compute.
+		expectedAlignedStart time.Time
+	}{
+		"step=20s: queryMinTime is step-aligned, no shift": {
+			end:                  queryMinTime.Add(5 * time.Hour),
+			expectedStep:         alignInterval,
+			expectedAlignedStart: queryMinTime,
+		},
+		"step=40s: queryMinTime is NOT step-aligned, shifted 20s backward": {
+			end:                  queryMinTime.Add(6 * time.Hour),
+			expectedStep:         40 * time.Second,
+			expectedAlignedStart: queryMinTime.Add(-20 * time.Second),
+		},
+		"step=60s: queryMinTime is NOT step-aligned, shifted 40s backward": {
+			end:                  queryMinTime.Add(12 * time.Hour),
+			expectedStep:         60 * time.Second,
+			expectedAlignedStart: queryMinTime.Add(-40 * time.Second),
+		},
+	}
+
+	for testName, tc := range tests {
+		t.Run(testName, func(t *testing.T) {
+			step := getQueryStep(queryMinTime, tc.end, alignInterval)
+			require.Equal(t, tc.expectedStep, step)
+
+			// Simulate the step-align middleware: start = (start/step)*step
+			startMs := queryMinTime.UnixMilli()
+			stepMs := step.Milliseconds()
+			alignedStartMs := (startMs / stepMs) * stepMs
+			alignedStart := time.UnixMilli(alignedStartMs).UTC()
+
+			require.Equal(t, tc.expectedAlignedStart, alignedStart)
+
+			if step == alignInterval {
+				require.Equal(t, queryMinTime, alignedStart,
+					"with step == writeInterval, start must not shift")
+				return
+			}
+
+			// When step > writeInterval, the aligned start is before queryMinTime.
+			require.True(t, alignedStart.Before(queryMinTime),
+				"aligned start %v should be before queryMinTime %v", alignedStart, queryMinTime)
+
+			// Build histogram samples: correct data from queryMinTime onward,
+			// but a wrong value at the shifted-back timestamp to simulate
+			// stale/inconsistent data before the recovery boundary.
+			histProfile := histogramProfilesForWriteProtocol(writeProtocolPrometheus)[0]
+			var histograms []model.SampleHistogramPair
+
+			// The stale pre-recovery sample at the aligned start.
+			staleHist := histProfile.generateSampleHistogram(alignedStart, numSeries)
+			staleHist.Sum += 12345 // corrupt the sum
+			histograms = append(histograms, newSampleHistogramPair(alignedStart, staleHist))
+
+			// Correct samples from queryMinTime onward.
+			for ts := queryMinTime; !ts.After(queryMinTime.Add(3 * step)); ts = ts.Add(step) {
+				histograms = append(histograms, newSampleHistogramPair(ts, histProfile.generateSampleHistogram(ts, numSeries)))
+			}
+
+			matrix := model.Matrix{{Histograms: histograms}}
+			_, err := verifySamplesSum(matrix, numSeries, step, histProfile.generateValue, histProfile.generateSampleHistogram, nil)
+			require.Error(t, err, "verifySamplesSum should fail on the stale pre-queryMinTime sample")
+			require.Contains(t, err.Error(), "has sum")
+		})
+	}
+}
+
 func TestVerifySamplesSum(t *testing.T) {
 	testVerifySamplesSumFloats(t, generateSineWaveValue, "generateSineWaveValue")
 	for _, histProfile := range histogramProfilesForWriteProtocol(writeProtocolPrometheus) {
