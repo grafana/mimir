@@ -493,6 +493,11 @@ func (f *Frontend) DoProtobufRequest(requestContext context.Context, req proto.M
 			default:
 				freq.spanLogger.DebugLog("msg", "request context cancelled or response stream closed by caller after enqueuing request but before querier started sending response, cancelling by sending notification to scheduler", "cause", context.Cause(streamContext))
 
+				// Cancelled while still queued: no querier will report a real queue time, so record a
+				// wall-clock approximation. This write runs in this background goroutine and is not
+				// synchronized with Next(), so it's best-effort: a consumer reading stats the instant
+				// Next() returns may still see 0. The query-frontend logs queue time only after the
+				// request has fully unwound, well after this runs.
 				stats.FromContext(streamContext).AddQueueTime(time.Since(freq.enqueuedAt))
 
 				select {
