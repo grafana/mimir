@@ -427,18 +427,12 @@ func (f *Frontend) DoProtobufRequest(requestContext context.Context, req proto.M
 		responseStarted: make(chan struct{}),
 		notifyClosed:    make(chan struct{}),
 		isClosed:        atomic.NewBool(false),
-
-		cancellationHandled: make(chan struct{}),
 	}
 
 	f.requests.put(freq)
 	f.inflightRequestCount.Inc()
 
 	go func() {
-		// Closed on every exit path from this goroutine, so that Next()/shouldAbortReading() can safely
-		// wait on it once requestContext is done without risking a deadlock.
-		defer close(freq.protobufResponseStream.cancellationHandled)
-
 		defer func() {
 			f.requests.delete(freq.queryID)
 			cancelStream(errExecutingQueryRoundTripFinished)
@@ -531,13 +525,6 @@ type ProtobufResponseStream struct {
 	notifyClosed    chan struct{}
 	isClosed        *atomic.Bool
 	closeStream     func()
-
-	// cancellationHandled is closed once the goroutine driving this request in DoProtobufRequest has
-	// finished reacting to streamContext being done, including recording an approximate queue time if
-	// applicable. Next() and shouldAbortReading() wait on this before returning due to requestContext
-	// being done, so that a caller reading stats right after Next() returns sees the final value rather
-	// than racing with the goroutine that writes it.
-	cancellationHandled chan struct{}
 }
 
 type protobufResponseMessage struct {
@@ -626,13 +613,6 @@ func (s *ProtobufResponseStream) Next(ctx context.Context) (*frontendv2pb.QueryR
 		// Note that we deliberately wait on s.requestContext, rather than s.streamContext, as s.streamContext is cancelled as soon
 		// as the response has been completely received, but we want to continue reading any outstanding messages
 		// from the stream unless s.requestContext (which presumably represents the query as a whole) is cancelled.
-		//
-		// Wait for the goroutine driving this request to finish reacting to the cancellation (including
-		// recording an approximate queue time) before returning, so a caller reading stats immediately
-		// after this call sees the final value. This can't deadlock: streamContext is a child of
-		// requestContext, so it's guaranteed to become done too, and cancellationHandled is always
-		// closed on every exit path of that goroutine.
-		<-s.cancellationHandled
 		return nil, context.Cause(s.requestContext)
 	case <-s.notifyClosed:
 		// If the stream was closed, then we should stop now as well.
@@ -645,8 +625,6 @@ func (s *ProtobufResponseStream) Next(ctx context.Context) (*frontendv2pb.QueryR
 // shouldAbortReading checks if the request has been cancelled or if this stream has been closed, and returns an error if so.
 func (s *ProtobufResponseStream) shouldAbortReading(ctx context.Context) error {
 	if s.requestContext.Err() != nil {
-		// See the equivalent wait in Next()'s select for why this can't deadlock.
-		<-s.cancellationHandled
 		return context.Cause(s.requestContext)
 	}
 
