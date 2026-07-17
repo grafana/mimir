@@ -31,6 +31,7 @@ spec:
       namespace: {{ .Release.Namespace | quote }}
     spec:
       serviceAccountName: {{ template "mimir.alertmanager.serviceAccountName" . }}
+      automountServiceAccountToken: {{ include "mimir.lib.automountServiceAccountToken" (dict "ctx" . "component" "alertmanager") }}
       {{- if .Values.alertmanager.priorityClassName }}
       priorityClassName: {{ .Values.query_frontend.priorityClassName }}
       {{- end }}

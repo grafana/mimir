@@ -59,6 +59,7 @@ spec:
       namespace: "citestns"
     spec:
       serviceAccountName: keda-autoscaling-metamonitoring-values-mimir
+      automountServiceAccountToken: false
       securityContext:
         fsGroup: 10001
         runAsGroup: 10001
@@ -200,6 +201,7 @@ spec:
       namespace: "citestns"
     spec:
       serviceAccountName: keda-autoscaling-metamonitoring-values-mimir
+      automountServiceAccountToken: false
       securityContext:
         fsGroup: 10001
         runAsGroup: 10001
@@ -341,6 +343,7 @@ spec:
       namespace: "citestns"
     spec:
       serviceAccountName: keda-autoscaling-metamonitoring-values-mimir
+      automountServiceAccountToken: false
       securityContext:
         fsGroup: 10001
         runAsGroup: 10001

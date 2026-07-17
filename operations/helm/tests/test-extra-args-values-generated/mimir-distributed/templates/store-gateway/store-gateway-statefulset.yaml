@@ -59,6 +59,7 @@ spec:
       namespace: "citestns"
     spec:
       serviceAccountName: test-extra-args-values-mimir
+      automountServiceAccountToken: false
       securityContext:
         fsGroup: 10001
         runAsGroup: 10001
@@ -207,6 +208,7 @@ spec:
       namespace: "citestns"
     spec:
       serviceAccountName: test-extra-args-values-mimir
+      automountServiceAccountToken: false
       securityContext:
         fsGroup: 10001
         runAsGroup: 10001
@@ -355,6 +357,7 @@ spec:
       namespace: "citestns"
     spec:
       serviceAccountName: test-extra-args-values-mimir
+      automountServiceAccountToken: false
       securityContext:
         fsGroup: 10001
         runAsGroup: 10001

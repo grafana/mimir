@@ -26,6 +26,7 @@ spec:
         {{- include "mimir.podAnnotations" (dict "ctx" . "component" "ruler-query-scheduler") | nindent 8 }}
     spec:
       serviceAccountName: {{ template "mimir.serviceAccountName" . }}
+      automountServiceAccountToken: {{ include "mimir.lib.automountServiceAccountToken" (dict "ctx" . "component" "ruler-query-scheduler") }}
       {{- if .Values.ruler_query_scheduler.priorityClassName }}
       priorityClassName: {{ .Values.ruler_query_scheduler.priorityClassName }}
       {{- end }}

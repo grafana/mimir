@@ -38,6 +38,7 @@ spec:
         minio-secret-version: "42"
     spec:
       serviceAccountName: test-oss-values-mimir
+      automountServiceAccountToken: false
       securityContext:
         fsGroup: 10001
         runAsGroup: 10001

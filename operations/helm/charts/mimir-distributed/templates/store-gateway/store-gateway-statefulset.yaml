@@ -80,6 +80,7 @@ spec:
       schedulerName: {{ . | quote }}
       {{- end }}
       serviceAccountName: {{ template "mimir.serviceAccountName" . }}
+      automountServiceAccountToken: {{ include "mimir.lib.automountServiceAccountToken" $args }}
       {{- if .Values.store_gateway.priorityClassName }}
       priorityClassName: {{ .Values.store_gateway.priorityClassName }}
       {{- end }}

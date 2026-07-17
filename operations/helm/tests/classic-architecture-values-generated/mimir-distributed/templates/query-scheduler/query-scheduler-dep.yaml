@@ -34,6 +34,7 @@ spec:
       annotations:
     spec:
       serviceAccountName: classic-architecture-values-mimir
+      automountServiceAccountToken: false
       securityContext:
         fsGroup: 10001
         runAsGroup: 10001

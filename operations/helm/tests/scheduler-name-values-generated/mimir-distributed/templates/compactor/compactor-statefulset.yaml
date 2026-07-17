@@ -48,6 +48,7 @@ spec:
     spec:
       schedulerName: "my-scheduler"
       serviceAccountName: scheduler-name-values-mimir
+      automountServiceAccountToken: false
       securityContext:
         fsGroup: 10001
         runAsGroup: 10001

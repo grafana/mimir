@@ -34,6 +34,7 @@ spec:
       namespace: {{ $.Release.Namespace | quote }}
     spec:
       serviceAccountName: {{ include "mimir.serviceAccountName" $ }}
+      automountServiceAccountToken: {{ include "mimir.lib.automountServiceAccountToken" (dict "ctx" $ "component" "gateway") }}
       {{- if .priorityClassName }}
       priorityClassName: {{ .priorityClassName }}
       {{- end }}

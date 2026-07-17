@@ -20,6 +20,7 @@ spec:
         app: mimir-distributed-job
         release: test-oss-emptydir-values
     spec:
+      automountServiceAccountToken: false
       restartPolicy: OnFailure      
       volumes:
         - name: minio-configuration

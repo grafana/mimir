@@ -20,6 +20,7 @@ spec:
         app: mimir-distributed-job
         release: keda-autoscaling-values
     spec:
+      automountServiceAccountToken: false
       restartPolicy: OnFailure      
       volumes:
         - name: minio-configuration

@@ -135,6 +135,22 @@ deny[msg] {
 	object.get(pod_spec.securityContext, field, "") != value
 }
 
+automount_service_account_token_defined(pod_spec) {
+	is_boolean(pod_spec.automountServiceAccountToken)
+}
+
+deny[msg] {
+	not disable_restricted_security_context_checks
+
+	obj := input[i].contents
+	msg := sprintf("The Mimir or GEM Pod doesn't define automountServiceAccountToken: %v", [object_display_name[i]])
+
+	obj.kind in ["StatefulSet", "Deployment"]
+	pod_spec := obj.spec.template.spec
+	is_mimir_or_gem_image(pod_spec.containers[j].image)
+	not automount_service_account_token_defined(pod_spec)
+}
+
 deny[msg] {
 	obj := input[i].contents
 	msg = sprintf("Resource has empty nodeSelector, but shouldn't %s", [object_display_name[i]])
